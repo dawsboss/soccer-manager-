@@ -285,3 +285,28 @@ label.field span{display:block;font-size:13px;color:var(--ink-soft);margin-botto
   background:var(--paper);border:1px solid var(--line);border-radius:8px;
   padding:11px 12px;margin-bottom:10px;word-break:break-all;user-select:all;
 }
+
+/* ---------- live view ---------- */
+.liverow{
+  display:grid;grid-template-columns:38px 1fr auto;align-items:center;gap:12px;
+  background:#fff;border:1px solid var(--line);border-radius:10px;
+  padding:14px 12px;width:100%;text-align:left;min-height:64px;
+}
+.liverow[data-on="1"]{border-left:5px solid var(--field);padding-left:9px}
+.liverow[data-picked="1"]{border-color:var(--field-deep);box-shadow:0 0 0 3px var(--field-wash)}
+.liverow .pnum{font-size:22px}
+.liverow .pname{font-size:17px}
+.livemins{text-align:right;font-variant-numeric:tabular-nums}
+.livemins>span:first-child{
+  display:block;font-family:"Barlow Condensed",sans-serif;font-weight:700;font-size:23px;
+}
+.livemins small{font-weight:500;font-size:12px;color:var(--ink-soft)}
+.diff{display:block;font-size:12px;font-weight:600}
+.diff.owed{color:var(--owed)}
+.diff.over{color:var(--ink-soft)}
+.pickbar{
+  position:sticky;top:96px;z-index:30;
+  display:flex;align-items:center;justify-content:space-between;gap:10px;
+  background:var(--field-deep);color:#fff;border-radius:var(--r);padding:11px 13px;font-size:14.5px;
+}
+.pickbar .btn{background:rgba(255,255,255,.16);color:#fff;border-color:rgba(255,255,255,.5)}

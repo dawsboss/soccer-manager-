@@ -7,7 +7,7 @@ const LS_UI = 'sm.ui.v1';
 const LS_WS = 'sm.workspace';
 
 let state = { teams: {}, matches: {} };
-let ui = { view: 'match', teamId: null, matchId: null, picked: null, dragging: false, editFid: null };
+let ui = { view: 'live', teamId: null, matchId: null, picked: null, dragging: false, editFid: null };
 let lastLog = [];
 
 const ROLES = ['GK', 'Back', 'Mid', 'Wing', 'Forward'];
@@ -231,6 +231,15 @@ function playedSec(m, pid, now = Date.now()) {
   for (const [, s] of stintsOf(m, pid)) { const off = s.off == null ? e : s.off; t += Math.max(0, off - s.on); }
   return t;
 }
+function spellSec(m, pid, now) {
+  const o = openStint(m, pid);
+  return o ? Math.max(0, elapsedSec(m, now) - o[1].on) : null;
+}
+function restSec(m, pid, now) {
+  const offs = stintsOf(m, pid).filter(([, x]) => x.off != null).map(([, x]) => x.off);
+  return offs.length ? Math.max(0, elapsedSec(m, now) - Math.max(...offs)) : null;
+}
+
 function plannedSec(m, pid) { return (m.planned && m.planned[pid] != null ? Number(m.planned[pid]) : 0) * 60; }
 const onField = (m, pid) => !!(m.positions && m.positions[pid]);
 const fieldIds = m => Object.keys(m.positions || {});
@@ -497,7 +506,8 @@ function render() {
   const app = $('#app');
   const v = ui.view;
   app.innerHTML =
-    v === 'match' ? viewMatch() :
+    v === 'live' ? viewLive() :
+      v === 'match' ? viewMatch() :
       v === 'matches' ? viewMatches() :
         v === 'roster' ? viewRoster() :
           v === 'season' ? viewSeason() :
@@ -511,6 +521,104 @@ function needTeam() {
   const c = wsCode();
   return `<div class="empty"><strong>No teams here</strong>${c ? `Nothing is stored under <code>${esc(c)}</code>. If you expected teams, check the code character by character — it is case sensitive and order matters.` : 'Add a team, then its players. Everything else hangs off that.'}
   <div style="margin-top:14px"><button class="btn" data-act="newteam">Add a team</button></div></div>`;
+}
+
+
+/* --- live: minutes and subs only, no pitch --- */
+function viewLive() {
+  const t = team(); if (!t) return needTeam();
+  let m = match();
+  if (!m || m.teamId !== t.id) { const l = teamMatches(t.id); m = l[0] || null; ui.matchId = m ? m.id : null; }
+  if (!m) return `<div class="empty"><strong>No game yet</strong>Create a game to start tracking minutes.
+    <div style="margin-top:14px"><button class="btn" data-act="newmatch">Add a game</button></div></div>`;
+
+  const now = Date.now();
+  const el = elapsedSec(m, now);
+  const roster = squad(t, m);
+  const name = id => { const p = (t.players || {})[id]; return p ? esc(p.name) : 'Unknown'; };
+
+  // longest on the pitch first — she is the one most likely due a rest
+  const on = roster.filter(p => onField(m, p.id))
+    .sort((a, b) => (spellSec(m, b.id, now) || 0) - (spellSec(m, a.id, now) || 0));
+  // furthest behind planned first — she is the one most likely due to go on
+  const bench = roster.filter(p => !onField(m, p.id))
+    .sort((a, b) => (plannedSec(m, b.id) - playedSec(m, b.id, now)) - (plannedSec(m, a.id) - playedSec(m, a.id, now)));
+
+  const clock = `<div class="clockwrap">
+    <div class="clockline">
+      <div class="clock" id="clock">${mmss(el)}</div>
+      <div class="clockmeta"><b>${esc(halfName(m, m.currentHalf || 1))}</b><span id="halfclock">${mmss(halfSec(m, now))}</span> of ${m.periodMinutes || 40}:00</div>
+    </div>
+    <div class="clockbtns">
+      ${running(m)
+      ? `<button class="btn stop" data-act="pause">Pause</button><button class="btn stop" data-act="endhalf">End ${esc(halfName(m, m.currentHalf || 1)).toLowerCase()}</button>`
+      : `<button class="btn" data-act="start">${el ? 'Resume' : 'Start clock'}</button>${el ? `<button class="btn stop" data-act="endhalf">End ${esc(halfName(m, m.currentHalf || 1)).toLowerCase()}</button>` : ''}`}
+    </div>
+    <button class="linkbtn" data-act="fixclock">Clock reading wrong?</button></div>`;
+
+  const picked = ui.picked ? (t.players || {})[ui.picked] : null;
+  const pickedOn = picked && onField(m, picked.id);
+  const banner = picked ? `<div class="pickbar">
+    <span><b>${esc(picked.name)}</b> ${pickedOn ? 'coming off' : 'going on'} — tap who she ${pickedOn ? 'hands over to' : 'replaces'}</span>
+    <button class="btn quiet sm" data-act="clearpick">Cancel</button></div>` : '';
+
+  const row = (p, isOn) => {
+    const pl = playedSec(m, p.id, now), pd = plannedSec(m, p.id);
+    const diff = Math.round((pl - pd) / 60);
+    const spell = isOn ? spellSec(m, p.id, now) : restSec(m, p.id, now);
+    const tag = spell == null ? 'not on yet' : (isOn ? 'on ' : 'off ') + mmss(spell);
+    return `<button class="liverow" type="button" data-act="taplive" data-pid="${p.id}"
+      data-on="${isOn ? 1 : 0}" data-picked="${ui.picked === p.id ? 1 : 0}">
+      <span class="pnum">${esc(p.number ?? '')}</span>
+      <span><span class="pname">${esc(p.name)}</span>
+        <span class="psub" data-spell="${p.id}">${tag}</span></span>
+      <span class="livemins"><span data-mins="${p.id}">${mins(pl)}<small> min</small></span>
+        ${pd > 0 ? `<span class="diff ${diff < 0 ? 'owed' : 'over'}">${diff < 0 ? -diff + ' owed' : diff > 0 ? diff + ' over' : 'on plan'}</span>` : ''}</span>
+    </button>`;
+  };
+
+  const clashes = clashesOn(t, m);
+  const warn = clashes.length
+    ? `<div class="warn">${clashes.map(([a, b]) => `${esc(a.name)} and ${esc(b.name)} are on together`).join(' · ')}</div>` : '';
+
+  lastLog = subEvents(m);
+  const recent = lastLog.slice(0, 4);
+  const logHtml = recent.length
+    ? `<div class="log">${recent.map((r, i) => `<button type="button" data-act="fixsub" data-i="${i}">
+        <span class="t">${mmss(r.t)}</span>
+        <span>${r.on ? `<span class="on">${name(r.on)} on</span>` : ''}${r.on && r.off ? ' for ' : ''}${r.off ? `<span class="off">${name(r.off)} off</span>` : ''}</span>
+        <span class="muted">fix</span></button>`).join('')}</div>`
+    : `<p class="muted" style="margin:0">No subs yet.</p>`;
+
+  return `<div class="stack">
+    ${clock}
+    ${banner}
+    ${warn}
+    <div class="card"><div class="spread" style="margin-bottom:8px">
+      <h2>On the pitch</h2><span class="muted">${on.length} of ${m.onFieldCount || 11} · longest first</span></div>
+      <div class="plist">${on.map(p => row(p, true)).join('') || '<p class="muted" style="margin:0">Nobody on yet.</p>'}</div></div>
+    <div class="card"><div class="spread" style="margin-bottom:8px">
+      <h2>Bench</h2><span class="muted">most owed first</span></div>
+      <div class="plist">${bench.map(p => row(p, false)).join('') || '<p class="muted" style="margin:0">Everyone is on.</p>'}</div></div>
+    <div class="card"><div class="spread" style="margin-bottom:10px"><h2>Recent subs</h2>
+      <div class="row"><button class="btn quiet sm" data-act="addsub">Add</button>
+      <button class="btn quiet sm" data-act="fixminutes">Fix</button></div></div>${logHtml}</div>
+  </div>`;
+}
+
+/* Simpler than the pitch version: one on, one off, that is a sub. */
+function tapLive(pid) {
+  const m = match(), t = team();
+  const p = (t.players || {})[pid]; if (!p) return;
+  if (!ui.picked) { ui.picked = pid; render(); return; }
+  if (ui.picked === pid) { ui.picked = null; render(); return; }
+  const a = ui.picked, b = pid;
+  const aOn = onField(m, a), bOn = onField(m, b);
+  if (aOn === bOn) { ui.picked = b; render(); return; }
+  ui.picked = null;
+  const outPid = aOn ? a : b, inPid = aOn ? b : a;
+  swap(m, outPid, inPid);
+  toast(`${(t.players || {})[inPid].name} on for ${(t.players || {})[outPid].name} at ${mins(elapsedSec(m))}′`);
 }
 
 /* --- match --- */
@@ -804,7 +912,7 @@ function viewSetup() {
 
 /* ---------------- ticking ---------------- */
 setInterval(() => {
-  if (ui.view !== 'match' || ui.dragging) return;
+  if ((ui.view !== 'match' && ui.view !== 'live') || ui.dragging) return;
   const m = match(); if (!m || !running(m)) return;
   const t = team(); if (!t) return;
   const now = Date.now();
@@ -816,6 +924,11 @@ setInterval(() => {
     if (a) a.innerHTML = `${mins(pl)}<small> min</small>`;
     const b = document.querySelector(`[data-tokmins="${p.id}"]`);
     if (b) b.textContent = mins(pl) + '′';
+    const sp = document.querySelector(`[data-spell="${p.id}"]`);
+    if (sp) {
+      const on = spellSec(m, p.id, now), off = restSec(m, p.id, now);
+      sp.textContent = on != null ? 'on ' + mmss(on) : off != null ? 'off ' + mmss(off) : 'not on yet';
+    }
     const bar = document.querySelector(`[data-bar="${p.id}"]`);
     if (bar && pd > 0) {
       bar.style.width = clamp(pl / pd * 100, 0, 100) + '%';
@@ -1156,6 +1269,8 @@ document.addEventListener('click', e => {
   const t = team(), m = match();
 
   if (a === 'tap') { tapPlayer(d.pid); return; }
+  if (a === 'taplive') { tapLive(d.pid); return; }
+  if (a === 'clearpick') { ui.picked = null; render(); return; }
   if (a === 'start') { startClock(m); return; }
   if (a === 'pause') { pauseClock(m); return; }
   if (a === 'endhalf') { endHalf(m); return; }
