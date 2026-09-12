@@ -14,12 +14,14 @@
 
 <header class="topbar">
   <div class="topbar-main">
-    <button class="team-switch" id="teamSwitch" type="button">
-      <span class="team-switch-name" id="teamSwitchName">No team yet</span>
-      <svg viewBox="0 0 12 8" width="12" height="8" aria-hidden="true"><path d="M1 1l5 5 5-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
-    </button>
+    <span class="brand">Minutes</span>
     <span class="sync" id="syncBadge" title="Sync status">local</span>
   </div>
+  <button class="team-switch" id="teamSwitch" type="button">
+    <span class="ts-label">Team</span>
+    <span class="team-switch-name" id="teamSwitchName">No team yet</span>
+    <svg viewBox="0 0 12 8" width="12" height="8" aria-hidden="true"><path d="M1 1l5 5 5-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+  </button>
   <nav class="tabs" id="tabs">
     <button type="button" data-view="match">Match</button>
     <button type="button" data-view="matches">Games</button>

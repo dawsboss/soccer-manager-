@@ -40,12 +40,17 @@ button{cursor:pointer}
   padding:calc(6px + env(safe-area-inset-top)) 10px 0;
 }
 .topbar-main{display:flex;align-items:center;gap:10px;padding:2px 4px 8px}
-.team-switch{
-  flex:1;display:flex;align-items:center;gap:8px;
-  background:none;border:0;padding:0;color:#fff;text-align:left;
-  font-family:"Barlow Condensed",sans-serif;font-weight:700;
-  font-size:26px;letter-spacing:.01em;
+.brand{
+  flex:1;font-family:"Barlow Condensed",sans-serif;font-weight:700;
+  font-size:24px;letter-spacing:.02em;
 }
+.team-switch{
+  display:inline-flex;align-items:center;gap:8px;max-width:100%;
+  margin:0 4px 10px;padding:6px 13px;
+  background:rgba(255,255,255,.14);border:1px solid rgba(255,255,255,.28);
+  border-radius:999px;color:#fff;font-size:15px;font-weight:600;text-align:left;
+}
+.ts-label{font-size:12px;opacity:.72;font-weight:500;flex:none}
 .team-switch svg{opacity:.7;flex:none}
 .team-switch-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .sync{
@@ -58,8 +63,8 @@ button{cursor:pointer}
 .tabs{display:flex;gap:2px;overflow-x:auto;scrollbar-width:none}
 .tabs::-webkit-scrollbar{display:none}
 .tabs button{
-  flex:1 0 auto;background:none;border:0;color:rgba(255,255,255,.72);
-  font-size:14px;font-weight:500;padding:9px 12px 11px;
+  flex:1 1 0;min-width:0;background:none;border:0;color:rgba(255,255,255,.72);
+  font-size:13px;font-weight:500;padding:9px 4px 11px;
   border-bottom:3px solid transparent;white-space:nowrap;
 }
 .tabs button[aria-current="true"]{color:#fff;border-bottom-color:#fff}
@@ -269,3 +274,6 @@ label.field span{display:block;font-size:13px;color:var(--ink-soft);margin-botto
 .slotok .lab{font-weight:700;font-size:17px}
 .slotok .rl{font-family:"Barlow",sans-serif;font-size:10px;color:var(--ink-soft)}
 .slotok.dragging{z-index:5;box-shadow:0 6px 14px rgba(0,0,0,.35)}
+
+.rowsub{font-size:12.5px;color:var(--ink-soft);display:block}
+.untitled{color:var(--over);font-style:italic}

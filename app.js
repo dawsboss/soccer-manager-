@@ -179,8 +179,14 @@ function drop(path) { delDeep(state, path); saveLocal(); remoteDel(path); render
 
 /* ---------------- model helpers ---------------- */
 const teams = () => Object.values(state.teams).sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+const teamLabel = t => t && t.name ? esc(t.name) : '<span class="untitled">Untitled team</span>';
+const teamStats = t => {
+  const n = Object.keys((t && t.players) || {}).length, g = teamMatches(t.id).length;
+  return `${n} player${n === 1 ? '' : 's'} · ${g} game${g === 1 ? '' : 's'} · id ${t.id.slice(0, 4)}`;
+};
 const team = () => state.teams[ui.teamId] || null;
-const players = t => Object.values((t && t.players) || {}).sort((a, b) => (Number(a.number) || 999) - (Number(b.number) || 999) || (a.name || '').localeCompare(b.name || ''));const teamMatches = id => Object.values(state.matches).filter(m => m.teamId === id).sort((a, b) => (b.date || '').localeCompare(a.date || '') || b.createdAt - a.createdAt);
+const players = t => Object.values((t && t.players) || {}).sort((a, b) => (Number(a.number) || 999) - (Number(b.number) || 999) || (a.name || '').localeCompare(b.name || ''));
+const teamMatches = id => Object.values(state.matches).filter(m => m.teamId === id).sort((a, b) => (b.date || '').localeCompare(a.date || '') || b.createdAt - a.createdAt);
 const match = () => state.matches[ui.matchId] || null;
 
 function segments(m) {
@@ -474,7 +480,8 @@ function toast(msg) {
 function render() {
   const t = team();
   if (!t && teams().length) { ui.teamId = teams()[0].id; }
-  $('#teamSwitchName').textContent = team() ? team().name : 'No team yet';
+  const tt = team();
+  $('#teamSwitchName').textContent = tt ? (tt.name || 'Untitled team') : 'No team yet';
   const tabView = ui.view === 'formation' ? 'setup' : ui.view;
   for (const b of document.querySelectorAll('#tabs button')) b.setAttribute('aria-current', String(b.dataset.view === tabView));
   const app = $('#app');
@@ -769,7 +776,8 @@ function viewSetup() {
 
     <div class="card"><h2 style="margin-bottom:8px">Teams</h2>
       <div class="plist">${teams().map(t => `<button class="prow" type="button" data-act="editteam" data-id="${t.id}" style="grid-template-columns:1fr auto">
-        <span class="pname">${esc(t.name)}</span><span class="muted">Rename</span></button>`).join('') || '<p class="muted" style="margin:0">No teams yet.</p>'}</div>
+        <span><span class="pname">${teamLabel(t)}</span><span class="rowsub">${teamStats(t)}</span></span>
+        <span class="muted">Edit</span></button>`).join('') || '<p class="muted" style="margin:0">No teams yet.</p>'}</div>
       <div style="margin-top:10px"><button class="btn quiet wide" data-act="newteam">Add a team</button></div></div>
 
     <div class="card"><h2 style="margin-bottom:8px">Shapes</h2>
@@ -902,7 +910,8 @@ function tapPlayer(pid) {
 /* ---------------- sheets ---------------- */
 function sheetTeams() {
   openSheet(`<h3>Switch team</h3>
-    ${teams().map(t => `<button class="opt" data-act="pickteam" data-id="${t.id}" aria-current="${t.id === ui.teamId}">${esc(t.name)}</button>`).join('')}
+    ${teams().map(t => `<button class="opt" data-act="pickteam" data-id="${t.id}" aria-current="${t.id === ui.teamId}">
+      ${teamLabel(t)}<span class="rowsub">${teamStats(t)}</span></button>`).join('')}
     <button class="btn wide" data-act="newteam">Add a team</button>`);
 }
 
@@ -1107,10 +1116,11 @@ function sheetPlan() {
 }
 
 function sheetTeam(t) {
-  openSheet(`<h3>${t ? 'Team name' : 'New team'}</h3>
-    <label class="field"><span>Name</span><input type="text" id="tName" value="${esc(t ? t.name : '')}" placeholder="Lakeside Thunder G14"></label>
+  openSheet(`<h3>${t ? 'Edit team' : 'New team'}</h3>
+    ${t ? `<p class="muted" style="margin-top:0">${teamStats(t)}</p>` : ''}
+    <label class="field"><span>Name</span><input type="text" id="tName" value="${esc(t && t.name ? t.name : '')}" placeholder="Lakeside Thunder G14"></label>
     <button class="btn wide" data-act="saveteam" data-id="${t ? t.id : ''}">${t ? 'Save changes' : 'Create team'}</button>
-    ${t ? `<div style="margin-top:8px"><button class="btn danger wide" data-act="delteam" data-id="${t.id}">Delete team and its games</button></div>` : ''}`);
+    ${t ? `<div style="margin-top:8px"><button class="btn danger wide" data-act="delteam" data-id="${t.id}">Delete this team and its games</button></div>` : ''}`);
 }
 
 /* ---------------- events ---------------- */
@@ -1135,7 +1145,8 @@ document.addEventListener('click', e => {
     closeSheet(); render(); return;
   }
   if (a === 'delteam') {
-    if (!confirm('Delete this team and every game with it?')) return;
+    const dt = state.teams[d.id];
+    if (!confirm(`Delete "${dt && dt.name ? dt.name : 'Untitled team'}" (${teamStats(dt)}) and every game with it?`)) return;
     for (const mm of teamMatches(d.id)) drop(`matches/${mm.id}`);
     drop(`teams/${d.id}`); ui.teamId = null; ui.matchId = null; closeSheet(); render(); return;
   }
