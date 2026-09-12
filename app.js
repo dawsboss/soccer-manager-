@@ -487,6 +487,14 @@ function subAt(m, outPid, inPid, t) {
   saveLocal(); render();
 }
 
+/* Wipe the clock back to 0:00. Whoever is on the pitch stays on and starts a
+   fresh spell at 0; everything measured against the old clock has to go. */
+function restartMatch(m) {
+  const stints = {};
+  for (const pid of fieldIds(m)) stints[uid()] = { pid, on: 0 };
+  commit(`matches/${m.id}`, { ...m, periods: {}, currentHalf: 1, stints, goals: null });
+}
+
 /* nudge the match clock when it was started late or left running */
 function adjustClock(m, deltaSec) {
   const segs = segments(m).filter(s => (s.half || 1) === (m.currentHalf || 1) && s.start);
@@ -1233,12 +1241,20 @@ function sheetAvailability() {
 
 function sheetFixClock() {
   const m = match();
-  openSheet(`<h3>Adjust the clock</h3>
-    <p class="muted" style="margin-top:0">Reads ${mmss(elapsedSec(m))} now. This shifts the current ${esc(halfName(m, m.currentHalf || 1)).toLowerCase()} and the total together.</p>
-    <div class="chips" style="margin-bottom:14px">
-      ${[-60, -15, -5, 5, 15, 60].map(d => `<button class="chip" type="button" data-act="nudgeclock" data-d="${d}">${d > 0 ? '+' : '−'}${Math.abs(d)}s</button>`).join('')}
+  const onNow = fieldIds(m).length;
+  openSheet(`<h3>Adjust or restart the clock</h3>
+    <p class="muted" style="margin-top:0">Reads ${mmss(elapsedSec(m))} now. Nudging shifts the current ${esc(halfName(m, m.currentHalf || 1)).toLowerCase()} and the total together.</p>
+    <div class="chips" style="margin-bottom:8px">
+      ${[-300, -60, -15, -5].map(d => `<button class="chip" type="button" data-act="nudgeclock" data-d="${d}">−${Math.abs(d) >= 60 ? Math.abs(d) / 60 + 'm' : Math.abs(d) + 's'}</button>`).join('')}
     </div>
-    <button class="btn wide" data-act="closesheet">Done</button>`);
+    <div class="chips" style="margin-bottom:16px">
+      ${[5, 15, 60, 300].map(d => `<button class="chip" type="button" data-act="nudgeclock" data-d="${d}">+${d >= 60 ? d / 60 + 'm' : d + 's'}</button>`).join('')}
+    </div>
+    <button class="btn wide" data-act="closesheet">Done</button>
+    <hr style="border:0;border-top:1px solid var(--line);margin:18px 0">
+    <h3>Started too early?</h3>
+    <p class="muted" style="margin-top:0">Puts the clock back to 0:00. The ${onNow} player${onNow === 1 ? '' : 's'} on the pitch stay${onNow === 1 ? 's' : ''} on and start${onNow === 1 ? 's' : ''} a fresh spell. Subs already logged and any goals are cleared, because their times belong to the old clock. Your roster, lineup, planned minutes and game plan are untouched.</p>
+    <button class="btn danger wide" data-act="restartgame">Start this game over at 0:00</button>`);
 }
 
 function sheetFixSub(i) {
@@ -1455,6 +1471,10 @@ document.addEventListener('click', e => {
 
   if (a === 'fixclock') { sheetFixClock(); return; }
   if (a === 'nudgeclock') { adjustClock(m, Number(d.d)); sheetFixClock(); return; }
+  if (a === 'restartgame') {
+    if (!confirm('Put the clock back to 0:00? Subs and goals logged so far will be cleared.')) return;
+    restartMatch(m); closeSheet(); toast('Clock back to 0:00'); return;
+  }
   if (a === 'fixsub') { sheetFixSub(Number(d.i)); return; }
   if (a === 'nudgesub') {
     const r = lastLog[Number(d.i)]; if (!r) return;
