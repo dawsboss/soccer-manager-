@@ -113,15 +113,24 @@ function delDeep(obj, path) {
 }
 
 /* ---------------- storage ---------------- */
+const wsCode = () => (localStorage.getItem(LS_WS) || '').trim();
+const dataKey = () => LS_DATA + ':' + (wsCode() || 'local');
+
 function saveLocal() {
-  try { localStorage.setItem(LS_DATA, JSON.stringify(state)); } catch (e) { }
+  try { localStorage.setItem(dataKey(), JSON.stringify(state)); } catch (e) { }
 }
 function saveUi() {
   try { localStorage.setItem(LS_UI, JSON.stringify({ view: ui.view, teamId: ui.teamId, matchId: ui.matchId })); } catch (e) { }
 }
 function loadLocal() {
   try {
-    const d = JSON.parse(localStorage.getItem(LS_DATA) || 'null');
+    // one-time move of pre-v5 data into the bucket for the current code
+    const legacy = localStorage.getItem(LS_DATA);
+    if (legacy !== null && localStorage.getItem(dataKey()) === null) {
+      localStorage.setItem(dataKey(), legacy);
+      localStorage.removeItem(LS_DATA);
+    }
+    const d = JSON.parse(localStorage.getItem(dataKey()) || 'null');
     if (d) state = { teams: d.teams || {}, matches: d.matches || {} };
     const u = JSON.parse(localStorage.getItem(LS_UI) || 'null');
     if (u) Object.assign(ui, u);
@@ -482,6 +491,7 @@ function render() {
   if (!t && teams().length) { ui.teamId = teams()[0].id; }
   const tt = team();
   $('#teamSwitchName').textContent = tt ? (tt.name || 'Untitled team') : 'No team yet';
+  $('#wsChipName').textContent = wsCode() || 'none';
   const tabView = ui.view === 'formation' ? 'setup' : ui.view;
   for (const b of document.querySelectorAll('#tabs button')) b.setAttribute('aria-current', String(b.dataset.view === tabView));
   const app = $('#app');
@@ -498,7 +508,8 @@ function render() {
 }
 
 function needTeam() {
-  return `<div class="empty"><strong>Start with a team</strong>Add a team, then its players. Everything else hangs off that.
+  const c = wsCode();
+  return `<div class="empty"><strong>No teams here</strong>${c ? `Nothing is stored under <code>${esc(c)}</code>. If you expected teams, check the code character by character — it is case sensitive and order matters.` : 'Add a team, then its players. Everything else hangs off that.'}
   <div style="margin-top:14px"><button class="btn" data-act="newteam">Add a team</button></div></div>`;
 }
 
@@ -908,6 +919,20 @@ function tapPlayer(pid) {
 }
 
 /* ---------------- sheets ---------------- */
+function sheetWorkspace() {
+  const code = wsCode();
+  const cfgOk = !!(window.SOCCER_FIREBASE_CONFIG && window.SOCCER_FIREBASE_CONFIG.apiKey);
+  openSheet(`<h3>Workspace code</h3>
+    <p class="muted" style="margin-top:0">${cfgOk ? 'Every device with this exact code sees the same teams and games. It is case sensitive and the order of the characters matters.' : 'No Firebase config in this build, so this device is on its own.'}</p>
+    ${code ? `<div class="codebox" id="codeShow">${esc(code)}</div>
+      <div class="row" style="margin-bottom:12px"><button class="btn quiet sm" data-act="copycode">Copy it</button>
+      <span class="muted">${code.length} characters</span></div>` : ''}
+    <label class="field"><span>Switch to a different code</span><input type="text" id="wsCode" value="${esc(code)}" autocapitalize="off" autocorrect="off" spellcheck="false"></label>
+    <div class="row"><button class="btn" data-act="savews">Save and reload</button>
+    <button class="btn quiet" data-act="gencode">Make one up</button></div>
+    <p class="muted" style="margin-bottom:0">Each code keeps its own copy on this device, so switching away and back does not lose anything.</p>`);
+}
+
 function sheetTeams() {
   openSheet(`<h3>Switch team</h3>
     ${teams().map(t => `<button class="opt" data-act="pickteam" data-id="${t.id}" aria-current="${t.id === ui.teamId}">
@@ -1401,6 +1426,10 @@ document.addEventListener('click', e => {
     location.reload(); return;
   }
   if (a === 'gencode') { $('#wsCode').value = 'sm-' + uid() + uid(); return; }
+  if (a === 'copycode') {
+    navigator.clipboard.writeText(wsCode()).then(() => toast('Code copied'), () => toast('Could not copy — select it by hand'));
+    return;
+  }
   if (a === 'export') {
     const blob = new Blob([JSON.stringify(state, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
@@ -1427,6 +1456,7 @@ document.addEventListener('click', e => {
 });
 
 $('#teamSwitch').addEventListener('click', sheetTeams);
+$('#wsChip').addEventListener('click', sheetWorkspace);
 $('#scrim').addEventListener('click', closeSheet);
 $('#tabs').addEventListener('click', e => {
   const b = e.target.closest('button'); if (!b) return;
