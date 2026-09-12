@@ -139,6 +139,8 @@ function loadLocal() {
 
 /* ---------------- firebase sync ---------------- */
 let fb = null; // { db, ref, set, remove, onValue, base }
+let clockSkew = 0;           // serverTime - deviceTime, in ms
+const nowMs = () => Date.now() + clockSkew;
 
 function setSync(stateName, label) {
   const b = $('#syncBadge');
@@ -157,6 +159,12 @@ async function initSync() {
     const app = appMod.initializeApp(cfg);
     const db = dbMod.getDatabase(app);
     fb = { db, ref: dbMod.ref, set: dbMod.set, remove: dbMod.remove, base: 'workspaces/' + code };
+
+    // every device measures the match against Firebase's clock, not its own
+    dbMod.onValue(dbMod.ref(db, '.info/serverTimeOffset'), s => {
+      clockSkew = s.val() || 0;
+      if (Math.abs(clockSkew) > 30000) console.warn('device clock is off by', Math.round(clockSkew / 1000), 's');
+    });
 
     dbMod.onValue(dbMod.ref(db, '.info/connected'), s => {
       setSync(s.val() ? 'live' : 'off', s.val() ? 'synced' : 'offline');
@@ -201,12 +209,12 @@ const match = () => state.matches[ui.matchId] || null;
 function segments(m) {
   return Object.keys(m.periods || {}).map(Number).sort((a, b) => a - b).map(i => ({ i, ...m.periods[i] }));
 }
-function elapsedSec(m, now = Date.now()) {
+function elapsedSec(m, now = nowMs()) {
   let t = 0;
   for (const s of segments(m)) { if (!s.start) continue; t += ((s.end || now) - s.start); }
   return Math.floor(t / 1000);
 }
-function halfSec(m, now = Date.now()) {
+function halfSec(m, now = nowMs()) {
   const h = m.currentHalf || 1;
   let t = 0;
   for (const s of segments(m)) { if (!s.start || (s.half || 1) !== h) continue; t += ((s.end || now) - s.start); }
@@ -225,7 +233,7 @@ function halfName(m, n) {
 function stintsOf(m, pid) { return Object.entries(m.stints || {}).filter(([, s]) => s.pid === pid); }
 function openStint(m, pid) { return stintsOf(m, pid).find(([, s]) => s.off == null); }
 
-function playedSec(m, pid, now = Date.now()) {
+function playedSec(m, pid, now = nowMs()) {
   const e = elapsedSec(m, now);
   let t = 0;
   for (const [, s] of stintsOf(m, pid)) { const off = s.off == null ? e : s.off; t += Math.max(0, off - s.on); }
@@ -238,6 +246,14 @@ function spellSec(m, pid, now) {
 function restSec(m, pid, now) {
   const offs = stintsOf(m, pid).filter(([, x]) => x.off != null).map(([, x]) => x.off);
   return offs.length ? Math.max(0, elapsedSec(m, now) - Math.max(...offs)) : null;
+}
+
+function goalList(m) {
+  return Object.entries(m.goals || {}).map(([id, g]) => ({ id, ...g })).sort((a, b) => a.t - b.t);
+}
+function score(m) {
+  const g = goalList(m);
+  return { us: g.filter(x => x.side === 'us').length, them: g.filter(x => x.side === 'them').length };
 }
 
 function plannedSec(m, pid) { return (m.planned && m.planned[pid] != null ? Number(m.planned[pid]) : 0) * 60; }
@@ -377,16 +393,16 @@ function parseTime(str, fallback) {
 function startClock(m) {
   if (running(m)) return;
   const idx = segments(m).length;
-  commit(`matches/${m.id}/periods/${idx}`, { half: m.currentHalf || 1, start: Date.now() });
+  commit(`matches/${m.id}/periods/${idx}`, { half: m.currentHalf || 1, start: nowMs() });
 }
 function pauseClock(m) {
   const s = openSeg(m);
   if (!s) return;
-  commit(`matches/${m.id}/periods/${s.i}/end`, Date.now());
+  commit(`matches/${m.id}/periods/${s.i}/end`, nowMs());
 }
 function endHalf(m) {
   const s = openSeg(m);
-  if (s) { setDeep(state, `matches/${m.id}/periods/${s.i}/end`, Date.now()); remoteSet(`matches/${m.id}/periods/${s.i}/end`, Date.now()); }
+  if (s) { const tEnd = nowMs(); setDeep(state, `matches/${m.id}/periods/${s.i}/end`, tEnd); remoteSet(`matches/${m.id}/periods/${s.i}/end`, tEnd); }
   const next = (m.currentHalf || 1) + 1;
   commit(`matches/${m.id}/currentHalf`, next);
   toast(halfName(m, next - 1) + ' ended');
@@ -476,7 +492,7 @@ function adjustClock(m, deltaSec) {
   const segs = segments(m).filter(s => (s.half || 1) === (m.currentHalf || 1) && s.start);
   const first = segs[0];
   if (!first) { toast('Start the clock first'); return; }
-  const span = (first.end || Date.now()) - first.start;
+  const span = (first.end || nowMs()) - first.start;
   const shift = clamp(-deltaSec * 1000, -60 * 60000, span - 1000);
   commit(`matches/${m.id}/periods/${first.i}/start`, first.start + shift);
 }
@@ -532,7 +548,7 @@ function viewLive() {
   if (!m) return `<div class="empty"><strong>No game yet</strong>Create a game to start tracking minutes.
     <div style="margin-top:14px"><button class="btn" data-act="newmatch">Add a game</button></div></div>`;
 
-  const now = Date.now();
+  const now = nowMs();
   const el = elapsedSec(m, now);
   const roster = squad(t, m);
   const name = id => { const p = (t.players || {})[id]; return p ? esc(p.name) : 'Unknown'; };
@@ -558,9 +574,11 @@ function viewLive() {
 
   const picked = ui.picked ? (t.players || {})[ui.picked] : null;
   const pickedOn = picked && onField(m, picked.id);
+  const room = on.length < (m.onFieldCount || 11);
   const banner = picked ? `<div class="pickbar">
-    <span><b>${esc(picked.name)}</b> ${pickedOn ? 'coming off' : 'going on'} — tap who she ${pickedOn ? 'hands over to' : 'replaces'}</span>
-    <button class="btn quiet sm" data-act="clearpick">Cancel</button></div>` : '';
+    <span><b>${esc(picked.name)}</b> ${pickedOn ? 'coming off — tap who takes her place' : room ? 'going on' : 'going on — tap who she replaces'}</span>
+    <span class="row">${!pickedOn && room ? `<button class="btn sm" data-act="puton" data-pid="${picked.id}">Put on</button>` : ''}
+    <button class="btn quiet sm" data-act="clearpick">Cancel</button></span></div>` : '';
 
   const row = (p, isOn) => {
     const pl = playedSec(m, p.id, now), pd = plannedSec(m, p.id);
@@ -590,20 +608,49 @@ function viewLive() {
         <span class="muted">fix</span></button>`).join('')}</div>`
     : `<p class="muted" style="margin:0">No subs yet.</p>`;
 
+  const sc = score(m);
+  const goals = goalList(m).reverse();
+  const scoreCard = `<div class="card scorecard">
+    <div class="scoreside"><span class="scorelbl">${teamLabel(t)}</span><span class="scorenum">${sc.us}</span>
+      <button class="btn sm" data-act="goal" data-side="us">Goal</button></div>
+    <div class="scoresep"></div>
+    <div class="scoreside"><span class="scorelbl">${esc(m.opponent || 'Them')}</span><span class="scorenum">${sc.them}</span>
+      <button class="btn quiet sm" data-act="goal" data-side="them">Goal</button></div>
+  </div>`;
+  const goalsCard = goals.length ? `<div class="card"><h2 style="margin-bottom:10px">Goals</h2>
+    <div class="log">${goals.map(g => `<button type="button" data-act="fixgoal" data-id="${g.id}">
+      <span class="t">${mmss(g.t)}</span>
+      <span>${g.side === 'us' ? `<span class="on">${teamLabel(t)}</span>` : `<span class="off">${esc(m.opponent || 'Them')}</span>`}${g.pid ? ' — ' + name(g.pid) : ''}${g.assist ? ` <span class="muted">(assist ${name(g.assist)})</span>` : ''}</span>
+      <span class="muted">edit</span></button>`).join('')}</div></div>` : '';
+
+  const startHint = on.length === 0 ? `<p class="muted" style="margin:0 0 10px">Tap a player on the bench, then <b>Put on</b>. Repeat until your starters are out there.
+    ${m.plan ? ' Or fill the whole lineup from the plan.' : ''}</p>
+    ${m.plan ? `<button class="btn quiet wide" data-act="applyblock" data-start="${(planBlockAt(m, el) || m.plan.blocks[0]).start}" style="margin-bottom:10px">Use the planned lineup</button>` : ''}` : '';
+
   return `<div class="stack">
     ${clock}
+    ${scoreCard}
     ${banner}
     ${warn}
     <div class="card"><div class="spread" style="margin-bottom:8px">
       <h2>On the pitch</h2><span class="muted">${on.length} of ${m.onFieldCount || 11} · longest first</span></div>
-      <div class="plist">${on.map(p => row(p, true)).join('') || '<p class="muted" style="margin:0">Nobody on yet.</p>'}</div></div>
+      ${startHint}
+      <div class="plist">${on.map(p => row(p, true)).join('') || ''}</div></div>
     <div class="card"><div class="spread" style="margin-bottom:8px">
       <h2>Bench</h2><span class="muted">most owed first</span></div>
       <div class="plist">${bench.map(p => row(p, false)).join('') || '<p class="muted" style="margin:0">Everyone is on.</p>'}</div></div>
     <div class="card"><div class="spread" style="margin-bottom:10px"><h2>Recent subs</h2>
       <div class="row"><button class="btn quiet sm" data-act="addsub">Add</button>
       <button class="btn quiet sm" data-act="fixminutes">Fix</button></div></div>${logHtml}</div>
+    ${goalsCard}
   </div>`;
+}
+
+function putOn(m, pid) {
+  const t = team(), p = (t.players || {})[pid];
+  const sl = ((m.formation && m.formation.slots) || []).find(x => !slotTaken(m, x.id));
+  putOnField(m, pid, sl ? sl.x : 50, sl ? sl.y : 40 + (fieldIds(m).length * 7) % 40, sl ? sl.id : null);
+  if (p) toast(`${p.name} on at ${mins(elapsedSec(m))}′`);
 }
 
 /* Simpler than the pitch version: one on, one off, that is a sub. */
@@ -614,7 +661,10 @@ function tapLive(pid) {
   if (ui.picked === pid) { ui.picked = null; render(); return; }
   const a = ui.picked, b = pid;
   const aOn = onField(m, a), bOn = onField(m, b);
-  if (aOn === bOn) { ui.picked = b; render(); return; }
+  if (aOn === bOn) {
+    if (!aOn && fieldIds(m).length < (m.onFieldCount || 11)) { ui.picked = null; putOn(m, a); ui.picked = b; render(); return; }
+    ui.picked = b; render(); return;
+  }
   ui.picked = null;
   const outPid = aOn ? a : b, inPid = aOn ? b : a;
   swap(m, outPid, inPid);
@@ -630,7 +680,7 @@ function viewMatch() {
     <div style="margin-top:14px"><button class="btn" data-act="newmatch">Add a game</button></div></div>`;
 
   const roster = squad(t, m);
-  const now = Date.now();
+  const now = nowMs();
   const el = elapsedSec(m, now);
   const bench = roster.filter(p => !onField(m, p.id));
   const field = roster.filter(p => onField(m, p.id));
@@ -767,7 +817,7 @@ function viewMatches() {
     const el = elapsedSec(m);
     return `<button class="prow" type="button" data-act="openmatch" data-id="${m.id}" style="grid-template-columns:1fr auto">
       <span><span class="pname">${esc(m.opponent || 'Game')}</span><span class="psub">${esc(m.date || '')} · ${mins(el)} min played${running(m) ? ' · clock running' : ''}</span></span>
-      <span class="pmins">${Object.keys(m.positions || {}).length}<small> on</small></span></button>`;
+      <span class="pmins">${score(m).us}<small>–${score(m).them}</small></span></button>`;
   }).join('') || `<div class="empty"><strong>No games yet</strong>Add one and it becomes the live game.</div>`;
   return `<div class="stack"><div class="spread"><h2>Games</h2><button class="btn sm" data-act="newmatch">Add a game</button></div><div class="plist">${rows}</div></div>`;
 }
@@ -915,7 +965,7 @@ setInterval(() => {
   if ((ui.view !== 'match' && ui.view !== 'live') || ui.dragging) return;
   const m = match(); if (!m || !running(m)) return;
   const t = team(); if (!t) return;
-  const now = Date.now();
+  const now = nowMs();
   const c = $('#clock'); if (c) c.textContent = mmss(elapsedSec(m, now));
   const h = $('#halfclock'); if (h) h.textContent = mmss(halfSec(m, now));
   for (const p of players(t)) {
@@ -1032,6 +1082,25 @@ function tapPlayer(pid) {
 }
 
 /* ---------------- sheets ---------------- */
+function sheetGoal(gid) {
+  const t = team(), m = match();
+  const g = (m.goals || {})[gid]; if (!g) return;
+  const roster = squad(t, m);
+  const ours = g.side === 'us';
+  openSheet(`<h3>Goal at ${mmss(g.t)} — ${ours ? teamLabel(t) : esc(m.opponent || 'Them')}</h3>
+    <label class="field"><span>Time</span><input type="text" id="glT" value="${mmss(g.t)}" inputmode="numeric"></label>
+    ${ours ? `<p class="lbl">Scorer</p>
+    <div class="chips" style="margin-bottom:14px">
+      ${roster.map(p => `<button class="chip" type="button" data-act="pickscorer" data-grp="scorer" data-v="${p.id}" aria-pressed="${g.pid === p.id}">${esc(p.name)}</button>`).join('')}
+    </div>
+    <p class="lbl">Assist</p>
+    <div class="chips" style="margin-bottom:14px">
+      ${roster.map(p => `<button class="chip" type="button" data-act="pickscorer" data-grp="assist" data-v="${p.id}" aria-pressed="${g.assist === p.id}">${esc(p.name)}</button>`).join('')}
+    </div>` : '<p class="muted">Opponent goal — nothing to attribute.</p>'}
+    <button class="btn wide" data-act="savegoal" data-id="${gid}">Save</button>
+    <div style="margin-top:8px"><button class="btn danger wide" data-act="delgoal" data-id="${gid}">Delete this goal</button></div>`);
+}
+
 function sheetWorkspace() {
   const code = wsCode();
   const cfgOk = !!(window.SOCCER_FIREBASE_CONFIG && window.SOCCER_FIREBASE_CONFIG.apiKey);
@@ -1271,6 +1340,29 @@ document.addEventListener('click', e => {
   if (a === 'tap') { tapPlayer(d.pid); return; }
   if (a === 'taplive') { tapLive(d.pid); return; }
   if (a === 'clearpick') { ui.picked = null; render(); return; }
+  if (a === 'puton') { ui.picked = null; putOn(m, d.pid); render(); return; }
+  if (a === 'goal') {
+    const id = uid(), g = { t: elapsedSec(m), side: d.side };
+    commit(`matches/${m.id}/goals/${id}`, g);
+    const sc = score(m);
+    toast(`${sc.us}–${sc.them} at ${mins(g.t)}′${d.side === 'us' ? ' · tap the goal to add a scorer' : ''}`);
+    return;
+  }
+  if (a === 'fixgoal') { sheetGoal(d.id); return; }
+  if (a === 'pickscorer') {
+    for (const b of document.querySelectorAll(`[data-act="pickscorer"][data-grp="${d.grp}"]`)) {
+      if (b === el) b.setAttribute('aria-pressed', String(b.getAttribute('aria-pressed') !== 'true'));
+      else b.setAttribute('aria-pressed', 'false');
+    }
+    return;
+  }
+  if (a === 'savegoal') {
+    const g = (m.goals || {})[d.id]; if (!g) return;
+    const pick = grp => { const b = document.querySelector(`[data-act="pickscorer"][data-grp="${grp}"][aria-pressed="true"]`); return b ? b.dataset.v : null; };
+    commit(`matches/${m.id}/goals/${d.id}`, { ...g, t: clamp(parseTime($('#glT').value, g.t), 0, elapsedSec(m)), pid: pick('scorer'), assist: pick('assist') });
+    closeSheet(); return;
+  }
+  if (a === 'delgoal') { drop(`matches/${m.id}/goals/${d.id}`); closeSheet(); return; }
   if (a === 'start') { startClock(m); return; }
   if (a === 'pause') { pauseClock(m); return; }
   if (a === 'endhalf') { endHalf(m); return; }
