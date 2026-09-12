@@ -178,10 +178,9 @@ function commit(path, value) { setDeep(state, path, value); saveLocal(); remoteS
 function drop(path) { delDeep(state, path); saveLocal(); remoteDel(path); render(); }
 
 /* ---------------- model helpers ---------------- */
-const teams = () => Object.values(state.teams).sort((a, b) => a.name.localeCompare(b.name));
+const teams = () => Object.values(state.teams).sort((a, b) => (a.name || '').localeCompare(b.name || ''));
 const team = () => state.teams[ui.teamId] || null;
-const players = t => Object.values((t && t.players) || {}).sort((a, b) => (Number(a.number) || 999) - (Number(b.number) || 999) || a.name.localeCompare(b.name));
-const teamMatches = id => Object.values(state.matches).filter(m => m.teamId === id).sort((a, b) => (b.date || '').localeCompare(a.date || '') || b.createdAt - a.createdAt);
+const players = t => Object.values((t && t.players) || {}).sort((a, b) => (Number(a.number) || 999) - (Number(b.number) || 999) || (a.name || '').localeCompare(b.name || ''));const teamMatches = id => Object.values(state.matches).filter(m => m.teamId === id).sort((a, b) => (b.date || '').localeCompare(a.date || '') || b.createdAt - a.createdAt);
 const match = () => state.matches[ui.matchId] || null;
 
 function segments(m) {
