@@ -6,11 +6,12 @@
 // See README.md for the rules to paste in.
 
 window.SOCCER_FIREBASE_CONFIG = {
-  apiKey: "",
-  authDomain: "",
-  databaseURL: "",
-  projectId: "",
-  storageBucket: "",
-  messagingSenderId: "",
-  appId: ""
+  apiKey: "AIzaSyCMrbnc2CykdkUKWtdhYb3POemqYeq1_pw",
+  authDomain: "soccer-manager-272ff.firebaseapp.com",
+  databaseURL: "https://soccer-manager-272ff-default-rtdb.firebaseio.com",
+  projectId: "soccer-manager-272ff",
+  storageBucket: "soccer-manager-272ff.firebasestorage.app",
+  messagingSenderId: "915056212579",
+  appId: "1:915056212579:web:992553ba48f34cc0849656",
+  measurementId: "G-9C7RFNTDL0"
 };
