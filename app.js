@@ -214,6 +214,7 @@ async function initSync() {
       const v = snap.val();
       if (!v) pushAll();
       else { state = { teams: v.teams || {}, matches: v.matches || {} }; saveLocal(); render(); }
+      schedulePublish();   // republish on load, so a fixed config heals itself
 
       for (const coll of ['teams', 'matches']) {
         const r = dbMod.ref(db, fb.base + '/' + coll);
