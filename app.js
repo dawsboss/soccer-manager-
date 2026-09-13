@@ -888,6 +888,10 @@ function viewTrack() {
     <div class="row"><button class="btn sm" data-act="poss" data-side="us" style="flex:1">${us} won it</button>
       <button class="btn quiet sm" data-act="poss" data-side="them" style="flex:1">${them} won it</button></div>
     ${po.changes ? `<button class="linkbtn dark" data-act="undoposs">Undo the last one</button>` : ''}
+    ${po.changes ? `<div class="log" style="margin-top:10px">${possList(m).slice().reverse().slice(0, 6).map(x => `<button type="button" data-act="fixposs" data-id="${x.id}">
+      <span class="t">${mmss(x.t)}</span>
+      <span>${x.to === 'us' ? `<span class="on">${us}</span>` : `<span class="off">${them}</span>`} won it${x.pid ? ' — ' + name(x.pid) : ''}${x.by ? ` <span class="muted">· ${esc(x.by)}</span>` : ''}</span>
+      <span class="muted">edit</span></button>`).join('')}</div>` : ''}
     <p class="muted" style="margin-bottom:0">Only as accurate as the tapping — best done by whoever is not making the subs.</p></div>`;
 
   const who = whoAmI();
@@ -1594,6 +1598,25 @@ function sheetTrackerClean() {
     <button class="btn wide" data-act="closesheet">Done</button>`);
 }
 
+function sheetPoss(id) {
+  const t = team(), m = match();
+  const x = (m.poss || {})[id]; if (!x) return;
+  const us = teamLabel(t), them = esc(m.opponent || 'Them');
+  openSheet(`<h3>Turnover at ${mmss(x.t)}</h3>
+    <label class="field"><span>Time</span><input type="text" id="poT" value="${mmss(x.t)}" inputmode="numeric"></label>
+    <p class="lbl">Who won it</p>
+    <div class="chips" style="margin-bottom:14px">
+      <button class="chip" type="button" data-act="pickone" data-grp="side" data-v="us" aria-pressed="${x.to === 'us'}">${us}</button>
+      <button class="chip" type="button" data-act="pickone" data-grp="side" data-v="them" aria-pressed="${x.to === 'them'}">${them}</button>
+    </div>
+    ${x.to === 'us' ? `<p class="lbl">Who made it (optional)</p>
+    <div class="chips" style="margin-bottom:14px">
+      ${squad(t, m).map(p => `<button class="chip" type="button" data-act="pickscorer" data-grp="winner" data-v="${p.id}" aria-pressed="${x.pid === p.id}">${esc(p.name)}</button>`).join('')}
+    </div>` : ''}
+    <button class="btn wide" data-act="saveposs" data-id="${id}">Save</button>
+    <div style="margin-top:8px"><button class="btn danger wide" data-act="delposs" data-id="${id}">Delete</button></div>`);
+}
+
 function sheetEvent(id) {
   const t = team(), m = match();
   const x = (m.events || {})[id]; if (!x) return;
@@ -2050,6 +2073,19 @@ document.addEventListener('click', e => {
     commit(`teams/${t.id}/track`, cfg); closeSheet(); return;
   }
   if (a === 'poss') { commit(`matches/${m.id}/poss/${uid()}`, { t: elapsedSec(m), to: d.side, ...stampedBy() }); return; }
+  if (a === 'fixposs') { sheetPoss(d.id); return; }
+  if (a === 'saveposs') {
+    const x = (m.poss || {})[d.id]; if (!x) return;
+    const sideEl = document.querySelector('[data-act="pickone"][data-grp="side"][aria-pressed="true"]');
+    const whoEl = document.querySelector('[data-act="pickscorer"][data-grp="winner"][aria-pressed="true"]');
+    const to = sideEl ? sideEl.dataset.v : x.to;
+    commit(`matches/${m.id}/poss/${d.id}`, {
+      ...x, t: clamp(parseTime($('#poT').value, x.t), 0, elapsedSec(m)),
+      to, pid: to === 'us' && whoEl ? whoEl.dataset.v : null
+    });
+    closeSheet(); return;
+  }
+  if (a === 'delposs') { drop(`matches/${m.id}/poss/${d.id}`); closeSheet(); return; }
   if (a === 'undoposs') {
     const l = possList(m); if (!l.length) return;
     drop(`matches/${m.id}/poss/${l[l.length - 1].id}`); toast('Removed'); return;
