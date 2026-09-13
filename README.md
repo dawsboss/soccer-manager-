@@ -43,9 +43,33 @@ Open `index.html` in a browser, or serve the folder. Everything works immediatel
 
 4. Open the app → **Setup** → *Make one up* → *Save and reload*. Enter that same workspace code on every device.
 
+The rules above cover the coaches' data. To publish read-only pages for parents, add a second block alongside it:
+
+```json
+"public": {
+  "$share": {
+    ".read": true,
+    ".write": true
+  }
+}
+```
+
+Write is open only because there is no authentication yet. The published node is a derived copy that is rewritten on every change, so anything tampered with there self-heals on the next save and the real record is never touched. Lock `.write` down to authenticated coaches when auth lands.
+
 The API key in `firebase-config.js` is not a secret; the rules above are what gate access. The long random workspace code is the shared password. Anyone who has it can read and write that workspace, which is fine for minutes and rosters — if you want real accounts later, turn on Firebase Authentication and change the rules to `"auth != null"`.
 
 The badge in the top bar shows `synced`, `offline`, or `this device`. Writes made while offline land when the connection returns. If both devices edit the same game while one is offline, last write wins.
+
+## Sharing with parents
+
+Setup → **Share with parents** creates a long random share id for the team and publishes a read-only mirror. Two links come out of it:
+
+- **Season** — `live.html?t=<share>`. Text it once. It shows the season record, whatever game is happening now, and every game played.
+- **One game** — `live.html?t=<share>&g=<gameId>`. Kick-off time, venue, score, live clock, who is on, minutes played and the substitutions. Copy it from the game switcher.
+
+**No child's name is ever published.** The mirror carries shirt numbers only — not names, not player ids. That is enforced by what gets written, not by what the page chooses to display, so there is nothing to find in the payload. *Rotate* makes a new share id and deletes the old node, which kills every link previously sent.
+
+Link previews in text messages are scraped without running JavaScript, so the card is fixed: the title, description and `share-card.png` in `live.html`. iMessage also freezes previews at send time, so a live-updating card in a message thread is not possible on any platform. Tapping through opens a page that does update by itself. If the score must appear in the preview itself, that needs a Cloudflare Worker to inject it server-side — see ROADMAP.md.
 
 ## Hosting on GitHub Pages
 
@@ -66,6 +90,7 @@ matches/{matchId}     { id, teamId, opponent, date, periodCount, periodMinutes, 
                         currentHalf, veoUrl,
                         periods:   { n: { half, start, end } },   // epoch ms
                         planned:   { playerId: minutes },
+                        kickoff, venue,
                         formation: { name, size, slots: [ { id, label, role, x, y } ] },  // a copy
                         positions: { playerId: { x, y, slot } },  // percent of pitch
                         stints:    { stintId: { pid, on, off } },  // seconds of elapsed match time
@@ -86,6 +111,21 @@ When you create a game it takes a **copy** of the team's default shape for that 
 For each block it scores every available player by remaining planned minutes divided by remaining blocks, so whoever is furthest behind rises to the top. Rating breaks ties. A player at her stint cap is pushed to the bench for that block. Anyone in a *keep apart* pair is skipped if their counterpart is already in. When a player is picked, her partners get a scoring boost so pairings tend to land in the same block. If a block comes out much weaker than the squad average, the lowest-rated pick is swapped for the strongest eligible player on the bench. Once the XI is settled it is matched to the shape's spots by best fit: the keeper goes in goal, a player's best position beats a position she is only fine at, a player who can go anywhere is neutral, and whoever held a spot last block keeps it rather than rotating for no reason.
 
 It is deliberately simple and readable rather than optimal — the projected-minutes list tells you what it cost. If two players can never play together, both will come in under their planned minutes, and the plan says so rather than hiding it.
+
+## Published mirror
+
+```
+public/{shareId}     { team: { name },
+                       record: { w, d, l, gf, ga },
+                       games: { gameId: { opponent, date, kickoff, venue, status,
+                                          score, periods, currentHalf,
+                                          players: [ { n, sec, on, spot, plan } ],   // n is a shirt number
+                                          goals:   [ { t, side, n } ],
+                                          log:     [ { t, on, off, move, spot } ],
+                                          shots } } }
+```
+
+Written by the coaches' app on a 1.2 second debounce. Read by `live.html`, which recomputes the clock from `periods` against Firebase's server time, so it ticks between pushes instead of waiting for one.
 
 ## Backup
 

@@ -253,8 +253,8 @@ function remoteSet(path, value) { if (fb) fb.set(fb.ref(fb.db, fb.base + '/' + p
 function remoteDel(path) { if (fb) fb.remove(fb.ref(fb.db, fb.base + '/' + path)); }
 
 function quiet(path, value) { setDeep(state, path, value); remoteSet(path, value); }
-function commit(path, value) { setDeep(state, path, value); saveLocal(); remoteSet(path, value); render(); }
-function drop(path) { delDeep(state, path); saveLocal(); remoteDel(path); render(); }
+function commit(path, value) { setDeep(state, path, value); saveLocal(); remoteSet(path, value); render(); schedulePublish(); }
+function drop(path) { delDeep(state, path); saveLocal(); remoteDel(path); render(); schedulePublish(); }
 
 /* ---------------- model helpers ---------------- */
 const teams = () => Object.values(state.teams).sort((a, b) => (a.name || '').localeCompare(b.name || ''));
@@ -776,7 +776,8 @@ function sheetPickGame() {
     const sc = score(g);
     return `<button class="opt spread" type="button" data-act="pickgame2" data-id="${g.id}" aria-current="${g.id === cur}">
       <span>${esc(g.opponent || 'Unnamed')}<span class="rowsub">${esc(g.date || '')} · ${mins(elapsedSec(g))} min played${running(g) ? ' · running' : ''}</span></span>
-      <span class="pmins">${sc.us}<small>–${sc.them}</small></span></button>`;
+      <span class="pmins">${sc.us}<small>–${sc.them}</small></span></button>
+      ${t.share ? `<button class="btn quiet sm" data-act="copylink" data-v="${esc(gameLink(t, g))}" style="margin:-4px 0 10px">Copy link to this game</button>` : ''}`;
   }).join('') || '<p class="muted">No games yet.</p>'}
     <button class="btn wide" data-act="newmatch">Add a game</button>`);
 }
@@ -1333,6 +1334,10 @@ function viewSetup() {
       <p class="muted" style="margin-top:0">Default lineups per side size. New games copy the default; existing games keep what they were played with.</p>
       <button class="btn quiet wide" data-act="formations">Manage shapes</button></div>
 
+    <div class="card"><h2 style="margin-bottom:8px">Share with parents</h2>
+      <p class="muted" style="margin-top:0">A read-only page showing shirt numbers, never names. Two links: one for the season, one for a single game.</p>
+      <button class="btn quiet wide" data-act="sharesheet">${team() && team().share ? 'Manage links' : 'Set up sharing'}</button></div>
+
     <div class="card"><h2 style="margin-bottom:8px">Backup</h2>
       <div class="row"><button class="btn quiet" data-act="export">Download a copy</button>
       <button class="btn quiet" data-act="import">Load from a file</button></div>
@@ -1461,6 +1466,63 @@ function tapPlayer(pid) {
   toast(`${pin.name} on for ${pout.name} at ${mins(elapsedSec(m))}′`);
 }
 
+/* ---------------- public mirror ---------------- */
+/* Published to its own node under a share id. Contains shirt numbers and never
+   a name, so the public tier is private by construction rather than by the UI
+   choosing to hide things. */
+const shirtOf = p => String((p && p.number) ?? '').trim() || '–';
+const gameStatus = m => (m.currentHalf || 1) > (m.periodCount || 2) ? 'done'
+  : (elapsedSec(m) > 0 || running(m)) ? 'live' : 'upcoming';
+
+function publicGame(t, m) {
+  const roster = squad(t, m);
+  const numOf = pid => shirtOf((t.players || {})[pid]);
+  return {
+    id: m.id,
+    opponent: m.opponent || '', date: m.date || '', kickoff: m.kickoff || '', venue: m.venue || '',
+    periodCount: m.periodCount || 2, periodMinutes: m.periodMinutes || 40,
+    currentHalf: m.currentHalf || 1, periods: m.periods || {},
+    status: gameStatus(m), score: score(m), shots: shotTally(m),
+    players: roster.map(p => ({
+      n: shirtOf(p), sec: playedSec(m, p.id), on: onField(m, p.id),
+      spot: currentSpot(m, p.id) || null, plan: (m.planned || {})[p.id] || 0
+    })).sort((a, b) => (Number(a.n) || 999) - (Number(b.n) || 999)),
+    goals: goalList(m).map(g => ({ t: g.t, side: g.side, n: g.pid ? numOf(g.pid) : null })),
+    log: subEvents(m).map(r => ({
+      t: r.t, on: r.on ? numOf(r.on) : null, off: r.off ? numOf(r.off) : null,
+      move: !!r.move, spot: r.spot || null
+    }))
+  };
+}
+
+function publicDoc(t) {
+  const games = {};
+  let w = 0, d = 0, l = 0, gf = 0, ga = 0;
+  for (const m of teamMatches(t.id)) {
+    const g = publicGame(t, m);
+    games[m.id] = g;
+    if (g.status === 'done') {
+      gf += g.score.us; ga += g.score.them;
+      if (g.score.us > g.score.them) w++; else if (g.score.us === g.score.them) d++; else l++;
+    }
+  }
+  return { team: { name: t.name || 'Team' }, games, record: { w, d, l, gf, ga }, updated: nowMs() };
+}
+
+let pubTimer;
+function schedulePublish() {
+  const t = team();
+  if (!fb || !t || !t.share) return;
+  clearTimeout(pubTimer);
+  pubTimer = setTimeout(() => {
+    try { fb.set(fb.ref(fb.db, 'public/' + t.share), publicDoc(t)); } catch (e) { console.warn('publish failed', e); }
+  }, 1200);
+}
+
+const shareBase = () => location.href.replace(/[^/]*$/, '') + 'live.html';
+const teamLink = t => t.share ? `${shareBase()}?t=${t.share}` : '';
+const gameLink = (t, m) => t.share ? `${shareBase()}?t=${t.share}&g=${m.id}` : '';
+
 /* ---------------- sheets ---------------- */
 function sheetSwitch(pid) {
   const t = team(), m = match();
@@ -1481,6 +1543,29 @@ function sheetSwitch(pid) {
       : `<p class="lbl">Role</p>
       ${ROLES.map(r => `<button class="opt" type="button" data-act="doswitch" data-pid="${pid}" data-role="${r}">${r}</button>`).join('')}`}
     <button class="btn quiet wide" data-act="closesheet" style="margin-top:8px">Cancel</button>`);
+}
+
+function sheetShare() {
+  const t = team();
+  if (!t) return;
+  const list = teamMatches(t.id);
+  const next = list.find(m => gameStatus(m) === 'live') || list[0];
+  openSheet(`<h3>Share ${teamLabel(t)}</h3>
+    ${t.share ? `
+      <p class="lbl">Follow the season</p>
+      <div class="codebox">${esc(teamLink(t))}</div>
+      <div class="row" style="margin-bottom:16px"><button class="btn sm" data-act="copylink" data-v="${esc(teamLink(t))}">Copy season link</button></div>
+      <p class="muted" style="margin-top:0">Text this once. It always shows whatever game is on, plus the season record.</p>
+
+      ${next ? `<p class="lbl">One game — ${esc(next.opponent || 'game')}${next.date ? ' · ' + esc(shortDate(next.date)) : ''}</p>
+      <div class="codebox">${esc(gameLink(t, next))}</div>
+      <div class="row" style="margin-bottom:16px"><button class="btn sm" data-act="copylink" data-v="${esc(gameLink(t, next))}">Copy game link</button></div>
+      <p class="muted" style="margin-top:0">Shows kick-off time, where it is, who is on and the minutes. Copy a different game from the game switcher.</p>` : ''}
+
+      <p class="muted">Anyone with a link can read it. Nobody can change anything, and no child's name is published — only shirt numbers.</p>
+      <button class="btn danger wide" data-act="rotateshare">Make a new link and kill the old one</button>`
+      : `<p class="muted" style="margin-top:0">Creates a long random address. Only people you send it to can find it.</p>
+      <button class="btn wide" data-act="makeshare">Create the share links</button>`}`);
 }
 
 function sheetWho() {
@@ -1590,7 +1675,11 @@ function sheetMatch(m) {
   m = m || { periodCount: 2, periodMinutes: 40, onFieldCount: 11, date: new Date().toISOString().slice(0, 10) };
   openSheet(`<h3>${isNew ? 'New game' : 'Game details'}</h3>
     <label class="field"><span>Opponent</span><input type="text" id="mOpp" value="${esc(m.opponent || '')}" placeholder="Riverside United"></label>
-    <label class="field"><span>Date</span><input type="date" id="mDate" value="${esc(m.date || '')}"></label>
+    <div class="grid2">
+      <label class="field"><span>Date</span><input type="date" id="mDate" value="${esc(m.date || '')}"></label>
+      <label class="field"><span>Kick-off</span><input type="time" id="mKick" value="${esc(m.kickoff || '')}"></label>
+    </div>
+    <label class="field"><span>Where</span><input type="text" id="mVenue" value="${esc(m.venue || '')}" placeholder="Lakeside Park, field 3"></label>
     <div class="grid2">
       <label class="field"><span>Halves or quarters</span><select id="mCount">
         <option value="2"${(m.periodCount || 2) == 2 ? ' selected' : ''}>2 halves</option>
@@ -1869,6 +1958,22 @@ document.addEventListener('click', e => {
   }
   if (a === 'delev') { drop(`matches/${m.id}/events/${d.id}`); closeSheet(); return; }
   if (a === 'trackcfg') { sheetTrackCfg(); return; }
+  if (a === 'sharesheet') { sheetShare(); return; }
+  if (a === 'makeshare') {
+    commit(`teams/${t.id}/share`, 's' + uid() + uid());
+    schedulePublish(); sheetShare(); return;
+  }
+  if (a === 'rotateshare') {
+    if (!confirm('Anyone holding the old link loses access. Continue?')) return;
+    const old = t.share;
+    commit(`teams/${t.id}/share`, 's' + uid() + uid());
+    if (fb && old) fb.remove(fb.ref(fb.db, 'public/' + old));
+    schedulePublish(); sheetShare(); toast('New links made'); return;
+  }
+  if (a === 'copylink') {
+    navigator.clipboard.writeText(d.v).then(() => toast('Link copied'), () => toast('Could not copy — select it by hand'));
+    return;
+  }
   if (a === 'setwho') { sheetWho(); return; }
   if (a === 'savewho') {
     const v = $('#whoName').value.trim();
@@ -2152,6 +2257,7 @@ document.addEventListener('click', e => {
     const side = Number($('#mSide').value);
     const base = {
       opponent: $('#mOpp').value.trim(), date: $('#mDate').value,
+      kickoff: $('#mKick').value || '', venue: $('#mVenue').value.trim(),
       periodCount: Number($('#mCount').value), periodMinutes: Number($('#mLen').value) || 40,
       onFieldCount: side, veoUrl: $('#mVeo').value.trim()
     };
