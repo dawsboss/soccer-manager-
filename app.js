@@ -5,9 +5,10 @@
 const LS_DATA = 'sm.data.v1';
 const LS_UI = 'sm.ui.v1';
 const LS_WS = 'sm.workspace';
+const LS_WHO = 'sm.tracker';
 
 let state = { teams: {}, matches: {} };
-let ui = { view: 'live', teamId: null, matchId: null, picked: null, dragging: false, editFid: null };
+let ui = { view: 'live', teamId: null, matchId: null, picked: null, dragging: false, editFid: null, sortBy: 'need', plan: null };
 let lastLog = [];
 
 const ROLES = ['GK', 'Back', 'Mid', 'Wing', 'Forward'];
@@ -77,8 +78,32 @@ function assignSlots(chosen, slots, prev) {
 }
 
 const slotById = (m, sid) => ((m.formation && m.formation.slots) || []).find(s => s.id === sid) || null;
-const slotOf = (m, pid) => slotById(m, ((m.positions || {})[pid] || {}).slot);
-const slotTaken = (m, sid) => Object.values(m.positions || {}).some(p => p.slot === sid);
+function slotIdOf(m, pid) {
+  const o = openStint(m, pid);
+  return (o && o[1].slot) || (((m.positions || {})[pid] || {}).slot) || null;
+}
+const spotLabel = st => st ? (st.label || st.role || null) : null;
+function currentSpot(m, pid) {
+  const o = openStint(m, pid);
+  if (!o) return null;
+  const sl = o[1].slot ? slotById(m, o[1].slot) : null;
+  return sl ? sl.label : (o[1].role || null);
+}
+/* seconds played broken down by role — the point of tracking switches */
+function byRole(m, pid, now = nowMs()) {
+  const e = elapsedSec(m, now), out = {};
+  for (const [, st] of stintsOf(m, pid)) {
+    const sl = st.slot ? slotById(m, st.slot) : null;
+    const key = (sl && sl.role) || st.role || 'Unassigned';
+    out[key] = (out[key] || 0) + Math.max(0, (st.off == null ? e : st.off) - st.on);
+  }
+  return out;
+}
+const roleSummary = (m, pid, now) => Object.entries(byRole(m, pid, now))
+  .filter(([, v]) => v >= 30).sort((a, b) => b[1] - a[1])
+  .map(([k, v]) => `${mins(v)} at ${k}`).join(' · ');
+const slotOf = (m, pid) => slotById(m, slotIdOf(m, pid));
+const slotTaken = (m, sid) => fieldIds(m).some(pid => slotIdOf(m, pid) === sid);
 
 /* Old players stored a flat positions[] list; fold it into the new fields. */
 function migrate(p) {
@@ -114,13 +139,23 @@ function delDeep(obj, path) {
 
 /* ---------------- storage ---------------- */
 const wsCode = () => (localStorage.getItem(LS_WS) || '').trim();
+/* Who is tapping on this device. Never synced, never a permission — anyone can
+   type anything. It exists so two people can track one game and untangle it after. */
+const whoAmI = () => (localStorage.getItem(LS_WHO) || '').trim();
+const stampedBy = () => { const w = whoAmI(); return w ? { by: w } : {}; };
+function trackersIn(m) {
+  const c = {};
+  for (const src of [m.goals, m.shots, m.events, m.poss])
+    for (const x of Object.values(src || {})) { const k = x.by || '(unnamed)'; c[k] = (c[k] || 0) + 1; }
+  return c;
+}
 const dataKey = () => LS_DATA + ':' + (wsCode() || 'local');
 
 function saveLocal() {
   try { localStorage.setItem(dataKey(), JSON.stringify(state)); } catch (e) { }
 }
 function saveUi() {
-  try { localStorage.setItem(LS_UI, JSON.stringify({ view: ui.view, teamId: ui.teamId, matchId: ui.matchId })); } catch (e) { }
+  try { localStorage.setItem(LS_UI, JSON.stringify({ view: ui.view, teamId: ui.teamId, matchId: ui.matchId, sortBy: ui.sortBy, plan: ui.plan })); } catch (e) { }
 }
 function loadLocal() {
   try {
@@ -134,6 +169,8 @@ function loadLocal() {
     if (d) state = { teams: d.teams || {}, matches: d.matches || {} };
     const u = JSON.parse(localStorage.getItem(LS_UI) || 'null');
     if (u) Object.assign(ui, u);
+    // a staged batch belongs to one game; drop it if we are somewhere else
+    if (ui.plan && ui.plan.matchId !== ui.matchId) ui.plan = null;
   } catch (e) { }
 }
 
@@ -159,6 +196,7 @@ async function initSync() {
     const app = appMod.initializeApp(cfg);
     const db = dbMod.getDatabase(app);
     fb = { db, ref: dbMod.ref, set: dbMod.set, remove: dbMod.remove, base: 'workspaces/' + code };
+    fb.childAdded = dbMod.onChildAdded;
 
     // every device measures the match against Firebase's clock, not its own
     dbMod.onValue(dbMod.ref(db, '.info/serverTimeOffset'), s => {
@@ -170,20 +208,44 @@ async function initSync() {
       setSync(s.val() ? 'live' : 'off', s.val() ? 'synced' : 'offline');
     });
 
+    // One full read to get in sync, then child-level listeners so an update to
+    // one match can never touch another, or the teams tree.
     dbMod.onValue(dbMod.ref(db, fb.base), snap => {
       const v = snap.val();
-      if (!v) { pushAll(); return; }
-      const next = { teams: v.teams || {}, matches: v.matches || {} };
-      if (JSON.stringify(next) === JSON.stringify(state)) return;
-      if (ui.dragging) return;
-      state = next;
-      saveLocal();
-      render();
-    });
+      if (!v) pushAll();
+      else { state = { teams: v.teams || {}, matches: v.matches || {} }; saveLocal(); render(); }
+
+      for (const coll of ['teams', 'matches']) {
+        const r = dbMod.ref(db, fb.base + '/' + coll);
+        const upsert = cs => {
+          if (ui.dragging) return;
+          const inc = cs.val(); if (!inc) return;
+          state[coll][cs.key] = mergeNode(state[coll][cs.key], inc);
+          saveLocal(); render();
+        };
+        dbMod.onChildAdded(r, upsert);
+        dbMod.onChildChanged(r, upsert);
+        dbMod.onChildRemoved(r, cs => {
+          if (ui.dragging) return;
+          delete state[coll][cs.key]; saveLocal(); render();
+        });
+      }
+    }, { onlyOnce: true });
   } catch (e) {
     console.error(e);
     setSync('off', 'sync failed');
   }
+}
+
+/* A write that was rejected can leave a parent node holding only the child that
+   got through — a team with players but no name. Never let that wipe an identity
+   field we already have locally. */
+const IDENTITY = ['name', 'opponent', 'date', 'teamId', 'periodCount', 'periodMinutes', 'onFieldCount'];
+function mergeNode(local, remote) {
+  if (!local || typeof local !== 'object') return remote;
+  const out = { ...remote };
+  for (const k of IDENTITY) if (out[k] === undefined && local[k] !== undefined) out[k] = local[k];
+  return out;
 }
 
 function pushAll() { if (fb) fb.set(fb.ref(fb.db, fb.base), state); }
@@ -256,9 +318,66 @@ function score(m) {
   return { us: g.filter(x => x.side === 'us').length, them: g.filter(x => x.side === 'them').length };
 }
 
+const EVENTS = [
+  { k: 'corner', label: 'Corners' },
+  { k: 'foul', label: 'Fouls' },
+  { k: 'throw', label: 'Throw-ins' },
+  { k: 'goalkick', label: 'Goal kicks' }
+];
+const evLabel = k => (EVENTS.find(e => e.k === k) || {}).label || k;
+const tracked = t => EVENTS.filter(e => ((t.track || {})[e.k] !== false));
+const evList = m => Object.entries(m.events || {}).map(([id, x]) => ({ id, ...x })).sort((a, b) => a.t - b.t);
+const evCount = (m, k, side) => evList(m).filter(x => x.kind === k && x.side === side).length;
+
+const shotList = m => Object.entries(m.shots || {}).map(([id, x]) => ({ id, ...x })).sort((a, b) => a.t - b.t);
+function shotTally(m) {
+  const sh = shotList(m), g = goalList(m);
+  const f = (side, on) => sh.filter(x => x.side === side && !!x.onTarget === on).length;
+  return {
+    usOn: f('us', true) + g.filter(x => x.side === 'us').length,
+    usOff: f('us', false),
+    themOn: f('them', true) + g.filter(x => x.side === 'them').length,
+    themOff: f('them', false)
+  };
+}
+
+/* Possession is the gaps between turnovers: whoever won it last holds it until
+   the next tap. Only as honest as the tapping, which is why the card says so. */
+const possList = m => Object.entries(m.poss || {}).map(([id, x]) => ({ id, ...x })).sort((a, b) => a.t - b.t);
+function possession(m, now = nowMs()) {
+  const evs = possList(m), end = elapsedSec(m, now);
+  let us = 0, them = 0;
+  evs.forEach((e, i) => {
+    const to = i + 1 < evs.length ? evs[i + 1].t : end;
+    const d = Math.max(0, to - e.t);
+    if (e.to === 'us') us += d; else them += d;
+  });
+  return { us, them, total: us + them, changes: evs.length };
+}
+
 function plannedSec(m, pid) { return (m.planned && m.planned[pid] != null ? Number(m.planned[pid]) : 0) * 60; }
-const onField = (m, pid) => !!(m.positions && m.positions[pid]);
-const fieldIds = m => Object.keys(m.positions || {});
+/* Truth is the stints: a player is on if she has a spell that has not closed.
+   `positions` now only carries coordinates, so a clash there is harmless. */
+const onField = (m, pid) => !!openStint(m, pid);
+const fieldIds = m => [...new Set(Object.values(m.stints || {}).filter(x => x.off == null).map(x => x.pid))];
+function posOf(m, pid) {
+  const p = (m.positions || {})[pid];
+  if (p && p.x != null) return p;
+  const sl = slotById(m, slotIdOf(m, pid));
+  return sl ? { x: sl.x, y: sl.y, slot: sl.id } : { x: 50, y: 45, slot: null };
+}
+
+/* Things that should never be true. Surfaced for repair rather than prevented —
+   locking a sideline app is worse than showing the coach what went wrong. */
+function anomalies(m) {
+  const open = {};
+  for (const [sid, x] of Object.entries(m.stints || {})) if (x.off == null) (open[x.pid] = open[x.pid] || []).push(sid);
+  const out = [];
+  for (const [pid, list] of Object.entries(open)) if (list.length > 1) out.push({ kind: 'double', pid, sids: list });
+  const n = Object.keys(open).length, cap = m.onFieldCount || 11;
+  if (n > cap) out.push({ kind: 'toomany', n, cap });
+  return out;
+}
 
 const isOut = (m, pid) => !!(m.out && m.out[pid]);
 function squad(t, m) {
@@ -414,7 +533,8 @@ function putOnField(m, pid, x, y, slot) {
   setDeep(state, `${path}/positions/${pid}`, pos);
   remoteSet(`${path}/positions/${pid}`, pos);
   if (!openStint(m, pid)) {
-    const sid = uid(), rec = { pid, on: elapsedSec(m) };
+    const sl = slot ? slotById(m, slot) : null;
+    const sid = uid(), rec = { pid, on: elapsedSec(m), slot: slot || null, role: sl ? sl.role : null };
     setDeep(state, `${path}/stints/${sid}`, rec);
     remoteSet(`${path}/stints/${sid}`, rec);
   }
@@ -428,7 +548,7 @@ function takeOffField(m, pid) {
   saveLocal(); render();
 }
 function swap(m, outPid, inPid) {
-  const pos = (m.positions || {})[outPid] || { x: 50, y: 50 };
+  const pos = posOf(m, outPid);
   takeOffField(m, outPid);
   putOnField(m, inPid, pos.x, pos.y, pos.slot);
 }
@@ -448,7 +568,11 @@ function subEvents(m) {
       const j = evs.findIndex((x, k) => k > i && !used.has(k) && x.type === 'on' && Math.abs(x.t - e.t) <= 3);
       if (j > -1) {
         used.add(i); used.add(j);
-        rows.push({ t: e.t, off: e.pid, offSid: e.sid, on: evs[j].pid, onSid: evs[j].sid });
+        const same = evs[j].pid === e.pid;
+        rows.push({
+          t: e.t, off: e.pid, offSid: e.sid, on: evs[j].pid, onSid: evs[j].sid,
+          move: same, spot: same ? spotLabel((m.stints || {})[evs[j].sid] && slotById(m, (m.stints || {})[evs[j].sid].slot)) || ((m.stints || {})[evs[j].sid] || {}).role : null
+        });
         return;
       }
     }
@@ -471,13 +595,91 @@ function moveSub(m, row, t) {
   saveLocal(); render();
 }
 
+const staged = () => (ui.plan && ui.plan.items) || [];
+const stagedIds = () => staged().flatMap(x => x.k === 'sub' ? [x.out, x.in] : [x.pid]);
+const isStaged = pid => stagedIds().includes(pid);
+function stage(item) {
+  if (!ui.plan) ui.plan = { matchId: ui.matchId, items: [] };
+  ui.plan.items.push(item);
+  saveUi();
+}
+
+/* One sub, no render — used when applying a whole batch at a single timestamp. */
+function subQuiet(m, outPid, inPid, t) {
+  const path = `matches/${m.id}`;
+  const pos = posOf(m, outPid);
+  const open = openStint(m, outPid);
+  if (open) quiet(`${path}/stints/${open[0]}/off`, t);
+  delDeep(state, `${path}/positions/${outPid}`); remoteDel(`${path}/positions/${outPid}`);
+  quiet(`${path}/positions/${inPid}`, { x: pos.x, y: pos.y, slot: pos.slot || null });
+  const sl = pos.slot ? slotById(m, pos.slot) : null;
+  quiet(`${path}/stints/${uid()}`, { pid: inPid, on: t, slot: pos.slot || null, role: sl ? sl.role : null });
+}
+
+/* Everything staged goes in at the same second, because it all happened at the
+   same stoppage. Subs first so a move can target a spot a sub just vacated. */
+function applyStaged(m) {
+  const items = staged();
+  if (!items.length) return;
+  const t = elapsedSec(m);
+  for (const it of items) if (it.k === 'sub') subQuiet(m, it.out, it.in, t);
+  for (const it of items) if (it.k === 'add') {
+    const sl = ((m.formation && m.formation.slots) || []).find(x => !slotTaken(m, x.id));
+    quiet(`matches/${m.id}/positions/${it.pid}`, sl ? { x: sl.x, y: sl.y, slot: sl.id } : { x: 50, y: 45, slot: null });
+    quiet(`matches/${m.id}/stints/${uid()}`, { pid: it.pid, on: t, slot: sl ? sl.id : null, role: sl ? sl.role : null });
+  }
+  for (const it of items) if (it.k === 'move') {
+    const mine = slotIdOf(m, it.pid);
+    const holder = it.sid ? fieldIds(m).find(x => x !== it.pid && slotIdOf(m, x) === it.sid) : null;
+    movePos(m, it.pid, it.sid, it.role, t);
+    if (holder) movePos(m, holder, mine, null, t);
+  }
+  const n = items.length;
+  ui.plan = null; ui.picked = null;
+  saveLocal(); render();
+  toast(`${n} change${n === 1 ? '' : 's'} made at ${mins(t)}′`);
+}
+
+/* A position change. Closes the current spell and opens a new one at the same
+   second, so total minutes are untouched but minutes-per-role become real. */
+function movePos(m, pid, slotId, role, atT) {
+  const t = atT != null ? atT : elapsedSec(m);
+  const path = `matches/${m.id}`;
+  const sl = slotId ? slotById(m, slotId) : null;
+  const nextRole = sl ? sl.role : (role || null);
+  const o = openStint(m, pid);
+  if (o) {
+    if (o[1].on >= t) {
+      quiet(`${path}/stints/${o[0]}`, { ...o[1], slot: slotId || null, role: nextRole });
+    } else {
+      quiet(`${path}/stints/${o[0]}/off`, t);
+      quiet(`${path}/stints/${uid()}`, { pid, on: t, slot: slotId || null, role: nextRole });
+    }
+  }
+  const cur = posOf(m, pid);
+  quiet(`${path}/positions/${pid}`, sl ? { x: sl.x, y: sl.y, slot: sl.id } : { x: cur.x, y: cur.y, slot: null });
+  saveLocal();
+}
+
+/* Move her, and if someone already holds that spot the two trade places. */
+function switchTo(m, pid, slotId, role) {
+  const mine = slotIdOf(m, pid);
+  const holder = slotId ? fieldIds(m).find(x => x !== pid && slotIdOf(m, x) === slotId) : null;
+  movePos(m, pid, slotId, role);
+  if (holder) movePos(m, holder, mine, null);
+  render();
+  const t = team(), p = (t.players || {})[pid];
+  const sl = slotId ? slotById(m, slotId) : null;
+  toast(`${p.name} to ${sl ? sl.label : (role || 'no spot')} at ${mins(elapsedSec(m))}′`);
+}
+
 /* record a sub that happened earlier than you tapped it */
 function subAt(m, outPid, inPid, t) {
   const e = elapsedSec(m);
   const open = openStint(m, outPid);
   const floor = open ? open[1].on : 0;
   t = clamp(Math.round(t), floor, e);
-  const pos = (m.positions || {})[outPid] || { x: 50, y: 50, slot: null };
+  const pos = posOf(m, outPid);
   const p = `matches/${m.id}`;
   if (open) { setDeep(state, `${p}/stints/${open[0]}/off`, t); remoteSet(`${p}/stints/${open[0]}/off`, t); }
   delDeep(state, `${p}/positions/${outPid}`); remoteDel(`${p}/positions/${outPid}`);
@@ -531,6 +733,7 @@ function render() {
   const v = ui.view;
   app.innerHTML =
     v === 'live' ? viewLive() :
+      v === 'track' ? viewTrack() :
       v === 'match' ? viewMatch() :
       v === 'matches' ? viewMatches() :
         v === 'roster' ? viewRoster() :
@@ -548,6 +751,158 @@ function needTeam() {
 }
 
 
+function shortDate(d) {
+  if (!d) return '';
+  const [y, mo, da] = d.split('-').map(Number);
+  return da + ' ' + ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][mo - 1];
+}
+
+function gameBar(t, m) {
+  const sc = score(m);
+  const n = teamMatches(t.id).length;
+  return `<button class="gamebar" data-act="pickgame">
+    <span class="gb-label">Game</span>
+    <span class="gb-name">${esc(m.opponent || 'Unnamed')}${m.date ? ' · ' + shortDate(m.date) : ''} · ${sc.us}–${sc.them}</span>
+    ${n > 1 ? `<span class="gb-hint">switch</span>` : ''}
+    <svg viewBox="0 0 12 8" width="12" height="8" aria-hidden="true"><path d="M1 1l5 5 5-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+  </button>`;
+}
+
+function sheetPickGame() {
+  const t = team(), cur = ui.matchId;
+  const list = teamMatches(t.id);
+  openSheet(`<h3>Which game?</h3>
+    ${list.map(g => {
+    const sc = score(g);
+    return `<button class="opt spread" type="button" data-act="pickgame2" data-id="${g.id}" aria-current="${g.id === cur}">
+      <span>${esc(g.opponent || 'Unnamed')}<span class="rowsub">${esc(g.date || '')} · ${mins(elapsedSec(g))} min played${running(g) ? ' · running' : ''}</span></span>
+      <span class="pmins">${sc.us}<small>–${sc.them}</small></span></button>`;
+  }).join('') || '<p class="muted">No games yet.</p>'}
+    <button class="btn wide" data-act="newmatch">Add a game</button>`);
+}
+
+function anomalyBanner(t, m) {
+  const list = anomalies(m);
+  if (!list.length) return '';
+  const nm = pid => esc(((t.players || {})[pid] || {}).name || 'someone');
+  return `<div class="warn alert"><div class="spread">
+    <span>${list.map(a => a.kind === 'double'
+    ? `${nm(a.pid)} has two open spells — she was probably subbed on from two phones at once`
+    : `${a.n} players on the pitch, ${a.cap} expected`).join(' · ')}</span>
+    ${list.some(a => a.kind === 'double') ? '<button class="btn sm" data-act="repair">Fix</button>' : ''}
+  </div></div>`;
+}
+
+function clockCard(m, now, controls) {
+  const el = elapsedSec(m, now);
+  return `<div class="clockwrap">
+    <div class="clockline">
+      <div class="clock" id="clock">${mmss(el)}</div>
+      <div class="clockmeta"><b>${esc(halfName(m, m.currentHalf || 1))}</b><span id="halfclock">${mmss(halfSec(m, now))}</span> of ${m.periodMinutes || 40}:00</div>
+    </div>
+    ${controls ? `<div class="clockbtns">
+      ${running(m)
+      ? `<button class="btn stop" data-act="pause">Pause</button><button class="btn stop" data-act="endhalf">End ${esc(halfName(m, m.currentHalf || 1)).toLowerCase()}</button>`
+      : `<button class="btn" data-act="start">${el ? 'Resume' : 'Start clock'}</button>${el ? `<button class="btn stop" data-act="endhalf">End ${esc(halfName(m, m.currentHalf || 1)).toLowerCase()}</button>` : ''}`}
+    </div>
+    <button class="linkbtn" data-act="fixclock">Clock reading wrong?</button>`
+      : `<p class="clocknote">${running(m) ? 'Running' : el ? 'Paused' : 'Not started'} — the clock is controlled from the Live tab.</p>`}</div>`;
+}
+
+function scoreCard(t, m) {
+  const sc = score(m);
+  return `<div class="card scorecard">
+    <div class="scoreside"><span class="scorelbl">${teamLabel(t)}</span><span class="scorenum">${sc.us}</span>
+      <button class="btn sm" data-act="goal" data-side="us">Goal</button></div>
+    <div class="scoresep"></div>
+    <div class="scoreside"><span class="scorelbl">${esc(m.opponent || 'Them')}</span><span class="scorenum">${sc.them}</span>
+      <button class="btn quiet sm" data-act="goal" data-side="them">Goal</button></div>
+  </div>`;
+}
+
+/* --- track: everything a second pair of hands can log --- */
+function viewTrack() {
+  const t = team(); if (!t) return needTeam();
+  let m = match();
+  if (!m || m.teamId !== t.id) { const l = teamMatches(t.id); m = l[0] || null; ui.matchId = m ? m.id : null; }
+  if (!m) return `<div class="empty"><strong>No game yet</strong>Create a game first.
+    <div style="margin-top:14px"><button class="btn" data-act="newmatch">Add a game</button></div></div>`;
+
+  const now = nowMs();
+  const name = id => { const p = (t.players || {})[id]; return p ? esc(p.name) : 'Unknown'; };
+  const us = teamLabel(t), them = esc(m.opponent || 'Them');
+
+  const goals = goalList(m).reverse();
+  const goalsCard = goals.length ? `<div class="card"><h2 style="margin-bottom:10px">Goals</h2>
+    <div class="log">${goals.map(g => `<button type="button" data-act="fixgoal" data-id="${g.id}">
+      <span class="t">${mmss(g.t)}</span>
+      <span>${g.side === 'us' ? `<span class="on">${us}</span>` : `<span class="off">${them}</span>`}${g.pid ? ' — ' + name(g.pid) : ''}${g.assist ? ` <span class="muted">(assist ${name(g.assist)})</span>` : ''}</span>
+      <span class="muted">edit</span></button>`).join('')}</div></div>` : '';
+
+  const sh = shotTally(m);
+  const shotsCard = `<div class="card"><div class="spread" style="margin-bottom:10px">
+      <h2>Shots</h2><span class="muted">goals count as on target</span></div>
+    <div class="tallygrid">
+      <span></span><span class="tallyhead">${us}</span><span class="tallyhead">${them}</span>
+      <span class="tallylbl">On target</span>
+      <button class="tallybtn" data-act="shot" data-side="us" data-on="1"><b>${sh.usOn}</b><span>tap</span></button>
+      <button class="tallybtn" data-act="shot" data-side="them" data-on="1"><b>${sh.themOn}</b><span>tap</span></button>
+      <span class="tallylbl">Off target</span>
+      <button class="tallybtn" data-act="shot" data-side="us" data-on="0"><b>${sh.usOff}</b><span>tap</span></button>
+      <button class="tallybtn" data-act="shot" data-side="them" data-on="0"><b>${sh.themOff}</b><span>tap</span></button>
+    </div>
+    ${shotList(m).length ? `<div class="log" style="margin-top:12px">${shotList(m).slice().reverse().slice(0, 5).map(x => `<button type="button" data-act="fixshot" data-id="${x.id}">
+      <span class="t">${mmss(x.t)}</span>
+      <span>${x.side === 'us' ? `<span class="on">${us}</span>` : `<span class="off">${them}</span>`} ${x.onTarget ? 'on target' : 'off target'}${x.pid ? ' — ' + name(x.pid) : ''}${x.by ? ` <span class="muted">· ${esc(x.by)}</span>` : ''}</span>
+      <span class="muted">edit</span></button>`).join('')}</div>` : ''}</div>`;
+
+  const rows = tracked(t);
+  const setCard = `<div class="card"><div class="spread" style="margin-bottom:10px">
+      <h2>Set pieces and fouls</h2><button class="btn quiet sm" data-act="trackcfg">Choose</button></div>
+    ${rows.length ? `<div class="tallygrid">
+      <span></span><span class="tallyhead">${us}</span><span class="tallyhead">${them}</span>
+      ${rows.map(e => `<span class="tallylbl">${e.label}</span>
+        <button class="tallybtn" data-act="ev" data-kind="${e.k}" data-side="us"><b>${evCount(m, e.k, 'us')}</b><span>tap</span></button>
+        <button class="tallybtn" data-act="ev" data-kind="${e.k}" data-side="them"><b>${evCount(m, e.k, 'them')}</b><span>tap</span></button>`).join('')}
+    </div>` : '<p class="muted" style="margin:0">Nothing switched on. Tap Choose to pick what you want to count.</p>'}
+    ${evList(m).length ? `<div class="log" style="margin-top:12px">${evList(m).slice().reverse().slice(0, 5).map(x => `<button type="button" data-act="fixev" data-id="${x.id}">
+      <span class="t">${mmss(x.t)}</span>
+      <span>${x.side === 'us' ? `<span class="on">${us}</span>` : `<span class="off">${them}</span>`} ${esc(evLabel(x.kind).replace(/s$/, '').toLowerCase())}${x.pid ? ' — ' + name(x.pid) : ''}${x.by ? ` <span class="muted">· ${esc(x.by)}</span>` : ''}</span>
+      <span class="muted">edit</span></button>`).join('')}</div>` : ''}</div>`;
+
+  const po = possession(m, now);
+  const pct = po.total ? Math.round(po.us / po.total * 100) : 50;
+  const possCard = `<div class="card"><div class="spread" style="margin-bottom:10px">
+      <h2>Possession</h2><span class="muted">${po.changes} change${po.changes === 1 ? '' : 's'}</span></div>
+    ${po.total ? `<div class="possbar"><i style="width:${pct}%"></i></div>
+      <div class="spread" style="margin:6px 0 12px"><span>${pct}% ${us}</span><span class="muted">${100 - pct}% ${them}</span></div>`
+      : '<p class="muted" style="margin:0 0 12px">Tap each time the ball changes hands and crosses halfway. Nothing recorded yet.</p>'}
+    <div class="row"><button class="btn sm" data-act="poss" data-side="us" style="flex:1">${us} won it</button>
+      <button class="btn quiet sm" data-act="poss" data-side="them" style="flex:1">${them} won it</button></div>
+    ${po.changes ? `<button class="linkbtn dark" data-act="undoposs">Undo the last one</button>` : ''}
+    <p class="muted" style="margin-bottom:0">Only as accurate as the tapping — best done by whoever is not making the subs.</p></div>`;
+
+  const who = whoAmI();
+  const whoBar = `<button class="gamebar" data-act="setwho">
+    <span class="gb-label">Logging as</span>
+    <span class="gb-name">${who ? esc(who) : 'nobody — tap to set a name'}</span>
+    <span class="gb-hint">change</span></button>`;
+
+  return `<div class="stack">
+    ${gameBar(t, m)}
+    ${whoBar}
+    ${clockCard(m, now, false)}
+    ${scoreCard(t, m)}
+    ${goalsCard}
+    ${shotsCard}
+    ${setCard}
+    ${possCard}
+    ${Object.keys(trackersIn(m)).length > 1 ? `<div class="card"><h2 style="margin-bottom:8px">Who logged what</h2>
+      <p class="muted" style="margin-top:0">More than one person has been tapping. If someone double-counted, you can drop everything they logged without touching anyone else's.</p>
+      <button class="btn quiet wide" data-act="trackerclean">Review by tracker</button></div>` : ''}
+  </div>`;
+}
+
 /* --- live: minutes and subs only, no pitch --- */
 function viewLive() {
   const t = team(); if (!t) return needTeam();
@@ -561,31 +916,39 @@ function viewLive() {
   const roster = squad(t, m);
   const name = id => { const p = (t.players || {})[id]; return p ? esc(p.name) : 'Unknown'; };
 
-  // longest on the pitch first — she is the one most likely due a rest
+  const byNumber = ui.sortBy === 'number';
+  const num = (a, b) => (Number(a.number) || 999) - (Number(b.number) || 999);
+  // by need: longest on the pitch first, she is the one most likely due a rest
   const on = roster.filter(p => onField(m, p.id))
-    .sort((a, b) => (spellSec(m, b.id, now) || 0) - (spellSec(m, a.id, now) || 0));
-  // furthest behind planned first — she is the one most likely due to go on
+    .sort(byNumber ? num : (a, b) => (spellSec(m, b.id, now) || 0) - (spellSec(m, a.id, now) || 0));
+  // by need: furthest behind planned first, she is the one most likely due to go on
   const bench = roster.filter(p => !onField(m, p.id))
-    .sort((a, b) => (plannedSec(m, b.id) - playedSec(m, b.id, now)) - (plannedSec(m, a.id) - playedSec(m, a.id, now)));
+    .sort(byNumber ? num : (a, b) => (plannedSec(m, b.id) - playedSec(m, b.id, now)) - (plannedSec(m, a.id) - playedSec(m, a.id, now)));
 
-  const clock = `<div class="clockwrap">
-    <div class="clockline">
-      <div class="clock" id="clock">${mmss(el)}</div>
-      <div class="clockmeta"><b>${esc(halfName(m, m.currentHalf || 1))}</b><span id="halfclock">${mmss(halfSec(m, now))}</span> of ${m.periodMinutes || 40}:00</div>
-    </div>
-    <div class="clockbtns">
-      ${running(m)
-      ? `<button class="btn stop" data-act="pause">Pause</button><button class="btn stop" data-act="endhalf">End ${esc(halfName(m, m.currentHalf || 1)).toLowerCase()}</button>`
-      : `<button class="btn" data-act="start">${el ? 'Resume' : 'Start clock'}</button>${el ? `<button class="btn stop" data-act="endhalf">End ${esc(halfName(m, m.currentHalf || 1)).toLowerCase()}</button>` : ''}`}
-    </div>
-    <button class="linkbtn" data-act="fixclock">Clock reading wrong?</button></div>`;
+  const clock = clockCard(m, now, true);
+
+  const planning = !!ui.plan;
+  const items = staged();
+  const pname = id => esc(((t.players || {})[id] || {}).name || '?');
+  const planBar = planning ? `<div class="planbar">
+    <div class="spread" style="margin-bottom:${items.length ? '8px' : '0'}">
+      <b>Staging changes${items.length ? ` (${items.length})` : ''}</b>
+      <button class="btn quiet sm" data-act="cancelplan">Cancel</button></div>
+    ${items.length ? `<div class="planlist">${items.map((it, i) => `<div class="spread">
+      <span>${it.k === 'sub' ? `${pname(it.in)} on for ${pname(it.out)}`
+      : it.k === 'add' ? `${pname(it.pid)} on`
+        : `${pname(it.pid)} moves to ${esc(it.label || 'a new spot')}`}</span>
+      <button class="xbtn" data-act="unstage" data-i="${i}" aria-label="remove">×</button></div>`).join('')}</div>
+      <button class="btn wide" data-act="applyplan" style="margin-top:10px">Make ${items.length} change${items.length === 1 ? '' : 's'} now</button>`
+      : `<p class="muted" style="margin:8px 0 0;color:rgba(255,255,255,.8)">Pair players as usual, or tap a spot chip to move someone. Nothing happens until you send it.</p>`}
+  </div>` : '';
 
   const picked = ui.picked ? (t.players || {})[ui.picked] : null;
   const pickedOn = picked && onField(m, picked.id);
   const room = on.length < (m.onFieldCount || 11);
   const banner = picked ? `<div class="pickbar">
     <span><b>${esc(picked.name)}</b> ${pickedOn ? 'coming off — tap who takes her place' : room ? 'going on' : 'going on — tap who she replaces'}</span>
-    <span class="row">${!pickedOn && room ? `<button class="btn sm" data-act="puton" data-pid="${picked.id}">Put on</button>` : ''}
+    <span class="row">${!pickedOn && room ? `<button class="btn sm" data-act="${planning ? 'stageadd' : 'puton'}" data-pid="${picked.id}">Put on</button>` : ''}
     <button class="btn quiet sm" data-act="clearpick">Cancel</button></span></div>` : '';
 
   const row = (p, isOn) => {
@@ -593,64 +956,61 @@ function viewLive() {
     const diff = Math.round((pl - pd) / 60);
     const spell = isOn ? spellSec(m, p.id, now) : restSec(m, p.id, now);
     const tag = spell == null ? 'not on yet' : (isOn ? 'on ' : 'off ') + mmss(spell);
-    return `<button class="liverow" type="button" data-act="taplive" data-pid="${p.id}"
-      data-on="${isOn ? 1 : 0}" data-picked="${ui.picked === p.id ? 1 : 0}">
-      <span class="pnum">${esc(p.number ?? '')}</span>
-      <span><span class="pname">${esc(p.name)}</span>
-        <span class="psub" data-spell="${p.id}">${tag}</span></span>
-      <span class="livemins"><span data-mins="${p.id}">${mins(pl)}<small> min</small></span>
-        ${pd > 0 ? `<span class="diff ${diff < 0 ? 'owed' : 'over'}">${diff < 0 ? -diff + ' owed' : diff > 0 ? diff + ' over' : 'on plan'}</span>` : ''}</span>
-    </button>`;
+    const spot = isOn ? currentSpot(m, p.id) : null;
+    return `<div class="liverow" data-on="${isOn ? 1 : 0}" data-picked="${ui.picked === p.id ? 1 : 0}" data-staged="${isStaged(p.id) ? 1 : 0}">
+      <button class="lrmain" type="button" data-act="taplive" data-pid="${p.id}">
+        <span class="pnum">${esc(p.number ?? '')}</span>
+        <span><span class="pname">${esc(p.name)}</span>
+          <span class="psub" data-spell="${p.id}">${tag}</span></span>
+        <span class="livemins"><span data-mins="${p.id}">${mins(pl)}<small> min</small></span>
+          ${pd > 0 ? `<span class="diff ${diff < 0 ? 'owed' : 'over'}">${diff < 0 ? -diff + ' owed' : diff > 0 ? diff + ' over' : 'on plan'}</span>` : ''}</span>
+      </button>
+      ${isOn ? `<button class="lrspot" type="button" data-act="switchpos" data-pid="${p.id}">
+        <span>${esc(spot || 'set')}</span><span class="lrspot-hint">move</span></button>` : ''}
+    </div>`;
   };
 
   const clashes = clashesOn(t, m);
-  const warn = clashes.length
-    ? `<div class="warn">${clashes.map(([a, b]) => `${esc(a.name)} and ${esc(b.name)} are on together`).join(' · ')}</div>` : '';
+  const warn = (clashes.length
+    ? `<div class="warn">${clashes.map(([a, b]) => `${esc(a.name)} and ${esc(b.name)} are on together`).join(' · ')}</div>` : '')
+    + anomalyBanner(t, m);
 
   lastLog = subEvents(m);
   const recent = lastLog.slice(0, 4);
   const logHtml = recent.length
     ? `<div class="log">${recent.map((r, i) => `<button type="button" data-act="fixsub" data-i="${i}">
         <span class="t">${mmss(r.t)}</span>
-        <span>${r.on ? `<span class="on">${name(r.on)} on</span>` : ''}${r.on && r.off ? ' for ' : ''}${r.off ? `<span class="off">${name(r.off)} off</span>` : ''}</span>
+        <span>${r.move ? `${name(r.on)} moved to <span class="on">${esc(r.spot || 'a new spot')}</span>`
+        : `${r.on ? `<span class="on">${name(r.on)} on</span>` : ''}${r.on && r.off ? ' for ' : ''}${r.off ? `<span class="off">${name(r.off)} off</span>` : ''}`}</span>
         <span class="muted">fix</span></button>`).join('')}</div>`
-    : `<p class="muted" style="margin:0">No subs yet.</p>`;
+    : `<p class="muted" style="margin:0">Nothing yet.</p>`;
 
-  const sc = score(m);
-  const goals = goalList(m).reverse();
-  const scoreCard = `<div class="card scorecard">
-    <div class="scoreside"><span class="scorelbl">${teamLabel(t)}</span><span class="scorenum">${sc.us}</span>
-      <button class="btn sm" data-act="goal" data-side="us">Goal</button></div>
-    <div class="scoresep"></div>
-    <div class="scoreside"><span class="scorelbl">${esc(m.opponent || 'Them')}</span><span class="scorenum">${sc.them}</span>
-      <button class="btn quiet sm" data-act="goal" data-side="them">Goal</button></div>
-  </div>`;
-  const goalsCard = goals.length ? `<div class="card"><h2 style="margin-bottom:10px">Goals</h2>
-    <div class="log">${goals.map(g => `<button type="button" data-act="fixgoal" data-id="${g.id}">
-      <span class="t">${mmss(g.t)}</span>
-      <span>${g.side === 'us' ? `<span class="on">${teamLabel(t)}</span>` : `<span class="off">${esc(m.opponent || 'Them')}</span>`}${g.pid ? ' — ' + name(g.pid) : ''}${g.assist ? ` <span class="muted">(assist ${name(g.assist)})</span>` : ''}</span>
-      <span class="muted">edit</span></button>`).join('')}</div></div>` : '';
+  const scCard = scoreCard(t, m);
 
   const startHint = on.length === 0 ? `<p class="muted" style="margin:0 0 10px">Tap a player on the bench, then <b>Put on</b>. Repeat until your starters are out there.
     ${m.plan ? ' Or fill the whole lineup from the plan.' : ''}</p>
     ${m.plan ? `<button class="btn quiet wide" data-act="applyblock" data-start="${(planBlockAt(m, el) || m.plan.blocks[0]).start}" style="margin-bottom:10px">Use the planned lineup</button>` : ''}` : '';
 
   return `<div class="stack">
+    ${gameBar(t, m)}
     ${clock}
-    ${scoreCard}
+    ${scCard}
+    ${planBar}
     ${banner}
     ${warn}
     <div class="card"><div class="spread" style="margin-bottom:8px">
-      <h2>On the pitch</h2><span class="muted">${on.length} of ${m.onFieldCount || 11} · longest first</span></div>
+      <h2>On the pitch</h2>
+      <span class="row"><button class="btn quiet sm" data-act="togglesort">${byNumber ? 'By number' : 'By need'}</button>
+      ${planning ? '' : '<button class="btn quiet sm" data-act="startplan">Batch</button>'}</span></div>
+      <p class="muted" style="margin:0 0 10px">${on.length} of ${m.onFieldCount || 11} on${byNumber ? ', in shirt-number order' : ', longest spell first'}</p>
       ${startHint}
       <div class="plist">${on.map(p => row(p, true)).join('') || ''}</div></div>
     <div class="card"><div class="spread" style="margin-bottom:8px">
-      <h2>Bench</h2><span class="muted">most owed first</span></div>
+      <h2>Bench</h2><span class="muted">${byNumber ? 'by number' : 'most owed first'}</span></div>
       <div class="plist">${bench.map(p => row(p, false)).join('') || '<p class="muted" style="margin:0">Everyone is on.</p>'}</div></div>
-    <div class="card"><div class="spread" style="margin-bottom:10px"><h2>Recent subs</h2>
+    <div class="card"><div class="spread" style="margin-bottom:10px"><h2>Subs and switches</h2>
       <div class="row"><button class="btn quiet sm" data-act="addsub">Add</button>
       <button class="btn quiet sm" data-act="fixminutes">Fix</button></div></div>${logHtml}</div>
-    ${goalsCard}
   </div>`;
 }
 
@@ -665,16 +1025,18 @@ function putOn(m, pid) {
 function tapLive(pid) {
   const m = match(), t = team();
   const p = (t.players || {})[pid]; if (!p) return;
+  if (ui.plan && isStaged(pid)) { toast(`${p.name} is already in this batch`); return; }
   if (!ui.picked) { ui.picked = pid; render(); return; }
   if (ui.picked === pid) { ui.picked = null; render(); return; }
   const a = ui.picked, b = pid;
   const aOn = onField(m, a), bOn = onField(m, b);
   if (aOn === bOn) {
-    if (!aOn && fieldIds(m).length < (m.onFieldCount || 11)) { ui.picked = null; putOn(m, a); ui.picked = b; render(); return; }
+    if (!aOn && !ui.plan && fieldIds(m).length < (m.onFieldCount || 11)) { ui.picked = null; putOn(m, a); ui.picked = b; render(); return; }
     ui.picked = b; render(); return;
   }
   ui.picked = null;
   const outPid = aOn ? a : b, inPid = aOn ? b : a;
+  if (ui.plan) { stage({ k: 'sub', out: outPid, in: inPid }); render(); return; }
   swap(m, outPid, inPid);
   toast(`${(t.players || {})[inPid].name} on for ${(t.players || {})[outPid].name} at ${mins(elapsedSec(m))}′`);
 }
@@ -695,7 +1057,7 @@ function viewMatch() {
   const cap = m.onFieldCount || 11;
 
   const tokens = field.map(p => {
-    const pos = m.positions[p.id];
+    const pos = posOf(m, p.id);
     const pl = playedSec(m, p.id, now), pd = plannedSec(m, p.id);
     const owed = pd > 0 && pl < pd ? 1 : 0;
     const sl = slotOf(m, p.id);
@@ -747,13 +1109,15 @@ function viewMatch() {
   const logHtml = lastLog.length
     ? `<div class="log">${lastLog.map((r, i) => `<button type="button" data-act="fixsub" data-i="${i}">
         <span class="t">${mmss(r.t)}</span>
-        <span>${r.on ? `<span class="on">${name(r.on)} on</span>` : ''}${r.on && r.off ? ' for ' : ''}${r.off ? `<span class="off">${name(r.off)} off</span>` : ''}</span>
+        <span>${r.move ? `${name(r.on)} moved to <span class="on">${esc(r.spot || 'a new spot')}</span>`
+        : `${r.on ? `<span class="on">${name(r.on)} on</span>` : ''}${r.on && r.off ? ' for ' : ''}${r.off ? `<span class="off">${name(r.off)} off</span>` : ''}`}</span>
         <span class="muted">fix</span></button>`).join('')}</div>`
-    : `<p class="muted" style="margin:0">Subs show up here with the minute they happened. Tap one to correct the time.</p>`;
+    : `<p class="muted" style="margin:0">Subs and switches show up here with the minute they happened. Tap one to correct the time.</p>`;
 
   const clashes = clashesOn(t, m);
-  const warn = clashes.length
-    ? `<div class="warn">${clashes.map(([a, b]) => `${esc(a.name)} and ${esc(b.name)} are on together`).join(' · ')}</div>` : '';
+  const warn = (clashes.length
+    ? `<div class="warn">${clashes.map(([a, b]) => `${esc(a.name)} and ${esc(b.name)} are on together`).join(' · ')}</div>` : '')
+    + anomalyBanner(t, m);
 
   const nb = nextPlanBlock(m, el), cb = planBlockAt(m, el);
   let planHtml;
@@ -776,6 +1140,7 @@ function viewMatch() {
   const outCount = Object.keys(m.out || {}).length;
 
   return `<div class="stack">
+    ${gameBar(t, m)}
     ${clock}
     ${warn}
     <div class="split">
@@ -867,8 +1232,14 @@ function viewSeason() {
   const ms = teamMatches(t.id);
   const rows = players(t).map(p => {
     let pl = 0, pd = 0;
-    for (const m of ms) { pl += playedSec(m, p.id); pd += plannedSec(m, p.id); }
-    return { p, pl, pd, diff: pl - pd };
+    const roles = {};
+    for (const m of ms) {
+      pl += playedSec(m, p.id); pd += plannedSec(m, p.id);
+      for (const [k, v] of Object.entries(byRole(m, p.id))) roles[k] = (roles[k] || 0) + v;
+    }
+    const rs = Object.entries(roles).filter(([, v]) => v >= 60).sort((a, b) => b[1] - a[1])
+      .map(([k, v]) => `${mins(v)} at ${k}`).join(' · ');
+    return { p, pl, pd, diff: pl - pd, roles: rs };
   }).sort((a, b) => a.diff - b.diff);
   if (!rows.length) return `<div class="empty"><strong>No players yet</strong>Add the squad on the Roster tab.</div>`;
   const html = rows.map(r => {
@@ -878,7 +1249,8 @@ function viewSeason() {
       <span class="pnum">${esc(r.p.number ?? '')}</span>
       <span><span class="pname">${esc(r.p.name)}</span>
       ${r.pd > 0 ? `<div class="bar"><i style="width:${pct}%" data-owed="${owed}" data-over="${over}"></i><u style="left:100%"></u></div>` : ''}
-      <span class="psub">${r.pd > 0 ? `${mins(r.pd)} planned · ${r.diff < 0 ? mins(-r.diff) + ' min owed' : mins(r.diff) + ' min over'}` : 'no plan set'}</span></span>
+      <span class="psub">${r.pd > 0 ? `${mins(r.pd)} planned · ${r.diff < 0 ? mins(-r.diff) + ' min owed' : mins(r.diff) + ' min over'}` : 'no plan set'}</span>
+      ${r.roles ? `<span class="psub">${esc(r.roles)}</span>` : ''}</span>
       <span class="pmins">${mins(r.pl)}<small> min</small></span></div>`;
   }).join('');
   return `<div class="stack"><div class="spread"><h2>Season totals</h2><span class="muted">${ms.length} games</span></div>
@@ -970,7 +1342,7 @@ function viewSetup() {
 
 /* ---------------- ticking ---------------- */
 setInterval(() => {
-  if ((ui.view !== 'match' && ui.view !== 'live') || ui.dragging) return;
+  if (!['match', 'live', 'track'].includes(ui.view) || ui.dragging) return;
   const m = match(); if (!m || !running(m)) return;
   const t = team(); if (!t) return;
   const now = nowMs();
@@ -1077,7 +1449,7 @@ function tapPlayer(pid) {
   ui.picked = null;
 
   if (aOn && bOn) { // swap positions on the pitch
-    const pa = m.positions[a], pb = m.positions[b];
+    const pa = posOf(m, a), pb = posOf(m, b);
     setDeep(state, `matches/${m.id}/positions/${a}`, pb); remoteSet(`matches/${m.id}/positions/${a}`, pb);
     setDeep(state, `matches/${m.id}/positions/${b}`, pa); remoteSet(`matches/${m.id}/positions/${b}`, pa);
     saveLocal(); render(); return;
@@ -1090,6 +1462,88 @@ function tapPlayer(pid) {
 }
 
 /* ---------------- sheets ---------------- */
+function sheetSwitch(pid) {
+  const t = team(), m = match();
+  const p = (t.players || {})[pid];
+  const shape = (m.formation && m.formation.slots) || [];
+  const here = ((m.positions || {})[pid] || {}).slot || null;
+  const holderOf = sid => {
+    const h = fieldIds(m).find(x => x !== pid && slotIdOf(m, x) === sid);
+    return h ? (t.players || {})[h] : null;
+  };
+  openSheet(`<h3>Move ${esc(p.name)}</h3>
+    <p class="muted" style="margin-top:0">${ui.plan ? 'Added to the batch — nothing happens until you send it.' : `Recorded at ${mmss(elapsedSec(m))}.`} Her total minutes do not change — they just start counting against the new spot.</p>
+    ${roleSummary(m, pid) ? `<p class="muted">So far: ${esc(roleSummary(m, pid))}</p>` : ''}
+    ${shape.length ? `<p class="lbl">Spot in the ${esc(m.formation.name)}</p>
+      ${shape.map(sl => { const h = holderOf(sl.id); return `<button class="opt spread" type="button" data-act="doswitch" data-pid="${pid}" data-sid="${sl.id}" aria-current="${here === sl.id}">
+        <span>${esc(sl.label)} <span class="muted">· ${esc(sl.role)}</span></span>
+        <span class="muted">${here === sl.id ? 'here now' : h ? 'swap with ' + esc(h.name) : 'free'}</span></button>`; }).join('')}`
+      : `<p class="lbl">Role</p>
+      ${ROLES.map(r => `<button class="opt" type="button" data-act="doswitch" data-pid="${pid}" data-role="${r}">${r}</button>`).join('')}`}
+    <button class="btn quiet wide" data-act="closesheet" style="margin-top:8px">Cancel</button>`);
+}
+
+function sheetWho() {
+  openSheet(`<h3>Logging as</h3>
+    <p class="muted" style="margin-top:0">Stamped onto everything you tap on this device so two people can track one game. It stays on this phone and is not a login — it does not restrict anything.</p>
+    <label class="field"><span>Your name</span><input type="text" id="whoName" value="${esc(whoAmI())}" placeholder="Grant"></label>
+    <button class="btn wide" data-act="savewho">Save</button>`);
+}
+
+function sheetTrackerClean() {
+  const m = match(), counts = trackersIn(m);
+  openSheet(`<h3>Who logged what</h3>
+    ${Object.entries(counts).sort((a, b) => b[1] - a[1]).map(([k, v]) => `<div class="opt spread">
+      <span>${esc(k)}<span class="rowsub">${v} item${v === 1 ? '' : 's'}</span></span>
+      <button class="btn danger sm" data-act="dropby" data-who="${esc(k)}">Remove all</button></div>`).join('')}
+    <p class="muted">Goals, shots, set pieces and possession only. Subs and minutes are untouched.</p>
+    <button class="btn wide" data-act="closesheet">Done</button>`);
+}
+
+function sheetEvent(id) {
+  const t = team(), m = match();
+  const x = (m.events || {})[id]; if (!x) return;
+  const ours = x.side === 'us';
+  openSheet(`<h3>${esc(evLabel(x.kind).replace(/s$/, ''))} at ${mmss(x.t)} — ${ours ? teamLabel(t) : esc(m.opponent || 'Them')}</h3>
+    <label class="field"><span>Time</span><input type="text" id="evT" value="${mmss(x.t)}" inputmode="numeric"></label>
+    ${ours ? `<p class="lbl">${x.kind === 'foul' ? 'Who committed it' : 'Who took it'} (optional)</p>
+    <div class="chips" style="margin-bottom:14px">
+      ${squad(t, m).map(p => `<button class="chip" type="button" data-act="pickscorer" data-grp="who" data-v="${p.id}" aria-pressed="${x.pid === p.id}">${esc(p.name)}</button>`).join('')}
+    </div>` : '<p class="muted">Opponent event — nothing to attribute.</p>'}
+    <button class="btn wide" data-act="saveev" data-id="${id}">Save</button>
+    <div style="margin-top:8px"><button class="btn danger wide" data-act="delev" data-id="${id}">Delete</button></div>`);
+}
+
+function sheetTrackCfg() {
+  const t = team();
+  openSheet(`<h3>What to count</h3>
+    <p class="muted" style="margin-top:0">Switch off anything that turns into more tapping than it is worth. Throw-ins run to forty a game in youth soccer; corners and fouls are far rarer and tell you more.</p>
+    <div class="chips" style="margin-bottom:16px">
+      ${EVENTS.map(e => `<button class="chip" type="button" data-act="togglechip" data-grp="track" data-v="${e.k}" aria-pressed="${(t.track || {})[e.k] !== false}">${e.label}</button>`).join('')}
+    </div>
+    <button class="btn wide" data-act="savetrackcfg">Save</button>`);
+}
+
+function sheetShot(id) {
+  const t = team(), m = match();
+  const x = (m.shots || {})[id]; if (!x) return;
+  const ours = x.side === 'us';
+  const roster = squad(t, m).filter(p => ours ? true : false);
+  openSheet(`<h3>Shot at ${mmss(x.t)} — ${ours ? teamLabel(t) : esc(m.opponent || 'Them')}</h3>
+    <label class="field"><span>Time</span><input type="text" id="shT" value="${mmss(x.t)}" inputmode="numeric"></label>
+    <p class="lbl">Where it went</p>
+    <div class="chips" style="margin-bottom:14px">
+      <button class="chip" type="button" data-act="pickone" data-grp="target" data-v="1" aria-pressed="${!!x.onTarget}">On target</button>
+      <button class="chip" type="button" data-act="pickone" data-grp="target" data-v="0" aria-pressed="${!x.onTarget}">Off target</button>
+    </div>
+    ${ours ? `<p class="lbl">Who took it</p>
+    <div class="chips" style="margin-bottom:14px">
+      ${roster.map(p => `<button class="chip" type="button" data-act="pickscorer" data-grp="shooter" data-v="${p.id}" aria-pressed="${x.pid === p.id}">${esc(p.name)}</button>`).join('')}
+    </div>` : '<p class="muted">Opponent shot — nothing to attribute.</p>'}
+    <button class="btn wide" data-act="saveshot" data-id="${id}">Save</button>
+    <div style="margin-top:8px"><button class="btn danger wide" data-act="delshot" data-id="${id}">Delete this shot</button></div>`);
+}
+
 function sheetGoal(gid) {
   const t = team(), m = match();
   const g = (m.goals || {})[gid]; if (!g) return;
@@ -1297,6 +1751,7 @@ function sheetFixMinutes(pid) {
   const e = elapsedSec(m);
   openSheet(`<h3>${esc(p.name)} — ${mins(playedSec(m, pid))} min</h3>
     <p class="muted" style="margin-top:0">Each row is one spell on the pitch. Blank means she is still on.</p>
+    ${roleSummary(m, pid) ? `<p class="muted">${esc(roleSummary(m, pid))}</p>` : ''}
     ${list.map(([sid, s]) => `<div class="row" style="margin-bottom:8px">
       <input type="text" style="flex:1" data-son="${sid}" value="${mmss(s.on)}" inputmode="numeric">
       <span class="muted">to</span>
@@ -1357,14 +1812,98 @@ document.addEventListener('click', e => {
   if (a === 'taplive') { tapLive(d.pid); return; }
   if (a === 'clearpick') { ui.picked = null; render(); return; }
   if (a === 'puton') { ui.picked = null; putOn(m, d.pid); render(); return; }
+  if (a === 'switchpos') { sheetSwitch(d.pid); return; }
+  if (a === 'togglesort') { ui.sortBy = ui.sortBy === 'number' ? 'need' : 'number'; render(); return; }
+  if (a === 'pickgame') { sheetPickGame(); return; }
+  if (a === 'pickgame2') { ui.matchId = d.id; ui.picked = null; closeSheet(); render(); return; }
+  if (a === 'doswitch') {
+    if (ui.plan) {
+      const sl = d.sid ? slotById(m, d.sid) : null;
+      stage({ k: 'move', pid: d.pid, sid: d.sid || null, role: d.role || null, label: sl ? sl.label : (d.role || null) });
+      closeSheet(); render(); return;
+    }
+    switchTo(m, d.pid, d.sid || null, d.role || null); closeSheet(); return;
+  }
+  if (a === 'stageadd') { ui.picked = null; stage({ k: 'add', pid: d.pid }); render(); return; }
+  if (a === 'startplan') { ui.plan = { matchId: ui.matchId, items: [] }; ui.picked = null; render(); return; }
+  if (a === 'cancelplan') { ui.plan = null; ui.picked = null; render(); return; }
+  if (a === 'unstage') { ui.plan.items.splice(Number(d.i), 1); saveUi(); render(); return; }
+  if (a === 'applyplan') { applyStaged(m); return; }
   if (a === 'goal') {
-    const id = uid(), g = { t: elapsedSec(m), side: d.side };
+    const id = uid(), g = { t: elapsedSec(m), side: d.side, ...stampedBy() };
     commit(`matches/${m.id}/goals/${id}`, g);
     const sc = score(m);
     toast(`${sc.us}–${sc.them} at ${mins(g.t)}′${d.side === 'us' ? ' · tap the goal to add a scorer' : ''}`);
     return;
   }
   if (a === 'fixgoal') { sheetGoal(d.id); return; }
+  if (a === 'shot') {
+    const id = uid();
+    commit(`matches/${m.id}/shots/${id}`, { t: elapsedSec(m), side: d.side, onTarget: d.on === '1', ...stampedBy() });
+    toast(`Shot ${d.on === '1' ? 'on' : 'off'} target at ${mins(elapsedSec(m))}′${d.side === 'us' ? ' · tap it to add who' : ''}`);
+    return;
+  }
+  if (a === 'fixshot') { sheetShot(d.id); return; }
+  if (a === 'saveshot') {
+    const x = (m.shots || {})[d.id]; if (!x) return;
+    const b = document.querySelector('[data-act="pickscorer"][data-grp="shooter"][aria-pressed="true"]');
+    const tg = document.querySelector('[data-act="pickone"][data-grp="target"][aria-pressed="true"]');
+    commit(`matches/${m.id}/shots/${d.id}`, {
+      ...x, t: clamp(parseTime($('#shT').value, x.t), 0, elapsedSec(m)),
+      pid: b ? b.dataset.v : null, onTarget: tg ? tg.dataset.v === '1' : !!x.onTarget
+    });
+    closeSheet(); return;
+  }
+  if (a === 'delshot') { drop(`matches/${m.id}/shots/${d.id}`); closeSheet(); return; }
+  if (a === 'ev') {
+    commit(`matches/${m.id}/events/${uid()}`, { t: elapsedSec(m), side: d.side, kind: d.kind, ...stampedBy() });
+    toast(`${evLabel(d.kind).replace(/s$/, '')} at ${mins(elapsedSec(m))}′`);
+    return;
+  }
+  if (a === 'fixev') { sheetEvent(d.id); return; }
+  if (a === 'saveev') {
+    const x = (m.events || {})[d.id]; if (!x) return;
+    const b = document.querySelector('[data-act="pickscorer"][data-grp="who"][aria-pressed="true"]');
+    commit(`matches/${m.id}/events/${d.id}`, { ...x, t: clamp(parseTime($('#evT').value, x.t), 0, elapsedSec(m)), pid: b ? b.dataset.v : null });
+    closeSheet(); return;
+  }
+  if (a === 'delev') { drop(`matches/${m.id}/events/${d.id}`); closeSheet(); return; }
+  if (a === 'trackcfg') { sheetTrackCfg(); return; }
+  if (a === 'setwho') { sheetWho(); return; }
+  if (a === 'savewho') {
+    const v = $('#whoName').value.trim();
+    if (v) localStorage.setItem(LS_WHO, v); else localStorage.removeItem(LS_WHO);
+    closeSheet(); render(); return;
+  }
+  if (a === 'repair') {
+    let n = 0;
+    for (const an of anomalies(m)) {
+      if (an.kind !== 'double') continue;
+      // keep the spell that started first, drop the duplicates
+      const keep = an.sids.sort((x, y) => m.stints[x].on - m.stints[y].on)[0];
+      for (const sid of an.sids) if (sid !== keep) { delDeep(state, `matches/${m.id}/stints/${sid}`); remoteDel(`matches/${m.id}/stints/${sid}`); n++; }
+    }
+    saveLocal(); render(); toast(`${n} duplicate spell${n === 1 ? '' : 's'} removed`); return;
+  }
+  if (a === 'trackerclean') { sheetTrackerClean(); return; }
+  if (a === 'dropby') {
+    if (!confirm(`Remove everything logged by ${d.who}? Subs and minutes are not affected.`)) return;
+    let n = 0;
+    for (const coll of ['goals', 'shots', 'events', 'poss'])
+      for (const [k, x] of Object.entries(m[coll] || {}))
+        if ((x.by || '(unnamed)') === d.who) { delDeep(state, `matches/${m.id}/${coll}/${k}`); remoteDel(`matches/${m.id}/${coll}/${k}`); n++; }
+    saveLocal(); closeSheet(); render(); toast(`${n} removed`); return;
+  }
+  if (a === 'savetrackcfg') {
+    const cfg = {};
+    for (const b of document.querySelectorAll('[data-act="togglechip"][data-grp="track"]')) cfg[b.dataset.v] = b.getAttribute('aria-pressed') === 'true';
+    commit(`teams/${t.id}/track`, cfg); closeSheet(); return;
+  }
+  if (a === 'poss') { commit(`matches/${m.id}/poss/${uid()}`, { t: elapsedSec(m), to: d.side, ...stampedBy() }); return; }
+  if (a === 'undoposs') {
+    const l = possList(m); if (!l.length) return;
+    drop(`matches/${m.id}/poss/${l[l.length - 1].id}`); toast('Removed'); return;
+  }
   if (a === 'pickscorer') {
     for (const b of document.querySelectorAll(`[data-act="pickscorer"][data-grp="${d.grp}"]`)) {
       if (b === el) b.setAttribute('aria-pressed', String(b.getAttribute('aria-pressed') !== 'true'));
@@ -1551,7 +2090,7 @@ document.addEventListener('click', e => {
     const sl = slotById(m, d.sid); if (!sl) return;
     if (!ui.picked) { toast('Pick a player first'); return; }
     const pid = ui.picked; ui.picked = null;
-    if (onField(m, pid)) { commit(`matches/${m.id}/positions/${pid}`, { x: sl.x, y: sl.y, slot: sl.id }); return; }
+    if (onField(m, pid)) { switchTo(m, pid, sl.id, null); return; }
     if (fieldIds(m).length >= (m.onFieldCount || 11)) { toast('Pitch is full — tap a player to swap'); return; }
     putOnField(m, pid, sl.x, sl.y, sl.id);
     const p = (t.players || {})[pid];

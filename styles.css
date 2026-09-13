@@ -318,3 +318,65 @@ label.field span{display:block;font-size:13px;color:var(--ink-soft);margin-botto
 .scorenum{font-family:"Barlow Condensed",sans-serif;font-weight:700;font-size:42px;line-height:1;font-variant-numeric:tabular-nums}
 .scoresep{width:1px;background:var(--line)}
 .scoreside .btn{width:100%}
+
+/* ---------- live row with a spot chip ---------- */
+.liverow{display:flex;gap:8px;align-items:stretch;padding:0;border:0;background:none;min-height:0}
+.lrmain{
+  flex:1;min-width:0;display:grid;grid-template-columns:38px 1fr auto;align-items:center;gap:12px;
+  background:#fff;border:1px solid var(--line);border-radius:10px;
+  padding:14px 12px;text-align:left;min-height:64px;
+}
+.liverow[data-on="1"] .lrmain{border-left:5px solid var(--field);padding-left:9px}
+.liverow[data-picked="1"] .lrmain{border-color:var(--field-deep);box-shadow:0 0 0 3px var(--field-wash)}
+.lrspot{
+  flex:none;width:66px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;
+  background:#fff;border:1px solid var(--line);border-radius:10px;
+  font-family:"Barlow Condensed",sans-serif;font-weight:700;font-size:16px;line-height:1;
+}
+.lrspot-hint{font-family:"Barlow",sans-serif;font-size:10px;font-weight:500;color:var(--ink-soft)}
+
+/* ---------- tallies ---------- */
+.tallygrid{display:grid;grid-template-columns:auto 1fr 1fr;gap:8px;align-items:center}
+.tallyhead{font-size:13px;color:var(--ink-soft);text-align:center;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tallylbl{font-size:14px;color:var(--ink-soft)}
+.tallybtn{
+  display:flex;flex-direction:column;align-items:center;gap:1px;
+  background:#fff;border:1px solid var(--line);border-radius:10px;padding:9px 4px;min-height:56px;
+  justify-content:center;
+}
+.tallybtn b{font-family:"Barlow Condensed",sans-serif;font-size:24px;line-height:1;font-variant-numeric:tabular-nums}
+.tallybtn span{font-size:10px;color:var(--ink-soft);letter-spacing:.04em}
+.tallybtn:active{background:var(--field-wash)}
+.possbar{height:12px;border-radius:6px;background:var(--bench);overflow:hidden}
+.possbar i{display:block;height:100%;background:var(--field)}
+.linkbtn.dark{color:var(--ink-soft);display:block;padding:10px 0 0}
+
+.clocknote{margin:10px 0 0;font-size:13px;color:rgba(255,255,255,.75)}
+.tabs button{font-size:12.5px;padding-left:3px;padding-right:3px}
+
+/* ---------- which game ---------- */
+.gamebar{
+  display:flex;align-items:center;gap:9px;width:100%;
+  background:#fff;border:1px solid var(--line);border-radius:10px;
+  padding:10px 13px;text-align:left;
+}
+.gb-label{font-size:12px;color:var(--ink-soft);flex:none}
+.gb-name{flex:1;min-width:0;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.gb-hint{font-size:12px;color:var(--field-deep);flex:none}
+.gamebar svg{color:var(--ink-soft);flex:none}
+
+/* ---------- staged batch ---------- */
+.planbar{
+  position:sticky;top:96px;z-index:30;
+  background:var(--field-deep);color:#fff;border-radius:var(--r);padding:12px 13px;font-size:14.5px;
+}
+.planbar .btn.quiet{background:rgba(255,255,255,.16);color:#fff;border-color:rgba(255,255,255,.5)}
+.planbar .btn.wide{background:#fff;color:var(--field-deep);border-color:#fff}
+.planlist{display:flex;flex-direction:column;gap:2px}
+.planlist .spread{padding:4px 0;border-top:1px solid rgba(255,255,255,.18)}
+.planlist .spread:first-child{border-top:0}
+.xbtn{background:none;border:0;color:rgba(255,255,255,.8);font-size:20px;line-height:1;padding:0 4px}
+.liverow[data-staged="1"] .lrmain{opacity:.55;border-style:dashed}
+
+.warn.alert{background:#FBE7E3;border-color:var(--over);color:#6E2317}
+.warn.alert .btn{background:var(--over);color:#fff;border-color:var(--over);flex:none}
