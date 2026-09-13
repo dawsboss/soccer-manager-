@@ -11,6 +11,7 @@ const mmss = sec => { sec = Math.max(0, Math.floor(sec)); return Math.floor(sec 
 const mins = sec => Math.round(sec / 60);
 
 let doc = null, skew = 0, openGame = ONE_GAME || null;
+const SEASON_PAGE = !/game\.html/.test(location.pathname);
 const nowMs = () => Date.now() + skew;
 
 function segments(g) {
@@ -59,6 +60,10 @@ function render() {
   const name = (doc.team && doc.team.name) || 'Team';
   const g = openGame ? (doc.games || {})[openGame] : null;
 
+  const logo = (doc.team && doc.team.logo) || null;
+  const crest = $('#crest');
+  if (crest) { crest.src = logo || ''; crest.hidden = !logo; }
+
   if (g) {
     const live = g.status === 'live', done = g.status === 'done';
     $('#title').textContent = `${name} v ${g.opponent || 'TBC'}`;
@@ -68,7 +73,7 @@ function render() {
     const on = (g.players || []).filter(p => p.on);
     const off = (g.players || []).filter(p => !p.on);
     $('#app').innerHTML = `<div class="stack">
-      ${ONE_GAME ? '' : `<button class="backlink" data-back>Back to the season</button>`}
+      ${ONE_GAME && !SEASON_PAGE ? '' : `<button class="backlink" data-back>Back to the season</button>`}
 
       <div class="card scorecard">
         <div class="scoreside"><span class="scorelbl">${esc(name)}</span><span class="bignum">${g.score.us}</span></div>
@@ -175,7 +180,12 @@ setInterval(() => {
       if (!doc) return fail('That link is no longer active.');
       if (ONE_GAME && !(doc.games || {})[ONE_GAME]) return fail('That game is not published.');
       render();
-    }, () => fail('Could not reach the scoreboard.'));
+    }, err => {
+      console.error(err);
+      fail(err && err.code === 'PERMISSION_DENIED'
+        ? 'This scoreboard has not been published yet.'
+        : 'Could not reach the scoreboard.');
+    });
   } catch (e) {
     console.error(e);
     fail('Could not load the scoreboard.');

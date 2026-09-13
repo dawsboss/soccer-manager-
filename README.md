@@ -49,12 +49,24 @@ The rules above cover the coaches' data. To publish read-only pages for parents,
 "public": {
   "$share": {
     ".read": true,
-    ".write": true
+    ".write": "newData.hasChildren(['team', 'games']) || !newData.exists()",
+    "team":   { ".validate": "newData.hasChild('name')" },
+    "games":  { "$g": { ".validate": "newData.hasChildren(['status', 'score'])" } },
+    "$other": { ".validate": false }
   }
 }
 ```
 
-Write is open only because there is no authentication yet. The published node is a derived copy that is rewritten on every change, so anything tampered with there self-heals on the next save and the real record is never touched. Lock `.write` down to authenticated coaches when auth lands.
+**Write is open, and that is a known gap.** There is no authentication yet, so the only thing stopping someone who holds a link from writing to that node is the shape check above. What that check buys: a vandal cannot inject arbitrary keys or free text, only something that already looks like a scoreboard. What it does not buy: they could still post a wrong score.
+
+Why it is tolerable for now, and only for now:
+
+- The node is **derived**. The coaches' app rewrites it on every change, so anything tampered with is gone at the next sub.
+- It contains **no names and no player ids**, so there is nothing there worth stealing.
+- The real record lives under `workspaces/` and is never read by the public page.
+- Share ids are long and random, so the node is not discoverable without the link.
+
+The proper fix is the first job for authentication: make `.write` require `auth.uid` to be a coach of the team that owns the share. Anonymous auth is *not* a shortcut here — anonymous uids are per-device, so two coaches on two devices would get different ids and only one could publish, and clearing browser storage would lock a coach out of their own share.
 
 The API key in `firebase-config.js` is not a secret; the rules above are what gate access. The long random workspace code is the shared password. Anyone who has it can read and write that workspace, which is fine for minutes and rosters — if you want real accounts later, turn on Firebase Authentication and change the rules to `"auth != null"`.
 
@@ -65,11 +77,17 @@ The badge in the top bar shows `synced`, `offline`, or `this device`. Writes mad
 Setup → **Share with parents** creates a long random share id for the team and publishes a read-only mirror. Two links come out of it:
 
 - **Season** — `live.html?t=<share>`. Text it once. It shows the season record, whatever game is happening now, and every game played.
-- **One game** — `live.html?t=<share>&g=<gameId>`. Kick-off time, venue, score, live clock, who is on, minutes played and the substitutions. Copy it from the game switcher.
+- **One game** — `game.html?t=<share>&g=<gameId>`. Kick-off time, venue, score, live clock, who is on, minutes played and the substitutions.
+
+Teams can carry a crest — Setup → Teams → tap the team → *Add a crest*. It is resized to 192px and re-encoded in the browser before saving, and it shows in the app header and at the top of the shared pages. It cannot appear in the text-message preview image, which is a fixed file; that needs the Cloudflare Worker.
+
+Both are reached from the share button beside the game bar, and both show the game you are currently looking at — switch games in the bar to share a different one. Setup is only where sharing is turned on and where links are rotated.
+
+They are two separate HTML files purely so the text-message preview differs: `live.html` previews as *Follow the season* with `share-season.png`, `game.html` as *Match day* with `share-game.png`. Both load the same `live.js`.
 
 **No child's name is ever published.** The mirror carries shirt numbers only — not names, not player ids. That is enforced by what gets written, not by what the page chooses to display, so there is nothing to find in the payload. *Rotate* makes a new share id and deletes the old node, which kills every link previously sent.
 
-Link previews in text messages are scraped without running JavaScript, so the card is fixed: the title, description and `share-card.png` in `live.html`. iMessage also freezes previews at send time, so a live-updating card in a message thread is not possible on any platform. Tapping through opens a page that does update by itself. If the score must appear in the preview itself, that needs a Cloudflare Worker to inject it server-side — see ROADMAP.md.
+Link previews in text messages are scraped without running JavaScript, so each card is fixed at whatever its file's meta tags say. iMessage also freezes previews at send time, so a live-updating card in a message thread is not possible on any platform. Tapping through opens a page that does update by itself. If the score must appear in the preview itself, that needs a Cloudflare Worker to inject it server-side — see ROADMAP.md.
 
 ## Hosting on GitHub Pages
 

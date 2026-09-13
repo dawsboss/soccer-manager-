@@ -380,3 +380,16 @@ label.field span{display:block;font-size:13px;color:var(--ink-soft);margin-botto
 
 .warn.alert{background:#FBE7E3;border-color:var(--over);color:#6E2317}
 .warn.alert .btn{background:var(--over);color:#fff;border-color:var(--over);flex:none}
+
+.barrow{display:flex;gap:8px;align-items:stretch}
+.barrow .gamebar{flex:1;min-width:0}
+.sharebtn{
+  flex:none;width:48px;display:flex;align-items:center;justify-content:center;
+  background:#fff;border:1px solid var(--line);border-radius:10px;color:var(--field-deep);
+}
+
+/* ---------- crests ---------- */
+.crest{width:44px;height:44px;border-radius:9px;object-fit:contain;background:#fff;flex:none}
+.crest.sm{width:24px;height:24px;border-radius:6px}
+.crest.lg{width:56px;height:56px;border-radius:12px;margin-bottom:8px;display:block}
+.crest.blank{display:flex;align-items:center;justify-content:center;border:1px dashed var(--line);color:var(--ink-soft)}

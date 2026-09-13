@@ -726,6 +726,8 @@ function render() {
   if (!t && teams().length) { ui.teamId = teams()[0].id; }
   const tt = team();
   $('#teamSwitchName').textContent = tt ? (tt.name || 'Untitled team') : 'No team yet';
+  const cr = $('#teamCrest');
+  if (cr) { cr.src = (tt && tt.logo) || ''; cr.hidden = !(tt && tt.logo); }
   $('#wsChipName').textContent = wsCode() || 'none';
   const tabView = ui.view === 'formation' ? 'setup' : ui.view;
   for (const b of document.querySelectorAll('#tabs button')) b.setAttribute('aria-current', String(b.dataset.view === tabView));
@@ -765,7 +767,11 @@ function gameBar(t, m) {
     <span class="gb-name">${esc(m.opponent || 'Unnamed')}${m.date ? ' · ' + shortDate(m.date) : ''} · ${sc.us}–${sc.them}</span>
     ${n > 1 ? `<span class="gb-hint">switch</span>` : ''}
     <svg viewBox="0 0 12 8" width="12" height="8" aria-hidden="true"><path d="M1 1l5 5 5-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
-  </button>`;
+  </button>
+  <button class="sharebtn" data-act="sharesheet" aria-label="Share">
+    <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/>
+      <path d="M8.6 13.5l6.8 4M15.4 6.5l-6.8 4"/></svg></button>`;
 }
 
 function sheetPickGame() {
@@ -777,7 +783,7 @@ function sheetPickGame() {
     return `<button class="opt spread" type="button" data-act="pickgame2" data-id="${g.id}" aria-current="${g.id === cur}">
       <span>${esc(g.opponent || 'Unnamed')}<span class="rowsub">${esc(g.date || '')} · ${mins(elapsedSec(g))} min played${running(g) ? ' · running' : ''}</span></span>
       <span class="pmins">${sc.us}<small>–${sc.them}</small></span></button>
-      ${t.share ? `<button class="btn quiet sm" data-act="copylink" data-v="${esc(gameLink(t, g))}" style="margin:-4px 0 10px">Copy link to this game</button>` : ''}`;
+`;
   }).join('') || '<p class="muted">No games yet.</p>'}
     <button class="btn wide" data-act="newmatch">Add a game</button>`);
 }
@@ -890,7 +896,7 @@ function viewTrack() {
     <span class="gb-hint">change</span></button>`;
 
   return `<div class="stack">
-    ${gameBar(t, m)}
+    <div class="barrow">${gameBar(t, m)}</div>
     ${whoBar}
     ${clockCard(m, now, false)}
     ${scoreCard(t, m)}
@@ -993,7 +999,7 @@ function viewLive() {
     ${m.plan ? `<button class="btn quiet wide" data-act="applyblock" data-start="${(planBlockAt(m, el) || m.plan.blocks[0]).start}" style="margin-bottom:10px">Use the planned lineup</button>` : ''}` : '';
 
   return `<div class="stack">
-    ${gameBar(t, m)}
+    <div class="barrow">${gameBar(t, m)}</div>
     ${clock}
     ${scCard}
     ${planBar}
@@ -1141,7 +1147,7 @@ function viewMatch() {
   const outCount = Object.keys(m.out || {}).length;
 
   return `<div class="stack">
-    ${gameBar(t, m)}
+    <div class="barrow">${gameBar(t, m)}</div>
     ${clock}
     ${warn}
     <div class="split">
@@ -1506,7 +1512,10 @@ function publicDoc(t) {
       if (g.score.us > g.score.them) w++; else if (g.score.us === g.score.them) d++; else l++;
     }
   }
-  return { team: { name: t.name || 'Team' }, games, record: { w, d, l, gf, ga }, updated: nowMs() };
+  return {
+    team: { name: t.name || 'Team', logo: t.logo || null },
+    games, record: { w, d, l, gf, ga }, updated: nowMs()
+  };
 }
 
 let pubTimer;
@@ -1519,9 +1528,9 @@ function schedulePublish() {
   }, 1200);
 }
 
-const shareBase = () => location.href.replace(/[^/]*$/, '') + 'live.html';
-const teamLink = t => t.share ? `${shareBase()}?t=${t.share}` : '';
-const gameLink = (t, m) => t.share ? `${shareBase()}?t=${t.share}&g=${m.id}` : '';
+const shareBase = () => location.href.replace(/[^/]*$/, '');
+const teamLink = t => t.share ? `${shareBase()}live.html?t=${t.share}` : '';
+const gameLink = (t, m) => t.share ? `${shareBase()}game.html?t=${t.share}&g=${m.id}` : '';
 
 /* ---------------- sheets ---------------- */
 function sheetSwitch(pid) {
@@ -1548,8 +1557,7 @@ function sheetSwitch(pid) {
 function sheetShare() {
   const t = team();
   if (!t) return;
-  const list = teamMatches(t.id);
-  const next = list.find(m => gameStatus(m) === 'live') || list[0];
+  const m = match() || teamMatches(t.id)[0];
   openSheet(`<h3>Share ${teamLabel(t)}</h3>
     ${t.share ? `
       <p class="lbl">Follow the season</p>
@@ -1557,10 +1565,10 @@ function sheetShare() {
       <div class="row" style="margin-bottom:16px"><button class="btn sm" data-act="copylink" data-v="${esc(teamLink(t))}">Copy season link</button></div>
       <p class="muted" style="margin-top:0">Text this once. It always shows whatever game is on, plus the season record.</p>
 
-      ${next ? `<p class="lbl">One game — ${esc(next.opponent || 'game')}${next.date ? ' · ' + esc(shortDate(next.date)) : ''}</p>
-      <div class="codebox">${esc(gameLink(t, next))}</div>
-      <div class="row" style="margin-bottom:16px"><button class="btn sm" data-act="copylink" data-v="${esc(gameLink(t, next))}">Copy game link</button></div>
-      <p class="muted" style="margin-top:0">Shows kick-off time, where it is, who is on and the minutes. Copy a different game from the game switcher.</p>` : ''}
+      ${m ? `<p class="lbl">This game — ${esc(m.opponent || 'game')}${m.date ? ' · ' + esc(shortDate(m.date)) : ''}</p>
+      <div class="codebox">${esc(gameLink(t, m))}</div>
+      <div class="row" style="margin-bottom:16px"><button class="btn sm" data-act="copylink" data-v="${esc(gameLink(t, m))}">Copy link to this game</button></div>
+      <p class="muted" style="margin-top:0">Kick-off time, where it is, who is on and the minutes. Switch games in the bar above to share a different one.</p>` : ''}
 
       <p class="muted">Anyone with a link can read it. Nobody can change anything, and no child's name is published — only shirt numbers.</p>
       <button class="btn danger wide" data-act="rotateshare">Make a new link and kill the old one</button>`
@@ -1882,9 +1890,45 @@ function sheetPlan() {
     <button class="btn wide" data-act="closesheet" style="margin-top:12px">Done</button>`);
 }
 
+/* Resize to 192px and re-encode before storing, so a 4MB phone photo does not
+   end up in the database and get republished on every save. */
+function pickLogo(teamId) {
+  const inp = document.createElement('input');
+  inp.type = 'file'; inp.accept = 'image/*';
+  inp.onchange = () => {
+    const f = inp.files[0]; if (!f) return;
+    const r = new FileReader();
+    r.onload = () => {
+      const im = new Image();
+      im.onload = () => {
+        const S = 192, c = document.createElement('canvas');
+        c.width = c.height = S;
+        const ctx = c.getContext('2d');
+        const sc = Math.min(S / im.width, S / im.height);
+        const w = im.width * sc, h = im.height * sc;
+        ctx.drawImage(im, (S - w) / 2, (S - h) / 2, w, h);
+        let url = c.toDataURL('image/webp', 0.85);
+        if (url.length > 60000) url = c.toDataURL('image/jpeg', 0.8);
+        if (url.length > 90000) { toast('That image is too large'); return; }
+        commit(`teams/${teamId}/logo`, url);
+        toast('Crest saved');
+      };
+      im.onerror = () => toast('Could not read that image');
+      im.src = r.result;
+    };
+    r.readAsDataURL(f);
+  };
+  inp.click();
+}
+
 function sheetTeam(t) {
   openSheet(`<h3>${t ? 'Edit team' : 'New team'}</h3>
-    ${t ? `<p class="muted" style="margin-top:0">${teamStats(t)}</p>` : ''}
+    ${t ? `<p class="muted" style="margin-top:0">${teamStats(t)}</p>
+    <div class="row" style="margin-bottom:14px">
+      ${t.logo ? `<img class="crest" src="${esc(t.logo)}" alt="">` : '<span class="crest blank">—</span>'}
+      <span style="flex:1"><button class="btn quiet sm" data-act="picklogo" data-id="${t.id}">${t.logo ? 'Change crest' : 'Add a crest'}</button>
+      ${t.logo ? `<button class="btn quiet sm" data-act="droplogo" data-id="${t.id}">Remove</button>` : ''}</span>
+    </div>` : ''}
     <label class="field"><span>Name</span><input type="text" id="tName" value="${esc(t && t.name ? t.name : '')}" placeholder="Lakeside Thunder G14"></label>
     <button class="btn wide" data-act="saveteam" data-id="${t ? t.id : ''}">${t ? 'Save changes' : 'Create team'}</button>
     ${t ? `<div style="margin-top:8px"><button class="btn danger wide" data-act="delteam" data-id="${t.id}">Delete this team and its games</button></div>` : ''}`);
@@ -2036,6 +2080,8 @@ document.addEventListener('click', e => {
     else { const id = uid(); commit(`teams/${id}`, { id, name, players: {} }); ui.teamId = id; }
     closeSheet(); render(); return;
   }
+  if (a === 'picklogo') { pickLogo(d.id); return; }
+  if (a === 'droplogo') { drop(`teams/${d.id}/logo`); closeSheet(); return; }
   if (a === 'delteam') {
     const dt = state.teams[d.id];
     if (!confirm(`Delete "${dt && dt.name ? dt.name : 'Untitled team'}" (${teamStats(dt)}) and every game with it?`)) return;
