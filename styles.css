@@ -393,3 +393,24 @@ label.field span{display:block;font-size:13px;color:var(--ink-soft);margin-botto
 .crest.sm{width:24px;height:24px;border-radius:6px}
 .crest.lg{width:56px;height:56px;border-radius:12px;margin-bottom:8px;display:block}
 .crest.blank{display:flex;align-items:center;justify-content:center;border:1px dashed var(--line);color:var(--ink-soft)}
+
+.ver{font-family:"Barlow",sans-serif;font-size:11px;font-weight:500;opacity:.55;margin-left:6px;vertical-align:2px}
+.ver[data-stale="1"]{opacity:1;color:#FFD9A0}
+.ver[data-stale="1"]::after{content:" cached"}
+
+/* ---------- shot map ---------- */
+.minipitch{position:relative;width:100%;aspect-ratio:68/100;max-width:320px;margin:0 auto;
+  background:var(--field);border-radius:var(--r);overflow:hidden}
+.minipitch svg{position:absolute;inset:0;width:100%;height:100%}
+.minipitch .dot{position:absolute;transform:translate(-50%,-50%);
+  width:16px;height:16px;border-radius:50%;padding:0;
+  border:2px solid #fff;background:transparent}
+.minipitch .dot[data-side="us"]{border-color:#fff}
+.minipitch .dot[data-side="us"][data-on="1"]{background:#fff}
+.minipitch .dot[data-side="them"]{border-color:var(--owed)}
+.minipitch .dot[data-side="them"][data-on="1"]{background:var(--owed)}
+
+.tallylbl .conv{display:block;font-size:11px;opacity:.7;margin-top:1px}
+.possbar{display:flex}
+.possbar i{background:var(--field)}
+.possbar u{display:block;height:100%;background:repeating-linear-gradient(45deg,var(--line),var(--line) 3px,#fff 3px,#fff 6px)}

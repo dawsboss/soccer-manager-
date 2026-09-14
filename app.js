@@ -2,6 +2,16 @@
    Static app. Data lives in localStorage, and mirrors to Firebase Realtime
    Database when a config + workspace code are present. */
 
+const BUILD = '23';
+const BUILT = '2026-09-13';
+/* index.html carries the build it was published with. If this file is newer, the
+   browser handed us a cached page — the exact failure that has eaten hours. */
+const pageBuild = () => {
+  const m = document.querySelector('meta[name="build"]');
+  return m ? m.content : null;
+};
+const stale = () => { const p = pageBuild(); return p !== null && p !== BUILD; };
+
 const LS_DATA = 'sm.data.v1';
 const LS_UI = 'sm.ui.v1';
 const LS_WS = 'sm.workspace';
@@ -302,6 +312,31 @@ function playedSec(m, pid, now = nowMs()) {
   for (const [, s] of stintsOf(m, pid)) { const off = s.off == null ? e : s.off; t += Math.max(0, off - s.on); }
   return t;
 }
+/* Match seconds <-> wall clock. Periods already store epoch milliseconds, so
+   every event has a real timestamp — which is what lines events up with video. */
+function absAt(m, sec) {
+  let acc = 0, last = null;
+  for (const s of segments(m)) {
+    if (!s.start) continue;
+    last = s;
+    const dur = Math.floor(((s.end || nowMs()) - s.start) / 1000);
+    if (acc + dur >= sec) return s.start + (sec - acc) * 1000;
+    acc += dur;
+  }
+  return last ? last.start + (sec - acc) * 1000 : null;
+}
+function secFromAbs(m, ms) {
+  let acc = 0;
+  for (const s of segments(m)) {
+    if (!s.start) continue;
+    const end = s.end || nowMs();
+    if (ms < s.start) return acc;
+    if (ms <= end) return acc + Math.floor((ms - s.start) / 1000);
+    acc += Math.floor((end - s.start) / 1000);
+  }
+  return acc;
+}
+
 function spellSec(m, pid, now) {
   const o = openStint(m, pid);
   return o ? Math.max(0, elapsedSec(m, now) - o[1].on) : null;
@@ -319,14 +354,23 @@ function score(m) {
   return { us: g.filter(x => x.side === 'us').length, them: g.filter(x => x.side === 'them').length };
 }
 
+/* `who` spells out what a side means for that kind. It is not the same for all
+   of them: a corner is credited to whoever takes it, a foul to whoever gave it
+   away. Leaving that implicit is what makes these ambiguous at the sideline. */
 const EVENTS = [
-  { k: 'corner', label: 'Corners' },
-  { k: 'foul', label: 'Fouls' },
-  { k: 'throw', label: 'Throw-ins' },
-  { k: 'goalkick', label: 'Goal kicks' }
+  { k: 'corner', label: 'Corners', who: 'won by', attr: 'Who took it' },
+  { k: 'foul', label: 'Fouls', who: 'given away by', attr: 'Who committed it' },
+  { k: 'throw', label: 'Throw-ins', who: 'taken by', attr: 'Who took it' },
+  { k: 'goalkick', label: 'Goal kicks', who: 'taken by', attr: 'Who took it' },
+  { k: 'keeper', label: 'Keeper claims', who: 'grabbed by', attr: 'Which keeper' }
 ];
-const evLabel = k => (EVENTS.find(e => e.k === k) || {}).label || k;
+const evOf = k => EVENTS.find(e => e.k === k) || { label: k, who: '', attr: 'Who' };
+const evLabel = k => evOf(k).label;
 const tracked = t => EVENTS.filter(e => ((t.track || {})[e.k] !== false));
+/* Off by default. Tapping every turnover while actually watching a game is not
+   realistic, so possession is expected to arrive from film instead. The model
+   and the editor stay put for whenever that lands. */
+const possOn = t => (t.track || {}).possession === true;
 const evList = m => Object.entries(m.events || {}).map(([id, x]) => ({ id, ...x })).sort((a, b) => a.t - b.t);
 const evCount = (m, k, side) => evList(m).filter(x => x.kind === k && x.side === side).length;
 
@@ -345,15 +389,20 @@ function shotTally(m) {
 /* Possession is the gaps between turnovers: whoever won it last holds it until
    the next tap. Only as honest as the tapping, which is why the card says so. */
 const possList = m => Object.entries(m.poss || {}).map(([id, x]) => ({ id, ...x })).sort((a, b) => a.t - b.t);
-function possession(m, now = nowMs()) {
+/* A clear answered by a clear answered by a clear is not possession, and with
+   young players that churn is most of the game. Anything held for less than the
+   threshold counts as contested and is kept out of both teams' share. */
+function possession(m, now = nowMs(), minSec) {
   const evs = possList(m), end = elapsedSec(m, now);
-  let us = 0, them = 0;
+  const MIN = minSec != null ? minSec : (team() && team().possMin != null ? Number(team().possMin) : 5);
+  let us = 0, them = 0, contested = 0;
   evs.forEach((e, i) => {
     const to = i + 1 < evs.length ? evs[i + 1].t : end;
     const d = Math.max(0, to - e.t);
-    if (e.to === 'us') us += d; else them += d;
+    if (d < MIN) contested += d;
+    else if (e.to === 'us') us += d; else them += d;
   });
-  return { us, them, total: us + them, changes: evs.length };
+  return { us, them, contested, settled: us + them, total: us + them + contested, changes: evs.length, min: MIN };
 }
 
 function plannedSec(m, pid) { return (m.planned && m.planned[pid] != null ? Number(m.planned[pid]) : 0) * 60; }
@@ -727,6 +776,8 @@ function render() {
   if (!t && teams().length) { ui.teamId = teams()[0].id; }
   const tt = team();
   $('#teamSwitchName').textContent = tt ? (tt.name || 'Untitled team') : 'No team yet';
+  const vr = $('#ver');
+  if (vr) { vr.textContent = 'v' + BUILD; vr.dataset.stale = stale() ? '1' : '0'; }
   const cr = $('#teamCrest');
   if (cr) { cr.src = (tt && tt.logo) || ''; cr.hidden = !(tt && tt.logo); }
   $('#wsChipName').textContent = wsCode() || 'none';
@@ -864,12 +915,28 @@ function viewTrack() {
       <span>${x.side === 'us' ? `<span class="on">${us}</span>` : `<span class="off">${them}</span>`} ${x.onTarget ? 'on target' : 'off target'}${x.pid ? ' — ' + name(x.pid) : ''}${x.by ? ` <span class="muted">· ${esc(x.by)}</span>` : ''}</span>
       <span class="muted">edit</span></button>`).join('')}</div>` : ''}</div>`;
 
+  const located = shotList(m).filter(x => x.xy && x.xy.x != null);
+  const mapCard = located.length ? `<div class="card"><div class="spread" style="margin-bottom:10px">
+      <h2>Shot map</h2><span class="muted">${located.length} of ${shotList(m).length} placed</span></div>
+    <div class="minipitch">
+      <svg viewBox="0 0 68 100" preserveAspectRatio="none" aria-hidden="true">
+        <g fill="none" stroke="rgba(255,255,255,.45)" stroke-width=".5">
+          <rect x="2" y="2" width="64" height="96"/><line x1="2" y1="50" x2="66" y2="50"/>
+          <circle cx="34" cy="50" r="9"/><rect x="16" y="2" width="36" height="15"/>
+          <rect x="26" y="2" width="16" height="6"/></g></svg>
+      ${located.map(x => `<button class="dot" data-act="fixshot" data-id="${x.id}"
+        data-side="${x.side}" data-on="${x.onTarget ? 1 : 0}"
+        style="left:${clamp(x.xy.x, 2, 98)}%;top:${clamp(x.xy.y, 2, 98)}%"
+        title="${mmss(x.t)}"></button>`).join('')}
+    </div>
+    <p class="muted" style="margin-bottom:0">Both teams shown attacking upward. Filled means on target.</p></div>` : '';
+
   const rows = tracked(t);
   const setCard = `<div class="card"><div class="spread" style="margin-bottom:10px">
       <h2>Set pieces and fouls</h2><button class="btn quiet sm" data-act="trackcfg">Choose</button></div>
     ${rows.length ? `<div class="tallygrid">
       <span></span><span class="tallyhead">${us}</span><span class="tallyhead">${them}</span>
-      ${rows.map(e => `<span class="tallylbl">${e.label}</span>
+      ${rows.map(e => `<span class="tallylbl">${e.label}<span class="conv">${e.who}</span></span>
         <button class="tallybtn" data-act="ev" data-kind="${e.k}" data-side="us"><b>${evCount(m, e.k, 'us')}</b><span>tap</span></button>
         <button class="tallybtn" data-act="ev" data-kind="${e.k}" data-side="them"><b>${evCount(m, e.k, 'them')}</b><span>tap</span></button>`).join('')}
     </div>` : '<p class="muted" style="margin:0">Nothing switched on. Tap Choose to pick what you want to count.</p>'}
@@ -878,13 +945,18 @@ function viewTrack() {
       <span>${x.side === 'us' ? `<span class="on">${us}</span>` : `<span class="off">${them}</span>`} ${esc(evLabel(x.kind).replace(/s$/, '').toLowerCase())}${x.pid ? ' — ' + name(x.pid) : ''}${x.by ? ` <span class="muted">· ${esc(x.by)}</span>` : ''}</span>
       <span class="muted">edit</span></button>`).join('')}</div>` : ''}</div>`;
 
+  const showPoss = possOn(t) || possList(m).length > 0;
   const po = possession(m, now);
-  const pct = po.total ? Math.round(po.us / po.total * 100) : 50;
+  const pct = po.settled ? Math.round(po.us / po.settled * 100) : 50;
+  const cpct = po.total ? Math.round(po.contested / po.total * 100) : 0;
   const possCard = `<div class="card"><div class="spread" style="margin-bottom:10px">
       <h2>Possession</h2><span class="muted">${po.changes} change${po.changes === 1 ? '' : 's'}</span></div>
-    ${po.total ? `<div class="possbar"><i style="width:${pct}%"></i></div>
-      <div class="spread" style="margin:6px 0 12px"><span>${pct}% ${us}</span><span class="muted">${100 - pct}% ${them}</span></div>`
-      : '<p class="muted" style="margin:0 0 12px">Tap each time the ball changes hands and crosses halfway. Nothing recorded yet.</p>'}
+    ${po.total ? `<div class="possbar"><i style="width:${Math.round(po.us / po.total * 100)}%"></i><u style="width:${cpct}%"></u></div>
+      <div class="spread" style="margin:6px 0 4px"><span>${pct}% ${us}</span><span class="muted">${100 - pct}% ${them}</span></div>
+      <p class="muted" style="margin:0 0 10px">Of settled play. ${cpct}% of the game was scrappy — held under ${po.min}s and counted for neither side.</p>
+      <div class="chips" style="margin-bottom:12px"><span class="muted" style="align-self:center">scrappy under</span>
+        ${[3, 5, 8, 12].map(v => `<button class="chip" type="button" data-act="setpossmin" data-v="${v}" aria-pressed="${po.min === v}">${v}s</button>`).join('')}</div>`
+      : '<p class="muted" style="margin:0 0 12px">Tap each time the ball properly changes hands. Nothing recorded yet.</p>'}
     <div class="row"><button class="btn sm" data-act="poss" data-side="us" style="flex:1">${us} won it</button>
       <button class="btn quiet sm" data-act="poss" data-side="them" style="flex:1">${them} won it</button></div>
     ${po.changes ? `<button class="linkbtn dark" data-act="undoposs">Undo the last one</button>` : ''}
@@ -892,7 +964,7 @@ function viewTrack() {
       <span class="t">${mmss(x.t)}</span>
       <span>${x.to === 'us' ? `<span class="on">${us}</span>` : `<span class="off">${them}</span>`} won it${x.pid ? ' — ' + name(x.pid) : ''}${x.by ? ` <span class="muted">· ${esc(x.by)}</span>` : ''}</span>
       <span class="muted">edit</span></button>`).join('')}</div>` : ''}
-    <p class="muted" style="margin-bottom:0">Only as accurate as the tapping — best done by whoever is not making the subs.</p></div>`;
+    <p class="muted" style="margin-bottom:0">${possOn(t) ? 'Only as accurate as the tapping — best done by whoever is not making the subs.' : 'Switched off for live tracking. These are older taps, still editable.'}</p></div>`;
 
   const who = whoAmI();
   const whoBar = `<button class="gamebar" data-act="setwho">
@@ -907,8 +979,9 @@ function viewTrack() {
     ${scoreCard(t, m)}
     ${goalsCard}
     ${shotsCard}
+    ${mapCard}
     ${setCard}
-    ${possCard}
+    ${showPoss ? possCard : ''}
     ${Object.keys(trackersIn(m)).length > 1 ? `<div class="card"><h2 style="margin-bottom:8px">Who logged what</h2>
       <p class="muted" style="margin-top:0">More than one person has been tapping. If someone double-counted, you can drop everything they logged without touching anyone else's.</p>
       <button class="btn quiet wide" data-act="trackerclean">Review by tracker</button></div>` : ''}
@@ -1349,6 +1422,12 @@ function viewSetup() {
       <p class="muted" style="margin-top:0">A read-only page showing shirt numbers, never names. Two links: one for the season, one for a single game.</p>
       <button class="btn quiet wide" data-act="sharesheet">${team() && team().share ? 'Manage links' : 'Set up sharing'}</button></div>
 
+    <div class="card"><h2 style="margin-bottom:8px">Version</h2>
+      <div class="spread"><span>Build <b>v${BUILD}</b> <span class="muted">· ${BUILT}</span></span>
+        <button class="btn quiet sm" data-act="hardreload">Force refresh</button></div>
+      ${stale() ? `<div class="warn alert" style="margin-top:10px">This page is cached at v${esc(pageBuild())} but the code is v${BUILD}. Force refresh to catch up.</div>`
+      : '<p class="muted" style="margin-bottom:0">Page and code agree, so you are on the latest push.</p>'}</div>
+
     <div class="card"><h2 style="margin-bottom:8px">Backup</h2>
       <div class="row"><button class="btn quiet" data-act="export">Download a copy</button>
       <button class="btn quiet" data-act="import">Load from a file</button></div>
@@ -1481,6 +1560,7 @@ function tapPlayer(pid) {
 /* Published to its own node under a share id. Contains shirt numbers and never
    a name, so the public tier is private by construction rather than by the UI
    choosing to hide things. */
+const chipName = p => `${p.number ? esc(p.number) + ' ' : ''}${esc(p.name)}`;
 const shirtOf = p => String((p && p.number) ?? '').trim() || '–';
 const gameStatus = m => (m.currentHalf || 1) > (m.periodCount || 2) ? 'done'
   : (elapsedSec(m) > 0 || running(m)) ? 'live' : 'upcoming';
@@ -1611,7 +1691,7 @@ function sheetPoss(id) {
     </div>
     ${x.to === 'us' ? `<p class="lbl">Who made it (optional)</p>
     <div class="chips" style="margin-bottom:14px">
-      ${squad(t, m).map(p => `<button class="chip" type="button" data-act="pickscorer" data-grp="winner" data-v="${p.id}" aria-pressed="${x.pid === p.id}">${esc(p.name)}</button>`).join('')}
+      ${squad(t, m).map(p => `<button class="chip" type="button" data-act="pickscorer" data-grp="winner" data-v="${p.id}" aria-pressed="${x.pid === p.id}">${chipName(p)}</button>`).join('')}
     </div>` : ''}
     <button class="btn wide" data-act="saveposs" data-id="${id}">Save</button>
     <div style="margin-top:8px"><button class="btn danger wide" data-act="delposs" data-id="${id}">Delete</button></div>`);
@@ -1623,9 +1703,10 @@ function sheetEvent(id) {
   const ours = x.side === 'us';
   openSheet(`<h3>${esc(evLabel(x.kind).replace(/s$/, ''))} at ${mmss(x.t)} — ${ours ? teamLabel(t) : esc(m.opponent || 'Them')}</h3>
     <label class="field"><span>Time</span><input type="text" id="evT" value="${mmss(x.t)}" inputmode="numeric"></label>
-    ${ours ? `<p class="lbl">${x.kind === 'foul' ? 'Who committed it' : 'Who took it'} (optional)</p>
+    <p class="muted" style="margin-top:-6px">Counted as ${esc(evOf(x.kind).who)} ${ours ? teamLabel(t) : esc(m.opponent || 'them')}.</p>
+    ${ours ? `<p class="lbl">${esc(evOf(x.kind).attr)} (optional)</p>
     <div class="chips" style="margin-bottom:14px">
-      ${squad(t, m).map(p => `<button class="chip" type="button" data-act="pickscorer" data-grp="who" data-v="${p.id}" aria-pressed="${x.pid === p.id}">${esc(p.name)}</button>`).join('')}
+      ${squad(t, m).map(p => `<button class="chip" type="button" data-act="pickscorer" data-grp="who" data-v="${p.id}" aria-pressed="${x.pid === p.id}">${chipName(p)}</button>`).join('')}
     </div>` : '<p class="muted">Opponent event — nothing to attribute.</p>'}
     <button class="btn wide" data-act="saveev" data-id="${id}">Save</button>
     <div style="margin-top:8px"><button class="btn danger wide" data-act="delev" data-id="${id}">Delete</button></div>`);
@@ -1638,6 +1719,11 @@ function sheetTrackCfg() {
     <div class="chips" style="margin-bottom:16px">
       ${EVENTS.map(e => `<button class="chip" type="button" data-act="togglechip" data-grp="track" data-v="${e.k}" aria-pressed="${(t.track || {})[e.k] !== false}">${e.label}</button>`).join('')}
     </div>
+    <p class="lbl">Possession</p>
+    <p class="muted" style="margin-top:0">Off by default. Catching every turnover while watching the game is hard enough that a half-tapped percentage misleads more than it informs — better taken from film. Anything already recorded stays visible and editable either way.</p>
+    <div class="chips" style="margin-bottom:16px">
+      <button class="chip" type="button" data-act="togglechip" data-grp="track" data-v="possession" aria-pressed="${possOn(t)}">Track it live</button>
+    </div>
     <button class="btn wide" data-act="savetrackcfg">Save</button>`);
 }
 
@@ -1648,6 +1734,7 @@ function sheetShot(id) {
   const roster = squad(t, m).filter(p => ours ? true : false);
   openSheet(`<h3>Shot at ${mmss(x.t)} — ${ours ? teamLabel(t) : esc(m.opponent || 'Them')}</h3>
     <label class="field"><span>Time</span><input type="text" id="shT" value="${mmss(x.t)}" inputmode="numeric"></label>
+    ${absAt(m, x.t) ? `<p class="muted" style="margin-top:-6px">${new Date(absAt(m, x.t)).toLocaleTimeString()} real time${x.xy ? ` · placed at ${Math.round(x.xy.x)},${Math.round(x.xy.y)}` : ''}</p>` : ''}
     <p class="lbl">Where it went</p>
     <div class="chips" style="margin-bottom:14px">
       <button class="chip" type="button" data-act="pickone" data-grp="target" data-v="1" aria-pressed="${!!x.onTarget}">On target</button>
@@ -1655,7 +1742,7 @@ function sheetShot(id) {
     </div>
     ${ours ? `<p class="lbl">Who took it</p>
     <div class="chips" style="margin-bottom:14px">
-      ${roster.map(p => `<button class="chip" type="button" data-act="pickscorer" data-grp="shooter" data-v="${p.id}" aria-pressed="${x.pid === p.id}">${esc(p.name)}</button>`).join('')}
+      ${roster.map(p => `<button class="chip" type="button" data-act="pickscorer" data-grp="shooter" data-v="${p.id}" aria-pressed="${x.pid === p.id}">${chipName(p)}</button>`).join('')}
     </div>` : '<p class="muted">Opponent shot — nothing to attribute.</p>'}
     <button class="btn wide" data-act="saveshot" data-id="${id}">Save</button>
     <div style="margin-top:8px"><button class="btn danger wide" data-act="delshot" data-id="${id}">Delete this shot</button></div>`);
@@ -1670,11 +1757,11 @@ function sheetGoal(gid) {
     <label class="field"><span>Time</span><input type="text" id="glT" value="${mmss(g.t)}" inputmode="numeric"></label>
     ${ours ? `<p class="lbl">Scorer</p>
     <div class="chips" style="margin-bottom:14px">
-      ${roster.map(p => `<button class="chip" type="button" data-act="pickscorer" data-grp="scorer" data-v="${p.id}" aria-pressed="${g.pid === p.id}">${esc(p.name)}</button>`).join('')}
+      ${roster.map(p => `<button class="chip" type="button" data-act="pickscorer" data-grp="scorer" data-v="${p.id}" aria-pressed="${g.pid === p.id}">${chipName(p)}</button>`).join('')}
     </div>
     <p class="lbl">Assist</p>
     <div class="chips" style="margin-bottom:14px">
-      ${roster.map(p => `<button class="chip" type="button" data-act="pickscorer" data-grp="assist" data-v="${p.id}" aria-pressed="${g.assist === p.id}">${esc(p.name)}</button>`).join('')}
+      ${roster.map(p => `<button class="chip" type="button" data-act="pickscorer" data-grp="assist" data-v="${p.id}" aria-pressed="${g.assist === p.id}">${chipName(p)}</button>`).join('')}
     </div>` : '<p class="muted">Opponent goal — nothing to attribute.</p>'}
     <button class="btn wide" data-act="savegoal" data-id="${gid}">Save</button>
     <div style="margin-top:8px"><button class="btn danger wide" data-act="delgoal" data-id="${gid}">Delete this goal</button></div>`);
@@ -1787,12 +1874,12 @@ function sheetPlayer(p) {
 
     <p class="lbl">Plays better alongside</p>
     <div class="chips" style="margin-bottom:14px">
-      ${others.map(o => `<button class="chip" type="button" data-act="togglechip" data-grp="pair" data-v="${o.id}" aria-pressed="${!!pairs[o.id]}">${esc(o.name)}</button>`).join('') || '<span class="muted">Add more players first.</span>'}
+      ${others.map(o => `<button class="chip" type="button" data-act="togglechip" data-grp="pair" data-v="${o.id}" aria-pressed="${!!pairs[o.id]}">${chipName(o)}</button>`).join('') || '<span class="muted">Add more players first.</span>'}
     </div>
 
     <p class="lbl">Keep apart from</p>
     <div class="chips" style="margin-bottom:14px">
-      ${others.map(o => `<button class="chip warn-chip" type="button" data-act="togglechip" data-grp="avoid" data-v="${o.id}" aria-pressed="${!!avoid[o.id]}">${esc(o.name)}</button>`).join('') || '<span class="muted">Add more players first.</span>'}
+      ${others.map(o => `<button class="chip warn-chip" type="button" data-act="togglechip" data-grp="avoid" data-v="${o.id}" aria-pressed="${!!avoid[o.id]}">${chipName(o)}</button>`).join('') || '<span class="muted">Add more players first.</span>'}
     </div>
 
     <label class="field"><span>Notes</span><textarea id="epNote" rows="2" placeholder="Strong left foot, fades after 25 minutes">${esc(p.note || '')}</textarea></label>
@@ -2026,6 +2113,10 @@ document.addEventListener('click', e => {
   }
   if (a === 'delev') { drop(`matches/${m.id}/events/${d.id}`); closeSheet(); return; }
   if (a === 'trackcfg') { sheetTrackCfg(); return; }
+  if (a === 'hardreload') {
+    location.replace(location.pathname + '?r=' + Date.now());
+    return;
+  }
   if (a === 'sharesheet') { sheetShare(); return; }
   if (a === 'makeshare') {
     commit(`teams/${t.id}/share`, 's' + uid() + uid());
@@ -2073,6 +2164,7 @@ document.addEventListener('click', e => {
     commit(`teams/${t.id}/track`, cfg); closeSheet(); return;
   }
   if (a === 'poss') { commit(`matches/${m.id}/poss/${uid()}`, { t: elapsedSec(m), to: d.side, ...stampedBy() }); return; }
+  if (a === 'setpossmin') { commit(`teams/${t.id}/possMin`, Number(d.v)); return; }
   if (a === 'fixposs') { sheetPoss(d.id); return; }
   if (a === 'saveposs') {
     const x = (m.poss || {})[d.id]; if (!x) return;
