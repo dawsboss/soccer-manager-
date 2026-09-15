@@ -414,3 +414,25 @@ label.field span{display:block;font-size:13px;color:var(--ink-soft);margin-botto
 .possbar{display:flex}
 .possbar i{background:var(--field)}
 .possbar u{display:block;height:100%;background:repeating-linear-gradient(45deg,var(--line),var(--line) 3px,#fff 3px,#fff 6px)}
+
+.subtabs{background:rgba(0,0,0,.18);margin:0 -10px;padding:0 10px}
+.subtabs button{font-size:13px}
+.backbtn{flex:none;width:40px;display:flex;align-items:center;justify-content:center;
+  background:#fff;border:1px solid var(--line);border-radius:10px;color:var(--ink-soft)}
+.statgrid{display:grid;gap:8px;align-items:center}
+.statgrid b{font-family:"Barlow Condensed",sans-serif;font-size:21px;text-align:center;font-variant-numeric:tabular-nums}
+
+/* ---------- something changed ---------- */
+@keyframes bumpflash{
+  0%{background:#7FD6A6;color:#0E3B25;transform:scale(1)}
+  25%{transform:scale(1.14)}
+  100%{background:transparent;transform:scale(1)}
+}
+[data-bump="1"]{animation:bumpflash 1.4s ease-out;border-radius:6px}
+@media (prefers-reduced-motion:reduce){[data-bump="1"]{animation:none}}
+
+.rolebar{background:var(--field-wash);border:1px solid var(--field);border-radius:var(--r);
+  padding:9px 12px;font-size:13.5px;margin-bottom:12px;color:#11402A}
+body[data-role="parent"] .tallybtn,
+body[data-role="parent"] .lrspot,
+body[data-role="parent"] .scoreside .btn{display:none}
