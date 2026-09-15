@@ -2,7 +2,7 @@
    Static app. Data lives in localStorage, and mirrors to Firebase Realtime
    Database when a config + workspace code are present. */
 
-const BUILD = '24';
+const BUILD = '28';
 const BUILT = '2026-09-13';
 /* index.html carries the build it was published with. If this file is newer, the
    browser handed us a cached page — the exact failure that has eaten hours. */
@@ -17,8 +17,10 @@ const LS_UI = 'sm.ui.v1';
 const LS_WS = 'sm.workspace';
 const LS_WHO = 'sm.tracker';
 
-let state = { teams: {}, matches: {} };
-let ui = { view: 'live', teamId: null, matchId: null, picked: null, dragging: false, editFid: null, sortBy: 'need', plan: null };
+/* The workspace node was already organisation-shaped — many teams, their
+   matches — so membership hangs off it directly and nothing has to migrate. */
+let state = { teams: {}, matches: {}, access: {} };
+let ui = { view: 'matches', gameView: 'live', teamId: null, matchId: null, picked: null, dragging: false, editFid: null, sortBy: 'need', plan: null };
 let lastLog = [];
 
 const ROLES = ['GK', 'Back', 'Mid', 'Wing', 'Forward'];
@@ -186,7 +188,7 @@ function saveLocal() {
   try { localStorage.setItem(dataKey(), JSON.stringify(state)); } catch (e) { }
 }
 function saveUi() {
-  try { localStorage.setItem(LS_UI, JSON.stringify({ view: ui.view, teamId: ui.teamId, matchId: ui.matchId, sortBy: ui.sortBy, plan: ui.plan })); } catch (e) { }
+  try { localStorage.setItem(LS_UI, JSON.stringify({ view: ui.view, teamId: ui.teamId, matchId: ui.matchId, sortBy: ui.sortBy, plan: ui.plan, gameView: ui.gameView })); } catch (e) { }
 }
 function loadLocal() {
   try {
@@ -197,9 +199,12 @@ function loadLocal() {
       localStorage.removeItem(LS_DATA);
     }
     const d = JSON.parse(localStorage.getItem(dataKey()) || 'null');
-    if (d) state = { teams: d.teams || {}, matches: d.matches || {} };
+    if (d) state = { teams: d.teams || {}, matches: d.matches || {}, access: d.access || {} };
     const u = JSON.parse(localStorage.getItem(LS_UI) || 'null');
     if (u) Object.assign(ui, u);
+    // pre-v26 the game screens were top-level tabs
+    const oldTabs = { live: 'live', track: 'track', match: 'pitch' };
+    if (oldTabs[ui.view]) { ui.gameView = oldTabs[ui.view]; ui.view = 'game'; }
     // a staged batch belongs to one game; drop it if we are somewhere else
     if (ui.plan && ui.plan.matchId !== ui.matchId) ui.plan = null;
   } catch (e) { }
@@ -250,6 +255,14 @@ async function initAuth() {
 
     authMod.onAuthStateChanged(fbAuth, u => {
       me = u ? { uid: u.uid, name: u.displayName || (u.email || '').split('@')[0] || 'Signed in', email: u.email || '' } : null;
+      if (me && fb) {
+        // put myself on the roster of people so an admin has someone to assign
+        const known = (acc().members || {})[me.uid];
+        if (!known || known.name !== me.name || known.email !== me.email) {
+          quiet(`access/members/${me.uid}`, { name: me.name, email: me.email, at: (known && known.at) || nowMs() });
+          saveLocal();
+        }
+      }
       render();
     });
   } catch (e) { console.warn('auth unavailable', e); }
@@ -282,8 +295,14 @@ async function initSync() {
     dbMod.onValue(dbMod.ref(db, fb.base), snap => {
       const v = snap.val();
       if (!v) pushAll();
-      else { state = { teams: v.teams || {}, matches: v.matches || {} }; saveLocal(); render(); }
+      else { state = { teams: v.teams || {}, matches: v.matches || {}, access: v.access || {} }; saveLocal(); render(); }
       schedulePublish();   // republish on load, so a fixed config heals itself
+
+      // membership is small and read whole; it does not need child-level listeners
+      dbMod.onValue(dbMod.ref(db, fb.base + '/access'), cs => {
+        state.access = cs.val() || {};
+        saveLocal(); render();
+      });
 
       for (const coll of ['teams', 'matches']) {
         const r = dbMod.ref(db, fb.base + '/' + coll);
@@ -325,6 +344,44 @@ function remoteDel(path) { if (fb) fb.remove(fb.ref(fb.db, fb.base + '/' + path)
 function quiet(path, value) { setDeep(state, path, value); remoteSet(path, value); }
 function commit(path, value) { setDeep(state, path, value); saveLocal(); remoteSet(path, value); render(); schedulePublish(); }
 function drop(path) { delDeep(state, path); saveLocal(); remoteDel(path); render(); schedulePublish(); }
+
+/* ---------------- roles ---------------- */
+/* Roles are derived from where a uid appears, never stored as a string on the
+   user — a role string is a second source of truth that goes stale the moment
+   someone changes team. Nothing is enforced here yet; the rules do that. */
+const acc = () => state.access || {};
+const members = () => Object.entries(acc().members || {}).map(([uid, v]) => ({ uid, ...v }))
+  .sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+const anyAdmins = () => Object.keys(acc().admins || {}).length > 0;
+const isAdmin = uid => !!(uid && (acc().admins || {})[uid]);
+const teamAccess = tid => ((acc().teams || {})[tid] || {});
+const isCoach = (tid, uid) => !!(uid && (isAdmin(uid) || (teamAccess(tid).coaches || {})[uid]));
+const isTracker = (tid, uid) => !!(uid && (teamAccess(tid).trackers || {})[uid]);
+function isGuardian(tid, uid) {
+  if (!uid) return false;
+  const t = state.teams[tid];
+  return Object.values((t && t.players) || {}).some(p => ((p.guardians || {})[uid]));
+}
+function roleIn(tid, uid) {
+  if (!uid) return null;
+  if (isAdmin(uid)) return 'admin';
+  if (isCoach(tid, uid)) return 'coach';
+  if (isTracker(tid, uid)) return 'tracker';
+  if (isGuardian(tid, uid)) return 'parent';
+  return null;
+}
+const ROLE_LABEL = { admin: 'Org admin', coach: 'Coach', tracker: 'Tracker', parent: 'Parent' };
+
+/* My role here. Nobody is locked out by an empty membership list: until someone
+   is actually given a role, everyone keeps the access they have today. */
+function myRole() {
+  if (!me) return null;
+  return roleIn(ui.teamId, me.uid);
+}
+const restricted = () => {
+  const r = myRole();
+  return r === 'tracker' || r === 'parent' ? r : null;
+};
 
 /* ---------------- model helpers ---------------- */
 const teams = () => Object.values(state.teams).sort((a, b) => (a.name || '').localeCompare(b.name || ''));
@@ -396,6 +453,18 @@ function secFromAbs(m, ms) {
   return acc;
 }
 
+/* Which half a given match second fell in — needed to split anything by half. */
+function halfOfSec(m, sec) {
+  let acc = 0;
+  for (const x of segments(m)) {
+    if (!x.start) continue;
+    const dur = Math.floor(((x.end || nowMs()) - x.start) / 1000);
+    if (sec < acc + dur) return x.half || 1;
+    acc += dur;
+  }
+  return m.currentHalf || 1;
+}
+
 function spellSec(m, pid, now) {
   const o = openStint(m, pid);
   return o ? Math.max(0, elapsedSec(m, now) - o[1].on) : null;
@@ -451,8 +520,23 @@ const possList = m => Object.entries(m.poss || {}).map(([id, x]) => ({ id, ...x 
 /* A clear answered by a clear answered by a clear is not possession, and with
    young players that churn is most of the game. Anything held for less than the
    threshold counts as contested and is kept out of both teams' share. */
+/* A throw-in, corner, goal kick or keeper claim all say who has the ball, and a
+   foul says who just lost it. Folding those in means possession costs almost no
+   extra tapping — you are already counting them. */
+function possMarkers(m) {
+  const out = [];
+  for (const [id, x] of Object.entries(m.poss || {})) out.push({ t: x.t, to: x.to, src: 'tap', id, coll: 'poss' });
+  for (const [id, x] of Object.entries(m.events || {})) {
+    const other = x.side === 'us' ? 'them' : 'us';
+    out.push({ t: x.t, to: x.kind === 'foul' ? other : x.side, src: x.kind, id, coll: 'events' });
+  }
+  // a goal restarts with the conceding team
+  for (const [id, x] of Object.entries(m.goals || {})) out.push({ t: x.t, to: x.side === 'us' ? 'them' : 'us', src: 'goal', id, coll: 'goals' });
+  return out.sort((a, b) => a.t - b.t);
+}
+
 function possession(m, now = nowMs(), minSec) {
-  const evs = possList(m), end = elapsedSec(m, now);
+  const evs = possMarkers(m), end = elapsedSec(m, now);
   const MIN = minSec != null ? minSec : (team() && team().possMin != null ? Number(team().possMin) : 5);
   let us = 0, them = 0, contested = 0;
   evs.forEach((e, i) => {
@@ -461,7 +545,10 @@ function possession(m, now = nowMs(), minSec) {
     if (d < MIN) contested += d;
     else if (e.to === 'us') us += d; else them += d;
   });
-  return { us, them, contested, settled: us + them, total: us + them + contested, changes: evs.length, min: MIN };
+  return {
+    us, them, contested, settled: us + them, total: us + them + contested,
+    changes: evs.length, tapped: possList(m).length, min: MIN
+  };
 }
 
 function plannedSec(m, pid) { return (m.planned && m.planned[pid] != null ? Number(m.planned[pid]) : 0) * 60; }
@@ -840,19 +927,31 @@ function render() {
   const cr = $('#teamCrest');
   if (cr) { cr.src = (tt && tt.logo) || ''; cr.hidden = !(tt && tt.logo); }
   $('#wsChipName').textContent = wsCode() || 'none';
-  const tabView = ui.view === 'formation' ? 'setup' : ui.view;
+  const lim = restricted();
+  document.body.dataset.role = lim || '';
+  const inGame = ui.view === 'game';
+  const tabView = ui.view === 'formation' ? 'setup' : inGame ? 'matches' : ui.view;
   for (const b of document.querySelectorAll('#tabs button')) b.setAttribute('aria-current', String(b.dataset.view === tabView));
+  const allowed = lim === 'tracker' ? ['track', 'stats'] : lim === 'parent' ? ['stats'] : ['live', 'track', 'stats', 'pitch'];
+  if (!allowed.includes(ui.gameView)) ui.gameView = allowed[0];
+  for (const b of document.querySelectorAll('#subtabs button')) {
+    b.hidden = !allowed.includes(b.dataset.gview);
+    b.setAttribute('aria-current', String(b.dataset.gview === ui.gameView));
+  }
+  const st = $('#subtabs'); if (st) st.hidden = !inGame;
+  const sr = $('#switchrow'); if (sr) sr.hidden = inGame;
   const app = $('#app');
   const v = ui.view;
-  app.innerHTML =
-    v === 'live' ? viewLive() :
-      v === 'track' ? viewTrack() :
-      v === 'match' ? viewMatch() :
-      v === 'matches' ? viewMatches() :
-        v === 'roster' ? viewRoster() :
-          v === 'season' ? viewSeason() :
-            v === 'formation' ? viewFormation() : viewSetup();
-  if (v === 'match') wireDrag();
+  const roleNote = lim
+    ? `<div class="rolebar">Signed in as <b>${esc(ROLE_LABEL[lim])}</b> — ${lim === 'tracker' ? 'you can log events but not make subs or run the clock' : 'you can read, not change'}.</div>`
+    : '';
+  const g = ui.gameView;
+  app.innerHTML = roleNote +
+    v === 'game' ? (g === 'track' ? viewTrack() : g === 'stats' ? viewStats() : g === 'pitch' ? viewMatch() : viewLive()) :
+      v === 'roster' ? viewRoster() :
+        v === 'season' ? viewSeason() :
+          v === 'formation' ? viewFormation() : v === 'setup' ? viewSetup() : viewMatches();
+  if (v === 'game' && g === 'pitch') wireDrag();
   if (v === 'formation') wireFormationDrag();
   saveUi();
 }
@@ -873,7 +972,9 @@ function shortDate(d) {
 function gameBar(t, m) {
   const sc = score(m);
   const n = teamMatches(t.id).length;
-  return `<button class="gamebar" data-act="pickgame">
+  return `<button class="backbtn" data-act="backgames" aria-label="All games">
+    <svg viewBox="0 0 12 12" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7.5 2L3.5 6l4 4"/></svg></button>
+  <button class="gamebar" data-act="pickgame">
     <span class="gb-label">Game</span>
     <span class="gb-name">${esc(m.opponent || 'Unnamed')}${m.date ? ' · ' + shortDate(m.date) : ''} · ${sc.us}–${sc.them}</span>
     ${n > 1 ? `<span class="gb-hint">switch</span>` : ''}
@@ -938,6 +1039,32 @@ function scoreCard(t, m) {
   </div>`;
 }
 
+/* Everything that happened, in one list, so the Track tab stops being four
+   separate scrolling piles. */
+function timeline(t, m) {
+  const us = teamLabel(t), them = esc(m.opponent || 'Them');
+  const nm = id => { const p = (t.players || {})[id]; return p ? esc(p.name) : null; };
+  const who = x => stampOf(x).name ? ` <span class="muted">· ${esc(stampLabel(x))}</span>` : '';
+  const side = sd => sd === 'us' ? `<span class="on">${us}</span>` : `<span class="off">${them}</span>`;
+  const rows = [];
+
+  for (const [id, x] of Object.entries(m.goals || {}))
+    rows.push({ t: x.t, g: 'goal', act: 'fixgoal', id, h: `<b>Goal</b> ${side(x.side)}${x.pid ? ' — ' + nm(x.pid) : ''}${x.assist ? ` <span class="muted">(assist ${nm(x.assist)})</span>` : ''}${who(x)}` });
+  for (const [id, x] of Object.entries(m.shots || {}))
+    rows.push({ t: x.t, g: 'shot', act: 'fixshot', id, h: `Shot ${x.onTarget ? 'on target' : 'off target'} ${side(x.side)}${x.pid ? ' — ' + nm(x.pid) : ''}${who(x)}` });
+  for (const [id, x] of Object.entries(m.events || {}))
+    rows.push({ t: x.t, g: 'set', act: 'fixev', id, h: `${esc(evLabel(x.kind).replace(/s$/, ''))} ${side(x.side)}${x.pid ? ' — ' + nm(x.pid) : ''}${who(x)}` });
+  for (const [id, x] of Object.entries(m.poss || {}))
+    rows.push({ t: x.t, g: 'poss', act: 'fixposs', id, h: `Turnover — ${side(x.to)} won it${x.pid ? ' — ' + nm(x.pid) : ''}${who(x)}` });
+  subEvents(m).forEach((r, i) => rows.push({
+    t: r.t, g: 'sub', act: 'fixsub', id: String(i),
+    h: r.move ? `${nm(r.on)} moved to <span class="on">${esc(r.spot || 'a new spot')}</span>`
+      : `${r.on ? `<span class="on">${nm(r.on)} on</span>` : ''}${r.on && r.off ? ' for ' : ''}${r.off ? `<span class="off">${nm(r.off)} off</span>` : ''}`
+  }));
+
+  return rows.sort((a, b) => b.t - a.t);
+}
+
 /* --- track: everything a second pair of hands can log --- */
 function viewTrack() {
   const t = team(); if (!t) return needTeam();
@@ -950,12 +1077,6 @@ function viewTrack() {
   const name = id => { const p = (t.players || {})[id]; return p ? esc(p.name) : 'Unknown'; };
   const us = teamLabel(t), them = esc(m.opponent || 'Them');
 
-  const goals = goalList(m).reverse();
-  const goalsCard = goals.length ? `<div class="card"><h2 style="margin-bottom:10px">Goals</h2>
-    <div class="log">${goals.map(g => `<button type="button" data-act="fixgoal" data-id="${g.id}">
-      <span class="t">${mmss(g.t)}</span>
-      <span>${g.side === 'us' ? `<span class="on">${us}</span>` : `<span class="off">${them}</span>`}${g.pid ? ' — ' + name(g.pid) : ''}${g.assist ? ` <span class="muted">(assist ${name(g.assist)})</span>` : ''}</span>
-      <span class="muted">edit</span></button>`).join('')}</div></div>` : '';
 
   const sh = shotTally(m);
   const shotsCard = `<div class="card"><div class="spread" style="margin-bottom:10px">
@@ -969,26 +1090,22 @@ function viewTrack() {
       <button class="tallybtn" data-act="shot" data-side="us" data-on="0"><b>${sh.usOff}</b><span>tap</span></button>
       <button class="tallybtn" data-act="shot" data-side="them" data-on="0"><b>${sh.themOff}</b><span>tap</span></button>
     </div>
-    ${shotList(m).length ? `<div class="log" style="margin-top:12px">${shotList(m).slice().reverse().slice(0, 5).map(x => `<button type="button" data-act="fixshot" data-id="${x.id}">
-      <span class="t">${mmss(x.t)}</span>
-      <span>${x.side === 'us' ? `<span class="on">${us}</span>` : `<span class="off">${them}</span>`} ${x.onTarget ? 'on target' : 'off target'}${x.pid ? ' — ' + name(x.pid) : ''}${stampOf(x).name ? ` <span class="muted">· ${esc(stampLabel(x))}${stampOf(x).verified ? '' : ' (unverified)'}</span>` : ''}</span>
-      <span class="muted">edit</span></button>`).join('')}</div>` : ''}</div>`;
+</div>`;
 
-  const located = shotList(m).filter(x => x.xy && x.xy.x != null);
-  const mapCard = located.length ? `<div class="card"><div class="spread" style="margin-bottom:10px">
-      <h2>Shot map</h2><span class="muted">${located.length} of ${shotList(m).length} placed</span></div>
-    <div class="minipitch">
-      <svg viewBox="0 0 68 100" preserveAspectRatio="none" aria-hidden="true">
-        <g fill="none" stroke="rgba(255,255,255,.45)" stroke-width=".5">
-          <rect x="2" y="2" width="64" height="96"/><line x1="2" y1="50" x2="66" y2="50"/>
-          <circle cx="34" cy="50" r="9"/><rect x="16" y="2" width="36" height="15"/>
-          <rect x="26" y="2" width="16" height="6"/></g></svg>
-      ${located.map(x => `<button class="dot" data-act="fixshot" data-id="${x.id}"
-        data-side="${x.side}" data-on="${x.onTarget ? 1 : 0}"
-        style="left:${clamp(x.xy.x, 2, 98)}%;top:${clamp(x.xy.y, 2, 98)}%"
-        title="${mmss(x.t)}"></button>`).join('')}
+  lastLog = subEvents(m);
+  const tl = timeline(t, m);
+  const F = ui.logFilter || 'all';
+  const shown = F === 'all' ? tl : tl.filter(r => r.g === F);
+  const logCard = `<div class="card" id="matchlog"><div class="spread" style="margin-bottom:10px">
+      <h2>Match log</h2><span class="muted">${tl.length} entr${tl.length === 1 ? 'y' : 'ies'}</span></div>
+    <div class="chips" style="margin-bottom:10px">
+      ${[['all', 'All'], ['goal', 'Goals'], ['shot', 'Shots'], ['set', 'Set pieces'], ['sub', 'Subs'], ['poss', 'Turnovers']]
+      .map(([k, l]) => `<button class="chip" type="button" data-act="logfilter" data-v="${k}" aria-pressed="${F === k}">${l}</button>`).join('')}
     </div>
-    <p class="muted" style="margin-bottom:0">Both teams shown attacking upward. Filled means on target.</p></div>` : '';
+    ${shown.length ? `<div class="log">${shown.slice(0, 40).map(r => `<button type="button" data-act="${r.act}" data-id="${r.id}" data-i="${r.id}">
+      <span class="t">${mmss(r.t)}</span><span>${r.h}</span><span class="muted">edit</span></button>`).join('')}</div>
+      ${shown.length > 40 ? `<p class="muted" style="margin-bottom:0">Showing the last 40 of ${shown.length}.</p>` : ''}`
+      : '<p class="muted" style="margin:0">Nothing logged yet.</p>'}</div>`;
 
   const rows = tracked(t);
   const setCard = `<div class="card"><div class="spread" style="margin-bottom:10px">
@@ -999,31 +1116,7 @@ function viewTrack() {
         <button class="tallybtn" data-act="ev" data-kind="${e.k}" data-side="us"><b>${evCount(m, e.k, 'us')}</b><span>tap</span></button>
         <button class="tallybtn" data-act="ev" data-kind="${e.k}" data-side="them"><b>${evCount(m, e.k, 'them')}</b><span>tap</span></button>`).join('')}
     </div>` : '<p class="muted" style="margin:0">Nothing switched on. Tap Choose to pick what you want to count.</p>'}
-    ${evList(m).length ? `<div class="log" style="margin-top:12px">${evList(m).slice().reverse().slice(0, 5).map(x => `<button type="button" data-act="fixev" data-id="${x.id}">
-      <span class="t">${mmss(x.t)}</span>
-      <span>${x.side === 'us' ? `<span class="on">${us}</span>` : `<span class="off">${them}</span>`} ${esc(evLabel(x.kind).replace(/s$/, '').toLowerCase())}${x.pid ? ' — ' + name(x.pid) : ''}${stampOf(x).name ? ` <span class="muted">· ${esc(stampLabel(x))}${stampOf(x).verified ? '' : ' (unverified)'}</span>` : ''}</span>
-      <span class="muted">edit</span></button>`).join('')}</div>` : ''}</div>`;
-
-  const showPoss = possOn(t) || possList(m).length > 0;
-  const po = possession(m, now);
-  const pct = po.settled ? Math.round(po.us / po.settled * 100) : 50;
-  const cpct = po.total ? Math.round(po.contested / po.total * 100) : 0;
-  const possCard = `<div class="card"><div class="spread" style="margin-bottom:10px">
-      <h2>Possession</h2><span class="muted">${po.changes} change${po.changes === 1 ? '' : 's'}</span></div>
-    ${po.total ? `<div class="possbar"><i style="width:${Math.round(po.us / po.total * 100)}%"></i><u style="width:${cpct}%"></u></div>
-      <div class="spread" style="margin:6px 0 4px"><span>${pct}% ${us}</span><span class="muted">${100 - pct}% ${them}</span></div>
-      <p class="muted" style="margin:0 0 10px">Of settled play. ${cpct}% of the game was scrappy — held under ${po.min}s and counted for neither side.</p>
-      <div class="chips" style="margin-bottom:12px"><span class="muted" style="align-self:center">scrappy under</span>
-        ${[3, 5, 8, 12].map(v => `<button class="chip" type="button" data-act="setpossmin" data-v="${v}" aria-pressed="${po.min === v}">${v}s</button>`).join('')}</div>`
-      : '<p class="muted" style="margin:0 0 12px">Tap each time the ball properly changes hands. Nothing recorded yet.</p>'}
-    <div class="row"><button class="btn sm" data-act="poss" data-side="us" style="flex:1">${us} won it</button>
-      <button class="btn quiet sm" data-act="poss" data-side="them" style="flex:1">${them} won it</button></div>
-    ${po.changes ? `<button class="linkbtn dark" data-act="undoposs">Undo the last one</button>` : ''}
-    ${po.changes ? `<div class="log" style="margin-top:10px">${possList(m).slice().reverse().slice(0, 6).map(x => `<button type="button" data-act="fixposs" data-id="${x.id}">
-      <span class="t">${mmss(x.t)}</span>
-      <span>${x.to === 'us' ? `<span class="on">${us}</span>` : `<span class="off">${them}</span>`} won it${x.pid ? ' — ' + name(x.pid) : ''}${stampOf(x).name ? ` <span class="muted">· ${esc(stampLabel(x))}${stampOf(x).verified ? '' : ' (unverified)'}</span>` : ''}</span>
-      <span class="muted">edit</span></button>`).join('')}</div>` : ''}
-    <p class="muted" style="margin-bottom:0">${possOn(t) ? 'Only as accurate as the tapping — best done by whoever is not making the subs.' : 'Switched off for live tracking. These are older taps, still editable.'}</p></div>`;
+</div>`;
 
   const who = whoAmI();
   const whoBar = `<button class="gamebar" data-act="setwho">
@@ -1031,19 +1124,119 @@ function viewTrack() {
     <span class="gb-name">${who ? esc(who) : 'nobody — tap to set a name'}</span>
     <span class="gb-hint">${me ? 'signed in' : 'change'}</span></button>`;
 
+  const possButtons = possOn(t) ? `<div class="card"><h2 style="margin-bottom:10px">Turnovers</h2>
+    <div class="row"><button class="btn sm" data-act="poss" data-side="us" style="flex:1">${us} won it</button>
+      <button class="btn quiet sm" data-act="poss" data-side="them" style="flex:1">${them} won it</button></div>
+    ${possList(m).length ? `<button class="linkbtn dark" data-act="undoposs">Undo the last one</button>` : ''}</div>` : '';
+
+  const whoTidy = Object.keys(trackersIn(m)).length > 1 ? `<div class="card"><h2 style="margin-bottom:8px">Who logged what</h2>
+      <p class="muted" style="margin-top:0">More than one person has been tapping. If someone double-counted, you can drop everything they logged without touching anyone else's.</p>
+      <button class="btn quiet wide" data-act="trackerclean">Review by tracker</button></div>` : '';
+
   return `<div class="stack">
     <div class="barrow">${gameBar(t, m)}</div>
-    ${whoBar}
     ${clockCard(m, now, false)}
     ${scoreCard(t, m)}
-    ${goalsCard}
     ${shotsCard}
-    ${mapCard}
     ${setCard}
-    ${showPoss ? possCard : ''}
-    ${Object.keys(trackersIn(m)).length > 1 ? `<div class="card"><h2 style="margin-bottom:8px">Who logged what</h2>
-      <p class="muted" style="margin-top:0">More than one person has been tapping. If someone double-counted, you can drop everything they logged without touching anyone else's.</p>
-      <button class="btn quiet wide" data-act="trackerclean">Review by tracker</button></div>` : ''}
+    ${possButtons}
+    ${logCard}
+    ${whoBar}
+    ${whoTidy}
+  </div>`;
+}
+
+
+/* --- stats: read, do not tap. Safe mid-game or days later. --- */
+function viewStats() {
+  const t = team(); if (!t) return needTeam();
+  let m = match();
+  if (!m || m.teamId !== t.id) { const l = teamMatches(t.id); m = l[0] || null; ui.matchId = m ? m.id : null; }
+  if (!m) return `<div class="empty"><strong>No game yet</strong>Create a game first.</div>`;
+
+  const now = nowMs();
+  const us = teamLabel(t), them = esc(m.opponent || 'Them');
+  const nm = id => { const p = (t.players || {})[id]; return p ? esc(p.name) : 'Unknown'; };
+  const sc = score(m), sh = shotTally(m);
+  const halves = [...new Set(segments(m).map(x => x.half || 1))].sort();
+  const byHalf = (list, pick) => halves.map(h => list.filter(x => halfOfSec(m, x.t) === h).filter(pick).length);
+
+  const po = possession(m, now);
+  const pct = po.settled ? Math.round(po.us / po.settled * 100) : 50;
+  const cpct = po.total ? Math.round(po.contested / po.total * 100) : 0;
+  const located = shotList(m).filter(x => x.xy && x.xy.x != null);
+  const roster = squad(t, m);
+  const shotsAll = sh.usOn + sh.usOff, shotsThemAll = sh.themOn + sh.themOff;
+
+  const headline = `<div class="card">
+    <h2>${us} ${sc.us} — ${sc.them} ${them}</h2>
+    <div class="muted">${gameStatus(m) === 'done' ? 'Full time' : gameStatus(m) === 'live' ? 'In progress' : 'Not started'} · ${mmss(elapsedSec(m, now))} played${m.date ? ' · ' + esc(shortDate(m.date)) : ''}</div></div>`;
+
+  const halfTable = halves.length > 1 ? `<div class="card"><h2 style="margin-bottom:10px">By half</h2>
+    <div class="statgrid" style="grid-template-columns:1fr ${halves.map(() => '48px').join(' ')}">
+      <span></span>${halves.map(h => `<span class="tallyhead">${esc(halfName(m, h)).replace(' half', '')}</span>`).join('')}
+      <span class="tallylbl">Goals ${us}</span>${byHalf(goalList(m), x => x.side === 'us').map(v => `<b>${v}</b>`).join('')}
+      <span class="tallylbl">Goals ${them}</span>${byHalf(goalList(m), x => x.side === 'them').map(v => `<b>${v}</b>`).join('')}
+      <span class="tallylbl">Shots ${us}</span>${byHalf(shotList(m), x => x.side === 'us').map(v => `<b>${v}</b>`).join('')}
+      <span class="tallylbl">Shots ${them}</span>${byHalf(shotList(m), x => x.side === 'them').map(v => `<b>${v}</b>`).join('')}
+    </div></div>` : '';
+
+  const shotsCard = (shotsAll + shotsThemAll) ? `<div class="card"><h2 style="margin-bottom:10px">Shots</h2>
+    <div class="statgrid" style="grid-template-columns:1fr 48px 48px">
+      <span></span><span class="tallyhead">${us}</span><span class="tallyhead">${them}</span>
+      <span class="tallylbl">On target</span><b>${sh.usOn}</b><b>${sh.themOn}</b>
+      <span class="tallylbl">Off target</span><b>${sh.usOff}</b><b>${sh.themOff}</b>
+      <span class="tallylbl">Scored from</span><b>${shotsAll ? Math.round(sc.us / shotsAll * 100) : 0}%</b><b>${shotsThemAll ? Math.round(sc.them / shotsThemAll * 100) : 0}%</b>
+    </div></div>` : '';
+
+  const evRows = tracked(t).filter(e => evCount(m, e.k, 'us') + evCount(m, e.k, 'them') > 0);
+  const evCard = evRows.length ? `<div class="card"><h2 style="margin-bottom:10px">Set pieces and fouls</h2>
+    <div class="statgrid" style="grid-template-columns:1fr 48px 48px">
+      <span></span><span class="tallyhead">${us}</span><span class="tallyhead">${them}</span>
+      ${evRows.map(e => `<span class="tallylbl">${e.label}<span class="conv">${e.who}</span></span>
+        <b>${evCount(m, e.k, 'us')}</b><b>${evCount(m, e.k, 'them')}</b>`).join('')}
+    </div></div>` : '';
+
+  const possCard = po.total ? `<div class="card"><div class="spread" style="margin-bottom:10px">
+      <h2>Possession</h2><span class="muted">${po.changes} markers</span></div>
+    <div class="possbar"><i style="width:${Math.round(po.us / po.total * 100)}%"></i><u style="width:${cpct}%"></u></div>
+    <div class="spread" style="margin:6px 0 4px"><span>${pct}% ${us}</span><span class="muted">${100 - pct}% ${them}</span></div>
+    <p class="muted" style="margin:0">Of settled play. ${cpct}% was scrappy — held under ${po.min}s, counted for neither side. Built from ${po.tapped} tap${po.tapped === 1 ? '' : 's'} plus every set piece, foul and kick-off.</p></div>` : '';
+
+  const mapCard = located.length ? `<div class="card"><div class="spread" style="margin-bottom:10px">
+      <h2>Shot map</h2><span class="muted">${located.length} of ${shotList(m).length} placed</span></div>
+    <div class="minipitch">
+      <svg viewBox="0 0 68 100" preserveAspectRatio="none" aria-hidden="true">
+        <g fill="none" stroke="rgba(255,255,255,.45)" stroke-width=".5">
+          <rect x="2" y="2" width="64" height="96"/><line x1="2" y1="50" x2="66" y2="50"/>
+          <circle cx="34" cy="50" r="9"/><rect x="16" y="2" width="36" height="15"/>
+          <rect x="26" y="2" width="16" height="6"/></g></svg>
+      ${located.map(x => `<button class="dot" data-act="fixshot" data-id="${x.id}" data-side="${x.side}" data-on="${x.onTarget ? 1 : 0}"
+        style="left:${clamp(x.xy.x, 2, 98)}%;top:${clamp(x.xy.y, 2, 98)}%" title="${mmss(x.t)}"></button>`).join('')}
+    </div>
+    <p class="muted" style="margin-bottom:0">Both teams attacking upward. Filled means on target.</p></div>` : '';
+
+  const goals = goalList(m).slice().reverse();
+  const goalsCard = goals.length ? `<div class="card"><h2 style="margin-bottom:10px">Goals</h2>
+    <div class="log">${goals.map(g => `<button type="button" data-act="fixgoal" data-id="${g.id}">
+      <span class="t">${mmss(g.t)}</span>
+      <span>${g.side === 'us' ? `<span class="on">${us}</span>` : `<span class="off">${them}</span>`}${g.pid ? ' — ' + nm(g.pid) : ''}${g.assist ? ` <span class="muted">(assist ${nm(g.assist)})</span>` : ''}</span>
+      <span class="muted">edit</span></button>`).join('')}</div></div>` : '';
+
+  const minutesCard = `<div class="card"><h2 style="margin-bottom:10px">Minutes</h2>
+    <div class="plist">${roster.map(p => {
+    const pl = playedSec(m, p.id, now), pd = plannedSec(m, p.id), diff = Math.round((pl - pd) / 60);
+    const rs = roleSummary(m, p.id, now);
+    return `<div class="prow">
+      <span class="pnum">${esc(p.number ?? '')}</span>
+      <span><span class="pname">${esc(p.name)}</span><span class="psub">${esc(rs) || (pd > 0 ? mins(pd) + ' min planned' : 'no plan set')}</span></span>
+      <span class="pmins">${mins(pl)}<small> min</small>${pd > 0 ? `<span class="diff ${diff < 0 ? 'owed' : 'over'}">${diff < 0 ? -diff + ' owed' : diff > 0 ? diff + ' over' : 'on plan'}</span>` : ''}</span>
+    </div>`;
+  }).join('')}</div></div>`;
+
+  return `<div class="stack">
+    <div class="barrow">${gameBar(t, m)}</div>
+    ${headline}${halfTable}${shotsCard}${mapCard}${possCard}${evCard}${goalsCard}${minutesCard}
   </div>`;
 }
 
@@ -1481,6 +1674,15 @@ function viewSetup() {
       <p class="muted" style="margin-top:0">A read-only page showing shirt numbers, never names. Two links: one for the season, one for a single game.</p>
       <button class="btn quiet wide" data-act="sharesheet">${team() && team().share ? 'Manage links' : 'Set up sharing'}</button></div>
 
+    <div class="card"><h2 style="margin-bottom:8px">People</h2>
+      ${!anyAdmins() ? `<p class="muted" style="margin-top:0">Nobody is an admin yet. Whoever claims it can assign coaches and trackers.</p>
+        ${me ? `<button class="btn wide" data-act="claimadmin">Make me the admin</button>`
+        : '<p class="muted">Sign in first to claim it.</p>'}`
+      : `<p class="muted" style="margin-top:0">${members().length} signed in · ${Object.keys(acc().admins || {}).length} admin${Object.keys(acc().admins || {}).length === 1 ? '' : 's'}.
+        ${me ? `You are <b>${esc(ROLE_LABEL[myRole()] || 'not assigned')}</b> for ${teamLabel(team() || {})}.` : 'Sign in to see your own role.'}</p>
+        <button class="btn quiet wide" data-act="people">Manage people and roles</button>`}
+      <p class="muted" style="margin-bottom:0">Roles are recorded but not yet enforced — the database rules that make them real come next.</p></div>
+
     <div class="card"><h2 style="margin-bottom:8px">Account</h2>
       <div class="spread"><span>${me ? `<b>${esc(me.name)}</b><span class="rowsub">${esc(me.email || '')}</span>` : 'Not signed in'}</span>
       <button class="btn quiet sm" data-act="signinsheet">${me ? 'Manage' : 'Sign in'}</button></div>
@@ -1638,6 +1840,9 @@ function publicGame(t, m) {
     periodCount: m.periodCount || 2, periodMinutes: m.periodMinutes || 40,
     currentHalf: m.currentHalf || 1, periods: m.periods || {},
     status: gameStatus(m), score: score(m), shots: shotTally(m),
+    events: Object.fromEntries(EVENTS.map(e => [e.k, { us: evCount(m, e.k, 'us'), them: evCount(m, e.k, 'them') }])
+      .filter(([, v]) => v.us + v.them > 0)),
+    poss: (() => { const p = possession(m); return { us: p.us, them: p.them, contested: p.contested, changes: p.changes }; })(),
     players: roster.map(p => ({
       n: shirtOf(p), sec: playedSec(m, p.id), on: onField(m, p.id),
       spot: currentSpot(m, p.id) || null, plan: (m.planned || {})[p.id] || 0
@@ -1668,12 +1873,27 @@ function publicDoc(t) {
 }
 
 let pubTimer;
+let pubState = { at: null, error: null };   // surfaced in the share sheet
 function schedulePublish() {
   const t = team();
-  if (!fb || !t || !t.share) return;
+  if (!fb) { pubState = { at: null, error: 'Not connected to Firebase' }; return; }
+  if (!t || !t.share) return;
   clearTimeout(pubTimer);
   pubTimer = setTimeout(() => {
-    try { fb.set(fb.ref(fb.db, 'public/' + t.share), publicDoc(t)); } catch (e) { console.warn('publish failed', e); }
+    // try/catch does not catch this — set() rejects asynchronously
+    fb.set(fb.ref(fb.db, 'public/' + t.share), publicDoc(t))
+      .then(() => { pubState = { at: nowMs(), error: null }; })
+      .catch(e => {
+        const code = (e && e.code) || (e && e.message) || 'unknown';
+        pubState = {
+          at: null,
+          error: /permission|denied/i.test(code)
+            ? 'Firebase rejected it — the "public" rules block is missing or wrong'
+            : String(code)
+        };
+        console.error('publish failed', e);
+        render();
+      });
   }, 1200);
 }
 
@@ -1717,12 +1937,42 @@ function sheetSwitch(pid) {
     <button class="btn quiet wide" data-act="closesheet" style="margin-top:8px">Cancel</button>`);
 }
 
+function sheetPeople() {
+  const t = team();
+  const list = members();
+  openSheet(`<h3>People</h3>
+    <p class="muted" style="margin-top:0">Anyone who signs in with the workspace code lands here. Roles below apply to <b>${teamLabel(t || {})}</b>; admins are club-wide.</p>
+    ${list.length ? list.map(u => {
+    const r = roleIn(t && t.id, u.uid);
+    const isMe = me && me.uid === u.uid;
+    return `<div class="opt">
+      <div class="spread"><span><b>${esc(u.name || 'Unnamed')}</b>${isMe ? ' <span class="muted">(you)</span>' : ''}
+        <span class="rowsub">${esc(u.email || '')}</span></span>
+        <span class="muted">${r ? esc(ROLE_LABEL[r]) : 'no role'}</span></div>
+      <div class="chips" style="margin-top:8px">
+        <button class="chip" type="button" data-act="setrole" data-uid="${u.uid}" data-r="admin" aria-pressed="${isAdmin(u.uid)}">Admin</button>
+        <button class="chip" type="button" data-act="setrole" data-uid="${u.uid}" data-r="coach" aria-pressed="${!isAdmin(u.uid) && isCoach(t && t.id, u.uid)}">Coach</button>
+        <button class="chip" type="button" data-act="setrole" data-uid="${u.uid}" data-r="tracker" aria-pressed="${isTracker(t && t.id, u.uid)}">Tracker</button>
+        ${r === 'parent' ? '<span class="muted" style="align-self:center">parent via a player</span>' : ''}
+      </div></div>`;
+  }).join('') : '<p class="muted">Nobody has signed in yet.</p>'}
+    <p class="muted">A parent is not set here — they become one by being linked to a player as a guardian.</p>
+    <button class="btn wide" data-act="closesheet">Done</button>`);
+}
+
 function sheetShare() {
   const t = team();
   if (!t) return;
   const m = match() || teamMatches(t.id)[0];
+  const st = pubState.error
+    ? `<div class="warn alert" style="margin-bottom:14px"><b>Not published.</b><br>${esc(pubState.error)}<br>
+       <span class="muted">Check Realtime Database → Rules for a <code>public</code> block, then tap Republish.</span></div>`
+    : pubState.at
+      ? `<p class="muted" style="margin-top:0">Published ${new Date(pubState.at).toLocaleTimeString()}. Links below are live.</p>`
+      : `<p class="muted" style="margin-top:0">Not published yet this session — tap Republish to force it.</p>`;
+
   openSheet(`<h3>Share ${teamLabel(t)}</h3>
-    ${t.share ? `
+    ${t.share ? st + `
       <p class="lbl">Follow the season</p>
       <div class="codebox">${esc(teamLink(t))}</div>
       <div class="row" style="margin-bottom:16px"><button class="btn sm" data-act="copylink" data-v="${esc(teamLink(t))}">Copy season link</button></div>
@@ -1734,6 +1984,7 @@ function sheetShare() {
       <p class="muted" style="margin-top:0">Kick-off time, where it is, who is on and the minutes. Switch games in the bar above to share a different one.</p>` : ''}
 
       <p class="muted">Anyone with a link can read it. Nobody can change anything, and no child's name is published — only shirt numbers.</p>
+      <button class="btn quiet wide" data-act="republish" style="margin-bottom:8px">Republish now</button>
       <button class="btn danger wide" data-act="rotateshare">Make a new link and kill the old one</button>`
       : `<p class="muted" style="margin-top:0">Creates a long random address. Only people you send it to can find it.</p>
       <button class="btn wide" data-act="makeshare">Create the share links</button>`}`);
@@ -2160,7 +2411,7 @@ document.addEventListener('click', e => {
   if (a === 'switchpos') { sheetSwitch(d.pid); return; }
   if (a === 'togglesort') { ui.sortBy = ui.sortBy === 'number' ? 'need' : 'number'; render(); return; }
   if (a === 'pickgame') { sheetPickGame(); return; }
-  if (a === 'pickgame2') { ui.matchId = d.id; ui.picked = null; closeSheet(); render(); return; }
+  if (a === 'pickgame2') { ui.matchId = d.id; ui.picked = null; ui.view = 'game'; closeSheet(); render(); return; }
   if (a === 'doswitch') {
     if (ui.plan) {
       const sl = d.sid ? slotById(m, d.sid) : null;
@@ -2213,12 +2464,45 @@ document.addEventListener('click', e => {
     closeSheet(); return;
   }
   if (a === 'delev') { drop(`matches/${m.id}/events/${d.id}`); closeSheet(); return; }
+  if (a === 'logfilter') { ui.logFilter = d.v; render(); return; }
   if (a === 'trackcfg') { sheetTrackCfg(); return; }
   if (a === 'hardreload') {
     location.replace(location.pathname + '?r=' + Date.now());
     return;
   }
-  if (a === 'sharesheet') { sheetShare(); return; }
+  if (a === 'people') { sheetPeople(); return; }
+  if (a === 'claimadmin') {
+    if (!me) { toast('Sign in first'); return; }
+    if (anyAdmins()) { toast('Someone already claimed it'); return; }
+    commit(`access/admins/${me.uid}`, true);
+    toast('You are the admin'); return;
+  }
+  if (a === 'setrole') {
+    const uid = d.uid, r = d.r, tid = t && t.id;
+    if (r === 'admin') {
+      if (isAdmin(uid)) {
+        if (Object.keys(acc().admins || {}).length === 1) { toast('Someone has to stay admin'); return; }
+        drop(`access/admins/${uid}`);
+      } else commit(`access/admins/${uid}`, true);
+    } else {
+      if (!tid) { toast('Pick a team first'); return; }
+      const key = r === 'coach' ? 'coaches' : 'trackers';
+      const on = ((teamAccess(tid)[key] || {})[uid]);
+      if (on) drop(`access/teams/${tid}/${key}/${uid}`);
+      else commit(`access/teams/${tid}/${key}/${uid}`, true);
+    }
+    sheetPeople(); return;
+  }
+  if (a === 'republish') {
+    if (!fb) { toast('Not connected — check the workspace code'); return; }
+    fb.set(fb.ref(fb.db, 'public/' + t.share), publicDoc(t))
+      .then(() => { pubState = { at: nowMs(), error: null }; sheetShare(); toast('Published'); })
+      .catch(e => {
+        pubState = { at: null, error: /permission|denied/i.test((e && e.code) || '') ? 'Firebase rejected it — the "public" rules block is missing or wrong' : String((e && e.code) || e) };
+        sheetShare();
+      });
+    return;
+  }
   if (a === 'makeshare') {
     commit(`teams/${t.id}/share`, 's' + uid() + uid());
     schedulePublish(); sheetShare(); return;
@@ -2556,7 +2840,8 @@ document.addEventListener('click', e => {
 
   if (a === 'newmatch') { closeSheet(); sheetMatch(null); return; }
   if (a === 'editmatch') { sheetMatch(state.matches[d.id]); return; }
-  if (a === 'openmatch') { ui.matchId = d.id; ui.view = 'match'; render(); return; }
+  if (a === 'backgames') { ui.view = 'matches'; ui.picked = null; render(); return; }
+  if (a === 'openmatch') { ui.matchId = d.id; ui.view = 'game'; render(); return; }
   if (a === 'savematch') {
     const side = Number($('#mSide').value);
     const base = {
@@ -2571,7 +2856,7 @@ document.addEventListener('click', e => {
     else {
       const id = uid();
       commit(`matches/${id}`, { id, teamId: t.id, currentHalf: 1, periods: {}, planned: {}, positions: {}, stints: {}, createdAt: Date.now(), ...base });
-      ui.matchId = id; ui.view = 'match';
+      ui.matchId = id; ui.view = 'game'; ui.gameView = 'live';
     }
     closeSheet(); render(); return;
   }
@@ -2637,6 +2922,10 @@ $('#scrim').addEventListener('click', closeSheet);
 $('#tabs').addEventListener('click', e => {
   const b = e.target.closest('button'); if (!b) return;
   ui.view = b.dataset.view; ui.picked = null; render();
+});
+$('#subtabs').addEventListener('click', e => {
+  const b = e.target.closest('button'); if (!b) return;
+  ui.gameView = b.dataset.gview; ui.picked = null; render();
 });
 document.addEventListener('keydown', e => { if (e.key === 'Escape') closeSheet(); });
 
