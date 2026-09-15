@@ -1,0 +1,72 @@
+name: Deploy to Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Never let two deploys race. A newer push wins.
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Stamp the build number
+        env:
+          BUILD: ${{ github.run_number }}
+          SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          mkdir -p _site
+          rsync -a --exclude '.git' --exclude '.github' --exclude '_site' ./ _site/
+          cd _site
+
+          BUILT="$(date -u +%Y-%m-%d) Â· ${SHA:0:7}"
+
+          # the constants the app checks itself against
+          sed -i "s/const BUILD = '[^']*'/const BUILD = '${BUILD}'/" app.js
+          sed -i "s/const BUILT = '[^']*'/const BUILT = '${BUILT}'/" app.js
+
+          # what index.html claims to be, used to detect a cached page
+          sed -i "s/name=\"build\" content=\"[^\"]*\"/name=\"build\" content=\"${BUILD}\"/" index.html
+
+          # cache-busting query strings on every page
+          sed -i -E "s/\?v=[0-9]+/?v=${BUILD}/g" index.html live.html game.html
+
+          # the version shown in the public pages' footer
+          sed -i -E "s/>v[0-9]+</>v${BUILD}</" live.html game.html
+
+          echo "--- stamped as build ${BUILD} (${BUILT}) ---"
+          grep -n "const BUILD\|const BUILT" app.js
+          grep -n 'name="build"' index.html
+          grep -on '?v=[0-9]*' index.html live.html game.html
+
+      - name: Fail if anything is still on an old build
+        run: |
+          set -euo pipefail
+          cd _site
+          B="${{ github.run_number }}"
+          BAD=$(grep -ho '?v=[0-9]*' index.html live.html game.html | sort -u | grep -v "^?v=${B}$" || true)
+          if [ -n "$BAD" ]; then echo "unstamped: $BAD"; exit 1; fi
+          grep -q "const BUILD = '${B}'" app.js || { echo "app.js not stamped"; exit 1; }
+          echo "all version markers agree at ${B}"
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+      - id: deploy
+        uses: actions/deploy-pages@v4
