@@ -2,7 +2,7 @@
    Static app. Data lives in localStorage, and mirrors to Firebase Realtime
    Database when a config + workspace code are present. */
 
-const BUILD = '23';
+const BUILD = '24';
 const BUILT = '2026-09-13';
 /* index.html carries the build it was published with. If this file is newer, the
    browser handed us a cached page — the exact failure that has eaten hours. */
@@ -151,12 +151,33 @@ function delDeep(obj, path) {
 const wsCode = () => (localStorage.getItem(LS_WS) || '').trim();
 /* Who is tapping on this device. Never synced, never a permission — anyone can
    type anything. It exists so two people can track one game and untangle it after. */
-const whoAmI = () => (localStorage.getItem(LS_WHO) || '').trim();
-const stampedBy = () => { const w = whoAmI(); return w ? { by: w } : {}; };
+const typedName = () => (localStorage.getItem(LS_WHO) || '').trim();
+const whoAmI = () => (me && me.name) || typedName();
+
+/* uid is the identity, byName is a display snapshot. A stamp with no uid is
+   unverified, which is exactly what an unsigned device should produce. */
+const stampedBy = () => me
+  ? { by: me.uid, byName: me.name }
+  : (typedName() ? { by: null, byName: typedName() } : {});
+
+/* Events written before auth put a typed name straight into `by`. They are told
+   apart by having no `byName` at all, so no guessing is needed. */
+function stampOf(x) {
+  if (x.byName !== undefined) return { uid: x.by || null, name: x.byName || null, verified: !!x.by };
+  if (x.by) return { uid: null, name: x.by, verified: false };
+  return { uid: null, name: null, verified: false };
+}
+const stampKey = x => { const st = stampOf(x); return st.uid || (st.name ? 'n:' + st.name : '?'); };
+const stampLabel = x => { const st = stampOf(x); return st.name || 'unnamed'; };
+
 function trackersIn(m) {
   const c = {};
   for (const src of [m.goals, m.shots, m.events, m.poss])
-    for (const x of Object.values(src || {})) { const k = x.by || '(unnamed)'; c[k] = (c[k] || 0) + 1; }
+    for (const x of Object.values(src || {})) {
+      const k = stampKey(x);
+      if (!c[k]) c[k] = { name: stampLabel(x), verified: stampOf(x).verified, n: 0 };
+      c[k].n++;
+    }
   return c;
 }
 const dataKey = () => LS_DATA + ':' + (wsCode() || 'local');
@@ -185,6 +206,8 @@ function loadLocal() {
 }
 
 /* ---------------- firebase sync ---------------- */
+let fbApp = null, fbAuth = null, authMod = null;
+let me = null;              // { uid, name, email } when signed in
 let fb = null; // { db, ref, set, remove, onValue, base }
 let clockSkew = 0;           // serverTime - deviceTime, in ms
 const nowMs = () => Date.now() + clockSkew;
@@ -195,15 +218,51 @@ function setSync(stateName, label) {
   b.textContent = label;
 }
 
+async function getApp() {
+  if (fbApp) return fbApp;
+  const cfg = window.SOCCER_FIREBASE_CONFIG;
+  if (!cfg || !cfg.apiKey) return null;
+  const appMod = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js');
+  fbApp = appMod.initializeApp(cfg);
+  return fbApp;
+}
+
+/* Signing in is optional for now. Nothing gates on it yet — it exists so stamps
+   carry a real identity, and so the org model has something to hang off next. */
+async function initAuth() {
+  const app = await getApp();
+  if (!app) return;
+  try {
+    authMod = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js');
+    fbAuth = authMod.getAuth(app);
+
+    // arriving back from a magic link
+    if (authMod.isSignInWithEmailLink(fbAuth, location.href)) {
+      const mail = localStorage.getItem('sm.emailForLink') || prompt('Confirm your email to finish signing in');
+      if (mail) {
+        try {
+          await authMod.signInWithEmailLink(fbAuth, mail, location.href);
+          localStorage.removeItem('sm.emailForLink');
+          history.replaceState(null, '', location.pathname);
+        } catch (e) { toast('That sign-in link did not work'); }
+      }
+    }
+
+    authMod.onAuthStateChanged(fbAuth, u => {
+      me = u ? { uid: u.uid, name: u.displayName || (u.email || '').split('@')[0] || 'Signed in', email: u.email || '' } : null;
+      render();
+    });
+  } catch (e) { console.warn('auth unavailable', e); }
+}
+
 async function initSync() {
   const cfg = window.SOCCER_FIREBASE_CONFIG;
   const code = localStorage.getItem(LS_WS);
   if (!cfg || !cfg.apiKey || !cfg.databaseURL) { setSync('off', 'this device'); return; }
   if (!code) { setSync('off', 'no code'); return; }
   try {
-    const appMod = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js');
+    const app = await getApp();
     const dbMod = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js');
-    const app = appMod.initializeApp(cfg);
     const db = dbMod.getDatabase(app);
     fb = { db, ref: dbMod.ref, set: dbMod.set, remove: dbMod.remove, base: 'workspaces/' + code };
     fb.childAdded = dbMod.onChildAdded;
@@ -912,7 +971,7 @@ function viewTrack() {
     </div>
     ${shotList(m).length ? `<div class="log" style="margin-top:12px">${shotList(m).slice().reverse().slice(0, 5).map(x => `<button type="button" data-act="fixshot" data-id="${x.id}">
       <span class="t">${mmss(x.t)}</span>
-      <span>${x.side === 'us' ? `<span class="on">${us}</span>` : `<span class="off">${them}</span>`} ${x.onTarget ? 'on target' : 'off target'}${x.pid ? ' — ' + name(x.pid) : ''}${x.by ? ` <span class="muted">· ${esc(x.by)}</span>` : ''}</span>
+      <span>${x.side === 'us' ? `<span class="on">${us}</span>` : `<span class="off">${them}</span>`} ${x.onTarget ? 'on target' : 'off target'}${x.pid ? ' — ' + name(x.pid) : ''}${stampOf(x).name ? ` <span class="muted">· ${esc(stampLabel(x))}${stampOf(x).verified ? '' : ' (unverified)'}</span>` : ''}</span>
       <span class="muted">edit</span></button>`).join('')}</div>` : ''}</div>`;
 
   const located = shotList(m).filter(x => x.xy && x.xy.x != null);
@@ -942,7 +1001,7 @@ function viewTrack() {
     </div>` : '<p class="muted" style="margin:0">Nothing switched on. Tap Choose to pick what you want to count.</p>'}
     ${evList(m).length ? `<div class="log" style="margin-top:12px">${evList(m).slice().reverse().slice(0, 5).map(x => `<button type="button" data-act="fixev" data-id="${x.id}">
       <span class="t">${mmss(x.t)}</span>
-      <span>${x.side === 'us' ? `<span class="on">${us}</span>` : `<span class="off">${them}</span>`} ${esc(evLabel(x.kind).replace(/s$/, '').toLowerCase())}${x.pid ? ' — ' + name(x.pid) : ''}${x.by ? ` <span class="muted">· ${esc(x.by)}</span>` : ''}</span>
+      <span>${x.side === 'us' ? `<span class="on">${us}</span>` : `<span class="off">${them}</span>`} ${esc(evLabel(x.kind).replace(/s$/, '').toLowerCase())}${x.pid ? ' — ' + name(x.pid) : ''}${stampOf(x).name ? ` <span class="muted">· ${esc(stampLabel(x))}${stampOf(x).verified ? '' : ' (unverified)'}</span>` : ''}</span>
       <span class="muted">edit</span></button>`).join('')}</div>` : ''}</div>`;
 
   const showPoss = possOn(t) || possList(m).length > 0;
@@ -962,7 +1021,7 @@ function viewTrack() {
     ${po.changes ? `<button class="linkbtn dark" data-act="undoposs">Undo the last one</button>` : ''}
     ${po.changes ? `<div class="log" style="margin-top:10px">${possList(m).slice().reverse().slice(0, 6).map(x => `<button type="button" data-act="fixposs" data-id="${x.id}">
       <span class="t">${mmss(x.t)}</span>
-      <span>${x.to === 'us' ? `<span class="on">${us}</span>` : `<span class="off">${them}</span>`} won it${x.pid ? ' — ' + name(x.pid) : ''}${x.by ? ` <span class="muted">· ${esc(x.by)}</span>` : ''}</span>
+      <span>${x.to === 'us' ? `<span class="on">${us}</span>` : `<span class="off">${them}</span>`} won it${x.pid ? ' — ' + name(x.pid) : ''}${stampOf(x).name ? ` <span class="muted">· ${esc(stampLabel(x))}${stampOf(x).verified ? '' : ' (unverified)'}</span>` : ''}</span>
       <span class="muted">edit</span></button>`).join('')}</div>` : ''}
     <p class="muted" style="margin-bottom:0">${possOn(t) ? 'Only as accurate as the tapping — best done by whoever is not making the subs.' : 'Switched off for live tracking. These are older taps, still editable.'}</p></div>`;
 
@@ -970,7 +1029,7 @@ function viewTrack() {
   const whoBar = `<button class="gamebar" data-act="setwho">
     <span class="gb-label">Logging as</span>
     <span class="gb-name">${who ? esc(who) : 'nobody — tap to set a name'}</span>
-    <span class="gb-hint">change</span></button>`;
+    <span class="gb-hint">${me ? 'signed in' : 'change'}</span></button>`;
 
   return `<div class="stack">
     <div class="barrow">${gameBar(t, m)}</div>
@@ -1422,6 +1481,11 @@ function viewSetup() {
       <p class="muted" style="margin-top:0">A read-only page showing shirt numbers, never names. Two links: one for the season, one for a single game.</p>
       <button class="btn quiet wide" data-act="sharesheet">${team() && team().share ? 'Manage links' : 'Set up sharing'}</button></div>
 
+    <div class="card"><h2 style="margin-bottom:8px">Account</h2>
+      <div class="spread"><span>${me ? `<b>${esc(me.name)}</b><span class="rowsub">${esc(me.email || '')}</span>` : 'Not signed in'}</span>
+      <button class="btn quiet sm" data-act="signinsheet">${me ? 'Manage' : 'Sign in'}</button></div>
+      <p class="muted" style="margin-bottom:0">Optional today. Everything still works signed out — signing in only means what you log is stamped with a verified account.</p></div>
+
     <div class="card"><h2 style="margin-bottom:8px">Version</h2>
       <div class="spread"><span>Build <b>v${BUILD}</b> <span class="muted">· ${BUILT}</span></span>
         <button class="btn quiet sm" data-act="hardreload">Force refresh</button></div>
@@ -1617,6 +1681,20 @@ const shareBase = () => location.href.replace(/[^/]*$/, '');
 const teamLink = t => t.share ? `${shareBase()}live.html?t=${t.share}` : '';
 const gameLink = (t, m) => t.share ? `${shareBase()}game.html?t=${t.share}&g=${m.id}` : '';
 
+/* Firebase error codes are not for humans. */
+function authMessage(err) {
+  const c = (err && err.code) || '';
+  if (c.includes('unauthorized-domain')) return 'This site is not on the authorised domains list in Firebase';
+  if (c.includes('operation-not-allowed')) return 'That sign-in method is not switched on in Firebase';
+  if (c.includes('invalid-email')) return 'That email does not look right';
+  if (c.includes('weak-password')) return 'Password needs to be at least six characters';
+  if (c.includes('email-already-in-use')) return 'That email already has an account — sign in instead';
+  if (c.includes('wrong-password') || c.includes('invalid-credential')) return 'Wrong email or password';
+  if (c.includes('network')) return 'No connection';
+  console.warn(err);
+  return 'Sign-in failed — ' + (c || 'unknown error');
+}
+
 /* ---------------- sheets ---------------- */
 function sheetSwitch(pid) {
   const t = team(), m = match();
@@ -1661,18 +1739,41 @@ function sheetShare() {
       <button class="btn wide" data-act="makeshare">Create the share links</button>`}`);
 }
 
+function sheetSignIn() {
+  if (!authMod) { toast('Sign-in is not available on this build'); return; }
+  openSheet(`<h3>${me ? 'Your account' : 'Sign in'}</h3>
+    ${me ? `<p class="muted" style="margin-top:0">Signed in as <b>${esc(me.name)}</b>${me.email ? ` · ${esc(me.email)}` : ''}.
+      Anything you log is now stamped with this account rather than a typed name.</p>
+      <button class="btn danger wide" data-act="signout">Sign out</button>`
+      : `<p class="muted" style="margin-top:0">Optional for now — everything works signed out. Signing in means the things you log carry a verified name instead of one anybody could type.</p>
+      <button class="btn wide" data-act="signin-google" style="margin-bottom:10px">Continue with Google</button>
+
+      <p class="lbl">Magic link — no password to forget</p>
+      <label class="field"><input type="email" id="authEmail" placeholder="you@example.com" autocapitalize="off" autocorrect="off"></label>
+      <button class="btn quiet wide" data-act="signin-link" style="margin-bottom:16px">Email me a sign-in link</button>
+
+      <p class="lbl">Or a password</p>
+      <label class="field"><input type="password" id="authPass" placeholder="Password" autocomplete="current-password"></label>
+      <div class="row"><button class="btn quiet sm" data-act="signin-pass" style="flex:1">Sign in</button>
+      <button class="btn quiet sm" data-act="signup-pass" style="flex:1">Create account</button></div>
+      <p class="muted">Uses the email box above.</p>`}`);
+}
+
 function sheetWho() {
   openSheet(`<h3>Logging as</h3>
-    <p class="muted" style="margin-top:0">Stamped onto everything you tap on this device so two people can track one game. It stays on this phone and is not a login — it does not restrict anything.</p>
-    <label class="field"><span>Your name</span><input type="text" id="whoName" value="${esc(whoAmI())}" placeholder="Grant"></label>
-    <button class="btn wide" data-act="savewho">Save</button>`);
+    ${me ? `<p class="muted" style="margin-top:0">Signed in as <b>${esc(me.name)}</b>. Everything you log carries that account, so it can be told apart from a typed name.</p>
+      <button class="btn quiet wide" data-act="signinsheet">Account settings</button>`
+      : `<p class="muted" style="margin-top:0">A typed name is stamped onto what you tap so two people can track one game. It is not a login — anyone could type it, and it shows as unverified.</p>
+      <label class="field"><span>Your name</span><input type="text" id="whoName" value="${esc(typedName())}" placeholder="Grant"></label>
+      <button class="btn wide" data-act="savewho" style="margin-bottom:12px">Save</button>
+      <button class="btn quiet wide" data-act="signinsheet">Sign in instead</button>`}`);
 }
 
 function sheetTrackerClean() {
   const m = match(), counts = trackersIn(m);
   openSheet(`<h3>Who logged what</h3>
-    ${Object.entries(counts).sort((a, b) => b[1] - a[1]).map(([k, v]) => `<div class="opt spread">
-      <span>${esc(k)}<span class="rowsub">${v} item${v === 1 ? '' : 's'}</span></span>
+    ${Object.entries(counts).sort((a, b) => b[1].n - a[1].n).map(([k, v]) => `<div class="opt spread">
+      <span>${esc(v.name)}<span class="rowsub">${v.n} item${v.n === 1 ? '' : 's'}${v.verified ? ' · signed in' : ' · unverified'}</span></span>
       <button class="btn danger sm" data-act="dropby" data-who="${esc(k)}">Remove all</button></div>`).join('')}
     <p class="muted">Goals, shots, set pieces and possession only. Subs and minutes are untouched.</p>
     <button class="btn wide" data-act="closesheet">Done</button>`);
@@ -2134,6 +2235,34 @@ document.addEventListener('click', e => {
     return;
   }
   if (a === 'setwho') { sheetWho(); return; }
+  if (a === 'signinsheet') { sheetSignIn(); return; }
+  if (a === 'signout') { authMod.signOut(fbAuth).then(() => { closeSheet(); toast('Signed out'); }); return; }
+  if (a === 'signin-google') {
+    const p = new authMod.GoogleAuthProvider();
+    authMod.signInWithPopup(fbAuth, p)
+      .then(() => { closeSheet(); toast('Signed in'); })
+      .catch(err => {
+        // popups get blocked on plenty of mobile browsers; redirect always works
+        if (/popup/i.test(err.code || '')) authMod.signInWithRedirect(fbAuth, p);
+        else toast(authMessage(err));
+      });
+    return;
+  }
+  if (a === 'signin-link') {
+    const mail = $('#authEmail').value.trim();
+    if (!mail) { toast('Enter your email first'); return; }
+    authMod.sendSignInLinkToEmail(fbAuth, mail, { url: location.origin + location.pathname, handleCodeInApp: true })
+      .then(() => { localStorage.setItem('sm.emailForLink', mail); closeSheet(); toast('Check your email'); })
+      .catch(err => toast(authMessage(err)));
+    return;
+  }
+  if (a === 'signin-pass' || a === 'signup-pass') {
+    const mail = $('#authEmail').value.trim(), pass = $('#authPass').value;
+    if (!mail || !pass) { toast('Email and password are both needed'); return; }
+    const fn = a === 'signup-pass' ? authMod.createUserWithEmailAndPassword : authMod.signInWithEmailAndPassword;
+    fn(fbAuth, mail, pass).then(() => { closeSheet(); toast('Signed in'); }).catch(err => toast(authMessage(err)));
+    return;
+  }
   if (a === 'savewho') {
     const v = $('#whoName').value.trim();
     if (v) localStorage.setItem(LS_WHO, v); else localStorage.removeItem(LS_WHO);
@@ -2151,11 +2280,11 @@ document.addEventListener('click', e => {
   }
   if (a === 'trackerclean') { sheetTrackerClean(); return; }
   if (a === 'dropby') {
-    if (!confirm(`Remove everything logged by ${d.who}? Subs and minutes are not affected.`)) return;
+    if (!confirm('Remove everything logged by them? Subs and minutes are not affected.')) return;
     let n = 0;
     for (const coll of ['goals', 'shots', 'events', 'poss'])
       for (const [k, x] of Object.entries(m[coll] || {}))
-        if ((x.by || '(unnamed)') === d.who) { delDeep(state, `matches/${m.id}/${coll}/${k}`); remoteDel(`matches/${m.id}/${coll}/${k}`); n++; }
+        if (stampKey(x) === d.who) { delDeep(state, `matches/${m.id}/${coll}/${k}`); remoteDel(`matches/${m.id}/${coll}/${k}`); n++; }
     saveLocal(); closeSheet(); render(); toast(`${n} removed`); return;
   }
   if (a === 'savetrackcfg') {
@@ -2514,4 +2643,5 @@ document.addEventListener('keydown', e => { if (e.key === 'Escape') closeSheet()
 /* ---------------- boot ---------------- */
 loadLocal();
 render();
+initAuth();
 initSync();
