@@ -11,6 +11,14 @@ const mmss = sec => { sec = Math.max(0, Math.floor(sec)); return Math.floor(sec 
 const mins = sec => Math.round(sec / 60);
 
 let doc = null, skew = 0, openGame = ONE_GAME || null;
+/* Anything that changed since the last render gets a flash, so someone watching
+   on a phone at the side of the pitch sees that something happened. */
+let prev = {};
+const bump = (key, val) => {
+  const changed = prev[key] !== undefined && prev[key] !== val;
+  prev[key] = val;
+  return changed ? ' data-bump="1"' : '';
+};
 const SEASON_PAGE = !/game\.html/.test(location.pathname);
 const nowMs = () => Date.now() + skew;
 
@@ -49,6 +57,37 @@ function niceTime(t) {
 const games = () => Object.values((doc && doc.games) || {})
   .sort((a, b) => (b.date || '').localeCompare(a.date || ''));
 
+const EV_LABELS = { corner: 'Corners', foul: 'Fouls', throw: 'Throw-ins', goalkick: 'Goal kicks', keeper: 'Keeper claims' };
+
+function statsBlock(g, name) {
+  const them = esc(g.opponent || 'Them');
+  const sh = g.shots || {};
+  const shotsAny = (sh.usOn || 0) + (sh.usOff || 0) + (sh.themOn || 0) + (sh.themOff || 0);
+  const evs = Object.entries(g.events || {});
+  const po = g.poss || {};
+  const settled = (po.us || 0) + (po.them || 0);
+  const total = settled + (po.contested || 0);
+  const pct = settled ? Math.round(po.us / settled * 100) : 50;
+  const cpct = total ? Math.round((po.contested || 0) / total * 100) : 0;
+  if (!shotsAny && !evs.length && !total) return '';
+
+  const grid = rows => `<div class="statgrid" style="grid-template-columns:1fr 48px 48px">
+    <span></span><span class="tallyhead">${esc(name)}</span><span class="tallyhead">${them}</span>${rows}</div>`;
+
+  return `<div class="card"><h2 style="margin-bottom:10px">Match stats</h2>
+    ${shotsAny ? grid(`
+      <span class="tallylbl">Shots on target</span><b${bump('sot', sh.usOn)}>${sh.usOn || 0}</b><b${bump('tot', sh.themOn)}>${sh.themOn || 0}</b>
+      <span class="tallylbl">Shots off target</span><b>${sh.usOff || 0}</b><b>${sh.themOff || 0}</b>`) : ''}
+    ${evs.length ? grid(evs.map(([k, v]) => `
+      <span class="tallylbl">${EV_LABELS[k] || k}</span><b${bump('e' + k, v.us)}>${v.us}</b><b${bump('e' + k + 't', v.them)}>${v.them}</b>`).join('')) : ''}
+    ${total ? `<div style="margin-top:12px">
+      <div class="possbar"><i style="width:${Math.round((po.us || 0) / total * 100)}%"></i><u style="width:${cpct}%"></u></div>
+      <div class="spread" style="margin-top:6px"><span>${pct}% possession</span><span class="muted">${100 - pct}% ${them}</span></div>
+      ${cpct ? `<p class="muted" style="margin:4px 0 0">${cpct}% scrappy, counted for neither side.</p>` : ''}
+    </div>` : ''}
+  </div>`;
+}
+
 function fail(msg) {
   $('#title').textContent = 'Nothing here';
   $('#sub').textContent = '';
@@ -76,9 +115,9 @@ function render() {
       ${ONE_GAME && !SEASON_PAGE ? '' : `<button class="backlink" data-back>Back to the season</button>`}
 
       <div class="card scorecard">
-        <div class="scoreside"><span class="scorelbl">${esc(name)}</span><span class="bignum">${g.score.us}</span></div>
+        <div class="scoreside"><span class="scorelbl">${esc(name)}</span><span class="bignum"${bump('su', g.score.us)}>${g.score.us}</span></div>
         <div class="scoresep"></div>
-        <div class="scoreside"><span class="scorelbl">${esc(g.opponent || 'Them')}</span><span class="bignum">${g.score.them}</span></div>
+        <div class="scoreside"><span class="scorelbl">${esc(g.opponent || 'Them')}</span><span class="bignum"${bump('st', g.score.them)}>${g.score.them}</span></div>
       </div>
 
       ${g.status !== 'upcoming' ? `<div class="clockwrap"><div class="clockline">
@@ -96,10 +135,10 @@ function render() {
         </div>`).join('')}</div></div>` : ''}
 
       ${on.length ? `<div class="card"><h2 style="margin-bottom:10px">On the pitch</h2>
-        <div class="numlist">${on.map(p => `<span class="numchip">${esc(p.n)}<small>${mins(p.sec)}m</small></span>`).join('')}</div></div>` : ''}
+        <div class="numlist">${on.map(p => `<span class="numchip"${bump('on' + p.n, 1)}>${esc(p.n)}<small${bump('m' + p.n, mins(p.sec))}>${mins(p.sec)}m</small></span>`).join('')}</div></div>` : ''}
 
       ${off.length ? `<div class="card"><h2 style="margin-bottom:10px">On the bench</h2>
-        <div class="numlist">${off.map(p => `<span class="numchip off">${esc(p.n)}<small>${mins(p.sec)}m</small></span>`).join('')}</div></div>` : ''}
+        <div class="numlist">${off.map(p => `<span class="numchip off"${bump('on' + p.n, 0)}>${esc(p.n)}<small>${mins(p.sec)}m</small></span>`).join('')}</div></div>` : ''}
 
       ${g.log && g.log.length ? `<div class="card"><h2 style="margin-bottom:10px">Changes</h2>
         <div class="log">${g.log.map(r => `<div style="display:grid;grid-template-columns:52px 1fr;gap:10px;padding:7px 0;border-top:1px solid var(--line)">
@@ -108,13 +147,7 @@ function render() {
         : `${r.on ? `<span class="on">${esc(r.on)} on</span>` : ''}${r.on && r.off ? ' for ' : ''}${r.off ? `<span class="off">${esc(r.off)} off</span>` : ''}`}</span>
         </div>`).join('')}</div></div>` : ''}
 
-      ${g.shots && (g.shots.usOn + g.shots.usOff + g.shots.themOn + g.shots.themOff) ? `<div class="card">
-        <h2 style="margin-bottom:10px">Shots</h2>
-        <div class="tallygrid">
-          <span></span><span class="tallyhead">${esc(name)}</span><span class="tallyhead">${esc(g.opponent || 'Them')}</span>
-          <span class="tallylbl">On target</span><span class="tallybtn" style="pointer-events:none"><b>${g.shots.usOn}</b></span><span class="tallybtn" style="pointer-events:none"><b>${g.shots.themOn}</b></span>
-          <span class="tallylbl">Off target</span><span class="tallybtn" style="pointer-events:none"><b>${g.shots.usOff}</b></span><span class="tallybtn" style="pointer-events:none"><b>${g.shots.themOff}</b></span>
-        </div></div>` : ''}
+      ${statsBlock(g, name)}
     </div>`;
     return;
   }

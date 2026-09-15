@@ -49,13 +49,17 @@ The rules above cover the coaches' data. To publish read-only pages for parents,
 "public": {
   "$share": {
     ".read": true,
-    ".write": "newData.hasChildren(['team', 'games']) || !newData.exists()",
+    ".write": "!newData.exists() || newData.hasChild('team')",
     "team":   { ".validate": "newData.hasChild('name')" },
     "games":  { "$g": { ".validate": "newData.hasChildren(['status', 'score'])" } },
     "$other": { ".validate": false }
   }
 }
 ```
+
+Two things that will silently reject a write if you tighten this further: a team with **no games yet** publishes without a `games` child at all, because Realtime Database drops empty objects — so never require `games`. And never add a `"$other": { ".validate": false }` catch-all: the document also contains `record` and `updated`, and a wildcard matches those too, failing the whole write.
+
+If links are not working, open **Setup → Share with parents**. It now reports whether the last publish succeeded and shows the rejection reason if not, with a **Republish now** button.
 
 **Write is open, and that is a known gap.** There is no authentication yet, so the only thing stopping someone who holds a link from writing to that node is the shape check above. What that check buys: a vandal cannot inject arbitrary keys or free text, only something that already looks like a scoreboard. What it does not buy: they could still post a wrong score.
 
