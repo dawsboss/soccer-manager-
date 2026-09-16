@@ -2,7 +2,7 @@
    Static app. Data lives in localStorage, and mirrors to Firebase Realtime
    Database when a config + workspace code are present. */
 
-const BUILD = '30';
+const BUILD = '32';
 const BUILT = '2026-09-13';
 /* index.html carries the build it was published with. If this file is newer, the
    browser handed us a cached page — the exact failure that has eaten hours. */
@@ -406,6 +406,38 @@ function syncIndex(uid) {
   else { delDeep(state, `access/index/${uid}`); remoteDel(`access/index/${uid}`); }
   saveLocal();
 }
+
+/* Who may see and change which team.
+   Admin: everything. Coach: edits her own team, reads the rest of the club —
+   comparing against the other age groups is the point of being in a club.
+   Tracker and parent: only the teams they are actually attached to. */
+function myTeams() {
+  const all = teams();
+  if (!me || !anyAdmins()) return all;        // before lockdown, nothing is hidden
+  if (canAdmin()) return all;
+  const coachAnywhere = all.some(t => isCoach(t.id, me.uid));
+  if (coachAnywhere) return all;
+  const mine = all.filter(t => isTracker(t.id, me.uid) || isGuardian(t.id, me.uid));
+  return mine;
+}
+/* Every player this account is a guardian of, across every team it can see.
+   Cuts across teams deliberately — a parent with three children in two age
+   groups should not have to know which team each is on. */
+function myPlayers() {
+  if (!me) return [];
+  const out = [];
+  for (const t of teams())
+    for (const p of Object.values(t.players || {}))
+      if ((p.guardians || {})[me.uid]) out.push({ t, p });
+  return out.sort((a, b) => (a.p.name || '').localeCompare(b.p.name || ''));
+}
+const guardsAnyone = () => myPlayers().length > 0;
+
+function canEditTeam(tid) {
+  if (!me || !anyAdmins()) return true;
+  return canAdmin() || isCoach(tid, me.uid);
+}
+const readOnlyHere = () => !canEditTeam(ui.teamId);
 
 /* My role here. Nobody is locked out by an empty membership list: until someone
    is actually given a role, everyone keeps the access they have today. */
@@ -956,6 +988,8 @@ function toast(msg) {
 function render() {
   const t = team();
   if (!t && teams().length) { ui.teamId = teams()[0].id; }
+  const vis = myTeams();
+  if (vis.length && !vis.some(x => x.id === ui.teamId)) ui.teamId = vis[0].id;
   const tt = team();
   $('#teamSwitchName').textContent = tt ? (tt.name || 'Untitled team') : 'No team yet';
   const vr = $('#ver');
@@ -970,6 +1004,12 @@ function render() {
   if (inGame && !match() && !teamMatches(ui.teamId).length) { ui.view = 'matches'; inGame = false; }
   const at = $('#adminTab'); if (at) at.hidden = !canAdmin();
   if (ui.view === 'admin' && !canAdmin()) ui.view = 'setup';
+  const mt = $('#mineTab'); if (mt) mt.hidden = !guardsAnyone();
+  if (ui.view === 'mine' && !guardsAnyone()) ui.view = 'matches';
+  // a parent has no business reading the rest of the squad's names
+  const rt = document.querySelector('#tabs [data-view="roster"]');
+  if (rt) rt.hidden = lim === 'parent';
+  if (ui.view === 'roster' && lim === 'parent') ui.view = guardsAnyone() ? 'mine' : 'matches';
   const tabView = ui.view === 'formation' ? 'admin' : inGame ? 'matches' : ui.view;
   for (const b of document.querySelectorAll('#tabs button')) b.setAttribute('aria-current', String(b.dataset.view === tabView));
   const allowed = lim === 'tracker' ? ['track', 'stats'] : lim === 'parent' ? ['stats'] : ['live', 'track', 'stats', 'pitch'];
@@ -984,15 +1024,17 @@ function render() {
   const app = $('#app');
   const v = ui.view;
   if (denied) { app.innerHTML = lockScreen(); saveUi(); return; }
+  const roNote = !lim && readOnlyHere() && team()
+    ? `<div class="rolebar">Viewing <b>${teamLabel(team())}</b> from another team in the club. You can read it, not change it.</div>` : '';
   const roleNote = lim
     ? `<div class="rolebar">Signed in as <b>${esc(ROLE_LABEL[lim])}</b> — ${lim === 'tracker' ? 'you can log events but not make subs or run the clock' : 'you can read, not change'}.</div>`
     : '';
   const g = ui.gameView;
-  app.innerHTML = roleNote +
+  app.innerHTML = roleNote + roNote +
     v === 'game' ? (g === 'track' ? viewTrack() : g === 'stats' ? viewStats() : g === 'pitch' ? viewMatch() : viewLive()) :
       v === 'roster' ? viewRoster() :
         v === 'season' ? viewSeason() :
-          v === 'formation' ? viewFormation() : v === 'admin' ? viewAdmin() : v === 'setup' ? viewSetup() : viewMatches();
+          v === 'formation' ? viewFormation() : v === 'admin' ? viewAdmin() : v === 'mine' ? viewMine() : v === 'setup' ? viewSetup() : viewMatches();
   if (v === 'game' && g === 'pitch') wireDrag();
   if (v === 'formation') wireFormationDrag();
   saveUi();
@@ -1706,6 +1748,57 @@ function sheetFormations() {
     ${[11, 9, 7, 5].map(size => `<div class="chips" style="margin-bottom:8px"><span class="muted" style="align-self:center;min-width:44px">${size}v${size}</span>
       ${Object.keys(presetsFor(size)).map(k => `<button class="chip" type="button" data-act="newformation" data-size="${size}" data-k="${k}">${k}</button>`).join('')}</div>`).join('')}`);
 }
+/* --- my players: the same page whatever else you are here --- */
+function viewMine() {
+  const list = myPlayers();
+  if (!list.length) return `<div class="empty"><strong>Nobody linked yet</strong>
+    A coach links your account to your player, and she shows up here.</div>`;
+
+  return `<div class="stack">
+    <h2>My players</h2>
+    ${list.map(({ t, p }) => {
+    const ms = teamMatches(t.id);
+    const played = ms.reduce((a, m) => a + playedSec(m, p.id), 0);
+    const planned = ms.reduce((a, m) => a + plannedSec(m, p.id), 0);
+    const diff = Math.round((played - planned) / 60);
+    const last = ms.find(m => gameStatus(m) === 'done');
+    const live = ms.find(m => gameStatus(m) === 'live');
+    const next = ms.filter(m => gameStatus(m) === 'upcoming').slice(-1)[0];
+    const roles = {};
+    for (const m of ms) for (const [k, v] of Object.entries(byRole(m, p.id))) roles[k] = (roles[k] || 0) + v;
+    const rs = Object.entries(roles).filter(([, v]) => v >= 60).sort((a, b) => b[1] - a[1])
+      .map(([k, v]) => `${mins(v)} at ${k}`).join(' · ');
+
+    return `<div class="card">
+      <div class="spread" style="align-items:flex-start">
+        <div class="row">
+          ${p.photo ? `<img class="crest" src="${esc(p.photo)}" alt="">` : `<span class="crest blank">${esc(p.number ?? '')}</span>`}
+          <span><b style="font-size:18px">${esc(p.name)}</b>
+            <span class="rowsub">${esc(p.number ? '#' + p.number + ' · ' : '')}${teamLabel(t)}</span></span>
+        </div>
+        <span class="pmins">${mins(played)}<small> min</small>
+          ${planned > 0 ? `<span class="diff ${diff < 0 ? 'owed' : 'over'}">${diff < 0 ? -diff + ' owed' : diff > 0 ? diff + ' over' : 'on plan'}</span>` : ''}</span>
+      </div>
+      ${rs ? `<p class="muted" style="margin:10px 0 0">${esc(rs)}</p>` : ''}
+      <div class="plist" style="margin-top:10px">
+        ${live ? `<button class="prow" data-act="gotoplayer" data-tid="${t.id}" data-id="${live.id}" style="grid-template-columns:1fr auto">
+          <span><span class="pname">Playing now — ${esc(live.opponent || 'TBC')}</span>
+            <span class="rowsub">${mins(playedSec(live, p.id))} min so far</span></span>
+          <span class="pmins">${score(live).us}<small>–${score(live).them}</small></span></button>` : ''}
+        ${last && !live ? `<button class="prow" data-act="gotoplayer" data-tid="${t.id}" data-id="${last.id}" style="grid-template-columns:1fr auto">
+          <span><span class="pname">Last game — ${esc(last.opponent || 'TBC')}</span>
+            <span class="rowsub">${esc(shortDate(last.date))} · ${mins(playedSec(last, p.id))} min played</span></span>
+          <span class="pmins">${score(last).us}<small>–${score(last).them}</small></span></button>` : ''}
+        ${next ? `<div class="prow" style="grid-template-columns:1fr auto">
+          <span><span class="pname">Next — ${esc(next.opponent || 'TBC')}</span>
+            <span class="rowsub">${[shortDate(next.date), next.kickoff, next.venue].filter(Boolean).map(esc).join(' · ')}</span></span>
+          <span class="muted">upcoming</span></div>` : ''}
+      </div></div>`;
+  }).join('')}
+    <p class="muted">Minutes are across every game this season. Tap a game for the full picture.</p>
+  </div>`;
+}
+
 /* --- settings: things about you and this device --- */
 function viewSetup() {
   const code = localStorage.getItem(LS_WS) || '';
@@ -2211,9 +2304,10 @@ function sheetWorkspace() {
 
 function sheetTeams() {
   openSheet(`<h3>Switch team</h3>
-    ${teams().map(t => `<button class="opt" data-act="pickteam" data-id="${t.id}" aria-current="${t.id === ui.teamId}">
-      ${teamLabel(t)}<span class="rowsub">${teamStats(t)}</span></button>`).join('')}
-    <button class="btn wide" data-act="newteam">Add a team</button>`);
+    ${myTeams().map(t => `<button class="opt" data-act="pickteam" data-id="${t.id}" aria-current="${t.id === ui.teamId}">
+      ${teamLabel(t)}<span class="rowsub">${teamStats(t)}${canEditTeam(t.id) ? '' : ' · view only'}</span></button>`).join('')
+      || '<p class="muted">No teams are shared with your account yet.</p>'}
+    ${canAdmin() ? `<button class="btn wide" data-act="newteam">Add a team</button>` : ''}`);
 }
 
 function sheetMatch(m) {
@@ -2305,6 +2399,12 @@ function sheetPlayer(p) {
       <label class="field"><span>Longest stint (min)</span><input type="number" inputmode="numeric" id="epStint" value="${esc(p.maxStint ?? '')}" placeholder="no limit"></label>
       <label class="field"><span>Goalkeeper</span><select id="epGk"><option value="0"${p.gk ? '' : ' selected'}>No</option><option value="1"${p.gk ? ' selected' : ''}>Yes</option></select></label>
     </div>
+
+    ${canAdmin() || isCoach(t.id, me && me.uid) ? `<p class="lbl">Guardians — accounts that follow her</p>
+    <div class="chips" style="margin-bottom:14px">
+      ${members().map(u => `<button class="chip" type="button" data-act="toggleguard" data-pid="${p.id}" data-uid="${u.uid}" aria-pressed="${!!((p.guardians || {})[u.uid])}">${esc(u.name || u.email || 'Unnamed')}</button>`).join('') || '<span class="muted">Nobody has signed in yet.</span>'}
+    </div>
+    <p class="muted" style="margin-top:-8px">A guardian can read this team and sees her under My players. Linking someone here is what makes them a parent.</p>` : ''}
 
     <p class="lbl">Plays better alongside</p>
     <div class="chips" style="margin-bottom:14px">
@@ -2553,6 +2653,9 @@ document.addEventListener('click', e => {
     return;
   }
   if (a === 'people') { sheetPeople(); return; }
+  if (a === 'gotoplayer') {
+    ui.teamId = d.tid; ui.matchId = d.id; ui.view = 'game'; ui.gameView = 'stats'; render(); return;
+  }
   if (a === 'sharesheet') { sheetShare(); return; }
   if (a === 'setwscode') { sheetWorkspace(); return; }
   if (a === 'claimadmin') {
@@ -2923,6 +3026,14 @@ document.addEventListener('click', e => {
     closeSheet(); return;
   }
   if (a === 'closesheet') { closeSheet(); return; }
+  if (a === 'toggleguard') {
+    const p = t.players[d.pid];
+    const on = ((p.guardians || {})[d.uid]);
+    if (on) drop(`teams/${t.id}/players/${d.pid}/guardians/${d.uid}`);
+    else commit(`teams/${t.id}/players/${d.pid}/guardians/${d.uid}`, true);
+    syncIndex(d.uid);
+    sheetPlayer(state.teams[t.id].players[d.pid]); return;
+  }
   if (a === 'delplayer') {
     if (!confirm('Remove this player from the roster?')) return;
     drop(`teams/${t.id}/players/${d.pid}`); closeSheet(); return;
