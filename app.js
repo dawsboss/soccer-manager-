@@ -2,7 +2,7 @@
    Static app. Data lives in localStorage, and mirrors to Firebase Realtime
    Database when a config + workspace code are present. */
 
-const BUILD = '32';
+const BUILD = '34';
 const BUILT = '2026-09-13';
 /* index.html carries the build it was published with. If this file is newer, the
    browser handed us a cached page — the exact failure that has eaten hours. */
@@ -281,6 +281,8 @@ async function initSync() {
     fb.childAdded = dbMod.onChildAdded;
 
     // every device measures the match against Firebase's clock, not its own
+    dbMod.onValue(dbMod.ref(db, 'appOwners'), s => { appOwners = s.val() || {}; render(); }, () => { });
+
     dbMod.onValue(dbMod.ref(db, '.info/serverTimeOffset'), s => {
       clockSkew = s.val() || 0;
       if (Math.abs(clockSkew) > 30000) console.warn('device clock is off by', Math.round(clockSkew / 1000), 's');
@@ -379,11 +381,12 @@ function roleIn(tid, uid) {
 }
 const ROLE_LABEL = { owner: 'App owner', admin: 'Org admin', coach: 'Coach', tracker: 'Tracker', parent: 'Parent' };
 
-/* Whoever looks after the app itself. This is a convenience for the interface,
-   not a security control — a list in client code proves nothing. What actually
-   protects anything is the rules, which only ever check auth.uid. */
-const APP_OWNERS = ['gdawson2018@gmail.com'];
-const isOwner = () => !!(me && APP_OWNERS.includes((me.email || '').toLowerCase()));
+/* Whoever looks after the app itself. Read from the database root, never from
+   this file — a personal email committed to a public repo gets scraped, sticks
+   around in history, and needs a deploy to change. Set it by hand in the
+   Firebase console; the rules make it read-only to everyone. */
+let appOwners = {};
+const isOwner = () => !!(me && appOwners[me.uid]);
 const canAdmin = () => isOwner() || (me && isAdmin(me.uid));
 /* Mirrors what the security rule checks, so the UI and the database agree. */
 const approved = uid => !!(uid && (acc().index || {})[uid]);
@@ -996,7 +999,8 @@ function render() {
   if (vr) { vr.textContent = 'v' + BUILD; vr.dataset.stale = stale() ? '1' : '0'; }
   const cr = $('#teamCrest');
   if (cr) { cr.src = (tt && tt.logo) || ''; cr.hidden = !(tt && tt.logo); }
-  $('#wsChipName').textContent = wsCode() || 'none';
+  const brand = $('#brand');
+  if (brand && brand.firstChild) brand.firstChild.nodeValue = (acc().org || {}).name || 'Minutes';
   const lim = restricted();
   document.body.dataset.role = lim || '';
   let inGame = ui.view === 'game';
@@ -1020,6 +1024,8 @@ function render() {
   }
   const openM = inGame ? match() : null;
   const st = $('#subtabs'); if (st) st.hidden = !(inGame && openM);
+  // two stacked rows of tabs read as a mistake; show whichever one applies
+  const tb = $('#tabs'); if (tb) tb.hidden = !!(inGame && openM);
   const sr = $('#switchrow'); if (sr) sr.hidden = inGame;
   const app = $('#app');
   const v = ui.view;
@@ -1071,14 +1077,19 @@ function shortDate(d) {
 function gameBar(t, m) {
   const sc = score(m);
   const n = teamMatches(t.id).length;
+  const list = teamMatches(t.id);
+  const i = list.findIndex(x => x.id === m.id);
+  const older = i > -1 ? list[i + 1] : null;     // list runs newest first
+  const newer = i > 0 ? list[i - 1] : null;
   return `<button class="backbtn" data-act="backgames" aria-label="All games">
     <svg viewBox="0 0 12 12" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7.5 2L3.5 6l4 4"/></svg></button>
+  ${older ? `<button class="stepbtn" data-act="pickgame2" data-id="${older.id}" aria-label="Older game" title="${esc(older.opponent || '')}">‹</button>` : ''}
   <button class="gamebar" data-act="pickgame">
-    <span class="gb-label">Game</span>
-    <span class="gb-name">${esc(m.opponent || 'Unnamed')}${m.date ? ' · ' + shortDate(m.date) : ''} · ${sc.us}–${sc.them}</span>
-    ${n > 1 ? `<span class="gb-hint">switch</span>` : ''}
-    <svg viewBox="0 0 12 8" width="12" height="8" aria-hidden="true"><path d="M1 1l5 5 5-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+    <span class="gb-name">${esc(m.opponent || 'Unnamed')}${m.date ? ' · ' + shortDate(m.date) : ''}</span>
+    <span class="gb-score">${sc.us}–${sc.them}</span>
+    ${n > 1 ? `<span class="gb-hint">${i + 1}/${n}</span>` : ''}
   </button>
+  ${newer ? `<button class="stepbtn" data-act="pickgame2" data-id="${newer.id}" aria-label="Newer game" title="${esc(newer.opponent || '')}">›</button>` : ''}
   <button class="sharebtn" data-act="sharesheet" aria-label="Share">
     <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
       <circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/>
@@ -1808,7 +1819,11 @@ function viewSetup() {
     <div class="card"><h2 style="margin-bottom:8px">Account</h2>
       <div class="spread"><span>${me ? `<b>${esc(me.name)}</b><span class="rowsub">${esc(me.email || '')}</span>` : 'Not signed in'}</span>
       <button class="btn quiet sm" data-act="signinsheet">${me ? 'Manage' : 'Sign in'}</button></div>
-      ${me ? `<p class="muted" style="margin-bottom:0">You are <b>${esc(ROLE_LABEL[r] || 'not assigned a role')}</b>${r && r !== 'owner' && r !== 'admin' ? ` for ${teamLabel(team() || {})}` : ''}.</p>`
+      ${me ? `<p class="muted">You are <b>${esc(ROLE_LABEL[r] || 'not assigned a role')}</b>${r && r !== 'owner' && r !== 'admin' ? ` for ${teamLabel(team() || {})}` : ''}.</p>
+      <p class="lbl">Your account id</p>
+      <div class="codebox">${esc(me.uid)}</div>
+      <button class="btn quiet sm" data-act="copylink" data-v="${esc(me.uid)}">Copy id</button>
+      <p class="muted" style="margin-bottom:0">Needed once, to be made app owner in the Firebase console.</p>`
       : '<p class="muted" style="margin-bottom:0">Everything works signed out until the workspace is locked down.</p>'}</div>
 
     <div class="card"><h2 style="margin-bottom:8px">Workspace</h2>
@@ -3118,7 +3133,7 @@ document.addEventListener('click', e => {
 });
 
 $('#teamSwitch').addEventListener('click', sheetTeams);
-$('#wsChip').addEventListener('click', sheetWorkspace);
+
 $('#scrim').addEventListener('click', closeSheet);
 $('#tabs').addEventListener('click', e => {
   const b = e.target.closest('button'); if (!b) return;

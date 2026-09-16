@@ -81,6 +81,25 @@ The API key in `firebase-config.js` is not a secret; the rules above are what ga
 
 The badge in the top bar shows `synced`, `offline`, or `this device`. Writes made while offline land when the connection returns. If both devices edit the same game while one is offline, last write wins.
 
+## Becoming the app owner
+
+The app owner is the one account that can appoint the first club admin. It is stored in the database, **not** in this repository — a personal email committed to a public repo gets scraped, stays in the history forever, and needs a deploy to change.
+
+1. Sign in to the app. Settings → Account shows **Your account id** with a copy button.
+2. Firebase console → Realtime Database → Data. At the **root** (not inside `workspaces`), add:
+
+```json
+"appOwners": { "<paste your account id>": true }
+```
+
+3. Add this to the rules so it can be read but never written from the app:
+
+```json
+"appOwners": { ".read": "auth != null", ".write": false }
+```
+
+Console-only by design. There is no bootstrap race and no button anyone could press to grant themselves ownership — changing it means having Firebase console access, which is the correct bar.
+
 ## Locking it down
 
 The open rules above mean anyone holding a workspace code can read and write everything, names included. Close that once you and at least one other coach have signed in.
