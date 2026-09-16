@@ -462,3 +462,12 @@ body[data-role="parent"] .scoreside .btn{display:none}
   overflow:hidden;text-overflow:ellipsis;max-width:60vw}
 .crumb-k{font-size:10px;font-weight:500;opacity:.66;letter-spacing:.03em}
 .crumb-sep{color:rgba(255,255,255,.45);flex:none}
+
+.avatar{flex:none;width:32px;height:32px;border-radius:50%;padding:0;overflow:hidden;
+  background:rgba(255,255,255,.18);border:1px solid rgba(255,255,255,.35);color:#fff;
+  display:flex;align-items:center;justify-content:center;font-weight:600;font-size:14px}
+.avatar img{width:100%;height:100%;object-fit:cover}
+.avatar[data-on="0"]{opacity:.65}
+.teamcard{display:flex;align-items:center;gap:12px;text-align:left;width:100%}
+.tc-main{flex:1;min-width:0}
+.tc-main b{display:block;font-size:17px}

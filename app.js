@@ -2,7 +2,7 @@
    Static app. Data lives in localStorage, and mirrors to Firebase Realtime
    Database when a config + workspace code are present. */
 
-const BUILD = '35';
+const BUILD = '36';
 const BUILT = '2026-09-13';
 /* index.html carries the build it was published with. If this file is newer, the
    browser handed us a cached page — the exact failure that has eaten hours. */
@@ -254,7 +254,7 @@ async function initAuth() {
     }
 
     authMod.onAuthStateChanged(fbAuth, u => {
-      me = u ? { uid: u.uid, name: u.displayName || (u.email || '').split('@')[0] || 'Signed in', email: u.email || '' } : null;
+      me = u ? { uid: u.uid, name: u.displayName || (u.email || '').split('@')[0] || 'Signed in', email: u.email || '', photo: u.photoURL || '' } : null;
       if (me && fb) {
         // put myself on the roster of people so an admin has someone to assign
         const known = (acc().members || {})[me.uid];
@@ -994,6 +994,13 @@ function render() {
   const vis = myTeams();
   if (vis.length && !vis.some(x => x.id === ui.teamId)) ui.teamId = vis[0].id;
   const cb = $('#crumbs'); if (cb) cb.innerHTML = crumbs();
+  const av = $('#avatar');
+  if (av) {
+    const ph = me && me.photo;
+    av.innerHTML = ph ? `<img src="${esc(ph)}" alt="">`
+      : `<span>${me ? esc((me.name || '?').slice(0, 1).toUpperCase()) : '\u00b7'}</span>`;
+    av.dataset.on = me ? '1' : '0';
+  }
   const vr = $('#ver');
   if (vr) { vr.textContent = 'v' + BUILD; vr.dataset.stale = stale() ? '1' : '0'; }
 
@@ -1002,7 +1009,7 @@ function render() {
   let inGame = ui.view === 'game';
   // a game screen with no game is just four buttons that do nothing
   if (inGame && !match() && !teamMatches(ui.teamId).length) { ui.view = 'matches'; inGame = false; }
-  if (ui.view === 'admin' && !canAdmin()) ui.view = 'setup';
+  if (ui.view === 'admin' && !canAdmin()) ui.view = 'club';
   if (ui.view === 'mine' && !guardsAnyone()) ui.view = 'matches';
   // a parent has no business reading the rest of the squad's names or the plan
   const hideForParent = ['roster', 'teamset'];
@@ -1038,7 +1045,7 @@ function render() {
     v === 'game' ? (g === 'track' ? viewTrack() : g === 'stats' ? viewStats() : g === 'pitch' ? viewMatch() : viewLive()) :
       v === 'roster' ? viewRoster() :
         v === 'season' ? viewSeason() :
-          v === 'formation' ? viewFormation() : v === 'admin' ? viewAdmin()
+          v === 'formation' ? viewFormation() : v === 'club' ? viewClub() : v === 'admin' ? viewAdmin()
             : v === 'mine' ? viewMine() : v === 'teamset' ? viewTeamSet()
               : v === 'setup' ? viewSetup() : viewMatches();
   syncHash();
@@ -1068,12 +1075,55 @@ function crumbs() {
   const org = (acc().org || {}).name || 'Club';
   const t = team();
   const m = ui.view === 'game' ? match() : null;
-  const out = [`<button class="crumb" data-act="clubmenu"><span class="crumb-k">Club</span>${esc(org)}</button>`];
+  const out = [`<button class="crumb" data-act="goview" data-v="club"><span class="crumb-k">Club</span>${esc(org)}</button>`];
   if (t) out.push(`<span class="crumb-sep">\u203a</span>
-    <button class="crumb" data-act="teammenu"><span class="crumb-k">Team</span>${teamLabel(t)}</button>`);
+    <button class="crumb" data-act="goteam" data-id="${t.id}"><span class="crumb-k">Team</span>${teamLabel(t)}</button>`);
   if (m) out.push(`<span class="crumb-sep">\u203a</span>
     <button class="crumb" data-act="pickgame"><span class="crumb-k">Game</span>${esc(m.opponent || 'Game')}</button>`);
   return out.join('');
+}
+
+function viewClub() {
+  const org = (acc().org || {}).name || 'Club';
+  const list = myTeams();
+  const now = nowMs();
+  return `<div class="stack">
+    <div class="spread"><h2>${esc(org)}</h2>
+      ${canAdmin() ? `<button class="btn quiet sm" data-act="goview" data-v="admin">Club settings</button>` : ''}</div>
+    ${guardsAnyone() ? `<button class="card" data-act="goview" data-v="mine" style="text-align:left;width:100%">
+      <b>My players</b><span class="rowsub">${myPlayers().map(x => esc(x.p.name)).join(', ')}</span></button>` : ''}
+    ${list.length ? list.map(t => {
+    const ms = teamMatches(t.id);
+    const live = ms.find(x => gameStatus(x) === 'live');
+    const next = ms.filter(x => gameStatus(x) === 'upcoming').slice(-1)[0];
+    const last = ms.find(x => gameStatus(x) === 'done');
+    const sub = live ? `Playing now — ${esc(live.opponent || 'TBC')} ${score(live).us}–${score(live).them}`
+      : next ? `Next: ${esc(next.opponent || 'TBC')}${next.date ? ' · ' + shortDate(next.date) : ''}`
+        : last ? `Last: ${esc(last.opponent || 'TBC')} ${score(last).us}–${score(last).them}` : 'No games yet';
+    return `<button class="card teamcard" data-act="goteam" data-id="${t.id}">
+      ${t.logo ? `<img class="crest" src="${esc(t.logo)}" alt="">` : `<span class="crest blank">${esc((t.name || '?').slice(0, 1))}</span>`}
+      <span class="tc-main"><b>${teamLabel(t)}</b>
+        <span class="rowsub">${sub}</span>
+        <span class="rowsub">${Object.keys(t.players || {}).length} players · ${ms.length} game${ms.length === 1 ? '' : 's'}${canEditTeam(t.id) ? '' : ' · view only'}</span></span>
+      ${live ? '<span class="pill live">live</span>' : ''}
+    </button>`;
+  }).join('')
+      : `<div class="empty"><strong>No teams yet</strong>${canAdmin() ? 'Add one from Club settings.' : 'Nothing has been shared with your account.'}</div>`}
+    ${canAdmin() ? `<button class="btn quiet wide" data-act="newteam">Add a team</button>` : ''}
+  </div>`;
+}
+
+function sheetAccount() {
+  const r = myRole();
+  openSheet(`<h3>${esc(me.name)}</h3>
+    <p class="muted" style="margin-top:0">${esc(me.email || '')}${r ? ` · ${esc(ROLE_LABEL[r])}` : ''}</p>
+    <button class="opt" data-act="goview" data-v="setup"><b>Settings</b>
+      <span class="rowsub">Workspace, sharing, backup, version</span></button>
+    ${guardsAnyone() ? `<button class="opt" data-act="goview" data-v="mine"><b>My players</b>
+      <span class="rowsub">${myPlayers().map(x => esc(x.p.name)).join(', ')}</span></button>` : ''}
+    ${canAdmin() ? `<button class="opt" data-act="goview" data-v="admin"><b>Club settings</b>
+      <span class="rowsub">Teams, people and roles</span></button>` : ''}
+    <button class="btn danger wide" data-act="signout" style="margin-top:8px">Sign out</button>`);
 }
 
 function sheetClubMenu() {
@@ -2800,9 +2850,9 @@ document.addEventListener('click', e => {
     return;
   }
   if (a === 'people') { sheetPeople(); return; }
-  if (a === 'clubmenu') { sheetClubMenu(); return; }
   if (a === 'teammenu') { sheetTeams(); return; }
   if (a === 'goview') { ui.view = d.v; closeSheet(); render(); return; }
+  if (a === 'goteam') { ui.teamId = d.id; ui.view = 'matches'; closeSheet(); render(); return; }
   if (a === 'gotoplayer') {
     ui.teamId = d.tid; ui.matchId = d.id; ui.view = 'game'; ui.gameView = 'stats'; render(); return;
   }
@@ -3292,7 +3342,8 @@ function uiToHash() {
     const seg = { matches: 'games', roster: 'squad', season: 'season', teamset: 'planning' }[ui.view];
     return `#/team/${t}/${seg}`;
   }
-  if (ui.view === 'admin') return '#/club';
+  if (ui.view === 'club') return '#/club';
+  if (ui.view === 'admin') return '#/club/settings';
   if (ui.view === 'mine') return '#/my-players';
   if (ui.view === 'setup') return '#/settings';
   return '#/';
@@ -3301,7 +3352,7 @@ function uiToHash() {
 function hashToUi() {
   const p = decodeURIComponent(location.hash.replace(/^#\/?/, '')).split('/').filter(Boolean);
   if (!p.length) return false;
-  if (p[0] === 'club') { ui.view = 'admin'; return true; }
+  if (p[0] === 'club') { ui.view = p[1] === 'settings' ? 'admin' : 'club'; return true; }
   if (p[0] === 'my-players') { ui.view = 'mine'; return true; }
   if (p[0] === 'settings') { ui.view = 'setup'; return true; }
   if (p[0] === 'team' && p[1]) {
@@ -3330,6 +3381,9 @@ function syncHash() {
   history.replaceState(null, '', location.pathname + location.search + want);
   setTimeout(() => { routing = false; }, 0);
 }
+const avEl = $('#avatar');
+if (avEl) avEl.addEventListener('click', () => (me ? sheetAccount() : sheetSignIn()));
+
 if (typeof window !== 'undefined' && window.addEventListener) {
   window.addEventListener('hashchange', () => {
     if (routing) return;
