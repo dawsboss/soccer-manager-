@@ -2,7 +2,7 @@
    Static app. Data lives in localStorage, and mirrors to Firebase Realtime
    Database when a config + workspace code are present. */
 
-const BUILD = '36';
+const BUILD = '38';
 const BUILT = '2026-09-13';
 /* index.html carries the build it was published with. If this file is newer, the
    browser handed us a cached page — the exact failure that has eaten hours. */
@@ -403,6 +403,18 @@ function hasAnyRole(uid) {
     if (Object.values(t.players || {}).some(p => (p.guardians || {})[uid])) return true;
   return false;
 }
+function logAccess(act, targetUid, extra) {
+  const u = (acc().members || {})[targetUid] || {};
+  quiet(`access/log/${uid()}`, {
+    at: nowMs(), act,
+    by: (me && me.uid) || null, byName: (me && me.name) || null,
+    target: targetUid, targetName: u.name || u.email || null,
+    ...(extra || {})
+  });
+  saveLocal();
+}
+const auditLog = () => Object.values(acc().log || {}).sort((a, b) => b.at - a.at);
+
 function syncIndex(uid) {
   if (!uid) return;
   if (hasAnyRole(uid)) quiet(`access/index/${uid}`, true);
@@ -1015,11 +1027,13 @@ function render() {
   const hideForParent = ['roster', 'teamset'];
   for (const v of hideForParent) {
     const b = document.querySelector(`#tabs [data-view="${v}"]`);
-    if (b) b.hidden = lim === 'parent';
+    if (b) b.hidden = lim === 'parent' || (v === 'teamset' && lim === 'tracker');
   }
   if (hideForParent.includes(ui.view) && lim === 'parent') ui.view = guardsAnyone() ? 'mine' : 'matches';
+  if (ui.view === 'teamset' && lim === 'tracker') ui.view = 'matches';
   // club admin and account settings are not team-level, so the tab row steps aside
   const teamLevel = ['matches', 'roster', 'season', 'teamset'].includes(ui.view);
+  if (ui.view === 'people' && !canAdmin() && !teams().some(x => isCoach(x.id, me && me.uid))) ui.view = 'club';
   const tabView = ui.view === 'formation' ? 'admin' : inGame ? 'matches' : ui.view;
   for (const b of document.querySelectorAll('#tabs button')) b.setAttribute('aria-current', String(b.dataset.view === tabView));
   const allowed = lim === 'tracker' ? ['track', 'stats'] : lim === 'parent' ? ['stats'] : ['live', 'track', 'stats', 'pitch'];
@@ -1045,7 +1059,7 @@ function render() {
     v === 'game' ? (g === 'track' ? viewTrack() : g === 'stats' ? viewStats() : g === 'pitch' ? viewMatch() : viewLive()) :
       v === 'roster' ? viewRoster() :
         v === 'season' ? viewSeason() :
-          v === 'formation' ? viewFormation() : v === 'club' ? viewClub() : v === 'admin' ? viewAdmin()
+          v === 'formation' ? viewFormation() : v === 'club' ? viewClub() : v === 'people' ? viewPeople() : v === 'admin' ? viewAdmin()
             : v === 'mine' ? viewMine() : v === 'teamset' ? viewTeamSet()
               : v === 'setup' ? viewSetup() : viewMatches();
   syncHash();
@@ -1075,7 +1089,7 @@ function crumbs() {
   const org = (acc().org || {}).name || 'Club';
   const t = team();
   const m = ui.view === 'game' ? match() : null;
-  const out = [`<button class="crumb" data-act="goview" data-v="club"><span class="crumb-k">Club</span>${esc(org)}</button>`];
+  const out = [`<button class="crumb crumb-club" data-act="clubswitch">${clubCrest('xs')}<span><span class="crumb-k">Club</span>${esc(org)}</span></button>`];
   if (t) out.push(`<span class="crumb-sep">\u203a</span>
     <button class="crumb" data-act="goteam" data-id="${t.id}"><span class="crumb-k">Team</span>${teamLabel(t)}</button>`);
   if (m) out.push(`<span class="crumb-sep">\u203a</span>
@@ -1090,6 +1104,8 @@ function viewClub() {
   return `<div class="stack">
     <div class="spread"><h2>${esc(org)}</h2>
       ${canAdmin() ? `<button class="btn quiet sm" data-act="goview" data-v="admin">Club settings</button>` : ''}</div>
+    <div class="clubhead">${clubCrest('lg')}<div><b>${esc(org)}</b>
+      <span class="rowsub">${myTeams().length} team${myTeams().length === 1 ? '' : 's'} you can reach</span></div></div>
     ${guardsAnyone() ? `<button class="card" data-act="goview" data-v="mine" style="text-align:left;width:100%">
       <b>My players</b><span class="rowsub">${myPlayers().map(x => esc(x.p.name)).join(', ')}</span></button>` : ''}
     ${list.length ? list.map(t => {
@@ -1101,7 +1117,7 @@ function viewClub() {
       : next ? `Next: ${esc(next.opponent || 'TBC')}${next.date ? ' · ' + shortDate(next.date) : ''}`
         : last ? `Last: ${esc(last.opponent || 'TBC')} ${score(last).us}–${score(last).them}` : 'No games yet';
     return `<button class="card teamcard" data-act="goteam" data-id="${t.id}">
-      ${t.logo ? `<img class="crest" src="${esc(t.logo)}" alt="">` : `<span class="crest blank">${esc((t.name || '?').slice(0, 1))}</span>`}
+      ${teamCrest(t)}
       <span class="tc-main"><b>${teamLabel(t)}</b>
         <span class="rowsub">${sub}</span>
         <span class="rowsub">${Object.keys(t.players || {}).length} players · ${ms.length} game${ms.length === 1 ? '' : 's'}${canEditTeam(t.id) ? '' : ' · view only'}</span></span>
@@ -1121,9 +1137,40 @@ function sheetAccount() {
       <span class="rowsub">Workspace, sharing, backup, version</span></button>
     ${guardsAnyone() ? `<button class="opt" data-act="goview" data-v="mine"><b>My players</b>
       <span class="rowsub">${myPlayers().map(x => esc(x.p.name)).join(', ')}</span></button>` : ''}
-    ${canAdmin() ? `<button class="opt" data-act="goview" data-v="admin"><b>Club settings</b>
-      <span class="rowsub">Teams, people and roles</span></button>` : ''}
-    <button class="btn danger wide" data-act="signout" style="margin-top:8px">Sign out</button>`);
+    <button class="btn danger wide" data-act="signout" style="margin-top:8px">Sign out</button>
+    <p class="muted">Club settings live under the club itself, since you may belong to more than one.</p>`);
+}
+
+/* Real multi-club needs the userOrgs index from AUTH.md. Until then this device
+   already keeps a separate store per workspace code, so it can offer the clubs
+   it has actually seen. */
+function knownClubs() {
+  const out = [];
+  try {
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (!k || !k.startsWith(LS_DATA + ':')) continue;
+      const code = k.slice(LS_DATA.length + 1);
+      if (code === 'local') continue;
+      let name = code;
+      try { const d = JSON.parse(localStorage.getItem(k)); name = ((d.access || {}).org || {}).name || code; } catch (e) { }
+      out.push({ code, name });
+    }
+  } catch (e) { }
+  return out.sort((a, b) => a.name.localeCompare(b.name));
+}
+
+function sheetClubSwitch() {
+  const here = wsCode();
+  const list = knownClubs();
+  openSheet(`<h3>Clubs</h3>
+    ${list.map(c => `<button class="opt spread" data-act="switchclub" data-code="${esc(c.code)}" aria-current="${c.code === here}">
+      <span><b>${esc(c.name)}</b>${c.code === here ? '<span class="rowsub">open now</span>' : ''}</span>
+      ${c.code === here ? '<span class="muted">here</span>' : '<span class="muted">open</span>'}</button>`).join('')}
+    <button class="opt" data-act="goview" data-v="club"><b>Club home</b>
+      <span class="rowsub">Teams, stats and settings for ${esc((acc().org || {}).name || 'this club')}</span></button>
+    <button class="btn quiet wide" data-act="setwscode" style="margin-top:8px">Join another club by code</button>
+    <p class="muted">Each club keeps its own copy on this device, so switching loses nothing.</p>`);
 }
 
 function sheetClubMenu() {
@@ -1761,16 +1808,23 @@ function viewSeason() {
 
   let w = 0, d = 0, l = 0, gf = 0, ga = 0;
   let sOn = 0, sOff = 0, sOnA = 0, sOffA = 0, pu = 0, pt = 0, pc = 0;
+  // Early games predate shot and possession tracking. Averaging over every game
+  // would quietly understate both, so each family counts only the games that
+  // actually carry it.
+  let shotGames = 0, possGames = 0, evGames = 0;
   const evTot = {};
   for (const m of ms) {
     const sc = score(m), sh = shotTally(m);
     sOn += sh.usOn; sOff += sh.usOff; sOnA += sh.themOn; sOffA += sh.themOff;
+    if (shotList(m).length) shotGames++;
     const po = possession(m, now);
-    pu += po.us; pt += po.them; pc += po.contested;
+    if (po.changes > 2) { pu += po.us; pt += po.them; pc += po.contested; possGames++; }
+    let anyEv = false;
     for (const e of EVENTS) {
       const u = evCount(m, e.k, 'us'), th = evCount(m, e.k, 'them');
-      if (u + th) { evTot[e.k] = evTot[e.k] || { us: 0, them: 0 }; evTot[e.k].us += u; evTot[e.k].them += th; }
+      if (u + th) { anyEv = true; evTot[e.k] = evTot[e.k] || { us: 0, them: 0 }; evTot[e.k].us += u; evTot[e.k].them += th; }
     }
+    if (anyEv) evGames++;
     if (gameStatus(m) === 'done') {
       gf += sc.us; ga += sc.them;
       if (sc.us > sc.them) w++; else if (sc.us === sc.them) d++; else l++;
@@ -1797,7 +1851,9 @@ function viewSeason() {
       ${stat('On target', sOn, sOnA)}
       ${stat('Accuracy', shotsFor ? Math.round(sOn / shotsFor * 100) + '%' : '—', shotsAg ? Math.round(sOnA / shotsAg * 100) + '%' : '—')}
       ${stat('Scored from', shotsFor ? Math.round(gf / shotsFor * 100) + '%' : '—', shotsAg ? Math.round(ga / shotsAg * 100) + '%' : '—')}
-    </div></div>` : '';
+      ${shotGames ? stat('Per game', (shotsFor / shotGames).toFixed(1), (shotsAg / shotGames).toFixed(1)) : ''}
+    </div>
+    ${shotGames < ms.length ? `<p class="muted" style="margin-bottom:0">From ${shotGames} of ${ms.length} games. The rest were played before shots were counted, so they are left out rather than dragging the average down.</p>` : ''}</div>` : '';
 
   const evKeys = Object.keys(evTot);
   const evCard = evKeys.length ? `<div class="card"><h2 style="margin-bottom:10px">Set pieces and fouls</h2>
@@ -1805,13 +1861,13 @@ function viewSeason() {
       <span></span><span class="tallyhead">Us</span><span class="tallyhead">Them</span>
       ${evKeys.map(k => stat(evLabel(k), evTot[k].us, evTot[k].them)).join('')}
     </div>
-    <p class="muted" style="margin-bottom:0">Across ${ms.length} game${ms.length === 1 ? '' : 's'}.</p></div>` : '';
+    <p class="muted" style="margin-bottom:0">From ${evGames} of ${ms.length} game${ms.length === 1 ? '' : 's'}${evGames < ms.length ? ', the rest predating these counters' : ''}.</p></div>` : '';
 
   const possCard = ptot ? `<div class="card"><h2 style="margin-bottom:10px">Possession</h2>
     <div class="possbar"><i style="width:${Math.round(pu / ptot * 100)}%"></i><u style="width:${Math.round(pc / ptot * 100)}%"></u></div>
     <div class="spread" style="margin-top:6px"><span>${settled ? Math.round(pu / settled * 100) : 50}% ours</span>
       <span class="muted">${Math.round(pc / ptot * 100)}% scrappy</span></div>
-    <p class="muted" style="margin-bottom:0">Season average of settled play.</p></div>` : '';
+    <p class="muted" style="margin-bottom:0">Settled play across ${possGames} of ${ms.length} game${ms.length === 1 ? '' : 's'}${possGames < ms.length ? ', ignoring those with too little recorded to judge' : ''}.</p></div>` : '';
 
   const results = ms.length ? `<div class="card"><h2 style="margin-bottom:10px">Results</h2>
     <div class="plist">${ms.map(m => {
@@ -1964,15 +2020,17 @@ function viewMine() {
   </div>`;
 }
 
-/* --- planning: the things a coach sets up before a game --- */
+/* --- team: planning and settings, for whoever can change this team --- */
 function viewTeamSet() {
   const t = team(); if (!t) return needTeam();
   const ro = !canEditTeam(t.id);
   const fs = Object.values(t.formations || {});
   return `<div class="stack">
     <div class="card"><div class="row" style="margin-bottom:10px">
-      ${t.logo ? `<img class="crest" src="${esc(t.logo)}" alt="">` : '<span class="crest blank">—</span>'}
-      <span style="flex:1"><b style="font-size:18px">${teamLabel(t)}</b><span class="rowsub">${teamStats(t)}</span></span></div>
+      ${teamCrest(t)}
+      <span style="flex:1"><b style="font-size:18px">${teamLabel(t)}</b>
+        <span class="rowsub">${teamStats(t)}</span>
+        <span class="rowsub">${t.logo ? 'Own crest' : 'Using the club badge'}</span></span></div>
       ${ro ? '<p class="muted" style="margin-bottom:0">You can read this team but not change it.</p>'
       : `<button class="btn quiet wide" data-act="editteam" data-id="${t.id}">Team name and crest</button>`}</div>
 
@@ -2042,7 +2100,7 @@ function viewAdmin() {
     <h2>Club admin</h2>
     <div class="card"><h2 style="margin-bottom:8px">Details</h2>
       <div class="row" style="margin-bottom:10px">
-        ${org.logo ? `<img class="crest" src="${esc(org.logo)}" alt="">` : '<span class="crest blank">—</span>'}
+        ${clubCrest()}
         <span style="flex:1"><button class="btn quiet sm" data-act="pickorglogo">${org.logo ? 'Change badge' : 'Add a badge'}</button></span>
       </div>
       <label class="field"><span>Name</span><input type="text" id="orgName" value="${esc(org.name || '')}" placeholder="Lakeside Soccer Club"></label>
@@ -2050,7 +2108,7 @@ function viewAdmin() {
 
     <div class="card"><h2 style="margin-bottom:8px">People</h2>
       ${nAdmins ? `<p class="muted" style="margin-top:0">${members().length} signed in · ${nAdmins} admin${nAdmins === 1 ? '' : 's'}.</p>
-        <button class="btn quiet wide" data-act="people">Manage people and roles</button>`
+        <button class="btn quiet wide" data-act="people">People and roles</button>`
       : isOwner() ? `<p class="muted" style="margin-top:0">Nobody administers this club yet. As app owner you can take it, or grant it to someone in People.</p>
         <button class="btn wide" data-act="claimadmin">Make me the club admin</button>`
       : `<p class="muted" style="margin-top:0">Nobody administers this club yet. Ask the app owner to set the first admin.</p>`}
@@ -2191,6 +2249,19 @@ function tapPlayer(pid) {
 /* Published to its own node under a share id. Contains shirt numbers and never
    a name, so the public tier is private by construction rather than by the UI
    choosing to hide things. */
+/* A club with no badge still gets a mark, so the header never looks unfinished. */
+const BALL = `<span class="crest ball" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">
+  <circle cx="12" cy="12" r="9.2"/><path d="M12 6.6l3.6 2.6-1.4 4.2h-4.4L8.4 9.2z"/>
+  <path d="M12 2.8v3.8M20.7 9.2l-5.1 0M18.5 19.2l-4.3-5.8M5.5 19.2l4.3-5.8M3.3 9.2l5.1 0"/></svg></span>`;
+const clubCrest = (cls = '') => {
+  const l = (acc().org || {}).logo;
+  return l ? `<img class="crest ${cls}" src="${esc(l)}" alt="">` : BALL.replace('crest ball', `crest ball ${cls}`);
+};
+/* A team falls back to the club badge, which is usually what a coach wants. */
+const teamCrest = (t, cls = '') => t && t.logo
+  ? `<img class="crest ${cls}" src="${esc(t.logo)}" alt="">`
+  : clubCrest(cls);
+
 const chipName = p => `${p.number ? esc(p.number) + ' ' : ''}${esc(p.name)}`;
 const shirtOf = p => String((p && p.number) ?? '').trim() || '–';
 const gameStatus = m => (m.currentHalf || 1) > (m.periodCount || 2) ? 'done'
@@ -2254,7 +2325,7 @@ function schedulePublish() {
         pubState = {
           at: null,
           error: /permission|denied/i.test(code)
-            ? 'Firebase rejected it — the "public" rules block is missing or wrong'
+            ? 'Firebase rejected the write. Realtime Database needs a "public" rules block alongside "workspaces" — see README.'
             : String(code)
         };
         console.error('publish failed', e);
@@ -2263,7 +2334,7 @@ function schedulePublish() {
   }, 1200);
 }
 
-const shareBase = () => location.href.replace(/[^/]*$/, '');
+const shareBase = () => location.origin + location.pathname.replace(/[^/]*$/, '');
 const teamLink = t => t.share ? `${shareBase()}live.html?t=${t.share}` : '';
 const gameLink = (t, m) => t.share ? `${shareBase()}game.html?t=${t.share}&g=${m.id}` : '';
 
@@ -2301,6 +2372,72 @@ function sheetSwitch(pid) {
       : `<p class="lbl">Role</p>
       ${ROLES.map(r => `<button class="opt" type="button" data-act="doswitch" data-pid="${pid}" data-role="${r}">${r}</button>`).join('')}`}
     <button class="btn quiet wide" data-act="closesheet" style="margin-top:8px">Cancel</button>`);
+}
+
+function viewPeople() {
+  const t = team();
+  const admin = canAdmin();
+  const myCoachTeams = teams().filter(x => isCoach(x.id, me && me.uid));
+  if (!admin && !myCoachTeams.length) return `<div class="empty"><strong>Coaches and admins only</strong>
+    Managing people is limited to whoever runs a team or the club.</div>`;
+
+  const scope = admin ? teams() : myCoachTeams;
+  const rolesOf = u => scope.map(x => ({ x, r: roleIn(x.id, u.uid) })).filter(v => v.r);
+  const all = members().map(u => {
+    const rs = rolesOf(u);
+    return { u, rs, none: !rs.length && !isAdmin(u.uid) };
+  }).filter(m2 => admin || m2.rs.length || m2.none);
+
+  const F = ui.peopleFilter || 'all';
+  const counts = {
+    all: all.length,
+    pending: all.filter(m2 => m2.none).length,
+    coach: all.filter(m2 => m2.rs.some(v => v.r === 'coach')).length,
+    tracker: all.filter(m2 => m2.rs.some(v => v.r === 'tracker')).length,
+    parent: all.filter(m2 => m2.rs.some(v => v.r === 'parent')).length
+  };
+  const shown = F === 'all' ? all
+    : F === 'pending' ? all.filter(m2 => m2.none)
+      : all.filter(m2 => m2.rs.some(v => v.r === F));
+
+  const sortKey = ui.peopleSort || 'name';
+  shown.sort((a, b) => sortKey === 'joined'
+    ? (b.u.at || 0) - (a.u.at || 0)
+    : (a.u.name || '').localeCompare(b.u.name || ''));
+
+  const when = ms => ms ? new Date(ms).toLocaleDateString() : 'unknown';
+
+  return `<div class="stack">
+    <div class="spread"><h2>People</h2>
+      <button class="btn quiet sm" data-act="peoplesort">${sortKey === 'joined' ? 'By join date' : 'By name'}</button></div>
+    <p class="muted" style="margin-top:-6px">${admin ? 'Every account in the club.' : `Accounts on ${esc(myCoachTeams.map(x => x.name).join(', '))}, and anyone new waiting for a role.`}</p>
+
+    <div class="chips">
+      ${[['all', 'All'], ['pending', 'Waiting'], ['coach', 'Coaches'], ['tracker', 'Trackers'], ['parent', 'Parents']]
+      .map(([k, l]) => `<button class="chip" type="button" data-act="peoplefilter" data-v="${k}" aria-pressed="${F === k}">${l} ${counts[k] || 0}</button>`).join('')}
+    </div>
+
+    <div class="plist">${shown.map(({ u, rs, none }) => `<div class="card personrow">
+      <div class="spread">
+        <span><b>${esc(u.name || 'Unnamed')}${me && me.uid === u.uid ? ' <span class="muted">(you)</span>' : ''}</b>
+          <span class="rowsub">${esc(u.email || '')}</span>
+          <span class="rowsub">Joined ${when(u.at)}${rs.length ? ' · ' + rs.map(v => `${esc(ROLE_LABEL[v.r])} of ${esc(v.x.name || 'a team')}`).join(', ') : ''}</span></span>
+        ${none ? '<span class="pill">waiting</span>' : ''}
+      </div>
+      <div class="chips" style="margin-top:10px">
+        ${admin ? `<button class="chip" type="button" data-act="setrole" data-uid="${u.uid}" data-r="admin" aria-pressed="${isAdmin(u.uid)}">Admin</button>` : ''}
+        ${scope.map(x => `<button class="chip" type="button" data-act="setrolet" data-uid="${u.uid}" data-tid="${x.id}" data-r="coach" aria-pressed="${!isAdmin(u.uid) && isCoach(x.id, u.uid)}">Coach · ${esc(x.name || '')}</button>
+        <button class="chip" type="button" data-act="setrolet" data-uid="${u.uid}" data-tid="${x.id}" data-r="tracker" aria-pressed="${isTracker(x.id, u.uid)}">Tracker · ${esc(x.name || '')}</button>`).join('')}
+      </div></div>`).join('') || '<p class="muted">Nobody matches that filter.</p>'}</div>
+
+    <p class="muted">Parents are not set here — linking an account to a player on the Squad page is what makes one.</p>
+
+    ${admin ? `<div class="card"><h2 style="margin-bottom:10px">Activity</h2>
+      ${auditLog().length ? `<div class="log">${auditLog().slice(0, 30).map(e => `<div style="display:grid;grid-template-columns:1fr auto;gap:10px;padding:7px 0;border-top:1px solid var(--line)">
+        <span>${esc(e.byName || 'Someone')} ${esc(e.act)} ${esc(e.targetName || 'someone')}${e.teamName ? ` on ${esc(e.teamName)}` : ''}${e.player ? ` (${esc(e.player)})` : ''}</span>
+        <span class="muted">${when(e.at)}</span></div>`).join('')}</div>`
+      : '<p class="muted" style="margin:0">Nothing recorded yet. Role changes from now on will show here.</p>'}</div>` : ''}
+  </div>`;
 }
 
 function sheetPeople() {
@@ -2767,9 +2904,9 @@ function sheetTeam(t) {
   openSheet(`<h3>${t ? 'Edit team' : 'New team'}</h3>
     ${t ? `<p class="muted" style="margin-top:0">${teamStats(t)}</p>
     <div class="row" style="margin-bottom:14px">
-      ${t.logo ? `<img class="crest" src="${esc(t.logo)}" alt="">` : '<span class="crest blank">—</span>'}
-      <span style="flex:1"><button class="btn quiet sm" data-act="picklogo" data-id="${t.id}">${t.logo ? 'Change crest' : 'Add a crest'}</button>
-      ${t.logo ? `<button class="btn quiet sm" data-act="droplogo" data-id="${t.id}">Remove</button>` : ''}</span>
+      ${teamCrest(t)}
+      <span style="flex:1"><button class="btn quiet sm" data-act="picklogo" data-id="${t.id}">${t.logo ? 'Change crest' : 'Use its own crest'}</button>
+      ${t.logo ? `<button class="btn quiet sm" data-act="droplogo" data-id="${t.id}">Use club badge</button>` : ''}</span>
     </div>` : ''}
     <label class="field"><span>Name</span><input type="text" id="tName" value="${esc(t && t.name ? t.name : '')}" placeholder="Lakeside Thunder G14"></label>
     <button class="btn wide" data-act="saveteam" data-id="${t ? t.id : ''}">${t ? 'Save changes' : 'Create team'}</button>
@@ -2790,7 +2927,7 @@ document.addEventListener('click', e => {
   if (a === 'switchpos') { sheetSwitch(d.pid); return; }
   if (a === 'togglesort') { ui.sortBy = ui.sortBy === 'number' ? 'need' : 'number'; render(); return; }
   if (a === 'pickgame') { sheetPickGame(); return; }
-  if (a === 'pickgame2') { ui.matchId = d.id; ui.picked = null; ui.view = 'game'; closeSheet(); render(); return; }
+  if (a === 'pickgame2') { ui.matchId = d.id; ui.picked = null; ui.view = 'game'; ui.gameView = 'live'; closeSheet(); render(); return; }
   if (a === 'doswitch') {
     if (ui.plan) {
       const sl = d.sid ? slotById(m, d.sid) : null;
@@ -2849,12 +2986,27 @@ document.addEventListener('click', e => {
     location.replace(location.pathname + '?r=' + Date.now());
     return;
   }
-  if (a === 'people') { sheetPeople(); return; }
+  if (a === 'people') { ui.view = 'people'; closeSheet(); render(); return; }
+  if (a === 'peoplefilter') { ui.peopleFilter = d.v; render(); return; }
+  if (a === 'peoplesort') { ui.peopleSort = ui.peopleSort === 'joined' ? 'name' : 'joined'; render(); return; }
+  if (a === 'setrolet') {
+    const key = d.r === 'coach' ? 'coaches' : 'trackers';
+    const on = ((teamAccess(d.tid)[key] || {})[d.uid]);
+    if (on) drop(`access/teams/${d.tid}/${key}/${d.uid}`);
+    else commit(`access/teams/${d.tid}/${key}/${d.uid}`, true);
+    logAccess((on ? 'removed ' : 'made ') + d.r, d.uid, { team: d.tid, teamName: (state.teams[d.tid] || {}).name || null });
+    syncIndex(d.uid); render(); return;
+  }
   if (a === 'teammenu') { sheetTeams(); return; }
   if (a === 'goview') { ui.view = d.v; closeSheet(); render(); return; }
-  if (a === 'goteam') { ui.teamId = d.id; ui.view = 'matches'; closeSheet(); render(); return; }
+  if (a === 'clubswitch') { sheetClubSwitch(); return; }
+  if (a === 'switchclub') {
+    if (d.code === wsCode()) { closeSheet(); ui.view = 'club'; render(); return; }
+    localStorage.setItem(LS_WS, d.code); location.reload(); return;
+  }
+  if (a === 'goteam') { ui.teamId = d.id; ui.view = 'matches'; ui.gameView = 'live'; closeSheet(); render(); return; }
   if (a === 'gotoplayer') {
-    ui.teamId = d.tid; ui.matchId = d.id; ui.view = 'game'; ui.gameView = 'stats'; render(); return;
+    ui.teamId = d.tid; ui.matchId = d.id; ui.view = 'game'; ui.gameView = 'stats'; render(); return;   // deliberate: a parent wants the numbers
   }
   if (a === 'sharesheet') { sheetShare(); return; }
   if (a === 'setwscode') { sheetWorkspace(); return; }
@@ -2872,12 +3024,14 @@ document.addEventListener('click', e => {
         if (Object.keys(acc().admins || {}).length === 1) { toast('Someone has to stay admin'); return; }
         drop(`access/admins/${uid}`);
       } else commit(`access/admins/${uid}`, true);
+      logAccess(isAdmin(uid) ? 'removed admin' : 'made admin', uid);
     } else {
       if (!tid) { toast('Pick a team first'); return; }
       const key = r === 'coach' ? 'coaches' : 'trackers';
       const on = ((teamAccess(tid)[key] || {})[uid]);
       if (on) drop(`access/teams/${tid}/${key}/${uid}`);
       else commit(`access/teams/${tid}/${key}/${uid}`, true);
+      logAccess((on ? 'removed ' : 'made ') + r, uid, { team: tid, teamName: (state.teams[tid] || {}).name || null });
     }
     syncIndex(uid);
     sheetPeople(); return;
@@ -2887,7 +3041,7 @@ document.addEventListener('click', e => {
     fb.set(fb.ref(fb.db, 'public/' + t.share), publicDoc(t))
       .then(() => { pubState = { at: nowMs(), error: null }; sheetShare(); toast('Published'); })
       .catch(e => {
-        pubState = { at: null, error: /permission|denied/i.test((e && e.code) || '') ? 'Firebase rejected it — the "public" rules block is missing or wrong' : String((e && e.code) || e) };
+        pubState = { at: null, error: /permission|denied/i.test((e && e.code) || '') ? 'Firebase rejected the write. Realtime Database needs a "public" rules block alongside "workspaces" — see README.' : String((e && e.code) || e) };
         sheetShare();
       });
     return;
@@ -3231,6 +3385,7 @@ document.addEventListener('click', e => {
     const on = ((p.guardians || {})[d.uid]);
     if (on) drop(`teams/${t.id}/players/${d.pid}/guardians/${d.uid}`);
     else commit(`teams/${t.id}/players/${d.pid}/guardians/${d.uid}`, true);
+    logAccess(on ? 'unlinked guardian' : 'linked guardian', d.uid, { team: t.id, teamName: t.name || null, player: p.name });
     syncIndex(d.uid);
     sheetPlayer(state.teams[t.id].players[d.pid]); return;
   }
@@ -3242,7 +3397,7 @@ document.addEventListener('click', e => {
   if (a === 'newmatch') { closeSheet(); sheetMatch(null); return; }
   if (a === 'editmatch') { sheetMatch(state.matches[d.id]); return; }
   if (a === 'backgames') { ui.view = 'matches'; ui.picked = null; render(); return; }
-  if (a === 'openmatch') { ui.matchId = d.id; ui.view = 'game'; render(); return; }
+  if (a === 'openmatch') { ui.matchId = d.id; ui.view = 'game'; ui.gameView = 'live'; render(); return; }
   if (a === 'savematch') {
     const side = Number($('#mSide').value);
     const base = {
@@ -3342,6 +3497,7 @@ function uiToHash() {
     const seg = { matches: 'games', roster: 'squad', season: 'season', teamset: 'planning' }[ui.view];
     return `#/team/${t}/${seg}`;
   }
+  if (ui.view === 'people') return '#/club/people';
   if (ui.view === 'club') return '#/club';
   if (ui.view === 'admin') return '#/club/settings';
   if (ui.view === 'mine') return '#/my-players';
@@ -3352,7 +3508,7 @@ function uiToHash() {
 function hashToUi() {
   const p = decodeURIComponent(location.hash.replace(/^#\/?/, '')).split('/').filter(Boolean);
   if (!p.length) return false;
-  if (p[0] === 'club') { ui.view = p[1] === 'settings' ? 'admin' : 'club'; return true; }
+  if (p[0] === 'club') { ui.view = p[1] === 'settings' ? 'admin' : p[1] === 'people' ? 'people' : 'club'; return true; }
   if (p[0] === 'my-players') { ui.view = 'mine'; return true; }
   if (p[0] === 'settings') { ui.view = 'setup'; return true; }
   if (p[0] === 'team' && p[1]) {
