@@ -2,7 +2,7 @@
    Static app. Data lives in localStorage, and mirrors to Firebase Realtime
    Database when a config + workspace code are present. */
 
-const BUILD = '34';
+const BUILD = '35';
 const BUILT = '2026-09-13';
 /* index.html carries the build it was published with. If this file is newer, the
    browser handed us a cached page — the exact failure that has eaten hours. */
@@ -993,27 +993,26 @@ function render() {
   if (!t && teams().length) { ui.teamId = teams()[0].id; }
   const vis = myTeams();
   if (vis.length && !vis.some(x => x.id === ui.teamId)) ui.teamId = vis[0].id;
-  const tt = team();
-  $('#teamSwitchName').textContent = tt ? (tt.name || 'Untitled team') : 'No team yet';
+  const cb = $('#crumbs'); if (cb) cb.innerHTML = crumbs();
   const vr = $('#ver');
   if (vr) { vr.textContent = 'v' + BUILD; vr.dataset.stale = stale() ? '1' : '0'; }
-  const cr = $('#teamCrest');
-  if (cr) { cr.src = (tt && tt.logo) || ''; cr.hidden = !(tt && tt.logo); }
-  const brand = $('#brand');
-  if (brand && brand.firstChild) brand.firstChild.nodeValue = (acc().org || {}).name || 'Minutes';
+
   const lim = restricted();
   document.body.dataset.role = lim || '';
   let inGame = ui.view === 'game';
   // a game screen with no game is just four buttons that do nothing
   if (inGame && !match() && !teamMatches(ui.teamId).length) { ui.view = 'matches'; inGame = false; }
-  const at = $('#adminTab'); if (at) at.hidden = !canAdmin();
   if (ui.view === 'admin' && !canAdmin()) ui.view = 'setup';
-  const mt = $('#mineTab'); if (mt) mt.hidden = !guardsAnyone();
   if (ui.view === 'mine' && !guardsAnyone()) ui.view = 'matches';
-  // a parent has no business reading the rest of the squad's names
-  const rt = document.querySelector('#tabs [data-view="roster"]');
-  if (rt) rt.hidden = lim === 'parent';
-  if (ui.view === 'roster' && lim === 'parent') ui.view = guardsAnyone() ? 'mine' : 'matches';
+  // a parent has no business reading the rest of the squad's names or the plan
+  const hideForParent = ['roster', 'teamset'];
+  for (const v of hideForParent) {
+    const b = document.querySelector(`#tabs [data-view="${v}"]`);
+    if (b) b.hidden = lim === 'parent';
+  }
+  if (hideForParent.includes(ui.view) && lim === 'parent') ui.view = guardsAnyone() ? 'mine' : 'matches';
+  // club admin and account settings are not team-level, so the tab row steps aside
+  const teamLevel = ['matches', 'roster', 'season', 'teamset'].includes(ui.view);
   const tabView = ui.view === 'formation' ? 'admin' : inGame ? 'matches' : ui.view;
   for (const b of document.querySelectorAll('#tabs button')) b.setAttribute('aria-current', String(b.dataset.view === tabView));
   const allowed = lim === 'tracker' ? ['track', 'stats'] : lim === 'parent' ? ['stats'] : ['live', 'track', 'stats', 'pitch'];
@@ -1025,8 +1024,7 @@ function render() {
   const openM = inGame ? match() : null;
   const st = $('#subtabs'); if (st) st.hidden = !(inGame && openM);
   // two stacked rows of tabs read as a mistake; show whichever one applies
-  const tb = $('#tabs'); if (tb) tb.hidden = !!(inGame && openM);
-  const sr = $('#switchrow'); if (sr) sr.hidden = inGame;
+  const tb = $('#tabs'); if (tb) tb.hidden = !!(inGame && openM) || !teamLevel;
   const app = $('#app');
   const v = ui.view;
   if (denied) { app.innerHTML = lockScreen(); saveUi(); return; }
@@ -1040,7 +1038,10 @@ function render() {
     v === 'game' ? (g === 'track' ? viewTrack() : g === 'stats' ? viewStats() : g === 'pitch' ? viewMatch() : viewLive()) :
       v === 'roster' ? viewRoster() :
         v === 'season' ? viewSeason() :
-          v === 'formation' ? viewFormation() : v === 'admin' ? viewAdmin() : v === 'mine' ? viewMine() : v === 'setup' ? viewSetup() : viewMatches();
+          v === 'formation' ? viewFormation() : v === 'admin' ? viewAdmin()
+            : v === 'mine' ? viewMine() : v === 'teamset' ? viewTeamSet()
+              : v === 'setup' ? viewSetup() : viewMatches();
+  syncHash();
   if (v === 'game' && g === 'pitch') wireDrag();
   if (v === 'formation') wireFormationDrag();
   saveUi();
@@ -1059,6 +1060,34 @@ function lockScreen() {
       </div></div>
     <p class="muted" style="text-align:center">Read-only score pages need none of this — they keep working from their own link.</p>
   </div>`;
+}
+
+/* Club › Team › Game. Each segment is its own switcher, so the structure of the
+   app is the navigation rather than something you have to learn. */
+function crumbs() {
+  const org = (acc().org || {}).name || 'Club';
+  const t = team();
+  const m = ui.view === 'game' ? match() : null;
+  const out = [`<button class="crumb" data-act="clubmenu"><span class="crumb-k">Club</span>${esc(org)}</button>`];
+  if (t) out.push(`<span class="crumb-sep">\u203a</span>
+    <button class="crumb" data-act="teammenu"><span class="crumb-k">Team</span>${teamLabel(t)}</button>`);
+  if (m) out.push(`<span class="crumb-sep">\u203a</span>
+    <button class="crumb" data-act="pickgame"><span class="crumb-k">Game</span>${esc(m.opponent || 'Game')}</button>`);
+  return out.join('');
+}
+
+function sheetClubMenu() {
+  const org = (acc().org || {}).name || 'Club';
+  openSheet(`<h3>${esc(org)}</h3>
+    ${canAdmin() ? `<button class="opt" data-act="goview" data-v="admin"><b>Club admin</b>
+      <span class="rowsub">Teams, people and roles, club details</span></button>` : ''}
+    ${guardsAnyone() ? `<button class="opt" data-act="goview" data-v="mine"><b>My players</b>
+      <span class="rowsub">${myPlayers().length} linked to your account</span></button>` : ''}
+    <button class="opt" data-act="goview" data-v="setup"><b>Your settings</b>
+      <span class="rowsub">Account, workspace, sharing, backup</span></button>
+    ${me ? `<button class="opt" data-act="signout"><b>Sign out</b>
+      <span class="rowsub">${esc(me.email || me.name)}</span></button>`
+      : `<button class="opt" data-act="signinsheet"><b>Sign in</b></button>`}`);
 }
 
 function needTeam() {
@@ -1673,36 +1702,111 @@ function viewRoster() {
     <div class="plist">${rows}</div></div>`;
 }
 
-/* --- season --- */
+/* --- season: the team first, then the players --- */
 function viewSeason() {
   const t = team(); if (!t) return needTeam();
   const ms = teamMatches(t.id);
+  const done = ms.filter(m => gameStatus(m) === 'done');
+  const now = nowMs();
+
+  let w = 0, d = 0, l = 0, gf = 0, ga = 0;
+  let sOn = 0, sOff = 0, sOnA = 0, sOffA = 0, pu = 0, pt = 0, pc = 0;
+  const evTot = {};
+  for (const m of ms) {
+    const sc = score(m), sh = shotTally(m);
+    sOn += sh.usOn; sOff += sh.usOff; sOnA += sh.themOn; sOffA += sh.themOff;
+    const po = possession(m, now);
+    pu += po.us; pt += po.them; pc += po.contested;
+    for (const e of EVENTS) {
+      const u = evCount(m, e.k, 'us'), th = evCount(m, e.k, 'them');
+      if (u + th) { evTot[e.k] = evTot[e.k] || { us: 0, them: 0 }; evTot[e.k].us += u; evTot[e.k].them += th; }
+    }
+    if (gameStatus(m) === 'done') {
+      gf += sc.us; ga += sc.them;
+      if (sc.us > sc.them) w++; else if (sc.us === sc.them) d++; else l++;
+    }
+  }
+  const settled = pu + pt, ptot = settled + pc;
+  const shotsFor = sOn + sOff, shotsAg = sOnA + sOffA;
+
+  const stat = (label, a, b) => `<span class="tallylbl">${label}</span><b>${a}</b><b>${b}</b>`;
+
+  const record = `<div class="card">
+    <div class="spread"><h2>${w}W ${d}D ${l}L</h2>
+      <span class="muted">${done.length} played${ms.length > done.length ? ` · ${ms.length - done.length} to come` : ''}</span></div>
+    <div class="statgrid" style="grid-template-columns:1fr 60px 60px;margin-top:10px">
+      <span></span><span class="tallyhead">For</span><span class="tallyhead">Against</span>
+      ${stat('Goals', gf, ga)}
+      ${done.length ? stat('Per game', (gf / done.length).toFixed(1), (ga / done.length).toFixed(1)) : ''}
+    </div></div>`;
+
+  const shotsCard = (shotsFor + shotsAg) ? `<div class="card"><h2 style="margin-bottom:10px">Shooting</h2>
+    <div class="statgrid" style="grid-template-columns:1fr 60px 60px">
+      <span></span><span class="tallyhead">For</span><span class="tallyhead">Against</span>
+      ${stat('Shots', shotsFor, shotsAg)}
+      ${stat('On target', sOn, sOnA)}
+      ${stat('Accuracy', shotsFor ? Math.round(sOn / shotsFor * 100) + '%' : '—', shotsAg ? Math.round(sOnA / shotsAg * 100) + '%' : '—')}
+      ${stat('Scored from', shotsFor ? Math.round(gf / shotsFor * 100) + '%' : '—', shotsAg ? Math.round(ga / shotsAg * 100) + '%' : '—')}
+    </div></div>` : '';
+
+  const evKeys = Object.keys(evTot);
+  const evCard = evKeys.length ? `<div class="card"><h2 style="margin-bottom:10px">Set pieces and fouls</h2>
+    <div class="statgrid" style="grid-template-columns:1fr 60px 60px">
+      <span></span><span class="tallyhead">Us</span><span class="tallyhead">Them</span>
+      ${evKeys.map(k => stat(evLabel(k), evTot[k].us, evTot[k].them)).join('')}
+    </div>
+    <p class="muted" style="margin-bottom:0">Across ${ms.length} game${ms.length === 1 ? '' : 's'}.</p></div>` : '';
+
+  const possCard = ptot ? `<div class="card"><h2 style="margin-bottom:10px">Possession</h2>
+    <div class="possbar"><i style="width:${Math.round(pu / ptot * 100)}%"></i><u style="width:${Math.round(pc / ptot * 100)}%"></u></div>
+    <div class="spread" style="margin-top:6px"><span>${settled ? Math.round(pu / settled * 100) : 50}% ours</span>
+      <span class="muted">${Math.round(pc / ptot * 100)}% scrappy</span></div>
+    <p class="muted" style="margin-bottom:0">Season average of settled play.</p></div>` : '';
+
+  const results = ms.length ? `<div class="card"><h2 style="margin-bottom:10px">Results</h2>
+    <div class="plist">${ms.map(m => {
+    const sc = score(m), st = gameStatus(m);
+    const r = st !== 'done' ? '' : sc.us > sc.them ? 'W' : sc.us === sc.them ? 'D' : 'L';
+    return `<button class="prow" type="button" data-act="openmatch" data-id="${m.id}" style="grid-template-columns:26px 1fr auto">
+      <span class="resbadge" data-r="${r}">${r || '·'}</span>
+      <span><span class="pname">${esc(m.opponent || 'TBC')}</span>
+        <span class="psub">${[shortDate(m.date), m.venue].filter(Boolean).map(esc).join(' · ') || 'no date'}</span></span>
+      <span class="pmins">${st === 'upcoming' ? '<small>upcoming</small>' : `${sc.us}<small>–${sc.them}</small>`}</span></button>`;
+  }).join('')}</div></div>` : '';
+
   const rows = players(t).map(p => {
-    let pl = 0, pd = 0;
+    let pl = 0, pd = 0, g = 0, a = 0, sh = 0;
     const roles = {};
     for (const m of ms) {
       pl += playedSec(m, p.id); pd += plannedSec(m, p.id);
+      g += goalList(m).filter(x => x.pid === p.id).length;
+      a += goalList(m).filter(x => x.assist === p.id).length;
+      sh += shotList(m).filter(x => x.pid === p.id).length;
       for (const [k, v] of Object.entries(byRole(m, p.id))) roles[k] = (roles[k] || 0) + v;
     }
-    const rs = Object.entries(roles).filter(([, v]) => v >= 60).sort((a, b) => b[1] - a[1])
+    const rs = Object.entries(roles).filter(([, v]) => v >= 60).sort((x, y) => y[1] - x[1])
       .map(([k, v]) => `${mins(v)} at ${k}`).join(' · ');
-    return { p, pl, pd, diff: pl - pd, roles: rs };
-  }).sort((a, b) => a.diff - b.diff);
-  if (!rows.length) return `<div class="empty"><strong>No players yet</strong>Add the squad on the Roster tab.</div>`;
-  const html = rows.map(r => {
+    return { p, pl, pd, diff: pl - pd, g, a, sh, rs };
+  }).sort((x, y) => x.diff - y.diff);
+
+  const playersCard = rows.length ? `<div class="card"><div class="spread" style="margin-bottom:10px">
+      <h2>Players</h2><span class="muted">furthest behind first</span></div>
+    <div class="plist">${rows.map(r => {
     const pct = r.pd > 0 ? clamp(r.pl / r.pd * 100, 0, 100) : 0;
     const owed = r.pd > 0 && r.diff < -60 ? 1 : 0, over = r.pd > 0 && r.diff > 60 ? 1 : 0;
-    return `<div class="prow" data-on="0">
+    const bits = [r.g ? `${r.g} goal${r.g === 1 ? '' : 's'}` : '', r.a ? `${r.a} assist${r.a === 1 ? '' : 's'}` : '', r.sh ? `${r.sh} shot${r.sh === 1 ? '' : 's'}` : ''].filter(Boolean).join(' · ');
+    return `<div class="prow">
       <span class="pnum">${esc(r.p.number ?? '')}</span>
       <span><span class="pname">${esc(r.p.name)}</span>
-      ${r.pd > 0 ? `<div class="bar"><i style="width:${pct}%" data-owed="${owed}" data-over="${over}"></i><u style="left:100%"></u></div>` : ''}
-      <span class="psub">${r.pd > 0 ? `${mins(r.pd)} planned · ${r.diff < 0 ? mins(-r.diff) + ' min owed' : mins(r.diff) + ' min over'}` : 'no plan set'}</span>
-      ${r.roles ? `<span class="psub">${esc(r.roles)}</span>` : ''}</span>
+        ${r.pd > 0 ? `<div class="bar"><i style="width:${pct}%" data-owed="${owed}" data-over="${over}"></i><u style="left:100%"></u></div>` : ''}
+        <span class="psub">${r.pd > 0 ? `${mins(r.pd)} planned · ${r.diff < 0 ? mins(-r.diff) + ' owed' : mins(r.diff) + ' over'}` : 'no plan set'}${bits ? ' · ' + bits : ''}</span>
+        ${r.rs ? `<span class="psub">${esc(r.rs)}</span>` : ''}</span>
       <span class="pmins">${mins(r.pl)}<small> min</small></span></div>`;
-  }).join('');
-  return `<div class="stack"><div class="spread"><h2>Season totals</h2><span class="muted">${ms.length} games</span></div>
-    <div class="plist">${html}</div>
-    <p class="muted">Sorted by who is furthest behind their planned minutes.</p></div>`;
+  }).join('')}</div></div>` : '<div class="empty"><strong>No players yet</strong>Add the squad first.</div>';
+
+  return `<div class="stack">
+    ${record}${shotsCard}${possCard}${evCard}${results}${playersCard}
+  </div>`;
 }
 
 /* --- formation editor --- */
@@ -1810,6 +1914,36 @@ function viewMine() {
   </div>`;
 }
 
+/* --- planning: the things a coach sets up before a game --- */
+function viewTeamSet() {
+  const t = team(); if (!t) return needTeam();
+  const ro = !canEditTeam(t.id);
+  const fs = Object.values(t.formations || {});
+  return `<div class="stack">
+    <div class="card"><div class="row" style="margin-bottom:10px">
+      ${t.logo ? `<img class="crest" src="${esc(t.logo)}" alt="">` : '<span class="crest blank">—</span>'}
+      <span style="flex:1"><b style="font-size:18px">${teamLabel(t)}</b><span class="rowsub">${teamStats(t)}</span></span></div>
+      ${ro ? '<p class="muted" style="margin-bottom:0">You can read this team but not change it.</p>'
+      : `<button class="btn quiet wide" data-act="editteam" data-id="${t.id}">Team name and crest</button>`}</div>
+
+    <div class="card"><h2 style="margin-bottom:8px">Shapes</h2>
+      <p class="muted" style="margin-top:0">Default lineups per side size. A new game copies the default; games already played keep what they were played with.</p>
+      <div class="plist">${fs.map(f => `<button class="prow" type="button" data-act="editformation" data-id="${f.id}" style="grid-template-columns:1fr auto">
+        <span><span class="pname">${esc(f.name)}</span><span class="psub">${f.size}v${f.size}${(t.defaults || {})[f.size] === f.id ? ' · default' : ''}</span></span>
+        <span class="muted">Edit</span></button>`).join('') || '<p class="muted" style="margin:0">None saved — presets are used instead.</p>'}</div>
+      ${ro ? '' : `<div style="margin-top:10px"><button class="btn quiet wide" data-act="formations">Manage shapes</button></div>`}</div>
+
+    <div class="card"><h2 style="margin-bottom:8px">What to count</h2>
+      <p class="muted" style="margin-top:0">Which counters appear on the Track tab during a game.</p>
+      <div class="chips">${tracked(t).map(e => `<span class="chip" aria-pressed="true">${e.label}</span>`).join('') || '<span class="muted">Nothing switched on.</span>'}</div>
+      ${ro ? '' : `<div style="margin-top:10px"><button class="btn quiet wide" data-act="trackcfg">Choose what to count</button></div>`}</div>
+
+    <div class="card"><h2 style="margin-bottom:8px">Parent links</h2>
+      <p class="muted" style="margin-top:0">Read-only pages showing shirt numbers, never names.</p>
+      <button class="btn quiet wide" data-act="sharesheet">${t.share ? 'Manage links' : 'Set up sharing'}</button></div>
+  </div>`;
+}
+
 /* --- settings: things about you and this device --- */
 function viewSetup() {
   const code = localStorage.getItem(LS_WS) || '';
@@ -1850,12 +1984,13 @@ function viewSetup() {
 
 /* --- admin: the club, its teams and who may touch them --- */
 function viewAdmin() {
-  if (!canAdmin()) return `<div class="empty"><strong>Admins only</strong>
+  if (!canAdmin()) return `<div class="empty"><strong>Club admins only</strong>
     ${me ? 'Your account does not have admin rights for this club.' : 'Sign in with an admin account.'}</div>`;
   const org = (acc().org || {});
   const nAdmins = Object.keys(acc().admins || {}).length;
   return `<div class="stack">
-    <div class="card"><h2 style="margin-bottom:8px">Club</h2>
+    <h2>Club admin</h2>
+    <div class="card"><h2 style="margin-bottom:8px">Details</h2>
       <div class="row" style="margin-bottom:10px">
         ${org.logo ? `<img class="crest" src="${esc(org.logo)}" alt="">` : '<span class="crest blank">—</span>'}
         <span style="flex:1"><button class="btn quiet sm" data-act="pickorglogo">${org.logo ? 'Change badge' : 'Add a badge'}</button></span>
@@ -1878,9 +2013,6 @@ function viewAdmin() {
         <span class="muted">Edit</span></button>`).join('') || '<p class="muted" style="margin:0">No teams yet.</p>'}</div>
       <div style="margin-top:10px"><button class="btn quiet wide" data-act="newteam">Add a team</button></div></div>
 
-    <div class="card"><h2 style="margin-bottom:8px">Shapes</h2>
-      <p class="muted" style="margin-top:0">Default lineups per side size. New games copy the default; existing games keep what they were played with.</p>
-      <button class="btn quiet wide" data-act="formations">Manage shapes</button></div>
   </div>`;
 }
 
@@ -2668,6 +2800,9 @@ document.addEventListener('click', e => {
     return;
   }
   if (a === 'people') { sheetPeople(); return; }
+  if (a === 'clubmenu') { sheetClubMenu(); return; }
+  if (a === 'teammenu') { sheetTeams(); return; }
+  if (a === 'goview') { ui.view = d.v; closeSheet(); render(); return; }
   if (a === 'gotoplayer') {
     ui.teamId = d.tid; ui.matchId = d.id; ui.view = 'game'; ui.gameView = 'stats'; render(); return;
   }
@@ -3132,7 +3267,7 @@ document.addEventListener('click', e => {
   }
 });
 
-$('#teamSwitch').addEventListener('click', sheetTeams);
+
 
 $('#scrim').addEventListener('click', closeSheet);
 $('#tabs').addEventListener('click', e => {
@@ -3145,8 +3280,66 @@ $('#subtabs').addEventListener('click', e => {
 });
 document.addEventListener('keydown', e => { if (e.key === 'Escape') closeSheet(); });
 
+/* ---------------- routing ---------------- */
+/* Hash routing rather than real paths: GitHub Pages has no rewrites, so
+   /admin/clubname would need a 404.html redirect hack. The hash gives the same
+   readable hierarchy, real back and forward, and links that survive a reload. */
+function uiToHash() {
+  const t = ui.teamId, m = ui.matchId;
+  if (ui.view === 'game' && t && m) return `#/team/${t}/game/${m}/${ui.gameView}`;
+  if (ui.view === 'formation' && t) return `#/team/${t}/shape/${ui.editFid}`;
+  if (['matches', 'roster', 'season', 'teamset'].includes(ui.view) && t) {
+    const seg = { matches: 'games', roster: 'squad', season: 'season', teamset: 'planning' }[ui.view];
+    return `#/team/${t}/${seg}`;
+  }
+  if (ui.view === 'admin') return '#/club';
+  if (ui.view === 'mine') return '#/my-players';
+  if (ui.view === 'setup') return '#/settings';
+  return '#/';
+}
+
+function hashToUi() {
+  const p = decodeURIComponent(location.hash.replace(/^#\/?/, '')).split('/').filter(Boolean);
+  if (!p.length) return false;
+  if (p[0] === 'club') { ui.view = 'admin'; return true; }
+  if (p[0] === 'my-players') { ui.view = 'mine'; return true; }
+  if (p[0] === 'settings') { ui.view = 'setup'; return true; }
+  if (p[0] === 'team' && p[1]) {
+    if (!state.teams[p[1]]) return false;
+    ui.teamId = p[1];
+    if (p[2] === 'game' && p[3]) {
+      if (!state.matches[p[3]]) return false;
+      ui.matchId = p[3]; ui.view = 'game';
+      if (['live', 'track', 'stats', 'pitch'].includes(p[4])) ui.gameView = p[4];
+      return true;
+    }
+    if (p[2] === 'shape' && p[3]) { ui.editFid = p[3]; ui.view = 'formation'; return true; }
+    const back = { games: 'matches', squad: 'roster', season: 'season', planning: 'teamset' }[p[2]];
+    ui.view = back || 'matches';
+    return true;
+  }
+  return false;
+}
+
+let routing = false;
+function syncHash() {
+  if (typeof history === 'undefined' || !history.replaceState) return;
+  const want = uiToHash();
+  if (location.hash === want) return;
+  routing = true;
+  history.replaceState(null, '', location.pathname + location.search + want);
+  setTimeout(() => { routing = false; }, 0);
+}
+if (typeof window !== 'undefined' && window.addEventListener) {
+  window.addEventListener('hashchange', () => {
+    if (routing) return;
+    if (hashToUi()) render();
+  });
+}
+
 /* ---------------- boot ---------------- */
 loadLocal();
+hashToUi();     // a shared link wins over whatever was last open
 render();
 initAuth();
 initSync();

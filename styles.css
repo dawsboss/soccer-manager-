@@ -445,3 +445,20 @@ body[data-role="parent"] .scoreside .btn{display:none}
   color:var(--field-deep);font-size:22px;line-height:1;padding:0 0 3px}
 .gb-score{font-family:"Barlow Condensed",sans-serif;font-weight:700;font-size:18px;
   font-variant-numeric:tabular-nums;flex:none}
+
+.resbadge{font-family:"Barlow Condensed",sans-serif;font-weight:700;font-size:14px;
+  width:24px;height:24px;border-radius:6px;display:flex;align-items:center;justify-content:center;
+  background:var(--paper);color:var(--ink-soft)}
+.resbadge[data-r="W"]{background:var(--field);color:#fff}
+.resbadge[data-r="D"]{background:var(--line);color:var(--ink)}
+.resbadge[data-r="L"]{background:var(--over);color:#fff}
+
+/* ---------- breadcrumbs ---------- */
+.crumbs{display:flex;align-items:center;gap:4px;padding:2px 4px 9px;overflow-x:auto;scrollbar-width:none}
+.crumbs::-webkit-scrollbar{display:none}
+.crumb{display:flex;flex-direction:column;align-items:flex-start;gap:0;flex:0 1 auto;min-width:0;
+  background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.22);border-radius:9px;
+  padding:5px 11px;color:#fff;font-weight:600;font-size:14.5px;white-space:nowrap;
+  overflow:hidden;text-overflow:ellipsis;max-width:60vw}
+.crumb-k{font-size:10px;font-weight:500;opacity:.66;letter-spacing:.03em}
+.crumb-sep{color:rgba(255,255,255,.45);flex:none}
