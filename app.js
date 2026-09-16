@@ -2,7 +2,7 @@
    Static app. Data lives in localStorage, and mirrors to Firebase Realtime
    Database when a config + workspace code are present. */
 
-const BUILD = '28';
+const BUILD = '29';
 const BUILT = '2026-09-13';
 /* index.html carries the build it was published with. If this file is newer, the
    browser handed us a cached page — the exact failure that has eaten hours. */
@@ -292,7 +292,13 @@ async function initSync() {
 
     // One full read to get in sync, then child-level listeners so an update to
     // one match can never touch another, or the teams tree.
+    const onDenied = err => {
+      if (!/permission|denied/i.test((err && err.code) || '')) return;
+      denied = true; setSync('off', 'sign in'); render();
+    };
+
     dbMod.onValue(dbMod.ref(db, fb.base), snap => {
+      denied = false;
       const v = snap.val();
       if (!v) pushAll();
       else { state = { teams: v.teams || {}, matches: v.matches || {}, access: v.access || {} }; saveLocal(); render(); }
@@ -319,7 +325,7 @@ async function initSync() {
           delete state[coll][cs.key]; saveLocal(); render();
         });
       }
-    }, { onlyOnce: true });
+    }, onDenied, { onlyOnce: true });
   } catch (e) {
     console.error(e);
     setSync('off', 'sync failed');
@@ -371,6 +377,27 @@ function roleIn(tid, uid) {
   return null;
 }
 const ROLE_LABEL = { admin: 'Org admin', coach: 'Coach', tracker: 'Tracker', parent: 'Parent' };
+/* Mirrors what the security rule checks, so the UI and the database agree. */
+const approved = uid => !!(uid && (acc().index || {})[uid]);
+
+/* Security rules can only look a path up directly — they cannot walk every team
+   asking whether a uid is in it. So every approved person is mirrored into one
+   flat node that a rule can check in a single lookup. */
+function hasAnyRole(uid) {
+  const a = acc();
+  if ((a.admins || {})[uid]) return true;
+  for (const ta of Object.values(a.teams || {}))
+    if ((ta.coaches || {})[uid] || (ta.trackers || {})[uid]) return true;
+  for (const t of Object.values(state.teams || {}))
+    if (Object.values(t.players || {}).some(p => (p.guardians || {})[uid])) return true;
+  return false;
+}
+function syncIndex(uid) {
+  if (!uid) return;
+  if (hasAnyRole(uid)) quiet(`access/index/${uid}`, true);
+  else { delDeep(state, `access/index/${uid}`); remoteDel(`access/index/${uid}`); }
+  saveLocal();
+}
 
 /* My role here. Nobody is locked out by an empty membership list: until someone
    is actually given a role, everyone keeps the access they have today. */
@@ -942,6 +969,7 @@ function render() {
   const sr = $('#switchrow'); if (sr) sr.hidden = inGame;
   const app = $('#app');
   const v = ui.view;
+  if (denied) { app.innerHTML = lockScreen(); saveUi(); return; }
   const roleNote = lim
     ? `<div class="rolebar">Signed in as <b>${esc(ROLE_LABEL[lim])}</b> — ${lim === 'tracker' ? 'you can log events but not make subs or run the clock' : 'you can read, not change'}.</div>`
     : '';
@@ -954,6 +982,21 @@ function render() {
   if (v === 'game' && g === 'pitch') wireDrag();
   if (v === 'formation') wireFormationDrag();
   saveUi();
+}
+
+/* Shown when the rules refuse us. Deliberately not a dead end: both the code and
+   the account can be changed from here. */
+function lockScreen() {
+  return `<div class="stack">
+    <div class="empty"><strong>This workspace needs a sign-in</strong>
+      ${me ? `You are signed in as <b>${esc(me.name)}</b>, but no role has been granted to this account yet. Ask the admin to add you in Setup → People.`
+      : 'The data here is protected. Sign in with the account a coach has given access to.'}
+      <div class="row" style="margin-top:14px;justify-content:center">
+        ${me ? `<button class="btn quiet" data-act="signout">Sign out</button>` : `<button class="btn" data-act="signinsheet">Sign in</button>`}
+        <button class="btn quiet" data-act="setwscode">Change code</button>
+      </div></div>
+    <p class="muted" style="text-align:center">Read-only score pages need none of this — they keep working from their own link.</p>
+  </div>`;
 }
 
 function needTeam() {
@@ -1874,6 +1917,7 @@ function publicDoc(t) {
 
 let pubTimer;
 let pubState = { at: null, error: null };   // surfaced in the share sheet
+let denied = false;                         // rules refused us; show the door
 function schedulePublish() {
   const t = team();
   if (!fb) { pubState = { at: null, error: 'Not connected to Firebase' }; return; }
@@ -2471,10 +2515,12 @@ document.addEventListener('click', e => {
     return;
   }
   if (a === 'people') { sheetPeople(); return; }
+  if (a === 'setwscode') { sheetWorkspace(); return; }
   if (a === 'claimadmin') {
     if (!me) { toast('Sign in first'); return; }
     if (anyAdmins()) { toast('Someone already claimed it'); return; }
     commit(`access/admins/${me.uid}`, true);
+    syncIndex(me.uid);
     toast('You are the admin'); return;
   }
   if (a === 'setrole') {
@@ -2491,6 +2537,7 @@ document.addEventListener('click', e => {
       if (on) drop(`access/teams/${tid}/${key}/${uid}`);
       else commit(`access/teams/${tid}/${key}/${uid}`, true);
     }
+    syncIndex(uid);
     sheetPeople(); return;
   }
   if (a === 'republish') {

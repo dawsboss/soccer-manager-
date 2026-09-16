@@ -26,20 +26,25 @@ Open `index.html` in a browser, or serve the folder. Everything works immediatel
 
 1. Create a Firebase project (free Spark plan is plenty) and add a **Realtime Database**.
 2. Add a **Web app** to the project, then copy the config object into `firebase-config.js`.
-3. In Realtime Database → Rules, paste:
+3. In Realtime Database → Rules, paste the **open** rules to begin with:
 
 ```json
 {
   "rules": {
-    "workspaces": {
-      "$code": {
-        ".read": "$code.length > 20",
-        ".write": "$code.length > 20"
+    "workspaces": { "$code": { ".read": true, ".write": true } },
+    "public": {
+      "$share": {
+        ".read": true,
+        ".write": "!newData.exists() || newData.hasChild('team')",
+        "team":  { ".validate": "newData.hasChild('name')" },
+        "games": { "$g": { ".validate": "newData.hasChild('status')" } }
       }
     }
   }
 }
 ```
+
+Lock them down once people have signed in — see **Locking it down** below.
 
 4. Open the app → **Setup** → *Make one up* → *Save and reload*. Enter that same workspace code on every device.
 
@@ -75,6 +80,73 @@ The proper fix is the first job for authentication: make `.write` require `auth.
 The API key in `firebase-config.js` is not a secret; the rules above are what gate access. The long random workspace code is the shared password. Anyone who has it can read and write that workspace, which is fine for minutes and rosters — if you want real accounts later, turn on Firebase Authentication and change the rules to `"auth != null"`.
 
 The badge in the top bar shows `synced`, `offline`, or `this device`. Writes made while offline land when the connection returns. If both devices edit the same game while one is offline, last write wins.
+
+## Locking it down
+
+The open rules above mean anyone holding a workspace code can read and write everything, names included. Close that once you and at least one other coach have signed in.
+
+### Do this in order. Out of order locks you out.
+
+1. **Back up.** Setup → *Download a copy*.
+2. **Sign in** on your own device. Setup → Account.
+3. **Claim admin.** Setup → People → *Make me the admin*.
+4. **Have every coach sign in** with the same workspace code. They appear in Setup → People.
+5. **Give each of them a role** — Coach or Tracker.
+6. **Check the database.** Realtime Database → Data → `workspaces/<code>/access/index`. Every person who needs access must have a uid listed there. **If someone is missing, stop** — publishing the rules now will lock them out.
+7. **Only then** paste the rules below and publish.
+8. **Test on both devices** before the next game.
+
+### The rules
+
+```json
+{
+  "rules": {
+    "workspaces": {
+      "$code": {
+        ".read": "auth != null && (!data.child('access/index').exists() || data.child('access/index/' + auth.uid).exists())",
+
+        "access": {
+          "members": {
+            "$uid": { ".write": "auth != null && ($uid === auth.uid || data.parent().parent().child('index/' + auth.uid).exists())" }
+          },
+          "admins": {
+            ".write": "auth != null && (!data.exists() || data.child(auth.uid).exists())"
+          },
+          "index":  { ".write": "auth != null && (!data.exists() || root.child('workspaces/' + $code + '/access/admins/' + auth.uid).exists() || data.child(auth.uid).exists())" },
+          "teams":  { ".write": "auth != null && root.child('workspaces/' + $code + '/access/admins/' + auth.uid).exists()" }
+        },
+
+        "teams":   { ".write": "auth != null && data.parent().child('access/index/' + auth.uid).exists()" },
+        "matches": { ".write": "auth != null && data.parent().child('access/index/' + auth.uid).exists()" }
+      }
+    },
+    "public": {
+      "$share": {
+        ".read": true,
+        ".write": "auth != null",
+        "team":  { ".validate": "newData.hasChild('name')" },
+        "games": { "$g": { ".validate": "newData.hasChild('status')" } }
+      }
+    }
+  }
+}
+```
+
+What each part is doing:
+
+- **Reading anything** needs a signed-in account listed in `access/index`. The `!data.child('access/index').exists()` clause is the bootstrap: a brand-new workspace with no index yet stays readable, so it can be set up in the first place. It stops mattering the moment the first role is granted.
+- **`access/members/$uid`** is self-writable. That is how a new coach knocks on the door: they sign in, register themselves, and an admin can then see them to assign a role. It grants no data access on its own.
+- **`admins`** can only be changed by an existing admin — except when there are none, which is the bootstrap for claiming it.
+- **`index`** is the flat lookup the read rule uses. Rules cannot iterate, so it cannot walk every team asking whether you are in it; the app mirrors every role grant into this one node.
+- **`public/$share`** stays world-readable — that is the whole point of the parent links — but writing now needs an account. That closes the hole where anyone holding a share link could overwrite the scoreboard.
+
+### If it goes wrong
+
+Paste the open rules from step 3 back in and publish. Access returns immediately; nothing is lost. The app also detects the refusal and shows a sign-in screen with a way to change account or workspace code rather than a broken page.
+
+### What is still not enforced
+
+Per-team roles. Any indexed person can currently write any team's data — the index is workspace-wide, not per-team. A tracker's restrictions are enforced in the interface only. Tightening that needs a per-team index (`access/teamIndex/{teamId}/{uid}`) and is the next step, not this one.
 
 ## Sharing with parents
 
