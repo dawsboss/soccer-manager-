@@ -2,7 +2,7 @@
    Static app. Data lives in localStorage, and mirrors to Firebase Realtime
    Database when a config + workspace code are present. */
 
-const BUILD = '29';
+const BUILD = '30';
 const BUILT = '2026-09-13';
 /* index.html carries the build it was published with. If this file is newer, the
    browser handed us a cached page — the exact failure that has eaten hours. */
@@ -370,13 +370,21 @@ function isGuardian(tid, uid) {
 }
 function roleIn(tid, uid) {
   if (!uid) return null;
+  if (me && me.uid === uid && isOwner()) return 'owner';
   if (isAdmin(uid)) return 'admin';
   if (isCoach(tid, uid)) return 'coach';
   if (isTracker(tid, uid)) return 'tracker';
   if (isGuardian(tid, uid)) return 'parent';
   return null;
 }
-const ROLE_LABEL = { admin: 'Org admin', coach: 'Coach', tracker: 'Tracker', parent: 'Parent' };
+const ROLE_LABEL = { owner: 'App owner', admin: 'Org admin', coach: 'Coach', tracker: 'Tracker', parent: 'Parent' };
+
+/* Whoever looks after the app itself. This is a convenience for the interface,
+   not a security control — a list in client code proves nothing. What actually
+   protects anything is the rules, which only ever check auth.uid. */
+const APP_OWNERS = ['gdawson2018@gmail.com'];
+const isOwner = () => !!(me && APP_OWNERS.includes((me.email || '').toLowerCase()));
+const canAdmin = () => isOwner() || (me && isAdmin(me.uid));
 /* Mirrors what the security rule checks, so the UI and the database agree. */
 const approved = uid => !!(uid && (acc().index || {})[uid]);
 
@@ -406,6 +414,7 @@ function myRole() {
   return roleIn(ui.teamId, me.uid);
 }
 const restricted = () => {
+  if (isOwner()) return null;
   const r = myRole();
   return r === 'tracker' || r === 'parent' ? r : null;
 };
@@ -956,8 +965,12 @@ function render() {
   $('#wsChipName').textContent = wsCode() || 'none';
   const lim = restricted();
   document.body.dataset.role = lim || '';
-  const inGame = ui.view === 'game';
-  const tabView = ui.view === 'formation' ? 'setup' : inGame ? 'matches' : ui.view;
+  let inGame = ui.view === 'game';
+  // a game screen with no game is just four buttons that do nothing
+  if (inGame && !match() && !teamMatches(ui.teamId).length) { ui.view = 'matches'; inGame = false; }
+  const at = $('#adminTab'); if (at) at.hidden = !canAdmin();
+  if (ui.view === 'admin' && !canAdmin()) ui.view = 'setup';
+  const tabView = ui.view === 'formation' ? 'admin' : inGame ? 'matches' : ui.view;
   for (const b of document.querySelectorAll('#tabs button')) b.setAttribute('aria-current', String(b.dataset.view === tabView));
   const allowed = lim === 'tracker' ? ['track', 'stats'] : lim === 'parent' ? ['stats'] : ['live', 'track', 'stats', 'pitch'];
   if (!allowed.includes(ui.gameView)) ui.gameView = allowed[0];
@@ -965,7 +978,8 @@ function render() {
     b.hidden = !allowed.includes(b.dataset.gview);
     b.setAttribute('aria-current', String(b.dataset.gview === ui.gameView));
   }
-  const st = $('#subtabs'); if (st) st.hidden = !inGame;
+  const openM = inGame ? match() : null;
+  const st = $('#subtabs'); if (st) st.hidden = !(inGame && openM);
   const sr = $('#switchrow'); if (sr) sr.hidden = inGame;
   const app = $('#app');
   const v = ui.view;
@@ -978,7 +992,7 @@ function render() {
     v === 'game' ? (g === 'track' ? viewTrack() : g === 'stats' ? viewStats() : g === 'pitch' ? viewMatch() : viewLive()) :
       v === 'roster' ? viewRoster() :
         v === 'season' ? viewSeason() :
-          v === 'formation' ? viewFormation() : v === 'setup' ? viewSetup() : viewMatches();
+          v === 'formation' ? viewFormation() : v === 'admin' ? viewAdmin() : v === 'setup' ? viewSetup() : viewMatches();
   if (v === 'game' && g === 'pitch') wireDrag();
   if (v === 'formation') wireFormationDrag();
   saveUi();
@@ -1591,7 +1605,7 @@ function viewRoster() {
     if (p.maxStint) bits.push('max ' + p.maxStint + ' min');
     if (p.active === false) bits.unshift('off the roster');
     return `<button class="prow" type="button" data-act="editplayer" data-pid="${p.id}">
-      <span class="pnum">${esc(p.number ?? '')}</span>
+      ${p.photo ? `<img class="crest sm" src="${esc(p.photo)}" alt="">` : `<span class="pnum">${esc(p.number ?? '')}</span>`}
       <span><span class="pname">${esc(p.name)}</span><span class="psub">${esc(bits.join(' · ') || 'no profile yet')}</span></span>
       <span class="stars" aria-label="rated ${rating(p)} of 5">${'●'.repeat(rating(p))}<span class="dim">${'●'.repeat(5 - rating(p))}</span></span></button>`;
   }).join('') ||
@@ -1692,44 +1706,26 @@ function sheetFormations() {
     ${[11, 9, 7, 5].map(size => `<div class="chips" style="margin-bottom:8px"><span class="muted" style="align-self:center;min-width:44px">${size}v${size}</span>
       ${Object.keys(presetsFor(size)).map(k => `<button class="chip" type="button" data-act="newformation" data-size="${size}" data-k="${k}">${k}</button>`).join('')}</div>`).join('')}`);
 }
-/* --- setup --- */
+/* --- settings: things about you and this device --- */
 function viewSetup() {
   const code = localStorage.getItem(LS_WS) || '';
   const cfgOk = !!(window.SOCCER_FIREBASE_CONFIG && window.SOCCER_FIREBASE_CONFIG.apiKey);
+  const r = myRole();
   return `<div class="stack">
-    <div class="card"><h2 style="margin-bottom:8px">Shared workspace</h2>
-      <p class="muted" style="margin-top:0">Both phones and the tablet need the same code to see the same games. Firebase config is ${cfgOk ? 'in place' : 'not filled in yet — see README.md'}.</p>
-      <label class="field"><span>Workspace code</span><input type="text" id="wsCode" value="${esc(code)}" placeholder="e.g. thunder-2026-9f3a"></label>
-      <div class="row"><button class="btn" data-act="savews">Save and reload</button>
-      <button class="btn quiet" data-act="gencode">Make one up</button></div></div>
-
-    <div class="card"><h2 style="margin-bottom:8px">Teams</h2>
-      <div class="plist">${teams().map(t => `<button class="prow" type="button" data-act="editteam" data-id="${t.id}" style="grid-template-columns:1fr auto">
-        <span><span class="pname">${teamLabel(t)}</span><span class="rowsub">${teamStats(t)}</span></span>
-        <span class="muted">Edit</span></button>`).join('') || '<p class="muted" style="margin:0">No teams yet.</p>'}</div>
-      <div style="margin-top:10px"><button class="btn quiet wide" data-act="newteam">Add a team</button></div></div>
-
-    <div class="card"><h2 style="margin-bottom:8px">Shapes</h2>
-      <p class="muted" style="margin-top:0">Default lineups per side size. New games copy the default; existing games keep what they were played with.</p>
-      <button class="btn quiet wide" data-act="formations">Manage shapes</button></div>
-
-    <div class="card"><h2 style="margin-bottom:8px">Share with parents</h2>
-      <p class="muted" style="margin-top:0">A read-only page showing shirt numbers, never names. Two links: one for the season, one for a single game.</p>
-      <button class="btn quiet wide" data-act="sharesheet">${team() && team().share ? 'Manage links' : 'Set up sharing'}</button></div>
-
-    <div class="card"><h2 style="margin-bottom:8px">People</h2>
-      ${!anyAdmins() ? `<p class="muted" style="margin-top:0">Nobody is an admin yet. Whoever claims it can assign coaches and trackers.</p>
-        ${me ? `<button class="btn wide" data-act="claimadmin">Make me the admin</button>`
-        : '<p class="muted">Sign in first to claim it.</p>'}`
-      : `<p class="muted" style="margin-top:0">${members().length} signed in · ${Object.keys(acc().admins || {}).length} admin${Object.keys(acc().admins || {}).length === 1 ? '' : 's'}.
-        ${me ? `You are <b>${esc(ROLE_LABEL[myRole()] || 'not assigned')}</b> for ${teamLabel(team() || {})}.` : 'Sign in to see your own role.'}</p>
-        <button class="btn quiet wide" data-act="people">Manage people and roles</button>`}
-      <p class="muted" style="margin-bottom:0">Roles are recorded but not yet enforced — the database rules that make them real come next.</p></div>
-
     <div class="card"><h2 style="margin-bottom:8px">Account</h2>
       <div class="spread"><span>${me ? `<b>${esc(me.name)}</b><span class="rowsub">${esc(me.email || '')}</span>` : 'Not signed in'}</span>
       <button class="btn quiet sm" data-act="signinsheet">${me ? 'Manage' : 'Sign in'}</button></div>
-      <p class="muted" style="margin-bottom:0">Optional today. Everything still works signed out — signing in only means what you log is stamped with a verified account.</p></div>
+      ${me ? `<p class="muted" style="margin-bottom:0">You are <b>${esc(ROLE_LABEL[r] || 'not assigned a role')}</b>${r && r !== 'owner' && r !== 'admin' ? ` for ${teamLabel(team() || {})}` : ''}.</p>`
+      : '<p class="muted" style="margin-bottom:0">Everything works signed out until the workspace is locked down.</p>'}</div>
+
+    <div class="card"><h2 style="margin-bottom:8px">Workspace</h2>
+      <p class="muted" style="margin-top:0">Every device needs the same code. Firebase config is ${cfgOk ? 'in place' : 'not filled in — see README.md'}.</p>
+      <div class="spread"><span class="codebox" style="margin:0;flex:1">${esc(code || 'none')}</span></div>
+      <div style="margin-top:10px"><button class="btn quiet wide" data-act="setwscode">Change or copy the code</button></div></div>
+
+    <div class="card"><h2 style="margin-bottom:8px">Share with parents</h2>
+      <p class="muted" style="margin-top:0">Read-only pages showing shirt numbers, never names.</p>
+      <button class="btn quiet wide" data-act="sharesheet">${team() && team().share ? 'Manage links' : 'Set up sharing'}</button></div>
 
     <div class="card"><h2 style="margin-bottom:8px">Version</h2>
       <div class="spread"><span>Build <b>v${BUILD}</b> <span class="muted">· ${BUILT}</span></span>
@@ -1740,7 +1736,43 @@ function viewSetup() {
     <div class="card"><h2 style="margin-bottom:8px">Backup</h2>
       <div class="row"><button class="btn quiet" data-act="export">Download a copy</button>
       <button class="btn quiet" data-act="import">Load from a file</button></div>
-      <p class="muted" style="margin-bottom:0">A JSON file with every team, game and sub.</p></div>
+      <p class="muted" style="margin-bottom:0">Every team, game and sub as a JSON file.</p></div>
+  </div>`;
+}
+
+/* --- admin: the club, its teams and who may touch them --- */
+function viewAdmin() {
+  if (!canAdmin()) return `<div class="empty"><strong>Admins only</strong>
+    ${me ? 'Your account does not have admin rights for this club.' : 'Sign in with an admin account.'}</div>`;
+  const org = (acc().org || {});
+  const nAdmins = Object.keys(acc().admins || {}).length;
+  return `<div class="stack">
+    <div class="card"><h2 style="margin-bottom:8px">Club</h2>
+      <div class="row" style="margin-bottom:10px">
+        ${org.logo ? `<img class="crest" src="${esc(org.logo)}" alt="">` : '<span class="crest blank">—</span>'}
+        <span style="flex:1"><button class="btn quiet sm" data-act="pickorglogo">${org.logo ? 'Change badge' : 'Add a badge'}</button></span>
+      </div>
+      <label class="field"><span>Name</span><input type="text" id="orgName" value="${esc(org.name || '')}" placeholder="Lakeside Soccer Club"></label>
+      <button class="btn quiet wide" data-act="saveorg">Save</button></div>
+
+    <div class="card"><h2 style="margin-bottom:8px">People</h2>
+      ${nAdmins ? `<p class="muted" style="margin-top:0">${members().length} signed in · ${nAdmins} admin${nAdmins === 1 ? '' : 's'}.</p>
+        <button class="btn quiet wide" data-act="people">Manage people and roles</button>`
+      : isOwner() ? `<p class="muted" style="margin-top:0">Nobody administers this club yet. As app owner you can take it, or grant it to someone in People.</p>
+        <button class="btn wide" data-act="claimadmin">Make me the club admin</button>`
+      : `<p class="muted" style="margin-top:0">Nobody administers this club yet. Ask the app owner to set the first admin.</p>`}
+      <p class="muted" style="margin-bottom:0">Parents are not assigned here — they become one by being linked to a player.</p></div>
+
+    <div class="card"><h2 style="margin-bottom:8px">Teams</h2>
+      <div class="plist">${teams().map(t => `<button class="prow" type="button" data-act="editteam" data-id="${t.id}" style="grid-template-columns:auto 1fr auto">
+        ${t.logo ? `<img class="crest sm" src="${esc(t.logo)}" alt="">` : '<span class="pnum">—</span>'}
+        <span><span class="pname">${teamLabel(t)}</span><span class="rowsub">${teamStats(t)}</span></span>
+        <span class="muted">Edit</span></button>`).join('') || '<p class="muted" style="margin:0">No teams yet.</p>'}</div>
+      <div style="margin-top:10px"><button class="btn quiet wide" data-act="newteam">Add a team</button></div></div>
+
+    <div class="card"><h2 style="margin-bottom:8px">Shapes</h2>
+      <p class="muted" style="margin-top:0">Default lineups per side size. New games copy the default; existing games keep what they were played with.</p>
+      <button class="btn quiet wide" data-act="formations">Manage shapes</button></div>
   </div>`;
 }
 
@@ -2238,6 +2270,12 @@ function sheetPlayer(p) {
   const others = players(t).filter(o => o.id !== p.id);
   const pairs = p.pairs || {}, avoid = p.avoid || {};
   openSheet(`<h3>${esc(p.name)}</h3>
+    <div class="row" style="margin-bottom:12px">
+      ${p.photo ? `<img class="crest" src="${esc(p.photo)}" alt="">` : '<span class="crest blank">—</span>'}
+      <span style="flex:1"><button class="btn quiet sm" data-act="pickphoto" data-pid="${p.id}">${p.photo ? 'Change photo' : 'Add a photo'}</button>
+      ${p.photo ? `<button class="btn quiet sm" data-act="dropphoto" data-pid="${p.id}">Remove</button>` : ''}</span>
+    </div>
+    <p class="muted" style="margin-top:-4px">Visible only to people signed in to this club. Never published to the parent links.</p>
     <div class="grid2">
       <label class="field"><span>Number</span><input type="number" inputmode="numeric" id="epNum" value="${esc(p.number ?? '')}"></label>
       <label class="field"><span>Name</span><input type="text" id="epName" value="${esc(p.name)}"></label>
@@ -2399,7 +2437,7 @@ function sheetPlan() {
 
 /* Resize to 192px and re-encode before storing, so a 4MB phone photo does not
    end up in the database and get republished on every save. */
-function pickLogo(teamId) {
+function pickImage(path, done) {
   const inp = document.createElement('input');
   inp.type = 'file'; inp.accept = 'image/*';
   inp.onchange = () => {
@@ -2417,8 +2455,8 @@ function pickLogo(teamId) {
         let url = c.toDataURL('image/webp', 0.85);
         if (url.length > 60000) url = c.toDataURL('image/jpeg', 0.8);
         if (url.length > 90000) { toast('That image is too large'); return; }
-        commit(`teams/${teamId}/logo`, url);
-        toast('Crest saved');
+        commit(path, url);
+        toast(done || 'Saved');
       };
       im.onerror = () => toast('Could not read that image');
       im.src = r.result;
@@ -2515,6 +2553,7 @@ document.addEventListener('click', e => {
     return;
   }
   if (a === 'people') { sheetPeople(); return; }
+  if (a === 'sharesheet') { sheetShare(); return; }
   if (a === 'setwscode') { sheetWorkspace(); return; }
   if (a === 'claimadmin') {
     if (!me) { toast('Sign in first'); return; }
@@ -2669,7 +2708,11 @@ document.addEventListener('click', e => {
     else { const id = uid(); commit(`teams/${id}`, { id, name, players: {} }); ui.teamId = id; }
     closeSheet(); render(); return;
   }
-  if (a === 'picklogo') { pickLogo(d.id); return; }
+  if (a === 'picklogo') { pickImage(`teams/${d.id}/logo`, 'Crest saved'); return; }
+  if (a === 'pickorglogo') { pickImage('access/org/logo', 'Badge saved'); return; }
+  if (a === 'pickphoto') { pickImage(`teams/${t.id}/players/${d.pid}/photo`, 'Photo saved'); return; }
+  if (a === 'dropphoto') { drop(`teams/${t.id}/players/${d.pid}/photo`); closeSheet(); return; }
+  if (a === 'saveorg') { commit('access/org/name', $('#orgName').value.trim() || 'Club'); toast('Saved'); return; }
   if (a === 'droplogo') { drop(`teams/${d.id}/logo`); closeSheet(); return; }
   if (a === 'delteam') {
     const dt = state.teams[d.id];
@@ -2845,7 +2888,7 @@ document.addEventListener('click', e => {
     saveLocal(); ui.editFid = id; ui.view = 'formation'; closeSheet(); render(); return;
   }
   if (a === 'editformation') { ui.editFid = d.id; ui.view = 'formation'; closeSheet(); render(); return; }
-  if (a === 'backsetup') { ui.view = 'setup'; ui.editFid = null; render(); return; }
+  if (a === 'backsetup') { ui.view = 'admin'; ui.editFid = null; render(); return; }
   if (a === 'savefname') {
     commit(`teams/${t.id}/formations/${ui.editFid}/name`, $('#fName').value.trim() || 'Shape');
     toast('Saved'); return;
