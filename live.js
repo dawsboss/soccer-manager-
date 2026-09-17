@@ -11,6 +11,7 @@ const mmss = sec => { sec = Math.max(0, Math.floor(sec)); return Math.floor(sec 
 const mins = sec => Math.round(sec / 60);
 
 let doc = null, skew = 0, openGame = ONE_GAME || null;
+let auth = null, authMod = null, viewer = null, hasAccess = null;   // null = not checked
 /* Anything that changed since the last render gets a flash, so someone watching
    on a phone at the side of the pitch sees that something happened. */
 let prev = {};
@@ -113,6 +114,7 @@ function render() {
     const off = (g.players || []).filter(p => !p.on);
     $('#app').innerHTML = `<div class="stack">
       ${ONE_GAME && !SEASON_PAGE ? '' : `<button class="backlink" data-back>Back to the season</button>`}
+      ${accessBlock()}
 
       <div class="card scorecard">
         <div class="scoreside"><span class="scorelbl">${esc(name)}</span><span class="bignum"${bump('su', g.score.us)}>${g.score.us}</span></div>
@@ -162,6 +164,7 @@ function render() {
     + (now ? `<br><span class="pill live">Playing now</span>` : '');
 
   $('#app').innerHTML = `<div class="stack">
+    ${accessBlock()}
     ${now ? card(now, 'Happening now') : next ? card(next, 'Up next') : ''}
     <div class="card"><h2 style="margin-bottom:10px">All games</h2>
       <div class="plist">${list.map(x => `<button class="gamerow" data-open="${esc(x.id)}">
@@ -183,11 +186,50 @@ function render() {
   }
 }
 
+function go(id, push) {
+  openGame = id;
+  if (push && history.pushState) history.pushState({ g: id }, '', id ? '#g=' + id : '#');
+  scrollTo(0, 0);
+  render();
+}
+window.addEventListener('popstate', e => { openGame = (e.state && e.state.g) || ONE_GAME || null; render(); });
+
 document.addEventListener('click', e => {
   const o = e.target.closest('[data-open]');
-  if (o) { openGame = o.dataset.open; scrollTo(0, 0); render(); return; }
-  if (e.target.closest('[data-back]')) { openGame = null; scrollTo(0, 0); render(); }
+  if (o) { go(o.dataset.open, true); return; }
+  if (e.target.closest('[data-back]')) { go(null, true); return; }
+  if (e.target.closest('[data-signin]')) { signIn(); return; }
+  if (e.target.closest('[data-signout]')) { authMod.signOut(auth); return; }
 });
+
+async function signIn() {
+  if (!authMod) return;
+  const p = new authMod.GoogleAuthProvider();
+  try { await authMod.signInWithPopup(auth, p); }
+  catch (err) { if (/popup/i.test(err.code || '')) authMod.signInWithRedirect(auth, p); }
+}
+
+/* A signed-in account either has a role in this club or it does not. Rather than
+   duplicating the roster here, the page just offers the way through to the app,
+   where the rules already decide what anyone may see. */
+function accessBlock() {
+  const link = doc && doc.link;
+  const appUrl = link && link.app;
+  const deep = appUrl && link.teamId
+    ? `${appUrl}#/team/${link.teamId}${openGame ? '/game/' + openGame + '/stats' : '/season'}`
+    : appUrl;
+  if (!authMod) return '';
+  if (!viewer) return `<div class="card"><div class="spread">
+      <span><b>Signed out</b><span class="rowsub">Numbers only. Sign in if a coach has given your account access.</span></span>
+      <button class="btn sm" data-signin>Sign in</button></div></div>`;
+  if (hasAccess) return `<div class="card"><div class="spread">
+      <span><b>${esc(viewer.name)}</b><span class="rowsub">Your account has access to this team.</span></span>
+      ${deep ? `<a class="btn sm" href="${esc(deep)}">Open in Minutes</a>` : ''}</div>
+      <button class="backlink" data-signout style="margin-top:8px">Sign out</button></div>`;
+  return `<div class="card"><div class="spread">
+      <span><b>${esc(viewer.name)}</b><span class="rowsub">This account has no role on this team, so the page stays on shirt numbers.</span></span>
+      <button class="btn quiet sm" data-signout>Sign out</button></div></div>`;
+}
 
 // tick the clock locally between pushes so it feels live
 setInterval(() => {
@@ -206,8 +248,27 @@ setInterval(() => {
   try {
     const appMod = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js');
     const dbMod = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js');
-    const db = dbMod.getDatabase(appMod.initializeApp(cfg));
+    const app = appMod.initializeApp(cfg);
+    const db = dbMod.getDatabase(app);
     dbMod.onValue(dbMod.ref(db, '.info/serverTimeOffset'), s => { skew = s.val() || 0; });
+    try {
+      authMod = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js');
+      auth = authMod.getAuth(app);
+    } catch (e) { authMod = null; }
+    if (authMod) {
+      authMod.onAuthStateChanged(auth, async u => {
+        viewer = u ? { uid: u.uid, name: u.displayName || (u.email || '').split('@')[0] || 'Signed in' } : null;
+        hasAccess = null;
+        if (u && doc && doc.link && doc.link.code) {
+          try {
+            const snap = await dbMod.get(dbMod.ref(db, `workspaces/${doc.link.code}/access/index/${u.uid}`));
+            hasAccess = !!snap.val();
+          } catch (e) { hasAccess = false; }
+        }
+        render();
+      });
+    }
+
     dbMod.onValue(dbMod.ref(db, 'public/' + SHARE), s => {
       doc = s.val();
       if (!doc) return fail('That link is no longer active.');

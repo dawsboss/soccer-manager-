@@ -471,3 +471,31 @@ body[data-role="parent"] .scoreside .btn{display:none}
 .teamcard{display:flex;align-items:center;gap:12px;text-align:left;width:100%}
 .tc-main{flex:1;min-width:0}
 .tc-main b{display:block;font-size:17px}
+
+.crest.ball{display:inline-flex;align-items:center;justify-content:center;
+  background:var(--field-wash);color:var(--field-deep);border:1px solid var(--line)}
+.crest.ball svg{width:70%;height:70%}
+.crest.xs{width:20px;height:20px;border-radius:5px}
+.crest.lg{width:52px;height:52px}
+.crumb-club{flex-direction:row;align-items:center;gap:8px}
+.crumb-club>span{display:flex;flex-direction:column;min-width:0}
+.clubhead{display:flex;align-items:center;gap:12px;margin-bottom:4px}
+.clubhead b{font-size:20px;font-family:"Barlow Condensed",sans-serif}
+.personrow .pill{background:var(--owed-wash);color:#6C4406;border:1px solid var(--owed);
+  border-radius:999px;padding:2px 9px;font-size:12px;flex:none;align-self:flex-start}
+
+/* ---------- dense tables ---------- */
+.tablewrap{overflow-x:auto;background:#fff;border:1px solid var(--line);border-radius:var(--r)}
+table.grid{border-collapse:collapse;width:100%;font-size:14px}
+table.grid th{text-align:left;font-size:11px;font-weight:600;color:var(--ink-soft);
+  letter-spacing:.04em;padding:8px 10px;border-bottom:1px solid var(--line);
+  position:sticky;top:0;background:#fff;white-space:nowrap}
+table.grid td{padding:9px 10px;border-bottom:1px solid var(--paper);vertical-align:top;white-space:nowrap}
+table.grid tr:last-child td{border-bottom:0}
+table.grid td.dim{color:var(--ink-soft)}
+table.grid td.right{text-align:right}
+.tag{display:inline-block;background:var(--field-wash);color:var(--field-deep);
+  border-radius:5px;padding:2px 7px;font-size:12px;font-weight:600;margin-right:4px}
+.tag i{font-style:normal;font-weight:500;opacity:.75;margin-left:5px}
+.tag.admin{background:var(--field-deep);color:#fff}
+.tag.wait{background:var(--owed-wash);color:#6C4406}

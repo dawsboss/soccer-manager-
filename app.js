@@ -2,7 +2,7 @@
    Static app. Data lives in localStorage, and mirrors to Firebase Realtime
    Database when a config + workspace code are present. */
 
-const BUILD = '38';
+const BUILD = '39';
 const BUILT = '2026-09-13';
 /* index.html carries the build it was published with. If this file is newer, the
    browser handed us a cached page — the exact failure that has eaten hours. */
@@ -2304,6 +2304,9 @@ function publicDoc(t) {
   }
   return {
     team: { name: t.name || 'Team', logo: t.logo || null },
+    // not a secret once sign-in is required — it is how a parent with an
+    // account gets from the read-only page into the real thing
+    link: { code: wsCode(), teamId: t.id, app: shareBase() + 'index.html' },
     games, record: { w, d, l, gf, ga }, updated: nowMs()
   };
 }
@@ -2417,18 +2420,18 @@ function viewPeople() {
       .map(([k, l]) => `<button class="chip" type="button" data-act="peoplefilter" data-v="${k}" aria-pressed="${F === k}">${l} ${counts[k] || 0}</button>`).join('')}
     </div>
 
-    <div class="plist">${shown.map(({ u, rs, none }) => `<div class="card personrow">
-      <div class="spread">
-        <span><b>${esc(u.name || 'Unnamed')}${me && me.uid === u.uid ? ' <span class="muted">(you)</span>' : ''}</b>
-          <span class="rowsub">${esc(u.email || '')}</span>
-          <span class="rowsub">Joined ${when(u.at)}${rs.length ? ' · ' + rs.map(v => `${esc(ROLE_LABEL[v.r])} of ${esc(v.x.name || 'a team')}`).join(', ') : ''}</span></span>
-        ${none ? '<span class="pill">waiting</span>' : ''}
-      </div>
-      <div class="chips" style="margin-top:10px">
-        ${admin ? `<button class="chip" type="button" data-act="setrole" data-uid="${u.uid}" data-r="admin" aria-pressed="${isAdmin(u.uid)}">Admin</button>` : ''}
-        ${scope.map(x => `<button class="chip" type="button" data-act="setrolet" data-uid="${u.uid}" data-tid="${x.id}" data-r="coach" aria-pressed="${!isAdmin(u.uid) && isCoach(x.id, u.uid)}">Coach · ${esc(x.name || '')}</button>
-        <button class="chip" type="button" data-act="setrolet" data-uid="${u.uid}" data-tid="${x.id}" data-r="tracker" aria-pressed="${isTracker(x.id, u.uid)}">Tracker · ${esc(x.name || '')}</button>`).join('')}
-      </div></div>`).join('') || '<p class="muted">Nobody matches that filter.</p>'}</div>
+    <div class="tablewrap"><table class="grid">
+      <thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Joined</th><th></th></tr></thead>
+      <tbody>${shown.map(({ u, rs, none }) => `<tr data-act="personrow" data-uid="${u.uid}">
+        <td><b>${esc(u.name || 'Unnamed')}</b>${me && me.uid === u.uid ? ' <span class="muted">you</span>' : ''}</td>
+        <td class="dim">${esc(u.email || '')}</td>
+        <td>${isAdmin(u.uid) ? '<span class="tag admin">Admin</span>'
+      : rs.length ? rs.map(v => `<span class="tag">${esc(ROLE_LABEL[v.r])}<i>${esc(v.x.name || '')}</i></span>`).join('')
+        : '<span class="tag wait">Waiting</span>'}</td>
+        <td class="dim">${when(u.at)}</td>
+        <td class="right"><button class="btn quiet sm" data-act="personedit" data-uid="${u.uid}">Roles</button></td>
+      </tr>`).join('') || '<tr><td colspan="5" class="dim">Nobody matches that filter.</td></tr>'}</tbody>
+    </table></div>
 
     <p class="muted">Parents are not set here — linking an account to a player on the Squad page is what makes one.</p>
 
@@ -2438,6 +2441,25 @@ function viewPeople() {
         <span class="muted">${when(e.at)}</span></div>`).join('')}</div>`
       : '<p class="muted" style="margin:0">Nothing recorded yet. Role changes from now on will show here.</p>'}</div>` : ''}
   </div>`;
+}
+
+function sheetPersonRoles(uid) {
+  const u = (acc().members || {})[uid] || {};
+  const admin = canAdmin();
+  const scope = admin ? teams() : teams().filter(x => isCoach(x.id, me && me.uid));
+  openSheet(`<h3>${esc(u.name || 'Unnamed')}</h3>
+    <p class="muted" style="margin-top:0">${esc(u.email || '')}</p>
+    ${admin ? `<p class="lbl">Club</p>
+    <div class="chips" style="margin-bottom:14px">
+      <button class="chip" type="button" data-act="setrole" data-uid="${uid}" data-r="admin" aria-pressed="${isAdmin(uid)}">Club admin</button>
+    </div>` : ''}
+    ${scope.map(x => `<p class="lbl">${esc(x.name || 'Team')}</p>
+      <div class="chips" style="margin-bottom:12px">
+        <button class="chip" type="button" data-act="setrolet" data-uid="${uid}" data-tid="${x.id}" data-r="coach" aria-pressed="${!isAdmin(uid) && isCoach(x.id, uid)}">Coach</button>
+        <button class="chip" type="button" data-act="setrolet" data-uid="${uid}" data-tid="${x.id}" data-r="tracker" aria-pressed="${isTracker(x.id, uid)}">Tracker</button>
+        ${isGuardian(x.id, uid) ? '<span class="muted" style="align-self:center">parent via a player</span>' : ''}
+      </div>`).join('')}
+    <button class="btn wide" data-act="closesheet">Done</button>`);
 }
 
 function sheetPeople() {
@@ -2988,6 +3010,7 @@ document.addEventListener('click', e => {
   }
   if (a === 'people') { ui.view = 'people'; closeSheet(); render(); return; }
   if (a === 'peoplefilter') { ui.peopleFilter = d.v; render(); return; }
+  if (a === 'personedit') { sheetPersonRoles(d.uid); return; }
   if (a === 'peoplesort') { ui.peopleSort = ui.peopleSort === 'joined' ? 'name' : 'joined'; render(); return; }
   if (a === 'setrolet') {
     const key = d.r === 'coach' ? 'coaches' : 'trackers';
@@ -2995,7 +3018,7 @@ document.addEventListener('click', e => {
     if (on) drop(`access/teams/${d.tid}/${key}/${d.uid}`);
     else commit(`access/teams/${d.tid}/${key}/${d.uid}`, true);
     logAccess((on ? 'removed ' : 'made ') + d.r, d.uid, { team: d.tid, teamName: (state.teams[d.tid] || {}).name || null });
-    syncIndex(d.uid); render(); return;
+    syncIndex(d.uid); sheetPersonRoles(d.uid); return;
   }
   if (a === 'teammenu') { sheetTeams(); return; }
   if (a === 'goview') { ui.view = d.v; closeSheet(); render(); return; }
@@ -3528,23 +3551,31 @@ function hashToUi() {
   return false;
 }
 
-let routing = false;
+let routing = false, booted = false;
+/* pushState, not replaceState: every move needs its own history entry or the
+   phone's back gesture walks straight out of the app instead of up a level. */
 function syncHash() {
-  if (typeof history === 'undefined' || !history.replaceState) return;
+  if (typeof history === 'undefined' || !history.pushState) return;
   const want = uiToHash();
   if (location.hash === want) return;
   routing = true;
-  history.replaceState(null, '', location.pathname + location.search + want);
+  const url = location.pathname + location.search + want;
+  if (booted) history.pushState(null, '', url); else history.replaceState(null, '', url);
+  booted = true;
   setTimeout(() => { routing = false; }, 0);
 }
 const avEl = $('#avatar');
 if (avEl) avEl.addEventListener('click', () => (me ? sheetAccount() : sheetSignIn()));
 
 if (typeof window !== 'undefined' && window.addEventListener) {
-  window.addEventListener('hashchange', () => {
+  const backOrForward = () => {
     if (routing) return;
-    if (hashToUi()) render();
-  });
+    const want = uiToHash();
+    if (location.hash === want) return;
+    if (hashToUi()) { routing = true; render(); setTimeout(() => { routing = false; }, 0); }
+  };
+  window.addEventListener('popstate', backOrForward);
+  window.addEventListener('hashchange', backOrForward);
 }
 
 /* ---------------- boot ---------------- */
