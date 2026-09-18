@@ -2,7 +2,7 @@
    Static app. Data lives in localStorage, and mirrors to Firebase Realtime
    Database when a config + workspace code are present. */
 
-const BUILD = '44';
+const BUILD = '45';
 const BUILT = '2026-09-13';
 /* index.html carries the build it was published with. If this file is newer, the
    browser handed us a cached page — the exact failure that has eaten hours. */
@@ -272,6 +272,7 @@ async function getApp() {
 async function initAuth() {
   const app = await getApp();
   if (!app) return;
+  let firstAuthOuter = Promise.resolve();
   try {
     authMod = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js');
     fbAuth = authMod.getAuth(app);
@@ -288,8 +289,16 @@ async function initAuth() {
       }
     }
 
+    let settled;
+    const firstAuth = new Promise(r => { settled = r; });
+    let prevUid;
     authMod.onAuthStateChanged(fbAuth, u => {
       me = u ? { uid: u.uid, name: u.displayName || (u.email || '').split('@')[0] || 'Signed in', email: u.email || '', photo: u.photoURL || '' } : null;
+      const uid = me ? me.uid : null;
+      // identity changed, so any earlier refusal is stale — read again
+      if (prevUid !== undefined && prevUid !== uid) { denied = false; attachWorkspace(); }
+      prevUid = uid;
+      settled();
       if (me && fb) {
         // put myself on the roster of people so an admin has someone to assign
         const known = (acc().members || {})[me.uid];
@@ -300,7 +309,10 @@ async function initAuth() {
       }
       render();
     });
+    firstAuthOuter = firstAuth;
   } catch (e) { console.warn('auth unavailable', e); }
+  // a locked-down workspace refuses an anonymous read, so never read before this
+  await Promise.race([firstAuthOuter, new Promise(r => setTimeout(r, 4000))]);
 }
 
 async function initSync() {
@@ -327,6 +339,7 @@ async function initSync() {
       setSync(s.val() ? 'live' : 'off', s.val() ? 'synced' : 'offline');
     });
 
+    attachWorkspace = () => {
     // One full read to get in sync, then child-level listeners so an update to
     // one match can never touch another, or the teams tree.
     const onDenied = err => {
@@ -338,8 +351,7 @@ async function initSync() {
 
     // a retired club tells every device still holding a copy to let it go
     dbMod.onValue(dbMod.ref(db, 'retired/' + code), rs => {
-      // an app owner keeps it, so a retired club can still be opened and exported
-      if (rs.val() && !isOwner()) purgeClub(code, 'retired');
+      if (rs.val()) purgeClub(code, 'retired');
     }, () => { });
 
     dbMod.onValue(dbMod.ref(db, 'retired'), rs => { retiredClubs = rs.val() || {}; render(); }, () => { });
@@ -373,6 +385,8 @@ async function initSync() {
         });
       }
     }, onDenied, { onlyOnce: true });
+    };
+    attachWorkspace();
   } catch (e) {
     console.error(e);
     setSync('off', 'sync failed');
@@ -1124,8 +1138,7 @@ function purgedScreen() {
   return `<div class="stack"><div class="empty"><strong>Local copy removed</strong>
     ${esc(why)} The copy this device was holding has been cleared.
     <div class="row" style="margin-top:14px;justify-content:center">
-      <button class="btn quiet" data-act="clubswitch">Other clubs</button>
-      <button class="btn quiet" data-act="setwscode">Join by code</button></div></div>
+      <button class="btn quiet" data-act="clubswitch">Other clubs</button></div></div>
     <p class="muted" style="text-align:center">Anything downloaded with <b>Download a copy</b> is yours and is not affected.</p></div>`;
 }
 
@@ -1136,7 +1149,7 @@ function lockScreen() {
       : 'The data here is protected. Sign in with the account a coach has given access to.'}
       <div class="row" style="margin-top:14px;justify-content:center">
         ${me ? `<button class="btn quiet" data-act="signout">Sign out</button>` : `<button class="btn" data-act="signinsheet">Sign in</button>`}
-        <button class="btn quiet" data-act="setwscode">Change code</button>
+
       </div></div>
     <p class="muted" style="text-align:center">Read-only score pages need none of this — they keep working from their own link.</p>
   </div>`;
@@ -1148,7 +1161,7 @@ function crumbs() {
   const org = (acc().org || {}).name || 'Club';
   const t = team();
   const m = ui.view === 'game' ? match() : null;
-  const out = [`<button class="crumb crumb-club" data-act="clubswitch">${clubCrest('xs')}<span><span class="crumb-k">Club</span>${esc(org)}</span></button>`];
+  const out = [`<button class="crumb crumb-club" data-act="goview" data-v="${canAdmin() ? 'admin' : 'club'}">${clubCrest('xs')}<span><span class="crumb-k">Club</span>${esc(org)}</span></button>`];
   if (t) out.push(`<span class="crumb-sep">\u203a</span>
     <button class="crumb" data-act="goteam" data-id="${t.id}"><span class="crumb-k">Team</span>${teamLabel(t)}</button>`);
   if (m) out.push(`<span class="crumb-sep">\u203a</span>
@@ -1231,8 +1244,7 @@ function sheetClubSwitch() {
     <p class="muted">Forget removes this device's copy only. Deleting a club for everyone is a Firebase console job — see below.</p>
     <button class="opt" data-act="goview" data-v="club"><b>Club home</b>
       <span class="rowsub">Teams, stats and settings for ${esc((acc().org || {}).name || 'this club')}</span></button>
-    <button class="btn quiet wide" data-act="setwscode" style="margin-top:8px">Join another club by code</button>
-    <p class="muted">Each club keeps its own copy on this device, so switching loses nothing.</p>`);
+    <p class="muted">Clubs are invite only. If one is missing, ask its admin to add your account.</p>`);
 }
 
 function sheetClubMenu() {
@@ -1322,7 +1334,10 @@ function clockCard(m, now, controls) {
       ? `<button class="btn stop" data-act="pause">Pause</button><button class="btn stop" data-act="endhalf">End ${esc(halfName(m, m.currentHalf || 1)).toLowerCase()}</button>`
       : `<button class="btn" data-act="start">${el ? 'Resume' : 'Start clock'}</button>${el ? `<button class="btn stop" data-act="endhalf">End ${esc(halfName(m, m.currentHalf || 1)).toLowerCase()}</button>` : ''}`}
     </div>
-    <button class="linkbtn" data-act="fixclock">Clock reading wrong?</button>`
+    <div class="row" style="margin-top:6px">
+      <button class="linkbtn" data-act="fixclock">Clock reading wrong?</button>
+      ${el ? `<button class="linkbtn" data-act="endgame" style="margin-left:auto">${m.ended ? 'Reopen game' : 'End game'}</button>` : ''}
+    </div>`
       : `<p class="clocknote">${running(m) ? 'Running' : el ? 'Paused' : 'Not started'} — the clock is controlled from the Live tab.</p>`}</div>`;
 }
 
@@ -1468,7 +1483,7 @@ function viewStats() {
 
   const headline = `<div class="card">
     <h2>${us} ${sc.us} — ${sc.them} ${them}</h2>
-    <div class="muted">${gameStatus(m) === 'done' ? 'Full time' : gameStatus(m) === 'live' ? 'In progress' : 'Not started'} · ${mmss(elapsedSec(m, now))} played${m.date ? ' · ' + esc(shortDate(m.date)) : ''}</div></div>`;
+    <div class="muted">${gameStatus(m) === 'done' ? (m.ended ? 'Final' : 'Full time') : gameStatus(m) === 'live' ? 'In progress' : 'Not started'} · ${mmss(elapsedSec(m, now))} played${m.date ? ' · ' + esc(shortDate(m.date)) : ''}</div></div>`;
 
   const halfTable = halves.length > 1 ? `<div class="card"><h2 style="margin-bottom:10px">By half</h2>
     <div class="statgrid" style="grid-template-columns:1fr ${halves.map(() => '48px').join(' ')}">
@@ -2131,9 +2146,8 @@ function viewSetup() {
       : '<p class="muted" style="margin-bottom:0">Everything works signed out until the workspace is locked down.</p>'}</div>
 
     <div class="card"><h2 style="margin-bottom:8px">Workspace</h2>
-      <p class="muted" style="margin-top:0">Every device needs the same code. Firebase config is ${cfgOk ? 'in place' : 'not filled in — see README.md'}.</p>
-      <div class="spread"><span class="codebox" style="margin:0;flex:1">${esc(code || 'none')}</span></div>
-      <div style="margin-top:10px"><button class="btn quiet wide" data-act="setwscode">Change or copy the code</button></div></div>
+      <p class="muted" style="margin-top:0">Firebase config is ${cfgOk ? 'in place' : 'not filled in — see README.md'}.</p>
+      <p class="muted" style="margin-bottom:0">${code ? 'Connected. Clubs are invite only — an admin adds your account, there is no code to type.' : 'Not connected to a club yet.'}</p></div>
 
     <div class="card"><h2 style="margin-bottom:8px">Share with parents</h2>
       <p class="muted" style="margin-top:0">Read-only pages showing shirt numbers, never names.</p>
@@ -2153,32 +2167,6 @@ function viewSetup() {
 }
 
 /* --- admin: the club, its teams and who may touch them --- */
-/* Applying the rules with an empty index leaves the club readable but unwritable
-   for everyone, which is a worse failure than leaving them open. Check first. */
-function readinessCard() {
-  const idx = Object.keys(acc().index || {});
-  const mem = members();
-  const owners = Object.keys(appOwners).length;
-  const meIn = me && idx.includes(me.uid);
-  const unassigned = mem.filter(u => !idx.includes(u.uid));
-  const checks = [
-    { ok: owners > 0, t: `App owner set in the database`, no: 'No appOwners node yet — see README' },
-    { ok: !!me, t: 'You are signed in', no: 'Sign in first' },
-    { ok: anyAdmins(), t: 'The club has an admin', no: 'Nobody has claimed admin' },
-    { ok: !!meIn, t: 'Your account is in the access index', no: 'You are not indexed — you would lose write access' },
-    { ok: idx.length > 0, t: `${idx.length} account${idx.length === 1 ? '' : 's'} indexed`, no: 'The index is empty — the whole club would go read-only' },
-    { ok: unassigned.length === 0, t: 'Everyone signed in has a role', no: `${unassigned.length} signed in with no role: ${unassigned.map(u => esc(u.name || u.email || '?')).join(', ')}` }
-  ];
-  const pass = checks.every(c => c.ok);
-  return `<div class="card"><div class="spread" style="margin-bottom:10px">
-      <h2>Lockdown readiness</h2><span class="pill ${pass ? 'live' : ''}">${pass ? 'ready' : 'not yet'}</span></div>
-    <div class="plist">${checks.map(c => `<div class="chk" data-ok="${c.ok ? 1 : 0}">
-      <span>${c.ok ? '\u2713' : '\u00d7'}</span><span>${c.ok ? c.t : c.no}</span></div>`).join('')}</div>
-    <p class="muted" style="margin-bottom:0">${pass
-      ? 'Safe to publish the locked-down rules from README. Reverting to the open ones restores access immediately if anything is wrong.'
-      : 'Fix the items above before publishing the rules. Anyone not listed in the index loses access the moment they go live.'}</p></div>`;
-}
-
 function viewAdmin() {
   if (!canAdmin()) return `<div class="empty"><strong>Club admins only</strong>
     ${me ? 'Your account does not have admin rights for this club.' : 'Sign in with an admin account.'}</div>`;
@@ -2202,10 +2190,8 @@ function viewAdmin() {
         ${code === wsCode() ? '<span class="muted">open now</span>'
       : `<button class="btn quiet sm" data-act="switchclub" data-code="${esc(code)}">Open</button>`}</div>`).join('')}</div></div>` : ''}
 
-    ${readinessCard()}
-
     <div class="card"><h2 style="margin-bottom:8px">Retire this club</h2>
-      <p class="muted" style="margin-top:0">Marks it closed. Every device holding a copy clears it on next connect — except the app owner's, so it can still be opened and exported. <b>Nothing is deleted.</b> The data stays until the app owner removes it in the Firebase console.</p>
+      <p class="muted" style="margin-top:0">Marks it closed and archives it. Every device clears its local copy, including yours — the data stays in the database and the app owner can reopen it from the archive at any time. <b>Nothing is deleted.</b></p>
       <button class="btn danger wide" data-act="retireclub">Retire ${esc((acc().org || {}).name || 'this club')}</button></div>
 
     <div class="card"><h2 style="margin-bottom:8px">People</h2>
@@ -2366,7 +2352,10 @@ const teamCrest = (t, cls = '') => t && t.logo
 
 const chipName = p => `${p.number ? esc(p.number) + ' ' : ''}${esc(p.name)}`;
 const shirtOf = p => String((p && p.number) ?? '').trim() || '–';
-const gameStatus = m => (m.currentHalf || 1) > (m.periodCount || 2) ? 'done'
+/* A derived end guesses wrong often enough to matter for stats, so a coach says
+   when it is over. The old rule stays as a fallback for older games. */
+const gameStatus = m => m.ended ? 'done'
+  : (m.currentHalf || 1) > (m.periodCount || 2) ? 'done'
   : (elapsedSec(m) > 0 || running(m)) ? 'live' : 'upcoming';
 
 function publicGame(t, m) {
@@ -2419,6 +2408,7 @@ let pubState = { at: null, error: null };   // surfaced in the share sheet
 let denied = false;                         // rules refused us; show the door
 let purged = null;                          // 'access' | 'retired'
 let retiredClubs = {};                      // app owner's view of what is closed
+let attachWorkspace = () => { };            // re-runnable workspace read
 function schedulePublish() {
   const t = team();
   if (!fb) { pubState = { at: null, error: 'Not connected to Firebase' }; return; }
@@ -3129,6 +3119,7 @@ document.addEventListener('click', e => {
   if (a === 'goview') { ui.view = d.v; closeSheet(); render(); return; }
   if (a === 'retireclub') {
     if (!fb) { toast('Not connected'); return; }
+    if (!canAdmin()) { toast('Club admins and the app owner only'); return; }
     if (!confirm('Retire this club? Every device holding a copy will clear it. Export a backup first if you want one.')) return;
     fb.set(fb.ref(fb.db, 'retired/' + wsCode()), {
       at: nowMs(), by: (me && me.uid) || null, byName: (me && me.name) || null,
@@ -3300,6 +3291,14 @@ document.addEventListener('click', e => {
   if (a === 'start') { startClock(m); return; }
   if (a === 'pause') { pauseClock(m); return; }
   if (a === 'endhalf') { endHalf(m); return; }
+  if (a === 'endgame') {
+    if (m.ended) { drop(`matches/${m.id}/ended`); toast('Game reopened'); return; }
+    if (running(m) && !confirm('The clock is still running. End the game anyway?')) return;
+    pauseClock(m);
+    commit(`matches/${m.id}/ended`, nowMs());
+    toast('Game ended — counted as final in stats');
+    return;
+  }
 
   if (a === 'newteam') { closeSheet(); sheetTeam(null); return; }
   if (a === 'editteam') { sheetTeam(state.teams[d.id]); return; }
@@ -3688,6 +3687,8 @@ function syncHash() {
   booted = true;
   setTimeout(() => { routing = false; }, 0);
 }
+const csEl = $('#clubSwitch');
+if (csEl) csEl.addEventListener('click', sheetClubSwitch);
 const avEl = $('#avatar');
 if (avEl) avEl.addEventListener('click', () => (me ? sheetAccount() : sheetSignIn()));
 
@@ -3706,5 +3707,4 @@ if (typeof window !== 'undefined' && window.addEventListener) {
 loadLocal();
 hashToUi();     // a shared link wins over whatever was last open
 render();
-initAuth();
-initSync();
+(async () => { await initAuth(); await initSync(); })();

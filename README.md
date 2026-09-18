@@ -85,7 +85,7 @@ The badge in the top bar shows `synced`, `offline`, or `this device`. Writes mad
 
 Every device that ever opened a club keeps a full local copy so the app works offline at a field with no signal. That copy is a **cache, not an archive**, and three things end it:
 
-- **Retired** — an admin marks the club closed, and every device clears it on next connect. **Except the app owner's**, so a retired club can still be opened and exported. Retiring deletes nothing.
+- **Retired** — an admin marks the club closed. Every device clears its local copy, the app owner's included. The data stays in the database and the app owner reopens it from the archive whenever. Retiring deletes nothing.
 - **Access withdrawn** — the rules refuse a device for more than 24 hours. The delay is deliberate: a botched rules change would otherwise wipe a coach's offline copy before anyone noticed.
 What this does not cover, and nothing can: a copy someone deliberately exported. That is true of every app that works offline. What it does mean is that the default is self-cleaning rather than a roster of children sitting on a stranger's phone forever.
 
@@ -203,6 +203,18 @@ Paste the open rules from step 3 back in and publish. Access returns immediately
 ### What is still not enforced
 
 Per-team roles. Any indexed person can currently write any team's data — the index is workspace-wide, not per-team. A tracker's restrictions are enforced in the interface only. Tightening that needs a per-team index (`access/teamIndex/{teamId}/{uid}`) and is the next step, not this one.
+
+## How long share links last
+
+**Forever, until you change them.** There is no expiry. A link keeps working as long as its share id exists.
+
+Three things end one:
+
+- **Rotate** — Share → *Make a new link and kill the old one*. Every link previously sent stops working immediately.
+- **Retire the club** — the mirror stops being updated, so it freezes at the last published state rather than going away.
+- **Delete `public/<share>` in the console** — the link goes dead.
+
+For a season that is usually what you want: text it in September, it works in May. If a family leaves mid-season, rotate and re-send to everyone else. An expiry date per link is worth adding when someone actually needs it — see ROADMAP.
 
 ## Sharing with parents
 

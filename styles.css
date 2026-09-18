@@ -505,3 +505,4 @@ table.grid td.right{text-align:right}
 .chk[data-ok="0"]>span:first-child{color:var(--over)}
 .chk[data-ok="0"]{color:var(--over)}
 .plainbtn{background:none;border:0;padding:0;color:inherit;font:inherit}
+.avatar.swap{border-radius:9px;background:rgba(255,255,255,.12)}
