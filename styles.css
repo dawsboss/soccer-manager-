@@ -499,3 +499,9 @@ table.grid td.right{text-align:right}
 .tag i{font-style:normal;font-weight:500;opacity:.75;margin-left:5px}
 .tag.admin{background:var(--field-deep);color:#fff}
 .tag.wait{background:var(--owed-wash);color:#6C4406}
+
+.chk{display:grid;grid-template-columns:20px 1fr;gap:8px;align-items:start;font-size:14px;padding:3px 0}
+.chk[data-ok="1"]>span:first-child{color:var(--field)}
+.chk[data-ok="0"]>span:first-child{color:var(--over)}
+.chk[data-ok="0"]{color:var(--over)}
+.plainbtn{background:none;border:0;padding:0;color:inherit;font:inherit}

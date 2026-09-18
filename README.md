@@ -81,6 +81,39 @@ The API key in `firebase-config.js` is not a secret; the rules above are what ga
 
 The badge in the top bar shows `synced`, `offline`, or `this device`. Writes made while offline land when the connection returns. If both devices edit the same game while one is offline, last write wins.
 
+## Deleting a club
+
+Every device that ever opened a club keeps a full local copy so the app works offline at a field with no signal. That copy is a **cache, not an archive**, and three things end it:
+
+- **Retired** — an admin marks the club closed, and every device clears it on next connect. **Except the app owner's**, so a retired club can still be opened and exported. Retiring deletes nothing.
+- **Access withdrawn** — the rules refuse a device for more than 24 hours. The delay is deliberate: a botched rules change would otherwise wipe a coach's offline copy before anyone noticed.
+What this does not cover, and nothing can: a copy someone deliberately exported. That is true of every app that works offline. What it does mean is that the default is self-cleaning rather than a roster of children sitting on a stranger's phone forever.
+
+Someone who wants a record of a season should take one with **Download a copy**, deliberately. A stale cache is not a keepsake and should not be treated as one.
+
+There is no in-app delete for a whole club, deliberately — it would be one mistap from wiping a season. It is four places, in this order:
+
+0. **Retire it.** Club settings → *Retire this club*. Do this **first**: it writes the marker that tells other devices to let go. Nothing is deleted — the app owner sees retired clubs listed under Club settings and can still open and export any of them, indefinitely. Steps 2 and 3 only happen when the app owner decides.
+1. **Export first.** Open the club, Settings → *Download a copy*. Do this even for a club you are sure is empty.
+2. **Delete the data.** Firebase console → Realtime Database → Data → expand `workspaces` → hover the code → the **×** deletes that node and every team, game and minute under it.
+3. **Delete its published mirror.** Under `public`, find the share id that club was using and delete that node too. **This is the one people forget.** Removing `workspaces/<code>` does not touch `public/<share>`, and the mirror is the world-readable half — an orphaned one keeps serving an old scoreboard to anyone holding the link. If you no longer know which share id belonged to which club, the mirror carries the team name, so open the nodes and read it.
+4. **Forget it on each device.** Club crumb → *Forget*. That clears this browser's local copy so it stops appearing in the switcher. It is per-device, so do it on each phone.
+
+Steps 2 and 3 are permanent and there is no undo, which is why step 1 comes first.
+
+The rules need one more block for retirement to work:
+
+```json
+"retired": {
+  "$code": {
+    ".read": true,
+    ".write": "auth != null && root.child('workspaces/' + $code + '/access/admins/' + auth.uid).exists()"
+  }
+}
+```
+
+Readable by anyone, because a device that has just lost access still has to be able to learn that it should let go. Writable only by an admin of that club.
+
 ## Becoming the app owner
 
 The app owner is the one account that can appoint the first club admin. It is stored in the database, **not** in this repository — a personal email committed to a public repo gets scraped, stays in the history forever, and needs a deploy to change.
@@ -111,7 +144,7 @@ The open rules above mean anyone holding a workspace code can read and write eve
 3. **Claim admin.** Setup → People → *Make me the admin*.
 4. **Have every coach sign in** with the same workspace code. They appear in Setup → People.
 5. **Give each of them a role** — Coach or Tracker.
-6. **Check the database.** Realtime Database → Data → `workspaces/<code>/access/index`. Every person who needs access must have a uid listed there. **If someone is missing, stop** — publishing the rules now will lock them out.
+6. **Check readiness.** Club settings → *Check readiness* tells you whether you are in the index, how many accounts are, and whether an app owner exists. **Everything must pass.** An empty `access/index` is the dangerous case: reads still work through the bootstrap clause, but nobody can write anything, so the app goes read-only for the whole club.
 7. **Only then** paste the rules below and publish.
 8. **Test on both devices** before the next game.
 
@@ -126,13 +159,15 @@ The open rules above mean anyone holding a workspace code can read and write eve
 
         "access": {
           "members": {
-            "$uid": { ".write": "auth != null && ($uid === auth.uid || data.parent().parent().child('index/' + auth.uid).exists())" }
+            "$uid": { ".write": "auth != null && ($uid === auth.uid || root.child('workspaces/' + $code + '/access/index/' + auth.uid).exists())" }
           },
           "admins": {
             ".write": "auth != null && (!data.exists() || data.child(auth.uid).exists())"
           },
           "index":  { ".write": "auth != null && (!data.exists() || root.child('workspaces/' + $code + '/access/admins/' + auth.uid).exists() || data.child(auth.uid).exists())" },
-          "teams":  { ".write": "auth != null && root.child('workspaces/' + $code + '/access/admins/' + auth.uid).exists()" }
+          "teams":  { ".write": "auth != null && root.child('workspaces/' + $code + '/access/admins/' + auth.uid).exists()" },
+          "org":    { ".write": "auth != null && root.child('workspaces/' + $code + '/access/admins/' + auth.uid).exists()" },
+          "log":    { "$e": { ".write": "auth != null && !data.exists() && newData.child('by').val() === auth.uid" } }
         },
 
         "teams":   { ".write": "auth != null && data.parent().child('access/index/' + auth.uid).exists()" },
@@ -157,6 +192,8 @@ What each part is doing:
 - **`access/members/$uid`** is self-writable. That is how a new coach knocks on the door: they sign in, register themselves, and an admin can then see them to assign a role. It grants no data access on its own.
 - **`admins`** can only be changed by an existing admin — except when there are none, which is the bootstrap for claiming it.
 - **`index`** is the flat lookup the read rule uses. Rules cannot iterate, so it cannot walk every team asking whether you are in it; the app mirrors every role grant into this one node.
+- **`access/org`** is the club name and badge, so it follows the admin rule.
+- **`access/log`** is the audit trail. Writes are allowed only where nothing exists yet and the entry stamps the author's own uid, which makes it append-only: nobody can edit or delete a record of what they did, including an admin.
 - **`public/$share`** stays world-readable — that is the whole point of the parent links — but writing now needs an account. That closes the hole where anyone holding a share link could overwrite the scoreboard.
 
 ### If it goes wrong

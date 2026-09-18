@@ -2,7 +2,7 @@
    Static app. Data lives in localStorage, and mirrors to Firebase Realtime
    Database when a config + workspace code are present. */
 
-const BUILD = '39';
+const BUILD = '44';
 const BUILT = '2026-09-13';
 /* index.html carries the build it was published with. If this file is newer, the
    browser handed us a cached page — the exact failure that has eaten hours. */
@@ -16,6 +16,9 @@ const LS_DATA = 'sm.data.v1';
 const LS_UI = 'sm.ui.v1';
 const LS_WS = 'sm.workspace';
 const LS_WHO = 'sm.tracker';
+const LS_SYNCED = 'sm.synced';   // last good sync, per club
+const LS_DENIED = 'sm.denied';   // first refusal, per club
+const DENY_GRACE_H = 24;
 
 /* The workspace node was already organisation-shaped — many teams, their
    matches — so membership hangs off it directly and nothing has to migrate. */
@@ -210,6 +213,38 @@ function loadLocal() {
   } catch (e) { }
 }
 
+/* A local copy is a cache, not an archive. Three things end it: the club is
+   retired, access is withdrawn, or nobody has opened it in a long time. None of
+   this can reach a copy someone deliberately exported — nothing can — but it
+   stops a stale shadow of a roster sitting on a phone forever by default. */
+function purgeClub(code, why) {
+  try {
+    localStorage.removeItem(LS_DATA + ':' + code);
+    localStorage.removeItem(LS_SYNCED + ':' + code);
+    localStorage.removeItem(LS_DENIED + ':' + code);
+  } catch (e) { }
+  if (code === wsCode()) { state = { teams: {}, matches: {}, access: {} }; purged = why; render(); }
+}
+
+function markSynced() {
+  try {
+    localStorage.setItem(LS_SYNCED + ':' + wsCode(), String(Date.now()));
+    localStorage.removeItem(LS_DENIED + ':' + wsCode());
+  } catch (e) { }
+}
+
+/* Refusal is not instant deletion: a botched rules change would otherwise wipe a
+   coach's offline copy before anyone noticed. It has to persist for a day. */
+function noteDenied() {
+  const k = LS_DENIED + ':' + wsCode();
+  try {
+    const first = Number(localStorage.getItem(k) || 0);
+    if (!first) { localStorage.setItem(k, String(Date.now())); return false; }
+    if (Date.now() - first > DENY_GRACE_H * 3600e3) { purgeClub(wsCode(), 'access'); return true; }
+  } catch (e) { }
+  return false;
+}
+
 /* ---------------- firebase sync ---------------- */
 let fbApp = null, fbAuth = null, authMod = null;
 let me = null;              // { uid, name, email } when signed in
@@ -296,14 +331,24 @@ async function initSync() {
     // one match can never touch another, or the teams tree.
     const onDenied = err => {
       if (!/permission|denied/i.test((err && err.code) || '')) return;
-      denied = true; setSync('off', 'sign in'); render();
+      denied = true; setSync('off', 'sign in');
+      noteDenied();
+      render();
     };
+
+    // a retired club tells every device still holding a copy to let it go
+    dbMod.onValue(dbMod.ref(db, 'retired/' + code), rs => {
+      // an app owner keeps it, so a retired club can still be opened and exported
+      if (rs.val() && !isOwner()) purgeClub(code, 'retired');
+    }, () => { });
+
+    dbMod.onValue(dbMod.ref(db, 'retired'), rs => { retiredClubs = rs.val() || {}; render(); }, () => { });
 
     dbMod.onValue(dbMod.ref(db, fb.base), snap => {
       denied = false;
       const v = snap.val();
       if (!v) pushAll();
-      else { state = { teams: v.teams || {}, matches: v.matches || {}, access: v.access || {} }; saveLocal(); render(); }
+      else { state = { teams: v.teams || {}, matches: v.matches || {}, access: v.access || {} }; saveLocal(); markSynced(); render(); }
       schedulePublish();   // republish on load, so a fixed config heals itself
 
       // membership is small and read whole; it does not need child-level listeners
@@ -1048,6 +1093,7 @@ function render() {
   const tb = $('#tabs'); if (tb) tb.hidden = !!(inGame && openM) || !teamLevel;
   const app = $('#app');
   const v = ui.view;
+  if (purged) { app.innerHTML = purgedScreen(); saveUi(); return; }
   if (denied) { app.innerHTML = lockScreen(); saveUi(); return; }
   const roNote = !lim && readOnlyHere() && team()
     ? `<div class="rolebar">Viewing <b>${teamLabel(team())}</b> from another team in the club. You can read it, not change it.</div>` : '';
@@ -1070,6 +1116,19 @@ function render() {
 
 /* Shown when the rules refuse us. Deliberately not a dead end: both the code and
    the account can be changed from here. */
+function purgedScreen() {
+  const why = {
+    retired: 'This club has been retired by its admin.',
+    access: 'Your access to this club was withdrawn more than a day ago.'
+  }[purged] || 'This club is no longer available.';
+  return `<div class="stack"><div class="empty"><strong>Local copy removed</strong>
+    ${esc(why)} The copy this device was holding has been cleared.
+    <div class="row" style="margin-top:14px;justify-content:center">
+      <button class="btn quiet" data-act="clubswitch">Other clubs</button>
+      <button class="btn quiet" data-act="setwscode">Join by code</button></div></div>
+    <p class="muted" style="text-align:center">Anything downloaded with <b>Download a copy</b> is yours and is not affected.</p></div>`;
+}
+
 function lockScreen() {
   return `<div class="stack">
     <div class="empty"><strong>This workspace needs a sign-in</strong>
@@ -1164,9 +1223,12 @@ function sheetClubSwitch() {
   const here = wsCode();
   const list = knownClubs();
   openSheet(`<h3>Clubs</h3>
-    ${list.map(c => `<button class="opt spread" data-act="switchclub" data-code="${esc(c.code)}" aria-current="${c.code === here}">
-      <span><b>${esc(c.name)}</b>${c.code === here ? '<span class="rowsub">open now</span>' : ''}</span>
-      ${c.code === here ? '<span class="muted">here</span>' : '<span class="muted">open</span>'}</button>`).join('')}
+    ${list.map(c => `<div class="opt spread">
+      <button class="plainbtn" data-act="switchclub" data-code="${esc(c.code)}" style="flex:1;text-align:left">
+        <b>${esc(c.name)}</b><span class="rowsub">${c.code === here ? 'open now' : 'tap to open'}</span></button>
+      ${c.code === here ? '<span class="muted">here</span>'
+      : `<button class="btn quiet sm" data-act="forgetclub" data-code="${esc(c.code)}">Forget</button>`}</div>`).join('')}
+    <p class="muted">Forget removes this device's copy only. Deleting a club for everyone is a Firebase console job — see below.</p>
     <button class="opt" data-act="goview" data-v="club"><b>Club home</b>
       <span class="rowsub">Teams, stats and settings for ${esc((acc().org || {}).name || 'this club')}</span></button>
     <button class="btn quiet wide" data-act="setwscode" style="margin-top:8px">Join another club by code</button>
@@ -2083,14 +2145,40 @@ function viewSetup() {
       ${stale() ? `<div class="warn alert" style="margin-top:10px">This page is cached at v${esc(pageBuild())} but the code is v${BUILD}. Force refresh to catch up.</div>`
       : '<p class="muted" style="margin-bottom:0">Page and code agree, so you are on the latest push.</p>'}</div>
 
-    <div class="card"><h2 style="margin-bottom:8px">Backup</h2>
+    ${canAdmin() ? `<div class="card"><h2 style="margin-bottom:8px">Backup</h2>
       <div class="row"><button class="btn quiet" data-act="export">Download a copy</button>
       <button class="btn quiet" data-act="import">Load from a file</button></div>
-      <p class="muted" style="margin-bottom:0">Every team, game and sub as a JSON file.</p></div>
+      <p class="muted" style="margin-bottom:0">Every team, game and sub as a JSON file. Admins only — it contains every child's name, so it is not something to hand out.</p></div>` : ''}
   </div>`;
 }
 
 /* --- admin: the club, its teams and who may touch them --- */
+/* Applying the rules with an empty index leaves the club readable but unwritable
+   for everyone, which is a worse failure than leaving them open. Check first. */
+function readinessCard() {
+  const idx = Object.keys(acc().index || {});
+  const mem = members();
+  const owners = Object.keys(appOwners).length;
+  const meIn = me && idx.includes(me.uid);
+  const unassigned = mem.filter(u => !idx.includes(u.uid));
+  const checks = [
+    { ok: owners > 0, t: `App owner set in the database`, no: 'No appOwners node yet — see README' },
+    { ok: !!me, t: 'You are signed in', no: 'Sign in first' },
+    { ok: anyAdmins(), t: 'The club has an admin', no: 'Nobody has claimed admin' },
+    { ok: !!meIn, t: 'Your account is in the access index', no: 'You are not indexed — you would lose write access' },
+    { ok: idx.length > 0, t: `${idx.length} account${idx.length === 1 ? '' : 's'} indexed`, no: 'The index is empty — the whole club would go read-only' },
+    { ok: unassigned.length === 0, t: 'Everyone signed in has a role', no: `${unassigned.length} signed in with no role: ${unassigned.map(u => esc(u.name || u.email || '?')).join(', ')}` }
+  ];
+  const pass = checks.every(c => c.ok);
+  return `<div class="card"><div class="spread" style="margin-bottom:10px">
+      <h2>Lockdown readiness</h2><span class="pill ${pass ? 'live' : ''}">${pass ? 'ready' : 'not yet'}</span></div>
+    <div class="plist">${checks.map(c => `<div class="chk" data-ok="${c.ok ? 1 : 0}">
+      <span>${c.ok ? '\u2713' : '\u00d7'}</span><span>${c.ok ? c.t : c.no}</span></div>`).join('')}</div>
+    <p class="muted" style="margin-bottom:0">${pass
+      ? 'Safe to publish the locked-down rules from README. Reverting to the open ones restores access immediately if anything is wrong.'
+      : 'Fix the items above before publishing the rules. Anyone not listed in the index loses access the moment they go live.'}</p></div>`;
+}
+
 function viewAdmin() {
   if (!canAdmin()) return `<div class="empty"><strong>Club admins only</strong>
     ${me ? 'Your account does not have admin rights for this club.' : 'Sign in with an admin account.'}</div>`;
@@ -2105,6 +2193,20 @@ function viewAdmin() {
       </div>
       <label class="field"><span>Name</span><input type="text" id="orgName" value="${esc(org.name || '')}" placeholder="Lakeside Soccer Club"></label>
       <button class="btn quiet wide" data-act="saveorg">Save</button></div>
+
+    ${isOwner() && Object.keys(retiredClubs).length ? `<div class="card"><h2 style="margin-bottom:8px">Retired clubs</h2>
+      <p class="muted" style="margin-top:0">Closed but not deleted. Everyone else's devices have let go of these; yours has not, so you can still open one and export it. Removing the data is a Firebase console job, whenever you decide.</p>
+      <div class="plist">${Object.entries(retiredClubs).map(([code, r]) => `<div class="prow" style="grid-template-columns:1fr auto">
+        <span><span class="pname">${esc((r && r.name) || code)}</span>
+          <span class="psub">Retired ${r && r.at ? new Date(r.at).toLocaleDateString() : 'unknown'}${r && r.byName ? ' by ' + esc(r.byName) : ''}</span></span>
+        ${code === wsCode() ? '<span class="muted">open now</span>'
+      : `<button class="btn quiet sm" data-act="switchclub" data-code="${esc(code)}">Open</button>`}</div>`).join('')}</div></div>` : ''}
+
+    ${readinessCard()}
+
+    <div class="card"><h2 style="margin-bottom:8px">Retire this club</h2>
+      <p class="muted" style="margin-top:0">Marks it closed. Every device holding a copy clears it on next connect — except the app owner's, so it can still be opened and exported. <b>Nothing is deleted.</b> The data stays until the app owner removes it in the Firebase console.</p>
+      <button class="btn danger wide" data-act="retireclub">Retire ${esc((acc().org || {}).name || 'this club')}</button></div>
 
     <div class="card"><h2 style="margin-bottom:8px">People</h2>
       ${nAdmins ? `<p class="muted" style="margin-top:0">${members().length} signed in · ${nAdmins} admin${nAdmins === 1 ? '' : 's'}.</p>
@@ -2304,9 +2406,10 @@ function publicDoc(t) {
   }
   return {
     team: { name: t.name || 'Team', logo: t.logo || null },
-    // not a secret once sign-in is required — it is how a parent with an
-    // account gets from the read-only page into the real thing
-    link: { code: wsCode(), teamId: t.id, app: shareBase() + 'index.html' },
+    // Deliberately NOT the workspace id. public/ is world-readable, and while the
+    // rules are open that id is the password to the whole club. The page only
+    // needs somewhere to send a signed-in visitor; the app decides what they see.
+    link: { teamId: t.id, app: shareBase() + 'index.html' },
     games, record: { w, d, l, gf, ga }, updated: nowMs()
   };
 }
@@ -2314,6 +2417,8 @@ function publicDoc(t) {
 let pubTimer;
 let pubState = { at: null, error: null };   // surfaced in the share sheet
 let denied = false;                         // rules refused us; show the door
+let purged = null;                          // 'access' | 'retired'
+let retiredClubs = {};                      // app owner's view of what is closed
 function schedulePublish() {
   const t = team();
   if (!fb) { pubState = { at: null, error: 'Not connected to Firebase' }; return; }
@@ -3022,7 +3127,24 @@ document.addEventListener('click', e => {
   }
   if (a === 'teammenu') { sheetTeams(); return; }
   if (a === 'goview') { ui.view = d.v; closeSheet(); render(); return; }
+  if (a === 'retireclub') {
+    if (!fb) { toast('Not connected'); return; }
+    if (!confirm('Retire this club? Every device holding a copy will clear it. Export a backup first if you want one.')) return;
+    fb.set(fb.ref(fb.db, 'retired/' + wsCode()), {
+      at: nowMs(), by: (me && me.uid) || null, byName: (me && me.name) || null,
+      name: (acc().org || {}).name || null
+    })
+      .then(() => toast('Retired — devices will clear on next connect'))
+      .catch(e => toast('Could not retire: ' + ((e && e.code) || e)));
+    return;
+  }
   if (a === 'clubswitch') { sheetClubSwitch(); return; }
+  if (a === 'forgetclub') {
+    if (d.code === wsCode()) { toast('Switch away from it first'); return; }
+    if (!confirm('Remove this device\u2019s copy of that club? The club itself is untouched, and anyone else keeps theirs.')) return;
+    try { localStorage.removeItem(LS_DATA + ':' + d.code); } catch (e) { }
+    sheetClubSwitch(); toast('Forgotten on this device'); return;
+  }
   if (a === 'switchclub') {
     if (d.code === wsCode()) { closeSheet(); ui.view = 'club'; render(); return; }
     localStorage.setItem(LS_WS, d.code); location.reload(); return;
@@ -3471,6 +3593,7 @@ document.addEventListener('click', e => {
     return;
   }
   if (a === 'export') {
+    if (!canAdmin()) { toast('Only club admins can export the full data'); return; }
     const blob = new Blob([JSON.stringify(state, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
@@ -3478,6 +3601,7 @@ document.addEventListener('click', e => {
     link.click(); URL.revokeObjectURL(url); return;
   }
   if (a === 'import') {
+    if (!canAdmin()) { toast('Only club admins can import'); return; }
     const inp = document.createElement('input'); inp.type = 'file'; inp.accept = 'application/json';
     inp.onchange = () => {
       const f = inp.files[0]; if (!f) return;

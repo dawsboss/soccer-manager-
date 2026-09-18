@@ -11,7 +11,7 @@ const mmss = sec => { sec = Math.max(0, Math.floor(sec)); return Math.floor(sec 
 const mins = sec => Math.round(sec / 60);
 
 let doc = null, skew = 0, openGame = ONE_GAME || null;
-let auth = null, authMod = null, viewer = null, hasAccess = null;   // null = not checked
+let auth = null, authMod = null, viewer = null;
 /* Anything that changed since the last render gets a flash, so someone watching
    on a phone at the side of the pitch sees that something happened. */
 let prev = {};
@@ -222,13 +222,10 @@ function accessBlock() {
   if (!viewer) return `<div class="card"><div class="spread">
       <span><b>Signed out</b><span class="rowsub">Numbers only. Sign in if a coach has given your account access.</span></span>
       <button class="btn sm" data-signin>Sign in</button></div></div>`;
-  if (hasAccess) return `<div class="card"><div class="spread">
-      <span><b>${esc(viewer.name)}</b><span class="rowsub">Your account has access to this team.</span></span>
+  return `<div class="card"><div class="spread">
+      <span><b>${esc(viewer.name)}</b><span class="rowsub">Open it in Minutes to see names, if your account has been given access.</span></span>
       ${deep ? `<a class="btn sm" href="${esc(deep)}">Open in Minutes</a>` : ''}</div>
       <button class="backlink" data-signout style="margin-top:8px">Sign out</button></div>`;
-  return `<div class="card"><div class="spread">
-      <span><b>${esc(viewer.name)}</b><span class="rowsub">This account has no role on this team, so the page stays on shirt numbers.</span></span>
-      <button class="btn quiet sm" data-signout>Sign out</button></div></div>`;
 }
 
 // tick the clock locally between pushes so it feels live
@@ -256,15 +253,8 @@ setInterval(() => {
       auth = authMod.getAuth(app);
     } catch (e) { authMod = null; }
     if (authMod) {
-      authMod.onAuthStateChanged(auth, async u => {
+      authMod.onAuthStateChanged(auth, u => {
         viewer = u ? { uid: u.uid, name: u.displayName || (u.email || '').split('@')[0] || 'Signed in' } : null;
-        hasAccess = null;
-        if (u && doc && doc.link && doc.link.code) {
-          try {
-            const snap = await dbMod.get(dbMod.ref(db, `workspaces/${doc.link.code}/access/index/${u.uid}`));
-            hasAccess = !!snap.val();
-          } catch (e) { hasAccess = false; }
-        }
         render();
       });
     }
