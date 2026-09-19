@@ -8,6 +8,7 @@ Read `HANDOFF.md` first if it exists and is current. Read `AUTH.md`, `ROADMAP.md
 
 - `node test/smoke.js` — boots the app in a stubbed DOM with no live Firebase connection and renders every view. Must exit 0, no exceptions.
 - `node test/version.js` — checks that `BUILD` in `app.js`, the `<meta name="build">` tag in `index.html`, and both `?v=` query params (`app.js?v=`, `styles.css?v=`) all agree. If you bump one, bump all four to the same number.
+- `node test/sandbox.js` — seeds the test club and checks it holds together: finished games with a closed clock and no open stints, one live game, `onField` agreeing with the stints, publishing refused, and each database's local copies kept apart. Exits non-zero on a failure.
 - Don't skip these because a change looks small. They're cheap and they're what catch a regression before it costs someone a Saturday.
 
 ## Required after every change to the rules in README.md
@@ -45,6 +46,7 @@ Don't jump ahead to identity/org work while a "Now — correctness" item is stil
 
 - **No in-app path to connect a brand-new device to a workspace.** The "join by code" UI was removed ahead of `AUTH.md`'s invite system, which isn't built yet. `Setup → Workspace` has an owner-only (`isOwner()`-gated) escape hatch in the meantime — don't remove it until real per-person invites exist.
 - **Per-person email invites** (`invites/{code}` + Firebase's `sendSignInLinkToEmail`) are designed in `AUTH.md` but not implemented. No Cloudflare Worker or custom email server is needed for this specific feature — Firebase Auth sends the magic-link email itself.
+- **The interface and the rules disagree in five places** — `node test/rules.js` prints them at the end. Among them: any indexed account can write any team (parents included), anyone in `access/index` can add anyone else to it, the app owner has no standing in the rules at all, and `initSync()` reads the whole `retired` node when the rules only grant `retired/$code`, so the owner's archive list silently never appears. Read that list before treating a refused write as a bug.
 - **The full `orgs/{orgId}` migration** (`AUTH.md` build order, steps 1–6) hasn't started. `workspaces/{code}` is still the live schema.
 
 ## Conventions

@@ -204,6 +204,70 @@ Paste the open rules from step 3 back in and publish. Access returns immediately
 
 Per-team roles. Any indexed person can currently write any team's data — the index is workspace-wide, not per-team. A tracker's restrictions are enforced in the interface only. Tightening that needs a per-team index (`access/teamIndex/{teamId}/{uid}`) and is the next step, not this one.
 
+## Trying auth changes without risking the season
+
+Three things, in increasing order of isolation. Use the cheapest one that covers
+what you are changing.
+
+### 1. `node test/rules.js` — the rules, offline
+
+Reads the rules JSON out of this file and evaluates it against a mock club for a
+signed-out visitor, an admin, a coach, a tracker, a parent, a registered account
+with no role, an unknown account and the app owner. No Firebase, no cost, and
+nothing to publish. **Run it before pasting anything into the console.** It is
+the only way to find out that a rules change locks everybody out *before* it
+does, because the failure "Locking it down" warns about is silent: reads keep
+working through the bootstrap clause while every write is refused.
+
+It also prints, at the end, the places where the interface and the rules
+currently disagree. Those are known and deliberate; read them before deciding a
+refused write is a bug.
+
+### 2. A test club — the flows, on invented data
+
+**Setup → Workspace → Make a test club** (app owner only). Seeds a club called
+Sandbox FC: two squads, invented names, four games with one in progress, and
+three people waiting in `access/members` with no roles yet. That is exactly the
+state a real club is in when the lockdown steps above begin, so you can rehearse
+all of them — claim admin, grant and withdraw roles, check readiness, get
+refused, retire it — on data nobody cares about.
+
+A test club carries a warm banner on every screen, and **publishing is switched
+off inside it**, so a seeded game can never overwrite a `public/` node that real
+families are reading. It lives in whichever database you are pointed at, under a
+code beginning `test-`; delete the node in the console when you are done.
+
+What it does **not** cover is a rules change. Rules belong to a database, not to
+a club: the locked-down block is written against `workspaces/$code`, so
+publishing it to try it on a test club applies it to the real club at the same
+instant. Nor can you carve a stricter sandbox out of an open wildcard — a rule
+grants, and nothing below it can take that back.
+
+### 3. A second database — everything, including rules
+
+**Setup → Workspace → Database** switches which Firebase database the app talks
+to. Declare them in `firebase-config.js`:
+
+```js
+window.SOCCER_FIREBASE_ENVS = {
+  sandbox: { databaseURL: "https://your-project-sandbox.firebaseio.com" }
+};
+```
+
+An entry overrides only the keys it names.
+
+- **A second Realtime Database in the same project** needs a `databaseURL` and
+  nothing else. It has **its own rules**, which is the point, and keeps the same
+  Auth, so accounts and uids carry over and you can rehearse with the real
+  people. Requires the Blaze plan — the free Spark plan allows one database.
+- **A separate Firebase project** works on Spark, but needs the whole config
+  object and has its own Auth. Different uids, so `appOwners` has to be set
+  again in that project's console and everyone signs in afresh.
+
+Each database keeps its own local copies on the device, so the same code opened
+in two of them can never overwrite the other's. Switching reloads and forgets
+the open code, because a club belongs to the database it lives in.
+
 ## How long share links last
 
 **Forever, until you change them.** There is no expiry. A link keeps working as long as its share id exists.

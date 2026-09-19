@@ -436,6 +436,9 @@ label.field span{display:block;font-size:13px;color:var(--ink-soft);margin-botto
 
 .rolebar{background:var(--field-wash);border:1px solid var(--field);border-radius:var(--r);
   padding:9px 12px;font-size:13.5px;margin-bottom:12px;color:#11402A}
+/* A rehearsal has to be unmistakable at a glance, so the test bar is warm
+   rather than the app's green — it should read as "not the real club". */
+.rolebar.test{background:#FFF4E0;border-color:#E0A33C;color:#6A4310}
 body[data-role="parent"] .tallybtn,
 body[data-role="parent"] .lrspot,
 body[data-role="parent"] .scoreside .btn{display:none}
