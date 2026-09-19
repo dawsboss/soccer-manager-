@@ -10,6 +10,10 @@ Read `HANDOFF.md` first if it exists and is current. Read `AUTH.md`, `ROADMAP.md
 - `node test/version.js` — checks that `BUILD` in `app.js`, the `<meta name="build">` tag in `index.html`, and both `?v=` query params (`app.js?v=`, `styles.css?v=`) all agree. If you bump one, bump all four to the same number.
 - Don't skip these because a change looks small. They're cheap and they're what catch a regression before it costs someone a Saturday.
 
+## Required after every change to the rules in README.md
+
+- `node test/rules.js` — evaluates the rules JSON *as README publishes it* against a mock club, for every kind of account. Exits non-zero on a failed expectation. Rules are the one thing here with no way to try it safely: the only live test is publishing over the real club, and the failure mode README warns about is silent (reads work, every write is refused). Run it before you paste anything into the Firebase console.
+
 ## Invariants — do not violate these
 
 - **Stints are the only truth for who's on the pitch.** `onField(m, pid) = !!openStint(m, pid)`. `positions` holds nothing but x/y coordinates — never make it authoritative again, and never gate a feature on it.
