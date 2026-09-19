@@ -7,7 +7,11 @@ const mk = () => new Proxy({
   querySelector:()=>mk(), querySelectorAll:()=>[], closest:()=>null, appendChild(){}
 },{get(t,k){ return k in t ? t[k] : undefined; }, set(t,k,v){t[k]=v; return true;}});
 
-global.document = { querySelector: ()=>mk(), querySelectorAll: ()=>[], addEventListener(){}, createElement:()=>mk(), body:mk() };
+// one node per selector, so what render() writes into #app can be read back
+const nodes = {};
+const node = sel => (nodes[sel] = nodes[sel] || mk());
+global.document = { querySelector: sel=>node(sel), querySelectorAll: ()=>[], addEventListener(){}, createElement:()=>mk(), body:mk() };
+global.rendered = () => String(node('#app').innerHTML || '');
 global.window = {};
 global.location = { reload(){}, hash:'', pathname:'/', search:'' };
 global.history = { replaceState(){} };
@@ -91,8 +95,25 @@ try {
     state.teams.t_ok.players.p2.guardians={u4:true};
     me={uid:'u4',name:'Mum'};  console.log('  guardian of a player ->', myRole(), '| restricted', restricted());
     me={uid:'u9',name:'Rando'};console.log('  signed in, unknown   ->', myRole(), '| restricted', restricted());
-    for (const r of ['u2','u3','u4']) { me={uid:r}; ui.view='game'; ui.gameView='live'; render(); }
-    console.log('  every role rendered a game view without throwing');
+    /* Not just "did not throw". The role banner is built by concatenation right
+       where the view is chosen, and === binds looser than +. Get that wrong and
+       the banner never reaches the page AND everyone holding one lands on the
+       games list instead of the game, so a tracker cannot open Track at all.
+       Both halves are checked: one can pass while the other does not. */
+    var roleFail = 0;
+    for (const row of [['coach','u2','live'],['tracker','u3','track'],['parent','u4','stats']]) {
+      const who=row[0], want=row[2];
+      me={uid:row[1]}; ui.view='game'; ui.gameView=want; render();
+      const html=rendered(), onGame=/class="barrow"/.test(html), banner=/class="rolebar"/.test(html);
+      const wantBanner = who!=='coach';   // a coach of this team is unrestricted here
+      if (!onGame || banner!==wantBanner) roleFail++;
+      console.log('  ' + who.padEnd(7) + ' opens a game -> '
+        + (onGame ? 'the game screen' : 'THE GAMES LIST')
+        + ', ' + want + ' tab kept: ' + (ui.gameView===want)
+        + ', banner: ' + (banner?'shown':'none') + (banner===wantBanner?'':' (WRONG)'));
+    }
+    console.log('  every role reached the game screen:', roleFail?'NO - '+roleFail+' wrong':'yes');
+    global.roleFail = roleFail;
     // app owner and tab visibility
     console.log('  before appOwners is read      -> isOwner', isOwner(), '(nobody is owner by default)');
     me={uid:'own',name:'Grant',email:'g@x.com'};
@@ -147,7 +168,13 @@ try {
     ui.teamId='t_ok'; ui.view='setup'; render();
   `)();
   console.log('BOOT OK + team sheet + all five tabs rendered, no exception');
+  // CLAUDE.md asks for exit 0 from this file, so actually refuse to give it
+  if (global.roleFail) {
+    console.log('FAILED:', global.roleFail, 'role(s) did not reach the game screen');
+    process.exit(1);
+  }
 } catch (e) {
   console.log('BOOT CRASH:', e.constructor.name, '-', e.message);
   console.log(e.stack.split('\n').slice(1,4).join('\n'));
+  process.exit(1);
 }

@@ -18,7 +18,10 @@ const LS_WS = 'sm.workspace';
 const LS_WHO = 'sm.tracker';
 const LS_SYNCED = 'sm.synced';   // last good sync, per club
 const LS_DENIED = 'sm.denied';   // first refusal, per club
+const LS_ENV = 'sm.env';         // which Firebase environment this device talks to
 const DENY_GRACE_H = 24;
+/* A club whose code starts with this is invented data for rehearsing on. */
+const SANDBOX_PREFIX = 'test-';
 
 /* The workspace node was already organisation-shaped — many teams, their
    matches — so membership hangs off it directly and nothing has to migrate. */
@@ -154,6 +157,41 @@ function delDeep(obj, path) {
 
 /* ---------------- storage ---------------- */
 const wsCode = () => (localStorage.getItem(LS_WS) || '').trim();
+
+/* Which Firebase environment this device talks to. Empty is production.
+
+   A second workspace code gives auth work somewhere safe to click, but it
+   cannot rehearse a rules change, and that is the change worth rehearsing.
+   Rules belong to a database instance, not to a code: the lockdown block is
+   written against workspaces/$code, so publishing it to try it on a test club
+   applies it to the real one in the same instant. Nor can you carve a stricter
+   sandbox out of an open wildcard — a rule grants and a child can never take
+   that back, so the open rule would still win. A separate database is the only
+   thing that actually isolates them.
+
+   firebase-config.js declares the environments; this picks one. An entry only
+   needs the keys it changes: a second Realtime Database in the same project is
+   a databaseURL and nothing else, and a whole separate project is a full config
+   object. Switching reloads, so nothing has to unpick a live connection. */
+const envName = () => (localStorage.getItem(LS_ENV) || '').trim();
+const envList = () => window.SOCCER_FIREBASE_ENVS || {};
+function fbConfig() {
+  const base = window.SOCCER_FIREBASE_CONFIG || {};
+  const over = envList()[envName()];
+  return over ? { ...base, ...over } : base;
+}
+/* Local copies are kept per club. Namespace them by environment as well, or the
+   same code in two environments shares one bucket on this device and a test run
+   quietly overwrites the real season. Production keeps the bare key, so nothing
+   already on anyone's phone has to move. */
+const envPrefix = () => (envName() ? envName() + '~' : '');
+const clubKey = () => envPrefix() + (wsCode() || 'local');
+
+/* Marked in two places on purpose. The code prefix is local and readable before
+   any database round-trip — schedulePublish() has to know before it fires. The
+   access/org flag syncs, so a second device opening the same club also knows it
+   is a rehearsal. */
+const isSandbox = () => wsCode().startsWith(SANDBOX_PREFIX) || !!(acc().org || {}).sandbox;
 /* Who is tapping on this device. Never synced, never a permission — anyone can
    type anything. It exists so two people can track one game and untangle it after. */
 const typedName = () => (localStorage.getItem(LS_WHO) || '').trim();
@@ -185,7 +223,7 @@ function trackersIn(m) {
     }
   return c;
 }
-const dataKey = () => LS_DATA + ':' + (wsCode() || 'local');
+const dataKey = () => LS_DATA + ':' + clubKey();
 
 function saveLocal() {
   try { localStorage.setItem(dataKey(), JSON.stringify(state)); } catch (e) { }
@@ -218,25 +256,26 @@ function loadLocal() {
    this can reach a copy someone deliberately exported — nothing can — but it
    stops a stale shadow of a roster sitting on a phone forever by default. */
 function purgeClub(code, why) {
+  const k = envPrefix() + code;
   try {
-    localStorage.removeItem(LS_DATA + ':' + code);
-    localStorage.removeItem(LS_SYNCED + ':' + code);
-    localStorage.removeItem(LS_DENIED + ':' + code);
+    localStorage.removeItem(LS_DATA + ':' + k);
+    localStorage.removeItem(LS_SYNCED + ':' + k);
+    localStorage.removeItem(LS_DENIED + ':' + k);
   } catch (e) { }
   if (code === wsCode()) { state = { teams: {}, matches: {}, access: {} }; purged = why; render(); }
 }
 
 function markSynced() {
   try {
-    localStorage.setItem(LS_SYNCED + ':' + wsCode(), String(Date.now()));
-    localStorage.removeItem(LS_DENIED + ':' + wsCode());
+    localStorage.setItem(LS_SYNCED + ':' + clubKey(), String(Date.now()));
+    localStorage.removeItem(LS_DENIED + ':' + clubKey());
   } catch (e) { }
 }
 
 /* Refusal is not instant deletion: a botched rules change would otherwise wipe a
    coach's offline copy before anyone noticed. It has to persist for a day. */
 function noteDenied() {
-  const k = LS_DENIED + ':' + wsCode();
+  const k = LS_DENIED + ':' + clubKey();
   try {
     const first = Number(localStorage.getItem(k) || 0);
     if (!first) { localStorage.setItem(k, String(Date.now())); return false; }
@@ -261,7 +300,7 @@ function setSync(stateName, label) {
 let fbAppPromise = null;
 async function getApp() {
   if (fbApp) return fbApp;
-  const cfg = window.SOCCER_FIREBASE_CONFIG;
+  const cfg = fbConfig();
   if (!cfg || !cfg.apiKey) return null;
   // initAuth() and initSync() both call this at boot; without caching the
   // in-flight promise they can race and call initializeApp() twice, which
@@ -330,7 +369,7 @@ async function initAuth() {
 }
 
 async function initSync() {
-  const cfg = window.SOCCER_FIREBASE_CONFIG;
+  const cfg = fbConfig();
   const code = localStorage.getItem(LS_WS);
   if (!cfg || !cfg.apiKey || !cfg.databaseURL) { setSync('off', 'this device'); return; }
   try {
@@ -560,6 +599,106 @@ const restricted = () => {
   const r = myRole();
   return r === 'tracker' || r === 'parent' ? r : null;
 };
+
+/* ---------------- the test club ---------------- */
+/* A club of invented data, for rehearsing what is frightening to try on a real
+   one: claiming admin, granting and withdrawing roles, the readiness check,
+   locking down, being refused, retiring. Every name here is made up.
+
+   It is seeded in the state a real club is in the moment its coaches have all
+   signed in and nobody has been given a role yet — no admins, no index, people
+   waiting in access/members. That is precisely where README's lockdown steps
+   begin, so the rehearsal begins there too. */
+const SANDBOX_NAMES = ['Ada', 'Bea', 'Cleo', 'Dara', 'Edie', 'Fern', 'Gia', 'Hana',
+  'Ines', 'Juno', 'Kira', 'Lena', 'Mira', 'Nell', 'Orla', 'Posy'];
+
+function sandboxTeam(id, name, n, from) {
+  const players = {};
+  for (let i = 0; i < n; i++) {
+    const pid = id + '_p' + (i + 1);
+    players[pid] = {
+      id: pid, name: SANDBOX_NAMES[(from + i) % SANDBOX_NAMES.length],
+      number: String(from + i + 2), active: true, anywhere: true,
+      rating: 2 + (i % 4), gk: i === 0
+    };
+  }
+  return { id, name, players };
+}
+
+/* Stints carry elapsed match seconds; periods carry epoch milliseconds. A
+   period with no end is what makes a clock tick, because elapsedSec() reads
+   `s.end || now` — so exactly one game is seeded that way, and the others are
+   closed with every stint closed too, which is the shape endGame() leaves. */
+function sandboxGame(t, o) {
+  const len = o.periodMinutes * 60000, gap = 5 * 60000;
+  const ids = Object.keys(t.players);
+  const periods = {}, stints = {}, goals = {}, planned = {};
+  const t0 = o.live ? nowMs() - ((o.periodCount - 1) * (len + gap) + 8 * 60000)
+    : nowMs() - o.daysAgo * 86400000;
+  for (let i = 0; i < o.periodCount; i++) {
+    periods[i] = { half: i + 1, start: t0 + i * (len + gap) };
+    if (!(o.live && i === o.periodCount - 1)) periods[i].end = periods[i].start + len;
+  }
+  // the same sum elapsedSec() does, so the seed and the clock cannot disagree
+  const mark = Math.floor(Object.values(periods)
+    .reduce((a, s) => a + ((s.end || nowMs()) - s.start), 0) / 1000);
+
+  const onCount = Math.min(o.onFieldCount, ids.length);
+  const starters = ids.slice(0, onCount), bench = ids.slice(onCount);
+  for (const pid of starters) stints[uid()] = { pid, on: 0, slot: null, role: null };
+  const subs = Math.min(bench.length, 4);
+  for (let k = 0; k < subs; k++) {
+    const at = Math.round(mark * (k + 1) / (subs + 2));
+    const open = Object.values(stints).find(s => s.pid === starters[k] && s.off == null);
+    if (open) open.off = at;
+    stints[uid()] = { pid: bench[k], on: at, slot: null, role: null };
+  }
+  if (!o.live) for (const s of Object.values(stints)) if (s.off == null) s.off = mark;
+
+  const total = o.us + o.them + 1;
+  for (let k = 0; k < o.us; k++)
+    goals[uid()] = { t: Math.round(mark * (k + 1) / total), side: 'us', pid: starters[(k + 1) % starters.length] };
+  for (let k = 0; k < o.them; k++)
+    goals[uid()] = { t: Math.round(mark * (o.us + k + 1) / total), side: 'them' };
+  for (const pid of ids) planned[pid] = Math.round(o.periodCount * o.periodMinutes * onCount / ids.length);
+
+  return {
+    id: o.id, teamId: t.id, opponent: o.opponent,
+    date: new Date(t0).toISOString().slice(0, 10), kickoff: '10:00', venue: 'Sandbox Park',
+    periodCount: o.periodCount, periodMinutes: o.periodMinutes, onFieldCount: onCount,
+    currentHalf: o.periodCount, periods, stints, goals, planned,
+    ...(o.live ? {} : { ended: t0 + o.periodCount * (len + gap) })
+  };
+}
+
+function seedSandbox() {
+  const code = SANDBOX_PREFIX + uid();
+  const a = sandboxTeam('sbA', 'Test Squad A', 14, 0);
+  const b = sandboxTeam('sbB', 'Test Squad B', 9, 6);
+  const teams = { [a.id]: a, [b.id]: b }, matches = {};
+  for (const g of [
+    sandboxGame(a, { id: 'sbg1', opponent: 'Riverside', daysAgo: 21, periodCount: 2, periodMinutes: 30, onFieldCount: 11, us: 3, them: 1 }),
+    sandboxGame(a, { id: 'sbg2', opponent: 'Northgate', daysAgo: 7, periodCount: 2, periodMinutes: 30, onFieldCount: 11, us: 1, them: 2 }),
+    sandboxGame(a, { id: 'sbg3', opponent: 'Hill End', live: true, periodCount: 2, periodMinutes: 30, onFieldCount: 11, us: 1, them: 1 }),
+    sandboxGame(b, { id: 'sbg4', opponent: 'Lakeside B', daysAgo: 14, periodCount: 4, periodMinutes: 12, onFieldCount: 7, us: 2, them: 2 })
+  ]) matches[g.id] = g;
+
+  /* access/members is the knocking-on-the-door list and grants nothing on its
+     own, so these invented accounts are people to practise assigning roles to
+     and taking them off again, without any of them being able to reach
+     anything even if the club were locked down around them. */
+  const members = {};
+  if (me) members[me.uid] = { name: me.name, email: me.email, at: nowMs() };
+  [['Jaz Aldritt', 'jaz@example.test'], ['Sam Okoro', 'sam@example.test'], ['Wren Bailey', 'wren@example.test']]
+    .forEach(([name, email], i) => { members['sbu' + (i + 1)] = { name, email, at: nowMs() - (i + 1) * 3600000 }; });
+
+  const seeded = { teams, matches, access: { org: { name: 'Sandbox FC', sandbox: true }, members } };
+  try {
+    localStorage.setItem(LS_DATA + ':' + envPrefix() + code, JSON.stringify(seeded));
+    localStorage.setItem(LS_WS, code);
+  } catch (e) { toast('Could not create it — this device is out of storage'); return; }
+  location.reload();
+}
 
 /* ---------------- model helpers ---------------- */
 const teams = () => Object.values(state.teams).sort((a, b) => (a.name || '').localeCompare(b.name || ''));
@@ -1167,14 +1306,26 @@ function render() {
   const roleNote = lim
     ? `<div class="rolebar">Signed in as <b>${esc(ROLE_LABEL[lim])}</b> — ${lim === 'tracker' ? 'you can log events but not make subs or run the clock' : 'you can read, not change'}.</div>`
     : '';
+  /* Never let a rehearsal pass for the real thing. Both facts are worth saying
+     out loud: a test club holds invented data and publishes nothing, and a
+     non-production environment is a different database with its own rules. */
+  const envNote = (isSandbox() || envName())
+    ? `<div class="rolebar test">${isSandbox() ? '<b>Test club</b> — invented data, nothing here is published to parents' : ''}${isSandbox() && envName() ? ' · ' : ''}${envName() ? `Environment <b>${esc(envName())}</b>` : ''}</div>`
+    : '';
   const g = ui.gameView;
-  app.innerHTML = roleNote + roNote +
+  /* The brackets are load-bearing. `===` binds looser than `+`, so without them
+     this reads as (roleNote + roNote + v) === 'game': the banners are swallowed
+     by the comparison instead of rendered, and anybody who has one — a tracker,
+     a parent, a coach reading another team — falls all the way through the chain
+     to the games list the moment they open a game. A tracker could not reach the
+     Track tab at all, which is the only screen her role exists for. */
+  app.innerHTML = envNote + roleNote + roNote + (
     v === 'game' ? (g === 'track' ? viewTrack() : g === 'stats' ? viewStats() : g === 'pitch' ? viewMatch() : viewLive()) :
       v === 'roster' ? viewRoster() :
         v === 'season' ? viewSeason() :
           v === 'formation' ? viewFormation() : v === 'club' ? viewClub() : v === 'people' ? viewPeople() : v === 'admin' ? viewAdmin()
             : v === 'mine' ? viewMine() : v === 'teamset' ? viewTeamSet()
-              : v === 'setup' ? viewSetup() : viewMatches();
+              : v === 'setup' ? viewSetup() : viewMatches());
   syncHash();
   if (v === 'game' && g === 'pitch') wireDrag();
   if (v === 'formation') wireFormationDrag();
@@ -1274,7 +1425,11 @@ function knownClubs() {
     for (let i = 0; i < localStorage.length; i++) {
       const k = localStorage.key(i);
       if (!k || !k.startsWith(LS_DATA + ':')) continue;
-      const code = k.slice(LS_DATA.length + 1);
+      let code = k.slice(LS_DATA.length + 1);
+      // a bucket belonging to another environment is not a club of this one
+      const pre = envPrefix();
+      if (pre) { if (!code.startsWith(pre)) continue; code = code.slice(pre.length); }
+      else if (code.includes('~')) continue;
       if (code === 'local') continue;
       let name = code;
       try { const d = JSON.parse(localStorage.getItem(k)); name = ((d.access || {}).org || {}).name || code; } catch (e) { }
@@ -2194,7 +2349,7 @@ function viewTeamSet() {
 /* --- settings: things about you and this device --- */
 function viewSetup() {
   const code = localStorage.getItem(LS_WS) || '';
-  const cfgOk = !!(window.SOCCER_FIREBASE_CONFIG && window.SOCCER_FIREBASE_CONFIG.apiKey);
+  const cfgOk = !!fbConfig().apiKey;
   const r = myRole();
   return `<div class="stack">
     <div class="card"><h2 style="margin-bottom:8px">Account</h2>
@@ -2211,7 +2366,10 @@ function viewSetup() {
       <p class="muted" style="margin-top:0">Firebase config is ${cfgOk ? 'in place' : 'not filled in — see README.md'}.</p>
       <p class="muted"${isOwner() ? '' : ' style="margin-bottom:0"'}>${code ? 'Connected. Clubs are invite only — an admin adds your account, there is no code to type.' : 'Not connected to a club yet.'}</p>
       ${isOwner() ? `<button class="btn quiet wide" data-act="setwscode">${code ? 'Change workspace code' : 'Connect to a workspace'}</button>
-      <p class="muted" style="margin-bottom:0">Owner-only stopgap until per-person invites exist — nobody else sees this.</p>` : ''}</div>
+      <p class="muted">Owner-only stopgap until per-person invites exist — nobody else sees this.</p>
+      <div class="row"><button class="btn quiet" data-act="envsheet">Database: ${esc(envName() || 'production')}</button>
+      <button class="btn quiet" data-act="maketestclub">Make a test club</button></div>
+      <p class="muted" style="margin-bottom:0">A test club is invented data with publishing switched off — safe to grant roles in, lock down and retire. Rules belong to a database rather than to a club, though, so a rules change has to be rehearsed in another database, not just another club.</p>` : ''}</div>
 
     <div class="card"><h2 style="margin-bottom:8px">Share with parents</h2>
       <p class="muted" style="margin-top:0">Read-only pages showing shirt numbers, never names.</p>
@@ -2472,6 +2630,11 @@ let purged = null;                          // 'access' | 'retired'
 let retiredClubs = {};                      // app owner's view of what is closed
 function schedulePublish() {
   const t = team();
+  /* A rehearsal must never reach public/. That tier is world-readable and keyed
+     by share id, so a seeded club carrying a copied share would quietly serve
+     invented scores to families holding a real link. Checked here rather than at
+     the call sites: every write path funnels through this one function. */
+  if (isSandbox()) { pubState = { at: null, error: 'Test club — nothing is published' }; return; }
   if (!fb) { pubState = { at: null, error: 'Not connected to Firebase' }; return; }
   if (!t || !t.share) return;
   clearTimeout(pubTimer);
@@ -2800,9 +2963,22 @@ function sheetGoal(gid) {
     <div style="margin-top:8px"><button class="btn danger wide" data-act="delgoal" data-id="${gid}">Delete this goal</button></div>`);
 }
 
+function sheetEnv() {
+  const cur = envName(), list = Object.keys(envList());
+  const url = c => esc((c || {}).databaseURL || 'not set');
+  openSheet(`<h3>Database</h3>
+    <p class="muted" style="margin-top:0">Which Firebase database this device talks to. Rules live on a database, not on a club, so this is the only way to try a rules change without applying it to the real club in the same instant.</p>
+    <button class="opt" data-act="setenv" data-v="" aria-current="${!cur}"><b>Production</b>
+      <span class="rowsub">${url(window.SOCCER_FIREBASE_CONFIG)}</span></button>
+    ${list.map(n => `<button class="opt" data-act="setenv" data-v="${esc(n)}" aria-current="${n === cur}"><b>${esc(n)}</b>
+      <span class="rowsub">${url(envList()[n])}</span></button>`).join('')}
+    ${list.length ? '' : '<p class="muted">None declared yet. Add <code>SOCCER_FIREBASE_ENVS</code> to firebase-config.js — see README.</p>'}
+    <p class="muted" style="margin-bottom:0">Switching reloads and forgets the open code, since a club belongs to the database it lives in. Each database keeps its own local copies, so neither can overwrite what the other holds.</p>`);
+}
+
 function sheetWorkspace() {
   const code = wsCode();
-  const cfgOk = !!(window.SOCCER_FIREBASE_CONFIG && window.SOCCER_FIREBASE_CONFIG.apiKey);
+  const cfgOk = !!fbConfig().apiKey;
   openSheet(`<h3>Workspace code</h3>
     <p class="muted" style="margin-top:0">${cfgOk ? 'Every device with this exact code sees the same teams and games. It is case sensitive and the order of the characters matters.' : 'No Firebase config in this build, so this device is on its own.'}</p>
     ${code ? `<div class="codebox" id="codeShow">${esc(code)}</div>
@@ -3194,7 +3370,7 @@ document.addEventListener('click', e => {
   if (a === 'forgetclub') {
     if (d.code === wsCode()) { toast('Switch away from it first'); return; }
     if (!confirm('Remove this device\u2019s copy of that club? The club itself is untouched, and anyone else keeps theirs.')) return;
-    try { localStorage.removeItem(LS_DATA + ':' + d.code); } catch (e) { }
+    try { localStorage.removeItem(LS_DATA + ':' + envPrefix() + d.code); } catch (e) { }
     sheetClubSwitch(); toast('Forgotten on this device'); return;
   }
   if (a === 'switchclub') {
@@ -3207,6 +3383,23 @@ document.addEventListener('click', e => {
   }
   if (a === 'sharesheet') { sheetShare(); return; }
   if (a === 'setwscode') { sheetWorkspace(); return; }
+  if (a === 'envsheet') { sheetEnv(); return; }
+  if (a === 'setenv') {
+    if (!isOwner()) { toast('App owner only'); return; }
+    const n = d.v || '';
+    if (n === envName()) { closeSheet(); return; }
+    if (n && !envList()[n]) { toast('That database is not configured'); return; }
+    try {
+      if (n) localStorage.setItem(LS_ENV, n); else localStorage.removeItem(LS_ENV);
+      localStorage.removeItem(LS_WS);   // a code belongs to the database it was opened in
+    } catch (e) { }
+    location.reload(); return;
+  }
+  if (a === 'maketestclub') {
+    if (!isOwner()) { toast('App owner only'); return; }
+    if (!confirm('Make a test club? It is invented data in the ' + (envName() || 'production') + ' database. Nothing in it is ever published to parents.')) return;
+    seedSandbox(); return;
+  }
   if (a === 'claimadmin') {
     if (!me) { toast('Sign in first'); return; }
     if (anyAdmins()) { toast('Someone already claimed it'); return; }
