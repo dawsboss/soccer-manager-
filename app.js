@@ -2,7 +2,7 @@
    Static app. Data lives in localStorage, and mirrors to Firebase Realtime
    Database when a config + workspace code are present. */
 
-const BUILD = '45';
+const BUILD = '47';
 const BUILT = '2026-09-13';
 /* index.html carries the build it was published with. If this file is newer, the
    browser handed us a cached page — the exact failure that has eaten hours. */
@@ -258,21 +258,36 @@ function setSync(stateName, label) {
   b.textContent = label;
 }
 
+let fbAppPromise = null;
 async function getApp() {
   if (fbApp) return fbApp;
   const cfg = window.SOCCER_FIREBASE_CONFIG;
   if (!cfg || !cfg.apiKey) return null;
-  const appMod = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js');
-  fbApp = appMod.initializeApp(cfg);
-  return fbApp;
+  // initAuth() and initSync() both call this at boot; without caching the
+  // in-flight promise they can race and call initializeApp() twice, which
+  // throws and silently kills whichever one loses.
+  if (!fbAppPromise) {
+    fbAppPromise = import('https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js')
+      .then(appMod => { fbApp = appMod.initializeApp(cfg); return fbApp; });
+  }
+  return fbAppPromise;
 }
+
+/* Resolves once after Firebase Auth has restored (or ruled out) a session.
+   initSync() must wait on this before reading the workspace: onAuthStateChanged
+   can fire after the database listener would otherwise have already gone out
+   with no auth.uid attached, and a rule keyed on auth.uid denies that request
+   even for someone who is, a moment later, fully signed in. That denial then
+   sticks, because the base read below is only ever tried once. */
+let authReadyResolve;
+const authReady = new Promise(res => { authReadyResolve = res; });
+let attachWorkspace = () => { };   // set by initSync once fb/db exist; re-runnable
 
 /* Signing in is optional for now. Nothing gates on it yet — it exists so stamps
    carry a real identity, and so the org model has something to hang off next. */
 async function initAuth() {
   const app = await getApp();
-  if (!app) return;
-  let firstAuthOuter = Promise.resolve();
+  if (!app) { authReadyResolve(); return; }
   try {
     authMod = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js');
     fbAuth = authMod.getAuth(app);
@@ -289,16 +304,14 @@ async function initAuth() {
       }
     }
 
-    let settled;
-    const firstAuth = new Promise(r => { settled = r; });
     let prevUid;
     authMod.onAuthStateChanged(fbAuth, u => {
       me = u ? { uid: u.uid, name: u.displayName || (u.email || '').split('@')[0] || 'Signed in', email: u.email || '', photo: u.photoURL || '' } : null;
       const uid = me ? me.uid : null;
-      // identity changed, so any earlier refusal is stale — read again
+      // identity changed after boot — e.g. someone signs in from the lock
+      // screen — so any earlier refusal is stale; read the workspace again
       if (prevUid !== undefined && prevUid !== uid) { denied = false; attachWorkspace(); }
       prevUid = uid;
-      settled();
       if (me && fb) {
         // put myself on the roster of people so an admin has someone to assign
         const known = (acc().members || {})[me.uid];
@@ -307,27 +320,28 @@ async function initAuth() {
           saveLocal();
         }
       }
+      authReadyResolve();
       render();
     });
-    firstAuthOuter = firstAuth;
-  } catch (e) { console.warn('auth unavailable', e); }
-  // a locked-down workspace refuses an anonymous read, so never read before this
-  await Promise.race([firstAuthOuter, new Promise(r => setTimeout(r, 4000))]);
+  } catch (e) {
+    console.warn('auth unavailable', e);
+    authReadyResolve(); // no auth module at all still counts as "resolved, signed out"
+  }
 }
 
 async function initSync() {
   const cfg = window.SOCCER_FIREBASE_CONFIG;
   const code = localStorage.getItem(LS_WS);
   if (!cfg || !cfg.apiKey || !cfg.databaseURL) { setSync('off', 'this device'); return; }
-  if (!code) { setSync('off', 'no code'); return; }
   try {
     const app = await getApp();
     const dbMod = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js');
     const db = dbMod.getDatabase(app);
-    fb = { db, ref: dbMod.ref, set: dbMod.set, remove: dbMod.remove, base: 'workspaces/' + code };
-    fb.childAdded = dbMod.onChildAdded;
 
-    // every device measures the match against Firebase's clock, not its own
+    // appOwners is root-level and has nothing to do with any one workspace —
+    // read it before a code even exists. A device with no workspace still
+    // needs to know whether the signed-in account is the app owner, so the
+    // stopgap "connect to a workspace" control in Setup can find them.
     dbMod.onValue(dbMod.ref(db, 'appOwners'), s => { appOwners = s.val() || {}; render(); }, () => { });
 
     dbMod.onValue(dbMod.ref(db, '.info/serverTimeOffset'), s => {
@@ -339,7 +353,11 @@ async function initSync() {
       setSync(s.val() ? 'live' : 'off', s.val() ? 'synced' : 'offline');
     });
 
-    attachWorkspace = () => {
+    if (!code) { setSync('off', 'no code'); return; }
+
+    fb = { db, ref: dbMod.ref, set: dbMod.set, remove: dbMod.remove, base: 'workspaces/' + code };
+    fb.childAdded = dbMod.onChildAdded;
+
     // One full read to get in sync, then child-level listeners so an update to
     // one match can never touch another, or the teams tree.
     const onDenied = err => {
@@ -349,43 +367,61 @@ async function initSync() {
       render();
     };
 
-    // a retired club tells every device still holding a copy to let it go
+    // a retired club tells every device still holding a copy to let it go —
+    // the app owner's device included. The workspace data is never deleted by
+    // this; retiring only writes the retired/{code} marker. An owner who needs
+    // to see a retired club again can still open it from Club settings ›
+    // Retired clubs, which reads it straight from the database.
     dbMod.onValue(dbMod.ref(db, 'retired/' + code), rs => {
       if (rs.val()) purgeClub(code, 'retired');
     }, () => { });
 
     dbMod.onValue(dbMod.ref(db, 'retired'), rs => { retiredClubs = rs.val() || {}; render(); }, () => { });
 
-    dbMod.onValue(dbMod.ref(db, fb.base), snap => {
-      denied = false;
-      const v = snap.val();
-      if (!v) pushAll();
-      else { state = { teams: v.teams || {}, matches: v.matches || {}, access: v.access || {} }; saveLocal(); markSynced(); render(); }
-      schedulePublish();   // republish on load, so a fixed config heals itself
+    function wireBase(attempt) {
+      dbMod.onValue(dbMod.ref(db, fb.base), snap => {
+        denied = false;
+        const v = snap.val();
+        if (!v) pushAll();
+        else { state = { teams: v.teams || {}, matches: v.matches || {}, access: v.access || {} }; saveLocal(); markSynced(); render(); }
+        schedulePublish();   // republish on load, so a fixed config heals itself
 
-      // membership is small and read whole; it does not need child-level listeners
-      dbMod.onValue(dbMod.ref(db, fb.base + '/access'), cs => {
-        state.access = cs.val() || {};
-        saveLocal(); render();
-      });
-
-      for (const coll of ['teams', 'matches']) {
-        const r = dbMod.ref(db, fb.base + '/' + coll);
-        const upsert = cs => {
-          if (ui.dragging) return;
-          const inc = cs.val(); if (!inc) return;
-          state[coll][cs.key] = mergeNode(state[coll][cs.key], inc);
+        // membership is small and read whole; it does not need child-level listeners
+        dbMod.onValue(dbMod.ref(db, fb.base + '/access'), cs => {
+          state.access = cs.val() || {};
           saveLocal(); render();
-        };
-        dbMod.onChildAdded(r, upsert);
-        dbMod.onChildChanged(r, upsert);
-        dbMod.onChildRemoved(r, cs => {
-          if (ui.dragging) return;
-          delete state[coll][cs.key]; saveLocal(); render();
         });
-      }
-    }, onDenied, { onlyOnce: true });
-    };
+
+        for (const coll of ['teams', 'matches']) {
+          const r = dbMod.ref(db, fb.base + '/' + coll);
+          const upsert = cs => {
+            if (ui.dragging) return;
+            const inc = cs.val(); if (!inc) return;
+            state[coll][cs.key] = mergeNode(state[coll][cs.key], inc);
+            saveLocal(); render();
+          };
+          dbMod.onChildAdded(r, upsert);
+          dbMod.onChildChanged(r, upsert);
+          dbMod.onChildRemoved(r, cs => {
+            if (ui.dragging) return;
+            delete state[coll][cs.key]; saveLocal(); render();
+          });
+        }
+      }, err => {
+        // A denial in the first second or two after boot is usually the ID
+        // token not having reached the database connection yet, not a real
+        // refusal — this read only ever runs once, so retry with backoff
+        // before showing someone the lock screen for a race, not a rule.
+        if (/permission|denied/i.test((err && err.code) || '') && attempt < 2) {
+          setTimeout(() => wireBase(attempt + 1), (attempt + 1) * 900);
+          return;
+        }
+        onDenied(err);
+      }, { onlyOnce: true });
+    }
+
+    await authReady;   // don't read the workspace until we know who, if anyone, is signed in
+    attachWorkspace = () => wireBase(0);
     attachWorkspace();
   } catch (e) {
     console.error(e);
@@ -865,6 +901,23 @@ function endHalf(m) {
   toast(halfName(m, next - 1) + ' ended');
 }
 
+/* Ending a game freezes it: closes whatever period is still open (like
+   endHalf) and, crucially, closes every open stint — otherwise elapsedSec()
+   and playedSec() keep counting against "now" forever, and minutes silently
+   drift after everyone has gone home. The explicit `ended` flag is then what
+   gameStatus() and Stats trust, regardless of currentHalf vs periodCount. */
+function endGame(m) {
+  const path = `matches/${m.id}`;
+  const t = elapsedSec(m);
+  const s = openSeg(m);
+  if (s) { const tEnd = nowMs(); setDeep(state, `${path}/periods/${s.i}/end`, tEnd); remoteSet(`${path}/periods/${s.i}/end`, tEnd); }
+  for (const [sid, st] of Object.entries(m.stints || {})) {
+    if (st.off == null) { setDeep(state, `${path}/stints/${sid}/off`, t); remoteSet(`${path}/stints/${sid}/off`, t); }
+  }
+  commit(`${path}/ended`, nowMs());
+  toast('Game ended — ready for stats');
+}
+
 function putOnField(m, pid, x, y, slot) {
   const path = `matches/${m.id}`;
   const pos = { x, y, slot: slot || null };
@@ -1149,7 +1202,6 @@ function lockScreen() {
       : 'The data here is protected. Sign in with the account a coach has given access to.'}
       <div class="row" style="margin-top:14px;justify-content:center">
         ${me ? `<button class="btn quiet" data-act="signout">Sign out</button>` : `<button class="btn" data-act="signinsheet">Sign in</button>`}
-
       </div></div>
     <p class="muted" style="text-align:center">Read-only score pages need none of this — they keep working from their own link.</p>
   </div>`;
@@ -1324,6 +1376,18 @@ function anomalyBanner(t, m) {
 
 function clockCard(m, now, controls) {
   const el = elapsedSec(m, now);
+  if (m.ended) {
+    return `<div class="clockwrap">
+      <div class="clockline">
+        <div class="clock" id="clock">${mmss(el)}</div>
+        <div class="clockmeta"><b>Full time</b></div>
+      </div>
+      ${controls ? `<div class="clockbtns">
+        <span class="pill live" style="align-self:center">Ended · ready for stats</span>
+      </div>
+      <button class="linkbtn" data-act="reopengame">Ended by mistake?</button>`
+        : `<p class="clocknote">Game ended.</p>`}</div>`;
+  }
   return `<div class="clockwrap">
     <div class="clockline">
       <div class="clock" id="clock">${mmss(el)}</div>
@@ -1334,10 +1398,8 @@ function clockCard(m, now, controls) {
       ? `<button class="btn stop" data-act="pause">Pause</button><button class="btn stop" data-act="endhalf">End ${esc(halfName(m, m.currentHalf || 1)).toLowerCase()}</button>`
       : `<button class="btn" data-act="start">${el ? 'Resume' : 'Start clock'}</button>${el ? `<button class="btn stop" data-act="endhalf">End ${esc(halfName(m, m.currentHalf || 1)).toLowerCase()}</button>` : ''}`}
     </div>
-    <div class="row" style="margin-top:6px">
-      <button class="linkbtn" data-act="fixclock">Clock reading wrong?</button>
-      ${el ? `<button class="linkbtn" data-act="endgame" style="margin-left:auto">${m.ended ? 'Reopen game' : 'End game'}</button>` : ''}
-    </div>`
+    ${el || running(m) ? `<button class="btn quiet wide" data-act="endgame" style="margin-top:8px">End game</button>` : ''}
+    <button class="linkbtn" data-act="fixclock">Clock reading wrong?</button>`
       : `<p class="clocknote">${running(m) ? 'Running' : el ? 'Paused' : 'Not started'} — the clock is controlled from the Live tab.</p>`}</div>`;
 }
 
@@ -2147,7 +2209,9 @@ function viewSetup() {
 
     <div class="card"><h2 style="margin-bottom:8px">Workspace</h2>
       <p class="muted" style="margin-top:0">Firebase config is ${cfgOk ? 'in place' : 'not filled in — see README.md'}.</p>
-      <p class="muted" style="margin-bottom:0">${code ? 'Connected. Clubs are invite only — an admin adds your account, there is no code to type.' : 'Not connected to a club yet.'}</p></div>
+      <p class="muted"${isOwner() ? '' : ' style="margin-bottom:0"'}>${code ? 'Connected. Clubs are invite only — an admin adds your account, there is no code to type.' : 'Not connected to a club yet.'}</p>
+      ${isOwner() ? `<button class="btn quiet wide" data-act="setwscode">${code ? 'Change workspace code' : 'Connect to a workspace'}</button>
+      <p class="muted" style="margin-bottom:0">Owner-only stopgap until per-person invites exist — nobody else sees this.</p>` : ''}</div>
 
     <div class="card"><h2 style="margin-bottom:8px">Share with parents</h2>
       <p class="muted" style="margin-top:0">Read-only pages showing shirt numbers, never names.</p>
@@ -2191,7 +2255,7 @@ function viewAdmin() {
       : `<button class="btn quiet sm" data-act="switchclub" data-code="${esc(code)}">Open</button>`}</div>`).join('')}</div></div>` : ''}
 
     <div class="card"><h2 style="margin-bottom:8px">Retire this club</h2>
-      <p class="muted" style="margin-top:0">Marks it closed and archives it. Every device clears its local copy, including yours — the data stays in the database and the app owner can reopen it from the archive at any time. <b>Nothing is deleted.</b></p>
+      <p class="muted" style="margin-top:0">Marks it closed. Every device holding a copy clears it on next connect — except the app owner's, so it can still be opened and exported. <b>Nothing is deleted.</b> The data stays until the app owner removes it in the Firebase console.</p>
       <button class="btn danger wide" data-act="retireclub">Retire ${esc((acc().org || {}).name || 'this club')}</button></div>
 
     <div class="card"><h2 style="margin-bottom:8px">People</h2>
@@ -2352,8 +2416,6 @@ const teamCrest = (t, cls = '') => t && t.logo
 
 const chipName = p => `${p.number ? esc(p.number) + ' ' : ''}${esc(p.name)}`;
 const shirtOf = p => String((p && p.number) ?? '').trim() || '–';
-/* A derived end guesses wrong often enough to matter for stats, so a coach says
-   when it is over. The old rule stays as a fallback for older games. */
 const gameStatus = m => m.ended ? 'done'
   : (m.currentHalf || 1) > (m.periodCount || 2) ? 'done'
   : (elapsedSec(m) > 0 || running(m)) ? 'live' : 'upcoming';
@@ -2408,7 +2470,6 @@ let pubState = { at: null, error: null };   // surfaced in the share sheet
 let denied = false;                         // rules refused us; show the door
 let purged = null;                          // 'access' | 'retired'
 let retiredClubs = {};                      // app owner's view of what is closed
-let attachWorkspace = () => { };            // re-runnable workspace read
 function schedulePublish() {
   const t = team();
   if (!fb) { pubState = { at: null, error: 'Not connected to Firebase' }; return; }
@@ -3118,8 +3179,8 @@ document.addEventListener('click', e => {
   if (a === 'teammenu') { sheetTeams(); return; }
   if (a === 'goview') { ui.view = d.v; closeSheet(); render(); return; }
   if (a === 'retireclub') {
-    if (!fb) { toast('Not connected'); return; }
     if (!canAdmin()) { toast('Club admins and the app owner only'); return; }
+    if (!fb) { toast('Not connected'); return; }
     if (!confirm('Retire this club? Every device holding a copy will clear it. Export a backup first if you want one.')) return;
     fb.set(fb.ref(fb.db, 'retired/' + wsCode()), {
       at: nowMs(), by: (me && me.uid) || null, byName: (me && me.name) || null,
@@ -3292,13 +3353,11 @@ document.addEventListener('click', e => {
   if (a === 'pause') { pauseClock(m); return; }
   if (a === 'endhalf') { endHalf(m); return; }
   if (a === 'endgame') {
-    if (m.ended) { drop(`matches/${m.id}/ended`); toast('Game reopened'); return; }
-    if (running(m) && !confirm('The clock is still running. End the game anyway?')) return;
-    pauseClock(m);
-    commit(`matches/${m.id}/ended`, nowMs());
-    toast('Game ended — counted as final in stats');
-    return;
+    const msg = running(m) ? 'The clock is still running. End the game anyway?' : 'End this game? It will be marked ready for stats.';
+    if (!confirm(msg)) return;
+    endGame(m); return;
   }
+  if (a === 'reopengame') { drop(`matches/${m.id}/ended`); toast('Game reopened'); return; }
 
   if (a === 'newteam') { closeSheet(); sheetTeam(null); return; }
   if (a === 'editteam') { sheetTeam(state.teams[d.id]); return; }
@@ -3687,10 +3746,10 @@ function syncHash() {
   booted = true;
   setTimeout(() => { routing = false; }, 0);
 }
-const csEl = $('#clubSwitch');
-if (csEl) csEl.addEventListener('click', sheetClubSwitch);
 const avEl = $('#avatar');
 if (avEl) avEl.addEventListener('click', () => (me ? sheetAccount() : sheetSignIn()));
+const csEl = $('#clubSwitch');
+if (csEl) csEl.addEventListener('click', sheetClubSwitch);
 
 if (typeof window !== 'undefined' && window.addEventListener) {
   const backOrForward = () => {
