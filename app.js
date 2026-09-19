@@ -1168,13 +1168,19 @@ function render() {
     ? `<div class="rolebar">Signed in as <b>${esc(ROLE_LABEL[lim])}</b> — ${lim === 'tracker' ? 'you can log events but not make subs or run the clock' : 'you can read, not change'}.</div>`
     : '';
   const g = ui.gameView;
-  app.innerHTML = roleNote + roNote +
+  /* The brackets are load-bearing. `===` binds looser than `+`, so without them
+     this reads as (roleNote + roNote + v) === 'game': the banners are swallowed
+     by the comparison instead of rendered, and anybody who has one — a tracker,
+     a parent, a coach reading another team — falls all the way through the chain
+     to the games list the moment they open a game. A tracker could not reach the
+     Track tab at all, which is the only screen her role exists for. */
+  app.innerHTML = roleNote + roNote + (
     v === 'game' ? (g === 'track' ? viewTrack() : g === 'stats' ? viewStats() : g === 'pitch' ? viewMatch() : viewLive()) :
       v === 'roster' ? viewRoster() :
         v === 'season' ? viewSeason() :
           v === 'formation' ? viewFormation() : v === 'club' ? viewClub() : v === 'people' ? viewPeople() : v === 'admin' ? viewAdmin()
             : v === 'mine' ? viewMine() : v === 'teamset' ? viewTeamSet()
-              : v === 'setup' ? viewSetup() : viewMatches();
+              : v === 'setup' ? viewSetup() : viewMatches());
   syncHash();
   if (v === 'game' && g === 'pitch') wireDrag();
   if (v === 'formation') wireFormationDrag();
