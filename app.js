@@ -2,7 +2,7 @@
    Static app. Data lives in localStorage, and mirrors to Firebase Realtime
    Database when a config + workspace code are present. */
 
-const BUILD = '47';
+const BUILD = '48';
 const BUILT = '2026-09-13';
 /* index.html carries the build it was published with. If this file is newer, the
    browser handed us a cached page — the exact failure that has eaten hours. */
@@ -1531,7 +1531,7 @@ function crumbs() {
   const org = (acc().org || {}).name || 'Club';
   const t = team();
   const m = ui.view === 'game' ? match() : null;
-  const out = [`<button class="crumb crumb-club" data-act="goview" data-v="${canAdmin() ? 'admin' : 'club'}">${clubCrest('xs')}<span><span class="crumb-k">Club</span>${esc(org)}</span></button>`];
+  const out = [`<button class="crumb crumb-club" data-act="goview" data-v="club">${clubCrest('xs')}<span><span class="crumb-k">Club</span>${esc(org)}</span></button>`];
   if (t) out.push(`<span class="crumb-sep">\u203a</span>
     <button class="crumb" data-act="goteam" data-id="${t.id}"><span class="crumb-k">Team</span>${teamLabel(t)}</button>`);
   if (m) out.push(`<span class="crumb-sep">\u203a</span>
@@ -1544,8 +1544,7 @@ function viewClub() {
   const list = myTeams();
   const now = nowMs();
   return `<div class="stack">
-    <div class="spread"><h2>${esc(org)}</h2>
-      ${canAdmin() ? `<button class="btn quiet sm" data-act="goview" data-v="admin">Club settings</button>` : ''}</div>
+    <h2>${esc(org)}</h2>
     <div class="clubhead">${clubCrest('lg')}<div><b>${esc(org)}</b>
       <span class="rowsub">${myTeams().length} team${myTeams().length === 1 ? '' : 's'} you can reach</span></div></div>
     ${guardsAnyone() ? `<button class="card" data-act="goview" data-v="mine" style="text-align:left;width:100%">
@@ -1567,7 +1566,8 @@ function viewClub() {
     </button>`;
   }).join('')
       : `<div class="empty"><strong>No teams yet</strong>${canAdmin() ? 'Add one from Club settings.' : 'Nothing has been shared with your account.'}</div>`}
-    ${canAdmin() ? `<button class="btn quiet wide" data-act="newteam">Add a team</button>` : ''}
+    ${canAdmin() ? `<button class="btn quiet wide" data-act="newteam">Add a team</button>
+    <button class="btn quiet wide" data-act="goview" data-v="admin">Club settings</button>` : ''}
   </div>`;
 }
 

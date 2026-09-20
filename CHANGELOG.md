@@ -8,6 +8,20 @@ before this point lives only in the git log.
 
 ---
 
+## Club crumb goes to the team list, not straight to settings — 2026-09-20
+
+For an admin, tapping the club button in the crumb bar (`crumb-club`) jumped
+straight into Club admin/settings, skipping the team list entirely — there was
+no way to reach it from there except editing the URL hash by hand. A coach
+running more than one team had no button left to switch teams.
+
+The crumb now always opens the team list (`viewClub()`), which every account
+could already reach and which already listed every team the account can see.
+The "Club settings" button that used to sit at the top of that screen for
+admins now sits at the bottom, after the team cards and "Add a team" — so
+switching teams is the first thing an admin sees, and settings is one tap
+further down rather than the landing page.
+
 ## Tests that can actually fail — 2026-09-20
 
 ### Four of the seven checks could never go red
