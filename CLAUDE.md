@@ -6,15 +6,31 @@ Read `HANDOFF.md` first if it exists and is current. Read `AUTH.md`, `ROADMAP.md
 
 ## Required after every change to app.js or index.html
 
-- `node test/smoke.js` — boots the app in a stubbed DOM with no live Firebase connection and renders every view. Must exit 0, no exceptions.
-- `node test/version.js` — checks that `BUILD` in `app.js`, the `<meta name="build">` tag in `index.html`, and both `?v=` query params (`app.js?v=`, `styles.css?v=`) all agree. If you bump one, bump all four to the same number.
-- `node test/signout.js` — checks that a signed-out device renders nothing from a club that has an admin (page, crumbs and tabs), that the pre-lockdown bootstrap and the no-Firebase-config case stay open, and that the identity cache keeps offline working. Exits non-zero on a failure.
-- `node test/sandbox.js` — seeds the test club and checks it holds together: finished games with a closed clock and no open stints, one live game, `onField` agreeing with the stints, publishing refused, and each database's local copies kept apart. Exits non-zero on a failure.
-- Don't skip these because a change looks small. They're cheap and they're what catch a regression before it costs someone a Saturday.
+- **`node test/run.js`** — runs every suite below in its own process and exits non-zero if any fails. This is the one to remember; four separate commands is how one of them quietly stops being run. `node test/run.js --verbose` shows everything, and `node test/run.js sync clock` runs just those.
+- Don't skip it because a change looks small. It's under a second, and it's what catches a regression before it costs someone a Saturday.
+- Every suite also runs on its own when you want the detail of one area:
+  - `node test/clock.js` — the match clock and minutes played. Pins the `s.end || now` rule from the invariants below: move the wall clock and require that a closed period does not budge.
+  - `node test/stints.js` — who is on the pitch, and every sub action. Deletes `positions` mid-game and requires that nothing about who is on, or for how long, changes.
+  - `node test/stats.js` — goals, shots, set pieces, possession, and the public mirror. Stringifies the published document and fails if any roster name is in it.
+  - `node test/sync.js` — auth and the workspace read, driven against a fake Firebase (`test/fakebase.js`): the `authReady` gate, the uid-change reattach, `getApp()`'s promise cache, the retry-before-lock-screen backoff, and `mergeNode()`.
+  - `node test/signout.js` — checks that a signed-out device renders nothing from a club that has an admin (page, crumbs and tabs), that the pre-lockdown bootstrap and the no-Firebase-config case stay open, and that the identity cache keeps offline working.
+  - `node test/roles.js`, `node test/visibility.js` — roles derived from where a uid appears; which teams each account sees and may change. `visibility.js` boots with a Firebase config on purpose: `gated()` is `anyAdmins() && fbConfig().apiKey`, so without one nothing is gated and every assertion about who sees what passes vacuously.
+  - `node test/routing.js` — links in and out, and links to things this device doesn't have.
+  - `node test/smoke.js` — boots the app in a stubbed DOM with no live Firebase connection and renders every view. Must exit 0, no exceptions.
+  - `node test/version.js` — checks that `BUILD` in `app.js`, the `<meta name="build">` tag in `index.html`, and both `?v=` query params (`app.js?v=`, `styles.css?v=`) all agree. If you bump one, bump all four to the same number.
+  - `node test/sandbox.js` — seeds the test club and checks it holds together: finished games with a closed clock and no open stints, one live game, `onField` agreeing with the stints, publishing refused, and each database's local copies kept apart.
+- `test/harness.js` is the shared rig: the stubbed DOM, a clock the test drives, a captured click handler (which is the only way to reach the ~120 actions that are inline branches in one listener), and `loadApp()`. Write new tests on it rather than a fourth copy of the stubs.
+- `.github/workflows/test.yml` runs `test/run.js` on every push and pull request.
 
 ## Required after every change to the rules in README.md
 
 - `node test/rules.js` — evaluates the rules JSON *as README publishes it* against a mock club, for every kind of account. Exits non-zero on a failed expectation. Rules are the one thing here with no way to try it safely: the only live test is publishing over the real club, and the failure mode README warns about is silent (reads work, every write is refused). Run it before you paste anything into the Firebase console.
+
+## Known gaps are pinned, not hidden
+
+Some behaviour contradicts a design document but is left alone because the fix is a decision rather than a bug — `rules.js` has printed five of those at the end for a while. `test/harness.js` gives that a shape: `knownGap()` asserts what the code does *today*, prints it under `gap` instead of `ok`, and **fails if the behaviour changes in either direction**. Closing a gap is meant to turn a suite red once; the fix is to promote the case to an ordinary `check()` and delete the `knownGap()`, not to widen it.
+
+Pinned today: `wireBase()` replaces local state wholesale on the connect-time read (`app.js:446`), against the invariant below. `node test/run.js` lists every gap at the end.
 
 ## Invariants — do not violate these
 
