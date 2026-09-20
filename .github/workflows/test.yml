@@ -1,0 +1,30 @@
+name: Tests
+
+# Deliberately separate from deploy.yml. That workflow holds the `pages`
+# concurrency group and cancels itself when a newer push arrives; a test job
+# inside it would either be cancelled mid-run or hold a deploy open. Here a red
+# test is a red check on the commit and the pull request, which is what anyone
+# reviewing actually looks at.
+on:
+  push:
+    branches: ['**']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # No dependencies and no build step — this stays a static site, and the
+      # suites use nothing but Node's built-ins.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Run every suite
+        run: node test/run.js

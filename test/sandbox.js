@@ -8,63 +8,15 @@
 
    Exits non-zero on a failed expectation. */
 
-const fs = require('fs');
-const path = require('path');
+/* The stubbed DOM, the storage stub, the way app.js is loaded and the `check`
+   format all moved into harness.js, which is the same rig every other test
+   boots on now. The expectations below are unchanged. */
+const H = require('./harness');
+const { check } = H;
 
-const mk = () => new Proxy({
-  dataset: {}, style: {}, value: '', textContent: '', innerHTML: '', hidden: false,
-  classList: { add() { }, remove() { } },
-  addEventListener() { }, removeEventListener() { }, setAttribute() { }, getAttribute() { return null },
-  setPointerCapture() { }, click() { }, getBoundingClientRect: () => ({ left: 0, top: 0, width: 300, height: 400 }),
-  querySelector: () => mk(), querySelectorAll: () => [], closest: () => null, appendChild() { }
-}, { get(t, k) { return k in t ? t[k] : undefined; }, set(t, k, v) { t[k] = v; return true; } });
-
-const nodes = {};
-global.document = {
-  querySelector: sel => (nodes[sel] = nodes[sel] || mk()),
-  querySelectorAll: () => [], addEventListener() { }, createElement: () => mk(), body: mk()
-};
-let reloads = 0;
-global.location = { reload() { reloads++; }, hash: '', pathname: '/', search: '', origin: 'https://x.test' };
-global.history = { replaceState() { } };
-global.window = { addEventListener() { }, SOCCER_FIREBASE_CONFIG: { apiKey: 'k', databaseURL: 'https://prod.example' } };
-global.setInterval = () => 0; global.setTimeout = () => 0; global.clearTimeout = () => { };
-global.confirm = () => true; global.alert = () => { };
-global.Blob = function () { }; global.URL = { createObjectURL: () => 'x', revokeObjectURL() { } };
-global.FileReader = function () { };
-global.localStorage = {
-  _d: {},
-  getItem(k) { return this._d[k] ?? null },
-  setItem(k, v) { this._d[k] = String(v) },
-  removeItem(k) { delete this._d[k] },
-  get length() { return Object.keys(this._d).length },
-  key(i) { return Object.keys(this._d)[i] ?? null }
-};
-
-let src = fs.readFileSync(path.join(__dirname, '..', 'app.js'), 'utf8');
-src = src.replace(/await import\([^)]*\)/g, '({})');
-/* Hand the internals out to module scope rather than writing the whole test
-   inside a template literal, where a backtick would end the program. */
-new Function(src + `
-  global.APP = {
-    seedSandbox, schedulePublish, elapsedSec, playedSec, onField, openStint,
-    dataKey, knownClubs, isSandbox, envPrefix, render,
-    get state() { return state }, set state(v) { state = v },
-    get ui() { return ui },
-    set me(v) { me = v }, set appOwners(v) { appOwners = v },
-    get pubState() { return pubState }, set fb(v) { fb = v }
-  };
-`)();
-
-const A = global.APP;
-const LS = global.localStorage;
-
-let failures = 0;
-function check(label, got, want) {
-  const ok = got === want;
-  if (!ok) failures++;
-  console.log(`  ${ok ? 'ok  ' : 'FAIL'} ${label.padEnd(50)} ${JSON.stringify(got)}${ok ? '' : ' — expected ' + JSON.stringify(want)}`);
-}
+const A = H.loadApp({ config: { apiKey: 'k', databaseURL: 'https://prod.example' } });
+const LS = A.storage;
+const nodes = A.dom.nodes;
 
 /* ---------------- seeding ---------------- */
 
@@ -75,7 +27,7 @@ A.seedSandbox();
 
 const code = LS.getItem('sm.workspace');
 check('the code marks it as a rehearsal', String(code).startsWith('test-'), true);
-check('it reloaded to pick the new club up', reloads, 1);
+check('it reloaded to pick the new club up', A.dom.reloads, 1);
 
 // what loadLocal() would do on the other side of that reload
 const seeded = JSON.parse(LS.getItem('sm.data.v1:' + code));
@@ -169,5 +121,4 @@ check('production shows production clubs', inProd.includes('ONLY-IN-PROD'), true
 check('and not sandbox ones', inProd.includes('ONLY-IN-SANDBOX'), false);
 check('no key leaks through unstripped', inProd.some(c => c.includes('~')), false);
 
-console.log(`\n${failures ? failures + ' EXPECTATION(S) FAILED' : 'all expectations hold'}`);
-process.exit(failures ? 1 : 0);
+H.summary();

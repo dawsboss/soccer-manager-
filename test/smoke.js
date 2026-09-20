@@ -1,11 +1,8 @@
 const fs=require('fs');
-const mk = () => new Proxy({
-  dataset:{}, style:{}, value:'', textContent:'', innerHTML:'', hidden:false,
-  classList:{add(){},remove(){}},
-  addEventListener(){}, removeEventListener(){}, setAttribute(){}, getAttribute(){return null},
-  setPointerCapture(){}, click(){}, getBoundingClientRect:()=>({left:0,top:0,width:300,height:400}),
-  querySelector:()=>mk(), querySelectorAll:()=>[], closest:()=>null, appendChild(){}
-},{get(t,k){ return k in t ? t[k] : undefined; }, set(t,k,v){t[k]=v; return true;}});
+/* The DOM stub and the storage stub live in harness.js now — three copies of
+   them had grown up across this file, sandbox.js and the slice tests, so a fix
+   to one fixed one test. Everything below is unchanged. */
+const { mk, makeStorage } = require('./harness');
 
 // one node per selector, so what render() writes into #app can be read back
 const nodes = {};
@@ -28,10 +25,10 @@ const store = {
   },
   matches:{}
 };
-global.localStorage = {
-  _d:{ 'sm.data.v1': JSON.stringify(store), 'sm.ui.v1': JSON.stringify({view:'setup',teamId:'t_bad'}) },
-  getItem(k){ return this._d[k] ?? null }, setItem(k,v){ this._d[k]=v }, removeItem(k){ delete this._d[k] }
-};
+global.localStorage = makeStorage({
+  'sm.data.v1': JSON.stringify(store),
+  'sm.ui.v1': JSON.stringify({view:'setup',teamId:'t_bad'})
+});
 
 let src = fs.readFileSync(require('path').join(__dirname,'..','app.js'),'utf8');
 src = src.replace(/await import\([^)]*\)/g,'({})');   // never reached, but keep Node happy

@@ -8,6 +8,85 @@ before this point lives only in the git log.
 
 ---
 
+## Tests that can actually fail — 2026-09-20
+
+### Four of the seven checks could never go red
+
+`roles.js`, `routing.js`, `visibility.js` and `version.js` had no assertions and
+no exit code. They printed their expectations next to whatever they got —
+`(expect false)`, `all round-trips: FAIL`, `all agree: NO — 47 / 19` — and
+exited 0 either way. `version.js` also read `index.html` from the working
+directory, so it only worked when run from the repository root and silently
+found nothing anywhere else.
+
+That is worse than having no test. `CLAUDE.md` names `version.js` as a required
+check after every change to `app.js`, so the instruction was being followed and
+the drift it exists to catch would still have shipped. They assert now, and the
+prose they printed is unchanged — it was already a decent description of what
+each case means.
+
+### The invariants are enforced rather than remembered
+
+`CLAUDE.md` lists six invariants and four auth/sync races that were found and
+fixed once. Nothing checked any of them. Four new suites do:
+
+`clock.js` moves the wall clock and requires that a closed period does not
+budge, which is the whole of the `s.end || now` rule. `stints.js` deletes
+`positions` in the middle of a game and requires that nothing about who is on,
+or for how long, changes — a test that only read `onField()` would pass even if
+the two were wired back together. `stats.js` stringifies the published document
+and fails if any roster name appears in it, because `public/` is world-readable
+and a name reaching it is not a display bug. `sync.js` covers the races.
+
+Two pieces of rig made the rest reachable. `test/fakebase.js` stands where
+Firebase stands, so `initAuth()`, `initSync()` and the `wireBase()` closure
+inside it run for real against listeners the test can hold, delay and refuse —
+none of that could be called directly. And the harness keeps the click handler
+`app.js` installs on `document` instead of discarding it, which is the only door
+to the hundred-odd actions that are inline branches in that one listener;
+`repair` and `retire` are tested through it.
+
+Each new check was confirmed by breaking the thing it guards and watching it go
+red: removing `await authReady`, removing the uid-change reattach, caching the
+resolved app instead of the in-flight promise, dropping `canAdmin()` from the
+retire handler, and pointing `onField` back at `positions`.
+
+### One invariant is currently violated, and is pinned
+
+`CLAUDE.md` says the connect-time workspace read "must never replace [local
+state] wholesale … a naive `state = snap.val()` at reconnect silently erases
+it. See `wireBase()`." `app.js:439` is that assignment. `mergeNode()` is wired
+into the per-child listeners below it and not into this first read, so a game
+tracked with no signal — which exists only in local state until it syncs — is
+dropped on reconnect, and `saveLocal()` then writes the loss to disk.
+
+Not fixed here. Changing how the workspace read merges is a change to the sync
+model, and `CLAUDE.md` is explicit that the schema and the rules around it are
+high-stakes rather than routine. It is pinned instead, by a `knownGap()` that
+asserts today's behaviour and fails if it changes in *either* direction — so
+closing the gap turns the suite red once, deliberately, and the fix is to
+promote the case to an ordinary check.
+
+### One command, and it runs in CI
+
+`node test/run.js` runs every suite in its own process — they each load `app.js`
+into module scope and would otherwise tread on each other — and exits non-zero
+if any fails. Asking for four separate commands is how one of them quietly stops
+being run.
+
+`.github/workflows/test.yml` runs it on every push and pull request, separate
+from `deploy.yml`: that workflow holds the `pages` concurrency group and cancels
+itself when a newer push lands, so a test job inside it would be cancelled
+mid-run or hold a deploy open.
+
+`test/harness.js` collects the stubbed DOM and storage that had been copy-pasted
+into three files, so a fix to one of them no longer fixes one test. `smoke.js`
+and `sandbox.js` now boot on it and their output is byte-for-byte what it was.
+
+No dependencies were added. This stays a static site with no build step.
+
+---
+
 ## Somewhere to work on auth that is not the live club — 2026-09-19
 
 ### A tracker could not open the Track tab
