@@ -101,7 +101,7 @@ There is no in-app delete for a whole club, deliberately — it would be one mis
 
 Steps 2 and 3 are permanent and there is no undo, which is why step 1 comes first.
 
-The rules need one more block for retirement to work:
+Retirement needs its own block. It is already part of the complete ruleset under **Locking it down** — this is here to explain it, not to paste separately:
 
 ```json
 "retired": {
@@ -125,7 +125,7 @@ The app owner is the one account that can appoint the first club admin. It is st
 "appOwners": { "<paste your account id>": true }
 ```
 
-3. Add this to the rules so it can be read but never written from the app:
+3. The rules keep it readable but never writable from the app. This is already part of the complete ruleset under **Locking it down**; shown here so you can see what guards it:
 
 ```json
 "appOwners": { ".read": "auth != null", ".write": false }
@@ -150,37 +150,74 @@ The open rules above mean anyone holding a workspace code can read and write eve
 
 ### The rules
 
+**This is the whole thing — paste it as it stands.** It already includes the
+`retired` and `appOwners` blocks shown earlier in this file; those appear there
+to explain what they are for, not to be pasted on their own. Publishing a
+partial ruleset is how a club ends up half locked down.
+
+`node test/rules.js` reads *this* block and checks it. Run it first.
+
 ```json
 {
   "rules": {
     "workspaces": {
       "$code": {
         ".read": "auth != null && (!data.child('access/index').exists() || data.child('access/index/' + auth.uid).exists())",
-
         "access": {
           "members": {
-            "$uid": { ".write": "auth != null && ($uid === auth.uid || root.child('workspaces/' + $code + '/access/index/' + auth.uid).exists())" }
+            "$uid": {
+              ".write": "auth != null && ($uid === auth.uid || root.child('workspaces/' + $code + '/access/index/' + auth.uid).exists())"
+            }
           },
           "admins": {
             ".write": "auth != null && (!data.exists() || data.child(auth.uid).exists())"
           },
-          "index":  { ".write": "auth != null && (!data.exists() || root.child('workspaces/' + $code + '/access/admins/' + auth.uid).exists() || data.child(auth.uid).exists())" },
-          "teams":  { ".write": "auth != null && root.child('workspaces/' + $code + '/access/admins/' + auth.uid).exists()" },
-          "org":    { ".write": "auth != null && root.child('workspaces/' + $code + '/access/admins/' + auth.uid).exists()" },
-          "log":    { "$e": { ".write": "auth != null && !data.exists() && newData.child('by').val() === auth.uid" } }
+          "index": {
+            ".write": "auth != null && (!data.exists() || root.child('workspaces/' + $code + '/access/admins/' + auth.uid).exists() || data.child(auth.uid).exists())"
+          },
+          "teams": {
+            ".write": "auth != null && root.child('workspaces/' + $code + '/access/admins/' + auth.uid).exists()"
+          },
+          "org": {
+            ".write": "auth != null && root.child('workspaces/' + $code + '/access/admins/' + auth.uid).exists()"
+          },
+          "log": {
+            "$e": {
+              ".write": "auth != null && !data.exists() && newData.child('by').val() === auth.uid"
+            }
+          }
         },
-
-        "teams":   { ".write": "auth != null && data.parent().child('access/index/' + auth.uid).exists()" },
-        "matches": { ".write": "auth != null && data.parent().child('access/index/' + auth.uid).exists()" }
+        "teams": {
+          ".write": "auth != null && data.parent().child('access/index/' + auth.uid).exists()"
+        },
+        "matches": {
+          ".write": "auth != null && data.parent().child('access/index/' + auth.uid).exists()"
+        }
       }
     },
     "public": {
       "$share": {
         ".read": true,
         ".write": "auth != null",
-        "team":  { ".validate": "newData.hasChild('name')" },
-        "games": { "$g": { ".validate": "newData.hasChild('status')" } }
+        "team": {
+          ".validate": "newData.hasChild('name')"
+        },
+        "games": {
+          "$g": {
+            ".validate": "newData.hasChild('status')"
+          }
+        }
       }
+    },
+    "retired": {
+      "$code": {
+        ".read": true,
+        ".write": "auth != null && root.child('workspaces/' + $code + '/access/admins/' + auth.uid).exists()"
+      }
+    },
+    "appOwners": {
+      ".read": "auth != null",
+      ".write": false
     }
   }
 }

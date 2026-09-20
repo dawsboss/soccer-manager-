@@ -8,6 +8,30 @@ before this point lives only in the git log.
 
 ---
 
+## One ruleset to paste, in one place — 2026-09-20
+
+Locking down meant merging three separate JSON blocks out of README by hand —
+the main one under "Locking it down", plus `retired` and `appOwners` from the
+sections that explain them. Publishing a partial set is how a club ends up half
+locked down, and "where do I find the rules" should not have three answers.
+
+README now carries the complete ruleset as one block, and `node test/rules.js`
+reads that block, so the thing tested and the thing pasted are the same text.
+The fragments stay where they are, because they belong to the prose that
+explains them, but they are labelled as explanation and the harness asserts
+they still match the complete set — the prose and the published rules can no
+longer drift apart unnoticed.
+
+Corrects a recommendation the harness made yesterday. It suggested fixing the
+owner's missing "Retired clubs" card by opening `.read` on the `retired` node
+itself. That would hand every reader the code and name of every retired club,
+and while the open rules are published a workspace code *is* the password to
+that workspace — the obvious rules fix trades a missing card for a real leak.
+It belongs in the app: read `retired/<code>` for the codes the device already
+knows locally, which the rules already grant.
+
+No rule changed behaviour in any of this.
+
 ## Signing out now means something — 2026-09-20
 
 Signed out of a club that has an admin, the app went on showing that club's
