@@ -175,10 +175,73 @@ async function boot(opts = {}) {
     fbk.signIn('coachU');
     await A.flush();
     fbk.deliver(WS, null);                   // nothing there yet
-    const pushed = fbk.writtenTo(WS);
-    check('a brand new workspace is seeded from this device', pushed.length, 1);
-    check('carrying the offline game', !!pushed[0].value.matches.gLocal, true);
+    /* Not one set() of the whole node any more. The rules grant .write only on
+       the children of workspaces/$code, so seeding a club has to walk them in
+       an order each rule can allow — admins while it is empty, then the index
+       every other rule consults, then the data those two authorise. A single
+       set() at the base is refused outright once a club is locked down, which
+       is precisely the call that creates one. */
+    const base = fbk.writtenTo(WS);
+    check('nothing is written to the workspace node itself', base.length, 0);
+    const paths = fbk.record.writes.filter(w => w.path.startsWith(WS + '/')).map(w => w.path.slice(WS.length + 1));
+    const at = p => paths.indexOf(p);
+    check('the writer claims admin', at('access/admins/coachU') > -1, true);
+    check('then indexes themselves', at('access/index/coachU') > at('access/admins/coachU'), true);
+    /* Per child, not per collection: a rule on $tid does not grant the parent,
+       so pushing the whole teams node is refused where pushing each team is
+       fine. Invisible until a club is locked down, and then total. */
+    check('and each team comes after the index', at('teams/t1') > at('access/index/coachU'), true);
+    check('collections themselves are never written', at('teams') === -1 && at('matches') === -1, true);
+    check('each game is pushed on its own', at('matches/gLocal') > at('access/index/coachU'), true);
+    // access/log is never replayed: its rule demands each entry stamp its own writer
+    check('the audit log is not pushed wholesale', at('access/log'), -1);
+    check('carrying the offline game', !!fbk.record.writes.find(w => w.path === WS + '/matches/gLocal').value, true);
     check('and the local copy survived', !!A.state.matches.gLocal, true);
+  }
+
+  console.log('\n--- an admin connecting closes the migration bridge ---');
+  {
+    /* The per-team rules fall back to the club-wide index while
+       access/teamIndex is missing, so a club locked down before that node
+       existed keeps working. Somebody has to write it, and only an admin may,
+       so an admin's device does it on the way in rather than waiting for a
+       button nobody knows about. */
+    const { A, fbk } = await boot();
+    fbk.signIn('bossU');
+    await A.flush();
+    fbk.deliver(WS, {
+      teams: { t1: { id: 't1', name: 'Flight', players: {} } },
+      matches: {},
+      access: { admins: { bossU: true }, index: { bossU: true, jazU: true, trkU: true },
+                teams: { t1: { coaches: { jazU: true }, trackers: { trkU: true } } } }
+    });
+    const w = fbk.record.writes.find(x => x.path === WS + '/access/teamIndex/t1');
+    check('the team index was written', !!w, true);
+    check('the coach is a coach', w && w.value.jazU, 'coach');
+    check('the tracker is a tracker', w && w.value.trkU, 'tracker');
+    check('admins are not mirrored into it', w && w.value.bossU === undefined, true);
+
+    const before = fbk.record.writes.length;
+    fbk.deliver(WS + '/access', {
+      admins: { bossU: true }, index: { bossU: true, jazU: true, trkU: true },
+      teams: { t1: { coaches: { jazU: true }, trackers: { trkU: true } } },
+      teamIndex: { t1: { jazU: 'coach', trkU: 'tracker' } }
+    });
+    check('and is not rewritten when it already agrees', fbk.record.writes.length, before);
+  }
+
+  console.log('\n--- a coach connecting writes nothing of the sort ---');
+  {
+    const { A, fbk } = await boot();
+    fbk.signIn('jazU');
+    await A.flush();
+    fbk.deliver(WS, {
+      teams: { t1: { id: 't1', name: 'Flight', players: {} } },
+      matches: {},
+      access: { admins: { bossU: true }, index: { bossU: true, jazU: true },
+                teams: { t1: { coaches: { jazU: true } } } }
+    });
+    check('only an admin may write the team index', fbk.record.writes.some(x => x.path.includes('teamIndex')), false);
   }
 
   console.log('\n--- a rejected write must not wipe an identity we already have ---');

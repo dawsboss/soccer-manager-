@@ -216,18 +216,29 @@ const DB = {
           coach: { name: 'Jaz', email: 'jaz@example.com', at: 2 },
           newbie: { name: 'Sam', email: 'sam@example.com', at: 3 }
         },
-        teams: { t1: { coaches: { coach: true }, trackers: { trk: true } } },
+        teams: { t1: { coaches: { coach: true }, trackers: { trk: true } }, t2: { coaches: { other: true } } },
+        /* The lookup tables the tighter rules read. A rule cannot iterate, so
+           "is this uid a coach of THIS team" has to be one direct hop, and the
+           value carries the role because coach and tracker are not the same
+           permission. */
+        teamIndex: { t1: { coach: 'coach', trk: 'tracker' }, t2: { other: 'coach' } },
         org: { name: 'Lakeside SC' },
         log: { e1: { at: 1, act: 'made coach', by: 'adm', target: 'coach' } }
       },
-      teams: { t1: { id: 't1', name: 'Flight', players: { p1: { id: 'p1', name: 'Ella', guardians: { mum: true } } } } },
-      matches: { g1: { id: 'g1', teamId: 't1', opponent: 'Riverside' } }
+      teams: {
+        t1: { id: 't1', name: 'Flight', players: { p1: { id: 'p1', name: 'Ella', guardians: { mum: true } } } },
+        t2: { id: 't2', name: 'Storm', players: {} }
+      },
+      matches: { g1: { id: 'g1', teamId: 't1', opponent: 'Riverside' }, g2: { id: 'g2', teamId: 't2', opponent: 'Athletic' } }
     },
     /* A club nobody holds a role in yet. Both halves of the bootstrap live
        here: it is the state a new club starts in, and the state README calls
        the dangerous one if you lock down while still in it. */
     FRESH: { teams: { t9: { id: 't9', name: 'New team' } } }
   },
+  /* Who may publish a team's mirror. public/ is world-readable by design; this
+     is what stops anyone holding a link from writing to it. */
+  shareOwners: { sh1: { adm: true, coach: true } },
   public: {
     sh1: {
       team: { name: 'Flight' },
@@ -242,6 +253,7 @@ const ADM = { uid: 'adm' };       // club admin
 const COACH = { uid: 'coach' };   // coach of t1
 const TRK = { uid: 'trk' };       // tracker on t1
 const MUM = { uid: 'mum' };       // guardian of a player on t1
+const OTHER = { uid: 'other' };   // coach of the OTHER team in the same club
 const NEWB = { uid: 'newbie' };   // signed in and registered, no role yet
 const RANDO = { uid: 'rando' };   // signed in, unknown to this club
 const OWNER = { uid: 'own' };     // the app owner, holding no role in this club
@@ -275,14 +287,54 @@ writes('not even after claiming admin', ADM, 'workspaces/FRESH/teams/t9/name', '
 console.log('  ^ this is the read-only trap: locking down before a single role is');
 console.log('    granted leaves a club that opens fine and refuses every change.');
 
-console.log('\n--- changing team and match data ---');
-writes('coach edits a team', COACH, 'workspaces/CLUB/teams/t1/name', 'Flight B', true);
-writes('tracker edits a team', TRK, 'workspaces/CLUB/teams/t1/name', 'Flight B', true);
-writes('parent edits a team', MUM, 'workspaces/CLUB/teams/t1/name', 'Flight B', true);
+console.log('\n--- the squad: coaches of that team, and admins ---');
+writes('admin edits any team', ADM, 'workspaces/CLUB/teams/t1/name', 'Flight B', true);
+writes('its own coach edits it', COACH, 'workspaces/CLUB/teams/t1/name', 'Flight B', true);
+writes('a coach of another team does not', OTHER, 'workspaces/CLUB/teams/t1/name', 'Flight B', false);
+writes('a tracker does not', TRK, 'workspaces/CLUB/teams/t1/name', 'Flight B', false);
+writes('a parent does not', MUM, 'workspaces/CLUB/teams/t1/name', 'Flight B', false);
+writes('nor delete the whole team', MUM, 'workspaces/CLUB/teams/t1', null, false);
 writes('registered but unroled', NEWB, 'workspaces/CLUB/teams/t1/name', 'Flight B', false);
 writes('signed out', OUT, 'workspaces/CLUB/teams/t1/name', 'Flight B', false);
-writes('coach edits a match', COACH, 'workspaces/CLUB/matches/g1/opponent', 'Athletic', true);
-writes('parent deletes a whole team', MUM, 'workspaces/CLUB/teams/t1', null, true);
+
+console.log('\n--- a game: whoever works that team, tracker included ---');
+writes('its coach edits the game', COACH, 'workspaces/CLUB/matches/g1/opponent', 'Athletic', true);
+writes('its tracker logs a goal', TRK, 'workspaces/CLUB/matches/g1/goals/x', { t: 60, side: 'us' }, true);
+writes('a coach of another team cannot', OTHER, 'workspaces/CLUB/matches/g1/goals/x', { t: 60, side: 'us' }, false);
+writes('a parent cannot', MUM, 'workspaces/CLUB/matches/g1/goals/x', { t: 60, side: 'us' }, false);
+writes('a new game carries the team it belongs to', COACH, 'workspaces/CLUB/matches/g9', { id: 'g9', teamId: 't1' }, true);
+writes('and cannot be filed under another team', COACH, 'workspaces/CLUB/matches/g9', { id: 'g9', teamId: 't2' }, false);
+console.log('  ^ this is the hole README called "still not enforced": the index');
+console.log('    is club-wide, so every indexed account could write every team.');
+
+console.log('\n--- the collections themselves are not writable ---');
+writes('the whole teams node', ADM, 'workspaces/CLUB/teams', {}, false);
+writes('the whole matches node', ADM, 'workspaces/CLUB/matches', {}, false);
+writes('the workspace node', ADM, 'workspaces/CLUB', {}, false);
+console.log('  ^ which is why pushAll() writes one child at a time.');
+
+console.log('\n--- the bridge, for a club that predates the team index ---');
+{
+  /* teamIndex does not exist on a club locked down before it was invented, and
+     a rule that needs it would refuse every write the moment it is pasted. So
+     each per-team rule falls back to the old club-wide index while the table is
+     missing, and stops the instant it appears. This is what makes the ruleset
+     safe to paste before the app has caught up. */
+  const saved = DB.workspaces.CLUB.access.teamIndex;
+  delete DB.workspaces.CLUB.access.teamIndex;
+  writes('with no table, an indexed tracker writes a team', TRK, 'workspaces/CLUB/teams/t1/name', 'X', true);
+  writes('and an indexed parent does too', MUM, 'workspaces/CLUB/teams/t1/name', 'X', true);
+  writes('an unindexed account still cannot', RANDO, 'workspaces/CLUB/teams/t1/name', 'X', false);
+  writes('signed out still cannot', OUT, 'workspaces/CLUB/teams/t1/name', 'X', false);
+  console.log('  ^ exactly today\'s behaviour, so pasting early locks nobody out');
+  DB.workspaces.CLUB.access.teamIndex = saved;
+  writes('the table appearing closes it again', TRK, 'workspaces/CLUB/teams/t1/name', 'X', false);
+}
+
+console.log('\n--- the team index itself is admin-only ---');
+writes('admin writes it', ADM, 'workspaces/CLUB/access/teamIndex/t1/newbie', 'coach', true);
+writes('a coach cannot promote anyone', COACH, 'workspaces/CLUB/access/teamIndex/t1/newbie', 'coach', false);
+writes('nor can a tracker', TRK, 'workspaces/CLUB/access/teamIndex/t1/trk', 'coach', false);
 
 console.log('\n--- knocking on the door: access/members ---');
 writes('new account registers itself', NEWB, 'workspaces/CLUB/access/members/newbie', { name: 'Sam' }, true);
@@ -302,9 +354,13 @@ writes('anyone claims a club that has no admin', RANDO, 'workspaces/FRESH/access
 console.log('\n--- the index, which is what the read rule checks ---');
 writes('admin indexes somebody', ADM, 'workspaces/CLUB/access/index/newbie', true, true);
 writes('unknown account indexes itself', RANDO, 'workspaces/CLUB/access/index/rando', true, false);
-writes('an indexed parent indexes a stranger', MUM, 'workspaces/CLUB/access/index/rando', true, true);
-console.log('  ^ anyone already in the index can put anyone else in it, and the');
-console.log('    index is the whole read/write gate. See the notes at the end.');
+writes('an indexed parent indexes a stranger', MUM, 'workspaces/CLUB/access/index/rando', true, false);
+writes('a coach cannot either', COACH, 'workspaces/CLUB/access/index/rando', true, false);
+writes('but anyone may take themselves out', COACH, 'workspaces/CLUB/access/index/coach', null, true);
+writes('and may not put themselves back', NEWB, 'workspaces/CLUB/access/index/newbie', true, false);
+writes('the whole index node is not writable', ADM, 'workspaces/CLUB/access/index', {}, false);
+console.log('  ^ the escalation is closed: being in the index no longer lets you');
+console.log('    put anyone else in it, which was a grant of the entire club.');
 
 console.log('\n--- the audit log is append-only ---');
 writes('coach appends, stamped as herself', COACH, 'workspaces/CLUB/access/log/e2', { at: NOW, act: 'x', by: 'coach' }, true);
@@ -330,58 +386,58 @@ writes('nobody can write it, owner included', OWNER, 'appOwners/rando', true, fa
 console.log('\n--- the published mirror ---');
 reads('anyone at all can read it', OUT, 'public/sh1', true);
 writes('signed out cannot write it', OUT, 'public/sh1/games/g1/status', 'done', false);
-writes('any signed-in account can', RANDO, 'public/sh1/games/g1/status', 'done', true);
-writes('a team needs a name', RANDO, 'public/sh1/team', { name: 'Flight' }, true);
-writes('a team without one is rejected', RANDO, 'public/sh1/team', { logo: 'x' }, false);
-writes('a game needs a status', RANDO, 'public/sh1/games/g2', { status: 'live' }, true);
-writes('a game without one is rejected', RANDO, 'public/sh1/games/g2', { score: 1 }, false);
+writes('nor can any passing account', RANDO, 'public/sh1/games/g1/status', 'done', false);
+writes('only an owner of that share', COACH, 'public/sh1/games/g1/status', 'done', true);
+console.log('  ^ the write hole AUTH.md names, closed by shareOwners/{shareId}.');
+writes('a team needs a name', COACH, 'public/sh1/team', { name: 'Flight' }, true);
+writes('a team without one is rejected', COACH, 'public/sh1/team', { logo: 'x' }, false);
+writes('a game needs a status', COACH, 'public/sh1/games/g2', { status: 'live' }, true);
+writes('a game without one is rejected', COACH, 'public/sh1/games/g2', { score: 1 }, false);
+
+console.log('\n--- claiming a share ---');
+writes('an unclaimed share can be claimed', RANDO, 'shareOwners/brandnew', { rando: true }, true);
+writes('a claimed one cannot be taken', RANDO, 'shareOwners/sh1', { rando: true }, false);
+writes('its owner may add a co-owner', COACH, 'shareOwners/sh1/newbie', true, true);
+reads('owners are not world-readable', OUT, 'shareOwners/sh1', false);
 
 /* ---------------- what the rules and the app disagree about ---------------- */
 
 console.log(`
---- where the interface and these rules disagree ---
+--- what is closed, and what is left ---
 
-  These all pass above, because the tests pin what the rules actually do. They
-  are listed here because the app believes something different, and the gap only
-  shows up as a refused write at a game.
+  Closed by this ruleset, each pinned by a case above:
 
-  1. access/index is club-wide, so every indexed account — tracker and parent
-     included — can write every team and every match. The app enforces a
-     tracker's limits in the interface only, and a parent's not at all, because
-     the interface never offers them the controls. README names the tracker half
-     of this under "What is still not enforced"; the parent half is the same
-     hole. AUTH.md's teamMembers/{teamId}/{uid} index is the fix.
+  - Per-team writes. access/index says who may READ the club; access/teamIndex
+    says who may write a given team, and carries 'coach' or 'tracker' because
+    those are not the same permission. A coach of one team can no longer edit
+    another, and a parent can no longer edit anything. This was README's "What
+    is still not enforced", and AUTH.md's teamMembers index by another name.
+  - The index escalation. Being in access/index no longer lets you put anyone
+    else in it — which was a grant of the whole club to anyone already holding
+    any role. Self-removal survives, because that was the clause's real intent.
+  - The public write hole. public/{share} now needs shareOwners/{share}/{uid},
+    which is AUTH.md's design and step 4 of its build order. Anonymous auth is
+    not an option here and AUTH.md says why.
 
-  2. Anyone in access/index can add anyone else to access/index, which is the
-     gate on reading and writing the entire club. The clause exists so a person
-     can take themselves out, but it reads as "may write the index" and grants
-     the escalation with it. Narrowing it to $uid === auth.uid for the non-admin
-     case keeps the intent and closes it.
+  Still open, deliberately:
 
-  3. The app owner has no standing in these rules at all. appOwners is read by
+  1. A tracker can write more of a match than the interface offers her. The
+     rules can say "may touch this team's games" but not "may add a goal and
+     nothing else" without a rule per field. AUTH.md's table already scopes a
+     tracker to the Track tab as an interface promise; this is the limit of
+     what the database can hold her to.
+
+  2. The app owner has no standing in these rules at all. appOwners is read by
      the app, never by a rule, so isOwner() opens buttons the database then
-     refuses. Club settings offers the owner "Open" on a retired club to export
-     it, and the retire button is shown on canAdmin(); both fail unless the
-     owner also holds a role in that club. Worth deciding deliberately: either
-     the rules learn about appOwners, or the interface stops promising it.
+     refuses — retiring a club the owner does not administer, or opening one
+     from the archive. Worth deciding deliberately rather than drifting into:
+     either the rules learn about appOwners, or the interface stops promising
+     it. Nothing here depends on the answer.
 
-  4. public/{share} is writable by any signed-in account, not just the coaches
-     of that team. AUTH.md's shareOwners/{shareId}/{uid} is the designed fix and
-     is step 4 of its build order.
-
-  5. initSync() subscribes to the whole "retired" node to populate the owner's
-     archive list, and the rules only ever grant retired/$code one at a time.
-     That read is refused, its error handler is an empty function, so the list
-     stays {} and the "Retired clubs" card silently never appears — exactly the
-     escape hatch README promises the owner for exporting a closed club. The
-     per-code listener beside it is fine, so clubs still let go when retired.
-
-     Fix it in the app, not the rules. Opening ".read" on the retired node
-     itself would hand every reader the code and name of every retired club,
-     and while the open rules are published a workspace code is the password to
-     that workspace — so the obvious rules fix trades a missing card for a real
-     leak. The owner's archive should read retired/<code> for the codes this
-     device already knows from local storage, which the rules do grant.`);
+  3. Creating a club is still a bootstrap. access/admins may be written while
+     it is empty, so the first person to reach a brand-new workspace code
+     becomes its admin. Codes are long and random, and this is what lets a club
+     exist at all, but it is a trust-on-first-use and worth knowing about.`);
 
 console.log(`\n${failures ? failures + ' EXPECTATION(S) FAILED' : 'all expectations hold'}`);
 process.exit(failures ? 1 : 0);

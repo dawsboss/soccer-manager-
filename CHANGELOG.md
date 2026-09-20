@@ -87,6 +87,54 @@ No dependencies were added. This stays a static site with no build step.
 
 ---
 
+## Per-team writes, and a ruleset that cannot lock you out — 2026-09-20
+
+The club is locked down, so the rules are now the thing standing between a
+signed-in parent and every team's roster. They were not doing that job.
+
+`access/index` answers "may this uid read the club", and both the team and match
+write rules checked it — so every indexed account could write every team. A
+tracker, a parent, a coach of a different age group: all of them could edit any
+squad and any game. README called this out under "What is still not enforced"
+and named the tracker half; the parent half was the same hole. Worse, anyone in
+`access/index` could add anyone else to `access/index`, which is a grant of the
+entire club to anybody already holding any role at all. And `public/{shareId}`
+took a write from any signed-in account, not just the coaches of that team.
+
+All three are closed. `access/teamIndex/{teamId}/{uid}` carries `'coach'` or
+`'tracker'` — different permissions, so different values — and the rules read it
+in the single direct hop a rule is capable of. `shareOwners/{shareId}/{uid}` is
+AUTH.md's design for the public write hole, step 4 of its build order. The index
+clause that allowed the escalation now allows only self-removal, which was its
+real intent.
+
+**The ruleset is safe to paste before the app has caught up.** Neither lookup
+table exists on a club locked down before they were invented, and a rule that
+needed one would refuse every write the moment it was published — the exact
+lockout README keeps warning about. So each per-team and per-share rule falls
+back to the old club-wide behaviour *while its table is missing*, and stops the
+instant it appears. Nothing to sequence. The app closes the bridges itself: an
+admin's device writes `teamIndex` on its next connect, and a share claims its
+owner list on its next publish.
+
+Two things were already broken under the rules as published, found by running
+the app's actual write paths through the harness:
+
+- `pushAll()` set the whole `workspaces/{code}` node in one call, and there is
+  no `.write` at that level — only on its children. So creating a club was
+  refused outright, which includes every test club. It now writes each child at
+  the depth its rule sits at, in the order the rules can grant: admins while
+  empty, then the index every other rule consults, then the data those authorise.
+- `initSync()` subscribed to the whole `retired` node, where `.read` is granted
+  only on `retired/{code}`. Refused, with an empty error handler, so the owner's
+  "Retired clubs" card silently never appeared — the one escape hatch README
+  promises for exporting a closed club. It now reads the codes this device
+  already knows, which is what the rules grant.
+
+**Club settings → Check readiness** now exists, which README has described for a
+while without it being built. Six lines, each one a way to lock the club out,
+and a button that writes both lookup tables on demand.
+
 ## One ruleset to paste, in one place — 2026-09-20
 
 Locking down meant merging three separate JSON blocks out of README by hand —
