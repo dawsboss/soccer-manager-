@@ -8,6 +8,67 @@ before this point lives only in the git log.
 
 ---
 
+## One ruleset to paste, in one place — 2026-09-20
+
+Locking down meant merging three separate JSON blocks out of README by hand —
+the main one under "Locking it down", plus `retired` and `appOwners` from the
+sections that explain them. Publishing a partial set is how a club ends up half
+locked down, and "where do I find the rules" should not have three answers.
+
+README now carries the complete ruleset as one block, and `node test/rules.js`
+reads that block, so the thing tested and the thing pasted are the same text.
+The fragments stay where they are, because they belong to the prose that
+explains them, but they are labelled as explanation and the harness asserts
+they still match the complete set — the prose and the published rules can no
+longer drift apart unnoticed.
+
+Corrects a recommendation the harness made yesterday. It suggested fixing the
+owner's missing "Retired clubs" card by opening `.read` on the `retired` node
+itself. That would hand every reader the code and name of every retired club,
+and while the open rules are published a workspace code *is* the password to
+that workspace — the obvious rules fix trades a missing card for a real leak.
+It belongs in the app: read `retired/<code>` for the codes the device already
+knows locally, which the rules already grant.
+
+No rule changed behaviour in any of this.
+
+## Signing out now means something — 2026-09-20
+
+Signed out of a club that has an admin, the app went on showing that club's
+teams from the local cache until the database got around to refusing the read
+— about three seconds, because `wireBase()` retries twice with backoff before
+it concedes. A refresh bought another three seconds. The names of children were
+on screen for the whole window, and so was the club and team name in the
+crumbs, which the lock screen never cleared because crumbs are drawn before
+`render()` takes its early return.
+
+Underneath it was worse than a timing window. `myTeams()` and `canEditTeam()`
+both opened with `if (!me || !anyAdmins())` — written to keep a fresh club from
+locking itself out before anyone has a role, but `!me` means *signed out*, so a
+signed-out visitor fell into the same branch as a brand-new club and got every
+team, **editable**. Not a flash of stale data: the full coach interface.
+
+Rendering the cache is now gated on `needsSignIn()` at the top of `render()`,
+which also blanks the crumbs and hides the tab rows, and `myTeams()` /
+`canEditTeam()` share one `gated()` predicate with it so the team list and the
+lock screen cannot disagree. The bootstrap is kept deliberately: a club with no
+admin, or a device with no Firebase config and therefore nowhere to sign in,
+stays open, because a lock screen there is a dead end rather than a protection.
+
+The local copy is **not** cleared on sign-out. It is what makes the app work at
+a field with no signal, and a game tracked offline lives only there. What
+changed is that holding it and drawing it are now separate decisions.
+
+That leaves one problem: Firebase Auth restores a session only once its module
+has loaded from the CDN, which does not happen offline, so gating on it alone
+would show the lock screen to the coach the club belongs to — exactly when she
+needs it. So the signed-in identity is cached in `sm.me` and cleared on
+sign-out. It grants nothing; the rules still decide what a uid may touch.
+
+This is a client-side gate. It stops the app showing a cached club to a
+signed-out device. Who can read the database directly is the rules' job, and
+the cached copy is still in localStorage for anyone with devtools.
+
 ## Somewhere to work on auth that is not the live club — 2026-09-19
 
 ### A tracker could not open the Track tab

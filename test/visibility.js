@@ -5,8 +5,10 @@ const code=grab('/* ---------------- roles ---------------- */','/* ------------
  let state={teams:{},matches:{},access:{}}, ui={teamId:null}, me=null;
  const teams=()=>Object.values(state.teams);
  function delDeep(){} function quiet(){} function remoteDel(){} function saveLocal(){}
- module.exports={myTeams,canEditTeam,roleIn,canAdmin,isOwner,
-   set:(st,who,tid)=>{state=st;me=who;ui.teamId=tid;}};`;
+ // access control only bites where there is somewhere to sign in
+ let CFG={apiKey:'k'}; function fbConfig(){return CFG}
+ module.exports={myTeams,canEditTeam,roleIn,canAdmin,isOwner,gated,needsSignIn,
+   set:(st,who,tid)=>{state=st;me=who;ui.teamId=tid;}, setCfg:c=>CFG=c};`;
 const m={exports:{}}; new Function('module','exports',code)(m,m.exports); const H=m.exports;
 
 const club=()=>({
@@ -31,9 +33,20 @@ console.log('\n--- coaches read across the club, edit only their own ---');
 H.set(club(), {uid:'jaz'}, 't2');
 console.log('  coach of t1 viewing t2 -> visible:', H.myTeams().length, 'teams, editable:', H.canEditTeam('t2'), '(expect 3, false)');
 
+console.log('\n--- signed out of a club that has an admin ---');
+H.set(club(), null, 't1');
+console.log('  sees:', names(H.myTeams()), '| can edit t1:', H.canEditTeam('t1'), '| needs a sign-in:', H.needsSignIn());
+console.log('  (expect none / false / true — the local copy is held, not shown)');
+
+console.log('\n--- with no Firebase config there is nowhere to sign in ---');
+H.set(club(), null, 't1'); H.setCfg({});
+console.log('  sees:', names(H.myTeams()), '| can edit t1:', H.canEditTeam('t1'), '| needs a sign-in:', H.needsSignIn());
+console.log('  (expect all three teams / true / false — a lock screen would be a dead end)');
+H.setCfg({apiKey:'k'});
+
 console.log('\n--- before lockdown nothing is hidden ---');
 const open={...club()}; open.access={};
 H.set(open, null, 't1');
-console.log('  signed out, no admins  ->', names(H.myTeams()), '| editable:', H.canEditTeam('t1'));
+console.log('  signed out, no admins  ->', names(H.myTeams()), '| editable:', H.canEditTeam('t1'), '(this is the bootstrap, and must stay open)');
 H.set(open, {uid:'anyone'}, 't1');
 console.log('  signed in, no admins   ->', names(H.myTeams()), '| editable:', H.canEditTeam('t1'));
