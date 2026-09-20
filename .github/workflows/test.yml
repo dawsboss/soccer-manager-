@@ -21,10 +21,11 @@ jobs:
       - uses: actions/checkout@v4
 
       # No dependencies and no build step — this stays a static site, and the
-      # suites use nothing but Node's built-ins.
+      # suites use nothing but Node's built-ins, so the version only has to be
+      # one the runners still offer. 20 is being deprecated on them.
       - uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '22'
 
       - name: Run every suite
         run: node test/run.js
