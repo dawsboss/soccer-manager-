@@ -19,6 +19,7 @@ const LS_WHO = 'sm.tracker';
 const LS_SYNCED = 'sm.synced';   // last good sync, per club
 const LS_DENIED = 'sm.denied';   // first refusal, per club
 const LS_ENV = 'sm.env';         // which Firebase environment this device talks to
+const LS_ME = 'sm.me';           // who was last verified signed in on this device
 const DENY_GRACE_H = 24;
 /* A club whose code starts with this is invented data for rehearsing on. */
 const SANDBOX_PREFIX = 'test-';
@@ -157,6 +158,25 @@ function delDeep(obj, path) {
 
 /* ---------------- storage ---------------- */
 const wsCode = () => (localStorage.getItem(LS_WS) || '').trim();
+
+/* Who was signed in here last time. Firebase Auth restores a session from its
+   own storage, but only once its module has loaded from the CDN — which does
+   not happen at a field with no signal. Without a local copy of the identity a
+   locked-down club would show its lock screen to the coach it belongs to, on
+   the one occasion this app exists for.
+
+   So remember it, and clear it the instant she signs out. That second half is
+   what makes signing out mean something straight away, rather than three
+   seconds later when the database gets around to refusing the read. It is not a
+   permission: the rules decide what this uid may actually touch, and anyone who
+   can read this key can already read the cached roster sitting beside it. */
+function cacheMe(v) {
+  try { v ? localStorage.setItem(LS_ME, JSON.stringify(v)) : localStorage.removeItem(LS_ME); } catch (e) { }
+}
+function cachedMe() {
+  try { const v = JSON.parse(localStorage.getItem(LS_ME) || 'null'); return v && v.uid ? v : null; }
+  catch (e) { return null; }
+}
 
 /* Which Firebase environment this device talks to. Empty is production.
 
@@ -346,6 +366,7 @@ async function initAuth() {
     let prevUid;
     authMod.onAuthStateChanged(fbAuth, u => {
       me = u ? { uid: u.uid, name: u.displayName || (u.email || '').split('@')[0] || 'Signed in', email: u.email || '', photo: u.photoURL || '' } : null;
+      cacheMe(me);   // signing out clears it, which is what locks the club now
       const uid = me ? me.uid : null;
       // identity changed after boot — e.g. someone signs in from the lock
       // screen — so any earlier refusal is stale; read the workspace again
@@ -556,13 +577,27 @@ function syncIndex(uid) {
   saveLocal();
 }
 
+/* A club with an admin is past its bootstrap, so its data is somebody's to
+   protect and a signed-out device has no business rendering it. The local copy
+   is still held — an unsynced game lives only there, and purging on sign-out
+   would throw it away — but holding it and drawing it are separate decisions.
+
+   Access control only bites once a club has an admin AND there is somewhere to
+   authenticate: a device running with no Firebase config has inert access lists
+   and no way to sign in, so hiding anything there would be a dead end rather
+   than a protection. One predicate for both, or the lock screen and the team
+   list end up disagreeing about whether the club is protected. */
+const gated = () => anyAdmins() && !!fbConfig().apiKey;
+const needsSignIn = () => !me && gated();
+
 /* Who may see and change which team.
    Admin: everything. Coach: edits her own team, reads the rest of the club —
    comparing against the other age groups is the point of being in a club.
    Tracker and parent: only the teams they are actually attached to. */
 function myTeams() {
   const all = teams();
-  if (!me || !anyAdmins()) return all;        // before lockdown, nothing is hidden
+  if (!gated()) return all;                   // before lockdown, nothing is hidden
+  if (!me) return [];                          // after it, signed out sees nothing
   if (canAdmin()) return all;
   const coachAnywhere = all.some(t => isCoach(t.id, me.uid));
   if (coachAnywhere) return all;
@@ -583,7 +618,8 @@ function myPlayers() {
 const guardsAnyone = () => myPlayers().length > 0;
 
 function canEditTeam(tid) {
-  if (!me || !anyAdmins()) return true;
+  if (!gated()) return true;                  // a fresh club has to be set up somehow
+  if (!me) return false;
   return canAdmin() || isCoach(tid, me.uid);
 }
 const readOnlyHere = () => !canEditTeam(ui.teamId);
@@ -1252,11 +1288,15 @@ function toast(msg) {
 
 /* ---------------- rendering ---------------- */
 function render() {
+  /* Settle whether this device may see the club before drawing a single thing.
+     The crumbs are chrome, but they carry the club and the team name, so a lock
+     screen with the crumbs still drawn has leaked most of what there was. */
+  const shut = !!purged || denied || needsSignIn();
   const t = team();
   if (!t && teams().length) { ui.teamId = teams()[0].id; }
   const vis = myTeams();
   if (vis.length && !vis.some(x => x.id === ui.teamId)) ui.teamId = vis[0].id;
-  const cb = $('#crumbs'); if (cb) cb.innerHTML = crumbs();
+  const cb = $('#crumbs'); if (cb) cb.innerHTML = shut ? '' : crumbs();
   const av = $('#avatar');
   if (av) {
     const ph = me && me.photo;
@@ -1294,13 +1334,13 @@ function render() {
     b.setAttribute('aria-current', String(b.dataset.gview === ui.gameView));
   }
   const openM = inGame ? match() : null;
-  const st = $('#subtabs'); if (st) st.hidden = !(inGame && openM);
+  const st = $('#subtabs'); if (st) st.hidden = shut || !(inGame && openM);
   // two stacked rows of tabs read as a mistake; show whichever one applies
-  const tb = $('#tabs'); if (tb) tb.hidden = !!(inGame && openM) || !teamLevel;
+  const tb = $('#tabs'); if (tb) tb.hidden = shut || !!(inGame && openM) || !teamLevel;
   const app = $('#app');
   const v = ui.view;
   if (purged) { app.innerHTML = purgedScreen(); saveUi(); return; }
-  if (denied) { app.innerHTML = lockScreen(); saveUi(); return; }
+  if (denied || needsSignIn()) { app.innerHTML = lockScreen(); saveUi(); return; }
   const roNote = !lim && readOnlyHere() && team()
     ? `<div class="rolebar">Viewing <b>${teamLabel(team())}</b> from another team in the club. You can read it, not change it.</div>` : '';
   const roleNote = lim
@@ -3957,6 +3997,10 @@ if (typeof window !== 'undefined' && window.addEventListener) {
 
 /* ---------------- boot ---------------- */
 loadLocal();
+/* Provisional, so an offline device renders for the person who was using it
+   rather than sitting on a lock screen. onAuthStateChanged overwrites it either
+   way a moment later, and a sign-out has already cleared it. */
+me = cachedMe();
 hashToUi();     // a shared link wins over whatever was last open
 render();
 (async () => { await initAuth(); await initSync(); })();

@@ -322,7 +322,7 @@ async function boot(opts = {}) {
        exists only in local state until it syncs — a naive `state = snap.val()`
        at reconnect silently erases it. See wireBase() in initSync()."
 
-       app.js:439 is that naive assignment. mergeNode() is wired into the
+       app.js:446 is that naive assignment. mergeNode() is wired into the
        per-child listeners underneath it and not into this first read. */
     const { A, fbk } = await boot({
       storage: {
@@ -348,7 +348,7 @@ async function boot(opts = {}) {
     check('the synced game is still here', !!A.state.matches.gSynced, true);
     knownGap('the offline game survives the connect-time read',
       A.state.matches.gOffline, undefined,
-      'app.js:439 assigns state = { teams: v.teams||{}, ... } on the first workspace\n' +
+      'app.js:446 assigns state = { teams: v.teams||{}, ... } on the first workspace\n' +
       'read, so a game that exists only on this device is dropped and saveLocal()\n' +
       'then writes the loss to disk. CLAUDE.md forbids exactly this ("must never\n' +
       'replace it wholesale"); mergeNode() is wired into the per-child listeners\n' +

@@ -17,7 +17,13 @@
 const H = require('./harness');
 const { check, deepEq } = H;
 
-const A = H.loadApp({});
+/* Booted with a Firebase config on purpose. `gated()` is `anyAdmins() &&
+   fbConfig().apiKey`, so on a device with no config nothing is gated at all and
+   every assertion below about who sees what would pass without testing
+   anything. The no-config case is a scenario of its own at the end. */
+const CFG = { apiKey: 'k', databaseURL: 'https://prod.example' };
+const A = H.loadApp({ config: CFG });
+const setCfg = c => { global.window.SOCCER_FIREBASE_CONFIG = c; };
 
 const club = () => ({
   teams: {
@@ -100,15 +106,44 @@ console.log('\n--- a coach who is also a parent on her own team ---');
   check('and she still edits her team', A.canEditTeam('t1'), true);
 }
 
+console.log('\n--- signed out of a club that has an admin ---');
+{
+  /* The local copy is still held — an unsynced game lives only there — but
+     holding it and drawing it are separate decisions. Gating on the database
+     refusing the read instead would leave children's names on screen for the
+     seconds wireBase() spends retrying. */
+  as(club(), null, 't1');
+  deepEq('she sees no teams at all', seen(), []);
+  check('and can edit nothing', A.canEditTeam('t1'), false);
+  check('the app asks her to sign in', A.needsSignIn(), true);
+  check('the club is gated', A.gated(), true);
+  check('but the local copy is still in state', Object.keys(A.state.teams).length, 3);
+}
+
+console.log('\n--- with no Firebase config there is nowhere to sign in ---');
+{
+  /* A lock screen on a device that cannot authenticate is a dead end, not a
+     protection: the access lists are inert with nothing to check them against. */
+  setCfg({});
+  as(club(), null, 't1');
+  check('every team is visible again', A.myTeams().length, 3);
+  check('and editable', A.canEditTeam('t1'), true);
+  check('nothing is gated', A.gated(), false);
+  check('and no sign-in is asked for', A.needsSignIn(), false);
+  setCfg(CFG);
+}
+
 console.log('\n--- before lockdown nothing is hidden ---');
 {
   /* Nobody gets locked out of a club that has not been locked down yet — the
-     alternative is a coach opening the app one morning to an empty screen. */
+     alternative is a coach opening the app one morning to an empty screen, with
+     no way to make herself the admin that would let her back in. */
   const open = club();
   open.access = {};
   as(open, null, 't1');
   check('signed out, every team is visible', A.myTeams().length, 3);
   check('and editable', A.canEditTeam('t1'), true);
+  check('no sign-in is asked for', A.needsSignIn(), false);
   as(open, 'anyone', 't1');
   check('signed in with no roles, the same', A.myTeams().length, 3);
   check('and still editable', A.canEditTeam('t1'), true);
@@ -118,6 +153,8 @@ console.log('\n--- before lockdown nothing is hidden ---');
   as(open, 'anyone', 't1');
   check('one admin is enough to turn it on', A.myTeams().length, 0);
   check('and editing stops', A.canEditTeam('t1'), false);
+  as(open, null, 't1');
+  check('and signing out now bites', A.needsSignIn(), true);
 }
 
 H.summary('team visibility');

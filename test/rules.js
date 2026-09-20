@@ -31,12 +31,14 @@ function jsonBlocks() {
 function loadRules() {
   let full = null;
   const fragments = {};
+  let complete = null;
   for (const raw of jsonBlocks()) {
     let doc = null;
     try { doc = JSON.parse(raw); } catch (e) { }
     if (doc && doc.rules) {
-      // the lockdown set is the one that knows about access/index
-      if (raw.includes('access/index')) full = doc.rules;
+      // the block README tells you to paste carries every tier at once
+      if (raw.includes('access/index') && raw.includes('appOwners')) complete = doc.rules;
+      else if (raw.includes('access/index')) full = doc.rules;
       continue;
     }
     // a fragment is a bare "key": { ... } pair, valid JSON once wrapped
@@ -45,10 +47,19 @@ function loadRules() {
       for (const k of Object.keys(frag)) fragments[k] = frag[k];
     } catch (e) { }
   }
-  if (!full) throw new Error('could not find the locked-down rules block in README.md');
-  // Only the two README tells you to add to the live rules. Named explicitly:
-  // the public block also appears as a fragment, as a variant README then warns
-  // you off, and merging that would test rules nobody is meant to publish.
+  /* Prefer the single complete block README says to paste, so the test and the
+     artifact are the same text. The fragments shown elsewhere in README are
+     explanation; assert they still match what the complete block says, or the
+     prose and the thing you publish can drift apart without anyone noticing. */
+  if (complete) {
+    for (const k of ['retired', 'appOwners']) {
+      if (!fragments[k]) continue;
+      if (JSON.stringify(fragments[k]) !== JSON.stringify(complete[k]))
+        throw new Error('README\'s "' + k + '" example no longer matches the complete ruleset');
+    }
+    return complete;
+  }
+  if (!full) throw new Error('could not find the rules block in README.md');
   for (const k of ['retired', 'appOwners']) {
     if (fragments[k]) full[k] = fragments[k];
     else console.log('  note: no "' + k + '" fragment found in README');
@@ -364,8 +375,13 @@ console.log(`
      stays {} and the "Retired clubs" card silently never appears — exactly the
      escape hatch README promises the owner for exporting a closed club. The
      per-code listener beside it is fine, so clubs still let go when retired.
-     Either add ".read": true on the retired node itself, or have the owner's
-     archive read the codes it already knows from local storage.`);
+
+     Fix it in the app, not the rules. Opening ".read" on the retired node
+     itself would hand every reader the code and name of every retired club,
+     and while the open rules are published a workspace code is the password to
+     that workspace — so the obvious rules fix trades a missing card for a real
+     leak. The owner's archive should read retired/<code> for the codes this
+     device already knows from local storage, which the rules do grant.`);
 
 console.log(`\n${failures ? failures + ' EXPECTATION(S) FAILED' : 'all expectations hold'}`);
 process.exit(failures ? 1 : 0);
