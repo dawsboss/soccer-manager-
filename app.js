@@ -436,14 +436,40 @@ async function initSync() {
       if (rs.val()) purgeClub(code, 'retired');
     }, () => { });
 
-    dbMod.onValue(dbMod.ref(db, 'retired'), rs => { retiredClubs = rs.val() || {}; render(); }, () => { });
+    /* .read is granted on retired/$code and never on the parent, so
+       subscribing to the whole node is refused the moment a club is locked
+       down — silently, because the error handler here can do nothing useful.
+       The owner's archive card then never appears at all, which is the one
+       escape hatch README promises for exporting a closed club. Ask for the
+       codes this device already knows instead: that is exactly what the rules
+       do grant, and a club this device has never opened was never in the list. */
+    const watching = new Set();
+    const watchRetired = code => {
+      if (!code || watching.has(code)) return;
+      watching.add(code);
+      dbMod.onValue(dbMod.ref(db, 'retired/' + code), rs => {
+        const v = rs.val();
+        if (v) retiredClubs[code] = v; else delete retiredClubs[code];
+        render();
+      }, () => { });
+    };
+    for (const c of knownClubs()) watchRetired(c.code);
+    watchRetired(code);
 
     function wireBase(attempt) {
       dbMod.onValue(dbMod.ref(db, fb.base), snap => {
         denied = false;
         const v = snap.val();
         if (!v) pushAll();
-        else { state = { teams: v.teams || {}, matches: v.matches || {}, access: v.access || {} }; saveLocal(); markSynced(); render(); }
+        else {
+          state = { teams: v.teams || {}, matches: v.matches || {}, access: v.access || {} };
+          saveLocal(); markSynced(); render();
+          /* Close the migration bridge without anybody being told to. The
+             per-team rules fall back to the old club-wide index while
+             access/teamIndex is missing; an admin's device is the only one
+             allowed to write it, so it does, once, on the way in. */
+          if (canAdmin()) syncAllTeamIndex();
+        }
         schedulePublish();   // republish on load, so a fixed config heals itself
 
         // membership is small and read whole; it does not need child-level listeners
@@ -500,7 +526,37 @@ function mergeNode(local, remote) {
   return out;
 }
 
-function pushAll() { if (fb) fb.set(fb.ref(fb.db, fb.base), state); }
+/* There is no .write at workspaces/$code — only on its children — so one set()
+   of the whole node is refused the moment a club is locked down, and that is
+   exactly the call that creates a club. Write the children in the order the
+   rules can actually grant: admins while it is still empty, then the index
+   (which is what every other rule checks), then the data those two authorise.
+   Realtime Database applies one client's writes in the order they are made, so
+   sequencing them here is enough; no chaining needed.
+
+   access/log is skipped deliberately. Its rule is append-only and demands each
+   entry stamp the writer's own uid, so replaying somebody else's entries would
+   be refused — and a club being pushed for the first time has no log anyway. */
+function pushAll() {
+  if (!fb) return;
+  const a = state.access || {};
+  const mine = me && me.uid;
+  const steps = [];
+  /* Each write goes at the exact depth its rule sits at. A rule on $uid or $tid
+     does not grant the parent, so pushing a whole collection is refused even
+     where pushing each child is fine — the difference is invisible until a club
+     is locked down and then it is total. */
+  if (a.admins) steps.push(['access/admins', a.admins]);
+  else if (mine) steps.push(['access/admins/' + mine, true]);
+  if (a.index) for (const u of Object.keys(a.index)) steps.push(['access/index/' + u, a.index[u]]);
+  else if (mine) steps.push(['access/index/' + mine, true]);
+  if (a.teamIndex) steps.push(['access/teamIndex', a.teamIndex]);
+  for (const u of Object.keys(a.members || {})) steps.push(['access/members/' + u, a.members[u]]);
+  for (const k of ['org', 'teams']) if (a[k]) steps.push(['access/' + k, a[k]]);
+  for (const tid of Object.keys(state.teams || {})) steps.push(['teams/' + tid, state.teams[tid]]);
+  for (const mid of Object.keys(state.matches || {})) steps.push(['matches/' + mid, state.matches[mid]]);
+  for (const [path, value] of steps) remoteSet(path, value);
+}
 function remoteSet(path, value) { if (fb) fb.set(fb.ref(fb.db, fb.base + '/' + path), value === undefined ? null : value); }
 function remoteDel(path) { if (fb) fb.remove(fb.ref(fb.db, fb.base + '/' + path)); }
 
@@ -575,6 +631,77 @@ function syncIndex(uid) {
   if (hasAnyRole(uid)) quiet(`access/index/${uid}`, true);
   else { delDeep(state, `access/index/${uid}`); remoteDel(`access/index/${uid}`); }
   saveLocal();
+}
+
+/* access/index answers "may this uid read the club". It cannot answer "may this
+   uid change *this* team", which is why every indexed account — a tracker, a
+   parent — could write every team's data. Rules cannot iterate, so the answer
+   has to be one direct lookup, and that is what this node is:
+
+     access/teamIndex/{teamId}/{uid} = 'coach' | 'tracker'
+
+   The value carries the role because the two are not the same permission. A
+   coach may change the squad; a tracker may only log events on a game, so the
+   rules let 'coach' write teams/{tid} and let either write a match belonging to
+   that team. Admins are deliberately absent — the rule checks access/admins
+   directly, and mirroring them here would be a second place to forget.
+
+   A tracker can still write more of a match than the interface offers her. That
+   is the limit of what a rule can express without per-field rules, and AUTH.md
+   already says so; what this closes is the cross-team hole and the parent one. */
+function syncTeamIndex(tid) {
+  if (!tid) return;
+  const ta = teamAccess(tid), want = {};
+  for (const u of Object.keys(ta.trackers || {})) want[u] = 'tracker';
+  for (const u of Object.keys(ta.coaches || {})) want[u] = 'coach';   // coach wins
+  const now = ((acc().teamIndex || {})[tid]) || {};
+  // this runs on every connect, so say nothing when there is nothing to say
+  if (JSON.stringify(now) === JSON.stringify(want)) return;
+  if (Object.keys(want).length) quiet(`access/teamIndex/${tid}`, want);
+  else { delDeep(state, `access/teamIndex/${tid}`); remoteDel(`access/teamIndex/${tid}`); }
+  saveLocal();
+}
+/* Called when the club is first pushed and whenever readiness is checked, so a
+   club that predates teamIndex grows one without anybody migrating anything. */
+function syncAllTeamIndex() { for (const tid of Object.keys(state.teams || {})) syncTeamIndex(tid); }
+
+/* Who may publish a team's read-only mirror. public/{share} is world-readable
+   by design, but its write rule is the one hole AUTH.md names outright, and it
+   is closed by a list the rule can look up in one hop. Anonymous auth is not an
+   option here and AUTH.md says why. */
+function claimShare(tid) {
+  const t = (state.teams || {})[tid];
+  if (!fb || !t || !t.share) return;
+  const owners = {};
+  for (const u of Object.keys(acc().admins || {})) owners[u] = true;
+  for (const u of Object.keys(teamAccess(tid).coaches || {})) owners[u] = true;
+  if (me) owners[me.uid] = true;
+  fb.set(fb.ref(fb.db, 'shareOwners/' + t.share), owners).catch(() => { });
+}
+function claimAllShares() { for (const t of Object.values(state.teams || {})) if (t.share) claimShare(t.id); }
+
+/* What has to be true before the tighter rules can be published. Every line is
+   a way to lock the club out, and all of them are invisible until you try to
+   write something at a game. */
+function readiness() {
+  const a = acc();
+  const rows = [];
+  const nAdmins = Object.keys(a.admins || {}).length;
+  const nIndex = Object.keys(a.index || {}).length;
+  rows.push({ ok: nAdmins > 0, label: 'Someone administers this club', detail: nAdmins + ' admin' + (nAdmins === 1 ? '' : 's') });
+  rows.push({ ok: nIndex > 0, label: 'The read index is not empty', detail: nIndex + ' account' + (nIndex === 1 ? '' : 's') + (nIndex ? '' : ' — every write would be refused') });
+  rows.push({ ok: !me || !!(a.index || {})[me.uid], label: 'Your own account is in it', detail: me ? (a.index || {})[me.uid] ? 'yes' : 'no — you would lose access' : 'not signed in' });
+  const withRoles = teams().filter(t => Object.keys(teamAccess(t.id).coaches || {}).length || Object.keys(teamAccess(t.id).trackers || {}).length);
+  const indexed = withRoles.filter(t => Object.keys((a.teamIndex || {})[t.id] || {}).length);
+  rows.push({
+    ok: indexed.length === withRoles.length,
+    label: 'Every team with a role has a team index',
+    detail: withRoles.length ? indexed.length + ' of ' + withRoles.length : 'no team roles granted yet'
+  });
+  const shared = teams().filter(t => t.share);
+  rows.push({ ok: true, label: 'Shared teams have an owner list', detail: shared.length ? shared.length + ' published' : 'nothing shared' });
+  rows.push({ ok: Object.keys(appOwners).length > 0, label: 'An app owner exists', detail: Object.keys(appOwners).length ? 'yes' : 'set appOwners in the console' });
+  return rows;
 }
 
 /* A club with an admin is past its bootstrap, so its data is somebody's to
@@ -2456,6 +2583,15 @@ function viewAdmin() {
       <p class="muted" style="margin-top:0">Marks it closed. Every device holding a copy clears it on next connect — except the app owner's, so it can still be opened and exported. <b>Nothing is deleted.</b> The data stays until the app owner removes it in the Firebase console.</p>
       <button class="btn danger wide" data-act="retireclub">Retire ${esc((acc().org || {}).name || 'this club')}</button></div>
 
+    <div class="card"><h2 style="margin-bottom:8px">Check readiness</h2>
+      <p class="muted" style="margin-top:0">What has to hold before the locked-down rules are published. Every failing line is a way to lock the whole club out, and none of them show up until somebody tries to change something at a game.</p>
+      <div class="plist">${readiness().map(r => `<div class="prow" style="grid-template-columns:auto 1fr auto">
+        <span class="pnum">${r.ok ? '\u2713' : '\u2717'}</span>
+        <span><span class="pname">${esc(r.label)}</span><span class="psub">${esc(r.detail)}</span></span>
+        <span class="muted">${r.ok ? '' : 'fix'}</span></div>`).join('')}</div>
+      <div style="margin-top:10px"><button class="btn quiet wide" data-act="preplockdown">Build the lookup tables</button></div>
+      <p class="muted" style="margin-bottom:0">Writes <code>access/teamIndex</code> for every team that has a coach or tracker, and an owner list for every published share. The tighter rules read both, so this has to run — and sync — <b>before</b> you paste them.</p></div>
+
     <div class="card"><h2 style="margin-bottom:8px">People</h2>
       ${nAdmins ? `<p class="muted" style="margin-top:0">${members().length} signed in · ${nAdmins} admin${nAdmins === 1 ? '' : 's'}.</p>
         <button class="btn quiet wide" data-act="people">People and roles</button>`
@@ -2677,6 +2813,11 @@ function schedulePublish() {
   if (isSandbox()) { pubState = { at: null, error: 'Test club — nothing is published' }; return; }
   if (!fb) { pubState = { at: null, error: 'Not connected to Firebase' }; return; }
   if (!t || !t.share) return;
+  /* The public write rule checks shareOwners/{share}. A share made before that
+     node existed has none, and the rule lets an unclaimed share through only
+     until someone claims it — so claim it here, on the way past. Publishing is
+     the one thing only a coach or admin of this team ever does. */
+  if (canEditTeam(t.id)) claimShare(t.id);
   clearTimeout(pubTimer);
   pubTimer = setTimeout(() => {
     // try/catch does not catch this — set() rejects asynchronously
@@ -3390,7 +3531,7 @@ document.addEventListener('click', e => {
     if (on) drop(`access/teams/${d.tid}/${key}/${d.uid}`);
     else commit(`access/teams/${d.tid}/${key}/${d.uid}`, true);
     logAccess((on ? 'removed ' : 'made ') + d.r, d.uid, { team: d.tid, teamName: (state.teams[d.tid] || {}).name || null });
-    syncIndex(d.uid); sheetPersonRoles(d.uid); return;
+    syncIndex(d.uid); syncTeamIndex(d.tid); sheetPersonRoles(d.uid); return;
   }
   if (a === 'teammenu') { sheetTeams(); return; }
   if (a === 'goview') { ui.view = d.v; closeSheet(); render(); return; }
@@ -3440,6 +3581,14 @@ document.addEventListener('click', e => {
     if (!confirm('Make a test club? It is invented data in the ' + (envName() || 'production') + ' database. Nothing in it is ever published to parents.')) return;
     seedSandbox(); return;
   }
+  if (a === 'preplockdown') {
+    if (!canAdmin()) { toast('Club admins and the app owner only'); return; }
+    syncAllTeamIndex();
+    claimAllShares();
+    render();
+    toast('Lookup tables written — let it sync, then check the list again');
+    return;
+  }
   if (a === 'claimadmin') {
     if (!me) { toast('Sign in first'); return; }
     if (anyAdmins()) { toast('Someone already claimed it'); return; }
@@ -3478,13 +3627,18 @@ document.addEventListener('click', e => {
   }
   if (a === 'makeshare') {
     commit(`teams/${t.id}/share`, 's' + uid() + uid());
+    claimShare(t.id);            // before publishing: the write rule checks this list
     schedulePublish(); sheetShare(); return;
   }
   if (a === 'rotateshare') {
     if (!confirm('Anyone holding the old link loses access. Continue?')) return;
     const old = t.share;
     commit(`teams/${t.id}/share`, 's' + uid() + uid());
-    if (fb && old) fb.remove(fb.ref(fb.db, 'public/' + old));
+    claimShare(t.id);
+    if (fb && old) {
+      fb.remove(fb.ref(fb.db, 'public/' + old));
+      fb.remove(fb.ref(fb.db, 'shareOwners/' + old));   // nothing left to own
+    }
     schedulePublish(); sheetShare(); toast('New links made'); return;
   }
   if (a === 'copylink') {

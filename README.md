@@ -157,6 +157,19 @@ partial ruleset is how a club ends up half locked down.
 
 `node test/rules.js` reads *this* block and checks it. Run it first.
 
+**It is safe to paste before the app has caught up.** Two lookup tables make the
+per-team and per-share rules possible — `access/teamIndex` and
+`shareOwners/{shareId}` — and neither exists on a club that predates them. So
+each of those rules carries a clause that falls back to the old club-wide
+behaviour *while its table is missing*, and stops doing so the moment the table
+appears. Nothing to sequence, and no way to lock the club out by pasting early.
+
+The app fills both in by itself: an admin's device writes `teamIndex` on its
+next connect, and a share claims its owner list on its next publish. **Club
+settings → Check readiness** shows whether that has happened. Until every line
+there has a tick, the club is locked down but not yet *tightly* — a tracker or
+a parent can still write another team's data, exactly as before.
+
 ```json
 {
   "rules": {
@@ -173,7 +186,12 @@ partial ruleset is how a club ends up half locked down.
             ".write": "auth != null && (!data.exists() || data.child(auth.uid).exists())"
           },
           "index": {
-            ".write": "auth != null && (!data.exists() || root.child('workspaces/' + $code + '/access/admins/' + auth.uid).exists() || data.child(auth.uid).exists())"
+            "$uid": {
+              ".write": "auth != null && (!root.child('workspaces/' + $code + '/access/index').exists() || root.child('workspaces/' + $code + '/access/admins/' + auth.uid).exists() || ($uid === auth.uid && !newData.exists()))"
+            }
+          },
+          "teamIndex": {
+            ".write": "auth != null && root.child('workspaces/' + $code + '/access/admins/' + auth.uid).exists()"
           },
           "teams": {
             ".write": "auth != null && root.child('workspaces/' + $code + '/access/admins/' + auth.uid).exists()"
@@ -188,17 +206,21 @@ partial ruleset is how a club ends up half locked down.
           }
         },
         "teams": {
-          ".write": "auth != null && data.parent().child('access/index/' + auth.uid).exists()"
+          "$tid": {
+            ".write": "auth != null && (root.child('workspaces/' + $code + '/access/admins/' + auth.uid).exists() || root.child('workspaces/' + $code + '/access/teamIndex/' + $tid + '/' + auth.uid).val() === 'coach' || (!root.child('workspaces/' + $code + '/access/teamIndex').exists() && root.child('workspaces/' + $code + '/access/index/' + auth.uid).exists()))"
+          }
         },
         "matches": {
-          ".write": "auth != null && data.parent().child('access/index/' + auth.uid).exists()"
+          "$mid": {
+            ".write": "auth != null && (root.child('workspaces/' + $code + '/access/admins/' + auth.uid).exists() || root.child('workspaces/' + $code + '/access/teamIndex/' + newData.child('teamId').val() + '/' + auth.uid).exists() || root.child('workspaces/' + $code + '/access/teamIndex/' + data.child('teamId').val() + '/' + auth.uid).exists() || (!root.child('workspaces/' + $code + '/access/teamIndex').exists() && root.child('workspaces/' + $code + '/access/index/' + auth.uid).exists()))"
+          }
         }
       }
     },
     "public": {
       "$share": {
         ".read": true,
-        ".write": "auth != null",
+        ".write": "auth != null && (root.child('shareOwners/' + $share + '/' + auth.uid).exists() || !root.child('shareOwners/' + $share).exists())",
         "team": {
           ".validate": "newData.hasChild('name')"
         },
@@ -207,6 +229,12 @@ partial ruleset is how a club ends up half locked down.
             ".validate": "newData.hasChild('status')"
           }
         }
+      }
+    },
+    "shareOwners": {
+      "$share": {
+        ".read": "auth != null",
+        ".write": "auth != null && (!data.exists() || data.child(auth.uid).exists())"
       }
     },
     "retired": {
