@@ -43,12 +43,13 @@ try {
       planned:{p2:40,p3:40}, positions:{p2:{x:50,y:50,slot:null}},
       stints:{s1:{pid:'p2',on:0}}};
     state.teams.t_ok.players.p3={id:'p3',name:'Mia',number:'8',anywhere:true};
-    ui.matchId='g1'; ui.view='game'; ui.gameView='live'; render();
+    ui.matchId='g1'; ui.view='game'; ui.gameView='subs'; render();
     tapLive('p3'); render();
     tapLive('p2');
     console.log('after sub — p2 min:', Math.round(playedSec(state.matches.g1,'p2')/60),
                 '| p3 on field:', onField(state.matches.g1,'p3'),
                 '| stints:', Object.keys(state.matches.g1.stints).length);
+    ui.view='game'; ui.gameView='subs'; render();
     ui.view='game'; ui.gameView='live'; render();
     ui.view='matches'; render();
     // fill the game with every kind of data so no branch is skipped
@@ -68,7 +69,7 @@ try {
     state.teams.t_ok.players.p3.gk=true;
     ui.plan={matchId:'g1',items:[{k:'sub',out:'p2',in:'p3'},{k:'add',pid:'p3'},{k:'move',pid:'p2',sid:'s2',label:'LB'}]};
     ui.picked='p3';
-    ui.view='game'; ['live','track','stats','pitch','plan'].forEach(g=>{
+    ui.view='game'; ['live','subs','track','stats','pitch','plan'].forEach(g=>{
       ui.gameView=g;
       const out=[]; const orig=document.querySelector;
       render(); console.log('  rendered game/'+g+' with full data');
@@ -76,7 +77,8 @@ try {
     ui.plan=null; ui.picked=null;
     ['all','goal','shot','set','sub','poss'].forEach(f=>{ui.logFilter=f; ui.gameView='track'; render();});
     console.log('  all six log filters rendered');
-    ui.sortBy='number'; ui.gameView='live'; render(); console.log('  live in shirt-number order');
+    ui.feedAll=true; ui.gameView='live'; render(); ui.feedAll=false; console.log('  live feed with everything');
+    ui.sortBy='number'; ui.gameView='subs'; render(); console.log('  subs in shirt-number order');
 
     // --- roles ---
     state.access={};
@@ -98,7 +100,7 @@ try {
        games list instead of the game, so a tracker cannot open Track at all.
        Both halves are checked: one can pass while the other does not. */
     var roleFail = 0;
-    for (const row of [['coach','u2','live'],['tracker','u3','track'],['parent','u4','stats']]) {
+    for (const row of [['coach','u2','subs'],['tracker','u3','track'],['parent','u4','stats'],['parent','u4','live'],['tracker','u3','live']]) {
       const who=row[0], want=row[2];
       me={uid:row[1]}; ui.view='game'; ui.gameView=want; render();
       const html=rendered(), onGame=/class="barrow"/.test(html), banner=/class="rolebar"/.test(html);

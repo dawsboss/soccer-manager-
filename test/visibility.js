@@ -93,8 +93,10 @@ console.log('\n--- another team is read, never coached ---');
   check('an admin is restricted nowhere', A.restricted(), null);
 
   as(club(), 'jaz', 't2');
-  A.ui.view = 'game'; A.ui.gameView = 'live'; A.render();
-  check('a viewer is moved off the coach\'s game screens', A.ui.gameView, 'stats');
+  A.ui.view = 'game'; A.ui.gameView = 'subs'; A.render();
+  check('a viewer is moved off the coach\'s game screens, onto the feed', A.ui.gameView, 'live');
+  A.ui.gameView = 'live'; A.render();
+  check('and may stay on the feed', A.ui.gameView, 'live');
 }
 
 console.log('\n--- only a coach or admin adds players and games ---');
