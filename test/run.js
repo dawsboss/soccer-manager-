@@ -20,6 +20,7 @@ const SUITES = [
   ['stints', 'who is on the pitch, and the sub actions'],
   ['plan', 'the Plan tab\'s snapshots of the pitch'],
   ['stats', 'tallies, and what reaches the public tier'],
+  ['ai', 'the AI prompt carries numbers, never names'],
   ['roles', 'roles derived from where a uid appears'],
   ['visibility', 'which teams each account sees and edits'],
   ['signout', 'a signed-out device draws nothing of a locked club'],

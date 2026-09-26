@@ -158,6 +158,8 @@ const EXPORTS = `{
   /* public mirror */
   publicGame, publicDoc, schedulePublish, shareBase, teamLink, gameLink,
   gameStatus, shirtOf,
+  /* AI prompt helper */
+  aiPrompt, aiLabels, AI_TOPICS, sheetAi,
   /* test club */
   seedSandbox,
   /* rendering + routing */

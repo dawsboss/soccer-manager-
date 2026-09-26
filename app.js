@@ -2,7 +2,7 @@
    Static app. Data lives in localStorage, and mirrors to Firebase Realtime
    Database when a config + workspace code are present. */
 
-const BUILD = '51';
+const BUILD = '52';
 const BUILT = '2026-09-26';
 /* index.html carries the build it was published with. If this file is newer, the
    browser handed us a cached page — the exact failure that has eaten hours. */
@@ -1984,6 +1984,7 @@ function viewStats() {
   return `<div class="stack">
     <div class="barrow">${gameBar(t, m)}</div>
     ${headline}${halfTable}${shotsCard}${mapCard}${possCard}${evCard}${goalsCard}${minutesCard}
+    ${restricted() ? '' : aiButton('game')}
   </div>`;
 }
 
@@ -2404,6 +2405,7 @@ function viewPlan() {
         <div class="card"><div class="spread">
           <div><h2>Who is unavailable</h2><div class="muted">${Object.keys(m.out || {}).length || 'Nobody'} left out of this game</div></div>
           <button class="btn quiet sm" data-act="availability">Change</button></div></div>
+        ${aiButton('game')}
       </div>
     </div></div>`;
 }
@@ -2579,6 +2581,7 @@ function viewSeason() {
 
   return `<div class="stack">
     ${record}${shotsCard}${possCard}${evCard}${results}${playersCard}
+    ${restricted() ? '' : aiButton('team')}
   </div>`;
 }
 
@@ -2823,6 +2826,7 @@ function viewAdmin() {
         <span class="muted">Edit</span></button>`).join('') || '<p class="muted" style="margin:0">No teams yet.</p>'}</div>
       <div style="margin-top:10px"><button class="btn quiet wide" data-act="newteam">Add a team</button></div></div>
 
+    ${aiButton('club')}
   </div>`;
 }
 
@@ -3724,6 +3728,174 @@ function planDetail(t, m) {
   }).join('')}`;
 }
 
+/* ---------------- AI prompt helper ---------------- */
+
+/* The app never calls an AI model (CLAUDE.md), and a coach's own ChatGPT or
+   Claude account cannot be borrowed from inside another site — every one of
+   them refuses to be framed. So the helper is a prompt generator: it writes out
+   what the app knows as plain text, and the coach pastes it into whichever
+   assistant she already uses. Nothing leaves the device unless she does that.
+
+   Because it does leave with her, it is held to the public mirror's contract:
+   a player is a shirt number and never a name. Notes, photos and parent links
+   stay out altogether — a note is free text and is exactly where a name ends up.
+   Where two players share a number, or one has none, they get a letter instead
+   of a label that would merge them. */
+function aiLabels(t) {
+  const ps = players(t);
+  const seen = {};
+  for (const p of ps) { const n = String(p.number ?? '').trim(); if (n) seen[n] = (seen[n] || 0) + 1; }
+  const out = {};
+  let k = 0;
+  for (const p of ps) {
+    const n = String(p.number ?? '').trim();
+    out[p.id] = n && seen[n] === 1 ? '#' + n : 'Player ' + (k < 26 ? String.fromCharCode(65 + k) : k + 1);
+    if (!(n && seen[n] === 1)) k++;
+  }
+  return out;
+}
+
+function aiFormat(m) {
+  return `${m.onFieldCount || 11}v${m.onFieldCount || 11}, ${m.periodCount || 2} × ${m.periodMinutes || 40} min`;
+}
+
+function aiGameLine(m) {
+  const st = gameStatus(m), sc = score(m), sh = shotTally(m), po = possession(m);
+  const bits = [
+    st === 'upcoming' ? 'not played yet' : `${st === 'live' ? 'in progress, ' : ''}${sc.us}–${sc.them}`,
+    (sh.usOn + sh.usOff + sh.themOn + sh.themOff) ? `shots ${sh.usOn + sh.usOff} (${sh.usOn} on target) vs ${sh.themOn + sh.themOff} (${sh.themOn})` : '',
+    po.changes > 2 && po.us + po.them ? `possession ${Math.round(po.us / (po.us + po.them) * 100)}% ours` : '',
+    ...EVENTS.map(e => { const u = evCount(m, e.k, 'us'), th = evCount(m, e.k, 'them'); return u + th ? `${e.label.toLowerCase()} ${u}–${th}` : ''; })
+  ].filter(Boolean);
+  return `${m.date || 'no date'} vs ${m.opponent || 'TBC'}${m.venue ? ' (' + m.venue + ')' : ''}: ${bits.join('; ')}`;
+}
+
+function aiSeasonFacts(t, lab) {
+  const ms = teamMatches(t.id).slice().reverse();
+  const rows = players(t).map(p => {
+    let pl = 0, pd = 0, g = 0, a = 0, sh = 0, apps = 0;
+    const roles = {};
+    for (const m of ms) {
+      const s = playedSec(m, p.id); pl += s; if (s > 0) apps++;
+      pd += plannedSec(m, p.id);
+      g += goalList(m).filter(x => x.pid === p.id).length;
+      a += goalList(m).filter(x => x.assist === p.id).length;
+      sh += shotList(m).filter(x => x.pid === p.id).length;
+      for (const [k, v] of Object.entries(byRole(m, p.id))) roles[k] = (roles[k] || 0) + v;
+    }
+    const rs = Object.entries(roles).filter(([k, v]) => v >= 60 && k !== 'Unassigned').sort((x, y) => y[1] - x[1]).map(([k, v]) => `${mins(v)} at ${k}`).join(', ');
+    return `- ${lab[p.id]}${p.gk ? ' (GK)' : ''}: ${mins(pl)} min in ${apps} game${apps === 1 ? '' : 's'}${pd ? `, ${mins(pd)} planned` : ''}`
+      + `${g ? `, ${g} goal${g === 1 ? '' : 's'}` : ''}${a ? `, ${a} assist${a === 1 ? '' : 's'}` : ''}${sh ? `, ${sh} shot${sh === 1 ? '' : 's'}` : ''}${rs ? ` — ${rs}` : ''}`;
+  });
+  return `SQUAD (${rows.length} players, season totals)\n${rows.join('\n') || '- none yet'}\n\n`
+    + `GAMES (oldest first)\n${ms.map(m => '- ' + aiGameLine(m)).join('\n') || '- none yet'}`;
+}
+
+function aiGameFacts(t, m, lab) {
+  const now = nowMs();
+  const L = id => lab[id] || 'unknown player';
+  const roster = squad(t, m);
+  const mins_ = roster.map(p => {
+    const pl = playedSec(m, p.id, now), pd = plannedSec(m, p.id);
+    const rs = Object.entries(byRole(m, p.id, now)).filter(([k, v]) => v >= 60 && k !== 'Unassigned').map(([k, v]) => `${mins(v)} at ${k}`).join(', ');
+    return `- ${L(p.id)}${p.gk ? ' (GK)' : ''}: ${mins(pl)} min${pd ? ` of ${mins(pd)} planned` : ''}${onField(m, p.id) && gameStatus(m) === 'live' ? ', on now' : ''}${rs ? ' — ' + rs : ''}`;
+  });
+  const out = Object.keys(m.out || {}).map(L);
+  const goals = goalList(m).map(g => `- ${mins(g.t)}' ${g.side === 'us' ? 'us' : 'them'}${g.pid ? ' ' + L(g.pid) : ''}${g.assist ? ' (assist ' + L(g.assist) + ')' : ''}`);
+  /* endGame() closes every open stint at the whistle. Those are not subs, and
+     eleven of them read to a model like a mass substitution in the last minute. */
+  const whistle = gameStatus(m) === 'done' ? elapsedSec(m, now) - 3 : Infinity;
+  const subs = subEvents(m).slice().reverse().filter(r => r.on || r.t < whistle).map(r => `- ${mins(r.t)}' ${r.move ? `${L(r.on)} moved${r.spot ? ' to ' + r.spot : ''}` : [r.on ? L(r.on) + ' on' : '', r.off ? L(r.off) + ' off' : ''].filter(Boolean).join(', ')}`);
+  return `GAME: ${aiGameLine(m)}\nFormat: ${aiFormat(m)}${m.formation ? ', formation ' + m.formation.name : ''}. ${gameStatus(m) === 'done' ? 'Full time.' : gameStatus(m) === 'live' ? `Clock at ${mins(elapsedSec(m, now))} min.` : ''}\n\n`
+    + `MINUTES\n${mins_.join('\n') || '- no squad'}${out.length ? `\nUnavailable: ${out.join(', ')}` : ''}\n\n`
+    + `GOALS\n${goals.join('\n') || '- none'}\n\nSUBSTITUTIONS\n${subs.join('\n') || '- none'}`;
+}
+
+function aiClubFacts() {
+  return teams().map(t => {
+    const ms = teamMatches(t.id), done = ms.filter(m => gameStatus(m) === 'done');
+    let w = 0, d = 0, l = 0;
+    for (const m of done) { const s = score(m); if (s.us > s.them) w++; else if (s.us === s.them) d++; else l++; }
+    const tot = players(t).filter(p => !p.gk).map(p => ms.reduce((n, m) => n + playedSec(m, p.id), 0));
+    const spread = tot.length && done.length ? `; outfield season minutes range ${mins(Math.min(...tot))}–${mins(Math.max(...tot))}` : '';
+    return `- ${t.name || 'Untitled team'}: ${players(t).length} players, ${done.length} played (${w}W ${d}D ${l}L), ${ms.length - done.length} to come${spread}`;
+  }).join('\n') || '- no teams yet';
+}
+
+const AI_TOPICS = {
+  team: [
+    ['season', 'Season review', 'Review our season so far. What are we doing well, where are we struggling, and what two or three things should I focus on next?'],
+    ['fair', 'Playing time', 'Look at how playing time is shared. Who is behind or ahead of plan, is anyone stuck in one position, and how should I rebalance over the next few games?'],
+    ['practice', 'Practice plan', 'Suggest a 75-minute practice plan for this week built around what the numbers say we need most. Keep drills age-appropriate and name what each one fixes.'],
+    ['next', 'Next game', 'Help me plan minutes and positions for our next game so the season evens out. Say who should start and roughly when to rotate.']
+  ],
+  game: [
+    ['review', 'Game review', 'Review this game. What went well, what did not, and what should we work on at the next practice?'],
+    ['halftime', 'Half-time', 'We are at half-time or a break in this game. Give me three short, practical adjustments and suggest subs that keep minutes on plan.'],
+    ['parents', 'Note to parents', 'Write a short, warm note to parents summarising this game. Refer to players only by shirt number so I can fill in names, and keep the focus on effort and the team rather than the result.']
+  ],
+  club: [
+    ['club', 'Club overview', 'Give me an overview of the club across all teams. Which teams look healthy, which may need support, and what should I raise with coaches?'],
+    ['clubfair', 'Fair minutes', 'Across the teams, where does playing time look uneven, and what club-wide guideline on minutes would you suggest?']
+  ]
+};
+
+function aiPrompt(scope, topic) {
+  const list = AI_TOPICS[scope];
+  const [, , ask] = list.find(x => x[0] === topic) || list[0];
+  const t = team(), m = match();
+  const who = scope === 'club' ? 'I run a youth soccer club' : 'I coach a youth soccer team';
+  const legend = 'Players are identified by shirt number only (or a letter). Minutes are rounded.';
+  let facts;
+  if (scope === 'club') facts = `TEAMS\n${aiClubFacts()}`;
+  else if (scope === 'game') facts = aiGameFacts(t, m, aiLabels(t));
+  else {
+    facts = aiSeasonFacts(t, aiLabels(t));
+    const next = teamMatches(t.id).filter(x => gameStatus(x) === 'upcoming').pop();
+    if (topic === 'next' && next) facts += `\n\nNEXT GAME: ${next.date || 'no date'} vs ${next.opponent || 'TBC'}, ${aiFormat(next)}`;
+  }
+  return `${who}. ${legend}\n\n${facts}\n\n${ask}`;
+}
+
+/* Where the prompt goes once it is copied. Both ?q= links pre-fill the box; the
+   copy happens first either way, so a site that ignores ?q= still just needs a
+   paste. Long prompts skip ?q= — a URL has limits a clipboard does not. */
+const AI_SITES = {
+  chatgpt: ['ChatGPT', 'https://chatgpt.com/', q => 'https://chatgpt.com/?q=' + encodeURIComponent(q)],
+  claude: ['Claude', 'https://claude.ai/new', q => 'https://claude.ai/new?q=' + encodeURIComponent(q)],
+  gemini: ['Gemini', 'https://gemini.google.com/app', null]
+};
+
+const aiButton = scope => `<div class="card"><div class="spread">
+    <div><h2>Ask an AI</h2><div class="muted">${scope === 'club' ? 'A ready-made prompt about every team' : scope === 'game' ? 'A ready-made prompt about this game' : 'A ready-made prompt about the season'}, to paste into ChatGPT or Claude</div></div>
+    <button class="btn quiet sm" data-act="aihelp" data-scope="${scope}">Build prompt</button></div></div>`;
+
+function sheetAi(scope, topic) {
+  const list = AI_TOPICS[scope];
+  const tp = list.some(x => x[0] === topic) ? topic : list[0][0];
+  ui.ai = { scope, topic: tp };
+  openSheet(`<h3>Ask an AI</h3>
+    <p class="muted" style="margin-top:0">Pick a question, copy the prompt, and paste it into your own ChatGPT, Claude or Gemini. The app does not send it anywhere itself.</p>
+    <div class="row" style="flex-wrap:wrap;gap:6px;margin-bottom:10px">${list.map(([k, label]) =>
+    `<button class="opt" type="button" style="width:auto" data-act="aitopic" data-k="${k}" aria-current="${k === tp}">${esc(label)}</button>`).join('')}</div>
+    <label class="field"><span>Prompt — edit or add to it before copying</span>
+      <textarea id="aiPrompt" rows="12" style="font-size:13px">${esc(aiPrompt(scope, tp))}</textarea></label>
+    <button class="btn wide" data-act="aicopy">Copy prompt</button>
+    <div class="muted" style="margin:10px 0 4px">Or copy it and open</div>
+    <div class="row" style="gap:6px">${Object.entries(AI_SITES).map(([k, [label]]) =>
+      `<button class="btn quiet sm" style="flex:1" data-act="aiopen" data-k="${k}">${label}</button>`).join('')}</div>
+    <p class="muted" style="margin-bottom:0">Players appear as shirt numbers — no names, notes or photos are included. Check before pasting anything you add yourself.</p>`);
+}
+
+function aiCopy(text) {
+  const done = () => toast('Prompt copied — paste it into the chat');
+  const fallback = () => {
+    const ta = $('#aiPrompt');
+    try { ta.select(); document.execCommand('copy'); done(); } catch (e) { toast('Could not copy — select it by hand'); }
+  };
+  try { navigator.clipboard.writeText(text).then(done, fallback); } catch (e) { fallback(); }
+}
+
 /* Resize to 192px and re-encode before storing, so a 4MB phone photo does not
    end up in the database and get republished on every save. */
 function pickImage(path, done) {
@@ -4365,6 +4537,22 @@ document.addEventListener('click', e => {
   }
 
   if (a === 'planall') { sheetPlanned(); return; }
+  /* Checked here as well as by hiding the button: the helper reads out the
+     whole squad's minutes, which is more than a tracker or parent is shown. */
+  if (a === 'aihelp') {
+    const sc = d.scope;
+    if (sc === 'club' ? !canAdmin() : (restricted() || !t || (sc === 'game' && !m))) return;
+    sheetAi(sc, (ui.ai && ui.ai.scope === sc && ui.ai.topic) || null); return;
+  }
+  if (a === 'aitopic') { if (ui.ai) sheetAi(ui.ai.scope, d.k); return; }
+  if (a === 'aicopy') { aiCopy($('#aiPrompt').value); return; }
+  if (a === 'aiopen') {
+    const q = $('#aiPrompt').value, site = AI_SITES[d.k]; if (!site) return;
+    aiCopy(q);
+    // opened inside the tap itself, or a phone treats it as a pop-up and blocks it
+    window.open(site[2] && q.length < 6000 ? site[2](q) : site[1], '_blank', 'noopener');
+    return;
+  }
   if (a === 'evensplit') {
     const roster = squad(t, m);
     const each = evenSplit(m, roster);
