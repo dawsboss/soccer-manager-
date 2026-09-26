@@ -8,6 +8,58 @@ before this point lives only in the git log.
 
 ---
 
+## Lock in the plan; the tracker calls the subs — 2026-09-26
+
+The Plan tab saved on every tap, but nothing said so, and a coach who has spent
+twenty minutes on snapshots wants to know they are safe. And the plan never
+reached the sideline for anyone but the coach: a tracker, usually a parent, had
+no idea when subs were meant to happen, and could not make them anyway.
+
+**Lock in** on the Plan tab stores `plan/locked` (when and who) and freezes the
+snapshots: any edit, a redraft included, has to unlock it first, and a rewrite
+of the plan drops the lock, because a changed plan is not the one that was
+locked in. The card then says where it is saved, and "saved to the club" means
+the database acknowledged that write, not that the badge happened to say
+synced. Offline it says the phone has it and it will go when there is signal;
+refused, it says that. Locking asks first if a snapshot has an empty spot or
+names someone marked unavailable, because the sideline is about to follow it to
+the letter.
+
+With a plan locked in, Track and Live (and the Plan tab mid-game) show one
+card. It counts down to the next change, grows a **Subs are on** button three
+minutes before, and turns loud when it is due. The phone buzzes on each of
+those, since it is as likely to be in a pocket. The tap makes every change in
+the snapshot at the minute it is pressed: stints closed and opened, spots and
+roles set, moves included. It is marked done in `planDone`, which sits beside
+the plan so a whole-plan write can never clobber it. A mis-tap can be undone
+for two minutes, as long as nothing has happened on top of it. **Not now**
+skips a change that is not happening.
+
+Timing is asked on the half clock, not the running total. A first half ended at
+38:00 must not make "10:00 into the second half" come due two minutes early. A
+change set for half-time comes due when the half is ended. A change counts as
+done if the pitch already matches it (the coach subbed by hand), and kick-off
+counts as done once anyone is on, so a coach's own starters are never swapped
+back from another phone. If one change is missed, the next one replaces it:
+each snapshot is a whole lineup, so the newest one also catches up the missed
+one.
+
+A tracker is told when and how many, never who. Those are the coach's lineups,
+and the Plan tab stays hidden from trackers as before. This is the one change
+to who is on the pitch a tracker may make, and the click handler checks it
+(locked plan, tracker of this team) rather than trusting the button being
+drawn. AUTH.md's role table says so now. No rules change: a tracker could
+already write the team's matches, and `test/rules.js` now pins the two
+paths this uses.
+
+Two fixes came with it. "Make these subs" and the other plan buttons now go
+through the same function, so a player coming on gets the spot the plan gives
+them in their stint, not the spot of whoever went off, and a planned position
+change is a real one. And the once-a-second ticker, which counts the clock and
+now this card, had been checking for view names the app stopped using when the
+game tabs moved, so it never ran: a game clock only moved when something else
+redrew the screen. `test/subs.js` covers the lot.
+
 ## Plan this game starts from the coach's plan — 2026-09-26
 
 The first cut of **Plan this game** asked the AI to build a plan from nothing.

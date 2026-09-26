@@ -527,3 +527,30 @@ table.grid td.right{text-align:right}
 .ghost[data-picked="1"]{background:rgba(255,255,255,.35);border-style:solid;outline:3px solid #fff;outline-offset:2px}
 .snaphint{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:10px;font-size:14.5px;min-height:34px}
 .snapdiff{margin-top:8px;padding:8px 10px;border:1px solid var(--line);border-radius:8px;font-size:14.5px;line-height:1.5}
+
+/* ---------- locked-in plan, and the sideline card that follows it ---------- */
+.lockbar{
+  background:var(--field-wash);border:1px solid var(--field);border-radius:var(--r);
+  padding:12px 14px;font-size:14.5px;color:var(--field-deep);
+}
+.lockbar b{font-size:17px}
+.lockbar .lockwhen{font-size:13px;color:var(--ink-soft)}
+.lockbar .lockmsg{margin:6px 0 0;color:var(--ink)}
+.lockbar .btn{margin-top:10px}
+.lockbar[data-state="sending"]{background:var(--owed-wash);border-color:var(--owed);color:#6C4406}
+.lockbar[data-state="refused"]{background:#FBE7E3;border-color:var(--over);color:#6E2317}
+
+.subsclock{
+  font-family:"Barlow Condensed",sans-serif;font-weight:700;font-size:24px;line-height:1;
+  font-variant-numeric:tabular-nums;color:var(--field-deep);
+}
+.subsline{margin:6px 0 0;font-size:15px}
+.subsnames{margin-top:6px;font-size:14.5px;line-height:1.5}
+.subscard .subsgo{margin-top:12px;font-size:18px;padding:15px 16px}
+.subscard[data-state="soon"]{border-color:var(--owed);box-shadow:inset 4px 0 0 var(--owed)}
+.subscard[data-state="soon"] .subsclock{color:var(--owed)}
+.subscard[data-state="due"]{background:#FBE7E3;border-color:var(--over);box-shadow:inset 4px 0 0 var(--over)}
+.subscard[data-state="due"] h2,.subscard[data-state="due"] .subsclock{color:var(--over)}
+.subscard[data-state="due"] .subsgo{background:var(--over);border-color:var(--over);animation:subspulse 1.6s ease-in-out infinite}
+@keyframes subspulse{0%,100%{box-shadow:0 0 0 0 rgba(184,69,47,.45)}50%{box-shadow:0 0 0 8px rgba(184,69,47,0)}}
+.subsdone{margin:0 0 10px;padding:8px 10px;border:1px solid var(--field);border-radius:8px;background:var(--field-wash);font-size:14.5px;color:var(--field-deep)}

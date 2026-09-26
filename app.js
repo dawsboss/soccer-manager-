@@ -2,7 +2,7 @@
    Static app. Data lives in localStorage, and mirrors to Firebase Realtime
    Database when a config + workspace code are present. */
 
-const BUILD = '55';
+const BUILD = '56';
 const BUILT = '2026-09-26';
 /* index.html carries the build it was published with. If this file is newer, the
    browser handed us a cached page — the exact failure that has eaten hours. */
@@ -312,6 +312,8 @@ let fbApp = null, fbAuth = null, authMod = null;
 let me = null;              // { uid, name, email } when signed in
 let fb = null; // { db, ref, set, remove, onValue, base }
 let clockSkew = 0;           // serverTime - deviceTime, in ms
+let online = false;          // .info/connected, as the database last said
+let wsRead = false;          // the workspace has been read from the database this session
 const nowMs = () => Date.now() + clockSkew;
 
 function setSync(stateName, label) {
@@ -423,6 +425,7 @@ async function initSync() {
     });
 
     dbMod.onValue(dbMod.ref(db, '.info/connected'), s => {
+      online = !!s.val();
       setSync(s.val() ? 'live' : 'off', s.val() ? 'synced' : 'offline');
     });
 
@@ -476,6 +479,7 @@ async function initSync() {
         if (!v) pushAll();
         else {
           state = { teams: v.teams || {}, matches: v.matches || {}, access: v.access || {} };
+          wsRead = true;
           saveLocal(); markSynced(); render();
           /* Close the migration bridge without anybody being told to. The
              per-team rules fall back to the old club-wide index while
@@ -571,7 +575,10 @@ function pushAll() {
   for (const mid of Object.keys(state.matches || {})) steps.push(['matches/' + mid, state.matches[mid]]);
   for (const [path, value] of steps) remoteSet(path, value);
 }
-function remoteSet(path, value) { if (fb) fb.set(fb.ref(fb.db, fb.base + '/' + path), value === undefined ? null : value); }
+/* Hands back the write's promise, which settles when the database has it. Most
+   callers ignore it; locking in a plan waits on it, because "saved" is the
+   whole point of that button and has to mean the club has it, not this phone. */
+function remoteSet(path, value) { if (fb) return fb.set(fb.ref(fb.db, fb.base + '/' + path), value === undefined ? null : value); }
 function remoteDel(path) { if (fb) fb.remove(fb.ref(fb.db, fb.base + '/' + path)); }
 
 function quiet(path, value) { setDeep(state, path, value); remoteSet(path, value); }
@@ -660,9 +667,9 @@ function syncIndex(uid) {
      access/teamIndex/{teamId}/{uid} = 'coach' | 'tracker'
 
    The value carries the role because the two are not the same permission. A
-   coach may change the squad; a tracker may only log events on a game, so the
-   rules let 'coach' write teams/{tid} and let either write a match belonging to
-   that team. Admins are deliberately absent — the rule checks access/admins
+   coach may change the squad; a tracker may only log events on a game and make
+   the coach's locked-in subs, so the rules let 'coach' write teams/{tid} and let
+   either write a match belonging to that team. Admins are deliberately absent — the rule checks access/admins
    directly, and mirroring them here would be a second place to forget.
 
    A tracker can still write more of a match than the interface offers her. That
@@ -1531,6 +1538,86 @@ function snapLabel(m, sec) {
   return sec % per === 0 ? halfName(m, n) : `${mmss(sec)} · ${halfName(m, n)}`;
 }
 
+/* ---------------- planned subs, at the sideline ----------------
+   A locked-in plan is what the sideline follows. The coach draws it at the
+   kitchen table; whoever tracks the game — often a parent — gets told when each
+   change is due and taps once when the referee actually lets the subs on. The
+   tracker is told when, never who: the plan is the coach's, and a parent reading
+   the whole afternoon's lineups before kick-off is not what locking it in is for.
+
+   The lock lives inside the plan (plan/locked), so any rewrite of the plan —
+   an edit, a redraft — unlocks it: a changed plan is not the one that was locked
+   in. What has been done lives beside it (planDone), because the tracker writes
+   it mid-game and a whole-plan write from the coach must never be able to
+   clobber it. Keys are 's' + start: a node keyed by small integers comes back
+   from the database as an array. */
+const SUB_LEAD = 180;          // how long before a planned change "coming up" opens, in seconds
+const SUB_UNDO_MS = 120000;    // how long a mis-tap can be taken back from the card
+const planLocked = m => !!(m && m.plan && m.plan.locked && planBlocks(m).length);
+const doneKey = b => 's' + b.start;
+const doneOf = (m, b) => (b && (m.planDone || {})[doneKey(b)]) || null;
+
+/* Plan times are nominal — the 2nd half starts at 40:00 whatever the clock
+   says — but a real half runs short or long. So "how long until" is asked in the
+   half the change belongs to, against that half's own clock, and a change set
+   for the start of a half comes due when the half before it is ended, not when
+   the running total happens to pass the mark. */
+function subsUntil(m, b, now = nowMs()) {
+  const per = (m.periodMinutes || 40) * 60;
+  const h = m.currentHalf || 1, into = halfSec(m, now);
+  const half = Math.floor(b.start / per) + 1, at = b.start % per;
+  if (half <= h) return (half - h) * per + at - into;
+  return Math.max(1, per - into) + (half - h - 1) * per + at;
+}
+/* "at kick-off", "at half-time", "at 20:00 of the 1st half" — the same clock
+   the Track tab shows under the big one. */
+function subsWhen(m, b) {
+  if (!b.start) return 'at kick-off';
+  const per = (m.periodMinutes || 40) * 60;
+  const half = Math.floor(b.start / per) + 1, at = b.start % per;
+  if (!at) return (m.periodCount || 2) === 2 && half === 2 ? 'at half-time' : `at the start of the ${halfName(m, half).toLowerCase()}`;
+  return `at ${mmss(at)} of the ${halfName(m, half).toLowerCase()}`;
+}
+/* What this snapshot would change on the pitch as it stands, which is not
+   always what it changes from the snapshot before: the coach may have made a
+   sub by hand in between. */
+function subsDiff(m, b) {
+  const want = b.assign || {}, ids = (b.ids && b.ids.length ? b.ids : Object.values(want));
+  const cur = fieldIds(m);
+  const spot = pid => Object.keys(want).find(k => want[k] === pid) || null;
+  return {
+    on: ids.filter(pid => !cur.includes(pid)),
+    off: cur.filter(pid => !ids.includes(pid)),
+    moved: ids.filter(pid => cur.includes(pid) && spot(pid) && slotIdOf(m, pid) !== spot(pid))
+  };
+}
+const subsCount = x => x.on.length + x.off.length + x.moved.length;
+
+/* The planned change that wants doing, if any. The latest snapshot inside the
+   window is the one that counts: a missed change is superseded by the next
+   rather than stacking up, and since a snapshot is a whole lineup, putting the
+   newest one on is also what catches up the one that was missed. A snapshot is
+   done once somebody has said so, or when the pitch already matches it — the
+   coach may have made the subs by hand — and kick-off is done the moment anyone
+   is on, because starters the coach has already set must not be swapped back
+   by a tap on another phone. */
+function subsDue(m, now = nowMs()) {
+  if (!planLocked(m) || m.ended) return null;
+  const blocks = planBlocks(m);
+  const inWin = blocks.filter(b => subsUntil(m, b, now) <= SUB_LEAD);
+  const b = inWin[inWin.length - 1] || null;
+  const next = blocks.find(x => subsUntil(m, x, now) > SUB_LEAD) || null;
+  if (b) {
+    const d = subsDiff(m, b);
+    const handled = doneOf(m, b) || (b.start === 0 ? fieldIds(m).length > 0 : !subsCount(d));
+    if (!handled) {
+      const u = subsUntil(m, b, now);
+      return { kind: u > 0 ? 'soon' : 'due', b, until: u, diff: d, next };
+    }
+  }
+  return { kind: next ? 'wait' : 'over', b: next, until: next ? subsUntil(m, next, now) : null, last: b, lastDone: doneOf(m, b), next };
+}
+
 /* Turn a picker value into a standalone copy. Always a copy: a game must never
    point at a team shape that a coach might edit next month. */
 function resolveShape(t, pick, size) {
@@ -1728,6 +1815,85 @@ function applyStaged(m) {
   toast(`${n} change${n === 1 ? '' : 's'} made at ${mins(t)}′`);
 }
 
+/* Put a planned snapshot on the pitch: everyone off, on and moved at the same
+   second, because it all happened at one stoppage. Each player coming on opens
+   a spell in the planned spot, and a player who stays on but changes spot
+   closes one spell and opens the next, like movePos — so minutes by
+   position come out right, not just who was on.
+
+   Returns what it changed and what was there before, so the one tap can be
+   taken back: `made` is every spell it opened, `prev` every spell it closed or
+   rewrote as it was, `pos` every position it replaced. Nulls are left out of
+   `prev` and `pos` on purpose — the database drops null children, so a record
+   that relied on them would not survive the round trip. */
+function applyBlock(m, b, t = elapsedSec(m)) {
+  const path = `matches/${m.id}`;
+  const want = b.assign || {};
+  const ids = b.ids && b.ids.length ? b.ids : Object.values(want);
+  const spot = pid => Object.keys(want).find(k => want[k] === pid) || null;
+  const rec = { t, made: [], prev: {}, pos: {} };
+  const keepPos = pid => { const p = (m.positions || {})[pid]; if (p && !(pid in rec.pos)) rec.pos[pid] = { ...p }; };
+  const open = (pid, sid) => {
+    const sl = sid ? slotById(m, sid) : null, id = uid();
+    quiet(`${path}/stints/${id}`, { pid, on: t, slot: sid || null, role: sl ? sl.role : null });
+    rec.made.push(id);
+  };
+  const d = subsDiff(m, b);
+  for (const pid of d.off) {
+    const o = openStint(m, pid);
+    if (o) { rec.prev[o[0]] = { ...o[1] }; quiet(`${path}/stints/${o[0]}/off`, t); }
+    keepPos(pid);
+    delDeep(state, `${path}/positions/${pid}`); remoteDel(`${path}/positions/${pid}`);
+  }
+  for (const pid of d.moved) {
+    const o = openStint(m, pid);
+    if (!o) continue;
+    rec.prev[o[0]] = { ...o[1] };
+    const sid = spot(pid), sl = slotById(m, sid);
+    // on at this very second already: correct the spell rather than open a zero-length one
+    if (o[1].on >= t) quiet(`${path}/stints/${o[0]}`, { ...o[1], slot: sid, role: sl ? sl.role : null });
+    else { quiet(`${path}/stints/${o[0]}/off`, t); open(pid, sid); }
+  }
+  d.on.forEach(pid => open(pid, spot(pid)));
+  // coordinates follow the spot; a player with no spot still gets somewhere on the pitch
+  ids.forEach((pid, i) => {
+    const sl = slotById(m, spot(pid));
+    const cur = (m.positions || {})[pid];
+    const next = sl ? { x: sl.x, y: sl.y, slot: sl.id } : cur && cur.x != null ? null : { x: 50, y: 25 + (i * 9) % 55, slot: null };
+    if (!next || (cur && cur.x === next.x && cur.y === next.y && cur.slot === next.slot)) return;
+    keepPos(pid);
+    quiet(`${path}/positions/${pid}`, next);
+  });
+  saveLocal();
+  return { rec, diff: d };
+}
+
+/* Take back one planned change, if nothing has happened on top of it. A spell it
+   opened that has since been closed means somebody subbed after it, and undoing
+   under that would leave a hole in someone's minutes — the match log is the tool for
+   that, not a blind rewind. */
+function undoBlock(m, key) {
+  const rec = (m.planDone || {})[key];
+  if (!rec) return false;
+  const path = `matches/${m.id}`;
+  const made = rec.made || [];
+  if (made.some(id => !(m.stints || {})[id] || (m.stints || {})[id].off != null)) return false;
+  const touched = new Set(Object.keys(rec.pos || {}));
+  for (const id of made) {
+    touched.add(m.stints[id].pid);
+    delDeep(state, `${path}/stints/${id}`); remoteDel(`${path}/stints/${id}`);
+  }
+  for (const [id, s] of Object.entries(rec.prev || {})) { touched.add(s.pid); quiet(`${path}/stints/${id}`, s); }
+  for (const pid of touched) {
+    const p = (rec.pos || {})[pid];
+    if (p) quiet(`${path}/positions/${pid}`, p);
+    else { delDeep(state, `${path}/positions/${pid}`); remoteDel(`${path}/positions/${pid}`); }
+  }
+  delDeep(state, `${path}/planDone/${key}`); remoteDel(`${path}/planDone/${key}`);
+  saveLocal();
+  return true;
+}
+
 /* A position change. Closes the current spell and opens a new one at the same
    second, so total minutes are untouched but minutes-per-role become real. */
 function movePos(m, pid, slotId, role, atT) {
@@ -1782,7 +1948,8 @@ function subAt(m, outPid, inPid, t) {
 function restartMatch(m) {
   const stints = {};
   for (const pid of fieldIds(m)) stints[uid()] = { pid, on: 0 };
-  commit(`matches/${m.id}`, { ...m, periods: {}, currentHalf: 1, stints, goals: null });
+  // which planned changes were made belongs to the old clock too
+  commit(`matches/${m.id}`, { ...m, periods: {}, currentHalf: 1, stints, goals: null, planDone: null });
 }
 
 /* nudge the match clock when it was started late or left running */
@@ -1868,7 +2035,7 @@ function render() {
   const roNote = !lim && readOnlyHere() && team()
     ? `<div class="rolebar">Viewing <b>${teamLabel(team())}</b> from another team in the club. You can read it, not change it.</div>` : '';
   const roleNote = lim
-    ? `<div class="rolebar">Signed in as <b>${esc(ROLE_LABEL[lim])}</b> — ${lim === 'tracker' ? 'you can log events but not make subs or run the clock' : 'you can read, not change'}.</div>`
+    ? `<div class="rolebar">Signed in as <b>${esc(ROLE_LABEL[lim])}</b> — ${lim === 'tracker' ? "you can log events and make the coach's planned subs when they are due, but not run the clock or make other subs" : 'you can read, not change'}.</div>`
     : '';
   /* Never let a rehearsal pass for the real thing. Both facts are worth saying
      out loud: a test club holds invented data and publishes nothing, and a
@@ -2233,6 +2400,7 @@ function viewTrack() {
   return `<div class="stack">
     <div class="barrow">${gameBar(t, m)}</div>
     ${clockCard(m, now, false)}
+    ${subsCard(t, m, now)}
     ${scoreCard(t, m)}
     ${shotsCard}
     ${setCard}
@@ -2429,6 +2597,7 @@ function viewLive() {
   return `<div class="stack">
     <div class="barrow">${gameBar(t, m)}</div>
     ${clock}
+    ${subsCard(t, m, now)}
     ${scCard}
     ${planBar}
     ${banner}
@@ -2589,6 +2758,84 @@ function viewMatch() {
     </div></div>`;
 }
 
+/* "in 3:12", or "1:40 ago" once it is over a minute late — for the first
+   minute the card's own "due now" says it. A countdown only makes sense inside
+   the half it counts down in: across half-time nobody knows how long the break
+   will be. */
+function subsClock(m, b, u) {
+  if (!b || !b.start) return '';
+  if (u > 0) return Math.floor(b.start / ((m.periodMinutes || 40) * 60)) + 1 === (m.currentHalf || 1) ? 'in ' + mmss(u) : '';
+  return u > -60 ? '' : mmss(-u) + ' ago';
+}
+/* The one change to who is on the pitch a tracker may make: the coach decided
+   it and locked it in, and the tracker only says when it happened. Anyone who
+   may edit the team may too, which is the coach at the sideline. */
+const canCallSubs = m => !!m && (canEditTeam(m.teamId) || (restricted() === 'tracker' && m.teamId === ui.teamId));
+
+/* The locked-in plan at the sideline: when the next change is due, a louder card
+   when it is, and one button for the moment the referee lets the subs on. The
+   tap is the record — the subs go in at the minute it was pressed, not the
+   minute the plan said. A tracker (often a parent) sees the time and how many
+   changes, never the names: the coach's lineups are the coach's. The coach
+   sees who, since it is the coach's own plan. */
+function subsCard(t, m, now) {
+  // a parent, or a coach reading another team's game, has nothing to call
+  if (!canCallSubs(m)) return '';
+  const reveal = !restricted();
+  const s = subsDue(m, now);
+  if (!s) {
+    if (m.ended) return '';
+    if (!reveal) return `<div class="card subscard" id="subsdue" data-k="none"><h2>Planned subs</h2>
+      <p class="muted" style="margin:6px 0 0">No sub plan is locked in for this game. Once the coach locks one in, this card says when each change is due and makes it with one tap.</p></div>`;
+    // only worth saying on Track: that is the tab a coach hands to somebody else
+    return ui.gameView === 'track' && planBlocks(m).length
+      ? `<div class="card subscard" id="subsdue" data-k="none"><div class="spread"><h2>Planned subs</h2>
+          <button class="btn quiet sm" data-act="opengview" data-v="plan">Open the plan</button></div>
+          <p class="muted" style="margin:6px 0 0">Lock in your plan and this card counts down to each change — for whoever is tracking, too, without showing them who.</p></div>`
+      : '';
+  }
+  const nm = id => { const p = (t.players || {})[id]; return p ? esc(p.name) : '?'; };
+  const spotIn = (b, id) => { const k = Object.keys(b.assign || {}).find(x => b.assign[x] === id); const sl = k && slotById(m, k); return sl ? ` (${esc(sl.label)})` : ''; };
+  const names = (b, d) => reveal ? `<div class="subsnames">
+      ${d.on.length ? `<div><span class="on">on:</span> ${d.on.map(id => nm(id) + spotIn(b, id)).join(', ')}</div>` : ''}
+      ${d.off.length ? `<div><span class="off">off:</span> ${d.off.map(nm).join(', ')}</div>` : ''}
+      ${d.moved.length ? `<div><span class="muted">moves:</span> ${d.moved.map(id => nm(id) + spotIn(b, id)).join(', ')}</div>` : ''}</div>` : '';
+  const howMany = (b, d) => {
+    if (!b.start) return `${(b.ids || []).length} players`;
+    const n = Math.max(d.on.length, d.off.length), mv = d.moved.length;
+    return [n ? `${n} sub${n === 1 ? '' : 's'}` : '', mv ? `${mv} position change${mv === 1 ? '' : 's'}` : ''].filter(Boolean).join(' and ') || 'no changes';
+  };
+  let undo = '';
+  const r = s.lastDone;
+  if (r && nowMs() - (r.at || 0) < SUB_UNDO_MS) {
+    undo = `<div class="subsdone spread"><span>✓ ${r.skipped ? `Skipped the change ${esc(subsWhen(m, s.last))}` : s.last.start ? `Subs made at ${mmss(r.t || 0)}` : 'Starting lineup on'}</span>
+      <button class="btn quiet sm" data-act="subsundo" data-key="${doneKey(s.last)}">Undo</button></div>`;
+  }
+
+  if (s.kind === 'due' || s.kind === 'soon') {
+    const b = s.b, ko = !b.start;
+    const title = ko ? 'Starting lineup' : s.kind === 'due' ? 'Subs due now' : 'Subs coming up';
+    return `<div class="card subscard" id="subsdue" data-state="${s.kind}" data-k="${s.kind}:${b.start}">
+      <div class="spread"><h2>${title}</h2><span class="subsclock" data-subsclock="1">${subsClock(m, b, s.until)}</span></div>
+      <p class="subsline">${ko ? 'From the plan' : 'Planned ' + esc(subsWhen(m, b))} · ${howMany(b, s.diff)}</p>
+      ${names(b, s.diff)}
+      <button class="btn wide subsgo" data-act="subsgo" data-start="${b.start}">${ko ? 'Starters are on' : 'Subs are on'}</button>
+      <div class="spread" style="margin-top:8px"><span class="muted">${ko ? 'Tap once the starters are on the pitch.' : `Tap when the referee lets them on — ${reveal ? 'every change in the snapshot is made' : "the coach's planned subs are made for you"} at that minute.`}</span>
+        <button class="btn quiet sm" data-act="subsskip" data-start="${b.start}" style="flex:none">Not now</button></div></div>`;
+  }
+  if (s.kind === 'wait') {
+    const b = s.b;
+    return `<div class="card subscard" id="subsdue" data-state="wait" data-k="wait:${b.start}">
+      ${undo}
+      <div class="spread"><h2>Next subs</h2><span class="subsclock" data-subsclock="1">${subsClock(m, b, s.until)}</span></div>
+      <p class="subsline">${esc(subsWhen(m, b))} · ${howMany(b, subsDiff(m, b))}</p>
+      ${names(b, subsDiff(m, b))}
+      <p class="muted" style="margin:6px 0 0">A button to make them appears ${Math.round(SUB_LEAD / 60)} minutes before.</p></div>`;
+  }
+  return `<div class="card subscard" id="subsdue" data-state="over" data-k="over">
+    ${undo}<h2>Planned subs</h2><p class="muted" style="margin:6px 0 0">That was the last change in the plan.</p></div>`;
+}
+
 /* What the plan wants next, with the button that does it. The live screen's
    "see the plan" link opens the full thing; the Plan tab shows it inline. */
 function nextChange(m, el, name) {
@@ -2632,9 +2879,35 @@ function viewPlan() {
   const name = id => { const p = (t.players || {})[id]; return p ? esc(p.name) : 'Unknown'; };
   const blocks = planBlocks(m);
   const shape = (m.formation && m.formation.slots) || [];
+  const locked = planLocked(m);
 
-  const next = blocks.length && el > 0
-    ? `<div class="card"><h2 style="margin-bottom:10px">Next change</h2>${nextChange(m, el, name)}</div>` : '';
+  // once locked in, the sideline card is the one answer to "what is due" on every tab
+  const next = !blocks.length || el <= 0 ? ''
+    : locked ? subsCard(t, m, nowMs())
+      : `<div class="card"><h2 style="margin-bottom:10px">Next change</h2>${nextChange(m, el, name)}</div>`;
+
+  let lockCard = '';
+  if (blocks.length && !readOnlyHere()) {
+    if (locked) {
+      const l = m.plan.locked, sv = lockSaved(m);
+      const at = new Date(l.at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+      const msg = {
+        saved: 'Saved to the club — every phone on this team has it.',
+        sending: online ? 'Saving to the club…' : 'Saved on this phone. It goes to the club as soon as there is signal — keep the app open until this says so.',
+        refused: 'Saved on this phone, but the club refused it. Check you are signed in as a coach of this team.',
+        device: 'Saved on this phone.'
+      }[sv];
+      lockCard = `<div class="lockbar" data-state="${sv}">
+        <div class="spread"><b>${sv === 'refused' ? '!' : '✓'} Plan locked in</b><span class="lockwhen">${esc(at)}${l.byName ? ' · ' + esc(l.byName) : ''}</span></div>
+        <p class="lockmsg">${msg}</p>
+        <p class="lockmsg">Whoever tracks this game gets a countdown to each change and one button to make it — told when, never who.</p>
+        <button class="btn quiet sm" data-act="planunlock">Unlock to change</button></div>`;
+    } else {
+      lockCard = `<div class="card"><div class="spread" style="align-items:flex-start"><div><h2>Happy with it?</h2>
+        <p class="muted" style="margin:4px 0 0">Lock it in. Nothing changes by accident, and whoever tracks the game is told when each change is due.</p></div>
+        <button class="btn" data-act="planlock" style="flex:none">Lock in</button></div></div>`;
+    }
+  }
 
   let snaps;
   if (!shape.length) {
@@ -2658,10 +2931,11 @@ function viewPlan() {
     const strip = `<div class="snapstrip">${blocks.map(b => {
       const empty = shape.filter(s => !(b.assign || {})[s.id]).length;
       return `<button type="button" class="chip" data-act="snappick" data-start="${b.start}" aria-pressed="${b === cur}">${b.start ? mmss(b.start) : 'Kick-off'}${empty ? ` <span class="snapgap">${empty}</span>` : ''}</button>`;
-    }).join('')}<button type="button" class="chip" data-act="snapadd">+ Add</button></div>`;
+    }).join('')}${locked ? '' : '<button type="button" class="chip" data-act="snapadd">+ Add</button>'}</div>`;
 
     const when = i === 0
       ? `<div class="snapwhen"><b>Kick-off</b><span class="muted">the starting lineup</span></div>`
+      : locked ? `<div class="snapwhen"><b>${mmss(cur.start)}<small>${esc(halfName(m, Math.floor(cur.start / ((m.periodMinutes || 40) * 60)) + 1))}</small></b></div>`
       : `<div class="snapwhen"><button class="btn quiet sm" data-act="snaptime" data-d="-300" aria-label="5 minutes earlier">−5</button>
           <button class="btn quiet sm" data-act="snaptime" data-d="-60" aria-label="1 minute earlier">−1</button>
           <b>${mmss(cur.start)}<small>${esc(halfName(m, Math.floor(cur.start / ((m.periodMinutes || 40) * 60)) + 1))}</small></b>
@@ -2686,7 +2960,9 @@ function viewPlan() {
         </g></svg>${spots}</div>`;
 
     const selSlot = sel && slotById(m, sel), selP = sel && assign[sel] && P(assign[sel]);
-    const hint = selSlot
+    const hint = locked
+      ? `<div class="snaphint"><span class="muted">Locked in. Tap a time above to look through it; unlock to change anything.</span></div>`
+      : selSlot
       ? `<div class="snaphint"><span>${selP ? `Who replaces <b>${esc(selP.name)}</b> at ${esc(selSlot.label)}? Or tap another spot to swap them.` : `Who plays <b>${esc(selSlot.label)}</b>?`}</span>
           ${selP ? `<button class="btn quiet sm" data-act="snapclear">Leave empty</button>` : ''}</div>`
       : `<div class="snaphint"><span class="muted">Tap a spot, then a player. Tap two spots to swap them.</span></div>`;
@@ -2723,8 +2999,8 @@ function viewPlan() {
     snaps = `<div class="card"><div class="spread" style="margin-bottom:10px"><h2>Snapshots</h2>
         <span class="muted">${esc(m.formation.name || '')}</span></div>
       ${strip}${when}${pitch}${hint}${diff}
-      <div class="row" style="margin-top:10px"><button class="btn quiet sm" data-act="snapadd">Copy to a new snapshot</button>
-        <button class="btn quiet sm" data-act="snapdel">Delete${i === 0 && blocks.length === 1 ? ' plan' : ''}</button>
+      <div class="row" style="margin-top:10px">${locked ? '' : `<button class="btn quiet sm" data-act="snapadd">Copy to a new snapshot</button>
+        <button class="btn quiet sm" data-act="snapdel">Delete${i === 0 && blocks.length === 1 ? ' plan' : ''}</button>`}
         <button class="btn quiet sm" data-act="applyblock" data-start="${cur.start}">Put this on the pitch now</button></div>
       ${list}</div>`;
   }
@@ -2742,6 +3018,7 @@ function viewPlan() {
     <div class="split">
       <div class="stack">
         ${next}
+        ${lockCard}
         ${snaps}
       </div>
       <div class="stack">
@@ -2750,8 +3027,8 @@ function viewPlan() {
           <p class="muted" style="margin-top:0">${m.periodCount || 2} × ${m.periodMinutes || 40} min · ${m.onFieldCount || 11}v${m.onFieldCount || 11}. ${blocks.length ? 'What each player gets if you follow the snapshots, against her target.' : 'Targets are optional — they are what <b>Build one for me</b> aims for.'}</p>
           ${minutesRows}</div>
         <div class="card"><h2 style="margin-bottom:6px">Build one for me</h2>
-          <p class="muted" style="margin-top:0">Drafts a snapshot every ${Number(m.blockMinutes) || 10} minutes or so from the targets, ratings and pairings. ${blocks.length ? 'It replaces the snapshots you have.' : 'Every one of them can be changed afterwards.'}</p>
-          <button class="btn quiet wide" data-act="makeplan">${blocks.length ? 'Redraft the plan' : 'Draft a plan'}</button></div>
+          <p class="muted" style="margin-top:0">Drafts a snapshot every ${Number(m.blockMinutes) || 10} minutes or so from the targets, ratings and pairings. ${locked ? 'Your plan is locked in — unlock it first to redraft.' : blocks.length ? 'It replaces the snapshots you have.' : 'Every one of them can be changed afterwards.'}</p>
+          ${locked ? '' : `<button class="btn quiet wide" data-act="makeplan">${blocks.length ? 'Redraft the plan' : 'Draft a plan'}</button>`}</div>
         <div class="card"><div class="spread">
           <div><h2>Who is unavailable</h2><div class="muted">${Object.keys(m.out || {}).length || 'Nobody'} left out of this game</div></div>
           <button class="btn quiet sm" data-act="availability">Change</button></div></div>
@@ -3182,13 +3459,31 @@ function viewAdmin() {
 }
 
 /* ---------------- ticking ---------------- */
+/* The game screens have all been ui.view === 'game' since the tabs moved inside
+   a game; this used to test for the old top-level names, so it never ran and a
+   clock only moved when something else redrew the page. */
 setInterval(() => {
-  if (!['match', 'live', 'track'].includes(ui.view) || ui.dragging) return;
+  if (ui.view !== 'game' || ui.dragging) return;
   const m = match(); if (!m || !running(m)) return;
   const t = team(); if (!t) return;
   const now = nowMs();
   const c = $('#clock'); if (c) c.textContent = mmss(elapsedSec(m, now));
   const h = $('#halfclock'); if (h) h.textContent = mmss(halfSec(m, now));
+  /* The planned-subs card counts down in place, and redraws when it changes
+     state — "coming up" grows a button, "due" turns loud — with a buzz, since
+     the phone is as likely to be in a pocket as in a hand. */
+  const card = $('#subsdue');
+  if (card) {
+    const s = subsDue(m, now);
+    const k = s ? (s.kind === 'over' ? 'over' : `${s.kind}:${s.b.start}`) : 'none';
+    if (card.dataset.k !== k) {
+      render();
+      if (s && (s.kind === 'due' || s.kind === 'soon')) { try { if (navigator.vibrate) navigator.vibrate([180, 90, 180]); } catch (e) { } }
+      return;
+    }
+    const sc = card.querySelector('[data-subsclock]');
+    if (sc && s && s.b) sc.textContent = subsClock(m, s.b, s.until);
+  }
   for (const p of players(t)) {
     const pl = playedSec(m, p.id, now), pd = plannedSec(m, p.id);
     const a = document.querySelector(`[data-mins="${p.id}"]`);
@@ -3960,8 +4255,55 @@ function savePlan(m, blocks) {
   });
   commit(`matches/${m.id}/plan`, out.length ? { manual: true, blocks: out } : null);
 }
+/* Locking in is two promises to the coach: nothing changes by accident now, and
+   it has really been saved. Every tap on the Plan tab already saves, but a coach
+   who has spent twenty minutes on a plan wants to be told so, and "saved" has to
+   mean the club has it — this session watches the write's own acknowledgement
+   rather than guessing from the sync badge. After a reload there is no
+   acknowledgement to watch, but a lock read back from the database once the
+   workspace has been read came from the club, so that counts too. */
+const lockAck = {};   // matchId -> { at, s: 'sending' | 'saved' | 'refused' }
+function lockPlan(m) {
+  const rec = { at: nowMs(), ...stampedBy() };
+  const path = `matches/${m.id}/plan/locked`;
+  setDeep(state, path, rec); saveLocal();
+  const w = remoteSet(path, rec);
+  if (w && w.then) {
+    lockAck[m.id] = { at: rec.at, s: 'sending' };
+    const settle = s => { const a = lockAck[m.id]; if (a && a.at === rec.at) { a.s = s; render(); } };
+    w.then(() => settle('saved'), () => settle('refused'));
+  }
+  render();
+}
+function lockSaved(m) {
+  const l = m.plan && m.plan.locked;
+  if (!l) return null;
+  const a = lockAck[m.id];
+  if (a && a.at === l.at) return a.s;
+  if (!fb) return 'device';
+  return online && wsRead ? 'saved' : 'sending';
+}
+/* What would go wrong at the sideline if this plan were followed to the letter.
+   A tracker taps once and the app does exactly what the snapshot says, so an
+   empty spot or a player who is out is worth a second look before locking. */
+function planIssues(t, m) {
+  const shape = (m.formation && m.formation.slots) || [];
+  const nm = id => ((t.players || {})[id] || {}).name || 'someone';
+  const out = [];
+  for (const b of planBlocks(m)) {
+    const lab = b.start ? mmss(b.start) : 'Kick-off';
+    const empty = shape.filter(s => !(b.assign || {})[s.id]).length;
+    if (empty) out.push(`${lab}: ${empty} empty spot${empty === 1 ? '' : 's'}`);
+    const gone = (b.ids || []).filter(id => isOut(m, id) || !(t.players || {})[id]);
+    if (gone.length) out.push(`${lab}: ${gone.map(nm).join(', ')} ${gone.length === 1 ? 'is' : 'are'} not available`);
+  }
+  return out;
+}
+
 function snapAction(t, m, a, d) {
   if (!m) return;
+  // looking at another snapshot is not changing it
+  if (planLocked(m) && a !== 'snappick') { toast('The plan is locked in — unlock it to change anything'); return; }
   const shape = (m.formation && m.formation.slots) || [];
   const end = matchMinutes(m) * 60, per = (m.periodMinutes || 40) * 60;
   const blocks = planBlocks(m).map(b => ({ start: b.start, assign: { ...(b.assign || {}) } }));
@@ -4867,7 +5209,8 @@ document.addEventListener('click', e => {
   if (a === 'makeplan') {
     const roster = squad(t, m);
     if (!roster.length) { toast('Add players first'); return; }
-    if (m.plan && m.plan.manual && !confirm('Replace your snapshots with a fresh draft?')) return;
+    if (planLocked(m)) { if (!confirm('Your plan is locked in. Replace it with a fresh draft? That unlocks it.')) return; }
+    else if (m.plan && m.plan.manual && !confirm('Replace your snapshots with a fresh draft?')) return;
     if (!m.planned || !Object.keys(m.planned).length) {
       const each = evenSplit(m, roster), pl = {};
       roster.forEach(p => pl[p.id] = p.gk ? matchMinutes(m) : each);
@@ -4882,21 +5225,56 @@ document.addEventListener('click', e => {
   if (a.startsWith('snap')) { snapAction(t, m, a, d); return; }
   if (a === 'applyblock') {
     const b = planBlocks(m).find(x => String(x.start) === String(d.start)); if (!b) return;
-    const cur = fieldIds(m);
-    const ids = b.ids || [];
-    const goOff = cur.filter(id => !ids.includes(id));
-    const goOn = ids.filter(id => !cur.includes(id));
-    const n = Math.min(goOff.length, goOn.length);
-    for (let i = 0; i < n; i++) swap(m, goOff[i], goOn[i]);
-    for (let i = n; i < goOff.length; i++) takeOffField(m, goOff[i]);
-    for (let i = n; i < goOn.length; i++) putOnField(m, goOn[i], 50, 25 + (i * 9) % 55);
-    for (const [sid, pid] of Object.entries(b.assign || {})) {
-      const sl = slotById(m, sid);
-      if (sl && onField(m, pid)) quiet(`matches/${m.id}/positions/${pid}`, { x: sl.x, y: sl.y, slot: sid });
-    }
-    saveLocal(); render();
+    // if this is the change the sideline card is waiting on, it is now done
+    const due = subsDue(m);
+    const { rec, diff } = applyBlock(m, b);
+    if (due && (due.kind === 'due' || due.kind === 'soon') && due.b.start === b.start)
+      quiet(`matches/${m.id}/planDone/${doneKey(b)}`, { ...rec, at: nowMs(), ...stampedBy() });
+    const n = Math.max(diff.on.length, diff.off.length);
+    saveLocal(); render(); schedulePublish();
     closeSheet(); toast(n + (n === 1 ? ' sub made' : ' subs made')); return;
   }
+  /* The sideline card. A tracker may do exactly this much to who is on the
+     pitch: say that the coach's locked-in change has happened, or has not. The
+     button being drawn only for the right people is not the check — this is. */
+  if (a === 'subsgo' || a === 'subsskip' || a === 'subsundo') {
+    if (!m || !planLocked(m) || !canCallSubs(m)) return;
+    if (a === 'subsundo') {
+      const r = (m.planDone || {})[d.key]; if (!r) return;
+      if (nowMs() - (r.at || 0) > SUB_UNDO_MS || !undoBlock(m, d.key)) { toast('Too late to undo from here — fix it in the match log'); render(); return; }
+      render(); schedulePublish();
+      toast(r.skipped ? 'Back on — the change is due again' : 'Undone — the pitch is back as it was');
+      return;
+    }
+    const s = subsDue(m);
+    if (!s || (s.kind !== 'due' && s.kind !== 'soon') || String(s.b.start) !== String(d.start)) {
+      render();
+      toast(s && s.last && String(s.last.start) === String(d.start) ? 'Already done — nothing more to do' : 'The plan has moved on — have another look');
+      return;
+    }
+    const key = doneKey(s.b), stamp = { at: nowMs(), ...stampedBy() };
+    if (a === 'subsskip') {
+      commit(`matches/${m.id}/planDone/${key}`, { ...stamp, skipped: true });
+      toast('Skipped — nobody was moved');
+      return;
+    }
+    const { rec, diff } = applyBlock(m, s.b);
+    commit(`matches/${m.id}/planDone/${key}`, { ...rec, ...stamp });
+    const n = Math.max(diff.on.length, diff.off.length);
+    toast(!s.b.start ? 'Starting lineup on' : `${n ? `${n} sub${n === 1 ? '' : 's'}` : 'Changes'} made at ${mmss(rec.t)}`);
+    return;
+  }
+  if (a === 'planlock' || a === 'planunlock') {
+    if (!m || restricted() || !canEditTeam(m.teamId) || !planBlocks(m).length) return;
+    if (a === 'planunlock') { drop(`matches/${m.id}/plan/locked`); toast('Unlocked — lock it in again when you are done'); return; }
+    const issues = planIssues(t, m);
+    if (issues.length && !confirm(`Worth a look before locking in:\n\n${issues.join('\n')}\n\nLock it in anyway?`)) return;
+    ui.snapSid = null;
+    lockPlan(m);
+    toast('Plan locked in');
+    return;
+  }
+  if (a === 'opengview') { ui.gameView = d.v; ui.picked = null; render(); return; }
   if (a === 'fillslot') {
     const sl = slotById(m, d.sid); if (!sl) return;
     if (!ui.picked) { toast('Pick a player first'); return; }

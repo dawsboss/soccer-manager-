@@ -148,6 +148,10 @@ const EXPORTS = `{
   posOf, anomalies, squad, isOut, evenSplit, clashesOn, buildPlan, resolveShape,
   presetsFor, slotById, slotIdOf, slotTaken, currentSpot, byRole,
   planBlocks, planBlockAt, nextPlanBlock, planSeconds, snapLabel,
+  /* planned subs at the sideline */
+  planLocked, subsDue, subsUntil, subsWhen, subsDiff, subsClock, subsCard,
+  applyBlock, undoBlock, lockPlan, lockSaved, planIssues, canCallSubs, doneKey,
+  SUB_LEAD, SUB_UNDO_MS,
   /* stats */
   goalList, score, EVENTS, evOf, evLabel, evCount, evList, possOn, shotList,
   shotTally, possMarkers, possession, subEvents,

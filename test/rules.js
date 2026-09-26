@@ -300,6 +300,10 @@ writes('signed out', OUT, 'workspaces/CLUB/teams/t1/name', 'Flight B', false);
 console.log('\n--- a game: whoever works that team, tracker included ---');
 writes('its coach edits the game', COACH, 'workspaces/CLUB/matches/g1/opponent', 'Athletic', true);
 writes('its tracker logs a goal', TRK, 'workspaces/CLUB/matches/g1/goals/x', { t: 60, side: 'us' }, true);
+// the sideline card: a tracker makes the coach's locked-in subs, and marks them done
+writes('its tracker makes the planned subs', TRK, 'workspaces/CLUB/matches/g1/stints/s9', { pid: 'a', on: 600, slot: 'sRB' }, true);
+writes('and marks the change done', TRK, 'workspaces/CLUB/matches/g1/planDone/s600', { t: 600, at: 1, by: 'trk' }, true);
+writes('another team\'s coach cannot', OTHER, 'workspaces/CLUB/matches/g1/planDone/s600', { t: 600 }, false);
 writes('a coach of another team cannot', OTHER, 'workspaces/CLUB/matches/g1/goals/x', { t: 60, side: 'us' }, false);
 writes('a parent cannot', MUM, 'workspaces/CLUB/matches/g1/goals/x', { t: 60, side: 'us' }, false);
 writes('a new game carries the team it belongs to', COACH, 'workspaces/CLUB/matches/g9', { id: 'g9', teamId: 't1' }, true);

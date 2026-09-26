@@ -68,7 +68,7 @@ Fixed, and deliberately not configurable — see the note at the end.
 | App owner | Everything | Everything |
 | Org admin | Every team in the club | Every team |
 | Coach | Every team in the club | Only her own |
-| Tracker | Only teams she tracks | Events on those teams |
+| Tracker | Only teams she tracks | Events on those teams, and the coach's locked-in subs when they are due |
 | Parent | Only teams her child is in | Nothing |
 
 Coaches reading across the club is intentional: comparing against the other age groups is half the value of being in a club rather than a lone team. Editing is another matter, so a coach viewing another team gets a banner saying so.
@@ -182,7 +182,7 @@ Roles are **derived from where a uid appears**, not stored as a string on the us
 | App owner | A list outside the org tree | Support and debugging |
 | Org admin | `orgs/{o}/admins/{uid}` | Create teams, assign coaches, manage members |
 | Coach | `teams/{t}/coaches/{uid}` | Everything for that team |
-| Tracker | `teams/{t}/trackers/{uid}` | Track tab only — no subs, no clock |
+| Tracker | `teams/{t}/trackers/{uid}` | Track tab only — no clock, and no subs beyond the coach's locked-in plan (told when, never who) |
 | Parent | `guardians/{uid}` on any player in the team | Read that team, including names |
 | Public | Holds a share link | Read the published mirror — numbers only |
 
