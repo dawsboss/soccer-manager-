@@ -173,7 +173,10 @@ const EXPORTS = `{
   get denied() { return denied }, set denied(v) { denied = v },
   get purged() { return purged },
   get retiredClubs() { return retiredClubs },
-  get pubState() { return pubState }
+  get pubState() { return pubState },
+  /* invites */
+  get invite() { return invite }, get clubInv() { return clubInv }, get myClubs() { return myClubs },
+  secretId, inviteLink, redeemInvite, makeInvite, inviteScreen
 }`;
 
 const FB_URLS = {
@@ -225,10 +228,11 @@ function loadApp(opts = {}) {
   };
   global.location = {
     reload() { dom.reloads = (dom.reloads || 0) + 1; },
-    hash: opts.hash || '', pathname: '/', search: '', href: 'https://x.test/',
+    hash: opts.hash || '', pathname: '/', search: opts.search || '', href: 'https://x.test/' + (opts.search || ''),
     origin: 'https://x.test'
   };
-  global.history = { replaceState() { } };
+  // what the address bar was rewritten to, so a test can see a parameter taken off it
+  global.history = { replaceState(s, t, url) { dom.replaced = url; } };
   global.navigator = { clipboard: { writeText: () => Promise.resolve() } };
   global.setTimeout = timers.setTimeout;
   global.clearTimeout = timers.clearTimeout;

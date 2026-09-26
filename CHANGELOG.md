@@ -48,6 +48,45 @@ says who plays well together and who is kept apart, all by shirt number. With
 no targets set, it asks for an even share weighted toward whoever is behind on
 the season. `test/ai.js` covers it, and it is held to the same no-names check
 as every other prompt.
+## Joining a club by invite — 2026-09-26
+
+The join-by-code screen went a while ago, ahead of the invite system in
+`AUTH.md`, and nothing replaced it: a brand-new device had no way to find a
+club, and in a locked-down club an account with no role could not read
+anything, so an admin had to wait for the person to sign in on an
+already-connected device before granting a role. Only the app owner's escape
+hatch in Setup could connect anyone.
+
+Invites close that. An admin opens People → *Invite someone*, picks coach,
+tracker or parent (and the player, for a parent), and gets a link. Whoever
+opens it signs in, sees which club and role, and taps Accept; the app spends
+the invite, writes the role and the index entry, and opens the club. Single
+use, 14 days, and optionally tied to one verified email address, in which case
+Firebase can send the sign-in email itself. The admin sees each invite as
+waiting, joined or expired, and can withdraw it.
+
+The rules carry the weight, and the design follows from what they can do. The
+invite lives at the database root because the person accepting it cannot read
+the club yet. The admin's list lives at `clubInvites/{code}`, outside the
+workspace, because every indexed account can read all of the workspace and a
+parent with a list of unspent coach invites could make herself a coach. Each
+write the invitee makes is checked against the spent invite, which means the
+role entries it writes hold the invite id instead of `true` — nothing reads
+them as anything but present. Withdrawing a role deletes the invite it came
+from, and the rules stop honouring a spent invite once it expires, so a
+withdrawn coach cannot re-grant herself from the old link. The invitee may
+mirror herself into `teamIndex` only if the table already exists: writing the
+first entry would close the migration bridge on the whole club.
+
+`userOrgs/{uid}` (AUTH.md's reverse index) comes with it, so the second
+device a coach signs in on opens her club without another invite. Members
+who joined before it pick up their entry on their next connect.
+
+The invite shows club, team and who sent it, and names a player by shirt
+number only — links get forwarded. `test/invites.js` drives both sides against
+the fake Firebase; `test/rules.js` gains the invite paths, including the
+attempts to use one for more than it grants. The three new root blocks are in
+both README rulesets and must be published before invites work.
 
 ## Ask an AI: a prompt generator, not a chatbot — 2026-09-26
 
