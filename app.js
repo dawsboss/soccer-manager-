@@ -2,7 +2,7 @@
    Static app. Data lives in localStorage, and mirrors to Firebase Realtime
    Database when a config + workspace code are present. */
 
-const BUILD = '50';
+const BUILD = '51';
 const BUILT = '2026-09-26';
 /* index.html carries the build it was published with. If this file is newer, the
    browser handed us a cached page — the exact failure that has eaten hours. */
@@ -53,7 +53,10 @@ const PRESETS = {
     S('LS', 'Forward', 38, 23), S('RS', 'Forward', 62, 23)],
     '3-2-3': [S('GK', 'GK', 50, 92), S('LB', 'Back', 22, 76), S('CB', 'Back', 50, 81), S('RB', 'Back', 78, 76),
     S('LCM', 'Mid', 36, 56), S('RCM', 'Mid', 64, 56),
-    S('LW', 'Wing', 20, 27), S('ST', 'Forward', 50, 20), S('RW', 'Wing', 80, 27)]
+    S('LW', 'Wing', 20, 27), S('ST', 'Forward', 50, 20), S('RW', 'Wing', 80, 27)],
+    '2-5-1': [S('GK', 'GK', 50, 92), S('LB', 'Back', 32, 78), S('RB', 'Back', 68, 78),
+    S('LM', 'Wing', 12, 50), S('LCM', 'Mid', 31, 56), S('CM', 'Mid', 50, 60), S('RCM', 'Mid', 69, 56), S('RM', 'Wing', 88, 50),
+    S('ST', 'Forward', 50, 23)]
   },
   7: {
     '2-3-1': [S('GK', 'GK', 50, 92), S('LB', 'Back', 32, 77), S('RB', 'Back', 68, 77),
@@ -1204,6 +1207,26 @@ function resolveShape(t, pick, size) {
   return k ? { name: k, size, slots: clone(presetsFor(size)[k]) } : null;
 }
 
+/* The shape editor works on one of two things: a shape the team keeps, or the
+   copy a single game carries. They are edited the same way but live in
+   different places, and the difference matters — a game's copy is what its
+   spots and plan point at, and changing it must never reach back into the
+   team's saved shape (or the other way round). GAME_SHAPE in ui.editFid means
+   "the open game's own copy". */
+const GAME_SHAPE = '@game';
+function shapeTarget() {
+  const t = team(); if (!t) return null;
+  if (ui.editFid === GAME_SHAPE) {
+    if (restricted() || readOnlyHere()) return null;
+    const m = match();
+    return m && m.teamId === t.id && m.formation ? { game: true, t, m, f: m.formation, path: `matches/${m.id}/formation` } : null;
+  }
+  const f = (t.formations || {})[ui.editFid];
+  return f ? { game: false, t, f, path: `teams/${t.id}/formations/${f.id}` } : null;
+}
+/* A blank shape still needs its keeper: every side size here plays with one. */
+const blankShape = size => ({ name: 'Custom', size, slots: [S('GK', 'GK', 50, 92)] });
+
 function parseTime(str, fallback) {
   const s = String(str || '').trim();
   if (/^\d+:\d{1,2}$/.test(s)) { const [a, b] = s.split(':').map(Number); return a * 60 + b; }
@@ -1479,7 +1502,7 @@ function render() {
   // club admin and account settings are not team-level, so the tab row steps aside
   const teamLevel = ['matches', 'roster', 'season', 'teamset'].includes(ui.view);
   if (ui.view === 'people' && !canAdmin() && !teams().some(x => isCoach(x.id, me && me.uid))) ui.view = 'club';
-  const tabView = ui.view === 'formation' ? 'admin' : inGame ? 'matches' : ui.view;
+  const tabView = ui.view === 'formation' ? (ui.editFid === GAME_SHAPE ? 'matches' : 'admin') : inGame ? 'matches' : ui.view;
   for (const b of document.querySelectorAll('#tabs button')) b.setAttribute('aria-current', String(b.dataset.view === tabView));
   const allowed = lim === 'tracker' ? ['track', 'stats'] : lim === 'parent' ? ['stats'] : ['live', 'track', 'stats', 'pitch', 'plan'];
   if (!allowed.includes(ui.gameView)) ui.gameView = allowed[0];
@@ -2191,6 +2214,8 @@ function viewMatch() {
     <div class="split">
       <div class="stack">
         ${pitch}
+        ${restricted() || readOnlyHere() ? '' : `<div class="spread"><span class="muted">Shape: <b>${esc(m.formation ? m.formation.name : 'none')}</b></span>
+          <button class="btn quiet sm" data-act="editgameshape">${m.formation ? 'Edit shape' : 'Make a shape'}</button></div>`}
         <div class="card"><div class="spread" style="margin-bottom:10px">
           <h2>On the pitch</h2><span class="muted">${field.length} of ${cap}</span></div>
           <div class="plist">${fieldRows}</div></div>
@@ -2560,14 +2585,27 @@ function viewSeason() {
 /* --- formation editor --- */
 function viewFormation() {
   const t = team(); if (!t) return needTeam();
-  const f = (t.formations || {})[ui.editFid];
-  if (!f) return `<div class="empty"><strong>Shape not found</strong><div style="margin-top:14px"><button class="btn" data-act="backsetup">Back to setup</button></div></div>`;
-  const isDefault = (t.defaults || {})[f.size] === f.id;
+  const tg = shapeTarget();
+  if (!tg) return `<div class="empty"><strong>Shape not found</strong><div style="margin-top:14px"><button class="btn" data-act="backsetup">Back</button></div></div>`;
+  const f = tg.f;
+  const isDefault = !tg.game && (t.defaults || {})[f.size] === f.id;
+  /* A spot someone is standing in can still be moved or renamed; removing it
+     only drops the label — the stint, and so her minutes, are untouched. */
+  const inUse = tg.game ? (f.slots || []).filter(x => slotTaken(tg.m, x.id)).length : 0;
+  const foot = tg.game
+    ? `<div class="card"><p class="muted" style="margin:0 0 10px">This shape belongs to this game only. Changing it here never touches the team's saved shapes${inUse ? `, and nobody on the pitch is moved — the ${inUse} spot${inUse === 1 ? '' : 's'} in use just take the new name or place` : ''}.</p>
+        <button class="btn quiet wide" data-act="saveshapeteam">Save a copy as a team shape</button></div>`
+    : `<div class="card"><div class="spread"><span>Use for ${f.size}v${f.size} by default</span>
+      <button class="chip" type="button" data-act="setdefault" data-id="${f.id}" aria-pressed="${isDefault}">${isDefault ? 'Default' : 'Make default'}</button></div>
+      <p class="muted" style="margin:10px 0 0">Changing this shape only affects games you create from now on. Games already played keep the lineup they were played with.</p></div>
+    <button class="btn danger wide" data-act="delformation" data-id="${f.id}">Delete this shape</button>`;
   const toks = (f.slots || []).map(s => `<div class="slotok" data-sid="${s.id}" style="left:${s.x}%;top:${s.y}%">
     <span class="lab">${esc(s.label)}</span><span class="rl">${esc(s.role)}</span></div>`).join('');
   return `<div class="stack">
-    <div class="spread"><button class="btn quiet sm" data-act="backsetup">Back</button>
+    <div class="spread"><button class="btn quiet sm" data-act="backsetup">${tg.game ? 'Back to the game' : 'Back'}</button>
       <span class="muted">${(f.slots || []).length} of ${f.size} spots</span></div>
+    ${tg.game ? `<p class="muted" style="margin:0">Shape for ${esc(tg.m.opponent ? 'vs ' + tg.m.opponent : 'this game')}</p>
+    <div class="chips">${Object.keys(presetsFor(f.size)).map(k => `<button class="chip" type="button" data-act="gameshapepreset" data-k="${k}">Start from ${k}</button>`).join('')}</div>` : ''}
     <label class="field"><span>Name</span><input type="text" id="fName" value="${esc(f.name)}"></label>
     <div class="pitch" id="fpitch">
       <svg class="lines" viewBox="0 0 68 100" preserveAspectRatio="none" aria-hidden="true">
@@ -2579,16 +2617,13 @@ function viewFormation() {
       <div class="pitchhint">Drag a spot to move it · tap to rename</div></div>
     <div class="row"><button class="btn quiet" data-act="addslot">Add a spot</button>
       <button class="btn" data-act="savefname">Save name</button></div>
-    <div class="card"><div class="spread"><span>Use for ${f.size}v${f.size} by default</span>
-      <button class="chip" type="button" data-act="setdefault" data-id="${f.id}" aria-pressed="${isDefault}">${isDefault ? 'Default' : 'Make default'}</button></div>
-      <p class="muted" style="margin:10px 0 0">Changing this shape only affects games you create from now on. Games already played keep the lineup they were played with.</p></div>
-    <button class="btn danger wide" data-act="delformation" data-id="${f.id}">Delete this shape</button>
+    ${foot}
   </div>`;
 }
 
 function sheetSlot(sid) {
-  const t = team(), f = (t.formations || {})[ui.editFid];
-  const s = (f.slots || []).find(x => x.id === sid); if (!s) return;
+  const tg = shapeTarget(); if (!tg) return;
+  const s = (tg.f.slots || []).find(x => x.id === sid); if (!s) return;
   openSheet(`<h3>${esc(s.label)}</h3>
     <label class="field"><span>Label on the pitch</span><input type="text" id="slLabel" value="${esc(s.label)}" placeholder="LB"></label>
     <p class="lbl">Kind of spot</p>
@@ -2877,13 +2912,12 @@ function wireDrag() {
 
 function wireFormationDrag() {
   const pitch = $('#fpitch'); if (!pitch) return;
-  const t = team(), f = t && (t.formations || {})[ui.editFid];
-  if (!f) return;
+  const tg = shapeTarget(); if (!tg) return;
   for (const el of pitch.querySelectorAll('.slotok')) {
     const sid = el.dataset.sid;
     draggable(pitch, el, p => {
-      const slots = (f.slots || []).map(s => s.id === sid ? { ...s, x: p.x, y: p.y } : s);
-      commit(`teams/${t.id}/formations/${f.id}/slots`, slots);
+      const slots = (tg.f.slots || []).map(s => s.id === sid ? { ...s, x: p.x, y: p.y } : s);
+      commit(`${tg.path}/slots`, slots);
     }, () => sheetSlot(sid));
   }
 }
@@ -3383,6 +3417,7 @@ function sheetMatch(m) {
       ${isNew ? '<option value="auto" selected>Team default for this side size</option>'
         : `<option value="keep" selected>Keep ${esc(m.formation ? m.formation.name : 'no shape')}</option>`}
       <option value="none">No shape — place them anywhere</option>
+      <option value="custom">Build my own for this game…</option>
       ${Object.values(t.formations || {}).map(f => `<option value="team:${f.id}">${esc(f.name)} (${f.size}v${f.size}, saved)</option>`).join('')}
       ${[11, 9, 7, 5].map(sz => Object.keys(presetsFor(sz)).map(k => `<option value="preset:${sz}:${k}">${k} (${sz}v${sz})</option>`).join('')).join('')}
     </select></label>
@@ -4225,9 +4260,33 @@ document.addEventListener('click', e => {
     saveLocal(); ui.editFid = id; ui.view = 'formation'; closeSheet(); render(); return;
   }
   if (a === 'editformation') { ui.editFid = d.id; ui.view = 'formation'; closeSheet(); render(); return; }
-  if (a === 'backsetup') { ui.view = 'admin'; ui.editFid = null; render(); return; }
+  if (a === 'backsetup') {
+    if (ui.editFid === GAME_SHAPE) { ui.view = 'game'; ui.gameView = 'pitch'; }
+    else ui.view = 'admin';
+    ui.editFid = null; render(); return;
+  }
+  /* A game's own shape is part of running the game, so it takes the same
+     standing as a sub: a coach of this team, not a tracker or a parent. */
+  if (a === 'editgameshape') {
+    if (!m || restricted() || readOnlyHere()) return;
+    if (!m.formation) commit(`matches/${m.id}/formation`, resolveShape(t, 'auto', m.onFieldCount || 11) || blankShape(m.onFieldCount || 11));
+    ui.editFid = GAME_SHAPE; ui.view = 'formation'; ui.picked = null; closeSheet(); render(); return;
+  }
+  if (a === 'gameshapepreset') {
+    const tg = shapeTarget(); if (!tg || !tg.game) return;
+    const sl = presetsFor(tg.f.size)[d.k]; if (!sl) return;
+    if (!confirm(`Replace this game's shape with a fresh ${d.k}? Anyone on the pitch stays on.`)) return;
+    commit(tg.path, { name: d.k, size: tg.f.size, slots: clone(sl) }); return;
+  }
+  if (a === 'saveshapeteam') {
+    const tg = shapeTarget(); if (!tg || !tg.game) return;
+    const id = uid();
+    commit(`teams/${t.id}/formations/${id}`, { id, name: tg.f.name || 'Custom', size: tg.f.size, slots: clone(tg.f.slots || []) });
+    toast(`Saved to ${t.name || 'the team'}'s shapes`); return;
+  }
   if (a === 'savefname') {
-    commit(`teams/${t.id}/formations/${ui.editFid}/name`, $('#fName').value.trim() || 'Shape');
+    const tg = shapeTarget(); if (!tg) return;
+    commit(`${tg.path}/name`, $('#fName').value.trim() || 'Shape');
     toast('Saved'); return;
   }
   if (a === 'setdefault') {
@@ -4242,21 +4301,21 @@ document.addEventListener('click', e => {
     ui.view = 'setup'; ui.editFid = null; render(); return;
   }
   if (a === 'addslot') {
-    const f = t.formations[ui.editFid];
-    commit(`teams/${t.id}/formations/${f.id}/slots`, [...(f.slots || []), { id: 's' + uid(), label: 'New', role: 'Mid', x: 50, y: 50 }]);
+    const tg = shapeTarget(); if (!tg) return;
+    commit(`${tg.path}/slots`, [...(tg.f.slots || []), { id: 's' + uid(), label: 'New', role: 'Mid', x: 50, y: 50 }]);
     return;
   }
   if (a === 'saveslot') {
-    const f = t.formations[ui.editFid];
+    const tg = shapeTarget(); if (!tg) return;
     const rEl = document.querySelector('[data-act="pickone"][data-grp="role"][aria-pressed="true"]');
     const label = $('#slLabel').value.trim() || 'Spot';
-    commit(`teams/${t.id}/formations/${f.id}/slots`,
-      (f.slots || []).map(x => x.id === d.sid ? { ...x, label, role: rEl ? rEl.dataset.v : x.role } : x));
+    commit(`${tg.path}/slots`,
+      (tg.f.slots || []).map(x => x.id === d.sid ? { ...x, label, role: rEl ? rEl.dataset.v : x.role } : x));
     closeSheet(); return;
   }
   if (a === 'delslot') {
-    const f = t.formations[ui.editFid];
-    commit(`teams/${t.id}/formations/${f.id}/slots`, (f.slots || []).filter(x => x.id !== d.sid));
+    const tg = shapeTarget(); if (!tg) return;
+    commit(`${tg.path}/slots`, (tg.f.slots || []).filter(x => x.id !== d.sid));
     closeSheet(); return;
   }
   if (a === 'closesheet') { closeSheet(); return; }
@@ -4287,13 +4346,17 @@ document.addEventListener('click', e => {
       onFieldCount: side, veoUrl: $('#mVeo').value.trim()
     };
     const pick = $('#mShape').value;
-    if (pick !== 'keep') base.formation = resolveShape(t, pick, side);
-    if (d.id) { commit(`matches/${d.id}`, { ...state.matches[d.id], ...base }); }
+    /* "Build my own" starts from the shape this game would otherwise get, so
+       the coach is nudging spots rather than placing nine from nothing. */
+    if (pick === 'custom') base.formation = resolveShape(t, 'auto', side) || blankShape(side);
+    else if (pick !== 'keep') base.formation = resolveShape(t, pick, side);
+    if (d.id) { commit(`matches/${d.id}`, { ...state.matches[d.id], ...base }); ui.matchId = d.id; }
     else {
       const id = uid();
       commit(`matches/${id}`, { id, teamId: t.id, currentHalf: 1, periods: {}, planned: {}, positions: {}, stints: {}, createdAt: Date.now(), ...base });
       ui.matchId = id; ui.view = 'game'; ui.gameView = 'live';
     }
+    if (pick === 'custom') { ui.editFid = GAME_SHAPE; ui.view = 'formation'; }
     closeSheet(); render(); return;
   }
   if (a === 'delmatch') {
@@ -4374,6 +4437,7 @@ document.addEventListener('keydown', e => { if (e.key === 'Escape') closeSheet()
 function uiToHash() {
   const t = ui.teamId, m = ui.matchId;
   if (ui.view === 'game' && t && m) return `#/team/${t}/game/${m}/${ui.gameView}`;
+  if (ui.view === 'formation' && t && ui.editFid === GAME_SHAPE && m) return `#/team/${t}/game/${m}/shape`;
   if (ui.view === 'formation' && t) return `#/team/${t}/shape/${ui.editFid}`;
   if (['matches', 'roster', 'season', 'teamset'].includes(ui.view) && t) {
     const seg = { matches: 'games', roster: 'squad', season: 'season', teamset: 'planning' }[ui.view];
@@ -4399,6 +4463,7 @@ function hashToUi() {
     if (p[2] === 'game' && p[3]) {
       if (!state.matches[p[3]]) return false;
       ui.matchId = p[3]; ui.view = 'game';
+      if (p[4] === 'shape') { ui.view = 'formation'; ui.editFid = GAME_SHAPE; return true; }
       if (['live', 'track', 'stats', 'pitch', 'plan'].includes(p[4])) ui.gameView = p[4];
       return true;
     }
