@@ -2,7 +2,7 @@
    Static app. Data lives in localStorage, and mirrors to Firebase Realtime
    Database when a config + workspace code are present. */
 
-const BUILD = '53';
+const BUILD = '55';
 const BUILT = '2026-09-26';
 /* index.html carries the build it was published with. If this file is newer, the
    browser handed us a cached page — the exact failure that has eaten hours. */
@@ -4164,6 +4164,58 @@ function aiGameFacts(t, m, lab) {
     + `GOALS\n${goals.join('\n') || '- none'}\n\nSUBSTITUTIONS\n${subs.join('\n') || '- none'}`;
 }
 
+/* Planning is a different question from reviewing, and wants different facts:
+   nothing has happened yet, so "0 min of 39 planned" eleven times over is noise.
+   What a model needs is what the app's own planner reads — the shape, the
+   targets, where each player can play, how long a spell she can manage, who
+   pairs and who is kept apart — plus the season so far, so it can even things
+   out rather than plan the game as if it were the first. */
+function aiPlanFacts(t, m, lab) {
+  const L = id => lab[id] || 'unknown player';
+  const roster = squad(t, m).map(migrate);
+  const ids = new Set(roster.map(p => p.id));
+  const earlier = teamMatches(t.id).filter(x => x.id !== m.id && gameStatus(x) !== 'upcoming');
+  const slots = (m.formation && m.formation.slots) || [];
+  const blocks = planBlocks(m), projected = planSeconds(m);
+  const rows = roster.map(p => {
+    const season = earlier.reduce((n, x) => n + playedSec(x, p.id), 0);
+    const where = p.gk ? 'goalkeeper' : [p.preferred ? 'best at ' + p.preferred : '', (p.canPlay || []).length ? 'also ' + p.canPlay.join('/') : '', p.anywhere === false ? 'only those' : ''].filter(Boolean).join(', ');
+    return `- ${L(p.id)}: my target ${m.planned && m.planned[p.id] != null ? m.planned[p.id] + ' min' : 'not set'}`
+      + `${blocks.length ? `, my plan gives ${mins(projected[p.id] || 0)}` : ''}`
+      + `${where ? '; ' + where : ''}; strength ${rating(p)}/5${p.maxStint ? `; longest spell ${p.maxStint} min` : ''}`
+      + `; ${mins(season)} min over ${earlier.length} earlier game${earlier.length === 1 ? '' : 's'}`;
+  });
+  const link = key => {
+    const seen = new Set(), out = [];
+    for (const p of roster) for (const o of Object.keys(p[key] || {})) {
+      const k = [p.id, o].sort().join('|');
+      if (ids.has(o) && !seen.has(k)) { seen.add(k); out.push(`${L(p.id)} & ${L(o)}`); }
+    }
+    return out.join(', ');
+  };
+  const pairs = link('pairs'), apart = link('avoid');
+  const out = Object.keys(m.out || {}).map(L);
+  /* The coach's own snapshots, whole lineup each time rather than just the
+     changes: a model reasons about "who is on at 20 minutes" far more reliably
+     from the list than by replaying a chain of swaps. */
+  const snaps = blocks.map(b => {
+    const on = Object.entries(b.assign || {}).map(([sid, pid]) => { const sl = slotById(m, sid); return `${sl ? sl.label : '?'} ${L(pid)}`; });
+    const placed = new Set(Object.values(b.assign || {}));
+    for (const id of b.ids || []) if (!placed.has(id)) on.push(L(id));
+    const bench = roster.filter(p => !(b.ids || []).includes(p.id)).map(p => L(p.id));
+    return `- ${snapLabel(m, b.start)}: ${on.join(', ') || 'nobody yet'}${bench.length ? ` | bench ${bench.join(', ')}` : ''}`;
+  });
+  return `GAME: ${m.date || 'no date'} vs ${m.opponent || 'TBC'}${m.kickoff ? ' at ' + m.kickoff : ''}`
+    + `\nFormat: ${aiFormat(m)}${m.formation ? `, formation ${m.formation.name}` : ''}${slots.length ? ` (positions: ${slots.map(x => x.label).join(', ')})` : ''}.`
+    + ` Subs roughly every ${Number(m.blockMinutes) || 10} min.\n\n`
+    + `AVAILABLE SQUAD (${roster.length})\n${rows.join('\n') || '- none'}`
+    + `${out.length ? `\nUnavailable: ${out.join(', ')}` : ''}`
+    + `${pairs ? `\nPlay well together: ${pairs}` : ''}${apart ? `\nKeep apart: ${apart}` : ''}`
+    + (snaps.length ? `\n\nMY PLAN SO FAR (${m.plan && m.plan.manual ? 'my snapshots' : 'an app draft I may change'})\n${snaps.join('\n')}` : '')
+    + (roster.some(p => m.planned && m.planned[p.id] != null) ? ''
+      : '\n\nNo targets are set for this game: share the minutes evenly, giving a little extra to whoever is furthest behind on the season.');
+}
+
 function aiClubFacts() {
   return teams().map(t => {
     const ms = teamMatches(t.id), done = ms.filter(m => gameStatus(m) === 'done');
@@ -4183,6 +4235,7 @@ const AI_TOPICS = {
     ['next', 'Next game', 'Help me plan minutes and positions for our next game so the season evens out. Say who should start and roughly when to rotate.']
   ],
   game: [
+    ['plan', 'Plan this game', 'Help me finish my plan for this game. Start from my targets, my plan so far and my ideas above, and keep my choices unless there is a clear reason not to (say why when you change one). Check it: flag anyone who ends up short of or over their target, anyone past their longest spell, and any block where the shape looks unbalanced. Then fill in the gaps and give me the whole plan as a table, one row per block, showing who is on and where.'],
     ['review', 'Game review', 'Review this game. What went well, what did not, and what should we work on at the next practice?'],
     ['halftime', 'Half-time', 'We are at half-time or a break in this game. Give me three short, practical adjustments and suggest subs that keep minutes on plan.'],
     ['parents', 'Note to parents', 'Write a short, warm note to parents summarising this game. Refer to players only by shirt number so I can fill in names, and keep the focus on effort and the team rather than the result.']
@@ -4193,7 +4246,7 @@ const AI_TOPICS = {
   ]
 };
 
-function aiPrompt(scope, topic) {
+function aiPrompt(scope, topic, ideas) {
   const list = AI_TOPICS[scope];
   const [, , ask] = list.find(x => x[0] === topic) || list[0];
   const t = team(), m = match();
@@ -4201,13 +4254,40 @@ function aiPrompt(scope, topic) {
   const legend = 'Players are identified by shirt number only (or a letter). Minutes are rounded.';
   let facts;
   if (scope === 'club') facts = `TEAMS\n${aiClubFacts()}`;
-  else if (scope === 'game') facts = aiGameFacts(t, m, aiLabels(t));
+  else if (scope === 'game') facts = topic === 'plan' ? aiPlanFacts(t, m, aiLabels(t)) : aiGameFacts(t, m, aiLabels(t));
   else {
     facts = aiSeasonFacts(t, aiLabels(t));
     const next = teamMatches(t.id).filter(x => gameStatus(x) === 'upcoming').pop();
     if (topic === 'next' && next) facts += `\n\nNEXT GAME: ${next.date || 'no date'} vs ${next.opponent || 'TBC'}, ${aiFormat(next)}`;
   }
-  return `${who}. ${legend}\n\n${facts}\n\n${ask}`;
+  const mine = String(ideas || '').trim();
+  return `${who}. ${legend}\n\n${facts}${mine ? `\n\nMY IDEAS\n${mine}` : ''}\n\n${ask}`;
+}
+
+/* A coach writing her ideas will write "Page starts at CB", not "#39 starts at
+   CB". So whatever is about to leave — the ideas box and any edit to the prompt
+   itself — has every roster name swapped for that player's label first: full
+   names before single words, so "Ella Fitzgerald" becomes one "#7" rather than
+   "#7 Fitzgerald". At club level a label would not say which team, so a name
+   there becomes "a player". Over-matching is the safe way round here: a word
+   that happens to be a name ("Page") is replaced rather than let through. */
+function aiScrub(text, scope) {
+  const pool = scope === 'club' ? teams().map(t => [t, null]) : [[team(), aiLabels(team())]];
+  const subs = [];
+  for (const [t, lab] of pool) for (const p of players(t)) {
+    const to = lab ? lab[p.id] : 'a player';
+    const full = String(p.name || '').trim();
+    if (!full) continue;
+    subs.push([full, to]);
+    for (const w of full.split(/\s+/)) if (w.length >= 2) subs.push([w, to]);
+  }
+  subs.sort((a, b) => b[0].length - a[0].length);
+  let n = 0;
+  for (const [from, to] of subs) {
+    const re = new RegExp(`(^|[^\\p{L}\\p{N}])${from.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?![\\p{L}\\p{N}])`, 'giu');
+    text = text.replace(re, (all, pre) => { n++; return pre + to; });
+  }
+  return { text, n };
 }
 
 /* Where the prompt goes once it is copied. Both ?q= links pre-fill the box; the
@@ -4227,21 +4307,35 @@ function sheetAi(scope, topic) {
   const list = AI_TOPICS[scope];
   const tp = list.some(x => x[0] === topic) ? topic : list[0][0];
   ui.ai = { scope, topic: tp };
+  const key = scope === 'game' && match() ? match().id : null;
+  const ideas = key ? ((ui.aiIdeas || {})[key] || '') : '';
   openSheet(`<h3>Ask an AI</h3>
     <p class="muted" style="margin-top:0">Pick a question, copy the prompt, and paste it into your own ChatGPT, Claude or Gemini. The app does not send it anywhere itself.</p>
     <div class="row" style="flex-wrap:wrap;gap:6px;margin-bottom:10px">${list.map(([k, label]) =>
     `<button class="opt" type="button" style="width:auto" data-act="aitopic" data-k="${k}" aria-current="${k === tp}">${esc(label)}</button>`).join('')}</div>
+    ${tp === 'plan' ? `<label class="field"><span>Your ideas — minutes, positions, who plays when</span>
+      <textarea id="aiIdeas" rows="4" placeholder="#7 and #9 split up top. #4 plays the whole first half at CB. Keep #10 fresh for the last 15.">${esc(ideas)}</textarea></label>
+      <p class="muted" style="margin-top:-6px">Names are fine here: they are swapped for shirt numbers before anything is copied. Your snapshots and targets from the Plan tab are already in the prompt.</p>` : ''}
     <label class="field"><span>Prompt — edit or add to it before copying</span>
-      <textarea id="aiPrompt" rows="12" style="font-size:13px">${esc(aiPrompt(scope, tp))}</textarea></label>
+      <textarea id="aiPrompt" rows="12" style="font-size:13px">${esc(aiPrompt(scope, tp, ideas))}</textarea></label>
     <button class="btn wide" data-act="aicopy">Copy prompt</button>
     <div class="muted" style="margin:10px 0 4px">Or copy it and open</div>
     <div class="row" style="gap:6px">${Object.entries(AI_SITES).map(([k, [label]]) =>
       `<button class="btn quiet sm" style="flex:1" data-act="aiopen" data-k="${k}">${label}</button>`).join('')}</div>
-    <p class="muted" style="margin-bottom:0">Players appear as shirt numbers — no names, notes or photos are included. Check before pasting anything you add yourself.</p>`);
+    <p class="muted" style="margin-bottom:0">Players appear as shirt numbers. No names, notes or photos are included, and any name you type is swapped for a number when you copy.</p>`);
 }
 
-function aiCopy(text) {
-  const done = () => toast('Prompt copied — paste it into the chat');
+/* Scrub what is about to be copied, and show the coach the scrubbed version in
+   the box, so what she sees is what left. */
+function aiFinal() {
+  const ta = $('#aiPrompt');
+  const r = aiScrub(ta.value, (ui.ai && ui.ai.scope) || 'team');
+  if (r.n) ta.value = r.text;
+  return r;
+}
+
+function aiCopy(text, swapped) {
+  const done = () => toast(swapped ? `Prompt copied — ${swapped} name${swapped === 1 ? '' : 's'} swapped for shirt numbers` : 'Prompt copied — paste it into the chat');
   const fallback = () => {
     const ta = $('#aiPrompt');
     try { ta.select(); document.execCommand('copy'); done(); } catch (e) { toast('Could not copy — select it by hand'); }
@@ -4932,13 +5026,15 @@ document.addEventListener('click', e => {
   if (a === 'aihelp') {
     const sc = d.scope;
     if (sc === 'club' ? !canAdmin() : (restricted() || !t || (sc === 'game' && !m))) return;
-    sheetAi(sc, (ui.ai && ui.ai.scope === sc && ui.ai.topic) || null); return;
+    // open on the question the game is ready for: before kick-off that is the plan
+    sheetAi(sc, sc === 'game' && gameStatus(m) === 'upcoming' ? 'plan' : sc === 'game' ? 'review' : null); return;
   }
   if (a === 'aitopic') { if (ui.ai) sheetAi(ui.ai.scope, d.k); return; }
-  if (a === 'aicopy') { aiCopy($('#aiPrompt').value); return; }
+  if (a === 'aicopy') { const r = aiFinal(); aiCopy(r.text, r.n); return; }
   if (a === 'aiopen') {
-    const q = $('#aiPrompt').value, site = AI_SITES[d.k]; if (!site) return;
-    aiCopy(q);
+    const site = AI_SITES[d.k]; if (!site) return;
+    const r = aiFinal(), q = r.text;
+    aiCopy(q, r.n);
     // opened inside the tap itself, or a phone treats it as a pop-up and blocks it
     window.open(site[2] && q.length < 6000 ? site[2](q) : site[1], '_blank', 'noopener');
     return;
@@ -4997,6 +5093,15 @@ document.addEventListener('click', e => {
 
 
 
+/* The ideas box writes itself into the prompt as she types, and is kept per game
+   so closing the sheet by accident does not lose a half-written plan. */
+document.addEventListener('input', e => {
+  if (!e.target || e.target.id !== 'aiIdeas' || !ui.ai) return;
+  const m = match(); if (!m) return;
+  ui.aiIdeas = { ...(ui.aiIdeas || {}), [m.id]: e.target.value };
+  const ta = $('#aiPrompt'); if (ta) ta.value = aiPrompt(ui.ai.scope, ui.ai.topic, e.target.value);
+  saveUi();
+});
 $('#scrim').addEventListener('click', closeSheet);
 $('#tabs').addEventListener('click', e => {
   const b = e.target.closest('button'); if (!b) return;
