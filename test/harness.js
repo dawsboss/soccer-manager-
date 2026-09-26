@@ -147,6 +147,7 @@ const EXPORTS = `{
   playedSec, spellSec, restSec, plannedSec, matchMinutes, onField, fieldIds,
   posOf, anomalies, squad, isOut, evenSplit, clashesOn, buildPlan, resolveShape,
   presetsFor, slotById, slotIdOf, slotTaken, currentSpot, byRole,
+  planBlocks, planBlockAt, nextPlanBlock, planSeconds, snapLabel,
   /* stats */
   goalList, score, EVENTS, evOf, evLabel, evCount, evList, possOn, shotList,
   shotTally, possMarkers, possession, subEvents,

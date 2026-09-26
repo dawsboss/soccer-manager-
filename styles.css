@@ -509,3 +509,21 @@ table.grid td.right{text-align:right}
 .chk[data-ok="0"]{color:var(--over)}
 .plainbtn{background:none;border:0;padding:0;color:inherit;font:inherit}
 .avatar.swap{border-radius:9px;background:rgba(255,255,255,.12)}
+
+/* ---------- plan snapshots ---------- */
+.snapstrip{display:flex;gap:6px;overflow-x:auto;padding-bottom:4px;margin-bottom:10px;-webkit-overflow-scrolling:touch}
+.snapstrip .chip{flex:none;white-space:nowrap;font-variant-numeric:tabular-nums}
+.snapgap{
+  display:inline-block;min-width:18px;margin-left:4px;padding:0 5px;border-radius:9px;
+  background:var(--owed);color:#fff;font-size:12px;font-weight:600;text-align:center;
+}
+.snapwhen{display:flex;align-items:center;justify-content:center;gap:6px;margin-bottom:10px}
+.snapwhen .btn.sm{padding:7px 9px}
+.snapwhen b{font-family:"Barlow Condensed",sans-serif;font-size:22px;line-height:1.05;min-width:6ch;text-align:center;font-variant-numeric:tabular-nums}
+.snapwhen b small{display:block;font-family:"Barlow",sans-serif;font-size:11.5px;font-weight:500;color:var(--ink-soft)}
+.snapwhen .muted{font-size:14px}
+.pitch button.token{padding:0;color:var(--ink);cursor:pointer;font:inherit;font-family:"Barlow Condensed",sans-serif}
+.pitch .ghost{cursor:pointer;padding:0}
+.ghost[data-picked="1"]{background:rgba(255,255,255,.35);border-style:solid;outline:3px solid #fff;outline-offset:2px}
+.snaphint{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:10px;font-size:14.5px;min-height:34px}
+.snapdiff{margin-top:8px;padding:8px 10px;border:1px solid var(--line);border-radius:8px;font-size:14.5px;line-height:1.5}
