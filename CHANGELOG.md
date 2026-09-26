@@ -8,6 +8,34 @@ before this point lives only in the git log.
 
 ---
 
+## Ask an AI: a prompt generator, not a chatbot — 2026-09-26
+
+Coaches and admins wanted an AI helper, ideally signed in with their own
+ChatGPT account. Neither half of that can live inside this app. `CLAUDE.md`
+says the app must never call an AI model, and ChatGPT, Claude and Gemini all
+refuse to be embedded in another site (`X-Frame-Options`), so nobody's own
+account can be borrowed from here.
+
+What ships instead is a prompt builder. **Ask an AI** sits at the foot of the
+Season tab, the game's Stats and Plan tabs, and Club admin. It writes out what
+the app knows (season minutes against plan, time by position, goals, assists,
+shots, results, set pieces, a game's subs, or every team for an admin) with
+a question to go with it: season review, playing time, practice plan, next
+game, half-time changes, a note to parents, club overview. The coach can edit
+it, then **Copy**, or **Copy & open** ChatGPT, Claude or Gemini in a new tab.
+ChatGPT and Claude get the prompt pre-filled when it is short enough for a URL.
+Nothing leaves the device unless she pastes it.
+
+Because it is designed to be pasted into a third-party service, it holds to
+the public mirror's contract: players appear as shirt numbers and never as
+names. Notes, photos and parent links are left out, since a note is free text
+and is exactly where a name ends up. Two players sharing a number, or one with
+no number, get a letter each rather than being merged. It is for coaches
+and admins only: the prompt reads out the whole squad's minutes, which
+trackers and parents are not shown, so the click handler checks that as well
+as hiding the button. `test/ai.js` builds every prompt and fails if any roster
+name or note is in it.
+
 ## The game plan gets its own tab — 2026-09-26
 
 The block-by-block game plan ("Plan the game", the next change, the full plan,
