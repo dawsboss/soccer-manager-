@@ -18,6 +18,7 @@ const SUITES = [
   ['version', 'the four build markers agree'],
   ['clock', 'the match clock and minutes played'],
   ['stints', 'who is on the pitch, and the sub actions'],
+  ['plan', 'the Plan tab\'s snapshots of the pitch'],
   ['stats', 'tallies, and what reaches the public tier'],
   ['ai', 'the AI prompt carries numbers, never names'],
   ['roles', 'roles derived from where a uid appears'],
