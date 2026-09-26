@@ -2,7 +2,7 @@
    Static app. Data lives in localStorage, and mirrors to Firebase Realtime
    Database when a config + workspace code are present. */
 
-const BUILD = '61';
+const BUILD = '62';
 const BUILT = '2026-09-26';
 /* index.html carries the build it was published with. If this file is newer, the
    browser handed us a cached page — the exact failure that has eaten hours. */
@@ -2110,10 +2110,13 @@ function takeOffField(m, pid) {
   delDeep(state, `${path}/positions/${pid}`); remoteDel(`${path}/positions/${pid}`);
   saveLocal(); render();
 }
+/* The spot comes from her spell, not from positions: a token dragged before it
+   had a positions entry carries x/y and no slot, and the player coming on would
+   inherit that blank — a keeper subbed in who never counts as one. */
 function swap(m, outPid, inPid) {
-  const pos = posOf(m, outPid);
+  const pos = posOf(m, outPid), sid = slotIdOf(m, outPid);
   takeOffField(m, outPid);
-  putOnField(m, inPid, pos.x, pos.y, pos.slot);
+  putOnField(m, inPid, pos.x, pos.y, sid);
 }
 
 function subEvents(m) {
@@ -2170,13 +2173,13 @@ function stage(item) {
 /* One sub, no render — used when applying a whole batch at a single timestamp. */
 function subQuiet(m, outPid, inPid, t) {
   const path = `matches/${m.id}`;
-  const pos = posOf(m, outPid);
+  const pos = posOf(m, outPid), sid = slotIdOf(m, outPid);
   const open = openStint(m, outPid);
   if (open) quiet(`${path}/stints/${open[0]}/off`, t);
   delDeep(state, `${path}/positions/${outPid}`); remoteDel(`${path}/positions/${outPid}`);
-  quiet(`${path}/positions/${inPid}`, { x: pos.x, y: pos.y, slot: pos.slot || null });
-  const sl = pos.slot ? slotById(m, pos.slot) : null;
-  quiet(`${path}/stints/${uid()}`, { pid: inPid, on: t, slot: pos.slot || null, role: sl ? sl.role : null });
+  quiet(`${path}/positions/${inPid}`, { x: pos.x, y: pos.y, slot: sid || null });
+  const sl = sid ? slotById(m, sid) : null;
+  quiet(`${path}/stints/${uid()}`, { pid: inPid, on: t, slot: sid || null, role: sl ? sl.role : (open && open[1].role) || null });
 }
 
 /* Everything staged goes in at the same second, because it all happened at the
@@ -2335,7 +2338,11 @@ function subAt(m, outPid, inPid, t) {
    fresh spell at 0; everything measured against the old clock has to go. */
 function restartMatch(m) {
   const stints = {};
-  for (const pid of fieldIds(m)) stints[uid()] = { pid, on: 0 };
+  // a fresh spell in the spot she is in now, so her minutes by position count from 0:00
+  for (const pid of fieldIds(m)) {
+    const o = openStint(m, pid)[1];
+    stints[uid()] = { pid, on: 0, slot: o.slot || null, role: o.role || null };
+  }
   // which planned changes were made belongs to the old clock too
   commit(`matches/${m.id}`, { ...m, periods: {}, currentHalf: 1, stints, goals: null, planDone: null });
 }
@@ -4947,6 +4954,25 @@ function sheetAddSub() {
     <button class="btn wide" data-act="doaddsub">Record it</button>`);
 }
 
+/* Where a spell was played, as the Fix minutes sheet offers it: the game's own
+   spots, or a bare role when the spot is not in the shape any more. A spell
+   saved before a spot was kept with it has neither, and this is the only way to
+   give it one back — minutes by position read nothing else. 'none' rather than
+   '' for no spot, so a select that is not on the page reads as "leave it". */
+function spotOptions(m, s) {
+  const slots = (m.formation && m.formation.slots) || [];
+  const cur = s.slot && slotById(m, s.slot) ? 'slot:' + s.slot : s.role ? 'role:' + s.role : 'none';
+  const opt = (v, label) => `<option value="${esc(v)}"${v === cur ? ' selected' : ''}>${esc(label)}</option>`;
+  return opt('none', 'Position not recorded')
+    + slots.map(x => opt('slot:' + x.id, x.label + (x.label !== x.role ? ' · ' + x.role : ''))).join('')
+    + ROLES.filter(r => !slots.some(x => x.role === r) || cur === 'role:' + r).map(r => opt('role:' + r, r + ' (any spot)')).join('');
+}
+function spotFrom(m, v, was) {
+  if (!v) return { slot: was.slot || null, role: was.role || null };
+  if (v.startsWith('slot:')) { const sl = slotById(m, v.slice(5)); return { slot: sl ? sl.id : null, role: sl ? sl.role : null }; }
+  if (v.startsWith('role:')) return { slot: null, role: v.slice(5) };
+  return { slot: null, role: null };
+}
 function sheetFixMinutes(pid) {
   const t = team(), m = match();
   if (!pid) {
@@ -4966,7 +4992,8 @@ function sheetFixMinutes(pid) {
       <span class="muted">to</span>
       <input type="text" style="flex:1" data-soff="${sid}" value="${s.off == null ? '' : mmss(s.off)}" placeholder="still on" inputmode="numeric">
       <button class="btn danger sm" data-act="delstint" data-sid="${sid}">Delete</button>
-    </div>`).join('') || '<p class="muted">She has not been on yet.</p>'}
+    </div>
+    <div class="row" style="margin:-2px 0 12px"><select style="flex:1" data-sspot="${sid}">${spotOptions(m, s)}</select></div>`).join('') || '<p class="muted">She has not been on yet.</p>'}
     <button class="btn wide" data-act="savestints" data-pid="${pid}" style="margin-top:6px">Save spells</button>
     <div style="margin-top:8px"><button class="btn quiet wide" data-act="addstint" data-pid="${pid}">Add a spell she was on for</button></div>
     <p class="muted" style="margin:8px 0 0">Times are minutes into the game, like 23:10. Now is ${mmss(e)}.</p>`);
@@ -5943,7 +5970,11 @@ document.addEventListener('click', e => {
       const on = clamp(parseTime(inp.value, 0), 0, e);
       const raw = offEl.value.trim();
       const off = raw === '' ? null : clamp(parseTime(raw, e), on, e);
-      quiet(`matches/${m.id}/stints/${sid}`, { pid: d.pid, on, off });
+      // the spot rides along with the times unless it was changed here, or every
+      // spell saved on this sheet stops counting towards minutes by position
+      const was = (m.stints || {})[sid] || {};
+      const spotEl = document.querySelector(`[data-sspot="${sid}"]`);
+      quiet(`matches/${m.id}/stints/${sid}`, { pid: d.pid, on, off, ...spotFrom(m, spotEl && spotEl.value, was) });
     }
     saveLocal(); closeSheet(); render(); toast('Minutes updated'); return;
   }

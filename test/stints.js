@@ -360,4 +360,75 @@ console.log('\n--- a game can carry, and edit, a shape of its own ---');
   check('back returns to the game, not club settings', A.ui.view + ':' + A.ui.gameView, 'game:pitch');
 }
 
+console.log('\n--- fixing minutes by hand keeps the spot she played them in ---');
+{
+  /* Found as "she was in goal for 30 and it says 19": every path below rewrote a
+     spell without its slot, so the time fell out of minutes-by-position while
+     the pitch, which falls back to positions, still drew her in goal. */
+  const gk = m => A.byRole(m, 'p5').GK || 0;
+
+  // Fix minutes -> Save spells, times untouched
+  let m = setup();
+  const doc = A.dom.document, qsa = doc.querySelectorAll;
+  doc.querySelectorAll = sel => sel === '[data-son]' ? [{ dataset: { son: 's5' }, value: '0:00' }] : [];
+  A.dom.node('[data-soff="s5"]').value = '';
+  A.click({ act: 'savestints', pid: 'p5' });
+  doc.querySelectorAll = qsa;
+  m = A.state.matches.g1;
+  check('saving her spells keeps her in goal', m.stints.s5.slot, 'sGK');
+  check('and her 20 minutes still count at GK', gk(m), 20 * 60);
+
+  // Start this game over: the spells restart at 0:00 in the same spots
+  m = setup();
+  const conf = global.confirm; global.confirm = () => true;
+  A.click({ act: 'restartgame' });
+  global.confirm = conf;
+  m = A.state.matches.g1;
+  const kept = A.openStint(m, 'p5');
+  check('a restarted game keeps the keeper in goal', kept && kept[1].slot, 'sGK');
+  check('as a GK spell, not an unassigned one', kept && kept[1].role, 'GK');
+
+  // A keeper whose token was dragged before it had a positions entry carries
+  // x/y and no slot; the keeper coming on for her must still count as one
+  m = setup();
+  m.positions.p5 = { x: 48, y: 90 };
+  A.swap(m, 'p5', 'p4');
+  m = A.state.matches.g1;
+  H.clock.set(T0 + 10 * MIN);
+  check('a keeper subbed on takes the spot from the spell', A.slotIdOf(m, 'p4'), 'sGK');
+  check('and her ten minutes count in goal', A.byRole(m, 'p4').GK, 10 * 60);
+}
+
+console.log('\n--- a spell saved without its spot can be given one back ---');
+{
+  const gk = m => A.byRole(m, 'p5').GK || 0;
+  const save = (spot) => {
+    const doc = A.dom.document, qsa = doc.querySelectorAll;
+    doc.querySelectorAll = sel => sel === '[data-son]' ? [{ dataset: { son: 's5' }, value: '0:00' }] : [];
+    A.dom.node('[data-soff="s5"]').value = '';
+    A.dom.node('[data-sspot="s5"]').value = spot;
+    A.click({ act: 'savestints', pid: 'p5' });
+    doc.querySelectorAll = qsa;
+    A.dom.node('[data-sspot="s5"]').value = '';
+    return A.state.matches.g1;
+  };
+  // what an old Save spells left behind
+  let m = setup({ stints: { ...setup().stints, s5: { pid: 'p5', on: 0 } } });
+  check('a spell with no spot counts nowhere', gk(m), 0);
+  A.click({ act: 'fixminutes', pid: 'p5' });
+  const sheet = A.rendered('#sheet');
+  check('her sheet offers a position for the spell', sheet.includes('data-sspot="s5"'), true);
+  check('and says it was not recorded', /value="none" selected/.test(sheet), true);
+  m = save('slot:sGK');
+  check('picking GK puts the spell back in goal', m.stints.s5.slot + ':' + m.stints.s5.role, 'sGK:GK');
+  check('and her 20 minutes count at GK again', gk(m), 20 * 60);
+  A.click({ act: 'fixminutes', pid: 'p5' });
+  check('the sheet now shows GK chosen', /value="slot:sGK" selected/.test(A.rendered('#sheet')), true);
+  m = save('role:Mid');
+  check('a bare role can be chosen too', A.byRole(m, 'p5').Mid, 20 * 60);
+  m = save('none');
+  check('and "not recorded" clears it', gk(m) + (A.byRole(m, 'p5').Mid || 0), 0);
+  check('none of which touches her minutes', A.playedSec(m, 'p5'), 20 * 60);
+}
+
 H.summary('stints and the sub actions');
