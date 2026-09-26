@@ -39,6 +39,74 @@ adds whatever the club is missing and keeps everything already here.
 `test/import.js` covers the lot, including that only an admin gets in: the
 click handler checks, not just the hidden button.
 
+## The tap on the planned-subs card is in the match log — 2026-09-26
+
+Tapping **Subs are on** already put the subs it made in the Track tab's match
+log, by name ("Hana on for Bea"). But nothing there said it was the planned
+10:00 change or who called it, and **Not now** left no trace at all, because
+a skip makes no subs to list. The tap now gets its own line: **Planned subs
+made** (10:00 · 1st half) · Tess, above the subs it made, or **Planned subs
+skipped** for a skip. A skip now records the game minute it was tapped, so it
+lands in the right place. The line goes away with Undo, like the subs do. It
+is read-only in the log; Undo stays on the card.
+
+## Tell the bench: the plan as calls to make — 2026-09-26
+
+A snapshot is a picture of the pitch, but at the sideline a coach doesn't
+hold up a picture. They tell the players on the bench who is going on, where,
+and for whom, and who is switching spots. Working that out from two pitches
+in your head, in the rain, is where subs go wrong.
+
+The coach's sideline card now shows each change that way: **Going on** (the
+spot, the player, "for Bea"), **Switching spots** (the new spot, "from CB"), and
+**Coming off**. Kick-off shows the starting lineup spot by spot, with the
+bench under it. **Tell the bench** opens the same thing in bigger type with
+**Copy as a message**, to text to whoever is standing with the subs. It is also
+on the Pitch and Plan tabs' next-change card and on every snapshot. **Bench
+sheet** (on the locked-in plan, or **Whole game** from any bench view) lists
+every change in the game, to read through at warm-up or send the night
+before.
+
+During a game the calls start from the pitch as it is, not from the snapshot
+before, since the coach may have subbed by hand in between. Before kick-off,
+and in the whole-game sheet, they go snapshot to snapshot, since the pitch at
+30:00 is not known yet. When someone comes on into a spot a teammate is moving
+out of, they are paired with whoever is coming off, so every call still has a
+"for". The calls name players, so like the Plan tab they are for coaches only.
+The tracker's card still names nobody, and the click handler refuses a
+tracker the sheet and the copy.
+
+## A coach reads other teams, and only coaches change the squad — 2026-09-26
+
+A coach opening another age group in her club got her own coach's screens
+there: the clock, subs, the plan, Add a game, Add a player, every edit sheet.
+`canEditTeam()` already knew she could not change that team, and a banner said
+so, but nothing that drew a screen or handled a tap asked it. The same gap let
+a tracker (and, from a stale screen, a parent) add players to the squad and
+games to the fixture list.
+
+On a team she does not coach, a coach is now a **viewer**: `restricted()`
+returns `'viewer'`, so she gets what a parent gets on a game (Stats only, no
+tally buttons, no AI helper) and the "you can read it, not change it" banner.
+The squad shows read-only, with no Add card and no edit sheet; the games list
+and every "no games yet" screen drop **Add a game**; Track hides **Choose** for
+anyone who cannot change the team's settings; the share sheet lets her copy the
+parent links but not make, kill or republish them.
+
+A hidden button is not the only thing in the way any more. The click handler
+checks `mayAct()` first: the squad, the fixture list, the team's settings, the
+clock, the lineup and the plan need a coach of that team (or an admin), and
+logging goals, shots and set pieces needs that or the team's tracker. A game
+answers to its own team, not whichever team happens to be open. Anyone else is
+told only the team's coaches can change it, and nothing is written.
+
+This is the interface. The rules already refuse a coach writing another team
+through `access/teamIndex`; `node test/rules.js` lists what they still do not.
+`test/visibility.js` now pins each case above, including that a tracker can
+still log a goal in her own team's game and cannot start its clock.
+
+---
+
 ## Lock in the plan; the tracker calls the subs — 2026-09-26
 
 The Plan tab saved on every tap, but nothing said so, and a coach who has spent

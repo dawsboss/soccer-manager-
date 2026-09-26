@@ -2,7 +2,7 @@
    Static app. Data lives in localStorage, and mirrors to Firebase Realtime
    Database when a config + workspace code are present. */
 
-const BUILD = '57';
+const BUILD = '59';
 const BUILT = '2026-09-26';
 /* index.html carries the build it was published with. If this file is newer, the
    browser handed us a cached page — the exact failure that has eaten hours. */
@@ -611,7 +611,7 @@ function roleIn(tid, uid) {
   if (isGuardian(tid, uid)) return 'parent';
   return null;
 }
-const ROLE_LABEL = { owner: 'App owner', admin: 'Org admin', coach: 'Coach', tracker: 'Tracker', parent: 'Parent' };
+const ROLE_LABEL = { owner: 'App owner', admin: 'Org admin', coach: 'Coach', tracker: 'Tracker', parent: 'Parent', viewer: 'Viewer' };
 
 /* Whoever looks after the app itself. Read from the database root, never from
    this file — a personal email committed to a public repo gets scraped, sticks
@@ -776,6 +776,10 @@ function canEditTeam(tid) {
   return canAdmin() || isCoach(tid, me.uid);
 }
 const readOnlyHere = () => !canEditTeam(ui.teamId);
+/* The squad and the fixture list are the coach's. A tracker logs a game and a
+   parent reads one; neither adds a player or a game, and nor does a coach of
+   another age group. The button is only drawn for whoever may press it. */
+const addGameBtn = cls => readOnlyHere() ? '' : `<button class="${cls}" data-act="newmatch">Add a game</button>`;
 
 /* My role here. Nobody is locked out by an empty membership list: until someone
    is actually given a role, everyone keeps the access they have today. */
@@ -783,11 +787,57 @@ function myRole() {
   if (!me) return null;
   return roleIn(ui.teamId, me.uid);
 }
+/* Tracker and parent are roles; 'viewer' is not — it is what a coach is on
+   every team that is not hers. myTeams() lets her read the rest of the club,
+   and without this she read it through her own coach's screens: clock, subs,
+   plan, Add a game, Add a player, all offered on a team she has no say in.
+   canEditTeam() already knew the answer; nothing that draws a screen asked it.
+   Folding it in here means every place that already narrows the interface for
+   a restricted account narrows it for her too. */
 const restricted = () => {
   if (isOwner()) return null;
   const r = myRole();
-  return r === 'tracker' || r === 'parent' ? r : null;
+  if (r === 'tracker' || r === 'parent') return r;
+  return me && !canEditTeam(ui.teamId) ? 'viewer' : null;
 };
+
+/* The click handler's own check, so a hidden button is not the only thing
+   standing between an account and a write — a stale screen, a sheet left open
+   while roles changed, or a tab restored from the last session can all still
+   put one under a finger. Two kinds of action, because a tracker holds exactly
+   one of them: the squad, the fixture list, the clock, the lineup and the plan
+   are the coach's; logging what happened is the tracker's too. Parents and
+   coaches of other teams hold neither. The rules are the real line, and
+   `node test/rules.js` says where they still fall short of this. */
+const COACH_ACTS = new Set([
+  // the squad
+  'addplayer', 'editplayer', 'saveplayer', 'delplayer', 'pickphoto', 'dropphoto', 'toggleguard',
+  // the fixture list
+  'newmatch', 'editmatch', 'savematch', 'delmatch',
+  // the team's own settings
+  'editteam', 'saveteam', 'picklogo', 'droplogo', 'setpossmin', 'trackcfg', 'savetrackcfg',
+  'formations', 'newformation', 'saveshapeteam', 'savefname', 'setdefault', 'delformation',
+  'addslot', 'saveslot', 'delslot', 'makeshare', 'rotateshare', 'republish',
+  // running the game: clock, subs, lineup, plan
+  'tap', 'taplive', 'puton', 'doswitch', 'stageadd', 'startplan', 'applyplan', 'applyblock', 'fillslot',
+  'start', 'pause', 'endhalf', 'endgame', 'reopengame', 'restartgame', 'fixclock', 'nudgeclock',
+  'fixsub', 'nudgesub', 'setsubtime', 'addsub', 'doaddsub', 'fixminutes', 'addstint', 'delstint', 'savestints',
+  'repair', 'makeplan', 'planall', 'saveplan', 'evensplit', 'availability', 'toggleavail', 'toggleout',
+  'editgameshape', 'gameshapepreset', 'planlock', 'planunlock',
+  'snapstart', 'snapadd', 'snapdel', 'snaptime', 'snapslot', 'snapclear', 'snapplayer'
+]);
+const LOG_ACTS = new Set([
+  'goal', 'savegoal', 'delgoal', 'shot', 'saveshot', 'delshot', 'ev', 'saveev', 'delev',
+  'poss', 'saveposs', 'delposs', 'undoposs', 'trackerclean', 'dropby'
+]);
+function mayAct(a, m) {
+  const coach = COACH_ACTS.has(a), log = LOG_ACTS.has(a);
+  if (!coach && !log) return true;
+  // an action on a game answers to that game's team, whichever team is open
+  const tid = m && m.teamId && !['newmatch', 'addplayer', 'editplayer', 'saveplayer', 'delplayer'].includes(a) ? m.teamId : ui.teamId;
+  if (canEditTeam(tid)) return true;
+  return log && !!me && isTracker(tid, me.uid);
+}
 
 /* ---------------- invites ---------------- */
 /* How somebody new gets into a club. The workspace code stopped being
@@ -2351,7 +2401,7 @@ function render() {
   if (ui.view === 'people' && !canAdmin() && !teams().some(x => isCoach(x.id, me && me.uid))) ui.view = 'club';
   const tabView = ui.view === 'formation' ? (ui.editFid === GAME_SHAPE ? 'matches' : 'admin') : inGame ? 'matches' : ui.view;
   for (const b of document.querySelectorAll('#tabs button')) b.setAttribute('aria-current', String(b.dataset.view === tabView));
-  const allowed = lim === 'tracker' ? ['track', 'stats'] : lim === 'parent' ? ['stats'] : ['live', 'track', 'stats', 'pitch', 'plan'];
+  const allowed = lim === 'tracker' ? ['track', 'stats'] : lim === 'parent' || lim === 'viewer' ? ['stats'] : ['live', 'track', 'stats', 'pitch', 'plan'];
   if (!allowed.includes(ui.gameView)) ui.gameView = allowed[0];
   for (const b of document.querySelectorAll('#subtabs button')) {
     b.hidden = !allowed.includes(b.dataset.gview);
@@ -2366,9 +2416,9 @@ function render() {
   if (inviting) { app.innerHTML = inviteScreen(); saveUi(); return; }
   if (purged) { app.innerHTML = purgedScreen(); saveUi(); return; }
   if (denied || needsSignIn()) { app.innerHTML = lockScreen(); saveUi(); return; }
-  const roNote = !lim && readOnlyHere() && team()
+  const roNote = lim === 'viewer' && team()
     ? `<div class="rolebar">Viewing <b>${teamLabel(team())}</b> from another team in the club. You can read it, not change it.</div>` : '';
-  const roleNote = lim
+  const roleNote = lim && lim !== 'viewer'
     ? `<div class="rolebar">Signed in as <b>${esc(ROLE_LABEL[lim])}</b> — ${lim === 'tracker' ? "you can log events and make the coach's planned subs when they are due, but not run the clock or make other subs" : 'you can read, not change'}.</div>`
     : '';
   /* Never let a rehearsal pass for the real thing. Both facts are worth saying
@@ -2582,7 +2632,7 @@ function sheetPickGame() {
       <span class="pmins">${sc.us}<small>–${sc.them}</small></span></button>
 `;
   }).join('') || '<p class="muted">No games yet.</p>'}
-    <button class="btn wide" data-act="newmatch">Add a game</button>`);
+    ${addGameBtn('btn wide')}`);
 }
 
 function anomalyBanner(t, m) {
@@ -2654,6 +2704,20 @@ function timeline(t, m) {
     rows.push({ t: x.t, g: 'set', act: 'fixev', id, h: `${esc(evLabel(x.kind).replace(/s$/, ''))} ${side(x.side)}${x.pid ? ' — ' + nm(x.pid) : ''}${who(x)}` });
   for (const [id, x] of Object.entries(m.poss || {}))
     rows.push({ t: x.t, g: 'poss', act: 'fixposs', id, h: `Turnover — ${side(x.to)} won it${x.pid ? ' — ' + nm(x.pid) : ''}${who(x)}` });
+  /* A tap on the planned-subs card, as its own line: which planned change it
+     was, and who said so. The subs it made follow it by name (it is pushed
+     first, and the sort keeps ties in order); a skip made none, so without this
+     line it would leave no trace at all. Not editable here — Undo is on the card. */
+  for (const [key, x] of Object.entries(m.planDone || {})) {
+    const start = Number(String(key).slice(1));
+    if (!x || isNaN(start)) continue;
+    const when = start ? esc(snapLabel(m, start)) : null;
+    rows.push({
+      t: x.t != null ? x.t : secFromAbs(m, x.at || 0), g: 'sub', id: key, fixed: true,
+      h: `<b>${when ? 'Planned subs' : 'Starting lineup'} ${x.skipped ? 'skipped' : when ? 'made' : 'on'}</b> `
+        + `<span class="muted">(${when || 'from the plan'})</span>${who(x)}`
+    });
+  }
   subEvents(m).forEach((r, i) => rows.push({
     t: r.t, g: 'sub', act: 'fixsub', id: String(i),
     h: r.move ? `${nm(r.on)} moved to <span class="on">${esc(r.spot || 'a new spot')}</span>`
@@ -2669,7 +2733,7 @@ function viewTrack() {
   let m = match();
   if (!m || m.teamId !== t.id) { const l = teamMatches(t.id); m = l[0] || null; ui.matchId = m ? m.id : null; }
   if (!m) return `<div class="empty"><strong>No game yet</strong>Create a game first.
-    <div style="margin-top:14px"><button class="btn" data-act="newmatch">Add a game</button></div></div>`;
+    ${readOnlyHere() ? '' : `<div style="margin-top:14px">${addGameBtn('btn')}</div>`}</div>`;
 
   const now = nowMs();
   const name = id => { const p = (t.players || {})[id]; return p ? esc(p.name) : 'Unknown'; };
@@ -2700,20 +2764,22 @@ function viewTrack() {
       ${[['all', 'All'], ['goal', 'Goals'], ['shot', 'Shots'], ['set', 'Set pieces'], ['sub', 'Subs'], ['poss', 'Turnovers']]
       .map(([k, l]) => `<button class="chip" type="button" data-act="logfilter" data-v="${k}" aria-pressed="${F === k}">${l}</button>`).join('')}
     </div>
-    ${shown.length ? `<div class="log">${shown.slice(0, 40).map(r => `<button type="button" data-act="${r.act}" data-id="${r.id}" data-i="${r.id}">
+    ${shown.length ? `<div class="log">${shown.slice(0, 40).map(r => r.fixed
+      ? `<div class="logrow"><span class="t">${mmss(r.t)}</span><span>${r.h}</span><span></span></div>`
+      : `<button type="button" data-act="${r.act}" data-id="${r.id}" data-i="${r.id}">
       <span class="t">${mmss(r.t)}</span><span>${r.h}</span><span class="muted">edit</span></button>`).join('')}</div>
       ${shown.length > 40 ? `<p class="muted" style="margin-bottom:0">Showing the last 40 of ${shown.length}.</p>` : ''}`
       : '<p class="muted" style="margin:0">Nothing logged yet.</p>'}</div>`;
 
   const rows = tracked(t);
   const setCard = `<div class="card"><div class="spread" style="margin-bottom:10px">
-      <h2>Set pieces and fouls</h2><button class="btn quiet sm" data-act="trackcfg">Choose</button></div>
+      <h2>Set pieces and fouls</h2>${canEditTeam(t.id) ? '<button class="btn quiet sm" data-act="trackcfg">Choose</button>' : ''}</div>
     ${rows.length ? `<div class="tallygrid">
       <span></span><span class="tallyhead">${us}</span><span class="tallyhead">${them}</span>
       ${rows.map(e => `<span class="tallylbl">${e.label}<span class="conv">${e.who}</span></span>
         <button class="tallybtn" data-act="ev" data-kind="${e.k}" data-side="us"><b>${evCount(m, e.k, 'us')}</b><span>tap</span></button>
         <button class="tallybtn" data-act="ev" data-kind="${e.k}" data-side="them"><b>${evCount(m, e.k, 'them')}</b><span>tap</span></button>`).join('')}
-    </div>` : '<p class="muted" style="margin:0">Nothing switched on. Tap Choose to pick what you want to count.</p>'}
+    </div>` : `<p class="muted" style="margin:0">Nothing switched on. ${canEditTeam(t.id) ? 'Tap Choose to pick what you want to count.' : "The team's coach picks what to count."}</p>`}
 </div>`;
 
   const who = whoAmI();
@@ -2846,7 +2912,7 @@ function viewLive() {
   let m = match();
   if (!m || m.teamId !== t.id) { const l = teamMatches(t.id); m = l[0] || null; ui.matchId = m ? m.id : null; }
   if (!m) return `<div class="empty"><strong>No game yet</strong>Create a game to start tracking minutes.
-    <div style="margin-top:14px"><button class="btn" data-act="newmatch">Add a game</button></div></div>`;
+    ${readOnlyHere() ? '' : `<div style="margin-top:14px">${addGameBtn('btn')}</div>`}</div>`;
 
   const now = nowMs();
   const el = elapsedSec(m, now);
@@ -2985,7 +3051,7 @@ function viewMatch() {
   let m = match();
   if (!m || m.teamId !== t.id) { const l = teamMatches(t.id); m = l[0] || null; ui.matchId = m ? m.id : null; }
   if (!m) return `<div class="empty"><strong>No game yet</strong>Create a game to start tracking minutes.
-    <div style="margin-top:14px"><button class="btn" data-act="newmatch">Add a game</button></div></div>`;
+    ${readOnlyHere() ? '' : `<div style="margin-top:14px">${addGameBtn('btn')}</div>`}</div>`;
 
   const roster = squad(t, m);
   const now = nowMs();
@@ -3092,6 +3158,126 @@ function viewMatch() {
     </div></div>`;
 }
 
+/* ---------------- telling the bench ----------------
+   A plan is pictures of the pitch, but what a coach actually says at the bench
+   is a list of calls: "Hana, on at left back for Bea. Cleo, over to left mid.
+   Bea and Gia, you're coming off." This turns two lineups into exactly that, so
+   it can be read out, or copied to whoever is standing with the subs.
+
+   Both sides are { assign: spot → player, ids }. During a game `from` is the
+   pitch as it really is — the coach may have subbed by hand since the plan was
+   drawn, and the calls have to get from here to there, not from the snapshot
+   before. Before kick-off it is the snapshot before, or nothing at all, which
+   makes the calls a starting lineup. */
+function pitchNow(m) {
+  const assign = {};
+  for (const pid of fieldIds(m)) {
+    const sid = slotIdOf(m, pid);
+    if (sid && slotById(m, sid) && !assign[sid]) assign[sid] = pid;
+  }
+  return { assign, ids: fieldIds(m) };
+}
+function benchCalls(m, from, to) {
+  const fa = (from && from.assign) || {}, ta = to.assign || {};
+  const fIds = from ? (from.ids && from.ids.length ? from.ids : Object.values(fa)) : [];
+  const tIds = to.ids && to.ids.length ? to.ids : Object.values(ta);
+  const spotIn = (a, pid) => Object.keys(a).find(k => a[k] === pid) || null;
+  const slots = (m.formation && m.formation.slots) || [];
+  const order = sid => { const i = slots.findIndex(s => s.id === sid); return i < 0 ? slots.length : i; };
+  const off = fIds.filter(p => !tIds.includes(p));
+  const on = tIds.filter(p => !fIds.includes(p)).map(pid => {
+    const sid = spotIn(ta, pid), was = sid ? fa[sid] : null;
+    return { pid, sid, for: was && off.includes(was) ? was : null };
+  }).sort((a, b) => order(a.sid) - order(b.sid));
+  /* Coming on into a spot a teammate moved out of is still coming on for
+     somebody: pair what is left over, in order, so every call has a "for". */
+  const paired = new Set(on.map(x => x.for).filter(Boolean));
+  const spare = off.filter(p => !paired.has(p));
+  for (const x of on) if (!x.for && spare.length) x.for = spare.shift();
+  const moves = tIds.filter(p => fIds.includes(p))
+    .map(pid => ({ pid, from: spotIn(fa, pid), to: spotIn(ta, pid) }))
+    .filter(x => x.to && x.from !== x.to)
+    .sort((a, b) => order(a.to) - order(b.to));
+  return { on, off, moves, kickoff: !fIds.length };
+}
+/* Where the calls for one snapshot start from: the pitch, once anyone is on it. */
+function benchFrom(m, b) {
+  if (fieldIds(m).length) return pitchNow(m);
+  const bl = planBlocks(m), i = bl.findIndex(x => x.start === b.start);
+  return i > 0 ? bl[i - 1] : null;
+}
+const benchName = (t, pid) => {
+  const p = (t.players || {})[pid];
+  if (!p) return 'someone';
+  return p.number != null && p.number !== '' ? `${p.name} (${p.number})` : p.name;
+};
+const spotName = (m, sid) => { const s = sid && slotById(m, sid); return s ? s.label : null; };
+
+/* The same calls twice over: once to look at, big enough to read in the rain,
+   and once as plain text to paste into a message. */
+function benchHtml(t, m, c, squadIds) {
+  const nm = pid => esc(benchName(t, pid));
+  const row = (spot, main, sub) => `<div class="benchrow"><span class="benchspot">${spot ? esc(spot) : '—'}</span>
+    <span><b>${main}</b>${sub ? `<small>${sub}</small>` : ''}</span></div>`;
+  if (c.kickoff) {
+    const bench = (squadIds || []).filter(p => !c.on.some(x => x.pid === p));
+    return `<div class="bench"><div class="benchgrp"><h4>Starting lineup</h4>
+      ${c.on.map(x => row(spotName(m, x.sid), nm(x.pid))).join('') || '<p class="muted" style="margin:0">Nobody in this snapshot yet.</p>'}</div>
+      ${bench.length ? `<div class="benchgrp"><h4>On the bench</h4><p class="benchlist">${bench.map(nm).join(', ')}</p></div>` : ''}</div>`;
+  }
+  if (!c.on.length && !c.off.length && !c.moves.length)
+    return `<div class="bench"><p class="muted" style="margin:0">Nothing to change — the pitch already looks like this.</p></div>`;
+  return `<div class="bench">
+    ${c.on.length ? `<div class="benchgrp"><h4>Going on</h4>${c.on.map(x => row(spotName(m, x.sid), nm(x.pid), x.for ? 'for ' + nm(x.for) : '')).join('')}</div>` : ''}
+    ${c.moves.length ? `<div class="benchgrp"><h4>Switching spots</h4>${c.moves.map(x => row(spotName(m, x.to), nm(x.pid), spotName(m, x.from) ? 'from ' + esc(spotName(m, x.from)) : '')).join('')}</div>` : ''}
+    ${c.off.length ? `<div class="benchgrp"><h4>Coming off</h4><p class="benchlist">${c.off.map(nm).join(', ')}</p></div>` : ''}</div>`;
+}
+function benchText(t, m, c, squadIds) {
+  const nm = pid => benchName(t, pid);
+  const at = sid => spotName(m, sid) ? ' at ' + spotName(m, sid) : '';
+  if (c.kickoff) {
+    const bench = (squadIds || []).filter(p => !c.on.some(x => x.pid === p));
+    return c.on.map(x => `- ${spotName(m, x.sid) || 'On'}: ${nm(x.pid)}`).join('\n')
+      + (bench.length ? `\nBench: ${bench.map(nm).join(', ')}` : '');
+  }
+  const out = [];
+  if (c.on.length) out.push('Going on:', ...c.on.map(x => `- ${nm(x.pid)}${at(x.sid)}${x.for ? ', for ' + nm(x.for) : ''}`));
+  if (c.moves.length) out.push('Switching spots:', ...c.moves.map(x => `- ${nm(x.pid)}: ${spotName(m, x.from) || 'no spot'} to ${spotName(m, x.to)}`));
+  if (c.off.length) out.push(`Coming off: ${c.off.map(nm).join(', ')}`);
+  return out.join('\n') || 'No changes.';
+}
+let benchCopy = '';    // what the open bench sheet's Copy button copies
+
+/* One change, from the pitch as it stands. */
+function sheetBench(t, m, start) {
+  const b = planBlocks(m).find(x => String(x.start) === String(start)); if (!b) return;
+  const from = benchFrom(m, b), c = benchCalls(m, from, b);
+  const ids = squad(t, m).map(p => p.id);
+  const head = c.kickoff ? 'Starting lineup' : `Subs ${subsWhen(m, b)}`;
+  benchCopy = `${head}${m.opponent ? ' — v ' + m.opponent : ''}\n${benchText(t, m, c, ids)}`;
+  openSheet(`<h3>Tell the bench</h3>
+    <p class="muted" style="margin-top:0">${esc(head.charAt(0).toUpperCase() + head.slice(1))}${c.kickoff ? '' : fieldIds(m).length ? ' — worked out from who is on the pitch now.' : ' — from the snapshot before.'}</p>
+    ${benchHtml(t, m, c, ids)}
+    <div class="row" style="margin-top:14px"><button class="btn" data-act="benchcopy" style="flex:1">Copy as a message</button>
+      <button class="btn quiet" data-act="benchall" style="flex:1">Whole game</button></div>
+    <button class="btn quiet wide" data-act="closesheet" style="margin-top:8px">Done</button>`);
+}
+/* Every change in the plan, in order — the thing to read through at warm-up,
+   or send to an assistant coach the night before. Snapshot to snapshot, since
+   the pitch at 30:00 is not known yet. */
+function sheetBenchAll(t, m) {
+  const bl = planBlocks(m); if (!bl.length) return;
+  const ids = squad(t, m).map(p => p.id);
+  const parts = bl.map((b, i) => ({ b, c: benchCalls(m, i ? bl[i - 1] : null, b) }));
+  benchCopy = `Game plan${m.opponent ? ' — v ' + m.opponent : ''}\n\n`
+    + parts.map(({ b, c }) => `${snapLabel(m, b.start)}\n${benchText(t, m, c, ids)}`).join('\n\n');
+  openSheet(`<h3>Bench sheet</h3>
+    <p class="muted" style="margin-top:0">Every change in the plan, as calls to make: who goes on, where and for whom, who switches spot, who comes off.</p>
+    ${parts.map(({ b, c }) => `<div class="benchstep"><h4 class="benchwhen">${esc(snapLabel(m, b.start))}</h4>${benchHtml(t, m, c, ids)}</div>`).join('')}
+    <button class="btn wide" data-act="benchcopy" style="margin-top:14px">Copy as a message</button>
+    <button class="btn quiet wide" data-act="closesheet" style="margin-top:8px">Done</button>`);
+}
+
 /* "in 3:12", or "1:40 ago" once it is over a minute late — for the first
    minute the card's own "due now" says it. A countdown only makes sense inside
    the half it counts down in: across half-time nobody knows how long the break
@@ -3128,12 +3314,9 @@ function subsCard(t, m, now) {
           <p class="muted" style="margin:6px 0 0">Lock in your plan and this card counts down to each change — for whoever is tracking, too, without showing them who.</p></div>`
       : '';
   }
-  const nm = id => { const p = (t.players || {})[id]; return p ? esc(p.name) : '?'; };
-  const spotIn = (b, id) => { const k = Object.keys(b.assign || {}).find(x => b.assign[x] === id); const sl = k && slotById(m, k); return sl ? ` (${esc(sl.label)})` : ''; };
-  const names = (b, d) => reveal ? `<div class="subsnames">
-      ${d.on.length ? `<div><span class="on">on:</span> ${d.on.map(id => nm(id) + spotIn(b, id)).join(', ')}</div>` : ''}
-      ${d.off.length ? `<div><span class="off">off:</span> ${d.off.map(nm).join(', ')}</div>` : ''}
-      ${d.moved.length ? `<div><span class="muted">moves:</span> ${d.moved.map(id => nm(id) + spotIn(b, id)).join(', ')}</div>` : ''}</div>` : '';
+  // the coach gets the calls to make at the bench; a tracker gets none of it
+  const names = b => reveal ? `<div class="subsbench">${benchHtml(t, m, benchCalls(m, benchFrom(m, b), b), squad(t, m).map(p => p.id))}
+      <button class="btn quiet sm" data-act="bench" data-start="${b.start}" style="margin-top:8px">Tell the bench</button></div>` : '';
   const howMany = (b, d) => {
     if (!b.start) return `${(b.ids || []).length} players`;
     const n = Math.max(d.on.length, d.off.length), mv = d.moved.length;
@@ -3152,7 +3335,7 @@ function subsCard(t, m, now) {
     return `<div class="card subscard" id="subsdue" data-state="${s.kind}" data-k="${s.kind}:${b.start}">
       <div class="spread"><h2>${title}</h2><span class="subsclock" data-subsclock="1">${subsClock(m, b, s.until)}</span></div>
       <p class="subsline">${ko ? 'From the plan' : 'Planned ' + esc(subsWhen(m, b))} · ${howMany(b, s.diff)}</p>
-      ${names(b, s.diff)}
+      ${names(b)}
       <button class="btn wide subsgo" data-act="subsgo" data-start="${b.start}">${ko ? 'Starters are on' : 'Subs are on'}</button>
       <div class="spread" style="margin-top:8px"><span class="muted">${ko ? 'Tap once the starters are on the pitch.' : `Tap when the referee lets them on — ${reveal ? 'every change in the snapshot is made' : "the coach's planned subs are made for you"} at that minute.`}</span>
         <button class="btn quiet sm" data-act="subsskip" data-start="${b.start}" style="flex:none">Not now</button></div></div>`;
@@ -3163,7 +3346,7 @@ function subsCard(t, m, now) {
       ${undo}
       <div class="spread"><h2>Next subs</h2><span class="subsclock" data-subsclock="1">${subsClock(m, b, s.until)}</span></div>
       <p class="subsline">${esc(subsWhen(m, b))} · ${howMany(b, subsDiff(m, b))}</p>
-      ${names(b, subsDiff(m, b))}
+      ${names(b)}
       <p class="muted" style="margin:6px 0 0">A button to make them appears ${Math.round(SUB_LEAD / 60)} minutes before.</p></div>`;
   }
   return `<div class="card subscard" id="subsdue" data-state="over" data-k="over">
@@ -3184,7 +3367,7 @@ function nextChange(m, el, name) {
       <div><div class="muted">Next change at ${mmss(nb.start)}</div>
       <div style="margin-top:4px">${onIds.length ? `<span class="on">on: ${onIds.map(name).join(', ')}</span><br>` : ''}${offIds.length ? `<span class="off">off: ${offIds.map(name).join(', ')}</span>` : ''}${!onIds.length && !offIds.length ? 'no changes' : ''}</div></div>
       <button class="btn sm" data-act="applyblock" data-start="${nb.start}">Make these subs</button></div>
-      <div class="row" style="margin-top:12px"><button class="btn quiet sm" data-act="viewplan">See the plan</button><button class="btn quiet sm" data-act="makeplan">Rebuild</button></div>`;
+      <div class="row" style="margin-top:12px"><button class="btn quiet sm" data-act="bench" data-start="${nb.start}">Tell the bench</button><button class="btn quiet sm" data-act="viewplan">See the plan</button><button class="btn quiet sm" data-act="makeplan">Rebuild</button></div>`;
   } else {
     return `<p class="muted" style="margin:0 0 10px">Plan finished — no changes left.</p>
       <div class="row"><button class="btn quiet sm" data-act="viewplan">See the plan</button><button class="btn quiet sm" data-act="makeplan">Rebuild</button></div>`;
@@ -3206,7 +3389,7 @@ function viewPlan() {
   let m = match();
   if (!m || m.teamId !== t.id) { const l = teamMatches(t.id); m = l[0] || null; ui.matchId = m ? m.id : null; }
   if (!m) return `<div class="empty"><strong>No game yet</strong>Create a game to plan it.
-    <div style="margin-top:14px"><button class="btn" data-act="newmatch">Add a game</button></div></div>`;
+    ${readOnlyHere() ? '' : `<div style="margin-top:14px">${addGameBtn('btn')}</div>`}</div>`;
 
   const roster = squad(t, m);
   const el = elapsedSec(m, nowMs());
@@ -3235,7 +3418,8 @@ function viewPlan() {
         <div class="spread"><b>${sv === 'refused' ? '!' : '✓'} Plan locked in</b><span class="lockwhen">${esc(at)}${l.byName ? ' · ' + esc(l.byName) : ''}</span></div>
         <p class="lockmsg">${msg}</p>
         <p class="lockmsg">Whoever tracks this game gets a countdown to each change and one button to make it — told when, never who.</p>
-        <button class="btn quiet sm" data-act="planunlock">Unlock to change</button></div>`;
+        <div class="row"><button class="btn sm" data-act="benchall">Bench sheet</button>
+          <button class="btn quiet sm" data-act="planunlock">Unlock to change</button></div></div>`;
     } else {
       lockCard = `<div class="card"><div class="spread" style="align-items:flex-start"><div><h2>Happy with it?</h2>
         <p class="muted" style="margin:4px 0 0">Lock it in. Nothing changes by accident, and whoever tracks the game is told when each change is due.</p></div>
@@ -3335,6 +3519,7 @@ function viewPlan() {
       ${strip}${when}${pitch}${hint}${diff}
       <div class="row" style="margin-top:10px">${locked ? '' : `<button class="btn quiet sm" data-act="snapadd">Copy to a new snapshot</button>
         <button class="btn quiet sm" data-act="snapdel">Delete${i === 0 && blocks.length === 1 ? ' plan' : ''}</button>`}
+        <button class="btn quiet sm" data-act="bench" data-start="${cur.start}">Tell the bench</button>
         <button class="btn quiet sm" data-act="applyblock" data-start="${cur.start}">Put this on the pitch now</button></div>
       ${list}</div>`;
   }
@@ -3394,14 +3579,15 @@ function viewMatches() {
     return `<button class="prow" type="button" data-act="openmatch" data-id="${m.id}" style="grid-template-columns:1fr auto">
       <span><span class="pname">${esc(m.opponent || 'Game')}</span><span class="psub">${esc(m.date || '')} · ${mins(el)} min played${running(m) ? ' · clock running' : ''}</span></span>
       <span class="pmins">${score(m).us}<small>–${score(m).them}</small></span></button>`;
-  }).join('') || `<div class="empty"><strong>No games yet</strong>Add one and it becomes the live game.</div>`;
-  return `<div class="stack"><div class="spread"><h2>Games</h2><button class="btn sm" data-act="newmatch">Add a game</button></div><div class="plist">${rows}</div></div>`;
+  }).join('') || `<div class="empty"><strong>No games yet</strong>${readOnlyHere() ? "The team's coach adds them." : 'Add one and it becomes the live game.'}</div>`;
+  return `<div class="stack"><div class="spread"><h2>Games</h2>${addGameBtn('btn sm')}</div><div class="plist">${rows}</div></div>`;
 }
 
 /* --- roster --- */
 function viewRoster() {
   const t = team(); if (!t) return needTeam();
   const list = players(t);
+  const ro = !canEditTeam(t.id);
   const rows = list.map(p => {
     const bits = [];
     if (p.gk) bits.push('keeper');
@@ -3413,19 +3599,20 @@ function viewRoster() {
     if (na) bits.push(na + ' to keep apart');
     if (p.maxStint) bits.push('max ' + p.maxStint + ' min');
     if (p.active === false) bits.unshift('off the roster');
-    return `<button class="prow" type="button" data-act="editplayer" data-pid="${p.id}">
+    // read-only, the row is not a button: editplayer opens the edit sheet
+    return `<${ro ? 'div' : 'button type="button" data-act="editplayer"'} class="prow" data-pid="${p.id}">
       ${p.photo ? `<img class="crest sm" src="${esc(p.photo)}" alt="">` : `<span class="pnum">${esc(p.number ?? '')}</span>`}
       <span><span class="pname">${esc(p.name)}</span><span class="psub">${esc(bits.join(' · ') || 'no profile yet')}</span></span>
-      <span class="stars" aria-label="rated ${rating(p)} of 5">${'●'.repeat(rating(p))}<span class="dim">${'●'.repeat(5 - rating(p))}</span></span></button>`;
+      <span class="stars" aria-label="rated ${rating(p)} of 5">${'●'.repeat(rating(p))}<span class="dim">${'●'.repeat(5 - rating(p))}</span></span></${ro ? 'div' : 'button'}>`;
   }).join('') ||
-    `<div class="empty"><strong>No players yet</strong>Add the squad once; every game reuses it.</div>`;
+    `<div class="empty"><strong>No players yet</strong>${ro ? "The team's coach adds the squad." : 'Add the squad once; every game reuses it.'}</div>`;
   return `<div class="stack">
     <div class="spread"><h2>${esc(t.name)}</h2><span class="muted">${list.length} players</span></div>
-    <div class="card"><div class="row" style="align-items:flex-end">
+    ${ro ? '' : `<div class="card"><div class="row" style="align-items:flex-end">
       <div style="width:76px"><label class="field"><span>Number</span><input type="number" inputmode="numeric" id="newNum" placeholder="7"></label></div>
       <div style="flex:1"><label class="field"><span>Name</span><input type="text" id="newName" placeholder="Ella Moreno"></label></div>
       <button class="btn" data-act="addplayer" style="margin-bottom:10px">Add</button>
-    </div></div>
+    </div></div>`}
     <div class="plist">${rows}</div></div>`;
 }
 
@@ -3689,7 +3876,7 @@ function viewTeamSet() {
 
     <div class="card"><h2 style="margin-bottom:8px">Parent links</h2>
       <p class="muted" style="margin-top:0">Read-only pages showing shirt numbers, never names.</p>
-      <button class="btn quiet wide" data-act="sharesheet">${t.share ? 'Manage links' : 'Set up sharing'}</button></div>
+      <button class="btn quiet wide" data-act="sharesheet">${t.share ? (ro ? 'See the links' : 'Manage links') : ro ? 'Sharing' : 'Set up sharing'}</button></div>
   </div>`;
 }
 
@@ -4194,6 +4381,9 @@ function sheetShare() {
   const t = team();
   if (!t) return;
   const m = match() || teamMatches(t.id)[0];
+  // the links are public anyway, so anyone who can see the team may copy them;
+  // making, killing and republishing them is the coach's
+  const ro = !canEditTeam(t.id);
   const st = pubState.error
     ? `<div class="warn alert" style="margin-bottom:14px"><b>Not published.</b><br>${esc(pubState.error)}<br>
        <span class="muted">Check Realtime Database → Rules for a <code>public</code> block, then tap Republish.</span></div>`
@@ -4214,8 +4404,9 @@ function sheetShare() {
       <p class="muted" style="margin-top:0">Kick-off time, where it is, who is on and the minutes. Switch games in the bar above to share a different one.</p>` : ''}
 
       <p class="muted">Anyone with a link can read it. Nobody can change anything, and no child's name is published — only shirt numbers.</p>
-      <button class="btn quiet wide" data-act="republish" style="margin-bottom:8px">Republish now</button>
-      <button class="btn danger wide" data-act="rotateshare">Make a new link and kill the old one</button>`
+      ${ro ? '' : `<button class="btn quiet wide" data-act="republish" style="margin-bottom:8px">Republish now</button>
+      <button class="btn danger wide" data-act="rotateshare">Make a new link and kill the old one</button>`}`
+      : ro ? `<p class="muted" style="margin-top:0">This team's coach has not set up parent links yet.</p>`
       : `<p class="muted" style="margin-top:0">Creates a long random address. Only people you send it to can find it.</p>
       <button class="btn wide" data-act="makeshare">Create the share links</button>`}`);
 }
@@ -5073,6 +5264,7 @@ document.addEventListener('click', e => {
   if (!el) return;
   const a = el.dataset.act, d = el.dataset;
   const t = team(), m = match();
+  if (!mayAct(a, m)) { closeSheet(); toast("Only this team's coaches can change that"); render(); return; }
 
   if (a === 'tap') { tapPlayer(d.pid); return; }
   if (a === 'taplive') { tapLive(d.pid); return; }
@@ -5592,7 +5784,7 @@ document.addEventListener('click', e => {
     }
     const key = doneKey(s.b), stamp = { at: nowMs(), ...stampedBy() };
     if (a === 'subsskip') {
-      commit(`matches/${m.id}/planDone/${key}`, { ...stamp, skipped: true });
+      commit(`matches/${m.id}/planDone/${key}`, { t: elapsedSec(m), ...stamp, skipped: true });
       toast('Skipped — nobody was moved');
       return;
     }
@@ -5613,6 +5805,19 @@ document.addEventListener('click', e => {
     return;
   }
   if (a === 'opengview') { ui.gameView = d.v; ui.picked = null; render(); return; }
+  /* What to tell the bench names every player in the plan, so it is the coach's
+     like the Plan tab is — checked here, not only by the button's absence. */
+  if (a === 'bench' || a === 'benchall') {
+    if (!m || restricted()) return;
+    if (a === 'bench') sheetBench(t, m, d.start); else sheetBenchAll(t, m);
+    return;
+  }
+  if (a === 'benchcopy') {
+    if (restricted() || !benchCopy) return;
+    try { navigator.clipboard.writeText(benchCopy).then(() => toast('Copied — paste it into a message'), () => toast('Could not copy — select it by hand')); }
+    catch (e) { toast('Could not copy — select it by hand'); }
+    return;
+  }
   if (a === 'fillslot') {
     const sl = slotById(m, d.sid); if (!sl) return;
     if (!ui.picked) { toast('Pick a player first'); return; }
