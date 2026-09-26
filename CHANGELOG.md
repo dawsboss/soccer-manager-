@@ -8,6 +8,37 @@ before this point lives only in the git log.
 
 ---
 
+## A coach reads other teams, and only coaches change the squad — 2026-09-26
+
+A coach opening another age group in her club got her own coach's screens
+there: the clock, subs, the plan, Add a game, Add a player, every edit sheet.
+`canEditTeam()` already knew she could not change that team, and a banner said
+so, but nothing that drew a screen or handled a tap asked it. The same gap let
+a tracker (and, from a stale screen, a parent) add players to the squad and
+games to the fixture list.
+
+On a team she does not coach, a coach is now a **viewer**: `restricted()`
+returns `'viewer'`, so she gets what a parent gets on a game (Stats only, no
+tally buttons, no AI helper) and the "you can read it, not change it" banner.
+The squad shows read-only, with no Add card and no edit sheet; the games list
+and every "no games yet" screen drop **Add a game**; Track hides **Choose** for
+anyone who cannot change the team's settings; the share sheet lets her copy the
+parent links but not make, kill or republish them.
+
+A hidden button is not the only thing in the way any more. The click handler
+checks `mayAct()` first: the squad, the fixture list, the team's settings, the
+clock, the lineup and the plan need a coach of that team (or an admin), and
+logging goals, shots and set pieces needs that or the team's tracker. A game
+answers to its own team, not whichever team happens to be open. Anyone else is
+told only the team's coaches can change it, and nothing is written.
+
+This is the interface. The rules already refuse a coach writing another team
+through `access/teamIndex`; `node test/rules.js` lists what they still do not.
+`test/visibility.js` now pins each case above, including that a tracker can
+still log a goal in her own team's game and cannot start its clock.
+
+---
+
 ## Lock in the plan; the tracker calls the subs — 2026-09-26
 
 The Plan tab saved on every tap, but nothing said so, and a coach who has spent

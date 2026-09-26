@@ -80,6 +80,95 @@ console.log('\n--- a coach viewing another team is read-only, not blind ---');
   check('and her own is not', A.readOnlyHere(), false);
 }
 
+console.log('\n--- another team is read, never coached ---');
+{
+  /* readOnlyHere() answered this correctly for a long time and nothing that
+     drew a screen asked it: a coach opening another age group got her own
+     coach's screens there — clock, subs, plan, Add a game, Add a player. */
+  as(club(), 'jaz', 't2');
+  check('a coach on another team is a viewer there', A.restricted(), 'viewer');
+  A.ui.teamId = 't1';
+  check('and a coach on her own', A.restricted(), null);
+  as(club(), 'boss', 't2');
+  check('an admin is restricted nowhere', A.restricted(), null);
+
+  as(club(), 'jaz', 't2');
+  A.ui.view = 'game'; A.ui.gameView = 'live'; A.render();
+  check('a viewer is moved off the coach\'s game screens', A.ui.gameView, 'stats');
+}
+
+console.log('\n--- only a coach or admin adds players and games ---');
+{
+  const html = (view) => { A.ui.view = view; A.render(); return A.rendered(); };
+  const offers = (who, tid) => {
+    as(club(), who, tid);
+    const roster = html('roster'), games = html('matches');
+    return {
+      addPlayer: roster.includes('data-act="addplayer"'),
+      editPlayer: roster.includes('data-act="editplayer"'),
+      addGame: games.includes('data-act="newmatch"')
+    };
+  };
+  const all = { addPlayer: true, editPlayer: true, addGame: true };
+  const none = { addPlayer: false, editPlayer: false, addGame: false };
+  deepEq('an admin is offered all three', offers('boss', 't1'), all);
+  deepEq('a coach on her own team, all three', offers('jaz', 't1'), all);
+  deepEq('a coach on another team, none', offers('jaz', 't2'), none);
+  deepEq('a tracker, none', offers('trk', 't1'), none);
+
+  // a hidden button is not the only thing in the way
+  const tries = (who, tid, act, extra) => {
+    as(club(), who, tid);
+    A.toasts.length = 0;
+    const before = JSON.stringify(A.state);
+    A.click({ act, ...(extra || {}) });
+    return JSON.stringify(A.state) === before ? 'refused' : 'changed';
+  };
+  const grab = () => A.state;
+  global.document.querySelector('#newName').value = 'Somebody New';
+  global.document.querySelector('#newNum').value = '99';
+  check('a tracker pressing Add player changes nothing', tries('trk', 't1', 'addplayer'), 'refused');
+  check('and is told why', /coaches/.test(A.lastToast() || ''), true);
+  check('a coach of another team, the same', tries('jaz', 't2', 'addplayer'), 'refused');
+  check('a parent, the same', tries('mum', 't1', 'addplayer'), 'refused');
+  check('her own coach adds the player', tries('jaz', 't1', 'addplayer'), 'changed');
+  check('and it landed on her team', Object.values(grab().teams.t1.players).some(p => p.name === 'Somebody New'), true);
+  global.document.querySelector('#newName').value = '';
+
+  check('a tracker cannot open the new-game sheet', (tries('trk', 't1', 'newmatch'), /coaches/.test(A.lastToast() || '')), true);
+  check('nor a coach of another team', (tries('jaz', 't2', 'newmatch'), /coaches/.test(A.lastToast() || '')), true);
+}
+
+console.log('\n--- a game belongs to its team ---');
+{
+  const withGame = () => {
+    const st = club();
+    st.matches = { g2: { id: 'g2', teamId: 't2', opponent: 'Rivals', periods: [], stints: {} },
+      g1: { id: 'g1', teamId: 't1', opponent: 'Others', periods: [], stints: {} } };
+    return st;
+  };
+  const goal = (who, tid, mid) => {
+    as(withGame(), who, tid);
+    A.ui.matchId = mid;
+    A.click({ act: 'goal', side: 'us' });
+    return Object.keys(A.state.matches[mid].goals || {}).length;
+  };
+  check('a coach cannot log a goal in another team\'s game', goal('jaz', 't2', 'g2'), 0);
+  check('a parent cannot either', goal('mum', 't1', 'g1'), 0);
+  check('the team\'s tracker still can — it is her job', goal('trk', 't1', 'g1'), 1);
+  check('and so can the coach', goal('jaz', 't1', 'g1'), 1);
+
+  const start = (who, tid, mid) => {
+    as(withGame(), who, tid);
+    A.ui.matchId = mid;
+    A.click({ act: 'start' });
+    return (A.state.matches[mid].periods || []).length;
+  };
+  check('a coach cannot start another team\'s clock', start('jaz', 't2', 'g2'), 0);
+  check('nor can a tracker start her own', start('trk', 't1', 'g1'), 0);
+  check('the coach can', start('jaz', 't1', 'g1') > 0, true);
+}
+
 console.log('\n--- a parent with children in two age groups ---');
 {
   const st = club();
