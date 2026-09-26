@@ -382,6 +382,7 @@ label.field span{display:block;font-size:13px;color:var(--ink-soft);margin-botto
 .liverow[data-staged="1"] .lrmain{opacity:.55;border-style:dashed}
 
 .warn.alert{background:#FBE7E3;border-color:var(--over);color:#6E2317}
+.implist{border:1px solid var(--line);border-radius:8px;padding:8px 10px;margin-bottom:10px;font-size:14px;line-height:1.4;max-height:40vh;overflow:auto}
 .warn.alert .btn{background:var(--over);color:#fff;border-color:var(--over);flex:none}
 
 .barrow{display:flex;gap:8px;align-items:stretch}
