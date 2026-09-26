@@ -441,7 +441,10 @@ label.field span{display:block;font-size:13px;color:var(--ink-soft);margin-botto
 .rolebar.test{background:#FFF4E0;border-color:#E0A33C;color:#6A4310}
 body[data-role="parent"] .tallybtn,
 body[data-role="parent"] .lrspot,
-body[data-role="parent"] .scoreside .btn{display:none}
+body[data-role="parent"] .scoreside .btn,
+body[data-role="viewer"] .tallybtn,
+body[data-role="viewer"] .lrspot,
+body[data-role="viewer"] .scoreside .btn{display:none}
 
 .stepbtn{flex:none;width:34px;display:flex;align-items:center;justify-content:center;
   background:#fff;border:1px solid var(--line);border-radius:10px;
