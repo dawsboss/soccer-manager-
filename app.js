@@ -2370,6 +2370,20 @@ function timeline(t, m) {
     rows.push({ t: x.t, g: 'set', act: 'fixev', id, h: `${esc(evLabel(x.kind).replace(/s$/, ''))} ${side(x.side)}${x.pid ? ' — ' + nm(x.pid) : ''}${who(x)}` });
   for (const [id, x] of Object.entries(m.poss || {}))
     rows.push({ t: x.t, g: 'poss', act: 'fixposs', id, h: `Turnover — ${side(x.to)} won it${x.pid ? ' — ' + nm(x.pid) : ''}${who(x)}` });
+  /* A tap on the planned-subs card, as its own line: which planned change it
+     was, and who said so. The subs it made follow it by name (it is pushed
+     first, and the sort keeps ties in order); a skip made none, so without this
+     line it would leave no trace at all. Not editable here — Undo is on the card. */
+  for (const [key, x] of Object.entries(m.planDone || {})) {
+    const start = Number(String(key).slice(1));
+    if (!x || isNaN(start)) continue;
+    const when = start ? esc(snapLabel(m, start)) : null;
+    rows.push({
+      t: x.t != null ? x.t : secFromAbs(m, x.at || 0), g: 'sub', id: key, fixed: true,
+      h: `<b>${when ? 'Planned subs' : 'Starting lineup'} ${x.skipped ? 'skipped' : when ? 'made' : 'on'}</b> `
+        + `<span class="muted">(${when || 'from the plan'})</span>${who(x)}`
+    });
+  }
   subEvents(m).forEach((r, i) => rows.push({
     t: r.t, g: 'sub', act: 'fixsub', id: String(i),
     h: r.move ? `${nm(r.on)} moved to <span class="on">${esc(r.spot || 'a new spot')}</span>`
@@ -2416,7 +2430,9 @@ function viewTrack() {
       ${[['all', 'All'], ['goal', 'Goals'], ['shot', 'Shots'], ['set', 'Set pieces'], ['sub', 'Subs'], ['poss', 'Turnovers']]
       .map(([k, l]) => `<button class="chip" type="button" data-act="logfilter" data-v="${k}" aria-pressed="${F === k}">${l}</button>`).join('')}
     </div>
-    ${shown.length ? `<div class="log">${shown.slice(0, 40).map(r => `<button type="button" data-act="${r.act}" data-id="${r.id}" data-i="${r.id}">
+    ${shown.length ? `<div class="log">${shown.slice(0, 40).map(r => r.fixed
+      ? `<div class="logrow"><span class="t">${mmss(r.t)}</span><span>${r.h}</span><span></span></div>`
+      : `<button type="button" data-act="${r.act}" data-id="${r.id}" data-i="${r.id}">
       <span class="t">${mmss(r.t)}</span><span>${r.h}</span><span class="muted">edit</span></button>`).join('')}</div>
       ${shown.length > 40 ? `<p class="muted" style="margin-bottom:0">Showing the last 40 of ${shown.length}.</p>` : ''}`
       : '<p class="muted" style="margin:0">Nothing logged yet.</p>'}</div>`;
@@ -5430,7 +5446,7 @@ document.addEventListener('click', e => {
     }
     const key = doneKey(s.b), stamp = { at: nowMs(), ...stampedBy() };
     if (a === 'subsskip') {
-      commit(`matches/${m.id}/planDone/${key}`, { ...stamp, skipped: true });
+      commit(`matches/${m.id}/planDone/${key}`, { t: elapsedSec(m), ...stamp, skipped: true });
       toast('Skipped — nobody was moved');
       return;
     }

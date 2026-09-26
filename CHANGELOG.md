@@ -8,6 +8,17 @@ before this point lives only in the git log.
 
 ---
 
+## The tap on the planned-subs card is in the match log — 2026-09-26
+
+Tapping **Subs are on** already put the subs it made in the Track tab's match
+log, by name ("Hana on for Bea"). But nothing there said it was the planned
+10:00 change or who called it, and **Not now** left no trace at all, because
+a skip makes no subs to list. The tap now gets its own line: **Planned subs
+made** (10:00 · 1st half) · Tess, above the subs it made, or **Planned subs
+skipped** for a skip. A skip now records the game minute it was tapped, so it
+lands in the right place. The line goes away with Undo, like the subs do. It
+is read-only in the log; Undo stays on the card.
+
 ## Tell the bench: the plan as calls to make — 2026-09-26
 
 A snapshot is a picture of the pitch, but at the sideline a coach doesn't

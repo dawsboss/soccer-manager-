@@ -264,6 +264,10 @@ function sideline() {
     check('and it says what it did', A.lastToast(), '1 sub made at 11:10');
     check('who tapped is kept', g().planDone.s600.byName, 'Tess');
     check('the match log has it', A.subEvents(g()).some(r => r.on === 'p4' && r.off === 'p2' && r.t === 670), true);
+    const log = () => { const h = html(); return h.slice(h.indexOf('id="matchlog"')); };
+    check('and the tap itself, as the planned change it was', /<b>Planned subs made<\/b> <span class="muted">\(10:00 · 1st half\)/.test(log()), true);
+    check('with who tapped it', /1st half\)<\/span> <span class="muted">· Tess/.test(log()), true);
+    check('above the sub it made', log().indexOf('Planned subs') < log().indexOf('Jo'), true);
     check('the card waits for half-time', A.subsDue(g()).kind + ':' + A.subsDue(g()).b.start, 'wait:2400');
 
     const stints = Object.keys(g().stints).length;
@@ -355,9 +359,14 @@ function sideline() {
     A.click({ act: 'subsskip', start: '3000' });
     check('skipping moves nobody', on(g), ['p2', 'p4', 'p5', 'p6']);
     check('and says so', /nobody was moved/.test(A.lastToast()), true);
+    A.ui.gameView = 'track';
+    const skipLog = () => { const h = html(); return h.slice(h.indexOf('id="matchlog"')); };
+    check('a skip is in the log, since it made no subs to show', /<b>Planned subs skipped<\/b> <span class="muted">\(50:00 · 2nd half\)/.test(skipLog()), true);
+    check('at the minute it was tapped', g().planDone.s3000.t, A.elapsedSec(g()));
     check('that was the last one', A.subsDue(g()).kind, 'over');
     A.click({ act: 'subsundo', key: 's3000' });
     check('a skip can be taken back too', A.subsDue(g()).kind, 'due');
+    check('and leaves the log with it', /skipped/.test(skipLog()), false);
 
     A.endGame(g());
     check('an ended game has nothing due', A.subsDue(g()), null);

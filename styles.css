@@ -188,12 +188,12 @@ label.field span{display:block;font-size:13px;color:var(--ink-soft);margin-botto
 
 /* ---------- sub log ---------- */
 .log{display:flex;flex-direction:column;gap:0}
-.log button{
+.log button,.log .logrow{
   display:grid;grid-template-columns:52px 1fr auto;gap:10px;align-items:baseline;
   padding:9px 0;border:0;border-top:1px solid var(--line);
   background:none;text-align:left;width:100%;
 }
-.log button:first-child{border-top:0}
+.log>:first-child{border-top:0}
 .log .t{font-family:"Barlow Condensed",sans-serif;font-weight:700;font-variant-numeric:tabular-nums;color:var(--ink-soft)}
 .off{color:var(--over)}
 .on{color:var(--field-deep)}
