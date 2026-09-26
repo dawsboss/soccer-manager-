@@ -152,6 +152,7 @@ const EXPORTS = `{
   planLocked, subsDue, subsUntil, subsWhen, subsDiff, subsClock, subsCard,
   applyBlock, undoBlock, lockPlan, lockSaved, planIssues, canCallSubs, doneKey,
   SUB_LEAD, SUB_UNDO_MS,
+  pitchNow, benchCalls, benchFrom, benchText, sheetBench, sheetBenchAll,
   /* stats */
   goalList, score, EVENTS, evOf, evLabel, evCount, evList, possOn, shotList,
   shotTally, possMarkers, possession, subEvents,

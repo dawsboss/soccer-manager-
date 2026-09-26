@@ -2,7 +2,7 @@
    Static app. Data lives in localStorage, and mirrors to Firebase Realtime
    Database when a config + workspace code are present. */
 
-const BUILD = '57';
+const BUILD = '58';
 const BUILT = '2026-09-26';
 /* index.html carries the build it was published with. If this file is newer, the
    browser handed us a cached page — the exact failure that has eaten hours. */
@@ -2808,6 +2808,126 @@ function viewMatch() {
     </div></div>`;
 }
 
+/* ---------------- telling the bench ----------------
+   A plan is pictures of the pitch, but what a coach actually says at the bench
+   is a list of calls: "Hana, on at left back for Bea. Cleo, over to left mid.
+   Bea and Gia, you're coming off." This turns two lineups into exactly that, so
+   it can be read out, or copied to whoever is standing with the subs.
+
+   Both sides are { assign: spot → player, ids }. During a game `from` is the
+   pitch as it really is — the coach may have subbed by hand since the plan was
+   drawn, and the calls have to get from here to there, not from the snapshot
+   before. Before kick-off it is the snapshot before, or nothing at all, which
+   makes the calls a starting lineup. */
+function pitchNow(m) {
+  const assign = {};
+  for (const pid of fieldIds(m)) {
+    const sid = slotIdOf(m, pid);
+    if (sid && slotById(m, sid) && !assign[sid]) assign[sid] = pid;
+  }
+  return { assign, ids: fieldIds(m) };
+}
+function benchCalls(m, from, to) {
+  const fa = (from && from.assign) || {}, ta = to.assign || {};
+  const fIds = from ? (from.ids && from.ids.length ? from.ids : Object.values(fa)) : [];
+  const tIds = to.ids && to.ids.length ? to.ids : Object.values(ta);
+  const spotIn = (a, pid) => Object.keys(a).find(k => a[k] === pid) || null;
+  const slots = (m.formation && m.formation.slots) || [];
+  const order = sid => { const i = slots.findIndex(s => s.id === sid); return i < 0 ? slots.length : i; };
+  const off = fIds.filter(p => !tIds.includes(p));
+  const on = tIds.filter(p => !fIds.includes(p)).map(pid => {
+    const sid = spotIn(ta, pid), was = sid ? fa[sid] : null;
+    return { pid, sid, for: was && off.includes(was) ? was : null };
+  }).sort((a, b) => order(a.sid) - order(b.sid));
+  /* Coming on into a spot a teammate moved out of is still coming on for
+     somebody: pair what is left over, in order, so every call has a "for". */
+  const paired = new Set(on.map(x => x.for).filter(Boolean));
+  const spare = off.filter(p => !paired.has(p));
+  for (const x of on) if (!x.for && spare.length) x.for = spare.shift();
+  const moves = tIds.filter(p => fIds.includes(p))
+    .map(pid => ({ pid, from: spotIn(fa, pid), to: spotIn(ta, pid) }))
+    .filter(x => x.to && x.from !== x.to)
+    .sort((a, b) => order(a.to) - order(b.to));
+  return { on, off, moves, kickoff: !fIds.length };
+}
+/* Where the calls for one snapshot start from: the pitch, once anyone is on it. */
+function benchFrom(m, b) {
+  if (fieldIds(m).length) return pitchNow(m);
+  const bl = planBlocks(m), i = bl.findIndex(x => x.start === b.start);
+  return i > 0 ? bl[i - 1] : null;
+}
+const benchName = (t, pid) => {
+  const p = (t.players || {})[pid];
+  if (!p) return 'someone';
+  return p.number != null && p.number !== '' ? `${p.name} (${p.number})` : p.name;
+};
+const spotName = (m, sid) => { const s = sid && slotById(m, sid); return s ? s.label : null; };
+
+/* The same calls twice over: once to look at, big enough to read in the rain,
+   and once as plain text to paste into a message. */
+function benchHtml(t, m, c, squadIds) {
+  const nm = pid => esc(benchName(t, pid));
+  const row = (spot, main, sub) => `<div class="benchrow"><span class="benchspot">${spot ? esc(spot) : '—'}</span>
+    <span><b>${main}</b>${sub ? `<small>${sub}</small>` : ''}</span></div>`;
+  if (c.kickoff) {
+    const bench = (squadIds || []).filter(p => !c.on.some(x => x.pid === p));
+    return `<div class="bench"><div class="benchgrp"><h4>Starting lineup</h4>
+      ${c.on.map(x => row(spotName(m, x.sid), nm(x.pid))).join('') || '<p class="muted" style="margin:0">Nobody in this snapshot yet.</p>'}</div>
+      ${bench.length ? `<div class="benchgrp"><h4>On the bench</h4><p class="benchlist">${bench.map(nm).join(', ')}</p></div>` : ''}</div>`;
+  }
+  if (!c.on.length && !c.off.length && !c.moves.length)
+    return `<div class="bench"><p class="muted" style="margin:0">Nothing to change — the pitch already looks like this.</p></div>`;
+  return `<div class="bench">
+    ${c.on.length ? `<div class="benchgrp"><h4>Going on</h4>${c.on.map(x => row(spotName(m, x.sid), nm(x.pid), x.for ? 'for ' + nm(x.for) : '')).join('')}</div>` : ''}
+    ${c.moves.length ? `<div class="benchgrp"><h4>Switching spots</h4>${c.moves.map(x => row(spotName(m, x.to), nm(x.pid), spotName(m, x.from) ? 'from ' + esc(spotName(m, x.from)) : '')).join('')}</div>` : ''}
+    ${c.off.length ? `<div class="benchgrp"><h4>Coming off</h4><p class="benchlist">${c.off.map(nm).join(', ')}</p></div>` : ''}</div>`;
+}
+function benchText(t, m, c, squadIds) {
+  const nm = pid => benchName(t, pid);
+  const at = sid => spotName(m, sid) ? ' at ' + spotName(m, sid) : '';
+  if (c.kickoff) {
+    const bench = (squadIds || []).filter(p => !c.on.some(x => x.pid === p));
+    return c.on.map(x => `- ${spotName(m, x.sid) || 'On'}: ${nm(x.pid)}`).join('\n')
+      + (bench.length ? `\nBench: ${bench.map(nm).join(', ')}` : '');
+  }
+  const out = [];
+  if (c.on.length) out.push('Going on:', ...c.on.map(x => `- ${nm(x.pid)}${at(x.sid)}${x.for ? ', for ' + nm(x.for) : ''}`));
+  if (c.moves.length) out.push('Switching spots:', ...c.moves.map(x => `- ${nm(x.pid)}: ${spotName(m, x.from) || 'no spot'} to ${spotName(m, x.to)}`));
+  if (c.off.length) out.push(`Coming off: ${c.off.map(nm).join(', ')}`);
+  return out.join('\n') || 'No changes.';
+}
+let benchCopy = '';    // what the open bench sheet's Copy button copies
+
+/* One change, from the pitch as it stands. */
+function sheetBench(t, m, start) {
+  const b = planBlocks(m).find(x => String(x.start) === String(start)); if (!b) return;
+  const from = benchFrom(m, b), c = benchCalls(m, from, b);
+  const ids = squad(t, m).map(p => p.id);
+  const head = c.kickoff ? 'Starting lineup' : `Subs ${subsWhen(m, b)}`;
+  benchCopy = `${head}${m.opponent ? ' — v ' + m.opponent : ''}\n${benchText(t, m, c, ids)}`;
+  openSheet(`<h3>Tell the bench</h3>
+    <p class="muted" style="margin-top:0">${esc(head.charAt(0).toUpperCase() + head.slice(1))}${c.kickoff ? '' : fieldIds(m).length ? ' — worked out from who is on the pitch now.' : ' — from the snapshot before.'}</p>
+    ${benchHtml(t, m, c, ids)}
+    <div class="row" style="margin-top:14px"><button class="btn" data-act="benchcopy" style="flex:1">Copy as a message</button>
+      <button class="btn quiet" data-act="benchall" style="flex:1">Whole game</button></div>
+    <button class="btn quiet wide" data-act="closesheet" style="margin-top:8px">Done</button>`);
+}
+/* Every change in the plan, in order — the thing to read through at warm-up,
+   or send to an assistant coach the night before. Snapshot to snapshot, since
+   the pitch at 30:00 is not known yet. */
+function sheetBenchAll(t, m) {
+  const bl = planBlocks(m); if (!bl.length) return;
+  const ids = squad(t, m).map(p => p.id);
+  const parts = bl.map((b, i) => ({ b, c: benchCalls(m, i ? bl[i - 1] : null, b) }));
+  benchCopy = `Game plan${m.opponent ? ' — v ' + m.opponent : ''}\n\n`
+    + parts.map(({ b, c }) => `${snapLabel(m, b.start)}\n${benchText(t, m, c, ids)}`).join('\n\n');
+  openSheet(`<h3>Bench sheet</h3>
+    <p class="muted" style="margin-top:0">Every change in the plan, as calls to make: who goes on, where and for whom, who switches spot, who comes off.</p>
+    ${parts.map(({ b, c }) => `<div class="benchstep"><h4 class="benchwhen">${esc(snapLabel(m, b.start))}</h4>${benchHtml(t, m, c, ids)}</div>`).join('')}
+    <button class="btn wide" data-act="benchcopy" style="margin-top:14px">Copy as a message</button>
+    <button class="btn quiet wide" data-act="closesheet" style="margin-top:8px">Done</button>`);
+}
+
 /* "in 3:12", or "1:40 ago" once it is over a minute late — for the first
    minute the card's own "due now" says it. A countdown only makes sense inside
    the half it counts down in: across half-time nobody knows how long the break
@@ -2844,12 +2964,9 @@ function subsCard(t, m, now) {
           <p class="muted" style="margin:6px 0 0">Lock in your plan and this card counts down to each change — for whoever is tracking, too, without showing them who.</p></div>`
       : '';
   }
-  const nm = id => { const p = (t.players || {})[id]; return p ? esc(p.name) : '?'; };
-  const spotIn = (b, id) => { const k = Object.keys(b.assign || {}).find(x => b.assign[x] === id); const sl = k && slotById(m, k); return sl ? ` (${esc(sl.label)})` : ''; };
-  const names = (b, d) => reveal ? `<div class="subsnames">
-      ${d.on.length ? `<div><span class="on">on:</span> ${d.on.map(id => nm(id) + spotIn(b, id)).join(', ')}</div>` : ''}
-      ${d.off.length ? `<div><span class="off">off:</span> ${d.off.map(nm).join(', ')}</div>` : ''}
-      ${d.moved.length ? `<div><span class="muted">moves:</span> ${d.moved.map(id => nm(id) + spotIn(b, id)).join(', ')}</div>` : ''}</div>` : '';
+  // the coach gets the calls to make at the bench; a tracker gets none of it
+  const names = b => reveal ? `<div class="subsbench">${benchHtml(t, m, benchCalls(m, benchFrom(m, b), b), squad(t, m).map(p => p.id))}
+      <button class="btn quiet sm" data-act="bench" data-start="${b.start}" style="margin-top:8px">Tell the bench</button></div>` : '';
   const howMany = (b, d) => {
     if (!b.start) return `${(b.ids || []).length} players`;
     const n = Math.max(d.on.length, d.off.length), mv = d.moved.length;
@@ -2868,7 +2985,7 @@ function subsCard(t, m, now) {
     return `<div class="card subscard" id="subsdue" data-state="${s.kind}" data-k="${s.kind}:${b.start}">
       <div class="spread"><h2>${title}</h2><span class="subsclock" data-subsclock="1">${subsClock(m, b, s.until)}</span></div>
       <p class="subsline">${ko ? 'From the plan' : 'Planned ' + esc(subsWhen(m, b))} · ${howMany(b, s.diff)}</p>
-      ${names(b, s.diff)}
+      ${names(b)}
       <button class="btn wide subsgo" data-act="subsgo" data-start="${b.start}">${ko ? 'Starters are on' : 'Subs are on'}</button>
       <div class="spread" style="margin-top:8px"><span class="muted">${ko ? 'Tap once the starters are on the pitch.' : `Tap when the referee lets them on — ${reveal ? 'every change in the snapshot is made' : "the coach's planned subs are made for you"} at that minute.`}</span>
         <button class="btn quiet sm" data-act="subsskip" data-start="${b.start}" style="flex:none">Not now</button></div></div>`;
@@ -2879,7 +2996,7 @@ function subsCard(t, m, now) {
       ${undo}
       <div class="spread"><h2>Next subs</h2><span class="subsclock" data-subsclock="1">${subsClock(m, b, s.until)}</span></div>
       <p class="subsline">${esc(subsWhen(m, b))} · ${howMany(b, subsDiff(m, b))}</p>
-      ${names(b, subsDiff(m, b))}
+      ${names(b)}
       <p class="muted" style="margin:6px 0 0">A button to make them appears ${Math.round(SUB_LEAD / 60)} minutes before.</p></div>`;
   }
   return `<div class="card subscard" id="subsdue" data-state="over" data-k="over">
@@ -2900,7 +3017,7 @@ function nextChange(m, el, name) {
       <div><div class="muted">Next change at ${mmss(nb.start)}</div>
       <div style="margin-top:4px">${onIds.length ? `<span class="on">on: ${onIds.map(name).join(', ')}</span><br>` : ''}${offIds.length ? `<span class="off">off: ${offIds.map(name).join(', ')}</span>` : ''}${!onIds.length && !offIds.length ? 'no changes' : ''}</div></div>
       <button class="btn sm" data-act="applyblock" data-start="${nb.start}">Make these subs</button></div>
-      <div class="row" style="margin-top:12px"><button class="btn quiet sm" data-act="viewplan">See the plan</button><button class="btn quiet sm" data-act="makeplan">Rebuild</button></div>`;
+      <div class="row" style="margin-top:12px"><button class="btn quiet sm" data-act="bench" data-start="${nb.start}">Tell the bench</button><button class="btn quiet sm" data-act="viewplan">See the plan</button><button class="btn quiet sm" data-act="makeplan">Rebuild</button></div>`;
   } else {
     return `<p class="muted" style="margin:0 0 10px">Plan finished — no changes left.</p>
       <div class="row"><button class="btn quiet sm" data-act="viewplan">See the plan</button><button class="btn quiet sm" data-act="makeplan">Rebuild</button></div>`;
@@ -2951,7 +3068,8 @@ function viewPlan() {
         <div class="spread"><b>${sv === 'refused' ? '!' : '✓'} Plan locked in</b><span class="lockwhen">${esc(at)}${l.byName ? ' · ' + esc(l.byName) : ''}</span></div>
         <p class="lockmsg">${msg}</p>
         <p class="lockmsg">Whoever tracks this game gets a countdown to each change and one button to make it — told when, never who.</p>
-        <button class="btn quiet sm" data-act="planunlock">Unlock to change</button></div>`;
+        <div class="row"><button class="btn sm" data-act="benchall">Bench sheet</button>
+          <button class="btn quiet sm" data-act="planunlock">Unlock to change</button></div></div>`;
     } else {
       lockCard = `<div class="card"><div class="spread" style="align-items:flex-start"><div><h2>Happy with it?</h2>
         <p class="muted" style="margin:4px 0 0">Lock it in. Nothing changes by accident, and whoever tracks the game is told when each change is due.</p></div>
@@ -3051,6 +3169,7 @@ function viewPlan() {
       ${strip}${when}${pitch}${hint}${diff}
       <div class="row" style="margin-top:10px">${locked ? '' : `<button class="btn quiet sm" data-act="snapadd">Copy to a new snapshot</button>
         <button class="btn quiet sm" data-act="snapdel">Delete${i === 0 && blocks.length === 1 ? ' plan' : ''}</button>`}
+        <button class="btn quiet sm" data-act="bench" data-start="${cur.start}">Tell the bench</button>
         <button class="btn quiet sm" data-act="applyblock" data-start="${cur.start}">Put this on the pitch now</button></div>
       ${list}</div>`;
   }
@@ -5332,6 +5451,19 @@ document.addEventListener('click', e => {
     return;
   }
   if (a === 'opengview') { ui.gameView = d.v; ui.picked = null; render(); return; }
+  /* What to tell the bench names every player in the plan, so it is the coach's
+     like the Plan tab is — checked here, not only by the button's absence. */
+  if (a === 'bench' || a === 'benchall') {
+    if (!m || restricted()) return;
+    if (a === 'bench') sheetBench(t, m, d.start); else sheetBenchAll(t, m);
+    return;
+  }
+  if (a === 'benchcopy') {
+    if (restricted() || !benchCopy) return;
+    try { navigator.clipboard.writeText(benchCopy).then(() => toast('Copied — paste it into a message'), () => toast('Could not copy — select it by hand')); }
+    catch (e) { toast('Could not copy — select it by hand'); }
+    return;
+  }
   if (a === 'fillslot') {
     const sl = slotById(m, d.sid); if (!sl) return;
     if (!ui.picked) { toast('Pick a player first'); return; }

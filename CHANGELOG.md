@@ -8,6 +8,32 @@ before this point lives only in the git log.
 
 ---
 
+## Tell the bench: the plan as calls to make — 2026-09-26
+
+A snapshot is a picture of the pitch, but at the sideline a coach doesn't
+hold up a picture. They tell the players on the bench who is going on, where,
+and for whom, and who is switching spots. Working that out from two pitches
+in your head, in the rain, is where subs go wrong.
+
+The coach's sideline card now shows each change that way: **Going on** (the
+spot, the player, "for Bea"), **Switching spots** (the new spot, "from CB"), and
+**Coming off**. Kick-off shows the starting lineup spot by spot, with the
+bench under it. **Tell the bench** opens the same thing in bigger type with
+**Copy as a message**, to text to whoever is standing with the subs. It is also
+on the Pitch and Plan tabs' next-change card and on every snapshot. **Bench
+sheet** (on the locked-in plan, or **Whole game** from any bench view) lists
+every change in the game, to read through at warm-up or send the night
+before.
+
+During a game the calls start from the pitch as it is, not from the snapshot
+before, since the coach may have subbed by hand in between. Before kick-off,
+and in the whole-game sheet, they go snapshot to snapshot, since the pitch at
+30:00 is not known yet. When someone comes on into a spot a teammate is moving
+out of, they are paired with whoever is coming off, so every call still has a
+"for". The calls name players, so like the Plan tab they are for coaches only.
+The tracker's card still names nobody, and the click handler refuses a
+tracker the sheet and the copy.
+
 ## A coach reads other teams, and only coaches change the squad — 2026-09-26
 
 A coach opening another age group in her club got her own coach's screens
