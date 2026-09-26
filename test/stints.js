@@ -332,4 +332,32 @@ console.log('\n--- the sub log reads as subs, not as loose events ---');
   check('with the same player on both sides', move.on === move.off, true);
 }
 
+console.log('\n--- a game can carry, and edit, a shape of its own ---');
+{
+  const p = A.presetsFor(9)['2-5-1'];
+  check('2-5-1 is a 9v9 preset', p && p.length, 9);
+  check('with exactly one keeper', p.filter(x => x.role === 'GK').length, 1);
+  check('two backs, five across the middle, one up top',
+    [p.filter(x => x.role === 'Back').length, p.filter(x => x.role === 'Mid' || x.role === 'Wing').length, p.filter(x => x.role === 'Forward').length].join('-'), '2-5-1');
+
+  const m = setup();
+  A.state.teams.t1.formations = { f1: { id: 'f1', name: 'Saved', size: 4, slots: [{ id: 'sGK', label: 'GK', role: 'GK', x: 50, y: 92 }] } };
+  const before = ids(m), played = A.playedSec(m, 'p1');
+  A.click({ act: 'editgameshape' });
+  check('the editor opens on the game copy', A.ui.view + ':' + A.ui.editFid, 'formation:@game');
+  A.click({ act: 'addslot' });
+  check('a spot added to the game shape lands on the game', A.state.matches.g1.formation.slots.length, 5);
+  A.click({ act: 'delslot', sid: 'sLB' });
+  const g = A.state.matches.g1;
+  check('removing an occupied spot removes it from the shape', g.formation.slots.some(x => x.id === 'sLB'), false);
+  deepEq('and nobody leaves the pitch', ids(g), before);
+  check('nor loses a second', A.playedSec(g, 'p1'), played);
+  check('stints still agree with onField', agrees(g), true);
+  check('the team shape is untouched', A.state.teams.t1.formations.f1.slots.length, 1);
+  A.click({ act: 'saveshapeteam' });
+  check('a copy can be saved back to the team', Object.keys(A.state.teams.t1.formations).length, 2);
+  A.click({ act: 'backsetup' });
+  check('back returns to the game, not club settings', A.ui.view + ':' + A.ui.gameView, 'game:pitch');
+}
+
 H.summary('stints and the sub actions');
