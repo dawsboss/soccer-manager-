@@ -192,6 +192,43 @@ console.log('\n--- the planned/actual pair ---');
   check('the defaults are 2 x 40', A.matchMinutes({}), 80);
 }
 
+console.log('\n--- the readings the ticker rewrites on every screen ---');
+{
+  /* Stats, the games list and My players draw their time once and leave the
+     rest to liveReading(). If it stopped following the wall clock, a parent's
+     page would sit at whatever it said when it drew — which is the bug this
+     replaced. And it must stop when the clock stops, same as elapsedSec(). */
+  H.clock.set(T0);
+  const m = game({ 0: { half: 1, start: T0 - 10 * MIN } }, {
+    stints: { s1: { pid: 'p1', on: 0 }, s2: { pid: 'p2', on: 0, off: 300 } },
+    planned: { p1: 30, p2: 20 }
+  });
+  A.state.matches = { g1: m };
+  A.state.teams = { t1: { id: 't1', name: 'Blue', players: { p1: { name: 'A' }, p2: { name: 'B' } } } };
+  const r = (kind, d) => A.liveReading(kind, d);
+  check('the game clock reads the wall clock', r('clock', { mid: 'g1' }), '10:00');
+  check('minutes played for the game', r('gmins', { mid: 'g1' }), '10');
+  check('a player on the pitch', r('pmins', { mid: 'g1', pid: 'p1' }), '10');
+  check('a player who came off', r('pmins', { mid: 'g1', pid: 'p2' }), '5');
+  check('her season total', r('smins', { tid: 't1', pid: 'p1' }), '10');
+  check('what she is owed', r('diff', { mid: 'g1', pid: 'p1' }), '<span class="diff owed">20 owed</span>');
+  check('nothing planned, nothing said', A.diffTag(600, 0), '');
+  H.clock.advance(5 * MIN);
+  check('five minutes on, the clock has moved', r('clock', { mid: 'g1' }), '15:00');
+  check('so has the player still on', r('pmins', { mid: 'g1', pid: 'p1' }), '15');
+  check('and the season total with her', r('smins', { tid: 't1', pid: 'p1' }), '15');
+  check('the player on the bench has not', r('pmins', { mid: 'g1', pid: 'p2' }), '5');
+  check('the owed count comes down', r('sdiff', { tid: 't1', pid: 'p1' }), '<span class="diff owed">15 owed</span>');
+  m.periods[0].end = H.clock.t;
+  m.stints.s1.off = A.elapsedSec(m);
+  H.clock.advance(30 * MIN);
+  check('once the clock stops, so does the reading', r('clock', { mid: 'g1' }), '15:00');
+  check('and her minutes', r('pmins', { mid: 'g1', pid: 'p1' }), '15');
+  check('an unknown game reads nothing, not zero', r('clock', { mid: 'nope' }), null);
+  check('an unknown kind reads nothing', r('what', { mid: 'g1' }), null);
+  A.state.matches = {}; A.state.teams = {};
+}
+
 console.log('\n--- formatting ---');
 {
   check('mmss pads the seconds', A.mmss(65), '1:05');

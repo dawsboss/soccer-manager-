@@ -398,6 +398,30 @@ function sideline() {
     check('the coach is told to lock it in', /Lock in your plan/.test(card()), true);
   }
 
+  console.log('\n--- the clock on the Track tab ---');
+  {
+    /* Track is where the coach is when she is logging a corner, so the clock is
+       there too. It is still the coach's: a tracker sees it run, and neither the
+       button nor the click reaches startClock(). */
+    const g = setup();
+    as('jaz'); A.ui.gameView = 'track';
+    let h = html();
+    check('the coach can start the clock from Track', /data-act="start"/.test(h), true);
+    A.click({ act: 'start' });
+    check('and it starts', A.running(g()), true);
+    h = html();
+    check('then pause it', /data-act="pause"/.test(h), true);
+    check('or end the half', /data-act="endhalf"/.test(h), true);
+    A.click({ act: 'pause' });
+    check('and pausing stops it', A.running(g()), false);
+    as('trk'); A.ui.gameView = 'track';
+    h = html();
+    check('a tracker sees no clock buttons', /data-act="(start|pause|endhalf|endgame)"/.test(h), false);
+    check('and is told who runs it', /the coach runs the clock/.test(h), true);
+    A.click({ act: 'start' });
+    check('a tracker cannot start it by force', A.running(g()), false);
+  }
+
   console.log('\n--- what to tell the bench ---');
   {
     const g = setup();

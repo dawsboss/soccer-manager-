@@ -144,6 +144,7 @@ const EXPORTS = `{
   /* model helpers */
   teams, team, players, teamMatches, match, segments, elapsedSec, halfSec,
   openSeg, running, halfName, absAt, secFromAbs, halfOfSec, stintsOf, openStint,
+  liveReading, diffTag, tickLive,
   playedSec, spellSec, restSec, plannedSec, matchMinutes, onField, fieldIds,
   posOf, anomalies, squad, isOut, evenSplit, clashesOn, buildPlan, resolveShape,
   presetsFor, slotById, slotIdOf, slotTaken, currentSpot, byRole,

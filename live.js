@@ -26,10 +26,18 @@ const nowMs = () => Date.now() + skew;
 function segments(g) {
   return Object.keys(g.periods || {}).map(Number).sort((a, b) => a - b).map(i => ({ i, ...g.periods[i] }));
 }
-function elapsed(g) {
+function elapsed(g, at = nowMs()) {
   let t = 0;
-  for (const s of segments(g)) { if (!s.start) continue; t += ((s.end || nowMs()) - s.start); }
+  for (const s of segments(g)) { if (!s.start || s.start > at) continue; t += (Math.min(s.end || at, at) - s.start); }
   return Math.floor(t / 1000);
+}
+/* A player's seconds are a snapshot taken when the coach's phone last
+   published, and while the clock runs that can be minutes old. Someone on the
+   pitch has played every second the match clock has moved since then, so add
+   exactly that — no guessing, and a paused clock adds nothing. */
+function liveSec(g, p) {
+  if (!p.on || !doc || !doc.updated) return p.sec;
+  return p.sec + Math.max(0, elapsed(g) - elapsed(g, doc.updated));
 }
 function halfElapsed(g) {
   const h = g.currentHalf || 1;
@@ -137,7 +145,7 @@ function render() {
         </div>`).join('')}</div></div>` : ''}
 
       ${on.length ? `<div class="card"><h2 style="margin-bottom:10px">On the pitch</h2>
-        <div class="numlist">${on.map(p => `<span class="numchip"${bump('on' + p.n, 1)}>${esc(p.n)}<small${bump('m' + p.n, mins(p.sec))}>${mins(p.sec)}m</small></span>`).join('')}</div></div>` : ''}
+        <div class="numlist">${on.map((p, i) => `<span class="numchip"${bump('on' + p.n, 1)}>${esc(p.n)}<small data-oni="${i}"${bump('m' + p.n, mins(liveSec(g, p)))}>${mins(liveSec(g, p))}m</small></span>`).join('')}</div></div>` : ''}
 
       ${off.length ? `<div class="card"><h2 style="margin-bottom:10px">On the bench</h2>
         <div class="numlist">${off.map(p => `<span class="numchip off"${bump('on' + p.n, 0)}>${esc(p.n)}<small>${mins(p.sec)}m</small></span>`).join('')}</div></div>` : ''}
@@ -181,6 +189,7 @@ function render() {
         <b style="font-size:18px">${esc(x.opponent || 'TBC')}</b>
         <span class="pmins">${x.status === 'upcoming' ? '' : `${x.score.us}<small>–${x.score.them}</small>`}</span>
       </div>
+      ${x.status === 'live' ? `<p class="muted" style="margin:4px 0 0">${esc(halfName(x, x.currentHalf || 1))} · <span data-gclk="${esc(x.id)}">${mmss(elapsed(x))}</span> played</p>` : ''}
       <p class="meta" style="margin-top:6px">${[niceDate(x.date), niceTime(x.kickoff) && 'Kick-off ' + niceTime(x.kickoff), esc(x.venue)].filter(Boolean).map(v => `<span>${v}</span>`).join('')}</p>
     </button>`;
   }
@@ -228,14 +237,24 @@ function accessBlock() {
       <button class="backlink" data-signout style="margin-top:8px">Sign out</button></div>`;
 }
 
-// tick the clock locally between pushes so it feels live
+// tick the clocks and the minutes locally between pushes so it feels live
 setInterval(() => {
-  if (!doc || !openGame) return;
+  if (!doc) return;
+  for (const el of document.querySelectorAll('[data-gclk]')) {
+    const x = (doc.games || {})[el.dataset.gclk];
+    if (x && isRunning(x)) el.textContent = mmss(elapsed(x));
+  }
+  if (!openGame) return;
   const g = (doc.games || {})[openGame];
   if (!g || !isRunning(g)) return;
   const c = $('#clk'), h = $('#hclk');
   if (c) c.textContent = mmss(elapsed(g));
   if (h) h.textContent = mmss(halfElapsed(g));
+  // by position, not shirt number: two can share one, and a missing one is '–'
+  (g.players || []).filter(p => p.on).forEach((p, i) => {
+    const el = document.querySelector(`[data-oni="${i}"]`);
+    if (el) el.textContent = mins(liveSec(g, p)) + 'm';
+  });
 }, 1000);
 
 (async () => {

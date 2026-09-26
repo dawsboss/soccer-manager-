@@ -8,6 +8,30 @@ before this point lives only in the git log.
 
 ---
 
+## Every clock ticks, and the clock is on the Track tab — 2026-09-26
+
+Only the Live and Track cards moved on their own. Everywhere else that shows
+time played — Stats, which is the only game screen a parent gets, the games
+list, the game picker, My players — drew it once and sat there until something
+else redrew the page, so a parent watching a game saw a clock stuck at
+whatever it read when they opened it. Those numbers are now tagged where they
+are drawn (`data-live`) and the once-a-second ticker rewrites them on every
+screen, not just inside a game. `liveReading()` is the one place that says
+what each tag reads, and `test/clock.js` moves the wall clock under it and
+requires that it follows while the clock runs and stops when it stops.
+
+The public follow page ticked its big clock but not the minutes beside each
+shirt number, which only changed when the coach's phone next published. A
+player on the pitch has played every second the match clock has moved since
+that publish, so the page now adds exactly that — nothing when the clock is
+paused, nothing for the bench. The season page's *Happening now* card shows
+the running clock too.
+
+Start, pause, end the half and end the game are now on the Track tab as well
+as Live, because Track is where a coach is when she is logging a corner. It
+is still the coach's clock: a tracker sees it run and is told the coach runs
+it, and the click handler refuses her whether or not the button is drawn.
+
 ## Bulk import for admins — 2026-09-26
 
 Setting a club up for a season meant typing every team, every child and every
