@@ -66,7 +66,7 @@ function setup(opts = {}) {
     access: {}
   };
   A.ui.teamId = 't1'; A.ui.matchId = 'g1';
-  A.ui.view = 'game'; A.ui.gameView = 'live'; A.ui.plan = null; A.ui.picked = null;
+  A.ui.view = 'game'; A.ui.gameView = 'subs'; A.ui.plan = null; A.ui.picked = null;
   return A.state.matches.g1;
 }
 

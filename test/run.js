@@ -21,6 +21,7 @@ const SUITES = [
   ['plan', 'the Plan tab\'s snapshots of the pitch'],
   ['subs', 'a locked-in plan, called from the sideline'],
   ['stats', 'tallies, and what reaches the public tier'],
+  ['feed', 'the Live tab, and what it notifies'],
   ['ai', 'the AI prompt carries numbers, never names'],
   ['roles', 'roles derived from where a uid appears'],
   ['visibility', 'which teams each account sees and edits'],
