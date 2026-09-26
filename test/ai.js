@@ -92,14 +92,40 @@ console.log('--- planning a game that has not been played ---');
   setup();
   A.ui.matchId = 'g2';
   const txt = A.aiPrompt('game', 'plan');
-  check('it is a plan question', txt.includes('Help me plan this game'), true);
-  check('it carries the target', txt.includes('#8: target 40 min'), true);
+  check('it is a plan question', txt.includes('Help me finish my plan'), true);
+  check('it carries the target', txt.includes('#8: my target 40 min'), true);
   check('and where she plays', txt.includes('best at MID, also DEF'), true);
   check('and her longest spell', txt.includes('longest spell 15 min'), true);
   check('earlier games count toward the season', txt.includes('over 2 earlier games'), true);
   check('pairings by number', txt.includes('Play well together: #8 & #4'), true);
   check('and who to keep apart', /Keep apart: #8 & (Player [A-Z]|#9)/.test(txt), true);
   check('no minutes-so-far noise', txt.includes('MINUTES'), false);
+  check('no plan yet, no plan section', txt.includes('MY PLAN SO FAR'), false);
+
+  // the coach's own snapshots: kick-off, then a change at 20 minutes
+  A.state.matches.g2.formation = { name: '1-2-1', slots: [
+    { id: 'sGK', label: 'GK', role: 'GK' }, { id: 'sCB', label: 'CB', role: 'DEF' },
+    { id: 'sCM', label: 'CM', role: 'MID' }, { id: 'sST', label: 'ST', role: 'FWD' }] };
+  A.state.matches.g2.plan = { manual: true, blocks: [
+    { start: 0, ids: ['p5', 'p3', 'p2', 'p1'], assign: { sGK: 'p5', sCB: 'p3', sCM: 'p2', sST: 'p1' } },
+    { start: 1200, ids: ['p5', 'p3', 'p2', 'p4'], assign: { sGK: 'p5', sCB: 'p3', sCM: 'p2', sST: 'p4' } }] };
+  const withPlan = A.aiPrompt('game', 'plan');
+  check('her snapshots are in it', withPlan.includes('MY PLAN SO FAR (my snapshots)'), true);
+  check('kick-off lineup, spot by spot', withPlan.includes('- Kick-off: GK #1, CB #4, CM #8, ST #7'), true);
+  check('with the bench', /Kick-off: [^\n]*\| bench [^\n]*Player/.test(withPlan), true);
+  check('and what her plan gives each player', withPlan.includes('#7: my target not set, my plan gives 20'), true);
+
+  // her ideas, as typed — names and all
+  const ideas = 'Rosa Delgado plays all of the first half at CB. mia and Ella share CM.';
+  const withIdeas = A.aiPrompt('game', 'plan', ideas);
+  check('her ideas are in the prompt', withIdeas.includes('MY IDEAS\n'), true);
+  const r = A.aiScrub(withIdeas, 'game');
+  check('names in them are swapped for numbers', r.text.includes('#4 plays all of the first half at CB. #8 and #7 share CM.'), true);
+  check('a full name counts once, not per word', r.n, 3);
+  check('and nothing of any name is left', NAMES.some(nm => nm.split(' ').some(w => r.text.includes(w))), false);
+  check('a name inside a longer word is left alone', A.aiScrub('Samuel and Jonah', 'game').text, 'Samuel and Jonah');
+  check('at club level a name becomes "a player"', A.aiScrub('talk to Mia', 'club').text, 'talk to a player');
+  delete A.state.matches.g2.plan; delete A.state.matches.g2.formation;
   A.dom.node('#sheet').innerHTML = '';
   A.click({ act: 'aihelp', scope: 'game' });
   check('an upcoming game opens on the plan', A.ui.ai.topic, 'plan');
