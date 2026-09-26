@@ -2,7 +2,7 @@
    Static app. Data lives in localStorage, and mirrors to Firebase Realtime
    Database when a config + workspace code are present. */
 
-const BUILD = '61';
+const BUILD = '62';
 const BUILT = '2026-09-26';
 /* index.html carries the build it was published with. If this file is newer, the
    browser handed us a cached page — the exact failure that has eaten hours. */
@@ -4788,6 +4788,25 @@ function sheetAddSub() {
     <button class="btn wide" data-act="doaddsub">Record it</button>`);
 }
 
+/* Where a spell was played, as the Fix minutes sheet offers it: the game's own
+   spots, or a bare role when the spot is not in the shape any more. A spell
+   saved before a spot was kept with it has neither, and this is the only way to
+   give it one back — minutes by position read nothing else. 'none' rather than
+   '' for no spot, so a select that is not on the page reads as "leave it". */
+function spotOptions(m, s) {
+  const slots = (m.formation && m.formation.slots) || [];
+  const cur = s.slot && slotById(m, s.slot) ? 'slot:' + s.slot : s.role ? 'role:' + s.role : 'none';
+  const opt = (v, label) => `<option value="${esc(v)}"${v === cur ? ' selected' : ''}>${esc(label)}</option>`;
+  return opt('none', 'Position not recorded')
+    + slots.map(x => opt('slot:' + x.id, x.label + (x.label !== x.role ? ' · ' + x.role : ''))).join('')
+    + ROLES.filter(r => !slots.some(x => x.role === r) || cur === 'role:' + r).map(r => opt('role:' + r, r + ' (any spot)')).join('');
+}
+function spotFrom(m, v, was) {
+  if (!v) return { slot: was.slot || null, role: was.role || null };
+  if (v.startsWith('slot:')) { const sl = slotById(m, v.slice(5)); return { slot: sl ? sl.id : null, role: sl ? sl.role : null }; }
+  if (v.startsWith('role:')) return { slot: null, role: v.slice(5) };
+  return { slot: null, role: null };
+}
 function sheetFixMinutes(pid) {
   const t = team(), m = match();
   if (!pid) {
@@ -4807,7 +4826,8 @@ function sheetFixMinutes(pid) {
       <span class="muted">to</span>
       <input type="text" style="flex:1" data-soff="${sid}" value="${s.off == null ? '' : mmss(s.off)}" placeholder="still on" inputmode="numeric">
       <button class="btn danger sm" data-act="delstint" data-sid="${sid}">Delete</button>
-    </div>`).join('') || '<p class="muted">She has not been on yet.</p>'}
+    </div>
+    <div class="row" style="margin:-2px 0 12px"><select style="flex:1" data-sspot="${sid}">${spotOptions(m, s)}</select></div>`).join('') || '<p class="muted">She has not been on yet.</p>'}
     <button class="btn wide" data-act="savestints" data-pid="${pid}" style="margin-top:6px">Save spells</button>
     <div style="margin-top:8px"><button class="btn quiet wide" data-act="addstint" data-pid="${pid}">Add a spell she was on for</button></div>
     <p class="muted" style="margin:8px 0 0">Times are minutes into the game, like 23:10. Now is ${mmss(e)}.</p>`);
@@ -5773,10 +5793,11 @@ document.addEventListener('click', e => {
       const on = clamp(parseTime(inp.value, 0), 0, e);
       const raw = offEl.value.trim();
       const off = raw === '' ? null : clamp(parseTime(raw, e), on, e);
-      // only the times are being fixed: the spot she played it in rides along,
-      // or every spell saved here stops counting towards minutes by position
+      // the spot rides along with the times unless it was changed here, or every
+      // spell saved on this sheet stops counting towards minutes by position
       const was = (m.stints || {})[sid] || {};
-      quiet(`matches/${m.id}/stints/${sid}`, { pid: d.pid, on, off, slot: was.slot || null, role: was.role || null });
+      const spotEl = document.querySelector(`[data-sspot="${sid}"]`);
+      quiet(`matches/${m.id}/stints/${sid}`, { pid: d.pid, on, off, ...spotFrom(m, spotEl && spotEl.value, was) });
     }
     saveLocal(); closeSheet(); render(); toast('Minutes updated'); return;
   }

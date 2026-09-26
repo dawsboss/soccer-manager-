@@ -8,6 +8,15 @@ before this point lives only in the git log.
 
 ---
 
+## Give a spell its position back — 2026-09-26
+
+The fix above stops spells losing their position, but games already played
+keep the blanks, and there was no way to put a position on a spell by hand.
+Fix minutes now shows each spell's position under its times — any spot in
+the game's shape, or a bare role — and Save spells writes it. A spell whose
+position was lost reads *Position not recorded*; pick GK and those minutes
+count in goal again. Changing a position never touches the minutes.
+
 ## Goalkeeper minutes stop going missing — 2026-09-26
 
 A keeper who was in goal for 30 minutes showed as 19 at GK. Minutes by
