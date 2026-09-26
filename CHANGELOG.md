@@ -8,6 +8,35 @@ before this point lives only in the git log.
 
 ---
 
+## Live is the play-by-play; the old Live is now Subs — 2026-09-26
+
+The Live tab was the coach's sub screen — who is on, who is owed, make the
+change — and nobody else could use it. A parent, a tracker, or anyone who just
+wanted to know how the game was going had Stats, which is tallies, not a story.
+So the sub screen is now called **Subs** (nothing on it changed), and **Live**
+is a new tab that reads the game back in words: the score and running clock at
+the top, then kick-off with the starting lineup, each goal with the score after
+it, subs, half time and full time, newest first. Shots and set pieces are under
+*Everything*, because in a feed they drown out the goals. It is the one game
+screen every role gets.
+
+It is built only from what is already stored, so it needs no new data, no rule
+change, and cannot disagree with the other tabs. Two readings mattered: a
+paused clock closes a period just as ending a half does, and only the second is
+half time; and a switch of spots is a pair of stints like a sub is, but it is
+not one to anybody following.
+
+*Notify me* follows a game on that device: each new goal, kick-off, half time
+and full time buzzes and toasts, or pops up as a system notification when the
+page is in the background. Only while the page is open — with no server there
+is nothing to push from, and the button says so. The first look at a game only
+takes note of what is there, so following at half time does not replay the
+first half. Android Chrome refuses a notification made by a page, and gets the
+buzz and toast instead.
+
+A phone left on the old Live comes back to Subs, not the feed that took its
+name, and opening a game still takes a coach to Subs. `test/feed.js` covers it.
+
 ## Every clock ticks, and the clock is on the Track tab — 2026-09-26
 
 Only the Live and Track cards moved on their own. Everywhere else that shows

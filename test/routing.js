@@ -20,7 +20,7 @@ A.state = {
 };
 
 const reset = () => Object.assign(A.ui,
-  { view: 'matches', gameView: 'live', teamId: null, matchId: null, editFid: null });
+  { view: 'matches', gameView: 'subs', teamId: null, matchId: null, editFid: null });
 
 const cases = [
   [{ view: 'matches', teamId: 't7' }, '#/team/t7/games'],
@@ -29,6 +29,7 @@ const cases = [
   [{ view: 'teamset', teamId: 't7' }, '#/team/t7/planning'],
   [{ view: 'game', teamId: 't7', matchId: 'g3', gameView: 'stats' }, '#/team/t7/game/g3/stats'],
   [{ view: 'game', teamId: 't7', matchId: 'g3', gameView: 'live' }, '#/team/t7/game/g3/live'],
+  [{ view: 'game', teamId: 't7', matchId: 'g3', gameView: 'subs' }, '#/team/t7/game/g3/subs'],
   [{ view: 'club' }, '#/club'],
   [{ view: 'admin' }, '#/club/settings'],
   [{ view: 'mine' }, '#/my-players'],

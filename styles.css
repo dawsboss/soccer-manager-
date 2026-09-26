@@ -195,6 +195,28 @@ label.field span{display:block;font-size:13px;color:var(--ink-soft);margin-botto
 }
 .log>:first-child{border-top:0}
 .log .t{font-family:"Barlow Condensed",sans-serif;font-weight:700;font-variant-numeric:tabular-nums;color:var(--ink-soft)}
+/* ---------- live feed ---------- */
+.feedhead{text-align:center;padding:16px var(--pad)}
+.feedstatus{display:flex;align-items:center;justify-content:center;gap:6px;font-size:14px;color:var(--ink-soft)}
+.feedhead[data-st="live"] .feedstatus{color:var(--field-deep);font-weight:600}
+.livedot{width:8px;height:8px;border-radius:50%;background:var(--over);animation:livepulse 1.4s ease-in-out infinite}
+@keyframes livepulse{50%{opacity:.25}}
+@media (prefers-reduced-motion:reduce){.livedot{animation:none}}
+.feedscore{display:grid;grid-template-columns:1fr auto 1fr;gap:10px;align-items:center;margin-top:6px}
+.fs-side{font-weight:600;overflow-wrap:anywhere}
+.fs-side:first-child{text-align:right}
+.fs-side:last-child{text-align:left}
+.fs-num{font-family:"Barlow Condensed",sans-serif;font-weight:700;font-size:44px;line-height:1;font-variant-numeric:tabular-nums}
+.feed{display:flex;flex-direction:column}
+.feedrow{display:grid;grid-template-columns:40px 1fr auto;gap:10px;align-items:baseline;padding:9px 0;border-top:1px solid var(--line)}
+.feed>:first-child{border-top:0}
+.feedrow .t{font-family:"Barlow Condensed",sans-serif;font-weight:700;font-variant-numeric:tabular-nums;color:var(--ink-soft)}
+.feedrow .fd{display:block;font-size:14px;color:var(--ink-soft)}
+.feedrow[data-kind="goal"] b{color:var(--field-deep)}
+.feedrow[data-kind="goal"][data-side="them"] b{color:var(--over)}
+.feedrow[data-kind="shot"] b,.feedrow[data-kind="set"] b{font-weight:500}
+.feedrow[data-kind="start"],.feedrow[data-kind="break"],.feedrow[data-kind="end"]{background:var(--field-wash);margin:0 calc(-1 * var(--pad));padding-left:var(--pad);padding-right:var(--pad)}
+.fscore{font-family:"Barlow Condensed",sans-serif;font-weight:700;font-size:20px;font-variant-numeric:tabular-nums}
 .off{color:var(--over)}
 .on{color:var(--field-deep)}
 

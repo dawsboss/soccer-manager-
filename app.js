@@ -2,7 +2,7 @@
    Static app. Data lives in localStorage, and mirrors to Firebase Realtime
    Database when a config + workspace code are present. */
 
-const BUILD = '60';
+const BUILD = '61';
 const BUILT = '2026-09-26';
 /* index.html carries the build it was published with. If this file is newer, the
    browser handed us a cached page — the exact failure that has eaten hours. */
@@ -27,7 +27,7 @@ const SANDBOX_PREFIX = 'test-';
 /* The workspace node was already organisation-shaped — many teams, their
    matches — so membership hangs off it directly and nothing has to migrate. */
 let state = { teams: {}, matches: {}, access: {} };
-let ui = { view: 'matches', gameView: 'live', teamId: null, matchId: null, picked: null, dragging: false, editFid: null, sortBy: 'need', plan: null, snapAt: null, snapSid: null };
+let ui = { view: 'matches', gameView: 'subs', teamId: null, matchId: null, picked: null, dragging: false, editFid: null, sortBy: 'need', plan: null, snapAt: null, snapSid: null };
 let lastLog = [];
 
 const ROLES = ['GK', 'Back', 'Mid', 'Wing', 'Forward'];
@@ -252,7 +252,7 @@ function saveLocal() {
   try { localStorage.setItem(dataKey(), JSON.stringify(state)); } catch (e) { }
 }
 function saveUi() {
-  try { localStorage.setItem(LS_UI, JSON.stringify({ view: ui.view, teamId: ui.teamId, matchId: ui.matchId, sortBy: ui.sortBy, plan: ui.plan, gameView: ui.gameView })); } catch (e) { }
+  try { localStorage.setItem(LS_UI, JSON.stringify({ view: ui.view, teamId: ui.teamId, matchId: ui.matchId, sortBy: ui.sortBy, plan: ui.plan, gameView: ui.gameView, follow: ui.follow || null, feedAll: !!ui.feedAll, tabs: 2 })); } catch (e) { }
 }
 function loadLocal() {
   try {
@@ -266,6 +266,10 @@ function loadLocal() {
     if (d) state = { teams: d.teams || {}, matches: d.matches || {}, access: d.access || {} };
     const u = JSON.parse(localStorage.getItem(LS_UI) || 'null');
     if (u) Object.assign(ui, u);
+    /* Before build 61 'live' was the coach's subs screen. Someone who left a
+       game open on it expects to come back to the same screen, not the feed
+       that took the name. */
+    if (u && !u.tabs && ui.gameView === 'live') ui.gameView = 'subs';
     // pre-v26 the game screens were top-level tabs
     const oldTabs = { live: 'live', track: 'track', match: 'pitch' };
     if (oldTabs[ui.view]) { ui.gameView = oldTabs[ui.view]; ui.view = 'game'; }
@@ -2401,8 +2405,11 @@ function render() {
   if (ui.view === 'people' && !canAdmin() && !teams().some(x => isCoach(x.id, me && me.uid))) ui.view = 'club';
   const tabView = ui.view === 'formation' ? (ui.editFid === GAME_SHAPE ? 'matches' : 'admin') : inGame ? 'matches' : ui.view;
   for (const b of document.querySelectorAll('#tabs button')) b.setAttribute('aria-current', String(b.dataset.view === tabView));
-  const allowed = lim === 'tracker' ? ['track', 'stats'] : lim === 'parent' || lim === 'viewer' ? ['stats'] : ['live', 'track', 'stats', 'pitch', 'plan'];
-  if (!allowed.includes(ui.gameView)) ui.gameView = allowed[0];
+  /* Live is the one game screen everybody gets. Where a role lands when its
+     tab is not allowed is its working screen, not the first in the list: a
+     tracker is there to log, a coach to make subs. */
+  const allowed = lim === 'tracker' ? ['live', 'track', 'stats'] : lim === 'parent' || lim === 'viewer' ? ['live', 'stats'] : ['live', 'subs', 'track', 'stats', 'pitch', 'plan'];
+  if (!allowed.includes(ui.gameView)) ui.gameView = lim === 'tracker' ? 'track' : lim ? 'live' : 'subs';
   for (const b of document.querySelectorAll('#subtabs button')) {
     b.hidden = !allowed.includes(b.dataset.gview);
     b.setAttribute('aria-current', String(b.dataset.gview === ui.gameView));
@@ -2435,7 +2442,7 @@ function render() {
      to the games list the moment they open a game. A tracker could not reach the
      Track tab at all, which is the only screen her role exists for. */
   app.innerHTML = envNote + roleNote + roNote + (
-    v === 'game' ? (g === 'track' ? viewTrack() : g === 'stats' ? viewStats() : g === 'pitch' ? viewMatch() : g === 'plan' ? viewPlan() : viewLive()) :
+    v === 'game' ? (g === 'track' ? viewTrack() : g === 'stats' ? viewStats() : g === 'pitch' ? viewMatch() : g === 'plan' ? viewPlan() : g === 'subs' ? viewSubs() : viewFeed()) :
       v === 'roster' ? viewRoster() :
         v === 'season' ? viewSeason() :
           v === 'formation' ? viewFormation() : v === 'club' ? viewClub() : v === 'people' ? viewPeople() : v === 'admin' ? viewAdmin()
@@ -2906,8 +2913,166 @@ function viewStats() {
   </div>`;
 }
 
-/* --- live: minutes and subs only, no pitch --- */
-function viewLive() {
+/* --- live: the game as it happens, in words, for anyone following ---
+   The Subs tab is the coach's working screen and nobody else can use it; Stats
+   is the tallies. Neither answers "what's going on?" for a parent in the car
+   park or a grandparent at home. This does, and it is the one game screen every
+   role gets. Built entirely from what is already stored — periods, goals,
+   stints, shots, events — so it needs no new data and cannot disagree with the
+   other tabs. Items are plain text, escaped once at render, because the same
+   words go into a system notification where HTML means nothing. */
+function feedItems(t, m) {
+  const us = (t && t.name) || 'Us', them = m.opponent || 'Them';
+  const sideName = sd => sd === 'us' ? us : them;
+  const nm = id => { const p = ((t && t.players) || {})[id]; return p ? p.name || 'Unknown' : 'Unknown'; };
+  const pc = m.periodCount || 2;
+  const out = [];
+
+  /* Kick-off and the breaks come from the periods. A half's end only counts
+     once the game has moved past it: pausing the clock closes a segment too,
+     and a pause is not half time. */
+  const segs = segments(m).filter(s => s.start);
+  const halves = [...new Set(segs.map(s => s.half || 1))].sort((a, b) => a - b);
+  let acc = 0;
+  const startAt = {}, endAt = {};
+  for (const s of segs) {
+    const h = s.half || 1;
+    if (startAt[h] == null) startAt[h] = acc;
+    acc += Math.floor(((s.end || nowMs()) - s.start) / 1000);
+    if (s.end) endAt[h] = acc; else delete endAt[h];
+  }
+  let fullTime = false;
+  for (const h of halves) {
+    out.push({
+      t: startAt[h], key: 'start:' + h, kind: 'start', big: true,
+      title: h === 1 ? 'Kick-off' : `${halfName(m, h)} under way`,
+      detail: h === 1 ? `${us} v ${them}` : ''
+    });
+    const over = endAt[h] != null && ((m.currentHalf || 1) > h || m.ended);
+    if (!over) continue;
+    const last = h >= pc || (m.ended && h === halves[halves.length - 1]);
+    if (last) fullTime = true;
+    out.push({
+      t: endAt[h], key: last ? 'ft' : 'brk:' + h, kind: last ? 'end' : 'break', big: true,
+      title: last ? 'Full time' : pc === 2 && h === 1 ? 'Half time' : `End of the ${halfName(m, h).toLowerCase()}`,
+      detail: ''
+    });
+  }
+  if (m.ended && !fullTime) out.push({ t: elapsedSec(m), key: 'ft', kind: 'end', big: true, title: 'Full time', detail: '' });
+
+  // the score after each goal, which is what anyone following wants next
+  let u = 0, th = 0;
+  for (const g of goalList(m)) {
+    if (g.side === 'us') u++; else th++;
+    const by = g.side === 'us' && g.pid ? nm(g.pid) + (g.assist ? `, assist ${nm(g.assist)}` : '') : '';
+    out.push({ t: g.t, key: 'goal:' + g.id, kind: 'goal', side: g.side, big: true, title: `Goal — ${sideName(g.side)}`, detail: by, score: `${u}–${th}` });
+  }
+
+  // starters are part of kick-off; a move between spots is the coach's business
+  for (const r of subEvents(m)) {
+    if (r.move) continue;
+    const title = r.on && r.off ? `${nm(r.on)} on for ${nm(r.off)}` : r.on ? `${nm(r.on)} on` : `${nm(r.off)} off`;
+    out.push({ t: r.t, key: `sub:${r.onSid || ''}:${r.offSid || ''}`, kind: 'sub', title: 'Sub', detail: title });
+  }
+
+  for (const x of shotList(m))
+    out.push({ t: x.t, key: 'shot:' + x.id, kind: 'shot', side: x.side, minor: true,
+      title: `Shot ${x.onTarget ? 'on target' : 'off target'} — ${sideName(x.side)}`, detail: x.side === 'us' && x.pid ? nm(x.pid) : '' });
+  for (const x of evList(m))
+    out.push({ t: x.t, key: 'ev:' + x.id, kind: 'set', side: x.side, minor: true,
+      title: `${evLabel(x.kind).replace(/s$/, '')} — ${sideName(x.side)}`, detail: '' });
+
+  /* Newest first. The clock stands still through a break, so a half's end, the
+     next half's start and anything logged in between share a second: the start
+     goes above the break, and the break above what was logged during it, which
+     belongs to the half before. Kick-off goes under anything at 0:00. */
+  const lift = x => x.kind === 'end' ? .3 : x.kind === 'start' ? (x.key === 'start:1' ? -.1 : .2) : x.kind === 'break' ? .1 : 0;
+  const rank = { goal: 0, sub: 1, shot: 2, set: 3 };
+  return out.sort((a, b) => (b.t + lift(b)) - (a.t + lift(a)) || (rank[a.kind] || 0) - (rank[b.kind] || 0));
+}
+
+// football minutes: the first minute is 1', not 0'
+const feedMin = t => Math.floor((t || 0) / 60) + 1 + '′';
+
+function viewFeed() {
+  const t = team(); if (!t) return needTeam();
+  let m = match();
+  if (!m || m.teamId !== t.id) { const l = teamMatches(t.id); m = l[0] || null; ui.matchId = m ? m.id : null; }
+  if (!m) return `<div class="empty"><strong>No game yet</strong>Nothing to follow until a game is set up.</div>`;
+
+  const now = nowMs(), sc = score(m), st = gameStatus(m);
+  const us = teamLabel(t), them = esc(m.opponent || 'Them');
+  const status = st === 'done' ? 'Full time'
+    : st === 'live' ? `${running(m) ? 'Live' : 'Paused'} · ${esc(halfName(m, m.currentHalf || 1))}`
+      : `Not started${m.date ? ' · ' + esc(shortDate(m.date)) : ''}`;
+  const head = `<div class="card feedhead" data-st="${st}">
+    <div class="feedstatus">${st === 'live' && running(m) ? '<i class="livedot"></i>' : ''}${status}${st === 'upcoming' ? '' : ` · <span data-live="clock" data-mid="${m.id}">${mmss(elapsedSec(m, now))}</span>`}</div>
+    <div class="feedscore"><span class="fs-side">${us}</span><span class="fs-num">${sc.us}–${sc.them}</span><span class="fs-side">${them}</span></div></div>`;
+
+  const all = feedItems(t, m);
+  const everything = !!ui.feedAll;
+  const shown = everything ? all : all.filter(x => !x.minor);
+  const starters = squad(t, m).filter(p => stintsOf(m, p.id).some(([, s]) => s.on === 0));
+  const row = x => `<div class="feedrow" data-kind="${x.kind}"${x.side ? ` data-side="${x.side}"` : ''}>
+      <span class="t">${x.kind === 'end' ? 'FT' : x.kind === 'break' ? 'HT' : feedMin(x.t)}</span>
+      <span><b>${esc(x.title)}</b>${x.detail ? `<span class="fd">${esc(x.detail)}</span>` : ''}
+        ${x.key === 'start:1' && starters.length ? `<span class="fd">Starting: ${starters.map(p => esc(p.name)).join(', ')}</span>` : ''}</span>
+      ${x.score ? `<span class="fscore">${x.score}</span>` : '<span></span>'}</div>`;
+  const feed = `<div class="card"><h2 style="margin-bottom:8px">What's happened</h2>
+      <div class="chips" style="margin-bottom:10px"><button class="chip" type="button" data-act="feedall" data-v="0" aria-pressed="${!everything}">Key moments</button>
+      <button class="chip" type="button" data-act="feedall" data-v="1" aria-pressed="${everything}">Everything</button></div>
+    ${shown.length ? `<div class="feed">${shown.map(row).join('')}</div>`
+      : `<p class="muted" style="margin:0">${st === 'upcoming' ? 'Nothing yet — this fills in from kick-off.' : 'Nothing logged yet.'}</p>`}</div>`;
+
+  /* Notifications are honest about what a static site can do: there is no
+     server to push from, so they come from this page while it is open — a
+     background tab or a phone with the page left up, not a phone that has
+     closed it. */
+  const following = ui.follow === m.id;
+  const canNotify = typeof Notification !== 'undefined';
+  const follow = st === 'done' ? '' : `<div class="card"><div class="spread"><h2>Notify me</h2>
+      <button class="btn ${following ? 'quiet ' : ''}sm" data-act="feedfollow" data-v="${following ? 0 : 1}">${following ? 'Stop' : 'Turn on'}</button></div>
+    <p class="muted" style="margin:6px 0 0">${following
+      ? `On for this game. Goals, kick-off, half time and full time ${canNotify && Notification.permission === 'granted' ? 'pop up on this device' : 'buzz and show here'} while this page is open.`
+      : 'Get goals, kick-off, half time and full time on this device while this page is open, even in another tab.'}</p></div>`;
+
+  return `<div class="stack">
+    <div class="barrow">${gameBar(t, m)}</div>
+    ${head}${follow}${feed}
+  </div>`;
+}
+
+/* Run from the once-a-second ticker, so it sees changes from any phone the
+   moment the sync lands. The first look at a game only takes note of what is
+   already there — opening a game at half time should not fire every goal. */
+let feedSeen = null, feedSeenFor = null;
+function watchFeed() {
+  const m = ui.follow ? state.matches[ui.follow] : null;
+  if (!m) { feedSeen = null; feedSeenFor = null; return []; }
+  const t = state.teams[m.teamId];
+  const big = feedItems(t, m).filter(x => x.big);
+  if (feedSeenFor !== m.id || !feedSeen) { feedSeen = new Set(big.map(x => x.key)); feedSeenFor = m.id; return []; }
+  const fresh = big.filter(x => !feedSeen.has(x.key)).reverse();
+  for (const x of fresh) { feedSeen.add(x.key); feedNotify(t, m, x); }
+  return fresh;
+}
+function feedNotify(t, m, x) {
+  const sc = score(m);
+  const body = [x.detail, `${(t && t.name) || 'Us'} ${sc.us}–${sc.them} ${m.opponent || 'Them'}`].filter(Boolean).join(' · ');
+  let shown = false;
+  try {
+    if (typeof document !== 'undefined' && document.hidden && typeof Notification !== 'undefined' && Notification.permission === 'granted') {
+      new Notification(x.title, { body, tag: 'minutes-' + m.id + '-' + x.key });
+      shown = true;
+    }
+  } catch (e) { }   // Android Chrome refuses a page-made Notification; the buzz and toast still land
+  if (!shown) toast(`${x.title} · ${body}`);
+  try { if (navigator.vibrate) navigator.vibrate(x.kind === 'goal' ? [120, 60, 120, 60, 120] : [150]); } catch (e) { }
+}
+
+/* --- subs: minutes and subs only, no pitch. This was the Live tab until Live
+   became the feed everyone can follow; it is still the coach's main screen. --- */
+function viewSubs() {
   const t = team(); if (!t) return needTeam();
   let m = match();
   if (!m || m.teamId !== t.id) { const l = teamMatches(t.id); m = l[0] || null; ui.matchId = m ? m.id : null; }
@@ -4023,6 +4188,7 @@ function tickLive(now = nowMs()) {
 setInterval(() => {
   if (ui.dragging) return;
   tickLive();
+  watchFeed();
   if (ui.view !== 'game') return;
   const m = match(); if (!m || !running(m)) return;
   const t = team(); if (!t) return;
@@ -5308,7 +5474,7 @@ document.addEventListener('click', e => {
   if (a === 'switchpos') { sheetSwitch(d.pid); return; }
   if (a === 'togglesort') { ui.sortBy = ui.sortBy === 'number' ? 'need' : 'number'; render(); return; }
   if (a === 'pickgame') { sheetPickGame(); return; }
-  if (a === 'pickgame2') { ui.matchId = d.id; ui.picked = null; ui.view = 'game'; ui.gameView = 'live'; closeSheet(); render(); return; }
+  if (a === 'pickgame2') { ui.matchId = d.id; ui.picked = null; ui.view = 'game'; ui.gameView = 'subs'; closeSheet(); render(); return; }
   if (a === 'doswitch') {
     if (ui.plan) {
       const sl = d.sid ? slotById(m, d.sid) : null;
@@ -5362,6 +5528,17 @@ document.addEventListener('click', e => {
   }
   if (a === 'delev') { drop(`matches/${m.id}/events/${d.id}`); closeSheet(); return; }
   if (a === 'logfilter') { ui.logFilter = d.v; render(); return; }
+  if (a === 'feedall') { ui.feedAll = d.v === '1'; render(); return; }
+  if (a === 'feedfollow') {
+    if (d.v !== '1') { ui.follow = null; render(); return; }
+    ui.follow = ui.matchId; feedSeen = null; watchFeed();
+    // asked on the tap, because browsers refuse a permission prompt nobody asked for
+    try {
+      if (typeof Notification !== 'undefined' && Notification.permission === 'default') Notification.requestPermission().then(() => render(), () => { });
+    } catch (e) { }
+    toast('Following this game');
+    render(); return;
+  }
   if (a === 'trackcfg') { sheetTrackCfg(); return; }
   if (a === 'hardreload') {
     location.replace(location.pathname + '?r=' + Date.now());
@@ -5404,7 +5581,7 @@ document.addEventListener('click', e => {
     if (d.code === wsCode()) { closeSheet(); ui.view = 'club'; render(); return; }
     localStorage.setItem(LS_WS, d.code); location.reload(); return;
   }
-  if (a === 'goteam') { ui.teamId = d.id; ui.view = 'matches'; ui.gameView = 'live'; closeSheet(); render(); return; }
+  if (a === 'goteam') { ui.teamId = d.id; ui.view = 'matches'; ui.gameView = 'subs'; closeSheet(); render(); return; }
   if (a === 'gotoplayer') {
     ui.teamId = d.tid; ui.matchId = d.id; ui.view = 'game'; ui.gameView = 'stats'; render(); return;   // deliberate: a parent wants the numbers
   }
@@ -5948,7 +6125,7 @@ document.addEventListener('click', e => {
   if (a === 'newmatch') { closeSheet(); sheetMatch(null); return; }
   if (a === 'editmatch') { sheetMatch(state.matches[d.id]); return; }
   if (a === 'backgames') { ui.view = 'matches'; ui.picked = null; render(); return; }
-  if (a === 'openmatch') { ui.matchId = d.id; ui.view = 'game'; ui.gameView = 'live'; render(); return; }
+  if (a === 'openmatch') { ui.matchId = d.id; ui.view = 'game'; ui.gameView = 'subs'; render(); return; }
   if (a === 'savematch') {
     const side = Number($('#mSide').value);
     const base = {
@@ -5966,7 +6143,7 @@ document.addEventListener('click', e => {
     else {
       const id = uid();
       commit(`matches/${id}`, { id, teamId: t.id, currentHalf: 1, periods: {}, planned: {}, positions: {}, stints: {}, createdAt: Date.now(), ...base });
-      ui.matchId = id; ui.view = 'game'; ui.gameView = 'live';
+      ui.matchId = id; ui.view = 'game'; ui.gameView = 'subs';
     }
     if (pick === 'custom') { ui.editFid = GAME_SHAPE; ui.view = 'formation'; }
     closeSheet(); render(); return;
@@ -6115,7 +6292,7 @@ function hashToUi() {
       if (!state.matches[p[3]]) return false;
       ui.matchId = p[3]; ui.view = 'game';
       if (p[4] === 'shape') { ui.view = 'formation'; ui.editFid = GAME_SHAPE; return true; }
-      if (['live', 'track', 'stats', 'pitch', 'plan'].includes(p[4])) ui.gameView = p[4];
+      if (['live', 'subs', 'track', 'stats', 'pitch', 'plan'].includes(p[4])) ui.gameView = p[4];
       return true;
     }
     if (p[2] === 'shape' && p[3]) { ui.editFid = p[3]; ui.view = 'formation'; return true; }

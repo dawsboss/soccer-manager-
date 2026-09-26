@@ -496,9 +496,9 @@ function sideline() {
     let h = html();
     check('the Track tab shows the card', /id="subsdue"/.test(h), true);
     check('the tracker\'s role bar mentions the planned subs', /planned subs/.test(h), true);
-    as('jaz'); A.ui.gameView = 'live';
+    as('jaz'); A.ui.gameView = 'subs';
     h = html();
-    check('the Live tab shows it to the coach', /id="subsdue"/.test(h) && /Sam/.test(h), true);
+    check('the Subs tab shows it to the coach', /id="subsdue"/.test(h) && /Sam/.test(h), true);
     A.ui.gameView = 'plan';
     check('the Plan tab draws locked', /Plan locked in/.test(html()), true);
     A.click({ act: 'subsgo', start: '0' });
