@@ -2,8 +2,8 @@
    Static app. Data lives in localStorage, and mirrors to Firebase Realtime
    Database when a config + workspace code are present. */
 
-const BUILD = '50';
-const BUILT = '2026-09-13';
+const BUILD = '51';
+const BUILT = '2026-09-26';
 /* index.html carries the build it was published with. If this file is newer, the
    browser handed us a cached page — the exact failure that has eaten hours. */
 const pageBuild = () => {
@@ -27,7 +27,7 @@ const SANDBOX_PREFIX = 'test-';
 /* The workspace node was already organisation-shaped — many teams, their
    matches — so membership hangs off it directly and nothing has to migrate. */
 let state = { teams: {}, matches: {}, access: {} };
-let ui = { view: 'matches', gameView: 'live', teamId: null, matchId: null, picked: null, dragging: false, editFid: null, sortBy: 'need', plan: null };
+let ui = { view: 'matches', gameView: 'live', teamId: null, matchId: null, picked: null, dragging: false, editFid: null, sortBy: 'need', plan: null, snapAt: null, snapSid: null };
 let lastLog = [];
 
 const ROLES = ['GK', 'Back', 'Mid', 'Wing', 'Forward'];
@@ -1148,15 +1148,42 @@ function buildPlan(m, roster) {
   return { blockMinutes: realLen, blocks, projected };
 }
 
+/* A plan is a list of snapshots: from `start` (seconds of game time) until the
+   next one, these players in these spots. The auto planner and the coach's own
+   snapshots write the same shape, so "Make these subs" and the live card work
+   on either without knowing which built it. Read blocks through here: the
+   database hands an array back as an object once it has a gap in it. */
+function planBlocks(m) {
+  const b = m && m.plan && m.plan.blocks;
+  if (!b) return [];
+  return (Array.isArray(b) ? b : Object.values(b)).filter(x => x && x.start != null)
+    .sort((a, c) => a.start - c.start);
+}
 function planBlockAt(m, sec) {
-  if (!m.plan || !m.plan.blocks) return null;
   let cur = null;
-  for (const b of m.plan.blocks) if (b.start <= sec) cur = b;
+  for (const b of planBlocks(m)) if (b.start <= sec) cur = b;
   return cur;
 }
 function nextPlanBlock(m, sec) {
-  if (!m.plan || !m.plan.blocks) return null;
-  return m.plan.blocks.find(b => b.start > sec) || null;
+  return planBlocks(m).find(b => b.start > sec) || null;
+}
+/* Seconds each player gets if the plan is followed: a snapshot lasts until the
+   next one, the last until full time. Worked out from the snapshots every time
+   rather than stored, so a hand-edited plan can never disagree with its total. */
+function planSeconds(m) {
+  const bl = planBlocks(m), end = matchMinutes(m) * 60, out = {};
+  bl.forEach((b, i) => {
+    const len = Math.max(0, Math.min(end, i + 1 < bl.length ? bl[i + 1].start : end) - b.start);
+    for (const id of b.ids || []) out[id] = (out[id] || 0) + len;
+  });
+  return out;
+}
+/* "Kick-off", "2nd half", or the minute and which half it falls in. */
+function snapLabel(m, sec) {
+  if (!sec) return 'Kick-off';
+  const per = (m.periodMinutes || 40) * 60;
+  const n = Math.floor(sec / per) + 1;
+  return sec % per === 0 ? halfName(m, n) : `${mmss(sec)} · ${halfName(m, n)}`;
 }
 
 /* Turn a picker value into a standalone copy. Always a copy: a game must never
@@ -2045,8 +2072,8 @@ function viewLive() {
   const scCard = scoreCard(t, m);
 
   const startHint = on.length === 0 ? `<p class="muted" style="margin:0 0 10px">Tap a player on the bench, then <b>Put on</b>. Repeat until your starters are out there.
-    ${m.plan ? ' Or fill the whole lineup from the plan.' : ''}</p>
-    ${m.plan ? `<button class="btn quiet wide" data-act="applyblock" data-start="${(planBlockAt(m, el) || m.plan.blocks[0]).start}" style="margin-bottom:10px">Use the planned lineup</button>` : ''}` : '';
+    ${planBlocks(m).length ? ' Or fill the whole lineup from the plan.' : ''}</p>
+    ${planBlocks(m).length ? `<button class="btn quiet wide" data-act="applyblock" data-start="${(planBlockAt(m, el) || planBlocks(m)[0]).start}" style="margin-bottom:10px">Use the planned lineup</button>` : ''}` : '';
 
   return `<div class="stack">
     <div class="barrow">${gameBar(t, m)}</div>
@@ -2219,8 +2246,8 @@ function nextChange(m, el, name) {
     return `<p class="muted" style="margin:0 0 10px">Build a block-by-block plan from planned minutes, ratings and pairings.</p>
       <button class="btn wide" data-act="makeplan">Plan the game</button>`;
   } else if (nb) {
-    const onIds = nb.ids.filter(id => !cb || !cb.ids.includes(id));
-    const offIds = cb ? cb.ids.filter(id => !nb.ids.includes(id)) : [];
+    const onIds = (nb.ids || []).filter(id => !cb || !(cb.ids || []).includes(id));
+    const offIds = cb ? (cb.ids || []).filter(id => !(nb.ids || []).includes(id)) : [];
     return `<div class="spread" style="align-items:flex-start">
       <div><div class="muted">Next change at ${mmss(nb.start)}</div>
       <div style="margin-top:4px">${onIds.length ? `<span class="on">on: ${onIds.map(name).join(', ')}</span><br>` : ''}${offIds.length ? `<span class="off">off: ${offIds.map(name).join(', ')}</span>` : ''}${!onIds.length && !offIds.length ? 'no changes' : ''}</div></div>
@@ -2235,7 +2262,13 @@ function nextChange(m, el, name) {
 /* The game plan used to be reachable only from a card at the foot of the Pitch
    tab, under the pitch, the XI and the bench — on a phone, far enough down that
    coaches stopped finding it. Planning is done before kick-off, at a kitchen
-   table, so it earns a tab of its own rather than a scroll. */
+   table, so it earns a tab of its own rather than a scroll.
+
+   The tab is built around snapshots, because that is how a coach thinks about
+   a plan: "at kick-off it looks like this, at 20 minutes like this". Each one is
+   the pitch in this game's shape — tap a spot, tap a player — and the minutes
+   each player ends up with fall out of the snapshots rather than going in. The
+   auto planner is still here, as a way to get a first draft to edit. */
 function viewPlan() {
   const t = team(); if (!t) return needTeam();
   let m = match();
@@ -2246,25 +2279,128 @@ function viewPlan() {
   const roster = squad(t, m);
   const el = elapsedSec(m, nowMs());
   const name = id => { const p = (t.players || {})[id]; return p ? esc(p.name) : 'Unknown'; };
-  const planned = roster.filter(p => m.planned && m.planned[p.id] != null);
+  const blocks = planBlocks(m);
+  const shape = (m.formation && m.formation.slots) || [];
+
+  const next = blocks.length && el > 0
+    ? `<div class="card"><h2 style="margin-bottom:10px">Next change</h2>${nextChange(m, el, name)}</div>` : '';
+
+  let snaps;
+  if (!shape.length) {
+    snaps = `<div class="card"><h2 style="margin-bottom:6px">Snapshots</h2>
+      <p class="muted" style="margin-top:0">This game has no shape, so there are no positions to plan around. Pick one — 4-3-3, 2-3-1, or a shape you saved — and each snapshot becomes a pitch you fill in.</p>
+      <button class="btn wide" data-act="editmatch" data-id="${m.id}">Pick a shape</button>
+      ${blocks.length ? `<div style="margin-top:14px">${planDetail(t, m)}</div>` : ''}</div>`;
+  } else if (!blocks.length) {
+    snaps = `<div class="card"><h2 style="margin-bottom:6px">Snapshots</h2>
+      <p class="muted" style="margin-top:0">A plan is a few pictures of the pitch: who plays where at kick-off, then who is where after each change. Start with kick-off, then add one for every time you mean to make subs — half-time, every ten minutes, whatever suits.</p>
+      <button class="btn wide" data-act="snapstart">Plan kick-off</button>
+      <p class="muted" style="margin:12px 0 0">Or let the app draft one from your target minutes, and change what you like — see <b>Build one for me</b>.</p></div>`;
+  } else {
+    const cur = blocks.find(b => b.start === ui.snapAt) || blocks[0];
+    const i = blocks.indexOf(cur), prev = i ? blocks[i - 1] : null;
+    const assign = cur.assign || {};
+    const sel = ui.snapSid && shape.some(s => s.id === ui.snapSid) ? ui.snapSid : null;
+    const P = id => (t.players || {})[id];
+    const slotOfIn = (b, pid) => Object.keys((b && b.assign) || {}).find(k => b.assign[k] === pid) || null;
+
+    const strip = `<div class="snapstrip">${blocks.map(b => {
+      const empty = shape.filter(s => !(b.assign || {})[s.id]).length;
+      return `<button type="button" class="chip" data-act="snappick" data-start="${b.start}" aria-pressed="${b === cur}">${b.start ? mmss(b.start) : 'Kick-off'}${empty ? ` <span class="snapgap">${empty}</span>` : ''}</button>`;
+    }).join('')}<button type="button" class="chip" data-act="snapadd">+ Add</button></div>`;
+
+    const when = i === 0
+      ? `<div class="snapwhen"><b>Kick-off</b><span class="muted">the starting lineup</span></div>`
+      : `<div class="snapwhen"><button class="btn quiet sm" data-act="snaptime" data-d="-300" aria-label="5 minutes earlier">−5</button>
+          <button class="btn quiet sm" data-act="snaptime" data-d="-60" aria-label="1 minute earlier">−1</button>
+          <b>${mmss(cur.start)}<small>${esc(halfName(m, Math.floor(cur.start / ((m.periodMinutes || 40) * 60)) + 1))}</small></b>
+          <button class="btn quiet sm" data-act="snaptime" data-d="60" aria-label="1 minute later">+1</button>
+          <button class="btn quiet sm" data-act="snaptime" data-d="300" aria-label="5 minutes later">+5</button></div>`;
+
+    const spots = shape.map(s => {
+      const pid = assign[s.id], p = pid && P(pid);
+      const picked = sel === s.id ? 1 : 0;
+      return p
+        ? `<button type="button" class="token snaptok" data-act="snapslot" data-sid="${s.id}" data-picked="${picked}" style="left:${s.x}%;top:${s.y}%">
+            <span class="role">${esc(s.label)}</span><span class="num">${esc(p.number ?? '')}</span>
+            <span class="nm">${esc(p.name.split(' ')[0])}</span></button>`
+        : `<button type="button" class="ghost" data-act="snapslot" data-sid="${s.id}" data-picked="${picked}" style="left:${s.x}%;top:${s.y}%">${esc(s.label)}</button>`;
+    }).join('');
+    const pitch = `<div class="pitch snappitch">
+      <svg class="lines" viewBox="0 0 68 100" preserveAspectRatio="none" aria-hidden="true">
+        <g fill="none" stroke="rgba(255,255,255,.45)" stroke-width=".5">
+          <rect x="2" y="2" width="64" height="96"/><line x1="2" y1="50" x2="66" y2="50"/><circle cx="34" cy="50" r="9"/>
+          <rect x="16" y="2" width="36" height="15"/><rect x="16" y="83" width="36" height="15"/>
+          <rect x="26" y="2" width="16" height="6"/><rect x="26" y="92" width="16" height="6"/>
+        </g></svg>${spots}</div>`;
+
+    const selSlot = sel && slotById(m, sel), selP = sel && assign[sel] && P(assign[sel]);
+    const hint = selSlot
+      ? `<div class="snaphint"><span>${selP ? `Who replaces <b>${esc(selP.name)}</b> at ${esc(selSlot.label)}? Or tap another spot to swap them.` : `Who plays <b>${esc(selSlot.label)}</b>?`}</span>
+          ${selP ? `<button class="btn quiet sm" data-act="snapclear">Leave empty</button>` : ''}</div>`
+      : `<div class="snaphint"><span class="muted">Tap a spot, then a player. Tap two spots to swap them.</span></div>`;
+
+    // what this snapshot changes from the one before — the subs you would make
+    let diff = '';
+    if (prev) {
+      const pa = prev.assign || {};
+      const bi = Object.values(assign), pi = Object.values(pa);
+      const on = bi.filter(id => !pi.includes(id)), off = pi.filter(id => !bi.includes(id));
+      const moved = bi.filter(id => pi.includes(id) && slotOfIn(prev, id) !== slotOfIn(cur, id));
+      const lbl = (b, id) => { const sl = slotById(m, slotOfIn(b, id)); return sl ? ` (${esc(sl.label)})` : ''; };
+      diff = `<div class="snapdiff">${on.length ? `<div><span class="on">on:</span> ${on.map(id => name(id) + lbl(cur, id)).join(', ')}</div>` : ''}
+        ${off.length ? `<div><span class="off">off:</span> ${off.map(name).join(', ')}</div>` : ''}
+        ${moved.length ? `<div><span class="muted">moves:</span> ${moved.map(id => `${name(id)} ${esc((slotById(m, slotOfIn(prev, id)) || {}).label || '')} → ${esc((slotById(m, slotOfIn(cur, id)) || {}).label || '')}`).join(', ')}</div>` : ''}
+        ${!on.length && !off.length && !moved.length ? '<span class="muted">Same as the snapshot before — change a spot, or delete this one.</span>' : ''}</div>`;
+    }
+
+    const secs = planSeconds(m);
+    const prow = p => {
+      const sid = slotOfIn(cur, p.id), sl = sid && slotById(m, sid);
+      const got = Math.round((secs[p.id] || 0) / 60), want = m.planned && m.planned[p.id] != null ? Number(m.planned[p.id]) : null;
+      return `<button class="prow" type="button" data-act="snapplayer" data-pid="${p.id}" data-picked="${sid && sid === sel ? 1 : 0}">
+        <span class="pnum">${esc(p.number ?? '')}</span>
+        <span><span class="pname">${esc(p.name)}</span><span class="psub">${sl ? esc(sl.label) : 'not on'}${p.gk ? (sl && sl.role === 'GK' ? '' : ' · keeper') : p.preferred ? ' · likes ' + esc(p.preferred) : ''}</span></span>
+        <span class="pmins">${got}<small>${want != null ? ' of ' + want : ''} min</small></span></button>`;
+    };
+    const off = roster.filter(p => !slotOfIn(cur, p.id)), on = roster.filter(p => slotOfIn(cur, p.id));
+    const list = `<h3 style="margin:14px 0 6px">Not on</h3>
+      <div class="plist">${off.map(prow).join('') || '<p class="muted" style="margin:2px 0">Everyone is on in this snapshot.</p>'}</div>
+      <h3 style="margin:14px 0 6px">On the pitch</h3>
+      <div class="plist">${on.map(prow).join('') || '<p class="muted" style="margin:2px 0">Nobody yet.</p>'}</div>`;
+
+    snaps = `<div class="card"><div class="spread" style="margin-bottom:10px"><h2>Snapshots</h2>
+        <span class="muted">${esc(m.formation.name || '')}</span></div>
+      ${strip}${when}${pitch}${hint}${diff}
+      <div class="row" style="margin-top:10px"><button class="btn quiet sm" data-act="snapadd">Copy to a new snapshot</button>
+        <button class="btn quiet sm" data-act="snapdel">Delete${i === 0 && blocks.length === 1 ? ' plan' : ''}</button>
+        <button class="btn quiet sm" data-act="applyblock" data-start="${cur.start}">Put this on the pitch now</button></div>
+      ${list}</div>`;
+  }
+
+  const secs = planSeconds(m);
   const minutesRows = roster.map(p => {
     const pd = m.planned && m.planned[p.id] != null ? Number(m.planned[p.id]) : null;
+    const got = Math.round((secs[p.id] || 0) / 60), d = pd != null ? got - pd : 0;
     return `<div class="spread" style="padding:4px 0"><span>${p.number != null && p.number !== '' ? `<span class="muted">${esc(p.number)}</span> ` : ''}${esc(p.name)}${p.gk ? ' <span class="muted">GK</span>' : ''}</span>
-      <span>${pd != null ? `<b>${pd}</b> <span class="muted">min</span>` : '<span class="muted">not set</span>'}</span></div>`;
+      <span>${blocks.length ? `<b>${got}</b> ` : ''}<span class="muted">${pd != null ? (blocks.length ? `of ${pd}` : `${pd} target`) : blocks.length ? 'min' : 'no target'}</span>${blocks.length && pd != null && d ? `<span class="diff ${d < 0 ? 'owed' : 'over'}">${d < 0 ? -d + ' short' : d + ' over'}</span>` : ''}</span></div>`;
   }).join('') || '<p class="muted" style="margin:0">No players in the squad for this game yet.</p>';
 
   return `<div class="stack">
     <div class="barrow">${gameBar(t, m)}</div>
     <div class="split">
       <div class="stack">
-        <div class="card"><h2 style="margin-bottom:10px">Game plan</h2>${nextChange(m, el, name)}</div>
-        ${m.plan ? `<div class="card"><h2 style="margin-bottom:10px">The plan${m.formation ? ' · ' + esc(m.formation.name) : ''}</h2>${planDetail(t, m)}</div>` : ''}
+        ${next}
+        ${snaps}
       </div>
       <div class="stack">
         <div class="card"><div class="spread" style="margin-bottom:10px">
-          <h2>Planned minutes</h2><button class="btn quiet sm" data-act="planall">${planned.length ? 'Edit' : 'Set'}</button></div>
-          <p class="muted" style="margin-top:0">${m.periodCount || 2} × ${m.periodMinutes || 40} min · ${m.onFieldCount || 11}v${m.onFieldCount || 11}. The plan shares these minutes out in blocks; left unset, it splits them evenly.</p>
+          <h2>Minutes</h2><button class="btn quiet sm" data-act="planall">Set targets</button></div>
+          <p class="muted" style="margin-top:0">${m.periodCount || 2} × ${m.periodMinutes || 40} min · ${m.onFieldCount || 11}v${m.onFieldCount || 11}. ${blocks.length ? 'What each player gets if you follow the snapshots, against her target.' : 'Targets are optional — they are what <b>Build one for me</b> aims for.'}</p>
           ${minutesRows}</div>
+        <div class="card"><h2 style="margin-bottom:6px">Build one for me</h2>
+          <p class="muted" style="margin-top:0">Drafts a snapshot every ${Number(m.blockMinutes) || 10} minutes or so from the targets, ratings and pairings. ${blocks.length ? 'It replaces the snapshots you have.' : 'Every one of them can be changed afterwards.'}</p>
+          <button class="btn quiet wide" data-act="makeplan">${blocks.length ? 'Redraft the plan' : 'Draft a plan'}</button></div>
         <div class="card"><div class="spread">
           <div><h2>Who is unavailable</h2><div class="muted">${Object.keys(m.out || {}).length || 'Nobody'} left out of this game</div></div>
           <button class="btn quiet sm" data-act="availability">Change</button></div></div>
@@ -3454,6 +3590,102 @@ function sheetFixMinutes(pid) {
     <p class="muted" style="margin:8px 0 0">Times are minutes into the game, like 23:10. Now is ${mmss(e)}.</p>`);
 }
 
+/* Snapshot editing on the Plan tab. The whole plan is rewritten on each change:
+   planning happens before the game on one phone, not in a race at the
+   sideline, and a whole write keeps the blocks dense and sorted. ids is always
+   rebuilt from assign, so who is on and where she plays cannot disagree. */
+function savePlan(m, blocks) {
+  const shape = (m.formation && m.formation.slots) || [];
+  const out = blocks.slice().sort((a, c) => a.start - c.start).map(b => {
+    const assign = {};
+    for (const s of shape) if (b.assign && b.assign[s.id]) assign[s.id] = b.assign[s.id];
+    return { start: b.start, ids: [...new Set(Object.values(assign))], assign };
+  });
+  commit(`matches/${m.id}/plan`, out.length ? { manual: true, blocks: out } : null);
+}
+function snapAction(t, m, a, d) {
+  if (!m) return;
+  const shape = (m.formation && m.formation.slots) || [];
+  const end = matchMinutes(m) * 60, per = (m.periodMinutes || 40) * 60;
+  const blocks = planBlocks(m).map(b => ({ start: b.start, assign: { ...(b.assign || {}) } }));
+  const cur = blocks.find(b => b.start === ui.snapAt) || blocks[0];
+  const taken = sec => blocks.some(b => b !== cur && b.start === sec);
+  if (ui.snapSid && !shape.some(s => s.id === ui.snapSid)) ui.snapSid = null;
+
+  if (a === 'snapstart') {
+    // start from whoever is on the pitch right now, if anyone — usually nobody
+    const assign = {};
+    for (const pid of fieldIds(m)) { const sid = slotIdOf(m, pid); if (sid && shape.some(s => s.id === sid)) assign[sid] = pid; }
+    ui.snapAt = 0; ui.snapSid = shape.find(s => !assign[s.id]) ? shape.find(s => !assign[s.id]).id : null;
+    savePlan(m, [{ start: 0, assign }]); return;
+  }
+  if (!cur) return;
+  if (a === 'snappick') { ui.snapAt = Number(d.start); ui.snapSid = null; render(); return; }
+  if (a === 'snapadd') {
+    // ten minutes on, or the next half's start if that comes sooner — half-time
+    // is when most coaches make their changes
+    const nx = blocks.find(b => b.start > cur.start);
+    const half = (Math.floor(cur.start / per) + 1) * per;
+    let at = Math.min(cur.start + 600, half < end ? half : end);
+    if (nx && at >= nx.start) at = cur.start + Math.floor((nx.start - cur.start) / 120) * 60;
+    if (at <= cur.start || at >= end || taken(at)) { toast(nx ? 'No room before the next snapshot — move that one first' : 'No time left after this one'); return; }
+    blocks.push({ start: at, assign: { ...cur.assign } });
+    ui.snapAt = at; ui.snapSid = null;
+    savePlan(m, blocks); toast(`Copied to ${mmss(at)} — now make the changes`); return;
+  }
+  if (a === 'snapdel') {
+    if (cur.start === 0 && blocks.length > 1) { toast('Kick-off is where the plan starts — clear its spots instead'); return; }
+    if (blocks.length === 1 && !confirm('Delete the whole plan?')) return;
+    const i = blocks.indexOf(cur);
+    blocks.splice(i, 1);
+    ui.snapAt = blocks.length ? blocks[Math.max(0, i - 1)].start : null; ui.snapSid = null;
+    savePlan(m, blocks); return;
+  }
+  if (a === 'snaptime') {
+    if (cur.start === 0) return;
+    const at = clamp(cur.start + Number(d.d), 60, end - 60);
+    if (at === cur.start) return;
+    if (taken(at)) { toast(`There is already a snapshot at ${mmss(at)}`); return; }
+    cur.start = at; ui.snapAt = at;
+    savePlan(m, blocks); return;
+  }
+  if (a === 'snapslot') {
+    const sid = d.sid;
+    if (!ui.snapSid || ui.snapSid === sid) { ui.snapSid = ui.snapSid === sid ? null : sid; render(); return; }
+    // a spot was already picked: swap the two, empty or not
+    const x = cur.assign[ui.snapSid], y = cur.assign[sid];
+    if (!x && !y) { ui.snapSid = sid; render(); return; }
+    if (y) cur.assign[ui.snapSid] = y; else delete cur.assign[ui.snapSid];
+    if (x) cur.assign[sid] = x; else delete cur.assign[sid];
+    ui.snapSid = null;
+    savePlan(m, blocks); return;
+  }
+  if (a === 'snapclear') {
+    if (ui.snapSid) delete cur.assign[ui.snapSid];
+    savePlan(m, blocks); return;
+  }
+  if (a === 'snapplayer') {
+    const p = (t.players || {})[d.pid]; if (!p) return;
+    const had = Object.keys(cur.assign).find(k => cur.assign[k] === p.id) || null;
+    let sid = ui.snapSid;
+    if (!sid) {
+      if (had) { ui.snapSid = had; render(); return; }
+      // no spot picked: drop her in the open spot that suits her best
+      const open = shape.filter(s => !cur.assign[s.id]);
+      if (!open.length) { toast('Every spot is filled — tap the spot she should take'); return; }
+      sid = open.slice().sort((x, y) => fit(p, y) - fit(p, x))[0].id;
+    }
+    if (had === sid) { ui.snapSid = null; render(); return; }
+    const was = cur.assign[sid];
+    cur.assign[sid] = p.id;
+    if (had) { if (was) cur.assign[had] = was; else delete cur.assign[had]; }
+    // carry on down the empty spots, so a lineup is one tap per player
+    const nextOpen = shape.find(s => !cur.assign[s.id]);
+    ui.snapSid = ui.snapSid && nextOpen ? nextOpen.id : null;
+    savePlan(m, blocks); return;
+  }
+}
+
 function sheetPlan() {
   const t = team(), m = match();
   if (!m.plan) return;
@@ -3466,25 +3698,26 @@ function sheetPlan() {
    sheet on the Pitch tab and the Plan tab, so the two never drift apart. */
 function planDetail(t, m) {
   const roster = squad(t, m);
-  const projected = m.plan.projected || {};
+  const projected = planSeconds(m), blocks = planBlocks(m);
   const nm = id => { const p = (t.players || {})[id]; return p ? (p.number ? p.number + ' ' : '') + p.name.split(' ')[0] : '?'; };
   const spotFor = (b, id) => {
     const sid = Object.keys(b.assign || {}).find(k => b.assign[k] === id);
     const sl = sid && slotById(m, sid);
     return sl ? ` (${sl.label})` : '';
   };
-  return `<p class="muted" style="margin-top:0">${m.plan.blocks.length} blocks of about ${Math.round(m.plan.blockMinutes)} minutes.</p>
-    ${m.plan.blocks.map((b, i) => {
-    const prev = i ? m.plan.blocks[i - 1] : null;
-    const onIds = prev ? b.ids.filter(id => !prev.ids.includes(id)) : b.ids;
-    const offIds = prev ? prev.ids.filter(id => !b.ids.includes(id)) : [];
-    return `<div class="planblock"><div class="spread"><b>${mmss(b.start)}</b>
+  return `<p class="muted" style="margin-top:0">${m.plan.manual ? `${blocks.length} snapshot${blocks.length === 1 ? '' : 's'}.` : `${blocks.length} blocks of about ${Math.round(m.plan.blockMinutes)} minutes.`}</p>
+    ${blocks.map((b, i) => {
+    const prev = i ? blocks[i - 1] : null;
+    const bi = b.ids || [], pi = prev ? prev.ids || [] : [];
+    const onIds = prev ? bi.filter(id => !pi.includes(id)) : bi;
+    const offIds = prev ? pi.filter(id => !bi.includes(id)) : [];
+    return `<div class="planblock"><div class="spread"><b>${esc(snapLabel(m, b.start))}</b>
         <button class="btn quiet sm" data-act="applyblock" data-start="${b.start}">Use this XI</button></div>
-        <div style="margin-top:4px">${prev ? `${onIds.length ? `<span class="on">on: ${onIds.map(id => nm(id) + spotFor(b, id)).join(', ')}</span> ` : ''}${offIds.length ? `<span class="off">off: ${offIds.map(nm).join(', ')}</span>` : ''}${!onIds.length && !offIds.length ? '<span class="muted">unchanged</span>' : ''}` : b.ids.map(id => nm(id) + spotFor(b, id)).join(', ')}</div></div>`;
+        <div style="margin-top:4px">${prev ? `${onIds.length ? `<span class="on">on: ${onIds.map(id => nm(id) + spotFor(b, id)).join(', ')}</span> ` : ''}${offIds.length ? `<span class="off">off: ${offIds.map(nm).join(', ')}</span>` : ''}${!onIds.length && !offIds.length ? '<span class="muted">unchanged</span>' : ''}` : bi.map(id => nm(id) + spotFor(b, id)).join(', ')}</div></div>`;
   }).join('')}
     <h3 style="margin-top:16px">Projected minutes</h3>
     ${roster.map(p => {
-    const pr = projected[p.id] || 0, pd = (m.planned && m.planned[p.id]) || 0;
+    const pr = Math.round((projected[p.id] || 0) / 60), pd = Number((m.planned && m.planned[p.id]) || 0);
     const d = pr - pd;
     return `<div class="spread" style="padding:4px 0"><span>${esc(p.name)}</span>
       <span><b>${pr}</b> <span class="muted">of ${pd} planned${pd ? d < 0 ? ` · ${-d} short` : d > 0 ? ` · ${d} over` : '' : ''}</span></span></div>`;
@@ -3978,6 +4211,7 @@ document.addEventListener('click', e => {
   if (a === 'makeplan') {
     const roster = squad(t, m);
     if (!roster.length) { toast('Add players first'); return; }
+    if (m.plan && m.plan.manual && !confirm('Replace your snapshots with a fresh draft?')) return;
     if (!m.planned || !Object.keys(m.planned).length) {
       const each = evenSplit(m, roster), pl = {};
       roster.forEach(p => pl[p.id] = p.gk ? matchMinutes(m) : each);
@@ -3989,11 +4223,13 @@ document.addEventListener('click', e => {
     return;
   }
   if (a === 'viewplan') { sheetPlan(); return; }
+  if (a.startsWith('snap')) { snapAction(t, m, a, d); return; }
   if (a === 'applyblock') {
-    const b = m.plan.blocks.find(x => String(x.start) === String(d.start)); if (!b) return;
+    const b = planBlocks(m).find(x => String(x.start) === String(d.start)); if (!b) return;
     const cur = fieldIds(m);
-    const goOff = cur.filter(id => !b.ids.includes(id));
-    const goOn = b.ids.filter(id => !cur.includes(id));
+    const ids = b.ids || [];
+    const goOff = cur.filter(id => !ids.includes(id));
+    const goOn = ids.filter(id => !cur.includes(id));
     const n = Math.min(goOff.length, goOn.length);
     for (let i = 0; i < n; i++) swap(m, goOff[i], goOn[i]);
     for (let i = n; i < goOff.length; i++) takeOffField(m, goOff[i]);

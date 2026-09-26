@@ -8,6 +8,35 @@ before this point lives only in the git log.
 
 ---
 
+## Plan in snapshots of the pitch — 2026-09-26
+
+The Plan tab only offered "Plan the game": the app drew up blocks from planned
+minutes, ratings and pairings, and the coach could take it or leave it. There
+was no way to make your own plan, and the result read as a list of names and
+times rather than the pitch a coach actually has in her head.
+
+The tab is now built around **snapshots**: each one is the pitch in this game's
+shape, from a given minute. Plan kick-off by tapping a spot and then a player
+(the next empty spot is picked for you, so a lineup is one tap per player), or
+tap a player on her own to drop her in the open spot that suits her best. Tap
+two spots to swap them. **Add** copies the current snapshot ten minutes on — or
+to the next half if that comes first — and −5/−1/+1/+5 move it. Each snapshot
+shows what it changes from the one before (on, off, and moves), and the Minutes
+card shows what every player gets if the snapshots are followed, against her
+target. "Put this on the pitch now" and the live "Make these subs" work from
+the same snapshots.
+
+Snapshots are the same `matches/{id}/plan` blocks the auto planner already
+wrote (`start`, `ids`, `assign`), now with `manual: true`; the editor rebuilds
+`ids` from `assign` on every save so the two cannot disagree. Projected minutes
+are worked out from the blocks (`planSeconds()`) rather than read from the
+stored `projected`, so a hand-edited plan cannot contradict its own totals, and
+blocks are read through `planBlocks()` because the database hands a gapped
+array back as an object. The auto planner stays as **Build one for me**, a
+first draft to edit, and asks before replacing snapshots you made. A game with
+no shape is asked to pick one, since there are no positions to plan around.
+`test/plan.js` covers the editor.
+
 ## A game can have its own shape, and 2-5-1 is a preset — 2026-09-26
 
 A team could already save its own shapes, but a game only ever got a frozen
