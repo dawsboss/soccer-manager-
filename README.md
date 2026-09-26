@@ -540,4 +540,37 @@ Written by the coaches' app on a 1.2 second debounce. Read by `live.html`, which
 
 ## Backup
 
-Setup → *Download a copy* writes the whole store to JSON. *Load from a file* replaces it and pushes to Firebase.
+Setup → *Download a copy* writes the whole store to JSON. *Load from a file* adds whatever teams and games the club is missing and keeps everything already there; it never replaces the club wholesale, and never touches who has access.
+
+## Bulk import
+
+Admin → *Import teams and games* takes a season at once — teams, rosters, fixtures and past results — as one JSON file, chosen or pasted. *Check it* shows what it will do and every problem, line by line, before anything is written; nothing is written while an error is left.
+
+```json
+{
+  "teams": [{
+    "name": "Lakeside Thunder G12",
+    "players": [
+      { "name": "Ada Lovelace", "number": 1, "gk": true },
+      { "name": "Bea Smith", "number": 7, "position": "Forward", "also": ["Wing"], "rating": 4 },
+      { "name": "Cleo Jones", "number": 10, "position": "Mid", "maxStint": 20, "note": "Strong left foot" }
+    ],
+    "games": [
+      { "opponent": "Riverside", "date": "2026-09-06", "kickoff": "10:00", "venue": "Lakeside Park",
+        "periods": 2, "minutes": 30, "side": 9, "score": "3-1", "scorers": [7, 7, 10] },
+      { "opponent": "Northgate", "date": "2026-10-04", "kickoff": "09:30", "side": 9, "shape": "3-3-2" }
+    ]
+  }],
+  "games": [
+    { "team": "Lakeside Thunder G12", "opponent": "Hill End", "date": "2026-10-11" }
+  ]
+}
+```
+
+- **Only `name` (team, player) and `opponent` (game) are required.** Everything else is optional and defaults to what the app would give it by hand.
+- **Player fields:** `number`, `gk`, `position` (GK, Back, Mid, Wing, Forward — "defender", "striker" and the like are understood), `also` (a list of positions), `rating` (1–5), `maxStint` (minutes), `note`, `active`.
+- **Game fields:** `date` (`2026-10-04`), `kickoff` (`09:30`), `venue`, `periods` (2 or 4), `minutes` (per period), `side` (5, 7, 9 or 11), `shape` (a preset like `4-3-3`, or a shape the team has saved), `veo`, and for a game already played `score` (`"3-1"`) with optional `scorers` (shirt numbers or names, one per goal).
+- **Games can sit under their team, or in a top-level `games` list with a `team` name** — whichever the spreadsheet exports more easily.
+- **It merges, it never replaces.** A team is matched by name, a player by name within the team, a game by team, date and opponent. A match gets only the fields the file gives; nothing is deleted. Running the same file twice changes nothing.
+- **A past result is a score, not minutes.** It becomes goals at 0:00 and a finished game, so the season record adds up; nobody's minutes are invented. A game that already has goals recorded keeps them.
+- The file holds children's names, so treat it like the roster. Names never reach the parent pages.

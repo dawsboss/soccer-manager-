@@ -8,6 +8,37 @@ before this point lives only in the git log.
 
 ---
 
+## Bulk import for admins — 2026-09-26
+
+Setting a club up for a season meant typing every team, every child and every
+fixture in one sheet at a time, when all of it is already in a spreadsheet
+somewhere. Admin → **Import teams and games** takes the lot as one JSON file,
+chosen or pasted: teams, rosters (numbers, positions, ratings, notes), the
+fixture list, and results from games played before the app was in use.
+README's **Bulk import** has the format.
+
+It merges and never replaces. A team is matched by name, a player by name
+within the team, a game by team, date and opponent; anything found gets only
+the fields the file names, and nothing is deleted. So the same file run twice
+changes nothing, which is the first thing anyone does after an import that
+half worked, and a game tracked offline on the admin's phone is never the
+importer's to lose. It is planned before it is applied: **Check it** says
+"adds 3 teams, 40 players, 28 games" and lists each problem by team and row,
+and nothing is written while any error is left. Writes go at the depth the
+rules sit at, a whole team or game only when it is new and one field at a time
+when it is not.
+
+A past result is only a score, so it is written as goals at 0:00 on a finished
+game with no clock, crediting scorers by shirt number or name. Nobody's minutes
+are invented, and a game with goals already recorded keeps them.
+
+*Load from a file* under Setup → Backup goes through the same door now. It used
+to replace local state with the file's teams and games, which also threw away
+`access` (admins, index, members) on this device before pushing. A backup now
+adds whatever the club is missing and keeps everything already here.
+`test/import.js` covers the lot, including that only an admin gets in: the
+click handler checks, not just the hidden button.
+
 ## The tap on the planned-subs card is in the match log — 2026-09-26
 
 Tapping **Subs are on** already put the subs it made in the Track tab's match

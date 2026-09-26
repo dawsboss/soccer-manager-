@@ -2,7 +2,7 @@
    Static app. Data lives in localStorage, and mirrors to Firebase Realtime
    Database when a config + workspace code are present. */
 
-const BUILD = '58';
+const BUILD = '59';
 const BUILT = '2026-09-26';
 /* index.html carries the build it was published with. If this file is newer, the
    browser handed us a cached page — the exact failure that has eaten hours. */
@@ -1266,6 +1266,340 @@ function seedSandbox() {
     localStorage.setItem(LS_WS, code);
   } catch (e) { toast('Could not create it — this device is out of storage'); return; }
   location.reload();
+}
+
+/* ---------------- bulk import ---------------- */
+/* An admin setting a club up for a season has every team, every roster and the
+   whole fixture list in a spreadsheet somewhere, and typing it in one sheet at a
+   time is an evening. This takes it as one JSON file instead.
+
+   Two decisions shape it. First, it merges and never replaces: a team is found
+   by name, a player by name within the team, a game by team, date and opponent,
+   and anything found is updated field by field while everything else in the
+   club is left exactly as it was. That makes a second run of the same file a
+   no-op rather than a second copy of the season, and it keeps the invariant the
+   connect-time read keeps — a game tracked offline on this device must never be
+   lost to somebody's import. Second, it is planned before it is applied: the
+   plan is a list of writes plus what they mean in words, so the admin reads
+   "adds 3 teams, 40 players, 28 games" and the problems line by line before a
+   single write goes out, and the tests can check the plan without a database.
+
+   A backup file (Setup → Backup) is recognised by its shape — `teams` and
+   `matches` keyed by id — and goes through the same door: whatever it has that
+   this club does not is added, and anything already here is kept as it is. */
+const IMPORT_ROLES = {
+  gk: 'GK', goalkeeper: 'GK', keeper: 'GK', goalie: 'GK',
+  back: 'Back', defender: 'Back', defence: 'Back', defense: 'Back', def: 'Back', cb: 'Back', fullback: 'Back',
+  mid: 'Mid', midfield: 'Mid', midfielder: 'Mid', cm: 'Mid',
+  wing: 'Wing', winger: 'Wing', wide: 'Wing',
+  forward: 'Forward', striker: 'Forward', attack: 'Forward', attacker: 'Forward', fwd: 'Forward', st: 'Forward'
+};
+const importRole = v => IMPORT_ROLES[String(v || '').trim().toLowerCase().replace(/[^a-z]/g, '')] || null;
+const importKey = s => String(s ?? '').trim().toLowerCase().replace(/\s+/g, ' ');
+const firstOf = (o, ...ks) => { for (const k of ks) if (o[k] !== undefined && o[k] !== null && o[k] !== '') return o[k]; return undefined; };
+
+const IMPORT_EXAMPLE = {
+  teams: [{
+    name: 'Lakeside Thunder G12',
+    players: [
+      { name: 'Ada Lovelace', number: 1, gk: true },
+      { name: 'Bea Smith', number: 7, position: 'Forward', also: ['Wing'], rating: 4 },
+      { name: 'Cleo Jones', number: 10, position: 'Mid', maxStint: 20, note: 'Strong left foot' }
+    ],
+    games: [
+      { opponent: 'Riverside', date: '2026-09-06', kickoff: '10:00', venue: 'Lakeside Park', periods: 2, minutes: 30, side: 9, score: '3-1', scorers: [7, 7, 10] },
+      { opponent: 'Northgate', date: '2026-10-04', kickoff: '09:30', venue: 'Northgate Rec, field 2', periods: 2, minutes: 30, side: 9, shape: '3-3-2' }
+    ]
+  }]
+};
+
+/* Reads a score however a spreadsheet export is likely to write it. */
+function importScore(v) {
+  if (v === undefined || v === null || v === '') return null;
+  let us, them;
+  if (Array.isArray(v)) [us, them] = v;
+  else if (typeof v === 'object') { us = firstOf(v, 'us', 'for'); them = firstOf(v, 'them', 'against'); }
+  else { const x = String(v).match(/^\s*(\d+)\s*[-–:]\s*(\d+)\s*$/); if (x) [, us, them] = x; }
+  us = Number(us); them = Number(them);
+  return Number.isInteger(us) && Number.isInteger(them) && us >= 0 && them >= 0 && us < 100 && them < 100 ? { us, them } : false;
+}
+
+/* Pure: reads `data` against the club as it stands and returns what importing
+   it would do. Nothing in state changes until applyImport(). */
+function importPlan(data, cur = state) {
+  const out = { writes: [], errors: [], warnings: [], counts: { newTeams: 0, newPlayers: 0, players: 0, newGames: 0, games: 0, results: 0 } };
+  const put = (path, value) => out.writes.push([path, value]);
+  if (!data || typeof data !== 'object' || Array.isArray(data)) { out.errors.push('The file should be one JSON object with a "teams" list in it.'); return out; }
+
+  const isBackup = data.teams && !Array.isArray(data.teams) && typeof data.teams === 'object'
+    && (data.matches === undefined || (typeof data.matches === 'object' && !Array.isArray(data.matches)));
+  if (isBackup) return importBackup(data, cur, out);
+
+  /* Drafts, not the live objects: updating an existing player or game below
+     edits these copies, and state only changes when the writes are applied. */
+  cur = { teams: clone(cur.teams || {}), matches: clone(cur.matches || {}) };
+  const fresh = new Set();
+  const teamList = Array.isArray(data.teams) ? data.teams : [];
+  const looseGames = Array.isArray(data.games) ? data.games : [];
+  if (!teamList.length && !looseGames.length) { out.errors.push('Nothing to import: expected a "teams" list (and optionally a "games" list).'); return out; }
+
+  // drafts of every team touched, so later rows in the file see earlier ones
+  const byName = {};
+  for (const t of Object.values(cur.teams || {})) if (t && t.name) byName[importKey(t.name)] = { t, isNew: false };
+  const gameIndex = {};
+  for (const m of Object.values(cur.matches || {})) if (m && m.teamId) gameIndex[[m.teamId, m.date || '', importKey(m.opponent)].join('|')] = m;
+
+  const teamFor = (name, where, create) => {
+    const k = importKey(name);
+    if (!k) { out.errors.push(`${where}: a team needs a name.`); return null; }
+    if (byName[k]) return byName[k];
+    if (!create) { out.errors.push(`${where}: there is no team called "${name}" here or in the file.`); return null; }
+    const id = uid();
+    const t = { id, name: String(name).trim(), players: {} };
+    put(`teams/${id}`, t);
+    out.counts.newTeams++;
+    return (byName[k] = { t, isNew: true, seenPlayers: {} });
+  };
+
+  const addPlayer = (entry, p, where) => {
+    const t = entry.t;
+    if (!p || typeof p !== 'object') { out.errors.push(`${where}: expected a player like {"name": "...", "number": 7}.`); return; }
+    const name = String(firstOf(p, 'name') ?? '').trim();
+    if (!name) { out.errors.push(`${where}: a player needs a name.`); return; }
+    const fields = {};
+    const num = firstOf(p, 'number', 'shirt', 'no');
+    if (num !== undefined) fields.number = String(num).trim();
+    const gk = firstOf(p, 'gk', 'keeper', 'goalkeeper');
+    if (gk !== undefined) fields.gk = gk === true || /^(y|yes|true|1)$/i.test(String(gk));
+    const pos = firstOf(p, 'position', 'preferred');
+    if (pos !== undefined) {
+      const r = importRole(pos);
+      if (r) fields.preferred = r; else out.warnings.push(`${where} (${name}): "${pos}" is not a position here (GK, Back, Mid, Wing, Forward), so it was left out.`);
+    }
+    const also = firstOf(p, 'also', 'canPlay');
+    if (also !== undefined) {
+      const list = (Array.isArray(also) ? also : String(also).split(/[,/;]/)).map(x => String(x).trim()).filter(Boolean);
+      const ok = list.map(importRole).filter(Boolean);
+      if (ok.length < list.length) out.warnings.push(`${where} (${name}): some of "${list.join(', ')}" are not positions here, so they were left out.`);
+      fields.canPlay = [...new Set(ok)];
+    }
+    const rt = firstOf(p, 'rating');
+    if (rt !== undefined) {
+      const n = Number(rt);
+      if (Number.isInteger(n) && n >= 1 && n <= 5) fields.rating = n;
+      else out.warnings.push(`${where} (${name}): rating ${JSON.stringify(rt)} is not 1 to 5, so it was left out.`);
+    }
+    const ms = firstOf(p, 'maxStint', 'longestStint');
+    if (ms !== undefined) {
+      const n = Number(ms);
+      if (n > 0) fields.maxStint = n; else out.warnings.push(`${where} (${name}): longest stint ${JSON.stringify(ms)} is not a number of minutes, so it was left out.`);
+    }
+    const note = firstOf(p, 'note', 'notes');
+    if (note !== undefined) fields.note = String(note).trim();
+    const act = firstOf(p, 'active');
+    if (act !== undefined) fields.active = !(act === false || /^(n|no|false|0)$/i.test(String(act)));
+
+    // the same player twice in one file merges into the first, as it would on a second run
+    const k = importKey(name);
+    const found = Object.values(t.players || {}).find(x => importKey(x.name) === k);
+    if (found) {
+      const changed = Object.entries(fields).filter(([f, v]) => JSON.stringify(found[f]) !== JSON.stringify(v));
+      if (!changed.length) return;
+      for (const [f, v] of changed) { found[f] = v; if (!entry.isNew) put(`teams/${t.id}/players/${found.id}/${f}`, v); }
+      if (!entry.isNew && !(entry.seenPlayers = entry.seenPlayers || {})[found.id]) { entry.seenPlayers[found.id] = true; out.counts.players++; }
+      return;
+    }
+    const id = uid();
+    const pl = { id, name, number: '', active: true, anywhere: true, preferred: '', canPlay: [], rating: 3, ...fields };
+    t.players = t.players || {};
+    t.players[id] = pl;
+    // a brand-new team is written whole once below, so its players ride along with it
+    if (!entry.isNew) put(`teams/${t.id}/players/${id}`, pl);
+    (entry.seenPlayers = entry.seenPlayers || {})[id] = true;
+    out.counts.newPlayers++;
+  };
+
+  const addGame = (entry, g, where) => {
+    const t = entry.t;
+    if (!g || typeof g !== 'object') { out.errors.push(`${where}: expected a game like {"opponent": "...", "date": "2026-10-04"}.`); return; }
+    const opponent = String(firstOf(g, 'opponent', 'vs', 'against') ?? '').trim();
+    if (!opponent) { out.errors.push(`${where}: a game needs an opponent.`); return; }
+    const label = `${where} (${opponent})`;
+    const date = String(firstOf(g, 'date') ?? '').trim();
+    if (date && !/^\d{4}-\d{2}-\d{2}$/.test(date)) { out.errors.push(`${label}: date "${date}" should be written 2026-10-04.`); return; }
+    const kickoff = String(firstOf(g, 'kickoff', 'time') ?? '').trim();
+    if (kickoff && !/^\d{1,2}:\d{2}$/.test(kickoff)) { out.errors.push(`${label}: kick-off "${kickoff}" should be written 09:30.`); return; }
+    const fields = { opponent };
+    if (date) fields.date = date;
+    if (kickoff) fields.kickoff = kickoff.padStart(5, '0');
+    const venue = firstOf(g, 'venue', 'where', 'location');
+    if (venue !== undefined) fields.venue = String(venue).trim();
+    const pc = firstOf(g, 'periods', 'periodCount');
+    if (pc !== undefined) {
+      if (Number(pc) === 2 || Number(pc) === 4) fields.periodCount = Number(pc);
+      else out.warnings.push(`${label}: ${pc} periods is not 2 halves or 4 quarters, so it was left at the default.`);
+    }
+    const len = firstOf(g, 'minutes', 'periodMinutes');
+    if (len !== undefined) {
+      if (Number(len) > 0 && Number(len) <= 60) fields.periodMinutes = Number(len);
+      else out.warnings.push(`${label}: ${len} minutes a period does not look right, so it was left at the default.`);
+    }
+    const side = firstOf(g, 'side', 'onFieldCount', 'players');
+    if (side !== undefined) {
+      if ([5, 7, 9, 11].includes(Number(side))) fields.onFieldCount = Number(side);
+      else out.warnings.push(`${label}: ${side}-a-side is not 5, 7, 9 or 11, so it was left at the default.`);
+    }
+    const veo = firstOf(g, 'veo', 'veoUrl');
+    if (veo !== undefined) fields.veoUrl = String(veo).trim();
+    const sc = importScore(firstOf(g, 'score', 'result'));
+    if (sc === false) out.warnings.push(`${label}: score ${JSON.stringify(firstOf(g, 'score', 'result'))} should be written "3-1", so it was left out.`);
+
+    const key = [t.id, date, importKey(opponent)].join('|');
+    const existing = gameIndex[key];
+    if (existing) {
+      const changed = Object.entries(fields).filter(([f, v]) => existing[f] !== v);
+      const isFresh = fresh.has(existing.id);
+      for (const [f, v] of changed) { existing[f] = v; if (!isFresh) put(`matches/${existing.id}/${f}`, v); }
+      if (changed.length && !isFresh) out.counts.games++;
+      if (sc && !isFresh) {
+        const now = score(existing);
+        if (now.us !== sc.us || now.them !== sc.them)
+          out.warnings.push(`${label}: this game already has goals recorded here (${now.us}-${now.them}), so the ${sc.us}-${sc.them} in the file was not added on top.`);
+      }
+      if (isFresh) out.warnings.push(`${label}: appears twice in the file, so it was imported once.`);
+      return;
+    }
+
+    const size = fields.onFieldCount || 11;
+    const shape = firstOf(g, 'shape', 'formation');
+    let formation;
+    if (shape !== undefined) {
+      const k = String(shape).trim();
+      const f = Object.values(t.formations || {}).find(x => importKey(x.name) === importKey(k) && x.size === size);
+      formation = f ? resolveShape(t, 'team:' + f.id, size)
+        : presetsFor(size)[k] ? resolveShape(t, `preset:${size}:${k}`, size) : undefined;
+      if (formation === undefined) out.warnings.push(`${label}: there is no "${k}" shape for ${size} v ${size}, so it gets the team default.`);
+    }
+    if (formation === undefined) formation = resolveShape(t, 'auto', size);
+
+    const id = uid();
+    const m = {
+      id, teamId: t.id, currentHalf: 1, periods: {}, planned: {}, positions: {}, stints: {}, createdAt: Date.now(),
+      periodCount: 2, periodMinutes: 40, onFieldCount: size, kickoff: '', venue: '', veoUrl: '', date: '',
+      ...fields, formation
+    };
+    /* A result from before the app was in use has no minutes to go with it, only
+       a score. It is written as goals at 0:00 and a finished game, so the season
+       record adds up; there is no clock to close because none was ever started.
+       Scorers are matched by shirt number or name, and anyone not found is still
+       a goal, just not credited. */
+    if (sc) {
+      const scorers = firstOf(g, 'scorers', 'goals');
+      const list = Array.isArray(scorers) ? scorers : scorers !== undefined ? String(scorers).split(/[,;]/) : [];
+      const roster = Object.values(t.players || {});
+      m.goals = {};
+      for (let i = 0; i < sc.us; i++) {
+        const who = list[i] !== undefined ? String(list[i]).trim() : '';
+        const p = who ? roster.find(x => String(x.number ?? '').trim() === who) || roster.find(x => importKey(x.name) === importKey(who)) : null;
+        if (who && !p) out.warnings.push(`${label}: scorer "${who}" is not on the roster, so that goal is not credited to anyone.`);
+        m.goals[uid()] = { t: 0, side: 'us', ...(p ? { pid: p.id } : {}) };
+      }
+      if (list.length > sc.us) out.warnings.push(`${label}: ${list.length} scorers for ${sc.us} goals; the extra ones were left out.`);
+      for (let i = 0; i < sc.them; i++) m.goals[uid()] = { t: 0, side: 'them' };
+      m.currentHalf = m.periodCount;
+      m.ended = (date ? Date.parse(date + 'T' + (m.kickoff || '12:00') + ':00') : NaN) || Date.now();
+      out.counts.results++;
+    }
+    if (!date) out.warnings.push(`${label}: no date, so it will sort as undated until one is set.`);
+    fresh.add(id);
+    gameIndex[key] = m;
+    put(`matches/${id}`, m);
+    out.counts.newGames++;
+  };
+
+  teamList.forEach((tt, i) => {
+    const where = `Team ${i + 1}`;
+    if (!tt || typeof tt !== 'object') { out.errors.push(`${where}: expected a team like {"name": "...", "players": [...]}.`); return; }
+    const entry = teamFor(tt.name, where, true); if (!entry) return;
+    const w = `${entry.t.name}`;
+    if (tt.players !== undefined && !Array.isArray(tt.players)) out.errors.push(`${w}: "players" should be a list.`);
+    else (tt.players || []).forEach((p, j) => addPlayer(entry, p, `${w}, player ${j + 1}`));
+    if (tt.games !== undefined && !Array.isArray(tt.games)) out.errors.push(`${w}: "games" should be a list.`);
+    else (tt.games || []).forEach((g, j) => addGame(entry, g, `${w}, game ${j + 1}`));
+  });
+  looseGames.forEach((g, j) => {
+    const where = `Game ${j + 1}`;
+    const entry = teamFor(g && g.team, where, false); if (!entry) return;
+    addGame(entry, g, where);
+  });
+
+  /* A new team's write holds the draft object itself, so the players gathered
+     into it after it was queued go out with it in the one write. */
+  return out;
+}
+
+function importBackup(data, cur, out) {
+  for (const [tid, t] of Object.entries(data.teams || {})) {
+    if (!t || typeof t !== 'object' || !/^[\w-]+$/.test(tid)) { out.errors.push(`Team "${tid}" in the backup could not be read.`); continue; }
+    if ((cur.teams || {})[tid]) { out.warnings.push(`${t.name || tid} is already here, so this club's copy was kept.`); continue; }
+    out.writes.push([`teams/${tid}`, { ...clone(t), id: tid }]);
+    out.counts.newTeams++;
+    out.counts.newPlayers += Object.keys(t.players || {}).length;
+  }
+  let kept = 0;
+  for (const [mid, m] of Object.entries(data.matches || {})) {
+    if (!m || typeof m !== 'object' || !/^[\w-]+$/.test(mid)) { out.errors.push(`Game "${mid}" in the backup could not be read.`); continue; }
+    if ((cur.matches || {})[mid]) { kept++; continue; }
+    if (!(cur.teams || {})[m.teamId] && !(data.teams || {})[m.teamId]) { out.warnings.push(`A game against ${m.opponent || 'someone'} belongs to a team that is in neither the backup nor this club, so it was left out.`); continue; }
+    out.writes.push([`matches/${mid}`, { ...clone(m), id: mid }]);
+    out.counts.newGames++;
+  }
+  if (kept) out.warnings.push(`${kept} game${kept === 1 ? ' is' : 's are'} already here, so this club's cop${kept === 1 ? 'y was' : 'ies were'} kept.`);
+  out.backup = true;
+  return out;
+}
+
+function importSummary(c) {
+  const bits = [];
+  const n = (k, one, many) => c[k] ? `${c[k]} ${c[k] === 1 ? one : many}` : null;
+  const add = [n('newTeams', 'team', 'teams'), n('newPlayers', 'player', 'players'), n('newGames', 'game', 'games')].filter(Boolean);
+  if (add.length) bits.push('adds ' + add.join(', '));
+  const upd = [n('players', 'player', 'players'), n('games', 'game', 'games')].filter(Boolean);
+  if (upd.length) bits.push('updates ' + upd.join(', '));
+  if (c.results) bits.push(`${c.results} with a final score`);
+  return bits.length ? bits.join(' · ') : 'nothing new — everything in it is already here';
+}
+
+/* Writes at the depth the rules sit at: a whole team or game only when it is
+   new, a single field of one that already exists. The same order a
+   hand-entered team and its games would go out in. */
+function applyImport(plan) {
+  for (const [path, value] of plan.writes) { setDeep(state, path, value); remoteSet(path, value); }
+  saveLocal(); render(); schedulePublish();
+}
+
+let pendingImport = null;
+function sheetImport(text) {
+  pendingImport = text == null ? pendingImport : { text };
+  const txt = (pendingImport && pendingImport.text) || '';
+  let plan = null, bad = null;
+  if (txt.trim()) { try { plan = importPlan(JSON.parse(txt)); } catch (err) { bad = 'That is not valid JSON: ' + err.message; } }
+  const list = (items, cls) => items.length ? `<div class="implist ${cls}">${items.slice(0, 30).map(esc).join('<br>')}${items.length > 30 ? `<br>…and ${items.length - 30} more` : ''}</div>` : '';
+  openSheet(`<h3>Bulk import</h3>
+    <p class="muted" style="margin-top:0">Teams, rosters and games from one JSON file. Teams are matched by name, players by name, and games by team, date and opponent, so running the same file twice changes nothing. Nothing already here is removed.</p>
+    <div class="row" style="margin-bottom:10px">
+      <button class="btn quiet sm" data-act="importfile">Choose a file</button>
+      <button class="btn quiet sm" data-act="importexample">Show an example</button>
+    </div>
+    <label class="field"><span>Or paste it here</span><textarea id="impText" rows="8" spellcheck="false" placeholder='{"teams": [{"name": "...", "players": [...], "games": [...]}]}'>${esc(txt)}</textarea></label>
+    <button class="btn quiet wide" data-act="importcheck" style="margin-bottom:10px">Check it</button>
+    ${bad ? list([bad], 'warn alert') : ''}
+    ${plan ? `${list(plan.errors, 'warn alert')}
+      ${plan.errors.length ? '<p class="muted">Fix those and check again — nothing is imported while any are left.</p>'
+      : `<p><b>This ${plan.backup ? 'backup' : 'file'} ${esc(importSummary(plan.counts))}.</b></p>`}
+      ${list(plan.warnings, '')}
+      ${!plan.errors.length && plan.writes.length ? `<button class="btn wide" data-act="importgo">Import it</button>` : ''}` : ''}
+    <p class="muted" style="margin-bottom:0">It holds children's names, so treat the file the way you would the roster itself. Names never reach the parent pages.</p>`);
 }
 
 /* ---------------- model helpers ---------------- */
@@ -3585,7 +3919,7 @@ function viewSetup() {
     ${canAdmin() ? `<div class="card"><h2 style="margin-bottom:8px">Backup</h2>
       <div class="row"><button class="btn quiet" data-act="export">Download a copy</button>
       <button class="btn quiet" data-act="import">Load from a file</button></div>
-      <p class="muted" style="margin-bottom:0">Every team, game and sub as a JSON file. Admins only — it contains every child's name, so it is not something to hand out.</p></div>` : ''}
+      <p class="muted" style="margin-bottom:0">Every team, game and sub as a JSON file. Admins only — it contains every child's name, so it is not something to hand out. Loading one adds whatever this club is missing and keeps everything already here.</p></div>` : ''}
   </div>`;
 }
 
@@ -3640,6 +3974,10 @@ function viewAdmin() {
         <span><span class="pname">${teamLabel(t)}</span><span class="rowsub">${teamStats(t)}</span></span>
         <span class="muted">Edit</span></button>`).join('') || '<p class="muted" style="margin:0">No teams yet.</p>'}</div>
       <div style="margin-top:10px"><button class="btn quiet wide" data-act="newteam">Add a team</button></div></div>
+
+    <div class="card"><h2 style="margin-bottom:8px">Bulk import</h2>
+      <p class="muted" style="margin-top:0">A whole season at once — teams, rosters, fixtures and past results — from one JSON file. It adds and updates, and never removes anything.</p>
+      <button class="btn quiet wide" data-act="bulkimport">Import teams and games</button></div>
 
     ${aiButton('club')}
   </div>`;
@@ -5655,22 +5993,34 @@ document.addEventListener('click', e => {
     link.href = url; link.download = 'minutes-backup-' + new Date().toISOString().slice(0, 10) + '.json';
     link.click(); URL.revokeObjectURL(url); return;
   }
-  if (a === 'import') {
+  /* Every import door checks canAdmin() here, not just by hiding the buttons:
+     it writes whole teams and games. A backup used to replace local state
+     wholesale — access included — and now goes through the same merge as the
+     bulk import, which only ever adds what is missing. */
+  if (a === 'bulkimport') { if (!canAdmin()) { toast('Only club admins can import'); return; } sheetImport(null); return; }
+  if (a === 'import' || a === 'importfile') {
     if (!canAdmin()) { toast('Only club admins can import'); return; }
-    const inp = document.createElement('input'); inp.type = 'file'; inp.accept = 'application/json';
+    const inp = document.createElement('input'); inp.type = 'file'; inp.accept = 'application/json,.json,.txt';
     inp.onchange = () => {
       const f = inp.files[0]; if (!f) return;
       const r = new FileReader();
-      r.onload = () => {
-        try {
-          const d2 = JSON.parse(r.result);
-          state = { teams: d2.teams || {}, matches: d2.matches || {} };
-          saveLocal(); pushAll(); render(); toast('Backup loaded');
-        } catch (err) { toast('That file could not be read'); }
-      };
+      r.onload = () => sheetImport(String(r.result || ''));
+      r.onerror = () => toast('That file could not be read');
       r.readAsText(f);
     };
     inp.click(); return;
+  }
+  if (a === 'importexample') { sheetImport(JSON.stringify(IMPORT_EXAMPLE, null, 2)); return; }
+  if (a === 'importcheck') { sheetImport($('#impText').value); return; }
+  if (a === 'importgo') {
+    if (!canAdmin()) { toast('Only club admins can import'); return; }
+    // planned again against the club as it is now, not as it was when checked
+    let plan;
+    try { plan = importPlan(JSON.parse($('#impText').value)); } catch (err) { sheetImport($('#impText').value); return; }
+    if (plan.errors.length || !plan.writes.length) { sheetImport($('#impText').value); return; }
+    if (!confirm(`Import into ${(acc().org || {}).name || 'this club'}? It ${importSummary(plan.counts)}.`)) return;
+    applyImport(plan); pendingImport = null; closeSheet();
+    toast('Imported: ' + importSummary(plan.counts)); return;
   }
 });
 

@@ -167,6 +167,8 @@ const EXPORTS = `{
   aiPrompt, aiLabels, aiScrub, AI_TOPICS, sheetAi,
   /* test club */
   seedSandbox,
+  /* bulk import */
+  importPlan, applyImport, importSummary, sheetImport, IMPORT_EXAMPLE,
   /* rendering + routing */
   render, uiToHash, hashToUi,
   /* the mutable module-scoped bindings */
