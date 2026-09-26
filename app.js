@@ -2,7 +2,7 @@
    Static app. Data lives in localStorage, and mirrors to Firebase Realtime
    Database when a config + workspace code are present. */
 
-const BUILD = '59';
+const BUILD = '60';
 const BUILT = '2026-09-26';
 /* index.html carries the build it was published with. If this file is newer, the
    browser handed us a cached page — the exact failure that has eaten hours. */
@@ -2628,7 +2628,7 @@ function sheetPickGame() {
     ${list.map(g => {
     const sc = score(g);
     return `<button class="opt spread" type="button" data-act="pickgame2" data-id="${g.id}" aria-current="${g.id === cur}">
-      <span>${esc(g.opponent || 'Unnamed')}<span class="rowsub">${esc(g.date || '')} · ${mins(elapsedSec(g))} min played${running(g) ? ' · running' : ''}</span></span>
+      <span>${esc(g.opponent || 'Unnamed')}<span class="rowsub">${esc(g.date || '')} · <span data-live="gmins" data-mid="${g.id}">${mins(elapsedSec(g))}</span> min played${running(g) ? ' · running' : ''}</span></span>
       <span class="pmins">${sc.us}<small>–${sc.them}</small></span></button>
 `;
   }).join('') || '<p class="muted">No games yet.</p>'}
@@ -2673,7 +2673,7 @@ function clockCard(m, now, controls) {
     </div>
     ${el || running(m) ? `<button class="btn quiet wide" data-act="endgame" style="margin-top:8px">End game</button>` : ''}
     <button class="linkbtn" data-act="fixclock">Clock reading wrong?</button>`
-      : `<p class="clocknote">${running(m) ? 'Running' : el ? 'Paused' : 'Not started'} — the clock is controlled from the Live tab.</p>`}</div>`;
+      : `<p class="clocknote">${running(m) ? 'Running' : el ? 'Paused' : 'Not started'} — the coach runs the clock.</p>`}</div>`;
 }
 
 function scoreCard(t, m) {
@@ -2799,7 +2799,7 @@ function viewTrack() {
 
   return `<div class="stack">
     <div class="barrow">${gameBar(t, m)}</div>
-    ${clockCard(m, now, false)}
+    ${clockCard(m, now, !restricted())}
     ${subsCard(t, m, now)}
     ${scoreCard(t, m)}
     ${shotsCard}
@@ -2835,7 +2835,7 @@ function viewStats() {
 
   const headline = `<div class="card">
     <h2>${us} ${sc.us} — ${sc.them} ${them}</h2>
-    <div class="muted">${gameStatus(m) === 'done' ? (m.ended ? 'Final' : 'Full time') : gameStatus(m) === 'live' ? 'In progress' : 'Not started'} · ${mmss(elapsedSec(m, now))} played${m.date ? ' · ' + esc(shortDate(m.date)) : ''}</div></div>`;
+    <div class="muted">${gameStatus(m) === 'done' ? (m.ended ? 'Final' : 'Full time') : gameStatus(m) === 'live' ? 'In progress' : 'Not started'} · <span data-live="clock" data-mid="${m.id}">${mmss(elapsedSec(m, now))}</span> played${m.date ? ' · ' + esc(shortDate(m.date)) : ''}</div></div>`;
 
   const halfTable = halves.length > 1 ? `<div class="card"><h2 style="margin-bottom:10px">By half</h2>
     <div class="statgrid" style="grid-template-columns:1fr ${halves.map(() => '48px').join(' ')}">
@@ -2890,12 +2890,12 @@ function viewStats() {
 
   const minutesCard = `<div class="card"><h2 style="margin-bottom:10px">Minutes</h2>
     <div class="plist">${roster.map(p => {
-    const pl = playedSec(m, p.id, now), pd = plannedSec(m, p.id), diff = Math.round((pl - pd) / 60);
+    const pl = playedSec(m, p.id, now), pd = plannedSec(m, p.id);
     const rs = roleSummary(m, p.id, now);
     return `<div class="prow">
       <span class="pnum">${esc(p.number ?? '')}</span>
       <span><span class="pname">${esc(p.name)}</span><span class="psub">${esc(rs) || (pd > 0 ? mins(pd) + ' min planned' : 'no plan set')}</span></span>
-      <span class="pmins">${mins(pl)}<small> min</small>${pd > 0 ? `<span class="diff ${diff < 0 ? 'owed' : 'over'}">${diff < 0 ? -diff + ' owed' : diff > 0 ? diff + ' over' : 'on plan'}</span>` : ''}</span>
+      <span class="pmins"><span data-live="pmins" data-mid="${m.id}" data-pid="${p.id}">${mins(pl)}</span><small> min</small><span data-live="diff" data-mid="${m.id}" data-pid="${p.id}">${diffTag(pl, pd)}</span></span>
     </div>`;
   }).join('')}</div></div>`;
 
@@ -3577,7 +3577,7 @@ function viewMatches() {
   const rows = list.map(m => {
     const el = elapsedSec(m);
     return `<button class="prow" type="button" data-act="openmatch" data-id="${m.id}" style="grid-template-columns:1fr auto">
-      <span><span class="pname">${esc(m.opponent || 'Game')}</span><span class="psub">${esc(m.date || '')} · ${mins(el)} min played${running(m) ? ' · clock running' : ''}</span></span>
+      <span><span class="pname">${esc(m.opponent || 'Game')}</span><span class="psub">${esc(m.date || '')} · <span data-live="gmins" data-mid="${m.id}">${mins(el)}</span> min played${running(m) ? ' · clock running' : ''}</span></span>
       <span class="pmins">${score(m).us}<small>–${score(m).them}</small></span></button>`;
   }).join('') || `<div class="empty"><strong>No games yet</strong>${readOnlyHere() ? "The team's coach adds them." : 'Add one and it becomes the live game.'}</div>`;
   return `<div class="stack"><div class="spread"><h2>Games</h2>${addGameBtn('btn sm')}</div><div class="plist">${rows}</div></div>`;
@@ -3809,7 +3809,6 @@ function viewMine() {
     const ms = teamMatches(t.id);
     const played = ms.reduce((a, m) => a + playedSec(m, p.id), 0);
     const planned = ms.reduce((a, m) => a + plannedSec(m, p.id), 0);
-    const diff = Math.round((played - planned) / 60);
     const last = ms.find(m => gameStatus(m) === 'done');
     const live = ms.find(m => gameStatus(m) === 'live');
     const next = ms.filter(m => gameStatus(m) === 'upcoming').slice(-1)[0];
@@ -3825,14 +3824,14 @@ function viewMine() {
           <span><b style="font-size:18px">${esc(p.name)}</b>
             <span class="rowsub">${esc(p.number ? '#' + p.number + ' · ' : '')}${teamLabel(t)}</span></span>
         </div>
-        <span class="pmins">${mins(played)}<small> min</small>
-          ${planned > 0 ? `<span class="diff ${diff < 0 ? 'owed' : 'over'}">${diff < 0 ? -diff + ' owed' : diff > 0 ? diff + ' over' : 'on plan'}</span>` : ''}</span>
+        <span class="pmins"><span data-live="smins" data-tid="${t.id}" data-pid="${p.id}">${mins(played)}</span><small> min</small>
+          <span data-live="sdiff" data-tid="${t.id}" data-pid="${p.id}">${diffTag(played, planned)}</span></span>
       </div>
       ${rs ? `<p class="muted" style="margin:10px 0 0">${esc(rs)}</p>` : ''}
       <div class="plist" style="margin-top:10px">
         ${live ? `<button class="prow" data-act="gotoplayer" data-tid="${t.id}" data-id="${live.id}" style="grid-template-columns:1fr auto">
           <span><span class="pname">Playing now — ${esc(live.opponent || 'TBC')}</span>
-            <span class="rowsub">${mins(playedSec(live, p.id))} min so far</span></span>
+            <span class="rowsub"><span data-live="pmins" data-mid="${live.id}" data-pid="${p.id}">${mins(playedSec(live, p.id))}</span> min so far</span></span>
           <span class="pmins">${score(live).us}<small>–${score(live).them}</small></span></button>` : ''}
         ${last && !live ? `<button class="prow" data-act="gotoplayer" data-tid="${t.id}" data-id="${last.id}" style="grid-template-columns:1fr auto">
           <span><span class="pname">Last game — ${esc(last.opponent || 'TBC')}</span>
@@ -3984,11 +3983,47 @@ function viewAdmin() {
 }
 
 /* ---------------- ticking ---------------- */
+/* A number that depends on the wall clock is tagged where it is drawn —
+   data-live names what it is, data-mid / data-pid / data-tid say whose — and
+   the ticker below rewrites it in place. Every screen that shows time played
+   uses it: Stats (which is all a parent gets), the games list, My players, the
+   game picker. Before this only the Live and Track cards moved, and a parent
+   watching Stats saw a clock stuck at whatever it read when the page drew. */
+function liveReading(kind, d, now = nowMs()) {
+  const m = d.mid ? state.matches[d.mid] : null;
+  const ms = d.tid ? teamMatches(d.tid) : [];
+  const season = f => ms.reduce((a, x) => a + f(x), 0);
+  if (kind === 'clock') return m ? mmss(elapsedSec(m, now)) : null;
+  if (kind === 'gmins') return m ? String(mins(elapsedSec(m, now))) : null;
+  if (kind === 'pmins') return m ? String(mins(playedSec(m, d.pid, now))) : null;
+  if (kind === 'smins') return d.tid ? String(mins(season(x => playedSec(x, d.pid, now)))) : null;
+  if (kind === 'diff' || kind === 'sdiff') {
+    const pl = kind === 'diff' ? (m ? playedSec(m, d.pid, now) : 0) : season(x => playedSec(x, d.pid, now));
+    const pd = kind === 'diff' ? (m ? plannedSec(m, d.pid) : 0) : season(x => plannedSec(x, d.pid));
+    return diffTag(pl, pd);
+  }
+  return null;
+}
+/* "3 owed" / "on plan" beside a minutes total; empty when nothing is planned. */
+function diffTag(pl, pd) {
+  if (!(pd > 0)) return '';
+  const diff = Math.round((pl - pd) / 60);
+  return `<span class="diff ${diff < 0 ? 'owed' : 'over'}">${diff < 0 ? -diff + ' owed' : diff > 0 ? diff + ' over' : 'on plan'}</span>`;
+}
+function tickLive(now = nowMs()) {
+  for (const el of document.querySelectorAll('[data-live]')) {
+    const v = liveReading(el.dataset.live, el.dataset, now);
+    if (v != null && el.innerHTML !== v) el.innerHTML = v;
+  }
+}
+
 /* The game screens have all been ui.view === 'game' since the tabs moved inside
    a game; this used to test for the old top-level names, so it never ran and a
    clock only moved when something else redrew the page. */
 setInterval(() => {
-  if (ui.view !== 'game' || ui.dragging) return;
+  if (ui.dragging) return;
+  tickLive();
+  if (ui.view !== 'game') return;
   const m = match(); if (!m || !running(m)) return;
   const t = team(); if (!t) return;
   const now = nowMs();
