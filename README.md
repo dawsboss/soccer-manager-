@@ -31,13 +31,53 @@ Open `index.html` in a browser, or serve the folder. Everything works immediatel
 ```json
 {
   "rules": {
-    "workspaces": { "$code": { ".read": true, ".write": true } },
+    "workspaces": {
+      "$code": {
+        ".read": true,
+        ".write": true
+      }
+    },
     "public": {
       "$share": {
         ".read": true,
         ".write": "!newData.exists() || newData.hasChild('team')",
-        "team":  { ".validate": "newData.hasChild('name')" },
-        "games": { "$g": { ".validate": "newData.hasChild('status')" } }
+        "team": {
+          ".validate": "newData.hasChild('name')"
+        },
+        "games": {
+          "$g": {
+            ".validate": "newData.hasChild('status')"
+          }
+        }
+      }
+    },
+    "invites": {
+      "$id": {
+        ".read": "auth != null",
+        ".write": "auth != null && ((!data.exists() && newData.child('by').val() === auth.uid && root.child('workspaces/' + newData.child('ws').val() + '/access/admins/' + auth.uid).exists()) || (data.exists() && !newData.exists() && (data.child('used/by').val() === auth.uid || root.child('workspaces/' + data.child('ws').val() + '/access/admins/' + auth.uid).exists() || root.child('workspaces/' + data.child('ws').val() + '/access/teamIndex/' + data.child('team').val() + '/' + auth.uid).val() === 'coach')))",
+        ".validate": "newData.hasChildren(['ws', 'team', 'role', 'by', 'expiresAt']) && (newData.child('role').val() === 'coach' || newData.child('role').val() === 'tracker' || (newData.child('role').val() === 'parent' && newData.hasChild('player')))",
+        "used": {
+          ".write": "auth != null && !data.exists() && newData.child('by').val() === auth.uid && data.parent().child('expiresAt').val() > now && (!data.parent().child('email').exists() || (auth.token.email_verified === true && auth.token.email.toLowerCase() === data.parent().child('email').val()))"
+        }
+      }
+    },
+    "clubInvites": {
+      "$code": {
+        ".read": "auth != null && root.child('workspaces/' + $code + '/access/admins/' + auth.uid).exists()",
+        "$id": {
+          ".write": "auth != null && root.child('workspaces/' + $code + '/access/admins/' + auth.uid).exists()",
+          "used": {
+            ".write": "auth != null && !data.exists() && data.parent().exists() && newData.child('by').val() === auth.uid && root.child('invites/' + $id + '/used/by').val() === auth.uid && root.child('invites/' + $id + '/ws').val() === $code"
+          }
+        }
+      }
+    },
+    "userOrgs": {
+      "$uid": {
+        ".read": "auth != null && auth.uid === $uid",
+        "$code": {
+          ".write": "auth != null && ($uid === auth.uid || root.child('workspaces/' + $code + '/access/admins/' + auth.uid).exists())"
+        }
       }
     }
   }
@@ -46,7 +86,9 @@ Open `index.html` in a browser, or serve the folder. Everything works immediatel
 
 Lock them down once people have signed in — see **Locking it down** below.
 
-4. Open the app → **Setup** → *Make one up* → *Save and reload*. Enter that same workspace code on every device.
+4. On the app owner's device: Setup → Workspace → *Connect to a workspace* → *Make one up* → *Save and reload*. That creates the club. Nobody else types the code: everyone else joins with an invite link — see **Joining a club** below.
+
+The three root blocks in these rules (`invites`, `clubInvites`, `userOrgs`) are what invites need. They are identical in the locked-down set, so an invite made today keeps working after lockdown.
 
 The rules above cover the coaches' data. To publish read-only pages for parents, add a second block alongside it:
 
@@ -80,6 +122,25 @@ The proper fix is the first job for authentication: make `.write` require `auth.
 The API key in `firebase-config.js` is not a secret; the rules above are what gate access. The long random workspace code is the shared password. Anyone who has it can read and write that workspace, which is fine for minutes and rosters — if you want real accounts later, turn on Firebase Authentication and change the rules to `"auth != null"`.
 
 The badge in the top bar shows `synced`, `offline`, or `this device`. Writes made while offline land when the connection returns. If both devices edit the same game while one is offline, last write wins.
+
+## Joining a club
+
+Clubs are invite only, and there is no code to type.
+
+1. A club admin opens **People → Invite someone**, picks Coach, Tracker or Parent (and which player, for a parent), and optionally an email address.
+2. The app makes a link — `…/?invite=<id>` — to copy, share, or, with an email, have Firebase send as a sign-in email.
+3. The person opens it on their phone, signs in, and sees *Join Lakeside SC as coach of Flight*. **Accept** gives them the role and opens the club. That is the whole of it for them.
+
+Each invite works **once**, for **one account**, and expires after **14 days**. With an email address on it, only that (verified) address can accept it; without one, whoever opens the link first gets the role, so send it somewhere private. The admin sees each invite under People — waiting, joined, or expired — and can withdraw one that has not been used. Withdrawing a role later also deletes the invite it came from, so it cannot be spent again.
+
+The invite shows the club, the team and who sent it — never a child's name. A parent invite names the player by shirt number, because a link gets forwarded.
+
+**A second device** needs no invite. Once someone has joined, signing in on a device with no club open finds the club from their account (`userOrgs`) and opens it; with more than one, they are listed under the club switcher. Anyone who joined before this existed gets that list filled in the next time they open the club.
+
+Two limits worth knowing:
+
+- **Firebase words the sign-in email itself.** It reads as "sign in to …", not "you are invited" — a text to say it is coming saves a confused parent.
+- **An invite belongs to the database it was made in.** One made in a test database only works on a device pointed at that database.
 
 ## Deleting a club
 
@@ -142,8 +203,8 @@ The open rules above mean anyone holding a workspace code can read and write eve
 1. **Back up.** Setup → *Download a copy*.
 2. **Sign in** on your own device. Setup → Account.
 3. **Claim admin.** Setup → People → *Make me the admin*.
-4. **Have every coach sign in** with the same workspace code. They appear in Setup → People.
-5. **Give each of them a role** — Coach or Tracker.
+4. **Invite every coach** — People → *Invite someone*, one link each. Accepting one signs them in, connects their device and gives them the role, so they appear in People already assigned.
+5. **Give a role to anyone who arrived another way** — Coach or Tracker, in People.
 6. **Check readiness.** Club settings → *Check readiness* tells you whether you are in the index, how many accounts are, and whether an app owner exists. **Everything must pass.** An empty `access/index` is the dangerous case: reads still work through the bootstrap clause, but nobody can write anything, so the app goes read-only for the whole club.
 7. **Only then** paste the rules below and publish.
 8. **Test on both devices** before the next game.
@@ -187,14 +248,26 @@ a parent can still write another team's data, exactly as before.
           },
           "index": {
             "$uid": {
-              ".write": "auth != null && (!root.child('workspaces/' + $code + '/access/index').exists() || root.child('workspaces/' + $code + '/access/admins/' + auth.uid).exists() || ($uid === auth.uid && !newData.exists()))"
+              ".write": "auth != null && (!root.child('workspaces/' + $code + '/access/index').exists() || root.child('workspaces/' + $code + '/access/admins/' + auth.uid).exists() || ($uid === auth.uid && !newData.exists()) || ($uid === auth.uid && root.child('invites/' + newData.val() + '/used/by').val() === auth.uid && root.child('invites/' + newData.val() + '/expiresAt').val() > now && root.child('invites/' + newData.val() + '/ws').val() === $code))"
             }
           },
           "teamIndex": {
-            ".write": "auth != null && root.child('workspaces/' + $code + '/access/admins/' + auth.uid).exists()"
+            ".write": "auth != null && root.child('workspaces/' + $code + '/access/admins/' + auth.uid).exists()",
+            "$tid": {
+              "$uid": {
+                ".write": "auth != null && $uid === auth.uid && root.child('workspaces/' + $code + '/access/teamIndex').exists() && ((newData.val() === 'coach' && root.child('workspaces/' + $code + '/access/teams/' + $tid + '/coaches/' + auth.uid).exists()) || (newData.val() === 'tracker' && root.child('workspaces/' + $code + '/access/teams/' + $tid + '/trackers/' + auth.uid).exists() && !root.child('workspaces/' + $code + '/access/teams/' + $tid + '/coaches/' + auth.uid).exists()))"
+              }
+            }
           },
           "teams": {
-            ".write": "auth != null && root.child('workspaces/' + $code + '/access/admins/' + auth.uid).exists()"
+            ".write": "auth != null && root.child('workspaces/' + $code + '/access/admins/' + auth.uid).exists()",
+            "$tid": {
+              "$key": {
+                "$uid": {
+                  ".write": "auth != null && $uid === auth.uid && root.child('invites/' + newData.val() + '/used/by').val() === auth.uid && root.child('invites/' + newData.val() + '/expiresAt').val() > now && root.child('invites/' + newData.val() + '/ws').val() === $code && root.child('invites/' + newData.val() + '/team').val() === $tid && (($key === 'coaches' && root.child('invites/' + newData.val() + '/role').val() === 'coach') || ($key === 'trackers' && root.child('invites/' + newData.val() + '/role').val() === 'tracker'))"
+                }
+              }
+            }
           },
           "org": {
             ".write": "auth != null && root.child('workspaces/' + $code + '/access/admins/' + auth.uid).exists()"
@@ -207,7 +280,16 @@ a parent can still write another team's data, exactly as before.
         },
         "teams": {
           "$tid": {
-            ".write": "auth != null && (root.child('workspaces/' + $code + '/access/admins/' + auth.uid).exists() || root.child('workspaces/' + $code + '/access/teamIndex/' + $tid + '/' + auth.uid).val() === 'coach' || (!root.child('workspaces/' + $code + '/access/teamIndex').exists() && root.child('workspaces/' + $code + '/access/index/' + auth.uid).exists()))"
+            ".write": "auth != null && (root.child('workspaces/' + $code + '/access/admins/' + auth.uid).exists() || root.child('workspaces/' + $code + '/access/teamIndex/' + $tid + '/' + auth.uid).val() === 'coach' || (!root.child('workspaces/' + $code + '/access/teamIndex').exists() && root.child('workspaces/' + $code + '/access/index/' + auth.uid).exists()))",
+            "players": {
+              "$pid": {
+                "guardians": {
+                  "$uid": {
+                    ".write": "auth != null && $uid === auth.uid && root.child('workspaces/' + $code + '/teams/' + $tid + '/players/' + $pid).exists() && root.child('invites/' + newData.val() + '/used/by').val() === auth.uid && root.child('invites/' + newData.val() + '/expiresAt').val() > now && root.child('invites/' + newData.val() + '/ws').val() === $code && root.child('invites/' + newData.val() + '/team').val() === $tid && root.child('invites/' + newData.val() + '/role').val() === 'parent' && root.child('invites/' + newData.val() + '/player').val() === $pid"
+                  }
+                }
+              }
+            }
           }
         },
         "matches": {
@@ -246,6 +328,35 @@ a parent can still write another team's data, exactly as before.
     "appOwners": {
       ".read": "auth != null",
       ".write": false
+    },
+    "invites": {
+      "$id": {
+        ".read": "auth != null",
+        ".write": "auth != null && ((!data.exists() && newData.child('by').val() === auth.uid && root.child('workspaces/' + newData.child('ws').val() + '/access/admins/' + auth.uid).exists()) || (data.exists() && !newData.exists() && (data.child('used/by').val() === auth.uid || root.child('workspaces/' + data.child('ws').val() + '/access/admins/' + auth.uid).exists() || root.child('workspaces/' + data.child('ws').val() + '/access/teamIndex/' + data.child('team').val() + '/' + auth.uid).val() === 'coach')))",
+        ".validate": "newData.hasChildren(['ws', 'team', 'role', 'by', 'expiresAt']) && (newData.child('role').val() === 'coach' || newData.child('role').val() === 'tracker' || (newData.child('role').val() === 'parent' && newData.hasChild('player')))",
+        "used": {
+          ".write": "auth != null && !data.exists() && newData.child('by').val() === auth.uid && data.parent().child('expiresAt').val() > now && (!data.parent().child('email').exists() || (auth.token.email_verified === true && auth.token.email.toLowerCase() === data.parent().child('email').val()))"
+        }
+      }
+    },
+    "clubInvites": {
+      "$code": {
+        ".read": "auth != null && root.child('workspaces/' + $code + '/access/admins/' + auth.uid).exists()",
+        "$id": {
+          ".write": "auth != null && root.child('workspaces/' + $code + '/access/admins/' + auth.uid).exists()",
+          "used": {
+            ".write": "auth != null && !data.exists() && data.parent().exists() && newData.child('by').val() === auth.uid && root.child('invites/' + $id + '/used/by').val() === auth.uid && root.child('invites/' + $id + '/ws').val() === $code"
+          }
+        }
+      }
+    },
+    "userOrgs": {
+      "$uid": {
+        ".read": "auth != null && auth.uid === $uid",
+        "$code": {
+          ".write": "auth != null && ($uid === auth.uid || root.child('workspaces/' + $code + '/access/admins/' + auth.uid).exists())"
+        }
+      }
     }
   }
 }
@@ -259,6 +370,11 @@ What each part is doing:
 - **`index`** is the flat lookup the read rule uses. Rules cannot iterate, so it cannot walk every team asking whether you are in it; the app mirrors every role grant into this one node.
 - **`access/org`** is the club name and badge, so it follows the admin rule.
 - **`access/log`** is the audit trail. Writes are allowed only where nothing exists yet and the entry stamps the author's own uid, which makes it append-only: nobody can edit or delete a record of what they did, including an admin.
+- **`invites/$id`** is the invite itself. Readable by any signed-in account that knows the id — the id is the secret, and nobody can list the node. Only an admin of the club it names can create one; it cannot be edited, only spent or deleted. **`used`** can be written once, by whoever spends it, before it expires, and only by the address it was sent to if it names one (verified addresses only).
+- **The role an invite grants** is written by the person accepting it, each write checked against the spent invite: `access/teams/$tid/coaches|trackers/$uid`, or `teams/$tid/players/$pid/guardians/$uid` for a parent, then `access/index/$uid`. The value written is the invite id, because that is what the rule looks up. Exactly the role the invite names, on the team it names, for the account that spent it, and only until it expires.
+- **`access/teamIndex/$tid/$uid`** can also be written by that account itself, as `coach` or `tracker`, only if it really is on that team in `access/teams` — and never as the first entry of a missing table, because that would close the bridge on everyone else in one write.
+- **`clubInvites/$code`** is the admin's list, readable only by admins. It lives outside the workspace on purpose: everyone indexed can read the whole workspace, and a list of unspent coach invites in a parent's hands is a parent who can make herself a coach.
+- **`userOrgs/$uid`** is which clubs an account belongs to, so a second device finds them without a code. Only its owner reads it. It is a list of bookmarks, not a grant: reading a club is still `access/index`'s decision.
 - **`public/$share`** stays world-readable — that is the whole point of the parent links — but writing now needs an account. That closes the hole where anyone holding a share link could overwrite the scoreboard.
 
 ### If it goes wrong

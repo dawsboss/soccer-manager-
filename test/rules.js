@@ -400,6 +400,146 @@ writes('a claimed one cannot be taken', RANDO, 'shareOwners/sh1', { rando: true 
 writes('its owner may add a co-owner', COACH, 'shareOwners/sh1/newbie', true, true);
 reads('owners are not world-readable', OUT, 'shareOwners/sh1', false);
 
+/* ---------------- invites ---------------- */
+
+/* An invite is how an account nobody has granted anything gets into a locked
+   club without an admin doing it by hand. That makes every rule below a door
+   in the wall, so most of these cases are somebody trying the handle. */
+{
+  const FUTURE = NOW + 7 * 864e5, PAST = NOW - 1;
+  const base = { ws: 'CLUB', team: 't1', by: 'adm', at: NOW - 1000, expiresAt: FUTURE };
+  DB.invites = {
+    ic: { ...base, role: 'coach' },
+    it: { ...base, role: 'tracker' },
+    ip: { ...base, role: 'parent', player: 'p1' },
+    imail: { ...base, role: 'coach', email: 'sam@example.com' },
+    iold: { ...base, role: 'coach', expiresAt: PAST },
+    itaken: { ...base, role: 'coach', used: { by: 'rando', at: NOW } },
+    // spent by the newcomer, which is the state every grant below checks for
+    sc: { ...base, role: 'coach', used: { by: 'newbie', at: NOW } },
+    st: { ...base, role: 'tracker', used: { by: 'newbie', at: NOW } },
+    sp: { ...base, role: 'parent', player: 'p1', used: { by: 'newbie', at: NOW } },
+    s2: { ...base, team: 't2', role: 'coach', used: { by: 'newbie', at: NOW } },
+    sold: { ...base, role: 'coach', expiresAt: PAST, used: { by: 'newbie', at: NOW - 9e9 } },
+    sfresh: { ...base, ws: 'FRESH', team: 't9', role: 'coach', used: { by: 'newbie', at: NOW } }
+  };
+  DB.clubInvites = { CLUB: { sc: { role: 'coach', team: 't1' } } };
+  const SAM = { uid: 'newbie', token: { email: 'Sam@Example.com', email_verified: true } };
+  const SAM_UNVERIFIED = { uid: 'newbie', token: { email: 'sam@example.com', email_verified: false } };
+  const RANDO_T = { uid: 'rando', token: { email: 'rando@example.com', email_verified: true } };
+  const W = 'workspaces/CLUB/';
+
+  console.log('\n--- making an invite ---');
+  const fresh = { ...base, role: 'coach' };
+  writes('an admin makes one for her club', ADM, 'invites/new1', fresh, true);
+  writes('stamped as somebody else', ADM, 'invites/new1', { ...fresh, by: 'coach' }, false);
+  writes('a coach cannot', COACH, 'invites/new1', { ...fresh, by: 'coach' }, false);
+  writes('nor an unknown account', RANDO, 'invites/new1', { ...fresh, by: 'rando' }, false);
+  writes('an admin cannot make one for another club', ADM, 'invites/new1', { ...fresh, ws: 'FRESH' }, false);
+  writes('nor overwrite an existing one', ADM, 'invites/ic', fresh, false);
+  writes('a role it cannot grant is refused', ADM, 'invites/new1', { ...fresh, role: 'admin' }, false);
+  writes('a parent invite must name a player', ADM, 'invites/new1', { ...fresh, role: 'parent' }, false);
+  writes('one with no expiry is refused', ADM, 'invites/new1', { ws: 'CLUB', team: 't1', by: 'adm', role: 'coach' }, false);
+  reads('whoever holds the link can read it', RANDO, 'invites/ic', true);
+  reads('signed out cannot', OUT, 'invites/ic', false);
+  reads('and nobody can list them all', ADM, 'invites', false);
+
+  console.log('\n--- spending one ---');
+  const use = who => ({ by: who.uid, at: NOW });
+  writes('an unknown account spends an open invite', RANDO, 'invites/ic/used', use(RANDO), true);
+  writes('but not in somebody else\'s name', RANDO, 'invites/ic/used', use(SAM), false);
+  writes('an expired one cannot be spent', RANDO, 'invites/iold/used', use(RANDO), false);
+  writes('a spent one cannot be spent again', SAM, 'invites/itaken/used', use(SAM), false);
+  writes('nor can a made-up one', RANDO, 'invites/nope/used', use(RANDO), false);
+  writes('signed out cannot', OUT, 'invites/ic/used', { by: null, at: NOW }, false);
+  writes('an emailed invite: the right address', SAM, 'invites/imail/used', use(SAM), true);
+  writes('the right address, unverified', SAM_UNVERIFIED, 'invites/imail/used', use(SAM), false);
+  writes('the wrong address', RANDO_T, 'invites/imail/used', use(RANDO_T), false);
+  writes('no address at all', RANDO, 'invites/imail/used', use(RANDO), false);
+
+  console.log('\n--- what a spent invite lets you write ---');
+  writes('coach invite: coach on that team', SAM, W + 'access/teams/t1/coaches/newbie', 'sc', true);
+  writes('coach invite: not coach on another team', SAM, W + 'access/teams/t2/coaches/newbie', 'sc', false);
+  writes('tracker invite: not coach', SAM, W + 'access/teams/t1/coaches/newbie', 'st', false);
+  writes('tracker invite: tracker', SAM, W + 'access/teams/t1/trackers/newbie', 'st', true);
+  writes('coach invite: not admin', SAM, W + 'access/admins/newbie', 'sc', false);
+  writes('nor somebody else onto the team', SAM, W + 'access/teams/t1/coaches/rando', 'sc', false);
+  writes('an invite somebody else spent', RANDO, W + 'access/teams/t1/coaches/rando', 'sc', false);
+  writes('an invite nobody has spent', RANDO, W + 'access/teams/t1/coaches/rando', 'ic', false);
+  writes('an expired one, spent long ago', SAM, W + 'access/teams/t1/coaches/newbie', 'sold', false);
+  writes('another club\'s invite', SAM, 'workspaces/FRESH/access/teams/t9/coaches/newbie', 'sc', false);
+  writes('a plain true is still admin-only', SAM, W + 'access/teams/t1/coaches/newbie', true, false);
+  writes('spent invite indexes its own account', SAM, W + 'access/index/newbie', 'sc', true);
+  writes('but not anybody else', SAM, W + 'access/index/rando', 'sc', false);
+  writes('nor from an invite to another club', SAM, W + 'access/index/newbie', 'sfresh', false);
+  writes('nor once it has expired', SAM, W + 'access/index/newbie', 'sold', false);
+  writes('parent invite: guardian of that player', SAM, W + 'teams/t1/players/p1/guardians/newbie', 'sp', true);
+  writes('parent invite: not another player', SAM, W + 'teams/t1/players/p2/guardians/newbie', 'sp', false);
+  writes('coach invite: not a guardian', SAM, W + 'teams/t1/players/p1/guardians/newbie', 'sc', false);
+  writes('parent invite: not the rest of the player', SAM, W + 'teams/t1/players/p1/name', 'sp', false);
+  writes('parent invite: not a coach', SAM, W + 'access/teams/t1/coaches/newbie', 'sp', false);
+  console.log('  ^ an invite grants exactly the role it names, on the team it names,');
+  console.log('    to the account that spent it, and only until it expires.');
+
+  console.log('\n--- mirroring yourself into the team index ---');
+  {
+    const saved = JSON.parse(JSON.stringify(DB.workspaces.CLUB.access.teams));
+    DB.workspaces.CLUB.access.teams.t1.coaches.newbie = 'sc';
+    writes('a coach on the team mirrors herself', SAM, W + 'access/teamIndex/t1/newbie', 'coach', true);
+    writes('not as coach of a team she is not on', SAM, W + 'access/teamIndex/t2/newbie', 'coach', false);
+    writes('not somebody else', SAM, W + 'access/teamIndex/t1/rando', 'coach', false);
+    writes('a tracker cannot mirror herself as coach', TRK, W + 'access/teamIndex/t1/trk', 'coach', false);
+    writes('an unroled account cannot at all', RANDO, W + 'access/teamIndex/t1/rando', 'tracker', false);
+    const ti = DB.workspaces.CLUB.access.teamIndex;
+    delete DB.workspaces.CLUB.access.teamIndex;
+    writes('never the first entry of a missing table', SAM, W + 'access/teamIndex/t1/newbie', 'coach', false);
+    console.log('  ^ that would close the bridge on everybody else in one write');
+    DB.workspaces.CLUB.access.teamIndex = ti;
+    DB.workspaces.CLUB.access.teams = saved;
+  }
+
+  console.log('\n--- the club\'s list of invites ---');
+  reads('an admin lists them', ADM, 'clubInvites/CLUB', true);
+  reads('a coach cannot — the ids are the secret', COACH, 'clubInvites/CLUB', false);
+  reads('nor a parent', MUM, 'clubInvites/CLUB', false);
+  writes('an admin adds one', ADM, 'clubInvites/CLUB/new1', { role: 'coach' }, true);
+  writes('a coach cannot', COACH, 'clubInvites/CLUB/new1', { role: 'coach' }, false);
+  writes('whoever spent it marks it used', SAM, 'clubInvites/CLUB/sc/used', { by: 'newbie', at: NOW }, true);
+  writes('nobody else can', RANDO, 'clubInvites/CLUB/sc/used', { by: 'rando', at: NOW }, false);
+  writes('nor mark one that is not listed', SAM, 'clubInvites/CLUB/st/used', { by: 'newbie', at: NOW }, false);
+
+  console.log('\n--- withdrawing one ---');
+  writes('an admin deletes one', ADM, 'invites/ic', null, true);
+  writes('its team\'s coach deletes one', COACH, 'invites/ic', null, true);
+  writes('another team\'s coach cannot', OTHER, 'invites/ic', null, false);
+  writes('whoever spent it consumes it', SAM, 'invites/sc', null, true);
+  writes('an unknown account cannot', RANDO, 'invites/ic', null, false);
+  writes('nobody may edit one in place', ADM, 'invites/ic/expiresAt', FUTURE * 2, false);
+
+  console.log('\n--- which clubs am I in ---');
+  reads('my own list', SAM, 'userOrgs/newbie', true);
+  reads('not somebody else\'s', RANDO, 'userOrgs/newbie', false);
+  writes('I add a club to it', SAM, 'userOrgs/newbie/CLUB', { name: 'Lakeside SC' }, true);
+  writes('not to somebody else\'s', RANDO, 'userOrgs/newbie/CLUB', { name: 'x' }, false);
+  writes('an admin of that club tidies it', ADM, 'userOrgs/newbie/CLUB', null, true);
+  writes('not for a club she does not run', ADM, 'userOrgs/newbie/FRESH', null, false);
+  console.log('  ^ a list of bookmarks, not a grant: reading the club is still');
+  console.log('    the index\'s decision.');
+
+  delete DB.invites; delete DB.clubInvites;
+}
+
+/* The open rules carry the same three root blocks, so invites work before a
+   club is locked down. One copy drifting from the other would mean an invite
+   that works today stops working on lockdown day. */
+{
+  const open = jsonBlocks().map(r => { try { return JSON.parse(r); } catch (e) { return null; } })
+    .find(d => d && d.rules && d.rules.workspaces && d.rules.workspaces.$code['.write'] === true);
+  console.log('\n--- the open rules ---');
+  for (const k of ['invites', 'clubInvites', 'userOrgs'])
+    check(k + ' matches the locked-down block', !!open && JSON.stringify(open.rules[k]) === JSON.stringify(RULES[k]), true);
+}
+
 /* ---------------- what the rules and the app disagree about ---------------- */
 
 console.log(`
@@ -437,7 +577,12 @@ console.log(`
   3. Creating a club is still a bootstrap. access/admins may be written while
      it is empty, so the first person to reach a brand-new workspace code
      becomes its admin. Codes are long and random, and this is what lets a club
-     exist at all, but it is a trust-on-first-use and worth knowing about.`);
+     exist at all, but it is a trust-on-first-use and worth knowing about.
+
+  4. An invite with no email on it is a bearer token until it is spent: whoever
+     opens the link first gets the role. Single use and a two-week expiry bound
+     it, and naming an address closes it; the interface says so where the
+     invite is made.`);
 
 console.log(`\n${failures ? failures + ' EXPECTATION(S) FAILED' : 'all expectations hold'}`);
 process.exit(failures ? 1 : 0);

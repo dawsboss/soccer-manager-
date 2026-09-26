@@ -55,6 +55,8 @@ invites/{code}: { orgId, teamId, role, playerId, createdBy, expiresAt, usedBy }
 
 An invite carries what it grants, so redeeming it is one step instead of a request followed by an approval. A coach invite grants coach on one team; a parent invite grants guardian on one player. Single-use, and they expire — a code circulating in last season's group chat should stop working on its own.
 
+**Built** (2026-09): per-person invites, as `invites/{id}` with the club it belongs to as `ws` (the org id is still the workspace code), an admin's list at `clubInvites/{code}`, and `userOrgs/{uid}`. Admins make them; README's **Joining a club** and the rules there are the reference. The role entries an invite writes hold its id rather than `true`, because a rule has to look the invite up from the value being written.
+
 Keep the parent claim flow described below as the bulk path: one team code, parent picks a shirt number, coach approves. Per-person invites are for coaches and for the one parent who cannot make the bulk flow work.
 
 ## Who sees which team
