@@ -2,7 +2,7 @@
    Static app. Data lives in localStorage, and mirrors to Firebase Realtime
    Database when a config + workspace code are present. */
 
-const BUILD = '60';
+const BUILD = '61';
 const BUILT = '2026-09-26';
 /* index.html carries the build it was published with. If this file is newer, the
    browser handed us a cached page — the exact failure that has eaten hours. */
@@ -2106,10 +2106,13 @@ function takeOffField(m, pid) {
   delDeep(state, `${path}/positions/${pid}`); remoteDel(`${path}/positions/${pid}`);
   saveLocal(); render();
 }
+/* The spot comes from her spell, not from positions: a token dragged before it
+   had a positions entry carries x/y and no slot, and the player coming on would
+   inherit that blank — a keeper subbed in who never counts as one. */
 function swap(m, outPid, inPid) {
-  const pos = posOf(m, outPid);
+  const pos = posOf(m, outPid), sid = slotIdOf(m, outPid);
   takeOffField(m, outPid);
-  putOnField(m, inPid, pos.x, pos.y, pos.slot);
+  putOnField(m, inPid, pos.x, pos.y, sid);
 }
 
 function subEvents(m) {
@@ -2166,13 +2169,13 @@ function stage(item) {
 /* One sub, no render — used when applying a whole batch at a single timestamp. */
 function subQuiet(m, outPid, inPid, t) {
   const path = `matches/${m.id}`;
-  const pos = posOf(m, outPid);
+  const pos = posOf(m, outPid), sid = slotIdOf(m, outPid);
   const open = openStint(m, outPid);
   if (open) quiet(`${path}/stints/${open[0]}/off`, t);
   delDeep(state, `${path}/positions/${outPid}`); remoteDel(`${path}/positions/${outPid}`);
-  quiet(`${path}/positions/${inPid}`, { x: pos.x, y: pos.y, slot: pos.slot || null });
-  const sl = pos.slot ? slotById(m, pos.slot) : null;
-  quiet(`${path}/stints/${uid()}`, { pid: inPid, on: t, slot: pos.slot || null, role: sl ? sl.role : null });
+  quiet(`${path}/positions/${inPid}`, { x: pos.x, y: pos.y, slot: sid || null });
+  const sl = sid ? slotById(m, sid) : null;
+  quiet(`${path}/stints/${uid()}`, { pid: inPid, on: t, slot: sid || null, role: sl ? sl.role : (open && open[1].role) || null });
 }
 
 /* Everything staged goes in at the same second, because it all happened at the
@@ -2331,7 +2334,11 @@ function subAt(m, outPid, inPid, t) {
    fresh spell at 0; everything measured against the old clock has to go. */
 function restartMatch(m) {
   const stints = {};
-  for (const pid of fieldIds(m)) stints[uid()] = { pid, on: 0 };
+  // a fresh spell in the spot she is in now, so her minutes by position count from 0:00
+  for (const pid of fieldIds(m)) {
+    const o = openStint(m, pid)[1];
+    stints[uid()] = { pid, on: 0, slot: o.slot || null, role: o.role || null };
+  }
   // which planned changes were made belongs to the old clock too
   commit(`matches/${m.id}`, { ...m, periods: {}, currentHalf: 1, stints, goals: null, planDone: null });
 }
@@ -5766,7 +5773,10 @@ document.addEventListener('click', e => {
       const on = clamp(parseTime(inp.value, 0), 0, e);
       const raw = offEl.value.trim();
       const off = raw === '' ? null : clamp(parseTime(raw, e), on, e);
-      quiet(`matches/${m.id}/stints/${sid}`, { pid: d.pid, on, off });
+      // only the times are being fixed: the spot she played it in rides along,
+      // or every spell saved here stops counting towards minutes by position
+      const was = (m.stints || {})[sid] || {};
+      quiet(`matches/${m.id}/stints/${sid}`, { pid: d.pid, on, off, slot: was.slot || null, role: was.role || null });
     }
     saveLocal(); closeSheet(); render(); toast('Minutes updated'); return;
   }

@@ -8,6 +8,28 @@ before this point lives only in the git log.
 
 ---
 
+## Goalkeeper minutes stop going missing — 2026-09-26
+
+A keeper who was in goal for 30 minutes showed as 19 at GK. Minutes by
+position are read from each spell's spot, and three things wrote a spell
+without one, so that time quietly stopped counting as GK — while the pitch,
+which falls back to `positions` for the label, still drew her in goal, so
+nothing looked wrong until the stats did:
+
+- **Fix minutes → Save spells** rewrote every spell of that player with only
+  her on and off times, even when neither had changed.
+- **Start this game over at 0:00** gave everyone on the pitch a fresh spell
+  with no spot.
+- **A one-for-one sub** took the spot from `positions` rather than from the
+  spell of the player going off. A token dragged before it had a positions
+  entry carries x/y and no slot, so the keeper coming on for her inherited a
+  blank. It now reads the spell, which is the invariant anyway.
+
+All three keep the spot now, and `test/stints.js` pins each one. Games
+already saved keep whatever they recorded: a spell written without a spot has
+nothing to recover it from, so its minutes still count as played, just not at
+any position.
+
 ## Every clock ticks, and the clock is on the Track tab — 2026-09-26
 
 Only the Live and Track cards moved on their own. Everywhere else that shows
