@@ -8,6 +8,43 @@ before this point lives only in the git log.
 
 ---
 
+## The tap on the planned-subs card is in the match log — 2026-09-26
+
+Tapping **Subs are on** already put the subs it made in the Track tab's match
+log, by name ("Hana on for Bea"). But nothing there said it was the planned
+10:00 change or who called it, and **Not now** left no trace at all, because
+a skip makes no subs to list. The tap now gets its own line: **Planned subs
+made** (10:00 · 1st half) · Tess, above the subs it made, or **Planned subs
+skipped** for a skip. A skip now records the game minute it was tapped, so it
+lands in the right place. The line goes away with Undo, like the subs do. It
+is read-only in the log; Undo stays on the card.
+
+## Tell the bench: the plan as calls to make — 2026-09-26
+
+A snapshot is a picture of the pitch, but at the sideline a coach doesn't
+hold up a picture. They tell the players on the bench who is going on, where,
+and for whom, and who is switching spots. Working that out from two pitches
+in your head, in the rain, is where subs go wrong.
+
+The coach's sideline card now shows each change that way: **Going on** (the
+spot, the player, "for Bea"), **Switching spots** (the new spot, "from CB"), and
+**Coming off**. Kick-off shows the starting lineup spot by spot, with the
+bench under it. **Tell the bench** opens the same thing in bigger type with
+**Copy as a message**, to text to whoever is standing with the subs. It is also
+on the Pitch and Plan tabs' next-change card and on every snapshot. **Bench
+sheet** (on the locked-in plan, or **Whole game** from any bench view) lists
+every change in the game, to read through at warm-up or send the night
+before.
+
+During a game the calls start from the pitch as it is, not from the snapshot
+before, since the coach may have subbed by hand in between. Before kick-off,
+and in the whole-game sheet, they go snapshot to snapshot, since the pitch at
+30:00 is not known yet. When someone comes on into a spot a teammate is moving
+out of, they are paired with whoever is coming off, so every call still has a
+"for". The calls name players, so like the Plan tab they are for coaches only.
+The tracker's card still names nobody, and the click handler refuses a
+tracker the sheet and the copy.
+
 ## A coach reads other teams, and only coaches change the squad — 2026-09-26
 
 A coach opening another age group in her club got her own coach's screens

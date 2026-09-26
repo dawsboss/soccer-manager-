@@ -264,6 +264,10 @@ function sideline() {
     check('and it says what it did', A.lastToast(), '1 sub made at 11:10');
     check('who tapped is kept', g().planDone.s600.byName, 'Tess');
     check('the match log has it', A.subEvents(g()).some(r => r.on === 'p4' && r.off === 'p2' && r.t === 670), true);
+    const log = () => { const h = html(); return h.slice(h.indexOf('id="matchlog"')); };
+    check('and the tap itself, as the planned change it was', /<b>Planned subs made<\/b> <span class="muted">\(10:00 · 1st half\)/.test(log()), true);
+    check('with who tapped it', /1st half\)<\/span> <span class="muted">· Tess/.test(log()), true);
+    check('above the sub it made', log().indexOf('Planned subs') < log().indexOf('Jo'), true);
     check('the card waits for half-time', A.subsDue(g()).kind + ':' + A.subsDue(g()).b.start, 'wait:2400');
 
     const stints = Object.keys(g().stints).length;
@@ -355,9 +359,14 @@ function sideline() {
     A.click({ act: 'subsskip', start: '3000' });
     check('skipping moves nobody', on(g), ['p2', 'p4', 'p5', 'p6']);
     check('and says so', /nobody was moved/.test(A.lastToast()), true);
+    A.ui.gameView = 'track';
+    const skipLog = () => { const h = html(); return h.slice(h.indexOf('id="matchlog"')); };
+    check('a skip is in the log, since it made no subs to show', /<b>Planned subs skipped<\/b> <span class="muted">\(50:00 · 2nd half\)/.test(skipLog()), true);
+    check('at the minute it was tapped', g().planDone.s3000.t, A.elapsedSec(g()));
     check('that was the last one', A.subsDue(g()).kind, 'over');
     A.click({ act: 'subsundo', key: 's3000' });
     check('a skip can be taken back too', A.subsDue(g()).kind, 'due');
+    check('and leaves the log with it', /skipped/.test(skipLog()), false);
 
     A.endGame(g());
     check('an ended game has nothing due', A.subsDue(g()), null);
@@ -387,6 +396,74 @@ function sideline() {
     check('the tracker is told there is no plan yet', /No sub plan is locked in/.test(card()), true);
     as('jaz'); A.ui.gameView = 'track';
     check('the coach is told to lock it in', /Lock in your plan/.test(card()), true);
+  }
+
+  console.log('\n--- what to tell the bench ---');
+  {
+    const g = setup();
+    as('jaz');
+    const bl = () => A.planBlocks(g());
+    const text = c => A.benchText(A.team(), g(), c, A.squad(A.team(), g()).map(p => p.id));
+    let c = A.benchCalls(g(), null, bl()[0]);
+    check('from nothing, the calls are a starting lineup', c.kickoff, true);
+    check('read out spot by spot, keeper first', text(c),
+      '- GK: Sam (1)\n- LB: Ella (7)\n- RB: Mia (8)\n- ST: Rosa (4)\nBench: Jo (9), Lou (11)');
+
+    A.click({ act: 'subsgo', start: '0' });
+    c = A.benchCalls(g(), A.pitchNow(g()), bl()[1]);
+    check('a sub says who, where and for whom', text(c), 'Going on:\n- Jo (9) at RB, for Mia (8)\nComing off: Mia (8)');
+
+    // on into a spot a teammate moves out of: still on for somebody
+    c = A.benchCalls(g(), A.pitchNow(g()), { start: 900, assign: { sGK: 'p5', sLB: 'p3', sRB: 'p2', sST: 'p6' } });
+    check('a chain reads as a sub and a switch', text(c),
+      'Going on:\n- Lou (11) at ST, for Ella (7)\nSwitching spots:\n- Rosa (4): ST to LB\nComing off: Ella (7)');
+
+    // the coach subbed by hand before 10:00: the calls start from the real pitch
+    startHalf(g, 1);
+    H.clock.advance(5 * MIN);
+    A.swap(g(), 'p3', 'p6');
+    H.clock.advance(5.5 * MIN);
+    c = A.benchCalls(g(), A.benchFrom(g(), bl()[1]), bl()[1]);
+    check('during a game, from the pitch as it is', text(c),
+      'Going on:\n- Jo (9) at RB, for Mia (8)\n- Rosa (4) at ST, for Lou (11)\nComing off: Mia (8), Lou (11)');
+    const due = card();
+    check('the coach\'s card carries the calls', /for Mia \(8\)/.test(due) && /Tell the bench/.test(due), true);
+    as('trk');
+    check('the tracker\'s card still names nobody', named(card()), []);
+
+    let copied = null;
+    // Node 22 has a navigator of its own that an assignment cannot replace
+    Object.defineProperty(globalThis, 'navigator', {
+      value: { clipboard: { writeText: v => { copied = v; return Promise.resolve(); } } }, configurable: true, writable: true
+    });
+    const sheet = () => String(A.dom.node('#sheet').innerHTML || '');
+    A.dom.node('#sheet').innerHTML = '';
+    A.click({ act: 'bench', start: '600' });
+    check('a tracker cannot open the bench calls', sheet(), '');
+    A.click({ act: 'benchall' });
+    check('nor the bench sheet', sheet(), '');
+
+    as('jaz');
+    A.click({ act: 'bench', start: '600' });
+    check('the coach can', /Tell the bench/.test(sheet()) && /Jo \(9\)/.test(sheet()), true);
+    check('and is told it is from the pitch now', /from who is on the pitch now/.test(sheet()), true);
+    A.click({ act: 'benchcopy' });
+    check('copied as a message, headed with when', copied && copied.split('\n')[0], 'Subs at 10:00 of the 1st half — v Riverside');
+    as('trk');
+    copied = null;
+    A.click({ act: 'benchcopy' });
+    check('and a tracker cannot copy what the coach opened', copied, null);
+
+    as('jaz');
+    A.click({ act: 'benchall' });
+    const all = sheet();
+    check('the bench sheet has every change', ['Kick-off', '10:00 · 1st half', '2nd half', '50:00 · 2nd half'].every(x => all.includes(x)), true);
+    A.click({ act: 'benchcopy' });
+    check('snapshot to snapshot, since later pitches are not known yet', /50:00 · 2nd half\nGoing on:\n- Ella \(7\) at RB, for Jo \(9\)\nComing off: Jo \(9\)/.test(copied), true);
+    A.ui.gameView = 'plan';
+    const h = html();
+    check('the Plan tab offers it per snapshot', /data-act="bench"/.test(h), true);
+    check('and for the whole game once locked in', /data-act="benchall"/.test(h), true);
   }
 
   console.log('\n--- the tabs draw ---');
