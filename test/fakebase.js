@@ -66,7 +66,12 @@ function makeFakebase() {
     database: {
       getDatabase: app => ({ app, _fake: true }),
       ref: (db, path) => ({ db, path, key: String(path).split('/').pop() }),
-      set(ref, value) { record.writes.push({ path: ref.path, value }); return Promise.resolve(); },
+      set(ref, value) {
+        if (record.refuse && record.refuse(ref.path, value))
+          return Promise.reject({ code: 'PERMISSION_DENIED', message: 'permission_denied at ' + ref.path });
+        record.writes.push({ path: ref.path, value });
+        return Promise.resolve();
+      },
       remove(ref) { record.removes.push(ref.path); return Promise.resolve(); },
       onValue(ref, cb, err, opts) {
         record.listeners.push({ kind: 'value', path: ref.path, cb, err, once: !!(opts && opts.onlyOnce) });
@@ -117,6 +122,8 @@ function makeFakebase() {
       for (const l of hit) l.cb(snap(value, key));
       return hit.length;
     },
+    /* Refuse every write whose path the predicate picks, the way a rule would. */
+    refuseWrites(pred) { record.refuse = pred; return this; },
     /* A rules refusal. The code is what app.js pattern-matches on. */
     refuse(path, code = 'PERMISSION_DENIED') {
       const hit = listenersFor(path).filter(l => l.err);

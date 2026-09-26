@@ -26,6 +26,7 @@ const SUITES = [
   ['signout', 'a signed-out device draws nothing of a locked club'],
   ['routing', 'links in, links out'],
   ['sync', 'auth, the workspace read, and its races'],
+  ['invites', 'joining a club by invite, on both sides'],
   ['smoke', 'every view renders without throwing'],
   ['sandbox', 'the test club, and database isolation'],
   ['rules', 'the database rules, as README publishes them']

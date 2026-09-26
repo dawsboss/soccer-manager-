@@ -2,7 +2,7 @@
    Static app. Data lives in localStorage, and mirrors to Firebase Realtime
    Database when a config + workspace code are present. */
 
-const BUILD = '52';
+const BUILD = '53';
 const BUILT = '2026-09-26';
 /* index.html carries the build it was published with. If this file is newer, the
    browser handed us a cached page — the exact failure that has eaten hours. */
@@ -373,7 +373,11 @@ async function initAuth() {
       const uid = me ? me.uid : null;
       // identity changed after boot — e.g. someone signs in from the lock
       // screen — so any earlier refusal is stale; read the workspace again
-      if (prevUid !== undefined && prevUid !== uid) { denied = false; attachWorkspace(); }
+      if (prevUid !== undefined && prevUid !== uid) {
+        denied = false; attachWorkspace();
+        // an invite read as the last account says nothing about this one
+        if (invite && invite.status !== 'working') { invite.status = 'idle'; invite.doc = null; }
+      }
       prevUid = uid;
       if (me && fb) {
         // put myself on the roster of people so an admin has someone to assign
@@ -384,6 +388,8 @@ async function initAuth() {
         }
       }
       authReadyResolve();
+      maybeLoadInvite();
+      watchMyClubs();
       render();
     });
   } catch (e) {
@@ -400,6 +406,10 @@ async function initSync() {
     const app = await getApp();
     const dbMod = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js');
     const db = dbMod.getDatabase(app);
+    rtdb = { db, mod: dbMod };
+    // an invite and the list of my clubs are both read before any workspace,
+    // because a device with neither code nor role is exactly who needs them
+    authReady.then(() => { maybeLoadInvite(); watchMyClubs(); });
 
     // appOwners is root-level and has nothing to do with any one workspace —
     // read it before a code even exists. A device with no workspace still
@@ -472,13 +482,14 @@ async function initSync() {
              access/teamIndex is missing; an admin's device is the only one
              allowed to write it, so it does, once, on the way in. */
           if (canAdmin()) syncAllTeamIndex();
+          noteMyClub();
         }
         schedulePublish();   // republish on load, so a fixed config heals itself
 
         // membership is small and read whole; it does not need child-level listeners
         dbMod.onValue(dbMod.ref(db, fb.base + '/access'), cs => {
           state.access = cs.val() || {};
-          saveLocal(); render();
+          saveLocal(); noteMyClub(); render();
         });
 
         for (const coll of ['teams', 'matches']) {
@@ -632,7 +643,12 @@ const auditLog = () => Object.values(acc().log || {}).sort((a, b) => b.at - a.at
 function syncIndex(uid) {
   if (!uid) return;
   if (hasAnyRole(uid)) quiet(`access/index/${uid}`, true);
-  else { delDeep(state, `access/index/${uid}`); remoteDel(`access/index/${uid}`); }
+  else {
+    forgetInvite((acc().index || {})[uid]);
+    delDeep(state, `access/index/${uid}`); remoteDel(`access/index/${uid}`);
+    // their bookmark to this club goes too, so no other device of theirs opens it
+    if (fb && wsCode()) Promise.resolve(fb.remove(fb.ref(fb.db, `userOrgs/${uid}/${wsCode()}`))).catch(() => { });
+  }
   saveLocal();
 }
 
@@ -765,6 +781,335 @@ const restricted = () => {
   const r = myRole();
   return r === 'tracker' || r === 'parent' ? r : null;
 };
+
+/* ---------------- invites ---------------- */
+/* How somebody new gets into a club. The workspace code stopped being
+   something anyone types, but a device still has to learn it, and an account
+   with no role still has to be given one — and in a locked club it cannot read
+   a thing until it has. An invite does both in one step, which is AUTH.md's
+   point: "redeeming it is one step instead of a request followed by an
+   approval".
+
+     invites/{id}               the invite itself, at the root, because the
+                                person holding it cannot read the club yet.
+                                The id is the secret; .read sits on {id}, so
+                                nobody can list them.
+     clubInvites/{code}/{id}    the admin's list. Not under the workspace:
+                                everybody indexed can read all of that, and a
+                                parent holding a list of unspent coach invites
+                                is a parent who can make herself a coach.
+     userOrgs/{uid}/{code}      which clubs this account is in, so a second
+                                device can find them without an invite.
+
+   Redeeming is a chain of small writes, each checked by its own rule against
+   the spent invite: spend it, then write the role it names, then the index.
+   The role entries carry the invite id as their value rather than `true` —
+   that value is what the rule looks up, and everything that reads a role asks
+   only whether the entry is there. An admin's plain `true` still wins.
+
+   Invites expire after two weeks, and the rules stop honouring a spent one
+   then too, so a role an admin later withdraws cannot be re-granted from the
+   same invite — the redeemer also deletes it once used, and withdrawing a role
+   deletes the invite it came from. */
+const LS_INVITE = 'sm.invite';
+const INVITE_DAYS = 14;
+const INVITE_ROLES = { coach: 'Coach', tracker: 'Tracker', parent: 'Parent' };
+let rtdb = null;        // { db, mod } once the database module has loaded, code or not
+let invite = null;      // { id, status, doc, err } while an invite link is being handled
+let clubInv = {};       // clubInvites/{code}, for an admin
+let clubInvWatch = null;
+let myClubs = null;     // userOrgs/{uid}
+let myClubsUid = null;
+
+/* Long enough that guessing one is not a plan. Share ids get away with
+   Math.random because a share is read-only; an invite is a grant. */
+function secretId() {
+  try {
+    const b = new Uint8Array(18);
+    crypto.getRandomValues(b);
+    return 'i' + Array.from(b, x => x.toString(16).padStart(2, '0')).join('');
+  } catch (e) { return 'i' + uid() + uid() + uid() + uid(); }
+}
+
+const inviteLink = id => location.origin + location.pathname + '?invite=' + encodeURIComponent(id);
+
+/* Taken off the address bar at load, before initAuth() reads it for a magic
+   link, and kept in localStorage: signing in by popup, redirect or email can
+   each lose the page, and the invite has to survive that. Only the invite
+   parameter goes — a magic link's own parameters are still needed. */
+function captureInvite() {
+  try {
+    const q = new URLSearchParams(location.search || '');
+    const id = (q.get('invite') || '').trim();
+    if (id) {
+      localStorage.setItem(LS_INVITE, id);
+      q.delete('invite');
+      const rest = q.toString();
+      history.replaceState(null, '', location.pathname + (rest ? '?' + rest : '') + (location.hash || ''));
+    }
+    const held = (localStorage.getItem(LS_INVITE) || '').trim();
+    invite = held ? { id: held, status: 'idle', doc: null, err: null } : null;
+  } catch (e) { invite = null; }
+}
+
+function dropInvite() {
+  try { localStorage.removeItem(LS_INVITE); } catch (e) { }
+  invite = null;
+}
+
+/* Read the invite once there is someone signed in to read it as. Re-run on
+   every change of account: the first one may be the wrong person. */
+function maybeLoadInvite() {
+  if (!invite || !rtdb || !me) return;
+  if (invite.status !== 'idle') return;
+  const id = invite.id, who = me.uid;
+  invite.status = 'loading';
+  const { db, mod } = rtdb;
+  mod.onValue(mod.ref(db, 'invites/' + id), s => {
+    if (!invite || invite.id !== id || !me || me.uid !== who) return;
+    const v = s.val();
+    invite.doc = v;
+    invite.status = !v ? 'gone'
+      : v.used && v.used.by !== who ? 'taken'
+        : v.used ? 'ready'                                 // ours, half finished: carry on
+          : (v.expiresAt || 0) <= nowMs() ? 'expired'
+            : v.email && v.email !== String(me.email || '').toLowerCase() ? 'wrongemail'
+              : 'ready';
+    render();
+  }, err => {
+    if (!invite || invite.id !== id) return;
+    invite.status = 'error';
+    invite.err = (err && err.code) || String(err);
+    render();
+  }, { onlyOnce: true });
+  render();
+}
+
+function inviteWhat(v) {
+  const role = INVITE_ROLES[v.role] || v.role;
+  return v.role === 'parent'
+    ? `a parent of ${v.playerNo ? '#' + esc(v.playerNo) : 'a player'} on <b>${esc(v.teamName || 'a team')}</b>`
+    : `${role.toLowerCase()} of <b>${esc(v.teamName || 'a team')}</b>`;
+}
+
+function inviteScreen() {
+  const v = (invite && invite.doc) || {};
+  const club = esc(v.clubName || 'a club');
+  const later = `<button class="btn quiet" data-act="invitedismiss">Not now</button>`;
+  const box = (title, body, btns) => `<div class="stack"><div class="empty"><strong>${title}</strong>${body}
+    <div class="row" style="margin-top:14px;justify-content:center">${btns}</div></div></div>`;
+  const s = invite.status;
+  if (!fbConfig().apiKey) return box('An invite', 'This copy of the app is not connected to a database, so it cannot accept one.', later);
+  if (!me) return box('You have been invited to a club',
+    'Sign in to see what it is and accept it. Use the account you want to keep — it is the one the club will know you by.',
+    `<button class="btn" data-act="signinsheet">Sign in</button>${later}`);
+  if (s === 'idle' || s === 'loading') return box('Opening your invite…', 'This needs a signal. It will carry on by itself once there is one.', later);
+  if (s === 'working') return box('Joining…', `Setting you up at ${club}.`, '');
+  if (s === 'gone') return box('That invite no longer exists',
+    'It has been used, or withdrawn by whoever sent it. Ask them for a new link.', `<button class="btn" data-act="invitedismiss">OK</button>`);
+  if (s === 'taken') return box('That invite has already been used',
+    'Each invite works once, for one account. Ask for a new link.', `<button class="btn" data-act="invitedismiss">OK</button>`);
+  if (s === 'expired') return box('That invite has expired',
+    `Invites last ${INVITE_DAYS} days. Ask ${esc(v.byName || 'whoever sent it')} for a new one.`, `<button class="btn" data-act="invitedismiss">OK</button>`);
+  if (s === 'wrongemail') return box('That invite is for someone else',
+    `It was sent to <b>${esc(v.email)}</b>, and you are signed in as <b>${esc(me.email || me.name)}</b>. Sign in with that address to accept it.`,
+    `<button class="btn" data-act="signout">Switch account</button>${later}`);
+  if (s === 'error') return box('Could not open the invite',
+    `${esc(invite.err || 'Something went wrong')}. Check the signal and try again.`,
+    `<button class="btn" data-act="inviteretry">Try again</button>${later}`);
+  return box(`Join ${club}`,
+    `${esc(v.byName || 'An admin')} has invited you as ${inviteWhat(v)}. You are signed in as <b>${esc(me.email || me.name)}</b>.`,
+    `<button class="btn" data-act="inviteaccept">Accept</button>${later}`);
+}
+
+/* Order matters and each step is awaited: every rule after the first checks
+   that the invite has been spent by this account, and the database evaluates
+   a write against what is there when it arrives. The first four writes are
+   the grant; the rest is bookkeeping, and a refusal there leaves the grant
+   standing — an admin's device rebuilds the team index on its next connect. */
+async function redeemInvite() {
+  if (!invite || invite.status !== 'ready' || !rtdb || !me) return;
+  const id = invite.id, v = invite.doc, who = me.uid, ws = v.ws, at = nowMs();
+  const { db, mod } = rtdb;
+  const put = (p, val) => mod.set(mod.ref(db, p), val);
+  const soft = pr => Promise.resolve(pr).catch(() => { });
+  const W = 'workspaces/' + ws + '/';
+  invite.status = 'working'; render();
+  try {
+    if (!v.used) await put('invites/' + id + '/used', { by: who, at });
+    await put(W + 'access/members/' + who, { name: me.name || '', email: me.email || '', at });
+    if (v.role === 'parent') await put(W + `teams/${v.team}/players/${v.player}/guardians/${who}`, id);
+    else await put(W + `access/teams/${v.team}/${v.role === 'coach' ? 'coaches' : 'trackers'}/${who}`, id);
+    await put(W + 'access/index/' + who, id);
+  } catch (e) {
+    invite.status = 'error';
+    invite.err = /permission|denied/i.test((e && e.code) || '') ? 'The database refused it — the invite may have expired or been withdrawn'
+      : ((e && e.code) || String(e));
+    render(); return;
+  }
+  if (v.role !== 'parent') await soft(put(W + `access/teamIndex/${v.team}/${who}`, v.role));
+  await soft(put('clubInvites/' + ws + '/' + id + '/used', { by: who, at, name: me.name || '' }));
+  await soft(put('userOrgs/' + who + '/' + ws, { name: v.clubName || '', at }));
+  await soft(put(W + 'access/log/' + uid(), {
+    at, act: 'joined by invite as', by: who, byName: me.name || null,
+    target: who, targetName: INVITE_ROLES[v.role] || v.role, team: v.team, teamName: v.teamName || null
+  }));
+  await soft(mod.remove(mod.ref(db, 'invites/' + id)));   // spent: nothing left to replay
+  dropInvite();
+  try { localStorage.setItem(LS_WS, ws); } catch (e) { }
+  location.reload();
+}
+
+/* A role that came from an invite carries the invite's id. Withdrawing the
+   role deletes the invite too, or its holder could spend it again until it
+   expired. Usually it is gone already; this is for the redeemer who stopped
+   halfway. */
+function forgetInvite(v) {
+  if (fb && typeof v === 'string' && v) Promise.resolve(fb.remove(fb.ref(fb.db, 'invites/' + v))).catch(() => { });
+}
+
+function watchClubInvites() {
+  const code = wsCode();
+  if (!rtdb || !code || !canAdmin() || clubInvWatch === code) return;
+  clubInvWatch = code;
+  const { db, mod } = rtdb;
+  mod.onValue(mod.ref(db, 'clubInvites/' + code), s => {
+    if (wsCode() !== code) return;
+    clubInv = s.val() || {};
+    render();
+  }, () => { });   // not an admin as far as the rules know; the list just stays empty
+}
+
+function watchMyClubs() {
+  if (!rtdb || !me) { myClubs = null; myClubsUid = null; return; }
+  if (myClubsUid === me.uid) return;
+  const who = myClubsUid = me.uid;
+  const { db, mod } = rtdb;
+  mod.onValue(mod.ref(db, 'userOrgs/' + who), s => {
+    if (!me || me.uid !== who) return;
+    myClubs = s.val() || {};
+    noteMyClub();
+    maybeOpenMyClub();
+    render();
+  }, () => { });
+}
+
+/* Keep this account's list of clubs true without anybody being told to: any
+   device that reads a club it holds a role in writes the bookmark, so people
+   who joined before this existed pick it up on their next connect. */
+function noteMyClub() {
+  const code = wsCode();
+  if (!rtdb || !me || !code || !myClubs || isSandbox()) return;
+  if (!approved(me.uid) && !isAdmin(me.uid)) return;
+  const name = (acc().org || {}).name || '';
+  const had = myClubs[code];
+  if (had && had.name === name) return;
+  myClubs[code] = { name, at: (had && had.at) || nowMs() };
+  const { db, mod } = rtdb;
+  Promise.resolve(mod.set(mod.ref(db, 'userOrgs/' + me.uid + '/' + code), myClubs[code])).catch(() => { });
+}
+
+/* A signed-in device with no club open, whose account belongs to exactly one:
+   open it. Not when this device has teams of its own on it — that is somebody
+   using the app on its own, and switching would hide their squad. */
+function maybeOpenMyClub() {
+  if (wsCode() || invite || !myClubs) return;
+  const codes = Object.keys(myClubs);
+  if (codes.length !== 1 || Object.keys(state.teams || {}).length) return;
+  try { localStorage.setItem(LS_WS, codes[0]); } catch (e) { return; }
+  location.reload();
+}
+
+function inviteStatus(v) {
+  if (v.used) return { k: 'used', label: `Joined${v.used.name ? ' — ' + esc(v.used.name) : ''}` };
+  if ((v.expiresAt || 0) <= nowMs()) return { k: 'expired', label: 'Expired' };
+  return { k: 'open', label: `Waiting · until ${new Date(v.expiresAt).toLocaleDateString()}` };
+}
+
+function invitesCard() {
+  if (!canAdmin()) return '';
+  watchClubInvites();
+  const list = Object.entries(clubInv || {}).map(([id, v]) => ({ id, ...v })).sort((a, b) => (b.at || 0) - (a.at || 0));
+  return `<div class="card"><div class="spread"><h2 style="margin:0">Invites</h2>
+      <button class="btn sm" data-act="invitenew">Invite someone</button></div>
+    <p class="muted">A link that makes one account a coach, tracker or parent on one team. It works once and lasts ${INVITE_DAYS} days.</p>
+    ${list.length ? list.slice(0, 30).map(v => {
+    const st = inviteStatus(v);
+    return `<div class="opt spread"><span><b>${esc(v.email || 'Anyone with the link')}</b>
+        <span class="rowsub">${esc(INVITE_ROLES[v.role] || v.role)} · ${esc(v.teamName || '')}${v.role === 'parent' && v.playerName ? ' · ' + esc(v.playerName) : ''} · ${st.label}</span></span>
+        <span class="row">${st.k === 'open' ? `<button class="btn quiet sm" data-act="copylink" data-v="${esc(inviteLink(v.id))}">Copy link</button>` : ''}
+        <button class="btn quiet sm" data-act="invitedrop" data-id="${esc(v.id)}">${st.k === 'open' ? 'Withdraw' : 'Clear'}</button></span></div>`;
+  }).join('') : '<p class="muted" style="margin:0">None yet.</p>'}</div>`;
+}
+
+function sheetInvite() {
+  const f = ui.inv || (ui.inv = { role: 'coach', team: ui.teamId || (teams()[0] || {}).id || null, player: null });
+  const t = state.teams[f.team] || null;
+  const players = t ? Object.values(t.players || {}).filter(p => p.active !== false)
+    .sort((a, b) => (Number(a.number) || 999) - (Number(b.number) || 999)) : [];
+  openSheet(`<h3>Invite someone</h3>
+    <p class="lbl">As</p>
+    <div class="chips" style="margin-bottom:12px">${Object.entries(INVITE_ROLES).map(([k, l]) =>
+    `<button class="chip" type="button" data-act="invitepick" data-k="role" data-v="${k}" aria-pressed="${f.role === k}">${l}</button>`).join('')}</div>
+    <p class="lbl">Team</p>
+    <div class="chips" style="margin-bottom:12px">${teams().map(x =>
+      `<button class="chip" type="button" data-act="invitepick" data-k="team" data-v="${x.id}" aria-pressed="${f.team === x.id}">${esc(x.name || 'Team')}</button>`).join('') || '<span class="muted">Add a team first.</span>'}</div>
+    ${f.role === 'parent' ? `<p class="lbl">Parent of</p>
+    <div class="chips" style="margin-bottom:12px">${players.map(p =>
+        `<button class="chip" type="button" data-act="invitepick" data-k="player" data-v="${p.id}" aria-pressed="${f.player === p.id}">${p.number ? '#' + esc(p.number) + ' ' : ''}${esc(p.name || '')}</button>`).join('') || '<span class="muted">No players on this team.</span>'}</div>` : ''}
+    <label class="field"><span>Their email — optional</span><input type="email" id="invEmail" placeholder="Leave empty for a link anyone can use once" autocapitalize="off" autocorrect="off"></label>
+    <p class="muted">With an email, only that address can accept it, and you can have the sign-in email sent for you. Without one, whoever opens the link first gets the role — send it somewhere private.</p>
+    <button class="btn wide" data-act="invitemake">Make the invite</button>`);
+}
+
+async function makeInvite() {
+  if (!canAdmin()) { toast('Club admins only'); return; }
+  if (!fb || !rtdb || !me) { toast(me ? 'Needs a connection to the database' : 'Sign in first'); return; }
+  const f = ui.inv || {};
+  const t = state.teams[f.team];
+  if (!t) { toast('Pick a team'); return; }
+  if (!INVITE_ROLES[f.role]) { toast('Pick a role'); return; }
+  const p = f.role === 'parent' ? (t.players || {})[f.player] : null;
+  if (f.role === 'parent' && !p) { toast('Pick the player'); return; }
+  const el = $('#invEmail');
+  const email = ((el && el.value) || '').trim().toLowerCase();
+  if (email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) { toast('That email does not look right'); return; }
+  const id = secretId(), at = nowMs();
+  /* What the invitee sees before joining. Club, team and who sent it — never
+     the child's name: the invite is readable by anyone holding the link, and a
+     link gets forwarded. The admin's own list can carry it; only admins read that. */
+  const doc = {
+    ws: wsCode(), team: t.id, teamName: t.name || '', role: f.role,
+    clubName: (acc().org || {}).name || '', by: me.uid, byName: me.name || '',
+    at, expiresAt: at + INVITE_DAYS * 864e5
+  };
+  if (p) { doc.player = p.id; if (p.number) doc.playerNo = String(p.number); }
+  if (email) doc.email = email;
+  const listed = { role: doc.role, team: doc.team, teamName: doc.teamName, by: doc.by, byName: doc.byName, at, expiresAt: doc.expiresAt };
+  if (p) listed.playerName = p.name || '';
+  if (email) listed.email = email;
+  try {
+    await fb.set(fb.ref(fb.db, 'invites/' + id), doc);
+    await fb.set(fb.ref(fb.db, 'clubInvites/' + wsCode() + '/' + id), listed);
+  } catch (e) {
+    toast(/permission|denied/i.test((e && e.code) || '') ? 'The database refused it — are the invite rules from README published?' : 'Could not make the invite');
+    return;
+  }
+  clubInv[id] = listed;
+  logAccess('invited', null, { targetName: (email || 'someone') + ' as ' + f.role, team: t.id, teamName: t.name || null });
+  ui.inv = null;
+  const link = inviteLink(id);
+  const canShare = typeof navigator !== 'undefined' && typeof navigator.share === 'function';
+  openSheet(`<h3>Invite ready</h3>
+    <p class="muted" style="margin-top:0">${esc(INVITE_ROLES[doc.role])} on <b>${esc(doc.teamName)}</b>${email ? ` for <b>${esc(email)}</b>` : ''}. Works once, for ${INVITE_DAYS} days.</p>
+    <div class="codebox">${esc(link)}</div>
+    <div class="row" style="margin-bottom:10px"><button class="btn" data-act="copylink" data-v="${esc(link)}">Copy link</button>
+    ${canShare ? `<button class="btn quiet" data-act="inviteshare" data-v="${esc(link)}">Share…</button>` : ''}</div>
+    ${email ? `<button class="btn quiet wide" data-act="invitemail" data-v="${esc(link)}" data-email="${esc(email)}">Send them the sign-in email</button>
+    <p class="muted">Firebase sends it, worded as a sign-in link rather than an invitation — worth a text to say it is coming.</p>` : ''}
+    <button class="btn quiet wide" data-act="closesheet">Done</button>`);
+  render();
+}
 
 /* ---------------- the test club ---------------- */
 /* A club of invented data, for rehearsing what is frightening to try on a real
@@ -1468,7 +1813,8 @@ function render() {
   /* Settle whether this device may see the club before drawing a single thing.
      The crumbs are chrome, but they carry the club and the team name, so a lock
      screen with the crumbs still drawn has leaked most of what there was. */
-  const shut = !!purged || denied || needsSignIn();
+  const inviting = !!invite;
+  const shut = inviting || !!purged || denied || needsSignIn();
   const t = team();
   if (!t && teams().length) { ui.teamId = teams()[0].id; }
   const vis = myTeams();
@@ -1516,6 +1862,7 @@ function render() {
   const tb = $('#tabs'); if (tb) tb.hidden = shut || !!(inGame && openM) || !teamLevel;
   const app = $('#app');
   const v = ui.view;
+  if (inviting) { app.innerHTML = inviteScreen(); saveUi(); return; }
   if (purged) { app.innerHTML = purgedScreen(); saveUi(); return; }
   if (denied || needsSignIn()) { app.innerHTML = lockScreen(); saveUi(); return; }
   const roNote = !lim && readOnlyHere() && team()
@@ -1566,7 +1913,7 @@ function purgedScreen() {
 function lockScreen() {
   return `<div class="stack">
     <div class="empty"><strong>This workspace needs a sign-in</strong>
-      ${me ? `You are signed in as <b>${esc(me.name)}</b>, but no role has been granted to this account yet. Ask the admin to add you in Setup → People.`
+      ${me ? `You are signed in as <b>${esc(me.name)}</b>, but no role has been granted to this account yet. Ask the club admin for an invite link.`
       : 'The data here is protected. Sign in with the account a coach has given access to.'}
       <div class="row" style="margin-top:14px;justify-content:center">
         ${me ? `<button class="btn quiet" data-act="signout">Sign out</button>` : `<button class="btn" data-act="signinsheet">Sign in</button>`}
@@ -1633,9 +1980,9 @@ function sheetAccount() {
     <p class="muted">Club settings live under the club itself, since you may belong to more than one.</p>`);
 }
 
-/* Real multi-club needs the userOrgs index from AUTH.md. Until then this device
-   already keeps a separate store per workspace code, so it can offer the clubs
-   it has actually seen. */
+/* The clubs this device keeps a copy of, plus the ones this account belongs to
+   (userOrgs, AUTH.md's reverse index) that it has never opened — which is how
+   a coach's second device finds her club without a code or a fresh invite. */
 function knownClubs() {
   const out = [];
   try {
@@ -1653,6 +2000,9 @@ function knownClubs() {
       out.push({ code, name });
     }
   } catch (e) { }
+  // clubs this account belongs to that this device has never opened
+  for (const [code, v] of Object.entries(myClubs || {}))
+    if (!out.some(c => c.code === code)) out.push({ code, name: (v && v.name) || code });
   return out.sort((a, b) => a.name.localeCompare(b.name));
 }
 
@@ -1668,7 +2018,7 @@ function sheetClubSwitch() {
     <p class="muted">Forget removes this device's copy only. Deleting a club for everyone is a Firebase console job — see below.</p>
     <button class="opt" data-act="goview" data-v="club"><b>Club home</b>
       <span class="rowsub">Teams, stats and settings for ${esc((acc().org || {}).name || 'this club')}</span></button>
-    <p class="muted">Clubs are invite only. If one is missing, ask its admin to add your account.</p>`);
+    <p class="muted">Clubs are invite only. If one is missing, ask its admin for an invite link.</p>`);
 }
 
 function sheetClubMenu() {
@@ -2750,7 +3100,8 @@ function viewSetup() {
 
     <div class="card"><h2 style="margin-bottom:8px">Workspace</h2>
       <p class="muted" style="margin-top:0">Firebase config is ${cfgOk ? 'in place' : 'not filled in — see README.md'}.</p>
-      <p class="muted"${isOwner() ? '' : ' style="margin-bottom:0"'}>${code ? 'Connected. Clubs are invite only — an admin adds your account, there is no code to type.' : 'Not connected to a club yet.'}</p>
+      <p class="muted"${isOwner() ? '' : ' style="margin-bottom:0"'}>${code ? 'Connected. Clubs are invite only — an admin sends you a link, there is no code to type.' : 'Not connected to a club yet. Open the invite link a club admin sent you to join one.'}</p>
+      ${!code && Object.keys(myClubs || {}).length ? `<button class="btn wide" data-act="clubswitch" style="margin-bottom:10px">Your clubs</button>` : ''}
       ${isOwner() ? `<button class="btn quiet wide" data-act="setwscode">${code ? 'Change workspace code' : 'Connect to a workspace'}</button>
       <p class="muted">Owner-only stopgap until per-person invites exist — nobody else sees this.</p>
       <div class="row"><button class="btn quiet" data-act="envsheet">Database: ${esc(envName() || 'production')}</button>
@@ -3152,7 +3503,9 @@ function viewPeople() {
       </tr>`).join('') || '<tr><td colspan="5" class="dim">Nobody matches that filter.</td></tr>'}</tbody>
     </table></div>
 
-    <p class="muted">Parents are not set here — linking an account to a player on the Squad page is what makes one.</p>
+    <p class="muted">Parents are not set here — linking an account to a player on the Squad page is what makes one, or a parent invite below.</p>
+
+    ${invitesCard()}
 
     ${admin ? `<div class="card"><h2 style="margin-bottom:10px">Activity</h2>
       ${auditLog().length ? `<div class="log">${auditLog().slice(0, 30).map(e => `<div style="display:grid;grid-template-columns:1fr auto;gap:10px;padding:7px 0;border-top:1px solid var(--line)">
@@ -3185,7 +3538,7 @@ function sheetPeople() {
   const t = team();
   const list = members();
   openSheet(`<h3>People</h3>
-    <p class="muted" style="margin-top:0">Anyone who signs in with the workspace code lands here. Roles below apply to <b>${teamLabel(t || {})}</b>; admins are club-wide.</p>
+    <p class="muted" style="margin-top:0">Anyone who signs in to this club lands here. Roles below apply to <b>${teamLabel(t || {})}</b>; admins are club-wide.</p>
     ${list.length ? list.map(u => {
     const r = roleIn(t && t.id, u.uid);
     const isMe = me && me.uid === u.uid;
@@ -4020,7 +4373,7 @@ document.addEventListener('click', e => {
   if (a === 'setrolet') {
     const key = d.r === 'coach' ? 'coaches' : 'trackers';
     const on = ((teamAccess(d.tid)[key] || {})[d.uid]);
-    if (on) drop(`access/teams/${d.tid}/${key}/${d.uid}`);
+    if (on) { forgetInvite(on); drop(`access/teams/${d.tid}/${key}/${d.uid}`); }
     else commit(`access/teams/${d.tid}/${key}/${d.uid}`, true);
     logAccess((on ? 'removed ' : 'made ') + d.r, d.uid, { team: d.tid, teamName: (state.teams[d.tid] || {}).name || null });
     syncIndex(d.uid); syncTeamIndex(d.tid); sheetPersonRoles(d.uid); return;
@@ -4081,6 +4434,41 @@ document.addEventListener('click', e => {
     toast('Lookup tables written — let it sync, then check the list again');
     return;
   }
+  if (a === 'invitenew') {
+    if (!canAdmin()) { toast('Club admins only'); return; }
+    ui.inv = null; sheetInvite(); return;
+  }
+  if (a === 'invitepick') {
+    const f = ui.inv || {};
+    f[d.k] = d.v;
+    if (d.k !== 'player' && (d.k === 'team' || f.role !== 'parent')) f.player = null;
+    ui.inv = f; sheetInvite(); return;
+  }
+  if (a === 'invitemake') { makeInvite(); return; }
+  if (a === 'invitedrop') {
+    if (!canAdmin()) { toast('Club admins only'); return; }
+    if (!fb) { toast('Not connected'); return; }
+    const v = clubInv[d.id];
+    if (v && !v.used && (v.expiresAt || 0) > nowMs() && !confirm('Withdraw this invite? The link stops working.')) return;
+    Promise.resolve(fb.remove(fb.ref(fb.db, 'invites/' + d.id))).catch(() => { });
+    Promise.resolve(fb.remove(fb.ref(fb.db, 'clubInvites/' + wsCode() + '/' + d.id))).catch(() => { });
+    delete clubInv[d.id];
+    render(); return;
+  }
+  if (a === 'inviteshare') {
+    navigator.share({ title: 'Join ' + ((acc().org || {}).name || 'the club'), url: d.v }).catch(() => { });
+    return;
+  }
+  if (a === 'invitemail') {
+    if (!authMod || !fbAuth) { toast('Sign-in is not available on this build'); return; }
+    authMod.sendSignInLinkToEmail(fbAuth, d.email, { url: d.v, handleCodeInApp: true })
+      .then(() => toast('Sent to ' + d.email))
+      .catch(err => toast(authMessage(err)));
+    return;
+  }
+  if (a === 'inviteaccept') { redeemInvite(); return; }
+  if (a === 'inviteretry') { if (invite) { invite.status = 'idle'; invite.err = null; maybeLoadInvite(); } return; }
+  if (a === 'invitedismiss') { dropInvite(); render(); return; }
   if (a === 'claimadmin') {
     if (!me) { toast('Sign in first'); return; }
     if (anyAdmins()) { toast('Someone already claimed it'); return; }
@@ -4100,7 +4488,7 @@ document.addEventListener('click', e => {
       if (!tid) { toast('Pick a team first'); return; }
       const key = r === 'coach' ? 'coaches' : 'trackers';
       const on = ((teamAccess(tid)[key] || {})[uid]);
-      if (on) drop(`access/teams/${tid}/${key}/${uid}`);
+      if (on) { forgetInvite(on); drop(`access/teams/${tid}/${key}/${uid}`); }
       else commit(`access/teams/${tid}/${key}/${uid}`, true);
       logAccess((on ? 'removed ' : 'made ') + r, uid, { team: tid, teamName: (state.teams[tid] || {}).name || null });
     }
@@ -4154,7 +4542,9 @@ document.addEventListener('click', e => {
   if (a === 'signin-link') {
     const mail = $('#authEmail').value.trim();
     if (!mail) { toast('Enter your email first'); return; }
-    authMod.sendSignInLinkToEmail(fbAuth, mail, { url: location.origin + location.pathname, handleCodeInApp: true })
+    // an invite rides along, so the link still works if it is opened on another device
+    const back = invite ? inviteLink(invite.id) : location.origin + location.pathname;
+    authMod.sendSignInLinkToEmail(fbAuth, mail, { url: back, handleCodeInApp: true })
       .then(() => { localStorage.setItem('sm.emailForLink', mail); closeSheet(); toast('Check your email'); })
       .catch(err => toast(authMessage(err)));
     return;
@@ -4494,7 +4884,7 @@ document.addEventListener('click', e => {
   if (a === 'toggleguard') {
     const p = t.players[d.pid];
     const on = ((p.guardians || {})[d.uid]);
-    if (on) drop(`teams/${t.id}/players/${d.pid}/guardians/${d.uid}`);
+    if (on) { forgetInvite(on); drop(`teams/${t.id}/players/${d.pid}/guardians/${d.uid}`); }
     else commit(`teams/${t.id}/players/${d.pid}/guardians/${d.uid}`, true);
     logAccess(on ? 'unlinked guardian' : 'linked guardian', d.uid, { team: t.id, teamName: t.name || null, player: p.name });
     syncIndex(d.uid);
@@ -4693,6 +5083,7 @@ if (typeof window !== 'undefined' && window.addEventListener) {
 }
 
 /* ---------------- boot ---------------- */
+captureInvite();
 loadLocal();
 /* Provisional, so an offline device renders for the person who was using it
    rather than sitting on a lock screen. onAuthStateChanged overwrites it either
