@@ -8,6 +8,33 @@ before this point lives only in the git log.
 
 ---
 
+## A game can have its own shape, and 2-5-1 is a preset — 2026-09-26
+
+A team could already save its own shapes, but a game only ever got a frozen
+copy of one, picked from a dropdown when the game was created. To play a shape
+that wasn't saved, you had to leave the game, build it under team settings,
+come back and re-pick it. And the shape we actually play, 2-5-1 with a keeper,
+wasn't one of the 9v9 presets.
+
+- **2-5-1 is a 9v9 preset**: GK, two backs, LM/LCM/CM/RCM/RM across the
+  middle, one striker.
+- **Edit a game's own shape.** The Pitch tab has an "Edit shape" button under
+  the pitch that opens the same drag-and-rename editor, pointed at
+  `matches/{id}/formation` instead of a team shape. From there you can move
+  spots, rename them, add or remove them, start again from any preset for the
+  side size, or save a copy back as a team shape. Links to it are
+  `#/team/{t}/game/{m}/shape`.
+- **"Build my own for this game…"** in the new-game and game-details shape
+  picker saves the game and goes straight to that editor.
+
+It edits the game's copy only. The team's saved shapes are never touched, and
+because stints are what decide who is on the pitch, moving or even removing a
+spot someone is standing in never takes her off or changes her minutes. The
+spot just gets its new name or place, or loses its label. `test/stints.js`
+checks exactly that. Like subs, the editor is for coaches of the team only.
+Trackers, parents and read-only viewers don't get the button, and the route
+shows nothing for them.
+
 ## The game plan gets its own tab — 2026-09-26
 
 The block-by-block game plan ("Plan the game", the next change, the full plan,
