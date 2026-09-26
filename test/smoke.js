@@ -68,7 +68,7 @@ try {
     state.teams.t_ok.players.p3.gk=true;
     ui.plan={matchId:'g1',items:[{k:'sub',out:'p2',in:'p3'},{k:'add',pid:'p3'},{k:'move',pid:'p2',sid:'s2',label:'LB'}]};
     ui.picked='p3';
-    ui.view='game'; ['live','track','stats','pitch'].forEach(g=>{
+    ui.view='game'; ['live','track','stats','pitch','plan'].forEach(g=>{
       ui.gameView=g;
       const out=[]; const orig=document.querySelector;
       render(); console.log('  rendered game/'+g+' with full data');

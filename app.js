@@ -2,7 +2,7 @@
    Static app. Data lives in localStorage, and mirrors to Firebase Realtime
    Database when a config + workspace code are present. */
 
-const BUILD = '48';
+const BUILD = '49';
 const BUILT = '2026-09-13';
 /* index.html carries the build it was published with. If this file is newer, the
    browser handed us a cached page — the exact failure that has eaten hours. */
@@ -1454,7 +1454,7 @@ function render() {
   if (ui.view === 'people' && !canAdmin() && !teams().some(x => isCoach(x.id, me && me.uid))) ui.view = 'club';
   const tabView = ui.view === 'formation' ? 'admin' : inGame ? 'matches' : ui.view;
   for (const b of document.querySelectorAll('#tabs button')) b.setAttribute('aria-current', String(b.dataset.view === tabView));
-  const allowed = lim === 'tracker' ? ['track', 'stats'] : lim === 'parent' ? ['stats'] : ['live', 'track', 'stats', 'pitch'];
+  const allowed = lim === 'tracker' ? ['track', 'stats'] : lim === 'parent' ? ['stats'] : ['live', 'track', 'stats', 'pitch', 'plan'];
   if (!allowed.includes(ui.gameView)) ui.gameView = allowed[0];
   for (const b of document.querySelectorAll('#subtabs button')) {
     b.hidden = !allowed.includes(b.dataset.gview);
@@ -1487,7 +1487,7 @@ function render() {
      to the games list the moment they open a game. A tracker could not reach the
      Track tab at all, which is the only screen her role exists for. */
   app.innerHTML = envNote + roleNote + roNote + (
-    v === 'game' ? (g === 'track' ? viewTrack() : g === 'stats' ? viewStats() : g === 'pitch' ? viewMatch() : viewLive()) :
+    v === 'game' ? (g === 'track' ? viewTrack() : g === 'stats' ? viewStats() : g === 'pitch' ? viewMatch() : g === 'plan' ? viewPlan() : viewLive()) :
       v === 'roster' ? viewRoster() :
         v === 'season' ? viewSeason() :
           v === 'formation' ? viewFormation() : v === 'club' ? viewClub() : v === 'people' ? viewPeople() : v === 'admin' ? viewAdmin()
@@ -2153,23 +2153,7 @@ function viewMatch() {
     ? `<div class="warn">${clashes.map(([a, b]) => `${esc(a.name)} and ${esc(b.name)} are on together`).join(' · ')}</div>` : '')
     + anomalyBanner(t, m);
 
-  const nb = nextPlanBlock(m, el), cb = planBlockAt(m, el);
-  let planHtml;
-  if (!m.plan) {
-    planHtml = `<p class="muted" style="margin:0 0 10px">Build a block-by-block plan from planned minutes, ratings and pairings.</p>
-      <button class="btn wide" data-act="makeplan">Plan the game</button>`;
-  } else if (nb) {
-    const onIds = nb.ids.filter(id => !cb || !cb.ids.includes(id));
-    const offIds = cb ? cb.ids.filter(id => !nb.ids.includes(id)) : [];
-    planHtml = `<div class="spread" style="align-items:flex-start">
-      <div><div class="muted">Next change at ${mmss(nb.start)}</div>
-      <div style="margin-top:4px">${onIds.length ? `<span class="on">on: ${onIds.map(name).join(', ')}</span><br>` : ''}${offIds.length ? `<span class="off">off: ${offIds.map(name).join(', ')}</span>` : ''}${!onIds.length && !offIds.length ? 'no changes' : ''}</div></div>
-      <button class="btn sm" data-act="applyblock" data-start="${nb.start}">Make these subs</button></div>
-      <div class="row" style="margin-top:12px"><button class="btn quiet sm" data-act="viewplan">See the plan</button><button class="btn quiet sm" data-act="makeplan">Rebuild</button></div>`;
-  } else {
-    planHtml = `<p class="muted" style="margin:0 0 10px">Plan finished — no changes left.</p>
-      <div class="row"><button class="btn quiet sm" data-act="viewplan">See the plan</button><button class="btn quiet sm" data-act="makeplan">Rebuild</button></div>`;
-  }
+  const planHtml = nextChange(m, el, name);
 
   const outCount = Object.keys(m.out || {}).length;
 
@@ -2198,6 +2182,67 @@ function viewMatch() {
           <button class="btn quiet sm" data-act="editmatch" data-id="${m.id}">Edit</button></div>
           ${m.veoUrl ? `<p style="margin:10px 0 0"><a href="${esc(m.veoUrl)}" target="_blank" rel="noopener">Open the Veo recording</a></p>` : ''}
         </div>
+      </div>
+    </div></div>`;
+}
+
+/* What the plan wants next, with the button that does it. The live screen's
+   "see the plan" link opens the full thing; the Plan tab shows it inline. */
+function nextChange(m, el, name) {
+  const nb = nextPlanBlock(m, el), cb = planBlockAt(m, el);
+  if (!m.plan) {
+    return `<p class="muted" style="margin:0 0 10px">Build a block-by-block plan from planned minutes, ratings and pairings.</p>
+      <button class="btn wide" data-act="makeplan">Plan the game</button>`;
+  } else if (nb) {
+    const onIds = nb.ids.filter(id => !cb || !cb.ids.includes(id));
+    const offIds = cb ? cb.ids.filter(id => !nb.ids.includes(id)) : [];
+    return `<div class="spread" style="align-items:flex-start">
+      <div><div class="muted">Next change at ${mmss(nb.start)}</div>
+      <div style="margin-top:4px">${onIds.length ? `<span class="on">on: ${onIds.map(name).join(', ')}</span><br>` : ''}${offIds.length ? `<span class="off">off: ${offIds.map(name).join(', ')}</span>` : ''}${!onIds.length && !offIds.length ? 'no changes' : ''}</div></div>
+      <button class="btn sm" data-act="applyblock" data-start="${nb.start}">Make these subs</button></div>
+      <div class="row" style="margin-top:12px"><button class="btn quiet sm" data-act="viewplan">See the plan</button><button class="btn quiet sm" data-act="makeplan">Rebuild</button></div>`;
+  } else {
+    return `<p class="muted" style="margin:0 0 10px">Plan finished — no changes left.</p>
+      <div class="row"><button class="btn quiet sm" data-act="viewplan">See the plan</button><button class="btn quiet sm" data-act="makeplan">Rebuild</button></div>`;
+  }
+}
+
+/* The game plan used to be reachable only from a card at the foot of the Pitch
+   tab, under the pitch, the XI and the bench — on a phone, far enough down that
+   coaches stopped finding it. Planning is done before kick-off, at a kitchen
+   table, so it earns a tab of its own rather than a scroll. */
+function viewPlan() {
+  const t = team(); if (!t) return needTeam();
+  let m = match();
+  if (!m || m.teamId !== t.id) { const l = teamMatches(t.id); m = l[0] || null; ui.matchId = m ? m.id : null; }
+  if (!m) return `<div class="empty"><strong>No game yet</strong>Create a game to plan it.
+    <div style="margin-top:14px"><button class="btn" data-act="newmatch">Add a game</button></div></div>`;
+
+  const roster = squad(t, m);
+  const el = elapsedSec(m, nowMs());
+  const name = id => { const p = (t.players || {})[id]; return p ? esc(p.name) : 'Unknown'; };
+  const planned = roster.filter(p => m.planned && m.planned[p.id] != null);
+  const minutesRows = roster.map(p => {
+    const pd = m.planned && m.planned[p.id] != null ? Number(m.planned[p.id]) : null;
+    return `<div class="spread" style="padding:4px 0"><span>${p.number != null && p.number !== '' ? `<span class="muted">${esc(p.number)}</span> ` : ''}${esc(p.name)}${p.gk ? ' <span class="muted">GK</span>' : ''}</span>
+      <span>${pd != null ? `<b>${pd}</b> <span class="muted">min</span>` : '<span class="muted">not set</span>'}</span></div>`;
+  }).join('') || '<p class="muted" style="margin:0">No players in the squad for this game yet.</p>';
+
+  return `<div class="stack">
+    <div class="barrow">${gameBar(t, m)}</div>
+    <div class="split">
+      <div class="stack">
+        <div class="card"><h2 style="margin-bottom:10px">Game plan</h2>${nextChange(m, el, name)}</div>
+        ${m.plan ? `<div class="card"><h2 style="margin-bottom:10px">The plan${m.formation ? ' · ' + esc(m.formation.name) : ''}</h2>${planDetail(t, m)}</div>` : ''}
+      </div>
+      <div class="stack">
+        <div class="card"><div class="spread" style="margin-bottom:10px">
+          <h2>Planned minutes</h2><button class="btn quiet sm" data-act="planall">${planned.length ? 'Edit' : 'Set'}</button></div>
+          <p class="muted" style="margin-top:0">${m.periodCount || 2} × ${m.periodMinutes || 40} min · ${m.onFieldCount || 11}v${m.onFieldCount || 11}. The plan shares these minutes out in blocks; left unset, it splits them evenly.</p>
+          ${minutesRows}</div>
+        <div class="card"><div class="spread">
+          <div><h2>Who is unavailable</h2><div class="muted">${Object.keys(m.out || {}).length || 'Nobody'} left out of this game</div></div>
+          <button class="btn quiet sm" data-act="availability">Change</button></div></div>
       </div>
     </div></div>`;
 }
@@ -3377,15 +3422,23 @@ function sheetFixMinutes(pid) {
 function sheetPlan() {
   const t = team(), m = match();
   if (!m.plan) return;
+  openSheet(`<h3>Game plan${m.formation ? ' · ' + esc(m.formation.name) : ''}</h3>
+    ${planDetail(t, m)}
+    <button class="btn wide" data-act="closesheet" style="margin-top:12px">Done</button>`);
+}
+
+/* The whole plan, block by block, then what it gives each player. Shared by the
+   sheet on the Pitch tab and the Plan tab, so the two never drift apart. */
+function planDetail(t, m) {
   const roster = squad(t, m);
+  const projected = m.plan.projected || {};
   const nm = id => { const p = (t.players || {})[id]; return p ? (p.number ? p.number + ' ' : '') + p.name.split(' ')[0] : '?'; };
   const spotFor = (b, id) => {
     const sid = Object.keys(b.assign || {}).find(k => b.assign[k] === id);
     const sl = sid && slotById(m, sid);
     return sl ? ` (${sl.label})` : '';
   };
-  openSheet(`<h3>Game plan${m.formation ? ' · ' + esc(m.formation.name) : ''}</h3>
-    <p class="muted" style="margin-top:0">${m.plan.blocks.length} blocks of about ${Math.round(m.plan.blockMinutes)} minutes.</p>
+  return `<p class="muted" style="margin-top:0">${m.plan.blocks.length} blocks of about ${Math.round(m.plan.blockMinutes)} minutes.</p>
     ${m.plan.blocks.map((b, i) => {
     const prev = i ? m.plan.blocks[i - 1] : null;
     const onIds = prev ? b.ids.filter(id => !prev.ids.includes(id)) : b.ids;
@@ -3396,12 +3449,11 @@ function sheetPlan() {
   }).join('')}
     <h3 style="margin-top:16px">Projected minutes</h3>
     ${roster.map(p => {
-    const pr = m.plan.projected[p.id] || 0, pd = (m.planned && m.planned[p.id]) || 0;
+    const pr = projected[p.id] || 0, pd = (m.planned && m.planned[p.id]) || 0;
     const d = pr - pd;
     return `<div class="spread" style="padding:4px 0"><span>${esc(p.name)}</span>
       <span><b>${pr}</b> <span class="muted">of ${pd} planned${pd ? d < 0 ? ` · ${-d} short` : d > 0 ? ` · ${d} over` : '' : ''}</span></span></div>`;
-  }).join('')}
-    <button class="btn wide" data-act="closesheet" style="margin-top:12px">Done</button>`);
+  }).join('')}`;
 }
 
 /* Resize to 192px and re-encode before storing, so a 4MB phone photo does not
@@ -3897,7 +3949,9 @@ document.addEventListener('click', e => {
       quiet(`matches/${m.id}/planned`, pl);
     }
     commit(`matches/${m.id}/plan`, buildPlan(m, roster));
-    sheetPlan(); return;
+    // on the Plan tab the plan is already on screen; a sheet over it would say it twice
+    if (ui.gameView === 'plan') render(); else sheetPlan();
+    return;
   }
   if (a === 'viewplan') { sheetPlan(); return; }
   if (a === 'applyblock') {
@@ -4109,7 +4163,7 @@ function hashToUi() {
     if (p[2] === 'game' && p[3]) {
       if (!state.matches[p[3]]) return false;
       ui.matchId = p[3]; ui.view = 'game';
-      if (['live', 'track', 'stats', 'pitch'].includes(p[4])) ui.gameView = p[4];
+      if (['live', 'track', 'stats', 'pitch', 'plan'].includes(p[4])) ui.gameView = p[4];
       return true;
     }
     if (p[2] === 'shape' && p[3]) { ui.editFid = p[3]; ui.view = 'formation'; return true; }

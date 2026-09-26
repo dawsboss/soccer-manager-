@@ -8,6 +8,24 @@ before this point lives only in the git log.
 
 ---
 
+## The game plan gets its own tab — 2026-09-26
+
+The block-by-block game plan ("Plan the game", the next change, the full plan,
+projected minutes) was only reachable from a card at the very bottom of the
+Pitch tab, under the pitch, the players on it and the bench. On a phone that
+is far enough down that it read as gone.
+
+A game now has a **Plan** tab next to Live, Track, Stats and Pitch. It shows
+the plan inline rather than in a sheet — next change with its "Make these
+subs" button, every block, projected against planned minutes — alongside the
+planned minutes themselves and who is unavailable, which is what you set
+before building one. The plan is the same data as before (`matches/{id}/plan`
+and `planned`); nothing about how it is built or stored changed, and the card
+on the Pitch tab stays. The block list and projection moved into
+`planDetail()` so the sheet and the tab draw the same thing. Like Live and
+Pitch, the tab is for coaches only; trackers and parents do not see it.
+Links to it are `#/team/{t}/game/{m}/plan`.
+
 ## Club crumb goes to the team list, not straight to settings — 2026-09-20
 
 For an admin, tapping the club button in the crumb bar (`crumb-club`) jumped
