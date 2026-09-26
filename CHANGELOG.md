@@ -8,6 +8,23 @@ before this point lives only in the git log.
 
 ---
 
+## Ask an AI can plan a game, not just review one — 2026-09-26
+
+Opened from a game, the helper only offered Game review, Half-time and a Note
+to parents. All three look back at a game, and the Plan tab is where a coach
+goes before kick-off, so there was nothing there to help plan one. "Next game"
+existed, but only on the Season tab.
+
+A game now has a **Plan this game** question, and the sheet opens on it when the
+game has not started (on the review once it has). Its prompt carries what the
+app's own planner reads, not a column of zero minutes: the formation and its
+positions, how often subs come, each player's target, where she plays best and
+also plays, strength, longest spell, and minutes over earlier games. It also
+says who plays well together and who is kept apart, all by shirt number. With
+no targets set, it asks for an even share weighted toward whoever is behind on
+the season. `test/ai.js` covers it, and it is held to the same no-names check
+as every other prompt.
+
 ## Ask an AI: a prompt generator, not a chatbot — 2026-09-26
 
 Coaches and admins wanted an AI helper, ideally signed in with their own

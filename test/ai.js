@@ -31,7 +31,7 @@ function setup() {
         id: 't1', name: 'G14 Flight',
         players: {
           p1: { id: 'p1', name: NAMES[0], number: '7', note: NOTE },
-          p2: { id: 'p2', name: NAMES[1], number: '8' },
+          p2: { id: 'p2', name: NAMES[1], number: '8', preferred: 'MID', canPlay: ['DEF'], rating: 4, maxStint: 15, pairs: { p3: true }, avoid: { p4: true } },
           p3: { id: 'p3', name: NAMES[2], number: '4', guardians: { mum: true } },
           p4: { id: 'p4', name: NAMES[3], number: '9' },
           p5: { id: 'p5', name: NAMES[4], number: '1', gk: true },
@@ -56,7 +56,7 @@ function setup() {
         goals: { y: { t: 900, side: 'us', pid: 'p4' } },
         planned: { p1: 40, p3: 40, p4: 40, p5: 80 }, out: { p2: true }
       },
-      g2: { id: 'g2', teamId: 't1', opponent: 'Oakfield', date: '2026-09-19', periodCount: 2, periodMinutes: 40, onFieldCount: 4 }
+      g2: { id: 'g2', teamId: 't1', opponent: 'Oakfield', date: '2026-09-19', periodCount: 2, periodMinutes: 40, onFieldCount: 4, planned: { p2: 40 } }
     },
     access: { org: { name: 'Flight FC' }, admins: { boss: true }, teams: { t1: { coaches: { coach: true }, trackers: { trk: true } } }, members: {}, index: {} }
   };
@@ -85,6 +85,27 @@ console.log('--- every prompt: numbers in, names out ---');
   check('the season prompt covers every game', ['Hillcrest', 'Riverside', 'Oakfield'].every(o => A.aiPrompt('team', 'season').includes(o)), true);
   check('"next game" names the upcoming one', A.aiPrompt('team', 'next').includes('NEXT GAME: 2026-09-19 vs Oakfield'), true);
   check('the club prompt lists the team', A.aiPrompt('club', 'club').includes('G14 Flight'), true);
+}
+
+console.log('--- planning a game that has not been played ---');
+{
+  setup();
+  A.ui.matchId = 'g2';
+  const txt = A.aiPrompt('game', 'plan');
+  check('it is a plan question', txt.includes('Help me plan this game'), true);
+  check('it carries the target', txt.includes('#8: target 40 min'), true);
+  check('and where she plays', txt.includes('best at MID, also DEF'), true);
+  check('and her longest spell', txt.includes('longest spell 15 min'), true);
+  check('earlier games count toward the season', txt.includes('over 2 earlier games'), true);
+  check('pairings by number', txt.includes('Play well together: #8 & #4'), true);
+  check('and who to keep apart', /Keep apart: #8 & (Player [A-Z]|#9)/.test(txt), true);
+  check('no minutes-so-far noise', txt.includes('MINUTES'), false);
+  A.dom.node('#sheet').innerHTML = '';
+  A.click({ act: 'aihelp', scope: 'game' });
+  check('an upcoming game opens on the plan', A.ui.ai.topic, 'plan');
+  A.ui.matchId = 'g1';
+  A.click({ act: 'aihelp', scope: 'game' });
+  check('a started game opens on the review', A.ui.ai.topic, 'review');
 }
 
 console.log('--- labels never merge two players ---');

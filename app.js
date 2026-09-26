@@ -2,7 +2,7 @@
    Static app. Data lives in localStorage, and mirrors to Firebase Realtime
    Database when a config + workspace code are present. */
 
-const BUILD = '52';
+const BUILD = '53';
 const BUILT = '2026-09-26';
 /* index.html carries the build it was published with. If this file is newer, the
    browser handed us a cached page — the exact failure that has eaten hours. */
@@ -3811,6 +3811,45 @@ function aiGameFacts(t, m, lab) {
     + `GOALS\n${goals.join('\n') || '- none'}\n\nSUBSTITUTIONS\n${subs.join('\n') || '- none'}`;
 }
 
+/* Planning is a different question from reviewing, and wants different facts:
+   nothing has happened yet, so "0 min of 39 planned" eleven times over is noise.
+   What a model needs is what the app's own planner reads — the shape, the
+   targets, where each player can play, how long a spell she can manage, who
+   pairs and who is kept apart — plus the season so far, so it can even things
+   out rather than plan the game as if it were the first. */
+function aiPlanFacts(t, m, lab) {
+  const L = id => lab[id] || 'unknown player';
+  const roster = squad(t, m).map(migrate);
+  const ids = new Set(roster.map(p => p.id));
+  const earlier = teamMatches(t.id).filter(x => x.id !== m.id && gameStatus(x) !== 'upcoming');
+  const slots = (m.formation && m.formation.slots) || [];
+  const rows = roster.map(p => {
+    const season = earlier.reduce((n, x) => n + playedSec(x, p.id), 0);
+    const where = p.gk ? 'goalkeeper' : [p.preferred ? 'best at ' + p.preferred : '', (p.canPlay || []).length ? 'also ' + p.canPlay.join('/') : '', p.anywhere === false ? 'only those' : ''].filter(Boolean).join(', ');
+    return `- ${L(p.id)}: target ${m.planned && m.planned[p.id] != null ? m.planned[p.id] + ' min' : 'not set'}`
+      + `${where ? '; ' + where : ''}; strength ${rating(p)}/5${p.maxStint ? `; longest spell ${p.maxStint} min` : ''}`
+      + `; ${mins(season)} min over ${earlier.length} earlier game${earlier.length === 1 ? '' : 's'}`;
+  });
+  const link = key => {
+    const seen = new Set(), out = [];
+    for (const p of roster) for (const o of Object.keys(p[key] || {})) {
+      const k = [p.id, o].sort().join('|');
+      if (ids.has(o) && !seen.has(k)) { seen.add(k); out.push(`${L(p.id)} & ${L(o)}`); }
+    }
+    return out.join(', ');
+  };
+  const pairs = link('pairs'), apart = link('avoid');
+  const out = Object.keys(m.out || {}).map(L);
+  return `GAME: ${m.date || 'no date'} vs ${m.opponent || 'TBC'}${m.kickoff ? ' at ' + m.kickoff : ''}`
+    + `\nFormat: ${aiFormat(m)}${m.formation ? `, formation ${m.formation.name}` : ''}${slots.length ? ` (positions: ${slots.map(x => x.label).join(', ')})` : ''}.`
+    + ` Subs roughly every ${Number(m.blockMinutes) || 10} min.\n\n`
+    + `AVAILABLE SQUAD (${roster.length})\n${rows.join('\n') || '- none'}`
+    + `${out.length ? `\nUnavailable: ${out.join(', ')}` : ''}`
+    + `${pairs ? `\nPlay well together: ${pairs}` : ''}${apart ? `\nKeep apart: ${apart}` : ''}`
+    + (roster.some(p => m.planned && m.planned[p.id] != null) ? ''
+      : '\n\nNo targets are set for this game: share the minutes evenly, giving a little extra to whoever is furthest behind on the season.');
+}
+
 function aiClubFacts() {
   return teams().map(t => {
     const ms = teamMatches(t.id), done = ms.filter(m => gameStatus(m) === 'done');
@@ -3830,6 +3869,7 @@ const AI_TOPICS = {
     ['next', 'Next game', 'Help me plan minutes and positions for our next game so the season evens out. Say who should start and roughly when to rotate.']
   ],
   game: [
+    ['plan', 'Plan this game', 'Help me plan this game. Suggest a starting lineup with a position for each player, then a rotation for each block so everyone ends close to their target minutes, plays where they are strongest, stays within their longest spell, and players who work well together overlap. Lay it out as a simple table: one row per block, who is on and where. Keep the team balanced on the pitch at all times.'],
     ['review', 'Game review', 'Review this game. What went well, what did not, and what should we work on at the next practice?'],
     ['halftime', 'Half-time', 'We are at half-time or a break in this game. Give me three short, practical adjustments and suggest subs that keep minutes on plan.'],
     ['parents', 'Note to parents', 'Write a short, warm note to parents summarising this game. Refer to players only by shirt number so I can fill in names, and keep the focus on effort and the team rather than the result.']
@@ -3848,7 +3888,7 @@ function aiPrompt(scope, topic) {
   const legend = 'Players are identified by shirt number only (or a letter). Minutes are rounded.';
   let facts;
   if (scope === 'club') facts = `TEAMS\n${aiClubFacts()}`;
-  else if (scope === 'game') facts = aiGameFacts(t, m, aiLabels(t));
+  else if (scope === 'game') facts = topic === 'plan' ? aiPlanFacts(t, m, aiLabels(t)) : aiGameFacts(t, m, aiLabels(t));
   else {
     facts = aiSeasonFacts(t, aiLabels(t));
     const next = teamMatches(t.id).filter(x => gameStatus(x) === 'upcoming').pop();
@@ -4542,7 +4582,8 @@ document.addEventListener('click', e => {
   if (a === 'aihelp') {
     const sc = d.scope;
     if (sc === 'club' ? !canAdmin() : (restricted() || !t || (sc === 'game' && !m))) return;
-    sheetAi(sc, (ui.ai && ui.ai.scope === sc && ui.ai.topic) || null); return;
+    // open on the question the game is ready for: before kick-off that is the plan
+    sheetAi(sc, sc === 'game' && gameStatus(m) === 'upcoming' ? 'plan' : sc === 'game' ? 'review' : null); return;
   }
   if (a === 'aitopic') { if (ui.ai) sheetAi(ui.ai.scope, d.k); return; }
   if (a === 'aicopy') { aiCopy($('#aiPrompt').value); return; }
