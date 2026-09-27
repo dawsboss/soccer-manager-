@@ -332,6 +332,17 @@ console.log('\n--- the sub log reads as subs, not as loose events ---');
   check('with the same player on both sides', move.on === move.off, true);
 }
 
+console.log('\n--- game details live on Plan, not under the pitch ---');
+{
+  setup();
+  A.ui.view = 'game'; A.ui.gameView = 'pitch'; A.render();
+  check('the Pitch tab no longer carries them', /data-act="editmatch"/.test(A.rendered()), false);
+  A.ui.gameView = 'plan'; A.render();
+  check('Plan opens with them', /Edit game<\/button>/.test(A.rendered()), true);
+  A.click({ act: 'pickgame' });
+  check('and the game picker reaches them from any tab', /data-act="editmatch" data-id="g1"/.test(A.rendered('#sheet')), true);
+}
+
 console.log('\n--- a game can carry, and edit, a shape of its own ---');
 {
   const p = A.presetsFor(9)['2-5-1'];

@@ -2,7 +2,7 @@
    Static app. Data lives in localStorage, and mirrors to Firebase Realtime
    Database when a config + workspace code are present. */
 
-const BUILD = '62';
+const BUILD = '64';
 const BUILT = '2026-09-26';
 /* index.html carries the build it was published with. If this file is newer, the
    browser handed us a cached page — the exact failure that has eaten hours. */
@@ -1087,20 +1087,71 @@ function inviteStatus(v) {
   return { k: 'open', label: `Waiting · until ${new Date(v.expiresAt).toLocaleDateString()}` };
 }
 
+const inviteList = () => Object.entries(clubInv || {}).map(([id, v]) => ({ id, ...v })).sort((a, b) => (b.at || 0) - (a.at || 0));
+const inviteFor = v => `${esc(INVITE_ROLES[v.role] || v.role)}${v.role === 'parent' && v.playerName ? ' of ' + esc(v.playerName) : ''} · ${esc(v.teamName || '')}`;
+
+/* Open invites first and all of them, because those are the ones an admin
+   comes back for: to copy the link again, or to kill it. Used and expired
+   ones are history, folded away behind a count. Every row opens the invite
+   itself, which is where the link, who used it and the revoke button live. */
 function invitesCard() {
   if (!canAdmin()) return '';
   watchClubInvites();
-  const list = Object.entries(clubInv || {}).map(([id, v]) => ({ id, ...v })).sort((a, b) => (b.at || 0) - (a.at || 0));
+  const list = inviteList();
+  const open = list.filter(v => inviteStatus(v).k === 'open');
+  const past = list.filter(v => inviteStatus(v).k !== 'open');
+  const row = v => {
+    const st = inviteStatus(v);
+    return `<div class="opt spread invrow" data-k="${st.k}">
+      <button type="button" class="linkish" data-act="inviteopen" data-id="${esc(v.id)}"><b>${esc(v.email || 'Anyone with the link')}</b>
+        <span class="rowsub">${inviteFor(v)} · ${st.label}</span></button>
+      <span class="row">${st.k === 'open' ? `<button class="btn quiet sm" data-act="copylink" data-v="${esc(inviteLink(v.id))}">Copy link</button>` : ''}
+        <button class="btn quiet sm" data-act="inviteopen" data-id="${esc(v.id)}">Details</button></span></div>`;
+  };
   return `<div class="card"><div class="spread"><h2 style="margin:0">Invites</h2>
       <button class="btn sm" data-act="invitenew">Invite someone</button></div>
-    <p class="muted">A link that makes one account a coach, tracker or parent on one team. It works once and lasts ${INVITE_DAYS} days.</p>
-    ${list.length ? list.slice(0, 30).map(v => {
-    const st = inviteStatus(v);
-    return `<div class="opt spread"><span><b>${esc(v.email || 'Anyone with the link')}</b>
-        <span class="rowsub">${esc(INVITE_ROLES[v.role] || v.role)} · ${esc(v.teamName || '')}${v.role === 'parent' && v.playerName ? ' · ' + esc(v.playerName) : ''} · ${st.label}</span></span>
-        <span class="row">${st.k === 'open' ? `<button class="btn quiet sm" data-act="copylink" data-v="${esc(inviteLink(v.id))}">Copy link</button>` : ''}
-        <button class="btn quiet sm" data-act="invitedrop" data-id="${esc(v.id)}">${st.k === 'open' ? 'Withdraw' : 'Clear'}</button></span></div>`;
-  }).join('') : '<p class="muted" style="margin:0">None yet.</p>'}</div>`;
+    <p class="muted">A link that makes one account a coach, tracker or parent on one team. It works once and lasts ${INVITE_DAYS} days. Tap one to copy its link again, see who used it, or revoke it.</p>
+    ${open.length ? open.map(row).join('') : `<p class="muted" style="margin:0">No open invites.</p>`}
+    ${past.length ? `<button class="btn quiet sm" data-act="invitepast" style="margin-top:8px">${ui.invPast ? 'Hide' : 'Show'} used and expired (${past.length})</button>
+    ${ui.invPast ? `<div style="margin-top:8px">${past.map(row).join('')}</div>` : ''}` : ''}</div>`;
+}
+
+/* One invite, everything about it. The link is only the id, so it can be
+   shown again at any point — which is what an admin who closed the "Invite
+   ready" sheet too soon needs. Once used, the redeemer deletes the invite
+   itself, so the link is dead and says so; what is left is who took it. */
+function sheetInviteDetail(id) {
+  const v = clubInv[id];
+  if (!v) { closeSheet(); toast('That invite is gone'); return; }
+  const st = inviteStatus(v), link = inviteLink(id);
+  const when = ms => ms ? new Date(ms).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' }) : 'unknown';
+  const who = v.used && (acc().members || {})[v.used.by];
+  const stillHas = v.used && (v.role === 'parent'
+    ? !!(((((state.teams[v.team] || {}).players || {})[v.player] || {}).guardians || {})[v.used.by])
+    : v.role === 'coach' ? isCoach(v.team, v.used.by) : isTracker(v.team, v.used.by));
+  const canShare = typeof navigator !== 'undefined' && typeof navigator.share === 'function';
+  const line = (k, val) => `<div class="spread" style="padding:6px 0;border-top:1px solid var(--line)"><span class="muted">${k}</span><span style="text-align:right">${val}</span></div>`;
+  openSheet(`<h3>${esc(v.email || 'Invite link')}</h3>
+    <p class="muted" style="margin-top:0">${inviteFor(v)}</p>
+    <div style="margin-bottom:14px">
+      ${line('Status', st.k === 'open' ? '<b>Waiting to be used</b>' : st.k === 'used' ? '<b>Used</b>' : '<b>Expired</b>')}
+      ${line('For', v.email ? esc(v.email) + ' only' : 'Whoever opens it first')}
+      ${line('Made by', `${esc(v.byName || 'an admin')} · ${when(v.at)}`)}
+      ${st.k === 'used'
+      ? line('Used by', `<b>${esc(v.used.name || (who && who.name) || 'someone')}</b>${who && who.email ? `<span class="rowsub">${esc(who.email)}</span>` : ''}<span class="rowsub">${when(v.used.at)}</span>`)
+        + line('Role now', stillHas ? 'Still has it' : 'Since removed')
+      : line(st.k === 'open' ? 'Works until' : 'Expired', when(v.expiresAt))}
+    </div>
+    ${st.k === 'open' ? `<p class="lbl">The link</p>
+    <div class="codebox">${esc(link)}</div>
+    <div class="row" style="margin-bottom:12px"><button class="btn" data-act="copylink" data-v="${esc(link)}">Copy link</button>
+      ${canShare ? `<button class="btn quiet" data-act="inviteshare" data-v="${esc(link)}">Share…</button>` : ''}</div>
+    ${v.email ? `<button class="btn quiet wide" data-act="invitemail" data-v="${esc(link)}" data-email="${esc(v.email)}" style="margin-bottom:12px">Send them the sign-in email again</button>` : ''}
+    <button class="btn danger wide" data-act="invitedrop" data-id="${esc(id)}">Revoke — the link stops working</button>`
+      : `<p class="muted">${st.k === 'used' ? 'This link has been used and no longer works. To take the role away, remove it from their roles.' : 'This link no longer works. Make a new one if they still need to join.'}</p>
+    ${st.k === 'used' && who ? `<button class="btn quiet wide" data-act="personedit" data-uid="${esc(v.used.by)}" style="margin-bottom:8px">Their roles</button>` : ''}
+    <button class="btn quiet wide" data-act="invitedrop" data-id="${esc(id)}">Remove from the list</button>`}
+    <button class="btn quiet wide" data-act="closesheet" style="margin-top:8px">Done</button>`);
 }
 
 function sheetInvite() {
@@ -1113,11 +1164,9 @@ function sheetInvite() {
     <div class="chips" style="margin-bottom:12px">${Object.entries(INVITE_ROLES).map(([k, l]) =>
     `<button class="chip" type="button" data-act="invitepick" data-k="role" data-v="${k}" aria-pressed="${f.role === k}">${l}</button>`).join('')}</div>
     <p class="lbl">Team</p>
-    <div class="chips" style="margin-bottom:12px">${teams().map(x =>
-      `<button class="chip" type="button" data-act="invitepick" data-k="team" data-v="${x.id}" aria-pressed="${f.team === x.id}">${esc(x.name || 'Team')}</button>`).join('') || '<span class="muted">Add a team first.</span>'}</div>
+    ${pickOne('invitepick', 'team', f.team, teams().map(x => [x.id, esc(x.name || 'Team')]), 'Add a team first.')}
     ${f.role === 'parent' ? `<p class="lbl">Parent of</p>
-    <div class="chips" style="margin-bottom:12px">${players.map(p =>
-        `<button class="chip" type="button" data-act="invitepick" data-k="player" data-v="${p.id}" aria-pressed="${f.player === p.id}">${p.number ? '#' + esc(p.number) + ' ' : ''}${esc(p.name || '')}</button>`).join('') || '<span class="muted">No players on this team.</span>'}</div>` : ''}
+    ${pickOne('invitepick', 'player', f.player, players.map(p => [p.id, `${p.number ? '#' + esc(p.number) + ' ' : ''}${esc(p.name || '')}`]), 'No players on this team.')}` : ''}
     <label class="field"><span>Their email — optional</span><input type="email" id="invEmail" placeholder="Leave empty for a link anyone can use once" autocapitalize="off" autocorrect="off"></label>
     <p class="muted">With an email, only that address can accept it, and you can have the sign-in email sent for you. Without one, whoever opens the link first gets the role — send it somewhere private.</p>
     <button class="btn wide" data-act="invitemake">Make the invite</button>`);
@@ -2646,6 +2695,7 @@ function sheetPickGame() {
       <span class="pmins">${sc.us}<small>–${sc.them}</small></span></button>
 `;
   }).join('') || '<p class="muted">No games yet.</p>'}
+    ${cur && state.matches[cur] && !readOnlyHere() ? `<button class="btn quiet wide" data-act="editmatch" data-id="${cur}" style="margin-bottom:8px">Edit this game's details</button>` : ''}
     ${addGameBtn('btn wide')}`);
 }
 
@@ -3321,11 +3371,6 @@ function viewMatch() {
         <div class="card"><div class="spread" style="margin-bottom:10px"><h2>Subs</h2>
           <div class="row"><button class="btn quiet sm" data-act="addsub">Add a sub</button>
           <button class="btn quiet sm" data-act="fixminutes">Fix minutes</button></div></div>${logHtml}</div>
-        <div class="card"><div class="spread">
-          <div><h2>${esc(m.opponent || 'Game')}</h2><div class="muted">${esc(m.date || '')} · ${m.periodCount || 2} × ${m.periodMinutes || 40} min · ${cap}v${cap}</div></div>
-          <button class="btn quiet sm" data-act="editmatch" data-id="${m.id}">Edit</button></div>
-          ${m.veoUrl ? `<p style="margin:10px 0 0"><a href="${esc(m.veoUrl)}" target="_blank" rel="noopener">Open the Veo recording</a></p>` : ''}
-        </div>
       </div>
     </div></div>`;
 }
@@ -3708,6 +3753,7 @@ function viewPlan() {
     <div class="barrow">${gameBar(t, m)}</div>
     <div class="split">
       <div class="stack">
+        ${gameDetailsCard(m)}
         ${next}
         ${lockCard}
         ${snaps}
@@ -3726,6 +3772,21 @@ function viewPlan() {
         ${aiButton('game')}
       </div>
     </div></div>`;
+}
+
+/* Opponent, when, where and the format. It lived at the foot of the Pitch
+   tab, under the bench and the sub log, where nobody looked for it; Plan is
+   where a game is set up before kick-off, so it heads that tab instead. */
+function gameDetailsCard(m) {
+  const cap = m.onFieldCount || 11;
+  const when = [m.date ? shortDate(m.date) : '', m.kickoff || ''].filter(Boolean).join(' · ');
+  return `<div class="card"><div class="spread" style="align-items:flex-start">
+    <div><h2>${esc(m.opponent || 'Game')}</h2>
+      <div class="muted">${esc(when || 'No date yet')}${m.venue ? ' · ' + esc(m.venue) : ''}</div>
+      <div class="muted">${m.periodCount || 2} × ${m.periodMinutes || 40} min · ${cap}v${cap} · ${esc(m.formation ? m.formation.name : 'no shape')}</div></div>
+    ${readOnlyHere() ? '' : `<button class="btn quiet sm" data-act="editmatch" data-id="${m.id}" style="flex:none">Edit game</button>`}</div>
+    ${m.veoUrl ? `<p style="margin:10px 0 0"><a href="${esc(m.veoUrl)}" target="_blank" rel="noopener">Open the Veo recording</a></p>` : ''}
+  </div>`;
 }
 
 function playerRow(m, p, now, isOn) {
@@ -4279,7 +4340,10 @@ function wireDrag() {
       () => tapPlayer(pid));
   }
 
-  pitch.addEventListener('pointerdown', e => {
+  /* click, not pointerdown: the grass scrolls the page now, and a thumb that
+     lands on it to scroll must not drop the picked player where it landed. A
+     click only arrives for a tap that did not turn into a scroll. */
+  pitch.addEventListener('click', e => {
     if (e.target.closest('.token') || e.target.closest('.ghost')) return;
     if (!ui.picked || onField(m, ui.picked)) return;
     if (fieldIds(m).length >= (m.onFieldCount || 11)) { toast('Pitch is full — tap a player to swap'); return; }
@@ -4483,7 +4547,7 @@ function viewPeople() {
     Managing people is limited to whoever runs a team or the club.</div>`;
 
   const scope = admin ? teams() : myCoachTeams;
-  const rolesOf = u => scope.map(x => ({ x, r: roleIn(x.id, u.uid) })).filter(v => v.r);
+  const rolesOf = u => rolesHeld(u.uid, scope);
   const all = members().map(u => {
     const rs = rolesOf(u);
     return { u, rs, none: !rs.length && !isAdmin(u.uid) };
@@ -4513,6 +4577,10 @@ function viewPeople() {
       <button class="btn quiet sm" data-act="peoplesort">${sortKey === 'joined' ? 'By join date' : 'By name'}</button></div>
     <p class="muted" style="margin-top:-6px">${admin ? 'Every account in the club.' : `Accounts on ${esc(myCoachTeams.map(x => x.name).join(', '))}, and anyone new waiting for a role.`}</p>
 
+    ${counts.pending && F !== 'pending' ? `<div class="warn alert"><div class="spread">
+      <span><b>${counts.pending} waiting to be let in.</b> They signed in but have no role, so they see nothing yet.</span>
+      <button class="btn sm" data-act="peoplefilter" data-v="pending" style="flex:none">Show them</button></div></div>` : ''}
+
     <div class="chips">
       ${[['all', 'All'], ['pending', 'Waiting'], ['coach', 'Coaches'], ['tracker', 'Trackers'], ['parent', 'Parents']]
       .map(([k, l]) => `<button class="chip" type="button" data-act="peoplefilter" data-v="${k}" aria-pressed="${F === k}">${l} ${counts[k] || 0}</button>`).join('')}
@@ -4524,14 +4592,15 @@ function viewPeople() {
         <td><b>${esc(u.name || 'Unnamed')}</b>${me && me.uid === u.uid ? ' <span class="muted">you</span>' : ''}</td>
         <td class="dim">${esc(u.email || '')}</td>
         <td>${isAdmin(u.uid) ? '<span class="tag admin">Admin</span>'
-      : rs.length ? rs.map(v => `<span class="tag">${esc(ROLE_LABEL[v.r])}<i>${esc(v.x.name || '')}</i></span>`).join('')
-        : '<span class="tag wait">Waiting</span>'}</td>
+      : rs.length ? roleTags(u.uid, scope) : '<span class="tag wait">Waiting</span>'}</td>
         <td class="dim">${when(u.at)}</td>
-        <td class="right"><button class="btn quiet sm" data-act="personedit" data-uid="${u.uid}">Roles</button></td>
+        <td class="right">${none
+        ? `<button class="btn sm" data-act="personedit" data-uid="${u.uid}">Let in</button>`
+        : `<button class="btn quiet sm" data-act="personedit" data-uid="${u.uid}">Roles</button>`}</td>
       </tr>`).join('') || '<tr><td colspan="5" class="dim">Nobody matches that filter.</td></tr>'}</tbody>
     </table></div>
 
-    <p class="muted">Parents are not set here — linking an account to a player on the Squad page is what makes one, or a parent invite below.</p>
+    <p class="muted">Tap <b>Roles</b> on anyone to let them in — as a parent of a player, a tracker or a coach. Somebody who signs in on their own waits here with no role and sees nothing until you do.</p>
 
     ${invitesCard()}
 
@@ -4543,23 +4612,91 @@ function viewPeople() {
   </div>`;
 }
 
+/* Every role one account holds, one entry per team and role. roleIn() answers
+   "what may she do here" and so keeps only the strongest; this is "what has
+   she been given", where a coach who is also a parent on the same team is two
+   things, and hiding either would make it impossible to take away. */
+function rolesHeld(uid, scope) {
+  const out = [];
+  for (const x of scope) {
+    if (!isAdmin(uid) && isCoach(x.id, uid)) out.push({ x, r: 'coach' });
+    if (isTracker(x.id, uid)) out.push({ x, r: 'tracker' });
+    for (const p of Object.values(x.players || {}))
+      if ((p.guardians || {})[uid]) out.push({ x, r: 'parent', p });
+  }
+  return out;
+}
+
+/* The Role column, one tag per kind of role rather than per team: a coach of
+   two teams reads "Coach U10, U12", and one of twelve reads "Coach 12 teams"
+   instead of a row of tags wider than the phone. */
+function roleTags(uid, scope) {
+  const by = {};
+  for (const v of rolesHeld(uid, scope)) (by[v.r] = by[v.r] || new Set()).add(v.x.name || 'Team');
+  return ['coach', 'tracker', 'parent'].filter(r => by[r]).map(r => {
+    const names = [...by[r]];
+    const what = names.length > 2 ? `${names.length} teams` : names.join(', ');
+    return `<span class="tag">${esc(ROLE_LABEL[r])}<i>${esc(what)}</i></span>`;
+  }).join('');
+}
+
+/* Chips are quicker up to a handful; past that they are a wall that pushes
+   the button off the bottom of the sheet, and a club has a dozen teams. The
+   select reports through the same action as a chip would, so both are one
+   code path (see the 'change' listener beside the click handler). */
+const PICK_CHIPS = 6;
+function pickOne(act, k, cur, items, empty) {
+  if (!items.length) return `<p class="muted" style="margin:0 0 12px">${empty}</p>`;
+  if (items.length <= PICK_CHIPS) return `<div class="chips" style="margin-bottom:12px">${items.map(([v, l]) =>
+    `<button class="chip" type="button" data-act="${act}" data-k="${k}" data-v="${esc(v)}" aria-pressed="${cur === v}">${l}</button>`).join('')}</div>`;
+  return `<label class="field"><select data-pick="${act}" data-k="${k}">
+    <option value=""${cur ? '' : ' selected'}>Choose…</option>
+    ${items.map(([v, l]) => `<option value="${esc(v)}"${cur === v ? ' selected' : ''}>${l}</option>`).join('')}</select></label>`;
+}
+
+/* A coach may hand out roles on her own team; an admin on any. Checked in the
+   handlers too, not only by what the sheet draws. */
+const mayGrant = tid => canAdmin() || !!(me && tid && isCoach(tid, me.uid));
+
 function sheetPersonRoles(uid) {
   const u = (acc().members || {})[uid] || {};
   const admin = canAdmin();
   const scope = admin ? teams() : teams().filter(x => isCoach(x.id, me && me.uid));
+  if (!ui.pr || ui.pr.uid !== uid) ui.pr = { uid, role: 'parent', team: scope.length === 1 ? scope[0].id : null, player: null };
+  const f = ui.pr;
+  const held = rolesHeld(uid, scope);
+  const t = scope.find(x => x.id === f.team) || null;
+  const players = t ? Object.values(t.players || {}).filter(p => p.active !== false)
+    .sort((a, b) => (Number(a.number) || 999) - (Number(b.number) || 999)) : [];
+  const pname = p => `${p.number ? '#' + esc(p.number) + ' ' : ''}${esc(p.name || '')}`;
+  const already = f.role === 'parent' ? held.some(v => v.r === 'parent' && v.x.id === f.team && v.p.id === f.player)
+    : held.some(v => v.r === f.role && v.x.id === f.team);
+
   openSheet(`<h3>${esc(u.name || 'Unnamed')}</h3>
-    <p class="muted" style="margin-top:0">${esc(u.email || '')}</p>
+    <p class="muted" style="margin-top:0">${esc(u.email || '')}${u.at ? ` · joined ${new Date(u.at).toLocaleDateString()}` : ''}</p>
     ${admin ? `<p class="lbl">Club</p>
     <div class="chips" style="margin-bottom:14px">
       <button class="chip" type="button" data-act="setrole" data-uid="${uid}" data-r="admin" aria-pressed="${isAdmin(uid)}">Club admin</button>
     </div>` : ''}
-    ${scope.map(x => `<p class="lbl">${esc(x.name || 'Team')}</p>
-      <div class="chips" style="margin-bottom:12px">
-        <button class="chip" type="button" data-act="setrolet" data-uid="${uid}" data-tid="${x.id}" data-r="coach" aria-pressed="${!isAdmin(uid) && isCoach(x.id, uid)}">Coach</button>
-        <button class="chip" type="button" data-act="setrolet" data-uid="${uid}" data-tid="${x.id}" data-r="tracker" aria-pressed="${isTracker(x.id, uid)}">Tracker</button>
-        ${isGuardian(x.id, uid) ? '<span class="muted" style="align-self:center">parent via a player</span>' : ''}
-      </div>`).join('')}
-    <button class="btn wide" data-act="closesheet">Done</button>`);
+    <p class="lbl">${isAdmin(uid) ? 'Admin covers every team. Also' : 'Roles'}</p>
+    ${held.length ? held.map(v => `<div class="opt spread">
+      <span><b>${esc(ROLE_LABEL[v.r])}</b>${v.p ? ` of ${pname(v.p)}` : ''}<span class="rowsub">${esc(v.x.name || 'Team')}</span></span>
+      ${v.r === 'parent'
+      ? `<button class="btn quiet sm" data-act="prunguard" data-uid="${uid}" data-tid="${v.x.id}" data-pid="${v.p.id}">Remove</button>`
+      : `<button class="btn quiet sm" data-act="setrolet" data-uid="${uid}" data-tid="${v.x.id}" data-r="${v.r}">Remove</button>`}</div>`).join('')
+      : `<p class="muted" style="margin-top:0">${isAdmin(uid) ? 'Nothing else.' : 'None yet — waiting to be let in. Until they have a role they see nothing of the club.'}</p>`}
+
+    ${scope.length ? `<p class="lbl" style="margin-top:14px">${held.length || isAdmin(uid) ? 'Give a role' : 'Let them in as'}</p>
+    <div class="chips" style="margin-bottom:12px">${[['parent', 'Parent'], ['tracker', 'Tracker'], ['coach', 'Coach']].map(([k, l]) =>
+        `<button class="chip" type="button" data-act="prpick" data-k="role" data-v="${k}" aria-pressed="${f.role === k}">${l}</button>`).join('')}</div>
+    <p class="lbl">Team</p>
+    ${pickOne('prpick', 'team', f.team, scope.map(x => [x.id, esc(x.name || 'Team')]), 'No teams yet.')}
+    ${f.role === 'parent' && t ? `<p class="lbl">Parent of</p>
+    ${pickOne('prpick', 'player', f.player, players.map(p => [p.id, pname(p)]), 'No players on this team.')}` : ''}
+    <button class="btn wide" data-act="praddrole" data-uid="${uid}"${already ? ' disabled' : ''}>${already ? 'Already has that role'
+        : `Make ${f.role === 'parent' ? 'parent' : f.role}${t ? ' on ' + esc(t.name || 'the team') : ''}`}</button>
+    <p class="muted">${{ parent: 'Reads that team, and sees their child under My players. Other children show by shirt number.', tracker: 'Logs goals, shots and set pieces on that team’s games, and makes the coach’s locked-in subs.', coach: 'Runs that team: squad, games, subs and plan.' }[f.role]}</p>` : ''}
+    <button class="btn quiet wide" data-act="closesheet" style="margin-top:6px">Done</button>`);
 }
 
 function sheetPeople() {
@@ -5487,7 +5624,7 @@ function sheetTeam(t) {
 }
 
 /* ---------------- events ---------------- */
-document.addEventListener('click', e => {
+function onAct(e) {
   const el = e.target.closest('[data-act]');
   if (!el) return;
   const a = el.dataset.act, d = el.dataset;
@@ -5576,12 +5713,55 @@ document.addEventListener('click', e => {
   if (a === 'personedit') { sheetPersonRoles(d.uid); return; }
   if (a === 'peoplesort') { ui.peopleSort = ui.peopleSort === 'joined' ? 'name' : 'joined'; render(); return; }
   if (a === 'setrolet') {
+    if (!mayGrant(d.tid)) { toast('Club admins and that team\u2019s coaches only'); return; }
     const key = d.r === 'coach' ? 'coaches' : 'trackers';
     const on = ((teamAccess(d.tid)[key] || {})[d.uid]);
     if (on) { forgetInvite(on); drop(`access/teams/${d.tid}/${key}/${d.uid}`); }
     else commit(`access/teams/${d.tid}/${key}/${d.uid}`, true);
     logAccess((on ? 'removed ' : 'made ') + d.r, d.uid, { team: d.tid, teamName: (state.teams[d.tid] || {}).name || null });
     syncIndex(d.uid); syncTeamIndex(d.tid); sheetPersonRoles(d.uid); return;
+  }
+  if (a === 'prpick') {
+    const f = ui.pr; if (!f) return;
+    f[d.k] = d.v || null;
+    if (d.k !== 'player') f.player = null;
+    sheetPersonRoles(f.uid); return;
+  }
+  if (a === 'praddrole') {
+    const f = ui.pr || {}, uid = d.uid, tid = f.team, x = state.teams[tid];
+    if (!x) { toast('Pick a team'); return; }
+    if (!mayGrant(tid)) { toast('Club admins and that team\u2019s coaches only'); return; }
+    if (f.role === 'parent') {
+      const p = (x.players || {})[f.player];
+      if (!p) { toast('Pick the player'); return; }
+      if (!(p.guardians || {})[uid]) {
+        commit(`teams/${tid}/players/${p.id}/guardians/${uid}`, true);
+        logAccess('linked guardian', uid, { team: tid, teamName: x.name || null, player: p.name });
+      }
+    } else if (f.role === 'coach' || f.role === 'tracker') {
+      const key = f.role === 'coach' ? 'coaches' : 'trackers';
+      if (!((teamAccess(tid)[key] || {})[uid])) {
+        commit(`access/teams/${tid}/${key}/${uid}`, true);
+        logAccess('made ' + f.role, uid, { team: tid, teamName: x.name || null });
+      }
+      syncTeamIndex(tid);
+    } else return;
+    syncIndex(uid);
+    f.player = null;
+    sheetPersonRoles(uid); return;
+  }
+  if (a === 'prunguard') {
+    if (!mayGrant(d.tid)) { toast('Club admins and that team\u2019s coaches only'); return; }
+    const x = state.teams[d.tid], p = x && (x.players || {})[d.pid];
+    if (!p) return;
+    const on = (p.guardians || {})[d.uid];
+    if (on) {
+      forgetInvite(on);
+      drop(`teams/${d.tid}/players/${d.pid}/guardians/${d.uid}`);
+      logAccess('unlinked guardian', d.uid, { team: d.tid, teamName: x.name || null, player: p.name });
+      syncIndex(d.uid);
+    }
+    sheetPersonRoles(d.uid); return;
   }
   if (a === 'teammenu') { sheetTeams(); return; }
   if (a === 'goview') { ui.view = d.v; closeSheet(); render(); return; }
@@ -5650,15 +5830,19 @@ document.addEventListener('click', e => {
     ui.inv = f; sheetInvite(); return;
   }
   if (a === 'invitemake') { makeInvite(); return; }
+  if (a === 'inviteopen') { if (!canAdmin()) { toast('Club admins only'); return; } sheetInviteDetail(d.id); return; }
+  if (a === 'invitepast') { ui.invPast = !ui.invPast; render(); return; }
   if (a === 'invitedrop') {
     if (!canAdmin()) { toast('Club admins only'); return; }
     if (!fb) { toast('Not connected'); return; }
     const v = clubInv[d.id];
-    if (v && !v.used && (v.expiresAt || 0) > nowMs() && !confirm('Withdraw this invite? The link stops working.')) return;
+    const live = v && !v.used && (v.expiresAt || 0) > nowMs();
+    if (live && !confirm('Revoke this invite? The link stops working.')) return;
     Promise.resolve(fb.remove(fb.ref(fb.db, 'invites/' + d.id))).catch(() => { });
     Promise.resolve(fb.remove(fb.ref(fb.db, 'clubInvites/' + wsCode() + '/' + d.id))).catch(() => { });
     delete clubInv[d.id];
-    render(); return;
+    if (live) logAccess('revoked an invite for', null, { targetName: (v.email || 'anyone') + ' as ' + v.role, team: v.team, teamName: v.teamName || null });
+    closeSheet(); render(); if (live) toast('Revoked'); return;
   }
   if (a === 'inviteshare') {
     navigator.share({ title: 'Join ' + ((acc().org || {}).name || 'the club'), url: d.v }).catch(() => { });
@@ -6265,6 +6449,15 @@ document.addEventListener('click', e => {
     applyImport(plan); pendingImport = null; closeSheet();
     toast('Imported: ' + importSummary(plan.counts)); return;
   }
+}
+document.addEventListener('click', onAct);
+/* A <select> from pickOne() stands in for a row of chips, so it goes through
+   the same action a chip would have, carrying what was chosen as data-v. */
+document.addEventListener('change', e => {
+  const s = e.target;
+  if (!s || !s.dataset || !s.dataset.pick) return;
+  const d = { act: s.dataset.pick, k: s.dataset.k, v: s.value };
+  onAct({ target: { closest: () => ({ dataset: d }) } });
 });
 
 

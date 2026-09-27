@@ -203,6 +203,83 @@ const CLUB = {
     check('and its entry in the list', fbk.record.removes.includes('clubInvites/CLUB/' + id), true);
   }
 
+  console.log('\n--- an invite can be found again ---');
+  {
+    const { A, fbk } = await boot({ storage: { 'sm.workspace': 'CLUB' } });
+    fbk.signIn('adm', { name: 'Ada' }); await A.flush();
+    fbk.deliver('workspaces/CLUB', CLUB); await A.flush();
+    A.ui.view = 'people'; A.render();
+    const at = A.nowMs();
+    fbk.deliver('clubInvites/CLUB', {
+      iopen: { role: 'coach', team: 't1', teamName: 'Flight', byName: 'Ada', at, expiresAt: at + 864e5 },
+      iused: { role: 'parent', team: 't1', teamName: 'Flight', playerName: 'Ella', byName: 'Ada', at: at - 10, expiresAt: at + 864e5, used: { by: 'coach', at, name: 'Jaz' } },
+      iold: { role: 'tracker', team: 't1', teamName: 'Flight', byName: 'Ada', at: at - 20, expiresAt: at - 1 }
+    }); await A.flush();
+    const page = A.rendered();
+    check('an open invite offers its link again', page.includes(A.inviteLink('iopen')), true);
+    check('used and expired ones are folded away', /Show used and expired \(2\)/.test(page), true);
+    A.click({ act: 'inviteopen', id: 'iopen' });
+    const open = A.rendered('#sheet');
+    check('its own sheet shows the link', open.includes(A.inviteLink('iopen')), true);
+    check('and can revoke it', /data-act="invitedrop" data-id="iopen"/.test(open), true);
+    A.click({ act: 'inviteopen', id: 'iused' });
+    const used = A.rendered('#sheet');
+    check('a used one names who used it', /Used by[\s\S]*Jaz/.test(used), true);
+    check('says whether they still have the role', /Since removed/.test(used), true);
+    check('and never offers a dead link to copy', used.includes('data-act="copylink"'), false);
+    A.click({ act: 'invitedrop', id: 'iopen' });
+    check('revoking deletes the invite', fbk.record.removes.includes('invites/iopen'), true);
+    check('and is written to the activity log', /revoked an invite/.test(JSON.stringify(A.state.access.log || {})), true);
+  }
+
+  console.log('\n--- letting someone in from People ---');
+  {
+    const club = JSON.parse(JSON.stringify(CLUB));
+    club.access.members.newbie = { name: 'Noor', email: 'noor@x.test' };
+    for (let i = 2; i <= 12; i++) club.teams['t' + i] = { id: 't' + i, name: 'Team ' + i, players: {} };
+    const { A, fbk } = await boot({ storage: { 'sm.workspace': 'CLUB' } });
+    fbk.signIn('adm', { name: 'Ada' }); await A.flush();
+    fbk.deliver('workspaces/CLUB', club); await A.flush();
+    A.ui.view = 'people'; A.render();
+    check('People says someone is waiting', /1 waiting to be let in/.test(A.rendered()), true);
+    check('with a Let in button on their row', /data-act="personedit" data-uid="newbie">Let in/.test(A.rendered()), true);
+    A.click({ act: 'personedit', uid: 'newbie' });
+    const sheet = A.rendered('#sheet');
+    check('which opens on letting them in, as a parent first', /Let them in as[\s\S]*data-v="parent" aria-pressed="true"/.test(sheet), true);
+    check('twelve teams are a list, not twelve rows of chips', /<select data-pick="prpick" data-k="team"/.test(sheet), true);
+    check('no per-team chip rows', (sheet.match(/data-act="setrolet"/g) || []).length, 0);
+    A.change({ pick: 'prpick', k: 'team' }, 't1');
+    A.click({ act: 'prpick', k: 'player', v: 'p1' });
+    A.click({ act: 'praddrole', uid: 'newbie' });
+    check('accepted as a parent of that player', !!A.state.teams.t1.players.p1.guardians.newbie, true);
+    check('and indexed, so she can read the club', A.approved('newbie'), true);
+    check('her role reads Parent', A.roleIn('t1', 'newbie'), 'parent');
+    A.click({ act: 'prpick', k: 'role', v: 'coach' });
+    A.click({ act: 'praddrole', uid: 'newbie' });
+    check('upgraded to coach on the same team', A.isCoach('t1', 'newbie'), true);
+    deepEq('and holds both, so either can be taken away', A.rolesHeld('newbie', A.teams()).map(v => v.r), ['coach', 'parent']);
+    for (const tid of ['t2', 't3', 't4']) { A.change({ pick: 'prpick', k: 'team' }, tid); A.click({ act: 'praddrole', uid: 'newbie' }); }
+    check('four teams read as a count, not four tags', /Coach<i>4 teams<\/i>/.test(A.roleTags('newbie', A.teams())), true);
+    A.click({ act: 'prunguard', uid: 'newbie', tid: 't1', pid: 'p1' });
+    check('the parent link can be removed there too', A.isGuardian('t1', 'newbie'), false);
+  }
+  {
+    const club = JSON.parse(JSON.stringify(CLUB));
+    club.access.members.newbie = { name: 'Noor' };
+    club.teams.t2 = { id: 't2', name: 'Other', players: { p2: { id: 'p2', name: 'Zoe', active: true } } };
+    const { A, fbk } = await boot({ storage: { 'sm.workspace': 'CLUB' } });
+    fbk.signIn('coach', { name: 'Jaz' }); await A.flush();
+    fbk.deliver('workspaces/CLUB', club); await A.flush();
+    A.ui.pr = { uid: 'newbie', role: 'coach', team: 't2', player: null };
+    A.click({ act: 'praddrole', uid: 'newbie' });
+    check('a coach cannot hand out roles on another team', A.isCoach('t2', 'newbie'), false);
+    A.click({ act: 'setrolet', uid: 'newbie', tid: 't2', r: 'tracker' });
+    check('not by the old button either', A.isTracker('t2', 'newbie'), false);
+    A.ui.pr = { uid: 'newbie', role: 'tracker', team: 't1', player: null };
+    A.click({ act: 'praddrole', uid: 'newbie' });
+    check('but can on her own', A.isTracker('t1', 'newbie'), true);
+  }
+
   console.log('\n--- only an admin ---');
   {
     const { A, fbk } = await boot({ storage: { 'sm.workspace': 'CLUB' } });
