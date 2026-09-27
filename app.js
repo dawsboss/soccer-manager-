@@ -2,7 +2,7 @@
    Static app. Data lives in localStorage, and mirrors to Firebase Realtime
    Database when a config + workspace code are present. */
 
-const BUILD = '63';
+const BUILD = '64';
 const BUILT = '2026-09-26';
 /* index.html carries the build it was published with. If this file is newer, the
    browser handed us a cached page — the exact failure that has eaten hours. */
@@ -4577,6 +4577,10 @@ function viewPeople() {
       <button class="btn quiet sm" data-act="peoplesort">${sortKey === 'joined' ? 'By join date' : 'By name'}</button></div>
     <p class="muted" style="margin-top:-6px">${admin ? 'Every account in the club.' : `Accounts on ${esc(myCoachTeams.map(x => x.name).join(', '))}, and anyone new waiting for a role.`}</p>
 
+    ${counts.pending && F !== 'pending' ? `<div class="warn alert"><div class="spread">
+      <span><b>${counts.pending} waiting to be let in.</b> They signed in but have no role, so they see nothing yet.</span>
+      <button class="btn sm" data-act="peoplefilter" data-v="pending" style="flex:none">Show them</button></div></div>` : ''}
+
     <div class="chips">
       ${[['all', 'All'], ['pending', 'Waiting'], ['coach', 'Coaches'], ['tracker', 'Trackers'], ['parent', 'Parents']]
       .map(([k, l]) => `<button class="chip" type="button" data-act="peoplefilter" data-v="${k}" aria-pressed="${F === k}">${l} ${counts[k] || 0}</button>`).join('')}
@@ -4590,7 +4594,9 @@ function viewPeople() {
         <td>${isAdmin(u.uid) ? '<span class="tag admin">Admin</span>'
       : rs.length ? roleTags(u.uid, scope) : '<span class="tag wait">Waiting</span>'}</td>
         <td class="dim">${when(u.at)}</td>
-        <td class="right"><button class="btn quiet sm" data-act="personedit" data-uid="${u.uid}">Roles</button></td>
+        <td class="right">${none
+        ? `<button class="btn sm" data-act="personedit" data-uid="${u.uid}">Let in</button>`
+        : `<button class="btn quiet sm" data-act="personedit" data-uid="${u.uid}">Roles</button>`}</td>
       </tr>`).join('') || '<tr><td colspan="5" class="dim">Nobody matches that filter.</td></tr>'}</tbody>
     </table></div>
 
@@ -4680,7 +4686,7 @@ function sheetPersonRoles(uid) {
       : `<button class="btn quiet sm" data-act="setrolet" data-uid="${uid}" data-tid="${v.x.id}" data-r="${v.r}">Remove</button>`}</div>`).join('')
       : `<p class="muted" style="margin-top:0">${isAdmin(uid) ? 'Nothing else.' : 'None yet — waiting to be let in. Until they have a role they see nothing of the club.'}</p>`}
 
-    ${scope.length ? `<p class="lbl" style="margin-top:14px">Give a role</p>
+    ${scope.length ? `<p class="lbl" style="margin-top:14px">${held.length || isAdmin(uid) ? 'Give a role' : 'Let them in as'}</p>
     <div class="chips" style="margin-bottom:12px">${[['parent', 'Parent'], ['tracker', 'Tracker'], ['coach', 'Coach']].map(([k, l]) =>
         `<button class="chip" type="button" data-act="prpick" data-k="role" data-v="${k}" aria-pressed="${f.role === k}">${l}</button>`).join('')}</div>
     <p class="lbl">Team</p>

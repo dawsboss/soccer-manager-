@@ -8,6 +8,14 @@ before this point lives only in the git log.
 
 ---
 
+## Waiting people are one tap from being let in — 2026-09-27
+
+Someone who signs in on their own lands in People with no role, and the only
+thing on their row was a quiet *Roles* button — nothing said "accept". Their
+row now has a **Let in** button, People says how many are waiting with a
+button to show just them, and the sheet it opens asks *Let them in as*,
+with Parent picked first: choose the team and the player, tap once.
+
 ## People scales past a handful of teams; invites can be found again; game details move to Plan; the pitch scrolls — 2026-09-27
 
 **Roles.** Someone's roles sheet drew a row of Coach/Tracker chips for every

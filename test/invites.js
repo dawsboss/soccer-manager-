@@ -240,8 +240,12 @@ const CLUB = {
     const { A, fbk } = await boot({ storage: { 'sm.workspace': 'CLUB' } });
     fbk.signIn('adm', { name: 'Ada' }); await A.flush();
     fbk.deliver('workspaces/CLUB', club); await A.flush();
+    A.ui.view = 'people'; A.render();
+    check('People says someone is waiting', /1 waiting to be let in/.test(A.rendered()), true);
+    check('with a Let in button on their row', /data-act="personedit" data-uid="newbie">Let in/.test(A.rendered()), true);
     A.click({ act: 'personedit', uid: 'newbie' });
     const sheet = A.rendered('#sheet');
+    check('which opens on letting them in, as a parent first', /Let them in as[\s\S]*data-v="parent" aria-pressed="true"/.test(sheet), true);
     check('twelve teams are a list, not twelve rows of chips', /<select data-pick="prpick" data-k="team"/.test(sheet), true);
     check('no per-team chip rows', (sheet.match(/data-act="setrolet"/g) || []).length, 0);
     A.change({ pick: 'prpick', k: 'team' }, 't1');
