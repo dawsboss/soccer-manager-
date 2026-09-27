@@ -8,6 +8,50 @@ before this point lives only in the git log.
 
 ---
 
+## People scales past a handful of teams; invites can be found again; game details move to Plan; the pitch scrolls — 2026-09-27
+
+**Roles.** Someone's roles sheet drew a row of Coach/Tracker chips for every
+team in the club, so with a dozen teams it was a wall with the Done button
+somewhere below the fold, and the Role column put one tag per team side by
+side. The sheet now lists the roles the person actually holds, each with a
+Remove, and a single *Give a role* form underneath: Parent, Tracker or Coach,
+then the team — chips up to six, a list past that — and for a parent, which
+player. The Role column says "Coach · 4 teams" instead of four tags. The
+same chips-or-list picker is used for the team and player on *Invite
+someone*.
+
+That form is also the answer to "do people join as a parent and get
+upgraded?": no. Somebody who signs in on their own waits with no role and
+reads nothing, because a parent can read the team's names and a default
+would hand that to anyone with the link. Letting them in as a parent is now
+one step from People, and upgrading is the same form later. Before, a parent
+could only be made from the player's page on Squad.
+
+The handlers for these (and the old per-team Coach/Tracker toggle) now check
+that whoever taps is an admin or that team's coach, rather than trusting
+that the button was only drawn for them.
+
+**Invites.** Open invites come first, each with *Copy link*, and every row
+opens the invite itself: the link again (with Share and, for an emailed one,
+the sign-in email again), who made it and when it runs out, and *Revoke*.
+A used one says who used it, when, and whether they still hold the role,
+with a shortcut to their roles; its link is not offered, because redeeming
+deletes it. Used and expired invites fold behind a count. Revoking is written
+to the activity log.
+
+**Game details** (opponent, date, kick-off, venue, format, Veo link) sat at
+the bottom of the Pitch tab under the bench and the sub log. They now head
+the Plan tab, and *Edit this game's details* is in the game picker, so the
+name in the bar reaches them from any tab.
+
+**The pitch scrolls.** The whole pitch had `touch-action:none`, so on a
+phone a thumb that landed on the grass could not scroll the page — and at
+full width the pitch is taller than most screens. The grass now scrolls;
+only the player tokens take the finger for a drag. Placing a picked player
+on the grass moved from `pointerdown` to `click`, so a scroll that starts on
+the grass does not drop her where the thumb landed. The pitch is also capped
+at 70% of the screen height.
+
 ## Give a spell its position back — 2026-09-26
 
 The fix above stops spells losing their position, but games already played

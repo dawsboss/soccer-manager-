@@ -96,6 +96,7 @@ h2{font-family:"Barlow Condensed",sans-serif;font-weight:600;font-size:22px;marg
 .btn.danger{background:#fff;color:var(--over);border-color:var(--over)}
 .btn.wide{width:100%}
 .btn.sm{padding:7px 11px;font-size:14px;border-radius:7px}
+.btn[disabled]{opacity:.5;pointer-events:none}
 
 input[type=text],input[type=number],input[type=date],input[type=url],select,textarea{
   width:100%;padding:10px 11px;border:1px solid var(--line);
@@ -128,10 +129,14 @@ label.field span{display:block;font-size:13px;color:var(--ink-soft);margin-botto
 .clockbtns .btn.stop{background:rgba(255,255,255,.14);color:#fff;border-color:rgba(255,255,255,.5)}
 
 /* ---------- pitch ---------- */
+/* The grass scrolls the page (pan-y); only the tokens take the finger for a
+   drag. With touch-action:none on the whole pitch, a phone had nowhere left
+   to put a thumb to scroll past it. Capped at 70% of the screen's height for
+   the same reason: full width at 68:100 is taller than most phones. */
 .pitch{
-  position:relative;width:100%;aspect-ratio:68/100;
+  position:relative;width:min(100%, calc(70vh * .68));margin-inline:auto;aspect-ratio:68/100;
   background:var(--field);border-radius:var(--r);overflow:hidden;
-  touch-action:none;user-select:none;-webkit-user-select:none;
+  touch-action:pan-y;user-select:none;-webkit-user-select:none;
 }
 .pitch svg.lines{position:absolute;inset:0;width:100%;height:100%}
 .token{
@@ -599,3 +604,8 @@ table.grid td.right{text-align:right}
 .subsbench{margin-top:10px}
 .subsbench .bench{font-size:15.5px}
 .subscard[data-state="due"] .benchspot{background:#fff}
+
+/* invites list on People: the row itself opens the invite */
+.card .invrow{display:flex;gap:10px;align-items:center;padding:10px 0;border-top:1px solid var(--line)}
+.invrow[data-k="used"] b,.invrow[data-k="expired"] b{color:var(--ink-soft)}
+.linkish{background:none;border:0;padding:0;text-align:left;font:inherit;color:inherit;cursor:pointer;min-width:0;flex:1}

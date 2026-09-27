@@ -138,7 +138,7 @@ const EXPORTS = `{
   quiet, commit, drop, nowMs,
   /* roles */
   acc, members, anyAdmins, isAdmin, isCoach, isTracker, isGuardian, roleIn,
-  isOwner, canAdmin, approved, hasAnyRole, syncIndex, myTeams, myPlayers,
+  isOwner, canAdmin, approved, hasAnyRole, syncIndex, myTeams, myPlayers, rolesHeld, roleTags,
   guardsAnyone, canEditTeam, readOnlyHere, myRole, restricted, auditLog,
   gated, needsSignIn, cacheMe, cachedMe,
   /* model helpers */
@@ -273,6 +273,11 @@ function loadApp(opts = {}) {
     if (!handlers.length) throw new Error('app.js registered no click handler');
     const el = { dataset };
     for (const h of handlers) h({ target: { closest: sel => (sel === '[data-act]' ? el : null) } });
+  };
+  /* A <select> drawn by pickOne() in place of chips: what it reports is the
+     action the chip would have carried, with the chosen option as data-v. */
+  A.change = (dataset, value) => {
+    for (const h of dom.listeners.change || []) h({ target: { dataset, value } });
   };
   return A;
 }
