@@ -377,7 +377,7 @@ reads('one club\'s marker is public', OUT, 'retired/CLUB', true);
 reads('the list of them all is NOT readable', OUT, 'retired', false);
 reads('not by the app owner either', OWNER, 'retired', false);
 console.log('  ^ .read sits on retired/$code, so it grants each marker on its own');
-console.log('    and never the parent. app.js reads the whole node. See note 5.');
+console.log('    and never the parent, so app.js asks for each code it knows.');
 writes('an admin of that club may retire it', ADM, 'retired/CLUB', { at: NOW, by: 'adm' }, true);
 writes('a coach of that club may not', COACH, 'retired/CLUB', { at: NOW, by: 'coach' }, false);
 writes('nor may the app owner', OWNER, 'retired/CLUB', { at: NOW, by: 'own' }, false);
@@ -533,14 +533,188 @@ reads('owners are not world-readable', OUT, 'shareOwners/sh1', false);
   delete DB.invites; delete DB.clubInvites;
 }
 
-/* The open rules carry the same three root blocks, so invites work before a
+/* ---------------- coaches, on their own team ---------------- */
+
+/* A coach runs one team. She may bring people onto it — a parent, a tracker —
+   but not make another coach (that is the club's call), and nothing she does
+   may reach another team or the club's own settings. */
+{
+  const FUTURE = NOW + 7 * 864e5;
+  const W = 'workspaces/CLUB/';
+  const mk = extra => ({ ws: 'CLUB', team: 't1', by: 'coach', at: NOW, expiresAt: FUTURE, role: 'tracker', ...extra });
+
+  console.log('\n--- a coach makes an invite ---');
+  writes('a tracker invite for her own team', COACH, 'invites/c1', mk(), true);
+  writes('a parent invite for her own team', COACH, 'invites/c1', mk({ role: 'parent', player: 'p1' }), true);
+  writes('not a coach invite', COACH, 'invites/c1', mk({ role: 'coach' }), false);
+  writes('not for another team', COACH, 'invites/c1', mk({ team: 't2' }), false);
+  writes('not stamped as somebody else', COACH, 'invites/c1', mk({ by: 'adm' }), false);
+  writes('a tracker cannot', TRK, 'invites/c1', mk({ by: 'trk' }), false);
+  writes('a parent cannot', MUM, 'invites/c1', mk({ by: 'mum' }), false);
+  {
+    const ti = DB.workspaces.CLUB.access.teamIndex;
+    delete DB.workspaces.CLUB.access.teamIndex;
+    writes('with no team index, only admins, as before', COACH, 'invites/c1', mk(), false);
+    DB.workspaces.CLUB.access.teamIndex = ti;
+  }
+
+  console.log('\n--- the team\'s list of invites ---');
+  reads('its coach lists them', COACH, 'teamInvites/CLUB/t1', true);
+  reads('an admin lists every team\'s', ADM, 'teamInvites/CLUB', true);
+  reads('a coach cannot list the whole club', COACH, 'teamInvites/CLUB', false);
+  reads('nor another team\'s', OTHER, 'teamInvites/CLUB/t1', false);
+  reads('a tracker cannot — the ids are the secret', TRK, 'teamInvites/CLUB/t1', false);
+  reads('nor a parent', MUM, 'teamInvites/CLUB/t1', false);
+  writes('its coach lists her own', COACH, 'teamInvites/CLUB/t1/c1', { role: 'tracker', by: 'coach', at: NOW }, true);
+  writes('not a coach invite', COACH, 'teamInvites/CLUB/t1/c1', { role: 'coach', by: 'coach', at: NOW }, false);
+  writes('not in somebody else\'s name', COACH, 'teamInvites/CLUB/t1/c1', { role: 'tracker', by: 'adm', at: NOW }, false);
+  writes('not on another team\'s list', COACH, 'teamInvites/CLUB/t2/c1', { role: 'tracker', by: 'coach', at: NOW }, false);
+  writes('an admin lists any', ADM, 'teamInvites/CLUB/t2/a1', { role: 'coach', by: 'adm', at: NOW }, true);
+  DB.teamInvites = { CLUB: { t1: { c9: { role: 'tracker', by: 'coach', at: NOW } } } };
+  DB.invites = { c9: mk({ used: { by: 'newbie', at: NOW } }) };
+  writes('its coach revokes one', COACH, 'teamInvites/CLUB/t1/c9', null, true);
+  writes('nor edits one in place', COACH, 'teamInvites/CLUB/t1/c9', { role: 'parent', by: 'coach', at: NOW }, false);
+  writes('whoever spent it marks it used', { uid: 'newbie' }, 'teamInvites/CLUB/t1/c9/used', { by: 'newbie', at: NOW }, true);
+  writes('nobody else can', RANDO, 'teamInvites/CLUB/t1/c9/used', { by: 'rando', at: NOW }, false);
+  writes('a coach deletes her team\'s invite', COACH, 'invites/c9', null, true);
+  delete DB.teamInvites; delete DB.invites;
+
+  console.log('\n--- a coach adds a tracker by hand ---');
+  writes('tracker on her own team', COACH, W + 'access/teams/t1/trackers/trk2', true, true);
+  writes('and takes one off', COACH, W + 'access/teams/t1/trackers/trk', null, true);
+  writes('not on another team', COACH, W + 'access/teams/t2/trackers/trk2', true, false);
+  writes('not a coach, even on her own', COACH, W + 'access/teams/t1/coaches/trk2', true, false);
+  writes('not an invite id she did not spend', COACH, W + 'access/teams/t1/trackers/trk2', 'sc', false);
+  writes('a tracker cannot add a tracker', TRK, W + 'access/teams/t1/trackers/trk2', true, false);
+  {
+    const saved = JSON.parse(JSON.stringify(DB.workspaces.CLUB.access.teams));
+    DB.workspaces.CLUB.access.teams.t1.trackers.trk2 = true;
+    writes('and mirrors her into the team index', COACH, W + 'access/teamIndex/t1/trk2', 'tracker', true);
+    writes('never as a coach', COACH, W + 'access/teamIndex/t1/trk2', 'coach', false);
+    writes('not somebody who is not a tracker', COACH, W + 'access/teamIndex/t1/rando', 'tracker', false);
+    writes('takes a tracker out of it', COACH, W + 'access/teamIndex/t1/trk', null, true);
+    writes('never a coach out of it', OTHER, W + 'access/teamIndex/t2/other', 'tracker', false);
+    writes('nor her own coach entry', COACH, W + 'access/teamIndex/t1/coach', null, false);
+    DB.workspaces.CLUB.access.teams = saved;
+  }
+  {
+    const ti = DB.workspaces.CLUB.access.teamIndex;
+    DB.workspaces.CLUB.access.teamIndex = { t1: { coach: 'coach', trk: 'tracker', co2: 'coach' } };
+    writes('a coach cannot demote a fellow coach', COACH, W + 'access/teamIndex/t1/co2', null, false);
+    DB.workspaces.CLUB.access.teamIndex = ti;
+  }
+}
+
+/* ---------------- the team join code ---------------- */
+
+/* AUTH.md's bulk path for parents. One code per team, sent to the team's
+   group chat; a parent types it and a shirt number, and the coach approves.
+   The code is a low-value secret: holding it lets you ASK, never get in. */
+{
+  const W = 'workspaces/CLUB/';
+  const code = extra => ({ ws: 'CLUB', team: 't1', teamName: 'Flight', clubName: 'Lakeside SC', by: 'coach', at: NOW, ...extra });
+
+  console.log('\n--- making a join code ---');
+  writes('its coach makes one', COACH, 'joinCodes/FLIGHT-7K2M9P', code(), true);
+  writes('an admin makes one', ADM, 'joinCodes/FLIGHT-7K2M9P', code({ by: 'adm' }), true);
+  writes('not for another team', COACH, 'joinCodes/STORM-7K2M9P', code({ team: 't2' }), false);
+  writes('not stamped as somebody else', COACH, 'joinCodes/FLIGHT-7K2M9P', code({ by: 'adm' }), false);
+  writes('a tracker cannot', TRK, 'joinCodes/FLIGHT-7K2M9P', code({ by: 'trk' }), false);
+  writes('a parent cannot', MUM, 'joinCodes/FLIGHT-7K2M9P', code({ by: 'mum' }), false);
+  writes('an outsider cannot', RANDO, 'joinCodes/FLIGHT-7K2M9P', code({ by: 'rando' }), false);
+  writes('one missing where it points is refused', COACH, 'joinCodes/FLIGHT-7K2M9P', { team: 't1', by: 'coach', at: NOW }, false);
+  DB.joinCodes = { 'FLIGHT-OLD111': code(), 'STORM-OLD222': code({ team: 't2', by: 'other' }) };
+  writes('nor overwrite an existing one', COACH, 'joinCodes/FLIGHT-OLD111', code(), false);
+  writes('its coach retires one', COACH, 'joinCodes/FLIGHT-OLD111', null, true);
+  writes('not another team\'s', COACH, 'joinCodes/STORM-OLD222', null, false);
+  reads('anyone signed in who holds it can read it', RANDO, 'joinCodes/FLIGHT-OLD111', true);
+  reads('signed out cannot', OUT, 'joinCodes/FLIGHT-OLD111', false);
+  reads('and nobody can list them', ADM, 'joinCodes', false);
+
+  console.log('\n--- asking to join with it ---');
+  const ask = extra => ({ code: 'FLIGHT-OLD111', name: 'Rando', email: 'rando@example.com', at: NOW, ...extra });
+  const C = 'claims/CLUB/t1/';
+  writes('an outsider asks for number 7', RANDO, C + 'rando/7', ask(), true);
+  writes('not in somebody else\'s name', RANDO, C + 'newbie/7', ask(), false);
+  writes('not with a made-up code', RANDO, C + 'rando/7', ask({ code: 'NOPE-000000' }), false);
+  writes('not with another team\'s code', RANDO, C + 'rando/7', ask({ code: 'STORM-OLD222' }), false);
+  writes('not onto another team with this one', RANDO, 'claims/CLUB/t2/rando/7', ask(), false);
+  writes('not with no code at all', RANDO, C + 'rando/7', { name: 'Rando', at: NOW }, false);
+  writes('a shirt number, not an essay', RANDO, C + 'rando/1234', ask(), false);
+  writes('signed out cannot', OUT, C + 'rando/7', ask(), false);
+  DB.claims = { CLUB: { t1: { rando: { 7: ask() }, sam: { 9: ask({ name: 'Sam' }) } } } };
+  writes('nor rewrite a request once made', RANDO, C + 'rando/7', ask({ name: 'Changed' }), false);
+  writes('but may withdraw it', RANDO, C + 'rando/7', null, true);
+  reads('the asker reads her own', RANDO, C + 'rando', true);
+  reads('not somebody else\'s', RANDO, C + 'sam', false);
+  reads('its coach reads the team\'s', COACH, 'claims/CLUB/t1', true);
+  reads('an admin reads the team\'s', ADM, 'claims/CLUB/t1', true);
+  reads('another team\'s coach cannot', OTHER, 'claims/CLUB/t1', false);
+  reads('a parent cannot — they carry emails', MUM, 'claims/CLUB/t1', false);
+  reads('nobody lists the whole club\'s', ADM, 'claims/CLUB', false);
+  writes('its coach turns one down', COACH, C + 'sam/9', ask({ name: 'Sam', rejected: true }), true);
+  writes('its coach clears one', COACH, C + 'sam/9', null, true);
+  writes('another team\'s coach cannot', OTHER, C + 'sam/9', null, false);
+  writes('a coach cannot invent one', COACH, C + 'ghost/7', ask(), false);
+  {
+    DB.joinCodes = {};
+    writes('a retired code stops new requests', RANDO, C + 'rando/8', ask(), false);
+    DB.joinCodes = { 'FLIGHT-OLD111': code(), 'STORM-OLD222': code({ team: 't2', by: 'other' }) };
+  }
+
+  console.log('\n--- the coach lets a parent in ---');
+  // the order approveClaim() writes in: guardian, index, then the request goes
+  writes('guardian of the player on her team', COACH, W + 'teams/t1/players/p1/guardians/rando', true, true);
+  writes('indexed with the team she asked to join', COACH, W + 'access/index/rando', 't1', true);
+  writes('not with a plain true', COACH, W + 'access/index/rando', true, false);
+  writes('not naming another team', COACH, W + 'access/index/rando', 't2', false);
+  writes('not somebody who never asked', COACH, W + 'access/index/ghost', 't1', false);
+  writes('another team\'s coach cannot', OTHER, W + 'access/index/rando', 't1', false);
+  writes('a tracker cannot', TRK, W + 'access/index/rando', 't1', false);
+  writes('the asker cannot let herself in', RANDO, W + 'access/index/rando', 't1', false);
+  writes('an admin can, of course', ADM, W + 'access/index/rando', true, true);
+  {
+    const saved = DB.workspaces.CLUB.access.index;
+    DB.workspaces.CLUB.access.index = { ...saved, pa: 't1', pb: true };
+    writes('its coach takes out someone she let in', COACH, W + 'access/index/pa', null, true);
+    writes('not someone the club let in', COACH, W + 'access/index/pb', null, false);
+    writes('another team\'s coach cannot', OTHER, W + 'access/index/pa', null, false);
+    DB.workspaces.CLUB.access.index = saved;
+  }
+  console.log('  ^ a coach can let in only an account that asked to join HER team,');
+  console.log('    with a code she or an admin made. Knocking is not enough.');
+  delete DB.claims; delete DB.joinCodes;
+}
+
+/* ---------------- creating a club ---------------- */
+
+/* Nothing new in the rules: creating a club is the bootstrap, in the order
+   createClub() writes it. Pinned so a change to the bootstrap cannot quietly
+   close the only door someone who belongs to nothing has. */
+{
+  console.log('\n--- creating a club ---');
+  const N = 'workspaces/NEWCLUB/access/';
+  writes('claims admin of an empty code', RANDO, N + 'admins/rando', true, true);
+  DB.workspaces.NEWCLUB = { access: { admins: { rando: true } } };
+  writes('indexes herself while the index is empty', RANDO, N + 'index/rando', true, true);
+  DB.workspaces.NEWCLUB.access.index = { rando: true };
+  writes('names it', RANDO, N + 'org', { name: 'Hilltop FC' }, true);
+  writes('registers as a member', RANDO, N + 'members/rando', { name: 'Rando' }, true);
+  writes('bookmarks it', RANDO, 'userOrgs/rando/NEWCLUB', { name: 'Hilltop FC', at: NOW }, true);
+  writes('adds a team', RANDO, 'workspaces/NEWCLUB/teams/tA', { id: 'tA', name: 'Hawks' }, true);
+  writes('a second account cannot claim it after', NEWB, N + 'admins/newbie', true, false);
+  writes('nor index itself', NEWB, N + 'index/newbie', true, false);
+  delete DB.workspaces.NEWCLUB;
+}
+
+/* The open rules carry the same root blocks, so invites work before a
    club is locked down. One copy drifting from the other would mean an invite
    that works today stops working on lockdown day. */
 {
   const open = jsonBlocks().map(r => { try { return JSON.parse(r); } catch (e) { return null; } })
     .find(d => d && d.rules && d.rules.workspaces && d.rules.workspaces.$code['.write'] === true);
   console.log('\n--- the open rules ---');
-  for (const k of ['invites', 'clubInvites', 'userOrgs'])
+  for (const k of ['invites', 'clubInvites', 'userOrgs', 'teamInvites', 'joinCodes', 'claims'])
     check(k + ' matches the locked-down block', !!open && JSON.stringify(open.rules[k]) === JSON.stringify(RULES[k]), true);
 }
 
@@ -586,7 +760,15 @@ console.log(`
   4. An invite with no email on it is a bearer token until it is spent: whoever
      opens the link first gets the role. Single use and a two-week expiry bound
      it, and naming an address closes it; the interface says so where the
-     invite is made.`);
+     invite is made.
+
+  5. A coach can take out of the index anyone she let in herself (the entry
+     holds her team's id), but the rule cannot see whether that account has
+     since been given a role on another team. The app checks before it
+     removes; the database cannot hold her to that. And the reverse: when a
+     coach removes the last role of an account an admin let in, it stays in
+     the index — the rules still let it read the club, though the app shows it
+     nothing — because only an admin may remove an entry she did not write.`);
 
 console.log(`\n${failures ? failures + ' EXPECTATION(S) FAILED' : 'all expectations hold'}`);
 process.exit(failures ? 1 : 0);

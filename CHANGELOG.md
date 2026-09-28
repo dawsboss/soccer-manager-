@@ -8,6 +8,49 @@ before this point lives only in the git log.
 
 ---
 
+## Parents join with a team code; coaches invite to their own team; anyone can create a club — 2026-09-28
+
+**The team code.** An invite is one link for one person, and a team has
+thirty parents — typing their emails is the data entry AUTH.md set out to
+avoid. A coach now makes one code per team (Team settings → *Joining this
+team*) and sends it to the group. A parent signs in, types it and their
+child's shirt number, and waits; they see the team's name and nothing else.
+The coach sees each request on the Games list and in Team settings, matched
+against the squad by number — one tap to let her in as that child's parent,
+a pick when nobody or two players wear the number, never a guess — or *Not
+approved*, which the parent is told. Her phone opens the club by itself once
+she is in. A new code stops the old one being used to ask; the code alone
+gets nobody in.
+
+**Coaches invite.** A coach can make an invite for her own team, as tracker
+or parent. Making a coach stays with the admins, in the interface and in the
+rules. Coaches read their team's list at `teamInvites/{code}/{tid}`; an admin
+sees every team's alongside the club's.
+
+**Create a club.** Somebody who belongs to nothing gets AUTH.md's two doors
+on their first screen: *Create a club*, which makes them admin of a new,
+long, random code — bringing along any teams the phone was keeping on its
+own — and *Have a team code?*. Until now a club could only be made by the app
+owner typing a code into Setup.
+
+**A coach letting someone in now matches the rules.** People offered a
+coach *Let in* for anyone who had signed in, and a Coach chip. Once a club
+was locked down the database refused both — the index and coach roles were
+admin-only — while the coach's phone showed them done. The rules now let a
+coach index an account only when it has a request on her team (the entry
+holds the team's id, which is what the rule checks), and add or remove her
+team's trackers; the app offers exactly that and says *send them the team
+code* otherwise. A coach's People list shows her own teams' people, not
+every stranger who signed in.
+
+Rules: three new root blocks (`teamInvites`, `joinCodes`, `claims`), in the
+open set too, and wider `invites`, `access/index`, `access/teams/…/trackers`
+and `access/teamIndex` rules. `node test/rules.js` pins each door, including
+the ones that stay shut. New suite: `node test/joining.js`. The fake Firebase
+also records writes and removes in one sequence (`opAt()`), because "the
+request is removed last" is an order across the two that separate lists
+could not check.
+
 ## Waiting people are one tap from being let in — 2026-09-27
 
 Someone who signs in on their own lands in People with no role, and the only

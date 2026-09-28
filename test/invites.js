@@ -76,6 +76,7 @@ const CLUB = {
     check('spent before the role is written', at('invites/' + ID + '/used') < at('workspaces/CLUB/access/teams/t1/coaches/sam'), true);
     check('role before the index', at('workspaces/CLUB/access/teams/t1/coaches/sam') < at('workspaces/CLUB/access/index/sam'), true);
     check('the admin\'s list is marked used', (valueAt(fbk, 'clubInvites/CLUB/' + ID + '/used') || {}).by, 'sam');
+    check('and the team\'s', (valueAt(fbk, 'teamInvites/CLUB/t1/' + ID + '/used') || {}).by, 'sam');
     check('the club goes on Sam\'s own list', (valueAt(fbk, 'userOrgs/sam/CLUB') || {}).name, 'Lakeside SC');
     check('and the join is in the audit log', p.some(x => x.startsWith('workspaces/CLUB/access/log/')), true);
     check('then the spent invite is deleted', fbk.record.removes.includes('invites/' + ID), true);
@@ -275,23 +276,110 @@ const CLUB = {
     check('a coach cannot hand out roles on another team', A.isCoach('t2', 'newbie'), false);
     A.click({ act: 'setrolet', uid: 'newbie', tid: 't2', r: 'tracker' });
     check('not by the old button either', A.isTracker('t2', 'newbie'), false);
+    /* Noor knocked, and nothing more. The rules let a coach index only an
+       account that asked to join her team with its code, so this used to look
+       done on the coach's phone and be refused by the database. */
     A.ui.pr = { uid: 'newbie', role: 'tracker', team: 't1', player: null };
     A.click({ act: 'praddrole', uid: 'newbie' });
-    check('but can on her own', A.isTracker('t1', 'newbie'), true);
+    check('not a stranger, even on her own team', A.isTracker('t1', 'newbie'), false);
+    check('and she is told who can', /Only a club admin can let in someone new/.test(A.lastToast()), true);
+    A.ui.pr = { uid: 'newbie', role: 'coach', team: 't1', player: null };
+    A.click({ act: 'praddrole', uid: 'newbie' });
+    check('nor make anybody a coach', A.isCoach('t1', 'newbie'), false);
   }
-
-  console.log('\n--- only an admin ---');
   {
+    /* Already in the club — a parent on another team, say. A coach may make
+       her a tracker on her own, and writes the team index one entry at a time,
+       because the rule sits on the uid. */
+    const club = JSON.parse(JSON.stringify(CLUB));
+    club.access.members.pat = { name: 'Pat' };
+    club.access.index.pat = true;
+    club.access.teamIndex = { t1: { coach: 'coach' } };
     const { A, fbk } = await boot({ storage: { 'sm.workspace': 'CLUB' } });
     fbk.signIn('coach', { name: 'Jaz' }); await A.flush();
-    fbk.deliver('workspaces/CLUB', CLUB); await A.flush();
+    fbk.deliver('workspaces/CLUB', club); await A.flush();
+    A.ui.pr = { uid: 'pat', role: 'tracker', team: 't1', player: null };
+    A.click({ act: 'praddrole', uid: 'pat' });
+    check('someone already in: tracker on her own team', A.isTracker('t1', 'pat'), true);
+    check('mirrored into the team index by uid', valueAt(fbk, 'workspaces/CLUB/access/teamIndex/t1/pat'), 'tracker');
+    check('never the whole team\'s index', fbk.writtenTo('workspaces/CLUB/access/teamIndex/t1').length, 0);
+    check('and the index is left alone', fbk.writtenTo('workspaces/CLUB/access/index/pat').length, 0);
+    A.click({ act: 'setrolet', uid: 'pat', tid: 't1', r: 'tracker' });
+    check('and taken off again', A.isTracker('t1', 'pat'), false);
+    check('out of the team index too', fbk.record.removes.includes('workspaces/CLUB/access/teamIndex/t1/pat'), true);
+    check('her index entry is not hers to remove', fbk.record.removes.includes('workspaces/CLUB/access/index/pat'), false);
+    console.log('       ^ pat holds no role now, but the index entry is the club\'s (true),');
+    console.log('         and only an admin may take that out — see rules.js note 5');
+  }
+
+  console.log('\n--- a coach invites to her own team ---');
+  {
+    const club = JSON.parse(JSON.stringify(CLUB));
+    club.teams.t2 = { id: 't2', name: 'Storm', players: {} };
+    const { A, fbk } = await boot({ storage: { 'sm.workspace': 'CLUB' } });
+    fbk.signIn('coach', { name: 'Jaz' }); await A.flush();
+    fbk.deliver('workspaces/CLUB', club); await A.flush();
     A.ui.view = 'people'; A.render();
-    check('a coach is not offered it', /data-act="invitenew"/.test(A.rendered()), false);
-    check('nor reads the list', fbk.watching('clubInvites/CLUB'), false);
+    check('a coach is offered it', /data-act="invitenew"/.test(A.rendered()), true);
+    check('she does not read the club\'s list', fbk.watching('clubInvites/CLUB'), false);
+    check('she reads her own team\'s', fbk.watching('teamInvites/CLUB/t1'), true);
+    check('and not another team\'s', fbk.watching('teamInvites/CLUB/t2'), false);
+    A.click({ act: 'invitenew' });
+    const sheet = A.rendered('#sheet');
+    check('tracker and parent, not coach', /data-v="tracker"/.test(sheet) && /data-v="parent"/.test(sheet) && !/data-v="coach"/.test(sheet), true);
+    check('her own team only', /Storm/.test(sheet), false);
+
     A.ui.inv = { role: 'coach', team: 't1' };
     await A.makeInvite(); await A.flush();
-    check('and making one anyway is refused', A.lastToast(), 'Club admins only');
+    check('a coach invite is refused', A.lastToast(), 'Only a club admin can invite a coach');
+    A.ui.inv = { role: 'tracker', team: 't2' };
+    await A.makeInvite(); await A.flush();
+    check('so is another team', A.lastToast(), 'Only for a team you coach');
     check('with nothing written', fbk.record.writes.some(x => x.path.startsWith('invites/')), false);
+
+    A.ui.inv = { role: 'tracker', team: 't1' };
+    await A.makeInvite(); await A.flush();
+    const w = fbk.record.writes.find(x => /^invites\/i[0-9a-f]+$/.test(x.path));
+    check('a tracker invite for her own team is made', !!w, true);
+    const id = w ? w.path.split('/')[1] : '';
+    check('stamped as her', w && w.value.by, 'coach');
+    check('listed for her team', !!valueAt(fbk, 'teamInvites/CLUB/t1/' + id), true);
+    check('never on the admins\' list, which the rules refuse her', fbk.writtenTo('clubInvites/CLUB/' + id).length, 0);
+    check('and she finds it again', A.rendered().includes(A.inviteLink(id)) || /Waiting/.test(A.rendered()), true);
+    A.click({ act: 'invitedrop', id });
+    check('she can revoke it', fbk.record.removes.includes('invites/' + id), true);
+    check('off her team\'s list too', fbk.record.removes.includes('teamInvites/CLUB/t1/' + id), true);
+    check('without touching the admins\' list', fbk.record.removes.includes('clubInvites/CLUB/' + id), false);
+    const at = A.nowMs();
+    fbk.deliver('teamInvites/CLUB/t1', { iadm: { role: 'parent', team: 't1', teamName: 'Flight', by: 'adm', byName: 'Ada', at, expiresAt: at + 864e5 } });
+    await A.flush();
+    A.click({ act: 'invitedrop', id: 'iadm' });
+    check('an admin\'s invite is the admin\'s to revoke', fbk.record.removes.includes('invites/iadm'), false);
+  }
+  {
+    // a parent or tracker is offered none of it
+    const club = JSON.parse(JSON.stringify(CLUB));
+    club.access.teams.t1.trackers = { trk: true };
+    club.access.index.trk = true;
+    const { A, fbk } = await boot({ storage: { 'sm.workspace': 'CLUB' } });
+    fbk.signIn('trk'); await A.flush();
+    fbk.deliver('workspaces/CLUB', club); await A.flush();
+    A.ui.inv = { role: 'parent', team: 't1', player: 'p1' };
+    await A.makeInvite(); await A.flush();
+    check('a tracker cannot make one', A.lastToast(), 'Club admins and coaches only');
+  }
+
+  console.log('\n--- an admin sees the coaches\' invites too ---');
+  {
+    const { A, fbk } = await boot({ storage: { 'sm.workspace': 'CLUB' } });
+    fbk.signIn('adm', { name: 'Ada' }); await A.flush();
+    fbk.deliver('workspaces/CLUB', CLUB); await A.flush();
+    A.ui.view = 'people'; A.render();
+    check('an admin reads every team\'s list in one go', fbk.watching('teamInvites/CLUB'), true);
+    const at = A.nowMs();
+    fbk.deliver('teamInvites/CLUB', { t1: { icoach: { role: 'tracker', team: 't1', teamName: 'Flight', by: 'coach', byName: 'Jaz', at, expiresAt: at + 864e5 } } });
+    await A.flush();
+    check('a coach\'s invite shows in People', A.rendered().includes(A.inviteLink('icoach')), true);
   }
 
   console.log('\n--- withdrawing a role that came from an invite ---');

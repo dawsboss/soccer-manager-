@@ -2,8 +2,8 @@
    Static app. Data lives in localStorage, and mirrors to Firebase Realtime
    Database when a config + workspace code are present. */
 
-const BUILD = '64';
-const BUILT = '2026-09-26';
+const BUILD = '65';
+const BUILT = '2026-09-28';
 /* index.html carries the build it was published with. If this file is newer, the
    browser handed us a cached page — the exact failure that has eaten hours. */
 const pageBuild = () => {
@@ -383,6 +383,8 @@ async function initAuth() {
         denied = false; attachWorkspace();
         // an invite read as the last account says nothing about this one
         if (invite && invite.status !== 'working') { invite.status = 'idle'; invite.doc = null; }
+        // nor does a join request: it was made by, and is readable by, that account
+        if (joining && joining.status !== 'sending') { joining.status = 'idle'; joinWatchKey = null; }
       }
       prevUid = uid;
       if (me && fb) {
@@ -395,6 +397,7 @@ async function initAuth() {
       }
       authReadyResolve();
       maybeLoadInvite();
+      maybeLoadJoin();
       watchMyClubs();
       render();
     });
@@ -415,7 +418,7 @@ async function initSync() {
     rtdb = { db, mod: dbMod };
     // an invite and the list of my clubs are both read before any workspace,
     // because a device with neither code nor role is exactly who needs them
-    authReady.then(() => { maybeLoadInvite(); watchMyClubs(); });
+    authReady.then(() => { maybeLoadInvite(); maybeLoadJoin(); watchMyClubs(); });
 
     // appOwners is root-level and has nothing to do with any one workspace —
     // read it before a code even exists. A device with no workspace still
@@ -651,11 +654,29 @@ function logAccess(act, targetUid, extra) {
 }
 const auditLog = () => Object.values(acc().log || {}).sort((a, b) => b.at - a.at);
 
-function syncIndex(uid) {
+/* Who writes the index entry decides what goes in it. An admin writes `true`.
+   A coach may only let in an account that asked to join her team with its
+   join code, and writes that team's id: the rule looks the id up to check she
+   coaches it and that the request is there. An entry already present is left
+   alone — its value may be the invite it came from, which is what withdrawing
+   it later has to find. Everything reading the index asks only whether the
+   entry is there, so the three kinds of value mean the same thing.
+
+   Taking an entry out is the admin's, or the coach's whose team id it holds.
+   A coach removing somebody's last role when an admin let them in cannot, and
+   the entry stays: they read nothing in the app, and the rules still let them
+   read the club until an admin changes their roles. `node test/rules.js` lists
+   that among what is still open. */
+function syncIndex(uid, tid) {
   if (!uid) return;
-  if (hasAnyRole(uid)) quiet(`access/index/${uid}`, true);
-  else {
-    forgetInvite((acc().index || {})[uid]);
+  const had = (acc().index || {})[uid];
+  if (hasAnyRole(uid)) {
+    if (!had) {
+      if (canAdmin()) quiet(`access/index/${uid}`, true);
+      else if (tid && me && isCoach(tid, me.uid) && hasClaim(tid, uid)) quiet(`access/index/${uid}`, tid);
+    }
+  } else if (had && (canAdmin() || (typeof had === 'string' && !!me && !!(state.teams || {})[had] && isCoach(had, me.uid)))) {
+    forgetInvite(had);
     delDeep(state, `access/index/${uid}`); remoteDel(`access/index/${uid}`);
     // their bookmark to this club goes too, so no other device of theirs opens it
     if (fb && wsCode()) Promise.resolve(fb.remove(fb.ref(fb.db, `userOrgs/${uid}/${wsCode()}`))).catch(() => { });
@@ -687,6 +708,13 @@ function syncTeamIndex(tid) {
   const now = ((acc().teamIndex || {})[tid]) || {};
   // this runs on every connect, so say nothing when there is nothing to say
   if (JSON.stringify(now) === JSON.stringify(want)) return;
+  /* A coach may add and remove her team's trackers, one entry at a time — the
+     rule sits on the uid, and touching a coach's entry is the admin's. */
+  if (!canAdmin()) {
+    for (const [u, r] of Object.entries(want)) if (r === 'tracker' && now[u] !== 'tracker') quiet(`access/teamIndex/${tid}/${u}`, 'tracker');
+    for (const [u, r] of Object.entries(now)) if (r === 'tracker' && !want[u]) { delDeep(state, `access/teamIndex/${tid}/${u}`); remoteDel(`access/teamIndex/${tid}/${u}`); }
+    saveLocal(); return;
+  }
   if (Object.keys(want).length) quiet(`access/teamIndex/${tid}`, want);
   else { delDeep(state, `access/teamIndex/${tid}`); remoteDel(`access/teamIndex/${tid}`); }
   saveLocal();
@@ -859,6 +887,11 @@ function mayAct(a, m) {
                                 everybody indexed can read all of that, and a
                                 parent holding a list of unspent coach invites
                                 is a parent who can make herself a coach.
+     teamInvites/{code}/{tid}/{id}  the same list cut by team, so a coach can
+                                read her own team's and nothing else. Every
+                                invite is listed here, whoever made it; a
+                                coach's never reaches clubInvites, which only
+                                admins write, and an admin reads both.
      userOrgs/{uid}/{code}      which clubs this account is in, so a second
                                 device can find them without an invite.
 
@@ -879,6 +912,8 @@ let rtdb = null;        // { db, mod } once the database module has loaded, code
 let invite = null;      // { id, status, doc, err } while an invite link is being handled
 let clubInv = {};       // clubInvites/{code}, for an admin
 let clubInvWatch = null;
+let teamInv = {};       // teamInvites/{code}/{tid}, by team: every team for an admin, her own for a coach
+const teamInvWatch = new Set();
 let myClubs = null;     // userOrgs/{uid}
 let myClubsUid = null;
 
@@ -1010,6 +1045,7 @@ async function redeemInvite() {
   }
   if (v.role !== 'parent') await soft(put(W + `access/teamIndex/${v.team}/${who}`, v.role));
   await soft(put('clubInvites/' + ws + '/' + id + '/used', { by: who, at, name: me.name || '' }));
+  await soft(put('teamInvites/' + ws + '/' + v.team + '/' + id + '/used', { by: who, at, name: me.name || '' }));
   await soft(put('userOrgs/' + who + '/' + ws, { name: v.clubName || '', at }));
   await soft(put(W + 'access/log/' + uid(), {
     at, act: 'joined by invite as', by: who, byName: me.name || null,
@@ -1039,6 +1075,21 @@ function watchClubInvites() {
     clubInv = s.val() || {};
     render();
   }, () => { });   // not an admin as far as the rules know; the list just stays empty
+}
+
+/* A coach reads her own teams' lists, one each, because a rule on teamInvites
+   grants a team and never the club. An admin reads the club's in one go. */
+function watchTeamInvites() {
+  const code = wsCode();
+  if (!rtdb || !code || !me) return;
+  const { db, mod } = rtdb;
+  const watch = (key, path, put) => {
+    if (teamInvWatch.has(key)) return;
+    teamInvWatch.add(key);
+    mod.onValue(mod.ref(db, path), s => { if (wsCode() !== code) return; put(s.val() || {}); render(); }, () => { });
+  };
+  if (canAdmin()) { watch(code, 'teamInvites/' + code, v => { teamInv = v; }); return; }
+  for (const t of inviteScope()) watch(code + '/' + t.id, 'teamInvites/' + code + '/' + t.id, v => { teamInv[t.id] = v; });
 }
 
 function watchMyClubs() {
@@ -1074,7 +1125,7 @@ function noteMyClub() {
    open it. Not when this device has teams of its own on it — that is somebody
    using the app on its own, and switching would hide their squad. */
 function maybeOpenMyClub() {
-  if (wsCode() || invite || !myClubs) return;
+  if (wsCode() || invite || joining || !myClubs) return;
   const codes = Object.keys(myClubs);
   if (codes.length !== 1 || Object.keys(state.teams || {}).length) return;
   try { localStorage.setItem(LS_WS, codes[0]); } catch (e) { return; }
@@ -1087,7 +1138,26 @@ function inviteStatus(v) {
   return { k: 'open', label: `Waiting · until ${new Date(v.expiresAt).toLocaleDateString()}` };
 }
 
-const inviteList = () => Object.entries(clubInv || {}).map(([id, v]) => ({ id, ...v })).sort((a, b) => (b.at || 0) - (a.at || 0));
+/* An admin invites anyone to any team. A coach invites to her own team, as a
+   tracker or a parent — making another coach is the club's decision, and the
+   rules refuse a coach invite from anyone but an admin. */
+const inviteScope = () => canAdmin() ? teams() : teams().filter(t => !!me && isCoach(t.id, me.uid));
+const mayInvite = (tid, role) => canAdmin() || (!!me && !!tid && isCoach(tid, me.uid) && role !== 'coach');
+const inviteRoles = () => Object.entries(INVITE_ROLES).filter(([k]) => canAdmin() || k !== 'coach');
+
+/* Both lists, merged by id: an admin's own invites are in each, a coach's only
+   in the team list. A coach sees only the teams she coaches. */
+function inviteList() {
+  const out = {};
+  const mine = new Set(inviteScope().map(t => t.id));
+  if (canAdmin()) for (const [id, v] of Object.entries(clubInv || {})) out[id] = { id, ...v };
+  for (const [tid, list] of Object.entries(teamInv || {})) {
+    if (!mine.has(tid)) continue;
+    for (const [id, v] of Object.entries(list || {})) out[id] = { id, team: tid, ...(out[id] || {}), ...v };
+  }
+  return Object.values(out).sort((a, b) => (b.at || 0) - (a.at || 0));
+}
+const findInvite = id => inviteList().find(v => v.id === id) || null;
 const inviteFor = v => `${esc(INVITE_ROLES[v.role] || v.role)}${v.role === 'parent' && v.playerName ? ' of ' + esc(v.playerName) : ''} · ${esc(v.teamName || '')}`;
 
 /* Open invites first and all of them, because those are the ones an admin
@@ -1095,8 +1165,9 @@ const inviteFor = v => `${esc(INVITE_ROLES[v.role] || v.role)}${v.role === 'pare
    ones are history, folded away behind a count. Every row opens the invite
    itself, which is where the link, who used it and the revoke button live. */
 function invitesCard() {
-  if (!canAdmin()) return '';
+  if (!canAdmin() && !inviteScope().length) return '';
   watchClubInvites();
+  watchTeamInvites();
   const list = inviteList();
   const open = list.filter(v => inviteStatus(v).k === 'open');
   const past = list.filter(v => inviteStatus(v).k !== 'open');
@@ -1110,7 +1181,7 @@ function invitesCard() {
   };
   return `<div class="card"><div class="spread"><h2 style="margin:0">Invites</h2>
       <button class="btn sm" data-act="invitenew">Invite someone</button></div>
-    <p class="muted">A link that makes one account a coach, tracker or parent on one team. It works once and lasts ${INVITE_DAYS} days. Tap one to copy its link again, see who used it, or revoke it.</p>
+    <p class="muted">A link that makes one account ${canAdmin() ? 'a coach, tracker or parent' : 'a tracker or a parent'} on one team. It works once and lasts ${INVITE_DAYS} days. Tap one to copy its link again, see who used it, or revoke it.</p>
     ${open.length ? open.map(row).join('') : `<p class="muted" style="margin:0">No open invites.</p>`}
     ${past.length ? `<button class="btn quiet sm" data-act="invitepast" style="margin-top:8px">${ui.invPast ? 'Hide' : 'Show'} used and expired (${past.length})</button>
     ${ui.invPast ? `<div style="margin-top:8px">${past.map(row).join('')}</div>` : ''}` : ''}</div>`;
@@ -1121,7 +1192,7 @@ function invitesCard() {
    ready" sheet too soon needs. Once used, the redeemer deletes the invite
    itself, so the link is dead and says so; what is left is who took it. */
 function sheetInviteDetail(id) {
-  const v = clubInv[id];
+  const v = findInvite(id);
   if (!v) { closeSheet(); toast('That invite is gone'); return; }
   const st = inviteStatus(v), link = inviteLink(id);
   const when = ms => ms ? new Date(ms).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' }) : 'unknown';
@@ -1136,7 +1207,7 @@ function sheetInviteDetail(id) {
     <div style="margin-bottom:14px">
       ${line('Status', st.k === 'open' ? '<b>Waiting to be used</b>' : st.k === 'used' ? '<b>Used</b>' : '<b>Expired</b>')}
       ${line('For', v.email ? esc(v.email) + ' only' : 'Whoever opens it first')}
-      ${line('Made by', `${esc(v.byName || 'an admin')} · ${when(v.at)}`)}
+      ${line('Made by', `${esc(v.byName || 'someone')} · ${when(v.at)}`)}
       ${st.k === 'used'
       ? line('Used by', `<b>${esc(v.used.name || (who && who.name) || 'someone')}</b>${who && who.email ? `<span class="rowsub">${esc(who.email)}</span>` : ''}<span class="rowsub">${when(v.used.at)}</span>`)
         + line('Role now', stillHas ? 'Still has it' : 'Since removed')
@@ -1147,7 +1218,7 @@ function sheetInviteDetail(id) {
     <div class="row" style="margin-bottom:12px"><button class="btn" data-act="copylink" data-v="${esc(link)}">Copy link</button>
       ${canShare ? `<button class="btn quiet" data-act="inviteshare" data-v="${esc(link)}">Share…</button>` : ''}</div>
     ${v.email ? `<button class="btn quiet wide" data-act="invitemail" data-v="${esc(link)}" data-email="${esc(v.email)}" style="margin-bottom:12px">Send them the sign-in email again</button>` : ''}
-    <button class="btn danger wide" data-act="invitedrop" data-id="${esc(id)}">Revoke — the link stops working</button>`
+    ${canAdmin() || !isAdmin(v.by) ? `<button class="btn danger wide" data-act="invitedrop" data-id="${esc(id)}">Revoke — the link stops working</button>` : '<p class="muted">An admin made this one, so an admin revokes it.</p>'}`
       : `<p class="muted">${st.k === 'used' ? 'This link has been used and no longer works. To take the role away, remove it from their roles.' : 'This link no longer works. Make a new one if they still need to join.'}</p>
     ${st.k === 'used' && who ? `<button class="btn quiet wide" data-act="personedit" data-uid="${esc(v.used.by)}" style="margin-bottom:8px">Their roles</button>` : ''}
     <button class="btn quiet wide" data-act="invitedrop" data-id="${esc(id)}">Remove from the list</button>`}
@@ -1155,16 +1226,20 @@ function sheetInviteDetail(id) {
 }
 
 function sheetInvite() {
-  const f = ui.inv || (ui.inv = { role: 'coach', team: ui.teamId || (teams()[0] || {}).id || null, player: null });
+  const scope = inviteScope();
+  const f = ui.inv || (ui.inv = {
+    role: canAdmin() ? 'coach' : 'parent',
+    team: scope.some(x => x.id === ui.teamId) ? ui.teamId : (scope[0] || {}).id || null, player: null
+  });
   const t = state.teams[f.team] || null;
   const players = t ? Object.values(t.players || {}).filter(p => p.active !== false)
     .sort((a, b) => (Number(a.number) || 999) - (Number(b.number) || 999)) : [];
   openSheet(`<h3>Invite someone</h3>
     <p class="lbl">As</p>
-    <div class="chips" style="margin-bottom:12px">${Object.entries(INVITE_ROLES).map(([k, l]) =>
+    <div class="chips" style="margin-bottom:12px">${inviteRoles().map(([k, l]) =>
     `<button class="chip" type="button" data-act="invitepick" data-k="role" data-v="${k}" aria-pressed="${f.role === k}">${l}</button>`).join('')}</div>
     <p class="lbl">Team</p>
-    ${pickOne('invitepick', 'team', f.team, teams().map(x => [x.id, esc(x.name || 'Team')]), 'Add a team first.')}
+    ${pickOne('invitepick', 'team', f.team, scope.map(x => [x.id, esc(x.name || 'Team')]), 'Add a team first.')}
     ${f.role === 'parent' ? `<p class="lbl">Parent of</p>
     ${pickOne('invitepick', 'player', f.player, players.map(p => [p.id, `${p.number ? '#' + esc(p.number) + ' ' : ''}${esc(p.name || '')}`]), 'No players on this team.')}` : ''}
     <label class="field"><span>Their email — optional</span><input type="email" id="invEmail" placeholder="Leave empty for a link anyone can use once" autocapitalize="off" autocorrect="off"></label>
@@ -1173,12 +1248,13 @@ function sheetInvite() {
 }
 
 async function makeInvite() {
-  if (!canAdmin()) { toast('Club admins only'); return; }
+  if (!inviteScope().length) { toast('Club admins and coaches only'); return; }
   if (!fb || !rtdb || !me) { toast(me ? 'Needs a connection to the database' : 'Sign in first'); return; }
   const f = ui.inv || {};
   const t = state.teams[f.team];
   if (!t) { toast('Pick a team'); return; }
   if (!INVITE_ROLES[f.role]) { toast('Pick a role'); return; }
+  if (!mayInvite(t.id, f.role)) { toast(f.role === 'coach' ? 'Only a club admin can invite a coach' : 'Only for a team you coach'); return; }
   const p = f.role === 'parent' ? (t.players || {})[f.player] : null;
   if (f.role === 'parent' && !p) { toast('Pick the player'); return; }
   const el = $('#invEmail');
@@ -1200,12 +1276,14 @@ async function makeInvite() {
   if (email) listed.email = email;
   try {
     await fb.set(fb.ref(fb.db, 'invites/' + id), doc);
-    await fb.set(fb.ref(fb.db, 'clubInvites/' + wsCode() + '/' + id), listed);
+    await fb.set(fb.ref(fb.db, 'teamInvites/' + wsCode() + '/' + t.id + '/' + id), listed);
+    if (canAdmin()) await fb.set(fb.ref(fb.db, 'clubInvites/' + wsCode() + '/' + id), listed);
   } catch (e) {
     toast(/permission|denied/i.test((e && e.code) || '') ? 'The database refused it — are the invite rules from README published?' : 'Could not make the invite');
     return;
   }
-  clubInv[id] = listed;
+  if (canAdmin()) clubInv[id] = listed;
+  (teamInv[t.id] = teamInv[t.id] || {})[id] = listed;
   logAccess('invited', null, { targetName: (email || 'someone') + ' as ' + f.role, team: t.id, teamName: t.name || null });
   ui.inv = null;
   const link = inviteLink(id);
@@ -1220,6 +1298,452 @@ async function makeInvite() {
     <button class="btn quiet wide" data-act="closesheet">Done</button>`);
   render();
 }
+
+/* ---------------- joining with a team code ---------------- */
+/* AUTH.md's bulk path for parents. An invite is one link for one person, and
+   a team has thirty guardians; typing thirty emails is the data entry AUTH.md
+   set out to avoid. So a coach texts the team ONE code, a parent types it and
+   their child's shirt number, and the coach lets each request in with a tap.
+
+     joinCodes/{KEY}                  what the code opens: club, team, and
+                                      their names for the screen. At the root,
+                                      because whoever holds the code cannot read
+                                      the club; .read sits on {KEY}, so nobody
+                                      lists them. Holding one lets you ASK.
+     teams/{tid}/joinCode             the team's current code, for the coach
+     claims/{code}/{tid}/{uid}/{no}   a request: the parent's name, email and
+                                      the code used. Admins and that team's
+                                      coaches read the team's; the parent reads
+                                      her own and nothing else.
+
+   The parent is never shown the roster — before she is let in she gets the
+   team's name and nothing more. The coach sees who asked and which number,
+   matched against her squad, and links her to the child. That write and the
+   index entry are the coach's, and the rule lets a coach index only an
+   account with a request on her team (the entry holds the team's id, which is
+   what the rule looks up). The request goes last, because it is what that
+   rule checks.
+
+   A new code stops the old one being used to ask. Requests already made stay,
+   and the coach can still let them in. */
+const LS_JOIN = 'sm.join';
+const JOIN_ABC = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';   // no 0/O or 1/I: it gets read out and typed
+let joining = null;      // this device asking to join: { code, status, ws, team, teamName, clubName, shirts, turned, err }
+let joinWatchKey = null;
+let claimsIn = {};       // claims/{code}/{tid} for the teams this account runs: { uid: { shirt: request } }
+const claimWatch = new Set();
+let creatingClub = false;
+
+function randomChars(n, abc) {
+  let out = '';
+  try {
+    const b = new Uint8Array(n);
+    crypto.getRandomValues(b);
+    for (const x of b) out += abc[x % abc.length];   // 256 is a multiple of 32, so no bias
+    return out;
+  } catch (e) {
+    for (let i = 0; i < n; i++) out += abc[Math.floor(Math.random() * abc.length)];
+    return out;
+  }
+}
+
+/* The key is the code with nothing but letters and digits, so FLIGHT-7K2M9P,
+   "flight 7k2m9p" and FLIGHT7K2M9P all find the same team. The dash is only
+   there to read it out by. Six random characters from 32 is about a billion
+   codes per team name — and guessing one only lets you ask. */
+const joinKey = v => String(v || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+const joinShow = k => (k && k.length > 6 ? k.slice(0, -6) + '-' + k.slice(-6) : k || '');
+const joinLink = k => location.origin + location.pathname + '?join=' + encodeURIComponent(k);
+const newJoinKey = t => (joinKey(t && t.name).slice(0, 8) || 'TEAM') + randomChars(6, JOIN_ABC);
+
+function saveJoin() {
+  try {
+    if (!joining) { localStorage.removeItem(LS_JOIN); return; }
+    const { code, ws, team, teamName, clubName, shirts } = joining;
+    localStorage.setItem(LS_JOIN, JSON.stringify({ code, ws, team, teamName, clubName, shirts: shirts || [] }));
+  } catch (e) { }
+}
+function dropJoin() {
+  try { localStorage.removeItem(LS_JOIN); } catch (e) { }
+  joining = null; joinWatchKey = null;
+}
+
+/* Like an invite, a join link survives the sign-in that follows it: taken off
+   the address bar at load and kept until the request is settled. A request
+   already sent is remembered too, so closing the page and coming back picks
+   up where it was rather than asking again. */
+function captureJoin() {
+  try {
+    const q = new URLSearchParams(location.search || '');
+    const k = joinKey(q.get('join'));
+    if (k) {
+      localStorage.setItem(LS_JOIN, JSON.stringify({ code: k }));
+      q.delete('join');
+      const rest = q.toString();
+      history.replaceState(null, '', location.pathname + (rest ? '?' + rest : '') + (location.hash || ''));
+    }
+    const held = JSON.parse(localStorage.getItem(LS_JOIN) || 'null');
+    joining = held && held.code ? { ...held, shirts: held.shirts || [], turned: [], status: 'idle', err: null } : null;
+  } catch (e) { joining = null; }
+}
+
+/* Somebody at home with a club open, waiting on another club's coach, keeps
+   using the club they have. Anything else about a join takes the screen. */
+const joinTakeover = () => !!joining && !(wsCode() && ['waiting', 'checking'].includes(joining.status));
+
+function maybeLoadJoin() {
+  if (!joining || !rtdb || !me || joining.status !== 'idle') return;
+  if ((joining.shirts || []).length && joining.ws && joining.team) { joining.status = 'waiting'; watchMyClaim(); render(); return; }
+  const k = joining.code, who = me.uid, j = joining;
+  j.status = 'loading';
+  const { db, mod } = rtdb;
+  mod.onValue(mod.ref(db, 'joinCodes/' + k), s => {
+    if (joining !== j || !me || me.uid !== who) return;
+    const v = s.val();
+    if (!v) j.status = 'gone';
+    else {
+      Object.assign(j, { ws: v.ws, team: v.team, teamName: v.teamName || '', clubName: v.clubName || '', status: 'ready' });
+      saveJoin();
+    }
+    render();
+  }, err => {
+    if (joining !== j) return;
+    j.status = 'error'; j.err = (err && err.code) || String(err);
+    render();
+  }, { onlyOnce: true });
+  render();
+}
+
+/* The request is create-only in the rules, so it cannot be edited — asking
+   for a second child is a second request under the same account. */
+async function sendClaim() {
+  const j = joining;
+  if (!j || j.status !== 'ready' || !rtdb || !me) return;
+  const el = $('#joinShirt');
+  const n = String((el && el.value) || '').trim().replace(/^#/, '');
+  if (!/^[0-9]{1,3}$/.test(n)) { toast('Type the shirt number — digits only'); return; }
+  const { db, mod } = rtdb, who = me.uid;
+  j.status = 'sending'; render();
+  try {
+    await mod.set(mod.ref(db, `claims/${j.ws}/${j.team}/${who}/${n}`), { code: j.code, name: me.name || '', email: me.email || '', at: nowMs() });
+  } catch (e) {
+    j.status = 'error';
+    j.err = /permission|denied/i.test((e && e.code) || '') ? 'The database refused it — the coach may have changed the code'
+      : ((e && e.code) || String(e));
+    render(); return;
+  }
+  j.shirts = [...new Set([...(j.shirts || []), n])];
+  j.status = 'waiting'; saveJoin(); watchMyClaim(); render();
+}
+
+/* Listen to my own requests. One disappearing means the coach let me in or
+   cleared it; the index says which. One marked rejected is a no, and says so
+   rather than leaving somebody waiting on a wrong shirt number forever. */
+function watchMyClaim() {
+  const j = joining;
+  if (!j || !rtdb || !me || !j.ws || !j.team) return;
+  const key = j.ws + '/' + j.team + '/' + me.uid;
+  if (joinWatchKey === key) return;
+  joinWatchKey = key;
+  const { db, mod } = rtdb, who = me.uid;
+  mod.onValue(mod.ref(db, 'claims/' + key), s => {
+    if (joining !== j || !me || me.uid !== who) return;
+    const v = s.val() || {};
+    const asked = j.shirts || [];
+    j.turned = asked.filter(n => v[n] && v[n].rejected);
+    const open = asked.filter(n => v[n] && !v[n].rejected);
+    if (asked.some(n => !v[n])) checkLetIn();
+    else if (j.status !== 'sending' && j.status !== 'ready') j.status = open.length ? 'waiting' : 'rejected';
+    render();
+  }, () => { });
+}
+
+function checkLetIn() {
+  const j = joining;
+  if (!j || !rtdb || !me || j.status === 'checking') return;
+  j.status = 'checking';
+  const { db, mod } = rtdb, who = me.uid;
+  const no = () => { if (joining !== j) return; j.status = j.turned.length ? 'rejected' : 'closed'; render(); };
+  mod.onValue(mod.ref(db, 'workspaces/' + j.ws + '/access/index/' + who), s => {
+    if (joining !== j) return;
+    if (s.val()) finishJoin(); else no();
+  }, no, { onlyOnce: true });
+}
+
+function finishJoin() {
+  const j = joining;
+  if (!j || !me || !rtdb) return;
+  const { db, mod } = rtdb;
+  Promise.resolve(mod.set(mod.ref(db, 'userOrgs/' + me.uid + '/' + j.ws), { name: j.clubName || '', at: nowMs() })).catch(() => { });
+  dropJoin();
+  try { localStorage.setItem(LS_WS, j.ws); } catch (e) { }
+  location.reload();
+}
+
+function withdrawJoin(which) {
+  const j = joining;
+  if (!j) return;
+  if (rtdb && me && j.ws && j.team)
+    for (const n of which || j.shirts || [])
+      Promise.resolve(rtdb.mod.remove(rtdb.mod.ref(rtdb.db, `claims/${j.ws}/${j.team}/${me.uid}/${n}`))).catch(() => { });
+}
+
+function joinScreen() {
+  const j = joining;
+  const box = (title, body, btns) => `<div class="stack"><div class="empty"><strong>${title}</strong>${body}
+    <div class="row" style="margin-top:14px;justify-content:center;flex-wrap:wrap">${btns}</div></div></div>`;
+  const later = `<button class="btn quiet" data-act="joindismiss">Not now</button>`;
+  const team = `<b>${esc(j.teamName || 'the team')}</b>${j.clubName ? ' at ' + esc(j.clubName) : ''}`;
+  const nums = list => list.map(n => '#' + esc(n)).join(' and ');
+  const s = j.status;
+  if (!fbConfig().apiKey) return box('A team code', 'This copy of the app is not connected to a database, so it cannot use one.', later);
+  if (!me) return box('Joining a team',
+    `You have a team code, <b>${esc(joinShow(j.code))}</b>. Sign in first — use the account you want to keep, because it is the one the coach will see.`,
+    `<button class="btn" data-act="signinsheet">Sign in</button>${later}`);
+  if (s === 'idle' || s === 'loading') return box('Looking up the code…', 'This needs a signal. It carries on by itself once there is one.', later);
+  if (s === 'gone') return box('That code does not work',
+    `Nothing answers to <b>${esc(joinShow(j.code))}</b>. Check it with the coach — they may have changed it for a new one.`,
+    `<button class="btn" data-act="joinstart">Try another code</button><button class="btn quiet" data-act="joindismiss">OK</button>`);
+  if (s === 'error') return box('That did not work', `${esc(j.err || 'Something went wrong')}. Check the signal and try again.`,
+    `<button class="btn" data-act="joinretry">Try again</button>${later}`);
+  if (s === 'sending') return box('Sending…', `Asking to join ${team}.`, '');
+  if (s === 'ready') return box(`Join ${team}`,
+    `${(j.shirts || []).length ? `You have already asked for ${nums(j.shirts)}. ` : ''}Type your child's shirt number. The coach sees your name, your email and the number, and links you to your child — until then you see nothing of the team.
+    <label class="field" style="margin:14px auto 0;max-width:180px;text-align:left"><span>Shirt number</span>
+      <input type="text" id="joinShirt" inputmode="numeric" pattern="[0-9]*" maxlength="4" autocomplete="off"></label>`,
+    `<button class="btn" data-act="joinsend">Ask to join</button>${later}`);
+  if (s === 'rejected') return box('The coach did not approve that',
+    `Your request for ${nums(j.turned)} on ${team} was turned down — usually it is the wrong shirt number. Check it with the coach.`,
+    `<button class="btn" data-act="joinmore">Try another number</button><button class="btn quiet" data-act="joinwithdraw">OK</button>`);
+  if (s === 'closed') return box('Your request is no longer there',
+    `It was withdrawn, or cleared without letting you in. Ask the coach, or send it again.`,
+    `<button class="btn" data-act="joinmore">Ask again</button><button class="btn quiet" data-act="joindismiss">OK</button>`);
+  return box('Waiting for the coach',
+    `You asked to join ${team} as a parent of ${nums(j.shirts || [])}, signed in as <b>${esc(me.email || me.name)}</b>. The coach lets each request in; this opens the team by itself once they have. You can close it and come back.`,
+    `<button class="btn quiet" data-act="joinmore">Another child on this team</button><button class="btn quiet" data-act="joinwithdraw">Withdraw</button>`);
+}
+
+function sheetJoinCode() {
+  openSheet(`<h3>Join with a team code</h3>
+    <p class="muted" style="margin-top:0">The code a coach sent the team — something like <b>FLIGHT-7K2M9P</b>. Capitals and the dash do not matter.</p>
+    <label class="field"><span>Team code</span><input type="text" id="joinCode" autocapitalize="characters" autocorrect="off" spellcheck="false" autocomplete="off"></label>
+    <button class="btn wide" data-act="joingo">Next</button>
+    <p class="muted">A coach or tracker is sent an invite link instead. This is for parents.</p>`);
+}
+
+/* ---- the coach's side ---- */
+
+/* One listener per team, because the rule grants a team and never the club. */
+function watchClaims() {
+  const code = wsCode();
+  if (!rtdb || !code || !me || !anyAdmins()) return;
+  const { db, mod } = rtdb;
+  for (const t of teams()) {
+    if (!(canAdmin() || isCoach(t.id, me.uid))) continue;
+    const key = code + '/' + t.id;
+    if (claimWatch.has(key)) continue;
+    claimWatch.add(key);
+    mod.onValue(mod.ref(db, 'claims/' + key), s => {
+      if (wsCode() !== code) return;
+      claimsIn[t.id] = s.val() || {};
+      render();
+    }, () => { });
+  }
+}
+const hasClaim = (tid, uid) => Object.keys(((claimsIn[tid] || {})[uid]) || {}).length > 0;
+function claimList(tid) {
+  const out = [];
+  for (const [uid, byNo] of Object.entries(claimsIn[tid] || {}))
+    for (const [n, c] of Object.entries(byNo || {})) out.push({ ...c, tid, uid, n });
+  return out.sort((a, b) => (!!a.rejected - !!b.rejected) || (a.at || 0) - (b.at || 0));
+}
+const pendingClaims = tid => claimList(tid).filter(c => !c.rejected);
+const runsTeam = tid => !!me && !!tid && (canAdmin() || isCoach(tid, me.uid));
+
+/* Matched against the squad by shirt number, because that is all the parent
+   gave. One match is one tap. None, or two players sharing a number, and the
+   coach picks — never a guess. */
+function claimsCard(t) {
+  const list = claimList(t.id);
+  if (!list.length) return '';
+  const ps = Object.values(t.players || {}).filter(p => p.active !== false)
+    .sort((a, b) => (Number(a.number) || 999) - (Number(b.number) || 999));
+  const pname = p => `${p.number ? '#' + esc(p.number) + ' ' : ''}${esc(p.name || '')}`;
+  const ids = c => `data-tid="${esc(c.tid)}" data-uid="${esc(c.uid)}" data-n="${esc(c.n)}"`;
+  const row = c => {
+    const who = `<b>${esc(c.name || 'Someone')}</b><span class="rowsub">${esc(c.email || '')}</span>`;
+    if (c.rejected) return `<div class="opt spread"><span>${who}<span class="rowsub">#${esc(c.n)} · not approved</span></span>
+      <button class="btn quiet sm" data-act="claimclear" ${ids(c)}>Clear</button></div>`;
+    const match = ps.filter(p => String(p.number || '') === String(c.n));
+    const pickKey = c.uid + '|' + c.n;
+    const picked = (ui.claimPick || {})[pickKey];
+    return `<div class="opt"><div class="spread"><span>${who}<span class="rowsub">Asks to be a parent of #${esc(c.n)}</span></span>
+      <button class="btn quiet sm" data-act="claimno" ${ids(c)}>Not approved</button></div>
+      ${match.length === 1
+        ? `<button class="btn sm" data-act="claimok" ${ids(c)} data-pid="${esc(match[0].id)}" style="margin:8px 0 6px">Let in as parent of ${pname(match[0])}</button>`
+        : `<p class="muted" style="margin:8px 0">${match.length ? `${match.length} players wear #${esc(c.n)}. Which one?` : `Nobody wears #${esc(c.n)} on this team. Check the number with them, or pick the player:`}</p>
+      ${pickOne('claimpick', pickKey, picked, (match.length ? match : ps).map(p => [p.id, pname(p)]), 'No players on this team.')}
+      ${picked ? `<button class="btn sm" data-act="claimok" ${ids(c)} data-pid="${esc(picked)}" style="margin-bottom:6px">Let in as parent of ${pname((t.players || {})[picked] || {})}</button>` : ''}`}
+    </div>`;
+  };
+  const open = list.filter(c => !c.rejected).length;
+  return `<p class="lbl" style="margin-top:14px">${open ? `${open} asking to join` : 'Requests'}</p>${list.map(row).join('')}`;
+}
+
+function approveClaim(tid, uid, n, pid) {
+  const t = state.teams[tid], p = t && (t.players || {})[pid];
+  const c = ((claimsIn[tid] || {})[uid] || {})[n];
+  if (!runsTeam(tid)) { toast('Club admins and that team’s coaches only'); return; }
+  if (!p || !c) { toast('That request is gone'); return; }
+  if (!fb) { toast('Not connected'); return; }
+  if (!(acc().members || {})[uid]) quiet(`access/members/${uid}`, { name: c.name || '', email: c.email || '', at: c.at || nowMs() });
+  if (!(p.guardians || {})[uid]) commit(`teams/${tid}/players/${pid}/guardians/${uid}`, true);
+  syncIndex(uid, tid);
+  logAccess('let in by team code', uid, { team: tid, teamName: t.name || null, player: p.name || null });
+  // last: the rule that just indexed them looks for this request
+  Promise.resolve(fb.remove(fb.ref(fb.db, `claims/${wsCode()}/${tid}/${uid}/${n}`))).catch(() => { });
+  delete claimsIn[tid][uid][n];
+  if (!Object.keys(claimsIn[tid][uid]).length) delete claimsIn[tid][uid];
+  toast(`${c.name || 'They'} can see ${t.name || 'the team'} now`);
+  render();
+}
+
+function rejectClaim(tid, uid, n) {
+  const c = ((claimsIn[tid] || {})[uid] || {})[n];
+  if (!runsTeam(tid)) { toast('Club admins and that team’s coaches only'); return; }
+  if (!c || !fb || !me) return;
+  const { tid: _t, uid: _u, n: _n, ...doc } = c;
+  const v = { ...doc, rejected: true, rejectedAt: nowMs(), rejectedBy: me.uid };
+  Promise.resolve(fb.set(fb.ref(fb.db, `claims/${wsCode()}/${tid}/${uid}/${n}`), v)).catch(() => { });
+  claimsIn[tid][uid][n] = v;
+  logAccess('turned down a join request from', null, { targetName: (c.name || c.email || 'someone') + ' for #' + n, team: tid, teamName: (state.teams[tid] || {}).name || null });
+  render();
+}
+
+function clearClaim(tid, uid, n) {
+  if (!runsTeam(tid) || !fb) return;
+  Promise.resolve(fb.remove(fb.ref(fb.db, `claims/${wsCode()}/${tid}/${uid}/${n}`))).catch(() => { });
+  if ((claimsIn[tid] || {})[uid]) { delete claimsIn[tid][uid][n]; if (!Object.keys(claimsIn[tid][uid]).length) delete claimsIn[tid][uid]; }
+  render();
+}
+
+/* The code is written at the root first, then onto the team, and only then is
+   the old one retired — so there is never a moment with no code at all. */
+async function makeJoinCode(tid) {
+  const t = state.teams[tid];
+  if (!t || !runsTeam(tid)) { toast('Club admins and that team’s coaches only'); return; }
+  if (!fb || !me) { toast(me ? 'Needs a connection to the database' : 'Sign in first'); return; }
+  const old = t.joinCode, k = newJoinKey(t);
+  const doc = { ws: wsCode(), team: tid, teamName: t.name || '', clubName: (acc().org || {}).name || '', by: me.uid, byName: me.name || '', at: nowMs() };
+  try { await fb.set(fb.ref(fb.db, 'joinCodes/' + k), doc); }
+  catch (e) {
+    toast(/permission|denied/i.test((e && e.code) || '') ? 'The database refused it — are the joining rules from README published?' : 'Could not make a code');
+    return;
+  }
+  commit(`teams/${tid}/joinCode`, k);
+  if (old) Promise.resolve(fb.remove(fb.ref(fb.db, 'joinCodes/' + old))).catch(() => { });
+  logAccess(old ? 'changed the join code for' : 'made a join code for', null, { targetName: 'parents', team: tid, teamName: t.name || null });
+  toast(old ? 'New code — the old one no longer works' : 'Code ready to send');
+}
+
+function joinOff(tid) {
+  const t = state.teams[tid];
+  if (!t || !t.joinCode || !runsTeam(tid) || !fb) return;
+  if (!confirm('Turn off the team code? Nobody new can use it to ask. Requests already made stay.')) return;
+  Promise.resolve(fb.remove(fb.ref(fb.db, 'joinCodes/' + t.joinCode))).catch(() => { });
+  drop(`teams/${tid}/joinCode`);
+  logAccess('turned off the join code for', null, { targetName: 'parents', team: tid, teamName: t.name || null });
+}
+
+function joinCard(t) {
+  if (!t || !fbConfig().apiKey || !me || !anyAdmins() || !runsTeam(t.id)) return '';
+  watchClaims();
+  const k = t.joinCode;
+  const canShare = typeof navigator !== 'undefined' && typeof navigator.share === 'function';
+  return `<div class="card" id="joincard"><h2 style="margin-bottom:8px">Joining this team</h2>
+    <p class="muted" style="margin-top:0">One code for every parent on the team — send it to the group once. Each types it and their child's shirt number, and you let them in here. The code alone gets nobody in.</p>
+    ${k ? `<div class="codebox">${esc(joinShow(k))}</div>
+    <div class="row" style="margin-bottom:10px;flex-wrap:wrap"><button class="btn" data-act="copylink" data-v="${esc(joinLink(k))}">Copy link</button>
+      ${canShare ? `<button class="btn quiet" data-act="joinshare" data-v="${esc(joinLink(k))}">Share…</button>` : ''}
+      <button class="btn quiet" data-act="joinrotate" data-tid="${esc(t.id)}">New code</button>
+      <button class="btn quiet" data-act="joinoff" data-tid="${esc(t.id)}">Turn off</button></div>
+    <p class="muted" style="margin:0">A new code stops the old one working for anyone who has not asked yet.</p>`
+      : `<button class="btn wide" data-act="joinmake" data-tid="${esc(t.id)}">Make a team code</button>`}
+    ${claimsCard(t)}
+    <div class="row" style="margin-top:12px;flex-wrap:wrap"><button class="btn quiet" data-act="invitenew">Invite one person</button>
+      <button class="btn quiet" data-act="people">People and roles</button></div></div>`;
+}
+
+/* On the team's own games list, where a coach lands: somebody is waiting. */
+function claimsAlert(t) {
+  if (!t || !anyAdmins() || !runsTeam(t.id)) return '';
+  watchClaims();
+  const n = pendingClaims(t.id).length;
+  return n ? `<div class="warn alert"><div class="spread"><span><b>${n} asking to join ${esc(t.name || 'the team')}.</b> Parents who used the team code.</span>
+    <button class="btn sm" data-act="goview" data-v="teamset" style="flex:none">See them</button></div></div>` : '';
+}
+
+/* ---------------- creating a club ---------------- */
+/* AUTH.md's other door for someone who belongs to nothing. Nothing new in the
+   rules: it is the bootstrap every club was made with — admin while nobody is,
+   index while it is empty — in that order, at a code long and random enough
+   that nobody else will ever reach it first (rules.js note 3 is exactly this).
+   A phone that has been keeping teams on its own can bring them along; they
+   are written one team and one game at a time, at the depth the rules grant. */
+const newClubCode = () => 'c' + secretId().slice(1, 25);
+
+function sheetNewClub() {
+  if (!me) { sheetSignIn(); return; }
+  const local = wsCode() ? 0 : Object.keys(state.teams || {}).length;
+  if (ui.bringTeams === undefined) ui.bringTeams = true;
+  openSheet(`<h3>Create a club</h3>
+    <p class="muted" style="margin-top:0">You become its admin. Then add teams, and bring people in with a team code or an invite.</p>
+    <label class="field"><span>Club name</span><input type="text" id="clubName" placeholder="e.g. Lakeside SC" autocomplete="off"></label>
+    ${local ? `<div class="chips" style="margin-bottom:12px"><button class="chip" type="button" data-act="clubbring" aria-pressed="${!!ui.bringTeams}">Bring the ${local} team${local === 1 ? '' : 's'} on this phone</button></div>` : ''}
+    <button class="btn wide" data-act="clubcreate">Create it</button>
+    <p class="muted">Needs a signal — the club is made in the database, not just on this phone.</p>`);
+}
+
+async function createClub() {
+  if (!me) { toast('Sign in first'); return; }
+  if (!rtdb) { toast('Needs a connection to the database'); return; }
+  if (creatingClub) return;
+  const el = $('#clubName');
+  const name = String((el && el.value) || '').trim();
+  if (!name) { toast('Give the club a name'); return; }
+  const bring = !wsCode() && !!ui.bringTeams;
+  const code = newClubCode(), at = nowMs(), who = me.uid;
+  const { db, mod } = rtdb;
+  const W = 'workspaces/' + code + '/';
+  const put = (p, v) => mod.set(mod.ref(db, p), v);
+  creatingClub = true; toast('Creating the club…');
+  try {
+    await put(W + 'access/admins/' + who, true);
+    await put(W + 'access/index/' + who, true);
+    await put(W + 'access/org', { name });
+    await put(W + 'access/members/' + who, { name: me.name || '', email: me.email || '', at });
+    if (bring) {
+      for (const [tid, t] of Object.entries(state.teams || {})) await put(W + 'teams/' + tid, t);
+      for (const [mid, m] of Object.entries(state.matches || {})) await put(W + 'matches/' + mid, m);
+    }
+  } catch (e) {
+    creatingClub = false;
+    toast(/permission|denied/i.test((e && e.code) || '') ? 'The database refused it' : 'Could not create the club');
+    return;
+  }
+  const soft = pr => Promise.resolve(pr).catch(() => { });
+  await soft(put('userOrgs/' + who + '/' + code, { name, at }));
+  await soft(put(W + 'access/log/' + uid(), { at, act: 'created the club', by: who, byName: me.name || null, target: null, targetName: name }));
+  try { localStorage.setItem(LS_WS, code); } catch (e) { }
+  location.reload();
+}
+
+/* The two doors, for anywhere a signed-in person with no club might be. */
+const clubDoors = () => fbConfig().apiKey
+  ? (me ? `<div class="row" style="justify-content:center;flex-wrap:wrap;margin-top:10px"><button class="btn" data-act="clubnew">Create a club</button>
+      <button class="btn quiet" data-act="joinstart">Have a team code?</button></div>`
+    : `<div class="row" style="justify-content:center;margin-top:10px"><button class="btn quiet" data-act="signinsheet">Sign in to create or join a club</button></div>`)
+  : '';
 
 /* ---------------- the test club ---------------- */
 /* A club of invented data, for rehearsing what is frightening to try on a real
@@ -2425,7 +2949,8 @@ function render() {
      The crumbs are chrome, but they carry the club and the team name, so a lock
      screen with the crumbs still drawn has leaked most of what there was. */
   const inviting = !!invite;
-  const shut = inviting || !!purged || denied || needsSignIn();
+  const asking = !inviting && joinTakeover();
+  const shut = inviting || asking || !!purged || denied || needsSignIn();
   const t = team();
   if (!t && teams().length) { ui.teamId = teams()[0].id; }
   const vis = myTeams();
@@ -2477,6 +3002,7 @@ function render() {
   const app = $('#app');
   const v = ui.view;
   if (inviting) { app.innerHTML = inviteScreen(); saveUi(); return; }
+  if (asking) { app.innerHTML = joinScreen(); saveUi(); return; }
   if (purged) { app.innerHTML = purgedScreen(); saveUi(); return; }
   if (denied || needsSignIn()) { app.innerHTML = lockScreen(); saveUi(); return; }
   const roNote = lim === 'viewer' && team()
@@ -2497,7 +3023,9 @@ function render() {
      a parent, a coach reading another team — falls all the way through the chain
      to the games list the moment they open a game. A tracker could not reach the
      Track tab at all, which is the only screen her role exists for. */
-  app.innerHTML = envNote + roleNote + roNote + (
+  const joinNote = joining && !asking
+    ? `<div class="rolebar">Waiting for <b>${esc(joining.teamName || 'a team')}</b>'s coach to let you in. <button class="linkish" data-act="joinwithdraw">Withdraw</button></div>` : '';
+  app.innerHTML = envNote + joinNote + roleNote + roNote + (
     v === 'game' ? (g === 'track' ? viewTrack() : g === 'stats' ? viewStats() : g === 'pitch' ? viewMatch() : g === 'plan' ? viewPlan() : g === 'subs' ? viewSubs() : viewFeed()) :
       v === 'roster' ? viewRoster() :
         v === 'season' ? viewSeason() :
@@ -2527,10 +3055,10 @@ function purgedScreen() {
 function lockScreen() {
   return `<div class="stack">
     <div class="empty"><strong>This workspace needs a sign-in</strong>
-      ${me ? `You are signed in as <b>${esc(me.name)}</b>, but no role has been granted to this account yet. Ask the club admin for an invite link.`
+      ${me ? `You are signed in as <b>${esc(me.name)}</b>, but no role has been granted to this account yet. Ask the coach for the team code, or an admin for an invite link.`
       : 'The data here is protected. Sign in with the account a coach has given access to.'}
       <div class="row" style="margin-top:14px;justify-content:center">
-        ${me ? `<button class="btn quiet" data-act="signout">Sign out</button>` : `<button class="btn" data-act="signinsheet">Sign in</button>`}
+        ${me ? `<button class="btn" data-act="joinstart">Have a team code?</button><button class="btn quiet" data-act="signout">Sign out</button>` : `<button class="btn" data-act="signinsheet">Sign in</button>`}
       </div></div>
     <p class="muted" style="text-align:center">Read-only score pages need none of this — they keep working from their own link.</p>
   </div>`;
@@ -2632,7 +3160,9 @@ function sheetClubSwitch() {
     <p class="muted">Forget removes this device's copy only. Deleting a club for everyone is a Firebase console job — see below.</p>
     <button class="opt" data-act="goview" data-v="club"><b>Club home</b>
       <span class="rowsub">Teams, stats and settings for ${esc((acc().org || {}).name || 'this club')}</span></button>
-    <p class="muted">Clubs are invite only. If one is missing, ask its admin for an invite link.</p>`);
+    <p class="muted">A club you belong to shows up here by itself. To join another, use its team code or an invite link.</p>
+    ${me && fbConfig().apiKey ? `<div class="row"><button class="btn quiet" data-act="joinstart">Have a team code?</button>
+      <button class="btn quiet" data-act="clubnew">Create a club</button></div>` : ''}`);
 }
 
 function sheetClubMenu() {
@@ -2651,6 +3181,14 @@ function sheetClubMenu() {
 
 function needTeam() {
   const c = wsCode();
+  /* Signed in and in no club: AUTH.md's "deliberately boring" screen, with
+     its two doors. A phone can still keep teams on its own, as it always
+     could; that stays, underneath. */
+  if (!c && fbConfig().apiKey) return `<div class="empty"><strong>You are not in a club yet</strong>
+    Create one and you are its admin, or join a team with the code its coach sent.
+    ${clubDoors()}
+    <p class="muted" style="margin-top:16px">Or keep teams on this phone only, with nobody else:</p>
+    <button class="btn quiet" data-act="newteam">Add a team here</button></div>`;
   return `<div class="empty"><strong>No teams here</strong>${c ? `Nothing is stored under <code>${esc(c)}</code>. If you expected teams, check the code character by character — it is case sensitive and order matters.` : 'Add a team, then its players. Everything else hangs off that.'}
   <div style="margin-top:14px"><button class="btn" data-act="newteam">Add a team</button></div></div>`;
 }
@@ -3813,7 +4351,7 @@ function viewMatches() {
       <span><span class="pname">${esc(m.opponent || 'Game')}</span><span class="psub">${esc(m.date || '')} · <span data-live="gmins" data-mid="${m.id}">${mins(el)}</span> min played${running(m) ? ' · clock running' : ''}</span></span>
       <span class="pmins">${score(m).us}<small>–${score(m).them}</small></span></button>`;
   }).join('') || `<div class="empty"><strong>No games yet</strong>${readOnlyHere() ? "The team's coach adds them." : 'Add one and it becomes the live game.'}</div>`;
-  return `<div class="stack"><div class="spread"><h2>Games</h2>${addGameBtn('btn sm')}</div><div class="plist">${rows}</div></div>`;
+  return `<div class="stack">${claimsAlert(t)}<div class="spread"><h2>Games</h2>${addGameBtn('btn sm')}</div><div class="plist">${rows}</div></div>`;
 }
 
 /* --- roster --- */
@@ -4094,6 +4632,8 @@ function viewTeamSet() {
       ${ro ? '<p class="muted" style="margin-bottom:0">You can read this team but not change it.</p>'
       : `<button class="btn quiet wide" data-act="editteam" data-id="${t.id}">Team name and crest</button>`}</div>
 
+    ${ro ? '' : joinCard(t)}
+
     <div class="card"><h2 style="margin-bottom:8px">Shapes</h2>
       <p class="muted" style="margin-top:0">Default lineups per side size. A new game copies the default; games already played keep what they were played with.</p>
       <div class="plist">${fs.map(f => `<button class="prow" type="button" data-act="editformation" data-id="${f.id}" style="grid-template-columns:1fr auto">
@@ -4109,6 +4649,7 @@ function viewTeamSet() {
     <div class="card"><h2 style="margin-bottom:8px">Parent links</h2>
       <p class="muted" style="margin-top:0">Read-only pages showing shirt numbers, never names.</p>
       <button class="btn quiet wide" data-act="sharesheet">${t.share ? (ro ? 'See the links' : 'Manage links') : ro ? 'Sharing' : 'Set up sharing'}</button></div>
+
   </div>`;
 }
 
@@ -4130,10 +4671,12 @@ function viewSetup() {
 
     <div class="card"><h2 style="margin-bottom:8px">Workspace</h2>
       <p class="muted" style="margin-top:0">Firebase config is ${cfgOk ? 'in place' : 'not filled in — see README.md'}.</p>
-      <p class="muted"${isOwner() ? '' : ' style="margin-bottom:0"'}>${code ? 'Connected. Clubs are invite only — an admin sends you a link, there is no code to type.' : 'Not connected to a club yet. Open the invite link a club admin sent you to join one.'}</p>
+      <p class="muted">${code ? 'Connected. Nobody types a workspace code: people join with a team code or an invite link.' : 'Not connected to a club yet. Create one, or join with the team code or invite link you were sent.'}</p>
       ${!code && Object.keys(myClubs || {}).length ? `<button class="btn wide" data-act="clubswitch" style="margin-bottom:10px">Your clubs</button>` : ''}
+      ${me && cfgOk ? `<div class="row" style="margin-bottom:${isOwner() ? '10px' : '0'}"><button class="btn quiet" data-act="clubnew">Create a club</button>
+      <button class="btn quiet" data-act="joinstart">Have a team code?</button></div>` : ''}
       ${isOwner() ? `<button class="btn quiet wide" data-act="setwscode">${code ? 'Change workspace code' : 'Connect to a workspace'}</button>
-      <p class="muted">Owner-only stopgap until per-person invites exist — nobody else sees this.</p>
+      <p class="muted">Owner-only: opens a club by its raw code, for support. Nobody else sees this.</p>
       <div class="row"><button class="btn quiet" data-act="envsheet">Database: ${esc(envName() || 'production')}</button>
       <button class="btn quiet" data-act="maketestclub">Make a test club</button></div>
       <p class="muted" style="margin-bottom:0">A test club is invented data with publishing switched off — safe to grant roles in, lock down and retire. Rules belong to a database rather than to a club, though, so a rules change has to be rehearsed in another database, not just another club.</p>` : ''}</div>
@@ -4551,7 +5094,7 @@ function viewPeople() {
   const all = members().map(u => {
     const rs = rolesOf(u);
     return { u, rs, none: !rs.length && !isAdmin(u.uid) };
-  }).filter(m2 => admin || m2.rs.length || m2.none);
+  }).filter(m2 => admin || m2.rs.length);
 
   const F = ui.peopleFilter || 'all';
   const counts = {
@@ -4575,7 +5118,7 @@ function viewPeople() {
   return `<div class="stack">
     <div class="spread"><h2>People</h2>
       <button class="btn quiet sm" data-act="peoplesort">${sortKey === 'joined' ? 'By join date' : 'By name'}</button></div>
-    <p class="muted" style="margin-top:-6px">${admin ? 'Every account in the club.' : `Accounts on ${esc(myCoachTeams.map(x => x.name).join(', '))}, and anyone new waiting for a role.`}</p>
+    <p class="muted" style="margin-top:-6px">${admin ? 'Every account in the club.' : `Accounts on ${esc(myCoachTeams.map(x => x.name).join(', '))}.`}</p>
 
     ${counts.pending && F !== 'pending' ? `<div class="warn alert"><div class="spread">
       <span><b>${counts.pending} waiting to be let in.</b> They signed in but have no role, so they see nothing yet.</span>
@@ -4600,8 +5143,10 @@ function viewPeople() {
       </tr>`).join('') || '<tr><td colspan="5" class="dim">Nobody matches that filter.</td></tr>'}</tbody>
     </table></div>
 
-    <p class="muted">Tap <b>Roles</b> on anyone to let them in — as a parent of a player, a tracker or a coach. Somebody who signs in on their own waits here with no role and sees nothing until you do.</p>
+    <p class="muted">${admin ? 'Tap <b>Roles</b> on anyone to let them in — as a parent of a player, a tracker or a coach. Somebody who signs in on their own waits here with no role and sees nothing until you do.'
+      : 'Parents join with your team code, and wait for you under <b>Asking to join</b>. Someone who signs in any other way waits for a club admin.'}</p>
 
+    ${requestsCard(scope)}
     ${invitesCard()}
 
     ${admin ? `<div class="card"><h2 style="margin-bottom:10px">Activity</h2>
@@ -4610,6 +5155,16 @@ function viewPeople() {
         <span class="muted">${when(e.at)}</span></div>`).join('')}</div>`
       : '<p class="muted" style="margin:0">Nothing recorded yet. Role changes from now on will show here.</p>'}</div>` : ''}
   </div>`;
+}
+
+/* Join requests on every team this account runs, one card. */
+function requestsCard(scope) {
+  if (!anyAdmins()) return '';
+  watchClaims();
+  const withReqs = scope.filter(x => runsTeam(x.id) && claimList(x.id).length);
+  if (!withReqs.length) return '';
+  return `<div class="card"><h2 style="margin-bottom:0">Asking to join</h2>
+    ${withReqs.map(x => `<p class="lbl" style="margin-top:12px">${esc(x.name || 'Team')}</p>${claimsCard(x).replace(/^<p class="lbl"[^>]*>[^<]*<\/p>/, '')}`).join('')}</div>`;
 }
 
 /* Every role one account holds, one entry per team and role. roleIn() answers
@@ -4683,11 +5238,11 @@ function sheetPersonRoles(uid) {
       <span><b>${esc(ROLE_LABEL[v.r])}</b>${v.p ? ` of ${pname(v.p)}` : ''}<span class="rowsub">${esc(v.x.name || 'Team')}</span></span>
       ${v.r === 'parent'
       ? `<button class="btn quiet sm" data-act="prunguard" data-uid="${uid}" data-tid="${v.x.id}" data-pid="${v.p.id}">Remove</button>`
-      : `<button class="btn quiet sm" data-act="setrolet" data-uid="${uid}" data-tid="${v.x.id}" data-r="${v.r}">Remove</button>`}</div>`).join('')
+      : v.r === 'coach' && !admin ? '' : `<button class="btn quiet sm" data-act="setrolet" data-uid="${uid}" data-tid="${v.x.id}" data-r="${v.r}">Remove</button>`}</div>`).join('')
       : `<p class="muted" style="margin-top:0">${isAdmin(uid) ? 'Nothing else.' : 'None yet — waiting to be let in. Until they have a role they see nothing of the club.'}</p>`}
 
     ${scope.length ? `<p class="lbl" style="margin-top:14px">${held.length || isAdmin(uid) ? 'Give a role' : 'Let them in as'}</p>
-    <div class="chips" style="margin-bottom:12px">${[['parent', 'Parent'], ['tracker', 'Tracker'], ['coach', 'Coach']].map(([k, l]) =>
+    <div class="chips" style="margin-bottom:12px">${[['parent', 'Parent'], ['tracker', 'Tracker'], ['coach', 'Coach']].filter(([k]) => admin || k !== 'coach').map(([k, l]) =>
         `<button class="chip" type="button" data-act="prpick" data-k="role" data-v="${k}" aria-pressed="${f.role === k}">${l}</button>`).join('')}</div>
     <p class="lbl">Team</p>
     ${pickOne('prpick', 'team', f.team, scope.map(x => [x.id, esc(x.name || 'Team')]), 'No teams yet.')}
@@ -5714,12 +6269,13 @@ function onAct(e) {
   if (a === 'peoplesort') { ui.peopleSort = ui.peopleSort === 'joined' ? 'name' : 'joined'; render(); return; }
   if (a === 'setrolet') {
     if (!mayGrant(d.tid)) { toast('Club admins and that team\u2019s coaches only'); return; }
+    if (d.r === 'coach' && !canAdmin()) { toast('Only a club admin can make or remove a coach'); return; }
     const key = d.r === 'coach' ? 'coaches' : 'trackers';
     const on = ((teamAccess(d.tid)[key] || {})[d.uid]);
     if (on) { forgetInvite(on); drop(`access/teams/${d.tid}/${key}/${d.uid}`); }
     else commit(`access/teams/${d.tid}/${key}/${d.uid}`, true);
     logAccess((on ? 'removed ' : 'made ') + d.r, d.uid, { team: d.tid, teamName: (state.teams[d.tid] || {}).name || null });
-    syncIndex(d.uid); syncTeamIndex(d.tid); sheetPersonRoles(d.uid); return;
+    syncIndex(d.uid, d.tid); syncTeamIndex(d.tid); sheetPersonRoles(d.uid); return;
   }
   if (a === 'prpick') {
     const f = ui.pr; if (!f) return;
@@ -5731,6 +6287,13 @@ function onAct(e) {
     const f = ui.pr || {}, uid = d.uid, tid = f.team, x = state.teams[tid];
     if (!x) { toast('Pick a team'); return; }
     if (!mayGrant(tid)) { toast('Club admins and that team\u2019s coaches only'); return; }
+    if (f.role === 'coach' && !canAdmin()) { toast('Only a club admin can make someone a coach'); return; }
+    /* The rules let a coach index only an account that asked to join her team,
+       so letting in somebody new any other way would look done here and be
+       refused by the database. Say so instead. */
+    if (!canAdmin() && gated() && !approved(uid) && !hasClaim(tid, uid)) {
+      toast('Only a club admin can let in someone new \u2014 send them the team code or an invite'); return;
+    }
     if (f.role === 'parent') {
       const p = (x.players || {})[f.player];
       if (!p) { toast('Pick the player'); return; }
@@ -5746,7 +6309,7 @@ function onAct(e) {
       }
       syncTeamIndex(tid);
     } else return;
-    syncIndex(uid);
+    syncIndex(uid, tid);
     f.player = null;
     sheetPersonRoles(uid); return;
   }
@@ -5759,7 +6322,7 @@ function onAct(e) {
       forgetInvite(on);
       drop(`teams/${d.tid}/players/${d.pid}/guardians/${d.uid}`);
       logAccess('unlinked guardian', d.uid, { team: d.tid, teamName: x.name || null, player: p.name });
-      syncIndex(d.uid);
+      syncIndex(d.uid, d.tid);
     }
     sheetPersonRoles(d.uid); return;
   }
@@ -5820,7 +6383,7 @@ function onAct(e) {
     return;
   }
   if (a === 'invitenew') {
-    if (!canAdmin()) { toast('Club admins only'); return; }
+    if (!inviteScope().length) { toast('Club admins and coaches only'); return; }
     ui.inv = null; sheetInvite(); return;
   }
   if (a === 'invitepick') {
@@ -5830,17 +6393,23 @@ function onAct(e) {
     ui.inv = f; sheetInvite(); return;
   }
   if (a === 'invitemake') { makeInvite(); return; }
-  if (a === 'inviteopen') { if (!canAdmin()) { toast('Club admins only'); return; } sheetInviteDetail(d.id); return; }
+  if (a === 'inviteopen') { if (!findInvite(d.id)) { toast('Club admins and that team\u2019s coaches only'); return; } sheetInviteDetail(d.id); return; }
   if (a === 'invitepast') { ui.invPast = !ui.invPast; render(); return; }
   if (a === 'invitedrop') {
-    if (!canAdmin()) { toast('Club admins only'); return; }
+    const v = findInvite(d.id);
+    if (!v || !(canAdmin() || (me && isCoach(v.team, me.uid)))) { toast('Club admins and that team\u2019s coaches only'); return; }
+    /* An admin's invite is also on the admins' list, which a coach cannot
+       write; revoking it from here would leave that list showing a dead link. */
+    if (!canAdmin() && isAdmin(v.by)) { toast('An admin made this one \u2014 ask them to revoke it'); return; }
     if (!fb) { toast('Not connected'); return; }
-    const v = clubInv[d.id];
     const live = v && !v.used && (v.expiresAt || 0) > nowMs();
     if (live && !confirm('Revoke this invite? The link stops working.')) return;
-    Promise.resolve(fb.remove(fb.ref(fb.db, 'invites/' + d.id))).catch(() => { });
-    Promise.resolve(fb.remove(fb.ref(fb.db, 'clubInvites/' + wsCode() + '/' + d.id))).catch(() => { });
+    const gone = p => Promise.resolve(fb.remove(fb.ref(fb.db, p))).catch(() => { });
+    gone('invites/' + d.id);
+    if (v.team) gone('teamInvites/' + wsCode() + '/' + v.team + '/' + d.id);
+    if (canAdmin()) gone('clubInvites/' + wsCode() + '/' + d.id);
     delete clubInv[d.id];
+    if (v.team && teamInv[v.team]) delete teamInv[v.team][d.id];
     if (live) logAccess('revoked an invite for', null, { targetName: (v.email || 'anyone') + ' as ' + v.role, team: v.team, teamName: v.teamName || null });
     closeSheet(); render(); if (live) toast('Revoked'); return;
   }
@@ -5858,6 +6427,55 @@ function onAct(e) {
   if (a === 'inviteaccept') { redeemInvite(); return; }
   if (a === 'inviteretry') { if (invite) { invite.status = 'idle'; invite.err = null; maybeLoadInvite(); } return; }
   if (a === 'invitedismiss') { dropInvite(); render(); return; }
+  /* ---- joining with a team code: the parent's side ---- */
+  if (a === 'joinstart') { sheetJoinCode(); return; }
+  if (a === 'joingo') {
+    const el = $('#joinCode');
+    const k = joinKey(el && el.value);
+    if (k.length < 7) { toast('That code looks too short'); return; }
+    joining = { code: k, shirts: [], turned: [], status: 'idle', err: null };
+    joinWatchKey = null;
+    saveJoin(); closeSheet(); maybeLoadJoin(); render(); return;
+  }
+  if (a === 'joinsend') { sendClaim(); return; }
+  if (a === 'joinretry') {
+    if (!joining) return;
+    joining.status = joining.ws && joining.team ? 'ready' : 'idle'; joining.err = null;
+    maybeLoadJoin(); render(); return;
+  }
+  if (a === 'joinmore') {
+    if (!joining) return;
+    // a turned-down number is cleared first: requests are create-only
+    if (joining.turned.length) { withdrawJoin(joining.turned); joining.shirts = joining.shirts.filter(n => !joining.turned.includes(n)); joining.turned = []; saveJoin(); }
+    joining.status = joining.ws && joining.team ? 'ready' : 'idle';
+    maybeLoadJoin(); render(); return;
+  }
+  if (a === 'joinwithdraw') {
+    if (joining && joining.status === 'waiting' && !confirm('Withdraw your request to join? The coach will not see it any more.')) return;
+    withdrawJoin(); dropJoin(); render(); return;
+  }
+  if (a === 'joindismiss') { dropJoin(); render(); return; }
+  /* ---- the coach's side ---- */
+  if (a === 'joinmake' || a === 'joinrotate') {
+    if (a === 'joinrotate' && !confirm('Make a new code? The old one stops working for anyone who has not asked yet.')) return;
+    makeJoinCode(d.tid); return;
+  }
+  if (a === 'joinoff') { joinOff(d.tid); return; }
+  if (a === 'joinshare') {
+    navigator.share({ title: 'Join ' + ((team() || {}).name || 'the team'), url: d.v }).catch(() => { });
+    return;
+  }
+  if (a === 'claimok') { approveClaim(d.tid, d.uid, d.n, d.pid); return; }
+  if (a === 'claimno') {
+    if (!confirm('Turn this request down? They are told it was not approved.')) return;
+    rejectClaim(d.tid, d.uid, d.n); return;
+  }
+  if (a === 'claimclear') { clearClaim(d.tid, d.uid, d.n); return; }
+  if (a === 'claimpick') { (ui.claimPick = ui.claimPick || {})[d.k] = d.v || null; render(); return; }
+  /* ---- creating a club ---- */
+  if (a === 'clubnew') { closeSheet(); sheetNewClub(); return; }
+  if (a === 'clubbring') { ui.bringTeams = !ui.bringTeams; sheetNewClub(); return; }
+  if (a === 'clubcreate') { createClub(); return; }
   if (a === 'claimadmin') {
     if (!me) { toast('Sign in first'); return; }
     if (anyAdmins()) { toast('Someone already claimed it'); return; }
@@ -6326,10 +6944,13 @@ function onAct(e) {
   if (a === 'toggleguard') {
     const p = t.players[d.pid];
     const on = ((p.guardians || {})[d.uid]);
+    if (!on && !canAdmin() && gated() && !approved(d.uid) && !hasClaim(t.id, d.uid)) {
+      toast('Only a club admin can let in someone new \u2014 send them the team code or an invite'); return;
+    }
     if (on) { forgetInvite(on); drop(`teams/${t.id}/players/${d.pid}/guardians/${d.uid}`); }
     else commit(`teams/${t.id}/players/${d.pid}/guardians/${d.uid}`, true);
     logAccess(on ? 'unlinked guardian' : 'linked guardian', d.uid, { team: t.id, teamName: t.name || null, player: p.name });
-    syncIndex(d.uid);
+    syncIndex(d.uid, t.id);
     sheetPlayer(state.teams[t.id].players[d.pid]); return;
   }
   if (a === 'delplayer') {
@@ -6558,6 +7179,7 @@ if (typeof window !== 'undefined' && window.addEventListener) {
 
 /* ---------------- boot ---------------- */
 captureInvite();
+captureJoin();
 loadLocal();
 /* Provisional, so an offline device renders for the person who was using it
    rather than sitting on a lock screen. onAuthStateChanged overwrites it either

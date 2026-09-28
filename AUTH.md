@@ -59,6 +59,8 @@ An invite carries what it grants, so redeeming it is one step instead of a reque
 
 Keep the parent claim flow described below as the bulk path: one team code, parent picks a shirt number, coach approves. Per-person invites are for coaches and for the one parent who cannot make the bulk flow work.
 
+**Built** (2026-09, later): the claim flow below, as `joinCodes/{key}` (the code, at the root, readable by id) and `claims/{code}/{teamId}/{uid}/{shirt}` (the request, readable by that team's coaches and the admins, and by its maker). Approving writes the guardian entry and then `access/index/{uid}` holding the team's id, which is how the rule knows the coach coaches that team and the account asked to join it. Coaches also make invites for their own team, as tracker or parent (`teamInvites/{code}/{teamId}` is their list), and **Create a club** is the first door for someone who belongs to nothing. README's **Joining a club** is the reference. Not built: the switcher and **My players** as described below — the club switcher and My players page that exist are simpler.
+
 ## Who sees which team
 
 Fixed, and deliberately not configurable — see the note at the end.

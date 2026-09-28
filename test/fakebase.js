@@ -22,7 +22,8 @@ function makeFakebase() {
     authSubscribers: 0,
     listeners: [],       // every read, in the order it was registered
     writes: [],          // { path, value }
-    removes: []          // path
+    removes: [],         // path
+    ops: []              // both, in the order they were asked for: 'set <path>' | 'remove <path>'
   };
 
   let authCb = null;
@@ -70,9 +71,10 @@ function makeFakebase() {
         if (record.refuse && record.refuse(ref.path, value))
           return Promise.reject({ code: 'PERMISSION_DENIED', message: 'permission_denied at ' + ref.path });
         record.writes.push({ path: ref.path, value });
+        record.ops.push('set ' + ref.path);
         return Promise.resolve();
       },
-      remove(ref) { record.removes.push(ref.path); return Promise.resolve(); },
+      remove(ref) { record.removes.push(ref.path); record.ops.push('remove ' + ref.path); return Promise.resolve(); },
       onValue(ref, cb, err, opts) {
         record.listeners.push({ kind: 'value', path: ref.path, cb, err, once: !!(opts && opts.onlyOnce) });
         return () => { };
@@ -96,6 +98,10 @@ function makeFakebase() {
        says whether the app went back for a second look */
     totalReads: path => record.listeners.filter(l => l.path === path).length,
     writtenTo: path => record.writes.filter(w => w.path === path),
+    /* Where in the sequence of writes AND removes an operation came, or -1.
+       Order across the two is what a rule that checks "the request is still
+       there" depends on, and two separate lists cannot say it. */
+    opAt: op => record.ops.indexOf(op),
 
     /* ---- auth, on the test's schedule ---- */
     signIn(uid, extra = {}) {

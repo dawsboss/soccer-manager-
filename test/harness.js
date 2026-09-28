@@ -184,7 +184,12 @@ const EXPORTS = `{
   get pubState() { return pubState },
   /* invites */
   get invite() { return invite }, get clubInv() { return clubInv }, get myClubs() { return myClubs },
-  secretId, inviteLink, redeemInvite, makeInvite, inviteScreen
+  secretId, inviteLink, redeemInvite, makeInvite, inviteScreen, inviteList,
+  /* joining with a team code, and creating a club */
+  get joining() { return joining }, get claimsIn() { return claimsIn },
+  joinKey, joinShow, joinLink, newJoinKey, joinScreen, sendClaim, makeJoinCode,
+  approveClaim, rejectClaim, hasClaim, claimList, joinCard, claimsAlert, createClub,
+  newClubCode, needTeam
 }`;
 
 const FB_URLS = {
