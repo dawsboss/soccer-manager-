@@ -184,7 +184,9 @@ const EXPORTS = `{
   get pubState() { return pubState },
   /* invites */
   get invite() { return invite }, get clubInv() { return clubInv }, get myClubs() { return myClubs },
-  secretId, inviteLink, redeemInvite, makeInvite, inviteScreen
+  secretId, inviteLink, redeemInvite, makeInvite, inviteScreen,
+  /* the squad grid */
+  get grid() { return grid }, openGrid, gridChanged, saveGrid, parseSquadLines, pasteSquad, copyPlayers
 }`;
 
 const FB_URLS = {
@@ -278,6 +280,12 @@ function loadApp(opts = {}) {
      action the chip would have carried, with the chosen option as data-v. */
   A.change = (dataset, value) => {
     for (const h of dom.listeners.change || []) h({ target: { dataset, value } });
+  };
+  /* Typing into a field, as the page's 'input' and 'change' listeners see it.
+     A checkbox reports `checked`; everything else `value`. */
+  A.type = (dataset, value, kind = 'input') => {
+    const target = typeof value === 'boolean' ? { dataset, checked: value, type: 'checkbox' } : { dataset, value };
+    for (const h of dom.listeners[kind] || []) h({ target });
   };
   return A;
 }

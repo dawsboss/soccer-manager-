@@ -2,8 +2,8 @@
    Static app. Data lives in localStorage, and mirrors to Firebase Realtime
    Database when a config + workspace code are present. */
 
-const BUILD = '64';
-const BUILT = '2026-09-26';
+const BUILD = '66';
+const BUILT = '2026-09-29';
 /* index.html carries the build it was published with. If this file is newer, the
    browser handed us a cached page — the exact failure that has eaten hours. */
 const pageBuild = () => {
@@ -816,6 +816,7 @@ const restricted = () => {
 const COACH_ACTS = new Set([
   // the squad
   'addplayer', 'editplayer', 'saveplayer', 'delplayer', 'pickphoto', 'dropphoto', 'toggleguard',
+  'gridopen', 'gridsave', 'gridpaste', 'gridcopy', 'gridmove', 'mvgo',
   // the fixture list
   'newmatch', 'editmatch', 'savematch', 'delmatch',
   // the team's own settings
@@ -3821,6 +3822,8 @@ function viewRoster() {
   const t = team(); if (!t) return needTeam();
   const list = players(t);
   const ro = !canEditTeam(t.id);
+  if (grid && (grid.tid !== t.id || ro)) grid = null;   // a different team, or no longer hers to change
+  if (grid) return rosterGrid(t);
   const rows = list.map(p => {
     const bits = [];
     if (p.gk) bits.push('keeper');
@@ -3840,13 +3843,200 @@ function viewRoster() {
   }).join('') ||
     `<div class="empty"><strong>No players yet</strong>${ro ? "The team's coach adds the squad." : 'Add the squad once; every game reuses it.'}</div>`;
   return `<div class="stack">
-    <div class="spread"><h2>${esc(t.name)}</h2><span class="muted">${list.length} players</span></div>
+    <div class="spread"><h2>${esc(t.name)}</h2>${ro ? `<span class="muted">${list.length} players</span>`
+      : `<span class="row"><span class="muted">${list.length} players</span><button class="btn quiet sm" data-act="gridopen">Edit the squad</button></span>`}</div>
     ${ro ? '' : `<div class="card"><div class="row" style="align-items:flex-end">
       <div style="width:76px"><label class="field"><span>Number</span><input type="number" inputmode="numeric" id="newNum" placeholder="7"></label></div>
       <div style="flex:1"><label class="field"><span>Name</span><input type="text" id="newName" placeholder="Ella Moreno"></label></div>
       <button class="btn" data-act="addplayer" style="margin-bottom:10px">Add</button>
     </div></div>`}
     <div class="plist">${rows}</div></div>`;
+}
+
+/* --- the squad, all at once ---
+   Setting up a season is thirty players' numbers, names and positions, and
+   the one-player sheet makes that thirty open-edit-save round trips. The grid
+   is the whole squad in one table, saved with one tap.
+
+   What is typed goes into a draft held here, not read back off the page: a
+   sync update from another phone redraws the screen, and a grid that rebuilt
+   itself from the database would wipe half a squad of typing. Save compares
+   the draft with the squad as it was when the grid opened and writes only the
+   fields that changed, one field at a time — so a coach fixing numbers here
+   does not undo a parent's-phone-sized edit someone else made meanwhile to a
+   field she never touched. */
+const GRID_FIELDS = ['number', 'name', 'preferred', 'gk', 'active'];
+let grid = null;   // { tid, orig: { pid: fields }, rows: { pid: fields }, sel: { pid: true } }
+
+const gridFields = p => ({ number: String(p.number ?? ''), name: p.name || '', preferred: p.preferred || '', gk: !!p.gk, active: p.active !== false });
+function openGrid(t) {
+  const orig = {};
+  for (const p of players(t)) orig[p.id] = gridFields(p);
+  grid = { tid: t.id, orig, rows: JSON.parse(JSON.stringify(orig)), sel: {} };
+}
+const gridChanged = () => !!grid && Object.keys(grid.rows).some(pid =>
+  GRID_FIELDS.some(k => grid.rows[pid][k] !== (grid.orig[pid] || {})[k]));
+
+function rosterGrid(t) {
+  const ids = players(t).map(p => p.id).filter(pid => grid.rows[pid]);
+  const r = pid => grid.rows[pid];
+  const nums = {};
+  for (const pid of ids) { const n = r(pid).number.trim(); if (n && r(pid).active) (nums[n] = nums[n] || []).push(r(pid).name || '?'); }
+  const clash = Object.entries(nums).filter(([, v]) => v.length > 1);
+  const nSel = ids.filter(pid => grid.sel[pid]).length;
+  const inp = (pid, k, attrs) => `<input data-grid="${k}" data-pid="${pid}" id="g-${k}-${pid}" ${attrs}>`;
+  const row = pid => `<tr>
+      <td><button class="chip sm" type="button" data-act="gridsel" data-pid="${pid}" aria-pressed="${!!grid.sel[pid]}" aria-label="Select">${grid.sel[pid] ? '✓' : ''}</button></td>
+      <td>${inp(pid, 'number', `type="text" inputmode="numeric" maxlength="3" class="gnum" value="${esc(r(pid).number)}"`)}</td>
+      <td>${inp(pid, 'name', `type="text" class="gname" value="${esc(r(pid).name)}"`)}</td>
+      <td><select data-grid="preferred" data-pid="${pid}" id="g-preferred-${pid}">${['', ...ROLES].map(x =>
+    `<option value="${x}"${r(pid).preferred === x ? ' selected' : ''}>${x || '—'}</option>`).join('')}</select></td>
+      <td class="center">${inp(pid, 'gk', `type="checkbox"${r(pid).gk ? ' checked' : ''}`)}</td>
+      <td class="center">${inp(pid, 'active', `type="checkbox"${r(pid).active ? ' checked' : ''}`)}</td></tr>`;
+  return `<div class="stack">
+    <div class="spread"><h2>Edit the squad</h2>
+      <span class="row"><button class="btn quiet sm" data-act="gridcancel">Cancel</button>
+      <button class="btn sm" data-act="gridsave">Save</button></span></div>
+    <p class="muted" style="margin-top:-6px">${esc(t.name || 'Team')} · every player at once. Nothing is saved until you tap Save. Untick <b>Plays</b> to take someone off the roster: her minutes stay, she just stops being picked.</p>
+    ${clash.length ? `<div class="warn alert">Shared shirt numbers: ${clash.map(([n, v]) => `<b>#${esc(n)}</b> ${esc(v.join(' and '))}`).join('; ')}. The parents' page shows players by number, so two on one number read as one there.</div>` : ''}
+    <div class="tablewrap"><table class="grid rostergrid">
+      <colgroup><col style="width:38px"><col style="width:48px"><col><col style="width:60px"><col style="width:40px"><col style="width:60px"></colgroup>
+      <thead><tr><th></th><th>#</th><th>Name</th><th title="Best position">Pos</th><th class="center" title="Goalkeeper">GK</th><th class="center" title="On the roster">Plays</th></tr></thead>
+      <tbody>${ids.map(row).join('') || '<tr><td colspan="6" class="dim">No players yet — add them below.</td></tr>'}</tbody>
+    </table></div>
+
+    <div class="card"><div class="spread"><h2 style="margin:0">${nSel ? `${nSel} selected` : 'Next season'}</h2>
+      <button class="btn quiet sm" data-act="gridselall">${nSel === ids.length && ids.length ? 'Select none' : 'Select all'}</button></div>
+      <p class="muted">Tick players, then copy them to another team — next season's, say — or move them there. Moving keeps their minutes here and takes them off this roster.</p>
+      <div class="row"><button class="btn quiet" data-act="gridcopy"${nSel ? '' : ' disabled'}>Copy to a team…</button>
+      <button class="btn quiet" data-act="gridmove"${nSel ? '' : ' disabled'}>Move to a team…</button></div></div>
+
+    <div class="card"><h2 style="margin-bottom:8px">Add several at once</h2>
+      <p class="muted" style="margin-top:0">One player a line, number first or last: <code>7 Ella Moreno</code> or <code>Ella Moreno, 7</code>. The number can be left off.</p>
+      <label class="field"><textarea id="gridPaste" rows="5" placeholder="7 Ella Moreno&#10;9 Maya Patel&#10;Rosa Diaz"></textarea></label>
+      <button class="btn quiet wide" data-act="gridpaste">Add them</button></div>
+  </div>`;
+}
+
+/* Typed, not guessed: a line that is only a number is not a player. */
+function parseSquadLines(text) {
+  const out = [], bad = [];
+  for (const raw of String(text || '').split(/\r?\n/)) {
+    const line = raw.trim();
+    if (!line) continue;
+    let m = line.match(/^#?(\d{1,3})[\s,.:;\-\t]+(.+)$/) || null;
+    let number = '', name = '';
+    if (m) { number = m[1]; name = m[2]; }
+    else if ((m = line.match(/^(.+?)[\s,;\t]+#?(\d{1,3})$/))) { name = m[1]; number = m[2]; }
+    else name = line;
+    name = name.replace(/^[\s,.:;\-]+|[\s,.:;\-]+$/g, '');
+    if (!name || /^\d+$/.test(name)) { bad.push(line); continue; }
+    out.push({ number, name });
+  }
+  return { rows: out, bad };
+}
+
+function saveGrid() {
+  const t = state.teams[grid && grid.tid];
+  if (!t) { grid = null; render(); return; }
+  for (const [pid, v] of Object.entries(grid.rows))
+    if (!v.name.trim() && (t.players || {})[pid]) { toast('Every player needs a name'); return; }
+  let n = 0;
+  for (const [pid, v] of Object.entries(grid.rows)) {
+    if (!(t.players || {})[pid]) continue;              // deleted on another phone meanwhile
+    const was = grid.orig[pid] || {};
+    for (const k of GRID_FIELDS) {
+      let val = v[k];
+      if (k === 'name' || k === 'number') val = String(val).trim();
+      if (val === was[k]) continue;
+      quiet(`teams/${t.id}/players/${pid}/${k}`, val);
+      n++;
+    }
+  }
+  grid = null;
+  saveLocal(); render(); schedulePublish();   // shirt numbers are on the parents' page
+  toast(n ? 'Squad saved' : 'Nothing had changed');
+}
+
+function pasteSquad(t) {
+  const el = $('#gridPaste');
+  const { rows, bad } = parseSquadLines(el && el.value);
+  if (!rows.length) { toast(bad.length ? 'Could not read those lines' : 'Nothing to add'); return; }
+  const have = new Set(players(t).map(p => (p.name || '').trim().toLowerCase()));
+  let added = 0, skipped = 0;
+  for (const r of rows) {
+    if (have.has(r.name.toLowerCase())) { skipped++; continue; }
+    have.add(r.name.toLowerCase());
+    const id = uid();
+    const p = { id, name: r.name, number: r.number, active: true, anywhere: true, preferred: '', canPlay: [], rating: 3 };
+    quiet(`teams/${t.id}/players/${id}`, p);
+    if (grid && grid.tid === t.id) { grid.orig[id] = gridFields(p); grid.rows[id] = gridFields(p); }
+    added++;
+  }
+  if (el) el.value = '';
+  saveLocal(); render(); schedulePublish();
+  toast(`Added ${added}${skipped ? `, skipped ${skipped} already on the team` : ''}${bad.length ? `, ${bad.length} line${bad.length === 1 ? '' : 's'} not understood` : ''}`);
+}
+
+/* Copying makes new players on the other team with the same profile. Their
+   history stays where it was played, and their parents stay linked — it is
+   the same child. Pairings are kept only among the players copied together,
+   since the rest are not on the new team. Moving is a copy that also takes
+   them off this roster; nothing is deleted, so this season's minutes stand. */
+const canMakeTeam = () => !gated() || canAdmin();
+function sheetMovePlayers(mode) {
+  const t = team();
+  const n = grid ? Object.keys(grid.sel).filter(pid => grid.sel[pid]).length : 0;
+  const f = ui.mv && ui.mv.mode === mode ? ui.mv : (ui.mv = { mode, to: null });
+  const targets = teams().filter(x => x.id !== (t && t.id) && canEditTeam(x.id)).map(x => [x.id, esc(x.name || 'Team')]);
+  if (canMakeTeam()) targets.push(['new', 'A new team…']);
+  openSheet(`<h3>${mode === 'move' ? 'Move' : 'Copy'} ${n} player${n === 1 ? '' : 's'}</h3>
+    <p class="muted" style="margin-top:0">${mode === 'move'
+      ? 'They join the other team and come off this roster. Their minutes here are kept.'
+      : 'They stay here too. Good for starting next season from this one.'} Parents linked to them stay linked.</p>
+    <p class="lbl">To</p>
+    ${pickOne('mvpick', 'to', f.to, targets, 'There is no other team you can change.')}
+    ${f.to === 'new' ? `<label class="field"><span>New team's name</span><input type="text" id="mvName" placeholder="${esc((t && t.name) || 'Team')} ${new Date(nowMs()).getFullYear() + 1}"></label>` : ''}
+    <button class="btn wide" data-act="mvgo"${f.to ? '' : ' disabled'}>${mode === 'move' ? 'Move' : 'Copy'} them</button>`);
+}
+
+function copyPlayers(src, ids, to, move, newName) {
+  let tgt = state.teams[to];
+  if (to === 'new') {
+    if (!canMakeTeam()) { toast('Only a club admin can add a team'); return false; }
+    const name = String(newName || '').trim();
+    if (!name) { toast('Give the new team a name'); return false; }
+    const id = uid();
+    quiet(`teams/${id}`, { id, name, players: {} });
+    tgt = state.teams[id];
+  }
+  if (!tgt || tgt.id === src.id) { toast('Pick a team'); return false; }
+  if (!canEditTeam(tgt.id)) { toast('You cannot change that team'); return false; }
+  /* Somebody already on that team (same name and number) is not doubled, but
+     she is still who the others' pairings point to there. */
+  const key = p => (p.name || '').trim().toLowerCase() + '#' + (p.number ?? '');
+  const there = {};
+  for (const p of players(tgt)) there[key(p)] = p.id;
+  const map = {}, dup = {};
+  for (const pid of ids) {
+    const p = (src.players || {})[pid];
+    if (!p) continue;
+    if (there[key(p)]) { map[pid] = there[key(p)]; dup[pid] = true; } else map[pid] = uid();
+  }
+  const remap = o => { const out = {}; for (const k of Object.keys(o || {})) if (map[k]) out[map[k]] = true; return out; };
+  let n = 0, skipped = 0;
+  for (const [pid, nid] of Object.entries(map)) {
+    const p = src.players[pid];
+    if (dup[pid]) { skipped++; continue; }
+    const np = { ...p, id: nid, active: true, pairs: remap(p.pairs), avoid: remap(p.avoid) };
+    delete np.positions;
+    quiet(`teams/${tgt.id}/players/${nid}`, np);
+    if (move) quiet(`teams/${src.id}/players/${pid}/active`, false);
+    n++;
+  }
+  saveLocal(); schedulePublish();
+  toast(`${move ? 'Moved' : 'Copied'} ${n} to ${tgt.name || 'the team'}${skipped ? ` — ${skipped} already there` : ''}`);
+  return true;
 }
 
 /* --- season: the team first, then the players --- */
@@ -6048,6 +6238,35 @@ function onAct(e) {
     return;
   }
   if (a === 'editplayer') { sheetPlayer(t.players[d.pid]); return; }
+  if (a === 'gridopen') { openGrid(t); render(); return; }
+  if (a === 'gridcancel') {
+    if (gridChanged() && !confirm('Leave without saving your changes?')) return;
+    grid = null; render(); return;
+  }
+  if (a === 'gridsave') { saveGrid(); return; }
+  if (a === 'gridpaste') { pasteSquad(t); return; }
+  if (a === 'gridsel') { if (grid) { grid.sel[d.pid] = !grid.sel[d.pid]; render(); } return; }
+  if (a === 'gridselall') {
+    if (!grid) return;
+    const ids = players(t).map(p => p.id).filter(pid => grid.rows[pid]);
+    const all = ids.length && ids.every(pid => grid.sel[pid]);
+    grid.sel = {}; if (!all) for (const pid of ids) grid.sel[pid] = true;
+    render(); return;
+  }
+  if (a === 'gridcopy' || a === 'gridmove') {
+    if (!grid || !Object.values(grid.sel).some(Boolean)) { toast('Tick some players first'); return; }
+    if (gridChanged()) { toast('Save or cancel your changes first'); return; }
+    ui.mv = null; sheetMovePlayers(a === 'gridmove' ? 'move' : 'copy'); return;
+  }
+  if (a === 'mvpick') { if (ui.mv) { ui.mv.to = d.v || null; sheetMovePlayers(ui.mv.mode); } return; }
+  if (a === 'mvgo') {
+    const f = ui.mv || {};
+    if (!grid || !f.to) return;
+    const ids = Object.keys(grid.sel).filter(pid => grid.sel[pid]);
+    const el = $('#mvName');
+    if (!copyPlayers(t, ids, f.to, f.mode === 'move', el && el.value)) return;
+    ui.mv = null; openGrid(state.teams[t.id]); closeSheet(); render(); return;
+  }
   if (a === 'togglechip') {
     const on = el.getAttribute('aria-pressed') !== 'true';
     el.setAttribute('aria-pressed', String(on));
@@ -6453,7 +6672,16 @@ function onAct(e) {
 document.addEventListener('click', onAct);
 /* A <select> from pickOne() stands in for a row of chips, so it goes through
    the same action a chip would have, carrying what was chosen as data-v. */
+/* The squad grid's draft, kept as it is typed, so a redraw cannot lose it. */
+function gridInput(e) {
+  const s = e.target;
+  if (!grid || !s || !s.dataset || !s.dataset.grid || !grid.rows[s.dataset.pid]) return false;
+  const k = s.dataset.grid;
+  grid.rows[s.dataset.pid][k] = k === 'gk' || k === 'active' ? !!s.checked : String(s.value ?? '');
+  return true;
+}
 document.addEventListener('change', e => {
+  if (gridInput(e)) return;
   const s = e.target;
   if (!s || !s.dataset || !s.dataset.pick) return;
   const d = { act: s.dataset.pick, k: s.dataset.k, v: s.value };
@@ -6465,6 +6693,7 @@ document.addEventListener('change', e => {
 /* The ideas box writes itself into the prompt as she types, and is kept per game
    so closing the sheet by accident does not lose a half-written plan. */
 document.addEventListener('input', e => {
+  if (gridInput(e)) return;
   if (!e.target || e.target.id !== 'aiIdeas' || !ui.ai) return;
   const m = match(); if (!m) return;
   ui.aiIdeas = { ...(ui.aiIdeas || {}), [m.id]: e.target.value };

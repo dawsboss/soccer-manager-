@@ -609,3 +609,17 @@ table.grid td.right{text-align:right}
 .card .invrow{display:flex;gap:10px;align-items:center;padding:10px 0;border-top:1px solid var(--line)}
 .invrow[data-k="used"] b,.invrow[data-k="expired"] b{color:var(--ink-soft)}
 .linkish{background:none;border:0;padding:0;text-align:left;font:inherit;color:inherit;cursor:pointer;min-width:0;flex:1}
+
+/* the squad grid: inputs sized to the table, not the page */
+.rostergrid td,.rostergrid th{padding:6px 4px;vertical-align:middle}
+.rostergrid td.center,.rostergrid th.center{text-align:center}
+.rostergrid input[type=text],.rostergrid select{font:inherit;padding:7px 8px;border:1px solid var(--line);border-radius:8px;background:#fff;width:100%;box-sizing:border-box}
+.rostergrid input.gnum{text-align:center}
+.rostergrid{table-layout:fixed}
+.rostergrid input.gname{width:100%;min-width:0}
+.rostergrid select{width:100%;min-width:0;padding:7px 2px}
+.rostergrid input.gnum{width:100%}
+.rostergrid th{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding-left:2px;padding-right:2px;letter-spacing:0}
+.rostergrid .chip.sm{margin:0}
+.rostergrid input[type=checkbox]{width:20px;height:20px}
+.rostergrid .chip.sm{min-width:30px;min-height:30px;padding:0 6px}

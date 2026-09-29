@@ -69,7 +69,9 @@ function makeFakebase() {
       set(ref, value) {
         if (record.refuse && record.refuse(ref.path, value))
           return Promise.reject({ code: 'PERMISSION_DENIED', message: 'permission_denied at ' + ref.path });
-        record.writes.push({ path: ref.path, value });
+        // a real set() serialises on the spot; holding the caller's object would
+        // let a later local change rewrite what the test sees was written
+        record.writes.push({ path: ref.path, value: value === undefined ? value : JSON.parse(JSON.stringify(value)) });
         return Promise.resolve();
       },
       remove(ref) { record.removes.push(ref.path); return Promise.resolve(); },

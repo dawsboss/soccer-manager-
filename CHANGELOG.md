@@ -8,6 +8,28 @@ before this point lives only in the git log.
 
 ---
 
+## Edit the whole squad at once; add a list of players; carry a squad into next season — 2026-09-29
+
+Setting up a season was thirty trips through the one-player sheet. The Squad
+tab now has **Edit the squad**: every player in one table — number, name,
+position, keeper, and whether she plays — saved with one tap. What is typed
+is a draft held apart from the page, because a sync update redraws the screen
+and would otherwise wipe half a squad of typing; Save writes only the fields
+that changed, one at a time, so an edit someone made on another phone to a
+field untouched here is not undone. Two players on one shirt number are
+flagged, since the parents' page shows players by number.
+
+**Add several at once** takes a pasted list, one player a line, with the
+number first, last or not at all; a name already on the team is skipped.
+
+**Next season.** Tick players and **copy** them to another team, or **move**
+them. Copies are new players with the same profile; their parents stay
+linked, and pairings follow among the players copied together (to the
+player already there, if she was). Moving takes them off this roster rather
+than deleting them, because this season's minutes hang off their ids. A
+coach copies to teams she coaches; an admin can also start a new team. The
+fake Firebase in the tests now copies what is written, as a real set() does.
+
 ## Waiting people are one tap from being let in — 2026-09-27
 
 Someone who signs in on their own lands in People with no role, and the only
