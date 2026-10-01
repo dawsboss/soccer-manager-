@@ -8,6 +8,41 @@ before this point lives only in the git log.
 
 ---
 
+## A drill library, and a design for training — 2026-10-01
+
+Nothing on screen changes yet. This is the groundwork for coaches planning
+practices in the app.
+
+**`drills.js`** is a built-in library of 55 drills: warm-ups, technique,
+opposed practices, small-sided games, set pieces, goalkeeping and a cool-down,
+from U4 to adult. Each card carries what a parent volunteer needs at quarter
+to six (setup, how it runs, three or four coaching points, questions to ask,
+what goes wrong) and what a filter needs: ages, level, players and keepers,
+minutes, intensity, space, kit, positions in the app's own five roles, and the
+skills, principles of play and moments of the game it trains. Every drill can
+be made easier and harder. Each one also says which game numbers it answers
+(*we create few chances*, *goals go in late*, *they win lots of corners*),
+using only stats the app already records. That's the bridge to a *what needs
+work* card, and later to an AI that picks from drills the coach can open
+instead of inventing them. It's a plain script, not JSON, so it will load from
+`file://` and with no signal, like `firebase-config.js`.
+
+**`test/drills.js`** keeps the library honest. Fixed vocabularies, because a
+misspelt skill is a drill no filter finds. No heading drill below U11, and a
+safety note on every heading and diving drill. Coverage too: on its first run
+it found that under-sixes had nine drills and throw-ins one, which is why
+*Red light, green light*, *Hungry hippos* and *Quick restarts* exist.
+
+**`TRAINING.md`** is the design, written before the code because the data
+model is the hard part. Coaches keep their own drills under their account, not
+the club's, so the drills go with them if they move clubs. Practices copy
+their drills rather than linking to them. Training data lives at
+`training/{code}`, outside the workspace, because every phone, parents'
+included, downloads the whole workspace on connect. It ends with six decisions
+for the club.
+
+---
+
 ## Waiting people are one tap from being let in — 2026-09-27
 
 Someone who signs in on their own lands in People with no role, and the only

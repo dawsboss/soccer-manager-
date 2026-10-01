@@ -2,7 +2,7 @@
 
 Soccer minutes/substitution tracker. Static site (`app.js`, `index.html`, `styles.css`), Firebase Realtime Database backend, deployed to GitHub Pages. Built for a coach tracking subs on a phone at the sideline, often with no signal.
 
-Read `HANDOFF.md` first if it exists and is current. Read `AUTH.md`, `ROADMAP.md`, `SECURITY.md` before touching auth, access, sharing, or the data model — they're design docs, not history, and `AUTH.md` says outright it was "written before any code, because the data model and the rules have to be right first — they are painful to change once twelve teams have data in them." Treat any schema change (`workspaces/{code}` today, `orgs/{orgId}` eventually) as high-stakes, not routine.
+Read `HANDOFF.md` first if it exists and is current. Read `AUTH.md`, `ROADMAP.md`, `SECURITY.md` before touching auth, access, sharing, or the data model — they're design docs, not history, and `AUTH.md` says outright it was "written before any code, because the data model and the rules have to be right first — they are painful to change once twelve teams have data in them." Treat any schema change (`workspaces/{code}` today, `orgs/{orgId}` eventually) as high-stakes, not routine. Read `TRAINING.md` before touching drills, practices or the training data model — same kind of document, written before the code; only the built-in drill library (`drills.js`) exists so far.
 
 ## Required after every change to app.js or index.html
 
@@ -23,6 +23,7 @@ Read `HANDOFF.md` first if it exists and is current. Read `AUTH.md`, `ROADMAP.md
   - `node test/routing.js` — links in and out, and links to things this device doesn't have.
   - `node test/smoke.js` — boots the app in a stubbed DOM with no live Firebase connection and renders every view. Must exit 0, no exceptions.
   - `node test/version.js` — checks that `BUILD` in `app.js`, the `<meta name="build">` tag in `index.html`, and both `?v=` query params (`app.js?v=`, `styles.css?v=`) all agree. If you bump one, bump all four to the same number.
+  - `node test/drills.js` — the built-in drill library in `drills.js`: every list field from its fixed vocabulary (a typo'd skill is a drill no filter ever finds), sane ranges, `goesWith` pointing at real drills, positions equal to `ROLES` in `app.js`, no heading drill below U11 and a safety note on every heading and diving drill, and coverage — at least ten drills, a warm-up and a game for every age U5–U18, three per position, two per signal. When it fails on coverage, add drills; don't lower the floor.
   - `node test/sandbox.js` — seeds the test club and checks it holds together: finished games with a closed clock and no open stints, one live game, `onField` agreeing with the stints, publishing refused, and each database's local copies kept apart.
 - `test/harness.js` is the shared rig: the stubbed DOM, a clock the test drives, a captured click handler (which is the only way to reach the ~120 actions that are inline branches in one listener), and `loadApp()`. Write new tests on it rather than a fourth copy of the stubs.
 - `.github/workflows/test.yml` runs `test/run.js` on every push and pull request.
