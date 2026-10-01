@@ -8,6 +8,56 @@ before this point lives only in the git log.
 
 ---
 
+## A calendar for the season, for everyone following the team — 2026-10-01
+
+Games were a list a coach opened to track one. Nothing said when practice
+was, and a parent wanting "where do I take her on Saturday" had to ask. Every
+team now has a **Calendar** tab: games and everything else in date order,
+a month with a dot per thing, and *Next up* at the top with directions and
+*Add to my calendar*. Coaches, trackers and parents all get it, and anyone who
+can see more than one team (a parent with daughters in two age groups, a coach,
+an admin) can see them all on one calendar. *My players* now says what is next
+for each child, practice included, not only the next game.
+
+Practices and other entries live under the team (`teams/{tid}/events/{eid}`),
+so the rule that already says who may change a team decides who may change its
+calendar, with no new rule and nothing to paste in order. `test/rules.js` pins
+that. A weekly practice is one entry per week, not a rule the app expands:
+calling off one Tuesday is one write to one entry, and editing asks *just this
+one* or *this and every later one*. Something called off stays on the
+calendar, struck through, because a deleted practice is one a parent still
+drives to.
+
+Each entry is kept to the team unless the coach puts it on the share link.
+Practices default to the team on purpose: a share link gets forwarded, and a
+practice is a predictable time and place where children are, without the crowd
+a match brings. The season page now shows what is coming up (games plus the
+entries marked for it) with a page for each event, and everything adds to a
+phone's calendar (Google, or an `.ics` file for Apple and Outlook) from the app
+and from the share link alike. The file is written by a new `ics.js`, kept free
+of the DOM and Firebase so the Worker on the roadmap can serve it as a feed one
+day. Until then it is a copy, and both the app and the page say so.
+
+Games carry what match day needs: home or away, arrive-by, kit, notes, and
+whether it is on, postponed or cancelled. Notes are the first free text on the
+share link where a name is likely ("Ella's family on snacks"), so everything new
+headed for `public/` goes through `pubText()`, which swaps any roster name for
+"a player" before it is written, the same matching the AI prompt uses. The coach
+is told when it happens. The Games list shows when and where for a game still to
+come instead of "0 min played".
+
+**For the other team** is the first answer to "can opponents see it?": the share
+sheet and the game's calendar entry copy a message for their coach (fixture,
+kick-off, where, what we wear, and the game page for the live score), with
+arrive-by left out because that time is ours. The game link carries the season
+link's code, so they can reach the season page too, and the sheet says so.
+ROADMAP has the rest of that exploration: a link scoped to one fixture, free dates
+for a reschedule, and a fixture shared by two clubs, which waits for the orgs work.
+
+The test club now has a fixture still to come, twice-weekly practice either
+side of today with one called off, and a team photo on the share link, so the
+calendar can be rehearsed with nothing real in it.
+
 ## Waiting people are one tap from being let in — 2026-09-27
 
 Someone who signs in on their own lands in People with no role, and the only

@@ -20,6 +20,8 @@ A sideline tracker for soccer coaches: multiple teams, rosters, planned vs actua
 - **Fixing mistakes.** Tap any line in the sub log to nudge it by 5, 15, 30 or 60 seconds, or type the exact time. *Add a sub* records one that happened before you tapped. *Fix minutes* opens a player's spells on the pitch and lets you edit or delete each one. *Clock reading wrong?* shifts the current half and the total together.
 - **Per-game availability.** Mark players out for one game without touching their season totals.
 - **Veo.** Each game has a field for the Veo link, so the recording sits next to the sub log.
+- **Calendar.** Every team has a Calendar tab: games, practices and anything else on, in date order, with a month at a glance, *Next up* at the top with directions, and called-off entries left on the calendar struck through rather than deleted. Practices repeat weekly on whichever days you pick. Coaches add and change it; everyone with a role on the team — trackers and parents included — reads it, and anyone who can see more than one team (a parent with two children, say) can see them all on one calendar. See **The calendar** below.
+- **Match-day details.** A game carries home or away, an arrive-by time, the kit, notes for families and the other team, and whether it is on, postponed or cancelled. They show on the calendar, the Plan tab and the share pages.
 
 ## Running it
 
@@ -452,6 +454,27 @@ Each database keeps its own local copies on the device, so the same code opened
 in two of them can never overwrite the other's. Switching reloads and forgets
 the open code, because a club belongs to the database it lives in.
 
+## The calendar
+
+Games are read straight from the games themselves, so moving a kick-off on the game moves it on the calendar. Practices and everything else (a team photo, a tournament, the end-of-season party) are added from the Calendar tab, and each one decides who sees it:
+
+- **The team** — everyone signed in with a role on it: coaches, trackers and parents. This is the default.
+- **The team and the share link** — also on the season page you text to families. Anyone holding that link, and anyone it is forwarded to, can read it.
+
+Practices default to the team only on purpose. A share link gets forwarded, and a practice is a predictable time and place where children are without the crowd a match brings. Games were already on the share link and still are.
+
+**Repeating practices** are one entry per week, not a rule the app expands: *Every week* on Tuesday and Thursday until the end of term writes one entry for each session (up to 60 at once). Each can be moved or called off on its own; editing one asks whether to change *just this one* or *this and every later one*.
+
+**Calling something off** keeps it on the calendar, struck through and marked Cancelled (or Postponed, for a game), on the share link too. Deleting is still there, but a deleted practice is one a parent may still turn up to.
+
+**In your own calendar.** Every entry has *Google Calendar* (opens pre-filled), *Apple or Outlook* (a `.ics` file the phone opens) and *Directions* (a maps search for the venue as typed). *Add what is coming up* puts the whole rest of the season in at once, on the app and on the share link. It is a copy: if a time changes later, add it again. Each entry carries a fixed id, so calendars that honour it replace their earlier copy instead of doubling it. A calendar that *subscribes* and follows changes by itself needs something server-side to serve the feed, which this site does not have. See ROADMAP.
+
+**Names never reach the share link.** A note like "Ella's family on snacks", typed into a public entry or a game's notes, is published as "a player's family on snacks". The coach is told when that happens. Every word of every roster name is matched, so a venue that shares a word with a player's surname loses that word on the share page. That is the safe way round.
+
+**For the other team.** The game's share sheet, and its calendar entry, have *Copy a message for the other team*, ready to text their coach: the fixture, kick-off, where with a directions link, what we wear, and the game link for the live score. Arrive-by is left out, because that time is for our families, not theirs. The game link is the same page families get, and it carries the season link's code, so the other team can also reach the season page: every game, and what was marked for the share link, never names and never anything kept to the team. ROADMAP has the longer exploration of what opponents could see.
+
+Nothing about the calendar needed a rule change: entries live under `teams/{tid}/events/{eid}`, below the rule that already lets a team's coaches and the club's admins change the team, and nobody else. `node test/rules.js` pins that.
+
 ## How long share links last
 
 **Forever, until you change them.** There is no expiry. A link keeps working as long as its share id exists.
@@ -468,8 +491,8 @@ For a season that is usually what you want: text it in September, it works in Ma
 
 Setup → **Share with parents** creates a long random share id for the team and publishes a read-only mirror. Two links come out of it:
 
-- **Season** — `live.html?t=<share>`. Text it once. It shows the season record, whatever game is happening now, and every game played.
-- **One game** — `game.html?t=<share>&g=<gameId>`. Kick-off time, venue, score, live clock, who is on, minutes played and the substitutions.
+- **Season** — `live.html?t=<share>`. Text it once. It shows the season record, whatever game is happening now, what is coming up (every game, plus any practice or event marked for the share link), and every result. Each entry adds to a phone's calendar, and so does the whole of what is coming up.
+- **One game** — `game.html?t=<share>&g=<gameId>`. Kick-off time, venue, home or away, arrive-by, kit, notes, score, live clock, who is on, minutes played and the substitutions.
 
 Teams can carry a crest — Setup → Teams → tap the team → *Add a crest*. It is resized to 192px and re-encoded in the browser before saving, and it shows in the app header and at the top of the shared pages. It cannot appear in the text-message preview image, which is a fixed file; that needs the Cloudflare Worker.
 
@@ -489,6 +512,8 @@ Push the folder to a repo, then Settings → Pages → deploy from branch, root.
 
 ```
 teams/{teamId}        { id, name,
+                        events: { eventId: { id, kind: 'practice' | 'event', title, date, start, end,
+                                             venue, notes, public, called, series, createdAt, by } },
                         formations: { fid: { id, name, size, slots[] } },
                         defaults:   { 11: fid, 9: fid, 7: fid, 5: fid },
                         players: { playerId: {
@@ -498,6 +523,7 @@ teams/{teamId}        { id, name,
                           pairs: { playerId: true }, avoid: { playerId: true } } } }
 matches/{matchId}     { id, teamId, opponent, date, periodCount, periodMinutes, onFieldCount,
                         currentHalf, veoUrl,
+                        home, arrive, kit, notes, called,   // 'home'|'away'|'neutral', 'HH:MM', text, text, 'cancelled'|'postponed'
                         periods:   { n: { half, start, end } },   // epoch ms
                         planned:   { playerId: minutes },
                         kickoff, venue,
@@ -529,7 +555,9 @@ It is deliberately simple and readable rather than optimal — the projected-min
 ```
 public/{shareId}     { team: { name },
                        record: { w, d, l, gf, ga },
+                       events: { eventId: { kind, title, date, start, end, venue, notes, called } },  // public ones only
                        games: { gameId: { opponent, date, kickoff, venue, status,
+                                          home, arrive, kit, notes, called,
                                           score, periods, currentHalf,
                                           players: [ { n, sec, on, spot, plan } ],   // n is a shirt number
                                           goals:   [ { t, side, n } ],

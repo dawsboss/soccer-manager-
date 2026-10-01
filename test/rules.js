@@ -297,6 +297,27 @@ writes('nor delete the whole team', MUM, 'workspaces/CLUB/teams/t1', null, false
 writes('registered but unroled', NEWB, 'workspaces/CLUB/teams/t1/name', 'Flight B', false);
 writes('signed out', OUT, 'workspaces/CLUB/teams/t1/name', 'Flight B', false);
 
+console.log('\n--- the calendar: under the team, so the team rule decides ---');
+{
+  /* Practices and other entries live at teams/{tid}/events/{eid}, below the
+     rule on $tid, so the calendar needed no rule of its own. These pin that:
+     the same people who may change the squad may change the calendar, one
+     entry at a time, and nobody else. */
+  const ev = { id: 'e1', kind: 'practice', title: 'Practice', date: '2026-09-15', start: '18:00', public: false };
+  writes('its coach adds a practice', COACH, 'workspaces/CLUB/teams/t1/events/e1', ev, true);
+  writes('an admin adds one to any team', ADM, 'workspaces/CLUB/teams/t2/events/e1', ev, true);
+  writes('its coach calls one off', COACH, 'workspaces/CLUB/teams/t1/events/e1/called', 'cancelled', true);
+  writes('a tracker cannot', TRK, 'workspaces/CLUB/teams/t1/events/e1', ev, false);
+  writes('a parent cannot', MUM, 'workspaces/CLUB/teams/t1/events/e1', ev, false);
+  writes('nor call one off', MUM, 'workspaces/CLUB/teams/t1/events/e1/called', 'cancelled', false);
+  writes('another team\'s coach cannot', OTHER, 'workspaces/CLUB/teams/t1/events/e1', ev, false);
+  writes('signed out cannot', OUT, 'workspaces/CLUB/teams/t1/events/e1', ev, false);
+  writes('the whole calendar at once is a team write, still the coach\'s', COACH, 'workspaces/CLUB/teams/t1/events', { e1: ev }, true);
+  reads('a parent reads it with the rest of the club', MUM, 'workspaces/CLUB/teams/t1/events/e1', true);
+  writes('and the published copy takes a calendar', COACH, 'public/sh1/events', { e2: { kind: 'event', title: 'Team photo', date: '2026-09-20' } }, true);
+  writes('with the whole mirror in one write too', COACH, 'public/sh1', { team: { name: 'Flight' }, games: { g1: { status: 'upcoming', called: 'cancelled', home: 'away' } }, events: { e2: { kind: 'event', date: '2026-09-20' } }, record: { w: 0 }, updated: 1 }, true);
+}
+
 console.log('\n--- a game: whoever works that team, tracker included ---');
 writes('its coach edits the game', COACH, 'workspaces/CLUB/matches/g1/opponent', 'Athletic', true);
 writes('its tracker logs a goal', TRK, 'workspaces/CLUB/matches/g1/goals/x', { t: 60, side: 'us' }, true);

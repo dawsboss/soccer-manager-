@@ -164,9 +164,16 @@ try {
     ui.view='match'; render();
     ui.view='roster'; render();
     ui.view='season'; render();
+    // the calendar, empty and then with a practice, a called-off one and every team at once
+    ui.teamId='t_ok'; ui.view='calendar'; render();
+    state.teams.t_ok.events={e1:{id:'e1',kind:'practice',title:'Practice',date:'2026-09-15',start:'18:00',end:'19:30',venue:'Field 3'},
+      e2:{id:'e2',kind:'event',title:'Team photo',date:'2026-09-20',called:'cancelled',public:true}};
+    ui.calAll=true; ui.calPast=true; render();
+    ui.calMonth='2026-10'; render(); ui.calMonth=null; ui.calAll=false;
+    console.log('  rendered the calendar');
     ui.teamId='t_ok'; ui.view='setup'; render();
   `)();
-  console.log('BOOT OK + team sheet + all five tabs rendered, no exception');
+  console.log('BOOT OK + team sheet + every tab rendered, no exception');
   // CLAUDE.md asks for exit 0 from this file, so actually refuse to give it
   if (global.roleFail) {
     console.log('FAILED:', global.roleFail, 'role(s) did not reach the game screen');

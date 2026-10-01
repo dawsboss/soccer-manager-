@@ -2,8 +2,8 @@
    Static app. Data lives in localStorage, and mirrors to Firebase Realtime
    Database when a config + workspace code are present. */
 
-const BUILD = '64';
-const BUILT = '2026-09-26';
+const BUILD = '65';
+const BUILT = '2026-10-01';
 /* index.html carries the build it was published with. If this file is newer, the
    browser handed us a cached page — the exact failure that has eaten hours. */
 const pageBuild = () => {
@@ -828,17 +828,22 @@ const COACH_ACTS = new Set([
   'fixsub', 'nudgesub', 'setsubtime', 'addsub', 'doaddsub', 'fixminutes', 'addstint', 'delstint', 'savestints',
   'repair', 'makeplan', 'planall', 'saveplan', 'evensplit', 'availability', 'toggleavail', 'toggleout',
   'editgameshape', 'gameshapepreset', 'planlock', 'planunlock',
-  'snapstart', 'snapadd', 'snapdel', 'snaptime', 'snapslot', 'snapclear', 'snapplayer'
+  'snapstart', 'snapadd', 'snapdel', 'snaptime', 'snapslot', 'snapclear', 'snapplayer',
+  // the calendar
+  'calnew', 'caledit', 'calsave', 'caldel', 'calcall', 'caleditgame'
 ]);
 const LOG_ACTS = new Set([
   'goal', 'savegoal', 'delgoal', 'shot', 'saveshot', 'delshot', 'ev', 'saveev', 'delev',
   'poss', 'saveposs', 'delposs', 'undoposs', 'trackerclean', 'dropby'
 ]);
-function mayAct(a, m) {
+function mayAct(a, m, d) {
   const coach = COACH_ACTS.has(a), log = LOG_ACTS.has(a);
   if (!coach && !log) return true;
-  // an action on a game answers to that game's team, whichever team is open
-  const tid = m && m.teamId && !['newmatch', 'addplayer', 'editplayer', 'saveplayer', 'delplayer'].includes(a) ? m.teamId : ui.teamId;
+  /* An action on a game answers to that game's team, whichever team is open.
+     A calendar entry names its team on the button, because "All my teams"
+     puts several teams' entries on one screen. */
+  const tid = a.startsWith('cal') && d && d.tid ? d.tid
+    : m && m.teamId && !['newmatch', 'addplayer', 'editplayer', 'saveplayer', 'delplayer'].includes(a) ? m.teamId : ui.teamId;
   if (canEditTeam(tid)) return true;
   return log && !!me && isTracker(tid, me.uid);
 }
@@ -1292,6 +1297,24 @@ function sandboxGame(t, o) {
   };
 }
 
+/* A season of calendar around the seeded games: practice twice a week either
+   side of today, one of them called off, and a team photo marked for the
+   share link — enough to see every state the calendar draws. */
+function sandboxEvents(t) {
+  const out = {}, today = todayStr(), series = 'sbs_' + t.id;
+  seriesDates(addDays(today, -21), addDays(today, 35), [1, 3]).forEach((date, i) => {
+    const id = t.id + '_e' + i;
+    out[id] = { id, kind: 'practice', title: 'Practice', date, start: '18:00', end: '19:15', venue: 'Sandbox Park, field 2', series, createdAt: nowMs() };
+  });
+  const off = Object.values(out).find(e => e.date > addDays(today, 6));
+  if (off) off.called = 'cancelled';
+  out[t.id + '_photo'] = {
+    id: t.id + '_photo', kind: 'event', title: 'Team photo', date: addDays(today, 10), start: '09:15',
+    venue: 'Sandbox Park pavilion', notes: 'Full kit, hair tied back', public: true, createdAt: nowMs()
+  };
+  return out;
+}
+
 function seedSandbox() {
   const code = SANDBOX_PREFIX + uid();
   const a = sandboxTeam('sbA', 'Test Squad A', 14, 0);
@@ -1303,6 +1326,13 @@ function seedSandbox() {
     sandboxGame(a, { id: 'sbg3', opponent: 'Hill End', live: true, periodCount: 2, periodMinutes: 30, onFieldCount: 11, us: 1, them: 1 }),
     sandboxGame(b, { id: 'sbg4', opponent: 'Lakeside B', daysAgo: 14, periodCount: 4, periodMinutes: 12, onFieldCount: 7, us: 2, them: 2 })
   ]) matches[g.id] = g;
+  // one still to come, so the calendar has a next game with everything filled in
+  matches.sbg5 = {
+    id: 'sbg5', teamId: a.id, opponent: 'Eastfield', date: addDays(todayStr(), 5), kickoff: '10:00', arrive: '09:30',
+    venue: 'Eastfield Rec, pitch 1', home: 'away', kit: 'Blue shirts, white socks', notes: 'Parking is behind the clubhouse',
+    periodCount: 2, periodMinutes: 30, onFieldCount: 11, currentHalf: 1, periods: {}, stints: {}, planned: {}, createdAt: nowMs()
+  };
+  a.events = sandboxEvents(a);
 
   /* access/members is the knocking-on-the-door list and grants nothing on its
      own, so these invented accounts are people to practise assigning roles to
@@ -2457,7 +2487,7 @@ function render() {
   if (hideForParent.includes(ui.view) && lim === 'parent') ui.view = guardsAnyone() ? 'mine' : 'matches';
   if (ui.view === 'teamset' && lim === 'tracker') ui.view = 'matches';
   // club admin and account settings are not team-level, so the tab row steps aside
-  const teamLevel = ['matches', 'roster', 'season', 'teamset'].includes(ui.view);
+  const teamLevel = ['matches', 'calendar', 'roster', 'season', 'teamset'].includes(ui.view);
   if (ui.view === 'people' && !canAdmin() && !teams().some(x => isCoach(x.id, me && me.uid))) ui.view = 'club';
   const tabView = ui.view === 'formation' ? (ui.editFid === GAME_SHAPE ? 'matches' : 'admin') : inGame ? 'matches' : ui.view;
   for (const b of document.querySelectorAll('#tabs button')) b.setAttribute('aria-current', String(b.dataset.view === tabView));
@@ -2500,7 +2530,7 @@ function render() {
   app.innerHTML = envNote + roleNote + roNote + (
     v === 'game' ? (g === 'track' ? viewTrack() : g === 'stats' ? viewStats() : g === 'pitch' ? viewMatch() : g === 'plan' ? viewPlan() : g === 'subs' ? viewSubs() : viewFeed()) :
       v === 'roster' ? viewRoster() :
-        v === 'season' ? viewSeason() :
+        v === 'season' ? viewSeason() : v === 'calendar' ? viewCalendar() :
           v === 'formation' ? viewFormation() : v === 'club' ? viewClub() : v === 'people' ? viewPeople() : v === 'admin' ? viewAdmin()
             : v === 'mine' ? viewMine() : v === 'teamset' ? viewTeamSet()
               : v === 'setup' ? viewSetup() : viewMatches());
@@ -2563,7 +2593,7 @@ function viewClub() {
     ${list.length ? list.map(t => {
     const ms = teamMatches(t.id);
     const live = ms.find(x => gameStatus(x) === 'live');
-    const next = ms.filter(x => gameStatus(x) === 'upcoming').slice(-1)[0];
+    const next = ms.filter(x => gameStatus(x) === 'upcoming' && !CALLED[x.called]).slice(-1)[0];
     const last = ms.find(x => gameStatus(x) === 'done');
     const sub = live ? `Playing now — ${esc(live.opponent || 'TBC')} ${score(live).us}–${score(live).them}`
       : next ? `Next: ${esc(next.opponent || 'TBC')}${next.date ? ' · ' + shortDate(next.date) : ''}`
@@ -3783,8 +3813,12 @@ function gameDetailsCard(m) {
   return `<div class="card"><div class="spread" style="align-items:flex-start">
     <div><h2>${esc(m.opponent || 'Game')}</h2>
       <div class="muted">${esc(when || 'No date yet')}${m.venue ? ' · ' + esc(m.venue) : ''}</div>
-      <div class="muted">${m.periodCount || 2} × ${m.periodMinutes || 40} min · ${cap}v${cap} · ${esc(m.formation ? m.formation.name : 'no shape')}</div></div>
+      <div class="muted">${m.periodCount || 2} × ${m.periodMinutes || 40} min · ${cap}v${cap} · ${esc(m.formation ? m.formation.name : 'no shape')}</div>
+      ${[HOME_AWAY[m.home], m.arrive ? 'arrive by ' + niceTime(m.arrive) : '', m.kit ? 'kit: ' + m.kit : ''].filter(Boolean).length
+      ? `<div class="muted">${esc([HOME_AWAY[m.home], m.arrive ? 'arrive by ' + niceTime(m.arrive) : '', m.kit ? 'kit: ' + m.kit : ''].filter(Boolean).join(' · '))}</div>` : ''}</div>
     ${readOnlyHere() ? '' : `<button class="btn quiet sm" data-act="editmatch" data-id="${m.id}" style="flex:none">Edit game</button>`}</div>
+    ${CALLED[m.called] ? `<div class="warn alert" style="margin-top:10px"><b>${CALLED[m.called]}.</b> It shows that way on the calendar and the share pages.</div>` : ''}
+    ${m.notes ? `<p class="muted" style="margin:10px 0 0">${esc(m.notes)}</p>` : ''}
     ${m.veoUrl ? `<p style="margin:10px 0 0"><a href="${esc(m.veoUrl)}" target="_blank" rel="noopener">Open the Veo recording</a></p>` : ''}
   </div>`;
 }
@@ -3803,15 +3837,494 @@ function playerRow(m, p, now, isOn) {
   </button>`;
 }
 
+/* --- calendar --- */
+/* The season in date order: games, practices and anything else the team has
+   on, for everyone who can see the team — coaches, trackers and parents alike.
+
+   Games are the matches that already exist; the calendar reads them and never
+   keeps a copy, so a kick-off moved on the game is moved here too. Everything
+   else lives under the team:
+
+     teams/{tid}/events/{eid}  { id, kind: 'practice' | 'event', title, date,
+                                 start, end, venue, notes, public, called,
+                                 series, createdAt, by }
+
+   Under the team on purpose. The rule on teams/$tid already says exactly who
+   may change it — an admin, or a coach of that team — and every role that can
+   read the team can read this, so the calendar needs no new rule and nothing
+   about it can be pasted out of order. Each entry has its own id, so two
+   coaches adding practices at once cannot collide. A weekly practice is one
+   entry per week sharing a `series` id rather than a rule the app expands:
+   calling off one week is one write to one entry, and offline needs no special
+   case.
+
+   `public` is the one decision a coach makes per entry. Games are on the share
+   link already. Practices and the rest default to the team only, because a
+   share link gets forwarded, and a practice is a predictable time and place
+   where children are without the crowd a match brings. */
+const CAL_KIND = { game: 'Game', practice: 'Practice', event: 'Event' };
+const CALLED = { cancelled: 'Cancelled', postponed: 'Postponed' };
+const HOME_AWAY = { home: 'Home', away: 'Away', neutral: 'Neutral ground' };
+const WEEKDAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const MONTHS_LONG = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+const SERIES_MAX = 60;       // a season of twice-weekly practices, with room to spare
+const ICS = () => (typeof window !== 'undefined' && window.MinutesIcs) || null;
+
+const pad2 = n => String(n).padStart(2, '0');
+/* Local dates throughout, never toISOString(): that is UTC, and at seven in
+   the evening in California it is already tomorrow. */
+const dayStr = d => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+const todayStr = () => dayStr(new Date(nowMs()));
+const dateOf = s => { const [y, m, d] = s.split('-').map(Number); return new Date(y, m - 1, d); };
+const addDays = (s, n) => { const d = dateOf(s); d.setDate(d.getDate() + n); return dayStr(d); };
+const weekdayOf = s => (dateOf(s).getDay() + 6) % 7;     // Monday is 0, as a fixture list reads
+const okDay = s => /^\d{4}-\d{2}-\d{2}$/.test(String(s || ''));
+/* A time as the calendar sorts it. An imported "9:30" and a typed "09:30" are
+   the same kick-off, and only one of them sorts before "10:00" as text. */
+const hm = t => { const x = /^(\d{1,2}):(\d{2})/.exec(String(t || '')); return x ? pad2(x[1]) + ':' + x[2] : ''; };
+const minOf = t => { const [h, m] = t.split(':').map(Number); return h * 60 + m; };
+function niceTime(t) {
+  t = hm(t); if (!t) return '';
+  const [h, mi] = t.split(':').map(Number);
+  return ((h % 12) || 12) + (mi ? ':' + pad2(mi) : '') + (h >= 12 ? 'pm' : 'am');
+}
+function dayLabel(s) {
+  if (!okDay(s)) return 'Date to be confirmed';
+  const d = dateOf(s);
+  return `${WEEKDAYS[weekdayOf(s)]} ${d.getDate()} ${MONTHS[d.getMonth()]}`;
+}
+function relDay(s) {
+  if (!okDay(s)) return '';
+  const t = todayStr();
+  if (s === t) return 'Today';
+  if (s === addDays(t, 1)) return 'Tomorrow';
+  const n = Math.round((dateOf(s) - dateOf(t)) / 86400000);   // rounded: a clock change makes a 23 or 25 hour day
+  return n > 1 && n < 7 ? `In ${n} days` : '';
+}
+
+/* Every dated thing on the given teams, in the order it happens. Undated games
+   come last rather than first: "date to be confirmed" is the end of the list,
+   not the top of it. */
+function calItems(tids) {
+  const out = [];
+  for (const tid of tids) {
+    const t = state.teams[tid]; if (!t) continue;
+    for (const m of teamMatches(tid)) out.push({
+      key: 'g:' + m.id, kind: 'game', tid, id: m.id, date: okDay(m.date) ? m.date : '',
+      start: hm(m.kickoff), end: '', mins: matchMinutes(m) + 15,
+      title: 'v ' + (m.opponent || 'TBC'), venue: m.venue || '',
+      called: CALLED[m.called] ? m.called : '', home: HOME_AWAY[m.home] ? m.home : '',
+      status: gameStatus(m), public: true
+    });
+    for (const [id, e] of Object.entries(t.events || {})) {
+      if (!e || typeof e !== 'object') continue;
+      const kind = e.kind === 'practice' ? 'practice' : 'event';
+      out.push({
+        key: 'e:' + id, kind, tid, id, date: okDay(e.date) ? e.date : '',
+        start: hm(e.start), end: hm(e.end), mins: 0,
+        title: e.title || CAL_KIND[kind], venue: e.venue || '',
+        called: CALLED[e.called] ? e.called : '', public: !!e.public, series: e.series || null
+      });
+    }
+  }
+  return out.sort(calOrder);
+}
+const calOrder = (a, b) => (a.date || '9999').localeCompare(b.date || '9999')
+  || (a.start || '').localeCompare(b.start || '')
+  || (a.kind === b.kind ? 0 : a.kind === 'game' ? -1 : b.kind === 'game' ? 1 : 0);
+
+/* Over, or still to come. A game knows for itself once its clock has run; for
+   everything else it is the date, and on the day the end time — practice at
+   six is still "coming up" at five, and "next" at a quarter past. */
+function calPast(it) {
+  if (it.kind === 'game' && it.status === 'done') return true;
+  if (it.kind === 'game' && it.status === 'live') return false;
+  if (!it.date) return false;
+  const today = todayStr();
+  if (it.date !== today) return it.date < today;
+  if (!it.start) return false;
+  let end = minOf(it.start) + (it.mins || 60);
+  if (it.end) { end = minOf(it.end); if (end <= minOf(it.start)) end += 24 * 60; }
+  const n = new Date(nowMs());
+  return n.getHours() * 60 + n.getMinutes() >= end;
+}
+/* What a parent opens the app to find out. A game being played beats anything,
+   and something called off is never "next" — it is the thing not to drive to. */
+const calNext = items => items.find(x => x.kind === 'game' && x.status === 'live')
+  || items.find(x => x.date && !x.called && !calPast(x)) || null;
+
+/* The teams the calendar is showing. Anyone who can see more than one team
+   (a parent with two children, a coach, an admin) can see them all at once. */
+function calTeams() {
+  const mine = myTeams();
+  if (ui.calAll && mine.length > 1) return mine.map(t => t.id);
+  return ui.teamId ? [ui.teamId] : [];
+}
+
+const seriesOf = (t, sid) => Object.values((t && t.events) || {}).filter(e => e && sid && e.series === sid)
+  .sort((a, b) => (a.date || '').localeCompare(b.date || ''));
+
+/* Dates for a weekly series: every chosen weekday from the first date to the
+   last, inclusive, capped so a mistyped year cannot write a decade of
+   practices. */
+function seriesDates(from, until, days) {
+  if (!okDay(from)) return [];
+  if (!okDay(until) || until < from || !(days || []).length) return [from];
+  const out = [];
+  for (let d = from, i = 0; d <= until && out.length < SERIES_MAX && i < 400; d = addDays(d, 1), i++)
+    if (days.includes(weekdayOf(d))) out.push(d);
+  return out;
+}
+
+/* One calendar item as a calendar file wants it. The team name goes in the
+   title because this lands in a family calendar next to everything else: "v
+   Riverside" alone does not say which child. */
+function icsItem(it) {
+  const t = state.teams[it.tid] || {};
+  const m = it.kind === 'game' ? state.matches[it.id] : null;
+  const e = m ? null : (t.events || {})[it.id] || {};
+  const desc = [];
+  if (m) {
+    if (HOME_AWAY[m.home]) desc.push(HOME_AWAY[m.home]);
+    if (m.arrive) desc.push('Arrive by ' + niceTime(m.arrive));
+    if (m.kit) desc.push('Kit: ' + m.kit);
+    if (m.notes) desc.push(m.notes);
+  } else if (e.notes) desc.push(e.notes);
+  const base = location.origin + location.pathname;
+  return {
+    uid: it.id, date: it.date, start: it.start, end: it.end, mins: it.mins,
+    title: m ? `${t.name || 'Game'} v ${m.opponent || 'TBC'}` : `${t.name ? t.name + ': ' : ''}${it.title}`,
+    venue: it.venue, desc: desc.join('\n'), called: it.called,
+    url: base + (m ? `#/team/${it.tid}/game/${m.id}/live` : `#/team/${it.tid}/calendar`)
+  };
+}
+function downloadIcs(name, items) {
+  const I = ICS();
+  if (!I) { toast('Calendar files are not available on this build'); return; }
+  if (!items.length) { toast('Nothing coming up to add'); return; }
+  const blob = new Blob([I.calendar(name, items, nowMs())], { type: 'text/calendar;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url; link.download = I.fileName(name);
+  // in the page while it is clicked: some browsers ignore a click on a detached link
+  if (document.body && document.body.appendChild) document.body.appendChild(link);
+  link.click();
+  if (link.parentNode) link.parentNode.removeChild(link);
+  // Safari reads the blob after the click returns, so it cannot be revoked on the spot
+  setTimeout(() => URL.revokeObjectURL(url), 4000);
+}
+
+/* What the coach texts the other team's coach, already written. The game link
+   is the same page families get — when, where and the live score — which is
+   everything an opponent needs and nothing a share page does not already
+   publish. Arrive-by is left out: that is our families' time, not theirs. */
+function opponentMessage(t, m) {
+  const us = t.name || 'Us', them = m.opponent || 'TBC';
+  const fixture = m.home === 'away' ? `${them} v ${us}` : `${us} v ${them}`;
+  const when = m.date ? dayLabel(m.date) : 'date to be confirmed';
+  const lines = [CALLED[m.called]
+    ? `${fixture} on ${when} is ${CALLED[m.called].toLowerCase()}.`
+    : `${fixture}: ${when}${m.kickoff ? ', kick-off ' + niceTime(m.kickoff) : ''}.`];
+  const I = ICS();
+  if (m.venue) lines.push(`Where: ${m.venue}${I ? ' — ' + I.mapLink(m.venue) : ''}`);
+  if (m.kit) lines.push(`We will be in ${m.kit}.`);
+  if (t.share) lines.push(`Details and the live score: ${gameLink(t, m)}`);
+  return lines.join('\n');
+}
+
+function calRow(it, all) {
+  const t = state.teams[it.tid] || {};
+  const edit = canEditTeam(it.tid);
+  // most entries are the team's own, so it is the exception that gets marked
+  const sub = [it.venue, it.home && HOME_AWAY[it.home], all ? t.name : '',
+    edit && it.kind !== 'game' && it.public ? 'on the share link' : ''].filter(Boolean);
+  const m = it.kind === 'game' ? state.matches[it.id] : null;
+  const right = it.called ? `<span class="tag off">${CALLED[it.called]}</span>`
+    : m && it.status !== 'upcoming' ? `<span class="pmins">${score(m).us}<small>–${score(m).them}</small></span>`
+      : `<span class="tag ${it.kind}">${CAL_KIND[it.kind]}</span>`;
+  return `<button class="prow calrow" type="button" data-act="calitem" data-k="${it.kind}" data-tid="${esc(it.tid)}" data-id="${esc(it.id)}" data-called="${it.called ? 1 : 0}">
+    <span class="caltime">${it.start ? niceTime(it.start) : it.date ? 'All day' : 'TBC'}</span>
+    <span style="min-width:0"><span class="pname">${esc(it.title)}</span>${sub.length ? `<span class="psub">${esc(sub.join(' · '))}</span>` : ''}</span>
+    ${right}</button>`;
+}
+function calList(items, all) {
+  let out = '', last = null;
+  for (const it of items) {
+    if (it.date !== last) {
+      const rel = relDay(it.date);
+      out += `<p class="calhead">${esc(dayLabel(it.date))}${rel ? ` <span>· ${rel}</span>` : ''}</p>`;
+      last = it.date;
+    }
+    out += calRow(it, all);
+  }
+  return out;
+}
+
+/* A month at a glance: a dot per thing on each day, coloured by kind. It is
+   for finding a day; the list below it is for reading one. */
+function calMonth(items) {
+  const today = todayStr();
+  const ym = /^\d{4}-\d{2}$/.test(ui.calMonth || '') ? ui.calMonth : today.slice(0, 7);
+  const [y, mo] = ym.split('-').map(Number);
+  const lead = weekdayOf(ym + '-01');
+  const days = new Date(y, mo, 0).getDate();
+  const on = {};
+  for (const it of items) if (it.date.startsWith(ym)) (on[it.date] = on[it.date] || []).push(it);
+  let cells = WEEKDAYS.map(w => `<span class="wd">${w.slice(0, 2)}</span>`).join('');
+  for (let i = 0; i < lead; i++) cells += '<span></span>';
+  for (let n = 1; n <= days; n++) {
+    const d = `${ym}-${pad2(n)}`, list = on[d] || [];
+    const attrs = `class="calday" data-today="${d === today ? 1 : 0}" data-past="${d < today ? 1 : 0}"`;
+    const dots = list.slice(0, 3).map(x => `<i class="dot ${x.kind}${x.called ? ' off' : ''}"></i>`).join('');
+    cells += list.length
+      ? `<button type="button" ${attrs} data-act="calday" data-v="${d}" aria-label="${esc(dayLabel(d))}: ${list.length} on">${n}<span class="dots">${dots}</span></button>`
+      : `<span ${attrs}>${n}<span class="dots"></span></span>`;
+  }
+  return `<div class="card">
+    <div class="spread" style="margin-bottom:8px">
+      <button class="stepbtn" data-act="calmonth" data-v="-1" aria-label="Previous month">‹</button>
+      <b>${MONTHS_LONG[mo - 1]} ${y}</b>
+      <button class="stepbtn" data-act="calmonth" data-v="1" aria-label="Next month">›</button></div>
+    <div class="calgrid">${cells}</div>
+    <div class="spread" style="margin-top:8px">
+      <span class="calkey"><i class="dot game"></i>Game <i class="dot practice"></i>Practice <i class="dot event"></i>Other</span>
+      ${ym !== today.slice(0, 7) ? '<button class="btn ghost sm" data-act="calmonth" data-v="0">This month</button>' : ''}</div>
+  </div>`;
+}
+
+/* The thing a parent opened the app for, with the two buttons that follow
+   from it: how to get there, and put it in my calendar. */
+function calNextCard(it, all) {
+  const t = state.teams[it.tid] || {};
+  const m = it.kind === 'game' ? state.matches[it.id] : null;
+  const I = ICS();
+  const live = m && it.status === 'live';
+  const when = live ? 'Playing now'
+    : [relDay(it.date) || dayLabel(it.date), it.start ? niceTime(it.start) : 'all day'].join(' · ');
+  const bits = [it.venue, m && m.arrive ? 'arrive by ' + niceTime(m.arrive) : '', m && m.kit ? 'kit: ' + m.kit : ''].filter(Boolean);
+  return `<div class="card calnext">
+    <span class="muted">${live ? '' : 'Next up'}${all ? (live ? '' : ' · ') + teamLabel(t) : ''}</span>
+    <button class="plainbtn" data-act="calitem" data-k="${it.kind}" data-tid="${esc(it.tid)}" data-id="${esc(it.id)}" style="display:block;width:100%;text-align:left">
+      <div class="spread" style="margin-top:4px"><b style="font-size:19px">${esc(it.title)}</b>
+        ${live ? `<span class="pmins">${score(m).us}<small>–${score(m).them}</small></span>` : `<span class="tag ${it.kind}">${CAL_KIND[it.kind]}</span>`}</div>
+      <p style="margin:4px 0 0"><b>${esc(when)}</b>${it.home ? ' · ' + esc(HOME_AWAY[it.home]) : ''}</p>
+      ${bits.length ? `<p class="muted" style="margin:2px 0 0">${esc(bits.join(' · '))}</p>` : ''}
+    </button>
+    ${live ? '' : `<div class="row wrap" style="margin-top:10px">
+      ${it.venue && I ? `<a class="btn quiet sm" href="${esc(I.mapLink(it.venue))}" target="_blank" rel="noopener">Directions</a>` : ''}
+      <button class="btn quiet sm" data-act="calitem" data-k="${it.kind}" data-tid="${esc(it.tid)}" data-id="${esc(it.id)}">Add to my calendar</button></div>`}
+  </div>`;
+}
+
+function viewCalendar() {
+  const t = team(); if (!t) return needTeam();
+  const mine = myTeams();
+  const all = !!ui.calAll && mine.length > 1;
+  const items = calItems(calTeams());
+  const dated = items.filter(x => x.date);
+  const ahead = dated.filter(x => !calPast(x));
+  const past = dated.filter(calPast).reverse();
+  const undated = items.filter(x => !x.date && !(x.kind === 'game' && x.status === 'done'));
+  const next = calNext(items);
+  const edit = canEditTeam(t.id);
+  return `<div class="stack">
+    <div class="spread"><h2>Calendar</h2>${edit ? `<button class="btn sm" data-act="calnew" data-tid="${esc(t.id)}">Add</button>` : ''}</div>
+    ${mine.length > 1 ? `<div class="chips">
+      <button class="chip" data-act="calscope" data-v="team" aria-pressed="${!all}">${teamLabel(t)}</button>
+      <button class="chip" data-act="calscope" data-v="all" aria-pressed="${all}">All my teams</button></div>` : ''}
+    ${next ? calNextCard(next, all) : ''}
+    ${calMonth(dated)}
+    <div class="card"><h2 style="margin-bottom:0">Coming up</h2>
+      ${ahead.length ? `<div class="plist">${calList(ahead, all)}</div>`
+      : `<p class="muted" style="margin-bottom:0">Nothing on the calendar yet.${edit ? ' Add the season’s practices with <b>Add</b>, and games from the Games tab.' : ' The coach adds games and practices here.'}</p>`}</div>
+    ${undated.length ? `<div class="card"><h2 style="margin-bottom:8px">Date to be confirmed</h2>
+      <div class="plist">${undated.map(x => calRow(x, all)).join('')}</div></div>` : ''}
+    ${past.length ? `<button class="btn quiet wide" data-act="calpast">${ui.calPast ? 'Hide' : 'Show'} what has already happened (${past.length})</button>
+      ${ui.calPast ? `<div class="card"><div class="plist">${calList(past, all)}</div></div>` : ''}` : ''}
+    <div class="card"><h2 style="margin-bottom:8px">In your own calendar</h2>
+      <p class="muted" style="margin-top:0">Everything still to come${all ? ' for these teams' : ''}, as a file your phone’s calendar opens. It is a copy: if a time changes later, add it again — each entry replaces its earlier self in calendars that allow it.</p>
+      <button class="btn quiet wide" data-act="calicsall">Add what is coming up</button>
+      ${!all && t.share ? `<p class="muted" style="margin-bottom:0">Grandparents and friends without an account: the season link shows the games, and anything marked for the share link, with no names. ${edit ? 'Team settings → Parent links.' : ''}</p>` : ''}</div>
+  </div>`;
+}
+
+/* One entry, read in full: when, where, what to bring, and the doors out of
+   it. The same sheet for every role; only the edit buttons depend on who. */
+function sheetCalItem(kind, tid, id) {
+  const t = state.teams[tid]; if (!t) return;
+  const it = calItems([tid]).find(x => x.kind === kind && x.id === id);
+  if (!it) { closeSheet(); return; }
+  const m = kind === 'game' ? state.matches[id] : null;
+  const e = m ? null : (t.events || {})[id];
+  const edit = canEditTeam(tid);
+  const I = ICS();
+  const span = it.start ? niceTime(it.start) + (it.end ? '–' + niceTime(it.end) : '') : 'All day';
+  const row = (k, v) => v ? `<dt>${k}</dt><dd>${v}</dd>` : '';
+  const left = e && e.series ? seriesOf(t, e.series).filter(x => (x.date || '') > (e.date || '')).length : 0;
+  openSheet(`<h3>${esc(it.title)}</h3>
+    ${it.called ? `<div class="warn alert" style="margin-bottom:10px"><b>${CALLED[it.called]}.</b>${m && it.called === 'postponed' ? ' A new date will be set.' : ''}</div>` : ''}
+    <p class="muted" style="margin-top:0">${teamLabel(t)} · ${CAL_KIND[kind]}${e && edit ? (e.public ? ' · on the share link' : ' · team only') : ''}</p>
+    <dl class="facts">
+      ${row('When', esc(dayLabel(it.date)) + (it.date ? ' · ' + esc(span) : ''))}
+      ${row('Where', esc(it.venue))}
+      ${m ? row('Ground', esc(HOME_AWAY[m.home] || '')) + row('Arrive by', esc(niceTime(m.arrive))) + row('Kit', esc(m.kit || ''))
+      + row('Format', `${m.onFieldCount || 11}v${m.onFieldCount || 11} · ${m.periodCount || 2} × ${m.periodMinutes || 40} min`) : ''}
+      ${row('Notes', esc((m ? m.notes : e && e.notes) || '').replace(/\n/g, '<br>'))}
+      ${left ? row('Repeats', `Weekly · ${left} more after this`) : ''}
+    </dl>
+    ${it.date ? `<div class="row wrap" style="margin-bottom:10px">
+      ${it.venue && I ? `<a class="btn quiet sm" href="${esc(I.mapLink(it.venue))}" target="_blank" rel="noopener">Directions</a>` : ''}
+      ${I ? `<a class="btn quiet sm" href="${esc(I.googleLink(icsItem(it)))}" target="_blank" rel="noopener">Google Calendar</a>` : ''}
+      <button class="btn quiet sm" data-act="calics" data-k="${kind}" data-tid="${esc(tid)}" data-id="${esc(id)}">Apple or Outlook</button></div>` : ''}
+    ${m ? `<button class="btn wide" data-act="calgame" data-tid="${esc(tid)}" data-id="${esc(id)}" style="margin-bottom:8px">Open the game</button>` : ''}
+    ${m && edit ? `<button class="btn quiet wide" data-act="caleditgame" data-tid="${esc(tid)}" data-id="${esc(id)}" style="margin-bottom:8px">Edit this game’s details</button>
+      <button class="btn quiet wide" data-act="copytext" data-v="${esc(opponentMessage(t, m))}">Copy a message for the other team</button>` : ''}
+    ${e && edit ? `<button class="btn quiet wide" data-act="caledit" data-tid="${esc(tid)}" data-id="${esc(id)}">Edit</button>` : ''}`);
+}
+
+function sheetCalDay(date) {
+  const items = calItems(calTeams()).filter(x => x.date === date);
+  const all = !!ui.calAll && myTeams().length > 1;
+  const edit = canEditTeam(ui.teamId);
+  openSheet(`<h3>${esc(dayLabel(date))}</h3>
+    <div class="plist">${items.map(x => calRow(x, all)).join('') || '<p class="muted">Nothing on.</p>'}</div>
+    ${edit ? `<button class="btn quiet wide" data-act="calnew" data-tid="${esc(ui.teamId)}" data-v="${date}" style="margin-top:10px">Add something on this day</button>` : ''}`);
+}
+
+/* The add/edit sheet keeps its fields in calForm and reads them back before
+   every redraw, so tapping Practice or a weekday chip does not throw away
+   what was already typed. */
+let calForm = null;
+function calFormRead() {
+  if (!calForm) return;
+  for (const [k, sel] of [['title', '#evTitle'], ['date', '#evDate'], ['start', '#evStart'], ['end', '#evEnd'],
+  ['venue', '#evVenue'], ['notes', '#evNotes'], ['until', '#evUntil']]) {
+    const el = $(sel);
+    if (el && typeof el.value === 'string') calForm[k] = el.value;
+  }
+}
+function calFormNew(tid, date) {
+  const t = state.teams[tid] || {};
+  const d = okDay(date) ? date : todayStr();
+  /* Practice is usually the same time and place every week, so a new one
+     starts from the last one rather than from blank. */
+  const last = Object.values(t.events || {}).filter(e => e && e.kind === 'practice')
+    .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0))[0] || {};
+  return {
+    tid, id: null, kind: 'practice', title: '', date: d, start: last.start || '', end: last.end || '',
+    venue: last.venue || '', notes: '', public: false, repeat: false, days: [weekdayOf(d)],
+    until: addDays(d, 7 * 10), scope: 'one'
+  };
+}
+function calFormEdit(tid, e) {
+  return {
+    tid, id: e.id, kind: e.kind === 'practice' ? 'practice' : 'event', title: e.title || '', date: e.date || '',
+    start: e.start || '', end: e.end || '', venue: e.venue || '', notes: e.notes || '', public: !!e.public,
+    repeat: false, days: [], until: '', scope: 'one'
+  };
+}
+function sheetCalEvent() {
+  const f = calForm; if (!f) return;
+  const t = state.teams[f.tid]; if (!t) return;
+  const isNew = !f.id;
+  const e = isNew ? null : (t.events || {})[f.id];
+  if (!isNew && !e) { closeSheet(); return; }
+  const inSeries = e && e.series && seriesOf(t, e.series).length > 1;
+  const word = f.kind === 'practice' ? 'practice' : 'event';
+  const n = isNew && f.repeat ? seriesDates(f.date, f.until, f.days).length : 1;
+  const chip = (act, v, on, label) => `<button class="chip" type="button" data-act="${act}" data-v="${v}" aria-pressed="${!!on}">${label}</button>`;
+  /* Names never reach the share link: anything typed here that matches the
+     roster is swapped out of the published copy. Saying so is better than a
+     coach finding "a player" on the season page and not knowing why. */
+  openSheet(`<h3>${isNew ? 'Add to the calendar' : 'Edit ' + word}</h3>
+    ${isNew ? `<div class="chips" style="margin-bottom:12px">
+      ${chip('calkind', 'practice', f.kind === 'practice', 'Practice')}
+      ${chip('calkind', 'event', f.kind === 'event', 'Something else')}
+      <button class="chip" type="button" data-act="newmatch" data-from="cal">A game →</button></div>` : ''}
+    <label class="field"><span>What</span><input type="text" id="evTitle" value="${esc(f.title)}" placeholder="${f.kind === 'practice' ? 'Practice' : 'Team photo, tournament, end-of-season party'}"></label>
+    <label class="field"><span>${isNew && f.repeat ? 'First one' : 'Date'}</span><input type="date" id="evDate" value="${esc(f.date)}"></label>
+    <div class="grid2">
+      <label class="field"><span>Starts</span><input type="time" id="evStart" value="${esc(f.start)}"></label>
+      <label class="field"><span>Ends</span><input type="time" id="evEnd" value="${esc(f.end)}"></label>
+    </div>
+    <label class="field"><span>Where</span><input type="text" id="evVenue" value="${esc(f.venue)}" placeholder="Lakeside Park, field 3"></label>
+    <label class="field"><span>Notes</span><textarea id="evNotes" rows="2" placeholder="Bring a ball and water">${esc(f.notes)}</textarea></label>
+    ${isNew ? `<p class="lbl">Repeats</p>
+      <div class="chips" style="margin-bottom:10px">${chip('calrepeat', '0', !f.repeat, 'Just once')}${chip('calrepeat', '1', f.repeat, 'Every week')}</div>
+      ${f.repeat ? `<div class="chips" style="margin-bottom:10px">${WEEKDAYS.map((w, i) => chip('calwd', i, f.days.includes(i), w)).join('')}</div>
+        <label class="field"><span>Last one</span><input type="date" id="evUntil" value="${esc(f.until)}"></label>
+        <p class="muted" style="margin-top:-4px">${n} ${word}${n === 1 ? '' : 's'}${n >= SERIES_MAX ? ' (the most at once)' : ''}. Each is its own entry, so one week can be moved or called off without touching the rest.</p>` : ''}` : ''}
+    <p class="lbl">Who sees it</p>
+    <div class="chips" style="margin-bottom:6px">${chip('calpub', '0', !f.public, 'The team')}${chip('calpub', '1', f.public, 'The team and the share link')}</div>
+    <p class="muted" style="margin-top:0">The team is everyone signed in with a role on it: coaches, trackers and parents. The share link is the season page you text to families, and anyone it is forwarded to can read it — names typed here are taken out of that copy.</p>
+    ${inSeries ? `<p class="lbl">Change</p>
+      <div class="chips" style="margin-bottom:10px">${chip('calscopeed', 'one', f.scope !== 'later', 'Just this one')}${chip('calscopeed', 'later', f.scope === 'later', 'This and every later one')}</div>` : ''}
+    <button class="btn wide" data-act="calsave" data-tid="${esc(f.tid)}" style="margin-bottom:8px">${isNew ? (n > 1 ? `Add ${n} ${word}s` : 'Add it') : 'Save'}</button>
+    ${isNew ? '' : `<button class="btn quiet wide" data-act="calcall" data-tid="${esc(f.tid)}" style="margin-bottom:8px">${e.called ? 'It is back on' : 'Call it off'}</button>
+      <button class="btn danger wide" data-act="caldel" data-tid="${esc(f.tid)}">Delete</button>`}`);
+}
+
+/* Each entry goes out at its own path, teams/{tid}/events/{eid} — below the
+   rule on $tid, which is what grants it — and the redraw and the republish
+   happen once at the end rather than once per week of a series. */
+function calTargets() {
+  const f = calForm, t = state.teams[f.tid] || {};
+  const e = (t.events || {})[f.id];
+  if (!e) return [];
+  return f.scope === 'later' && e.series ? seriesOf(t, e.series).filter(x => (x.date || '') >= (e.date || '')) : [e];
+}
+function calDone(msg) {
+  saveLocal(); schedulePublish(); closeSheet(); render();
+  if (msg) toast(msg);
+}
+function saveCalEvent() {
+  calFormRead();
+  const f = calForm; if (!f) return;
+  const t = state.teams[f.tid]; if (!t) return;
+  if (!okDay(f.date)) { toast('Pick a date'); return; }
+  const kind = f.kind === 'practice' ? 'practice' : 'event';
+  const fields = { kind, title: (f.title || '').trim() || CAL_KIND[kind], start: hm(f.start), end: hm(f.end), venue: (f.venue || '').trim(), notes: (f.notes || '').trim(), public: !!f.public };
+  const scrubbed = fields.public && ['title', 'venue', 'notes'].some(k => pubText(t, fields[k]) !== fields[k]);
+  const why = scrubbed ? ' · a name in it is left off the share link' : '';
+  if (f.id) {
+    const list = calTargets();
+    for (const x of list) quiet(`teams/${f.tid}/events/${x.id}`, { ...x, ...fields, ...(x.id === f.id ? { date: f.date } : {}) });
+    calForm = null;
+    calDone((list.length > 1 ? `Saved ${list.length}` : 'Saved') + why);
+    return;
+  }
+  const dates = f.repeat ? seriesDates(f.date, f.until, f.days.length ? f.days : [weekdayOf(f.date)]) : [f.date];
+  if (!dates.length) { toast('No days between those dates'); return; }
+  const series = dates.length > 1 ? uid() : null;
+  for (const date of dates) {
+    const id = uid();
+    quiet(`teams/${f.tid}/events/${id}`, {
+      id, ...fields, date, ...(series ? { series } : {}),
+      createdAt: nowMs(), ...(me ? { by: me.uid } : {})
+    });
+  }
+  calForm = null;
+  calDone((dates.length > 1 ? `Added ${dates.length} ${kind === 'practice' ? 'practices' : 'events'}` : 'Added') + why);
+}
+
 /* --- games --- */
 function viewMatches() {
   const t = team(); if (!t) return needTeam();
   const list = teamMatches(t.id);
   const rows = list.map(m => {
     const el = elapsedSec(m);
+    /* Before kick-off the useful line is when and where; after it, how long
+       and how it went. "0 min played" on next week's game said nothing. */
+    const st = gameStatus(m);
+    const when = [m.date ? dayLabel(m.date) : 'No date yet', niceTime(m.kickoff), HOME_AWAY[m.home]].filter(Boolean).join(' · ');
     return `<button class="prow" type="button" data-act="openmatch" data-id="${m.id}" style="grid-template-columns:1fr auto">
-      <span><span class="pname">${esc(m.opponent || 'Game')}</span><span class="psub">${esc(m.date || '')} · <span data-live="gmins" data-mid="${m.id}">${mins(el)}</span> min played${running(m) ? ' · clock running' : ''}</span></span>
-      <span class="pmins">${score(m).us}<small>–${score(m).them}</small></span></button>`;
+      <span><span class="pname">${esc(m.opponent || 'Game')}</span><span class="psub">${st === 'upcoming'
+        ? esc(when)
+        : `${esc(m.date ? dayLabel(m.date) : '')} · <span data-live="gmins" data-mid="${m.id}">${mins(el)}</span> min played${running(m) ? ' · clock running' : ''}`}</span></span>
+      ${CALLED[m.called] && st === 'upcoming' ? `<span class="tag off">${CALLED[m.called]}</span>`
+        : st === 'upcoming' ? '<span class="tag game">Upcoming</span>'
+          : `<span class="pmins">${score(m).us}<small>–${score(m).them}</small></span>`}</button>`;
   }).join('') || `<div class="empty"><strong>No games yet</strong>${readOnlyHere() ? "The team's coach adds them." : 'Add one and it becomes the live game.'}</div>`;
   return `<div class="stack"><div class="spread"><h2>Games</h2>${addGameBtn('btn sm')}</div><div class="plist">${rows}</div></div>`;
 }
@@ -4044,7 +4557,9 @@ function viewMine() {
     const planned = ms.reduce((a, m) => a + plannedSec(m, p.id), 0);
     const last = ms.find(m => gameStatus(m) === 'done');
     const live = ms.find(m => gameStatus(m) === 'live');
-    const next = ms.filter(m => gameStatus(m) === 'upcoming').slice(-1)[0];
+    /* A parent's "next" is whatever she has to get her daughter to, and that
+       is a practice four days out of five. */
+    const next = calNext(calItems([t.id]).filter(x => !(x.kind === 'game' && x.status === 'live')));
     const roles = {};
     for (const m of ms) for (const [k, v] of Object.entries(byRole(m, p.id))) roles[k] = (roles[k] || 0) + v;
     const rs = Object.entries(roles).filter(([, v]) => v >= 60).sort((a, b) => b[1] - a[1])
@@ -4070,10 +4585,10 @@ function viewMine() {
           <span><span class="pname">Last game — ${esc(last.opponent || 'TBC')}</span>
             <span class="rowsub">${esc(shortDate(last.date))} · ${mins(playedSec(last, p.id))} min played</span></span>
           <span class="pmins">${score(last).us}<small>–${score(last).them}</small></span></button>` : ''}
-        ${next ? `<div class="prow" style="grid-template-columns:1fr auto">
-          <span><span class="pname">Next — ${esc(next.opponent || 'TBC')}</span>
-            <span class="rowsub">${[shortDate(next.date), next.kickoff, next.venue].filter(Boolean).map(esc).join(' · ')}</span></span>
-          <span class="muted">upcoming</span></div>` : ''}
+        ${next ? `<button class="prow" data-act="calitem" data-k="${next.kind}" data-tid="${esc(t.id)}" data-id="${esc(next.id)}" style="grid-template-columns:1fr auto">
+          <span><span class="pname">Next — ${esc(next.title)}</span>
+            <span class="rowsub">${[relDay(next.date) || dayLabel(next.date), niceTime(next.start), next.venue].filter(Boolean).map(esc).join(' · ')}</span></span>
+          <span class="tag ${next.kind}">${CAL_KIND[next.kind]}</span></button>` : ''}
       </div></div>`;
   }).join('')}
     <p class="muted">Minutes are across every game this season. Tap a game for the full picture.</p>
@@ -4422,6 +4937,8 @@ function publicGame(t, m) {
   return {
     id: m.id,
     opponent: m.opponent || '', date: m.date || '', kickoff: m.kickoff || '', venue: m.venue || '',
+    home: HOME_AWAY[m.home] ? m.home : '', arrive: hm(m.arrive), called: CALLED[m.called] ? m.called : '',
+    kit: pubText(t, m.kit), notes: pubText(t, m.notes),
     periodCount: m.periodCount || 2, periodMinutes: m.periodMinutes || 40,
     currentHalf: m.currentHalf || 1, periods: m.periods || {},
     status: gameStatus(m), score: score(m), shots: shotTally(m),
@@ -4457,8 +4974,25 @@ function publicDoc(t) {
     // rules are open that id is the password to the whole club. The page only
     // needs somewhere to send a signed-in visitor; the app decides what they see.
     link: { teamId: t.id, app: shareBase() + 'index.html' },
-    games, record: { w, d, l, gf, ga }, updated: nowMs()
+    games, events: publicEvents(t), record: { w, d, l, gf, ga }, updated: nowMs()
   };
+}
+
+/* Only what a coach marked for the share link, and only the fields a family
+   needs to turn up: no series id, no author, no note of who added it. Free
+   text goes through pubText() like the game's own notes. */
+function publicEvents(t) {
+  const out = {};
+  for (const [id, e] of Object.entries(t.events || {})) {
+    if (!e || !e.public || !okDay(e.date)) continue;
+    const kind = e.kind === 'practice' ? 'practice' : 'event';
+    out[id] = {
+      kind, title: pubText(t, e.title) || CAL_KIND[kind], date: e.date,
+      start: hm(e.start), end: hm(e.end), venue: pubText(t, e.venue), notes: pubText(t, e.notes),
+      called: CALLED[e.called] ? e.called : ''
+    };
+  }
+  return out;
 }
 
 let pubTimer;
@@ -4741,7 +5275,7 @@ function sheetShare() {
       <p class="lbl">Follow the season</p>
       <div class="codebox">${esc(teamLink(t))}</div>
       <div class="row" style="margin-bottom:16px"><button class="btn sm" data-act="copylink" data-v="${esc(teamLink(t))}">Copy season link</button></div>
-      <p class="muted" style="margin-top:0">Text this once. It always shows whatever game is on, plus the season record.</p>
+      <p class="muted" style="margin-top:0">Text this once. It always shows whatever game is on, what is coming up — games, and any practice or event marked for the share link — and the season record. Families can add it all to their own calendars from there.</p>
 
       ${m ? `<p class="lbl">This game — ${esc(m.opponent || 'game')}${m.date ? ' · ' + esc(shortDate(m.date)) : ''}</p>
       <div class="codebox">${esc(gameLink(t, m))}</div>
@@ -4753,7 +5287,11 @@ function sheetShare() {
       <button class="btn danger wide" data-act="rotateshare">Make a new link and kill the old one</button>`}`
       : ro ? `<p class="muted" style="margin-top:0">This team's coach has not set up parent links yet.</p>`
       : `<p class="muted" style="margin-top:0">Creates a long random address. Only people you send it to can find it.</p>
-      <button class="btn wide" data-act="makeshare">Create the share links</button>`}`);
+      <button class="btn wide" data-act="makeshare">Create the share links</button>`}
+    ${m && !ro ? `<p class="lbl" style="margin-top:16px">For the other team</p>
+      <div class="codebox" style="white-space:pre-wrap">${esc(opponentMessage(t, m))}</div>
+      <div class="row" style="margin-bottom:8px"><button class="btn sm" data-act="copytext" data-v="${esc(opponentMessage(t, m))}">Copy the message</button></div>
+      <p class="muted" style="margin-top:0">Ready to text to their coach.${t.share ? ' The link is the game page families get: when, where and the live score, shirt numbers only. It carries the season link\u2019s code, so whoever holds it can reach the season page too — every game, and what you marked for the share link. Never names, and never anything kept to the team.' : ' Set up sharing and it carries a link to the game page with the live score.'}</p>` : ''}`);
 }
 
 function sheetSignIn() {
@@ -4920,10 +5458,11 @@ function sheetTeams() {
     ${canAdmin() ? `<button class="btn wide" data-act="newteam">Add a team</button>` : ''}`);
 }
 
-function sheetMatch(m) {
+function sheetMatch(m, pre) {
   const t = team();
   const isNew = !m;
-  m = m || { periodCount: 2, periodMinutes: 40, onFieldCount: 11, date: new Date().toISOString().slice(0, 10) };
+  // today as the coach's phone reads it; toISOString() is tomorrow by the evening in America
+  m = m || { periodCount: 2, periodMinutes: 40, onFieldCount: 11, date: todayStr(), ...(pre || {}) };
   openSheet(`<h3>${isNew ? 'New game' : 'Game details'}</h3>
     <label class="field"><span>Opponent</span><input type="text" id="mOpp" value="${esc(m.opponent || '')}" placeholder="Riverside United"></label>
     <div class="grid2">
@@ -4931,6 +5470,18 @@ function sheetMatch(m) {
       <label class="field"><span>Kick-off</span><input type="time" id="mKick" value="${esc(m.kickoff || '')}"></label>
     </div>
     <label class="field"><span>Where</span><input type="text" id="mVenue" value="${esc(m.venue || '')}" placeholder="Lakeside Park, field 3"></label>
+    <div class="grid2">
+      <label class="field"><span>Home or away</span><select id="mHome">
+        <option value="">Not set</option>
+        ${Object.entries(HOME_AWAY).map(([k, v]) => `<option value="${k}"${m.home === k ? ' selected' : ''}>${v}</option>`).join('')}</select></label>
+      <label class="field"><span>Arrive by</span><input type="time" id="mArrive" value="${esc(m.arrive || '')}"></label>
+    </div>
+    <label class="field"><span>Kit</span><input type="text" id="mKit" value="${esc(m.kit || '')}" placeholder="Blue shirts, white socks"></label>
+    <label class="field"><span>Notes for families and the other team</span><textarea id="mNotes" rows="2" placeholder="Park on Elm Street, not in the school lot">${esc(m.notes || '')}</textarea></label>
+    <p class="muted" style="margin:-4px 0 12px">On the share pages and in the calendar. A player\u2019s name typed here is left off the share pages.</p>
+    ${isNew ? '' : `<label class="field"><span>Is it on?</span><select id="mCalled">
+      <option value="">On</option>
+      ${Object.entries(CALLED).map(([k, v]) => `<option value="${k}"${m.called === k ? ' selected' : ''}>${v}</option>`).join('')}</select></label>`}
     <div class="grid2">
       <label class="field"><span>Halves or quarters</span><select id="mCount">
         <option value="2"${(m.periodCount || 2) == 2 ? ' selected' : ''}>2 halves</option>
@@ -5517,13 +6068,34 @@ function aiScrub(text, scope) {
     subs.push([full, to]);
     for (const w of full.split(/\s+/)) if (w.length >= 2) subs.push([w, to]);
   }
-  subs.sort((a, b) => b[0].length - a[0].length);
+  return replaceNames(text, subs);
+}
+function replaceNames(text, subs) {
+  subs = subs.slice().sort((a, b) => b[0].length - a[0].length);
   let n = 0;
   for (const [from, to] of subs) {
     const re = new RegExp(`(^|[^\\p{L}\\p{N}])${from.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?![\\p{L}\\p{N}])`, 'giu');
     text = text.replace(re, (all, pre) => { n++; return pre + to; });
   }
   return { text, n };
+}
+/* Free text on its way to public/. Venue and opponent have always been
+   published as typed, but the calendar adds notes, titles and kit, and a note
+   is exactly where a name gets typed — "Ella's family on snacks". The mirror's
+   promise is that no child's name is in it by construction, so a roster name
+   here becomes "a player" before it is written, not before it is drawn. Every
+   word of every name, as the AI prompt does: "Rose Park" losing a word is the
+   safe way round, and the coach is told when it happens. */
+function pubText(t, s) {
+  if (!s) return '';
+  const subs = [];
+  for (const p of players(t)) {
+    const full = String(p.name || '').trim();
+    if (!full) continue;
+    subs.push([full, 'a player']);
+    for (const w of full.split(/\s+/)) if (w.length >= 2) subs.push([w, 'a player']);
+  }
+  return replaceNames(String(s), subs).text;
 }
 
 /* Where the prompt goes once it is copied. Both ?q= links pre-fill the box; the
@@ -5629,7 +6201,7 @@ function onAct(e) {
   if (!el) return;
   const a = el.dataset.act, d = el.dataset;
   const t = team(), m = match();
-  if (!mayAct(a, m)) { closeSheet(); toast("Only this team's coaches can change that"); render(); return; }
+  if (!mayAct(a, m, d)) { closeSheet(); toast("Only this team's coaches can change that"); render(); return; }
 
   if (a === 'tap') { tapPlayer(d.pid); return; }
   if (a === 'taplive') { tapLive(d.pid); return; }
@@ -6337,7 +6909,97 @@ function onAct(e) {
     drop(`teams/${t.id}/players/${d.pid}`); closeSheet(); return;
   }
 
-  if (a === 'newmatch') { closeSheet(); sheetMatch(null); return; }
+  if (a === 'newmatch') {
+    // from the calendar's Add sheet, the day and place already typed carry over
+    let pre = null;
+    if (d.from === 'cal' && calForm) { calFormRead(); pre = { date: calForm.date, kickoff: calForm.start, venue: calForm.venue }; calForm = null; }
+    closeSheet(); sheetMatch(null, pre); return;
+  }
+
+  /* The calendar. Looking is anybody's; adding, changing and calling off are
+     the coach's, checked by mayAct() against the team the button names. Acting
+     on an entry makes its team the open one, so the republish that follows a
+     change goes to that team's share link and not to whichever was open. */
+  if (a === 'calscope') { ui.calAll = d.v === 'all'; render(); return; }
+  if (a === 'calpast') { ui.calPast = !ui.calPast; render(); return; }
+  if (a === 'calmonth') {
+    const cur = /^\d{4}-\d{2}$/.test(ui.calMonth || '') ? ui.calMonth : todayStr().slice(0, 7);
+    const [y, mo] = cur.split('-').map(Number);
+    const x = new Date(y, mo - 1 + Number(d.v || 0), 1);
+    ui.calMonth = Number(d.v) ? `${x.getFullYear()}-${pad2(x.getMonth() + 1)}` : null;
+    render(); return;
+  }
+  if (a === 'calday') { sheetCalDay(d.v); return; }
+  if (a === 'calitem') { sheetCalItem(d.k, d.tid, d.id); return; }
+  if (a === 'calgame') {
+    const g = state.matches[d.id]; if (!g) return;
+    ui.teamId = d.tid; ui.matchId = d.id; ui.view = 'game'; ui.picked = null;
+    // before kick-off a coach has a plan to make; everyone else follows the game
+    ui.gameView = gameStatus(g) === 'upcoming' && canEditTeam(d.tid) ? 'plan' : 'live';
+    closeSheet(); render(); return;
+  }
+  if (a === 'calics') {
+    const it = calItems([d.tid]).find(x => x.kind === d.k && x.id === d.id);
+    if (it) downloadIcs(icsItem(it).title, [icsItem(it)]);
+    return;
+  }
+  if (a === 'calicsall') {
+    const all = !!ui.calAll && myTeams().length > 1;
+    const list = calItems(calTeams()).filter(x => x.date && !calPast(x)).map(icsItem);
+    downloadIcs(all ? ((acc().org || {}).name || 'Club') : ((t && t.name) || 'Team'), list);
+    return;
+  }
+  if (a === 'calnew') {
+    if (d.tid) ui.teamId = d.tid;
+    calForm = calFormNew(ui.teamId, d.v); sheetCalEvent(); return;
+  }
+  if (a === 'caledit') {
+    const e = ((state.teams[d.tid] || {}).events || {})[d.id]; if (!e) return;
+    ui.teamId = d.tid;
+    calForm = calFormEdit(d.tid, e); sheetCalEvent(); return;
+  }
+  if (a === 'calkind' || a === 'calrepeat' || a === 'calwd' || a === 'calpub' || a === 'calscopeed') {
+    if (!calForm) return;
+    calFormRead();
+    const f = calForm;
+    if (a === 'calkind') f.kind = d.v === 'practice' ? 'practice' : 'event';
+    // turning it on is when the days get chosen, so start from the date as typed by then
+    if (a === 'calrepeat') { f.repeat = d.v === '1'; if (f.repeat && okDay(f.date)) f.days = [weekdayOf(f.date)]; }
+    if (a === 'calwd') { const i = Number(d.v); f.days = f.days.includes(i) ? f.days.filter(x => x !== i) : [...f.days, i].sort(); }
+    if (a === 'calpub') f.public = d.v === '1';
+    if (a === 'calscopeed') f.scope = d.v === 'later' ? 'later' : 'one';
+    sheetCalEvent(); return;
+  }
+  if (a === 'calsave') { if (calForm) saveCalEvent(); return; }
+  if (a === 'calcall') {
+    if (!calForm || !calForm.id) return;
+    calFormRead();
+    const tid = calForm.tid, e = ((state.teams[tid] || {}).events || {})[calForm.id]; if (!e) return;
+    const off = !e.called, list = calTargets();
+    for (const x of list) quiet(`teams/${tid}/events/${x.id}/called`, off ? 'cancelled' : null);
+    calForm = null;
+    calDone(off ? `Called off${list.length > 1 ? ` — ${list.length} of them` : ''}. It stays on the calendar, struck through.` : 'Back on');
+    return;
+  }
+  if (a === 'caldel') {
+    if (!calForm || !calForm.id) return;
+    const tid = calForm.tid, list = calTargets();
+    if (!list.length) return;
+    if (!confirm(list.length > 1 ? `Delete these ${list.length}? Calling them off keeps them on the calendar for people to see.` : 'Delete this? Calling it off instead keeps it on the calendar, struck through, so nobody turns up.')) return;
+    for (const x of list) { delDeep(state, `teams/${tid}/events/${x.id}`); remoteDel(`teams/${tid}/events/${x.id}`); }
+    calForm = null;
+    calDone(list.length > 1 ? `Deleted ${list.length}` : 'Deleted');
+    return;
+  }
+  if (a === 'caleditgame') {
+    if (!state.matches[d.id]) return;
+    ui.teamId = d.tid; ui.matchId = d.id;
+    sheetMatch(state.matches[d.id]); return;
+  }
+  if (a === 'copytext') {
+    navigator.clipboard.writeText(d.v).then(() => toast('Copied'), () => toast('Could not copy — select it by hand'));
+    return;
+  }
   if (a === 'editmatch') { sheetMatch(state.matches[d.id]); return; }
   if (a === 'backgames') { ui.view = 'matches'; ui.picked = null; render(); return; }
   if (a === 'openmatch') { ui.matchId = d.id; ui.view = 'game'; ui.gameView = 'subs'; render(); return; }
@@ -6347,8 +7009,13 @@ function onAct(e) {
       opponent: $('#mOpp').value.trim(), date: $('#mDate').value,
       kickoff: $('#mKick').value || '', venue: $('#mVenue').value.trim(),
       periodCount: Number($('#mCount').value), periodMinutes: Number($('#mLen').value) || 40,
-      onFieldCount: side, veoUrl: $('#mVeo').value.trim()
+      onFieldCount: side, veoUrl: $('#mVeo').value.trim(),
+      home: HOME_AWAY[$('#mHome').value] ? $('#mHome').value : '', arrive: hm($('#mArrive').value),
+      kit: $('#mKit').value.trim(), notes: $('#mNotes').value.trim()
     };
+    // a new game has no "is it on?" control, and an old one keeps what it had if the sheet lacks it
+    const cl = d.id ? $('#mCalled') : null;
+    if (cl) base.called = CALLED[cl.value] ? cl.value : '';
     const pick = $('#mShape').value;
     /* "Build my own" starts from the shape this game would otherwise get, so
        the coach is nudging spots rather than placing nine from nothing. */
@@ -6491,8 +7158,8 @@ function uiToHash() {
   if (ui.view === 'game' && t && m) return `#/team/${t}/game/${m}/${ui.gameView}`;
   if (ui.view === 'formation' && t && ui.editFid === GAME_SHAPE && m) return `#/team/${t}/game/${m}/shape`;
   if (ui.view === 'formation' && t) return `#/team/${t}/shape/${ui.editFid}`;
-  if (['matches', 'roster', 'season', 'teamset'].includes(ui.view) && t) {
-    const seg = { matches: 'games', roster: 'squad', season: 'season', teamset: 'planning' }[ui.view];
+  if (['matches', 'calendar', 'roster', 'season', 'teamset'].includes(ui.view) && t) {
+    const seg = { matches: 'games', calendar: 'calendar', roster: 'squad', season: 'season', teamset: 'planning' }[ui.view];
     return `#/team/${t}/${seg}`;
   }
   if (ui.view === 'people') return '#/club/people';
@@ -6520,7 +7187,7 @@ function hashToUi() {
       return true;
     }
     if (p[2] === 'shape' && p[3]) { ui.editFid = p[3]; ui.view = 'formation'; return true; }
-    const back = { games: 'matches', squad: 'roster', season: 'season', planning: 'teamset' }[p[2]];
+    const back = { games: 'matches', calendar: 'calendar', squad: 'roster', season: 'season', planning: 'teamset' }[p[2]];
     ui.view = back || 'matches';
     return true;
   }
