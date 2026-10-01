@@ -8,6 +8,35 @@ before this point lives only in the git log.
 
 ---
 
+## Messages: team notices, and families talking to their coaches — 2026-10-01
+
+Everything a club says to its parents happened somewhere else — a group chat,
+a text from the coach's own number, an email chain someone was left off. The
+bell in the top bar now opens **Messages**:
+
+- **Team notices.** A team's coaches and the admins post; every family on the
+  team reads. *Urgent* marks one in red. Each shows the coach **Seen by 9 of 14
+  families**, with who has not, and **Email or share** opens her email app with
+  every parent's address in Bcc — the one way to reach a closed phone without a
+  server.
+- **Family conversations.** One per family per team, with *every* coach of that
+  team and the admins on it. Never a private line to one coach: that is the
+  shape safeguarding policies ask for, and it means a message is not lost when
+  a coach is off sick. Append-only — nobody edits or deletes a message.
+- **Offline.** A message written with no signal waits in an outbox and goes
+  when the connection returns, even across a reload. A refused one says *Not
+  sent* and keeps its text.
+- **Pop-ups** while Minutes is open, through the same path as the Live tab's
+  goals, and a count on the bell until it is read.
+
+Both live at the root (`board/`, `dm/`) with rules of their own, not under the
+workspace: every indexed account reads the whole workspace, and a parent's
+message about her daughter is not every other parent's business. README has
+the two rule blocks — in the open set and the locked-down set — and
+`test/rules.js` pins them; `test/messages.js` pins that the app asks for no
+more than they allow. ROADMAP has what real push to a closed phone would take,
+which is the first piece of this project that would need a server.
+
 ## Waiting people are one tap from being let in — 2026-09-27
 
 Someone who signs in on their own lands in People with no role, and the only

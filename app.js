@@ -2,8 +2,8 @@
    Static app. Data lives in localStorage, and mirrors to Firebase Realtime
    Database when a config + workspace code are present. */
 
-const BUILD = '64';
-const BUILT = '2026-09-26';
+const BUILD = '65';
+const BUILT = '2026-10-01';
 /* index.html carries the build it was published with. If this file is newer, the
    browser handed us a cached page — the exact failure that has eaten hours. */
 const pageBuild = () => {
@@ -1219,6 +1219,453 @@ async function makeInvite() {
     <p class="muted">Firebase sends it, worded as a sign-in link rather than an invitation — worth a text to say it is coming.</p>` : ''}
     <button class="btn quiet wide" data-act="closesheet">Done</button>`);
   render();
+}
+
+/* ---------------- messages ---------------- */
+/* Talking to the families: team notices from the coaches, and a private
+   conversation between each family and their team's coaches.
+
+   Where it lives matters more than how it looks. Not under workspaces/{code}:
+   everyone indexed reads all of that, so a parent's message about her
+   daughter would be readable by every other parent in the club, and the
+   connect-time read would drag every conversation onto every phone. So, at the
+   root, each with rules of its own (README has them; test/rules.js pins them):
+
+     board/{code}/{teamId}/{id}           a notice. Coaches of that team and
+                                          admins post; anyone indexed in the
+                                          club reads. seen/{uid} is each
+                                          reader's own tick, which is also how
+                                          a coach knows who has not seen it.
+     dm/{code}/{teamId}/{familyUid}/m/{id}
+                                          one conversation per family per team,
+                                          readable by that family, every coach
+                                          of the team and the admins — never one
+                                          coach alone. Append-only, like the
+                                          audit log: nobody edits or deletes a
+                                          message, admins included.
+     dm/.../{familyUid}/seen/{uid}        each side's read marker.
+
+   A notice board readable club-wide is no wider than what the rules already
+   let a parent read (every team's games and squad); the app shows each person
+   only their own teams. Rules cannot ask "is this uid a guardian on this team"
+   without a parent lookup table, and AUTH.md's teamMembers index is that table.
+
+   Notifications are honest about the platform, as the Live tab's are: with no
+   server there is nothing to push from, so a message pops up while Minutes is
+   open, in any tab, and is waiting with a badge the next time it is opened.
+   Reaching a phone that has closed it means Email the parents, which needs
+   nothing but the addresses the club already has, or a push service — ROADMAP
+   has what that would take. */
+const LS_MSGS = 'sm.msgs';
+const MSG_MAX = 4000;
+const MSG_SHOW = 25;           // notices drawn before "Show older"
+let msgs = { board: {}, dm: {}, outbox: {} };
+let msgFor = null;             // { key, ls, uid, code } the watchers belong to
+let msgSubs = {};              // path -> unsubscribe
+let msgPrimed = {};            // path -> keys already there at the first read
+const msgSentHere = new Set(); // ids this page has handed to the database itself
+
+const msgsKey = u => LS_MSGS + ':' + clubKey() + ':' + u;
+const isStaff = tid => !!me && (canAdmin() || isCoach(tid, me.uid));
+/* Every team whose notices this account reads: the ones it works on or has a
+   child in. A coach reading another age group is a viewer there, not a member,
+   and that team's notices are not hers. */
+function msgTeams() {
+  if (!me || !fb || !wsCode() || needsSignIn() || !anyAdmins()) return [];
+  return teams().filter(t => isStaff(t.id) || isTracker(t.id, me.uid) || isGuardian(t.id, me.uid));
+}
+const staffTeams = () => msgTeams().filter(t => isStaff(t.id));
+// a coach whose own child is in her squad talks to herself as staff, not as a family
+const famTeams = () => msgTeams().filter(t => !isStaff(t.id) && isGuardian(t.id, me.uid));
+const msgOn = () => msgTeams().length > 0;
+
+function saveMsgs() {
+  if (!msgFor) return;
+  try { localStorage.setItem(msgFor.ls, JSON.stringify(msgs)); } catch (e) { }
+}
+function rootSet(p, v) {
+  if (!fb) return Promise.reject(new Error('not connected'));
+  try { return Promise.resolve(fb.set(fb.ref(fb.db, p), v)); } catch (e) { return Promise.reject(e); }
+}
+
+/* Attach exactly the listeners this account's roles call for, and drop any it
+   no longer has. Run from render(), so a role granted or withdrawn while the
+   page is open changes what is being listened to without a reload. A change of
+   account or club starts over, and signing out drops this account's copy: the
+   squad's cache is kept for an unsynced game, but nothing here exists only on
+   this device except the outbox, and a private conversation does not belong on
+   a phone somebody else may sign in on next. */
+function watchMessages() {
+  const key = me && rtdb && fb && wsCode() && !needsSignIn() ? clubKey() + '|' + me.uid : null;
+  if (key !== (msgFor && msgFor.key)) {
+    for (const off of Object.values(msgSubs)) { try { off(); } catch (e) { } }
+    if (msgFor && !me) { try { localStorage.removeItem(msgFor.ls); } catch (e) { } }
+    msgSubs = {}; msgPrimed = {};
+    msgs = { board: {}, dm: {}, outbox: {} };
+    msgFor = key ? { key, ls: msgsKey(me.uid), uid: me.uid, code: wsCode() } : null;
+    if (msgFor) {
+      try {
+        const c = JSON.parse(localStorage.getItem(msgFor.ls) || 'null');
+        if (c) msgs = { board: c.board || {}, dm: c.dm || {}, outbox: c.outbox || {} };
+      } catch (e) { }
+    }
+  }
+  if (!msgFor) return;
+  const code = msgFor.code, want = {};
+  for (const t of msgTeams()) want[`board/${code}/${t.id}`] = { kind: 'board', tid: t.id };
+  for (const t of staffTeams()) want[`dm/${code}/${t.id}`] = { kind: 'dm', tid: t.id };
+  for (const t of famTeams()) want[`dm/${code}/${t.id}/${me.uid}`] = { kind: 'dm', tid: t.id, fam: me.uid };
+  for (const p of Object.keys(msgSubs)) if (!want[p]) {
+    try { msgSubs[p](); } catch (e) { }
+    delete msgSubs[p]; delete msgPrimed[p];
+  }
+  const { db, mod } = rtdb;
+  for (const [p, w] of Object.entries(want)) {
+    if (msgSubs[p]) continue;
+    /* Claimed before asking: a listener that answers synchronously from the
+       cache renders, and render() comes straight back here — without the
+       placeholder that is a second listener, and a third, and so on. */
+    let off = null;
+    msgSubs[p] = () => { if (off) off(); };
+    off = mod.onValue(mod.ref(db, p), s => onMsgs(p, w, s.val()), () => { });
+    if (typeof off !== 'function') off = null;
+  }
+}
+
+/* What a listener delivers is the truth for its path; the outbox is what this
+   device has sent that the database has not said it has. */
+function onMsgs(p, w, v) {
+  if (!msgFor) return;
+  if (w.kind === 'board') msgs.board[w.tid] = v || {};
+  else if (w.fam) {
+    const all = { ...(msgs.dm[w.tid] || {}) };
+    if (v) all[w.fam] = v; else delete all[w.fam];
+    msgs.dm[w.tid] = all;
+  } else msgs.dm[w.tid] = v || {};
+  const landed = id => w.kind === 'board' ? !!((v || {})[id])
+    : w.fam ? !!(((v || {}).m || {})[id]) : Object.values(v || {}).some(th => (th.m || {})[id]);
+  const first = !msgPrimed[p];
+  for (const [id, o] of Object.entries(msgs.outbox)) {
+    if (!o.path.startsWith(p + '/')) continue;
+    /* Firebase shows this page its own write at once, before the server has
+       it, and forgets it on a reload. So only the write's own answer clears
+       something sent from here; seeing it in a read only clears what an
+       earlier page sent, because then it came from the server. */
+    if (landed(id) && !msgSentHere.has(id)) delete msgs.outbox[id];
+    // queued before a reload, which a database write does not survive: send it again
+    else if (first && o.status === 'sending') sendOut(id);
+  }
+  const fresh = msgNews(p, w);
+  saveMsgs();
+  for (const x of fresh) ping(x.title, x.body, 'minutes-msg-' + x.id, x.urgent ? [200, 80, 200, 80, 200] : [150, 60, 150]);
+  msgPaint();
+}
+
+/* The first read of a path only takes note of what is already there — opening
+   the app should not fire a week of notices — after which anything new from
+   somebody else, that this account has not already seen elsewhere, is news. */
+function msgNews(p, w) {
+  const items = [];
+  const tn = (state.teams[w.tid] || {}).name || 'Your team';
+  if (w.kind === 'board') {
+    for (const [id, x] of Object.entries(msgs.board[w.tid] || {}))
+      items.push({ id, by: x.by, seen: !!(x.seen || {})[msgFor.uid], urgent: !!x.urgent,
+        title: `${x.urgent ? 'Urgent · ' : ''}${tn} · ${x.byName || 'a coach'}`, body: x.text });
+  } else {
+    for (const [fam, th] of Object.entries(msgs.dm[w.tid] || {})) {
+      if (w.fam && fam !== w.fam) continue;
+      const mark = (th.seen || {})[msgFor.uid] || 0;
+      for (const [id, x] of Object.entries(th.m || {}))
+        items.push({ id, by: x.by, seen: (x.at || 0) <= mark,
+          title: w.fam ? `${x.byName || 'A coach'} · ${tn}` : `${familyName(fam)} · ${tn}`, body: x.text });
+    }
+  }
+  const known = msgPrimed[p];
+  msgPrimed[p] = new Set(items.map(x => x.id));
+  if (!known) return [];
+  return items.filter(x => !known.has(x.id) && x.by !== msgFor.uid && !x.seen);
+}
+
+/* ---- reading ---- */
+const outFor = (kind, tid, fam) => Object.entries(msgs.outbox || {})
+  .filter(([, o]) => o.kind === kind && o.tid === tid && (kind === 'board' || o.fam === fam))
+  .map(([id, o]) => ({ id, ...o.value, status: o.status }));
+// the outbox's copy wins over the database's echo of it, so it keeps its status
+const withOut = (sent, out) => { const ids = new Set(out.map(x => x.id)); return sent.filter(x => !ids.has(x.id)).concat(out); };
+function notices(tid) {
+  const sent = Object.entries(msgs.board[tid] || {}).map(([id, x]) => ({ id, tid, ...x }));
+  return withOut(sent, outFor('board', tid).map(x => ({ ...x, tid }))).sort((a, b) => (b.at || 0) - (a.at || 0));
+}
+const thread = (tid, fam) => ((msgs.dm[tid] || {})[fam]) || {};
+function threadMsgs(tid, fam) {
+  const sent = Object.entries(thread(tid, fam).m || {}).map(([id, x]) => ({ id, ...x }));
+  return withOut(sent, outFor('dm', tid, fam)).sort((a, b) => (a.at || 0) - (b.at || 0));
+}
+const noticeUnread = x => !!me && x.by !== me.uid && !x.status && !(x.seen || {})[me.uid];
+function threadUnread(tid, fam) {
+  if (!me) return 0;
+  const mark = (thread(tid, fam).seen || {})[me.uid] || 0;
+  return threadMsgs(tid, fam).filter(x => x.by !== me.uid && !x.status && (x.at || 0) > mark).length;
+}
+function unreadCount() {
+  if (!msgFor) return 0;
+  let n = 0;
+  for (const t of msgTeams()) n += notices(t.id).filter(noticeUnread).length;
+  for (const t of staffTeams()) for (const fam of Object.keys(msgs.dm[t.id] || {})) n += threadUnread(t.id, fam) ? 1 : 0;
+  for (const t of famTeams()) n += threadUnread(t.id, me.uid) ? 1 : 0;
+  return n;
+}
+
+/* Families on a team, by account: a parent of two in the same squad is one
+   family, and it is families a coach is asking about when she asks who has
+   seen the notice. */
+function families(tid) {
+  const out = new Set();
+  for (const p of Object.values(((state.teams[tid] || {}).players) || {}))
+    for (const u of Object.keys(p.guardians || {})) if (!isStaff(tid) || u !== me.uid) out.add(u);
+  return [...out];
+}
+function familyName(u) {
+  const x = (acc().members || {})[u] || {};
+  return x.name || (x.email ? x.email.split('@')[0] : '') || 'A parent';
+}
+// the coach sees whose parent this is; nobody else is ever shown this
+function childrenOf(tid, u) {
+  return players(state.teams[tid]).filter(p => (p.guardians || {})[u]).map(p => p.name).filter(Boolean);
+}
+function staffNames(tid) {
+  const out = new Set();
+  for (const u of Object.keys(teamAccess(tid).coaches || {})) out.add(familyName(u));
+  return [...out];
+}
+const guardianEmails = tid => [...new Set(families(tid).map(u => ((acc().members || {})[u] || {}).email).filter(Boolean))];
+
+function whenShort(ms) {
+  if (!ms) return '';
+  const d = new Date(ms), now = new Date(nowMs());
+  const time = d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  if (d.toDateString() === now.toDateString()) return time;
+  const y = new Date(now); y.setDate(y.getDate() - 1);
+  if (d.toDateString() === y.toDateString()) return 'Yesterday ' + time;
+  return d.toLocaleDateString([], { day: 'numeric', month: 'short' }) + ' ' + time;
+}
+const msgText = s => esc(s).replace(/\n/g, '<br>');
+
+/* Opening the screen is reading it. Only while the page is actually in front
+   of somebody: a tab left on Messages in the background has not read what
+   arrives there. */
+function markSeen() {
+  if (!msgFor || (typeof document !== 'undefined' && document.hidden)) return;
+  const u = msgFor.uid, code = msgFor.code, at = nowMs();
+  if (ui.view === 'inbox') {
+    for (const t of msgTeams()) for (const x of notices(t.id)) {
+      if (!noticeUnread(x)) continue;
+      setDeep(msgs.board, `${t.id}/${x.id}/seen/${u}`, at);
+      rootSet(`board/${code}/${t.id}/${x.id}/seen/${u}`, at).catch(() => { });
+    }
+    saveMsgs();
+  }
+  if (ui.view === 'thread' && ui.thread) {
+    const { tid, fam } = ui.thread;
+    if (!threadUnread(tid, fam)) return;
+    setDeep(msgs.dm, `${tid}/${fam}/seen/${u}`, at);
+    rootSet(`dm/${code}/${tid}/${fam}/seen/${u}`, at).catch(() => { });
+    saveMsgs();
+  }
+}
+
+/* ---- sending ---- */
+function sendOut(id) {
+  const o = msgs.outbox[id]; if (!o) return;
+  o.status = 'sending'; saveMsgs();
+  msgSentHere.add(id);
+  rootSet(o.path, o.value).then(() => {
+    delete msgs.outbox[id]; saveMsgs(); render();
+  }, err => {
+    if (!msgs.outbox[id]) return;
+    msgs.outbox[id].status = 'refused'; saveMsgs(); render();
+    toast(/permission|denied/i.test((err && (err.code || err.message)) || '')
+      ? 'Not sent — the database refused it. Are the messaging rules published?' : 'Not sent');
+  });
+}
+/* The outbox is what lets a coach at a pitch with no signal post "we are
+   running ten minutes late" and put the phone away: it goes when the signal
+   comes back, even if the page was reloaded in between. */
+function queueMsg(kind, tid, fam, text, extra) {
+  const id = uid();
+  const value = { by: me.uid, byName: me.name || 'Someone', at: nowMs(), text, ...(extra || {}) };
+  const path = kind === 'board' ? `board/${msgFor.code}/${tid}/${id}` : `dm/${msgFor.code}/${tid}/${fam}/m/${id}`;
+  msgs.outbox[id] = { kind, tid, fam: fam || null, path, value, status: 'sending' };
+  sendOut(id);
+  return id;
+}
+
+/* ---- screens ---- */
+function viewInbox() {
+  if (!msgOn() && !wsRead && fbConfig().apiKey) return `<div class="empty"><strong>Connecting…</strong>Messages appear once Minutes has reached the club.</div>`;
+  if (!msgOn()) return `<div class="empty"><strong>No messages here</strong>
+    ${!anyAdmins() ? 'Messages start once the club has an admin.' : 'Messages are for the teams you coach, track or have a child in.'}</div>`;
+  const mine = msgTeams(), staff = staffTeams(), fams = famTeams();
+  const many = mine.length > 1;
+  const all = mine.flatMap(t => notices(t.id)).sort((a, b) => (b.at || 0) - (a.at || 0));
+  const shown = ui.msgAll ? all : all.slice(0, MSG_SHOW);
+
+  const canPop = typeof Notification !== 'undefined';
+  const alerts = canPop && Notification.permission === 'default' ? `<div class="card"><div class="spread"><b>Pop-ups on this device</b>
+      <button class="btn sm" data-act="msgalerts">Turn on</button></div>
+    <p class="muted" style="margin:6px 0 0">A message pops up while Minutes is open, even in another tab.</p></div>` : '';
+
+  const notice = x => {
+    const t = state.teams[x.tid] || {};
+    const fam = families(x.tid);
+    const seen = fam.filter(u => (x.seen || {})[u]).length;
+    return `<div class="msgcard${noticeUnread(x) ? ' unread' : ''}${x.urgent ? ' urgent' : ''}">
+      <div class="msghead"><b>${esc(x.byName || 'A coach')}</b>${many ? `<span class="pill">${esc(t.name || 'Team')}</span>` : ''}
+        ${x.urgent ? '<span class="pill urgent">Urgent</span>' : ''}<span class="msgwhen">${esc(whenShort(x.at))}</span></div>
+      <div class="msgbody">${msgText(x.text)}</div>
+      ${x.status === 'sending' ? '<div class="msgfoot">Sending — goes when there is a signal</div>' : ''}
+      ${x.status === 'refused' ? `<div class="msgfoot bad">Not sent <button class="linkbtn" data-act="msgretry" data-id="${x.id}">Try again</button> <button class="linkbtn" data-act="msgdiscard" data-id="${x.id}">Discard</button></div>` : ''}
+      ${!x.status && isStaff(x.tid) ? `<div class="msgfoot"><button class="linkbtn" data-act="postseen" data-tid="${x.tid}" data-id="${x.id}">Seen by ${seen} of ${fam.length} famil${fam.length === 1 ? 'y' : 'ies'}</button>
+        <button class="linkbtn" data-act="postshare" data-tid="${x.tid}" data-id="${x.id}">Email or share</button>
+        ${x.by === me.uid || canAdmin() ? `<button class="linkbtn" data-act="postdel" data-tid="${x.tid}" data-id="${x.id}">Delete</button>` : ''}</div>` : ''}
+    </div>`;
+  };
+
+  const convRow = (tid, fam, label, sub) => {
+    const l = threadMsgs(tid, fam), last = l[l.length - 1], n = threadUnread(tid, fam);
+    return `<button class="prow convrow${n ? ' unread' : ''}" data-act="thread" data-tid="${tid}" data-fam="${fam}">
+      <span><span class="pname">${label}</span>
+        <span class="rowsub">${last ? `${last.by === me.uid ? 'You: ' : ''}${esc(String(last.text || '').slice(0, 80))}` : esc(sub)}</span></span>
+      <span class="msgwhen">${n ? `<span class="msgdot">${n}</span>` : last ? esc(whenShort(last.at)) : ''}</span></button>`;
+  };
+  const famConvs = fams.map(t => convRow(t.id, me.uid, `Coaches of ${teamLabel(t)}`, 'Ask a question, say she is ill, anything for the coaches'));
+  const staffConvs = staff.flatMap(t => Object.keys(msgs.dm[t.id] || {})
+    .concat(Object.values(msgs.outbox || {}).filter(o => o.kind === 'dm' && o.tid === t.id).map(o => o.fam))
+    .filter((f, i, a) => a.indexOf(f) === i)
+    .map(fam => ({ t, fam, last: (threadMsgs(t.id, fam).slice(-1)[0] || {}).at || 0 })))
+    .sort((a, b) => (threadUnread(b.t.id, b.fam) ? 1 : 0) - (threadUnread(a.t.id, a.fam) ? 1 : 0) || b.last - a.last)
+    .map(({ t, fam }) => {
+      const kids = childrenOf(t.id, fam);
+      return convRow(t.id, fam, `${esc(familyName(fam))}${kids.length ? ` <span class="muted">· ${esc(kids.join(', '))}</span>` : ''}${many ? ` <span class="pill">${esc(t.name || '')}</span>` : ''}`, '');
+    });
+
+  return `<div class="stack">
+    <div class="spread"><h2>Messages</h2>
+      ${staff.length ? `<button class="btn sm" data-act="postnew">Post a notice</button>` : ''}</div>
+    ${alerts}
+    ${fams.length || staff.length ? `<div class="card"><h2 style="margin-bottom:8px">${staff.length ? 'From families' : 'Talk to the coaches'}</h2>
+      ${staff.length && !staffConvs.length && !famConvs.length ? `<p class="muted" style="margin:0">Nothing yet. A parent's message to the coaches lands here.</p>` : ''}
+      <div class="plist">${famConvs.join('')}${staffConvs.join('')}</div></div>` : ''}
+    <div class="card"><h2 style="margin-bottom:8px">Team notices</h2>
+      ${shown.length ? shown.map(notice).join('') : `<p class="muted" style="margin:0">${staff.length ? 'Nothing posted yet. A notice goes to every family on the team.' : 'Nothing from the coaches yet.'}</p>`}
+      ${all.length > shown.length ? `<button class="btn quiet wide" data-act="msgall">Show ${all.length - shown.length} older</button>` : ''}</div>
+    <p class="muted">Messages pop up while Minutes is open on a phone, and wait here with a badge until then.${staff.length ? ' To reach everyone right now, use <b>Email or share</b> on a notice.' : ''}</p>
+  </div>`;
+}
+
+function viewThread() {
+  const th = ui.thread || {};
+  const t = state.teams[th.tid];
+  const mayRead = t && me && (isStaff(t.id) || (th.fam === me.uid && isGuardian(t.id, me.uid)));
+  if (!mayRead) { ui.view = 'inbox'; ui.thread = null; return viewInbox(); }
+  const asStaff = isStaff(t.id) && th.fam !== me.uid;
+  const kids = asStaff ? childrenOf(t.id, th.fam) : [];
+  const coaches = staffNames(t.id);
+  const head = asStaff
+    ? `<b>${esc(familyName(th.fam))}</b><span class="rowsub">${kids.length ? 'Parent of ' + esc(kids.join(', ')) + ' · ' : ''}${teamLabel(t)}</span>`
+    : `<b>Coaches of ${teamLabel(t)}</b><span class="rowsub">${coaches.length ? esc(coaches.join(', ')) : 'The team’s coaches'}</span>`;
+  const draftKey = th.tid + '/' + th.fam;
+  return `<div class="stack">
+    <div class="row"><button class="btn quiet sm" data-act="inbox">‹ Messages</button></div>
+    <div class="card">${head}</div>
+    <div class="card"><div class="thread" id="thread">${threadHtml(t.id, th.fam)}</div>
+      <textarea id="msgText" rows="3" maxlength="${MSG_MAX}" placeholder="Write a message" data-draft="${esc(draftKey)}">${esc((ui.msgDraft || {})[draftKey] || '')}</textarea>
+      <div class="row" style="margin-top:8px;justify-content:flex-end"><button class="btn" data-act="msgsend" data-tid="${t.id}" data-fam="${esc(th.fam)}">Send</button></div></div>
+    <p class="muted">Every coach of ${teamLabel(t)} and the club's admins can read this conversation — never one coach alone. Nobody can edit or delete a message once it is sent.</p>
+  </div>`;
+}
+function threadHtml(tid, fam) {
+  const l = threadMsgs(tid, fam);
+  if (!l.length) return `<p class="muted" style="margin:0">No messages yet.</p>`;
+  // "Seen" under my last message once anybody on the other side has opened it since
+  const other = Object.entries(thread(tid, fam).seen || {}).filter(([u]) => u !== me.uid).map(([, v]) => v);
+  const lastMine = [...l].reverse().find(x => x.by === me.uid && !x.status);
+  const seenMine = lastMine && other.some(v => v >= (lastMine.at || 0));
+  return l.map(x => `<div class="bubble${x.by === me.uid ? ' me' : ''}">
+      ${x.by === me.uid ? '' : `<span class="bwho">${esc(x.byName || 'Someone')}</span>`}
+      <span class="btext">${msgText(x.text)}</span>
+      <span class="bwhen">${x.status === 'sending' ? 'Sending…' : x.status === 'refused'
+      ? `Not sent · <button class="linkbtn" data-act="msgretry" data-id="${x.id}">Try again</button>` : esc(whenShort(x.at))}${x === lastMine && seenMine ? ' · Seen' : ''}</span></div>`).join('');
+}
+
+function sheetPost(tid, text = '', urgent = false) {
+  const list = staffTeams();
+  if (!list.length) return;
+  if (!list.some(t => t.id === tid)) tid = (list.find(t => t.id === ui.teamId) || list[0]).id;
+  ui.postTid = tid; ui.postUrgent = urgent;
+  const n = families(tid).length;
+  openSheet(`<h3>Post a notice</h3>
+    ${list.length > 1 ? `<div class="field"><label>To</label>${pickOne('postteam', 'tid', tid, list.map(t => [t.id, teamLabel(t)]), '')}</div>` : ''}
+    <p class="muted" style="margin-top:0">Goes to every family on <b>${teamLabel(state.teams[tid])}</b> (${n} with an account), and to its coaches and trackers.</p>
+    <textarea id="postText" rows="5" maxlength="${MSG_MAX}" placeholder="Training moved to 6pm on Thursday — same pitch.">${esc(text)}</textarea>
+    <div class="chips" style="margin:10px 0"><button class="chip" type="button" data-act="posturgent" aria-pressed="${urgent}">Urgent</button></div>
+    <button class="btn wide" data-act="postsend">Post</button>
+    <button class="btn quiet wide" data-act="closesheet">Cancel</button>`);
+}
+
+/* After posting, the honest part: only people with the page open got it just
+   now. Email reaches the rest without a server — the club already holds every
+   parent's address from their sign-in. */
+function sheetPostShare(tid, id) {
+  const x = notices(tid).find(n => n.id === id); if (!x) { closeSheet(); return; }
+  const t = state.teams[tid] || {};
+  const mails = guardianEmails(tid);
+  const subject = `${t.name || 'Team'}${x.urgent ? ' — urgent' : ''}: message from ${x.byName || 'the coach'}`;
+  const body = String(x.text || '').slice(0, 1500);
+  const href = `mailto:?bcc=${encodeURIComponent(mails.join(','))}&subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+  openSheet(`<h3>Reach everyone now</h3>
+    <p class="muted" style="margin-top:0">Families with Minutes open have it already; everyone else sees it with a badge next time they open it. To get it to their phones now:</p>
+    ${mails.length ? `<a class="btn wide" href="${esc(href)}" data-act="closesheet">Email the parents (${mails.length})</a>
+      <p class="muted">Opens your email app with them in Bcc, so nobody sees anyone else's address.</p>`
+      : `<p class="muted">No parent on this team has an account with an email address yet.</p>`}
+    <button class="btn quiet wide" data-act="postsharetext" data-tid="${tid}" data-id="${id}">Share or copy the text</button>
+    <button class="btn quiet wide" data-act="closesheet">Done</button>`);
+}
+
+function sheetPostSeen(tid, id) {
+  const x = notices(tid).find(n => n.id === id); if (!x) return;
+  const fam = families(tid);
+  const yes = fam.filter(u => (x.seen || {})[u]), no = fam.filter(u => !(x.seen || {})[u]);
+  const row = u => {
+    const kids = childrenOf(tid, u);
+    return `<div class="prow" style="grid-template-columns:1fr auto"><span><span class="pname">${esc(familyName(u))}</span>
+      ${kids.length ? `<span class="rowsub">${esc(kids.join(', '))}</span>` : ''}</span>
+      <span class="muted">${(x.seen || {})[u] ? esc(whenShort(x.seen[u])) : ''}</span></div>`;
+  };
+  openSheet(`<h3>Who has seen it</h3>
+    <p class="muted" style="margin-top:0">Families whose parents have an account. A parent who only gets the email is not counted.</p>
+    ${no.length ? `<h4>Not yet (${no.length})</h4><div class="plist">${no.map(row).join('')}</div>` : ''}
+    ${yes.length ? `<h4>Seen (${yes.length})</h4><div class="plist">${yes.map(row).join('')}</div>` : ''}
+    ${!fam.length ? '<p class="muted">No parent on this team has an account yet — invite them from People.</p>' : ''}
+    <button class="btn quiet wide" data-act="closesheet">Done</button>`);
+}
+
+/* Draws what arrived without taking the reply box away from a thumb that is
+   typing in it: a full render rewrites #app, and the keyboard closes. */
+function msgPaint() {
+  const a = typeof document !== 'undefined' ? document.activeElement : null;
+  if (ui.view === 'thread' && ui.thread && a && a.id === 'msgText') {
+    const el = $('#thread'); if (el) el.innerHTML = threadHtml(ui.thread.tid, ui.thread.fam);
+    paintBell(); markSeen(); return;
+  }
+  render();
+}
+function paintBell(shut) {
+  const n = shut ? 0 : unreadCount();
+  const b = $('#inboxBtn');
+  if (b) { b.hidden = !!shut || !msgOn(); b.dataset.n = n ? String(n) : ''; }
+  const c = $('#inboxN'); if (c) c.textContent = n ? (n > 9 ? '9+' : String(n)) : '';
+  if (typeof document !== 'undefined') document.title = (n ? `(${n}) ` : '') + 'Minutes — soccer sub tracker';
 }
 
 /* ---------------- the test club ---------------- */
@@ -2448,6 +2895,10 @@ function render() {
   if (inGame && !match() && !teamMatches(ui.teamId).length) { ui.view = 'matches'; inGame = false; }
   if (ui.view === 'admin' && !canAdmin()) ui.view = 'club';
   if (ui.view === 'mine' && !guardsAnyone()) ui.view = 'matches';
+  /* Not before the club has been read: a link to #/messages opened cold on a
+     new phone renders before it knows anybody's role, and sending it to the
+     club then would lose where it was going for good. */
+  if ((ui.view === 'inbox' || ui.view === 'thread') && !shut && (wsRead || !fbConfig().apiKey) && !msgOn()) ui.view = 'club';
   // a parent has no business reading the rest of the squad's names or the plan
   const hideForParent = ['roster', 'teamset'];
   for (const v of hideForParent) {
@@ -2476,12 +2927,14 @@ function render() {
   const tb = $('#tabs'); if (tb) tb.hidden = shut || !!(inGame && openM) || !teamLevel;
   const app = $('#app');
   const v = ui.view;
-  if (inviting) { app.innerHTML = inviteScreen(); saveUi(); return; }
-  if (purged) { app.innerHTML = purgedScreen(); saveUi(); return; }
-  if (denied || needsSignIn()) { app.innerHTML = lockScreen(); saveUi(); return; }
+  paintBell(shut);
+  if (inviting) { app.innerHTML = inviteScreen(); saveUi(); watchMessages(); return; }
+  if (purged) { app.innerHTML = purgedScreen(); saveUi(); watchMessages(); return; }
+  if (denied || needsSignIn()) { app.innerHTML = lockScreen(); saveUi(); watchMessages(); return; }
   const roNote = lim === 'viewer' && team()
     ? `<div class="rolebar">Viewing <b>${teamLabel(team())}</b> from another team in the club. You can read it, not change it.</div>` : '';
-  const roleNote = lim && lim !== 'viewer'
+  // "you can read, not change" is about the team; on Messages a parent writes
+  const roleNote = lim && lim !== 'viewer' && v !== 'inbox' && v !== 'thread'
     ? `<div class="rolebar">Signed in as <b>${esc(ROLE_LABEL[lim])}</b> — ${lim === 'tracker' ? "you can log events and make the coach's planned subs when they are due, but not run the clock or make other subs" : 'you can read, not change'}.</div>`
     : '';
   /* Never let a rehearsal pass for the real thing. Both facts are worth saying
@@ -2503,11 +2956,16 @@ function render() {
         v === 'season' ? viewSeason() :
           v === 'formation' ? viewFormation() : v === 'club' ? viewClub() : v === 'people' ? viewPeople() : v === 'admin' ? viewAdmin()
             : v === 'mine' ? viewMine() : v === 'teamset' ? viewTeamSet()
+              : v === 'inbox' ? viewInbox() : v === 'thread' ? viewThread()
               : v === 'setup' ? viewSetup() : viewMatches());
   syncHash();
   if (v === 'game' && g === 'pitch') wireDrag();
   if (v === 'formation') wireFormationDrag();
   saveUi();
+  markSeen();
+  paintBell();
+  // last, because a listener that answers at once from its cache renders again
+  watchMessages();
 }
 
 /* Shown when the rules refuse us. Deliberately not a dead end: both the code and
@@ -3116,15 +3574,22 @@ function watchFeed() {
 function feedNotify(t, m, x) {
   const sc = score(m);
   const body = [x.detail, `${(t && t.name) || 'Us'} ${sc.us}–${sc.them} ${m.opponent || 'Them'}`].filter(Boolean).join(' · ');
+  ping(x.title, body, 'minutes-' + m.id + '-' + x.key, x.kind === 'goal' ? [120, 60, 120, 60, 120] : [150]);
+}
+/* One way to get somebody's attention from a page that is open: a system
+   notification when the tab is in the background and they said yes, otherwise
+   a toast on the screen they are looking at, and a buzz either way. The Live
+   tab's goals and the messages both come through here. */
+function ping(title, body, tag, buzz) {
   let shown = false;
   try {
     if (typeof document !== 'undefined' && document.hidden && typeof Notification !== 'undefined' && Notification.permission === 'granted') {
-      new Notification(x.title, { body, tag: 'minutes-' + m.id + '-' + x.key });
+      new Notification(title, { body, tag });
       shown = true;
     }
   } catch (e) { }   // Android Chrome refuses a page-made Notification; the buzz and toast still land
-  if (!shown) toast(`${x.title} · ${body}`);
-  try { if (navigator.vibrate) navigator.vibrate(x.kind === 'goal' ? [120, 60, 120, 60, 120] : [150]); } catch (e) { }
+  if (!shown) toast(`${title} · ${String(body || '').slice(0, 140)}`);
+  try { if (navigator.vibrate) navigator.vibrate(buzz || [150]); } catch (e) { }
 }
 
 /* --- subs: minutes and subs only, no pitch. This was the Live tab until Live
@@ -5703,6 +6168,55 @@ function onAct(e) {
     toast('Following this game');
     render(); return;
   }
+  /* Messages. None of these are in COACH_ACTS — a parent sends too — so each
+     checks for itself who may do it, rather than trusting what was drawn. */
+  if (a === 'inbox') { ui.view = 'inbox'; ui.thread = null; closeSheet(); render(); return; }
+  if (a === 'msgall') { ui.msgAll = true; render(); return; }
+  if (a === 'msgalerts') {
+    try { if (typeof Notification !== 'undefined') Notification.requestPermission().then(() => render(), () => { }); } catch (e) { }
+    return;
+  }
+  if (a === 'thread') { ui.view = 'thread'; ui.thread = { tid: d.tid, fam: d.fam }; render(); return; }
+  if (a === 'postnew') { if (!staffTeams().length) { toast('Only coaches and admins post notices'); return; } sheetPost(ui.postTid || ui.teamId); return; }
+  if (a === 'postteam') { const el = $('#postText'); sheetPost(d.v, el ? el.value : '', !!ui.postUrgent); return; }
+  if (a === 'posturgent') { const el = $('#postText'); sheetPost(ui.postTid, el ? el.value : '', !ui.postUrgent); return; }
+  if (a === 'postsend') {
+    const tid = ui.postTid, el = $('#postText'), text = String((el && el.value) || '').trim();
+    if (!msgFor || !isStaff(tid)) { toast('Only this team’s coaches and the club admins can post to it'); return; }
+    if (!text) { toast('Write something first'); return; }
+    const id = queueMsg('board', tid, null, text.slice(0, MSG_MAX), ui.postUrgent ? { urgent: true } : null);
+    ui.postUrgent = false; ui.view = 'inbox';
+    sheetPostShare(tid, id); render(); return;
+  }
+  if (a === 'postshare') { if (isStaff(d.tid)) sheetPostShare(d.tid, d.id); return; }
+  if (a === 'postsharetext') {
+    const x = notices(d.tid).find(n => n.id === d.id); if (!x) return;
+    const text = `${(state.teams[d.tid] || {}).name || 'Team'} — ${x.byName || 'coach'}:\n${x.text}`;
+    if (navigator.share) { navigator.share({ text }).catch(() => { }); return; }
+    navigator.clipboard.writeText(text).then(() => toast('Copied — paste it into the team chat'), () => toast('Could not copy'));
+    return;
+  }
+  if (a === 'postseen') { if (isStaff(d.tid)) sheetPostSeen(d.tid, d.id); return; }
+  if (a === 'postdel') {
+    const x = notices(d.tid).find(n => n.id === d.id);
+    if (!x || !msgFor || !isStaff(d.tid) || (x.by !== me.uid && !canAdmin())) { toast('Only whoever posted it, or an admin, can delete it'); return; }
+    if (!confirm('Delete this notice for everyone?')) return;
+    delete (msgs.board[d.tid] || {})[d.id]; saveMsgs();
+    Promise.resolve(fb.remove(fb.ref(fb.db, `board/${msgFor.code}/${d.tid}/${d.id}`))).catch(() => toast('Not deleted — the database refused it'));
+    render(); return;
+  }
+  if (a === 'msgsend') {
+    const el = $('#msgText'), text = String((el && el.value) || '').trim();
+    const mine = me && d.fam === me.uid && isGuardian(d.tid, me.uid);
+    if (!msgFor || !(mine || isStaff(d.tid))) { toast('This conversation is not yours to write in'); return; }
+    if (!text) return;
+    queueMsg('dm', d.tid, d.fam, text.slice(0, MSG_MAX));
+    if (ui.msgDraft) delete ui.msgDraft[d.tid + '/' + d.fam];
+    if (el) el.value = '';
+    render(); return;
+  }
+  if (a === 'msgretry') { if (msgs.outbox[d.id]) sendOut(d.id); render(); return; }
+  if (a === 'msgdiscard') { delete msgs.outbox[d.id]; saveMsgs(); render(); return; }
   if (a === 'trackcfg') { sheetTrackCfg(); return; }
   if (a === 'hardreload') {
     location.replace(location.pathname + '?r=' + Date.now());
@@ -6465,6 +6979,11 @@ document.addEventListener('change', e => {
 /* The ideas box writes itself into the prompt as she types, and is kept per game
    so closing the sheet by accident does not lose a half-written plan. */
 document.addEventListener('input', e => {
+  // a half-written message survives a redraw, a tab change and a reload
+  if (e.target && e.target.id === 'msgText' && e.target.dataset && e.target.dataset.draft) {
+    ui.msgDraft = { ...(ui.msgDraft || {}), [e.target.dataset.draft]: e.target.value };
+    saveUi(); return;
+  }
   if (!e.target || e.target.id !== 'aiIdeas' || !ui.ai) return;
   const m = match(); if (!m) return;
   ui.aiIdeas = { ...(ui.aiIdeas || {}), [m.id]: e.target.value };
@@ -6499,6 +7018,8 @@ function uiToHash() {
   if (ui.view === 'club') return '#/club';
   if (ui.view === 'admin') return '#/club/settings';
   if (ui.view === 'mine') return '#/my-players';
+  if (ui.view === 'inbox') return '#/messages';
+  if (ui.view === 'thread' && ui.thread) return `#/messages/${ui.thread.tid}/${ui.thread.fam}`;
   if (ui.view === 'setup') return '#/settings';
   return '#/';
 }
@@ -6508,6 +7029,10 @@ function hashToUi() {
   if (!p.length) return false;
   if (p[0] === 'club') { ui.view = p[1] === 'settings' ? 'admin' : p[1] === 'people' ? 'people' : 'club'; return true; }
   if (p[0] === 'my-players') { ui.view = 'mine'; return true; }
+  if (p[0] === 'messages') {
+    if (p[1] && p[2] && state.teams[p[1]]) { ui.view = 'thread'; ui.thread = { tid: p[1], fam: p[2] }; return true; }
+    ui.view = 'inbox'; return true;
+  }
   if (p[0] === 'settings') { ui.view = 'setup'; return true; }
   if (p[0] === 'team' && p[1]) {
     if (!state.teams[p[1]]) return false;
@@ -6544,6 +7069,11 @@ const avEl = $('#avatar');
 if (avEl) avEl.addEventListener('click', () => (me ? sheetAccount() : sheetSignIn()));
 const csEl = $('#clubSwitch');
 if (csEl) csEl.addEventListener('click', sheetClubSwitch);
+const ibEl = $('#inboxBtn');
+if (ibEl) ibEl.addEventListener('click', () => { ui.view = 'inbox'; ui.thread = null; closeSheet(); render(); });
+// a tab brought back to the front has now read what arrived while it was behind
+if (typeof document !== 'undefined' && document.addEventListener)
+  document.addEventListener('visibilitychange', () => { if (!document.hidden && (ui.view === 'inbox' || ui.view === 'thread')) render(); });
 
 if (typeof window !== 'undefined' && window.addEventListener) {
   const backOrForward = () => {

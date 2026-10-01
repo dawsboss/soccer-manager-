@@ -609,3 +609,33 @@ table.grid td.right{text-align:right}
 .card .invrow{display:flex;gap:10px;align-items:center;padding:10px 0;border-top:1px solid var(--line)}
 .invrow[data-k="used"] b,.invrow[data-k="expired"] b{color:var(--ink-soft)}
 .linkish{background:none;border:0;padding:0;text-align:left;font:inherit;color:inherit;cursor:pointer;min-width:0;flex:1}
+
+/* ---------- messages ---------- */
+.bell{position:relative;overflow:visible}
+.belln{position:absolute;top:-5px;right:-6px;min-width:17px;height:17px;padding:0 4px;border-radius:999px;
+  background:var(--owed);color:#fff;font-size:11px;font-weight:700;line-height:17px;text-align:center}
+.belln:empty{display:none}
+.msgcard{padding:12px 0;border-top:1px solid var(--line)}
+.msgcard:first-of-type{border-top:0;padding-top:4px}
+.msgcard.unread .msgbody{font-weight:600}
+.msgcard.urgent{border-left:4px solid var(--over);padding-left:10px}
+.msghead{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-bottom:4px}
+.msgwhen{margin-left:auto;font-size:12.5px;color:var(--ink-soft);white-space:nowrap}
+.msgbody{overflow-wrap:anywhere}
+.msgfoot{display:flex;flex-wrap:wrap;gap:4px 14px;margin-top:6px;font-size:13.5px;color:var(--ink-soft)}
+.msgfoot.bad{color:var(--over)}
+.msgfoot .linkbtn,.bubble .linkbtn{padding:0;color:var(--field-deep);font-size:inherit}
+.msghead .pill,.convrow .pill{display:inline-block;padding:0 7px;border-radius:999px;font-size:11.5px;font-weight:600;
+  background:var(--field-wash);color:var(--field-deep);border:1px solid var(--line)}
+.msghead .pill.urgent{background:#FBE3DD;color:var(--over);border:1px solid var(--over)}
+.convrow{grid-template-columns:1fr auto;text-align:left;width:100%}
+.convrow.unread .pname{font-weight:700}
+.msgdot{display:inline-block;min-width:20px;height:20px;padding:0 6px;border-radius:999px;background:var(--field-deep);
+  color:#fff;font-size:12px;font-weight:700;line-height:20px;text-align:center}
+.thread{display:flex;flex-direction:column;gap:8px;margin-bottom:12px;max-height:60vh;overflow-y:auto}
+.bubble{max-width:85%;align-self:flex-start;background:var(--paper);border-radius:14px 14px 14px 4px;padding:8px 12px}
+.bubble.me{align-self:flex-end;background:var(--field-wash);border-radius:14px 14px 4px 14px}
+.bubble .bwho{display:block;font-size:12.5px;font-weight:600;color:var(--field-deep)}
+.bubble .btext{display:block;overflow-wrap:anywhere}
+.bubble .bwhen{display:block;font-size:11.5px;color:var(--ink-soft);margin-top:2px}
+#msgText,#postText{width:100%}

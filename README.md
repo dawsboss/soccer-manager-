@@ -82,6 +82,51 @@ Open `index.html` in a browser, or serve the folder. Everything works immediatel
           ".write": "auth != null && ($uid === auth.uid || root.child('workspaces/' + $code + '/access/admins/' + auth.uid).exists())"
         }
       }
+    },
+    "board": {
+      "$code": {
+        "$tid": {
+          ".read": "auth != null && (root.child('workspaces/' + $code + '/access/index/' + auth.uid).exists() || root.child('workspaces/' + $code + '/access/admins/' + auth.uid).exists())",
+          "$id": {
+            ".write": "auth != null && (root.child('workspaces/' + $code + '/access/admins/' + auth.uid).exists() || root.child('workspaces/' + $code + '/access/teamIndex/' + $tid + '/' + auth.uid).val() === 'coach') && ((!data.exists() && newData.child('by').val() === auth.uid) || (data.child('by').val() === auth.uid && newData.child('by').val() === auth.uid) || (!newData.exists() && (data.child('by').val() === auth.uid || root.child('workspaces/' + $code + '/access/admins/' + auth.uid).exists())))",
+            ".validate": "newData.hasChildren(['by', 'at', 'text'])",
+            "text": {
+              ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 4000"
+            },
+            "seen": {
+              "$uid": {
+                ".write": "auth != null && $uid === auth.uid && data.parent().parent().exists() && (root.child('workspaces/' + $code + '/access/index/' + auth.uid).exists() || root.child('workspaces/' + $code + '/access/admins/' + auth.uid).exists())",
+                ".validate": "newData.isNumber()"
+              }
+            }
+          }
+        }
+      }
+    },
+    "dm": {
+      "$code": {
+        "$tid": {
+          ".read": "auth != null && (root.child('workspaces/' + $code + '/access/admins/' + auth.uid).exists() || root.child('workspaces/' + $code + '/access/teamIndex/' + $tid + '/' + auth.uid).val() === 'coach')",
+          "$fam": {
+            ".read": "auth != null && auth.uid === $fam",
+            "m": {
+              "$id": {
+                ".write": "auth != null && !data.exists() && newData.child('by').val() === auth.uid && ((auth.uid === $fam && root.child('workspaces/' + $code + '/access/index/' + auth.uid).exists()) || root.child('workspaces/' + $code + '/access/admins/' + auth.uid).exists() || root.child('workspaces/' + $code + '/access/teamIndex/' + $tid + '/' + auth.uid).val() === 'coach')",
+                ".validate": "newData.hasChildren(['by', 'at', 'text'])",
+                "text": {
+                  ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 4000"
+                }
+              }
+            },
+            "seen": {
+              "$uid": {
+                ".write": "auth != null && $uid === auth.uid && (auth.uid === $fam || root.child('workspaces/' + $code + '/access/admins/' + auth.uid).exists() || root.child('workspaces/' + $code + '/access/teamIndex/' + $tid + '/' + auth.uid).val() === 'coach')",
+                ".validate": "newData.isNumber()"
+              }
+            }
+          }
+        }
+      }
     }
   }
 }
@@ -91,7 +136,7 @@ Lock them down once people have signed in — see **Locking it down** below.
 
 4. On the app owner's device: Setup → Workspace → *Connect to a workspace* → *Make one up* → *Save and reload*. That creates the club. Nobody else types the code: everyone else joins with an invite link — see **Joining a club** below.
 
-The three root blocks in these rules (`invites`, `clubInvites`, `userOrgs`) are what invites need. They are identical in the locked-down set, so an invite made today keeps working after lockdown.
+The root blocks in these rules — `invites`, `clubInvites`, `userOrgs` for invites, `board` and `dm` for messages — are identical in the locked-down set, so an invite made or a message sent today keeps working after lockdown.
 
 The rules above cover the coaches' data. To publish read-only pages for parents, add a second block alongside it:
 
@@ -144,6 +189,18 @@ Two limits worth knowing:
 
 - **Firebase words the sign-in email itself.** It reads as "sign in to …", not "you are invited" — a text to say it is coming saves a confused parent.
 - **An invite belongs to the database it was made in.** One made in a test database only works on a device pointed at that database.
+
+## Messages
+
+The bell in the top bar, for anyone with a role in a club that has an admin.
+
+- **Team notices.** A team's coaches and the club admins post; every family on the team, its coaches and its trackers read. *Urgent* marks one in red. Under each notice a coach sees **Seen by 9 of 14 families** — tap it for who has not — and **Email or share**, which opens her email app with every parent's address in Bcc (from their sign-in), or the phone's share sheet for the team chat.
+- **Family conversations.** A parent gets one conversation per team with that team's coaches: *Ella has a cold, she'll miss Thursday.* Every coach of the team and the admins see it and can reply — never one coach alone, which is the safeguarding-friendly shape — and nobody else. Messages cannot be edited or deleted.
+- **No signal.** A message written at a pitch with no signal waits in an outbox on the phone and goes when the connection returns, even after a reload. One the database refuses says *Not sent* with *Try again*.
+
+**What "notifications" means here.** With no server, nothing can wake a phone that has closed Minutes. A message pops up (or buzzes) while Minutes is open in any tab, with a system notification when the tab is in the background and the person allowed it, and otherwise waits with a count on the bell. To reach everyone *now*, use **Email or share** on the notice. Real push is in ROADMAP, with what it would cost.
+
+**Needs the `board` and `dm` rule blocks published** — they are in both rule sets above. Without them posting says *Not sent — the database refused it*.
 
 ## Deleting a club
 
@@ -360,6 +417,51 @@ a parent can still write another team's data, exactly as before.
           ".write": "auth != null && ($uid === auth.uid || root.child('workspaces/' + $code + '/access/admins/' + auth.uid).exists())"
         }
       }
+    },
+    "board": {
+      "$code": {
+        "$tid": {
+          ".read": "auth != null && (root.child('workspaces/' + $code + '/access/index/' + auth.uid).exists() || root.child('workspaces/' + $code + '/access/admins/' + auth.uid).exists())",
+          "$id": {
+            ".write": "auth != null && (root.child('workspaces/' + $code + '/access/admins/' + auth.uid).exists() || root.child('workspaces/' + $code + '/access/teamIndex/' + $tid + '/' + auth.uid).val() === 'coach') && ((!data.exists() && newData.child('by').val() === auth.uid) || (data.child('by').val() === auth.uid && newData.child('by').val() === auth.uid) || (!newData.exists() && (data.child('by').val() === auth.uid || root.child('workspaces/' + $code + '/access/admins/' + auth.uid).exists())))",
+            ".validate": "newData.hasChildren(['by', 'at', 'text'])",
+            "text": {
+              ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 4000"
+            },
+            "seen": {
+              "$uid": {
+                ".write": "auth != null && $uid === auth.uid && data.parent().parent().exists() && (root.child('workspaces/' + $code + '/access/index/' + auth.uid).exists() || root.child('workspaces/' + $code + '/access/admins/' + auth.uid).exists())",
+                ".validate": "newData.isNumber()"
+              }
+            }
+          }
+        }
+      }
+    },
+    "dm": {
+      "$code": {
+        "$tid": {
+          ".read": "auth != null && (root.child('workspaces/' + $code + '/access/admins/' + auth.uid).exists() || root.child('workspaces/' + $code + '/access/teamIndex/' + $tid + '/' + auth.uid).val() === 'coach')",
+          "$fam": {
+            ".read": "auth != null && auth.uid === $fam",
+            "m": {
+              "$id": {
+                ".write": "auth != null && !data.exists() && newData.child('by').val() === auth.uid && ((auth.uid === $fam && root.child('workspaces/' + $code + '/access/index/' + auth.uid).exists()) || root.child('workspaces/' + $code + '/access/admins/' + auth.uid).exists() || root.child('workspaces/' + $code + '/access/teamIndex/' + $tid + '/' + auth.uid).val() === 'coach')",
+                ".validate": "newData.hasChildren(['by', 'at', 'text'])",
+                "text": {
+                  ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 4000"
+                }
+              }
+            },
+            "seen": {
+              "$uid": {
+                ".write": "auth != null && $uid === auth.uid && (auth.uid === $fam || root.child('workspaces/' + $code + '/access/admins/' + auth.uid).exists() || root.child('workspaces/' + $code + '/access/teamIndex/' + $tid + '/' + auth.uid).val() === 'coach')",
+                ".validate": "newData.isNumber()"
+              }
+            }
+          }
+        }
+      }
     }
   }
 }
@@ -379,6 +481,8 @@ What each part is doing:
 - **`clubInvites/$code`** is the admin's list, readable only by admins. It lives outside the workspace on purpose: everyone indexed can read the whole workspace, and a list of unspent coach invites in a parent's hands is a parent who can make herself a coach.
 - **`userOrgs/$uid`** is which clubs an account belongs to, so a second device finds them without a code. Only its owner reads it. It is a list of bookmarks, not a grant: reading a club is still `access/index`'s decision.
 - **`public/$share`** stays world-readable — that is the whole point of the parent links — but writing now needs an account. That closes the hole where anyone holding a share link could overwrite the scoreboard.
+- **`board/$code/$tid`** is a team's notices. Anyone indexed in the club reads them; that team's coaches (`teamIndex` = `coach`) and the admins post, each in their own name, and only the author or an admin deletes one. **`seen/$uid`** is each reader's own tick, which is how a coach sees who has not read it.
+- **`dm/$code/$tid/$fam`** is one family's conversation with that team's coaches. Readable by that family, the team's coaches and the admins — no one coach alone, and no other family. Messages are append-only: nobody edits or deletes one, admins included. There is no bridge for a club without `teamIndex`: these are new nodes, so failing closed locks nobody out of anything, and until an admin's device has written the table only admins can read or post.
 
 ### If it goes wrong
 

@@ -35,6 +35,36 @@ Open questions before building it:
 
 ### Notifications with the page closed
 
-*Notify me* on the Live tab only works while the page is open. Real push to a
-closed phone needs a push service and something server-side to send it, which
-this project does not have. Worth revisiting alongside the Cloudflare Worker.
+*Notify me* on the Live tab, and Messages (team notices and family
+conversations, shipped 2026-10), only reach a phone while Minutes is open on
+it. A closed phone hears nothing until the coach taps *Email or share*. Real
+push needs three things, and only the last is server-side:
+
+1. **A service worker** and a web app manifest, so the site can be added to the
+   home screen. iPhones only deliver web push to a site added to the home
+   screen (iOS 16.4+); Android Chrome delivers to any site.
+2. **Firebase Cloud Messaging** on the client: ask permission from a tap, get a
+   token, store it at `pushTokens/{uid}/{token}` (owner-only rule). Static.
+3. **A sender.** A Cloud Function on `board/{code}/{tid}/{id}` and
+   `dm/.../m/{id}` creates that reads who should hear (the same lists the
+   rules check) and sends to their tokens. That is the first server-side code
+   in the project, and Cloud Functions need the Blaze (pay-as-you-go) plan —
+   pennies at one club's volume, but a card on file. A Cloudflare Worker could
+   do the same job without Blaze but would need a service account key.
+
+The data model is already shaped for it: every notice and message is one
+append-only node with its sender, so a function has exactly one thing to
+trigger on and nothing to diff. This is the point where "static site with a
+Firebase backend only" (CLAUDE.md) stops being true — a decision for the
+owner, which is why it is written down here rather than built.
+
+### Messages, next steps
+
+- **Game and practice notices.** A *Tell the families* button on a game's
+  details that drafts the notice (opponent, kick-off, venue) — and the same for
+  practices once those exist.
+- **Availability replies.** "Can Ella make Saturday?" with Yes / No from the
+  parent, feeding the game's existing availability list (`m.out`).
+- **Parents per team in the rules.** Notices are readable club-wide today (see
+  `test/rules.js`, item 5). AUTH.md's `teamMembers` index would narrow that, and
+  it belongs to the orgs migration.
