@@ -8,6 +8,71 @@ before this point lives only in the git log.
 
 ---
 
+## Parents join a whole squad at a time — 2026-10-02
+
+A parent could only arrive by a personal invite, made by an admin one sheet
+at a time — fifteen trips through *Invite someone* for one squad, and every
+team's landing on the admin. The team's **Squad** tab now has a **Parents**
+card with two ways to do it in bulk:
+
+- **One team link.** Its coach posts it in the team chat. Each parent signs in,
+  types their child's shirt number, and waits; the request appears on Squad
+  with the player that number matches already picked, and **Let in** is one
+  tap. That is AUTH.md's "parents claim, coaches approve" path. The parent sees
+  no names before she is let in, because a link in a group chat travels, and
+  her phone opens the club by itself the moment she is approved. **New link**
+  kills the old one.
+- **A personal link per family**, for admins: one tap makes a parent invite for
+  every player with no parent yet, and lists them to copy or share. Running it
+  twice makes nothing new.
+
+Approving needed one new permission, and it is narrow on purpose: a team's
+coach may now put someone in `access/index`, but only someone whose request
+to *her* team she has approved, with that team's id as the value the rule
+checks. Before, only admins could let anybody in. README has the `joinCodes`
+and `claims` blocks and the new clause; `test/rules.js` and `test/join.js`
+pin both sides.
+
+## Messages: team notices, and families talking to their coaches — 2026-10-01
+
+Everything a club says to its parents happened somewhere else — a group chat,
+a text from the coach's own number, an email chain someone was left off. The
+bell in the top bar now opens **Messages**:
+
+- **Team notices.** A team's coaches and the admins post; every family on the
+  team reads. *Urgent* marks one in red. Each shows the coach **Seen by 9 of 14
+  families**, with who has not, and **Email or share** opens her email app with
+  every parent's address in Bcc — the one way to reach a closed phone without a
+  server.
+- **Family conversations.** One per family per team, with *every* coach of that
+  team and the admins on it. Never a private line to one coach: that is the
+  shape safeguarding policies ask for, and it means a message is not lost when
+  a coach is off sick. Append-only — nobody edits or deletes a message.
+- **Offline.** A message written with no signal waits in an outbox and goes
+  when the connection returns, even across a reload. A refused one says *Not
+  sent* and keeps its text.
+- **Pop-ups** while Minutes is open, through the same path as the Live tab's
+  goals, and a count on the bell until it is read.
+
+**Notices stay on their own team.** A team's notices are readable by that
+team's families, coaches and trackers and the admins — not the rest of the
+club — and only a family on a team can open a conversation with its coaches.
+That needed a third lookup table, `access/teamParents/{team}/{uid}`, because a
+rule cannot walk the squad to find a guardian. Its value is a player id the
+rule checks against that player's guardians, so nobody can put themselves on
+it; parents join it when they accept an invite, and an admin's device fills it
+in for everyone else on its next connect. Until it exists, the rules fall back
+to club-wide, so pasting them locks nobody out. Check readiness has a line for
+it.
+
+Both live at the root (`board/`, `dm/`) with rules of their own, not under the
+workspace: every indexed account reads the whole workspace, and a parent's
+message about her daughter is not every other parent's business. README has
+the two rule blocks — in the open set and the locked-down set — and
+`test/rules.js` pins them; `test/messages.js` pins that the app asks for no
+more than they allow. ROADMAP has what real push to a closed phone would take,
+which is the first piece of this project that would need a server.
+
 ## Waiting people are one tap from being let in — 2026-09-27
 
 Someone who signs in on their own lands in People with no role, and the only

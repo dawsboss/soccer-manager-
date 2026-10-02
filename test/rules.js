@@ -533,14 +533,243 @@ reads('owners are not world-readable', OUT, 'shareOwners/sh1', false);
   delete DB.invites; delete DB.clubInvites;
 }
 
-/* The open rules carry the same three root blocks, so invites work before a
-   club is locked down. One copy drifting from the other would mean an invite
-   that works today stops working on lockdown day. */
+/* ---------------- messages ---------------- */
+
+/* Notices and family conversations live at the root, outside the workspace,
+   because everybody indexed reads all of a workspace and a parent's message
+   about her daughter is not every other parent's business. */
+{
+  const AT = NOW - 1000;
+  DB.board = { CLUB: {
+    t1: { n1: { by: 'coach', byName: 'Jaz', at: AT, text: 'Training at 6' } },
+    t2: { n2: { by: 'other', byName: 'Kim', at: AT, text: 'Storm news' } }
+  } };
+  DB.dm = { CLUB: { t1: {
+    mum: { m: { d1: { by: 'mum', byName: 'Mum', at: AT, text: 'Ella is ill' } } },
+    dad: { m: { d2: { by: 'dad', byName: 'Dad', at: AT, text: 'Private' } } }
+  } } };
+  const post = (by, extra) => ({ by, byName: by, at: NOW, text: 'Kick-off moved to 10', ...(extra || {}) });
+
+  /* The parent list, which is what narrows all of this to one team's own
+     families. Each value is a player the uid is a guardian of, because that
+     is what the rule can check. Mum is on t1; Dad is indexed but his child
+     is on t2, so t1's notices and coaches are none of his business. */
+  const A = DB.workspaces.CLUB.access;
+  A.index.dad = true;
+  DB.workspaces.CLUB.teams.t2.players = { q1: { id: 'q1', name: 'Gia', guardians: { dad: true } } };
+  A.teamParents = { t1: { mum: 'p1' }, t2: { dad: 'q1' } };
+  const DAD = { uid: 'dad' };
+
+  console.log('\n--- team notices: reading ---');
+  reads('a parent reads her team\'s notices', MUM, 'board/CLUB/t1', true);
+  reads('not another team\'s', MUM, 'board/CLUB/t2', false);
+  reads('a parent on another team cannot read these', DAD, 'board/CLUB/t1', false);
+  reads('the tracker does', TRK, 'board/CLUB/t1', true);
+  reads('but not another team\'s', TRK, 'board/CLUB/t2', false);
+  reads('its coach does', COACH, 'board/CLUB/t1', true);
+  reads('a coach of another team does not', OTHER, 'board/CLUB/t1', false);
+  reads('an admin reads every team\'s', ADM, 'board/CLUB/t2', true);
+  reads('registered but unroled does not', NEWB, 'board/CLUB/t1', false);
+  reads('an unknown account does not', RANDO, 'board/CLUB/t1', false);
+  reads('signed out does not', OUT, 'board/CLUB/t1', false);
+  reads('nobody lists every club\'s boards', ADM, 'board', false);
+
+  console.log('\n--- team notices: posting ---');
+  writes('its coach posts', COACH, 'board/CLUB/t1/n9', post('coach'), true);
+  writes('an admin posts to any team', ADM, 'board/CLUB/t2/n9', post('adm'), true);
+  writes('not in somebody else\'s name', COACH, 'board/CLUB/t1/n9', post('adm'), false);
+  writes('a coach of another team cannot', OTHER, 'board/CLUB/t1/n9', post('other'), false);
+  writes('the tracker cannot', TRK, 'board/CLUB/t1/n9', post('trk'), false);
+  writes('a parent cannot', MUM, 'board/CLUB/t1/n9', post('mum'), false);
+  writes('an empty notice is refused', COACH, 'board/CLUB/t1/n9', post('coach', { text: '' }), false);
+  writes('nor one past 4000 characters', COACH, 'board/CLUB/t1/n9', post('coach', { text: 'x'.repeat(4001) }), false);
+  writes('nor one with no time', COACH, 'board/CLUB/t1/n9', { by: 'coach', text: 'hi' }, false);
+  writes('its author edits it', COACH, 'board/CLUB/t1/n1/text', 'Training at 7', true);
+  writes('and deletes it', COACH, 'board/CLUB/t1/n1', null, true);
+  writes('an admin deletes anybody\'s', ADM, 'board/CLUB/t2/n2', null, true);
+  writes('another coach does not delete Jaz\'s', OTHER, 'board/CLUB/t1/n1', null, false);
+  writes('a parent cannot delete one', MUM, 'board/CLUB/t1/n1', null, false);
+  writes('the whole board cannot be written', ADM, 'board/CLUB/t1', {}, false);
+
+  console.log('\n--- team notices: who has seen it ---');
+  writes('a parent ticks it seen', MUM, 'board/CLUB/t1/n1/seen/mum', NOW, true);
+  writes('not for somebody else', MUM, 'board/CLUB/t1/n1/seen/dad', NOW, false);
+  writes('not on a notice that is not there', MUM, 'board/CLUB/t1/nope/seen/mum', NOW, false);
+  writes('only a time', MUM, 'board/CLUB/t1/n1/seen/mum', 'yes', false);
+  writes('the coach ticks her own', OTHER, 'board/CLUB/t2/n2/seen/other', NOW, true);
+  writes('a parent of another team cannot tick one', DAD, 'board/CLUB/t1/n1/seen/dad', NOW, false);
+  writes('an unroled account cannot', NEWB, 'board/CLUB/t1/n1/seen/newbie', NOW, false);
+
+  console.log('\n--- a family and its team\'s coaches ---');
+  reads('a parent reads her own conversation', MUM, 'dm/CLUB/t1/mum', true);
+  reads('not another family\'s', MUM, 'dm/CLUB/t1/dad', false);
+  reads('nor the list of them', MUM, 'dm/CLUB/t1', false);
+  reads('the team\'s coach reads every family\'s', COACH, 'dm/CLUB/t1', true);
+  reads('an admin does', ADM, 'dm/CLUB/t1', true);
+  reads('a coach of another team does not', OTHER, 'dm/CLUB/t1', false);
+  reads('nor one family\'s', OTHER, 'dm/CLUB/t1/mum', false);
+  reads('the tracker does not', TRK, 'dm/CLUB/t1/mum', false);
+  const msg = by => ({ by, byName: by, at: NOW, text: 'See you Saturday' });
+  writes('a parent writes to the coaches', MUM, 'dm/CLUB/t1/mum/m/x1', msg('mum'), true);
+  writes('the coach replies', COACH, 'dm/CLUB/t1/mum/m/x1', msg('coach'), true);
+  writes('an admin replies', ADM, 'dm/CLUB/t1/mum/m/x1', msg('adm'), true);
+  writes('a parent cannot write in another family\'s', MUM, 'dm/CLUB/t1/dad/m/x1', msg('mum'), false);
+  writes('nor sign as the coach', MUM, 'dm/CLUB/t1/mum/m/x1', msg('coach'), false);
+  writes('a coach of another team cannot', OTHER, 'dm/CLUB/t1/mum/m/x1', msg('other'), false);
+  writes('an unroled account cannot start one', NEWB, 'dm/CLUB/t1/newbie/m/x1', msg('newbie'), false);
+  writes('nor a parent from another team', DAD, 'dm/CLUB/t1/dad/m/x1', msg('dad'), false);
+  writes('who can with his own team\'s coaches', DAD, 'dm/CLUB/t2/dad/m/x1', msg('dad'), true);
+  writes('nor the tracker as a "family"', TRK, 'dm/CLUB/t1/trk/m/x1', msg('trk'), false);
+  writes('nobody edits a message', COACH, 'dm/CLUB/t1/mum/m/d1/text', 'changed', false);
+  writes('nor deletes one, the parent', MUM, 'dm/CLUB/t1/mum/m/d1', null, false);
+  writes('nor an admin', ADM, 'dm/CLUB/t1/mum/m/d1', null, false);
+  writes('nor the whole conversation', ADM, 'dm/CLUB/t1/mum', null, false);
+  writes('an empty message is refused', MUM, 'dm/CLUB/t1/mum/m/x1', { ...msg('mum'), text: '' }, false);
+  writes('the parent marks it read', MUM, 'dm/CLUB/t1/mum/seen/mum', NOW, true);
+  writes('the coach marks it read', COACH, 'dm/CLUB/t1/mum/seen/coach', NOW, true);
+  writes('not as somebody else', COACH, 'dm/CLUB/t1/mum/seen/mum', NOW, false);
+  writes('another family cannot', MUM, 'dm/CLUB/t1/dad/seen/mum', NOW, false);
+
+  console.log('\n--- the parent list itself ---');
+  const TP = 'workspaces/CLUB/access/teamParents/';
+  writes('a parent puts herself on it, naming her child', MUM, TP + 't1/mum', 'p1', true);
+  writes('not naming a child she is not guardian of', MUM, TP + 't1/mum', 'p3', false);
+  writes('not on a team her child is not on', MUM, TP + 't2/mum', 'q1', false);
+  writes('not somebody else', MUM, TP + 't1/dad', 'p1', false);
+  writes('the team\'s coach writes it', COACH, TP + 't1/mum', 'p1', true);
+  writes('but only true entries', COACH, TP + 't1/rando', 'p1', false);
+  writes('and takes one off', COACH, TP + 't1/mum', null, true);
+  writes('a coach of another team cannot', OTHER, TP + 't1/mum', null, false);
+  writes('an admin writes it', ADM, TP + 't1/mum', 'p1', true);
+  writes('even an admin only true entries', ADM, TP + 't1/rando', 'p1', false);
+  writes('a parent takes herself off', MUM, TP + 't1/mum', null, true);
+  writes('nobody else\'s', MUM, TP + 't2/dad', null, false);
+  {
+    const saved = A.teamParents;
+    delete A.teamParents;
+    writes('with no table, a parent cannot start it', MUM, TP + 't1/mum', 'p1', false);
+    writes('nor a coach', COACH, TP + 't1/mum', 'p1', false);
+    writes('only an admin', ADM, TP + 't1/mum', 'p1', true);
+    console.log('  ^ the first entry closes the bridge below on every team at once,');
+    console.log('    so only an admin may make it — and her device writes them all.');
+
+    console.log('\n--- the bridge, for a club with no parent list yet ---');
+    reads('with no table, an indexed parent reads any team\'s notices', DAD, 'board/CLUB/t1', true);
+    writes('and may write to its coaches', DAD, 'dm/CLUB/t1/dad/m/x1', msg('dad'), true);
+    reads('but never another family\'s conversation', DAD, 'dm/CLUB/t1/mum', false);
+    reads('and signed out still nothing', OUT, 'board/CLUB/t1', false);
+    console.log('  ^ the same width as before the table existed, so pasting these rules');
+    console.log('    locks nobody out; an admin\'s next connect closes it.');
+    A.teamParents = saved;
+  }
+
+  console.log('\n--- before teamIndex exists, coaches wait; nobody else gets in ---');
+  {
+    const saved = DB.workspaces.CLUB.access.teamIndex;
+    delete DB.workspaces.CLUB.access.teamIndex;
+    writes('a coach cannot post yet', COACH, 'board/CLUB/t1/n9', post('coach'), false);
+    reads('nor read the families\' messages', COACH, 'dm/CLUB/t1', false);
+    writes('the admin still can', ADM, 'board/CLUB/t1/n9', post('adm'), true);
+    reads('and still reads them', ADM, 'dm/CLUB/t1/mum', true);
+    reads('no indexed account reads them through a bridge', TRK, 'dm/CLUB/t1/mum', false);
+    console.log('  ^ no bridge on purpose: these are new nodes, so failing closed locks');
+    console.log('    nobody out of anything they had, and a private message has no');
+    console.log('    club-wide fallback to fall back to. An admin\'s next connect');
+    console.log('    writes teamIndex, which is what Check readiness looks for.');
+    DB.workspaces.CLUB.access.teamIndex = saved;
+  }
+  delete DB.board; delete DB.dm;
+  delete A.teamParents; delete A.index.dad; DB.workspaces.CLUB.teams.t2.players = {};
+}
+
+/* ---------------- team links ---------------- */
+
+/* One link per team; a parent asks with a shirt number and a coach lets her
+   in. The link grants nothing. What has to hold is that nobody but a coach of
+   that team (or an admin) approves, and that approving is the only new way
+   into access/index — for the person who asked, on that coach's team. */
+{
+  const A = DB.workspaces.CLUB.access;
+  DB.joinCodes = {
+    jc1: { ws: 'CLUB', team: 't1', teamName: 'Flight', by: 'coach', at: NOW },
+    jc2: { ws: 'CLUB', team: 't2', teamName: 'Storm', by: 'other', at: NOW }
+  };
+  DB.claims = { CLUB: { t1: {
+    asker: { code: 'jc1', shirt: '7', at: NOW },
+    ok: { code: 'jc1', shirt: '9', at: NOW, approved: { by: 'coach', at: NOW } }
+  } } };
+  const ASKER = { uid: 'asker' }, OK = { uid: 'ok' };
+  const link = (by, ws, team) => ({ ws, team, by, at: NOW });
+  const ask = (code, extra) => ({ code, shirt: '7', at: NOW, ...(extra || {}) });
+
+  console.log('\n--- making a team link ---');
+  writes('its coach makes one', COACH, 'joinCodes/new', link('coach', 'CLUB', 't1'), true);
+  writes('an admin makes one for any team', ADM, 'joinCodes/new', link('adm', 'CLUB', 't2'), true);
+  writes('a coach not for another team', COACH, 'joinCodes/new', link('coach', 'CLUB', 't2'), false);
+  writes('nor stamped as someone else', COACH, 'joinCodes/new', link('adm', 'CLUB', 't1'), false);
+  writes('a parent cannot', MUM, 'joinCodes/new', link('mum', 'CLUB', 't1'), false);
+  writes('an unknown account cannot', RANDO, 'joinCodes/new', link('rando', 'CLUB', 't1'), false);
+  writes('nobody edits one in place', COACH, 'joinCodes/jc1/team', 't2', false);
+  writes('its coach retires it', COACH, 'joinCodes/jc1', null, true);
+  writes('another team\'s coach cannot', OTHER, 'joinCodes/jc1', null, false);
+  reads('whoever holds the link reads it', RANDO, 'joinCodes/jc1', true);
+  reads('signed out cannot', OUT, 'joinCodes/jc1', false);
+  reads('and nobody lists them', ADM, 'joinCodes', false);
+
+  console.log('\n--- asking to join ---');
+  writes('anyone signed in asks, with a live link', RANDO, 'claims/CLUB/t1/rando', ask('jc1'), true);
+  writes('not with a link that does not exist', RANDO, 'claims/CLUB/t1/rando', ask('nope'), false);
+  writes('not with another team\'s link', RANDO, 'claims/CLUB/t1/rando', ask('jc2'), false);
+  writes('not in somebody else\'s name', RANDO, 'claims/CLUB/t1/newbie', ask('jc1'), false);
+  writes('not approved by herself', RANDO, 'claims/CLUB/t1/rando', ask('jc1', { approved: { by: 'rando' } }), false);
+  writes('nor approve an existing one', ASKER, 'claims/CLUB/t1/asker/approved', { by: 'asker', at: NOW }, false);
+  writes('a shirt number is needed', RANDO, 'claims/CLUB/t1/rando', ask('jc1', { shirt: '' }), false);
+  writes('she withdraws her own', ASKER, 'claims/CLUB/t1/asker', null, true);
+  writes('and tidies it away once approved', OK, 'claims/CLUB/t1/ok', null, true);
+  writes('but cannot rewrite it once approved', OK, 'claims/CLUB/t1/ok/shirt', '12', false);
+  reads('she reads her own', ASKER, 'claims/CLUB/t1/asker', true);
+  reads('not anybody else\'s', ASKER, 'claims/CLUB/t1/ok', false);
+  reads('nor the list', ASKER, 'claims/CLUB/t1', false);
+  reads('the team\'s coach reads the list', COACH, 'claims/CLUB/t1', true);
+  reads('an admin does', ADM, 'claims/CLUB/t1', true);
+  reads('a coach of another team does not', OTHER, 'claims/CLUB/t1', false);
+  reads('a parent does not', MUM, 'claims/CLUB/t1', false);
+
+  console.log('\n--- approving ---');
+  const yes = by => ({ by, at: NOW, players: { p1: true } });
+  writes('its coach approves', COACH, 'claims/CLUB/t1/asker/approved', yes('coach'), true);
+  writes('an admin approves', ADM, 'claims/CLUB/t1/asker/approved', yes('adm'), true);
+  writes('not stamped as someone else', COACH, 'claims/CLUB/t1/asker/approved', yes('adm'), false);
+  writes('another team\'s coach cannot', OTHER, 'claims/CLUB/t1/asker/approved', yes('other'), false);
+  writes('the tracker cannot', TRK, 'claims/CLUB/t1/asker/approved', yes('trk'), false);
+  writes('nor a parent', MUM, 'claims/CLUB/t1/asker/approved', yes('mum'), false);
+  writes('nobody approves a request nobody made', COACH, 'claims/CLUB/t1/ghost/approved', yes('coach'), false);
+  writes('a coach cannot make a request up', COACH, 'claims/CLUB/t1/ghost', ask('jc1'), false);
+  writes('she turns one down', COACH, 'claims/CLUB/t1/asker', null, true);
+  writes('another team\'s coach cannot', OTHER, 'claims/CLUB/t1/asker', null, false);
+
+  console.log('\n--- what approving lets a coach write ---');
+  writes('index for the parent she approved', COACH, 'workspaces/CLUB/access/index/ok', 't1', true);
+  writes('not for one still waiting', COACH, 'workspaces/CLUB/access/index/asker', 't1', false);
+  writes('not for anybody else', COACH, 'workspaces/CLUB/access/index/rando', 't1', false);
+  writes('not naming another team', COACH, 'workspaces/CLUB/access/index/ok', 't2', false);
+  writes('another team\'s coach cannot use her approval', OTHER, 'workspaces/CLUB/access/index/ok', 't1', false);
+  writes('nor can the parent index herself with it', OK, 'workspaces/CLUB/access/index/ok', 't1', false);
+  writes('she links the guardian, as before', COACH, 'workspaces/CLUB/teams/t1/players/p1/guardians/ok', true, true);
+  console.log('  ^ the one new way into the index: a request to her own team that she');
+  console.log('    approved. A coach still cannot let in anyone who did not ask.');
+
+  delete DB.joinCodes; delete DB.claims;
+}
+
+/* The open rules carry the same root blocks, so invites and messages work
+   before a club is locked down. One copy drifting from the other would mean an
+   invite or a message that works today stops working on lockdown day. */
 {
   const open = jsonBlocks().map(r => { try { return JSON.parse(r); } catch (e) { return null; } })
     .find(d => d && d.rules && d.rules.workspaces && d.rules.workspaces.$code['.write'] === true);
   console.log('\n--- the open rules ---');
-  for (const k of ['invites', 'clubInvites', 'userOrgs'])
+  for (const k of ['invites', 'clubInvites', 'userOrgs', 'board', 'dm', 'joinCodes', 'claims'])
     check(k + ' matches the locked-down block', !!open && JSON.stringify(open.rules[k]) === JSON.stringify(RULES[k]), true);
 }
 
@@ -586,7 +815,14 @@ console.log(`
   4. An invite with no email on it is a bearer token until it is spent: whoever
      opens the link first gets the role. Single use and a two-week expiry bound
      it, and naming an address closes it; the interface says so where the
-     invite is made.`);
+     invite is made.
+
+  5. The parent list is only as fresh as the last device that synced it. Its
+     entries can only ever name a real guardian at the moment they are
+     written, but a parent unlinked by an older copy of the app keeps reading
+     that team's notices until an admin's or the coach's next connect takes
+     her off. While the list does not exist at all, notices fall back to
+     club-wide, as they were.`);
 
 console.log(`\n${failures ? failures + ' EXPECTATION(S) FAILED' : 'all expectations hold'}`);
 process.exit(failures ? 1 : 0);

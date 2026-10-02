@@ -29,6 +29,8 @@ const SUITES = [
   ['routing', 'links in, links out'],
   ['sync', 'auth, the workspace read, and its races'],
   ['invites', 'joining a club by invite, on both sides'],
+  ['join', 'a squad of invites at once, and the team link a coach approves'],
+  ['messages', 'notices and family conversations, read and written by whom'],
   ['import', 'bulk import merges, and never replaces'],
   ['smoke', 'every view renders without throwing'],
   ['sandbox', 'the test club, and database isolation'],

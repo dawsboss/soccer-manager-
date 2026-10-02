@@ -96,6 +96,8 @@ const CLUB = {
     check('not a coach or tracker', paths(fbk).some(x => x.includes('/access/teams/')), false);
     check('and not in the team index', paths(fbk).some(x => x.includes('/teamIndex/')), false);
     check('indexed, so she can read the club', valueAt(fbk, 'workspaces/CLUB/access/index/mum'), ID);
+    check('on her team\'s parent list, naming her child', valueAt(fbk, 'workspaces/CLUB/access/teamParents/t1/mum'), 'p1');
+    check('written after the guardian entry the rule checks', paths(fbk).indexOf('workspaces/CLUB/teams/t1/players/p1/guardians/mum') < paths(fbk).indexOf('workspaces/CLUB/access/teamParents/t1/mum'), true);
   }
 
   console.log('\n--- the database says no ---');

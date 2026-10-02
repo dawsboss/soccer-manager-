@@ -184,7 +184,13 @@ const EXPORTS = `{
   get pubState() { return pubState },
   /* invites */
   get invite() { return invite }, get clubInv() { return clubInv }, get myClubs() { return myClubs },
-  secretId, inviteLink, redeemInvite, makeInvite, inviteScreen
+  secretId, inviteLink, redeemInvite, makeInvite, inviteScreen,
+  /* messages */
+  msgTeams, staffTeams, famTeams, msgOn, unreadCount, notices, threadMsgs, threadUnread,
+  families, guardianEmails, childrenOf, viewInbox, viewThread, watchMessages, sheetPostShare,
+  get msgs() { return msgs }, get msgFor() { return msgFor },
+  /* team links and squad invites */
+  get join() { return join }, joinLink, claimMatches, pendingClaims, inviteSquad, sheetSquadInvites, joinCard
 }`;
 
 const FB_URLS = {
