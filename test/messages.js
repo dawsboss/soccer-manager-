@@ -44,7 +44,8 @@ async function boot(who, opts = {}) {
   const A = H.loadApp({ firebase: fbk, config: CONFIG, storage: { 'sm.workspace': 'CLUB', ...(opts.storage || {}) } });
   await A.flush();
   fbk.signIn(who, { name: (CLUB.access.members[who] || {}).name || who, email: who + '@x.test' }); await A.flush();
-  fbk.deliver('workspaces/CLUB', opts.club || CLUB); await A.flush();
+  // a copy each time: the app writes into what it was handed, and one test's sync must not seed the next
+  fbk.deliver('workspaces/CLUB', JSON.parse(JSON.stringify(opts.club || CLUB))); await A.flush();
   return { A, fbk };
 }
 const writes = (fbk, prefix) => fbk.record.writes.filter(w => w.path.startsWith(prefix));
@@ -226,6 +227,41 @@ const NOTE = (A, by, text, extra) => ({ by, byName: CLUB.access.members[by].name
     fbk.deliver('dm/CLUB/t1/mum', { m: { q1: pend.value } }); await A.flush();
     check('but not if it had landed before the reload', writes(fbk, 'dm/CLUB/t1/mum/m/q1').length, 0);
     check('and it leaves the outbox', Object.keys(A.msgs.outbox).length, 0);
+  }
+
+  console.log('\n--- the parent list the rules narrow notices with ---');
+  {
+    // a club from before the list: an admin's connect creates it, team by team, uid by uid
+    const { A, fbk } = await boot('adm');
+    const tp = fbk.record.writes.filter(w => w.path.includes('/access/teamParents/'));
+    check('an admin\'s connect writes every parent', tp.map(w => w.path + '=' + w.value).sort().join(' '),
+      'workspaces/CLUB/access/teamParents/t1/dad=p2 workspaces/CLUB/access/teamParents/t1/mum=p1');
+    check('one entry at a time, never a whole team', tp.every(w => w.path.split('/').length === 6), true);
+  }
+  {
+    // a coach may not be the one to create it: the first entry closes the bridge on every team
+    const { fbk } = await boot('coach');
+    check('a coach does not start the list', fbk.record.writes.some(w => w.path.includes('/teamParents/')), false);
+  }
+  {
+    const club = JSON.parse(JSON.stringify(CLUB));
+    club.access.teamParents = { t1: { mum: 'p1', dad: 'p2' } };
+    const { A, fbk } = await boot('coach', { club });
+    check('nothing to write when it is already right', fbk.record.writes.some(w => w.path.includes('/teamParents/')), false);
+    A.ui.teamId = 't1';
+    A.click({ act: 'toggleguard', pid: 'p3', uid: 'trk' }); await A.flush();
+    check('linking a parent puts her on it', fbk.writtenTo('workspaces/CLUB/access/teamParents/t1/trk').map(w => w.value).join(), 'p3');
+    A.click({ act: 'toggleguard', pid: 'p1', uid: 'mum' }); await A.flush();
+    check('unlinking her last child takes her off', fbk.record.removes.includes('workspaces/CLUB/access/teamParents/t1/mum'), true);
+    check('and the list no longer names her', !!(((A.state.access.teamParents || {}).t1 || {}).mum), false);
+  }
+  {
+    const club = JSON.parse(JSON.stringify(CLUB));
+    club.access.teamParents = { t1: { mum: 'p1' } };
+    const { A, fbk } = await boot('other', { club });
+    A.ui.teamId = 't1';
+    A.click({ act: 'toggleguard', pid: 'p3', uid: 'other' }); await A.flush();
+    check('a coach of another team writes no one onto it', fbk.record.writes.some(w => w.path.includes('/teamParents/')), false);
   }
 
   console.log('\n--- signing out ---');

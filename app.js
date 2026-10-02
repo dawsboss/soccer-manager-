@@ -3,7 +3,7 @@
    Database when a config + workspace code are present. */
 
 const BUILD = '65';
-const BUILT = '2026-10-01';
+const BUILT = '2026-10-02';
 /* index.html carries the build it was published with. If this file is newer, the
    browser handed us a cached page — the exact failure that has eaten hours. */
 const pageBuild = () => {
@@ -490,6 +490,8 @@ async function initSync() {
              access/teamIndex is missing; an admin's device is the only one
              allowed to write it, so it does, once, on the way in. */
           if (canAdmin()) syncAllTeamIndex();
+          // an admin, or each coach for her own team, heals the parent list
+          syncAllTeamParents();
           noteMyClub();
         }
         schedulePublish();   // republish on load, so a fixed config heals itself
@@ -695,6 +697,48 @@ function syncTeamIndex(tid) {
    club that predates teamIndex grows one without anybody migrating anything. */
 function syncAllTeamIndex() { for (const tid of Object.keys(state.teams || {})) syncTeamIndex(tid); }
 
+/* teamIndex's counterpart for parents, which it cannot hold: a parent is a
+   guardian of a player, and a rule cannot walk the squad to find her. So
+   "is this uid a parent on THIS team" gets its own one-hop answer —
+
+     access/teamParents/{teamId}/{uid} = a playerId she is a guardian of
+
+   — and the value is a player id rather than `true` because that is what lets
+   the rule check it: a write is only accepted if that player really lists her
+   in guardians. So this table can never say more than the squad already does,
+   and nobody can put themselves in it. It is what narrows a team's notices to
+   that team's own families, and lets only them open a conversation with its
+   coaches.
+
+   Derived, like teamIndex: rebuilt from the guardians wherever a guardian
+   changes, and on every connect by an admin or that team's coach. Only an
+   admin may create the table — the rules fall back to the club-wide index
+   while it is missing, and one stray first entry would close that bridge on
+   every other team at once. */
+function parentsWanted(tid) {
+  const want = {};
+  for (const p of players(state.teams[tid]))
+    for (const u of Object.keys(p.guardians || {})) if (!want[u]) want[u] = p.id;
+  return want;
+}
+function syncTeamParents(tid) {
+  if (!tid || !me || !state.teams[tid]) return;
+  if (!isAdmin(me.uid) && !isCoach(tid, me.uid)) return;
+  const all = acc().teamParents;
+  if (!all && !isAdmin(me.uid)) return;
+  const want = parentsWanted(tid), now = (all || {})[tid] || {};
+  const team = state.teams[tid];
+  const holds = (u, pid) => !!((((team.players || {})[pid] || {}).guardians || {})[u]);
+  let changed = false;
+  // one entry at a time: a coach's rule sits on $uid, not on the team
+  for (const [u, pid] of Object.entries(want))
+    if (!now[u] || !holds(u, now[u])) { quiet(`access/teamParents/${tid}/${u}`, pid); changed = true; }
+  for (const u of Object.keys(now))
+    if (!want[u]) { delDeep(state, `access/teamParents/${tid}/${u}`); remoteDel(`access/teamParents/${tid}/${u}`); changed = true; }
+  if (changed) saveLocal();
+}
+function syncAllTeamParents() { for (const tid of Object.keys(state.teams || {})) syncTeamParents(tid); }
+
 /* Who may publish a team's read-only mirror. public/{share} is world-readable
    by design, but its write rule is the one hole AUTH.md names outright, and it
    is closed by a list the rule can look up in one hop. Anonymous auth is not an
@@ -727,6 +771,13 @@ function readiness() {
     ok: indexed.length === withRoles.length,
     label: 'Every team with a role has a team index',
     detail: withRoles.length ? indexed.length + ' of ' + withRoles.length : 'no team roles granted yet'
+  });
+  const withParents = teams().filter(t => Object.keys(parentsWanted(t.id)).length);
+  const listed = withParents.filter(t => Object.keys((a.teamParents || {})[t.id] || {}).length);
+  rows.push({
+    ok: listed.length === withParents.length,
+    label: 'Every team with parents has a parent list',
+    detail: withParents.length ? listed.length + ' of ' + withParents.length + (listed.length < withParents.length ? ' — notices are readable club-wide until then' : '') : 'no parents linked yet'
   });
   const shared = teams().filter(t => t.share);
   rows.push({ ok: true, label: 'Shared teams have an owner list', detail: shared.length ? shared.length + ' published' : 'nothing shared' });
@@ -1009,6 +1060,10 @@ async function redeemInvite() {
     render(); return;
   }
   if (v.role !== 'parent') await soft(put(W + `access/teamIndex/${v.team}/${who}`, v.role));
+  /* Refused while the table does not exist yet, which is fine: the rules fall
+     back to the club-wide index until an admin's device creates it, and that
+     device puts her in it. */
+  else await soft(put(W + `access/teamParents/${v.team}/${who}`, v.player));
   await soft(put('clubInvites/' + ws + '/' + id + '/used', { by: who, at, name: me.name || '' }));
   await soft(put('userOrgs/' + who + '/' + ws, { name: v.clubName || '', at }));
   await soft(put(W + 'access/log/' + uid(), {
@@ -6252,6 +6307,7 @@ function onAct(e) {
         commit(`teams/${tid}/players/${p.id}/guardians/${uid}`, true);
         logAccess('linked guardian', uid, { team: tid, teamName: x.name || null, player: p.name });
       }
+      syncTeamParents(tid);
     } else if (f.role === 'coach' || f.role === 'tracker') {
       const key = f.role === 'coach' ? 'coaches' : 'trackers';
       if (!((teamAccess(tid)[key] || {})[uid])) {
@@ -6273,7 +6329,7 @@ function onAct(e) {
       forgetInvite(on);
       drop(`teams/${d.tid}/players/${d.pid}/guardians/${d.uid}`);
       logAccess('unlinked guardian', d.uid, { team: d.tid, teamName: x.name || null, player: p.name });
-      syncIndex(d.uid);
+      syncIndex(d.uid); syncTeamParents(d.tid);
     }
     sheetPersonRoles(d.uid); return;
   }
@@ -6328,6 +6384,7 @@ function onAct(e) {
   if (a === 'preplockdown') {
     if (!canAdmin()) { toast('Club admins and the app owner only'); return; }
     syncAllTeamIndex();
+    syncAllTeamParents();
     claimAllShares();
     render();
     toast('Lookup tables written — let it sync, then check the list again');
@@ -6843,12 +6900,12 @@ function onAct(e) {
     if (on) { forgetInvite(on); drop(`teams/${t.id}/players/${d.pid}/guardians/${d.uid}`); }
     else commit(`teams/${t.id}/players/${d.pid}/guardians/${d.uid}`, true);
     logAccess(on ? 'unlinked guardian' : 'linked guardian', d.uid, { team: t.id, teamName: t.name || null, player: p.name });
-    syncIndex(d.uid);
+    syncIndex(d.uid); syncTeamParents(t.id);
     sheetPlayer(state.teams[t.id].players[d.pid]); return;
   }
   if (a === 'delplayer') {
     if (!confirm('Remove this player from the roster?')) return;
-    drop(`teams/${t.id}/players/${d.pid}`); closeSheet(); return;
+    drop(`teams/${t.id}/players/${d.pid}`); syncTeamParents(t.id); closeSheet(); return;
   }
 
   if (a === 'newmatch') { closeSheet(); sheetMatch(null); return; }

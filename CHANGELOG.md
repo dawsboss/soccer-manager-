@@ -29,6 +29,17 @@ bell in the top bar now opens **Messages**:
 - **Pop-ups** while Minutes is open, through the same path as the Live tab's
   goals, and a count on the bell until it is read.
 
+**Notices stay on their own team.** A team's notices are readable by that
+team's families, coaches and trackers and the admins — not the rest of the
+club — and only a family on a team can open a conversation with its coaches.
+That needed a third lookup table, `access/teamParents/{team}/{uid}`, because a
+rule cannot walk the squad to find a guardian. Its value is a player id the
+rule checks against that player's guardians, so nobody can put themselves on
+it; parents join it when they accept an invite, and an admin's device fills it
+in for everyone else on its next connect. Until it exists, the rules fall back
+to club-wide, so pasting them locks nobody out. Check readiness has a line for
+it.
+
 Both live at the root (`board/`, `dm/`) with rules of their own, not under the
 workspace: every indexed account reads the whole workspace, and a parent's
 message about her daughter is not every other parent's business. README has

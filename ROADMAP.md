@@ -65,6 +65,6 @@ owner, which is why it is written down here rather than built.
   practices once those exist.
 - **Availability replies.** "Can Ella make Saturday?" with Yes / No from the
   parent, feeding the game's existing availability list (`m.out`).
-- **Parents per team in the rules.** Notices are readable club-wide today (see
-  `test/rules.js`, item 5). AUTH.md's `teamMembers` index would narrow that, and
-  it belongs to the orgs migration.
+- **Parents per team in the rules** — done (`access/teamParents`). When the
+  orgs migration happens, it folds into AUTH.md's `teamMembers` index along
+  with `teamIndex`.

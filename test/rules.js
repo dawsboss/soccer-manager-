@@ -550,9 +550,25 @@ reads('owners are not world-readable', OUT, 'shareOwners/sh1', false);
   } } };
   const post = (by, extra) => ({ by, byName: by, at: NOW, text: 'Kick-off moved to 10', ...(extra || {}) });
 
+  /* The parent list, which is what narrows all of this to one team's own
+     families. Each value is a player the uid is a guardian of, because that
+     is what the rule can check. Mum is on t1; Dad is indexed but his child
+     is on t2, so t1's notices and coaches are none of his business. */
+  const A = DB.workspaces.CLUB.access;
+  A.index.dad = true;
+  DB.workspaces.CLUB.teams.t2.players = { q1: { id: 'q1', name: 'Gia', guardians: { dad: true } } };
+  A.teamParents = { t1: { mum: 'p1' }, t2: { dad: 'q1' } };
+  const DAD = { uid: 'dad' };
+
   console.log('\n--- team notices: reading ---');
   reads('a parent reads her team\'s notices', MUM, 'board/CLUB/t1', true);
+  reads('not another team\'s', MUM, 'board/CLUB/t2', false);
+  reads('a parent on another team cannot read these', DAD, 'board/CLUB/t1', false);
   reads('the tracker does', TRK, 'board/CLUB/t1', true);
+  reads('but not another team\'s', TRK, 'board/CLUB/t2', false);
+  reads('its coach does', COACH, 'board/CLUB/t1', true);
+  reads('a coach of another team does not', OTHER, 'board/CLUB/t1', false);
+  reads('an admin reads every team\'s', ADM, 'board/CLUB/t2', true);
   reads('registered but unroled does not', NEWB, 'board/CLUB/t1', false);
   reads('an unknown account does not', RANDO, 'board/CLUB/t1', false);
   reads('signed out does not', OUT, 'board/CLUB/t1', false);
@@ -581,6 +597,7 @@ reads('owners are not world-readable', OUT, 'shareOwners/sh1', false);
   writes('not on a notice that is not there', MUM, 'board/CLUB/t1/nope/seen/mum', NOW, false);
   writes('only a time', MUM, 'board/CLUB/t1/n1/seen/mum', 'yes', false);
   writes('the coach ticks her own', OTHER, 'board/CLUB/t2/n2/seen/other', NOW, true);
+  writes('a parent of another team cannot tick one', DAD, 'board/CLUB/t1/n1/seen/dad', NOW, false);
   writes('an unroled account cannot', NEWB, 'board/CLUB/t1/n1/seen/newbie', NOW, false);
 
   console.log('\n--- a family and its team\'s coaches ---');
@@ -600,6 +617,9 @@ reads('owners are not world-readable', OUT, 'shareOwners/sh1', false);
   writes('nor sign as the coach', MUM, 'dm/CLUB/t1/mum/m/x1', msg('coach'), false);
   writes('a coach of another team cannot', OTHER, 'dm/CLUB/t1/mum/m/x1', msg('other'), false);
   writes('an unroled account cannot start one', NEWB, 'dm/CLUB/t1/newbie/m/x1', msg('newbie'), false);
+  writes('nor a parent from another team', DAD, 'dm/CLUB/t1/dad/m/x1', msg('dad'), false);
+  writes('who can with his own team\'s coaches', DAD, 'dm/CLUB/t2/dad/m/x1', msg('dad'), true);
+  writes('nor the tracker as a "family"', TRK, 'dm/CLUB/t1/trk/m/x1', msg('trk'), false);
   writes('nobody edits a message', COACH, 'dm/CLUB/t1/mum/m/d1/text', 'changed', false);
   writes('nor deletes one, the parent', MUM, 'dm/CLUB/t1/mum/m/d1', null, false);
   writes('nor an admin', ADM, 'dm/CLUB/t1/mum/m/d1', null, false);
@@ -609,6 +629,39 @@ reads('owners are not world-readable', OUT, 'shareOwners/sh1', false);
   writes('the coach marks it read', COACH, 'dm/CLUB/t1/mum/seen/coach', NOW, true);
   writes('not as somebody else', COACH, 'dm/CLUB/t1/mum/seen/mum', NOW, false);
   writes('another family cannot', MUM, 'dm/CLUB/t1/dad/seen/mum', NOW, false);
+
+  console.log('\n--- the parent list itself ---');
+  const TP = 'workspaces/CLUB/access/teamParents/';
+  writes('a parent puts herself on it, naming her child', MUM, TP + 't1/mum', 'p1', true);
+  writes('not naming a child she is not guardian of', MUM, TP + 't1/mum', 'p3', false);
+  writes('not on a team her child is not on', MUM, TP + 't2/mum', 'q1', false);
+  writes('not somebody else', MUM, TP + 't1/dad', 'p1', false);
+  writes('the team\'s coach writes it', COACH, TP + 't1/mum', 'p1', true);
+  writes('but only true entries', COACH, TP + 't1/rando', 'p1', false);
+  writes('and takes one off', COACH, TP + 't1/mum', null, true);
+  writes('a coach of another team cannot', OTHER, TP + 't1/mum', null, false);
+  writes('an admin writes it', ADM, TP + 't1/mum', 'p1', true);
+  writes('even an admin only true entries', ADM, TP + 't1/rando', 'p1', false);
+  writes('a parent takes herself off', MUM, TP + 't1/mum', null, true);
+  writes('nobody else\'s', MUM, TP + 't2/dad', null, false);
+  {
+    const saved = A.teamParents;
+    delete A.teamParents;
+    writes('with no table, a parent cannot start it', MUM, TP + 't1/mum', 'p1', false);
+    writes('nor a coach', COACH, TP + 't1/mum', 'p1', false);
+    writes('only an admin', ADM, TP + 't1/mum', 'p1', true);
+    console.log('  ^ the first entry closes the bridge below on every team at once,');
+    console.log('    so only an admin may make it — and her device writes them all.');
+
+    console.log('\n--- the bridge, for a club with no parent list yet ---');
+    reads('with no table, an indexed parent reads any team\'s notices', DAD, 'board/CLUB/t1', true);
+    writes('and may write to its coaches', DAD, 'dm/CLUB/t1/dad/m/x1', msg('dad'), true);
+    reads('but never another family\'s conversation', DAD, 'dm/CLUB/t1/mum', false);
+    reads('and signed out still nothing', OUT, 'board/CLUB/t1', false);
+    console.log('  ^ the same width as before the table existed, so pasting these rules');
+    console.log('    locks nobody out; an admin\'s next connect closes it.');
+    A.teamParents = saved;
+  }
 
   console.log('\n--- before teamIndex exists, coaches wait; nobody else gets in ---');
   {
@@ -626,6 +679,7 @@ reads('owners are not world-readable', OUT, 'shareOwners/sh1', false);
     DB.workspaces.CLUB.access.teamIndex = saved;
   }
   delete DB.board; delete DB.dm;
+  delete A.teamParents; delete A.index.dad; DB.workspaces.CLUB.teams.t2.players = {};
 }
 
 /* The open rules carry the same root blocks, so invites and messages work
@@ -683,13 +737,12 @@ console.log(`
      it, and naming an address closes it; the interface says so where the
      invite is made.
 
-  5. Team notices are readable by anyone indexed in the club, not only that
-     team's families — the same width as the workspace read, which already
-     lets a parent read every team's games. And any indexed account can open
-     a conversation with any team's coaches. Narrowing either needs a parent
-     lookup per team (AUTH.md's teamMembers index); the app shows each person
-     only their own teams. Family conversations themselves are closed: one
-     family, that team's coaches and the admins, nobody else.`);
+  5. The parent list is only as fresh as the last device that synced it. Its
+     entries can only ever name a real guardian at the moment they are
+     written, but a parent unlinked by an older copy of the app keeps reading
+     that team's notices until an admin's or the coach's next connect takes
+     her off. While the list does not exist at all, notices fall back to
+     club-wide, as they were.`);
 
 console.log(`\n${failures ? failures + ' EXPECTATION(S) FAILED' : 'all expectations hold'}`);
 process.exit(failures ? 1 : 0);
