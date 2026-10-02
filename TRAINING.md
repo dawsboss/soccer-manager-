@@ -32,7 +32,7 @@ the half of the week where that knowledge is used.
 | --- | --- | --- | --- | --- |
 | **Built-in** | Everyone's | `drills.js`, shipped with the app | Coaches and admins, in the app | Nobody in the app. A new version of the file |
 | **Club** | The club's | `training/{code}/drills` | Admins and coaches. Never trackers, never parents | Admins; any coach for what she shared |
-| **Mine** | One coach's, across every club | `userLibrary/{uid}/drills` | Only her. Not even an admin | Only her |
+| **Mine** | One coach's, across every club | `userLibrary/{uid}/drills` | Only her, and the app owner. Never a club admin | Only her |
 
 **Drills are a club's and a coach's own work, so parents never see them**
 (settled 2026-10-02). That isn't only a matter of hiding a tab: a parent's
@@ -51,8 +51,9 @@ the Practice tab is theirs.
 **Mine is keyed by account, not by club, and it's private.** `AUTH.md`'s coach
 with a daughter at another club is also a coach whose drills should follow her
 if she moves clubs. A personal library inside `workspaces/{code}` would be the
-club's the day she left. At the root, beside `userOrgs/{uid}`, it's hers, and
-the rules let nobody else read it. Sharing is a choice she makes one drill at a
+club's the day she left. At the root, beside `userOrgs/{uid}`, it's hers. The
+rules let one other account read it, the app owner, for support, and nobody
+in any club: not another coach, not an admin (settled 2026-10-02). Sharing is a choice she makes one drill at a
 time, and she never has to make it.
 
 **Club is the shared shelf, and the club's secret sauce.** It's where a club's
@@ -268,6 +269,7 @@ training/{code}/practices/{teamId}/{practiceId}
 | Coach | Read, copy | Read, copy; share; edit or remove what she shared | Her own | Plan and edit her team's | Read; change her team's |
 | Tracker | — | — | — | — | Read |
 | Parent | — | — | — | — | Read |
+| App owner | Read, copy | Only through a club role | Read anyone's, for support; never changes it | Only through a club role | Only through a club role |
 | Signed out | — | — | — | — | — |
 
 A coach can't read another team's practice plans, which is narrower than
@@ -346,7 +348,7 @@ today's workspace code, so `training/{code}` is already `training/{orgId}`.
 },
 "userLibrary": {
   "$uid": {
-    ".read": "auth != null && auth.uid === $uid",
+    ".read": "auth != null && (auth.uid === $uid || root.child('appOwners/' + auth.uid).exists())",
     "$kind": { "$id": { ".write": "auth != null && auth.uid === $uid" } }
   }
 }
@@ -391,6 +393,15 @@ and, inside the existing `workspaces/$code/access` block:
   Practices fall back the same way: while `teamIndex` is missing, it's
   admins and anyone in `coachIndex`, never the whole club. `schedule` is
   the one part that is club-wide, so it keeps the usual bridge.
+- **Mine reads as its owner or the app owner, and writes as its owner only.**
+  It's the first rule that gives the app owner any standing (`CLAUDE.md`
+  lists *the app owner has no standing in the rules* as a known gap). That's
+  safe because `appOwners` can only be changed in the Firebase console
+  (`.write: false`, README's *Becoming the app owner*), so no button in the
+  app can make someone an owner and open every coach's library. It's read
+  only: the owner can see a drill to help with a problem, but never edit or
+  delete one. A club admin gets no clause here at all. The library belongs to
+  the person, and a coach in two clubs would have two sets of admins.
 - **A club drill records the team its author coaches** (`team`), and the
   write rule looks that one entry up, the same trick `matches/$mid` uses with
   `teamId`. If she stops coaching that team, she can no longer edit what she
@@ -421,7 +432,9 @@ decisions.
   the same exposure as a game tracked offline, and it merges on read, never
   replaced wholesale.
 - Mine is cached per account and, like the identity cache, cleared on sign-out.
-  It's the person's, not the device's.
+  It's the person's, not the device's. The app owner's device never caches
+  another coach's library: it reads one when asked, for support, and keeps
+  nothing.
 - Club drills and practice plans are only ever fetched by a coach's or an
   admin's device, so a parent's phone never holds a copy to leak through
   devtools. That's stricter than the workspace cache, and it can be: a coach
@@ -541,3 +554,5 @@ Settled on 2026-10-02:
   and coaches, not trackers. A parent sees when and where.
 - Each coach has her own private library and shares from it only if she wants
   to. Any coach can share into the club library; admins tidy it.
+- A coach's own library is readable by her and by the app owner, read only,
+  for support. No club admin can see it.

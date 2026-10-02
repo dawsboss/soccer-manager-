@@ -8,6 +8,17 @@ before this point lives only in the git log.
 
 ---
 
+## A coach's own drills: her, and the app owner — 2026-10-02
+
+Design only, in `TRAINING.md`. A coach's personal library is readable by
+her and by the app owner, for support, and by no one in any club: not another
+coach, and not an admin. The owner can read but never change or delete a
+coach's drills. This is the first rule that gives the app owner any standing.
+It's safe because `appOwners` can only be changed in the Firebase console, so
+nothing in the app can make someone an owner.
+
+---
+
 ## 105 drills, a guide to every position, and drills that stay private — 2026-10-02
 
 Still nothing new on screen in the app.
