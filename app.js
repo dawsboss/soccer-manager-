@@ -872,7 +872,7 @@ const COACH_ACTS = new Set([
   'editgameshape', 'gameshapepreset', 'planlock', 'planunlock',
   'snapstart', 'snapadd', 'snapdel', 'snaptime', 'snapslot', 'snapclear', 'snapplayer',
   // the calendar
-  'calnew', 'caledit', 'calsave', 'caldel', 'calcall', 'caleditgame', 'calsyncon', 'calsyncnew', 'rsvpout'
+  'calnew', 'caledit', 'calsave', 'caldel', 'calcall', 'caleditgame', 'calsyncon', 'calsyncnew', 'attend', 'attsave'
 ]);
 const LOG_ACTS = new Set([
   'goal', 'savegoal', 'delgoal', 'shot', 'saveshot', 'delshot', 'ev', 'saveev', 'delev',
@@ -882,9 +882,9 @@ function mayAct(a, m, d) {
   const coach = COACH_ACTS.has(a), log = LOG_ACTS.has(a);
   if (!coach && !log) return true;
   /* An action on a game answers to that game's team, whichever team is open.
-     A calendar entry names its team on the button, because "All my teams"
-     puts several teams' entries on one screen. */
-  const tid = a.startsWith('cal') && d && d.tid ? d.tid
+     A calendar entry (and its register) names its team on the button,
+     because "All my teams" puts several teams' entries on one screen. */
+  const tid = (a.startsWith('cal') || a === 'attend' || a === 'attsave') && d && d.tid ? d.tid
     : m && m.teamId && !['newmatch', 'addplayer', 'editplayer', 'saveplayer', 'delplayer'].includes(a) ? m.teamId : ui.teamId;
   if (canEditTeam(tid)) return true;
   return log && !!me && isTracker(tid, me.uid);
@@ -1919,7 +1919,22 @@ function anomalies(m) {
   return out;
 }
 
-const isOut = (m, pid) => !!(m.out && m.out[pid]);
+/* Who is not available for a game. The coach's own word wins either way;
+   without one, the family's answer does, so a "not going" leaves her out of the
+   bench, the plan and the even split without the coach copying it across.
+   `out[pid] === false` is the coach saying she is playing after all, and
+   toggleout keeps an entry only while it disagrees with what the family said —
+   so a family that changes its mind still flows through, unless the coach has
+   decided otherwise. */
+function isOut(m, pid) {
+  const o = ((m && m.out) || {})[pid];
+  if (o === false) return false;
+  if (o) return true;
+  return familySaidNo(m, pid);
+}
+const familySaidNo = (m, pid) => !!m && ((rsvpOf(m.teamId, 'g_' + m.id, pid) || {}).v === 'no');
+// everyone left out of a game, by whichever route — never Object.keys(m.out), which misses the families' answers
+const outIds = (t, m) => players(t).filter(p => p.active !== false && isOut(m, p.id)).map(p => p.id);
 function squad(t, m) {
   return players(t).filter(p => p.active !== false && (!m || !isOut(m, p.id)));
 }
@@ -3419,7 +3434,7 @@ function viewMatch() {
 
   const planHtml = nextChange(m, el, name);
 
-  const outCount = Object.keys(m.out || {}).length;
+  const outCount = outIds(t, m).length;
 
   return `<div class="stack">
     <div class="barrow">${gameBar(t, m)}</div>
@@ -3817,7 +3832,9 @@ function viewPlan() {
   const minutesRows = roster.map(p => {
     const pd = m.planned && m.planned[p.id] != null ? Number(m.planned[p.id]) : null;
     const got = Math.round((secs[p.id] || 0) / 60), d = pd != null ? got - pd : 0;
-    return `<div class="spread" style="padding:4px 0"><span>${p.number != null && p.number !== '' ? `<span class="muted">${esc(p.number)}</span> ` : ''}${esc(p.name)}${p.gk ? ' <span class="muted">GK</span>' : ''}</span>
+    const r = rsvpOf(t.id, 'g_' + m.id, p.id);
+    const unsure = gameStatus(m) !== 'upcoming' ? '' : r && r.v === 'maybe' ? ' <span class="tag event">maybe</span>' : !r && (m.out || {})[p.id] !== false ? ' <span class="muted">· no answer</span>' : '';
+    return `<div class="spread" style="padding:4px 0"><span>${p.number != null && p.number !== '' ? `<span class="muted">${esc(p.number)}</span> ` : ''}${esc(p.name)}${p.gk ? ' <span class="muted">GK</span>' : ''}${unsure}</span>
       <span>${blocks.length ? `<b>${got}</b> ` : ''}<span class="muted">${pd != null ? (blocks.length ? `of ${pd}` : `${pd} target`) : blocks.length ? 'min' : 'no target'}</span>${blocks.length && pd != null && d ? `<span class="diff ${d < 0 ? 'owed' : 'over'}">${d < 0 ? -d + ' short' : d + ' over'}</span>` : ''}</span></div>`;
   }).join('') || '<p class="muted" style="margin:0">No players in the squad for this game yet.</p>';
 
@@ -3838,12 +3855,31 @@ function viewPlan() {
         <div class="card"><h2 style="margin-bottom:6px">Build one for me</h2>
           <p class="muted" style="margin-top:0">Drafts a snapshot every ${Number(m.blockMinutes) || 10} minutes or so from the targets, ratings and pairings. ${locked ? 'Your plan is locked in — unlock it first to redraft.' : blocks.length ? 'It replaces the snapshots you have.' : 'Every one of them can be changed afterwards.'}</p>
           ${locked ? '' : `<button class="btn quiet wide" data-act="makeplan">${blocks.length ? 'Redraft the plan' : 'Draft a plan'}</button>`}</div>
-        <div class="card"><div class="spread">
-          <div><h2>Who is unavailable</h2><div class="muted">${Object.keys(m.out || {}).length || 'Nobody'} left out of this game</div></div>
-          <button class="btn quiet sm" data-act="availability">Change</button></div></div>
+        ${comingCard(t, m)}
         ${aiButton('game')}
       </div>
     </div></div>`;
+}
+
+/* Who to plan for, on the tab where the plan is made. The families' answers
+   are already applied — the plan, the targets and the even split work from the
+   players who are coming — so this says who is out and why, and who has not
+   said, which is who might still turn up or not. */
+function comingCard(t, m) {
+  const key = 'g_' + m.id, ps = players(t).filter(p => p.active !== false);
+  const outs = ps.filter(p => isOut(m, p.id));
+  const inn = ps.filter(p => !isOut(m, p.id));
+  const maybe = inn.filter(p => (rsvpOf(t.id, key, p.id) || {}).v === 'maybe');
+  const quiet_ = gameStatus(m) === 'upcoming' ? inn.filter(p => !rsvpOf(t.id, key, p.id) && (m.out || {})[p.id] !== false) : [];
+  const names = list => list.map(p => esc(p.name)).join(', ');
+  const why = p => (m.out || {})[p.id] ? 'you' : 'family';
+  return `<div class="card"><div class="spread" style="align-items:flex-start">
+      <div><h2>Who is coming</h2><div class="muted">${inn.length} to plan for${outs.length ? ` · ${outs.length} out` : ''}</div></div>
+      <button class="btn quiet sm" data-act="availability" style="flex:none">Change</button></div>
+    ${outs.length ? `<p style="margin:10px 0 0"><b>Out:</b> ${outs.map(p => `${esc(p.name)} <span class="muted">(${why(p) === 'you' ? 'you' : 'family said'})</span>`).join(', ')}</p>` : ''}
+    ${maybe.length ? `<p style="margin:6px 0 0"><b>Maybe:</b> ${names(maybe)}</p>` : ''}
+    ${quiet_.length ? `<p style="margin:6px 0 0"><b>Not answered:</b> ${names(quiet_)}</p>` : ''}
+    <p class="muted" style="margin:8px 0 0">Families answer from the calendar. Not going leaves a player out of the plan, the targets and the even split until you change it here.</p></div>`;
 }
 
 /* Opponent, when, where and the format. It lived at the foot of the Pitch
@@ -4146,6 +4182,107 @@ function rsvpBlock(it) {
   return c.yes + c.no + c.maybe ? `<p class="muted">${esc(countLine(c))}</p>` : '';
 }
 
+/* --- who came --- */
+/* The register for practices and other entries, taken by the coach on the
+   day: teams/{tid}/attend/{eid}/{pid} = true (came) or false (missed). Under
+   the team, so the team rule already says only its coaches write it; beside
+   the entries rather than inside them, so editing a practice can never write
+   over the register taken for it. Keyed by the calendar entry's id, which is
+   what lets anything hung off that entry later (the drills in its practice
+   plan) be counted per player.
+
+   A game needs no register. Minutes played and the availability above already
+   say who was there: she played, or she was available and on the bench. */
+const attendOf = (tid, eid) => (((state.teams[tid] || {}).attend || {})[eid]) || null;
+const cameToGame = (m, pid) => !!m && (playedSec(m, pid) > 0 || !isOut(m, pid));
+// before anyone has ticked: a family's "not going" is a likely miss, anyone else probably came
+const attendGuess = (tid, eid, pid) => (rsvpOf(tid, 'e_' + eid, pid) || {}).v !== 'no';
+// on the day or after, and only for something that happened
+const attendDue = it => it.kind !== 'game' && !!it.date && !it.called && it.date <= todayStr();
+
+/* One player's season, by kind. `silent` is a miss nobody warned the coach
+   about — no "not going" beforehand — which is the number a coach actually
+   asks about. Entries with no register yet are left out rather than counted
+   either way. */
+function attendance(t, pid) {
+  const r = { practice: { came: 0, of: 0, silent: 0 }, event: { came: 0, of: 0, silent: 0 }, game: { came: 0, of: 0 } };
+  for (const it of calItems([t.id])) {
+    if (it.called || !it.date) continue;
+    if (it.kind === 'game') {
+      if (it.status !== 'done') continue;
+      r.game.of++;
+      if (cameToGame(state.matches[it.id], pid)) r.game.came++;
+      continue;
+    }
+    if (!calPast(it)) continue;
+    const a = attendOf(t.id, it.id);
+    if (!a || a[pid] === undefined) continue;
+    const b = r[it.kind]; b.of++;
+    if (a[pid]) b.came++;
+    else if ((rsvpOf(t.id, 'e_' + it.id, pid) || {}).v !== 'no') b.silent++;
+  }
+  return r;
+}
+function attendLine(r) {
+  const miss = b => b.of - b.came;
+  return [
+    r.practice.of ? `Practices ${r.practice.came} of ${r.practice.of}${miss(r.practice) ? ` · missed ${miss(r.practice)}${r.practice.silent ? ` (${r.practice.silent} without saying)` : ''}` : ''}` : '',
+    r.game.of ? `Games ${r.game.came} of ${r.game.of}` : '',
+    r.event.of ? `Other ${r.event.came} of ${r.event.of}` : ''
+  ].filter(Boolean).join(' · ');
+}
+// past entries nobody has taken the register for
+const attendUntaken = t => calItems([t.id]).filter(it => it.kind !== 'game' && !it.called && it.date && calPast(it) && !attendOf(t.id, it.id));
+
+/* On an entry's sheet, for the coach: the register once it is taken, and the
+   button to take it from the day itself onwards. */
+function attendBlock(it) {
+  if (!canEditTeam(it.tid) || !attendDue(it)) return '';
+  const a = attendOf(it.tid, it.id), squad_ = rsvpSquad(it.tid);
+  if (!a) return `<div class="rsvpbox"><p class="lbl">Who came</p>
+    <button class="btn quiet wide" data-act="attend" data-tid="${esc(it.tid)}" data-id="${esc(it.id)}">Take attendance</button></div>`;
+  const came = squad_.filter(p => a[p.id] === true), missed = squad_.filter(p => a[p.id] === false);
+  return `<div class="rsvpbox"><div class="spread"><p class="lbl" style="margin:0">Who came — ${came.length} of ${came.length + missed.length}</p>
+      <button class="btn quiet sm" data-act="attend" data-tid="${esc(it.tid)}" data-id="${esc(it.id)}">Change</button></div>
+    ${missed.length ? `<p style="margin:6px 0 0"><b>Missed:</b> ${missed.map(p => esc(p.name)).join(', ')}</p>` : '<p class="muted" style="margin:6px 0 0">Everyone came.</p>'}</div>`;
+}
+
+let attForm = null;      // { tid, eid, marks: { pid: bool } } while the register is open
+function sheetAttend() {
+  const f = attForm; if (!f) return;
+  const it = calItems([f.tid]).find(x => x.kind !== 'game' && x.id === f.eid);
+  if (!it) { closeSheet(); return; }
+  const n = Object.values(f.marks).filter(Boolean).length, all = rsvpSquad(f.tid).length;
+  openSheet(`<h3>Who came — ${esc(it.title)}</h3>
+    <p class="muted" style="margin-top:0">${esc(dayLabel(it.date))}. ${attendOf(f.tid, f.eid) ? 'Tap anyone to change.' : 'Filled in from what families said — anyone whose family said not going starts as missed. Tap anyone to change, then save.'}</p>
+    <button class="btn quiet wide" data-act="attall" style="margin-bottom:10px">Everyone came</button>
+    ${rsvpSquad(f.tid).map(p => {
+    const r = rsvpOf(f.tid, 'e_' + f.eid, p.id);
+    return `<button class="opt spread" type="button" data-act="attmark" data-pid="${esc(p.id)}">
+      <span>${esc(shirtOf(p))} ${esc(p.name)}${r ? `<span class="rowsub">Family said ${esc(RSVP_SHORT[r.v])}${r.note ? ' · ' + esc(r.note) : ''}</span>` : ''}</span>
+      <span class="${f.marks[p.id] ? 'on' : 'off'}">${f.marks[p.id] ? 'came' : 'missed'}</span></button>`;
+  }).join('')}
+    <button class="btn wide" data-act="attsave" data-tid="${esc(f.tid)}">Save — ${n} of ${all} came</button>`);
+}
+
+/* The Season tab's register, for the coach: who misses most, practices first
+   because that is where the question usually is. */
+function attendanceCard(t) {
+  if (!canEditTeam(t.id)) return '';
+  const rows = players(t).filter(p => p.active !== false).map(p => ({ p, r: attendance(t, p.id) }));
+  const untaken = attendUntaken(t).length;
+  if (!rows.some(x => x.r.practice.of + x.r.event.of + x.r.game.of) && !untaken) return '';
+  const missed = x => (x.r.practice.of - x.r.practice.came) + (x.r.event.of - x.r.event.came);
+  rows.sort((a, b) => missed(b) - missed(a) || (b.r.game.of - b.r.game.came) - (a.r.game.of - a.r.game.came) || (a.p.name || '').localeCompare(b.p.name || ''));
+  return `<div class="card"><div class="spread" style="margin-bottom:10px"><h2>Attendance</h2><span class="muted">most missed first</span></div>
+    ${untaken ? `<p class="muted" style="margin-top:0">${untaken} past practice${untaken === 1 ? '' : 's'} or event${untaken === 1 ? '' : 's'} with no register yet — open ${untaken === 1 ? 'it' : 'them'} on the Calendar to take it.</p>` : ''}
+    <div class="plist">${rows.map(x => `<div class="prow">
+      <span class="pnum">${esc(x.p.number ?? '')}</span>
+      <span><span class="pname">${esc(x.p.name)}</span><span class="psub">${esc(attendLine(x.r) || 'Nothing recorded yet')}</span></span>
+      <span class="pmins">${x.r.practice.of ? `${x.r.practice.came}<small>/${x.r.practice.of}</small>` : '<small>–</small>'}</span></div>`).join('')}</div>
+    <p class="muted" style="margin-bottom:0">Practices and events count once the register is taken; a game counts from the minutes and who was available.</p></div>`;
+}
+
 /* Calendar sync. A calendar app subscribes to an address and comes back to it
    on its own schedule, from its own servers, never running a line of ours — so
    a static site cannot answer it. worker/calendar.mjs does: it reads the
@@ -4217,7 +4354,8 @@ function calRow(it, all) {
   const edit = canEditTeam(it.tid);
   // most entries are the team's own, so it is the exception that gets marked
   const sub = [it.venue, it.home && HOME_AWAY[it.home], all ? t.name : '',
-    edit && it.kind !== 'game' && it.public ? 'on the share link' : '', rsvpLine(it)].filter(Boolean);
+    edit && it.kind !== 'game' && it.public ? 'on the share link' : '', rsvpLine(it),
+    edit && attendDue(it) && calPast(it) ? (a => a ? `${Object.values(a).filter(Boolean).length} came` : 'no register yet')(attendOf(it.tid, it.id)) : ''].filter(Boolean);
   const m = it.kind === 'game' ? state.matches[it.id] : null;
   const right = it.called ? `<span class="tag off">${CALLED[it.called]}</span>`
     : m && it.status !== 'upcoming' ? `<span class="pmins">${score(m).us}<small>–${score(m).them}</small></span>`
@@ -4352,6 +4490,7 @@ function sheetCalItem(kind, tid, id) {
       ${left ? row('Repeats', `Weekly · ${left} more after this`) : ''}
     </dl>
     ${rsvpBlock(it)}
+    ${attendBlock(it)}
     ${it.date ? `<div class="row wrap" style="margin-bottom:10px">
       ${it.venue && I ? `<a class="btn quiet sm" href="${esc(I.mapLink(it.venue))}" target="_blank" rel="noopener">Directions</a>` : ''}
       ${I ? `<a class="btn quiet sm" href="${esc(I.googleLink(icsItem(it)))}" target="_blank" rel="noopener">Google Calendar</a>` : ''}
@@ -4653,7 +4792,7 @@ function viewSeason() {
   }).join('')}</div></div>` : '<div class="empty"><strong>No players yet</strong>Add the squad first.</div>';
 
   return `<div class="stack">
-    ${record}${shotsCard}${possCard}${evCard}${results}${playersCard}
+    ${record}${shotsCard}${possCard}${evCard}${results}${playersCard}${attendanceCard(t)}
     ${restricted() ? '' : aiButton('team')}
   </div>`;
 }
@@ -4755,6 +4894,7 @@ function viewMine() {
           <span data-live="sdiff" data-tid="${t.id}" data-pid="${p.id}">${diffTag(played, planned)}</span></span>
       </div>
       ${rs ? `<p class="muted" style="margin:10px 0 0">${esc(rs)}</p>` : ''}
+      ${(l => l ? `<p class="muted" style="margin:6px 0 0">${esc(l)}</p>` : '')(attendLine(attendance(t, p.id)))}
       <div class="plist" style="margin-top:10px">
         ${live ? `<button class="prow" data-act="gotoplayer" data-tid="${t.id}" data-id="${live.id}" style="grid-template-columns:1fr auto">
           <span><span class="pname">Playing now — ${esc(live.opponent || 'TBC')}</span>
@@ -5775,6 +5915,7 @@ function sheetPlayer(p) {
       ${p.photo ? `<button class="btn quiet sm" data-act="dropphoto" data-pid="${p.id}">Remove</button>` : ''}</span>
     </div>
     <p class="muted" style="margin-top:-4px">Visible only to people signed in to this club. Never published to the parent links.</p>
+    ${(l => l ? `<p style="margin:0 0 12px"><b>This season:</b> ${esc(l)}</p>` : '')(attendLine(attendance(t, p.id)))}
     <div class="grid2">
       <label class="field"><span>Number</span><input type="number" inputmode="numeric" id="epNum" value="${esc(p.number ?? '')}"></label>
       <label class="field"><span>Name</span><input type="text" id="epName" value="${esc(p.name)}"></label>
@@ -5833,14 +5974,18 @@ function sheetPlayer(p) {
 function sheetAvailability() {
   const t = team(), m = match();
   const said = pid => rsvpOf(t.id, 'g_' + m.id, pid);
-  const noes = players(t).filter(p => p.active !== false && !isOut(m, p.id) && (said(p.id) || {}).v === 'no');
-  /* What families said is a hint, not a switch: the coach decides who is out,
-     and one tap takes every "not going" at their word. */
+  const why = p => {
+    const o = (m.out || {})[p.id], r = said(p.id);
+    const fam = r ? RSVP[r.v] + (r.note ? ' · ' + r.note : '') : (gameStatus(m) === 'upcoming' ? 'Not answered' : '');
+    if (o === false && familySaidNo(m, p.id)) return 'Family said not going — you have her playing';
+    if (o) return 'You marked her out' + (r ? ' · family said ' + RSVP_SHORT[r.v] : '');
+    return fam;
+  };
+  const fromFamily = players(t).filter(p => p.active !== false && isOut(m, p.id) && (m.out || {})[p.id] === undefined).length;
   openSheet(`<h3>Available for ${esc(m.opponent || 'this game')}</h3>
-    <p class="muted" style="margin-top:0">Anyone switched off here is left out of the bench, the plan and the even split — but keeps her season totals.</p>
-    ${noes.length ? `<button class="btn quiet wide" data-act="rsvpout" style="margin-bottom:10px">Mark the ${noes.length} who said they are not going as out</button>` : ''}
+    <p class="muted" style="margin-top:0">Anyone out is left out of the bench, the plan and the even split — but keeps her season totals. Families\u2019 answers come straight in: <b>not going</b> means out until you say otherwise.${fromFamily ? ` ${fromFamily} out because ${fromFamily === 1 ? 'her family said so' : 'their families said so'}.` : ''}</p>
     ${players(t).filter(p => p.active !== false).map(p => `<button class="opt spread" type="button" data-act="toggleout" data-pid="${p.id}">
-      <span>${esc(p.number ?? '')} ${esc(p.name)}${said(p.id) ? `<span class="rowsub">${esc(RSVP[said(p.id).v])}${said(p.id).note ? ' · ' + esc(said(p.id).note) : ''}</span>` : ''}</span>
+      <span>${esc(p.number ?? '')} ${esc(p.name)}${why(p) ? `<span class="rowsub">${esc(why(p))}</span>` : ''}</span>
       <span class="${isOut(m, p.id) ? 'off' : 'on'}">${isOut(m, p.id) ? 'out' : 'available'}</span></button>`).join('')}
     <button class="btn wide" data-act="closesheet">Done</button>`);
 }
@@ -6188,7 +6333,7 @@ function aiGameFacts(t, m, lab) {
     const rs = Object.entries(byRole(m, p.id, now)).filter(([k, v]) => v >= 60 && k !== 'Unassigned').map(([k, v]) => `${mins(v)} at ${k}`).join(', ');
     return `- ${L(p.id)}${p.gk ? ' (GK)' : ''}: ${mins(pl)} min${pd ? ` of ${mins(pd)} planned` : ''}${onField(m, p.id) && gameStatus(m) === 'live' ? ', on now' : ''}${rs ? ' — ' + rs : ''}`;
   });
-  const out = Object.keys(m.out || {}).map(L);
+  const out = outIds(t, m).map(L);
   const goals = goalList(m).map(g => `- ${mins(g.t)}' ${g.side === 'us' ? 'us' : 'them'}${g.pid ? ' ' + L(g.pid) : ''}${g.assist ? ' (assist ' + L(g.assist) + ')' : ''}`);
   /* endGame() closes every open stint at the whistle. Those are not subs, and
      eleven of them read to a model like a mass substitution in the last minute. */
@@ -6229,7 +6374,7 @@ function aiPlanFacts(t, m, lab) {
     return out.join(', ');
   };
   const pairs = link('pairs'), apart = link('avoid');
-  const out = Object.keys(m.out || {}).map(L);
+  const out = outIds(t, m).map(L);
   /* The coach's own snapshots, whole lineup each time rather than just the
      changes: a model reasons about "who is on at 20 minutes" far more reliably
      from the list than by replaying a chain of swaps. */
@@ -6929,8 +7074,12 @@ function onAct(e) {
   }
   if (a === 'availability') { sheetAvailability(); return; }
   if (a === 'toggleout') {
-    if (isOut(m, d.pid)) { drop(`matches/${m.id}/out/${d.pid}`); }
-    else { if (onField(m, d.pid)) takeOffField(m, d.pid); commit(`matches/${m.id}/out/${d.pid}`, true); }
+    /* The coach's word is written only where it differs from the family's, so
+       agreeing with them leaves nothing behind for a changed answer to fight. */
+    const want = !isOut(m, d.pid);
+    if (want && onField(m, d.pid)) takeOffField(m, d.pid);
+    if (want === familySaidNo(m, d.pid)) drop(`matches/${m.id}/out/${d.pid}`);
+    else commit(`matches/${m.id}/out/${d.pid}`, want);
     sheetAvailability(); return;
   }
 
@@ -7224,6 +7373,26 @@ function onAct(e) {
     sheetCalEvent(); return;
   }
   if (a === 'calsave') { if (calForm) saveCalEvent(); return; }
+  if (a === 'attend') {
+    const it = calItems([d.tid]).find(x => x.kind !== 'game' && x.id === d.id);
+    if (!it || !attendDue(it)) return;
+    ui.teamId = d.tid;
+    const had = attendOf(d.tid, d.id) || {};
+    const marks = {};
+    for (const p of rsvpSquad(d.tid)) marks[p.id] = had[p.id] !== undefined ? !!had[p.id] : attendGuess(d.tid, d.id, p.id);
+    attForm = { tid: d.tid, eid: d.id, marks };
+    sheetAttend(); return;
+  }
+  if (a === 'attmark') { if (attForm) { attForm.marks[d.pid] = !attForm.marks[d.pid]; sheetAttend(); } return; }
+  if (a === 'attall') { if (attForm) { for (const k of Object.keys(attForm.marks)) attForm.marks[k] = true; sheetAttend(); } return; }
+  if (a === 'attsave') {
+    if (!attForm) return;
+    const f = attForm, n = Object.values(f.marks).filter(Boolean).length;
+    // one write for the register, at a depth the team rule grants
+    quiet(`teams/${f.tid}/attend/${f.eid}`, { ...f.marks });
+    attForm = null; saveLocal(); closeSheet(); render();
+    toast(`Saved — ${n} of ${Object.keys(f.marks).length} came`); return;
+  }
   /* Checked here, not only by which chips are drawn: a parent may answer for
      her own child and nobody else's, a coach for anyone on her team. */
   if (a === 'rsvp' || a === 'rsvpnote') {
@@ -7241,11 +7410,7 @@ function onAct(e) {
     if (d.from === 'sheet' || a === 'rsvpnote') sheetCalItem(d.kind, d.tid, d.id);
     render(); return;
   }
-  if (a === 'rsvpout') {
-    if (!m) return;
-    for (const p of players(t)) if (p.active !== false && !isOut(m, p.id) && (rsvpOf(t.id, 'g_' + m.id, p.id) || {}).v === 'no') quiet(`matches/${m.id}/out/${p.id}`, true);
-    saveLocal(); schedulePublish(); render(); sheetAvailability(); toast('Marked out'); return;
-  }
+
   if (a === 'calsyncon' || a === 'calsyncnew') {
     const x = state.teams[d.tid]; if (!x) return;
     if (!feedBase()) { toast('Calendar sync is not set up on this site yet'); return; }
@@ -7272,7 +7437,11 @@ function onAct(e) {
     const tid = calForm.tid, list = calTargets();
     if (!list.length) return;
     if (!confirm(list.length > 1 ? `Delete these ${list.length}? Calling them off keeps them on the calendar for people to see.` : 'Delete this? Calling it off instead keeps it on the calendar, struck through, so nobody turns up.')) return;
-    for (const x of list) { delDeep(state, `teams/${tid}/events/${x.id}`); remoteDel(`teams/${tid}/events/${x.id}`); }
+    for (const x of list) {
+      delDeep(state, `teams/${tid}/events/${x.id}`); remoteDel(`teams/${tid}/events/${x.id}`);
+      // a register for something that no longer exists is data about children with no purpose left
+      if (attendOf(tid, x.id)) { delDeep(state, `teams/${tid}/attend/${x.id}`); remoteDel(`teams/${tid}/attend/${x.id}`); }
+    }
     calForm = null;
     calDone(list.length > 1 ? `Deleted ${list.length}` : 'Deleted');
     return;

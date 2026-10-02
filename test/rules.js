@@ -313,6 +313,11 @@ console.log('\n--- the calendar: under the team, so the team rule decides ---');
   writes('another team\'s coach cannot', OTHER, 'workspaces/CLUB/teams/t1/events/e1', ev, false);
   writes('signed out cannot', OUT, 'workspaces/CLUB/teams/t1/events/e1', ev, false);
   writes('the whole calendar at once is a team write, still the coach\'s', COACH, 'workspaces/CLUB/teams/t1/events', { e1: ev }, true);
+  // the register sits beside the entries, under the same team rule
+  writes('its coach takes the register', COACH, 'workspaces/CLUB/teams/t1/attend/e1', { p1: true }, true);
+  writes('a parent cannot', MUM, 'workspaces/CLUB/teams/t1/attend/e1', { p1: true }, false);
+  writes('nor a tracker', TRK, 'workspaces/CLUB/teams/t1/attend/e1', { p1: true }, false);
+  writes('nor another team\'s coach', OTHER, 'workspaces/CLUB/teams/t1/attend/e1', { p1: true }, false);
   reads('a parent reads it with the rest of the club', MUM, 'workspaces/CLUB/teams/t1/events/e1', true);
   writes('and the published copy takes a calendar', COACH, 'public/sh1/events', { e2: { kind: 'event', title: 'Team photo', date: '2026-09-20' } }, true);
   writes('with the whole mirror in one write too', COACH, 'public/sh1', { team: { name: 'Flight' }, games: { g1: { status: 'upcoming', called: 'cancelled', home: 'away' } }, events: { e2: { kind: 'event', date: '2026-09-20' } }, record: { w: 0 }, updated: 1 }, true);

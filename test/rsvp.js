@@ -154,20 +154,57 @@ function rest() {
     check('she answers for a family that told her another way', ans('p3', 'g_g1').v + ' by ' + ans('p3', 'g_g1').by, 'yes by coachU');
     check('— redrawing the sheet with it', /Jo Nakamura<span class="rowsub">Going/.test(sheet()), true);
 
-    // on the game's availability sheet, the answers are a hint and one tap acts on them
-    A.ui.matchId = 'g1'; A.ui.view = 'game';
+  }
+
+  console.log('--- the plan works from who is coming ---');
+  {
+    setup();
+    const g1 = () => A.state.matches.g1;
+    const sq = () => A.squad(A.state.teams.t1, g1()).map(p => p.id).join(',');
+    check('nobody has answered: everyone on the roster is planned for', sq(), 'p2,p1,p3');
+    as('dadU'); sets = []; answer('p2', 'no', 'g_g1');
+    check('a family\'s "not going" leaves her out of the plan', sq(), 'p1,p3');
+    check('— with no write to the game: the parent cannot make one', sets.filter(([p]) => /\/matches\//.test(p)).length, 0);
+    check('the AI prompt and the Subs tab count her out too', A.outIds(A.state.teams.t1, g1()).join(), 'p2');
+    answer('p2', 'yes', 'g_g1');
+    check('the family changes its mind: back in, by itself', sq(), 'p2,p1,p3');
+    answer('p2', 'no', 'g_g1');
+
+    as('coachU');
+    A.ui.view = 'game'; A.ui.gameView = 'plan'; A.ui.matchId = 'g1';
+    let h = html();
+    check('Plan says who is coming', /Who is coming[\s\S]*?2 to plan for · 1 out/.test(h), true);
+    check('who is out, and that the family said so', /Out:<\/b> Rosa Delgado <span class="muted">\(family said\)/.test(h), true);
+    check('and who has not answered', /Not answered:<\/b> Ella Fitzgerald, Jo Nakamura/.test(h), true);
     A.click({ act: 'availability' });
-    check('availability shows what families said', /Rosa Delgado<span class="rowsub">Not going · Away at Gran/.test(sheet()), true);
-    check('and offers to act on the "no"s', /Mark the 1 who said they are not going as out/.test(sheet()), true);
+    check('availability says why she is out', /Rosa Delgado<span class="rowsub">Not going · Away at Gran|Rosa Delgado<span class="rowsub">Not going/.test(sheet()), true);
+
     sets = [];
-    A.click({ act: 'rsvpout' });
-    check('marking them out is the coach\'s own write to the game', A.state.matches.g1.out && A.state.matches.g1.out.p2, true);
-    check('— at the depth the match rule grants', sets.some(([p]) => p === 'workspaces/CLUB/matches/g1/out/p2'), true);
-    check('nobody who said yes is touched', !!(A.state.matches.g1.out || {}).p1, false);
-    as('mumU'); A.ui.matchId = 'g1';
-    sets = []; A.toasts.length = 0;
-    A.click({ act: 'rsvpout' });
-    check('a parent cannot do that', (A.state.matches.g1.out || {}).p1 === undefined && !sets.some(([p]) => /\/out\//.test(p)), true);
+    A.click({ act: 'toggleout', pid: 'p2' });
+    check('the coach can have her play anyway', A.squad(A.state.teams.t1, g1()).some(p => p.id === 'p2'), true);
+    check('— written as the coach\'s own word, false', g1().out.p2, false);
+    check('— which the sheet explains', /Family said not going — you have her playing/.test(sheet()), true);
+    as('dadU'); answer('p2', 'maybe', 'g_g1'); answer('p2', 'no', 'g_g1');
+    check('a later answer does not undo the coach\'s decision', sq().includes('p2'), true);
+    as('coachU');
+    A.click({ act: 'toggleout', pid: 'p2' });
+    check('agreeing with the family again leaves nothing behind', g1().out && 'p2' in g1().out, false);
+    check('— and she is out, on the family\'s word', sq().includes('p2'), false);
+
+    A.click({ act: 'toggleout', pid: 'p3' });
+    check('a coach can still mark out someone whose family said nothing', g1().out.p3, true);
+    as('mumU'); sets = []; A.toasts.length = 0;
+    A.click({ act: 'toggleout', pid: 'p1' });
+    check('a parent cannot', sets.some(([p]) => /\/out\//.test(p)) || (g1().out || {}).p1 !== undefined, false);
+    as('coachU');
+
+    /* Once the game has started the answers are closed, and the bench is what
+       it was at kick-off: a "not going" that turned up anyway is the coach's
+       one tap, as it always was. */
+    g1().periods = { 0: { half: 1, start: H.clock.t - 60000 } };
+    check('kicked off: the "no" still reads as out', sq().includes('p2'), false);
+    as('mumU'); A.ui.view = 'calendar';
+    check('and her parent is not asked any more', /Is Ella going/.test(html()), false);
   }
 
   console.log('--- a tracker ---');

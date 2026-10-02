@@ -8,6 +8,39 @@ before this point lives only in the git log.
 
 ---
 
+## Families' answers plan the game, and the coach takes a register — 2026-10-02
+
+**Answers go straight into the plan.** A "not going" was a hint on the
+availability sheet with a button to act on it, which meant the coach copying
+every answer across by hand before she could plan. Availability is now derived:
+`isOut()` is the coach's word if she gave one, otherwise the family's answer.
+So a "not going" leaves a player out of the bench, the plan, the targets and
+the even split by itself, and a family that changes its mind flows straight
+back in. The coach still has the last word either way: she can play a "not
+going" or leave out someone whose family said nothing, and her choice is kept
+only where it differs from theirs. The Plan tab's *Who is coming* replaces *Who
+is unavailable*: who is out and why, who said maybe, who has not answered, and
+the Minutes list marks the maybes and the silent ones. The AI prompts and the
+Subs tab counted the coach's list directly and would have missed the families.
+They now ask the same question everything else does.
+
+**Attendance.** From the day of a practice onwards the coach can *Take
+attendance*: filled in from what families said, a tap per change, *Everyone
+came*. It is one write at `teams/{tid}/attend/{eid}`, beside the entries rather
+than inside them, so editing a practice cannot write over its register, and keyed
+by the calendar entry so a practice plan keyed the same way can say which drills
+each player has done. Games need no register: a player came if she played or
+was available. Season → **Attendance** lists practices came to and missed, how
+many misses nobody warned about (the number a coach actually asks), and games,
+most missed first. It also says how many past practices still have no register
+rather than guessing. A player's sheet carries her line; a parent sees her own
+child's.
+
+**What comes next** is written down: ROADMAP's *Next: planning for the club*
+(clashes across teams, coaches and families with children on two teams; finding
+a free time; booking a club-wide event as one entry per team), and `HANDOFF.md`
+for the conversation that picks it up.
+
 ## Calendars that follow changes, parents saying who is coming, and game links that stop at the game — 2026-10-02
 
 **Sync.** Adding the calendar to a phone gave a copy, so a moved kick-off meant

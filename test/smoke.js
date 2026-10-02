@@ -174,6 +174,10 @@ try {
     state.rsvp={t_ok:{e_e1:{p2:{v:'yes',by:'mumU',at:1,note:'late'}}}};
     window.SOCCER_CALENDAR_FEED='https://feed.example'; state.teams.t_ok.calFeed='cFeed1'; render();
     sheetCalItem('practice','t_ok','e1'); sheetCalItem('event','t_ok','e2');
+    // the register and what it adds up to
+    state.teams.t_ok.attend={e1:{p2:true,p3:false}}; attForm={tid:'t_ok',eid:'e1',marks:{p2:true,p3:false}}; sheetAttend();
+    ui.view='season'; render(); ui.view='calendar';
+    if (match()) { ui.view='game'; ui.gameView='plan'; render(); sheetAvailability(); ui.view='calendar'; }
     window.SOCCER_CALENDAR_FEED='';
     console.log('  rendered the calendar');
     ui.teamId='t_ok'; ui.view='setup'; render();

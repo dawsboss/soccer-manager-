@@ -485,7 +485,11 @@ Practices default to the team only on purpose. A share link gets forwarded, and 
 
 **In your own calendar.** Once the club has set up **Calendar sync** (below), the Calendar tab has *Apple Calendar* and *Google Calendar* buttons, and *Copy the address* for Outlook. Subscribe once and the phone's calendar follows every change on its own: a moved kick-off, a called-off practice, a new tournament. A coach turns it on per team. Every entry also has *Directions* (a maps search for the venue as typed), and a one-off copy is still there for a phone that will not subscribe. Without sync set up, that copy is all there is: add it again if a time changes. Each entry has a fixed id, so calendars that go by id replace the earlier copy instead of doubling it.
 
-**Who is coming.** On the calendar, a parent sees *Is Ella going?* with *Going*, *Not going* and *Maybe*, on *Next up* and on each entry's page, for each of their own children. Once they have answered there is room for a short note ("arriving late"). Tapping the answer again takes it back. The coach sees each entry's answers by name, with whoever has not answered at the top, can answer for a family that said so another way, and gets the count on every row. On a game's *Available* sheet, the coach sees what each family said and can *mark everyone who said they are not going as out* in one tap. It is a hint, not a switch: the coach decides who is out. Trackers and coaches of other teams see how many are coming, not who. Answers never reach the share link or the calendar feed, not even as a count. Answering needs the `rsvp` block in the locked-down rules (see **Locking it down**); the open rules already allow it.
+**Who is coming.** On the calendar, a parent sees *Is Ella going?* with *Going*, *Not going* and *Maybe*, on *Next up* and on each entry's page, for each of their own children. Once they have answered there is room for a short note ("arriving late"). Tapping the answer again takes it back. The coach sees each entry's answers by name, with whoever has not answered at the top, can answer for a family that said so another way, and gets the count on every row.
+
+**Answers go straight into the game.** A family's *not going* leaves that player out of the bench, the plan, the targets and the even split, with nothing for the coach to copy across. The Plan tab's *Who is coming* says who is out and why, who said maybe, and who has not answered; the Minutes list marks the maybes and the silent ones. The coach's word still wins either way: on the *Available* sheet she can have a "not going" play after all, or leave out someone whose family said nothing. Her choice is stored only where it differs from the family's, so a family that changes its mind still flows through unless she has decided otherwise. Once the game kicks off, answers close and the bench stays as it was.
+
+**Attendance.** From the day of a practice or event onwards, its page has *Take attendance*: the squad, filled in from what families said ("not going" starts as missed, everyone else as came), a tap to change anyone, and *Everyone came*. Games need no register: a player came if she played, or was available on the bench. The Season tab's **Attendance** card (coaches only) lists every player with practices came to and missed, how many of those misses nobody warned about, and games, most missed first, and says how many past practices still have no register. A player's sheet carries the same line, and a parent sees her own child's under *My players*. Nothing is counted that did not happen: a called-off practice, a future one, or one with no register yet. Trackers and coaches of other teams see how many are coming, not who. Answers never reach the share link or the calendar feed, not even as a count. Answering needs the `rsvp` block in the locked-down rules (see **Locking it down**); the open rules already allow it.
 
 **Names never reach the share link.** A note like "Ella's family on snacks", typed into a public entry or a game's notes, is published as "a player's family on snacks". The coach is told when that happens. Every word of every roster name is matched, so a venue that shares a word with a player's surname loses that word on the share page. That is the safe way round.
 
@@ -553,6 +557,7 @@ Push the folder to a repo, then Settings → Pages → deploy from branch, root.
 ```
 rsvp/{teamId}/{g_matchId | e_eventId}/{playerId}   { v: 'yes' | 'no' | 'maybe', by, at, note }
 teams/{teamId}        { id, name, share, calFeed,
+                        attend: { eventId: { playerId: true | false } },   // the register: came or missed
                         events: { eventId: { id, kind: 'practice' | 'event', title, date, start, end,
                                              venue, notes, public, called, series, createdAt, by } },
                         formations: { fid: { id, name, size, slots[] } },
@@ -572,7 +577,7 @@ matches/{matchId}     { id, teamId, opponent, date, periodCount, periodMinutes, 
                         formation: { name, size, slots: [ { id, label, role, x, y } ] },  // a copy
                         positions: { playerId: { x, y, slot } },  // percent of pitch
                         stints:    { stintId: { pid, on, off } },  // seconds of elapsed match time
-                        out:       { playerId: true },            // unavailable for this game
+                        out:       { playerId: true | false },    // the coach's word; false = playing despite a "not going"
                         plan:      { blockMinutes, blocks: [ { start, ids[], assign } ], projected,
                                      manual, locked: { at, by, byName } },  // any rewrite unlocks
                         planDone:  { s{start}: { t, at, by, byName, made[], prev, pos, skipped } } }
