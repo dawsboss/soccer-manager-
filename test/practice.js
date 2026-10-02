@@ -43,7 +43,7 @@ function as(uid, tid = 't1', state = club()) {
   A.ui.teamId = tid;
   A.ui.matchId = null;
   A.appOwners = {};
-  A.ui.practice = null;
+  A.ui.practice = { tab: 'drills' };   // the library; Plans is the default, and has its own suite
   A.toasts.length = 0;
 }
 const open = () => { A.ui.view = 'practice'; A.render(); return A.ui.view; };
@@ -102,8 +102,8 @@ console.log('\n--- a tap that reaches the handler is refused there too ---');
     A.click({ act: 'drillfilters' });
     check(who + ': nor the filters', sheet().includes('Kit you don'), false);
   }
-  deepEq('every practice action is covered by the check', [...A.PRACTICE_ACTS].sort(),
-    ['dfchip', 'dfclear', 'dfpick', 'drill', 'drillfilters', 'drillmore', 'drillpic', 'practab', 'roleguide', 'rolepic']);
+  const lib = ['dfchip', 'dfclear', 'dfpick', 'drill', 'drillfilters', 'drillmore', 'drillpic', 'practab', 'roleguide', 'rolepic'];
+  check('every library action is covered by the check', lib.every(x => A.PRACTICE_ACTS.has(x)), true);
 }
 
 console.log('\n--- a drill card and a position draw a picture ---');
@@ -242,7 +242,7 @@ console.log('\n--- a long list pages, and its state survives a reload ---');
      the list. */
   A.ui.practice = { tab: 'nonsense', show: -3, f: { types: 'game', q: 7, stale: 1 } };
   const p = A.practiceUi();
-  check('a broken saved tab reads as Drills', p.tab, 'drills');
+  check('a broken saved tab reads as Plans', p.tab, 'plans');
   check('a broken page size reads as 24', p.show, 24);
   deepEq('a list saved as a string reads as empty', p.f.types, []);
   check('a non-string search reads as empty', p.f.q, '');

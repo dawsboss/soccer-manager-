@@ -392,7 +392,10 @@ and, inside the existing `workspaces/$code/access` block:
   because there's no fallback for her write to close on anyone else.
   Practices fall back the same way: while `teamIndex` is missing, it's
   admins and anyone in `coachIndex`, never the whole club. `schedule` is
-  the one part that is club-wide, so it keeps the usual bridge.
+  the one part that is club-wide, so its *read* keeps the usual bridge.
+  Its *write* is the plan's write, because writing a time for a team is
+  planning for it, and there is no older behaviour to keep there either.
+  (As built. The sketch above gave `schedule` the club-wide bridge for both.)
 - **Mine reads as its owner or the app owner, and writes as its owner only.**
   It's the first rule that gives the app owner any standing (`CLAUDE.md`
   lists *the app owner has no standing in the rules* as a known gap). That's
@@ -524,7 +527,12 @@ too. The bridge doesn't change shape.
 3. **Practices.** Plan, run mode, review; `training/{code}/practices` and
    `schedule`; `access/coachIndex` and its place in `syncIndex()`; the rules
    blocks in both sets with `test/rules.js` cases (a parent and a tracker
-   refused first); merge-on-read and the offline cache.
+   refused first); merge-on-read and the offline cache. *Built. The rules
+   are in README, in both sets, and have to be published before plans leave
+   the phone; until then the Plans screen says they're saved on this phone
+   only. Not built from this step: templates (they belong to Mine and Club),
+   and the "shares your drill with your team" notice, which needs Mine.
+   Blocks hold built-in drills only, by reference, for the same reason.*
 4. **Mine.** `userLibrary/{uid}`; save to mine; edit; templates.
 5. **Club.** Share to the club, copy from it, curation under Admin.
 6. **Pictures for a coach's own drills.** The diagram editor, then links.

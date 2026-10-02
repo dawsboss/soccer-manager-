@@ -174,6 +174,11 @@ const EXPORTS = `{
   canTrain, seasonEndYear, uAge, teamUAge, uLabel, practiceUi, practiceAge,
   practiceDrills, practiceActive, viewPractice, sheetDrill, sheetRole,
   sheetDrillFilters, PRACTICE_ACTS, PRACTICE_BLANK,
+  /* practice plans */
+  PLAN_ACTS, canPlan, teamPractices, practiceById, putPractice, dropPractice, mergePractices,
+  suggestPlan, planWarnings, planKit, whenOf, nextPractice, todayIso, addDays, pracDay,
+  syncCoachIndex, syncAllCoachIndex, coachTeamOf, readiness,
+  get train() { return train }, set train(v) { train = v }, get trainState() { return trainState },
   /* rendering + routing */
   render, uiToHash, hashToUi,
   /* the mutable module-scoped bindings */

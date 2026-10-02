@@ -222,6 +222,10 @@ const DB = {
            value carries the role because coach and tracker are not the same
            permission. */
         teamIndex: { t1: { coach: 'coach', trk: 'tracker' }, t2: { other: 'coach' } },
+        /* "Is this uid a coach of ANY team?", for the training bridge. The
+           value is a team she coaches, because that is what her own write of
+           it is checked against. */
+        coachIndex: { coach: 't1', other: 't2' },
         org: { name: 'Lakeside SC' },
         log: { e1: { at: 1, act: 'made coach', by: 'adm', target: 'coach' } }
       },
@@ -239,6 +243,18 @@ const DB = {
   /* Who may publish a team's mirror. public/ is world-readable by design; this
      is what stops anyone holding a link from writing to it. */
   shareOwners: { sh1: { adm: true, coach: true } },
+  /* Practice plans, outside the workspace so the connect-time read never
+     carries them to a parent's phone. The plan is coaches' and admins'; when
+     and where is the whole club's. */
+  training: {
+    CLUB: {
+      practices: {
+        t1: { pr1: { id: 'pr1', teamId: 't1', date: '2026-09-22', blocks: [{ drill: { shelf: 'builtin', id: 'rondo-4v1' }, minutes: 12 }] } },
+        t2: { pr2: { id: 'pr2', teamId: 't2', date: '2026-09-23' } }
+      },
+      schedule: { t1: { pr1: { date: '2026-09-22', start: '17:30', place: 'Lakeside Park' } } }
+    }
+  },
   public: {
     sh1: {
       team: { name: 'Flight' },
@@ -533,14 +549,115 @@ reads('owners are not world-readable', OUT, 'shareOwners/sh1', false);
   delete DB.invites; delete DB.clubInvites;
 }
 
-/* The open rules carry the same three root blocks, so invites work before a
-   club is locked down. One copy drifting from the other would mean an invite
-   that works today stops working on lockdown day. */
+/* ---------------- practices ---------------- */
+
+/* TRAINING.md: drills and plans are the club's and the coach's own work, so a
+   parent and a tracker are refused first, before anything is allowed. There is
+   no .read on training/$code itself, because a read granted there could not be
+   taken back lower down and would hand every plan to whoever it reached. */
+{
+  const T = 'training/CLUB/';
+  const plan = (id, tid, extra = {}) => ({ id, teamId: tid, date: '2026-10-06', start: '17:30', minutes: 60, blocks: [], ...extra });
+
+  console.log('\n--- a team\'s practice plans: refused first ---');
+  reads('a parent cannot read them', MUM, T + 'practices/t1', false);
+  reads('a tracker cannot either', TRK, T + 'practices/t1', false);
+  reads('nor one plan by its id', MUM, T + 'practices/t1/pr1', false);
+  reads('registered, no role yet', NEWB, T + 'practices/t1', false);
+  reads('signed in, unknown to this club', RANDO, T + 'practices/t1', false);
+  reads('signed out', OUT, T + 'practices/t1', false);
+  reads('the app owner, holding no role here', OWNER, T + 'practices/t1', false);
+  reads('a coach of ANOTHER team', OTHER, T + 'practices/t1', false);
+  writes('a parent cannot add one', MUM, T + 'practices/t1/x', plan('x', 't1'), false);
+  writes('a tracker cannot either', TRK, T + 'practices/t1/x', plan('x', 't1'), false);
+  writes('nor delete one', TRK, T + 'practices/t1/pr1', null, false);
+  writes('a coach of another team cannot', OTHER, T + 'practices/t1/x', plan('x', 't1'), false);
+
+  console.log('\n--- and allowed to that team\'s coaches and the admins ---');
+  reads('its coach reads them', COACH, T + 'practices/t1', true);
+  reads('an admin reads any team\'s', ADM, T + 'practices/t2', true);
+  writes('its coach plans one', COACH, T + 'practices/t1/x', plan('x', 't1'), true);
+  writes('and deletes one', COACH, T + 'practices/t1/pr1', null, true);
+  writes('an admin plans for any team', ADM, T + 'practices/t2/x', plan('x', 't2'), true);
+  writes('filed under the wrong team', COACH, T + 'practices/t1/x', plan('x', 't2'), false);
+  writes('under an id that is not its own', COACH, T + 'practices/t1/x', plan('y', 't1'), false);
+  writes('with no date', COACH, T + 'practices/t1/x', { id: 'x', teamId: 't1' }, false);
+  writes('the team\'s whole collection at once', COACH, T + 'practices/t1', { x: plan('x', 't1') }, false);
+  reads('nobody lists every team\'s plans', ADM, T + 'practices', false);
+  reads('nor the whole training node', ADM, 'training/CLUB', false);
+  console.log('  ^ which is why the app reads one team at a time and writes one plan');
+  console.log('    at a time, the depth the rules sit at.');
+
+  console.log('\n--- the bridge fails closed ---');
+  {
+    /* Every other bridge falls back to the old club-wide behaviour while its
+       table is missing, because that behaviour existed and removing it would
+       lock people out. Practices have no old behaviour, and failing open
+       would show parents the plans. So the fallback is "a coach of some team",
+       read from coachIndex, and with no coachIndex it is admins only. */
+    const ti = DB.workspaces.CLUB.access.teamIndex;
+    delete DB.workspaces.CLUB.access.teamIndex;
+    reads('no team index: a coach still reads them', COACH, T + 'practices/t1', true);
+    writes('and plans one', COACH, T + 'practices/t1/x', plan('x', 't1'), true);
+    reads('a parent still cannot', MUM, T + 'practices/t1', false);
+    reads('nor a tracker', TRK, T + 'practices/t1', false);
+    writes('nor write one', TRK, T + 'practices/t1/x', plan('x', 't1'), false);
+    reads('another team\'s coach can, until it appears', OTHER, T + 'practices/t1', true);
+    const ci = DB.workspaces.CLUB.access.coachIndex;
+    delete DB.workspaces.CLUB.access.coachIndex;
+    reads('no coach index either: a coach cannot', COACH, T + 'practices/t1', false);
+    reads('but an admin can', ADM, T + 'practices/t1', true);
+    reads('and a parent still cannot', MUM, T + 'practices/t1', false);
+    DB.workspaces.CLUB.access.coachIndex = ci;
+    DB.workspaces.CLUB.access.teamIndex = ti;
+    reads('the team index appearing narrows it again', OTHER, T + 'practices/t1', false);
+  }
+
+  console.log('\n--- when and where: the whole club reads it ---');
+  reads('a parent reads the time and place', MUM, T + 'schedule/t1', true);
+  reads('a tracker does', TRK, T + 'schedule/t1', true);
+  DB.workspaces.CLUB.access.index.other = true;     // the mock leaves her out of the index elsewhere
+  reads('a coach of another team does', OTHER, T + 'schedule/t1', true);
+  delete DB.workspaces.CLUB.access.index.other;
+  reads('registered, no role yet, does not', NEWB, T + 'schedule/t1', false);
+  reads('an unknown account does not', RANDO, T + 'schedule/t1', false);
+  reads('signed out does not', OUT, T + 'schedule/t1', false);
+  const when = { date: '2026-10-06', start: '17:30', end: '18:30', place: 'Lakeside Park' };
+  writes('its coach sets it', COACH, T + 'schedule/t1/x', when, true);
+  writes('an admin sets any team\'s', ADM, T + 'schedule/t2/x', when, true);
+  writes('a parent cannot', MUM, T + 'schedule/t1/x', when, false);
+  writes('a tracker cannot', TRK, T + 'schedule/t1/x', when, false);
+  writes('another team\'s coach cannot', OTHER, T + 'schedule/t1/x', when, false);
+  writes('one with no date is refused', COACH, T + 'schedule/t1/x', { start: '17:30' }, false);
+
+  console.log('\n--- the coach index ---');
+  const W = 'workspaces/CLUB/access/coachIndex/';
+  writes('an admin writes anyone\'s entry', ADM, W + 'newbie', 't1', true);
+  writes('a coach writes her own', COACH, W + 'coach', 't1', true);
+  writes('naming a team she coaches, not another', COACH, W + 'coach', 't2', false);
+  writes('not somebody else\'s', COACH, W + 'other', 't1', false);
+  writes('a tracker cannot add herself', TRK, W + 'trk', 't1', false);
+  writes('nor a parent', MUM, W + 'mum', 't1', false);
+  writes('anyone may take themselves out', COACH, W + 'coach', null, true);
+  writes('a coach cannot rewrite the table', COACH, 'workspaces/CLUB/access/coachIndex', { coach: 't1' }, false);
+  {
+    const ci = DB.workspaces.CLUB.access.coachIndex;
+    delete DB.workspaces.CLUB.access.coachIndex;
+    writes('her own entry, into a missing table', COACH, W + 'coach', 't1', true);
+    console.log('  ^ allowed, unlike teamIndex: with no fallback to close, her first');
+    console.log('    write takes nothing away from anyone else.');
+    DB.workspaces.CLUB.access.coachIndex = ci;
+  }
+}
+
+/* The open rules carry the same root blocks, so invites work before a club is
+   locked down. One copy drifting from the other would mean an invite that
+   works today stops working on lockdown day. */
 {
   const open = jsonBlocks().map(r => { try { return JSON.parse(r); } catch (e) { return null; } })
     .find(d => d && d.rules && d.rules.workspaces && d.rules.workspaces.$code['.write'] === true);
   console.log('\n--- the open rules ---');
-  for (const k of ['invites', 'clubInvites', 'userOrgs'])
+  for (const k of ['invites', 'clubInvites', 'userOrgs', 'training'])
     check(k + ' matches the locked-down block', !!open && JSON.stringify(open.rules[k]) === JSON.stringify(RULES[k]), true);
 }
 

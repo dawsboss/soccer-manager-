@@ -164,6 +164,14 @@ try {
     ui.view='practice'; render(); practiceUi().tab='positions'; render(); practiceUi().tab='drills';
     sheetDrill(window.SOCCER_DRILLS.DRILLS[0].id); sheetRole(window.SOCCER_DRILLS.ROLE_GUIDE[0].id); sheetDrillFilters();
     console.log('  rendered practice: drills, positions, a drill card, a position, the filters');
+    putPractice({id:'pp1',teamId:ui.teamId,date:'2026-09-20',start:'17:30',minutes:60,place:'Park',focus:{signals:['late-goals']},blocks:[],status:'plan'});
+    practiceUi().tab='plans'; practiceUi().open='pp1'; render();
+    var pp=practiceById(ui.teamId,'pp1'); pp.blocks=suggestPlan(window.SOCCER_DRILLS, team(), pp, 0); putPractice(pp); render();
+    practiceUi().open=null; render();
+    practiceUi().run={pid:'pp1',i:0,left:null,endsAt:null}; render(); practiceUi().run.endsAt=Date.now()-1000; render(); practiceUi().run=null;
+    sheetPractice(null); sheetPractice(pp); sheetReview(pp); sheetBlockNote(pp,0);
+    ui.view='matches'; render();
+    console.log('  rendered practice plans: the list, a plan, run mode, its sheets, and the next practice on Games');
     ui.view='setup'; render();
     ui.view='match'; render();
     ui.view='roster'; render();

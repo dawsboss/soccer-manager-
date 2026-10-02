@@ -98,7 +98,7 @@ h2{font-family:"Barlow Condensed",sans-serif;font-weight:600;font-size:22px;marg
 .btn.sm{padding:7px 11px;font-size:14px;border-radius:7px}
 .btn[disabled]{opacity:.5;pointer-events:none}
 
-input[type=text],input[type=number],input[type=date],input[type=url],select,textarea{
+input[type=text],input[type=number],input[type=date],input[type=time],input[type=url],select,textarea{
   width:100%;padding:10px 11px;border:1px solid var(--line);
   border-radius:8px;background:#fff;
 }
@@ -653,3 +653,30 @@ table.grid td.right{text-align:right}
 .drillwhy p,.drillsafety p{margin:0}
 @media (max-width:420px){.drillrow{grid-template-columns:1fr 82px}}
 .sheet .chips + .lbl,.sheet .chips + .grid2{margin-top:12px}
+
+/* --- practice plans --- */
+.rolebar.warn{background:var(--owed-wash);border-color:var(--owed);color:#6C4406}
+.nextprac{display:flex;flex-direction:column;gap:2px;text-align:left;width:100%;font:inherit;color:inherit;border-left:4px solid var(--field)}
+button.nextprac{cursor:pointer}
+.nextprac b{font-size:16px}
+.planday{display:block;font-size:18px}
+.planblock{padding:10px 12px}
+.planblock .spread{gap:8px;align-items:center}
+.planname{font-weight:600;font-size:15px;text-align:left;padding:0;flex:1;min-width:0}
+.planmins{display:flex;align-items:center;gap:6px;flex:none}
+.planmins b{min-width:34px;text-align:center}
+.planmins .chip{min-width:36px;padding:4px 0;justify-content:center}
+.plannote{margin:6px 0 0;padding:6px 8px;background:var(--paper);border-radius:6px;font-size:14px}
+.planctl{display:flex;gap:6px;margin-top:8px;flex-wrap:wrap}
+.planctl button{font:inherit;font-size:13px;background:none;border:1px solid var(--line);border-radius:6px;padding:4px 10px;color:var(--ink-soft);cursor:pointer}
+.planctl button:disabled{opacity:.35;cursor:default}
+.planwarn{background:var(--owed-wash);border-color:var(--owed)}
+.planwarn p{margin:0 0 4px;color:#6C4406;font-size:14px}
+.planwarn p:last-child{margin-bottom:0}
+.pickbar{display:flex;align-items:center;justify-content:space-between;gap:10px;border-left:4px solid var(--field)}
+.runmode h4{font-size:12.5px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--ink-soft);margin:14px 0 4px}
+.runcard{text-align:center}
+.runcard h2{margin:0 0 4px}
+.runclock{font-family:"Barlow Condensed",sans-serif;font-size:72px;font-weight:700;line-height:1.1;margin:4px 0 12px;font-variant-numeric:tabular-nums}
+.runclock.up{color:var(--over);font-size:48px}
+.planback{align-self:flex-start;text-align:left}

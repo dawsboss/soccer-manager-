@@ -20,7 +20,8 @@ A sideline tracker for soccer coaches: multiple teams, rosters, planned vs actua
 - **Fixing mistakes.** Tap any line in the sub log to nudge it by 5, 15, 30 or 60 seconds, or type the exact time. *Add a sub* records one that happened before you tapped. *Fix minutes* opens a player's spells on the pitch and lets you edit or delete each one. *Clock reading wrong?* shifts the current half and the total together.
 - **Per-game availability.** Mark players out for one game without touching their season totals.
 - **Veo.** Each game has a field for the Veo link, so the recording sits next to the sub log.
-- **Practice.** A library of 105 drills, each with an animated diagram, setup, coaching points, questions to ask, what goes wrong, easier and harder versions and safety notes. Filter by age, type, position, length, setup time, players, kit, difficulty, intensity, skill, principle of play and what needs work. A **Positions** guide says what each of nine positions does with the ball, without it, and in the second either way, and links the drills that teach it. The list starts at the team's age group, set as a **birth year** under Team → *Team name and crest*, so it moves up a year by itself every August. Coaches and admins only: parents and trackers never get the tab. Club and personal drills and practice plans are designed in `TRAINING.md` and not built yet.
+- **Practice.** A library of 105 drills, each with an animated diagram, setup, coaching points, questions to ask, what goes wrong, easier and harder versions and safety notes. Filter by age, type, position, length, setup time, players, kit, difficulty, intensity, skill, principle of play and what needs work. A **Positions** guide says what each of nine positions does with the ball, without it, and in the second either way, and links the drills that teach it. The list starts at the team's age group, set as a **birth year** under Team → *Team name and crest*, so it moves up a year by itself every August. Coaches and admins only: parents and trackers never get the tab.
+- **Practice plans.** *Plan a practice* takes a date, time, length, place and what it's for, and *Suggest a session* fills it: a warm-up, one or two practices, a game and a cool-down that suit the team's age and squad, timed to fit. Add, move, retime and annotate drills; the plan works out the kit to bring and warns before the field about too few players, missing keepers, a drill outside the age group or three hard drills in a row. *Run it* is the sideline view, one drill at a time with a countdown and its coaching points, and it works with no signal. Afterwards, one to five stars and a line on how it went. The plan is the team's coaches' and the club's admins'; the date, time and place go to everyone, so parents see the next practice on Games. Plans need the `training` rules block below; without it they stay on the phone they were made on. Club and personal drill libraries are designed in `TRAINING.md` and not built yet.
 
 ## Running it
 
@@ -83,6 +84,28 @@ Open `index.html` in a browser, or serve the folder. Everything works immediatel
           ".write": "auth != null && ($uid === auth.uid || root.child('workspaces/' + $code + '/access/admins/' + auth.uid).exists())"
         }
       }
+    },
+    "training": {
+      "$code": {
+        "practices": {
+          "$tid": {
+            ".read": "auth != null && (root.child('workspaces/' + $code + '/access/admins/' + auth.uid).exists() || root.child('workspaces/' + $code + '/access/teamIndex/' + $tid + '/' + auth.uid).val() === 'coach' || (!root.child('workspaces/' + $code + '/access/teamIndex').exists() && root.child('workspaces/' + $code + '/access/coachIndex/' + auth.uid).exists()))",
+            "$pid": {
+              ".write": "auth != null && (root.child('workspaces/' + $code + '/access/admins/' + auth.uid).exists() || root.child('workspaces/' + $code + '/access/teamIndex/' + $tid + '/' + auth.uid).val() === 'coach' || (!root.child('workspaces/' + $code + '/access/teamIndex').exists() && root.child('workspaces/' + $code + '/access/coachIndex/' + auth.uid).exists()))",
+              ".validate": "newData.hasChildren(['id', 'teamId', 'date']) && newData.child('id').val() === $pid && newData.child('teamId').val() === $tid"
+            }
+          }
+        },
+        "schedule": {
+          "$tid": {
+            ".read": "auth != null && (root.child('workspaces/' + $code + '/access/index/' + auth.uid).exists() || !root.child('workspaces/' + $code + '/access/index').exists())",
+            "$pid": {
+              ".write": "auth != null && (root.child('workspaces/' + $code + '/access/admins/' + auth.uid).exists() || root.child('workspaces/' + $code + '/access/teamIndex/' + $tid + '/' + auth.uid).val() === 'coach' || (!root.child('workspaces/' + $code + '/access/teamIndex').exists() && root.child('workspaces/' + $code + '/access/coachIndex/' + auth.uid).exists()))",
+              ".validate": "newData.hasChild('date')"
+            }
+          }
+        }
+      }
     }
   }
 }
@@ -92,7 +115,7 @@ Lock them down once people have signed in — see **Locking it down** below.
 
 4. On the app owner's device: Setup → Workspace → *Connect to a workspace* → *Make one up* → *Save and reload*. That creates the club. Nobody else types the code: everyone else joins with an invite link — see **Joining a club** below.
 
-The three root blocks in these rules (`invites`, `clubInvites`, `userOrgs`) are what invites need. They are identical in the locked-down set, so an invite made today keeps working after lockdown.
+The three root blocks in these rules (`invites`, `clubInvites`, `userOrgs`) are what invites need, and `training` is what practice plans need. All four are identical in the locked-down set, so an invite made or a practice planned today keeps working after lockdown. Without `training`, plans stay on the phone they were made on and the Practice tab says so.
 
 The rules above cover the coaches' data. To publish read-only pages for parents, add a second block alongside it:
 
@@ -263,6 +286,12 @@ a parent can still write another team's data, exactly as before.
               }
             }
           },
+          "coachIndex": {
+            ".write": "auth != null && root.child('workspaces/' + $code + '/access/admins/' + auth.uid).exists()",
+            "$uid": {
+              ".write": "auth != null && $uid === auth.uid && (!newData.exists() || root.child('workspaces/' + $code + '/access/teams/' + newData.val() + '/coaches/' + auth.uid).exists())"
+            }
+          },
           "teams": {
             ".write": "auth != null && root.child('workspaces/' + $code + '/access/admins/' + auth.uid).exists()",
             "$tid": {
@@ -361,6 +390,28 @@ a parent can still write another team's data, exactly as before.
           ".write": "auth != null && ($uid === auth.uid || root.child('workspaces/' + $code + '/access/admins/' + auth.uid).exists())"
         }
       }
+    },
+    "training": {
+      "$code": {
+        "practices": {
+          "$tid": {
+            ".read": "auth != null && (root.child('workspaces/' + $code + '/access/admins/' + auth.uid).exists() || root.child('workspaces/' + $code + '/access/teamIndex/' + $tid + '/' + auth.uid).val() === 'coach' || (!root.child('workspaces/' + $code + '/access/teamIndex').exists() && root.child('workspaces/' + $code + '/access/coachIndex/' + auth.uid).exists()))",
+            "$pid": {
+              ".write": "auth != null && (root.child('workspaces/' + $code + '/access/admins/' + auth.uid).exists() || root.child('workspaces/' + $code + '/access/teamIndex/' + $tid + '/' + auth.uid).val() === 'coach' || (!root.child('workspaces/' + $code + '/access/teamIndex').exists() && root.child('workspaces/' + $code + '/access/coachIndex/' + auth.uid).exists()))",
+              ".validate": "newData.hasChildren(['id', 'teamId', 'date']) && newData.child('id').val() === $pid && newData.child('teamId').val() === $tid"
+            }
+          }
+        },
+        "schedule": {
+          "$tid": {
+            ".read": "auth != null && (root.child('workspaces/' + $code + '/access/index/' + auth.uid).exists() || !root.child('workspaces/' + $code + '/access/index').exists())",
+            "$pid": {
+              ".write": "auth != null && (root.child('workspaces/' + $code + '/access/admins/' + auth.uid).exists() || root.child('workspaces/' + $code + '/access/teamIndex/' + $tid + '/' + auth.uid).val() === 'coach' || (!root.child('workspaces/' + $code + '/access/teamIndex').exists() && root.child('workspaces/' + $code + '/access/coachIndex/' + auth.uid).exists()))",
+              ".validate": "newData.hasChild('date')"
+            }
+          }
+        }
+      }
     }
   }
 }
@@ -377,6 +428,9 @@ What each part is doing:
 - **`invites/$id`** is the invite itself. Readable by any signed-in account that knows the id — the id is the secret, and nobody can list the node. Only an admin of the club it names can create one; it cannot be edited, only spent or deleted. **`used`** can be written once, by whoever spends it, before it expires, and only by the address it was sent to if it names one (verified addresses only).
 - **The role an invite grants** is written by the person accepting it, each write checked against the spent invite: `access/teams/$tid/coaches|trackers/$uid`, or `teams/$tid/players/$pid/guardians/$uid` for a parent, then `access/index/$uid`. The value written is the invite id, because that is what the rule looks up. Exactly the role the invite names, on the team it names, for the account that spent it, and only until it expires.
 - **`access/teamIndex/$tid/$uid`** can also be written by that account itself, as `coach` or `tracker`, only if it really is on that team in `access/teams` — and never as the first entry of a missing table, because that would close the bridge on everyone else in one write.
+- **`access/coachIndex/$uid`** names one team the account coaches. It is the third flat lookup table, after `index` and `teamIndex`, and answers "is this a coach of *any* team?" for the training bridge below. Like the others it is derived: an admin's device writes everyone's, and a coach's own device may write her own entry, but only naming a team she really coaches. Unlike `teamIndex`, she may write it into a missing table, because there is no fallback for her write to close on anyone else.
+- **`training/$code/practices/$tid`** is a team's practice plans: readable and writable by that team's coaches (`teamIndex` says `coach`) and the club's admins, one plan per write. Parents and trackers never read them. There is no `.read` on `training/$code` itself, because a read granted there could not be taken back lower down. While `teamIndex` is missing, the fallback is any coach in `coachIndex`, never the whole club, so this bridge **fails closed**: practices have no older behaviour to preserve, and failing open would show parents the plans.
+- **`training/$code/schedule/$tid`** is when and where each practice is, without the plan. The whole club reads it, so a parent sees the next practice's time and place. Only the people who can write the plan can write it.
 - **`clubInvites/$code`** is the admin's list, readable only by admins. It lives outside the workspace on purpose: everyone indexed can read the whole workspace, and a list of unspent coach invites in a parent's hands is a parent who can make herself a coach.
 - **`userOrgs/$uid`** is which clubs an account belongs to, so a second device finds them without a code. Only its owner reads it. It is a list of bookmarks, not a grant: reading a club is still `access/index`'s decision.
 - **`public/$share`** stays world-readable — that is the whole point of the parent links — but writing now needs an account. That closes the hole where anyone holding a share link could overwrite the scoreboard.

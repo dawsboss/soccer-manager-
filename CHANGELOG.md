@@ -8,6 +8,74 @@ before this point lives only in the git log.
 
 ---
 
+## Practice plans — 2026-10-02
+
+Step 3 of `TRAINING.md`. A coach plans a practice for her team, the app
+suggests a session to fill it, she runs it at the sideline one drill at a
+time, and afterwards says how it went.
+
+**Planning.** *Plan a practice* asks for the date, time, length, place and,
+optionally, what it's for: one of the same signals the drill library filters
+on. *Suggest a session* builds the shape coaches are taught: a warm-up, one or
+two practices, a game and, when there's time, a cool-down. Each drill is
+picked for the team's age, the number of players and keepers on the squad,
+and the focus, then timed to fit the length exactly. Asking again moves along
+the shortlist. Drills can be added from the library (the drill card grows an
+*Add to Tue 6 Oct* button while picking), moved, retimed a minute at a time,
+given a note, or taken out. The plan works out what to bring: the most of
+each item any one drill needs, with a ball each meaning the squad's size. It
+warns about anything that would go wrong at the field: running over time,
+too few players, a drill wanting keepers the squad hasn't got, one outside
+the age group, three hard drills in a row, or a drill since taken out of the
+library. A test sweeps the suggester across every age, length and focus
+(3,024 plans) and fails if any suggestion trips those warnings. The first
+version did, 134 times: hard warm-ups, and 30-minute practices whose drills'
+shortest times added up to more than 30.
+
+**Running it.** One drill at a time, in big type, with a countdown that runs
+off the wall clock, so a phone that sleeps comes back showing the right
+time, and it buzzes at zero. The diagram, the coaching points, the setup and
+how to make it harder or easier are all there, and none of it needs a
+signal. *Finish* asks how it went: one to five stars and a line. The review
+box says plainly that the note is about the session, not a child.
+
+**Who sees what.** The plan is that team's coaches' and the club's admins'.
+A coach looking at another team can read its drills but not its plans, and a
+parent's or a tracker's phone never asks the database for a plan at all. The
+date, time and place go to a separate `schedule` node that the whole club
+reads, so the Games list shows everyone the next practice. For a parent it's
+just the time and the place.
+
+**How it syncs.** Practices live at `training/{code}/practices/{team}/{id}`,
+outside the workspace, with their own local copy and one listener per team.
+They merge on every read: a plan this phone has changed and the club hasn't
+acknowledged is never overwritten by the club's copy, and is sent again on
+the first answer after a reload. A plan deleted on another phone goes. This is
+the invariant the workspace's own connect-time read still breaks, written
+correctly from the start rather than copied.
+
+**New rules, which have to be published.** README's open and locked rule
+sets both gain an identical `training` block, and the locked set's `access`
+gains `coachIndex`, a third flat lookup table: "is this account a coach of
+any team?". Rules can't iterate, `index` only says member, and `teamIndex`
+needs a team to look in. An admin's device writes everyone's entry and a
+coach's own device writes hers; the rule checks that the team she names is
+one she coaches. The practice rules fall back while `teamIndex` is missing,
+but the fallback fails closed: it opens to coaches, never to the whole club,
+because practices have no older behaviour to preserve and failing open would
+show parents the plans. `test/rules.js` refuses a parent and a tracker before
+it allows anything. Until the rules are published, plans stay on the phone
+they were made on and the screen says so. Club settings → *Check readiness*
+now lists the coach index.
+
+A refused read is tried once more, as the workspace read is, because in the
+first second after boot a refusal is as likely to be sign-in still reaching
+the database. A second refusal is final until a different account signs in.
+The first version kept asking again on every redraw; `test/plans.js` now pins
+that it doesn't.
+
+---
+
 ## A Practice tab, and a team's age — 2026-10-02
 
 The drill library is in the app now. Practice sits beside Games, for coaches

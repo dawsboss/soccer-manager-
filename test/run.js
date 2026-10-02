@@ -32,6 +32,7 @@ const SUITES = [
   ['import', 'bulk import merges, and never replaces'],
   ['drills', 'the built-in drill library holds together'],
   ['practice', 'the Practice tab, and who gets it'],
+  ['plans', 'practice plans, and how they reach the club'],
   ['smoke', 'every view renders without throwing'],
   ['sandbox', 'the test club, and database isolation'],
   ['rules', 'the database rules, as README publishes them']
