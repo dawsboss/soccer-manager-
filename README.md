@@ -355,15 +355,15 @@ a parent can still write another team's data, exactly as before.
               }
             }
           },
-        "teamParents": {
-          ".write": "auth != null && root.child('workspaces/' + $code + '/access/admins/' + auth.uid).exists()",
-          "$tid": {
-            "$uid": {
-              ".write": "auth != null && root.child('workspaces/' + $code + '/access/teamParents').exists() && ($uid === auth.uid || root.child('workspaces/' + $code + '/access/teamIndex/' + $tid + '/' + auth.uid).val() === 'coach') && (!newData.exists() || root.child('workspaces/' + $code + '/teams/' + $tid + '/players/' + newData.val() + '/guardians/' + $uid).exists())",
-              ".validate": "newData.isString() && root.child('workspaces/' + $code + '/teams/' + $tid + '/players/' + newData.val() + '/guardians/' + $uid).exists()"
+          "teamParents": {
+            ".write": "auth != null && root.child('workspaces/' + $code + '/access/admins/' + auth.uid).exists()",
+            "$tid": {
+              "$uid": {
+                ".write": "auth != null && root.child('workspaces/' + $code + '/access/teamParents').exists() && ($uid === auth.uid || root.child('workspaces/' + $code + '/access/teamIndex/' + $tid + '/' + auth.uid).val() === 'coach') && (!newData.exists() || root.child('workspaces/' + $code + '/teams/' + $tid + '/players/' + newData.val() + '/guardians/' + $uid).exists())",
+                ".validate": "newData.isString() && root.child('workspaces/' + $code + '/teams/' + $tid + '/players/' + newData.val() + '/guardians/' + $uid).exists()"
+              }
             }
-          }
-        },
+          },
           "teams": {
             ".write": "auth != null && root.child('workspaces/' + $code + '/access/admins/' + auth.uid).exists()",
             "$tid": {
