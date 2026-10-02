@@ -41,13 +41,19 @@ All in `CHANGELOG.md` (three entries, 2026-10-01 and 2026-10-02) and README
   a player has done" becomes a join with the attendance register. ROADMAP →
   *Drills a player has done*. Its open question 3 (attendance) is answered:
   the owner wants it, and it is built here.
-- `ccr-898e57e7-rrryfw` (messages: team notices, families and coaches). Natural
-  join points: a reminder to families who have not answered (ROADMAP → *Who is
-  coming, next*), and a notice when an entry is called off.
-- All three branches bump `BUILD` and touch `app.js`, `index.html` (tabs),
-  `README.md` rules, `CHANGELOG.md` and `CLAUDE.md`. Whoever merges second
-  takes the higher build number and merges the rules blocks by hand, then runs
-  `node test/run.js` and `node test/rules.js`.
+- **Messages (`ccr-898e57e7-rrryfw`) is merged** into `main` and into this
+  branch (2026-10-02). Its joins with this work: a reminder notice to families
+  who have not answered (ROADMAP → *Who is coming, next*), and a notice when an
+  entry is called off. Its "availability replies" next step is done here, as
+  `rsvp`.
+- **The rules to paste are the merged ones.** README's two rule sets now carry
+  messages' root blocks (`board`, `dm`, `joinCodes`, `claims`), its
+  `access/teamParents` and its extra clause on `access/index`, and this
+  branch's `rsvp`. `node test/rules.js` checks all of it together.
+- Training still bumps `BUILD` and touches `app.js`, `index.html` (tabs),
+  `README.md`, `CHANGELOG.md` and `CLAUDE.md`. Whoever merges it takes the
+  higher build number (this branch is on 66) and runs `node test/run.js` and
+  `node test/rules.js`.
 
 ## Next conversation: planning for the club
 

@@ -57,6 +57,8 @@ An invite carries what it grants, so redeeming it is one step instead of a reque
 
 **Built** (2026-09): per-person invites, as `invites/{id}` with the club it belongs to as `ws` (the org id is still the workspace code), an admin's list at `clubInvites/{code}`, and `userOrgs/{uid}`. Admins make them; README's **Joining a club** and the rules there are the reference. The role entries an invite writes hold its id rather than `true`, because a rule has to look the invite up from the value being written.
 
+**Built** (2026-10): the bulk path below, as `joinCodes/{code}` (the team link) and `claims/{ws}/{team}/{uid}` (a parent's request), approved from the team's Squad tab. The team's current link sits at `teams/{tid}/join`. Approval writes the guardian and lets the parent into `access/index` with the team id as its value — the one place a coach writes the index, and only for a request to her own team she approved. Admins can also make a squad's worth of personal parent invites in one go.
+
 Keep the parent claim flow described below as the bulk path: one team code, parent picks a shirt number, coach approves. Per-person invites are for coaches and for the one parent who cannot make the bulk flow work.
 
 ## Who sees which team
