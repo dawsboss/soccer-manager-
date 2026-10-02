@@ -21,7 +21,10 @@
               grid: a coned square. box: a penalty area on the top edge.
               half: that plus halfway on the bottom. pitch: both ends, boxes
               left and right when the area is wider than it is long.
-     cones, balls:  [[x, y], ...]           static
+     cones, balls, poles:  [[x, y], ...]    static
+     hurdles: [[x, y, 'v'|'h']]             a bar across the run; v (default) for a
+                                            run along x, h for a run along y
+     walls:   [[x1, y1, x2, y2]]            something to pass against
      goals:   [[x, y, 'big'|'mini', facing]]    the middle of the goal line;
               facing is the way the mouth opens: n, s, e or w
      zones:   [[x, y, w, h, label?]]        shaded: end zones, channels, homes
@@ -39,6 +42,8 @@
      A1>A2     pass to a player, to wherever she is at the end of the step
      A1>12,4   pass into space
      A1>G      shot at the nearest goal (G2: the second goal in the list)
+     A1>W      off the nearest wall and back to her (W2: the second wall)
+     A1>A2(    a pass or shot that bends left, as the passer sees it; ) bends right
      A1~12,4   dribble there with the ball
      A1-12,4   run there without it
      D1-A1     run at a player, stopping just short of her
@@ -64,7 +69,7 @@
   const COLOURS = {
     grass: '#2F8A55', stripe: '#2B814F', line: '#FFFFFF', zone: 'rgba(255,255,255,.13)',
     A: '#1D5FD6', D: '#D23B3B', N: '#F2B417', B: '#0E9C94', K: '#7A3FD1', C: '#F5F7F6',
-    cone: '#FF8A1F', ball: '#FFFFFF', arrow: '#FFFFFF', shot: '#FFE15A', ink: '#0E1B14', caption: 'rgba(8,20,13,.8)'
+    cone: '#FF8A1F', pole: '#F4D21F', hurdle: '#F8F4E8', wall: '#C9C2B0', ball: '#FFFFFF', arrow: '#FFFFFF', shot: '#FFE15A', ink: '#0E1B14', caption: 'rgba(8,20,13,.8)'
   };
 
   const ID = /^[ADNBKC]\d*$/;
@@ -99,6 +104,12 @@
     if (mark === 'pitch' && Math.min(aw, ah) < 44) err('a pitch needs both sides at least 44 yd');
     (dg.cones || []).forEach((c, i) => point(c, `cone ${i + 1}`));
     (dg.balls || []).forEach((c, i) => point(c, `ball ${i + 1}`));
+    (dg.poles || []).forEach((c, i) => point(c, `pole ${i + 1}`));
+    (dg.hurdles || []).forEach((c, i) => {
+      point(c, `hurdle ${i + 1}`);
+      if (c[2] !== undefined && c[2] !== 'v' && c[2] !== 'h') err(`hurdle ${i + 1}: the third value is v or h`);
+    });
+    (dg.walls || []).forEach((l, i) => { point(l, `wall ${i + 1}`); point([l[2], l[3]], `wall ${i + 1} end`); });
     (dg.goals || []).forEach((g, i) => {
       point(g, `goal ${i + 1}`, 0);
       if (!['big', 'mini'].includes(g[2])) err(`goal ${i + 1}: size must be big or mini`);
@@ -173,23 +184,43 @@
         const ball = next.balls.find(b => b.by === p.who);
         if (!ball) { err(`step ${n}: ${p.who} passes without a ball`); continue; }
         const from = prev.players[p.who];
+        const bi = next.balls.indexOf(ball);
+        let tgt = p.tgt, curve = 0;
+        if (/[()]$/.test(tgt)) { curve = tgt.endsWith(')') ? 1 : -1; tgt = tgt.slice(0, -1); }
+        if (/^W\d*$/.test(tgt)) {
+          /* Off a wall and back: the ball goes straight at the wall and returns
+             to wherever the passer is by the end of the step. */
+          const walls = dg.walls || [];
+          if (!walls.length) { err(`step ${n}: '${p.raw}' passes against a wall, but there isn't one`); continue; }
+          const onto = w => {
+            const ax = w[2] - w[0], ay = w[3] - w[1], L2 = ax * ax + ay * ay || 1;
+            const u = Math.max(0, Math.min(1, ((from[0] - w[0]) * ax + (from[1] - w[1]) * ay) / L2));
+            return [w[0] + ax * u, w[1] + ay * u];
+          };
+          const w = tgt === 'W' ? walls.slice().sort((a, b) => dist(onto(a), from) - dist(onto(b), from))[0] : walls[Number(tgt.slice(1)) - 1];
+          if (!w) { err(`step ${n}: '${p.raw}' passes against a wall that isn't there`); continue; }
+          ball.by = p.who; ball.at = null;
+          moves.push({ kind: 'pass', who: p.who, from, to: next.players[p.who], via: [onto(w)], toPlayer: true, ball: bi });
+          continue;
+        }
+        p.tgt = tgt;
         if (/^G\d*$/.test(p.tgt)) {
           const goals = dg.goals || [];
           if (!goals.length) { err(`step ${n}: '${p.raw}' shoots, but there is no goal`); continue; }
           const g = p.tgt === 'G' ? goals.slice().sort((a, b) => dist(a, from) - dist(b, from))[0] : goals[Number(p.tgt.slice(1)) - 1];
           if (!g) { err(`step ${n}: '${p.raw}' shoots at a goal that isn't there`); continue; }
           ball.by = null; ball.at = [g[0], g[1]]; ball.goal = true;
-          moves.push({ kind: 'shot', who: p.who, from, to: [g[0], g[1]], toPlayer: false });
+          moves.push({ kind: 'shot', who: p.who, from, to: [g[0], g[1]], toPlayer: false, ball: bi, curve });
         } else if (ID.test(p.tgt)) {
           if (!next.players[p.tgt]) { err(`step ${n}: '${p.raw}' passes to '${p.tgt}', who isn't there`); continue; }
           if (p.tgt === p.who) { err(`step ${n}: '${p.raw}' passes to herself`); continue; }
           ball.by = p.tgt; ball.at = null;
-          moves.push({ kind: 'pass', who: p.who, from, to: next.players[p.tgt], toPlayer: true });
+          moves.push({ kind: 'pass', who: p.who, from, to: next.players[p.tgt], toPlayer: true, ball: bi, curve });
         } else {
           const to = pointOf(p.tgt);
           if (!to || !inside(to)) { err(`step ${n}: can't pass to '${p.tgt}'`); continue; }
           ball.by = null; ball.at = to;
-          moves.push({ kind: 'pass', who: p.who, from, to, toPlayer: false });
+          moves.push({ kind: 'pass', who: p.who, from, to, toPlayer: false, ball: bi, curve });
         }
       }
       for (const p of parsed.filter(p => p.op === '*')) {
@@ -235,7 +266,8 @@
     let x0 = 0, y0 = 0, x1 = aw, y1 = ah;
     const take = p => { x0 = Math.min(x0, p[0]); y0 = Math.min(y0, p[1]); x1 = Math.max(x1, p[0]); y1 = Math.max(y1, p[1]); };
     for (const st of states) for (const p of Object.values(st.players)) take(p);
-    for (const p of [...(dg.cones || []), ...(dg.balls || [])]) take(p);
+    for (const p of [...(dg.cones || []), ...(dg.balls || []), ...(dg.poles || []), ...(dg.hurdles || [])]) take(p);
+    for (const w of dg.walls || []) { take(w); take([w[2], w[3]]); }
     const room = { n: 0, s: 0, e: 0, w: 0 };
     for (const [x, y, size, facing] of dg.goals || []) {
       const deep = size === 'big' ? 22 : 12;
@@ -326,7 +358,30 @@
   /* Every arrow sits a few units to the left of its line of travel, so a pass
      there and a pass back draw as two arrows rather than one on top of the
      other. */
+  /* The control point of a bent pass: a quarter of its length out to one side.
+     Positive bends right as the passer sees it, which on screen (y down) is
+     the normal (-uy, ux). */
+  const bend = (a, b, curve) => {
+    const d = dist(a, b) || 1, ux = (b[0] - a[0]) / d, uy = (b[1] - a[1]) / d;
+    return [(a[0] + b[0]) / 2 - uy * curve * 0.25 * d, (a[1] + b[1]) / 2 + ux * curve * 0.25 * d];
+  };
+  const head = (b, ux, uy, col) => `<path d="M${b[0]} ${b[1]} L${f(b[0] - ux * 9 - uy * 5)} ${f(b[1] - uy * 9 + ux * 5)} L${f(b[0] - ux * 9 + uy * 5)} ${f(b[1] - uy * 9 - ux * 5)} Z" fill="${col}"/>`;
+
   function arrowSvg(mv, g, num) {
+    if (mv.via) {
+      /* Out to the wall and back: two strokes, each to its own left, so a ball
+         played straight at a wall reads as there-and-back, not one line. */
+      const w = g.px(mv.via[0]), a0 = g.px(mv.from), b0 = g.px(mv.to);
+      const leg = (p, q, cutA, cutB, tip) => {
+        const d = dist(p, q); if (d < cutA + cutB + 6) return '';
+        const ux = (q[0] - p[0]) / d, uy = (q[1] - p[1]) / d, side = 4;
+        const s0 = [f(p[0] + ux * cutA + uy * side), f(p[1] + uy * cutA - ux * side)];
+        const s1 = [f(q[0] - ux * cutB + uy * side), f(q[1] - uy * cutB - ux * side)];
+        return `<path d="M${s0[0]} ${s0[1]} L${s1[0]} ${s1[1]}" fill="none" stroke="${COLOURS.arrow}" stroke-width="2.2" stroke-linecap="round"/>` + (tip ? head(s1, ux, uy, COLOURS.arrow) : '');
+      };
+      const lab = num ? (() => { const m = [f((a0[0] + w[0]) / 2 + 12), f((a0[1] + w[1]) / 2)]; return `<circle cx="${m[0]}" cy="${m[1]}" r="7.5" fill="${COLOURS.ink}" fill-opacity=".8"/><text x="${m[0]}" y="${f(m[1] + 3.6)}" font-size="10" font-weight="700" text-anchor="middle" fill="#fff">${num}</text>`; })() : '';
+      return leg(a0, w, R + 2, 4, true) + leg(w, b0, 4, R + 4, true) + lab;
+    }
     let a = g.px(mv.from), b = g.px(mv.to);
     const d = dist(a, b);
     const ux = (b[0] - a[0]) / d, uy = (b[1] - a[1]) / d;
@@ -338,13 +393,19 @@
     const col = mv.kind === 'shot' ? COLOURS.shot : COLOURS.arrow;
     const w = mv.kind === 'shot' ? 3 : 2.2;
     const dash = mv.kind === 'run' ? ` stroke-dasharray="6 5"` : '';
-    const path = mv.kind === 'dribble' ? wavy(a, b) : `M${a[0]} ${a[1]} L${b[0]} ${b[1]}`;
-    const head = `<path d="M${b[0]} ${b[1]} L${f(b[0] - ux * 9 - uy * 5)} ${f(b[1] - uy * 9 + ux * 5)} L${f(b[0] - ux * 9 + uy * 5)} ${f(b[1] - uy * 9 - ux * 5)} Z" fill="${col}"/>`;
+    let path = mv.kind === 'dribble' ? wavy(a, b) : `M${a[0]} ${a[1]} L${b[0]} ${b[1]}`;
+    let hx = ux, hy = uy;
+    if (mv.curve) {
+      const c = bend(a, b, mv.curve), cd = dist(c, b) || 1;
+      path = `M${a[0]} ${a[1]} Q${f(c[0])} ${f(c[1])} ${b[0]} ${b[1]}`;
+      hx = (b[0] - c[0]) / cd; hy = (b[1] - c[1]) / cd;
+    }
+    const tip = head(b, hx, hy, col);
     const label = num ? (() => {
       const m = [f(a[0] + (b[0] - a[0]) * 0.45 + uy * 10), f(a[1] + (b[1] - a[1]) * 0.45 - ux * 10)];
       return `<circle cx="${m[0]}" cy="${m[1]}" r="7.5" fill="${COLOURS.ink}" fill-opacity=".8"/><text x="${m[0]}" y="${f(m[1] + 3.6)}" font-size="10" font-weight="700" text-anchor="middle" fill="#fff">${num}</text>`;
     })() : '';
-    return `<path d="${path}" fill="none" stroke="${col}" stroke-width="${w}" stroke-linecap="round" stroke-linejoin="round"${dash}/>${head}${label}`;
+    return `<path d="${path}" fill="none" stroke="${col}" stroke-width="${w}" stroke-linecap="round" stroke-linejoin="round"${dash}/>${tip}${label}`;
   }
 
   function playerSvg(id) {
@@ -410,7 +471,9 @@
     for (const z of dg.zones || []) {
       const [a, b] = g.px(z);
       out.push(`<rect x="${a}" y="${b}" width="${f(g.len(z[2]))}" height="${f(g.len(z[3]))}" fill="${COLOURS.zone}" stroke="${COLOURS.line}" stroke-opacity=".5" stroke-dasharray="3 4"/>`);
-      if (z[4]) out.push(`<text x="${f(a + g.len(z[2]) / 2)}" y="${f(b + g.len(z[3]) / 2 + 4)}" font-size="11" font-weight="700" text-anchor="middle" fill="#fff" fill-opacity=".75" letter-spacing=".6">${esc(z[4])}</text>`);
+      /* Along the top edge rather than in the middle: the middle of a zone is
+         where its players stand. */
+      if (z[4]) out.push(`<text x="${f(a + g.len(z[2]) / 2)}" y="${f(b + Math.min(12.5, g.len(z[3]) / 2 + 4))}" font-size="10.5" font-weight="700" text-anchor="middle" fill="#fff" fill-opacity=".75" letter-spacing=".6">${esc(z[4])}</text>`);
     }
     out.push(markings(dg, g));
     for (const l of dg.lines || []) {
@@ -421,6 +484,18 @@
     for (const c of dg.cones || []) {
       const [a, b] = g.px(c);
       out.push(`<path d="M${a} ${f(b - 6)} L${f(a + 5.5)} ${f(b + 4)} L${f(a - 5.5)} ${f(b + 4)} Z" fill="${COLOURS.cone}" stroke="${COLOURS.ink}" stroke-opacity=".35" stroke-width="1"/>`);
+    }
+    for (const w of dg.walls || []) {
+      const [a, b] = g.px(w), [c, d] = g.px([w[2], w[3]]);
+      out.push(`<line x1="${a}" y1="${b}" x2="${c}" y2="${d}" stroke="${COLOURS.wall}" stroke-width="8" stroke-linecap="round"/>`);
+    }
+    for (const h of dg.hurdles || []) {
+      const [a, b] = g.px(h), half = Math.max(g.len(0.8), 8), across = h[2] === 'h';
+      out.push(`<rect x="${f(across ? a - half : a - 2)}" y="${f(across ? b - 2 : b - half)}" width="${f(across ? half * 2 : 4)}" height="${f(across ? 4 : half * 2)}" rx="1.5" fill="${COLOURS.hurdle}" stroke="${COLOURS.ink}" stroke-opacity=".5"/>`);
+    }
+    for (const p of dg.poles || []) {
+      const [a, b] = g.px(p);
+      out.push(`<circle cx="${a}" cy="${b}" r="5" fill="${COLOURS.pole}" stroke="${COLOURS.ink}" stroke-width="1.4"/><circle cx="${a}" cy="${b}" r="1.6" fill="${COLOURS.ink}"/>`);
     }
     for (const b of dg.balls || []) { const [a, c] = g.px(b); out.push(`<g transform="translate(${a},${c})">${ballSvg()}</g>`); }
     for (const l of dg.labels || []) {
@@ -437,9 +512,28 @@
       const p = g.px(states[0].players[id]);
       out.push(`<g transform="translate(${p[0]},${p[1]})">${anim ? motion(track(s => g.px(s.players[id]))) : ''}${playerSvg(id)}</g>`);
     }
+    /* A ball that bends or bounces off a wall can't move in a straight line
+       between two key times, so its own animation gets extra points along
+       the way. Players never need them. */
+    const ballMotion = i => {
+      const at = [0], vals = [ballPx(states[0].balls[i], states[0], g)];
+      for (let k = 0; k < steps.length; k++) {
+        const a = ballPx(states[k].balls[i], states[k], g), b = ballPx(states[k + 1].balls[i], states[k + 1], g);
+        at.push(ms(k)); vals.push(a);
+        const mv = steps[k].moves.find(m => m.ball === i && (m.via || m.curve));
+        const mids = !mv ? [] : mv.via ? [g.px(mv.via[0])] : [0.25, 0.5, 0.75].map(u => {
+          const c = bend(a, b, mv.curve);
+          return [f((1 - u) * (1 - u) * a[0] + 2 * (1 - u) * u * c[0] + u * u * b[0]), f((1 - u) * (1 - u) * a[1] + 2 * (1 - u) * u * c[1] + u * u * b[1])];
+        });
+        mids.forEach((p, j) => { at.push(ms(k) + MOVE * (j + 1) / (mids.length + 1)); vals.push(p); });
+        at.push(ms(k) + MOVE); vals.push(b);
+      }
+      at.push(T); vals.push(vals[vals.length - 1]);
+      return `<animateTransform attributeName="transform" type="translate" ${dur} keyTimes="${at.map(t).join(';')}" values="${vals.map(v => v.join(',')).join(';')}"/>`;
+    };
     states[0].balls.forEach((b, i) => {
       const p = ballPx(b, states[0], g);
-      out.push(`<g transform="translate(${p[0]},${p[1]})">${anim ? motion(track(s => ballPx(s.balls[i], s, g))) : ''}${ballSvg()}</g>`);
+      out.push(`<g transform="translate(${p[0]},${p[1]})">${anim ? ballMotion(i) : ''}${ballSvg()}</g>`);
     });
 
     if (captions) {

@@ -22,7 +22,7 @@ const FILE = path.join(__dirname, '..', 'drills.js');
 const DIAGRAM = path.join(__dirname, '..', 'drill-diagram.js');
 const LIB = require(FILE);
 const DD = require(DIAGRAM);
-const { DRILLS, TYPES, MOMENTS, SKILLS, PRINCIPLES, PHYSICAL, KIT, LEVELS, INTENSITY, GROUPS, INVOLVEMENT, POSITIONS, SIGNALS } = LIB;
+const { DRILLS, TYPES, MOMENTS, SKILLS, PRINCIPLES, PHYSICAL, KIT, LEVELS, INTENSITY, GROUPS, INVOLVEMENT, POSITIONS, SIGNALS, ROLE_GUIDE } = LIB;
 const ids = new Set(DRILLS.map(d => d.id));
 
 /* Collect every problem, then report each kind once with the drills it hit.
@@ -170,6 +170,8 @@ console.log('\n--- every drill has a picture, and it agrees with the card ---');
     if (goals.some(g => g[2] === 'big') && !d.kit.goals) flag('kit-goals', d.id);
     if (goals.some(g => g[2] === 'mini') && !d.kit.minigoals) flag('kit-goals', d.id);
     if ((d.diagram.cones || []).length && !d.kit.cones) flag('kit-cones', d.id);
+    if ((d.diagram.poles || []).length && !d.kit.poles) flag('kit-other', d.id);
+    if ((d.diagram.hurdles || []).length && !d.kit.hurdles) flag('kit-other', d.id);
   }
   report('every drill has a diagram that parses', 'diagram');
   report('…and draws, still and moving', 'renders');
@@ -178,6 +180,7 @@ console.log('\n--- every drill has a picture, and it agrees with the card ---');
   report('a keeper on the card is a keeper in the picture', 'keepers');
   report('a goal in the picture is on the kit list', 'kit-goals');
   report('cones in the picture are on the kit list', 'kit-cones');
+  report('poles and hurdles in the picture are on it too', 'kit-other');
   const moving = DRILLS.filter(d => d.diagram && (d.diagram.frames || []).length).length;
   check('most diagrams move (layouts are the exception)', moving >= DRILLS.length - 3, true);
 }
@@ -199,6 +202,58 @@ console.log('\n--- the renderer refuses what it can\'t draw ---');
   check('a pass is played onto a run, not to where she was', JSON.stringify(through.steps[0].moves.find(m => m.kind === 'pass').to), '[15,12]');
   const loose = DD.parse({ ...base, frames: [['A1>15,6'], ['A2~18,10']] });
   check('a loose ball at someone\'s feet becomes hers', loose.errors.length, 0);
+  const wall = DD.parse({ ...base, walls: [[0, 1, 20, 1]], frames: [['A1>W']] });
+  check('a pass off the wall comes back to the passer', wall.errors.length === 0 && wall.states[1].balls[0].by, 'A1');
+  check('a wall pass with no wall is refused', errs([['A1>W']]).length > 0, true);
+  const bent = DD.parse({ ...base, frames: [['A1>A2(']] });
+  check('a bent pass is still a pass to her', bent.errors.length === 0 && bent.states[1].balls[0].by, 'A2');
+  check('…and it knows which way it bends', bent.steps[0] && bent.steps[0].moves[0].curve, -1);
+}
+
+console.log('\n--- the position guide ---');
+{
+  /* The guide is what a coach reads to find out what a position is for. It
+     has to line up with the rest of the app: its roles are the app's roles,
+     its slots are labels the app's shapes really use, and every drill it
+     recommends for a position says on its own card that it's for that
+     position. A guide that sends a centre back to a drill marked Forward
+     only is a guide nobody trusts twice. */
+  const src = fs.readFileSync(path.join(__dirname, '..', 'app.js'), 'utf8');
+  const appSlots = new Set([...src.matchAll(/S\('([A-Z]+)', '[A-Za-z]+'/g)].map(m => m[1]));
+  const gids = new Set();
+  for (const r of ROLE_GUIDE || []) {
+    const id = r.id || '(no id)';
+    if (!/^[a-z]+(-[a-z]+)*$/.test(r.id || '') || gids.has(r.id)) flag('guide-id', id);
+    gids.add(r.id);
+    if (![r.name, r.oneLine, r.whenWeWin, r.whenWeLose, r.young, r.number].every(text)) flag('guide-text', id);
+    if (!texts(r.withBall, 2) || !texts(r.withoutBall, 2) || !texts(r.aka)) flag('guide-text', id);
+    if (!Array.isArray(r.roles) || !r.roles.length || !r.roles.every(x => POSITIONS.includes(x))) flag('guide-roles', id);
+    if (!Array.isArray(r.slots) || !r.slots.length || r.slots.some(x => !appSlots.has(x))) flag('guide-slots', id);
+    if (!subset(r.keySkills, SKILLS) || !r.keySkills.length) flag('guide-skills', id);
+    if (!Array.isArray(r.drills) || r.drills.length < 5 || r.drills.some(x => !ids.has(x))) flag('guide-drills', id);
+    else {
+      const ds = r.drills.map(x => DRILLS.find(d => d.id === x));
+      if (ds.some(d => !d.positions.some(p => r.roles.includes(p)))) flag('guide-fit', id + ' (' + ds.filter(d => !d.positions.some(p => r.roles.includes(p))).map(d => d.id).join(' ') + ')');
+      if (!ds.some(d => d.type === 'position' || d.type === 'keeper')) flag('guide-own', id);
+    }
+    const dr = r.diagram && DD.parse(r.diagram);
+    if (!dr || dr.errors.length || !dr.steps.length) flag('guide-diagram', id);
+    else if (dr.steps.some(st => !st.caption || st.caption.length > 48)) flag('guide-diagram', id);
+  }
+  check('there is a guide entry per job, nine of them', (ROLE_GUIDE || []).length, 9);
+  report('guide ids are unique, lowercase-with-hyphens', 'guide-id');
+  report('every entry says what the job is, both ways', 'guide-text');
+  report('roles are the app\'s five', 'guide-roles');
+  report('slots are labels the app\'s shapes use', 'guide-slots');
+  report('key skills come from SKILLS', 'guide-skills');
+  report('at least five real drills each', 'guide-drills');
+  report('every drill it recommends is for that position', 'guide-fit');
+  report('each links a positional (or keeper) drill', 'guide-own');
+  report('each has a moving diagram with captions that fit', 'guide-diagram');
+  const covered = new Set((ROLE_GUIDE || []).flatMap(r => r.slots));
+  check('every slot in the app\'s shapes has a guide entry', [...appSlots].filter(x => !covered.has(x)).join(', '), '');
+  const rolesCovered = new Set((ROLE_GUIDE || []).flatMap(r => r.roles));
+  check('every app role has a guide entry', POSITIONS.filter(p => !rolesCovered.has(p)).join(', '), '');
 }
 
 console.log('\n--- safety ---');

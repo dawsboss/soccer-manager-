@@ -8,6 +8,52 @@ before this point lives only in the git log.
 
 ---
 
+## 105 drills, a guide to every position, and drills that stay private — 2026-10-02
+
+Still nothing new on screen in the app.
+
+**Fifty more drills**, most of them harder. Advanced ball skills: move
+combinations, fast footwork, a weaker-foot circuit, controlling high balls,
+volleys, chips, bending the ball, the Y passing pattern, first touch away from
+pressure, and wall passing for homework. Opposed work: a rondo through a
+pivot, a three-zone rondo, back-to-pressure, 1v1 from four sides, 2v2 with
+bounce players, a finishing circuit, recovery runs and a marking game. Also
+penalties, free kicks, four more keeper drills (sweeping, footwork, reaction
+saves, and being calm on a back-pass) and two cool-downs. The youngest get new
+games too: knockout, skill-move tag, and *Don't be a bee*, which turns
+swarming the ball into a first idea of a position.
+
+**Positions and units** is a new kind of drill, fifteen of them, about where to
+be and what to do rather than a skill. They cover the back line shifting
+together, the centre-back partnership, the full-back's and winger's jobs both
+ways, the holding midfielder screening and switching, the midfield triangle,
+finding the pocket as a number 10, striker movement, holding the ball up,
+pressing from the front, defending in two banks, and a game where everyone
+plays every position in turn.
+
+**The position guide** says what each of nine positions is for. It covers
+the ball, no ball, the second we win it and the second we lose it. Each entry
+gives the skills it needs, the drills that teach it, a note for coaches of
+under-tens, and an animated diagram. It lines up with the shape labels the app
+already uses, and the tests check that every drill it recommends for a
+position is marked for that position.
+
+**The diagrams learned new tricks:** poles, hurdles, a wall to pass against,
+and passes that bend. Every new diagram was checked by eye. That moved zone
+labels to the top edge of their zone, because the middle is where the
+players stand.
+
+**`TRAINING.md`**: no uploads, only drawn diagrams and links. That settles
+both the storage question and the children-in-photos question. Drills are a
+club's and a coach's own work, so parents and trackers never see club drills
+or practice plans. That's enforced by the rules, not by hiding a tab, and it
+needs a third lookup table, `access/coachIndex`, because a rule can't ask "is
+this person a coach of any team". Unlike the other bridges, this one fails
+closed, because failing open would show parents the drills. Each coach keeps
+her own library private and shares from it only if she wants to.
+
+---
+
 ## Every drill gets a picture that moves, and a lot more to filter on — 2026-10-02
 
 Still nothing on screen in the app. This makes the drill library something a

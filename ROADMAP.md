@@ -13,8 +13,10 @@ starts with the ideas that do not have a place in that order yet.
 and each coach's own, which follows her across clubs), practice plans that
 copy their drills the way games copy their shapes, a run mode for the field,
 and a *what needs work* card that reads the game stats before any AI does.
-The built-in library (`drills.js`), an animated diagram for every drill
-(`drill-diagram.js`) and their suite exist; nothing in the app loads them yet. Its build order starts with browsing that library, which needs
+The built-in library (`drills.js`, 105 drills and a guide to nine positions),
+an animated diagram for every drill (`drill-diagram.js`) and their suite exist;
+nothing in the app loads them yet. Club drills and practice plans are for
+coaches and admins only; parents never see them. Its build order starts with browsing that library, which needs
 no schema change, and its first database step is a new root node,
 `training/{code}`, kept out of the workspace because every phone reads the
 whole workspace on connect.

@@ -5,9 +5,10 @@ rules have to be right first. Training adds the first new root node since
 invites. It's also the first data here that belongs to a *person* rather than to
 a club, so a mistake would be expensive to undo.
 
-What exists today is the built-in drill library (`drills.js`, 55 drills, each
-with an animated diagram), the renderer that draws those diagrams
-(`drill-diagram.js`), and the suite that keeps both honest (`test/drills.js`).
+What exists today is the built-in drill library (`drills.js`, 105 drills, each
+with an animated diagram, and a guide to what each of nine positions is for),
+the renderer that draws those diagrams (`drill-diagram.js`), and the suite that
+keeps both honest (`test/drills.js`).
 Nothing in the app loads any of them yet. Everything else below is a proposal, and the questions at the end are the
 decisions it needs.
 
@@ -27,23 +28,36 @@ the half of the week where that knowledge is used.
 
 ## Three shelves
 
-| Shelf | Whose | Lives in | Who changes it |
-| --- | --- | --- | --- |
-| **Built-in** | Everyone's | `drills.js`, shipped with the app | Nobody in the app. A new version of the file |
-| **Club** | The club's | `training/{code}/drills` | Admins; coaches for what they added (see question 1) |
-| **Mine** | One coach's, across every club | `userLibrary/{uid}/drills` | Only that coach |
+| Shelf | Whose | Lives in | Who reads it | Who changes it |
+| --- | --- | --- | --- | --- |
+| **Built-in** | Everyone's | `drills.js`, shipped with the app | Coaches and admins, in the app | Nobody in the app. A new version of the file |
+| **Club** | The club's | `training/{code}/drills` | Admins and coaches. Never trackers, never parents | Admins; any coach for what she shared |
+| **Mine** | One coach's, across every club | `userLibrary/{uid}/drills` | Only her. Not even an admin | Only her |
+
+**Drills are a club's and a coach's own work, so parents never see them**
+(settled 2026-10-02). That isn't only a matter of hiding a tab: a parent's
+phone reads the whole workspace, so club drills can't live there, and the
+rules have to refuse a parent outright (*Rules sketch*). The Practice tab is
+drawn for coaches and admins only. A parent gets *Next practice: Tuesday
+5:30, Lakeside* on the team's page and nothing more.
 
 **Built-in costs nothing to run.** It's a script tag, like `firebase-config.js`.
 No database read, no rule, nothing to migrate, and it works from `file://` at a
-field with no signal. That's why it could be written before anything else.
+field with no signal. That's why it could be written before anything else. It
+isn't a secret, since it ships in the app's public files, but it isn't the
+club's work either. The app still only draws it for coaches and admins, because
+the Practice tab is theirs.
 
-**Mine is keyed by account, not by club.** `AUTH.md`'s coach with a daughter at
-another club is also a coach whose drills should follow her if she moves clubs.
-A personal library inside `workspaces/{code}` would be the club's the day she
-left. At the root, beside `userOrgs/{uid}`, it's hers.
+**Mine is keyed by account, not by club, and it's private.** `AUTH.md`'s coach
+with a daughter at another club is also a coach whose drills should follow her
+if she moves clubs. A personal library inside `workspaces/{code}` would be the
+club's the day she left. At the root, beside `userOrgs/{uid}`, it's hers, and
+the rules let nobody else read it. Sharing is a choice she makes one drill at a
+time, and she never has to make it.
 
-**Club is the shared shelf.** It's where a club's way of playing gets written
-down: the U14 coach's rondo that the U10s should start learning.
+**Club is the shared shelf, and the club's secret sauce.** It's where a club's
+way of playing gets written down: the U14 coach's rondo that the U10s should
+start learning. Any coach can share into it and any admin can tidy it.
 
 ### Moving between shelves: copied, never linked
 
@@ -75,7 +89,7 @@ a deletion leaves holes in it.
 | `id`, `v` | Stable id, content version | Sessions, copies and AI answers refer to it. Ids are never reused |
 | `name`, `summary` | Title and one line | The list view |
 | `type` | Warm-up, technique, opposed, small-sided game, set pieces, goalkeeping, cool-down | The order a session runs in |
-| `ages` | U-age range, e.g. `[8, 12]` | The default filter, once a team has an age (question 4) |
+| `ages` | U-age range, e.g. `[8, 12]` | The default filter, once a team has an age (question 2) |
 | `level` | 1–3 | A U12 team in its first season and a U12 academy side aren't the same |
 | `players`, `gk` | Min / best / max, keepers needed | The session builder warns when a drill needs more players than are coming |
 | `minutes`, `intensity` | Range, 1–3 | Building to a time, and not stacking three hard drills in a row |
@@ -112,7 +126,7 @@ something a U6 coach opens and finds empty.
 
 ### Built-in drills: drawn, and they move
 
-Every built-in drill has a diagram, and 53 of the 55 animate: players run, the
+Every built-in drill has a diagram, and 103 of the 105 animate: players run, the
 ball travels, and a caption says what each step is. The two that don't move
 (juggling and the cool-down circle) are layouts.
 
@@ -135,46 +149,53 @@ or saved as a file. Next to a GIF it:
   World Cup's kit list missing the cones in its own picture.
 
 They were checked by eye as well, every one, still and mid-animation. A parser
-can tell that a diagram is valid. It can't tell that it reads well.
+can tell that a diagram is valid. It can't tell that it reads well. The eye
+check caught zone labels sitting under the players, which is why labels now
+sit along a zone's top edge.
 
-### A coach's own drills: three ways, cheapest first
+### The position guide
 
-For drills on the Club and Mine shelves, the coach chooses:
+`ROLE_GUIDE` in `drills.js` answers *what is this position for?* for nine
+jobs: goalkeeper, centre back, full-back, holding midfielder, central
+midfielder, attacking midfielder, wide midfielder, winger and striker. Each
+entry covers four moments: what she does when we have the ball, when they have
+it, the second we win it, and the second we lose it. It also lists the skills
+the job needs, five or more drills that teach it, a line for coaches of
+under-tens (who shouldn't be fixing anyone in one position yet), and an
+animated diagram of where she plays and how she moves.
+
+The app's five roles are too coarse to explain a job: a centre back and a
+full-back are both *Back*. So each entry names the roles it falls under and the
+shape slots that usually play it (`LB`, `RCB`, `ST`…, the labels `app.js`'s
+formations really use). `test/drills.js` checks every slot in the app has an
+entry. It also checks every drill the guide recommends for a position says on
+its own card that it's for that position. Later, a player's profile can link
+straight to the guide entry for her best position, and Ask an AI can quote the
+job when it suggests where someone plays.
+
+### A coach's own drills: draw it, or link it
+
+No uploads (settled 2026-10-02). Two ways, and between them they cover what a
+coach needs:
 
 1. **Draw it.** A diagram editor in the same format: tap to place players and
    cones, drag from a player to make a pass or a run, *Next step* for the
    next move. It's the same few kilobytes, works offline, animates, and needs
-   no storage at all. This is the default, and it covers most of what a coach
-   would otherwise photograph.
+   no storage at all. This is the default.
 2. **Link it.** A video or GIF that lives somewhere else: YouTube, Vimeo,
    Instagram, Google Drive, a direct `.gif`. It's stored as
-   `media: [{ kind: 'link', url, title }]`. A direct image link shows inline,
-   anything else as a link card. It costs nothing to store, but needs a signal
-   to play, and a link can die.
-3. **Upload a picture.** Shrunk on the phone first, to about 1000 px wide and
-   100–150 KB as a JPEG, through a canvas. That also strips the location data
-   phones write into photos, which matters more here than the size. Then the
-   question is where the bytes go (question 5):
-   - **Realtime Database, at a node of its own** (`trainingMedia/{code}/{id}`),
-     read only when a card opens and cached for offline. The free plan holds
-     1 GB, which is thousands of shrunk photos. It works for pictures, but not
-     for GIFs or video, which run to megabytes.
-   - **Cloud Storage for Firebase**, the proper home for files of any size.
-     Firebase has been moving Storage onto the pay-as-you-go (Blaze) plan, and
-     this project's bucket is the newer `firebasestorage.app` kind, so check
-     the plan in the console before designing on it.
+   `media: [{ kind: 'link', url, title }]`, so a drill list stays a few
+   kilobytes however many drills have one. A direct image link shows inline,
+   anything else as a link card that opens outside the app. It needs a signal
+   to play, and a link can die. The card says so rather than pretending
+   otherwise.
 
-   The recommendation: draw, link, and photos into the database. Storage only
-   if a club wants to upload its own video.
-
-**Photos of drills are usually photos of children** (question 6). A club drill
-is readable by every account in the club, parents included, and it outlives
-the season the photo was taken in. So: the upload screen says *photograph the
-set-up, not the players* and asks for a tick that no child's face is in it;
-pictures and links never go near the public mirror or `live.html`; a picture
-on Mine is readable by its owner only; and an admin can remove any club media.
-A drawn diagram has none of these problems, which is one more reason it comes
-first.
+Leaving out uploads closes two questions at once. There's no storage plan to
+pay for. And there's no photo of somebody's child sitting on a club drill for
+years after she has left. A link is only as private as what it points to,
+though. An *unlisted* video is visible to anyone who has the link. So the
+add-a-link screen says so in one line, and suggests a clip of the set-up, or of
+professionals, over a clip of the team.
 
 ## Practices
 
@@ -210,11 +231,23 @@ training/{code}/practices/{teamId}/{practiceId}
   (see *Privacy*).
 - **Templates:** *Save as a template* in Mine or Club. *Run this again* copies
   a past practice to a new date.
+- **The plan and the time are kept apart.** The plan (the drills, the notes,
+  the review) lives under `practices/`, readable by that team's coaches and
+  the club's admins. *When and where* lives under `schedule/`, readable by the
+  whole club, so parents get the time and place without the plan.
+- **Putting your own drill in a practice shares it with your team.** The
+  practice holds a copy, so the team's other coaches and the club's admins can
+  read it. The builder says so the first time a coach adds one of hers:
+  *Adding this to the practice shares it with this team's coaches.* That's the
+  only way a Mine drill is ever seen by anyone else without her sharing it on
+  purpose.
 
 ## Where it lives in the app
 
-- A **Practice** tab beside Games: upcoming practices, the last few, and
-  *Plan a practice*.
+- A **Practice** tab beside Games, for coaches and admins only: upcoming
+  practices, the last few, and *Plan a practice*. Trackers and parents don't
+  get the tab. Parents see the next practice's time and place on the team
+  page.
 - **Drills** inside it, with the three shelves as filter chips (Built-in ·
   Club · Mine) and a filter for everything on the card: age, what needs work,
   type, position, length, difficulty, intensity, how many players are coming
@@ -229,18 +262,18 @@ training/{code}/practices/{teamId}/{practiceId}
 
 ## Who can do what
 
-| | Built-in | Club drills | Mine | Team practices |
-| --- | --- | --- | --- | --- |
-| Admin | Read, copy | Add, edit, remove any | Own | Plan and edit any team's |
-| Coach | Read, copy | Read, copy, share; edit/remove her own (question 1) | Own | Plan and edit her team's; read the club's |
-| Tracker | Read | Read | Own | Read her team's: a volunteer running a station |
-| Parent | — | — | — | When and where only (question 2) |
-| Signed out | Browse | — | — | — |
+| | Built-in | Club drills | Mine | Team practices (the plan) | Practice times |
+| --- | --- | --- | --- | --- | --- |
+| Admin | Read, copy | Add, edit, remove any | Her own | Plan and edit any team's | Read, change |
+| Coach | Read, copy | Read, copy; share; edit or remove what she shared | Her own | Plan and edit her team's | Read; change her team's |
+| Tracker | — | — | — | — | Read |
+| Parent | — | — | — | — | Read |
+| Signed out | — | — | — | — | — |
 
-The built-in library is safe to show anyone, signed in or not, because it
-holds nothing about the club. That's the only part of training a signed-out
-device should draw (`needsSignIn()` still gates the rest, at the top of
-`render()`).
+A coach can't read another team's practice plans, which is narrower than
+`AUTH.md`'s *coaches read the whole club*. That's on purpose. A plan can hold
+a copy of a coach's own drills, and those are hers to share. A coach who wants
+the club to have a session saves it to the club as a template.
 
 ## Data model
 
@@ -250,20 +283,17 @@ drills.js                                   built-in, read-only, ships with the 
 training/{code}/                            the club's; {code} is the workspace code
   drills/{drillId}       { ...card, diagram, media[], from, by, byName, team, at }
   templates/{sid}        { name, blocks[], by, byName, team, at }
-  practices/{teamId}/{practiceId}   (above)
+  practices/{teamId}/{practiceId}   (above)               coaches of that team, admins
+  schedule/{teamId}/{practiceId}    { date, start, end, place }   everyone in the club
+
+workspaces/{code}/access/
+  coachIndex/{uid}       a teamId she coaches   derived, like index and teamIndex
 
 userLibrary/{uid}/                          one person's, whichever clubs they are in
   drills/{drillId}       { ...card, diagram, media[], from, at }
   templates/{sid}        { name, blocks[], at }
 
-trainingMedia/{code}/{mediaId}              uploaded pictures, if question 5 says the
-                         { jpeg, w, h, by, at }     database: read when a card opens, never
-                                            with the drill list
-```
-
-`media[]` on a drill holds links and references (`{ kind: 'link', url }`,
-`{ kind: 'photo', id }`), never the bytes. That keeps a drill list a few
-kilobytes even when every drill on it has a picture.
+`media[]` on a drill holds links only (`{ kind: 'link', url, title }`).
 
 **Why `training/{code}` and not `workspaces/{code}/training`.** Three reasons,
 any one of which would be enough:
@@ -290,14 +320,23 @@ today's workspace code, so `training/{code}` is already `training/{orgId}`.
 ```json
 "training": {
   "$code": {
-    ".read": "auth != null && (root.child('workspaces/' + $code + '/access/index/' + auth.uid).exists() || !root.child('workspaces/' + $code + '/access/index').exists())",
     "drills": {
+      ".read": "auth != null && (root.child('workspaces/' + $code + '/access/admins/' + auth.uid).exists() || root.child('workspaces/' + $code + '/access/coachIndex/' + auth.uid).exists())",
       "$id": {
         ".write": "auth != null && (root.child('workspaces/' + $code + '/access/admins/' + auth.uid).exists() || (!data.exists() && newData.child('by').val() === auth.uid && root.child('workspaces/' + $code + '/access/teamIndex/' + newData.child('team').val() + '/' + auth.uid).val() === 'coach') || (data.child('by').val() === auth.uid && root.child('workspaces/' + $code + '/access/teamIndex/' + data.child('team').val() + '/' + auth.uid).val() === 'coach'))"
       }
     },
     "practices": {
       "$tid": {
+        ".read": "auth != null && (root.child('workspaces/' + $code + '/access/admins/' + auth.uid).exists() || root.child('workspaces/' + $code + '/access/teamIndex/' + $tid + '/' + auth.uid).val() === 'coach' || (!root.child('workspaces/' + $code + '/access/teamIndex').exists() && root.child('workspaces/' + $code + '/access/coachIndex/' + auth.uid).exists()))",
+        "$pid": {
+          ".write": "auth != null && (root.child('workspaces/' + $code + '/access/admins/' + auth.uid).exists() || root.child('workspaces/' + $code + '/access/teamIndex/' + $tid + '/' + auth.uid).val() === 'coach' || (!root.child('workspaces/' + $code + '/access/teamIndex').exists() && root.child('workspaces/' + $code + '/access/coachIndex/' + auth.uid).exists()))"
+        }
+      }
+    },
+    "schedule": {
+      "$tid": {
+        ".read": "auth != null && (root.child('workspaces/' + $code + '/access/index/' + auth.uid).exists() || !root.child('workspaces/' + $code + '/access/index').exists())",
         "$pid": {
           ".write": "auth != null && (root.child('workspaces/' + $code + '/access/admins/' + auth.uid).exists() || root.child('workspaces/' + $code + '/access/teamIndex/' + $tid + '/' + auth.uid).val() === 'coach' || (!root.child('workspaces/' + $code + '/access/teamIndex').exists() && root.child('workspaces/' + $code + '/access/index/' + auth.uid).exists()))"
         }
@@ -313,27 +352,63 @@ today's workspace code, so `training/{code}` is already `training/{orgId}`.
 }
 ```
 
+and, inside the existing `workspaces/$code/access` block:
+
+```json
+"coachIndex": {
+  ".write": "auth != null && root.child('workspaces/' + $code + '/access/admins/' + auth.uid).exists()",
+  "$uid": {
+    ".write": "auth != null && $uid === auth.uid && (!newData.exists() || root.child('workspaces/' + $code + '/access/teams/' + newData.val() + '/coaches/' + auth.uid).exists())"
+  }
+}
+```
+
 `templates` follows `drills`. The things to check against the invariants:
 
-- **"Is this person a coach of *any* team?" can't be asked.** Rules can't
-  iterate, and `access/index/{uid}` says *member*, not *coach*. So a club drill
-  records the team its author coaches (`team`) and the rule looks that one
-  entry up, the same trick `matches/$mid` uses with `teamId`. If she stops
-  coaching that team, she can no longer edit what she shared, and the club
-  still has it. That's the intended behaviour, not a side effect.
-- **The bridge.** `practices` carries the same *while `teamIndex` is missing*
-  clause as `matches`, so the block can be pasted on a club that predates the
-  per-team index.
+- **There is no `.read` on `training/$code` itself.** A rule higher up can't
+  be taken back lower down, so a club-wide read there would hand parents the
+  drills whatever `drills/.read` said. Every read sits on the node it's
+  about.
+- **"Is this person a coach of *any* team?" needs a third lookup table.**
+  Rules can't iterate, `access/index/{uid}` says *member*, and
+  `access/teamIndex/{tid}/{uid}` needs a team to look in. So
+  `access/coachIndex/{uid}` joins the two flat tables `CLAUDE.md` describes,
+  derived the same way: `syncIndex()` rebuilds it from `access/teams/*/coaches`,
+  and nothing else may write it. Its value is a team she coaches, not `true`,
+  because that's what lets her own device write her entry: the rule checks
+  she really is a coach of the team the value names. That's the same pattern
+  an invite id follows in the role entries. Everything that reads it asks only
+  whether the entry is there. When this ships, `CLAUDE.md`'s invariant says
+  three tables, not two.
+- **This bridge fails closed, unlike the others.** The per-team and per-share
+  rules fall back to the old club-wide behaviour while their table is missing,
+  because that behaviour already existed and taking it away would lock people
+  out. Training has no old behaviour. Failing open would show parents the
+  drills. So while `coachIndex` is missing, only admins read the club library.
+  Each coach's device writes its own entry on its next connect, and an admin's
+  writes everyone's. A coach can write her own entry even into an empty table,
+  because there's no fallback for her write to close on anyone else.
+  Practices fall back the same way: while `teamIndex` is missing, it's
+  admins and anyone in `coachIndex`, never the whole club. `schedule` is
+  the one part that is club-wide, so it keeps the usual bridge.
+- **A club drill records the team its author coaches** (`team`), and the
+  write rule looks that one entry up, the same trick `matches/$mid` uses with
+  `teamId`. If she stops coaching that team, she can no longer edit what she
+  shared, and the club still has it. That's intended.
 - **Write at the depth the rule sits at.** One drill, one template, one
-  practice per write. Never the collection.
-- **The open rules need this block too.** The open set grants `workspaces`
+  practice, one schedule entry per write. Never the collection.
+- **The open rules need these blocks too.** The open set grants `workspaces`
   and nothing else, so a new root node is refused under it. This is the
-  invites lesson again: publish the block in both sets, and when a write is
+  invites lesson again: publish the blocks in both sets, and when a write is
   refused, the app says *the club's rules don't include training yet* rather
   than failing quietly. Until then, practices stay on the phone, as everything
-  did before sync.
-- `node test/rules.js` gets cases for every role against both blocks before
-  any of this is pasted anywhere.
+  did before sync. Under the open rules anyone holding the workspace code can
+  read the workspace. They can't read `training/`, because the open set has
+  no grant for it. That makes training the first thing the open rules don't
+  give away, which is right for the secret sauce.
+- `node test/rules.js` gets cases for every role against every block before
+  any of this is pasted anywhere, starting with a parent being refused
+  `drills/` and `practices/`, and a tracker being refused both.
 
 ## Offline
 
@@ -347,6 +422,11 @@ decisions.
   replaced wholesale.
 - Mine is cached per account and, like the identity cache, cleared on sign-out.
   It's the person's, not the device's.
+- Club drills and practice plans are only ever fetched by a coach's or an
+  admin's device, so a parent's phone never holds a copy to leak through
+  devtools. That's stricter than the workspace cache, and it can be: a coach
+  at the field needs her plan, but nobody needs the club's library offline
+  on a phone that isn't hers.
 
 ## Privacy
 
@@ -354,14 +434,13 @@ decisions.
   child. The built-in library is enforced by review; club and personal drills
   are free text, so the AI step runs them through `aiScrub()` like the ideas
   box.
-- **Practices don't either, for now.** `training/{code}` is readable by anyone
-  indexed, parents included, exactly as the workspace is today. That's fine for
-  plans and drills and wrong for "Ava was off the pace again". The review note
-  says so on the screen, and attendance (question 3) is the feature that would
-  force a tighter read rule.
-- **Pictures of drills are pictures of children**, more often than not. The
-  rules for that are under *Pictures*, and the drawn diagram is the default
-  because it has none of these problems.
+- **Practice plans are coaches' and admins' only**, which also makes them a
+  safer place for a review note than anything parents can read. They still
+  aren't the place for "Ava was off the pace again", which would follow the
+  child through every coach who takes the team. The review box says so.
+- **No uploads, so no pictures of children** stored by the app at all. Links
+  point elsewhere, and the add-a-link screen says that *unlisted* isn't
+  *private*.
 
 ## Towards the AI helper
 
@@ -402,7 +481,10 @@ Four steps, each useful without the next:
    drills that fit (id, name, minutes, what it trains): about sixty short
    lines. It asks for a session made from those ids, written `[rondo-4v1]`.
    The model picks from drills the coach can open, read and run, instead of
-   inventing them.
+   inventing them. Club and Mine drills are the secret sauce, and pasting them
+   into a chatbot is sharing them. So they go in only when the coach ticks
+   *Include our own drills*, and then only by name and what each one trains,
+   never the full card.
 
 3. **Paste the answer back.** A box on Plan a practice reads the `[drill-id]`
    tokens and minutes from the reply and turns them into a draft. It's still
@@ -424,13 +506,13 @@ too. The bridge doesn't change shape.
    alone and be useful the same day.
 2. **A team age.** One field on the team (U-age, or birth year so it rolls
    over), so the library filters to the team by default.
-3. **Practices.** Plan, run mode, review; `training/{code}/practices`; the
-   rules block in both sets with `test/rules.js` cases; merge-on-read and the
-   offline cache.
+3. **Practices.** Plan, run mode, review; `training/{code}/practices` and
+   `schedule`; `access/coachIndex` and its place in `syncIndex()`; the rules
+   blocks in both sets with `test/rules.js` cases (a parent and a tracker
+   refused first); merge-on-read and the offline cache.
 4. **Mine.** `userLibrary/{uid}`; save to mine; edit; templates.
 5. **Club.** Share to the club, copy from it, curation under Admin.
-6. **Pictures for a coach's own drills.** The diagram editor first, then links,
-   then photo upload once question 5 is answered.
+6. **Pictures for a coach's own drills.** The diagram editor, then links.
 7. **What needs work.** The signals card on Season.
 8. **The AI steps.** The library in the prompt, then paste-back.
 9. **Import.** A `"drills"` list in Admin's bulk import file, for a club that
@@ -444,25 +526,18 @@ goes anywhere near the real club.
 
 ## Decisions this needs
 
-1. **Who adds to the club library?** Admins only (curated, slower), or any
-   coach, with admins able to remove (grows faster). The rules sketch allows
-   either. The recommendation is any coach, because a club library nobody adds
-   to is empty.
-2. **Do parents see practices?** Nothing, or date, time and place only. The
-   recommendation is when and where only: it saves the coach a group text.
-3. **Attendance?** Who came to practice is useful (and the AI would use it),
-   but it is data about children, and it changes the read rule. The
-   recommendation is not yet.
-4. **Team age as a U-age or a birth year?** A birth year rolls over by itself
+1. **Attendance?** Who came to practice is useful (and the AI would use it),
+   but it is data about children. Plans are now coaches' and admins' only, so
+   it would sit in the right place. The recommendation is still not yet.
+2. **Team age as a U-age or a birth year?** A birth year rolls over by itself
    each season; a U-age is what coaches say.
-5. **Where uploaded pictures live.** The database (free, pictures only) or
-   Cloud Storage (any size, the paid plan). The recommendation is the
-   database, and links for video.
-6. **Children in photos.** The *no faces* tick on its own, or an admin
-   approving each club photo before parents can see it? The recommendation
-   is the tick, with admins able to remove anything. An approval queue is a
-   job nobody will do in October.
-7. **The tab's name:** Practice or Training?
+3. **The tab's name:** Practice or Training?
 
-Settled: built-in drills have pictures, animated (answered *yes, for sure*,
-2026-10-02), and coaches can add their own as an option.
+Settled on 2026-10-02:
+
+- Built-in drills have pictures, and they're animated.
+- Coaches' own pictures are drawn in the app or linked. Nothing is uploaded.
+- Parents never see drills or practice plans. The club library is for admins
+  and coaches, not trackers. A parent sees when and where.
+- Each coach has her own private library and shares from it only if she wants
+  to. Any coach can share into the club library; admins tidy it.
