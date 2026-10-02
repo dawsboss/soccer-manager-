@@ -188,7 +188,9 @@ const EXPORTS = `{
   /* messages */
   msgTeams, staffTeams, famTeams, msgOn, unreadCount, notices, threadMsgs, threadUnread,
   families, guardianEmails, childrenOf, viewInbox, viewThread, watchMessages, sheetPostShare,
-  get msgs() { return msgs }, get msgFor() { return msgFor }
+  get msgs() { return msgs }, get msgFor() { return msgFor },
+  /* team links and squad invites */
+  get join() { return join }, joinLink, claimMatches, pendingClaims, inviteSquad, sheetSquadInvites, joinCard
 }`;
 
 const FB_URLS = {

@@ -383,6 +383,7 @@ async function initAuth() {
         denied = false; attachWorkspace();
         // an invite read as the last account says nothing about this one
         if (invite && invite.status !== 'working') { invite.status = 'idle'; invite.doc = null; }
+        if (join && join.status !== 'working') { join.status = 'idle'; join.sent = false; }
       }
       prevUid = uid;
       if (me && fb) {
@@ -395,6 +396,7 @@ async function initAuth() {
       }
       authReadyResolve();
       maybeLoadInvite();
+      maybeLoadJoin();
       watchMyClubs();
       render();
     });
@@ -415,7 +417,7 @@ async function initSync() {
     rtdb = { db, mod: dbMod };
     // an invite and the list of my clubs are both read before any workspace,
     // because a device with neither code nor role is exactly who needs them
-    authReady.then(() => { maybeLoadInvite(); watchMyClubs(); });
+    authReady.then(() => { maybeLoadInvite(); maybeLoadJoin(); watchMyClubs(); });
 
     // appOwners is root-level and has nothing to do with any one workspace —
     // read it before a code even exists. A device with no workspace still
@@ -1227,6 +1229,75 @@ function sheetInvite() {
     <button class="btn wide" data-act="invitemake">Make the invite</button>`);
 }
 
+/* One invite, written where the rules want it: the invite itself, then the
+   admin's list. Throws if either is refused, so a caller making a squad's
+   worth stops at the first refusal instead of making fifteen half-invites. */
+async function writeInvite(t, role, p, email) {
+  const id = secretId(), at = nowMs();
+  /* What the invitee sees before joining. Club, team and who sent it — never
+     the child's name: the invite is readable by anyone holding the link, and a
+     link gets forwarded. The admin's own list can carry it; only admins read that. */
+  const doc = {
+    ws: wsCode(), team: t.id, teamName: t.name || '', role,
+    clubName: (acc().org || {}).name || '', by: me.uid, byName: me.name || '',
+    at, expiresAt: at + INVITE_DAYS * 864e5
+  };
+  if (p) { doc.player = p.id; if (p.number) doc.playerNo = String(p.number); }
+  if (email) doc.email = email;
+  const listed = { role: doc.role, team: doc.team, teamName: doc.teamName, by: doc.by, byName: doc.byName, at, expiresAt: doc.expiresAt };
+  if (p) { listed.playerName = p.name || ''; listed.player = p.id; }
+  if (email) listed.email = email;
+  await fb.set(fb.ref(fb.db, 'invites/' + id), doc);
+  await fb.set(fb.ref(fb.db, 'clubInvites/' + wsCode() + '/' + id), listed);
+  clubInv[id] = listed;
+  return { id, doc, listed };
+}
+
+/* A squad's parents, one link per family, in one go. Every player with no
+   parent linked yet and no open invite gets one; a player who already has an
+   open invite keeps it, so running this twice makes nothing new and the list
+   is also where an admin finds a link to send again. Personal links rather
+   than one team link: each works once and needs no approving — the team link
+   below is the other way in, for when typing fifteen texts is the problem. */
+const openParentInvite = (tid, p) => inviteList().find(v => v.role === 'parent' && v.team === tid && !v.used
+  && (v.expiresAt || 0) > nowMs() && (v.player ? v.player === p.id : v.playerName === p.name));
+const needsParent = (t, p) => p.active !== false && !Object.keys(p.guardians || {}).length;
+function sheetSquadInvites(tid) {
+  const t = state.teams[tid]; if (!t) return;
+  const list = players(t).filter(p => needsParent(t, p));
+  const missing = list.filter(p => !openParentInvite(tid, p));
+  const canShare = typeof navigator !== 'undefined' && typeof navigator.share === 'function';
+  const row = p => {
+    const v = openParentInvite(tid, p), link = v ? inviteLink(v.id) : '';
+    return `<div class="prow" style="grid-template-columns:auto 1fr auto">
+      <span class="pnum">${esc(p.number ?? '')}</span><span><span class="pname">${esc(p.name || '')}</span>
+        <span class="rowsub">${v ? `Link ready · until ${esc(new Date(v.expiresAt).toLocaleDateString())}` : 'No link yet'}</span></span>
+      <span class="row">${v ? `<button class="btn sm" data-act="copylink" data-v="${esc(link)}">Copy</button>
+        ${canShare ? `<button class="btn quiet sm" data-act="inviteshare" data-v="${esc(link)}">Share</button>` : ''}` : ''}</span></div>`;
+  };
+  openSheet(`<h3>Invite ${teamLabel(t)}'s parents</h3>
+    ${list.length ? `<p class="muted" style="margin-top:0">One link per family, for the ${list.length} player${list.length === 1 ? '' : 's'} with no parent linked yet. Each works once, for ${INVITE_DAYS} days, and makes whoever opens it that child's parent — so send each one to that family only.</p>
+      ${missing.length ? `<button class="btn wide" data-act="squadinvitego" data-tid="${tid}">Make ${missing.length} link${missing.length === 1 ? '' : 's'}</button>` : ''}
+      <div class="plist" style="margin-top:10px">${list.map(row).join('')}</div>`
+    : `<p class="muted">Every player on the squad has a parent linked.</p>`}
+    <button class="btn quiet wide" data-act="closesheet">Done</button>`);
+}
+async function inviteSquad(tid) {
+  const t = state.teams[tid];
+  if (!t || !canAdmin()) { toast('Club admins only'); return; }
+  if (!fb || !rtdb || !me) { toast(me ? 'Needs a connection to the database' : 'Sign in first'); return; }
+  const todo = players(t).filter(p => needsParent(t, p) && !openParentInvite(tid, p));
+  let n = 0;
+  for (const p of todo) {
+    try { await writeInvite(t, 'parent', p, ''); n++; } catch (e) {
+      toast(/permission|denied/i.test((e && e.code) || '') ? 'The database refused it — are the invite rules from README published?' : 'Stopped — no connection');
+      break;
+    }
+  }
+  if (n) logAccess('invited', null, { targetName: n + ' parent' + (n === 1 ? '' : 's') + ' by link', team: t.id, teamName: t.name || null });
+  sheetSquadInvites(tid);
+}
+
 async function makeInvite() {
   if (!canAdmin()) { toast('Club admins only'); return; }
   if (!fb || !rtdb || !me) { toast(me ? 'Needs a connection to the database' : 'Sign in first'); return; }
@@ -1239,28 +1310,12 @@ async function makeInvite() {
   const el = $('#invEmail');
   const email = ((el && el.value) || '').trim().toLowerCase();
   if (email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) { toast('That email does not look right'); return; }
-  const id = secretId(), at = nowMs();
-  /* What the invitee sees before joining. Club, team and who sent it — never
-     the child's name: the invite is readable by anyone holding the link, and a
-     link gets forwarded. The admin's own list can carry it; only admins read that. */
-  const doc = {
-    ws: wsCode(), team: t.id, teamName: t.name || '', role: f.role,
-    clubName: (acc().org || {}).name || '', by: me.uid, byName: me.name || '',
-    at, expiresAt: at + INVITE_DAYS * 864e5
-  };
-  if (p) { doc.player = p.id; if (p.number) doc.playerNo = String(p.number); }
-  if (email) doc.email = email;
-  const listed = { role: doc.role, team: doc.team, teamName: doc.teamName, by: doc.by, byName: doc.byName, at, expiresAt: doc.expiresAt };
-  if (p) listed.playerName = p.name || '';
-  if (email) listed.email = email;
-  try {
-    await fb.set(fb.ref(fb.db, 'invites/' + id), doc);
-    await fb.set(fb.ref(fb.db, 'clubInvites/' + wsCode() + '/' + id), listed);
-  } catch (e) {
+  let made;
+  try { made = await writeInvite(t, f.role, p, email); } catch (e) {
     toast(/permission|denied/i.test((e && e.code) || '') ? 'The database refused it — are the invite rules from README published?' : 'Could not make the invite');
     return;
   }
-  clubInv[id] = listed;
+  const { id, doc } = made;
   logAccess('invited', null, { targetName: (email || 'someone') + ' as ' + f.role, team: t.id, teamName: t.name || null });
   ui.inv = null;
   const link = inviteLink(id);
@@ -1274,6 +1329,285 @@ async function makeInvite() {
     <p class="muted">Firebase sends it, worded as a sign-in link rather than an invitation — worth a text to say it is coming.</p>` : ''}
     <button class="btn quiet wide" data-act="closesheet">Done</button>`);
   render();
+}
+
+/* ---------------- team links: parents ask, coaches approve ---------------- */
+/* AUTH.md's bulk path. One link per team, posted once in the team chat; each
+   parent signs in, types their child's shirt number, and a coach of the team
+   approves with a tap. A parent sees no names before that — the roster is the
+   thing being protected, and a link in a group chat travels.
+
+     joinCodes/{code}               what the link points at: club, team, and
+                                    names for the screen. Readable by id only,
+                                    like an invite. Grants nothing by itself.
+     claims/{code}/{teamId}/{uid}   a request: the shirt number and, if given,
+                                    the child's first name, to help the coach
+                                    match it. Its author and that team's coaches
+                                    and the admins read it.
+     teams/{teamId}/join            the team's current link, so its coaches can
+                                    show it again. "New link" deletes the old
+                                    code, which is how a link in last season's
+                                    chat stops working.
+
+   Approving is the coach's device doing what she can already do — link a
+   guardian, add to the parent list — plus one write she could not do before:
+   putting the parent in access/index. The rules let her only for someone with
+   an approved request on her own team, and the value is that team's id, which
+   is what the rule checks. Nobody waits on the parent's phone to come back. */
+const LS_JOIN = 'sm.join';
+let join = null;            // { code, status, doc, err } while a team link is being handled
+let claimsSeen = {};        // claims/{code}/{teamId}, for that team's coaches
+let claimFor = null, claimSubs = {};
+
+const joinLink = c => location.origin + location.pathname + '?join=' + encodeURIComponent(c);
+
+function captureJoin() {
+  try {
+    const q = new URLSearchParams(location.search || '');
+    const c = (q.get('join') || '').trim();
+    if (c) {
+      localStorage.setItem(LS_JOIN, JSON.stringify({ code: c }));
+      q.delete('join');
+      const rest = q.toString();
+      history.replaceState(null, '', location.pathname + (rest ? '?' + rest : '') + (location.hash || ''));
+    }
+    const held = JSON.parse(localStorage.getItem(LS_JOIN) || 'null');
+    join = held && held.code ? { code: held.code, status: 'idle', doc: held.doc || null, err: null, hidden: !!held.hidden } : null;
+  } catch (e) { join = null; }
+}
+function holdJoin() {
+  if (!join) return;
+  try { localStorage.setItem(LS_JOIN, JSON.stringify({ code: join.code, doc: join.doc, hidden: !!join.hidden })); } catch (e) { }
+}
+function dropJoin() {
+  try { localStorage.removeItem(LS_JOIN); } catch (e) { }
+  join = null;
+}
+
+/* Read the link, then the request this account may already have made with it
+   — a parent who comes back tomorrow should see "waiting", not the form. The
+   request is watched, not read once: approval arrives from somebody else's
+   phone, and this is how the parent's finds out. */
+function maybeLoadJoin() {
+  if (!join || !rtdb || !me || join.status !== 'idle') return;
+  const code = join.code, who = me.uid;
+  join.status = 'loading';
+  const { db, mod } = rtdb;
+  mod.onValue(mod.ref(db, 'joinCodes/' + code), s => {
+    if (!join || join.code !== code || !me || me.uid !== who) return;
+    const v = s.val();
+    if (!v) { join.status = join.doc && join.sent ? join.status : 'gone'; render(); return; }
+    join.doc = v; holdJoin();
+    if (wsCode() === v.ws && isGuardian(v.team, who)) { dropJoin(); toast(`You're already in ${v.teamName || 'that team'}`); render(); return; }
+    mod.onValue(mod.ref(db, `claims/${v.ws}/${v.team}/${who}`), cs => {
+      if (!join || join.code !== code || !me || me.uid !== who) return;
+      const c = cs.val();
+      if (c && c.approved) { joinApproved(v); return; }
+      if (c) { join.status = 'sent'; join.sent = true; }
+      else join.status = join.sent ? 'declined' : 'ready';
+      render();
+    }, () => { join.status = 'ready'; render(); });
+  }, err => {
+    if (!join || join.code !== code) return;
+    join.status = 'error'; join.err = (err && err.code) || String(err);
+    render();
+  }, { onlyOnce: true });
+  render();
+}
+
+/* Let in. The coach has done the granting; what is left is this account's
+   own bookkeeping, then the club. A device already using another club is not
+   switched out from under whoever is using it — the club goes on the account's
+   list instead, where the club switcher finds it. */
+async function joinApproved(v) {
+  const { db, mod } = rtdb, who = me.uid, soft = pr => Promise.resolve(pr).catch(() => { });
+  await soft(mod.set(mod.ref(db, 'userOrgs/' + who + '/' + v.ws), { name: v.clubName || '', at: nowMs() }));
+  await soft(mod.remove(mod.ref(db, `claims/${v.ws}/${v.team}/${who}`)));
+  dropJoin();
+  const here = wsCode();
+  if (!here || here === v.ws) {
+    try { localStorage.setItem(LS_WS, v.ws); } catch (e) { }
+    location.reload(); return;
+  }
+  toast(`You're in at ${v.clubName || 'the club'} — open it from the club switcher`);
+  render();
+}
+
+async function sendClaim() {
+  if (!join || !join.doc || !rtdb || !me) return;
+  const v = join.doc, who = me.uid;
+  const sEl = $('#joinShirt'), cEl = $('#joinChild');
+  const shirt = String((sEl && sEl.value) || '').trim().slice(0, 40);
+  const child = String((cEl && cEl.value) || '').trim().slice(0, 40);
+  if (!shirt) { toast('Type the shirt number'); return; }
+  const { db, mod } = rtdb;
+  const at = nowMs();
+  join.status = 'working'; render();
+  try {
+    // so a coach or admin sees who is asking, as they would anyone who signed in
+    await mod.set(mod.ref(db, `workspaces/${v.ws}/access/members/${who}`), { name: me.name || '', email: me.email || '', at });
+    await mod.set(mod.ref(db, `claims/${v.ws}/${v.team}/${who}`), {
+      code: join.code, shirt, ...(child ? { child } : {}), name: me.name || '', email: me.email || '', at
+    });
+  } catch (e) {
+    join.status = 'error';
+    join.err = /permission|denied/i.test((e && e.code) || '') ? 'The database refused it — the link may have been replaced. Ask the coach for the new one'
+      : ((e && e.code) || String(e));
+    render(); return;
+  }
+  join.status = 'sent'; join.sent = true; holdJoin(); render();
+}
+
+function joinScreen() {
+  const v = (join && join.doc) || {};
+  const club = esc(v.clubName || 'a club'), tm = esc(v.teamName || 'a team');
+  const later = `<button class="btn quiet" data-act="joinhide">Not now</button>`;
+  const box = (title, body, btns) => `<div class="stack"><div class="empty"><strong>${title}</strong>${body}
+    <div class="row" style="margin-top:14px;justify-content:center">${btns}</div></div></div>`;
+  const s = join.status;
+  if (!fbConfig().apiKey) return box('A team link', 'This copy of the app is not connected to a database, so it cannot use one.', `<button class="btn quiet" data-act="joindrop">OK</button>`);
+  if (!me) return box('Join your child’s team',
+    'Sign in first. Use the account you want to keep — it is the one the coaches will know you by.',
+    `<button class="btn" data-act="signinsheet">Sign in</button>${later}`);
+  if (s === 'idle' || s === 'loading') return box('Opening the team link…', 'This needs a signal. It will carry on by itself once there is one.', later);
+  if (s === 'working') return box('Sending…', `Asking the coaches of ${tm}.`, '');
+  if (s === 'gone') return box('That team link no longer works',
+    'The coach has made a new one. Ask them for the latest link.', `<button class="btn" data-act="joindrop">OK</button>`);
+  if (s === 'error') return box('Something went wrong', `${esc(join.err || '')}. Check the signal and try again.`,
+    `<button class="btn" data-act="joinretry">Try again</button>${later}`);
+  if (s === 'sent') return box(`Waiting for a coach of ${tm}`,
+    `Your request to join ${club} is with the team's coaches. Once one of them lets you in, this opens the club by itself — you can close it meanwhile.`,
+    `<button class="btn quiet" data-act="joincancel">Cancel the request</button>${later}`);
+  if (s === 'declined') return box('Not approved',
+    `A coach of ${tm} did not approve the request. If that is a mistake, check the shirt number with them and ask again.`,
+    `<button class="btn" data-act="joinagain">Ask again</button><button class="btn quiet" data-act="joindrop">OK</button>`);
+  return `<div class="stack"><div class="card">
+    <h2>Join ${tm}</h2>
+    <p class="muted" style="margin-top:4px">${club} · as a parent. You are signed in as <b>${esc(me.email || me.name)}</b>.</p>
+    <label class="field"><span>Your child's shirt number</span><input type="text" inputmode="numeric" id="joinShirt" maxlength="40" placeholder="7 — or 7, 12 for two"></label>
+    <label class="field"><span>Their first name — optional, helps the coach</span><input type="text" id="joinChild" maxlength="40" autocomplete="off"></label>
+    <p class="muted">A coach of the team checks this and lets you in. You see nothing of the team until then.</p>
+    <div class="row"><button class="btn" data-act="joinsend">Send to the coaches</button>${later}</div>
+  </div></div>`;
+}
+
+/* ---- the coach's side ---- */
+async function makeJoinCode(tid) {
+  const t = state.teams[tid];
+  if (!t || !mayGrant(tid)) { toast('Club admins and that team’s coaches only'); return; }
+  if (!fb || !me) { toast(me ? 'Needs a connection to the database' : 'Sign in first'); return; }
+  const code = secretId().replace(/^i/, 'j'), at = nowMs(), old = (t.join || {}).code;
+  try {
+    await fb.set(fb.ref(fb.db, 'joinCodes/' + code), {
+      ws: wsCode(), team: tid, teamName: t.name || '', clubName: (acc().org || {}).name || '',
+      by: me.uid, byName: me.name || '', at
+    });
+  } catch (e) {
+    toast(/permission|denied/i.test((e && e.code) || '') ? 'The database refused it — are the team link rules from README published?' : 'Could not make the link');
+    return;
+  }
+  if (old) Promise.resolve(fb.remove(fb.ref(fb.db, 'joinCodes/' + old))).catch(() => { });
+  commit(`teams/${tid}/join`, { code, at, by: me.uid });
+  logAccess(old ? 'replaced the team link' : 'made a team link', null, { team: tid, teamName: t.name || null });
+  toast(old ? 'New link made — the old one has stopped working' : 'Team link made');
+}
+
+/* Requests for the teams this account may approve on. Same shape as the
+   message watchers: attach what the roles call for, drop what they no longer
+   do, start over on a change of club or account. */
+function watchClaims() {
+  const key = me && rtdb && fb && wsCode() && !needsSignIn() ? clubKey() + '|' + me.uid : null;
+  if (key !== claimFor) {
+    for (const off of Object.values(claimSubs)) { try { off(); } catch (e) { } }
+    claimSubs = {}; claimsSeen = {}; claimFor = key;
+  }
+  if (!key) return;
+  const want = {};
+  for (const t of teams()) if (mayGrant(t.id)) want[`claims/${wsCode()}/${t.id}`] = t.id;
+  for (const p of Object.keys(claimSubs)) if (!want[p]) { try { claimSubs[p](); } catch (e) { } delete claimSubs[p]; }
+  const { db, mod } = rtdb;
+  for (const [p, tid] of Object.entries(want)) {
+    if (claimSubs[p]) continue;
+    let off = null;
+    claimSubs[p] = () => { if (off) off(); };
+    off = mod.onValue(mod.ref(db, p), s => { claimsSeen[tid] = s.val() || {}; render(); }, () => { });
+    if (typeof off !== 'function') off = null;
+  }
+}
+const pendingClaims = tid => Object.entries(claimsSeen[tid] || {}).filter(([, c]) => c && !c.approved)
+  .map(([u, c]) => ({ uid: u, ...c })).sort((a, b) => (a.at || 0) - (b.at || 0));
+// the shirt numbers a request names, matched to the squad; never a guess beyond that
+function claimMatches(t, c) {
+  const nums = String(c.shirt || '').split(/[^0-9A-Za-z]+/).map(x => x.trim().toLowerCase()).filter(Boolean);
+  return players(t).filter(p => p.active !== false && nums.includes(String(p.number ?? '').trim().toLowerCase()));
+}
+
+async function approveClaim(tid, u, pids) {
+  const t = state.teams[tid];
+  if (!t || !mayGrant(tid)) { toast('Club admins and that team’s coaches only'); return; }
+  const c = (claimsSeen[tid] || {})[u];
+  const picked = pids.filter(pid => (t.players || {})[pid]);
+  if (!c || !picked.length) { toast('Pick their child'); return; }
+  const at = nowMs();
+  try {
+    // first, because the index rule looks for it
+    await fb.set(fb.ref(fb.db, `claims/${wsCode()}/${tid}/${u}/approved`), { by: me.uid, at, players: Object.fromEntries(picked.map(x => [x, true])) });
+  } catch (e) {
+    toast(/permission|denied/i.test((e && e.code) || '') ? 'The database refused it — are the team link rules from README published?' : 'Not approved — no connection');
+    return;
+  }
+  setDeep(claimsSeen, `${tid}/${u}/approved`, { by: me.uid, at });
+  for (const pid of picked) if (!(((t.players[pid] || {}).guardians) || {})[u]) commit(`teams/${tid}/players/${pid}/guardians/${u}`, true);
+  // the team id, not `true`: that is what the rule checks a coach's write against
+  if (!(acc().index || {})[u]) quiet(`access/index/${u}`, tid);
+  if (!(acc().members || {})[u]) quiet(`access/members/${u}`, { name: c.name || '', email: c.email || '', at: c.at || at });
+  syncTeamParents(tid);
+  logAccess('approved as parent', u, { team: tid, teamName: t.name || null, player: picked.map(x => t.players[x].name).join(', ') });
+  saveLocal(); render();
+  toast(`${c.name || c.email || 'They'} can open the team now`);
+}
+function declineClaim(tid, u) {
+  if (!mayGrant(tid)) { toast('Club admins and that team’s coaches only'); return; }
+  if (!confirm('Turn this request down? They can ask again.')) return;
+  delete (claimsSeen[tid] || {})[u];
+  Promise.resolve(fb.remove(fb.ref(fb.db, `claims/${wsCode()}/${tid}/${u}`))).catch(() => toast('Not removed — no connection'));
+  render();
+}
+
+/* On Squad, for whoever can let people in: the team link, the requests that
+   came through it, and — admins — a personal link per family. */
+function joinCard(t) {
+  if (!mayGrant(t.id) || !fbConfig().apiKey || !anyAdmins()) return '';
+  const j = t.join, link = j && j.code ? joinLink(j.code) : '';
+  const canShare = typeof navigator !== 'undefined' && typeof navigator.share === 'function';
+  const reqs = pendingClaims(t.id);
+  const pick = ui.claimPick || {};
+  const req = c => {
+    const m = claimMatches(t, c);
+    const chosen = (pick[c.uid] || m.map(p => p.id)).filter(pid => (t.players || {})[pid]);
+    return `<div class="claim">
+      <div><b>${esc(c.name || c.email || 'Someone')}</b>${c.email && c.name ? ` <span class="muted">${esc(c.email)}</span>` : ''}</div>
+      <div class="rowsub">Says: #${esc(c.shirt)}${c.child ? ' · ' + esc(c.child) : ''} · ${esc(whenShort(c.at))}</div>
+      <div class="chips" style="margin:8px 0">${players(t).filter(p => p.active !== false).map(p =>
+      chosen.includes(p.id) || m.some(x => x.id === p.id) || pick['all:' + c.uid]
+        ? `<button class="chip" type="button" data-act="claimpick" data-uid="${esc(c.uid)}" data-pid="${p.id}" aria-pressed="${chosen.includes(p.id)}">${chipName(p)}</button>` : '').join('')}
+        <button class="chip" type="button" data-act="claimall" data-uid="${esc(c.uid)}">${pick['all:' + c.uid] ? 'Fewer' : m.length ? 'Someone else' : 'Pick from the squad'}</button></div>
+      ${!m.length ? '<p class="muted" style="margin:0 0 8px">No player on the squad has that number — check with them before letting them in.</p>' : ''}
+      <div class="row"><button class="btn sm" data-act="claimok" data-tid="${t.id}" data-uid="${esc(c.uid)}"${chosen.length ? '' : ' disabled'}>Let in as parent${chosen.length ? ' of ' + chosen.map(pid => esc(t.players[pid].name || '')).join(' & ') : ''}</button>
+        <button class="btn quiet sm" data-act="claimno" data-tid="${t.id}" data-uid="${esc(c.uid)}">Turn down</button></div></div>`;
+  };
+  const without = players(t).filter(p => needsParent(t, p)).length;
+  return `<div class="card">
+    <div class="spread"><h2>Parents</h2>${reqs.length ? `<span class="pill asking">${reqs.length} asking</span>` : ''}</div>
+    ${reqs.length ? `<div class="claims">${reqs.map(req).join('')}</div>` : ''}
+    <p class="muted" style="margin:8px 0">${link ? 'Post this link in the team chat. Parents sign in, type their child’s shirt number, and wait for you to let them in here.' : 'One link for the whole team: parents sign in, type their child’s shirt number, and you let them in here with a tap.'}</p>
+    ${link ? `<div class="codebox">${esc(link)}</div>
+      <div class="row" style="margin-bottom:8px"><button class="btn sm" data-act="copylink" data-v="${esc(link)}">Copy link</button>
+      ${canShare ? `<button class="btn quiet sm" data-act="inviteshare" data-v="${esc(link)}">Share…</button>` : ''}
+      <button class="btn quiet sm" data-act="joinnew" data-tid="${t.id}">New link</button></div>`
+    : `<button class="btn wide" data-act="joinnew" data-tid="${t.id}">Make a team link</button>`}
+    ${canAdmin() ? `<button class="btn quiet wide" data-act="squadinvites" data-tid="${t.id}">Or a personal link per family${without ? ` (${without} without a parent)` : ''}</button>` : ''}
+  </div>`;
 }
 
 /* ---------------- messages ---------------- */
@@ -2927,7 +3261,8 @@ function render() {
      The crumbs are chrome, but they carry the club and the team name, so a lock
      screen with the crumbs still drawn has leaked most of what there was. */
   const inviting = !!invite;
-  const shut = inviting || !!purged || denied || needsSignIn();
+  const joining = !inviting && !!join && !join.hidden;
+  const shut = inviting || joining || !!purged || denied || needsSignIn();
   const t = team();
   if (!t && teams().length) { ui.teamId = teams()[0].id; }
   const vis = myTeams();
@@ -2984,6 +3319,7 @@ function render() {
   const v = ui.view;
   paintBell(shut);
   if (inviting) { app.innerHTML = inviteScreen(); saveUi(); watchMessages(); return; }
+  if (joining) { app.innerHTML = joinScreen(); saveUi(); watchMessages(); return; }
   if (purged) { app.innerHTML = purgedScreen(); saveUi(); watchMessages(); return; }
   if (denied || needsSignIn()) { app.innerHTML = lockScreen(); saveUi(); watchMessages(); return; }
   const roNote = lim === 'viewer' && team()
@@ -3005,7 +3341,10 @@ function render() {
      a parent, a coach reading another team — falls all the way through the chain
      to the games list the moment they open a game. A tracker could not reach the
      Track tab at all, which is the only screen her role exists for. */
-  app.innerHTML = envNote + roleNote + roNote + (
+  // a request still waiting, from a team link put aside with "Not now"
+  const joinNote = join && join.hidden && join.status === 'sent'
+    ? `<div class="rolebar">Waiting for a coach of <b>${esc((join.doc || {}).teamName || 'a team')}</b> to let you in. <button class="linkbtn dark" data-act="joinshow">Open</button></div>` : '';
+  app.innerHTML = envNote + joinNote + roleNote + roNote + (
     v === 'game' ? (g === 'track' ? viewTrack() : g === 'stats' ? viewStats() : g === 'pitch' ? viewMatch() : g === 'plan' ? viewPlan() : g === 'subs' ? viewSubs() : viewFeed()) :
       v === 'roster' ? viewRoster() :
         v === 'season' ? viewSeason() :
@@ -3021,6 +3360,7 @@ function render() {
   paintBell();
   // last, because a listener that answers at once from its cache renders again
   watchMessages();
+  watchClaims();
 }
 
 /* Shown when the rules refuse us. Deliberately not a dead end: both the code and
@@ -4361,6 +4701,7 @@ function viewRoster() {
     `<div class="empty"><strong>No players yet</strong>${ro ? "The team's coach adds the squad." : 'Add the squad once; every game reuses it.'}</div>`;
   return `<div class="stack">
     <div class="spread"><h2>${esc(t.name)}</h2><span class="muted">${list.length} players</span></div>
+    ${ro ? '' : joinCard(t)}
     ${ro ? '' : `<div class="card"><div class="row" style="align-items:flex-end">
       <div style="width:76px"><label class="field"><span>Number</span><input type="number" inputmode="numeric" id="newNum" placeholder="7"></label></div>
       <div style="flex:1"><label class="field"><span>Name</span><input type="text" id="newName" placeholder="Ella Moreno"></label></div>
@@ -6429,6 +6770,41 @@ function onAct(e) {
   if (a === 'inviteaccept') { redeemInvite(); return; }
   if (a === 'inviteretry') { if (invite) { invite.status = 'idle'; invite.err = null; maybeLoadInvite(); } return; }
   if (a === 'invitedismiss') { dropInvite(); render(); return; }
+  /* team links. The parent's side acts only on her own request; the coach's
+     side checks mayGrant() in each function, not just by what Squad drew. */
+  if (a === 'joinsend') { sendClaim(); return; }
+  if (a === 'joinhide') { if (join) { join.hidden = true; holdJoin(); } if (join && !join.sent) dropJoin(); render(); return; }
+  if (a === 'joinshow') { if (join) { join.hidden = false; holdJoin(); } render(); return; }
+  if (a === 'joindrop') { dropJoin(); render(); return; }
+  if (a === 'joinretry' || a === 'joinagain') { if (join) { join.status = 'idle'; join.sent = false; join.err = null; maybeLoadJoin(); } return; }
+  if (a === 'joincancel') {
+    if (!join || !join.doc || !rtdb || !me) return;
+    const v = join.doc;
+    join.sent = false;
+    Promise.resolve(rtdb.mod.remove(rtdb.mod.ref(rtdb.db, `claims/${v.ws}/${v.team}/${me.uid}`))).catch(() => { });
+    dropJoin(); toast('Request cancelled'); render(); return;
+  }
+  if (a === 'joinnew') {
+    const t2 = state.teams[d.tid];
+    if (t2 && t2.join && !confirm('Make a new link? The current one stops working — anyone still to use it will need the new one.')) return;
+    makeJoinCode(d.tid); return;
+  }
+  if (a === 'squadinvites') { if (!canAdmin()) { toast('Club admins only'); return; } sheetSquadInvites(d.tid); return; }
+  if (a === 'squadinvitego') { inviteSquad(d.tid); return; }
+  if (a === 'claimpick') {
+    const t2 = team(); const c = t2 && (claimsSeen[t2.id] || {})[d.uid]; if (!c) return;
+    const pk = ui.claimPick = ui.claimPick || {};
+    const cur = pk[d.uid] || claimMatches(t2, c).map(p => p.id);
+    pk[d.uid] = cur.includes(d.pid) ? cur.filter(x => x !== d.pid) : cur.concat(d.pid);
+    render(); return;
+  }
+  if (a === 'claimall') { const pk = ui.claimPick = ui.claimPick || {}; pk['all:' + d.uid] = !pk['all:' + d.uid]; render(); return; }
+  if (a === 'claimok') {
+    const t2 = state.teams[d.tid]; const c = t2 && (claimsSeen[d.tid] || {})[d.uid]; if (!c) return;
+    const pk = (ui.claimPick || {})[d.uid] || claimMatches(t2, c).map(p => p.id);
+    approveClaim(d.tid, d.uid, pk); return;
+  }
+  if (a === 'claimno') { declineClaim(d.tid, d.uid); return; }
   if (a === 'claimadmin') {
     if (!me) { toast('Sign in first'); return; }
     if (anyAdmins()) { toast('Someone already claimed it'); return; }
@@ -7145,6 +7521,7 @@ if (typeof window !== 'undefined' && window.addEventListener) {
 
 /* ---------------- boot ---------------- */
 captureInvite();
+captureJoin();
 loadLocal();
 /* Provisional, so an offline device renders for the person who was using it
    rather than sitting on a lock screen. onAuthStateChanged overwrites it either

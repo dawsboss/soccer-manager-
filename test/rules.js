@@ -682,6 +682,86 @@ reads('owners are not world-readable', OUT, 'shareOwners/sh1', false);
   delete A.teamParents; delete A.index.dad; DB.workspaces.CLUB.teams.t2.players = {};
 }
 
+/* ---------------- team links ---------------- */
+
+/* One link per team; a parent asks with a shirt number and a coach lets her
+   in. The link grants nothing. What has to hold is that nobody but a coach of
+   that team (or an admin) approves, and that approving is the only new way
+   into access/index — for the person who asked, on that coach's team. */
+{
+  const A = DB.workspaces.CLUB.access;
+  DB.joinCodes = {
+    jc1: { ws: 'CLUB', team: 't1', teamName: 'Flight', by: 'coach', at: NOW },
+    jc2: { ws: 'CLUB', team: 't2', teamName: 'Storm', by: 'other', at: NOW }
+  };
+  DB.claims = { CLUB: { t1: {
+    asker: { code: 'jc1', shirt: '7', at: NOW },
+    ok: { code: 'jc1', shirt: '9', at: NOW, approved: { by: 'coach', at: NOW } }
+  } } };
+  const ASKER = { uid: 'asker' }, OK = { uid: 'ok' };
+  const link = (by, ws, team) => ({ ws, team, by, at: NOW });
+  const ask = (code, extra) => ({ code, shirt: '7', at: NOW, ...(extra || {}) });
+
+  console.log('\n--- making a team link ---');
+  writes('its coach makes one', COACH, 'joinCodes/new', link('coach', 'CLUB', 't1'), true);
+  writes('an admin makes one for any team', ADM, 'joinCodes/new', link('adm', 'CLUB', 't2'), true);
+  writes('a coach not for another team', COACH, 'joinCodes/new', link('coach', 'CLUB', 't2'), false);
+  writes('nor stamped as someone else', COACH, 'joinCodes/new', link('adm', 'CLUB', 't1'), false);
+  writes('a parent cannot', MUM, 'joinCodes/new', link('mum', 'CLUB', 't1'), false);
+  writes('an unknown account cannot', RANDO, 'joinCodes/new', link('rando', 'CLUB', 't1'), false);
+  writes('nobody edits one in place', COACH, 'joinCodes/jc1/team', 't2', false);
+  writes('its coach retires it', COACH, 'joinCodes/jc1', null, true);
+  writes('another team\'s coach cannot', OTHER, 'joinCodes/jc1', null, false);
+  reads('whoever holds the link reads it', RANDO, 'joinCodes/jc1', true);
+  reads('signed out cannot', OUT, 'joinCodes/jc1', false);
+  reads('and nobody lists them', ADM, 'joinCodes', false);
+
+  console.log('\n--- asking to join ---');
+  writes('anyone signed in asks, with a live link', RANDO, 'claims/CLUB/t1/rando', ask('jc1'), true);
+  writes('not with a link that does not exist', RANDO, 'claims/CLUB/t1/rando', ask('nope'), false);
+  writes('not with another team\'s link', RANDO, 'claims/CLUB/t1/rando', ask('jc2'), false);
+  writes('not in somebody else\'s name', RANDO, 'claims/CLUB/t1/newbie', ask('jc1'), false);
+  writes('not approved by herself', RANDO, 'claims/CLUB/t1/rando', ask('jc1', { approved: { by: 'rando' } }), false);
+  writes('nor approve an existing one', ASKER, 'claims/CLUB/t1/asker/approved', { by: 'asker', at: NOW }, false);
+  writes('a shirt number is needed', RANDO, 'claims/CLUB/t1/rando', ask('jc1', { shirt: '' }), false);
+  writes('she withdraws her own', ASKER, 'claims/CLUB/t1/asker', null, true);
+  writes('and tidies it away once approved', OK, 'claims/CLUB/t1/ok', null, true);
+  writes('but cannot rewrite it once approved', OK, 'claims/CLUB/t1/ok/shirt', '12', false);
+  reads('she reads her own', ASKER, 'claims/CLUB/t1/asker', true);
+  reads('not anybody else\'s', ASKER, 'claims/CLUB/t1/ok', false);
+  reads('nor the list', ASKER, 'claims/CLUB/t1', false);
+  reads('the team\'s coach reads the list', COACH, 'claims/CLUB/t1', true);
+  reads('an admin does', ADM, 'claims/CLUB/t1', true);
+  reads('a coach of another team does not', OTHER, 'claims/CLUB/t1', false);
+  reads('a parent does not', MUM, 'claims/CLUB/t1', false);
+
+  console.log('\n--- approving ---');
+  const yes = by => ({ by, at: NOW, players: { p1: true } });
+  writes('its coach approves', COACH, 'claims/CLUB/t1/asker/approved', yes('coach'), true);
+  writes('an admin approves', ADM, 'claims/CLUB/t1/asker/approved', yes('adm'), true);
+  writes('not stamped as someone else', COACH, 'claims/CLUB/t1/asker/approved', yes('adm'), false);
+  writes('another team\'s coach cannot', OTHER, 'claims/CLUB/t1/asker/approved', yes('other'), false);
+  writes('the tracker cannot', TRK, 'claims/CLUB/t1/asker/approved', yes('trk'), false);
+  writes('nor a parent', MUM, 'claims/CLUB/t1/asker/approved', yes('mum'), false);
+  writes('nobody approves a request nobody made', COACH, 'claims/CLUB/t1/ghost/approved', yes('coach'), false);
+  writes('a coach cannot make a request up', COACH, 'claims/CLUB/t1/ghost', ask('jc1'), false);
+  writes('she turns one down', COACH, 'claims/CLUB/t1/asker', null, true);
+  writes('another team\'s coach cannot', OTHER, 'claims/CLUB/t1/asker', null, false);
+
+  console.log('\n--- what approving lets a coach write ---');
+  writes('index for the parent she approved', COACH, 'workspaces/CLUB/access/index/ok', 't1', true);
+  writes('not for one still waiting', COACH, 'workspaces/CLUB/access/index/asker', 't1', false);
+  writes('not for anybody else', COACH, 'workspaces/CLUB/access/index/rando', 't1', false);
+  writes('not naming another team', COACH, 'workspaces/CLUB/access/index/ok', 't2', false);
+  writes('another team\'s coach cannot use her approval', OTHER, 'workspaces/CLUB/access/index/ok', 't1', false);
+  writes('nor can the parent index herself with it', OK, 'workspaces/CLUB/access/index/ok', 't1', false);
+  writes('she links the guardian, as before', COACH, 'workspaces/CLUB/teams/t1/players/p1/guardians/ok', true, true);
+  console.log('  ^ the one new way into the index: a request to her own team that she');
+  console.log('    approved. A coach still cannot let in anyone who did not ask.');
+
+  delete DB.joinCodes; delete DB.claims;
+}
+
 /* The open rules carry the same root blocks, so invites and messages work
    before a club is locked down. One copy drifting from the other would mean an
    invite or a message that works today stops working on lockdown day. */
@@ -689,7 +769,7 @@ reads('owners are not world-readable', OUT, 'shareOwners/sh1', false);
   const open = jsonBlocks().map(r => { try { return JSON.parse(r); } catch (e) { return null; } })
     .find(d => d && d.rules && d.rules.workspaces && d.rules.workspaces.$code['.write'] === true);
   console.log('\n--- the open rules ---');
-  for (const k of ['invites', 'clubInvites', 'userOrgs', 'board', 'dm'])
+  for (const k of ['invites', 'clubInvites', 'userOrgs', 'board', 'dm', 'joinCodes', 'claims'])
     check(k + ' matches the locked-down block', !!open && JSON.stringify(open.rules[k]) === JSON.stringify(RULES[k]), true);
 }
 

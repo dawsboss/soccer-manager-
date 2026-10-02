@@ -8,6 +8,31 @@ before this point lives only in the git log.
 
 ---
 
+## Parents join a whole squad at a time — 2026-10-02
+
+A parent could only arrive by a personal invite, made by an admin one sheet
+at a time — fifteen trips through *Invite someone* for one squad, and every
+team's landing on the admin. The team's **Squad** tab now has a **Parents**
+card with two ways to do it in bulk:
+
+- **One team link.** Its coach posts it in the team chat. Each parent signs in,
+  types their child's shirt number, and waits; the request appears on Squad
+  with the player that number matches already picked, and **Let in** is one
+  tap. That is AUTH.md's "parents claim, coaches approve" path. The parent sees
+  no names before she is let in, because a link in a group chat travels, and
+  her phone opens the club by itself the moment she is approved. **New link**
+  kills the old one.
+- **A personal link per family**, for admins: one tap makes a parent invite for
+  every player with no parent yet, and lists them to copy or share. Running it
+  twice makes nothing new.
+
+Approving needed one new permission, and it is narrow on purpose: a team's
+coach may now put someone in `access/index`, but only someone whose request
+to *her* team she has approved, with that team's id as the value the rule
+checks. Before, only admins could let anybody in. README has the `joinCodes`
+and `claims` blocks and the new clause; `test/rules.js` and `test/join.js`
+pin both sides.
+
 ## Messages: team notices, and families talking to their coaches — 2026-10-01
 
 Everything a club says to its parents happened somewhere else — a group chat,

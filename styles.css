@@ -639,3 +639,9 @@ table.grid td.right{text-align:right}
 .bubble .btext{display:block;overflow-wrap:anywhere}
 .bubble .bwhen{display:block;font-size:11.5px;color:var(--ink-soft);margin-top:2px}
 #msgText,#postText{width:100%}
+
+/* ---------- team links ---------- */
+.claims{display:flex;flex-direction:column;gap:10px;margin-top:8px}
+.claim{border:1px solid var(--line);border-radius:var(--r);padding:10px 12px;background:var(--owed-wash)}
+.claim .btn[disabled]{opacity:.5;cursor:not-allowed}
+.pill.asking{display:inline-block;padding:1px 9px;border-radius:999px;font-size:12.5px;font-weight:700;background:var(--owed);color:#fff}
