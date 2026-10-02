@@ -7,9 +7,12 @@
    clause while every write is refused, so the club goes read-only and nobody
    finds out until someone tries to make a sub at a game.
 
-   So this reads the rules JSON straight out of README.md rather than keeping a
-   copy. What is tested is the artifact you actually paste into the console; a
-   copy would drift from it, and a rules test that drifts is worse than none.
+   So this reads the rules from the files you actually paste —
+   database.rules.json (locked down) and database.rules.open.json (the starter
+   set) — rather than keeping a copy. They used to live as code blocks inside
+   README.md, and this test parsed them out of the prose; a file is what you
+   copy from and what a commit diff shows, so the file is the artifact now and
+   README only explains it.
 
    Exits non-zero when an expectation fails. */
 
@@ -18,53 +21,41 @@ const path = require('path');
 
 const README = fs.readFileSync(path.join(__dirname, '..', 'README.md'), 'utf8');
 
-/* ---------------- pulling the rules out of README ---------------- */
+/* ---------------- the rules files, and README's excerpts of them ---------------- */
 
-/* README carries several fenced JSON blocks: the open rules to start with, the
-   locked-down set, and two fragments to paste alongside it. Pick them by what
-   they contain rather than by position, so reordering the prose cannot silently
-   start testing the wrong block. */
+const ROOT = path.join(__dirname, '..');
+const readJson = f => JSON.parse(fs.readFileSync(path.join(ROOT, f), 'utf8'));
+
 function jsonBlocks() {
   return [...README.matchAll(/```json\n([\s\S]*?)```/g)].map(m => m[1]);
 }
 
+/* Three things can go wrong with two rule sets and a README, and each one is
+   silent until a club is refused something: a full ruleset copied back into
+   README and edited there instead of in the file; an excerpt in README that
+   explains a block which no longer looks like that; and firebase.json pointing
+   the CLI at some other file. Each is a hard failure. (The blocks the open and
+   locked sets share are checked case by case under "the open rules".) */
 function loadRules() {
-  let full = null;
-  const fragments = {};
-  let complete = null;
+  const locked = readJson('database.rules.json').rules;
+  readJson('database.rules.open.json');          // it has to parse, at least
   for (const raw of jsonBlocks()) {
     let doc = null;
     try { doc = JSON.parse(raw); } catch (e) { }
-    if (doc && doc.rules) {
-      // the block README tells you to paste carries every tier at once
-      if (raw.includes('access/index') && raw.includes('appOwners')) complete = doc.rules;
-      else if (raw.includes('access/index')) full = doc.rules;
-      continue;
-    }
+    if (doc && doc.rules) throw new Error('README.md carries a whole ruleset again. The rules live in database.rules.json and database.rules.open.json; change them there and point README at the file.');
     // a fragment is a bare "key": { ... } pair, valid JSON once wrapped
-    try {
-      const frag = JSON.parse('{' + raw + '}');
-      for (const k of Object.keys(frag)) fragments[k] = frag[k];
-    } catch (e) { }
+    let frag = null;
+    try { frag = JSON.parse('{' + raw + '}'); } catch (e) { }
+    // only excerpts of rules: README also shows the appOwners *data* you add by hand
+    const isRule = v => v && typeof v === 'object' && Object.keys(v).some(x => x[0] === '.' || x[0] === '$');
+    for (const k of ['retired', 'appOwners'])
+      if (frag && isRule(frag[k]) && JSON.stringify(frag[k]) !== JSON.stringify(locked[k]))
+        throw new Error('README\'s "' + k + '" example no longer matches database.rules.json');
   }
-  /* Prefer the single complete block README says to paste, so the test and the
-     artifact are the same text. The fragments shown elsewhere in README are
-     explanation; assert they still match what the complete block says, or the
-     prose and the thing you publish can drift apart without anyone noticing. */
-  if (complete) {
-    for (const k of ['retired', 'appOwners']) {
-      if (!fragments[k]) continue;
-      if (JSON.stringify(fragments[k]) !== JSON.stringify(complete[k]))
-        throw new Error('README\'s "' + k + '" example no longer matches the complete ruleset');
-    }
-    return complete;
-  }
-  if (!full) throw new Error('could not find the rules block in README.md');
-  for (const k of ['retired', 'appOwners']) {
-    if (fragments[k]) full[k] = fragments[k];
-    else console.log('  note: no "' + k + '" fragment found in README');
-  }
-  return full;
+  const firebase = readJson('firebase.json');
+  if (((firebase.database || {}).rules) !== 'database.rules.json')
+    throw new Error('firebase.json no longer points at database.rules.json, so `firebase deploy --only database` would publish something else');
+  return locked;
 }
 
 const RULES = loadRules();
@@ -226,7 +217,7 @@ const DB = {
         log: { e1: { at: 1, act: 'made coach', by: 'adm', target: 'coach' } }
       },
       teams: {
-        t1: { id: 't1', name: 'Flight', players: { p1: { id: 'p1', name: 'Ella', guardians: { mum: true } } } },
+        t1: { id: 't1', name: 'Flight', players: { p1: { id: 'p1', name: 'Ella', guardians: { mum: true } }, p2: { id: 'p2', name: 'Rosa' } } },
         t2: { id: 't2', name: 'Storm', players: {} }
       },
       matches: { g1: { id: 'g1', teamId: 't1', opponent: 'Riverside' }, g2: { id: 'g2', teamId: 't2', opponent: 'Athletic' } }
@@ -296,6 +287,62 @@ writes('a parent does not', MUM, 'workspaces/CLUB/teams/t1/name', 'Flight B', fa
 writes('nor delete the whole team', MUM, 'workspaces/CLUB/teams/t1', null, false);
 writes('registered but unroled', NEWB, 'workspaces/CLUB/teams/t1/name', 'Flight B', false);
 writes('signed out', OUT, 'workspaces/CLUB/teams/t1/name', 'Flight B', false);
+
+console.log('\n--- the calendar: under the team, so the team rule decides ---');
+{
+  /* Practices and other entries live at teams/{tid}/events/{eid}, below the
+     rule on $tid, so the calendar needed no rule of its own. These pin that:
+     the same people who may change the squad may change the calendar, one
+     entry at a time, and nobody else. */
+  const ev = { id: 'e1', kind: 'practice', title: 'Practice', date: '2026-09-15', start: '18:00', public: false };
+  writes('its coach adds a practice', COACH, 'workspaces/CLUB/teams/t1/events/e1', ev, true);
+  writes('an admin adds one to any team', ADM, 'workspaces/CLUB/teams/t2/events/e1', ev, true);
+  writes('its coach calls one off', COACH, 'workspaces/CLUB/teams/t1/events/e1/called', 'cancelled', true);
+  writes('a tracker cannot', TRK, 'workspaces/CLUB/teams/t1/events/e1', ev, false);
+  writes('a parent cannot', MUM, 'workspaces/CLUB/teams/t1/events/e1', ev, false);
+  writes('nor call one off', MUM, 'workspaces/CLUB/teams/t1/events/e1/called', 'cancelled', false);
+  writes('another team\'s coach cannot', OTHER, 'workspaces/CLUB/teams/t1/events/e1', ev, false);
+  writes('signed out cannot', OUT, 'workspaces/CLUB/teams/t1/events/e1', ev, false);
+  writes('the whole calendar at once is a team write, still the coach\'s', COACH, 'workspaces/CLUB/teams/t1/events', { e1: ev }, true);
+  // the register sits beside the entries, under the same team rule
+  writes('its coach takes the register', COACH, 'workspaces/CLUB/teams/t1/attend/e1', { p1: true }, true);
+  writes('a parent cannot', MUM, 'workspaces/CLUB/teams/t1/attend/e1', { p1: true }, false);
+  writes('nor a tracker', TRK, 'workspaces/CLUB/teams/t1/attend/e1', { p1: true }, false);
+  writes('nor another team\'s coach', OTHER, 'workspaces/CLUB/teams/t1/attend/e1', { p1: true }, false);
+  reads('a parent reads it with the rest of the club', MUM, 'workspaces/CLUB/teams/t1/events/e1', true);
+  writes('and the published copy takes a calendar', COACH, 'public/sh1/events', { e2: { kind: 'event', title: 'Team photo', date: '2026-09-20' } }, true);
+  writes('with the whole mirror in one write too', COACH, 'public/sh1', { team: { name: 'Flight' }, games: { g1: { status: 'upcoming', called: 'cancelled', home: 'away' } }, events: { e2: { kind: 'event', date: '2026-09-20' } }, record: { w: 0 }, updated: 1 }, true);
+}
+
+console.log('\n--- who is coming: a parent for her own child, a coach for anyone ---');
+{
+  /* The first thing a parent writes. The rule hands her one node — her own
+     child's answer — and the node sits outside the game and the team, so it
+     cannot be stretched into a write of either. */
+  const R = 'workspaces/CLUB/rsvp/t1/g_g1/';
+  const ans = by => ({ v: 'yes', by, at: NOW });
+  writes('a parent answers for her own child', MUM, R + 'p1', ans('mum'), true);
+  writes('with a note', MUM, R + 'p1', { ...ans('mum'), v: 'no', note: 'Away that weekend' }, true);
+  writes('and takes the answer back', MUM, R + 'p1', null, true);
+  writes('not for another child', MUM, R + 'p2', ans('mum'), false);
+  writes('not stamped as somebody else', MUM, R + 'p1', ans('coach'), false);
+  writes('not an answer that is not one', MUM, R + 'p1', { ...ans('mum'), v: 'definitely' }, false);
+  writes('not a note longer than a text', MUM, R + 'p1', { ...ans('mum'), note: 'x'.repeat(141) }, false);
+  writes('not anything else tucked inside it', MUM, R + 'p1', { ...ans('mum'), photo: 'data:...' }, false);
+  writes('not the whole team\'s answers at once', MUM, 'workspaces/CLUB/rsvp/t1', { g_g1: { p1: ans('mum') } }, false);
+  writes('and it gives her nothing on the game itself', MUM, 'workspaces/CLUB/matches/g1/out/p2', true, false);
+  writes('the team\'s coach answers for anyone on it', COACH, R + 'p2', ans('coach'), true);
+  writes('an admin for anyone', ADM, 'workspaces/CLUB/rsvp/t2/e_x/k9', ans('adm'), true);
+  writes('a tracker cannot', TRK, R + 'p2', ans('trk'), false);
+  writes('nor another team\'s coach', OTHER, R + 'p2', ans('other'), false);
+  writes('nor a registered account with no role', NEWB, R + 'p1', ans('newbie'), false);
+  writes('nor anyone signed out', OUT, R + 'p1', { v: 'yes', at: NOW }, false);
+  reads('the coach reads the answers with the rest of the club', COACH, R + 'p1', true);
+  const saved = DB.workspaces.CLUB.access.teamIndex;
+  delete DB.workspaces.CLUB.access.teamIndex;
+  writes('before the team index: any indexed account, as elsewhere', TRK, R + 'p2', ans('trk'), true);
+  DB.workspaces.CLUB.access.teamIndex = saved;
+}
 
 console.log('\n--- a game: whoever works that team, tracker included ---');
 writes('its coach edits the game', COACH, 'workspaces/CLUB/matches/g1/opponent', 'Athletic', true);
@@ -766,8 +813,7 @@ reads('owners are not world-readable', OUT, 'shareOwners/sh1', false);
    before a club is locked down. One copy drifting from the other would mean an
    invite or a message that works today stops working on lockdown day. */
 {
-  const open = jsonBlocks().map(r => { try { return JSON.parse(r); } catch (e) { return null; } })
-    .find(d => d && d.rules && d.rules.workspaces && d.rules.workspaces.$code['.write'] === true);
+  const open = readJson('database.rules.open.json');
   console.log('\n--- the open rules ---');
   for (const k of ['invites', 'clubInvites', 'userOrgs', 'board', 'dm', 'joinCodes', 'claims'])
     check(k + ' matches the locked-down block', !!open && JSON.stringify(open.rules[k]) === JSON.stringify(RULES[k]), true);
@@ -822,7 +868,13 @@ console.log(`
      written, but a parent unlinked by an older copy of the app keeps reading
      that team's notices until an admin's or the coach's next connect takes
      her off. While the list does not exist at all, notices fall back to
-     club-wide, as they were.`);
+     club-wide, as they were.
+
+  6. A parent can answer for her child under an item key that names no game
+     or entry. The rule checks whose child it is, not that the thing exists,
+     because Realtime Database rules have no substring to pull a game id back
+     out of the key. It costs nothing but a stray answer under her own child,
+     and keeping the rule short enough to read in one go is worth more.`);
 
 console.log(`\n${failures ? failures + ' EXPECTATION(S) FAILED' : 'all expectations hold'}`);
 process.exit(failures ? 1 : 0);

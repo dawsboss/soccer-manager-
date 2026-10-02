@@ -170,6 +170,13 @@ const EXPORTS = `{
   seedSandbox,
   /* bulk import */
   importPlan, applyImport, importSummary, sheetImport, IMPORT_EXAMPLE,
+  /* the calendar */
+  calItems, calPast, calNext, calTeams, seriesDates, seriesOf, icsItem, opponentMessage,
+  viewCalendar, sheetCalItem, sheetCalEvent, calFormNew, publicEvents, pubText, mayAct,
+  todayStr, dayLabel, niceTime, hm, addDays, weekdayOf, CALLED, HOME_AWAY, SERIES_MAX,
+  get calForm() { return calForm },
+  fixtureDoc, calendarDoc, publishTeam, ensureFixtureShares, claimTeamIds, outIds, familySaidNo, attendance, attendLine, attendOf, attendUntaken, cameToGame,
+  get pubSeen() { return pubSeen },
   /* rendering + routing */
   render, uiToHash, hashToUi,
   /* the mutable module-scoped bindings */

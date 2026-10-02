@@ -1,6 +1,6 @@
-/* Four version markers that have to agree.
+/* The version markers that have to agree — four, and now ics.js?v= as well.
 
-   CLAUDE.md: "If you bump one, bump all four to the same number." The failure
+   CLAUDE.md: "If you bump one, bump them all to the same number." The failure
    this catches is a browser holding a cached index.html while fetching a newer
    app.js — the one the comment in app.js calls "the exact failure that has
    eaten hours", because the page half-works and nothing says why.
@@ -32,6 +32,10 @@ check('index.html cache-busts both assets', qs.length, 2);
 check('the meta tag matches app.js', meta, build);
 check('app.js?v= matches', qs[0], build);
 check('styles.css?v= matches', qs[1], build);
+/* The calendar-file writer is a classic script loaded ahead of app.js, so a
+   cached copy of it is the same half-working page as a cached app.js. */
+const ics = (idx.match(/ics\.js\?v=(\d+)/) || [])[1];
+check('ics.js?v= matches', ics, build);
 
 console.log('\n--- what a cached page would do ---');
 {

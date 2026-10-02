@@ -8,6 +8,155 @@ before this point lives only in the git log.
 
 ---
 
+## The database rules are files — 2026-10-02
+
+The rules lived as two code blocks in README, and `test/rules.js` parsed them
+out of the prose. That made the thing you paste into the Firebase console a
+selection from the middle of a long document: one stray brace from being
+refused, awkward to copy on a phone, and invisible in a diff among paragraphs
+of explanation. They are now `database.rules.json` (locked down: what a club
+runs) and `database.rules.open.json` (the starter set). On a phone, open the
+file on GitHub, tap **Raw**, select all, copy. `firebase.json` points the
+Firebase CLI at the locked set, so `firebase deploy --only database` publishes
+the same file from a computer.
+
+README still explains every block and keeps its short excerpts. `rules.js`
+reads the files, and fails in four ways it could not catch before: a whole
+ruleset copied back into README (the copy that drifts), an excerpt there that
+no longer matches the file, a block the open set shares with the locked one
+that has drifted (so an invite made today would stop working on lockdown day),
+and `firebase.json` pointing anywhere else.
+
+## Families' answers plan the game, and the coach takes a register — 2026-10-02
+
+**Answers go straight into the plan.** A "not going" was a hint on the
+availability sheet with a button to act on it, which meant the coach copying
+every answer across by hand before she could plan. Availability is now derived:
+`isOut()` is the coach's word if she gave one, otherwise the family's answer.
+So a "not going" leaves a player out of the bench, the plan, the targets and
+the even split by itself, and a family that changes its mind flows straight
+back in. The coach still has the last word either way: she can play a "not
+going" or leave out someone whose family said nothing, and her choice is kept
+only where it differs from theirs. The Plan tab's *Who is coming* replaces *Who
+is unavailable*: who is out and why, who said maybe, who has not answered, and
+the Minutes list marks the maybes and the silent ones. The AI prompts and the
+Subs tab counted the coach's list directly and would have missed the families.
+They now ask the same question everything else does.
+
+**Attendance.** From the day of a practice onwards the coach can *Take
+attendance*: filled in from what families said, a tap per change, *Everyone
+came*. It is one write at `teams/{tid}/attend/{eid}`, beside the entries rather
+than inside them, so editing a practice cannot write over its register, and keyed
+by the calendar entry so a practice plan keyed the same way can say which drills
+each player has done. Games need no register: a player came if she played or
+was available. Season → **Attendance** lists practices came to and missed, how
+many misses nobody warned about (the number a coach actually asks), and games,
+most missed first. It also says how many past practices still have no register
+rather than guessing. A player's sheet carries her line; a parent sees her own
+child's.
+
+**What comes next** is written down: ROADMAP's *Next: planning for the club*
+(clashes across teams, coaches and families with children on two teams; finding
+a free time; booking a club-wide event as one entry per team), and `HANDOFF.md`
+for the conversation that picks it up.
+
+## Calendars that follow changes, parents saying who is coming, and game links that stop at the game — 2026-10-02
+
+**Sync.** Adding the calendar to a phone gave a copy, so a moved kick-off meant
+everyone adding it again. A calendar app that *subscribes* fetches an address on
+its own schedule, from its own servers, and never runs our JavaScript, so no
+static file can answer it. `worker/calendar.mjs` does: a Cloudflare Worker that
+reads one `public/{id}` node and returns it as a calendar. It is the first piece
+here that is not a static file, so it is kept as small as it can be: optional,
+read-only, no credentials, and it can only ask the database what anyone could
+already ask. `test/worker.js` pins that it never fetches anything but
+`public/{id}.json` for a plain id. It carries its own copy of `ics.js`, because
+Cloudflare's editor takes one file, and the test fails if the copy drifts
+(`node worker/make.js` refreshes it).
+
+A coach turns sync on per team, and every member gets *Apple Calendar*,
+*Google Calendar* and *Copy the address*. That feed includes team-only practices,
+because a subscribed calendar without practices is not the calendar, so they are
+published under its id. The id is shown only inside the app, to the team's
+members, it holds no names, players or answers, and *Replace this address*
+retires it. The share page offers the season's own feed: games, and only what
+was marked for the share link. Without the Worker set up, the copy is still
+there and nothing else changes.
+
+**Who is coming.** Parents answer *Going*, *Not going* or *Maybe* for each of
+their children, on *Next up* and on each entry, with an optional note. This is
+the first thing a parent writes, so the answer gets a node of its own,
+`rsvp/{tid}/{item}/{pid}`, and a rule that grants that node and nothing else. It
+is not inside the game, because a coach saving a game writes the whole game and
+would wipe an answer given at the same moment. The coach sees names with the
+unanswered at the top, answers for a family who said so another way, and on a
+game's *Available* sheet can mark everyone who said no as out in one tap. A
+refused answer comes back off the screen with a reason, rather than appearing to
+stick. Answers never reach `public/`, not even as counts. **Locked-down clubs need
+the new `rsvp` block from README pasted** before parents can answer;
+`test/rules.js` checks it for every kind of account.
+
+**Game links stop at the game.** A game link carried the season link's id, so
+whoever it reached, the other team included, could open the whole season. Each
+game is now published alone under its own id, and the page has no way back to a
+season it does not have. Only documents whose content changed are rewritten, so
+thirty fixtures do not go out on every sub. Rotating the season link replaces
+every game's too, and deleting a game takes its page down. Old game links keep
+working until the season link is rotated.
+
+Also: a parent's banner no longer says they can only read, and the
+`.btn.ghost` style, never used until the calendar reached for it, is gone,
+because the pitch's empty spots are `.ghost` too and won.
+
+## A calendar for the season, for everyone following the team — 2026-10-01
+
+Games were a list a coach opened to track one. Nothing said when practice
+was, and a parent wanting "where do I take her on Saturday" had to ask. Every
+team now has a **Calendar** tab: games and everything else in date order,
+a month with a dot per thing, and *Next up* at the top with directions and
+*Add to my calendar*. Coaches, trackers and parents all get it, and anyone who
+can see more than one team (a parent with daughters in two age groups, a coach,
+an admin) can see them all on one calendar. *My players* now says what is next
+for each child, practice included, not only the next game.
+
+Practices and other entries live under the team (`teams/{tid}/events/{eid}`),
+so the rule that already says who may change a team decides who may change its
+calendar, with no new rule and nothing to paste in order. `test/rules.js` pins
+that. A weekly practice is one entry per week, not a rule the app expands:
+calling off one Tuesday is one write to one entry, and editing asks *just this
+one* or *this and every later one*. Something called off stays on the
+calendar, struck through, because a deleted practice is one a parent still
+drives to.
+
+Each entry is kept to the team unless the coach puts it on the share link.
+Practices default to the team on purpose: a share link gets forwarded, and a
+practice is a predictable time and place where children are, without the crowd
+a match brings. The season page now shows what is coming up (games plus the
+entries marked for it) with a page for each event, and everything adds to a
+phone's calendar (Google, or an `.ics` file for Apple and Outlook) from the app
+and from the share link alike. The file is written by a new `ics.js`, kept free
+of the DOM and Firebase so the Worker on the roadmap can serve it as a feed one
+day. Until then it is a copy, and both the app and the page say so.
+
+Games carry what match day needs: home or away, arrive-by, kit, notes, and
+whether it is on, postponed or cancelled. Notes are the first free text on the
+share link where a name is likely ("Ella's family on snacks"), so everything new
+headed for `public/` goes through `pubText()`, which swaps any roster name for
+"a player" before it is written, the same matching the AI prompt uses. The coach
+is told when it happens. The Games list shows when and where for a game still to
+come instead of "0 min played".
+
+**For the other team** is the first answer to "can opponents see it?": the share
+sheet and the game's calendar entry copy a message for their coach (fixture,
+kick-off, where, what we wear, and the game page for the live score), with
+arrive-by left out because that time is ours. The game link carries the season
+link's code, so they can reach the season page too, and the sheet says so.
+ROADMAP has the rest of that exploration: a link scoped to one fixture, free dates
+for a reschedule, and a fixture shared by two clubs, which waits for the orgs work.
+
+The test club now has a fixture still to come, twice-weekly practice either
+side of today with one called off, and a team photo on the share link, so the
+calendar can be rehearsed with nothing real in it.
 ## Parents join a whole squad at a time — 2026-10-02
 
 A parent could only arrive by a personal invite, made by an admin one sheet

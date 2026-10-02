@@ -61,10 +61,172 @@ owner, which is why it is written down here rather than built.
 ### Messages, next steps
 
 - **Game and practice notices.** A *Tell the families* button on a game's
-  details that drafts the notice (opponent, kick-off, venue) — and the same for
-  practices once those exist.
-- **Availability replies.** "Can Ella make Saturday?" with Yes / No from the
-  parent, feeding the game's existing availability list (`m.out`).
+  details, or a calendar entry, that drafts the notice (opponent, kick-off,
+  venue). Practices exist now, as calendar entries; *Call it off* is the
+  obvious moment to offer one.
+- **Availability replies** — done on the calendar (`rsvp/{tid}/{item}/{pid}`):
+  Going / Not going / Maybe from the parent, which takes a "not going" out of
+  the game's plan through `isOut()` rather than writing `m.out`. What is left
+  is the join with messages: a reminder notice to the families who have not
+  answered (see *Who is coming, next*).
 - **Parents per team in the rules** — done (`access/teamParents`). When the
   orgs migration happens, it folds into AUTH.md's `teamMembers` index along
   with `teamIndex`.
+
+### Calendar sync, beyond the first version
+
+Built: `worker/calendar.mjs` serves any `public/{id}` as a feed, the team's
+members get a feed with practices in it, and the share page offers the season's.
+What is left:
+
+- **One address per person, not per team.** Today replacing a leaked team
+  address makes every family subscribe again. Per-person feed ids would let one
+  be revoked alone, at the cost of a public node per member.
+- **A parent's own children only.** A parent with two daughters on two teams
+  subscribes twice. One feed across her teams needs a document keyed by her,
+  and the same care as above.
+- **Answers in the feed.** "Ella: going" in the calendar entry would be handy,
+  but answers are about named children and the feed is world-readable by
+  address. Not without a feed that is not world-readable, which means the
+  Worker holding a credential, which is a different project.
+
+### Who is coming, next
+
+Built: parents answer for their own children, at `rsvp/{tid}/{item}/{pid}`,
+and the coach sees names and chases the unanswered; a "not going" takes the
+player out of the game's plan by itself, and the coach can override it. Next, with parent communication rather than before it:
+
+- **A reminder** to the families who have not answered by two days out. That
+  needs a way to reach them, which is the communication work.
+- **A deadline** the coach sets, after which answers close.
+
+### Practice plans
+
+A practice on the calendar is `teams/{tid}/events/{eid}` with `kind:
+'practice'`. Session plans (drills, the focus, who is coaching) belong
+*on* that entry, or keyed by its id, not in a second list of practices that
+can disagree with the calendar about when practice is.
+
+### Opponents
+
+Explored while building the calendar. What is built today:
+
+- **A message for their coach.** The game's share sheet and its calendar entry
+  copy one: fixture, kick-off, where (with directions), what we wear, and the
+  game link. Arrive-by is left out; it is our families' time.
+- **The game page.** The link in that message is the page families get. When
+  and where, then the live score once it starts, shirt numbers only. Their
+  families can follow the score of their own child's game, which is a nice side
+  effect.
+
+What they can see: that game, by shirt number, and nothing else. (The first
+version's game link carried the season link's id, which reached the whole season;
+game links made then are retired by making a new season link.)
+
+Built since: **a link scoped to one fixture.** Each game is published to its own
+`public/{m.share}`, and that is the id in every game link and in the message,
+so the opponent holds one game and nothing else.
+
+Two steps further, in increasing cost:
+
+1. **Free dates for a reschedule.** The season page already shows our game days.
+   A "we are free on" list (game days and practice days, as busy/free with no
+   detail) would let a coach agree a new date without a back-and-forth. Needs
+   nothing new in the data. It is a view over what is there.
+2. **One fixture, two clubs.** When both clubs use Minutes, the fixture could be
+   one shared record both see, so a reschedule or a cancellation lands on both
+   calendars, and the score is confirmed by both coaches. That is cross-club
+   data with rules that answer to two sets of admins. It depends on the
+   `orgs/{orgId}` model in AUTH.md, so it waits until that has happened, and
+   should not be started before it.
+
+### One calendar for the club
+
+"All my teams" already merges every team an account can see. For an admin that
+is the whole club, which is most of a field-booking view. The missing piece is
+flagging two teams at the same venue at overlapping times. The venue is free text,
+so "same place" needs either a list of the club's fields or a forgiving match.
+Decide which when a club with shared fields asks.
+
+## Next: planning for the club
+
+The next piece of work, and the reason the calendar, answers and attendance
+were built the way they were. A club admin scheduling the season asks one
+question in many shapes: **when is everyone involved free?** For a reschedule,
+a new friendly, an extra practice, picture day, the end-of-season party, a
+coaches' meeting. All the facts are already in the club; nothing joins them up.
+
+### What the data can already answer
+
+| Question | Where it comes from |
+| --- | --- |
+| When is each team busy? | `matches` (date, kick-off, length from `periodCount × periodMinutes`) and `teams/{tid}/events` (start and end) |
+| Where? | `venue` on both, free text |
+| Which coaches are tied up? | `access/teams/{tid}/coaches/{uid}`: a coach of two teams is in both |
+| Which families? | `teams/{tid}/players/{pid}/guardians/{uid}`: the same parent uid on players in two teams is siblings in two age groups, the clash coaches hear about most and see least |
+| Who actually turns up, and on which days | `rsvp` and `teams/{tid}/attend`, so "Tuesdays lose a third of the squad" is a query, not a hunch |
+| What is fixed and what can move | a game against another club barely moves; a practice can |
+
+### What it should do, in order of value
+
+1. **Clashes, today.** Club settings → *Planner*: every team's week on one
+   screen, and a list of what collides. Two teams on one pitch at once (same
+   venue, overlapping times). A coach due in two places. A family with two
+   children due in two places (a count to everyone but admins, names for
+   admins). Read-only, no new data, nothing to write: the cheapest thing to
+   ship and the one that proves the joins.
+2. **Find a time.** Pick the teams (or "the whole club"), how long, a date
+   range, the hours that are acceptable, and optionally a venue. It returns the
+   slots where none of those teams, their coaches or their families is
+   already busy, best first: fewest people affected, then the team's usual
+   practice slot. Each candidate says what it would clash with, if anything.
+3. **Book it.** Choosing a slot writes the entry to each team's calendar.
+   **A club-wide event is one entry per team sharing a `club` id**, the same
+   trick a weekly practice uses with `series`. An admin can already write every
+   team's `events`, so no new node and no new rule, and each team can call off
+   or move its own copy without touching the others'.
+4. **Picture day, and anything else done team by team.** One venue, one window,
+   a slot length. It lays the teams out back to back around their existing
+   commitments, siblings next to each other so one family makes one trip, and
+   books each team's slot as above.
+
+### What is missing, and needs deciding
+
+- **Venues are free text.** "Lakeside Park f2" and "Lakeside Park, field 2"
+  are one pitch. A club list of venues (and pitches) for the picker, matched
+  forgivingly against what is already typed, is the first piece of new data.
+  It is club settings, so it belongs at `access/org/venues` under the admin
+  rule, with no rule change.
+- **When pitches can be had at all.** Council bookings, lights, the school's
+  hours. A weekly availability per venue makes "find a time" stop suggesting
+  9pm on a Wednesday.
+- **Coaches' own unavailability** ("never Mondays"). That is data a coach
+  writes about herself; `access/members/{uid}` is already self-writable, so it
+  could live there.
+- **Games involving another club** are fixed by a league or by both coaches.
+  The planner should treat them as immovable and say so rather than offering to
+  move them. (ROADMAP's *Opponents*, step 2, is the other club's half of this.)
+
+### Constraints to keep
+
+- **The rules.** Steps 1, 2 and 4's suggestions are reads. Booking is writes at
+  `teams/{tid}/events/{eid}`, which the admin rule already grants, one entry
+  per write, never a collection.
+- **Not the orgs migration.** All of this works on `workspaces/{code}` as it
+  is. CLAUDE.md's ordering puts roles and organisations after the correctness
+  work, and nothing here needs them.
+- **Children's names stay where they are.** The planner can say "3 families
+  have children on both teams"; who they are is for admins and those teams'
+  coaches, as everywhere else.
+
+### Drills a player has done
+
+Wanted alongside attendance: each player's list of drills done. The register is
+keyed by the calendar entry's id (`teams/{tid}/attend/{eid}`), so if a practice
+plan is keyed by the same id, "drills she has done" is the drills on the plans
+of the practices she came to. A plain join, with no data about the child stored
+twice. The training work (`TRAINING.md`, on its own branch) currently proposes
+`training/{code}/practices/{teamId}/{practiceId}` with its own date, time and
+place. Keying it by the calendar entry instead (`practices/{teamId}/{eventId}`),
+and taking the when and where from the entry, avoids two lists of practices that
+disagree about when practice is, and makes the per-player drill list free.

@@ -277,7 +277,13 @@ console.log('--- share links ---');
 {
   const t = A.state.teams.t1;
   check('a team link points at the live page', A.teamLink(t), 'https://x.test/live.html?t=sh_abc');
-  check('a game link names the game', A.gameLink(t, A.state.matches.g1), 'https://x.test/game.html?t=sh_abc&g=g1');
+  /* A game link carries the game's own id, never the season's, so whoever it
+     is forwarded to holds that game and nothing else. */
+  check('a game with no id of its own has no link yet', A.gameLink(t, A.state.matches.g1), '');
+  A.state.matches.g1.share = 'f_g1';
+  check('a game link names the game, by its own id', A.gameLink(t, A.state.matches.g1), 'https://x.test/game.html?t=f_g1&g=g1');
+  check('and never carries the season id', A.gameLink(t, A.state.matches.g1).includes('sh_abc'), false);
+  delete A.state.matches.g1.share;
   check('a team with no share has no link', A.teamLink({ id: 'x' }), '');
 }
 

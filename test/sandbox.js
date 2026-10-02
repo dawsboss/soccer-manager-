@@ -34,7 +34,10 @@ const seeded = JSON.parse(LS.getItem('sm.data.v1:' + code));
 A.state = seeded;
 check('the club knows it is a sandbox', A.isSandbox(), true);
 check('teams seeded', Object.keys(seeded.teams).length, 2);
-check('games seeded', Object.keys(seeded.matches).length, 4);
+check('games seeded, one still to come', Object.keys(seeded.matches).length, 5);
+check('the calendar has practices and an event', Object.values(seeded.teams.sbA.events || {}).map(e => e.kind).filter((k, i, a) => a.indexOf(k) === i).sort().join(','), 'event,practice');
+check('a weekly practice is one entry per week, one series', new Set(Object.values(seeded.teams.sbA.events).filter(e => e.kind === 'practice').map(e => e.series)).size, 1);
+check('one practice is called off, not deleted', Object.values(seeded.teams.sbA.events).filter(e => e.called === 'cancelled').length, 1);
 check('people are waiting to be given a role', Object.keys(seeded.access.members).length, 4);
 check('nobody is an admin yet', seeded.access.admins === undefined, true);
 check('and there is no index yet', seeded.access.index === undefined, true);
@@ -51,6 +54,13 @@ for (const m of Object.values(seeded.matches)) {
   const ids = Object.keys(seeded.teams[m.teamId].players);
   const over = ids.filter(pid => A.playedSec(m, pid) > el);
   const mismatch = ids.filter(pid => A.onField(m, pid) !== !!A.openStint(m, pid));
+  if (!Object.keys(m.periods).length) {
+    // the fixture still to come: nothing about it may look started
+    check(m.opponent + ': still to come, clock untouched', el, 0);
+    check(m.opponent + ': still to come, nobody on', Object.keys(m.stints).length, 0);
+    check(m.opponent + ': still to come, reads as upcoming', A.gameStatus(m), 'upcoming');
+    continue;
+  }
   if (m.ended) {
     check(m.opponent + ': finished, clock closed', openPeriods, 0);
     check(m.opponent + ': finished, every stint closed', openStints, 0);
@@ -70,9 +80,9 @@ check('exactly one game is in progress', live, 1);
 console.log('\n--- it looks like a club, and admits it is not one ---');
 const shown = () => String(nodes['#app'].innerHTML || '');
 A.ui.teamId = Object.keys(seeded.teams)[0];
-A.ui.matchId = Object.values(seeded.matches).find(m => !m.ended).id;
+A.ui.matchId = Object.values(seeded.matches).find(m => !m.ended && Object.keys(m.periods).length).id;
 let renderFail = 0, unbannered = [];
-for (const [view, gview] of [['matches', null], ['roster', null], ['season', null],
+for (const [view, gview] of [['matches', null], ['calendar', null], ['roster', null], ['season', null],
 ['club', null], ['setup', null], ['game', 'live'], ['game', 'stats']]) {
   A.ui.view = view; if (gview) A.ui.gameView = gview;
   try { A.render(); } catch (e) { renderFail++; console.log('  THREW on ' + view + ': ' + e.message); continue; }

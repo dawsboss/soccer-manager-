@@ -1,7 +1,7 @@
 /* Every suite, one command, one exit code.
 
    CLAUDE.md asks for the checks to be run after every change to app.js and
-   again after every change to the rules in README.md. Asking for four separate
+   again after every change to the rules in database.rules.json. Asking for four separate
    commands is how one of them quietly stops being run, so this is the one to
    remember; the individual files still work on their own when you want to read
    the detail of a single area.
@@ -15,13 +15,17 @@ const { spawnSync } = require('child_process');
 const path = require('path');
 
 const SUITES = [
-  ['version', 'the four build markers agree'],
+  ['version', 'the build markers agree'],
   ['clock', 'the match clock and minutes played'],
   ['stints', 'who is on the pitch, and the sub actions'],
   ['plan', 'the Plan tab\'s snapshots of the pitch'],
   ['subs', 'a locked-in plan, called from the sideline'],
   ['stats', 'tallies, and what reaches the public tier'],
   ['feed', 'the Live tab, and what it notifies'],
+  ['calendar', 'the season calendar, and what reaches the share link'],
+  ['rsvp', 'parents say who is coming, for their own child only'],
+  ['attend', 'who came, and the season counted from it'],
+  ['worker', 'the calendar feed reads public/ and nothing else'],
   ['ai', 'the AI prompt carries numbers, never names'],
   ['roles', 'roles derived from where a uid appears'],
   ['visibility', 'which teams each account sees and edits'],
@@ -34,7 +38,7 @@ const SUITES = [
   ['import', 'bulk import merges, and never replaces'],
   ['smoke', 'every view renders without throwing'],
   ['sandbox', 'the test club, and database isolation'],
-  ['rules', 'the database rules, as README publishes them']
+  ['rules', 'the database rules, as database.rules.json has them']
 ];
 
 const verbose = process.argv.includes('--verbose') || process.argv.includes('-v');
