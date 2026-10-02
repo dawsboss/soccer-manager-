@@ -12,7 +12,8 @@ global.rendered = () => String(node('#app').innerHTML || '');
 global.window = {};
 global.location = { reload(){}, hash:'', pathname:'/', search:'' };
 global.history = { replaceState(){} };
-global.window = { addEventListener(){}, SOCCER_FIREBASE_CONFIG:null };
+global.window = { addEventListener(){}, SOCCER_FIREBASE_CONFIG:null,
+  SOCCER_DRILLS: require('../drills.js'), DrillDiagram: require('../drill-diagram.js') };
 global.setInterval = ()=>0; global.setTimeout=()=>0; global.clearTimeout=()=>{};
 global.confirm = ()=>false; global.alert=()=>{};
 global.Blob=function(){}; global.URL={createObjectURL:()=>'x',revokeObjectURL(){}}; global.FileReader=function(){};
@@ -160,6 +161,9 @@ try {
     console.log('  all five people filters rendered');
     ui.peopleSort='joined'; render(); console.log('  people sorted by join date');
     ui.view='teamset'; render(); console.log('  rendered team page');
+    ui.view='practice'; render(); practiceUi().tab='positions'; render(); practiceUi().tab='drills';
+    sheetDrill(window.SOCCER_DRILLS.DRILLS[0].id); sheetRole(window.SOCCER_DRILLS.ROLE_GUIDE[0].id); sheetDrillFilters();
+    console.log('  rendered practice: drills, positions, a drill card, a position, the filters');
     ui.view='setup'; render();
     ui.view='match'; render();
     ui.view='roster'; render();

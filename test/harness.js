@@ -170,6 +170,10 @@ const EXPORTS = `{
   seedSandbox,
   /* bulk import */
   importPlan, applyImport, importSummary, sheetImport, IMPORT_EXAMPLE,
+  /* practice */
+  canTrain, seasonEndYear, uAge, teamUAge, uLabel, practiceUi, practiceAge,
+  practiceDrills, practiceActive, viewPractice, sheetDrill, sheetRole,
+  sheetDrillFilters, PRACTICE_ACTS, PRACTICE_BLANK,
   /* rendering + routing */
   render, uiToHash, hashToUi,
   /* the mutable module-scoped bindings */
@@ -229,10 +233,14 @@ function loadApp(opts = {}) {
   global.__toasts = toasts;
   global.document = dom.document;
   global.localStorage = storage;
+  /* The drill library and its diagram renderer are plain scripts that
+     index.html loads ahead of app.js, so a page has them before the module
+     runs. `drills: false` boots the way a page does when they failed to load. */
   global.window = {
     addEventListener() { },
     SOCCER_FIREBASE_CONFIG: opts.config === undefined ? null : opts.config,
-    SOCCER_FIREBASE_ENVS: opts.envs || undefined
+    SOCCER_FIREBASE_ENVS: opts.envs || undefined,
+    ...(opts.drills === false ? {} : { SOCCER_DRILLS: require('../drills.js'), DrillDiagram: require('../drill-diagram.js') })
   };
   global.location = {
     reload() { dom.reloads = (dom.reloads || 0) + 1; },

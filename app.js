@@ -2,7 +2,7 @@
    Static app. Data lives in localStorage, and mirrors to Firebase Realtime
    Database when a config + workspace code are present. */
 
-const BUILD = '64';
+const BUILD = '65';
 const BUILT = '2026-09-26';
 /* index.html carries the build it was published with. If this file is newer, the
    browser handed us a cached page — the exact failure that has eaten hours. */
@@ -252,7 +252,7 @@ function saveLocal() {
   try { localStorage.setItem(dataKey(), JSON.stringify(state)); } catch (e) { }
 }
 function saveUi() {
-  try { localStorage.setItem(LS_UI, JSON.stringify({ view: ui.view, teamId: ui.teamId, matchId: ui.matchId, sortBy: ui.sortBy, plan: ui.plan, gameView: ui.gameView, follow: ui.follow || null, feedAll: !!ui.feedAll, tabs: 2 })); } catch (e) { }
+  try { localStorage.setItem(LS_UI, JSON.stringify({ view: ui.view, teamId: ui.teamId, matchId: ui.matchId, sortBy: ui.sortBy, plan: ui.plan, gameView: ui.gameView, follow: ui.follow || null, feedAll: !!ui.feedAll, practice: ui.practice || null, tabs: 2 })); } catch (e) { }
 }
 function loadLocal() {
   try {
@@ -1354,6 +1354,7 @@ const firstOf = (o, ...ks) => { for (const k of ks) if (o[k] !== undefined && o[
 const IMPORT_EXAMPLE = {
   teams: [{
     name: 'Lakeside Thunder G12',
+    birthYear: 2015,
     players: [
       { name: 'Ada Lovelace', number: 1, gk: true },
       { name: 'Bea Smith', number: 7, position: 'Forward', also: ['Wing'], rating: 4 },
@@ -1380,7 +1381,7 @@ function importScore(v) {
 /* Pure: reads `data` against the club as it stands and returns what importing
    it would do. Nothing in state changes until applyImport(). */
 function importPlan(data, cur = state) {
-  const out = { writes: [], errors: [], warnings: [], counts: { newTeams: 0, newPlayers: 0, players: 0, newGames: 0, games: 0, results: 0 } };
+  const out = { writes: [], errors: [], warnings: [], counts: { newTeams: 0, teams: 0, newPlayers: 0, players: 0, newGames: 0, games: 0, results: 0 } };
   const put = (path, value) => out.writes.push([path, value]);
   if (!data || typeof data !== 'object' || Array.isArray(data)) { out.errors.push('The file should be one JSON object with a "teams" list in it.'); return out; }
 
@@ -1575,6 +1576,16 @@ function importPlan(data, cur = state) {
     if (!tt || typeof tt !== 'object') { out.errors.push(`${where}: expected a team like {"name": "...", "players": [...]}.`); return; }
     const entry = teamFor(tt.name, where, true); if (!entry) return;
     const w = `${entry.t.name}`;
+    /* The age group, as a birth year. A team already here keeps the one it
+       has: the import fills gaps, it doesn't overrule what a coach set. */
+    const by = firstOf(tt, 'birthYear', 'born');
+    if (by !== undefined && by !== null && by !== '') {
+      const n = Number(by);
+      if (uAge(n) == null) out.warnings.push(`${w}: birth year ${JSON.stringify(by)} doesn't look like a year, so it was left out.`);
+      else if (entry.isNew) entry.t.birthYear = n;
+      else if (!entry.t.birthYear) { entry.t.birthYear = n; put(`teams/${entry.t.id}/birthYear`, n); out.counts.teams++; }
+      else if (Number(entry.t.birthYear) !== n) out.warnings.push(`${w}: already born ${entry.t.birthYear} here, so ${n} was left out.`);
+    }
     if (tt.players !== undefined && !Array.isArray(tt.players)) out.errors.push(`${w}: "players" should be a list.`);
     else (tt.players || []).forEach((p, j) => addPlayer(entry, p, `${w}, player ${j + 1}`));
     if (tt.games !== undefined && !Array.isArray(tt.games)) out.errors.push(`${w}: "games" should be a list.`);
@@ -1617,7 +1628,7 @@ function importSummary(c) {
   const n = (k, one, many) => c[k] ? `${c[k]} ${c[k] === 1 ? one : many}` : null;
   const add = [n('newTeams', 'team', 'teams'), n('newPlayers', 'player', 'players'), n('newGames', 'game', 'games')].filter(Boolean);
   if (add.length) bits.push('adds ' + add.join(', '));
-  const upd = [n('players', 'player', 'players'), n('games', 'game', 'games')].filter(Boolean);
+  const upd = [n('teams', 'team', 'teams'), n('players', 'player', 'players'), n('games', 'game', 'games')].filter(Boolean);
   if (upd.length) bits.push('updates ' + upd.join(', '));
   if (c.results) bits.push(`${c.results} with a final score`);
   return bits.length ? bits.join(' · ') : 'nothing new — everything in it is already here';
@@ -2407,9 +2418,16 @@ function adjustClock(m, deltaSec) {
 }
 
 /* ---------------- sheet / toast ---------------- */
-function openSheet(html) {
-  $('#sheet').innerHTML = html;
-  $('#sheet').hidden = false;
+/* A sheet opened fresh starts at its top: without this it kept the scroll of
+   whichever sheet was open last, so a long card could open halfway down. One
+   redrawn while it's open (a filter chip, Moving / Still) keeps her place, or
+   every tap would throw her back up. `top` is for one sheet replacing another
+   without closing, like a drill opened from the card of the one it goes with. */
+function openSheet(html, top) {
+  const s = $('#sheet'), fresh = top || s.hidden;
+  s.innerHTML = html;
+  s.hidden = false;
+  if (fresh) s.scrollTop = 0;
   $('#scrim').hidden = false;
 }
 function closeSheet() { $('#sheet').hidden = true; $('#scrim').hidden = true; }
@@ -2456,8 +2474,14 @@ function render() {
   }
   if (hideForParent.includes(ui.view) && lim === 'parent') ui.view = guardsAnyone() ? 'mine' : 'matches';
   if (ui.view === 'teamset' && lim === 'tracker') ui.view = 'matches';
+  /* Practice is a coach's and an admin's, on any team: the library isn't
+     about one team, and a parent or a tracker never gets the tab at all. */
+  const train = canTrain();
+  const pb = document.querySelector('#tabs [data-view="practice"]');
+  if (pb) pb.hidden = !train;
+  if (ui.view === 'practice' && !train) ui.view = 'matches';
   // club admin and account settings are not team-level, so the tab row steps aside
-  const teamLevel = ['matches', 'roster', 'season', 'teamset'].includes(ui.view);
+  const teamLevel = ['matches', 'practice', 'roster', 'season', 'teamset'].includes(ui.view);
   if (ui.view === 'people' && !canAdmin() && !teams().some(x => isCoach(x.id, me && me.uid))) ui.view = 'club';
   const tabView = ui.view === 'formation' ? (ui.editFid === GAME_SHAPE ? 'matches' : 'admin') : inGame ? 'matches' : ui.view;
   for (const b of document.querySelectorAll('#tabs button')) b.setAttribute('aria-current', String(b.dataset.view === tabView));
@@ -2502,7 +2526,7 @@ function render() {
       v === 'roster' ? viewRoster() :
         v === 'season' ? viewSeason() :
           v === 'formation' ? viewFormation() : v === 'club' ? viewClub() : v === 'people' ? viewPeople() : v === 'admin' ? viewAdmin()
-            : v === 'mine' ? viewMine() : v === 'teamset' ? viewTeamSet()
+            : v === 'mine' ? viewMine() : v === 'teamset' ? viewTeamSet() : v === 'practice' ? viewPractice()
               : v === 'setup' ? viewSetup() : viewMatches());
   syncHash();
   if (v === 'game' && g === 'pitch') wireDrag();
@@ -4090,6 +4114,7 @@ function viewTeamSet() {
       ${teamCrest(t)}
       <span style="flex:1"><b style="font-size:18px">${teamLabel(t)}</b>
         <span class="rowsub">${teamStats(t)}</span>
+        <span class="rowsub">${teamUAge(t) != null ? `${uLabel(teamUAge(t))} this season · born ${esc(String(t.birthYear))}` : 'No age group set'}</span>
         <span class="rowsub">${t.logo ? 'Own crest' : 'Using the club badge'}</span></span></div>
       ${ro ? '<p class="muted" style="margin-bottom:0">You can read this team but not change it.</p>'
       : `<button class="btn quiet wide" data-act="editteam" data-id="${t.id}">Team name and crest</button>`}</div>
@@ -4110,6 +4135,326 @@ function viewTeamSet() {
       <p class="muted" style="margin-top:0">Read-only pages showing shirt numbers, never names.</p>
       <button class="btn quiet wide" data-act="sharesheet">${t.share ? (ro ? 'See the links' : 'Manage links') : ro ? 'Sharing' : 'Set up sharing'}</button></div>
   </div>`;
+}
+
+/* ---------------- practice ---------------- */
+/* The drill library and the position guide: TRAINING.md's first build step.
+   Both are content, shipped as their own scripts (drills.js and
+   drill-diagram.js) and loaded before this module, so they are on window by
+   the time it runs. No database read, nothing to sync, and all of it there at a
+   field with no signal. Nothing in this section writes anything except the
+   team's birth year, which is an ordinary team field.
+
+   Coaches and admins only. The built-in drills aren't a secret, since they
+   ship in the app's public files, but the Practice tab is where a club's own
+   drills and plans will live, and TRAINING.md settles that parents and
+   trackers never see those. Before a club has an admin nothing is gated, the
+   same as every other screen. */
+const drillLib = () => (typeof window !== 'undefined' && window.SOCCER_DRILLS && window.SOCCER_DRILLS.DRILLS) ? window.SOCCER_DRILLS : null;
+const drillDiagram = () => (typeof window !== 'undefined' && window.DrillDiagram && window.DrillDiagram.svg) ? window.DrillDiagram : null;
+const canTrain = () => !gated() || isOwner() || (!!me && teams().some(t => isCoach(t.id, me.uid)));
+const PRACTICE_ACTS = new Set(['practab', 'drill', 'drillpic', 'roleguide', 'rolepic', 'drillfilters', 'dfchip', 'dfpick', 'dfclear', 'drillmore']);
+
+/* A team's age is stored as the year its players were born, because that
+   rolls over by itself: the same team is U10 this season and U11 the next
+   without anybody editing it. It's shown as a U-age, the way coaches say it. A
+   season runs August to July and takes the year it ends in, which is how
+   birth-year age groups work in US youth soccer: born 2016 is U11 in 2026–27. */
+function seasonEndYear(now = nowMs()) {
+  const d = new Date(now);
+  return d.getMonth() >= 7 ? d.getFullYear() + 1 : d.getFullYear();
+}
+function uAge(birthYear, now = nowMs()) {
+  const y = Number(birthYear);
+  if (!Number.isInteger(y)) return null;
+  const u = seasonEndYear(now) - y;
+  return u >= 4 && u <= 80 ? u : null;
+}
+const teamUAge = t => (t && t.birthYear ? uAge(t.birthYear) : null);
+const uLabel = u => (u == null ? '' : u <= 19 ? 'U' + u : 'Adult');
+
+/* What the coach has narrowed the library to, kept per device with the rest of
+   the screen state. Rebuilt from the blank on every read, so a filter saved by
+   an older build that this one no longer knows can't break the list. */
+const PRACTICE_BLANK = () => ({
+  q: '', age: 'team', sort: 'session', sig: '', len: '', setup: '', players: '', comp: '',
+  skill: '', principle: '', moment: '', physical: '',
+  types: [], pos: [], levels: [], intens: [], inv: [], groups: [], flags: [], noKit: []
+});
+function practiceUi() {
+  if (!ui.practice || typeof ui.practice !== 'object') ui.practice = {};
+  const p = ui.practice;
+  if (p.tab !== 'positions') p.tab = 'drills';
+  if (!(p.show > 0)) p.show = 24;
+  const blank = PRACTICE_BLANK(), f = p.f && typeof p.f === 'object' ? p.f : {};
+  for (const [k, v] of Object.entries(blank)) {
+    if (Array.isArray(v)) f[k] = Array.isArray(f[k]) ? f[k].map(String) : [];
+    else f[k] = typeof f[k] === 'string' ? f[k] : v;
+  }
+  p.f = f;
+  return p;
+}
+const PRACTICE_FLAGS = { noKeeper: 'No keeper needed', oneAdult: 'One adult can run it', indoor: 'Works indoors' };
+const PRACTICE_NOKIT = { minigoals: 'No mini goals', goals: 'No big goals', bibs: 'No bibs', cones: 'No cones', poles: 'No poles' };
+const PRACTICE_SORTS = {
+  session: ['Session order', null],
+  short: ['Shortest', (a, b) => a.minutes[0] - b.minutes[0] || a.minutes[1] - b.minutes[1]],
+  setup: ['Quickest to set up', (a, b) => a.setupMins - b.setupMins],
+  busy: ['Busiest', (a, b) => b.involvement - a.involvement || b.intensity - a.intensity],
+  easy: ['Easiest', (a, b) => a.level - b.level || a.intensity - b.intensity],
+  hard: ['Hardest', (a, b) => b.level - a.level || b.intensity - a.intensity],
+  name: ['A to Z', (a, b) => a.name.localeCompare(b.name)]
+};
+
+/* The age the list is filtered to: the team's own unless the coach picked
+   another, and no age at all if the team hasn't got one and she hasn't chosen. */
+function practiceAge(f, t = team()) {
+  if (f.age === 'any') return null;
+  if (f.age === 'team' || !f.age) { const u = teamUAge(t); return u == null ? null : Math.min(u, 19); }
+  const n = Number(f.age);
+  return n >= 4 && n <= 19 ? n : null;
+}
+const drillWords = new Map();
+function drillText(d, L) {
+  if (!drillWords.has(d.id)) drillWords.set(d.id, [d.name, d.summary, d.setup, d.why, ...d.how, ...d.points, ...d.skills.map(s => L.SKILLS[s] || s), ...d.tags].join(' ').toLowerCase());
+  return drillWords.get(d.id);
+}
+function drillMatches(d, f, age, L) {
+  const q = String(f.q || '').trim().toLowerCase().split(/\s+/).filter(Boolean);
+  return (age == null || (d.ages[0] <= age && age <= d.ages[1]))
+    && (!f.sig || d.signals.includes(f.sig))
+    && (!f.types.length || f.types.includes(d.type))
+    && (!f.pos.length || f.pos.some(p => d.positions.includes(p)))
+    && (!f.len || d.minutes[0] <= Number(f.len))
+    && (!f.setup || d.setupMins <= Number(f.setup))
+    && (!f.players || d.players.min <= Number(f.players))
+    && (!f.comp || d.competitive === (f.comp === 'yes'))
+    && (!f.levels.length || f.levels.includes(String(d.level)))
+    && (!f.intens.length || f.intens.includes(String(d.intensity)))
+    && (!f.inv.length || f.inv.includes(String(d.involvement)))
+    && (!f.groups.length || f.groups.some(g => d.groups.includes(g)))
+    && (!f.flags.includes('noKeeper') || d.gk === 0)
+    && (!f.flags.includes('oneAdult') || d.adults === 1)
+    && (!f.flags.includes('indoor') || d.indoor)
+    && f.noKit.every(k => !d.kit[k])
+    && (!f.skill || d.skills.includes(f.skill))
+    && (!f.principle || d.principles.includes(f.principle))
+    && (!f.moment || d.moments.includes(f.moment))
+    && (!f.physical || d.physical.includes(f.physical))
+    && (!q.length || q.every(w => drillText(d, L).includes(w)));
+}
+function practiceDrills(f = practiceUi().f, t = team()) {
+  const L = drillLib(); if (!L) return [];
+  const age = practiceAge(f, t);
+  const order = Object.keys(L.TYPES);
+  const by = (PRACTICE_SORTS[f.sort] || PRACTICE_SORTS.session)[1] || ((a, b) => order.indexOf(a.type) - order.indexOf(b.type) || a.level - b.level);
+  return L.DRILLS.filter(d => drillMatches(d, f, age, L)).sort(by);
+}
+/* Everything but the search box, the age and the sort, which sit on the screen
+   itself rather than behind the Filters button. */
+function practiceActive(f) {
+  let n = 0;
+  for (const k of ['sig', 'len', 'setup', 'players', 'comp', 'skill', 'principle', 'moment', 'physical']) if (f[k]) n++;
+  for (const k of ['types', 'pos', 'levels', 'intens', 'inv', 'groups', 'flags', 'noKit']) n += f[k].length;
+  return n;
+}
+
+const drillAges = d => `U${d.ages[0]}–${d.ages[1] >= 19 ? 'adult' : 'U' + d.ages[1]}`;
+const drillPlayers = d => (d.players.min === d.players.max ? d.players.min : d.players.min + '–' + d.players.max);
+/* Thumbnails are the same every time, and render() runs on every sync. */
+const drillThumbs = new Map();
+function drillThumb(id, dg, title) {
+  if (!drillThumbs.has(id)) drillThumbs.set(id, drillDiagram().svg(dg, { title }));
+  return drillThumbs.get(id);
+}
+const reducedMotion = () => {
+  try { return !!(typeof window !== 'undefined' && window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches); } catch (e) { return false; }
+};
+
+function viewPractice() {
+  const L = drillLib(), D = drillDiagram();
+  if (!L || !D) return `<div class="empty"><strong>The drill library didn't load</strong>It comes with the app as a file of its own, and this page opened without it. Reload when you have a signal.</div>`;
+  const p = practiceUi();
+  const tabs = `<div class="chips">${[['drills', `Drills · ${L.DRILLS.length}`], ['positions', 'Positions']].map(([k, l]) =>
+    `<button class="chip" type="button" data-act="practab" data-k="${k}" aria-pressed="${p.tab === k}">${l}</button>`).join('')}</div>`;
+  return `<div class="stack">${tabs}${p.tab === 'positions' ? practicePositions(L) : practiceDrillsView(L)}</div>`;
+}
+
+function practiceDrillsView(L) {
+  const p = practiceUi(), f = p.f, t = team();
+  const u = teamUAge(t);
+  const ages = [['team', u == null ? 'No team age' : `${uLabel(u)} (team)`], ['any', 'Any age'],
+    ...Array.from({ length: 16 }, (_, i) => i + 4).map(n => [String(n), n === 19 ? 'U19 and adult' : 'U' + n])];
+  const opt = (cur, [v, l]) => `<option value="${esc(v)}"${cur === v ? ' selected' : ''}>${esc(l)}</option>`;
+  const n = practiceActive(f);
+  const s = f.sig && L.SIGNALS[f.sig];
+  return `<div class="card drillbar">
+      <input type="search" id="drillQ" value="${esc(f.q)}" placeholder="Search drills, skills, coaching points" aria-label="Search drills">
+      <div class="drilltools">
+        <select data-pick="dfpick" data-k="age" aria-label="Age">${ages.map(x => opt(f.age, x)).join('')}</select>
+        <select data-pick="dfpick" data-k="sort" aria-label="Sort">${Object.entries(PRACTICE_SORTS).map(([k, [l]]) => opt(f.sort, [k, l])).join('')}</select>
+        <button class="btn ${n ? '' : 'quiet '}sm" data-act="drillfilters">${n ? 'Filters · ' + n : 'Filters'}</button>
+      </div>
+      ${u == null && f.age === 'team' && canEditTeam(ui.teamId) ? `<p class="muted" style="margin:8px 0 0">Give the team a birth year (Team → Team name and crest) and the list starts at the right age.</p>` : ''}
+      ${s ? `<div class="drillsignal"><b>${esc(s.label)}</b><span>${esc(s.means)}</span></div>` : ''}
+    </div>
+    <div id="drillList">${drillListHtml()}</div>`;
+}
+
+function drillListHtml() {
+  const L = drillLib(); if (!L) return '';
+  const p = practiceUi(), list = practiceDrills(p.f);
+  const shown = list.slice(0, p.show);
+  const busy = practiceActive(p.f) || p.f.q;
+  return `<p class="muted drillcount">${list.length === L.DRILLS.length ? `All ${list.length} drills` : `${list.length} of ${L.DRILLS.length} drills`}${busy ? ` · <button class="drilllink" data-act="dfclear">clear filters</button>` : ''}</p>
+    ${shown.length ? `<div class="drilllist">${shown.map(drillRow).join('')}</div>` : `<div class="empty"><strong>No drill matches all of that</strong>Try taking a filter off.</div>`}
+    ${list.length > shown.length ? `<button class="btn quiet wide" data-act="drillmore">Show ${Math.min(24, list.length - shown.length)} more</button>` : ''}`;
+}
+
+function drillRow(d) {
+  const L = drillLib();
+  return `<button class="drillrow" type="button" data-act="drill" data-id="${esc(d.id)}">
+    <span class="drillmain"><span class="drillname">${esc(d.name)}</span>
+      <span class="drilltype">${esc(L.TYPES[d.type] || d.type)}</span>
+      <span class="drillsum">${esc(d.summary)}</span>
+      <span class="drillfacts"><b>${drillAges(d)}</b> · ${d.minutes[0]}–${d.minutes[1]} min · ${drillPlayers(d)} players${d.gk ? ' · ' + d.gk + ' GK' : ''} · ${esc(L.LEVELS[d.level])}</span></span>
+    <span class="drillthumb" aria-hidden="true">${drillThumb(d.id, d.diagram, d.name)}</span></button>`;
+}
+
+const DIAGRAM_KEY = [['A', 'Team'], ['D', 'Opponents'], ['N', 'Neutral'], ['B', 'Fourth team'], ['K', 'Keeper'], ['C', 'Coach or server']];
+/* The picture, its key, its Moving / Still switch and its steps, for a drill
+   or a position alike. Moving unless the phone has asked for less motion. */
+function diagramBlock(dg, title, act, id, moving) {
+  const D = drillDiagram();
+  const steps = D.parse(dg).steps;
+  const anim = steps.length > 0 && moving;
+  const used = new Set(Object.keys(dg.players || {}).map(x => x[0]));
+  return `<div class="drillpic">${D.svg(dg, { animate: anim, title })}</div>
+    <div class="spread drillpicbar"><span class="drillkey">${DIAGRAM_KEY.filter(([k]) => used.has(k)).map(([k, l]) => `<span><i style="background:${D.COLOURS[k]}"></i>${l}</span>`).join('')}</span>
+      ${steps.length ? `<span class="chips">${[['move', 'Moving'], ['still', 'Still']].map(([k, l]) =>
+        `<button class="chip" type="button" data-act="${act}" data-id="${esc(id)}" data-k="${k}" aria-pressed="${(k === 'move') === anim}">${l}</button>`).join('')}</span>` : '<span class="muted">Layout</span>'}</div>
+    ${steps.some(s => s.caption) ? `<ol class="drillsteps">${steps.map(s => `<li>${esc(s.caption || '')}</li>`).join('')}</ol>` : ''}`;
+}
+
+function sheetDrill(id, moving = !reducedMotion(), top = false) {
+  const L = drillLib(); if (!L || !drillDiagram()) return;
+  const d = L.DRILLS.find(x => x.id === id); if (!d) return;
+  const byId = x => L.DRILLS.find(y => y.id === x);
+  const list = a => `<ul class="drillul">${a.map(x => `<li>${esc(x)}</li>`).join('')}</ul>`;
+  const kit = Object.entries(d.kit).map(([k, n]) => (n === 'each' ? 'a ball each' : `${n} ${(n === 1 ? (L.KIT[k] || k).replace(/s$/, '') : (L.KIT[k] || k)).toLowerCase()}`)).join(', ') || 'nothing';
+  const trains = [...d.skills.map(s => L.SKILLS[s]), ...d.principles.map(x => L.PRINCIPLES[x]), ...d.physical.map(x => L.PHYSICAL[x]), ...d.moments.map(x => L.MOMENTS[x])];
+  openSheet(`<h3>${esc(d.name)}</h3>
+    <p class="muted" style="margin:-6px 0 10px">${esc(L.TYPES[d.type])} · ${drillAges(d)} · ${d.minutes[0]}–${d.minutes[1]} min · ${esc(L.LEVELS[d.level])} · ${esc(L.INTENSITY[d.intensity])}</p>
+    ${diagramBlock(d.diagram, d.name, 'drillpic', d.id, moving)}
+    <p>${esc(d.summary)}</p>
+    <div class="drillmeta">
+      <span>Players <b>${drillPlayers(d)}${d.gk ? ' · ' + d.gk + ' GK' : ''}</b></span>
+      <span>Setup <b>${d.setupMins ? d.setupMins + ' min' : 'none'}</b></span>
+      <span><b>${d.adults === 1 ? 'One adult' : 'Two adults'}</b></span>
+      <span><b>${d.indoor ? 'Indoors or out' : 'Outdoors'}</b></span>
+      <span><b>${esc(d.groups.map(g => L.GROUPS[g]).join(', '))}</b></span>
+      <span><b>${esc(L.INVOLVEMENT[d.involvement])}</b></span>
+      ${d.competitive ? '<span><b>Competitive</b></span>' : ''}
+      <span>Space <b>${d.space ? d.space[0] + ' × ' + d.space[1] + ' yd' : esc(d.spaceNote || '')}</b></span>
+      <span>Bring <b>${esc(kit)}</b></span>
+      <span>For <b>${esc(d.positions.join(', '))}</b></span>
+    </div>
+    <h4>Setup</h4><p>${esc(d.setup)}</p>
+    <h4>How it runs</h4><ol class="drillul">${d.how.map(x => `<li>${esc(x)}</li>`).join('')}</ol>
+    <h4>Coaching points</h4>${list(d.points)}
+    <h4>Ask them</h4>${list(d.questions)}
+    <h4>Watch for</h4>${list(d.mistakes)}
+    <div class="drillwhy"><h4>Why it helps on Saturday</h4><p>${esc(d.why)}</p></div>
+    <h4>Make it easier</h4>${list(d.easier)}
+    <h4>Make it harder</h4>${list(d.harder)}
+    ${d.safety ? `<div class="drillsafety"><h4>Safety</h4><p>${esc(d.safety)}</p></div>` : ''}
+    <h4>Trains</h4><div class="chips">${trains.map(x => `<span class="tag">${esc(x)}</span>`).join('')}</div>
+    ${d.signals.length ? `<h4>Answers</h4><div class="chips">${d.signals.map(s => `<span class="tag wait">${esc(L.SIGNALS[s].label)}</span>`).join('')}</div>` : ''}
+    ${d.goesWith.length ? `<h4>Goes well with</h4><div class="chips">${d.goesWith.map(byId).filter(Boolean).map(x =>
+      `<button class="chip" type="button" data-act="drill" data-id="${esc(x.id)}">${esc(x.name)}</button>`).join('')}</div>` : ''}
+    <button class="btn quiet wide" data-act="closesheet" style="margin-top:14px">Done</button>`, top);
+}
+
+/* The position guide: what each job is, with the ball and without it. The
+   spots on the team's own default shapes are named alongside, so "full-back"
+   reads as "your LB and RB". */
+function practicePositions(L) {
+  const t = team();
+  const own = new Set(Object.values((t && t.formations) || {}).flatMap(f => (f.slots || []).map(s => s.label)));
+  return `<p class="muted" style="margin:0">What each position is for: when we have the ball, when they have it, and the second either way. Each links the drills that teach it.</p>
+    <div class="drilllist">${L.ROLE_GUIDE.map(r => {
+      const mine = r.slots.filter(s => own.has(s));
+      return `<button class="drillrow" type="button" data-act="roleguide" data-id="${esc(r.id)}">
+        <span class="drillmain"><span class="drillname">${esc(r.name)} <span class="tag">${esc(r.number)}</span></span>
+          <span class="drillsum">${esc(r.oneLine)}</span>
+          <span class="drillfacts">${mine.length ? `In your shapes: <b>${esc(mine.join(', '))}</b>` : `Plays <b>${esc(r.slots.join(', '))}</b>`}</span></span>
+        <span class="drillthumb" aria-hidden="true">${drillThumb('role:' + r.id, r.diagram, r.name)}</span></button>`;
+    }).join('')}</div>`;
+}
+
+function sheetRole(id, moving = !reducedMotion(), top = false) {
+  const L = drillLib(); if (!L || !drillDiagram()) return;
+  const r = (L.ROLE_GUIDE || []).find(x => x.id === id); if (!r) return;
+  const list = a => `<ul class="drillul">${a.map(x => `<li>${esc(x)}</li>`).join('')}</ul>`;
+  openSheet(`<h3>${esc(r.name)} <span class="tag">${esc(r.number)}</span></h3>
+    <p class="muted" style="margin:-6px 0 10px">${esc(r.aka.join(' · '))} · plays ${esc(r.slots.join(', '))}</p>
+    <p>${esc(r.oneLine)}</p>
+    ${diagramBlock(r.diagram, r.name, 'rolepic', r.id, moving)}
+    <h4>When we have the ball</h4>${list(r.withBall)}
+    <h4>When they have it</h4>${list(r.withoutBall)}
+    <div class="drillwhy"><h4>The second we win it</h4><p>${esc(r.whenWeWin)}</p></div>
+    <div class="drillwhy"><h4>The second we lose it</h4><p>${esc(r.whenWeLose)}</p></div>
+    <h4>Key skills</h4><div class="chips">${r.keySkills.map(k => `<span class="tag">${esc(L.SKILLS[k] || k)}</span>`).join('')}</div>
+    <h4>Drills that teach it</h4><div class="chips">${r.drills.map(x => L.DRILLS.find(d => d.id === x)).filter(Boolean).map(d =>
+      `<button class="chip" type="button" data-act="drill" data-id="${esc(d.id)}">${esc(d.name)}</button>`).join('')}</div>
+    <div class="drillsafety"><h4>Under-tens</h4><p>${esc(r.young)}</p></div>
+    <button class="btn quiet wide" data-act="closesheet" style="margin-top:14px">Done</button>`, top);
+}
+
+/* Every filter on the card, behind one button so the list keeps the screen.
+   Each tap redraws the list underneath and this sheet in place, with the count
+   on the button that closes it, so a coach can see a filter bite as she sets it. */
+function sheetDrillFilters() {
+  const L = drillLib(); if (!L) return;
+  const f = practiceUi().f;
+  const chips = (key, vocab) => `<div class="chips">${Object.entries(vocab).map(([k, l]) =>
+    `<button class="chip" type="button" data-act="dfchip" data-k="${key}" data-v="${esc(k)}" data-in="sheet" aria-pressed="${f[key].includes(String(k))}">${esc(l)}</button>`).join('')}</div>`;
+  const sel = (key, first, entries) => `<select data-pick="dfpick" data-k="${key}" data-in="sheet"><option value=""${f[key] ? '' : ' selected'}>${esc(first)}</option>${entries.map(([v, l]) =>
+    `<option value="${esc(v)}"${f[key] === String(v) ? ' selected' : ''}>${esc(l)}</option>`).join('')}</select>`;
+  const lab = (l, body) => `<label class="field"><span>${l}</span>${body}</label>`;
+  const n = practiceDrills(f).length;
+  openSheet(`<h3>Filters</h3>
+    ${lab('What needs work', sel('sig', 'Anything', Object.entries(L.SIGNALS).map(([k, s]) => [k, s.label])))}
+    <p class="lbl">Type</p>${chips('types', L.TYPES)}
+    <p class="lbl">Position</p>${chips('pos', Object.fromEntries(L.POSITIONS.map(x => [x, x])))}
+    <div class="grid2">
+      ${lab('Fits in', sel('len', 'Any length', [5, 10, 15, 20].map(m => [m, m + ' minutes'])))}
+      ${lab('Setup', sel('setup', 'Any setup', [[1, 'A minute or less'], [3, 'Under 3 minutes'], [5, 'Under 5 minutes']]))}
+      ${lab('Players coming', sel('players', 'Any number', Array.from({ length: 23 }, (_, i) => [i + 2, String(i + 2)])))}
+      ${lab('Competitive', sel('comp', 'Either', [['yes', 'Has a score or winner'], ['no', 'No scoring']]))}
+    </div>
+    <p class="lbl">Difficulty</p>${chips('levels', L.LEVELS)}
+    <p class="lbl">Intensity</p>${chips('intens', L.INTENSITY)}
+    <p class="lbl">How busy</p>${chips('inv', L.INVOLVEMENT)}
+    <p class="lbl">Grouped as</p>${chips('groups', L.GROUPS)}
+    <p class="lbl">Practical</p>${chips('flags', PRACTICE_FLAGS)}
+    <p class="lbl">Kit you don't have</p>${chips('noKit', PRACTICE_NOKIT)}
+    <div class="grid2">
+      ${lab('Skill', sel('skill', 'Any skill', Object.entries(L.SKILLS)))}
+      ${lab('Principle of play', sel('principle', 'Any principle', Object.entries(L.PRINCIPLES)))}
+      ${lab('Moment of the game', sel('moment', 'Any moment', Object.entries(L.MOMENTS)))}
+      ${lab('Physical', sel('physical', 'Any', Object.entries(L.PHYSICAL)))}
+    </div>
+    <div class="row" style="gap:8px;margin-top:6px">
+      <button class="btn quiet" style="flex:1" data-act="dfclear" data-in="sheet">Clear</button>
+      <button class="btn" style="flex:2" data-act="closesheet">Show ${n} drill${n === 1 ? '' : 's'}</button></div>`);
+}
+
+/* The search box redraws the list only: redrawing the whole screen would take
+   the box, and the keyboard, away from her after every letter. */
+function refreshDrillList() {
+  const el = $('#drillList');
+  if (el) el.innerHTML = drillListHtml();
 }
 
 /* --- settings: things about you and this device --- */
@@ -5619,6 +5964,8 @@ function sheetTeam(t) {
       ${t.logo ? `<button class="btn quiet sm" data-act="droplogo" data-id="${t.id}">Use club badge</button>` : ''}</span>
     </div>` : ''}
     <label class="field"><span>Name</span><input type="text" id="tName" value="${esc(t && t.name ? t.name : '')}" placeholder="Lakeside Thunder G14"></label>
+    <label class="field"><span>Birth year</span><input type="number" inputmode="numeric" id="tBirth" value="${esc(t && t.birthYear ? String(t.birthYear) : '')}" placeholder="${seasonEndYear() - 11}"></label>
+    <p class="muted" style="margin-top:-6px">The year most of the squad were born. It sets the age group, ${t && teamUAge(t) != null ? `${uLabel(teamUAge(t))} this season, ` : ''}which moves up by itself every August, and starts the drill library at the right age.</p>
     <button class="btn wide" data-act="saveteam" data-id="${t ? t.id : ''}">${t ? 'Save changes' : 'Create team'}</button>
     ${t ? `<div style="margin-top:8px"><button class="btn danger wide" data-act="delteam" data-id="${t.id}">Delete this team and its games</button></div>` : ''}`);
 }
@@ -5630,6 +5977,27 @@ function onAct(e) {
   const a = el.dataset.act, d = el.dataset;
   const t = team(), m = match();
   if (!mayAct(a, m)) { closeSheet(); toast("Only this team's coaches can change that"); render(); return; }
+  if (PRACTICE_ACTS.has(a) && !canTrain()) { closeSheet(); toast('Practice is for coaches and admins'); render(); return; }
+
+  if (a === 'practab') { practiceUi().tab = d.k === 'positions' ? 'positions' : 'drills'; render(); return; }
+  if (a === 'drill') { sheetDrill(d.id, undefined, true); return; }
+  if (a === 'drillpic') { sheetDrill(d.id, d.k === 'move'); return; }
+  if (a === 'roleguide') { sheetRole(d.id, undefined, true); return; }
+  if (a === 'rolepic') { sheetRole(d.id, d.k === 'move'); return; }
+  if (a === 'drillfilters') { sheetDrillFilters(); return; }
+  if (a === 'drillmore') { practiceUi().show += 24; refreshDrillList(); saveUi(); return; }
+  if (a === 'dfchip' || a === 'dfpick' || a === 'dfclear') {
+    const p = practiceUi(), f = p.f;
+    if (a === 'dfclear') p.f = { ...PRACTICE_BLANK(), age: f.age, sort: f.sort };
+    else if (a === 'dfchip' && Array.isArray(f[d.k])) {
+      const v = String(d.v), i = f[d.k].indexOf(v);
+      if (i >= 0) f[d.k].splice(i, 1); else f[d.k].push(v);
+    } else if (a === 'dfpick' && typeof f[d.k] === 'string') f[d.k] = String(d.v || '');
+    p.show = 24;
+    render();
+    if (d.in === 'sheet') sheetDrillFilters();
+    return;
+  }
 
   if (a === 'tap') { tapPlayer(d.pid); return; }
   if (a === 'taplive') { tapLive(d.pid); return; }
@@ -6022,8 +6390,16 @@ function onAct(e) {
   if (a === 'pickteam') { ui.teamId = d.id; ui.matchId = null; closeSheet(); render(); return; }
   if (a === 'saveteam') {
     const name = $('#tName').value.trim(); if (!name) { toast('Give the team a name'); return; }
-    if (d.id) { commit(`teams/${d.id}/name`, name); }
-    else { const id = uid(); commit(`teams/${id}`, { id, name, players: {} }); ui.teamId = id; }
+    const bEl = $('#tBirth'), braw = bEl && bEl.value != null ? String(bEl.value).trim() : '';
+    const born = braw ? Number(braw) : null;
+    if (braw && uAge(born) == null) { toast('That birth year doesn\'t look right'); return; }
+    if (d.id) {
+      commit(`teams/${d.id}/name`, name);
+      const was = (state.teams[d.id] || {}).birthYear || null;
+      if (born && born !== was) commit(`teams/${d.id}/birthYear`, born);
+      else if (!born && was) drop(`teams/${d.id}/birthYear`);
+    }
+    else { const id = uid(); commit(`teams/${id}`, { id, name, players: {}, ...(born ? { birthYear: born } : {}) }); ui.teamId = id; }
     closeSheet(); render(); return;
   }
   if (a === 'picklogo') { pickImage(`teams/${d.id}/logo`, 'Crest saved'); return; }
@@ -6456,11 +6832,18 @@ document.addEventListener('click', onAct);
 document.addEventListener('change', e => {
   const s = e.target;
   if (!s || !s.dataset || !s.dataset.pick) return;
-  const d = { act: s.dataset.pick, k: s.dataset.k, v: s.value };
+  const d = { act: s.dataset.pick, k: s.dataset.k, v: s.value, in: s.dataset.in };
   onAct({ target: { closest: () => ({ dataset: d }) } });
 });
 
 
+
+document.addEventListener('input', e => {
+  if (!e.target || e.target.id !== 'drillQ') return;
+  const p = practiceUi();
+  p.f.q = e.target.value; p.show = 24;
+  refreshDrillList(); saveUi();
+});
 
 /* The ideas box writes itself into the prompt as she types, and is kept per game
    so closing the sheet by accident does not lose a half-written plan. */
@@ -6491,8 +6874,8 @@ function uiToHash() {
   if (ui.view === 'game' && t && m) return `#/team/${t}/game/${m}/${ui.gameView}`;
   if (ui.view === 'formation' && t && ui.editFid === GAME_SHAPE && m) return `#/team/${t}/game/${m}/shape`;
   if (ui.view === 'formation' && t) return `#/team/${t}/shape/${ui.editFid}`;
-  if (['matches', 'roster', 'season', 'teamset'].includes(ui.view) && t) {
-    const seg = { matches: 'games', roster: 'squad', season: 'season', teamset: 'planning' }[ui.view];
+  if (['matches', 'practice', 'roster', 'season', 'teamset'].includes(ui.view) && t) {
+    const seg = { matches: 'games', practice: 'practice', roster: 'squad', season: 'season', teamset: 'planning' }[ui.view];
     return `#/team/${t}/${seg}`;
   }
   if (ui.view === 'people') return '#/club/people';
@@ -6520,7 +6903,7 @@ function hashToUi() {
       return true;
     }
     if (p[2] === 'shape' && p[3]) { ui.editFid = p[3]; ui.view = 'formation'; return true; }
-    const back = { games: 'matches', squad: 'roster', season: 'season', planning: 'teamset' }[p[2]];
+    const back = { games: 'matches', practice: 'practice', squad: 'roster', season: 'season', planning: 'teamset' }[p[2]];
     ui.view = back || 'matches';
     return true;
   }

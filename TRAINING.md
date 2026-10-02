@@ -516,9 +516,11 @@ too. The bridge doesn't change shape.
 
 1. **Browse the built-in library.** Practice → Drills, filters, the drill card
    with its animated diagram. No database, no rules, no schema. It can ship
-   alone and be useful the same day.
+   alone and be useful the same day. *Built, with the position guide as
+   Practice → Positions.*
 2. **A team age.** One field on the team (U-age, or birth year so it rolls
-   over), so the library filters to the team by default.
+   over), so the library filters to the team by default. *Built as
+   `teams/{tid}/birthYear`, which bulk import also takes.*
 3. **Practices.** Plan, run mode, review; `training/{code}/practices` and
    `schedule`; `access/coachIndex` and its place in `syncIndex()`; the rules
    blocks in both sets with `test/rules.js` cases (a parent and a tracker
@@ -542,11 +544,13 @@ goes anywhere near the real club.
 1. **Attendance?** Who came to practice is useful (and the AI would use it),
    but it is data about children. Plans are now coaches' and admins' only, so
    it would sit in the right place. The recommendation is still not yet.
-2. **Team age as a U-age or a birth year?** A birth year rolls over by itself
-   each season; a U-age is what coaches say.
-3. **The tab's name:** Practice or Training?
 
 Settled on 2026-10-02:
+
+- Team age is stored as a birth year and shown as a U-age. The season runs
+  August to July and takes the year it ends in, the US youth rule: born 2016
+  is U11 in 2026–27.
+- The tab is called Practice.
 
 - Built-in drills have pictures, and they're animated.
 - Coaches' own pictures are drawn in the app or linked. Nothing is uploaded.

@@ -8,6 +8,60 @@ before this point lives only in the git log.
 
 ---
 
+## A Practice tab, and a team's age — 2026-10-02
+
+The drill library is in the app now. Practice sits beside Games, for coaches
+and admins only. A parent, a tracker or an account with no role never gets the
+tab. A link to it lands them on the games list, and a tap that gets to the
+handler anyway is refused there too. The built-in drills are in the app's
+public files and aren't secret on their own. The point is that the screen
+where club drills and plans will live is shut to the right people before any
+of that arrives. Before a club has an admin nothing is gated, the same as
+every other screen.
+
+**Drills** lists all 105, each with its animated diagram as a thumbnail.
+Search covers the name, the steps, the coaching points and the skills. Age and
+sort are on the screen. Everything else on the card is behind one *Filters*
+button: what needs work, type, position, length, setup time, players coming,
+competitive, difficulty, intensity, how busy, grouping, keeper, one adult,
+indoors, missing kit, skill, principle, moment and physical. The button counts
+how many filters are on, and the sheet shows how many drills are left as you
+set each one. A drill card has the diagram (Moving or Still, and still by
+default on a phone that asks for less motion) and the numbered steps, then
+setup, how it runs, coaching points, questions, mistakes, why it helps on
+Saturday, easier, harder, safety, what it trains and the drills that go with
+it.
+
+**Positions** is the guide to all nine positions, each with its diagram and
+links to the drills that teach it. It names the spots from the team's own
+saved shapes, so "full-back" reads as "your LB and RB".
+
+**A team's age** is one new field on the team sheet: the birth year. It's
+shown as a U-age, and it rolls over by itself each August, because a season
+takes the year it ends in: born 2016 is U11 from August 2026 to July 2027.
+The list starts at the team's age, and a coach can switch to any age or
+none. Bulk import takes `birthYear` (or `born`) on a team. A team that
+already has one keeps it, because the import fills gaps rather than
+overruling a coach.
+
+No new database node and no rule change. `birthYear` sits inside a team,
+which the existing team rules already cover.
+
+`drills.js` and `drill-diagram.js` load as plain scripts ahead of `app.js`, so
+they are cache-busted with everything else. `test/version.js` now checks every
+`?v=` in `index.html`, not just two, and that both scripts come before
+`app.js`. If either file fails to arrive, the tab still opens and says so,
+rather than taking `render()` down. `node test/practice.js` covers who gets
+the tab, the age rule, every filter, the cards and that failure case.
+
+**Every sheet now opens at its top.** Fixed while checking this on a phone. A
+sheet kept the scroll position of whichever sheet was open before it, so a
+long drill card opened halfway down its coaching points. The bug was in the
+app before, but nothing was long enough to show it. A sheet redrawn while
+it's open, such as a filter chip or Moving / Still, still keeps its place.
+
+---
+
 ## A coach's own drills: her, and the app owner — 2026-10-02
 
 Design only, in `TRAINING.md`. A coach's personal library is readable by

@@ -15,7 +15,7 @@ const { spawnSync } = require('child_process');
 const path = require('path');
 
 const SUITES = [
-  ['version', 'the four build markers agree'],
+  ['version', 'the build markers agree'],
   ['clock', 'the match clock and minutes played'],
   ['stints', 'who is on the pitch, and the sub actions'],
   ['plan', 'the Plan tab\'s snapshots of the pitch'],
@@ -31,6 +31,7 @@ const SUITES = [
   ['invites', 'joining a club by invite, on both sides'],
   ['import', 'bulk import merges, and never replaces'],
   ['drills', 'the built-in drill library holds together'],
+  ['practice', 'the Practice tab, and who gets it'],
   ['smoke', 'every view renders without throwing'],
   ['sandbox', 'the test club, and database isolation'],
   ['rules', 'the database rules, as README publishes them']

@@ -20,6 +20,7 @@ A sideline tracker for soccer coaches: multiple teams, rosters, planned vs actua
 - **Fixing mistakes.** Tap any line in the sub log to nudge it by 5, 15, 30 or 60 seconds, or type the exact time. *Add a sub* records one that happened before you tapped. *Fix minutes* opens a player's spells on the pitch and lets you edit or delete each one. *Clock reading wrong?* shifts the current half and the total together.
 - **Per-game availability.** Mark players out for one game without touching their season totals.
 - **Veo.** Each game has a field for the Veo link, so the recording sits next to the sub log.
+- **Practice.** A library of 105 drills, each with an animated diagram, setup, coaching points, questions to ask, what goes wrong, easier and harder versions and safety notes. Filter by age, type, position, length, setup time, players, kit, difficulty, intensity, skill, principle of play and what needs work. A **Positions** guide says what each of nine positions does with the ball, without it, and in the second either way, and links the drills that teach it. The list starts at the team's age group, set as a **birth year** under Team → *Team name and crest*, so it moves up a year by itself every August. Coaches and admins only: parents and trackers never get the tab. Club and personal drills and practice plans are designed in `TRAINING.md` and not built yet.
 
 ## Running it
 
@@ -551,6 +552,7 @@ Admin → *Import teams and games* takes a season at once — teams, rosters, fi
 {
   "teams": [{
     "name": "Lakeside Thunder G12",
+    "birthYear": 2015,
     "players": [
       { "name": "Ada Lovelace", "number": 1, "gk": true },
       { "name": "Bea Smith", "number": 7, "position": "Forward", "also": ["Wing"], "rating": 4 },
@@ -569,6 +571,7 @@ Admin → *Import teams and games* takes a season at once — teams, rosters, fi
 ```
 
 - **Only `name` (team, player) and `opponent` (game) are required.** Everything else is optional and defaults to what the app would give it by hand.
+- **Team fields:** `birthYear` (`born` also works), which sets the age group. A team already here keeps the birth year it has.
 - **Player fields:** `number`, `gk`, `position` (GK, Back, Mid, Wing, Forward — "defender", "striker" and the like are understood), `also` (a list of positions), `rating` (1–5), `maxStint` (minutes), `note`, `active`.
 - **Game fields:** `date` (`2026-10-04`), `kickoff` (`09:30`), `venue`, `periods` (2 or 4), `minutes` (per period), `side` (5, 7, 9 or 11), `shape` (a preset like `4-3-3`, or a shape the team has saved), `veo`, and for a game already played `score` (`"3-1"`) with optional `scorers` (shirt numbers or names, one per goal).
 - **Games can sit under their team, or in a top-level `games` list with a `team` name** — whichever the spreadsheet exports more easily.
