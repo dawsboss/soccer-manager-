@@ -8,6 +8,25 @@ before this point lives only in the git log.
 
 ---
 
+## The database rules are files — 2026-10-02
+
+The rules lived as two code blocks in README, and `test/rules.js` parsed them
+out of the prose. That made the thing you paste into the Firebase console a
+selection from the middle of a long document: one stray brace from being
+refused, awkward to copy on a phone, and invisible in a diff among paragraphs
+of explanation. They are now `database.rules.json` (locked down: what a club
+runs) and `database.rules.open.json` (the starter set). On a phone, open the
+file on GitHub, tap **Raw**, select all, copy. `firebase.json` points the
+Firebase CLI at the locked set, so `firebase deploy --only database` publishes
+the same file from a computer.
+
+README still explains every block and keeps its short excerpts. `rules.js`
+reads the files, and fails in four ways it could not catch before: a whole
+ruleset copied back into README (the copy that drifts), an excerpt there that
+no longer matches the file, a block the open set shares with the locked one
+that has drifted (so an invite made today would stop working on lockdown day),
+and `firebase.json` pointing anywhere else.
+
 ## Families' answers plan the game, and the coach takes a register — 2026-10-02
 
 **Answers go straight into the plan.** A "not going" was a hint on the

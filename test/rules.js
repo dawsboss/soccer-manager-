@@ -7,9 +7,12 @@
    clause while every write is refused, so the club goes read-only and nobody
    finds out until someone tries to make a sub at a game.
 
-   So this reads the rules JSON straight out of README.md rather than keeping a
-   copy. What is tested is the artifact you actually paste into the console; a
-   copy would drift from it, and a rules test that drifts is worse than none.
+   So this reads the rules from the files you actually paste —
+   database.rules.json (locked down) and database.rules.open.json (the starter
+   set) — rather than keeping a copy. They used to live as code blocks inside
+   README.md, and this test parsed them out of the prose; a file is what you
+   copy from and what a commit diff shows, so the file is the artifact now and
+   README only explains it.
 
    Exits non-zero when an expectation fails. */
 
@@ -18,53 +21,41 @@ const path = require('path');
 
 const README = fs.readFileSync(path.join(__dirname, '..', 'README.md'), 'utf8');
 
-/* ---------------- pulling the rules out of README ---------------- */
+/* ---------------- the rules files, and README's excerpts of them ---------------- */
 
-/* README carries several fenced JSON blocks: the open rules to start with, the
-   locked-down set, and two fragments to paste alongside it. Pick them by what
-   they contain rather than by position, so reordering the prose cannot silently
-   start testing the wrong block. */
+const ROOT = path.join(__dirname, '..');
+const readJson = f => JSON.parse(fs.readFileSync(path.join(ROOT, f), 'utf8'));
+
 function jsonBlocks() {
   return [...README.matchAll(/```json\n([\s\S]*?)```/g)].map(m => m[1]);
 }
 
+/* Three things can go wrong with two rule sets and a README, and each one is
+   silent until a club is refused something: a full ruleset copied back into
+   README and edited there instead of in the file; an excerpt in README that
+   explains a block which no longer looks like that; and firebase.json pointing
+   the CLI at some other file. Each is a hard failure. (The blocks the open and
+   locked sets share are checked case by case under "the open rules".) */
 function loadRules() {
-  let full = null;
-  const fragments = {};
-  let complete = null;
+  const locked = readJson('database.rules.json').rules;
+  readJson('database.rules.open.json');          // it has to parse, at least
   for (const raw of jsonBlocks()) {
     let doc = null;
     try { doc = JSON.parse(raw); } catch (e) { }
-    if (doc && doc.rules) {
-      // the block README tells you to paste carries every tier at once
-      if (raw.includes('access/index') && raw.includes('appOwners')) complete = doc.rules;
-      else if (raw.includes('access/index')) full = doc.rules;
-      continue;
-    }
+    if (doc && doc.rules) throw new Error('README.md carries a whole ruleset again. The rules live in database.rules.json and database.rules.open.json; change them there and point README at the file.');
     // a fragment is a bare "key": { ... } pair, valid JSON once wrapped
-    try {
-      const frag = JSON.parse('{' + raw + '}');
-      for (const k of Object.keys(frag)) fragments[k] = frag[k];
-    } catch (e) { }
+    let frag = null;
+    try { frag = JSON.parse('{' + raw + '}'); } catch (e) { }
+    // only excerpts of rules: README also shows the appOwners *data* you add by hand
+    const isRule = v => v && typeof v === 'object' && Object.keys(v).some(x => x[0] === '.' || x[0] === '$');
+    for (const k of ['retired', 'appOwners'])
+      if (frag && isRule(frag[k]) && JSON.stringify(frag[k]) !== JSON.stringify(locked[k]))
+        throw new Error('README\'s "' + k + '" example no longer matches database.rules.json');
   }
-  /* Prefer the single complete block README says to paste, so the test and the
-     artifact are the same text. The fragments shown elsewhere in README are
-     explanation; assert they still match what the complete block says, or the
-     prose and the thing you publish can drift apart without anyone noticing. */
-  if (complete) {
-    for (const k of ['retired', 'appOwners']) {
-      if (!fragments[k]) continue;
-      if (JSON.stringify(fragments[k]) !== JSON.stringify(complete[k]))
-        throw new Error('README\'s "' + k + '" example no longer matches the complete ruleset');
-    }
-    return complete;
-  }
-  if (!full) throw new Error('could not find the rules block in README.md');
-  for (const k of ['retired', 'appOwners']) {
-    if (fragments[k]) full[k] = fragments[k];
-    else console.log('  note: no "' + k + '" fragment found in README');
-  }
-  return full;
+  const firebase = readJson('firebase.json');
+  if (((firebase.database || {}).rules) !== 'database.rules.json')
+    throw new Error('firebase.json no longer points at database.rules.json, so `firebase deploy --only database` would publish something else');
+  return locked;
 }
 
 const RULES = loadRules();
@@ -822,8 +813,7 @@ reads('owners are not world-readable', OUT, 'shareOwners/sh1', false);
    before a club is locked down. One copy drifting from the other would mean an
    invite or a message that works today stops working on lockdown day. */
 {
-  const open = jsonBlocks().map(r => { try { return JSON.parse(r); } catch (e) { return null; } })
-    .find(d => d && d.rules && d.rules.workspaces && d.rules.workspaces.$code['.write'] === true);
+  const open = readJson('database.rules.open.json');
   console.log('\n--- the open rules ---');
   for (const k of ['invites', 'clubInvites', 'userOrgs', 'board', 'dm', 'joinCodes', 'claims'])
     check(k + ' matches the locked-down block', !!open && JSON.stringify(open.rules[k]) === JSON.stringify(RULES[k]), true);

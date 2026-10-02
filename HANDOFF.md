@@ -46,7 +46,13 @@ All in `CHANGELOG.md` (three entries, 2026-10-01 and 2026-10-02) and README
   who have not answered (ROADMAP → *Who is coming, next*), and a notice when an
   entry is called off. Its "availability replies" next step is done here, as
   `rsvp`.
-- **The rules to paste are the merged ones.** README's two rule sets now carry
+- **The rules are files now**: `database.rules.json` (locked down) and
+  `database.rules.open.json`, no longer code blocks in README. A branch that
+  still edits a rules block in README (training, if it adds rules) has to move
+  that change into the file when it merges; `node test/rules.js` fails until it
+  does. The owner's live rules matched `main`'s on 2026-10-02; the only thing
+  to add for this branch is `rsvp`.
+- **The rules to paste are the merged ones.** The two rule sets now carry
   messages' root blocks (`board`, `dm`, `joinCodes`, `claims`), its
   `access/teamParents` and its extra clause on `access/index`, and this
   branch's `rsvp`. `node test/rules.js` checks all of it together.

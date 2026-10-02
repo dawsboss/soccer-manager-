@@ -33,9 +33,10 @@ Read `HANDOFF.md` first if it exists and is current. Read `AUTH.md`, `ROADMAP.md
 - `test/harness.js` is the shared rig: the stubbed DOM, a clock the test drives, a captured click handler (which is the only way to reach the ~120 actions that are inline branches in one listener), and `loadApp()`. Write new tests on it rather than a fourth copy of the stubs.
 - `.github/workflows/test.yml` runs `test/run.js` on every push and pull request.
 
-## Required after every change to the rules in README.md
+## Required after every change to the rules (`database.rules.json`, `database.rules.open.json`)
 
-- `node test/rules.js` — evaluates the rules JSON *as README publishes it* against a mock club, for every kind of account. Exits non-zero on a failed expectation. Rules are the one thing here with no way to try it safely: the only live test is publishing over the real club, and the failure mode README warns about is silent (reads work, every write is refused). Run it before you paste anything into the Firebase console.
+- The rules live in two files: `database.rules.json` (locked down, what a club runs; `firebase.json` points the Firebase CLI at it) and `database.rules.open.json` (the starter set). README explains them and points at them, but never carries a whole copy — a second copy is the one that drifts, and `rules.js` fails if one reappears. Edit the file, never a pasted-back block.
+- `node test/rules.js` — evaluates `database.rules.json`, the file you paste, against a mock club, for every kind of account, and checks that the blocks the open set shares with it are identical. Exits non-zero on a failed expectation. Rules are the one thing here with no way to try it safely: the only live test is publishing over the real club, and the failure mode README warns about is silent (reads work, every write is refused). Run it before you paste anything into the Firebase console.
 
 ## Known gaps are pinned, not hidden
 
