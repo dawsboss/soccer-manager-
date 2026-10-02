@@ -8,6 +8,45 @@ before this point lives only in the git log.
 
 ---
 
+## Every drill gets a picture that moves, and a lot more to filter on — 2026-10-02
+
+Still nothing on screen in the app. This makes the drill library something a
+coach would actually pick from.
+
+**Diagrams.** Every built-in drill now has one, and 53 of the 55 animate:
+players run, the ball travels, and a caption under the pitch says what each
+step is. The other two (juggling, the cool-down circle) are layouts. They are
+not images. A diagram is a few lines of data in the drill (cones, goals,
+players in yards, then moves like `A1>A2` for a pass and `A1~12,4` for a
+dribble), and `drill-diagram.js` draws it as an SVG whose animation runs
+inside the SVG, so it loops like a GIF with no script. That keeps each one a
+few kilobytes and working offline, gives a still version with numbered
+arrows for anyone whose phone asks for less motion, and means a coach's own
+diagrams can later be drawn in the app rather than uploaded.
+
+**More to filter on.** Each drill now says how long it takes to set up, whether
+one adult can run it, whether it works indoors, how the players are grouped,
+how busy each player is (lines versus non-stop), and whether there's a score
+to win. Those sit beside what was already there (length, difficulty,
+intensity, ages, players and keepers, kit, skills, principles, moments,
+physical) as filters in the preview.
+
+**Checks.** `test/drills.js` parses every diagram and refuses a pass from
+someone without the ball, a player off the pitch, or a caption too long for
+a phone. It holds each picture to its card: a keeper on the card is a keeper
+in the picture, and goals and cones in the picture are on the kit list. That
+check found World Cup's kit list missing the cones in its own picture.
+Every diagram was also looked at by eye, still and mid-animation, because a
+parser can say a diagram is valid but not that it reads well.
+
+**`TRAINING.md`** has a *Pictures* section. Coaches add their own three ways,
+cheapest first: draw one in the same format, link a video or GIF that lives
+elsewhere, or upload a photo shrunk on the phone. Two new decisions for the
+club: where uploaded photos are kept, and what to do about the children who
+will be in them.
+
+---
+
 ## A drill library, and a design for training — 2026-10-01
 
 Nothing on screen changes yet. This is the groundwork for coaches planning

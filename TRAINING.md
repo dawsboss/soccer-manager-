@@ -5,9 +5,10 @@ rules have to be right first. Training adds the first new root node since
 invites. It's also the first data here that belongs to a *person* rather than to
 a club, so a mistake would be expensive to undo.
 
-What exists today is the built-in drill library (`drills.js`, 55 drills) and the
-suite that keeps it honest (`test/drills.js`). Nothing in the app loads either
-yet. Everything else below is a proposal, and the questions at the end are the
+What exists today is the built-in drill library (`drills.js`, 55 drills, each
+with an animated diagram), the renderer that draws those diagrams
+(`drill-diagram.js`), and the suite that keeps both honest (`test/drills.js`).
+Nothing in the app loads any of them yet. Everything else below is a proposal, and the questions at the end are the
 decisions it needs.
 
 ---
@@ -89,6 +90,13 @@ a deletion leaves holes in it.
 | `safety` | Optional | Heading (federation age rules), diving surfaces, punting rules |
 | `signals` | Which game numbers it answers | The bridge to "what needs work" and the AI, below |
 | `goesWith`, `tags` | Drills that chain well; loose labels | Suggestions in the builder |
+| `setupMins` | Minutes to lay it out | "Something I can put out while they arrive" |
+| `adults` | 1 or 2 | A volunteer on her own needs to know before she picks it. The keeper drills say 2, because the keepers work apart from the team |
+| `indoor` | Works in a gym or on a court | Winter, and rained-off fields |
+| `groups` | On their own, pairs, small groups, teams, whole squad | Odd numbers, and what the session before it left set up |
+| `involvement` | 1 some waiting, 2 busy, 3 non-stop | Lines are what youth coaches are most often told to cut |
+| `competitive` | A score or a winner | Some groups need one to switch on; some need a break from one |
+| `diagram` | The picture, as data (below) | Most coaches read the picture first and the words second |
 
 `test/drills.js` holds the library to this: fixed vocabularies, sane ranges,
 `goesWith` pointing at real drills, positions matching `ROLES` in `app.js`, no
@@ -100,10 +108,73 @@ while the library was being written: the under-sixes had nine drills, and
 throw-ins had one. It's there to keep the library from quietly becoming
 something a U6 coach opens and finds empty.
 
-**Diagrams are not in yet** (question 5). A small, coordinate-based format
-(players, cones, goals, arrows on a 100 × 100 grid, like `positions`) would
-render as SVG beside the pitch the app already draws. It's worth doing, but by
-hand, one drill at a time, and checked by eye.
+## Pictures
+
+### Built-in drills: drawn, and they move
+
+Every built-in drill has a diagram, and 53 of the 55 animate: players run, the
+ball travels, and a caption says what each step is. The two that don't move
+(juggling and the cool-down circle) are layouts.
+
+A diagram is data, not an image. It's a few lines in `drills.js`: the area in
+yards, cones and goals, players by team colour, then moves step by step (`A1>A2`
+a pass, `A1~12,4` a dribble, `A1-12,4` a run, `A1>G` a shot). `drill-diagram.js`
+turns that into an SVG. The animation is SMIL inside the SVG, so it loops like a
+GIF with no script running and the same string works in the app, in an `<img>`,
+or saved as a file. Next to a GIF it:
+
+- **weighs a few kilobytes and works offline**, like the rest of the app;
+- **has a still version for free.** Every move is drawn as an arrow, numbered
+  by step, for anyone whose phone asks for less motion, and for paper;
+- **can't drift from the card silently.** `test/drills.js` parses every
+  diagram, so a pass from a player without the ball, or someone standing off the
+  pitch, fails the suite. It also holds the picture to its card: a keeper on
+  the card is a keeper in the picture, and a goal or cones in the picture are
+  on the kit list. Captions are capped at 48 characters so the strip under the
+  picture never cuts one off on a phone. The first run of those checks caught
+  World Cup's kit list missing the cones in its own picture.
+
+They were checked by eye as well, every one, still and mid-animation. A parser
+can tell that a diagram is valid. It can't tell that it reads well.
+
+### A coach's own drills: three ways, cheapest first
+
+For drills on the Club and Mine shelves, the coach chooses:
+
+1. **Draw it.** A diagram editor in the same format: tap to place players and
+   cones, drag from a player to make a pass or a run, *Next step* for the
+   next move. It's the same few kilobytes, works offline, animates, and needs
+   no storage at all. This is the default, and it covers most of what a coach
+   would otherwise photograph.
+2. **Link it.** A video or GIF that lives somewhere else: YouTube, Vimeo,
+   Instagram, Google Drive, a direct `.gif`. It's stored as
+   `media: [{ kind: 'link', url, title }]`. A direct image link shows inline,
+   anything else as a link card. It costs nothing to store, but needs a signal
+   to play, and a link can die.
+3. **Upload a picture.** Shrunk on the phone first, to about 1000 px wide and
+   100–150 KB as a JPEG, through a canvas. That also strips the location data
+   phones write into photos, which matters more here than the size. Then the
+   question is where the bytes go (question 5):
+   - **Realtime Database, at a node of its own** (`trainingMedia/{code}/{id}`),
+     read only when a card opens and cached for offline. The free plan holds
+     1 GB, which is thousands of shrunk photos. It works for pictures, but not
+     for GIFs or video, which run to megabytes.
+   - **Cloud Storage for Firebase**, the proper home for files of any size.
+     Firebase has been moving Storage onto the pay-as-you-go (Blaze) plan, and
+     this project's bucket is the newer `firebasestorage.app` kind, so check
+     the plan in the console before designing on it.
+
+   The recommendation: draw, link, and photos into the database. Storage only
+   if a club wants to upload its own video.
+
+**Photos of drills are usually photos of children** (question 6). A club drill
+is readable by every account in the club, parents included, and it outlives
+the season the photo was taken in. So: the upload screen says *photograph the
+set-up, not the players* and asks for a tick that no child's face is in it;
+pictures and links never go near the public mirror or `live.html`; a picture
+on Mine is readable by its owner only; and an admin can remove any club media.
+A drawn diagram has none of these problems, which is one more reason it comes
+first.
 
 ## Practices
 
@@ -145,7 +216,13 @@ training/{code}/practices/{teamId}/{practiceId}
 - A **Practice** tab beside Games: upcoming practices, the last few, and
   *Plan a practice*.
 - **Drills** inside it, with the three shelves as filter chips (Built-in ·
-  Club · Mine) and filters for age, type, skill, position and signal.
+  Club · Mine) and a filter for everything on the card: age, what needs work,
+  type, position, length, difficulty, intensity, how many players are coming
+  and whether a keeper is, setup time, one adult or two, indoors, how they're
+  grouped, how busy, competitive, skills, principles, moments, physical, and
+  what kit there is (no mini goals, no bibs). Sorted by session order,
+  shortest, quickest to set up or busiest. The preview artifact has all of
+  these working.
 - **Club drills** also under Admin, for curation.
 - **My drills** under the account menu, because it's the person's, not the
   team's.
@@ -171,14 +248,22 @@ device should draw (`needsSignIn()` still gates the rest, at the top of
 drills.js                                   built-in, read-only, ships with the app
 
 training/{code}/                            the club's; {code} is the workspace code
-  drills/{drillId}       { ...card, from, by, byName, team, at }
+  drills/{drillId}       { ...card, diagram, media[], from, by, byName, team, at }
   templates/{sid}        { name, blocks[], by, byName, team, at }
   practices/{teamId}/{practiceId}   (above)
 
 userLibrary/{uid}/                          one person's, whichever clubs they are in
-  drills/{drillId}       { ...card, from, at }
+  drills/{drillId}       { ...card, diagram, media[], from, at }
   templates/{sid}        { name, blocks[], at }
+
+trainingMedia/{code}/{mediaId}              uploaded pictures, if question 5 says the
+                         { jpeg, w, h, by, at }     database: read when a card opens, never
+                                            with the drill list
 ```
+
+`media[]` on a drill holds links and references (`{ kind: 'link', url }`,
+`{ kind: 'photo', id }`), never the bytes. That keeps a drill list a few
+kilobytes even when every drill on it has a picture.
 
 **Why `training/{code}` and not `workspaces/{code}/training`.** Three reasons,
 any one of which would be enough:
@@ -274,8 +359,9 @@ decisions.
   plans and drills and wrong for "Ava was off the pace again". The review note
   says so on the screen, and attendance (question 3) is the feature that would
   force a tighter read rule.
-- **No video, no photos** of players in drills. If diagrams arrive they're
-  drawn, not recorded.
+- **Pictures of drills are pictures of children**, more often than not. The
+  rules for that are under *Pictures*, and the drawn diagram is the default
+  because it has none of these problems.
 
 ## Towards the AI helper
 
@@ -333,9 +419,9 @@ too. The bridge doesn't change shape.
 
 ## Build order
 
-1. **Browse the built-in library.** Practice → Drills, filters, the drill card.
-   No database, no rules, no schema. It can ship alone and be useful the same
-   day.
+1. **Browse the built-in library.** Practice → Drills, filters, the drill card
+   with its animated diagram. No database, no rules, no schema. It can ship
+   alone and be useful the same day.
 2. **A team age.** One field on the team (U-age, or birth year so it rolls
    over), so the library filters to the team by default.
 3. **Practices.** Plan, run mode, review; `training/{code}/practices`; the
@@ -343,9 +429,11 @@ too. The bridge doesn't change shape.
    offline cache.
 4. **Mine.** `userLibrary/{uid}`; save to mine; edit; templates.
 5. **Club.** Share to the club, copy from it, curation under Admin.
-6. **What needs work.** The signals card on Season.
-7. **The AI steps.** The library in the prompt, then paste-back.
-8. **Import.** A `"drills"` list in Admin's bulk import file, for a club that
+6. **Pictures for a coach's own drills.** The diagram editor first, then links,
+   then photo upload once question 5 is answered.
+7. **What needs work.** The signals card on Season.
+8. **The AI steps.** The library in the prompt, then paste-back.
+9. **Import.** A `"drills"` list in Admin's bulk import file, for a club that
    already keeps its drills in a spreadsheet. Merges by name, never replaces,
    like everything else that file does.
 
@@ -367,5 +455,14 @@ goes anywhere near the real club.
    recommendation is not yet.
 4. **Team age as a U-age or a birth year?** A birth year rolls over by itself
    each season; a U-age is what coaches say.
-5. **Diagrams:** worth doing by hand for the built-in drills?
-6. **The tab's name:** Practice or Training?
+5. **Where uploaded pictures live.** The database (free, pictures only) or
+   Cloud Storage (any size, the paid plan). The recommendation is the
+   database, and links for video.
+6. **Children in photos.** The *no faces* tick on its own, or an admin
+   approving each club photo before parents can see it? The recommendation
+   is the tick, with admins able to remove anything. An approval queue is a
+   job nobody will do in October.
+7. **The tab's name:** Practice or Training?
+
+Settled: built-in drills have pictures, animated (answered *yes, for sure*,
+2026-10-02), and coaches can add their own as an option.

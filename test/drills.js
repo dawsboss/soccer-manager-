@@ -19,8 +19,10 @@ const H = require('./harness');
 const { check } = H;
 
 const FILE = path.join(__dirname, '..', 'drills.js');
+const DIAGRAM = path.join(__dirname, '..', 'drill-diagram.js');
 const LIB = require(FILE);
-const { DRILLS, TYPES, MOMENTS, SKILLS, PRINCIPLES, PHYSICAL, KIT, LEVELS, INTENSITY, POSITIONS, SIGNALS } = LIB;
+const DD = require(DIAGRAM);
+const { DRILLS, TYPES, MOMENTS, SKILLS, PRINCIPLES, PHYSICAL, KIT, LEVELS, INTENSITY, GROUPS, INVOLVEMENT, POSITIONS, SIGNALS } = LIB;
 const ids = new Set(DRILLS.map(d => d.id));
 
 /* Collect every problem, then report each kind once with the drills it hit.
@@ -45,6 +47,9 @@ console.log('--- it loads both ways the app will load it ---');
   check('a script tag puts it on window.SOCCER_DRILLS', !!(win.SOCCER_DRILLS && win.SOCCER_DRILLS.DRILLS), true);
   check('…with the same drills node sees', win.SOCCER_DRILLS && win.SOCCER_DRILLS.DRILLS.length, DRILLS.length);
   check('node gets it through module.exports', Array.isArray(DRILLS) && DRILLS.length > 0, true);
+  const win2 = {};
+  vm.runInNewContext(fs.readFileSync(DIAGRAM, 'utf8'), { window: win2 });
+  check('the diagram renderer lands on window.DrillDiagram', typeof (win2.DrillDiagram && win2.DrillDiagram.svg), 'function');
   console.log(`  ${DRILLS.length} drills`);
 }
 
@@ -91,6 +96,12 @@ for (const d of DRILLS) {
   if (!Array.isArray(d.goesWith) || d.goesWith.some(x => x === d.id || !ids.has(x))) flag('goesWith', id);
   if (!Array.isArray(d.tags) || d.tags.some(t => !/^[a-z0-9]+(-[a-z0-9]+)*$/.test(t))) flag('tags', id);
   if (d.safety !== undefined && !text(d.safety)) flag('safety', id);
+
+  if (!(isInt(d.setupMins) && d.setupMins >= 0 && d.setupMins <= 15)) flag('setupMins', id);
+  if (d.adults !== 1 && d.adults !== 2) flag('adults', id);
+  if (typeof d.indoor !== 'boolean' || typeof d.competitive !== 'boolean') flag('bools', id);
+  if (!subset(d.groups, GROUPS) || !d.groups.length) flag('groups', id);
+  if (!INVOLVEMENT[d.involvement]) flag('involvement', id);
 }
 
 report('ids are lowercase-with-hyphens', 'id');
@@ -119,6 +130,11 @@ report('signals are ones the stats can raise', 'signals');
 report('goesWith names real drills, never itself', 'goesWith');
 report('tags are lowercase-with-hyphens', 'tags');
 report('a safety note, where given, says something', 'safety');
+report('setup takes 0–15 minutes', 'setupMins');
+report('one adult or two', 'adults');
+report('indoor and competitive are yes or no', 'bools');
+report('groups come from GROUPS', 'groups');
+report('involvement is 1–3', 'involvement');
 
 console.log('\n--- the positions match the app\'s ---');
 {
@@ -128,6 +144,61 @@ console.log('\n--- the positions match the app\'s ---');
   const src = fs.readFileSync(path.join(__dirname, '..', 'app.js'), 'utf8');
   const roles = JSON.parse((src.match(/const ROLES = (\[[^\]]*\]);/) || [, '[]'])[1].replace(/'/g, '"'));
   check('POSITIONS is app.js\'s ROLES', JSON.stringify(POSITIONS), JSON.stringify(roles));
+}
+
+console.log('\n--- every drill has a picture, and it agrees with the card ---');
+{
+  /* The diagram is drawn from data, so it can be wrong in ways a picture
+     can't: a pass from someone who hasn't got the ball, a player off the
+     pitch, a goal the kit list forgot. parse() names each one. Then the
+     picture is held to the card it sits on. */
+  for (const d of DRILLS) {
+    if (!d.diagram) { flag('diagram', d.id); continue; }
+    const r = DD.parse(d.diagram);
+    if (r.errors.length) { flag('diagram', d.id + ' (' + r.errors[0] + ')'); continue; }
+    const still = DD.svg(d.diagram), moving = DD.svg(d.diagram, { animate: true });
+    if (!still.startsWith('<svg') || !moving.startsWith('<svg')) flag('renders', d.id);
+    /* SMIL drops an animation whose keyTimes and values disagree in length,
+       silently: the player just doesn't move. */
+    for (const m of moving.matchAll(/keyTimes="([^"]*)" values="([^"]*)"/g)) {
+      if (m[1].split(';').length !== m[2].split(';').length) { flag('smil', d.id); break; }
+    }
+    for (const st of r.steps) if (st.caption && st.caption.length > 48) flag('caption', d.id);
+    const ps = Object.keys(d.diagram.players);
+    if (ps.filter(p => p[0] === 'K').length < d.gk) flag('keepers', d.id);
+    const goals = d.diagram.goals || [];
+    if (goals.some(g => g[2] === 'big') && !d.kit.goals) flag('kit-goals', d.id);
+    if (goals.some(g => g[2] === 'mini') && !d.kit.minigoals) flag('kit-goals', d.id);
+    if ((d.diagram.cones || []).length && !d.kit.cones) flag('kit-cones', d.id);
+  }
+  report('every drill has a diagram that parses', 'diagram');
+  report('…and draws, still and moving', 'renders');
+  report('every animation has a value for each key time', 'smil');
+  report('captions fit the strip at phone width (48)', 'caption');
+  report('a keeper on the card is a keeper in the picture', 'keepers');
+  report('a goal in the picture is on the kit list', 'kit-goals');
+  report('cones in the picture are on the kit list', 'kit-cones');
+  const moving = DRILLS.filter(d => d.diagram && (d.diagram.frames || []).length).length;
+  check('most diagrams move (layouts are the exception)', moving >= DRILLS.length - 3, true);
+}
+
+console.log('\n--- the renderer refuses what it can\'t draw ---');
+{
+  const base = { area: [20, 20], players: { A1: [5, 5], A2: [15, 5] }, ball: 'A1' };
+  const errs = frames => DD.parse({ ...base, frames }).errors;
+  check('a clean pass parses', errs([['A1>A2']]).length, 0);
+  check('a pass from someone without the ball', errs([['A2>A1']]).length > 0, true);
+  check('a dribble without a ball', errs([['A2~10,10']]).length > 0, true);
+  check('a run off the diagram', errs([['A1-40,5']]).length > 0, true);
+  check('a shot with no goal to aim at', errs([['A1>G']]).length > 0, true);
+  check('a player who isn\'t there', errs([['A3>A1']]).length > 0, true);
+  check('the same player moved twice in one step', errs([['A1~8,8', 'A1-9,9']]).length > 0, true);
+  check('a step with nothing in it', errs([['# just words']]).length > 0, true);
+  check('a broken diagram draws nothing rather than half', DD.svg({ ...base, frames: [['A2>A1']] }), '');
+  const through = DD.parse({ ...base, frames: [['A2-15,12', 'A1>A2']] });
+  check('a pass is played onto a run, not to where she was', JSON.stringify(through.steps[0].moves.find(m => m.kind === 'pass').to), '[15,12]');
+  const loose = DD.parse({ ...base, frames: [['A1>15,6'], ['A2~18,10']] });
+  check('a loose ball at someone\'s feet becomes hers', loose.errors.length, 0);
 }
 
 console.log('\n--- safety ---');
