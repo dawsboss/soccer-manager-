@@ -175,6 +175,8 @@ const EXPORTS = `{
   viewCalendar, sheetCalItem, sheetCalEvent, calFormNew, publicEvents, pubText, mayAct,
   todayStr, dayLabel, niceTime, hm, addDays, weekdayOf, CALLED, HOME_AWAY, SERIES_MAX,
   get calForm() { return calForm },
+  fixtureDoc, calendarDoc, publishTeam, ensureFixtureShares, claimTeamIds,
+  get pubSeen() { return pubSeen },
   /* rendering + routing */
   render, uiToHash, hashToUi,
   /* the mutable module-scoped bindings */

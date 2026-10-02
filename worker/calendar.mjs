@@ -1,3 +1,25 @@
+/* Minutes — the calendar feed.
+
+   A Cloudflare Worker. A calendar app (Apple, Google, Outlook) subscribes to an
+   address and comes back to it on its own schedule, from its own servers,
+   without running any of the app's JavaScript — so a static site cannot answer
+   it, and this does. It reads one node of public/ from the database, the same
+   node the share pages read, and returns it as a calendar.
+
+   It is read-only and holds no credentials. It asks the database exactly what
+   anyone on the internet could ask it — public/{id}.json — so it cannot see
+   anything the share pages could not, and it cannot write anything at all.
+
+     /{id}.ics   a season link's id     games, and entries marked for the share link
+                 a game's own id        that game
+                 a calendar-feed id     every game and entry: the members' feed
+
+   Setup is in README, under "Calendar sync". The one setting is your
+   database's address, here or as DATABASE_URL in the Worker's settings. */
+
+const DATABASE_URL = '';      // e.g. https://your-project-default-rtdb.firebaseio.com
+
+/* ---- ics.js, copied in by worker/make.js: do not edit by hand ---- */
 /* Calendar files and add-to-calendar links, shared by the app (index.html) and
    the share pages (live.html, game.html).
 
@@ -172,3 +194,56 @@
   root.MinutesIcs = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })(typeof window !== 'undefined' ? window : globalThis);
+/* ---- end of ics.js ---- */
+
+const ICS = globalThis.MinutesIcs;
+// what the app makes: a letter and two uid()s. Anything else is never fetched.
+const ID = /^[A-Za-z0-9_-]{6,80}$/;
+const REFRESH_MIN = 60;
+
+const say = (status, msg) => new Response(msg + '\n', { status, headers: { 'Content-Type': 'text/plain; charset=utf-8' } });
+
+export default {
+  async fetch(request, env) {
+    if (request.method !== 'GET' && request.method !== 'HEAD') return say(405, 'Method not allowed');
+    const path = /^\/([^/]+?)(?:\.ics)?$/.exec(new URL(request.url).pathname);
+    if (!path || !ID.test(path[1])) return say(404, 'No such calendar');
+    const id = path[1];
+    const db = String((env && env.DATABASE_URL) || DATABASE_URL).trim().replace(/\/+$/, '');
+    if (!/^https:\/\/[^/]+$/.test(db)) return say(500, 'This feed has no database address set');
+
+    let doc;
+    try {
+      const r = await fetch(`${db}/public/${id}.json`);
+      if (!r.ok) return say(502, 'Could not reach the calendar');
+      doc = await r.json();
+    } catch (e) {
+      return say(502, 'Could not reach the calendar');
+    }
+    // a link that was replaced, or a game that was deleted, is simply gone
+    if (!doc || typeof doc !== 'object' || !doc.team) return say(404, 'No such calendar');
+
+    /* Where each entry links back to. The members' feed opens the app, where
+       signing in decides what anyone sees; a share-link feed opens the share
+       page it came from. */
+    const app = String((doc.link && doc.link.app) || '');
+    const site = app.replace(/[^/]*$/, '');
+    const tid = encodeURIComponent(String((doc.link && doc.link.teamId) || ''));
+    const back = (kind, x) => !/^https?:\/\//.test(site) ? ''
+      : doc.calendar ? (kind === 'game' ? `${app}#/team/${tid}/game/${encodeURIComponent(x)}/live` : `${app}#/team/${tid}/calendar`)
+        : doc.fixture ? `${site}game.html?t=${id}&g=${encodeURIComponent(x)}`
+          : `${site}live.html?t=${id}#${kind === 'game' ? 'g' : 'e'}=${encodeURIComponent(x)}`;
+
+    const name = (doc.team && doc.team.name) || 'Team';
+    const body = ICS.calendar(name, ICS.docItems(doc, back), Date.now(), { refresh: REFRESH_MIN });
+    return new Response(request.method === 'HEAD' ? null : body, {
+      headers: {
+        'Content-Type': 'text/calendar; charset=utf-8',
+        'Content-Disposition': `inline; filename="${ICS.fileName(name)}"`,
+        // short, so a change reaches the next calendar that asks; calendars poll far less often than this
+        'Cache-Control': 'public, max-age=300',
+        'X-Content-Type-Options': 'nosniff'
+      }
+    });
+  }
+};

@@ -91,7 +91,6 @@ h2{font-family:"Barlow Condensed",sans-serif;font-weight:600;font-size:22px;marg
   border-radius:8px;padding:11px 16px;font-weight:600;font-size:15px;
 }
 .btn:active{transform:translateY(1px)}
-.btn.ghost{background:transparent;color:var(--field-deep)}
 .btn.quiet{background:#fff;color:var(--ink);border-color:var(--line)}
 .btn.danger{background:#fff;color:var(--over);border-color:var(--over)}
 .btn.wide{width:100%}
@@ -646,3 +645,13 @@ button.calday:active{background:var(--field-wash)}
 .facts dd{margin:0}
 .row.wrap{flex-wrap:wrap}
 a.btn{display:inline-block;text-decoration:none}
+.syncrow{padding:4px 0 6px}
+.syncrow+.syncrow{border-top:1px solid var(--line);padding-top:10px}
+/* who is coming */
+.rsvpbox{border-top:1px solid var(--line);margin:4px 0 12px;padding-top:10px}
+.rsvprow{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:6px 0;border-top:1px solid var(--paper)}
+.rsvprow:first-of-type{border-top:0}
+.rsvpchips{flex:none}
+.rsvprow .chip{padding:4px 9px;font-size:13px}
+/* a quiet action on a light card (.linkbtn is for the dark clock band) */
+.textbtn{background:none;border:0;padding:4px 0;color:var(--field-deep);font-size:14px;text-decoration:underline;text-underline-offset:3px}

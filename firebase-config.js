@@ -16,6 +16,11 @@ window.SOCCER_FIREBASE_CONFIG = {
   measurementId: "G-9C7RFNTDL0"
 };
 
+// Optional: where the calendar feed Worker lives (worker/calendar.mjs), so
+// families can subscribe and their calendars follow every change. Leave it
+// blank and the calendar offers a one-off copy instead. README, "Calendar sync".
+window.SOCCER_CALENDAR_FEED = '';
+
 // Optional: other databases to point this app at, for trying auth and rules
 // changes somewhere that is not the club with this season's data in it.
 //

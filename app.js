@@ -3,7 +3,7 @@
    Database when a config + workspace code are present. */
 
 const BUILD = '65';
-const BUILT = '2026-10-01';
+const BUILT = '2026-10-02';
 /* index.html carries the build it was published with. If this file is newer, the
    browser handed us a cached page — the exact failure that has eaten hours. */
 const pageBuild = () => {
@@ -26,7 +26,13 @@ const SANDBOX_PREFIX = 'test-';
 
 /* The workspace node was already organisation-shaped — many teams, their
    matches — so membership hangs off it directly and nothing has to migrate. */
-let state = { teams: {}, matches: {}, access: {} };
+/* rsvp/{tid}/{item}/{pid}: who is coming, answered by a parent for her own
+   child (or by a coach for anyone). Its own node, not inside the game or the
+   entry, for two reasons. A coach saving a game writes the whole game, so an
+   answer stored inside it would be lost to any edit made while a parent was
+   answering; and the rule that lets a parent write here grants this node and
+   nothing else, so a parent can never touch the team or the game. */
+let state = { teams: {}, matches: {}, access: {}, rsvp: {} };
 let ui = { view: 'matches', gameView: 'subs', teamId: null, matchId: null, picked: null, dragging: false, editFid: null, sortBy: 'need', plan: null, snapAt: null, snapSid: null };
 let lastLog = [];
 
@@ -263,7 +269,7 @@ function loadLocal() {
       localStorage.removeItem(LS_DATA);
     }
     const d = JSON.parse(localStorage.getItem(dataKey()) || 'null');
-    if (d) state = { teams: d.teams || {}, matches: d.matches || {}, access: d.access || {} };
+    if (d) state = { teams: d.teams || {}, matches: d.matches || {}, access: d.access || {}, rsvp: d.rsvp || {} };
     const u = JSON.parse(localStorage.getItem(LS_UI) || 'null');
     if (u) Object.assign(ui, u);
     /* Before build 61 'live' was the coach's subs screen. Someone who left a
@@ -289,7 +295,7 @@ function purgeClub(code, why) {
     localStorage.removeItem(LS_SYNCED + ':' + k);
     localStorage.removeItem(LS_DENIED + ':' + k);
   } catch (e) { }
-  if (code === wsCode()) { state = { teams: {}, matches: {}, access: {} }; purged = why; render(); }
+  if (code === wsCode()) { state = { teams: {}, matches: {}, access: {}, rsvp: {} }; purged = why; render(); }
 }
 
 function markSynced() {
@@ -482,7 +488,7 @@ async function initSync() {
         const v = snap.val();
         if (!v) pushAll();
         else {
-          state = { teams: v.teams || {}, matches: v.matches || {}, access: v.access || {} };
+          state = { teams: v.teams || {}, matches: v.matches || {}, access: v.access || {}, rsvp: v.rsvp || {} };
           wsRead = true;
           saveLocal(); markSynced(); render();
           /* Close the migration bridge without anybody being told to. The
@@ -500,7 +506,9 @@ async function initSync() {
           saveLocal(); noteMyClub(); render();
         });
 
-        for (const coll of ['teams', 'matches']) {
+        // rsvp per team, like teams and matches: one parent's answer never redraws from a whole-club read
+        for (const coll of ['teams', 'matches', 'rsvp']) {
+          if (!state[coll]) state[coll] = {};
           const r = dbMod.ref(db, fb.base + '/' + coll);
           const upsert = cs => {
             if (ui.dragging) return;
@@ -555,6 +563,9 @@ function mergeNode(local, remote) {
    (which is what every other rule checks), then the data those two authorise.
    Realtime Database applies one client's writes in the order they are made, so
    sequencing them here is enough; no chaining needed.
+
+   rsvp is skipped for the same reason as the log below: each answer must be
+   stamped by whoever writes it, so replaying other people's is refused.
 
    access/log is skipped deliberately. Its rule is append-only and demands each
    entry stamp the writer's own uid, so replaying somebody else's entries would
@@ -709,6 +720,37 @@ function claimShare(tid) {
   fb.set(fb.ref(fb.db, 'shareOwners/' + t.share), owners).catch(() => { });
 }
 function claimAllShares() { for (const t of Object.values(state.teams || {})) if (t.share) claimShare(t.id); }
+/* A team now publishes under more ids than its season link: one per game, so a
+   game link carries that game and nothing else, and one for the members'
+   calendar feed. Each needs its owners claimed before the first write, exactly
+   as the season link does. Once a session per id is enough — the season link
+   above keeps being refreshed on every publish, as it always was. */
+const claimed = new Set();
+function claimTeamIds(tid) {
+  const t = (state.teams || {})[tid];
+  if (!fb || !t) return;
+  const owners = {};
+  for (const u of Object.keys(acc().admins || {})) owners[u] = true;
+  for (const u of Object.keys(teamAccess(tid).coaches || {})) owners[u] = true;
+  if (me) owners[me.uid] = true;
+  const ids = [t.calFeed, ...(t.share ? teamMatches(tid).map(m => m.share) : [])].filter(Boolean);
+  for (const id of ids) {
+    if (claimed.has(id)) continue;
+    claimed.add(id);
+    fb.set(fb.ref(fb.db, 'shareOwners/' + id), owners).catch(() => claimed.delete(id));
+  }
+}
+/* Every game gets its own share id the first time a coach publishes with
+   sharing on. The id lives on the game, so it follows the game and dies with
+   it. Readers never make one: the button that needs it waits for the coach's
+   phone to have published. */
+function ensureFixtureShares(t) {
+  if (!t || !t.share || !canEditTeam(t.id)) return false;
+  let made = false;
+  for (const m of teamMatches(t.id)) if (!m.share) { quiet(`matches/${m.id}/share`, 'f' + uid() + uid()); made = true; }
+  if (made) saveLocal();
+  return made;
+}
 
 /* What has to be true before the tighter rules can be published. Every line is
    a way to lock the club out, and all of them are invisible until you try to
@@ -830,7 +872,7 @@ const COACH_ACTS = new Set([
   'editgameshape', 'gameshapepreset', 'planlock', 'planunlock',
   'snapstart', 'snapadd', 'snapdel', 'snaptime', 'snapslot', 'snapclear', 'snapplayer',
   // the calendar
-  'calnew', 'caledit', 'calsave', 'caldel', 'calcall', 'caleditgame'
+  'calnew', 'caledit', 'calsave', 'caldel', 'calcall', 'caleditgame', 'calsyncon', 'calsyncnew', 'rsvpout'
 ]);
 const LOG_ACTS = new Set([
   'goal', 'savegoal', 'delgoal', 'shot', 'saveshot', 'delshot', 'ev', 'saveev', 'delev',
@@ -2512,7 +2554,7 @@ function render() {
   const roNote = lim === 'viewer' && team()
     ? `<div class="rolebar">Viewing <b>${teamLabel(team())}</b> from another team in the club. You can read it, not change it.</div>` : '';
   const roleNote = lim && lim !== 'viewer'
-    ? `<div class="rolebar">Signed in as <b>${esc(ROLE_LABEL[lim])}</b> — ${lim === 'tracker' ? "you can log events and make the coach's planned subs when they are due, but not run the clock or make other subs" : 'you can read, not change'}.</div>`
+    ? `<div class="rolebar">Signed in as <b>${esc(ROLE_LABEL[lim])}</b> — ${lim === 'tracker' ? "you can log events and make the coach's planned subs when they are due, but not run the clock or make other subs" : lim === 'parent' ? 'you can read, and say from the Calendar whether your child is coming' : 'you can read, not change'}.</div>`
     : '';
   /* Never let a rehearsal pass for the real thing. Both facts are worth saying
      out loud: a test club holds invented data and publishes nothing, and a
@@ -4015,6 +4057,143 @@ function downloadIcs(name, items) {
   setTimeout(() => URL.revokeObjectURL(url), 4000);
 }
 
+/* --- who is coming --- */
+/* A parent answers for her own child, a coach for anyone on the team. The
+   answer is a fact about a named child, so it never goes near public/: the
+   share link and the calendar feed carry no answers and no counts. Inside the
+   app the coach sees names; a parent sees her own child's answer and how many
+   are going; a tracker or a coach of another team, the count. */
+const RSVP = { yes: 'Going', no: 'Not going', maybe: 'Maybe' };
+const RSVP_SHORT = { yes: 'going', no: 'not going', maybe: 'maybe' };
+const RSVP_NOTE_MAX = 140;
+const rsvpKey = it => (it.kind === 'game' ? 'g_' : 'e_') + it.id;
+const rsvpOf = (tid, key, pid) => ((((state.rsvp || {})[tid] || {})[key] || {})[pid]) || null;
+const rsvpSquad = tid => players(state.teams[tid]).filter(p => p.active !== false);
+// her own children on this team, by the guardian list rather than by role, as the rule asks
+const myKids = tid => !me ? [] : rsvpSquad(tid).filter(p => (p.guardians || {})[me.uid]);
+const canRsvp = (tid, pid) => canEditTeam(tid) || myKids(tid).some(p => p.id === pid);
+// a past or called-off entry is read, not answered
+const rsvpOpen = it => !!it.date && !it.called && !calPast(it) && !(it.kind === 'game' && it.status !== 'upcoming');
+function rsvpCounts(tid, key) {
+  const c = { yes: 0, no: 0, maybe: 0, none: 0 };
+  for (const p of rsvpSquad(tid)) { const r = rsvpOf(tid, key, p.id); c[r && RSVP[r.v] ? r.v : 'none']++; }
+  return c;
+}
+const countLine = c => [c.yes + ' going', c.no ? c.no + ' not' : '', c.maybe ? c.maybe + ' maybe' : '', c.none ? c.none + ' to answer' : ''].filter(Boolean).join(' · ');
+const firstName = p => String(p.name || '').trim().split(/\s+/)[0] || ('#' + shirtOf(p));
+
+/* One answer, written where the rule sits. Shown at once and taken back if the
+   database refuses it: a parent who taps Going and sees it stick when it did
+   not is worse off than one with no button at all. */
+function setRsvp(tid, key, pid, v, note) {
+  const path = `rsvp/${tid}/${key}/${pid}`;
+  const prev = rsvpOf(tid, key, pid);
+  const val = RSVP[v] ? { v, by: (me && me.uid) || 'device', at: nowMs(), ...(note ? { note: String(note).slice(0, RSVP_NOTE_MAX) } : {}) } : null;
+  if (val) setDeep(state, path, val); else delDeep(state, path);
+  saveLocal();
+  const w = remoteSet(path, val);
+  if (w && w.catch) w.catch(e => {
+    if (prev) setDeep(state, path, prev); else delDeep(state, path);
+    saveLocal(); render();
+    toast(/permission|denied/i.test((e && e.code) || (e && e.message) || '')
+      ? 'Not saved — the club\u2019s database rules need the rsvp block from README'
+      : 'Not saved — try again when there is signal');
+  });
+}
+
+/* The chips for one child, in the sheet and on Next up. Tapping the answer
+   already given takes it back. */
+function rsvpChips(it, p, from) {
+  const r = rsvpOf(it.tid, rsvpKey(it), p.id);
+  return `<div class="chips rsvpchips">${Object.entries(RSVP).map(([v, label]) =>
+    `<button class="chip" type="button" data-act="rsvp" data-tid="${esc(it.tid)}" data-k="${esc(rsvpKey(it))}" data-pid="${esc(p.id)}" data-v="${v}" data-from="${from}" data-kind="${it.kind}" data-id="${esc(it.id)}" aria-pressed="${!!(r && r.v === v)}">${label}</button>`).join('')}</div>`;
+}
+
+/* What the calendar row says about answers: her own children for a parent,
+   the count for the coach, nothing for anyone else or for something over. */
+function rsvpLine(it) {
+  if (!rsvpOpen(it)) return '';
+  const key = rsvpKey(it);
+  if (canEditTeam(it.tid)) { const c = rsvpCounts(it.tid, key); return c.yes + c.no + c.maybe ? countLine(c) : ''; }
+  return myKids(it.tid).map(p => { const r = rsvpOf(it.tid, key, p.id); return `${firstName(p)}: ${r ? RSVP_SHORT[r.v] : 'not answered'}`; }).join(' · ');
+}
+
+/* The "who is coming" part of an entry's sheet. */
+function rsvpBlock(it) {
+  const key = rsvpKey(it), open = rsvpOpen(it);
+  const c = rsvpCounts(it.tid, key);
+  if (canEditTeam(it.tid)) {
+    // who has not answered first: that is who the coach has to chase
+    const order = { none: 0, no: 1, maybe: 2, yes: 3 };
+    const rows = rsvpSquad(it.tid).map(p => ({ p, r: rsvpOf(it.tid, key, p.id) }))
+      .sort((a, b) => order[a.r ? a.r.v : 'none'] - order[b.r ? b.r.v : 'none'] || (Number(a.p.number) || 999) - (Number(b.p.number) || 999));
+    if (!rows.length) return '';
+    const who = r => r && r.by && r.by !== (me && me.uid) ? ((acc().members || {})[r.by] || {}).name || '' : '';
+    return `<div class="rsvpbox"><p class="lbl">Who is coming — ${esc(countLine(c))}</p>
+      ${rows.map(({ p, r }) => `<div class="rsvprow">
+        <span><b>${esc(shirtOf(p))}</b> ${esc(p.name)}${r ? `<span class="rowsub">${esc(RSVP[r.v])}${who(r) ? ' · said by ' + esc(who(r)) : ''}${r.note ? ' · ' + esc(r.note) : ''}</span>` : '<span class="rowsub">Not answered</span>'}</span>
+        ${open ? rsvpChips(it, p, 'sheet') : ''}</div>`).join('')}
+      <p class="muted" style="margin-bottom:0">${open ? 'Parents answer for their own child from this calendar. Tap an answer to give one for a family who told you another way.' : 'Answers are closed once it is over or called off.'}</p></div>`;
+  }
+  const kids = myKids(it.tid);
+  if (kids.length) return `<div class="rsvpbox">${kids.map(p => {
+    const r = rsvpOf(it.tid, key, p.id);
+    return `<p class="lbl">${open ? `Is ${esc(firstName(p))} going?` : esc(firstName(p))}</p>
+      ${open ? rsvpChips(it, p, 'sheet') : `<p style="margin:0 0 8px">${r ? esc(RSVP[r.v]) : 'Not answered'}</p>`}
+      ${open && r ? `<div class="row" style="margin:8px 0 4px"><input type="text" id="rsvpNote_${esc(p.id)}" maxlength="${RSVP_NOTE_MAX}" value="${esc(r.note || '')}" placeholder="Anything the coach should know?" style="flex:1">
+        <button class="btn quiet sm" data-act="rsvpnote" data-tid="${esc(it.tid)}" data-k="${esc(key)}" data-pid="${esc(p.id)}" data-kind="${it.kind}" data-id="${esc(it.id)}">Save</button></div>` : ''}`;
+  }).join('')}<p class="muted" style="margin-bottom:0">${c.yes} going so far. The coach sees your answer and any note.</p></div>`;
+  return c.yes + c.no + c.maybe ? `<p class="muted">${esc(countLine(c))}</p>` : '';
+}
+
+/* Calendar sync. A calendar app subscribes to an address and comes back to it
+   on its own schedule, from its own servers, never running a line of ours — so
+   a static site cannot answer it. worker/calendar.mjs does: it reads the
+   public/ node an id names and returns it as a calendar. Where it lives goes in
+   firebase-config.js as SOCCER_CALENDAR_FEED; until it is set, the calendar
+   offers a copy to add instead, as it did before. */
+const feedBase = () => {
+  const b = String((typeof window !== 'undefined' && window.SOCCER_CALENDAR_FEED) || '').trim();
+  return /^https:\/\/[^\s]+$/.test(b) ? b.replace(/\/*$/, '/') : '';
+};
+const feedUrl = id => feedBase() && id ? feedBase() + encodeURIComponent(id) + '.ics' : '';
+const webcal = u => u.replace(/^https:/, 'webcal:');
+// Google's own "add this calendar by address" page, which wants the webcal form
+const googleSub = u => 'https://calendar.google.com/calendar/render?cid=' + encodeURIComponent(webcal(u));
+
+/* The "in your own calendar" card. With a feed, each team's subscribe buttons
+   (or the coach's switch to turn it on); a one-off copy stays as the fallback
+   for a phone that will not subscribe. Without one, the copy is all there is,
+   and an admin is told what would change that. */
+function calSyncCard(t, all) {
+  const base = feedBase();
+  const list = all ? myTeams() : [t];
+  const copyNote = `Everything still to come${all ? ' for these teams' : ''}, as a file your phone\u2019s calendar opens. It is a copy: if a time changes later, add it again — each entry replaces its earlier self in calendars that allow it.`;
+  if (!base) return `<div class="card"><h2 style="margin-bottom:8px">In your own calendar</h2>
+    <p class="muted" style="margin-top:0">${copyNote}</p>
+    <button class="btn quiet wide" data-act="calicsall">Add what is coming up</button>
+    ${canAdmin() ? '<p class="muted" style="margin-bottom:0">A calendar that follows every change by itself needs the calendar feed set up once for the club — README, <b>Calendar sync</b>.</p>' : ''}
+    ${!all && t.share ? `<p class="muted" style="margin-bottom:0">Grandparents and friends without an account: the season link shows the games, and anything marked for the share link, with no names.</p>` : ''}</div>`;
+  const rows = list.map(x => {
+    const u = feedUrl(x.calFeed);
+    if (u) return `<div class="syncrow">${all ? `<p class="lbl">${teamLabel(x)}</p>` : ''}
+      <div class="row wrap">
+        <a class="btn sm" href="${esc(webcal(u))}">Apple Calendar</a>
+        <a class="btn quiet sm" href="${esc(googleSub(u))}" target="_blank" rel="noopener">Google Calendar</a>
+        <button class="btn quiet sm" data-act="copytext" data-v="${esc(u)}">Copy the address</button></div>
+      ${canEditTeam(x.id) ? `<button class="textbtn" data-act="calsyncnew" data-tid="${esc(x.id)}" style="margin-top:6px">Replace this address</button>` : ''}</div>`;
+    return canEditTeam(x.id)
+      ? `<button class="btn wide" data-act="calsyncon" data-tid="${esc(x.id)}" style="margin-bottom:8px">Turn on calendar sync${all ? ' for ' + teamLabel(x) : ''}</button>`
+      : `<p class="muted">${all ? teamLabel(x) + ': the' : 'The'} coach has not turned calendar sync on yet.</p>`;
+  }).join('');
+  return `<div class="card"><h2 style="margin-bottom:8px">In your own calendar</h2>
+    <p class="muted" style="margin-top:0">Subscribe once and your calendar follows every change — a moved kick-off, a called-off practice, a new tournament. Apple and Outlook check about every hour; Google keeps its own pace, often several hours.</p>
+    ${rows}
+    ${isSandbox() ? '<p class="muted">Test club: nothing is published, so a subscription here stays empty.</p>' : ''}
+    <p class="muted">The address shows practices as well as games — never names — so keep it to the team. Outlook: <i>Add calendar \u2192 From internet</i> and paste the address.</p>
+    <button class="btn quiet wide" data-act="calicsall">Or add a one-off copy</button></div>`;
+}
+
 /* What the coach texts the other team's coach, already written. The game link
    is the same page families get — when, where and the live score — which is
    everything an opponent needs and nothing a share page does not already
@@ -4029,7 +4208,7 @@ function opponentMessage(t, m) {
   const I = ICS();
   if (m.venue) lines.push(`Where: ${m.venue}${I ? ' — ' + I.mapLink(m.venue) : ''}`);
   if (m.kit) lines.push(`We will be in ${m.kit}.`);
-  if (t.share) lines.push(`Details and the live score: ${gameLink(t, m)}`);
+  if (gameLink(t, m)) lines.push(`Details and the live score: ${gameLink(t, m)}`);
   return lines.join('\n');
 }
 
@@ -4038,7 +4217,7 @@ function calRow(it, all) {
   const edit = canEditTeam(it.tid);
   // most entries are the team's own, so it is the exception that gets marked
   const sub = [it.venue, it.home && HOME_AWAY[it.home], all ? t.name : '',
-    edit && it.kind !== 'game' && it.public ? 'on the share link' : ''].filter(Boolean);
+    edit && it.kind !== 'game' && it.public ? 'on the share link' : '', rsvpLine(it)].filter(Boolean);
   const m = it.kind === 'game' ? state.matches[it.id] : null;
   const right = it.called ? `<span class="tag off">${CALLED[it.called]}</span>`
     : m && it.status !== 'upcoming' ? `<span class="pmins">${score(m).us}<small>–${score(m).them}</small></span>`
@@ -4089,7 +4268,7 @@ function calMonth(items) {
     <div class="calgrid">${cells}</div>
     <div class="spread" style="margin-top:8px">
       <span class="calkey"><i class="dot game"></i>Game <i class="dot practice"></i>Practice <i class="dot event"></i>Other</span>
-      ${ym !== today.slice(0, 7) ? '<button class="btn ghost sm" data-act="calmonth" data-v="0">This month</button>' : ''}</div>
+      ${ym !== today.slice(0, 7) ? '<button class="textbtn" data-act="calmonth" data-v="0">This month</button>' : ''}</div>
   </div>`;
 }
 
@@ -4114,6 +4293,8 @@ function calNextCard(it, all) {
     ${live ? '' : `<div class="row wrap" style="margin-top:10px">
       ${it.venue && I ? `<a class="btn quiet sm" href="${esc(I.mapLink(it.venue))}" target="_blank" rel="noopener">Directions</a>` : ''}
       <button class="btn quiet sm" data-act="calitem" data-k="${it.kind}" data-tid="${esc(it.tid)}" data-id="${esc(it.id)}">Add to my calendar</button></div>`}
+    ${rsvpOpen(it) && !canEditTeam(it.tid) ? myKids(it.tid).map(p => `<p class="lbl" style="margin-top:12px">Is ${esc(firstName(p))} going?</p>${rsvpChips(it, p, 'next')}`).join('')
+      : rsvpOpen(it) && rsvpLine(it) ? `<p class="muted" style="margin:8px 0 0">${esc(rsvpLine(it))}</p>` : ''}
   </div>`;
 }
 
@@ -4142,10 +4323,7 @@ function viewCalendar() {
       <div class="plist">${undated.map(x => calRow(x, all)).join('')}</div></div>` : ''}
     ${past.length ? `<button class="btn quiet wide" data-act="calpast">${ui.calPast ? 'Hide' : 'Show'} what has already happened (${past.length})</button>
       ${ui.calPast ? `<div class="card"><div class="plist">${calList(past, all)}</div></div>` : ''}` : ''}
-    <div class="card"><h2 style="margin-bottom:8px">In your own calendar</h2>
-      <p class="muted" style="margin-top:0">Everything still to come${all ? ' for these teams' : ''}, as a file your phone’s calendar opens. It is a copy: if a time changes later, add it again — each entry replaces its earlier self in calendars that allow it.</p>
-      <button class="btn quiet wide" data-act="calicsall">Add what is coming up</button>
-      ${!all && t.share ? `<p class="muted" style="margin-bottom:0">Grandparents and friends without an account: the season link shows the games, and anything marked for the share link, with no names. ${edit ? 'Team settings → Parent links.' : ''}</p>` : ''}</div>
+    ${calSyncCard(t, all)}
   </div>`;
 }
 
@@ -4173,6 +4351,7 @@ function sheetCalItem(kind, tid, id) {
       ${row('Notes', esc((m ? m.notes : e && e.notes) || '').replace(/\n/g, '<br>'))}
       ${left ? row('Repeats', `Weekly · ${left} more after this`) : ''}
     </dl>
+    ${rsvpBlock(it)}
     ${it.date ? `<div class="row wrap" style="margin-bottom:10px">
       ${it.venue && I ? `<a class="btn quiet sm" href="${esc(I.mapLink(it.venue))}" target="_blank" rel="noopener">Directions</a>` : ''}
       ${I ? `<a class="btn quiet sm" href="${esc(I.googleLink(icsItem(it)))}" target="_blank" rel="noopener">Google Calendar</a>` : ''}
@@ -4587,7 +4766,8 @@ function viewMine() {
           <span class="pmins">${score(last).us}<small>–${score(last).them}</small></span></button>` : ''}
         ${next ? `<button class="prow" data-act="calitem" data-k="${next.kind}" data-tid="${esc(t.id)}" data-id="${esc(next.id)}" style="grid-template-columns:1fr auto">
           <span><span class="pname">Next — ${esc(next.title)}</span>
-            <span class="rowsub">${[relDay(next.date) || dayLabel(next.date), niceTime(next.start), next.venue].filter(Boolean).map(esc).join(' · ')}</span></span>
+            <span class="rowsub">${[relDay(next.date) || dayLabel(next.date), niceTime(next.start), next.venue,
+      rsvpOpen(next) ? (r => r ? RSVP[r.v] : 'Not answered yet')(rsvpOf(t.id, rsvpKey(next), p.id)) : ''].filter(Boolean).map(esc).join(' · ')}</span></span>
           <span class="tag ${next.kind}">${CAL_KIND[next.kind]}</span></button>` : ''}
       </div></div>`;
   }).join('')}
@@ -4980,11 +5160,12 @@ function publicDoc(t) {
 
 /* Only what a coach marked for the share link, and only the fields a family
    needs to turn up: no series id, no author, no note of who added it. Free
-   text goes through pubText() like the game's own notes. */
-function publicEvents(t) {
+   text goes through pubText() like the game's own notes. `all` is the members'
+   calendar feed, which carries the team-only entries too — see calendarDoc(). */
+function publicEvents(t, all) {
   const out = {};
   for (const [id, e] of Object.entries(t.events || {})) {
-    if (!e || !e.public || !okDay(e.date)) continue;
+    if (!e || !(e.public || all) || !okDay(e.date)) continue;
     const kind = e.kind === 'practice' ? 'practice' : 'event';
     out[id] = {
       kind, title: pubText(t, e.title) || CAL_KIND[kind], date: e.date,
@@ -4995,7 +5176,42 @@ function publicEvents(t) {
   return out;
 }
 
+/* One game, alone. This is what a game link opens, so the other team (and
+   whoever they forward it to) holds that game and nothing else: no season, no
+   record, no other fixtures, no practices. `fixture` tells the page there is no
+   season to go back to. */
+function fixtureDoc(t, m) {
+  return {
+    team: { name: t.name || 'Team', logo: t.logo || null },
+    link: { teamId: t.id, app: shareBase() + 'index.html' },
+    fixture: m.id, games: { [m.id]: publicGame(t, m) }, updated: nowMs()
+  };
+}
+
+/* The members' calendar feed: every game and every entry, team-only ones
+   included, because a subscribed calendar without practices in it is not the
+   calendar. It is still public/ — the calendar app that fetches it signs in as
+   nobody — so it holds what a family needs to turn up and nothing else: no
+   players, no minutes, no shirt numbers, and free text through pubText(). What
+   keeps team-only entries off the open web is the id, which the app shows only
+   to the team's signed-in members, and which a coach can replace at any time. */
+function calendarDoc(t) {
+  const games = {};
+  for (const m of teamMatches(t.id)) games[m.id] = {
+    id: m.id, opponent: m.opponent || '', date: m.date || '', kickoff: m.kickoff || '', venue: m.venue || '',
+    home: HOME_AWAY[m.home] ? m.home : '', arrive: hm(m.arrive), called: CALLED[m.called] ? m.called : '',
+    kit: pubText(t, m.kit), notes: pubText(t, m.notes), status: gameStatus(m), score: score(m),
+    periodCount: m.periodCount || 2, periodMinutes: m.periodMinutes || 40
+  };
+  return {
+    team: { name: t.name || 'Team', logo: t.logo || null },
+    link: { teamId: t.id, app: shareBase() + 'index.html' },
+    calendar: true, games, events: publicEvents(t, true), updated: nowMs()
+  };
+}
+
 let pubTimer;
+let pubSeen = {};                           // what each public id last carried, so unchanged ones are not rewritten
 let pubState = { at: null, error: null };   // surfaced in the share sheet
 let denied = false;                         // rules refused us; show the door
 let purged = null;                          // 'access' | 'retired'
@@ -5008,18 +5224,39 @@ function schedulePublish() {
      the call sites: every write path funnels through this one function. */
   if (isSandbox()) { pubState = { at: null, error: 'Test club — nothing is published' }; return; }
   if (!fb) { pubState = { at: null, error: 'Not connected to Firebase' }; return; }
-  if (!t || !t.share) return;
+  if (!t || !(t.share || t.calFeed)) return;
   /* The public write rule checks shareOwners/{share}. A share made before that
      node existed has none, and the rule lets an unclaimed share through only
      until someone claims it — so claim it here, on the way past. Publishing is
      the one thing only a coach or admin of this team ever does. */
-  if (canEditTeam(t.id)) claimShare(t.id);
+  if (canEditTeam(t.id)) { if (t.share) claimShare(t.id); ensureFixtureShares(t); claimTeamIds(t.id); }
   clearTimeout(pubTimer);
-  pubTimer = setTimeout(() => {
+  pubTimer = setTimeout(() => publishTeam(t), 1200);
+}
+
+/* The season link is written every time, as it always was: it is the one the
+   share sheet reports on, and a republish on load is what heals a fixed
+   config. A game's own page and the calendar feed are written only when what
+   they carry has changed, or a sub tap would rewrite thirty fixtures. */
+function publishTeam(t) {
+  const docs = [];
+  let mainWrite = null;
+  if (t.share) {
+    docs.push([t.share, publicDoc(t), true]);
+    for (const m of teamMatches(t.id)) if (m.share) docs.push([m.share, fixtureDoc(t, m), false]);
+  }
+  if (t.calFeed) docs.push([t.calFeed, calendarDoc(t), false]);
+  for (const [id, doc, main] of docs) {
+    const sig = JSON.stringify({ ...doc, updated: 0 });
+    if (!main && pubSeen[id] === sig) continue;
+    pubSeen[id] = sig;
     // try/catch does not catch this — set() rejects asynchronously
-    fb.set(fb.ref(fb.db, 'public/' + t.share), publicDoc(t))
-      .then(() => { pubState = { at: nowMs(), error: null }; })
+    const w = fb.set(fb.ref(fb.db, 'public/' + id), doc)
+      .then(() => { if (main) pubState = { at: nowMs(), error: null }; })
       .catch(e => {
+        delete pubSeen[id];        // try again next time rather than believe it landed
+        console.error('publish failed', e);
+        if (!main) return;
         const code = (e && e.code) || (e && e.message) || 'unknown';
         pubState = {
           at: null,
@@ -5027,15 +5264,20 @@ function schedulePublish() {
             ? 'Firebase rejected the write. Realtime Database needs a "public" rules block alongside "workspaces" — see README.'
             : String(code)
         };
-        console.error('publish failed', e);
         render();
       });
-  }, 1200);
+    if (main) mainWrite = w;
+  }
+  return mainWrite;     // settles once the season page has landed or been refused; the share sheet waits on it
 }
 
 const shareBase = () => location.origin + location.pathname.replace(/[^/]*$/, '');
 const teamLink = t => t.share ? `${shareBase()}live.html?t=${t.share}` : '';
-const gameLink = (t, m) => t.share ? `${shareBase()}game.html?t=${t.share}&g=${m.id}` : '';
+/* A game link carries the game's own id, never the season's: whoever holds it
+   — the other team, a group chat it was forwarded to — can open that game and
+   nothing else. No id yet means no link yet, rather than a fallback that would
+   quietly hand out the season. */
+const gameLink = (t, m) => t.share && m.share ? `${shareBase()}game.html?t=${m.share}&g=${m.id}` : '';
 
 /* Firebase error codes are not for humans. */
 function authMessage(err) {
@@ -5278,9 +5520,10 @@ function sheetShare() {
       <p class="muted" style="margin-top:0">Text this once. It always shows whatever game is on, what is coming up — games, and any practice or event marked for the share link — and the season record. Families can add it all to their own calendars from there.</p>
 
       ${m ? `<p class="lbl">This game — ${esc(m.opponent || 'game')}${m.date ? ' · ' + esc(shortDate(m.date)) : ''}</p>
-      <div class="codebox">${esc(gameLink(t, m))}</div>
+      ${gameLink(t, m) ? `<div class="codebox">${esc(gameLink(t, m))}</div>
       <div class="row" style="margin-bottom:16px"><button class="btn sm" data-act="copylink" data-v="${esc(gameLink(t, m))}">Copy link to this game</button></div>
-      <p class="muted" style="margin-top:0">Kick-off time, where it is, who is on and the minutes. Switch games in the bar above to share a different one.</p>` : ''}
+      <p class="muted" style="margin-top:0">Kick-off time, where it is, who is on and the minutes — for this game only. Whoever it reaches cannot get from it to the season page or any other game. Switch games in the bar above to share a different one.</p>`
+      : `<p class="muted" style="margin-top:0">${ro ? 'This game\u2019s own link appears once the coach\u2019s phone has published it.' : 'This game\u2019s own link is being made — it appears here in a moment.'}</p>`}` : ''}
 
       <p class="muted">Anyone with a link can read it. Nobody can change anything, and no child's name is published — only shirt numbers.</p>
       ${ro ? '' : `<button class="btn quiet wide" data-act="republish" style="margin-bottom:8px">Republish now</button>
@@ -5291,7 +5534,7 @@ function sheetShare() {
     ${m && !ro ? `<p class="lbl" style="margin-top:16px">For the other team</p>
       <div class="codebox" style="white-space:pre-wrap">${esc(opponentMessage(t, m))}</div>
       <div class="row" style="margin-bottom:8px"><button class="btn sm" data-act="copytext" data-v="${esc(opponentMessage(t, m))}">Copy the message</button></div>
-      <p class="muted" style="margin-top:0">Ready to text to their coach.${t.share ? ' The link is the game page families get: when, where and the live score, shirt numbers only. It carries the season link\u2019s code, so whoever holds it can reach the season page too — every game, and what you marked for the share link. Never names, and never anything kept to the team.' : ' Set up sharing and it carries a link to the game page with the live score.'}</p>` : ''}`);
+      <p class="muted" style="margin-top:0">Ready to text to their coach.${t.share ? ' The link opens this game and nothing else: when, where and the live score, shirt numbers only. Your season page, other fixtures and practices are not reachable from it.' : ' Set up sharing and it carries a link to the game page with the live score.'}</p>` : ''}`);
 }
 
 function sheetSignIn() {
@@ -5589,10 +5832,15 @@ function sheetPlayer(p) {
 
 function sheetAvailability() {
   const t = team(), m = match();
+  const said = pid => rsvpOf(t.id, 'g_' + m.id, pid);
+  const noes = players(t).filter(p => p.active !== false && !isOut(m, p.id) && (said(p.id) || {}).v === 'no');
+  /* What families said is a hint, not a switch: the coach decides who is out,
+     and one tap takes every "not going" at their word. */
   openSheet(`<h3>Available for ${esc(m.opponent || 'this game')}</h3>
     <p class="muted" style="margin-top:0">Anyone switched off here is left out of the bench, the plan and the even split — but keeps her season totals.</p>
+    ${noes.length ? `<button class="btn quiet wide" data-act="rsvpout" style="margin-bottom:10px">Mark the ${noes.length} who said they are not going as out</button>` : ''}
     ${players(t).filter(p => p.active !== false).map(p => `<button class="opt spread" type="button" data-act="toggleout" data-pid="${p.id}">
-      <span>${esc(p.number ?? '')} ${esc(p.name)}</span>
+      <span>${esc(p.number ?? '')} ${esc(p.name)}${said(p.id) ? `<span class="rowsub">${esc(RSVP[said(p.id).v])}${said(p.id).note ? ' · ' + esc(said(p.id).note) : ''}</span>` : ''}</span>
       <span class="${isOut(m, p.id) ? 'off' : 'on'}">${isOut(m, p.id) ? 'out' : 'available'}</span></button>`).join('')}
     <button class="btn wide" data-act="closesheet">Done</button>`);
 }
@@ -6364,7 +6612,11 @@ function onAct(e) {
   if (a === 'gotoplayer') {
     ui.teamId = d.tid; ui.matchId = d.id; ui.view = 'game'; ui.gameView = 'stats'; render(); return;   // deliberate: a parent wants the numbers
   }
-  if (a === 'sharesheet') { sheetShare(); return; }
+  if (a === 'sharesheet') {
+    // a game made before game links existed gets its own id now, so the sheet has one to show
+    if (t && ensureFixtureShares(t)) { claimTeamIds(t.id); schedulePublish(); }
+    sheetShare(); return;
+  }
   if (a === 'setwscode') { sheetWorkspace(); return; }
   if (a === 'envsheet') { sheetEnv(); return; }
   if (a === 'setenv') {
@@ -6458,12 +6710,10 @@ function onAct(e) {
   }
   if (a === 'republish') {
     if (!fb) { toast('Not connected — check the workspace code'); return; }
-    fb.set(fb.ref(fb.db, 'public/' + t.share), publicDoc(t))
-      .then(() => { pubState = { at: nowMs(), error: null }; sheetShare(); toast('Published'); })
-      .catch(e => {
-        pubState = { at: null, error: /permission|denied/i.test((e && e.code) || '') ? 'Firebase rejected the write. Realtime Database needs a "public" rules block alongside "workspaces" — see README.' : String((e && e.code) || e) };
-        sheetShare();
-      });
+    // every page goes out, the game pages and the calendar feed too, changed or not
+    pubSeen = {};
+    ensureFixtureShares(t); claimTeamIds(t.id);
+    Promise.resolve(publishTeam(t)).then(() => { sheetShare(); toast(pubState.error ? 'Not published' : 'Published'); });
     return;
   }
   if (a === 'makeshare') {
@@ -6472,13 +6722,16 @@ function onAct(e) {
     schedulePublish(); sheetShare(); return;
   }
   if (a === 'rotateshare') {
-    if (!confirm('Anyone holding the old link loses access. Continue?')) return;
-    const old = t.share;
+    if (!confirm('Anyone holding the old season link, or a link to any one game, loses access. Continue?')) return;
+    /* Every game link goes with the season link. A family holding last
+       month's game link is one forward away from whoever it was sent to. */
+    const old = [t.share, ...teamMatches(t.id).map(m => m.share)].filter(Boolean);
+    for (const m of teamMatches(t.id)) if (m.share) quiet(`matches/${m.id}/share`, 'f' + uid() + uid());
     commit(`teams/${t.id}/share`, 's' + uid() + uid());
     claimShare(t.id);
-    if (fb && old) {
-      fb.remove(fb.ref(fb.db, 'public/' + old));
-      fb.remove(fb.ref(fb.db, 'shareOwners/' + old));   // nothing left to own
+    if (fb) for (const id of old) {
+      fb.remove(fb.ref(fb.db, 'public/' + id));
+      fb.remove(fb.ref(fb.db, 'shareOwners/' + id));   // nothing left to own
     }
     schedulePublish(); sheetShare(); toast('New links made'); return;
   }
@@ -6971,6 +7224,39 @@ function onAct(e) {
     sheetCalEvent(); return;
   }
   if (a === 'calsave') { if (calForm) saveCalEvent(); return; }
+  /* Checked here, not only by which chips are drawn: a parent may answer for
+     her own child and nobody else's, a coach for anyone on her team. */
+  if (a === 'rsvp' || a === 'rsvpnote') {
+    if (!canRsvp(d.tid, d.pid)) { toast('Only that player\u2019s family or coach can answer for her'); return; }
+    const cur = rsvpOf(d.tid, d.k, d.pid);
+    if (a === 'rsvpnote') {
+      if (!cur) return;
+      const el = $('#rsvpNote_' + d.pid);
+      setRsvp(d.tid, d.k, d.pid, cur.v, el && typeof el.value === 'string' ? el.value.trim() : cur.note);
+      toast('Note saved');
+    } else {
+      // the same answer again takes it back; a new answer keeps the note
+      setRsvp(d.tid, d.k, d.pid, cur && cur.v === d.v ? null : d.v, cur && cur.v !== d.v ? cur.note : null);
+    }
+    if (d.from === 'sheet' || a === 'rsvpnote') sheetCalItem(d.kind, d.tid, d.id);
+    render(); return;
+  }
+  if (a === 'rsvpout') {
+    if (!m) return;
+    for (const p of players(t)) if (p.active !== false && !isOut(m, p.id) && (rsvpOf(t.id, 'g_' + m.id, p.id) || {}).v === 'no') quiet(`matches/${m.id}/out/${p.id}`, true);
+    saveLocal(); schedulePublish(); render(); sheetAvailability(); toast('Marked out'); return;
+  }
+  if (a === 'calsyncon' || a === 'calsyncnew') {
+    const x = state.teams[d.tid]; if (!x) return;
+    if (!feedBase()) { toast('Calendar sync is not set up on this site yet'); return; }
+    const old = x.calFeed;
+    if (a === 'calsyncnew' && !confirm('Everyone subscribed stops getting changes until they subscribe again with the new address. Do this if the address has reached someone it should not have. Continue?')) return;
+    ui.teamId = d.tid;          // the publish that follows goes to this team's pages
+    commit(`teams/${d.tid}/calFeed`, 'c' + uid() + uid());
+    if (fb && old) { fb.remove(fb.ref(fb.db, 'public/' + old)); fb.remove(fb.ref(fb.db, 'shareOwners/' + old)); }
+    toast(old ? 'New address made — the old one has stopped working' : 'Calendar sync is on');
+    return;
+  }
   if (a === 'calcall') {
     if (!calForm || !calForm.id) return;
     calFormRead();
@@ -7032,6 +7318,9 @@ function onAct(e) {
   }
   if (a === 'delmatch') {
     if (!confirm('Delete this game and its minutes?')) return;
+    // its own page goes with it, or the link keeps serving a game that no longer exists
+    const gone = (state.matches[d.id] || {}).share;
+    if (fb && gone) { fb.remove(fb.ref(fb.db, 'public/' + gone)); fb.remove(fb.ref(fb.db, 'shareOwners/' + gone)); }
     drop(`matches/${d.id}`); ui.matchId = null; closeSheet(); render(); return;
   }
 

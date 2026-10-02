@@ -8,6 +8,54 @@ before this point lives only in the git log.
 
 ---
 
+## Calendars that follow changes, parents saying who is coming, and game links that stop at the game — 2026-10-02
+
+**Sync.** Adding the calendar to a phone gave a copy, so a moved kick-off meant
+everyone adding it again. A calendar app that *subscribes* fetches an address on
+its own schedule, from its own servers, and never runs our JavaScript, so no
+static file can answer it. `worker/calendar.mjs` does: a Cloudflare Worker that
+reads one `public/{id}` node and returns it as a calendar. It is the first piece
+here that is not a static file, so it is kept as small as it can be: optional,
+read-only, no credentials, and it can only ask the database what anyone could
+already ask. `test/worker.js` pins that it never fetches anything but
+`public/{id}.json` for a plain id. It carries its own copy of `ics.js`, because
+Cloudflare's editor takes one file, and the test fails if the copy drifts
+(`node worker/make.js` refreshes it).
+
+A coach turns sync on per team, and every member gets *Apple Calendar*,
+*Google Calendar* and *Copy the address*. That feed includes team-only practices,
+because a subscribed calendar without practices is not the calendar, so they are
+published under its id. The id is shown only inside the app, to the team's
+members, it holds no names, players or answers, and *Replace this address*
+retires it. The share page offers the season's own feed: games, and only what
+was marked for the share link. Without the Worker set up, the copy is still
+there and nothing else changes.
+
+**Who is coming.** Parents answer *Going*, *Not going* or *Maybe* for each of
+their children, on *Next up* and on each entry, with an optional note. This is
+the first thing a parent writes, so the answer gets a node of its own,
+`rsvp/{tid}/{item}/{pid}`, and a rule that grants that node and nothing else. It
+is not inside the game, because a coach saving a game writes the whole game and
+would wipe an answer given at the same moment. The coach sees names with the
+unanswered at the top, answers for a family who said so another way, and on a
+game's *Available* sheet can mark everyone who said no as out in one tap. A
+refused answer comes back off the screen with a reason, rather than appearing to
+stick. Answers never reach `public/`, not even as counts. **Locked-down clubs need
+the new `rsvp` block from README pasted** before parents can answer;
+`test/rules.js` checks it for every kind of account.
+
+**Game links stop at the game.** A game link carried the season link's id, so
+whoever it reached, the other team included, could open the whole season. Each
+game is now published alone under its own id, and the page has no way back to a
+season it does not have. Only documents whose content changed are rewritten, so
+thirty fixtures do not go out on every sub. Rotating the season link replaces
+every game's too, and deleting a game takes its page down. Old game links keep
+working until the season link is rotated.
+
+Also: a parent's banner no longer says they can only read, and the
+`.btn.ghost` style, never used until the calendar reached for it, is gone,
+because the pitch's empty spots are `.ghost` too and won.
+
 ## A calendar for the season, for everyone following the team — 2026-10-01
 
 Games were a list a coach opened to track one. Nothing said when practice

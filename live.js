@@ -117,24 +117,22 @@ function past(it) {
   return n.getHours() * 60 + n.getMinutes() >= end;
 }
 const pageBase = () => location.origin + location.pathname.replace(/[^/]*$/, '');
-/* As a calendar file wants it. Same uid as the app uses for the same fixture,
-   so a family that adds it from both does not get it twice in calendars that
-   go by uid. */
+/* The season link as a calendar feed, when the site has one (README, "Calendar
+   sync"): the same games and entries this page shows, never more. */
+const feed = () => {
+  const b = String(window.SOCCER_CALENDAR_FEED || '').trim();
+  return /^https:\/\/\S+$/.test(b) && SHARE ? b.replace(/\/*$/, '/') + encodeURIComponent(SHARE) + '.ics' : '';
+};
+/* As a calendar file wants it, built by ics.js from the same published copy
+   the calendar feed is built from, so a family that adds an entry here and
+   subscribes later sees one description of it. Same uid as the app uses, so it
+   is not doubled in calendars that go by uid. */
 function icsOf(it) {
-  const name = (doc.team && doc.team.name) || 'Team';
-  const desc = [];
-  if (it.g) {
-    if (HOME_AWAY[it.g.home]) desc.push(HOME_AWAY[it.g.home]);
-    if (it.g.arrive) desc.push('Arrive by ' + niceTime(it.g.arrive));
-    if (it.g.kit) desc.push('Kit: ' + it.g.kit);
-    if (it.g.notes) desc.push(it.g.notes);
-  } else if (it.e && it.e.notes) desc.push(it.e.notes);
-  return {
-    uid: it.id, date: it.date, start: it.start, end: it.end, mins: it.mins, venue: it.venue, called: it.called,
-    title: it.g ? `${name} v ${it.g.opponent || 'TBC'}` : `${name}: ${it.title}`, desc: desc.join('\n'),
-    url: it.g ? `${pageBase()}game.html?t=${encodeURIComponent(SHARE)}&g=${encodeURIComponent(it.id)}`
-      : `${pageBase()}live.html?t=${encodeURIComponent(SHARE)}#e=${encodeURIComponent(it.id)}`
-  };
+  const I = window.MinutesIcs;
+  const url = (kind, id) => kind === 'game'
+    ? `${pageBase()}game.html?t=${encodeURIComponent(SHARE)}&g=${encodeURIComponent(id)}`
+    : `${pageBase()}live.html?t=${encodeURIComponent(SHARE)}#e=${encodeURIComponent(id)}`;
+  return (I ? I.docItems(doc, url) : []).find(x => x.uid === it.id) || { uid: it.id, title: it.title, date: it.date };
 }
 function download(name, list) {
   const I = window.MinutesIcs;
@@ -217,6 +215,9 @@ function fail(msg) {
 
 function render() {
   if (!doc) return;
+  /* A game's own link publishes that game alone, marked `fixture`. There is no
+     season to go back to, and nothing else to open. */
+  if (doc.fixture) { openGame = doc.fixture; openEvent = null; }
   const name = (doc.team && doc.team.name) || 'Team';
   const g = openGame ? (doc.games || {})[openGame] : null;
   const ev = !g && openEvent ? items().find(x => x.e && x.id === openEvent) : null;
@@ -258,7 +259,7 @@ function render() {
     const on = (g.players || []).filter(p => p.on);
     const off = (g.players || []).filter(p => !p.on);
     $('#app').innerHTML = `<div class="stack">
-      ${ONE_GAME && !SEASON_PAGE ? '' : `<button class="backlink" data-back>Back to the season</button>`}
+      ${(ONE_GAME && !SEASON_PAGE) || doc.fixture ? '' : `<button class="backlink" data-back>Back to the season</button>`}
       ${accessBlock()}
 
       <div class="card scorecard">
@@ -319,8 +320,15 @@ function render() {
     ${now ? card(now, 'Happening now') : nextIt ? nextCard(nextIt) : ''}
     <div class="card"><h2 style="margin-bottom:0">Coming up</h2>
       ${ahead.length ? `<div class="plist">${itemList(ahead)}</div>
-        <button class="btn quiet wide" data-icsall style="margin-top:12px">Add all of it to my calendar</button>
-        <p class="muted" style="margin:6px 0 0">A copy for your phone\u2019s calendar. If a time changes, this page has it first — add it again and each entry replaces itself, in calendars that allow it.</p>`
+        ${feed() ? `<p class="lbl" style="margin-top:14px">Follow it in your calendar</p>
+        <div class="row wrap">
+          <a class="btn sm" href="${esc(feed().replace(/^https:/, 'webcal:'))}">Apple Calendar</a>
+          <a class="btn quiet sm" href="https://calendar.google.com/calendar/render?cid=${encodeURIComponent(feed().replace(/^https:/, 'webcal:'))}" target="_blank" rel="noopener">Google Calendar</a>
+          <button class="btn quiet sm" data-copy="${esc(feed())}">Copy the address</button></div>
+        <p class="muted" style="margin:6px 0 0">Subscribe once and your calendar follows every change on this page. Apple and Outlook check about hourly; Google takes longer.</p>
+        <button class="backlink" data-icsall style="margin-top:10px">Or add a one-off copy</button>`
+        : `<button class="btn quiet wide" data-icsall style="margin-top:12px">Add all of it to my calendar</button>
+        <p class="muted" style="margin:6px 0 0">A copy for your phone\u2019s calendar. If a time changes, this page has it first — add it again and each entry replaces itself, in calendars that allow it.</p>`}`
       : '<p class="muted" style="margin-bottom:0">Nothing on the calendar yet.</p>'}</div>
     ${tbc.length ? `<div class="card"><h2 style="margin-bottom:8px">Date to be confirmed</h2><div class="plist">${tbc.map(itemRow).join('')}</div></div>` : ''}
     <div class="card"><h2 style="margin-bottom:10px">Results</h2>
@@ -367,8 +375,14 @@ window.addEventListener('popstate', e => {
   openEvent = (e.state && e.state.e) || null;
   render();
 });
-// a link to one event (the calendar file's URL carries one) opens on it
-{ const h = /^#e=(.+)$/.exec(location.hash || ''); if (h && !ONE_GAME) try { openEvent = decodeURIComponent(h[1]); } catch (e) { } }
+// a link to one game or event (a calendar entry's URL carries one) opens on it
+{
+  const h = /^#([ge])=(.+)$/.exec(location.hash || '');
+  if (h && !ONE_GAME) try {
+    const id = decodeURIComponent(h[2]);
+    if (h[1] === 'e') openEvent = id; else openGame = id;
+  } catch (e) { }
+}
 
 document.addEventListener('click', e => {
   const o = e.target.closest('[data-open]');
@@ -380,6 +394,11 @@ document.addEventListener('click', e => {
     const [k, id] = ic.dataset.ics.split(':');
     const it = items().find(x => x.kind === k && x.id === id);
     if (it) download(icsOf(it).title, [icsOf(it)]);
+    return;
+  }
+  const cp = e.target.closest('[data-copy]');
+  if (cp) {
+    navigator.clipboard.writeText(cp.dataset.copy).then(() => { cp.textContent = 'Copied'; }, () => { });
     return;
   }
   if (e.target.closest('[data-icsall]')) {

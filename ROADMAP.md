@@ -39,29 +39,32 @@ Open questions before building it:
 closed phone needs a push service and something server-side to send it, which
 this project does not have. Worth revisiting alongside the Cloudflare Worker.
 
-### A calendar that follows changes by itself
+### Calendar sync, beyond the first version
 
-The calendar can be added to a phone (one entry, or everything coming up), but
-only as a copy: change a kick-off and every family has to add it again. A
-calendar app *subscribes* by fetching a feed URL on its own schedule, from its
-own servers, and never runs our JavaScript, so a static site cannot serve one.
-The Cloudflare Worker already on the roadmap could: fetch
-`public/{share}.json` from the database's REST endpoint and return it as
-`text/calendar`. `ics.js` was written to drop into that Worker unchanged (no DOM,
-no Firebase, plain data in and text out), and every entry already carries a
-stable id, so a subscribed calendar would update entries in place. Only what
-the share link already publishes would be in it.
+Built: `worker/calendar.mjs` serves any `public/{id}` as a feed, the team's
+members get a feed with practices in it, and the share page offers the season's.
+What is left:
 
-### Who is coming
+- **One address per person, not per team.** Today replacing a leaked team
+  address makes every family subscribe again. Per-person feed ids would let one
+  be revoked alone, at the cost of a public node per member.
+- **A parent's own children only.** A parent with two daughters on two teams
+  subscribes twice. One feed across her teams needs a document keyed by her,
+  and the same care as above.
+- **Answers in the feed.** "Ella: going" in the calendar entry would be handy,
+  but answers are about named children and the feed is world-readable by
+  address. Not without a feed that is not world-readable, which means the
+  Worker holding a credential, which is a different project.
 
-The next thing a coach asks of a calendar is "who can make Saturday?". Games
-already have `out/{pid}`, but only a coach writes it. Letting a parent answer
-for her own child means a parent writing for the first time, which needs a
-rule, keyed on the guardian list, at the depth of one child's answer:
-`teams/{tid}/events/{eid}/rsvp/{pid}` (and the same for a game), writable when
-`teams/{tid}/players/{pid}/guardians/{auth.uid}` exists. That is a direct
-lookup, so the rule is short. Build it together with parent communication, not
-before it: an answer nobody is asked for does not get given.
+### Who is coming, next
+
+Built: parents answer for their own children, at `rsvp/{tid}/{item}/{pid}`,
+and the coach sees names, chases the unanswered and marks the "no"s out of a
+game. Next, with parent communication rather than before it:
+
+- **A reminder** to the families who have not answered by two days out. That
+  needs a way to reach them, which is the communication work.
+- **A deadline** the coach sets, after which answers close.
 
 ### Practice plans
 
@@ -82,24 +85,21 @@ Explored while building the calendar. What is built today:
   families can follow the score of their own child's game, which is a nice side
   effect.
 
-What they can see, honestly: the game link carries the season link's share id,
-so whoever holds it can open the season page too, with every game and anything
-a coach marked for the share link. Never names, and never anything kept to the
-team, because neither is ever written to `public/`. That is why practices
-default to the team only.
+What they can see: that game, by shirt number, and nothing else. (The first
+version's game link carried the season link's id, which reached the whole season;
+game links made then are retired by making a new season link.)
 
-Three steps further, in increasing cost:
+Built since: **a link scoped to one fixture.** Each game is published to its own
+`public/{m.share}`, and that is the id in every game link and in the message,
+so the opponent holds one game and nothing else.
 
-1. **A link scoped to one fixture.** Publish each game to its own
-   `public/{fixtureShareId}` as well as the team's mirror, and put that id in the
-   message. The opponent then holds one game and nothing else. Costs a second
-   write per change and a `shareOwners` claim per fixture, and nothing in the
-   rules changes. Worth doing once a club asks.
-2. **Free dates for a reschedule.** The season page already shows our game days.
+Two steps further, in increasing cost:
+
+1. **Free dates for a reschedule.** The season page already shows our game days.
    A "we are free on" list (game days and practice days, as busy/free with no
    detail) would let a coach agree a new date without a back-and-forth. Needs
    nothing new in the data. It is a view over what is there.
-3. **One fixture, two clubs.** When both clubs use Minutes, the fixture could be
+2. **One fixture, two clubs.** When both clubs use Minutes, the fixture could be
    one shared record both see, so a reschedule or a cancellation lands on both
    calendars, and the score is confirmed by both coaches. That is cross-club
    data with rules that answer to two sets of admins. It depends on the

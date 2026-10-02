@@ -23,6 +23,8 @@ const SUITES = [
   ['stats', 'tallies, and what reaches the public tier'],
   ['feed', 'the Live tab, and what it notifies'],
   ['calendar', 'the season calendar, and what reaches the share link'],
+  ['rsvp', 'parents say who is coming, for their own child only'],
+  ['worker', 'the calendar feed reads public/ and nothing else'],
   ['ai', 'the AI prompt carries numbers, never names'],
   ['roles', 'roles derived from where a uid appears'],
   ['visibility', 'which teams each account sees and edits'],

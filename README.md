@@ -20,7 +20,7 @@ A sideline tracker for soccer coaches: multiple teams, rosters, planned vs actua
 - **Fixing mistakes.** Tap any line in the sub log to nudge it by 5, 15, 30 or 60 seconds, or type the exact time. *Add a sub* records one that happened before you tapped. *Fix minutes* opens a player's spells on the pitch and lets you edit or delete each one. *Clock reading wrong?* shifts the current half and the total together.
 - **Per-game availability.** Mark players out for one game without touching their season totals.
 - **Veo.** Each game has a field for the Veo link, so the recording sits next to the sub log.
-- **Calendar.** Every team has a Calendar tab: games, practices and anything else on, in date order, with a month at a glance, *Next up* at the top with directions, and called-off entries left on the calendar struck through rather than deleted. Practices repeat weekly on whichever days you pick. Coaches add and change it; everyone with a role on the team — trackers and parents included — reads it, and anyone who can see more than one team (a parent with two children, say) can see them all on one calendar. See **The calendar** below.
+- **Calendar.** Every team has a Calendar tab: games, practices and anything else on, in date order, with a month at a glance, *Next up* at the top with directions, and called-off entries left on the calendar struck through rather than deleted. Practices repeat weekly on whichever days you pick. Coaches add and change it; everyone with a role on the team — trackers and parents included — reads it, and anyone who can see more than one team (a parent with two children, say) can see them all on one calendar. Families can subscribe so their own calendar follows every change, and parents say whether their child is coming to each game, practice or event. See **The calendar** below.
 - **Match-day details.** A game carries home or away, an arrive-by time, the kit, notes for families and the other team, and whether it is on, postponed or cancelled. They show on the calendar, the Plan tab and the share pages.
 
 ## Running it
@@ -301,6 +301,21 @@ a parent can still write another team's data, exactly as before.
           "$mid": {
             ".write": "auth != null && (root.child('workspaces/' + $code + '/access/admins/' + auth.uid).exists() || root.child('workspaces/' + $code + '/access/teamIndex/' + newData.child('teamId').val() + '/' + auth.uid).exists() || root.child('workspaces/' + $code + '/access/teamIndex/' + data.child('teamId').val() + '/' + auth.uid).exists() || (!root.child('workspaces/' + $code + '/access/teamIndex').exists() && root.child('workspaces/' + $code + '/access/index/' + auth.uid).exists()))"
           }
+        },
+        "rsvp": {
+          "$tid": {
+            "$item": {
+              "$pid": {
+                ".write": "auth != null && (!newData.exists() || newData.child('by').val() === auth.uid) && (root.child('workspaces/' + $code + '/access/admins/' + auth.uid).exists() || root.child('workspaces/' + $code + '/access/teamIndex/' + $tid + '/' + auth.uid).val() === 'coach' || root.child('workspaces/' + $code + '/teams/' + $tid + '/players/' + $pid + '/guardians/' + auth.uid).exists() || (!root.child('workspaces/' + $code + '/access/teamIndex').exists() && root.child('workspaces/' + $code + '/access/index/' + auth.uid).exists()))",
+                ".validate": "newData.hasChildren(['v', 'by', 'at']) && (newData.child('v').val() === 'yes' || newData.child('v').val() === 'no' || newData.child('v').val() === 'maybe')",
+                "v": { ".validate": "newData.isString()" },
+                "by": { ".validate": "newData.isString()" },
+                "at": { ".validate": "newData.isNumber()" },
+                "note": { ".validate": "newData.isString() && newData.val().length <= 140" },
+                "$other": { ".validate": false }
+              }
+            }
+          }
         }
       }
     },
@@ -380,6 +395,7 @@ What each part is doing:
 - **`access/teamIndex/$tid/$uid`** can also be written by that account itself, as `coach` or `tracker`, only if it really is on that team in `access/teams` — and never as the first entry of a missing table, because that would close the bridge on everyone else in one write.
 - **`clubInvites/$code`** is the admin's list, readable only by admins. It lives outside the workspace on purpose: everyone indexed can read the whole workspace, and a list of unspent coach invites in a parent's hands is a parent who can make herself a coach.
 - **`userOrgs/$uid`** is which clubs an account belongs to, so a second device finds them without a code. Only its owner reads it. It is a list of bookmarks, not a grant: reading a club is still `access/index`'s decision.
+- **`rsvp/$tid/$item/$pid`** is who is coming: one answer per child per game or calendar entry. A parent may write it for a child whose `guardians` list holds her uid, a coach for anyone on her team, an admin for anyone, and each answer must be stamped with the writer's own uid. It is a node of its own, not part of the game or the team, so the one thing this rule hands a parent is her own child's answer. An answer is `yes`, `no` or `maybe`, an optional note of at most 140 characters, and nothing else. Until this block is published, a locked-down club refuses parents' answers and the app says so; the open rules already allow them.
 - **`public/$share`** stays world-readable — that is the whole point of the parent links — but writing now needs an account. That closes the hole where anyone holding a share link could overwrite the scoreboard.
 
 ### If it goes wrong
@@ -467,11 +483,35 @@ Practices default to the team only on purpose. A share link gets forwarded, and 
 
 **Calling something off** keeps it on the calendar, struck through and marked Cancelled (or Postponed, for a game), on the share link too. Deleting is still there, but a deleted practice is one a parent may still turn up to.
 
-**In your own calendar.** Every entry has *Google Calendar* (opens pre-filled), *Apple or Outlook* (a `.ics` file the phone opens) and *Directions* (a maps search for the venue as typed). *Add what is coming up* puts the whole rest of the season in at once, on the app and on the share link. It is a copy: if a time changes later, add it again. Each entry carries a fixed id, so calendars that honour it replace their earlier copy instead of doubling it. A calendar that *subscribes* and follows changes by itself needs something server-side to serve the feed, which this site does not have. See ROADMAP.
+**In your own calendar.** Once the club has set up **Calendar sync** (below), the Calendar tab has *Apple Calendar* and *Google Calendar* buttons, and *Copy the address* for Outlook. Subscribe once and the phone's calendar follows every change on its own: a moved kick-off, a called-off practice, a new tournament. A coach turns it on per team. Every entry also has *Directions* (a maps search for the venue as typed), and a one-off copy is still there for a phone that will not subscribe. Without sync set up, that copy is all there is: add it again if a time changes. Each entry has a fixed id, so calendars that go by id replace the earlier copy instead of doubling it.
+
+**Who is coming.** On the calendar, a parent sees *Is Ella going?* with *Going*, *Not going* and *Maybe*, on *Next up* and on each entry's page, for each of their own children. Once they have answered there is room for a short note ("arriving late"). Tapping the answer again takes it back. The coach sees each entry's answers by name, with whoever has not answered at the top, can answer for a family that said so another way, and gets the count on every row. On a game's *Available* sheet, the coach sees what each family said and can *mark everyone who said they are not going as out* in one tap. It is a hint, not a switch: the coach decides who is out. Trackers and coaches of other teams see how many are coming, not who. Answers never reach the share link or the calendar feed, not even as a count. Answering needs the `rsvp` block in the locked-down rules (see **Locking it down**); the open rules already allow it.
 
 **Names never reach the share link.** A note like "Ella's family on snacks", typed into a public entry or a game's notes, is published as "a player's family on snacks". The coach is told when that happens. Every word of every roster name is matched, so a venue that shares a word with a player's surname loses that word on the share page. That is the safe way round.
 
-**For the other team.** The game's share sheet, and its calendar entry, have *Copy a message for the other team*, ready to text their coach: the fixture, kick-off, where with a directions link, what we wear, and the game link for the live score. Arrive-by is left out, because that time is for our families, not theirs. The game link is the same page families get, and it carries the season link's code, so the other team can also reach the season page: every game, and what was marked for the share link, never names and never anything kept to the team. ROADMAP has the longer exploration of what opponents could see.
+**For the other team.** The game's share sheet, and its calendar entry, have *Copy a message for the other team*, ready to text their coach: the fixture, kick-off, where with a directions link, what we wear, and the game link for the live score. Arrive-by is left out, because that time is for our families, not theirs. **A game link reaches that game and nothing else.** Each game is published under its own id, so whoever holds its link (the other team, or whoever they forward it to) cannot get from it to the season page, any other fixture or any practice. ROADMAP has the longer exploration of what opponents could see.
+
+## Calendar sync
+
+A calendar app subscribes to a web address and goes back to it on its own schedule, from its own servers, without running any of this app's JavaScript. A static site cannot answer that, so sync is one small extra piece: `worker/calendar.mjs`, a Cloudflare Worker. It reads one node of `public/` (the same node a share page reads) and returns it as a calendar. It holds no credentials and cannot write anything. It asks the database exactly what anyone on the internet could ask (`public/{id}.json`), so it cannot see more than the share pages can. It is the one part of this project that is not a static file, and it is optional: without it, everything else works and the calendar offers a copy instead.
+
+Set it up once for the club:
+
+1. A free Cloudflare account → **Workers & Pages** → **Create** → **Create Worker**. Name it something like `minutes-calendar` and deploy the hello-world it starts with.
+2. **Edit code**, delete what is there, paste the whole of `worker/calendar.mjs`, and **Deploy**.
+3. The Worker's **Settings → Variables and Secrets** → add `DATABASE_URL` with your database address (`databaseURL` in `firebase-config.js`, e.g. `https://your-project-default-rtdb.firebaseio.com`). Or put it in the `DATABASE_URL` line at the top of the file before pasting.
+4. Copy the Worker's address (`https://minutes-calendar.<you>.workers.dev`) into `firebase-config.js` as `window.SOCCER_CALENDAR_FEED`, commit, and let the site deploy.
+5. In the app, a coach opens Calendar → **Turn on calendar sync**. Everyone on the team then has the subscribe buttons.
+
+Three addresses come out of it, all `https://<worker>/{id}.ics`:
+
+- **The team's feed** (from the Calendar tab, for the team's signed-in members): every game and every entry, **team-only practices included**, because a subscribed calendar without practices is not the calendar. That means a team-only practice is published under this feed's id, world-readable by anyone who has the address, the same way the share link works. So the address is shown only inside the app, to the team's members. It holds no names, no players, no minutes and no answers. A coach can **Replace this address** at any time, which stops the old one and means everyone subscribes again.
+- **The season link's feed** (on the share page, for grandparents and friends): the games, and only the entries marked for the share link.
+- **A game's own** feed (that one game). Nothing offers it, but the same Worker answers it.
+
+How quickly a change arrives is up to the calendar app, not us. Apple and Outlook come back roughly hourly (the feed asks for that). Google refreshes subscribed calendars on its own schedule, often every several hours, and nothing a feed says changes that.
+
+After any change to `ics.js`, run `node worker/make.js` to copy it into the Worker, then paste the Worker again. `node test/worker.js` fails until the two match, so the feed and the app never describe a fixture differently.
 
 Nothing about the calendar needed a rule change: entries live under `teams/{tid}/events/{eid}`, below the rule that already lets a team's coaches and the club's admins change the team, and nobody else. `node test/rules.js` pins that.
 
@@ -481,7 +521,7 @@ Nothing about the calendar needed a rule change: entries live under `teams/{tid}
 
 Three things end one:
 
-- **Rotate** — Share → *Make a new link and kill the old one*. Every link previously sent stops working immediately.
+- **Rotate** — Share → *Make a new link and kill the old one*. Every link previously sent stops working immediately, the season link and every game's own link alike.
 - **Retire the club** — the mirror stops being updated, so it freezes at the last published state rather than going away.
 - **Delete `public/<share>` in the console** — the link goes dead.
 
@@ -492,7 +532,7 @@ For a season that is usually what you want: text it in September, it works in Ma
 Setup → **Share with parents** creates a long random share id for the team and publishes a read-only mirror. Two links come out of it:
 
 - **Season** — `live.html?t=<share>`. Text it once. It shows the season record, whatever game is happening now, what is coming up (every game, plus any practice or event marked for the share link), and every result. Each entry adds to a phone's calendar, and so does the whole of what is coming up.
-- **One game** — `game.html?t=<share>&g=<gameId>`. Kick-off time, venue, home or away, arrive-by, kit, notes, score, live clock, who is on, minutes played and the substitutions.
+- **One game** — `game.html?t=<gameShare>&g=<gameId>`. Kick-off time, venue, home or away, arrive-by, kit, notes, score, live clock, who is on, minutes played and the substitutions. Each game is published under its own id, so this link holds that game and nothing else: nobody can reach the season page from it. Game links made before this change carried the season link's id; *Make a new link and kill the old one* retires those.
 
 Teams can carry a crest — Setup → Teams → tap the team → *Add a crest*. It is resized to 192px and re-encoded in the browser before saving, and it shows in the app header and at the top of the shared pages. It cannot appear in the text-message preview image, which is a fixed file; that needs the Cloudflare Worker.
 
@@ -511,7 +551,8 @@ Push the folder to a repo, then Settings → Pages → deploy from branch, root.
 ## Data model
 
 ```
-teams/{teamId}        { id, name,
+rsvp/{teamId}/{g_matchId | e_eventId}/{playerId}   { v: 'yes' | 'no' | 'maybe', by, at, note }
+teams/{teamId}        { id, name, share, calFeed,
                         events: { eventId: { id, kind: 'practice' | 'event', title, date, start, end,
                                              venue, notes, public, called, series, createdAt, by } },
                         formations: { fid: { id, name, size, slots[] } },
@@ -524,6 +565,7 @@ teams/{teamId}        { id, name,
 matches/{matchId}     { id, teamId, opponent, date, periodCount, periodMinutes, onFieldCount,
                         currentHalf, veoUrl,
                         home, arrive, kit, notes, called,   // 'home'|'away'|'neutral', 'HH:MM', text, text, 'cancelled'|'postponed'
+                        share,                              // the game's own public id, for its game link
                         periods:   { n: { half, start, end } },   // epoch ms
                         planned:   { playerId: minutes },
                         kickoff, venue,
@@ -565,7 +607,16 @@ public/{shareId}     { team: { name },
                                           shots } } }
 ```
 
-Written by the coaches' app on a 1.2 second debounce. Read by `live.html`, which recomputes the clock from `periods` against Firebase's server time, so it ticks between pushes instead of waiting for one.
+Two more kinds of node sit beside it, written on the same debounce but only when what they carry has changed:
+
+```
+public/{gameShare}   { team, link, fixture: gameId, games: { gameId: { ...as above } } }    // one game, nothing else
+public/{calFeed}     { team, link, calendar: true,
+                       games:  { gameId: { opponent, date, kickoff, venue, home, arrive, kit, notes, called, status, score } },
+                       events: { eventId: { ...every entry, team-only included } } }      // no players, no numbers
+```
+
+Written by the coaches' app on a 1.2 second debounce. Read by `live.html`, which recomputes the clock from `periods` against Firebase's server time, so it ticks between pushes instead of waiting for one. The calendar feed Worker reads the same nodes.
 
 ## Backup
 

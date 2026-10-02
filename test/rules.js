@@ -226,7 +226,7 @@ const DB = {
         log: { e1: { at: 1, act: 'made coach', by: 'adm', target: 'coach' } }
       },
       teams: {
-        t1: { id: 't1', name: 'Flight', players: { p1: { id: 'p1', name: 'Ella', guardians: { mum: true } } } },
+        t1: { id: 't1', name: 'Flight', players: { p1: { id: 'p1', name: 'Ella', guardians: { mum: true } }, p2: { id: 'p2', name: 'Rosa' } } },
         t2: { id: 't2', name: 'Storm', players: {} }
       },
       matches: { g1: { id: 'g1', teamId: 't1', opponent: 'Riverside' }, g2: { id: 'g2', teamId: 't2', opponent: 'Athletic' } }
@@ -316,6 +316,36 @@ console.log('\n--- the calendar: under the team, so the team rule decides ---');
   reads('a parent reads it with the rest of the club', MUM, 'workspaces/CLUB/teams/t1/events/e1', true);
   writes('and the published copy takes a calendar', COACH, 'public/sh1/events', { e2: { kind: 'event', title: 'Team photo', date: '2026-09-20' } }, true);
   writes('with the whole mirror in one write too', COACH, 'public/sh1', { team: { name: 'Flight' }, games: { g1: { status: 'upcoming', called: 'cancelled', home: 'away' } }, events: { e2: { kind: 'event', date: '2026-09-20' } }, record: { w: 0 }, updated: 1 }, true);
+}
+
+console.log('\n--- who is coming: a parent for her own child, a coach for anyone ---');
+{
+  /* The first thing a parent writes. The rule hands her one node — her own
+     child's answer — and the node sits outside the game and the team, so it
+     cannot be stretched into a write of either. */
+  const R = 'workspaces/CLUB/rsvp/t1/g_g1/';
+  const ans = by => ({ v: 'yes', by, at: NOW });
+  writes('a parent answers for her own child', MUM, R + 'p1', ans('mum'), true);
+  writes('with a note', MUM, R + 'p1', { ...ans('mum'), v: 'no', note: 'Away that weekend' }, true);
+  writes('and takes the answer back', MUM, R + 'p1', null, true);
+  writes('not for another child', MUM, R + 'p2', ans('mum'), false);
+  writes('not stamped as somebody else', MUM, R + 'p1', ans('coach'), false);
+  writes('not an answer that is not one', MUM, R + 'p1', { ...ans('mum'), v: 'definitely' }, false);
+  writes('not a note longer than a text', MUM, R + 'p1', { ...ans('mum'), note: 'x'.repeat(141) }, false);
+  writes('not anything else tucked inside it', MUM, R + 'p1', { ...ans('mum'), photo: 'data:...' }, false);
+  writes('not the whole team\'s answers at once', MUM, 'workspaces/CLUB/rsvp/t1', { g_g1: { p1: ans('mum') } }, false);
+  writes('and it gives her nothing on the game itself', MUM, 'workspaces/CLUB/matches/g1/out/p2', true, false);
+  writes('the team\'s coach answers for anyone on it', COACH, R + 'p2', ans('coach'), true);
+  writes('an admin for anyone', ADM, 'workspaces/CLUB/rsvp/t2/e_x/k9', ans('adm'), true);
+  writes('a tracker cannot', TRK, R + 'p2', ans('trk'), false);
+  writes('nor another team\'s coach', OTHER, R + 'p2', ans('other'), false);
+  writes('nor a registered account with no role', NEWB, R + 'p1', ans('newbie'), false);
+  writes('nor anyone signed out', OUT, R + 'p1', { v: 'yes', at: NOW }, false);
+  reads('the coach reads the answers with the rest of the club', COACH, R + 'p1', true);
+  const saved = DB.workspaces.CLUB.access.teamIndex;
+  delete DB.workspaces.CLUB.access.teamIndex;
+  writes('before the team index: any indexed account, as elsewhere', TRK, R + 'p2', ans('trk'), true);
+  DB.workspaces.CLUB.access.teamIndex = saved;
 }
 
 console.log('\n--- a game: whoever works that team, tracker included ---');
@@ -607,7 +637,13 @@ console.log(`
   4. An invite with no email on it is a bearer token until it is spent: whoever
      opens the link first gets the role. Single use and a two-week expiry bound
      it, and naming an address closes it; the interface says so where the
-     invite is made.`);
+     invite is made.
+
+  5. A parent can answer for her child under an item key that names no game
+     or entry. The rule checks whose child it is, not that the thing exists,
+     because Realtime Database rules have no substring to pull a game id back
+     out of the key. It costs nothing but a stray answer under her own child,
+     and keeping the rule short enough to read in one go is worth more.`);
 
 console.log(`\n${failures ? failures + ' EXPECTATION(S) FAILED' : 'all expectations hold'}`);
 process.exit(failures ? 1 : 0);
