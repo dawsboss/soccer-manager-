@@ -504,7 +504,13 @@ Written by the coaches' app on a 1.2 second debounce. Read by `live.html`, which
 
 ## Backup
 
-Setup → *Download a copy* writes the whole store to JSON. *Load from a file* adds whatever teams and games the club is missing and keeps everything already there; it never replaces the club wholesale, and never touches who has access.
+Setup → *Download a copy* (admins) writes the whole club to one JSON file: teams, games, roles and fields, and under `training` the training sessions with their bookings, registers and fees, coaches' pay rates, practice plans and the club's drills. With a signal it asks the club for its own copy of those first and lays this phone's over it, so the file holds what the club has, not just what this phone happened to open; if part of it can't be asked about, the download says so.
+
+*Load from a file* adds whatever the club is missing and keeps everything already there: teams, games, fields, and every training record. It never replaces the club wholesale and never touches who has access. A training record goes back only where the club has nothing at that place, so last month's backup can't overwrite this week's fees; before saying what it would do, it asks the club what it already has, and a record it can't check (no signal, or not an admin) is left out and listed rather than written blind. Backups from before training records were included still load.
+
+**What is still owed is counted in one place.** The badge in the corner, the warning on every screen and *Not saved to the club yet* count everything on this phone that the club hasn't accepted: games and squads, and also practice plans, drills and training sessions. *Try again now* resends all of it. *Drop the refused ones* drops refused games, squads and training-session changes (the club's copy comes back in their place); refused practice plans and drills stay, and are retried, until the club takes them.
+
+**A phone with no room left says so.** If the browser refuses to store a change because the phone's storage is full, the app says so straight away and on every screen until a save gets through again, because a change it couldn't keep would be gone when the app closes. Anything already sent to the club is safe.
 
 ## Bulk import
 
