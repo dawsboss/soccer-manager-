@@ -512,6 +512,74 @@ function writeOne(D, extra = {}) {
   }
 
   await H.flush(20);
+  console.log('\n--- one drill, sent to another coach ---');
+  {
+    const shelf = {
+      d1: { id: 'd1', name: 'Jaz\'s secret rondo', type: 'opposed', ages: [8, 12], by: 'jaz', byName: 'Jaz', team: 't1', at: 1, v: 1, summary: 's', setup: 's', how: ['h'], points: ['p'] }
+    };
+    const open = (D, key) => { global.location.hash = '#/drill/' + encodeURIComponent(key); return D.hashToUi(); };
+    const bi = L.DRILLS.find(x => x.goesWith.length && x.diagram);
+
+    // the coach who has it sends it
+    const a = await device('jaz');
+    toDrills(a.D, 'club');
+    a.fbk.deliver(CLUBD, shelf); await a.D.flush();
+    a.D.click({ act: 'drill', id: 'club:d1' });
+    check('a club drill offers Send to a coach', /data-act="drillsend"/.test(sheet(a.D)), true);
+    a.D.click({ act: 'drillsend', id: 'club:d1' });
+    check('the link names the drill and nothing else', sheet(a.D).includes('https://x.test/#/drill/club%3Ad1'), true);
+    check('and says who it opens for', /only for the club's coaches and admins/.test(sheet(a.D)), true);
+    check('the club\'s code is not in it', sheet(a.D).includes(CODE), false);
+    a.D.click({ act: 'drill', id: bi.id }); a.D.click({ act: 'drillsend', id: bi.id });
+    check('a built-in drill\'s link opens for anyone', /opens for anyone/.test(sheet(a.D)) && sheet(a.D).includes('#/drill/' + bi.id), true);
+    const mine = writeOne(a.D);
+    a.D.click({ act: 'drillsend', id: 'mine:' + mine.id });
+    check('her own drill is never sent: it is private', /yours, and private/.test(sheet(a.D)) && !/#\/drill\//.test(sheet(a.D)), true);
+    check('she is offered sharing it with the club instead', /data-act="drillshare"/.test(sheet(a.D)), true);
+
+    // another team's coach opens it
+    const k = await device('kim');
+    check('a link is taken', open(k.D, 'club:d1'), true);
+    check('and the address goes back to the screen, so Back does not reopen it', /#\/drill/.test(k.D.dom.replaced || ''), false);
+    check('the club\'s drills are asked for', k.fbk.watching(CLUBD), true);
+    check('nothing is said before they arrive', /secret rondo|isn't here/.test(sheet(k.D)), false);
+    k.fbk.deliver(CLUBD, shelf); await k.D.flush(); k.D.timers.run();
+    check('a coach of another team opens it once they do', /<h3>Jaz&#39;s secret rondo<\/h3>|<h3>Jaz's secret rondo<\/h3>/.test(sheet(k.D)), true);
+    check('with what a coach can do with it', /data-act="drillmine"/.test(sheet(k.D)), true);
+    open(k.D, 'club:gone'); k.D.timers.run();
+    check('a drill removed since is said, not guessed', /That drill isn't here/.test(sheet(k.D)), true);
+    open(k.D, 'mine:' + mine.id); k.D.timers.run();
+    check('somebody else\'s own drill is private', /That drill is private/.test(sheet(k.D)), true);
+
+    // a parent and a tracker it was forwarded to
+    for (const who of ['mum', 'trk']) {
+      const p = await device(who);
+      open(p.D, 'club:d1'); p.D.timers.run();
+      check(who + ': a club drill is refused with a reason', /for the club's coaches/.test(sheet(p.D)), true);
+      check(who + ': naming her role', new RegExp(`signed in as a ${who === 'mum' ? 'parent' : 'tracker'}`).test(sheet(p.D)), true);
+      check(who + ': and showing nothing of it', /secret rondo/.test(sheet(p.D)), false);
+      check(who + ': her phone never asks for the club\'s drills', p.fbk.readPaths().some(x => x.includes('/drills')), false);
+      p.D.click({ act: 'drillopen', id: 'club:d1' });
+      check(who + ': nor by a tap that gets through', /for the club's coaches/.test(sheet(p.D)) && !/secret rondo/.test(sheet(p.D)), true);
+      p.D.click({ act: 'drillsend', id: bi.id });
+      check(who + ': and she cannot send drills on', p.D.lastToast(), 'Practice is for coaches and admins');
+
+      open(p.D, bi.id); p.D.timers.run();
+      const sh = sheet(p.D);
+      check(who + ': a built-in drill opens for her', sh.includes('<h3>' + bi.name.replace(/'/g, '&#39;') + '</h3>') || sh.includes('<h3>' + bi.name + '</h3>'), true);
+      check(who + ': to read, with nothing a coach does on it',
+        ['drillmine', 'drilledit', 'drillsend', 'drillshare', 'pracadd', 'drill', 'drillpic'].some(x => sh.includes(`data-act="${x}"`)), false);
+      p.D.click({ act: 'drillopen', id: bi.goesWith[0] });
+      check(who + ': and the drills it goes with open the same way', sheet(p.D).includes(L.DRILLS.find(x => x.id === bi.goesWith[0]).name.replace(/'/g, '&#39;')), true);
+    }
+
+    // a link that can't be answered never waits for ever
+    const s = await device('kim');
+    open(s.D, 'club:d1');
+    s.D.clock.advance(9000); s.D.render(); s.D.timers.run();
+    check('with no answer from the club, it says so rather than hanging', /That drill isn't here/.test(sheet(s.D)), true);
+  }
+
   console.log('\n--- a hostile drill cannot break the next coach\'s screen ---');
   {
     const { D, fbk } = await device('kim');
