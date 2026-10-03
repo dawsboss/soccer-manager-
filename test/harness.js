@@ -156,7 +156,7 @@ const EXPORTS = `{
   pitchNow, benchCalls, benchFrom, benchText, sheetBench, sheetBenchAll,
   /* stats */
   goalList, score, EVENTS, evOf, evLabel, evCount, evList, possOn, shotList,
-  shotTally, possMarkers, possession, subEvents,
+  shotTally, possMarkers, possession, subEvents, deleteSub,
   /* actions */
   startClock, pauseClock, endHalf, endGame, putOnField, takeOffField, swap,
   moveSub, subQuiet, applyStaged, movePos, switchTo, subAt, restartMatch,
@@ -165,7 +165,7 @@ const EXPORTS = `{
   publicGame, publicDoc, schedulePublish, shareBase, teamLink, gameLink,
   gameStatus, shirtOf,
   /* AI prompt helper */
-  aiPrompt, aiLabels, aiScrub, AI_TOPICS, sheetAi,
+  aiPrompt, aiLabels, aiScrub, AI_TOPICS, sheetAi, aiSlotNames, aiPlanAsk, aiPlanParse,
   /* test club */
   seedSandbox,
   /* bulk import */

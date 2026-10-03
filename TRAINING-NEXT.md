@@ -99,6 +99,14 @@ Built, and on this branch:
 drills leave the phone (README → *The database rules*). Until then the
 Drills screen says *Saved on this phone only*.
 
+**Started on `main` (2026-10-03).** The owner asked for the Practice tab's
+Add and the Calendar's Add to be the same, so they are now one button and one
+sheet: a practice added from either goes on the calendar, and a plan made for
+it is keyed by the entry's id (`eid`) and starts from its day, time and place.
+A plan opens from its calendar entry. What's left of step 1 below: take when
+and where from the entry on read rather than a copy, retire `schedule` and its
+rule, and move plans made the old way onto entries.
+
 ## What to build, in this order
 
 ### 1. Plans hang off the calendar
@@ -219,7 +227,7 @@ an id that isn't its own).
 ## Housekeeping when it ships
 
 - Bump `BUILD` in `app.js`, the meta tag and every `?v=` in `index.html`
-  together (70 on this branch). `test/version.js` checks them.
+  together (74 on this branch). `test/version.js` checks them.
 - A `CHANGELOG.md` entry, README's feature bullets and rules list, and mark
   the steps built in `TRAINING.md` → *Build order*.
 - Look at every new screen at phone width (390px). This branch did it by

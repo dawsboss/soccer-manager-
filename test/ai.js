@@ -160,4 +160,47 @@ console.log('--- who may open it ---');
   check('the sheet shows no player name', NAMES.some(nm => sheet.includes(nm.split(' ')[0])), false);
 }
 
+console.log('\n--- an AI\'s plan comes back in ---');
+{
+  setup();
+  const g2 = A.state.matches.g2;
+  g2.formation = { name: '2-1', size: 4, slots: [
+    { id: 'sGK', label: 'GK', role: 'GK', x: 50, y: 92 }, { id: 'sA', label: 'CB', role: 'Back', x: 30, y: 75 },
+    { id: 'sB', label: 'CB', role: 'Back', x: 70, y: 75 }, { id: 'sST', label: 'ST', role: 'Forward', x: 50, y: 22 }] };
+  A.ui.matchId = 'g2';
+  check('a repeated position label is numbered so it can be read back', Object.values(A.aiSlotNames(g2)).join(' '), 'GK CB CB2 ST');
+  const txt = A.aiPrompt('game', 'plan');
+  check('the plan prompt asks for the PLAN lines', /PLAN\n0:00 GK=#1 CB=… CB2=… ST=…/.test(txt), true);
+  check('and says when the second half starts', /2nd half starts at 40:00/.test(txt), true);
+  const lab = A.aiLabels(A.team());
+  const answer = `Here is a balanced plan.\n\n| Time | Lineup |\n|---|---|\n\nPLAN\n**0:00** GK=#1 CB=#7 CB2=#8 ST=#4\n20:00 GK=#1 CB=#7 CB2=${lab.p4} ST=#4\n40:00 GK=#1 CB=${lab.p6} CB2=#8 ST=${lab.p7}\n\nEveryone gets at least 40 minutes.`;
+  const r = A.aiPlanParse(A.team(), g2, answer);
+  check('a reply with chat around it reads cleanly', r.problems.join('; '), '');
+  check('into one snapshot per line', r.blocks.map(b => b.start).join(','), '0,1200,2400');
+  check('with every spot and player right', JSON.stringify(r.blocks[2].assign), JSON.stringify({ sGK: 'p5', sA: 'p6', sB: 'p2', sST: 'p7' }));
+  const bad = A.aiPlanParse(A.team(), g2, 'PLAN\n0:00 GK=#1 LW=#7 CB=#99 ST=#1');
+  check('a typo in the plan is reported, not dropped', bad.problems.length, 3);
+  check('and a reply with no plan says what to look for', /No plan lines/.test(A.aiPlanParse(A.team(), g2, 'Sounds good!').problems[0]), true);
+
+  A.ui.view = 'game'; A.ui.gameView = 'plan';
+  A.dom.node('#aiAnswer').value = 'PLAN\n0:00 GK=#1 LW=#7';
+  A.click({ act: 'aiimport' });
+  check('nothing is loaded while it has a problem', A.planBlocks(g2).length, 0);
+  A.dom.node('#aiAnswer').value = answer;
+  A.click({ act: 'aiimport' });
+  check('a clean answer becomes the plan', A.planBlocks(A.state.matches.g2).length, 3);
+  global.confirm = () => false;
+  A.dom.node('#aiAnswer').value = 'PLAN\n0:00 GK=#1 CB=#7 CB2=#8 ST=#4';
+  A.click({ act: 'aiimport' });
+  check('it asks before replacing a plan, and no keeps it', A.planBlocks(A.state.matches.g2).length, 3);
+  global.confirm = () => true;
+  A.state.matches.g2.plan.locked = { at: 1 };
+  A.click({ act: 'aiimport' });
+  check('and never writes over a locked plan', A.planBlocks(A.state.matches.g2).length, 3);
+  A.me = { uid: 'trk', name: 'T' };
+  delete A.state.matches.g2.plan.locked;
+  A.click({ act: 'aiimport' });
+  check('a tracker cannot load one', A.planBlocks(A.state.matches.g2).length, 3);
+}
+
 H.summary('the AI prompt helper');

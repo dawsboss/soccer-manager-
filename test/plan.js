@@ -126,22 +126,28 @@ console.log('\n--- with no spot picked, a player goes where she fits ---');
   check('tapping a placed player picks her spot', A.ui.snapSid, 'sGK');
 }
 
-console.log('\n--- later snapshots: copy, time, delete ---');
+console.log('\n--- later snapshots: empty, time, delete ---');
 {
   const g = setup();
   A.click({ act: 'snapstart' });
   for (const pid of ['p5', 'p1', 'p2', 'p3']) A.click({ act: 'snapplayer', pid });
 
   A.click({ act: 'snapadd' });
-  check('a copy lands ten minutes on', A.planBlocks(g()).map(b => b.start), [0, 600]);
-  check('with the same lineup', A.planBlocks(g())[1].assign, A.planBlocks(g())[0].assign);
+  check('a new change lands ten minutes on', A.planBlocks(g()).map(b => b.start), [0, 600]);
+  check('with an empty pitch, not a copy', A.planBlocks(g())[1].assign, {});
   check('and is the one being edited', A.ui.snapAt, 600);
+  check('so nobody is credited past it yet', A.planSeconds(g()).p1, 600);
+  check('the players from before are listed first', /Not on<\/h3>\s*<div class="plist">[^]*?was /.test(html()), true);
+  A.click({ act: 'snapplayer', pid: 'p1' });
+  check('one from before goes back to her old spot', A.planBlocks(g())[1].assign, { sLB: 'p1' });
+  A.click({ act: 'snapfill' });
+  check('and the rest fill from the one before in a tap', A.planBlocks(g())[1].assign, A.planBlocks(g())[0].assign);
 
   A.click({ act: 'snaptime', d: '600' });
   check('it can be moved later', A.planBlocks(g())[1].start, 1200);
   A.click({ act: 'snapadd' });
   A.click({ act: 'snapadd' });
-  check('copies stop at half-time, where subs usually happen', A.planBlocks(g()).map(b => b.start), [0, 1200, 1800, 2400]);
+  check('new changes stop at half-time, where subs usually happen', A.planBlocks(g()).map(b => b.start), [0, 1200, 1800, 2400]);
   check('which reads as the half', A.snapLabel(g(), 2400), '2nd half');
   check('and a minute reads with its half', A.snapLabel(g(), 3000), '50:00 · 2nd half');
 
@@ -168,6 +174,7 @@ console.log('\n--- minutes fall out of the snapshots ---');
   A.click({ act: 'snapstart' });
   for (const pid of ['p5', 'p1', 'p2', 'p3']) A.click({ act: 'snapplayer', pid });
   A.click({ act: 'snapadd' });                    // 10:00
+  A.click({ act: 'snapfill' });
   A.click({ act: 'snaptime', d: '1800' });        // 40:00 — half-time
   A.click({ act: 'snapslot', sid: 'sST' });
   A.click({ act: 'snapplayer', pid: 'p4' });      // Jo on for Rosa
@@ -178,6 +185,13 @@ console.log('\n--- minutes fall out of the snapshots ---');
   check('every filled spot adds up to the game', Object.values(s).reduce((a, b) => a + b, 0), 4 * 4800);
   const h = html();
   check('the diff shows the sub', /on:<\/span> Jo \(ST\)/.test(h) && /off:<\/span> Rosa/.test(h), true);
+  const by = A.planSeconds(g(), 2400);
+  check('up to a mark counts only what is played before it', [by.p3, by.p4, by.p5], [2400, 0, 2400]);
+  const row = pid => (h.match(new RegExp(`data-pid="${pid}"[^]*?</button>`)) || [''])[0].replace(/<[^>]+>/g, '').replace(/\s+/g, ' ');
+  check('at a change, a player shows what she has had by then and her game total', /40 by 40:00 ?40 in game/.test(row('p3')), true);
+  check('and one coming on shows none yet, with her total', / 0 by 40:00 ?40 in game/.test(row('p4')), true);
+  A.ui.snapAt = 0;
+  check('kick-off shows just the total', /by 0:00|by 00:00/.test(html()), false);
 }
 
 console.log('\n--- blocks as the database hands them back ---');
@@ -207,12 +221,20 @@ console.log('\n--- the draft does not quietly replace your snapshots ---');
   A.click({ act: 'snapstart' });
   A.click({ act: 'snapplayer', pid: 'p5' });
   const before = JSON.stringify(g().plan);
-  global.confirm = () => false;
-  A.click({ act: 'makeplan' });
-  check('declining keeps them', JSON.stringify(g().plan), before);
   global.confirm = () => true;
+  check('there is no redraft button once there is a plan', /data-act="makeplan"/.test(html()), false);
   A.click({ act: 'makeplan' });
-  check('accepting drafts a fresh plan', g().plan.manual, undefined);
+  check('and a tap that reaches the handler changes nothing', JSON.stringify(g().plan), before);
+  check('and says to clear first', /clear it first/.test(A.lastToast()), true);
+  global.confirm = () => false;
+  A.click({ act: 'snapwipe' });
+  check('Clear plan asks first, and no keeps it', JSON.stringify(g().plan), before);
+  global.confirm = () => true;
+  A.click({ act: 'snapwipe' });
+  check('yes clears every snapshot', A.planBlocks(g()).length, 0);
+  check('and the draft button is back', /data-act="makeplan"/.test(html()), true);
+  A.click({ act: 'makeplan' });
+  check('an empty plan can be drafted', g().plan.manual, undefined);
   check('with a block every ten minutes', A.planBlocks(g()).length, 8);
 }
 
