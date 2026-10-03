@@ -182,6 +182,9 @@ label.field span{display:block;font-size:13px;color:var(--ink-soft);margin-botto
   font-variant-numeric:tabular-nums;text-align:right;min-width:58px;
 }
 .pmins small{font-weight:500;font-size:13px;color:var(--ink-soft)}
+/* Plan tab, after kick-off: minutes by this change on top, the whole game under it */
+.snapmins{display:flex;flex-direction:column;align-items:flex-end;line-height:1.05}
+.snapmins .pmtot{font-family:"Barlow",sans-serif;font-weight:500;font-size:12px;color:var(--ink-soft);white-space:nowrap;margin-top:2px}
 
 /* planned vs actual bar */
 .bar{position:relative;height:6px;background:var(--paper);border-radius:3px;margin-top:5px;overflow:visible}
@@ -541,7 +544,8 @@ table.grid td.right{text-align:right}
 .avatar.swap{border-radius:9px;background:rgba(255,255,255,.12)}
 
 /* ---------- plan snapshots ---------- */
-.snapstrip{display:flex;gap:6px;overflow-x:auto;padding-bottom:4px;margin-bottom:10px;-webkit-overflow-scrolling:touch}
+/* wrapped, not scrolled sideways: a sideways strip snaps back to 0:00 on every redraw */
+.snapstrip{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px}
 .snapstrip .chip{flex:none;white-space:nowrap;font-variant-numeric:tabular-nums}
 .snapgap{
   display:inline-block;min-width:18px;margin-left:4px;padding:0 5px;border-radius:9px;
@@ -552,6 +556,7 @@ table.grid td.right{text-align:right}
 .snapwhen b{font-family:"Barlow Condensed",sans-serif;font-size:22px;line-height:1.05;min-width:6ch;text-align:center;font-variant-numeric:tabular-nums}
 .snapwhen b small{display:block;font-family:"Barlow",sans-serif;font-size:11.5px;font-weight:500;color:var(--ink-soft)}
 .snapwhen .muted{font-size:14px}
+.snapwhen .snapx{margin-left:6px}
 .pitch button.token{padding:0;color:var(--ink);cursor:pointer;font:inherit;font-family:"Barlow Condensed",sans-serif}
 .pitch .ghost{cursor:pointer;padding:0}
 .ghost[data-picked="1"]{background:rgba(255,255,255,.35);border-style:solid;outline:3px solid #fff;outline-offset:2px}

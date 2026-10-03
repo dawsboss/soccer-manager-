@@ -8,6 +8,54 @@ before this point lives only in the git log.
 
 ---
 
+## Sub planning: start empty, clear it, and bring an AI's plan back — 2026-10-03
+
+From a coach using the Plan tab for real.
+
+- **A new change starts with an empty pitch**, not a copy of the one before.
+  A copy credited eleven players with the rest of the game the moment it
+  appeared, so the minutes column stopped saying where anything came from.
+  Now each number moves when its player is placed. The players from the change
+  before are listed first, marked with where they were, and a tap puts one back
+  in her old spot; *Fill the gaps from the one before* does the rest in one go.
+- **Clear plan** empties the whole plan, after asking. **Redraft is gone**: a
+  draft only fills an empty plan, checked in the handler too, so no tap can
+  write over snapshots a coach made. Clearing first is the deliberate way to a
+  fresh draft.
+- **Deleting a change sits beside its time** (the ✕ after −5 −1 +1 +5), not in
+  a row of buttons about other things.
+- **Ask an AI → Plan this game** now asks for the plan back in a fixed shape
+  (`PLAN`, then `0:00 GK=#1 LB=#4 …` per change), and the sheet has a box to
+  paste the reply into. The app reads those lines and nothing else, reports a
+  wrong position or shirt number rather than dropping it, loads nothing until
+  it is clean, asks before replacing a plan, and never touches a locked one.
+  Players stay shirt numbers both ways. A position label a shape repeats is
+  numbered (`CB`, `CB2`) so it can be read back.
+- **Minutes so far, next to the total.** On any change after kick-off, each
+  player shows what the plan has given her by that minute (*12 by 20:00*), with
+  her whole-game total under it (*40 of 40 in game*). The total alone could not
+  say who was due a rest at the moment the change comes round. Kick-off still
+  shows only the total, since nobody has played yet.
+- **Picking a time no longer loses your place.** The times sat in one strip
+  that scrolled sideways, and every tap redraws the page, which sent the strip
+  back to Kick-off. A coach planning the 60th minute scrolled back to it after
+  every tap. The times now wrap onto as many rows as they need, so all of them
+  are in view. And when a redraw is of the same screen, `render()` puts the page
+  back at the same height, so it doesn't jump either.
+- **A sub can be deleted from the match log** — *Delete — this sub did not
+  happen* on its sheet. A swap gives the player who "went off" the other's
+  spell; one swapped straight back later just played on; a move joins her two
+  spells; the full-time whistle is refused, and so is anything that would put
+  a player on the pitch twice (Fix minutes is the way through for those).
+- **Putting a lineup on before kick-off no longer logs subs.** Changing the
+  lineup at 0:00 closed the first one's spells at 0:00, and the match log reads
+  every closed spell as someone going off. A spell that has not started is now
+  removed instead (Undo still has it). Spells of no length already in a game
+  can be deleted from the log. Before kick-off the button says *Use as the
+  starting lineup*.
+
+---
+
 ## One Add for a practice — 2026-10-03
 
 The Practice tab had its own "Plan a practice" button and sheet (date, start,
@@ -30,6 +78,8 @@ either tab. Editing a plan's own details, and the plans already made the old
 way, are unchanged; the plan still carries its own copy of when and where, and
 `schedule` still exists — retiring those is the rest of the "plans hang off the
 calendar" decision in `TRAINING-NEXT.md`.
+
+---
 
 ## One set of rules, for every club — 2026-10-03
 

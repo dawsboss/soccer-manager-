@@ -442,4 +442,79 @@ console.log('\n--- a spell saved without its spot can be given one back ---');
   check('none of which touches her minutes', A.playedSec(m, 'p5'), 20 * 60);
 }
 
+console.log('\n--- deleting a sub from the match log ---');
+{
+  // log rows are numbered as the Track tab drew them, so draw it first
+  const rowOf = (m, f) => { A.ui.gameView = 'track'; A.render(); return A.subEvents(m).findIndex(f); };
+
+  let m = setup();
+  A.subAt(m, 'p2', 'p4', 10 * 60);                       // Jo on for Mia at 10:00
+  m = A.state.matches.g1;
+  let i = rowOf(m, r => r.on === 'p4' && r.off === 'p2');
+  check('the sub is in the log', i > -1, true);
+  A.click({ act: 'delsub', i: String(i) });
+  m = A.state.matches.g1;
+  check('deleting it takes it out of the log', A.subEvents(m).length, 0);
+  check('Mia never went off', A.onField(m, 'p2'), true);
+  check('and Jo never came on', A.onField(m, 'p4'), false);
+  check('so Mia has all 20 minutes', A.playedSec(m, 'p2'), 20 * 60);
+  check('Jo none', A.playedSec(m, 'p4'), 0);
+  check('Mia keeps her spot', A.openStint(m, 'p2')[1].slot, 'sRB');
+  deepEq('and still four on the pitch', ids(m), ['p1', 'p2', 'p3', 'p5']);
+  check('onField agrees with the stints', agrees(m), true);
+
+  // swapped straight back later: Mia off for Jo, then Jo off for Mia
+  m = setup();
+  A.subAt(m, 'p2', 'p4', 5 * 60);
+  A.subAt(A.state.matches.g1, 'p4', 'p2', 15 * 60);
+  m = A.state.matches.g1;
+  i = rowOf(m, r => r.on === 'p4' && r.off === 'p2');
+  check('both subs are in the log', i > -1 && A.subEvents(m).length, 2);
+  A.click({ act: 'delsub', i: String(i) });
+  m = A.state.matches.g1;
+  check('deleting the first means she played on: both go', A.subEvents(m).length, 0);
+  check('Mia has all 20 minutes in one spell', A.stintsOf(m, 'p2').length + ':' + A.playedSec(m, 'p2'), '1:1200');
+  check('and Jo none', A.playedSec(m, 'p4'), 0);
+
+  // but not where it would put her on the pitch twice
+  m = setup();
+  A.subAt(m, 'p2', 'p4', 5 * 60);                        // Mia off for Jo
+  A.subAt(A.state.matches.g1, 'p3', 'p2', 10 * 60);      // Mia back on for Rosa, Jo still on
+  m = A.state.matches.g1;
+  i = rowOf(m, r => r.on === 'p4' && r.off === 'p2');
+  A.click({ act: 'delsub', i: String(i) });
+  m = A.state.matches.g1;
+  check('one that overlaps her own later spell is refused', A.subEvents(m).length, 2);
+  check('and says to use Fix minutes', /Fix minutes/.test(A.lastToast()), true);
+
+  // a move to a new spot, deleted: one spell again, in the old spot
+  m = setup();
+  A.movePos(m, 'p1', 'sST', null, 8 * 60);
+  m = A.state.matches.g1;
+  i = rowOf(m, r => r.move && r.on === 'p1');
+  A.click({ act: 'delsub', i: String(i) });
+  m = A.state.matches.g1;
+  check('a deleted move joins her spells back up', A.stintsOf(m, 'p1').length, 1);
+  check('in the spot she started in', A.openStint(m, 'p1')[1].slot, 'sLB');
+  check('with her minutes untouched', A.playedSec(m, 'p1'), 20 * 60);
+
+  // what a lineup changed before kick-off used to leave: spells of no length
+  m = setup({ stints: { ...setup().stints, z1: { pid: 'p4', on: 0, off: 0, slot: 'sRB', role: 'Back' } } });
+  i = rowOf(m, r => r.off === 'p4');
+  check('a spell of no length shows as an "off"', i > -1, true);
+  A.click({ act: 'delsub', i: String(i) });
+  m = A.state.matches.g1;
+  check('deleting it removes the spell', 'z1' in m.stints, false);
+  deepEq('and nobody else is touched', ids(m), ['p1', 'p2', 'p3', 'p5']);
+
+  // the whistle is not a sub
+  m = setup();
+  A.endGame(m);
+  m = A.state.matches.g1;
+  i = rowOf(m, r => r.off === 'p1' && !r.on);
+  A.click({ act: 'delsub', i: String(i) });
+  check('the full-time "off" cannot be deleted', !!A.openStint(A.state.matches.g1, 'p1'), false);
+  check('and says why', /final whistle/.test(A.lastToast()), true);
+}
+
 H.summary('stints and the sub actions');
