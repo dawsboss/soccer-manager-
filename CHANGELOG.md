@@ -8,6 +8,29 @@ before this point lives only in the git log.
 
 ---
 
+## One Add for a practice — 2026-10-03
+
+The Practice tab had its own "Plan a practice" button and sheet (date, start,
+length, place, focus), and the Calendar had "Add" with another (date, start,
+end, where, notes, weekly, who sees it). They looked different and did
+different things: a practice planned on the Practice tab never reached the
+calendar, so families never saw it, and one added on the calendar never
+reached Plans.
+
+Now the Practice tab's button is the calendar's: the same **Add**, opening the
+same sheet, set to Practice. Saving puts the practice on the calendar, and,
+because the coach came from Practice to plan it, makes its plan and opens it.
+The plan is keyed by the calendar entry's id (`eid`) and takes its day, time,
+place and length from the entry. Practices added on the calendar with nothing
+planned yet are on the Plans list as *Plan it*, so there is one list of
+practices, and a practice's own sheet on the calendar has **Plan this
+practice** (or **Open the plan**) for its coaches. So a season can be put on
+the calendar at once with *Every week*, and each week planned later from
+either tab. Editing a plan's own details, and the plans already made the old
+way, are unchanged; the plan still carries its own copy of when and where, and
+`schedule` still exists — retiring those is the rest of the "plans hang off the
+calendar" decision in `TRAINING-NEXT.md`.
+
 ## One set of rules, for every club — 2026-10-03
 
 There were two rulesets: an open "starter" set that new clubs began on, and
