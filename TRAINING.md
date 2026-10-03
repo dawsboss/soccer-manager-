@@ -296,7 +296,7 @@ training/{code}/practices/{teamId}/{practiceId}
 | Signed out | — | — | — | — | — |
 
 One exception to the dashes: a coach can **send one drill** as a link
-(`#/drill/{key}`). A built-in drill's link opens for anyone, to read only,
+(`#/drill/{club tag}/{key}`; the tag names the club without giving its code, and a phone switches to it only if it already belongs to it). A built-in drill's link opens for anyone, to read only,
 because the built-in library ships in the app's public files. A club drill's
 link opens only for whoever the table lets read the Club shelf; anyone else is
 told it's for the club's coaches, and her phone never asks the database for

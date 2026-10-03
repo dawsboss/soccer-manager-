@@ -193,7 +193,7 @@ const EXPORTS = `{
   get mine() { return mine }, get mineUid() { return mineUid }, get shelfState() { return shelfState },
   get drillDraft() { return drillDraft },
   /* rendering + routing */
-  render, uiToHash, hashToUi,
+  render, uiToHash, hashToUi, clubTag,
   /* the mutable module-scoped bindings */
   get state() { return state }, set state(v) { state = v },
   get ui() { return ui },

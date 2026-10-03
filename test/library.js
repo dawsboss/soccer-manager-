@@ -517,7 +517,10 @@ function writeOne(D, extra = {}) {
     const shelf = {
       d1: { id: 'd1', name: 'Jaz\'s secret rondo', type: 'opposed', ages: [8, 12], by: 'jaz', byName: 'Jaz', team: 't1', at: 1, v: 1, summary: 's', setup: 's', how: ['h'], points: ['p'] }
     };
-    const open = (D, key) => { global.location.hash = '#/drill/' + encodeURIComponent(key); return D.hashToUi(); };
+    const open = (D, key, code = CODE) => {
+      global.location.hash = '#/drill/' + (/^club:/.test(key) ? D.clubTag(code) + '/' : '') + encodeURIComponent(key);
+      return D.hashToUi();
+    };
     const bi = L.DRILLS.find(x => x.goesWith.length && x.diagram);
 
     // the coach who has it sends it
@@ -527,9 +530,10 @@ function writeOne(D, extra = {}) {
     a.D.click({ act: 'drill', id: 'club:d1' });
     check('a club drill offers Send to a coach', /data-act="drillsend"/.test(sheet(a.D)), true);
     a.D.click({ act: 'drillsend', id: 'club:d1' });
-    check('the link names the drill and nothing else', sheet(a.D).includes('https://x.test/#/drill/club%3Ad1'), true);
+    check('the link names the club and the drill', sheet(a.D).includes('https://x.test/#/drill/' + a.D.clubTag(CODE) + '/club%3Ad1'), true);
     check('and says who it opens for', /only for the club's coaches and admins/.test(sheet(a.D)), true);
-    check('the club\'s code is not in it', sheet(a.D).includes(CODE), false);
+    check('the club\'s code itself is not in it', /#\/drill\/[^"<]*CLUB\b/.test(sheet(a.D)), false);
+    check('a different club has a different tag', a.D.clubTag('OTHER') !== a.D.clubTag(CODE), true);
     a.D.click({ act: 'drill', id: bi.id }); a.D.click({ act: 'drillsend', id: bi.id });
     check('a built-in drill\'s link opens for anyone', /opens for anyone/.test(sheet(a.D)) && sheet(a.D).includes('#/drill/' + bi.id), true);
     const mine = writeOne(a.D);
@@ -578,6 +582,30 @@ function writeOne(D, extra = {}) {
     open(s.D, 'club:d1');
     s.D.clock.advance(9000); s.D.render(); s.D.timers.run();
     check('with no answer from the club, it says so rather than hanging', /That drill isn't here/.test(sheet(s.D)), true);
+  }
+
+  console.log('\n--- a drill from another of her clubs opens that club ---');
+  {
+    const open = (D, key, code) => { global.location.hash = '#/drill/' + D.clubTag(code) + '/' + encodeURIComponent(key); return D.hashToUi(); };
+    // kim coaches in a second club this phone has kept a copy of
+    const { D } = await device('kim', { storage: { 'sm.data.v1:SECOND': JSON.stringify({ teams: {}, matches: {}, access: { org: { name: 'Second FC' } } }) } });
+    D.dom.reloads = 0;
+    open(D, 'club:x9', 'SECOND'); D.timers.run();
+    check('the phone switches to the club the link names', D.storage.getItem('sm.workspace'), 'SECOND');
+    check('and reloads into it', D.dom.reloads, 1);
+    check('with the link kept on the address, to open there', D.dom.replaced, '/#/drill/' + D.clubTag('SECOND') + '/club%3Ax9');
+    check('saying where it is going', D.lastToast(), 'Opening Second FC');
+
+    const o = await device('kim');
+    o.D.dom.reloads = 0;
+    open(o.D, 'club:x9', 'NOTMINE'); o.D.timers.run();
+    o.D.clock.advance(9000); o.D.render(); o.D.timers.run();
+    check('a club she isn\'t in is never switched to', o.D.storage.getItem('sm.workspace') + ' ' + (o.D.dom.reloads || 0), CODE + ' 0');
+    check('and is said, not guessed', /from another club/.test(sheet(o.D)), true);
+
+    const p = await device('mum');
+    open(p.D, 'club:x9', 'NOTMINE'); p.D.timers.run(); p.D.clock.advance(9000); p.D.render(); p.D.timers.run();
+    check('a parent with a link from another club gets the same, and nothing of it', /from another club/.test(sheet(p.D)) && p.D.storage.getItem('sm.workspace') === CODE, true);
   }
 
   console.log('\n--- a hostile drill cannot break the next coach\'s screen ---');

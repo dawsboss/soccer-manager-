@@ -7050,16 +7050,30 @@ function sheetDrill(id, moving = !reducedMotion(), top = false) {
 }
 
 /* ---- sending one drill to another coach ---- */
-/* A link, #/drill/{key}, and nothing else: not the club's code, not the card.
-   Whoever it reaches gets what her own role lets her read on her own phone,
-   so a link forwarded to the wrong person opens nothing, and a drill removed
-   since stops opening. A built-in drill ships in the app's public files, so
+/* A link, #/drill/{club}/{key}, and nothing else: not the card, and not the
+   club's code either, only a tag made from it. The coach it reaches shouldn't
+   have to know which of her clubs it came from, so the link says, and her
+   phone opens that club itself; but a link gets forwarded, so the tag can only
+   be matched against clubs the phone or the account already belongs to and
+   can't be turned back into a code anyone could type in. Whoever it reaches
+   gets what her own role lets her read on her own phone, so a link forwarded
+   to the wrong person opens nothing, and a drill removed since stops opening. A built-in drill ships in the app's public files, so
    it opens for anyone, parents included. A club drill opens only for the
    club's coaches and admins, the same people the rules let read the shelf;
    anyone else is told why, and her phone never asks the database for it.
    Mine is private to the person who wrote it, so it is never sent: sharing it
    with the club first gives the club's copy a link of its own. */
-const drillLinkUrl = key => location.origin + location.pathname + '#/drill/' + encodeURIComponent(key);
+const drillLinkUrl = key => location.origin + location.pathname + '#/drill/'
+  + (/^club:/.test(key) && wsCode() ? clubTag(wsCode()) + '/' : '') + encodeURIComponent(key);
+/* A one-way tag for a club code (cyrb53): the same code always gives the same
+   tag, and the tag alone gives back nothing to type in. */
+function clubTag(code) {
+  let h1 = 0xdeadbeef, h2 = 0x41c6ce57;
+  for (const ch of 'club:' + code) { const c = ch.charCodeAt(0); h1 = Math.imul(h1 ^ c, 2654435761); h2 = Math.imul(h2 ^ c, 1597334677); }
+  h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^ Math.imul(h2 ^ (h2 >>> 13), 3266489909);
+  h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909);
+  return (4294967296 * (2097151 & h2) + (h1 >>> 0)).toString(36);
+}
 function sheetSendDrill(key) {
   const d = findDrill(key); if (!d) return;
   const shelf = d.shelf || 'builtin';
@@ -7088,10 +7102,10 @@ function sheetSendDrill(key) {
    club's been read (a parent's cached role can be out of date) and, for a
    coach, the club's shelf has arrived. Never for long: past DRILL_LINK_WAIT,
    or with no signal, it answers with what it has. */
-let drillLink = null;            // { key, k, at }
+let drillLink = null;            // { key, club, k, at }
 const DRILL_LINK_WAIT = 8000;
-function followDrillLink(key, k) {
-  drillLink = { key: String(key || ''), k: k || '', at: nowMs() };
+function followDrillLink(key, k, club) {
+  drillLink = { key: String(key || ''), club: String(club || ''), k: k || '', at: nowMs() };
   const tm = setTimeout(() => { if (drillLink) render(); }, DRILL_LINK_WAIT + 50);
   if (tm && tm.unref) tm.unref();
   openDrillLink();
@@ -7106,6 +7120,23 @@ function openDrillLink() {
   // the lock screen, an invite or a join comes first; signing in brings the link back
   if (invite || (join && !join.hidden) || purged || denied || needsSignIn()) return;
   const waiting = !!fbConfig().apiKey && nowMs() - w.at < DRILL_LINK_WAIT;
+  /* From another of her clubs: open that one, with the link still on the
+     address so it opens the drill once the club has loaded. Only a club this
+     phone has kept, or this account's own list says she's in; until that list
+     has come, wait for it. */
+  if (w.club && clubTag(wsCode()) !== w.club) {
+    const to = knownClubs().find(c => clubTag(c.code) === w.club);
+    if (to) {
+      drillLink = null;
+      try {
+        localStorage.setItem(LS_WS, to.code);
+        history.replaceState(null, '', location.pathname + location.search + '#/drill/' + w.club + '/' + encodeURIComponent(key));
+      } catch (e) { sheetDrillRefused('otherclub'); return; }
+      toast('Opening ' + to.name); location.reload(); return;
+    }
+    if (waiting && me && rtdb && !myClubs) return;
+    drillLink = null; sheetDrillRefused('otherclub'); return;
+  }
   if (waiting && !wsRead) return;
   if (!canTrain()) { drillLink = null; sheetDrillRefused('club'); return; }
   if (findDrill(key)) { show(); return; }
@@ -7121,7 +7152,8 @@ function sheetDrillRefused(why) {
         : lim === 'parent' ? "You're signed in as a parent, so it stays closed to you." : lim === 'tracker' ? "You're signed in as a tracker, so it stays closed to you."
         : "Your account isn't a coach or an admin here, so it stays closed to you."} The drills that come with the app open for anyone.</p>`,
     mine: `<h3>That drill is private</h3><p>It's on a coach's own shelf, which only she can open. Ask her to share it with the club and send the club's copy.</p>`,
-    gone: `<h3>That drill isn't here</h3><p>It isn't in this club's drills. It may have been removed, or it's from another club: if you coach in more than one, switch to the one it came from and open the link again.</p>`,
+    gone: `<h3>That drill isn't here</h3><p>It isn't in this club's drills any more. Whoever shared it may have removed it.</p>`,
+    otherclub: `<h3>That drill is from another club</h3><p>It's on the shelf of a club this phone isn't in, so it opens only for that club's coaches and admins. ${me ? 'If you coach there, open the invite the club sent you first, then this link again.' : 'If you coach there, sign in, then open this link again.'}</p>`,
     refused: `<h3>The club's drills didn't load</h3><p>The database refused them: the club's rules may not include drills yet. Ask an admin.</p>`,
     noload: `<h3>The drill library didn't load</h3><p>It comes with the app as a file of its own, and this page opened without it. Reload when you have a signal.</p>`,
     bad: `<h3>That link isn't to a drill</h3><p>It may have been cut short when it was copied. Ask for it again.</p>`
@@ -12937,8 +12969,10 @@ function hashToUi() {
      the drill opens over it, once: the hash goes straight back to the screen's
      own, so Back doesn't open it again. */
   if (p[0] === 'drill' && p[1]) {
-    followDrillLink(p.slice(1).join('/'));
+    // #/drill/{club tag}/{key}, or #/drill/{key} for a built-in drill, which opens in any club
+    // first, so a switch to the link's own club can put the link back on the address
     try { history.replaceState(null, '', location.pathname + location.search + uiToHash()); } catch (e) { }
+    if (p[2]) followDrillLink(p.slice(2).join('/'), '', p[1]); else followDrillLink(p[1]);
     return true;
   }
   /* #/training/fields is a tab; #/training/{id} is one session, from a calendar

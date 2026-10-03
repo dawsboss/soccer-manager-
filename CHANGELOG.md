@@ -14,18 +14,25 @@ The owner asked to share specific drills with other coaches, still checking
 permissions so that a parent who gets one can't view it and is told why,
 except for the drills that come with the app.
 
-- **Send to a coach** on a built-in or a club drill gives a link,
-  `#/drill/{key}`, to share or copy. It carries the drill's id and nothing
-  else, not the club's code and not the card, so whatever it opens is decided
-  on the phone that opens it, by that person's own role: the link gets
-  forwarded, and the only safe link is one that grants nothing.
+- **Send to a coach** on a built-in or a club drill gives a link to share or
+  copy: `#/drill/{club}/{key}` for a club drill, `#/drill/{key}` for a
+  built-in one. It carries the drill's id and which club it's from, and
+  nothing else, not the card, so whatever it opens is decided on the phone
+  that opens it, by that person's own role: the link gets forwarded, and the
+  only safe link is one that grants nothing.
+- **The link picks the club, not the coach.** A coach in more than one club
+  shouldn't have to know which the drill came from, so the link names it and
+  her phone opens that club, then the drill. The club is named by a one-way
+  tag made from its code, never the code, and is matched only against clubs
+  this phone has kept or this account's own list (`userOrgs`) says she's in;
+  a link from a club she isn't in is never switched to, and says so.
 - **Opening it.** A built-in drill opens for anyone, read-only, because it
   ships in the app's public files; the drills it goes with open the same way.
   A club drill opens for the club's coaches and admins, after the club's
   drills have arrived. A parent or a tracker sees *This drill is for the
   club's coaches*, naming her role, and nothing of the drill; her phone never
-  asks the database for the shelf, the same as before. A drill removed since,
-  or from another club, says so. The link waits for the club to be read
+  asks the database for the shelf, the same as before. A drill removed since
+  says so. The link waits for the club to be read
   rather than judging on a cached role, but never for more than a few
   seconds.
 - **Mine is never sent.** It's private to its author, so a link would open
