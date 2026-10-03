@@ -642,8 +642,9 @@ function newSession(v = {}) {
     const D2 = H.loadApp({ firebase: fbk2, config: CONFIG, storage: saved });
     await D2.flush(); fbk2.signIn('jaz', { name: 'Jaz' }); await D2.flush(); fbk2.deliver(WS, club()); await D2.flush(); D2.render();
     check('after a reload it is still on the phone', !!D2.sessById(mine.id), true);
-    fbk2.deliver(TR + 'sessions', {}); await D2.flush();
-    check('and is sent on the first answer', !!written(fbk2, TR + 'sessions/' + mine.id), true);
+    check('and is sent on connect, before Training sessions is even opened', !!written(fbk2, TR + 'sessions/' + mine.id), true);
+    await D2.flush();
+    check('and once the club has it, nothing is owed', Object.keys(D2.sess.dirty).length, 0);
     void held;
   }
 

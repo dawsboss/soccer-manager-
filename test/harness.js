@@ -186,6 +186,12 @@ const EXPORTS = `{
   suggestPlan, planWarnings, planKit, whenOf, nextPractice, todayIso, pracDay,
   syncCoachIndex, syncAllCoachIndex, coachTeamOf, readiness,
   get train() { return train }, set train(v) { train = v }, get trainState() { return trainState },
+  /* the club's drills and a coach's own */
+  SHELVES, LIB_ACTS, normDrill, cardOf, findDrill, drillOrigin, drillPool, shelfItems, canCurate, shareTeam,
+  putDrill, dropDrill, mergeShelf, watchShelf, peekLibrary, blockDrill, drillBlock, draftProblem, mineUnsent,
+  get pending() { return pending }, pendingCount, refusedCount, pendingLabel, localOnlyData, flushPending,
+  get mine() { return mine }, get mineUid() { return mineUid }, get shelfState() { return shelfState },
+  get drillDraft() { return drillDraft },
   /* rendering + routing */
   render, uiToHash, hashToUi,
   /* the mutable module-scoped bindings */

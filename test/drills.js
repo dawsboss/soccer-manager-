@@ -185,6 +185,36 @@ console.log('\n--- every drill has a picture, and it agrees with the card ---');
   check('most diagrams move (layouts are the exception)', moving >= DRILLS.length - 3, true);
 }
 
+console.log('\n--- clean(): a drawing from somewhere else ---');
+{
+  /* A coach's drawing comes back from the database or from an AI chat, and
+     svg() writes its numbers and ids straight into markup. clean() rebuilds it
+     from typed values first. It has to leave every built-in drawing exactly as
+     it is, or the same rebuild that protects a club drill would quietly change
+     the library's pictures. */
+  const strip = s => s.replace(/d[a-z0-9]{6}/g, 'X');      // each svg() gets its own random id
+  const changed = [...DRILLS, ...(LIB.ROLE_GUIDE || [])].filter(d => strip(DD.svg(DD.clean(d.diagram), { animate: true })) !== strip(DD.svg(d.diagram, { animate: true })));
+  check('every built-in drawing comes through clean() unchanged', changed.map(d => d.id).join(', '), '');
+  const evil = DD.clean({
+    area: [20, 20], mark: 'grid"><script>', cones: [[1, 1], ['1" onload="x', 2], [NaN, 3], [1e9, 4]],
+    players: { A1: [5, 5], 'A2" onclick="x': [6, 6], A3: ['7', 7], D1: [10, 10] }, ball: 'A1',
+    labels: [[2, 2, '<b>hi</b>']], goals: [[10, 0, 'big', 'south'], [10, 20, 'mini', 'n']],
+    frames: [['A1>D1', 'A1>D1"/><script>', 'D1~3,3<x', '# <img src=x onerror=alert(1)>'], 'not a step'], extra: { x: 1 }
+  });
+  check('only the fields it knows', Object.keys(evil).sort().join(), 'area,ball,cones,frames,goals,labels,players');
+  check('a mark it doesn\'t know is dropped', evil.mark, undefined);
+  check('points that are not numbers are dropped', JSON.stringify(evil.cones), '[[1,1]]');
+  check('player ids that are not ids are dropped', Object.keys(evil.players).join(), 'A1,D1');
+  check('a goal facing a way that is not n, s, e or w is dropped', evil.goals.length, 1);
+  check('moves that are not the grammar are dropped', JSON.stringify(evil.frames), '[["A1>D1","# <img src=x onerror=alert(1)>"]]');
+  const out = DD.svg(evil, { animate: true });
+  check('what is left draws', out.startsWith('<svg'), true);
+  check('with its text escaped', /<img|<b>|<script|onclick|onload/.test(out), false);
+  check('no area is no drawing', DD.clean({ players: { A1: [1, 1] } }), null);
+  check('an area too big for a phone is no drawing', DD.clean({ area: [500, 20] }), null);
+  check('nor is something that is not an object', DD.clean('A1>A2'), null);
+}
+
 console.log('\n--- the renderer refuses what it can\'t draw ---');
 {
   const base = { area: [20, 20], players: { A1: [5, 5], A2: [15, 5] }, ball: 'A1' };

@@ -123,6 +123,10 @@ function withWrite(tree, p, value) {
 /* The expressions are a subset of JS, so run them as JS with the snapshot API
    bound in. A throw counts as false, which is what the database does when an
    expression reaches through a null (auth.uid while signed out, say). */
+/* The rules' string methods that JavaScript spells differently. Only the ones
+   database.rules.json uses: a drill's link has to begin with https://. */
+if (!String.prototype.beginsWith) String.prototype.beginsWith = String.prototype.startsWith;
+
 function evalExpr(expr, ctx) {
   if (typeof expr === 'boolean') return expr;
   if (typeof expr !== 'string') return false;
@@ -182,7 +186,8 @@ function validated(p, value, after) {
   const paths = [];
   (function walk(pp, v) {
     paths.push(pp);
-    if (v && typeof v === 'object' && !Array.isArray(v))
+    // an array is stored as an object keyed 0, 1, 2…, and validated that way
+    if (v && typeof v === 'object')
       for (const k of Object.keys(v)) walk(pp + '/' + k, v[k]);
   })(p, value);
   for (const pp of paths) {
@@ -710,6 +715,108 @@ reads('owners are not world-readable', OUT, 'shareOwners/sh1', false);
   }
 }
 
+/* ---------------- the club's drills, and a coach's own ---------------- */
+
+/* TRAINING.md's shelves. Club drills are the club's secret sauce: admins and
+   coaches, never trackers or parents. Mine is one person's, across every club:
+   she reads and writes it, the app owner may read it for support, and no club
+   admin gets any clause at all. Refusals first, as with practices. */
+{
+  const T = 'training/CLUB/';
+  const drill = (id, by, team, extra = {}) => ({ id, name: 'Rondo 4v1', type: 'technical', by, byName: by, team, at: NOW, v: 1, ...extra });
+  DB.training.CLUB.drills = {
+    d1: drill('d1', 'coach', 't1'),
+    d2: drill('d2', 'other', 't2'),
+    d3: drill('d3', 'coach', 't2')            // shared while she coached t2, which she no longer does
+  };
+  DB.training.CLUB.templates = { s1: { id: 's1', name: 'Tuesday', by: 'coach', team: 't1', at: NOW, blocks: [] } };
+  DB.userLibrary = { coach: { drills: { m1: { id: 'm1', name: 'My rondo', at: NOW } } }, other: { drills: { m2: { id: 'm2', name: 'Hers', at: NOW } } } };
+
+  console.log('\n--- club drills: refused first ---');
+  reads('a parent cannot read them', MUM, T + 'drills', false);
+  reads('nor one by its id', MUM, T + 'drills/d1', false);
+  reads('a tracker cannot either', TRK, T + 'drills', false);
+  reads('registered, no role yet', NEWB, T + 'drills', false);
+  reads('a stranger', RANDO, T + 'drills', false);
+  reads('signed out', OUT, T + 'drills', false);
+  writes('a parent cannot share one', MUM, T + 'drills/x', drill('x', 'mum', 't1'), false);
+  writes('a tracker cannot', TRK, T + 'drills/x', drill('x', 'trk', 't1'), false);
+  writes('a stranger cannot', RANDO, T + 'drills/x', drill('x', 'rando', 't1'), false);
+  writes('a coach cannot edit another coach\'s', COACH, T + 'drills/d2', drill('d2', 'coach', 't1'), false);
+  writes('nor delete it', COACH, T + 'drills/d2', null, false);
+  writes('nor her own, once she stops coaching its team', COACH, T + 'drills/d3', drill('d3', 'coach', 't2', { name: 'Edited' }), false);
+  writes('nor share one stamped as someone else', COACH, T + 'drills/x', drill('x', 'other', 't1'), false);
+  writes('nor for a team she does not coach', COACH, T + 'drills/x', drill('x', 'coach', 't2'), false);
+  writes('nor hand her drill to another coach', COACH, T + 'drills/d1', drill('d1', 'other', 't1'), false);
+  writes('nor move it to a team she does not coach', COACH, T + 'drills/d1', drill('d1', 'coach', 't2'), false);
+  writes('the whole shelf at once', ADM, T + 'drills', { x: drill('x', 'adm', 't1') }, false);
+
+  console.log('\n--- club drills: coaches and admins ---');
+  reads('a coach reads them', COACH, T + 'drills', true);
+  reads('a coach of another team does too', OTHER, T + 'drills', true);
+  reads('an admin does', ADM, T + 'drills', true);
+  writes('a coach shares one, as herself, for her team', COACH, T + 'drills/x', drill('x', 'coach', 't1'), true);
+  writes('and edits what she shared', COACH, T + 'drills/d1', drill('d1', 'coach', 't1', { name: 'Rondo 5v2', v: 2 }), true);
+  writes('and removes it', COACH, T + 'drills/d1', null, true);
+  writes('an admin edits anyone\'s', ADM, T + 'drills/d2', drill('d2', 'other', 't2', { name: 'Tidied' }), true);
+  writes('and removes anyone\'s', ADM, T + 'drills/d3', null, true);
+  writes('with no name it is refused', COACH, T + 'drills/x', drill('x', 'coach', 't1', { name: '' }), false);
+  writes('nor a name of 81 characters', COACH, T + 'drills/x', drill('x', 'coach', 't1', { name: 'x'.repeat(81) }), false);
+  writes('nor under an id that is not its own', COACH, T + 'drills/x', drill('y', 'coach', 't1'), false);
+  writes('nor without the team it is for', COACH, T + 'drills/x', { id: 'x', name: 'n', by: 'coach', at: NOW }, false);
+  writes('a link that is https', COACH, T + 'drills/x', drill('x', 'coach', 't1', { media: [{ kind: 'link', url: 'https://youtu.be/abc', title: 'Clip' }] }), true);
+  writes('a link that is not', COACH, T + 'drills/x', drill('x', 'coach', 't1', { media: [{ kind: 'link', url: 'javascript:alert(1)' }] }), false);
+  writes('nor plain http', COACH, T + 'drills/x', drill('x', 'coach', 't1', { media: [{ kind: 'link', url: 'http://example.com/a.gif' }] }), false);
+  writes('nor a link with no url', COACH, T + 'drills/x', drill('x', 'coach', 't1', { media: [{ kind: 'link', title: 'Clip' }] }), false);
+  writes('templates: a coach saves one for her team', COACH, T + 'templates/s2', { id: 's2', name: 'Thursday', by: 'coach', team: 't1', at: NOW }, true);
+  writes('templates: another coach cannot change it', OTHER, T + 'templates/s1', null, false);
+  reads('templates: a parent cannot read them', MUM, T + 'templates', false);
+
+  console.log('\n--- club drills: the bridge fails closed ---');
+  {
+    /* There was never a time when anyone but admins and coaches read club
+       drills, so there is nothing to fall back to: with no coach index, only
+       admins read them. Sharing checks the team's own coach list, which every
+       club has, so it needs no bridge at all. */
+    const ci = DB.workspaces.CLUB.access.coachIndex;
+    const ti = DB.workspaces.CLUB.access.teamIndex;
+    delete DB.workspaces.CLUB.access.coachIndex;
+    delete DB.workspaces.CLUB.access.teamIndex;
+    reads('no coach index: a coach cannot read them', COACH, T + 'drills', false);
+    reads('an admin still can', ADM, T + 'drills', true);
+    reads('a parent still cannot', MUM, T + 'drills', false);
+    writes('no team index: a coach still shares one', COACH, T + 'drills/x', drill('x', 'coach', 't1'), true);
+    DB.workspaces.CLUB.access.coachIndex = ci;
+    DB.workspaces.CLUB.access.teamIndex = ti;
+  }
+
+  console.log('\n--- a coach\'s own drills: hers alone ---');
+  const U = 'userLibrary/';
+  const mine = (id, extra = {}) => ({ id, name: 'Box rondo', at: NOW, v: 1, ...extra });
+  reads('she reads her own', COACH, U + 'coach', true);
+  writes('and writes one', COACH, U + 'coach/drills/m9', mine('m9'), true);
+  writes('and a template', COACH, U + 'coach/templates/s9', mine('s9'), true);
+  writes('and deletes one', COACH, U + 'coach/drills/m1', null, true);
+  writes('nothing but drills and templates', COACH, U + 'coach/notes/n1', mine('n1'), false);
+  writes('nor her whole library at once', COACH, U + 'coach/drills', { m9: mine('m9') }, false);
+  writes('nor an unnamed one', COACH, U + 'coach/drills/m9', mine('m9', { name: '' }), false);
+  writes('nor a link that is not https', COACH, U + 'coach/drills/m9', mine('m9', { media: [{ kind: 'link', url: 'ftp://x' }] }), false);
+  reads('another coach cannot read hers', OTHER, U + 'coach', false);
+  writes('nor write to it', OTHER, U + 'coach/drills/m9', mine('m9'), false);
+  reads('an admin of her club cannot read it', ADM, U + 'coach', false);
+  reads('nor one drill of it', ADM, U + 'coach/drills/m1', false);
+  writes('nor write to it', ADM, U + 'coach/drills/m1', null, false);
+  reads('a parent cannot', MUM, U + 'coach', false);
+  reads('a stranger cannot', RANDO, U + 'coach', false);
+  reads('signed out cannot', OUT, U + 'coach', false);
+  reads('the app owner can, for support', OWNER, U + 'coach', true);
+  writes('but cannot change it', OWNER, U + 'coach/drills/m1', mine('m1', { name: 'Owner was here' }), false);
+  writes('nor delete it', OWNER, U + 'coach/drills/m1', null, false);
+  reads('nobody lists every person\'s library', OWNER, 'userLibrary', false);
+
+  delete DB.training.CLUB.drills; delete DB.training.CLUB.templates; delete DB.userLibrary;
+}
+
 /* ---------------- messages ---------------- */
 
 /* Notices and family conversations live at the root, outside the workspace,
@@ -1118,12 +1225,15 @@ reads('owners are not world-readable', OUT, 'shareOwners/sh1', false);
   step('and a game', FOUNDER, W + 'matches/gA', { id: 'gA', teamId: 'tA', opponent: 'Riverside' });
   step('and plans a practice', FOUNDER, 'training/NEWCLUB/practices/tA/pA', { id: 'pA', teamId: 'tA', date: '2026-10-06' });
   step('and offers a training session', FOUNDER, 'training/NEWCLUB/sessions/sA', { id: 'sA', kind: 'group', coach: 'founder', date: '2026-10-07', cap: 6, open: true });
+  step('and adds a drill to the club\'s shelf', FOUNDER, 'training/NEWCLUB/drills/dA', { id: 'dA', name: 'Rondo', by: 'founder', team: 'tA', at: NOW });
+  reads('and reads the shelf', FOUNDER, 'training/NEWCLUB/drills', true);
   reads('and reads the club back', FOUNDER, 'workspaces/NEWCLUB', true);
   console.log('  ^ from nothing to a working club, under the rules every other club runs on.');
   reads('from then on a stranger cannot read it', RANDO, 'workspaces/NEWCLUB', false);
   writes('nor claim it too', RANDO, W + 'access/admins/rando', true, false);
   writes('nor write a team into it', RANDO, W + 'teams/tA/name', 'Mine now', false);
   reads('nor read its practices', RANDO, 'training/NEWCLUB/practices/tA', false);
+  reads('nor its drills', RANDO, 'training/NEWCLUB/drills', false);
   reads('and its founder still cannot read anyone else\'s club', FOUNDER, 'workspaces/CLUB', false);
   writes('nor write to one', FOUNDER, 'workspaces/CLUB/teams/t1/name', 'Mine now', false);
   delete DB.workspaces.NEWCLUB; delete DB.training.NEWCLUB;

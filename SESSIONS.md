@@ -48,10 +48,12 @@ The same three reasons `TRAINING.md` gives for practice plans, and one more:
 
 1. Every phone reads the whole workspace on connect. Fees, pay rates and a
    club's season of sessions do not belong on every parent's phone.
-2. The connect-time workspace read still replaces local state wholesale (the
-   pinned gap in `test/sync.js`). A session made offline under the workspace
-   would be wiped at the next connect. A separate node merges on read from the
-   start.
+2. When this was written, the connect-time workspace read still replaced
+   local state wholesale, and a session made offline under the workspace
+   would have been wiped at the next connect. The workspace outbox has since
+   closed that; sessions keep their own merge-on-read and their own pending
+   marks, like practice plans and drills, and are sent again on every
+   connect (`flushTraining()`).
 3. A new rules block, not an edit inside the tested workspace block.
 4. **A session belongs to no team.** Every per-team rule keys on `$tid`;
    there is no team to hang a 1-1 off.

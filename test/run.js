@@ -40,6 +40,7 @@ const SUITES = [
   ['practice', 'the Practice tab, and who gets it'],
   ['plans', 'practice plans, and how they reach the club'],
   ['sessions', 'training sessions, fields, fees and hours'],
+  ['library', 'the club\'s drills and a coach\'s own, and who sees which'],
   ['smoke', 'every view renders without throwing'],
   ['sandbox', 'the test club, and database isolation'],
   ['rules', 'the database rules, as database.rules.json has them']
