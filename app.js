@@ -2,7 +2,7 @@
    Static app. Data lives in localStorage, and mirrors to Firebase Realtime
    Database when a config + workspace code are present. */
 
-const BUILD = '72';
+const BUILD = '73';
 const BUILT = '2026-10-02';
 /* index.html carries the build it was published with. If this file is newer, the
    browser handed us a cached page — the exact failure that has eaten hours. */
@@ -35,6 +35,7 @@ const SANDBOX_PREFIX = 'test-';
 let state = { teams: {}, matches: {}, access: {}, rsvp: {} };
 let ui = { view: 'matches', gameView: 'subs', teamId: null, matchId: null, picked: null, dragging: false, editFid: null, sortBy: 'need', plan: null, snapAt: null, snapSid: null };
 let lastLog = [];
+let lastScreen = null;   // the screen render() last drew, so a redraw of the same one keeps its scroll
 
 const ROLES = ['GK', 'Back', 'Mid', 'Wing', 'Forward'];
 const S = (label, role, x, y) => ({ id: 's' + label + x, label, role, x, y });
@@ -3572,6 +3573,14 @@ function render() {
   // a request still waiting, from a team link put aside with "Not now"
   const joinNote = join && join.hidden && join.status === 'sent'
     ? `<div class="rolebar">Waiting for a coach of <b>${esc((join.doc || {}).teamName || 'a team')}</b> to let you in. <button class="linkbtn dark" data-act="joinshow">Open</button></div>` : '';
+  /* Redrawing is how every tap shows its result, and replacing the whole page
+     can leave the window somewhere else: on the Plan tab, picking the 60:00
+     snapshot dropped the coach back at the top every time. When this draw is
+     the same screen as the last one, put her back where she was. A different
+     screen keeps the old behaviour (and toTop() where a caller asks for it). */
+  const here = [v, g, ui.matchId, ui.teamId].join('|');
+  const keepY = here === lastScreen && typeof window !== 'undefined' ? window.scrollY || 0 : null;
+  lastScreen = here;
   app.innerHTML = envNote + joinNote + roleNote + roNote + (
     v === 'game' ? (g === 'track' ? viewTrack() : g === 'stats' ? viewStats() : g === 'pitch' ? viewMatch() : g === 'plan' ? viewPlan() : g === 'subs' ? viewSubs() : viewFeed()) :
       v === 'roster' ? viewRoster() :
@@ -3581,6 +3590,7 @@ function render() {
               : v === 'inbox' ? viewInbox() : v === 'thread' ? viewThread()
               : v === 'setup' ? viewSetup() : viewMatches());
   syncHash();
+  if (keepY && (window.scrollY || 0) !== keepY) { try { window.scrollTo(0, keepY); } catch (e) { } }
   if (v === 'game' && g === 'pitch') wireDrag();
   if (v === 'formation') wireFormationDrag();
   saveUi();

@@ -544,7 +544,8 @@ table.grid td.right{text-align:right}
 .avatar.swap{border-radius:9px;background:rgba(255,255,255,.12)}
 
 /* ---------- plan snapshots ---------- */
-.snapstrip{display:flex;gap:6px;overflow-x:auto;padding-bottom:4px;margin-bottom:10px;-webkit-overflow-scrolling:touch}
+/* wrapped, not scrolled sideways: a sideways strip snaps back to 0:00 on every redraw */
+.snapstrip{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px}
 .snapstrip .chip{flex:none;white-space:nowrap;font-variant-numeric:tabular-nums}
 .snapgap{
   display:inline-block;min-width:18px;margin-left:4px;padding:0 5px;border-radius:9px;

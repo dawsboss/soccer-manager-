@@ -36,6 +36,12 @@ From a coach using the Plan tab for real.
   her whole-game total under it (*40 of 40 in game*). The total alone could not
   say who was due a rest at the moment the change comes round. Kick-off still
   shows only the total, since nobody has played yet.
+- **Picking a time no longer loses your place.** The times sat in one strip
+  that scrolled sideways, and every tap redraws the page, which sent the strip
+  back to Kick-off. A coach planning the 60th minute scrolled back to it after
+  every tap. The times now wrap onto as many rows as they need, so all of them
+  are in view. And when a redraw is of the same screen, `render()` puts the page
+  back at the same height, so it doesn't jump either.
 - **A sub can be deleted from the match log** — *Delete — this sub did not
   happen* on its sheet. A swap gives the player who "went off" the other's
   spell; one swapped straight back later just played on; a move joins her two
