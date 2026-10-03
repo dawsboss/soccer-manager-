@@ -2,7 +2,7 @@
    Static app. Data lives in localStorage, and mirrors to Firebase Realtime
    Database when a config + workspace code are present. */
 
-const BUILD = '76';
+const BUILD = '77';
 const BUILT = '2026-10-03';
 /* index.html carries the build it was published with. If this file is newer, the
    browser handed us a cached page — the exact failure that has eaten hours. */
@@ -4304,6 +4304,7 @@ function render() {
               : v === 'inbox' ? viewInbox() : v === 'thread' ? viewThread() : v === 'sessions' ? viewSessions()
               : v === 'setup' ? viewSetup() : viewMatches());
   syncHash();
+  if (drillLink) setTimeout(openDrillLink, 0);
   if (keepY && (window.scrollY || 0) !== keepY) { try { window.scrollTo(0, keepY); } catch (e) { } }
   if (v === 'game' && g === 'pitch') wireDrag();
   if (v === 'formation') wireFormationDrag();
@@ -6745,7 +6746,7 @@ const PLAN_ACTS = new Set(['pracnew', 'pracfromcal', 'pracopen', 'pracback', 'pr
 const LIB_ACTS = new Set(['shelf', 'drillmine', 'drilledit', 'drillnew', 'drillshare', 'drilldel', 'drillorig', 'dedchip', 'dedpic',
   'dedai', 'dedaiback', 'dedaicopy', 'dedaiopen', 'dedaiuse', 'dedaifix',
   'dedlinkadd', 'dedlinkdel', 'dedsave', 'clubdrills', 'mydrills']);
-const PRACTICE_ACTS = new Set(['practab', 'drill', 'drillpic', 'roleguide', 'rolepic', 'drillfilters', 'dfchip', 'dfpick', 'dfclear', 'drillmore', ...PLAN_ACTS, ...LIB_ACTS]);
+const PRACTICE_ACTS = new Set(['practab', 'drill', 'drillpic', 'drillsend', 'drillsendshare', 'roleguide', 'rolepic', 'drillfilters', 'dfchip', 'dfpick', 'dfclear', 'drillmore', ...PLAN_ACTS, ...LIB_ACTS]);
 
 /* A team's age is stored as the year its players were born, because that
    rolls over by itself: the same team is U10 this season and U11 the next
@@ -6976,16 +6977,21 @@ function sheetDrill(id, moving = !reducedMotion(), top = false) {
   const L = drillLib(); if (!L || !drillDiagram()) return;
   const d = findDrill(id); if (!d) return;
   const key = String(id), shelf = d.shelf || 'builtin', inPlan = key.startsWith('plan:');
+  /* Somebody without Practice gets here only by a link a coach sent, and only
+     to a built-in drill, which ships in the app's public files anyway. She
+     reads it and that's all: nothing on it that would need Practice to tap. */
+  const ro = !canTrain();
+  if (ro && shelf !== 'builtin') return;
   const byId = x => L.DRILLS.find(y => y.id === x);
   const list = a => `<ul class="drillul">${a.map(x => `<li>${esc(x)}</li>`).join('')}</ul>`;
   const kit = kitWords(L, d.kit, 0) || 'nothing';
-  const tgt = inPlan ? null : pickTarget();
+  const tgt = inPlan || ro ? null : pickTarget();
   const trains = [...d.skills.map(s => L.SKILLS[s]), ...d.principles.map(x => L.PRINCIPLES[x]), ...d.physical.map(x => L.PHYSICAL[x]), ...d.moments.map(x => L.MOMENTS[x])];
   const orig = shelf !== 'builtin' && !inPlan ? drillOrigin(d) : null;
   /* What she can do with it depends on whose it is. Editing anything that
      isn't hers, or isn't the club's for her to tidy, is saving her own copy. */
   const acts = [];
-  if (!inPlan && me) {
+  if (!inPlan && !ro && me) {
     if (shelf === 'mine') {
       acts.push(['drilledit', 'Edit']);
       if (wsCode() && shareTeam()) acts.push(['drillshare', 'Share with the club']);
@@ -6996,6 +7002,7 @@ function sheetDrill(id, moving = !reducedMotion(), top = false) {
       if (canCurate(d)) acts.push(['drilldel', 'Remove from the club']);
     }
   }
+  if (!inPlan && !ro) acts.splice(shelf === 'mine' ? 1 : 0, 0, ['drillsend', 'Send to a coach']);
   const whose = shelf === 'club' ? `Shared with the club by ${esc(d.byName || 'a coach')}${d.by && !stillCoaching(d.by) ? ', who no longer coaches here' : ''}.${d.edName && d.edBy !== d.by ? ` Last tidied by ${esc(d.edName)}.` : ''}`
     : shelf === 'mine' ? 'Yours. Nobody else sees it unless you share it.' : inPlan ? '' : `From the ${APP_NAME} library.`;
   const media = (d.media || []).map(m => /\.(gif|png|jpe?g|webp)(\?|$)/i.test(m.url)
@@ -7007,7 +7014,7 @@ function sheetDrill(id, moving = !reducedMotion(), top = false) {
     ${inPlan ? '<p class="muted" style="margin:-4px 0 10px">The copy this plan keeps, so it reads the same whatever happens to the original.</p>' : ''}
     ${orig && orig.changed ? `<div class="rolebar">The original has changed since you copied it. <button class="drilllink" data-act="drillorig" data-id="${esc(key)}">See what it says now</button>; yours stays as it is.</div>` : ''}
     ${tgt ? `<button class="btn wide" data-act="pracadd" data-id="${esc(tgt.id)}" data-v="${esc(key)}" style="margin-bottom:10px">Add to ${esc(pracDay(tgt.date))}</button>` : ''}
-    ${d.diagram ? diagramBlock(d.diagram, d.name, 'drillpic', key, moving) : ''}
+    ${d.diagram ? diagramBlock(d.diagram, d.name, ro ? 'drillopen' : 'drillpic', key, moving) : ''}
     ${media}
     ${!d.diagram && media ? '<p class="muted">A link needs a signal to play, and can stop working if whoever posted it takes it down.</p>' : ''}
     ${!d.diagram && !media ? '<p class="muted">No picture. Drawing one in the app is still to come; a link to a clip works now.</p>' : ''}
@@ -7038,8 +7045,120 @@ function sheetDrill(id, moving = !reducedMotion(), top = false) {
     ${trains.length ? `<h4>Trains</h4><div class="chips">${trains.map(x => `<span class="tag">${esc(x)}</span>`).join('')}</div>` : ''}
     ${d.signals.length ? `<h4>Answers</h4><div class="chips">${d.signals.map(s => `<span class="tag wait">${esc(L.SIGNALS[s].label)}</span>`).join('')}</div>` : ''}
     ${d.goesWith.length ? `<h4>Goes well with</h4><div class="chips">${d.goesWith.map(byId).filter(Boolean).map(x =>
-      `<button class="chip" type="button" data-act="drill" data-id="${esc(x.id)}">${esc(x.name)}</button>`).join('')}</div>` : ''}
+      `<button class="chip" type="button" data-act="${ro ? 'drillopen' : 'drill'}" data-id="${esc(x.id)}">${esc(x.name)}</button>`).join('')}</div>` : ''}
     <button class="btn quiet wide" data-act="closesheet" style="margin-top:14px">Done</button>`, top);
+}
+
+/* ---- sending one drill to another coach ---- */
+/* A link, #/drill/{club}/{key}, and nothing else: not the card, and not the
+   club's code either, only a tag made from it. The coach it reaches shouldn't
+   have to know which of her clubs it came from, so the link says, and her
+   phone opens that club itself; but a link gets forwarded, so the tag can only
+   be matched against clubs the phone or the account already belongs to and
+   can't be turned back into a code anyone could type in. Whoever it reaches
+   gets what her own role lets her read on her own phone, so a link forwarded
+   to the wrong person opens nothing, and a drill removed since stops opening. A built-in drill ships in the app's public files, so
+   it opens for anyone, parents included. A club drill opens only for the
+   club's coaches and admins, the same people the rules let read the shelf;
+   anyone else is told why, and her phone never asks the database for it.
+   Mine is private to the person who wrote it, so it is never sent: sharing it
+   with the club first gives the club's copy a link of its own. */
+const drillLinkUrl = key => location.origin + location.pathname + '#/drill/'
+  + (/^club:/.test(key) && wsCode() ? clubTag(wsCode()) + '/' : '') + encodeURIComponent(key);
+/* A one-way tag for a club code (cyrb53): the same code always gives the same
+   tag, and the tag alone gives back nothing to type in. */
+function clubTag(code) {
+  let h1 = 0xdeadbeef, h2 = 0x41c6ce57;
+  for (const ch of 'club:' + code) { const c = ch.charCodeAt(0); h1 = Math.imul(h1 ^ c, 2654435761); h2 = Math.imul(h2 ^ c, 1597334677); }
+  h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^ Math.imul(h2 ^ (h2 >>> 13), 3266489909);
+  h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909);
+  return (4294967296 * (2097151 & h2) + (h1 >>> 0)).toString(36);
+}
+function sheetSendDrill(key) {
+  const d = findDrill(key); if (!d) return;
+  const shelf = d.shelf || 'builtin';
+  if (shelf === 'mine') {
+    openSheet(`<h3>Send to a coach</h3>
+      <p>This one is yours, and private: nobody else can open it, so a link to it would open for nobody. Share it with the club, and the club's copy can be sent to any of its coaches.</p>
+      ${wsCode() && shareTeam() ? `<button class="btn wide" data-act="drillshare" data-id="${esc(key)}">Share with the club</button>` : ''}
+      <button class="btn quiet wide" data-act="drill" data-id="${esc(key)}" style="margin-top:8px">Back to the drill</button>`, true);
+    return;
+  }
+  if (shelf !== 'builtin' && shelf !== 'club') return;
+  const url = drillLinkUrl(d.key || d.id);
+  const canShare = typeof navigator !== 'undefined' && typeof navigator.share === 'function';
+  openSheet(`<h3>Send “${esc(d.name)}” to a coach</h3>
+    <p class="muted">${shelf === 'builtin'
+      ? `It comes with the app, so the link opens for anyone you send it to, parents included.`
+      : `It's the club's, so the link opens only for the club's coaches and admins, signed in. Anyone else it reaches, a parent included, is told it isn't for them and sees nothing of it.`}</p>
+    <input type="text" readonly value="${esc(url)}" aria-label="Link to this drill">
+    <div class="row" style="gap:8px;margin-top:10px">
+      ${canShare ? `<button class="btn" style="flex:1" data-act="drillsendshare" data-id="${esc(d.key || d.id)}">Share</button>` : ''}
+      <button class="btn ${canShare ? 'quiet ' : ''}" style="flex:1" data-act="copylink" data-v="${esc(url)}">Copy link</button></div>
+    <button class="btn quiet wide" data-act="drill" data-id="${esc(d.key || d.id)}" style="margin-top:8px">Back to the drill</button>`, true);
+}
+
+/* A link opened on this phone, held until it knows enough to answer: the
+   club's been read (a parent's cached role can be out of date) and, for a
+   coach, the club's shelf has arrived. Never for long: past DRILL_LINK_WAIT,
+   or with no signal, it answers with what it has. */
+let drillLink = null;            // { key, club, k, at }
+const DRILL_LINK_WAIT = 8000;
+function followDrillLink(key, k, club) {
+  drillLink = { key: String(key || ''), club: String(club || ''), k: k || '', at: nowMs() };
+  const tm = setTimeout(() => { if (drillLink) render(); }, DRILL_LINK_WAIT + 50);
+  if (tm && tm.unref) tm.unref();
+  openDrillLink();
+}
+function openDrillLink() {
+  const w = drillLink; if (!w) return;
+  const L = drillLib();
+  if (!L || !drillDiagram()) { drillLink = null; sheetDrillRefused('noload'); return; }
+  const key = w.key, show = () => { drillLink = null; sheetDrill(key, w.k ? w.k === 'move' : undefined, !w.k); };
+  if (L.DRILLS.some(x => x.id === key)) { show(); return; }
+  if (!/^club:[^/]+$/.test(key)) { drillLink = null; sheetDrillRefused(/^mine:/.test(key) ? 'mine' : 'bad'); return; }
+  // the lock screen, an invite or a join comes first; signing in brings the link back
+  if (invite || (join && !join.hidden) || purged || denied || needsSignIn()) return;
+  const waiting = !!fbConfig().apiKey && nowMs() - w.at < DRILL_LINK_WAIT;
+  /* From another of her clubs: open that one, with the link still on the
+     address so it opens the drill once the club has loaded. Only a club this
+     phone has kept, or this account's own list says she's in; until that list
+     has come, wait for it. */
+  if (w.club && clubTag(wsCode()) !== w.club) {
+    const to = knownClubs().find(c => clubTag(c.code) === w.club);
+    if (to) {
+      drillLink = null;
+      try {
+        localStorage.setItem(LS_WS, to.code);
+        history.replaceState(null, '', location.pathname + location.search + '#/drill/' + w.club + '/' + encodeURIComponent(key));
+      } catch (e) { sheetDrillRefused('otherclub'); return; }
+      toast('Opening ' + to.name); location.reload(); return;
+    }
+    if (waiting && me && rtdb && !myClubs) return;
+    drillLink = null; sheetDrillRefused('otherclub'); return;
+  }
+  if (waiting && !wsRead) return;
+  if (!canTrain()) { drillLink = null; sheetDrillRefused('club'); return; }
+  if (findDrill(key)) { show(); return; }
+  watchShelf('club');
+  if (waiting && !shelfState.club) return;   // on its way; mergeShelf() redraws, and render() asks again
+  drillLink = null; sheetDrillRefused(shelfState.club === 'refused' ? 'refused' : 'gone');
+}
+function sheetDrillRefused(why) {
+  const lim = restricted();
+  const body = {
+    club: `<h3>This drill is for the club's coaches</h3>
+      <p>It's on the club's own shelf, which only the club's coaches and admins can open${me ? '' : ', signed in'}. ${!me ? 'If you coach here, sign in with the account the club knows and open the link again.'
+        : lim === 'parent' ? "You're signed in as a parent, so it stays closed to you." : lim === 'tracker' ? "You're signed in as a tracker, so it stays closed to you."
+        : "Your account isn't a coach or an admin here, so it stays closed to you."} The drills that come with the app open for anyone.</p>`,
+    mine: `<h3>That drill is private</h3><p>It's on a coach's own shelf, which only she can open. Ask her to share it with the club and send the club's copy.</p>`,
+    gone: `<h3>That drill isn't here</h3><p>It isn't in this club's drills any more. Whoever shared it may have removed it.</p>`,
+    otherclub: `<h3>That drill is from another club</h3><p>It's on the shelf of a club this phone isn't in, so it opens only for that club's coaches and admins. ${me ? 'If you coach there, open the invite the club sent you first, then this link again.' : 'If you coach there, sign in, then open this link again.'}</p>`,
+    refused: `<h3>The club's drills didn't load</h3><p>The database refused them: the club's rules may not include drills yet. Ask an admin.</p>`,
+    noload: `<h3>The drill library didn't load</h3><p>It comes with the app as a file of its own, and this page opened without it. Reload when you have a signal.</p>`,
+    bad: `<h3>That link isn't to a drill</h3><p>It may have been cut short when it was copied. Ask for it again.</p>`
+  }[why] || '';
+  openSheet(`${body}<button class="btn quiet wide" data-act="closesheet" style="margin-top:14px">Done</button>`, true);
 }
 
 /* The position guide: what each job is, with the ball and without it. The
@@ -11337,6 +11456,8 @@ function onAct(e) {
   const a = el.dataset.act, d = el.dataset;
   const t = team(), m = match();
   if (!mayAct(a, m, d)) { closeSheet(); toast("Only this team's coaches can change that"); render(); return; }
+  // a drill a coach sent, or one linked from it: built-in for anyone, the rest checked as the link is
+  if (a === 'drillopen') { followDrillLink(d.id, d.k); return; }
   if (PRACTICE_ACTS.has(a) && !canTrain()) { closeSheet(); toast('Practice is for coaches and admins'); render(); return; }
   if (SESS_ACTS.has(a)) { onSessAct(a, d); return; }
 
@@ -11348,6 +11469,14 @@ function onAct(e) {
   }
   if (a === 'drill') { sheetDrill(d.id, undefined, true); return; }
   if (a === 'drillpic') { sheetDrill(d.id, d.k === 'move'); return; }
+  if (a === 'drillsend') { sheetSendDrill(d.id); return; }
+  if (a === 'drillsendshare') {
+    const x = findDrill(d.id); if (!x || (x.shelf && x.shelf !== 'club')) return;
+    // a club drill's name stays off the preview: the link can be forwarded past the coaches
+    const title = x.shelf === 'club' ? "A drill from the club's library" : x.name;
+    navigator.share({ title, text: title, url: drillLinkUrl(x.key || x.id) }).catch(() => { });
+    return;
+  }
   if (a === 'roleguide') { sheetRole(d.id, undefined, true); return; }
   if (a === 'rolepic') { sheetRole(d.id, d.k === 'move'); return; }
   if (a === 'drillfilters') { sheetDrillFilters(); return; }
@@ -12836,6 +12965,16 @@ function hashToUi() {
     ui.view = 'inbox'; return true;
   }
   if (p[0] === 'settings') { ui.view = 'setup'; return true; }
+  /* #/drill/{key} is a drill a coach sent. The screen stays where it was and
+     the drill opens over it, once: the hash goes straight back to the screen's
+     own, so Back doesn't open it again. */
+  if (p[0] === 'drill' && p[1]) {
+    // #/drill/{club tag}/{key}, or #/drill/{key} for a built-in drill, which opens in any club
+    // first, so a switch to the link's own club can put the link back on the address
+    try { history.replaceState(null, '', location.pathname + location.search + uiToHash()); } catch (e) { }
+    if (p[2]) followDrillLink(p.slice(2).join('/'), '', p[1]); else followDrillLink(p[1]);
+    return true;
+  }
   /* #/training/fields is a tab; #/training/{id} is one session, from a calendar
      file or a message, opened once the screen has drawn. */
   if (p[0] === 'training') {
