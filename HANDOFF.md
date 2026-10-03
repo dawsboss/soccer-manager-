@@ -78,6 +78,27 @@ Its overlap with *planning for the club* (below): fields with permits are the
 already join teams, coaches, players and fields for one day. The club-wide
 planner should build on those, not write a second set.
 
+## Starting a club, bookable times, My calendar (branch `claude/club-creation-training-calendar-26idsd`, 2026-10-03)
+
+The owner asked how a new club is made from inside one, and for coaches'
+bookable times that families book themselves, synced with the teams'
+calendars, with a calendar that is the person's rather than the team's.
+
+- **+ Start a new club** in the club switcher (`createClub()`): no rule change,
+  the bootstrap clauses already allowed it.
+- **Bookable times** (`training/{code}/avail`) and **My calendar**
+  (`#/my-calendar`). `AVAILABILITY.md` is the design; `test/avail.js` and the
+  new cases in `test/rules.js` pin it.
+- **Waiting on the owner: paste `database.rules.json` again.** It gains the
+  `avail` block and family clauses in `sessions/$sid` and `booked/$sid/$pid`.
+  Until then a coach's times stay on her phone and a family's booking is
+  refused and taken back. `node test/rules.js` passes.
+- **Decisions taken that the owner may want to revisit:** slots are 1-1 only
+  (no group slots); a family's booking is confirmed at once, not asked for;
+  families cancel up to a notice the coach sets (24 hours by default); My
+  calendar lives on Club home and is linked from each team's Calendar tab,
+  not in the top-left switcher.
+
 ## Next conversation: planning for the club
 
 The owner's next ask: help club admins plan future events — who (teams,

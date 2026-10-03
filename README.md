@@ -206,6 +206,8 @@ What each part is doing:
 - **`training/$code/schedule/$tid`** is when and where each practice is, without the plan. The whole club reads it, so a parent sees the next practice's time and place. Only the people who can write the plan can write it.
 - **`training/$code/sessions/$sid`** is a training session (a 1-1 or a small group, belonging to no team). The whole club reads them. A coach (in `coachIndex`) makes one in her own name and changes or deletes only those that name her; she can't hand one to someone else. An admin makes, moves and deletes any. With no `coachIndex` yet, only admins can: the bridge fails closed, as practices' does.
 - **`training/$code/booked/$sid/$pid`** is one player's place in a session. The club reads them, as it does `rsvp`. The session's coach and the admins write anything. A family writes only for a child whose `guardians` holds her uid, in her own name, without changing the team the booking names, and only `asked` (while the session is open, and not after the coach has answered) or `out` (withdrawing, any time). **A family can never give herself a place**: a rule cannot count spots, so the coach keeps the count and only she or an admin says `in`.
+- **`training/$code/avail/$bid`** is one coach's bookable times on one date. The club reads them. A coach (in `coachIndex`) writes her own and only her own, as with sessions; an admin writes anyone's. A start and an end as `HH:MM`, a slot length of 15–240 minutes, a price of nothing or more.
+- **A family books a slot** by making a session herself, which the `sessions/$sid` rule allows for exactly one shape: a 1-1, not open to asks, for a child whose `guardians` holds her uid, in her own name, inside a window of that coach's on that date that isn't taken off, at the window's price, and under the id `k_{coach}_{date}_{HHMM}` that its time gives it, where nothing is yet. That id is what stops two families booking one time. She then writes her child's booking as `in`, which `booked/$sid/$pid` allows only on a slot she made for that child. She may delete both again (the booking first) until the register is taken or it is paid for. The rule does not check that a slot sits on the window's grid or misses the coach's other commitments, nor how close to the start she cancels; the app does, and `rules.js` says so.
 - **`training/$code/came/$sid`** is a session's register: the session's coach or an admin writes it, the club reads it.
 - **`training/$code/fees/$sid/$pid`** is what was paid for one place. Money, so narrowed by the rules themselves: admins read them all, the session's coach reads and writes her own sessions', and a family reads her own child's. Nobody else reads one.
 - **`training/$code/pay/$uid`** is a coach's pay rate. Admins read and set them; each coach reads her own.
@@ -380,7 +382,21 @@ Nothing about the calendar needed a rule change: entries live under `teams/{tid}
 - **Telling families.** *Tell the families* writes the message (when, where, what changed) and offers it in the app (into the family conversation, on teams where you are staff), by email in Bcc, or as a copy. Calling a session off opens it straight away. On screen, a family is told when her child's place is confirmed, waitlisted, turned down or taken off, and when her session is moved or called off; a coach is told when a family asks or withdraws. Like messages, this needs the page open: email is what reaches a closed phone.
 - **Never on the share link.** Sessions are not on the season page, the game pages or the calendar feed. A 1-1 is a child, a time and a place.
 
-Sessions need the `training` block's `sessions`, `booked`, `came`, `fees`, `pay` and `splans` rules published (**The database rules**). Until then they stay on the phone they were made on, the screen says *Some of this is on this phone only*, and a family's ask is refused and taken back off the screen with a message.
+### Bookable times
+
+A coach says when she is free for 1-1s and families book a slot themselves, with no back and forth. **Training sessions → Bookable times → Add times**: a window (Tuesdays 5–7pm, say), the slot length (30, 45, 60 or 90 minutes), where, the price, an age range, how late a family can cancel, and *Every week* until a date. Each week is its own, so *Not this week* takes one off without touching the rest. A coach offers and changes her own times; an admin anyone's. The design is [`AVAILABILITY.md`](AVAILABILITY.md).
+
+- **Synced with the teams' calendars.** A practice or game for any team the coach coaches, and any session she runs, takes out the slots it overlaps by itself: add a practice on Tuesday at six and six o'clock stops being offered. A slot that overlaps the child's own team practice isn't offered to her family either.
+- **Booking.** A family sees *Book a time with a coach* on her Training sessions list, picks a free slot for her child, says what she wants to work on, and it's booked: no waiting for a reply. It needs a signal, because it is first come, first served; if two families tap the same time at once the database lets one in and tells the other to pick again.
+- **A booked slot is a session.** It shows on the coach's list, and everything sessions do (the register, fees, hours, clashes, notices, the player's record, the team calendar) works on it. The coach is told when a family books or cancels.
+- **Cancelling.** The family cancels from the session's page, up to the notice the coach set (24 hours by default), and the time goes back on offer. Later than that, she messages the coach, who can still take her off.
+- **Never on the share link**, like sessions.
+
+### My calendar
+
+**Club home → My calendar** (or the link at the top of any team's Calendar tab) is the person's, not a team's: every team she coaches or tracks, every team a child of hers is on, the sessions she runs and her children's, and the times she has offered, in one month view and one list. A parent of two, or a coach who is also a parent, can narrow it to one child or to her coaching. The team Calendar tab stays as it is: it is what a coach plans on and what the share link mirrors.
+
+Sessions need the `training` block's `sessions`, `booked`, `came`, `fees`, `pay`, `splans` and `avail` rules published (**The database rules**). Until then they stay on the phone they were made on, the screen says *Some of this is on this phone only*, and a family's ask is refused and taken back off the screen with a message.
 
 ## How long share links last
 
@@ -456,6 +472,10 @@ training/{code}/came/{sid}          { playerId: true | false }
 training/{code}/fees/{sid}/{pid}    { paid, how: 'cash' | 'card' | 'transfer' | 'waived' | 'other', at, by, byName }
 training/{code}/pay/{uid}           { rate, per: 'hour' | 'session' }
 training/{code}/splans/{sid}        { blocks: [ { drill: { shelf, id, v }, name, minutes, note } ], by, at }
+training/{code}/avail/{bid}         { id, coach, coachName, date, start, end, len, field, place, price, ages, notice,
+                                      note, series, off, by, at }       // a coach's bookable times, one date each
+training/{code}/sessions/k_{coach}_{date}_{HHMM}
+                                    a slot a family booked: a session, plus { slot, pid, tid, by, notice }
 workspaces/{code}/access/org/venues/{fieldId}
                                     { id, name, address, pitches, surface, lights, notes,
                                       permits: { id: { id, days: [0..6], start, end, from, until, ref, note } } }

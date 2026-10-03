@@ -219,7 +219,10 @@ const EXPORTS = `{
   sessAll, sessById, normSess, bookingsOf, bookOf, spotsLeft, canSessions, canOffer, canRun, sessClashes, busyItems,
   fieldList, fieldById, fieldOfText, permitsOf, permitCovers, fieldDays, looseVenues, hoursFor, payOf, payFor, feeRows,
   familyOwed, feeOf, sessAttendance, sessCalItems, sessMerge, sessPut, watchSess, sessNews, viewSessions, sheetSess,
-  sessUi, SESS_ACTS, sessMessage, reachFor, fmtMoney, sessClubLine, calendarDoc, publicDoc, viewMine, viewClub
+  sessUi, SESS_ACTS, sessMessage, reachFor, fmtMoney, sessClubLine, calendarDoc, publicDoc, viewMine, viewClub,
+  /* bookable times, and my calendar */
+  blockAll, blockById, blockSlots, normBlock, slotSid, canEditBlock, kidBusy, blockKids, availView, familyAvail, sheetBlock,
+  AVAIL_ACTS, myCalItems, myCalTeams, myCalFilters, viewMyCal, myCalLine, createClub
 }`;
 
 const FB_URLS = {
