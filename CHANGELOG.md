@@ -8,6 +8,36 @@ before this point lives only in the git log.
 
 ---
 
+## Twenty more drills, most of them where the library was thinnest — 2026-10-03
+
+The owner asked for more drills. Counting what was already there showed
+where to put them: a U4 coach had four drills to choose from, a U5 coach
+fourteen, and nothing taught an under-eight to play in goal. There were six set
+pieces, none of them a goal kick, a kick-off or a wall, and three cool-downs.
+Throw-ins and heading had two drills each.
+
+- **The youngest** get ten: *Tails*, *Copy cat*, *Bowling* (passing to knock
+  a pin over), *Goal frenzy* (a ball each, a goal on every side), *Numbers*,
+  *Guard the castle* (staying between the ball and what you protect),
+  *Sideline helpers* (a first reason to be wide instead of in the swarm),
+  *Little keepers* (everyone's turn in goal, from close in), *Throw-in target*
+  and an *Animal cool-down*. U4 now has 9 drills, U5 19, U6 31.
+- **Set pieces**: *Goal kicks* (short and long, against a press), *Kick-off
+  routines* and *Building a wall*.
+- **Older players**: *Stay on your feet* (the block tackle and the poke, with
+  a lunge giving the attacker the point, for the fouls signal), *Clear it,
+  then step out*, *Switch the play*, *The keeper's voice* (who, where and the
+  ball), *Throw, head, catch*, *Pass and prepare* (a warm-up that is the
+  running warm-up with a ball) and a *Crossbar challenge* to finish on.
+
+The three that head the ball are U12 and up and carry the same federation
+safety note as the others; the suite already refuses a heading drill below
+U11. Every diagram was checked by eye, and five were redrawn after that
+because the arrows piled up. `LIB.version` is 4, and the build is 77 so
+phones fetch the new `drills.js`.
+
+---
+
 ## Nothing floats away: one count, a full phone, a whole backup — 2026-10-03
 
 The owner's worry, after training sessions and the drill shelves shipped:

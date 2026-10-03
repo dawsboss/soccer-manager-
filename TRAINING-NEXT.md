@@ -51,7 +51,7 @@ all still binding:
 
 Built, and on this branch:
 
-- **The built-in library** (`drills.js`, 105 drills, `LIB.version` 3), the
+- **The built-in library** (`drills.js`, 125 drills, `LIB.version` 4), the
   diagram renderer (`drill-diagram.js`), the position guide, and the
   Practice tab (`canTrain()`: coaches, admins, the app owner, and any club
   with no admin yet).
