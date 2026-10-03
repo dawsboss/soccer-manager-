@@ -156,6 +156,12 @@ function plan(extra = {}) {
     A.ui.practice.open = null; A.render();
     check('after which it is listed once, as a plan', (A.rendered().match(new RegExp('data-id="' + e.id + '"', 'g')) || []).length, 1);
 
+    A.ui.view = 'calendar'; A.ui.teamId = 't2';
+    A.click({ act: 'calitem', k: 'practice', tid: 't1', id: e.id });
+    check('the calendar entry opens its plan', /data-act="pracfromcal" data-tid="t1"[^>]*>Open the plan</.test(sheet(A)), true);
+    A.click({ act: 'pracfromcal', tid: 't1', id: e.id });
+    check('straight to it, on its own team', [A.ui.view, A.ui.teamId, A.ui.practice.open].join(' '), 'practice t1 ' + e.id);
+
     as('trk'); A.state.teams.t1.events = { [e.id]: e };
     A.click({ act: 'pracfromcal', id: e.id });
     check('a tracker cannot plan one', A.practiceById('t1', e.id), null);

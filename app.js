@@ -2,7 +2,7 @@
    Static app. Data lives in localStorage, and mirrors to Firebase Realtime
    Database when a config + workspace code are present. */
 
-const BUILD = '69';
+const BUILD = '70';
 const BUILT = '2026-10-02';
 /* index.html carries the build it was published with. If this file is newer, the
    browser handed us a cached page — the exact failure that has eaten hours. */
@@ -5428,6 +5428,7 @@ function sheetCalItem(kind, tid, id) {
     ${m ? `<button class="btn wide" data-act="calgame" data-tid="${esc(tid)}" data-id="${esc(id)}" style="margin-bottom:8px">Open the game</button>` : ''}
     ${m && edit ? `<button class="btn quiet wide" data-act="caleditgame" data-tid="${esc(tid)}" data-id="${esc(id)}" style="margin-bottom:8px">Edit this game’s details</button>
       <button class="btn quiet wide" data-act="copytext" data-v="${esc(opponentMessage(t, m))}">Copy a message for the other team</button>` : ''}
+    ${e && e.kind === 'practice' && canPlan(tid) ? `<button class="btn wide" data-act="pracfromcal" data-tid="${esc(tid)}" data-id="${esc(id)}" style="margin-bottom:8px">${practiceById(tid, id) ? 'Open the plan' : 'Plan this practice'}</button>` : ''}
     ${e && edit ? `<button class="btn quiet wide" data-act="caledit" data-tid="${esc(tid)}" data-id="${esc(id)}">Edit</button>` : ''}`);
 }
 
@@ -8406,6 +8407,8 @@ function onAct(e) {
 
   /* ---- practice plans ---- */
   if (PLAN_ACTS.has(a)) {
+    // from the calendar, which can show several teams at once: the button names its team
+    if (a === 'pracfromcal' && d.tid && canPlan(d.tid)) ui.teamId = d.tid;
     const tp = team();
     if (!tp || !canPlan(tp.id)) { closeSheet(); toast("Only this team's coaches plan its practices"); render(); return; }
     const p = practiceUi(), L = drillLib();
@@ -8419,7 +8422,7 @@ function onAct(e) {
       const e = ((tp.events || {})[d.id]);
       if (!e || e.kind !== 'practice') { toast('That practice is not on the calendar any more'); render(); return; }
       if (!practiceById(tp.id, e.id)) planFromEntry(tp.id, e);
-      p.tab = 'plans'; p.open = e.id; p.pick = null; p.run = null; render(); toTop(); return;
+      ui.view = 'practice'; p.tab = 'plans'; p.open = e.id; p.pick = null; p.run = null; closeSheet(); render(); toTop(); return;
     }
     if (a === 'pracopen') {
       if (!pr) { toast('That practice is not on this phone yet'); return; }

@@ -23,7 +23,10 @@ because the coach came from Practice to plan it, makes its plan and opens it.
 The plan is keyed by the calendar entry's id (`eid`) and takes its day, time,
 place and length from the entry. Practices added on the calendar with nothing
 planned yet are on the Plans list as *Plan it*, so there is one list of
-practices. Editing a plan's own details, and the plans already made the old
+practices, and a practice's own sheet on the calendar has **Plan this
+practice** (or **Open the plan**) for its coaches. So a season can be put on
+the calendar at once with *Every week*, and each week planned later from
+either tab. Editing a plan's own details, and the plans already made the old
 way, are unchanged; the plan still carries its own copy of when and where, and
 `schedule` still exists — retiring those is the rest of the "plans hang off the
 calendar" decision in `TRAINING-NEXT.md`.
