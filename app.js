@@ -2,7 +2,7 @@
    Static app. Data lives in localStorage, and mirrors to Firebase Realtime
    Database when a config + workspace code are present. */
 
-const BUILD = '66';
+const BUILD = '68';
 const BUILT = '2026-10-02';
 /* index.html carries the build it was published with. If this file is newer, the
    browser handed us a cached page — the exact failure that has eaten hours. */
@@ -258,7 +258,7 @@ function saveLocal() {
   try { localStorage.setItem(dataKey(), JSON.stringify(state)); } catch (e) { }
 }
 function saveUi() {
-  try { localStorage.setItem(LS_UI, JSON.stringify({ view: ui.view, teamId: ui.teamId, matchId: ui.matchId, sortBy: ui.sortBy, plan: ui.plan, gameView: ui.gameView, follow: ui.follow || null, feedAll: !!ui.feedAll, tabs: 2 })); } catch (e) { }
+  try { localStorage.setItem(LS_UI, JSON.stringify({ view: ui.view, teamId: ui.teamId, matchId: ui.matchId, sortBy: ui.sortBy, plan: ui.plan, gameView: ui.gameView, follow: ui.follow || null, feedAll: !!ui.feedAll, practice: ui.practice || null, tabs: 2 })); } catch (e) { }
 }
 function loadLocal() {
   try {
@@ -282,6 +282,7 @@ function loadLocal() {
     // a staged batch belongs to one game; drop it if we are somewhere else
     if (ui.plan && ui.plan.matchId !== ui.matchId) ui.plan = null;
   } catch (e) { }
+  loadTrain();
 }
 
 /* A local copy is a cache, not an archive. Three things end it: the club is
@@ -294,8 +295,9 @@ function purgeClub(code, why) {
     localStorage.removeItem(LS_DATA + ':' + k);
     localStorage.removeItem(LS_SYNCED + ':' + k);
     localStorage.removeItem(LS_DENIED + ':' + k);
+    localStorage.removeItem(LS_TRAIN + ':' + k);
   } catch (e) { }
-  if (code === wsCode()) { state = { teams: {}, matches: {}, access: {}, rsvp: {} }; purged = why; render(); }
+  if (code === wsCode()) { state = { teams: {}, matches: {}, access: {}, rsvp: {} }; train = TRAIN_BLANK(); purged = why; render(); }
 }
 
 function markSynced() {
@@ -387,6 +389,7 @@ async function initAuth() {
       // screen — so any earlier refusal is stale; read the workspace again
       if (prevUid !== undefined && prevUid !== uid) {
         denied = false; attachWorkspace();
+        resetTrainWatch();
         // an invite read as the last account says nothing about this one
         if (invite && invite.status !== 'working') { invite.status = 'idle'; invite.doc = null; }
         if (join && join.status !== 'working') { join.status = 'idle'; join.sent = false; }
@@ -497,7 +500,8 @@ async function initSync() {
              per-team rules fall back to the old club-wide index while
              access/teamIndex is missing; an admin's device is the only one
              allowed to write it, so it does, once, on the way in. */
-          if (canAdmin()) syncAllTeamIndex();
+          if (canAdmin()) { syncAllTeamIndex(); syncAllCoachIndex(); }
+          else if (me) syncCoachIndex(me.uid);
           // an admin, or each coach for her own team, heals the parent list
           syncAllTeamParents();
           noteMyClub();
@@ -588,6 +592,7 @@ function pushAll() {
   if (a.index) for (const u of Object.keys(a.index)) steps.push(['access/index/' + u, a.index[u]]);
   else if (mine) steps.push(['access/index/' + mine, true]);
   if (a.teamIndex) steps.push(['access/teamIndex', a.teamIndex]);
+  if (a.coachIndex) steps.push(['access/coachIndex', a.coachIndex]);
   for (const u of Object.keys(a.members || {})) steps.push(['access/members/' + u, a.members[u]]);
   for (const k of ['org', 'teams']) if (a[k]) steps.push(['access/' + k, a[k]]);
   for (const tid of Object.keys(state.teams || {})) steps.push(['teams/' + tid, state.teams[tid]]);
@@ -668,6 +673,7 @@ const auditLog = () => Object.values(acc().log || {}).sort((a, b) => b.at - a.at
 
 function syncIndex(uid) {
   if (!uid) return;
+  syncCoachIndex(uid);
   if (hasAnyRole(uid)) quiet(`access/index/${uid}`, true);
   else {
     forgetInvite((acc().index || {})[uid]);
@@ -709,6 +715,38 @@ function syncTeamIndex(tid) {
 /* Called when the club is first pushed and whenever readiness is checked, so a
    club that predates teamIndex grows one without anybody migrating anything. */
 function syncAllTeamIndex() { for (const tid of Object.keys(state.teams || {})) syncTeamIndex(tid); }
+
+/* access/coachIndex/{uid} names one team she coaches. It's the third flat
+   table, for the one question the training rules ask that the other two can't
+   answer in a single hop: is this account a coach of ANY team? index says
+   "member", and teamIndex needs a team to look in. The value is a team rather
+   than `true` because that's what lets her own device write her entry: the
+   rule checks she really coaches the team it names. Everything that reads it
+   asks only whether the entry is there.
+
+   An admin's device writes everyone's, the same as teamIndex; a coach's own
+   device also writes hers, so a coach whose admin hasn't connected since is
+   not shut out of her own plans. */
+function coachTeamOf(uid) {
+  const ts = acc().teams || {};
+  return Object.keys(ts).sort().find(tid => ((ts[tid] || {}).coaches || {})[uid]) || null;
+}
+function syncCoachIndex(uid) {
+  if (!uid) return;
+  const now = (acc().coachIndex || {})[uid] || null;
+  // any team she coaches will do, so only rewrite it once the one it names stops being true
+  if (now && (teamAccess(now).coaches || {})[uid]) return;
+  const want = coachTeamOf(uid);
+  if (want === now) return;
+  if (want) quiet(`access/coachIndex/${uid}`, want);
+  else { delDeep(state, `access/coachIndex/${uid}`); remoteDel(`access/coachIndex/${uid}`); }
+  saveLocal();
+}
+function syncAllCoachIndex() {
+  const uids = new Set(Object.keys(acc().coachIndex || {}));
+  for (const ta of Object.values(acc().teams || {})) for (const u of Object.keys((ta || {}).coaches || {})) uids.add(u);
+  for (const u of uids) syncCoachIndex(u);
+}
 
 /* teamIndex's counterpart for parents, which it cannot hold: a parent is a
    guardian of a player, and a rule cannot walk the squad to find her. So
@@ -815,6 +853,14 @@ function readiness() {
     ok: indexed.length === withRoles.length,
     label: 'Every team with a role has a team index',
     detail: withRoles.length ? indexed.length + ' of ' + withRoles.length : 'no team roles granted yet'
+  });
+  const coaches = new Set();
+  for (const ta of Object.values(a.teams || {})) for (const u of Object.keys((ta || {}).coaches || {})) coaches.add(u);
+  const inCoachIndex = [...coaches].filter(u => (a.coachIndex || {})[u]).length;
+  rows.push({
+    ok: inCoachIndex === coaches.size,
+    label: 'Every coach is in the coach index',
+    detail: coaches.size ? inCoachIndex + ' of ' + coaches.size + (inCoachIndex === coaches.size ? '' : ' — practice plans need it') : 'no coaches yet'
   });
   const withParents = teams().filter(t => Object.keys(parentsWanted(t.id)).length);
   const listed = withParents.filter(t => Object.keys((a.teamParents || {})[t.id] || {}).length);
@@ -2262,6 +2308,7 @@ const firstOf = (o, ...ks) => { for (const k of ks) if (o[k] !== undefined && o[
 const IMPORT_EXAMPLE = {
   teams: [{
     name: 'Lakeside Thunder G12',
+    birthYear: 2015,
     players: [
       { name: 'Ada Lovelace', number: 1, gk: true },
       { name: 'Bea Smith', number: 7, position: 'Forward', also: ['Wing'], rating: 4 },
@@ -2288,7 +2335,7 @@ function importScore(v) {
 /* Pure: reads `data` against the club as it stands and returns what importing
    it would do. Nothing in state changes until applyImport(). */
 function importPlan(data, cur = state) {
-  const out = { writes: [], errors: [], warnings: [], counts: { newTeams: 0, newPlayers: 0, players: 0, newGames: 0, games: 0, results: 0 } };
+  const out = { writes: [], errors: [], warnings: [], counts: { newTeams: 0, teams: 0, newPlayers: 0, players: 0, newGames: 0, games: 0, results: 0 } };
   const put = (path, value) => out.writes.push([path, value]);
   if (!data || typeof data !== 'object' || Array.isArray(data)) { out.errors.push('The file should be one JSON object with a "teams" list in it.'); return out; }
 
@@ -2483,6 +2530,16 @@ function importPlan(data, cur = state) {
     if (!tt || typeof tt !== 'object') { out.errors.push(`${where}: expected a team like {"name": "...", "players": [...]}.`); return; }
     const entry = teamFor(tt.name, where, true); if (!entry) return;
     const w = `${entry.t.name}`;
+    /* The age group, as a birth year. A team already here keeps the one it
+       has: the import fills gaps, it doesn't overrule what a coach set. */
+    const by = firstOf(tt, 'birthYear', 'born');
+    if (by !== undefined && by !== null && by !== '') {
+      const n = Number(by);
+      if (uAge(n) == null) out.warnings.push(`${w}: birth year ${JSON.stringify(by)} doesn't look like a year, so it was left out.`);
+      else if (entry.isNew) entry.t.birthYear = n;
+      else if (!entry.t.birthYear) { entry.t.birthYear = n; put(`teams/${entry.t.id}/birthYear`, n); out.counts.teams++; }
+      else if (Number(entry.t.birthYear) !== n) out.warnings.push(`${w}: already born ${entry.t.birthYear} here, so ${n} was left out.`);
+    }
     if (tt.players !== undefined && !Array.isArray(tt.players)) out.errors.push(`${w}: "players" should be a list.`);
     else (tt.players || []).forEach((p, j) => addPlayer(entry, p, `${w}, player ${j + 1}`));
     if (tt.games !== undefined && !Array.isArray(tt.games)) out.errors.push(`${w}: "games" should be a list.`);
@@ -2525,7 +2582,7 @@ function importSummary(c) {
   const n = (k, one, many) => c[k] ? `${c[k]} ${c[k] === 1 ? one : many}` : null;
   const add = [n('newTeams', 'team', 'teams'), n('newPlayers', 'player', 'players'), n('newGames', 'game', 'games')].filter(Boolean);
   if (add.length) bits.push('adds ' + add.join(', '));
-  const upd = [n('players', 'player', 'players'), n('games', 'game', 'games')].filter(Boolean);
+  const upd = [n('teams', 'team', 'teams'), n('players', 'player', 'players'), n('games', 'game', 'games')].filter(Boolean);
   if (upd.length) bits.push('updates ' + upd.join(', '));
   if (c.results) bits.push(`${c.results} with a final score`);
   return bits.length ? bits.join(' · ') : 'nothing new — everything in it is already here';
@@ -3330,9 +3387,16 @@ function adjustClock(m, deltaSec) {
 }
 
 /* ---------------- sheet / toast ---------------- */
-function openSheet(html) {
-  $('#sheet').innerHTML = html;
-  $('#sheet').hidden = false;
+/* A sheet opened fresh starts at its top: without this it kept the scroll of
+   whichever sheet was open last, so a long card could open halfway down. One
+   redrawn while it's open (a filter chip, Moving / Still) keeps her place, or
+   every tap would throw her back up. `top` is for one sheet replacing another
+   without closing, like a drill opened from the card of the one it goes with. */
+function openSheet(html, top) {
+  const s = $('#sheet'), fresh = top || s.hidden;
+  s.innerHTML = html;
+  s.hidden = false;
+  if (fresh) s.scrollTop = 0;
   $('#scrim').hidden = false;
 }
 function closeSheet() { $('#sheet').hidden = true; $('#scrim').hidden = true; }
@@ -3384,8 +3448,14 @@ function render() {
   }
   if (hideForParent.includes(ui.view) && lim === 'parent') ui.view = guardsAnyone() ? 'mine' : 'matches';
   if (ui.view === 'teamset' && lim === 'tracker') ui.view = 'matches';
+  /* Practice is a coach's and an admin's, on any team: the library isn't
+     about one team, and a parent or a tracker never gets the tab at all. */
+  const train = canTrain();
+  const pb = document.querySelector('#tabs [data-view="practice"]');
+  if (pb) pb.hidden = !train;
+  if (ui.view === 'practice' && !train) ui.view = 'matches';
   // club admin and account settings are not team-level, so the tab row steps aside
-  const teamLevel = ['matches', 'calendar', 'roster', 'season', 'teamset'].includes(ui.view);
+  const teamLevel = ['matches', 'calendar', 'practice', 'roster', 'season', 'teamset'].includes(ui.view);
   if (ui.view === 'people' && !canAdmin() && !teams().some(x => isCoach(x.id, me && me.uid))) ui.view = 'club';
   const tabView = ui.view === 'formation' ? (ui.editFid === GAME_SHAPE ? 'matches' : 'admin') : inGame ? 'matches' : ui.view;
   for (const b of document.querySelectorAll('#tabs button')) b.setAttribute('aria-current', String(b.dataset.view === tabView));
@@ -3436,7 +3506,7 @@ function render() {
       v === 'roster' ? viewRoster() :
         v === 'season' ? viewSeason() : v === 'calendar' ? viewCalendar() :
           v === 'formation' ? viewFormation() : v === 'club' ? viewClub() : v === 'people' ? viewPeople() : v === 'admin' ? viewAdmin()
-            : v === 'mine' ? viewMine() : v === 'teamset' ? viewTeamSet()
+            : v === 'mine' ? viewMine() : v === 'teamset' ? viewTeamSet() : v === 'practice' ? viewPractice()
               : v === 'inbox' ? viewInbox() : v === 'thread' ? viewThread()
               : v === 'setup' ? viewSetup() : viewMatches());
   syncHash();
@@ -5504,7 +5574,7 @@ function viewMatches() {
         : st === 'upcoming' ? '<span class="tag game">Upcoming</span>'
           : `<span class="pmins">${score(m).us}<small>–${score(m).them}</small></span>`}</button>`;
   }).join('') || `<div class="empty"><strong>No games yet</strong>${readOnlyHere() ? "The team's coach adds them." : 'Add one and it becomes the live game.'}</div>`;
-  return `<div class="stack"><div class="spread"><h2>Games</h2>${addGameBtn('btn sm')}</div><div class="plist">${rows}</div></div>`;
+  return `<div class="stack">${nextPracticeCard(t)}<div class="spread"><h2>Games</h2>${addGameBtn('btn sm')}</div><div class="plist">${rows}</div></div>`;
 }
 
 /* --- roster --- */
@@ -5786,6 +5856,7 @@ function viewTeamSet() {
       ${teamCrest(t)}
       <span style="flex:1"><b style="font-size:18px">${teamLabel(t)}</b>
         <span class="rowsub">${teamStats(t)}</span>
+        <span class="rowsub">${teamUAge(t) != null ? `${uLabel(teamUAge(t))} this season · born ${esc(String(t.birthYear))}` : 'No age group set'}</span>
         <span class="rowsub">${t.logo ? 'Own crest' : 'Using the club badge'}</span></span></div>
       ${ro ? '<p class="muted" style="margin-bottom:0">You can read this team but not change it.</p>'
       : `<button class="btn quiet wide" data-act="editteam" data-id="${t.id}">Team name and crest</button>`}</div>
@@ -5808,6 +5879,823 @@ function viewTeamSet() {
   </div>`;
 }
 
+/* ---------------- practice ---------------- */
+/* The drill library and the position guide: TRAINING.md's first build step.
+   Both are content, shipped as their own scripts (drills.js and
+   drill-diagram.js) and loaded before this module, so they are on window by
+   the time it runs. No database read, nothing to sync, and all of it there at a
+   field with no signal. Nothing in this section writes anything except the
+   team's birth year, which is an ordinary team field.
+
+   Coaches and admins only. The built-in drills aren't a secret, since they
+   ship in the app's public files, but the Practice tab is where a club's own
+   drills and plans will live, and TRAINING.md settles that parents and
+   trackers never see those. Before a club has an admin nothing is gated, the
+   same as every other screen. */
+const drillLib = () => (typeof window !== 'undefined' && window.SOCCER_DRILLS && window.SOCCER_DRILLS.DRILLS) ? window.SOCCER_DRILLS : null;
+const drillDiagram = () => (typeof window !== 'undefined' && window.DrillDiagram && window.DrillDiagram.svg) ? window.DrillDiagram : null;
+const canTrain = () => !gated() || isOwner() || (!!me && teams().some(t => isCoach(t.id, me.uid)));
+/* The plan's own actions also need the team: a coach browsing another age
+   group can read its drills but never touch its plans. */
+const PLAN_ACTS = new Set(['pracnew', 'pracopen', 'pracback', 'pracpast', 'pracedit', 'pracsave', 'pracpick', 'pracpickdone', 'pracadd',
+  'pracsuggest', 'pracmin', 'pracmove', 'pracdel', 'pracnote', 'pracnotesave', 'pracreview', 'pracrate', 'pracreviewsave', 'pracagain',
+  'pracrm', 'pracrun', 'rungo', 'runpause', 'runreset', 'runnext', 'runprev', 'runstop', 'runpic']);
+const PRACTICE_ACTS = new Set(['practab', 'drill', 'drillpic', 'roleguide', 'rolepic', 'drillfilters', 'dfchip', 'dfpick', 'dfclear', 'drillmore', ...PLAN_ACTS]);
+
+/* A team's age is stored as the year its players were born, because that
+   rolls over by itself: the same team is U10 this season and U11 the next
+   without anybody editing it. It's shown as a U-age, the way coaches say it. A
+   season runs August to July and takes the year it ends in, which is how
+   birth-year age groups work in US youth soccer: born 2016 is U11 in 2026–27. */
+function seasonEndYear(now = nowMs()) {
+  const d = new Date(now);
+  return d.getMonth() >= 7 ? d.getFullYear() + 1 : d.getFullYear();
+}
+function uAge(birthYear, now = nowMs()) {
+  const y = Number(birthYear);
+  if (!Number.isInteger(y)) return null;
+  const u = seasonEndYear(now) - y;
+  return u >= 4 && u <= 80 ? u : null;
+}
+const teamUAge = t => (t && t.birthYear ? uAge(t.birthYear) : null);
+const uLabel = u => (u == null ? '' : u <= 19 ? 'U' + u : 'Adult');
+
+/* What the coach has narrowed the library to, kept per device with the rest of
+   the screen state. Rebuilt from the blank on every read, so a filter saved by
+   an older build that this one no longer knows can't break the list. */
+const PRACTICE_BLANK = () => ({
+  q: '', age: 'team', sort: 'session', sig: '', len: '', setup: '', players: '', comp: '',
+  skill: '', principle: '', moment: '', physical: '',
+  types: [], pos: [], levels: [], intens: [], inv: [], groups: [], flags: [], noKit: []
+});
+function practiceUi() {
+  if (!ui.practice || typeof ui.practice !== 'object') ui.practice = {};
+  const p = ui.practice;
+  if (!['plans', 'drills', 'positions'].includes(p.tab)) p.tab = 'plans';
+  if (p.run && (typeof p.run !== 'object' || !p.run.pid)) p.run = null;
+  if (!(p.show > 0)) p.show = 24;
+  const blank = PRACTICE_BLANK(), f = p.f && typeof p.f === 'object' ? p.f : {};
+  for (const [k, v] of Object.entries(blank)) {
+    if (Array.isArray(v)) f[k] = Array.isArray(f[k]) ? f[k].map(String) : [];
+    else f[k] = typeof f[k] === 'string' ? f[k] : v;
+  }
+  p.f = f;
+  return p;
+}
+const PRACTICE_FLAGS = { noKeeper: 'No keeper needed', oneAdult: 'One adult can run it', indoor: 'Works indoors' };
+const PRACTICE_NOKIT = { minigoals: 'No mini goals', goals: 'No big goals', bibs: 'No bibs', cones: 'No cones', poles: 'No poles' };
+const PRACTICE_SORTS = {
+  session: ['Session order', null],
+  short: ['Shortest', (a, b) => a.minutes[0] - b.minutes[0] || a.minutes[1] - b.minutes[1]],
+  setup: ['Quickest to set up', (a, b) => a.setupMins - b.setupMins],
+  busy: ['Busiest', (a, b) => b.involvement - a.involvement || b.intensity - a.intensity],
+  easy: ['Easiest', (a, b) => a.level - b.level || a.intensity - b.intensity],
+  hard: ['Hardest', (a, b) => b.level - a.level || b.intensity - a.intensity],
+  name: ['A to Z', (a, b) => a.name.localeCompare(b.name)]
+};
+
+/* The age the list is filtered to: the team's own unless the coach picked
+   another, and no age at all if the team hasn't got one and she hasn't chosen. */
+function practiceAge(f, t = team()) {
+  if (f.age === 'any') return null;
+  if (f.age === 'team' || !f.age) { const u = teamUAge(t); return u == null ? null : Math.min(u, 19); }
+  const n = Number(f.age);
+  return n >= 4 && n <= 19 ? n : null;
+}
+const drillWords = new Map();
+function drillText(d, L) {
+  if (!drillWords.has(d.id)) drillWords.set(d.id, [d.name, d.summary, d.setup, d.why, ...d.how, ...d.points, ...d.skills.map(s => L.SKILLS[s] || s), ...d.tags].join(' ').toLowerCase());
+  return drillWords.get(d.id);
+}
+function drillMatches(d, f, age, L) {
+  const q = String(f.q || '').trim().toLowerCase().split(/\s+/).filter(Boolean);
+  return (age == null || (d.ages[0] <= age && age <= d.ages[1]))
+    && (!f.sig || d.signals.includes(f.sig))
+    && (!f.types.length || f.types.includes(d.type))
+    && (!f.pos.length || f.pos.some(p => d.positions.includes(p)))
+    && (!f.len || d.minutes[0] <= Number(f.len))
+    && (!f.setup || d.setupMins <= Number(f.setup))
+    && (!f.players || d.players.min <= Number(f.players))
+    && (!f.comp || d.competitive === (f.comp === 'yes'))
+    && (!f.levels.length || f.levels.includes(String(d.level)))
+    && (!f.intens.length || f.intens.includes(String(d.intensity)))
+    && (!f.inv.length || f.inv.includes(String(d.involvement)))
+    && (!f.groups.length || f.groups.some(g => d.groups.includes(g)))
+    && (!f.flags.includes('noKeeper') || d.gk === 0)
+    && (!f.flags.includes('oneAdult') || d.adults === 1)
+    && (!f.flags.includes('indoor') || d.indoor)
+    && f.noKit.every(k => !d.kit[k])
+    && (!f.skill || d.skills.includes(f.skill))
+    && (!f.principle || d.principles.includes(f.principle))
+    && (!f.moment || d.moments.includes(f.moment))
+    && (!f.physical || d.physical.includes(f.physical))
+    && (!q.length || q.every(w => drillText(d, L).includes(w)));
+}
+function practiceDrills(f = practiceUi().f, t = team()) {
+  const L = drillLib(); if (!L) return [];
+  const age = practiceAge(f, t);
+  const order = Object.keys(L.TYPES);
+  const by = (PRACTICE_SORTS[f.sort] || PRACTICE_SORTS.session)[1] || ((a, b) => order.indexOf(a.type) - order.indexOf(b.type) || a.level - b.level);
+  return L.DRILLS.filter(d => drillMatches(d, f, age, L)).sort(by);
+}
+/* Everything but the search box, the age and the sort, which sit on the screen
+   itself rather than behind the Filters button. */
+function practiceActive(f) {
+  let n = 0;
+  for (const k of ['sig', 'len', 'setup', 'players', 'comp', 'skill', 'principle', 'moment', 'physical']) if (f[k]) n++;
+  for (const k of ['types', 'pos', 'levels', 'intens', 'inv', 'groups', 'flags', 'noKit']) n += f[k].length;
+  return n;
+}
+
+const drillAges = d => `U${d.ages[0]}–${d.ages[1] >= 19 ? 'adult' : 'U' + d.ages[1]}`;
+const drillPlayers = d => (d.players.min === d.players.max ? d.players.min : d.players.min + '–' + d.players.max);
+/* Thumbnails are the same every time, and render() runs on every sync. */
+const drillThumbs = new Map();
+function drillThumb(id, dg, title) {
+  if (!drillThumbs.has(id)) drillThumbs.set(id, drillDiagram().svg(dg, { title }));
+  return drillThumbs.get(id);
+}
+const reducedMotion = () => {
+  try { return !!(typeof window !== 'undefined' && window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches); } catch (e) { return false; }
+};
+
+function viewPractice() {
+  const L = drillLib(), D = drillDiagram();
+  if (!L || !D) return `<div class="empty"><strong>The drill library didn't load</strong>It comes with the app as a file of its own, and this page opened without it. Reload when you have a signal.</div>`;
+  const p = practiceUi();
+  if (p.run) { const r = runView(L); if (r) return r; }
+  const tabs = `<div class="chips">${[['plans', 'Plans'], ['drills', `Drills · ${L.DRILLS.length}`], ['positions', 'Positions']].map(([k, l]) =>
+    `<button class="chip" type="button" data-act="practab" data-k="${k}" aria-pressed="${p.tab === k}">${l}</button>`).join('')}</div>`;
+  const body = p.tab === 'positions' ? practicePositions(L) : p.tab === 'drills' ? pickBanner(L) + practiceDrillsView(L) : practicePlansView(L);
+  return `<div class="stack">${tabs}${body}</div>`;
+}
+
+function practiceDrillsView(L) {
+  const p = practiceUi(), f = p.f, t = team();
+  const u = teamUAge(t);
+  const ages = [['team', u == null ? 'No team age' : `${uLabel(u)} (team)`], ['any', 'Any age'],
+    ...Array.from({ length: 16 }, (_, i) => i + 4).map(n => [String(n), n === 19 ? 'U19 and adult' : 'U' + n])];
+  const opt = (cur, [v, l]) => `<option value="${esc(v)}"${cur === v ? ' selected' : ''}>${esc(l)}</option>`;
+  const n = practiceActive(f);
+  const s = f.sig && L.SIGNALS[f.sig];
+  return `<div class="card drillbar">
+      <input type="search" id="drillQ" value="${esc(f.q)}" placeholder="Search drills, skills, coaching points" aria-label="Search drills">
+      <div class="drilltools">
+        <select data-pick="dfpick" data-k="age" aria-label="Age">${ages.map(x => opt(f.age, x)).join('')}</select>
+        <select data-pick="dfpick" data-k="sort" aria-label="Sort">${Object.entries(PRACTICE_SORTS).map(([k, [l]]) => opt(f.sort, [k, l])).join('')}</select>
+        <button class="btn ${n ? '' : 'quiet '}sm" data-act="drillfilters">${n ? 'Filters · ' + n : 'Filters'}</button>
+      </div>
+      ${u == null && f.age === 'team' && canEditTeam(ui.teamId) ? `<p class="muted" style="margin:8px 0 0">Give the team a birth year (Team → Team name and crest) and the list starts at the right age.</p>` : ''}
+      ${s ? `<div class="drillsignal"><b>${esc(s.label)}</b><span>${esc(s.means)}</span></div>` : ''}
+    </div>
+    <div id="drillList">${drillListHtml()}</div>`;
+}
+
+function drillListHtml() {
+  const L = drillLib(); if (!L) return '';
+  const p = practiceUi(), list = practiceDrills(p.f);
+  const shown = list.slice(0, p.show);
+  const busy = practiceActive(p.f) || p.f.q;
+  return `<p class="muted drillcount">${list.length === L.DRILLS.length ? `All ${list.length} drills` : `${list.length} of ${L.DRILLS.length} drills`}${busy ? ` · <button class="drilllink" data-act="dfclear">clear filters</button>` : ''}</p>
+    ${shown.length ? `<div class="drilllist">${shown.map(drillRow).join('')}</div>` : `<div class="empty"><strong>No drill matches all of that</strong>Try taking a filter off.</div>`}
+    ${list.length > shown.length ? `<button class="btn quiet wide" data-act="drillmore">Show ${Math.min(24, list.length - shown.length)} more</button>` : ''}`;
+}
+
+function drillRow(d) {
+  const L = drillLib();
+  return `<button class="drillrow" type="button" data-act="drill" data-id="${esc(d.id)}">
+    <span class="drillmain"><span class="drillname">${esc(d.name)}</span>
+      <span class="drilltype">${esc(L.TYPES[d.type] || d.type)}</span>
+      <span class="drillsum">${esc(d.summary)}</span>
+      <span class="drillfacts"><b>${drillAges(d)}</b> · ${d.minutes[0]}–${d.minutes[1]} min · ${drillPlayers(d)} players${d.gk ? ' · ' + d.gk + ' GK' : ''} · ${esc(L.LEVELS[d.level])}</span></span>
+    <span class="drillthumb" aria-hidden="true">${drillThumb(d.id, d.diagram, d.name)}</span></button>`;
+}
+
+const DIAGRAM_KEY = [['A', 'Team'], ['D', 'Opponents'], ['N', 'Neutral'], ['B', 'Fourth team'], ['K', 'Keeper'], ['C', 'Coach or server']];
+/* The picture, its key, its Moving / Still switch and its steps, for a drill
+   or a position alike. Moving unless the phone has asked for less motion. */
+function diagramBlock(dg, title, act, id, moving) {
+  const D = drillDiagram();
+  const steps = D.parse(dg).steps;
+  const anim = steps.length > 0 && moving;
+  const used = new Set(Object.keys(dg.players || {}).map(x => x[0]));
+  return `<div class="drillpic">${D.svg(dg, { animate: anim, title })}</div>
+    <div class="spread drillpicbar"><span class="drillkey">${DIAGRAM_KEY.filter(([k]) => used.has(k)).map(([k, l]) => `<span><i style="background:${D.COLOURS[k]}"></i>${l}</span>`).join('')}</span>
+      ${steps.length ? `<span class="chips">${[['move', 'Moving'], ['still', 'Still']].map(([k, l]) =>
+        `<button class="chip" type="button" data-act="${act}" data-id="${esc(id)}" data-k="${k}" aria-pressed="${(k === 'move') === anim}">${l}</button>`).join('')}</span>` : '<span class="muted">Layout</span>'}</div>
+    ${steps.some(s => s.caption) ? `<ol class="drillsteps">${steps.map(s => `<li>${esc(s.caption || '')}</li>`).join('')}</ol>` : ''}`;
+}
+
+function sheetDrill(id, moving = !reducedMotion(), top = false) {
+  const L = drillLib(); if (!L || !drillDiagram()) return;
+  const d = L.DRILLS.find(x => x.id === id); if (!d) return;
+  const byId = x => L.DRILLS.find(y => y.id === x);
+  const list = a => `<ul class="drillul">${a.map(x => `<li>${esc(x)}</li>`).join('')}</ul>`;
+  const kit = kitWords(L, d.kit, 0) || 'nothing';
+  const tgt = pickTarget();
+  const trains = [...d.skills.map(s => L.SKILLS[s]), ...d.principles.map(x => L.PRINCIPLES[x]), ...d.physical.map(x => L.PHYSICAL[x]), ...d.moments.map(x => L.MOMENTS[x])];
+  openSheet(`<h3>${esc(d.name)}</h3>
+    <p class="muted" style="margin:-6px 0 10px">${esc(L.TYPES[d.type])} · ${drillAges(d)} · ${d.minutes[0]}–${d.minutes[1]} min · ${esc(L.LEVELS[d.level])} · ${esc(L.INTENSITY[d.intensity])}</p>
+    ${tgt ? `<button class="btn wide" data-act="pracadd" data-id="${esc(tgt.id)}" data-v="${esc(d.id)}" style="margin-bottom:10px">Add to ${esc(pracDay(tgt.date))}</button>` : ''}
+    ${diagramBlock(d.diagram, d.name, 'drillpic', d.id, moving)}
+    <p>${esc(d.summary)}</p>
+    <div class="drillmeta">
+      <span>Players <b>${drillPlayers(d)}${d.gk ? ' · ' + d.gk + ' GK' : ''}</b></span>
+      <span>Setup <b>${d.setupMins ? d.setupMins + ' min' : 'none'}</b></span>
+      <span><b>${d.adults === 1 ? 'One adult' : 'Two adults'}</b></span>
+      <span><b>${d.indoor ? 'Indoors or out' : 'Outdoors'}</b></span>
+      <span><b>${esc(d.groups.map(g => L.GROUPS[g]).join(', '))}</b></span>
+      <span><b>${esc(L.INVOLVEMENT[d.involvement])}</b></span>
+      ${d.competitive ? '<span><b>Competitive</b></span>' : ''}
+      <span>Space <b>${d.space ? d.space[0] + ' × ' + d.space[1] + ' yd' : esc(d.spaceNote || '')}</b></span>
+      <span>Bring <b>${esc(kit)}</b></span>
+      <span>For <b>${esc(d.positions.join(', '))}</b></span>
+    </div>
+    <h4>Setup</h4><p>${esc(d.setup)}</p>
+    <h4>How it runs</h4><ol class="drillul">${d.how.map(x => `<li>${esc(x)}</li>`).join('')}</ol>
+    <h4>Coaching points</h4>${list(d.points)}
+    <h4>Ask them</h4>${list(d.questions)}
+    <h4>Watch for</h4>${list(d.mistakes)}
+    <div class="drillwhy"><h4>Why it helps on Saturday</h4><p>${esc(d.why)}</p></div>
+    <h4>Make it easier</h4>${list(d.easier)}
+    <h4>Make it harder</h4>${list(d.harder)}
+    ${d.safety ? `<div class="drillsafety"><h4>Safety</h4><p>${esc(d.safety)}</p></div>` : ''}
+    <h4>Trains</h4><div class="chips">${trains.map(x => `<span class="tag">${esc(x)}</span>`).join('')}</div>
+    ${d.signals.length ? `<h4>Answers</h4><div class="chips">${d.signals.map(s => `<span class="tag wait">${esc(L.SIGNALS[s].label)}</span>`).join('')}</div>` : ''}
+    ${d.goesWith.length ? `<h4>Goes well with</h4><div class="chips">${d.goesWith.map(byId).filter(Boolean).map(x =>
+      `<button class="chip" type="button" data-act="drill" data-id="${esc(x.id)}">${esc(x.name)}</button>`).join('')}</div>` : ''}
+    <button class="btn quiet wide" data-act="closesheet" style="margin-top:14px">Done</button>`, top);
+}
+
+/* The position guide: what each job is, with the ball and without it. The
+   spots on the team's own default shapes are named alongside, so "full-back"
+   reads as "your LB and RB". */
+function practicePositions(L) {
+  const t = team();
+  const own = new Set(Object.values((t && t.formations) || {}).flatMap(f => (f.slots || []).map(s => s.label)));
+  return `<p class="muted" style="margin:0">What each position is for: when we have the ball, when they have it, and the second either way. Each links the drills that teach it.</p>
+    <div class="drilllist">${L.ROLE_GUIDE.map(r => {
+      const mine = r.slots.filter(s => own.has(s));
+      return `<button class="drillrow" type="button" data-act="roleguide" data-id="${esc(r.id)}">
+        <span class="drillmain"><span class="drillname">${esc(r.name)} <span class="tag">${esc(r.number)}</span></span>
+          <span class="drillsum">${esc(r.oneLine)}</span>
+          <span class="drillfacts">${mine.length ? `In your shapes: <b>${esc(mine.join(', '))}</b>` : `Plays <b>${esc(r.slots.join(', '))}</b>`}</span></span>
+        <span class="drillthumb" aria-hidden="true">${drillThumb('role:' + r.id, r.diagram, r.name)}</span></button>`;
+    }).join('')}</div>`;
+}
+
+function sheetRole(id, moving = !reducedMotion(), top = false) {
+  const L = drillLib(); if (!L || !drillDiagram()) return;
+  const r = (L.ROLE_GUIDE || []).find(x => x.id === id); if (!r) return;
+  const list = a => `<ul class="drillul">${a.map(x => `<li>${esc(x)}</li>`).join('')}</ul>`;
+  openSheet(`<h3>${esc(r.name)} <span class="tag">${esc(r.number)}</span></h3>
+    <p class="muted" style="margin:-6px 0 10px">${esc(r.aka.join(' · '))} · plays ${esc(r.slots.join(', '))}</p>
+    <p>${esc(r.oneLine)}</p>
+    ${diagramBlock(r.diagram, r.name, 'rolepic', r.id, moving)}
+    <h4>When we have the ball</h4>${list(r.withBall)}
+    <h4>When they have it</h4>${list(r.withoutBall)}
+    <div class="drillwhy"><h4>The second we win it</h4><p>${esc(r.whenWeWin)}</p></div>
+    <div class="drillwhy"><h4>The second we lose it</h4><p>${esc(r.whenWeLose)}</p></div>
+    <h4>Key skills</h4><div class="chips">${r.keySkills.map(k => `<span class="tag">${esc(L.SKILLS[k] || k)}</span>`).join('')}</div>
+    <h4>Drills that teach it</h4><div class="chips">${r.drills.map(x => L.DRILLS.find(d => d.id === x)).filter(Boolean).map(d =>
+      `<button class="chip" type="button" data-act="drill" data-id="${esc(d.id)}">${esc(d.name)}</button>`).join('')}</div>
+    <div class="drillsafety"><h4>Under-tens</h4><p>${esc(r.young)}</p></div>
+    <button class="btn quiet wide" data-act="closesheet" style="margin-top:14px">Done</button>`, top);
+}
+
+/* Every filter on the card, behind one button so the list keeps the screen.
+   Each tap redraws the list underneath and this sheet in place, with the count
+   on the button that closes it, so a coach can see a filter bite as she sets it. */
+function sheetDrillFilters() {
+  const L = drillLib(); if (!L) return;
+  const f = practiceUi().f;
+  const chips = (key, vocab) => `<div class="chips">${Object.entries(vocab).map(([k, l]) =>
+    `<button class="chip" type="button" data-act="dfchip" data-k="${key}" data-v="${esc(k)}" data-in="sheet" aria-pressed="${f[key].includes(String(k))}">${esc(l)}</button>`).join('')}</div>`;
+  const sel = (key, first, entries) => `<select data-pick="dfpick" data-k="${key}" data-in="sheet"><option value=""${f[key] ? '' : ' selected'}>${esc(first)}</option>${entries.map(([v, l]) =>
+    `<option value="${esc(v)}"${f[key] === String(v) ? ' selected' : ''}>${esc(l)}</option>`).join('')}</select>`;
+  const lab = (l, body) => `<label class="field"><span>${l}</span>${body}</label>`;
+  const n = practiceDrills(f).length;
+  openSheet(`<h3>Filters</h3>
+    ${lab('What needs work', sel('sig', 'Anything', Object.entries(L.SIGNALS).map(([k, s]) => [k, s.label])))}
+    <p class="lbl">Type</p>${chips('types', L.TYPES)}
+    <p class="lbl">Position</p>${chips('pos', Object.fromEntries(L.POSITIONS.map(x => [x, x])))}
+    <div class="grid2">
+      ${lab('Fits in', sel('len', 'Any length', [5, 10, 15, 20].map(m => [m, m + ' minutes'])))}
+      ${lab('Setup', sel('setup', 'Any setup', [[1, 'A minute or less'], [3, 'Under 3 minutes'], [5, 'Under 5 minutes']]))}
+      ${lab('Players coming', sel('players', 'Any number', Array.from({ length: 23 }, (_, i) => [i + 2, String(i + 2)])))}
+      ${lab('Competitive', sel('comp', 'Either', [['yes', 'Has a score or winner'], ['no', 'No scoring']]))}
+    </div>
+    <p class="lbl">Difficulty</p>${chips('levels', L.LEVELS)}
+    <p class="lbl">Intensity</p>${chips('intens', L.INTENSITY)}
+    <p class="lbl">How busy</p>${chips('inv', L.INVOLVEMENT)}
+    <p class="lbl">Grouped as</p>${chips('groups', L.GROUPS)}
+    <p class="lbl">Practical</p>${chips('flags', PRACTICE_FLAGS)}
+    <p class="lbl">Kit you don't have</p>${chips('noKit', PRACTICE_NOKIT)}
+    <div class="grid2">
+      ${lab('Skill', sel('skill', 'Any skill', Object.entries(L.SKILLS)))}
+      ${lab('Principle of play', sel('principle', 'Any principle', Object.entries(L.PRINCIPLES)))}
+      ${lab('Moment of the game', sel('moment', 'Any moment', Object.entries(L.MOMENTS)))}
+      ${lab('Physical', sel('physical', 'Any', Object.entries(L.PHYSICAL)))}
+    </div>
+    <div class="row" style="gap:8px;margin-top:6px">
+      <button class="btn quiet" style="flex:1" data-act="dfclear" data-in="sheet">Clear</button>
+      <button class="btn" style="flex:2" data-act="closesheet">Show ${n} drill${n === 1 ? '' : 's'}</button></div>`);
+}
+
+/* The search box redraws the list only: redrawing the whole screen would take
+   the box, and the keyboard, away from her after every letter. */
+function refreshDrillList() {
+  const el = $('#drillList');
+  if (el) el.innerHTML = drillListHtml();
+}
+
+/* ---------------- practice plans ---------------- */
+/* A practice is a dated plan for one team: the drills in order, how long each
+   runs, and afterwards whether it worked. TRAINING.md has the design.
+
+   It lives at training/{code}/practices/{tid}/{pid}, outside the workspace,
+   for reasons TRAINING.md gives at length. The one that shapes this code is
+   that the workspace's connect-time read still replaces local state wholesale
+   (the gap test/sync.js pins), and a plan made offline must not be wiped the
+   same way. So practices have their own local copy, one listener per team,
+   and merge on every read from the start. A plan this phone changed and the
+   club hasn't acknowledged is `dirty`, and a dirty plan is never overwritten
+   by what the club says. It's sent again instead.
+
+   When and where also goes to schedule/{tid}/{pid}, which the whole club
+   reads. That's how a parent gets the time and place without the plan. */
+const LS_TRAIN = 'sm.train.v1';
+const trainKey = () => LS_TRAIN + ':' + clubKey();
+const TRAIN_BLANK = () => ({ practices: {}, schedule: {}, dirty: {} });
+let train = TRAIN_BLANK();
+const trainState = {};            // tid -> 'synced' | 'refused', as the database last answered
+let trainWatch = new Map();       // 'practices/t1' -> unsubscribe
+const trainTries = {};
+
+function loadTrain() {
+  train = TRAIN_BLANK();
+  try {
+    const t = JSON.parse(localStorage.getItem(trainKey()) || 'null');
+    if (t && typeof t === 'object') for (const k of Object.keys(train)) if (t[k] && typeof t[k] === 'object') train[k] = t[k];
+  } catch (e) { }
+}
+function saveTrain() { try { localStorage.setItem(trainKey(), JSON.stringify(train)); } catch (e) { } }
+
+/* What the database hands back is not always what was written: an array comes
+   back as an object when it has gaps, and an empty one doesn't come back at
+   all. Every plan goes through this on the way in, so nothing below has to
+   wonder. */
+function normPractice(p, tid, pid) {
+  if (!p || typeof p !== 'object') return null;
+  const raw = Array.isArray(p.blocks) ? p.blocks : Object.values(p.blocks || {});
+  const str = v => (v == null ? '' : String(v));
+  /* Any of the team's coaches can write a plan, and the rules don't check its
+     shape, so a rating of 9 or a start time of 1730 must not be able to break
+     the screen of the next coach who opens it. */
+  const r = p.review && typeof p.review === 'object' ? p.review : null;
+  return {
+    ...p, id: str(p.id || pid), teamId: str(p.teamId || tid),
+    date: str(p.date), start: /^\d{2}:\d{2}$/.test(str(p.start)) ? str(p.start) : '', place: str(p.place),
+    minutes: Number(p.minutes) > 0 ? Math.min(Number(p.minutes), 600) : 60,
+    status: p.status === 'done' ? 'done' : 'plan',
+    focus: { signals: [].concat((p.focus && p.focus.signals) || []).map(str).filter(Boolean) },
+    review: r ? { ...r, rating: Number.isInteger(Number(r.rating)) ? clamp(Number(r.rating), 0, 5) : 0, note: str(r.note) } : undefined,
+    blocks: raw.filter(b => b && b.drill && b.drill.id).map(b => ({ ...b, name: str(b.name), minutes: clamp(Number(b.minutes) || 10, 1, 240), note: str(b.note) }))
+  };
+}
+/* A signal by its key, and only one of the library's own: a key read off a
+   plan is somebody's typing. */
+const signalOf = (L, k) => (L && k && Object.prototype.hasOwnProperty.call(L.SIGNALS, k) ? L.SIGNALS[k] : null);
+const teamPractices = tid => Object.values(train.practices[tid] || {}).map(p => normPractice(p, tid, p && p.id)).filter(Boolean)
+  .sort((a, b) => (a.date + a.start).localeCompare(b.date + b.start));
+const practiceById = (tid, pid) => { const p = (train.practices[tid] || {})[pid]; return p ? normPractice(p, tid, pid) : null; };
+/* The plan is that team's coaches' and the club's admins', and nobody else's,
+   whatever the rest of the screen lets them read. */
+const canPlan = tid => !!tid && !!state.teams[tid] && canTrain() && canEditTeam(tid);
+
+const isoDay = ms => { const d = new Date(ms); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); };
+const todayIso = () => isoDay(nowMs());
+const addMins = (hhmm, n) => { const [h, m] = hhmm.split(':').map(Number); const t = ((h * 60 + m + n) % 1440 + 1440) % 1440; return String(Math.floor(t / 60)).padStart(2, '0') + ':' + String(t % 60).padStart(2, '0'); };
+const DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+function pracDay(iso) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(iso || '')) return 'No date';
+  const [y, m, d] = iso.split('-').map(Number);
+  return DOW[new Date(y, m - 1, d).getDay()] + ' ' + shortDate(iso);
+}
+const pracTimes = p => (/^\d{2}:\d{2}$/.test(String(p.start || '')) ? p.start + '–' + (/^\d{2}:\d{2}$/.test(String(p.end || '')) ? p.end : addMins(p.start, Number(p.minutes) || 60)) : '');
+const blockTotal = pr => pr.blocks.reduce((n, b) => n + b.minutes, 0);
+
+/* The half the whole club may read: no drills, no notes, no review. */
+function whenOf(p) {
+  const w = { date: p.date, minutes: p.minutes };
+  if (p.start) { w.start = p.start; w.end = addMins(p.start, p.minutes); }
+  if (p.place) w.place = p.place;
+  return w;
+}
+
+/* Every change to a plan goes through here: kept on the phone first, marked
+   dirty with the version sent, then sent. One plan per write, at the depth the
+   rule sits at, and never the team's whole collection. */
+function putPractice(p) {
+  const tid = p.teamId;
+  p = JSON.parse(JSON.stringify({ ...p, at: nowMs() }));   // the database refuses undefined anywhere in a write
+  (train.practices[tid] = train.practices[tid] || {})[p.id] = p;
+  train.dirty[tid + '/' + p.id] = p.at;
+  saveTrain();
+  sendPractice(tid, p.id);
+  return p;
+}
+function dropPractice(tid, pid) {
+  if (train.practices[tid]) delete train.practices[tid][pid];
+  train.dirty[tid + '/' + pid] = -1;            // a delete the club hasn't had yet
+  saveTrain();
+  sendPractice(tid, pid);
+}
+function sendPractice(tid, pid) {
+  const code = wsCode(), k = tid + '/' + pid, mark = train.dirty[k];
+  if (!fb || !code || mark === undefined) return;
+  const p = mark === -1 ? null : (train.practices[tid] || {})[pid];
+  if (mark !== -1 && !p) return;
+  const ref = kind => fb.ref(fb.db, `training/${code}/${kind}/${tid}/${pid}`);
+  Promise.all([fb.set(ref('practices'), p), fb.set(ref('schedule'), p ? whenOf(normPractice(p, tid, pid)) : null)])
+    .then(() => {
+      // only the version that was sent is clean; a change made since is still owed
+      if (train.dirty[k] === mark) { delete train.dirty[k]; saveTrain(); }
+      const was = trainState[tid]; trainState[tid] = 'synced';
+      if (was !== 'synced') render();
+    })
+    .catch(e => {
+      if (!/permission|denied/i.test((e && e.code) || '')) return;
+      trainState[tid] = 'refused'; render();
+    });
+}
+
+/* Merge, never replace. The club's copy wins for every plan this phone has
+   nothing pending on; a plan with something pending keeps this phone's
+   version, and a plan that was clean here and is gone from the club was
+   deleted somewhere else. On the first answer after attaching, everything
+   still pending is sent again, which is how a plan made offline and then
+   reloaded still reaches the club. */
+function mergePractices(tid, remote, resend) {
+  const local = train.practices[tid] || {}, out = {};
+  remote = remote && typeof remote === 'object' ? remote : {};
+  for (const [pid, r] of Object.entries(remote)) {
+    const k = tid + '/' + pid;
+    if (train.dirty[k] === undefined) { const n = normPractice(r, tid, pid); if (n) out[pid] = n; }
+    else if (local[pid]) out[pid] = local[pid];
+  }
+  for (const [pid, p] of Object.entries(local))
+    if (!out[pid] && !remote[pid] && train.dirty[tid + '/' + pid] !== undefined) out[pid] = p;
+  train.practices[tid] = out;
+  saveTrain();
+  if (resend) for (const k of Object.keys(train.dirty)) if (k.startsWith(tid + '/')) sendPractice(tid, k.slice(tid.length + 1));
+  render();
+}
+
+/* Read one team at a time, when a screen needs it: practices when the Plans
+   list opens, the schedule when the games list does. A parent's phone never
+   asks for a plan, so it never holds one. Needs a signed-in account, because
+   every training rule does. A refusal gets one retry, for the same reason
+   wireBase() retries: in the first second after boot a refusal is as likely to
+   be the sign-in not having reached the database yet as it is the rules. */
+function watchTrain(kind, tid) {
+  if (!rtdb || !fb || !me || !tid || !wsCode()) return;
+  const key = kind + '/' + tid;
+  if (trainWatch.has(key)) return;
+  const { db, mod } = rtdb;
+  let first = true;
+  trainWatch.set(key, () => { });
+  const off = mod.onValue(mod.ref(db, `training/${wsCode()}/${key}`), s => {
+    if (kind === 'schedule') { train.schedule[tid] = s.val() || {}; saveTrain(); render(); return; }
+    trainState[tid] = 'synced';
+    mergePractices(tid, s.val(), first);
+    first = false;
+  }, err => {
+    if (!/permission|denied/i.test((err && err.code) || '')) return;
+    const n = trainTries[key] = (trainTries[key] || 0) + 1;
+    if (n < 2) { trainWatch.delete(key); setTimeout(() => { watchTrain(kind, tid); }, 1500); return; }
+    // the key stays, so redrawing doesn't ask again; a different account does (resetTrainWatch)
+    if (kind === 'practices') { trainState[tid] = 'refused'; render(); }
+  });
+  if (typeof off === 'function') trainWatch.set(key, off);
+}
+/* Who's asking changed, so every answer so far was somebody else's. */
+function resetTrainWatch() {
+  for (const off of trainWatch.values()) { try { off(); } catch (e) { } }
+  trainWatch = new Map();
+  for (const k of Object.keys(trainTries)) delete trainTries[k];
+  for (const k of Object.keys(trainState)) delete trainState[k];
+}
+
+/* The next practice, from what the club published plus whatever this phone
+   has planned and not sent yet. */
+function nextPractice(tid) {
+  const today = todayIso(), by = {};
+  for (const [pid, s] of Object.entries(train.schedule[tid] || {})) if (s && s.date) by[pid] = { id: pid, ...s };
+  for (const p of teamPractices(tid)) by[p.id] = { id: p.id, ...whenOf(p) };
+  for (const [k, v] of Object.entries(train.dirty)) if (v === -1 && k.startsWith(tid + '/')) delete by[k.slice(tid.length + 1)];
+  return Object.values(by).filter(x => x.date >= today).sort((a, b) => (a.date + (a.start || '')).localeCompare(b.date + (b.start || '')))[0] || null;
+}
+function nextPracticeCard(t) {
+  watchTrain('schedule', t.id);
+  const nx = nextPractice(t.id); if (!nx) return '';
+  const open = canPlan(t.id) && !!practiceById(t.id, nx.id);
+  const body = `<span class="lbl" style="margin:0">Next practice</span>
+    <b>${esc(pracDay(nx.date))}${nx.start ? ' · ' + esc(pracTimes(nx)) : ''}</b>${nx.place ? `<span class="muted">${esc(nx.place)}</span>` : ''}`;
+  return open ? `<button type="button" class="card nextprac" data-act="pracopen" data-id="${esc(nx.id)}">${body}</button>` : `<div class="card nextprac">${body}</div>`;
+}
+
+/* Saved here only, and why, in as few words as will do. */
+function trainNote(tid) {
+  if (!fbConfig().apiKey) return '';
+  if (trainState[tid] === 'refused') return `<div class="rolebar warn">Saved on this phone only. The database refused it: the club's rules may not include practices yet, or it doesn't list you as this team's coach yet.</div>`;
+  if (!me) return `<div class="rolebar">Sign in and your plans are kept with the club, not just on this phone.</div>`;
+  const pending = Object.keys(train.dirty).some(k => k.startsWith(tid + '/'));
+  if (pending && !online) return `<div class="rolebar">Offline. Changes are on this phone and go to the club when the signal's back.</div>`;
+  return '';
+}
+
+/* ---- the drills in a plan ---- */
+/* A built-in drill is stored by reference, because nobody can change one
+   except by shipping a new drills.js, with its name alongside so the plan
+   still reads if the drill is ever taken out. Club and personal drills, when
+   they exist, will be copied in whole instead (TRAINING.md, the shapes rule). */
+const blockDrill = (L, b) => (L && b && b.drill && b.drill.shelf === 'builtin' ? L.DRILLS.find(d => d.id === b.drill.id) || null : null);
+const midMinutes = d => Math.round((d.minutes[0] + d.minutes[1]) / 2);
+const drillBlock = (L, d, minutes) => ({ drill: { shelf: 'builtin', id: d.id, v: L.version }, name: d.name, minutes: minutes || midMinutes(d), note: '' });
+const squadOf = t => players(t).filter(p => p.active !== false);
+
+/* Kit is worked out when it's needed, never stored: the most of each thing
+   any one drill needs, because cones are reused rather than used up, and a
+   ball each is the squad's size. */
+function kitWords(L, kit, n) {
+  return Object.entries(kit).map(([k, v]) => {
+    const name = (L.KIT[k] || k).toLowerCase();
+    if (v === 'each') return n ? `${n} ${name}` : `a ${name.replace(/s$/, '')} each`;
+    return `${v} ${v === 1 ? name.replace(/s$/, '') : name}`;
+  }).join(', ');
+}
+function planKit(L, t, pr) {
+  const n = squadOf(t).length, most = {};
+  for (const b of pr.blocks) {
+    const d = blockDrill(L, b); if (!d) continue;
+    for (const [k, v] of Object.entries(d.kit)) {
+      const q = v === 'each' ? (n || 'each') : Number(v) || 0;
+      most[k] = q === 'each' || most[k] === 'each' ? 'each' : Math.max(most[k] || 0, q);
+    }
+  }
+  return kitWords(L, most, n);
+}
+
+/* What would go wrong at the field, said before getting there. */
+function planWarnings(L, t, pr) {
+  const out = [], u = teamUAge(t), sq = squadOf(t), n = sq.length, gk = sq.filter(p => p.gk).length;
+  const total = blockTotal(pr);
+  if (total > pr.minutes) out.push(`Runs ${total - pr.minutes} min over the ${pr.minutes} you have.`);
+  for (const b of pr.blocks) {
+    const d = blockDrill(L, b);
+    if (!d) { out.push(`${b.name || 'A drill'} is no longer in the library.`); continue; }
+    if (n && d.players.min > n) out.push(`${d.name} needs at least ${d.players.min} players; the squad has ${n}.`);
+    if (n && d.gk > gk) out.push(gk ? `${d.name} wants ${d.gk} keepers; the squad has ${gk}.` : `${d.name} wants ${d.gk === 1 ? 'a keeper' : d.gk + ' keepers'}, and nobody on the squad is marked as one.`);
+    if (u != null && (Math.min(u, 19) < d.ages[0] || Math.min(u, 19) > d.ages[1])) out.push(`${d.name} is for ${drillAges(d)}; this team is ${uLabel(u)}.`);
+  }
+  for (let i = 2; i < pr.blocks.length; i++) {
+    const ds = [i - 2, i - 1, i].map(j => blockDrill(L, pr.blocks[j]));
+    if (ds.every(d => d && d.intensity === 3)) { out.push(`Three hard drills in a row: ${ds.map(d => d.name).join(', ')}. A drink break, or move one.`); break; }
+  }
+  return [...new Set(out)];
+}
+
+/* A session shaped the way coaches are taught to shape one: warm up, one or
+   two practices, a game, and a cool-down when there's time for it. Each slot
+   takes the drill that best fits the team's age, the squad, and what the
+   practice is for; asking again moves along the shortlist. The minutes start
+   at the middle of each drill's range and are fitted to the practice's length,
+   with the game taking up whatever is left over. */
+function suggestPlan(L, t, pr, turn = 0, strict = false) {
+  const u = teamUAge(t), age = u == null ? null : Math.min(u, 19);
+  const sq = squadOf(t), n = sq.length, gk = sq.filter(p => p.gk).length;
+  const sig = signalOf(L, pr.focus.signals[0]) ? pr.focus.signals[0] : '';
+  const level = age == null ? 2 : age <= 8 ? 1 : age <= 12 ? 2 : 3;
+  const fits = d => (age == null || (d.ages[0] <= age && age <= d.ages[1])) && (!n || d.players.min <= n);
+  // with a squad entered, a drill wanting more keepers than it has is a last resort
+  const keepers = d => !n || d.gk <= gk;
+  const score = d => (sig && d.signals.includes(sig) ? 10 : 0) + (3 - Math.abs(d.level - level));
+  const used = new Set(), seq = [];
+  /* Never a third hard drill straight after two, so the plan doesn't trip the
+     warning it would then show; some warm-ups are games and run hot. Softer,
+     not a hard one straight after a hard one, nor a warm-up that starts flat
+     out. If that still ends in three, the second try forbids even two. */
+  const hard = d => d.intensity === 3;
+  const calm = d => !(hard(d) && (strict ? seq.length >= 1 && hard(seq[seq.length - 1]) : seq.length >= 2 && seq.slice(-2).every(hard)));
+  const ease = d => (hard(d) && (d.type === 'warmup' || (seq.length && hard(seq[seq.length - 1]))) ? 3 : 0);
+  const pick = (ok, k) => {
+    const sc = d => score(d) - ease(d);
+    const all = L.DRILLS.filter(d => fits(d) && ok(d) && !used.has(d.id)).sort((a, b) => sc(b) - sc(a) || a.id.localeCompare(b.id));
+    const c = [d => keepers(d) && calm(d), calm, () => true].map(f => all.filter(f)).find(x => x.length) || [];
+    if (!c.length) return null;
+    const best = c.filter(d => sc(d) >= sc(c[0]) - 1).slice(0, 4);
+    const d = best[(turn + k) % best.length];
+    used.add(d.id); seq.push(d);
+    return d;
+  };
+  const MAIN = ['technical', 'opposed', 'position'];
+  const main = d => MAIN.includes(d.type) || (!!sig && d.signals.includes(sig) && !['warmup', 'game', 'cooldown'].includes(d.type));
+  const slots = [pick(d => d.type === 'warmup', 0), pick(main, 1)];
+  if (pr.minutes >= 60) slots.push(pick(d => main(d) && d.type !== (slots[1] || {}).type, 2) || pick(main, 2));
+  slots.push(pick(d => d.type === 'game', 3));
+  if (pr.minutes >= 75) slots.push(pick(d => d.type === 'cooldown', 4));
+  const ds = slots.filter(Boolean);
+  if (!ds.length) return [];
+  if (!strict && ds.some((d, i) => i >= 2 && hard(d) && hard(ds[i - 1]) && hard(ds[i - 2]))) return suggestPlan(L, t, pr, turn, true);
+  const mids = ds.map(midMinutes), sum = mids.reduce((a, b) => a + b, 0), scale = pr.minutes / sum;
+  const mins = ds.map((d, i) => Math.max(d.minutes[0], Math.min(d.minutes[1] + 5, Math.round(mids[i] * scale))));
+  const gi = ds.findIndex(d => d.type === 'game'), fix = gi >= 0 ? gi : ds.length - 1;
+  mins[fix] = Math.max(5, mins[fix] + pr.minutes - mins.reduce((a, b) => a + b, 0));
+  // a short practice can't give every drill its shortest time: trim the longest until it fits
+  for (let over = mins.reduce((a, b) => a + b, 0) - pr.minutes; over > 0; over--) {
+    const j = mins.indexOf(Math.max(...mins));
+    if (mins[j] <= 5) break;
+    mins[j]--;
+  }
+  return ds.map((d, i) => drillBlock(L, d, mins[i]));
+}
+
+/* ---- the screens ---- */
+function practicePlansView(L) {
+  const t = team(); if (!t) return needTeam();
+  if (!canPlan(t.id)) return `<div class="empty"><strong>Plans are for this team's coaches</strong>The drills and the positions guide are here for every coach; your own team's plans are under your team.</div>`;
+  watchTrain('practices', t.id);
+  const p = practiceUi();
+  if (p.open) { const pr = practiceById(t.id, p.open); if (pr) return planView(L, t, pr); p.open = null; }
+  const all = teamPractices(t.id), today = todayIso();
+  const next = all.filter(x => x.date >= today), past = all.filter(x => x.date < today).reverse();
+  return `${trainNote(t.id)}
+    <div class="spread"><h2>Practices</h2><button class="btn sm" data-act="pracnew">Plan a practice</button></div>
+    ${next.length ? `<div class="plist">${next.map(x => pracRow(L, x, today)).join('')}</div>`
+      : `<div class="empty"><strong>Nothing planned yet</strong>Plan one, and the drills, the timings and the kit list are on your phone at the field, signal or not.</div>`}
+    ${past.length ? `<p class="lbl" style="margin:6px 0 0">Earlier</p><div class="plist">${past.slice(0, p.past ? 60 : 5).map(x => pracRow(L, x, today)).join('')}</div>
+      ${past.length > 5 && !p.past ? `<button class="btn quiet wide" data-act="pracpast">Show all ${past.length}</button>` : ''}` : ''}`;
+}
+
+function pracRow(L, pr, today) {
+  const n = pr.blocks.length, s = signalOf(L, pr.focus.signals[0]);
+  const tag = pr.status === 'done' ? `<span class="tag">${pr.review && pr.review.rating ? '★ ' + pr.review.rating : 'Done'}</span>`
+    : pr.date < today ? '<span class="tag wait">How did it go?</span>' : '<span class="tag">Planned</span>';
+  const sub = [pr.place, n ? `${n} drill${n === 1 ? '' : 's'} · ${blockTotal(pr)} min` : 'no drills yet', s ? s.label : ''].filter(Boolean).join(' · ');
+  return `<button class="prow" type="button" data-act="pracopen" data-id="${esc(pr.id)}" style="grid-template-columns:1fr auto">
+    <span><span class="pname">${esc(pracDay(pr.date))}${pr.start ? ' · ' + esc(pracTimes(pr)) : ''}</span><span class="psub">${esc(sub)}</span></span>${tag}</button>`;
+}
+
+function planView(L, t, pr) {
+  const id = esc(pr.id), total = blockTotal(pr), today = todayIso();
+  const warn = planWarnings(L, t, pr), kit = planKit(L, t, pr);
+  const s = signalOf(L, pr.focus.signals[0]);
+  const last = pr.blocks.length - 1;
+  const rows = pr.blocks.map((b, i) => {
+    const d = blockDrill(L, b);
+    return `<div class="card planblock">
+      <div class="spread"><button class="drilllink planname" data-act="${d ? 'drill' : 'pracnote'}" data-id="${esc(d ? d.id : pr.id)}" data-i="${i}">${i + 1}. ${esc(d ? d.name : b.name || 'A drill')}</button>
+        <span class="planmins"><button class="chip" type="button" data-act="pracmin" data-id="${id}" data-i="${i}" data-d="-1" aria-label="A minute less">−</button><b>${b.minutes}′</b><button class="chip" type="button" data-act="pracmin" data-id="${id}" data-i="${i}" data-d="1" aria-label="A minute more">+</button></span></div>
+      ${d ? `<span class="drillfacts">${esc(L.TYPES[d.type] || d.type)} · ${esc(L.INTENSITY[d.intensity])}</span>` : ''}
+      ${b.note ? `<p class="plannote">${esc(b.note)}</p>` : ''}
+      <div class="planctl">
+        <button type="button" data-act="pracmove" data-id="${id}" data-i="${i}" data-d="-1"${i === 0 ? ' disabled' : ''} aria-label="Earlier">↑</button>
+        <button type="button" data-act="pracmove" data-id="${id}" data-i="${i}" data-d="1"${i === last ? ' disabled' : ''} aria-label="Later">↓</button>
+        <button type="button" data-act="pracnote" data-id="${id}" data-i="${i}">${b.note ? 'Edit note' : 'Note'}</button>
+        <button type="button" data-act="pracdel" data-id="${id}" data-i="${i}">Remove</button></div></div>`;
+  }).join('');
+  const r = pr.review || { rating: 0, note: '' };
+  const review = pr.status === 'done'
+    ? `<div class="card"><div class="spread"><h4 style="margin:0">How it went</h4><button class="btn quiet sm" data-act="pracreview" data-id="${id}">Change</button></div>
+        <p style="margin:6px 0 0"><span class="stars">${'★'.repeat(r.rating)}<span class="dim">${'★'.repeat(5 - r.rating)}</span></span>${r.note ? ' · ' + esc(r.note) : ''}</p></div>`
+    : pr.date <= today ? `<button class="btn wide" data-act="pracreview" data-id="${id}">How did it go?</button>` : '';
+  return `${trainNote(t.id)}
+    <button class="drilllink planback" data-act="pracback">‹ All practices</button>
+    <div class="card">
+      <div class="spread"><span><b class="planday">${esc(pracDay(pr.date))}</b><span class="rowsub">${esc([pracTimes(pr), pr.place].filter(Boolean).join(' · ') || 'No time or place yet')}</span></span>
+        <button class="btn quiet sm" data-act="pracedit" data-id="${id}">Edit</button></div>
+      ${s ? `<div class="drillsignal"><b>${esc(s.label)}</b><span>${esc(s.means)}</span></div>` : ''}
+      <p class="muted" style="margin:8px 0 0">${total} of ${pr.minutes} min planned${pr.blocks.length ? ` · ${pr.blocks.length} drill${pr.blocks.length === 1 ? '' : 's'}` : ''}</p>
+      ${pr.blocks.length ? `<button class="btn wide" data-act="pracrun" data-id="${id}" style="margin-top:10px">Run it</button>` : ''}
+    </div>
+    ${warn.length ? `<div class="card planwarn">${warn.map(w => `<p>${esc(w)}</p>`).join('')}</div>` : ''}
+    ${rows ? `<div class="stack">${rows}</div>` : `<div class="empty"><strong>No drills yet</strong>Add them from the library, or let the app suggest a session for this team's age${s ? ' and what it needs' : ''}.</div>`}
+    <div class="row" style="gap:8px"><button class="btn" style="flex:1" data-act="pracpick" data-id="${id}">Add a drill</button>
+      <button class="btn quiet" style="flex:1" data-act="pracsuggest" data-id="${id}">${pr.blocks.length ? 'Suggest another' : 'Suggest a session'}</button></div>
+    ${kit ? `<div class="card"><h4 style="margin:0 0 4px">Bring</h4><p style="margin:0">${esc(kit)}</p></div>` : ''}
+    ${review}
+    <div class="row" style="gap:8px"><button class="btn quiet" style="flex:2" data-act="pracagain" data-id="${id}">Again next week</button>
+      <button class="btn quiet danger" style="flex:1" data-act="pracrm" data-id="${id}">Delete</button></div>`;
+}
+
+/* Adding drills from the library, with where they're going said on top. */
+function pickBanner(L) {
+  const p = practiceUi(), t = team();
+  const pr = p.pick && t && canPlan(t.id) ? practiceById(t.id, p.pick) : null;
+  if (!pr) { p.pick = null; return ''; }
+  return `<div class="card pickbar"><span>Adding to <b>${esc(pracDay(pr.date))}</b><span class="rowsub">${pr.blocks.length} drill${pr.blocks.length === 1 ? '' : 's'} · ${blockTotal(pr)} of ${pr.minutes} min</span></span>
+    <button class="btn sm" data-act="pracpickdone" data-id="${esc(pr.id)}">Back to the plan</button></div>`;
+}
+function pickTarget() {
+  const p = practiceUi(), t = team();
+  return p.pick && t && canPlan(t.id) ? practiceById(t.id, p.pick) : null;
+}
+
+function sheetPractice(pr) {
+  const L = drillLib(), t = team(); if (!t) return;
+  const prev = teamPractices(t.id).slice(-1)[0] || {};
+  const v = pr || { date: addDays(todayIso(), 1), start: prev.start || '', minutes: prev.minutes || 60, place: prev.place || '', focus: { signals: [] } };
+  const sig = (v.focus && v.focus.signals || [])[0] || '';
+  const lens = [30, 45, 60, 75, 90, 105, 120];
+  if (!lens.includes(v.minutes)) lens.push(v.minutes);
+  openSheet(`<h3>${pr ? 'Edit the practice' : 'Plan a practice'}</h3>
+    <div class="grid2">
+      <label class="field"><span>Date</span><input type="date" id="prDate" value="${esc(v.date)}"></label>
+      <label class="field"><span>Start</span><input type="time" id="prStart" value="${esc(v.start)}"></label>
+    </div>
+    <div class="grid2">
+      <label class="field"><span>Length</span><select id="prLen">${lens.sort((a, b) => a - b).map(m => `<option value="${m}"${m === v.minutes ? ' selected' : ''}>${m} minutes</option>`).join('')}</select></label>
+      <label class="field"><span>Place</span><input type="text" id="prPlace" value="${esc(v.place)}" placeholder="Lakeside Park, field 2" maxlength="80"></label>
+    </div>
+    <label class="field"><span>What it's for</span><select id="prFocus"><option value="">Nothing in particular</option>${L ? Object.entries(L.SIGNALS).map(([k, s]) =>
+      `<option value="${esc(k)}"${k === sig ? ' selected' : ''}>${esc(s.label)}</option>`).join('') : ''}</select></label>
+    <p class="muted" style="margin-top:0">The whole club sees the date, time and place, so parents know when and where. Only this team's coaches and the club's admins see the plan.</p>
+    <button class="btn wide" data-act="pracsave" data-id="${pr ? esc(pr.id) : ''}">${pr ? 'Save' : 'Plan it'}</button>
+    <button class="btn quiet wide" data-act="closesheet" style="margin-top:8px">Cancel</button>`, true);
+}
+
+function sheetBlockNote(pr, i) {
+  const b = pr.blocks[i]; if (!b) return;
+  openSheet(`<h3>Note for ${esc(b.name || 'this drill')}</h3>
+    <label class="field"><span>A reminder for yourself or the other coaches</span><textarea id="prNote" rows="3" maxlength="300">${esc(b.note || '')}</textarea></label>
+    <p class="muted" style="margin-top:0">About the drill, not about a child: every coach this team ever has can read the plan.</p>
+    <button class="btn wide" data-act="pracnotesave" data-id="${esc(pr.id)}" data-i="${i}">Save</button>
+    <button class="btn quiet wide" data-act="closesheet" style="margin-top:8px">Cancel</button>`, true);
+}
+
+function sheetReview(pr, draft) {
+  const r = pr.review || {};
+  openSheet(`<h3>How did it go?</h3>
+    <p class="muted" style="margin-top:0">${esc(pracDay(pr.date))}${pr.place ? ' · ' + esc(pr.place) : ''}</p>
+    <div class="chips">${[1, 2, 3, 4, 5].map(n => `<button class="chip" type="button" data-act="pracrate" data-id="${esc(pr.id)}" data-v="${n}" aria-pressed="${r.rating === n}">${'★'.repeat(n)}</button>`).join('')}</div>
+    <label class="field" style="margin-top:10px"><span>One line on what worked, or didn't</span><input type="text" id="prReview" value="${esc(draft != null ? draft : r.note || '')}" maxlength="200" placeholder="The rondo clicked; the game ran long"></label>
+    <p class="muted" style="margin-top:0">About the session, not about a child. A plan follows the team to every coach it ever has, and this is what a coach or the AI helper learns from later.</p>
+    <button class="btn wide" data-act="pracreviewsave" data-id="${esc(pr.id)}">Save</button>
+    <button class="btn quiet wide" data-act="closesheet" style="margin-top:8px">Not now</button>`, true);
+}
+
+/* Run mode: the sideline view, one drill at a time in big type, with a
+   countdown that runs off the wall clock (so a phone that sleeps comes back
+   with the right time) and works with no signal, because everything it shows
+   is already on the phone. */
+const runLeft = (r, b) => (r.endsAt ? Math.max(0, Math.round((r.endsAt - nowMs()) / 1000)) : r.left != null ? r.left : b.minutes * 60);
+function runView(L) {
+  const p = practiceUi(), r = p.run, t = team();
+  const pr = t && canPlan(t.id) ? practiceById(t.id, r.pid) : null;
+  if (!pr || !pr.blocks.length) { p.run = null; return null; }
+  r.i = clamp(Number(r.i) || 0, 0, pr.blocks.length - 1);
+  const i = r.i, b = pr.blocks[i], d = blockDrill(L, b), last = i === pr.blocks.length - 1;
+  const left = runLeft(r, b), going = !!r.endsAt, up = going && left === 0;
+  const list = a => `<ul class="drillul">${a.map(x => `<li>${esc(x)}</li>`).join('')}</ul>`;
+  const nextB = pr.blocks[i + 1];
+  return `<div class="stack runmode">
+    <div class="spread"><button class="drilllink planback" data-act="runstop">‹ Back to the plan</button><span class="muted">${i + 1} of ${pr.blocks.length} · ${esc(pracDay(pr.date))}</span></div>
+    <div class="card runcard">
+      <h2>${esc(d ? d.name : b.name || 'A drill')}</h2>
+      <div class="runclock${up ? ' up' : ''}" id="runClock">${up ? "Time's up" : mmss(left)}</div>
+      <div class="row" style="gap:8px">
+        <button class="btn" style="flex:2" data-act="${going && !up ? 'runpause' : 'rungo'}">${going && !up ? 'Pause' : up ? 'Two more minutes' : left < b.minutes * 60 ? 'Carry on' : 'Start ' + b.minutes + ' min'}</button>
+        <button class="btn quiet" style="flex:1" data-act="runreset">Reset</button></div>
+    </div>
+    ${b.note ? `<div class="drillwhy"><h4>Your note</h4><p>${esc(b.note)}</p></div>` : ''}
+    ${d ? `${diagramBlock(d.diagram, d.name, 'runpic', d.id, !p.runStill && !reducedMotion())}
+      <h4>Coaching points</h4>${list(d.points)}
+      <h4>Setup</h4><p>${esc(d.setup)}</p>
+      <h4>Make it harder</h4>${list(d.harder)}
+      <h4>Make it easier</h4>${list(d.easier)}` : '<p class="muted">This drill is no longer in the library; its name and your note are all the plan kept.</p>'}
+    <div class="row" style="gap:8px">
+      <button class="btn quiet" style="flex:1" data-act="runprev"${i === 0 ? ' disabled' : ''}>‹ Back</button>
+      <button class="btn" style="flex:2" data-act="runnext">${last ? 'Finish' : 'Next: ' + esc((blockDrill(L, nextB) || nextB).name || 'drill')}</button></div>
+  </div>`;
+}
+/* A new screen starts at its top: a drill's name is the first thing she
+   needs, and the last one left the page scrolled to its bottom. */
+const toTop = () => { try { if (typeof window.scrollTo === 'function') window.scrollTo(0, 0); } catch (e) { } };
+
+/* Called every second by the clock loop. Only the numbers change, so only the
+   numbers are redrawn, except the moment it reaches zero. */
+function tickRun() {
+  const r = ui.view === 'practice' && ui.practice && ui.practice.run;
+  if (!r || !r.endsAt) return;
+  const left = Math.max(0, Math.round((r.endsAt - nowMs()) / 1000));
+  if (left === 0) {
+    if (!r.buzzed) { r.buzzed = true; try { if (navigator.vibrate) navigator.vibrate([300, 120, 300]); } catch (e) { } render(); }
+    return;
+  }
+  const el = $('#runClock'); if (el) el.textContent = mmss(left);
+}
+
 /* --- settings: things about you and this device --- */
 function viewSetup() {
   const code = localStorage.getItem(LS_WS) || '';
@@ -5822,7 +6710,7 @@ function viewSetup() {
       <div class="codebox">${esc(me.uid)}</div>
       <button class="btn quiet sm" data-act="copylink" data-v="${esc(me.uid)}">Copy id</button>
       <p class="muted" style="margin-bottom:0">Needed once, to be made app owner in the Firebase console.</p>`
-      : '<p class="muted" style="margin-bottom:0">Everything works signed out until the workspace is locked down.</p>'}</div>
+      : '<p class="muted" style="margin-bottom:0">Signed out, everything stays on this device. Sign in to share it with your club.</p>'}</div>
 
     <div class="card"><h2 style="margin-bottom:8px">Workspace</h2>
       <p class="muted" style="margin-top:0">Firebase config is ${cfgOk ? 'in place' : 'not filled in — see README.md'}.</p>
@@ -5832,7 +6720,7 @@ function viewSetup() {
       <p class="muted">Owner-only stopgap until per-person invites exist — nobody else sees this.</p>
       <div class="row"><button class="btn quiet" data-act="envsheet">Database: ${esc(envName() || 'production')}</button>
       <button class="btn quiet" data-act="maketestclub">Make a test club</button></div>
-      <p class="muted" style="margin-bottom:0">A test club is invented data with publishing switched off — safe to grant roles in, lock down and retire. Rules belong to a database rather than to a club, though, so a rules change has to be rehearsed in another database, not just another club.</p>` : ''}</div>
+      <p class="muted" style="margin-bottom:0">A test club is invented data with publishing switched off — safe to grant roles in, take apart and retire. Rules belong to a database rather than to a club, though, so a rules change has to be rehearsed in another database, not just another club.</p>` : ''}</div>
 
     <div class="card"><h2 style="margin-bottom:8px">Share with parents</h2>
       <p class="muted" style="margin-top:0">Read-only pages showing shirt numbers, never names.</p>
@@ -5880,7 +6768,7 @@ function viewAdmin() {
       <button class="btn danger wide" data-act="retireclub">Retire ${esc((acc().org || {}).name || 'this club')}</button></div>
 
     <div class="card"><h2 style="margin-bottom:8px">Check readiness</h2>
-      <p class="muted" style="margin-top:0">What has to hold before the locked-down rules are published. Every failing line is a way to lock the whole club out, and none of them show up until somebody tries to change something at a game.</p>
+      <p class="muted" style="margin-top:0">What the club needs for the rules to work as designed. A cross is a lookup table the app hasn't written yet, or a way to be locked out of your own club, and none of them show up until somebody tries to change something at a game.</p>
       <div class="plist">${readiness().map(r => `<div class="prow" style="grid-template-columns:auto 1fr auto">
         <span class="pnum">${r.ok ? '\u2713' : '\u2717'}</span>
         <span><span class="pname">${esc(r.label)}</span><span class="psub">${esc(r.detail)}</span></span>
@@ -5953,6 +6841,7 @@ setInterval(() => {
   if (ui.dragging) return;
   tickLive();
   watchFeed();
+  tickRun();
   if (ui.view !== 'game') return;
   const m = match(); if (!m || !running(m)) return;
   const t = team(); if (!t) return;
@@ -7445,6 +8334,8 @@ function sheetTeam(t) {
       ${t.logo ? `<button class="btn quiet sm" data-act="droplogo" data-id="${t.id}">Use club badge</button>` : ''}</span>
     </div>` : ''}
     <label class="field"><span>Name</span><input type="text" id="tName" value="${esc(t && t.name ? t.name : '')}" placeholder="Lakeside Thunder G14"></label>
+    <label class="field"><span>Birth year</span><input type="number" inputmode="numeric" id="tBirth" value="${esc(t && t.birthYear ? String(t.birthYear) : '')}" placeholder="${seasonEndYear() - 11}"></label>
+    <p class="muted" style="margin-top:-6px">The year most of the squad were born. It sets the age group, ${t && teamUAge(t) != null ? `${uLabel(teamUAge(t))} this season, ` : ''}which moves up by itself every August, and starts the drill library at the right age.</p>
     <button class="btn wide" data-act="saveteam" data-id="${t ? t.id : ''}">${t ? 'Save changes' : 'Create team'}</button>
     ${t ? `<div style="margin-top:8px"><button class="btn danger wide" data-act="delteam" data-id="${t.id}">Delete this team and its games</button></div>` : ''}`);
 }
@@ -7456,6 +8347,137 @@ function onAct(e) {
   const a = el.dataset.act, d = el.dataset;
   const t = team(), m = match();
   if (!mayAct(a, m, d)) { closeSheet(); toast("Only this team's coaches can change that"); render(); return; }
+  if (PRACTICE_ACTS.has(a) && !canTrain()) { closeSheet(); toast('Practice is for coaches and admins'); render(); return; }
+
+  if (a === 'practab') {
+    const p = practiceUi();
+    p.tab = ['plans', 'drills', 'positions'].includes(d.k) ? d.k : 'plans';
+    if (p.tab !== 'drills') p.pick = null;
+    render(); return;
+  }
+  if (a === 'drill') { sheetDrill(d.id, undefined, true); return; }
+  if (a === 'drillpic') { sheetDrill(d.id, d.k === 'move'); return; }
+  if (a === 'roleguide') { sheetRole(d.id, undefined, true); return; }
+  if (a === 'rolepic') { sheetRole(d.id, d.k === 'move'); return; }
+  if (a === 'drillfilters') { sheetDrillFilters(); return; }
+  if (a === 'drillmore') { practiceUi().show += 24; refreshDrillList(); saveUi(); return; }
+  if (a === 'dfchip' || a === 'dfpick' || a === 'dfclear') {
+    const p = practiceUi(), f = p.f;
+    if (a === 'dfclear') p.f = { ...PRACTICE_BLANK(), age: f.age, sort: f.sort };
+    else if (a === 'dfchip' && Array.isArray(f[d.k])) {
+      const v = String(d.v), i = f[d.k].indexOf(v);
+      if (i >= 0) f[d.k].splice(i, 1); else f[d.k].push(v);
+    } else if (a === 'dfpick' && typeof f[d.k] === 'string') f[d.k] = String(d.v || '');
+    p.show = 24;
+    render();
+    if (d.in === 'sheet') sheetDrillFilters();
+    return;
+  }
+
+  /* ---- practice plans ---- */
+  if (PLAN_ACTS.has(a)) {
+    const tp = team();
+    if (!tp || !canPlan(tp.id)) { closeSheet(); toast("Only this team's coaches plan its practices"); render(); return; }
+    const p = practiceUi(), L = drillLib();
+    const pr = d.id ? practiceById(tp.id, d.id) : null;
+    const i = Number(d.i);
+    const by = () => ({ by: me ? me.uid : null, byName: whoAmI() || null });
+    const edit = fn => { if (!pr) return; const c = clone(pr); fn(c); putPractice(c); render(); };
+    if (a === 'pracnew') { sheetPractice(null); return; }
+    if (a === 'pracopen') {
+      if (!pr) { toast('That practice is not on this phone yet'); return; }
+      ui.view = 'practice'; p.tab = 'plans'; p.open = pr.id; p.pick = null; p.run = null; closeSheet(); render(); toTop(); return;
+    }
+    if (a === 'pracback') { p.open = null; render(); return; }
+    if (a === 'pracpast') { p.past = true; render(); return; }
+    if (a === 'pracedit') { if (pr) sheetPractice(pr); return; }
+    if (a === 'pracsave') {
+      const date = String($('#prDate').value || '').trim();
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) { toast('Pick a date'); return; }
+      const start = String($('#prStart').value || '').trim();
+      if (start && !/^\d{2}:\d{2}$/.test(start)) { toast('That start time doesn\'t look right'); return; }
+      const minutes = clamp(Number($('#prLen').value) || 60, 10, 240);
+      const place = String($('#prPlace').value || '').trim().slice(0, 80);
+      const sig = String($('#prFocus').value || '');
+      const focus = { signals: sig && L && L.SIGNALS[sig] ? [sig] : [] };
+      if (pr) putPractice({ ...clone(pr), date, start, minutes, place, focus });
+      else {
+        const id = uid();
+        putPractice({ id, teamId: tp.id, date, start, minutes, place, focus, blocks: [], status: 'plan', made: nowMs(), ...by() });
+        p.open = id;
+      }
+      p.tab = 'plans'; closeSheet(); render(); if (!pr) toTop(); return;
+    }
+    if (a === 'pracpick') { if (!pr) return; p.pick = pr.id; p.open = pr.id; p.tab = 'drills'; render(); toTop(); return; }
+    if (a === 'pracpickdone') { p.pick = null; p.tab = 'plans'; if (pr) p.open = pr.id; render(); return; }
+    if (a === 'pracadd') {
+      const dr = L && L.DRILLS.find(x => x.id === d.v);
+      if (!pr || !dr) return;
+      const c = clone(pr); c.blocks.push(drillBlock(L, dr)); putPractice(c);
+      closeSheet(); render();
+      toast(`Added. ${c.blocks.length} drill${c.blocks.length === 1 ? '' : 's'}, ${blockTotal(c)} of ${c.minutes} min`);
+      return;
+    }
+    if (a === 'pracsuggest') {
+      if (!pr || !L) return;
+      if (pr.blocks.length && !confirm('Swap the drills in this plan for a suggested session?')) return;
+      if (pr.blocks.length) p.turn = (Number(p.turn) || 0) + 1;
+      const blocks = suggestPlan(L, tp, pr, Number(p.turn) || 0);
+      if (!blocks.length) { toast('No drills fit this team\'s age and squad'); return; }
+      edit(c => { c.blocks = blocks; }); return;
+    }
+    if (a === 'pracmin') { edit(c => { const b = c.blocks[i]; if (b) b.minutes = clamp(b.minutes + (Number(d.d) || 0), 1, 90); }); return; }
+    if (a === 'pracmove') {
+      edit(c => { const j = i + (Number(d.d) || 0); if (c.blocks[i] && c.blocks[j]) [c.blocks[i], c.blocks[j]] = [c.blocks[j], c.blocks[i]]; });
+      return;
+    }
+    if (a === 'pracdel') { edit(c => { c.blocks.splice(i, 1); }); return; }
+    if (a === 'pracnote') { if (pr) sheetBlockNote(pr, i); return; }
+    if (a === 'pracnotesave') {
+      const note = String($('#prNote').value || '').trim().slice(0, 300);
+      edit(c => { if (c.blocks[i]) c.blocks[i].note = note; }); closeSheet(); return;
+    }
+    if (a === 'pracreview') { if (pr) sheetReview(pr); return; }
+    if (a === 'pracrate') {
+      const typed = String($('#prReview').value || '');
+      edit(c => { c.review = { ...(c.review || {}), rating: clamp(Number(d.v) || 1, 1, 5), at: nowMs(), ...by() }; c.status = 'done'; });
+      const n = practiceById(tp.id, d.id); if (n) sheetReview(n, typed);
+      return;
+    }
+    if (a === 'pracreviewsave') {
+      const note = String($('#prReview').value || '').trim().slice(0, 200);
+      edit(c => { c.review = { ...(c.review || {}), note, at: nowMs(), ...by() }; c.status = 'done'; });
+      closeSheet(); toast('Saved'); return;
+    }
+    if (a === 'pracagain') {
+      if (!pr) return;
+      let date = /^\d{4}-\d{2}-\d{2}$/.test(pr.date) ? addDays(pr.date, 7) : addDays(todayIso(), 7);
+      while (date < todayIso()) date = addDays(date, 7);
+      const c = { ...clone(pr), id: uid(), date, status: 'plan', made: nowMs(), ...by() };
+      delete c.review;
+      putPractice(c); p.open = c.id; render(); toast('Planned for ' + pracDay(date)); return;
+    }
+    if (a === 'pracrm') {
+      if (!pr || !confirm('Delete this practice? The plan goes for every coach on the team.')) return;
+      dropPractice(tp.id, pr.id);
+      p.open = null; p.run = null; if (p.pick === pr.id) p.pick = null;
+      render(); return;
+    }
+    if (a === 'pracrun') { if (!pr || !pr.blocks.length) return; p.run = { pid: pr.id, i: 0, left: null, endsAt: null }; p.open = pr.id; render(); toTop(); return; }
+    const run = p.run, rp = run ? practiceById(tp.id, run.pid) : null, rb = rp && rp.blocks[run.i];
+    if (a === 'runstop') { p.run = null; render(); return; }
+    if (a === 'runpic') { p.runStill = d.k === 'still'; render(); return; }
+    if (!rb) { p.run = null; render(); return; }
+    if (a === 'rungo') { const left = runLeft(run, rb); run.endsAt = nowMs() + (left > 0 ? left : 120) * 1000; run.left = null; run.buzzed = false; render(); return; }
+    if (a === 'runpause') { run.left = runLeft(run, rb); run.endsAt = null; render(); return; }
+    if (a === 'runreset') { run.left = null; run.endsAt = null; run.buzzed = false; render(); return; }
+    if (a === 'runnext' && run.i >= rp.blocks.length - 1) { p.run = null; p.open = rp.id; render(); sheetReview(rp); return; }
+    if (a === 'runnext' || a === 'runprev') {
+      run.i = clamp(run.i + (a === 'runnext' ? 1 : -1), 0, rp.blocks.length - 1);
+      run.left = null; run.endsAt = null; run.buzzed = false; render(); toTop(); return;
+    }
+    return;
+  }
 
   if (a === 'tap') { tapPlayer(d.pid); return; }
   if (a === 'taplive') { tapLive(d.pid); return; }
@@ -7694,6 +8716,7 @@ function onAct(e) {
   if (a === 'preplockdown') {
     if (!canAdmin()) { toast('Club admins and the app owner only'); return; }
     syncAllTeamIndex();
+    syncAllCoachIndex();
     syncAllTeamParents();
     claimAllShares();
     render();
@@ -7939,8 +8962,16 @@ function onAct(e) {
   if (a === 'pickteam') { ui.teamId = d.id; ui.matchId = null; closeSheet(); render(); return; }
   if (a === 'saveteam') {
     const name = $('#tName').value.trim(); if (!name) { toast('Give the team a name'); return; }
-    if (d.id) { commit(`teams/${d.id}/name`, name); }
-    else { const id = uid(); commit(`teams/${id}`, { id, name, players: {} }); ui.teamId = id; }
+    const bEl = $('#tBirth'), braw = bEl && bEl.value != null ? String(bEl.value).trim() : '';
+    const born = braw ? Number(braw) : null;
+    if (braw && uAge(born) == null) { toast('That birth year doesn\'t look right'); return; }
+    if (d.id) {
+      commit(`teams/${d.id}/name`, name);
+      const was = (state.teams[d.id] || {}).birthYear || null;
+      if (born && born !== was) commit(`teams/${d.id}/birthYear`, born);
+      else if (!born && was) drop(`teams/${d.id}/birthYear`);
+    }
+    else { const id = uid(); commit(`teams/${id}`, { id, name, players: {}, ...(born ? { birthYear: born } : {}) }); ui.teamId = id; }
     closeSheet(); render(); return;
   }
   if (a === 'picklogo') { pickImage(`teams/${d.id}/logo`, 'Crest saved'); return; }
@@ -8528,11 +9559,18 @@ document.addEventListener('click', onAct);
 document.addEventListener('change', e => {
   const s = e.target;
   if (!s || !s.dataset || !s.dataset.pick) return;
-  const d = { act: s.dataset.pick, k: s.dataset.k, v: s.value };
+  const d = { act: s.dataset.pick, k: s.dataset.k, v: s.value, in: s.dataset.in };
   onAct({ target: { closest: () => ({ dataset: d }) } });
 });
 
 
+
+document.addEventListener('input', e => {
+  if (!e.target || e.target.id !== 'drillQ') return;
+  const p = practiceUi();
+  p.f.q = e.target.value; p.show = 24;
+  refreshDrillList(); saveUi();
+});
 
 /* The ideas box writes itself into the prompt as she types, and is kept per game
    so closing the sheet by accident does not lose a half-written plan. */
@@ -8568,8 +9606,8 @@ function uiToHash() {
   if (ui.view === 'game' && t && m) return `#/team/${t}/game/${m}/${ui.gameView}`;
   if (ui.view === 'formation' && t && ui.editFid === GAME_SHAPE && m) return `#/team/${t}/game/${m}/shape`;
   if (ui.view === 'formation' && t) return `#/team/${t}/shape/${ui.editFid}`;
-  if (['matches', 'calendar', 'roster', 'season', 'teamset'].includes(ui.view) && t) {
-    const seg = { matches: 'games', calendar: 'calendar', roster: 'squad', season: 'season', teamset: 'planning' }[ui.view];
+  if (['matches', 'calendar', 'practice', 'roster', 'season', 'teamset'].includes(ui.view) && t) {
+    const seg = { matches: 'games', calendar: 'calendar', practice: 'practice', roster: 'squad', season: 'season', teamset: 'planning' }[ui.view];
     return `#/team/${t}/${seg}`;
   }
   if (ui.view === 'people') return '#/club/people';
@@ -8603,7 +9641,7 @@ function hashToUi() {
       return true;
     }
     if (p[2] === 'shape' && p[3]) { ui.editFid = p[3]; ui.view = 'formation'; return true; }
-    const back = { games: 'matches', calendar: 'calendar', squad: 'roster', season: 'season', planning: 'teamset' }[p[2]];
+    const back = { games: 'matches', calendar: 'calendar', practice: 'practice', squad: 'roster', season: 'season', planning: 'teamset' }[p[2]];
     ui.view = back || 'matches';
     return true;
   }

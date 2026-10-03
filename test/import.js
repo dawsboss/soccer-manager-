@@ -26,7 +26,7 @@ const clickImport = o => {
   A.click({ act: 'importgo' });
 };
 const onlyDepths = plan => plan.writes.every(([p]) =>
-  /^teams\/[\w-]+(\/players\/[\w-]+(\/\w+)?)?$/.test(p) || /^matches\/[\w-]+(\/\w+)?$/.test(p));
+  /^teams\/[\w-]+(\/players\/[\w-]+(\/\w+)?|\/birthYear)?$/.test(p) || /^matches\/[\w-]+(\/\w+)?$/.test(p));
 
 /* ---------------- a club from nothing ---------------- */
 
@@ -45,6 +45,7 @@ check('a new team goes out whole, players and all', plan.writes.filter(([p]) => 
 clickImport(A.IMPORT_EXAMPLE);
 const t = Object.values(A.state.teams)[0];
 check('the team is there', t && t.name, 'Lakeside Thunder G12');
+check('with its birth year', t.birthYear, 2015);
 check('with its roster', Object.keys(t.players).length, 3);
 const bea = Object.values(t.players).find(p => p.name === 'Bea Smith');
 check('position read', bea.preferred, 'Forward');
@@ -104,6 +105,24 @@ check('her other details kept', A.state.teams[t.id].players[bea.id].preferred, '
 check('venue updated', A.state.matches[next.id].venue, 'Moved: Lakeside Park');
 check('kick-off kept', A.state.matches[next.id].kickoff, '09:30');
 check('"defender" means Back', Object.values(A.state.teams[t.id].players).find(p => p.name === 'Dara Kim').preferred, 'Back');
+
+console.log('\n--- a birth year fills a gap, and never overrules one ---');
+{
+  const kept = A.importPlan({ teams: [{ name: 'Lakeside Thunder G12', birthYear: 2014 }] });
+  check('a team that has one keeps it', kept.writes.length, 0);
+  check('and says what it left out', kept.warnings.some(w => /already born 2015 here, so 2014 was left out/.test(w)), true);
+  const keep = A.state.teams[t.id].birthYear;
+  delete A.state.teams[t.id].birthYear;
+  const fill = A.importPlan({ teams: [{ name: 'Lakeside Thunder G12', born: '2015' }] });
+  deepEq('a team without one gets it, as one field', fill.writes, [[`teams/${t.id}/birthYear`, 2015]]);
+  check('counted as an updated team', A.importSummary(fill.counts), 'updates 1 team');
+  check('at a depth the rules grant', onlyDepths(fill), true);
+  A.applyImport(fill);
+  check('and it lands', A.state.teams[t.id].birthYear, keep);
+  const odd = A.importPlan({ teams: [{ name: 'New Team', birthYear: 'twenty-sixteen' }] });
+  check('a year that isn\'t one is left out', odd.writes[0][1].birthYear, undefined);
+  check('with a warning, not an error', odd.errors.length === 0 && odd.warnings.some(w => /doesn't look like a year/.test(w)), true);
+}
 
 console.log('\n--- a score for a game that already has goals ---');
 const clash = A.importPlan({ teams: [{ name: 'Lakeside Thunder G12', games: [{ opponent: 'Riverside', date: '2026-09-06', score: '5-0' }] }] });

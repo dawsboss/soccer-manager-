@@ -8,6 +8,287 @@ before this point lives only in the git log.
 
 ---
 
+## One set of rules, for every club — 2026-10-03
+
+There were two rulesets: an open "starter" set that new clubs began on, and
+the locked-down set a club moved to once its people had signed in. That model
+assumed one club. This is a site for any club that turns up, and a database
+runs one ruleset for every club in it, so the two could never both be live:
+whichever was published applied to every club at once. Publishing the open set
+for a new club opened every established one. Publishing the locked set left
+nothing for new clubs to start on, except that it already had what they need.
+
+So there is one ruleset now, `database.rules.json`, and
+`database.rules.open.json` is gone. A brand-new club starts under the same
+rules as the rest. While its code has no admin and no index, a signed-in
+account may claim admin of it and put itself in its index, and from that
+moment the club is closed to everyone it hasn't let in. `test/rules.js` walks
+a new club from nothing to a working one: admin, index, name, a team, a game
+and a practice. It also checks that a stranger is shut out the moment that's
+done, and that the founder can't reach anyone else's club. It fails if a
+second ruleset ever reappears.
+
+README's *Locking it down* is now *The database rules*. The ordered lockdown
+steps stay, but only for a database still running the old open rules, where a
+club whose data went in before anyone held a role needs one set up first. If
+the rules go wrong, the way back is the previous version of the file, not the
+open set. The app's copy stops saying the workspace "is locked down": signed
+out, everything stays on the device, and signing in is how a club shares it.
+
+---
+
+## Practice plans — 2026-10-02
+
+Step 3 of `TRAINING.md`. A coach plans a practice for her team, the app
+suggests a session to fill it, she runs it at the sideline one drill at a
+time, and afterwards says how it went.
+
+**Planning.** *Plan a practice* asks for the date, time, length, place and,
+optionally, what it's for: one of the same signals the drill library filters
+on. *Suggest a session* builds the shape coaches are taught: a warm-up, one or
+two practices, a game and, when there's time, a cool-down. Each drill is
+picked for the team's age, the number of players and keepers on the squad,
+and the focus, then timed to fit the length exactly. Asking again moves along
+the shortlist. Drills can be added from the library (the drill card grows an
+*Add to Tue 6 Oct* button while picking), moved, retimed a minute at a time,
+given a note, or taken out. The plan works out what to bring: the most of
+each item any one drill needs, with a ball each meaning the squad's size. It
+warns about anything that would go wrong at the field: running over time,
+too few players, a drill wanting keepers the squad hasn't got, one outside
+the age group, three hard drills in a row, or a drill since taken out of the
+library. A test sweeps the suggester across every age, length and focus
+(3,024 plans) and fails if any suggestion trips those warnings. The first
+version did, 134 times: hard warm-ups, and 30-minute practices whose drills'
+shortest times added up to more than 30.
+
+**Running it.** One drill at a time, in big type, with a countdown that runs
+off the wall clock, so a phone that sleeps comes back showing the right
+time, and it buzzes at zero. The diagram, the coaching points, the setup and
+how to make it harder or easier are all there, and none of it needs a
+signal. *Finish* asks how it went: one to five stars and a line. The review
+box says plainly that the note is about the session, not a child.
+
+**Who sees what.** The plan is that team's coaches' and the club's admins'.
+A coach looking at another team can read its drills but not its plans, and a
+parent's or a tracker's phone never asks the database for a plan at all. The
+date, time and place go to a separate `schedule` node that the whole club
+reads, so the Games list shows everyone the next practice. For a parent it's
+just the time and the place.
+
+**How it syncs.** Practices live at `training/{code}/practices/{team}/{id}`,
+outside the workspace, with their own local copy and one listener per team.
+They merge on every read: a plan this phone has changed and the club hasn't
+acknowledged is never overwritten by the club's copy, and is sent again on
+the first answer after a reload. A plan deleted on another phone goes. This is
+the invariant the workspace's own connect-time read still breaks, written
+correctly from the start rather than copied.
+
+**New rules, which have to be published.** Both rules files,
+`database.rules.json` and `database.rules.open.json`, gain an identical
+`training` block, and the locked set's `access` gains `coachIndex`, a third flat lookup table: "is this account a coach of
+any team?". Rules can't iterate, `index` only says member, and `teamIndex`
+needs a team to look in. An admin's device writes everyone's entry and a
+coach's own device writes hers; the rule checks that the team she names is
+one she coaches. The practice rules fall back while `teamIndex` is missing,
+but the fallback fails closed: it opens to coaches, never to the whole club,
+because practices have no older behaviour to preserve and failing open would
+show parents the plans. `test/rules.js` refuses a parent and a tracker before
+it allows anything. Until the rules are published, plans stay on the phone
+they were made on and the screen says so. Club settings → *Check readiness*
+now lists the coach index.
+
+A refused read is tried once more, as the workspace read is, because in the
+first second after boot a refusal is as likely to be sign-in still reaching
+the database. A second refusal is final until a different account signs in.
+The first version kept asking again on every redraw; `test/plans.js` now pins
+that it doesn't.
+
+---
+
+## A Practice tab, and a team's age — 2026-10-02
+
+The drill library is in the app now. Practice sits beside Games, for coaches
+and admins only. A parent, a tracker or an account with no role never gets the
+tab. A link to it lands them on the games list, and a tap that gets to the
+handler anyway is refused there too. The built-in drills are in the app's
+public files and aren't secret on their own. The point is that the screen
+where club drills and plans will live is shut to the right people before any
+of that arrives. Before a club has an admin nothing is gated, the same as
+every other screen.
+
+**Drills** lists all 105, each with its animated diagram as a thumbnail.
+Search covers the name, the steps, the coaching points and the skills. Age and
+sort are on the screen. Everything else on the card is behind one *Filters*
+button: what needs work, type, position, length, setup time, players coming,
+competitive, difficulty, intensity, how busy, grouping, keeper, one adult,
+indoors, missing kit, skill, principle, moment and physical. The button counts
+how many filters are on, and the sheet shows how many drills are left as you
+set each one. A drill card has the diagram (Moving or Still, and still by
+default on a phone that asks for less motion) and the numbered steps, then
+setup, how it runs, coaching points, questions, mistakes, why it helps on
+Saturday, easier, harder, safety, what it trains and the drills that go with
+it.
+
+**Positions** is the guide to all nine positions, each with its diagram and
+links to the drills that teach it. It names the spots from the team's own
+saved shapes, so "full-back" reads as "your LB and RB".
+
+**A team's age** is one new field on the team sheet: the birth year. It's
+shown as a U-age, and it rolls over by itself each August, because a season
+takes the year it ends in: born 2016 is U11 from August 2026 to July 2027.
+The list starts at the team's age, and a coach can switch to any age or
+none. Bulk import takes `birthYear` (or `born`) on a team. A team that
+already has one keeps it, because the import fills gaps rather than
+overruling a coach.
+
+No new database node and no rule change. `birthYear` sits inside a team,
+which the existing team rules already cover.
+
+`drills.js` and `drill-diagram.js` load as plain scripts ahead of `app.js`, so
+they are cache-busted with everything else. `test/version.js` now checks every
+`?v=` in `index.html`, not just two, and that both scripts come before
+`app.js`. If either file fails to arrive, the tab still opens and says so,
+rather than taking `render()` down. `node test/practice.js` covers who gets
+the tab, the age rule, every filter, the cards and that failure case.
+
+**Every sheet now opens at its top.** Fixed while checking this on a phone. A
+sheet kept the scroll position of whichever sheet was open before it, so a
+long drill card opened halfway down its coaching points. The bug was in the
+app before, but nothing was long enough to show it. A sheet redrawn while
+it's open, such as a filter chip or Moving / Still, still keeps its place.
+
+---
+
+## A coach's own drills: her, and the app owner — 2026-10-02
+
+Design only, in `TRAINING.md`. A coach's personal library is readable by
+her and by the app owner, for support, and by no one in any club: not another
+coach, and not an admin. The owner can read but never change or delete a
+coach's drills. This is the first rule that gives the app owner any standing.
+It's safe because `appOwners` can only be changed in the Firebase console, so
+nothing in the app can make someone an owner.
+
+---
+
+## 105 drills, a guide to every position, and drills that stay private — 2026-10-02
+
+Still nothing new on screen in the app.
+
+**Fifty more drills**, most of them harder. Advanced ball skills: move
+combinations, fast footwork, a weaker-foot circuit, controlling high balls,
+volleys, chips, bending the ball, the Y passing pattern, first touch away from
+pressure, and wall passing for homework. Opposed work: a rondo through a
+pivot, a three-zone rondo, back-to-pressure, 1v1 from four sides, 2v2 with
+bounce players, a finishing circuit, recovery runs and a marking game. Also
+penalties, free kicks, four more keeper drills (sweeping, footwork, reaction
+saves, and being calm on a back-pass) and two cool-downs. The youngest get new
+games too: knockout, skill-move tag, and *Don't be a bee*, which turns
+swarming the ball into a first idea of a position.
+
+**Positions and units** is a new kind of drill, fifteen of them, about where to
+be and what to do rather than a skill. They cover the back line shifting
+together, the centre-back partnership, the full-back's and winger's jobs both
+ways, the holding midfielder screening and switching, the midfield triangle,
+finding the pocket as a number 10, striker movement, holding the ball up,
+pressing from the front, defending in two banks, and a game where everyone
+plays every position in turn.
+
+**The position guide** says what each of nine positions is for. It covers
+the ball, no ball, the second we win it and the second we lose it. Each entry
+gives the skills it needs, the drills that teach it, a note for coaches of
+under-tens, and an animated diagram. It lines up with the shape labels the app
+already uses, and the tests check that every drill it recommends for a
+position is marked for that position.
+
+**The diagrams learned new tricks:** poles, hurdles, a wall to pass against,
+and passes that bend. Every new diagram was checked by eye. That moved zone
+labels to the top edge of their zone, because the middle is where the
+players stand.
+
+**`TRAINING.md`**: no uploads, only drawn diagrams and links. That settles
+both the storage question and the children-in-photos question. Drills are a
+club's and a coach's own work, so parents and trackers never see club drills
+or practice plans. That's enforced by the rules, not by hiding a tab, and it
+needs a third lookup table, `access/coachIndex`, because a rule can't ask "is
+this person a coach of any team". Unlike the other bridges, this one fails
+closed, because failing open would show parents the drills. Each coach keeps
+her own library private and shares from it only if she wants to.
+
+---
+
+## Every drill gets a picture that moves, and a lot more to filter on — 2026-10-02
+
+Still nothing on screen in the app. This makes the drill library something a
+coach would actually pick from.
+
+**Diagrams.** Every built-in drill now has one, and 53 of the 55 animate:
+players run, the ball travels, and a caption under the pitch says what each
+step is. The other two (juggling, the cool-down circle) are layouts. They are
+not images. A diagram is a few lines of data in the drill (cones, goals,
+players in yards, then moves like `A1>A2` for a pass and `A1~12,4` for a
+dribble), and `drill-diagram.js` draws it as an SVG whose animation runs
+inside the SVG, so it loops like a GIF with no script. That keeps each one a
+few kilobytes and working offline, gives a still version with numbered
+arrows for anyone whose phone asks for less motion, and means a coach's own
+diagrams can later be drawn in the app rather than uploaded.
+
+**More to filter on.** Each drill now says how long it takes to set up, whether
+one adult can run it, whether it works indoors, how the players are grouped,
+how busy each player is (lines versus non-stop), and whether there's a score
+to win. Those sit beside what was already there (length, difficulty,
+intensity, ages, players and keepers, kit, skills, principles, moments,
+physical) as filters in the preview.
+
+**Checks.** `test/drills.js` parses every diagram and refuses a pass from
+someone without the ball, a player off the pitch, or a caption too long for
+a phone. It holds each picture to its card: a keeper on the card is a keeper
+in the picture, and goals and cones in the picture are on the kit list. That
+check found World Cup's kit list missing the cones in its own picture.
+Every diagram was also looked at by eye, still and mid-animation, because a
+parser can say a diagram is valid but not that it reads well.
+
+**`TRAINING.md`** has a *Pictures* section. Coaches add their own three ways,
+cheapest first: draw one in the same format, link a video or GIF that lives
+elsewhere, or upload a photo shrunk on the phone. Two new decisions for the
+club: where uploaded photos are kept, and what to do about the children who
+will be in them.
+
+---
+
+## A drill library, and a design for training — 2026-10-01
+
+Nothing on screen changes yet. This is the groundwork for coaches planning
+practices in the app.
+
+**`drills.js`** is a built-in library of 55 drills: warm-ups, technique,
+opposed practices, small-sided games, set pieces, goalkeeping and a cool-down,
+from U4 to adult. Each card carries what a parent volunteer needs at quarter
+to six (setup, how it runs, three or four coaching points, questions to ask,
+what goes wrong) and what a filter needs: ages, level, players and keepers,
+minutes, intensity, space, kit, positions in the app's own five roles, and the
+skills, principles of play and moments of the game it trains. Every drill can
+be made easier and harder. Each one also says which game numbers it answers
+(*we create few chances*, *goals go in late*, *they win lots of corners*),
+using only stats the app already records. That's the bridge to a *what needs
+work* card, and later to an AI that picks from drills the coach can open
+instead of inventing them. It's a plain script, not JSON, so it will load from
+`file://` and with no signal, like `firebase-config.js`.
+
+**`test/drills.js`** keeps the library honest. Fixed vocabularies, because a
+misspelt skill is a drill no filter finds. No heading drill below U11, and a
+safety note on every heading and diving drill. Coverage too: on its first run
+it found that under-sixes had nine drills and throw-ins one, which is why
+*Red light, green light*, *Hungry hippos* and *Quick restarts* exist.
+
+**`TRAINING.md`** is the design, written before the code because the data
+model is the hard part. Coaches keep their own drills under their account, not
+the club's, so the drills go with them if they move clubs. Practices copy
+their drills rather than linking to them. Training data lives at
+`training/{code}`, outside the workspace, because every phone, parents'
+included, downloads the whole workspace on connect. It ends with six decisions
+for the club.
+
+---
 ## The database rules are files — 2026-10-02
 
 The rules lived as two code blocks in README, and `test/rules.js` parsed them

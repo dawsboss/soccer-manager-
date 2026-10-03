@@ -1,4 +1,5 @@
-/* The version markers that have to agree — four, and now ics.js?v= as well.
+/* The version markers that have to agree: BUILD, the meta tag, and every
+   ?v= in index.html, including the classic scripts that load ahead of app.js.
 
    CLAUDE.md: "If you bump one, bump them all to the same number." The failure
    this catches is a browser holding a cached index.html while fetching a newer
@@ -19,23 +20,29 @@ const idx = fs.readFileSync(root('index.html'), 'utf8');
 
 const build = (app.match(/const BUILD = '(\d+)'/) || [])[1];
 const meta = (idx.match(/meta name="build" content="(\d+)"/) || [])[1];
-const qs = [...idx.matchAll(/(?:app\.js|styles\.css)\?v=(\d+)/g)].map(m => m[1]);
+/* Every file index.html loads with a ?v=, not just the two this started
+   with. The drill library and its renderer are scripts of their own; one left
+   on an old number is a phone running new app.js against last week's drills. */
+const qv = f => (idx.match(new RegExp(f.replace('.', '\\.') + '\\?v=(\\d+)')) || [])[1];
+const all = [...idx.matchAll(/([\w.-]+)\?v=(\d+)/g)].map(m => [m[1], m[2]]);
+const ASSETS = ['styles.css', 'ics.js', 'drills.js', 'drill-diagram.js', 'app.js'];
 
-console.log('--- the four markers CLAUDE.md names ---');
+console.log('--- the markers CLAUDE.md names ---');
 console.log('  app.js BUILD      :', build);
 console.log('  index meta build  :', meta);
-console.log('  index ?v= params  :', qs.join(', '));
+console.log('  index ?v= params  :', all.map(([f, v]) => f + '=' + v).join(', '));
 
 check('app.js declares a BUILD', !!build, true);
 check('index.html carries a build meta tag', !!meta, true);
-check('index.html cache-busts both assets', qs.length, 2);
 check('the meta tag matches app.js', meta, build);
-check('app.js?v= matches', qs[0], build);
-check('styles.css?v= matches', qs[1], build);
-/* The calendar-file writer is a classic script loaded ahead of app.js, so a
-   cached copy of it is the same half-working page as a cached app.js. */
-const ics = (idx.match(/ics\.js\?v=(\d+)/) || [])[1];
-check('ics.js?v= matches', ics, build);
+for (const f of ASSETS) check(f + '?v= matches', qv(f), build);
+check('and nothing else in index.html carries another', all.every(([, v]) => v === build), true);
+
+/* app.js is a module and runs after the plain scripts above it have run, but
+   only if they are above it: it reads window.SOCCER_DRILLS once it renders. */
+const at = f => idx.indexOf(f + '?v=');
+check('drills.js loads before app.js', at('drills.js') >= 0 && at('drills.js') < at('app.js'), true);
+check('drill-diagram.js loads before app.js', at('drill-diagram.js') >= 0 && at('drill-diagram.js') < at('app.js'), true);
 
 console.log('\n--- what a cached page would do ---');
 {

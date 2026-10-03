@@ -23,9 +23,11 @@ All in `CHANGELOG.md` (three entries, 2026-10-01 and 2026-10-02) and README
 
 ## Waiting on the owner (not code)
 
-1. **Paste the updated locked-down rules** (README → *Locking it down*) if the
-   club is locked down. Without the new `rsvp` block, parents' answers are
-   refused (the app says so). Run `node test/rules.js` first; it passes.
+1. **Paste `database.rules.json`** (README → *The database rules*). Without
+   the `rsvp` block, parents' answers are refused (the app says so), and
+   without `training` and `access/coachIndex`, practice plans stay on the
+   phone. Run `node test/rules.js` first; it passes. There is one ruleset now,
+   for every club (see below).
 2. **Calendar sync is parked** ("don't worry about subscribing yet"). The
    Worker is written and tested but not deployed; nothing shows the subscribe
    buttons until `SOCCER_CALENDAR_FEED` is set in `firebase-config.js`.
@@ -34,28 +36,29 @@ All in `CHANGELOG.md` (three entries, 2026-10-01 and 2026-10-02) and README
 
 ## Other branches touching the same ground
 
-- `ccr-eccb3a51-07tefa` (training: drill library, `TRAINING.md`). Its proposed
-  `training/{code}/practices/{teamId}/{practiceId}` has its own date, time and
-  place. Recommended: key practice plans by the calendar entry's id and take
-  when and where from the entry, so there is one list of practices, and "drills
-  a player has done" becomes a join with the attendance register. ROADMAP →
-  *Drills a player has done*. Its open question 3 (attendance) is answered:
-  the owner wants it, and it is built here.
+- `ccr-eccb3a51-07tefa` (training: drill library, practice plans,
+  `TRAINING.md`) has main merged into it. Its practice plans at
+  `training/{code}/practices/{teamId}/{practiceId}` still carry their own date,
+  time and place. Recommended, and put to the owner but not yet answered: key
+  practice plans by the calendar entry's id and take when and where from the
+  entry, so there is one list of practices, and "drills a player has done"
+  becomes a join with the attendance register. ROADMAP → *Drills a player has
+  done*. The next training chat's brief is **`TRAINING-NEXT.md`**.
 - **Messages (`ccr-898e57e7-rrryfw`) is merged** into `main` and into this
   branch (2026-10-02). Its joins with this work: a reminder notice to families
   who have not answered (ROADMAP → *Who is coming, next*), and a notice when an
   entry is called off. Its "availability replies" next step is done here, as
   `rsvp`.
-- **The rules are files now**: `database.rules.json` (locked down) and
-  `database.rules.open.json`, no longer code blocks in README. A branch that
-  still edits a rules block in README (training, if it adds rules) has to move
-  that change into the file when it merges; `node test/rules.js` fails until it
-  does. The owner's live rules matched `main`'s on 2026-10-02; the only thing
-  to add for this branch is `rsvp`.
-- **The rules to paste are the merged ones.** The two rule sets now carry
-  messages' root blocks (`board`, `dm`, `joinCodes`, `claims`), its
-  `access/teamParents` and its extra clause on `access/index`, and this
-  branch's `rsvp`. `node test/rules.js` checks all of it together.
+- **The rules are one file now**: `database.rules.json`, for every club. The
+  owner asked for this on 2026-10-03: the site is for any club that turns up,
+  and a database runs one ruleset for all of them, so the open "starter" set
+  (`database.rules.open.json`) is gone and a new club is made under the same
+  rules as an established one, through the bootstrap clauses. `rules.js` walks
+  a brand-new club through it, and fails if a second ruleset reappears.
+- **The rules to paste are the merged ones.** The file carries messages' root
+  blocks (`board`, `dm`, `joinCodes`, `claims`), its `access/teamParents` and
+  its extra clause on `access/index`, `rsvp`, and training's `training` and
+  `access/coachIndex`. `node test/rules.js` checks all of it together.
 - Training still bumps `BUILD` and touches `app.js`, `index.html` (tabs),
   `README.md`, `CHANGELOG.md` and `CLAUDE.md`. Whoever merges it takes the
   higher build number (this branch is on 66) and runs `node test/run.js` and

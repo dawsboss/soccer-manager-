@@ -177,6 +177,15 @@ const EXPORTS = `{
   get calForm() { return calForm },
   fixtureDoc, calendarDoc, publishTeam, ensureFixtureShares, claimTeamIds, outIds, familySaidNo, attendance, attendLine, attendOf, attendUntaken, cameToGame,
   get pubSeen() { return pubSeen },
+  /* practice */
+  canTrain, seasonEndYear, uAge, teamUAge, uLabel, practiceUi, practiceAge,
+  practiceDrills, practiceActive, viewPractice, sheetDrill, sheetRole,
+  sheetDrillFilters, PRACTICE_ACTS, PRACTICE_BLANK,
+  /* practice plans */
+  PLAN_ACTS, canPlan, teamPractices, practiceById, putPractice, dropPractice, mergePractices,
+  suggestPlan, planWarnings, planKit, whenOf, nextPractice, todayIso, pracDay,
+  syncCoachIndex, syncAllCoachIndex, coachTeamOf, readiness,
+  get train() { return train }, set train(v) { train = v }, get trainState() { return trainState },
   /* rendering + routing */
   render, uiToHash, hashToUi,
   /* the mutable module-scoped bindings */
@@ -242,10 +251,14 @@ function loadApp(opts = {}) {
   global.__toasts = toasts;
   global.document = dom.document;
   global.localStorage = storage;
+  /* The drill library and its diagram renderer are plain scripts that
+     index.html loads ahead of app.js, so a page has them before the module
+     runs. `drills: false` boots the way a page does when they failed to load. */
   global.window = {
     addEventListener() { },
     SOCCER_FIREBASE_CONFIG: opts.config === undefined ? null : opts.config,
-    SOCCER_FIREBASE_ENVS: opts.envs || undefined
+    SOCCER_FIREBASE_ENVS: opts.envs || undefined,
+    ...(opts.drills === false ? {} : { SOCCER_DRILLS: require('../drills.js'), DrillDiagram: require('../drill-diagram.js') })
   };
   global.location = {
     reload() { dom.reloads = (dom.reloads || 0) + 1; },
