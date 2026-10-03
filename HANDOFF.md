@@ -90,11 +90,14 @@ calendars, with a calendar that is the person's rather than the team's.
   (`#/my-calendar`). `AVAILABILITY.md` is the design; `test/avail.js` and the
   new cases in `test/rules.js` pin it.
 - **Waiting on the owner: paste `database.rules.json` again.** It gains the
-  `avail` block and family clauses in `sessions/$sid` and `booked/$sid/$pid`.
+  `avail` and `seats` blocks and family clauses in `sessions/$sid` and
+  `booked/$sid/$pid`.
   Until then a coach's times stay on her phone and a family's booking is
   refused and taken back. `node test/rules.js` passes.
-- **Decisions taken that the owner may want to revisit:** slots are 1-1 only
-  (no group slots); a family's booking is confirmed at once, not asked for;
+- **Settled with the owner:** slots are 1-1s or a small group; the rules,
+  not just the app, hold a family to the grid, the clock, the notice and the
+  number of places (AVAILABILITY.md, *What the rules hold a family to*).
+  Agreed as proposed: a family's booking is confirmed at once, not asked for;
   families cancel up to a notice the coach sets (24 hours by default); My
   calendar lives on Club home and is linked from each team's Calendar tab,
   not in the top-left switcher.

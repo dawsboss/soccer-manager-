@@ -222,7 +222,7 @@ const EXPORTS = `{
   sessUi, SESS_ACTS, sessMessage, reachFor, fmtMoney, sessClubLine, calendarDoc, publicDoc, viewMine, viewClub,
   /* bookable times, and my calendar */
   blockAll, blockById, blockSlots, normBlock, slotSid, canEditBlock, kidBusy, blockKids, availView, familyAvail, sheetBlock,
-  AVAIL_ACTS, myCalItems, myCalTeams, myCalFilters, viewMyCal, myCalLine, createClub
+  AVAIL_ACTS, myCalItems, myCalTeams, myCalFilters, viewMyCal, myCalLine, createClub, blockValue, healBlocks, seatsOf, freeSeat, placesTaken, openSlotsOf, slotAt, slotKey
 }`;
 
 const FB_URLS = {

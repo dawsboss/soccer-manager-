@@ -2,7 +2,7 @@
    Static app. Data lives in localStorage, and mirrors to Firebase Realtime
    Database when a config + workspace code are present. */
 
-const BUILD = '77';
+const BUILD = '78';
 const BUILT = '2026-10-03';
 /* index.html carries the build it was published with. If this file is newer, the
    browser handed us a cached page — the exact failure that has eaten hours. */
@@ -8013,12 +8013,12 @@ function tickRun() {
 const LS_SESS = 'sm.sess.v1';
 const LS_SESS_SEEN = 'sm.sessSeen';
 const sessKey = () => LS_SESS + ':' + clubKey();
-const SESS_BLANK = () => ({ sessions: {}, booked: {}, came: {}, fees: {}, pay: {}, splans: {}, avail: {}, dirty: {} });
+const SESS_BLANK = () => ({ sessions: {}, booked: {}, came: {}, fees: {}, pay: {}, splans: {}, avail: {}, seats: {}, dirty: {} });
 /* How many path segments down each kind's records sit: a session is one node,
    a booking is one per player per session, a register one per session. A merge
    walks to exactly this depth and no further, so a record is always taken or
    kept whole and never half of one with half of the other. */
-const SESS_DEPTH = { sessions: 2, booked: 3, came: 2, fees: 3, pay: 2, splans: 2, avail: 2 };
+const SESS_DEPTH = { sessions: 2, booked: 3, came: 2, fees: 3, pay: 2, splans: 2, avail: 2, seats: 3 };
 const SESS_KIND = { one: '1-1', group: 'Group' };
 const BOOK = { asked: 'Asked', in: 'Booked', wait: 'Waiting list', no: 'Not this time', out: 'Withdrew' };
 const BOOK_ORDER = { asked: 0, in: 1, wait: 2, no: 3, out: 4 };
@@ -8184,7 +8184,7 @@ function sessSend(path, undo) {
      once the session is gone they are nobody's to delete. One connection
      applies writes in the order they were made. */
   if (kind === 'sessions' && getDeep(sess, path) === undefined)
-    for (const k of ['booked', 'came', 'fees', 'splans']) if (sess.dirty[k + '/' + id] !== undefined) sessSend(k + '/' + id);
+    for (const k of ['booked', 'seats', 'came', 'fees', 'splans']) if (sess.dirty[k + '/' + id] !== undefined) sessSend(k + '/' + id);
   const v = getDeep(sess, path);
   rootSet(`training/${code}/${path}`, v === undefined ? null : v).then(() => {
     // only the version that was sent is clean; a change made since is still owed
@@ -8234,7 +8234,7 @@ function sessMerge(path, remote, resend) {
 const sessOn = () => !!(rtdb && fb && me && wsCode() && wsRead && !needsSignIn());
 function sessWanted() {
   if (!canSessions()) return [];
-  const want = ['sessions', 'booked', 'came', 'avail'];
+  const want = ['sessions', 'booked', 'came', 'avail', 'seats'];
   const all = sessAll();
   if (isAdmin(me.uid)) want.push('fees', 'pay');
   else {
@@ -8258,6 +8258,7 @@ function watchSess() {
     sessFor = key;
   }
   if (!key) return;
+  scheduleHeal();
   const want = new Set(sessWanted());
   for (const p of Object.keys(sessSubs)) if (!want.has(p)) { try { sessSubs[p](); } catch (e) { } delete sessSubs[p]; }
   const { db, mod } = rtdb, code = wsCode();
@@ -8319,23 +8320,21 @@ function sessNews() {
       now[k] = x.st;
       if (first || seen[k] === x.st || x.b.by === me.uid || sessPast(s)) continue;
       if (x.st === 'asked') news.push(['Asked for a spot', `${whoName(x)} · ${sessTitle(s)} · ${when}`]);
-      else if (x.st === 'in' && s.slot && x.b.by === s.by) news.push(['Booked a time', `${whoName(x)} · ${when}`]);
+      else if (x.st === 'in' && s.slot && x.b.by !== s.coach && !isAdmin(x.b.by)) news.push(['Booked a time', `${whoName(x)} · ${when}`]);
       else if (x.st === 'out') news.push(['Withdrew', `${whoName(x)} · ${sessTitle(s)} · ${when}`]);
     }
   }
-  /* A slot a family cancels is deleted, not marked, so the coach hears about
-     it from its absence: one she was told of last time, gone now, and not
-     deleted from this phone. */
+  /* A place a family cancels is deleted, not marked, so the coach hears
+     about it from its absence: a booking she was told of last time, gone
+     now, and not taken back from this phone. */
   for (const s of sessAll()) {
     if (!s.slot || s.coach !== me.uid || s.called || sessPast(s)) continue;
-    // the booking goes before the slot does, so the last name it had is kept for the notice
-    const names = bookingsOf(s.id).filter(x => x.st === 'in').map(whoName).join(', ');
-    now['k/' + s.id] = names ? `${names} · ${dayLabel(s.date)} ${niceTime(s.start)}` : (!first && seen['k/' + s.id]) || `A slot · ${dayLabel(s.date)} ${niceTime(s.start)}`;
+    for (const x of bookingsOf(s.id)) if (x.st === 'in') now['k/' + s.id + '/' + x.pid] = `${whoName(x)} · ${dayLabel(s.date)} ${niceTime(s.start)}`;
   }
   if (!first) for (const k of Object.keys(seen)) {
-    if (!k.startsWith('k/') || now[k] !== undefined) continue;
-    const sid = k.slice(2);
-    if (sessDropped.has(sid) || sessById(sid)) continue;
+    if (!k.startsWith('k/') || now[k] !== undefined || sessDropped.has(k.slice(2))) continue;
+    const [sid, pid] = k.slice(2).split('/');
+    if (bookOf(sid, pid)) continue;
     news.push(['Cancelled a time', String(seen[k])]);
   }
   try { localStorage.setItem(lsk, JSON.stringify(now)); } catch (e) { }
@@ -8683,7 +8682,7 @@ function sessFamilyBlock(s) {
     if (b && b.st !== 'out') {
       const fee = s.price && b.st === 'in' ? (feeOf(s.id, p.id) ? ' · paid' : feesKnown(s.id, p.id) ? ` · ${esc(fmtMoney(s.price))} to pay` : '') : '';
       return `<div class="rsvprow"><span><b>${name}</b><span class="rowsub">${esc(BOOK[b.st])}${fee}${b.want ? ' · wants: ' + esc(b.want) : ''}</span></span>
-        ${over || b.st === 'no' ? '' : s.slot && b.st === 'in' && (!me || s.by === me.uid)
+        ${over || b.st === 'no' ? '' : s.slot && b.st === 'in'
         ? `<button class="btn quiet sm" data-act="slotcancel" data-id="${esc(s.id)}" data-pid="${esc(p.id)}">Cancel this time</button>`
         : `<button class="btn quiet sm" data-act="sesswithdraw" data-id="${esc(s.id)}" data-pid="${esc(p.id)}">${b.st === 'in' ? 'Can’t make it' : 'Withdraw'}</button>`}</div>`;
     }
@@ -9200,7 +9199,7 @@ function onSessAct(a, d) {
   if (a === 'sessdel') {
     if (bookingsOf(s.id).some(x => feeOf(s.id, x.pid))) { toast('Payments are recorded against it, so call it off instead'); return; }
     if (!confirm('Delete this session, with its bookings and register? Calling it off keeps the record instead.')) return;
-    for (const k of ['booked', 'came', 'fees', 'splans']) if (getDeep(sess, k + '/' + s.id) !== undefined || fb) sessPut(k + '/' + s.id, null);
+    for (const k of ['booked', 'seats', 'came', 'fees', 'splans']) if (getDeep(sess, k + '/' + s.id) !== undefined || fb) sessPut(k + '/' + s.id, null);
     sessPut('sessions/' + s.id, null);
     u.open = null; closeSheet(); render(); toast('Deleted'); return;
   }
@@ -9211,6 +9210,8 @@ function onSessAct(a, d) {
     const st = BOOK[d.v] ? d.v : null; if (!st || st === 'asked') return;
     if (st === 'in' && b.st !== 'in' && spotsLeft(s) === 0) { toast('No spots left — take someone off, waitlist this one, or add spots'); return; }
     sessPut(`booked/${s.id}/${d.pid}`, bookingVal(b, st));
+    // a place she gave up in a slot goes back to the families
+    if (s.slot && (st === 'out' || st === 'no')) for (const x of seatsOf(s.id)) if (x.pid === d.pid) sessPut(`seats/${s.id}/${x.n}`, null);
     sheetSess(s.id); render(); return;
   }
   if (a === 'sesspick') { sessPick = { sid: s.id, tid: ui.teamId, picked: [], scope: 'one' }; sheetSessPick(); return; }
@@ -9232,6 +9233,9 @@ function onSessAct(a, d) {
       if (b && b.st === 'in') continue;
       const st = spotsLeft(sessById(x.id)) > 0 ? 'in' : 'wait';
       if (st === 'wait') waited++;
+      // on a family-bookable slot, a player the coach adds takes a seat too, so the families' count stays true
+      const blk = x.slot ? blockById(x.slot) : null, seat = blk && st === 'in' && !seatsOf(x.id).some(y => y.pid === pid) ? freeSeat(blk, x.id) : null;
+      if (seat) sessPut(`seats/${x.id}/${seat}`, { pid, tid: w.t.id, by: by(), at: nowMs() });
       sessPut(`booked/${x.id}/${pid}`, bookingVal({ ...(b || {}), tid: w.t.id }, st));
     }
     sessPick = null; sheetSess(base.id); render();
@@ -9453,22 +9457,38 @@ function saveSessForm() {
 }
 
 /* ---------------- bookable times ---------------- */
-/* AVAILABILITY.md. A coach says when she is free for 1-1s, and families book
-   a slot themselves. A block is one coach's window on one date, cut into
-   slots of `len` minutes; a weekly one is a block per week sharing a series
-   id, as practices and sessions are, so "not next Tuesday" is one write.
+/* AVAILABILITY.md. A coach says when she is free for 1-1s or a small group,
+   and families book a slot themselves. A block is one coach's window on one
+   date, cut into slots of `len` minutes; a weekly one is a block per week
+   sharing a series id, as practices and sessions are, so "not next Tuesday"
+   is one write.
 
-   A booked slot is not a new kind of thing: it is an ordinary 1-1 session,
-   made by the family, under an id built from the coach, the day and the
-   start. The rule checks the id was built that way and that nothing is there
-   yet, so of two families tapping six o'clock at once the database lets
-   exactly one in. Everything sessions already do (the coach's list, the
+   A booked slot is not a new kind of thing: it is an ordinary session, made
+   by the first family to book it, under an id built from the coach, the day
+   and the start, so of two families making six o'clock at once the database
+   lets exactly one in. Everything sessions already do (the coach's list, the
    register, fees, hours, clashes, the team calendar) then works on it
-   unchanged, because it is one. */
+   unchanged, because it is one.
+
+   The rules hold a family to the window, and they can only look things up,
+   never count or search. So the block carries what they need to look up:
+   `slots`, the times it still offers, each with its start as a timestamp
+   (the grid, the length, and "not in the past" and "not inside the notice"
+   become comparisons), and `seats`, one key per place. A family takes a
+   place by taking a seat nobody holds, which is how a group of six refuses
+   the seventh. `slots` leaves out whatever the coach is busy with, and her
+   phone and the admins' keep it so (`healBlocks()`), as the lookup tables
+   are kept: derived, rebuilt, never typed. */
 const SLOT_LENS = [30, 45, 60, 90];
 const NOTICE_HOURS = [0, 12, 24, 48];
+const BLOCK_KIND = { one: '1-1s', group: 'Small group' };
 const clockOf = m => pad2(Math.floor(m / 60) % 24) + ':' + pad2(m % 60);
+// keys a database will not turn into an array: 's1' and 't1700', never 1 and 1700
+const slotKey = start => 't' + String(start).replace(':', '');
+const seatKeys = cap => Array.from({ length: cap }, (_, i) => 's' + (i + 1));
 const slotSid = (coach, date, start) => 'k_' + coach + '_' + date + '_' + String(start).replace(':', '');
+const slotAt = (date, start) => dateOf(date).getTime() + minOf(start) * 60000;
+const SEAT_STALE = 10 * 60000;
 const agesOf = raw => {
   const a = raw && typeof raw === 'object' ? Object.values(raw).map(Number) : null;
   return a && a.length === 2 && a.every(n => Number.isInteger(n) && n >= 4 && n <= 19) && a[0] <= a[1] ? a : null;
@@ -9479,8 +9499,10 @@ function normBlock(b, id) {
   if (!b || typeof b !== 'object') return null;
   const str = v => (v == null ? '' : String(v));
   const n = Number(b.notice);
+  const kind = b.kind === 'group' ? 'group' : 'one';
   return {
-    ...b, id: str(b.id || id), coach: str(b.coach), coachName: personName(b.coach) || str(b.coachName) || 'Coach',
+    ...b, id: str(b.id || id), kind, cap: kind === 'one' ? 1 : clamp(Math.round(Number(b.cap)) || 6, 1, 60),
+    title: str(b.title).slice(0, 80), coach: str(b.coach), coachName: personName(b.coach) || str(b.coachName) || 'Coach',
     date: okDay(b.date) ? b.date : '', start: hm(b.start), end: hm(b.end),
     len: clamp(Math.round(Number(b.len)) || 60, 15, 240), field: str(b.field), place: str(b.place).slice(0, 120),
     price: Math.max(0, Math.round((Number(b.price) || 0) * 100) / 100), ages: agesOf(b.ages),
@@ -9494,10 +9516,24 @@ const blockAll = () => Object.entries(sess.avail || {}).map(([id, b]) => normBlo
 const blockById = id => { const b = id ? (sess.avail || {})[id] : null; return b ? normBlock(b, id) : null; };
 const blockSeries = b => (b.series ? blockAll().filter(x => x.series === b.series) : [b]);
 const blockPlace = b => { const f = fieldById(b.field); return f ? f.name + (b.place ? ', ' + b.place : '') : b.place; };
+const blockLabel = b => b.title || (b.kind === 'group' ? `Small group, ${b.cap} places` : '1-1s');
 // the same two clauses as the rule on avail/$bid, and as canRun() for a session
 const canEditBlock = b => !!b && (!gated() || canAdmin() || (!!me && b.coach === me.uid && isCoachAny(me.uid)));
 const minsNow = () => { const d = new Date(nowMs()); return d.getHours() * 60 + d.getMinutes(); };
-const hoursUntil = s => (dateOf(s.date).getTime() + minOf(s.start || '00:00') * 60000 - nowMs()) / 3600000;
+const startMs = s => Number(s.t0) || slotAt(s.date, s.start || '00:00');
+const hoursUntil = s => (startMs(s) - nowMs()) / 3600000;
+
+/* ---- seats: a place in a slot ---- */
+const seatsOf = sid => Object.entries(((sess.seats || {})[sid]) || {}).filter(([, v]) => v && typeof v === 'object' && v.pid).map(([n, v]) => ({ n, ...v }));
+/* Who is in a slot: everyone the coach or a family has booked, and anyone
+   holding a seat whose booking has not landed yet. Somebody taken off, or
+   turned down, is not, whatever seat she still holds. */
+function placesTaken(sid) {
+  const ins = new Set(bookingsOf(sid).filter(x => x.st === 'in').map(x => x.pid));
+  for (const st of seatsOf(sid)) if (!bookOf(sid, st.pid)) ins.add(st.pid);
+  return ins.size;
+}
+const freeSeat = (b, sid) => { const held = new Set(seatsOf(sid).map(x => x.n)); return seatKeys(b.cap).find(k => !held.has(k)) || null; };
 
 /* The block cut into its slots, each with whatever keeps it from being
    booked. A coach's team calendar is her busy time: a practice or game for a
@@ -9508,16 +9544,67 @@ function blockSlots(b) {
   if (!b || !b.start || !b.end) return out;
   const from = minOf(b.start), to = minOf(b.end);
   const busy = busyItems(b.date).filter(x => x.coaches.includes(b.coach));
+  const listed = ((sess.avail || {})[b.id] || {}).slots || {};
   const today = todayStr(), now = minsNow();
   for (let a = from; a + b.len <= to && out.length < 48; a += b.len) {
     const start = clockOf(a), end = clockOf(a + b.len), sid = slotSid(b.coach, b.date, start);
     const s = sessById(sid);
     const clash = busy.filter(x => x.key !== 's:' + sid && x.a < a + b.len && a < x.b);
     const past = b.date < today || (b.date === today && a <= now);
-    out.push({ start, end, sid, a, s, clash, past, free: !s && !clash.length && !past && !b.off });
+    const taken = s ? placesTaken(sid) : 0;
+    const left = s && s.called ? 0 : Math.max(0, b.cap - taken);
+    const free = !clash.length && !past && !b.off && !!listed[slotKey(start)] && left > 0 && !!freeSeat(b, sid);
+    out.push({ start, end, sid, a, s, clash, past, taken, left, free });
   }
   return out;
 }
+/* What the block offers, as the rule reads it: every slot on the grid the
+   coach is free for, with its start as a timestamp. Taken and past slots stay
+   listed; the seats and the clock refuse those. */
+function openSlotsOf(b) {
+  const out = {};
+  if (b.off) return out;
+  for (const x of blockSlots(b)) if (!x.clash.length) out[slotKey(x.start)] = { end: x.end, at: slotAt(b.date, x.start) };
+  return out;
+}
+const seatMap = cap => Object.fromEntries(seatKeys(cap).map(k => [k, true]));
+const canon = v => (v && typeof v === 'object' ? '{' + Object.keys(v).sort().map(k => k + ':' + canon(v[k])).join(',') + '}' : JSON.stringify(v));
+
+/* Keeps what the rules read true. A practice added to a team she coaches, a
+   session she now runs, a week taken off: her phone, or an admin's, rewrites
+   the block's list of slots the next time it draws, as the lookup tables are
+   rebuilt on connect. Only changed blocks are written, so it settles. Also
+   lets go of seats nobody is using: one whose child was taken off or turned
+   down, or one held ten minutes with no booking behind it. */
+let healTimer = null;
+function scheduleHeal() {
+  if (healTimer || typeof setTimeout !== 'function') return;
+  healTimer = setTimeout(() => { healTimer = null; healBlocks(); }, 1500);
+}
+function healBlocks() {
+  if (!me || (fb && !(sessLoaded.has('avail') && sessLoaded.has('sessions')))) return 0;
+  let n = 0;
+  const today = todayStr();
+  for (const b of blockAll()) {
+    if (b.date < today || !(b.coach === me.uid ? canEditBlock(b) : canAdmin())) continue;
+    const raw = sess.avail[b.id] || {};
+    const want = { slots: openSlotsOf(b), seats: seatMap(b.cap) };
+    if (canon(raw.slots || {}) === canon(want.slots) && canon(raw.seats || {}) === canon(want.seats)) continue;
+    sessPut('avail/' + b.id, { ...raw, ...want });
+    n++;
+  }
+  if (!fb || sessLoaded.has('seats')) for (const sid of Object.keys(sess.seats || {})) {
+    const s = sessById(sid);
+    if (!s || !s.slot || sessPast(s) || !canRun(s) || (s.coach !== (me && me.uid) && !canAdmin())) continue;
+    for (const st of seatsOf(sid)) {
+      const bk = bookOf(sid, st.pid);
+      if (bk ? bk.st === 'out' || bk.st === 'no' : nowMs() - (Number(st.at) || 0) > SEAT_STALE) { sessPut(`seats/${sid}/${st.n}`, null); n++; }
+    }
+  }
+  if (n) render();
+  return n;
+}
+
 /* What a child of hers already has then: her team's practice or game, or a
    session she is in. Offered to the family as taken by it, never booked over. */
 function kidBusy(b, sl, kid) {
@@ -9531,12 +9618,14 @@ const blockStray = (b, sl) => sessAll().filter(s => s.slot === b.id && !sl.some(
 
 /* ---- screens ---- */
 function availRow(b, fam, who) {
-  const sl = blockSlots(b), taken = sl.filter(x => x.s && !x.s.called).length, free = sl.filter(x => x.free).length;
-  const sub = [who ? b.coachName : '', blockPlace(b), fam ? (b.off ? '' : `${free} free`) : (sl.length ? `${taken} of ${sl.length} booked` : 'too short for a slot'),
+  const sl = blockSlots(b), free = sl.filter(x => x.free).length;
+  const booked = sl.filter(x => x.s && !x.s.called && x.taken).length;
+  const sub = [who ? b.coachName : '', blockPlace(b),
+    fam ? (b.off ? '' : `${free} free`) : (sl.length ? `${booked} of ${sl.length} slots booked` : 'too short for a slot'),
     `${b.len} min`, b.price ? fmtMoney(b.price) : ''];
   return `<button class="prow calrow" type="button" data-act="availopen" data-id="${esc(b.id)}" data-called="${b.off ? 1 : 0}">
     <span class="caltime">${niceTime(b.start)}</span>
-    <span style="min-width:0"><span class="pname">${fam ? `1-1s with ${esc(b.coachName)}` : `Bookable 1-1s until ${esc(niceTime(b.end))}`}</span>
+    <span style="min-width:0"><span class="pname">${fam ? `${esc(blockLabel(b))} with ${esc(b.coachName)}` : `${esc(blockLabel(b))} until ${esc(niceTime(b.end))}`}</span>
       <span class="psub">${esc(sub.filter(Boolean).join(' · '))}</span></span>
     ${b.off ? '<span class="tag off">Off</span>' : `<span class="tag avail">${fam ? 'Book' : 'Open'}</span>`}</button>`;
 }
@@ -9560,19 +9649,19 @@ function availView() {
     <button class="btn sm" data-act="availnew">Add times</button></div>
     <div class="card"><h2 style="margin-bottom:0">Times families can book</h2>
       ${ahead.length ? availDays(ahead, false, u.scope === 'all')
-      : `<p class="muted" style="margin-bottom:0">${u.scope === 'mine' ? 'You have not offered any yet.' : 'No coach has offered any yet.'} <b>Add times</b> says when you are free for 1-1s, say Tuesdays 5–7pm in hour slots, and families book a slot themselves. Your team practices and games, and the sessions you run, are taken out by themselves.</p>`}</div>
+      : `<p class="muted" style="margin-bottom:0">${u.scope === 'mine' ? 'You have not offered any yet.' : 'No coach has offered any yet.'} <b>Add times</b> says when you are free, say Tuesdays 5–7pm in hour slots, for 1-1s or a small group, and families book a place themselves. Your team practices and games, and the sessions you run, are taken out by themselves.</p>`}</div>
     ${past.length ? `<button class="btn quiet wide" data-act="sesspast">${u.past ? 'Hide' : 'Show'} earlier times (${past.length})</button>
       ${u.past ? `<div class="card">${availDays(past.slice(0, 60), false, u.scope === 'all')}</div>` : ''}` : ''}`;
 }
 
-/* A family's card on the sessions screen: coaches' times with a free slot
+/* A family's card on the sessions screen: coaches' times with a free place
    that suits one of her children. */
 function familyAvail() {
   const today = todayStr();
   const list = blockAll().filter(b => b.date >= today && !b.off && blockKids(b).length && blockSlots(b).some(x => x.free));
   if (!list.length) return '';
   return `<div class="card"><h2 style="margin-bottom:0">Book a time with a coach</h2>
-    <p class="muted" style="margin:4px 0 0">Pick a free slot and it is yours, no waiting for a reply.</p>
+    <p class="muted" style="margin:4px 0 0">Pick a free slot and the place is yours, no waiting for a reply.</p>
     ${availDays(list.slice(0, 40), true, true)}</div>`;
 }
 
@@ -9586,31 +9675,34 @@ function sheetBlock(id) {
   const kid = kids.find(k => k.p.id === u.kid) || null;
   const row = (k, v) => v ? `<dt>${k}</dt><dd>${v}</dd>` : '';
   const later = b.series ? blockSeries(b).filter(x => x.date > b.date).length : 0;
-  const names = s => bookingsOf(s.id).filter(x => x.st === 'in').map(whoName).join(', ') || 'held, nobody booked';
+  const group = b.kind === 'group';
+  const names = s => bookingsOf(s.id).filter(x => x.st === 'in').map(whoName).join(', ') || 'held, nobody booked yet';
   const slotRow = x => {
     const when = `${niceTime(x.start)}–${niceTime(x.end)}`;
-    if (x.s) {
-      const own = kids.some(k => k.p.id === x.s.pid) || (me && x.s.by === me.uid);
-      const label = x.s.called ? CALLED[x.s.called] : canRun(x.s) ? names(x.s) : own ? 'Yours' : 'Taken';
-      return canRun(x.s) || own ? `<button class="opt spread" type="button" data-act="sessopen" data-id="${esc(x.s.id)}"><span>${when}</span><span class="on">${esc(label)}</span></button>`
-        : `<div class="opt spread"><span class="muted">${when}</span><span class="muted">${esc(label)}</span></div>`;
+    const count = group ? `${x.taken} of ${b.cap}` : '';
+    const mineIn = x.s && kids.some(k => (bookOf(x.s.id, k.p.id) || {}).st === 'in');
+    if (x.s && (canRun(x.s) || mineIn) && !(mineIn && !edit && x.free && kid && !bookOf(x.s.id, kid.p.id))) {
+      const label = x.s.called ? CALLED[x.s.called] : canRun(x.s) ? [count, names(x.s)].filter(Boolean).join(' · ')
+        : kids.filter(k => (bookOf(x.s.id, k.p.id) || {}).st === 'in').map(k => firstName(k.p) + ' is in').join(', ');
+      return `<button class="opt spread" type="button" data-act="sessopen" data-id="${esc(x.s.id)}"><span>${when}</span><span class="on">${esc(label)}</span></button>`;
     }
-    const why = x.past ? 'gone' : b.off ? 'off' : x.clash.length ? (edit ? x.clash.map(c => c.label).join('; ') : 'not free') : '';
-    if (why) return `<div class="opt spread"><span class="muted">${when}</span><span class="muted">${esc(why)}</span></div>`;
+    const why = x.past ? 'gone' : b.off ? 'off' : x.clash.length ? (edit ? x.clash.map(c => c.label).join('; ') : 'not free')
+      : x.s && x.s.called ? CALLED[x.s.called] : x.s && !x.left ? 'full' : !x.free ? 'not open yet' : '';
+    if (why) return `<div class="opt spread"><span class="muted">${when}</span><span class="muted">${esc([count, why].filter(Boolean).join(' · '))}</span></div>`;
     if (!edit && kid) {
       const kb = kidBusy(b, x, kid);
       if (kb.length) return `<div class="opt spread"><span class="muted">${when}</span><span class="muted">${esc(firstName(kid.p))} has ${esc(kb[0].label)}</span></div>`;
-      return `<button class="opt spread" type="button" data-act="slotpick" data-id="${esc(b.id)}" data-v="${esc(x.start)}"><span><b>${when}</b></span><span class="tag avail">Book</span></button>`;
+      return `<button class="opt spread" type="button" data-act="slotpick" data-id="${esc(b.id)}" data-v="${esc(x.start)}"><span><b>${when}</b>${group ? `<span class="rowsub">${x.left} of ${b.cap} places left</span>` : ''}</span><span class="tag avail">Book</span></button>`;
     }
-    return `<div class="opt spread"><span>${when}</span><span class="muted">free</span></div>`;
+    return `<div class="opt spread"><span>${when}</span><span class="muted">${group ? `${x.left} of ${b.cap} free` : 'free'}</span></div>`;
   };
-  openSheet(`<h3>1-1s with ${esc(b.coachName)}</h3>
+  openSheet(`<h3>${esc(blockLabel(b))} with ${esc(b.coachName)}</h3>
     ${b.off ? '<div class="warn alert" style="margin-bottom:10px"><b>Off this week.</b> Nothing here can be booked.</div>' : ''}
     <dl class="facts">
       ${row('When', esc(dayLabel(b.date)) + ' · ' + esc(niceTime(b.start) + '–' + niceTime(b.end)))}
       ${row('Where', esc(blockPlace(b) || 'To be confirmed'))}
-      ${row('Each', `${b.len} minutes`)}
-      ${row('Price', b.price ? esc(fmtMoney(b.price)) : 'Free')}
+      ${row('Each', `${b.len} minutes${group ? `, up to ${b.cap} players` : ', one player'}`)}
+      ${row('Price', b.price ? esc(fmtMoney(b.price)) + (group ? ' each' : '') : 'Free')}
       ${row('Ages', b.ages ? esc(agesLabel(b.ages)) : '')}
       ${row('Cancelling', b.notice ? `Up to ${b.notice} hours before` : 'Any time before it starts')}
       ${row('Notes', esc(b.note).replace(/\n/g, '<br>'))}
@@ -9636,7 +9728,7 @@ function sheetSlotBook(bid, start) {
   const x = b ? blockSlots(b).find(y => y.start === start) : null;
   if (!b || !kid || !x) { closeSheet(); return; }
   openSheet(`<h3>Book ${esc(niceTime(x.start))} for ${esc(firstName(kid.p))}</h3>
-    <p class="muted" style="margin-top:0">1-1 with ${esc(b.coachName)} · ${esc(dayLabel(b.date))}, ${esc(niceTime(x.start))}–${esc(niceTime(x.end))}${blockPlace(b) ? ' · ' + esc(blockPlace(b)) : ''}</p>
+    <p class="muted" style="margin-top:0">${esc(blockLabel(b))} with ${esc(b.coachName)} · ${esc(dayLabel(b.date))}, ${esc(niceTime(x.start))}–${esc(niceTime(x.end))}${blockPlace(b) ? ' · ' + esc(blockPlace(b)) : ''}${b.kind === 'group' ? ` · ${x.left} of ${b.cap} places left` : ''}</p>
     <label class="field"><span>What she wants to work on</span><textarea id="slotWant" rows="2" maxlength="${WANT_MAX}" placeholder="Weak foot, crossing, a drill she liked"></textarea></label>
     <p class="muted">${b.price ? `${esc(fmtMoney(b.price))}, paid to the coach or the club the way you usually do. ` : ''}${b.notice ? `You can cancel here up to ${b.notice} hours before; after that, message the coach.` : 'You can cancel here any time before it starts.'}</p>
     <button class="btn wide" data-act="slotbook" data-id="${esc(b.id)}" data-v="${esc(x.start)}" data-pid="${esc(kid.p.id)}" style="margin-bottom:8px">Book it</button>
@@ -9647,8 +9739,8 @@ function sheetSlotBook(bid, start) {
 let blockForm = null;
 function blockFormRead() {
   if (!blockForm) return;
-  for (const [k, sel] of [['date', '#avDate'], ['start', '#avStart'], ['end', '#avEnd'], ['field', '#avField'], ['place', '#avPlace'],
-  ['price', '#avPrice'], ['lo', '#avLo'], ['hi', '#avHi'], ['note', '#avNote'], ['until', '#avUntil'], ['coach', '#avCoach']]) {
+  for (const [k, sel] of [['title', '#avTitle'], ['date', '#avDate'], ['start', '#avStart'], ['end', '#avEnd'], ['field', '#avField'], ['place', '#avPlace'],
+  ['price', '#avPrice'], ['cap', '#avCap'], ['lo', '#avLo'], ['hi', '#avHi'], ['note', '#avNote'], ['until', '#avUntil'], ['coach', '#avCoach']]) {
     const el = $(sel);
     if (el && typeof el.value === 'string') blockForm[k] = el.value;
   }
@@ -9660,7 +9752,8 @@ function blockFormNew() {
   const last = mine[mine.length - 1] || {};
   const d = addDays(todayStr(), 1);
   return {
-    id: null, coach: me ? me.uid : '', date: d, start: last.start || '17:00', end: last.end || '19:00', len: last.len || 60,
+    id: null, kind: last.kind || 'one', title: '', cap: String(last.kind === 'group' ? last.cap : 6), coach: me ? me.uid : '', date: d,
+    start: last.start || '17:00', end: last.end || '19:00', len: last.len || 60,
     field: last.field || '', place: last.field ? '' : (last.place || ''), price: last.price ? String(last.price) : '',
     lo: last.ages ? String(last.ages[0]) : '', hi: last.ages ? String(last.ages[1]) : '', notice: last.notice === undefined ? 24 : last.notice,
     note: '', repeat: true, days: [weekdayOf(d)], until: addDays(d, 7 * 8), scope: 'one'
@@ -9668,9 +9761,9 @@ function blockFormNew() {
 }
 function blockFormEdit(b) {
   return {
-    id: b.id, coach: b.coach, date: b.date, start: b.start, end: b.end, len: b.len, field: b.field, place: b.place,
-    price: b.price ? String(b.price) : '', lo: b.ages ? String(b.ages[0]) : '', hi: b.ages ? String(b.ages[1]) : '',
-    notice: b.notice, note: b.note, repeat: false, days: [], until: '', scope: 'one'
+    id: b.id, kind: b.kind, title: b.title, cap: String(b.cap), coach: b.coach, date: b.date, start: b.start, end: b.end, len: b.len,
+    field: b.field, place: b.place, price: b.price ? String(b.price) : '', lo: b.ages ? String(b.ages[0]) : '', hi: b.ages ? String(b.ages[1]) : '',
+    notice: b.notice, note: b.note, repeat: false, days: [], until: '', scope: 'one', daysTouched: true
   };
 }
 function sheetBlockForm() {
@@ -9685,7 +9778,11 @@ function sheetBlockForm() {
   const fields = fieldList();
   const slots = hm(f.start) && hm(f.end) ? Math.max(0, Math.floor((minOf(hm(f.end)) - minOf(hm(f.start))) / f.len)) : 0;
   openSheet(`<h3>${isNew ? 'Times families can book' : 'Edit bookable times'}</h3>
-    <p class="muted" style="margin-top:0">Families book a slot of their own, one child each. Anything on your teams' calendars, and any session you run, is taken out by itself.</p>
+    <p class="muted" style="margin-top:0">Families book a place themselves. Anything on your teams' calendars, and any session you run, is taken out by itself.</p>
+    <div class="chips" style="margin-bottom:12px">${chip('availkind', 'one', f.kind === 'one', '1-1s')}${chip('availkind', 'group', f.kind === 'group', 'Small group')}</div>
+    ${f.kind === 'group' ? `<div class="grid2">
+      <label class="field"><span>What</span><input type="text" id="avTitle" maxlength="80" value="${esc(f.title)}" placeholder="Finishing group"></label>
+      <label class="field"><span>Places a slot</span><input type="number" id="avCap" min="2" max="60" value="${esc(f.cap)}"></label></div>` : ''}
     ${canAdmin() ? `<label class="field"><span>Coach</span><select id="avCoach">${sessCoaches().map(([v, l]) => opt(v, l, f.coach)).join('')}</select></label>` : ''}
     <label class="field"><span>${isNew && f.repeat ? 'First week' : 'Date'}</span><input type="date" id="avDate" value="${esc(f.date)}"></label>
     <div class="grid2">
@@ -9697,7 +9794,7 @@ function sheetBlockForm() {
     <p class="muted" style="margin-top:0">${slots ? `${slots} slot${slots === 1 ? '' : 's'} a ${isNew && f.repeat ? 'week' : 'day'}.` : 'Shorter than one slot.'}</p>
     <label class="field"><span>Field</span><select id="avField">${opt('', fields.length ? 'Somewhere else' : 'No fields listed yet', f.field)}${fields.map(x => opt(x.id, x.name, f.field)).join('')}</select></label>
     <label class="field"><span>${fieldById(f.field) ? 'Which part' : 'Where'}</span><input type="text" id="avPlace" maxlength="120" value="${esc(f.place)}" placeholder="${fieldById(f.field) ? 'The goalmouth' : 'Lakeside Park, field 3'}"></label>
-    <label class="field"><span>Price a slot, ${esc(moneySign())}</span><input type="text" inputmode="decimal" id="avPrice" value="${esc(f.price)}" placeholder="Free"></label>
+    <label class="field"><span>Price ${f.kind === 'group' ? 'a player' : 'a slot'}, ${esc(moneySign())}</span><input type="text" inputmode="decimal" id="avPrice" value="${esc(f.price)}" placeholder="Free"></label>
     <div class="grid2">
       <label class="field"><span>Ages from</span><select id="avLo">${ageOpts(f.lo)}</select></label>
       <label class="field"><span>to</span><select id="avHi">${ageOpts(f.hi)}</select></label>
@@ -9714,6 +9811,16 @@ function sheetBlockForm() {
       <div class="chips" style="margin-bottom:10px">${chip('availscopeed', 'one', f.scope !== 'later', 'Just this week')}${chip('availscopeed', 'later', f.scope === 'later', 'This and every later week')}</div>` : ''}
     <button class="btn wide" data-act="availsave">${isNew ? (n > 1 ? `Offer ${n} days` : 'Offer it') : 'Save'}</button>`);
 }
+/* A block as it is written: what the form said, and the two lists the rules
+   read worked out from it there and then, so a family can book the moment it
+   reaches the club rather than after the next heal. */
+function blockValue(base) {
+  const v = { ...base };
+  const nb = normBlock(v, v.id);
+  v.slots = openSlotsOf(nb);
+  v.seats = seatMap(nb.cap);
+  return v;
+}
 function saveBlockForm() {
   blockFormRead();
   const f = blockForm; if (!f) return;
@@ -9726,7 +9833,10 @@ function saveBlockForm() {
   const lo = Number(f.lo), hi = Number(f.hi);
   const ages = lo && hi ? [Math.min(lo, hi), Math.max(lo, hi)] : lo ? [lo, 19] : hi ? [4, hi] : null;
   const price = Number(String(f.price || '').replace(/[^0-9.]/g, '')) || 0;
+  const kind = f.kind === 'group' ? 'group' : 'one';
+  const cap = kind === 'one' ? 1 : clamp(Math.round(Number(f.cap)) || 6, 2, 60);
   const fields = {
+    kind, cap, title: kind === 'group' ? (f.title || '').trim().slice(0, 80) : '',
     coach, coachName: personName(coach) || (me && coach === me.uid ? whoAmI() : '') || 'Coach', start, end, len: f.len,
     field: fieldById(f.field) ? f.field : '', place: (f.place || '').trim().slice(0, 120), price, notice: f.notice,
     note: (f.note || '').trim().slice(0, 500)
@@ -9738,7 +9848,7 @@ function saveBlockForm() {
     for (const x of list) {
       const raw = { ...sess.avail[x.id] };
       delete raw.ages;
-      sessPut('avail/' + x.id, { ...raw, ...fields, ...(x.id === f.id ? { date: f.date } : {}), at: nowMs() });
+      sessPut('avail/' + x.id, blockValue({ ...raw, ...fields, ...(x.id === f.id ? { date: f.date } : {}), at: nowMs() }));
     }
     blockForm = null; sheetBlock(f.id); render();
     toast(list.length > 1 ? `Saved ${list.length} weeks` : 'Saved'); return;
@@ -9749,7 +9859,7 @@ function saveBlockForm() {
   let first = null;
   for (const date of dates) {
     const id = uid();
-    sessPut('avail/' + id, { id, ...fields, date, ...(series ? { series } : {}), by: me ? me.uid : null, at: nowMs() });
+    sessPut('avail/' + id, blockValue({ id, ...fields, date, ...(series ? { series } : {}), by: me ? me.uid : null, at: nowMs() }));
     first = first || id;
   }
   blockForm = null;
@@ -9759,10 +9869,10 @@ function saveBlockForm() {
 }
 
 /* ---- actions ---- */
-const AVAIL_ACTS = new Set(['availopen', 'availnew', 'availedit', 'availlen', 'availnotice', 'availrepeat', 'availwd', 'availscopeed',
+const AVAIL_ACTS = new Set(['availopen', 'availnew', 'availedit', 'availkind', 'availlen', 'availnotice', 'availrepeat', 'availwd', 'availscopeed',
   'availsave', 'availoff', 'availdel', 'slotkid', 'slotpick', 'slotbook', 'slotcancel']);
 for (const x of AVAIL_ACTS) SESS_ACTS.add(x);
-// sessions this phone deleted itself, so its coach is not told about her own tap
+// places this phone took back itself ('sid/pid'), so its coach is not told about her own tap
 const sessDropped = new Set();
 
 function onAvailAct(a, d) {
@@ -9777,11 +9887,12 @@ function onAvailAct(a, d) {
     closeSheet(); toast(b ? 'Only that coach, or an admin, can change those' : 'Those times are not on this phone any more'); render(); return;
   }
   if (a === 'availedit') { blockForm = blockFormEdit(b); sheetBlockForm(); return; }
-  if (['availlen', 'availnotice', 'availrepeat', 'availwd', 'availscopeed'].includes(a)) {
+  if (['availkind', 'availlen', 'availnotice', 'availrepeat', 'availwd', 'availscopeed'].includes(a)) {
     if (!blockForm) return;
     if (!canOffer()) { closeSheet(); toast('That is for coaches and admins'); render(); return; }
     blockFormRead();
     const f = blockForm;
+    if (a === 'availkind') f.kind = d.v === 'group' ? 'group' : 'one';
     if (a === 'availlen' && SLOT_LENS.includes(Number(d.v))) f.len = Number(d.v);
     if (a === 'availnotice' && NOTICE_HOURS.includes(Number(d.v))) f.notice = Number(d.v);
     if (a === 'availrepeat') { f.repeat = d.v === '1'; if (f.repeat && okDay(f.date)) f.days = [weekdayOf(f.date)]; }
@@ -9796,7 +9907,7 @@ function onAvailAct(a, d) {
   if (a === 'availoff') {
     const next = { ...sess.avail[b.id], at: nowMs() };
     if (b.off) delete next.off; else next.off = true;
-    sessPut('avail/' + b.id, next);
+    sessPut('avail/' + b.id, blockValue(next));
     sheetBlock(b.id); render(); toast(b.off ? 'Open again' : 'Taken off for this week — booked slots stay booked'); return;
   }
   if (a === 'availdel') {
@@ -9806,7 +9917,7 @@ function onAvailAct(a, d) {
     u.openBlock = null; closeSheet(); render(); toast(list.length > 1 ? `Deleted ${list.length}` : 'Deleted'); return;
   }
 
-  /* -- a family books a slot for her own child -- */
+  /* -- a family books a place for her own child -- */
   if (a === 'slotkid') { if (myPlayers().some(k => k.p.id === d.pid)) u.kid = d.pid; sheetBlock(d.id); return; }
   if (a === 'slotpick') {
     if (!b) { closeSheet(); return; }
@@ -9818,41 +9929,52 @@ function onAvailAct(a, d) {
     if (!b || !kid) { closeSheet(); toast('You can only book for your own child'); render(); return; }
     if (fb && !me) { toast('Sign in first'); return; }
     const x = blockSlots(b).find(y => y.start === d.v);
+    if (x && x.s && (bookOf(x.sid, kid.p.id) || {}).st === 'in') { toast(`${firstName(kid.p)} is already in`); return; }
     if (!x || !x.free) { toast('That time is not free any more'); sheetBlock(b.id); return; }
     if (kidBusy(b, x, kid).length) { toast(`${firstName(kid.p)} has something else then`); return; }
     // first come, first served: a booking that waited in a queue would be a promise nobody can keep
     if (fb && !online) { toast('Booking a time needs a signal — it is first come, first served'); return; }
+    const seat = freeSeat(b, x.sid);
     const el = $('#slotWant');
     const want = String((el && el.value) || '').trim().slice(0, WANT_MAX);
-    const raw = sess.avail[b.id] || {};
-    const s = {
-      id: x.sid, kind: 'one', title: '', coach: b.coach, coachName: b.coachName, date: b.date, start: x.start, end: x.end,
-      field: b.field, place: b.place, cap: 1, open: false, slot: b.id, pid: kid.p.id, tid: kid.t.id,
-      by: (me && me.uid) || 'device', notice: b.notice, made: nowMs(), at: nowMs()
-    };
-    // the rule compares the price with the block's exactly, so it is copied as stored, or left out with it
-    if (raw.price !== undefined && raw.price !== null) s.price = raw.price;
-    if (b.ages) s.ages = b.ages;
-    const msg = 'Not booked — somebody may have just taken that time. Pick another.';
-    sessPut('sessions/' + x.sid, s, msg);
-    sessPut(`booked/${x.sid}/${kid.p.id}`, bookingVal({ tid: kid.t.id }, 'in', { want }), msg);
+    const raw = sess.avail[b.id] || {}, who = (me && me.uid) || 'device';
+    const msg = 'Not booked — somebody may have just taken that place. Pick another.';
+    if (!x.s) {
+      const s = {
+        id: x.sid, kind: b.kind, title: b.title, coach: b.coach, coachName: b.coachName, date: b.date, start: x.start, end: x.end,
+        t0: ((raw.slots || {})[slotKey(x.start)] || {}).at || slotAt(b.date, x.start), field: b.field, place: b.place, cap: b.cap, open: false, slot: b.id, pid: kid.p.id, tid: kid.t.id,
+        by: who, made: nowMs(), at: nowMs()
+      };
+      /* The rule compares these with the block's exactly, so each is copied as
+         stored, or left out with it; the start time too, as the coach's phone
+         worked it out, so a phone in another time zone cannot disagree. */
+      for (const k of ['price', 'notice']) if (raw[k] !== undefined && raw[k] !== null) s[k] = raw[k];
+      if (b.ages) s.ages = b.ages;
+      sessPut('sessions/' + x.sid, s, msg);
+    }
+    sessPut(`seats/${x.sid}/${seat}`, { pid: kid.p.id, tid: kid.t.id, by: who, at: nowMs() }, msg);
+    sessPut(`booked/${x.sid}/${kid.p.id}`, bookingVal({ tid: kid.t.id }, 'in', { want, seat }), msg);
     render(); sheetSess(x.sid);
     toast(`Booked: ${firstName(kid.p)}, ${dayLabel(b.date)} ${niceTime(x.start)}`); return;
   }
   if (a === 'slotcancel') {
     const s = sessById(d.id);
-    const kid = s ? myPlayers().find(k => k.p.id === s.pid && k.p.id === d.pid) : null;
-    if (!s || !s.slot || !kid) { closeSheet(); toast('You can only cancel your own child’s time'); render(); return; }
-    if (me && s.by !== me.uid) { toast('Somebody else booked this one — ask the coach'); return; }
+    const kid = s ? myPlayers().find(k => k.p.id === d.pid) : null;
+    const bk = kid ? bookOf(s.id, kid.p.id) : null;
+    if (!s || !s.slot || !kid || !bk) { closeSheet(); toast('You can only cancel your own child’s place'); render(); return; }
     if (sessPast(s) || s.called) return;
     if (feeOf(s.id, kid.p.id) || (sess.came || {})[s.id]) { toast('It has been paid for or marked — ask the coach'); return; }
     const notice = Number(s.notice) || 0;
     if (notice && hoursUntil(s) < notice) { toast(`Less than ${notice} hours to go — message the coach to cancel`); return; }
-    if (!confirm(`Cancel ${firstName(kid.p)}’s 1-1 on ${dayLabel(s.date)} at ${niceTime(s.start)}? The time goes back to the coach.`)) return;
+    if (!confirm(`Cancel ${firstName(kid.p)}’s place on ${dayLabel(s.date)} at ${niceTime(s.start)}? It goes back to the coach’s free times.`)) return;
     const msg = 'Not cancelled — the club’s database refused it. Ask the coach.';
-    sessDropped.add(s.id);
+    const who = (me && me.uid) || 'device';
+    sessDropped.add(s.id + '/' + kid.p.id);
+    // in the order the rules need: the booking, then her seat, then the slot if nobody else is in it
     sessPut(`booked/${s.id}/${kid.p.id}`, null, msg);
-    sessPut('sessions/' + s.id, null, msg);
+    for (const st of seatsOf(s.id)) if (st.pid === kid.p.id && (!me || st.by === who)) sessPut(`seats/${s.id}/${st.n}`, null, msg);
+    const others = bookingsOf(s.id).some(x => x.pid !== kid.p.id) || seatsOf(s.id).some(x => x.pid !== kid.p.id);
+    if (!others && (!me || s.by === who)) sessPut('sessions/' + s.id, null, msg);
     u.open = null; closeSheet(); render(); toast('Cancelled — the coach is told'); return;
   }
 }
@@ -9906,7 +10028,7 @@ function myCalItems() {
   }
   if (me && mineToo) for (const b of blockAll()) if (b.coach === me.uid) out.push({
     key: 'a:' + b.id, kind: 'avail', tid: '', id: b.id, date: b.date, start: b.start, end: b.end, mins: 0,
-    title: 'Bookable 1-1s', venue: blockPlace(b), called: b.off ? 'cancelled' : ''
+    title: 'Bookable: ' + blockLabel(b), venue: blockPlace(b), called: b.off ? 'cancelled' : ''
   });
   return out.sort(calOrder);
 }

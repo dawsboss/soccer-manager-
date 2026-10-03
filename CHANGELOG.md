@@ -8,6 +8,39 @@ before this point lives only in the git log.
 
 ---
 
+## Bookable groups, and the rules hold families to the times — 2026-10-03
+
+The owner, on the first version: *slots should be for groups or 1-1*, and
+*the rules should also block some of that stuff* — the slot grid, the coach
+being free and the cancellation notice, which the first version left to the
+app.
+
+- **1-1s or a small group.** A coach's times are either; a group has a
+  number of places and an optional name ("Finishing group"), and a family
+  sees how many are left. The first family to book a group slot makes it;
+  the rest join it.
+- **A place is a seat.** A rule can't count, but it can refuse a key that's
+  taken, so a slot has one seat key per place (`seats/{sid}/s1…`) and a
+  family books by taking a free one, then writing her child's booking naming
+  it. That is how a group of six refuses the seventh.
+- **The window carries what the rules look up.** Each block lists the slots
+  it offers, each with its start as a timestamp. The rule now refuses a slot
+  off the grid or of the wrong length, one in the past, one at a price, size
+  or notice of the family's own, a seat the window doesn't have, and a
+  cancellation or withdrawal inside the coach's notice.
+- **"The coach is busy" reaches the rules too.** The list of open slots
+  leaves out anything the coach is busy with, and her phone or an admin's
+  keeps it current whenever they open the app (`healBlocks()`), as the lookup
+  tables are kept. The same phones let go of seats nobody is using.
+- **`rules.js`** walks all of it, including the seventh child and a cancel an
+  hour before, and prints what is still the app's: how fresh the list of open
+  slots is, and a second seat held by hand for one child.
+
+Paste `database.rules.json` again: it gains the `seats` block, and `avail`
+blocks now need `kind` and `cap`.
+
+---
+
 ## Coaches' bookable times, and My calendar — 2026-10-03
 
 Asked by the owner: *training sessions should have a calendar, and coaches
