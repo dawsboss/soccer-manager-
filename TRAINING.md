@@ -198,7 +198,25 @@ cut to length) and `parse()` has passed it, because the renderer writes
 numbers and ids straight into SVG and any coach can write a club drill.
 `test/drills.js` holds `clean()` to leaving every built-in drawing exactly as
 it was. When parse() objects, the app lists the problems in words she can
-paste back to the AI. Tapping out a drawing by hand is still to come.
+paste back to the AI.
+
+*As built (step 6, second half):* **she taps it out on a pitch.** The owner
+(2026-10-03): "the write a drill is really confusing… I have no idea how a
+user would make the animation." *Draw it on a pitch* opens a board: the
+set-up is pick a tool (blue, red, yellow, keeper, coach, ball, cone, goal,
+move, remove) and tap the grass; then each step is "tap a player, then where
+they go". A player with the ball passes to whoever is tapped next or
+dribbles to a spot, one without it runs, and chips cover a shot, winning the
+ball and a pass into space. A step's moves happen together, which is the
+format's own meaning. It writes the same format the AI does, so every tap is
+held to `parse()` before it's kept and a move that couldn't be drawn is
+refused on the spot, in words; *Use this drawing* still goes through
+`cleanDrawing()`. It opens on her own drawing, or the built-in one she
+copied, to change it. Not on the board: walls, hurdles, zones, lines,
+labels and bent passes (the AI and the built-ins still write those, and the
+board keeps them). The editor itself was folded into three parts at the same
+time: the five things every drill needs, the picture, and the rest behind
+*Show the detail*.
 
 No uploads (settled 2026-10-02). Two ways, and between them they cover what a
 coach needs:

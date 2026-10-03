@@ -517,6 +517,89 @@ function writeOne(D, extra = {}) {
   }
 
   await H.flush(20);
+  console.log('\n--- drawn by hand, on a pitch ---');
+  {
+    const { D } = await device('jaz');
+    toDrills(D);
+    D.click({ act: 'drillnew' }); loadForm(D);
+    check('the editor starts with what every drill needs', /1 · What it is/.test(sheet(D)) && /needed/.test(sheet(D)), true);
+    check('and folds the filters away', /data-act="dedmore" aria-expanded="false"/.test(sheet(D)) && /<div hidden>/.test(sheet(D)), true);
+    D.click({ act: 'dedmore' });
+    check('until she asks for them', /aria-expanded="true"/.test(sheet(D)) && !/<div hidden>/.test(sheet(D)), true);
+    type(D, { deName: 'Pass and move', deSummary: 'Pass, then run', deSetup: 'A 20 yd square', deHow: 'Pass\nMove', dePoints: 'Move after the pass' });
+    check('it offers a pitch to draw on', /data-act="dbopen"[^>]*>Draw it on a pitch/.test(sheet(D)), true);
+    D.click({ act: 'dbopen' });
+    check('which opens on the set-up', /Draw it/.test(sheet(D)) && /data-act="dbstep" data-k="0" aria-pressed="true"/.test(sheet(D)), true);
+    check('the board takes taps', /data-act="dbtap"/.test(sheet(D)), true);
+    const tap = (x, y) => D.click({ act: 'dbtap', x, y });
+    const b = () => D.drillDraft.board;
+    tap(2, 10); tap(10, 2);
+    D.click({ act: 'dbtool', k: 'D' }); tap(10, 10);
+    deepEq('a tap puts a player where it lands', b().dg.players, { A1: [2, 10], A2: [10, 2], D1: [10, 10] });
+    D.click({ act: 'dbtool', k: 'mini' }); tap(19, 10);
+    deepEq('a goal goes on the nearest edge, facing in', b().dg.goals, [[20, 10, 'mini', 'w']]);
+    D.click({ act: 'dbtool', k: 'ball' }); tap(2, 10);
+    check('the ball tool gives a player a ball', JSON.stringify(b().dg.ball), '["A1"]');
+    D.click({ act: 'dbtool', k: 'A' }); tap(2.3, 10);
+    check('two players never stand on one spot', Object.keys(b().dg.players).length, 3);
+
+    D.click({ act: 'dbaddstep' });
+    check('a step is added and opened', b().step, 1);
+    tap(10, 2); tap(15, 5);
+    deepEq('a player without the ball runs', b().dg.frames[0], ['A2-15,5']);
+    tap(2, 10); tap(10, 2);
+    deepEq('one with it passes to whoever she taps, where they end up', b().dg.frames[0], ['A2-15,5', 'A1>A2']);
+    tap(10, 10); D.click({ act: 'dbverb', k: 'run' }); tap(15, 5);
+    deepEq('a tap on the end of a run means the runner, and the chips pick the move', b().dg.frames[0], ['A2-15,5', 'A1>A2', 'D1-A2']);
+    tap(2, 10); tap(4, 4);
+    deepEq('a pass, then a run: pass and follow', b().dg.frames[0], ['A2-15,5', 'A1>A2', 'D1-A2', 'A1-4,4']);
+    tap(2, 10); tap(6, 8);
+    check('a second run in one step is refused', b().dg.frames[0].length, 4);
+    check('in words', D.lastToast(), 'They already move in this step. Add a step for their next move');
+    D.click({ act: 'dbverb', k: 'none' });
+    tap(15, 5);
+    check('one passed the ball in this step is told what she can do with it', /passed it in this step: tap a teammate for a first-time pass/.test(sheet(D)), true);
+    tap(17, 9);
+    check('carrying it is the next step', D.lastToast(), 'A2 gets the ball in this step. Add a step for what they do with it');
+    D.click({ act: 'dbverb', k: 'none' });
+    tap(10, 10); D.click({ act: 'dbverb', k: 'pass' }); tap(2, 10);
+    check('so is a pass from someone without the ball', D.lastToast(), 'D1 hasn\'t got the ball then. Give them one in the set-up, or pass it to them first');
+    D.click({ act: 'dbverb', k: 'none' });
+    type(D, { dbCap: 'Pass and follow' });
+    D.click({ act: 'dbaddstep' });
+    check('the caption is kept', b().dg.frames[0].includes('# Pass and follow'), true);
+    type(D, { dbCap: '' });
+    tap(15, 5); D.click({ act: 'dbverb', k: 'shoot' });
+    deepEq('a shot needs one tap', b().dg.frames[1], ['A2>G']);
+    D.click({ act: 'dbundo' });
+    deepEq('and undo takes it back', b().dg.frames[1], []);
+    tap(15, 5); tap(18, 8);
+    deepEq('with the ball, a tap on the grass is a dribble', b().dg.frames[1], ['A2~18,8']);
+    check('it plays as it is drawn', /How it plays/.test(sheet(D)) && /animateTransform/.test(sheet(D)), true);
+
+    D.click({ act: 'dbstep', k: 0 }); D.click({ act: 'dbtool', k: 'del' }); tap(10, 2);
+    check('a player who moves later is taken off with their moves', !b().dg.players.A2 && b().dg.frames.flat().every(m => !/A2/.test(m)), true);
+    D.click({ act: 'dbback' });
+    check('going back leaves the drill undrawn', D.drillDraft.d.diagram, undefined);
+
+    D.click({ act: 'dbopen' });
+    check('starting again from an empty pitch', Object.keys(b().dg.players).length, 0);
+    tap(2, 10); tap(10, 2); D.click({ act: 'dbtool', k: 'ball' }); tap(2, 10);
+    D.click({ act: 'dbaddstep' }); tap(2, 10); tap(10, 2);
+    D.click({ act: 'dbuse' });
+    const dg = D.drillDraft.d.diagram;
+    check('used, the drawing is in the draft', !!dg && dg.frames.length, 1);
+    check('and holds to the same checks as any drawing', JSON.stringify(D.cleanDrawing(dg)), JSON.stringify(dg));
+    check('back in the editor, offering to change it', /Change the drawing/.test(sheet(D)), true);
+    loadForm(D); D.click({ act: 'dedsave' });
+    const saved = D.shelfItems('mine').find(x => x.name === 'Pass and move');
+    check('saved with it', !!(saved && saved.diagram && saved.diagram.frames.length === 1), true);
+    D.click({ act: 'drilledit', id: 'mine:' + saved.id });
+    D.click({ act: 'dbopen' });
+    check('and it opens on the board again to change', Object.keys(D.drillDraft.board.dg.players).length, Object.keys(saved.diagram.players).length);
+  }
+
+  await H.flush(20);
   console.log('\n--- one drill, sent to another coach ---');
   {
     const shelf = {

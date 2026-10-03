@@ -281,7 +281,17 @@
     const ox = PAD + room.w + ((W - 2 * PAD - room.e - room.w) - bw * s) / 2 - x0 * s;
     const oy = PAD + room.n - y0 * s;
     const h = bh * s + 2 * PAD + room.n + room.s;
-    return { s, h, px: p => [f(ox + p[0] * s), f(oy + p[1] * s)], len: y => y * s };
+    return { s, h, px: p => [f(ox + p[0] * s), f(oy + p[1] * s)], len: y => y * s, yd: v => [(v[0] - ox) / s, (v[1] - oy) / s] };
+  }
+
+  /* The still drawing's canvas, for a screen that takes taps on it (the
+     drawing board in app.js): its size in viewBox units, where a point in
+     yards lands, and the way back from a tap. Null when it can't be drawn. */
+  function frame(dg) {
+    const { errors, states } = parse(dg);
+    if (errors.some(e => e !== 'no players')) return null;
+    const g = geometry(dg, states);
+    return { w: W, h: f(g.h), s: g.s, r: R, px: g.px, yd: g.yd };
   }
 
   function markings(dg, g) {
@@ -428,9 +438,10 @@
 
   /* opts.animate loops the moves. Without it every move is drawn at once,
      numbered by step, which is how a diagram on paper reads. */
+  /* opts.empty draws a pitch nobody is on yet, for the drawing board. */
   function svg(dg, opts = {}) {
     const { errors, states, steps } = parse(dg);
-    if (errors.length) return '';
+    if (errors.some(e => !(opts.empty && e === 'no players'))) return '';
     const g = geometry(dg, states);
     const anim = !!opts.animate && steps.length > 0;
     const captions = anim && steps.some(s => s.caption);
@@ -609,7 +620,7 @@
     return out;
   }
 
-  const API = { parse, svg, clean, COLOURS };
+  const API = { parse, svg, clean, frame, COLOURS };
   if (typeof module !== 'undefined' && module.exports) module.exports = API;
   else root.DrillDiagram = API;
 })(typeof window !== 'undefined' ? window : globalThis);

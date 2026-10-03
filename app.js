@@ -2,7 +2,7 @@
    Static app. Data lives in localStorage, and mirrors to Firebase Realtime
    Database when a config + workspace code are present. */
 
-const BUILD = '80';
+const BUILD = '81';
 const BUILT = '2026-10-03';
 /* index.html carries the build it was published with. If this file is newer, the
    browser handed us a cached page — the exact failure that has eaten hours. */
@@ -6803,7 +6803,8 @@ const PLAN_ACTS = new Set(['pracnew', 'pracfromcal', 'pracopen', 'pracback', 'pr
    each one checks the shelf it touches as well. */
 const LIB_ACTS = new Set(['shelf', 'drillmine', 'drilledit', 'drillnew', 'drillshare', 'drilldel', 'drillorig', 'dedchip', 'dedpic',
   'dedai', 'dedaiback', 'dedaicopy', 'dedaiopen', 'dedaiuse', 'dedaifix',
-  'dedlinkadd', 'dedlinkdel', 'dedsave', 'clubdrills', 'mydrills']);
+  'dedlinkadd', 'dedlinkdel', 'dedsave', 'dedmore', 'clubdrills', 'mydrills',
+  'dbopen', 'dbtap', 'dbtool', 'dbverb', 'dbarea', 'dbstep', 'dbaddstep', 'dbundo', 'dbdelstep', 'dbuse', 'dbback']);
 const PRACTICE_ACTS = new Set(['practab', 'drill', 'drillpic', 'drillsend', 'drillsendshare', 'roleguide', 'rolepic', 'drillfilters', 'dfchip', 'dfpick', 'dfclear', 'drillmore', ...PLAN_ACTS, ...LIB_ACTS]);
 
 /* A team's age is stored as the year its players were born, because that
@@ -7854,15 +7855,42 @@ function sheetDrillEditor(top = false) {
   const kitOpts = k => [['', 'None'], ...(k === 'balls' ? [['each', 'One each']] : []), ...[1, 2, 3, 4, 6, 8, 10, 12, 16, 20, 24].map(x => [x, String(x)])];
   const pic = c.pic && L.DRILLS.find(x => x.id === c.pic);
   const own = !pic && c.diagram ? cleanDrawing(c.diagram) : null;
+  const need = l => `${l} <b class="need">needed</b>`;
+  /* Three parts, because a page of forty fields reads as a form to give up
+     on: the five things every drill needs, then the picture, then everything
+     the filters use, folded away with sensible defaults. The folded part is
+     still in the page, only hidden, so whatever she typed into it is read
+     back the same way as the rest. */
   openSheet(`<h3>${dr.id ? 'Edit the drill' : 'Write a drill'}</h3>
     <p class="muted" style="margin-top:0">${dr.shelf === 'club' ? 'The club\'s copy: every coach and admin in the club reads it.' : 'Yours. Nobody else sees it unless you share it with the club or add it to a practice.'}</p>
-    ${lab('Name', `<input type="text" id="deName" value="${esc(c.name)}" maxlength="80" placeholder="Box rondo">`)}
-    ${lab('In one line', `<input type="text" id="deSummary" value="${esc(c.summary || '')}" maxlength="200" placeholder="Four keep the ball from one in a small square">`)}
+    <p class="lbl edstep">1 · What it is</p>
+    ${lab(need('Name'), `<input type="text" id="deName" value="${esc(c.name)}" maxlength="80" placeholder="Box rondo">`)}
+    ${lab(need('In one line'), `<input type="text" id="deSummary" value="${esc(c.summary || '')}" maxlength="200" placeholder="Four keep the ball from one in a small square">`)}
+    ${lab(need('Setup'), `<textarea id="deSetup" rows="2" placeholder="A 10 yard square, four cones, one ball">${esc(c.setup || '')}</textarea>`)}
+    ${lab(need('How it runs') + ' <i class="hint">one step a line</i>', `<textarea id="deHow" rows="4" placeholder="Four on the outside, one in the middle&#10;They pass round him&#10;Whoever gives it away goes in">${esc(arrOf(c.how).join('\n'))}</textarea>`)}
+    ${lab(need('What to coach') + ' <i class="hint">one a line</i>', `<textarea id="dePoints" rows="3" placeholder="Open your body to see the next pass">${esc(arrOf(c.points).join('\n'))}</textarea>`)}
+    <div class="grid2">
+      ${lab('Youngest', sel('deAge0', n.ages ? n.ages[0] : 8, ages))}
+      ${lab('Oldest', sel('deAge1', n.ages ? n.ages[1] : 12, ages))}
+    </div>
+    <p class="lbl edstep">2 · The picture <i class="hint">optional</i></p>
+    ${pic ? `<div class="chips"><button class="chip" type="button" data-act="dedpic" data-k="keep" aria-pressed="${dr.keepPic}">Keep the drawing from ${esc(pic.name)}</button><button class="chip" type="button" data-act="dedpic" data-k="drop" aria-pressed="${!dr.keepPic}">No drawing</button></div>`
+      : own ? `<div class="drillpic">${drillDiagram().svg(own, { animate: !reducedMotion(), title: c.name })}</div>
+        <button class="btn quiet sm" data-act="dedpic" data-k="clear">Remove this drawing</button>` : '<p class="muted" style="margin-top:0">Put the players on a pitch and tap where they go. It plays as an animation on the drill\'s card.</p>'}
+    <button class="btn wide" data-act="dbopen" style="margin-top:8px">${own || (pic && dr.keepPic) ? 'Change the drawing' : 'Draw it on a pitch'}</button>
+    <button class="btn quiet wide" data-act="dedai" style="margin-top:8px">Or describe it, and have an AI draw it</button>
+    <p class="muted" style="margin-top:10px">Or link to a clip:</p>
+    ${c.media.map((m, i) => `<div class="spread"><a class="drilllink" href="${esc(m.url)}" target="_blank" rel="noopener noreferrer">${esc(m.title || m.url)}</a><button class="btn quiet sm" data-act="dedlinkdel" data-i="${i}">Remove</button></div>`).join('')}
+    ${c.media.length < 6 ? `<div class="grid2">${lab('Link to a video or GIF', `<input type="url" id="dlUrl" placeholder="https://youtu.be/…">`)}${lab('What it shows', `<input type="text" id="dlTitle" maxlength="80" placeholder="The set-up">`)}</div>
+      <button class="btn quiet wide" data-act="dedlinkadd">Add the link</button>` : ''}
+    <p class="muted">Unlisted isn't private: anyone who has the link can watch it. A clip of the set-up, or of professionals, is safer than one of your team. Nothing is uploaded, and a link needs a signal to play.</p>
+    <p class="lbl edstep">3 · More detail <i class="hint">optional</i></p>
+    <p class="muted" style="margin-top:0">Numbers, kit and tags, so it turns up when a coach filters the library. Leave them and the defaults stand.</p>
+    <button class="btn quiet wide" data-act="dedmore" aria-expanded="${!!dr.more}">${dr.more ? 'Hide the detail' : 'Show the detail'}</button>
+    <div${dr.more ? '' : ' hidden'}>
     <div class="grid2">
       ${lab('Type', sel('deType', c.type, Object.entries(L.TYPES)))}
       ${lab('Difficulty', sel('deLevel', n.level, Object.entries(L.LEVELS)))}
-      ${lab('Youngest', sel('deAge0', n.ages ? n.ages[0] : 8, ages))}
-      ${lab('Oldest', sel('deAge1', n.ages ? n.ages[1] : 12, ages))}
       ${lab('Minutes, shortest', `<input type="number" inputmode="numeric" id="deMin0" value="${esc(n.minutes ? n.minutes[0] : '')}">`)}
       ${lab('Minutes, longest', `<input type="number" inputmode="numeric" id="deMin1" value="${esc(n.minutes ? n.minutes[1] : '')}">`)}
       ${lab('Players, fewest', `<input type="number" inputmode="numeric" id="dePmin" value="${esc(n.players ? n.players.min : '')}">`)}
@@ -7878,9 +7906,6 @@ function sheetDrillEditor(top = false) {
       ${lab('Space, yards wide', `<input type="number" inputmode="numeric" id="deSpaceW" value="${esc(n.space ? n.space[0] : '')}">`)}
       ${lab('Space, yards long', `<input type="number" inputmode="numeric" id="deSpaceL" value="${esc(n.space ? n.space[1] : '')}">`)}
     </div>
-    ${lab('Setup', `<textarea id="deSetup" rows="3">${esc(c.setup || '')}</textarea>`)}
-    ${area('deHow', 'how', 4, 'How it runs, a step a line')}
-    ${area('dePoints', 'points', 3, 'Coaching points, one a line')}
     ${area('deQuestions', 'questions', 2, 'Questions to ask them, one a line')}
     ${area('deMistakes', 'mistakes', 2, 'What goes wrong, and the fix, one a line')}
     ${lab('Why it helps on Saturday', `<textarea id="deWhy" rows="2">${esc(c.why || '')}</textarea>`)}
@@ -7889,19 +7914,297 @@ function sheetDrillEditor(top = false) {
     ${lab('Safety', `<input type="text" id="deSafety" value="${esc(c.safety || '')}" maxlength="400" placeholder="Only if there is something to say">`)}
     ${Object.keys(DRAFT_CHIPS).map(chips).join('')}
     <p class="lbl">Bring</p><div class="grid2">${Object.entries(L.KIT).map(([k, l]) => lab(esc(l), sel('deKit_' + k, (c.kit || {})[k] || '', kitOpts(k)))).join('')}</div>
-    <p class="lbl">Picture</p>
-    ${pic ? `<div class="chips"><button class="chip" type="button" data-act="dedpic" data-k="keep" aria-pressed="${dr.keepPic}">Keep the drawing from ${esc(pic.name)}</button><button class="chip" type="button" data-act="dedpic" data-k="drop" aria-pressed="${!dr.keepPic}">No drawing</button></div>`
-      : own ? `<div class="drillpic">${drillDiagram().svg(own, { animate: !reducedMotion(), title: c.name })}</div>
-        <button class="btn quiet sm" data-act="dedpic" data-k="clear">Remove this drawing</button>` : ''}
-    <button class="btn quiet wide" data-act="dedai" style="margin-top:8px">${pic || own ? 'Describe it, and have an AI redraw it' : 'Describe it, and have an AI draw it'}</button>
-    <p class="muted" style="margin-top:6px">Or link to a clip:</p>
-    ${c.media.map((m, i) => `<div class="spread"><a class="drilllink" href="${esc(m.url)}" target="_blank" rel="noopener noreferrer">${esc(m.title || m.url)}</a><button class="btn quiet sm" data-act="dedlinkdel" data-i="${i}">Remove</button></div>`).join('')}
-    ${c.media.length < 6 ? `<div class="grid2">${lab('Link to a video or GIF', `<input type="url" id="dlUrl" placeholder="https://youtu.be/…">`)}${lab('What it shows', `<input type="text" id="dlTitle" maxlength="80" placeholder="The set-up">`)}</div>
-      <button class="btn quiet wide" data-act="dedlinkadd">Add the link</button>` : ''}
-    <p class="muted">Unlisted isn't private: anyone who has the link can watch it. A clip of the set-up, or of professionals, is safer than one of your team. Nothing is uploaded, and a link needs a signal to play.</p>
-    <button class="btn wide" data-act="dedsave">Save</button>
+    </div>
+    <button class="btn wide" data-act="dedsave" style="margin-top:14px">Save</button>
     <button class="btn quiet wide" data-act="closesheet" style="margin-top:8px">Cancel</button>`, top);
 }
+/* ---- drawing it herself ---- */
+/* A pitch she taps on. The set-up is where everyone stands: pick a tool,
+   tap the grass. Then each step is "tap a player, then where they go": a
+   player with the ball passes to whoever she taps next, or dribbles to a
+   spot; one without it runs. That covers almost every move in the format,
+   and the chips over the board cover the rest (a shot, winning the ball, a
+   pass into space). What it builds is drill-diagram.js's own format, so
+   every change is held to parse() before it's kept and a step that couldn't
+   be drawn is refused there and then, in words, rather than at Save. The
+   board never touches the draft's drawing until she says Use this drawing. */
+const BOARD_SIZES = [
+  ['15x15', [15, 15], 'grid', 'Small square'], ['20x20', [20, 20], 'grid', 'Square'], ['30x20', [30, 20], 'grid', 'Grid'],
+  ['40x30', [40, 30], 'grid', 'Big grid'], ['44x30', [44, 30], 'box', 'Penalty area'], ['60x44', [60, 44], 'half', 'Half a pitch'],
+  ['70x50', [70, 50], 'pitch', 'Small-sided pitch']];
+const BOARD_TOOLS = [['A', 'Blue player'], ['D', 'Red player'], ['N', 'Yellow (both sides)'], ['K', 'Keeper'], ['C', 'Coach'],
+  ['ball', 'Ball'], ['cone', 'Cone'], ['goal', 'Goal'], ['mini', 'Small goal'], ['move', 'Move'], ['del', 'Remove']];
+const BOARD_VERBS = [['pass', 'Pass'], ['dribble', 'Dribble'], ['run', 'Run'], ['shoot', 'Shoot'], ['win', 'Win the ball']];
+const halfYd = n => Math.round(n * 2) / 2;
+const boardClone = dg => JSON.parse(JSON.stringify(dg));
+/* An empty step is allowed only while she's filling it, and only last. */
+function boardSettled(dg) {
+  const out = boardClone(dg);
+  const fr = arrOf(out.frames).filter(f => arrOf(f).some(m => !String(m).startsWith('#')));
+  if (fr.length) out.frames = fr; else delete out.frames;
+  return out;
+}
+const boardMoves = f => arrOf(f).filter(m => !String(m).startsWith('#'));
+function boardOpen(c, keepPic) {
+  const L = drillLib();
+  const pic = keepPic && c.pic && L && L.DRILLS.find(x => x.id === c.pic);
+  const own = c.diagram ? cleanDrawing(c.diagram) : null;
+  const from = own || (pic && pic.diagram ? drillDiagram().clean(pic.diagram) : null);
+  const dg = from ? boardClone(from) : { area: [20, 20], mark: 'grid', players: {} };
+  dg.players = dg.players || {};
+  dg.frames = arrOf(dg.frames).map(f => arrOf(f).slice());
+  return { dg, step: 0, tool: 'A', sel: null, verb: null };
+}
+/* What a refused change gets told, in her words rather than the parser's. */
+function boardWhy(err) {
+  const m = String(err || '');
+  const who = (/([ADNBKC]\d*) (?:passes|dribbles) without a ball/.exec(m) || [])[1];
+  if (who) return `${who} hasn't got the ball then. Give them one in the set-up, or pass it to them first`;
+  if (/told to move twice/.test(m)) return 'They already move in this step. Add a step for their next move';
+  if (/outside the area|leaves the area|can't pass to/.test(m)) return "That's off the area";
+  if (/no goal/.test(m)) return 'Put a goal on in the set-up first';
+  if (/passes to herself/.test(m)) return 'Tap somebody else to pass to';
+  if (/penalty box needs|pitch needs/.test(m)) return 'That size is too small for those markings';
+  if (/no players/.test(m)) return 'Put a player on first';
+  return m.replace(/^step \d+: /, '');
+}
+/* Every change goes through here: tried on a copy, kept only if it draws. */
+function boardTry(b, change) {
+  const next = boardClone(b.dg);
+  if (change(next) === false) return false;
+  const st = boardSettled(next);
+  const errs = Object.keys(st.players || {}).length ? drillDiagram().parse(st).errors : [];
+  if (errs.length) { toast(boardWhy(errs[0])); return false; }
+  if (JSON.stringify(st).length > 12000) { toast("That's as much as one drawing can hold"); return false; }
+  b.dg = next; return true;
+}
+/* Where everyone is when step k starts (k counts from 1; 0 is the set-up),
+   and who has a ball once the moves already in it have happened. */
+function boardStates(b) {
+  const st = boardSettled(b.dg);
+  return Object.keys(st.players || {}).length ? drillDiagram().parse(st).states : [];
+}
+function boardHas(b, id) {
+  const states = boardStates(b), k = b.step;
+  const s = boardMoves(b.dg.frames[k - 1]).length ? states[k] : states[k - 1];
+  return !!s && s.balls.some(x => x.by === id);
+}
+/* Has it at the start of the step, rather than being passed it during. One
+   passed it can play it on first time, but carrying it is the next step. */
+const boardHadIt = (b, id) => { const s = boardStates(b)[b.step - 1]; return !!s && s.balls.some(x => x.by === id); };
+/* What the board shows: the set-up, or step k with everyone where they are
+   at its start and its own moves drawn as arrows. */
+function boardView(b) {
+  if (!b.step) { const v = boardClone(b.dg); delete v.frames; return v; }
+  const states = boardStates(b), s = states[b.step - 1];
+  if (!s) return null;
+  const v = boardClone(b.dg); delete v.frames;
+  v.players = s.players;
+  const balls = s.balls.map(x => (x.by ? x.by : x.at));
+  if (balls.length) v.ball = balls; else delete v.ball;
+  const mv = boardMoves(b.dg.frames[b.step - 1]);
+  if (mv.length) {
+    const t = { ...v, frames: [mv] };
+    if (!drillDiagram().parse(t).errors.length) return t;
+  }
+  return v;
+}
+/* Who a tap means: whoever is drawn there, or, in a step, whoever's run
+   ends there, since a pass onto a run is aimed where she's going. */
+function boardHit(b, v, fr, at) {
+  const reach = (fr.r + 8) / fr.s;
+  const near = ps => Object.entries(ps || {}).map(([id, p]) => [id, Math.hypot(p[0] - at[0], p[1] - at[1])])
+    .filter(x => x[1] <= reach).sort((x, y) => x[1] - y[1])[0];
+  const end = b.step && boardMoves(b.dg.frames[b.step - 1]).length ? (boardStates(b)[b.step] || {}).players : null;
+  const hit = near(v.players) || near(end);
+  return hit ? hit[0] : null;
+}
+function boardNextId(dg, letter) {
+  let n = 1; while (dg.players[letter + n]) n++;
+  return n > 99 ? null : letter + n;
+}
+/* A ball, cone or goal near the tap, for Move and Remove. */
+function boardThing(dg, at, reach) {
+  const d = p => Math.hypot(p[0] - at[0], p[1] - at[1]);
+  const all = [];
+  for (const k of ['cones', 'balls', 'poles', 'goals', 'hurdles']) arrOf(dg[k]).forEach((p, i) => all.push([k, i, d(p)]));
+  boardBalls(dg).filter(Array.isArray).forEach((p, i) => all.push(['ball', i, d(p)]));
+  return all.filter(x => x[2] <= reach).sort((x, y) => x[2] - y[2])[0] || null;
+}
+const boardBalls = dg => (dg.ball === undefined ? [] : typeof dg.ball === 'string' ? [dg.ball]
+  : Array.isArray(dg.ball) && dg.ball.length === 2 && dg.ball.every(Number.isFinite) ? [dg.ball] : arrOf(dg.ball));
+function setBoardBalls(dg, list) { if (list.length) dg.ball = list; else delete dg.ball; }
+function boardDropPlayer(dg, id) {
+  delete dg.players[id];
+  setBoardBalls(dg, boardBalls(dg).filter(x => x !== id));
+  const mentions = new RegExp(`(^|[>~*-])${id}(?![0-9])`);
+  dg.frames = dg.frames.map(f => f.filter(m => String(m).startsWith('#') || !mentions.test(m)));
+  // a step left with nothing in it goes, unless it's the last one she's still filling
+  dg.frames = dg.frames.filter((f, i) => boardMoves(f).length || i === dg.frames.length - 1);
+}
+
+function sheetDrawBoard(top = false) {
+  const dr = drillDraft, b = dr && dr.board; if (!b) return;
+  const D = drillDiagram(), v = boardView(b), fr = v && D.frame(v);
+  const n = b.dg.frames.length;
+  if (b.step > n) b.step = n;
+  let pic = fr ? D.svg(v, { empty: true }) : '';
+  if (pic && b.sel && v.players[b.sel]) {
+    const [x, y] = fr.px(v.players[b.sel]);
+    pic = pic.replace(/<\/svg>$/, `<circle cx="${x}" cy="${y}" r="${fr.r + 5}" fill="none" stroke="#FFE15A" stroke-width="3"/></svg>`);
+  }
+  const chip = (act, k, label, on) => `<button class="chip" type="button" data-act="${act}" data-k="${esc(k)}" aria-pressed="${!!on}">${esc(label)}</button>`;
+  const steps = `<div class="chips">${chip('dbstep', 0, 'Set-up', !b.step)}${b.dg.frames.map((f, i) => chip('dbstep', i + 1, 'Step ' + (i + 1), b.step === i + 1)).join('')}
+    ${!n || boardMoves(b.dg.frames[n - 1]).length ? '<button class="chip" type="button" data-act="dbaddstep">+ Add a step</button>' : ''}</div>`;
+  const cap = b.step ? (arrOf(b.dg.frames[b.step - 1]).find(m => String(m).startsWith('#')) || '').replace(/^#\s*/, '') : '';
+  const help = !b.step
+    ? (b.tool === 'move' ? (b.sel ? `Now tap where ${esc(b.sel)} starts.` : 'Tap a player, then where they should stand.')
+      : b.tool === 'del' ? 'Tap anything to take it off.' : b.tool === 'ball' ? 'Tap a player to give them a ball, or the grass for a loose one.'
+        : b.tool === 'goal' || b.tool === 'mini' ? 'Tap near an edge: the goal goes on it, facing in.' : 'Tap the grass to put one there.')
+    : b.sel ? (b.verb === 'pass' ? `${esc(b.sel)} passes: tap a player or a space.` : b.verb === 'run' ? `${esc(b.sel)} runs: tap where to, or a player to close down.`
+      : b.verb === 'dribble' ? `${esc(b.sel)} dribbles: tap where to.`
+        : boardHas(b, b.sel) && !boardHadIt(b, b.sel) ? `${esc(b.sel)} is passed it in this step: tap a teammate for a first-time pass, or add a step for what they do next.`
+          : boardHas(b, b.sel) ? `${esc(b.sel)} has the ball: tap a teammate to pass, or a space to dribble there.` : `Tap where ${esc(b.sel)} runs to.`)
+      : 'Tap the player who moves first. Things that happen at the same time go in the same step.';
+  openSheet(`<h3>Draw it</h3>
+    <p class="muted" style="margin-top:0">${!b.step ? 'First the set-up: where everyone stands. Then add steps, one for each thing that happens, and it plays them in order.' : 'Tap a player, then where they go. A player with the ball passes or dribbles; one without it runs.'}</p>
+    ${steps}
+    ${!b.step ? `<p class="lbl">Size</p><div class="chips">${BOARD_SIZES.map(([k, a, m, l]) => chip('dbarea', k, `${l}, ${a[0]}×${a[1]}`, b.dg.area[0] === a[0] && b.dg.area[1] === a[1] && (b.dg.mark || 'grid') === m)).join('')}</div>
+      <p class="lbl">Put on</p><div class="chips">${BOARD_TOOLS.map(([k, l]) => chip('dbtool', k, l, b.tool === k)).join('')}</div>`
+      : b.sel ? `<div class="chips">${BOARD_VERBS.filter(([k]) => k !== 'shoot' || arrOf(b.dg.goals).length).map(([k, l]) => chip('dbverb', k, l, b.verb === k)).join('')}${chip('dbverb', 'none', 'Cancel', false)}</div>` : ''}
+    <p class="muted" style="margin:8px 0 6px">${help}</p>
+    <div class="drillpic board" data-act="dbtap" style="cursor:crosshair">${pic || '<p class="muted" style="padding:16px;color:#fff">This can\'t be drawn. Try another size.</p>'}</div>
+    ${b.step ? `<label class="field"><span>What happens, in a few words</span><input type="text" id="dbCap" maxlength="48" value="${esc(cap)}" placeholder="Pass and follow"></label>
+      <div class="row" style="gap:6px">${boardMoves(b.dg.frames[b.step - 1]).length ? '<button class="btn quiet sm" style="flex:1" data-act="dbundo">Undo</button>' : ''}
+        <button class="btn quiet sm" style="flex:1" data-act="dbdelstep">Delete this step</button></div>` : ''}
+    ${boardSettled(b.dg).frames && fr ? `<p class="lbl" style="margin-top:12px">How it plays</p><div class="drillpic">${D.svg(boardSettled(b.dg), { animate: !reducedMotion(), title: dr.d.name || 'The drill' })}</div>` : ''}
+    <button class="btn wide" data-act="dbuse" style="margin-top:12px">Use this drawing</button>
+    <button class="btn quiet wide" data-act="dbback" style="margin-top:8px">Back to the drill</button>`, top);
+}
+/* A tap on the board, in yards: from where the finger landed on the drawing,
+   or from data-x/data-y, which is how the tests tap. */
+function boardPoint(e, el, v) {
+  const fr = v && drillDiagram().frame(v); if (!fr) return null;
+  const svgEl = el && el.querySelector && el.querySelector('svg');
+  if (e && Number.isFinite(e.clientX) && svgEl && svgEl.getBoundingClientRect) {
+    const r = svgEl.getBoundingClientRect();
+    if (!r.width || !r.height) return null;
+    return { fr, at: fr.yd([(e.clientX - r.left) / r.width * fr.w, (e.clientY - r.top) / r.height * fr.h]) };
+  }
+  const x = Number(el && el.dataset && el.dataset.x), y = Number(el && el.dataset && el.dataset.y);
+  return Number.isFinite(x) && Number.isFinite(y) ? { fr, at: [x, y] } : null;
+}
+function onBoardAct(a, d, e, el) {
+  const dr = drillDraft, c = dr.d;
+  if (a === 'dbopen') { dr.board = boardOpen(c, dr.keepPic); sheetDrawBoard(true); return; }
+  const b = dr.board; if (!b) { sheetDrillEditor(true); return; }
+  // the caption is typed, so it's read in before anything redraws over it
+  const capEl = $('#dbCap');
+  if (b.step && capEl && b.dg.frames[b.step - 1]) {
+    const t = String(capEl.value || '').replace(/[\u0000-\u001f]/g, ' ').trim().slice(0, 48);
+    const f = b.dg.frames[b.step - 1].filter(m => !String(m).startsWith('#'));
+    b.dg.frames[b.step - 1] = t ? [...f, '# ' + t] : f;
+  }
+  if (a === 'dbback') { dr.board = null; sheetDrillEditor(true); return; }
+  if (a === 'dbuse') {
+    const st = boardSettled(b.dg);
+    if (!Object.keys(st.players || {}).length) { toast('Put a player on first'); return; }
+    const clean = cleanDrawing(st);
+    if (!clean) { toast("That can't be drawn yet"); return; }
+    c.diagram = clean; delete c.pic; dr.keepPic = false; dr.board = null;
+    sheetDrillEditor(true); toast(clean.frames ? 'Drawn. It plays on the drill\'s card' : 'Drawn'); return;
+  }
+  if (a === 'dbtool') { if (BOARD_TOOLS.some(([k]) => k === d.k)) { b.tool = d.k; b.sel = null; } sheetDrawBoard(); return; }
+  if (a === 'dbverb') {
+    if (d.k === 'none') { b.sel = null; b.verb = null; sheetDrawBoard(); return; }
+    if (!b.sel || !BOARD_VERBS.some(([k]) => k === d.k)) return;
+    // a shot and winning the ball need nothing more tapped
+    if (d.k === 'shoot' || d.k === 'win') {
+      const mv = d.k === 'shoot' ? b.sel + '>G' : b.sel + '*';
+      if (boardTry(b, g => { g.frames[b.step - 1].splice(boardMoves(g.frames[b.step - 1]).length, 0, mv); })) { b.sel = null; b.verb = null; }
+      sheetDrawBoard(); return;
+    }
+    b.verb = b.verb === d.k ? null : d.k; sheetDrawBoard(); return;
+  }
+  if (a === 'dbarea') {
+    const z = BOARD_SIZES.find(x => x[0] === d.k); if (!z) return;
+    if (!boardTry(b, g => { g.area = z[1].slice(); g.mark = z[2]; })) { sheetDrawBoard(); return; }
+    sheetDrawBoard(); return;
+  }
+  if (a === 'dbstep') { b.step = Math.max(0, Math.min(b.dg.frames.length, Number(d.k) || 0)); b.sel = null; b.verb = null; sheetDrawBoard(); return; }
+  if (a === 'dbaddstep') {
+    if (!Object.keys(b.dg.players).length) { toast('Put a player on first'); return; }
+    const n = b.dg.frames.length;
+    if (!n || boardMoves(b.dg.frames[n - 1]).length) { if (n >= 16) { toast('Sixteen steps is the most'); return; } b.dg.frames.push([]); }
+    b.step = b.dg.frames.length; b.sel = null; b.verb = null; sheetDrawBoard(); return;
+  }
+  if (a === 'dbundo') {
+    const f = b.dg.frames[b.step - 1]; if (!f) return;
+    boardTry(b, g => { const h = g.frames[b.step - 1], i = h.map(m => !String(m).startsWith('#')).lastIndexOf(true); if (i < 0) return false; h.splice(i, 1); });
+    sheetDrawBoard(); return;
+  }
+  if (a === 'dbdelstep') {
+    const k = b.step; if (!k) return;
+    if (!boardTry(b, g => { g.frames.splice(k - 1, 1); })) return;
+    b.step = Math.min(k, b.dg.frames.length); b.sel = null; sheetDrawBoard(); return;
+  }
+  if (a !== 'dbtap') return;
+  const v = boardView(b), p = boardPoint(e, el, v); if (!p) return;
+  const [aw, ah] = b.dg.area;
+  const at = [halfYd(Math.max(0, Math.min(aw, p.at[0]))), halfYd(Math.max(0, Math.min(ah, p.at[1])))];
+  const hit = boardHit(b, v, p.fr, p.at), reach = (p.fr.r + 8) / p.fr.s;
+
+  if (!b.step) {
+    const t = b.tool;
+    if (t === 'move') {
+      if (!b.sel) { if (hit) b.sel = hit; else toast('Tap a player to move'); sheetDrawBoard(); return; }
+      const id = b.sel; b.sel = null;
+      if (hit !== id) boardTry(b, g => { g.players[id] = at; });
+      sheetDrawBoard(); return;
+    }
+    if (t === 'del') {
+      const th = boardThing(b.dg, p.at, reach);
+      if (hit && (!th || th[2] >= Math.hypot(v.players[hit][0] - p.at[0], v.players[hit][1] - p.at[1]))) boardTry(b, g => boardDropPlayer(g, hit));
+      else if (th) boardTry(b, g => {
+        let j = -1;
+        if (th[0] === 'ball') setBoardBalls(g, boardBalls(g).filter(x => !(Array.isArray(x) && ++j === th[1])));
+        else { g[th[0]].splice(th[1], 1); if (!g[th[0]].length) delete g[th[0]]; }
+      });
+      sheetDrawBoard(); return;
+    }
+    if (t === 'ball') {
+      boardTry(b, g => {
+        const list = boardBalls(g);
+        if (hit) setBoardBalls(g, list.includes(hit) ? list.filter(x => x !== hit) : [...list, hit]);
+        else setBoardBalls(g, [...list, at]);
+      });
+      sheetDrawBoard(); return;
+    }
+    if (t === 'cone') { boardTry(b, g => { g.cones = [...arrOf(g.cones), at]; }); sheetDrawBoard(); return; }
+    if (t === 'goal' || t === 'mini') {
+      // onto whichever edge is nearest, mouth facing into the area
+      const [x, y] = at, edge = [[y, [x, 0, 's']], [ah - y, [x, ah, 'n']], [x, [0, y, 'e']], [aw - x, [aw, y, 'w']]].sort((m, n) => m[0] - n[0])[0][1];
+      boardTry(b, g => { g.goals = [...arrOf(g.goals), [edge[0], edge[1], t === 'goal' ? 'big' : 'mini', edge[2]]]; });
+      sheetDrawBoard(); return;
+    }
+    if (hit) { toast('Someone is already there. Use Move to shift them'); return; }
+    const id = boardNextId(b.dg, t);
+    if (!id || Object.keys(b.dg.players).length >= 30) { toast('Thirty players is the most'); return; }
+    boardTry(b, g => { g.players[id] = at; });
+    sheetDrawBoard(); return;
+  }
+
+  /* A step: the first tap picks who, the second says where. */
+  if (!b.sel) { if (hit) b.sel = hit; else toast('Tap a player first'); sheetDrawBoard(); return; }
+  if (hit === b.sel) { b.sel = null; b.verb = null; sheetDrawBoard(); return; }
+  const who = b.sel, ball = boardHas(b, who), verb = b.verb || (ball ? (hit ? 'pass' : 'dribble') : 'run');
+  if (verb === 'dribble' && ball && !boardHadIt(b, who)) { toast(`${who} gets the ball in this step. Add a step for what they do with it`); return; }
+  const spot = `${at[0]},${at[1]}`;
+  const mv = verb === 'pass' ? `${who}>${hit || spot}` : verb === 'dribble' ? `${who}~${spot}` : `${who}-${hit || spot}`;
+  if (boardTry(b, g => { g.frames[b.step - 1].splice(boardMoves(g.frames[b.step - 1]).length, 0, mv); })) { b.sel = null; b.verb = null; }
+  sheetDrawBoard();
+}
+
 /* ---- having an AI draw it ---- */
 /* The coach says what happens in her own words, and an AI writes the drawing
    in drill-diagram.js's format. The app never calls a model itself (CLAUDE.md):
@@ -12298,6 +12601,8 @@ function onAct(e) {
       if (d.k === 'clear') delete c.diagram; else dr2.keepPic = d.k === 'keep';
       sheetDrillEditor(); return;
     }
+    if (a === 'dedmore') { dr2.more = !dr2.more; sheetDrillEditor(); return; }
+    if (a.startsWith('db')) { onBoardAct(a, d, e, el); return; }
     if (a === 'dedai') { sheetDrawAi(); return; }
     if (a === 'dedaiback') { dr2.ai = null; sheetDrillEditor(true); return; }
     if (['dedaicopy', 'dedaiopen', 'dedaiuse', 'dedaifix'].includes(a)) {

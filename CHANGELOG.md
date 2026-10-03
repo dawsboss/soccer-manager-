@@ -8,6 +8,44 @@ before this point lives only in the git log.
 
 ---
 
+## Writing a drill: five things, then draw it on a pitch — 2026-10-03
+
+The owner: *the write a drill is really confusing for a user. Also I have no
+idea how a user would make the animation in that?* Both fair. The editor was
+one page of about forty fields in the order the card stores them, and the
+only way to a moving picture was to copy a prompt into an AI chat and paste
+JSON back.
+
+**The editor is three parts now.** *1 · What it is* is the five things Save
+already insisted on (name, one line, setup, how it runs, what to coach),
+marked *needed*, with the age range. *2 · The picture*. *3 · More detail*,
+folded behind *Show the detail*: type, numbers, kit, every tag chip. The
+folded fields are still in the page, only hidden, so nothing about how the
+draft is read or saved changed, and the defaults stand if she never opens it.
+
+**Draw it on a pitch.** A board in the editor: pick a size, put players, a
+ball, cones and goals on by tapping, then add steps. In a step she taps a
+player and then where they go; a player with the ball passes to whoever she
+taps (or the end of their run) or dribbles to a spot, one without it runs,
+and chips give a shot, winning the ball, and a pass into space. Each step
+can have a few words, which play as the caption. It writes
+`drill-diagram.js`'s own format, so each tap is tried on a copy and held to
+`parse()` before it's kept: a pass from someone without the ball, a second
+run in one step, a spot off the area are refused there and then, in plain
+words, instead of at Save. *Use this drawing* still goes through
+`cleanDrawing()`, as an AI's answer does. It opens on whatever drawing the
+drill already has, built-in or her own, so changing one is the same screen.
+`DrillDiagram` gained `frame()` (where a point lands and the way back from a
+tap) and `svg(…, { empty: true })` for a pitch nobody is on yet. Having an
+AI draw it is still there, second.
+
+`test/library.js` taps a drill out end to end: placing, the goal on the
+nearest edge, a ball, pass and run and pass-and-follow, the refusals and
+what they say, a shot, undo, removing a player who moves later, and the
+saved drawing holding to the same checks as any other.
+
+---
+
 ## Drills for the shape you play, and wide players who get back — 2026-10-03
 
 The owner: *we are running a 2-5-1 and the girls on the wings are having

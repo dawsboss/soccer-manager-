@@ -729,6 +729,10 @@ a.btn{display:inline-block;text-decoration:none}
 .drillthumb{border-radius:6px;overflow:hidden;line-height:0}
 .drillthumb svg,.drillpic svg{width:100%;height:auto;display:block}
 .drillpic{border-radius:8px;overflow:hidden;line-height:0;background:#2F8A55;margin-bottom:6px}
+.sheet .edstep{font-size:15px;font-weight:700;color:var(--ink);margin:18px 0 8px;padding-top:12px;border-top:1px solid var(--line)}
+.need{font-weight:600;font-size:11px;color:var(--ink-soft);text-transform:uppercase;letter-spacing:.04em;margin-left:4px}
+.hint{font-style:normal;font-weight:400;font-size:12px;color:var(--ink-soft);margin-left:4px}
+.drillpic.board{touch-action:manipulation;-webkit-user-select:none;user-select:none}
 .drillpicbar{font-size:12.5px;margin-bottom:6px;flex-wrap:wrap}
 .drillkey{display:flex;flex-wrap:wrap;gap:4px 10px;color:var(--ink-soft)}
 .drillkey i{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:4px;vertical-align:-1px;border:1px solid rgba(0,0,0,.2)}
