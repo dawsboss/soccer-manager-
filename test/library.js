@@ -1,0 +1,439 @@
+/* The club's drills and a coach's own: who sees which shelf, how a drill moves
+   between them, and how each reaches the database and comes back.
+
+   TRAINING.md is the design and TRAINING-NEXT.md the brief. What's pinned here
+   is what would be easy to get quietly wrong:
+
+   - Drills are the club's and the coach's secret sauce. A parent's or a
+     tracker's phone never draws a shelf and never asks the database for one,
+     so it never holds a copy to leak.
+   - Mine is the person's, not the phone's. Cached per account, cleared when she
+     signs out or someone else signs in; another account's library is never
+     read, except by the app owner, once, and never kept.
+   - Copied, never linked. Every copy says where it came from, a copy whose
+     original moved on says so and never merges, and deleting from any shelf
+     leaves every plan that used the drill readable.
+   - Merge on read, never replace, the same as practice plans.
+   - Anything any coach can write is drawn as text, and held to the library's
+     own vocabularies so the filters find it. */
+
+const H = require('./harness');
+const { check, deepEq } = H;
+const { makeFakebase } = require('./fakebase');
+const L = require('../drills.js');
+
+const CONFIG = { apiKey: 'k', databaseURL: 'https://prod.example', projectId: 'p' };
+const CODE = 'CLUB';
+const WS = 'workspaces/' + CODE;
+const CLUBD = 'training/' + CODE + '/drills';
+const LIB = uid => 'userLibrary/' + uid + '/drills';
+
+const club = () => ({
+  teams: {
+    t1: { id: 't1', name: 'G11 Flight', birthYear: 2016, players: { p1: { id: 'p1', name: 'Ella', number: '7', guardians: { mum: true } } } },
+    t2: { id: 't2', name: 'G13 Storm', birthYear: 2014, players: {} }
+  },
+  matches: {},
+  access: {
+    admins: { boss: true },
+    index: { boss: true, jaz: true, trk: true, mum: true, kim: true },
+    members: { boss: { name: 'Ada' }, jaz: { name: 'Jaz' }, kim: { name: 'Kim' } },
+    teams: { t1: { coaches: { jaz: true }, trackers: { trk: true } }, t2: { coaches: { kim: true } } },
+    coachIndex: { jaz: 't1', kim: 't2' }
+  }
+});
+
+const sheet = D => String(D.dom.node('#sheet').innerHTML || '');
+const written = (fbk, p) => { const w = fbk.writtenTo(p); return w.length ? w[w.length - 1].value : undefined; };
+const unesc = s => s.replace(/&#39;/g, "'").replace(/&quot;/g, '"').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&');
+
+/* The stub DOM keeps whatever a test last typed into a node and knows nothing
+   of the markup, so after the editor opens its fields are filled in from the
+   sheet the way a browser would fill them. */
+function loadForm(D) {
+  const html = sheet(D);
+  for (const m of html.matchAll(/<input[^>]*\bid="([^"]+)"[^>]*>/g)) {
+    const v = /\bvalue="([^"]*)"/.exec(m[0]);
+    D.dom.node('#' + m[1]).value = v ? unesc(v[1]) : '';
+  }
+  for (const m of html.matchAll(/<textarea id="([^"]+)"[^>]*>([\s\S]*?)<\/textarea>/g)) D.dom.node('#' + m[1]).value = unesc(m[2]);
+  for (const m of html.matchAll(/<select id="([^"]+)">([\s\S]*?)<\/select>/g)) {
+    const sel = /<option value="([^"]*)" selected>/.exec(m[2]) || /<option value="([^"]*)"/.exec(m[2]);
+    D.dom.node('#' + m[1]).value = sel ? unesc(sel[1]) : '';
+  }
+}
+const type = (D, v) => { for (const [k, x] of Object.entries(v)) D.dom.node('#' + k).value = x; };
+
+async function device(uid, opts = {}) {
+  const fbk = makeFakebase();
+  const D = H.loadApp({ firebase: fbk, config: CONFIG, storage: { 'sm.workspace': CODE, ...(opts.storage || {}) } });
+  await D.flush();
+  fbk.signIn(uid, { name: uid }); await D.flush();
+  fbk.deliver(WS, opts.club || club()); await D.flush();
+  if (opts.owner) { fbk.deliver('appOwners', { [uid]: true }); await D.flush(); }
+  return { D, fbk };
+}
+const toDrills = (D, shelf = 'all') => {
+  D.ui.view = 'practice'; D.ui.teamId = D.ui.teamId || 't1';
+  D.ui.practice = { tab: 'drills', shelf }; D.render();
+};
+/* A drill the way a coach's editor writes one. */
+function writeOne(D, extra = {}) {
+  D.click({ act: 'drillnew' }); loadForm(D);
+  type(D, { deName: 'Box rondo', deSummary: 'Four keep it from one', deSetup: 'A 10 yd square', deHow: 'Four on the outside\nOne in the middle', dePoints: 'Open your body', ...extra });
+  D.click({ act: 'dedsave' });
+  return D.shelfItems('mine').find(x => x.name === (extra.deName || 'Box rondo'));
+}
+
+(async () => {
+
+  console.log('--- who gets the shelves ---');
+  {
+    for (const who of ['mum', 'trk']) {
+      const { D, fbk } = await device(who);
+      toDrills(D);
+      check(who + ': no shelves drawn', /data-act="shelf"/.test(D.rendered()), false);
+      check(who + ': never asks for the club\'s drills', fbk.readPaths().some(p => p.includes('/drills')), false);
+      check(who + ': nor anybody\'s library', fbk.readPaths().some(p => p.startsWith('userLibrary')), false);
+      D.click({ act: 'drillnew' });
+      check(who + ': a tap that gets through is refused', D.lastToast(), 'Practice is for coaches and admins');
+      D.click({ act: 'clubdrills' });
+      check(who + ': including the way in from Admin', D.lastToast(), 'Practice is for coaches and admins');
+      check(who + ': and nothing is written', fbk.record.writes.some(w => w.path.includes('/drills')), false);
+    }
+    const { D, fbk } = await device('jaz');
+    check('every library action is behind the practice check', [...D.LIB_ACTS].every(x => D.PRACTICE_ACTS.has(x)), true);
+    check('nothing is read before Drills opens', fbk.readPaths().some(p => p.includes('drills')), false);
+    toDrills(D);
+    check('a coach gets Built-in, Club and Mine', ['all', 'builtin', 'club', 'mine'].every(k => D.rendered().includes(`data-act="shelf" data-k="${k}"`)), true);
+    check('reading the club\'s drills', fbk.watching(CLUBD), true);
+    check('and her own library', fbk.watching(LIB('jaz')), true);
+    check('and nobody else\'s', fbk.readPaths().filter(p => p.startsWith('userLibrary')).every(p => p === LIB('jaz')), true);
+    D.render(); D.render();
+    check('once, however often it redraws', fbk.countReads(CLUBD) + fbk.countReads(LIB('jaz')), 2);
+
+    const a = await device('boss');
+    toDrills(a.D);
+    check('an admin reads the club\'s drills too', a.fbk.watching(CLUBD), true);
+  }
+
+  await H.flush(20);
+  console.log('\n--- writing her own ---');
+  {
+    const { D, fbk } = await device('jaz');
+    toDrills(D, 'mine');
+    check('an empty Mine says what it is for', /Private to you/.test(D.rendered()), true);
+    D.click({ act: 'drillnew' });
+    check('the editor opens', /Write a drill/.test(sheet(D)), true);
+    check('and says unlisted is not private', /Unlisted isn't private/.test(sheet(D)), true);
+    loadForm(D);
+    type(D, { deName: 'Box rondo' });
+    D.click({ act: 'dedsave' });
+    check('a drill with no summary is refused', D.lastToast(), 'Say what it is in one line');
+    check('and nothing is saved', D.shelfItems('mine').length, 0);
+
+    type(D, { deSummary: 'Four keep it from one', deSetup: 'A 10 yd square', deHow: 'Four on the outside\nOne in the middle', dePoints: 'Open your body' });
+    D.click({ act: 'dedchip', k: 'skills', v: 'passing' });
+    check('a chip keeps what was typed', D.drillDraft.d.name, 'Box rondo');
+    D.click({ act: 'dedchip', k: 'skills', v: 'telepathy' });
+    D.click({ act: 'dedchip', k: 'colour', v: 'red' });
+    deepEq('the editor only takes the library\'s own words', D.drillDraft.d.skills, ['passing']);
+    D.click({ act: 'dedchip', k: 'positions', v: 'Mid' });
+    loadForm(D);
+    type(D, { dlUrl: 'javascript:alert(1)', dlTitle: 'x' });
+    D.click({ act: 'dedlinkadd' });
+    check('a link that is not https is refused', D.lastToast(), 'A link has to start with https://');
+    type(D, { dlUrl: 'https://youtu.be/abc', dlTitle: 'The set-up' });
+    D.click({ act: 'dedlinkadd' });
+    check('an https link is taken', D.drillDraft.d.media.length, 1);
+    loadForm(D);
+    D.click({ act: 'dedsave' });
+    const d = D.shelfItems('mine')[0];
+    check('saved to Mine', d && d.name, 'Box rondo');
+    deepEq('with its lines as lists', d.how, ['Four on the outside', 'One in the middle']);
+    check('version 1', d.v, 1);
+    await D.flush();
+    const w = written(fbk, LIB('jaz') + '/' + d.id);
+    check('written to her library, one drill at that depth', w && w.name, 'Box rondo');
+    check('never the whole library', fbk.record.writes.some(x => x.path === LIB('jaz')), false);
+    check('acknowledged, nothing pending', D.mine.dirty[d.id], undefined);
+    check('kept on the phone under her account', /Box rondo/.test(D.storage.getItem('sm.mine.v1:jaz') || ''), true);
+    check('and not in the club\'s cache', /Box rondo/.test(D.storage.getItem('sm.train.v1:' + CODE) || ''), false);
+
+    toDrills(D, 'all'); D.ui.practice.f = { q: 'box rondo' }; D.render();
+    check('it is in the list with the built-in ones', /Box rondo/.test(D.rendered()) && /Mine<\/span>/.test(D.rendered()), true);
+    D.ui.practice.f = { q: '', skill: 'passing' }; D.ui.practice.shelf = 'mine'; D.render();
+    check('and the filters find it', /Box rondo/.test(D.rendered()), true);
+    D.ui.practice.f = { skill: 'shooting' }; D.render();
+    check('and leave it out when it does not match', /Box rondo/.test(D.rendered()), false);
+    D.ui.practice.f = {}; D.render();
+
+    D.click({ act: 'drill', id: 'mine:' + d.id });
+    check('its card has the link, opening outside the app', /href="https:\/\/youtu.be\/abc" target="_blank" rel="noopener noreferrer"/.test(sheet(D)), true);
+    check('and says a link needs a signal', /needs a signal/.test(sheet(D)), true);
+    check('offers to edit, share and delete', ['drilledit', 'drillshare', 'drilldel'].every(x => sheet(D).includes(`data-act="${x}"`)), true);
+    D.click({ act: 'drilledit', id: 'mine:' + d.id }); loadForm(D);
+    type(D, { deName: 'Box rondo 5v2' });
+    D.click({ act: 'dedsave' });
+    check('editing her own bumps its version', D.findDrill('mine:' + d.id).v, 2);
+    check('under the same id', D.findDrill('mine:' + d.id).name, 'Box rondo 5v2');
+    check('heading is refused below U11', (() => { D.click({ act: 'drillnew' }); loadForm(D); type(D, { deName: 'Headers', deSummary: 's', deSetup: 's', deHow: 'h', dePoints: 'p', deAge0: '8' }); D.click({ act: 'dedchip', k: 'skills', v: 'heading' }); D.click({ act: 'dedsave' }); return D.lastToast(); })(), 'Heading drills start at U11: US Soccer rules out heading for under-elevens');
+  }
+
+  await H.flush(20);
+  console.log('\n--- copied, never linked ---');
+  {
+    const { D, fbk } = await device('jaz');
+    toDrills(D);
+    const b = L.DRILLS.find(x => x.id === 'rondo-4v1') || L.DRILLS[10];
+    D.click({ act: 'drill', id: b.id });
+    check('a built-in card offers Save to mine', /data-act="drillmine"/.test(sheet(D)), true);
+    D.click({ act: 'drillmine', id: b.id });
+    const c = D.shelfItems('mine')[0];
+    deepEq('save to mine records where it came from', c.from, { shelf: 'builtin', id: b.id, v: b.v });
+    check('keeps its name', c.name, b.name);
+    check('and its drawing, by name, from the library', c.pic === b.id && c.diagram === b.diagram, true);
+    check('the card says whose version it is', new RegExp('Your version of').test(sheet(D)), true);
+    check('nothing changed in the library itself', L.DRILLS.find(x => x.id === b.id).name, b.name);
+
+    /* Edit a built-in drill: that is saving her own copy. */
+    D.click({ act: 'drilledit', id: b.id });
+    check('editing a built-in drill copies it first', D.shelfItems('mine').length, 2);
+    check('and says the original is untouched', /original is untouched/.test(D.toasts.join(' ')), true);
+
+    /* The original moves on. */
+    const v0 = b.v; b.v = v0 + 1;
+    D.click({ act: 'drill', id: 'mine:' + c.id });
+    check('a copy whose original moved on says so', /The original has changed/.test(sheet(D)), true);
+    check('and has not merged by itself', D.findDrill('mine:' + c.id).name, c.name);
+    D.click({ act: 'drillorig', id: 'mine:' + c.id });
+    check('with a way to see the original', /data-act="drillmine" data-id="/.test(sheet(D)) && sheet(D).includes(b.name), true);
+    b.v = v0;
+
+    /* Share with the club: a copy, hers stays hers. */
+    D.click({ act: 'drillshare', id: 'mine:' + c.id });
+    const cl = D.shelfItems('club')[0];
+    check('share with the club makes a club copy', !!cl, true);
+    check('under a new id', cl.id !== c.id, true);
+    check('stamped with who shared it', cl.by + ' ' + cl.byName, 'jaz jaz');
+    check('for a team she coaches', cl.team, 't1');
+    deepEq('and where it came from', cl.from, { shelf: 'mine', id: c.id, v: c.v });
+    check('hers is still in Mine', !!D.findDrill('mine:' + c.id), true);
+    await D.flush();
+    const w = written(fbk, CLUBD + '/' + cl.id);
+    check('written to the club, one drill at that depth', w && w.id, cl.id);
+    check('carrying what the rule checks', !!(w && w.by === 'jaz' && w.team === 't1' && typeof w.at === 'number'), true);
+    check('never the whole shelf', fbk.record.writes.some(x => x.path === CLUBD), false);
+
+    D.click({ act: 'drilledit', id: 'mine:' + c.id }); loadForm(D); type(D, { deName: 'Rondo, my way' }); D.click({ act: 'dedsave' });
+    check('editing hers leaves the club\'s copy alone', D.findDrill('club:' + cl.id).name, b.name);
+  }
+
+  await H.flush(20);
+  console.log('\n--- the club\'s shelf, and who tidies it ---');
+  {
+    const shelf = {
+      d1: { id: 'd1', name: 'Jaz\'s rondo', type: 'opposed', ages: [8, 12], by: 'jaz', byName: 'Jaz', team: 't1', at: 1, v: 1, summary: 's', setup: 's', how: ['h'], points: ['p'] },
+      d2: { id: 'd2', name: 'Kim\'s rondo', type: 'opposed', ages: [8, 12], by: 'kim', byName: 'Kim', team: 't2', at: 1, v: 1, summary: 's', setup: 's', how: ['h'], points: ['p'] },
+      d3: { id: 'd3', name: 'Old team drill', type: 'game', by: 'jaz', byName: 'Jaz', team: 't2', at: 1, v: 1, summary: 's', setup: 's', how: ['h'], points: ['p'] }
+    };
+    const { D, fbk } = await device('jaz');
+    toDrills(D, 'club');
+    fbk.deliver(CLUBD, shelf); await D.flush(); D.render();
+    check('the club\'s drills arrive', D.shelfItems('club').length, 3);
+    check('and are drawn with who shared them', /shared by Kim/.test(D.rendered()), true);
+    check('a coach may tidy what she shared', D.canCurate(D.findDrill('club:d1')), true);
+    check('not another coach\'s', D.canCurate(D.findDrill('club:d2')), false);
+    check('not her own once she stops coaching its team', D.canCurate(D.findDrill('club:d3')), false);
+    D.click({ act: 'drill', id: 'club:d2' });
+    check('another coach\'s card offers her own copy, not removal', /Edit your own copy/.test(sheet(D)) && !/data-act="drilldel"/.test(sheet(D)), true);
+    D.click({ act: 'drilldel', id: 'club:d2' });
+    check('and a tap that gets through is refused', D.lastToast(), 'Only an admin, or the coach who shared it, can remove it');
+    check('with nothing removed', !!D.findDrill('club:d2'), true);
+    D.click({ act: 'drilledit', id: 'club:d2' });
+    check('editing another coach\'s drill saves her own copy', D.drillDraft.shelf, 'mine');
+    deepEq('recorded as from the club', D.findDrill('mine:' + D.drillDraft.id).from, { shelf: 'club', id: 'd2', v: 1 });
+
+    D.click({ act: 'drilledit', id: 'club:d1' }); loadForm(D);
+    check('her own club drill edits in place', D.drillDraft.shelf + ' ' + D.drillDraft.id, 'club d1');
+    type(D, { deName: 'Jaz\'s rondo, tidied' }); D.click({ act: 'dedsave' });
+    const e = D.findDrill('club:d1');
+    check('bumping its version', e.v, 2);
+    check('still hers, still for her team', e.by + ' ' + e.team, 'jaz t1');
+
+    const a = await device('boss');
+    toDrills(a.D, 'club');
+    a.fbk.deliver(CLUBD, shelf); await a.D.flush();
+    check('an admin may tidy anyone\'s', a.D.canCurate(a.D.findDrill('club:d2')), true);
+    a.D.click({ act: 'drilldel', id: 'club:d2' });
+    check('and remove it', a.D.findDrill('club:d2'), null);
+    await a.D.flush();
+    check('one drill deleted at that depth', a.fbk.record.writes.some(w => w.path === CLUBD + '/d2' && w.value === null), true);
+    a.D.ui.view = 'admin'; a.D.render();
+    check('Admin has a way into the club\'s drills', /data-act="clubdrills"/.test(a.D.rendered()), true);
+  }
+
+  await H.flush(20);
+  console.log('\n--- in a plan, a copy that outlives the shelf ---');
+  {
+    const { D } = await device('jaz');
+    toDrills(D);
+    const d = writeOne(D);
+    D.ui.view = 'practice'; D.ui.practice = { tab: 'plans' };
+    type(D, { prDate: '2026-09-15', prStart: '17:30', prLen: '60', prPlace: 'Lakeside', prFocus: '' });
+    D.click({ act: 'pracnew' }); D.click({ act: 'pracsave', id: '' });
+    const pid = D.ui.practice.open;
+    D.click({ act: 'pracpick', id: pid });
+    let asked = null;
+    global.confirm = m => { asked = m; return true; };
+    D.click({ act: 'pracadd', id: pid, v: 'mine:' + d.id });
+    check('the first of hers says it shares it with the team\'s coaches', /shares it with this team's coaches/.test(asked || ''), true);
+    asked = null;
+    D.click({ act: 'pracadd', id: pid, v: 'mine:' + d.id });
+    check('and only the first time', asked, null);
+    const blk = D.practiceById('t1', pid).blocks[0];
+    check('the plan holds a copy of the card', blk.drill.shelf + ' ' + (blk.drill.card && blk.drill.card.name), 'mine Box rondo');
+    check('without who wrote it', blk.drill.card.by === undefined && blk.drill.card.from === undefined, true);
+
+    D.click({ act: 'drill', id: 'mine:' + d.id }); D.click({ act: 'drilldel', id: 'mine:' + d.id });
+    check('deleting it from Mine', D.findDrill('mine:' + d.id), null);
+    const pr = D.practiceById('t1', pid);
+    check('leaves the plan whole', pr.blocks.length, 2);
+    check('still reading the drill', D.blockDrill(L, pr.blocks[0]) && D.blockDrill(L, pr.blocks[0]).name, 'Box rondo');
+    D.ui.practice = { tab: 'plans', open: pid }; D.render();
+    check('the plan does not say it is gone', /no longer in the library/.test(D.rendered()), false);
+    check('and opens the plan\'s own copy', D.rendered().includes(`data-id="plan:${pid}:0"`), true);
+    D.click({ act: 'drill', id: `plan:${pid}:0` });
+    check('which draws', /Box rondo/.test(sheet(D)) && /The copy this plan keeps/.test(sheet(D)), true);
+    let threw = null;
+    try { D.click({ act: 'pracrun', id: pid }); D.render(); } catch (e) { threw = e.message; }
+    check('and runs', threw, null);
+    check('in run mode', /Box rondo/.test(D.rendered()), true);
+  }
+
+  await H.flush(20);
+  console.log('\n--- merge on read, never replace ---');
+  {
+    const { D, fbk } = await device('jaz');
+    toDrills(D);
+    fbk.deliver(LIB('jaz'), { r1: { id: 'r1', name: 'From another phone', at: 1, v: 1 } }); await D.flush();
+    check('her library arrives', !!D.findDrill('mine:r1'), true);
+    fbk.refuseWrites(p => p.startsWith('userLibrary'));
+    const off = writeOne(D, { deName: 'Written offline' });
+    await D.flush();
+    check('a refused write stays on the phone', !!off, true);
+    check('still pending', D.mine.dirty[off.id] !== undefined, true);
+    D.ui.practice.shelf = 'mine'; D.render();
+    check('and the screen says why', /Saved on this phone only/.test(D.rendered()), true);
+    fbk.deliver(LIB('jaz'), { r1: { id: 'r1', name: 'From another phone', at: 1, v: 1 } }); await D.flush();
+    check('the database\'s answer does not wipe it', !!D.findDrill('mine:' + off.id), true);
+    fbk.deliver(LIB('jaz'), {}); await D.flush();
+    check('one gone from the database, with nothing pending here, was deleted there', D.findDrill('mine:r1'), null);
+    check('the pending one is still here', !!D.findDrill('mine:' + off.id), true);
+
+    const saved = { ...D.storage._d };
+    const fbk2 = makeFakebase();
+    const D2 = H.loadApp({ firebase: fbk2, config: CONFIG, storage: saved });
+    await D2.flush(); fbk2.signIn('jaz'); await D2.flush(); fbk2.deliver(WS, club()); await D2.flush();
+    toDrills(D2);
+    check('after a reload it is still here', !!D2.findDrill('mine:' + off.id), true);
+    fbk2.deliver(LIB('jaz'), {}); await D2.flush();
+    check('and the first answer sends it again', !!written(fbk2, LIB('jaz') + '/' + off.id), true);
+    check('then it is no longer pending', D2.mine.dirty[off.id], undefined);
+
+    /* the club shelf, the same way */
+    fbk2.refuseWrites(p => p.startsWith('training/'));
+    D2.click({ act: 'drillshare', id: 'mine:' + off.id });
+    const cl = D2.shelfItems('club')[0];
+    await D2.flush();
+    fbk2.deliver(CLUBD, {}); await D2.flush();
+    check('a club drill not yet accepted survives the club\'s answer', !!D2.findDrill('club:' + cl.id), true);
+  }
+
+  await H.flush(20);
+  console.log('\n--- hers, not the phone\'s ---');
+  {
+    const { D, fbk } = await device('jaz');
+    toDrills(D);
+    const d = writeOne(D);
+    await D.flush();
+    check('her library is cached under her account', !!D.storage.getItem('sm.mine.v1:jaz'), true);
+    fbk.signOut(); await D.flush();
+    check('signing out clears it from the phone', D.storage.getItem('sm.mine.v1:jaz'), null);
+    check('and from memory', D.shelfItems('mine').length, 0);
+
+    const two = await device('jaz');
+    toDrills(two.D); writeOne(two.D); await two.D.flush();
+    two.fbk.signIn('kim'); await two.D.flush();
+    check('someone else signing in on the same phone clears hers', two.D.storage.getItem('sm.mine.v1:jaz'), null);
+    check('and she sees none of it', two.D.shelfItems('mine').length, 0);
+    toDrills(two.D);
+    check('her library is never read for the next person', two.fbk.watching(LIB('kim')) && !two.fbk.readPaths().slice(-3).includes(LIB('jaz')), true);
+
+    const three = await device('jaz');
+    toDrills(three.D);
+    three.fbk.refuseWrites(() => true);
+    writeOne(three.D); await three.D.flush();
+    let asked = null;
+    global.confirm = m => { asked = m; return false; };
+    three.D.click({ act: 'signout' });
+    check('signing out with changes not sent asks first', /n't reached the database yet/.test(asked || ''), true);
+    check('and saying no keeps them', !!three.D.storage.getItem('sm.mine.v1:jaz'), true);
+    global.confirm = () => true;
+    void d;
+  }
+
+  await H.flush(20);
+  console.log('\n--- the app owner, for support ---');
+  {
+    const { D, fbk } = await device('own', { owner: true });
+    D.ui.view = 'setup'; D.render();
+    check('the owner has a support view', /data-act="peeklib"/.test(D.rendered()), true);
+    D.click({ act: 'peeklib' });
+    type(D, { peekUid: 'jaz-uid-123' });
+    D.click({ act: 'peekgo' });
+    check('reads that one library', fbk.watching(LIB('jaz-uid-123')), true);
+    check('once', fbk.record.listeners.find(l => l.path === LIB('jaz-uid-123')).once, true);
+    fbk.deliver(LIB('jaz-uid-123'), { x: { id: 'x', name: 'Secret sauce', at: 1 } }); await D.flush();
+    check('and shows it', /Secret sauce/.test(sheet(D)), true);
+    check('never keeping a copy', Object.keys(D.storage._d).some(k => /Secret sauce/.test(D.storage._d[k])), false);
+    check('nor putting it in her own library', D.shelfItems('mine').length, 0);
+
+    const c = await device('jaz');
+    c.D.ui.view = 'setup'; c.D.render();
+    check('nobody else has it', /data-act="peeklib"/.test(c.D.rendered()), false);
+    c.D.click({ act: 'peekgo' }); c.D.click({ act: 'peeklib' });
+    check('nor reaches it with a tap', c.fbk.readPaths().some(p => p.startsWith('userLibrary/') && p !== LIB('jaz')), false);
+  }
+
+  await H.flush(20);
+  console.log('\n--- a hostile drill cannot break the next coach\'s screen ---');
+  {
+    const { D, fbk } = await device('kim');
+    D.ui.teamId = 't2'; toDrills(D, 'club');
+    const evil = '<img src=x onerror=alert(1)>';
+    fbk.deliver(CLUBD, {
+      h1: { id: 'h1', name: evil, summary: evil, type: '__proto__', ages: ['x', 99], minutes: { 1: 'lots' }, players: 'many', kit: { cones: '<b>', balls: 'each', rockets: 3 },
+        skills: ['passing', evil, '__proto__'], positions: ['Mid', 'Sweeper'], how: { 0: evil, 5: 'ok' }, points: evil, safety: { x: 1 },
+        media: [{ url: 'javascript:alert(1)' }, { url: 'https://x.test/a.gif" onerror="alert(1)' }, { url: 'https://ok.test/a.gif', title: evil }],
+        diagram: { area: [1, 1], players: { 'A1"><script>': [0, 0] } }, pic: '../../etc', by: 'kim', team: 't2', at: 1 },
+      h2: 'not a drill', h3: { name: '' }
+    });
+    await D.flush();
+    let threw = null;
+    try { D.render(); D.click({ act: 'drill', id: 'club:h1' }); D.click({ act: 'drilledit', id: 'club:h1' }); } catch (e) { threw = e.message; }
+    check('it draws without throwing', threw, null);
+    const all = D.rendered() + sheet(D);
+    check('and nothing in it reaches the page as markup', /<img src=x|<script|onerror="alert/.test(all), false);
+    const h = D.findDrill('club:h1');
+    check('only drills with a name are drills', D.shelfItems('club').length, 1);
+    check('an unknown type is a technique drill', h.type, 'technical');
+    deepEq('only skills the filters know', h.skills, ['passing']);
+    deepEq('only the app\'s own positions', h.positions, ['Mid']);
+    deepEq('only kit the library knows', Object.keys(h.kit).sort(), ['balls']);
+    check('only https links that are links', h.media.map(m => m.url).join(), 'https://ok.test/a.gif');
+    check('a stored diagram is never drawn', h.diagram, null);
+  }
+
+  H.summary('the club\'s drills and a coach\'s own');
+})();

@@ -8,9 +8,11 @@ a club, so a mistake would be expensive to undo.
 Built so far (see *Build order*): the built-in drill library (`drills.js`, 105
 drills, each with an animated diagram, and a guide to what each of nine
 positions is for), the renderer that draws those diagrams
-(`drill-diagram.js`), the Practice tab that shows them, a team's age, and
-practice plans with their rules. Coaches' own drills, the club's drills and
-templates are next; **`TRAINING-NEXT.md` is the brief for that work.**
+(`drill-diagram.js`), the Practice tab that shows them, a team's age,
+practice plans with their rules, and the other two shelves: a coach's own
+drills (Mine) and the club's (Club), with their rules. Templates are next,
+and plans moving onto the calendar with them; **`TRAINING-NEXT.md` is the
+brief for that work.**
 Everything not built is still a proposal, and the questions at the end are the
 decisions it needs.
 
@@ -177,6 +179,13 @@ straight to the guide entry for her best position, and Ask an AI can quote the
 job when it suggests where someone plays.
 
 ### A coach's own drills: draw it, or link it
+
+*As built (step 4):* a drill copied from a built-in one keeps that drill's
+drawing by naming it (`pic`), and the drawing is taken from `drills.js` on
+every read. A diagram stored in the database is never drawn, because the
+renderer writes coordinates and labels straight into SVG and trusts its
+input, and any coach can write a club drill. The diagram editor below needs
+a sanitiser for stored diagrams before that changes.
 
 No uploads (settled 2026-10-02). Two ways, and between them they cover what a
 coach needs:
@@ -533,8 +542,19 @@ too. The bridge doesn't change shape.
    only. Not built from this step: templates (they belong to Mine and Club),
    and the "shares your drill with your team" notice, which needs Mine.
    Blocks hold built-in drills only, by reference, for the same reason.*
-4. **Mine.** `userLibrary/{uid}`; save to mine; edit; templates.
-5. **Club.** Share to the club, copy from it, curation under Admin.
+4. **Mine.** `userLibrary/{uid}`; save to mine; edit; templates. *Built,
+   except templates: the shelf, the editor, save to mine, "the original has
+   changed", links, Mine drills copied whole into plans with the "shares it
+   with this team's coaches" notice, the cache cleared on sign-out, and the
+   app owner's read-once support view. Its rules are in
+   `database.rules.json` with `test/rules.js` cases, and `test/library.js`
+   covers the app side.*
+5. **Club.** Share to the club, copy from it, curation under Admin. *Built,
+   except templates. Curation is the same card, with Edit and Remove for
+   admins and for the coach who shared it, reached from Admin → Club
+   drills. As built, the write rule checks the team's own coach list
+   (`access/teams/{team}/coaches`) rather than `teamIndex`, so sharing needs
+   no bridge in a club whose lookup tables aren't built yet.*
 6. **Pictures for a coach's own drills.** The diagram editor, then links.
 7. **What needs work.** The signals card on Season.
 8. **The AI steps.** The library in the prompt, then paste-back.
@@ -552,6 +572,14 @@ goes anywhere near the real club.
 1. **Attendance?** Who came to practice is useful (and the AI would use it),
    but it is data about children. Plans are now coaches' and admins' only, so
    it would sit in the right place. The recommendation is still not yet.
+
+Settled on 2026-10-03:
+
+- **Practice plans hang off the calendar.** A plan is keyed by the calendar
+  practice's id (`teams/{tid}/events/{eid}`) and takes its date, time and
+  place from that entry, so there is one list of practices, `schedule` goes,
+  and "drills a player has done" is a join with the register. A template is
+  a plan with no calendar entry. Not built yet; `TRAINING-NEXT.md` has it.
 
 Settled on 2026-10-02:
 

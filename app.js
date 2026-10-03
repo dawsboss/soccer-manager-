@@ -2,8 +2,8 @@
    Static app. Data lives in localStorage, and mirrors to Firebase Realtime
    Database when a config + workspace code are present. */
 
-const BUILD = '68';
-const BUILT = '2026-10-02';
+const BUILD = '69';
+const BUILT = '2026-10-03';
 /* index.html carries the build it was published with. If this file is newer, the
    browser handed us a cached page — the exact failure that has eaten hours. */
 const pageBuild = () => {
@@ -385,6 +385,8 @@ async function initAuth() {
       me = u ? { uid: u.uid, name: u.displayName || (u.email || '').split('@')[0] || 'Signed in', email: u.email || '', photo: u.photoURL || '' } : null;
       cacheMe(me);   // signing out clears it, which is what locks the club now
       const uid = me ? me.uid : null;
+      // her own drills are hers, not the phone's: gone the moment she is
+      if (mineUid && mineUid !== uid) forgetMine();
       // identity changed after boot — e.g. someone signs in from the lock
       // screen — so any earlier refusal is stale; read the workspace again
       if (prevUid !== undefined && prevUid !== uid) {
@@ -5900,7 +5902,11 @@ const canTrain = () => !gated() || isOwner() || (!!me && teams().some(t => isCoa
 const PLAN_ACTS = new Set(['pracnew', 'pracopen', 'pracback', 'pracpast', 'pracedit', 'pracsave', 'pracpick', 'pracpickdone', 'pracadd',
   'pracsuggest', 'pracmin', 'pracmove', 'pracdel', 'pracnote', 'pracnotesave', 'pracreview', 'pracrate', 'pracreviewsave', 'pracagain',
   'pracrm', 'pracrun', 'rungo', 'runpause', 'runreset', 'runnext', 'runprev', 'runstop', 'runpic']);
-const PRACTICE_ACTS = new Set(['practab', 'drill', 'drillpic', 'roleguide', 'rolepic', 'drillfilters', 'dfchip', 'dfpick', 'dfclear', 'drillmore', ...PLAN_ACTS]);
+/* The club's drills and her own: reaching any of these needs Practice, and
+   each one checks the shelf it touches as well. */
+const LIB_ACTS = new Set(['shelf', 'drillmine', 'drilledit', 'drillnew', 'drillshare', 'drilldel', 'drillorig', 'dedchip', 'dedpic',
+  'dedlinkadd', 'dedlinkdel', 'dedsave', 'clubdrills', 'mydrills']);
+const PRACTICE_ACTS = new Set(['practab', 'drill', 'drillpic', 'roleguide', 'rolepic', 'drillfilters', 'dfchip', 'dfpick', 'dfclear', 'drillmore', ...PLAN_ACTS, ...LIB_ACTS]);
 
 /* A team's age is stored as the year its players were born, because that
    rolls over by itself: the same team is U10 this season and U11 the next
@@ -5934,6 +5940,7 @@ function practiceUi() {
   if (!['plans', 'drills', 'positions'].includes(p.tab)) p.tab = 'plans';
   if (p.run && (typeof p.run !== 'object' || !p.run.pid)) p.run = null;
   if (!(p.show > 0)) p.show = 24;
+  if (!ownKey(SHELVES, p.shelf) && p.shelf !== 'all') p.shelf = 'all';
   const blank = PRACTICE_BLANK(), f = p.f && typeof p.f === 'object' ? p.f : {};
   for (const [k, v] of Object.entries(blank)) {
     if (Array.isArray(v)) f[k] = Array.isArray(f[k]) ? f[k].map(String) : [];
@@ -5963,9 +5970,12 @@ function practiceAge(f, t = team()) {
   return n >= 4 && n <= 19 ? n : null;
 }
 const drillWords = new Map();
+// keyed by shelf and version too: a coach's own drill changes, and can share an id with nothing else
+const drillCacheKey = d => (d.key || d.id) + '@' + (d.v || 0) + '@' + (d.at || 0);
 function drillText(d, L) {
-  if (!drillWords.has(d.id)) drillWords.set(d.id, [d.name, d.summary, d.setup, d.why, ...d.how, ...d.points, ...d.skills.map(s => L.SKILLS[s] || s), ...d.tags].join(' ').toLowerCase());
-  return drillWords.get(d.id);
+  const k = drillCacheKey(d);
+  if (!drillWords.has(k)) drillWords.set(k, [d.name, d.summary, d.setup, d.why, ...d.how, ...d.points, ...d.skills.map(s => L.SKILLS[s] || s), ...d.tags].join(' ').toLowerCase());
+  return drillWords.get(k);
 }
 function drillMatches(d, f, age, L) {
   const q = String(f.q || '').trim().toLowerCase().split(/\s+/).filter(Boolean);
@@ -5996,7 +6006,15 @@ function practiceDrills(f = practiceUi().f, t = team()) {
   const age = practiceAge(f, t);
   const order = Object.keys(L.TYPES);
   const by = (PRACTICE_SORTS[f.sort] || PRACTICE_SORTS.session)[1] || ((a, b) => order.indexOf(a.type) - order.indexOf(b.type) || a.level - b.level);
-  return L.DRILLS.filter(d => drillMatches(d, f, age, L)).sort(by);
+  return drillPool(L).filter(d => drillMatches(d, f, age, L)).sort(by);
+}
+/* The drills on the shelves the coach has picked: every filter then works the
+   same across all three. */
+function drillPool(L, shelf = practiceUi().shelf) {
+  const out = [];
+  if (shelf === 'all' || shelf === 'builtin') out.push(...L.DRILLS);
+  for (const s of ['club', 'mine']) if (shelf === 'all' || shelf === s) out.push(...shelfItems(s));
+  return out;
 }
 /* Everything but the search box, the age and the sort, which sit on the screen
    itself rather than behind the Filters button. */
@@ -6024,7 +6042,7 @@ function viewPractice() {
   if (!L || !D) return `<div class="empty"><strong>The drill library didn't load</strong>It comes with the app as a file of its own, and this page opened without it. Reload when you have a signal.</div>`;
   const p = practiceUi();
   if (p.run) { const r = runView(L); if (r) return r; }
-  const tabs = `<div class="chips">${[['plans', 'Plans'], ['drills', `Drills · ${L.DRILLS.length}`], ['positions', 'Positions']].map(([k, l]) =>
+  const tabs = `<div class="chips">${[['plans', 'Plans'], ['drills', `Drills · ${drillPool(L, 'all').length}`], ['positions', 'Positions']].map(([k, l]) =>
     `<button class="chip" type="button" data-act="practab" data-k="${k}" aria-pressed="${p.tab === k}">${l}</button>`).join('')}</div>`;
   const body = p.tab === 'positions' ? practicePositions(L) : p.tab === 'drills' ? pickBanner(L) + practiceDrillsView(L) : practicePlansView(L);
   return `<div class="stack">${tabs}${body}</div>`;
@@ -6038,7 +6056,11 @@ function practiceDrillsView(L) {
   const opt = (cur, [v, l]) => `<option value="${esc(v)}"${cur === v ? ' selected' : ''}>${esc(l)}</option>`;
   const n = practiceActive(f);
   const s = f.sig && L.SIGNALS[f.sig];
-  return `<div class="card drillbar">
+  watchShelf('club'); watchShelf('mine');
+  const shelves = `<div class="chips">${[['all', 'All'], ...Object.entries(SHELVES)].map(([k, l]) =>
+    `<button class="chip" type="button" data-act="shelf" data-k="${k}" aria-pressed="${p.shelf === k}">${l}</button>`).join('')}
+    ${me ? '<button class="chip" type="button" data-act="drillnew">+ Write a drill</button>' : ''}</div>`;
+  return `${shelves}${shelfNote(p.shelf)}<div class="card drillbar">
       <input type="search" id="drillQ" value="${esc(f.q)}" placeholder="Search drills, skills, coaching points" aria-label="Search drills">
       <div class="drilltools">
         <select data-pick="dfpick" data-k="age" aria-label="Age">${ages.map(x => opt(f.age, x)).join('')}</select>
@@ -6053,22 +6075,26 @@ function practiceDrillsView(L) {
 
 function drillListHtml() {
   const L = drillLib(); if (!L) return '';
-  const p = practiceUi(), list = practiceDrills(p.f);
+  const p = practiceUi(), list = practiceDrills(p.f), all = drillPool(L).length;
   const shown = list.slice(0, p.show);
   const busy = practiceActive(p.f) || p.f.q;
-  return `<p class="muted drillcount">${list.length === L.DRILLS.length ? `All ${list.length} drills` : `${list.length} of ${L.DRILLS.length} drills`}${busy ? ` · <button class="drilllink" data-act="dfclear">clear filters</button>` : ''}</p>
-    ${shown.length ? `<div class="drilllist">${shown.map(drillRow).join('')}</div>` : `<div class="empty"><strong>No drill matches all of that</strong>Try taking a filter off.</div>`}
+  const none = !all && p.shelf === 'club' ? `<div class="empty"><strong>The club has no drills of its own yet</strong>Any coach can share one: open it under Mine and tap Share with the club. Admins tidy what's here.</div>`
+    : !all && p.shelf === 'mine' ? `<div class="empty"><strong>Your own drills</strong>${me ? 'Private to you, in whichever club you coach. Save a copy of any drill and make it yours, or write one from scratch.' : 'Sign in, and the drills you write go with your account.'}</div>`
+    : `<div class="empty"><strong>No drill matches all of that</strong>Try taking a filter off.</div>`;
+  return `<p class="muted drillcount">${list.length === all ? `All ${list.length} drill${list.length === 1 ? '' : 's'}` : `${list.length} of ${all} drills`}${busy ? ` · <button class="drilllink" data-act="dfclear">clear filters</button>` : ''}</p>
+    ${shown.length ? `<div class="drilllist">${shown.map(drillRow).join('')}</div>` : none}
     ${list.length > shown.length ? `<button class="btn quiet wide" data-act="drillmore">Show ${Math.min(24, list.length - shown.length)} more</button>` : ''}`;
 }
 
 function drillRow(d) {
   const L = drillLib();
-  return `<button class="drillrow" type="button" data-act="drill" data-id="${esc(d.id)}">
-    <span class="drillmain"><span class="drillname">${esc(d.name)}</span>
+  const tag = d.shelf && d.shelf !== 'builtin' ? ` <span class="tag${d.shelf === 'mine' ? ' wait' : ''}">${SHELVES[d.shelf]}</span>` : '';
+  return `<button class="drillrow" type="button" data-act="drill" data-id="${esc(d.key || d.id)}">
+    <span class="drillmain"><span class="drillname">${esc(d.name)}${tag}</span>
       <span class="drilltype">${esc(L.TYPES[d.type] || d.type)}</span>
       <span class="drillsum">${esc(d.summary)}</span>
-      <span class="drillfacts"><b>${drillAges(d)}</b> · ${d.minutes[0]}–${d.minutes[1]} min · ${drillPlayers(d)} players${d.gk ? ' · ' + d.gk + ' GK' : ''} · ${esc(L.LEVELS[d.level])}</span></span>
-    <span class="drillthumb" aria-hidden="true">${drillThumb(d.id, d.diagram, d.name)}</span></button>`;
+      <span class="drillfacts"><b>${drillAges(d)}</b> · ${d.minutes[0]}–${d.minutes[1]} min · ${drillPlayers(d)} players${d.gk ? ' · ' + d.gk + ' GK' : ''} · ${esc(L.LEVELS[d.level])}${d.shelf === 'club' && d.byName ? ' · shared by ' + esc(d.byName) : ''}</span></span>
+    <span class="drillthumb${d.diagram ? '' : ' nopic'}" aria-hidden="true">${d.diagram ? drillThumb(d.pic || d.id, d.diagram, d.name) : (d.media && d.media.length ? '▶' : '')}</span></button>`;
 }
 
 const DIAGRAM_KEY = [['A', 'Team'], ['D', 'Opponents'], ['N', 'Neutral'], ['B', 'Fourth team'], ['K', 'Keeper'], ['C', 'Coach or server']];
@@ -6088,39 +6114,67 @@ function diagramBlock(dg, title, act, id, moving) {
 
 function sheetDrill(id, moving = !reducedMotion(), top = false) {
   const L = drillLib(); if (!L || !drillDiagram()) return;
-  const d = L.DRILLS.find(x => x.id === id); if (!d) return;
+  const d = findDrill(id); if (!d) return;
+  const key = String(id), shelf = d.shelf || 'builtin', inPlan = key.startsWith('plan:');
   const byId = x => L.DRILLS.find(y => y.id === x);
   const list = a => `<ul class="drillul">${a.map(x => `<li>${esc(x)}</li>`).join('')}</ul>`;
   const kit = kitWords(L, d.kit, 0) || 'nothing';
-  const tgt = pickTarget();
+  const tgt = inPlan ? null : pickTarget();
   const trains = [...d.skills.map(s => L.SKILLS[s]), ...d.principles.map(x => L.PRINCIPLES[x]), ...d.physical.map(x => L.PHYSICAL[x]), ...d.moments.map(x => L.MOMENTS[x])];
+  const orig = shelf !== 'builtin' && !inPlan ? drillOrigin(d) : null;
+  /* What she can do with it depends on whose it is. Editing anything that
+     isn't hers, or isn't the club's for her to tidy, is saving her own copy. */
+  const acts = [];
+  if (!inPlan && me) {
+    if (shelf === 'mine') {
+      acts.push(['drilledit', 'Edit']);
+      if (wsCode() && shareTeam()) acts.push(['drillshare', 'Share with the club']);
+      acts.push(['drilldel', 'Delete']);
+    } else {
+      acts.push(['drillmine', 'Save to mine']);
+      acts.push(['drilledit', canCurate(d) ? 'Edit the club\'s copy' : 'Edit your own copy']);
+      if (canCurate(d)) acts.push(['drilldel', 'Remove from the club']);
+    }
+  }
+  const whose = shelf === 'club' ? `Shared with the club${d.byName ? ' by ' + esc(d.byName) : ''}.` : shelf === 'mine' ? 'Yours. Nobody else sees it unless you share it.' : '';
+  const media = (d.media || []).map(m => /\.(gif|png|jpe?g|webp)(\?|$)/i.test(m.url)
+    ? `<figure class="drillmedia"><img src="${esc(m.url)}" alt="${esc(m.title || d.name)}" loading="lazy" referrerpolicy="no-referrer">${m.title ? `<figcaption>${esc(m.title)}</figcaption>` : ''}</figure>`
+    : `<a class="card drilllinkcard" href="${esc(m.url)}" target="_blank" rel="noopener noreferrer"><b>${esc(m.title || 'Watch it')}</b><span class="muted">${esc(m.url.replace(/^https:\/\//, '').slice(0, 60))}</span></a>`).join('');
   openSheet(`<h3>${esc(d.name)}</h3>
     <p class="muted" style="margin:-6px 0 10px">${esc(L.TYPES[d.type])} · ${drillAges(d)} · ${d.minutes[0]}–${d.minutes[1]} min · ${esc(L.LEVELS[d.level])} · ${esc(L.INTENSITY[d.intensity])}</p>
-    ${tgt ? `<button class="btn wide" data-act="pracadd" data-id="${esc(tgt.id)}" data-v="${esc(d.id)}" style="margin-bottom:10px">Add to ${esc(pracDay(tgt.date))}</button>` : ''}
-    ${diagramBlock(d.diagram, d.name, 'drillpic', d.id, moving)}
+    ${whose ? `<p class="muted" style="margin:-4px 0 10px">${whose}${orig ? ` Your version of <button class="drilllink" data-act="drillorig" data-id="${esc(key)}">${esc(orig.d.name)}</button>.` : ''}</p>` : ''}
+    ${inPlan ? '<p class="muted" style="margin:-4px 0 10px">The copy this plan keeps, so it reads the same whatever happens to the original.</p>' : ''}
+    ${orig && orig.changed ? `<div class="rolebar">The original has changed since you copied it. <button class="drilllink" data-act="drillorig" data-id="${esc(key)}">See what it says now</button>; yours stays as it is.</div>` : ''}
+    ${tgt ? `<button class="btn wide" data-act="pracadd" data-id="${esc(tgt.id)}" data-v="${esc(key)}" style="margin-bottom:10px">Add to ${esc(pracDay(tgt.date))}</button>` : ''}
+    ${d.diagram ? diagramBlock(d.diagram, d.name, 'drillpic', key, moving) : ''}
+    ${media}
+    ${!d.diagram && media ? '<p class="muted">A link needs a signal to play, and can stop working if whoever posted it takes it down.</p>' : ''}
+    ${!d.diagram && !media ? '<p class="muted">No picture. Drawing one in the app is still to come; a link to a clip works now.</p>' : ''}
     <p>${esc(d.summary)}</p>
     <div class="drillmeta">
       <span>Players <b>${drillPlayers(d)}${d.gk ? ' · ' + d.gk + ' GK' : ''}</b></span>
       <span>Setup <b>${d.setupMins ? d.setupMins + ' min' : 'none'}</b></span>
       <span><b>${d.adults === 1 ? 'One adult' : 'Two adults'}</b></span>
       <span><b>${d.indoor ? 'Indoors or out' : 'Outdoors'}</b></span>
-      <span><b>${esc(d.groups.map(g => L.GROUPS[g]).join(', '))}</b></span>
+      ${d.groups.length ? `<span><b>${esc(d.groups.map(g => L.GROUPS[g]).join(', '))}</b></span>` : ''}
       <span><b>${esc(L.INVOLVEMENT[d.involvement])}</b></span>
       ${d.competitive ? '<span><b>Competitive</b></span>' : ''}
-      <span>Space <b>${d.space ? d.space[0] + ' × ' + d.space[1] + ' yd' : esc(d.spaceNote || '')}</b></span>
+      ${d.space || d.spaceNote ? `<span>Space <b>${d.space ? d.space[0] + ' × ' + d.space[1] + ' yd' : esc(d.spaceNote || '')}</b></span>` : ''}
       <span>Bring <b>${esc(kit)}</b></span>
-      <span>For <b>${esc(d.positions.join(', '))}</b></span>
+      ${d.positions.length ? `<span>For <b>${esc(d.positions.join(', '))}</b></span>` : ''}
     </div>
-    <h4>Setup</h4><p>${esc(d.setup)}</p>
-    <h4>How it runs</h4><ol class="drillul">${d.how.map(x => `<li>${esc(x)}</li>`).join('')}</ol>
-    <h4>Coaching points</h4>${list(d.points)}
-    <h4>Ask them</h4>${list(d.questions)}
-    <h4>Watch for</h4>${list(d.mistakes)}
-    <div class="drillwhy"><h4>Why it helps on Saturday</h4><p>${esc(d.why)}</p></div>
-    <h4>Make it easier</h4>${list(d.easier)}
-    <h4>Make it harder</h4>${list(d.harder)}
+    ${acts.length ? `<div class="row" style="gap:8px;flex-wrap:wrap;margin:6px 0">${acts.map(([a, l]) =>
+      `<button class="btn quiet sm${a === 'drilldel' ? ' danger' : ''}" data-act="${a}" data-id="${esc(key)}">${l}</button>`).join('')}</div>` : ''}
+    ${d.setup ? `<h4>Setup</h4><p>${esc(d.setup)}</p>` : ''}
+    ${d.how.length ? `<h4>How it runs</h4><ol class="drillul">${d.how.map(x => `<li>${esc(x)}</li>`).join('')}</ol>` : ''}
+    ${d.points.length ? `<h4>Coaching points</h4>${list(d.points)}` : ''}
+    ${d.questions.length ? `<h4>Ask them</h4>${list(d.questions)}` : ''}
+    ${d.mistakes.length ? `<h4>Watch for</h4>${list(d.mistakes)}` : ''}
+    ${d.why ? `<div class="drillwhy"><h4>Why it helps on Saturday</h4><p>${esc(d.why)}</p></div>` : ''}
+    ${d.easier.length ? `<h4>Make it easier</h4>${list(d.easier)}` : ''}
+    ${d.harder.length ? `<h4>Make it harder</h4>${list(d.harder)}` : ''}
     ${d.safety ? `<div class="drillsafety"><h4>Safety</h4><p>${esc(d.safety)}</p></div>` : ''}
-    <h4>Trains</h4><div class="chips">${trains.map(x => `<span class="tag">${esc(x)}</span>`).join('')}</div>
+    ${trains.length ? `<h4>Trains</h4><div class="chips">${trains.map(x => `<span class="tag">${esc(x)}</span>`).join('')}</div>` : ''}
     ${d.signals.length ? `<h4>Answers</h4><div class="chips">${d.signals.map(s => `<span class="tag wait">${esc(L.SIGNALS[s].label)}</span>`).join('')}</div>` : ''}
     ${d.goesWith.length ? `<h4>Goes well with</h4><div class="chips">${d.goesWith.map(byId).filter(Boolean).map(x =>
       `<button class="chip" type="button" data-act="drill" data-id="${esc(x.id)}">${esc(x.name)}</button>`).join('')}</div>` : ''}
@@ -6226,7 +6280,7 @@ function refreshDrillList() {
    reads. That's how a parent gets the time and place without the plan. */
 const LS_TRAIN = 'sm.train.v1';
 const trainKey = () => LS_TRAIN + ':' + clubKey();
-const TRAIN_BLANK = () => ({ practices: {}, schedule: {}, dirty: {} });
+const TRAIN_BLANK = () => ({ practices: {}, schedule: {}, dirty: {}, drills: {}, drillDirty: {} });
 let train = TRAIN_BLANK();
 const trainState = {};            // tid -> 'synced' | 'refused', as the database last answered
 let trainWatch = new Map();       // 'practices/t1' -> unsubscribe
@@ -6381,6 +6435,7 @@ function watchTrain(kind, tid) {
 }
 /* Who's asking changed, so every answer so far was somebody else's. */
 function resetTrainWatch() {
+  resetShelfWatch();
   for (const off of trainWatch.values()) { try { off(); } catch (e) { } }
   trainWatch = new Map();
   for (const k of Object.keys(trainTries)) delete trainTries[k];
@@ -6415,14 +6470,394 @@ function trainNote(tid) {
   return '';
 }
 
+/* ---------------- the club's drills, and a coach's own ---------------- */
+/* TRAINING.md's other two shelves. Built-in ships with the app; these two are
+   people's work, and they're the club's and the coach's secret sauce.
+
+   - Club: training/{code}/drills/{id}. Admins and coaches read it, never
+     trackers or parents, and only a coach's or an admin's phone ever asks for
+     it, so nobody else's holds a copy. It's cached per club inside `train`,
+     beside the plans.
+   - Mine: userLibrary/{uid}/drills/{id}. One person's, whichever club she's
+     in. Cached per account (sm.mine.v1:{uid}) and cleared when she signs out
+     or somebody else signs in, like sm.me: it's the person's, not the
+     phone's. No club admin can read it; the app owner can, for support, and
+     never keeps a copy (peekLibrary).
+
+   Both sync the way practice plans do, and for the same reason: merge on
+   read, never replace. A drill this phone changed and the database hasn't
+   acknowledged is dirty and keeps this phone's version. One drill per write,
+   at the depth the rules sit at.
+
+   Moving between shelves copies, never links, and records where it came
+   from: `from: { shelf, id, v }`. A copy whose original has moved on says so
+   and never merges by itself. Deleting never cascades: a plan holds its own
+   copy of every drill that isn't built in, so removing one from a shelf
+   leaves last month's plan readable.
+
+   Pictures: a drill copied from a built-in one keeps its drawing by naming
+   it (`pic`), and the drawing comes from drills.js on every read. A diagram
+   stored in the database is never drawn: the renderer writes numbers into
+   SVG and trusts its input, and anyone who can write a drill could put
+   markup there. The diagram editor (TRAINING.md step 6) will need its own
+   sanitiser before that changes. Everything else is links, https only. */
+const SHELVES = { builtin: 'Built-in', club: 'Club', mine: 'Mine' };
+const LS_MINE = 'sm.mine.v1';
+const MINE_BLANK = () => ({ drills: {}, dirty: {} });
+let mine = MINE_BLANK(), mineUid = null;
+const shelfState = {};            // 'club' | 'mine' -> 'synced' | 'refused'
+let shelfWatch = new Map();       // database path -> unsubscribe
+const shelfTries = {};
+
+function loadMine(u) {
+  mine = MINE_BLANK(); mineUid = u || null;
+  if (!u) return;
+  try {
+    const m = JSON.parse(localStorage.getItem(LS_MINE + ':' + u) || 'null');
+    if (m && typeof m === 'object') for (const k of Object.keys(mine)) if (m[k] && typeof m[k] === 'object') mine[k] = m[k];
+  } catch (e) { }
+}
+function saveMine() { if (mineUid) try { localStorage.setItem(LS_MINE + ':' + mineUid, JSON.stringify(mine)); } catch (e) { } }
+/* Signing out, or in as somebody else, takes the last person's library off
+   the phone, the way cacheMe(null) takes her identity. */
+function forgetMine() {
+  if (mineUid) try { localStorage.removeItem(LS_MINE + ':' + mineUid); } catch (e) { }
+  mine = MINE_BLANK(); mineUid = null;
+}
+const mineUnsent = () => (me && mineUid === me.uid ? Object.keys(mine.dirty).length : 0);
+
+const SHELF = {
+  club: {
+    store() {
+      if (!train.drills || typeof train.drills !== 'object') train.drills = {};
+      if (!train.drillDirty || typeof train.drillDirty !== 'object') train.drillDirty = {};
+      return { items: train.drills, dirty: train.drillDirty };
+    },
+    save: () => saveTrain(),
+    owner: () => wsCode() || null,
+    path: () => (wsCode() ? `training/${wsCode()}/drills` : null)
+  },
+  mine: {
+    store() {
+      if (!me) return { items: {}, dirty: {} };
+      if (mineUid !== me.uid) loadMine(me.uid);
+      return { items: mine.drills, dirty: mine.dirty };
+    },
+    save: () => saveMine(),
+    owner: () => (me ? me.uid : null),
+    path: () => (me ? `userLibrary/${me.uid}/drills` : null)
+  }
+};
+
+const ownKey = (o, k) => !!o && Object.prototype.hasOwnProperty.call(o, k);
+const arrOf = v => (Array.isArray(v) ? v : v && typeof v === 'object' ? Object.values(v) : []);
+const drillKey = (shelf, id) => (!shelf || shelf === 'builtin' ? id : shelf + ':' + id);
+const linkOk = u => typeof u === 'string' && u.length <= 500 && /^https:\/\/[^\s"'<>]+$/.test(u);
+
+/* Whatever comes back from the database, or out of a plan, goes through this.
+   Any coach can write a club drill and the rules check only its name and its
+   links, so every list is held to the library's own vocabularies (a skill the
+   filters don't know is a drill nobody finds), every number to a range, and
+   every string to a length. Arrays come back from the database as objects
+   when they have gaps. */
+function normDrill(raw, shelf, id) {
+  const L = drillLib(); if (!L || !raw || typeof raw !== 'object') return null;
+  const str = (v, n) => (v == null || typeof v === 'object' ? '' : String(v)).trim().slice(0, n);
+  const name = str(raw.name, 80); if (!name) return null;
+  const int = (v, lo, hi, dflt) => { if (v == null || v === '') return dflt; const n = Math.round(Number(v)); return Number.isFinite(n) ? clamp(n, lo, hi) : dflt; };
+  const lines = (v, n = 12) => arrOf(v).map(x => str(x, 400)).filter(Boolean).slice(0, n);
+  const keys = (v, vocab) => [...new Set(arrOf(v).map(String))].filter(k => ownKey(vocab, k));
+  const ages = arrOf(raw.ages), mins = arrOf(raw.minutes), pl = raw.players && typeof raw.players === 'object' ? raw.players : {};
+  const a0 = int(ages[0], 4, 19, 4), a1 = int(ages[1], a0, 19, 19);
+  const m0 = int(mins[0], 1, 120, 10), m1 = int(mins[1], m0, 120, Math.max(m0, 15));
+  const pmin = int(pl.min, 1, 40, 2), pmax = int(pl.max, pmin, 40, Math.max(pmin, 20)), pbest = int(pl.best, pmin, pmax, pmin);
+  const kit = {};
+  if (raw.kit && typeof raw.kit === 'object')
+    for (const [k, v] of Object.entries(raw.kit)) if (ownKey(L.KIT, k)) {
+      if (v === 'each' && k === 'balls') kit[k] = 'each';
+      else { const n = int(v, 0, 99, 0); if (n) kit[k] = n; }
+    }
+  const sp = arrOf(raw.space).map(x => int(x, 1, 150, 0));
+  const media = arrOf(raw.media).filter(x => x && typeof x === 'object' && linkOk(x.url))
+    .map(x => ({ kind: 'link', url: String(x.url), title: str(x.title, 80) })).slice(0, 6);
+  const fr = raw.from && typeof raw.from === 'object' && ownKey(SHELVES, raw.from.shelf) ? { shelf: raw.from.shelf, id: str(raw.from.id, 60), v: int(raw.from.v, 0, 1e6, 0) } : null;
+  const pic = str(raw.pic, 60), base = pic ? L.DRILLS.find(x => x.id === pic) : null;
+  const did = str(raw.id, 60) || str(id, 60);
+  return {
+    id: did, v: int(raw.v, 1, 1e6, 1), name, type: ownKey(L.TYPES, raw.type) ? raw.type : 'technical',
+    summary: str(raw.summary, 200), ages: [a0, a1], level: int(raw.level, 1, 3, 2), players: { min: pmin, best: pbest, max: pmax },
+    gk: int(raw.gk, 0, 4, 0), minutes: [m0, m1], intensity: int(raw.intensity, 1, 3, 2),
+    space: sp.length === 2 && sp[0] && sp[1] ? sp : null, spaceNote: '',
+    kit, setupMins: int(raw.setupMins, 0, 30, 0), adults: int(raw.adults, 1, 2, 1), indoor: raw.indoor === true,
+    groups: keys(raw.groups, L.GROUPS), involvement: int(raw.involvement, 1, 3, 2), competitive: raw.competitive === true,
+    positions: keys(raw.positions, Object.fromEntries(L.POSITIONS.map(x => [x, 1]))),
+    skills: keys(raw.skills, L.SKILLS), principles: keys(raw.principles, L.PRINCIPLES), moments: keys(raw.moments, L.MOMENTS), physical: keys(raw.physical, L.PHYSICAL),
+    setup: str(raw.setup, 1000), how: lines(raw.how), points: lines(raw.points), questions: lines(raw.questions), mistakes: lines(raw.mistakes),
+    why: str(raw.why, 600), easier: lines(raw.easier), harder: lines(raw.harder), safety: str(raw.safety, 400),
+    signals: keys(raw.signals, L.SIGNALS), goesWith: [], tags: [],
+    diagram: base ? base.diagram : null, pic: base ? pic : '', media, from: fr,
+    by: str(raw.by, 60), byName: str(raw.byName, 60), team: str(raw.team, 60), at: Number(raw.at) || 0,
+    shelf, key: drillKey(shelf, did)
+  };
+}
+
+/* The card itself, without whose it is or where it sits: what a copy takes,
+   to another shelf or into a plan. A built-in drill's drawing goes by name. */
+const CARD_DROP = new Set(['shelf', 'key', 'diagram', 'by', 'byName', 'team', 'at', 'from', 'spaceNote', 'goesWith', 'tags']);
+function cardOf(d) {
+  const c = {};
+  for (const [k, v] of Object.entries(d)) if (!CARD_DROP.has(k) && v != null && v !== '') c[k] = v;
+  if (!d.shelf || d.shelf === 'builtin') c.pic = d.id;
+  return JSON.parse(JSON.stringify(c));
+}
+
+const shelfItems = shelf => Object.entries(SHELF[shelf].store().items).map(([id, r]) => normDrill(r, shelf, id)).filter(Boolean);
+/* Any drill by the key a screen carries: a built-in id, 'club:id', 'mine:id',
+   or 'plan:practiceId:index' for the copy a plan holds, which outlives the
+   shelf it came from. */
+function findDrill(key) {
+  const L = drillLib(); key = String(key || '');
+  if (!L) return null;
+  const m = /^(club|mine):(.+)$/.exec(key);
+  if (m) { const r = SHELF[m[1]].store().items[m[2]]; return r ? normDrill(r, m[1], m[2]) : null; }
+  const p = /^plan:([^:]+):(\d+)$/.exec(key);
+  if (p) { const t = team(), pr = t && canPlan(t.id) ? practiceById(t.id, p[1]) : null; return pr ? blockDrill(L, pr.blocks[Number(p[2])]) : null; }
+  return L.DRILLS.find(d => d.id === key) || null;
+}
+/* The original a copy came from, and whether it has moved on since. */
+function drillOrigin(d) {
+  if (!d || !d.from || d.from.shelf === 'mine') return null;
+  const o = findDrill(drillKey(d.from.shelf, d.from.id));
+  return o ? { d: o, changed: (o.v || 1) > (d.from.v || 0) } : null;
+}
+
+/* Who may change a club drill in place. Mirrors the rule: an admin, or the
+   coach who shared it while she still coaches the team it names. */
+const canCurate = d => !!(me && d && d.shelf === 'club' && (isAdmin(me.uid) || (d.by === me.uid && !!(teamAccess(d.team).coaches || {})[me.uid])));
+/* The team a shared drill is filed under, which the rule checks she coaches. */
+function shareTeam() {
+  if (!me) return null;
+  const t = team();
+  if (t && ((teamAccess(t.id).coaches || {})[me.uid] || isAdmin(me.uid))) return t.id;
+  return coachTeamOf(me.uid) || (isAdmin(me.uid) ? (teams()[0] || {}).id || null : null);
+}
+
+function putDrill(shelf, d) {
+  const S = SHELF[shelf], st = S.store();
+  d = JSON.parse(JSON.stringify({ ...d, at: nowMs() }));
+  st.items[d.id] = d; st.dirty[d.id] = d.at;
+  S.save(); sendDrill(shelf, d.id);
+  return d;
+}
+function dropDrill(shelf, id) {
+  const S = SHELF[shelf], st = S.store();
+  delete st.items[id]; st.dirty[id] = -1;       // a delete the database hasn't had yet
+  S.save(); sendDrill(shelf, id);
+}
+function sendDrill(shelf, id) {
+  const S = SHELF[shelf], st = S.store(), base = S.path(), owner = S.owner(), mark = st.dirty[id];
+  if (!rtdb || !me || !base || mark === undefined) return;
+  const v = mark === -1 ? null : st.items[id];
+  if (mark !== -1 && !v) return;
+  const { db, mod } = rtdb;
+  Promise.resolve().then(() => mod.set(mod.ref(db, base + '/' + id), v)).then(() => {
+    if (S.owner() !== owner) return;            // somebody else's now; theirs was cleared
+    if (st.dirty[id] === mark) { delete st.dirty[id]; S.save(); }
+    const was = shelfState[shelf]; shelfState[shelf] = 'synced';
+    if (was !== 'synced') render();
+  }).catch(e => {
+    if (!/permission|denied/i.test((e && e.code) || '')) return;
+    shelfState[shelf] = 'refused'; render();
+  });
+}
+/* Merge, never replace: the same rule mergePractices() follows. */
+function mergeShelf(shelf, remote, resend) {
+  const S = SHELF[shelf], st = S.store(), out = {};
+  remote = remote && typeof remote === 'object' ? remote : {};
+  for (const [id, r] of Object.entries(remote)) {
+    if (st.dirty[id] === undefined) { if (r && typeof r === 'object') out[id] = r; }
+    else if (st.items[id]) out[id] = st.items[id];
+  }
+  for (const [id, d] of Object.entries(st.items)) if (!out[id] && !remote[id] && st.dirty[id] !== undefined) out[id] = d;
+  for (const k of Object.keys(st.items)) delete st.items[k];
+  Object.assign(st.items, out);
+  S.save();
+  if (resend) for (const id of Object.keys(st.dirty)) sendDrill(shelf, id);
+  render();
+}
+/* Read when the Drills screen opens, by a coach's or an admin's phone only.
+   One retry on a refusal, as watchTrain() does. */
+function watchShelf(shelf) {
+  const base = SHELF[shelf].path();
+  if (!rtdb || !me || !base || !canTrain() || shelfWatch.has(base)) return;
+  const { db, mod } = rtdb;
+  let first = true;
+  shelfWatch.set(base, () => { });
+  const off = mod.onValue(mod.ref(db, base), s => {
+    if (SHELF[shelf].path() !== base) return;
+    shelfState[shelf] = 'synced';
+    mergeShelf(shelf, s.val(), first);
+    first = false;
+  }, err => {
+    if (!/permission|denied/i.test((err && err.code) || '')) return;
+    const n = shelfTries[base] = (shelfTries[base] || 0) + 1;
+    if (n < 2) { shelfWatch.delete(base); setTimeout(() => { watchShelf(shelf); }, 1500); return; }
+    shelfState[shelf] = 'refused'; render();
+  });
+  if (typeof off === 'function') shelfWatch.set(base, off);
+}
+function resetShelfWatch() {
+  for (const off of shelfWatch.values()) { try { off(); } catch (e) { } }
+  shelfWatch = new Map();
+  for (const k of Object.keys(shelfTries)) delete shelfTries[k];
+  for (const k of Object.keys(shelfState)) delete shelfState[k];
+}
+
+/* For the app owner, helping someone: one look at one person's library, read
+   once and drawn into a sheet. Nothing is kept: not in `mine`, not in
+   localStorage, and the sheet forgets it when it closes. */
+function peekLibrary(u) {
+  if (!rtdb || !me || !isOwner() || !u) return;
+  const { db, mod } = rtdb;
+  mod.onValue(mod.ref(db, `userLibrary/${u}/drills`), s => {
+    const ds = Object.entries(s.val() || {}).map(([id, r]) => normDrill(r, 'mine', id)).filter(Boolean);
+    openSheet(`<h3>Their drills</h3><p class="muted" style="margin-top:0">Read once, for support, and not kept on this phone. You can't change them.</p>
+      ${ds.length ? `<div class="plist">${ds.map(d => `<div class="prow" style="grid-template-columns:1fr"><span><span class="pname">${esc(d.name)}</span><span class="psub">${esc(d.summary)}</span></span></div>`).join('')}</div>` : '<p class="muted">None.</p>'}
+      <button class="btn quiet wide" data-act="closesheet" style="margin-top:12px">Done</button>`, true);
+  }, () => { toast('The database refused that'); }, { onlyOnce: true });
+}
+
+/* Saved here only, and why, for the shelf the coach is looking at. */
+function shelfNote(shelf) {
+  if (!fbConfig().apiKey) return '';
+  if (!me) return `<div class="rolebar">Sign in to see the club's drills and keep your own.</div>`;
+  const which = shelf === 'all' ? ['club', 'mine'] : shelf === 'builtin' ? [] : [shelf];
+  if (which.some(s => shelfState[s] === 'refused')) return `<div class="rolebar warn">Saved on this phone only. The database refused it: the club's rules may not include drills yet.</div>`;
+  if (which.some(s => Object.keys(SHELF[s].store().dirty).length) && !online) return `<div class="rolebar">Offline. Your changes are on this phone and go up when the signal's back.</div>`;
+  return '';
+}
+
+/* ---- the drill editor ---- */
+/* A sheet with the card's fields. Every list is chips from the library's own
+   vocabularies, never free text, so a drill written here turns up under the
+   same filters as a built-in one. Chips redraw the sheet, so what's typed is
+   read into the draft first and drawn back from it. */
+let drillDraft = null;            // { shelf, id, d: the card being written, keepPic }
+const DRAFT_TEXT = { deName: 'name', deSummary: 'summary', deSetup: 'setup', deWhy: 'why', deSafety: 'safety' };
+const DRAFT_LINES = { deHow: 'how', dePoints: 'points', deQuestions: 'questions', deMistakes: 'mistakes', deEasier: 'easier', deHarder: 'harder' };
+const DRAFT_CHIPS = { positions: null, skills: 'SKILLS', principles: 'PRINCIPLES', moments: 'MOMENTS', physical: 'PHYSICAL', groups: 'GROUPS', signals: 'SIGNALS' };
+const draftVocab = (L, k) => (k === 'positions' ? Object.fromEntries(L.POSITIONS.map(x => [x, x])) : k === 'signals' ? Object.fromEntries(Object.entries(L.SIGNALS).map(([s, v]) => [s, v.label])) : L[DRAFT_CHIPS[k]]);
+
+function draftFrom(d) {
+  const c = d ? cardOf(d) : { name: '', type: 'technical', ages: [8, 12], minutes: [10, 15], players: { min: 4, best: 12, max: 16 }, gk: 0, level: 2, intensity: 2, involvement: 2, adults: 1 };
+  if (d && d.shelf && d.shelf !== 'builtin') { if (d.pic) c.pic = d.pic; else delete c.pic; }
+  for (const k of [...Object.values(DRAFT_LINES), ...Object.keys(DRAFT_CHIPS)]) c[k] = arrOf(c[k]);
+  c.kit = c.kit && typeof c.kit === 'object' ? c.kit : {};
+  c.media = arrOf(c.media);
+  return c;
+}
+function captureDraft() {
+  const L = drillLib(), dd = drillDraft && drillDraft.d; if (!dd || !L || !$('#deName')) return;
+  const v = id => { const n = $('#' + id); return n && n.value != null ? String(n.value) : ''; };
+  for (const [id, k] of Object.entries(DRAFT_TEXT)) dd[k] = v(id);
+  for (const [id, k] of Object.entries(DRAFT_LINES)) dd[k] = v(id).split('\n').map(x => x.trim()).filter(Boolean);
+  dd.type = v('deType'); dd.level = v('deLevel'); dd.intensity = v('deInt'); dd.involvement = v('deInv');
+  dd.ages = [v('deAge0'), v('deAge1')]; dd.minutes = [v('deMin0'), v('deMin1')];
+  dd.players = { min: v('dePmin'), best: v('dePbest'), max: v('dePmax') };
+  dd.gk = v('deGk'); dd.adults = v('deAdults'); dd.setupMins = v('deSetupMins');
+  dd.indoor = v('deIndoor') === 'yes'; dd.competitive = v('deComp') === 'yes';
+  dd.space = [v('deSpaceW'), v('deSpaceL')];
+  dd.kit = {};
+  for (const k of Object.keys(L.KIT)) { const x = v('deKit_' + k); if (x) dd.kit[k] = x === 'each' ? 'each' : Number(x); }
+}
+/* Opened at its top; redrawn after a chip or a link, it stays where she was. */
+function sheetDrillEditor(top = false) {
+  const L = drillLib(), dr = drillDraft; if (!L || !dr) return;
+  const c = dr.d, n = normDrill({ ...c, name: c.name || 'x' }, dr.shelf, 'x') || {};
+  const opt = (cur, v, l) => `<option value="${esc(v)}"${String(cur) === String(v) ? ' selected' : ''}>${esc(l)}</option>`;
+  const sel = (id, cur, entries) => `<select id="${id}">${entries.map(([v, l]) => opt(cur, v, l)).join('')}</select>`;
+  const lab = (l, body) => `<label class="field"><span>${l}</span>${body}</label>`;
+  const ages = Array.from({ length: 16 }, (_, i) => [i + 4, i + 4 === 19 ? 'U19 / adult' : 'U' + (i + 4)]);
+  const area = (id, k, rows, ph) => lab(esc(ph), `<textarea id="${id}" rows="${rows}">${esc(arrOf(c[k]).join('\n'))}</textarea>`);
+  const chips = k => `<p class="lbl">${{ positions: 'For', skills: 'Skills', principles: 'Principles of play', moments: 'Moments', physical: 'Physical', groups: 'Grouped as', signals: 'Answers' }[k]}</p>
+    <div class="chips">${Object.entries(draftVocab(L, k)).map(([v, l]) => `<button class="chip" type="button" data-act="dedchip" data-k="${k}" data-v="${esc(v)}" aria-pressed="${arrOf(c[k]).includes(v)}">${esc(l)}</button>`).join('')}</div>`;
+  const nums = (lo, hi) => Array.from({ length: hi - lo + 1 }, (_, i) => [lo + i, String(lo + i)]);
+  const kitOpts = k => [['', 'None'], ...(k === 'balls' ? [['each', 'One each']] : []), ...[1, 2, 3, 4, 6, 8, 10, 12, 16, 20, 24].map(x => [x, String(x)])];
+  const pic = c.pic && L.DRILLS.find(x => x.id === c.pic);
+  openSheet(`<h3>${dr.id ? 'Edit the drill' : 'Write a drill'}</h3>
+    <p class="muted" style="margin-top:0">${dr.shelf === 'club' ? 'The club\'s copy: every coach and admin in the club reads it.' : 'Yours. Nobody else sees it unless you share it with the club or add it to a practice.'}</p>
+    ${lab('Name', `<input type="text" id="deName" value="${esc(c.name)}" maxlength="80" placeholder="Box rondo">`)}
+    ${lab('In one line', `<input type="text" id="deSummary" value="${esc(c.summary || '')}" maxlength="200" placeholder="Four keep the ball from one in a small square">`)}
+    <div class="grid2">
+      ${lab('Type', sel('deType', c.type, Object.entries(L.TYPES)))}
+      ${lab('Difficulty', sel('deLevel', n.level, Object.entries(L.LEVELS)))}
+      ${lab('Youngest', sel('deAge0', n.ages ? n.ages[0] : 8, ages))}
+      ${lab('Oldest', sel('deAge1', n.ages ? n.ages[1] : 12, ages))}
+      ${lab('Minutes, shortest', `<input type="number" inputmode="numeric" id="deMin0" value="${esc(n.minutes ? n.minutes[0] : '')}">`)}
+      ${lab('Minutes, longest', `<input type="number" inputmode="numeric" id="deMin1" value="${esc(n.minutes ? n.minutes[1] : '')}">`)}
+      ${lab('Players, fewest', `<input type="number" inputmode="numeric" id="dePmin" value="${esc(n.players ? n.players.min : '')}">`)}
+      ${lab('Players, best', `<input type="number" inputmode="numeric" id="dePbest" value="${esc(n.players ? n.players.best : '')}">`)}
+      ${lab('Players, most', `<input type="number" inputmode="numeric" id="dePmax" value="${esc(n.players ? n.players.max : '')}">`)}
+      ${lab('Keepers', sel('deGk', n.gk, nums(0, 4)))}
+      ${lab('Intensity', sel('deInt', n.intensity, Object.entries(L.INTENSITY)))}
+      ${lab('How busy', sel('deInv', n.involvement, Object.entries(L.INVOLVEMENT)))}
+      ${lab('Adults to run it', sel('deAdults', n.adults, [[1, 'One'], [2, 'Two']]))}
+      ${lab('Setup, minutes', `<input type="number" inputmode="numeric" id="deSetupMins" value="${esc(n.setupMins || 0)}">`)}
+      ${lab('Indoors', sel('deIndoor', n.indoor ? 'yes' : 'no', [['no', 'Outdoors only'], ['yes', 'Works indoors']]))}
+      ${lab('Competitive', sel('deComp', n.competitive ? 'yes' : 'no', [['no', 'No score'], ['yes', 'Has a score or winner']]))}
+      ${lab('Space, yards wide', `<input type="number" inputmode="numeric" id="deSpaceW" value="${esc(n.space ? n.space[0] : '')}">`)}
+      ${lab('Space, yards long', `<input type="number" inputmode="numeric" id="deSpaceL" value="${esc(n.space ? n.space[1] : '')}">`)}
+    </div>
+    ${lab('Setup', `<textarea id="deSetup" rows="3">${esc(c.setup || '')}</textarea>`)}
+    ${area('deHow', 'how', 4, 'How it runs, a step a line')}
+    ${area('dePoints', 'points', 3, 'Coaching points, one a line')}
+    ${area('deQuestions', 'questions', 2, 'Questions to ask them, one a line')}
+    ${area('deMistakes', 'mistakes', 2, 'What goes wrong, and the fix, one a line')}
+    ${lab('Why it helps on Saturday', `<textarea id="deWhy" rows="2">${esc(c.why || '')}</textarea>`)}
+    ${area('deEasier', 'easier', 2, 'Make it easier, one a line')}
+    ${area('deHarder', 'harder', 2, 'Make it harder, one a line')}
+    ${lab('Safety', `<input type="text" id="deSafety" value="${esc(c.safety || '')}" maxlength="400" placeholder="Only if there is something to say">`)}
+    ${Object.keys(DRAFT_CHIPS).map(chips).join('')}
+    <p class="lbl">Bring</p><div class="grid2">${Object.entries(L.KIT).map(([k, l]) => lab(esc(l), sel('deKit_' + k, (c.kit || {})[k] || '', kitOpts(k)))).join('')}</div>
+    <p class="lbl">Picture</p>
+    ${pic ? `<div class="chips"><button class="chip" type="button" data-act="dedpic" data-k="keep" aria-pressed="${dr.keepPic}">Keep the drawing from ${esc(pic.name)}</button><button class="chip" type="button" data-act="dedpic" data-k="drop" aria-pressed="${!dr.keepPic}">No drawing</button></div>`
+      : `<p class="muted" style="margin-top:0">Drawing a drill in the app is still to come. Until then a link to a clip does the job.</p>`}
+    ${c.media.map((m, i) => `<div class="spread"><a class="drilllink" href="${esc(m.url)}" target="_blank" rel="noopener noreferrer">${esc(m.title || m.url)}</a><button class="btn quiet sm" data-act="dedlinkdel" data-i="${i}">Remove</button></div>`).join('')}
+    ${c.media.length < 6 ? `<div class="grid2">${lab('Link to a video or GIF', `<input type="url" id="dlUrl" placeholder="https://youtu.be/…">`)}${lab('What it shows', `<input type="text" id="dlTitle" maxlength="80" placeholder="The set-up">`)}</div>
+      <button class="btn quiet wide" data-act="dedlinkadd">Add the link</button>` : ''}
+    <p class="muted">Unlisted isn't private: anyone who has the link can watch it. A clip of the set-up, or of professionals, is safer than one of your team. Nothing is uploaded, and a link needs a signal to play.</p>
+    <button class="btn wide" data-act="dedsave">Save</button>
+    <button class="btn quiet wide" data-act="closesheet" style="margin-top:8px">Cancel</button>`, top);
+}
+/* What's wrong with the draft, said in one line, or nothing. */
+function draftProblem(n) {
+  if (!n) return 'Give it a name';
+  if (!n.summary) return 'Say what it is in one line';
+  if (!n.setup) return 'Say how to set it up';
+  if (!n.how.length) return 'Say how it runs, a step a line';
+  if (!n.points.length) return 'Give it at least one coaching point';
+  if (n.skills.includes('heading') && n.ages[0] < 11) return 'Heading drills start at U11: US Soccer rules out heading for under-elevens';
+  return '';
+}
+
 /* ---- the drills in a plan ---- */
 /* A built-in drill is stored by reference, because nobody can change one
    except by shipping a new drills.js, with its name alongside so the plan
-   still reads if the drill is ever taken out. Club and personal drills, when
-   they exist, will be copied in whole instead (TRAINING.md, the shapes rule). */
-const blockDrill = (L, b) => (L && b && b.drill && b.drill.shelf === 'builtin' ? L.DRILLS.find(d => d.id === b.drill.id) || null : null);
+   still reads if the drill is ever taken out. A club or personal drill is
+   copied in whole (`card`), because those can be edited and deleted, and
+   last month's plan must still read the way it was run. */
+function blockDrill(L, b) {
+  if (!L || !b || !b.drill) return null;
+  if (b.drill.shelf === 'builtin') return L.DRILLS.find(d => d.id === b.drill.id) || null;
+  return b.drill.card && ownKey(SHELVES, b.drill.shelf) ? normDrill({ ...b.drill.card, id: b.drill.id }, b.drill.shelf, b.drill.id) : null;
+}
+/* Where a block's drill opens from: the library for a built-in one, the
+   plan's own copy for anything else. */
+const blockKey = (pr, i, d) => (!d.shelf || d.shelf === 'builtin' ? d.id : 'plan:' + pr.id + ':' + i);
 const midMinutes = d => Math.round((d.minutes[0] + d.minutes[1]) / 2);
-const drillBlock = (L, d, minutes) => ({ drill: { shelf: 'builtin', id: d.id, v: L.version }, name: d.name, minutes: minutes || midMinutes(d), note: '' });
+const drillBlock = (L, d, minutes) => (!d.shelf || d.shelf === 'builtin'
+  ? { drill: { shelf: 'builtin', id: d.id, v: L.version }, name: d.name, minutes: minutes || midMinutes(d), note: '' }
+  : { drill: { shelf: d.shelf, id: d.id, v: d.v, card: cardOf(d) }, name: d.name, minutes: minutes || midMinutes(d), note: '' });
 const squadOf = t => players(t).filter(p => p.active !== false);
 
 /* Kit is worked out when it's needed, never stored: the most of each thing
@@ -6555,7 +6990,7 @@ function planView(L, t, pr) {
   const rows = pr.blocks.map((b, i) => {
     const d = blockDrill(L, b);
     return `<div class="card planblock">
-      <div class="spread"><button class="drilllink planname" data-act="${d ? 'drill' : 'pracnote'}" data-id="${esc(d ? d.id : pr.id)}" data-i="${i}">${i + 1}. ${esc(d ? d.name : b.name || 'A drill')}</button>
+      <div class="spread"><button class="drilllink planname" data-act="${d ? 'drill' : 'pracnote'}" data-id="${esc(d ? blockKey(pr, i, d) : pr.id)}" data-i="${i}">${i + 1}. ${esc(d ? d.name : b.name || 'A drill')}</button>
         <span class="planmins"><button class="chip" type="button" data-act="pracmin" data-id="${id}" data-i="${i}" data-d="-1" aria-label="A minute less">−</button><b>${b.minutes}′</b><button class="chip" type="button" data-act="pracmin" data-id="${id}" data-i="${i}" data-d="1" aria-label="A minute more">+</button></span></div>
       ${d ? `<span class="drillfacts">${esc(L.TYPES[d.type] || d.type)} · ${esc(L.INTENSITY[d.intensity])}</span>` : ''}
       ${b.note ? `<p class="plannote">${esc(b.note)}</p>` : ''}
@@ -6669,7 +7104,7 @@ function runView(L) {
         <button class="btn quiet" style="flex:1" data-act="runreset">Reset</button></div>
     </div>
     ${b.note ? `<div class="drillwhy"><h4>Your note</h4><p>${esc(b.note)}</p></div>` : ''}
-    ${d ? `${diagramBlock(d.diagram, d.name, 'runpic', d.id, !p.runStill && !reducedMotion())}
+    ${d ? `${d.diagram ? diagramBlock(d.diagram, d.name, 'runpic', d.id, !p.runStill && !reducedMotion()) : ''}
       <h4>Coaching points</h4>${list(d.points)}
       <h4>Setup</h4><p>${esc(d.setup)}</p>
       <h4>Make it harder</h4>${list(d.harder)}
@@ -6709,7 +7144,9 @@ function viewSetup() {
       <p class="lbl">Your account id</p>
       <div class="codebox">${esc(me.uid)}</div>
       <button class="btn quiet sm" data-act="copylink" data-v="${esc(me.uid)}">Copy id</button>
-      <p class="muted" style="margin-bottom:0">Needed once, to be made app owner in the Firebase console.</p>`
+      <p class="muted"${canTrain() || isOwner() ? '' : ' style="margin-bottom:0"'}>Needed once, to be made app owner in the Firebase console.</p>
+      ${canTrain() ? `<button class="btn quiet wide" data-act="mydrills">My drills</button>` : ''}
+      ${isOwner() ? `<button class="btn quiet wide" data-act="peeklib" style="margin-top:8px">Look at someone's drills, for support</button>` : ''}`
       : '<p class="muted" style="margin-bottom:0">Signed out, everything stays on this device. Sign in to share it with your club.</p>'}</div>
 
     <div class="card"><h2 style="margin-bottom:8px">Workspace</h2>
@@ -6790,6 +7227,10 @@ function viewAdmin() {
         <span><span class="pname">${teamLabel(t)}</span><span class="rowsub">${teamStats(t)}</span></span>
         <span class="muted">Edit</span></button>`).join('') || '<p class="muted" style="margin:0">No teams yet.</p>'}</div>
       <div style="margin-top:10px"><button class="btn quiet wide" data-act="newteam">Add a team</button></div></div>
+
+    <div class="card"><h2 style="margin-bottom:8px">Club drills</h2>
+      <p class="muted" style="margin-top:0">${(() => { const n = shelfItems('club').length; return n ? `${n} drill${n === 1 ? '' : 's'} the club's coaches have shared.` : 'None yet. Coaches share their own drills into it, and you can tidy or remove any of them.'; })()} Coaches and admins see them; trackers and parents never do.</p>
+      <button class="btn quiet wide" data-act="clubdrills">Look after the club's drills</button></div>
 
     <div class="card"><h2 style="margin-bottom:8px">Bulk import</h2>
       <p class="muted" style="margin-top:0">A whole season at once — teams, rosters, fixtures and past results — from one JSON file. It adds and updates, and never removes anything.</p>
@@ -8374,6 +8815,98 @@ function onAct(e) {
     return;
   }
 
+  /* ---- the club's drills and her own ---- */
+  if (LIB_ACTS.has(a)) {
+    const p = practiceUi(), L = drillLib();
+    if (a === 'shelf') { p.shelf = ownKey(SHELVES, d.k) ? d.k : 'all'; p.show = 24; render(); return; }
+    if (a === 'clubdrills' || a === 'mydrills') {
+      ui.view = 'practice'; p.tab = 'drills'; p.pick = null; p.run = null; p.shelf = a === 'clubdrills' ? 'club' : 'mine';
+      closeSheet(); render(); toTop(); return;
+    }
+    if (!me || !L) { closeSheet(); toast('Sign in to keep drills of your own'); return; }
+    const dr = d.id ? findDrill(d.id) : null;
+    const copyToMine = x => putDrill('mine', { ...cardOf(x), id: uid(), v: 1, from: { shelf: x.shelf || 'builtin', id: x.id, v: x.v || 1 } });
+    const edit = (shelf, x) => { drillDraft = { shelf, id: x ? x.id : null, d: draftFrom(x), keepPic: !!(x && (x.pic || !x.shelf || x.shelf === 'builtin')) }; sheetDrillEditor(true); };
+    if (a === 'drillnew') { edit('mine', null); return; }
+    if (a === 'drillorig') {
+      const o = dr && drillOrigin(dr);
+      if (!o) { toast('The original isn\'t here any more'); return; }
+      sheetDrill(o.d.key || o.d.id, undefined, true); return;
+    }
+    if (a === 'drillmine') {
+      if (!dr || dr.shelf === 'mine') return;
+      const n = copyToMine(dr);
+      sheetDrill('mine:' + n.id, undefined, true); toast('Saved to your drills'); render(); return;
+    }
+    if (a === 'drilledit') {
+      if (!dr) return;
+      if (dr.shelf === 'mine' || canCurate(dr)) { edit(dr.shelf, dr); return; }
+      /* Editing somebody else's drill is saving your own version of it. The
+         original is untouched, and yours says where it came from. */
+      const n = normDrill(copyToMine(dr), 'mine', null);
+      edit('mine', n); toast('Your own copy. The original is untouched'); render(); return;
+    }
+    if (a === 'drillshare') {
+      if (!dr || dr.shelf !== 'mine') return;
+      const tid = shareTeam();
+      if (!wsCode() || !tid) { toast('Only a coach or an admin of a club can share into it'); return; }
+      if (!confirm('Share a copy with the club? Every coach and admin in it can read it. Yours stays yours.')) return;
+      const n = putDrill('club', { ...cardOf(dr), id: uid(), v: 1, from: { shelf: 'mine', id: dr.id, v: dr.v || 1 }, by: me.uid, byName: whoAmI() || '', team: tid });
+      sheetDrill('club:' + n.id, undefined, true); toast('Shared with the club'); render(); return;
+    }
+    if (a === 'drilldel') {
+      if (!dr) return;
+      if (dr.shelf === 'mine') {
+        if (!confirm('Delete this drill? Practices that use it keep their own copy.')) return;
+        dropDrill('mine', dr.id);
+      } else if (dr.shelf === 'club' && canCurate(dr)) {
+        if (!confirm('Remove this drill from the club? Copies coaches saved, and practices that use it, keep theirs.')) return;
+        dropDrill('club', dr.id);
+      } else { toast('Only an admin, or the coach who shared it, can remove it'); return; }
+      closeSheet(); render(); toast('Deleted'); return;
+    }
+    const dr2 = drillDraft;
+    if (!dr2) { closeSheet(); return; }
+    /* A draft for a club drill she can no longer change, say because she
+       stopped coaching its team while the sheet was open, goes no further. */
+    if (dr2.shelf === 'club' && !canCurate(findDrill('club:' + dr2.id))) { closeSheet(); drillDraft = null; toast('Only an admin, or the coach who shared it, can change it'); return; }
+    captureDraft();
+    const c = dr2.d;
+    if (a === 'dedchip') {
+      const k = d.k, v = String(d.v || '');
+      if (!ownKey(DRAFT_CHIPS, k) || !ownKey(draftVocab(L, k), v)) return;   // only the library's own words
+      const i = c[k].indexOf(v); if (i >= 0) c[k].splice(i, 1); else c[k].push(v);
+      sheetDrillEditor(); return;
+    }
+    if (a === 'dedpic') { dr2.keepPic = d.k === 'keep'; sheetDrillEditor(); return; }
+    if (a === 'dedlinkdel') { c.media.splice(Number(d.i), 1); sheetDrillEditor(); return; }
+    if (a === 'dedlinkadd') {
+      const url = String(($('#dlUrl') || {}).value || '').trim(), title = String(($('#dlTitle') || {}).value || '').trim().slice(0, 80);
+      if (!linkOk(url)) { toast('A link has to start with https://'); return; }
+      if (c.media.length >= 6) return;
+      c.media.push({ kind: 'link', url, title });
+      const u = $('#dlUrl'), t2 = $('#dlTitle'); if (u) u.value = ''; if (t2) t2.value = '';
+      sheetDrillEditor(); return;
+    }
+    if (a === 'dedsave') {
+      const raw = { ...c };
+      if (!dr2.keepPic) delete raw.pic;
+      const n = normDrill(raw, dr2.shelf, dr2.id || 'new');
+      const why = draftProblem(n);
+      if (why) { toast(why); return; }
+      const was = dr2.id ? SHELF[dr2.shelf].store().items[dr2.id] : null;
+      const old = was ? normDrill(was, dr2.shelf, dr2.id) : null;
+      const out = { ...cardOf(n), id: dr2.id || uid(), v: old ? (old.v || 1) + 1 : 1 };
+      if (!dr2.keepPic) delete out.pic;
+      if (old && old.from) out.from = old.from;
+      if (dr2.shelf === 'club') Object.assign(out, { by: old.by, byName: old.byName, team: old.team });
+      const saved = putDrill(dr2.shelf, out);
+      drillDraft = null;
+      sheetDrill(drillKey(dr2.shelf, saved.id), undefined, true); render(); toast('Saved'); return;
+    }
+    return;
+  }
+
   /* ---- practice plans ---- */
   if (PLAN_ACTS.has(a)) {
     const tp = team();
@@ -8411,8 +8944,14 @@ function onAct(e) {
     if (a === 'pracpick') { if (!pr) return; p.pick = pr.id; p.open = pr.id; p.tab = 'drills'; render(); toTop(); return; }
     if (a === 'pracpickdone') { p.pick = null; p.tab = 'plans'; if (pr) p.open = pr.id; render(); return; }
     if (a === 'pracadd') {
-      const dr = L && L.DRILLS.find(x => x.id === d.v);
+      const dr = String(d.v || '').startsWith('plan:') ? null : findDrill(d.v);
       if (!pr || !dr) return;
+      /* The plan keeps a copy, and every coach of the team reads the plan:
+         the one way a drill of hers is seen without her sharing it on purpose. */
+      if (dr.shelf === 'mine' && !p.mineShared) {
+        if (!confirm('Adding this to the practice shares it with this team\'s coaches. Add it?')) return;
+        p.mineShared = true;
+      }
       const c = clone(pr); c.blocks.push(drillBlock(L, dr)); putPractice(c);
       closeSheet(); render();
       toast(`Added. ${c.blocks.length} drill${c.blocks.length === 1 ? '' : 's'}, ${blockTotal(c)} of ${c.minutes} min`);
@@ -8856,7 +9395,20 @@ function onAct(e) {
   }
   if (a === 'setwho') { sheetWho(); return; }
   if (a === 'signinsheet') { sheetSignIn(); return; }
-  if (a === 'signout') { authMod.signOut(fbAuth).then(() => { closeSheet(); toast('Signed out'); }); return; }
+  if (a === 'signout') {
+    const n = mineUnsent();
+    if (n && !confirm(`${n} change${n === 1 ? '' : 's'} to your own drills ha${n === 1 ? 's' : 've'}n't reached the database yet, and signing out takes your drills off this phone. Sign out anyway?`)) return;
+    authMod.signOut(fbAuth).then(() => { closeSheet(); toast('Signed out'); }); return;
+  }
+  if (a === 'peeklib') {
+    if (!isOwner()) return;
+    openSheet(`<h3>Look at someone's drills</h3><p class="muted" style="margin-top:0">For support. Read once, never kept on this phone, and you can't change them. Their account id is on their Settings screen.</p>
+      <label class="field"><span>Account id</span><input type="text" id="peekUid"></label>
+      <button class="btn wide" data-act="peekgo">Look</button>
+      <button class="btn quiet wide" data-act="closesheet" style="margin-top:8px">Cancel</button>`, true);
+    return;
+  }
+  if (a === 'peekgo') { const u = String(($('#peekUid') || {}).value || '').trim(); if (isOwner() && /^[\w-]{6,128}$/.test(u)) peekLibrary(u); else toast('That doesn\'t look like an account id'); return; }
   if (a === 'signin-google') {
     const p = new authMod.GoogleAuthProvider();
     authMod.signInWithPopup(fbAuth, p)

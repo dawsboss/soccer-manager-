@@ -8,6 +8,57 @@ before this point lives only in the git log.
 
 ---
 
+## The club's drills, and a coach's own — 2026-10-03
+
+The owner asked for coaches to have their own drill libraries and clubs to
+have theirs, and settled the shape on 2026-10-02: parents never see drills,
+because they are a club's and a coach's own work; a coach's library is hers
+and she shares only if she wants to; and no club admin sees it, only the app
+owner, for support. TRAINING.md had the design and TRAINING-NEXT.md the
+brief; this builds its first two steps.
+
+Practice → Drills now has three shelves, Built-in, Club and Mine, and every
+filter works across all three. *Save to mine* copies any drill, and editing
+one that isn't yours saves your own version of it, which records where it
+came from and says when the original has changed, without ever merging by
+itself: a coach who reworded the setup for her age group doesn't want it
+reworded back. *Write a drill* is an editor with the card's fields, where
+every list is chips from `drills.js`'s own vocabularies, because a typo'd
+skill is a drill no filter finds. There are no uploads. A copy of a built-in
+drill keeps its drawing by naming it, and anything else carries https links,
+with a line saying an unlisted video isn't private.
+
+*Share with the club* copies a drill to the Club shelf, stamped with who
+shared it and a team she coaches. Admins tidy it from Admin → Club drills,
+and a coach can edit or remove what she shared while she still coaches that
+team. Coaches' and admins' phones are the only ones that ever ask for it.
+
+Mine lives at `userLibrary/{uid}`, outside every club, so a coach's drills
+follow her if she moves. It is cached per account and taken off the phone
+the moment she signs out or someone else signs in, with a warning if a
+change hasn't reached the database yet. The app owner can read one person's
+library once, from Settings, and the phone keeps nothing.
+
+A practice plan can now hold Club and Mine drills. They are copied into the
+plan whole, because those can be edited and deleted and last month's plan
+must still read the way it was run, and the first time a coach adds one of
+hers the app says that shares it with the team's coaches.
+
+Both shelves sync the way plans do: merge on read, never replace, and one
+drill per write. Everything read is normalised, because any coach can write
+a club drill and the rules check only its name and its links. A diagram
+stored in the database is never drawn, since the renderer trusts its input.
+
+The rules: `training/{code}/drills` and `templates` (admins and anyone in
+`coachIndex` read; a coach writes as herself for a team whose coach list
+names her; admins curate; fails closed) and `userLibrary/{uid}` (hers; the
+app owner reads; no club admin). They have to be pasted before drills leave
+the phone. `test/rules.js` covers every role against them, and its validator
+now walks into arrays, which it skipped before. `test/library.js` is new.
+
+Templates, and practice plans moving onto the calendar (settled the same
+day), are next; TRAINING-NEXT.md is the brief.
+
 ## One set of rules, for every club — 2026-10-03
 
 There were two rulesets: an open "starter" set that new clubs began on, and

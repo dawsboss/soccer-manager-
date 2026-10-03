@@ -1,7 +1,7 @@
-# Next in training: coaches' own drills, the club's drills, and templates
+# Next in training: plans on the calendar, then templates
 
 A brief for a fresh chat, written 2026-10-03 at the end of the branch
-`ccr-eccb3a51-07tefa`. If that branch is merged and nothing below has shipped
+`ccr-d5818ea9-kls3o6`. If that branch is merged and nothing below has shipped
 since, this is current. If something has shipped differently, trust the code
 and `CHANGELOG.md` over this note.
 
@@ -15,243 +15,208 @@ The owner, in their own words:
 > Work in allowing coaches to have their own drill libraries, clubs to have
 > their own, templates.
 
-And from the conversation that designed it (2026-10-01 to 2026-10-02):
+Coaches' own libraries and the club's are built (below). Templates are what's
+left of that ask. On 2026-10-03 the owner also answered the question this
+brief used to open with:
 
-- A library for each coach on her own, and one for the club, and copying
-  between them and her own account.
-- "Parents should not see the drills, this is the secret sauce for a club and
-  coach. So club provided drills should remain for club admins and coaches.
-  And a coach should have their own set, where they don't have to share if
-  they don't want to."
-- "No admin should see personal drills. Coach only and me as the app owner."
-- "No pictures directly and only links." Links only, for storage and for
-  children's faces. The owner likes the drawn, animated diagrams best.
+> **Do practice plans hang off the calendar?** — *Yes.*
+
+So a plan is keyed by the calendar practice it belongs to and takes when and
+where from that entry, and **a template is a plan with no calendar entry.**
+Move the plans first, then build templates on top, because a template built
+before the move would have to change shape after it.
+
+Standing decisions from the design conversation (2026-10-01 to 2026-10-02),
+all still binding:
+
+- Parents never see drills, plans or templates: "this is the secret sauce for
+  a club and coach." The club's are for admins and coaches, never trackers.
+- A coach's own things are hers. "No admin should see personal drills. Coach
+  only and me as the app owner."
+- "No pictures directly and only links."
 
 ## Read first
 
-1. `CLAUDE.md`: the invariants, and the rules section. **There is one
-   ruleset, `database.rules.json`, for every club.** The site is for any club
-   that turns up, so never add a second one; `test/rules.js` fails if you do.
-2. `TRAINING.md`: *Three shelves*, *Moving between shelves: copied, never
-   linked*, *A drill card*, *Pictures* (draw it, or link it), *Who can do
-   what*, *Data model*, *Rules sketch*, *Offline*, *Privacy*, and *Build
-   order*. Steps 4 (Mine) and 5 (Club) are this work; templates sit in both.
-3. `HANDOFF.md`: main's latest note. It's about a different next chat (club
-   event planning), but it records how the calendar and attendance work.
+1. `CLAUDE.md`: the invariants (including the new one on drill shelves), and
+   the rules section. **There is one ruleset, `database.rules.json`, for
+   every club.** Never add a second; `test/rules.js` fails if you do.
+2. `TRAINING.md`: *Practices*, *Moving between shelves*, *Data model*,
+   *Rules sketch*, *Offline*, *Build order*, and *Decisions* (the calendar
+   one is settled there too).
+3. `HANDOFF.md`: how the calendar and the attendance register work. The
+   calendar comment in `app.js` (search `/* --- calendar --- */`) has the
+   entry's shape.
 
 ## Where things stand
 
-Built and merged into this branch:
+Built, and on this branch:
 
-- **`drills.js`**: 105 built-in drills (`window.SOCCER_DRILLS`), the position
-  guide `ROLE_GUIDE`, and the fixed vocabularies (`TYPES`, `SKILLS`,
-  `PRINCIPLES`, `MOMENTS`, `PHYSICAL`, `KIT`, `LEVELS`, `INTENSITY`, `GROUPS`,
-  `INVOLVEMENT`, `POSITIONS`, `SIGNALS`). `LIB.version` is 3. A user's drill
-  must use these same vocabularies, or no filter ever finds it.
-- **`drill-diagram.js`**: `parse(diagram)` and `svg(diagram, { animate,
-  title })`. A diagram is a few lines of data: area in yards, cones, goals,
-  players by team, then moves step by step. `TRAINING.md` → *Pictures* has
-  the format.
-- **The Practice tab** (`app.js`), for coaches and admins only (`canTrain()`):
-  - **Plans**: practice plans for one team, with a suggested session, run
-    mode and a review.
-  - **Drills**: the built-in library, with search, every filter, and the
-    drill card (`sheetDrill()`).
-  - **Positions**: the position guide.
-
-  Useful functions: `drillLib()`, `practiceUi()`, `drillMatches()`,
-  `practiceDrills()`, `drillRow()`, `diagramBlock()`, `kitWords()`.
-- **Practice plans** live at `training/{code}/practices/{teamId}/{practiceId}`.
-  Their local copy is `train` (`sm.train.v1:{club}`), and their sync is
+- **The built-in library** (`drills.js`, 105 drills, `LIB.version` 3), the
+  diagram renderer (`drill-diagram.js`), the position guide, and the
+  Practice tab (`canTrain()`: coaches, admins, the app owner, and any club
+  with no admin yet).
+- **Practice plans** at `training/{code}/practices/{tid}/{pid}`, with their
+  own date, time and place, and a copy of when and where at
+  `training/{code}/schedule/{tid}/{pid}` for parents. Sync:
   `putPractice()` / `sendPractice()` / `mergePractices()` / `watchTrain()`.
-  It merges on read and never replaces (a dirty map, and a re-send on the
-  first answer after attaching). **Copy this pattern for Mine and Club**; don't
-  copy `wireBase()`, which still replaces wholesale (the pinned gap).
-- **A plan's blocks hold built-in drills only**, by reference:
-  `{ drill: { shelf: 'builtin', id, v }, name, minutes, note }`. `blockDrill()`
-  returns null for any other shelf, and the plan then says the drill is gone.
-  That's the seam this work opens.
-- **Rules** in `database.rules.json`:
-  - `training/$code/practices/$tid` and `training/$code/schedule/$tid`;
-  - `access/coachIndex/$uid`, the "a coach of any team?" lookup, derived by
-    `syncCoachIndex()`.
+- **The club's drills and a coach's own** (this branch, TRAINING.md steps 4
+  and 5 less templates):
+  - Club: `training/{code}/drills/{id}`, cached inside `train`
+    (`train.drills`, `train.drillDirty`). Mine: `userLibrary/{uid}/drills/{id}`,
+    cached at `sm.mine.v1:{uid}` and dropped by `forgetMine()` whenever the
+    signed-in uid changes.
+  - One sync for both: `SHELF.club` / `SHELF.mine` describe where each lives;
+    `putDrill()`, `dropDrill()`, `sendDrill()`, `mergeShelf()`,
+    `watchShelf()`. Merge on read, a dirty map, one drill per write.
+    **Templates should be a third and fourth entry in the same shape**, not a
+    new copy of the sync.
+  - `normDrill()` normalises everything read: the vocabularies, ranges,
+    https links, and `pic` (a built-in drill whose drawing a copy borrows).
+    **A stored diagram is never drawn.** `cardOf()` is the card without whose
+    it is, which is what a copy takes.
+  - Keys: a built-in id, `club:{id}`, `mine:{id}`, or `plan:{pid}:{i}` for the
+    copy inside a plan. `findDrill(key)` resolves any of them.
+  - In a plan, a non-built-in drill is copied whole:
+    `{ drill: { shelf, id, v, card }, name, minutes, note }`. `blockDrill()`
+    reads either kind.
+  - The editor is `drillDraft` + `sheetDrillEditor()` + `captureDraft()`.
+  - The app owner's support read is `peekLibrary()`, from Settings.
+- **Rules** in `database.rules.json`: `training/$code/drills` and
+  `training/$code/templates` (same rules, already written and tested), and
+  `userLibrary/$uid` (with `$kind` limited to `drills` and `templates`).
+  Templates need no new rule.
+- **Tests**: `test/library.js` (new) for the shelves; `test/rules.js` for
+  every rule, and its validator now walks into arrays.
 
-  There is no `drills`, `templates` or `userLibrary` yet.
-- **Tests**: `test/drills.js` (the library), `test/practice.js` (the tab and
-  who gets it), `test/plans.js` (plans and their sync, against
-  `test/fakebase.js`), and `test/rules.js` (every rule, plus a brand-new club
-  made under them).
-
-## Decide this first
-
-**Do practice plans hang off the calendar?** Main's calendar already has
-practices (`teams/{tid}/events/{eid}`), with a date, time and place that
-everyone on the team reads. Plans here still carry their own, and a
-`schedule` node that duplicates it for parents.
-
-The recommendation, from main's handoff and from this branch, is to key a plan
-by the calendar entry's id and take when and where from the entry. Then:
-
-- there is one list of practices;
-- the `schedule` node and its rule go;
-- "drills a player has done" becomes a join with the attendance register.
-
-**It was put to the owner on 2026-10-03 and not yet answered. Ask before
-building templates**, because the answer decides what a template is:
-
-- If plans hang off the calendar, a template is a plan without a calendar
-  entry, and "use a template" fills a calendar practice's plan.
-- If they don't, a template is a plan without a date.
+**Not yet published.** The owner has to paste `database.rules.json` before
+drills leave the phone (README → *The database rules*). Until then the
+Drills screen says *Saved on this phone only*.
 
 ## What to build, in this order
 
-### 1. Mine: a coach's own drills
+### 1. Plans hang off the calendar
 
-- **Data**: `userLibrary/{uid}/drills/{drillId}`, holding the card's fields
-  (`TRAINING.md` → *A drill card*) plus `diagram` (optional), `media` (links
-  only), `from`, `v` and `at`.
-  - Required: `name`, `type`, `ages`, `minutes`, `players`, `summary`,
-    `setup`, `how`, `points`.
-  - Everything else is optional and gets filled from defaults on read, so
-    `drillMatches()` and the card never meet a missing array.
-- **Save to mine** from a built-in or club card copies the drill:
-  - `from: { shelf, id, v }`;
-  - editing a built-in or club drill *is* saving to mine;
-  - "Your version of Rondo 4v1".
-- **Editing** her own drill bumps `v`. When the original's `v` has moved past
-  `from.v`, her copy says *The original has changed*. It never merges by
-  itself.
-- **The drill editor** is a sheet with the card's fields:
-  - every list field is a chip set from the fixed vocabularies, never free
-    text;
-  - links are `media: [{ kind: 'link', url, title }]`, https only;
-  - the screen says *unlisted isn't private* in one line.
+The calendar already has practices: `teams/{tid}/events/{eid}` with
+`kind: 'practice'`, `date`, `start`, `end`, `venue`, `called`, `series`.
+Everyone on the team reads them, through the workspace.
 
-  The diagram editor is `TRAINING.md` build step 6 and is out of scope unless
-  asked. Until then her drill has no picture, or a link, and the card says so.
-- **Shelves** on the Drills tab: chips for *Built-in · Club · Mine*. Every
-  filter works across all three.
-- **Caching**:
-  - Mine is the person's, not the device's, so it's cached per account
-    (`sm.mine.v1:{uid}`) and **cleared on sign-out**, like `sm.me`.
-  - The app owner may read anyone's Mine for support but **never caches it**.
-    It's read on demand and dropped.
-- **In a plan**: a Mine drill is copied whole into the block:
-  `drill: { shelf: 'mine', id, v, card: {…} }`. A Mine drill can be edited or
-  deleted, and last month's plan must still read.
-  - The first time a coach adds one of hers, the builder says: *Adding this to
-    the practice shares it with this team's coaches.*
-  - Teach `blockDrill()` to read a copied card.
+- **Key a plan by the entry's id**: `training/{code}/practices/{tid}/{eid}`.
+  The plan stops carrying `date`, `start`, `place`, `minutes`; it reads them
+  from the entry (length is `end − start`). Keep `focus`, `blocks`, `status`,
+  `review`, `by`, `byName`, `at`.
+- **Plans → the list is the calendar's practices** for this team, each with
+  its plan or *Plan it*. *Plan a practice* becomes *Add a practice*, which
+  makes a calendar entry through the calendar's own code (don't write a
+  second way to make one) and opens its plan.
+- **Called off**: the plan stays and the row says so, struck through like
+  the calendar. **Deleted entry**: the plan is orphaned, never deleted with
+  it (delete never cascades). Show orphans under *Earlier* with *Save as a
+  template* and *Delete*.
+- **Again next week** becomes *Use this plan for…*, picking the next
+  practice that has no plan.
+- **`schedule` goes.** Stop writing it, read the next practice from the
+  calendar in `nextPracticeCard()`, and only then remove the `schedule` rule
+  in a later change, once no app in the wild writes it. Never remove a rule
+  an older app still depends on in the same change that stops using it.
+- **Moving existing plans.** A club may already have plans keyed by their own
+  id. On a coach's or admin's device, for each plan whose id is not an
+  entry: make a practice entry from its date, time and place (`public:
+  false`, the calendar's default), write the plan under the new id, and only
+  once that write is acknowledged delete the old one. Each is its own write,
+  at the depth the rule sits at. A plan with something pending stays where
+  it is until it's sent. Pin this in `test/plans.js` against
+  `test/fakebase.js`, including a reload halfway through.
+- **The rule.** `practices/$tid/$pid` validates `date` today. Change it to
+  `id` and `teamId` only, so a plan without a date is accepted. Old apps
+  still send a date, so the new rule accepts both. Paste it before the app
+  ships.
+- **Drills a player has done** becomes possible: for each practice entry
+  with a register (`teams/{tid}/attend/{eid}`), the drills in its plan
+  count for each player marked present. Don't build the screen yet; check
+  that the join is one lookup and leave a note in ROADMAP.
 
-### 2. Club: the club's shared drills
+### 2. Templates
 
-- **Data**: `training/{code}/drills/{drillId}`, holding the card's fields plus
-  `by`, `byName`, `team` (a team she coaches, which the rule checks), `from`
-  and `at`.
-- **Share with the club** copies from Mine. Her copy stays hers. **Copy to
-  mine** goes the other way. **Delete never cascades**: removing a club drill
-  touches no one's copy and no plan.
-- **Curation under Admin**: admins edit or remove any club drill. A coach edits
-  or removes what she shared, while she still coaches the team it names.
-- **Who fetches it**: only a coach's or admin's device, when the Club shelf
-  opens. It's cached per club like `train`. A parent's or tracker's phone
-  never asks for it, so it never holds a copy.
+A template is a plan with no calendar entry.
 
-### 3. Templates
+- **Data.** Mine: `userLibrary/{uid}/templates/{sid}`. Club:
+  `training/{code}/templates/{sid}`, with `by`, `byName` and `team`, exactly
+  like a club drill. Shape: `{ id, name, minutes, focus, blocks, v, at }`.
+  Built-in drills in its blocks stay by reference; Club and Mine drills are
+  copied whole, as in a plan (`drillBlock()` already does both).
+- **Sync.** Add `SHELF.mineTpl` and `SHELF.clubTpl` (names are yours) beside
+  the drill entries, with their own stores in `mine` and `train`. Generalise
+  `normDrill()`'s caller, not the function: write a `normTemplate()` that
+  runs each block's card through `normDrill()`.
+- **Save as a template** from any plan, to Mine, or straight to the club for
+  a coach of the team or an admin. Name it (1–80 characters, the rule checks).
+- **Plan from a template** on a practice with no plan, or *Swap in a
+  template* on one with drills (confirm first, as *Suggest another* does).
+  The plan copies the blocks; the template is untouched.
+- **Where they're listed**: a *Templates* chip set on Plans (*Mine · Club*),
+  and Admin → Club drills shows the club's templates beside its drills.
+- **Copied, never linked; delete never cascades**, the same as drills.
+  *Share with the club* and *Copy to mine* work the same way, with `from`.
+- **Curation**: an admin edits or removes any club template; a coach, what
+  she shared while she still coaches its team (`canCurate()` already says
+  exactly this for drills).
 
-- **Mine**: `userLibrary/{uid}/templates/{sid}`. **Club**:
-  `training/{code}/templates/{sid}`. The rules follow the drills beside them.
-- **Save as a template** from a plan, and **plan from a template**. A
-  template's non-built-in drills are copied whole, the same as a plan's.
-- What a template is depends on the calendar decision above.
+### 3. Then, as TRAINING.md has it
 
-## The rules to write, and test first
+- **Step 6, pictures**: the diagram editor. It must come with a sanitiser for
+  stored diagrams (coordinates are numbers in range, player keys match
+  `^[ADNBKC]\d{1,2}$`, captions are text), tested with a hostile diagram,
+  before `normDrill()` stops dropping them.
+- **Step 7, what needs work**: the signals card on Season.
 
-Start from `TRAINING.md` → *Rules sketch*. Write `test/rules.js` cases before
-the app code, and refuse a parent and a tracker first.
+## The rules: little left to write
 
-- **`training/$code/drills`**:
-  - Read: admin, or `coachIndex/{uid}` exists. This bridge **fails closed**:
-    with no coach index, only admins read.
-  - Write, at `$id` depth: admin; or a new drill stamped `by` her own uid,
-    whose `team` her `teamIndex` entry says she coaches; or an existing drill
-    whose `by` is her, while she still coaches its `team`.
-  - `templates` follows the same rules.
-- **`userLibrary/$uid`**:
-  - Read: `auth.uid === $uid`, or `appOwners/{auth.uid}` exists.
-  - Write: `auth.uid === $uid` only, at `$kind/$id`, with `$kind` validated as
-    `drills` or `templates`.
-  - No club admin gets any clause.
-- **No `.read` on `training/$code`** itself, nor on `userLibrary`. A read
-  granted there can't be taken back lower down.
-- **Validate shape and size.** Any coach can write a drill, and the rules are
-  the only thing between a malformed one and every other coach's screen. Check
-  that `name` is a string of 1–80 characters and that each `media` url starts
-  with `https://`. Normalise on read anyway, the way `normPractice()` does;
-  `test/plans.js` has a hostile-plan case worth copying.
-
-Cases `test/rules.js` needs:
-
-- Refused:
-  - a parent and a tracker, from the club shelf;
-  - another coach, from Mine;
-  - **an admin, from Mine**;
-  - the app owner writing to Mine (reading it is allowed);
-  - a coach editing another coach's club drill;
-  - a coach editing her own club drill after she stopped coaching its team;
-  - a stranger.
-- Allowed:
-  - a coach sharing a drill stamped as herself, for a team she coaches;
-  - an admin editing anyone's club drill.
-- "A brand-new club" must still walk from nothing to working.
-
-Then add a bullet per block to README → *What each part is doing*, and tell the
-owner to paste `database.rules.json`.
+Templates need none: `training/$code/templates` and `userLibrary/$uid/templates`
+are in `database.rules.json` with `test/rules.js` cases. Moving plans onto
+the calendar needs one change, to `practices/$tid/$pid`'s `.validate`
+(above). Add cases for a plan with no date being accepted, and keep every
+existing refusal (a parent, a tracker, another team's coach, the wrong team,
+an id that isn't its own).
 
 ## Invariants this work must keep
 
-- **One drill, one template, per write**, at the depth the rule sits at. Never
-  a whole shelf.
-- **Merge on read, never replace.** A drill saved offline must survive the
-  next read.
-- **Holding a copy and drawing it are different decisions.** Mine is cleared
-  on sign-out. Club is held only by coaches' and admins' devices.
-- **Copied, never linked. Delete never cascades.**
-- **`esc()` every coach-written string**, and normalise everything read. The
-  rules don't check most of a drill's shape.
-- **No uploads.** Links only.
-- **The app never calls an AI model.** When drills reach the Ask an AI prompt,
-  later, Club and Mine drills go in only on opt-in, by name and focus, through
-  `aiScrub()`.
+- **One plan, one template, one drill per write**, at the depth the rule
+  sits at. Never a whole shelf or a team's whole collection.
+- **Merge on read, never replace.** A plan or template saved offline must
+  survive the next read, and a reload.
+- **Holding a copy and drawing it are different decisions.** Mine (templates
+  included) is cleared when the uid changes. Club is fetched only by coaches'
+  and admins' phones.
+- **Copied, never linked. Delete never cascades.** Deleting a calendar entry
+  must not delete its plan.
+- **Never copy a game, or a practice, into a second list.** The calendar is
+  the list of practices; the plan hangs off it.
+- **`esc()` every coach-written string**, and normalise everything read.
+- **No uploads.** Links only, https only.
+- **The app never calls an AI model.**
 
 ## Tests to add
 
-- **A new `test/library.js`**, against `test/fakebase.js`. It should check:
-  - the shelves are drawn for coaches and admins and never for parents and
-    trackers;
-  - a parent's phone never reads `training/{code}/drills`;
-  - another uid's `userLibrary` is never read, except by the app owner, on
-    demand and without caching;
-  - save to mine records `from`, and editing bumps `v`;
-  - *the original has changed* appears when it should;
-  - share to club is a copy;
-  - deleting from any shelf leaves plans intact;
-  - Mine and Club merge on read;
-  - signing out clears Mine's cache.
-- **User drills against the vocabularies**: the editor can't produce a skill,
-  type or position the filters don't know.
-- **Rules**, as above.
-- Add the suite to `test/run.js` and to `CLAUDE.md`'s list.
+- `test/plans.js`: plans keyed by entry; called off and deleted entries; the
+  move of old plans (acknowledged before the old one goes, survives a
+  reload); the next practice read from the calendar; a parent's phone still
+  never reads a plan.
+- `test/library.js`: templates on both shelves, the same way drills are
+  tested there: who sees them, save as, plan from, share and copy as copies,
+  curation, merge on read, cleared on sign-out.
+- `test/rules.js`: the `.validate` change.
+- `test/calendar.js` shouldn't need to change. If it does, find out why
+  before changing it.
 
 ## Housekeeping when it ships
 
 - Bump `BUILD` in `app.js`, the meta tag and every `?v=` in `index.html`
-  together. `test/version.js` checks them.
-- Add a `CHANGELOG.md` entry, a README feature bullet, and mark the steps
-  built in `TRAINING.md` → *Build order*.
-- Look at every new screen at phone width (390px).
-  - Last time: the site was copied into a scratch folder with a blank
-    `firebase-config.js`, so nothing touched a real database.
-  - It was driven with Playwright and the preinstalled Chromium.
-  - That caught a sheet opening scrolled halfway down, which no test would
-    have.
+  together (69 on this branch). `test/version.js` checks them.
+- A `CHANGELOG.md` entry, README's feature bullets and rules list, and mark
+  the steps built in `TRAINING.md` → *Build order*.
+- Look at every new screen at phone width (390px). This branch did it by
+  copying the site to a scratch folder with a blank `firebase-config.js`,
+  serving it with `python3 -m http.server` (Chromium won't run the module
+  from `file://`), and driving it with Playwright and the preinstalled
+  Chromium, with `sm.me` and a team seeded in localStorage. That caught the
+  editor jumping to its top on every chip tap.
