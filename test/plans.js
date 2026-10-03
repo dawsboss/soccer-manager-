@@ -223,6 +223,27 @@ function plan(extra = {}) {
     check(`nor for six players and no keeper (${tried} tried)`, bad.length, 0);
     const tiny = A.suggestPlan(L, { ...A.state.teams.t1, birthYear: 2021 }, { ...pr, minutes: 45, focus: { signals: [] } });
     check('a U6 team gets no heading', tiny.some(b => L.DRILLS.find(d => d.id === b.drill.id).skills.includes('heading')), false);
+    /* A team that plays a saved 2-5-1 is offered drills written for it, and the
+       nudge that does it trips no warning either, whatever the shape. */
+    const shaped = name => ({ ...A.state.teams.t1, formations: { f: { id: 'f', name, size: 9, slots: [] } }, defaults: { 9: 'f' } });
+    const forShape = (t, name) => [0, 1, 2].some(turn => A.suggestPlan(L, t, { ...pr, minutes: 60, focus: { signals: [] } }, turn)
+      .some(b => (L.DRILLS.find(d => d.id === b.drill.id).shapes || []).includes(name)));
+    check('a 2-5-1 team is offered a 2-5-1 drill', forShape(shaped('2-5-1'), '2-5-1'), true);
+    check('…and a 3-3-2 team a 3-3-2 one', forShape(shaped('3-3-2'), '3-3-2'), true);
+    bad = []; tried = 0;
+    for (const name of Object.keys(L.SHAPES))
+      for (let born = 2008; born <= 2021; born++)
+        for (const minutes of [45, 60, 90])
+          for (const sig of ['', 'conceding']) {
+            const t = { ...shaped(name), birthYear: born };
+            const p = { ...pr, minutes, focus: { signals: sig ? [sig] : [] } };
+            const blocks = A.suggestPlan(L, t, p, 0);
+            tried++;
+            const w = A.planWarnings(L, t, { ...p, blocks });
+            if (!blocks.length || w.length) bad.push(`${name} U${2027 - born} ${minutes}m ${sig || '-'}: ${w.join(' / ') || 'nothing'}`);
+          }
+    if (bad.length) console.log('    ' + bad.slice(0, 10).join('\n    '));
+    check(`nor for a team with a shape (${tried} tried)`, bad.length, 0);
   }
 
   console.log('\n--- changing the plan ---');

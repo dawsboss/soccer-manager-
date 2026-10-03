@@ -22,7 +22,7 @@ const FILE = path.join(__dirname, '..', 'drills.js');
 const DIAGRAM = path.join(__dirname, '..', 'drill-diagram.js');
 const LIB = require(FILE);
 const DD = require(DIAGRAM);
-const { DRILLS, TYPES, MOMENTS, SKILLS, PRINCIPLES, PHYSICAL, KIT, LEVELS, INTENSITY, GROUPS, INVOLVEMENT, POSITIONS, SIGNALS, ROLE_GUIDE } = LIB;
+const { DRILLS, TYPES, MOMENTS, SKILLS, PRINCIPLES, PHYSICAL, KIT, SHAPES, LEVELS, INTENSITY, GROUPS, INVOLVEMENT, POSITIONS, SIGNALS, ROLE_GUIDE } = LIB;
 const ids = new Set(DRILLS.map(d => d.id));
 
 /* Collect every problem, then report each kind once with the drills it hit.
@@ -96,6 +96,7 @@ for (const d of DRILLS) {
   if (!Array.isArray(d.goesWith) || d.goesWith.some(x => x === d.id || !ids.has(x))) flag('goesWith', id);
   if (!Array.isArray(d.tags) || d.tags.some(t => !/^[a-z0-9]+(-[a-z0-9]+)*$/.test(t))) flag('tags', id);
   if (d.safety !== undefined && !text(d.safety)) flag('safety', id);
+  if (d.shapes !== undefined && (!subset(d.shapes, SHAPES) || !d.shapes.length)) flag('shapes', id);
 
   if (!(isInt(d.setupMins) && d.setupMins >= 0 && d.setupMins <= 15)) flag('setupMins', id);
   if (d.adults !== 1 && d.adults !== 2) flag('adults', id);
@@ -130,6 +131,7 @@ report('signals are ones the stats can raise', 'signals');
 report('goesWith names real drills, never itself', 'goesWith');
 report('tags are lowercase-with-hyphens', 'tags');
 report('a safety note, where given, says something', 'safety');
+report('shapes, where given, are the app\'s own', 'shapes');
 report('setup takes 0–15 minutes', 'setupMins');
 report('one adult or two', 'adults');
 report('indoor and competitive are yes or no', 'bools');
@@ -144,6 +146,24 @@ console.log('\n--- the positions match the app\'s ---');
   const src = fs.readFileSync(path.join(__dirname, '..', 'app.js'), 'utf8');
   const roles = JSON.parse((src.match(/const ROLES = (\[[^\]]*\]);/) || [, '[]'])[1].replace(/'/g, '"'));
   check('POSITIONS is app.js\'s ROLES', JSON.stringify(POSITIONS), JSON.stringify(roles));
+}
+
+console.log('\n--- the shapes are the app\'s ---');
+{
+  /* A drill's shapes are the names of app.js's preset formations, because a
+     team's saved shape keeps the preset's name and that is what the Practice
+     tab looks the drills up by. A preset renamed or added in app.js without
+     its drills would be a chip that finds nothing. */
+  const src = fs.readFileSync(path.join(__dirname, '..', 'app.js'), 'utf8');
+  const block = src.slice(src.indexOf('const PRESETS = {'), src.indexOf('const presetsFor'));
+  const names = [...block.matchAll(/'(\d(?:-\d)+)': \[/g)].map(m => m[1]).sort();
+  check('the app has preset shapes to read', names.length > 0, true);
+  check('SHAPES is app.js\'s preset names', JSON.stringify(Object.keys(SHAPES).sort()), JSON.stringify(names));
+  const thin = names.filter(n => DRILLS.filter(d => (d.shapes || []).includes(n)).length < 3);
+  check('every preset shape has at least three drills', thin.join(', '), '');
+  /* The question that started this: wide players in a 2-5-1 who don't get back. */
+  check('a 2-5-1 has its own drill', DRILLS.some(d => d.type === 'position' && JSON.stringify(d.shapes) === '["2-5-1"]'), true);
+  check('…and drills for wide players getting back', DRILLS.filter(d => (d.shapes || []).includes('2-5-1') && d.positions.includes('Wing') && d.moments.includes('toDefend')).length >= 3, true);
 }
 
 console.log('\n--- every drill has a picture, and it agrees with the card ---');

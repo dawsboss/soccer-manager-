@@ -139,6 +139,10 @@ function writeOne(D, extra = {}) {
     D.click({ act: 'dedchip', k: 'colour', v: 'red' });
     deepEq('the editor only takes the library\'s own words', D.drillDraft.d.skills, ['passing']);
     D.click({ act: 'dedchip', k: 'positions', v: 'Mid' });
+    check('the editor offers the shapes too', /Written for the shape/.test(sheet(D)), true);
+    D.click({ act: 'dedchip', k: 'shapes', v: '2-5-1' });
+    D.click({ act: 'dedchip', k: 'shapes', v: '9-9-9' });
+    deepEq('…only the app\'s own', D.drillDraft.d.shapes, ['2-5-1']);
     loadForm(D);
     type(D, { dlUrl: 'javascript:alert(1)', dlTitle: 'x' });
     D.click({ act: 'dedlinkadd' });
@@ -151,6 +155,7 @@ function writeOne(D, extra = {}) {
     const d = D.shelfItems('mine')[0];
     check('saved to Mine', d && d.name, 'Box rondo');
     deepEq('with its lines as lists', d.how, ['Four on the outside', 'One in the middle']);
+    deepEq('and its shape, so the 2-5-1 chip finds it', d.shapes, ['2-5-1']);
     check('version 1', d.v, 1);
     await D.flush();
     const w = written(fbk, LIB('jaz') + '/' + d.id);
@@ -615,7 +620,7 @@ function writeOne(D, extra = {}) {
     const evil = '<img src=x onerror=alert(1)>';
     fbk.deliver(CLUBD, {
       h1: { id: 'h1', name: evil, summary: evil, type: '__proto__', ages: ['x', 99], minutes: { 1: 'lots' }, players: 'many', kit: { cones: '<b>', balls: 'each', rockets: 3 },
-        skills: ['passing', evil, '__proto__'], positions: ['Mid', 'Sweeper'], how: { 0: evil, 5: 'ok' }, points: evil, safety: { x: 1 },
+        skills: ['passing', evil, '__proto__'], positions: ['Mid', 'Sweeper'], shapes: ['2-5-1', '9-9-9', evil, 'constructor'], how: { 0: evil, 5: 'ok' }, points: evil, safety: { x: 1 },
         media: [{ url: 'javascript:alert(1)' }, { url: 'https://x.test/a.gif" onerror="alert(1)' }, { url: 'https://ok.test/a.gif', title: evil }],
         diagram: { area: [1, 1], players: { 'A1"><script>': [0, 0] } }, pic: '../../etc', by: 'kim', team: 't2', at: 1 },
       h2: 'not a drill', h3: { name: '' }
@@ -631,6 +636,7 @@ function writeOne(D, extra = {}) {
     check('an unknown type is a technique drill', h.type, 'technical');
     deepEq('only skills the filters know', h.skills, ['passing']);
     deepEq('only the app\'s own positions', h.positions, ['Mid']);
+    deepEq('only the app\'s own shapes', h.shapes, ['2-5-1']);
     deepEq('only kit the library knows', Object.keys(h.kit).sort(), ['balls']);
     check('only https links that are links', h.media.map(m => m.url).join(), 'https://ok.test/a.gif');
     check('a stored diagram that does not hold together is not drawn', h.diagram, null);
