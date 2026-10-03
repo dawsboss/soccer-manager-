@@ -2,7 +2,7 @@
    Static app. Data lives in localStorage, and mirrors to Firebase Realtime
    Database when a config + workspace code are present. */
 
-const BUILD = '75';
+const BUILD = '76';
 const BUILT = '2026-10-03';
 /* index.html carries the build it was published with. If this file is newer, the
    browser handed us a cached page — the exact failure that has eaten hours. */
@@ -255,9 +255,28 @@ function trackersIn(m) {
 }
 const dataKey = () => LS_DATA + ':' + clubKey();
 
-function saveLocal() {
-  try { localStorage.setItem(dataKey(), JSON.stringify(state)); } catch (e) { }
+/* Every store that holds data goes through here, because a phone whose
+   storage is full refuses the write, and before this the refusal was
+   swallowed: the change looked saved, lived only in the open page, and was
+   gone when the page closed. That is the one way an unsent change could
+   vanish, so it is said out loud, once when it starts, and on every screen
+   until a save gets through again. Screen preferences don't come through
+   here; losing those loses nothing. */
+let storeFail = 0;
+function keepStored(key, text) {
+  try {
+    localStorage.setItem(key, text);
+    if (storeFail) { storeFail = 0; paintSync(); }
+    return true;
+  } catch (e) {
+    if (!storeFail) {
+      storeFail = nowMs();
+      toast('This phone is out of storage space, so your latest change could not be kept on it. Free up some space before you close the app.');
+    }
+    return false;
+  }
 }
+function saveLocal() { keepStored(dataKey(), JSON.stringify(state)); }
 function saveUi() {
   try { localStorage.setItem(LS_UI, JSON.stringify({ view: ui.view, teamId: ui.teamId, matchId: ui.matchId, sortBy: ui.sortBy, plan: ui.plan, gameView: ui.gameView, follow: ui.follow || null, feedAll: !!ui.feedAll, practice: ui.practice || null, sess: ui.sess ? { tab: ui.sess.tab, scope: ui.sess.scope, month: ui.sess.month } : null, tabs: 2 })); } catch (e) { }
 }
@@ -613,12 +632,31 @@ function loadPending() {
     if (s && typeof s === 'object') seen = { teams: s.teams || {}, matches: s.matches || {} };
   } catch (e) { }
 }
-function savePending() { try { localStorage.setItem(pendKey(), JSON.stringify(pending)); } catch (e) { } paintSync(); }
-function saveSeen() { try { localStorage.setItem(seenKey(), JSON.stringify(seen)); } catch (e) { } }
+function savePending() { keepStored(pendKey(), JSON.stringify(pending)); paintSync(); }
+function saveSeen() { keepStored(seenKey(), JSON.stringify(seen)); }
 function noteSeen(coll, id) { if ((coll === 'teams' || coll === 'matches') && id && !seen[coll][id]) { seen[coll][id] = 1; saveSeen(); } }
 const pendingList = () => Object.entries(pending.w).sort((a, b) => a[1].n - b[1].n);
-const pendingCount = () => Object.keys(pending.w).length;
-const refusedCount = () => Object.values(pending.w).filter(e => e.refused).length;
+/* Everything else this phone still owes the club: practice plans, the club's
+   drills, her own drills, and training sessions with their bookings,
+   registers and fees. Each keeps its own dirty list (they live outside the
+   workspace, with their own rules), but a coach shouldn't have to know that:
+   the badge, the banner and "Not saved to the club yet" count all of it, so
+   "synced" is never said while any of it is still only here. */
+const SESS_WHAT = { sessions: 'a training session', booked: 'a place in a training session', came: 'a training session\'s register',
+  fees: 'a training session fee', pay: 'a coach\'s pay rate', splans: 'a training session\'s drills' };
+function otherOwed() {
+  const out = [];
+  for (const k of Object.keys(train.dirty || {})) {
+    const tid = k.split('/')[0], t = state.teams[tid];
+    out.push({ label: 'a practice plan' + (t && t.name ? ' for ' + t.name : ''), refused: trainState[tid] === 'refused' });
+  }
+  for (const id of Object.keys((train.drillDirty) || {})) out.push({ label: 'a drill shared with the club', refused: shelfState.club === 'refused' });
+  if (me && mineUid === me.uid) for (const id of Object.keys(mine.dirty || {})) out.push({ label: 'one of your own drills', refused: shelfState.mine === 'refused' });
+  for (const k of Object.keys(sess.dirty || {})) out.push({ label: SESS_WHAT[k.split('/')[0]] || 'a training record', refused: !!(sess.refused || {})[k], sess: k });
+  return out;
+}
+const pendingCount = () => Object.keys(pending.w).length + otherOwed().length;
+const refusedCount = () => Object.values(pending.w).filter(e => e.refused).length + otherOwed().filter(x => x.refused).length;
 
 function notePending(path, v, del) {
   for (const p of Object.keys(pending.w)) if (p === path || p.startsWith(path + '/')) delete pending.w[p];
@@ -703,14 +741,15 @@ function pendingLabel(p) {
   return p;
 }
 function sheetPending() {
-  const list = pendingList(), r = list.filter(([, e]) => e.refused);
+  const list = [...pendingList().map(([p, e]) => [pendingLabel(p), e.refused]), ...otherOwed().map(x => [x.label, x.refused])];
+  const r = list.filter(([, refused]) => refused);
   openSheet(`<h3>Not saved to the club yet</h3>
     <p class="muted" style="margin-top:0">${list.length} change${list.length === 1 ? ' is' : 's are'} on this phone and nowhere else${r.length ? `, ${r.length} of them refused by the club's database` : ''}. They stay here, and are sent again every time this phone connects. Nothing is dropped unless you drop it.</p>
     ${r.length ? `<p class="muted">A refusal usually means the club's database rules haven't been updated yet (an admin pastes them from README), or this account isn't a coach of that team any more.</p>` : ''}
-    <div class="plist">${list.slice(0, 40).map(([p, e]) => `<div class="prow" style="grid-template-columns:1fr auto"><span class="pname">${esc(pendingLabel(p))}</span>${e.refused ? '<span class="tag wait">refused</span>' : '<span class="tag">waiting</span>'}</div>`).join('')}</div>
+    <div class="plist">${list.slice(0, 40).map(([label, refused]) => `<div class="prow" style="grid-template-columns:1fr auto"><span class="pname">${esc(label)}</span>${refused ? '<span class="tag wait">refused</span>' : '<span class="tag">waiting</span>'}</div>`).join('')}</div>
     ${list.length > 40 ? `<p class="muted">…and ${list.length - 40} more.</p>` : ''}
     <button class="btn wide" data-act="pendingretry" style="margin-top:12px">Try again now</button>
-    ${r.length ? `<button class="btn quiet danger wide" data-act="pendingdrop" style="margin-top:8px">Drop the refused ones</button>` : ''}
+    ${Object.values(pending.w).some(e => e.refused) || Object.keys(sess.refused || {}).length ? `<button class="btn quiet danger wide" data-act="pendingdrop" style="margin-top:8px">Drop the refused ones</button>` : ''}
     <button class="btn quiet wide" data-act="closesheet" style="margin-top:8px">Done</button>`, true);
 }
 /* A phone used before it joined a club kept its teams under 'local', which
@@ -1973,7 +2012,7 @@ const msgOn = () => msgTeams().length > 0;
 
 function saveMsgs() {
   if (!msgFor) return;
-  try { localStorage.setItem(msgFor.ls, JSON.stringify(msgs)); } catch (e) { }
+  keepStored(msgFor.ls, JSON.stringify(msgs));
 }
 function rootSet(p, v) {
   if (!fb) return Promise.reject(new Error('not connected'));
@@ -2555,13 +2594,11 @@ function importScore(v) {
 /* Pure: reads `data` against the club as it stands and returns what importing
    it would do. Nothing in state changes until applyImport(). */
 function importPlan(data, cur = state) {
-  const out = { writes: [], sessWrites: [], errors: [], warnings: [], counts: { newTeams: 0, teams: 0, newPlayers: 0, players: 0, newGames: 0, games: 0, results: 0, newFields: 0, fields: 0, newSessions: 0, sessions: 0, bookings: 0 } };
+  const out = { writes: [], sessWrites: [], trainWrites: [], errors: [], warnings: [], counts: { newTeams: 0, teams: 0, newPlayers: 0, players: 0, newGames: 0, games: 0, results: 0, newFields: 0, fields: 0, newSessions: 0, sessions: 0, bookings: 0, training: 0 } };
   const put = (path, value) => out.writes.push([path, value]);
   if (!data || typeof data !== 'object' || Array.isArray(data)) { out.errors.push('The file should be one JSON object with a "teams", "fields" or "sessions" list in it.'); return out; }
 
-  const isBackup = data.teams && !Array.isArray(data.teams) && typeof data.teams === 'object'
-    && (data.matches === undefined || (typeof data.matches === 'object' && !Array.isArray(data.matches)));
-  if (isBackup) return importBackup(data, cur, out);
+  if (isBackupData(data)) return importBackup(data, cur, out);
 
   /* Drafts, not the live objects: updating an existing player or game below
      edits these copies, and state only changes when the writes are applied. */
@@ -2781,6 +2818,125 @@ function importPlan(data, cur = state) {
   return out;
 }
 
+/* ---- the backup, training included ---- */
+/* A backup used to be `state`: teams, games, roles and fields. Everything that
+   lives outside the workspace (training sessions with their bookings,
+   registers and fees, pay rates, practice plans, the club's drills) was left
+   out, so a club keeping the file for safety would have lost its fee records
+   without knowing. It now carries them under `training`, as completely as
+   this phone can get them: its own copy, laid over the club's wherever the
+   club could be asked, and the download says if some of it could not be. */
+let lastBackup = null;     // the last download's contents, for the tests and for nothing else
+const TRAIN_KINDS = [['sessions', 1], ['booked', 2], ['came', 1], ['fees', 2], ['pay', 1], ['splans', 1]];
+const isBackupData = data => !!(data && data.teams && !Array.isArray(data.teams) && typeof data.teams === 'object'
+  && (data.matches === undefined || (typeof data.matches === 'object' && !Array.isArray(data.matches))));
+function fetchOnce(path, ms = 6000) {
+  return new Promise(res => {
+    let done = false;
+    const fin = r => { if (!done) { done = true; res(r); } };
+    if (!rtdb) { fin({ ok: false }); return; }
+    try { rtdb.mod.onValue(rtdb.mod.ref(rtdb.db, path), s => fin({ ok: true, v: s.val() }), () => fin({ ok: false }), { onlyOnce: true }); }
+    catch (e) { fin({ ok: false }); }
+    setTimeout(() => fin({ ok: false }), ms);
+  });
+}
+// records from two copies, `depth` levels down; the second wins where both have one
+function overlayRecords(a, b, depth) {
+  const out = a && typeof a === 'object' ? clone(a) : {};
+  for (const [k, v] of Object.entries(b && typeof b === 'object' ? b : {}))
+    out[k] = depth <= 1 ? clone(v) : overlayRecords(out[k], v, depth - 1);
+  return out;
+}
+/* This phone's training records, laid over the club's where it could ask.
+   `known` is what the club said it has, path by path; `missed` names the
+   paths it could not ask about (no signal, or rules that refuse). With no
+   database at all, this phone's copy is the club's, and `known` is null. */
+async function trainingCopy(extra = {}) {
+  const T = { practices: clone(train.practices || {}), drills: clone(SHELF.club.store().items || {}) };
+  for (const [k] of TRAIN_KINDS) T[k] = clone(sess[k] || {});
+  const missed = new Set(), known = {};
+  if (!(fb && rtdb && me && wsCode())) return { T, missed, known: null };
+  const base = `training/${wsCode()}/`;
+  const sids = new Set([...Object.keys(T.sessions), ...(extra.sids || [])]);
+  const tids = new Set([...teams().map(t => t.id), ...(extra.tids || [])]);
+  // splans has no read on the whole, so one per session; practices one per team, as their rules sit
+  const jobs = TRAIN_KINDS.filter(([k]) => k !== 'splans').map(([k, d]) => [k, d]);
+  for (const sid of sids) jobs.push(['splans/' + sid, 0]);
+  for (const tid of tids) jobs.push(['practices/' + tid, 1]);
+  jobs.push(['drills', 1]);
+  const res = await Promise.all(jobs.map(([key]) => fetchOnce(base + key)));
+  jobs.forEach(([key, depth], i) => {
+    const r = res[i];
+    if (!r.ok) { missed.add(key); return; }
+    known[key] = r.v == null ? null : r.v;
+    const local = getDeep(T, key);
+    const merged = depth === 0 ? (local !== undefined ? local : r.v) : overlayRecords(r.v, local, depth);
+    if (merged != null && (depth === 0 || Object.keys(merged).length)) setDeep(T, key, merged);
+  });
+  return { T, missed, known };
+}
+async function backupDoc() {
+  const { T, missed } = await trainingCopy();
+  return { doc: { ...clone(state), training: T, savedAt: nowMs(), build: BUILD }, missed };
+}
+
+/* Restoring it: like teams and games, only what the club is missing, and
+   never on top of something the club has. A training record this phone could
+   not check against the club is not restored at all, and the check says so:
+   writing it blind could put last month's copy over this week's. */
+function restoreTraining(T, cur, out) {
+  if (!T || typeof T !== 'object') return;
+  const tk = cur.trainingKnown;
+  const coverOf = path => {
+    const s = path.split('/');
+    if (s[0] === 'splans') return ['splans/' + s[1], s.slice(2)];
+    if (s[0] === 'practices') return ['practices/' + s[1], s.slice(2)];
+    return [s[0], s.slice(1)];
+  };
+  // true, false, or null for "could not be checked"
+  const has = path => {
+    const local = path.startsWith('practices/') ? getDeep(train, path) : path.startsWith('drills/') ? getDeep(SHELF.club.store().items, path.slice(7)) : getDeep(sess, path);
+    if (local !== undefined) return true;
+    if (!fb) return false;
+    if (!tk || !tk.known) return null;
+    const [key, rest] = coverOf(path);
+    if (tk.missed.has(key) || !Object.prototype.hasOwnProperty.call(tk.known, key)) return null;
+    const v = tk.known[key];
+    return (rest.length ? getDeep(v || {}, rest.join('/')) : v) != null;
+  };
+  let unknown = 0;
+  const leaves = (v, prefix, left, out2) => {
+    if (left <= 0) { if (v != null) out2.push([prefix, v]); return out2; }
+    if (v && typeof v === 'object') for (const [k, x] of Object.entries(v)) if (/^[\w-]+$/.test(k)) leaves(x, prefix + '/' + k, left - 1, out2);
+    return out2;
+  };
+  // sessions first: the rules that let bookings, registers and fees be written find the coach through the session
+  for (const [kind, depth] of TRAIN_KINDS) {
+    for (const [p, v] of leaves(T[kind], kind, depth, [])) {
+      if (kind === 'sessions' && !(v && v.id === p.split('/')[1] && okDay(v.date) && v.coach)) continue;
+      const h = has(p);
+      if (h === null) { unknown++; continue; }
+      if (h) continue;
+      out.sessWrites.push([p, clone(v)]); out.counts.training++;
+    }
+  }
+  for (const [p, v] of leaves(T.practices, 'practices', 2, [])) {
+    const [, tid, pid] = p.split('/');
+    if (!(cur.teams || {})[tid]) continue;
+    const h = has(p);
+    if (h === null) { unknown++; continue; }
+    if (h || !v || typeof v !== 'object' || !okDay(v.date)) continue;
+    out.trainWrites.push(['practice', { ...clone(v), id: pid, teamId: tid }]); out.counts.training++;
+  }
+  for (const [p, v] of leaves(T.drills, 'drills', 1, [])) {
+    const h = has(p);
+    if (h === null) { unknown++; continue; }
+    if (h || !v || typeof v !== 'object' || !v.name) continue;
+    out.trainWrites.push(['drill', { ...clone(v), id: p.slice(7) }]); out.counts.training++;
+  }
+  if (unknown) out.warnings.push(`${unknown} training record${unknown === 1 ? ' was' : 's were'} not restored, because this phone could not check whether the club already has ${unknown === 1 ? 'it' : 'them'}. Try again with a signal, signed in as an admin.`);
+}
+
 function importBackup(data, cur, out) {
   for (const [tid, t] of Object.entries(data.teams || {})) {
     if (!t || typeof t !== 'object' || !/^[\w-]+$/.test(tid)) { out.errors.push(`Team "${tid}" in the backup could not be read.`); continue; }
@@ -2798,6 +2954,15 @@ function importBackup(data, cur, out) {
     out.counts.newGames++;
   }
   if (kept) out.warnings.push(`${kept} game${kept === 1 ? ' is' : 's are'} already here, so this club's cop${kept === 1 ? 'y was' : 'ies were'} kept.`);
+  // fields the club doesn't have, by id or by name; one it has keeps the club's copy
+  const have = ((cur.access || {}).org || {}).venues || {};
+  const names = new Set(Object.values(have).map(f => importKey(f && f.name)));
+  for (const [id, f] of Object.entries((((data.access || {}).org || {}).venues) || {})) {
+    if (!f || typeof f !== 'object' || !f.name || !/^[\w-]+$/.test(id) || have[id] || names.has(importKey(f.name))) continue;
+    out.writes.push([`access/org/venues/${id}`, { ...clone(f), id }]);
+    out.counts.newFields++;
+  }
+  restoreTraining(data.training, cur, out);
   out.backup = true;
   return out;
 }
@@ -3096,7 +3261,8 @@ function importSummary(c) {
   const bits = [];
   const n = (k, one, many) => c[k] ? `${c[k]} ${c[k] === 1 ? one : many}` : null;
   const add = [n('newTeams', 'team', 'teams'), n('newPlayers', 'player', 'players'), n('newGames', 'game', 'games'),
-    n('newFields', 'field', 'fields'), n('newSessions', 'session', 'sessions'), n('bookings', 'booking', 'bookings')].filter(Boolean);
+    n('newFields', 'field', 'fields'), n('newSessions', 'session', 'sessions'), n('bookings', 'booking', 'bookings'),
+    n('training', 'training record', 'training records')].filter(Boolean);
   if (add.length) bits.push('adds ' + add.join(', '));
   const upd = [n('teams', 'team', 'teams'), n('players', 'player', 'players'), n('games', 'game', 'games'),
     n('fields', 'field', 'fields'), n('sessions', 'session', 'sessions')].filter(Boolean);
@@ -3113,15 +3279,38 @@ function applyImport(plan) {
   saveLocal();
   // sessions after the teams and fields they name, through the store that resends them
   for (const [path, value] of plan.sessWrites || []) sessPut(path, value);
+  for (const [what, value] of plan.trainWrites || []) { if (what === 'practice') putPractice(value); else if (what === 'drill') putDrill('club', value); }
   render(); schedulePublish();
 }
 
 let pendingImport = null;
+/* A backup carrying training records needs the club's answer to "what do you
+   already have" before it can be planned, so the sheet asks once per file and
+   draws again when the answer comes. Undefined: nothing to ask. */
+function restoreKnown(data, txt) {
+  if (!isBackupData(data) || !data.training || !fb) return undefined;
+  const pi = pendingImport;
+  if (pi && pi.knownFor === txt) return pi.known;
+  if (pi && pi.asking === txt) return 'checking';
+  if (pi) pi.asking = txt;
+  trainingCopy({ sids: Object.keys(data.training.sessions || {}), tids: Object.keys(data.training.practices || {}) }).then(r => {
+    if (!pendingImport || pendingImport.asking !== txt) return;
+    pendingImport.known = r; pendingImport.knownFor = txt; pendingImport.asking = null;
+    if (!$('#sheet').hidden) sheetImport(null);
+  });
+  return 'checking';
+}
 function sheetImport(text) {
   pendingImport = text == null ? pendingImport : { text };
   const txt = (pendingImport && pendingImport.text) || '';
-  let plan = null, bad = null;
-  if (txt.trim()) { try { plan = importPlan(JSON.parse(txt)); } catch (err) { bad = 'That is not valid JSON: ' + err.message; } }
+  let plan = null, bad = null, checking = false;
+  if (txt.trim()) {
+    try {
+      const data = JSON.parse(txt);
+      const k = restoreKnown(data, txt);
+      if (k === 'checking') checking = true; else plan = importPlan(data, k ? { ...state, trainingKnown: k } : state);
+    } catch (err) { bad = 'That is not valid JSON: ' + err.message; }
+  }
   const list = (items, cls) => items.length ? `<div class="implist ${cls}">${items.slice(0, 30).map(esc).join('<br>')}${items.length > 30 ? `<br>…and ${items.length - 30} more` : ''}</div>` : '';
   openSheet(`<h3>Bulk import</h3>
     <p class="muted" style="margin-top:0">Teams, rosters, games, fields and training sessions from one JSON file. Teams, players and fields are matched by name, games by team, date and opponent, and sessions by date, start and coach, so running the same file twice changes nothing. Nothing already here is removed.</p>
@@ -3132,11 +3321,12 @@ function sheetImport(text) {
     <label class="field"><span>Or paste it here</span><textarea id="impText" rows="8" spellcheck="false" placeholder='{"teams": [{"name": "...", "players": [...], "games": [...]}]}'>${esc(txt)}</textarea></label>
     <button class="btn quiet wide" data-act="importcheck" style="margin-bottom:10px">Check it</button>
     ${bad ? list([bad], 'warn alert') : ''}
+    ${checking ? '<p class="muted"><b>Checking what the club already has…</b> A backup with training records is only restored where the club has nothing, so it asks first.</p>' : ''}
     ${plan ? `${list(plan.errors, 'warn alert')}
       ${plan.errors.length ? '<p class="muted">Fix those and check again — nothing is imported while any are left.</p>'
       : `<p><b>This ${plan.backup ? 'backup' : 'file'} ${esc(importSummary(plan.counts))}.</b></p>`}
       ${list(plan.warnings, '')}
-      ${!plan.errors.length && (plan.writes.length || plan.sessWrites.length) ? `<button class="btn wide" data-act="importgo">Import it</button>` : ''}` : ''}
+      ${!plan.errors.length && (plan.writes.length || plan.sessWrites.length || plan.trainWrites.length) ? `<button class="btn wide" data-act="importgo">Import it</button>` : ''}` : ''}
     <p class="muted" style="margin-bottom:0">It holds children's names, so treat the file the way you would the roster itself. Names never reach the parent pages.</p>`);
 }
 
@@ -4095,7 +4285,8 @@ function render() {
     ? `<div class="rolebar">Waiting for a coach of <b>${esc((join.doc || {}).teamName || 'a team')}</b> to let you in. <button class="linkbtn dark" data-act="joinshow">Open</button></div>` : '';
   // said on every screen, because a change the club refused is one that exists only here
   const nRef = fb ? refusedCount() : 0;
-  const saveNote = nRef ? `<div class="rolebar warn">${nRef} change${nRef === 1 ? '' : 's'} on this phone ha${nRef === 1 ? 's' : 've'}n't been accepted by the club's database. ${nRef === 1 ? 'It is' : 'They are'} kept here and tried again each time you connect. <button class="linkbtn dark" data-act="pendingsheet">See ${nRef === 1 ? 'it' : 'them'}</button></div>` : '';
+  const fullNote = storeFail ? `<div class="rolebar warn"><b>This phone is out of storage space.</b> Changes since ${esc(niceTime(pad2(new Date(storeFail).getHours()) + ':' + pad2(new Date(storeFail).getMinutes())))} may not be kept on it if the app closes. ${fb && online ? 'Anything already sent to the club is safe. ' : ''}Free up space (photos, other apps or sites), and this goes once a save gets through.</div>` : '';
+  const saveNote = fullNote + (nRef ? `<div class="rolebar warn">${nRef} change${nRef === 1 ? '' : 's'} on this phone ha${nRef === 1 ? 's' : 've'}n't been accepted by the club's database. ${nRef === 1 ? 'It is' : 'They are'} kept here and tried again each time you connect. <button class="linkbtn dark" data-act="pendingsheet">See ${nRef === 1 ? 'it' : 'them'}</button></div>` : '');
   /* Redrawing is how every tap shows its result, and replacing the whole page
      can leave the window somewhere else: on the Plan tab, picking the 60:00
      snapshot dropped the coach back at the top every time. When this draw is
@@ -6964,7 +7155,7 @@ function loadTrain() {
     if (t && typeof t === 'object') for (const k of Object.keys(train)) if (t[k] && typeof t[k] === 'object') train[k] = t[k];
   } catch (e) { }
 }
-function saveTrain() { try { localStorage.setItem(trainKey(), JSON.stringify(train)); } catch (e) { } }
+function saveTrain() { keepStored(trainKey(), JSON.stringify(train)); paintSync(); }
 
 /* What the database hands back is not always what was written: an array comes
    back as an object when it has gaps, and an empty one doesn't come back at
@@ -7189,7 +7380,7 @@ function loadMine(u) {
     if (m && typeof m === 'object') for (const k of Object.keys(mine)) if (m[k] && typeof m[k] === 'object') mine[k] = m[k];
   } catch (e) { }
 }
-function saveMine() { if (mineUid) try { localStorage.setItem(LS_MINE + ':' + mineUid, JSON.stringify(mine)); } catch (e) { } }
+function saveMine() { if (mineUid) keepStored(LS_MINE + ':' + mineUid, JSON.stringify(mine)); paintSync(); }
 /* Signing out, or in as somebody else, takes the last person's library off
    the phone, the way cacheMe(null) takes her identity. */
 function forgetMine() {
@@ -7957,7 +8148,7 @@ function tickRun() {
 const LS_SESS = 'sm.sess.v1';
 const LS_SESS_SEEN = 'sm.sessSeen';
 const sessKey = () => LS_SESS + ':' + clubKey();
-const SESS_BLANK = () => ({ sessions: {}, booked: {}, came: {}, fees: {}, pay: {}, splans: {}, dirty: {} });
+const SESS_BLANK = () => ({ sessions: {}, booked: {}, came: {}, fees: {}, pay: {}, splans: {}, dirty: {}, refused: {} });
 /* How many path segments down each kind's records sit: a session is one node,
    a booking is one per player per session, a register one per session. A merge
    walks to exactly this depth and no further, so a record is always taken or
@@ -7983,7 +8174,7 @@ function loadSess() {
     if (v && typeof v === 'object') for (const k of Object.keys(sess)) if (v[k] && typeof v[k] === 'object') sess[k] = v[k];
   } catch (e) { }
 }
-function saveSess() { try { localStorage.setItem(sessKey(), JSON.stringify(sess)); } catch (e) { } }
+function saveSess() { keepStored(sessKey(), JSON.stringify(sess)); paintSync(); }
 const getDeep = (o, p) => p.split('/').reduce((x, k) => (x && typeof x === 'object' ? x[k] : undefined), o);
 
 /* ---- who ---- */
@@ -8132,7 +8323,7 @@ function sessSend(path, undo) {
   const v = getDeep(sess, path);
   rootSet(`training/${code}/${path}`, v === undefined ? null : v).then(() => {
     // only the version that was sent is clean; a change made since is still owed
-    if (sess.dirty[path] === mark) { delete sess.dirty[path]; saveSess(); }
+    if (sess.dirty[path] === mark) { delete sess.dirty[path]; delete sess.refused[path]; saveSess(); }
     if (sessState[kind] !== 'synced') { sessState[kind] = 'synced'; render(); }
   }, e => {
     if (!/permission|denied/i.test((e && (e.code || e.message)) || '')) return;
@@ -8141,7 +8332,8 @@ function sessSend(path, undo) {
       if (undo.prev == null) delDeep(sess, path); else setDeep(sess, path, undo.prev);
       saveSess(); render(); toast(undo.msg); return;
     }
-    sessState[kind] = 'refused'; render();
+    // marked per record, so the list of what is owed can say which ones the club said no to
+    sessState[kind] = 'refused'; sess.refused[path] = 1; saveSess(); render();
   });
 }
 
@@ -12489,11 +12681,18 @@ function onAct(e) {
   }
   if (a === 'export') {
     if (!canAdmin()) { toast('Only club admins can export the full data'); return; }
-    const blob = new Blob([JSON.stringify(state, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url; link.download = 'minutes-backup-' + new Date().toISOString().slice(0, 10) + '.json';
-    link.click(); URL.revokeObjectURL(url); return;
+    if (fb) toast('Gathering the club\u2019s training records…');
+    backupDoc().then(({ doc, missed }) => {
+      const blob = new Blob([JSON.stringify(doc, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url; link.download = 'minutes-backup-' + new Date().toISOString().slice(0, 10) + '.json';
+      link.click(); URL.revokeObjectURL(url);
+      lastBackup = { doc, missed };
+      toast(missed.size ? `Downloaded. ${missed.size} part${missed.size === 1 ? '' : 's'} of the training records could not be checked with the club just now, so this phone\u2019s copy of ${missed.size === 1 ? 'it is' : 'those is'} what\u2019s in it.`
+        : 'Downloaded: teams, games, roles, fields, training sessions, bookings, registers, fees, pay rates, practice plans and club drills.');
+    });
+    return;
   }
   /* Every import door checks canAdmin() here, not just by hiding the buttons:
      it writes whole teams and games. A backup used to replace local state
@@ -12502,13 +12701,21 @@ function onAct(e) {
   if (a === 'pendingsheet') { sheetPending(); return; }
   if (a === 'pendingretry') {
     for (const e of Object.values(pending.w)) delete e.refused;
+    sess.refused = {}; saveSess();
+    for (const k of Object.keys(trainState)) if (trainState[k] === 'refused') delete trainState[k];
+    for (const k of Object.keys(shelfState)) if (shelfState[k] === 'refused') delete shelfState[k];
+    for (const k of Object.keys(sessState)) if (sessState[k] === 'refused') delete sessState[k];
     savePending(); flushPending(); flushTraining(); closeSheet(); render();
     toast(online ? 'Sending' : 'Offline — it goes when the signal is back'); return;
   }
   if (a === 'pendingdrop') {
-    const n = refusedCount();
+    // practice plans and drills have no drop of their own here: they stay, and are retried, until the club takes them
+    const n = Object.values(pending.w).filter(e => e.refused).length + Object.keys(sess.refused || {}).length;
     if (!n || !confirm(`Drop ${n} change${n === 1 ? '' : 's'} the club refused? ${n === 1 ? 'It exists' : 'They exist'} only on this phone, so ${n === 1 ? 'it is' : 'they are'} gone for good.`)) return;
     for (const [p, e] of Object.entries(pending.w)) if (e.refused) delete pending.w[p];
+    // a refused training record goes the same way: the club's copy is read again in its place
+    for (const k of Object.keys(sess.refused || {})) { delete sess.dirty[k]; delete sess.refused[k]; }
+    saveSess(); sessFor = null;
     savePending(); closeSheet();
     attachWorkspace();      // read the club again, so the screen shows what it really has
     render(); return;
@@ -12537,8 +12744,15 @@ function onAct(e) {
     if (!canAdmin()) { toast('Only club admins can import'); return; }
     // planned again against the club as it is now, not as it was when checked
     let plan;
-    try { plan = importPlan(JSON.parse($('#impText').value)); } catch (err) { sheetImport($('#impText').value); return; }
-    if (plan.errors.length || !(plan.writes.length + (plan.sessWrites || []).length)) { sheetImport($('#impText').value); return; }
+    const txt = $('#impText').value;
+    try {
+      const data = JSON.parse(txt);
+      if (!pendingImport || pendingImport.text !== txt) pendingImport = { text: txt };
+      const k = restoreKnown(data, txt);
+      if (k === 'checking') { sheetImport(txt); return; }
+      plan = importPlan(data, k ? { ...state, trainingKnown: k } : state);
+    } catch (err) { sheetImport(txt); return; }
+    if (plan.errors.length || !(plan.writes.length + plan.sessWrites.length + plan.trainWrites.length)) { sheetImport(txt); return; }
     if (!confirm(`Import into ${(acc().org || {}).name || 'this club'}? It ${importSummary(plan.counts)}.`)) return;
     applyImport(plan); pendingImport = null; closeSheet();
     toast('Imported: ' + importSummary(plan.counts)); return;
