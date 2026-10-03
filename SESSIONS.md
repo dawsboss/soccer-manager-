@@ -271,6 +271,12 @@ is the coach's and is left as it is. Fields go out with the workspace writes;
 sessions and bookings go through the session store, so an import made offline
 is owed and resent like a session made by hand.
 
+## Bookable times
+
+Built after, on the owner's ask: a coach's windows that families book a slot
+of themselves. A booked slot is one of these sessions, made by the family
+under an id built from its time. `AVAILABILITY.md` is the design.
+
 ## Build order
 
 1. The rules and `test/rules.js` cases, before any code writes the nodes.

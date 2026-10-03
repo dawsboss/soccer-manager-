@@ -295,6 +295,13 @@ training/{code}/practices/{teamId}/{practiceId}
 | App owner | Read, copy | Only through a club role | Read anyone's, for support; never changes it | Only through a club role | Only through a club role |
 | Signed out | — | — | — | — | — |
 
+One exception to the dashes: a coach can **send one drill** as a link
+(`#/drill/{club tag}/{key}`; the tag names the club without giving its code, and a phone switches to it only if it already belongs to it). A built-in drill's link opens for anyone, to read only,
+because the built-in library ships in the app's public files. A club drill's
+link opens only for whoever the table lets read the Club shelf; anyone else is
+told it's for the club's coaches, and her phone never asks the database for
+it. Mine has no link, because it's private: share it with the club first.
+
 A coach can't read another team's practice plans, which is narrower than
 `AUTH.md`'s *coaches read the whole club*. That's on purpose. A plan can hold
 a copy of a coach's own drills, and those are hers to share. A coach who wants

@@ -152,6 +152,8 @@ try {
     me=null; state.access={};
     ui.view='club'; render(); console.log('  rendered club home');
     ui.view='sessions'; render(); console.log('  rendered training sessions');
+    ui.view='mycal'; render(); console.log('  rendered my calendar');
+    ui.view='sessions'; ui.sess={tab:'avail'}; render(); ui.sess={tab:'list'}; console.log('  rendered bookable times');
     state.access={admins:{own:true},members:{own:{name:'Grant',email:'g@x',at:Date.now()},u9:{name:'New Person',email:'n@x',at:Date.now()}},teams:{},index:{}};
     me={uid:'own',name:'Grant'}; appOwners={};
     ui.view='people'; render(); console.log('  rendered people page as admin');

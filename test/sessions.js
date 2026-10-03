@@ -107,9 +107,9 @@ function newSession(v = {}) {
     as('mum'); A.ui.view = 'club'; A.render();
     check('a family has the card', /<b>Training sessions<\/b>/.test(A.rendered()), true);
     as('jaz'); A.render();
-    check('a coach has the four tabs', ['Sessions', 'Fields', 'Fees', 'Hours'].every(t => A.rendered().includes(`>${t}</button>`)), true);
+    check('a coach has the five tabs', ['Sessions', 'Bookable times', 'Fields', 'Fees', 'Hours'].every(t => A.rendered().includes(`>${t}</button>`)), true);
     check('and a way to offer one', /data-act="sessnew"/.test(A.rendered()), true);
-    check('every session action is behind the handler\'s own check', [...A.SESS_ACTS].every(a => a.startsWith('sess') || a.startsWith('field') || a.startsWith('reach')), true);
+    check('every session action is behind the handler\'s own check', [...A.SESS_ACTS].every(a => a.startsWith('sess') || a.startsWith('field') || a.startsWith('reach') || a.startsWith('avail') || a.startsWith('slot')), true);
   }
 
   console.log('\n--- offering one ---');

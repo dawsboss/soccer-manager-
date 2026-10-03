@@ -2,7 +2,7 @@
    Static app. Data lives in localStorage, and mirrors to Firebase Realtime
    Database when a config + workspace code are present. */
 
-const BUILD = '77';
+const BUILD = '80';
 const BUILT = '2026-10-03';
 /* index.html carries the build it was published with. If this file is newer, the
    browser handed us a cached page — the exact failure that has eaten hours. */
@@ -643,7 +643,8 @@ const pendingList = () => Object.entries(pending.w).sort((a, b) => a[1].n - b[1]
    the badge, the banner and "Not saved to the club yet" count all of it, so
    "synced" is never said while any of it is still only here. */
 const SESS_WHAT = { sessions: 'a training session', booked: 'a place in a training session', came: 'a training session\'s register',
-  fees: 'a training session fee', pay: 'a coach\'s pay rate', splans: 'a training session\'s drills' };
+  fees: 'a training session fee', pay: 'a coach\'s pay rate', splans: 'a training session\'s drills',
+  avail: 'a coach\'s bookable times', seats: 'a place in a bookable slot' };
 function otherOwed() {
   const out = [];
   for (const k of Object.keys(train.dirty || {})) {
@@ -1418,6 +1419,50 @@ async function redeemInvite() {
   dropInvite();
   try { localStorage.setItem(LS_WS, ws); } catch (e) { }
   location.reload();
+}
+
+/* Starting a club from inside another one. The rules already let any
+   signed-in account found a club at a code nobody has written (the bootstrap
+   clauses, and rules.js's "a brand-new club"), so this is the same four
+   writes, in the order those clauses need them: admin first, because every
+   later rule asks whether she is one. It is awaited and online-only on
+   purpose. A club made through the outbox would be a club that exists on one
+   phone, with a code nobody else can reach and an admin claim that some other
+   device could beat it to; a club is cheap to make again with a signal, and a
+   half-made one is not cheap to explain. The code is long and random, so the
+   trust-on-first-use window rules.js prints is a code nobody else knows. */
+let newClubBusy = false;
+async function createClub(name) {
+  if (!rtdb || !me || newClubBusy) return false;
+  const code = 'sm-' + uid() + uid(), who = me.uid, at = nowMs();
+  const { db, mod } = rtdb;
+  const put = (p, val) => mod.set(mod.ref(db, p), val);
+  const W = 'workspaces/' + code + '/';
+  newClubBusy = true;
+  try {
+    await put(W + 'access/admins/' + who, true);
+    await put(W + 'access/index/' + who, true);
+    await put(W + 'access/members/' + who, { name: me.name || '', email: me.email || '', at });
+    await put(W + 'access/org/name', name);
+  } catch (e) {
+    newClubBusy = false;
+    toast(/permission|denied/i.test((e && e.code) || '') ? 'The database refused it — the rules may not be published yet'
+      : 'Could not make the club — check the signal and try again');
+    return false;
+  }
+  // the bookmark is what puts it in every one of her devices' club lists
+  await Promise.resolve(put('userOrgs/' + who + '/' + code, { name, at })).catch(() => { });
+  try { localStorage.setItem(LS_WS, code); } catch (e) { }
+  location.reload();
+  return true;
+}
+
+function sheetNewClub() {
+  openSheet(`<h3>Start a new club</h3>
+    <p class="muted" style="margin-top:0">A club of its own, with you as its admin. ${wsCode() ? `${esc((acc().org || {}).name || 'The club you are in')} is not touched, and stays in your list of clubs.` : ''}</p>
+    <label class="field"><span>Club name</span><input type="text" id="newClubName" placeholder="Hillside FC" maxlength="80"></label>
+    <button class="btn wide" data-act="newclubgo">Start it</button>
+    <p class="muted" style="margin-bottom:0">Needs a signal. Then add teams, and invite coaches and families from People.</p>`);
 }
 
 /* A role that came from an invite carries the invite's id. Withdrawing the
@@ -2827,7 +2872,8 @@ function importPlan(data, cur = state) {
    this phone can get them: its own copy, laid over the club's wherever the
    club could be asked, and the download says if some of it could not be. */
 let lastBackup = null;     // the last download's contents, for the tests and for nothing else
-const TRAIN_KINDS = [['sessions', 1], ['booked', 2], ['came', 1], ['fees', 2], ['pay', 1], ['splans', 1]];
+// bookable times and their seats go last: a restored seat names a session that has to be there first
+const TRAIN_KINDS = [['sessions', 1], ['booked', 2], ['came', 1], ['fees', 2], ['pay', 1], ['splans', 1], ['avail', 1], ['seats', 2]];
 const isBackupData = data => !!(data && data.teams && !Array.isArray(data.teams) && typeof data.teams === 'object'
   && (data.matches === undefined || (typeof data.matches === 'object' && !Array.isArray(data.matches))));
 function fetchOnce(path, ms = 6000) {
@@ -4301,9 +4347,10 @@ function render() {
         v === 'season' ? viewSeason() : v === 'calendar' ? viewCalendar() :
           v === 'formation' ? viewFormation() : v === 'club' ? viewClub() : v === 'people' ? viewPeople() : v === 'admin' ? viewAdmin()
             : v === 'mine' ? viewMine() : v === 'teamset' ? viewTeamSet() : v === 'practice' ? viewPractice()
-              : v === 'inbox' ? viewInbox() : v === 'thread' ? viewThread() : v === 'sessions' ? viewSessions()
+              : v === 'inbox' ? viewInbox() : v === 'thread' ? viewThread() : v === 'sessions' ? viewSessions() : v === 'mycal' ? viewMyCal()
               : v === 'setup' ? viewSetup() : viewMatches());
   syncHash();
+  if (drillLink) setTimeout(openDrillLink, 0);
   if (keepY && (window.scrollY || 0) !== keepY) { try { window.scrollTo(0, keepY); } catch (e) { } }
   if (v === 'game' && g === 'pitch') wireDrag();
   if (v === 'formation') wireFormationDrag();
@@ -4364,6 +4411,8 @@ function viewClub() {
     <h2>${esc(org)}</h2>
     <div class="clubhead">${clubCrest('lg')}<div><b>${esc(org)}</b>
       <span class="rowsub">${myTeams().length} team${myTeams().length === 1 ? '' : 's'} you can reach</span></div></div>
+    ${me || !gated() ? `<button class="card" data-act="goview" data-v="mycal" style="text-align:left;width:100%">
+      <b>My calendar</b><span class="rowsub">${esc(myCalLine())}</span></button>` : ''}
     ${guardsAnyone() ? `<button class="card" data-act="goview" data-v="mine" style="text-align:left;width:100%">
       <b>My players</b><span class="rowsub">${myPlayers().map(x => esc(x.p.name)).join(', ')}</span></button>` : ''}
     ${canSessions() ? `<button class="card" data-act="goview" data-v="sessions" style="text-align:left;width:100%">
@@ -4428,6 +4477,11 @@ function knownClubs() {
   return out.sort((a, b) => a.name.localeCompare(b.name));
 }
 
+/* Anyone signed in, with a database to make it in. Signed out there is no
+   uid for the rules to make an admin of; with no Firebase config a "club" is
+   just this phone, which is what it already is. */
+const canNewClub = () => !!(me && fbConfig().apiKey);
+
 function sheetClubSwitch() {
   const here = wsCode();
   const list = knownClubs();
@@ -4440,7 +4494,9 @@ function sheetClubSwitch() {
     <p class="muted">Forget removes this device's copy only. Deleting a club for everyone is a Firebase console job — see below.</p>
     <button class="opt" data-act="goview" data-v="club"><b>Club home</b>
       <span class="rowsub">Teams, stats and settings for ${esc((acc().org || {}).name || 'this club')}</span></button>
-    <p class="muted">Clubs are invite only. If one is missing, ask its admin for an invite link.</p>`);
+    ${canNewClub() ? `<button class="opt" data-act="newclub"><b>+ Start a new club</b>
+      <span class="rowsub">You become its admin</span></button>` : ''}
+    <p class="muted">To join someone else's club, ask its admin for an invite link.</p>`);
 }
 
 function sheetClubMenu() {
@@ -4450,6 +4506,8 @@ function sheetClubMenu() {
       <span class="rowsub">Teams, people and roles, club details</span></button>` : ''}
     ${guardsAnyone() ? `<button class="opt" data-act="goview" data-v="mine"><b>My players</b>
       <span class="rowsub">${myPlayers().length} linked to your account</span></button>` : ''}
+    ${me ? `<button class="opt" data-act="goview" data-v="mycal"><b>My calendar</b>
+      <span class="rowsub">Every team of yours, your children and your sessions</span></button>` : ''}
     <button class="opt" data-act="goview" data-v="setup"><b>Your settings</b>
       <span class="rowsub">Account, workspace, sharing, backup</span></button>
     ${me ? `<button class="opt" data-act="signout"><b>Sign out</b>
@@ -6129,7 +6187,7 @@ function calList(items, all) {
 
 /* A month at a glance: a dot per thing on each day, coloured by kind. It is
    for finding a day; the list below it is for reading one. */
-function calMonth(items) {
+function calMonth(items, dayAct = 'calday') {
   const today = todayStr();
   const ym = /^\d{4}-\d{2}$/.test(ui.calMonth || '') ? ui.calMonth : today.slice(0, 7);
   const [y, mo] = ym.split('-').map(Number);
@@ -6144,7 +6202,7 @@ function calMonth(items) {
     const attrs = `class="calday" data-today="${d === today ? 1 : 0}" data-past="${d < today ? 1 : 0}"`;
     const dots = list.slice(0, 3).map(x => `<i class="dot ${x.kind}${x.called ? ' off' : ''}"></i>`).join('');
     cells += list.length
-      ? `<button type="button" ${attrs} data-act="calday" data-v="${d}" aria-label="${esc(dayLabel(d))}: ${list.length} on">${n}<span class="dots">${dots}</span></button>`
+      ? `<button type="button" ${attrs} data-act="${dayAct}" data-v="${d}" aria-label="${esc(dayLabel(d))}: ${list.length} on">${n}<span class="dots">${dots}</span></button>`
       : `<span ${attrs}>${n}<span class="dots"></span></span>`;
   }
   return `<div class="card">
@@ -6154,7 +6212,7 @@ function calMonth(items) {
       <button class="stepbtn" data-act="calmonth" data-v="1" aria-label="Next month">›</button></div>
     <div class="calgrid">${cells}</div>
     <div class="spread" style="margin-top:8px">
-      <span class="calkey"><i class="dot game"></i>Game <i class="dot practice"></i>Practice <i class="dot event"></i>Other${items.some(x => x.kind === 'session') ? ' <i class="dot session"></i>Training' : ''}</span>
+      <span class="calkey"><i class="dot game"></i>Game <i class="dot practice"></i>Practice <i class="dot event"></i>Other${items.some(x => x.kind === 'session') ? ' <i class="dot session"></i>Training' : ''}${items.some(x => x.kind === 'avail') ? ' <i class="dot avail"></i>Bookable' : ''}</span>
       ${ym !== today.slice(0, 7) ? '<button class="textbtn" data-act="calmonth" data-v="0">This month</button>' : ''}</div>
   </div>`;
 }
@@ -6207,6 +6265,7 @@ function viewCalendar() {
   const edit = canEditTeam(t.id);
   return `<div class="stack">
     <div class="spread"><h2>Calendar</h2>${edit ? `<button class="btn sm" data-act="calnew" data-tid="${esc(t.id)}">Add</button>` : ''}</div>
+    ${me ? '<button class="textbtn" data-act="goview" data-v="mycal" style="align-self:flex-start">My calendar: everything of yours, every team</button>' : ''}
     ${mine.length > 1 ? `<div class="chips">
       <button class="chip" data-act="calscope" data-v="team" aria-pressed="${!all}">${teamLabel(t)}</button>
       <button class="chip" data-act="calscope" data-v="all" aria-pressed="${all}">All my teams</button></div>` : ''}
@@ -6745,7 +6804,7 @@ const PLAN_ACTS = new Set(['pracnew', 'pracfromcal', 'pracopen', 'pracback', 'pr
 const LIB_ACTS = new Set(['shelf', 'drillmine', 'drilledit', 'drillnew', 'drillshare', 'drilldel', 'drillorig', 'dedchip', 'dedpic',
   'dedai', 'dedaiback', 'dedaicopy', 'dedaiopen', 'dedaiuse', 'dedaifix',
   'dedlinkadd', 'dedlinkdel', 'dedsave', 'clubdrills', 'mydrills']);
-const PRACTICE_ACTS = new Set(['practab', 'drill', 'drillpic', 'roleguide', 'rolepic', 'drillfilters', 'dfchip', 'dfpick', 'dfclear', 'drillmore', ...PLAN_ACTS, ...LIB_ACTS]);
+const PRACTICE_ACTS = new Set(['practab', 'drill', 'drillpic', 'drillsend', 'drillsendshare', 'roleguide', 'rolepic', 'drillfilters', 'dfchip', 'dfpick', 'dfclear', 'drillmore', ...PLAN_ACTS, ...LIB_ACTS]);
 
 /* A team's age is stored as the year its players were born, because that
    rolls over by itself: the same team is U10 this season and U11 the next
@@ -6976,16 +7035,21 @@ function sheetDrill(id, moving = !reducedMotion(), top = false) {
   const L = drillLib(); if (!L || !drillDiagram()) return;
   const d = findDrill(id); if (!d) return;
   const key = String(id), shelf = d.shelf || 'builtin', inPlan = key.startsWith('plan:');
+  /* Somebody without Practice gets here only by a link a coach sent, and only
+     to a built-in drill, which ships in the app's public files anyway. She
+     reads it and that's all: nothing on it that would need Practice to tap. */
+  const ro = !canTrain();
+  if (ro && shelf !== 'builtin') return;
   const byId = x => L.DRILLS.find(y => y.id === x);
   const list = a => `<ul class="drillul">${a.map(x => `<li>${esc(x)}</li>`).join('')}</ul>`;
   const kit = kitWords(L, d.kit, 0) || 'nothing';
-  const tgt = inPlan ? null : pickTarget();
+  const tgt = inPlan || ro ? null : pickTarget();
   const trains = [...d.skills.map(s => L.SKILLS[s]), ...d.principles.map(x => L.PRINCIPLES[x]), ...d.physical.map(x => L.PHYSICAL[x]), ...d.moments.map(x => L.MOMENTS[x])];
   const orig = shelf !== 'builtin' && !inPlan ? drillOrigin(d) : null;
   /* What she can do with it depends on whose it is. Editing anything that
      isn't hers, or isn't the club's for her to tidy, is saving her own copy. */
   const acts = [];
-  if (!inPlan && me) {
+  if (!inPlan && !ro && me) {
     if (shelf === 'mine') {
       acts.push(['drilledit', 'Edit']);
       if (wsCode() && shareTeam()) acts.push(['drillshare', 'Share with the club']);
@@ -6996,6 +7060,7 @@ function sheetDrill(id, moving = !reducedMotion(), top = false) {
       if (canCurate(d)) acts.push(['drilldel', 'Remove from the club']);
     }
   }
+  if (!inPlan && !ro) acts.splice(shelf === 'mine' ? 1 : 0, 0, ['drillsend', 'Send to a coach']);
   const whose = shelf === 'club' ? `Shared with the club by ${esc(d.byName || 'a coach')}${d.by && !stillCoaching(d.by) ? ', who no longer coaches here' : ''}.${d.edName && d.edBy !== d.by ? ` Last tidied by ${esc(d.edName)}.` : ''}`
     : shelf === 'mine' ? 'Yours. Nobody else sees it unless you share it.' : inPlan ? '' : `From the ${APP_NAME} library.`;
   const media = (d.media || []).map(m => /\.(gif|png|jpe?g|webp)(\?|$)/i.test(m.url)
@@ -7007,7 +7072,7 @@ function sheetDrill(id, moving = !reducedMotion(), top = false) {
     ${inPlan ? '<p class="muted" style="margin:-4px 0 10px">The copy this plan keeps, so it reads the same whatever happens to the original.</p>' : ''}
     ${orig && orig.changed ? `<div class="rolebar">The original has changed since you copied it. <button class="drilllink" data-act="drillorig" data-id="${esc(key)}">See what it says now</button>; yours stays as it is.</div>` : ''}
     ${tgt ? `<button class="btn wide" data-act="pracadd" data-id="${esc(tgt.id)}" data-v="${esc(key)}" style="margin-bottom:10px">Add to ${esc(pracDay(tgt.date))}</button>` : ''}
-    ${d.diagram ? diagramBlock(d.diagram, d.name, 'drillpic', key, moving) : ''}
+    ${d.diagram ? diagramBlock(d.diagram, d.name, ro ? 'drillopen' : 'drillpic', key, moving) : ''}
     ${media}
     ${!d.diagram && media ? '<p class="muted">A link needs a signal to play, and can stop working if whoever posted it takes it down.</p>' : ''}
     ${!d.diagram && !media ? '<p class="muted">No picture. Drawing one in the app is still to come; a link to a clip works now.</p>' : ''}
@@ -7038,8 +7103,120 @@ function sheetDrill(id, moving = !reducedMotion(), top = false) {
     ${trains.length ? `<h4>Trains</h4><div class="chips">${trains.map(x => `<span class="tag">${esc(x)}</span>`).join('')}</div>` : ''}
     ${d.signals.length ? `<h4>Answers</h4><div class="chips">${d.signals.map(s => `<span class="tag wait">${esc(L.SIGNALS[s].label)}</span>`).join('')}</div>` : ''}
     ${d.goesWith.length ? `<h4>Goes well with</h4><div class="chips">${d.goesWith.map(byId).filter(Boolean).map(x =>
-      `<button class="chip" type="button" data-act="drill" data-id="${esc(x.id)}">${esc(x.name)}</button>`).join('')}</div>` : ''}
+      `<button class="chip" type="button" data-act="${ro ? 'drillopen' : 'drill'}" data-id="${esc(x.id)}">${esc(x.name)}</button>`).join('')}</div>` : ''}
     <button class="btn quiet wide" data-act="closesheet" style="margin-top:14px">Done</button>`, top);
+}
+
+/* ---- sending one drill to another coach ---- */
+/* A link, #/drill/{club}/{key}, and nothing else: not the card, and not the
+   club's code either, only a tag made from it. The coach it reaches shouldn't
+   have to know which of her clubs it came from, so the link says, and her
+   phone opens that club itself; but a link gets forwarded, so the tag can only
+   be matched against clubs the phone or the account already belongs to and
+   can't be turned back into a code anyone could type in. Whoever it reaches
+   gets what her own role lets her read on her own phone, so a link forwarded
+   to the wrong person opens nothing, and a drill removed since stops opening. A built-in drill ships in the app's public files, so
+   it opens for anyone, parents included. A club drill opens only for the
+   club's coaches and admins, the same people the rules let read the shelf;
+   anyone else is told why, and her phone never asks the database for it.
+   Mine is private to the person who wrote it, so it is never sent: sharing it
+   with the club first gives the club's copy a link of its own. */
+const drillLinkUrl = key => location.origin + location.pathname + '#/drill/'
+  + (/^club:/.test(key) && wsCode() ? clubTag(wsCode()) + '/' : '') + encodeURIComponent(key);
+/* A one-way tag for a club code (cyrb53): the same code always gives the same
+   tag, and the tag alone gives back nothing to type in. */
+function clubTag(code) {
+  let h1 = 0xdeadbeef, h2 = 0x41c6ce57;
+  for (const ch of 'club:' + code) { const c = ch.charCodeAt(0); h1 = Math.imul(h1 ^ c, 2654435761); h2 = Math.imul(h2 ^ c, 1597334677); }
+  h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^ Math.imul(h2 ^ (h2 >>> 13), 3266489909);
+  h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909);
+  return (4294967296 * (2097151 & h2) + (h1 >>> 0)).toString(36);
+}
+function sheetSendDrill(key) {
+  const d = findDrill(key); if (!d) return;
+  const shelf = d.shelf || 'builtin';
+  if (shelf === 'mine') {
+    openSheet(`<h3>Send to a coach</h3>
+      <p>This one is yours, and private: nobody else can open it, so a link to it would open for nobody. Share it with the club, and the club's copy can be sent to any of its coaches.</p>
+      ${wsCode() && shareTeam() ? `<button class="btn wide" data-act="drillshare" data-id="${esc(key)}">Share with the club</button>` : ''}
+      <button class="btn quiet wide" data-act="drill" data-id="${esc(key)}" style="margin-top:8px">Back to the drill</button>`, true);
+    return;
+  }
+  if (shelf !== 'builtin' && shelf !== 'club') return;
+  const url = drillLinkUrl(d.key || d.id);
+  const canShare = typeof navigator !== 'undefined' && typeof navigator.share === 'function';
+  openSheet(`<h3>Send “${esc(d.name)}” to a coach</h3>
+    <p class="muted">${shelf === 'builtin'
+      ? `It comes with the app, so the link opens for anyone you send it to, parents included.`
+      : `It's the club's, so the link opens only for the club's coaches and admins, signed in. Anyone else it reaches, a parent included, is told it isn't for them and sees nothing of it.`}</p>
+    <input type="text" readonly value="${esc(url)}" aria-label="Link to this drill">
+    <div class="row" style="gap:8px;margin-top:10px">
+      ${canShare ? `<button class="btn" style="flex:1" data-act="drillsendshare" data-id="${esc(d.key || d.id)}">Share</button>` : ''}
+      <button class="btn ${canShare ? 'quiet ' : ''}" style="flex:1" data-act="copylink" data-v="${esc(url)}">Copy link</button></div>
+    <button class="btn quiet wide" data-act="drill" data-id="${esc(d.key || d.id)}" style="margin-top:8px">Back to the drill</button>`, true);
+}
+
+/* A link opened on this phone, held until it knows enough to answer: the
+   club's been read (a parent's cached role can be out of date) and, for a
+   coach, the club's shelf has arrived. Never for long: past DRILL_LINK_WAIT,
+   or with no signal, it answers with what it has. */
+let drillLink = null;            // { key, club, k, at }
+const DRILL_LINK_WAIT = 8000;
+function followDrillLink(key, k, club) {
+  drillLink = { key: String(key || ''), club: String(club || ''), k: k || '', at: nowMs() };
+  const tm = setTimeout(() => { if (drillLink) render(); }, DRILL_LINK_WAIT + 50);
+  if (tm && tm.unref) tm.unref();
+  openDrillLink();
+}
+function openDrillLink() {
+  const w = drillLink; if (!w) return;
+  const L = drillLib();
+  if (!L || !drillDiagram()) { drillLink = null; sheetDrillRefused('noload'); return; }
+  const key = w.key, show = () => { drillLink = null; sheetDrill(key, w.k ? w.k === 'move' : undefined, !w.k); };
+  if (L.DRILLS.some(x => x.id === key)) { show(); return; }
+  if (!/^club:[^/]+$/.test(key)) { drillLink = null; sheetDrillRefused(/^mine:/.test(key) ? 'mine' : 'bad'); return; }
+  // the lock screen, an invite or a join comes first; signing in brings the link back
+  if (invite || (join && !join.hidden) || purged || denied || needsSignIn()) return;
+  const waiting = !!fbConfig().apiKey && nowMs() - w.at < DRILL_LINK_WAIT;
+  /* From another of her clubs: open that one, with the link still on the
+     address so it opens the drill once the club has loaded. Only a club this
+     phone has kept, or this account's own list says she's in; until that list
+     has come, wait for it. */
+  if (w.club && clubTag(wsCode()) !== w.club) {
+    const to = knownClubs().find(c => clubTag(c.code) === w.club);
+    if (to) {
+      drillLink = null;
+      try {
+        localStorage.setItem(LS_WS, to.code);
+        history.replaceState(null, '', location.pathname + location.search + '#/drill/' + w.club + '/' + encodeURIComponent(key));
+      } catch (e) { sheetDrillRefused('otherclub'); return; }
+      toast('Opening ' + to.name); location.reload(); return;
+    }
+    if (waiting && me && rtdb && !myClubs) return;
+    drillLink = null; sheetDrillRefused('otherclub'); return;
+  }
+  if (waiting && !wsRead) return;
+  if (!canTrain()) { drillLink = null; sheetDrillRefused('club'); return; }
+  if (findDrill(key)) { show(); return; }
+  watchShelf('club');
+  if (waiting && !shelfState.club) return;   // on its way; mergeShelf() redraws, and render() asks again
+  drillLink = null; sheetDrillRefused(shelfState.club === 'refused' ? 'refused' : 'gone');
+}
+function sheetDrillRefused(why) {
+  const lim = restricted();
+  const body = {
+    club: `<h3>This drill is for the club's coaches</h3>
+      <p>It's on the club's own shelf, which only the club's coaches and admins can open${me ? '' : ', signed in'}. ${!me ? 'If you coach here, sign in with the account the club knows and open the link again.'
+        : lim === 'parent' ? "You're signed in as a parent, so it stays closed to you." : lim === 'tracker' ? "You're signed in as a tracker, so it stays closed to you."
+        : "Your account isn't a coach or an admin here, so it stays closed to you."} The drills that come with the app open for anyone.</p>`,
+    mine: `<h3>That drill is private</h3><p>It's on a coach's own shelf, which only she can open. Ask her to share it with the club and send the club's copy.</p>`,
+    gone: `<h3>That drill isn't here</h3><p>It isn't in this club's drills any more. Whoever shared it may have removed it.</p>`,
+    otherclub: `<h3>That drill is from another club</h3><p>It's on the shelf of a club this phone isn't in, so it opens only for that club's coaches and admins. ${me ? 'If you coach there, open the invite the club sent you first, then this link again.' : 'If you coach there, sign in, then open this link again.'}</p>`,
+    refused: `<h3>The club's drills didn't load</h3><p>The database refused them: the club's rules may not include drills yet. Ask an admin.</p>`,
+    noload: `<h3>The drill library didn't load</h3><p>It comes with the app as a file of its own, and this page opened without it. Reload when you have a signal.</p>`,
+    bad: `<h3>That link isn't to a drill</h3><p>It may have been cut short when it was copied. Ask for it again.</p>`
+  }[why] || '';
+  openSheet(`${body}<button class="btn quiet wide" data-act="closesheet" style="margin-top:14px">Done</button>`, true);
 }
 
 /* The position guide: what each job is, with the ball and without it. The
@@ -8148,12 +8325,12 @@ function tickRun() {
 const LS_SESS = 'sm.sess.v1';
 const LS_SESS_SEEN = 'sm.sessSeen';
 const sessKey = () => LS_SESS + ':' + clubKey();
-const SESS_BLANK = () => ({ sessions: {}, booked: {}, came: {}, fees: {}, pay: {}, splans: {}, dirty: {}, refused: {} });
+const SESS_BLANK = () => ({ sessions: {}, booked: {}, came: {}, fees: {}, pay: {}, splans: {}, avail: {}, seats: {}, dirty: {}, refused: {} });
 /* How many path segments down each kind's records sit: a session is one node,
    a booking is one per player per session, a register one per session. A merge
    walks to exactly this depth and no further, so a record is always taken or
    kept whole and never half of one with half of the other. */
-const SESS_DEPTH = { sessions: 2, booked: 3, came: 2, fees: 3, pay: 2, splans: 2 };
+const SESS_DEPTH = { sessions: 2, booked: 3, came: 2, fees: 3, pay: 2, splans: 2, avail: 2, seats: 3 };
 const SESS_KIND = { one: '1-1', group: 'Group' };
 const BOOK = { asked: 'Asked', in: 'Booked', wait: 'Waiting list', no: 'Not this time', out: 'Withdrew' };
 const BOOK_ORDER = { asked: 0, in: 1, wait: 2, no: 3, out: 4 };
@@ -8319,7 +8496,7 @@ function sessSend(path, undo) {
      once the session is gone they are nobody's to delete. One connection
      applies writes in the order they were made. */
   if (kind === 'sessions' && getDeep(sess, path) === undefined)
-    for (const k of ['booked', 'came', 'fees', 'splans']) if (sess.dirty[k + '/' + id] !== undefined) sessSend(k + '/' + id);
+    for (const k of ['booked', 'seats', 'came', 'fees', 'splans']) if (sess.dirty[k + '/' + id] !== undefined) sessSend(k + '/' + id);
   const v = getDeep(sess, path);
   rootSet(`training/${code}/${path}`, v === undefined ? null : v).then(() => {
     // only the version that was sent is clean; a change made since is still owed
@@ -8370,7 +8547,7 @@ function sessMerge(path, remote, resend) {
 const sessOn = () => !!(rtdb && fb && me && wsCode() && wsRead && !needsSignIn());
 function sessWanted() {
   if (!canSessions()) return [];
-  const want = ['sessions', 'booked', 'came'];
+  const want = ['sessions', 'booked', 'came', 'avail', 'seats'];
   const all = sessAll();
   if (isAdmin(me.uid)) want.push('fees', 'pay');
   else {
@@ -8394,6 +8571,7 @@ function watchSess() {
     sessFor = key;
   }
   if (!key) return;
+  scheduleHeal();
   const want = new Set(sessWanted());
   for (const p of Object.keys(sessSubs)) if (!want.has(p)) { try { sessSubs[p](); } catch (e) { } delete sessSubs[p]; }
   const { db, mod } = rtdb, code = wsCode();
@@ -8455,8 +8633,22 @@ function sessNews() {
       now[k] = x.st;
       if (first || seen[k] === x.st || x.b.by === me.uid || sessPast(s)) continue;
       if (x.st === 'asked') news.push(['Asked for a spot', `${whoName(x)} · ${sessTitle(s)} · ${when}`]);
+      else if (x.st === 'in' && s.slot && x.b.by !== s.coach && !isAdmin(x.b.by)) news.push(['Booked a time', `${whoName(x)} · ${when}`]);
       else if (x.st === 'out') news.push(['Withdrew', `${whoName(x)} · ${sessTitle(s)} · ${when}`]);
     }
+  }
+  /* A place a family cancels is deleted, not marked, so the coach hears
+     about it from its absence: a booking she was told of last time, gone
+     now, and not taken back from this phone. */
+  for (const s of sessAll()) {
+    if (!s.slot || s.coach !== me.uid || s.called || sessPast(s)) continue;
+    for (const x of bookingsOf(s.id)) if (x.st === 'in') now['k/' + s.id + '/' + x.pid] = `${whoName(x)} · ${dayLabel(s.date)} ${niceTime(s.start)}`;
+  }
+  if (!first) for (const k of Object.keys(seen)) {
+    if (!k.startsWith('k/') || now[k] !== undefined || sessDropped.has(k.slice(2))) continue;
+    const [sid, pid] = k.slice(2).split('/');
+    if (bookOf(sid, pid)) continue;
+    news.push(['Cancelled a time', String(seen[k])]);
   }
   try { localStorage.setItem(lsk, JSON.stringify(now)); } catch (e) { }
   for (const [title, body] of news.slice(0, 3)) ping(title, body, 'minutes-sess-' + title + body);
@@ -8632,7 +8824,7 @@ function sessIcs(s) {
 }
 
 /* ---- screens ---- */
-const SESS_TABS = { list: 'Sessions', fields: 'Fields', fees: 'Fees', hours: 'Hours' };
+const SESS_TABS = { list: 'Sessions', avail: 'Bookable times', fields: 'Fields', fees: 'Fees', hours: 'Hours' };
 function sessUi() {
   if (!ui.sess || typeof ui.sess !== 'object') ui.sess = {};
   const u = ui.sess;
@@ -8672,7 +8864,7 @@ function viewSessions() {
   if (u.go) { const id = u.go; u.go = null; setTimeout(() => { if (sessById(id)) sheetSess(id); }, 0); }
   const tabs = staff ? `<div class="chips">${Object.entries(SESS_TABS).map(([k, l]) =>
     `<button class="chip" type="button" data-act="sesstab" data-k="${k}" aria-pressed="${u.tab === k}">${l}</button>`).join('')}</div>` : '';
-  const body = u.tab === 'fields' ? sessFieldsView() : u.tab === 'fees' ? sessFeesView() : u.tab === 'hours' ? sessHoursView() : sessListView();
+  const body = u.tab === 'avail' ? availView() : u.tab === 'fields' ? sessFieldsView() : u.tab === 'fees' ? sessFeesView() : u.tab === 'hours' ? sessHoursView() : sessListView();
   return `<div class="stack"><h2>Training sessions</h2>${sessNote()}${tabs}${body}</div>`;
 }
 
@@ -8748,6 +8940,7 @@ function familySessions(staff) {
       <p class="muted" style="margin-bottom:0">Pay the coach or the club the way you usually do; they mark it paid here.</p></div>` : ''}
     <div class="card"><h2 style="margin-bottom:0">Booked and asked for</h2>
       ${ahead.length ? sessDays(ahead, true) : '<p class="muted" style="margin-bottom:0">Nothing yet. Ask for a spot in an open session below, or a coach books one for you.</p>'}</div>
+    ${familyAvail()}
     <div class="card"><h2 style="margin-bottom:0">Open to ask for</h2>
       ${open.length ? sessDays(open, true) : `<p class="muted" style="margin-bottom:0">No open sessions for ${kids.length > 1 ? 'your children’s ages' : esc(firstName(kids[0].p)) + '’s age'} right now.</p>`}</div>
     ${done.length ? `<div class="card"><h2 style="margin-bottom:0">Earlier</h2>${sessDays(done.slice(0, 30), true)}</div>` : ''}`;
@@ -8769,7 +8962,7 @@ function sheetSess(id) {
   const anyFee = xs.some(x => feeOf(s.id, x.pid));
   openSheet(`<h3>${esc(sessTitle(s))}</h3>
     ${s.called ? `<div class="warn alert" style="margin-bottom:10px"><b>${CALLED[s.called]}.</b></div>` : ''}
-    <p class="muted" style="margin-top:0">${SESS_KIND[s.kind]} · with ${esc(s.coachName)}${s.ages ? ' · ' + agesLabel(s.ages) : ''}${run ? (s.open ? ' · families can ask' : ' · the coach books it') : ''}</p>
+    <p class="muted" style="margin-top:0">${SESS_KIND[s.kind]} · with ${esc(s.coachName)}${s.ages ? ' · ' + agesLabel(s.ages) : ''}${s.slot ? ' · booked by the family from bookable times' : run ? (s.open ? ' · families can ask' : ' · the coach books it') : ''}</p>
     <dl class="facts">
       ${row('When', esc(dayLabel(s.date)) + ' · ' + esc(span))}
       ${row('Where', esc(sessPlace(s) || 'To be confirmed') + (f ? ` · <button class="textbtn" data-act="fieldopen" data-id="${esc(f.id)}">about this field</button>` : ''))}
@@ -8802,7 +8995,9 @@ function sessFamilyBlock(s) {
     if (b && b.st !== 'out') {
       const fee = s.price && b.st === 'in' ? (feeOf(s.id, p.id) ? ' · paid' : feesKnown(s.id, p.id) ? ` · ${esc(fmtMoney(s.price))} to pay` : '') : '';
       return `<div class="rsvprow"><span><b>${name}</b><span class="rowsub">${esc(BOOK[b.st])}${fee}${b.want ? ' · wants: ' + esc(b.want) : ''}</span></span>
-        ${!over && b.st !== 'no' ? `<button class="btn quiet sm" data-act="sesswithdraw" data-id="${esc(s.id)}" data-pid="${esc(p.id)}">${b.st === 'in' ? 'Can’t make it' : 'Withdraw'}</button>` : ''}</div>`;
+        ${over || b.st === 'no' ? '' : s.slot && b.st === 'in'
+        ? `<button class="btn quiet sm" data-act="slotcancel" data-id="${esc(s.id)}" data-pid="${esc(p.id)}">Cancel this time</button>`
+        : `<button class="btn quiet sm" data-act="sesswithdraw" data-id="${esc(s.id)}" data-pid="${esc(p.id)}">${b.st === 'in' ? 'Can’t make it' : 'Withdraw'}</button>`}</div>`;
     }
     if (over || !s.open || !fitsAges(s, t)) return b ? `<div class="rsvprow"><span><b>${name}</b><span class="rowsub">Withdrew</span></span></div>` : '';
     const full = spotsLeft(s) === 0;
@@ -9281,6 +9476,7 @@ function onSessAct(a, d) {
     'sesspicktoggle', 'sesspickscope', 'sesspicksave', 'sessfee', 'sessfeehow', 'sessfeesave', 'sessfeeclear', 'sessremind', 'sessmonth', 'sesshourscoach'];
   if (staffOnly.includes(a) && !canOffer()) { closeSheet(); toast('That is for coaches and admins'); render(); return; }
   const by = () => (me && me.uid) || 'device';
+  if (AVAIL_ACTS.has(a)) { onAvailAct(a, d); return; }
 
   if (a === 'sesstab') { ui.view = 'sessions'; u.tab = SESS_TABS[d.k] ? d.k : 'list'; closeSheet(); render(); toTop(); return; }
   if (a === 'sessscope') { u.scope = d.v === 'all' ? 'all' : 'mine'; render(); return; }
@@ -9316,7 +9512,7 @@ function onSessAct(a, d) {
   if (a === 'sessdel') {
     if (bookingsOf(s.id).some(x => feeOf(s.id, x.pid))) { toast('Payments are recorded against it, so call it off instead'); return; }
     if (!confirm('Delete this session, with its bookings and register? Calling it off keeps the record instead.')) return;
-    for (const k of ['booked', 'came', 'fees', 'splans']) if (getDeep(sess, k + '/' + s.id) !== undefined || fb) sessPut(k + '/' + s.id, null);
+    for (const k of ['booked', 'seats', 'came', 'fees', 'splans']) if (getDeep(sess, k + '/' + s.id) !== undefined || fb) sessPut(k + '/' + s.id, null);
     sessPut('sessions/' + s.id, null);
     u.open = null; closeSheet(); render(); toast('Deleted'); return;
   }
@@ -9327,6 +9523,8 @@ function onSessAct(a, d) {
     const st = BOOK[d.v] ? d.v : null; if (!st || st === 'asked') return;
     if (st === 'in' && b.st !== 'in' && spotsLeft(s) === 0) { toast('No spots left — take someone off, waitlist this one, or add spots'); return; }
     sessPut(`booked/${s.id}/${d.pid}`, bookingVal(b, st));
+    // a place she gave up in a slot goes back to the families
+    if (s.slot && (st === 'out' || st === 'no')) for (const x of seatsOf(s.id)) if (x.pid === d.pid) sessPut(`seats/${s.id}/${x.n}`, null);
     sheetSess(s.id); render(); return;
   }
   if (a === 'sesspick') { sessPick = { sid: s.id, tid: ui.teamId, picked: [], scope: 'one' }; sheetSessPick(); return; }
@@ -9348,6 +9546,9 @@ function onSessAct(a, d) {
       if (b && b.st === 'in') continue;
       const st = spotsLeft(sessById(x.id)) > 0 ? 'in' : 'wait';
       if (st === 'wait') waited++;
+      // on a family-bookable slot, a player the coach adds takes a seat too, so the families' count stays true
+      const blk = x.slot ? blockById(x.slot) : null, seat = blk && st === 'in' && !seatsOf(x.id).some(y => y.pid === pid) ? freeSeat(blk, x.id) : null;
+      if (seat) sessPut(`seats/${x.id}/${seat}`, { pid, tid: w.t.id, by: by(), at: nowMs() });
       sessPut(`booked/${x.id}/${pid}`, bookingVal({ ...(b || {}), tid: w.t.id }, st));
     }
     sessPick = null; sheetSess(base.id); render();
@@ -9568,6 +9769,637 @@ function saveSessForm() {
   toast(dates.length > 1 ? `Added ${dates.length} sessions` : 'Added — now add players, or leave it open for families');
 }
 
+/* ---------------- bookable times ---------------- */
+/* AVAILABILITY.md. A coach says when she is free for 1-1s or a small group,
+   and families book a slot themselves. A block is one coach's window on one
+   date, cut into slots of `len` minutes; a weekly one is a block per week
+   sharing a series id, as practices and sessions are, so "not next Tuesday"
+   is one write.
+
+   A booked slot is not a new kind of thing: it is an ordinary session, made
+   by the first family to book it, under an id built from the coach, the day
+   and the start, so of two families making six o'clock at once the database
+   lets exactly one in. Everything sessions already do (the coach's list, the
+   register, fees, hours, clashes, the team calendar) then works on it
+   unchanged, because it is one.
+
+   The rules hold a family to the window, and they can only look things up,
+   never count or search. So the block carries what they need to look up:
+   `slots`, the times it still offers, each with its start as a timestamp
+   (the grid, the length, and "not in the past" and "not inside the notice"
+   become comparisons), and `seats`, one key per place. A family takes a
+   place by taking a seat nobody holds, which is how a group of six refuses
+   the seventh. `slots` leaves out whatever the coach is busy with, and her
+   phone and the admins' keep it so (`healBlocks()`), as the lookup tables
+   are kept: derived, rebuilt, never typed. */
+const SLOT_LENS = [30, 45, 60, 90];
+const NOTICE_HOURS = [0, 12, 24, 48];
+const BLOCK_KIND = { one: '1-1s', group: 'Small group' };
+const clockOf = m => pad2(Math.floor(m / 60) % 24) + ':' + pad2(m % 60);
+// keys a database will not turn into an array: 's1' and 't1700', never 1 and 1700
+const slotKey = start => 't' + String(start).replace(':', '');
+const seatKeys = cap => Array.from({ length: cap }, (_, i) => 's' + (i + 1));
+const slotSid = (coach, date, start) => 'k_' + coach + '_' + date + '_' + String(start).replace(':', '');
+const slotAt = (date, start) => dateOf(date).getTime() + minOf(start) * 60000;
+const SEAT_STALE = 10 * 60000;
+const agesOf = raw => {
+  const a = raw && typeof raw === 'object' ? Object.values(raw).map(Number) : null;
+  return a && a.length === 2 && a.every(n => Number.isInteger(n) && n >= 4 && n <= 19) && a[0] <= a[1] ? a : null;
+};
+/* Any coach writes a block, and the rule checks its owner and its shape, so
+   one with a length of "lots" must not break the next phone that draws it. */
+function normBlock(b, id) {
+  if (!b || typeof b !== 'object') return null;
+  const str = v => (v == null ? '' : String(v));
+  const n = Number(b.notice);
+  const kind = b.kind === 'group' ? 'group' : 'one';
+  return {
+    ...b, id: str(b.id || id), kind, cap: kind === 'one' ? 1 : clamp(Math.round(Number(b.cap)) || 6, 1, 60),
+    title: str(b.title).slice(0, 80), coach: str(b.coach), coachName: personName(b.coach) || str(b.coachName) || 'Coach',
+    date: okDay(b.date) ? b.date : '', start: hm(b.start), end: hm(b.end),
+    len: clamp(Math.round(Number(b.len)) || 60, 15, 240), field: str(b.field), place: str(b.place).slice(0, 120),
+    price: Math.max(0, Math.round((Number(b.price) || 0) * 100) / 100), ages: agesOf(b.ages),
+    notice: Number.isFinite(n) ? clamp(Math.round(n), 0, 168) : 24, note: str(b.note).slice(0, 500),
+    off: b.off === true, series: b.series || null
+  };
+}
+const blockAll = () => Object.entries(sess.avail || {}).map(([id, b]) => normBlock(b, id))
+  .filter(b => b && b.date && b.start && b.end && minOf(b.end) > minOf(b.start))
+  .sort((a, b) => (a.date + a.start).localeCompare(b.date + b.start) || a.id.localeCompare(b.id));
+const blockById = id => { const b = id ? (sess.avail || {})[id] : null; return b ? normBlock(b, id) : null; };
+const blockSeries = b => (b.series ? blockAll().filter(x => x.series === b.series) : [b]);
+const blockPlace = b => { const f = fieldById(b.field); return f ? f.name + (b.place ? ', ' + b.place : '') : b.place; };
+const blockLabel = b => b.title || (b.kind === 'group' ? `Small group, ${b.cap} places` : '1-1s');
+// the same two clauses as the rule on avail/$bid, and as canRun() for a session
+const canEditBlock = b => !!b && (!gated() || canAdmin() || (!!me && b.coach === me.uid && isCoachAny(me.uid)));
+const minsNow = () => { const d = new Date(nowMs()); return d.getHours() * 60 + d.getMinutes(); };
+const startMs = s => Number(s.t0) || slotAt(s.date, s.start || '00:00');
+const hoursUntil = s => (startMs(s) - nowMs()) / 3600000;
+
+/* ---- seats: a place in a slot ---- */
+const seatsOf = sid => Object.entries(((sess.seats || {})[sid]) || {}).filter(([, v]) => v && typeof v === 'object' && v.pid).map(([n, v]) => ({ n, ...v }));
+/* Who is in a slot: everyone the coach or a family has booked, and anyone
+   holding a seat whose booking has not landed yet. Somebody taken off, or
+   turned down, is not, whatever seat she still holds. */
+function placesTaken(sid) {
+  const ins = new Set(bookingsOf(sid).filter(x => x.st === 'in').map(x => x.pid));
+  for (const st of seatsOf(sid)) if (!bookOf(sid, st.pid)) ins.add(st.pid);
+  return ins.size;
+}
+const freeSeat = (b, sid) => { const held = new Set(seatsOf(sid).map(x => x.n)); return seatKeys(b.cap).find(k => !held.has(k)) || null; };
+
+/* The block cut into its slots, each with whatever keeps it from being
+   booked. A coach's team calendar is her busy time: a practice or game for a
+   team she coaches, or another session she runs, takes out the slots it
+   overlaps, with nobody having to edit the block. */
+function blockSlots(b) {
+  const out = [];
+  if (!b || !b.start || !b.end) return out;
+  const from = minOf(b.start), to = minOf(b.end);
+  const busy = busyItems(b.date).filter(x => x.coaches.includes(b.coach));
+  const listed = ((sess.avail || {})[b.id] || {}).slots || {};
+  const today = todayStr(), now = minsNow();
+  for (let a = from; a + b.len <= to && out.length < 48; a += b.len) {
+    const start = clockOf(a), end = clockOf(a + b.len), sid = slotSid(b.coach, b.date, start);
+    const s = sessById(sid);
+    const clash = busy.filter(x => x.key !== 's:' + sid && x.a < a + b.len && a < x.b);
+    const past = b.date < today || (b.date === today && a <= now);
+    const taken = s ? placesTaken(sid) : 0;
+    const left = s && s.called ? 0 : Math.max(0, b.cap - taken);
+    const free = !clash.length && !past && !b.off && !!listed[slotKey(start)] && left > 0 && !!freeSeat(b, sid);
+    out.push({ start, end, sid, a, s, clash, past, taken, left, free });
+  }
+  return out;
+}
+/* What the block offers, as the rule reads it: every slot on the grid the
+   coach is free for, with its start as a timestamp. Taken and past slots stay
+   listed; the seats and the clock refuse those. */
+function openSlotsOf(b) {
+  const out = {};
+  if (b.off) return out;
+  for (const x of blockSlots(b)) if (!x.clash.length) out[slotKey(x.start)] = { end: x.end, at: slotAt(b.date, x.start) };
+  return out;
+}
+const seatMap = cap => Object.fromEntries(seatKeys(cap).map(k => [k, true]));
+const canon = v => (v && typeof v === 'object' ? '{' + Object.keys(v).sort().map(k => k + ':' + canon(v[k])).join(',') + '}' : JSON.stringify(v));
+
+/* Keeps what the rules read true. A practice added to a team she coaches, a
+   session she now runs, a week taken off: her phone, or an admin's, rewrites
+   the block's list of slots the next time it draws, as the lookup tables are
+   rebuilt on connect. Only changed blocks are written, so it settles. Also
+   lets go of seats nobody is using: one whose child was taken off or turned
+   down, or one held ten minutes with no booking behind it. */
+let healTimer = null;
+function scheduleHeal() {
+  if (healTimer || typeof setTimeout !== 'function') return;
+  healTimer = setTimeout(() => { healTimer = null; healBlocks(); }, 1500);
+}
+function healBlocks() {
+  if (!me || (fb && !(sessLoaded.has('avail') && sessLoaded.has('sessions')))) return 0;
+  let n = 0;
+  const today = todayStr();
+  for (const b of blockAll()) {
+    if (b.date < today || !(b.coach === me.uid ? canEditBlock(b) : canAdmin())) continue;
+    const raw = sess.avail[b.id] || {};
+    const want = { slots: openSlotsOf(b), seats: seatMap(b.cap) };
+    if (canon(raw.slots || {}) === canon(want.slots) && canon(raw.seats || {}) === canon(want.seats)) continue;
+    sessPut('avail/' + b.id, { ...raw, ...want });
+    n++;
+  }
+  if (!fb || sessLoaded.has('seats')) for (const sid of Object.keys(sess.seats || {})) {
+    const s = sessById(sid);
+    if (!s || !s.slot || sessPast(s) || !canRun(s) || (s.coach !== (me && me.uid) && !canAdmin())) continue;
+    for (const st of seatsOf(sid)) {
+      const bk = bookOf(sid, st.pid);
+      if (bk ? bk.st === 'out' || bk.st === 'no' : nowMs() - (Number(st.at) || 0) > SEAT_STALE) { sessPut(`seats/${sid}/${st.n}`, null); n++; }
+    }
+  }
+  if (n) render();
+  return n;
+}
+
+/* What a child of hers already has then: her team's practice or game, or a
+   session she is in. Offered to the family as taken by it, never booked over. */
+function kidBusy(b, sl, kid) {
+  return busyItems(b.date).filter(x => x.key !== 's:' + sl.sid && x.a < sl.a + b.len && sl.a < x.b
+    && (x.pids ? x.pids.includes(kid.p.id) : x.tid === kid.t.id));
+}
+// the children of hers a block suits; an age range is a guide, as on a session
+const blockKids = b => myPlayers().filter(({ t }) => fitsAges(b, t));
+// slots a session made from this block holds that its grid no longer offers
+const blockStray = (b, sl) => sessAll().filter(s => s.slot === b.id && !sl.some(x => x.sid === s.id));
+
+/* ---- screens ---- */
+function availRow(b, fam, who) {
+  const sl = blockSlots(b), free = sl.filter(x => x.free).length;
+  const booked = sl.filter(x => x.s && !x.s.called && x.taken).length;
+  const sub = [who ? b.coachName : '', blockPlace(b),
+    fam ? (b.off ? '' : `${free} free`) : (sl.length ? `${booked} of ${sl.length} slots booked` : 'too short for a slot'),
+    `${b.len} min`, b.price ? fmtMoney(b.price) : ''];
+  return `<button class="prow calrow" type="button" data-act="availopen" data-id="${esc(b.id)}" data-called="${b.off ? 1 : 0}">
+    <span class="caltime">${niceTime(b.start)}</span>
+    <span style="min-width:0"><span class="pname">${fam ? `${esc(blockLabel(b))} with ${esc(b.coachName)}` : `${esc(blockLabel(b))} until ${esc(niceTime(b.end))}`}</span>
+      <span class="psub">${esc(sub.filter(Boolean).join(' · '))}</span></span>
+    ${b.off ? '<span class="tag off">Off</span>' : `<span class="tag avail">${fam ? 'Book' : 'Open'}</span>`}</button>`;
+}
+function availDays(list, fam, who) {
+  let out = '', last = null;
+  for (const b of list) {
+    if (b.date !== last) { const rel = relDay(b.date); out += `<p class="calhead">${esc(dayLabel(b.date))}${rel ? ` <span>· ${rel}</span>` : ''}</p>`; last = b.date; }
+    out += availRow(b, fam, who);
+  }
+  return `<div class="plist">${out}</div>`;
+}
+
+/* The staff tab: her own times, or everyone's for an admin. */
+function availView() {
+  const u = sessUi(), all = blockAll(), today = todayStr();
+  const pool = u.scope === 'all' || !me ? all : all.filter(b => b.coach === me.uid);
+  const ahead = pool.filter(b => b.date >= today), past = pool.filter(b => b.date < today).reverse();
+  return `<div class="spread"><div class="chips">
+      <button class="chip" type="button" data-act="sessscope" data-v="mine" aria-pressed="${u.scope === 'mine'}">Mine</button>
+      <button class="chip" type="button" data-act="sessscope" data-v="all" aria-pressed="${u.scope === 'all'}">Everyone's</button></div>
+    <button class="btn sm" data-act="availnew">Add times</button></div>
+    <div class="card"><h2 style="margin-bottom:0">Times families can book</h2>
+      ${ahead.length ? availDays(ahead, false, u.scope === 'all')
+      : `<p class="muted" style="margin-bottom:0">${u.scope === 'mine' ? 'You have not offered any yet.' : 'No coach has offered any yet.'} <b>Add times</b> says when you are free, say Tuesdays 5–7pm in hour slots, for 1-1s or a small group, and families book a place themselves. Your team practices and games, and the sessions you run, are taken out by themselves.</p>`}</div>
+    ${past.length ? `<button class="btn quiet wide" data-act="sesspast">${u.past ? 'Hide' : 'Show'} earlier times (${past.length})</button>
+      ${u.past ? `<div class="card">${availDays(past.slice(0, 60), false, u.scope === 'all')}</div>` : ''}` : ''}`;
+}
+
+/* A family's card on the sessions screen: coaches' times with a free place
+   that suits one of her children. */
+function familyAvail() {
+  const today = todayStr();
+  const list = blockAll().filter(b => b.date >= today && !b.off && blockKids(b).length && blockSlots(b).some(x => x.free));
+  if (!list.length) return '';
+  return `<div class="card"><h2 style="margin-bottom:0">Book a time with a coach</h2>
+    <p class="muted" style="margin:4px 0 0">Pick a free slot and the place is yours, no waiting for a reply.</p>
+    ${availDays(list.slice(0, 40), true, true)}</div>`;
+}
+
+function sheetBlock(id) {
+  const b = blockById(id);
+  if (!b) { closeSheet(); toast('Those times are not on this phone any more'); return; }
+  const u = sessUi(); u.openBlock = id;
+  const edit = canEditBlock(b), sl = blockSlots(b), stray = blockStray(b, sl);
+  const kids = blockKids(b);
+  if (!kids.some(k => k.p.id === u.kid)) u.kid = kids.length ? kids[0].p.id : null;
+  const kid = kids.find(k => k.p.id === u.kid) || null;
+  const row = (k, v) => v ? `<dt>${k}</dt><dd>${v}</dd>` : '';
+  const later = b.series ? blockSeries(b).filter(x => x.date > b.date).length : 0;
+  const group = b.kind === 'group';
+  const names = s => bookingsOf(s.id).filter(x => x.st === 'in').map(whoName).join(', ') || 'held, nobody booked yet';
+  const slotRow = x => {
+    const when = `${niceTime(x.start)}–${niceTime(x.end)}`;
+    const count = group ? `${x.taken} of ${b.cap}` : '';
+    const mineIn = x.s && kids.some(k => (bookOf(x.s.id, k.p.id) || {}).st === 'in');
+    if (x.s && (canRun(x.s) || mineIn) && !(mineIn && !edit && x.free && kid && !bookOf(x.s.id, kid.p.id))) {
+      const label = x.s.called ? CALLED[x.s.called] : canRun(x.s) ? [count, names(x.s)].filter(Boolean).join(' · ')
+        : kids.filter(k => (bookOf(x.s.id, k.p.id) || {}).st === 'in').map(k => firstName(k.p) + ' is in').join(', ');
+      return `<button class="opt spread" type="button" data-act="sessopen" data-id="${esc(x.s.id)}"><span>${when}</span><span class="on">${esc(label)}</span></button>`;
+    }
+    const why = x.past ? 'gone' : b.off ? 'off' : x.clash.length ? (edit ? x.clash.map(c => c.label).join('; ') : 'not free')
+      : x.s && x.s.called ? CALLED[x.s.called] : x.s && !x.left ? 'full' : !x.free ? 'not open yet' : '';
+    if (why) return `<div class="opt spread"><span class="muted">${when}</span><span class="muted">${esc([count, why].filter(Boolean).join(' · '))}</span></div>`;
+    if (!edit && kid) {
+      const kb = kidBusy(b, x, kid);
+      if (kb.length) return `<div class="opt spread"><span class="muted">${when}</span><span class="muted">${esc(firstName(kid.p))} has ${esc(kb[0].label)}</span></div>`;
+      return `<button class="opt spread" type="button" data-act="slotpick" data-id="${esc(b.id)}" data-v="${esc(x.start)}"><span><b>${when}</b>${group ? `<span class="rowsub">${x.left} of ${b.cap} places left</span>` : ''}</span><span class="tag avail">Book</span></button>`;
+    }
+    return `<div class="opt spread"><span>${when}</span><span class="muted">${group ? `${x.left} of ${b.cap} free` : 'free'}</span></div>`;
+  };
+  openSheet(`<h3>${esc(blockLabel(b))} with ${esc(b.coachName)}</h3>
+    ${b.off ? '<div class="warn alert" style="margin-bottom:10px"><b>Off this week.</b> Nothing here can be booked.</div>' : ''}
+    <dl class="facts">
+      ${row('When', esc(dayLabel(b.date)) + ' · ' + esc(niceTime(b.start) + '–' + niceTime(b.end)))}
+      ${row('Where', esc(blockPlace(b) || 'To be confirmed'))}
+      ${row('Each', `${b.len} minutes${group ? `, up to ${b.cap} players` : ', one player'}`)}
+      ${row('Price', b.price ? esc(fmtMoney(b.price)) + (group ? ' each' : '') : 'Free')}
+      ${row('Ages', b.ages ? esc(agesLabel(b.ages)) : '')}
+      ${row('Cancelling', b.notice ? `Up to ${b.notice} hours before` : 'Any time before it starts')}
+      ${row('Notes', esc(b.note).replace(/\n/g, '<br>'))}
+      ${later ? row('Repeats', `Weekly · ${later} more after this`) : ''}
+    </dl>
+    ${!edit && kids.length > 1 ? `<p class="lbl">Booking for</p><div class="chips" style="margin-bottom:10px">${kids.map(k =>
+      `<button class="chip" type="button" data-act="slotkid" data-id="${esc(b.id)}" data-pid="${esc(k.p.id)}" aria-pressed="${k === kid}">${esc(firstName(k.p))}</button>`).join('')}</div>` : ''}
+    ${!edit && !kids.length && guardsAnyone() ? `<p class="muted">These times are for ${esc(agesLabel(b.ages))}.</p>` : ''}
+    <p class="lbl">Slots</p>
+    <div style="margin-bottom:12px">${sl.map(slotRow).join('') || '<p class="muted">The window is shorter than one slot.</p>'}</div>
+    ${edit && stray.length ? `<p class="lbl">Also booked from these times</p><div style="margin-bottom:12px">${stray.map(s =>
+      `<button class="opt spread" type="button" data-act="sessopen" data-id="${esc(s.id)}"><span>${esc(niceTime(s.start))}–${esc(niceTime(s.end))}${s.date !== b.date ? ' · ' + esc(dayLabel(s.date)) : ''}</span><span class="on">${esc(names(s))}</span></button>`).join('')}</div>` : ''}
+    ${edit ? `<button class="btn quiet wide" data-act="availedit" data-id="${esc(b.id)}" style="margin-bottom:8px">Edit</button>
+      <button class="btn quiet wide" data-act="availoff" data-id="${esc(b.id)}" style="margin-bottom:8px">${b.off ? 'Open it again' : 'Not this week'}</button>
+      <button class="btn danger wide" data-act="availdel" data-id="${esc(b.id)}" data-v="one"${later ? ' style="margin-bottom:8px"' : ''}>Delete${later ? ' this week' : ''}</button>
+      ${later ? `<button class="btn danger wide" data-act="availdel" data-id="${esc(b.id)}" data-v="later">Delete this and every later week</button>` : ''}
+      <p class="muted" style="margin-bottom:0">Slots already booked stay booked whatever happens here; each is a session of yours, to move or call off from its own page.</p>` : ''}`);
+}
+
+function sheetSlotBook(bid, start) {
+  const b = blockById(bid), u = sessUi();
+  const kid = blockKids(b || {}).find(k => k.p.id === u.kid) || (b ? blockKids(b)[0] : null);
+  const x = b ? blockSlots(b).find(y => y.start === start) : null;
+  if (!b || !kid || !x) { closeSheet(); return; }
+  openSheet(`<h3>Book ${esc(niceTime(x.start))} for ${esc(firstName(kid.p))}</h3>
+    <p class="muted" style="margin-top:0">${esc(blockLabel(b))} with ${esc(b.coachName)} · ${esc(dayLabel(b.date))}, ${esc(niceTime(x.start))}–${esc(niceTime(x.end))}${blockPlace(b) ? ' · ' + esc(blockPlace(b)) : ''}${b.kind === 'group' ? ` · ${x.left} of ${b.cap} places left` : ''}</p>
+    <label class="field"><span>What she wants to work on</span><textarea id="slotWant" rows="2" maxlength="${WANT_MAX}" placeholder="Weak foot, crossing, a drill she liked"></textarea></label>
+    <p class="muted">${b.price ? `${esc(fmtMoney(b.price))}, paid to the coach or the club the way you usually do. ` : ''}${b.notice ? `You can cancel here up to ${b.notice} hours before; after that, message the coach.` : 'You can cancel here any time before it starts.'}</p>
+    <button class="btn wide" data-act="slotbook" data-id="${esc(b.id)}" data-v="${esc(x.start)}" data-pid="${esc(kid.p.id)}" style="margin-bottom:8px">Book it</button>
+    <button class="btn quiet wide" data-act="availopen" data-id="${esc(b.id)}">Back</button>`);
+}
+
+/* ---- the form ---- */
+let blockForm = null;
+function blockFormRead() {
+  if (!blockForm) return;
+  for (const [k, sel] of [['title', '#avTitle'], ['date', '#avDate'], ['start', '#avStart'], ['end', '#avEnd'], ['field', '#avField'], ['place', '#avPlace'],
+  ['price', '#avPrice'], ['cap', '#avCap'], ['lo', '#avLo'], ['hi', '#avHi'], ['note', '#avNote'], ['until', '#avUntil'], ['coach', '#avCoach']]) {
+    const el = $(sel);
+    if (el && typeof el.value === 'string') blockForm[k] = el.value;
+  }
+  // the weekday follows the date until she picks days herself
+  if (!blockForm.daysTouched && okDay(blockForm.date)) blockForm.days = [weekdayOf(blockForm.date)];
+}
+function blockFormNew() {
+  const mine = me ? blockAll().filter(b => b.coach === me.uid) : blockAll();
+  const last = mine[mine.length - 1] || {};
+  const d = addDays(todayStr(), 1);
+  return {
+    id: null, kind: last.kind || 'one', title: '', cap: String(last.kind === 'group' ? last.cap : 6), coach: me ? me.uid : '', date: d,
+    start: last.start || '17:00', end: last.end || '19:00', len: last.len || 60,
+    field: last.field || '', place: last.field ? '' : (last.place || ''), price: last.price ? String(last.price) : '',
+    lo: last.ages ? String(last.ages[0]) : '', hi: last.ages ? String(last.ages[1]) : '', notice: last.notice === undefined ? 24 : last.notice,
+    note: '', repeat: true, days: [weekdayOf(d)], until: addDays(d, 7 * 8), scope: 'one'
+  };
+}
+function blockFormEdit(b) {
+  return {
+    id: b.id, kind: b.kind, title: b.title, cap: String(b.cap), coach: b.coach, date: b.date, start: b.start, end: b.end, len: b.len,
+    field: b.field, place: b.place, price: b.price ? String(b.price) : '', lo: b.ages ? String(b.ages[0]) : '', hi: b.ages ? String(b.ages[1]) : '',
+    notice: b.notice, note: b.note, repeat: false, days: [], until: '', scope: 'one', daysTouched: true
+  };
+}
+function sheetBlockForm() {
+  const f = blockForm; if (!f) return;
+  const isNew = !f.id, cur = isNew ? null : blockById(f.id);
+  if (!isNew && !cur) { closeSheet(); return; }
+  const inSeries = cur && cur.series && blockSeries(cur).length > 1;
+  const n = isNew && f.repeat ? seriesDates(f.date, f.until, f.days).length : 1;
+  const chip = (act, v, on, label) => `<button class="chip" type="button" data-act="${act}" data-v="${v}" aria-pressed="${!!on}">${label}</button>`;
+  const opt = (v, l, c) => `<option value="${esc(v)}"${String(c) === String(v) ? ' selected' : ''}>${esc(l)}</option>`;
+  const ageOpts = c => opt('', 'Any', c) + Array.from({ length: 16 }, (_, i) => i + 4).map(a => opt(a, uLabel(a), c)).join('');
+  const fields = fieldList();
+  const slots = hm(f.start) && hm(f.end) ? Math.max(0, Math.floor((minOf(hm(f.end)) - minOf(hm(f.start))) / f.len)) : 0;
+  openSheet(`<h3>${isNew ? 'Times families can book' : 'Edit bookable times'}</h3>
+    <p class="muted" style="margin-top:0">Families book a place themselves. Anything on your teams' calendars, and any session you run, is taken out by itself.</p>
+    <div class="chips" style="margin-bottom:12px">${chip('availkind', 'one', f.kind === 'one', '1-1s')}${chip('availkind', 'group', f.kind === 'group', 'Small group')}</div>
+    ${f.kind === 'group' ? `<div class="grid2">
+      <label class="field"><span>What</span><input type="text" id="avTitle" maxlength="80" value="${esc(f.title)}" placeholder="Finishing group"></label>
+      <label class="field"><span>Places a slot</span><input type="number" id="avCap" min="2" max="60" value="${esc(f.cap)}"></label></div>` : ''}
+    ${canAdmin() ? `<label class="field"><span>Coach</span><select id="avCoach">${sessCoaches().map(([v, l]) => opt(v, l, f.coach)).join('')}</select></label>` : ''}
+    <label class="field"><span>${isNew && f.repeat ? 'First week' : 'Date'}</span><input type="date" id="avDate" value="${esc(f.date)}"></label>
+    <div class="grid2">
+      <label class="field"><span>From</span><input type="time" id="avStart" value="${esc(f.start)}"></label>
+      <label class="field"><span>Until</span><input type="time" id="avEnd" value="${esc(f.end)}"></label>
+    </div>
+    <p class="lbl">Each slot</p>
+    <div class="chips" style="margin-bottom:6px">${SLOT_LENS.map(m => chip('availlen', m, f.len === m, m + ' min')).join('')}</div>
+    <p class="muted" style="margin-top:0">${slots ? `${slots} slot${slots === 1 ? '' : 's'} a ${isNew && f.repeat ? 'week' : 'day'}.` : 'Shorter than one slot.'}</p>
+    <label class="field"><span>Field</span><select id="avField">${opt('', fields.length ? 'Somewhere else' : 'No fields listed yet', f.field)}${fields.map(x => opt(x.id, x.name, f.field)).join('')}</select></label>
+    <label class="field"><span>${fieldById(f.field) ? 'Which part' : 'Where'}</span><input type="text" id="avPlace" maxlength="120" value="${esc(f.place)}" placeholder="${fieldById(f.field) ? 'The goalmouth' : 'Lakeside Park, field 3'}"></label>
+    <label class="field"><span>Price ${f.kind === 'group' ? 'a player' : 'a slot'}, ${esc(moneySign())}</span><input type="text" inputmode="decimal" id="avPrice" value="${esc(f.price)}" placeholder="Free"></label>
+    <div class="grid2">
+      <label class="field"><span>Ages from</span><select id="avLo">${ageOpts(f.lo)}</select></label>
+      <label class="field"><span>to</span><select id="avHi">${ageOpts(f.hi)}</select></label>
+    </div>
+    <p class="lbl">Families can cancel</p>
+    <div class="chips" style="margin-bottom:10px">${NOTICE_HOURS.map(h => chip('availnotice', h, f.notice === h, h ? `${h}h before` : 'Any time')).join('')}</div>
+    <label class="field"><span>Notes</span><textarea id="avNote" rows="2" placeholder="Bring a ball and water">${esc(f.note)}</textarea></label>
+    ${isNew ? `<p class="lbl">Repeats</p>
+      <div class="chips" style="margin-bottom:10px">${chip('availrepeat', '0', !f.repeat, 'Just this day')}${chip('availrepeat', '1', f.repeat, 'Every week')}</div>
+      ${f.repeat ? `<div class="chips" style="margin-bottom:10px">${WEEKDAYS.map((w, i) => chip('availwd', i, f.days.includes(i), w)).join('')}</div>
+        <label class="field"><span>Last week</span><input type="date" id="avUntil" value="${esc(f.until)}"></label>
+        <p class="muted" style="margin-top:-4px">${n} day${n === 1 ? '' : 's'}${n >= SERIES_MAX ? ' (the most at once)' : ''}. Each is its own, so one week can be changed or taken off without touching the rest.</p>` : ''}` : ''}
+    ${inSeries ? `<p class="lbl">Change</p>
+      <div class="chips" style="margin-bottom:10px">${chip('availscopeed', 'one', f.scope !== 'later', 'Just this week')}${chip('availscopeed', 'later', f.scope === 'later', 'This and every later week')}</div>` : ''}
+    <button class="btn wide" data-act="availsave">${isNew ? (n > 1 ? `Offer ${n} days` : 'Offer it') : 'Save'}</button>`);
+}
+/* A block as it is written: what the form said, and the two lists the rules
+   read worked out from it there and then, so a family can book the moment it
+   reaches the club rather than after the next heal. */
+function blockValue(base) {
+  const v = { ...base };
+  const nb = normBlock(v, v.id);
+  v.slots = openSlotsOf(nb);
+  v.seats = seatMap(nb.cap);
+  return v;
+}
+function saveBlockForm() {
+  blockFormRead();
+  const f = blockForm; if (!f) return;
+  if (!okDay(f.date)) { toast('Pick a date'); return; }
+  const start = hm(f.start), end = hm(f.end);
+  if (!start || !end || minOf(end) <= minOf(start)) { toast('Give it a start, and an end after it'); return; }
+  if (minOf(end) - minOf(start) < f.len) { toast(`Shorter than one ${f.len}-minute slot`); return; }
+  const coach = canAdmin() && f.coach ? f.coach : (me ? me.uid : (f.coach || 'device'));
+  if (gated() && !canAdmin() && !(me && coach === me.uid && isCoachAny(me.uid))) { closeSheet(); toast('Coaches offer their own times; an admin anyone’s'); return; }
+  const lo = Number(f.lo), hi = Number(f.hi);
+  const ages = lo && hi ? [Math.min(lo, hi), Math.max(lo, hi)] : lo ? [lo, 19] : hi ? [4, hi] : null;
+  const price = Number(String(f.price || '').replace(/[^0-9.]/g, '')) || 0;
+  const kind = f.kind === 'group' ? 'group' : 'one';
+  const cap = kind === 'one' ? 1 : clamp(Math.round(Number(f.cap)) || 6, 2, 60);
+  const fields = {
+    kind, cap, title: kind === 'group' ? (f.title || '').trim().slice(0, 80) : '',
+    coach, coachName: personName(coach) || (me && coach === me.uid ? whoAmI() : '') || 'Coach', start, end, len: f.len,
+    field: fieldById(f.field) ? f.field : '', place: (f.place || '').trim().slice(0, 120), price, notice: f.notice,
+    note: (f.note || '').trim().slice(0, 500)
+  };
+  if (ages) fields.ages = ages;
+  if (f.id) {
+    const cur = blockById(f.id); if (!cur || !canEditBlock(cur)) { closeSheet(); toast('Only that coach, or an admin, can change those'); return; }
+    const list = f.scope === 'later' && cur.series ? blockSeries(cur).filter(x => x.date >= cur.date && canEditBlock(x)) : [cur];
+    for (const x of list) {
+      const raw = { ...sess.avail[x.id] };
+      delete raw.ages;
+      sessPut('avail/' + x.id, blockValue({ ...raw, ...fields, ...(x.id === f.id ? { date: f.date } : {}), at: nowMs() }));
+    }
+    blockForm = null; sheetBlock(f.id); render();
+    toast(list.length > 1 ? `Saved ${list.length} weeks` : 'Saved'); return;
+  }
+  const dates = f.repeat ? seriesDates(f.date, f.until, f.days.length ? f.days : [weekdayOf(f.date)]) : [f.date];
+  if (!dates.length) { toast('No days between those dates'); return; }
+  const series = dates.length > 1 ? uid() : null;
+  let first = null;
+  for (const date of dates) {
+    const id = uid();
+    sessPut('avail/' + id, blockValue({ id, ...fields, date, ...(series ? { series } : {}), by: me ? me.uid : null, at: nowMs() }));
+    first = first || id;
+  }
+  blockForm = null;
+  const u = sessUi(); ui.view = 'sessions'; u.tab = 'avail';
+  render(); sheetBlock(first);
+  toast(dates.length > 1 ? `Offered ${dates.length} days — families can book now` : 'Offered — families can book now');
+}
+
+/* ---- actions ---- */
+const AVAIL_ACTS = new Set(['availopen', 'availnew', 'availedit', 'availkind', 'availlen', 'availnotice', 'availrepeat', 'availwd', 'availscopeed',
+  'availsave', 'availoff', 'availdel', 'slotkid', 'slotpick', 'slotbook', 'slotcancel']);
+for (const x of AVAIL_ACTS) SESS_ACTS.add(x);
+// places this phone took back itself ('sid/pid'), so its coach is not told about her own tap
+const sessDropped = new Set();
+
+function onAvailAct(a, d) {
+  const u = sessUi();
+  const b = d.id && a !== 'slotcancel' ? blockById(d.id) : null;
+  if (a === 'availopen') { sheetBlock(d.id); return; }
+  if (a === 'availnew') {
+    if (!canOffer()) { closeSheet(); toast('That is for coaches and admins'); render(); return; }
+    blockForm = blockFormNew(); sheetBlockForm(); return;
+  }
+  if (['availedit', 'availoff', 'availdel'].includes(a) && !canEditBlock(b)) {
+    closeSheet(); toast(b ? 'Only that coach, or an admin, can change those' : 'Those times are not on this phone any more'); render(); return;
+  }
+  if (a === 'availedit') { blockForm = blockFormEdit(b); sheetBlockForm(); return; }
+  if (['availkind', 'availlen', 'availnotice', 'availrepeat', 'availwd', 'availscopeed'].includes(a)) {
+    if (!blockForm) return;
+    if (!canOffer()) { closeSheet(); toast('That is for coaches and admins'); render(); return; }
+    blockFormRead();
+    const f = blockForm;
+    if (a === 'availkind') f.kind = d.v === 'group' ? 'group' : 'one';
+    if (a === 'availlen' && SLOT_LENS.includes(Number(d.v))) f.len = Number(d.v);
+    if (a === 'availnotice' && NOTICE_HOURS.includes(Number(d.v))) f.notice = Number(d.v);
+    if (a === 'availrepeat') { f.repeat = d.v === '1'; if (f.repeat && okDay(f.date)) f.days = [weekdayOf(f.date)]; }
+    if (a === 'availwd') { const i = Number(d.v); f.days = f.days.includes(i) ? f.days.filter(x => x !== i) : [...f.days, i]; f.daysTouched = true; }
+    if (a === 'availscopeed') f.scope = d.v === 'later' ? 'later' : 'one';
+    sheetBlockForm(); return;
+  }
+  if (a === 'availsave') {
+    if (!canOffer()) { closeSheet(); toast('That is for coaches and admins'); render(); return; }
+    saveBlockForm(); return;
+  }
+  if (a === 'availoff') {
+    const next = { ...sess.avail[b.id], at: nowMs() };
+    if (b.off) delete next.off; else next.off = true;
+    sessPut('avail/' + b.id, blockValue(next));
+    sheetBlock(b.id); render(); toast(b.off ? 'Open again' : 'Taken off for this week — booked slots stay booked'); return;
+  }
+  if (a === 'availdel') {
+    const list = d.v === 'later' && b.series ? blockSeries(b).filter(x => x.date >= b.date && canEditBlock(x)) : [b];
+    if (!confirm(`Delete ${list.length > 1 ? list.length + ' weeks of these times' : 'these times'}? Slots already booked stay booked.`)) return;
+    for (const x of list) sessPut('avail/' + x.id, null);
+    u.openBlock = null; closeSheet(); render(); toast(list.length > 1 ? `Deleted ${list.length}` : 'Deleted'); return;
+  }
+
+  /* -- a family books a place for her own child -- */
+  if (a === 'slotkid') { if (myPlayers().some(k => k.p.id === d.pid)) u.kid = d.pid; sheetBlock(d.id); return; }
+  if (a === 'slotpick') {
+    if (!b) { closeSheet(); return; }
+    if (!blockKids(b).length) { toast('You can only book for your own child'); return; }
+    sheetSlotBook(b.id, d.v); return;
+  }
+  if (a === 'slotbook') {
+    const kid = b ? blockKids(b).find(k => k.p.id === d.pid) : null;
+    if (!b || !kid) { closeSheet(); toast('You can only book for your own child'); render(); return; }
+    if (fb && !me) { toast('Sign in first'); return; }
+    const x = blockSlots(b).find(y => y.start === d.v);
+    if (x && x.s && (bookOf(x.sid, kid.p.id) || {}).st === 'in') { toast(`${firstName(kid.p)} is already in`); return; }
+    if (!x || !x.free) { toast('That time is not free any more'); sheetBlock(b.id); return; }
+    if (kidBusy(b, x, kid).length) { toast(`${firstName(kid.p)} has something else then`); return; }
+    // first come, first served: a booking that waited in a queue would be a promise nobody can keep
+    if (fb && !online) { toast('Booking a time needs a signal — it is first come, first served'); return; }
+    const seat = freeSeat(b, x.sid);
+    const el = $('#slotWant');
+    const want = String((el && el.value) || '').trim().slice(0, WANT_MAX);
+    const raw = sess.avail[b.id] || {}, who = (me && me.uid) || 'device';
+    const msg = 'Not booked — somebody may have just taken that place. Pick another.';
+    if (!x.s) {
+      const s = {
+        id: x.sid, kind: b.kind, title: b.title, coach: b.coach, coachName: b.coachName, date: b.date, start: x.start, end: x.end,
+        t0: ((raw.slots || {})[slotKey(x.start)] || {}).at || slotAt(b.date, x.start), field: b.field, place: b.place, cap: b.cap, open: false, slot: b.id, pid: kid.p.id, tid: kid.t.id,
+        by: who, made: nowMs(), at: nowMs()
+      };
+      /* The rule compares these with the block's exactly, so each is copied as
+         stored, or left out with it; the start time too, as the coach's phone
+         worked it out, so a phone in another time zone cannot disagree. */
+      for (const k of ['price', 'notice']) if (raw[k] !== undefined && raw[k] !== null) s[k] = raw[k];
+      if (b.ages) s.ages = b.ages;
+      sessPut('sessions/' + x.sid, s, msg);
+    }
+    sessPut(`seats/${x.sid}/${seat}`, { pid: kid.p.id, tid: kid.t.id, by: who, at: nowMs() }, msg);
+    sessPut(`booked/${x.sid}/${kid.p.id}`, bookingVal({ tid: kid.t.id }, 'in', { want, seat }), msg);
+    render(); sheetSess(x.sid);
+    toast(`Booked: ${firstName(kid.p)}, ${dayLabel(b.date)} ${niceTime(x.start)}`); return;
+  }
+  if (a === 'slotcancel') {
+    const s = sessById(d.id);
+    const kid = s ? myPlayers().find(k => k.p.id === d.pid) : null;
+    const bk = kid ? bookOf(s.id, kid.p.id) : null;
+    if (!s || !s.slot || !kid || !bk) { closeSheet(); toast('You can only cancel your own child’s place'); render(); return; }
+    if (sessPast(s) || s.called) return;
+    if (feeOf(s.id, kid.p.id) || (sess.came || {})[s.id]) { toast('It has been paid for or marked — ask the coach'); return; }
+    const notice = Number(s.notice) || 0;
+    if (notice && hoursUntil(s) < notice) { toast(`Less than ${notice} hours to go — message the coach to cancel`); return; }
+    if (!confirm(`Cancel ${firstName(kid.p)}’s place on ${dayLabel(s.date)} at ${niceTime(s.start)}? It goes back to the coach’s free times.`)) return;
+    const msg = 'Not cancelled — the club’s database refused it. Ask the coach.';
+    const who = (me && me.uid) || 'device';
+    sessDropped.add(s.id + '/' + kid.p.id);
+    // in the order the rules need: the booking, then her seat, then the slot if nobody else is in it
+    sessPut(`booked/${s.id}/${kid.p.id}`, null, msg);
+    for (const st of seatsOf(s.id)) if (st.pid === kid.p.id && (!me || st.by === who)) sessPut(`seats/${s.id}/${st.n}`, null, msg);
+    const others = bookingsOf(s.id).some(x => x.pid !== kid.p.id) || seatsOf(s.id).some(x => x.pid !== kid.p.id);
+    if (!others && (!me || s.by === who)) sessPut('sessions/' + s.id, null, msg);
+    u.open = null; closeSheet(); render(); toast('Cancelled — the coach is told'); return;
+  }
+}
+
+/* ---------------- my calendar ---------------- */
+/* A calendar is a person's, not a team's. The team Calendar tab stays what a
+   team's coach plans on and what the share link mirrors; this is everything
+   of hers across the club: the teams she coaches or tracks, every team a child
+   of hers is on, the sessions she runs and her children's, and the times she
+   has offered. It reads the same lists the team calendar does, so an entry
+   exists once and both draw it. */
+/* The teams that are hers: coached or tracked, and her children's. */
+function myRoleTeams() {
+  const out = new Set();
+  if (me) for (const t of teams()) {
+    const ta = teamAccess(t.id);
+    if ((ta.coaches || {})[me.uid] || (ta.trackers || {})[me.uid]) out.add(t.id);
+  }
+  return out;
+}
+function myCalTeams() {
+  const out = new Set([...myRoleTeams(), ...myPlayers().map(k => k.t.id)]);
+  // an admin who works no team of her own, or a club before anyone signs in, sees the club's
+  if (!out.size && (canAdmin() || !gated())) for (const t of myTeams()) out.add(t.id);
+  return [...out];
+}
+function myCalFilters() {
+  const out = [['all', 'Everything']];
+  const kids = myPlayers();
+  const staff = !!me && (myRoleTeams().size > 0 || isCoachAny(me.uid) || blockAll().some(b => b.coach === me.uid));
+  if (kids.length > 1 || (kids.length && staff)) for (const { p } of kids) out.push(['p:' + p.id, esc(firstName(p))]);
+  if (kids.length && staff) out.push(['me', 'My coaching']);
+  return out;
+}
+function myCalItems() {
+  const f = myCalFilters().some(([k]) => k === ui.myCal) ? ui.myCal : 'all';
+  const kids = myPlayers(), kid = f.startsWith('p:') ? kids.find(k => k.p.id === f.slice(2)) : null;
+  const tids = f === 'all' ? myCalTeams() : f === 'me' ? [...myRoleTeams()] : kid ? [kid.t.id] : [];
+  const out = calItems(tids);
+  const mineToo = f === 'all' || f === 'me';
+  for (const s of sessAll()) {
+    const run = !!me && mineToo && s.coach === me.uid;
+    const xs = f === 'me' ? [] : bookingsOf(s.id).filter(x => (x.st === 'in' || x.st === 'asked' || x.st === 'wait')
+      && (kid ? x.pid === kid.p.id : kids.some(k => k.p.id === x.pid)));
+    if (!run && !xs.length) continue;
+    out.push({
+      key: 's:' + s.id, kind: 'session', tid: '', id: s.id, date: s.date, start: s.start, end: s.end, mins: 0,
+      title: run ? sessTitle(s) : `${sessTitle(s)} with ${s.coachName}`, venue: sessPlace(s), called: s.called, run, who: xs,
+      firm: run || xs.some(x => x.st === 'in')
+    });
+  }
+  if (me && mineToo) for (const b of blockAll()) if (b.coach === me.uid) out.push({
+    key: 'a:' + b.id, kind: 'avail', tid: '', id: b.id, date: b.date, start: b.start, end: b.end, mins: 0,
+    title: 'Bookable: ' + blockLabel(b), venue: blockPlace(b), called: b.off ? 'cancelled' : ''
+  });
+  return out.sort(calOrder);
+}
+function myCalRow(it) {
+  if (it.kind === 'avail') { const b = blockById(it.id); return b ? availRow(b, false, false) : ''; }
+  if (it.kind !== 'session') return calRow(it, true);
+  const s = sessById(it.id); if (!s) return '';
+  const ins = bookingsOf(s.id).filter(x => x.st === 'in');
+  const sub = [it.venue, it.run ? (s.kind === 'one' ? (ins.length ? ins.map(whoName).join(', ') : 'nobody booked') : `${ins.length} of ${s.cap} booked`) : '',
+    ...it.who.map(x => `${firstName(x.who ? x.who.p : {})}${x.st === 'in' ? '' : ' (' + BOOK[x.st].toLowerCase() + ')'}`)].filter(Boolean);
+  return `<button class="prow calrow" type="button" data-act="sessopen" data-id="${esc(s.id)}" data-called="${it.called ? 1 : 0}">
+    <span class="caltime">${it.start ? niceTime(it.start) : 'TBC'}</span>
+    <span style="min-width:0"><span class="pname">${esc(it.title)}</span>${sub.length ? `<span class="psub">${esc(sub.join(' · '))}</span>` : ''}</span>
+    ${it.called ? `<span class="tag off">${CALLED[it.called]}</span>` : '<span class="tag session">Training</span>'}</button>`;
+}
+function myCalList(items) {
+  let out = '', last = null;
+  for (const it of items) {
+    if (it.date !== last) { const rel = relDay(it.date); out += `<p class="calhead">${esc(dayLabel(it.date))}${rel ? ` <span>· ${rel}</span>` : ''}</p>`; last = it.date; }
+    out += myCalRow(it);
+  }
+  return out;
+}
+/* One line for the club page's card: the next thing of hers. */
+function myCalLine() {
+  const next = myCalItems().find(x => x.date && !x.called && x.kind !== 'avail' && (x.kind !== 'session' || x.firm) && !calPast(x));
+  if (!next) return 'Your teams, your children and your sessions, in one place';
+  const t = state.teams[next.tid];
+  return `Next: ${next.title}${t && myCalTeams().length > 1 ? ' (' + t.name + ')' : ''} · ${relDay(next.date) || dayLabel(next.date)}${next.start ? ' ' + niceTime(next.start) : ''}`;
+}
+function viewMyCal() {
+  if (needsSignIn()) return lockScreen();
+  const filters = myCalFilters();
+  if (!filters.some(([k]) => k === ui.myCal)) ui.myCal = 'all';
+  const items = myCalItems();
+  const dated = items.filter(x => x.date);
+  const ahead = dated.filter(x => !calPast(x)), past = dated.filter(calPast).reverse();
+  const canBook = guardsAnyone() && blockAll().some(b => b.date >= todayStr() && !b.off && blockKids(b).length && blockSlots(b).some(x => x.free));
+  return `<div class="stack">
+    <h2>My calendar</h2>
+    ${filters.length > 1 ? `<div class="chips">${filters.map(([k, l]) =>
+      `<button class="chip" type="button" data-act="mycalf" data-v="${esc(k)}" aria-pressed="${ui.myCal === k}">${l}</button>`).join('')}</div>` : ''}
+    ${canBook ? `<button class="btn wide" data-act="sesstab" data-k="list">Book a 1-1 with a coach</button>` : ''}
+    ${calMonth(dated, 'mycalday')}
+    <div class="card"><h2 style="margin-bottom:0">Coming up</h2>
+      ${ahead.length ? `<div class="plist">${myCalList(ahead)}</div>`
+      : `<p class="muted" style="margin-bottom:0">Nothing coming up.${myCalTeams().length ? '' : ' Once you coach a team, or a child of yours is on one, its games and practices are here.'}</p>`}</div>
+    ${past.length ? `<button class="btn quiet wide" data-act="calpast">${ui.calPast ? 'Hide' : 'Show'} what has already happened (${past.length})</button>
+      ${ui.calPast ? `<div class="card"><div class="plist">${myCalList(past.slice(0, 80))}</div></div>` : ''}` : ''}
+    <p class="muted">Each team's own calendar is still on its Calendar tab; that is the one the share link mirrors.</p>
+  </div>`;
+}
+function sheetMyCalDay(date) {
+  const items = myCalItems().filter(x => x.date === date);
+  openSheet(`<h3>${esc(dayLabel(date))}</h3>
+    <div class="plist">${items.map(myCalRow).join('') || '<p class="muted">Nothing on.</p>'}</div>`);
+}
+
 function viewSetup() {
   const code = localStorage.getItem(LS_WS) || '';
   const cfgOk = !!fbConfig().apiKey;
@@ -9589,6 +10421,7 @@ function viewSetup() {
       <p class="muted" style="margin-top:0">Firebase config is ${cfgOk ? 'in place' : 'not filled in — see README.md'}.</p>
       <p class="muted"${isOwner() ? '' : ' style="margin-bottom:0"'}>${code ? 'Connected. Clubs are invite only — an admin sends you a link, there is no code to type.' : 'Not connected to a club yet. Open the invite link a club admin sent you to join one.'}</p>
       ${!code && Object.keys(myClubs || {}).length ? `<button class="btn wide" data-act="clubswitch" style="margin-bottom:10px">Your clubs</button>` : ''}
+      ${!code && canNewClub() ? `<button class="btn quiet wide" data-act="newclub" style="margin-bottom:10px">Start a new club</button>` : ''}
       ${isOwner() ? `<button class="btn quiet wide" data-act="setwscode">${code ? 'Change workspace code' : 'Connect to a workspace'}</button>
       <p class="muted">Owner-only stopgap until per-person invites exist — nobody else sees this.</p>
       <div class="row"><button class="btn quiet" data-act="envsheet">Database: ${esc(envName() || 'production')}</button>
@@ -11337,6 +12170,8 @@ function onAct(e) {
   const a = el.dataset.act, d = el.dataset;
   const t = team(), m = match();
   if (!mayAct(a, m, d)) { closeSheet(); toast("Only this team's coaches can change that"); render(); return; }
+  // a drill a coach sent, or one linked from it: built-in for anyone, the rest checked as the link is
+  if (a === 'drillopen') { followDrillLink(d.id, d.k); return; }
   if (PRACTICE_ACTS.has(a) && !canTrain()) { closeSheet(); toast('Practice is for coaches and admins'); render(); return; }
   if (SESS_ACTS.has(a)) { onSessAct(a, d); return; }
 
@@ -11348,6 +12183,14 @@ function onAct(e) {
   }
   if (a === 'drill') { sheetDrill(d.id, undefined, true); return; }
   if (a === 'drillpic') { sheetDrill(d.id, d.k === 'move'); return; }
+  if (a === 'drillsend') { sheetSendDrill(d.id); return; }
+  if (a === 'drillsendshare') {
+    const x = findDrill(d.id); if (!x || (x.shelf && x.shelf !== 'club')) return;
+    // a club drill's name stays off the preview: the link can be forwarded past the coaches
+    const title = x.shelf === 'club' ? "A drill from the club's library" : x.name;
+    navigator.share({ title, text: title, url: drillLinkUrl(x.key || x.id) }).catch(() => { });
+    return;
+  }
   if (a === 'roleguide') { sheetRole(d.id, undefined, true); return; }
   if (a === 'rolepic') { sheetRole(d.id, d.k === 'move'); return; }
   if (a === 'drillfilters') { sheetDrillFilters(); return; }
@@ -11888,6 +12731,14 @@ function onAct(e) {
     return;
   }
   if (a === 'inviteaccept') { redeemInvite(); return; }
+  if (a === 'newclub') { if (!canNewClub()) { toast('Sign in first'); return; } sheetNewClub(); return; }
+  if (a === 'newclubgo') {
+    if (!canNewClub()) { toast('Sign in first'); return; }
+    const nm = ($('#newClubName').value || '').trim().slice(0, 80);
+    if (!nm) { toast('Give the club a name'); return; }
+    if (!online) { toast('Starting a club needs a signal'); return; }
+    createClub(nm); return;
+  }
   if (a === 'inviteretry') { if (invite) { invite.status = 'idle'; invite.err = null; maybeLoadInvite(); } return; }
   if (a === 'invitedismiss') { dropInvite(); render(); return; }
   /* team links. The parent's side acts only on her own request; the coach's
@@ -12457,6 +13308,8 @@ function onAct(e) {
     render(); return;
   }
   if (a === 'calday') { sheetCalDay(d.v); return; }
+  if (a === 'mycalday') { sheetMyCalDay(d.v); return; }
+  if (a === 'mycalf') { ui.myCal = String(d.v || 'all'); render(); return; }
   if (a === 'calitem') { sheetCalItem(d.k, d.tid, d.id); return; }
   if (a === 'calgame') {
     const g = state.matches[d.id]; if (!g) return;
@@ -12819,6 +13672,7 @@ function uiToHash() {
   if (ui.view === 'club') return '#/club';
   if (ui.view === 'admin') return '#/club/settings';
   if (ui.view === 'mine') return '#/my-players';
+  if (ui.view === 'mycal') return '#/my-calendar';
   if (ui.view === 'inbox') return '#/messages';
   if (ui.view === 'thread' && ui.thread) return `#/messages/${ui.thread.tid}/${ui.thread.fam}`;
   if (ui.view === 'setup') return '#/settings';
@@ -12831,11 +13685,22 @@ function hashToUi() {
   if (!p.length) return false;
   if (p[0] === 'club') { ui.view = p[1] === 'settings' ? 'admin' : p[1] === 'people' ? 'people' : 'club'; return true; }
   if (p[0] === 'my-players') { ui.view = 'mine'; return true; }
+  if (p[0] === 'my-calendar') { ui.view = 'mycal'; return true; }
   if (p[0] === 'messages') {
     if (p[1] && p[2] && state.teams[p[1]]) { ui.view = 'thread'; ui.thread = { tid: p[1], fam: p[2] }; return true; }
     ui.view = 'inbox'; return true;
   }
   if (p[0] === 'settings') { ui.view = 'setup'; return true; }
+  /* #/drill/{key} is a drill a coach sent. The screen stays where it was and
+     the drill opens over it, once: the hash goes straight back to the screen's
+     own, so Back doesn't open it again. */
+  if (p[0] === 'drill' && p[1]) {
+    // #/drill/{club tag}/{key}, or #/drill/{key} for a built-in drill, which opens in any club
+    // first, so a switch to the link's own club can put the link back on the address
+    try { history.replaceState(null, '', location.pathname + location.search + uiToHash()); } catch (e) { }
+    if (p[2]) followDrillLink(p.slice(2).join('/'), '', p[1]); else followDrillLink(p[1]);
+    return true;
+  }
   /* #/training/fields is a tab; #/training/{id} is one session, from a calendar
      file or a message, opened once the screen has drawn. */
   if (p[0] === 'training') {
