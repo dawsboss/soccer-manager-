@@ -8,6 +8,36 @@ before this point lives only in the git log.
 
 ---
 
+## Who made a drill, and an AI to draw it — 2026-10-03
+
+The owner asked for three things after the shelves landed: to know who added
+a drill to the club even after they leave, to filter by who made it, and to
+let a coach explain her idea to an AI and have it make the animation.
+
+Credit was half there: a club drill already carried `by` and `byName`,
+copied onto it when it was shared, so the name never depended on her still
+being in the club. Now the card says so ("shared by Lou, who no longer
+coaches here"), an admin tidying it leaves the author the author and adds
+"last tidied by", and the built-in library is credited to Minutes, the
+app's name. Filters → *Made by* narrows to the app, you, or one coach, with
+those who have left marked.
+
+*Have an AI draw it* follows Ask an AI's rule: the app never calls a model.
+The editor builds a prompt with the drawing format, two of the library's own
+drawings as examples, the drill's setup and steps, and her description, with
+every player's name in the club swapped out. She pastes it into her own
+chat and pastes the answer back. Until now a drawing stored with a drill was
+never drawn, because the renderer writes numbers and ids straight into SVG
+and any coach can write a club drill. `DrillDiagram.clean()` is what makes
+it safe to draw one: it rebuilds a drawing from typed values (numbers in
+range, ids and enums from their lists, moves that match the grammar, text
+cut to length) and drops everything else, and `parse()` then has to pass
+it. `test/drills.js` holds `clean()` to leaving all 114 built-in drawings
+exactly as they draw today. When an answer doesn't hold together, the app
+lists what's wrong in plain words with a button to copy them back to the AI.
+It reads an answer whether it's JSON or written the way a JavaScript file
+would be, with or without a code fence around it.
+
 ## The club's drills, and a coach's own — 2026-10-03
 
 The owner asked for coaches to have their own drill libraries and clubs to

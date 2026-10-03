@@ -72,8 +72,15 @@ Built, and on this branch:
     new copy of the sync.
   - `normDrill()` normalises everything read: the vocabularies, ranges,
     https links, and `pic` (a built-in drill whose drawing a copy borrows).
-    **A stored diagram is never drawn.** `cardOf()` is the card without whose
-    it is, which is what a copy takes.
+    **A stored drawing is drawn only through `cleanDrawing()`**
+    (`DrillDiagram.clean()` then `parse()`). `cardOf()` is the card without
+    whose it is, which is what a copy takes.
+  - Credit: a club drill's `by`/`byName` are copied on when shared and never
+    change; a tidy by someone else adds `edBy`/`edName`. Built-in drills are
+    credited to the app (`APP_NAME`). Filters → *Made by* is `madeBy()`.
+  - *Have an AI draw it*: `drawPrompt()`, `drawingFrom()` (reads JSON, or
+    JavaScript-style objects, out of a reply), `drawingProblems()`,
+    `sheetDrawAi()`. The app never calls a model; she copies and pastes.
   - Keys: a built-in id, `club:{id}`, `mine:{id}`, or `plan:{pid}:{i}` for the
     copy inside a plan. `findDrill(key)` resolves any of them.
   - In a plan, a non-built-in drill is copied whole:
@@ -163,10 +170,11 @@ A template is a plan with no calendar entry.
 
 ### 3. Then, as TRAINING.md has it
 
-- **Step 6, pictures**: the diagram editor. It must come with a sanitiser for
-  stored diagrams (coordinates are numbers in range, player keys match
-  `^[ADNBKC]\d{1,2}$`, captions are text), tested with a hostile diagram,
-  before `normDrill()` stops dropping them.
+- **Step 6, the rest of pictures**: drawing by hand, tap by tap, in the
+  same format. The AI route and the guard are built: `DrillDiagram.clean()`
+  rebuilds every stored drawing and `cleanDrawing()` holds it to `parse()`,
+  so a hand editor only has to produce the format; anything it writes goes
+  through the same door.
 - **Step 7, what needs work**: the signals card on Season.
 
 ## The rules: little left to write
@@ -211,7 +219,7 @@ an id that isn't its own).
 ## Housekeeping when it ships
 
 - Bump `BUILD` in `app.js`, the meta tag and every `?v=` in `index.html`
-  together (69 on this branch). `test/version.js` checks them.
+  together (70 on this branch). `test/version.js` checks them.
 - A `CHANGELOG.md` entry, README's feature bullets and rules list, and mark
   the steps built in `TRAINING.md` → *Build order*.
 - Look at every new screen at phone width (390px). This branch did it by

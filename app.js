@@ -2,7 +2,7 @@
    Static app. Data lives in localStorage, and mirrors to Firebase Realtime
    Database when a config + workspace code are present. */
 
-const BUILD = '69';
+const BUILD = '70';
 const BUILT = '2026-10-03';
 /* index.html carries the build it was published with. If this file is newer, the
    browser handed us a cached page — the exact failure that has eaten hours. */
@@ -5905,6 +5905,7 @@ const PLAN_ACTS = new Set(['pracnew', 'pracopen', 'pracback', 'pracpast', 'prace
 /* The club's drills and her own: reaching any of these needs Practice, and
    each one checks the shelf it touches as well. */
 const LIB_ACTS = new Set(['shelf', 'drillmine', 'drilledit', 'drillnew', 'drillshare', 'drilldel', 'drillorig', 'dedchip', 'dedpic',
+  'dedai', 'dedaiback', 'dedaicopy', 'dedaiopen', 'dedaiuse', 'dedaifix',
   'dedlinkadd', 'dedlinkdel', 'dedsave', 'clubdrills', 'mydrills']);
 const PRACTICE_ACTS = new Set(['practab', 'drill', 'drillpic', 'roleguide', 'rolepic', 'drillfilters', 'dfchip', 'dfpick', 'dfclear', 'drillmore', ...PLAN_ACTS, ...LIB_ACTS]);
 
@@ -5930,7 +5931,7 @@ const uLabel = u => (u == null ? '' : u <= 19 ? 'U' + u : 'Adult');
    the screen state. Rebuilt from the blank on every read, so a filter saved by
    an older build that this one no longer knows can't break the list. */
 const PRACTICE_BLANK = () => ({
-  q: '', age: 'team', sort: 'session', sig: '', len: '', setup: '', players: '', comp: '',
+  q: '', age: 'team', sort: 'session', sig: '', len: '', setup: '', players: '', comp: '', by: '',
   skill: '', principle: '', moment: '', physical: '',
   types: [], pos: [], levels: [], intens: [], inv: [], groups: [], flags: [], noKit: []
 });
@@ -5999,7 +6000,28 @@ function drillMatches(d, f, age, L) {
     && (!f.principle || d.principles.includes(f.principle))
     && (!f.moment || d.moments.includes(f.moment))
     && (!f.physical || d.physical.includes(f.physical))
+    && madeBy(d, f.by)
     && (!q.length || q.every(w => drillText(d, L).includes(w)));
+}
+/* Who made a drill: the app itself for the built-in library (it ships as
+   Minutes), you for your own and what you shared, or the coach a club drill
+   names. A club drill keeps its author's name after she leaves, because it
+   was copied onto the drill when she shared it, not looked up. */
+const APP_NAME = 'Minutes';
+function madeBy(d, by) {
+  if (!by) return true;
+  const shelf = d.shelf || 'builtin';
+  if (by === 'app') return shelf === 'builtin';
+  if (by === 'me') return shelf === 'mine' || (shelf === 'club' && !!me && d.by === me.uid);
+  return by.startsWith('u:') && shelf === 'club' && d.by === by.slice(2);
+}
+/* A club drill's author is still credited after she goes; this only says so. */
+const stillCoaching = u => !!u && (isAdmin(u) || !!coachTeamOf(u));
+function drillMakers() {
+  const seen = new Map();
+  for (const d of shelfItems('club')) if (d.by && (!me || d.by !== me.uid) && !seen.has(d.by))
+    seen.set(d.by, (d.byName || 'A coach') + (stillCoaching(d.by) ? '' : ' (left)'));
+  return [['app', APP_NAME + ' (built-in)'], ...(me ? [['me', 'You']] : []), ...[...seen].sort((a, b) => a[1].localeCompare(b[1])).map(([u, n]) => ['u:' + u, n])];
 }
 function practiceDrills(f = practiceUi().f, t = team()) {
   const L = drillLib(); if (!L) return [];
@@ -6020,7 +6042,7 @@ function drillPool(L, shelf = practiceUi().shelf) {
    itself rather than behind the Filters button. */
 function practiceActive(f) {
   let n = 0;
-  for (const k of ['sig', 'len', 'setup', 'players', 'comp', 'skill', 'principle', 'moment', 'physical']) if (f[k]) n++;
+  for (const k of ['sig', 'len', 'setup', 'players', 'comp', 'by', 'skill', 'principle', 'moment', 'physical']) if (f[k]) n++;
   for (const k of ['types', 'pos', 'levels', 'intens', 'inv', 'groups', 'flags', 'noKit']) n += f[k].length;
   return n;
 }
@@ -6094,7 +6116,7 @@ function drillRow(d) {
       <span class="drilltype">${esc(L.TYPES[d.type] || d.type)}</span>
       <span class="drillsum">${esc(d.summary)}</span>
       <span class="drillfacts"><b>${drillAges(d)}</b> · ${d.minutes[0]}–${d.minutes[1]} min · ${drillPlayers(d)} players${d.gk ? ' · ' + d.gk + ' GK' : ''} · ${esc(L.LEVELS[d.level])}${d.shelf === 'club' && d.byName ? ' · shared by ' + esc(d.byName) : ''}</span></span>
-    <span class="drillthumb${d.diagram ? '' : ' nopic'}" aria-hidden="true">${d.diagram ? drillThumb(d.pic || d.id, d.diagram, d.name) : (d.media && d.media.length ? '▶' : '')}</span></button>`;
+    <span class="drillthumb${d.diagram ? '' : ' nopic'}" aria-hidden="true">${d.diagram ? drillThumb(d.pic || drillCacheKey(d), d.diagram, d.name) : (d.media && d.media.length ? '▶' : '')}</span></button>`;
 }
 
 const DIAGRAM_KEY = [['A', 'Team'], ['D', 'Opponents'], ['N', 'Neutral'], ['B', 'Fourth team'], ['K', 'Keeper'], ['C', 'Coach or server']];
@@ -6136,7 +6158,8 @@ function sheetDrill(id, moving = !reducedMotion(), top = false) {
       if (canCurate(d)) acts.push(['drilldel', 'Remove from the club']);
     }
   }
-  const whose = shelf === 'club' ? `Shared with the club${d.byName ? ' by ' + esc(d.byName) : ''}.` : shelf === 'mine' ? 'Yours. Nobody else sees it unless you share it.' : '';
+  const whose = shelf === 'club' ? `Shared with the club by ${esc(d.byName || 'a coach')}${d.by && !stillCoaching(d.by) ? ', who no longer coaches here' : ''}.${d.edName && d.edBy !== d.by ? ` Last tidied by ${esc(d.edName)}.` : ''}`
+    : shelf === 'mine' ? 'Yours. Nobody else sees it unless you share it.' : inPlan ? '' : `From the ${APP_NAME} library.`;
   const media = (d.media || []).map(m => /\.(gif|png|jpe?g|webp)(\?|$)/i.test(m.url)
     ? `<figure class="drillmedia"><img src="${esc(m.url)}" alt="${esc(m.title || d.name)}" loading="lazy" referrerpolicy="no-referrer">${m.title ? `<figcaption>${esc(m.title)}</figcaption>` : ''}</figure>`
     : `<a class="card drilllinkcard" href="${esc(m.url)}" target="_blank" rel="noopener noreferrer"><b>${esc(m.title || 'Watch it')}</b><span class="muted">${esc(m.url.replace(/^https:\/\//, '').slice(0, 60))}</span></a>`).join('');
@@ -6239,6 +6262,7 @@ function sheetDrillFilters() {
       ${lab('Players coming', sel('players', 'Any number', Array.from({ length: 23 }, (_, i) => [i + 2, String(i + 2)])))}
       ${lab('Competitive', sel('comp', 'Either', [['yes', 'Has a score or winner'], ['no', 'No scoring']]))}
     </div>
+    ${lab('Made by', sel('by', 'Anyone', drillMakers()))}
     <p class="lbl">Difficulty</p>${chips('levels', L.LEVELS)}
     <p class="lbl">Intensity</p>${chips('intens', L.INTENSITY)}
     <p class="lbl">How busy</p>${chips('inv', L.INVOLVEMENT)}
@@ -6496,11 +6520,12 @@ function trainNote(tid) {
    leaves last month's plan readable.
 
    Pictures: a drill copied from a built-in one keeps its drawing by naming
-   it (`pic`), and the drawing comes from drills.js on every read. A diagram
-   stored in the database is never drawn: the renderer writes numbers into
-   SVG and trusts its input, and anyone who can write a drill could put
-   markup there. The diagram editor (TRAINING.md step 6) will need its own
-   sanitiser before that changes. Everything else is links, https only. */
+   it (`pic`), and the drawing comes from drills.js on every read. A drawing
+   of her own (one an AI drew from her description, for now) is stored with
+   the drill, and is drawn only after DrillDiagram.clean() has rebuilt it from
+   typed values and parse() has passed it: the renderer writes numbers and
+   ids straight into SVG, and anyone who can write a club drill could put
+   markup there. Everything else is links, https only. */
 const SHELVES = { builtin: 'Built-in', club: 'Club', mine: 'Mine' };
 const LS_MINE = 'sm.mine.v1';
 const MINE_BLANK = () => ({ drills: {}, dirty: {} });
@@ -6552,6 +6577,14 @@ const SHELF = {
 const ownKey = (o, k) => !!o && Object.prototype.hasOwnProperty.call(o, k);
 const arrOf = v => (Array.isArray(v) ? v : v && typeof v === 'object' ? Object.values(v) : []);
 const drillKey = (shelf, id) => (!shelf || shelf === 'builtin' ? id : shelf + ':' + id);
+/* A drawing that didn't come from drills.js: rebuilt, then held to the same
+   parser the built-in ones are, and to a size, or not drawn at all. */
+function cleanDrawing(dg) {
+  const D = drillDiagram();
+  if (!D || !D.clean || !dg) return null;
+  const c = D.clean(dg);
+  return c && !D.parse(c).errors.length && JSON.stringify(c).length <= 12000 ? c : null;
+}
 const linkOk = u => typeof u === 'string' && u.length <= 500 && /^https:\/\/[^\s"'<>]+$/.test(u);
 
 /* Whatever comes back from the database, or out of a plan, goes through this.
@@ -6595,7 +6628,8 @@ function normDrill(raw, shelf, id) {
     setup: str(raw.setup, 1000), how: lines(raw.how), points: lines(raw.points), questions: lines(raw.questions), mistakes: lines(raw.mistakes),
     why: str(raw.why, 600), easier: lines(raw.easier), harder: lines(raw.harder), safety: str(raw.safety, 400),
     signals: keys(raw.signals, L.SIGNALS), goesWith: [], tags: [],
-    diagram: base ? base.diagram : null, pic: base ? pic : '', media, from: fr,
+    diagram: base ? base.diagram : cleanDrawing(raw.diagram), pic: base ? pic : '', media, from: fr,
+    edBy: str(raw.edBy, 60), edName: str(raw.edName, 60),
     by: str(raw.by, 60), byName: str(raw.byName, 60), team: str(raw.team, 60), at: Number(raw.at) || 0,
     shelf, key: drillKey(shelf, did)
   };
@@ -6603,11 +6637,13 @@ function normDrill(raw, shelf, id) {
 
 /* The card itself, without whose it is or where it sits: what a copy takes,
    to another shelf or into a plan. A built-in drill's drawing goes by name. */
-const CARD_DROP = new Set(['shelf', 'key', 'diagram', 'by', 'byName', 'team', 'at', 'from', 'spaceNote', 'goesWith', 'tags']);
+const CARD_DROP = new Set(['shelf', 'key', 'by', 'byName', 'edBy', 'edName', 'team', 'at', 'from', 'spaceNote', 'goesWith', 'tags']);
 function cardOf(d) {
   const c = {};
   for (const [k, v] of Object.entries(d)) if (!CARD_DROP.has(k) && v != null && v !== '') c[k] = v;
   if (!d.shelf || d.shelf === 'builtin') c.pic = d.id;
+  // a borrowed drawing goes by name; only her own travels with the card
+  if (c.pic) delete c.diagram;
   return JSON.parse(JSON.stringify(c));
 }
 
@@ -6784,6 +6820,7 @@ function sheetDrillEditor(top = false) {
   const nums = (lo, hi) => Array.from({ length: hi - lo + 1 }, (_, i) => [lo + i, String(lo + i)]);
   const kitOpts = k => [['', 'None'], ...(k === 'balls' ? [['each', 'One each']] : []), ...[1, 2, 3, 4, 6, 8, 10, 12, 16, 20, 24].map(x => [x, String(x)])];
   const pic = c.pic && L.DRILLS.find(x => x.id === c.pic);
+  const own = !pic && c.diagram ? cleanDrawing(c.diagram) : null;
   openSheet(`<h3>${dr.id ? 'Edit the drill' : 'Write a drill'}</h3>
     <p class="muted" style="margin-top:0">${dr.shelf === 'club' ? 'The club\'s copy: every coach and admin in the club reads it.' : 'Yours. Nobody else sees it unless you share it with the club or add it to a practice.'}</p>
     ${lab('Name', `<input type="text" id="deName" value="${esc(c.name)}" maxlength="80" placeholder="Box rondo">`)}
@@ -6821,7 +6858,10 @@ function sheetDrillEditor(top = false) {
     <p class="lbl">Bring</p><div class="grid2">${Object.entries(L.KIT).map(([k, l]) => lab(esc(l), sel('deKit_' + k, (c.kit || {})[k] || '', kitOpts(k)))).join('')}</div>
     <p class="lbl">Picture</p>
     ${pic ? `<div class="chips"><button class="chip" type="button" data-act="dedpic" data-k="keep" aria-pressed="${dr.keepPic}">Keep the drawing from ${esc(pic.name)}</button><button class="chip" type="button" data-act="dedpic" data-k="drop" aria-pressed="${!dr.keepPic}">No drawing</button></div>`
-      : `<p class="muted" style="margin-top:0">Drawing a drill in the app is still to come. Until then a link to a clip does the job.</p>`}
+      : own ? `<div class="drillpic">${drillDiagram().svg(own, { animate: !reducedMotion(), title: c.name })}</div>
+        <button class="btn quiet sm" data-act="dedpic" data-k="clear">Remove this drawing</button>` : ''}
+    <button class="btn quiet wide" data-act="dedai" style="margin-top:8px">${pic || own ? 'Describe it, and have an AI redraw it' : 'Describe it, and have an AI draw it'}</button>
+    <p class="muted" style="margin-top:6px">Or link to a clip:</p>
     ${c.media.map((m, i) => `<div class="spread"><a class="drilllink" href="${esc(m.url)}" target="_blank" rel="noopener noreferrer">${esc(m.title || m.url)}</a><button class="btn quiet sm" data-act="dedlinkdel" data-i="${i}">Remove</button></div>`).join('')}
     ${c.media.length < 6 ? `<div class="grid2">${lab('Link to a video or GIF', `<input type="url" id="dlUrl" placeholder="https://youtu.be/…">`)}${lab('What it shows', `<input type="text" id="dlTitle" maxlength="80" placeholder="The set-up">`)}</div>
       <button class="btn quiet wide" data-act="dedlinkadd">Add the link</button>` : ''}
@@ -6829,6 +6869,101 @@ function sheetDrillEditor(top = false) {
     <button class="btn wide" data-act="dedsave">Save</button>
     <button class="btn quiet wide" data-act="closesheet" style="margin-top:8px">Cancel</button>`, top);
 }
+/* ---- having an AI draw it ---- */
+/* The coach says what happens in her own words, and an AI writes the drawing
+   in drill-diagram.js's format. The app never calls a model itself (CLAUDE.md):
+   it builds a prompt she copies into her own ChatGPT, Claude or Gemini, and
+   she pastes the answer back. What comes back is somebody else's text, so it
+   goes through DrillDiagram.clean() and parse() like any stored drawing, and
+   whatever parse() objects to is handed back to her as a list she can paste
+   to the AI to fix. Names typed into the idea are swapped out before copying,
+   club-wide, because a drill is no place for a child's name. */
+const DRAW_EXAMPLES = ['rondo-4v1', 'turn-and-shoot'];
+function drawPrompt(c, idea) {
+  const L = drillLib();
+  const ex = DRAW_EXAMPLES.map(id => L.DRILLS.find(d => d.id === id)).filter(Boolean)
+    .map(d => `"${d.name}":\n${JSON.stringify(d.diagram)}`).join('\n\n');
+  const how = arrOf(c.how).map((x, i) => `${i + 1}. ${x}`).join('\n');
+  return `I coach youth soccer and use an app that draws and animates drills from a small JSON format. Please draw this drill in that format.
+
+The drill: ${c.name || '(no name yet)'}
+${c.setup ? 'Setup: ' + c.setup + '\n' : ''}${how ? 'How it runs:\n' + how + '\n' : ''}
+What the picture should show:
+${idea || '(see above)'}
+
+THE FORMAT. Distances are in yards. x runs across, y runs down, and 0,0 is the top-left corner of the area.
+- "area": [width, length], each 4 to 150.
+- "mark": "grid" (a coned square), "box" (a penalty area on the top edge, area at least 44 wide), "half" (that plus halfway at the bottom), "pitch" (both ends, both sides at least 44) or "none".
+- "cones", "balls", "poles": lists of [x, y].
+- "goals": [x, y, "big" or "mini", facing], where x, y is the middle of the goal line and facing is the way the mouth opens: "n", "s", "e" or "w". A goal on the top edge facing down the area is "s".
+- "zones": [x, y, width, height, "label"] for shaded areas. "lines": [x1, y1, x2, y2], dashed. "labels": [x, y, "text"].
+- "players": {"A1": [x, y], ...}. A is our team (blue), D opponents (red), N neutral (yellow), B a fourth team, K a keeper, C a coach or server. A letter and up to two digits.
+- "ball": who starts with a ball: "A1", or ["A1", "A2"], or a spot [[x, y]].
+- "frames": the steps, in order. Each step is a list of moves that happen at the same time, plus one caption written "# Caption" (under 48 characters).
+
+MOVES:
+- "A1>A2" pass to a player (to wherever she is at the end of the step). "A1>12,4" pass into space. "A1>G" shoot at the nearest goal ("G2" the second goal). Add "(" or ")" at the end to bend it left or right.
+- "A1~12,4" dribble there with the ball. "A1-12,4" run there without it. "D1-A1" run at a player. "D1*" win the nearest ball.
+
+RULES:
+- Everyone stays inside the area. Only the player who has the ball passes, shoots or dribbles; a pass makes the receiver the one with the ball.
+- Nobody moves twice in one step. 2 to 6 steps is plenty. No player names: letters and numbers only.
+- Reply with the JSON object only, and nothing else.
+
+TWO EXAMPLES from the app's own library:
+
+${ex}`;
+}
+/* An AI's answer is a JSON object, give or take a code fence and a sentence
+   either side, and sometimes written the way a JavaScript file would be. */
+function drawingFrom(text) {
+  let s = String(text || '').replace(/```(?:json|js|javascript)?/gi, '');
+  const a = s.indexOf('{'), b = s.lastIndexOf('}');
+  if (a < 0 || b <= a) return null;
+  s = s.slice(a, b + 1);
+  try { return JSON.parse(s); } catch (e) { }
+  try {
+    return JSON.parse(s.replace(/'([^'\\]*)'/g, '"$1"').replace(/([{,]\s*)([A-Za-z_]\w*)\s*:/g, '$1"$2":').replace(/,\s*([}\]])/g, '$1'));
+  } catch (e) { return null; }
+}
+/* What's wrong with a pasted answer, in words she can paste back to the AI. */
+function drawingProblems(raw) {
+  const D = drillDiagram();
+  if (!raw) return ["That isn't a drawing: paste the AI's answer, the part from { to }."];
+  const c = D.clean(raw);
+  if (!c) return ['It needs an "area": [width, length], each 4 to 150 yards.'];
+  const out = D.parse(c).errors.slice(0, 8);
+  const moves = fr => (Array.isArray(fr) ? fr : []).flat().filter(m => typeof m === 'string' && !m.trim().startsWith('#')).length;
+  const lost = moves(raw.frames) - moves(c.frames);
+  if (lost > 0) out.push(`${lost} move${lost === 1 ? " isn't" : "s aren't"} written in the format (like "A1>A2" or "A1~12,4") and ${lost === 1 ? 'was' : 'were'} left out.`);
+  const pl = raw.players && typeof raw.players === 'object' ? Object.keys(raw.players).length : 0;
+  if (pl > Object.keys(c.players).length) out.push('Some players have ids that are not a letter (A, D, N, B, K or C) and up to two digits, or no [x, y].');
+  if (!out.length && JSON.stringify(c).length > 12000) out.push('It is too big: keep it under about 30 players and 16 steps.');
+  return out;
+}
+function sheetDrawAi() {
+  const dr = drillDraft; if (!dr) return;
+  const ai = dr.ai = dr.ai || { idea: '', reply: '', problems: [] };
+  const prompt = aiScrub(drawPrompt(dr.d, ai.idea), 'club').text;
+  openSheet(`<h3>Have an AI draw it</h3>
+    <p class="muted" style="margin-top:0">Say what happens, in your own words. You copy a prompt into your own ChatGPT, Claude or Gemini, and paste its answer back here; the app doesn't send anything anywhere itself.</p>
+    <label class="field"><span>What happens, step by step</span><textarea id="daIdea" rows="4" placeholder="Four on the outside of a 10 yard square, one defender in the middle. They pass round him; when he wins it, the passer goes in.">${esc(ai.idea)}</textarea></label>
+    <p class="muted" style="margin-top:-6px">The drill's setup and steps go in too. Any player's name is swapped out before it's copied.</p>
+    <textarea id="daPrompt" rows="3" readonly style="font-size:12px" aria-label="The prompt">${esc(prompt)}</textarea>
+    <button class="btn wide" data-act="dedaicopy">Copy the prompt</button>
+    <div class="row" style="gap:6px;margin-top:8px">${Object.entries(AI_SITES).map(([k, [label]]) =>
+      `<button class="btn quiet sm" style="flex:1" data-act="dedaiopen" data-k="${k}">${label}</button>`).join('')}</div>
+    <label class="field" style="margin-top:12px"><span>Paste the AI's answer</span><textarea id="daReply" rows="5" style="font-size:12px" placeholder='{"area": [20, 20], ...}'>${esc(ai.reply)}</textarea></label>
+    ${ai.problems.length ? `<div class="card planwarn"><p><b>Not quite. The drawing has ${ai.problems.length === 1 ? 'a problem' : 'some problems'}:</b></p>${ai.problems.map(x => `<p>${esc(x)}</p>`).join('')}
+      <button class="btn quiet sm" data-act="dedaifix" style="margin-top:6px">Copy these to send back to the AI</button></div>` : ''}
+    <button class="btn wide" data-act="dedaiuse">Use this drawing</button>
+    <button class="btn quiet wide" data-act="dedaiback" style="margin-top:8px">Back to the drill</button>`, true);
+}
+function copyQuiet(text, done) {
+  try { navigator.clipboard.writeText(text).then(() => toast(done), () => toast('Could not copy — select it by hand')); }
+  catch (e) { toast('Could not copy — select it by hand'); }
+}
+
 /* What's wrong with the draft, said in one line, or nothing. */
 function draftProblem(n) {
   if (!n) return 'Give it a name';
@@ -8878,7 +9013,34 @@ function onAct(e) {
       const i = c[k].indexOf(v); if (i >= 0) c[k].splice(i, 1); else c[k].push(v);
       sheetDrillEditor(); return;
     }
-    if (a === 'dedpic') { dr2.keepPic = d.k === 'keep'; sheetDrillEditor(); return; }
+    if (a === 'dedpic') {
+      if (d.k === 'clear') delete c.diagram; else dr2.keepPic = d.k === 'keep';
+      sheetDrillEditor(); return;
+    }
+    if (a === 'dedai') { sheetDrawAi(); return; }
+    if (a === 'dedaiback') { dr2.ai = null; sheetDrillEditor(true); return; }
+    if (['dedaicopy', 'dedaiopen', 'dedaiuse', 'dedaifix'].includes(a)) {
+      const ai = dr2.ai = dr2.ai || { idea: '', reply: '', problems: [] };
+      const v = id => { const n = $('#' + id); return n && n.value != null ? String(n.value) : ''; };
+      ai.idea = v('daIdea').slice(0, 2000); ai.reply = v('daReply').slice(0, 30000);
+      if (a === 'dedaicopy' || a === 'dedaiopen') {
+        const r = aiScrub(drawPrompt(c, ai.idea), 'club');
+        const site = a === 'dedaiopen' ? AI_SITES[d.k] : null;
+        copyQuiet(r.text, r.n ? `Prompt copied — ${r.n} name${r.n === 1 ? '' : 's'} taken out` : 'Prompt copied — paste it into the chat');
+        // opened inside the tap itself, or a phone treats it as a pop-up and blocks it
+        if (site && typeof window.open === 'function') window.open(site[2] && r.text.length < 6000 ? site[2](r.text) : site[1], '_blank', 'noopener');
+        sheetDrawAi(); return;
+      }
+      if (a === 'dedaifix') {
+        copyQuiet(`That drawing has ${ai.problems.length === 1 ? 'a problem' : 'some problems'}:\n${ai.problems.map(x => '- ' + x).join('\n')}\n\nPlease send the corrected JSON object only.`, 'Copied — paste it back into the chat');
+        return;
+      }
+      const raw = drawingFrom(ai.reply);
+      ai.problems = drawingProblems(raw);
+      if (ai.problems.length) { sheetDrawAi(); return; }
+      c.diagram = drillDiagram().clean(raw); delete c.pic; dr2.keepPic = false; dr2.ai = null;
+      sheetDrillEditor(true); toast('Drawn. Check it moves the way you meant'); return;
+    }
     if (a === 'dedlinkdel') { c.media.splice(Number(d.i), 1); sheetDrillEditor(); return; }
     if (a === 'dedlinkadd') {
       const url = String(($('#dlUrl') || {}).value || '').trim(), title = String(($('#dlTitle') || {}).value || '').trim().slice(0, 80);
@@ -8899,7 +9061,10 @@ function onAct(e) {
       const out = { ...cardOf(n), id: dr2.id || uid(), v: old ? (old.v || 1) + 1 : 1 };
       if (!dr2.keepPic) delete out.pic;
       if (old && old.from) out.from = old.from;
-      if (dr2.shelf === 'club') Object.assign(out, { by: old.by, byName: old.byName, team: old.team });
+      /* The author stays the author whoever tidies it, so the club can still
+         see who wrote it after she has gone; a tidy by someone else is said. */
+      if (dr2.shelf === 'club') Object.assign(out, { by: old.by, byName: old.byName, team: old.team },
+        me.uid !== old.by ? { edBy: me.uid, edName: whoAmI() || '' } : {});
       const saved = putDrill(dr2.shelf, out);
       drillDraft = null;
       sheetDrill(drillKey(dr2.shelf, saved.id), undefined, true); render(); toast('Saved'); return;

@@ -182,10 +182,22 @@ job when it suggests where someone plays.
 
 *As built (step 4):* a drill copied from a built-in one keeps that drill's
 drawing by naming it (`pic`), and the drawing is taken from `drills.js` on
-every read. A diagram stored in the database is never drawn, because the
-renderer writes coordinates and labels straight into SVG and trusts its
-input, and any coach can write a club drill. The diagram editor below needs
-a sanitiser for stored diagrams before that changes.
+every read.
+
+*As built (step 6, first half):* **an AI draws it from her description.**
+The owner's idea (2026-10-03): "allow the user to tell an AI how to make a
+drill so they can explain their idea and it makes the animation for them."
+The app still never calls a model. The editor builds a prompt (the format,
+two built-in drawings as examples, the drill's setup and steps, and her
+words with every player's name in the club swapped out), she pastes it into
+her own chat, and pastes the answer back. A stored drawing is drawn only
+after `DrillDiagram.clean()` has rebuilt it from typed values (numbers in
+range, ids and enums from their lists, moves that match the grammar, text
+cut to length) and `parse()` has passed it, because the renderer writes
+numbers and ids straight into SVG and any coach can write a club drill.
+`test/drills.js` holds `clean()` to leaving every built-in drawing exactly as
+it was. When parse() objects, the app lists the problems in words she can
+paste back to the AI. Tapping out a drawing by hand is still to come.
 
 No uploads (settled 2026-10-02). Two ways, and between them they cover what a
 coach needs:
@@ -556,6 +568,9 @@ too. The bridge doesn't change shape.
    (`access/teams/{team}/coaches`) rather than `teamIndex`, so sharing needs
    no bridge in a club whose lookup tables aren't built yet.*
 6. **Pictures for a coach's own drills.** The diagram editor, then links.
+   *Links built with step 4. Drawings built as "have an AI draw it", with
+   `DrillDiagram.clean()` guarding every stored drawing; drawing by hand,
+   tap by tap, is not built.*
 7. **What needs work.** The signals card on Season.
 8. **The AI steps.** The library in the prompt, then paste-back.
 9. **Import.** A `"drills"` list in Admin's bulk import file, for a club that

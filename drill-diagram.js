@@ -548,7 +548,68 @@
     return out.join('');
   }
 
-  const API = { parse, svg, COLOURS };
+  /* ---------------- a diagram from somewhere else ---------------- */
+
+  /* The built-in diagrams are reviewed code. A coach's diagram is not: it
+     comes back from the database, or from whatever an AI chat replied, and
+     svg() writes its numbers and ids straight into markup. So nothing that
+     didn't come from drills.js reaches parse() or svg() until it has been
+     rebuilt here, field by field, from typed values: numbers that are finite
+     and in range, ids and enums from their fixed lists, moves that match the
+     grammar above exactly, and text cut to length (svg() escapes text, but
+     not ids or numbers). Anything else is dropped rather than repaired. Sizes
+     are capped too, because one coach's drill is drawn on every other coach's
+     phone. Returns null when there is no area to draw on. */
+  const MARKS = ['grid', 'box', 'half', 'pitch', 'none'];
+  const CLEAN_ID = /^[ADNBKC]\d{0,2}$/;
+  const C_NUM = '-?\\d{1,3}(?:\\.\\d{1,2})?';
+  const C_PT = C_NUM + ',' + C_NUM;
+  const C_WHO = '[ADNBKC]\\d{0,2}';
+  const CLEAN_MOVE = new RegExp(`^${C_WHO}(?:>(?:${C_WHO}|G\\d?|W\\d?|${C_PT})[()]?|[~-](?:${C_PT}|${C_WHO})|\\*(?:${C_WHO})?)$`);
+  function clean(dg) {
+    if (!dg || typeof dg !== 'object' || Array.isArray(dg)) return null;
+    const num = v => (typeof v === 'number' && Number.isFinite(v) && Math.abs(v) <= 300 ? v : null);
+    const nums = (a, n) => (Array.isArray(a) && a.length >= n && a.slice(0, n).every(x => num(x) !== null) ? a.slice(0, n) : null);
+    const txt = (s, n) => (typeof s === 'string' ? s.replace(/[\u0000-\u001f\u007f]/g, ' ').trim().slice(0, n) : '');
+    const list = (a, max, fn) => (Array.isArray(a) ? a.slice(0, max).map(fn).filter(Boolean) : []);
+    const area = nums(dg.area, 2);
+    if (!area || area[0] < 4 || area[1] < 4 || area[0] > 150 || area[1] > 150) return null;
+    const out = { area };
+    if (MARKS.includes(dg.mark)) out.mark = dg.mark;
+    const put = (k, v) => { if (v.length) out[k] = v; };
+    for (const k of ['cones', 'balls', 'poles']) put(k, list(dg[k], 60, p => nums(p, 2)));
+    put('hurdles', list(dg.hurdles, 30, p => { const q = nums(p, 2); return q && (p[2] === 'v' || p[2] === 'h' ? [...q, p[2]] : q); }));
+    for (const k of ['walls', 'lines']) put(k, list(dg[k], 20, p => nums(p, 4)));
+    put('goals', list(dg.goals, 6, g => { const q = nums(g, 2); return q && ['big', 'mini'].includes(g[2]) && ['n', 's', 'e', 'w'].includes(g[3]) ? [...q, g[2], g[3]] : null; }));
+    put('zones', list(dg.zones, 12, z => { const q = nums(z, 4); if (!q) return null; const l = txt(z[4], 20); return l ? [...q, l] : q; }));
+    put('labels', list(dg.labels, 12, l => { const q = nums(l, 2), s = txt(l && l[2], 24); return q && s ? [...q, s] : null; }));
+    const players = {};
+    if (dg.players && typeof dg.players === 'object' && !Array.isArray(dg.players))
+      for (const [id, p] of Object.entries(dg.players).slice(0, 30)) { const q = nums(p, 2); if (CLEAN_ID.test(id) && q) players[id] = q; }
+    out.players = players;
+    const startBall = b => (typeof b === 'string' ? (players[b] ? b : null) : nums(b, 2));
+    if (typeof dg.ball === 'string') { if (players[dg.ball]) out.ball = dg.ball; }
+    else if (Array.isArray(dg.ball)) {
+      const one = nums(dg.ball, 2);
+      if (one && dg.ball.length === 2) out.ball = one;
+      else { const bs = list(dg.ball, 30, startBall); if (bs.length) out.ball = bs; }
+    }
+    const frames = list(dg.frames, 16, fr => {
+      if (!Array.isArray(fr)) return null;
+      const f2 = [];
+      for (const m of fr.slice(0, 30)) {
+        if (typeof m !== 'string') continue;
+        if (m.trim().startsWith('#')) { const c = txt(m.trim().slice(1), 48); if (c) f2.push('# ' + c); continue; }
+        const s = m.replace(/\s+/g, '');
+        if (CLEAN_MOVE.test(s)) f2.push(s);
+      }
+      return f2.length ? f2 : null;
+    });
+    if (frames.length) out.frames = frames;
+    return out;
+  }
+
+  const API = { parse, svg, clean, COLOURS };
   if (typeof module !== 'undefined' && module.exports) module.exports = API;
   else root.DrillDiagram = API;
 })(typeof window !== 'undefined' ? window : globalThis);

@@ -406,6 +406,108 @@ function writeOne(D, extra = {}) {
     check('nor reaches it with a tap', c.fbk.readPaths().some(p => p.startsWith('userLibrary/') && p !== LIB('jaz')), false);
   }
 
+  console.log('\n--- who made it, even after she has gone ---');
+  {
+    const shelf = {
+      d1: { id: 'd1', name: 'Kim\'s rondo', type: 'opposed', by: 'kim', byName: 'Kim', team: 't2', at: 1, v: 1, summary: 's', setup: 's', how: ['h'], points: ['p'] },
+      d2: { id: 'd2', name: 'Jaz\'s finisher', type: 'opposed', by: 'jaz', byName: 'Jaz', team: 't1', at: 1, v: 1, summary: 's', setup: 's', how: ['h'], points: ['p'] },
+      d3: { id: 'd3', name: 'Lou\'s warm-up', type: 'warmup', by: 'lou', byName: 'Lou', team: 't1', at: 1, v: 1, summary: 's', setup: 's', how: ['h'], points: ['p'] }
+    };
+    const { D, fbk } = await device('jaz');
+    toDrills(D);
+    fbk.deliver(CLUBD, shelf); await D.flush();
+    D.click({ act: 'drill', id: L.DRILLS[0].id });
+    check('a built-in drill is credited to the app', /From the Minutes library/.test(sheet(D)), true);
+    D.click({ act: 'drill', id: 'club:d1' });
+    check('a club drill to the coach who shared it', /Shared with the club by Kim\./.test(sheet(D)), true);
+    D.click({ act: 'drill', id: 'club:d3' });
+    check('still, after she stops coaching here', /by Lou, who no longer coaches here/.test(sheet(D)), true);
+    D.ui.practice.shelf = 'club'; D.render();
+    check('and on the list', /shared by Lou/.test(D.rendered()), true);
+
+    D.click({ act: 'drillfilters' });
+    check('Filters has a Made by', /data-k="by"/.test(sheet(D)), true);
+    check('offering the app', /value="app"[^>]*>Minutes \(built-in\)/.test(sheet(D)), true);
+    check('you', /value="me"[^>]*>You/.test(sheet(D)), true);
+    check('each coach who shared one, by name', /value="u:kim"[^>]*>Kim</.test(sheet(D)), true);
+    check('saying who has left', /value="u:lou"[^>]*>Lou \(left\)/.test(sheet(D)), true);
+    check('and not herself twice', /value="u:jaz"/.test(sheet(D)), false);
+    const names = by => { D.ui.practice.shelf = 'all'; D.ui.practice.f = { by }; return D.practiceDrills(D.ui.practice.f).map(d => d.name); };
+    deepEq('by a coach: hers only', names('u:lou'), ['Lou\'s warm-up']);
+    check('by you: what she shared and her own', names('me').join(), 'Jaz\'s finisher');
+    check('by the app: the built-in library only', names('app').length === L.DRILLS.filter(d => d.ages[0] <= 11 && 11 <= d.ages[1]).length && !names('app').includes('Kim\'s rondo'), true);
+    check('anyone: all of them', names('').length > names('app').length, true);
+    D.ui.practice.f = {};
+
+    const a = await device('boss');
+    toDrills(a.D, 'club');
+    a.fbk.deliver(CLUBD, shelf); await a.D.flush();
+    a.D.click({ act: 'drilledit', id: 'club:d3' }); loadForm(a.D);
+    type(a.D, { deName: 'Lou\'s warm-up, tidied' }); a.D.click({ act: 'dedsave' });
+    const t = a.D.findDrill('club:d3');
+    check('an admin tidying it leaves the author the author', t.by + ' ' + t.byName, 'lou Lou');
+    check('and says who tidied it', /Last tidied by boss/.test(sheet(a.D)), true);
+    await a.D.flush();
+    const w = written(a.fbk, CLUBD + '/d3');
+    check('as written', !!w && w.by === 'lou' && w.edBy === 'boss', true);
+  }
+
+  console.log('\n--- describe it, and an AI draws it ---');
+  {
+    const copied = [];
+    const { D } = await device('jaz', { club: (() => { const c = club(); c.teams.t2.players = { q1: { id: 'q1', name: 'Rosa Diaz', number: '4' } }; return c; })() });
+    // Node has a navigator of its own that a plain assignment can't replace
+    Object.defineProperty(globalThis, 'navigator', { configurable: true, writable: true, value: { clipboard: { writeText: t => { copied.push(t); return Promise.resolve(); } } } });
+    toDrills(D);
+    D.click({ act: 'drillnew' }); loadForm(D);
+    type(D, { deName: 'Box rondo', deSummary: 'Four keep it from one', deSetup: 'A 10 yd square', deHow: 'Four outside\nOne inside', dePoints: 'Open your body' });
+    check('the editor offers an AI drawing', /data-act="dedai"/.test(sheet(D)), true);
+    D.click({ act: 'dedai' });
+    check('which says the app sends nothing itself', /doesn't send anything anywhere itself/.test(sheet(D)), true);
+    type(D, { daIdea: 'Ella and Rosa pass round the square, Rosa goes in the middle when she loses it', daReply: '' });
+    D.click({ act: 'dedaicopy' }); await D.flush();
+    const p = copied[copied.length - 1] || '';
+    check('the prompt is copied', p.length > 500, true);
+    check('with the drill and the idea in it', /Box rondo/.test(p) && /pass round the square/.test(p), true);
+    check('with the format and an example from the library', /"area": \[width, length\]/.test(p) && /"frames":/.test(p), true);
+    check('asking for the JSON only', /Reply with the JSON object only/.test(p), true);
+    check('with no child\'s name in it, from any team', /Ella|Rosa/.test(p), false);
+    check('and the coach is told', /names? taken out/.test(D.lastToast()), true);
+    check('what is copied is what she is shown', sheet(D).includes('the middle when she loses it') && !/Rosa/.test(String(D.dom.node('#sheet').innerHTML).split('id="daPrompt"')[1].split('</textarea>')[0]), true);
+
+    type(D, { daReply: 'Sure! Here is a lovely drill for you.' });
+    D.click({ act: 'dedaiuse' });
+    check('an answer with no drawing in it is refused', /isn't a drawing/.test(D.drillDraft.ai.problems.join()) && /planwarn/.test(sheet(D)), true);
+    check('and nothing is drawn', D.drillDraft.d.diagram, undefined);
+
+    const bad = { area: [10, 10], players: { A1: [0, 0], A2: [10, 0], D1: [5, 5] }, ball: 'A1', frames: [['A2>A1', '# Round the square'], ['A1 passes to D1']] };
+    type(D, { daReply: JSON.stringify(bad) });
+    D.click({ act: 'dedaiuse' });
+    check('a drawing that does not hold together says why', /A2 passes without a ball/.test(sheet(D)), true);
+    check('including moves it could not read', D.drillDraft.ai.problems.some(x => /1 move isn't written in the format/.test(x)), true);
+    D.click({ act: 'dedaifix' }); await D.flush();
+    check('and the problems copy back to the AI', /A2 passes without a ball/.test(copied[copied.length - 1]) && /corrected JSON object only/.test(copied[copied.length - 1]), true);
+    check('still nothing drawn', D.drillDraft.d.diagram, undefined);
+
+    const good = "Here you go:\n```js\n{ area: [10, 10], mark: 'grid', cones: [[0,0],[10,0],[0,10],[10,10]], players: { A1: [0, 5], A2: [5, 0], A3: [10, 5], A4: [5, 10], D1: [5, 5] }, ball: 'A1',\n frames: [['A1>A2', '# Pass round the <b>square</b>'], ['A2>A3', 'D1-7,3', '# Defender chases'],] }\n```\nEnjoy!";
+    type(D, { daReply: good });
+    D.click({ act: 'dedaiuse' });
+    const dg = D.drillDraft.d.diagram;
+    check('a good answer, even written as JavaScript in a code fence, is drawn', !!dg && Object.keys(dg.players).length, 5);
+    check('back in the editor, with the drawing shown', /Edit the drill|Write a drill/.test(sheet(D)) && /<svg/.test(sheet(D)), true);
+    check('its text escaped', /<b>square/.test(sheet(D)), false);
+    check('and a way to remove it', /data-k="clear"/.test(sheet(D)), true);
+    loadForm(D);
+    D.click({ act: 'dedsave' });
+    const saved = D.shelfItems('mine').find(x => x.name === 'Box rondo');
+    check('saved with the drawing', !!(saved && saved.diagram && saved.diagram.frames.length === 2), true);
+    check('its card draws it, moving', /<svg/.test(sheet(D)) && /animateTransform/.test(sheet(D)), true);
+    toDrills(D, 'mine'); D.ui.practice.f = {}; D.render();
+    check('and so does its row', /drillthumb" aria-hidden="true"><svg/.test(D.rendered()), true);
+    D.click({ act: 'drillshare', id: 'mine:' + saved.id });
+    check('sharing it takes the drawing to the club', !!D.shelfItems('club')[0].diagram, true);
+  }
+
   await H.flush(20);
   console.log('\n--- a hostile drill cannot break the next coach\'s screen ---');
   {
@@ -432,7 +534,7 @@ function writeOne(D, extra = {}) {
     deepEq('only the app\'s own positions', h.positions, ['Mid']);
     deepEq('only kit the library knows', Object.keys(h.kit).sort(), ['balls']);
     check('only https links that are links', h.media.map(m => m.url).join(), 'https://ok.test/a.gif');
-    check('a stored diagram is never drawn', h.diagram, null);
+    check('a stored diagram that does not hold together is not drawn', h.diagram, null);
   }
 
   H.summary('the club\'s drills and a coach\'s own');
