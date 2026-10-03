@@ -2,7 +2,7 @@
    Static app. Data lives in localStorage, and mirrors to Firebase Realtime
    Database when a config + workspace code are present. */
 
-const BUILD = '69';
+const BUILD = '71';
 const BUILT = '2026-10-02';
 /* index.html carries the build it was published with. If this file is newer, the
    browser handed us a cached page — the exact failure that has eaten hours. */
@@ -5500,6 +5500,7 @@ function sheetCalItem(kind, tid, id) {
     ${m ? `<button class="btn wide" data-act="calgame" data-tid="${esc(tid)}" data-id="${esc(id)}" style="margin-bottom:8px">Open the game</button>` : ''}
     ${m && edit ? `<button class="btn quiet wide" data-act="caleditgame" data-tid="${esc(tid)}" data-id="${esc(id)}" style="margin-bottom:8px">Edit this game’s details</button>
       <button class="btn quiet wide" data-act="copytext" data-v="${esc(opponentMessage(t, m))}">Copy a message for the other team</button>` : ''}
+    ${e && e.kind === 'practice' && canPlan(tid) ? `<button class="btn wide" data-act="pracfromcal" data-tid="${esc(tid)}" data-id="${esc(id)}" style="margin-bottom:8px">${practiceById(tid, id) ? 'Open the plan' : 'Plan this practice'}</button>` : ''}
     ${e && edit ? `<button class="btn quiet wide" data-act="caledit" data-tid="${esc(tid)}" data-id="${esc(id)}">Edit</button>` : ''}`);
 }
 
@@ -5617,12 +5618,19 @@ function saveCalEvent() {
   const dates = f.repeat ? seriesDates(f.date, f.until, f.days.length ? f.days : [weekdayOf(f.date)]) : [f.date];
   if (!dates.length) { toast('No days between those dates'); return; }
   const series = dates.length > 1 ? uid() : null;
+  let first = null;
   for (const date of dates) {
     const id = uid();
-    quiet(`teams/${f.tid}/events/${id}`, {
-      id, ...fields, date, ...(series ? { series } : {}),
-      createdAt: nowMs(), ...(me ? { by: me.uid } : {})
-    });
+    const e = { id, ...fields, date, ...(series ? { series } : {}), createdAt: nowMs(), ...(me ? { by: me.uid } : {}) };
+    quiet(`teams/${f.tid}/events/${id}`, e);
+    first = first || e;
+  }
+  /* Added from the Practice tab: the coach came to plan it, so its plan is
+     made and opened. The other weeks of a series wait on the Plans list. */
+  if (f.plan && kind === 'practice' && canPlan(f.tid)) {
+    planFromEntry(f.tid, first);
+    const p = practiceUi();
+    ui.view = 'practice'; p.tab = 'plans'; p.open = first.id; p.pick = null; p.run = null;
   }
   calForm = null;
   calDone((dates.length > 1 ? `Added ${dates.length} ${kind === 'practice' ? 'practices' : 'events'}` : 'Added') + why);
@@ -5969,7 +5977,7 @@ const drillDiagram = () => (typeof window !== 'undefined' && window.DrillDiagram
 const canTrain = () => !gated() || isOwner() || (!!me && teams().some(t => isCoach(t.id, me.uid)));
 /* The plan's own actions also need the team: a coach browsing another age
    group can read its drills but never touch its plans. */
-const PLAN_ACTS = new Set(['pracnew', 'pracopen', 'pracback', 'pracpast', 'pracedit', 'pracsave', 'pracpick', 'pracpickdone', 'pracadd',
+const PLAN_ACTS = new Set(['pracnew', 'pracfromcal', 'pracopen', 'pracback', 'pracpast', 'pracedit', 'pracsave', 'pracpick', 'pracpickdone', 'pracadd',
   'pracsuggest', 'pracmin', 'pracmove', 'pracdel', 'pracnote', 'pracnotesave', 'pracreview', 'pracrate', 'pracreviewsave', 'pracagain',
   'pracrm', 'pracrun', 'rungo', 'runpause', 'runreset', 'runnext', 'runprev', 'runstop', 'runpic']);
 const PRACTICE_ACTS = new Set(['practab', 'drill', 'drillpic', 'roleguide', 'rolepic', 'drillfilters', 'dfchip', 'dfpick', 'dfclear', 'drillmore', ...PLAN_ACTS]);
@@ -6601,13 +6609,36 @@ function practicePlansView(L) {
   const p = practiceUi();
   if (p.open) { const pr = practiceById(t.id, p.open); if (pr) return planView(L, t, pr); p.open = null; }
   const all = teamPractices(t.id), today = todayIso();
-  const next = all.filter(x => x.date >= today), past = all.filter(x => x.date < today).reverse();
+  const past = all.filter(x => x.date < today).reverse();
+  /* A practice is added once, on the calendar, whichever tab the coach is on,
+     so the ones put there with nothing planned yet are listed here too, ready
+     to plan, rather than a second list of practices the calendar never sees. */
+  const unplanned = calItems([t.id]).filter(x => x.kind === 'practice' && x.date >= today && !x.called && !practiceById(t.id, x.id))
+    .map(x => ({ cal: x, date: x.date, start: x.start }));
+  const next = [...all.filter(x => x.date >= today), ...unplanned].sort((a, b) => (a.date + (a.start || '')).localeCompare(b.date + (b.start || '')));
   return `${trainNote(t.id)}
-    <div class="spread"><h2>Practices</h2><button class="btn sm" data-act="pracnew">Plan a practice</button></div>
-    ${next.length ? `<div class="plist">${next.map(x => pracRow(L, x, today)).join('')}</div>`
-      : `<div class="empty"><strong>Nothing planned yet</strong>Plan one, and the drills, the timings and the kit list are on your phone at the field, signal or not.</div>`}
+    <div class="spread"><h2>Practices</h2><button class="btn sm" data-act="pracnew" data-tid="${esc(t.id)}">Add</button></div>
+    ${next.length ? `<div class="plist">${next.map(x => x.cal ? calPracRow(x.cal) : pracRow(L, x, today)).join('')}</div>`
+      : `<div class="empty"><strong>Nothing planned yet</strong>Add one, and the drills, the timings and the kit list are on your phone at the field, signal or not.</div>`}
     ${past.length ? `<p class="lbl" style="margin:6px 0 0">Earlier</p><div class="plist">${past.slice(0, p.past ? 60 : 5).map(x => pracRow(L, x, today)).join('')}</div>
       ${past.length > 5 && !p.past ? `<button class="btn quiet wide" data-act="pracpast">Show all ${past.length}</button>` : ''}` : ''}`;
+}
+
+function calPracRow(it) {
+  const sub = [it.venue, 'no plan yet'].filter(Boolean).join(' · ');
+  return `<button class="prow" type="button" data-act="pracfromcal" data-id="${esc(it.id)}" style="grid-template-columns:1fr auto">
+    <span><span class="pname">${esc(pracDay(it.date))}${it.start ? ' · ' + esc(it.start) + (it.end ? '–' + esc(it.end) : '') : ''}</span><span class="psub">${esc(sub)}</span></span><span class="tag wait">Plan it</span></button>`;
+}
+/* A plan for a calendar practice is keyed by the entry's id and starts from
+   its day, time and place, so the practice and its plan are one thing. */
+function planFromEntry(tid, e) {
+  const prev = teamPractices(tid).slice(-1)[0] || {};
+  const s = hm(e.start), en = hm(e.end);
+  const len = s && en && minOf(en) > minOf(s) ? minOf(en) - minOf(s) : prev.minutes || 60;
+  return putPractice({
+    id: e.id, eid: e.id, teamId: tid, date: e.date, start: s, minutes: clamp(len, 10, 240), place: e.venue || '',
+    focus: { signals: [] }, blocks: [], status: 'plan', made: nowMs(), by: me ? me.uid : null, byName: whoAmI() || null
+  });
 }
 
 function pracRow(L, pr, today) {
@@ -8546,6 +8577,8 @@ function onAct(e) {
 
   /* ---- practice plans ---- */
   if (PLAN_ACTS.has(a)) {
+    // from the calendar, which can show several teams at once: the button names its team
+    if (a === 'pracfromcal' && d.tid && canPlan(d.tid)) ui.teamId = d.tid;
     const tp = team();
     if (!tp || !canPlan(tp.id)) { closeSheet(); toast("Only this team's coaches plan its practices"); render(); return; }
     const p = practiceUi(), L = drillLib();
@@ -8553,7 +8586,14 @@ function onAct(e) {
     const i = Number(d.i);
     const by = () => ({ by: me ? me.uid : null, byName: whoAmI() || null });
     const edit = fn => { if (!pr) return; const c = clone(pr); fn(c); putPractice(c); render(); };
-    if (a === 'pracnew') { sheetPractice(null); return; }
+    // the same Add, and the same sheet, as the calendar's: one way to put a practice on
+    if (a === 'pracnew') { calForm = { ...calFormNew(tp.id), plan: true }; sheetCalEvent(); return; }
+    if (a === 'pracfromcal') {
+      const e = ((tp.events || {})[d.id]);
+      if (!e || e.kind !== 'practice') { toast('That practice is not on the calendar any more'); render(); return; }
+      if (!practiceById(tp.id, e.id)) planFromEntry(tp.id, e);
+      ui.view = 'practice'; p.tab = 'plans'; p.open = e.id; p.pick = null; p.run = null; closeSheet(); render(); toTop(); return;
+    }
     if (a === 'pracopen') {
       if (!pr) { toast('That practice is not on this phone yet'); return; }
       ui.view = 'practice'; p.tab = 'plans'; p.open = pr.id; p.pick = null; p.run = null; closeSheet(); render(); toTop(); return;

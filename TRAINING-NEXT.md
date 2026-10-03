@@ -96,7 +96,15 @@ by the calendar entry's id and take when and where from the entry. Then:
 - the `schedule` node and its rule go;
 - "drills a player has done" becomes a join with the attendance register.
 
-**It was put to the owner on 2026-10-03 and not yet answered. Ask before
+**Partly answered (2026-10-03):** the owner asked for the Practice tab's
+Add and the Calendar's Add to look and be the same, so they are now one
+button and one sheet. A practice added from either goes on the calendar,
+and a plan made for it is keyed by the entry's id (`eid`) and starts from
+its day, time and place. Still to do for the full answer: take when and
+where from the entry on read rather than a copy, retire `schedule` and its
+rule, and move plans made the old way onto entries.
+
+**The rest was put to the owner on 2026-10-03 and not yet answered. Ask before
 building templates**, because the answer decides what a template is:
 
 - If plans hang off the calendar, a template is a plan without a calendar
