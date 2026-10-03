@@ -204,6 +204,12 @@ What each part is doing:
 - **`access/coachIndex/$uid`** names one team the account coaches. It is the third flat lookup table, after `index` and `teamIndex`, and answers "is this a coach of *any* team?" for the training bridge below. Like the others it is derived: an admin's device writes everyone's, and a coach's own device may write her own entry, but only naming a team she really coaches. Unlike `teamIndex`, she may write it into a missing table, because there is no fallback for her write to close on anyone else.
 - **`training/$code/practices/$tid`** is a team's practice plans: readable and writable by that team's coaches (`teamIndex` says `coach`) and the club's admins, one plan per write. Parents and trackers never read them. There is no `.read` on `training/$code` itself, because a read granted there could not be taken back lower down. While `teamIndex` is missing, the fallback is any coach in `coachIndex`, never the whole club, so this bridge **fails closed**: practices have no older behaviour to preserve, and failing open would show parents the plans.
 - **`training/$code/schedule/$tid`** is when and where each practice is, without the plan. The whole club reads it, so a parent sees the next practice's time and place. Only the people who can write the plan can write it.
+- **`training/$code/sessions/$sid`** is a training session (a 1-1 or a small group, belonging to no team). The whole club reads them. A coach (in `coachIndex`) makes one in her own name and changes or deletes only those that name her; she can't hand one to someone else. An admin makes, moves and deletes any. With no `coachIndex` yet, only admins can: the bridge fails closed, as practices' does.
+- **`training/$code/booked/$sid/$pid`** is one player's place in a session. The club reads them, as it does `rsvp`. The session's coach and the admins write anything. A family writes only for a child whose `guardians` holds her uid, in her own name, without changing the team the booking names, and only `asked` (while the session is open, and not after the coach has answered) or `out` (withdrawing, any time). **A family can never give herself a place**: a rule cannot count spots, so the coach keeps the count and only she or an admin says `in`.
+- **`training/$code/came/$sid`** is a session's register: the session's coach or an admin writes it, the club reads it.
+- **`training/$code/fees/$sid/$pid`** is what was paid for one place. Money, so narrowed by the rules themselves: admins read them all, the session's coach reads and writes her own sessions', and a family reads her own child's. Nobody else reads one.
+- **`training/$code/pay/$uid`** is a coach's pay rate. Admins read and set them; each coach reads her own.
+- **`training/$code/splans/$sid`** is a session's drills: its coach and the admins only, like a practice plan.
 - **`training/$code/drills/$id`** is the club's shelf of drills. Admins and anyone in `coachIndex` read it; trackers and parents never do, and with no `coachIndex` only admins do (it **fails closed**, like practices). A coach writes a drill stamped `by` herself for a `team` whose coach list (`access/teams/{team}/coaches`) names her, and edits or removes it only while that is still true; admins edit or remove any. The check reads the team's own coach list rather than `teamIndex`, so sharing works in a club that hasn't built its lookup tables yet, with no bridge. A drill needs a name of 1–80 characters, and every link in `media` must start with `https://`. **`training/$code/templates/$id`** follows the same rules, ready for templates.
 - **`userLibrary/$uid`** is one person's own drills and templates, whichever club she is in. She reads and writes it, one drill at a time, under `drills` or `templates` only. The app owner (`appOwners`) may read it, for support, and never write it. No club admin has any clause here: a coach in two clubs would have two sets of admins, and the library is hers.
 - **`clubInvites/$code`** is the admin's list, readable only by admins. It lives outside the workspace on purpose: everyone indexed can read the whole workspace, and a list of unspent coach invites in a parent's hands is a parent who can make herself a coach.
@@ -360,6 +366,22 @@ After any change to `ics.js`, run `node worker/make.js` to copy it into the Work
 
 Nothing about the calendar needed a rule change: entries live under `teams/{tid}/events/{eid}`, below the rule that already lets a team's coaches and the club's admins change the team, and nobody else. `node test/rules.js` pins that.
 
+## Training sessions
+
+1-1s and small groups that belong to no team: a coach offers a slot, books players from any team or leaves it open for families to ask, brings the drills (or plans around what the family said she wants to work on), takes the register, and marks who has paid. **Club → Training sessions.** The design, and why it is shaped the way it is, is [`SESSIONS.md`](SESSIONS.md).
+
+- **Offering one.** *New session*: 1-1 or small group, when, which field, how many spots, an age range, a price, and whether families can ask. *Every week* makes one session per week, each its own, like weekly practices. Before saving, *Check for clashes* says if it is outside the field's permit, the field is full then, the coach is due somewhere else, or a booked player has a team practice or game at that time.
+- **Getting players in.** The coach adds players from any team (*Add players*, a team at a time; past the number of spots they go on the waiting list), or a family asks from her own phone, with what her daughter wants to work on. Asks are listed first, with *Book*, *Waitlist* and *Not this time*. A family can withdraw at any time, and never gives herself a place.
+- **What a family sees.** Her own children's sessions and how each stands, the open ones that suit their ages with how many spots are left, and what she owes. Never another child's name. Her children's confirmed sessions are on her Calendar and under *My players*, and in the file *Add what is coming up* makes.
+- **Who came.** From the day of a session, its page has *Take the register*. It counts on the player's record as *Extra sessions 3 of 4*, beside her practices and games, on the Season tab and under *My players*. Only once taken, only for something that happened.
+- **Fees.** A place owes the session's price once it is booked and the session is not called off; a withdrawal owes nothing. *Fees* lists what is not paid, by player, with *All paid* and *Remind the family* (email in Bcc, a copy, or their family conversation where you coach the team). Mark it paid by cash, card, bank transfer or other, or waive it. There are no card payments: this is the club's record of who has paid. A session with a payment on it can be called off but not deleted.
+- **Hours.** *Hours* is each coach's month: sessions run, hours, players, and, with a rate set by an admin (per hour or per session), what that comes to. *Copy as a table* for whoever does payroll. A coach sees only her own. Team practices aren't counted, because the app knows a team's coaches but not which of them ran it.
+- **Fields.** Admins list the club's fields (**Club settings → Fields and permits**, or the *Fields* tab): address, how many pitches, surface, lights, notes, and each permit's days, hours, dates and number. A field's page shows the next two weeks of everything on it, sessions and team practices and games, with whatever is outside the permit or double-booked flagged. A team entry is at a field when its venue contains the field's name ("Lakeside Park, field 2" is at "Lakeside Park"). Venues typed on the calendar that match no field yet are offered as one-tap fields. Fields live under the club settings (`access/org/venues`), so they need no new rule.
+- **Telling families.** *Tell the families* writes the message (when, where, what changed) and offers it in the app (into the family conversation, on teams where you are staff), by email in Bcc, or as a copy. Calling a session off opens it straight away. On screen, a family is told when her child's place is confirmed, waitlisted, turned down or taken off, and when her session is moved or called off; a coach is told when a family asks or withdraws. Like messages, this needs the page open: email is what reaches a closed phone.
+- **Never on the share link.** Sessions are not on the season page, the game pages or the calendar feed. A 1-1 is a child, a time and a place.
+
+Sessions need the `training` block's `sessions`, `booked`, `came`, `fees`, `pay` and `splans` rules published (**The database rules**). Until then they stay on the phone they were made on, the screen says *Some of this is on this phone only*, and a family's ask is refused and taken back off the screen with a message.
+
 ## How long share links last
 
 **Forever, until you change them.** There is no expiry. A link keeps working as long as its share id exists.
@@ -424,6 +446,22 @@ matches/{matchId}     { id, teamId, opponent, date, periodCount, periodMinutes, 
                         planDone:  { s{start}: { t, at, by, byName, made[], prev, pos, skipped } } }
 ```
 
+Training sessions live outside the workspace, beside practice plans (`SESSIONS.md` says why):
+
+```
+training/{code}/sessions/{sid}      { id, kind: 'one' | 'group', title, focus, coach, coachName, date, start, end,
+                                      field, place, cap, ages: [lo, hi], price, open, notes, series, called, by, at }
+training/{code}/booked/{sid}/{pid}  { tid, st: 'asked' | 'in' | 'wait' | 'no' | 'out', by, at, want }
+training/{code}/came/{sid}          { playerId: true | false }
+training/{code}/fees/{sid}/{pid}    { paid, how: 'cash' | 'card' | 'transfer' | 'waived' | 'other', at, by, byName }
+training/{code}/pay/{uid}           { rate, per: 'hour' | 'session' }
+training/{code}/splans/{sid}        { blocks: [ { drill: { shelf, id, v }, name, minutes, note } ], by, at }
+workspaces/{code}/access/org/venues/{fieldId}
+                                    { id, name, address, pitches, surface, lights, notes,
+                                      permits: { id: { id, days: [0..6], start, end, from, until, ref, note } } }
+workspaces/{code}/access/org/money  the currency sign, '$' by default
+```
+
 Stints are append-only events rather than running totals, which is what makes the Veo step realistic later: a timestamped sub log lines up directly with a recording's timeline, and positions over time are already the skeleton of a birds-eye reconstruction.
 
 ## Shapes are copied, never linked
@@ -470,7 +508,7 @@ Setup → *Download a copy* writes the whole store to JSON. *Load from a file* a
 
 ## Bulk import
 
-Admin → *Import teams and games* takes a season at once — teams, rosters, fixtures and past results — as one JSON file, chosen or pasted. *Check it* shows what it will do and every problem, line by line, before anything is written; nothing is written while an error is left.
+Admin → *Import teams, games, fields and sessions* takes a season at once — teams, rosters, fixtures, past results, the club's fields with their permits, and training sessions — as one JSON file, chosen or pasted. *Check it* shows what it will do and every problem, line by line, before anything is written; nothing is written while an error is left.
 
 ```json
 {
@@ -502,3 +540,31 @@ Admin → *Import teams and games* takes a season at once — teams, rosters, fi
 - **It merges, it never replaces.** A team is matched by name, a player by name within the team, a game by team, date and opponent. A match gets only the fields the file gives; nothing is deleted. Running the same file twice changes nothing.
 - **A past result is a score, not minutes.** It becomes goals at 0:00 and a finished game, so the season record adds up; nobody's minutes are invented. A game that already has goals recorded keeps them.
 - The file holds children's names, so treat it like the roster. Names never reach the parent pages.
+
+**Fields and training sessions** go in the same file, beside `teams` or on their own:
+
+```json
+{
+  "fields": [{
+    "name": "Lakeside Park", "address": "1 Lake Rd", "pitches": 2, "surface": "Grass", "lights": true,
+    "permits": [
+      { "days": ["Mon", "Wed"], "start": "16:00", "end": "20:00", "from": "2026-09-01", "until": "2026-11-30", "number": "City parks #4471" },
+      { "days": "weekends", "note": "All day" }
+    ]
+  }],
+  "sessions": [
+    { "type": "1-1", "title": "Finishing", "coach": "Jaz Patel", "date": "2026-10-05", "start": "5pm", "end": "6pm",
+      "field": "Lakeside Park", "price": 25, "team": "Lakeside Thunder G12", "players": ["Bea Smith"] },
+    { "type": "group", "title": "Keeper group", "coach": "jaz@example.com", "date": "2026-10-07", "start": "16:30", "end": "17:30",
+      "field": "Lakeside Park", "where": "the goalmouth", "spots": 4, "ages": "U10-U13", "price": 15, "open": true,
+      "weekly": { "days": ["Wed"], "until": "2026-11-25" }, "focus": "Handling and diving",
+      "players": [{ "name": "Ada Lovelace", "team": "Lakeside Thunder G12" }, { "number": 10, "team": "Lakeside Thunder G12" }] }
+  ]
+}
+```
+
+- **A field** needs a `name`; everything else is optional: `address`, `pitches`, `surface`, `lights`, `notes`, and `permits`. A permit needs its `days` (`["Mon", "Wed"]`, `"Mon, Wed"`, `"weekdays"`, `"weekends"`, `"every day"`); `start` and `end` are its hours (`16:00` or `4pm`; leave both out for the whole day), `from` and `until` its dates, `number` the permit number, and `note` anything else. A field is matched by name and updated in place, and **a permit is only ever added**: one already listed is not added twice, and nothing is removed.
+- **A session** needs a `date` and a `start` and `end`. `coach` is the name or email of a coach or admin here (someone who has signed in at least once); left out, the session is whoever imports it. `type` is `"1-1"` or `"group"`, `spots` how many places a group has, `ages` like `"U10-U12"`, `price` a number (`"$25"` and `"free"` work too), `field` the name of a field here or in the same file (anything else is kept as the place, and the check says so), `where` the part of it, `focus` and `notes`. `weekly` with `days` and `until` makes one session a week, each its own, like *Every week* in the app.
+- **`players` books them in.** Each is a name, a shirt number (with the session's `team`), or `{ "name" | "number", "team" }`. A name found on two teams needs its team; a player the same file adds can be booked. Past the number of spots, the rest go on the waiting list, and the check says who. A session with players named starts closed to families' asks unless it says `"open": true`; one with nobody named starts open.
+- **Sessions merge too.** One is matched by date, start and coach, so running the file again changes nothing, and a changed price or title updates the session it matches. A booking already here is left as it is, whatever the coach has made of it since, and the check says so. A session at a time outside its field's permit is imported, with a warning.
+- Fields go into the club settings with the rest of the import. Sessions go to the club's training sessions, and reach the club once its rules include them (**Training sessions**); until then they stay on the admin's phone, like one made by hand.

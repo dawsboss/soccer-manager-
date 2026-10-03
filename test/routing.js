@@ -33,7 +33,8 @@ const cases = [
   [{ view: 'club' }, '#/club'],
   [{ view: 'admin' }, '#/club/settings'],
   [{ view: 'mine' }, '#/my-players'],
-  [{ view: 'setup' }, '#/settings']
+  [{ view: 'setup' }, '#/settings'],
+  [{ view: 'sessions' }, '#/training']
 ];
 
 console.log('--- the screen turns into a readable path ---');
@@ -69,6 +70,17 @@ console.log('\n--- a link to something this device does not have is refused ---'
   check('an empty hash', A.hashToUi(), false);
   global.location.hash = '#/nonsense/here';
   check('a path that means nothing', A.hashToUi(), false);
+}
+
+console.log('\n--- training sessions: a tab, or one session ---');
+{
+  reset(); A.ui.view = 'nowhere'; A.ui.sess = null;
+  global.location.hash = '#/training/fields';
+  check('#/training/fields opens the Fields tab', A.hashToUi() && A.ui.view + ' ' + A.ui.sess.tab, 'sessions fields');
+  check('and goes back out as itself', A.uiToHash(), '#/training/fields');
+  reset(); A.ui.sess = null;
+  global.location.hash = '#/training/s123';
+  check('#/training/{id} opens the list, to open that session', A.hashToUi() && A.ui.sess.tab + ' ' + A.ui.sess.go, 'list s123');
 }
 
 console.log('\n--- a link survives the round trip it came from ---');
