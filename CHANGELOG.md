@@ -8,6 +8,129 @@ before this point lives only in the git log.
 
 ---
 
+## Nothing lives only on the phone — 2026-10-03
+
+The owner asked that no data be stored only locally, and that it all reach
+the server. Most of it already did, but not all of it reliably, and one case
+was a known way to lose a game.
+
+Firebase keeps a write it couldn't send in memory only. A coach who tracked a
+game with no signal and closed the page (or whose phone reloaded it) had the
+game in localStorage and nowhere else, and the connect-time read then replaced
+local state with the club's, which had never heard of it. `test/sync.js` had
+pinned this as a known gap. It is closed:
+
+- Every workspace write goes into an outbox on the phone
+  (`sm.pending.v1:{club}`) and leaves it only when the database acknowledges
+  it. On connect, the club's copy is taken, whatever is still owed is laid
+  back over it in the order it was made, and all of it is sent again.
+- A phone remembers which teams and games it has ever read from the club, so
+  a game made here and never sent is sent, while one deleted somewhere else
+  stays deleted. On the first connect after this build nothing has been seen
+  yet, so a game deleted elsewhere while this phone was away can come back
+  once: the safe way round.
+- A write the database refuses is kept, marked, and tried again every time
+  the phone connects (the rules may just not be pasted yet). Every screen
+  says so, the badge counts it, and Settings lists what's waiting in words
+  ("a goal in the game against Riverside") with *Try again* and a confirmed
+  *Drop*. Nothing is dropped unless the coach says so.
+- The badge no longer says *synced* while something is still on its way; it
+  says how many changes are left to send.
+- Practice plans, club drills and a coach's own drills already kept a
+  pending list, but sent it again only when their own screen was opened.
+  They now go on every connect.
+- Teams kept on a phone from before it joined a club were under a key no
+  club reads. Settings now says so, and an admin can add them to the club
+  through the bulk import, which merges and never replaces.
+
+The four lookup tables stay out of the outbox, because they are rebuilt from
+the roles on every connect anyway. A parent's answer the rules refuse is
+still taken back off the screen, and now out of the outbox too, so it doesn't
+come back on the next connect.
+
+## Who made a drill, and an AI to draw it — 2026-10-03
+
+The owner asked for three things after the shelves landed: to know who added
+a drill to the club even after they leave, to filter by who made it, and to
+let a coach explain her idea to an AI and have it make the animation.
+
+Credit was half there: a club drill already carried `by` and `byName`,
+copied onto it when it was shared, so the name never depended on her still
+being in the club. Now the card says so ("shared by Lou, who no longer
+coaches here"), an admin tidying it leaves the author the author and adds
+"last tidied by", and the built-in library is credited to Minutes, the
+app's name. Filters → *Made by* narrows to the app, you, or one coach, with
+those who have left marked.
+
+*Have an AI draw it* follows Ask an AI's rule: the app never calls a model.
+The editor builds a prompt with the drawing format, two of the library's own
+drawings as examples, the drill's setup and steps, and her description, with
+every player's name in the club swapped out. She pastes it into her own
+chat and pastes the answer back. Until now a drawing stored with a drill was
+never drawn, because the renderer writes numbers and ids straight into SVG
+and any coach can write a club drill. `DrillDiagram.clean()` is what makes
+it safe to draw one: it rebuilds a drawing from typed values (numbers in
+range, ids and enums from their lists, moves that match the grammar, text
+cut to length) and drops everything else, and `parse()` then has to pass
+it. `test/drills.js` holds `clean()` to leaving all 114 built-in drawings
+exactly as they draw today. When an answer doesn't hold together, the app
+lists what's wrong in plain words with a button to copy them back to the AI.
+It reads an answer whether it's JSON or written the way a JavaScript file
+would be, with or without a code fence around it.
+
+## The club's drills, and a coach's own — 2026-10-03
+
+The owner asked for coaches to have their own drill libraries and clubs to
+have theirs, and settled the shape on 2026-10-02: parents never see drills,
+because they are a club's and a coach's own work; a coach's library is hers
+and she shares only if she wants to; and no club admin sees it, only the app
+owner, for support. TRAINING.md had the design and TRAINING-NEXT.md the
+brief; this builds its first two steps.
+
+Practice → Drills now has three shelves, Built-in, Club and Mine, and every
+filter works across all three. *Save to mine* copies any drill, and editing
+one that isn't yours saves your own version of it, which records where it
+came from and says when the original has changed, without ever merging by
+itself: a coach who reworded the setup for her age group doesn't want it
+reworded back. *Write a drill* is an editor with the card's fields, where
+every list is chips from `drills.js`'s own vocabularies, because a typo'd
+skill is a drill no filter finds. There are no uploads. A copy of a built-in
+drill keeps its drawing by naming it, and anything else carries https links,
+with a line saying an unlisted video isn't private.
+
+*Share with the club* copies a drill to the Club shelf, stamped with who
+shared it and a team she coaches. Admins tidy it from Admin → Club drills,
+and a coach can edit or remove what she shared while she still coaches that
+team. Coaches' and admins' phones are the only ones that ever ask for it.
+
+Mine lives at `userLibrary/{uid}`, outside every club, so a coach's drills
+follow her if she moves. It is cached per account and taken off the phone
+the moment she signs out or someone else signs in, with a warning if a
+change hasn't reached the database yet. The app owner can read one person's
+library once, from Settings, and the phone keeps nothing.
+
+A practice plan can now hold Club and Mine drills. They are copied into the
+plan whole, because those can be edited and deleted and last month's plan
+must still read the way it was run, and the first time a coach adds one of
+hers the app says that shares it with the team's coaches.
+
+Both shelves sync the way plans do: merge on read, never replace, and one
+drill per write. Everything read is normalised, because any coach can write
+a club drill and the rules check only its name and its links. A diagram
+stored in the database is never drawn, since the renderer trusts its input.
+
+The rules: `training/{code}/drills` and `templates` (admins and anyone in
+`coachIndex` read; a coach writes as herself for a team whose coach list
+names her; admins curate; fails closed) and `userLibrary/{uid}` (hers; the
+app owner reads; no club admin). They have to be pasted before drills leave
+the phone. `test/rules.js` covers every role against them, and its validator
+now walks into arrays, which it skipped before. `test/library.js` is new.
+
+Templates, and practice plans moving onto the calendar (settled the same
+day), are next; TRAINING-NEXT.md is the brief.
+
+---
+
 ## Sub planning: start empty, clear it, and bring an AI's plan back — 2026-10-03
 
 From a coach using the Plan tab for real.

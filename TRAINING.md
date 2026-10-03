@@ -8,9 +8,11 @@ a club, so a mistake would be expensive to undo.
 Built so far (see *Build order*): the built-in drill library (`drills.js`, 105
 drills, each with an animated diagram, and a guide to what each of nine
 positions is for), the renderer that draws those diagrams
-(`drill-diagram.js`), the Practice tab that shows them, a team's age, and
-practice plans with their rules. Coaches' own drills, the club's drills and
-templates are next; **`TRAINING-NEXT.md` is the brief for that work.**
+(`drill-diagram.js`), the Practice tab that shows them, a team's age,
+practice plans with their rules, and the other two shelves: a coach's own
+drills (Mine) and the club's (Club), with their rules. Templates are next,
+and plans moving onto the calendar with them; **`TRAINING-NEXT.md` is the
+brief for that work.**
 Everything not built is still a proposal, and the questions at the end are the
 decisions it needs.
 
@@ -178,6 +180,25 @@ job when it suggests where someone plays.
 
 ### A coach's own drills: draw it, or link it
 
+*As built (step 4):* a drill copied from a built-in one keeps that drill's
+drawing by naming it (`pic`), and the drawing is taken from `drills.js` on
+every read.
+
+*As built (step 6, first half):* **an AI draws it from her description.**
+The owner's idea (2026-10-03): "allow the user to tell an AI how to make a
+drill so they can explain their idea and it makes the animation for them."
+The app still never calls a model. The editor builds a prompt (the format,
+two built-in drawings as examples, the drill's setup and steps, and her
+words with every player's name in the club swapped out), she pastes it into
+her own chat, and pastes the answer back. A stored drawing is drawn only
+after `DrillDiagram.clean()` has rebuilt it from typed values (numbers in
+range, ids and enums from their lists, moves that match the grammar, text
+cut to length) and `parse()` has passed it, because the renderer writes
+numbers and ids straight into SVG and any coach can write a club drill.
+`test/drills.js` holds `clean()` to leaving every built-in drawing exactly as
+it was. When parse() objects, the app lists the problems in words she can
+paste back to the AI. Tapping out a drawing by hand is still to come.
+
 No uploads (settled 2026-10-02). Two ways, and between them they cover what a
 coach needs:
 
@@ -308,11 +329,12 @@ any one of which would be enough:
    connect, only to be thrown away because `state` keeps only teams, matches and
    access. At the root, a coach's phone reads one team's practices when she
    opens Practice.
-2. **The connect-time read still replaces local state wholesale.** That's the
-   gap `test/sync.js` pins (*the offline game survives the connect-time read*). A practice planned offline under the
-   workspace would be wiped by it at the next connect. A separate node gets its
-   own merge-on-read from the start, written to the invariant rather than to
-   the code that breaks it.
+2. **The connect-time read replaced local state wholesale** when this was
+   written (the gap `test/sync.js` pinned; the workspace outbox has since
+   closed it). A practice planned offline under the workspace would have been
+   wiped by it at the next connect. A separate node got its own merge-on-read
+   from the start, written to the invariant rather than to the code that broke
+   it.
 3. **It's a new rules block, not an edit inside the workspace block.** The
    locked-down workspace rules stay exactly as tested. Training adds a sibling.
 
@@ -533,9 +555,23 @@ too. The bridge doesn't change shape.
    only. Not built from this step: templates (they belong to Mine and Club),
    and the "shares your drill with your team" notice, which needs Mine.
    Blocks hold built-in drills only, by reference, for the same reason.*
-4. **Mine.** `userLibrary/{uid}`; save to mine; edit; templates.
-5. **Club.** Share to the club, copy from it, curation under Admin.
+4. **Mine.** `userLibrary/{uid}`; save to mine; edit; templates. *Built,
+   except templates: the shelf, the editor, save to mine, "the original has
+   changed", links, Mine drills copied whole into plans with the "shares it
+   with this team's coaches" notice, the cache cleared on sign-out, and the
+   app owner's read-once support view. Its rules are in
+   `database.rules.json` with `test/rules.js` cases, and `test/library.js`
+   covers the app side.*
+5. **Club.** Share to the club, copy from it, curation under Admin. *Built,
+   except templates. Curation is the same card, with Edit and Remove for
+   admins and for the coach who shared it, reached from Admin → Club
+   drills. As built, the write rule checks the team's own coach list
+   (`access/teams/{team}/coaches`) rather than `teamIndex`, so sharing needs
+   no bridge in a club whose lookup tables aren't built yet.*
 6. **Pictures for a coach's own drills.** The diagram editor, then links.
+   *Links built with step 4. Drawings built as "have an AI draw it", with
+   `DrillDiagram.clean()` guarding every stored drawing; drawing by hand,
+   tap by tap, is not built.*
 7. **What needs work.** The signals card on Season.
 8. **The AI steps.** The library in the prompt, then paste-back.
 9. **Import.** A `"drills"` list in Admin's bulk import file, for a club that
@@ -552,6 +588,14 @@ goes anywhere near the real club.
 1. **Attendance?** Who came to practice is useful (and the AI would use it),
    but it is data about children. Plans are now coaches' and admins' only, so
    it would sit in the right place. The recommendation is still not yet.
+
+Settled on 2026-10-03:
+
+- **Practice plans hang off the calendar.** A plan is keyed by the calendar
+  practice's id (`teams/{tid}/events/{eid}`) and takes its date, time and
+  place from that entry, so there is one list of practices, `schedule` goes,
+  and "drills a player has done" is a join with the register. A template is
+  a plan with no calendar entry. Not built yet; `TRAINING-NEXT.md` has it.
 
 Settled on 2026-10-02:
 

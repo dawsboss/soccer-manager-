@@ -739,6 +739,13 @@ a.btn{display:inline-block;text-decoration:none}
 .drillsafety{background:var(--owed-wash)}
 .drillwhy p,.drillsafety p{margin:0}
 @media (max-width:420px){.drillrow{grid-template-columns:1fr 82px}}
+.drillthumb.nopic{aspect-ratio:4/3;background:var(--field-wash);color:var(--field-deep);display:flex;align-items:center;justify-content:center;font-size:22px;line-height:1}
+.drillname .tag{font-family:inherit;font-size:11px;vertical-align:3px}
+.drillmedia{margin:0 0 8px}
+.drillmedia img{width:100%;height:auto;display:block;border-radius:8px}
+.drillmedia figcaption{font-size:13px;color:var(--ink-soft);margin-top:4px}
+.drilllinkcard{display:flex;flex-direction:column;gap:2px;text-decoration:none;color:inherit;margin-bottom:8px;border-left:4px solid var(--field)}
+.drilllinkcard .muted{font-size:13px;overflow-wrap:anywhere}
 .sheet .chips + .lbl,.sheet .chips + .grid2{margin-top:12px}
 
 /* --- practice plans --- */
