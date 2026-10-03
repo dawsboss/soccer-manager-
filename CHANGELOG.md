@@ -108,6 +108,75 @@ a rule change.
 
 ---
 
+## Send one drill to another coach — 2026-10-03
+
+The owner asked to share specific drills with other coaches, still checking
+permissions so that a parent who gets one can't view it and is told why,
+except for the drills that come with the app.
+
+- **Send to a coach** on a built-in or a club drill gives a link to share or
+  copy: `#/drill/{club}/{key}` for a club drill, `#/drill/{key}` for a
+  built-in one. It carries the drill's id and which club it's from, and
+  nothing else, not the card, so whatever it opens is decided on the phone
+  that opens it, by that person's own role: the link gets forwarded, and the
+  only safe link is one that grants nothing.
+- **The link picks the club, not the coach.** A coach in more than one club
+  shouldn't have to know which the drill came from, so the link names it and
+  her phone opens that club, then the drill. The club is named by a one-way
+  tag made from its code, never the code, and is matched only against clubs
+  this phone has kept or this account's own list (`userOrgs`) says she's in;
+  a link from a club she isn't in is never switched to, and says so.
+- **Opening it.** A built-in drill opens for anyone, read-only, because it
+  ships in the app's public files; the drills it goes with open the same way.
+  A club drill opens for the club's coaches and admins, after the club's
+  drills have arrived. A parent or a tracker sees *This drill is for the
+  club's coaches*, naming her role, and nothing of the drill; her phone never
+  asks the database for the shelf, the same as before. A drill removed since
+  says so. The link waits for the club to be read
+  rather than judging on a cached role, but never for more than a few
+  seconds.
+- **Mine is never sent.** It's private to its author, so a link would open
+  for nobody; the button offers *Share with the club* instead.
+- The address goes back to the screen underneath as soon as the link is
+  taken, so Back doesn't open the drill again.
+
+Cases in `test/library.js`.
+
+---
+
+## Nothing floats away: one count, a full phone, a whole backup — 2026-10-03
+
+The owner's worry, after training sessions and the drill shelves shipped:
+"not saving sounds like data could float away." Nothing in them was ever
+thrown away, but three things meant it could happen without anyone noticing.
+
+- **One count.** The badge said "synced" while a practice plan, a drill or
+  a training session was still only on the phone: it counted the workspace
+  outbox and nothing else, and the only warning was a note on that one
+  screen. Now the badge, the banner on every screen and *Not saved to the
+  club yet* count all of it. A refused session is marked per record, keeps
+  its mark through a reload, and *Try again* or *Drop the refused ones*
+  covers it with the rest.
+- **The backup was missing half the club.** *Download a copy* wrote the
+  workspace: teams, games, roles, fields. Sessions, bookings, registers,
+  fees, pay rates, practice plans and the club's drills live outside it and
+  were left out, so a club keeping the file for safety had no fee records in
+  it. Now they are under `training`, and with a signal the club's own copy is
+  asked for first, so the file holds what the club has, not just what this
+  phone opened. *Load from a file* puts back only what the club is missing:
+  it asks the club what it has, writes a training record only where there is
+  nothing, and leaves out (and lists) what it couldn't check, because
+  writing blind could put last month's fees over this week's.
+- **A full phone.** Every local save was `try { … } catch (e) { }`, so a phone
+  out of storage refused the write in silence: the change looked saved, lived
+  only in the open page, and was gone when it closed. Saves now go through
+  `keepStored()`, which says so at once and on every screen until one gets
+  through.
+
+`test/safekeep.js` is new.
+
+---
+
 ## Bulk import takes fields and training sessions — 2026-10-03
 
 Asked for straight after training sessions shipped: a club's fields, their

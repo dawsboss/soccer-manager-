@@ -193,7 +193,7 @@ const EXPORTS = `{
   get mine() { return mine }, get mineUid() { return mineUid }, get shelfState() { return shelfState },
   get drillDraft() { return drillDraft },
   /* rendering + routing */
-  render, uiToHash, hashToUi,
+  render, uiToHash, hashToUi, clubTag,
   /* the mutable module-scoped bindings */
   get state() { return state }, set state(v) { state = v },
   get ui() { return ui },
@@ -222,7 +222,10 @@ const EXPORTS = `{
   sessUi, SESS_ACTS, sessMessage, reachFor, fmtMoney, sessClubLine, calendarDoc, publicDoc, viewMine, viewClub,
   /* bookable times, and my calendar */
   blockAll, blockById, blockSlots, normBlock, slotSid, canEditBlock, kidBusy, blockKids, availView, familyAvail, sheetBlock,
-  AVAIL_ACTS, myCalItems, myCalTeams, myCalFilters, viewMyCal, myCalLine, createClub, blockValue, healBlocks, seatsOf, freeSeat, placesTaken, openSlotsOf, slotAt, slotKey
+  AVAIL_ACTS, myCalItems, myCalTeams, myCalFilters, viewMyCal, myCalLine, createClub, blockValue, healBlocks, seatsOf, freeSeat, placesTaken, openSlotsOf, slotAt, slotKey,
+  /* safekeeping: what is owed, a full phone, and the backup */
+  otherOwed, pendingCount, refusedCount, backupDoc, trainingCopy, isBackupData, keepStored,
+  get lastBackup() { return lastBackup }, get storeFail() { return storeFail }, set storeFail(v) { storeFail = v }
 }`;
 
 const FB_URLS = {
