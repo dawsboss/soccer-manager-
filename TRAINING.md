@@ -5,11 +5,13 @@ rules have to be right first. Training adds the first new root node since
 invites. It's also the first data here that belongs to a *person* rather than to
 a club, so a mistake would be expensive to undo.
 
-What exists today is the built-in drill library (`drills.js`, 105 drills, each
-with an animated diagram, and a guide to what each of nine positions is for),
-the renderer that draws those diagrams (`drill-diagram.js`), and the suite that
-keeps both honest (`test/drills.js`).
-Nothing in the app loads any of them yet. Everything else below is a proposal, and the questions at the end are the
+Built so far (see *Build order*): the built-in drill library (`drills.js`, 105
+drills, each with an animated diagram, and a guide to what each of nine
+positions is for), the renderer that draws those diagrams
+(`drill-diagram.js`), the Practice tab that shows them, a team's age, and
+practice plans with their rules. Coaches' own drills, the club's drills and
+templates are next; **`TRAINING-NEXT.md` is the brief for that work.**
+Everything not built is still a proposal, and the questions at the end are the
 decisions it needs.
 
 ---
@@ -411,15 +413,13 @@ and, inside the existing `workspaces/$code/access` block:
   shared, and the club still has it. That's intended.
 - **Write at the depth the rule sits at.** One drill, one template, one
   practice, one schedule entry per write. Never the collection.
-- **The open rules need these blocks too.** The open set grants `workspaces`
-  and nothing else, so a new root node is refused under it. This is the
-  invites lesson again: publish the blocks in both sets, and when a write is
-  refused, the app says *the club's rules don't include training yet* rather
-  than failing quietly. Until then, practices stay on the phone, as everything
-  did before sync. Under the open rules anyone holding the workspace code can
-  read the workspace. They can't read `training/`, because the open set has
-  no grant for it. That makes training the first thing the open rules don't
-  give away, which is right for the secret sauce.
+- **Publish before it syncs.** A new root node is refused until its block is
+  in `database.rules.json`, the one ruleset every club runs on. When a write
+  is refused, the app says so (*Saved on this phone only*) rather than failing
+  quietly, and practices stay on the phone, as everything did before sync.
+  (This used to read "the open rules need these blocks too": there was a
+  second, open ruleset for new clubs. It's gone. A database runs one ruleset
+  for every club in it, so new clubs start under the same rules as the rest.)
 - `node test/rules.js` gets cases for every role against every block before
   any of this is pasted anywhere, starting with a parent being refused
   `drills/` and `practices/`, and a tracker being refused both.

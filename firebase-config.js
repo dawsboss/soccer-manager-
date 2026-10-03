@@ -25,7 +25,7 @@ window.SOCCER_CALENDAR_FEED = '';
 // changes somewhere that is not the club with this season's data in it.
 //
 // A test *club* (Setup > Workspace > Make a test club) isolates data but not
-// rules: rules belong to a database instance, and the locked-down block is
+// rules: rules belong to a database instance, and database.rules.json is
 // written against workspaces/$code, so publishing it to try it on a test club
 // applies it to the real club at the same moment. A child rule can only ever
 // add permission, never take it back, so there is no carving a stricter

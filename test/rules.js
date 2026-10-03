@@ -7,12 +7,19 @@
    clause while every write is refused, so the club goes read-only and nobody
    finds out until someone tries to make a sub at a game.
 
-   So this reads the rules from the files you actually paste —
-   database.rules.json (locked down) and database.rules.open.json (the starter
-   set) — rather than keeping a copy. They used to live as code blocks inside
+   So this reads the rules from the file you actually paste, database.rules.json,
+   rather than keeping a copy. They used to live as code blocks inside
    README.md, and this test parsed them out of the prose; a file is what you
    copy from and what a commit diff shows, so the file is the artifact now and
    README only explains it.
+
+   There is one ruleset, for every club in the database. This is a site any
+   club can come to, and the rules belong to the database, not to a club, so a
+   starter set for new clubs and a stricter one for established ones cannot
+   both be live: whichever is published applies to every club at once. So the
+   one set has to let a brand-new club be made at any time — the bootstrap
+   clauses do that, and "a brand-new club" below walks it through — while
+   holding every established club to its roles.
 
    Exits non-zero when an expectation fails. */
 
@@ -30,19 +37,22 @@ function jsonBlocks() {
   return [...README.matchAll(/```json\n([\s\S]*?)```/g)].map(m => m[1]);
 }
 
-/* Three things can go wrong with two rule sets and a README, and each one is
+/* Four things can go wrong with one ruleset and a README, and each one is
    silent until a club is refused something: a full ruleset copied back into
    README and edited there instead of in the file; an excerpt in README that
-   explains a block which no longer looks like that; and firebase.json pointing
-   the CLI at some other file. Each is a hard failure. (The blocks the open and
-   locked sets share are checked case by case under "the open rules".) */
+   explains a block which no longer looks like that; firebase.json pointing
+   the CLI at some other file; and a second ruleset coming back, which is a
+   choice about which clubs the database protects that nobody should have to
+   make. Each is a hard failure. */
 function loadRules() {
   const locked = readJson('database.rules.json').rules;
-  readJson('database.rules.open.json');          // it has to parse, at least
+  for (const f of fs.readdirSync(ROOT))
+    if (/\.rules\b.*\.json$/.test(f) && f !== 'database.rules.json')
+      throw new Error(f + ' is a second ruleset. There is one, database.rules.json, for every club: a database can only run one at a time.');
   for (const raw of jsonBlocks()) {
     let doc = null;
     try { doc = JSON.parse(raw); } catch (e) { }
-    if (doc && doc.rules) throw new Error('README.md carries a whole ruleset again. The rules live in database.rules.json and database.rules.open.json; change them there and point README at the file.');
+    if (doc && doc.rules) throw new Error('README.md carries a whole ruleset again. The rules live in database.rules.json; change them there and point README at the file.');
     // a fragment is a bare "key": { ... } pair, valid JSON once wrapped
     let frag = null;
     try { frag = JSON.parse('{' + raw + '}'); } catch (e) { }
@@ -290,9 +300,12 @@ console.log('\n--- a club with nobody in its index (the bootstrap) ---');
 reads('any signed-in account can read it', RANDO, 'workspaces/FRESH', true);
 reads('signed out still cannot', OUT, 'workspaces/FRESH', false);
 writes('but NOBODY can write to it', RANDO, 'workspaces/FRESH/teams/t9/name', 'Renamed', false);
-writes('not even after claiming admin', ADM, 'workspaces/FRESH/teams/t9/name', 'Renamed', false);
-console.log('  ^ this is the read-only trap: locking down before a single role is');
-console.log('    granted leaves a club that opens fine and refuses every change.');
+writes('not even an admin of another club', ADM, 'workspaces/FRESH/teams/t9/name', 'Renamed', false);
+console.log('  ^ the read-only trap: a club whose data went in under the old open rules,');
+console.log('    before anyone held a role, opens fine and refuses every change until');
+console.log('    somebody claims admin. A club made under these rules claims admin first');
+console.log('    (see "a brand-new club" below), so only a database moving off the open');
+console.log('    rules can be caught by it.');
 
 console.log('\n--- the squad: coaches of that team, and admins ---');
 writes('admin edits any team', ADM, 'workspaces/CLUB/teams/t1/name', 'Flight B', true);
@@ -926,14 +939,42 @@ reads('owners are not world-readable', OUT, 'shareOwners/sh1', false);
   delete DB.joinCodes; delete DB.claims;
 }
 
-/* The open rules carry the same root blocks, so invites and messages work
-   before a club is locked down. One copy drifting from the other would mean an
-   invite or a message that works today stops working on lockdown day. */
+/* ---------------- a brand-new club, under the same rules ---------------- */
+
+/* Clubs arrive whenever they like, into the database every other club is
+   already in, so making one has to work under the rules the established clubs
+   run on. These are the writes pushAll() makes for a club nobody has written
+   yet, in its order, each applied before the next is tried — exactly as the
+   database applies one client's writes in sequence. */
 {
-  const open = readJson('database.rules.open.json');
-  console.log('\n--- the open rules ---');
-  for (const k of ['invites', 'clubInvites', 'userOrgs', 'board', 'dm', 'joinCodes', 'claims', 'training'])
-    check(k + ' matches the locked-down block', !!open && JSON.stringify(open.rules[k]) === JSON.stringify(RULES[k]), true);
+  const put = (p, v) => {
+    const segs = p.split('/');
+    let cur = DB;
+    for (const k of segs.slice(0, -1)) cur = cur[k] = cur[k] && typeof cur[k] === 'object' ? cur[k] : {};
+    if (v === null) delete cur[segs[segs.length - 1]]; else cur[segs[segs.length - 1]] = JSON.parse(JSON.stringify(v));
+  };
+  const step = (label, who, p, v) => { const ok = canWrite(p, v, who); check(label, ok, true); if (ok) put(p, v); };
+  const FOUNDER = { uid: 'founder' };
+  const W = 'workspaces/NEWCLUB/';
+  console.log('\n--- a brand-new club, made today alongside the others ---');
+  writes('signed out, nobody can start one', OUT, W + 'access/admins/x', true, false);
+  reads('a signed-in founder can read the empty code', FOUNDER, 'workspaces/NEWCLUB', true);
+  step('she claims admin of it', FOUNDER, W + 'access/admins/founder', true);
+  step('puts herself in its index', FOUNDER, W + 'access/index/founder', true);
+  step('registers herself', FOUNDER, W + 'access/members/founder', { name: 'Fran', at: NOW });
+  step('names the club', FOUNDER, W + 'access/org/name', 'Hillside FC');
+  step('adds a team', FOUNDER, W + 'teams/tA', { id: 'tA', name: 'U9 Hawks', players: { a1: { id: 'a1', name: 'Ada' } } });
+  step('and a game', FOUNDER, W + 'matches/gA', { id: 'gA', teamId: 'tA', opponent: 'Riverside' });
+  step('and plans a practice', FOUNDER, 'training/NEWCLUB/practices/tA/pA', { id: 'pA', teamId: 'tA', date: '2026-10-06' });
+  reads('and reads the club back', FOUNDER, 'workspaces/NEWCLUB', true);
+  console.log('  ^ from nothing to a working club, under the rules every other club runs on.');
+  reads('from then on a stranger cannot read it', RANDO, 'workspaces/NEWCLUB', false);
+  writes('nor claim it too', RANDO, W + 'access/admins/rando', true, false);
+  writes('nor write a team into it', RANDO, W + 'teams/tA/name', 'Mine now', false);
+  reads('nor read its practices', RANDO, 'training/NEWCLUB/practices/tA', false);
+  reads('and its founder still cannot read anyone else\'s club', FOUNDER, 'workspaces/CLUB', false);
+  writes('nor write to one', FOUNDER, 'workspaces/CLUB/teams/t1/name', 'Mine now', false);
+  delete DB.workspaces.NEWCLUB; delete DB.training.NEWCLUB;
 }
 
 /* ---------------- what the rules and the app disagree about ---------------- */

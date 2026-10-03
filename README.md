@@ -33,31 +33,15 @@ Open `index.html` in a browser, or serve the folder. Everything works immediatel
 
 1. Create a Firebase project (free Spark plan is plenty) and add a **Realtime Database**.
 2. Add a **Web app** to the project, then copy the config object into `firebase-config.js`.
-3. In Realtime Database → Rules, paste the **open** rules to begin with:
+3. In Realtime Database → Rules, paste the rules:
 
-   **[`database.rules.open.json`](database.rules.open.json)** — the whole file. On a phone: open it on GitHub, tap **Raw**, select all, copy, and paste it over everything in the Rules editor.
+   **[`database.rules.json`](database.rules.json)** — the whole file. On a phone: open it on GitHub, tap **Raw**, select all, copy, and paste it over everything in the Rules editor, then **Publish**.
 
-Lock them down once people have signed in — see **Locking it down** below.
+   There is one ruleset, for every club. A database runs one set of rules for every club in it, and this site is for any club that comes to it, so there is no "starter" set for new clubs and a stricter one for established ones: a new club is made under the same rules every other club runs on (see **The database rules** below).
 
-4. On the app owner's device: Setup → Workspace → *Connect to a workspace* → *Make one up* → *Save and reload*. That creates the club. Nobody else types the code: everyone else joins with an invite link — see **Joining a club** below.
+4. On the app owner's device: sign in (Setup → Account), then Setup → Workspace → *Connect to a workspace* → *Make one up* → *Save and reload*. That creates the club, with you as its admin. Nobody else types the code: everyone else joins with an invite link — see **Joining a club** below. Signed out, the app still works, but only on that one device.
 
-The root blocks in these rules — `invites`, `clubInvites`, `userOrgs` for invites, `board` and `dm` for messages, `training` for practice plans — are identical in the locked-down set, so an invite made, a message sent or a practice planned today keeps working after lockdown. Without `training`, plans stay on the phone they were made on and the Practice tab says so.
-
-The open rules cover the coaches' data. To publish read-only pages for parents, add a second block alongside it:
-
-```json
-"public": {
-  "$share": {
-    ".read": true,
-    ".write": "!newData.exists() || newData.hasChild('team')",
-    "team":   { ".validate": "newData.hasChild('name')" },
-    "games":  { "$g": { ".validate": "newData.hasChildren(['status', 'score'])" } },
-    "$other": { ".validate": false }
-  }
-}
-```
-
-Two things that will silently reject a write if you tighten this further: a team with **no games yet** publishes without a `games` child at all, because Realtime Database drops empty objects — so never require `games`. And never add a `"$other": { ".validate": false }` catch-all: the document also contains `record` and `updated`, and a wildcard matches those too, failing the whole write.
+Two things that will silently reject a write if you tighten the `public` block: a team with **no games yet** publishes without a `games` child at all, because Realtime Database drops empty objects — so never require `games`. And never add a `"$other": { ".validate": false }` catch-all: the document also contains `record` and `updated`, and a wildcard matches those too, failing the whole write.
 
 If links are not working, open **Setup → Share with parents**. It now reports whether the last publish succeeded and shows the rejection reason if not, with a **Republish now** button.
 
@@ -136,7 +120,7 @@ There is no in-app delete for a whole club, deliberately — it would be one mis
 
 Steps 2 and 3 are permanent and there is no undo, which is why step 1 comes first.
 
-Retirement needs its own block. It is already part of the complete ruleset under **Locking it down** — this is here to explain it, not to paste separately:
+Retirement needs its own block. It is already part of the ruleset (**The database rules** below) — this is here to explain it, not to paste separately:
 
 ```json
 "retired": {
@@ -160,7 +144,7 @@ The app owner is the one account that can appoint the first club admin. It is st
 "appOwners": { "<paste your account id>": true }
 ```
 
-3. The rules keep it readable but never writable from the app. This is already part of the complete ruleset under **Locking it down**; shown here so you can see what guards it:
+3. The rules keep it readable but never writable from the app. This is already part of the ruleset (**The database rules** below); shown here so you can see what guards it:
 
 ```json
 "appOwners": { ".read": "auth != null", ".write": false }
@@ -168,29 +152,21 @@ The app owner is the one account that can appoint the first club admin. It is st
 
 Console-only by design. There is no bootstrap race and no button anyone could press to grant themselves ownership — changing it means having Firebase console access, which is the correct bar.
 
-## Locking it down
+## The database rules
 
-The open rules above mean anyone holding a workspace code can read and write everything, names included. Close that once you and at least one other coach have signed in.
+**One file, for every club: [`database.rules.json`](database.rules.json).
+Paste the whole file as it stands**, whenever it changes. It already includes
+the `retired` and `appOwners` blocks shown earlier in this file; those appear
+there to explain what they are for, not to be pasted on their own. Publishing
+a partial ruleset is how a club ends up half protected.
 
-### Do this in order. Out of order locks you out.
-
-1. **Back up.** Setup → *Download a copy*.
-2. **Sign in** on your own device. Setup → Account.
-3. **Claim admin.** Setup → People → *Make me the admin*.
-4. **Invite every coach** — People → *Invite someone*, one link each. Accepting one signs them in, connects their device and gives them the role, so they appear in People already assigned.
-5. **Give a role to anyone who arrived another way** — Coach or Tracker, in People.
-6. **Check readiness.** Club settings → *Check readiness* tells you whether you are in the index, how many accounts are, and whether an app owner exists. **Everything must pass.** An empty `access/index` is the dangerous case: reads still work through the bootstrap clause, but nobody can write anything, so the app goes read-only for the whole club.
-7. **Only then** paste the rules below and publish.
-8. **Test on both devices** before the next game.
-
-### The rules
-
-**The rules live in a file, not in this README: [`database.rules.json`](database.rules.json).
-Paste the whole file as it stands.** It already includes the `retired` and
-`appOwners` blocks shown earlier in this file; those appear there to explain
-what they are for, not to be pasted on their own. Publishing a partial ruleset
-is how a club ends up half locked down. The starter set is
-[`database.rules.open.json`](database.rules.open.json).
+**There is no second, open set.** Rules belong to the database, not to a club,
+so whatever is published applies to every club in it at once, and this site
+is for any club that turns up. A brand-new club is made under the same rules
+an established one runs on: while a club's code has no admin and no index, a
+signed-in account may claim admin of it and put itself in its index, and from
+that moment the club is closed to everyone it hasn't let in. `node test/rules.js`
+walks a new club through exactly that, alongside the established ones.
 
 A file rather than a block here because a ruleset copied out of prose is one
 stray brace from being refused, and because a file shows exactly what changed
@@ -208,7 +184,7 @@ appears. Nothing to sequence, and no way to lock the club out by pasting early.
 The app fills both in by itself: an admin's device writes `teamIndex` on its
 next connect, and a share claims its owner list on its next publish. **Club
 settings → Check readiness** shows whether that has happened. Until every line
-there has a tick, the club is locked down but not yet *tightly* — a tracker or
+there has a tick, the club is protected but not yet *tightly* — a tracker or
 a parent can still write another team's data, exactly as before.
 
 **[`database.rules.json`](database.rules.json)** is the whole ruleset. On a phone: open it on GitHub, tap **Raw**, select all, copy, and paste it over everything in Realtime Database → Rules, then **Publish**. From a computer with the Firebase CLI signed in, `firebase deploy --only database` publishes the same file (`firebase.json` points at it) — the console is fine, and is what this README assumes.
@@ -229,7 +205,7 @@ What each part is doing:
 - **`training/$code/schedule/$tid`** is when and where each practice is, without the plan. The whole club reads it, so a parent sees the next practice's time and place. Only the people who can write the plan can write it.
 - **`clubInvites/$code`** is the admin's list, readable only by admins. It lives outside the workspace on purpose: everyone indexed can read the whole workspace, and a list of unspent coach invites in a parent's hands is a parent who can make herself a coach.
 - **`userOrgs/$uid`** is which clubs an account belongs to, so a second device finds them without a code. Only its owner reads it. It is a list of bookmarks, not a grant: reading a club is still `access/index`'s decision.
-- **`rsvp/$tid/$item/$pid`** is who is coming: one answer per child per game or calendar entry. A parent may write it for a child whose `guardians` list holds her uid, a coach for anyone on her team, an admin for anyone, and each answer must be stamped with the writer's own uid. It is a node of its own, not part of the game or the team, so the one thing this rule hands a parent is her own child's answer. An answer is `yes`, `no` or `maybe`, an optional note of at most 140 characters, and nothing else. Until this block is published, a locked-down club refuses parents' answers and the app says so; the open rules already allow them.
+- **`rsvp/$tid/$item/$pid`** is who is coming: one answer per child per game or calendar entry. A parent may write it for a child whose `guardians` list holds her uid, a coach for anyone on her team, an admin for anyone, and each answer must be stamped with the writer's own uid. It is a node of its own, not part of the game or the team, so the one thing this rule hands a parent is her own child's answer. An answer is `yes`, `no` or `maybe`, an optional note of at most 140 characters, and nothing else. Until this block is published, parents' answers are refused and the app says so.
 - **`public/$share`** stays world-readable — that is the whole point of the parent links — but writing now needs an account. That closes the hole where anyone holding a share link could overwrite the scoreboard.
 - **`joinCodes/$jc`** is a team link: club, team, and the names shown on it. Readable by id only, like an invite; made and retired by that team's coach or an admin, never edited. It grants nothing on its own.
 - **`claims/$ws/$tid/$uid`** is a parent's request through that link — a shirt number and optionally the child's first name. Only its author writes it, only with a live link to that team, and never with an approval in it. **`approved`** is written by that team's coach or an admin, once, in their own name; they can also delete a request to turn it down. The author and the team's coaches and admins read it.
@@ -238,9 +214,31 @@ What each part is doing:
 - **`board/$code/$tid`** is a team's notices. Readable by that team's families (`teamParents`), coaches and trackers (`teamIndex`), and the admins — not by the rest of the club. While `teamParents` does not exist yet, it falls back to anyone indexed in the club, so pasting this locks nobody out. That team's coaches and the admins post, each in their own name, and only the author or an admin deletes one. **`seen/$uid`** is each reader's own tick, which is how a coach sees who has not read it.
 - **`dm/$code/$tid/$fam`** is one family's conversation with that team's coaches. Only a family on that team's parent list can start one (club-wide while the list is missing). Readable by that family, the team's coaches and the admins — no one coach alone, and no other family. Messages are append-only: nobody edits or deletes one, admins included. There is no bridge for a club without `teamIndex`: these are new nodes, so failing closed locks nobody out of anything, and until an admin's device has written the table only admins can read or post.
 
+### A database still on the old open rules
+
+Clubs used to start on a second, open ruleset and be "locked down" later. If
+your database still runs those, any club in it whose data went in before anyone
+held a role needs its roles set up **before** you publish `database.rules.json`,
+or it opens fine and refuses every change. Once, in this order:
+
+1. **Back up.** Setup → *Download a copy*.
+2. **Sign in** on your own device. Setup → Account.
+3. **Claim admin.** Setup → People → *Make me the admin*.
+4. **Invite every coach** — People → *Invite someone*, one link each. Accepting one signs them in, connects their device and gives them the role, so they appear in People already assigned.
+5. **Give a role to anyone who arrived another way** — Coach or Tracker, in People.
+6. **Check readiness.** Club settings → *Check readiness* tells you whether you are in the index, how many accounts are, and whether an app owner exists. An empty `access/index` is the dangerous case: reads still work through the bootstrap clause, but nobody can write anything, so the app goes read-only for the whole club.
+7. **Then** paste `database.rules.json` and publish, and **test on two devices** before the next game.
+
+After that there is nothing to move again: every new club starts under the
+same rules.
+
 ### If it goes wrong
 
-Paste the open rules from step 3 back in and publish. Access returns immediately; nothing is lost. The app also detects the refusal and shows a sign-in screen with a way to change account or workspace code rather than a broken page.
+Paste the previous version of `database.rules.json` back in and publish — on
+GitHub, open the file's **History**, pick the commit before the change, tap
+**Raw**. Access returns immediately; nothing is lost. The app also detects the
+refusal and shows a sign-in screen with a way to change account or workspace
+code rather than a broken page.
 
 ### What is still not enforced
 
@@ -258,7 +256,7 @@ signed-out visitor, an admin, a coach, a tracker, a parent, a registered account
 with no role, an unknown account and the app owner. No Firebase, no cost, and
 nothing to publish. **Run it before pasting anything into the console.** It is
 the only way to find out that a rules change locks everybody out *before* it
-does, because the failure "Locking it down" warns about is silent: reads keep
+does, because the failure **A database still on the old open rules** warns about is silent: reads keep
 working through the bootstrap clause while every write is refused.
 
 It also prints, at the end, the places where the interface and the rules
@@ -270,7 +268,7 @@ refused write is a bug.
 **Setup → Workspace → Make a test club** (app owner only). Seeds a club called
 Sandbox FC: two squads, invented names, four games with one in progress, and
 three people waiting in `access/members` with no roles yet. That is exactly the
-state a real club is in when the lockdown steps above begin, so you can rehearse
+state a club moving off the old open rules is in (the steps above), so you can rehearse
 all of them — claim admin, grant and withdraw roles, check readiness, get
 refused, retire it — on data nobody cares about.
 

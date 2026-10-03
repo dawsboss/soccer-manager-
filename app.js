@@ -2,7 +2,7 @@
    Static app. Data lives in localStorage, and mirrors to Firebase Realtime
    Database when a config + workspace code are present. */
 
-const BUILD = '67';
+const BUILD = '68';
 const BUILT = '2026-10-02';
 /* index.html carries the build it was published with. If this file is newer, the
    browser handed us a cached page — the exact failure that has eaten hours. */
@@ -6710,7 +6710,7 @@ function viewSetup() {
       <div class="codebox">${esc(me.uid)}</div>
       <button class="btn quiet sm" data-act="copylink" data-v="${esc(me.uid)}">Copy id</button>
       <p class="muted" style="margin-bottom:0">Needed once, to be made app owner in the Firebase console.</p>`
-      : '<p class="muted" style="margin-bottom:0">Everything works signed out until the workspace is locked down.</p>'}</div>
+      : '<p class="muted" style="margin-bottom:0">Signed out, everything stays on this device. Sign in to share it with your club.</p>'}</div>
 
     <div class="card"><h2 style="margin-bottom:8px">Workspace</h2>
       <p class="muted" style="margin-top:0">Firebase config is ${cfgOk ? 'in place' : 'not filled in — see README.md'}.</p>
@@ -6720,7 +6720,7 @@ function viewSetup() {
       <p class="muted">Owner-only stopgap until per-person invites exist — nobody else sees this.</p>
       <div class="row"><button class="btn quiet" data-act="envsheet">Database: ${esc(envName() || 'production')}</button>
       <button class="btn quiet" data-act="maketestclub">Make a test club</button></div>
-      <p class="muted" style="margin-bottom:0">A test club is invented data with publishing switched off — safe to grant roles in, lock down and retire. Rules belong to a database rather than to a club, though, so a rules change has to be rehearsed in another database, not just another club.</p>` : ''}</div>
+      <p class="muted" style="margin-bottom:0">A test club is invented data with publishing switched off — safe to grant roles in, take apart and retire. Rules belong to a database rather than to a club, though, so a rules change has to be rehearsed in another database, not just another club.</p>` : ''}</div>
 
     <div class="card"><h2 style="margin-bottom:8px">Share with parents</h2>
       <p class="muted" style="margin-top:0">Read-only pages showing shirt numbers, never names.</p>
@@ -6768,7 +6768,7 @@ function viewAdmin() {
       <button class="btn danger wide" data-act="retireclub">Retire ${esc((acc().org || {}).name || 'this club')}</button></div>
 
     <div class="card"><h2 style="margin-bottom:8px">Check readiness</h2>
-      <p class="muted" style="margin-top:0">What has to hold before the locked-down rules are published. Every failing line is a way to lock the whole club out, and none of them show up until somebody tries to change something at a game.</p>
+      <p class="muted" style="margin-top:0">What the club needs for the rules to work as designed. A cross is a lookup table the app hasn't written yet, or a way to be locked out of your own club, and none of them show up until somebody tries to change something at a game.</p>
       <div class="plist">${readiness().map(r => `<div class="prow" style="grid-template-columns:auto 1fr auto">
         <span class="pnum">${r.ok ? '\u2713' : '\u2717'}</span>
         <span><span class="pname">${esc(r.label)}</span><span class="psub">${esc(r.detail)}</span></span>

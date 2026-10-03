@@ -8,6 +8,35 @@ before this point lives only in the git log.
 
 ---
 
+## One set of rules, for every club — 2026-10-03
+
+There were two rulesets: an open "starter" set that new clubs began on, and
+the locked-down set a club moved to once its people had signed in. That model
+assumed one club. This is a site for any club that turns up, and a database
+runs one ruleset for every club in it, so the two could never both be live:
+whichever was published applied to every club at once. Publishing the open set
+for a new club opened every established one. Publishing the locked set left
+nothing for new clubs to start on, except that it already had what they need.
+
+So there is one ruleset now, `database.rules.json`, and
+`database.rules.open.json` is gone. A brand-new club starts under the same
+rules as the rest. While its code has no admin and no index, a signed-in
+account may claim admin of it and put itself in its index, and from that
+moment the club is closed to everyone it hasn't let in. `test/rules.js` walks
+a new club from nothing to a working one: admin, index, name, a team, a game
+and a practice. It also checks that a stranger is shut out the moment that's
+done, and that the founder can't reach anyone else's club. It fails if a
+second ruleset ever reappears.
+
+README's *Locking it down* is now *The database rules*. The ordered lockdown
+steps stay, but only for a database still running the old open rules, where a
+club whose data went in before anyone held a role needs one set up first. If
+the rules go wrong, the way back is the previous version of the file, not the
+open set. The app's copy stops saying the workspace "is locked down": signed
+out, everything stays on the device, and signing in is how a club shares it.
+
+---
+
 ## Practice plans — 2026-10-02
 
 Step 3 of `TRAINING.md`. A coach plans a practice for her team, the app
