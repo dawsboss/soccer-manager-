@@ -632,6 +632,7 @@ button.calday:active{background:var(--field-wash)}
 :is(.dots,.calkey) .dot.game{background:var(--field)}
 :is(.dots,.calkey) .dot.practice{background:var(--focus)}
 :is(.dots,.calkey) .dot.event{background:var(--owed)}
+:is(.dots,.calkey) .dot.session{background:#6B3FA0}
 :is(.dots,.calkey) .dot.off{opacity:.3}
 .calkey{font-size:12px;color:var(--ink-soft);display:flex;align-items:center;gap:5px;flex-wrap:wrap}
 .calkey .dot{margin-left:6px}
@@ -645,6 +646,7 @@ button.calday:active{background:var(--field-wash)}
 .tag.game{background:var(--field-wash);color:var(--field-deep)}
 .tag.practice{background:#E1ECF7;color:#0E4E8A}
 .tag.event{background:var(--owed-wash);color:#6C4406}
+.tag.session{background:#EEE6F7;color:#4B2A73}
 .tag.off{background:#FBE7E3;color:#6E2317}
 .facts{display:grid;grid-template-columns:auto 1fr;gap:6px 14px;margin:0 0 14px;font-size:15px}
 .facts dt{color:var(--ink-soft);font-size:13px;padding-top:2px}

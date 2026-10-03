@@ -39,6 +39,7 @@ const SUITES = [
   ['drills', 'the built-in drill library holds together'],
   ['practice', 'the Practice tab, and who gets it'],
   ['plans', 'practice plans, and how they reach the club'],
+  ['sessions', 'training sessions, fields, fees and hours'],
   ['smoke', 'every view renders without throwing'],
   ['sandbox', 'the test club, and database isolation'],
   ['rules', 'the database rules, as database.rules.json has them']

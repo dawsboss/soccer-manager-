@@ -8,6 +8,72 @@ before this point lives only in the git log.
 
 ---
 
+## Training sessions: 1-1s and small groups, fields, fees and hours — 2026-10-03
+
+The owner's ask: schedule 1-1 and group training that isn't tied to a team,
+with players from any team training all kinds of things, and take on the
+planning, scheduling and admin of it. Usually the coach brings the drills, but
+sometimes a player brings the ones she wants. `SESSIONS.md` is the design,
+written before the code.
+
+- **Club → Training sessions.** A coach offers a 1-1 or a small group: when,
+  which field, how many spots, an age range, a price, and whether families may
+  ask. *Every week* makes one session per week, each its own, so one week is
+  moved or called off without the rest.
+- **Two ways in.** The coach books players from any team herself, and past the
+  spots they go on the waiting list. Or a family asks from her own phone, for
+  her own child, saying what she wants to work on, and the coach books,
+  waitlists or turns it down. A family can withdraw but never give herself a
+  place: a rule can't count spots, so only the coach or an admin says *in*.
+- **The family's "own drills" reach the coach** as her own words on the ask,
+  shown on the session and at the top of its drill picker. The picker offers the
+  library's drills that this many players (plus the coach) can do at these ages.
+  Families never see the library, as `TRAINING.md` settled.
+- **The register** counts on the player's record as *Extra sessions*, beside
+  practices and games, on the Season tab and under *My players*.
+- **Fees**: a booked place owes the session's price, a withdrawal nothing. Mark
+  paid (cash, card, transfer, other) or waived, one place or all of a player's
+  at once; *Remind the family*. A family sees what she owes. No card payments:
+  it's the club's book, not a till.
+- **Hours**: each coach's month, sessions and hours and players, and with an
+  admin-set rate per hour or per session, what that comes to. *Copy as a table*
+  for payroll. A coach sees only her own.
+- **Fields with profiles**: address, pitches, surface, lights, notes, and the
+  club's permits (days, hours, dates, permit number). Each field shows the
+  next two weeks of everything on it, including team practices and games whose
+  venue names it, flagging anything outside the permit or double-booked.
+  Venues already typed on the calendar are offered as one-tap fields. Fields
+  live in club settings (`access/org/venues`), so no new rule.
+- **Clashes**: before saving and on each session, outside the permit, more at
+  once than the field has pitches, the coach due somewhere else, or a booked
+  player due at her team's practice or game.
+- **Telling families**: one message with when, where and what changed, sent
+  in the app where the sender coaches the team, by email in Bcc, or as a copy.
+  Calling a session off opens it. On screen, a family hears when her child's
+  place changes or her session moves; a coach hears when a family asks or
+  withdraws. The first read tells nobody anything.
+- **On the calendar** for that team's coaches and the child's own family, in
+  *Add what is coming up*, and never on the share link or the calendar feed.
+
+Why it's shaped this way: sessions sit at `training/{code}/…`, beside practice
+plans, not in the workspace. Every phone reads the whole workspace, fees don't
+belong on every parent's phone, and the connect-time read would erase a session
+made offline. They have their own local copy, merged on read and never
+replaced. Bookings, the register and fees are separate from the session, so a
+coach saving it can't overwrite a family's ask. Bookings and registers are
+club-readable at the database, as `rsvp` and team registers already are, and
+the screen narrows them; fees are narrowed by the rules themselves. Every write
+is one record at the depth its rule sits at, and deleting a session clears its
+bookings before the session itself, while its coach can still be found.
+
+The rules (`sessions`, `booked`, `came`, `fees`, `pay`, `splans` under
+`training/$code`) need publishing; `node test/rules.js` covers them, and
+`node test/sessions.js` covers the app. Not built: packages of sessions, two
+coaches on one session, outside trainers, named pitches, and bulk import of
+sessions or fields.
+
+---
+
 ## Sub planning: start empty, clear it, and bring an AI's plan back — 2026-10-03
 
 From a coach using the Plan tab for real.

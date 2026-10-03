@@ -64,6 +64,20 @@ All in `CHANGELOG.md` (three entries, 2026-10-01 and 2026-10-02) and README
   higher build number (this branch is on 66) and runs `node test/run.js` and
   `node test/rules.js`.
 
+## Training sessions (branch `claude/calendar-training-scheduling-khnwif`, 2026-10-03)
+
+1-1s and small groups that belong to no team, with fields and permits, fees,
+coach hours, clashes and notices. `SESSIONS.md` is the design; CHANGELOG has
+the entry; README has **Training sessions** and the rule bullets. Waiting on
+the owner: **paste `database.rules.json` again**, since it gains six blocks
+under `training/$code`. `node test/rules.js` passes.
+
+Its overlap with *planning for the club* (below): fields with permits are the
+"club list of venues" ROADMAP asked for, at the place it proposed
+(`access/org/venues`), and `busyItems()` / `fieldOfText()` / `sessClashes()`
+already join teams, coaches, players and fields for one day. The club-wide
+planner should build on those, not write a second set.
+
 ## Next conversation: planning for the club
 
 The owner's next ask: help club admins plan future events — who (teams,

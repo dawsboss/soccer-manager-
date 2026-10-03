@@ -939,6 +939,157 @@ reads('owners are not world-readable', OUT, 'shareOwners/sh1', false);
   delete DB.joinCodes; delete DB.claims;
 }
 
+/* ---------------- training sessions ---------------- */
+
+/* SESSIONS.md: 1-1s and small groups that belong to no team. The session is
+   the club's to read; a coach makes and runs her own, an admin any. A family
+   asks for a spot for her own child and never gives one, because a rule
+   cannot count spots and the coach can. Fees are money, so the rules narrow
+   those themselves: admins, the coach who ran it, and that child's family. */
+{
+  const T = 'training/CLUB/';
+  const sess = (id, extra = {}) => ({ id, kind: 'group', coach: 'coach', date: '2026-10-07', start: '17:00', end: '18:00', cap: 6, price: 20, open: true, ...extra });
+  DB.training.CLUB.sessions = {
+    s1: sess('s1'),
+    s2: sess('s2', { kind: 'one', coach: 'other', cap: 1, open: false })
+  };
+  DB.training.CLUB.booked = { s1: { p1: { tid: 't1', st: 'in', by: 'coach', at: 1 } } };
+  DB.training.CLUB.came = { s1: { p1: true } };
+  DB.training.CLUB.fees = { s1: { p1: { paid: 20, how: 'cash', at: 1, by: 'coach' } } };
+  DB.training.CLUB.pay = { coach: { rate: 30, per: 'hour' } };
+  DB.training.CLUB.splans = { s1: { blocks: [{ drill: { shelf: 'builtin', id: 'rondo-4v1' }, minutes: 12 }] } };
+  const ask = (st, extra = {}) => ({ tid: 't1', st, by: 'mum', at: NOW, ...extra });
+
+  console.log('\n--- sessions: the club reads them ---');
+  reads('a parent reads every session', MUM, T + 'sessions', true);
+  reads('a tracker does', TRK, T + 'sessions', true);
+  reads('a coach does', COACH, T + 'sessions', true);
+  reads('registered, no role yet, does not', NEWB, T + 'sessions', false);
+  reads('an unknown account does not', RANDO, T + 'sessions', false);
+  reads('signed out does not', OUT, T + 'sessions', false);
+  reads('the app owner, holding no role here, does not', OWNER, T + 'sessions', false);
+
+  console.log('\n--- sessions: a coach makes and runs her own ---');
+  writes('a coach offers one, as herself', COACH, T + 'sessions/x', sess('x'), true);
+  writes('not in another coach\'s name', COACH, T + 'sessions/x', sess('x', { coach: 'other' }), false);
+  writes('she changes her own', COACH, T + 'sessions/s1', sess('s1', { start: '17:30' }), true);
+  writes('but cannot give it away', COACH, T + 'sessions/s1', sess('s1', { coach: 'other' }), false);
+  writes('nor change another coach\'s', COACH, T + 'sessions/s2', sess('s2', { coach: 'other', start: '09:00' }), false);
+  writes('nor take another coach\'s over', COACH, T + 'sessions/s2', sess('s2', { coach: 'coach' }), false);
+  writes('she calls off her own by deleting it', COACH, T + 'sessions/s1', null, true);
+  writes('not another coach\'s', COACH, T + 'sessions/s2', null, false);
+  writes('an admin makes one for any coach', ADM, T + 'sessions/x', sess('x', { coach: 'other' }), true);
+  writes('and moves one to another coach', ADM, T + 'sessions/s1', sess('s1', { coach: 'other' }), true);
+  writes('a parent cannot offer one', MUM, T + 'sessions/x', sess('x', { coach: 'mum' }), false);
+  writes('a tracker cannot either', TRK, T + 'sessions/x', sess('x', { coach: 'trk' }), false);
+  writes('nor a stranger', RANDO, T + 'sessions/x', sess('x', { coach: 'rando' }), false);
+  writes('a kind that is neither one nor group', COACH, T + 'sessions/x', sess('x', { kind: 'clinic' }), false);
+  writes('under an id that is not its own', COACH, T + 'sessions/x', sess('y'), false);
+  writes('with no date', COACH, T + 'sessions/x', { id: 'x', kind: 'group', coach: 'coach' }, false);
+  writes('with a price below nothing', COACH, T + 'sessions/x', sess('x', { price: -5 }), false);
+  writes('with no spots at all', COACH, T + 'sessions/x', sess('x', { cap: 0 }), false);
+  writes('the whole collection at once', COACH, T + 'sessions', { x: sess('x') }, false);
+  {
+    const ci = DB.workspaces.CLUB.access.coachIndex;
+    delete DB.workspaces.CLUB.access.coachIndex;
+    writes('no coach index: a coach cannot make one', COACH, T + 'sessions/x', sess('x'), false);
+    writes('nor change her own', COACH, T + 'sessions/s1', sess('s1', { start: '18:00' }), false);
+    writes('an admin still can', ADM, T + 'sessions/x', sess('x'), true);
+    DB.workspaces.CLUB.access.coachIndex = ci;
+    console.log('  ^ the bridge fails closed, as practices\' does: no older behaviour to fall back to.');
+  }
+
+  console.log('\n--- bookings: a family asks, the coach decides ---');
+  reads('the club reads bookings', MUM, T + 'booked', true);
+  reads('a stranger does not', RANDO, T + 'booked', false);
+  delete DB.training.CLUB.booked.s1.p1;
+  writes('a parent asks for her own child', MUM, T + 'booked/s1/p1', ask('asked', { want: 'Weak foot, crossing' }), true);
+  writes('not for somebody else\'s child', MUM, T + 'booked/s1/p2', { ...ask('asked'), tid: 't1' }, false);
+  writes('not claiming another team', MUM, T + 'booked/s1/p1', ask('asked', { tid: 't2' }), false);
+  writes('not in somebody else\'s name', MUM, T + 'booked/s1/p1', ask('asked', { by: 'coach' }), false);
+  writes('and never gives herself the spot', MUM, T + 'booked/s1/p1', ask('in'), false);
+  writes('nor a place on the waiting list', MUM, T + 'booked/s1/p1', ask('wait'), false);
+  writes('not for a session closed to asking', MUM, T + 'booked/s2/p1', ask('asked'), false);
+  writes('not for a session that does not exist', MUM, T + 'booked/nope/p1', ask('asked'), false);
+  writes('with more than 280 characters of wants', MUM, T + 'booked/s1/p1', ask('asked', { want: 'x'.repeat(281) }), false);
+  writes('with something the booking does not carry', MUM, T + 'booked/s1/p1', ask('asked', { paid: true }), false);
+  writes('a tracker cannot ask for anybody', TRK, T + 'booked/s1/p1', { ...ask('asked'), by: 'trk' }, false);
+  DB.training.CLUB.booked.s1.p1 = { tid: 't1', st: 'in', by: 'coach', at: 1 };
+  writes('once the coach has said yes, asking again is refused', MUM, T + 'booked/s1/p1', ask('asked'), false);
+  writes('but she can always withdraw', MUM, T + 'booked/s1/p1', ask('out'), true);
+  writes('even from a session closed to asking', MUM, T + 'booked/s2/p1', ask('out'), true);
+  writes('and cannot delete the booking outright', MUM, T + 'booked/s1/p1', null, false);
+  DB.training.CLUB.booked.s1.p1 = { tid: 't1', st: 'no', by: 'coach', at: 1 };
+  writes('after a "not this time", no asking again', MUM, T + 'booked/s1/p1', ask('asked'), false);
+  DB.training.CLUB.booked.s1.p1 = { tid: 't1', st: 'out', by: 'mum', at: 1 };
+  writes('after withdrawing, she can ask again', MUM, T + 'booked/s1/p1', ask('asked'), true);
+  DB.training.CLUB.booked.s1.p1 = { tid: 't1', st: 'in', by: 'coach', at: 1 };
+  const coachSays = (st, pid = 'p2') => ({ tid: 't1', st, by: 'coach', at: NOW });
+  writes('the session\'s coach books a player', COACH, T + 'booked/s1/p2', coachSays('in'), true);
+  writes('and waitlists one', COACH, T + 'booked/s1/p2', coachSays('wait'), true);
+  writes('and turns one down', COACH, T + 'booked/s1/p1', coachSays('no'), true);
+  writes('and takes a booking off', COACH, T + 'booked/s1/p1', null, true);
+  writes('and clears every booking on it', COACH, T + 'booked/s1', null, true);
+  writes('not on another coach\'s session', COACH, T + 'booked/s2/p2', coachSays('in'), false);
+  writes('another coach cannot book onto hers', OTHER, T + 'booked/s1/p2', { ...coachSays('in'), by: 'other' }, false);
+  writes('an admin books onto any', ADM, T + 'booked/s2/p2', { ...coachSays('in'), by: 'adm' }, true);
+  writes('a status that is not one', COACH, T + 'booked/s1/p2', coachSays('maybe'), false);
+  {
+    const ci = DB.workspaces.CLUB.access.coachIndex;
+    DB.workspaces.CLUB.access.coachIndex = { other: 't2' };
+    writes('a coach who stops being one stops running it', COACH, T + 'booked/s1/p2', coachSays('in'), false);
+    DB.workspaces.CLUB.access.coachIndex = ci;
+  }
+
+  console.log('\n--- the register ---');
+  reads('the club reads it, like a team register', MUM, T + 'came/s1', true);
+  writes('the session\'s coach takes it', COACH, T + 'came/s1', { p1: true, p2: false }, true);
+  writes('an admin does', ADM, T + 'came/s2', { p1: true }, true);
+  writes('another coach does not', OTHER, T + 'came/s1', { p1: false }, false);
+  writes('a parent does not', MUM, T + 'came/s1', { p1: true }, false);
+  writes('each mark is came or missed', COACH, T + 'came/s1', { p1: 'yes' }, false);
+
+  console.log('\n--- fees: money, narrowed by the rules themselves ---');
+  const fee = (extra = {}) => ({ paid: 20, how: 'cash', at: NOW, by: 'coach', ...extra });
+  reads('an admin reads every fee', ADM, T + 'fees', true);
+  reads('a coach does not read them all', COACH, T + 'fees', false);
+  reads('she reads her own session\'s', COACH, T + 'fees/s1', true);
+  reads('not another coach\'s', COACH, T + 'fees/s2', false);
+  reads('a family reads her own child\'s', MUM, T + 'fees/s1/p1', true);
+  reads('not the whole session\'s', MUM, T + 'fees/s1', false);
+  reads('nor another child\'s', MUM, T + 'fees/s1/p2', false);
+  reads('a tracker reads none', TRK, T + 'fees/s1/p1', false);
+  reads('nor a coach of another team', OTHER, T + 'fees/s1', false);
+  writes('the session\'s coach marks one paid', COACH, T + 'fees/s1/p2', fee(), true);
+  writes('and waived', COACH, T + 'fees/s1/p2', fee({ paid: 0, how: 'waived' }), true);
+  writes('an admin marks any', ADM, T + 'fees/s2/p1', fee({ by: 'adm' }), true);
+  writes('a family cannot mark her own paid', MUM, T + 'fees/s1/p1', fee({ by: 'mum' }), false);
+  writes('another coach cannot', OTHER, T + 'fees/s1/p1', fee({ by: 'other' }), false);
+  writes('a way of paying it does not know', COACH, T + 'fees/s1/p2', fee({ how: 'iou' }), false);
+  writes('a negative payment', COACH, T + 'fees/s1/p2', fee({ paid: -20 }), false);
+
+  console.log('\n--- pay rates ---');
+  reads('an admin reads them', ADM, T + 'pay', true);
+  reads('a coach reads her own', COACH, T + 'pay/coach', true);
+  reads('not anyone else\'s', COACH, T + 'pay/other', false);
+  reads('nor the list', COACH, T + 'pay', false);
+  reads('a parent reads none', MUM, T + 'pay/coach', false);
+  writes('an admin sets one', ADM, T + 'pay/other', { rate: 25, per: 'session' }, true);
+  writes('a coach cannot set her own', COACH, T + 'pay/coach', { rate: 300, per: 'hour' }, false);
+  writes('per something else', ADM, T + 'pay/other', { rate: 25, per: 'week' }, false);
+
+  console.log('\n--- a session\'s drills ---');
+  reads('its coach reads the plan', COACH, T + 'splans/s1', true);
+  reads('an admin does', ADM, T + 'splans/s1', true);
+  reads('a parent does not', MUM, T + 'splans/s1', false);
+  reads('another coach does not', OTHER, T + 'splans/s1', false);
+  writes('its coach writes it', COACH, T + 'splans/s1', { blocks: [] , at: NOW }, true);
+  writes('not another coach\'s', COACH, T + 'splans/s2', { blocks: [], at: NOW }, false);
+  reads('nobody reads every plan at once', ADM, T + 'splans', false);
+
+  for (const k of ['sessions', 'booked', 'came', 'fees', 'pay', 'splans']) delete DB.training.CLUB[k];
+}
+
 /* ---------------- a brand-new club, under the same rules ---------------- */
 
 /* Clubs arrive whenever they like, into the database every other club is
@@ -966,6 +1117,7 @@ reads('owners are not world-readable', OUT, 'shareOwners/sh1', false);
   step('adds a team', FOUNDER, W + 'teams/tA', { id: 'tA', name: 'U9 Hawks', players: { a1: { id: 'a1', name: 'Ada' } } });
   step('and a game', FOUNDER, W + 'matches/gA', { id: 'gA', teamId: 'tA', opponent: 'Riverside' });
   step('and plans a practice', FOUNDER, 'training/NEWCLUB/practices/tA/pA', { id: 'pA', teamId: 'tA', date: '2026-10-06' });
+  step('and offers a training session', FOUNDER, 'training/NEWCLUB/sessions/sA', { id: 'sA', kind: 'group', coach: 'founder', date: '2026-10-07', cap: 6, open: true });
   reads('and reads the club back', FOUNDER, 'workspaces/NEWCLUB', true);
   console.log('  ^ from nothing to a working club, under the rules every other club runs on.');
   reads('from then on a stranger cannot read it', RANDO, 'workspaces/NEWCLUB', false);
@@ -1032,7 +1184,16 @@ console.log(`
      or entry. The rule checks whose child it is, not that the thing exists,
      because Realtime Database rules have no substring to pull a game id back
      out of the key. It costs nothing but a stray answer under her own child,
-     and keeping the rule short enough to read in one go is worth more.`);
+     and keeping the rule short enough to read in one go is worth more.
+
+  7. A training session's bookings and register are readable by the whole
+     club, as rsvp and the team registers are; the screen shows a family her
+     own child and counts. Narrowing it in the rules would mean a listener per
+     session per child on every parent's phone. Fees are narrowed by the rules.
+
+  8. A rule cannot count, so it cannot refuse the seventh place in a group of
+     six. It refuses anyone but the session's coach or an admin giving a place;
+     the coach's phone keeps the count.`);
 
 console.log(`\n${failures ? failures + ' EXPECTATION(S) FAILED' : 'all expectations hold'}`);
 process.exit(failures ? 1 : 0);

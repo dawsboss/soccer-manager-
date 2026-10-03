@@ -206,7 +206,14 @@ const EXPORTS = `{
   families, guardianEmails, childrenOf, viewInbox, viewThread, watchMessages, sheetPostShare,
   get msgs() { return msgs }, get msgFor() { return msgFor },
   /* team links and squad invites */
-  get join() { return join }, joinLink, claimMatches, pendingClaims, inviteSquad, sheetSquadInvites, joinCard
+  get join() { return join }, joinLink, claimMatches, pendingClaims, inviteSquad, sheetSquadInvites, joinCard,
+  /* training sessions */
+  get sess() { return sess }, set sess(v) { sess = v }, get sessLoaded() { return sessLoaded }, get sessState() { return sessState },
+  get reach() { return reach }, get sessForm() { return sessForm },
+  sessAll, sessById, normSess, bookingsOf, bookOf, spotsLeft, canSessions, canOffer, canRun, sessClashes, busyItems,
+  fieldList, fieldById, fieldOfText, permitsOf, permitCovers, fieldDays, looseVenues, hoursFor, payOf, payFor, feeRows,
+  familyOwed, feeOf, sessAttendance, sessCalItems, sessMerge, sessPut, watchSess, sessNews, viewSessions, sheetSess,
+  sessUi, SESS_ACTS, sessMessage, reachFor, fmtMoney, sessClubLine, calendarDoc, publicDoc, viewMine, viewClub
 }`;
 
 const FB_URLS = {
