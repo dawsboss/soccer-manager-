@@ -8,6 +8,106 @@ before this point lives only in the git log.
 
 ---
 
+## Bookable groups, and the rules hold families to the times — 2026-10-03
+
+The owner, on the first version: *slots should be for groups or 1-1*, and
+*the rules should also block some of that stuff* — the slot grid, the coach
+being free and the cancellation notice, which the first version left to the
+app.
+
+- **1-1s or a small group.** A coach's times are either; a group has a
+  number of places and an optional name ("Finishing group"), and a family
+  sees how many are left. The first family to book a group slot makes it;
+  the rest join it.
+- **A place is a seat.** A rule can't count, but it can refuse a key that's
+  taken, so a slot has one seat key per place (`seats/{sid}/s1…`) and a
+  family books by taking a free one, then writing her child's booking naming
+  it. That is how a group of six refuses the seventh.
+- **The window carries what the rules look up.** Each block lists the slots
+  it offers, each with its start as a timestamp. The rule now refuses a slot
+  off the grid or of the wrong length, one in the past, one at a price, size
+  or notice of the family's own, a seat the window doesn't have, and a
+  cancellation or withdrawal inside the coach's notice.
+- **"The coach is busy" reaches the rules too.** The list of open slots
+  leaves out anything the coach is busy with, and her phone or an admin's
+  keeps it current whenever they open the app (`healBlocks()`), as the lookup
+  tables are kept. The same phones let go of seats nobody is using.
+- **`rules.js`** walks all of it, including the seventh child and a cancel an
+  hour before, and prints what is still the app's: how fresh the list of open
+  slots is, and a second seat held by hand for one child.
+
+Paste `database.rules.json` again: it gains the `seats` block, and `avail`
+blocks now need `kind` and `cap`.
+
+---
+
+## Coaches' bookable times, and My calendar — 2026-10-03
+
+Asked by the owner: *training sessions should have a calendar, and coaches
+have block-out times they can be booked in; admins and coaches edit them, a
+parent books whatever is in there, synced with the teams' calendars — and a
+calendar is not team-specific but person-specific.* `AVAILABILITY.md` is the
+design, written first.
+
+- **Bookable times.** Training sessions has a *Bookable times* tab. A coach
+  offers a window (Tuesdays 5–7pm, hour slots, $30, until the end of term);
+  each week is its own block, so one week can be taken off with one tap. A
+  coach offers and changes her own; an admin anyone's, checked in the handler.
+- **Families book a slot themselves**, for their own child, with what she
+  wants to work on, and it's booked: no waiting on a reply. A booked slot is
+  an ordinary 1-1 session, so the coach's list, the register, fees, hours,
+  clashes, notices and the player's record all work on it unchanged.
+- **One time, one family, enforced by the database.** The slot's id is built
+  from the coach, the day and the start, and the rule checks it was, and
+  that nothing is there yet. A rule can't search for overlaps; it can refuse
+  a key that exists. So booking needs a signal, and a family who loses the
+  race is told to pick again with nothing left on her screen.
+- **Synced with the teams' calendars.** A practice or game for a team the
+  coach coaches, or a session she runs, takes out the slots it overlaps with
+  nobody editing anything; a slot that overlaps the child's own team practice
+  isn't offered to her family.
+- **Cancelling** goes back to the coach's list as a free time, up to the
+  notice she sets (24 hours by default). The coach is told of bookings and
+  cancellations.
+- **My calendar** (Club home, and a link on every team's Calendar tab): every
+  team she coaches or tracks, every team a child of hers is on, her sessions,
+  her children's, and the times she's offered. It reads the lists the team
+  calendar reads, so nothing is copied and nothing goes stale.
+- **Rules.** `training/$code/avail`, and family clauses on `sessions/$sid`
+  and `booked/$sid/$pid` for exactly a slot's shape. `rules.js` walks it,
+  including two families racing for one time, and prints what is left to the
+  app (the slot grid, the coach being free, the cancellation notice).
+- **Sheet rows line up.** `.sheet .opt` was undoing `.opt.spread` in every
+  sheet, so a label ran into the time beside it; now they sit at either end.
+
+Paste `database.rules.json` again: without `avail`, a coach's times stay on
+her phone and a family's booking is refused and taken back.
+
+---
+
+## Start a new club from the club switcher — 2026-10-03
+
+Asked by the owner: "not sure how a new club can be made if you are in one."
+It couldn't, except by the app owner typing a workspace code under Settings.
+The rules already let any signed-in account found a club at a code nobody
+has written (the bootstrap clauses `rules.js` walks), so this is a door, not
+a rule change.
+
+- **The club button at the top left** now ends with **+ Start a new club**.
+  A name, *Start it*, and the phone opens the new club with you as its admin.
+  The club you were in is untouched and stays in the list.
+- **Admin, index, member, name, then the bookmark**, each awaited, in the
+  order the rules need: every later clause asks whether she is the admin.
+- **Online only, on purpose.** Everything else goes through the outbox; a
+  club does not. A club queued on one phone is a code nobody else can reach
+  with an admin claim another device could beat it to, and making one again
+  with a signal costs nothing. Refused or offline, nothing is half-made and
+  the phone stays where it was.
+- **A device with no club open** gets the same button under Settings →
+  Workspace. The owner's code box stays as the escape hatch.
+
+---
+
 ## Send one drill to another coach — 2026-10-03
 
 The owner asked to share specific drills with other coaches, still checking

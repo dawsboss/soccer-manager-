@@ -40,6 +40,7 @@ const SUITES = [
   ['practice', 'the Practice tab, and who gets it'],
   ['plans', 'practice plans, and how they reach the club'],
   ['sessions', 'training sessions, fields, fees and hours'],
+  ['avail', 'coaches\' bookable times, a family booking one, and my calendar'],
   ['safekeep', 'nothing floats away: one count, a full phone, a whole backup'],
   ['library', 'the club\'s drills and a coach\'s own, and who sees which'],
   ['smoke', 'every view renders without throwing'],
