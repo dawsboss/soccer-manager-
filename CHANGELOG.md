@@ -31,6 +31,11 @@ From a coach using the Plan tab for real.
   it is clean, asks before replacing a plan, and never touches a locked one.
   Players stay shirt numbers both ways. A position label a shape repeats is
   numbered (`CB`, `CB2`) so it can be read back.
+- **Minutes so far, next to the total.** On any change after kick-off, each
+  player shows what the plan has given her by that minute (*12 by 20:00*), with
+  her whole-game total under it (*40 of 40 in game*). The total alone could not
+  say who was due a rest at the moment the change comes round. Kick-off still
+  shows only the total, since nobody has played yet.
 - **A sub can be deleted from the match log** — *Delete — this sub did not
   happen* on its sheet. A swap gives the player who "went off" the other's
   spell; one swapped straight back later just played on; a move joins her two

@@ -185,6 +185,13 @@ console.log('\n--- minutes fall out of the snapshots ---');
   check('every filled spot adds up to the game', Object.values(s).reduce((a, b) => a + b, 0), 4 * 4800);
   const h = html();
   check('the diff shows the sub', /on:<\/span> Jo \(ST\)/.test(h) && /off:<\/span> Rosa/.test(h), true);
+  const by = A.planSeconds(g(), 2400);
+  check('up to a mark counts only what is played before it', [by.p3, by.p4, by.p5], [2400, 0, 2400]);
+  const row = pid => (h.match(new RegExp(`data-pid="${pid}"[^]*?</button>`)) || [''])[0].replace(/<[^>]+>/g, '').replace(/\s+/g, ' ');
+  check('at a change, a player shows what she has had by then and her game total', /40 by 40:00 ?40 in game/.test(row('p3')), true);
+  check('and one coming on shows none yet, with her total', / 0 by 40:00 ?40 in game/.test(row('p4')), true);
+  A.ui.snapAt = 0;
+  check('kick-off shows just the total', /by 0:00|by 00:00/.test(html()), false);
 }
 
 console.log('\n--- blocks as the database hands them back ---');

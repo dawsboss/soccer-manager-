@@ -2,7 +2,7 @@
    Static app. Data lives in localStorage, and mirrors to Firebase Realtime
    Database when a config + workspace code are present. */
 
-const BUILD = '71';
+const BUILD = '72';
 const BUILT = '2026-10-02';
 /* index.html carries the build it was published with. If this file is newer, the
    browser handed us a cached page — the exact failure that has eaten hours. */
@@ -2939,9 +2939,11 @@ function nextPlanBlock(m, sec) {
 }
 /* Seconds each player gets if the plan is followed: a snapshot lasts until the
    next one, the last until full time. Worked out from the snapshots every time
-   rather than stored, so a hand-edited plan can never disagree with its total. */
-function planSeconds(m) {
-  const bl = planBlocks(m), end = matchMinutes(m) * 60, out = {};
+   rather than stored, so a hand-edited plan can never disagree with its total.
+   With `until`, only what is played before that mark: what a player has had by
+   the time a change comes round, which is what the coach decides it on. */
+function planSeconds(m, until) {
+  const bl = planBlocks(m), end = Math.min(matchMinutes(m) * 60, until == null ? Infinity : until), out = {};
   bl.forEach((b, i) => {
     const len = Math.max(0, Math.min(end, i + 1 < bl.length ? bl[i + 1].start : end) - b.start);
     for (const id of b.ids || []) out[id] = (out[id] || 0) + len;
@@ -4804,14 +4806,18 @@ function viewPlan() {
         ${!on.length && !off.length && !moved.length ? '<span class="muted">Same as the snapshot before — change a spot, or delete this one.</span>' : ''}</div>`;
     }
 
-    const secs = planSeconds(m);
+    const secs = planSeconds(m), before = planSeconds(m, cur.start);
     const prow = p => {
       const sid = slotOfIn(cur, p.id), sl = sid && slotById(m, sid);
       const got = Math.round((secs[p.id] || 0) / 60), want = m.planned && m.planned[p.id] != null ? Number(m.planned[p.id]) : null;
+      const sofar = Math.round((before[p.id] || 0) / 60);
+      const mins_ = cur.start
+        ? `<span class="pmins snapmins"><span>${sofar}<small> by ${mmss(cur.start)}</small></span><span class="pmtot">${got}${want != null ? ' of ' + want : ''} in game</span></span>`
+        : `<span class="pmins">${got}<small>${want != null ? ' of ' + want : ''} min</small></span>`;
       return `<button class="prow" type="button" data-act="snapplayer" data-pid="${p.id}" data-picked="${sid && sid === sel ? 1 : 0}">
         <span class="pnum">${esc(p.number ?? '')}</span>
         <span><span class="pname">${esc(p.name)}</span><span class="psub">${sl ? esc(sl.label) : prev && slotOfIn(prev, p.id) ? 'was ' + esc((slotById(m, slotOfIn(prev, p.id)) || {}).label || 'on') + ' before' : 'not on'}${p.gk ? (sl && sl.role === 'GK' ? '' : ' · keeper') : p.preferred ? ' · likes ' + esc(p.preferred) : ''}</span></span>
-        <span class="pmins">${got}<small>${want != null ? ' of ' + want : ''} min</small></span></button>`;
+        ${mins_}</button>`;
     };
     const wasOn = p => !!(prev && slotOfIn(prev, p.id));
     const off = roster.filter(p => !slotOfIn(cur, p.id)).sort((x, y) => wasOn(y) - wasOn(x)), on = roster.filter(p => slotOfIn(cur, p.id));
