@@ -155,12 +155,10 @@ console.log('\n--- a plan worth a second look asks before locking ---');
   A.click({ act: 'planlock' });
   check('accepting locks it anyway', !!g().plan.locked, true);
 
-  global.confirm = () => false;
   A.click({ act: 'makeplan' });
-  check('a redraft asks first when locked', !!g().plan.locked, true);
-  global.confirm = () => true;
-  A.click({ act: 'makeplan' });
-  check('and a redraft is not the plan that was locked in', g().plan.locked, undefined);
+  check('there is no redraft over a locked plan', !!g().plan.locked, true);
+  A.click({ act: 'snapwipe' });
+  check('nor a clear: unlock first', !!g().plan.locked, true);
 }
 
 console.log('\n--- "saved" means the club has it ---');
@@ -510,6 +508,22 @@ function sideline() {
     A.click({ act: 'subsgo', start: '0' });
     check('a plan with no spots still puts the players on', on(g), ['p1', 'p2', 'p3', 'p5']);
     check('each somewhere on the pitch', A.fieldIds(g()).every(p => g().positions[p] && g().positions[p].x != null), true);
+  }
+
+  console.log('\n--- a lineup put on and changed before kick-off is not a sub ---');
+  {
+    const g = setup();
+    delete g().plan.locked;
+    as('jaz'); A.ui.gameView = 'plan';
+    A.ui.snapAt = 0;
+    check('before kick-off the button says what it does', /Use as the starting lineup/.test(html()), true);
+    A.click({ act: 'applyblock', start: '0' });
+    A.click({ act: 'applyblock', start: '600' });         // then the 10:00 lineup, still at 0:00
+    check('the second lineup is the one on', on(g), ['p1', 'p3', 'p4', 'p5']);
+    check('Mia was never on, so she has no spell at all', A.stintsOf(g(), 'p2').length, 0);
+    check('and the match log has no subs in it', A.subEvents(g()).length, 0);
+    A.click({ act: 'applyblock', start: '0' });
+    check('back again: still none', A.subEvents(g()).length + ':' + A.stintsOf(g(), 'p4').length, '0:0');
   }
 
   H.summary('planned subs at the sideline');

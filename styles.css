@@ -552,6 +552,7 @@ table.grid td.right{text-align:right}
 .snapwhen b{font-family:"Barlow Condensed",sans-serif;font-size:22px;line-height:1.05;min-width:6ch;text-align:center;font-variant-numeric:tabular-nums}
 .snapwhen b small{display:block;font-family:"Barlow",sans-serif;font-size:11.5px;font-weight:500;color:var(--ink-soft)}
 .snapwhen .muted{font-size:14px}
+.snapwhen .snapx{margin-left:6px}
 .pitch button.token{padding:0;color:var(--ink);cursor:pointer;font:inherit;font-family:"Barlow Condensed",sans-serif}
 .pitch .ghost{cursor:pointer;padding:0}
 .ghost[data-picked="1"]{background:rgba(255,255,255,.35);border-style:solid;outline:3px solid #fff;outline-offset:2px}

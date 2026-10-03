@@ -2,7 +2,7 @@
    Static app. Data lives in localStorage, and mirrors to Firebase Realtime
    Database when a config + workspace code are present. */
 
-const BUILD = '68';
+const BUILD = '69';
 const BUILT = '2026-10-02';
 /* index.html carries the build it was published with. If this file is newer, the
    browser handed us a cached page — the exact failure that has eaten hours. */
@@ -969,7 +969,8 @@ const COACH_ACTS = new Set([
   'fixsub', 'nudgesub', 'setsubtime', 'addsub', 'doaddsub', 'fixminutes', 'addstint', 'delstint', 'savestints',
   'repair', 'makeplan', 'planall', 'saveplan', 'evensplit', 'availability', 'toggleavail', 'toggleout',
   'editgameshape', 'gameshapepreset', 'planlock', 'planunlock',
-  'snapstart', 'snapadd', 'snapdel', 'snaptime', 'snapslot', 'snapclear', 'snapplayer',
+  'snapstart', 'snapadd', 'snapdel', 'snaptime', 'snapslot', 'snapclear', 'snapplayer', 'snapwipe', 'snapfill',
+  'delsub', 'aiimport',
   // the calendar
   'calnew', 'caledit', 'calsave', 'caldel', 'calcall', 'caleditgame', 'calsyncon', 'calsyncnew', 'attend', 'attsave'
 ]);
@@ -3190,6 +3191,68 @@ function moveSub(m, row, t) {
   saveLocal(); render();
 }
 
+/* Take a sub out of the log: it did not happen. What that means for the
+   minutes depends on the row. A swap gives the player who "went off" the
+   spell of the one who "came on", and that spell goes; a move to a new spot
+   joins her two spells back into one; a lone "on" goes; a lone "off" joins up
+   with her next spell, or reopens her if she has none. A spell of no length is
+   simply removed — it is what a lineup set and changed before kick-off left
+   behind. Where the answer would overlap another spell of the same player it
+   is refused, with Fix minutes as the way through, rather than guessed.
+   Returns a reason when refused, nothing when done. */
+function deleteSub(m, row) {
+  const path = `matches/${m.id}`, S = m.stints || {};
+  const A = row.offSid && S[row.offSid] ? { ...S[row.offSid] } : null;
+  const B = row.onSid && S[row.onSid] ? { ...S[row.onSid] } : null;
+  if (!A && !B) return 'That sub is not there any more';
+  const gone = sid => { delDeep(state, `${path}/stints/${sid}`); remoteDel(`${path}/stints/${sid}`); };
+  const put = (sid, s) => { const v = { ...s }; if (v.off == null) delete v.off; delDeep(state, `${path}/stints/${sid}`); quiet(`${path}/stints/${sid}`, v); };
+  const unpos = pid => { delDeep(state, `${path}/positions/${pid}`); remoteDel(`${path}/positions/${pid}`); };
+  const pos = (pid, s, from) => {
+    const sl = s.slot ? slotById(m, s.slot) : null;
+    const p = from && (m.positions || {})[from];
+    quiet(`${path}/positions/${pid}`, sl ? { x: sl.x, y: sl.y, slot: sl.id } : p ? { ...p } : { x: 50, y: 45, slot: null });
+  };
+  const zero = s => s && s.off != null && s.off <= s.on;
+  if (zero(A) || zero(B)) {
+    if (zero(A)) gone(row.offSid);
+    if (zero(B)) gone(row.onSid);
+    saveLocal(); return null;
+  }
+  // does pid have another spell that starts inside [from, to)?
+  const clash = (pid, from, to, skip) => Object.entries(S).some(([sid, s]) => !skip.includes(sid) && s.pid === pid && s.on >= from && (to == null || s.on < to));
+  if (A && B) {
+    /* Swapped straight back later (Mia off for Jo, then Jo off for Mia): with
+       the first gone she simply played on, so her next spell joins this one.
+       Any other spell of hers inside Jo's would be her on the pitch twice. */
+    const back = B.off == null || A.pid === B.pid ? null : Object.entries(S).find(([sid, s]) => sid !== row.offSid && s.pid === A.pid && Math.abs(s.on - B.off) <= 3);
+    if (clash(A.pid, A.off, back ? back[1].on : B.off, [row.offSid, row.onSid])) return 'She came back on later — use Fix minutes for this one';
+    // back in another spot is a move, and stays one; anywhere else it is one spell
+    const join = back && (!back[1].slot || back[1].slot === A.slot);
+    put(row.offSid, { ...A, off: join ? back[1].off : back ? back[1].on : B.off });
+    if (join) gone(back[0]);
+    gone(row.onSid);
+    if (B.off == null) { if (A.pid !== B.pid) unpos(B.pid); pos(A.pid, A, B.pid); }
+    saveLocal(); return null;
+  }
+  if (B) {
+    gone(row.onSid);
+    if (B.off == null) unpos(B.pid);
+    saveLocal(); return null;
+  }
+  // a lone "off": join her next spell, or reopen her
+  const next = Object.entries(S).filter(([sid, s]) => sid !== row.offSid && s.pid === A.pid && s.on >= A.off).sort((x, y) => x[1].on - y[1].on)[0];
+  if (next) {
+    put(row.offSid, { ...A, off: next[1].off });
+    gone(next[0]);
+  } else {
+    if (m.ended) return 'That is the final whistle, not a sub';
+    put(row.offSid, { ...A, off: null });
+    pos(A.pid, A);
+  }
+  saveLocal(); return null;
+}
+
 const staged = () => (ui.plan && ui.plan.items) || [];
 const stagedIds = () => staged().flatMap(x => x.k === 'sub' ? [x.out, x.in] : [x.pid]);
 const isStaged = pid => stagedIds().includes(pid);
@@ -3261,7 +3324,13 @@ function applyBlock(m, b, t = elapsedSec(m)) {
   const d = subsDiff(m, b);
   for (const pid of d.off) {
     const o = openStint(m, pid);
-    if (o) { rec.prev[o[0]] = { ...o[1] }; quiet(`${path}/stints/${o[0]}/off`, t); }
+    /* On at this very second — usually a lineup put on before kick-off and
+       then swapped for another. Closing it would leave a spell of no length,
+       and the match log reads every closed spell as a player going off: a
+       string of subs before a ball was kicked. She was never on, so the spell
+       goes; `prev` still holds it, so Undo puts it back. */
+    if (o && o[1].on >= t) { rec.prev[o[0]] = { ...o[1] }; delDeep(state, `${path}/stints/${o[0]}`); remoteDel(`${path}/stints/${o[0]}`); }
+    else if (o) { rec.prev[o[0]] = { ...o[1] }; quiet(`${path}/stints/${o[0]}/off`, t); }
     keepPos(pid);
     delDeep(state, `${path}/positions/${pid}`); remoteDel(`${path}/positions/${pid}`);
   }
@@ -4671,13 +4740,14 @@ function viewPlan() {
     snaps = `<div class="card"><h2 style="margin-bottom:6px">Snapshots</h2>
       <p class="muted" style="margin-top:0">A plan is a few pictures of the pitch: who plays where at kick-off, then who is where after each change. Start with kick-off, then add one for every time you mean to make subs — half-time, every ten minutes, whatever suits.</p>
       <button class="btn wide" data-act="snapstart">Plan kick-off</button>
-      <p class="muted" style="margin:12px 0 0">Or let the app draft one from your target minutes, and change what you like — see <b>Build one for me</b>.</p></div>`;
+      <p class="muted" style="margin:12px 0 0">Or let the app draft one from your target minutes, or paste back an answer from <b>Ask an AI</b>, and change what you like.</p></div>`;
   } else {
     const cur = blocks.find(b => b.start === ui.snapAt) || blocks[0];
     const i = blocks.indexOf(cur), prev = i ? blocks[i - 1] : null;
     const assign = cur.assign || {};
     const sel = ui.snapSid && shape.some(s => s.id === ui.snapSid) ? ui.snapSid : null;
     const P = id => (t.players || {})[id];
+    const emptyN = shape.filter(s => !assign[s.id]).length;
     const slotOfIn = (b, pid) => Object.keys((b && b.assign) || {}).find(k => b.assign[k] === pid) || null;
 
     const strip = `<div class="snapstrip">${blocks.map(b => {
@@ -4692,7 +4762,8 @@ function viewPlan() {
           <button class="btn quiet sm" data-act="snaptime" data-d="-60" aria-label="1 minute earlier">−1</button>
           <b>${mmss(cur.start)}<small>${esc(halfName(m, Math.floor(cur.start / ((m.periodMinutes || 40) * 60)) + 1))}</small></b>
           <button class="btn quiet sm" data-act="snaptime" data-d="60" aria-label="1 minute later">+1</button>
-          <button class="btn quiet sm" data-act="snaptime" data-d="300" aria-label="5 minutes later">+5</button></div>`;
+          <button class="btn quiet sm" data-act="snaptime" data-d="300" aria-label="5 minutes later">+5</button>
+          <button class="btn danger sm snapx" data-act="snapdel" aria-label="Delete the change at ${mmss(cur.start)}">✕</button></div>`;
 
     const spots = shape.map(s => {
       const pid = assign[s.id], p = pid && P(pid);
@@ -4728,7 +4799,7 @@ function viewPlan() {
       const moved = bi.filter(id => pi.includes(id) && slotOfIn(prev, id) !== slotOfIn(cur, id));
       const lbl = (b, id) => { const sl = slotById(m, slotOfIn(b, id)); return sl ? ` (${esc(sl.label)})` : ''; };
       diff = `<div class="snapdiff">${on.length ? `<div><span class="on">on:</span> ${on.map(id => name(id) + lbl(cur, id)).join(', ')}</div>` : ''}
-        ${off.length ? `<div><span class="off">off:</span> ${off.map(name).join(', ')}</div>` : ''}
+        ${off.length ? `<div><span class="off">${emptyN ? 'not placed yet:' : 'off:'}</span> ${off.map(name).join(', ')}</div>` : ''}
         ${moved.length ? `<div><span class="muted">moves:</span> ${moved.map(id => `${name(id)} ${esc((slotById(m, slotOfIn(prev, id)) || {}).label || '')} → ${esc((slotById(m, slotOfIn(cur, id)) || {}).label || '')}`).join(', ')}</div>` : ''}
         ${!on.length && !off.length && !moved.length ? '<span class="muted">Same as the snapshot before — change a spot, or delete this one.</span>' : ''}</div>`;
     }
@@ -4739,22 +4810,23 @@ function viewPlan() {
       const got = Math.round((secs[p.id] || 0) / 60), want = m.planned && m.planned[p.id] != null ? Number(m.planned[p.id]) : null;
       return `<button class="prow" type="button" data-act="snapplayer" data-pid="${p.id}" data-picked="${sid && sid === sel ? 1 : 0}">
         <span class="pnum">${esc(p.number ?? '')}</span>
-        <span><span class="pname">${esc(p.name)}</span><span class="psub">${sl ? esc(sl.label) : 'not on'}${p.gk ? (sl && sl.role === 'GK' ? '' : ' · keeper') : p.preferred ? ' · likes ' + esc(p.preferred) : ''}</span></span>
+        <span><span class="pname">${esc(p.name)}</span><span class="psub">${sl ? esc(sl.label) : prev && slotOfIn(prev, p.id) ? 'was ' + esc((slotById(m, slotOfIn(prev, p.id)) || {}).label || 'on') + ' before' : 'not on'}${p.gk ? (sl && sl.role === 'GK' ? '' : ' · keeper') : p.preferred ? ' · likes ' + esc(p.preferred) : ''}</span></span>
         <span class="pmins">${got}<small>${want != null ? ' of ' + want : ''} min</small></span></button>`;
     };
-    const off = roster.filter(p => !slotOfIn(cur, p.id)), on = roster.filter(p => slotOfIn(cur, p.id));
+    const wasOn = p => !!(prev && slotOfIn(prev, p.id));
+    const off = roster.filter(p => !slotOfIn(cur, p.id)).sort((x, y) => wasOn(y) - wasOn(x)), on = roster.filter(p => slotOfIn(cur, p.id));
     const list = `<h3 style="margin:14px 0 6px">Not on</h3>
       <div class="plist">${off.map(prow).join('') || '<p class="muted" style="margin:2px 0">Everyone is on in this snapshot.</p>'}</div>
       <h3 style="margin:14px 0 6px">On the pitch</h3>
       <div class="plist">${on.map(prow).join('') || '<p class="muted" style="margin:2px 0">Nobody yet.</p>'}</div>`;
 
     snaps = `<div class="card"><div class="spread" style="margin-bottom:10px"><h2>Snapshots</h2>
-        <span class="muted">${esc(m.formation.name || '')}</span></div>
+        <span class="muted">${esc(m.formation.name || '')}${locked ? '' : ' <button class="btn quiet sm" data-act="snapwipe">Clear plan</button>'}</span></div>
       ${strip}${when}${pitch}${hint}${diff}
-      <div class="row" style="margin-top:10px">${locked ? '' : `<button class="btn quiet sm" data-act="snapadd">Copy to a new snapshot</button>
-        <button class="btn quiet sm" data-act="snapdel">Delete${i === 0 && blocks.length === 1 ? ' plan' : ''}</button>`}
+      <div class="row" style="margin-top:10px">${locked ? '' : `<button class="btn quiet sm" data-act="snapadd">Add the next change</button>
+        ${prev && emptyN && Object.values(prev.assign || {}).some(id => !Object.values(assign).includes(id)) ? '<button class="btn quiet sm" data-act="snapfill">Fill the gaps from the one before</button>' : ''}`}
         <button class="btn quiet sm" data-act="bench" data-start="${cur.start}">Tell the bench</button>
-        <button class="btn quiet sm" data-act="applyblock" data-start="${cur.start}">Put this on the pitch now</button></div>
+        <button class="btn quiet sm" data-act="applyblock" data-start="${cur.start}">${elapsedSec(m) <= 0 && !m.ended ? 'Use as the starting lineup' : 'Put this on the pitch now'}</button></div>
       ${list}</div>`;
   }
 
@@ -4783,8 +4855,8 @@ function viewPlan() {
           <p class="muted" style="margin-top:0">${m.periodCount || 2} × ${m.periodMinutes || 40} min · ${m.onFieldCount || 11}v${m.onFieldCount || 11}. ${blocks.length ? 'What each player gets if you follow the snapshots, against her target.' : 'Targets are optional — they are what <b>Build one for me</b> aims for.'}</p>
           ${minutesRows}</div>
         <div class="card"><h2 style="margin-bottom:6px">Build one for me</h2>
-          <p class="muted" style="margin-top:0">Drafts a snapshot every ${Number(m.blockMinutes) || 10} minutes or so from the targets, ratings and pairings. ${locked ? 'Your plan is locked in — unlock it first to redraft.' : blocks.length ? 'It replaces the snapshots you have.' : 'Every one of them can be changed afterwards.'}</p>
-          ${locked ? '' : `<button class="btn quiet wide" data-act="makeplan">${blocks.length ? 'Redraft the plan' : 'Draft a plan'}</button>`}</div>
+          <p class="muted" style="margin-top:0">${blocks.length ? 'Only for an empty plan, so it can never write over yours. <b>Clear plan</b> first if you really want a fresh draft.' : `Drafts a snapshot every ${Number(m.blockMinutes) || 10} minutes or so from the targets, ratings and pairings. Every one of them can be changed afterwards.`}</p>
+          ${blocks.length ? '' : '<button class="btn quiet wide" data-act="makeplan">Draft a plan</button>'}</div>
         ${comingCard(t, m)}
         ${aiButton('game')}
       </div>
@@ -7769,6 +7841,7 @@ function sheetFixSub(i) {
     </div>
     <label class="field"><span>Or set the exact time</span><input type="text" id="subT" value="${mmss(r.t)}" placeholder="23:10" inputmode="numeric"></label>
     <button class="btn wide" data-act="setsubtime" data-i="${i}">Save time</button>
+    <div style="margin-top:8px"><button class="btn danger wide" data-act="delsub" data-i="${i}">Delete — this sub did not happen</button></div>
     <div style="margin-top:8px"><button class="btn quiet wide" data-act="closesheet">Cancel</button></div>`);
 }
 
@@ -7906,6 +7979,11 @@ function snapAction(t, m, a, d) {
     ui.snapAt = 0; ui.snapSid = shape.find(s => !assign[s.id]) ? shape.find(s => !assign[s.id]).id : null;
     savePlan(m, [{ start: 0, assign }]); return;
   }
+  if (a === 'snapwipe') {
+    if (!blocks.length || !confirm('Clear the whole plan? Every snapshot goes, and you start again from an empty pitch.')) return;
+    ui.snapAt = null; ui.snapSid = null;
+    savePlan(m, []); toast('Plan cleared'); return;
+  }
   if (!cur) return;
   if (a === 'snappick') { ui.snapAt = Number(d.start); ui.snapSid = null; render(); return; }
   if (a === 'snapadd') {
@@ -7916,9 +7994,27 @@ function snapAction(t, m, a, d) {
     let at = Math.min(cur.start + 600, half < end ? half : end);
     if (nx && at >= nx.start) at = cur.start + Math.floor((nx.start - cur.start) / 120) * 60;
     if (at <= cur.start || at >= end || taken(at)) { toast(nx ? 'No room before the next snapshot — move that one first' : 'No time left after this one'); return; }
-    blocks.push({ start: at, assign: { ...cur.assign } });
+    /* Empty, not a copy of the one before. A copied lineup credits eleven
+       players with the rest of the game the moment it appears, and the minutes
+       column stops saying where any of it came from; built up one player at a
+       time, each number moves when its player is placed. The players from the
+       change before are listed first and land back in their old spots, so
+       rebuilding the ones who stay is a tap each. */
+    blocks.push({ start: at, assign: {} });
     ui.snapAt = at; ui.snapSid = null;
-    savePlan(m, blocks); toast(`Copied to ${mmss(at)} — now make the changes`); return;
+    savePlan(m, blocks); toast(`New change at ${mmss(at)} — put on who plays from here`); return;
+  }
+  if (a === 'snapfill') {
+    const prev = blocks.filter(b => b.start < cur.start).pop();
+    if (!prev) return;
+    const placed = new Set(Object.values(cur.assign));
+    let n = 0;
+    for (const s of shape) {
+      const pid = (prev.assign || {})[s.id];
+      if (pid && !cur.assign[s.id] && !placed.has(pid)) { cur.assign[s.id] = pid; placed.add(pid); n++; }
+    }
+    ui.snapSid = null;
+    savePlan(m, blocks); toast(n ? `${n} filled from the change before` : 'Nothing left to fill from the change before'); return;
   }
   if (a === 'snapdel') {
     if (cur.start === 0 && blocks.length > 1) { toast('Kick-off is where the plan starts — clear its spots instead'); return; }
@@ -7957,10 +8053,12 @@ function snapAction(t, m, a, d) {
     let sid = ui.snapSid;
     if (!sid) {
       if (had) { ui.snapSid = had; render(); return; }
-      // no spot picked: drop her in the open spot that suits her best
+      // no spot picked: back where she was in the change before, else the open spot that suits her best
       const open = shape.filter(s => !cur.assign[s.id]);
       if (!open.length) { toast('Every spot is filled — tap the spot she should take'); return; }
-      sid = open.slice().sort((x, y) => fit(p, y) - fit(p, x))[0].id;
+      const before = blocks.filter(b => b.start < cur.start).pop();
+      const was = before && Object.keys(before.assign || {}).find(k => before.assign[k] === p.id);
+      sid = was && !cur.assign[was] ? was : open.slice().sort((x, y) => fit(p, y) - fit(p, x))[0].id;
     }
     if (had === sid) { ui.snapSid = null; render(); return; }
     const was = cur.assign[sid];
@@ -8136,7 +8234,7 @@ function aiPlanFacts(t, m, lab) {
     return `- ${snapLabel(m, b.start)}: ${on.join(', ') || 'nobody yet'}${bench.length ? ` | bench ${bench.join(', ')}` : ''}`;
   });
   return `GAME: ${m.date || 'no date'} vs ${m.opponent || 'TBC'}${m.kickoff ? ' at ' + m.kickoff : ''}`
-    + `\nFormat: ${aiFormat(m)}${m.formation ? `, formation ${m.formation.name}` : ''}${slots.length ? ` (positions: ${slots.map(x => x.label).join(', ')})` : ''}.`
+    + `\nFormat: ${aiFormat(m)}${m.formation ? `, formation ${m.formation.name}` : ''}${slots.length ? ` (positions: ${Object.values(aiSlotNames(m)).join(', ')})` : ''}.`
     + ` Subs roughly every ${Number(m.blockMinutes) || 10} min.\n\n`
     + `AVAILABLE SQUAD (${roster.length})\n${rows.join('\n') || '- none'}`
     + `${out.length ? `\nUnavailable: ${out.join(', ')}` : ''}`
@@ -8191,7 +8289,74 @@ function aiPrompt(scope, topic, ideas) {
     if (topic === 'next' && next) facts += `\n\nNEXT GAME: ${next.date || 'no date'} vs ${next.opponent || 'TBC'}, ${aiFormat(next)}`;
   }
   const mine = String(ideas || '').trim();
-  return `${who}. ${legend}\n\n${facts}${mine ? `\n\nMY IDEAS\n${mine}` : ''}\n\n${ask}`;
+  const back = scope === 'game' && topic === 'plan' ? '\n\n' + aiPlanAsk(m) : '';
+  return `${who}. ${legend}\n\n${facts}${mine ? `\n\nMY IDEAS\n${mine}` : ''}\n\n${ask}${back}`;
+}
+
+/* ---- bringing an AI's plan back ----
+   The answer comes back as text the coach pastes, so the prompt asks for it in
+   one fixed shape the app can read: a line per change, the game-clock time and
+   then every spot with its player's label. Position labels have to be unique
+   to be read back, and a coach's own shape can repeat one ("CB", "CB"), so a
+   repeat is numbered. Players are the same labels the prompt used, so a name
+   never has to travel in either direction. */
+function aiSlotNames(m) {
+  const slots = (m && m.formation && m.formation.slots) || [], seen = {}, out = {};
+  for (const sl of slots) {
+    const base = String(sl.label || sl.role || 'P').replace(/[^A-Za-z0-9]/g, '') || 'P';
+    seen[base] = (seen[base] || 0) + 1;
+    out[sl.id] = seen[base] > 1 ? base + seen[base] : base;
+  }
+  return out;
+}
+function aiPlanAsk(m) {
+  const names = Object.values(aiSlotNames(m));
+  if (!names.length) return '';
+  const per = m.periodMinutes || 40;
+  return `So I can load it straight into my app, end your answer with the plan again in exactly this form and nothing else on those lines: a line saying PLAN, then one line per change starting at kick-off, each with the game-clock time (minutes:seconds from kick-off, so the ${halfName(m, 2).toLowerCase()} starts at ${per}:00) and then every position with who plays it, the whole lineup each time:\n`
+    + `PLAN\n0:00 ${names.map((n, i) => `${n}=${i === 0 ? '#1' : '…'}`).join(' ')}\n10:00 ${names.map(n => `${n}=…`).join(' ')}`;
+}
+/* Read the pasted answer. Strict about the lines it recognises — a time, then
+   position=player pairs — and blind to everything else, so the AI's chat around
+   the plan does not matter but a typo in the plan itself is reported rather
+   than quietly dropped. Returns { blocks, problems }; blocks are only worth
+   using when problems is empty. */
+function aiPlanParse(t, m, text) {
+  const names = aiSlotNames(m), bySlot = {};
+  for (const [sid, n] of Object.entries(names)) bySlot[n.toLowerCase()] = sid;
+  const lab = aiLabels(t), byLab = {};
+  for (const [pid, l] of Object.entries(lab)) byLab[l.toLowerCase().replace(/\s+/g, ' ')] = pid;
+  const end = matchMinutes(m) * 60, per = (m.periodMinutes || 40) * 60;
+  const blocks = [], problems = [];
+  const PAIR = /(^|[^A-Za-z0-9#])([A-Za-z][A-Za-z0-9]{0,5})\s*(?:[=:]\s*(#?\d+|Player\s+[A-Z]{1,2}\b)|\s+(#\d+|Player\s+[A-Z]{1,2}\b))/g;
+  for (const raw of String(text || '').split(/\r?\n/)) {
+    const line = raw.replace(/[*`_|]/g, ' ').replace(/[–—]/g, '-').trim();
+    const tm = /^(?:[-•]\s*)?(?:(kick-?off|ko)|(half-?time|ht)|(\d{1,3})(?::(\d{2}))?\s*'?)(?=\s|$|[-:,])/i.exec(line);
+    if (!tm) continue;
+    const rest = line.slice(tm[0].length);
+    const pairs = [...rest.matchAll(PAIR)];
+    if (!pairs.length) continue;
+    const start = tm[1] ? 0 : tm[2] ? per : Number(tm[3]) * 60 + Number(tm[4] || 0);
+    const at = start ? mmss(start) : 'Kick-off';
+    if (start >= end) { problems.push(`${at}: after full time`); continue; }
+    if (blocks.some(b => b.start === start)) { problems.push(`${at}: there are two lines for this time`); continue; }
+    const assign = {}, used = new Set();
+    for (const p of pairs) {
+      const sl = p[2].toLowerCase();
+      if (['bench', 'subs', 'sub', 'off', 'out'].includes(sl)) break;
+      const sid = bySlot[sl], who = (p[3] || p[4]).replace(/\s+/g, ' ');
+      const pid = byLab[(/^\d+$/.test(who) ? '#' + who : who).toLowerCase()];
+      if (!sid) { problems.push(`${at}: no position called ${p[2]} in this shape`); continue; }
+      if (!pid) { problems.push(`${at}: nobody in the squad is ${who}`); continue; }
+      if (used.has(pid)) { problems.push(`${at}: ${who} is in two positions`); continue; }
+      if (assign[sid]) { problems.push(`${at}: ${names[sid]} is given twice`); continue; }
+      assign[sid] = pid; used.add(pid);
+    }
+    blocks.push({ start, assign });
+  }
+  if (!blocks.length) problems.push('No plan lines found. They look like: 0:00 GK=#1 LB=#4 …');
+  else if (!blocks.some(b => b.start === 0)) problems.push('No kick-off line (0:00)');
+  return { blocks: blocks.sort((a, b) => a.start - b.start), problems };
 }
 
 /* A coach writing her ideas will write "Page starts at CB", not "#39 starts at
@@ -8273,7 +8438,12 @@ function sheetAi(scope, topic) {
     <div class="muted" style="margin:10px 0 4px">Or copy it and open</div>
     <div class="row" style="gap:6px">${Object.entries(AI_SITES).map(([k, [label]]) =>
       `<button class="btn quiet sm" style="flex:1" data-act="aiopen" data-k="${k}">${label}</button>`).join('')}</div>
-    <p class="muted" style="margin-bottom:0">Players appear as shirt numbers. No names, notes or photos are included, and any name you type is swapped for a number when you copy.</p>`);
+    <p class="muted" style="margin-bottom:0">Players appear as shirt numbers. No names, notes or photos are included, and any name you type is swapped for a number when you copy.</p>
+    ${tp === 'plan' && scope === 'game' && match() && ((match().formation || {}).slots || []).length ? `<h3 style="margin:18px 0 6px">Bring the answer back</h3>
+      <p class="muted" style="margin-top:0">Paste the AI's whole reply. The app reads the lines under <b>PLAN</b> and turns them into snapshots you can change before locking in.</p>
+      <label class="field"><span>The AI's answer</span><textarea id="aiAnswer" rows="6" style="font-size:13px" placeholder="PLAN&#10;0:00 GK=#1 LB=#4 …"></textarea></label>
+      <div id="aiImportMsg"></div>
+      <button class="btn wide" data-act="aiimport">Use this plan</button>` : ''}`);
 }
 
 /* Scrub what is about to be copied, and show the coach the scrubbed version in
@@ -9079,6 +9249,12 @@ function onAct(e) {
     const r = lastLog[Number(d.i)]; if (!r) return;
     moveSub(m, r, parseTime($('#subT').value, r.t)); closeSheet(); return;
   }
+  if (a === 'delsub') {
+    const r = lastLog[Number(d.i)]; if (!r) return;
+    const why = deleteSub(m, r);
+    if (why) { toast(why); return; }
+    closeSheet(); render(); schedulePublish(); toast('Sub deleted'); return;
+  }
   if (a === 'addsub') { sheetAddSub(); return; }
   if (a === 'doaddsub') {
     const o = $('#asOut').value, i2 = $('#asIn').value;
@@ -9118,8 +9294,8 @@ function onAct(e) {
   if (a === 'makeplan') {
     const roster = squad(t, m);
     if (!roster.length) { toast('Add players first'); return; }
-    if (planLocked(m)) { if (!confirm('Your plan is locked in. Replace it with a fresh draft? That unlocks it.')) return; }
-    else if (m.plan && m.plan.manual && !confirm('Replace your snapshots with a fresh draft?')) return;
+    // a draft only ever fills an empty plan: never a way to lose snapshots by a tap
+    if (planBlocks(m).length) { toast('There is a plan already — clear it first if you want a fresh draft'); return; }
     if (!m.planned || !Object.keys(m.planned).length) {
       const each = evenSplit(m, roster), pl = {};
       roster.forEach(p => pl[p.id] = p.gk ? matchMinutes(m) : each);
@@ -9482,6 +9658,21 @@ function onAct(e) {
   }
   if (a === 'aitopic') { if (ui.ai) sheetAi(ui.ai.scope, d.k); return; }
   if (a === 'aicopy') { const r = aiFinal(); aiCopy(r.text, r.n); return; }
+  if (a === 'aiimport') {
+    if (!m || restricted()) return;
+    if (planLocked(m)) { toast('Your plan is locked in — unlock it first'); return; }
+    const ta = $('#aiAnswer'), box = $('#aiImportMsg');
+    const r = aiPlanParse(t, m, ta ? ta.value : '');
+    if (r.problems.length) {
+      if (box) box.innerHTML = `<div class="warn alert" style="margin-bottom:10px"><b>Nothing loaded yet.</b> Fix these in the box, or ask the AI again:<br>${r.problems.slice(0, 8).map(esc).join('<br>')}</div>`;
+      return;
+    }
+    // the redraft button is gone so a tap can never write over a plan; this asks first instead
+    if (planBlocks(m).length && !confirm(`Replace your ${planBlocks(m).length} snapshot${planBlocks(m).length === 1 ? '' : 's'} with the AI's ${r.blocks.length}?`)) return;
+    ui.snapAt = 0; ui.snapSid = null; ui.gameView = 'plan';
+    savePlan(m, r.blocks);
+    closeSheet(); toast(`Plan loaded — ${r.blocks.length} snapshot${r.blocks.length === 1 ? '' : 's'}. Check it, then lock it in.`); return;
+  }
   if (a === 'aiopen') {
     const site = AI_SITES[d.k]; if (!site) return;
     const r = aiFinal(), q = r.text;
