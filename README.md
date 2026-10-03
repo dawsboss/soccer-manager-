@@ -59,7 +59,7 @@ The proper fix is the first job for authentication: make `.write` require `auth.
 
 The API key in `firebase-config.js` is not a secret; the rules above are what gate access. The long random workspace code is the shared password. Anyone who has it can read and write that workspace, which is fine for minutes and rosters — if you want real accounts later, turn on Firebase Authentication and change the rules to `"auth != null"`.
 
-The badge in the top bar shows `synced`, `offline`, or `this device`. Writes made while offline land when the connection returns. If both devices edit the same game while one is offline, last write wins.
+The badge in the top bar shows `synced`, `offline`, or `this device`, and `3 to send` while changes made on this phone haven't reached the club yet. Nothing lives only on the phone: every change is kept in an outbox on the phone until the database confirms it has it, so a game tracked with no signal reaches the club even if the app is closed and reopened before the signal comes back. Plans, drills and messages do the same. A change the club's database refuses (usually because the rules haven't been pasted yet) is kept, tried again every time the phone connects, and said on every screen, with a list under Settings; it is only dropped if you choose to. A phone used before it joined a club is offered, under Settings, a way for an admin to add those teams to the club. If both devices edit the same game while one is offline, last write wins.
 
 ## Joining a club
 

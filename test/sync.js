@@ -12,9 +12,10 @@
    file says so, the workspace answers when this file says so, and the rules
    refuse when this file says so.
 
-   One case at the end is a knownGap: behaviour that contradicts an invariant
-   and is pinned rather than fixed, because the fix is a deliberate change to
-   the sync model and not a test's business. */
+   The last cases are the outbox: what a phone made with no signal reaches
+   the club after a reload, and nothing is dropped without the coach saying
+   so. They used to end in a knownGap, the connect-time read throwing away a
+   game tracked offline; that gap is closed. */
 
 const H = require('./harness');
 const { check, deepEq, knownGap } = H;
@@ -385,8 +386,9 @@ async function boot(opts = {}) {
        exists only in local state until it syncs — a naive `state = snap.val()`
        at reconnect silently erases it. See wireBase() in initSync()."
 
-       app.js:446 is that naive assignment. mergeNode() is wired into the
-       per-child listeners underneath it and not into this first read. */
+       It used to be a naive assignment here, pinned as a known gap. The read
+       now takes the club's copy and lays back over it what this phone made
+       and the club has never seen. */
     const { A, fbk } = await boot({
       storage: {
         'sm.data.v1:FLIGHT': JSON.stringify({
@@ -409,16 +411,128 @@ async function boot(opts = {}) {
       access: {}
     });
     check('the synced game is still here', !!A.state.matches.gSynced, true);
-    knownGap('the offline game survives the connect-time read',
-      A.state.matches.gOffline, undefined,
-      'app.js:446 assigns state = { teams: v.teams||{}, ... } on the first workspace\n' +
-      'read, so a game that exists only on this device is dropped and saveLocal()\n' +
-      'then writes the loss to disk. CLAUDE.md forbids exactly this ("must never\n' +
-      'replace it wholesale"); mergeNode() is wired into the per-child listeners\n' +
-      'below it, not into this read. Fixing it is a deliberate change to the sync\n' +
-      'model, so it is pinned here rather than papered over.');
-    check('and the loss was written to disk',
-      JSON.parse(A.storage.getItem('sm.data.v1:' + CODE)).matches.gOffline, undefined);
+    check('the offline game survives the connect-time read', !!A.state.matches.gOffline, true);
+    check('and is kept on disk', !!JSON.parse(A.storage.getItem('sm.data.v1:' + CODE)).matches.gOffline, true);
+    check('and sent to the club, the one place it was missing from', !!fbk.writtenTo(WS + '/matches/gOffline').length, true);
+    check('the synced game is not sent back', fbk.writtenTo(WS + '/matches/gSynced').length, 0);
+  }
+
+  /* The outbox. Firebase holds a write it couldn't send in memory only, so a
+     page reloaded with no signal had the change in localStorage and nowhere
+     else; the connect-time read then threw it away. Every workspace write is
+     now recorded until the database acknowledges it. */
+  const CLUB = () => ({
+    teams: { t1: { id: 't1', name: 'G14 Flight', players: { p1: { id: 'p1', name: 'Ella' } } } },
+    matches: { g1: { id: 'g1', teamId: 't1', opponent: 'Riverside' }, g2: { id: 'g2', teamId: 't1', opponent: 'Athletic' } },
+    access: { admins: { coachU: true }, index: { coachU: true }, teams: { t1: { coaches: { coachU: true } } } }
+  });
+  async function online(storage) {
+    const { A, fbk } = await boot({ storage });
+    fbk.signIn('coachU'); await A.flush();
+    return { A, fbk };
+  }
+
+  console.log('\n--- what is made with no signal reaches the club, even after a reload ---');
+  {
+    const { A, fbk } = await online();
+    fbk.deliver(WS, CLUB()); await A.flush();
+    check('a game this phone has read is remembered as the club\'s', /g1/.test(A.storage.getItem('sm.seen.v1:' + CODE) || ''), true);
+    fbk.holdWrites(p => p.startsWith(WS + '/'));                  // the signal goes
+    A.commit('matches/g1/goals/x1', { t: 600, side: 'us' });
+    A.commit('matches/gNew', { id: 'gNew', teamId: 't1', opponent: 'Made at the field' });
+    A.drop('matches/g2');
+    await A.flush();
+    const owed = JSON.parse(A.storage.getItem('sm.pending.v1:' + CODE));
+    check('each change is in the outbox on disk', Object.keys(owed.w).sort().join(), 'matches/g1/goals/x1,matches/g2,matches/gNew');
+    check('the badge says so, rather than "synced"', /to send/.test(A.dom.node('#syncBadge').textContent), true);
+    A.render();
+    check('and so does Settings', (A.ui.view = 'setup', A.render(), /Waiting to reach the club/.test(A.rendered())), true);
+
+    /* The page is closed and opened again, still offline, and then the signal
+       comes back with the club exactly as it was. */
+    const saved = { ...A.storage._d };
+    const B = await online(saved);
+    check('after a reload the changes are still on screen', !!B.A.state.matches.g1.goals && !!B.A.state.matches.gNew && !B.A.state.matches.g2, true);
+    B.fbk.deliver(WS, CLUB()); await B.A.flush();
+    check('the club\'s answer does not take the goal away', !!(B.A.state.matches.g1.goals || {}).x1, true);
+    check('nor the new game', !!B.A.state.matches.gNew, true);
+    check('nor put back the game deleted here', B.A.state.matches.g2, undefined);
+    check('the goal is sent again', B.fbk.writtenTo(WS + '/matches/g1/goals/x1').length, 1);
+    check('the game too', B.fbk.writtenTo(WS + '/matches/gNew').length, 1);
+    check('and the delete', B.fbk.record.removes.includes(WS + '/matches/g2'), true);
+    check('in the order they were made', B.fbk.record.writes.findIndex(w => w.path.endsWith('/goals/x1')) < B.fbk.record.writes.findIndex(w => w.path.endsWith('/gNew')), true);
+    await B.A.flush();
+    check('acknowledged, the outbox is empty', Object.keys(JSON.parse(B.A.storage.getItem('sm.pending.v1:' + CODE)).w).length, 0);
+    check('and the badge stops counting', /to send|not saved/.test(B.A.dom.node('#syncBadge').textContent), false);
+    B.fbk.deliverChild(WS + '/matches', 'g1', { id: 'g1', teamId: 't1', opponent: 'Riverside', goals: { x1: { t: 600, side: 'us' } } }, 'changed'); await B.A.flush();
+    check('later answers from the club are taken as they are', B.A.state.matches.g1.goals.x1.t, 600);
+  }
+
+  console.log('\n--- deleted somewhere else is deleted here ---');
+  {
+    const { A, fbk } = await online();
+    fbk.deliver(WS, CLUB()); await A.flush();
+    const saved = { ...A.storage._d };
+    const B = await online(saved);
+    const c = CLUB(); delete c.matches.g2;
+    B.fbk.deliver(WS, c); await B.A.flush();
+    check('a game this phone had from the club, gone from the club, goes', B.A.state.matches.g2, undefined);
+    check('and is not sent back', B.fbk.writtenTo(WS + '/matches/g2').length, 0);
+  }
+
+  console.log('\n--- a write the club refuses is kept, said, and tried again ---');
+  {
+    const { A, fbk } = await online();
+    fbk.deliver(WS, CLUB()); await A.flush();
+    fbk.refuseWrites(p => p.includes('/goals/'));
+    A.commit('matches/g1/goals/x2', { t: 900, side: 'us' }); await A.flush();
+    check('the refused goal stays on this phone', !!A.state.matches.g1.goals.x2, true);
+    check('marked refused in the outbox', JSON.parse(A.storage.getItem('sm.pending.v1:' + CODE)).w['matches/g1/goals/x2'].refused, true);
+    A.ui.view = 'matches'; A.render();
+    check('every screen says a change was not accepted', /hasn't been accepted by the club/.test(A.rendered()), true);
+    check('the badge too', /1 not saved/.test(A.dom.node('#syncBadge').textContent), true);
+    A.click({ act: 'pendingsheet' });
+    check('the list says what it is, in words', /a goal in the game against Riverside/.test(String(A.dom.node('#sheet').innerHTML)), true);
+
+    const B = await online({ ...A.storage._d });
+    B.fbk.deliver(WS, CLUB()); await B.A.flush();
+    check('a reload keeps it, on top of the club\'s copy', !!B.A.state.matches.g1.goals && !!B.A.state.matches.g1.goals.x2, true);
+    check('and tries it again (the rules may have been pasted since)', B.fbk.writtenTo(WS + '/matches/g1/goals/x2').length, 1);
+    check('accepted this time, it leaves the outbox', Object.keys(JSON.parse(B.A.storage.getItem('sm.pending.v1:' + CODE)).w).length, 0);
+
+    const C = await online({ ...A.storage._d });
+    C.fbk.refuseWrites(() => true);
+    C.fbk.deliver(WS, CLUB()); await C.A.flush();
+    check('the lookup tables, rebuilt on every connect, never wait in the outbox', Object.keys(C.A.pending.w).some(k => /^access\/(index|teamIndex|coachIndex|teamParents)/.test(k)), false);
+    let asked = null;
+    global.confirm = m => { asked = m; return true; };
+    C.A.click({ act: 'pendingdrop' });
+    check('dropping it asks first, saying it is gone for good', /gone for good/.test(asked || ''), true);
+    check('then it leaves the outbox', Object.keys(JSON.parse(C.A.storage.getItem('sm.pending.v1:' + CODE)).w).filter(k => k.includes('goals')).length, 0);
+    check('and the club is read again', C.fbk.totalReads(WS) >= 2, true);
+    global.confirm = () => true;
+  }
+
+  console.log('\n--- an answer taken back off the screen leaves the outbox too ---');
+  {
+    const { A, fbk } = await online();
+    fbk.deliver(WS, CLUB()); await A.flush();
+    fbk.refuseWrites(p => p.includes('/rsvp/'));
+    A.remoteSet('rsvp/t1/g_g1/p1', { v: 'yes', by: 'coachU', at: 1 }).catch(() => { });
+    await A.flush();
+    check('a refused write is marked, not lost', JSON.parse(A.storage.getItem('sm.pending.v1:' + CODE)).w['rsvp/t1/g_g1/p1'].refused, true);
+  }
+
+  console.log('\n--- teams from before this phone joined a club ---');
+  {
+    const local = { teams: { tL: { id: 'tL', name: 'Before the club', players: { a: { id: 'a', name: 'Ada' } } } }, matches: {}, access: {} };
+    const { A, fbk } = await online({ 'sm.data.v1:local': JSON.stringify(local) });
+    fbk.deliver(WS, CLUB()); await A.flush();
+    A.ui.view = 'setup'; A.render();
+    check('Settings says this phone has teams no club has', /On this phone only/.test(A.rendered()), true);
+    check('and offers an admin to add them', /data-act="adoptlocal"/.test(A.rendered()), true);
+    A.click({ act: 'adoptlocal' });
+    check('through the import, which merges and never replaces', /Bulk import/.test(String(A.dom.node('#sheet').innerHTML)) && /Before the club/.test(String(A.dom.node('#sheet').innerHTML)), true);
   }
 
   H.summary('auth and sync');

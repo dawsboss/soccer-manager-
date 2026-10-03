@@ -2,7 +2,7 @@
    Static app. Data lives in localStorage, and mirrors to Firebase Realtime
    Database when a config + workspace code are present. */
 
-const BUILD = '70';
+const BUILD = '71';
 const BUILT = '2026-10-03';
 /* index.html carries the build it was published with. If this file is newer, the
    browser handed us a cached page — the exact failure that has eaten hours. */
@@ -283,6 +283,7 @@ function loadLocal() {
     if (ui.plan && ui.plan.matchId !== ui.matchId) ui.plan = null;
   } catch (e) { }
   loadTrain();
+  loadPending();
 }
 
 /* A local copy is a cache, not an archive. Three things end it: the club is
@@ -296,8 +297,10 @@ function purgeClub(code, why) {
     localStorage.removeItem(LS_SYNCED + ':' + k);
     localStorage.removeItem(LS_DENIED + ':' + k);
     localStorage.removeItem(LS_TRAIN + ':' + k);
+    localStorage.removeItem(LS_PENDING + ':' + k);
+    localStorage.removeItem(LS_SEEN + ':' + k);
   } catch (e) { }
-  if (code === wsCode()) { state = { teams: {}, matches: {}, access: {}, rsvp: {} }; train = TRAIN_BLANK(); purged = why; render(); }
+  if (code === wsCode()) { state = { teams: {}, matches: {}, access: {}, rsvp: {} }; train = TRAIN_BLANK(); pending = { seq: 0, w: {} }; purged = why; render(); }
 }
 
 function markSynced() {
@@ -329,9 +332,8 @@ let wsRead = false;          // the workspace has been read from the database th
 const nowMs = () => Date.now() + clockSkew;
 
 function setSync(stateName, label) {
-  const b = $('#syncBadge');
-  b.dataset.state = stateName;
-  b.textContent = label;
+  syncBase = [stateName, label];
+  paintSync();
 }
 
 let fbAppPromise = null;
@@ -495,9 +497,12 @@ async function initSync() {
         const v = snap.val();
         if (!v) pushAll();
         else {
-          state = { teams: v.teams || {}, matches: v.matches || {}, access: v.access || {}, rsvp: v.rsvp || {} };
+          // merged, never replaced: what this phone owes the club goes back on top, and back out
+          const owed = mergeConnect(v);
           wsRead = true;
           saveLocal(); markSynced(); render();
+          flushPending();
+          for (const [p, x] of owed) remoteSet(p, x);
           /* Close the migration bridge without anybody being told to. The
              per-team rules fall back to the old club-wide index while
              access/teamIndex is missing; an admin's device is the only one
@@ -508,11 +513,13 @@ async function initSync() {
           syncAllTeamParents();
           noteMyClub();
         }
+        flushTraining();
         schedulePublish();   // republish on load, so a fixed config heals itself
 
         // membership is small and read whole; it does not need child-level listeners
         dbMod.onValue(dbMod.ref(db, fb.base + '/access'), cs => {
           state.access = cs.val() || {};
+          overlayPending(state.access, 'access');
           saveLocal(); noteMyClub(); render();
         });
 
@@ -524,12 +531,18 @@ async function initSync() {
             if (ui.dragging) return;
             const inc = cs.val(); if (!inc) return;
             state[coll][cs.key] = mergeNode(state[coll][cs.key], inc);
+            noteSeen(coll, cs.key);
+            // a change still on its way to the club stays on top of what the club last said
+            const own = { [cs.key]: state[coll][cs.key] };
+            overlayPending(own, coll);
+            if (own[cs.key]) state[coll][cs.key] = own[cs.key]; else delete state[coll][cs.key];
             saveLocal(); render();
           };
           dbMod.onChildAdded(r, upsert);
           dbMod.onChildChanged(r, upsert);
           dbMod.onChildRemoved(r, cs => {
             if (ui.dragging) return;
+            if (pendingList().some(([p, e]) => p.startsWith(coll + '/' + cs.key) && e.v !== null)) return;
             delete state[coll][cs.key]; saveLocal(); render();
           });
         }
@@ -553,6 +566,181 @@ async function initSync() {
     console.error(e);
     setSync('off', 'sync failed');
   }
+}
+
+/* ---- the outbox: nothing lives only on this phone ---- */
+/* Firebase keeps a write it couldn't send yet in memory only. A coach who
+   tracks a game with no signal and then closes the page, or whose phone
+   reloads it, has that game in localStorage and nowhere else, and the
+   connect-time read used to replace local state with the club's, which has
+   never heard of it. So every write to the workspace is also recorded here,
+   per club, until the database acknowledges it:
+
+     sm.pending.v1:{club}  { seq, w: { path: { v, n, refused? } } }
+
+   A write to a path supersedes anything still queued beneath it. On the
+   connect-time read the club's copy is taken, everything still pending is
+   laid back over it in the order it was made, and sent again; that is the
+   merge CLAUDE.md asks for, done with what this phone actually knows rather
+   than guessed from shapes. A write the rules refuse stays in the outbox,
+   marked, and is tried again on every connect (the rules may simply not be
+   pasted yet); the coach is told, and can see the list and choose to drop
+   it. Nothing is ever dropped without her saying so.
+
+   Top-level teams and games also get a second net, for copies saved before
+   this outbox existed: `seen` remembers which ids this phone has ever read
+   from the club. One the club doesn't have that it has seen was deleted
+   somewhere else; one it has never seen and isn't pending was made here and
+   never reached the club, and is sent now. On the first connect after this
+   build nothing has been seen yet, so a game deleted elsewhere while this
+   phone was away can come back once: the safe way round, against losing a
+   game for good. */
+const LS_PENDING = 'sm.pending.v1';
+const LS_SEEN = 'sm.seen.v1';
+const pendKey = () => LS_PENDING + ':' + clubKey();
+const seenKey = () => LS_SEEN + ':' + clubKey();
+let pending = { seq: 0, w: {} };
+let seen = { teams: {}, matches: {} };
+function loadPending() {
+  pending = { seq: 0, w: {} }; seen = { teams: {}, matches: {} };
+  try {
+    const p = JSON.parse(localStorage.getItem(pendKey()) || 'null');
+    if (p && typeof p === 'object' && p.w && typeof p.w === 'object') pending = { seq: Number(p.seq) || 0, w: p.w };
+    const s = JSON.parse(localStorage.getItem(seenKey()) || 'null');
+    if (s && typeof s === 'object') seen = { teams: s.teams || {}, matches: s.matches || {} };
+  } catch (e) { }
+}
+function savePending() { try { localStorage.setItem(pendKey(), JSON.stringify(pending)); } catch (e) { } paintSync(); }
+function saveSeen() { try { localStorage.setItem(seenKey(), JSON.stringify(seen)); } catch (e) { } }
+function noteSeen(coll, id) { if ((coll === 'teams' || coll === 'matches') && id && !seen[coll][id]) { seen[coll][id] = 1; saveSeen(); } }
+const pendingList = () => Object.entries(pending.w).sort((a, b) => a[1].n - b[1].n);
+const pendingCount = () => Object.keys(pending.w).length;
+const refusedCount = () => Object.values(pending.w).filter(e => e.refused).length;
+
+function notePending(path, v, del) {
+  for (const p of Object.keys(pending.w)) if (p === path || p.startsWith(path + '/')) delete pending.w[p];
+  const n = ++pending.seq;
+  pending.w[path] = { v: v === undefined ? null : clone(v), n, ...(del ? { del: true } : {}) };
+  savePending();
+  return n;
+}
+/* The write settles: gone from the outbox if the club has it and nothing newer
+   was queued for that path since; marked if the rules said no. */
+function settle(path, n, ok, err) {
+  const e = pending.w[path];
+  if (ok) { const top = /^(teams|matches)\/([^/]+)$/.exec(path); if (top && e && e.v !== null) noteSeen(top[1], top[2]); }
+  if (!e || e.n !== n) return;
+  if (ok) delete pending.w[path];
+  else if (/permission|denied/i.test((err && (err.code || err.message)) || '')) { if (e.refused) return; e.refused = true; }
+  else return;          // anything else: still owed, and sent again on the next connect
+  savePending(); render();
+}
+function sendPending(path, n, v, del) {
+  let w;
+  try { w = del ? fb.remove(fb.ref(fb.db, fb.base + '/' + path)) : fb.set(fb.ref(fb.db, fb.base + '/' + path), v); }
+  catch (e) { return Promise.reject(e); }
+  const p = Promise.resolve(w);
+  p.then(() => settle(path, n, true), e => settle(path, n, false, e));
+  return p;
+}
+/* A caller that undoes its own change when it's refused (an answer taken back
+   off the screen) takes it out of the outbox too, or it would come back. */
+function forgetPending(path) { if (pending.w[path]) { delete pending.w[path]; savePending(); } }
+/* Lay what this phone still owes over a copy of the club's, in the order it
+   was made. `under` limits it to one part of the tree. */
+function overlayPending(target, under) {
+  for (const [p, e] of pendingList()) {
+    if (under && p !== under && !p.startsWith(under + '/')) continue;
+    const rel = under ? p.slice(under.length + 1) : p;
+    if (!rel) continue;
+    if (e.v === null) delDeep(target, rel); else setDeep(target, rel, clone(e.v));
+  }
+}
+/* The connect-time read: the club's copy, with what this phone made and the
+   club hasn't got laid over it, then all of that sent again. */
+function mergeConnect(v) {
+  const remote = { teams: v.teams || {}, matches: v.matches || {}, access: v.access || {}, rsvp: v.rsvp || {} };
+  const owed = [];
+  for (const coll of ['teams', 'matches']) {
+    for (const [id, x] of Object.entries(state[coll] || {})) {
+      if (remote[coll][id] || seen[coll][id] || !x || typeof x !== 'object') continue;
+      if (pendingList().some(([p]) => p === coll + '/' + id || p.startsWith(coll + '/' + id + '/'))) continue;
+      remote[coll][id] = x; owed.push([coll + '/' + id, x]);
+    }
+    for (const id of Object.keys(remote[coll])) if (!seen[coll][id]) seen[coll][id] = 1;
+  }
+  saveSeen();
+  overlayPending(remote);
+  state = remote;
+  return owed;
+}
+function flushPending() {
+  if (!fb) return;
+  for (const [p, e] of pendingList()) sendPending(p, e.n, e.v, e.del).catch(() => { });
+}
+
+/* What a pending write is, in words: the coach is deciding whether to drop
+   it, and "matches/abc/goals/x" tells her nothing. */
+function pendingLabel(p) {
+  const [coll, id, sub] = p.split('/');
+  if (coll === 'matches') {
+    const m = state.matches[id], vs = m && m.opponent ? ` against ${m.opponent}` : '';
+    const what = { goals: 'a goal', shots: 'a shot', stints: 'a sub', events: 'a set piece or foul', periods: 'the clock', plan: 'the plan', out: 'who is out', poss: 'possession' }[sub];
+    return (what ? what + ' in the game' : 'the game') + vs;
+  }
+  if (coll === 'teams') {
+    const t = state.teams[id], n = t && t.name ? ' ' + t.name : '';
+    const what = { players: 'the squad of', events: 'the calendar of', attend: 'the register of' }[sub];
+    return (what ? what : 'the team') + n;
+  }
+  if (coll === 'rsvp') return 'an answer to who is coming';
+  if (coll === 'access') return 'who has which role';
+  return p;
+}
+function sheetPending() {
+  const list = pendingList(), r = list.filter(([, e]) => e.refused);
+  openSheet(`<h3>Not saved to the club yet</h3>
+    <p class="muted" style="margin-top:0">${list.length} change${list.length === 1 ? ' is' : 's are'} on this phone and nowhere else${r.length ? `, ${r.length} of them refused by the club's database` : ''}. They stay here, and are sent again every time this phone connects. Nothing is dropped unless you drop it.</p>
+    ${r.length ? `<p class="muted">A refusal usually means the club's database rules haven't been updated yet (an admin pastes them from README), or this account isn't a coach of that team any more.</p>` : ''}
+    <div class="plist">${list.slice(0, 40).map(([p, e]) => `<div class="prow" style="grid-template-columns:1fr auto"><span class="pname">${esc(pendingLabel(p))}</span>${e.refused ? '<span class="tag wait">refused</span>' : '<span class="tag">waiting</span>'}</div>`).join('')}</div>
+    ${list.length > 40 ? `<p class="muted">…and ${list.length - 40} more.</p>` : ''}
+    <button class="btn wide" data-act="pendingretry" style="margin-top:12px">Try again now</button>
+    ${r.length ? `<button class="btn quiet danger wide" data-act="pendingdrop" style="margin-top:8px">Drop the refused ones</button>` : ''}
+    <button class="btn quiet wide" data-act="closesheet" style="margin-top:8px">Done</button>`, true);
+}
+/* A phone used before it joined a club kept its teams under 'local', which
+   no club ever reads. Bringing them in is an import (it merges, adds only
+   what is missing, and is admin-only), offered from the data itself. */
+function localOnlyData() {
+  if (!wsCode()) return null;
+  try {
+    const d = JSON.parse(localStorage.getItem(LS_DATA + ':' + envPrefix() + 'local') || 'null');
+    if (!d || typeof d !== 'object' || !d.teams || !Object.keys(d.teams).length) return null;
+    const data = { teams: d.teams, matches: d.matches || {} };
+    const plan = importPlan(data);
+    return plan.errors.length || !plan.writes.length ? null : { data, plan };
+  } catch (e) { return null; }
+}
+
+/* The badge in the corner says what the club has, not what this phone has:
+   "synced" while something is still owed would be the lie that loses a game. */
+let syncBase = ['off', 'this device'];
+function paintSync() {
+  const b = $('#syncBadge'); if (!b) return;
+  const n = pendingCount(), r = refusedCount();
+  if (fb && r) { b.dataset.state = 'off'; b.textContent = `${r} not saved`; }
+  else if (fb && n) { b.dataset.state = 'off'; b.textContent = `${n} to send`; }
+  else { b.dataset.state = syncBase[0]; b.textContent = syncBase[1]; }
+}
+/* Everything else this phone keeps until the club has it: plans, drills, her
+   own library. Each re-sends its own pending list when its screen opens;
+   this sends it on every connect too, so a plan made offline reaches the
+   club even if nobody opens Plans again. Messages do the same from their
+   outbox whenever the app is open. */
+function flushTraining() {
+  if (!fb || !me) return;
+  for (const k of Object.keys(train.dirty || {})) { const i = k.indexOf('/'); if (i > 0) sendPractice(k.slice(0, i), k.slice(i + 1)); }
+  for (const s of ['club', 'mine']) for (const id of Object.keys(SHELF[s].store().dirty)) sendDrill(s, id);
 }
 
 /* A write that was rejected can leave a parent node holding only the child that
@@ -604,8 +792,21 @@ function pushAll() {
 /* Hands back the write's promise, which settles when the database has it. Most
    callers ignore it; locking in a plan waits on it, because "saved" is the
    whole point of that button and has to mean the club has it, not this phone. */
-function remoteSet(path, value) { if (fb) return fb.set(fb.ref(fb.db, fb.base + '/' + path), value === undefined ? null : value); }
-function remoteDel(path) { if (fb) fb.remove(fb.ref(fb.db, fb.base + '/' + path)); }
+/* The four lookup tables are rebuilt from the roles on every connect
+   (syncIndex() and the rest), so they never need the outbox; queuing them
+   would only mean a refused copy of something derived nagging forever. */
+const DERIVED = /^access\/(index|teamIndex|coachIndex|teamParents)(\/|$)/;
+function remoteSet(path, value) {
+  if (!fb) return;
+  const v = value === undefined ? null : value;
+  if (DERIVED.test(path)) { const w = Promise.resolve(fb.set(fb.ref(fb.db, fb.base + '/' + path), v)); w.catch(() => { }); return w; }
+  return sendPending(path, notePending(path, v), v);
+}
+function remoteDel(path) {
+  if (!fb) return;
+  if (DERIVED.test(path)) { Promise.resolve(fb.remove(fb.ref(fb.db, fb.base + '/' + path))).catch(() => { }); return; }
+  sendPending(path, notePending(path, null, true), null, true).catch(() => { });
+}
 
 function quiet(path, value) { setDeep(state, path, value); remoteSet(path, value); }
 function commit(path, value) { setDeep(state, path, value); saveLocal(); remoteSet(path, value); render(); schedulePublish(); }
@@ -3503,7 +3704,10 @@ function render() {
   // a request still waiting, from a team link put aside with "Not now"
   const joinNote = join && join.hidden && join.status === 'sent'
     ? `<div class="rolebar">Waiting for a coach of <b>${esc((join.doc || {}).teamName || 'a team')}</b> to let you in. <button class="linkbtn dark" data-act="joinshow">Open</button></div>` : '';
-  app.innerHTML = envNote + joinNote + roleNote + roNote + (
+  // said on every screen, because a change the club refused is one that exists only here
+  const nRef = fb ? refusedCount() : 0;
+  const saveNote = nRef ? `<div class="rolebar warn">${nRef} change${nRef === 1 ? '' : 's'} on this phone ha${nRef === 1 ? 's' : 've'}n't been accepted by the club's database. ${nRef === 1 ? 'It is' : 'They are'} kept here and tried again each time you connect. <button class="linkbtn dark" data-act="pendingsheet">See ${nRef === 1 ? 'it' : 'them'}</button></div>` : '';
+  app.innerHTML = envNote + saveNote + joinNote + roleNote + roNote + (
     v === 'game' ? (g === 'track' ? viewTrack() : g === 'stats' ? viewStats() : g === 'pitch' ? viewMatch() : g === 'plan' ? viewPlan() : g === 'subs' ? viewSubs() : viewFeed()) :
       v === 'roster' ? viewRoster() :
         v === 'season' ? viewSeason() : v === 'calendar' ? viewCalendar() :
@@ -5061,6 +5265,7 @@ function setRsvp(tid, key, pid, v, note) {
   saveLocal();
   const w = remoteSet(path, val);
   if (w && w.catch) w.catch(e => {
+    forgetPending(path);
     if (prev) setDeep(state, path, prev); else delDeep(state, path);
     saveLocal(); render();
     toast(/permission|denied/i.test((e && e.code) || (e && e.message) || '')
@@ -6292,10 +6497,10 @@ function refreshDrillList() {
    runs, and afterwards whether it worked. TRAINING.md has the design.
 
    It lives at training/{code}/practices/{tid}/{pid}, outside the workspace,
-   for reasons TRAINING.md gives at length. The one that shapes this code is
-   that the workspace's connect-time read still replaces local state wholesale
-   (the gap test/sync.js pins), and a plan made offline must not be wiped the
-   same way. So practices have their own local copy, one listener per team,
+   for reasons TRAINING.md gives at length. The one that shaped this code is
+   that the workspace's connect-time read used to replace local state
+   wholesale (since closed by the workspace outbox), and a plan made offline
+   must not be wiped that way. So practices have their own local copy, one listener per team,
    and merge on every read from the start. A plan this phone changed and the
    club hasn't acknowledged is `dirty`, and a dirty plan is never overwritten
    by what the club says. It's sent again instead.
@@ -7293,6 +7498,18 @@ function viewSetup() {
       <div class="row"><button class="btn quiet" data-act="envsheet">Database: ${esc(envName() || 'production')}</button>
       <button class="btn quiet" data-act="maketestclub">Make a test club</button></div>
       <p class="muted" style="margin-bottom:0">A test club is invented data with publishing switched off — safe to grant roles in, take apart and retire. Rules belong to a database rather than to a club, though, so a rules change has to be rehearsed in another database, not just another club.</p>` : ''}</div>
+
+    ${(() => {
+      const n = fb ? pendingCount() : 0, lo = localOnlyData();
+      const pend = n ? `<div class="card"><h2 style="margin-bottom:8px">Waiting to reach the club</h2>
+        <p class="muted" style="margin-top:0">${n} change${n === 1 ? '' : 's'} made on this phone ${n === 1 ? "hasn't" : "haven't"} reached the club yet. ${n === 1 ? 'It goes' : 'They go'} the moment there's a signal, even if the app is closed and opened again in between.</p>
+        <button class="btn quiet wide" data-act="pendingsheet">See what's waiting</button></div>` : '';
+      const old = lo ? `<div class="card"><h2 style="margin-bottom:8px">On this phone only</h2>
+        <p class="muted" style="margin-top:0">This phone has ${esc(importSummary(lo.plan.counts).replace(/^adds /, ''))} from before it joined this club, kept on this phone and nowhere else.</p>
+        ${canAdmin() ? `<button class="btn quiet wide" data-act="adoptlocal">Add them to the club</button>`
+          : '<p class="muted" style="margin-bottom:0">A club admin can add them to the club, signed in on this phone.</p>'}</div>` : '';
+      return pend + old;
+    })()}
 
     <div class="card"><h2 style="margin-bottom:8px">Share with parents</h2>
       <p class="muted" style="margin-top:0">Read-only pages showing shirt numbers, never names.</p>
@@ -10244,6 +10461,25 @@ function onAct(e) {
      it writes whole teams and games. A backup used to replace local state
      wholesale — access included — and now goes through the same merge as the
      bulk import, which only ever adds what is missing. */
+  if (a === 'pendingsheet') { sheetPending(); return; }
+  if (a === 'pendingretry') {
+    for (const e of Object.values(pending.w)) delete e.refused;
+    savePending(); flushPending(); flushTraining(); closeSheet(); render();
+    toast(online ? 'Sending' : 'Offline — it goes when the signal is back'); return;
+  }
+  if (a === 'pendingdrop') {
+    const n = refusedCount();
+    if (!n || !confirm(`Drop ${n} change${n === 1 ? '' : 's'} the club refused? ${n === 1 ? 'It exists' : 'They exist'} only on this phone, so ${n === 1 ? 'it is' : 'they are'} gone for good.`)) return;
+    for (const [p, e] of Object.entries(pending.w)) if (e.refused) delete pending.w[p];
+    savePending(); closeSheet();
+    attachWorkspace();      // read the club again, so the screen shows what it really has
+    render(); return;
+  }
+  if (a === 'adoptlocal') {
+    if (!canAdmin()) { toast('Only club admins can import'); return; }
+    const lo = localOnlyData(); if (!lo) return;
+    sheetImport(JSON.stringify(lo.data)); return;
+  }
   if (a === 'bulkimport') { if (!canAdmin()) { toast('Only club admins can import'); return; } sheetImport(null); return; }
   if (a === 'import' || a === 'importfile') {
     if (!canAdmin()) { toast('Only club admins can import'); return; }

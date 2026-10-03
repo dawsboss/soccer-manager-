@@ -8,6 +8,46 @@ before this point lives only in the git log.
 
 ---
 
+## Nothing lives only on the phone — 2026-10-03
+
+The owner asked that no data be stored only locally, and that it all reach
+the server. Most of it already did, but not all of it reliably, and one case
+was a known way to lose a game.
+
+Firebase keeps a write it couldn't send in memory only. A coach who tracked a
+game with no signal and closed the page (or whose phone reloaded it) had the
+game in localStorage and nowhere else, and the connect-time read then replaced
+local state with the club's, which had never heard of it. `test/sync.js` had
+pinned this as a known gap. It is closed:
+
+- Every workspace write goes into an outbox on the phone
+  (`sm.pending.v1:{club}`) and leaves it only when the database acknowledges
+  it. On connect, the club's copy is taken, whatever is still owed is laid
+  back over it in the order it was made, and all of it is sent again.
+- A phone remembers which teams and games it has ever read from the club, so
+  a game made here and never sent is sent, while one deleted somewhere else
+  stays deleted. On the first connect after this build nothing has been seen
+  yet, so a game deleted elsewhere while this phone was away can come back
+  once: the safe way round.
+- A write the database refuses is kept, marked, and tried again every time
+  the phone connects (the rules may just not be pasted yet). Every screen
+  says so, the badge counts it, and Settings lists what's waiting in words
+  ("a goal in the game against Riverside") with *Try again* and a confirmed
+  *Drop*. Nothing is dropped unless the coach says so.
+- The badge no longer says *synced* while something is still on its way; it
+  says how many changes are left to send.
+- Practice plans, club drills and a coach's own drills already kept a
+  pending list, but sent it again only when their own screen was opened.
+  They now go on every connect.
+- Teams kept on a phone from before it joined a club were under a key no
+  club reads. Settings now says so, and an admin can add them to the club
+  through the bulk import, which merges and never replaces.
+
+The four lookup tables stay out of the outbox, because they are rebuilt from
+the roles on every connect anyway. A parent's answer the rules refuse is
+still taken back off the screen, and now out of the outbox too, so it doesn't
+come back on the next connect.
+
 ## Who made a drill, and an AI to draw it — 2026-10-03
 
 The owner asked for three things after the shelves landed: to know who added

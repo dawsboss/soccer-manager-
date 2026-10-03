@@ -329,11 +329,12 @@ any one of which would be enough:
    connect, only to be thrown away because `state` keeps only teams, matches and
    access. At the root, a coach's phone reads one team's practices when she
    opens Practice.
-2. **The connect-time read still replaces local state wholesale.** That's the
-   gap `test/sync.js` pins (*the offline game survives the connect-time read*). A practice planned offline under the
-   workspace would be wiped by it at the next connect. A separate node gets its
-   own merge-on-read from the start, written to the invariant rather than to
-   the code that breaks it.
+2. **The connect-time read replaced local state wholesale** when this was
+   written (the gap `test/sync.js` pinned; the workspace outbox has since
+   closed it). A practice planned offline under the workspace would have been
+   wiped by it at the next connect. A separate node got its own merge-on-read
+   from the start, written to the invariant rather than to the code that broke
+   it.
 3. **It's a new rules block, not an edit inside the workspace block.** The
    locked-down workspace rules stay exactly as tested. Training adds a sibling.
 

@@ -67,12 +67,20 @@ function makeFakebase() {
       getDatabase: app => ({ app, _fake: true }),
       ref: (db, path) => ({ db, path, key: String(path).split('/').pop() }),
       set(ref, value) {
+        /* No signal: the write is taken and never answered, which is all a
+           phone that loses the page before reconnecting ever sees. */
+        if (record.hold && record.hold(ref.path, value)) { (record.held = record.held || []).push({ path: ref.path, value }); return new Promise(() => { }); }
         if (record.refuse && record.refuse(ref.path, value))
           return Promise.reject({ code: 'PERMISSION_DENIED', message: 'permission_denied at ' + ref.path });
         record.writes.push({ path: ref.path, value });
         return Promise.resolve();
       },
-      remove(ref) { record.removes.push(ref.path); return Promise.resolve(); },
+      remove(ref) {
+        if (record.hold && record.hold(ref.path, null)) { (record.held = record.held || []).push({ path: ref.path, value: null }); return new Promise(() => { }); }
+        if (record.refuse && record.refuse(ref.path, null))
+          return Promise.reject({ code: 'PERMISSION_DENIED', message: 'permission_denied at ' + ref.path });
+        record.removes.push(ref.path); return Promise.resolve();
+      },
       onValue(ref, cb, err, opts) {
         record.listeners.push({ kind: 'value', path: ref.path, cb, err, once: !!(opts && opts.onlyOnce) });
         return () => { };
@@ -124,6 +132,8 @@ function makeFakebase() {
     },
     /* Refuse every write whose path the predicate picks, the way a rule would. */
     refuseWrites(pred) { record.refuse = pred; return this; },
+    /* Take every write the predicate picks and never answer it: no signal. */
+    holdWrites(pred) { record.hold = pred; return this; },
     /* A rules refusal. The code is what app.js pattern-matches on. */
     refuse(path, code = 'PERMISSION_DENIED') {
       const hit = listenersFor(path).filter(l => l.err);

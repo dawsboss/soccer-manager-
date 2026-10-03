@@ -335,11 +335,14 @@ function writeOne(D, extra = {}) {
     const fbk2 = makeFakebase();
     const D2 = H.loadApp({ firebase: fbk2, config: CONFIG, storage: saved });
     await D2.flush(); fbk2.signIn('jaz'); await D2.flush(); fbk2.deliver(WS, club()); await D2.flush();
-    toDrills(D2);
     check('after a reload it is still here', !!D2.findDrill('mine:' + off.id), true);
-    fbk2.deliver(LIB('jaz'), {}); await D2.flush();
-    check('and the first answer sends it again', !!written(fbk2, LIB('jaz') + '/' + off.id), true);
+    /* Sent on connect, not only when the Drills screen opens: a drill made
+       offline reaches the club even if she never opens Drills again. */
+    check('and connecting sends it, before Drills is even opened', !!written(fbk2, LIB('jaz') + '/' + off.id), true);
     check('then it is no longer pending', D2.mine.dirty[off.id], undefined);
+    toDrills(D2);
+    fbk2.deliver(LIB('jaz'), { [off.id]: written(fbk2, LIB('jaz') + '/' + off.id) }); await D2.flush();
+    check('and the club\'s answer has it', !!D2.findDrill('mine:' + off.id), true);
 
     /* the club shelf, the same way */
     fbk2.refuseWrites(p => p.startsWith('training/'));
