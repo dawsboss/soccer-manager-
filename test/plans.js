@@ -99,9 +99,13 @@ function plan(extra = {}) {
   console.log('\n--- planning one ---');
   {
     as('jaz');
+    A.render();
+    check('the Add here is the calendar\'s Add', /<button class="btn sm" data-act="pracnew" data-tid="t1">Add<\/button>/.test(A.rendered()), true);
     A.click({ act: 'pracnew' });
-    check('the sheet asks for date, time, length, place, focus', ['prDate', 'prStart', 'prLen', 'prPlace', 'prFocus'].every(k => sheet(A).includes('id="' + k + '"')), true);
-    check('and says who sees what', /whole club sees the date, time and place/.test(sheet(A)), true);
+    const fromPlans = sheet(A);
+    A.click({ act: 'calnew', tid: 't1' });
+    check('and opens the very same sheet', fromPlans, sheet(A));
+    check('set to a practice', /data-act="calkind" data-v="practice" aria-pressed="true"/.test(fromPlans), true);
     fill(A, { prDate: 'next tuesday', prStart: '', prLen: '60', prPlace: '', prFocus: '' });
     A.click({ act: 'pracsave', id: '' });
     check('a date that is not a date is refused', A.lastToast(), 'Pick a date');
@@ -118,6 +122,43 @@ function plan(extra = {}) {
     check('and its time and place', /17:30–18:30 · Lakeside Park/.test(A.rendered()), true);
     check('and offers to suggest a session', /Suggest a session/.test(A.rendered()), true);
     check('with nothing to run yet', /data-act="pracrun"/.test(A.rendered()), false);
+  }
+
+  console.log('\n--- one way to add a practice ---');
+  {
+    as('jaz');
+    A.click({ act: 'pracnew', tid: 't1' });
+    fill(A, { evTitle: '', evDate: '2026-09-22', evStart: '17:30', evEnd: '18:45', evVenue: 'Hill End', evNotes: '' });
+    A.click({ act: 'calsave', tid: 't1' });
+    const evs = Object.values(A.state.teams.t1.events || {});
+    check('it goes on the calendar', evs.length, 1);
+    check('as a practice', evs[0].kind, 'practice');
+    const pr = A.practiceById('t1', evs[0].id);
+    check('with its plan keyed by the entry', !!pr && pr.eid, evs[0].id);
+    check('taking day, time and place from it', [pr.date, pr.start, pr.place].join(' '), '2026-09-22 17:30 Hill End');
+    check('and its length from start to end', pr.minutes, 75);
+    check('and the plan is opened', A.ui.view + ' ' + A.ui.practice.open, 'practice ' + evs[0].id);
+
+    as('jaz');
+    A.ui.view = 'calendar';
+    A.click({ act: 'calnew', tid: 't1' });
+    fill(A, { evTitle: '', evDate: '2099-09-23', evStart: '18:00', evEnd: '19:00', evVenue: '', evNotes: '' });
+    A.click({ act: 'calsave', tid: 't1' });
+    const e = Object.values(A.state.teams.t1.events)[0];
+    check('one added on the calendar makes no plan of itself', A.practiceById('t1', e.id), null);
+    check('and stays on the calendar', A.ui.view, 'calendar');
+    A.ui.view = 'practice'; A.render();
+    check('but is on the Plans list, ready to plan', new RegExp('data-act="pracfromcal" data-id="' + e.id + '"').test(A.rendered()), true);
+    A.click({ act: 'pracfromcal', id: e.id });
+    const p2 = A.practiceById('t1', e.id);
+    check('tapping it makes its plan', !!p2 && p2.date, '2099-09-23');
+    check('and opens it', A.ui.practice.open, e.id);
+    A.ui.practice.open = null; A.render();
+    check('after which it is listed once, as a plan', (A.rendered().match(new RegExp('data-id="' + e.id + '"', 'g')) || []).length, 1);
+
+    as('trk'); A.state.teams.t1.events = { [e.id]: e };
+    A.click({ act: 'pracfromcal', id: e.id });
+    check('a tracker cannot plan one', A.practiceById('t1', e.id), null);
   }
 
   console.log('\n--- suggesting a session ---');
