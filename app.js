@@ -6828,7 +6828,7 @@ const uLabel = u => (u == null ? '' : u <= 19 ? 'U' + u : 'Adult');
    the screen state. Rebuilt from the blank on every read, so a filter saved by
    an older build that this one no longer knows can't break the list. */
 const PRACTICE_BLANK = () => ({
-  q: '', age: 'team', sort: 'session', sig: '', len: '', setup: '', players: '', comp: '', by: '',
+  q: '', age: 'team', sort: 'session', sig: '', len: '', setup: '', players: '', comp: '', by: '', shape: '',
   skill: '', principle: '', moment: '', physical: '',
   types: [], pos: [], levels: [], intens: [], inv: [], groups: [], flags: [], noKit: []
 });
@@ -6879,6 +6879,7 @@ function drillMatches(d, f, age, L) {
   const q = String(f.q || '').trim().toLowerCase().split(/\s+/).filter(Boolean);
   return (age == null || (d.ages[0] <= age && age <= d.ages[1]))
     && (!f.sig || d.signals.includes(f.sig))
+    && (!f.shape || (d.shapes || []).includes(f.shape))
     && (!f.types.length || f.types.includes(d.type))
     && (!f.pos.length || f.pos.some(p => d.positions.includes(p)))
     && (!f.len || d.minutes[0] <= Number(f.len))
@@ -6939,7 +6940,7 @@ function drillPool(L, shelf = practiceUi().shelf) {
    itself rather than behind the Filters button. */
 function practiceActive(f) {
   let n = 0;
-  for (const k of ['sig', 'len', 'setup', 'players', 'comp', 'by', 'skill', 'principle', 'moment', 'physical']) if (f[k]) n++;
+  for (const k of ['sig', 'shape', 'len', 'setup', 'players', 'comp', 'by', 'skill', 'principle', 'moment', 'physical']) if (f[k]) n++;
   for (const k of ['types', 'pos', 'levels', 'intens', 'inv', 'groups', 'flags', 'noKit']) n += f[k].length;
   return n;
 }
@@ -6967,6 +6968,17 @@ function viewPractice() {
   return `<div class="stack">${tabs}${body}</div>`;
 }
 
+/* The team's own shapes that the library has drills for, its defaults first:
+   a saved shape keeps the preset's name ("2-5-1"), and that name is what a
+   drill's `shapes` lists. A shape the coach renamed or drew herself matches
+   nothing, so it gets no chip, and the filter still offers every shape. */
+function teamShapes(t, L) {
+  if (!t || !L || !L.SHAPES) return [];
+  const fs = t.formations || {}, defs = Object.values(t.defaults || {}).map(id => fs[id]).filter(Boolean);
+  const names = [...defs, ...Object.values(fs)].map(f => String(f.name || ''));
+  return [...new Set(names)].filter(n => ownKey(L.SHAPES, n));
+}
+
 function practiceDrillsView(L) {
   const p = practiceUi(), f = p.f, t = team();
   const u = teamUAge(t);
@@ -6975,6 +6987,8 @@ function practiceDrillsView(L) {
   const opt = (cur, [v, l]) => `<option value="${esc(v)}"${cur === v ? ' selected' : ''}>${esc(l)}</option>`;
   const n = practiceActive(f);
   const s = f.sig && L.SIGNALS[f.sig];
+  // a shape picked in Filters that the team doesn't play still gets its chip, so it can be turned off here
+  const shapes = [...new Set([...teamShapes(t, L), ...(f.shape && L.SHAPES && ownKey(L.SHAPES, f.shape) ? [f.shape] : [])])];
   watchShelf('club'); watchShelf('mine');
   const shelves = `<div class="chips">${[['all', 'All'], ...Object.entries(SHELVES)].map(([k, l]) =>
     `<button class="chip" type="button" data-act="shelf" data-k="${k}" aria-pressed="${p.shelf === k}">${l}</button>`).join('')}
@@ -6988,6 +7002,8 @@ function practiceDrillsView(L) {
       </div>
       ${u == null && f.age === 'team' && canEditTeam(ui.teamId) ? `<p class="muted" style="margin:8px 0 0">Give the team a birth year (Team → Team name and crest) and the list starts at the right age.</p>` : ''}
       ${s ? `<div class="drillsignal"><b>${esc(s.label)}</b><span>${esc(s.means)}</span></div>` : ''}
+      ${shapes.length ? `<div class="chips" style="margin-top:8px">${shapes.map(k =>
+        `<button class="chip" type="button" data-act="dfpick" data-k="shape" data-v="${esc(f.shape === k ? '' : k)}" aria-pressed="${f.shape === k}">${esc(k)} drills</button>`).join('')}</div>` : ''}
     </div>
     <div id="drillList">${drillListHtml()}</div>`;
 }
@@ -7088,6 +7104,7 @@ function sheetDrill(id, moving = !reducedMotion(), top = false) {
       ${d.space || d.spaceNote ? `<span>Space <b>${d.space ? d.space[0] + ' × ' + d.space[1] + ' yd' : esc(d.spaceNote || '')}</b></span>` : ''}
       <span>Bring <b>${esc(kit)}</b></span>
       ${d.positions.length ? `<span>For <b>${esc(d.positions.join(', '))}</b></span>` : ''}
+      ${(d.shapes || []).length ? `<span>Shape <b>${esc(d.shapes.join(', '))}</b></span>` : ''}
     </div>
     ${acts.length ? `<div class="row" style="gap:8px;flex-wrap:wrap;margin:6px 0">${acts.map(([a, l]) =>
       `<button class="btn quiet sm${a === 'drilldel' ? ' danger' : ''}" data-act="${a}" data-id="${esc(key)}">${l}</button>`).join('')}</div>` : ''}
@@ -7269,6 +7286,7 @@ function sheetDrillFilters() {
   const n = practiceDrills(f).length;
   openSheet(`<h3>Filters</h3>
     ${lab('What needs work', sel('sig', 'Anything', Object.entries(L.SIGNALS).map(([k, s]) => [k, s.label])))}
+    ${L.SHAPES ? lab('Written for the shape', sel('shape', 'Any shape', Object.entries(L.SHAPES))) : ''}
     <p class="lbl">Type</p>${chips('types', L.TYPES)}
     <p class="lbl">Position</p>${chips('pos', Object.fromEntries(L.POSITIONS.map(x => [x, x])))}
     <div class="grid2">
@@ -7642,7 +7660,7 @@ function normDrill(raw, shelf, id) {
     skills: keys(raw.skills, L.SKILLS), principles: keys(raw.principles, L.PRINCIPLES), moments: keys(raw.moments, L.MOMENTS), physical: keys(raw.physical, L.PHYSICAL),
     setup: str(raw.setup, 1000), how: lines(raw.how), points: lines(raw.points), questions: lines(raw.questions), mistakes: lines(raw.mistakes),
     why: str(raw.why, 600), easier: lines(raw.easier), harder: lines(raw.harder), safety: str(raw.safety, 400),
-    signals: keys(raw.signals, L.SIGNALS), goesWith: [], tags: [],
+    signals: keys(raw.signals, L.SIGNALS), shapes: keys(raw.shapes, L.SHAPES || {}), goesWith: [], tags: [],
     diagram: base ? base.diagram : cleanDrawing(raw.diagram), pic: base ? pic : '', media, from: fr,
     edBy: str(raw.edBy, 60), edName: str(raw.edName, 60),
     by: str(raw.by, 60), byName: str(raw.byName, 60), team: str(raw.team, 60), at: Number(raw.at) || 0,
@@ -7796,8 +7814,8 @@ function shelfNote(shelf) {
 let drillDraft = null;            // { shelf, id, d: the card being written, keepPic }
 const DRAFT_TEXT = { deName: 'name', deSummary: 'summary', deSetup: 'setup', deWhy: 'why', deSafety: 'safety' };
 const DRAFT_LINES = { deHow: 'how', dePoints: 'points', deQuestions: 'questions', deMistakes: 'mistakes', deEasier: 'easier', deHarder: 'harder' };
-const DRAFT_CHIPS = { positions: null, skills: 'SKILLS', principles: 'PRINCIPLES', moments: 'MOMENTS', physical: 'PHYSICAL', groups: 'GROUPS', signals: 'SIGNALS' };
-const draftVocab = (L, k) => (k === 'positions' ? Object.fromEntries(L.POSITIONS.map(x => [x, x])) : k === 'signals' ? Object.fromEntries(Object.entries(L.SIGNALS).map(([s, v]) => [s, v.label])) : L[DRAFT_CHIPS[k]]);
+const DRAFT_CHIPS = { positions: null, skills: 'SKILLS', principles: 'PRINCIPLES', moments: 'MOMENTS', physical: 'PHYSICAL', groups: 'GROUPS', signals: 'SIGNALS', shapes: 'SHAPES' };
+const draftVocab = (L, k) => (k === 'positions' ? Object.fromEntries(L.POSITIONS.map(x => [x, x])) : k === 'signals' ? Object.fromEntries(Object.entries(L.SIGNALS).map(([s, v]) => [s, v.label])) : L[DRAFT_CHIPS[k]] || {});
 
 function draftFrom(d) {
   const c = d ? cardOf(d) : { name: '', type: 'technical', ages: [8, 12], minutes: [10, 15], players: { min: 4, best: 12, max: 16 }, gk: 0, level: 2, intensity: 2, involvement: 2, adults: 1 };
@@ -7830,7 +7848,7 @@ function sheetDrillEditor(top = false) {
   const lab = (l, body) => `<label class="field"><span>${l}</span>${body}</label>`;
   const ages = Array.from({ length: 16 }, (_, i) => [i + 4, i + 4 === 19 ? 'U19 / adult' : 'U' + (i + 4)]);
   const area = (id, k, rows, ph) => lab(esc(ph), `<textarea id="${id}" rows="${rows}">${esc(arrOf(c[k]).join('\n'))}</textarea>`);
-  const chips = k => `<p class="lbl">${{ positions: 'For', skills: 'Skills', principles: 'Principles of play', moments: 'Moments', physical: 'Physical', groups: 'Grouped as', signals: 'Answers' }[k]}</p>
+  const chips = k => `<p class="lbl">${{ positions: 'For', skills: 'Skills', principles: 'Principles of play', moments: 'Moments', physical: 'Physical', groups: 'Grouped as', signals: 'Answers', shapes: 'Written for the shape' }[k]}</p>
     <div class="chips">${Object.entries(draftVocab(L, k)).map(([v, l]) => `<button class="chip" type="button" data-act="dedchip" data-k="${k}" data-v="${esc(v)}" aria-pressed="${arrOf(c[k]).includes(v)}">${esc(l)}</button>`).join('')}</div>`;
   const nums = (lo, hi) => Array.from({ length: hi - lo + 1 }, (_, i) => [lo + i, String(lo + i)]);
   const kitOpts = k => [['', 'None'], ...(k === 'balls' ? [['each', 'One each']] : []), ...[1, 2, 3, 4, 6, 8, 10, 12, 16, 20, 24].map(x => [x, String(x)])];
@@ -8065,7 +8083,12 @@ function suggestPlan(L, t, pr, turn = 0, strict = false) {
   const fits = d => (age == null || (d.ages[0] <= age && age <= d.ages[1])) && (!n || d.players.min <= n);
   // with a squad entered, a drill wanting more keepers than it has is a last resort
   const keepers = d => !n || d.gk <= gk;
-  const score = d => (sig && d.signals.includes(sig) ? 10 : 0) + (3 - Math.abs(d.level - level));
+  /* A drill written for the shape the team plays gets a nudge, smaller than
+     the focus the coach picked: a 2-5-1 team is offered its wide players'
+     run back before a drill for any shape, but not before what needs work. */
+  const own = new Set(teamShapes(t, L));
+  const ours = d => (d.shapes || []).some(x => own.has(x)) ? 2 : 0;
+  const score = d => (sig && d.signals.includes(sig) ? 10 : 0) + (3 - Math.abs(d.level - level)) + ours(d);
   const used = new Set(), seq = [];
   /* Never a third hard drill straight after two, so the plan doesn't trip the
      warning it would then show; some warm-ups are games and run hot. Softer,

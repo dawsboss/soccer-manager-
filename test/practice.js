@@ -226,6 +226,50 @@ console.log('\n--- every filter narrows, and clearing undoes them ---');
   check('a chip in the sheet redraws the sheet', /Kit you don/.test(sheet()) && /aria-pressed="false">Advanced/.test(sheet()), true);
 }
 
+console.log('\n--- drills for the team\'s own shape ---');
+{
+  /* A coach playing a 2-5-1 asked for drills for it, and for her wide players
+     who don't get back. The shape is the name on the team's saved formation,
+     so the chip comes from what the team already plays, not from a setting. */
+  as('jaz');
+  A.change({ pick: 'dfpick', k: 'age' }, 'any');
+  const all = A.practiceDrills().length;
+  A.change({ pick: 'dfpick', k: 'shape' }, '2-5-1');
+  const got = A.practiceDrills();
+  check('the shape filter narrows the list', got.length > 2 && got.length < all, true);
+  check('…to drills written for that shape', got.every(d => (d.shapes || []).includes('2-5-1')), true);
+  check('and counts as a filter', A.practiceActive(A.ui.practice.f), 1);
+  A.click({ act: 'drillfilters' });
+  check('the filters sheet offers every shape', /Written for the shape/.test(sheet()) && /3-3-2 \(9v9\)/.test(sheet()), true);
+  A.click({ act: 'dfclear' });
+  check('clear takes it off', A.ui.practice.f.shape, '');
+
+  A.ui.view = 'practice'; A.render();
+  check('a team with no saved shape gets no chip', /data-k="shape"/.test(A.rendered()), false);
+  A.state.teams.t1.formations = {
+    f: { id: 'f', name: '2-5-1', size: 9, slots: [] },
+    g: { id: 'g', name: 'Our diamond', size: 7, slots: [] },
+    h: { id: 'h', name: '3-3-2', size: 9, slots: [] }
+  };
+  A.state.teams.t1.defaults = { 9: 'f' };
+  A.render();
+  check('a saved 2-5-1 gets a chip', /data-k="shape" data-v="2-5-1" aria-pressed="false">2-5-1 drills/.test(A.rendered()), true);
+  check('so does every other preset it saved', /3-3-2 drills/.test(A.rendered()), true);
+  check('but a shape she named herself matches no drill, so no chip', /Our diamond drills/.test(A.rendered()), false);
+  check('the team\'s default comes first', A.rendered().indexOf('2-5-1 drills') < A.rendered().indexOf('3-3-2 drills'), true);
+  A.click({ act: 'dfpick', k: 'shape', v: '2-5-1' });
+  check('the chip turns the filter on', A.ui.practice.f.shape, '2-5-1');
+  check('and is drawn pressed, ready to turn it off', /data-k="shape" data-v="" aria-pressed="true">2-5-1 drills/.test(A.rendered()), true);
+  A.click({ act: 'dfpick', k: 'shape', v: '' });
+  check('a second tap turns it off', A.ui.practice.f.shape, '');
+
+  A.click({ act: 'drill', id: 'shape-2-5-1' });
+  check('the card says which shape it is for', /Shape <b>2-5-1<\/b>/.test(sheet()), true);
+  A.click({ act: 'drill', id: 'rondo-4v1' });
+  check('and a drill for any shape says nothing about one', /Shape <b>/.test(sheet()), false);
+  delete A.state.teams.t1.formations; delete A.state.teams.t1.defaults;
+}
+
 console.log('\n--- a long list pages, and its state survives a reload ---');
 {
   as('jaz');

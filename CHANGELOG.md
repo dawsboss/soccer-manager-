@@ -8,6 +8,52 @@ before this point lives only in the git log.
 
 ---
 
+## Drills for the shape you play, and wide players who get back — 2026-10-03
+
+The owner: *we are running a 2-5-1 and the girls on the wings are having
+trouble learning to fall back to help defend… people are just not moving as
+much as they should, whether from not knowing or laziness.* So, drills by
+shape, and most of them about the run back.
+
+**Drills know their shape.** A drill can say which of the app's preset
+formations it is written for (`shapes`, from `SHAPES` in `drills.js`, which
+the suite holds to `PRESETS` in `app.js`). A team with a saved 2-5-1 gets a
+one-tap *2-5-1 drills* chip on the Drills screen; Filters has *Written for
+the shape* for any of them; the card says it; the editor has chips for it, so
+a coach's own drill can be found the same way; and *Suggest a session* leans
+towards the team's shape, less than towards the focus she picked. A shape
+she drew and renamed herself matches no drill and gets no chip. Eleven
+existing drills were tagged too (the winger's and full-back's jobs, the back
+line, two banks and others), without a version bump: a filter label is not
+new content.
+
+**Sixteen new drills, 141 in all:**
+
+- **The 2-5-1 problem itself.** *2-5-1: two shapes*: a 2-5-1 with the
+  ball and a 4-3-1 without it, the wide players dropping beside the two backs
+  on every turnover. *Back in time*: the wide player attacks, then races back
+  the moment it ends to make it 2v1. *Follow her home*: tracking a runner
+  without the ball all the way to the line. *Mirror on the wing*: the same
+  run as a warm-up race. *Hold until help comes*: the two backs' half of
+  it, delaying 3v2 until the wide player arrives. *Cross, then get back*: both
+  ends of the wing in one rep. *Slide as five* and *One up top*: the
+  midfield line and the lone striker.
+- **Other shapes.** *3-3-2: ball side, far side* and *2-3-1: everyone has
+  two jobs*.
+- **Work rate**, which the players enforce on each other: *Up together, back
+  together* (a goal counts only with everyone over halfway, and double
+  against a team that didn't get back), *Last one back* (the last over the
+  line sits out the next attack), *Freeze!* (anyone hiding or on the wrong
+  side of the ball moves before play goes on) and *Everyone touches*.
+- Also *Cross and attack the box* and *Futsal 3v3* for the winter.
+
+Every preset shape has at least three drills (a 2-5-1 has 17). Every diagram
+was looked at, and four were corrected: the crossing drill had its near and
+far post the wrong way round, and two had passes running through defenders.
+`LIB.version` is 5.
+
+---
+
 ## Twenty more drills, most of them where the library was thinnest — 2026-10-03
 
 The owner asked for more drills. Counting what was already there showed
