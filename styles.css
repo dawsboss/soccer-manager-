@@ -91,7 +91,6 @@ h2{font-family:"Barlow Condensed",sans-serif;font-weight:600;font-size:22px;marg
   border-radius:8px;padding:11px 16px;font-weight:600;font-size:15px;
 }
 .btn:active{transform:translateY(1px)}
-.btn.ghost{background:transparent;color:var(--field-deep)}
 .btn.quiet{background:#fff;color:var(--ink);border-color:var(--line)}
 .btn.danger{background:#fff;color:var(--over);border-color:var(--over)}
 .btn.wide{width:100%}
@@ -609,6 +608,89 @@ table.grid td.right{text-align:right}
 .card .invrow{display:flex;gap:10px;align-items:center;padding:10px 0;border-top:1px solid var(--line)}
 .invrow[data-k="used"] b,.invrow[data-k="expired"] b{color:var(--ink-soft)}
 .linkish{background:none;border:0;padding:0;text-align:left;font:inherit;color:inherit;cursor:pointer;min-width:0;flex:1}
+
+/* ---------- calendar ---------- */
+/* Kind is colour everywhere it appears — the month's dots, the tag on a row,
+   the key — so a glance at the month says "two games and a practice" before
+   anything is read. */
+.calgrid{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:2px;text-align:center}
+.calgrid .wd{font-size:11px;color:var(--ink-soft);padding:2px 0 4px;text-transform:uppercase;letter-spacing:.04em}
+.calday{background:none;border:0;border-radius:8px;padding:6px 0 4px;min-height:44px;
+  display:flex;flex-direction:column;align-items:center;gap:4px;font-size:14px;font-variant-numeric:tabular-nums}
+button.calday{font-weight:600}
+button.calday:active{background:var(--field-wash)}
+.calday[data-past="1"]{color:var(--ink-soft);font-weight:400}
+.calday[data-today="1"]{box-shadow:inset 0 0 0 2px var(--field-deep);color:var(--field-deep)}
+.dots{display:flex;gap:3px;height:6px}
+/* scoped: the shot map's markers are .dot too */
+:is(.dots,.calkey) .dot{display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--bench)}
+:is(.dots,.calkey) .dot.game{background:var(--field)}
+:is(.dots,.calkey) .dot.practice{background:var(--focus)}
+:is(.dots,.calkey) .dot.event{background:var(--owed)}
+:is(.dots,.calkey) .dot.off{opacity:.3}
+.calkey{font-size:12px;color:var(--ink-soft);display:flex;align-items:center;gap:5px;flex-wrap:wrap}
+.calkey .dot{margin-left:6px}
+.calkey .dot:first-child{margin-left:0}
+.calhead{font-size:12.5px;font-weight:600;color:var(--ink-soft);margin:12px 0 2px;text-transform:uppercase;letter-spacing:.05em}
+.calhead span{text-transform:none;letter-spacing:0;color:var(--field-deep)}
+.calrow{grid-template-columns:58px minmax(0,1fr) auto}
+.caltime{font-family:"Barlow Condensed",sans-serif;font-weight:600;font-size:16px;font-variant-numeric:tabular-nums;color:var(--ink-soft)}
+.calrow[data-called="1"] .pname{text-decoration:line-through;color:var(--ink-soft)}
+.calnext{border-left:4px solid var(--field)}
+.tag.game{background:var(--field-wash);color:var(--field-deep)}
+.tag.practice{background:#E1ECF7;color:#0E4E8A}
+.tag.event{background:var(--owed-wash);color:#6C4406}
+.tag.off{background:#FBE7E3;color:#6E2317}
+.facts{display:grid;grid-template-columns:auto 1fr;gap:6px 14px;margin:0 0 14px;font-size:15px}
+.facts dt{color:var(--ink-soft);font-size:13px;padding-top:2px}
+.facts dd{margin:0}
+.row.wrap{flex-wrap:wrap}
+a.btn{display:inline-block;text-decoration:none}
+.syncrow{padding:4px 0 6px}
+.syncrow+.syncrow{border-top:1px solid var(--line);padding-top:10px}
+/* who is coming */
+.rsvpbox{border-top:1px solid var(--line);margin:4px 0 12px;padding-top:10px}
+.rsvprow{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:6px 0;border-top:1px solid var(--paper)}
+.rsvprow:first-of-type{border-top:0}
+.rsvpchips{flex:none}
+.rsvprow .chip{padding:4px 9px;font-size:13px}
+/* a quiet action on a light card (.linkbtn is for the dark clock band) */
+.textbtn{background:none;border:0;padding:4px 0;color:var(--field-deep);font-size:14px;text-decoration:underline;text-underline-offset:3px}
+/* ---------- messages ---------- */
+.bell{position:relative;overflow:visible}
+.belln{position:absolute;top:-5px;right:-6px;min-width:17px;height:17px;padding:0 4px;border-radius:999px;
+  background:var(--owed);color:#fff;font-size:11px;font-weight:700;line-height:17px;text-align:center}
+.belln:empty{display:none}
+.msgcard{padding:12px 0;border-top:1px solid var(--line)}
+.msgcard:first-of-type{border-top:0;padding-top:4px}
+.msgcard.unread .msgbody{font-weight:600}
+.msgcard.urgent{border-left:4px solid var(--over);padding-left:10px}
+.msghead{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-bottom:4px}
+.msgwhen{margin-left:auto;font-size:12.5px;color:var(--ink-soft);white-space:nowrap}
+.msgbody{overflow-wrap:anywhere}
+.msgfoot{display:flex;flex-wrap:wrap;gap:4px 14px;margin-top:6px;font-size:13.5px;color:var(--ink-soft)}
+.msgfoot.bad{color:var(--over)}
+.msgfoot .linkbtn,.bubble .linkbtn{padding:0;color:var(--field-deep);font-size:inherit}
+.msghead .pill,.convrow .pill{display:inline-block;padding:0 7px;border-radius:999px;font-size:11.5px;font-weight:600;
+  background:var(--field-wash);color:var(--field-deep);border:1px solid var(--line)}
+.msghead .pill.urgent{background:#FBE3DD;color:var(--over);border:1px solid var(--over)}
+.convrow{grid-template-columns:1fr auto;text-align:left;width:100%}
+.convrow.unread .pname{font-weight:700}
+.msgdot{display:inline-block;min-width:20px;height:20px;padding:0 6px;border-radius:999px;background:var(--field-deep);
+  color:#fff;font-size:12px;font-weight:700;line-height:20px;text-align:center}
+.thread{display:flex;flex-direction:column;gap:8px;margin-bottom:12px;max-height:60vh;overflow-y:auto}
+.bubble{max-width:85%;align-self:flex-start;background:var(--paper);border-radius:14px 14px 14px 4px;padding:8px 12px}
+.bubble.me{align-self:flex-end;background:var(--field-wash);border-radius:14px 14px 4px 14px}
+.bubble .bwho{display:block;font-size:12.5px;font-weight:600;color:var(--field-deep)}
+.bubble .btext{display:block;overflow-wrap:anywhere}
+.bubble .bwhen{display:block;font-size:11.5px;color:var(--ink-soft);margin-top:2px}
+#msgText,#postText{width:100%}
+
+/* ---------- team links ---------- */
+.claims{display:flex;flex-direction:column;gap:10px;margin-top:8px}
+.claim{border:1px solid var(--line);border-radius:var(--r);padding:10px 12px;background:var(--owed-wash)}
+.claim .btn[disabled]{opacity:.5;cursor:not-allowed}
+.pill.asking{display:inline-block;padding:1px 9px;border-radius:999px;font-size:12.5px;font-weight:700;background:var(--owed);color:#fff}
 
 /* ---------- practice: the drill library and the position guide ---------- */
 /* The diagrams draw their own pitch in fixed greens and whites, so they read

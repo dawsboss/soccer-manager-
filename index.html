@@ -4,12 +4,12 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#17603C">
-<meta name="build" content="66">
+<meta name="build" content="67">
 <title>Minutes — soccer sub tracker</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600&family=Barlow+Condensed:wght@500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="styles.css?v=66">
+<link rel="stylesheet" href="styles.css?v=67">
 </head>
 <body>
 
@@ -17,6 +17,9 @@
   <div class="topbar-main">
     <span class="brand" id="brand">Minutes<span class="ver" id="ver"></span></span>
     <span class="sync" id="syncBadge" title="Sync status">local</span>
+    <button class="avatar swap bell" id="inboxBtn" type="button" aria-label="Messages" title="Messages" hidden>
+      <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg><span class="belln" id="inboxN"></span></button>
     <button class="avatar swap" id="clubSwitch" type="button" aria-label="Switch club" title="Switch club">
       <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
         <path d="M4 8h13l-3-3M20 16H7l3 3"/></svg></button>
@@ -25,6 +28,7 @@
   <nav class="crumbs" id="crumbs" aria-label="Where you are"></nav>
   <nav class="tabs" id="tabs">
     <button type="button" data-view="matches">Games</button>
+    <button type="button" data-view="calendar">Calendar</button>
     <button type="button" data-view="practice" hidden>Practice</button>
     <button type="button" data-view="roster">Squad</button>
     <button type="button" data-view="season">Season</button>
@@ -47,11 +51,12 @@
 <div class="toast" id="toast" hidden></div>
 
 <script src="firebase-config.js"></script>
+<script src="ics.js?v=67"></script>
 <!-- Content, not code: the drill library and the diagrams that draw it. Plain
      scripts before the module, so they are on window when app.js runs, and
      cache-busted with the same build number so a cached copy can't disagree. -->
-<script src="drills.js?v=66"></script>
-<script src="drill-diagram.js?v=66"></script>
-<script type="module" src="app.js?v=66"></script>
+<script src="drills.js?v=67"></script>
+<script src="drill-diagram.js?v=67"></script>
+<script type="module" src="app.js?v=67"></script>
 </body>
 </html>

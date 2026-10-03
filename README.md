@@ -20,6 +20,8 @@ A sideline tracker for soccer coaches: multiple teams, rosters, planned vs actua
 - **Fixing mistakes.** Tap any line in the sub log to nudge it by 5, 15, 30 or 60 seconds, or type the exact time. *Add a sub* records one that happened before you tapped. *Fix minutes* opens a player's spells on the pitch and lets you edit or delete each one. *Clock reading wrong?* shifts the current half and the total together.
 - **Per-game availability.** Mark players out for one game without touching their season totals.
 - **Veo.** Each game has a field for the Veo link, so the recording sits next to the sub log.
+- **Calendar.** Every team has a Calendar tab: games, practices and anything else on, in date order, with a month at a glance, *Next up* at the top with directions, and called-off entries left on the calendar struck through rather than deleted. Practices repeat weekly on whichever days you pick. Coaches add and change it; everyone with a role on the team — trackers and parents included — reads it, and anyone who can see more than one team (a parent with two children, say) can see them all on one calendar. Families can subscribe so their own calendar follows every change, and parents say whether their child is coming to each game, practice or event. See **The calendar** below.
+- **Match-day details.** A game carries home or away, an arrive-by time, the kit, notes for families and the other team, and whether it is on, postponed or cancelled. They show on the calendar, the Plan tab and the share pages.
 - **Practice.** A library of 105 drills, each with an animated diagram, setup, coaching points, questions to ask, what goes wrong, easier and harder versions and safety notes. Filter by age, type, position, length, setup time, players, kit, difficulty, intensity, skill, principle of play and what needs work. A **Positions** guide says what each of nine positions does with the ball, without it, and in the second either way, and links the drills that teach it. The list starts at the team's age group, set as a **birth year** under Team → *Team name and crest*, so it moves up a year by itself every August. Coaches and admins only: parents and trackers never get the tab.
 - **Practice plans.** *Plan a practice* takes a date, time, length, place and what it's for, and *Suggest a session* fills it: a warm-up, one or two practices, a game and a cool-down that suit the team's age and squad, timed to fit. Add, move, retime and annotate drills; the plan works out the kit to bring and warns before the field about too few players, missing keepers, a drill outside the age group or three hard drills in a row. *Run it* is the sideline view, one drill at a time with a countdown and its coaching points, and it works with no signal. Afterwards, one to five stars and a line on how it went. The plan is the team's coaches' and the club's admins'; the date, time and place go to everyone, so parents see the next practice on Games. Plans need the `training` rules block below; without it they stay on the phone they were made on. Club and personal drill libraries are designed in `TRAINING.md` and not built yet.
 
@@ -33,91 +35,15 @@ Open `index.html` in a browser, or serve the folder. Everything works immediatel
 2. Add a **Web app** to the project, then copy the config object into `firebase-config.js`.
 3. In Realtime Database → Rules, paste the **open** rules to begin with:
 
-```json
-{
-  "rules": {
-    "workspaces": {
-      "$code": {
-        ".read": true,
-        ".write": true
-      }
-    },
-    "public": {
-      "$share": {
-        ".read": true,
-        ".write": "!newData.exists() || newData.hasChild('team')",
-        "team": {
-          ".validate": "newData.hasChild('name')"
-        },
-        "games": {
-          "$g": {
-            ".validate": "newData.hasChild('status')"
-          }
-        }
-      }
-    },
-    "invites": {
-      "$id": {
-        ".read": "auth != null",
-        ".write": "auth != null && ((!data.exists() && newData.child('by').val() === auth.uid && root.child('workspaces/' + newData.child('ws').val() + '/access/admins/' + auth.uid).exists()) || (data.exists() && !newData.exists() && (data.child('used/by').val() === auth.uid || root.child('workspaces/' + data.child('ws').val() + '/access/admins/' + auth.uid).exists() || root.child('workspaces/' + data.child('ws').val() + '/access/teamIndex/' + data.child('team').val() + '/' + auth.uid).val() === 'coach')))",
-        ".validate": "newData.hasChildren(['ws', 'team', 'role', 'by', 'expiresAt']) && (newData.child('role').val() === 'coach' || newData.child('role').val() === 'tracker' || (newData.child('role').val() === 'parent' && newData.hasChild('player')))",
-        "used": {
-          ".write": "auth != null && !data.exists() && newData.child('by').val() === auth.uid && data.parent().child('expiresAt').val() > now && (!data.parent().child('email').exists() || (auth.token.email_verified === true && auth.token.email.toLowerCase() === data.parent().child('email').val()))"
-        }
-      }
-    },
-    "clubInvites": {
-      "$code": {
-        ".read": "auth != null && root.child('workspaces/' + $code + '/access/admins/' + auth.uid).exists()",
-        "$id": {
-          ".write": "auth != null && root.child('workspaces/' + $code + '/access/admins/' + auth.uid).exists()",
-          "used": {
-            ".write": "auth != null && !data.exists() && data.parent().exists() && newData.child('by').val() === auth.uid && root.child('invites/' + $id + '/used/by').val() === auth.uid && root.child('invites/' + $id + '/ws').val() === $code"
-          }
-        }
-      }
-    },
-    "userOrgs": {
-      "$uid": {
-        ".read": "auth != null && auth.uid === $uid",
-        "$code": {
-          ".write": "auth != null && ($uid === auth.uid || root.child('workspaces/' + $code + '/access/admins/' + auth.uid).exists())"
-        }
-      }
-    },
-    "training": {
-      "$code": {
-        "practices": {
-          "$tid": {
-            ".read": "auth != null && (root.child('workspaces/' + $code + '/access/admins/' + auth.uid).exists() || root.child('workspaces/' + $code + '/access/teamIndex/' + $tid + '/' + auth.uid).val() === 'coach' || (!root.child('workspaces/' + $code + '/access/teamIndex').exists() && root.child('workspaces/' + $code + '/access/coachIndex/' + auth.uid).exists()))",
-            "$pid": {
-              ".write": "auth != null && (root.child('workspaces/' + $code + '/access/admins/' + auth.uid).exists() || root.child('workspaces/' + $code + '/access/teamIndex/' + $tid + '/' + auth.uid).val() === 'coach' || (!root.child('workspaces/' + $code + '/access/teamIndex').exists() && root.child('workspaces/' + $code + '/access/coachIndex/' + auth.uid).exists()))",
-              ".validate": "newData.hasChildren(['id', 'teamId', 'date']) && newData.child('id').val() === $pid && newData.child('teamId').val() === $tid"
-            }
-          }
-        },
-        "schedule": {
-          "$tid": {
-            ".read": "auth != null && (root.child('workspaces/' + $code + '/access/index/' + auth.uid).exists() || !root.child('workspaces/' + $code + '/access/index').exists())",
-            "$pid": {
-              ".write": "auth != null && (root.child('workspaces/' + $code + '/access/admins/' + auth.uid).exists() || root.child('workspaces/' + $code + '/access/teamIndex/' + $tid + '/' + auth.uid).val() === 'coach' || (!root.child('workspaces/' + $code + '/access/teamIndex').exists() && root.child('workspaces/' + $code + '/access/coachIndex/' + auth.uid).exists()))",
-              ".validate": "newData.hasChild('date')"
-            }
-          }
-        }
-      }
-    }
-  }
-}
-```
+   **[`database.rules.open.json`](database.rules.open.json)** — the whole file. On a phone: open it on GitHub, tap **Raw**, select all, copy, and paste it over everything in the Rules editor.
 
 Lock them down once people have signed in — see **Locking it down** below.
 
 4. On the app owner's device: Setup → Workspace → *Connect to a workspace* → *Make one up* → *Save and reload*. That creates the club. Nobody else types the code: everyone else joins with an invite link — see **Joining a club** below.
 
-The three root blocks in these rules (`invites`, `clubInvites`, `userOrgs`) are what invites need, and `training` is what practice plans need. All four are identical in the locked-down set, so an invite made or a practice planned today keeps working after lockdown. Without `training`, plans stay on the phone they were made on and the Practice tab says so.
+The root blocks in these rules — `invites`, `clubInvites`, `userOrgs` for invites, `board` and `dm` for messages, `training` for practice plans — are identical in the locked-down set, so an invite made, a message sent or a practice planned today keeps working after lockdown. Without `training`, plans stay on the phone they were made on and the Practice tab says so.
 
-The rules above cover the coaches' data. To publish read-only pages for parents, add a second block alongside it:
+The open rules cover the coaches' data. To publish read-only pages for parents, add a second block alongside it:
 
 ```json
 "public": {
@@ -162,12 +88,33 @@ Each invite works **once**, for **one account**, and expires after **14 days**. 
 
 The invite shows the club, the team and who sent it — never a child's name. A parent invite names the player by shirt number, because a link gets forwarded.
 
+### A whole squad of parents
+
+Two ways, both on the team's **Squad** tab, in a **Parents** card for that team's coaches and the admins.
+
+- **One team link** (coaches and admins). Post it in the team chat. Each parent signs in, types their child's shirt number (`7, 12` for two) and optionally the child's first name, and waits. The request shows on Squad with the player that number matches already picked; **Let in as parent of …** makes them that player's parent and lets them into the club, **Turn down** removes it. The parent sees no names at all before they are let in, and their phone opens the club by itself once approved. **New link** replaces it — the old one stops working, which is how a link in last season's chat dies.
+- **A personal link per family** (admins). *Or a personal link per family* makes an ordinary parent invite for every player with no parent yet, in one tap, and lists them to copy or share one by one. Running it again makes nothing new, so the same list is where you find a link to send again. Each works once with no approving, so send each to that family only.
+
+The team link needs the `joinCodes` and `claims` rule blocks, and the clause on `access/index` that lets a coach index a parent she approved.
+
 **A second device** needs no invite. Once someone has joined, signing in on a device with no club open finds the club from their account (`userOrgs`) and opens it; with more than one, they are listed under the club switcher. Anyone who joined before this existed gets that list filled in the next time they open the club.
 
 Two limits worth knowing:
 
 - **Firebase words the sign-in email itself.** It reads as "sign in to …", not "you are invited" — a text to say it is coming saves a confused parent.
 - **An invite belongs to the database it was made in.** One made in a test database only works on a device pointed at that database.
+
+## Messages
+
+The bell in the top bar, for anyone with a role in a club that has an admin.
+
+- **Team notices.** A team's coaches and the club admins post; every family on the team, its coaches and its trackers read. *Urgent* marks one in red. Under each notice a coach sees **Seen by 9 of 14 families** — tap it for who has not — and **Email or share**, which opens her email app with every parent's address in Bcc (from their sign-in), or the phone's share sheet for the team chat.
+- **Family conversations.** A parent gets one conversation per team with that team's coaches: *Ella has a cold, she'll miss Thursday.* Every coach of the team and the admins see it and can reply — never one coach alone, which is the safeguarding-friendly shape — and nobody else. Messages cannot be edited or deleted.
+- **No signal.** A message written at a pitch with no signal waits in an outbox on the phone and goes when the connection returns, even after a reload. One the database refuses says *Not sent* with *Try again*.
+
+**What "notifications" means here.** With no server, nothing can wake a phone that has closed Minutes. A message pops up (or buzzes) while Minutes is open in any tab, with a system notification when the tab is in the background and the person allowed it, and otherwise waits with a count on the bell. To reach everyone *now*, use **Email or share** on the notice. Real push is in ROADMAP, with what it would cost.
+
+**Needs the `board` and `dm` rule blocks published** — they are in both rule sets above. Without them posting says *Not sent — the database refused it*.
 
 ## Deleting a club
 
@@ -238,12 +185,18 @@ The open rules above mean anyone holding a workspace code can read and write eve
 
 ### The rules
 
-**This is the whole thing — paste it as it stands.** It already includes the
-`retired` and `appOwners` blocks shown earlier in this file; those appear there
-to explain what they are for, not to be pasted on their own. Publishing a
-partial ruleset is how a club ends up half locked down.
+**The rules live in a file, not in this README: [`database.rules.json`](database.rules.json).
+Paste the whole file as it stands.** It already includes the `retired` and
+`appOwners` blocks shown earlier in this file; those appear there to explain
+what they are for, not to be pasted on their own. Publishing a partial ruleset
+is how a club ends up half locked down. The starter set is
+[`database.rules.open.json`](database.rules.open.json).
 
-`node test/rules.js` reads *this* block and checks it. Run it first.
+A file rather than a block here because a ruleset copied out of prose is one
+stray brace from being refused, and because a file shows exactly what changed
+in a commit. `node test/rules.js` reads *these files* and checks them; it also
+fails if a whole ruleset reappears in this README, since a second copy is the
+one that drifts. Run it first.
 
 **It is safe to paste before the app has caught up.** Two lookup tables make the
 per-team and per-share rules possible — `access/teamIndex` and
@@ -258,164 +211,7 @@ settings → Check readiness** shows whether that has happened. Until every line
 there has a tick, the club is locked down but not yet *tightly* — a tracker or
 a parent can still write another team's data, exactly as before.
 
-```json
-{
-  "rules": {
-    "workspaces": {
-      "$code": {
-        ".read": "auth != null && (!data.child('access/index').exists() || data.child('access/index/' + auth.uid).exists())",
-        "access": {
-          "members": {
-            "$uid": {
-              ".write": "auth != null && ($uid === auth.uid || root.child('workspaces/' + $code + '/access/index/' + auth.uid).exists())"
-            }
-          },
-          "admins": {
-            ".write": "auth != null && (!data.exists() || data.child(auth.uid).exists())"
-          },
-          "index": {
-            "$uid": {
-              ".write": "auth != null && (!root.child('workspaces/' + $code + '/access/index').exists() || root.child('workspaces/' + $code + '/access/admins/' + auth.uid).exists() || ($uid === auth.uid && !newData.exists()) || ($uid === auth.uid && root.child('invites/' + newData.val() + '/used/by').val() === auth.uid && root.child('invites/' + newData.val() + '/expiresAt').val() > now && root.child('invites/' + newData.val() + '/ws').val() === $code))"
-            }
-          },
-          "teamIndex": {
-            ".write": "auth != null && root.child('workspaces/' + $code + '/access/admins/' + auth.uid).exists()",
-            "$tid": {
-              "$uid": {
-                ".write": "auth != null && $uid === auth.uid && root.child('workspaces/' + $code + '/access/teamIndex').exists() && ((newData.val() === 'coach' && root.child('workspaces/' + $code + '/access/teams/' + $tid + '/coaches/' + auth.uid).exists()) || (newData.val() === 'tracker' && root.child('workspaces/' + $code + '/access/teams/' + $tid + '/trackers/' + auth.uid).exists() && !root.child('workspaces/' + $code + '/access/teams/' + $tid + '/coaches/' + auth.uid).exists()))"
-              }
-            }
-          },
-          "coachIndex": {
-            ".write": "auth != null && root.child('workspaces/' + $code + '/access/admins/' + auth.uid).exists()",
-            "$uid": {
-              ".write": "auth != null && $uid === auth.uid && (!newData.exists() || root.child('workspaces/' + $code + '/access/teams/' + newData.val() + '/coaches/' + auth.uid).exists())"
-            }
-          },
-          "teams": {
-            ".write": "auth != null && root.child('workspaces/' + $code + '/access/admins/' + auth.uid).exists()",
-            "$tid": {
-              "$key": {
-                "$uid": {
-                  ".write": "auth != null && $uid === auth.uid && root.child('invites/' + newData.val() + '/used/by').val() === auth.uid && root.child('invites/' + newData.val() + '/expiresAt').val() > now && root.child('invites/' + newData.val() + '/ws').val() === $code && root.child('invites/' + newData.val() + '/team').val() === $tid && (($key === 'coaches' && root.child('invites/' + newData.val() + '/role').val() === 'coach') || ($key === 'trackers' && root.child('invites/' + newData.val() + '/role').val() === 'tracker'))"
-                }
-              }
-            }
-          },
-          "org": {
-            ".write": "auth != null && root.child('workspaces/' + $code + '/access/admins/' + auth.uid).exists()"
-          },
-          "log": {
-            "$e": {
-              ".write": "auth != null && !data.exists() && newData.child('by').val() === auth.uid"
-            }
-          }
-        },
-        "teams": {
-          "$tid": {
-            ".write": "auth != null && (root.child('workspaces/' + $code + '/access/admins/' + auth.uid).exists() || root.child('workspaces/' + $code + '/access/teamIndex/' + $tid + '/' + auth.uid).val() === 'coach' || (!root.child('workspaces/' + $code + '/access/teamIndex').exists() && root.child('workspaces/' + $code + '/access/index/' + auth.uid).exists()))",
-            "players": {
-              "$pid": {
-                "guardians": {
-                  "$uid": {
-                    ".write": "auth != null && $uid === auth.uid && root.child('workspaces/' + $code + '/teams/' + $tid + '/players/' + $pid).exists() && root.child('invites/' + newData.val() + '/used/by').val() === auth.uid && root.child('invites/' + newData.val() + '/expiresAt').val() > now && root.child('invites/' + newData.val() + '/ws').val() === $code && root.child('invites/' + newData.val() + '/team').val() === $tid && root.child('invites/' + newData.val() + '/role').val() === 'parent' && root.child('invites/' + newData.val() + '/player').val() === $pid"
-                  }
-                }
-              }
-            }
-          }
-        },
-        "matches": {
-          "$mid": {
-            ".write": "auth != null && (root.child('workspaces/' + $code + '/access/admins/' + auth.uid).exists() || root.child('workspaces/' + $code + '/access/teamIndex/' + newData.child('teamId').val() + '/' + auth.uid).exists() || root.child('workspaces/' + $code + '/access/teamIndex/' + data.child('teamId').val() + '/' + auth.uid).exists() || (!root.child('workspaces/' + $code + '/access/teamIndex').exists() && root.child('workspaces/' + $code + '/access/index/' + auth.uid).exists()))"
-          }
-        }
-      }
-    },
-    "public": {
-      "$share": {
-        ".read": true,
-        ".write": "auth != null && (root.child('shareOwners/' + $share + '/' + auth.uid).exists() || !root.child('shareOwners/' + $share).exists())",
-        "team": {
-          ".validate": "newData.hasChild('name')"
-        },
-        "games": {
-          "$g": {
-            ".validate": "newData.hasChild('status')"
-          }
-        }
-      }
-    },
-    "shareOwners": {
-      "$share": {
-        ".read": "auth != null",
-        ".write": "auth != null && (!data.exists() || data.child(auth.uid).exists())"
-      }
-    },
-    "retired": {
-      "$code": {
-        ".read": true,
-        ".write": "auth != null && root.child('workspaces/' + $code + '/access/admins/' + auth.uid).exists()"
-      }
-    },
-    "appOwners": {
-      ".read": "auth != null",
-      ".write": false
-    },
-    "invites": {
-      "$id": {
-        ".read": "auth != null",
-        ".write": "auth != null && ((!data.exists() && newData.child('by').val() === auth.uid && root.child('workspaces/' + newData.child('ws').val() + '/access/admins/' + auth.uid).exists()) || (data.exists() && !newData.exists() && (data.child('used/by').val() === auth.uid || root.child('workspaces/' + data.child('ws').val() + '/access/admins/' + auth.uid).exists() || root.child('workspaces/' + data.child('ws').val() + '/access/teamIndex/' + data.child('team').val() + '/' + auth.uid).val() === 'coach')))",
-        ".validate": "newData.hasChildren(['ws', 'team', 'role', 'by', 'expiresAt']) && (newData.child('role').val() === 'coach' || newData.child('role').val() === 'tracker' || (newData.child('role').val() === 'parent' && newData.hasChild('player')))",
-        "used": {
-          ".write": "auth != null && !data.exists() && newData.child('by').val() === auth.uid && data.parent().child('expiresAt').val() > now && (!data.parent().child('email').exists() || (auth.token.email_verified === true && auth.token.email.toLowerCase() === data.parent().child('email').val()))"
-        }
-      }
-    },
-    "clubInvites": {
-      "$code": {
-        ".read": "auth != null && root.child('workspaces/' + $code + '/access/admins/' + auth.uid).exists()",
-        "$id": {
-          ".write": "auth != null && root.child('workspaces/' + $code + '/access/admins/' + auth.uid).exists()",
-          "used": {
-            ".write": "auth != null && !data.exists() && data.parent().exists() && newData.child('by').val() === auth.uid && root.child('invites/' + $id + '/used/by').val() === auth.uid && root.child('invites/' + $id + '/ws').val() === $code"
-          }
-        }
-      }
-    },
-    "userOrgs": {
-      "$uid": {
-        ".read": "auth != null && auth.uid === $uid",
-        "$code": {
-          ".write": "auth != null && ($uid === auth.uid || root.child('workspaces/' + $code + '/access/admins/' + auth.uid).exists())"
-        }
-      }
-    },
-    "training": {
-      "$code": {
-        "practices": {
-          "$tid": {
-            ".read": "auth != null && (root.child('workspaces/' + $code + '/access/admins/' + auth.uid).exists() || root.child('workspaces/' + $code + '/access/teamIndex/' + $tid + '/' + auth.uid).val() === 'coach' || (!root.child('workspaces/' + $code + '/access/teamIndex').exists() && root.child('workspaces/' + $code + '/access/coachIndex/' + auth.uid).exists()))",
-            "$pid": {
-              ".write": "auth != null && (root.child('workspaces/' + $code + '/access/admins/' + auth.uid).exists() || root.child('workspaces/' + $code + '/access/teamIndex/' + $tid + '/' + auth.uid).val() === 'coach' || (!root.child('workspaces/' + $code + '/access/teamIndex').exists() && root.child('workspaces/' + $code + '/access/coachIndex/' + auth.uid).exists()))",
-              ".validate": "newData.hasChildren(['id', 'teamId', 'date']) && newData.child('id').val() === $pid && newData.child('teamId').val() === $tid"
-            }
-          }
-        },
-        "schedule": {
-          "$tid": {
-            ".read": "auth != null && (root.child('workspaces/' + $code + '/access/index/' + auth.uid).exists() || !root.child('workspaces/' + $code + '/access/index').exists())",
-            "$pid": {
-              ".write": "auth != null && (root.child('workspaces/' + $code + '/access/admins/' + auth.uid).exists() || root.child('workspaces/' + $code + '/access/teamIndex/' + $tid + '/' + auth.uid).val() === 'coach' || (!root.child('workspaces/' + $code + '/access/teamIndex').exists() && root.child('workspaces/' + $code + '/access/coachIndex/' + auth.uid).exists()))",
-              ".validate": "newData.hasChild('date')"
-            }
-          }
-        }
-      }
-    }
-  }
-}
-```
+**[`database.rules.json`](database.rules.json)** is the whole ruleset. On a phone: open it on GitHub, tap **Raw**, select all, copy, and paste it over everything in Realtime Database → Rules, then **Publish**. From a computer with the Firebase CLI signed in, `firebase deploy --only database` publishes the same file (`firebase.json` points at it) — the console is fine, and is what this README assumes.
 
 What each part is doing:
 
@@ -433,7 +229,14 @@ What each part is doing:
 - **`training/$code/schedule/$tid`** is when and where each practice is, without the plan. The whole club reads it, so a parent sees the next practice's time and place. Only the people who can write the plan can write it.
 - **`clubInvites/$code`** is the admin's list, readable only by admins. It lives outside the workspace on purpose: everyone indexed can read the whole workspace, and a list of unspent coach invites in a parent's hands is a parent who can make herself a coach.
 - **`userOrgs/$uid`** is which clubs an account belongs to, so a second device finds them without a code. Only its owner reads it. It is a list of bookmarks, not a grant: reading a club is still `access/index`'s decision.
+- **`rsvp/$tid/$item/$pid`** is who is coming: one answer per child per game or calendar entry. A parent may write it for a child whose `guardians` list holds her uid, a coach for anyone on her team, an admin for anyone, and each answer must be stamped with the writer's own uid. It is a node of its own, not part of the game or the team, so the one thing this rule hands a parent is her own child's answer. An answer is `yes`, `no` or `maybe`, an optional note of at most 140 characters, and nothing else. Until this block is published, a locked-down club refuses parents' answers and the app says so; the open rules already allow them.
 - **`public/$share`** stays world-readable — that is the whole point of the parent links — but writing now needs an account. That closes the hole where anyone holding a share link could overwrite the scoreboard.
+- **`joinCodes/$jc`** is a team link: club, team, and the names shown on it. Readable by id only, like an invite; made and retired by that team's coach or an admin, never edited. It grants nothing on its own.
+- **`claims/$ws/$tid/$uid`** is a parent's request through that link — a shirt number and optionally the child's first name. Only its author writes it, only with a live link to that team, and never with an approval in it. **`approved`** is written by that team's coach or an admin, once, in their own name; they can also delete a request to turn it down. The author and the team's coaches and admins read it.
+- **`access/index/$uid`** gains one clause for the team link: a team's coach may write it for someone whose request to *her* team she approved, with that team's id as the value. A coach still cannot let in anyone who did not ask.
+- **`access/teamParents/$tid/$uid`** is the parent list for one team, and the third lookup table for the same reason as the other two: a rule cannot walk the squad to ask whether someone is a guardian. Its value is a player id, and a write is only accepted if that player really lists that account in `guardians` — so the list can never say more than the squad does. A parent adds herself when she accepts an invite; the team's coach or an admin keeps it in step. Only an admin may create the table, because its first entry closes the bridge below on every team at once, and the app does that by itself on an admin's next connect.
+- **`board/$code/$tid`** is a team's notices. Readable by that team's families (`teamParents`), coaches and trackers (`teamIndex`), and the admins — not by the rest of the club. While `teamParents` does not exist yet, it falls back to anyone indexed in the club, so pasting this locks nobody out. That team's coaches and the admins post, each in their own name, and only the author or an admin deletes one. **`seen/$uid`** is each reader's own tick, which is how a coach sees who has not read it.
+- **`dm/$code/$tid/$fam`** is one family's conversation with that team's coaches. Only a family on that team's parent list can start one (club-wide while the list is missing). Readable by that family, the team's coaches and the admins — no one coach alone, and no other family. Messages are append-only: nobody edits or deletes one, admins included. There is no bridge for a club without `teamIndex`: these are new nodes, so failing closed locks nobody out of anything, and until an admin's device has written the table only admins can read or post.
 
 ### If it goes wrong
 
@@ -450,7 +253,7 @@ what you are changing.
 
 ### 1. `node test/rules.js` — the rules, offline
 
-Reads the rules JSON out of this file and evaluates it against a mock club for a
+Reads `database.rules.json` and evaluates it against a mock club for a
 signed-out visitor, an admin, a coach, a tracker, a parent, a registered account
 with no role, an unknown account and the app owner. No Firebase, no cost, and
 nothing to publish. **Run it before pasting anything into the console.** It is
@@ -507,13 +310,62 @@ Each database keeps its own local copies on the device, so the same code opened
 in two of them can never overwrite the other's. Switching reloads and forgets
 the open code, because a club belongs to the database it lives in.
 
+## The calendar
+
+Games are read straight from the games themselves, so moving a kick-off on the game moves it on the calendar. Practices and everything else (a team photo, a tournament, the end-of-season party) are added from the Calendar tab, and each one decides who sees it:
+
+- **The team** — everyone signed in with a role on it: coaches, trackers and parents. This is the default.
+- **The team and the share link** — also on the season page you text to families. Anyone holding that link, and anyone it is forwarded to, can read it.
+
+Practices default to the team only on purpose. A share link gets forwarded, and a practice is a predictable time and place where children are without the crowd a match brings. Games were already on the share link and still are.
+
+**Repeating practices** are one entry per week, not a rule the app expands: *Every week* on Tuesday and Thursday until the end of term writes one entry for each session (up to 60 at once). Each can be moved or called off on its own; editing one asks whether to change *just this one* or *this and every later one*.
+
+**Calling something off** keeps it on the calendar, struck through and marked Cancelled (or Postponed, for a game), on the share link too. Deleting is still there, but a deleted practice is one a parent may still turn up to.
+
+**In your own calendar.** Once the club has set up **Calendar sync** (below), the Calendar tab has *Apple Calendar* and *Google Calendar* buttons, and *Copy the address* for Outlook. Subscribe once and the phone's calendar follows every change on its own: a moved kick-off, a called-off practice, a new tournament. A coach turns it on per team. Every entry also has *Directions* (a maps search for the venue as typed), and a one-off copy is still there for a phone that will not subscribe. Without sync set up, that copy is all there is: add it again if a time changes. Each entry has a fixed id, so calendars that go by id replace the earlier copy instead of doubling it.
+
+**Who is coming.** On the calendar, a parent sees *Is Ella going?* with *Going*, *Not going* and *Maybe*, on *Next up* and on each entry's page, for each of their own children. Once they have answered there is room for a short note ("arriving late"). Tapping the answer again takes it back. The coach sees each entry's answers by name, with whoever has not answered at the top, can answer for a family that said so another way, and gets the count on every row.
+
+**Answers go straight into the game.** A family's *not going* leaves that player out of the bench, the plan, the targets and the even split, with nothing for the coach to copy across. The Plan tab's *Who is coming* says who is out and why, who said maybe, and who has not answered; the Minutes list marks the maybes and the silent ones. The coach's word still wins either way: on the *Available* sheet she can have a "not going" play after all, or leave out someone whose family said nothing. Her choice is stored only where it differs from the family's, so a family that changes its mind still flows through unless she has decided otherwise. Once the game kicks off, answers close and the bench stays as it was.
+
+**Attendance.** From the day of a practice or event onwards, its page has *Take attendance*: the squad, filled in from what families said ("not going" starts as missed, everyone else as came), a tap to change anyone, and *Everyone came*. Games need no register: a player came if she played, or was available on the bench. The Season tab's **Attendance** card (coaches only) lists every player with practices came to and missed, how many of those misses nobody warned about, and games, most missed first, and says how many past practices still have no register. A player's sheet carries the same line, and a parent sees her own child's under *My players*. Nothing is counted that did not happen: a called-off practice, a future one, or one with no register yet. Trackers and coaches of other teams see how many are coming, not who. Answers never reach the share link or the calendar feed, not even as a count. Answering needs the `rsvp` block in the locked-down rules (see **Locking it down**); the open rules already allow it.
+
+**Names never reach the share link.** A note like "Ella's family on snacks", typed into a public entry or a game's notes, is published as "a player's family on snacks". The coach is told when that happens. Every word of every roster name is matched, so a venue that shares a word with a player's surname loses that word on the share page. That is the safe way round.
+
+**For the other team.** The game's share sheet, and its calendar entry, have *Copy a message for the other team*, ready to text their coach: the fixture, kick-off, where with a directions link, what we wear, and the game link for the live score. Arrive-by is left out, because that time is for our families, not theirs. **A game link reaches that game and nothing else.** Each game is published under its own id, so whoever holds its link (the other team, or whoever they forward it to) cannot get from it to the season page, any other fixture or any practice. ROADMAP has the longer exploration of what opponents could see.
+
+## Calendar sync
+
+A calendar app subscribes to a web address and goes back to it on its own schedule, from its own servers, without running any of this app's JavaScript. A static site cannot answer that, so sync is one small extra piece: `worker/calendar.mjs`, a Cloudflare Worker. It reads one node of `public/` (the same node a share page reads) and returns it as a calendar. It holds no credentials and cannot write anything. It asks the database exactly what anyone on the internet could ask (`public/{id}.json`), so it cannot see more than the share pages can. It is the one part of this project that is not a static file, and it is optional: without it, everything else works and the calendar offers a copy instead.
+
+Set it up once for the club:
+
+1. A free Cloudflare account → **Workers & Pages** → **Create** → **Create Worker**. Name it something like `minutes-calendar` and deploy the hello-world it starts with.
+2. **Edit code**, delete what is there, paste the whole of `worker/calendar.mjs`, and **Deploy**.
+3. The Worker's **Settings → Variables and Secrets** → add `DATABASE_URL` with your database address (`databaseURL` in `firebase-config.js`, e.g. `https://your-project-default-rtdb.firebaseio.com`). Or put it in the `DATABASE_URL` line at the top of the file before pasting.
+4. Copy the Worker's address (`https://minutes-calendar.<you>.workers.dev`) into `firebase-config.js` as `window.SOCCER_CALENDAR_FEED`, commit, and let the site deploy.
+5. In the app, a coach opens Calendar → **Turn on calendar sync**. Everyone on the team then has the subscribe buttons.
+
+Three addresses come out of it, all `https://<worker>/{id}.ics`:
+
+- **The team's feed** (from the Calendar tab, for the team's signed-in members): every game and every entry, **team-only practices included**, because a subscribed calendar without practices is not the calendar. That means a team-only practice is published under this feed's id, world-readable by anyone who has the address, the same way the share link works. So the address is shown only inside the app, to the team's members. It holds no names, no players, no minutes and no answers. A coach can **Replace this address** at any time, which stops the old one and means everyone subscribes again.
+- **The season link's feed** (on the share page, for grandparents and friends): the games, and only the entries marked for the share link.
+- **A game's own** feed (that one game). Nothing offers it, but the same Worker answers it.
+
+How quickly a change arrives is up to the calendar app, not us. Apple and Outlook come back roughly hourly (the feed asks for that). Google refreshes subscribed calendars on its own schedule, often every several hours, and nothing a feed says changes that.
+
+After any change to `ics.js`, run `node worker/make.js` to copy it into the Worker, then paste the Worker again. `node test/worker.js` fails until the two match, so the feed and the app never describe a fixture differently.
+
+Nothing about the calendar needed a rule change: entries live under `teams/{tid}/events/{eid}`, below the rule that already lets a team's coaches and the club's admins change the team, and nobody else. `node test/rules.js` pins that.
+
 ## How long share links last
 
 **Forever, until you change them.** There is no expiry. A link keeps working as long as its share id exists.
 
 Three things end one:
 
-- **Rotate** — Share → *Make a new link and kill the old one*. Every link previously sent stops working immediately.
+- **Rotate** — Share → *Make a new link and kill the old one*. Every link previously sent stops working immediately, the season link and every game's own link alike.
 - **Retire the club** — the mirror stops being updated, so it freezes at the last published state rather than going away.
 - **Delete `public/<share>` in the console** — the link goes dead.
 
@@ -523,8 +375,8 @@ For a season that is usually what you want: text it in September, it works in Ma
 
 Setup → **Share with parents** creates a long random share id for the team and publishes a read-only mirror. Two links come out of it:
 
-- **Season** — `live.html?t=<share>`. Text it once. It shows the season record, whatever game is happening now, and every game played.
-- **One game** — `game.html?t=<share>&g=<gameId>`. Kick-off time, venue, score, live clock, who is on, minutes played and the substitutions.
+- **Season** — `live.html?t=<share>`. Text it once. It shows the season record, whatever game is happening now, what is coming up (every game, plus any practice or event marked for the share link), and every result. Each entry adds to a phone's calendar, and so does the whole of what is coming up.
+- **One game** — `game.html?t=<gameShare>&g=<gameId>`. Kick-off time, venue, home or away, arrive-by, kit, notes, score, live clock, who is on, minutes played and the substitutions. Each game is published under its own id, so this link holds that game and nothing else: nobody can reach the season page from it. Game links made before this change carried the season link's id; *Make a new link and kill the old one* retires those.
 
 Teams can carry a crest — Setup → Teams → tap the team → *Add a crest*. It is resized to 192px and re-encoded in the browser before saving, and it shows in the app header and at the top of the shared pages. It cannot appear in the text-message preview image, which is a fixed file; that needs the Cloudflare Worker.
 
@@ -543,7 +395,11 @@ Push the folder to a repo, then Settings → Pages → deploy from branch, root.
 ## Data model
 
 ```
-teams/{teamId}        { id, name,
+rsvp/{teamId}/{g_matchId | e_eventId}/{playerId}   { v: 'yes' | 'no' | 'maybe', by, at, note }
+teams/{teamId}        { id, name, share, calFeed,
+                        attend: { eventId: { playerId: true | false } },   // the register: came or missed
+                        events: { eventId: { id, kind: 'practice' | 'event', title, date, start, end,
+                                             venue, notes, public, called, series, createdAt, by } },
                         formations: { fid: { id, name, size, slots[] } },
                         defaults:   { 11: fid, 9: fid, 7: fid, 5: fid },
                         players: { playerId: {
@@ -553,13 +409,15 @@ teams/{teamId}        { id, name,
                           pairs: { playerId: true }, avoid: { playerId: true } } } }
 matches/{matchId}     { id, teamId, opponent, date, periodCount, periodMinutes, onFieldCount,
                         currentHalf, veoUrl,
+                        home, arrive, kit, notes, called,   // 'home'|'away'|'neutral', 'HH:MM', text, text, 'cancelled'|'postponed'
+                        share,                              // the game's own public id, for its game link
                         periods:   { n: { half, start, end } },   // epoch ms
                         planned:   { playerId: minutes },
                         kickoff, venue,
                         formation: { name, size, slots: [ { id, label, role, x, y } ] },  // a copy
                         positions: { playerId: { x, y, slot } },  // percent of pitch
                         stints:    { stintId: { pid, on, off } },  // seconds of elapsed match time
-                        out:       { playerId: true },            // unavailable for this game
+                        out:       { playerId: true | false },    // the coach's word; false = playing despite a "not going"
                         plan:      { blockMinutes, blocks: [ { start, ids[], assign } ], projected,
                                      manual, locked: { at, by, byName } },  // any rewrite unlocks
                         planDone:  { s{start}: { t, at, by, byName, made[], prev, pos, skipped } } }
@@ -584,7 +442,9 @@ It is deliberately simple and readable rather than optimal — the projected-min
 ```
 public/{shareId}     { team: { name },
                        record: { w, d, l, gf, ga },
+                       events: { eventId: { kind, title, date, start, end, venue, notes, called } },  // public ones only
                        games: { gameId: { opponent, date, kickoff, venue, status,
+                                          home, arrive, kit, notes, called,
                                           score, periods, currentHalf,
                                           players: [ { n, sec, on, spot, plan } ],   // n is a shirt number
                                           goals:   [ { t, side, n } ],
@@ -592,7 +452,16 @@ public/{shareId}     { team: { name },
                                           shots } } }
 ```
 
-Written by the coaches' app on a 1.2 second debounce. Read by `live.html`, which recomputes the clock from `periods` against Firebase's server time, so it ticks between pushes instead of waiting for one.
+Two more kinds of node sit beside it, written on the same debounce but only when what they carry has changed:
+
+```
+public/{gameShare}   { team, link, fixture: gameId, games: { gameId: { ...as above } } }    // one game, nothing else
+public/{calFeed}     { team, link, calendar: true,
+                       games:  { gameId: { opponent, date, kickoff, venue, home, arrive, kit, notes, called, status, score } },
+                       events: { eventId: { ...every entry, team-only included } } }      // no players, no numbers
+```
+
+Written by the coaches' app on a 1.2 second debounce. Read by `live.html`, which recomputes the clock from `periods` against Firebase's server time, so it ticks between pushes instead of waiting for one. The calendar feed Worker reads the same nodes.
 
 ## Backup
 

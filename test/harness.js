@@ -170,13 +170,20 @@ const EXPORTS = `{
   seedSandbox,
   /* bulk import */
   importPlan, applyImport, importSummary, sheetImport, IMPORT_EXAMPLE,
+  /* the calendar */
+  calItems, calPast, calNext, calTeams, seriesDates, seriesOf, icsItem, opponentMessage,
+  viewCalendar, sheetCalItem, sheetCalEvent, calFormNew, publicEvents, pubText, mayAct,
+  todayStr, dayLabel, niceTime, hm, addDays, weekdayOf, CALLED, HOME_AWAY, SERIES_MAX,
+  get calForm() { return calForm },
+  fixtureDoc, calendarDoc, publishTeam, ensureFixtureShares, claimTeamIds, outIds, familySaidNo, attendance, attendLine, attendOf, attendUntaken, cameToGame,
+  get pubSeen() { return pubSeen },
   /* practice */
   canTrain, seasonEndYear, uAge, teamUAge, uLabel, practiceUi, practiceAge,
   practiceDrills, practiceActive, viewPractice, sheetDrill, sheetRole,
   sheetDrillFilters, PRACTICE_ACTS, PRACTICE_BLANK,
   /* practice plans */
   PLAN_ACTS, canPlan, teamPractices, practiceById, putPractice, dropPractice, mergePractices,
-  suggestPlan, planWarnings, planKit, whenOf, nextPractice, todayIso, addDays, pracDay,
+  suggestPlan, planWarnings, planKit, whenOf, nextPractice, todayIso, pracDay,
   syncCoachIndex, syncAllCoachIndex, coachTeamOf, readiness,
   get train() { return train }, set train(v) { train = v }, get trainState() { return trainState },
   /* rendering + routing */
@@ -193,7 +200,13 @@ const EXPORTS = `{
   get pubState() { return pubState },
   /* invites */
   get invite() { return invite }, get clubInv() { return clubInv }, get myClubs() { return myClubs },
-  secretId, inviteLink, redeemInvite, makeInvite, inviteScreen
+  secretId, inviteLink, redeemInvite, makeInvite, inviteScreen,
+  /* messages */
+  msgTeams, staffTeams, famTeams, msgOn, unreadCount, notices, threadMsgs, threadUnread,
+  families, guardianEmails, childrenOf, viewInbox, viewThread, watchMessages, sheetPostShare,
+  get msgs() { return msgs }, get msgFor() { return msgFor },
+  /* team links and squad invites */
+  get join() { return join }, joinLink, claimMatches, pendingClaims, inviteSquad, sheetSquadInvites, joinCard
 }`;
 
 const FB_URLS = {

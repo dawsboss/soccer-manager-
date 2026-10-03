@@ -1,6 +1,7 @@
-/* The version markers that have to agree.
+/* The version markers that have to agree: BUILD, the meta tag, and every
+   ?v= in index.html, including the classic scripts that load ahead of app.js.
 
-   CLAUDE.md: "If you bump one, bump all of them to the same number." The failure
+   CLAUDE.md: "If you bump one, bump them all to the same number." The failure
    this catches is a browser holding a cached index.html while fetching a newer
    app.js — the one the comment in app.js calls "the exact failure that has
    eaten hours", because the page half-works and nothing says why.
@@ -24,7 +25,7 @@ const meta = (idx.match(/meta name="build" content="(\d+)"/) || [])[1];
    on an old number is a phone running new app.js against last week's drills. */
 const qv = f => (idx.match(new RegExp(f.replace('.', '\\.') + '\\?v=(\\d+)')) || [])[1];
 const all = [...idx.matchAll(/([\w.-]+)\?v=(\d+)/g)].map(m => [m[1], m[2]]);
-const ASSETS = ['styles.css', 'drills.js', 'drill-diagram.js', 'app.js'];
+const ASSETS = ['styles.css', 'ics.js', 'drills.js', 'drill-diagram.js', 'app.js'];
 
 console.log('--- the markers CLAUDE.md names ---');
 console.log('  app.js BUILD      :', build);

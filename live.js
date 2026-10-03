@@ -10,7 +10,7 @@ const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': 
 const mmss = sec => { sec = Math.max(0, Math.floor(sec)); return Math.floor(sec / 60) + ':' + String(sec % 60).padStart(2, '0'); };
 const mins = sec => Math.round(sec / 60);
 
-let doc = null, skew = 0, openGame = ONE_GAME || null;
+let doc = null, skew = 0, openGame = ONE_GAME || null, openEvent = null;
 let auth = null, authMod = null, viewer = null;
 /* Anything that changed since the last render gets a flash, so someone watching
    on a phone at the side of the pitch sees that something happened. */
@@ -66,6 +66,116 @@ function niceTime(t) {
 const games = () => Object.values((doc && doc.games) || {})
   .sort((a, b) => (b.date || '').localeCompare(a.date || ''));
 
+/* ---------- the calendar: games plus what the coach marked for this page ---------- */
+/* The same reading of "coming up" the app makes, from the published copy:
+   games, and the practices and events a coach chose to put on the share link.
+   Anything kept to the team was never written here, so there is nothing to
+   filter out. */
+const KIND = { game: 'Game', practice: 'Practice', event: 'Event' };
+const CALLED = { cancelled: 'Cancelled', postponed: 'Postponed' };
+const HOME_AWAY = { home: 'Home', away: 'Away', neutral: 'Neutral ground' };
+const WD = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+const pad2 = n => String(n).padStart(2, '0');
+const okDay = d => /^\d{4}-\d{2}-\d{2}$/.test(String(d || ''));
+const hm = t => { const x = /^(\d{1,2}):(\d{2})/.exec(String(t || '')); return x ? pad2(x[1]) + ':' + x[2] : ''; };
+const dateOf = s => { const [y, m, d] = s.split('-').map(Number); return new Date(y, m - 1, d); };
+const dayStr = d => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+const today = () => dayStr(new Date(nowMs()));
+const dayLabel = d => okDay(d) ? WD[(dateOf(d).getDay() + 6) % 7] + ' ' + niceDate(d) : 'Date to be confirmed';
+function relDay(d) {
+  if (!okDay(d)) return '';
+  const n = Math.round((dateOf(d) - dateOf(today())) / 86400000);
+  return n === 0 ? 'Today' : n === 1 ? 'Tomorrow' : n > 1 && n < 7 ? `In ${n} days` : '';
+}
+function items() {
+  const out = [];
+  for (const g of Object.values((doc && doc.games) || {})) out.push({
+    kind: 'game', id: g.id, date: okDay(g.date) ? g.date : '', start: hm(g.kickoff), end: '',
+    mins: (g.periodCount || 2) * (g.periodMinutes || 40) + 15, title: 'v ' + (g.opponent || 'TBC'),
+    venue: g.venue || '', called: CALLED[g.called] ? g.called : '', status: g.status, g
+  });
+  for (const [id, e] of Object.entries((doc && doc.events) || {})) {
+    if (!e) continue;
+    const kind = e.kind === 'practice' ? 'practice' : 'event';
+    out.push({
+      kind, id, date: okDay(e.date) ? e.date : '', start: hm(e.start), end: hm(e.end), mins: 0,
+      title: e.title || KIND[kind], venue: e.venue || '', called: CALLED[e.called] ? e.called : '', e
+    });
+  }
+  return out.sort((a, b) => (a.date || '9999').localeCompare(b.date || '9999') || (a.start || '').localeCompare(b.start || ''));
+}
+function past(it) {
+  if (it.kind === 'game' && it.status === 'done') return true;
+  if (it.kind === 'game' && it.status === 'live') return false;
+  if (!it.date) return false;
+  if (it.date !== today()) return it.date < today();
+  if (!it.start) return false;
+  const st = it.start.split(':').map(Number), m0 = st[0] * 60 + st[1];
+  let end = m0 + (it.mins || 60);
+  if (it.end) { const e = it.end.split(':').map(Number); end = e[0] * 60 + e[1]; if (end <= m0) end += 1440; }
+  const n = new Date(nowMs());
+  return n.getHours() * 60 + n.getMinutes() >= end;
+}
+const pageBase = () => location.origin + location.pathname.replace(/[^/]*$/, '');
+/* The season link as a calendar feed, when the site has one (README, "Calendar
+   sync"): the same games and entries this page shows, never more. */
+const feed = () => {
+  const b = String(window.SOCCER_CALENDAR_FEED || '').trim();
+  return /^https:\/\/\S+$/.test(b) && SHARE ? b.replace(/\/*$/, '/') + encodeURIComponent(SHARE) + '.ics' : '';
+};
+/* As a calendar file wants it, built by ics.js from the same published copy
+   the calendar feed is built from, so a family that adds an entry here and
+   subscribes later sees one description of it. Same uid as the app uses, so it
+   is not doubled in calendars that go by uid. */
+function icsOf(it) {
+  const I = window.MinutesIcs;
+  const url = (kind, id) => kind === 'game'
+    ? `${pageBase()}game.html?t=${encodeURIComponent(SHARE)}&g=${encodeURIComponent(id)}`
+    : `${pageBase()}live.html?t=${encodeURIComponent(SHARE)}#e=${encodeURIComponent(id)}`;
+  return (I ? I.docItems(doc, url) : []).find(x => x.uid === it.id) || { uid: it.id, title: it.title, date: it.date };
+}
+function download(name, list) {
+  const I = window.MinutesIcs;
+  if (!I || !list.length) return;
+  const blob = new Blob([I.calendar(name, list, nowMs())], { type: 'text/calendar;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = I.fileName(name);
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 4000);
+}
+/* Directions and the two ways into a calendar, for one item. */
+function addButtons(it) {
+  const I = window.MinutesIcs;
+  if (!I || !it.date) return '';
+  return `<div class="row wrap" style="margin-top:10px">
+    ${it.venue ? `<a class="btn quiet sm" href="${esc(I.mapLink(it.venue))}" target="_blank" rel="noopener">Directions</a>` : ''}
+    <a class="btn quiet sm" href="${esc(I.googleLink(icsOf(it)))}" target="_blank" rel="noopener">Google Calendar</a>
+    <button class="btn quiet sm" data-ics="${esc(it.kind)}:${esc(it.id)}">Apple or Outlook</button></div>`;
+}
+function itemRow(it) {
+  const right = it.called ? `<span class="tag off">${CALLED[it.called]}</span>`
+    : it.g && it.status !== 'upcoming' ? `<span class="pmins">${it.g.score.us}<small>–${it.g.score.them}</small></span>`
+      : `<span class="tag ${it.kind}">${KIND[it.kind]}</span>`;
+  const sub = [it.venue, it.g && HOME_AWAY[it.g.home]].filter(Boolean).join(' · ');
+  return `<button class="prow calrow" data-${it.g ? 'open' : 'event'}="${esc(it.id)}" data-called="${it.called ? 1 : 0}">
+    <span class="caltime">${it.start ? niceTime(it.start) : it.date ? 'All day' : 'TBC'}</span>
+    <span style="min-width:0"><span class="pname">${esc(it.title)}</span>${sub ? `<span class="psub">${esc(sub)}</span>` : ''}</span>
+    ${right}</button>`;
+}
+function itemList(list) {
+  let out = '', last = null;
+  for (const it of list) {
+    if (it.date !== last) {
+      const r = relDay(it.date);
+      out += `<p class="calhead">${esc(dayLabel(it.date))}${r ? ` <span>· ${r}</span>` : ''}</p>`;
+      last = it.date;
+    }
+    out += itemRow(it);
+  }
+  return out;
+}
+
 const EV_LABELS = { corner: 'Corners', foul: 'Fouls', throw: 'Throw-ins', goalkick: 'Goal kicks', keeper: 'Keeper claims' };
 
 function statsBlock(g, name) {
@@ -105,23 +215,51 @@ function fail(msg) {
 
 function render() {
   if (!doc) return;
+  /* A game's own link publishes that game alone, marked `fixture`. There is no
+     season to go back to, and nothing else to open. */
+  if (doc.fixture) { openGame = doc.fixture; openEvent = null; }
   const name = (doc.team && doc.team.name) || 'Team';
   const g = openGame ? (doc.games || {})[openGame] : null;
+  const ev = !g && openEvent ? items().find(x => x.e && x.id === openEvent) : null;
 
   const logo = (doc.team && doc.team.logo) || null;
   const crest = $('#crest');
   if (crest) { crest.src = logo || ''; crest.hidden = !logo; }
 
+  if (ev) {
+    $('#title').textContent = `${name}: ${ev.title}`;
+    $('#sub').innerHTML = [esc(dayLabel(ev.date)), ev.start ? niceTime(ev.start) + (ev.end ? '–' + niceTime(ev.end) : '') : 'All day'].join(' · ')
+      + (ev.called ? `<br><span class="pill">${CALLED[ev.called]}</span>` : '');
+    $('#app').innerHTML = `<div class="stack">
+      <button class="backlink" data-back>Back to the season</button>
+      ${ev.called ? `<div class="warn alert"><b>${CALLED[ev.called]}.</b> It is not happening at this time.</div>` : ''}
+      <div class="card"><dl class="facts" style="margin:0">
+        <dt>When</dt><dd>${esc(dayLabel(ev.date))} · ${ev.start ? esc(niceTime(ev.start)) + (ev.end ? '–' + esc(niceTime(ev.end)) : '') : 'all day'}</dd>
+        ${ev.venue ? `<dt>Where</dt><dd>${esc(ev.venue)}</dd>` : ''}
+        ${ev.e.notes ? `<dt>Notes</dt><dd>${esc(ev.e.notes).replace(/\n/g, '<br>')}</dd>` : ''}
+      </dl>${addButtons(ev)}</div>
+    </div>`;
+    return;
+  }
+
   if (g) {
     const live = g.status === 'live', done = g.status === 'done';
-    $('#title').textContent = `${name} v ${g.opponent || 'TBC'}`;
+    const it = items().find(x => x.g && x.id === g.id);
+    $('#title').textContent = g.home === 'away' ? `${g.opponent || 'TBC'} v ${name}` : `${name} v ${g.opponent || 'TBC'}`;
     $('#sub').innerHTML = [niceDate(g.date), niceTime(g.kickoff), esc(g.venue)].filter(Boolean).join(' · ')
-      + `<br><span class="pill ${live ? 'live' : ''}">${live ? 'Live now' : done ? 'Full time' : 'Not started'}</span>`;
+      + `<br><span class="pill ${live ? 'live' : ''}">${live ? 'Live now' : done ? 'Full time' : CALLED[g.called] || 'Not started'}</span>`;
+    /* What a family, or the other team, needs before kick-off. */
+    const facts = [
+      HOME_AWAY[g.home] ? `<dt>Ground</dt><dd>${HOME_AWAY[g.home]}</dd>` : '',
+      g.arrive ? `<dt>Arrive by</dt><dd>${esc(niceTime(g.arrive))}</dd>` : '',
+      g.kit ? `<dt>${esc(name)} wear</dt><dd>${esc(g.kit)}</dd>` : '',
+      g.notes ? `<dt>Notes</dt><dd>${esc(g.notes).replace(/\n/g, '<br>')}</dd>` : ''
+    ].join('');
 
     const on = (g.players || []).filter(p => p.on);
     const off = (g.players || []).filter(p => !p.on);
     $('#app').innerHTML = `<div class="stack">
-      ${ONE_GAME && !SEASON_PAGE ? '' : `<button class="backlink" data-back>Back to the season</button>`}
+      ${(ONE_GAME && !SEASON_PAGE) || doc.fixture ? '' : `<button class="backlink" data-back>Back to the season</button>`}
       ${accessBlock()}
 
       <div class="card scorecard">
@@ -134,9 +272,11 @@ function render() {
         <div class="clock" id="clk">${mmss(elapsed(g))}</div>
         <div class="clockmeta"><b>${esc(halfName(g, g.currentHalf || 1))}</b>
         <span id="hclk">${mmss(halfElapsed(g))}</span> of ${g.periodMinutes || 40}:00</div>
-      </div></div>` : `<div class="card"><p class="meta" style="margin:0">
+      </div></div>` : `<div class="card">
+        ${CALLED[g.called] ? `<div class="warn alert" style="margin-bottom:10px"><b>${CALLED[g.called]}.</b>${g.called === 'postponed' ? ' A new date will be set.' : ''}</div>` : ''}
+        <p class="meta" style="margin:0">
         ${[niceDate(g.date), niceTime(g.kickoff) && 'Kick-off ' + niceTime(g.kickoff), esc(g.venue)].filter(Boolean).map(x => `<span>${x}</span>`).join('')}
-      </p></div>`}
+      </p>${facts ? `<dl class="facts" style="margin:10px 0 0">${facts}</dl>` : ''}${it && !CALLED[g.called] ? addButtons(it) : ''}</div>`}
 
       ${g.goals && g.goals.length ? `<div class="card"><h2 style="margin-bottom:10px">Goals</h2>
         <div class="log">${g.goals.slice().reverse().map(x => `<div style="display:grid;grid-template-columns:52px 1fr;gap:10px;padding:7px 0;border-top:1px solid var(--line)">
@@ -166,21 +306,49 @@ function render() {
   const r = doc.record || { w: 0, d: 0, l: 0, gf: 0, ga: 0 };
   const list = games();
   const now = list.find(x => x.status === 'live');
-  const next = list.filter(x => x.status === 'upcoming').slice(-1)[0];
+  const all = items();
+  const ahead = all.filter(x => x.date && !past(x));
+  const nextIt = ahead.find(x => !x.called && !(x.g && x.status === 'live'));
+  const tbc = all.filter(x => !x.date && !(x.g && x.status === 'done'));
+  const played = list.filter(x => x.status !== 'upcoming');
   $('#title').textContent = `Follow ${name}`;
   $('#sub').innerHTML = `${r.w}W ${r.d}D ${r.l}L · ${r.gf} scored, ${r.ga} conceded`
     + (now ? `<br><span class="pill live">Playing now</span>` : '');
 
   $('#app').innerHTML = `<div class="stack">
     ${accessBlock()}
-    ${now ? card(now, 'Happening now') : next ? card(next, 'Up next') : ''}
-    <div class="card"><h2 style="margin-bottom:10px">All games</h2>
-      <div class="plist">${list.map(x => `<button class="gamerow" data-open="${esc(x.id)}">
+    ${now ? card(now, 'Happening now') : nextIt ? nextCard(nextIt) : ''}
+    <div class="card"><h2 style="margin-bottom:0">Coming up</h2>
+      ${ahead.length ? `<div class="plist">${itemList(ahead)}</div>
+        ${feed() ? `<p class="lbl" style="margin-top:14px">Follow it in your calendar</p>
+        <div class="row wrap">
+          <a class="btn sm" href="${esc(feed().replace(/^https:/, 'webcal:'))}">Apple Calendar</a>
+          <a class="btn quiet sm" href="https://calendar.google.com/calendar/render?cid=${encodeURIComponent(feed().replace(/^https:/, 'webcal:'))}" target="_blank" rel="noopener">Google Calendar</a>
+          <button class="btn quiet sm" data-copy="${esc(feed())}">Copy the address</button></div>
+        <p class="muted" style="margin:6px 0 0">Subscribe once and your calendar follows every change on this page. Apple and Outlook check about hourly; Google takes longer.</p>
+        <button class="backlink" data-icsall style="margin-top:10px">Or add a one-off copy</button>`
+        : `<button class="btn quiet wide" data-icsall style="margin-top:12px">Add all of it to my calendar</button>
+        <p class="muted" style="margin:6px 0 0">A copy for your phone\u2019s calendar. If a time changes, this page has it first — add it again and each entry replaces itself, in calendars that allow it.</p>`}`
+      : '<p class="muted" style="margin-bottom:0">Nothing on the calendar yet.</p>'}</div>
+    ${tbc.length ? `<div class="card"><h2 style="margin-bottom:8px">Date to be confirmed</h2><div class="plist">${tbc.map(itemRow).join('')}</div></div>` : ''}
+    <div class="card"><h2 style="margin-bottom:10px">Results</h2>
+      <div class="plist">${played.map(x => `<button class="gamerow" data-open="${esc(x.id)}">
         <span><b>${esc(x.opponent || 'TBC')}</b>
           <span class="rowsub">${[niceDate(x.date), niceTime(x.kickoff), esc(x.venue)].filter(Boolean).join(' · ')}</span></span>
-        <span class="pmins">${x.status === 'upcoming' ? '<small>upcoming</small>' : `${x.score.us}<small>–${x.score.them}</small>`}</span>
-      </button>`).join('') || '<p class="muted" style="margin:0">No games yet.</p>'}</div></div>
+        <span class="pmins">${x.score.us}<small>–${x.score.them}</small></span>
+      </button>`).join('') || '<p class="muted" style="margin:0">No games played yet.</p>'}</div></div>
   </div>`;
+
+  function nextCard(it) {
+    const bits = [it.venue, it.g && it.g.arrive ? 'arrive by ' + niceTime(it.g.arrive) : '', it.g && it.g.kit ? 'kit: ' + it.g.kit : ''].filter(Boolean);
+    return `<div class="card calnext">
+      <button class="plainbtn" data-${it.g ? 'open' : 'event'}="${esc(it.id)}" style="display:block;width:100%;text-align:left">
+        <span class="muted">Up next</span>
+        <div class="spread" style="margin-top:4px"><b style="font-size:18px">${esc(it.title)}</b><span class="tag ${it.kind}">${KIND[it.kind]}</span></div>
+        <p style="margin:4px 0 0"><b>${esc(relDay(it.date) || dayLabel(it.date))} · ${it.start ? esc(niceTime(it.start)) : 'all day'}</b>${it.g && HOME_AWAY[it.g.home] ? ' · ' + HOME_AWAY[it.g.home] : ''}</p>
+        ${bits.length ? `<p class="muted" style="margin:2px 0 0">${esc(bits.join(' · '))}</p>` : ''}
+      </button>${addButtons(it)}</div>`;
+  }
 
   function card(x, label) {
     return `<button class="card" data-open="${esc(x.id)}" style="text-align:left;width:100%">
@@ -195,17 +363,48 @@ function render() {
   }
 }
 
-function go(id, push) {
-  openGame = id;
-  if (push && history.pushState) history.pushState({ g: id }, '', id ? '#g=' + id : '#');
+function go(id, push, kind) {
+  openGame = kind === 'e' ? null : id;
+  openEvent = kind === 'e' ? id : null;
+  if (push && history.pushState) history.pushState({ g: openGame, e: openEvent }, '', id ? `#${kind === 'e' ? 'e' : 'g'}=` + id : '#');
   scrollTo(0, 0);
   render();
 }
-window.addEventListener('popstate', e => { openGame = (e.state && e.state.g) || ONE_GAME || null; render(); });
+window.addEventListener('popstate', e => {
+  openGame = (e.state && e.state.g) || ONE_GAME || null;
+  openEvent = (e.state && e.state.e) || null;
+  render();
+});
+// a link to one game or event (a calendar entry's URL carries one) opens on it
+{
+  const h = /^#([ge])=(.+)$/.exec(location.hash || '');
+  if (h && !ONE_GAME) try {
+    const id = decodeURIComponent(h[2]);
+    if (h[1] === 'e') openEvent = id; else openGame = id;
+  } catch (e) { }
+}
 
 document.addEventListener('click', e => {
   const o = e.target.closest('[data-open]');
   if (o) { go(o.dataset.open, true); return; }
+  const ev = e.target.closest('[data-event]');
+  if (ev) { go(ev.dataset.event, true, 'e'); return; }
+  const ic = e.target.closest('[data-ics]');
+  if (ic) {
+    const [k, id] = ic.dataset.ics.split(':');
+    const it = items().find(x => x.kind === k && x.id === id);
+    if (it) download(icsOf(it).title, [icsOf(it)]);
+    return;
+  }
+  const cp = e.target.closest('[data-copy]');
+  if (cp) {
+    navigator.clipboard.writeText(cp.dataset.copy).then(() => { cp.textContent = 'Copied'; }, () => { });
+    return;
+  }
+  if (e.target.closest('[data-icsall]')) {
+    download((doc.team && doc.team.name) || 'Team', items().filter(x => x.date && !past(x)).map(icsOf));
+    return;
+  }
   if (e.target.closest('[data-back]')) { go(null, true); return; }
   if (e.target.closest('[data-signin]')) { signIn(); return; }
   if (e.target.closest('[data-signout]')) { authMod.signOut(auth); return; }
