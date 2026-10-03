@@ -2,7 +2,7 @@
    Static app. Data lives in localStorage, and mirrors to Firebase Realtime
    Database when a config + workspace code are present. */
 
-const BUILD = '74';
+const BUILD = '75';
 const BUILT = '2026-10-03';
 /* index.html carries the build it was published with. If this file is newer, the
    browser handed us a cached page — the exact failure that has eaten hours. */
@@ -2322,7 +2322,17 @@ const IMPORT_EXAMPLE = {
       { opponent: 'Riverside', date: '2026-09-06', kickoff: '10:00', venue: 'Lakeside Park', periods: 2, minutes: 30, side: 9, score: '3-1', scorers: [7, 7, 10] },
       { opponent: 'Northgate', date: '2026-10-04', kickoff: '09:30', venue: 'Northgate Rec, field 2', periods: 2, minutes: 30, side: 9, shape: '3-3-2' }
     ]
-  }]
+  }],
+  fields: [{
+    name: 'Lakeside Park', address: '1 Lake Rd', pitches: 2, surface: 'Grass', lights: true,
+    permits: [{ days: ['Mon', 'Wed'], start: '16:00', end: '20:00', from: '2026-09-01', until: '2026-11-30', number: 'City parks #4471' }]
+  }],
+  /* "coach" is the name or email of a coach or admin here; left out, the
+     session is whoever imports it. */
+  sessions: [
+    { type: '1-1', title: 'Finishing', date: '2026-10-05', start: '17:00', end: '18:00', field: 'Lakeside Park', price: 25, team: 'Lakeside Thunder G12', players: ['Bea Smith'] },
+    { type: 'group', title: 'Keeper group', date: '2026-10-07', start: '16:30', end: '17:30', field: 'Lakeside Park', where: 'the goalmouth', spots: 4, ages: 'U10-U13', price: 15, open: true, weekly: { days: ['Wed'], until: '2026-11-25' }, focus: 'Handling and diving' }
+  ]
 };
 
 /* Reads a score however a spreadsheet export is likely to write it. */
@@ -2339,9 +2349,9 @@ function importScore(v) {
 /* Pure: reads `data` against the club as it stands and returns what importing
    it would do. Nothing in state changes until applyImport(). */
 function importPlan(data, cur = state) {
-  const out = { writes: [], errors: [], warnings: [], counts: { newTeams: 0, teams: 0, newPlayers: 0, players: 0, newGames: 0, games: 0, results: 0 } };
+  const out = { writes: [], sessWrites: [], errors: [], warnings: [], counts: { newTeams: 0, teams: 0, newPlayers: 0, players: 0, newGames: 0, games: 0, results: 0, newFields: 0, fields: 0, newSessions: 0, sessions: 0, bookings: 0 } };
   const put = (path, value) => out.writes.push([path, value]);
-  if (!data || typeof data !== 'object' || Array.isArray(data)) { out.errors.push('The file should be one JSON object with a "teams" list in it.'); return out; }
+  if (!data || typeof data !== 'object' || Array.isArray(data)) { out.errors.push('The file should be one JSON object with a "teams", "fields" or "sessions" list in it.'); return out; }
 
   const isBackup = data.teams && !Array.isArray(data.teams) && typeof data.teams === 'object'
     && (data.matches === undefined || (typeof data.matches === 'object' && !Array.isArray(data.matches)));
@@ -2349,11 +2359,13 @@ function importPlan(data, cur = state) {
 
   /* Drafts, not the live objects: updating an existing player or game below
      edits these copies, and state only changes when the writes are applied. */
+  const acc0 = cur.access || {};
   cur = { teams: clone(cur.teams || {}), matches: clone(cur.matches || {}) };
   const fresh = new Set();
   const teamList = Array.isArray(data.teams) ? data.teams : [];
   const looseGames = Array.isArray(data.games) ? data.games : [];
-  if (!teamList.length && !looseGames.length) { out.errors.push('Nothing to import: expected a "teams" list (and optionally a "games" list).'); return out; }
+  const training = ['fields', 'sessions'].some(k => data[k] !== undefined);
+  if (!teamList.length && !looseGames.length && !training) { out.errors.push('Nothing to import: expected a "teams" list, and optionally "games", "fields" and "sessions" lists.'); return out; }
 
   // drafts of every team touched, so later rows in the file see earlier ones
   const byName = {};
@@ -2555,6 +2567,9 @@ function importPlan(data, cur = state) {
     addGame(entry, g, where);
   });
 
+  // after the teams, so a session can book a player the same file has just added
+  importTraining(data, out, byName, acc0);
+
   /* A new team's write holds the draft object itself, so the players gathered
      into it after it was queued go out with it in the one write. */
   return out;
@@ -2581,12 +2596,304 @@ function importBackup(data, cur, out) {
   return out;
 }
 
+/* ---- fields and training sessions, in the same file ---- */
+/* The same promises as the rest of the importer: matched against what is
+   already here, so running a file twice changes nothing; nothing here is ever
+   removed; and every write sits where its rule does. A field is matched by
+   name and updated in place, and its permits are only ever added to. A session
+   is matched by date, start and coach, so a re-run updates it rather than
+   making a second; a booking that is already here, whatever the coach made of
+   it, is left as it is. Fields are club settings and go out with the rest of
+   the workspace writes; sessions and bookings go to training/{code} through
+   the session store, so they get its merge-on-read and its resend. */
+const IMPORT_DAYS = { mon: 0, tue: 1, wed: 2, thu: 3, fri: 4, sat: 5, sun: 6 };
+function importDays(v) {
+  if (v === undefined || v === null || v === '') return { days: [], bad: [] };
+  // split before lowering, so a day it cannot read is quoted back as it was typed
+  const raw = Array.isArray(v) ? v.map(String) : String(v).replace(/every ?day/gi, 'daily').split(/[\s,;/&+]+/);
+  const out = new Set(), bad = [];
+  for (const w0 of raw) {
+    const w = String(w0).trim().toLowerCase();
+    if (!w || w === 'and') continue;
+    if (w === 'weekdays') [0, 1, 2, 3, 4].forEach(d => out.add(d));
+    else if (w === 'weekends') [5, 6].forEach(d => out.add(d));
+    else if (w === 'daily') [0, 1, 2, 3, 4, 5, 6].forEach(d => out.add(d));
+    else if (IMPORT_DAYS[w.slice(0, 3)] !== undefined) out.add(IMPORT_DAYS[w.slice(0, 3)]);
+    else bad.push(w0);
+  }
+  return { days: [...out].sort(), bad };
+}
+/* "17:30", "5:30pm" or "5pm". A bare "17" is not a time: it is as likely to be
+   a number of minutes. */
+function importTime(v) {
+  const x = String(v ?? '').trim().toLowerCase().match(/^(\d{1,2})(?::(\d{2}))?\s*(am|pm)?$/);
+  if (!x || (x[2] === undefined && !x[3])) return null;
+  let h = Number(x[1]); const m = Number(x[2] || 0);
+  if (x[3]) { if (h < 1 || h > 12) return null; h = h % 12 + (x[3] === 'pm' ? 12 : 0); }
+  return h <= 23 && m <= 59 ? pad2(h) + ':' + pad2(m) : null;
+}
+const importDate = v => (/^\d{4}-\d{2}-\d{2}$/.test(String(v ?? '').trim()) ? String(v).trim() : null);
+const importBool = (v, dflt) => (v === undefined || v === null || v === '' ? dflt : !(v === false || /^(n|no|false|0|off)$/i.test(String(v).trim())));
+function importMoney(v) {
+  if (v === undefined || v === null || v === '' || /^free$/i.test(String(v).trim())) return 0;
+  const n = typeof v === 'number' ? v : Number(String(v).replace(/[^0-9.]/g, ''));
+  return Number.isFinite(n) && n >= 0 && String(v).replace(/[^0-9.]/g, '') !== '' ? Math.round(n * 100) / 100 : null;
+}
+// "U10-U12", "U11", "10–12", [10, 12] or "any"
+function importAges(v) {
+  if (v === undefined || v === null || v === '' || /^any$/i.test(String(v).trim())) return { ages: null };
+  const ns = (Array.isArray(v) ? v : String(v).match(/\d+/g) || []).map(Number);
+  if (!ns.length || ns.length > 2 || ns.some(n => !Number.isInteger(n) || n < 4 || n > 19)) return { bad: true };
+  return { ages: [Math.min(...ns), Math.max(...ns)] };
+}
+const importKind = v => {
+  const k = String(v ?? '').trim().toLowerCase();
+  if (!k) return '';
+  if (/^(1|one|1-1|1:1|1 ?on ?1|1v1|one ?to ?one|one ?on ?one|private|individual|solo)$/.test(k)) return 'one';
+  if (/group|clinic|small/.test(k)) return 'group';
+  return null;
+};
+// a permit's identity, so a second run adds no copy of one already listed
+const permitKey = p => [[...(p.days || [])].sort().join(','), p.start || '', p.end || '', p.from || '', p.until || ''].join('|');
+
+function importPermit(p, label, out) {
+  if (!p || typeof p !== 'object') { out.errors.push(`${label}: expected a permit like {"days": ["Mon", "Wed"], "start": "16:00", "end": "20:00"}.`); return null; }
+  const d = importDays(firstOf(p, 'days', 'day'));
+  if (d.bad.length) { out.errors.push(`${label}: "${d.bad.join(', ')}" ${d.bad.length === 1 ? 'is not a day' : 'are not days'} (Mon, Tue, … or weekdays).`); return null; }
+  if (!d.days.length) { out.errors.push(`${label}: a permit needs the days it covers.`); return null; }
+  // "from" and "to" are read as times or as dates, whichever they look like
+  const pick = (...ks) => { for (const k of ks) { const v = p[k]; if (v !== undefined && v !== null && v !== '') return String(v).trim(); } return ''; };
+  const looseFrom = pick('from'), looseTo = pick('to');
+  const st = pick('start', 'opens') || (importTime(looseFrom) ? looseFrom : '');
+  const en = pick('end', 'closes') || (importTime(looseTo) ? looseTo : '');
+  const df = pick('starting', 'startDate', 'validFrom') || (importDate(looseFrom) ? looseFrom : '');
+  const du = pick('ending', 'until', 'endDate', 'validUntil') || (importDate(looseTo) ? looseTo : '');
+  const start = st ? importTime(st) : '', end = en ? importTime(en) : '';
+  if (start === null || end === null) { out.errors.push(`${label}: "${start === null ? st : en}" should be a time like 16:00 or 4pm.`); return null; }
+  if (!!start !== !!end) { out.errors.push(`${label}: give both a start and an end time, or neither for the whole day.`); return null; }
+  if (start && minOf(end) <= minOf(start)) { out.errors.push(`${label}: it ends at ${end}, before it starts at ${start}.`); return null; }
+  const from = df ? importDate(df) : '', until = du ? importDate(du) : '';
+  if (from === null || until === null) { out.errors.push(`${label}: "${from === null ? df : du}" should be a date like 2026-09-01.`); return null; }
+  if (from && until && until < from) { out.errors.push(`${label}: it ends on ${until}, before it starts on ${from}.`); return null; }
+  return { days: d.days, start, end, from, until,
+    ref: String(firstOf(p, 'number', 'ref', 'permit') ?? '').trim().slice(0, 60), note: String(firstOf(p, 'note', 'notes') ?? '').trim().slice(0, 120) };
+}
+
+function importTraining(data, out, byName, acc0) {
+  const put = (p, v) => out.writes.push([p, v]);
+  const sput = (p, v) => out.sessWrites.push([p, v]);
+
+  /* -- fields -- */
+  const venues = clone((acc0.org || {}).venues || {});
+  const fieldByName = {};
+  for (const f of Object.values(venues)) if (f && f.id && f.name) fieldByName[importKey(f.name)] = { f, isNew: false };
+  if (data.fields !== undefined && !Array.isArray(data.fields)) out.errors.push('"fields" should be a list.');
+  else (data.fields || []).forEach((x, i) => {
+    const where = `Field ${i + 1}`;
+    if (!x || typeof x !== 'object') { out.errors.push(`${where}: expected a field like {"name": "Lakeside Park", "permits": [...]}.`); return; }
+    const name = String(firstOf(x, 'name') ?? '').trim().slice(0, 80);
+    if (!name) { out.errors.push(`${where}: a field needs a name.`); return; }
+    const label = `${where} (${name})`;
+    const fields = {};
+    const addr = firstOf(x, 'address');
+    if (addr !== undefined) fields.address = String(addr).trim().slice(0, 160);
+    const pc = firstOf(x, 'pitches');
+    if (pc !== undefined) {
+      const n = Number(pc);
+      if (Number.isInteger(n) && n >= 1 && n <= 20) fields.pitches = n;
+      else out.warnings.push(`${label}: ${JSON.stringify(pc)} pitches is not 1 to 20, so it was left out.`);
+    }
+    const sf = firstOf(x, 'surface');
+    if (sf !== undefined) { const v = String(sf).trim(); fields.surface = ['Grass', 'Turf', 'Indoor'].find(s => s.toLowerCase() === v.toLowerCase()) || v.slice(0, 20); }
+    const li = firstOf(x, 'lights');
+    if (li !== undefined) fields.lights = importBool(li, false);
+    const nt = firstOf(x, 'notes', 'note');
+    if (nt !== undefined) fields.notes = String(nt).trim().slice(0, 1000);
+    const pin = firstOf(x, 'permits', 'permit');
+    const permits = [];
+    if (pin !== undefined && !Array.isArray(pin)) out.errors.push(`${label}: "permits" should be a list.`);
+    else (pin || []).forEach((p, j) => { const pm = importPermit(p, `${label}, permit ${j + 1}`, out); if (pm) permits.push(pm); });
+
+    const k = importKey(name), had = fieldByName[k];
+    if (had && had.isNew) { out.warnings.push(`${label}: appears twice in the file, so it was imported once.`); return; }
+    if (had) {
+      const f = had.f;
+      let changed = false;
+      for (const [fk, v] of Object.entries(fields)) if (JSON.stringify(f[fk]) !== JSON.stringify(v)) { f[fk] = v; put(`access/org/venues/${f.id}/${fk}`, v); changed = true; }
+      const have = new Set(permitsOf(f).map(permitKey));
+      for (const pm of permits) {
+        if (have.has(permitKey(pm))) continue;
+        const pid = uid(); have.add(permitKey(pm));
+        (f.permits = f.permits || {})[pid] = { id: pid, ...pm };
+        put(`access/org/venues/${f.id}/permits/${pid}`, { id: pid, ...pm });
+        changed = true;
+      }
+      if (changed) out.counts.fields++;
+      return;
+    }
+    const id = uid(), pms = {};
+    const seen = new Set();
+    for (const pm of permits) { if (seen.has(permitKey(pm))) continue; seen.add(permitKey(pm)); const pid = uid(); pms[pid] = { id: pid, ...pm }; }
+    const f = { id, name, address: '', pitches: 1, surface: '', lights: false, notes: '', ...fields, permits: pms };
+    put(`access/org/venues/${id}`, f);
+    fieldByName[k] = { f, isNew: true };
+    out.counts.newFields++;
+  });
+
+  /* -- sessions -- */
+  if (data.sessions !== undefined && !Array.isArray(data.sessions)) { out.errors.push('"sessions" should be a list.'); return; }
+  const members_ = acc0.members || {};
+  const staff = new Set([...Object.values(acc0.teams || {}).flatMap(ta => Object.keys((ta || {}).coaches || {})), ...Object.keys(acc0.admins || {})]);
+  let defaulted = false;     // said only for a session actually added, so a second run is quiet
+  const coachFor = (v, label) => {
+    if (v === undefined || v === null || String(v).trim() === '' || /^(me|mine)$/i.test(String(v).trim())) {
+      if (me) { defaulted = v === undefined || v === null || String(v).trim() === ''; return me.uid; }
+      out.errors.push(`${label}: a session needs a coach: the name or email of a coach or admin here.`); return null;
+    }
+    const k = importKey(v);
+    const hits = [...staff].filter(u => u === String(v).trim() || importKey((members_[u] || {}).name) === k || importKey((members_[u] || {}).email) === k);
+    if (hits.length === 1) return hits[0];
+    if (hits.length > 1) { out.errors.push(`${label}: more than one coach is called "${v}", so give an email instead.`); return null; }
+    const names = [...staff].map(u => (members_[u] || {}).name).filter(Boolean);
+    out.errors.push(`${label}: no coach or admin called "${v}" here${names.length ? ` (there are ${names.slice(0, 8).join(', ')})` : ''}. A coach has to have signed in once to be found.`);
+    return null;
+  };
+  const playerFor = (spec, teamName, label) => {
+    const o = spec && typeof spec === 'object' ? spec : { [typeof spec === 'number' || /^\d+$/.test(String(spec).trim()) ? 'number' : 'name']: spec };
+    const tn = firstOf(o, 'team') ?? teamName;
+    const num = firstOf(o, 'number', 'shirt', 'no');
+    const nm = firstOf(o, 'name');
+    const what = nm !== undefined ? `"${nm}"` : `number ${num}`;
+    const inTeam = t => Object.values(t.players || {}).filter(p => (nm !== undefined ? importKey(p.name) === importKey(nm) : String(p.number ?? '').trim() === String(num).trim()));
+    if (nm === undefined && num === undefined) { out.errors.push(`${label}: a player needs a name or a shirt number.`); return null; }
+    if (tn !== undefined && tn !== null && String(tn).trim()) {
+      const e = byName[importKey(tn)];
+      if (!e) { out.errors.push(`${label}: there is no team called "${tn}" here or in the file.`); return null; }
+      const hit = inTeam(e.t);
+      if (hit.length === 1) return { t: e.t, p: hit[0] };
+      out.errors.push(hit.length ? `${label}: two players on ${e.t.name} match ${what}.` : `${label}: nobody on ${e.t.name} matches ${what}.`);
+      return null;
+    }
+    if (nm === undefined) { out.errors.push(`${label}: a shirt number needs a team to look in ("team": "...").`); return null; }
+    const hits = Object.values(byName).flatMap(e => inTeam(e.t).map(p => ({ t: e.t, p })));
+    if (hits.length === 1) return hits[0];
+    out.errors.push(hits.length ? `${label}: more than one player is called ${what}, so say which team ("team": "...").` : `${label}: nobody in the club is called ${what}.`);
+    return null;
+  };
+
+  const known = {};      // date|start|coach -> { id, raw, fresh }
+  for (const s of sessAll()) known[[s.date, s.start, s.coach].join('|')] = { id: s.id, raw: (sess.sessions || {})[s.id], fresh: false };
+  const ins = {};        // sid -> places given, so a file cannot overfill a session
+  const by = (me && me.uid) || 'import';
+
+  (data.sessions || []).forEach((x, i) => {
+    const where = `Session ${i + 1}`;
+    if (!x || typeof x !== 'object') { out.errors.push(`${where}: expected a session like {"date": "2026-10-06", "start": "17:00", "end": "18:00", "coach": "..."}.`); return; }
+    const title = String(firstOf(x, 'title', 'name', 'what') ?? '').trim().slice(0, 80);
+    const label = `${where}${title ? ` (${title})` : ''}`;
+    const errs = out.errors.length;
+    defaulted = false;
+    const date = importDate(firstOf(x, 'date'));
+    if (!date) out.errors.push(`${label}: date ${JSON.stringify(firstOf(x, 'date') ?? '')} should be written 2026-10-06.`);
+    const st0 = firstOf(x, 'start', 'time', 'from'), en0 = firstOf(x, 'end', 'until', 'to');
+    const start = importTime(st0), end = importTime(en0);
+    if (!start || !end) out.errors.push(`${label}: needs a start and an end, like "17:00" and "18:00".`);
+    else if (minOf(end) <= minOf(start)) out.errors.push(`${label}: it ends at ${end}, before it starts at ${start}.`);
+    const kind0 = importKind(firstOf(x, 'type', 'kind'));
+    if (kind0 === null) out.errors.push(`${label}: type ${JSON.stringify(firstOf(x, 'type', 'kind'))} should be "1-1" or "group".`);
+    const coach = coachFor(firstOf(x, 'coach', 'runBy', 'trainer'), label);
+    const ag = importAges(firstOf(x, 'ages', 'age'));
+    if (ag.bad) out.errors.push(`${label}: ages ${JSON.stringify(firstOf(x, 'ages', 'age'))} should be written like "U10-U12".`);
+    const price = importMoney(firstOf(x, 'price', 'fee', 'cost'));
+    if (price === null) out.errors.push(`${label}: price ${JSON.stringify(firstOf(x, 'price', 'fee', 'cost'))} is not an amount.`);
+    const plist = firstOf(x, 'players', 'booked');
+    if (plist !== undefined && !Array.isArray(plist)) out.errors.push(`${label}: "players" should be a list.`);
+    const who = (Array.isArray(plist) ? plist : []).map((p, j) => playerFor(p, firstOf(x, 'team'), `${label}, player ${j + 1}`));
+    const rep = firstOf(x, 'weekly', 'repeat', 'repeats');
+    let days = [], until = '';
+    if (rep !== undefined && rep !== false) {
+      const r = typeof rep === 'object' ? rep : { until: rep };
+      until = importDate(firstOf(r, 'until', 'to', 'end', 'ending'));
+      const d = importDays(firstOf(r, 'days', 'day'));
+      if (!until) out.errors.push(`${label}: a weekly session needs the date of the last one ("until": "2026-12-16").`);
+      if (d.bad.length) out.errors.push(`${label}: "${d.bad.join(', ')}" ${d.bad.length === 1 ? 'is not a day' : 'are not days'}.`);
+      days = d.days;
+    }
+    if (out.errors.length > errs) return;
+
+    const kind = kind0 || ((Number(firstOf(x, 'spots', 'cap', 'size', 'max')) || 2) > 1 ? 'group' : 'one');
+    const capRaw = firstOf(x, 'spots', 'cap', 'size', 'max');
+    let cap = kind === 'one' ? 1 : 6;
+    if (kind === 'group' && capRaw !== undefined) {
+      const n = Number(capRaw);
+      if (Number.isInteger(n) && n >= 1 && n <= 60) cap = n; else out.warnings.push(`${label}: ${JSON.stringify(capRaw)} spots is not 1 to 60, so it has 6.`);
+    }
+    const fName = firstOf(x, 'field', 'venue');
+    let field = '', place = String(firstOf(x, 'where', 'place', 'pitch') ?? '').trim();
+    if (fName !== undefined && String(fName).trim()) {
+      const f = fieldByName[importKey(fName)];
+      if (f) field = f.f.id;
+      else { place = [String(fName).trim(), place].filter(Boolean).join(', '); out.warnings.push(`${label}: "${fName}" is not a field here or in the file, so it is kept as the place.`); }
+    }
+    const fieldObj = field ? (Object.values(fieldByName).find(e => e.f.id === field) || {}).f : null;
+    const fields = {
+      kind, title, coach, coachName: (members_[coach] || {}).name || (me && coach === me.uid ? whoAmI() : '') || 'Coach',
+      start, end, field, place: place.slice(0, 120), cap, price, open: importBool(firstOf(x, 'open', 'openToAsk', 'familiesCanAsk'), !who.length),
+      focus: String(firstOf(x, 'focus', 'workingOn', 'skills') ?? '').trim().slice(0, 200), notes: String(firstOf(x, 'notes', 'note') ?? '').trim().slice(0, 2000),
+      ...(ag.ages ? { ages: ag.ages } : {})
+    };
+    const dates = until ? seriesDates(date, until, days.length ? days : [weekdayOf(date)]) : [date];
+    if (until && !dates.length) { out.warnings.push(`${label}: no days between ${date} and ${until}, so nothing was added.`); return; }
+    const old = dates.map(d => known[[d, start, coach].join('|')]).find(e => e && !e.fresh && e.raw && e.raw.series);
+    const series = dates.length > 1 ? (old ? old.raw.series : uid()) : null;
+    let twice = false, added = 0;
+    for (const d of dates) {
+      const k = [d, start, coach].join('|'), had = known[k];
+      let sid;
+      if (had && had.fresh) { twice = true; continue; }
+      if (had) {
+        sid = had.id;
+        const raw = had.raw || {};
+        const changed = Object.entries(fields).filter(([f, v]) => JSON.stringify(raw[f] ?? (f === 'ages' ? null : raw[f])) !== JSON.stringify(v));
+        if (changed.length) { const next = { ...raw, ...Object.fromEntries(changed), at: nowMs() }; known[k] = { ...had, raw: next }; sput(`sessions/${sid}`, next); out.counts.sessions++; }
+      } else {
+        sid = uid();
+        const s = { id: sid, ...fields, date: d, ...(series ? { series } : {}), by, made: nowMs(), at: nowMs() };
+        known[k] = { id: sid, raw: s, fresh: true };
+        sput(`sessions/${sid}`, s);
+        out.counts.newSessions++; added++;
+        if (fieldObj && permitsOf(fieldObj).length && !permitsOf(fieldObj).some(p => permitCovers(p, d, minOf(start), minOf(end))))
+          out.warnings.push(`${label}: ${d} at ${start} is outside the club's permit for ${fieldObj.name}.`);
+      }
+      // the places, at most the spots; past that, the waiting list
+      ins[sid] = ins[sid] ?? (had ? bookingsOf(sid).filter(b => b.st === 'in').length : 0);
+      const named = new Set();
+      who.forEach((w, j) => {
+        // a name and her shirt number in the same list are one player, booked once
+        if (!w || named.has(w.p.id)) return;
+        named.add(w.p.id);
+        const b = had ? bookOf(sid, w.p.id) : null;
+        if (b) { if (b.st !== 'in') out.warnings.push(`${label}, player ${j + 1}: ${w.p.name} is already "${BOOK[b.st].toLowerCase()}" for ${d} here, so that was left as it is.`); return; }
+        const stt = ins[sid] < (kind === 'one' ? 1 : cap) ? 'in' : 'wait';
+        if (stt === 'in') ins[sid]++;
+        else out.warnings.push(`${label}: ${d} is full, so ${w.p.name} goes on its waiting list.`);
+        sput(`booked/${sid}/${w.p.id}`, { tid: w.t.id, st: stt, by, at: nowMs() });
+        out.counts.bookings++;
+      });
+    }
+    if (twice) out.warnings.push(`${label}: appears twice in the file, so it was imported once.`);
+    if (defaulted && added) out.warnings.push(`${label}: no coach given, so ${added === 1 ? 'it is' : 'they are'} yours.`);
+  });
+}
+
 function importSummary(c) {
   const bits = [];
   const n = (k, one, many) => c[k] ? `${c[k]} ${c[k] === 1 ? one : many}` : null;
-  const add = [n('newTeams', 'team', 'teams'), n('newPlayers', 'player', 'players'), n('newGames', 'game', 'games')].filter(Boolean);
+  const add = [n('newTeams', 'team', 'teams'), n('newPlayers', 'player', 'players'), n('newGames', 'game', 'games'),
+    n('newFields', 'field', 'fields'), n('newSessions', 'session', 'sessions'), n('bookings', 'booking', 'bookings')].filter(Boolean);
   if (add.length) bits.push('adds ' + add.join(', '));
-  const upd = [n('teams', 'team', 'teams'), n('players', 'player', 'players'), n('games', 'game', 'games')].filter(Boolean);
+  const upd = [n('teams', 'team', 'teams'), n('players', 'player', 'players'), n('games', 'game', 'games'),
+    n('fields', 'field', 'fields'), n('sessions', 'session', 'sessions')].filter(Boolean);
   if (upd.length) bits.push('updates ' + upd.join(', '));
   if (c.results) bits.push(`${c.results} with a final score`);
   return bits.length ? bits.join(' · ') : 'nothing new — everything in it is already here';
@@ -2597,7 +2904,10 @@ function importSummary(c) {
    hand-entered team and its games would go out in. */
 function applyImport(plan) {
   for (const [path, value] of plan.writes) { setDeep(state, path, value); remoteSet(path, value); }
-  saveLocal(); render(); schedulePublish();
+  saveLocal();
+  // sessions after the teams and fields they name, through the store that resends them
+  for (const [path, value] of plan.sessWrites || []) sessPut(path, value);
+  render(); schedulePublish();
 }
 
 let pendingImport = null;
@@ -2608,7 +2918,7 @@ function sheetImport(text) {
   if (txt.trim()) { try { plan = importPlan(JSON.parse(txt)); } catch (err) { bad = 'That is not valid JSON: ' + err.message; } }
   const list = (items, cls) => items.length ? `<div class="implist ${cls}">${items.slice(0, 30).map(esc).join('<br>')}${items.length > 30 ? `<br>…and ${items.length - 30} more` : ''}</div>` : '';
   openSheet(`<h3>Bulk import</h3>
-    <p class="muted" style="margin-top:0">Teams, rosters and games from one JSON file. Teams are matched by name, players by name, and games by team, date and opponent, so running the same file twice changes nothing. Nothing already here is removed.</p>
+    <p class="muted" style="margin-top:0">Teams, rosters, games, fields and training sessions from one JSON file. Teams, players and fields are matched by name, games by team, date and opponent, and sessions by date, start and coach, so running the same file twice changes nothing. Nothing already here is removed.</p>
     <div class="row" style="margin-bottom:10px">
       <button class="btn quiet sm" data-act="importfile">Choose a file</button>
       <button class="btn quiet sm" data-act="importexample">Show an example</button>
@@ -2620,7 +2930,7 @@ function sheetImport(text) {
       ${plan.errors.length ? '<p class="muted">Fix those and check again — nothing is imported while any are left.</p>'
       : `<p><b>This ${plan.backup ? 'backup' : 'file'} ${esc(importSummary(plan.counts))}.</b></p>`}
       ${list(plan.warnings, '')}
-      ${!plan.errors.length && plan.writes.length ? `<button class="btn wide" data-act="importgo">Import it</button>` : ''}` : ''}
+      ${!plan.errors.length && (plan.writes.length || plan.sessWrites.length) ? `<button class="btn wide" data-act="importgo">Import it</button>` : ''}` : ''}
     <p class="muted" style="margin-bottom:0">It holds children's names, so treat the file the way you would the roster itself. Names never reach the parent pages.</p>`);
 }
 
@@ -8387,8 +8697,8 @@ function viewAdmin() {
       <button class="btn quiet wide" data-act="sesstab" data-k="fields">Fields</button></div>
 
     <div class="card"><h2 style="margin-bottom:8px">Bulk import</h2>
-      <p class="muted" style="margin-top:0">A whole season at once — teams, rosters, fixtures and past results — from one JSON file. It adds and updates, and never removes anything.</p>
-      <button class="btn quiet wide" data-act="bulkimport">Import teams and games</button></div>
+      <p class="muted" style="margin-top:0">A whole season at once — teams, rosters, fixtures, past results, the club's fields and permits, and training sessions — from one JSON file. It adds and updates, and never removes anything.</p>
+      <button class="btn quiet wide" data-act="bulkimport">Import teams, games, fields and sessions</button></div>
 
     ${aiButton('club')}
   </div>`;
@@ -11273,7 +11583,7 @@ function onAct(e) {
     // planned again against the club as it is now, not as it was when checked
     let plan;
     try { plan = importPlan(JSON.parse($('#impText').value)); } catch (err) { sheetImport($('#impText').value); return; }
-    if (plan.errors.length || !plan.writes.length) { sheetImport($('#impText').value); return; }
+    if (plan.errors.length || !(plan.writes.length + (plan.sessWrites || []).length)) { sheetImport($('#impText').value); return; }
     if (!confirm(`Import into ${(acc().org || {}).name || 'this club'}? It ${importSummary(plan.counts)}.`)) return;
     applyImport(plan); pendingImport = null; closeSheet();
     toast('Imported: ' + importSummary(plan.counts)); return;

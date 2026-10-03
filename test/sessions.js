@@ -594,6 +594,25 @@ function newSession(v = {}) {
     check('nothing is left owed', Object.keys(D.sess.dirty).length, 0);
   }
 
+  console.log('\n--- bulk import, against the database ---');
+  {
+    const { D, fbk } = await device('boss');
+    fbk.deliver(TR + 'sessions', {}); fbk.deliver(TR + 'booked', {}); fbk.deliver(TR + 'came', {}); await D.flush();
+    D.dom.node('#impText').value = JSON.stringify({
+      fields: [{ name: 'Lakeside Park', permits: [{ days: 'weekdays', start: '16:00', end: '20:00' }] }],
+      sessions: [{ type: '1-1', coach: 'Jaz', date: day(4), start: '17:00', end: '18:00', field: 'Lakeside Park', players: ['Rosa Smith'] }]
+    });
+    D.click({ act: 'importgo' });
+    await D.flush();
+    const sw = fbk.record.writes.filter(w => w.path.startsWith(TR + 'sessions/'));
+    check('an imported session is one write at its own path', sw.length, 1);
+    check('run by the coach the file named', sw[0] && sw[0].value.coach, 'jaz');
+    const bw = fbk.record.writes.filter(w => w.path.startsWith(TR + 'booked/'));
+    check('its booking one more, at its own', bw.length === 1 && /booked\/[\w-]+\/p1$/.test(bw[0].path), true);
+    check('the field goes to the club settings', fbk.record.writes.some(w => /^workspaces\/CLUB\/access\/org\/venues\/[\w-]+$/.test(w.path)), true);
+    check('and every write is acknowledged, so nothing is owed', Object.keys(D.sess.dirty).length, 0);
+  }
+
   console.log('\n--- merge, never replace ---');
   {
     const { D, fbk } = await device('jaz');

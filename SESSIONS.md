@@ -255,7 +255,19 @@ screen with a message, as an RSVP is.
   role that isn't "coach of a team", which is `AUTH.md`'s territory.
 - **Field-level pitches** (field 2 of Lakeside). Clashes count against the
   field's number of pitches, not a named pitch.
-- **Bulk import** doesn't take sessions or fields.
+
+## Bulk import
+
+Built after the first version, on the owner's ask. The admin's bulk import
+takes `fields` and `sessions` lists beside `teams` (README, **Bulk import**),
+with the promises the rest of the importer keeps: checked first, nothing
+written while an error is left, matched against what is here so a second run
+changes nothing, and nothing removed. A field is matched by name and its
+permits are only added to. A session is matched by date, start and coach,
+which is what a coach would call "the same session"; a booking already here
+is the coach's and is left as it is. Fields go out with the workspace writes;
+sessions and bookings go through the session store, so an import made offline
+is owed and resent like a session made by hand.
 
 ## Build order
 

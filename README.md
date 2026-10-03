@@ -505,7 +505,7 @@ Setup → *Download a copy* writes the whole store to JSON. *Load from a file* a
 
 ## Bulk import
 
-Admin → *Import teams and games* takes a season at once — teams, rosters, fixtures and past results — as one JSON file, chosen or pasted. *Check it* shows what it will do and every problem, line by line, before anything is written; nothing is written while an error is left.
+Admin → *Import teams, games, fields and sessions* takes a season at once — teams, rosters, fixtures, past results, the club's fields with their permits, and training sessions — as one JSON file, chosen or pasted. *Check it* shows what it will do and every problem, line by line, before anything is written; nothing is written while an error is left.
 
 ```json
 {
@@ -537,3 +537,31 @@ Admin → *Import teams and games* takes a season at once — teams, rosters, fi
 - **It merges, it never replaces.** A team is matched by name, a player by name within the team, a game by team, date and opponent. A match gets only the fields the file gives; nothing is deleted. Running the same file twice changes nothing.
 - **A past result is a score, not minutes.** It becomes goals at 0:00 and a finished game, so the season record adds up; nobody's minutes are invented. A game that already has goals recorded keeps them.
 - The file holds children's names, so treat it like the roster. Names never reach the parent pages.
+
+**Fields and training sessions** go in the same file, beside `teams` or on their own:
+
+```json
+{
+  "fields": [{
+    "name": "Lakeside Park", "address": "1 Lake Rd", "pitches": 2, "surface": "Grass", "lights": true,
+    "permits": [
+      { "days": ["Mon", "Wed"], "start": "16:00", "end": "20:00", "from": "2026-09-01", "until": "2026-11-30", "number": "City parks #4471" },
+      { "days": "weekends", "note": "All day" }
+    ]
+  }],
+  "sessions": [
+    { "type": "1-1", "title": "Finishing", "coach": "Jaz Patel", "date": "2026-10-05", "start": "5pm", "end": "6pm",
+      "field": "Lakeside Park", "price": 25, "team": "Lakeside Thunder G12", "players": ["Bea Smith"] },
+    { "type": "group", "title": "Keeper group", "coach": "jaz@example.com", "date": "2026-10-07", "start": "16:30", "end": "17:30",
+      "field": "Lakeside Park", "where": "the goalmouth", "spots": 4, "ages": "U10-U13", "price": 15, "open": true,
+      "weekly": { "days": ["Wed"], "until": "2026-11-25" }, "focus": "Handling and diving",
+      "players": [{ "name": "Ada Lovelace", "team": "Lakeside Thunder G12" }, { "number": 10, "team": "Lakeside Thunder G12" }] }
+  ]
+}
+```
+
+- **A field** needs a `name`; everything else is optional: `address`, `pitches`, `surface`, `lights`, `notes`, and `permits`. A permit needs its `days` (`["Mon", "Wed"]`, `"Mon, Wed"`, `"weekdays"`, `"weekends"`, `"every day"`); `start` and `end` are its hours (`16:00` or `4pm`; leave both out for the whole day), `from` and `until` its dates, `number` the permit number, and `note` anything else. A field is matched by name and updated in place, and **a permit is only ever added**: one already listed is not added twice, and nothing is removed.
+- **A session** needs a `date` and a `start` and `end`. `coach` is the name or email of a coach or admin here (someone who has signed in at least once); left out, the session is whoever imports it. `type` is `"1-1"` or `"group"`, `spots` how many places a group has, `ages` like `"U10-U12"`, `price` a number (`"$25"` and `"free"` work too), `field` the name of a field here or in the same file (anything else is kept as the place, and the check says so), `where` the part of it, `focus` and `notes`. `weekly` with `days` and `until` makes one session a week, each its own, like *Every week* in the app.
+- **`players` books them in.** Each is a name, a shirt number (with the session's `team`), or `{ "name" | "number", "team" }`. A name found on two teams needs its team; a player the same file adds can be booked. Past the number of spots, the rest go on the waiting list, and the check says who. A session with players named starts closed to families' asks unless it says `"open": true`; one with nobody named starts open.
+- **Sessions merge too.** One is matched by date, start and coach, so running the file again changes nothing, and a changed price or title updates the session it matches. A booking already here is left as it is, whatever the coach has made of it since, and the check says so. A session at a time outside its field's permit is imported, with a warning.
+- Fields go into the club settings with the rest of the import. Sessions go to the club's training sessions, and reach the club once its rules include them (**Training sessions**); until then they stay on the admin's phone, like one made by hand.

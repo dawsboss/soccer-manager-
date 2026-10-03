@@ -8,6 +8,38 @@ before this point lives only in the git log.
 
 ---
 
+## Bulk import takes fields and training sessions — 2026-10-03
+
+Asked for straight after training sessions shipped: a club's fields, their
+permits and a term of sessions are a spreadsheet's worth of typing, the same
+as a season's fixtures were.
+
+- **`fields`**: name, address, pitches, surface, lights, notes, and permits
+  with their days (`"Mon, Wed"`, `"weekdays"`), hours (`16:00` or `4pm`),
+  dates and number.
+- **`sessions`**: date, start and end, the coach by name or email, 1-1 or
+  group, spots, ages (`"U10-U12"`), price (`"$25"` works), the field by name
+  (one in the same file too), `weekly` with days and a last date, and
+  `players` to book, by name, by shirt number with a team, or both.
+- **The same promises as the rest of the importer.** *Check it* lists every
+  problem before anything is written, and nothing is written while one is
+  left. Running a file twice changes nothing: a field is matched by name, a
+  session by date, start and coach. Nothing is removed. A field's permits are
+  only added to, never replaced. A booking already here is left as the coach
+  has it, and the check says so.
+- **What it can't decide, it says.** Past a session's spots, the rest go on
+  the waiting list. A field nobody has is kept as the session's place. A time
+  outside the field's permit is imported with a warning. A name on two teams
+  needs its team. A session with players named starts closed to families'
+  asks; one with nobody named starts open.
+
+Fields go out with the workspace writes, under the club-settings rule.
+Sessions and bookings go through the session store, one record per write,
+so an import made with no signal is owed and resent like a session made by
+hand.
+
+---
+
 ## Training sessions: 1-1s and small groups, fields, fees and hours — 2026-10-03
 
 The owner's ask: schedule 1-1 and group training that isn't tied to a team,

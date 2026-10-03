@@ -26,7 +26,10 @@ const clickImport = o => {
   A.click({ act: 'importgo' });
 };
 const onlyDepths = plan => plan.writes.every(([p]) =>
-  /^teams\/[\w-]+(\/players\/[\w-]+(\/\w+)?|\/birthYear)?$/.test(p) || /^matches\/[\w-]+(\/\w+)?$/.test(p));
+  /^teams\/[\w-]+(\/players\/[\w-]+(\/\w+)?|\/birthYear)?$/.test(p) || /^matches\/[\w-]+(\/\w+)?$/.test(p)
+  || /^access\/org\/venues\/[\w-]+(\/\w+|\/permits\/[\w-]+)?$/.test(p))
+  // a session and a booking each at its own path under training/{code}, never a collection
+  && (plan.sessWrites || []).every(([p]) => /^sessions\/[\w-]+$/.test(p) || /^booked\/[\w-]+\/[\w-]+$/.test(p));
 
 /* ---------------- a club from nothing ---------------- */
 
@@ -166,6 +169,165 @@ check('one player', dup.counts.newPlayers, 1);
 check('who got both rows', Object.values(dup.writes[0][1].players)[0].rating, 2);
 check('one game', dup.counts.newGames, 1);
 check('with a note', dup.warnings.some(w => /appears twice/.test(w)), true);
+
+/* ---------------- fields and training sessions ---------------- */
+
+/* The same promises, for the club's fields and its training sessions: matched,
+   never doubled, never removed, nothing written while the file has an error.
+   Sessions are matched by date, start and coach; a booking already here is
+   the coach's and is left alone. */
+const held = { state: JSON.stringify(A.state), sess: JSON.stringify(A.sess) };
+const club2 = () => {
+  A.state = {
+    teams: {
+      ta: { id: 'ta', name: 'G11 Flight', birthYear: 2016, players: {
+        a1: { id: 'a1', name: 'Ella Fitz', number: '7', active: true },
+        a2: { id: 'a2', name: 'Rosa Delgado', number: '9', active: true },
+        a3: { id: 'a3', name: 'Maya Chen', number: '4', active: true } } },
+      tb: { id: 'tb', name: 'G13 Storm', birthYear: 2014, players: {
+        b1: { id: 'b1', name: 'Quinn Jones', number: '3', active: true },
+        b2: { id: 'b2', name: 'Maya Chen', number: '5', active: true } } }
+    },
+    matches: {},
+    access: {
+      org: { name: 'Lakeside SC' }, admins: { adm: true }, index: { adm: true, jaz: true },
+      members: { adm: { name: 'Ada' }, jaz: { name: 'Jaz Patel', email: 'Jaz@x.test' } },
+      teams: { ta: { coaches: { jaz: true } } }
+    }
+  };
+  A.sess = { sessions: {}, booked: {}, came: {}, fees: {}, pay: {}, splans: {}, dirty: {} };
+  A.me = { uid: 'adm', name: 'Ada' };
+};
+
+console.log('\n--- fields, with their permits ---');
+club2();
+const fieldFile = { fields: [{ name: 'Lakeside Park', address: '1 Lake Rd', pitches: 2, surface: 'grass', lights: 'yes',
+  permits: [{ days: 'Mon, Wed', start: '4pm', end: '8pm', from: '2026-09-01', until: '2026-11-30', number: 'City #4471' },
+    { days: 'weekends', note: 'Saturdays and Sundays, all day' }] }] };
+const fp = A.importPlan(fieldFile);
+deepEq('a file of only fields is fine', fp.errors, []);
+check('one field', fp.counts.newFields, 1);
+check('every write at a depth the rules grant', onlyDepths(fp), true);
+clickImport(fieldFile);
+const lf = A.fieldList()[0];
+check('the field is there', lf && lf.name, 'Lakeside Park');
+check('under the club settings', !!A.state.access.org.venues[lf.id], true);
+check('its surface, tidied', lf.surface, 'Grass');
+check('lights', lf.lights, true);
+const pms = A.permitsOf(lf);
+check('both permits', pms.length, 2);
+const weekday = pms.find(p => p.ref === 'City #4471');
+deepEq('days read', weekday.days, [0, 2]);
+check('4pm to 8pm read', weekday.start + '–' + weekday.end, '16:00–20:00');
+check('and its dates', weekday.from + ' ' + weekday.until, '2026-09-01 2026-11-30');
+deepEq('"weekends" is Saturday and Sunday', pms.find(p => !p.ref).days, [5, 6]);
+check('a permit with no hours covers the day', !pms.find(p => !p.ref).start, true);
+check('the same file again changes nothing', A.importPlan(fieldFile).writes.length, 0);
+
+const moreFile = { fields: [{ name: 'lakeside park', pitches: 3,
+  permits: [{ days: ['Mon', 'Wed'], start: '16:00', end: '20:00', from: '2026-09-01', until: '2026-11-30', number: 'City #4471' },
+    { days: ['Fri'], from: '17:00', to: '19:00' }] }] };
+const mp = A.importPlan(moreFile);
+check('a second file finds the field by name', mp.counts.newFields + ' new, ' + mp.counts.fields + ' updated', '0 new, 1 updated');
+clickImport(moreFile);
+check('its pitches updated', A.fieldById(lf.id).pitches, 3);
+check('a permit already listed is not added twice; a new one is', A.permitsOf(A.fieldById(lf.id)).length, 3);
+check('"from" and "to" read as times when they are times', A.permitsOf(A.fieldById(lf.id)).some(p => p.days.join() === '4' && p.start === '17:00'), true);
+check('and nothing it had is gone', A.fieldById(lf.id).address, '1 Lake Rd');
+
+const badFields = A.importPlan({ fields: [{ name: 'X', permits: [{ days: 'Funday', start: '16:00', end: '18:00' }] },
+  { name: 'Y', permits: [{ days: 'Mon', start: '18:00', end: '16:00' }] }, { permits: [] }, { name: 'Z', permits: [{ start: '16:00', end: '18:00' }] }] });
+check('a day that is not a day is an error', badFields.errors.some(e => /"Funday" is not a day/.test(e)), true);
+check('a permit that ends before it starts', badFields.errors.some(e => /ends at 16:00, before it starts at 18:00/.test(e)), true);
+check('a field with no name', badFields.errors.some(e => /Field 3: a field needs a name/.test(e)), true);
+check('a permit with no days', badFields.errors.some(e => /needs the days it covers/.test(e)), true);
+
+console.log('\n--- training sessions ---');
+club2();
+const sessFile = {
+  fields: [{ name: 'Lakeside Park', permits: [{ days: ['Mon', 'Wed'], start: '16:00', end: '20:00' }] }],
+  sessions: [
+    { type: '1-1', title: 'Finishing', coach: 'Jaz Patel', date: '2026-10-05', start: '5pm', end: '6pm', field: 'Lakeside Park', price: '$25', players: ['Ella Fitz'] },
+    { type: 'group', title: 'Keepers', coach: 'jaz@x.test', date: '2026-10-07', start: '16:30', end: '17:30', field: 'Lakeside Park', where: 'goalmouth',
+      spots: 2, ages: 'U10-U13', weekly: { days: ['Wed'], until: '2026-10-21' }, team: 'G11 Flight', players: ['Rosa Delgado', 9, { name: 'Quinn Jones', team: 'G13 Storm' }, { number: 4 }] },
+    { type: 'group', title: 'Late one', date: '2026-10-08', start: '19:30', end: '20:30', field: 'Lakeside Park' },
+    { type: '1-1', title: 'Somewhere new', coach: 'Jaz Patel', date: '2026-10-09', start: '10:00', end: '11:00', field: 'Riverside Rec' }
+  ]
+};
+const sp = A.importPlan(sessFile);
+deepEq('no errors', sp.errors, []);
+check('one session plus a weekly group of three, plus two more', sp.counts.newSessions, 6);
+check('every write at a depth the rules grant', onlyDepths(sp), true);
+check('the sessions go to training, not into the workspace', sp.writes.some(([p]) => /session|booked/.test(p)), false);
+check('a coach found by name or by email, whatever its case', sp.sessWrites.filter(([p, v]) => p.startsWith('sessions/') && v.coach === 'jaz').length, 5);
+check('one with no coach is the importer\'s', sp.sessWrites.some(([p, v]) => p.startsWith('sessions/') && v.title === 'Late one' && v.coach === 'adm'), true);
+check('and that is said', sp.warnings.some(w => /Late one\): no coach given, so it is yours/.test(w)), true);
+check('a time outside the field\'s permit is said', sp.warnings.some(w => /Late one.*outside the club's permit/.test(w)), true);
+check('a field nobody has is kept as the place', sp.sessWrites.some(([, v]) => v.title === 'Somewhere new' && v.place === 'Riverside Rec' && !v.field), true);
+check('and that is said too', sp.warnings.some(w => /"Riverside Rec" is not a field/.test(w)), true);
+clickImport(sessFile);
+const one = A.sessAll().find(s => s.title === 'Finishing');
+check('5pm to 6pm read', one.start + '–' + one.end, '17:00–18:00');
+check('"$25" read', one.price, 25);
+check('at the field from the same file', A.fieldById(one.field).name, 'Lakeside Park');
+check('a session with players named is booked by the coach, not open', one.open, false);
+check('Ella is booked', (A.bookOf(one.id, 'a1') || {}).st, 'in');
+check('under her own team', A.bookOf(one.id, 'a1').tid, 'ta');
+const wk = A.sessAll().filter(s => s.title === 'Keepers');
+check('weekly: one session a week, to the last date', wk.map(s => s.date).join(), '2026-10-07,2026-10-14,2026-10-21');
+check('sharing one series', new Set(wk.map(s => s.series)).size, 1);
+deepEq('ages read', wk[0].ages, [10, 13]);
+check('a name, a shirt number and another team\'s player all found', ['a2', 'b1', 'a3'].every(p => A.bookOf(wk[0].id, p)), true);
+check('Rosa by name and by her number is one booking', A.bookingsOf(wk[0].id).length, 3);
+check('two spots: two booked', A.bookingsOf(wk[0].id).filter(x => x.st === 'in').length, 2);
+check('and the rest on the waiting list, in every week', wk.every(s => A.bookingsOf(s.id).filter(x => x.st === 'wait').length === 1), true);
+check('a session with nobody named is open to families', A.sessAll().find(s => s.title === 'Late one').open, true);
+check('each is owed to the club until it answers', Object.keys(A.sess.dirty).some(k => k.startsWith('sessions/')), true);
+
+const again2 = A.importPlan(sessFile);
+check('the same file again adds nothing', again2.sessWrites.length + again2.writes.length, 0);
+check('and says so', A.importSummary(again2.counts), 'nothing new — everything in it is already here');
+deepEq('quietly', again2.warnings.filter(w => !/waiting list|outside|not a field|already/.test(w)), []);
+
+A.sess.booked[one.id].a1.st = 'out';
+const changed = { sessions: [{ type: '1-1', title: 'Finishing', coach: 'Jaz Patel', date: '2026-10-05', start: '17:00', end: '18:00', field: 'Lakeside Park', price: 30, players: ['Ella Fitz'] }] };
+const cp = A.importPlan(changed);
+check('a changed price updates the session it matches', cp.counts.newSessions + ' new, ' + cp.counts.sessions + ' updated', '0 new, 1 updated');
+check('written whole, at its own path', cp.sessWrites[0][0], 'sessions/' + one.id);
+check('a booking the coach changed is left as it is', cp.sessWrites.some(([p]) => p.startsWith('booked/')), false);
+check('and said', cp.warnings.some(w => /already "withdrew"/.test(w)), true);
+
+const badSess = A.importPlan({ sessions: [
+  { date: '05/10/2026', start: '17:00', end: '18:00', coach: 'Jaz Patel' },
+  { date: '2026-10-05', start: '18:00', end: '17:00', coach: 'Jaz Patel' },
+  { date: '2026-10-05', start: '17:00', end: '18:00', coach: 'Nobody' },
+  { date: '2026-10-05', start: '17:00', end: '18:00', coach: 'Jaz Patel', players: ['Maya Chen'] },
+  { date: '2026-10-05', start: '17:00', end: '18:00', coach: 'Jaz Patel', players: ['Zara Nobody'] },
+  { date: '2026-10-05', start: '17:00', end: '18:00', coach: 'Jaz Patel', type: 'workshop' },
+  { date: '2026-10-05', start: '17:00', end: '18:00', coach: 'Jaz Patel', ages: 'U30' },
+  { date: '2026-10-05', start: '17:00', end: '18:00', coach: 'Jaz Patel', weekly: { days: ['Mon'] } },
+  { date: '2026-10-05', start: '17', end: '18', coach: 'Jaz Patel' }
+] });
+check('a date the other way round', badSess.errors.some(e => /Session 1: date "05\/10\/2026"/.test(e)), true);
+check('one that ends before it starts', badSess.errors.some(e => /Session 2: it ends at 17:00/.test(e)), true);
+check('a coach nobody has heard of, with who there is', badSess.errors.some(e => /no coach or admin called "Nobody" here \(there are .*Jaz Patel/.test(e)), true);
+check('a name on two teams needs its team', badSess.errors.some(e => /more than one player is called "Maya Chen"/.test(e)), true);
+check('a name on no team', badSess.errors.some(e => /nobody in the club is called "Zara Nobody"/.test(e)), true);
+check('a type it cannot read', badSess.errors.some(e => /should be "1-1" or "group"/.test(e)), true);
+check('ages it cannot read', badSess.errors.some(e => /ages "U30"/.test(e)), true);
+check('weekly with no last date', badSess.errors.some(e => /needs the date of the last one/.test(e)), true);
+check('a bare "17" is not a time', badSess.errors.some(e => /Session 9: needs a start and an end/.test(e)), true);
+const snap3 = JSON.stringify(A.sess);
+clickImport({ sessions: [{ date: '2026-10-30', start: '17:00', end: '18:00', coach: 'Jaz Patel' }, { date: 'soon' }] });
+check('with errors left, no session is written', JSON.stringify(A.sess) === snap3, true);
+
+console.log('\n--- a whole club in one file ---');
+club2();
+const whole = A.importPlan(A.IMPORT_EXAMPLE);
+deepEq('the example has no errors', whole.errors, []);
+check('its team, its field and its sessions', [whole.counts.newTeams, whole.counts.newFields, whole.counts.newSessions > 2].join(), '1,1,true');
+check('booking a player the same file adds', whole.sessWrites.some(([p, v]) => p.startsWith('booked/') && v.st === 'in'), true);
+A.state = JSON.parse(held.state); A.sess = JSON.parse(held.sess); A.me = { uid: 'adm', name: 'Ada' };
 
 /* ---------------- who may ---------------- */
 
