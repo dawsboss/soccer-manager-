@@ -8,6 +8,29 @@ before this point lives only in the git log.
 
 ---
 
+## Start a new club from the club switcher — 2026-10-03
+
+Asked by the owner: "not sure how a new club can be made if you are in one."
+It couldn't, except by the app owner typing a workspace code under Settings.
+The rules already let any signed-in account found a club at a code nobody
+has written (the bootstrap clauses `rules.js` walks), so this is a door, not
+a rule change.
+
+- **The club button at the top left** now ends with **+ Start a new club**.
+  A name, *Start it*, and the phone opens the new club with you as its admin.
+  The club you were in is untouched and stays in the list.
+- **Admin, index, member, name, then the bookmark**, each awaited, in the
+  order the rules need: every later clause asks whether she is the admin.
+- **Online only, on purpose.** Everything else goes through the outbox; a
+  club does not. A club queued on one phone is a code nobody else can reach
+  with an admin claim another device could beat it to, and making one again
+  with a signal costs nothing. Refused or offline, nothing is half-made and
+  the phone stays where it was.
+- **A device with no club open** gets the same button under Settings →
+  Workspace. The owner's code box stays as the escape hatch.
+
+---
+
 ## Bulk import takes fields and training sessions — 2026-10-03
 
 Asked for straight after training sessions shipped: a club's fields, their

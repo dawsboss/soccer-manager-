@@ -40,7 +40,7 @@ Open `index.html` in a browser, or serve the folder. Everything works immediatel
 
    There is one ruleset, for every club. A database runs one set of rules for every club in it, and this site is for any club that comes to it, so there is no "starter" set for new clubs and a stricter one for established ones: a new club is made under the same rules every other club runs on (see **The database rules** below).
 
-4. On the app owner's device: sign in (Setup → Account), then Setup → Workspace → *Connect to a workspace* → *Make one up* → *Save and reload*. That creates the club, with you as its admin. Nobody else types the code: everyone else joins with an invite link — see **Joining a club** below. Signed out, the app still works, but only on that one device.
+4. Sign in (Setup → Account), then tap the club button at the top left → **+ Start a new club**, give it a name, and *Start it*. That creates the club, with you as its admin, and opens it. (A device with no club open has the same button under Setup → Workspace. The app owner's *Connect to a workspace* still works too.) Nobody else types the code: everyone else joins with an invite link — see **Joining a club** below. Signed out, the app still works, but only on that one device.
 
 Two things that will silently reject a write if you tighten the `public` block: a team with **no games yet** publishes without a `games` child at all, because Realtime Database drops empty objects — so never require `games`. And never add a `"$other": { ".validate": false }` catch-all: the document also contains `record` and `updated`, and a wildcard matches those too, failing the whole write.
 
@@ -63,7 +63,7 @@ The badge in the top bar shows `synced`, `offline`, or `this device`, and `3 to 
 
 ## Joining a club
 
-Clubs are invite only, and there is no code to type.
+Joining someone else's club is by invite, and there is no code to type. Starting your own is not: anyone signed in can tap the club button at the top left → **+ Start a new club** and be its admin. The club they were in is untouched and stays in their list; a new club needs a signal, because it is made at the database there and then rather than queued on the phone.
 
 1. A club admin opens **People → Invite someone**, picks Coach, Tracker or Parent (and which player, for a parent), and optionally an email address.
 2. The app makes a link — `…/?invite=<id>` — to copy, share, or, with an email, have Firebase send as a sign-in email.

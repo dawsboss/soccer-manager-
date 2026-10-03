@@ -2,7 +2,7 @@
    Static app. Data lives in localStorage, and mirrors to Firebase Realtime
    Database when a config + workspace code are present. */
 
-const BUILD = '75';
+const BUILD = '76';
 const BUILT = '2026-10-03';
 /* index.html carries the build it was published with. If this file is newer, the
    browser handed us a cached page — the exact failure that has eaten hours. */
@@ -1379,6 +1379,50 @@ async function redeemInvite() {
   dropInvite();
   try { localStorage.setItem(LS_WS, ws); } catch (e) { }
   location.reload();
+}
+
+/* Starting a club from inside another one. The rules already let any
+   signed-in account found a club at a code nobody has written (the bootstrap
+   clauses, and rules.js's "a brand-new club"), so this is the same four
+   writes, in the order those clauses need them: admin first, because every
+   later rule asks whether she is one. It is awaited and online-only on
+   purpose. A club made through the outbox would be a club that exists on one
+   phone, with a code nobody else can reach and an admin claim that some other
+   device could beat it to; a club is cheap to make again with a signal, and a
+   half-made one is not cheap to explain. The code is long and random, so the
+   trust-on-first-use window rules.js prints is a code nobody else knows. */
+let newClubBusy = false;
+async function createClub(name) {
+  if (!rtdb || !me || newClubBusy) return false;
+  const code = 'sm-' + uid() + uid(), who = me.uid, at = nowMs();
+  const { db, mod } = rtdb;
+  const put = (p, val) => mod.set(mod.ref(db, p), val);
+  const W = 'workspaces/' + code + '/';
+  newClubBusy = true;
+  try {
+    await put(W + 'access/admins/' + who, true);
+    await put(W + 'access/index/' + who, true);
+    await put(W + 'access/members/' + who, { name: me.name || '', email: me.email || '', at });
+    await put(W + 'access/org/name', name);
+  } catch (e) {
+    newClubBusy = false;
+    toast(/permission|denied/i.test((e && e.code) || '') ? 'The database refused it — the rules may not be published yet'
+      : 'Could not make the club — check the signal and try again');
+    return false;
+  }
+  // the bookmark is what puts it in every one of her devices' club lists
+  await Promise.resolve(put('userOrgs/' + who + '/' + code, { name, at })).catch(() => { });
+  try { localStorage.setItem(LS_WS, code); } catch (e) { }
+  location.reload();
+  return true;
+}
+
+function sheetNewClub() {
+  openSheet(`<h3>Start a new club</h3>
+    <p class="muted" style="margin-top:0">A club of its own, with you as its admin. ${wsCode() ? `${esc((acc().org || {}).name || 'The club you are in')} is not touched, and stays in your list of clubs.` : ''}</p>
+    <label class="field"><span>Club name</span><input type="text" id="newClubName" placeholder="Hillside FC" maxlength="80"></label>
+    <button class="btn wide" data-act="newclubgo">Start it</button>
+    <p class="muted" style="margin-bottom:0">Needs a signal. Then add teams, and invite coaches and families from People.</p>`);
 }
 
 /* A role that came from an invite carries the invite's id. Withdrawing the
@@ -4237,6 +4281,11 @@ function knownClubs() {
   return out.sort((a, b) => a.name.localeCompare(b.name));
 }
 
+/* Anyone signed in, with a database to make it in. Signed out there is no
+   uid for the rules to make an admin of; with no Firebase config a "club" is
+   just this phone, which is what it already is. */
+const canNewClub = () => !!(me && fbConfig().apiKey);
+
 function sheetClubSwitch() {
   const here = wsCode();
   const list = knownClubs();
@@ -4249,7 +4298,9 @@ function sheetClubSwitch() {
     <p class="muted">Forget removes this device's copy only. Deleting a club for everyone is a Firebase console job — see below.</p>
     <button class="opt" data-act="goview" data-v="club"><b>Club home</b>
       <span class="rowsub">Teams, stats and settings for ${esc((acc().org || {}).name || 'this club')}</span></button>
-    <p class="muted">Clubs are invite only. If one is missing, ask its admin for an invite link.</p>`);
+    ${canNewClub() ? `<button class="opt" data-act="newclub"><b>+ Start a new club</b>
+      <span class="rowsub">You become its admin</span></button>` : ''}
+    <p class="muted">To join someone else's club, ask its admin for an invite link.</p>`);
 }
 
 function sheetClubMenu() {
@@ -9397,6 +9448,7 @@ function viewSetup() {
       <p class="muted" style="margin-top:0">Firebase config is ${cfgOk ? 'in place' : 'not filled in — see README.md'}.</p>
       <p class="muted"${isOwner() ? '' : ' style="margin-bottom:0"'}>${code ? 'Connected. Clubs are invite only — an admin sends you a link, there is no code to type.' : 'Not connected to a club yet. Open the invite link a club admin sent you to join one.'}</p>
       ${!code && Object.keys(myClubs || {}).length ? `<button class="btn wide" data-act="clubswitch" style="margin-bottom:10px">Your clubs</button>` : ''}
+      ${!code && canNewClub() ? `<button class="btn quiet wide" data-act="newclub" style="margin-bottom:10px">Start a new club</button>` : ''}
       ${isOwner() ? `<button class="btn quiet wide" data-act="setwscode">${code ? 'Change workspace code' : 'Connect to a workspace'}</button>
       <p class="muted">Owner-only stopgap until per-person invites exist — nobody else sees this.</p>
       <div class="row"><button class="btn quiet" data-act="envsheet">Database: ${esc(envName() || 'production')}</button>
@@ -11696,6 +11748,14 @@ function onAct(e) {
     return;
   }
   if (a === 'inviteaccept') { redeemInvite(); return; }
+  if (a === 'newclub') { if (!canNewClub()) { toast('Sign in first'); return; } sheetNewClub(); return; }
+  if (a === 'newclubgo') {
+    if (!canNewClub()) { toast('Sign in first'); return; }
+    const nm = ($('#newClubName').value || '').trim().slice(0, 80);
+    if (!nm) { toast('Give the club a name'); return; }
+    if (!online) { toast('Starting a club needs a signal'); return; }
+    createClub(nm); return;
+  }
   if (a === 'inviteretry') { if (invite) { invite.status = 'idle'; invite.err = null; maybeLoadInvite(); } return; }
   if (a === 'invitedismiss') { dropInvite(); render(); return; }
   /* team links. The parent's side acts only on her own request; the coach's

@@ -362,5 +362,62 @@ const CLUB = {
     check('an account with no role does not', fbk.writtenTo('userOrgs/rando/CLUB').length, 0);
   }
 
+  console.log('\n--- starting a new club from inside one ---');
+  {
+    const { A, fbk } = await boot({ storage: { 'sm.workspace': 'CLUB' } });
+    fbk.signIn('coach', { name: 'Jaz', email: 'jaz@x.test' }); await A.flush();
+    fbk.deliver('.info/connected', true);
+    fbk.deliver('workspaces/CLUB', CLUB); await A.flush();
+    A.click({ act: 'clubswitch' });
+    check('the club switcher offers a new club', /data-act="newclub"/.test(A.rendered('#sheet')), true);
+    A.click({ act: 'newclub' });
+    A.dom.node('#newClubName').value = '';
+    A.click({ act: 'newclubgo' });
+    check('a club needs a name', fbk.record.writes.filter(w => /^workspaces\/sm-/.test(w.path)).length, 0);
+    A.dom.node('#newClubName').value = '  Hillside FC ';
+    A.click({ act: 'newclubgo' }); await A.flush(20);
+    const ws = fbk.record.writes.filter(w => /^workspaces\/sm-/.test(w.path));
+    const code = ws.length ? ws[0].path.split('/')[1] : '';
+    const p = paths(fbk), at = x => p.indexOf('workspaces/' + code + '/' + x);
+    check('at a new code, not this club\'s', !!code && code !== 'CLUB', true);
+    check('admin first, as the rules need', ws[0] && ws[0].path, 'workspaces/' + code + '/access/admins/coach');
+    check('then the index', at('access/index/coach') > at('access/admins/coach'), true);
+    check('she is a member', (valueAt(fbk, 'workspaces/' + code + '/access/members/coach') || {}).name, 'Jaz');
+    check('and the club has its name, trimmed', valueAt(fbk, 'workspaces/' + code + '/access/org/name'), 'Hillside FC');
+    check('nothing of the old club goes with it', ws.some(w => /\/teams|\/matches/.test(w.path)), false);
+    check('the old club is not written to', fbk.record.writes.some(w => w.path.startsWith('workspaces/CLUB/access/admins')), false);
+    check('it goes on her list of clubs', (valueAt(fbk, 'userOrgs/coach/' + code) || {}).name, 'Hillside FC');
+    check('and the phone opens it', A.storage.getItem('sm.workspace'), code);
+    check('by reloading into it', A.dom.reloads, 1);
+  }
+  {
+    const { A, fbk } = await boot({ storage: { 'sm.workspace': 'CLUB' } });
+    fbk.signIn('coach'); await A.flush();
+    fbk.deliver('.info/connected', true);
+    fbk.deliver('workspaces/CLUB', CLUB); await A.flush();
+    fbk.refuseWrites(p => /^workspaces\/sm-/.test(p));
+    A.click({ act: 'newclub' });
+    A.dom.node('#newClubName').value = 'Hillside FC';
+    A.click({ act: 'newclubgo' }); await A.flush(20);
+    check('refused: the phone stays in its club', A.storage.getItem('sm.workspace'), 'CLUB');
+    check('and is not bookmarked', fbk.record.writes.some(w => w.path.startsWith('userOrgs/coach/sm-')), false);
+  }
+  {
+    const { A, fbk } = await boot({ storage: { 'sm.workspace': 'CLUB' } });
+    fbk.signIn('coach'); await A.flush();
+    fbk.deliver('.info/connected', false);
+    fbk.deliver('workspaces/CLUB', CLUB); await A.flush();
+    A.click({ act: 'newclub' });
+    A.dom.node('#newClubName').value = 'Hillside FC';
+    A.click({ act: 'newclubgo' }); await A.flush(20);
+    check('with no signal nothing is half-made', fbk.record.writes.some(w => /^workspaces\/sm-/.test(w.path)), false);
+  }
+  {
+    const { A, fbk } = await boot({ storage: { 'sm.workspace': 'CLUB' } });
+    fbk.signOut(); await A.flush();
+    A.click({ act: 'newclubgo' }); await A.flush(5);
+    check('signed out, the handler refuses', fbk.record.writes.some(w => /^workspaces\/sm-/.test(w.path)), false);
+  }
+
   H.summary('invites');
 })();
