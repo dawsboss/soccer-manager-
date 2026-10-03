@@ -238,6 +238,55 @@
     },
     "training": {
       "$code": {
+        "drills": {
+          ".read": "auth != null && (root.child('workspaces/' + $code + '/access/admins/' + auth.uid).exists() || root.child('workspaces/' + $code + '/access/coachIndex/' + auth.uid).exists())",
+          "$id": {
+            ".write": "auth != null && (root.child('workspaces/' + $code + '/access/admins/' + auth.uid).exists() || (!data.exists() && newData.child('by').val() === auth.uid && root.child('workspaces/' + $code + '/access/teams/' + newData.child('team').val() + '/coaches/' + auth.uid).exists()) || (data.child('by').val() === auth.uid && root.child('workspaces/' + $code + '/access/teams/' + data.child('team').val() + '/coaches/' + auth.uid).exists() && (!newData.exists() || (newData.child('by').val() === auth.uid && root.child('workspaces/' + $code + '/access/teams/' + newData.child('team').val() + '/coaches/' + auth.uid).exists()))))",
+            ".validate": "newData.hasChildren(['id', 'name', 'by', 'team', 'at']) && newData.child('id').val() === $id",
+            "name": {
+              ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 80"
+            },
+            "by": {
+              ".validate": "newData.isString()"
+            },
+            "team": {
+              ".validate": "newData.isString()"
+            },
+            "at": {
+              ".validate": "newData.isNumber()"
+            },
+            "media": {
+              "$i": {
+                ".validate": "newData.hasChild('url')",
+                "url": {
+                  ".validate": "newData.isString() && newData.val().beginsWith('https://') && newData.val().length <= 500"
+                },
+                "title": {
+                  ".validate": "newData.isString() && newData.val().length <= 80"
+                }
+              }
+            }
+          }
+        },
+        "templates": {
+          ".read": "auth != null && (root.child('workspaces/' + $code + '/access/admins/' + auth.uid).exists() || root.child('workspaces/' + $code + '/access/coachIndex/' + auth.uid).exists())",
+          "$id": {
+            ".write": "auth != null && (root.child('workspaces/' + $code + '/access/admins/' + auth.uid).exists() || (!data.exists() && newData.child('by').val() === auth.uid && root.child('workspaces/' + $code + '/access/teams/' + newData.child('team').val() + '/coaches/' + auth.uid).exists()) || (data.child('by').val() === auth.uid && root.child('workspaces/' + $code + '/access/teams/' + data.child('team').val() + '/coaches/' + auth.uid).exists() && (!newData.exists() || (newData.child('by').val() === auth.uid && root.child('workspaces/' + $code + '/access/teams/' + newData.child('team').val() + '/coaches/' + auth.uid).exists()))))",
+            ".validate": "newData.hasChildren(['id', 'name', 'by', 'team', 'at']) && newData.child('id').val() === $id",
+            "name": {
+              ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 80"
+            },
+            "by": {
+              ".validate": "newData.isString()"
+            },
+            "team": {
+              ".validate": "newData.isString()"
+            },
+            "at": {
+              ".validate": "newData.isNumber()"
+            }
+          }
+        },
         "practices": {
           "$tid": {
             ".read": "auth != null && (root.child('workspaces/' + $code + '/access/admins/' + auth.uid).exists() || root.child('workspaces/' + $code + '/access/teamIndex/' + $tid + '/' + auth.uid).val() === 'coach' || (!root.child('workspaces/' + $code + '/access/teamIndex').exists() && root.child('workspaces/' + $code + '/access/coachIndex/' + auth.uid).exists()))",
@@ -253,6 +302,34 @@
             "$pid": {
               ".write": "auth != null && (root.child('workspaces/' + $code + '/access/admins/' + auth.uid).exists() || root.child('workspaces/' + $code + '/access/teamIndex/' + $tid + '/' + auth.uid).val() === 'coach' || (!root.child('workspaces/' + $code + '/access/teamIndex').exists() && root.child('workspaces/' + $code + '/access/coachIndex/' + auth.uid).exists()))",
               ".validate": "newData.hasChild('date')"
+            }
+          }
+        }
+      }
+    },
+    "userLibrary": {
+      "$uid": {
+        ".read": "auth != null && (auth.uid === $uid || root.child('appOwners/' + auth.uid).exists())",
+        "$kind": {
+          "$id": {
+            ".write": "auth != null && auth.uid === $uid && ($kind === 'drills' || $kind === 'templates')",
+            ".validate": "newData.hasChildren(['id', 'name', 'at']) && newData.child('id').val() === $id",
+            "name": {
+              ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 80"
+            },
+            "at": {
+              ".validate": "newData.isNumber()"
+            },
+            "media": {
+              "$i": {
+                ".validate": "newData.hasChild('url')",
+                "url": {
+                  ".validate": "newData.isString() && newData.val().beginsWith('https://') && newData.val().length <= 500"
+                },
+                "title": {
+                  ".validate": "newData.isString() && newData.val().length <= 80"
+                }
+              }
             }
           }
         }
