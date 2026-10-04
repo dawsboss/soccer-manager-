@@ -8,6 +8,50 @@ before this point lives only in the git log.
 
 ---
 
+## Admins call coaches off, who's free, and club activity — 2026-10-04 (build 84)
+
+The owner: *admins should be able to call coaches off. Also say what coaches
+are available at a given time … notifications for admins for coaches calling
+out, sessions being made by parents, practices, games, it all.*
+
+- **Admins act for any coach.** On a practice, game or event, *Call Jaz off*
+  for each of the team's coaches (and the session's coach on a session),
+  asked first, with an optional note; *Put Jaz back on* undoes it. Planner →
+  Coaches has *Add* time off for each coach and *Remove*. It is written in the
+  coach's own record with the admin as `by`, so the entry says *Jaz can't
+  make it (called off by Ada)*. A coach still can't do any of it for
+  another, checked in the handler; the `away` rule already allowed admins.
+- **Who's free.** Planner → *Coaches*: a day and a time, and every coach is
+  listed free, busy (*G13 Storm: Practice at 6pm*) or off (*Every Mon, all
+  day*), with the teams she coaches. `coachStatus()` reads `busyItems()`, so
+  it agrees with everything else; a coach called out of the thing being
+  covered is never offered as its cover. A practice with no coach left says
+  *Free then: Kim* on its sheet and in Clashes. "Removed for good" is being
+  taken off every team (under People): she is then no coach here, and isn't
+  listed; time off is the "for now".
+- **Club activity.** `clubNews()` works out, on the phone, what changed since
+  it last looked, the way a family's session news already did: new, moved,
+  called off, back on and deleted practices, games and events on any team (a
+  weekly series, or a club-wide booking, as one item); a coach calling out,
+  or being called off, and back on; time off; sessions families booked
+  (*Booked by a family: 1-1 with Kim · Ella*) or asked for, and withdrawals;
+  sessions coaches made. Each pops up as it arrives (top three, then *N
+  more*) and is kept under the bell, at the top of Messages, unread marked,
+  each tap opening the entry or session. A coach hears the call-outs on her
+  teams and being called off; a parent hears none of it.
+  - **Not news**: the first look at each source; a source that hasn't loaded
+    yet (so a reload, or sessions arriving after the calendar, never reads
+    as everything deleted); anything this phone wrote itself
+    (`noteMine()`, called from every write path).
+  - **Not push.** Like messages, heard while Minutes is open on a phone;
+    ROADMAP's push section is still the way to a closed phone.
+- Games made from now on carry `by`, so a new game says who added it.
+
+`test/news.js` is new; `test/away.js` gains the admin and the who's-free
+cases.
+
+---
+
 ## Field hours and closures — 2026-10-04 (build 83)
 
 The other half of the owner's ask (*the per-field thing would be amazing*),

@@ -125,6 +125,11 @@ passed and the page was blank).
 block, `test/away.js`) and field opening hours and closures (no rule change).
 **Paste `database.rules.json` again** for time off to leave the phone.
 
+**Then, build 84:** admins act for any coach (time off, calling off, putting
+back), Planner → *Coaches* (who's free at a time, cover for a practice with
+no coach), and club activity under the bell (`clubNews()`, `test/news.js`).
+No rule change: the `away` rule already let admins write any coach's record.
+
 ## Was next: planning for the club (now built, above)
 
 The owner's next ask: help club admins plan future events — who (teams,

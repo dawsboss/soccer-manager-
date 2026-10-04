@@ -690,6 +690,8 @@ a.btn{display:inline-block;text-decoration:none}
 .msghead .pill.urgent{background:#FBE3DD;color:var(--over);border:1px solid var(--over)}
 .convrow{grid-template-columns:1fr auto;text-align:left;width:100%}
 .convrow.unread .pname{font-weight:700}
+.prow.unread .pname{font-weight:700}
+.prow.unread{border-left:3px solid var(--field)}
 .msgdot{display:inline-block;min-width:20px;height:20px;padding:0 6px;border-radius:999px;background:var(--field-deep);
   color:#fff;font-size:12px;font-weight:700;line-height:20px;text-align:center}
 .thread{display:flex;flex-direction:column;gap:8px;margin-bottom:12px;max-height:60vh;overflow-y:auto}

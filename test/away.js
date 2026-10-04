@@ -171,6 +171,60 @@ const blank = { awFrom: '', awTo: '', awStart: '', awEnd: '', awNote: '' };
     check('and the session is not called off', !A.sess.sessions.s1.called, true);
   }
 
+  console.log('\n--- an admin acts for a coach ---');
+  {
+    as('kim');
+    A.click({ act: 'awaynew', u: 'jaz' });
+    check('a coach cannot add another coach\'s time off', A.lastToast(), "Only an admin changes another coach's time off");
+    A.click({ act: 'awayout', u: 'jaz', k: 'e:e1', tid: 't1', d: MON });
+    check('nor call her off', A.lastToast(), "Only an admin changes another coach's time off");
+
+    as('boss');
+    A.click({ act: 'calitem', k: 'practice', tid: 't1', id: 'e1' });
+    check('an admin can call the team\'s coach off', /data-act="awayout" data-u="jaz" data-k="e:e1"/.test(sheet(A)) && />Call Jaz off</.test(sheet(A)), true);
+    A.click({ act: 'awayout', u: 'jaz', k: 'e:e1', tid: 't1', d: MON });
+    check('asked first, by name', /Call Jaz off\?/.test(sheet(A)), true);
+    fill(A, { coNote: 'Suspended' });
+    A.click({ act: 'awayoutgo', u: 'jaz', k: 'e:e1', tid: 't1', d: MON });
+    const r = A.awayAll().find(x => x.kind === 'callout');
+    check('the call-out is the coach\'s, made by the admin', [r.uid, r.by, r.note].join(' '), 'jaz boss Suspended');
+    check('written under her uid', Object.keys(A.sess.dirty).some(k => k.startsWith('away/jaz/')), true);
+    A.click({ act: 'calitem', k: 'practice', tid: 't1', id: 'e1' });
+    check('the entry says who called her off', /Jaz can't make it \(called off by you\)/.test(sheet(A)), true);
+    check('and who is free to cover', /No coach left for it\.<\/b> Free then: Kim\./.test(sheet(A)), true);
+    A.click({ act: 'awayout', u: 'kim', k: 'e:e1', tid: 't1', d: MON });
+    check('but not a coach who doesn\'t coach it', A.lastToast(), "Kim doesn't coach that");
+    A.click({ act: 'awayback', u: 'jaz', id: r.id });
+    check('and puts her back on', A.calledOut('e:e1').length, 0);
+
+    A.click({ act: 'awaynew', u: 'jaz' });
+    check('time off for a coach says whose', /Time off for Jaz/.test(sheet(A)), true);
+    A.click({ act: 'awaykind', v: 'dates' });
+    fill(A, { ...blank, awFrom: TUE, awTo: TUE });
+    A.click({ act: 'awaysave' });
+    const t = A.awayAll().find(x => x.kind === 'dates');
+    check('saved under her, by the admin', t.uid + ' ' + t.by, 'jaz boss');
+    check('she is off on Tuesday', A.coachStatus('jaz', TUE, 18 * 60, 19 * 60).state, 'off');
+
+    console.log('\n--- who is free then ---');
+    A.sess.away = {};
+    check('free when nothing is on', A.coachStatus('kim', MON, 9 * 60, 10 * 60).state, 'free');
+    const b = A.coachStatus('jaz', TUE, 17 * 60 + 45, 18 * 60 + 15);
+    check('busy says where', b.state + ' ' + b.why, 'busy G11 Flight: Practice at 5:30pm; G13 Storm: Practice at 6pm');
+    deepEq('who is free at once', A.freeCoaches(MON, 9 * 60, 10 * 60), ['Jaz', 'Kim'].map(n => n.toLowerCase()));
+    A.ui.view = 'planner'; A.ui.planner = { tab: 'coach', cw: { date: TUE, h0: '18:00', h1: '19:00' } }; A.render();
+    const html = A.rendered();
+    check('the Coaches tab lists every coach with where she is', /G13 Storm: Practice at 6pm/.test(html) && />Busy</.test(html), true);
+    check('with a way to add time off for each', /data-act="awaynew" data-u="kim"/.test(html), true);
+    A.state.access.teams.t2.coaches = { jaz: true };
+    A.render();
+    check('someone taken off every team is no longer a coach here', /Kim/.test(A.rendered().split('Time off')[0]), false);
+    A.sess.away = { jaz: { c: { id: 'c', kind: 'callout', item: 'e:e1', tid: 't1', date: MON, by: 'jaz', at: 1 } } };
+    A.state.access.teams.t2.coaches = { jaz: true, kim: true };
+    const nc = A.clubClashesOn(MON).find(c => c.kind === 'nocoach');
+    check('a practice with no coach names who could cover', /Free then: Kim$/.test(nc.text), true);
+  }
+
   console.log('\n--- against the database ---');
   {
     for (const [who, wants] of [['mum', false], ['jaz', true], ['boss', true]]) {

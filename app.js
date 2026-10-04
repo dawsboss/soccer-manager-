@@ -2,7 +2,7 @@
    Static app. Data lives in localStorage, and mirrors to Firebase Realtime
    Database when a config + workspace code are present. */
 
-const BUILD = '83';
+const BUILD = '84';
 const BUILT = '2026-10-03';
 /* index.html carries the build it was published with. If this file is newer, the
    browser handed us a cached page — the exact failure that has eaten hours. */
@@ -845,12 +845,14 @@ function pushAll() {
    would only mean a refused copy of something derived nagging forever. */
 const DERIVED = /^access\/(index|teamIndex|coachIndex|teamParents)(\/|$)/;
 function remoteSet(path, value) {
+  noteMine(path);
   if (!fb) return;
   const v = value === undefined ? null : value;
   if (DERIVED.test(path)) { const w = Promise.resolve(fb.set(fb.ref(fb.db, fb.base + '/' + path), v)); w.catch(() => { }); return w; }
   return sendPending(path, notePending(path, v), v);
 }
 function remoteDel(path) {
+  noteMine(path);
   if (!fb) return;
   if (DERIVED.test(path)) { Promise.resolve(fb.remove(fb.ref(fb.db, fb.base + '/' + path))).catch(() => { }); return; }
   sendPending(path, notePending(path, null, true), null, true).catch(() => { });
@@ -2186,8 +2188,9 @@ function threadUnread(tid, fam) {
   return threadMsgs(tid, fam).filter(x => x.by !== me.uid && !x.status && (x.at || 0) > mark).length;
 }
 function unreadCount() {
-  if (!msgFor) return 0;
-  let n = 0;
+  const news = newsFor() ? newsUnread() : 0;
+  if (!msgFor) return news;
+  let n = news;
   for (const t of msgTeams()) n += notices(t.id).filter(noticeUnread).length;
   for (const t of staffTeams()) for (const fam of Object.keys(msgs.dm[t.id] || {})) n += threadUnread(t.id, fam) ? 1 : 0;
   for (const t of famTeams()) n += threadUnread(t.id, me.uid) ? 1 : 0;
@@ -2280,6 +2283,11 @@ function queueMsg(kind, tid, fam, text, extra) {
 
 /* ---- screens ---- */
 function viewInbox() {
+  const news = newsFor() ? newsCard() : '';
+  if (news && !msgOn()) return `<div class="stack">${news}</div>`;
+  return news ? viewInboxMsgs().replace('<div class="stack">', '<div class="stack">' + news) : viewInboxMsgs();
+}
+function viewInboxMsgs() {
   if (!msgOn() && !wsRead && fbConfig().apiKey) return `<div class="empty"><strong>Connecting…</strong>Messages appear once Minutes has reached the club.</div>`;
   if (!msgOn()) return `<div class="empty"><strong>No messages here</strong>
     ${!anyAdmins() ? 'Messages start once the club has an admin.' : 'Messages are for the teams you coach, track or have a child in.'}</div>`;
@@ -2441,7 +2449,7 @@ function msgPaint() {
 function paintBell(shut) {
   const n = shut ? 0 : unreadCount();
   const b = $('#inboxBtn');
-  if (b) { b.hidden = !!shut || !msgOn(); b.dataset.n = n ? String(n) : ''; }
+  if (b) { b.hidden = !!shut || !(msgOn() || (newsFor() && newsItems().length)); b.dataset.n = n ? String(n) : ''; }
   const c = $('#inboxN'); if (c) c.textContent = n ? (n > 9 ? '9+' : String(n)) : '';
   if (typeof document !== 'undefined') document.title = (n ? `(${n}) ` : '') + 'Minutes — soccer sub tracker';
 }
@@ -4275,7 +4283,7 @@ function render() {
   /* Not before the club has been read: a link to #/messages opened cold on a
      new phone renders before it knows anybody's role, and sending it to the
      club then would lose where it was going for good. */
-  if ((ui.view === 'inbox' || ui.view === 'thread') && !shut && (wsRead || !fbConfig().apiKey) && !msgOn()) ui.view = 'club';
+  if ((ui.view === 'inbox' || ui.view === 'thread') && !shut && (wsRead || !fbConfig().apiKey) && !msgOn() && !(ui.view === 'inbox' && newsFor() && newsItems().length)) ui.view = 'club';
   // the same wait, for the same reason: a family's link to a session opened cold
   if (ui.view === 'sessions' && !shut && (wsRead || !fbConfig().apiKey) && !canSessions()) ui.view = 'club';
   // a parent has no business reading the rest of the squad's names or the plan
@@ -4371,6 +4379,8 @@ function render() {
   watchMessages();
   watchClaims();
   watchSess();
+  clubNews();
+  paintBell(shut);
 }
 
 /* Shown when the rules refuse us. Deliberately not a dead end: both the code and
@@ -9234,6 +9244,7 @@ const fmtMoney = n => { n = Math.round((Number(n) || 0) * 100) / 100; return mon
    worse off than one with no button. A coach's refused write stays on her
    phone, marked, and says so, the way a refused practice plan does. */
 function sessPut(path, value, undo) {
+  noteMine(path);
   const prev = getDeep(sess, path);
   const v = value == null ? null : JSON.parse(JSON.stringify(value));   // the database refuses undefined anywhere in a write
   if (v == null) delDeep(sess, path); else setDeep(sess, path, v);
@@ -11425,6 +11436,26 @@ function awayDuring(u, date, a, b) {
 }
 const awayOn = () => !!me && (!gated() || isAdmin(me.uid) || isCoachAny(me.uid));
 
+/* Where a coach is at a given time: free, due somewhere (and where), or off
+   (time off, or called out of the one thing she'd be at). Only people who
+   coach a team now are coaches here: one taken off every team is gone for
+   good, and time off is the "for now". `skip` leaves out the item being
+   covered, so a coach called out of it doesn't count as busy with it. */
+function coachStatus(u, date, a, b, skip = []) {
+  const off = awayDuring(u, date, a, b);
+  if (off) return { state: 'off', why: awayText(off) };
+  const items = busyItems(date).filter(x => !x.away && x.a < b && a < x.b);
+  const due = items.filter(x => !skip.includes(x.key) && x.coaches.includes(u));
+  if (due.length) return { state: 'busy', why: due.map(x => `${x.label} at ${timeOf(x)}`).join('; ') };
+  // called out of something then, the one being covered included: not free for it
+  const runs = x => (x.tid ? coachesOf(x.tid) : [(sessById(x.key.slice(2)) || {}).coach]).includes(u);
+  const out = items.filter(x => runs(x) && calledOut(x.key).includes(u));
+  // out of the very thing being covered is no cover for it; out of something else, she's free then
+  if (!out.length) return { state: 'free', why: '' };
+  return { state: out.some(x => skip.includes(x.key)) ? 'out' : 'free', why: `called out of ${out.map(x => x.label).join('; ')}` };
+}
+const freeCoaches = (date, a, b, skip = []) => [...coachUids()].filter(u => coachStatus(u, date, a, b, skip).state === 'free').sort((x, y) => coachName(x).localeCompare(coachName(y)));
+
 /* Her own list, on My calendar. */
 let awayForm = null;
 function awayCard() {
@@ -11444,7 +11475,8 @@ function awayFormRead() {
 function sheetAway() {
   const f = awayForm; if (!f) return;
   const chip = (act, v, on, l) => `<button class="chip" type="button" data-act="${act}" data-v="${v}" aria-pressed="${!!on}">${l}</button>`;
-  openSheet(`<h3>Time off</h3>
+  const forOther = f.u && f.u !== me.uid;
+  openSheet(`<h3>${forOther ? 'Time off for ' + esc(coachName(f.u)) : 'Time off'}</h3>
     <div class="chips" style="margin-bottom:10px">${chip('awaykind', 'weekly', f.kind === 'weekly', 'Every week')}${chip('awaykind', 'dates', f.kind === 'dates', 'Dates away')}</div>
     ${f.kind === 'weekly' ? `<p class="lbl">Which days</p><div class="chips" style="margin-bottom:10px">${WEEKDAYS.map((w, i) => chip('awayday', i, f.days.includes(i), w)).join('')}</div>` : ''}
     <div class="grid2">
@@ -11460,11 +11492,12 @@ function sheetAway() {
     <button class="btn wide" data-act="awaysave">Save</button>
     <button class="btn quiet wide" data-act="closesheet" style="margin-top:8px">Cancel</button>`, true);
 }
-function sheetCallOut(key, tid, date) {
-  openSheet(`<h3>Can't make it?</h3>
+function sheetCallOut(key, tid, date, who) {
+  const other = who && who !== me.uid;
+  openSheet(`<h3>${other ? `Call ${esc(coachName(who))} off?` : "Can't make it?"}</h3>
     <p class="muted" style="margin-top:0">${tid ? `The team's other coaches and the club's admins see that you can't. Nothing is called off, and families aren't told.` : `The club's admins see that you can't. The session isn't called off, and families aren't told: call it off or hand it over from the session itself.`}</p>
     <label class="field"><span>Note (optional)</span><input type="text" id="coNote" maxlength="${AWAY_NOTE}" placeholder="Work, ill"></label>
-    <button class="btn wide" data-act="awayoutgo" data-k="${esc(key)}" data-tid="${esc(tid || '')}" data-d="${esc(date || '')}">I can't make it</button>
+    <button class="btn wide" data-act="awayoutgo" data-k="${esc(key)}" data-tid="${esc(tid || '')}" data-d="${esc(date || '')}"${other ? ` data-u="${esc(who)}"` : ''}>${other ? `Call ${esc(coachName(who))} off` : "I can't make it"}</button>
     <button class="btn quiet wide" data-act="closesheet" style="margin-top:8px">Cancel</button>`, true);
 }
 /* For an entry's sheet: who has called out, to those running the team, and
@@ -11474,19 +11507,36 @@ function callOutBlock(key, tid, date, run) {
   const outs = awayAll().filter(r => r.kind === 'callout' && r.item === key);
   const mine = outs.find(r => r.uid === me.uid);
   const staff = tid ? canEditTeam(tid) : run || canAdmin();
-  const list = staff && outs.length ? `<div class="rolebar warn" style="margin-bottom:10px">${outs.map(r => `${esc(r.uid === me.uid ? 'You' : coachName(r.uid))} can't make it${r.note ? ` (${esc(r.note)})` : ''}`).join('<br>')}${tid && coachesOf(tid).length && coachesOf(tid).every(u => outs.some(r => r.uid === u)) ? '<br><b>No coach left for it.</b>' : ''}</div>` : '';
+  const none = tid && coachesOf(tid).length && coachesOf(tid).every(u => outs.some(r => r.uid === u));
+  const it = none ? calItems([tid]).find(x => x.key === key) : null;
+  const cover = it && it.start && canAdmin() ? freeCoaches(it.date, minOf(it.start), it.end ? minOf(it.end) : minOf(it.start) + (it.mins || 60), [key]) : [];
+  const list = staff && outs.length ? `<div class="rolebar warn" style="margin-bottom:10px">${outs.map(r => `${esc(r.uid === me.uid ? 'You' : coachName(r.uid))} can't make it${r.by && r.by !== r.uid ? ` (called off by ${esc(r.by === me.uid ? 'you' : coachName(r.by))})` : ''}${r.note ? ` (${esc(r.note)})` : ''}`).join('<br>')}${none ? `<br><b>No coach left for it.</b>${cover.length ? ` Free then: ${esc(cover.map(coachName).join(', '))}.` : ''}` : ''}</div>` : '';
   const mayOut = tid ? coachesOf(tid).includes(me.uid) : run;
   const future = !date || date >= todayStr();
   const btn = mayOut && future ? (mine ? `<button class="btn quiet wide" data-act="awayback" data-id="${esc(mine.id)}" style="margin-bottom:8px">I can make it after all</button>`
     : `<button class="btn quiet wide" data-act="awayout" data-k="${esc(key)}" data-tid="${esc(tid || '')}" data-d="${esc(date || '')}" style="margin-bottom:8px">I can't make this</button>`) : '';
-  return list + btn;
+  /* An admin calls a coach off it, or puts her back: the coach is said by
+     name, and the record says who made it. */
+  let adm = '';
+  if (canAdmin() && future) {
+    const s0 = !tid ? sessById(key.slice(2)) : null;
+    const cs = (tid ? coachesOf(tid) : s0 ? [s0.coach] : []).filter(u => u !== me.uid);
+    adm = cs.map(u => { const r = outs.find(x => x.uid === u); return r
+      ? `<button class="btn quiet sm" data-act="awayback" data-u="${esc(u)}" data-id="${esc(r.id)}">Put ${esc(coachName(u))} back on</button>`
+      : `<button class="btn quiet sm" data-act="awayout" data-u="${esc(u)}" data-k="${esc(key)}" data-tid="${esc(tid || '')}" data-d="${esc(date || '')}">Call ${esc(coachName(u))} off</button>`; }).join('');
+    if (adm) adm = `<div class="row wrap" style="margin-bottom:10px">${adm}</div>`;
+  }
+  return list + btn + adm;
 }
 const AWAY_ACTS = new Set(['awaynew', 'awaykind', 'awayday', 'awaysave', 'awayrm', 'awayout', 'awayoutgo', 'awayback']);
 function onAwayAct(a, d) {
   // checked here: a record is always the signed-in coach's own, and only a coach or an admin has any
   if (!awayOn()) { closeSheet(); toast(me ? 'Time off is for coaches and admins' : 'Sign in first'); return; }
-  const mine = id => awayOf(me.uid).find(r => r.id === id);
-  if (a === 'awaynew') { awayForm = { kind: 'weekly', days: [], from: '', to: '', start: '', end: '', note: '' }; sheetAway(); return; }
+  // whose: her own, or, for an admin, the coach the button names
+  const who = d.u || (awayForm && awayForm.u) || me.uid;
+  if (who !== me.uid && !canAdmin()) { closeSheet(); toast("Only an admin changes another coach's time off"); return; }
+  const rec = (u, id) => awayOf(u).find(r => r.id === id);
+  if (a === 'awaynew') { awayForm = { u: d.u || me.uid, kind: 'weekly', days: [], from: '', to: '', start: '', end: '', note: '' }; sheetAway(); return; }
   if (a === 'awaykind' || a === 'awayday') {
     awayFormRead();
     if (a === 'awaykind') awayForm.kind = d.v === 'dates' ? 'dates' : 'weekly';
@@ -11502,30 +11552,185 @@ function onAwayAct(a, d) {
     if (f.kind === 'dates' && !okDay(f.from)) { toast('Pick the first day'); return; }
     if (f.kind === 'dates' && okDay(f.to) && f.to < f.from) { toast('The last day is before the first'); return; }
     const id = uid();
-    const rec = { id, kind: f.kind, start, end, note: String(f.note || '').trim().slice(0, AWAY_NOTE), by: me.uid, at: nowMs(),
+    const rec_ = { id, kind: f.kind, start, end, note: String(f.note || '').trim().slice(0, AWAY_NOTE), by: me.uid, at: nowMs(),
       ...(f.kind === 'weekly' ? { days: f.days, from: okDay(f.from) ? f.from : '', to: okDay(f.to) ? f.to : '' } : { from: f.from, to: okDay(f.to) ? f.to : f.from }) };
-    sessPut(`away/${me.uid}/${id}`, rec);
-    awayForm = null; closeSheet(); render(); toast('Saved'); return;
+    sessPut(`away/${who}/${id}`, rec_);
+    awayForm = null; closeSheet(); render(); toast(who === me.uid ? 'Saved' : `Saved for ${coachName(who)}`); return;
   }
   if (a === 'awayrm' || a === 'awayback') {
-    if (!mine(d.id)) { toast('That is not yours to remove'); return; }
-    sessPut(`away/${me.uid}/${d.id}`, null);
-    closeSheet(); render(); toast(a === 'awayback' ? 'You are back on it' : 'Removed'); return;
+    if (!rec(who, d.id)) { toast('That is not yours to remove'); return; }
+    sessPut(`away/${who}/${d.id}`, null);
+    closeSheet(); render(); toast(a === 'awayback' ? (who === me.uid ? 'You are back on it' : `${coachName(who)} is back on it`) : 'Removed'); return;
   }
   if (a === 'awayout' || a === 'awayoutgo') {
     const key = String(d.k || ''), [kind, id] = key.split(':'), tid = d.tid || '';
     // only a coach of the team (or the coach a session names) calls out of it, and only once
     const s = kind === 's' ? sessById(id) : null;
-    if (kind === 's' ? !(s && s.coach === me.uid) : !(tid && coachesOf(tid).includes(me.uid))) { closeSheet(); toast('Only its own coach calls out of that'); return; }
-    if (callOutOf(me.uid, key)) { closeSheet(); toast('You have already said'); return; }
-    if (a === 'awayout') { sheetCallOut(key, tid, d.d); return; }
+    if (kind === 's' ? !(s && s.coach === who) : !(tid && coachesOf(tid).includes(who))) { closeSheet(); toast(who === me.uid ? 'Only its own coach calls out of that' : `${coachName(who)} doesn't coach that`); return; }
+    if (callOutOf(who, key)) { closeSheet(); toast(who === me.uid ? 'You have already said' : `${coachName(who)} is already off it`); return; }
+    if (a === 'awayout') { sheetCallOut(key, tid, d.d, who); return; }
     const it = s ? null : calItems([tid]).find(x => x.key === key);
     if (!s && !it) { closeSheet(); toast('That is not on the calendar any more'); return; }
     const rid = uid();
-    sessPut(`away/${me.uid}/${rid}`, { id: rid, kind: 'callout', item: key, tid, date: (s || it).date || '', start: (s || it).start || '', end: (s || it).end || '',
+    sessPut(`away/${who}/${rid}`, { id: rid, kind: 'callout', item: key, tid, date: (s || it).date || '', start: (s || it).start || '', end: (s || it).end || '',
       title: s ? sessTitle(s) : `${(state.teams[tid] || {}).name || 'Team'}: ${it.title}`, note: String(($('#coNote') || {}).value || '').trim().slice(0, AWAY_NOTE), by: me.uid, at: nowMs() });
-    closeSheet(); render(); toast("Said. The other coaches and the admins can see it"); return;
+    closeSheet(); render(); toast(who === me.uid ? 'Said. The other coaches and the admins can see it' : `${coachName(who)} is called off it`); return;
   }
+}
+
+/* ---------------- club activity ---------------- */
+/* What an admin needs to hear about without going to look: a coach calling
+   out or calling another off, time off, practices, games and events added,
+   moved, called off or deleted on any team, and sessions families booked or
+   asked for. A coach hears the call-outs on her own teams and her sessions,
+   and being called off herself.
+
+   Worked out the way sessNews() works out a family's news: what this phone
+   saw last time, kept per account and club, against what it holds now. The
+   first look at each source tells nobody anything (what's already there is
+   not news), a source that hasn't loaded yet is left alone rather than read
+   as everything gone, and nothing this phone did itself is news to it
+   (noteMine(), from every write path). Nothing is sent anywhere: like
+   messages, it is heard while Minutes is open, and kept to read later. */
+const LS_NEWS = 'sm.clubNews', LS_NEWS_SEEN = 'sm.clubSeen', LS_NEWS_READ = 'sm.clubRead';
+const NEWS_KEEP = 60;
+const mineTouched = new Set();
+let newsLast = '';
+function noteMine(path) {
+  const p = String(path || '').split('/');
+  if (p[0] === 'teams' && p[2] === 'events' && p[3]) mineTouched.add(`e:${p[1]}:${p[3]}`);
+  else if (p[0] === 'matches' && p[1]) mineTouched.add('g:' + p[1]);
+  else if (p[0] === 'sessions' && p[1]) mineTouched.add('s:' + p[1]);
+  else if (p[0] === 'booked' && p[1]) mineTouched.add(p[2] ? `b:${p[1]}:${p[2]}` : 'b:' + p[1]);
+  else if (p[0] === 'away' && p[1] && p[2]) mineTouched.add(`o:${p[1]}:${p[2]}`);
+}
+const newsKey = k => k + ':' + clubKey() + ':' + (me ? me.uid : '');
+const newsGet = (k, dflt) => { try { const v = JSON.parse(localStorage.getItem(newsKey(k)) || 'null'); return v == null ? dflt : v; } catch (e) { return dflt; } };
+const newsItems = () => (me ? arrOf(newsGet(LS_NEWS, [])).filter(x => x && x.title) : []);
+const newsUnread = () => { const r = Number(newsGet(LS_NEWS_READ, 0)) || 0; return newsItems().filter(x => x.at > r).length; };
+const newsFor = () => !!me && (canAdmin() || isCoachAny(me.uid));
+const whenOfIt = (date, start) => `${okDay(date) ? dayLabel(date) : 'No date'}${start ? ' ' + niceTime(start) : ''}`;
+
+/* Everything news is made of, per source: key -> [signature, words, meta]. */
+function newsNow() {
+  const admin = canAdmin(), myTeams_ = new Set(teams().filter(t => coachesOf(t.id).includes(me.uid)).map(t => t.id));
+  const src = { cal: !fb || wsRead, sess: !fb || (sessLoaded.has('sessions') && sessLoaded.has('booked')), away: !fb || sessLoaded.has('away') };
+  const now = {};
+  if (src.cal && admin) {
+    for (const t of teams()) for (const [id, e] of Object.entries(t.events || {})) {
+      if (!e || typeof e !== 'object') continue;
+      now[`e:${t.id}:${id}`] = [[e.date, hm(e.start), e.called || '', e.title || ''].join('|'), `${t.name || 'A team'}: ${e.title || CAL_KIND[e.kind === 'practice' ? 'practice' : 'event']}`,
+        { src: 'cal', kind: e.kind === 'practice' ? 'practice' : 'event', tid: t.id, id, date: e.date, start: hm(e.start), venue: e.venue || '', called: e.called || '', by: e.by || '', club: e.club || '', series: e.series || '' }];
+    }
+    for (const m of Object.values(state.matches || {})) {
+      if (!m || !m.id || !state.teams[m.teamId]) continue;
+      now['g:' + m.id] = [[m.date || '', hm(m.kickoff), m.called || '', m.opponent || ''].join('|'), `${shortTeam(m.teamId)} v ${m.opponent || 'TBC'}`,
+        { src: 'cal', kind: 'game', tid: m.teamId, id: m.id, date: m.date || '', start: hm(m.kickoff), venue: m.venue || '', called: m.called || '', by: m.by || '' }];
+    }
+  }
+  if (src.away) for (const r of awayAll()) {
+    const mineToHear = r.kind === 'callout' && (admin || r.uid === me.uid || (r.tid ? myTeams_.has(r.tid) : (sessById((r.item || '').slice(2)) || {}).coach === me.uid));
+    if (!(admin || mineToHear)) continue;
+    if (r.kind !== 'callout' && !admin) continue;
+    now[`o:${r.uid}:${r.id}`] = ['1', r.kind === 'callout' ? `${coachName(r.uid)} on ${r.title || 'it'}` : `${coachName(r.uid)}'s time off`, { src: 'away', r }];
+  }
+  if (src.sess && admin) {
+    for (const x of sessAll()) {
+      now['s:' + x.id] = [[x.date, x.start, x.called || ''].join('|'), `${sessTitle(x)} with ${x.coachName}`, { src: 'sess', s: x }];
+      for (const b of bookingsOf(x.id)) now[`b:${x.id}:${b.pid}`] = [b.st, `${whoName(b)}: ${sessTitle(x)}`, { src: 'sess', s: x, b }];
+    }
+  }
+  return { now, src };
+}
+function clubNews() {
+  if (!newsFor() || (fb && !wsRead)) return;
+  const { now, src } = newsNow();
+  const seen = newsGet(LS_NEWS_SEEN, null);
+  const old = seen && typeof seen === 'object' ? seen : { src: {}, k: {} };
+  old.src = old.src || {}; old.k = old.k || {};
+  const out = [], groups = {};
+  const by = u => (u && u !== me.uid ? ' · by ' + coachName(u) : '');
+  const go = m => (m.src === 'cal' ? `cal|${m.kind}|${m.tid}|${m.id}` : m.src === 'sess' ? `sess|${m.s.id}` : m.r && m.r.item ? (m.r.item[0] === 's' ? `sess|${m.r.item.slice(2)}` : `cal|${m.r.item[0] === 'g' ? 'game' : 'item'}|${m.r.tid}|${m.r.item.slice(2)}`) : '');
+  const add = (title, body, m) => out.push({ title, body, go: m ? go(m) : '' });
+  for (const [k, [sig, words, m]] of Object.entries(now)) {
+    if (!old.src[m.src]) continue;                              // the first look at a source is not news
+    const was = old.k[k];
+    if (was && was[0] === sig) continue;
+    if (mineTouched.has(k) || (m.b && mineTouched.has('b:' + m.s.id))) continue;
+    if (m.src === 'cal') {
+      const what = m.kind === 'game' ? 'game' : m.kind;
+      if (!was) {
+        if (m.by === me.uid) continue;
+        // a weekly series, or one club-wide booking, is one piece of news, not ten
+        const g = m.club ? 'c:' + m.club : m.series ? 'r:' + m.series : '';
+        if (g) { (groups[g] = groups[g] || []).push({ words, m }); continue; }
+        add(`New ${what}: ${words}`, `${whenOfIt(m.date, m.start)}${m.venue ? ' · ' + m.venue : ''}${by(m.by)}`, m);
+      } else {
+        const [od, os, oc] = was[0].split('|');
+        if (m.called && m.called !== oc) add(`${CALLED[m.called] || 'Called off'}: ${words}`, whenOfIt(m.date, m.start), m);
+        else if (!m.called && oc) add(`Back on: ${words}`, whenOfIt(m.date, m.start), m);
+        else if (od !== m.date || os !== m.start) add(`Moved: ${words}`, `Now ${whenOfIt(m.date, m.start)}`, m);
+      }
+    } else if (m.src === 'away' && !was) {
+      const r = m.r;
+      if (r.by === me.uid) continue;
+      if (r.kind === 'callout') add(r.by && r.by !== r.uid ? `${coachName(r.by)} called ${r.uid === me.uid ? 'you' : coachName(r.uid)} off ${r.title || 'it'}` : `${coachName(r.uid)} can't make ${r.title || 'it'}`,
+        `${r.date ? dayLabel(r.date) + (r.start ? ' ' + niceTime(r.start) : '') : ''}${r.note ? ' · ' + r.note : ''}`, m);
+      else add(`Time off: ${coachName(r.uid)}`, awayText(r), m);
+    } else if (m.src === 'sess') {
+      const x = m.s;
+      if (m.b) {
+        if (m.b.b.by === me.uid) continue;
+        // a time a family booked is said once, from the booking, which is what names the child
+        if (x.slot && m.b.st === 'in' && !was) { add(`Booked by a family: ${sessTitle(x)} with ${x.coachName}`, `${whenOfIt(x.date, x.start)} · ${whoName(m.b)}`, m); continue; }
+        if (m.b.st === 'asked') add(`Asked for a place: ${whoName(m.b)}`, `${sessTitle(x)} with ${x.coachName} · ${whenOfIt(x.date, x.start)}`, m);
+        else if (m.b.st === 'out') add(`Withdrew: ${whoName(m.b)}`, `${sessTitle(x)} with ${x.coachName} · ${whenOfIt(x.date, x.start)}`, m);
+      } else if (!was) {
+        if (x.slot || x.by === me.uid || x.coach === me.uid) continue;
+        add(`New session: ${sessTitle(x)} with ${x.coachName}`, whenOfIt(x.date, x.start), m);
+      } else if (x.called && x.called !== was[0].split('|')[2]) add(`${CALLED[x.called]}: ${sessTitle(x)} with ${x.coachName}`, whenOfIt(x.date, x.start), m);
+    }
+  }
+  for (const list of Object.values(groups)) {
+    const { m, words } = list[0], n = list.length;
+    if (m.club) add(`Booked for ${n} team${n === 1 ? '' : 's'}: ${words.replace(/^[^:]*: /, '')}`, `${whenOfIt(m.date, m.start)}${by(m.by)}`, m);
+    else add(`New weekly ${m.kind}: ${words}`, `${n} week${n === 1 ? '' : 's'} from ${whenOfIt(list.map(x => x.m.date).sort()[0], m.start)}${by(m.by)}`, m);
+  }
+  // gone since last time: a deleted entry or game, or a coach back on something she'd called out of
+  for (const [k, was] of Object.entries(old.k)) {
+    if (now[k] || mineTouched.has(k)) continue;
+    const s0 = k[0] === 'e' || k[0] === 'g' ? 'cal' : k[0] === 'o' ? 'away' : k[0] === 's' || k[0] === 'b' ? 'sess' : '';
+    if (!s0 || !src[s0] || !old.src[s0]) continue;
+    if (s0 === 'cal') add(`Deleted: ${was[1]}`, '', null);
+    else if (s0 === 'away' && / on /.test(was[1])) add(`Back on: ${was[1].replace(' on ', ' is back on ')}`, '', null);
+  }
+  for (const k of [...mineTouched]) mineTouched.delete(k);
+  // what was seen is kept per source; one that hasn't loaded keeps what it had
+  const keep = { src: { ...old.src }, k: {} };
+  for (const [k, v] of Object.entries(old.k)) { const s0 = k[0] === 'e' || k[0] === 'g' ? 'cal' : k[0] === 'o' ? 'away' : 'sess'; if (!src[s0]) keep.k[k] = v; }
+  for (const [k, [sig, words, m]] of Object.entries(now)) keep.k[k] = [sig, words];
+  for (const [s0, ok] of Object.entries(src)) if (ok) keep.src[s0] = 1;
+  // every redraw comes through here, so the store is only written when what was seen has changed
+  const kept = JSON.stringify(keep);
+  if (kept !== newsLast) { newsLast = kept; try { localStorage.setItem(newsKey(LS_NEWS_SEEN), kept); } catch (e) { } }
+  if (!out.length) return;
+  const at = nowMs();
+  const items = [...out.map((x, i) => ({ id: at + '-' + i, at: at + i / 1000, ...x })).reverse(), ...newsItems()].slice(0, NEWS_KEEP);
+  keepStored(newsKey(LS_NEWS), JSON.stringify(items));
+  for (const x of out.slice(0, 3)) ping(x.title, x.body, 'minutes-club-' + x.title);
+  if (out.length > 3) ping('Club activity', `${out.length - 3} more`, 'minutes-club-more');
+}
+/* At the top of the inbox: the latest, newest first, the unread marked. */
+function newsCard() {
+  const items = newsItems(); if (!items.length) return '';
+  const read = Number(newsGet(LS_NEWS_READ, 0)) || 0;
+  const shown = ui.newsAll ? items : items.slice(0, 8);
+  const html = `<div class="card"><div class="spread"><h2 style="margin:0">Club activity</h2><span class="muted">${canAdmin() ? 'the whole club' : 'your teams'}</span></div>
+    <div class="plist" style="margin-top:8px">${shown.map(x => `<button class="prow${x.at > read ? ' unread' : ''}" type="button" data-act="newsopen" data-k="${esc(x.go || '')}" style="grid-template-columns:minmax(0,1fr) auto">
+      <span style="min-width:0"><span class="pname" style="white-space:normal">${esc(x.title)}</span>${x.body ? `<span class="psub">${esc(x.body)}</span>` : ''}</span><span class="msgwhen">${esc(whenShort(Math.floor(x.at)))}</span></button>`).join('')}</div>
+    ${items.length > 8 && !ui.newsAll ? `<button class="btn quiet wide" data-act="newsall" style="margin-top:8px">Show all ${items.length}</button>` : ''}</div>`;
+  try { localStorage.setItem(newsKey(LS_NEWS_READ), JSON.stringify(nowMs() + 1)); } catch (e) { }
+  return html;
 }
 
 /* ---------------- planning for the club ---------------- */
@@ -11554,11 +11759,13 @@ function onAwayAct(a, d) {
    looks. A game against another club is fixed by a league; the planner says
    what it clashes with and never offers to move it. */
 const canPlanClub = () => canAdmin();
-const PLANNER_ACTS = new Set(['planner', 'plback', 'pltab', 'plrange', 'pltm', 'plfind', 'plbook', 'plkind', 'plbookgo', 'plpictm', 'plpic', 'plpicgo']);
+const PLANNER_ACTS = new Set(['planner', 'plback', 'pltab', 'plcw', 'plrange', 'pltm', 'plfind', 'plbook', 'plkind', 'plbookgo', 'plpictm', 'plpic', 'plpicgo']);
 function plannerUi() {
   if (!ui.planner || typeof ui.planner !== 'object') ui.planner = {};
   const p = ui.planner;
-  if (!['clash', 'find', 'pic'].includes(p.tab)) p.tab = 'clash';
+  if (!['clash', 'find', 'pic', 'coach'].includes(p.tab)) p.tab = 'clash';
+  const cw = p.cw && typeof p.cw === 'object' ? p.cw : {};
+  p.cw = { date: okDay(cw.date) ? cw.date : todayStr(), h0: hm(cw.h0) || '17:00', h1: hm(cw.h1) || '18:30' };
   if (![7, 14, 28].includes(p.days)) p.days = 14;
   const today = todayStr();
   const f = p.find && typeof p.find === 'object' ? p.find : {};
@@ -11575,6 +11782,7 @@ function plannerRead() {
   const p = plannerUi(), val = id => { const el = $('#' + id); return el && typeof el.value === 'string' ? el.value : null; };
   for (const [k, id] of [['from', 'plFrom'], ['h0', 'plH0'], ['h1', 'plH1'], ['len', 'plLen'], ['days', 'plDays'], ['field', 'plField']]) { const v = val(id); if (v != null) p.find[k] = k === 'len' || k === 'days' ? Number(v) : v; }
   for (const [k, id] of [['date', 'pcDate'], ['venue', 'pcVenue'], ['h0', 'pcH0'], ['h1', 'pcH1'], ['slot', 'pcSlot']]) { const v = val(id); if (v != null) p.pic[k] = k === 'slot' ? Number(v) : v; }
+  for (const [k, id] of [['date', 'cwDate'], ['h0', 'cwH0'], ['h1', 'cwH1']]) { const v = val(id); if (v != null) p.cw[k] = v; }
   plannerUi();
 }
 const minHm = x => pad2(Math.floor(x / 60) % 24) + ':' + pad2(x % 60);
@@ -11639,7 +11847,7 @@ function clubClashesOn(date) {
     const outs = calledOut(x.key);
     const why = u => outs.includes(u) ? `${coachName(u)} called out` : awayDuring(u, date, x.a, x.b) ? `${coachName(u)} has time off` : '';
     const left = cs.filter(u => !why(u));
-    if (!left.length) out.push({ kind: 'nocoach', text: `No coach for ${x.label} at ${timeOf(x)}: ${cs.map(why).join(', ')}` });
+    if (!left.length) { const cover = freeCoaches(date, x.a, x.b, [x.key]); out.push({ kind: 'nocoach', text: `No coach for ${x.label} at ${timeOf(x)}: ${cs.map(why).join(', ')}${cover.length ? `. Free then: ${cover.map(coachName).join(', ')}` : ''}` }); }
     else if (outs.length) out.push({ kind: 'callout', text: `${outs.map(coachName).join(', ')} called out of ${x.label} at ${timeOf(x)}; ${left.map(coachName).join(', ')} still on` });
   }
   return out;
@@ -11750,10 +11958,10 @@ function viewPlanner() {
   if (!canPlanClub()) return `<div class="empty"><strong>Club admins only</strong>Planning across the club's teams is for its admins.</div>`;
   const p = plannerUi();
   const tab = (k, l) => `<button class="chip" type="button" data-act="pltab" data-k="${k}" aria-pressed="${p.tab === k}">${l}</button>`;
-  const body = p.tab === 'find' ? plannerFind(p) : p.tab === 'pic' ? plannerPic(p) : plannerClashView(p);
+  const body = p.tab === 'find' ? plannerFind(p) : p.tab === 'pic' ? plannerPic(p) : p.tab === 'coach' ? plannerCoaches(p) : plannerClashView(p);
   return `<div class="stack">
     <div class="spread"><h2>Planning for the club</h2><button class="btn quiet sm" data-act="plback">Back</button></div>
-    <div class="chips">${tab('clash', 'Clashes')}${tab('find', 'Find a time')}${tab('pic', 'Picture day')}</div>
+    <div class="chips">${tab('clash', 'Clashes')}${tab('find', 'Find a time')}${tab('coach', 'Coaches')}${tab('pic', 'Picture day')}</div>
     ${body}</div>`;
 }
 function plannerClashView(p) {
@@ -11769,6 +11977,35 @@ function plannerClashView(p) {
       : `<div class="empty"><strong>Nothing collides</strong>No two things at one place at once, no coach due in two places or on time off, and no family with children due in two places, in the next ${p.days} days.</div>`}
     ${off.length ? `<div class="card"><h4 style="margin:0 0 6px">Coaches' time off</h4>${off.map(r => `<p style="margin:0 0 4px"><b>${esc(coachName(r.uid))}</b> · ${esc(awayText(r))}</p>`).join('')}</div>` : ''}
     <p class="muted">From every team's games and calendar, the training sessions, who coaches which team, and which families have children on which teams. A place is a field from Fields where one matches, or the same words typed. Nothing here is stored or sent.</p>`;
+}
+/* Who can coach then: every coach, free first, each saying where she is
+   otherwise, with her time off below and a way for the admin to add some or
+   call her off. */
+function plannerCoaches(p) {
+  const c = p.cw, a = minOf(c.h0), b = Math.max(minOf(c.h1), a + 15);
+  const order = { free: 0, out: 1, busy: 2, off: 3 };
+  const label = { free: 'Free', out: 'Free', busy: 'Busy', off: 'Off' };
+  const rows = [...coachUids()].map(u => ({ u, ...coachStatus(u, c.date, a, b) }))
+    .sort((x, y) => order[x.state] - order[y.state] || coachName(x.u).localeCompare(coachName(y.u)));
+  const teamsOf = u => teams().filter(t => coachesOf(t.id).includes(u)).map(t => t.name || 'Team').join(', ');
+  return `<div class="card">
+    <div class="grid2"><label class="field"><span>Day</span><input type="date" id="cwDate" value="${esc(c.date)}"></label>
+      <span></span></div>
+    <div class="grid2"><label class="field"><span>From</span><input type="time" id="cwH0" value="${esc(c.h0)}"></label>
+      <label class="field"><span>Until</span><input type="time" id="cwH1" value="${esc(c.h1)}"></label></div>
+    <button class="btn wide" data-act="plcw">Who's free</button></div>
+    ${rows.length ? `<div class="plist">${rows.map(r => `<div class="prow" style="grid-template-columns:1fr auto">
+      <span><span class="pname">${esc(coachName(r.u))}</span><span class="psub">${esc([teamsOf(r.u), r.why].filter(Boolean).join(' · '))}</span></span>
+      <span class="tag${r.state === 'off' || r.state === 'busy' ? ' off' : ''}">${label[r.state]}</span></div>`).join('')}</div>`
+      : `<div class="empty"><strong>No coaches yet</strong>Give someone a coach's role on a team under People.</div>`}
+    <div class="card"><h2 style="margin-bottom:6px">Time off</h2>
+      ${[...coachUids()].sort((x, y) => coachName(x).localeCompare(coachName(y))).map(u => {
+    const recs = awayOf(u).filter(r => awayCurrent(r));
+    return `<div style="margin-bottom:10px"><div class="spread"><b>${esc(coachName(u))}</b><button class="btn quiet sm" data-act="awaynew" data-u="${esc(u)}">Add</button></div>
+        ${recs.map(r => `<div class="spread" style="margin-top:4px"><span class="muted">${esc(awayText(r))}${r.by && r.by !== u ? ` · by ${esc(coachName(r.by))}` : ''}</span>
+          <button class="btn quiet sm" data-act="awayrm" data-u="${esc(u)}" data-id="${esc(r.id)}">Remove</button></div>`).join('') || '<span class="muted">None</span>'}</div>`;
+  }).join('') || '<p class="muted">No coaches yet.</p>'}
+      <p class="muted" style="margin-bottom:0">Time off is "for now". Taking someone off a team for good is under People; once she coaches no team she isn't listed here.</p></div>`;
 }
 function plannerFind(p) {
   const f = p.find, ts = teams();
@@ -11842,6 +12079,7 @@ function onPlannerAct(a, d) {
   if (a === 'planner') { ui.view = 'planner'; render(); toTop(); return; }
   if (a === 'plback') { ui.view = 'admin'; render(); return; }
   if (a === 'pltab') { p.tab = d.k; render(); return; }
+  if (a === 'plcw') { render(); return; }
   if (a === 'plrange') { p.days = Number(d.v); render(); return; }
   if (a === 'pltm') {
     if (d.v === 'all') p.find.tids = [];
@@ -13538,6 +13776,16 @@ function onAct(e) {
   if (SESS_ACTS.has(a)) { onSessAct(a, d); return; }
   if (PLANNER_ACTS.has(a)) { onPlannerAct(a, d); return; }
   if (AWAY_ACTS.has(a)) { onAwayAct(a, d); return; }
+  if (a === 'newsall') { ui.newsAll = true; render(); return; }
+  if (a === 'newsopen') {
+    const [k, kind, tid, id] = String(d.k || '').split('|');
+    if (k === 'sess' && sessById(kind)) { sheetSess(kind); return; }
+    if (k === 'cal' && state.teams[tid]) {
+      const it = calItems([tid]).find(x => x.id === id && (kind === 'item' || x.kind === kind));
+      if (it) { sheetCalItem(it.kind, tid, id); return; }
+    }
+    toast('That is not here any more'); return;
+  }
 
   if (a === 'practab') {
     const p = practiceUi();
@@ -14888,7 +15136,7 @@ function onAct(e) {
     if (d.id) { commit(`matches/${d.id}`, { ...state.matches[d.id], ...base }); ui.matchId = d.id; }
     else {
       const id = uid();
-      commit(`matches/${id}`, { id, teamId: t.id, currentHalf: 1, periods: {}, planned: {}, positions: {}, stints: {}, createdAt: Date.now(), ...base });
+      commit(`matches/${id}`, { id, teamId: t.id, currentHalf: 1, periods: {}, planned: {}, positions: {}, stints: {}, createdAt: Date.now(), ...(me ? { by: me.uid } : {}), ...base });
       ui.matchId = id; ui.view = 'game'; ui.gameView = 'subs';
     }
     if (pick === 'custom') { ui.editFid = GAME_SHAPE; ui.view = 'formation'; }
