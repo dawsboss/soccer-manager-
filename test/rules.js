@@ -616,23 +616,17 @@ reads('owners are not world-readable', OUT, 'shareOwners/sh1', false);
 
 /* ---------------- a calendar of your own ---------------- */
 
-/* AVAILABILITY.md, "My calendar is yours, not a club's". Her summary of each
-   club is hers alone; her busy times are readable by anyone signed in, carry
-   nothing but times, and cannot be written at all until she says so. */
+/* AVAILABILITY.md, "My calendar is yours, not a club's". Her phone reads her
+   other clubs itself, so nothing about a club is stored under her; her busy
+   times are readable by anyone signed in, carry nothing but times, and
+   cannot be written at all until she says so. */
 {
   console.log('\n--- my calendar, across clubs ---');
   const P = 'people/coach/';
-  const item = { k: 'practice', d: '2026-10-05', s: '17:00', e: '18:30', t: 'Practice', p: 'Lakeside', n: 'Flight' };
-  writes('I write my summary of a club', COACH, P + 'cal/CLUB', { name: 'Lakeside SC', at: NOW, items: { i1: item } }, true);
-  writes('not somebody else\'s', ADM, P + 'cal/CLUB', { name: 'x', at: NOW }, false);
-  writes('nor with a field it does not know', COACH, P + 'cal/CLUB', { at: NOW, items: { i1: { ...item, kid: 'Ella' } } }, false);
-  DB.people = { coach: { cal: { CLUB: { name: 'Lakeside SC', at: NOW, items: { i1: item } } } } };
-  reads('I read it', COACH, P + 'cal', true);
-  reads('an admin of the club does not', ADM, P + 'cal', false);
-  reads('nor the app owner', OWNER, P + 'cal', false);
+  writes('no summary of a club is kept for her anywhere', COACH, P + 'cal/CLUB', { name: 'Lakeside SC', at: NOW }, false);
+  writes('nor anything else under her name', COACH, P + 'notes', { x: 1 }, false);
   reads('nobody lists everyone', OWNER, 'people', false);
-  writes('I clear it', COACH, P + 'cal', null, true);
-
+  DB.people = { coach: {} };
   const busy = { at: NOW, b: { i1: { d: '2026-10-05', s: '17:00', e: '18:30' } } };
   writes('private by default: no busy times while sharing is off', COACH, P + 'busy/abc123', busy, false);
   writes('I say whether to share', COACH, P + 'set', { share: true, at: NOW }, true);

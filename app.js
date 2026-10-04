@@ -2,7 +2,7 @@
    Static app. Data lives in localStorage, and mirrors to Firebase Realtime
    Database when a config + workspace code are present. */
 
-const BUILD = '87';
+const BUILD = '88';
 const BUILT = '2026-10-04';
 /* The version of database.rules.json this app was written against. The rules
    carry the same number in rulesVersion's .write, which accepts that number
@@ -11,7 +11,7 @@ const BUILT = '2026-10-04';
    never pasted look exactly like a coach with no signal: "saved on this phone
    only", one feature at a time. test/rules.js holds the two numbers together
    and fails when the rules change without this going up. */
-const RULES_VERSION = 3;
+const RULES_VERSION = 4;
 /* index.html carries the build it was published with. If this file is newer, the
    browser handed us a cached page — the exact failure that has eaten hours. */
 const pageBuild = () => {
@@ -712,6 +712,7 @@ function overlayPending(target, under) {
 }
 /* The connect-time read: the club's copy, with what this phone made and the
    club hasn't got laid over it, then all of that sent again. */
+// SERVER.md: stays with a server too: the phone still works offline first.
 function mergeConnect(v) {
   const remote = { teams: v.teams || {}, matches: v.matches || {}, access: v.access || {}, rsvp: v.rsvp || {} };
   const owed = [];
@@ -728,6 +729,7 @@ function mergeConnect(v) {
   state = remote;
   return owed;
 }
+// SERVER.md: stays with a server too: the phone still works offline first.
 function flushPending() {
   if (!fb) return;
   for (const [p, e] of pendingList()) sendPending(p, e.n, e.v, e.del).catch(() => { });
@@ -794,6 +796,7 @@ function paintSync() {
    this sends it on every connect too, so a plan made offline reaches the
    club even if nobody opens Plans again. Messages do the same from their
    outbox whenever the app is open. */
+// SERVER.md: stays with a server too: the phone still works offline first.
 function flushTraining() {
   if (!fb || !me) return;
   for (const k of Object.keys(train.dirty || {})) { const i = k.indexOf('/'); if (i > 0) sendPractice(k.slice(0, i), k.slice(i + 1)); }
@@ -905,6 +908,7 @@ const ROLE_LABEL = { owner: 'App owner', admin: 'Org admin', coach: 'Coach', tra
    around in history, and needs a deploy to change. Set it by hand in the
    Firebase console; the rules make it read-only to everyone. */
 let appOwners = {};
+// SERVER.md: opens buttons the rules don't back (rules.js gap 2); a server would make it a real role.
 const isOwner = () => !!(me && appOwners[me.uid]);
 const canAdmin = () => isOwner() || (me && isAdmin(me.uid));
 /* Mirrors what the security rule checks, so the UI and the database agree. */
@@ -934,6 +938,7 @@ function logAccess(act, targetUid, extra) {
 }
 const auditLog = () => Object.values(acc().log || {}).sort((a, b) => b.at - a.at);
 
+// SERVER.md: a lookup table rebuilt by phones on connect; a server trigger would keep it true at once.
 function syncIndex(uid) {
   if (!uid) return;
   syncCoachIndex(uid);
@@ -963,6 +968,7 @@ function syncIndex(uid) {
    A tracker can still write more of a match than the interface offers her. That
    is the limit of what a rule can express without per-field rules, and AUTH.md
    already says so; what this closes is the cross-team hole and the parent one. */
+// SERVER.md: a lookup table rebuilt by phones on connect; a server trigger would keep it true at once.
 function syncTeamIndex(tid) {
   if (!tid) return;
   const ta = teamAccess(tid), want = {};
@@ -994,6 +1000,7 @@ function coachTeamOf(uid) {
   const ts = acc().teams || {};
   return Object.keys(ts).sort().find(tid => ((ts[tid] || {}).coaches || {})[uid]) || null;
 }
+// SERVER.md: a lookup table rebuilt by phones on connect; a server trigger would keep it true at once.
 function syncCoachIndex(uid) {
   if (!uid) return;
   const now = (acc().coachIndex || {})[uid] || null;
@@ -1035,6 +1042,7 @@ function parentsWanted(tid) {
     for (const u of Object.keys(p.guardians || {})) if (!want[u]) want[u] = p.id;
   return want;
 }
+// SERVER.md: a lookup table rebuilt by phones on connect; a server trigger would keep it true at once.
 function syncTeamParents(tid) {
   if (!tid || !me || !state.teams[tid]) return;
   if (!isAdmin(me.uid) && !isCoach(tid, me.uid)) return;
@@ -1091,6 +1099,7 @@ function claimTeamIds(tid) {
    sharing on. The id lives on the game, so it follows the game and dies with
    it. Readers never make one: the button that needs it waits for the coach's
    phone to have published. */
+// SERVER.md: an older game gets its link from whichever phone opens it next; a server would give it one.
 function ensureFixtureShares(t) {
   if (!t || !t.share || !canEditTeam(t.id)) return false;
   let made = false;
@@ -1299,6 +1308,7 @@ let rtdb = null;        // { db, mod } once the database module has loaded, code
    written a higher number). Asked once a session, by an admin's phone,
    because an admin is the one who can paste them. */
 let rulesCheck = null;
+// SERVER.md: an admin pastes the rules by hand and her phone checks; a server deploys them with the code.
 function checkRules() {
   if (!rtdb || rulesCheck) return;
   rulesCheck = 'asking';
@@ -1424,6 +1434,7 @@ function inviteScreen() {
    a write against what is there when it arrives. The first four writes are
    the grant; the rest is bookkeeping, and a refusal there leaves the grant
    standing — an admin's device rebuilds the team index on its next connect. */
+// SERVER.md: several writes in the order the rules need; a server would do it in one call.
 async function redeemInvite() {
   if (!invite || invite.status !== 'ready' || !rtdb || !me) return;
   const id = invite.id, v = invite.doc, who = me.uid, ws = v.ws, at = nowMs();
@@ -1472,6 +1483,7 @@ async function redeemInvite() {
    half-made one is not cheap to explain. The code is long and random, so the
    trust-on-first-use window rules.js prints is a code nobody else knows. */
 let newClubBusy = false;
+// SERVER.md: a new club claimed by the first writer (trust-on-first-use); a server would issue it.
 async function createClub(name) {
   if (!rtdb || !me || newClubBusy) return false;
   const code = 'sm-' + uid() + uid(), who = me.uid, at = nowMs();
@@ -1542,6 +1554,7 @@ function watchMyClubs() {
 /* Keep this account's list of clubs true without anybody being told to: any
    device that reads a club it holds a role in writes the bookmark, so people
    who joined before this existed pick it up on their next connect. */
+// SERVER.md: the bookmark is kept true by whichever phone reads the club; a server would write it with the role.
 function noteMyClub() {
   const code = wsCode();
   if (!rtdb || !me || !code || !myClubs || isSandbox()) return;
@@ -1709,6 +1722,7 @@ function sheetSquadInvites(tid) {
     : `<p class="muted">Every player on the squad has a parent linked.</p>`}
     <button class="btn quiet wide" data-act="closesheet">Done</button>`);
 }
+// SERVER.md: one invite at a time from the admin's phone; a server would make the squad's in one call.
 async function inviteSquad(tid) {
   const t = state.teams[tid];
   if (!t || !canAdmin()) { toast('Club admins only'); return; }
@@ -1969,6 +1983,7 @@ function claimMatches(t, c) {
   return players(t).filter(p => p.active !== false && nums.includes(String(p.number ?? '').trim().toLowerCase()));
 }
 
+// SERVER.md: approval written before the index entry, for the rules; a server would do it in one call.
 async function approveClaim(tid, u, pids) {
   const t = state.teams[tid];
   if (!t || !mayGrant(tid)) { toast('Club admins and that team’s coaches only'); return; }
@@ -2111,6 +2126,7 @@ function rootSet(p, v) {
    squad's cache is kept for an unsynced game, but nothing here exists only on
    this device except the outbox, and a private conversation does not belong on
    a phone somebody else may sign in on next. */
+// SERVER.md: notices heard only while the page is open; a server sender would push them.
 function watchMessages() {
   const key = me && rtdb && fb && wsCode() && !needsSignIn() ? clubKey() + '|' + me.uid : null;
   if (key !== (msgFor && msgFor.key)) {
@@ -3082,6 +3098,7 @@ async function trainingCopy(extra = {}) {
   });
   return { T, missed, known };
 }
+// SERVER.md: a backup is an admin remembering to tap; a server would take them nightly.
 async function backupDoc() {
   const { T, missed } = await trainingCopy();
   return { doc: { ...clone(state), training: T, savedAt: nowMs(), build: BUILD }, missed };
@@ -3493,6 +3510,7 @@ function importSummary(c) {
 /* Writes at the depth the rules sit at: a whole team or game only when it is
    new, a single field of one that already exists. The same order a
    hand-entered team and its games would go out in. */
+// SERVER.md: one write at a time from the admin's phone; a server would apply the whole file or none.
 function applyImport(plan) {
   for (const [path, value] of plan.writes) { setDeep(state, path, value); remoteSet(path, value); }
   saveLocal();
@@ -4741,7 +4759,8 @@ function render() {
   watchClaims();
   watchSess();
   watchYou();
-  if (!shut) { watchBusy(); scheduleYou(); }
+  watchMirror();
+  if (!shut) { watchBusy(); youPublishSoon(); }
   clubNews();
   paintBell(shut);
 }
@@ -4782,13 +4801,24 @@ function lockScreen() {
 const TEAM_VIEWS = ['matches', 'calendar', 'practice', 'roster', 'season', 'teamset', 'game'];
 const viewScope = (v = ui.view) => v === 'mycal' ? 'me'
   : TEAM_VIEWS.includes(v) || (v === 'formation' && ui.editFid === GAME_SHAPE) ? 'team' : 'club';
+/* The screen itself, for the screens that are not a team's: the row ends in
+   where you are, so Club › People reads as the club's people and never as a
+   team's. Club home is the club alone. */
+const VIEW_CRUMB = {
+  mycal: 'My calendar', setup: 'Your settings', people: 'People', admin: 'Club settings', sessions: 'Training sessions',
+  planner: 'Planner', inbox: 'Messages', thread: 'Messages', mine: 'My players', formation: 'Shapes'
+};
 function crumbs() {
+  const sep = '<span class="crumb-sep">\u203a</span>';
+  const here = VIEW_CRUMB[ui.view] && viewScope() !== 'team'
+    ? `${sep}<span class="crumb" aria-current="page"><span class="crumb-k">${viewScope() === 'me' ? 'Yours' : 'Screen'}</span>${esc(VIEW_CRUMB[ui.view])}</span>` : '';
   if (viewScope() === 'me' && me)
-    return `<button class="crumb" data-act="accountsheet"><span class="crumb-k">You</span>${esc(me.name || me.email || 'Your account')}</button>`;
+    return `<button class="crumb" data-act="accountsheet"><span class="crumb-k">You</span>${esc(me.name || me.email || 'Your account')}</button>${here}`;
   const org = (acc().org || {}).name || 'Club';
   const t = viewScope() === 'team' ? team() : null;
   const m = ui.view === 'game' ? match() : null;
   const out = [`<button class="crumb crumb-club" data-act="goview" data-v="club">${clubCrest('xs')}<span><span class="crumb-k">Club</span>${esc(org)}</span></button>`];
+  if (here) out.push(here);
   if (t) out.push(`<span class="crumb-sep">\u203a</span>
     <button class="crumb" data-act="goteam" data-id="${t.id}"><span class="crumb-k">Team</span>${teamLabel(t)}</button>`);
   if (m) out.push(`<span class="crumb-sep">\u203a</span>
@@ -5383,6 +5413,7 @@ function feedNotify(t, m, x) {
    notification when the tab is in the background and they said yes, otherwise
    a toast on the screen they are looking at, and a buzz either way. The Live
    tab's goals and the messages both come through here. */
+// SERVER.md: a notification from an open page only; real push needs a server sender.
 function ping(title, body, tag, buzz) {
   let shown = false;
   try {
@@ -8032,6 +8063,7 @@ function mergePractices(tid, remote, resend) {
    deleted on purpose from bringing the entry back. A plan with something
    pending stays where it is until it's sent, unless there is no database to
    send it to, in which case this phone's copy is the only one there is. */
+// SERVER.md: old plans moved by whichever phone opens them; a server would migrate once.
 function movePlans(tid, drawing = false) {
   if (!canPlan(tid)) return 0;
   const t = state.teams[tid], local = !fb || !wsCode();
@@ -9590,6 +9622,7 @@ function hoursText(f) {
 }
 /* Why the field can't be used then, in words, or '' if it can. */
 const DAYS_LONG = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+// SERVER.md: permits and hours checked only on the phone; a server could check them on save.
 function fieldShut(f, date, a, b) {
   if (!f || !okDay(date)) return '';
   const c = fieldClosures(f).find(x => x.from <= date && date <= x.until);
@@ -9748,6 +9781,7 @@ function watchSess() {
    hears about families asking and withdrawing. Nobody hears about their own
    taps, and the first read on a phone tells nobody anything: what is already
    there is not news. */
+// SERVER.md: worked out per phone while the page is open; a server would push it.
 function sessNews() {
   if (!me || !sessFor || !sessLoaded.has('sessions') || !sessLoaded.has('booked')) return;
   const lsk = LS_SESS_SEEN + ':' + clubKey() + ':' + me.uid;
@@ -9801,6 +9835,7 @@ function sessNews() {
 /* Everything with a time on one day, across the club: every team's practices,
    games and events, and every session. A team entry ties up its coaches and
    its whole squad; a session its coach and the players booked or asking. */
+// SERVER.md: who is busy, from what this phone holds plus what others' phones published; a server would know it all.
 function busyItems(date) {
   const out = [];
   const span = (start, end, mins) => { const a = minOf(start); let b = end ? minOf(end) : a + (mins || 60); if (b <= a) b += 1440; return [a, b]; };
@@ -9824,8 +9859,8 @@ function busyItems(date) {
      she is due somewhere during it. */
   for (const r of awayAll()) for (const [a, b] of awaySpans(r, date))
     out.push({ key: 'o:' + r.uid + ':' + r.id, kind: 'away', label: `Time off (${coachName(r.uid)})`, a, b, field: null, venue: '', coaches: [r.uid], tid: null, pids: null, away: r });
-  /* Busy at another club: hers from her own summaries, and any coach's who
-     shares it. A coach is due there as she is due here, so it takes her out
+  /* Busy at another club: hers from her other clubs, held on this phone,
+     and any coach's who shares it. A coach is due there as she is due here, so it takes her out
      of find-a-time and her bookable slots and is said as a clash. */
   out.push(...elsewhereOn(date));
   return out;
@@ -9833,6 +9868,7 @@ function busyItems(date) {
 const timeOf = x => `${niceTime(pad2(Math.floor(x.a / 60) % 24) + ':' + pad2(x.a % 60))}`;
 /* What a session collides with, in words for its coach and the admins. Read
    only, worked out from what this phone already holds; nothing is stored. */
+// SERVER.md: clashes worked out on the phone from what it holds; a server could check them on save.
 function sessClashes(s) {
   if (!s || !okDay(s.date) || !s.start || s.called) return [];
   const out = [];
@@ -11076,6 +11112,7 @@ function blockSlots(b) {
 /* What the block offers, as the rule reads it: every slot on the grid the
    coach is free for, with its start as a timestamp. Taken and past slots stay
    listed; the seats and the clock refuse those. */
+// SERVER.md: the slot list the rules read, because rules can't count; a server books directly.
 function openSlotsOf(b) {
   const out = {};
   if (b.off) return out;
@@ -11096,6 +11133,7 @@ function scheduleHeal() {
   if (healTimer || typeof setTimeout !== 'function') return;
   healTimer = setTimeout(() => { healTimer = null; healBlocks(); }, 1500);
 }
+// SERVER.md: slots and seats kept true by the coach's or an admin's phone; a server would book in a transaction.
 function healBlocks() {
   if (!me || (fb && !(sessLoaded.has('avail') && sessLoaded.has('sessions')))) return 0;
   let n = 0;
@@ -11592,7 +11630,6 @@ function myCalLine() {
 }
 function viewMyCal() {
   if (needsSignIn()) return lockScreen();
-  refreshElsewhere();
   const filters = myCalFilters();
   if (!filters.some(([k]) => k === ui.myCal)) ui.myCal = 'all';
   const items = myCalItems();
@@ -11623,98 +11660,156 @@ function sheetMyCalDay(date) {
 }
 
 /* ---------------- my calendar, across clubs ---------------- */
-/* AVAILABILITY.md, "My calendar is yours, not a club's". A phone holds one
-   club at a time, so the others reach My calendar as a summary each of her
-   phones writes about the club it has open, to people/{uid}/cal/{code}, which
-   only she can read. Her busy times (a date and two times, nothing else) go
-   to people/{uid}/busy/{tag} only while she has said they may: private is
-   the default, and the rules refuse them otherwise. */
-const LS_YOU = 'sm.you.v1';                 // per account: her summaries of each club, and whether she shares
-const YOU_BACK = 14, YOU_AHEAD = 183, YOU_MAX = 250, YOU_FRESH = 10 * 60000;
-const YOU_BLANK = () => ({ uid: null, cal: {}, set: null, refused: false });
+/* AVAILABILITY.md, "My calendar is yours, not a club's". A phone is in every
+   club its account is in: the one open on screen is synced in full as it
+   always was, and every other one is listened to as well, read-only, for what
+   My calendar and "who is free" need of it (its teams and games, its sessions
+   and bookable times), and kept on the phone so it is there with no signal.
+   Nothing about a club is written anywhere new to make that work. Her busy
+   times (a date and two times, nothing else) go to people/{uid}/busy/{tag}
+   only while she has said they may: private is the default, and the rules
+   refuse them otherwise. SERVER.md: a server would publish those itself. */
+const LS_MIRROR = 'sm.mirror.v1';           // per account: her other clubs, cut to what My calendar needs
+const MIRROR_WS = ['teams', 'matches', 'access'], MIRROR_TR = ['sessions', 'booked', 'avail'];
+const YOU_BLANK = () => ({ uid: null, clubs: {}, set: null, refused: false });
 let you = YOU_BLANK();
-let youWatch = null;                        // the uid whose own node is being listened to
-let youSent = {};                           // what this session has written: cal codes, and busy tags by their content
-let youFresh = {};                          // code: when this session last read that club itself
+let youWatch = null;                        // the uid whose own setting is being listened to
+let youSent = {};                           // busy tags written this session, by their content
+const mirrorWatch = new Map();              // code: [unsubscribe, …]
+const mirrorLive = new Set();               // codes the database has answered for this session
+let mirrorVer = 0;                          // bumped on every answer, so computed items can be kept
+const mirrorCache = {};                     // code: { ver, day, items }
 const busyOf = {};                          // other coaches' shared busy times, by uid
 const busyWatch = new Map();                // uid: unsubscribe
 function loadYou(u) {
   you = { ...YOU_BLANK(), uid: u };
   try {
-    const d = JSON.parse(localStorage.getItem(LS_YOU + ':' + u) || 'null');
-    if (d && typeof d === 'object') { you.cal = d.cal && typeof d.cal === 'object' ? d.cal : {}; you.set = d.set || null; }
+    const d = JSON.parse(localStorage.getItem(LS_MIRROR + ':' + u) || 'null');
+    if (d && typeof d === 'object') { you.clubs = d.clubs && typeof d.clubs === 'object' ? d.clubs : {}; you.set = d.set || null; }
   } catch (e) { }
 }
-const saveYou = () => { if (you.uid) keepStored(LS_YOU + ':' + you.uid, JSON.stringify({ cal: you.cal, set: you.set })); };
+let mirrorSaveT = null;
+const saveYou = () => { if (you.uid) keepStored(LS_MIRROR + ':' + you.uid, JSON.stringify({ clubs: you.clubs, set: you.set })); };
+function saveYouSoon() {
+  if (mirrorSaveT || typeof setTimeout !== 'function') return;
+  mirrorSaveT = setTimeout(() => { mirrorSaveT = null; saveYou(); }, 1000);
+}
 const youHere = () => { if (me && you.uid !== me.uid) loadYou(me.uid); return me ? you : YOU_BLANK(); };
-/* Hers, not the phone's, like her own drills: gone when she is. */
+const unwatchClub = code => {
+  for (const off of mirrorWatch.get(code) || []) try { if (typeof off === 'function') off(); } catch (e) { }
+  mirrorWatch.delete(code); mirrorLive.delete(code);
+};
+/* Hers, not the phone's, like her own drills: gone when she is. The clubs'
+   own copies (the open one's outbox included) are not touched. */
 function forgetYou() {
-  if (you.uid) try { localStorage.removeItem(LS_YOU + ':' + you.uid); } catch (e) { }
-  you = YOU_BLANK(); youWatch = null; youSent = {}; youFresh = {};
+  if (you.uid) try { localStorage.removeItem(LS_MIRROR + ':' + you.uid); } catch (e) { }
+  for (const code of [...mirrorWatch.keys()]) unwatchClub(code);
+  you = YOU_BLANK(); youWatch = null; youSent = {};
+  for (const k of Object.keys(mirrorCache)) delete mirrorCache[k];
   for (const off of busyWatch.values()) try { if (typeof off === 'function') off(); } catch (e) { }
   busyWatch.clear();
   for (const k of Object.keys(busyOf)) delete busyOf[k];
 }
 const sharing = () => !!(youHere().set && you.set.share === true);
-/* The other clubs she is in, with a summary to show. Only the ones her
-   account still lists, once it has been read: a club she has left, or that
-   has been retired, is not hers to see any more. */
+/* What My calendar needs of another club, and no more: her own children
+   (not the squad), every game's when and where, her own bookable times, and
+   only the bookings that are her children's. The open club's full copy stays
+   where it always was; this is a second, smaller one. */
+// SERVER.md: a phone's cut-down copy of another club; not needed once a server answers for it.
+function mirrorSlim(part, v) {
+  v = v && typeof v === 'object' ? v : {};
+  const mine = u => me && u === me.uid;
+  if (part === 'teams') return Object.fromEntries(Object.entries(v).filter(([, t]) => t && typeof t === 'object').map(([id, t]) => [id, {
+    id, name: t.name || '', events: t.events || {},
+    players: Object.fromEntries(Object.entries(t.players || {}).filter(([, p]) => p && p.guardians && Object.keys(p.guardians).some(mine))
+      .map(([pid, p]) => [pid, { id: pid, name: p.name || '', guardians: { [me.uid]: true } }]))
+  }]));
+  if (part === 'matches') return Object.fromEntries(Object.entries(v).filter(([, m]) => m && typeof m === 'object').map(([id, m]) => [id,
+    Object.fromEntries(['id', 'teamId', 'opponent', 'date', 'kickoff', 'venue', 'called', 'home', 'periodCount', 'periodMinutes', 'currentHalf', 'ended', 'periods', 'createdAt']
+      .filter(k => m[k] !== undefined).map(k => [k, m[k]]))]));
+  if (part === 'access') return { org: { name: ((v.org || {}).name) || '' }, admins: v.admins || {}, index: v.index || {}, teams: v.teams || {}, coachIndex: v.coachIndex || {} };
+  if (part === 'avail') return Object.fromEntries(Object.entries(v).filter(([, b]) => b && mine(b.coach)));
+  return v;
+}
+/* Every club the account is in, other than the one open, listened to for as
+   long as it is: one read per part, and an answer redraws whatever asked. A
+   club left, or retired, is let go, and its copy with it. */
+// SERVER.md: every club held on every phone of hers; a server would answer "my calendar" in one request.
+function watchMirror() {
+  if (!rtdb || !me || !myClubs || isSandbox()) return;
+  youHere();
+  const here = wsCode(), who = me.uid;
+  for (const code of [...mirrorWatch.keys()]) if (code === here || !myClubs[code] || retiredClubs[code]) unwatchClub(code);
+  for (const code of Object.keys(you.clubs)) if (!myClubs[code] || retiredClubs[code]) { delete you.clubs[code]; saveYouSoon(); }
+  const { db, mod } = rtdb;
+  for (const code of Object.keys(myClubs)) {
+    if (code === here || retiredClubs[code] || mirrorWatch.has(code) || code.startsWith(SANDBOX_PREFIX)) continue;
+    const offs = [];
+    mirrorWatch.set(code, offs);
+    const take = (part, sub) => snap => {
+      if (!me || me.uid !== who || !mirrorWatch.has(code)) return;
+      const c = you.clubs[code] = you.clubs[code] || { ws: {}, tr: {} };
+      c[sub][part] = mirrorSlim(part, snap.val());
+      if (sub === 'ws' && part === 'access') c.name = c.ws.access.org.name || (myClubs[code] || {}).name || '';
+      c.at = nowMs();
+      mirrorLive.add(code); mirrorVer++;
+      saveYouSoon();
+      youPublishSoon();
+      render();
+    };
+    for (const p of MIRROR_WS) offs.push(mod.onValue(mod.ref(db, `workspaces/${code}/${p}`), take(p, 'ws'), () => { }));
+    for (const p of MIRROR_TR) offs.push(mod.onValue(mod.ref(db, `training/${code}/${p}`), take(p, 'tr'), () => { }));
+  }
+}
+/* The other clubs she is in that this phone holds a copy of. */
 function youClubs() {
   if (!me) return [];
   const here = wsCode();
-  return Object.entries(youHere().cal).filter(([code, c]) => code !== here && c && typeof c === 'object'
-    && (!myClubs || myClubs[code]) && !retiredClubs[code])
-    .sort((a, b) => (a[1].name || '').localeCompare(b[1].name || ''));
+  return Object.entries(youHere().clubs).filter(([code, c]) => code !== here && c && c.ws && (!myClubs || myClubs[code]) && !retiredClubs[code])
+    .map(([code, c]) => [code, { ...c, name: c.name || ((myClubs || {})[code] || {}).name || 'Another club' }])
+    .sort((a, b) => a[1].name.localeCompare(b[1].name));
 }
-/* Another club's entries, in My calendar's shape. */
+/* Another club, as its own phone would draw her calendar of it: the same
+   functions, run for a moment against its copy instead of this one's.
+   Synchronous, so nothing else can see the swap. Kept until it changes. */
+// SERVER.md: another club's calendar worked out on this phone; a server would do it once.
+function withClub(c, fn) {
+  const s0 = state, x0 = sess;
+  state = { teams: {}, matches: {}, rsvp: {}, ...(c.ws || {}), access: (c.ws || {}).access || {} };
+  sess = { ...SESS_BLANK(), ...(c.tr || {}) };
+  try { return fn(); } catch (e) { return null; } finally { state = s0; sess = x0; }
+}
+function mirrorItems(code, c) {
+  const day = todayStr(), had = mirrorCache[code];
+  if (had && had.ver === mirrorVer && had.day === day) return had.items;
+  const items = withClub(c, () => myCalItems('all', true).map(it => ({ ...it, team: (state.teams[it.tid] || {}).name || '' }))) || [];
+  mirrorCache[code] = { ver: mirrorVer, day, items };
+  return items;
+}
+/* Another club's entries, in My calendar's shape. Read-only here: tapping one
+   would need that club open, so a row says which club it is. */
 function youCalItems(only) {
   const out = [];
   for (const [code, c] of youClubs()) {
     if (only && code !== only) continue;
-    for (const [i, x] of Object.entries(c.items || {})) {
-      if (!x || !okDay(x.d)) continue;
-      out.push({
-        key: 'y:' + code + ':' + i, kind: x.k || 'event', club: code, clubName: c.name || 'Another club', tid: '', id: i,
-        date: x.d, start: hm(x.s), end: hm(x.e), mins: Number(x.m) || 0, title: x.t || CAL_KIND[x.k] || 'Something on',
-        venue: x.p || '', team: x.n || '', called: x.x || ''
-      });
-    }
+    for (const it of mirrorItems(code, c)) out.push({
+      key: 'y:' + code + ':' + it.key, kind: it.kind, club: code, clubName: c.name, tid: '', id: it.id,
+      date: it.date, start: it.start, end: it.end, mins: it.mins, title: it.title, venue: it.venue, team: it.team,
+      called: it.called, status: it.status, firm: it.kind !== 'session' || !!it.firm
+    });
   }
   return out.sort(calOrder);
 }
-/* This club, as a summary: what My calendar shows of it, cut to what a
-   summary needs, from a fortnight back to six months ahead. A session she has
-   only asked for is left out; it is not on yet. */
-function youItems() {
-  const from = addDays(todayStr(), -YOU_BACK), to = addDays(todayStr(), YOU_AHEAD);
-  const out = {};
-  let n = 0;
-  for (const it of myCalItems('all', true)) {
-    if (!it.date || it.date < from || it.date > to || n >= YOU_MAX) continue;
-    if (it.kind === 'session' && !it.firm) continue;
-    const x = { k: it.kind, d: it.date };
-    if (it.start) x.s = it.start;
-    if (it.end) x.e = it.end;
-    if (it.mins) x.m = it.mins;
-    if (it.title) x.t = String(it.title).slice(0, 120);
-    if (it.venue) x.p = String(it.venue).slice(0, 120);
-    const t = state.teams[it.tid];
-    if (t && t.name) x.n = String(t.name).slice(0, 80);
-    if (it.called) x.x = String(it.called).slice(0, 20);
-    out['i' + (++n)] = x;
-  }
-  return out;
-}
-/* What she is busy with, from a summary: firm, on, with a time. Bookable
-   times are not busy; they are when she's free to be booked. */
+/* What she is busy with, from calendar items: firm, on, with a time, from
+   today. Bookable times are not busy; they are when she's free to be booked. */
 function youBusy(items) {
   const out = {};
   let n = 0;
-  for (const x of Object.values(items || {})) {
-    if (!x || !okDay(x.d) || !hm(x.s) || x.x || x.k === 'avail' || x.d < todayStr()) continue;
-    let e = hm(x.e);
-    if (!e) { const b = minOf(hm(x.s)) + (Number(x.m) || 60); e = minHm(Math.min(b, 23 * 60 + 59)); }
-    out['b' + (++n)] = { d: x.d, s: hm(x.s), e };
+  for (const x of items) {
+    if (!x || !okDay(x.date) || !x.start || x.called || x.kind === 'avail' || (x.kind === 'session' && !x.firm) || x.date < todayStr() || n >= 300) continue;
+    let e = x.end;
+    if (!e) e = minHm(Math.min(minOf(x.start) + (Number(x.mins) || 60), 23 * 60 + 59));
+    out['b' + (++n)] = { d: x.date, s: x.start, e };
   }
   return out;
 }
@@ -11727,105 +11822,49 @@ function youWrite(path, value) {
     .then(() => { if (you.refused) { you.refused = false; render(); } return true; },
       () => { if (!you.refused) { you.refused = true; render(); } return false; });
 }
-/* Her shared busy times, one entry per club, from the summaries this phone
-   holds. Only what changed is written. */
+/* Her shared busy times, one entry per club: the open one from its full copy,
+   the others from theirs. Only what changed is written, and only from a phone
+   that has heard from the club this session, so an old copy never overwrites
+   a newer one another phone of hers sent. SERVER.md: this is her phone doing
+   a server's job, and it means a club's change reaches the others only when
+   one of her phones is open. */
+// SERVER.md: her own phone publishes her busy times; a server would answer "is she free" itself.
 function youPublish() {
   if (!me || !rtdb || !sharing()) return;
-  for (const [code, c] of Object.entries(you.cal)) {
-    if (!c || (myClubs && !myClubs[code] && code !== wsCode())) continue;
-    const tag = clubTag(code), b = youBusy(c.items), sig = canon(b);
-    if (youSent['busy:' + tag] === sig) continue;
-    youSent['busy:' + tag] = sig;
+  const clubs = [];
+  const here = wsCode();
+  if (here && wsRead && !isSandbox() && !needsSignIn() && (approved(me.uid) || isAdmin(me.uid))) clubs.push([here, myCalItems('all', true)]);
+  for (const [code] of youClubs()) if (mirrorLive.has(code)) clubs.push([code, youCalItems(code)]);
+  for (const [code, items] of clubs) {
+    const tag = clubTag(code), b = youBusy(items), sig = canon(b);
+    if (youSent[tag] === sig) continue;
+    youSent[tag] = sig;
     youWrite(youPath('busy/' + tag), Object.keys(b).length ? { at: nowMs(), b } : null);
   }
 }
-/* Write this club's summary when it has changed, and once a session anyway
-   so "as of" stays true. Only once the club has been read here: a summary of
-   a copy the club hasn't answered for yet could be days old. */
 let youTimer = null;
-function scheduleYou() {
-  if (youTimer || typeof setTimeout !== 'function') return;
-  youTimer = setTimeout(() => { youTimer = null; noteMyCal(); }, 2000);
+function youPublishSoon() {
+  if (youTimer || typeof setTimeout !== 'function' || !sharing()) return;
+  youTimer = setTimeout(() => { youTimer = null; youPublish(); }, 2000);
 }
-function noteMyCal() {
-  const code = wsCode();
-  if (!me || !rtdb || !code || isSandbox() || !wsRead || denied || purged || needsSignIn()) return false;
-  if (!approved(me.uid) && !isAdmin(me.uid)) return false;
-  youHere();
-  const doc = { name: String((acc().org || {}).name || '').slice(0, 80), at: nowMs(), items: youItems() };
-  const had = you.cal[code];
-  const same = had && canon({ n: had.name || '', i: had.items || {} }) === canon({ n: doc.name, i: doc.items });
-  if (!same || !youSent['cal:' + code]) {
-    you.cal[code] = doc; saveYou();
-    youSent['cal:' + code] = true;
-    youWrite(youPath('cal/' + code), doc);
-  }
-  youPublish();
-  return true;
-}
-/* Her own node: the summaries her other phones wrote, and whether she shares.
-   The newer of two copies of a club wins, so this phone's own word on the
-   club it has open is never overwritten by an older one. */
+/* Whether she shares, which every phone of hers needs to know. */
 function watchYou() {
   if (!rtdb || !me || youWatch === me.uid) return;
   const who = youWatch = me.uid;
   youHere();
   const { db, mod } = rtdb;
-  mod.onValue(mod.ref(db, `people/${who}/cal`), snap => {
-    if (!me || me.uid !== who) return;
-    for (const [code, c] of Object.entries(snap.val() || {}))
-      if (c && typeof c === 'object' && (Number(c.at) || 0) > (Number((you.cal[code] || {}).at) || 0)) you.cal[code] = c;
-    saveYou();
-    youPublish();
-    if (ui.view === 'mycal') render();
-  }, () => { });
   mod.onValue(mod.ref(db, `people/${who}/set`), snap => {
     if (!me || me.uid !== who) return;
     const v = snap.val();
     // a phone that changed it offline keeps its own word until it has been sent
-    if (v && typeof v === 'object' && (Number(v.at) || 0) >= (Number((you.set || {}).at) || 0)) { you.set = { share: v.share === true, at: Number(v.at) || 0 }; saveYou(); youPublish(); }
+    if (v && typeof v === 'object' && (Number(v.at) || 0) >= (Number((you.set || {}).at) || 0)) { you.set = { share: v.share === true, at: Number(v.at) || 0 }; saveYou(); youPublishSoon(); }
     if (ui.view === 'mycal') render();
   }, () => { });
-}
-/* Other clubs, read directly when My calendar opens with a signal: their teams
-   and games, which is where most of a person's calendar is. Sessions and
-   bookable times come from the summary, since they live under training/ and
-   would be a read per kind per club on every open. */
-function refreshElsewhere() {
-  if (!rtdb || !online || !me || !myClubs || isSandbox()) return;
-  for (const code of Object.keys(myClubs)) {
-    if (code === wsCode() || retiredClubs[code] || nowMs() - (youFresh[code] || 0) < YOU_FRESH) continue;
-    youFresh[code] = nowMs();
-    const who = me.uid, base = `workspaces/${code}/`;
-    Promise.all(['teams', 'matches', 'access'].map(k => fetchOnce(base + k))).then(([t, m, a]) => {
-      if (!me || me.uid !== who || !t.ok || !a.ok || code === wsCode()) return;
-      const fresh = clubSummary({ teams: t.v || {}, matches: (m.ok && m.v) || {}, access: a.v || {} });
-      const had = you.cal[code] || {};
-      const items = {};
-      let n = 0;
-      for (const x of Object.values(fresh)) items['i' + (++n)] = x;
-      for (const x of Object.values(had.items || {})) if (x && (x.k === 'session' || x.k === 'avail') && n < YOU_MAX) items['i' + (++n)] = x;
-      const doc = { name: String(((a.v || {}).org || {}).name || (myClubs[code] || {}).name || had.name || '').slice(0, 80), at: nowMs(), items };
-      you.cal[code] = doc; saveYou();
-      youWrite(youPath('cal/' + code), doc);
-      youPublish();
-      if (ui.view === 'mycal') render();
-    });
-  }
-}
-/* Another club's teams and games, summarised exactly as its own phone would:
-   the same functions, run for a moment against its copy instead of this
-   one's. Synchronous, so nothing else can see the swap. Sessions are left
-   out (this phone has none of that club's) and come from its summary. */
-function clubSummary(ws) {
-  const s0 = state, x0 = sess;
-  state = { teams: {}, matches: {}, access: {}, rsvp: {}, ...ws };
-  sess = SESS_BLANK();
-  try { return youItems(); } catch (e) { return {}; } finally { state = s0; sess = x0; }
 }
 /* Others' shared busy times, for the coaches of this club, read on the phones
    that ask who is free: coaches' and admins'. A private calendar has nothing
    there, so the listener just answers empty. */
+// SERVER.md: listening for others' busy times; a server would answer who is free.
 function watchBusy() {
   if (!rtdb || !me || !awayOn()) return;
   const { db, mod } = rtdb;
@@ -11840,16 +11879,17 @@ function watchBusy() {
     busyWatch.set(u, off);
   }
 }
-/* Busy at another club, as busyItems() has it: hers from her summaries,
+/* Busy at another club, as busyItems() has it: hers from her other clubs,
    everyone else's from what they share, leaving out the club open here (its
    own entries are in busyItems already, in full). */
+// SERVER.md: other clubs' busy times, as phones published them; a server would know them first-hand.
 function elsewhereOn(date) {
   const out = [], here = wsCode(), tag = here ? clubTag(here) : '';
   const span = (s, e, m) => { const a = minOf(s); let b = e ? minOf(e) : a + (m || 60); if (b <= a) b += 1440; return [a, b]; };
-  if (me) for (const [code, c] of youClubs()) for (const [i, x] of Object.entries(c.items || {})) {
-    if (!x || x.d !== date || !hm(x.s) || x.x || x.k === 'avail') continue;
-    const [a, b] = span(hm(x.s), hm(x.e), Number(x.m));
-    out.push({ key: `y:${code}:${i}`, kind: 'elsewhere', label: `${c.name || 'Another club'}: ${x.t || 'busy'}`, a, b, field: null, venue: '', coaches: [me.uid], tid: null, pids: null });
+  if (me) for (const x of youCalItems()) {
+    if (x.date !== date || !x.start || x.called || x.kind === 'avail' || !x.firm) continue;
+    const [a, b] = span(x.start, x.end, x.mins);
+    out.push({ key: x.key, kind: 'elsewhere', label: `${x.clubName}: ${x.title}`, a, b, field: null, venue: '', coaches: [me.uid], tid: null, pids: null });
   }
   for (const [u, byTag] of Object.entries(busyOf)) {
     if (me && u === me.uid) continue;
@@ -11871,22 +11911,20 @@ async function setSharing(on) {
   saveYou();
   render();
   if (!rtdb) return;
+  // the setting first: the rules refuse a busy time while it is not a yes
   const ok = await youWrite(youPath('set'), you.set);
   if (!ok) { toast('Not saved: the database refused it. Its rules may need updating.'); return; }
-  if (on) { for (const k of Object.keys(youSent)) if (k.startsWith('busy:')) delete youSent[k]; noteMyCal() || youPublish(); toast('Your busy times are shared'); }
-  else {
-    for (const k of Object.keys(youSent)) if (k.startsWith('busy:')) delete youSent[k];
-    await youWrite(youPath('busy'), null);
-    toast('Your calendar is private');
-  }
+  youSent = {};
+  if (on) { youPublish(); toast('Your busy times are shared'); }
+  else { await youWrite(youPath('busy'), null); toast('Your calendar is private'); }
 }
-/* How old another club's part of the calendar is, when it is old enough to
-   matter. */
+/* Said only when it matters: a club this phone hasn't heard from this
+   session, with how old its copy is. */
 function youNote() {
-  const old = youClubs().filter(([, c]) => nowMs() - (Number(c.at) || 0) > 86400000);
-  const bits = old.map(([, c]) => `${esc(c.name || 'Another club')} as of ${esc(dayLabel(dayStr(new Date(Number(c.at) || 0))))}`);
-  return (bits.length ? `<p class="muted" style="margin:0">${bits.join('; ')}. It catches up when you're online, or open it.</p>` : '')
-    + (you.refused ? '<p class="rolebar warn">Your other clubs are on this phone only: the database\'s rules may not include My calendar yet.</p>' : '');
+  const old = youClubs().filter(([code]) => !mirrorLive.has(code));
+  const bits = old.map(([, c]) => `${esc(c.name)} as of ${c.at ? esc(dayLabel(dayStr(new Date(Number(c.at))))) + ' ' + esc(niceTime(minHm(new Date(Number(c.at)).getHours() * 60 + new Date(Number(c.at)).getMinutes()))) : 'never'}`);
+  return (bits.length ? `<p class="muted" style="margin:0">${bits.join('; ')}. It catches up as soon as there's a signal.</p>` : '')
+    + (you.refused ? '<p class="rolebar warn">Sharing didn\'t go through: the database\'s rules may not include My calendar yet.</p>' : '');
 }
 function youShareCard() {
   if (!me || !fbConfig().apiKey) return '';
@@ -12336,6 +12374,7 @@ function newsNow() {
   }
   return { now, src };
 }
+// SERVER.md: worked out per phone, per source, while the page is open; a server would push it once.
 function clubNews() {
   if (!newsFor() || (fb && !wsRead)) return;
   const { now, src } = newsNow();
@@ -12546,6 +12585,7 @@ function clubClashesOn(date) {
   }
   return out;
 }
+// SERVER.md: clashes worked out on the phone from what it holds; a server could check them on save.
 function plannerClashes(from, days) {
   const out = [];
   for (let i = 0; i < days; i++) { const date = addDays(from, i); for (const c of clubClashesOn(date)) out.push({ date, ...c }); }
@@ -13089,6 +13129,7 @@ function publicEvents(t, all) {
    whoever they forward it to) holds that game and nothing else: no season, no
    record, no other fixtures, no practices. `fixture` tells the page there is no
    season to go back to. */
+// SERVER.md: built on the phone for the public mirror; a server trigger would build it.
 function fixtureDoc(t, m) {
   return {
     team: { name: t.name || 'Team', logo: t.logo || null },
@@ -13104,6 +13145,7 @@ function fixtureDoc(t, m) {
    players, no minutes, no shirt numbers, and free text through pubText(). What
    keeps team-only entries off the open web is the id, which the app shows only
    to the team's signed-in members, and which a coach can replace at any time. */
+// SERVER.md: built on the phone for the public mirror; a server trigger would build it.
 function calendarDoc(t) {
   const games = {};
   for (const m of teamMatches(t.id)) games[m.id] = {
@@ -13125,6 +13167,7 @@ let pubState = { at: null, error: null };   // surfaced in the share sheet
 let denied = false;                         // rules refused us; show the door
 let purged = null;                          // 'access' | 'retired'
 let retiredClubs = {};                      // app owner's view of what is closed
+// SERVER.md: the share pages are written by whichever phone made the change; a server trigger would write them.
 function schedulePublish() {
   const t = team();
   /* A rehearsal must never reach public/. That tier is world-readable and keyed
@@ -13147,6 +13190,7 @@ function schedulePublish() {
    share sheet reports on, and a republish on load is what heals a fixed
    config. A game's own page and the calendar feed are written only when what
    they carry has changed, or a sub tap would rewrite thirty fixtures. */
+// SERVER.md: the share pages are written by whichever phone made the change; a server trigger would write them.
 function publishTeam(t) {
   const docs = [];
   let mainWrite = null;
@@ -14341,6 +14385,7 @@ function replaceNames(text, subs) {
    here becomes "a player" before it is written, not before it is drawn. Every
    word of every name, as the AI prompt does: "Rose Park" losing a word is the
    safe way round, and the coach is told when it happens. */
+// SERVER.md: the scrub stays, but would run on the server's write of the mirror.
 function pubText(t, s) {
   if (!s) return '';
   const subs = [];

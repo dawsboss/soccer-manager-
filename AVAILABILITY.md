@@ -192,33 +192,37 @@ Then when people need to know my availability they can without going to
 another club's page. But some people want privacy, so there should be a
 default private, and they can make it public if they want.*
 
-So My calendar moves out of the club. The crumbs say **You**, not the club,
-it opens from the account button as well as the club page, and it carries
-every club the account is in.
+Followed up again the same day: *a phone should be a part of as many clubs as
+it wants.*
 
-**A phone only ever holds one club**, and that stays true: switching clubs
-swaps the whole local copy, and the rules decide reading per club. So the
-other clubs reach My calendar as a **summary each of her own phones writes
-about the club it has open**, to a node only she can read:
+So My calendar moves out of the club. The top row says **You › My
+calendar**, not the club, it opens from the account button as well as the
+club page, and it carries every club the account is in.
+
+**A phone is in every club its account is in.** The one on screen is synced
+in full, exactly as before (its outbox, its lookup tables, everything). Every
+other club in `userOrgs` is listened to as well, read-only, for what My
+calendar and "who is free" need of it: its teams, games and access, and its
+sessions, bookings and bookable times (`watchMirror()`). That copy is cut down
+before it is kept (`mirrorSlim()`): her own children and not the squad, every
+game's when and where but not its stints or goals, her own bookable times and
+her own children's bookings. It is kept on the phone per account
+(`sm.mirror.v1:{uid}`) so My calendar has every club with no signal, says "as
+of" for a club it hasn't heard from this session, and is forgotten on sign-out.
+My calendar runs each club's own calendar code against its copy for a moment
+(`withClub()`), so an entry looks the same whichever club is open. Switching
+which club is on screen still reloads the page; that is the one place a
+phone still works on one club at a time.
+
+Nothing about a club is written anywhere new for this: the phone reads what
+it is already allowed to read.
 
 ```
 people/{uid}/
-  cal/{code}    { name, at, items: { i1: { k, d, s, e, m, t, p, n, x }, … } }   // her eyes only
   set           { share: true | false, at }                                  // her eyes only
   busy/{tag}    { at, b: { i1: { d, s, e }, … } }                             // anyone signed in
 ```
 
-- `cal/{code}` is what My calendar shows for a club other than the one
-  open: kind, date, start, end, length, title, place, team name and
-  whether it's called off, from the last 14 days to six months ahead. It
-  is exactly what she sees in that club anyway, so it holds nothing she
-  could not read already; nobody else can read it, not an admin, not the
-  app owner. Any of her phones that has a club open rewrites that club's
-  summary when it changes, and My calendar, opened with a signal, also
-  reads each other club's teams and games itself, so a practice moved in a
-  club she hasn't opened this week still shows moved. Sessions and bookable
-  times come from the summary alone (they are under `training/`, a read too
-  many per club to make on every open), and the screen says how old it is.
 - `set.share` is **off unless she turns it on**, and only she can read it.
 - `busy/{tag}` is her busy times, **and nothing else**: a date, a start and
   an end. No title, no place, no team, no club. The rule refuses any other
@@ -228,7 +232,10 @@ people/{uid}/
   deletes the lot. `{tag}` is `clubTag(code)`, the one-way tag drill links
   already use, so a club's code never leaves it this way, and a viewer in
   one of her clubs can leave out the times of the club she is looking from
-  (she sees those in full already).
+  (she sees those in full already). Her phones write it (`youPublish()`),
+  which means a change in one club reaches the others only while one of her
+  phones is open: a server's job, done by a phone until there is one
+  (`SERVER.md`, *Busy at another club*).
 
 **Who sees what.** With sharing off (the default) a coach is exactly as
 before: each club sees what she does in that club and nothing of the other.

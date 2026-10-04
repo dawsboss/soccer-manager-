@@ -225,7 +225,7 @@ const EXPORTS = `{
   blockAll, blockById, blockSlots, normBlock, slotSid, canEditBlock, kidBusy, blockKids, availView, familyAvail, sheetBlock,
   AVAIL_ACTS, myCalItems, myCalTeams, myCalFilters, viewMyCal, myCalLine, createClub, blockValue, healBlocks, seatsOf, freeSeat, placesTaken, openSlotsOf, slotAt, slotKey,
   /* my calendar, across clubs */
-  get you() { return you }, busyOf, youCalItems, youItems, youBusy, noteMyCal, elsewhereOn, sharing, sheetPersonCal, viewScope, crumbs, refreshElsewhere,
+  get you() { return you }, busyOf, youCalItems, youBusy, youClubs, elsewhereOn, sharing, sheetPersonCal, viewScope, crumbs, watchMirror, mirrorSlim,
   /* safekeeping: what is owed, a full phone, and the backup */
   otherOwed, pendingCount, refusedCount, backupDoc, trainingCopy, isBackupData, keepStored,
   get lastBackup() { return lastBackup }, get storeFail() { return storeFail }, set storeFail(v) { storeFail = v }

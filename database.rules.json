@@ -107,7 +107,7 @@
     },
     "rulesVersion": {
       ".read": true,
-      ".write": "newData.isNumber() && newData.val() === 3"
+      ".write": "newData.isNumber() && newData.val() === 4"
     },
     "public": {
       "$share": {
@@ -546,58 +546,6 @@
     },
     "people": {
       "$uid": {
-        "cal": {
-          ".read": "auth != null && auth.uid === $uid",
-          ".write": "auth != null && auth.uid === $uid && !newData.exists()",
-          "$code": {
-            ".write": "auth != null && auth.uid === $uid",
-            ".validate": "newData.hasChildren(['at'])",
-            "name": {
-              ".validate": "newData.isString() && newData.val().length <= 80"
-            },
-            "at": {
-              ".validate": "newData.isNumber()"
-            },
-            "items": {
-              "$i": {
-                ".validate": "newData.hasChildren(['k', 'd'])",
-                "k": {
-                  ".validate": "newData.isString() && newData.val().length <= 10"
-                },
-                "d": {
-                  ".validate": "newData.isString() && newData.val().length === 10"
-                },
-                "s": {
-                  ".validate": "newData.isString() && newData.val().length <= 5"
-                },
-                "e": {
-                  ".validate": "newData.isString() && newData.val().length <= 5"
-                },
-                "m": {
-                  ".validate": "newData.isNumber()"
-                },
-                "t": {
-                  ".validate": "newData.isString() && newData.val().length <= 120"
-                },
-                "p": {
-                  ".validate": "newData.isString() && newData.val().length <= 120"
-                },
-                "n": {
-                  ".validate": "newData.isString() && newData.val().length <= 80"
-                },
-                "x": {
-                  ".validate": "newData.isString() && newData.val().length <= 20"
-                },
-                "$other": {
-                  ".validate": false
-                }
-              }
-            },
-            "$other": {
-              ".validate": false
-            }
-          }
-        },
         "set": {
           ".read": "auth != null && auth.uid === $uid",
           ".write": "auth != null && auth.uid === $uid",

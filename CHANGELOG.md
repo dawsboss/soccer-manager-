@@ -8,6 +8,36 @@ before this point lives only in the git log.
 
 ---
 
+## A phone in every club; the top row names the screen; SERVER.md — 2026-10-04 (build 88, rules version 4)
+
+The owner: *a phone should be a part of as many clubs as they want. Are there
+other screens that shouldn't show the team in the top row? I think the top
+row should switch to the view you're looking at. And note down everywhere that
+will change when we have a server — a phone having to update that a coach is
+busy for another club is ridiculous in the future.*
+
+- **A phone is in every club its account is in.** The club on screen is still
+  synced in full; every other one is now listened to as well, read-only, for
+  its teams, games, sessions and bookable times, and kept on the phone cut
+  down to what My calendar needs. My calendar shows every club live, works
+  with no signal, and says "as of" for a club it hasn't heard from. This
+  replaces the per-club summary each phone used to write to
+  `people/{uid}/cal`, which is gone, so nothing about a club is stored under a
+  person any more.
+- **The top row names the screen.** Club › People, Club › Training sessions,
+  Club › Planner, Club › Messages, Club › Club settings, Club › Your settings,
+  Club › My players, Club › Shapes; You › My calendar; a team's tabs Club ›
+  Team (› Game) as before.
+- **SERVER.md** lists every job a phone does today that a server would do:
+  busy times across clubs, holding every club, the lookup tables, bookable
+  slots and seats, the share pages, joining and new clubs, notifications and
+  email, the rules, migrations, backups and imports. Each function it names
+  carries a `// SERVER.md:` line, and `test/version.js` fails if one goes
+  missing.
+
+**Rules version 4**: `people/{uid}/cal` removed (version 3 was never
+published). Paste `database.rules.json` to turn sharing on.
+
 ## My calendar is yours, across clubs; import from spreadsheets — 2026-10-04 (build 87, rules version 3)
 
 The owner: *when I go to my settings, my calendar or something else, the team
