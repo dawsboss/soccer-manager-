@@ -8,6 +8,20 @@ before this point lives only in the git log.
 
 ---
 
+## The to-do notes say only what is left — 2026-10-04
+
+`HANDOFF.md` described branches that have all merged since, and everything in
+it was already in this changelog, README, `ROADMAP.md` or CLAUDE.md's known
+gaps, so it is gone. `ROADMAP.md` loses what has shipped (availability
+replies, parents per team in the rules, game-only links, the club's list of
+venues) and two ideas the later *planning for the club* section replaced;
+its training section, which still said nothing in the app loaded the drills,
+now points at `TRAINING.md` and `TRAINING-NEXT.md`. `TRAINING-NEXT.md` drops
+the parts of step 1 that *One Add for a practice* built and the hand-drawn
+pictures *Writing a drill* built; `TRAINING.md`'s build order says so too.
+
+---
+
 ## Writing a drill: five things, then draw it on a pitch — 2026-10-03
 
 The owner: *the write a drill is really confusing for a user. Also I have no

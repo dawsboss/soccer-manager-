@@ -7,19 +7,11 @@ shareable read-only pages and the Cloudflare Worker — and later items assume t
 earlier ones hold. This file was missing from the repository until now; it
 starts with the ideas that do not have a place in that order yet.
 
-## Training: drills, practices, and what needs work
+## Training
 
-`TRAINING.md` has the design. Three shelves of drills (built-in, the club's,
-and each coach's own, which follows her across clubs), practice plans that
-copy their drills the way games copy their shapes, a run mode for the field,
-and a *what needs work* card that reads the game stats before any AI does.
-The built-in library (`drills.js`, 105 drills and a guide to nine positions),
-an animated diagram for every drill (`drill-diagram.js`) and their suite exist;
-nothing in the app loads them yet. Club drills and practice plans are for
-coaches and admins only; parents never see them. Its build order starts with browsing that library, which needs
-no schema change, and its first database step is a new root node,
-`training/{code}`, kept out of the workspace because every phone reads the
-whole workspace on connect.
+`TRAINING.md` is the design and records what is built; `TRAINING-NEXT.md` is
+the brief for what is next (plans reading when and where from the calendar,
+then templates, then the *what needs work* card).
 
 ## Ideas, not scheduled
 
@@ -78,14 +70,8 @@ owner, which is why it is written down here rather than built.
   details, or a calendar entry, that drafts the notice (opponent, kick-off,
   venue). Practices exist now, as calendar entries; *Call it off* is the
   obvious moment to offer one.
-- **Availability replies** — done on the calendar (`rsvp/{tid}/{item}/{pid}`):
-  Going / Not going / Maybe from the parent, which takes a "not going" out of
-  the game's plan through `isOut()` rather than writing `m.out`. What is left
-  is the join with messages: a reminder notice to the families who have not
-  answered (see *Who is coming, next*).
-- **Parents per team in the rules** — done (`access/teamParents`). When the
-  orgs migration happens, it folds into AUTH.md's `teamMembers` index along
-  with `teamIndex`.
+- **When the orgs migration happens**, `access/teamParents` folds into
+  AUTH.md's `teamMembers` index along with `teamIndex`.
 
 ### Calendar sync, beyond the first version
 
@@ -114,13 +100,6 @@ player out of the game's plan by itself, and the coach can override it. Next, wi
   needs a way to reach them, which is the communication work.
 - **A deadline** the coach sets, after which answers close.
 
-### Practice plans
-
-A practice on the calendar is `teams/{tid}/events/{eid}` with `kind:
-'practice'`. Session plans (drills, the focus, who is coaching) belong
-*on* that entry, or keyed by its id, not in a second list of practices that
-can disagree with the calendar about when practice is.
-
 ### Opponents
 
 Explored while building the calendar. What is built today:
@@ -133,13 +112,9 @@ Explored while building the calendar. What is built today:
   families can follow the score of their own child's game, which is a nice side
   effect.
 
-What they can see: that game, by shirt number, and nothing else. (The first
-version's game link carried the season link's id, which reached the whole season;
-game links made then are retired by making a new season link.)
-
-Built since: **a link scoped to one fixture.** Each game is published to its own
-`public/{m.share}`, and that is the id in every game link and in the message,
-so the opponent holds one game and nothing else.
+What they can see: that game, by shirt number, and nothing else — each game is
+published alone at `public/{m.share}`. (Game links sent before that carried the
+season's id; *Make a new link and kill the old one* retires them.)
 
 Two steps further, in increasing cost:
 
@@ -153,14 +128,6 @@ Two steps further, in increasing cost:
    data with rules that answer to two sets of admins. It depends on the
    `orgs/{orgId}` model in AUTH.md, so it waits until that has happened, and
    should not be started before it.
-
-### One calendar for the club
-
-"All my teams" already merges every team an account can see. For an admin that
-is the whole club, which is most of a field-booking view. The missing piece is
-flagging two teams at the same venue at overlapping times. The venue is free text,
-so "same place" needs either a list of the club's fields or a forgiving match.
-Decide which when a club with shared fields asks.
 
 ## Next: planning for the club
 
@@ -206,11 +173,11 @@ coaches' meeting. All the facts are already in the club; nothing joins them up.
 
 ### What is missing, and needs deciding
 
-- **Venues are free text.** "Lakeside Park f2" and "Lakeside Park, field 2"
-  are one pitch. A club list of venues (and pitches) for the picker, matched
-  forgivingly against what is already typed, is the first piece of new data.
-  It is club settings, so it belongs at `access/org/venues` under the admin
-  rule, with no rule change.
+- **Venues — built** as the club's fields, with permits, at
+  `access/org/venues` (`SESSIONS.md`). `fieldOfText()` matches what is
+  already typed and `busyItems()` / `sessClashes()` already join teams,
+  coaches, players and fields for one day: the planner builds on those, not
+  a second set.
 - **When pitches can be had at all.** Council bookings, lights, the school's
   hours. A weekly availability per venue makes "find a time" stop suggesting
   9pm on a Wednesday.
@@ -239,8 +206,6 @@ Wanted alongside attendance: each player's list of drills done. The register is
 keyed by the calendar entry's id (`teams/{tid}/attend/{eid}`), so if a practice
 plan is keyed by the same id, "drills she has done" is the drills on the plans
 of the practices she came to. A plain join, with no data about the child stored
-twice. The training work (`TRAINING.md`, on its own branch) currently proposes
-`training/{code}/practices/{teamId}/{practiceId}` with its own date, time and
-place. Keying it by the calendar entry instead (`practices/{teamId}/{eventId}`),
-and taking the when and where from the entry, avoids two lists of practices that
-disagree about when practice is, and makes the per-player drill list free.
+twice. Decided (2026-10-03): plans are keyed by the calendar entry's id, and new ones
+already are. Moving the old ones and reading when and where from the entry is
+step 1 of `TRAINING-NEXT.md`; build the screen after that.
