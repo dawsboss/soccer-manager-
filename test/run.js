@@ -41,6 +41,7 @@ const SUITES = [
   ['plans', 'practice plans, and how they reach the club'],
   ['sessions', 'training sessions, fields, fees and hours'],
   ['avail', 'coaches\' bookable times, a family booking one, and my calendar'],
+  ['mycal', 'my calendar is the person\'s, across clubs, and private unless she shares it'],
   ['safekeep', 'nothing floats away: one count, a full phone, a whole backup'],
   ['library', 'the club\'s drills and a coach\'s own, and who sees which'],
   ['away', 'coaches\' time off: nights, dates away, calling out'],

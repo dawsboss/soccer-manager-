@@ -184,6 +184,65 @@ entry exists once, under its team or in `training/`, and both calendars draw
 it. It stays out of the top-left club switcher: that button is about which
 club you're in, and a calendar is about you within it.
 
+## My calendar is yours, not a club's
+
+Followed up 2026-10-04: *My calendar should be to my account, so no club
+included, since if I work for more than one my calendar becomes more complex.
+Then when people need to know my availability they can without going to
+another club's page. But some people want privacy, so there should be a
+default private, and they can make it public if they want.*
+
+So My calendar moves out of the club. The crumbs say **You**, not the club,
+it opens from the account button as well as the club page, and it carries
+every club the account is in.
+
+**A phone only ever holds one club**, and that stays true: switching clubs
+swaps the whole local copy, and the rules decide reading per club. So the
+other clubs reach My calendar as a **summary each of her own phones writes
+about the club it has open**, to a node only she can read:
+
+```
+people/{uid}/
+  cal/{code}    { name, at, items: { i1: { k, d, s, e, m, t, p, n, x }, … } }   // her eyes only
+  set           { share: true | false, at }                                  // her eyes only
+  busy/{tag}    { at, b: { i1: { d, s, e }, … } }                             // anyone signed in
+```
+
+- `cal/{code}` is what My calendar shows for a club other than the one
+  open: kind, date, start, end, length, title, place, team name and
+  whether it's called off, from the last 14 days to six months ahead. It
+  is exactly what she sees in that club anyway, so it holds nothing she
+  could not read already; nobody else can read it, not an admin, not the
+  app owner. Any of her phones that has a club open rewrites that club's
+  summary when it changes, and My calendar, opened with a signal, also
+  reads each other club's teams and games itself, so a practice moved in a
+  club she hasn't opened this week still shows moved. Sessions and bookable
+  times come from the summary alone (they are under `training/`, a read too
+  many per club to make on every open), and the screen says how old it is.
+- `set.share` is **off unless she turns it on**, and only she can read it.
+- `busy/{tag}` is her busy times, **and nothing else**: a date, a start and
+  an end. No title, no place, no team, no club. The rule refuses any other
+  field, so a later change to the app cannot put one there by accident, and
+  refuses any busy time at all while `set.share` is not `true` — private is
+  enforced by the database, not by her phone's goodwill. Turning sharing off
+  deletes the lot. `{tag}` is `clubTag(code)`, the one-way tag drill links
+  already use, so a club's code never leaves it this way, and a viewer in
+  one of her clubs can leave out the times of the club she is looking from
+  (she sees those in full already).
+
+**Who sees what.** With sharing off (the default) a coach is exactly as
+before: each club sees what she does in that club and nothing of the other.
+With it on, the coaches and admins of every club she is in see that she is
+busy then, as *busy at another club*, wherever this app already asks who is
+free: find a time, the planner's clashes, covering a call-out, a session's
+clashes, and her own bookable slots. Her **Calendar** on People shows the
+next fortnight of it. Families never see it.
+
+**What the rules cannot hold.** Anyone signed in who knows her uid can read
+her shared busy times; a uid is only ever shown to people in a club with
+her, but it is not a secret. That is what *shared* means, and the switch
+says so.
+
 ## Not built yet, and why
 
 - **A personal calendar feed** to subscribe to. The feed Worker reads only

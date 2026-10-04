@@ -2,7 +2,7 @@
    Static app. Data lives in localStorage, and mirrors to Firebase Realtime
    Database when a config + workspace code are present. */
 
-const BUILD = '86';
+const BUILD = '87';
 const BUILT = '2026-10-04';
 /* The version of database.rules.json this app was written against. The rules
    carry the same number in rulesVersion's .write, which accepts that number
@@ -11,7 +11,7 @@ const BUILT = '2026-10-04';
    never pasted look exactly like a coach with no signal: "saved on this phone
    only", one feature at a time. test/rules.js holds the two numbers together
    and fails when the rules change without this going up. */
-const RULES_VERSION = 2;
+const RULES_VERSION = 3;
 /* index.html carries the build it was published with. If this file is newer, the
    browser handed us a cached page — the exact failure that has eaten hours. */
 const pageBuild = () => {
@@ -419,6 +419,8 @@ async function initAuth() {
       const uid = me ? me.uid : null;
       // her own drills are hers, not the phone's: gone the moment she is
       if (mineUid && mineUid !== uid) forgetMine();
+      // and so is her calendar of every club she is in
+      if (you.uid && you.uid !== uid) forgetYou();
       // identity changed after boot — e.g. someone signs in from the lock
       // screen — so any earlier refusal is stale; read the workspace again
       if (prevUid !== undefined && prevUid !== uid) {
@@ -2654,7 +2656,10 @@ const IMPORT_EXAMPLE = {
     ],
     games: [
       { opponent: 'Riverside', date: '2026-09-06', kickoff: '10:00', venue: 'Lakeside Park', periods: 2, minutes: 30, side: 9, score: '3-1', scorers: [7, 7, 10] },
-      { opponent: 'Northgate', date: '2026-10-04', kickoff: '09:30', venue: 'Northgate Rec, field 2', periods: 2, minutes: 30, side: 9, shape: '3-3-2' }
+      { opponent: 'Northgate', date: '2026-10-04', kickoff: '09:30', venue: 'Northgate Rec, field 2', periods: 2, minutes: 30, side: 9, shape: '3-3-2', home: 'away', arrive: '09:00', kit: 'White shirts' }
+    ],
+    practices: [
+      { date: '2026-09-08', start: '17:30', end: '19:00', where: 'Lakeside Park', weekly: { days: ['Tue', 'Thu'], until: '2026-11-26' } }
     ]
   }],
   fields: [{
@@ -2683,7 +2688,7 @@ function importScore(v) {
 /* Pure: reads `data` against the club as it stands and returns what importing
    it would do. Nothing in state changes until applyImport(). */
 function importPlan(data, cur = state) {
-  const out = { writes: [], sessWrites: [], trainWrites: [], errors: [], warnings: [], counts: { newTeams: 0, teams: 0, newPlayers: 0, players: 0, newGames: 0, games: 0, results: 0, newFields: 0, fields: 0, newSessions: 0, sessions: 0, bookings: 0, training: 0 } };
+  const out = { writes: [], sessWrites: [], trainWrites: [], errors: [], warnings: [], counts: { newTeams: 0, teams: 0, newPlayers: 0, players: 0, newGames: 0, games: 0, results: 0, newPractices: 0, newEvents: 0, entries: 0, newFields: 0, fields: 0, newSessions: 0, sessions: 0, bookings: 0, training: 0 } };
   const put = (path, value) => out.writes.push([path, value]);
   if (!data || typeof data !== 'object' || Array.isArray(data)) { out.errors.push('The file should be one JSON object with a "teams", "fields" or "sessions" list in it.'); return out; }
 
@@ -2696,14 +2701,23 @@ function importPlan(data, cur = state) {
   const fresh = new Set();
   const teamList = Array.isArray(data.teams) ? data.teams : [];
   const looseGames = Array.isArray(data.games) ? data.games : [];
-  const training = ['fields', 'sessions'].some(k => data[k] !== undefined);
-  if (!teamList.length && !looseGames.length && !training) { out.errors.push('Nothing to import: expected a "teams" list, and optionally "games", "fields" and "sessions" lists.'); return out; }
+  const training = ['fields', 'sessions', 'practices', 'events'].some(k => data[k] !== undefined);
+  if (!teamList.length && !looseGames.length && !training) { out.errors.push('Nothing to import: expected a "teams" list, and optionally "games", "practices", "events", "fields" and "sessions" lists.'); return out; }
 
   // drafts of every team touched, so later rows in the file see earlier ones
   const byName = {};
   for (const t of Object.values(cur.teams || {})) if (t && t.name) byName[importKey(t.name)] = { t, isNew: false };
   const gameIndex = {};
   for (const m of Object.values(cur.matches || {})) if (m && m.teamId) gameIndex[[m.teamId, m.date || '', importKey(m.opponent)].join('|')] = m;
+
+  /* A calendar entry is matched by its team, date, start and whether it is a
+     practice, so a second run, or a weekly practice already typed in by hand,
+     adds nothing twice. */
+  const entryIndex = {};
+  const entryKey = (tid, date, start, kind) => [tid, date, start, kind].join('|');
+  for (const t of Object.values(cur.teams || {})) for (const e of Object.values((t && t.events) || {}))
+    if (e && e.id) entryIndex[entryKey(t.id, e.date || '', hm(e.start), e.kind === 'practice' ? 'practice' : 'event')] = e;
+  const freshEntry = new Set();
 
   const teamFor = (name, where, create) => {
     const k = importKey(name);
@@ -2783,11 +2797,28 @@ function importPlan(data, cur = state) {
     const label = `${where} (${opponent})`;
     const date = String(firstOf(g, 'date') ?? '').trim();
     if (date && !/^\d{4}-\d{2}-\d{2}$/.test(date)) { out.errors.push(`${label}: date "${date}" should be written 2026-10-04.`); return; }
-    const kickoff = String(firstOf(g, 'kickoff', 'time') ?? '').trim();
-    if (kickoff && !/^\d{1,2}:\d{2}$/.test(kickoff)) { out.errors.push(`${label}: kick-off "${kickoff}" should be written 09:30.`); return; }
+    const kickoff = String(firstOf(g, 'kickoff', 'time', 'start') ?? '').trim();
+    if (kickoff && !importTime(kickoff)) { out.errors.push(`${label}: kick-off "${kickoff}" should be written 09:30.`); return; }
     const fields = { opponent };
     if (date) fields.date = date;
-    if (kickoff) fields.kickoff = kickoff.padStart(5, '0');
+    if (kickoff) fields.kickoff = importTime(kickoff);
+    /* The match-day details a fixture list carries: home or away, when to
+       be there, and what to wear. Read loosely, since every league writes
+       them its own way, and left out (said) when they can't be read. */
+    const ha = firstOf(g, 'home', 'homeAway', 'ground');
+    if (ha !== undefined) {
+      const h = importHome(ha);
+      if (h) fields.home = h; else out.warnings.push(`${label}: "${ha}" is not home, away or neutral, so it was left out.`);
+    }
+    const arr = firstOf(g, 'arrive', 'arrival', 'arriveBy');
+    if (arr !== undefined) {
+      const at = importTime(arr);
+      if (at) fields.arrive = at; else out.warnings.push(`${label}: arrive by "${arr}" is not a time, so it was left out.`);
+    }
+    const kit = firstOf(g, 'kit', 'uniform', 'colours', 'colors');
+    if (kit !== undefined) fields.kit = String(kit).trim().slice(0, 80);
+    const gn = firstOf(g, 'notes', 'note');
+    if (gn !== undefined) fields.notes = String(gn).trim().slice(0, 2000);
     const venue = firstOf(g, 'venue', 'where', 'location');
     if (venue !== undefined) fields.venue = String(venue).trim();
     const pc = firstOf(g, 'periods', 'periodCount');
@@ -2873,6 +2904,80 @@ function importPlan(data, cur = state) {
     out.counts.newGames++;
   };
 
+  /* A practice or another entry on a team's calendar, as the Calendar tab
+     makes one: teams/{tid}/events/{eid}, one per week for a weekly one,
+     sharing a series id. Team-only unless the file says "public". */
+  const addEntry = (entry, x, where, kind0) => {
+    const t = entry.t;
+    if (!x || typeof x !== 'object') { out.errors.push(`${where}: expected an entry like {"date": "2026-10-06", "start": "17:30", "end": "19:00"}.`); return; }
+    const ty = String(firstOf(x, 'type', 'kind') ?? '').trim();
+    const kind = kind0 || (/practi[cs]e|training/i.test(ty) ? 'practice' : 'event');
+    const title0 = String(firstOf(x, 'title', 'name', 'what') ?? '').trim().slice(0, 80);
+    const label = `${where} (${title0 || CAL_KIND[kind]})`;
+    const errs = out.errors.length;
+    const date = importDate(firstOf(x, 'date'));
+    if (!date) out.errors.push(`${label}: date ${JSON.stringify(firstOf(x, 'date') ?? '')} should be written 2026-10-06.`);
+    const st0 = firstOf(x, 'start', 'time', 'from'), en0 = firstOf(x, 'end', 'finish', 'until', 'to');
+    const start = st0 === undefined ? '' : importTime(st0);
+    if (start === null) out.errors.push(`${label}: start "${st0}" should be written 17:30 or 5:30pm.`);
+    let end = en0 === undefined ? '' : importTime(en0);
+    if (end === null) out.errors.push(`${label}: end "${en0}" should be written 19:00 or 7pm.`);
+    const dur = firstOf(x, 'minutes', 'duration', 'length');
+    if (!end && start && dur !== undefined) {
+      const n = Number(String(dur).replace(/[^0-9.]/g, ''));
+      if (n > 0 && n <= 600) end = minHm((minOf(start) + n) % 1440);
+      else out.warnings.push(`${label}: ${JSON.stringify(dur)} is not a number of minutes, so it has no end time.`);
+    }
+    const rep = firstOf(x, 'weekly', 'repeat', 'repeats');
+    let days = [], until = '';
+    if (rep !== undefined && rep !== false && rep !== '') {
+      const r = typeof rep === 'object' ? rep : { until: rep };
+      until = importDate(firstOf(r, 'until', 'to', 'end', 'ending'));
+      const d = importDays(firstOf(r, 'days', 'day'));
+      if (!until) out.errors.push(`${label}: a weekly ${kind === 'practice' ? 'practice' : 'entry'} needs the date of the last one ("until": "2026-12-16").`);
+      if (d.bad.length) out.errors.push(`${label}: "${d.bad.join(', ')}" ${d.bad.length === 1 ? 'is not a day' : 'are not days'}.`);
+      days = d.days;
+    }
+    if (out.errors.length > errs) return;
+    // only what the file gives is changed on an entry already here
+    const given = { kind };
+    if (title0) given.title = title0;
+    if (end) given.end = end;
+    const venue = firstOf(x, 'venue', 'where', 'location', 'field', 'place');
+    if (venue !== undefined) given.venue = String(venue).trim().slice(0, 120);
+    const notes = firstOf(x, 'notes', 'note', 'details');
+    if (notes !== undefined) given.notes = String(notes).trim().slice(0, 2000);
+    const pub = firstOf(x, 'public', 'shared');
+    if (pub !== undefined) given.public = importBool(pub, false);
+    const fields = { title: CAL_KIND[kind], start, end: '', venue: '', notes: '', public: false, ...given };
+    const dates = until ? seriesDates(date, until, days.length ? days : [weekdayOf(date)]) : [date];
+    if (until && !dates.length) { out.warnings.push(`${label}: no days between ${date} and ${until}, so nothing was added.`); return; }
+    if (until && dates.length >= SERIES_MAX) out.warnings.push(`${label}: only the first ${SERIES_MAX} weeks were added; add the rest as a second entry.`);
+    if (!start) out.warnings.push(`${label}: no start time, so it shows as "time to be confirmed".`);
+    const old = dates.map(d => entryIndex[entryKey(t.id, d, start, kind)]).find(e => e && !freshEntry.has(e.id) && e.series);
+    const series = dates.length > 1 ? (old ? old.series : uid()) : null;
+    let twice = false, updated = false;
+    for (const d of dates) {
+      const k = entryKey(t.id, d, start, kind), had = entryIndex[k];
+      if (had && freshEntry.has(had.id)) { twice = true; continue; }
+      if (had) {
+        const changed = Object.entries(given).filter(([f, v]) => JSON.stringify(had[f] ?? (f === 'public' ? false : '')) !== JSON.stringify(v));
+        for (const [f, v] of changed) { had[f] = v; put(`teams/${t.id}/events/${had.id}/${f}`, v); }
+        if (changed.length) updated = true;
+        continue;
+      }
+      const id = uid();
+      const e = { id, ...fields, date: d, ...(series ? { series } : {}), createdAt: nowMs(), ...(me ? { by: me.uid } : {}) };
+      // a brand-new team is written whole, so its calendar rides along with it
+      if (entry.isNew) { t.events = t.events || {}; t.events[id] = e; } else put(`teams/${t.id}/events/${id}`, e);
+      entryIndex[k] = e; freshEntry.add(id);
+      out.counts[kind === 'practice' ? 'newPractices' : 'newEvents']++;
+    }
+    if (updated) out.counts.entries++;
+    if (twice) out.warnings.push(`${label}: appears twice in the file, so it was imported once.`);
+  };
+  const rowOr = (x, dflt) => (x && typeof x === 'object' && x.row ? `Row ${x.row}` : dflt);
+
   teamList.forEach((tt, i) => {
     const where = `Team ${i + 1}`;
     if (!tt || typeof tt !== 'object') { out.errors.push(`${where}: expected a team like {"name": "...", "players": [...]}.`); return; }
@@ -2889,15 +2994,27 @@ function importPlan(data, cur = state) {
       else if (Number(entry.t.birthYear) !== n) out.warnings.push(`${w}: already born ${entry.t.birthYear} here, so ${n} was left out.`);
     }
     if (tt.players !== undefined && !Array.isArray(tt.players)) out.errors.push(`${w}: "players" should be a list.`);
-    else (tt.players || []).forEach((p, j) => addPlayer(entry, p, `${w}, player ${j + 1}`));
+    else (tt.players || []).forEach((p, j) => addPlayer(entry, p, rowOr(p, `${w}, player ${j + 1}`)));
     if (tt.games !== undefined && !Array.isArray(tt.games)) out.errors.push(`${w}: "games" should be a list.`);
-    else (tt.games || []).forEach((g, j) => addGame(entry, g, `${w}, game ${j + 1}`));
+    else (tt.games || []).forEach((g, j) => addGame(entry, g, rowOr(g, `${w}, game ${j + 1}`)));
+    for (const [k, kind, one] of [['practices', 'practice', 'practice'], ['events', null, 'entry']]) {
+      if (tt[k] !== undefined && !Array.isArray(tt[k])) out.errors.push(`${w}: "${k}" should be a list.`);
+      else (tt[k] || []).forEach((x, j) => addEntry(entry, x, rowOr(x, `${w}, ${one} ${j + 1}`), kind));
+    }
   });
   looseGames.forEach((g, j) => {
-    const where = `Game ${j + 1}`;
+    const where = rowOr(g, `Game ${j + 1}`);
     const entry = teamFor(g && g.team, where, false); if (!entry) return;
     addGame(entry, g, where);
   });
+  for (const [k, kind, one] of [['practices', 'practice', 'Practice'], ['events', null, 'Entry']]) {
+    if (data[k] !== undefined && !Array.isArray(data[k])) { out.errors.push(`"${k}" should be a list.`); continue; }
+    (data[k] || []).forEach((x, j) => {
+      const where = rowOr(x, `${one} ${j + 1}`);
+      const entry = teamFor(x && x.team, where, false); if (!entry) return;
+      addEntry(entry, x, where, kind);
+    });
+  }
 
   // after the teams, so a session can book a player the same file has just added
   importTraining(data, out, byName, acc0);
@@ -3095,13 +3212,17 @@ function importDays(v) {
 /* "17:30", "5:30pm" or "5pm". A bare "17" is not a time: it is as likely to be
    a number of minutes. */
 function importTime(v) {
-  const x = String(v ?? '').trim().toLowerCase().match(/^(\d{1,2})(?::(\d{2}))?\s*(am|pm)?$/);
+  const x = String(v ?? '').trim().toLowerCase().replace(/\./g, '').match(/^(\d{1,2})(?::(\d{2}))?(?::00)?\s*(am|pm)?$/);
   if (!x || (x[2] === undefined && !x[3])) return null;
   let h = Number(x[1]); const m = Number(x[2] || 0);
   if (x[3]) { if (h < 1 || h > 12) return null; h = h % 12 + (x[3] === 'pm' ? 12 : 0); }
   return h <= 23 && m <= 59 ? pad2(h) + ':' + pad2(m) : null;
 }
 const importDate = v => (/^\d{4}-\d{2}-\d{2}$/.test(String(v ?? '').trim()) ? String(v).trim() : null);
+const importHome = v => {
+  const k = String(v ?? '').trim().toLowerCase();
+  return /^(h|home|host|hosting|vs\.?)$/.test(k) ? 'home' : /^(a|away|@|at|visiting|visitor)$/.test(k) ? 'away' : /^(n|neutral|neutral ground|tournament)$/.test(k) ? 'neutral' : '';
+};
 const importBool = (v, dflt) => (v === undefined || v === null || v === '' ? dflt : !(v === false || /^(n|no|false|0|off)$/i.test(String(v).trim())));
 function importMoney(v) {
   if (v === undefined || v === null || v === '' || /^free$/i.test(String(v).trim())) return 0;
@@ -3158,7 +3279,7 @@ function importTraining(data, out, byName, acc0) {
   for (const f of Object.values(venues)) if (f && f.id && f.name) fieldByName[importKey(f.name)] = { f, isNew: false };
   if (data.fields !== undefined && !Array.isArray(data.fields)) out.errors.push('"fields" should be a list.');
   else (data.fields || []).forEach((x, i) => {
-    const where = `Field ${i + 1}`;
+    const where = x && x.row ? `Row ${x.row}` : `Field ${i + 1}`;
     if (!x || typeof x !== 'object') { out.errors.push(`${where}: expected a field like {"name": "Lakeside Park", "permits": [...]}.`); return; }
     const name = String(firstOf(x, 'name') ?? '').trim().slice(0, 80);
     if (!name) { out.errors.push(`${where}: a field needs a name.`); return; }
@@ -3359,11 +3480,11 @@ function importSummary(c) {
   const bits = [];
   const n = (k, one, many) => c[k] ? `${c[k]} ${c[k] === 1 ? one : many}` : null;
   const add = [n('newTeams', 'team', 'teams'), n('newPlayers', 'player', 'players'), n('newGames', 'game', 'games'),
-    n('newFields', 'field', 'fields'), n('newSessions', 'session', 'sessions'), n('bookings', 'booking', 'bookings'),
+    n('newPractices', 'practice', 'practices'), n('newEvents', 'calendar entry', 'calendar entries'), n('newFields', 'field', 'fields'), n('newSessions', 'session', 'sessions'), n('bookings', 'booking', 'bookings'),
     n('training', 'training record', 'training records')].filter(Boolean);
   if (add.length) bits.push('adds ' + add.join(', '));
   const upd = [n('teams', 'team', 'teams'), n('players', 'player', 'players'), n('games', 'game', 'games'),
-    n('fields', 'field', 'fields'), n('sessions', 'session', 'sessions')].filter(Boolean);
+    n('entries', 'calendar entry', 'calendar entries'), n('fields', 'field', 'fields'), n('sessions', 'session', 'sessions')].filter(Boolean);
   if (upd.length) bits.push('updates ' + upd.join(', '));
   if (c.results) bits.push(`${c.results} with a final score`);
   return bits.length ? bits.join(' · ') : 'nothing new — everything in it is already here';
@@ -3381,7 +3502,195 @@ function applyImport(plan) {
   render(); schedulePublish();
 }
 
+/* ---- spreadsheets ---- */
+/* Most clubs arrive with a spreadsheet, not a JSON file: a roster from the
+   registration system, a fixture list from the league, a practice schedule
+   somebody typed up. So a CSV (what any spreadsheet saves as) is read into
+   the same shape the JSON takes and planned by the same importPlan(), with
+   every promise that makes: matched, merged, never replacing, nothing written
+   while an error is left. The columns are matched by name, loosely, because
+   no two systems export the same headings; a column it can't place is said,
+   never guessed at. */
+function parseCsv(text) {
+  const src = String(text || '').replace(/^﻿/, '');
+  const firstLine = src.split(/\r?\n/, 1)[0] || '';
+  const count = ch => firstLine.split(ch).length - 1;
+  const delim = count('\t') > count(',') && count('\t') >= count(';') ? '\t' : count(';') > count(',') ? ';' : ',';
+  const rows = [];
+  let row = [], cell = '', q = false;
+  for (let i = 0; i < src.length; i++) {
+    const c = src[i];
+    if (q) {
+      if (c === '"') { if (src[i + 1] === '"') { cell += '"'; i++; } else q = false; }
+      else cell += c;
+    } else if (c === '"' && cell.trim() === '') { cell = ''; q = true; }
+    else if (c === delim) { row.push(cell); cell = ''; }
+    else if (c === '\n' || c === '\r') {
+      if (c === '\r' && src[i + 1] === '\n') i++;
+      row.push(cell); rows.push(row); row = []; cell = '';
+    } else cell += c;
+  }
+  if (cell !== '' || row.length) { row.push(cell); rows.push(row); }
+  return rows.map(r => r.map(x => x.trim())).filter(r => r.some(Boolean));
+}
+/* Heading, as most exports write it, to what it is. */
+const CSV_COLS = {
+  team: ['team', 'teamname', 'squad', 'division', 'agegroup'],
+  name: ['name', 'player', 'playername', 'fullname', 'title', 'eventname', 'fieldname'],
+  first: ['firstname', 'first', 'givenname', 'forename', 'playerfirstname'],
+  last: ['lastname', 'last', 'surname', 'familyname', 'playerlastname'],
+  number: ['number', 'no', 'num', 'jersey', 'jerseynumber', 'jerseyno', 'shirt', 'shirtnumber', 'uniformnumber'],
+  position: ['position', 'pos', 'preferredposition'],
+  also: ['also', 'otherpositions', 'canplay'],
+  gk: ['gk', 'keeper', 'goalkeeper'],
+  rating: ['rating'], note: ['note', 'notes', 'comments', 'details', 'description'], active: ['active'],
+  born: ['birthyear', 'born', 'yearofbirth'],
+  type: ['type', 'kind', 'eventtype', 'category'],
+  date: ['date', 'day', 'gamedate', 'eventdate', 'startdate', 'matchdate'],
+  start: ['start', 'time', 'starttime', 'kickoff', 'kickofftime', 'from'],
+  end: ['end', 'endtime', 'finish', 'until', 'to'],
+  minutes: ['duration', 'length', 'durationminutes', 'mins', 'minutes'],
+  opponent: ['opponent', 'opponents', 'opposition', 'vs', 'versus', 'against', 'opponentname'],
+  hometeam: ['hometeam', 'home'], awayteam: ['awayteam', 'away', 'visitor', 'visitingteam'],
+  homeaway: ['homeaway', 'ha', 'homeoraway', 'ground'],
+  venue: ['venue', 'location', 'where', 'place', 'field', 'pitch', 'locationname'],
+  arrive: ['arrive', 'arrival', 'arrivaltime', 'arriveby', 'meettime'],
+  kit: ['kit', 'uniform', 'colours', 'colors', 'jerseycolor'],
+  score: ['score', 'result', 'finalscore'],
+  side: ['side', 'aside', 'format', 'playersaside'],
+  address: ['address', 'streetaddress'], pitches: ['pitches', 'fields', 'numberoffields', 'numberofpitches'],
+  surface: ['surface', 'turf'], lights: ['lights', 'lit', 'floodlights'],
+  public: ['public', 'shared', 'onsharelink']
+};
+const CSV_ALIAS = Object.fromEntries(Object.entries(CSV_COLS).flatMap(([k, vs]) => vs.map(v => [v, k])));
+const csvHead = h => (String(h).trim() === '#' ? 'number' : CSV_ALIAS[String(h).toLowerCase().replace(/[^a-z0-9]/g, '')] || null);
+/* "2026-10-04", "10/04/2026", "4/10/26", "Oct 4, 2026", "Sat 4 October
+   2026". A slashed date is month first unless a day over twelve in the same
+   column says otherwise; the file is read one way throughout, never row by row. */
+const MONTH_IX = { jan: 1, feb: 2, mar: 3, apr: 4, may: 5, jun: 6, jul: 7, aug: 8, sep: 9, oct: 10, nov: 11, dec: 12 };
+function csvDate(v, dayFirst) {
+  const s = String(v || '').trim().toLowerCase().replace(/(\d)(st|nd|rd|th)\b/g, '$1');
+  const ok = (y, m, d) => {
+    y = Number(y); m = Number(m); d = Number(d);
+    if (y < 100) y += 2000;
+    if (!(m >= 1 && m <= 12 && d >= 1 && d <= 31 && y >= 2000 && y < 2100)) return null;
+    const out = `${y}-${pad2(m)}-${pad2(d)}`;
+    return dayStr(dateOf(out)) === out ? out : null;
+  };
+  let x = s.match(/^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})/);
+  if (x) return ok(x[1], x[2], x[3]);
+  x = s.match(/^(\d{1,2})[-/.](\d{1,2})[-/.](\d{2,4})\b/);
+  if (x) return dayFirst ? ok(x[3], x[2], x[1]) : ok(x[3], x[1], x[2]);
+  x = s.match(/(\d{1,2})\s+([a-z]{3})[a-z]*\.?,?\s+(\d{4})/);
+  if (x && MONTH_IX[x[2]]) return ok(x[3], MONTH_IX[x[2]], x[1]);
+  x = s.match(/([a-z]{3})[a-z]*\.?\s+(\d{1,2}),?\s+(\d{4})/);
+  if (x && MONTH_IX[x[1]]) return ok(x[3], MONTH_IX[x[1]], x[2]);
+  return null;
+}
+const CSV_GAME = /game|match|fixture|league|cup|friendly|tournament|scrimmage|playoff/i;
+const CSV_PRACTICE = /practi[cs]e|training|session/i;
+/* Reads a spreadsheet into importPlan()'s shape. `team` is the team every
+   row is for when the sheet has no team column, as the import sheet asks. */
+function csvImport(text, opts = {}) {
+  const rows = parseCsv(text);
+  if (rows.length < 2) return { error: 'A spreadsheet needs a heading row, and at least one row under it.' };
+  const head = rows[0].map(csvHead);
+  const unused = rows[0].filter((h, i) => h && !head[i]);
+  const has = k => head.includes(k);
+  const recs = rows.slice(1).map((r, i) => {
+    const o = { row: i + 2 };
+    head.forEach((k, j) => { if (k && r[j] !== undefined && r[j] !== '' && o[k] === undefined) o[k] = r[j]; });
+    return o;
+  });
+  const kind = has('date') ? 'schedule'
+    : (has('address') || has('pitches') || has('surface') || has('lights')) && !has('first') && !has('number') ? 'fields'
+      : has('name') || has('first') || has('last') ? 'players' : null;
+  if (!kind) return { error: `Couldn't tell what this spreadsheet holds from its headings (${rows[0].join(', ')}). A roster needs a "Name" (or "First name" and "Last name") column, a schedule a "Date" column, and a list of fields "Name" and "Address".`, unused };
+  const needsTeam = kind !== 'fields' && !has('team');
+  const teamOf = o => String(o.team || opts.team || '').trim();
+  if (needsTeam && !String(opts.team || '').trim()) return { kind, needsTeam, unused, rows: recs.length, error: 'This spreadsheet has no "Team" column, so pick the team it is for.' };
+  const data = {};
+  if (kind === 'players') {
+    const byTeam = new Map();
+    for (const o of recs) {
+      const name = o.name || [o.first, o.last].filter(Boolean).join(' ');
+      const p = { row: o.row, name };
+      for (const k of ['number', 'position', 'also', 'gk', 'rating', 'note', 'active']) if (o[k] !== undefined) p[k] = o[k];
+      const tn = teamOf(o);
+      if (!byTeam.has(tn)) byTeam.set(tn, { name: tn, players: [] });
+      const tt = byTeam.get(tn);
+      if (o.born !== undefined && tt.born === undefined) tt.born = o.born;
+      tt.players.push(p);
+    }
+    data.teams = [...byTeam.values()];
+  } else if (kind === 'fields') {
+    data.fields = recs.map(o => {
+      const f = { row: o.row, name: o.name || o.venue || '' };
+      for (const k of ['address', 'pitches', 'surface', 'lights']) if (o[k] !== undefined) f[k] = o[k];
+      if (o.note !== undefined) f.notes = o.note;
+      return f;
+    });
+  } else {
+    const slashed = recs.map(o => String(o.date || '').trim().match(/^(\d{1,2})[-/.](\d{1,2})[-/.]\d{2,4}/)).filter(Boolean);
+    const dayFirst = slashed.some(x => Number(x[1]) > 12);
+    data.games = []; data.practices = []; data.events = [];
+    for (const o of recs) {
+      const team = teamOf(o);
+      const date = csvDate(o.date, dayFirst) || o.date || '';
+      const ty = String(o.type || '');
+      let opponent = o.opponent, home = o.homeaway;
+      if (!opponent && o.hometeam && o.awayteam) {
+        const ours = importKey(team);
+        if (importKey(o.hometeam) === ours) { opponent = o.awayteam; home = home || 'home'; }
+        else if (importKey(o.awayteam) === ours) { opponent = o.hometeam; home = home || 'away'; }
+      }
+      const isGame = CSV_GAME.test(ty) || (!ty && !!opponent) || (!!opponent && !CSV_PRACTICE.test(ty));
+      if (isGame) {
+        const g = { row: o.row, team, opponent: opponent || '', date };
+        if (o.start) g.kickoff = o.start;
+        for (const [k, to] of [['venue', 'venue'], ['arrive', 'arrive'], ['kit', 'kit'], ['note', 'notes'], ['score', 'score'], ['side', 'side']]) if (o[k] !== undefined) g[to] = o[k];
+        if (home !== undefined) g.home = home;
+        data.games.push(g);
+      } else {
+        const e = { row: o.row, team, date };
+        if (o.name) e.title = o.name;
+        for (const [k, to] of [['start', 'start'], ['end', 'end'], ['minutes', 'minutes'], ['venue', 'venue'], ['note', 'notes'], ['public', 'public']]) if (o[k] !== undefined) e[to] = o[k];
+        (CSV_PRACTICE.test(ty) || (!ty && /practi[cs]e|training/i.test(o.name || '')) ? data.practices : data.events).push(e);
+      }
+    }
+    for (const k of ['games', 'practices', 'events']) if (!data[k].length) delete data[k];
+    // a schedule for a team that isn't here yet makes it, as a roster would
+    const names = [...new Set(recs.map(teamOf).filter(Boolean))];
+    if (names.length) data.teams = names.map(name => ({ name }));
+  }
+  return { data, kind, needsTeam, unused, rows: recs.length };
+}
+const CSV_KIND = { players: 'a roster', schedule: 'a schedule', fields: 'a list of fields' };
+/* Templates to fill in, so nobody has to guess the headings. */
+const CSV_TEMPLATES = {
+  roster: 'Team,First name,Last name,Number,Position,Goalkeeper,Notes\nLakeside Thunder G12,Ada,Lovelace,1,GK,yes,\nLakeside Thunder G12,Bea,Smith,7,Forward,,Strong left foot\n',
+  schedule: 'Team,Type,Date,Start,End,Opponent,Home/Away,Location,Arrive,Uniform,Notes\nLakeside Thunder G12,Game,2026-10-04,09:30,,Northgate,Away,Northgate Rec field 2,09:00,Blue shirts,\nLakeside Thunder G12,Practice,2026-10-06,17:30,19:00,,,Lakeside Park,,,Bring water\n',
+  fields: 'Name,Address,Pitches,Surface,Lights,Notes\nLakeside Park,1 Lake Rd,2,Grass,yes,Gate code 4471\n'
+};
+const isJsonText = txt => /^\s*[{[]/.test(String(txt || ''));
+/* The text in the box, read as JSON or as a spreadsheet: { data, csv, bad }. */
+function importRead(txt, team) {
+  if (!String(txt || '').trim()) return {};
+  if (isJsonText(txt)) { try { return { data: JSON.parse(txt) }; } catch (err) { return { bad: 'That is not valid JSON: ' + err.message }; } }
+  const csv = csvImport(txt, { team });
+  return csv.error ? { bad: csv.error, csv } : { data: csv.data, csv };
+}
+
 let pendingImport = null;
+/* The team a spreadsheet with no team column is for: a new name typed in
+   wins over the list, and with neither the last one picked stands. */
+function importTeamPicked() {
+  const nw = $('#impNewTeam'), pick = $('#impTeam');
+  const typed = nw && typeof nw.value === 'string' ? nw.value.trim() : '';
+  if (typed) return typed.slice(0, 80);
+  if (pick && typeof pick.value === 'string' && pick.value) return pick.value;
+  return (pendingImport && pendingImport.team) || '';
+}
 /* A backup carrying training records needs the club's answer to "what do you
    already have" before it can be planned, so the sheet asks once per file and
    draws again when the answer comes. Undefined: nothing to ask. */
@@ -3398,26 +3707,38 @@ function restoreKnown(data, txt) {
   });
   return 'checking';
 }
-function sheetImport(text) {
-  pendingImport = text == null ? pendingImport : { text };
+function sheetImport(text, team) {
+  pendingImport = text == null ? pendingImport : { text, team: team !== undefined ? team : (pendingImport && pendingImport.team) || '' };
   const txt = (pendingImport && pendingImport.text) || '';
-  let plan = null, bad = null, checking = false;
-  if (txt.trim()) {
-    try {
-      const data = JSON.parse(txt);
-      const k = restoreKnown(data, txt);
-      if (k === 'checking') checking = true; else plan = importPlan(data, k ? { ...state, trainingKnown: k } : state);
-    } catch (err) { bad = 'That is not valid JSON: ' + err.message; }
+  let plan = null, checking = false;
+  const read = importRead(txt, pendingImport && pendingImport.team);
+  const bad = read.bad || null, csv = read.csv || null;
+  if (read.data) {
+    const k = restoreKnown(read.data, txt);
+    if (k === 'checking') checking = true; else plan = importPlan(read.data, k ? { ...state, trainingKnown: k } : state);
   }
+  const tName = (pendingImport && pendingImport.team) || '';
+  const teamPick = csv && csv.needsTeam ? `<label class="field"><span>Which team is this ${csv.kind === 'players' ? 'roster' : 'schedule'} for?</span>
+      <select id="impTeam"><option value="">Pick a team</option>${teams().map(t => `<option value="${esc(t.name || '')}"${importKey(t.name) === importKey(tName) ? ' selected' : ''}>${esc(t.name || 'Untitled team')}</option>`).join('')}
+      ${tName && !teams().some(t => importKey(t.name) === importKey(tName)) ? `<option value="${esc(tName)}" selected>${esc(tName)} (new)</option>` : ''}</select></label>
+      <label class="field"><span>Or a new team's name</span><input type="text" id="impNewTeam" maxlength="80" placeholder="Lakeside Thunder G12"></label>` : '';
   const list = (items, cls) => items.length ? `<div class="implist ${cls}">${items.slice(0, 30).map(esc).join('<br>')}${items.length > 30 ? `<br>…and ${items.length - 30} more` : ''}</div>` : '';
   openSheet(`<h3>Bulk import</h3>
-    <p class="muted" style="margin-top:0">Teams, rosters, games, fields and training sessions from one JSON file. Teams, players and fields are matched by name, games by team, date and opponent, and sessions by date, start and coach, so running the same file twice changes nothing. Nothing already here is removed.</p>
+    <p class="muted" style="margin-top:0">Coming from another app or a spreadsheet? Save each sheet as CSV — a roster, a schedule of games and practices, a list of fields — and bring them in one at a time, or everything at once as one JSON file. Teams, players and fields are matched by name, games by team, date and opponent, practices by team, date and start, and sessions by date, start and coach, so running the same file twice changes nothing. Nothing already here is removed.</p>
     <div class="row" style="margin-bottom:10px">
       <button class="btn quiet sm" data-act="importfile">Choose a file</button>
       <button class="btn quiet sm" data-act="importexample">Show an example</button>
     </div>
-    <label class="field"><span>Or paste it here</span><textarea id="impText" rows="8" spellcheck="false" placeholder='{"teams": [{"name": "...", "players": [...], "games": [...]}]}'>${esc(txt)}</textarea></label>
+    <p class="muted" style="margin:0 0 6px">Spreadsheet templates, with the headings it reads:</p>
+    <div class="row" style="margin-bottom:10px">
+      <button class="btn quiet sm" data-act="importtpl" data-v="roster">Roster</button>
+      <button class="btn quiet sm" data-act="importtpl" data-v="schedule">Games and practices</button>
+      <button class="btn quiet sm" data-act="importtpl" data-v="fields">Fields</button>
+    </div>
+    <label class="field"><span>Or paste it here</span><textarea id="impText" rows="8" spellcheck="false" placeholder='Team,Type,Date,Start,Opponent,Location&#10;… or {"teams": [{"name": "...", "players": [...], "games": [...]}]}'>${esc(txt)}</textarea></label>
+    ${teamPick}
     <button class="btn quiet wide" data-act="importcheck" style="margin-bottom:10px">Check it</button>
+    ${csv && csv.kind ? `<p class="muted">Read as ${CSV_KIND[csv.kind]}: ${csv.rows} row${csv.rows === 1 ? '' : 's'}.${csv.unused && csv.unused.length ? ` Not used: ${esc(csv.unused.join(', '))}.` : ''}</p>` : ''}
     ${bad ? list([bad], 'warn alert') : ''}
     ${checking ? '<p class="muted"><b>Checking what the club already has…</b> A backup with training records is only restored where the club has nothing, so it asks first.</p>' : ''}
     ${plan ? `${list(plan.errors, 'warn alert')}
@@ -4419,6 +4740,8 @@ function render() {
   watchMessages();
   watchClaims();
   watchSess();
+  watchYou();
+  if (!shut) { watchBusy(); scheduleYou(); }
   clubNews();
   paintBell(shut);
 }
@@ -4451,9 +4774,19 @@ function lockScreen() {
 
 /* Club › Team › Game. Each segment is its own switcher, so the structure of the
    app is the navigation rather than something you have to learn. */
+/* Which of the three a screen belongs to. A team's tabs (and its games, and
+   its game shape) are the team's; My calendar is the person's, across every
+   club she is in; everything else (club home, settings, people, sessions,
+   messages) is the club's. The crumbs say exactly that much and no more: a
+   team left in them on Settings reads as "these are the team's settings". */
+const TEAM_VIEWS = ['matches', 'calendar', 'practice', 'roster', 'season', 'teamset', 'game'];
+const viewScope = (v = ui.view) => v === 'mycal' ? 'me'
+  : TEAM_VIEWS.includes(v) || (v === 'formation' && ui.editFid === GAME_SHAPE) ? 'team' : 'club';
 function crumbs() {
+  if (viewScope() === 'me' && me)
+    return `<button class="crumb" data-act="accountsheet"><span class="crumb-k">You</span>${esc(me.name || me.email || 'Your account')}</button>`;
   const org = (acc().org || {}).name || 'Club';
-  const t = team();
+  const t = viewScope() === 'team' ? team() : null;
   const m = ui.view === 'game' ? match() : null;
   const out = [`<button class="crumb crumb-club" data-act="goview" data-v="club">${clubCrest('xs')}<span><span class="crumb-k">Club</span>${esc(org)}</span></button>`];
   if (t) out.push(`<span class="crumb-sep">\u203a</span>
@@ -4503,6 +4836,8 @@ function sheetAccount() {
   const r = myRole();
   openSheet(`<h3>${esc(me.name)}</h3>
     <p class="muted" style="margin-top:0">${esc(me.email || '')}${r ? ` · ${esc(ROLE_LABEL[r])}` : ''}</p>
+    <button class="opt" data-act="goview" data-v="mycal"><b>My calendar</b>
+      <span class="rowsub">Everything of yours, in every club you're in</span></button>
     <button class="opt" data-act="goview" data-v="setup"><b>Settings</b>
       <span class="rowsub">Workspace, sharing, backup, version</span></button>
     ${guardsAnyone() ? `<button class="opt" data-act="goview" data-v="mine"><b>My players</b>
@@ -9489,6 +9824,10 @@ function busyItems(date) {
      she is due somewhere during it. */
   for (const r of awayAll()) for (const [a, b] of awaySpans(r, date))
     out.push({ key: 'o:' + r.uid + ':' + r.id, kind: 'away', label: `Time off (${coachName(r.uid)})`, a, b, field: null, venue: '', coaches: [r.uid], tid: null, pids: null, away: r });
+  /* Busy at another club: hers from her own summaries, and any coach's who
+     shares it. A coach is due there as she is due here, so it takes her out
+     of find-a-time and her bookable slots and is said as a clash. */
+  out.push(...elsewhereOn(date));
   return out;
 }
 const timeOf = x => `${niceTime(pad2(Math.floor(x.a / 60) % 24) + ':' + pad2(x.a % 60))}`;
@@ -11183,14 +11522,24 @@ function myCalFilters() {
   const staff = !!me && (myRoleTeams().size > 0 || isCoachAny(me.uid) || blockAll().some(b => b.coach === me.uid));
   if (kids.length > 1 || (kids.length && staff)) for (const { p } of kids) out.push(['p:' + p.id, esc(firstName(p))]);
   if (kids.length && staff) out.push(['me', 'My coaching']);
+  // a chip per club, once there is more than one: the person's calendar, not this club's
+  const others = youClubs();
+  if (others.length) {
+    out.push(['c:' + wsCode(), esc((acc().org || {}).name || 'This club')]);
+    for (const [code, c] of others) out.push(['c:' + code, esc(c.name || 'Another club')]);
+  }
   return out;
 }
-function myCalItems() {
-  const f = myCalFilters().some(([k]) => k === ui.myCal) ? ui.myCal : 'all';
+/* `hereOnly` is the club open on this phone and nothing else, which is what a
+   summary of it for her other phones and clubs is made from. */
+function myCalItems(f0 = ui.myCal, hereOnly = false) {
+  const f = hereOnly ? 'all' : myCalFilters().some(([k]) => k === f0) ? f0 : 'all';
+  const elsewhere = !hereOnly && (f === 'all' || (f.startsWith('c:') && f !== 'c:' + wsCode()));
+  if (f.startsWith('c:') && f !== 'c:' + wsCode()) return youCalItems(f.slice(2));
   const kids = myPlayers(), kid = f.startsWith('p:') ? kids.find(k => k.p.id === f.slice(2)) : null;
-  const tids = f === 'all' ? myCalTeams() : f === 'me' ? [...myRoleTeams()] : kid ? [kid.t.id] : [];
+  const tids = f === 'all' || f.startsWith('c:') ? myCalTeams() : f === 'me' ? [...myRoleTeams()] : kid ? [kid.t.id] : [];
   const out = calItems(tids);
-  const mineToo = f === 'all' || f === 'me';
+  const mineToo = f === 'all' || f === 'me' || f.startsWith('c:');
   for (const s of sessAll()) {
     const run = !!me && mineToo && s.coach === me.uid;
     const xs = f === 'me' ? [] : bookingsOf(s.id).filter(x => (x.st === 'in' || x.st === 'asked' || x.st === 'wait')
@@ -11206,9 +11555,14 @@ function myCalItems() {
     key: 'a:' + b.id, kind: 'avail', tid: '', id: b.id, date: b.date, start: b.start, end: b.end, mins: 0,
     title: 'Bookable: ' + blockLabel(b), venue: blockPlace(b), called: b.off ? 'cancelled' : ''
   });
+  if (elsewhere) out.push(...youCalItems());
   return out.sort(calOrder);
 }
 function myCalRow(it) {
+  if (it.club) return `<div class="prow calrow">
+    <span class="caltime">${it.start ? niceTime(it.start) : 'TBC'}</span>
+    <span style="min-width:0"><span class="pname">${esc(it.title)}</span><span class="psub">${esc([it.clubName, it.team, it.venue].filter(Boolean).join(' · '))}</span></span>
+    ${it.called ? `<span class="tag off">${CALLED[it.called] || 'Off'}</span>` : `<span class="tag">${esc(CAL_KIND[it.kind] || (it.kind === 'session' ? 'Training' : it.kind === 'avail' ? 'Bookable' : 'Game'))}</span>`}</div>`;
   if (it.kind === 'avail') { const b = blockById(it.id); return b ? availRow(b, false, false) : ''; }
   if (it.kind !== 'session') return calRow(it, true);
   const s = sessById(it.id); if (!s) return '';
@@ -11233,10 +11587,12 @@ function myCalLine() {
   const next = myCalItems().find(x => x.date && !x.called && x.kind !== 'avail' && (x.kind !== 'session' || x.firm) && !calPast(x));
   if (!next) return 'Your teams, your children and your sessions, in one place';
   const t = state.teams[next.tid];
+  if (next.club) return `Next: ${next.title} (${next.clubName}) · ${relDay(next.date) || dayLabel(next.date)}${next.start ? ' ' + niceTime(next.start) : ''}`;
   return `Next: ${next.title}${t && myCalTeams().length > 1 ? ' (' + t.name + ')' : ''} · ${relDay(next.date) || dayLabel(next.date)}${next.start ? ' ' + niceTime(next.start) : ''}`;
 }
 function viewMyCal() {
   if (needsSignIn()) return lockScreen();
+  refreshElsewhere();
   const filters = myCalFilters();
   if (!filters.some(([k]) => k === ui.myCal)) ui.myCal = 'all';
   const items = myCalItems();
@@ -11249,12 +11605,14 @@ function viewMyCal() {
       `<button class="chip" type="button" data-act="mycalf" data-v="${esc(k)}" aria-pressed="${ui.myCal === k}">${l}</button>`).join('')}</div>` : ''}
     ${canBook ? `<button class="btn wide" data-act="sesstab" data-k="list">Book a 1-1 with a coach</button>` : ''}
     ${calMonth(dated, 'mycalday')}
+    ${youNote()}
     ${awayCard()}
     <div class="card"><h2 style="margin-bottom:0">Coming up</h2>
       ${ahead.length ? `<div class="plist">${myCalList(ahead)}</div>`
       : `<p class="muted" style="margin-bottom:0">Nothing coming up.${myCalTeams().length ? '' : ' Once you coach a team, or a child of yours is on one, its games and practices are here.'}</p>`}</div>
     ${past.length ? `<button class="btn quiet wide" data-act="calpast">${ui.calPast ? 'Hide' : 'Show'} what has already happened (${past.length})</button>
       ${ui.calPast ? `<div class="card"><div class="plist">${myCalList(past.slice(0, 80))}</div></div>` : ''}` : ''}
+    ${youShareCard()}
     <p class="muted">Each team's own calendar is still on its Calendar tab; that is the one the share link mirrors.</p>
   </div>`;
 }
@@ -11262,6 +11620,302 @@ function sheetMyCalDay(date) {
   const items = myCalItems().filter(x => x.date === date);
   openSheet(`<h3>${esc(dayLabel(date))}</h3>
     <div class="plist">${items.map(myCalRow).join('') || '<p class="muted">Nothing on.</p>'}</div>`);
+}
+
+/* ---------------- my calendar, across clubs ---------------- */
+/* AVAILABILITY.md, "My calendar is yours, not a club's". A phone holds one
+   club at a time, so the others reach My calendar as a summary each of her
+   phones writes about the club it has open, to people/{uid}/cal/{code}, which
+   only she can read. Her busy times (a date and two times, nothing else) go
+   to people/{uid}/busy/{tag} only while she has said they may: private is
+   the default, and the rules refuse them otherwise. */
+const LS_YOU = 'sm.you.v1';                 // per account: her summaries of each club, and whether she shares
+const YOU_BACK = 14, YOU_AHEAD = 183, YOU_MAX = 250, YOU_FRESH = 10 * 60000;
+const YOU_BLANK = () => ({ uid: null, cal: {}, set: null, refused: false });
+let you = YOU_BLANK();
+let youWatch = null;                        // the uid whose own node is being listened to
+let youSent = {};                           // what this session has written: cal codes, and busy tags by their content
+let youFresh = {};                          // code: when this session last read that club itself
+const busyOf = {};                          // other coaches' shared busy times, by uid
+const busyWatch = new Map();                // uid: unsubscribe
+function loadYou(u) {
+  you = { ...YOU_BLANK(), uid: u };
+  try {
+    const d = JSON.parse(localStorage.getItem(LS_YOU + ':' + u) || 'null');
+    if (d && typeof d === 'object') { you.cal = d.cal && typeof d.cal === 'object' ? d.cal : {}; you.set = d.set || null; }
+  } catch (e) { }
+}
+const saveYou = () => { if (you.uid) keepStored(LS_YOU + ':' + you.uid, JSON.stringify({ cal: you.cal, set: you.set })); };
+const youHere = () => { if (me && you.uid !== me.uid) loadYou(me.uid); return me ? you : YOU_BLANK(); };
+/* Hers, not the phone's, like her own drills: gone when she is. */
+function forgetYou() {
+  if (you.uid) try { localStorage.removeItem(LS_YOU + ':' + you.uid); } catch (e) { }
+  you = YOU_BLANK(); youWatch = null; youSent = {}; youFresh = {};
+  for (const off of busyWatch.values()) try { if (typeof off === 'function') off(); } catch (e) { }
+  busyWatch.clear();
+  for (const k of Object.keys(busyOf)) delete busyOf[k];
+}
+const sharing = () => !!(youHere().set && you.set.share === true);
+/* The other clubs she is in, with a summary to show. Only the ones her
+   account still lists, once it has been read: a club she has left, or that
+   has been retired, is not hers to see any more. */
+function youClubs() {
+  if (!me) return [];
+  const here = wsCode();
+  return Object.entries(youHere().cal).filter(([code, c]) => code !== here && c && typeof c === 'object'
+    && (!myClubs || myClubs[code]) && !retiredClubs[code])
+    .sort((a, b) => (a[1].name || '').localeCompare(b[1].name || ''));
+}
+/* Another club's entries, in My calendar's shape. */
+function youCalItems(only) {
+  const out = [];
+  for (const [code, c] of youClubs()) {
+    if (only && code !== only) continue;
+    for (const [i, x] of Object.entries(c.items || {})) {
+      if (!x || !okDay(x.d)) continue;
+      out.push({
+        key: 'y:' + code + ':' + i, kind: x.k || 'event', club: code, clubName: c.name || 'Another club', tid: '', id: i,
+        date: x.d, start: hm(x.s), end: hm(x.e), mins: Number(x.m) || 0, title: x.t || CAL_KIND[x.k] || 'Something on',
+        venue: x.p || '', team: x.n || '', called: x.x || ''
+      });
+    }
+  }
+  return out.sort(calOrder);
+}
+/* This club, as a summary: what My calendar shows of it, cut to what a
+   summary needs, from a fortnight back to six months ahead. A session she has
+   only asked for is left out; it is not on yet. */
+function youItems() {
+  const from = addDays(todayStr(), -YOU_BACK), to = addDays(todayStr(), YOU_AHEAD);
+  const out = {};
+  let n = 0;
+  for (const it of myCalItems('all', true)) {
+    if (!it.date || it.date < from || it.date > to || n >= YOU_MAX) continue;
+    if (it.kind === 'session' && !it.firm) continue;
+    const x = { k: it.kind, d: it.date };
+    if (it.start) x.s = it.start;
+    if (it.end) x.e = it.end;
+    if (it.mins) x.m = it.mins;
+    if (it.title) x.t = String(it.title).slice(0, 120);
+    if (it.venue) x.p = String(it.venue).slice(0, 120);
+    const t = state.teams[it.tid];
+    if (t && t.name) x.n = String(t.name).slice(0, 80);
+    if (it.called) x.x = String(it.called).slice(0, 20);
+    out['i' + (++n)] = x;
+  }
+  return out;
+}
+/* What she is busy with, from a summary: firm, on, with a time. Bookable
+   times are not busy; they are when she's free to be booked. */
+function youBusy(items) {
+  const out = {};
+  let n = 0;
+  for (const x of Object.values(items || {})) {
+    if (!x || !okDay(x.d) || !hm(x.s) || x.x || x.k === 'avail' || x.d < todayStr()) continue;
+    let e = hm(x.e);
+    if (!e) { const b = minOf(hm(x.s)) + (Number(x.m) || 60); e = minHm(Math.min(b, 23 * 60 + 59)); }
+    out['b' + (++n)] = { d: x.d, s: hm(x.s), e };
+  }
+  return out;
+}
+const youPath = k => `people/${me.uid}/${k}`;
+function youWrite(path, value) {
+  if (!rtdb) return Promise.resolve(false);
+  const { db, mod } = rtdb;
+  const ref = mod.ref(db, path);
+  return Promise.resolve(value === null ? mod.remove(ref) : mod.set(ref, value))
+    .then(() => { if (you.refused) { you.refused = false; render(); } return true; },
+      () => { if (!you.refused) { you.refused = true; render(); } return false; });
+}
+/* Her shared busy times, one entry per club, from the summaries this phone
+   holds. Only what changed is written. */
+function youPublish() {
+  if (!me || !rtdb || !sharing()) return;
+  for (const [code, c] of Object.entries(you.cal)) {
+    if (!c || (myClubs && !myClubs[code] && code !== wsCode())) continue;
+    const tag = clubTag(code), b = youBusy(c.items), sig = canon(b);
+    if (youSent['busy:' + tag] === sig) continue;
+    youSent['busy:' + tag] = sig;
+    youWrite(youPath('busy/' + tag), Object.keys(b).length ? { at: nowMs(), b } : null);
+  }
+}
+/* Write this club's summary when it has changed, and once a session anyway
+   so "as of" stays true. Only once the club has been read here: a summary of
+   a copy the club hasn't answered for yet could be days old. */
+let youTimer = null;
+function scheduleYou() {
+  if (youTimer || typeof setTimeout !== 'function') return;
+  youTimer = setTimeout(() => { youTimer = null; noteMyCal(); }, 2000);
+}
+function noteMyCal() {
+  const code = wsCode();
+  if (!me || !rtdb || !code || isSandbox() || !wsRead || denied || purged || needsSignIn()) return false;
+  if (!approved(me.uid) && !isAdmin(me.uid)) return false;
+  youHere();
+  const doc = { name: String((acc().org || {}).name || '').slice(0, 80), at: nowMs(), items: youItems() };
+  const had = you.cal[code];
+  const same = had && canon({ n: had.name || '', i: had.items || {} }) === canon({ n: doc.name, i: doc.items });
+  if (!same || !youSent['cal:' + code]) {
+    you.cal[code] = doc; saveYou();
+    youSent['cal:' + code] = true;
+    youWrite(youPath('cal/' + code), doc);
+  }
+  youPublish();
+  return true;
+}
+/* Her own node: the summaries her other phones wrote, and whether she shares.
+   The newer of two copies of a club wins, so this phone's own word on the
+   club it has open is never overwritten by an older one. */
+function watchYou() {
+  if (!rtdb || !me || youWatch === me.uid) return;
+  const who = youWatch = me.uid;
+  youHere();
+  const { db, mod } = rtdb;
+  mod.onValue(mod.ref(db, `people/${who}/cal`), snap => {
+    if (!me || me.uid !== who) return;
+    for (const [code, c] of Object.entries(snap.val() || {}))
+      if (c && typeof c === 'object' && (Number(c.at) || 0) > (Number((you.cal[code] || {}).at) || 0)) you.cal[code] = c;
+    saveYou();
+    youPublish();
+    if (ui.view === 'mycal') render();
+  }, () => { });
+  mod.onValue(mod.ref(db, `people/${who}/set`), snap => {
+    if (!me || me.uid !== who) return;
+    const v = snap.val();
+    // a phone that changed it offline keeps its own word until it has been sent
+    if (v && typeof v === 'object' && (Number(v.at) || 0) >= (Number((you.set || {}).at) || 0)) { you.set = { share: v.share === true, at: Number(v.at) || 0 }; saveYou(); youPublish(); }
+    if (ui.view === 'mycal') render();
+  }, () => { });
+}
+/* Other clubs, read directly when My calendar opens with a signal: their teams
+   and games, which is where most of a person's calendar is. Sessions and
+   bookable times come from the summary, since they live under training/ and
+   would be a read per kind per club on every open. */
+function refreshElsewhere() {
+  if (!rtdb || !online || !me || !myClubs || isSandbox()) return;
+  for (const code of Object.keys(myClubs)) {
+    if (code === wsCode() || retiredClubs[code] || nowMs() - (youFresh[code] || 0) < YOU_FRESH) continue;
+    youFresh[code] = nowMs();
+    const who = me.uid, base = `workspaces/${code}/`;
+    Promise.all(['teams', 'matches', 'access'].map(k => fetchOnce(base + k))).then(([t, m, a]) => {
+      if (!me || me.uid !== who || !t.ok || !a.ok || code === wsCode()) return;
+      const fresh = clubSummary({ teams: t.v || {}, matches: (m.ok && m.v) || {}, access: a.v || {} });
+      const had = you.cal[code] || {};
+      const items = {};
+      let n = 0;
+      for (const x of Object.values(fresh)) items['i' + (++n)] = x;
+      for (const x of Object.values(had.items || {})) if (x && (x.k === 'session' || x.k === 'avail') && n < YOU_MAX) items['i' + (++n)] = x;
+      const doc = { name: String(((a.v || {}).org || {}).name || (myClubs[code] || {}).name || had.name || '').slice(0, 80), at: nowMs(), items };
+      you.cal[code] = doc; saveYou();
+      youWrite(youPath('cal/' + code), doc);
+      youPublish();
+      if (ui.view === 'mycal') render();
+    });
+  }
+}
+/* Another club's teams and games, summarised exactly as its own phone would:
+   the same functions, run for a moment against its copy instead of this
+   one's. Synchronous, so nothing else can see the swap. Sessions are left
+   out (this phone has none of that club's) and come from its summary. */
+function clubSummary(ws) {
+  const s0 = state, x0 = sess;
+  state = { teams: {}, matches: {}, access: {}, rsvp: {}, ...ws };
+  sess = SESS_BLANK();
+  try { return youItems(); } catch (e) { return {}; } finally { state = s0; sess = x0; }
+}
+/* Others' shared busy times, for the coaches of this club, read on the phones
+   that ask who is free: coaches' and admins'. A private calendar has nothing
+   there, so the listener just answers empty. */
+function watchBusy() {
+  if (!rtdb || !me || !awayOn()) return;
+  const { db, mod } = rtdb;
+  for (const u of coachUids()) {
+    if (u === me.uid || busyWatch.has(u)) continue;
+    busyWatch.set(u, null);
+    const off = mod.onValue(mod.ref(db, `people/${u}/busy`), snap => {
+      const v = snap.val() || {};
+      if (canon(v) === canon(busyOf[u] || {})) return;
+      busyOf[u] = v; render();
+    }, () => { });
+    busyWatch.set(u, off);
+  }
+}
+/* Busy at another club, as busyItems() has it: hers from her summaries,
+   everyone else's from what they share, leaving out the club open here (its
+   own entries are in busyItems already, in full). */
+function elsewhereOn(date) {
+  const out = [], here = wsCode(), tag = here ? clubTag(here) : '';
+  const span = (s, e, m) => { const a = minOf(s); let b = e ? minOf(e) : a + (m || 60); if (b <= a) b += 1440; return [a, b]; };
+  if (me) for (const [code, c] of youClubs()) for (const [i, x] of Object.entries(c.items || {})) {
+    if (!x || x.d !== date || !hm(x.s) || x.x || x.k === 'avail') continue;
+    const [a, b] = span(hm(x.s), hm(x.e), Number(x.m));
+    out.push({ key: `y:${code}:${i}`, kind: 'elsewhere', label: `${c.name || 'Another club'}: ${x.t || 'busy'}`, a, b, field: null, venue: '', coaches: [me.uid], tid: null, pids: null });
+  }
+  for (const [u, byTag] of Object.entries(busyOf)) {
+    if (me && u === me.uid) continue;
+    for (const [t, v] of Object.entries(byTag || {})) {
+      if (t === tag || !v) continue;
+      for (const [i, x] of Object.entries(v.b || {})) {
+        if (!x || x.d !== date || !hm(x.s)) continue;
+        const [a, b] = span(hm(x.s), hm(x.e), 60);
+        out.push({ key: `x:${u}:${t}:${i}`, kind: 'elsewhere', label: 'another club', a, b, field: null, venue: '', coaches: [u], tid: null, pids: null });
+      }
+    }
+  }
+  return out;
+}
+async function setSharing(on) {
+  if (!me) return;
+  youHere();
+  you.set = { share: !!on, at: nowMs() };
+  saveYou();
+  render();
+  if (!rtdb) return;
+  const ok = await youWrite(youPath('set'), you.set);
+  if (!ok) { toast('Not saved: the database refused it. Its rules may need updating.'); return; }
+  if (on) { for (const k of Object.keys(youSent)) if (k.startsWith('busy:')) delete youSent[k]; noteMyCal() || youPublish(); toast('Your busy times are shared'); }
+  else {
+    for (const k of Object.keys(youSent)) if (k.startsWith('busy:')) delete youSent[k];
+    await youWrite(youPath('busy'), null);
+    toast('Your calendar is private');
+  }
+}
+/* How old another club's part of the calendar is, when it is old enough to
+   matter. */
+function youNote() {
+  const old = youClubs().filter(([, c]) => nowMs() - (Number(c.at) || 0) > 86400000);
+  const bits = old.map(([, c]) => `${esc(c.name || 'Another club')} as of ${esc(dayLabel(dayStr(new Date(Number(c.at) || 0))))}`);
+  return (bits.length ? `<p class="muted" style="margin:0">${bits.join('; ')}. It catches up when you're online, or open it.</p>` : '')
+    + (you.refused ? '<p class="rolebar warn">Your other clubs are on this phone only: the database\'s rules may not include My calendar yet.</p>' : '');
+}
+function youShareCard() {
+  if (!me || !fbConfig().apiKey) return '';
+  const on = sharing();
+  return `<div class="card"><h2 style="margin-bottom:6px">Who sees your calendar</h2>
+    <div class="chips" style="margin-bottom:8px">
+      <button class="chip" type="button" data-act="youshare" data-v="0" aria-pressed="${!on}">Private</button>
+      <button class="chip" type="button" data-act="youshare" data-v="1" aria-pressed="${on}">Share when I'm busy</button></div>
+    <p class="muted" style="margin:0">${on
+      ? 'Coaches and admins in your clubs see the times you are busy at another club, so they don\'t book you then: the times only, never what, where or which club. Families never see them. Anyone signed in who has your account id could read them too.'
+      : 'Only you see this calendar. Each club sees what you do in that club, as it always has, and nothing of your other clubs.'}</p></div>`;
+}
+/* Somebody's next fortnight, as this club can see it: what they coach or run
+   here, their time off, and, if they share it, when they are busy elsewhere. */
+function sheetPersonCal(u) {
+  const name = coachName(u);
+  let html = '';
+  for (let i = 0; i < 14; i++) {
+    const date = addDays(todayStr(), i);
+    const xs = busyItems(date).filter(x => x.coaches.includes(u)).sort((x, y) => x.a - y.a);
+    if (!xs.length) continue;
+    html += `<p class="calhead">${esc(dayLabel(date))}</p>` + xs.map(x => `<div class="prow calrow"><span class="caltime">${timeOf(x)}</span>
+      <span style="min-width:0"><span class="pname">${esc(x.kind === 'elsewhere' && u !== (me && me.uid) ? 'Busy at another club' : x.label)}</span></span></div>`).join('');
+  }
+  const shared = me && u === me.uid ? sharing() : Object.keys(busyOf[u] || {}).some(t => t !== clubTag(wsCode()));
+  openSheet(`<h3>${esc(name)}: the next two weeks</h3>
+    <div class="plist">${html || '<p class="muted">Nothing on.</p>'}</div>
+    <p class="muted">${shared ? `Includes when ${esc(name)} is busy at another club, which ${esc(name)} has chosen to share. Only the times are shared.`
+      : `Only what is in this club. Anything ${esc(name)} does at another club is private unless shared from My calendar.`}</p>`);
 }
 
 function viewSetup() {
@@ -11386,8 +12040,8 @@ function viewAdmin() {
       <button class="btn quiet wide" data-act="tpllist" data-k="clubTpl" style="margin-top:8px">The club's templates${(() => { const n = tplItems('clubTpl').length; return n ? ' · ' + n : ''; })()}</button></div>
 
     <div class="card"><h2 style="margin-bottom:8px">Bulk import</h2>
-      <p class="muted" style="margin-top:0">A whole season at once — teams, rosters, fixtures, past results, the club's fields and permits, and training sessions — from one JSON file. It adds and updates, and never removes anything.</p>
-      <button class="btn quiet wide" data-act="bulkimport">Import teams, games, fields and sessions</button></div>
+      <p class="muted" style="margin-top:0">Moving from another app or a spreadsheet? A whole season at once — rosters, games, practices, the club's fields and permits, and training sessions — from CSV files or one JSON file. It adds and updates, and never removes anything.</p>
+      <button class="btn quiet wide" data-act="bulkimport">Import from a spreadsheet or file</button></div>
 
     ${aiButton('club')}
   </div>`;
@@ -12627,7 +13281,7 @@ function viewPeople() {
         <td class="dim">${when(u.at)}</td>
         <td class="right">${none
         ? `<button class="btn sm" data-act="personedit" data-uid="${u.uid}">Let in</button>`
-        : `<button class="btn quiet sm" data-act="personedit" data-uid="${u.uid}">Roles</button>`}</td>
+        : `${isCoachAny(u.uid) || isAdmin(u.uid) ? `<button class="btn quiet sm" data-act="personcal" data-uid="${u.uid}">Calendar</button> ` : ''}<button class="btn quiet sm" data-act="personedit" data-uid="${u.uid}">Roles</button>`}</td>
       </tr>`).join('') || '<tr><td colspan="5" class="dim">Nobody matches that filter.</td></tr>'}</tbody>
     </table></div>
 
@@ -14351,6 +15005,7 @@ function onAct(e) {
   }
   if (a === 'teammenu') { sheetTeams(); return; }
   if (a === 'goview') { ui.view = d.v; closeSheet(); render(); return; }
+  if (a === 'accountsheet') { if (me) sheetAccount(); else sheetSignIn(); return; }
   if (a === 'retireclub') {
     if (!canAdmin()) { toast('Club admins and the app owner only'); return; }
     if (!fb) { toast('Not connected'); return; }
@@ -15026,6 +15681,8 @@ function onAct(e) {
   }
   if (a === 'calday') { sheetCalDay(d.v); return; }
   if (a === 'mycalday') { sheetMyCalDay(d.v); return; }
+  if (a === 'youshare') { if (!me) return; setSharing(d.v === '1' || d.v === 1); return; }
+  if (a === 'personcal') { if (!awayOn() || !d.uid) return; sheetPersonCal(d.uid); return; }
   if (a === 'mycalf') { ui.myCal = String(d.v || 'all'); render(); return; }
   if (a === 'calitem') { sheetCalItem(d.k, d.tid, d.id); return; }
   if (a === 'calgame') {
@@ -15298,7 +15955,7 @@ function onAct(e) {
   if (a === 'bulkimport') { if (!canAdmin()) { toast('Only club admins can import'); return; } sheetImport(null); return; }
   if (a === 'import' || a === 'importfile') {
     if (!canAdmin()) { toast('Only club admins can import'); return; }
-    const inp = document.createElement('input'); inp.type = 'file'; inp.accept = 'application/json,.json,.txt';
+    const inp = document.createElement('input'); inp.type = 'file'; inp.accept = 'application/json,.json,.txt,.csv,.tsv,text/csv';
     inp.onchange = () => {
       const f = inp.files[0]; if (!f) return;
       const r = new FileReader();
@@ -15309,20 +15966,31 @@ function onAct(e) {
     inp.click(); return;
   }
   if (a === 'importexample') { sheetImport(JSON.stringify(IMPORT_EXAMPLE, null, 2)); return; }
-  if (a === 'importcheck') { sheetImport($('#impText').value); return; }
+  if (a === 'importcheck') { sheetImport($('#impText').value, importTeamPicked()); return; }
+  if (a === 'importtpl') {
+    const body = CSV_TEMPLATES[d.v]; if (!body) return;
+    const blob = new Blob([body], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url; link.download = `minutes-${d.v}-template.csv`;
+    link.click(); URL.revokeObjectURL(url);
+    return;
+  }
   if (a === 'importgo') {
     if (!canAdmin()) { toast('Only club admins can import'); return; }
     // planned again against the club as it is now, not as it was when checked
     let plan;
-    const txt = $('#impText').value;
-    try {
-      const data = JSON.parse(txt);
-      if (!pendingImport || pendingImport.text !== txt) pendingImport = { text: txt };
+    const txt = $('#impText').value, team = importTeamPicked();
+    const read = importRead(txt, team);
+    if (!read.data) { sheetImport(txt, team); return; }
+    {
+      const data = read.data;
+      if (!pendingImport || pendingImport.text !== txt) pendingImport = { text: txt, team };
       const k = restoreKnown(data, txt);
-      if (k === 'checking') { sheetImport(txt); return; }
+      if (k === 'checking') { sheetImport(txt, team); return; }
       plan = importPlan(data, k ? { ...state, trainingKnown: k } : state);
-    } catch (err) { sheetImport(txt); return; }
-    if (plan.errors.length || !(plan.writes.length + plan.sessWrites.length + plan.trainWrites.length)) { sheetImport(txt); return; }
+    }
+    if (plan.errors.length || !(plan.writes.length + plan.sessWrites.length + plan.trainWrites.length)) { sheetImport(txt, team); return; }
     if (!confirm(`Import into ${(acc().org || {}).name || 'this club'}? It ${importSummary(plan.counts)}.`)) return;
     applyImport(plan); pendingImport = null; closeSheet();
     toast('Imported: ' + importSummary(plan.counts)); return;

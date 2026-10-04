@@ -8,6 +8,50 @@ before this point lives only in the git log.
 
 ---
 
+## My calendar is yours, across clubs; import from spreadsheets — 2026-10-04 (build 87, rules version 3)
+
+The owner: *when I go to my settings, my calendar or something else, the team
+should become deselected and just the club selected. My calendar should be
+to my account, so no club included, since if I work for more than one my
+calendar becomes more complex. Then people can know my availability without
+going to another club's page — but private by default, public if I want.
+And a way to import fields, games, practices, etc. in bulk, so clubs can
+switch to this easily.*
+
+- **The crumbs say whose a screen is.** A team's tabs carry Club › Team;
+  settings, people, sessions, messages and club home carry the club alone;
+  My calendar carries **You**. A team left in the crumbs on Settings read as
+  "these are the team's settings".
+- **My calendar covers every club you're in**, from the account button as
+  well as the club page, with a chip per club. A phone still holds one club,
+  so each of your phones writes a summary of the club it has open to
+  `people/{uid}/cal/{code}`, which only you can read, and My calendar opened
+  online also reads each other club's teams and games itself, so a moved
+  practice shows moved. `AVAILABILITY.md` has the design.
+- **Private by default; share if you want.** *Who sees your calendar* →
+  *Share when I'm busy* publishes the times you are busy (a date and two
+  times, nothing else; no title, place or club) to `people/{uid}/busy`. The
+  coaches and admins of your clubs then see you as busy at another club
+  wherever the app asks who is free — find a time, the planner, covering a
+  call-out, session clashes, and your own bookable slots — and **People →
+  Calendar** shows anyone's next fortnight as the club sees it. The rules
+  refuse any busy time while sharing is off, and turning it off deletes them.
+- **Import from a spreadsheet.** The bulk import reads CSV as well as JSON: a
+  roster, a schedule (games, practices and other entries sorted by type or
+  by whether there's an opponent; *Home team*/*Away team* worked out), or a
+  list of fields, by their headings, with templates to download. A sheet
+  with no team column asks which team it's for. Problems are given by row,
+  and nothing is written while one is left, as before.
+- **Practices and events import**, from either: one entry per week of a
+  weekly practice, sharing a series as *Every week* does, matched by team,
+  date, start and kind so a second run adds nothing. Games take their
+  match-day details (home or away, arrive by, kit, notes), and times can be
+  written `9:30am`.
+
+**Rules version 3**: the new `people` root block. Paste `database.rules.json`;
+until then other clubs stay on the phone that saw them and sharing is
+refused, and the screen says so.
+
 ## Time boxes keep their colon — 2026-10-04
 
 Editing a goal, shot, event or sub time opens a number pad, which has no colon

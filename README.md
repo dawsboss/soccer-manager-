@@ -238,6 +238,7 @@ What each part is doing:
 - **`training/$code/splans/$sid`** is a session's drills: its coach and the admins only, like a practice plan.
 - **`training/$code/drills/$id`** is the club's shelf of drills. Admins and anyone in `coachIndex` read it; trackers and parents never do, and with no `coachIndex` only admins do (it **fails closed**, like practices). A coach writes a drill stamped `by` herself for a `team` whose coach list (`access/teams/{team}/coaches`) names her, and edits or removes it only while that is still true; admins edit or remove any. The check reads the team's own coach list rather than `teamIndex`, so sharing works in a club that hasn't built its lookup tables yet, with no bridge. A drill needs a name of 1–80 characters, and every link in `media` must start with `https://`. **`training/$code/templates/$id`** follows the same rules, ready for templates.
 - **`userLibrary/$uid`** is one person's own drills and templates, whichever club she is in. She reads and writes it, one drill at a time, under `drills` or `templates` only. The app owner (`appOwners`) may read it, for support, and never write it. No club admin has any clause here: a coach in two clubs would have two sets of admins, and the library is hers.
+- **`people/$uid`** is one person's calendar across every club she is in (`AVAILABILITY.md`, *My calendar is yours, not a club's*). **`cal/$code`** is her summary of each club, written by her own phones and readable by her alone — not an admin, not the app owner. **`set`** is whether she shares her busy times, hers alone too. **`busy/$tag`** is those busy times, one entry per club under a one-way tag of its code: a date, a start and an end, and the rule refuses any other field (no title, no place, no club). Anyone signed in reads them, and they can only be written while her own `set/share` is `true`, so a calendar is private until she says otherwise, and turning it off deletes them.
 - **`clubInvites/$code`** is the admin's list, readable only by admins. It lives outside the workspace on purpose: everyone indexed can read the whole workspace, and a list of unspent coach invites in a parent's hands is a parent who can make herself a coach.
 - **`userOrgs/$uid`** is which clubs an account belongs to, so a second device finds them without a code. Only its owner reads it. It is a list of bookmarks, not a grant: reading a club is still `access/index`'s decision.
 - **`rsvp/$tid/$item/$pid`** is who is coming: one answer per child per game or calendar entry. A parent may write it for a child whose `guardians` list holds her uid, a coach for anyone on her team, an admin for anyone, and each answer must be stamped with the writer's own uid. It is a node of its own, not part of the game or the team, so the one thing this rule hands a parent is her own child's answer. An answer is `yes`, `no` or `maybe`, an optional note of at most 140 characters, and nothing else. Until this block is published, parents' answers are refused and the app says so.
@@ -419,7 +420,10 @@ A coach says when she is free, for 1-1s or a small group, and families book a pl
 
 ### My calendar
 
-**Club home → My calendar** (or the link at the top of any team's Calendar tab) is the person's, not a team's: every team she coaches or tracks, every team a child of hers is on, the sessions she runs and her children's, and the times she has offered, in one month view and one list. A parent of two, or a coach who is also a parent, can narrow it to one child or to her coaching. The team Calendar tab stays as it is: it is what a coach plans on and what the share link mirrors.
+**Your account (the round button, top right) → My calendar** (or Club home, or the link at the top of any team's Calendar tab) is the person's, not a team's or even a club's: every team she coaches or tracks, every team a child of hers is on, the sessions she runs and her children's, and the times she has offered — **in every club she is in**, each named, with a chip per club. A parent of two, or a coach who is also a parent, can narrow it to one child or to her coaching. The team Calendar tab stays as it is: it is what a coach plans on and what the share link mirrors.
+
+- **Other clubs** come from a summary each of her phones writes about the club it has open, readable only by her, and from the clubs' own teams and games, read when she opens My calendar with a signal. Sessions and bookable times in a club she hasn't opened lately are as of the last time she did, and the screen says so.
+- **Private by default.** *Who sees your calendar* → **Share when I'm busy** lets the coaches and admins of her clubs see the times she is busy at another club — the times only, never what, where or which club — wherever the app asks who is free: find a time, the planner's clashes, covering a call-out, a session's clashes and her bookable slots. **People → Calendar** shows anyone's next fortnight as the club sees it. Families never see it. **Private** takes it all down. It needs the `people` rule block published; until then the other clubs stay on the phone and the screen says so.
 
 Sessions need the `training` block's `sessions`, `booked`, `came`, `fees`, `pay`, `splans`, `avail` and `seats` rules published (**The database rules**). Until then they stay on the phone they were made on, the screen says *Some of this is on this phone only*, and a family's ask is refused and taken back off the screen with a message.
 
@@ -561,7 +565,7 @@ Setup → *Download a copy* (admins) writes the whole club to one JSON file: tea
 
 ## Bulk import
 
-Admin → *Import teams, games, fields and sessions* takes a season at once — teams, rosters, fixtures, past results, the club's fields with their permits, and training sessions — as one JSON file, chosen or pasted. *Check it* shows what it will do and every problem, line by line, before anything is written; nothing is written while an error is left.
+Admin → *Import from a spreadsheet or file* takes a season at once — teams, rosters, fixtures, past results, practices and the rest of the calendar, the club's fields with their permits, and training sessions — as CSV (what any spreadsheet, or the app you're moving from, saves as) or one JSON file, chosen or pasted. *Check it* shows what it will do and every problem, line by line, before anything is written; nothing is written while an error is left.
 
 ```json
 {
@@ -593,6 +597,27 @@ Admin → *Import teams, games, fields and sessions* takes a season at once — 
 - **It merges, it never replaces.** A team is matched by name, a player by name within the team, a game by team, date and opponent. A match gets only the fields the file gives; nothing is deleted. Running the same file twice changes nothing.
 - **A past result is a score, not minutes.** It becomes goals at 0:00 and a finished game, so the season record adds up; nobody's minutes are invented. A game that already has goals recorded keeps them.
 - The file holds children's names, so treat it like the roster. Names never reach the parent pages.
+
+**Practices and other calendar entries** go in the same file, beside `teams` (with a `team`) or inside one:
+
+```json
+{
+  "practices": [{ "team": "Lakeside Thunder G12", "date": "2026-09-07", "start": "5:30pm", "end": "19:00",
+                  "where": "Lakeside Park", "weekly": { "days": ["Mon", "Wed"], "until": "2026-11-25" } }],
+  "events": [{ "team": "Lakeside Thunder G12", "title": "Picture day", "date": "2026-09-20", "start": "10:00", "minutes": 30 }]
+}
+```
+
+- A practice or event needs a `date`; `start` and `end` (or `minutes`) are its times, `where` the place, `notes`, `title`, and `public: true` puts it on the share link (team-only otherwise, as in the app). `weekly` with `days` and `until` makes one entry a week sharing a series, exactly like *Every week* on the Calendar tab, so calling one week off later is one change.
+- **Matched by team, date, start and kind**, so running it again adds nothing; a changed place or end time updates the entries it matches, one field at a time, and nothing the file doesn't mention is touched.
+- **Games take the match-day details too:** `home` (`home`, `away`, `neutral`, or `H`/`A`), `arrive` (the time to be there), `kit` (or `uniform`) and `notes`. Times can be `09:30`, `9:30am` or `9am`.
+
+**Spreadsheets.** Save a sheet as CSV and choose it, or paste it, and the import reads it by its headings — one sheet at a time:
+
+- **A roster**: `Name` (or `First name` and `Last name`), `Number` (`Jersey`, `#`), `Position`, `Goalkeeper`, `Notes`, and `Team`. With no `Team` column, the sheet asks which team it is for, or the name of a new one.
+- **A schedule**: `Date`, `Start` (`Time`, `Kick-off`), `End` or `Duration`, `Type` (game, practice, or anything else for an event), `Opponent` — or `Home team` and `Away team`, and it works out which is you — `Home/Away`, `Location`, `Arrival`, `Uniform`, `Notes`, and `Team`. A row with an opponent and no type is a game. Dates can be `2026-10-04`, `10/4/2026` or `Oct 4, 2026`; a slashed date is read month first unless a day over twelve in the same column says it's day first.
+- **Fields**: `Name`, `Address`, `Pitches`, `Surface`, `Lights`, `Notes`.
+- A heading it doesn't know is listed as not used, never guessed at, and every problem is given by its row number. Templates for each are on the import sheet.
 
 **Fields and training sessions** go in the same file, beside `teams` or on their own:
 
