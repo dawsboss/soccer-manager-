@@ -1437,6 +1437,57 @@ reads('owners are not world-readable', OUT, 'shareOwners/sh1', false);
   delete DB.workspaces.NEWCLUB; delete DB.training.NEWCLUB;
 }
 
+/* ---------------- which version is published ---------------- */
+
+/* rulesVersion accepts one number, the version these rules are, from anyone:
+   the app's admin banner and `node tools/live-rules.js` both find out what is
+   published by trying to write it, and the second runs with no account. The
+   only write that can succeed stores the number already there in any club
+   running these rules, so there is nothing to protect by asking for one. */
+console.log('\n--- which version of the rules is published ---');
+const VERSION = (() => {
+  const m = /^newData\.isNumber\(\) && newData\.val\(\) === (\d+)$/.exec(((RULES.rulesVersion || {})['.write']) || '');
+  return m ? Number(m[1]) : null;
+})();
+check('rulesVersion names its version as a whole number', VERSION !== null, true);
+reads('anyone reads it, signed out too', OUT, 'rulesVersion', true);
+writes('signed out, writing this version', OUT, 'rulesVersion', VERSION, true);
+writes('admin, writing this version', ADM, 'rulesVersion', VERSION, true);
+writes('the version before', OUT, 'rulesVersion', VERSION - 1, false);
+writes('the version after', ADM, 'rulesVersion', VERSION + 1, false);
+writes('this version, as text', OUT, 'rulesVersion', String(VERSION), false);
+writes('deleting it', ADM, 'rulesVersion', null, false);
+
+/* The number only means something if it goes up every time the rules change,
+   so the last version's fingerprint is kept, and a change without a bump
+   fails here — locally and in CI — rather than on a club. The app has to ask
+   for the same number, or every admin is told her rules are out of date. */
+{
+  const crypto = require('crypto');
+  const STAMP = path.join(__dirname, 'rules-stamp.json');
+  const raw = fs.readFileSync(path.join(ROOT, 'database.rules.json'), 'utf8');
+  // the number itself is left out, so bumping it is not a change to stamp
+  const print = crypto.createHash('sha256').update(raw.replace(/newData\.val\(\) === \d+"/, 'newData.val() === N"')).digest('hex').slice(0, 16);
+  const app = /const RULES_VERSION = (\d+);/.exec(fs.readFileSync(path.join(ROOT, 'app.js'), 'utf8'));
+  check('app.js asks for the version the rules are', !!app && Number(app[1]) === VERSION, true);
+  let stamp = {};
+  try { stamp = JSON.parse(fs.readFileSync(STAMP, 'utf8')); } catch (e) { }
+  const same = stamp.version === VERSION && stamp.print === print;
+  if (process.argv.includes('--stamp') && !same) {
+    if (stamp.print !== print && !(VERSION > (stamp.version || 0))) {
+      check(`the rules changed: raise rulesVersion past ${stamp.version} before stamping`, false, true);
+    } else {
+      fs.writeFileSync(STAMP, JSON.stringify({ version: VERSION, print }, null, 2) + '\n');
+      console.log(`  stamped version ${VERSION} (${print})`);
+    }
+  } else if (!same) {
+    console.log(stamp.print !== print && VERSION === stamp.version
+      ? `  database.rules.json changed but is still version ${VERSION}. Raise it in rulesVersion's .write and RULES_VERSION in app.js, then run node test/rules.js --stamp`
+      : `  version ${VERSION} is not stamped yet: run node test/rules.js --stamp`);
+    check('the rules are stamped with their version', false, true);
+  } else check('the rules are stamped with their version', true, true);
+}
+
 /* ---------------- what the rules and the app disagree about ---------------- */
 
 console.log(`

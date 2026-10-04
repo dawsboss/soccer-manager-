@@ -190,8 +190,21 @@ a parent can still write another team's data, exactly as before.
 
 **[`database.rules.json`](database.rules.json)** is the whole ruleset. On a phone: open it on GitHub, tap **Raw**, select all, copy, and paste it over everything in Realtime Database → Rules, then **Publish**. From a computer with the Firebase CLI signed in, `firebase deploy --only database` publishes the same file (`firebase.json` points at it) — the console is fine, and is what this README assumes.
 
+**Which version is published?** The rules carry a version number, and the
+app carries the one it was built for. An admin's phone asks the database
+each session; if the published rules are older, every screen says so (and
+*Club settings → Check readiness* has a cross), instead of each feature
+quietly saying *saved on this phone only*. From a computer,
+`node tools/live-rules.js` asks the live database the same question and
+prints the published version beside this checkout's.
+
 What each part is doing:
 
+- **`rulesVersion`** is the number above. Anyone may write it, signed in or
+  not, but only the one number these rules are, so the write is a question
+  only the published rules can answer, and the only write that can succeed
+  changes nothing. Whoever changes `database.rules.json` raises it (and
+  `RULES_VERSION` in `app.js`); `node test/rules.js` fails until they do.
 - **Reading anything** needs a signed-in account listed in `access/index`. The `!data.child('access/index').exists()` clause is the bootstrap: a brand-new workspace with no index yet stays readable, so it can be set up in the first place. It stops mattering the moment the first role is granted.
 - **`access/members/$uid`** is self-writable. That is how a new coach knocks on the door: they sign in, register themselves, and an admin can then see them to assign a role. It grants no data access on its own.
 - **`admins`** can only be changed by an existing admin — except when there are none, which is the bootstrap for claiming it.
