@@ -183,17 +183,18 @@ const EXPORTS = `{
   sheetDrillFilters, PRACTICE_ACTS, PRACTICE_BLANK,
   /* practice plans */
   PLAN_ACTS, canPlan, teamPractices, practiceById, putPractice, dropPractice, mergePractices,
-  suggestPlan, planWarnings, planKit, whenOf, nextPractice, todayIso, pracDay,
+  suggestPlan, planWarnings, planKit, needsWork, drillsFor, nextPractice, movePlans, planEntry, rawPlan, addMins, todayIso, pracDay,
   syncCoachIndex, syncAllCoachIndex, coachTeamOf, readiness,
   get train() { return train }, set train(v) { train = v }, get trainState() { return trainState },
   /* the club's drills and a coach's own */
-  SHELVES, LIB_ACTS, normDrill, cardOf, findDrill, drillOrigin, drillPool, shelfItems, canCurate, shareTeam,
+  SHELF, SHELVES, LIB_ACTS, TPL_ACTS, tplItems, findTpl, normTemplate, canCurateTpl, normDrill, cardOf, findDrill, drillOrigin, drillPool, shelfItems, canCurate, shareTeam,
   putDrill, dropDrill, mergeShelf, watchShelf, peekLibrary, blockDrill, drillBlock, draftProblem, mineUnsent, cleanDrawing,
   get pending() { return pending }, pendingCount, refusedCount, pendingLabel, localOnlyData, flushPending,
   get mine() { return mine }, get mineUid() { return mineUid }, get shelfState() { return shelfState },
   get drillDraft() { return drillDraft },
   /* rendering + routing */
   render, uiToHash, hashToUi, clubTag,
+  clubClashesOn, coachStatus, freeCoaches, clubNews, newsFor, newsItems, newsUnread, fieldShut, fieldHours, fieldClosures, awayAll, awaySpans, calledOut, findTimes, picOrder, picLayout, plannerClashes, PLANNER_ACTS,
   /* the mutable module-scoped bindings */
   get state() { return state }, set state(v) { state = v },
   get ui() { return ui },

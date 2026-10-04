@@ -54,6 +54,21 @@ console.log('\n--- what a cached page would do ---');
   console.log('  the banner would say: "cached at v' + staleMeta + ' but the code is v' + build + '"');
 }
 
+console.log('\n--- app.js parses the way the browser loads it ---');
+{
+  /* index.html loads app.js as a module, which is strict and refuses a name
+     declared twice at the top level. The other suites eval it as a plain
+     script, where a second function of the same name quietly replaces the
+     first: a planner's clashesOn(date) once replaced the game plan's
+     clashesOn(t, m), every suite passed, and the page itself was blank. */
+  const os = require('os'), path = require('path'), { spawnSync } = require('child_process');
+  const tmp = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'sm-')), 'app.mjs');
+  fs.copyFileSync(root('app.js'), tmp);
+  const r = spawnSync(process.execPath, ['--check', tmp], { encoding: 'utf8' });
+  if (r.status) console.log('    ' + String(r.stderr).split('\n').slice(0, 4).join('\n    '));
+  check('app.js compiles as a module, with no name declared twice', r.status, 0);
+}
+
 console.log('\n--- the public pages ---');
 {
   /* live.html and game.html are stamped by .github/workflows/deploy.yml at

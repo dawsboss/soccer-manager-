@@ -131,6 +131,14 @@ Two steps further, in increasing cost:
 
 ## Next: planning for the club
 
+> **Built, 2026-10-04**, all four steps, as Admin → *Plan* (`viewPlanner()`,
+> `test/planner.js`): clashes, find a time, booking one entry per team with a
+> shared `club` id, and picture day. Not built from *What is missing* below:
+> nothing: per-field opening hours and closures, and coaches' own time off
+> (weekly, dates away, calling out of one entry), were built the same day,
+> the time off at `training/{code}/away` rather than `access/members` (CHANGELOG
+> says why). Games are said, never offered to move.
+
 The next piece of work, and the reason the calendar, answers and attendance
 were built the way they were. A club admin scheduling the season asks one
 question in many shapes: **when is everyone involved free?** For a reschedule,
@@ -201,6 +209,11 @@ coaches' meeting. All the facts are already in the club; nothing joins them up.
   coaches, as everywhere else.
 
 ### Drills a player has done
+
+*The join is now one lookup*: plans are keyed by the calendar entry's id, so
+for each entry with a register (`teams/{tid}/attend/{eid}`), the drills in
+`practices/{tid}/{eid}` count for each player marked present. The screen is
+not built.
 
 Wanted alongside attendance: each player's list of drills done. The register is
 keyed by the calendar entry's id (`teams/{tid}/attend/{eid}`), so if a practice

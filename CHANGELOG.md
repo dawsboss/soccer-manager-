@@ -16,6 +16,283 @@ it back. The time boxes now draw the colon themselves: they hold digits, the
 last two are seconds (2 3 1 0 reads 23:10), and backspacing over the colon
 deletes the digit before it.
 
+## Merged with main: rules version 2 — 2026-10-04 (build 85)
+
+Main started numbering the rules (`rulesVersion`, `RULES_VERSION`) while this
+branch changed them twice: the `practices` rule no longer needs a date, and
+the new `training/$code/away` block. So this is **rules version 2**, stamped
+in `test/rules-stamp.json`. Paste `database.rules.json` once and an admin's
+phone stops saying the rules are behind. `HANDOFF.md` went on main; what this
+branch had added to it is in the entries below.
+
+---
+
+## Admins call coaches off, who's free, and club activity — 2026-10-04 (build 84)
+
+The owner: *admins should be able to call coaches off. Also say what coaches
+are available at a given time … notifications for admins for coaches calling
+out, sessions being made by parents, practices, games, it all.*
+
+- **Admins act for any coach.** On a practice, game or event, *Call Jaz off*
+  for each of the team's coaches (and the session's coach on a session),
+  asked first, with an optional note; *Put Jaz back on* undoes it. Planner →
+  Coaches has *Add* time off for each coach and *Remove*. It is written in the
+  coach's own record with the admin as `by`, so the entry says *Jaz can't
+  make it (called off by Ada)*. A coach still can't do any of it for
+  another, checked in the handler; the `away` rule already allowed admins.
+- **Who's free.** Planner → *Coaches*: a day and a time, and every coach is
+  listed free, busy (*G13 Storm: Practice at 6pm*) or off (*Every Mon, all
+  day*), with the teams she coaches. `coachStatus()` reads `busyItems()`, so
+  it agrees with everything else; a coach called out of the thing being
+  covered is never offered as its cover. A practice with no coach left says
+  *Free then: Kim* on its sheet and in Clashes. "Removed for good" is being
+  taken off every team (under People): she is then no coach here, and isn't
+  listed; time off is the "for now".
+- **Club activity.** `clubNews()` works out, on the phone, what changed since
+  it last looked, the way a family's session news already did: new, moved,
+  called off, back on and deleted practices, games and events on any team (a
+  weekly series, or a club-wide booking, as one item); a coach calling out,
+  or being called off, and back on; time off; sessions families booked
+  (*Booked by a family: 1-1 with Kim · Ella*) or asked for, and withdrawals;
+  sessions coaches made. Each pops up as it arrives (top three, then *N
+  more*) and is kept under the bell, at the top of Messages, unread marked,
+  each tap opening the entry or session. A coach hears the call-outs on her
+  teams and being called off; a parent hears none of it.
+  - **Not news**: the first look at each source; a source that hasn't loaded
+    yet (so a reload, or sessions arriving after the calendar, never reads
+    as everything deleted); anything this phone wrote itself
+    (`noteMine()`, called from every write path).
+  - **Not push.** Like messages, heard while Minutes is open on a phone;
+    ROADMAP's push section is still the way to a closed phone.
+- Games made from now on carry `by`, so a new game says who added it.
+
+`test/news.js` is new; `test/away.js` gains the admin and the who's-free
+cases.
+
+---
+
+## Field hours and closures — 2026-10-04 (build 83)
+
+The other half of the owner's ask (*the per-field thing would be amazing*),
+and ROADMAP's "when pitches can be had at all": the lights go off at nine,
+the school has it until four, it's shut for reseeding in November.
+
+- **Opening hours per weekday**, on the field's form: an opening and a
+  closing time, or *Closed*, for each day. Only what constrains is saved: a
+  day left blank is open any time, so a field with no hours checks nothing,
+  as before. A day with only one of the two times is refused, not guessed.
+- **Closed on dates**: from, until (one day if blank) and why.
+- Stored on the field with everything else about it
+  (`access/org/venues/{id}/hours`, `closed`), under the admin rule that
+  already covers fields, so no rule change.
+- `fieldShut()` says why the field can't be used then (*Lakeside Park is open
+  4pm–6:30pm on Tuesdays*, *is closed 2 Nov to 15 Nov (Reseeding)*), and it
+  is asked everywhere permits already were: the session's clash card, the
+  field's own next two weeks, the planner's Clashes (*Field*), and find-a-time
+  with a field chosen, which ranks a shut slot with the clashes.
+- The field card and sheet show the hours and the coming closures.
+
+`test/planner.js` pins the hours, the closures winning over hours, the
+planner, find-a-time, a session on a closed date, the form (half-typed
+refused, only constraints saved) and a coach unable to change it. Also:
+date inputs side by side no longer overflow the sheet at phone width.
+
+---
+
+## Coaches' time off: nights off, dates away, calling out — 2026-10-04
+
+The owner: *get the coaches block out, call out, and all their kinds of
+events coded up.* ROADMAP's "coaches' own unavailability", in the three
+shapes a coach says it:
+
+- **Every week**: *never Mondays*, *not after 6 on Tuesdays*, from or until
+  a date if she likes.
+- **Dates away**: *12–19 October*, or one afternoon for the dentist.
+- **Calling out** of one practice, game, event or session she coaches: *I
+  can't make this*, with an optional note, and *I can make it after all*.
+
+Her list is on My calendar (*Time off*, with Add and Remove); calling out is
+on the entry's own sheet and on her session's.
+
+**Where it lives, and why not where ROADMAP first said.** ROADMAP suggested
+`access/members/{uid}`. Every account in the club reads the workspace, and
+the members rule lets any of them write any member's node, so a parent could
+read a coach's week and forge it. It is `training/{code}/away/{uid}/{id}`
+instead, with a rule of its own: a coach writes only her own, in her own
+name, an admin anyone's, and only coaches and admins read it. It syncs with
+the training sessions' machinery (merge on read, dirty marks, a refusal said
+per record, *Download a copy*), and only coaches' and admins' phones ever ask
+for it. **Paste `database.rules.json`** for it to leave the phone; until then
+the card says *Saved on this phone only*.
+
+**Read, not obeyed.** Nothing is called off or moved for her. Time off is a
+busy item of hers in `busyItems()`, so it is what the planner, find-a-time
+and her own bookable slots already read: her slots on a Monday are taken out,
+find-a-time counts her busy. A call-out takes her off that entry, so she is
+free for something else then, and the planner's Clashes says *No coach for
+G11 Flight: Practice at 5:30pm: Jaz called out* when nobody is left, or *Jaz
+called out …; Kim still on* when somebody is, plus *Jaz has time off but is
+due at …*, and lists every coach's time off in the window. The team's
+calendar row says *no coach: all called out* to its coaches and admins.
+Families see none of it.
+
+`test/away.js` is new; `test/rules.js` has the block, refusals first.
+
+---
+
+## Planning for the club — 2026-10-04 (build 82)
+
+ROADMAP's *Next: planning for the club*, all four steps, as Admin → *Plan*.
+An admin scheduling the season asks one question in many shapes: when is
+everyone involved free? Every fact was already in the club; this joins them,
+building on `busyItems()` (the join training sessions use) rather than a
+second one.
+
+- **Clashes**, this week, 14 or 28 days: two things at one place at once (a
+  field from Fields, with its number of pitches, or the same words typed),
+  a coach due in two places, and a family with children due in two places,
+  by name, since the screen is the admins'. A read: nothing written.
+- **Find a time** for some teams or the whole club: how long, from when, over
+  how many days, between which hours, optionally at which field. Every half
+  hour that fits is scored: a chosen team already busy is all but ruled
+  out, then a full or unpermitted field, then coaches and families due
+  somewhere else, with a team's usual practice slot as the tie-break. Each
+  slot says what it clashes with.
+- **Book it**: one entry per team at `teams/{tid}/events/{eid}`, sharing a
+  `club` id the way a weekly practice shares `series`, each its own write,
+  team-only. No new node and no new rule: an admin can already write every
+  team's calendar, and each team can move or call off its own copy.
+- **Picture day**: a day, a window, a slot length and the teams; siblings'
+  teams are put next to each other, each team gets the first slot it and its
+  coaches are free for, a team with no room left is said rather than
+  squeezed in, and one tap books every slot.
+
+Admins only, checked in the click handler as well as on the screen. Games
+against other clubs are shown as what they are and never offered to move.
+`test/planner.js` is new; `test/smoke.js` draws all three tabs.
+
+Also in this build: **`test/version.js` compiles app.js as a module**, the
+way `index.html` loads it. The suites eval it as a script, where a second
+top-level function of the same name quietly replaces the first: the
+planner's first draft declared a `clashesOn(date)` beside the game plan's
+`clashesOn(t, m)`, every suite passed, and the page itself was blank. Found
+by looking at the new screens in Chromium at phone width, which is now a
+test.
+
+---
+
+## What needs work, on the Season tab — 2026-10-04
+
+TRAINING.md's step 7, and the first step of its road to the AI helper, with
+no AI in it. A card on Season, for the team's coaches and the club's admins,
+that works out the signals in `drills.js` from the last five finished games
+(at least three), shows the three that stand out with the numbers behind
+each (*12 against and 6 for in the last 5 games: 2.4 a game against, 1.2
+for*), and the drills that answer each one for the team's age, closest level
+first, with *All 16 →* opening the library filtered to that signal.
+
+`needsWork()` uses TRAINING.md's starting thresholds exactly: shots under
+80% of theirs, under 40% on target from ten, a top scorer with 60% from five,
+under a quarter assisted from five, possession under 45%, their shots over
+125% of ours, conceding a goal a game more than we score, 40% of goals
+against in the last quarter from five, corners against over 150% (or two
+goals within 20 seconds of one), fouls over 150%, twelve throw-ins a game.
+
+**A signal only fires on data that was tracked.** Each family counts only the
+games that carry it and needs three; no shots tapped is *we don't know*, and
+the card says which families it couldn't judge. Assists count only for a
+team that has ever tapped one. Parents and trackers don't get the card: the
+drills are the coaches', and the numbers are in the cards they already see.
+Nothing about it reaches `public/` or the AI prompt yet (TRAINING.md's step
+2). `test/plans.js` pins each threshold that fires, the honesty rule, the
+age filter, and who sees it.
+
+---
+
+## Templates — 2026-10-04
+
+The last of the owner's ask for coaches' own libraries, the club's, and
+templates. **A template is a plan with no calendar entry**: a name, a
+length, what it's for, and the drills in order, with their minutes and notes.
+
+- **Two shelves, the drills' shape.** Mine at `userLibrary/{uid}/templates`,
+  the club's at `training/{code}/templates` with `by`, `byName` and `team`,
+  exactly like a club drill. They are `SHELF.mineTpl` and `SHELF.clubTpl`
+  beside the drill entries, so `putDrill()`, `mergeShelf()`, `watchShelf()`
+  and the rest sync them with no second copy of the code: merge on read, a
+  dirty map, one template per write, Mine cleared on sign-out with the rest
+  of `sm.mine.v1`. Everything read goes through `normTemplate()`, which holds
+  each block to a shape and leaves the drill cards to `normDrill()` when
+  they're drawn.
+- **Save as a template**, from any plan, to Mine, or straight to the club
+  for a coach of the team or an admin. **Plan from a template** on a plan
+  with no drills, or **Swap in a template** on one with some (asked first,
+  as *Suggest another* does); or open a template and **Plan a practice from
+  it**, which lists the coming practices with no plan. The plan copies the
+  blocks and records which template (`tpl`); the template is untouched.
+- **Where they are**: *Templates · Mine · Club* chips on top of Plans, and
+  Admin → Club drills has *The club's templates*.
+- **Copied, never linked; delete never cascades.** *Share with the club* and
+  *Copy to mine* make copies that record `from`. An admin removes any club
+  template, a coach what she shared while she still coaches its team,
+  checked in the click handler, as for drills.
+- Counted in the badge and *Not saved to the club yet* until the database
+  has them; the club's go in *Download a copy* and come back through *Load
+  from a file* only where the club has none. A plan with no date of its own
+  (one that hangs off the calendar) is now restored too.
+
+No rule change: `templates` was already in both blocks of
+`database.rules.json`, with its `rules.js` cases. `test/library.js` pins who
+sees them, save as, plan from, swap in, share and copy as copies, curation,
+merge on read, sign-out, and a hostile club template drawn as text.
+
+---
+
+## Practice plans hang off the calendar — 2026-10-04
+
+The owner settled it on 2026-10-03 (*do practice plans hang off the
+calendar? Yes*), and the Add buttons were already one. This finishes it: a
+plan no longer has a date, time or place of its own. It is keyed by its
+calendar practice's id and reads day, start, end, place, length and whether
+it's called off from `teams/{tid}/events/{eid}` every time it's drawn
+(`withEntry()`), so there is one list of practices and nothing that can
+disagree with it about when practice is. Edits start from what is stored
+(`rawPlan()`), so the calendar's day is never copied back into the plan.
+
+- **Plans → the list is the calendar's practices**, each with its plan or
+  *Plan it*. *Add a practice* is the calendar's own sheet. Editing a plan
+  edits what it's for (and its length when the entry has no end time) and
+  sends day, time and place to the calendar.
+- **Called off**: the plan stays, struck through and saying so. **Deleted
+  entry**: the plan is kept, never deleted with it, and listed under
+  *Earlier* as *Not on the calendar*, offering *Save as a template* and
+  *Delete the plan*.
+- **Again next week** is now **Use this plan for…**: the coming practices
+  with no plan yet; the drills and the focus are copied.
+- **`schedule` is no longer written or read.** The next practice on Games
+  comes from the calendar, which everyone on the team could always read, so a
+  parent's phone now reads no training node at all. The `schedule` rule stays
+  for now, because an older app in the wild still writes it; remove it in a
+  later change.
+- **Older plans move across by themselves** (`movePlans()`), on a coach's or
+  an admin's phone, after the club's copy of the plans arrives: a practice
+  entry is made from the plan's day, time and place, team only, *under the
+  plan's own id*, and the plan is marked `eid`. The brief suggested a new id
+  and deleting the old plan once the new one was acknowledged; the same id
+  gets the same result with nothing to delete, so two phones moving the same
+  plan write the same entry, and a reload halfway leaves nothing half-moved.
+  `eid` stops a plan being moved twice, and stops an entry deleted on purpose
+  from coming back. A plan with something pending waits until it is sent.
+- **The rule**: `practices/$tid/$pid` now needs `id` and `teamId` only, so a
+  plan with no date is accepted; an older app's dated plan still is. **Paste
+  `database.rules.json` before this ships**, or a new plan is refused and
+  stays on the phone (the screen says so).
+
+`test/plans.js` makes practices through the calendar now, and pins the move
+(including a reload before anything was acknowledged), called-off and
+deleted entries, *Use this plan for…*, and the next practice read from the
+calendar by a parent's phone that reads no training at all. `test/rules.js`
+has the plan with no date.
 ## Which rules are published, asked of the database — 2026-10-04
 
 Nobody could tell whether the latest `database.rules.json` had been pasted.

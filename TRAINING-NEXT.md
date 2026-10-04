@@ -1,5 +1,15 @@
 # Next in training: plans on the calendar, then templates
 
+> **Built, 2026-10-04.** Steps 1 and 2 below, and step 3's *what needs work*,
+> shipped (`CHANGELOG.md` has the entries). Two things are left from this
+> brief: **remove the `schedule` rule** from `database.rules.json` once no
+> app older than build 82 is in use (and its `rules.js` cases with it), and
+> the screen for *drills a player has done*, which is now one lookup (a
+> register at `teams/{tid}/attend/{eid}`, a plan at `practices/{tid}/{eid}`).
+> One deviation: old plans move onto an entry under their *own* id rather
+> than a new one, so there is no old copy to delete (CHANGELOG says why).
+> The rest of this file is the brief as it was written.
+
 A brief for a fresh chat, written 2026-10-03 at the end of the branch
 `ccr-d5818ea9-kls3o6`. If that branch is merged and nothing below has shipped
 since, this is current. If something has shipped differently, trust the code
