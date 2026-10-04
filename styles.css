@@ -774,6 +774,8 @@ button.nextprac{cursor:pointer}
 .planctl button:disabled{opacity:.35;cursor:default}
 .planwarn{background:var(--owed-wash);border-color:var(--owed)}
 .planwarn p{margin:0 0 4px;color:#6C4406;font-size:14px}
+.nwsig{padding:10px 0;border-top:1px solid var(--line)}
+.nwsig:first-of-type{border-top:0;padding-top:4px}
 .planwarn p:last-child{margin-bottom:0}
 .pickbar{display:flex;align-items:center;justify-content:space-between;gap:10px;border-left:4px solid var(--field)}
 .runmode h4{font-size:12.5px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--ink-soft);margin:14px 0 4px}

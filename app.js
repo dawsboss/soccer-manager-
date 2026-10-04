@@ -6628,9 +6628,129 @@ function viewSeason() {
   }).join('')}</div></div>` : '<div class="empty"><strong>No players yet</strong>Add the squad first.</div>';
 
   return `<div class="stack">
-    ${record}${shotsCard}${possCard}${evCard}${results}${playersCard}${attendanceCard(t)}
+    ${record}${needsWorkCard(t)}${shotsCard}${possCard}${evCard}${results}${playersCard}${attendanceCard(t)}
     ${restricted() ? '' : aiButton('team')}
   </div>`;
+}
+
+/* --- what needs work --- */
+/* TRAINING.md's first step towards the AI helper, with no AI in it: the
+   signals in drills.js worked out from the last five finished games, the two
+   or three that stand out with the numbers behind them, and the drills that
+   answer each, for the team's age. Deterministic, and it shows its working,
+   the way the game planner does its sums.
+
+   A signal only fires on data that was tracked. A game with no shots tapped
+   says nothing about shooting, so it is left out of the shooting signals
+   rather than counted as a game with no shots; the same for set pieces,
+   fouls and possession. Each family needs three games that carry it. The
+   thresholds are TRAINING.md's, a coaching judgement, and meant to move. */
+const NW_GAMES = 5, NW_MIN = 3;
+function needsWork(t) {
+  const games = teamMatches(t.id).filter(m => gameStatus(m) === 'done').slice(0, NW_GAMES);
+  const out = { games: games.length, sigs: [], unknown: [] };
+  if (games.length < NW_MIN) return out;
+  const fire = (k, strength, why) => out.sigs.push({ k, strength, why });
+  const pct = x => Math.round(x * 100) + '%';
+  const per = (n, g) => (n / g).toFixed(1);
+  const n = games.length;
+
+  // goals: always there, because a goal is the one thing every tracker taps
+  let gf = 0, ga = 0;
+  const ours = [], theirs = [];
+  for (const m of games) for (const g of goalList(m)) {
+    if (g.side === 'us') { gf++; ours.push(g); } else if (g.side === 'them') { ga++; theirs.push({ g, len: matchMinutes(m) * 60 }); }
+  }
+  if (ga - gf >= n) fire('conceding', (ga - gf) / n, `${ga} against and ${gf} for in the last ${n} games: ${per(ga, n)} a game against, ${per(gf, n)} for.`);
+  const late = theirs.filter(x => x.g.t >= x.len * 0.75).length;
+  if (ga >= 5 && late / ga >= 0.4) fire('late-goals', late / ga / 0.4, `${late} of the ${ga} goals against came in the last quarter of the game (${pct(late / ga)}).`);
+  const named = ours.filter(g => g.pid);
+  if (named.length >= 5) {
+    const by = {};
+    for (const g of named) by[g.pid] = (by[g.pid] || 0) + 1;
+    const top = Math.max(...Object.values(by));
+    if (top / named.length >= 0.6) fire('one-scorer', top / named.length / 0.6, `One player scored ${top} of our ${named.length} goals (${pct(top / named.length)}).`);
+  }
+  // assists recorded at all, anywhere this season: a team that never taps one isn't "never passing"
+  const assistsKept = teamMatches(t.id).some(m => goalList(m).some(g => g.assist));
+  if (gf >= 5 && assistsKept) {
+    const a = ours.filter(g => g.assist).length;
+    if (a / gf < 0.25) fire('solo-goals', (0.25 - a / gf) * 4 + 1, `${a} of our ${gf} goals had an assist recorded (${pct(a / gf)}).`);
+  } else if (gf >= 5) out.unknown.push('assists');
+
+  // shots: only the games where shots were tapped
+  const sg = games.filter(m => shotList(m).length);
+  if (sg.length >= NW_MIN) {
+    let us = 0, them = 0, on = 0;
+    for (const m of sg) { const x = shotTally(m); us += x.usOn + x.usOff; them += x.themOn + x.themOff; on += x.usOn; }
+    if (them && us < them * 0.8) fire('few-shots', them / Math.max(us, 1) / 1.25, `${per(us, sg.length)} shots a game to their ${per(them, sg.length)}, over ${sg.length} games.`);
+    if (us >= 10 && on / us < 0.4) fire('off-target', 0.4 / Math.max(on / us, 0.05), `${on} of our ${us} shots on target (${pct(on / us)}).`);
+    if (them && them > us * 1.25) fire('shots-against', them / Math.max(us, 1) / 1.25, `They had ${them} shots to our ${us} over ${sg.length} games.`);
+  } else out.unknown.push('shots');
+
+  // possession, only for a team that tracks it
+  if (possOn(t)) {
+    const pg = games.map(m => possession(m)).filter(po => po.changes > 2 && po.settled);
+    if (pg.length >= NW_MIN) {
+      const u = pg.reduce((a, x) => a + x.us, 0), all = pg.reduce((a, x) => a + x.settled, 0);
+      if (all && u / all < 0.45) fire('possession', 0.45 / Math.max(u / all, 0.05), `${pct(u / all)} of settled play was ours, over ${pg.length} games.`);
+    } else out.unknown.push('possession');
+  }
+
+  // set pieces and fouls: each kind counts only the games where it was tapped
+  const kindGames = k => games.filter(m => evList(m).some(x => x.kind === k));
+  const sum = (ms, k, side) => ms.reduce((a, m) => a + evCount(m, k, side), 0);
+  const cg = kindGames('corner');
+  if (cg.length >= NW_MIN) {
+    const us = sum(cg, 'corner', 'us'), them = sum(cg, 'corner', 'them');
+    // a goal against within 20 seconds of one of their corners
+    let fromCorner = 0;
+    for (const m of cg) {
+      const cs = evList(m).filter(x => x.kind === 'corner' && x.side === 'them').map(x => x.t);
+      fromCorner += goalList(m).filter(g => g.side === 'them' && cs.some(c => g.t >= c && g.t - c <= 20)).length;
+    }
+    if ((them >= 3 && them > us * 1.5) || fromCorner >= 2)
+      fire('corners-against', Math.max(them / Math.max(us, 1) / 1.5, fromCorner / 2), `They won ${them} corners to our ${us}${fromCorner ? `, and scored ${fromCorner} straight from one` : ''}, over ${cg.length} games.`);
+  } else out.unknown.push('corners');
+  const fg = kindGames('foul');
+  if (fg.length >= NW_MIN) {
+    const us = sum(fg, 'foul', 'us'), them = sum(fg, 'foul', 'them');
+    if (us >= 3 && us > them * 1.5) fire('fouls', us / Math.max(them, 1) / 1.5, `We gave away ${us} fouls to their ${them}, over ${fg.length} games.`);
+  } else out.unknown.push('fouls');
+  const tg = kindGames('throw');
+  if (tg.length >= NW_MIN) {
+    const us = sum(tg, 'throw', 'us');
+    if (us / tg.length >= 12) fire('throw-ins', us / tg.length / 12, `${per(us, tg.length)} throw-ins of ours a game, over ${tg.length} games.`);
+  }
+  out.sigs.sort((a, b) => b.strength - a.strength);
+  return out;
+}
+/* The drills that answer a signal, for this team's age: the closest level
+   first, so a U9 team isn't offered the hardest version first. */
+function drillsFor(L, t, sig, max = 3) {
+  const u = teamUAge(t), age = u == null ? null : Math.min(u, 19);
+  const level = age == null ? 2 : age <= 8 ? 1 : age <= 12 ? 2 : 3;
+  return L.DRILLS.filter(d => d.signals.includes(sig) && (age == null || (d.ages[0] <= age && age <= d.ages[1])))
+    .sort((a, b) => Math.abs(a.level - level) - Math.abs(b.level - level) || a.name.localeCompare(b.name)).slice(0, max);
+}
+/* For the team's coaches and the club's admins: the drills are theirs, and a
+   parent reading the Season tab has the same numbers in the cards above. */
+function needsWorkCard(t) {
+  const L = drillLib();
+  if (!L || !canPlan(t.id)) return '';
+  const nw = needsWork(t);
+  const head = `<h2 style="margin-bottom:6px">What needs work</h2>`;
+  if (nw.games < NW_MIN) return `<div class="card">${head}<p class="muted" style="margin:0">After ${NW_MIN} finished games this works out what the numbers say to practise, and the drills for it. ${nw.games ? `${nw.games} so far.` : ''}</p></div>`;
+  const top = nw.sigs.slice(0, 3);
+  const unknown = nw.unknown.length ? `<p class="muted" style="margin:8px 0 0">Not counted in enough games to say anything about: ${nw.unknown.join(', ')}. No taps means we don't know, not that it's fine.</p>` : '';
+  if (!top.length) return `<div class="card">${head}<p class="muted" style="margin:0">Nothing stands out in the last ${nw.games} games. Keep doing what you're doing.</p>${unknown}</div>`;
+  return `<div class="card">${head}<p class="muted" style="margin:0 0 8px">From the last ${nw.games} games, worked out from the numbers, no AI.</p>
+    ${top.map(x => {
+    const s = L.SIGNALS[x.k], ds = drillsFor(L, t, x.k), all = drillsFor(L, t, x.k, 999).length;
+    return `<div class="nwsig"><b>${esc(s.label)}</b><p class="muted" style="margin:2px 0 6px">${esc(x.why)}</p>
+      ${ds.length ? `<div class="chips">${ds.map(d => `<button class="chip" type="button" data-act="drill" data-id="${esc(d.id)}">${esc(d.name)}</button>`).join('')}
+        ${all > ds.length ? `<button class="chip" type="button" data-act="nwdrills" data-k="${esc(x.k)}">All ${all} →</button>` : ''}</div>` : ''}</div>`;
+  }).join('')}${unknown}</div>`;
 }
 
 /* --- formation editor --- */
@@ -6817,7 +6937,7 @@ const LIB_ACTS = new Set(['shelf', 'drillmine', 'drilledit', 'drillnew', 'drills
   'dbopen', 'dbtap', 'dbtool', 'dbverb', 'dbarea', 'dbstep', 'dbaddstep', 'dbundo', 'dbdelstep', 'dbuse', 'dbback']);
 /* Templates: a plan with no calendar entry, on her own shelf or the club's. */
 const TPL_ACTS = new Set(['tpllist', 'tplopen', 'tplsave', 'tplsavego', 'tplpick', 'tpluse', 'tplplan', 'tplplango', 'tplcopy', 'tplshare', 'tpldel']);
-const PRACTICE_ACTS = new Set(['practab', ...TPL_ACTS, 'drill', 'drillpic', 'drillsend', 'drillsendshare', 'roleguide', 'rolepic', 'drillfilters', 'dfchip', 'dfpick', 'dfclear', 'drillmore', ...PLAN_ACTS, ...LIB_ACTS]);
+const PRACTICE_ACTS = new Set(['practab', 'nwdrills', ...TPL_ACTS, 'drill', 'drillpic', 'drillsend', 'drillsendshare', 'roleguide', 'rolepic', 'drillfilters', 'dfchip', 'dfpick', 'dfclear', 'drillmore', ...PLAN_ACTS, ...LIB_ACTS]);
 
 /* A team's age is stored as the year its players were born, because that
    rolls over by itself: the same team is U10 this season and U11 the next
@@ -12771,6 +12891,13 @@ function onAct(e) {
     render(); return;
   }
   if (a === 'drill') { sheetDrill(d.id, undefined, true); return; }
+  // from What needs work: the library, narrowed to the drills that answer it
+  if (a === 'nwdrills') {
+    const p = practiceUi(), L = drillLib();
+    if (!L || !signalOf(L, d.k)) return;
+    p.f = { ...PRACTICE_BLANK(), sig: d.k }; p.tab = 'drills'; p.shelf = 'all'; p.pick = null; p.run = null;
+    ui.view = 'practice'; saveUi(); render(); toTop(); return;
+  }
   if (a === 'drillpic') { sheetDrill(d.id, d.k === 'move'); return; }
   if (a === 'drillsend') { sheetSendDrill(d.id); return; }
   if (a === 'drillsendshare') {

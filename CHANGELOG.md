@@ -8,6 +8,34 @@ before this point lives only in the git log.
 
 ---
 
+## What needs work, on the Season tab — 2026-10-04
+
+TRAINING.md's step 7, and the first step of its road to the AI helper, with
+no AI in it. A card on Season, for the team's coaches and the club's admins,
+that works out the signals in `drills.js` from the last five finished games
+(at least three), shows the three that stand out with the numbers behind
+each (*12 against and 6 for in the last 5 games: 2.4 a game against, 1.2
+for*), and the drills that answer each one for the team's age, closest level
+first, with *All 16 →* opening the library filtered to that signal.
+
+`needsWork()` uses TRAINING.md's starting thresholds exactly: shots under
+80% of theirs, under 40% on target from ten, a top scorer with 60% from five,
+under a quarter assisted from five, possession under 45%, their shots over
+125% of ours, conceding a goal a game more than we score, 40% of goals
+against in the last quarter from five, corners against over 150% (or two
+goals within 20 seconds of one), fouls over 150%, twelve throw-ins a game.
+
+**A signal only fires on data that was tracked.** Each family counts only the
+games that carry it and needs three; no shots tapped is *we don't know*, and
+the card says which families it couldn't judge. Assists count only for a
+team that has ever tapped one. Parents and trackers don't get the card: the
+drills are the coaches', and the numbers are in the cards they already see.
+Nothing about it reaches `public/` or the AI prompt yet (TRAINING.md's step
+2). `test/plans.js` pins each threshold that fires, the honesty rule, the
+age filter, and who sees it.
+
+---
+
 ## Templates — 2026-10-04
 
 The last of the owner's ask for coaches' own libraries, the club's, and

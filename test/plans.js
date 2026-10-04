@@ -452,6 +452,66 @@ function plan(extra = {}, X = A) {
     check('nor one already past', /Next practice/.test(A.rendered()), false);
   }
 
+  console.log('\n--- what needs work ---');
+  {
+    /* Finished games built by hand: goals with a time in match seconds and a
+       scorer, shots with on/off target, set pieces by side. */
+    let n = 0;
+    const game = (o = {}) => {
+      const id = 'g' + (++n), m = { id, teamId: 't1', date: '2026-09-0' + n, opponent: 'Opp ' + n, ended: true, periodCount: 2, periodMinutes: 25,
+        periods: { 0: { start: 1, end: 2 } }, goals: {}, shots: {}, events: {} };
+      (o.goals || []).forEach((g, i) => { m.goals['x' + i] = { side: g[0], t: g[1], pid: g[2] || null, assist: g[3] || null }; });
+      (o.shots || []).forEach((x, i) => { m.shots['s' + i] = { side: x[0], onTarget: !!x[1], t: 10 * i }; });
+      (o.events || []).forEach((x, i) => { m.events['e' + i] = { kind: x[0], side: x[1], t: x[2] || 10 * i }; });
+      return m;
+    };
+    const with_ = gs => { as('jaz'); A.state.matches = Object.fromEntries(gs.map(m => [m.id, m])); };
+    const sigs = () => A.needsWork(A.state.teams.t1).sigs.map(x => x.k);
+
+    with_([game(), game()]);
+    check('two games are too few to say anything', A.needsWork(A.state.teams.t1).sigs.length, 0);
+    A.ui.view = 'season'; A.render();
+    check('and the card says so', /After 3 finished games/.test(A.rendered()), true);
+
+    // losing heavily, conceding late, one scorer; no shots tapped at all
+    const late = [['them', 2400], ['them', 2600], ['them', 300], ['us', 100, 'p3']];
+    with_([1, 2, 3, 4].map(() => game({ goals: late })).concat([game({ goals: [['us', 50, 'p3'], ['us', 60, 'p3']] })]));
+    const s1 = sigs();
+    check('conceding a goal a game more than we score fires', s1.includes('conceding'), true);
+    check('so does 40% of goals against in the last quarter', s1.includes('late-goals'), true);
+    check('and one player scoring most of ours', s1.includes('one-scorer'), true);
+    check('no shots tapped is not "we never shoot"', s1.includes('few-shots') || s1.includes('shots-against'), false);
+    check('it is said to be unknown instead', A.needsWork(A.state.teams.t1).unknown.includes('shots'), true);
+    check('no assists ever tapped is not "we never pass"', s1.includes('solo-goals'), false);
+    A.ui.view = 'season'; A.render();
+    const html = A.rendered();
+    check('the card shows the numbers behind each', /12 against and 6 for in the last 5 games/.test(html), true);
+    check('and drills that answer it, for the team\'s age', /data-act="drill" data-id="/.test(html), true);
+    const conc = A.drillsFor(L, A.state.teams.t1, 'conceding', 999);
+    check('every drill offered suits a U11', conc.every(d => d.ages[0] <= 11 && 11 <= d.ages[1] && d.signals.includes('conceding')), true);
+    check('at most three stand out', A.needsWork(A.state.teams.t1).sigs.length >= 3 && (html.match(/class="nwsig"/g) || []).length, 3);
+    check('without a name from the roster', /Player \d/.test(html.slice(html.indexOf('What needs work'), html.indexOf('What needs work') + 3000)), false);
+
+    // out-shot, off target, fouls and corners, in games that tracked them
+    const shots = [...Array(5)].map(() => ['us', false]).concat([['us', true]], [...Array(8)].map(() => ['them', true]));
+    const evs = [['foul', 'us'], ['foul', 'us'], ['corner', 'them'], ['corner', 'them']];
+    with_([1, 2, 3].map(() => game({ shots, events: evs, goals: [['us', 100], ['them', 200]] })));
+    const s2 = sigs();
+    check('fewer shots than theirs fires', s2.includes('few-shots'), true);
+    check('and theirs over 125% of ours', s2.includes('shots-against'), true);
+    check('under 40% on target, from ten or more', s2.includes('off-target'), true);
+    check('fouls over 150% of theirs', s2.includes('fouls'), true);
+    check('corners against over 150% of ours', s2.includes('corners-against'), true);
+    check('an even scoreline does not fire conceding', s2.includes('conceding'), false);
+    A.click({ act: 'nwdrills', k: 'few-shots' });
+    check('All → opens the library on that signal', [A.ui.view, A.ui.practice.tab, A.ui.practice.f.sig].join(' '), 'practice drills few-shots');
+
+    for (const who of ['mum', 'trk']) {
+      const ms = A.state.matches; as(who); A.state.matches = ms; A.ui.view = 'season'; A.render();
+      check(who + ': no What needs work card', /What needs work/.test(A.rendered()), false);
+    }
+  }
+
   /* ---------- part two: against the fake database ---------- */
 
   async function device(uid, storage = {}) {

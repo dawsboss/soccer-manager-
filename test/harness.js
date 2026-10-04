@@ -183,7 +183,7 @@ const EXPORTS = `{
   sheetDrillFilters, PRACTICE_ACTS, PRACTICE_BLANK,
   /* practice plans */
   PLAN_ACTS, canPlan, teamPractices, practiceById, putPractice, dropPractice, mergePractices,
-  suggestPlan, planWarnings, planKit, nextPractice, movePlans, planEntry, rawPlan, addMins, todayIso, pracDay,
+  suggestPlan, planWarnings, planKit, needsWork, drillsFor, nextPractice, movePlans, planEntry, rawPlan, addMins, todayIso, pracDay,
   syncCoachIndex, syncAllCoachIndex, coachTeamOf, readiness,
   get train() { return train }, set train(v) { train = v }, get trainState() { return trainState },
   /* the club's drills and a coach's own */
