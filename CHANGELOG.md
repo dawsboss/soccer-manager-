@@ -8,6 +8,17 @@ before this point lives only in the git log.
 
 ---
 
+## Merged with main: rules version 2 — 2026-10-04 (build 85)
+
+Main started numbering the rules (`rulesVersion`, `RULES_VERSION`) while this
+branch changed them twice: the `practices` rule no longer needs a date, and
+the new `training/$code/away` block. So this is **rules version 2**, stamped
+in `test/rules-stamp.json`. Paste `database.rules.json` once and an admin's
+phone stops saying the rules are behind. `HANDOFF.md` went on main; what this
+branch had added to it is in the entries below.
+
+---
+
 ## Admins call coaches off, who's free, and club activity — 2026-10-04 (build 84)
 
 The owner: *admins should be able to call coaches off. Also say what coaches
@@ -274,6 +285,47 @@ disagree with it about when practice is. Edits start from what is stored
 deleted entries, *Use this plan for…*, and the next practice read from the
 calendar by a parent's phone that reads no training at all. `test/rules.js`
 has the plan with no date.
+## Which rules are published, asked of the database — 2026-10-04
+
+Nobody could tell whether the latest `database.rules.json` had been pasted.
+Rules that were never published look exactly like a coach with no signal:
+each feature says *saved on this phone only* on its own screen, and the notes
+in this repository went on saying "waiting on the owner" after the owner had
+pasted them.
+
+**The rules carry a version.** A new root node, `rulesVersion`, accepts one
+number, the version the rules are, from anyone, so writing it is a question
+only the published rules can answer, and the only write that can succeed
+changes nothing. The app carries the version it was built for
+(`RULES_VERSION`). An admin's phone asks once a session it has a signal: if
+the rules are older, every screen says so and *Check readiness* has a cross;
+if the app is older (another phone already wrote a higher number), it says to
+reload. Nobody else's phone writes it.
+
+**From a computer**, `node tools/live-rules.js` tries the numbers against the
+live database and prints the published version beside this checkout's.
+
+**It rolls on its own.** `test/rules.js` keeps a fingerprint of the rules in
+`test/rules-stamp.json` and fails when they change without the version going
+up, or when `app.js` asks for a different number. Raise both, then
+`node test/rules.js --stamp`. `test/rulesver.js` pins the app's side.
+
+This change is itself a rules change: paste `database.rules.json` once more
+and the check starts answering.
+
+---
+
+## The to-do notes say only what is left — 2026-10-04
+
+`HANDOFF.md` described branches that have all merged since, and everything in
+it was already in this changelog, README, `ROADMAP.md` or CLAUDE.md's known
+gaps, so it is gone. `ROADMAP.md` loses what has shipped (availability
+replies, parents per team in the rules, game-only links, the club's list of
+venues) and two ideas the later *planning for the club* section replaced;
+its training section, which still said nothing in the app loaded the drills,
+now points at `TRAINING.md` and `TRAINING-NEXT.md`. `TRAINING-NEXT.md` drops
+the parts of step 1 that *One Add for a practice* built and the hand-drawn
+pictures *Writing a drill* built; `TRAINING.md`'s build order says so too.
 
 ---
 

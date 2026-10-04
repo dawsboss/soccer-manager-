@@ -2,8 +2,16 @@
    Static app. Data lives in localStorage, and mirrors to Firebase Realtime
    Database when a config + workspace code are present. */
 
-const BUILD = '84';
-const BUILT = '2026-10-03';
+const BUILD = '85';
+const BUILT = '2026-10-04';
+/* The version of database.rules.json this app was written against. The rules
+   carry the same number in rulesVersion's .write, which accepts that number
+   and nothing else, so writing it is a question only the published rules can
+   answer: accepted means they are this version. Without it, rules that were
+   never pasted look exactly like a coach with no signal: "saved on this phone
+   only", one feature at a time. test/rules.js holds the two numbers together
+   and fails when the rules change without this going up. */
+const RULES_VERSION = 2;
 /* index.html carries the build it was published with. If this file is newer, the
    browser handed us a cached page — the exact failure that has eaten hours. */
 const pageBuild = () => {
@@ -1124,6 +1132,14 @@ function readiness() {
   });
   const shared = teams().filter(t => t.share);
   rows.push({ ok: true, label: 'Shared teams have an owner list', detail: shared.length ? shared.length + ' published' : 'nothing shared' });
+  rows.push({
+    ok: rulesCheck === 'ok',
+    label: 'The published rules match this app',
+    detail: rulesCheck === 'ok' ? 'version ' + RULES_VERSION
+      : rulesCheck === 'old' ? 'older than version ' + RULES_VERSION + ' — paste database.rules.json'
+        : rulesCheck === 'app' ? 'newer than this app — reload it'
+          : 'not checked yet — needs a signal'
+  });
   rows.push({ ok: Object.keys(appOwners).length > 0, label: 'An app owner exists', detail: Object.keys(appOwners).length ? 'yes' : 'set appOwners in the console' });
   return rows;
 }
@@ -1276,6 +1292,24 @@ const LS_INVITE = 'sm.invite';
 const INVITE_DAYS = 14;
 const INVITE_ROLES = { coach: 'Coach', tracker: 'Tracker', parent: 'Parent' };
 let rtdb = null;        // { db, mod } once the database module has loaded, code or not
+/* null until asked, then 'asking', 'ok', 'old' (the published rules predate
+   this app) or 'app' (this app predates them: another phone has already
+   written a higher number). Asked once a session, by an admin's phone,
+   because an admin is the one who can paste them. */
+let rulesCheck = null;
+function checkRules() {
+  if (!rtdb || rulesCheck) return;
+  rulesCheck = 'asking';
+  const { db, mod } = rtdb;
+  const ref = mod.ref(db, 'rulesVersion');
+  mod.set(ref, RULES_VERSION).then(() => { rulesCheck = 'ok'; render(); }, () => {
+    // refused: the number already there says which side is behind
+    mod.onValue(ref, snap => {
+      rulesCheck = (Number(snap.val()) || 0) > RULES_VERSION ? 'app' : 'old';
+      render();
+    }, () => { rulesCheck = 'old'; render(); }, { onlyOnce: true });
+  });
+}
 let invite = null;      // { id, status, doc, err } while an invite link is being handled
 let clubInv = {};       // clubInvites/{code}, for an admin
 let clubInvWatch = null;
@@ -4350,7 +4384,13 @@ function render() {
   // said on every screen, because a change the club refused is one that exists only here
   const nRef = fb ? refusedCount() : 0;
   const fullNote = storeFail ? `<div class="rolebar warn"><b>This phone is out of storage space.</b> Changes since ${esc(niceTime(pad2(new Date(storeFail).getHours()) + ':' + pad2(new Date(storeFail).getMinutes())))} may not be kept on it if the app closes. ${fb && online ? 'Anything already sent to the club is safe. ' : ''}Free up space (photos, other apps or sites), and this goes once a save gets through.</div>` : '';
-  const saveNote = fullNote + (nRef ? `<div class="rolebar warn">${nRef} change${nRef === 1 ? '' : 's'} on this phone ha${nRef === 1 ? 's' : 've'}n't been accepted by the club's database. ${nRef === 1 ? 'It is' : 'They are'} kept here and tried again each time you connect. <button class="linkbtn dark" data-act="pendingsheet">See ${nRef === 1 ? 'it' : 'them'}</button></div>` : '');
+  /* An admin is told on every screen, because every feature the old rules
+     lack fails quietly on its own screen, and she is the one who can fix it. */
+  if (online && fb && !rulesCheck && canAdmin()) checkRules();
+  const rulesNote = !canAdmin() ? ''
+    : rulesCheck === 'old' ? `<div class="rolebar warn"><b>The club's database rules are out of date.</b> This app needs version ${RULES_VERSION}; until the latest <code>database.rules.json</code> is pasted into Firebase (README, <b>The database rules</b>), some changes will stay on this phone.</div>`
+      : rulesCheck === 'app' ? `<div class="rolebar warn"><b>This copy of the app is older than the club's database rules.</b> Reload the page to get the latest.</div>` : '';
+  const saveNote = rulesNote + fullNote + (nRef ? `<div class="rolebar warn">${nRef} change${nRef === 1 ? '' : 's'} on this phone ha${nRef === 1 ? 's' : 've'}n't been accepted by the club's database. ${nRef === 1 ? 'It is' : 'They are'} kept here and tried again each time you connect. <button class="linkbtn dark" data-act="pendingsheet">See ${nRef === 1 ? 'it' : 'them'}</button></div>` : '');
   /* Redrawing is how every tap shows its result, and replacing the whole page
      can leave the window somewhere else: on the Plan tab, picking the 60:00
      snapshot dropped the coach back at the top every time. When this draw is

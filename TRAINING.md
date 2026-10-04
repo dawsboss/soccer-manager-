@@ -599,8 +599,8 @@ too. The bridge doesn't change shape.
    no bridge in a club whose lookup tables aren't built yet.*
 6. **Pictures for a coach's own drills.** The diagram editor, then links.
    *Links built with step 4. Drawings built as "have an AI draw it", with
-   `DrillDiagram.clean()` guarding every stored drawing; drawing by hand,
-   tap by tap, built since as *Draw it on a pitch*.*
+   `DrillDiagram.clean()` guarding every stored drawing, and drawing by hand,
+   tap by tap, on a board in the drill editor.*
 7. **What needs work.** The signals card on Season. *Built: `needsWork()`,
    with the thresholds in the table above, for coaches and admins.*
 8. **The AI steps.** The library in the prompt, then paste-back.

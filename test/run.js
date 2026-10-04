@@ -48,6 +48,7 @@ const SUITES = [
   ['planner', 'planning for the club: clashes, a time for everyone, picture day'],
   ['smoke', 'every view renders without throwing'],
   ['sandbox', 'the test club, and database isolation'],
+  ['rulesver', 'an admin is told when the published rules are behind'],
   ['rules', 'the database rules, as database.rules.json has them']
 ];
 
