@@ -653,6 +653,8 @@ function otherOwed() {
   }
   for (const id of Object.keys((train.drillDirty) || {})) out.push({ label: 'a drill shared with the club', refused: shelfState.club === 'refused' });
   if (me && mineUid === me.uid) for (const id of Object.keys(mine.dirty || {})) out.push({ label: 'one of your own drills', refused: shelfState.mine === 'refused' });
+  for (const id of Object.keys((train.tplDirty) || {})) out.push({ label: 'a template shared with the club', refused: shelfState.clubTpl === 'refused' });
+  if (me && mineUid === me.uid) for (const id of Object.keys(mine.tplDirty || {})) out.push({ label: 'one of your own templates', refused: shelfState.mineTpl === 'refused' });
   for (const k of Object.keys(sess.dirty || {})) out.push({ label: SESS_WHAT[k.split('/')[0]] || 'a training record', refused: !!(sess.refused || {})[k], sess: k });
   return out;
 }
@@ -785,7 +787,7 @@ function paintSync() {
 function flushTraining() {
   if (!fb || !me) return;
   for (const k of Object.keys(train.dirty || {})) { const i = k.indexOf('/'); if (i > 0) sendPractice(k.slice(0, i), k.slice(i + 1)); }
-  for (const s of ['club', 'mine']) for (const id of Object.keys(SHELF[s].store().dirty)) sendDrill(s, id);
+  for (const s of ['club', 'mine', 'clubTpl', 'mineTpl']) for (const id of Object.keys(SHELF[s].store().dirty)) sendDrill(s, id);
   for (const k of Object.keys(sess.dirty || {})) sessSend(k);
 }
 
@@ -2898,7 +2900,7 @@ function overlayRecords(a, b, depth) {
    paths it could not ask about (no signal, or rules that refuse). With no
    database at all, this phone's copy is the club's, and `known` is null. */
 async function trainingCopy(extra = {}) {
-  const T = { practices: clone(train.practices || {}), drills: clone(SHELF.club.store().items || {}) };
+  const T = { practices: clone(train.practices || {}), drills: clone(SHELF.club.store().items || {}), templates: clone(SHELF.clubTpl.store().items || {}) };
   for (const [k] of TRAIN_KINDS) T[k] = clone(sess[k] || {});
   const missed = new Set(), known = {};
   if (!(fb && rtdb && me && wsCode())) return { T, missed, known: null };
@@ -2909,7 +2911,7 @@ async function trainingCopy(extra = {}) {
   const jobs = TRAIN_KINDS.filter(([k]) => k !== 'splans').map(([k, d]) => [k, d]);
   for (const sid of sids) jobs.push(['splans/' + sid, 0]);
   for (const tid of tids) jobs.push(['practices/' + tid, 1]);
-  jobs.push(['drills', 1]);
+  jobs.push(['drills', 1], ['templates', 1]);
   const res = await Promise.all(jobs.map(([key]) => fetchOnce(base + key)));
   jobs.forEach(([key, depth], i) => {
     const r = res[i];
@@ -2941,7 +2943,8 @@ function restoreTraining(T, cur, out) {
   };
   // true, false, or null for "could not be checked"
   const has = path => {
-    const local = path.startsWith('practices/') ? getDeep(train, path) : path.startsWith('drills/') ? getDeep(SHELF.club.store().items, path.slice(7)) : getDeep(sess, path);
+    const local = path.startsWith('practices/') ? getDeep(train, path) : path.startsWith('drills/') ? getDeep(SHELF.club.store().items, path.slice(7))
+      : path.startsWith('templates/') ? getDeep(SHELF.clubTpl.store().items, path.slice(10)) : getDeep(sess, path);
     if (local !== undefined) return true;
     if (!fb) return false;
     if (!tk || !tk.known) return null;
@@ -2971,7 +2974,8 @@ function restoreTraining(T, cur, out) {
     if (!(cur.teams || {})[tid]) continue;
     const h = has(p);
     if (h === null) { unknown++; continue; }
-    if (h || !v || typeof v !== 'object' || !okDay(v.date)) continue;
+    // a plan hangs off its calendar entry and has no date of its own; one from before that has one
+    if (h || !v || typeof v !== 'object' || !(okDay(v.date) || v.eid)) continue;
     out.trainWrites.push(['practice', { ...clone(v), id: pid, teamId: tid }]); out.counts.training++;
   }
   for (const [p, v] of leaves(T.drills, 'drills', 1, [])) {
@@ -2979,6 +2983,12 @@ function restoreTraining(T, cur, out) {
     if (h === null) { unknown++; continue; }
     if (h || !v || typeof v !== 'object' || !v.name) continue;
     out.trainWrites.push(['drill', { ...clone(v), id: p.slice(7) }]); out.counts.training++;
+  }
+  for (const [p, v] of leaves(T.templates, 'templates', 1, [])) {
+    const h = has(p);
+    if (h === null) { unknown++; continue; }
+    if (h || !v || typeof v !== 'object' || !v.name || !v.by || !v.team) continue;
+    out.trainWrites.push(['template', { ...clone(v), id: p.slice(10) }]); out.counts.training++;
   }
   if (unknown) out.warnings.push(`${unknown} training record${unknown === 1 ? ' was' : 's were'} not restored, because this phone could not check whether the club already has ${unknown === 1 ? 'it' : 'them'}. Try again with a signal, signed in as an admin.`);
 }
@@ -3325,7 +3335,7 @@ function applyImport(plan) {
   saveLocal();
   // sessions after the teams and fields they name, through the store that resends them
   for (const [path, value] of plan.sessWrites || []) sessPut(path, value);
-  for (const [what, value] of plan.trainWrites || []) { if (what === 'practice') putPractice(value); else if (what === 'drill') putDrill('club', value); }
+  for (const [what, value] of plan.trainWrites || []) { if (what === 'practice') putPractice(value); else if (what === 'drill') putDrill('club', value); else if (what === 'template') putDrill('clubTpl', value); }
   render(); schedulePublish();
 }
 
@@ -6805,7 +6815,9 @@ const LIB_ACTS = new Set(['shelf', 'drillmine', 'drilledit', 'drillnew', 'drills
   'dedai', 'dedaiback', 'dedaicopy', 'dedaiopen', 'dedaiuse', 'dedaifix',
   'dedlinkadd', 'dedlinkdel', 'dedsave', 'dedmore', 'clubdrills', 'mydrills',
   'dbopen', 'dbtap', 'dbtool', 'dbverb', 'dbarea', 'dbstep', 'dbaddstep', 'dbundo', 'dbdelstep', 'dbuse', 'dbback']);
-const PRACTICE_ACTS = new Set(['practab', 'drill', 'drillpic', 'drillsend', 'drillsendshare', 'roleguide', 'rolepic', 'drillfilters', 'dfchip', 'dfpick', 'dfclear', 'drillmore', ...PLAN_ACTS, ...LIB_ACTS]);
+/* Templates: a plan with no calendar entry, on her own shelf or the club's. */
+const TPL_ACTS = new Set(['tpllist', 'tplopen', 'tplsave', 'tplsavego', 'tplpick', 'tpluse', 'tplplan', 'tplplango', 'tplcopy', 'tplshare', 'tpldel']);
+const PRACTICE_ACTS = new Set(['practab', ...TPL_ACTS, 'drill', 'drillpic', 'drillsend', 'drillsendshare', 'roleguide', 'rolepic', 'drillfilters', 'dfchip', 'dfpick', 'dfclear', 'drillmore', ...PLAN_ACTS, ...LIB_ACTS]);
 
 /* A team's age is stored as the year its players were born, because that
    rolls over by itself: the same team is U10 this season and U11 the next
@@ -7626,7 +7638,7 @@ function trainNote(tid) {
    markup there. Everything else is links, https only. */
 const SHELVES = { builtin: 'Built-in', club: 'Club', mine: 'Mine' };
 const LS_MINE = 'sm.mine.v1';
-const MINE_BLANK = () => ({ drills: {}, dirty: {} });
+const MINE_BLANK = () => ({ drills: {}, dirty: {}, tpls: {}, tplDirty: {} });
 let mine = MINE_BLANK(), mineUid = null;
 const shelfState = {};            // 'club' | 'mine' -> 'synced' | 'refused'
 let shelfWatch = new Map();       // database path -> unsubscribe
@@ -7647,7 +7659,7 @@ function forgetMine() {
   if (mineUid) try { localStorage.removeItem(LS_MINE + ':' + mineUid); } catch (e) { }
   mine = MINE_BLANK(); mineUid = null;
 }
-const mineUnsent = () => (me && mineUid === me.uid ? Object.keys(mine.dirty).length : 0);
+const mineUnsent = () => (me && mineUid === me.uid ? Object.keys(mine.dirty).length + Object.keys(mine.tplDirty || {}).length : 0);
 
 const SHELF = {
   club: {
@@ -7669,6 +7681,31 @@ const SHELF = {
     save: () => saveMine(),
     owner: () => (me ? me.uid : null),
     path: () => (me ? `userLibrary/${me.uid}/drills` : null)
+  },
+  /* Templates are a third and fourth shelf in the same shape, so they sync,
+     merge, and are cleared on sign-out exactly as drills are, by the same
+     code: putDrill() and the rest take any of these four. */
+  clubTpl: {
+    store() {
+      if (!train.tpls || typeof train.tpls !== 'object') train.tpls = {};
+      if (!train.tplDirty || typeof train.tplDirty !== 'object') train.tplDirty = {};
+      return { items: train.tpls, dirty: train.tplDirty };
+    },
+    save: () => saveTrain(),
+    owner: () => wsCode() || null,
+    path: () => (wsCode() ? `training/${wsCode()}/templates` : null)
+  },
+  mineTpl: {
+    store() {
+      if (!me) return { items: {}, dirty: {} };
+      if (mineUid !== me.uid) loadMine(me.uid);
+      if (!mine.tpls || typeof mine.tpls !== 'object') mine.tpls = {};
+      if (!mine.tplDirty || typeof mine.tplDirty !== 'object') mine.tplDirty = {};
+      return { items: mine.tpls, dirty: mine.tplDirty };
+    },
+    save: () => saveMine(),
+    owner: () => (me ? me.uid : null),
+    path: () => (me ? `userLibrary/${me.uid}/templates` : null)
   }
 };
 
@@ -8594,6 +8631,7 @@ function planView(L, t, pr) {
     ${rows ? `<div class="stack">${rows}</div>` : `<div class="empty"><strong>No drills yet</strong>Add them from the library, or let the app suggest a session for this team's age${s ? ' and what it needs' : ''}.</div>`}
     <div class="row" style="gap:8px"><button class="btn" style="flex:1" data-act="pracpick" data-id="${id}">Add a drill</button>
       <button class="btn quiet" style="flex:1" data-act="pracsuggest" data-id="${id}">${pr.blocks.length ? 'Suggest another' : 'Suggest a session'}</button></div>
+    <button class="btn quiet wide" data-act="tplpick" data-id="${id}">${pr.blocks.length ? 'Swap in a template' : 'Plan from a template'}</button>
     ${kit ? `<div class="card"><h4 style="margin:0 0 4px">Bring</h4><p style="margin:0">${esc(kit)}</p></div>` : ''}
     ${review}
     <div class="row" style="gap:8px"><button class="btn quiet" style="flex:1" data-act="pracagain" data-id="${id}">Use this plan for…</button>
@@ -8633,7 +8671,141 @@ function sheetPractice(pr) {
     <button class="btn quiet wide" data-act="closesheet" style="margin-top:8px">Cancel</button>`, true);
 }
 
-function tplStrip() { return ''; }
+/* ---- templates ---- */
+/* A template is a plan with no calendar entry: a name, a length, what it's
+   for, and the drills in order. Mine at userLibrary/{uid}/templates/{id};
+   the club's at training/{code}/templates/{id}, with by, byName and team,
+   exactly like a club drill, and the same rule. Built-in drills stay by
+   reference and every other drill is copied whole, as a plan does it, so a
+   template still reads after the drill it copied is deleted.
+
+   Copied, never linked, both ways: saving a plan as a template copies its
+   drills, planning from a template copies them back, and the template is
+   untouched by anything done to the plan afterwards. Delete never cascades. */
+const TPL_SHELVES = { mineTpl: 'Mine', clubTpl: 'Club' };
+const tplKey = (shelf, id) => 'tpl:' + shelf + ':' + id;
+function normTemplate(raw, shelf, id) {
+  if (!raw || typeof raw !== 'object') return null;
+  const str = (v, n) => (v == null || typeof v === 'object' ? '' : String(v)).trim().slice(0, n);
+  const name = str(raw.name, 80); if (!name) return null;
+  /* Any coach can write a club template, and its blocks carry drill cards: a
+     card is drawn only through normDrill() (blockDrill() does that), and here
+     the block itself is held to a shape and every string to a length. */
+  const blocks = arrOf(raw.blocks).filter(b => b && b.drill && b.drill.id && (b.drill.shelf === 'builtin' || ownKey(SHELVES, b.drill.shelf)))
+    .slice(0, 20).map(b => ({
+      drill: b.drill.shelf === 'builtin' ? { shelf: 'builtin', id: str(b.drill.id, 60), v: Number(b.drill.v) || 0 }
+        : { shelf: b.drill.shelf, id: str(b.drill.id, 60), v: Number(b.drill.v) || 0, card: b.drill.card && typeof b.drill.card === 'object' ? b.drill.card : null },
+      name: str(b.name, 80), minutes: clamp(Number(b.minutes) || 10, 1, 240), note: str(b.note, 300)
+    }));
+  const L = drillLib();
+  const fr = raw.from && typeof raw.from === 'object' && ownKey(TPL_SHELVES, raw.from.shelf) ? { shelf: raw.from.shelf, id: str(raw.from.id, 60), v: Number(raw.from.v) || 0 } : null;
+  const tid = str(raw.id, 60) || str(id, 60);
+  return {
+    id: tid, name, minutes: clamp(Number(raw.minutes) || 60, 10, 240), v: Math.max(1, Math.round(Number(raw.v) || 1)),
+    focus: { signals: [].concat((raw.focus && raw.focus.signals) || []).map(String).filter(k => signalOf(L, k)).slice(0, 1) },
+    blocks, from: fr, by: str(raw.by, 60), byName: str(raw.byName, 60), team: str(raw.team, 60), at: Number(raw.at) || 0,
+    shelf, key: tplKey(shelf, tid)
+  };
+}
+const tplItems = shelf => Object.entries(SHELF[shelf].store().items).map(([id, r]) => normTemplate(r, shelf, id)).filter(Boolean)
+  .sort((a, b) => a.name.localeCompare(b.name));
+function findTpl(key) {
+  const m = /^tpl:(clubTpl|mineTpl):(.+)$/.exec(String(key || ''));
+  if (!m) return null;
+  const r = SHELF[m[1]].store().items[m[2]];
+  return r ? normTemplate(r, m[1], m[2]) : null;
+}
+/* Who may change a club template in place: canCurate()'s rule, for drills. */
+const canCurateTpl = t => !!(me && t && t.shelf === 'clubTpl' && (isAdmin(me.uid) || (t.by === me.uid && !!(teamAccess(t.team).coaches || {})[me.uid])));
+const tplMine = t => !!t && t.shelf === 'mineTpl';
+const tplCanEdit = t => tplMine(t) || canCurateTpl(t);
+/* Sharing to the club needs a team she coaches, or an admin: the rule checks it. */
+const canShareTpl = () => !!(me && shareTeam());
+function tplFrom(src, extra) {
+  return { id: uid(), name: src.name, minutes: src.minutes, focus: clone(src.focus || { signals: [] }), blocks: clone(src.blocks || []), v: 1, ...extra };
+}
+function clubStamp() { return { by: me.uid, byName: whoAmI() || '', team: shareTeam() }; }
+function watchTpls() { watchShelf('clubTpl'); watchShelf('mineTpl'); }
+
+/* The chips on top of Plans: her templates and the club's, a tap away. */
+function tplStrip(L, t) {
+  watchTpls();
+  const n = s => tplItems(s).length;
+  return `<div class="chips" style="margin:2px 0 10px"><span class="lbl" style="margin:0 6px 0 0;align-self:center">Templates</span>
+    ${Object.entries(TPL_SHELVES).map(([k, l]) => `<button class="chip" type="button" data-act="tpllist" data-k="${k}">${l}${n(k) ? ' · ' + n(k) : ''}</button>`).join('')}</div>`;
+}
+function tplNote(shelf) {
+  if (!fbConfig().apiKey) return '';
+  if (shelfState[shelf] === 'refused') return `<p class="rolebar warn">Saved on this phone only. The database refused it: the club's rules may not include templates yet.</p>`;
+  if (!me) return `<p class="rolebar">Sign in and your templates are kept with your account, not just on this phone.</p>`;
+  return '';
+}
+function tplRow(t, act, extra = '') {
+  const n = t.blocks.length;
+  const sub = [`${n} drill${n === 1 ? '' : 's'} · ${t.minutes} min`, t.shelf === 'clubTpl' && t.byName ? 'by ' + t.byName : ''].filter(Boolean).join(' · ');
+  return `<button class="prow" type="button" data-act="${act}" data-v="${esc(t.key)}"${extra} style="grid-template-columns:1fr auto">
+    <span><span class="pname">${esc(t.name)}</span><span class="psub">${esc(sub)}</span></span><span class="tag">${TPL_SHELVES[t.shelf]}</span></button>`;
+}
+function sheetTplList(shelf) {
+  if (!ownKey(TPL_SHELVES, shelf)) shelf = 'mineTpl';
+  watchTpls();
+  const list = tplItems(shelf);
+  openSheet(`<h3>${shelf === 'mineTpl' ? 'Your templates' : "The club's templates"}</h3>
+    <div class="chips" style="margin-bottom:10px">${Object.entries(TPL_SHELVES).map(([k, l]) => `<button class="chip" type="button" data-act="tpllist" data-k="${k}" aria-pressed="${k === shelf}">${l}</button>`).join('')}</div>
+    ${tplNote(shelf)}
+    ${list.length ? `<div class="plist">${list.map(t => tplRow(t, 'tplopen')).join('')}</div>`
+      : `<div class="empty"><strong>None yet</strong>${shelf === 'mineTpl' ? "Open a practice's plan and tap Save as a template. Yours follow you to any club, and nobody else sees them." : "A coach saves one straight to the club, or shares one of her own. Coaches and admins see them; trackers and parents never do."}</div>`}
+    <button class="btn quiet wide" data-act="closesheet" style="margin-top:10px">Done</button>`, true);
+}
+function sheetTpl(t) {
+  const L = drillLib();
+  const sig = signalOf(L, t.focus.signals[0]);
+  const orig = t.from ? findTpl(tplKey(t.from.shelf, t.from.id)) : null;
+  const changed = orig && orig.v > (t.from.v || 0);
+  const mayPlan = (() => { const tm = team(); return !!tm && canPlan(tm.id); })();
+  openSheet(`<h3>${esc(t.name)}</h3>
+    <p class="muted" style="margin-top:0">${TPL_SHELVES[t.shelf]} template · ${t.minutes} min${sig ? ' · ' + esc(sig.label) : ''}${t.shelf === 'clubTpl' && t.byName ? ' · by ' + esc(t.byName) : ''}</p>
+    ${changed ? `<p class="rolebar">The template this was copied from has changed since. This copy hasn't, and won't by itself.</p>` : ''}
+    ${t.blocks.length ? `<ol class="drillul">${t.blocks.map(b => { const d = blockDrill(L, b); return `<li>${esc(d ? d.name : b.name || 'A drill')} · ${b.minutes}′${b.note ? ` <span class="muted">${esc(b.note)}</span>` : ''}</li>`; }).join('')}</ol>` : '<p class="muted">No drills in it.</p>'}
+    ${mayPlan ? `<button class="btn wide" data-act="tplplan" data-v="${esc(t.key)}" style="margin-top:8px">Plan a practice from it</button>` : ''}
+    ${t.shelf === 'clubTpl' ? `<button class="btn quiet wide" data-act="tplcopy" data-v="${esc(t.key)}" style="margin-top:8px">Copy to mine</button>`
+      : canShareTpl() ? `<button class="btn quiet wide" data-act="tplshare" data-v="${esc(t.key)}" style="margin-top:8px">Share with the club</button>` : ''}
+    ${tplCanEdit(t) ? `<button class="btn quiet danger wide" data-act="tpldel" data-v="${esc(t.key)}" style="margin-top:8px">Delete the template</button>` : ''}
+    <button class="btn quiet wide" data-act="tpllist" data-k="${t.shelf}" style="margin-top:8px">‹ All templates</button>`, true);
+}
+function sheetTplSave(pr) {
+  const L = drillLib(), s = signalOf(L, pr.focus.signals[0]);
+  const suggested = [s ? s.label : '', pr.blocks.length ? pr.minutes + ' min' : ''].filter(Boolean).join(', ') || 'My session';
+  openSheet(`<h3>Save as a template</h3>
+    <label class="field"><span>Name it</span><input type="text" id="tplName" maxlength="80" value="${esc(suggested)}" placeholder="Pressing, 60 min"></label>
+    <p class="muted" style="margin-top:0">The drills, their minutes and notes, and what it's for are copied. The day, the place and how it went stay with this practice.</p>
+    <button class="btn wide" data-act="tplsavego" data-id="${esc(pr.id)}" data-k="mineTpl">Save to mine</button>
+    ${canShareTpl() ? `<button class="btn quiet wide" data-act="tplsavego" data-id="${esc(pr.id)}" data-k="clubTpl" style="margin-top:8px">Save to the club</button>
+      <p class="muted" style="margin:6px 0 0">The club's are for its coaches and admins. Any drill of yours in the plan goes with it.</p>` : ''}
+    <button class="btn quiet wide" data-act="closesheet" style="margin-top:8px">Cancel</button>`, true);
+}
+/* On a plan: pick a template to plan it from, or to swap in. */
+function sheetTplPick(pr) {
+  watchTpls();
+  const all = [...tplItems('mineTpl'), ...tplItems('clubTpl')];
+  openSheet(`<h3>${pr.blocks.length ? 'Swap in a template' : 'Plan from a template'}</h3>
+    ${pr.blocks.length ? `<p class="muted" style="margin-top:0">Its drills take the place of the ${pr.blocks.length} in this plan.</p>` : ''}
+    ${all.length ? `<div class="plist">${all.map(t => tplRow(t, 'tpluse', ` data-id="${esc(pr.id)}"`)).join('')}</div>`
+      : `<div class="empty"><strong>No templates yet</strong>Save a plan you like as a template, and it's here for the next one.</div>`}
+    <button class="btn quiet wide" data-act="closesheet" style="margin-top:10px">Cancel</button>`, true);
+}
+/* From a template: the coming practices with no plan yet. */
+function sheetTplPlan(t) {
+  const tm = team(); if (!tm || !t) return;
+  const free = calItems([tm.id]).filter(x => x.kind === 'practice' && x.date >= todayIso() && !x.called && !practiceById(tm.id, x.id)).slice(0, 12);
+  openSheet(`<h3>Plan a practice from ${esc(t.name)}</h3>
+    ${free.length ? `<div class="plist">${free.map(x => `<button class="prow" type="button" data-act="tplplango" data-v="${esc(t.key)}" data-id="${esc(x.id)}" style="grid-template-columns:1fr auto">
+      <span><span class="pname">${esc(pracDay(x.date))}${x.start ? ' · ' + esc(x.start) + (x.end ? '–' + esc(x.end) : '') : ''}</span><span class="psub">${esc(x.venue || '')}</span></span><span class="tag wait">Use</span></button>`).join('')}</div>`
+      : `<div class="empty"><strong>No coming practice without a plan</strong>Add a practice to ${esc(tm.name || 'the team')}'s calendar, or open a plan and use Swap in a template.</div>`}
+    <button class="btn quiet wide" data-act="pracnew" data-tid="${esc(tm.id)}" style="margin-top:8px">Add a practice</button>
+    <button class="btn quiet wide" data-act="tplopen" data-v="${esc(t.key)}" style="margin-top:8px">‹ Back</button>`, true);
+}
+
 
 /* Use this plan for another practice: the coming ones with no plan yet. */
 function sheetUseFor(pr) {
@@ -10930,7 +11102,8 @@ function viewAdmin() {
       <button class="btn quiet wide" data-act="sesstab" data-k="fields">Fields</button></div>
     <div class="card"><h2 style="margin-bottom:8px">Club drills</h2>
       <p class="muted" style="margin-top:0">${(() => { const n = shelfItems('club').length; return n ? `${n} drill${n === 1 ? '' : 's'} the club's coaches have shared.` : 'None yet. Coaches share their own drills into it, and you can tidy or remove any of them.'; })()} Coaches and admins see them; trackers and parents never do.</p>
-      <button class="btn quiet wide" data-act="clubdrills">Look after the club's drills</button></div>
+      <button class="btn quiet wide" data-act="clubdrills">Look after the club's drills</button>
+      <button class="btn quiet wide" data-act="tpllist" data-k="clubTpl" style="margin-top:8px">The club's templates${(() => { const n = tplItems('clubTpl').length; return n ? ' · ' + n : ''; })()}</button></div>
 
     <div class="card"><h2 style="margin-bottom:8px">Bulk import</h2>
       <p class="muted" style="margin-top:0">A whole season at once — teams, rosters, fixtures, past results, the club's fields and permits, and training sessions — from one JSON file. It adds and updates, and never removes anything.</p>
@@ -12744,6 +12917,70 @@ function onAct(e) {
       const saved = putDrill(dr2.shelf, out);
       drillDraft = null;
       sheetDrill(drillKey(dr2.shelf, saved.id), undefined, true); render(); toast('Saved'); return;
+    }
+    return;
+  }
+
+  /* ---- templates ---- */
+  if (TPL_ACTS.has(a)) {
+    const L = drillLib(), t = d.v ? findTpl(d.v) : null;
+    if (a === 'tpllist') { sheetTplList(d.k); return; }
+    if (a === 'tplopen') { if (!t) { toast('That template is not on this phone'); return; } sheetTpl(t); return; }
+    if (a === 'tplcopy') {
+      if (!t || !me) { toast(me ? 'That template is not on this phone' : 'Sign in to keep your own templates'); return; }
+      putDrill('mineTpl', tplFrom(t, { name: t.name, from: { shelf: t.shelf, id: t.id, v: t.v } }));
+      closeSheet(); toast('Copied to your templates'); return;
+    }
+    if (a === 'tplshare') {
+      if (!t || !tplMine(t) || !canShareTpl()) { toast('Only a coach or an admin shares with the club'); return; }
+      putDrill('clubTpl', tplFrom(t, { from: { shelf: 'mineTpl', id: t.id, v: t.v }, ...clubStamp() }));
+      closeSheet(); toast('Shared with the club. Yours is unchanged.'); return;
+    }
+    if (a === 'tpldel') {
+      // checked here, not just by the button being hidden: a club template is the club's
+      if (!t || !tplCanEdit(t)) { toast('Only an admin, or the coach who shared it, removes a club template'); return; }
+      if (!confirm('Delete this template? Plans made from it keep their drills.')) return;
+      dropDrill(t.shelf, t.id); sheetTplList(t.shelf); return;
+    }
+    /* Everything below touches a plan, which is that team's coaches' and the
+       club's admins' only. */
+    const tp = team();
+    if (!tp || !canPlan(tp.id)) { closeSheet(); toast("Only this team's coaches plan its practices"); return; }
+    const pr = d.id ? practiceById(tp.id, d.id) : null;
+    if (a === 'tplsave') { if (pr) sheetTplSave(pr); return; }
+    if (a === 'tplsavego') {
+      if (!pr) return;
+      const name = String(($('#tplName') || {}).value || '').trim().slice(0, 80);
+      if (!name) { toast('Give it a name'); return; }
+      const raw = rawPlan(tp.id, pr.id);
+      const src = { name, minutes: pr.minutes, focus: raw.focus, blocks: raw.blocks };
+      if (d.k === 'clubTpl') {
+        if (!canShareTpl()) { toast('Only a coach or an admin saves to the club'); return; }
+        putDrill('clubTpl', tplFrom(src, clubStamp()));
+      } else {
+        if (!me) { toast('Sign in to keep your own templates'); return; }
+        putDrill('mineTpl', tplFrom(src, {}));
+      }
+      closeSheet(); toast(d.k === 'clubTpl' ? 'Saved to the club\'s templates' : 'Saved to your templates'); return;
+    }
+    if (a === 'tplpick') { if (pr) sheetTplPick(pr); return; }
+    if (a === 'tpluse') {
+      if (!pr || !t) return;
+      if (pr.blocks.length && !confirm('Swap the drills in this plan for the template\'s?')) return;
+      const c = rawPlan(tp.id, pr.id);
+      c.blocks = clone(t.blocks); if (t.focus.signals.length) c.focus = clone(t.focus);
+      if (!pr.end) c.minutes = t.minutes;
+      c.tpl = { shelf: t.shelf, id: t.id, v: t.v };
+      putPractice(c); closeSheet(); render(); toast('Planned from ' + t.name); return;
+    }
+    if (a === 'tplplan') { if (t) sheetTplPlan(t); return; }
+    if (a === 'tplplango') {
+      const e = planEntry(tp.id, d.id);
+      if (!t || !e) { toast('That practice is not on the calendar any more'); return; }
+      if (practiceById(tp.id, e.id)) { toast('That practice has a plan already'); return; }
+      planFromEntry(tp.id, e, { minutes: t.minutes, focus: t.focus, blocks: t.blocks, tpl: { shelf: t.shelf, id: t.id, v: t.v } });
+      const p = practiceUi(); ui.view = 'practice'; p.tab = 'plans'; p.open = e.id; p.pick = null; p.run = null;
+      closeSheet(); render(); toTop(); toast('Planned for ' + pracDay(e.date)); return;
     }
     return;
   }

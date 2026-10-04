@@ -187,7 +187,7 @@ const EXPORTS = `{
   syncCoachIndex, syncAllCoachIndex, coachTeamOf, readiness,
   get train() { return train }, set train(v) { train = v }, get trainState() { return trainState },
   /* the club's drills and a coach's own */
-  SHELVES, LIB_ACTS, normDrill, cardOf, findDrill, drillOrigin, drillPool, shelfItems, canCurate, shareTeam,
+  SHELF, SHELVES, LIB_ACTS, TPL_ACTS, tplItems, findTpl, normTemplate, canCurateTpl, normDrill, cardOf, findDrill, drillOrigin, drillPool, shelfItems, canCurate, shareTeam,
   putDrill, dropDrill, mergeShelf, watchShelf, peekLibrary, blockDrill, drillBlock, draftProblem, mineUnsent, cleanDrawing,
   get pending() { return pending }, pendingCount, refusedCount, pendingLabel, localOnlyData, flushPending,
   get mine() { return mine }, get mineUid() { return mineUid }, get shelfState() { return shelfState },

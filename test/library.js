@@ -697,6 +697,131 @@ function writeOne(D, extra = {}) {
     check('a parent with a link from another club gets the same, and nothing of it', /from another club/.test(sheet(p.D)) && p.D.storage.getItem('sm.workspace') === CODE, true);
   }
 
+  console.log('\n--- templates: a plan with no calendar entry ---');
+  {
+    const TPLC = 'training/' + CODE + '/templates', TPLM = uid => 'userLibrary/' + uid + '/templates';
+    for (const who of ['mum', 'trk']) {
+      const { D, fbk } = await device(who);
+      D.click({ act: 'tpllist', k: 'clubTpl' });
+      check(who + ': the templates are refused', D.lastToast(), 'Practice is for coaches and admins');
+      D.ui.view = 'practice'; D.render();
+      check(who + ': and never read', fbk.readPaths().some(p => p.includes('templates')), false);
+    }
+    const { D, fbk } = await device('jaz');
+    check('every template action is behind the practice check', [...D.TPL_ACTS].every(x => D.PRACTICE_ACTS.has(x)), true);
+    const d = writeOne(D);
+    D.ui.view = 'practice'; D.ui.practice = { tab: 'plans' }; D.render();
+    check('Plans reads her templates and the club\'s', fbk.watching(TPLC) && fbk.watching(TPLM('jaz')), true);
+    check('and nobody else\'s', fbk.readPaths().filter(p => p.startsWith('userLibrary') && p.includes('templates')).every(p => p === TPLM('jaz')), true);
+    D.click({ act: 'pracnew', tid: 't1' });
+    type(D, { evTitle: '', evDate: '2026-09-15', evStart: '17:30', evEnd: '18:30', evVenue: 'Lakeside', evNotes: '' });
+    D.click({ act: 'calsave', tid: 't1' });
+    const pid = D.ui.practice.open;
+    D.click({ act: 'pracsuggest', id: pid });
+    global.confirm = () => true;
+    D.click({ act: 'pracpick', id: pid }); D.click({ act: 'pracadd', id: pid, v: 'mine:' + d.id });
+    D.click({ act: 'pracreview', id: pid }); type(D, { prReview: 'Went well' }); D.click({ act: 'pracrate', id: pid, v: '5' });
+    const pr = D.practiceById('t1', pid);
+
+    D.click({ act: 'tplsave', id: pid });
+    check('save as a template asks for a name', /id="tplName"/.test(sheet(D)), true);
+    check('and offers the club to a coach of the team', /data-k="clubTpl"/.test(sheet(D)), true);
+    type(D, { tplName: '' }); D.click({ act: 'tplsavego', id: pid, k: 'mineTpl' });
+    check('a name is needed', D.lastToast(), 'Give it a name');
+    type(D, { tplName: 'Tuesday rondos' }); D.click({ act: 'tplsavego', id: pid, k: 'mineTpl' });
+    await D.flush();
+    const mt = D.tplItems('mineTpl')[0];
+    check('it is on her shelf', mt && mt.name, 'Tuesday rondos');
+    check('with the plan\'s drills, in order', mt.blocks.map(b => b.drill.id).join(), pr.blocks.map(b => b.drill.id).join());
+    check('her own drill copied whole', mt.blocks[mt.blocks.length - 1].drill.card.name, 'Box rondo');
+    check('and none of the practice\'s day, place or review', ['date', 'place', 'review', 'eid', 'status'].some(k => k in D.SHELF.mineTpl.store().items[mt.id]), false);
+    const mw = written(fbk, TPLM('jaz') + '/' + mt.id);
+    check('written to her library, one template at that depth', mw && mw.name, 'Tuesday rondos');
+    check('never her whole shelf', fbk.record.writes.some(w => w.path === TPLM('jaz')), false);
+
+    D.click({ act: 'tplsave', id: pid }); type(D, { tplName: 'Club session' }); D.click({ act: 'tplsavego', id: pid, k: 'clubTpl' });
+    await D.flush();
+    const ct = D.tplItems('clubTpl')[0];
+    check('saved straight to the club, credited and filed under her team', [ct.name, ct.by, ct.byName, ct.team].join(' '), 'Club session jaz jaz t1');
+    check('written at its own path', !!written(fbk, TPLC + '/' + ct.id), true);
+
+    /* The plan and the template are copies of each other: changing one
+       leaves the other alone. */
+    D.click({ act: 'pracdel', id: pid, i: '0' });
+    check('changing the plan leaves the template alone', D.tplItems('mineTpl')[0].blocks.length, pr.blocks.length);
+
+    D.click({ act: 'calnew', tid: 't1' });
+    type(D, { evTitle: '', evDate: '2026-09-22', evStart: '17:30', evEnd: '18:30', evVenue: '', evNotes: '' });
+    D.click({ act: 'calsave', tid: 't1' });
+    const next = Object.values(D.state.teams.t1.events).find(e => e.date === '2026-09-22');
+    D.click({ act: 'tplopen', v: mt.key });
+    check('a template offers to plan a practice from it', /data-act="tplplan"/.test(sheet(D)), true);
+    D.click({ act: 'tplplan', v: mt.key });
+    check('listing the coming practices with no plan', new RegExp('data-act="tplplango"[^>]*data-id="' + next.id + '"').test(sheet(D)), true);
+    D.click({ act: 'tplplango', v: mt.key, id: next.id });
+    const np = D.practiceById('t1', next.id);
+    check('planning from it copies the drills', np.blocks.map(b => b.drill.id).join(), mt.blocks.map(b => b.drill.id).join());
+    check('and remembers which template', np.tpl.id, mt.id);
+    check('on the practice\'s own day', np.date, '2026-09-22');
+
+    let asked = null; global.confirm = m => { asked = m; return true; };
+    D.click({ act: 'tplpick', id: next.id });
+    check('a plan with drills offers to swap in a template', /Swap in a template/.test(sheet(D)), true);
+    D.click({ act: 'tpluse', id: next.id, v: ct.key });
+    check('and asks first', /Swap the drills/.test(asked || ''), true);
+    check('then takes the template\'s drills', D.practiceById('t1', next.id).tpl.id, ct.id);
+    global.confirm = () => true;
+
+    D.click({ act: 'tplshare', v: mt.key }); await D.flush();
+    const shared = D.tplItems('clubTpl').find(x => x.from && x.from.id === mt.id);
+    check('share with the club is a copy that says where it came from', !!shared && shared.from.shelf, 'mineTpl');
+    check('and hers is unchanged', D.tplItems('mineTpl').length, 1);
+    D.click({ act: 'tplcopy', v: ct.key });
+    check('copy to mine likewise', D.tplItems('mineTpl').some(x => x.from && x.from.id === ct.id), true);
+
+    const ctWritten = written(fbk, TPLC + '/' + ct.id);
+    D.click({ act: 'tpldel', v: ct.key }); await D.flush();
+    check('the coach who shared it removes it', D.findTpl(ct.key), null);
+    check('and the plan made from it keeps its drills', D.practiceById('t1', next.id).blocks.length > 0, true);
+    // merge on read, and hers, not the phone's
+    fbk.refuseWrites(p => p.includes('templates'));
+    D.click({ act: 'tplsave', id: pid }); type(D, { tplName: 'Offline one' }); D.click({ act: 'tplsavego', id: pid, k: 'mineTpl' }); await D.flush();
+    fbk.deliver(TPLM('jaz'), {}); await D.flush();
+    check('a template not yet saved survives the database\'s answer', D.tplItems('mineTpl').some(x => x.name === 'Offline one'), true);
+    check('and is counted as not saved yet', D.otherOwed().some(x => /your own templates/.test(x.label)), true);
+    fbk.signOut(); await D.flush();
+    check('signing out takes her templates off the phone', Object.keys(D.storage._d).some(k2 => k2.startsWith('sm.mine.v1') && /Offline one/.test(D.storage._d[k2])), false);
+
+    // curation: a coach of another team cannot remove hers; an admin can
+    const k = await device('kim');
+    k.D.ui.teamId = 't2';
+    k.fbk.deliver(TPLC, { [ct.id]: ctWritten }); k.D.watchShelf('clubTpl'); await k.D.flush();
+    k.D.ui.view = 'practice'; k.D.ui.practice = { tab: 'plans' }; k.D.render();
+    k.fbk.deliver(TPLC, { [ct.id]: ctWritten }); await k.D.flush();
+    check('another coach reads the club\'s templates', k.D.tplItems('clubTpl').length, 1);
+    check('but may not change one she did not share', k.D.canCurateTpl(k.D.tplItems('clubTpl')[0]), false);
+    k.D.click({ act: 'tpldel', v: ct.key });
+    check('a delete that gets through is refused', /Only an admin/.test(k.D.lastToast()), true);
+    check('and nothing is removed', k.fbk.record.removes.some(p => p.includes('templates')) || k.fbk.record.writes.some(w => w.path.includes('templates') && w.value === null), false);
+
+
+    // a hostile club template draws as text
+    const b = await device('boss');
+    b.D.ui.view = 'practice'; b.D.ui.practice = { tab: 'plans' }; b.D.render();
+    const evil = '<img src=x onerror=alert(1)>';
+    b.fbk.deliver(TPLC, { h: { id: 'h', name: evil, minutes: 'x', by: 'kim', team: 't2', at: 1, focus: { signals: [evil] },
+      blocks: { 0: { drill: { shelf: 'builtin', id: L.DRILLS[0].id }, name: evil, minutes: -3, note: evil }, 1: { drill: { shelf: 'evil', id: 'x' } } } } });
+    await b.D.flush();
+    let threw = null;
+    try { b.D.click({ act: 'tpllist', k: 'clubTpl' }); b.D.click({ act: 'tplopen', v: 'tpl:clubTpl:h' }); } catch (e) { threw = e.message; }
+    check('a hostile template draws without throwing', threw, null);
+    check('and nothing in it reaches the page as markup', /<img src=x/.test(sheet(b.D)), false);
+    const h = b.D.findTpl('tpl:clubTpl:h');
+    check('only blocks from a real shelf', h.blocks.length, 1);
+    check('a focus the library does not know is dropped', h.focus.signals.length, 0);
+    check('an admin may tidy any club template', b.D.canCurateTpl(h), true);
+  }
+
   console.log('\n--- a hostile drill cannot break the next coach\'s screen ---');
   {
     const { D, fbk } = await device('kim');

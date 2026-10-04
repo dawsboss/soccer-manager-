@@ -8,6 +8,45 @@ before this point lives only in the git log.
 
 ---
 
+## Templates — 2026-10-04
+
+The last of the owner's ask for coaches' own libraries, the club's, and
+templates. **A template is a plan with no calendar entry**: a name, a
+length, what it's for, and the drills in order, with their minutes and notes.
+
+- **Two shelves, the drills' shape.** Mine at `userLibrary/{uid}/templates`,
+  the club's at `training/{code}/templates` with `by`, `byName` and `team`,
+  exactly like a club drill. They are `SHELF.mineTpl` and `SHELF.clubTpl`
+  beside the drill entries, so `putDrill()`, `mergeShelf()`, `watchShelf()`
+  and the rest sync them with no second copy of the code: merge on read, a
+  dirty map, one template per write, Mine cleared on sign-out with the rest
+  of `sm.mine.v1`. Everything read goes through `normTemplate()`, which holds
+  each block to a shape and leaves the drill cards to `normDrill()` when
+  they're drawn.
+- **Save as a template**, from any plan, to Mine, or straight to the club
+  for a coach of the team or an admin. **Plan from a template** on a plan
+  with no drills, or **Swap in a template** on one with some (asked first,
+  as *Suggest another* does); or open a template and **Plan a practice from
+  it**, which lists the coming practices with no plan. The plan copies the
+  blocks and records which template (`tpl`); the template is untouched.
+- **Where they are**: *Templates · Mine · Club* chips on top of Plans, and
+  Admin → Club drills has *The club's templates*.
+- **Copied, never linked; delete never cascades.** *Share with the club* and
+  *Copy to mine* make copies that record `from`. An admin removes any club
+  template, a coach what she shared while she still coaches its team,
+  checked in the click handler, as for drills.
+- Counted in the badge and *Not saved to the club yet* until the database
+  has them; the club's go in *Download a copy* and come back through *Load
+  from a file* only where the club has none. A plan with no date of its own
+  (one that hangs off the calendar) is now restored too.
+
+No rule change: `templates` was already in both blocks of
+`database.rules.json`, with its `rules.js` cases. `test/library.js` pins who
+sees them, save as, plan from, swap in, share and copy as copies, curation,
+merge on read, sign-out, and a hostile club template drawn as text.
+
+---
+
 ## Practice plans hang off the calendar — 2026-10-04
 
 The owner settled it on 2026-10-03 (*do practice plans hang off the
