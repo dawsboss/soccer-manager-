@@ -8,6 +8,14 @@ before this point lives only in the git log.
 
 ---
 
+## Time boxes keep their colon — 2026-10-04
+
+Editing a goal, shot, event or sub time opens a number pad, which has no colon
+key, so deleting the colon left a time that no longer parsed and no way to type
+it back. The time boxes now draw the colon themselves: they hold digits, the
+last two are seconds (2 3 1 0 reads 23:10), and backspacing over the colon
+deletes the digit before it.
+
 ## Merged with main: rules version 2 — 2026-10-04 (build 85)
 
 Main started numbering the rules (`rulesVersion`, `RULES_VERSION`) while this

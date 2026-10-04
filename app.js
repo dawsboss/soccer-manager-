@@ -2,7 +2,7 @@
    Static app. Data lives in localStorage, and mirrors to Firebase Realtime
    Database when a config + workspace code are present. */
 
-const BUILD = '85';
+const BUILD = '86';
 const BUILT = '2026-10-04';
 /* The version of database.rules.json this app was written against. The rules
    carry the same number in rulesVersion's .write, which accepts that number
@@ -12837,7 +12837,7 @@ function sheetPoss(id) {
   const x = (m.poss || {})[id]; if (!x) return;
   const us = teamLabel(t), them = esc(m.opponent || 'Them');
   openSheet(`<h3>Turnover at ${mmss(x.t)}</h3>
-    <label class="field"><span>Time</span><input type="text" id="poT" value="${mmss(x.t)}" inputmode="numeric"></label>
+    <label class="field"><span>Time</span><input type="text" id="poT" value="${mmss(x.t)}" inputmode="numeric" data-clock></label>
     <p class="lbl">Who won it</p>
     <div class="chips" style="margin-bottom:14px">
       <button class="chip" type="button" data-act="pickone" data-grp="side" data-v="us" aria-pressed="${x.to === 'us'}">${us}</button>
@@ -12856,7 +12856,7 @@ function sheetEvent(id) {
   const x = (m.events || {})[id]; if (!x) return;
   const ours = x.side === 'us';
   openSheet(`<h3>${esc(evLabel(x.kind).replace(/s$/, ''))} at ${mmss(x.t)} — ${ours ? teamLabel(t) : esc(m.opponent || 'Them')}</h3>
-    <label class="field"><span>Time</span><input type="text" id="evT" value="${mmss(x.t)}" inputmode="numeric"></label>
+    <label class="field"><span>Time</span><input type="text" id="evT" value="${mmss(x.t)}" inputmode="numeric" data-clock></label>
     <p class="muted" style="margin-top:-6px">Counted as ${esc(evOf(x.kind).who)} ${ours ? teamLabel(t) : esc(m.opponent || 'them')}.</p>
     ${ours ? `<p class="lbl">${esc(evOf(x.kind).attr)} (optional)</p>
     <div class="chips" style="margin-bottom:14px">
@@ -12887,7 +12887,7 @@ function sheetShot(id) {
   const ours = x.side === 'us';
   const roster = squad(t, m).filter(p => ours ? true : false);
   openSheet(`<h3>Shot at ${mmss(x.t)} — ${ours ? teamLabel(t) : esc(m.opponent || 'Them')}</h3>
-    <label class="field"><span>Time</span><input type="text" id="shT" value="${mmss(x.t)}" inputmode="numeric"></label>
+    <label class="field"><span>Time</span><input type="text" id="shT" value="${mmss(x.t)}" inputmode="numeric" data-clock></label>
     ${absAt(m, x.t) ? `<p class="muted" style="margin-top:-6px">${new Date(absAt(m, x.t)).toLocaleTimeString()} real time${x.xy ? ` · placed at ${Math.round(x.xy.x)},${Math.round(x.xy.y)}` : ''}</p>` : ''}
     <p class="lbl">Where it went</p>
     <div class="chips" style="margin-bottom:14px">
@@ -12908,7 +12908,7 @@ function sheetGoal(gid) {
   const roster = squad(t, m);
   const ours = g.side === 'us';
   openSheet(`<h3>Goal at ${mmss(g.t)} — ${ours ? teamLabel(t) : esc(m.opponent || 'Them')}</h3>
-    <label class="field"><span>Time</span><input type="text" id="glT" value="${mmss(g.t)}" inputmode="numeric"></label>
+    <label class="field"><span>Time</span><input type="text" id="glT" value="${mmss(g.t)}" inputmode="numeric" data-clock></label>
     ${ours ? `<p class="lbl">Scorer</p>
     <div class="chips" style="margin-bottom:14px">
       ${roster.map(p => `<button class="chip" type="button" data-act="pickscorer" data-grp="scorer" data-v="${p.id}" aria-pressed="${g.pid === p.id}">${chipName(p)}</button>`).join('')}
@@ -13132,7 +13132,7 @@ function sheetFixSub(i) {
     <div class="chips" style="margin-bottom:14px">
       ${[-60, -30, -15, -5, 5, 15, 30, 60].map(d => `<button class="chip" type="button" data-act="nudgesub" data-i="${i}" data-d="${d}">${d > 0 ? '+' : '−'}${Math.abs(d)}s</button>`).join('')}
     </div>
-    <label class="field"><span>Or set the exact time</span><input type="text" id="subT" value="${mmss(r.t)}" placeholder="23:10" inputmode="numeric"></label>
+    <label class="field"><span>Or set the exact time</span><input type="text" id="subT" value="${mmss(r.t)}" placeholder="23:10" inputmode="numeric" data-clock></label>
     <button class="btn wide" data-act="setsubtime" data-i="${i}">Save time</button>
     <div style="margin-top:8px"><button class="btn danger wide" data-act="delsub" data-i="${i}">Delete — this sub did not happen</button></div>
     <div style="margin-top:8px"><button class="btn quiet wide" data-act="closesheet">Cancel</button></div>`);
@@ -13147,7 +13147,7 @@ function sheetAddSub() {
   openSheet(`<h3>Add a sub you missed</h3>
     <label class="field"><span>Coming off</span><select id="asOut">${on.map(p => `<option value="${p.id}">${esc(p.number ?? '')} ${esc(p.name)}</option>`).join('')}</select></label>
     <label class="field"><span>Going on</span><select id="asIn">${off.map(p => `<option value="${p.id}">${esc(p.number ?? '')} ${esc(p.name)}</option>`).join('')}</select></label>
-    <label class="field"><span>When it actually happened</span><input type="text" id="asT" value="${mmss(elapsedSec(m))}" placeholder="23:10" inputmode="numeric"></label>
+    <label class="field"><span>When it actually happened</span><input type="text" id="asT" value="${mmss(elapsedSec(m))}" placeholder="23:10" inputmode="numeric" data-clock></label>
     <button class="btn wide" data-act="doaddsub">Record it</button>`);
 }
 
@@ -13185,9 +13185,9 @@ function sheetFixMinutes(pid) {
     <p class="muted" style="margin-top:0">Each row is one spell on the pitch. Blank means she is still on.</p>
     ${roleSummary(m, pid) ? `<p class="muted">${esc(roleSummary(m, pid))}</p>` : ''}
     ${list.map(([sid, s]) => `<div class="row" style="margin-bottom:8px">
-      <input type="text" style="flex:1" data-son="${sid}" value="${mmss(s.on)}" inputmode="numeric">
+      <input type="text" style="flex:1" data-son="${sid}" value="${mmss(s.on)}" inputmode="numeric" data-clock>
       <span class="muted">to</span>
-      <input type="text" style="flex:1" data-soff="${sid}" value="${s.off == null ? '' : mmss(s.off)}" placeholder="still on" inputmode="numeric">
+      <input type="text" style="flex:1" data-soff="${sid}" value="${s.off == null ? '' : mmss(s.off)}" placeholder="still on" inputmode="numeric" data-clock>
       <button class="btn danger sm" data-act="delstint" data-sid="${sid}">Delete</button>
     </div>
     <div class="row" style="margin:-2px 0 12px"><select style="flex:1" data-sspot="${sid}">${spotOptions(m, s)}</select></div>`).join('') || '<p class="muted">She has not been on yet.</p>'}
@@ -15371,6 +15371,41 @@ $('#subtabs').addEventListener('click', e => {
   ui.gameView = b.dataset.gview; ui.picked = null; render();
 });
 document.addEventListener('keydown', e => { if (e.key === 'Escape') closeSheet(); });
+/* Time boxes (m:ss) keep their colon. On a phone's number pad there is no colon
+   key, so a deleted colon could not be typed back and the time stopped parsing.
+   Instead the box holds digits only and draws the colon itself: the last two
+   digits are seconds, so typing 2 3 1 0 reads 23:10. Backspace over the colon
+   deletes the digit before it, which is what she meant. */
+function clockFormat(value, caret) {
+  const v = String(value || '');
+  const before = v.slice(0, caret == null ? v.length : caret).replace(/\D/g, '').length;
+  let d = v.replace(/\D/g, '').replace(/^0+(?=\d{3})/, '');
+  if (!d) return { value: '', caret: 0 };
+  const lost = v.replace(/\D/g, '').length - d.length; // leading zeros trimmed
+  d = d.padStart(3, '0');
+  const out = d.slice(0, -2) + ':' + d.slice(-2);
+  // put the caret back after the same number of digits it was after
+  let want = Math.max(0, before - lost) + (d.length - (v.replace(/\D/g, '').length - lost));
+  let pos = 0, seen = 0;
+  while (pos < out.length && seen < want) { if (out[pos] !== ':') seen++; pos++; }
+  return { value: out, caret: pos };
+}
+document.addEventListener('keydown', e => {
+  const t = e.target;
+  if (!t || !t.dataset || t.dataset.clock == null || t.selectionStart !== t.selectionEnd) return;
+  const i = t.selectionStart;
+  if (e.key === 'Backspace' && t.value[i - 1] === ':') t.setSelectionRange(i - 1, i - 1);
+  else if (e.key === 'Delete' && t.value[i] === ':') t.setSelectionRange(i + 1, i + 1);
+});
+document.addEventListener('input', e => {
+  const t = e.target;
+  if (!t || !t.dataset || t.dataset.clock == null) return;
+  const r = clockFormat(t.value, t.selectionStart);
+  if (r.value === t.value) return;
+  t.value = r.value;
+  try { t.setSelectionRange(r.caret, r.caret); } catch (_) { /* not focused */ }
+});
+
 
 /* ---------------- routing ---------------- */
 /* Hash routing rather than real paths: GitHub Pages has no rewrites, so
