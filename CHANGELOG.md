@@ -8,6 +8,47 @@ before this point lives only in the git log.
 
 ---
 
+## Coaches' time off: nights off, dates away, calling out — 2026-10-04
+
+The owner: *get the coaches block out, call out, and all their kinds of
+events coded up.* ROADMAP's "coaches' own unavailability", in the three
+shapes a coach says it:
+
+- **Every week**: *never Mondays*, *not after 6 on Tuesdays*, from or until
+  a date if she likes.
+- **Dates away**: *12–19 October*, or one afternoon for the dentist.
+- **Calling out** of one practice, game, event or session she coaches: *I
+  can't make this*, with an optional note, and *I can make it after all*.
+
+Her list is on My calendar (*Time off*, with Add and Remove); calling out is
+on the entry's own sheet and on her session's.
+
+**Where it lives, and why not where ROADMAP first said.** ROADMAP suggested
+`access/members/{uid}`. Every account in the club reads the workspace, and
+the members rule lets any of them write any member's node, so a parent could
+read a coach's week and forge it. It is `training/{code}/away/{uid}/{id}`
+instead, with a rule of its own: a coach writes only her own, in her own
+name, an admin anyone's, and only coaches and admins read it. It syncs with
+the training sessions' machinery (merge on read, dirty marks, a refusal said
+per record, *Download a copy*), and only coaches' and admins' phones ever ask
+for it. **Paste `database.rules.json`** for it to leave the phone; until then
+the card says *Saved on this phone only*.
+
+**Read, not obeyed.** Nothing is called off or moved for her. Time off is a
+busy item of hers in `busyItems()`, so it is what the planner, find-a-time
+and her own bookable slots already read: her slots on a Monday are taken out,
+find-a-time counts her busy. A call-out takes her off that entry, so she is
+free for something else then, and the planner's Clashes says *No coach for
+G11 Flight: Practice at 5:30pm: Jaz called out* when nobody is left, or *Jaz
+called out …; Kim still on* when somebody is, plus *Jaz has time off but is
+due at …*, and lists every coach's time off in the window. The team's
+calendar row says *no coach: all called out* to its coaches and admins.
+Families see none of it.
+
+`test/away.js` is new; `test/rules.js` has the block, refusals first.
+
+---
+
 ## Planning for the club — 2026-10-04 (build 82)
 
 ROADMAP's *Next: planning for the club*, all four steps, as Admin → *Plan*.

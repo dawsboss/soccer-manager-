@@ -287,6 +287,22 @@
             }
           }
         },
+        "away": {
+          ".read": "auth != null && (root.child('workspaces/' + $code + '/access/admins/' + auth.uid).exists() || root.child('workspaces/' + $code + '/access/coachIndex/' + auth.uid).exists())",
+          "$uid": {
+            ".read": "auth != null && $uid === auth.uid",
+            "$id": {
+              ".write": "auth != null && ($uid === auth.uid || root.child('workspaces/' + $code + '/access/admins/' + auth.uid).exists()) && (!newData.exists() || newData.child('by').val() === auth.uid)",
+              ".validate": "newData.hasChildren(['id', 'kind', 'by', 'at']) && newData.child('id').val() === $id && (newData.child('kind').val() === 'weekly' || newData.child('kind').val() === 'dates' || newData.child('kind').val() === 'callout')",
+              "note": {
+                ".validate": "newData.isString() && newData.val().length <= 80"
+              },
+              "at": {
+                ".validate": "newData.isNumber()"
+              }
+            }
+          }
+        },
         "practices": {
           "$tid": {
             ".read": "auth != null && (root.child('workspaces/' + $code + '/access/admins/' + auth.uid).exists() || root.child('workspaces/' + $code + '/access/teamIndex/' + $tid + '/' + auth.uid).val() === 'coach' || (!root.child('workspaces/' + $code + '/access/teamIndex').exists() && root.child('workspaces/' + $code + '/access/coachIndex/' + auth.uid).exists()))",

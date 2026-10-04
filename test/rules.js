@@ -1398,6 +1398,35 @@ reads('owners are not world-readable', OUT, 'shareOwners/sh1', false);
   for (const k of ['avail', 'sessions', 'booked', 'seats']) delete DB.training.CLUB[k];
 }
 
+/* ---------------- coaches' time off ---------------- */
+{
+  const T = 'training/CLUB/away/';
+  const rec = (id, by, extra = {}) => ({ id, kind: 'weekly', days: [0], by, at: 1, ...extra });
+  console.log('\n--- coaches\' time off: refused first ---');
+  reads('a parent cannot read it', MUM, 'training/CLUB/away', false);
+  reads('nor one coach\'s', MUM, T + 'coach', false);
+  reads('a tracker cannot', TRK, 'training/CLUB/away', false);
+  reads('registered, no role yet', NEWB, 'training/CLUB/away', false);
+  reads('signed out', OUT, 'training/CLUB/away', false);
+  writes('a parent cannot write a coach\'s', MUM, T + 'coach/x', rec('x', 'mum'), false);
+  writes('another coach cannot write hers', OTHER, T + 'coach/x', rec('x', 'other'), false);
+  writes('nor delete it', OTHER, T + 'coach/x', null, false);
+  console.log('\n--- and allowed to coaches and admins ---');
+  reads('a coach reads every coach\'s', COACH, 'training/CLUB/away', true);
+  reads('an admin does', ADM, 'training/CLUB/away', true);
+  reads('anyone reads her own', NEWB, T + 'newbie', true);
+  writes('a coach writes her own', COACH, T + 'coach/x', rec('x', 'coach'), true);
+  writes('dates away', COACH, T + 'coach/x', { id: 'x', kind: 'dates', from: '2026-10-12', to: '2026-10-19', by: 'coach', at: 1 }, true);
+  writes('a call-out', COACH, T + 'coach/x', { id: 'x', kind: 'callout', item: 'e:e1', tid: 't1', by: 'coach', at: 1 }, true);
+  writes('and deletes it', COACH, T + 'coach/x', null, true);
+  writes('an admin writes anyone\'s', ADM, T + 'coach/y', rec('y', 'adm'), true);
+  writes('but not in someone else\'s name', COACH, T + 'coach/x', rec('x', 'other'), false);
+  writes('nor a kind there isn\'t', COACH, T + 'coach/x', rec('x', 'coach', { kind: 'forever' }), false);
+  writes('nor under an id that is not its own', COACH, T + 'coach/x', rec('y', 'coach'), false);
+  writes('nor a note longer than 80', COACH, T + 'coach/x', rec('x', 'coach', { note: 'x'.repeat(81) }), false);
+  writes('nor everyone\'s at once', ADM, 'training/CLUB/away', { coach: { x: rec('x', 'adm') } }, false);
+}
+
 /* ---------------- a brand-new club, under the same rules ---------------- */
 
 /* Clubs arrive whenever they like, into the database every other club is

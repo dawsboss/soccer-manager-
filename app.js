@@ -644,7 +644,7 @@ const pendingList = () => Object.entries(pending.w).sort((a, b) => a[1].n - b[1]
    "synced" is never said while any of it is still only here. */
 const SESS_WHAT = { sessions: 'a training session', booked: 'a place in a training session', came: 'a training session\'s register',
   fees: 'a training session fee', pay: 'a coach\'s pay rate', splans: 'a training session\'s drills',
-  avail: 'a coach\'s bookable times', seats: 'a place in a bookable slot' };
+  avail: 'a coach\'s bookable times', seats: 'a place in a bookable slot', away: 'a coach\'s time off' };
 function otherOwed() {
   const out = [];
   for (const k of Object.keys(train.dirty || {})) {
@@ -2875,7 +2875,7 @@ function importPlan(data, cur = state) {
    club could be asked, and the download says if some of it could not be. */
 let lastBackup = null;     // the last download's contents, for the tests and for nothing else
 // bookable times and their seats go last: a restored seat names a session that has to be there first
-const TRAIN_KINDS = [['sessions', 1], ['booked', 2], ['came', 1], ['fees', 2], ['pay', 1], ['splans', 1], ['avail', 1], ['seats', 2]];
+const TRAIN_KINDS = [['sessions', 1], ['booked', 2], ['came', 1], ['fees', 2], ['pay', 1], ['splans', 1], ['avail', 1], ['seats', 2], ['away', 2]];
 const isBackupData = data => !!(data && data.teams && !Array.isArray(data.teams) && typeof data.teams === 'object'
   && (data.matches === undefined || (typeof data.matches === 'object' && !Array.isArray(data.matches))));
 function fetchOnce(path, ms = 6000) {
@@ -6154,6 +6154,12 @@ function opponentMessage(t, m) {
   return lines.join('\n');
 }
 
+/* Who of the team's coaches can't make it, for those running the team. */
+function coachOutLine(it) {
+  const outs = calledOut(it.key); if (!outs.length) return '';
+  const cs = coachesOf(it.tid);
+  return cs.length && cs.every(u => outs.includes(u)) ? 'no coach: all called out' : outs.map(u => coachName(u)).join(', ') + ' out';
+}
 function calRow(it, all) {
   if (it.kind === 'session') return sessCalRow(it, all);
   const t = state.teams[it.tid] || {};
@@ -6161,7 +6167,8 @@ function calRow(it, all) {
   // most entries are the team's own, so it is the exception that gets marked
   const sub = [it.venue, it.home && HOME_AWAY[it.home], all ? t.name : '',
     edit && it.kind !== 'game' && it.public ? 'on the share link' : '', rsvpLine(it),
-    edit && attendDue(it) && calPast(it) ? (a => a ? `${Object.values(a).filter(Boolean).length} came` : 'no register yet')(attendOf(it.tid, it.id)) : ''].filter(Boolean);
+    edit && attendDue(it) && calPast(it) ? (a => a ? `${Object.values(a).filter(Boolean).length} came` : 'no register yet')(attendOf(it.tid, it.id)) : '',
+    edit && !it.called && !calPast(it) ? coachOutLine(it) : ''].filter(Boolean);
   const m = it.kind === 'game' ? state.matches[it.id] : null;
   const right = it.called ? `<span class="tag off">${CALLED[it.called]}</span>`
     : m && it.status !== 'upcoming' ? `<span class="pmins">${score(m).us}<small>–${score(m).them}</small></span>`
@@ -6316,6 +6323,7 @@ function sheetCalItem(kind, tid, id) {
       ${row('Notes', esc((m ? m.notes : e && e.notes) || '').replace(/\n/g, '<br>'))}
       ${left ? row('Repeats', `Weekly · ${left} more after this`) : ''}
     </dl>
+    ${callOutBlock(it.key, tid, it.date)}
     ${rsvpBlock(it)}
     ${attendBlock(it)}
     ${it.date ? `<div class="row wrap" style="margin-bottom:10px">
@@ -9033,12 +9041,12 @@ function tickRun() {
 const LS_SESS = 'sm.sess.v1';
 const LS_SESS_SEEN = 'sm.sessSeen';
 const sessKey = () => LS_SESS + ':' + clubKey();
-const SESS_BLANK = () => ({ sessions: {}, booked: {}, came: {}, fees: {}, pay: {}, splans: {}, avail: {}, seats: {}, dirty: {}, refused: {} });
+const SESS_BLANK = () => ({ sessions: {}, booked: {}, came: {}, fees: {}, pay: {}, splans: {}, avail: {}, seats: {}, away: {}, dirty: {}, refused: {} });
 /* How many path segments down each kind's records sit: a session is one node,
    a booking is one per player per session, a register one per session. A merge
    walks to exactly this depth and no further, so a record is always taken or
    kept whole and never half of one with half of the other. */
-const SESS_DEPTH = { sessions: 2, booked: 3, came: 2, fees: 3, pay: 2, splans: 2, avail: 2, seats: 3 };
+const SESS_DEPTH = { sessions: 2, booked: 3, came: 2, fees: 3, pay: 2, splans: 2, avail: 2, seats: 3, away: 3 };
 const SESS_KIND = { one: '1-1', group: 'Group' };
 const BOOK = { asked: 'Asked', in: 'Booked', wait: 'Waiting list', no: 'Not this time', out: 'Withdrew' };
 const BOOK_ORDER = { asked: 0, in: 1, wait: 2, no: 3, out: 4 };
@@ -9256,6 +9264,8 @@ const sessOn = () => !!(rtdb && fb && me && wsCode() && wsRead && !needsSignIn()
 function sessWanted() {
   if (!canSessions()) return [];
   const want = ['sessions', 'booked', 'came', 'avail', 'seats'];
+  // coaches' time off is the coaches' and the admins', never a family's
+  if (isAdmin(me.uid) || isCoachAny(me.uid)) want.push('away');
   const all = sessAll();
   if (isAdmin(me.uid)) want.push('fees', 'pay');
   else {
@@ -9373,16 +9383,23 @@ function busyItems(date) {
   for (const it of calItems(teams().map(t => t.id))) {
     if (it.date !== date || it.called || !it.start) continue;
     const [a, b] = span(it.start, it.end, it.mins);
-    const f = fieldOfText(it.venue), t = state.teams[it.tid] || {};
-    out.push({ key: it.key, kind: it.kind, label: `${t.name || 'A team'}: ${it.title}`, a, b, field: f ? f.id : null, venue: it.venue || '', coaches: Object.keys(teamAccess(it.tid).coaches || {}), tid: it.tid, pids: null });
+    const f = fieldOfText(it.venue), t = state.teams[it.tid] || {}, out_ = calledOut(it.key);
+    // a coach who called out of it is not due there, so she is free for something else then
+    out.push({ key: it.key, kind: it.kind, label: `${t.name || 'A team'}: ${it.title}`, a, b, field: f ? f.id : null, venue: it.venue || '',
+      coaches: coachesOf(it.tid).filter(u => !out_.includes(u)), tid: it.tid, pids: null });
   }
   for (const s of sessAll()) {
     if (s.date !== date || s.called || !s.start) continue;
     const [a, b] = span(s.start, s.end, 60);
     const f = sessField(s);
-    out.push({ key: 's:' + s.id, kind: 'session', label: `${sessTitle(s)} (${s.coachName})`, a, b, field: f ? f.id : null, venue: s.place || '', coaches: [s.coach], tid: null,
+    out.push({ key: 's:' + s.id, kind: 'session', label: `${sessTitle(s)} (${s.coachName})`, a, b, field: f ? f.id : null, venue: s.place || '', coaches: calledOut('s:' + s.id).includes(s.coach) ? [] : [s.coach], tid: null,
       pids: bookingsOf(s.id).filter(x => x.st === 'in' || x.st === 'asked').map(x => x.pid) });
   }
+  /* A coach's time off is a busy item of its own, hers alone: it takes her out
+     of find-a-time and out of her own bookable slots, and the planner says when
+     she is due somewhere during it. */
+  for (const r of awayAll()) for (const [a, b] of awaySpans(r, date))
+    out.push({ key: 'o:' + r.uid + ':' + r.id, kind: 'away', label: `Time off (${coachName(r.uid)})`, a, b, field: null, venue: '', coaches: [r.uid], tid: null, pids: null, away: r });
   return out;
 }
 const timeOf = x => `${niceTime(pad2(Math.floor(x.a / 60) % 24) + ':' + pad2(x.a % 60))}`;
@@ -9402,8 +9419,10 @@ function sessClashes(s) {
     const here = others.filter(x => x.field === f.id);
     if (here.length + 1 > pitches) out.push(`${f.name} has ${pitches} pitch${pitches === 1 ? '' : 'es'}, and this is on top of ${list(here)}`);
   }
-  const coachBusy = others.filter(x => x.coaches.includes(s.coach));
+  const coachBusy = others.filter(x => x.coaches.includes(s.coach) && !x.away);
   if (coachBusy.length) out.push(`${s.coachName} is also due at ${list(coachBusy)}`);
+  const off = others.filter(x => x.away && x.coaches.includes(s.coach));
+  if (off.length) out.push(`${s.coachName} has time off then: ${off.map(x => awayText(x.away)).join('; ')}`);
   for (const x of bookingsOf(s.id)) {
     if (x.st !== 'in' && x.st !== 'asked') continue;
     const tid = x.b.tid || (x.who && x.who.t.id);
@@ -9681,6 +9700,7 @@ function sheetSess(id) {
       ${later ? row('Repeats', `Weekly · ${later} more after this`) : ''}
     </dl>
     ${clashes.length ? `<div class="card planwarn">${clashes.map(c => `<p>${esc(c)}</p>`).join('')}</div>` : ''}
+    ${callOutBlock('s:' + s.id, '', s.date, !!me && s.coach === me.uid)}
     ${sessFamilyBlock(s)}
     ${run ? sessPlayersBlock(s) + sessRegisterBlock(s) + sessFeesBlock(s) + sessDrillsBlock(s) : ''}
     ${s.date ? `<div class="row wrap" style="margin-bottom:10px">
@@ -11094,6 +11114,7 @@ function viewMyCal() {
       `<button class="chip" type="button" data-act="mycalf" data-v="${esc(k)}" aria-pressed="${ui.myCal === k}">${l}</button>`).join('')}</div>` : ''}
     ${canBook ? `<button class="btn wide" data-act="sesstab" data-k="list">Book a 1-1 with a coach</button>` : ''}
     ${calMonth(dated, 'mycalday')}
+    ${awayCard()}
     <div class="card"><h2 style="margin-bottom:0">Coming up</h2>
       ${ahead.length ? `<div class="plist">${myCalList(ahead)}</div>`
       : `<p class="muted" style="margin-bottom:0">Nothing coming up.${myCalTeams().length ? '' : ' Once you coach a team, or a child of yours is on one, its games and practices are here.'}</p>`}</div>
@@ -11237,6 +11258,192 @@ function viewAdmin() {
   </div>`;
 }
 
+/* ---------------- coaches' time off ---------------- */
+/* ROADMAP's "coaches' own unavailability", in the three shapes a coach says it:
+
+     weekly    "never Mondays", "not before 6 on Tuesdays", until a date or not
+     dates     "away 12–19 October", "Thursday 3–4, the dentist"
+     callout   "I can't make Tuesday's practice": one entry or session
+
+   At training/{code}/away/{uid}/{id}. Not under access/members, which ROADMAP
+   first suggested: every account in the club reads the workspace and any of
+   them can write a member's node, so a parent could read a coach's week and
+   forge it. Here the rule lets a coach write only her own and an admin
+   anyone's, and only coaches and admins read it, so it syncs with training
+   sessions' machinery (merge on read, dirty marks, refused said per record)
+   and only coaches' and admins' phones ever hold it.
+
+   It is read, not obeyed: time off and call-outs make a coach busy in
+   busyItems(), which is what the planner, find-a-time and her bookable slots
+   already read; and a call-out takes her off the entry, so a team whose every
+   coach has called out is said to have nobody. Nothing is cancelled for her. */
+const AWAY_KIND = { weekly: 'Every week', dates: 'Dates away', callout: 'Called out' };
+const AWAY_NOTE = 80;
+const coachesOf = tid => Object.keys(teamAccess(tid).coaches || {});
+function normAway(raw, u, id) {
+  if (!raw || typeof raw !== 'object' || !AWAY_KIND[raw.kind]) return null;
+  const str = (v, n) => (v == null || typeof v === 'object' ? '' : String(v)).trim().slice(0, n);
+  const r = { id: str(raw.id || id, 60), uid: u, kind: raw.kind, note: str(raw.note, AWAY_NOTE), start: hm(raw.start), end: hm(raw.end), at: Number(raw.at) || 0, by: str(raw.by, 60) };
+  if (r.start && r.end && minOf(r.end) <= minOf(r.start)) r.start = r.end = '';
+  if (!r.start || !r.end) r.start = r.end = '';
+  if (r.kind === 'weekly') {
+    r.days = [...new Set(arrOf(raw.days).map(Number))].filter(n => Number.isInteger(n) && n >= 0 && n <= 6).sort();
+    r.from = okDay(raw.from) ? raw.from : ''; r.to = okDay(raw.to) ? raw.to : '';
+    return r.days.length ? r : null;
+  }
+  if (r.kind === 'dates') {
+    r.from = okDay(raw.from) ? raw.from : ''; r.to = okDay(raw.to) && raw.to >= r.from ? raw.to : r.from;
+    return r.from ? r : null;
+  }
+  r.item = /^[egs]:[\w-]+$/.test(str(raw.item, 80)) ? str(raw.item, 80) : '';
+  r.tid = str(raw.tid, 60); r.date = okDay(raw.date) ? raw.date : ''; r.title = str(raw.title, 80);
+  return r.item ? r : null;
+}
+function awayAll() {
+  const out = [];
+  for (const [u, recs] of Object.entries(sess.away || {})) if (recs && typeof recs === 'object')
+    for (const [id, raw] of Object.entries(recs)) { const r = normAway(raw, u, id); if (r) out.push(r); }
+  return out;
+}
+const awayOf = u => awayAll().filter(r => r.uid === u);
+/* The minutes of one day a record takes, as [from, to] pairs. A call-out
+   takes none: it is about one entry, and the entry knows. */
+function awaySpans(r, date) {
+  if (!okDay(date) || r.kind === 'callout') return [];
+  if (r.kind === 'weekly' && (!r.days.includes(weekdayOf(date)) || (r.from && date < r.from) || (r.to && date > r.to))) return [];
+  if (r.kind === 'dates' && (date < r.from || date > r.to)) return [];
+  return [r.start ? [minOf(r.start), minOf(r.end)] : [0, 1440]];
+}
+// who has called out of one calendar item or session, by its key ('e:id', 'g:id', 's:id')
+const calledOut = key => awayAll().filter(r => r.kind === 'callout' && r.item === key).map(r => r.uid);
+const callOutOf = (u, key) => awayAll().find(r => r.uid === u && r.kind === 'callout' && r.item === key) || null;
+function awayText(r) {
+  const hours = r.start ? `${niceTime(r.start)}–${niceTime(r.end)}` : 'all day';
+  const note = r.note ? ` (${r.note})` : '';
+  if (r.kind === 'weekly') {
+    const days = r.days.length === 7 ? 'Every day' : 'Every ' + r.days.map(i => WEEKDAYS[i]).join(', ');
+    const span = r.to ? ` until ${dayLabel(r.to)}` : r.from && r.from > todayStr() ? ` from ${dayLabel(r.from)}` : '';
+    return `${days}, ${hours}${span}${note}`;
+  }
+  if (r.kind === 'dates') return `${r.from === r.to ? dayLabel(r.from) : dayLabel(r.from) + ' to ' + dayLabel(r.to)}, ${hours}${note}`;
+  return `Can't make ${r.title || 'it'}${r.date ? ', ' + dayLabel(r.date) : ''}${note}`;
+}
+// still to come, or still going: what her list shows and the planner lists
+function awayCurrent(r, today = todayStr()) {
+  if (r.kind === 'weekly') return !r.to || r.to >= today;
+  if (r.kind === 'dates') return r.to >= today;
+  return !r.date || r.date >= today;
+}
+/* Is she off for any of [a, b) on that date? The record, or null. */
+function awayDuring(u, date, a, b) {
+  for (const r of awayOf(u)) for (const [x, y] of awaySpans(r, date)) if (x < b && a < y) return r;
+  return null;
+}
+const awayOn = () => !!me && (!gated() || isAdmin(me.uid) || isCoachAny(me.uid));
+
+/* Her own list, on My calendar. */
+let awayForm = null;
+function awayCard() {
+  if (!awayOn()) return '';
+  const mine = awayOf(me.uid).filter(r => awayCurrent(r)).sort((x, y) => (x.from || x.date || '').localeCompare(y.from || y.date || ''));
+  return `<div class="card"><div class="spread"><h2 style="margin:0">Time off</h2><button class="btn quiet sm" data-act="awaynew">Add</button></div>
+    ${mine.length ? `<div class="plist" style="margin-top:8px">${mine.map(r => `<div class="prow" style="grid-template-columns:1fr auto">
+      <span><span class="pname">${esc(AWAY_KIND[r.kind])}</span><span class="psub">${esc(awayText(r))}</span></span>
+      <button class="btn quiet sm" data-act="awayrm" data-id="${esc(r.id)}">Remove</button></div>`).join('')}</div>`
+      : `<p class="muted" style="margin:6px 0 0">Nights you can't do, or dates you're away. Your club's admins see it when they plan, your bookable times leave it out, and it's never shown to families.</p>`}
+    ${sessState.away === 'refused' ? '<p class="rolebar warn">Saved on this phone only: the club\'s rules may not include time off yet.</p>' : ''}</div>`;
+}
+function awayFormRead() {
+  const f = awayForm; if (!f) return;
+  for (const [k, id] of [['from', '#awFrom'], ['to', '#awTo'], ['start', '#awStart'], ['end', '#awEnd'], ['note', '#awNote']]) { const el = $(id); if (el && typeof el.value === 'string') f[k] = el.value; }
+}
+function sheetAway() {
+  const f = awayForm; if (!f) return;
+  const chip = (act, v, on, l) => `<button class="chip" type="button" data-act="${act}" data-v="${v}" aria-pressed="${!!on}">${l}</button>`;
+  openSheet(`<h3>Time off</h3>
+    <div class="chips" style="margin-bottom:10px">${chip('awaykind', 'weekly', f.kind === 'weekly', 'Every week')}${chip('awaykind', 'dates', f.kind === 'dates', 'Dates away')}</div>
+    ${f.kind === 'weekly' ? `<p class="lbl">Which days</p><div class="chips" style="margin-bottom:10px">${WEEKDAYS.map((w, i) => chip('awayday', i, f.days.includes(i), w)).join('')}</div>` : ''}
+    <div class="grid2">
+      <label class="field"><span>${f.kind === 'weekly' ? 'Starting (optional)' : 'From'}</span><input type="date" id="awFrom" value="${esc(f.from)}"></label>
+      <label class="field"><span>${f.kind === 'weekly' ? 'Until (optional)' : 'To'}</span><input type="date" id="awTo" value="${esc(f.to)}"></label>
+    </div>
+    <div class="grid2">
+      <label class="field"><span>From (blank is all day)</span><input type="time" id="awStart" value="${esc(f.start)}"></label>
+      <label class="field"><span>Until</span><input type="time" id="awEnd" value="${esc(f.end)}"></label>
+    </div>
+    <label class="field"><span>Note (optional)</span><input type="text" id="awNote" maxlength="${AWAY_NOTE}" value="${esc(f.note)}" placeholder="Work late, holiday"></label>
+    <p class="muted" style="margin-top:0">The club's coaches and admins can read it, so keep the note general.</p>
+    <button class="btn wide" data-act="awaysave">Save</button>
+    <button class="btn quiet wide" data-act="closesheet" style="margin-top:8px">Cancel</button>`, true);
+}
+function sheetCallOut(key, tid, date) {
+  openSheet(`<h3>Can't make it?</h3>
+    <p class="muted" style="margin-top:0">${tid ? `The team's other coaches and the club's admins see that you can't. Nothing is called off, and families aren't told.` : `The club's admins see that you can't. The session isn't called off, and families aren't told: call it off or hand it over from the session itself.`}</p>
+    <label class="field"><span>Note (optional)</span><input type="text" id="coNote" maxlength="${AWAY_NOTE}" placeholder="Work, ill"></label>
+    <button class="btn wide" data-act="awayoutgo" data-k="${esc(key)}" data-tid="${esc(tid || '')}" data-d="${esc(date || '')}">I can't make it</button>
+    <button class="btn quiet wide" data-act="closesheet" style="margin-top:8px">Cancel</button>`, true);
+}
+/* For an entry's sheet: who has called out, to those running the team, and
+   the button for a coach of the team herself. */
+function callOutBlock(key, tid, date, run) {
+  if (!awayOn()) return '';
+  const outs = awayAll().filter(r => r.kind === 'callout' && r.item === key);
+  const mine = outs.find(r => r.uid === me.uid);
+  const staff = tid ? canEditTeam(tid) : run || canAdmin();
+  const list = staff && outs.length ? `<div class="rolebar warn" style="margin-bottom:10px">${outs.map(r => `${esc(r.uid === me.uid ? 'You' : coachName(r.uid))} can't make it${r.note ? ` (${esc(r.note)})` : ''}`).join('<br>')}${tid && coachesOf(tid).length && coachesOf(tid).every(u => outs.some(r => r.uid === u)) ? '<br><b>No coach left for it.</b>' : ''}</div>` : '';
+  const mayOut = tid ? coachesOf(tid).includes(me.uid) : run;
+  const future = !date || date >= todayStr();
+  const btn = mayOut && future ? (mine ? `<button class="btn quiet wide" data-act="awayback" data-id="${esc(mine.id)}" style="margin-bottom:8px">I can make it after all</button>`
+    : `<button class="btn quiet wide" data-act="awayout" data-k="${esc(key)}" data-tid="${esc(tid || '')}" data-d="${esc(date || '')}" style="margin-bottom:8px">I can't make this</button>`) : '';
+  return list + btn;
+}
+const AWAY_ACTS = new Set(['awaynew', 'awaykind', 'awayday', 'awaysave', 'awayrm', 'awayout', 'awayoutgo', 'awayback']);
+function onAwayAct(a, d) {
+  // checked here: a record is always the signed-in coach's own, and only a coach or an admin has any
+  if (!awayOn()) { closeSheet(); toast(me ? 'Time off is for coaches and admins' : 'Sign in first'); return; }
+  const mine = id => awayOf(me.uid).find(r => r.id === id);
+  if (a === 'awaynew') { awayForm = { kind: 'weekly', days: [], from: '', to: '', start: '', end: '', note: '' }; sheetAway(); return; }
+  if (a === 'awaykind' || a === 'awayday') {
+    awayFormRead();
+    if (a === 'awaykind') awayForm.kind = d.v === 'dates' ? 'dates' : 'weekly';
+    else { const n = Number(d.v); awayForm.days = awayForm.days.includes(n) ? awayForm.days.filter(x => x !== n) : [...awayForm.days, n].sort(); }
+    sheetAway(); return;
+  }
+  if (a === 'awaysave') {
+    awayFormRead();
+    const f = awayForm; if (!f) return;
+    const start = hm(f.start), end = hm(f.end);
+    if ((start || end) && !(start && end && minOf(end) > minOf(start))) { toast('Give a start and an end, or leave both blank for all day'); return; }
+    if (f.kind === 'weekly' && !f.days.length) { toast('Pick at least one day'); return; }
+    if (f.kind === 'dates' && !okDay(f.from)) { toast('Pick the first day'); return; }
+    if (f.kind === 'dates' && okDay(f.to) && f.to < f.from) { toast('The last day is before the first'); return; }
+    const id = uid();
+    const rec = { id, kind: f.kind, start, end, note: String(f.note || '').trim().slice(0, AWAY_NOTE), by: me.uid, at: nowMs(),
+      ...(f.kind === 'weekly' ? { days: f.days, from: okDay(f.from) ? f.from : '', to: okDay(f.to) ? f.to : '' } : { from: f.from, to: okDay(f.to) ? f.to : f.from }) };
+    sessPut(`away/${me.uid}/${id}`, rec);
+    awayForm = null; closeSheet(); render(); toast('Saved'); return;
+  }
+  if (a === 'awayrm' || a === 'awayback') {
+    if (!mine(d.id)) { toast('That is not yours to remove'); return; }
+    sessPut(`away/${me.uid}/${d.id}`, null);
+    closeSheet(); render(); toast(a === 'awayback' ? 'You are back on it' : 'Removed'); return;
+  }
+  if (a === 'awayout' || a === 'awayoutgo') {
+    const key = String(d.k || ''), [kind, id] = key.split(':'), tid = d.tid || '';
+    // only a coach of the team (or the coach a session names) calls out of it, and only once
+    const s = kind === 's' ? sessById(id) : null;
+    if (kind === 's' ? !(s && s.coach === me.uid) : !(tid && coachesOf(tid).includes(me.uid))) { closeSheet(); toast('Only its own coach calls out of that'); return; }
+    if (callOutOf(me.uid, key)) { closeSheet(); toast('You have already said'); return; }
+    if (a === 'awayout') { sheetCallOut(key, tid, d.d); return; }
+    const it = s ? null : calItems([tid]).find(x => x.key === key);
+    if (!s && !it) { closeSheet(); toast('That is not on the calendar any more'); return; }
+    const rid = uid();
+    sessPut(`away/${me.uid}/${rid}`, { id: rid, kind: 'callout', item: key, tid, date: (s || it).date || '', start: (s || it).start || '', end: (s || it).end || '',
+      title: s ? sessTitle(s) : `${(state.teams[tid] || {}).name || 'Team'}: ${it.title}`, note: String(($('#coNote') || {}).value || '').trim().slice(0, AWAY_NOTE), by: me.uid, at: nowMs() });
+    closeSheet(); render(); toast("Said. The other coaches and the admins can see it"); return;
+  }
+}
+
 /* ---------------- planning for the club ---------------- */
 /* ROADMAP's *Next: planning for the club*. A club admin scheduling the season
    asks one question in many shapes: when is everyone involved free? All the
@@ -11312,6 +11519,13 @@ function clubClashesOn(date) {
   for (let i = 0; i < items.length; i++) for (let j = i + 1; j < items.length; j++) {
     const x = items[i], y = items[j];
     if (!ov(x, y)) continue;
+    // time off clashes with nothing but what its own coach is due at
+    if (x.away || y.away) {
+      const off = x.away ? x : y, other = x.away ? y : x;
+      if (!other.away && other.coaches.includes(off.away.uid))
+        out.push({ kind: 'away', text: `${coachName(off.away.uid)} has time off (${awayText(off.away)}) but is due at ${other.label} at ${timeOf(other)}` });
+      continue;
+    }
     const both = `${x.label} at ${timeOf(x)} and ${y.label} at ${timeOf(y)}`;
     const pk = placeKey(x);
     if (pk && pk === placeKey(y)) {
@@ -11327,6 +11541,17 @@ function clubClashesOn(date) {
       const kids = common.map(u => [...fx[u], ...fy[u]].filter((p, k, a) => a.findIndex(q => q.id === p.id) === k).map(p => p.name).join(' and ')).filter(Boolean);
       out.push({ kind: 'family', text: `${common.length} famil${common.length === 1 ? 'y has' : 'ies have'} children at ${both}${kids.length ? ': ' + kids.join('; ') : ''}` });
     }
+  }
+  /* A team entry its coaches can't make: everyone called out or off is a
+     clash; some out with somebody still on is said, so it isn't a surprise. */
+  for (const x of items) {
+    if (!x.tid) continue;
+    const cs = coachesOf(x.tid); if (!cs.length) continue;
+    const outs = calledOut(x.key);
+    const why = u => outs.includes(u) ? `${coachName(u)} called out` : awayDuring(u, date, x.a, x.b) ? `${coachName(u)} has time off` : '';
+    const left = cs.filter(u => !why(u));
+    if (!left.length) out.push({ kind: 'nocoach', text: `No coach for ${x.label} at ${timeOf(x)}: ${cs.map(why).join(', ')}` });
+    else if (outs.length) out.push({ kind: 'callout', text: `${outs.map(coachName).join(', ')} called out of ${x.label} at ${timeOf(x)}; ${left.map(coachName).join(', ')} still on` });
   }
   return out;
 }
@@ -11443,13 +11668,16 @@ function viewPlanner() {
 }
 function plannerClashView(p) {
   const today = todayStr(), list = plannerClashes(today, p.days);
-  const icon = { place: 'Same place', coach: 'Coach', family: 'Families' };
+  const icon = { place: 'Same place', coach: 'Coach', family: 'Families', away: 'Time off', nocoach: 'No coach', callout: 'Called out', field: 'Field' };
+  const end = addDays(today, p.days - 1);
+  const off = awayAll().filter(r => r.kind !== 'callout' && awayCurrent(r) && (r.kind === 'weekly' ? !r.from || r.from <= end : r.from <= end));
   const byDay = {};
   for (const c of list) (byDay[c.date] = byDay[c.date] || []).push(c);
   return `<div class="chips">${[7, 14, 28].map(n => `<button class="chip" type="button" data-act="plrange" data-v="${n}" aria-pressed="${p.days === n}">${n === 7 ? 'This week' : n + ' days'}</button>`).join('')}</div>
     ${list.length ? Object.entries(byDay).map(([date, cs]) => `<div class="card"><h4 style="margin:0 0 6px">${esc(dayLabel(date))}</h4>
       ${cs.map(c => `<p style="margin:0 0 6px"><span class="tag off">${icon[c.kind]}</span> ${esc(c.text)}</p>`).join('')}</div>`).join('')
-      : `<div class="empty"><strong>Nothing collides</strong>No two things at one place at once, no coach due in two places, and no family with children due in two places, in the next ${p.days} days.</div>`}
+      : `<div class="empty"><strong>Nothing collides</strong>No two things at one place at once, no coach due in two places or on time off, and no family with children due in two places, in the next ${p.days} days.</div>`}
+    ${off.length ? `<div class="card"><h4 style="margin:0 0 6px">Coaches' time off</h4>${off.map(r => `<p style="margin:0 0 4px"><b>${esc(coachName(r.uid))}</b> · ${esc(awayText(r))}</p>`).join('')}</div>` : ''}
     <p class="muted">From every team's games and calendar, the training sessions, who coaches which team, and which families have children on which teams. A place is a field from Fields where one matches, or the same words typed. Nothing here is stored or sent.</p>`;
 }
 function plannerFind(p) {
@@ -13219,6 +13447,7 @@ function onAct(e) {
   if (PRACTICE_ACTS.has(a) && !canTrain()) { closeSheet(); toast('Practice is for coaches and admins'); render(); return; }
   if (SESS_ACTS.has(a)) { onSessAct(a, d); return; }
   if (PLANNER_ACTS.has(a)) { onPlannerAct(a, d); return; }
+  if (AWAY_ACTS.has(a)) { onAwayAct(a, d); return; }
 
   if (a === 'practab') {
     const p = practiceUi();

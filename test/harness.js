@@ -194,7 +194,7 @@ const EXPORTS = `{
   get drillDraft() { return drillDraft },
   /* rendering + routing */
   render, uiToHash, hashToUi, clubTag,
-  clubClashesOn, findTimes, picOrder, picLayout, plannerClashes, PLANNER_ACTS,
+  clubClashesOn, awayAll, awaySpans, calledOut, findTimes, picOrder, picLayout, plannerClashes, PLANNER_ACTS,
   /* the mutable module-scoped bindings */
   get state() { return state }, set state(v) { state = v },
   get ui() { return ui },
