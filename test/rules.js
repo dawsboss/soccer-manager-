@@ -646,7 +646,11 @@ reads('owners are not world-readable', OUT, 'shareOwners/sh1', false);
   writes('an admin plans for any team', ADM, T + 'practices/t2/x', plan('x', 't2'), true);
   writes('filed under the wrong team', COACH, T + 'practices/t1/x', plan('x', 't2'), false);
   writes('under an id that is not its own', COACH, T + 'practices/t1/x', plan('y', 't1'), false);
-  writes('with no date', COACH, T + 'practices/t1/x', { id: 'x', teamId: 't1' }, false);
+  /* A plan hangs off its calendar entry and takes its day from there, so it
+     carries no date; an older app still sends one, and that is fine too. */
+  writes('with no date: the calendar entry has it', COACH, T + 'practices/t1/x', { id: 'x', teamId: 't1', eid: 'x', blocks: [] }, true);
+  writes('and an older app\'s, with its own date', COACH, T + 'practices/t1/x', plan('x', 't1'), true);
+  writes('with no team named', COACH, T + 'practices/t1/x', { id: 'x' }, false);
   writes('the team\'s whole collection at once', COACH, T + 'practices/t1', { x: plan('x', 't1') }, false);
   reads('nobody lists every team\'s plans', ADM, T + 'practices', false);
   reads('nor the whole training node', ADM, 'training/CLUB', false);
@@ -1392,6 +1396,35 @@ reads('owners are not world-readable', OUT, 'shareOwners/sh1', false);
 
   delete DB.workspaces.CLUB.teams.t1.players.p2.guardians;
   for (const k of ['avail', 'sessions', 'booked', 'seats']) delete DB.training.CLUB[k];
+}
+
+/* ---------------- coaches' time off ---------------- */
+{
+  const T = 'training/CLUB/away/';
+  const rec = (id, by, extra = {}) => ({ id, kind: 'weekly', days: [0], by, at: 1, ...extra });
+  console.log('\n--- coaches\' time off: refused first ---');
+  reads('a parent cannot read it', MUM, 'training/CLUB/away', false);
+  reads('nor one coach\'s', MUM, T + 'coach', false);
+  reads('a tracker cannot', TRK, 'training/CLUB/away', false);
+  reads('registered, no role yet', NEWB, 'training/CLUB/away', false);
+  reads('signed out', OUT, 'training/CLUB/away', false);
+  writes('a parent cannot write a coach\'s', MUM, T + 'coach/x', rec('x', 'mum'), false);
+  writes('another coach cannot write hers', OTHER, T + 'coach/x', rec('x', 'other'), false);
+  writes('nor delete it', OTHER, T + 'coach/x', null, false);
+  console.log('\n--- and allowed to coaches and admins ---');
+  reads('a coach reads every coach\'s', COACH, 'training/CLUB/away', true);
+  reads('an admin does', ADM, 'training/CLUB/away', true);
+  reads('anyone reads her own', NEWB, T + 'newbie', true);
+  writes('a coach writes her own', COACH, T + 'coach/x', rec('x', 'coach'), true);
+  writes('dates away', COACH, T + 'coach/x', { id: 'x', kind: 'dates', from: '2026-10-12', to: '2026-10-19', by: 'coach', at: 1 }, true);
+  writes('a call-out', COACH, T + 'coach/x', { id: 'x', kind: 'callout', item: 'e:e1', tid: 't1', by: 'coach', at: 1 }, true);
+  writes('and deletes it', COACH, T + 'coach/x', null, true);
+  writes('an admin writes anyone\'s', ADM, T + 'coach/y', rec('y', 'adm'), true);
+  writes('but not in someone else\'s name', COACH, T + 'coach/x', rec('x', 'other'), false);
+  writes('nor a kind there isn\'t', COACH, T + 'coach/x', rec('x', 'coach', { kind: 'forever' }), false);
+  writes('nor under an id that is not its own', COACH, T + 'coach/x', rec('y', 'coach'), false);
+  writes('nor a note longer than 80', COACH, T + 'coach/x', rec('x', 'coach', { note: 'x'.repeat(81) }), false);
+  writes('nor everyone\'s at once', ADM, 'training/CLUB/away', { coach: { x: rec('x', 'adm') } }, false);
 }
 
 /* ---------------- a brand-new club, under the same rules ---------------- */

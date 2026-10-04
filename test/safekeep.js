@@ -141,13 +141,16 @@ const badge = D => String(D.dom.node('#syncBadge').textContent || '');
     A.sess = { ...BLANK(), sessions: { s1: session('s1') }, booked: { s1: { p1: { tid: 't1', st: 'in', by: 'jaz', at: 1 } } },
       came: { s1: { p1: true } }, fees: { s1: { p1: { paid: 20, how: 'cash', at: 1, by: 'jaz' } } }, pay: { jaz: { rate: 30, per: 'hour' } },
       splans: { s1: { blocks: [{ drill: { shelf: 'builtin', id: 'rondo-4v1' }, name: 'Rondo', minutes: 12 }], at: 1 } } };
-    A.train = { ...A.train, practices: { t1: { pr1: { id: 'pr1', teamId: 't1', date: '2026-10-06', start: '17:30', minutes: 60, blocks: [], status: 'plan' } } }, schedule: {}, dirty: {} };
+    A.train = { ...A.train, practices: { t1: { pr1: { id: 'pr1', teamId: 't1', date: '2026-10-06', start: '17:30', minutes: 60, blocks: [], status: 'plan' },
+      pr2: { id: 'pr2', teamId: 't1', eid: 'pr2', blocks: [], status: 'plan' } } }, dirty: {},
+      tpls: { tp1: { id: 'tp1', name: 'Pressing hour', minutes: 60, blocks: [], by: 'jaz', byName: 'Jaz', team: 't1', at: 1 } }, tplDirty: {} };
     const { doc, missed } = await A.backupDoc();
     check('teams, games and roles, as before', !!doc.teams.t1 && !!doc.access.admins.boss, true);
     check('the club\'s fields', !!doc.access.org.venues.v1, true);
     deepEq('training sessions, bookings, registers, fees, pay and drills', ['sessions', 'booked', 'came', 'fees', 'pay', 'splans'].map(k => Object.keys(doc.training[k]).length), [1, 1, 1, 1, 1, 1]);
     check('the fee itself', doc.training.fees.s1.p1.paid, 20);
     check('practice plans', !!doc.training.practices.t1.pr1, true);
+    check('the club\'s templates', doc.training.templates.tp1.name, 'Pressing hour');
     check('nothing it could not check', missed.size, 0);
     check('the outbox and dirty marks are not in it', JSON.stringify(doc.training).includes('"dirty"'), false);
     A.click({ act: 'export' });
@@ -159,7 +162,7 @@ const badge = D => String(D.dom.node('#syncBadge').textContent || '');
     const file = JSON.stringify(doc);
     // the club since then: one session deleted, one fee changed, a field and a plan lost
     A.sess = { ...BLANK(), sessions: {}, fees: {}, booked: {}, came: {}, pay: { jaz: { rate: 35, per: 'hour' } } };
-    A.train = { ...A.train, practices: {} };
+    A.train = { ...A.train, practices: {}, tpls: {} };
     delete A.state.access.org.venues.v1;
     A.state.access.org.venues.v2 = { id: 'v2', name: 'Lakeside Park', pitches: 2 };
     const plan = A.importPlan(JSON.parse(file));
@@ -168,6 +171,8 @@ const badge = D => String(D.dom.node('#syncBadge').textContent || '');
     check('the session before what hangs off it', plan.sessWrites[0][0], 'sessions/s1');
     check('a pay rate the club changed since keeps the club\'s', plan.sessWrites.some(([p]) => p.startsWith('pay/')), false);
     check('the lost practice plan comes back', plan.trainWrites.some(([w, v]) => w === 'practice' && v.id === 'pr1'), true);
+    check('one that hangs off its calendar entry too, with no date of its own', plan.trainWrites.some(([w, v]) => w === 'practice' && v.id === 'pr2'), true);
+    check('and the lost template', plan.trainWrites.some(([w, v]) => w === 'template' && v.id === 'tp1'), true);
     check('a field the club has under the same name is not doubled', plan.writes.some(([p]) => p.startsWith('access/org/venues/')), false);
     check('and it says what it adds', /training records/.test(A.importSummary(plan.counts)), true);
     A.dom.node('#impText').value = file;
@@ -190,7 +195,7 @@ const badge = D => String(D.dom.node('#syncBadge').textContent || '');
     fbk.deliver(TR + 'sessions', { s9: session('s9') });
     for (const k of ['booked', 'came', 'fees', 'pay']) fbk.deliver(TR + k, {});
     fbk.deliver(TR + 'practices/t1', { pr9: { id: 'pr9', teamId: 't1', date: '2026-10-09' } });
-    fbk.deliver(TR + 'drills', {});
+    fbk.deliver(TR + 'drills', {}); fbk.deliver(TR + 'templates', {});
     await D.flush();
     // splans/s9 was never asked: s9 was not on this phone when the backup started
     const { doc, missed } = await p;
@@ -207,7 +212,7 @@ const badge = D => String(D.dom.node('#syncBadge').textContent || '');
     D.click({ act: 'importgo' });
     check('a tap on Import meanwhile writes nothing', fbk.record.writes.some(w => w.path.includes('/s5')), false);
     fbk.refuse(TR + 'sessions');
-    for (const k of ['booked', 'came', 'fees', 'pay', 'drills', 'splans/s5', 'splans/s9', 'practices/t1']) fbk.deliver(TR + k, null);
+    for (const k of ['booked', 'came', 'fees', 'pay', 'drills', 'templates', 'splans/s5', 'splans/s9', 'practices/t1']) fbk.deliver(TR + k, null);
     await D.flush();
     check('what could not be checked is not restored', /not restored, because this phone could not check/.test(sheet(D)), true);
     check('and no Import button for nothing', /data-act="importgo"/.test(sheet(D)), false);

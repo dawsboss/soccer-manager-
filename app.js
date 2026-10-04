@@ -2,7 +2,7 @@
    Static app. Data lives in localStorage, and mirrors to Firebase Realtime
    Database when a config + workspace code are present. */
 
-const BUILD = '82';
+const BUILD = '85';
 const BUILT = '2026-10-04';
 /* The version of database.rules.json this app was written against. The rules
    carry the same number in rulesVersion's .write, which accepts that number
@@ -11,7 +11,7 @@ const BUILT = '2026-10-04';
    never pasted look exactly like a coach with no signal: "saved on this phone
    only", one feature at a time. test/rules.js holds the two numbers together
    and fails when the rules change without this going up. */
-const RULES_VERSION = 1;
+const RULES_VERSION = 2;
 /* index.html carries the build it was published with. If this file is newer, the
    browser handed us a cached page — the exact failure that has eaten hours. */
 const pageBuild = () => {
@@ -652,7 +652,7 @@ const pendingList = () => Object.entries(pending.w).sort((a, b) => a[1].n - b[1]
    "synced" is never said while any of it is still only here. */
 const SESS_WHAT = { sessions: 'a training session', booked: 'a place in a training session', came: 'a training session\'s register',
   fees: 'a training session fee', pay: 'a coach\'s pay rate', splans: 'a training session\'s drills',
-  avail: 'a coach\'s bookable times', seats: 'a place in a bookable slot' };
+  avail: 'a coach\'s bookable times', seats: 'a place in a bookable slot', away: 'a coach\'s time off' };
 function otherOwed() {
   const out = [];
   for (const k of Object.keys(train.dirty || {})) {
@@ -661,6 +661,8 @@ function otherOwed() {
   }
   for (const id of Object.keys((train.drillDirty) || {})) out.push({ label: 'a drill shared with the club', refused: shelfState.club === 'refused' });
   if (me && mineUid === me.uid) for (const id of Object.keys(mine.dirty || {})) out.push({ label: 'one of your own drills', refused: shelfState.mine === 'refused' });
+  for (const id of Object.keys((train.tplDirty) || {})) out.push({ label: 'a template shared with the club', refused: shelfState.clubTpl === 'refused' });
+  if (me && mineUid === me.uid) for (const id of Object.keys(mine.tplDirty || {})) out.push({ label: 'one of your own templates', refused: shelfState.mineTpl === 'refused' });
   for (const k of Object.keys(sess.dirty || {})) out.push({ label: SESS_WHAT[k.split('/')[0]] || 'a training record', refused: !!(sess.refused || {})[k], sess: k });
   return out;
 }
@@ -793,7 +795,7 @@ function paintSync() {
 function flushTraining() {
   if (!fb || !me) return;
   for (const k of Object.keys(train.dirty || {})) { const i = k.indexOf('/'); if (i > 0) sendPractice(k.slice(0, i), k.slice(i + 1)); }
-  for (const s of ['club', 'mine']) for (const id of Object.keys(SHELF[s].store().dirty)) sendDrill(s, id);
+  for (const s of ['club', 'mine', 'clubTpl', 'mineTpl']) for (const id of Object.keys(SHELF[s].store().dirty)) sendDrill(s, id);
   for (const k of Object.keys(sess.dirty || {})) sessSend(k);
 }
 
@@ -851,12 +853,14 @@ function pushAll() {
    would only mean a refused copy of something derived nagging forever. */
 const DERIVED = /^access\/(index|teamIndex|coachIndex|teamParents)(\/|$)/;
 function remoteSet(path, value) {
+  noteMine(path);
   if (!fb) return;
   const v = value === undefined ? null : value;
   if (DERIVED.test(path)) { const w = Promise.resolve(fb.set(fb.ref(fb.db, fb.base + '/' + path), v)); w.catch(() => { }); return w; }
   return sendPending(path, notePending(path, v), v);
 }
 function remoteDel(path) {
+  noteMine(path);
   if (!fb) return;
   if (DERIVED.test(path)) { Promise.resolve(fb.remove(fb.ref(fb.db, fb.base + '/' + path))).catch(() => { }); return; }
   sendPending(path, notePending(path, null, true), null, true).catch(() => { });
@@ -2218,8 +2222,9 @@ function threadUnread(tid, fam) {
   return threadMsgs(tid, fam).filter(x => x.by !== me.uid && !x.status && (x.at || 0) > mark).length;
 }
 function unreadCount() {
-  if (!msgFor) return 0;
-  let n = 0;
+  const news = newsFor() ? newsUnread() : 0;
+  if (!msgFor) return news;
+  let n = news;
   for (const t of msgTeams()) n += notices(t.id).filter(noticeUnread).length;
   for (const t of staffTeams()) for (const fam of Object.keys(msgs.dm[t.id] || {})) n += threadUnread(t.id, fam) ? 1 : 0;
   for (const t of famTeams()) n += threadUnread(t.id, me.uid) ? 1 : 0;
@@ -2312,6 +2317,11 @@ function queueMsg(kind, tid, fam, text, extra) {
 
 /* ---- screens ---- */
 function viewInbox() {
+  const news = newsFor() ? newsCard() : '';
+  if (news && !msgOn()) return `<div class="stack">${news}</div>`;
+  return news ? viewInboxMsgs().replace('<div class="stack">', '<div class="stack">' + news) : viewInboxMsgs();
+}
+function viewInboxMsgs() {
   if (!msgOn() && !wsRead && fbConfig().apiKey) return `<div class="empty"><strong>Connecting…</strong>Messages appear once Minutes has reached the club.</div>`;
   if (!msgOn()) return `<div class="empty"><strong>No messages here</strong>
     ${!anyAdmins() ? 'Messages start once the club has an admin.' : 'Messages are for the teams you coach, track or have a child in.'}</div>`;
@@ -2473,7 +2483,7 @@ function msgPaint() {
 function paintBell(shut) {
   const n = shut ? 0 : unreadCount();
   const b = $('#inboxBtn');
-  if (b) { b.hidden = !!shut || !msgOn(); b.dataset.n = n ? String(n) : ''; }
+  if (b) { b.hidden = !!shut || !(msgOn() || (newsFor() && newsItems().length)); b.dataset.n = n ? String(n) : ''; }
   const c = $('#inboxN'); if (c) c.textContent = n ? (n > 9 ? '9+' : String(n)) : '';
   if (typeof document !== 'undefined') document.title = (n ? `(${n}) ` : '') + 'Minutes — soccer sub tracker';
 }
@@ -2907,7 +2917,7 @@ function importPlan(data, cur = state) {
    club could be asked, and the download says if some of it could not be. */
 let lastBackup = null;     // the last download's contents, for the tests and for nothing else
 // bookable times and their seats go last: a restored seat names a session that has to be there first
-const TRAIN_KINDS = [['sessions', 1], ['booked', 2], ['came', 1], ['fees', 2], ['pay', 1], ['splans', 1], ['avail', 1], ['seats', 2]];
+const TRAIN_KINDS = [['sessions', 1], ['booked', 2], ['came', 1], ['fees', 2], ['pay', 1], ['splans', 1], ['avail', 1], ['seats', 2], ['away', 2]];
 const isBackupData = data => !!(data && data.teams && !Array.isArray(data.teams) && typeof data.teams === 'object'
   && (data.matches === undefined || (typeof data.matches === 'object' && !Array.isArray(data.matches))));
 function fetchOnce(path, ms = 6000) {
@@ -2932,7 +2942,7 @@ function overlayRecords(a, b, depth) {
    paths it could not ask about (no signal, or rules that refuse). With no
    database at all, this phone's copy is the club's, and `known` is null. */
 async function trainingCopy(extra = {}) {
-  const T = { practices: clone(train.practices || {}), drills: clone(SHELF.club.store().items || {}) };
+  const T = { practices: clone(train.practices || {}), drills: clone(SHELF.club.store().items || {}), templates: clone(SHELF.clubTpl.store().items || {}) };
   for (const [k] of TRAIN_KINDS) T[k] = clone(sess[k] || {});
   const missed = new Set(), known = {};
   if (!(fb && rtdb && me && wsCode())) return { T, missed, known: null };
@@ -2943,7 +2953,7 @@ async function trainingCopy(extra = {}) {
   const jobs = TRAIN_KINDS.filter(([k]) => k !== 'splans').map(([k, d]) => [k, d]);
   for (const sid of sids) jobs.push(['splans/' + sid, 0]);
   for (const tid of tids) jobs.push(['practices/' + tid, 1]);
-  jobs.push(['drills', 1]);
+  jobs.push(['drills', 1], ['templates', 1]);
   const res = await Promise.all(jobs.map(([key]) => fetchOnce(base + key)));
   jobs.forEach(([key, depth], i) => {
     const r = res[i];
@@ -2975,7 +2985,8 @@ function restoreTraining(T, cur, out) {
   };
   // true, false, or null for "could not be checked"
   const has = path => {
-    const local = path.startsWith('practices/') ? getDeep(train, path) : path.startsWith('drills/') ? getDeep(SHELF.club.store().items, path.slice(7)) : getDeep(sess, path);
+    const local = path.startsWith('practices/') ? getDeep(train, path) : path.startsWith('drills/') ? getDeep(SHELF.club.store().items, path.slice(7))
+      : path.startsWith('templates/') ? getDeep(SHELF.clubTpl.store().items, path.slice(10)) : getDeep(sess, path);
     if (local !== undefined) return true;
     if (!fb) return false;
     if (!tk || !tk.known) return null;
@@ -3005,7 +3016,8 @@ function restoreTraining(T, cur, out) {
     if (!(cur.teams || {})[tid]) continue;
     const h = has(p);
     if (h === null) { unknown++; continue; }
-    if (h || !v || typeof v !== 'object' || !okDay(v.date)) continue;
+    // a plan hangs off its calendar entry and has no date of its own; one from before that has one
+    if (h || !v || typeof v !== 'object' || !(okDay(v.date) || v.eid)) continue;
     out.trainWrites.push(['practice', { ...clone(v), id: pid, teamId: tid }]); out.counts.training++;
   }
   for (const [p, v] of leaves(T.drills, 'drills', 1, [])) {
@@ -3013,6 +3025,12 @@ function restoreTraining(T, cur, out) {
     if (h === null) { unknown++; continue; }
     if (h || !v || typeof v !== 'object' || !v.name) continue;
     out.trainWrites.push(['drill', { ...clone(v), id: p.slice(7) }]); out.counts.training++;
+  }
+  for (const [p, v] of leaves(T.templates, 'templates', 1, [])) {
+    const h = has(p);
+    if (h === null) { unknown++; continue; }
+    if (h || !v || typeof v !== 'object' || !v.name || !v.by || !v.team) continue;
+    out.trainWrites.push(['template', { ...clone(v), id: p.slice(10) }]); out.counts.training++;
   }
   if (unknown) out.warnings.push(`${unknown} training record${unknown === 1 ? ' was' : 's were'} not restored, because this phone could not check whether the club already has ${unknown === 1 ? 'it' : 'them'}. Try again with a signal, signed in as an admin.`);
 }
@@ -3359,7 +3377,7 @@ function applyImport(plan) {
   saveLocal();
   // sessions after the teams and fields they name, through the store that resends them
   for (const [path, value] of plan.sessWrites || []) sessPut(path, value);
-  for (const [what, value] of plan.trainWrites || []) { if (what === 'practice') putPractice(value); else if (what === 'drill') putDrill('club', value); }
+  for (const [what, value] of plan.trainWrites || []) { if (what === 'practice') putPractice(value); else if (what === 'drill') putDrill('club', value); else if (what === 'template') putDrill('clubTpl', value); }
   render(); schedulePublish();
 }
 
@@ -4294,12 +4312,12 @@ function render() {
   let inGame = ui.view === 'game';
   // a game screen with no game is just four buttons that do nothing
   if (inGame && !match() && !teamMatches(ui.teamId).length) { ui.view = 'matches'; inGame = false; }
-  if (ui.view === 'admin' && !canAdmin()) ui.view = 'club';
+  if ((ui.view === 'admin' || ui.view === 'planner') && !canAdmin()) ui.view = 'club';
   if (ui.view === 'mine' && !guardsAnyone()) ui.view = 'matches';
   /* Not before the club has been read: a link to #/messages opened cold on a
      new phone renders before it knows anybody's role, and sending it to the
      club then would lose where it was going for good. */
-  if ((ui.view === 'inbox' || ui.view === 'thread') && !shut && (wsRead || !fbConfig().apiKey) && !msgOn()) ui.view = 'club';
+  if ((ui.view === 'inbox' || ui.view === 'thread') && !shut && (wsRead || !fbConfig().apiKey) && !msgOn() && !(ui.view === 'inbox' && newsFor() && newsItems().length)) ui.view = 'club';
   // the same wait, for the same reason: a family's link to a session opened cold
   if (ui.view === 'sessions' && !shut && (wsRead || !fbConfig().apiKey) && !canSessions()) ui.view = 'club';
   // a parent has no business reading the rest of the squad's names or the plan
@@ -4387,7 +4405,7 @@ function render() {
         v === 'season' ? viewSeason() : v === 'calendar' ? viewCalendar() :
           v === 'formation' ? viewFormation() : v === 'club' ? viewClub() : v === 'people' ? viewPeople() : v === 'admin' ? viewAdmin()
             : v === 'mine' ? viewMine() : v === 'teamset' ? viewTeamSet() : v === 'practice' ? viewPractice()
-              : v === 'inbox' ? viewInbox() : v === 'thread' ? viewThread() : v === 'sessions' ? viewSessions() : v === 'mycal' ? viewMyCal()
+              : v === 'inbox' ? viewInbox() : v === 'thread' ? viewThread() : v === 'sessions' ? viewSessions() : v === 'mycal' ? viewMyCal() : v === 'planner' ? viewPlanner()
               : v === 'setup' ? viewSetup() : viewMatches());
   syncHash();
   if (drillLink) setTimeout(openDrillLink, 0);
@@ -4401,6 +4419,8 @@ function render() {
   watchMessages();
   watchClaims();
   watchSess();
+  clubNews();
+  paintBell(shut);
 }
 
 /* Shown when the rules refuse us. Deliberately not a dead end: both the code and
@@ -6184,6 +6204,12 @@ function opponentMessage(t, m) {
   return lines.join('\n');
 }
 
+/* Who of the team's coaches can't make it, for those running the team. */
+function coachOutLine(it) {
+  const outs = calledOut(it.key); if (!outs.length) return '';
+  const cs = coachesOf(it.tid);
+  return cs.length && cs.every(u => outs.includes(u)) ? 'no coach: all called out' : outs.map(u => coachName(u)).join(', ') + ' out';
+}
 function calRow(it, all) {
   if (it.kind === 'session') return sessCalRow(it, all);
   const t = state.teams[it.tid] || {};
@@ -6191,7 +6217,8 @@ function calRow(it, all) {
   // most entries are the team's own, so it is the exception that gets marked
   const sub = [it.venue, it.home && HOME_AWAY[it.home], all ? t.name : '',
     edit && it.kind !== 'game' && it.public ? 'on the share link' : '', rsvpLine(it),
-    edit && attendDue(it) && calPast(it) ? (a => a ? `${Object.values(a).filter(Boolean).length} came` : 'no register yet')(attendOf(it.tid, it.id)) : ''].filter(Boolean);
+    edit && attendDue(it) && calPast(it) ? (a => a ? `${Object.values(a).filter(Boolean).length} came` : 'no register yet')(attendOf(it.tid, it.id)) : '',
+    edit && !it.called && !calPast(it) ? coachOutLine(it) : ''].filter(Boolean);
   const m = it.kind === 'game' ? state.matches[it.id] : null;
   const right = it.called ? `<span class="tag off">${CALLED[it.called]}</span>`
     : m && it.status !== 'upcoming' ? `<span class="pmins">${score(m).us}<small>–${score(m).them}</small></span>`
@@ -6346,6 +6373,7 @@ function sheetCalItem(kind, tid, id) {
       ${row('Notes', esc((m ? m.notes : e && e.notes) || '').replace(/\n/g, '<br>'))}
       ${left ? row('Repeats', `Weekly · ${left} more after this`) : ''}
     </dl>
+    ${callOutBlock(it.key, tid, it.date)}
     ${rsvpBlock(it)}
     ${attendBlock(it)}
     ${it.date ? `<div class="row wrap" style="margin-bottom:10px">
@@ -6658,9 +6686,129 @@ function viewSeason() {
   }).join('')}</div></div>` : '<div class="empty"><strong>No players yet</strong>Add the squad first.</div>';
 
   return `<div class="stack">
-    ${record}${shotsCard}${possCard}${evCard}${results}${playersCard}${attendanceCard(t)}
+    ${record}${needsWorkCard(t)}${shotsCard}${possCard}${evCard}${results}${playersCard}${attendanceCard(t)}
     ${restricted() ? '' : aiButton('team')}
   </div>`;
+}
+
+/* --- what needs work --- */
+/* TRAINING.md's first step towards the AI helper, with no AI in it: the
+   signals in drills.js worked out from the last five finished games, the two
+   or three that stand out with the numbers behind them, and the drills that
+   answer each, for the team's age. Deterministic, and it shows its working,
+   the way the game planner does its sums.
+
+   A signal only fires on data that was tracked. A game with no shots tapped
+   says nothing about shooting, so it is left out of the shooting signals
+   rather than counted as a game with no shots; the same for set pieces,
+   fouls and possession. Each family needs three games that carry it. The
+   thresholds are TRAINING.md's, a coaching judgement, and meant to move. */
+const NW_GAMES = 5, NW_MIN = 3;
+function needsWork(t) {
+  const games = teamMatches(t.id).filter(m => gameStatus(m) === 'done').slice(0, NW_GAMES);
+  const out = { games: games.length, sigs: [], unknown: [] };
+  if (games.length < NW_MIN) return out;
+  const fire = (k, strength, why) => out.sigs.push({ k, strength, why });
+  const pct = x => Math.round(x * 100) + '%';
+  const per = (n, g) => (n / g).toFixed(1);
+  const n = games.length;
+
+  // goals: always there, because a goal is the one thing every tracker taps
+  let gf = 0, ga = 0;
+  const ours = [], theirs = [];
+  for (const m of games) for (const g of goalList(m)) {
+    if (g.side === 'us') { gf++; ours.push(g); } else if (g.side === 'them') { ga++; theirs.push({ g, len: matchMinutes(m) * 60 }); }
+  }
+  if (ga - gf >= n) fire('conceding', (ga - gf) / n, `${ga} against and ${gf} for in the last ${n} games: ${per(ga, n)} a game against, ${per(gf, n)} for.`);
+  const late = theirs.filter(x => x.g.t >= x.len * 0.75).length;
+  if (ga >= 5 && late / ga >= 0.4) fire('late-goals', late / ga / 0.4, `${late} of the ${ga} goals against came in the last quarter of the game (${pct(late / ga)}).`);
+  const named = ours.filter(g => g.pid);
+  if (named.length >= 5) {
+    const by = {};
+    for (const g of named) by[g.pid] = (by[g.pid] || 0) + 1;
+    const top = Math.max(...Object.values(by));
+    if (top / named.length >= 0.6) fire('one-scorer', top / named.length / 0.6, `One player scored ${top} of our ${named.length} goals (${pct(top / named.length)}).`);
+  }
+  // assists recorded at all, anywhere this season: a team that never taps one isn't "never passing"
+  const assistsKept = teamMatches(t.id).some(m => goalList(m).some(g => g.assist));
+  if (gf >= 5 && assistsKept) {
+    const a = ours.filter(g => g.assist).length;
+    if (a / gf < 0.25) fire('solo-goals', (0.25 - a / gf) * 4 + 1, `${a} of our ${gf} goals had an assist recorded (${pct(a / gf)}).`);
+  } else if (gf >= 5) out.unknown.push('assists');
+
+  // shots: only the games where shots were tapped
+  const sg = games.filter(m => shotList(m).length);
+  if (sg.length >= NW_MIN) {
+    let us = 0, them = 0, on = 0;
+    for (const m of sg) { const x = shotTally(m); us += x.usOn + x.usOff; them += x.themOn + x.themOff; on += x.usOn; }
+    if (them && us < them * 0.8) fire('few-shots', them / Math.max(us, 1) / 1.25, `${per(us, sg.length)} shots a game to their ${per(them, sg.length)}, over ${sg.length} games.`);
+    if (us >= 10 && on / us < 0.4) fire('off-target', 0.4 / Math.max(on / us, 0.05), `${on} of our ${us} shots on target (${pct(on / us)}).`);
+    if (them && them > us * 1.25) fire('shots-against', them / Math.max(us, 1) / 1.25, `They had ${them} shots to our ${us} over ${sg.length} games.`);
+  } else out.unknown.push('shots');
+
+  // possession, only for a team that tracks it
+  if (possOn(t)) {
+    const pg = games.map(m => possession(m)).filter(po => po.changes > 2 && po.settled);
+    if (pg.length >= NW_MIN) {
+      const u = pg.reduce((a, x) => a + x.us, 0), all = pg.reduce((a, x) => a + x.settled, 0);
+      if (all && u / all < 0.45) fire('possession', 0.45 / Math.max(u / all, 0.05), `${pct(u / all)} of settled play was ours, over ${pg.length} games.`);
+    } else out.unknown.push('possession');
+  }
+
+  // set pieces and fouls: each kind counts only the games where it was tapped
+  const kindGames = k => games.filter(m => evList(m).some(x => x.kind === k));
+  const sum = (ms, k, side) => ms.reduce((a, m) => a + evCount(m, k, side), 0);
+  const cg = kindGames('corner');
+  if (cg.length >= NW_MIN) {
+    const us = sum(cg, 'corner', 'us'), them = sum(cg, 'corner', 'them');
+    // a goal against within 20 seconds of one of their corners
+    let fromCorner = 0;
+    for (const m of cg) {
+      const cs = evList(m).filter(x => x.kind === 'corner' && x.side === 'them').map(x => x.t);
+      fromCorner += goalList(m).filter(g => g.side === 'them' && cs.some(c => g.t >= c && g.t - c <= 20)).length;
+    }
+    if ((them >= 3 && them > us * 1.5) || fromCorner >= 2)
+      fire('corners-against', Math.max(them / Math.max(us, 1) / 1.5, fromCorner / 2), `They won ${them} corners to our ${us}${fromCorner ? `, and scored ${fromCorner} straight from one` : ''}, over ${cg.length} games.`);
+  } else out.unknown.push('corners');
+  const fg = kindGames('foul');
+  if (fg.length >= NW_MIN) {
+    const us = sum(fg, 'foul', 'us'), them = sum(fg, 'foul', 'them');
+    if (us >= 3 && us > them * 1.5) fire('fouls', us / Math.max(them, 1) / 1.5, `We gave away ${us} fouls to their ${them}, over ${fg.length} games.`);
+  } else out.unknown.push('fouls');
+  const tg = kindGames('throw');
+  if (tg.length >= NW_MIN) {
+    const us = sum(tg, 'throw', 'us');
+    if (us / tg.length >= 12) fire('throw-ins', us / tg.length / 12, `${per(us, tg.length)} throw-ins of ours a game, over ${tg.length} games.`);
+  }
+  out.sigs.sort((a, b) => b.strength - a.strength);
+  return out;
+}
+/* The drills that answer a signal, for this team's age: the closest level
+   first, so a U9 team isn't offered the hardest version first. */
+function drillsFor(L, t, sig, max = 3) {
+  const u = teamUAge(t), age = u == null ? null : Math.min(u, 19);
+  const level = age == null ? 2 : age <= 8 ? 1 : age <= 12 ? 2 : 3;
+  return L.DRILLS.filter(d => d.signals.includes(sig) && (age == null || (d.ages[0] <= age && age <= d.ages[1])))
+    .sort((a, b) => Math.abs(a.level - level) - Math.abs(b.level - level) || a.name.localeCompare(b.name)).slice(0, max);
+}
+/* For the team's coaches and the club's admins: the drills are theirs, and a
+   parent reading the Season tab has the same numbers in the cards above. */
+function needsWorkCard(t) {
+  const L = drillLib();
+  if (!L || !canPlan(t.id)) return '';
+  const nw = needsWork(t);
+  const head = `<h2 style="margin-bottom:6px">What needs work</h2>`;
+  if (nw.games < NW_MIN) return `<div class="card">${head}<p class="muted" style="margin:0">After ${NW_MIN} finished games this works out what the numbers say to practise, and the drills for it. ${nw.games ? `${nw.games} so far.` : ''}</p></div>`;
+  const top = nw.sigs.slice(0, 3);
+  const unknown = nw.unknown.length ? `<p class="muted" style="margin:8px 0 0">Not counted in enough games to say anything about: ${nw.unknown.join(', ')}. No taps means we don't know, not that it's fine.</p>` : '';
+  if (!top.length) return `<div class="card">${head}<p class="muted" style="margin:0">Nothing stands out in the last ${nw.games} games. Keep doing what you're doing.</p>${unknown}</div>`;
+  return `<div class="card">${head}<p class="muted" style="margin:0 0 8px">From the last ${nw.games} games, worked out from the numbers, no AI.</p>
+    ${top.map(x => {
+    const s = L.SIGNALS[x.k], ds = drillsFor(L, t, x.k), all = drillsFor(L, t, x.k, 999).length;
+    return `<div class="nwsig"><b>${esc(s.label)}</b><p class="muted" style="margin:2px 0 6px">${esc(x.why)}</p>
+      ${ds.length ? `<div class="chips">${ds.map(d => `<button class="chip" type="button" data-act="drill" data-id="${esc(d.id)}">${esc(d.name)}</button>`).join('')}
+        ${all > ds.length ? `<button class="chip" type="button" data-act="nwdrills" data-k="${esc(x.k)}">All ${all} →</button>` : ''}</div>` : ''}</div>`;
+  }).join('')}${unknown}</div>`;
 }
 
 /* --- formation editor --- */
@@ -6836,7 +6984,7 @@ const drillDiagram = () => (typeof window !== 'undefined' && window.DrillDiagram
 const canTrain = () => !gated() || isOwner() || (!!me && teams().some(t => isCoach(t.id, me.uid)));
 /* The plan's own actions also need the team: a coach browsing another age
    group can read its drills but never touch its plans. */
-const PLAN_ACTS = new Set(['pracnew', 'pracfromcal', 'pracopen', 'pracback', 'pracpast', 'pracedit', 'pracsave', 'pracpick', 'pracpickdone', 'pracadd',
+const PLAN_ACTS = new Set(['pracnew', 'pracfromcal', 'pracusefor', 'pracopen', 'pracback', 'pracpast', 'pracedit', 'pracsave', 'pracpick', 'pracpickdone', 'pracadd',
   'pracsuggest', 'pracmin', 'pracmove', 'pracdel', 'pracnote', 'pracnotesave', 'pracreview', 'pracrate', 'pracreviewsave', 'pracagain',
   'pracrm', 'pracrun', 'rungo', 'runpause', 'runreset', 'runnext', 'runprev', 'runstop', 'runpic']);
 /* The club's drills and her own: reaching any of these needs Practice, and
@@ -6845,7 +6993,9 @@ const LIB_ACTS = new Set(['shelf', 'drillmine', 'drilledit', 'drillnew', 'drills
   'dedai', 'dedaiback', 'dedaicopy', 'dedaiopen', 'dedaiuse', 'dedaifix',
   'dedlinkadd', 'dedlinkdel', 'dedsave', 'dedmore', 'clubdrills', 'mydrills',
   'dbopen', 'dbtap', 'dbtool', 'dbverb', 'dbarea', 'dbstep', 'dbaddstep', 'dbundo', 'dbdelstep', 'dbuse', 'dbback']);
-const PRACTICE_ACTS = new Set(['practab', 'drill', 'drillpic', 'drillsend', 'drillsendshare', 'roleguide', 'rolepic', 'drillfilters', 'dfchip', 'dfpick', 'dfclear', 'drillmore', ...PLAN_ACTS, ...LIB_ACTS]);
+/* Templates: a plan with no calendar entry, on her own shelf or the club's. */
+const TPL_ACTS = new Set(['tpllist', 'tplopen', 'tplsave', 'tplsavego', 'tplpick', 'tpluse', 'tplplan', 'tplplango', 'tplcopy', 'tplshare', 'tpldel']);
+const PRACTICE_ACTS = new Set(['practab', 'nwdrills', ...TPL_ACTS, 'drill', 'drillpic', 'drillsend', 'drillsendshare', 'roleguide', 'rolepic', 'drillfilters', 'dfchip', 'dfpick', 'dfclear', 'drillmore', ...PLAN_ACTS, ...LIB_ACTS]);
 
 /* A team's age is stored as the year its players were born, because that
    rolls over by itself: the same team is U10 this season and U11 the next
@@ -7374,11 +7524,21 @@ function refreshDrillList() {
    club hasn't acknowledged is `dirty`, and a dirty plan is never overwritten
    by what the club says. It's sent again instead.
 
-   When and where also goes to schedule/{tid}/{pid}, which the whole club
-   reads. That's how a parent gets the time and place without the plan. */
+   A plan hangs off a calendar practice: it is keyed by the entry's id
+   (teams/{tid}/events/{eid}) and takes its day, time, place and length from
+   that entry every time it's read, so the calendar is the one list of
+   practices and nothing can disagree with it about when practice is. The plan
+   keeps only what is the plan's: the focus, the drills, the review. Parents
+   read when and where off the calendar, which they could always read, so the
+   old copy at schedule/{tid}/{pid} is no longer written (its rule stays until
+   no app in the wild still writes it).
+
+   A plan whose entry was deleted is orphaned, never deleted with it: delete
+   never cascades. A plan made before this, with its own date and no entry, is
+   moved onto one by movePlans(). */
 const LS_TRAIN = 'sm.train.v1';
 const trainKey = () => LS_TRAIN + ':' + clubKey();
-const TRAIN_BLANK = () => ({ practices: {}, schedule: {}, dirty: {}, drills: {}, drillDirty: {} });
+const TRAIN_BLANK = () => ({ practices: {}, dirty: {}, drills: {}, drillDirty: {}, tpls: {}, tplDirty: {} });
 let train = TRAIN_BLANK();
 const trainState = {};            // tid -> 'synced' | 'refused', as the database last answered
 let trainWatch = new Map();       // 'practices/t1' -> unsubscribe
@@ -7418,9 +7578,36 @@ function normPractice(p, tid, pid) {
 /* A signal by its key, and only one of the library's own: a key read off a
    plan is somebody's typing. */
 const signalOf = (L, k) => (L && k && Object.prototype.hasOwnProperty.call(L.SIGNALS, k) ? L.SIGNALS[k] : null);
-const teamPractices = tid => Object.values(train.practices[tid] || {}).map(p => normPractice(p, tid, p && p.id)).filter(Boolean)
+/* The calendar practice a plan hangs off, if it is still there. */
+function planEntry(tid, pid) {
+  const e = ((state.teams[tid] || {}).events || {})[pid];
+  return e && typeof e === 'object' && e.kind === 'practice' ? e : null;
+}
+/* A plan as the screens read it: its own fields, with when and where laid
+   over from its calendar entry. `onCal` is a plan with an entry; `orphan` is
+   one whose entry has gone; neither is a plan from before the calendar, still
+   carrying its own date until movePlans() gets to it. */
+function withEntry(pr) {
+  if (!pr) return null;
+  const e = planEntry(pr.teamId, pr.id);
+  if (!e) return { ...pr, onCal: false, orphan: !!pr.eid, called: '' };
+  const s = hm(e.start), en = hm(e.end);
+  const len = s && en && minOf(en) > minOf(s) ? minOf(en) - minOf(s) : pr.minutes;
+  return { ...pr, date: okDay(e.date) ? e.date : '', start: s, end: s && en ? en : '', place: String(e.venue || ''),
+    minutes: clamp(len, 10, 600), called: CALLED[e.called] ? e.called : '', onCal: true, orphan: false };
+}
+const teamPractices = tid => Object.values(train.practices[tid] || {}).map(p => withEntry(normPractice(p, tid, p && p.id))).filter(Boolean)
   .sort((a, b) => (a.date + a.start).localeCompare(b.date + b.start));
-const practiceById = (tid, pid) => { const p = (train.practices[tid] || {})[pid]; return p ? normPractice(p, tid, pid) : null; };
+/* What is stored, normalised but with nothing laid over it: what an edit
+   starts from, so the calendar's day and place never get written into a plan. */
+function rawPlan(tid, pid) {
+  const p = (train.practices[tid] || {})[pid], n = p ? normPractice(p, tid, pid) : null;
+  if (!n) return null;
+  // normalising fills in a blank day and place; a plan that had none keeps none
+  for (const k of ['date', 'start', 'place']) if (!ownKey(p, k)) delete n[k];
+  return clone(n);
+}
+const practiceById = (tid, pid) => { const p = (train.practices[tid] || {})[pid]; return p ? withEntry(normPractice(p, tid, pid)) : null; };
 /* The plan is that team's coaches' and the club's admins', and nobody else's,
    whatever the rest of the screen lets them read. */
 const canPlan = tid => !!tid && !!state.teams[tid] && canTrain() && canEditTeam(tid);
@@ -7436,14 +7623,6 @@ function pracDay(iso) {
 }
 const pracTimes = p => (/^\d{2}:\d{2}$/.test(String(p.start || '')) ? p.start + '–' + (/^\d{2}:\d{2}$/.test(String(p.end || '')) ? p.end : addMins(p.start, Number(p.minutes) || 60)) : '');
 const blockTotal = pr => pr.blocks.reduce((n, b) => n + b.minutes, 0);
-
-/* The half the whole club may read: no drills, no notes, no review. */
-function whenOf(p) {
-  const w = { date: p.date, minutes: p.minutes };
-  if (p.start) { w.start = p.start; w.end = addMins(p.start, p.minutes); }
-  if (p.place) w.place = p.place;
-  return w;
-}
 
 /* Every change to a plan goes through here: kept on the phone first, marked
    dirty with the version sent, then sent. One plan per write, at the depth the
@@ -7468,8 +7647,7 @@ function sendPractice(tid, pid) {
   if (!fb || !code || mark === undefined) return;
   const p = mark === -1 ? null : (train.practices[tid] || {})[pid];
   if (mark !== -1 && !p) return;
-  const ref = kind => fb.ref(fb.db, `training/${code}/${kind}/${tid}/${pid}`);
-  Promise.all([fb.set(ref('practices'), p), fb.set(ref('schedule'), p ? whenOf(normPractice(p, tid, pid)) : null)])
+  fb.set(fb.ref(fb.db, `training/${code}/practices/${tid}/${pid}`), p)
     .then(() => {
       // only the version that was sent is clean; a change made since is still owed
       if (train.dirty[k] === mark) { delete train.dirty[k]; saveTrain(); }
@@ -7501,11 +7679,49 @@ function mergePractices(tid, remote, resend) {
   train.practices[tid] = out;
   saveTrain();
   if (resend) for (const k of Object.keys(train.dirty)) if (k.startsWith(tid + '/')) sendPractice(tid, k.slice(tid.length + 1));
+  movePlans(tid);
   render();
 }
 
+/* Plans made before plans hung off the calendar carry their own date, time
+   and place and have no entry. Each is moved onto one, on a phone that may
+   plan for the team: a practice entry is made from its day, time and place
+   (team only, the calendar's default) under the plan's own id, and the plan
+   is marked with `eid` so it reads from the entry from then on.
+
+   Using the plan's own id is what makes this safe to run anywhere, any number
+   of times: two coaches' phones moving the same plan at once write the same
+   entry to the same place, there is no old copy to delete once the new one is
+   acknowledged, and a reload halfway leaves nothing half-moved. `eid` is what
+   stops it running twice on a plan, and what keeps a plan whose entry was
+   deleted on purpose from bringing the entry back. A plan with something
+   pending stays where it is until it's sent, unless there is no database to
+   send it to, in which case this phone's copy is the only one there is. */
+function movePlans(tid, drawing = false) {
+  if (!canPlan(tid)) return 0;
+  const t = state.teams[tid], local = !fb || !wsCode();
+  let n = 0;
+  for (const [pid, raw] of Object.entries(train.practices[tid] || {})) {
+    if (!raw || raw.eid || (!local && train.dirty[tid + '/' + pid] !== undefined)) continue;
+    const p = normPractice(raw, tid, pid);
+    if (!p || !okDay(p.date) || !/^[\w-]+$/.test(pid)) continue;
+    if (!planEntry(tid, pid)) {
+      const e = { id: pid, kind: 'practice', title: CAL_KIND.practice, date: p.date, start: p.start, end: p.start ? addMins(p.start, p.minutes) : '',
+        venue: p.place, notes: '', public: false, createdAt: Number(raw.made) || nowMs(), ...(raw.by ? { by: String(raw.by) } : {}) };
+      quiet(`teams/${tid}/events/${pid}`, e);
+    }
+    const c = JSON.parse(JSON.stringify(raw)); c.eid = pid;
+    (train.practices[tid] = train.practices[tid] || {})[pid] = c;
+    train.dirty[tid + '/' + pid] = nowMs();
+    sendPractice(tid, pid);
+    n++;
+  }
+  if (n) { saveTrain(); saveLocal(); schedulePublish(); if (t && !drawing) render(); }
+  return n;
+}
+
 /* Read one team at a time, when a screen needs it: practices when the Plans
-   list opens, the schedule when the games list does. A parent's phone never
+   list opens. A parent's phone never
    asks for a plan, so it never holds one. Needs a signed-in account, because
    every training rule does. A refusal gets one retry, for the same reason
    wireBase() retries: in the first second after boot a refusal is as likely to
@@ -7518,7 +7734,6 @@ function watchTrain(kind, tid) {
   let first = true;
   trainWatch.set(key, () => { });
   const off = mod.onValue(mod.ref(db, `training/${wsCode()}/${key}`), s => {
-    if (kind === 'schedule') { train.schedule[tid] = s.val() || {}; saveTrain(); render(); return; }
     trainState[tid] = 'synced';
     mergePractices(tid, s.val(), first);
     first = false;
@@ -7540,17 +7755,16 @@ function resetTrainWatch() {
   for (const k of Object.keys(trainState)) delete trainState[k];
 }
 
-/* The next practice, from what the club published plus whatever this phone
-   has planned and not sent yet. */
+/* The next practice is the calendar's, which everyone on the team reads: one
+   not called off, today or later. A plan from before the calendar that
+   hasn't been moved onto it yet counts too, on the phone that holds it. */
 function nextPractice(tid) {
   const today = todayIso(), by = {};
-  for (const [pid, s] of Object.entries(train.schedule[tid] || {})) if (s && s.date) by[pid] = { id: pid, ...s };
-  for (const p of teamPractices(tid)) by[p.id] = { id: p.id, ...whenOf(p) };
-  for (const [k, v] of Object.entries(train.dirty)) if (v === -1 && k.startsWith(tid + '/')) delete by[k.slice(tid.length + 1)];
+  for (const x of calItems([tid])) if (x.kind === 'practice' && !x.called && x.date) by[x.id] = { id: x.id, date: x.date, start: x.start, end: x.end, place: x.venue };
+  if (canPlan(tid)) for (const p of teamPractices(tid)) if (!p.onCal && !p.orphan && p.date && !by[p.id]) by[p.id] = { id: p.id, date: p.date, start: p.start, minutes: p.minutes, place: p.place };
   return Object.values(by).filter(x => x.date >= today).sort((a, b) => (a.date + (a.start || '')).localeCompare(b.date + (b.start || '')))[0] || null;
 }
 function nextPracticeCard(t) {
-  watchTrain('schedule', t.id);
   const nx = nextPractice(t.id); if (!nx) return '';
   const open = canPlan(t.id) && !!practiceById(t.id, nx.id);
   const body = `<span class="lbl" style="margin:0">Next practice</span>
@@ -7602,7 +7816,7 @@ function trainNote(tid) {
    markup there. Everything else is links, https only. */
 const SHELVES = { builtin: 'Built-in', club: 'Club', mine: 'Mine' };
 const LS_MINE = 'sm.mine.v1';
-const MINE_BLANK = () => ({ drills: {}, dirty: {} });
+const MINE_BLANK = () => ({ drills: {}, dirty: {}, tpls: {}, tplDirty: {} });
 let mine = MINE_BLANK(), mineUid = null;
 const shelfState = {};            // 'club' | 'mine' -> 'synced' | 'refused'
 let shelfWatch = new Map();       // database path -> unsubscribe
@@ -7623,7 +7837,7 @@ function forgetMine() {
   if (mineUid) try { localStorage.removeItem(LS_MINE + ':' + mineUid); } catch (e) { }
   mine = MINE_BLANK(); mineUid = null;
 }
-const mineUnsent = () => (me && mineUid === me.uid ? Object.keys(mine.dirty).length : 0);
+const mineUnsent = () => (me && mineUid === me.uid ? Object.keys(mine.dirty).length + Object.keys(mine.tplDirty || {}).length : 0);
 
 const SHELF = {
   club: {
@@ -7645,6 +7859,31 @@ const SHELF = {
     save: () => saveMine(),
     owner: () => (me ? me.uid : null),
     path: () => (me ? `userLibrary/${me.uid}/drills` : null)
+  },
+  /* Templates are a third and fourth shelf in the same shape, so they sync,
+     merge, and are cleared on sign-out exactly as drills are, by the same
+     code: putDrill() and the rest take any of these four. */
+  clubTpl: {
+    store() {
+      if (!train.tpls || typeof train.tpls !== 'object') train.tpls = {};
+      if (!train.tplDirty || typeof train.tplDirty !== 'object') train.tplDirty = {};
+      return { items: train.tpls, dirty: train.tplDirty };
+    },
+    save: () => saveTrain(),
+    owner: () => wsCode() || null,
+    path: () => (wsCode() ? `training/${wsCode()}/templates` : null)
+  },
+  mineTpl: {
+    store() {
+      if (!me) return { items: {}, dirty: {} };
+      if (mineUid !== me.uid) loadMine(me.uid);
+      if (!mine.tpls || typeof mine.tpls !== 'object') mine.tpls = {};
+      if (!mine.tplDirty || typeof mine.tplDirty !== 'object') mine.tplDirty = {};
+      return { items: mine.tpls, dirty: mine.tplDirty };
+    },
+    save: () => saveMine(),
+    owner: () => (me ? me.uid : null),
+    path: () => (me ? `userLibrary/${me.uid}/templates` : null)
   }
 };
 
@@ -8479,18 +8718,22 @@ function practicePlansView(L) {
   watchTrain('practices', t.id);
   const p = practiceUi();
   if (p.open) { const pr = practiceById(t.id, p.open); if (pr) return planView(L, t, pr); p.open = null; }
+  // with no database there is nobody to wait for, so plans from before the calendar move as soon as they're drawn
+  if (!fb || !wsCode()) movePlans(t.id, true);
   const all = teamPractices(t.id), today = todayIso();
-  const past = all.filter(x => x.date < today).reverse();
-  /* A practice is added once, on the calendar, whichever tab the coach is on,
-     so the ones put there with nothing planned yet are listed here too, ready
-     to plan, rather than a second list of practices the calendar never sees. */
+  /* The list is the calendar's practices, each with its plan or a way to
+     plan it: a practice is added once, on the calendar, whichever tab the
+     coach is on. A plan whose entry was deleted (orphan) is listed under
+     Earlier whatever its date, since it is no longer on any day. */
+  const past = all.filter(x => x.orphan || x.date < today).sort((a, b) => (b.date + b.start).localeCompare(a.date + a.start));
   const unplanned = calItems([t.id]).filter(x => x.kind === 'practice' && x.date >= today && !x.called && !practiceById(t.id, x.id))
     .map(x => ({ cal: x, date: x.date, start: x.start }));
-  const next = [...all.filter(x => x.date >= today), ...unplanned].sort((a, b) => (a.date + (a.start || '')).localeCompare(b.date + (b.start || '')));
+  const next = [...all.filter(x => !x.orphan && x.date >= today), ...unplanned].sort((a, b) => (a.date + (a.start || '')).localeCompare(b.date + (b.start || '')));
   return `${trainNote(t.id)}
-    <div class="spread"><h2>Practices</h2><button class="btn sm" data-act="pracnew" data-tid="${esc(t.id)}">Add</button></div>
+    <div class="spread"><h2>Practices</h2><button class="btn sm" data-act="pracnew" data-tid="${esc(t.id)}">Add a practice</button></div>
+    ${tplStrip(L, t)}
     ${next.length ? `<div class="plist">${next.map(x => x.cal ? calPracRow(x.cal) : pracRow(L, x, today)).join('')}</div>`
-      : `<div class="empty"><strong>Nothing planned yet</strong>Add one, and the drills, the timings and the kit list are on your phone at the field, signal or not.</div>`}
+      : `<div class="empty"><strong>No practices coming up</strong>Add one, and it goes on the team's calendar; then the drills, the timings and the kit list are on your phone at the field, signal or not.</div>`}
     ${past.length ? `<p class="lbl" style="margin:6px 0 0">Earlier</p><div class="plist">${past.slice(0, p.past ? 60 : 5).map(x => pracRow(L, x, today)).join('')}</div>
       ${past.length > 5 && !p.past ? `<button class="btn quiet wide" data-act="pracpast">Show all ${past.length}</button>` : ''}` : ''}`;
 }
@@ -8502,23 +8745,29 @@ function calPracRow(it) {
 }
 /* A plan for a calendar practice is keyed by the entry's id and starts from
    its day, time and place, so the practice and its plan are one thing. */
-function planFromEntry(tid, e) {
+function planFromEntry(tid, e, from) {
+  /* No date, time or place of its own: those are the entry's. The length is
+     kept only for an entry with no end time, which has none to give. */
   const prev = teamPractices(tid).slice(-1)[0] || {};
-  const s = hm(e.start), en = hm(e.end);
-  const len = s && en && minOf(en) > minOf(s) ? minOf(en) - minOf(s) : prev.minutes || 60;
   return putPractice({
-    id: e.id, eid: e.id, teamId: tid, date: e.date, start: s, minutes: clamp(len, 10, 240), place: e.venue || '',
-    focus: { signals: [] }, blocks: [], status: 'plan', made: nowMs(), by: me ? me.uid : null, byName: whoAmI() || null
+    id: e.id, eid: e.id, teamId: tid, minutes: (from && from.minutes) || prev.minutes || 60,
+    focus: from ? clone(from.focus) : { signals: [] }, blocks: from ? clone(from.blocks) : [], status: 'plan', made: nowMs(),
+    ...(from && from.tpl ? { tpl: from.tpl } : {}), by: me ? me.uid : null, byName: whoAmI() || null
   });
 }
 
 function pracRow(L, pr, today) {
   const n = pr.blocks.length, s = signalOf(L, pr.focus.signals[0]);
-  const tag = pr.status === 'done' ? `<span class="tag">${pr.review && pr.review.rating ? '★ ' + pr.review.rating : 'Done'}</span>`
-    : pr.date < today ? '<span class="tag wait">How did it go?</span>' : '<span class="tag">Planned</span>';
+  /* Called off is said and struck through, as the calendar does it; the plan
+     stays, because the practice may well be put back on. */
+  const tag = pr.orphan ? '<span class="tag off">Not on the calendar</span>'
+    : pr.called ? `<span class="tag off">${CALLED[pr.called]}</span>`
+      : pr.status === 'done' ? `<span class="tag">${pr.review && pr.review.rating ? '★ ' + pr.review.rating : 'Done'}</span>`
+        : pr.date < today ? '<span class="tag wait">How did it go?</span>' : '<span class="tag">Planned</span>';
   const sub = [pr.place, n ? `${n} drill${n === 1 ? '' : 's'} · ${blockTotal(pr)} min` : 'no drills yet', s ? s.label : ''].filter(Boolean).join(' · ');
+  const day = `${esc(pracDay(pr.date))}${pr.start ? ' · ' + esc(pracTimes(pr)) : ''}`;
   return `<button class="prow" type="button" data-act="pracopen" data-id="${esc(pr.id)}" style="grid-template-columns:1fr auto">
-    <span><span class="pname">${esc(pracDay(pr.date))}${pr.start ? ' · ' + esc(pracTimes(pr)) : ''}</span><span class="psub">${esc(sub)}</span></span>${tag}</button>`;
+    <span><span class="pname">${pr.called ? `<s>${day}</s>` : day}</span><span class="psub">${esc(sub)}</span></span>${tag}</button>`;
 }
 
 function planView(L, t, pr) {
@@ -8544,10 +8793,13 @@ function planView(L, t, pr) {
     ? `<div class="card"><div class="spread"><h4 style="margin:0">How it went</h4><button class="btn quiet sm" data-act="pracreview" data-id="${id}">Change</button></div>
         <p style="margin:6px 0 0"><span class="stars">${'★'.repeat(r.rating)}<span class="dim">${'★'.repeat(5 - r.rating)}</span></span>${r.note ? ' · ' + esc(r.note) : ''}</p></div>`
     : pr.date <= today ? `<button class="btn wide" data-act="pracreview" data-id="${id}">How did it go?</button>` : '';
+  const where = pr.orphan ? `<div class="rolebar warn">This practice was taken off the calendar. The plan is kept: use it for another practice, save it as a template, or delete it.</div>`
+    : pr.called ? `<div class="rolebar warn">${CALLED[pr.called]}. The plan is kept in case it's back on.</div>` : '';
   return `${trainNote(t.id)}
     <button class="drilllink planback" data-act="pracback">‹ All practices</button>
+    ${where}
     <div class="card">
-      <div class="spread"><span><b class="planday">${esc(pracDay(pr.date))}</b><span class="rowsub">${esc([pracTimes(pr), pr.place].filter(Boolean).join(' · ') || 'No time or place yet')}</span></span>
+      <div class="spread"><span><b class="planday">${pr.called ? `<s>${esc(pracDay(pr.date))}</s>` : esc(pracDay(pr.date))}</b><span class="rowsub">${esc([pracTimes(pr), pr.place].filter(Boolean).join(' · ') || 'No time or place yet')}</span></span>
         <button class="btn quiet sm" data-act="pracedit" data-id="${id}">Edit</button></div>
       ${s ? `<div class="drillsignal"><b>${esc(s.label)}</b><span>${esc(s.means)}</span></div>` : ''}
       <p class="muted" style="margin:8px 0 0">${total} of ${pr.minutes} min planned${pr.blocks.length ? ` · ${pr.blocks.length} drill${pr.blocks.length === 1 ? '' : 's'}` : ''}</p>
@@ -8557,10 +8809,12 @@ function planView(L, t, pr) {
     ${rows ? `<div class="stack">${rows}</div>` : `<div class="empty"><strong>No drills yet</strong>Add them from the library, or let the app suggest a session for this team's age${s ? ' and what it needs' : ''}.</div>`}
     <div class="row" style="gap:8px"><button class="btn" style="flex:1" data-act="pracpick" data-id="${id}">Add a drill</button>
       <button class="btn quiet" style="flex:1" data-act="pracsuggest" data-id="${id}">${pr.blocks.length ? 'Suggest another' : 'Suggest a session'}</button></div>
+    <button class="btn quiet wide" data-act="tplpick" data-id="${id}">${pr.blocks.length ? 'Swap in a template' : 'Plan from a template'}</button>
     ${kit ? `<div class="card"><h4 style="margin:0 0 4px">Bring</h4><p style="margin:0">${esc(kit)}</p></div>` : ''}
     ${review}
-    <div class="row" style="gap:8px"><button class="btn quiet" style="flex:2" data-act="pracagain" data-id="${id}">Again next week</button>
-      <button class="btn quiet danger" style="flex:1" data-act="pracrm" data-id="${id}">Delete</button></div>`;
+    <div class="row" style="gap:8px"><button class="btn quiet" style="flex:1" data-act="pracagain" data-id="${id}">Use this plan for…</button>
+      <button class="btn quiet" style="flex:1" data-act="tplsave" data-id="${id}">Save as a template</button></div>
+    <button class="btn quiet danger wide" data-act="pracrm" data-id="${id}">Delete the plan</button>`;
 }
 
 /* Adding drills from the library, with where they're going said on top. */
@@ -8576,26 +8830,172 @@ function pickTarget() {
   return p.pick && t && canPlan(t.id) ? practiceById(t.id, p.pick) : null;
 }
 
+/* The plan's own half: what it's for, and how long it runs when the calendar
+   entry has no end time to say. Day, time and place are the calendar's, and
+   are changed there, so there is one place a practice moves. */
 function sheetPractice(pr) {
-  const L = drillLib(), t = team(); if (!t) return;
-  const prev = teamPractices(t.id).slice(-1)[0] || {};
-  const v = pr || { date: addDays(todayIso(), 1), start: prev.start || '', minutes: prev.minutes || 60, place: prev.place || '', focus: { signals: [] } };
-  const sig = (v.focus && v.focus.signals || [])[0] || '';
+  const L = drillLib(), t = team(); if (!t || !pr) return;
+  const sig = (pr.focus && pr.focus.signals || [])[0] || '';
   const lens = [30, 45, 60, 75, 90, 105, 120];
-  if (!lens.includes(v.minutes)) lens.push(v.minutes);
-  openSheet(`<h3>${pr ? 'Edit the practice' : 'Plan a practice'}</h3>
-    <div class="grid2">
-      <label class="field"><span>Date</span><input type="date" id="prDate" value="${esc(v.date)}"></label>
-      <label class="field"><span>Start</span><input type="time" id="prStart" value="${esc(v.start)}"></label>
-    </div>
-    <div class="grid2">
-      <label class="field"><span>Length</span><select id="prLen">${lens.sort((a, b) => a - b).map(m => `<option value="${m}"${m === v.minutes ? ' selected' : ''}>${m} minutes</option>`).join('')}</select></label>
-      <label class="field"><span>Place</span><input type="text" id="prPlace" value="${esc(v.place)}" placeholder="Lakeside Park, field 2" maxlength="80"></label>
-    </div>
+  if (!lens.includes(pr.minutes)) lens.push(pr.minutes);
+  const fixed = pr.onCal && !!pr.end;
+  openSheet(`<h3>Edit the plan</h3>
     <label class="field"><span>What it's for</span><select id="prFocus"><option value="">Nothing in particular</option>${L ? Object.entries(L.SIGNALS).map(([k, s]) =>
       `<option value="${esc(k)}"${k === sig ? ' selected' : ''}>${esc(s.label)}</option>`).join('') : ''}</select></label>
-    <p class="muted" style="margin-top:0">The whole club sees the date, time and place, so parents know when and where. Only this team's coaches and the club's admins see the plan.</p>
-    <button class="btn wide" data-act="pracsave" data-id="${pr ? esc(pr.id) : ''}">${pr ? 'Save' : 'Plan it'}</button>
+    ${fixed ? '' : `<label class="field"><span>Length</span><select id="prLen">${lens.sort((a, b) => a - b).map(m => `<option value="${m}"${m === pr.minutes ? ' selected' : ''}>${m} minutes</option>`).join('')}</select></label>`}
+    ${pr.onCal ? `<p class="muted" style="margin-top:0">${esc([pracDay(pr.date), pracTimes(pr), pr.place].filter(Boolean).join(' · '))}. The day, time and place are the calendar's, which the whole team sees; only this team's coaches and the club's admins see the plan.</p>
+      <button class="btn quiet wide" data-act="caledit" data-tid="${esc(t.id)}" data-id="${esc(pr.id)}" style="margin-bottom:8px">Change the day, time or place</button>` : ''}
+    <button class="btn wide" data-act="pracsave" data-id="${esc(pr.id)}">Save</button>
+    <button class="btn quiet wide" data-act="closesheet" style="margin-top:8px">Cancel</button>`, true);
+}
+
+/* ---- templates ---- */
+/* A template is a plan with no calendar entry: a name, a length, what it's
+   for, and the drills in order. Mine at userLibrary/{uid}/templates/{id};
+   the club's at training/{code}/templates/{id}, with by, byName and team,
+   exactly like a club drill, and the same rule. Built-in drills stay by
+   reference and every other drill is copied whole, as a plan does it, so a
+   template still reads after the drill it copied is deleted.
+
+   Copied, never linked, both ways: saving a plan as a template copies its
+   drills, planning from a template copies them back, and the template is
+   untouched by anything done to the plan afterwards. Delete never cascades. */
+const TPL_SHELVES = { mineTpl: 'Mine', clubTpl: 'Club' };
+const tplKey = (shelf, id) => 'tpl:' + shelf + ':' + id;
+function normTemplate(raw, shelf, id) {
+  if (!raw || typeof raw !== 'object') return null;
+  const str = (v, n) => (v == null || typeof v === 'object' ? '' : String(v)).trim().slice(0, n);
+  const name = str(raw.name, 80); if (!name) return null;
+  /* Any coach can write a club template, and its blocks carry drill cards: a
+     card is drawn only through normDrill() (blockDrill() does that), and here
+     the block itself is held to a shape and every string to a length. */
+  const blocks = arrOf(raw.blocks).filter(b => b && b.drill && b.drill.id && (b.drill.shelf === 'builtin' || ownKey(SHELVES, b.drill.shelf)))
+    .slice(0, 20).map(b => ({
+      drill: b.drill.shelf === 'builtin' ? { shelf: 'builtin', id: str(b.drill.id, 60), v: Number(b.drill.v) || 0 }
+        : { shelf: b.drill.shelf, id: str(b.drill.id, 60), v: Number(b.drill.v) || 0, card: b.drill.card && typeof b.drill.card === 'object' ? b.drill.card : null },
+      name: str(b.name, 80), minutes: clamp(Number(b.minutes) || 10, 1, 240), note: str(b.note, 300)
+    }));
+  const L = drillLib();
+  const fr = raw.from && typeof raw.from === 'object' && ownKey(TPL_SHELVES, raw.from.shelf) ? { shelf: raw.from.shelf, id: str(raw.from.id, 60), v: Number(raw.from.v) || 0 } : null;
+  const tid = str(raw.id, 60) || str(id, 60);
+  return {
+    id: tid, name, minutes: clamp(Number(raw.minutes) || 60, 10, 240), v: Math.max(1, Math.round(Number(raw.v) || 1)),
+    focus: { signals: [].concat((raw.focus && raw.focus.signals) || []).map(String).filter(k => signalOf(L, k)).slice(0, 1) },
+    blocks, from: fr, by: str(raw.by, 60), byName: str(raw.byName, 60), team: str(raw.team, 60), at: Number(raw.at) || 0,
+    shelf, key: tplKey(shelf, tid)
+  };
+}
+const tplItems = shelf => Object.entries(SHELF[shelf].store().items).map(([id, r]) => normTemplate(r, shelf, id)).filter(Boolean)
+  .sort((a, b) => a.name.localeCompare(b.name));
+function findTpl(key) {
+  const m = /^tpl:(clubTpl|mineTpl):(.+)$/.exec(String(key || ''));
+  if (!m) return null;
+  const r = SHELF[m[1]].store().items[m[2]];
+  return r ? normTemplate(r, m[1], m[2]) : null;
+}
+/* Who may change a club template in place: canCurate()'s rule, for drills. */
+const canCurateTpl = t => !!(me && t && t.shelf === 'clubTpl' && (isAdmin(me.uid) || (t.by === me.uid && !!(teamAccess(t.team).coaches || {})[me.uid])));
+const tplMine = t => !!t && t.shelf === 'mineTpl';
+const tplCanEdit = t => tplMine(t) || canCurateTpl(t);
+/* Sharing to the club needs a team she coaches, or an admin: the rule checks it. */
+const canShareTpl = () => !!(me && shareTeam());
+function tplFrom(src, extra) {
+  return { id: uid(), name: src.name, minutes: src.minutes, focus: clone(src.focus || { signals: [] }), blocks: clone(src.blocks || []), v: 1, ...extra };
+}
+function clubStamp() { return { by: me.uid, byName: whoAmI() || '', team: shareTeam() }; }
+function watchTpls() { watchShelf('clubTpl'); watchShelf('mineTpl'); }
+
+/* The chips on top of Plans: her templates and the club's, a tap away. */
+function tplStrip(L, t) {
+  watchTpls();
+  const n = s => tplItems(s).length;
+  return `<div class="chips" style="margin:2px 0 10px"><span class="lbl" style="margin:0 6px 0 0;align-self:center">Templates</span>
+    ${Object.entries(TPL_SHELVES).map(([k, l]) => `<button class="chip" type="button" data-act="tpllist" data-k="${k}">${l}${n(k) ? ' · ' + n(k) : ''}</button>`).join('')}</div>`;
+}
+function tplNote(shelf) {
+  if (!fbConfig().apiKey) return '';
+  if (shelfState[shelf] === 'refused') return `<p class="rolebar warn">Saved on this phone only. The database refused it: the club's rules may not include templates yet.</p>`;
+  if (!me) return `<p class="rolebar">Sign in and your templates are kept with your account, not just on this phone.</p>`;
+  return '';
+}
+function tplRow(t, act, extra = '') {
+  const n = t.blocks.length;
+  const sub = [`${n} drill${n === 1 ? '' : 's'} · ${t.minutes} min`, t.shelf === 'clubTpl' && t.byName ? 'by ' + t.byName : ''].filter(Boolean).join(' · ');
+  return `<button class="prow" type="button" data-act="${act}" data-v="${esc(t.key)}"${extra} style="grid-template-columns:1fr auto">
+    <span><span class="pname">${esc(t.name)}</span><span class="psub">${esc(sub)}</span></span><span class="tag">${TPL_SHELVES[t.shelf]}</span></button>`;
+}
+function sheetTplList(shelf) {
+  if (!ownKey(TPL_SHELVES, shelf)) shelf = 'mineTpl';
+  watchTpls();
+  const list = tplItems(shelf);
+  openSheet(`<h3>${shelf === 'mineTpl' ? 'Your templates' : "The club's templates"}</h3>
+    <div class="chips" style="margin-bottom:10px">${Object.entries(TPL_SHELVES).map(([k, l]) => `<button class="chip" type="button" data-act="tpllist" data-k="${k}" aria-pressed="${k === shelf}">${l}</button>`).join('')}</div>
+    ${tplNote(shelf)}
+    ${list.length ? `<div class="plist">${list.map(t => tplRow(t, 'tplopen')).join('')}</div>`
+      : `<div class="empty"><strong>None yet</strong>${shelf === 'mineTpl' ? "Open a practice's plan and tap Save as a template. Yours follow you to any club, and nobody else sees them." : "A coach saves one straight to the club, or shares one of her own. Coaches and admins see them; trackers and parents never do."}</div>`}
+    <button class="btn quiet wide" data-act="closesheet" style="margin-top:10px">Done</button>`, true);
+}
+function sheetTpl(t) {
+  const L = drillLib();
+  const sig = signalOf(L, t.focus.signals[0]);
+  const orig = t.from ? findTpl(tplKey(t.from.shelf, t.from.id)) : null;
+  const changed = orig && orig.v > (t.from.v || 0);
+  const mayPlan = (() => { const tm = team(); return !!tm && canPlan(tm.id); })();
+  openSheet(`<h3>${esc(t.name)}</h3>
+    <p class="muted" style="margin-top:0">${TPL_SHELVES[t.shelf]} template · ${t.minutes} min${sig ? ' · ' + esc(sig.label) : ''}${t.shelf === 'clubTpl' && t.byName ? ' · by ' + esc(t.byName) : ''}</p>
+    ${changed ? `<p class="rolebar">The template this was copied from has changed since. This copy hasn't, and won't by itself.</p>` : ''}
+    ${t.blocks.length ? `<ol class="drillul">${t.blocks.map(b => { const d = blockDrill(L, b); return `<li>${esc(d ? d.name : b.name || 'A drill')} · ${b.minutes}′${b.note ? ` <span class="muted">${esc(b.note)}</span>` : ''}</li>`; }).join('')}</ol>` : '<p class="muted">No drills in it.</p>'}
+    ${mayPlan ? `<button class="btn wide" data-act="tplplan" data-v="${esc(t.key)}" style="margin-top:8px">Plan a practice from it</button>` : ''}
+    ${t.shelf === 'clubTpl' ? `<button class="btn quiet wide" data-act="tplcopy" data-v="${esc(t.key)}" style="margin-top:8px">Copy to mine</button>`
+      : canShareTpl() ? `<button class="btn quiet wide" data-act="tplshare" data-v="${esc(t.key)}" style="margin-top:8px">Share with the club</button>` : ''}
+    ${tplCanEdit(t) ? `<button class="btn quiet danger wide" data-act="tpldel" data-v="${esc(t.key)}" style="margin-top:8px">Delete the template</button>` : ''}
+    <button class="btn quiet wide" data-act="tpllist" data-k="${t.shelf}" style="margin-top:8px">‹ All templates</button>`, true);
+}
+function sheetTplSave(pr) {
+  const L = drillLib(), s = signalOf(L, pr.focus.signals[0]);
+  const suggested = [s ? s.label : '', pr.blocks.length ? pr.minutes + ' min' : ''].filter(Boolean).join(', ') || 'My session';
+  openSheet(`<h3>Save as a template</h3>
+    <label class="field"><span>Name it</span><input type="text" id="tplName" maxlength="80" value="${esc(suggested)}" placeholder="Pressing, 60 min"></label>
+    <p class="muted" style="margin-top:0">The drills, their minutes and notes, and what it's for are copied. The day, the place and how it went stay with this practice.</p>
+    <button class="btn wide" data-act="tplsavego" data-id="${esc(pr.id)}" data-k="mineTpl">Save to mine</button>
+    ${canShareTpl() ? `<button class="btn quiet wide" data-act="tplsavego" data-id="${esc(pr.id)}" data-k="clubTpl" style="margin-top:8px">Save to the club</button>
+      <p class="muted" style="margin:6px 0 0">The club's are for its coaches and admins. Any drill of yours in the plan goes with it.</p>` : ''}
+    <button class="btn quiet wide" data-act="closesheet" style="margin-top:8px">Cancel</button>`, true);
+}
+/* On a plan: pick a template to plan it from, or to swap in. */
+function sheetTplPick(pr) {
+  watchTpls();
+  const all = [...tplItems('mineTpl'), ...tplItems('clubTpl')];
+  openSheet(`<h3>${pr.blocks.length ? 'Swap in a template' : 'Plan from a template'}</h3>
+    ${pr.blocks.length ? `<p class="muted" style="margin-top:0">Its drills take the place of the ${pr.blocks.length} in this plan.</p>` : ''}
+    ${all.length ? `<div class="plist">${all.map(t => tplRow(t, 'tpluse', ` data-id="${esc(pr.id)}"`)).join('')}</div>`
+      : `<div class="empty"><strong>No templates yet</strong>Save a plan you like as a template, and it's here for the next one.</div>`}
+    <button class="btn quiet wide" data-act="closesheet" style="margin-top:10px">Cancel</button>`, true);
+}
+/* From a template: the coming practices with no plan yet. */
+function sheetTplPlan(t) {
+  const tm = team(); if (!tm || !t) return;
+  const free = calItems([tm.id]).filter(x => x.kind === 'practice' && x.date >= todayIso() && !x.called && !practiceById(tm.id, x.id)).slice(0, 12);
+  openSheet(`<h3>Plan a practice from ${esc(t.name)}</h3>
+    ${free.length ? `<div class="plist">${free.map(x => `<button class="prow" type="button" data-act="tplplango" data-v="${esc(t.key)}" data-id="${esc(x.id)}" style="grid-template-columns:1fr auto">
+      <span><span class="pname">${esc(pracDay(x.date))}${x.start ? ' · ' + esc(x.start) + (x.end ? '–' + esc(x.end) : '') : ''}</span><span class="psub">${esc(x.venue || '')}</span></span><span class="tag wait">Use</span></button>`).join('')}</div>`
+      : `<div class="empty"><strong>No coming practice without a plan</strong>Add a practice to ${esc(tm.name || 'the team')}'s calendar, or open a plan and use Swap in a template.</div>`}
+    <button class="btn quiet wide" data-act="pracnew" data-tid="${esc(tm.id)}" style="margin-top:8px">Add a practice</button>
+    <button class="btn quiet wide" data-act="tplopen" data-v="${esc(t.key)}" style="margin-top:8px">‹ Back</button>`, true);
+}
+
+
+/* Use this plan for another practice: the coming ones with no plan yet. */
+function sheetUseFor(pr) {
+  const t = team(); if (!t || !pr) return;
+  const today = todayIso();
+  const free = calItems([t.id]).filter(x => x.kind === 'practice' && x.date >= today && !x.called && x.id !== pr.id && !practiceById(t.id, x.id)).slice(0, 12);
+  openSheet(`<h3>Use this plan for…</h3>
+    <p class="muted" style="margin-top:0">The drills and what it's for are copied; this plan stays as it is.</p>
+    ${free.length ? `<div class="plist">${free.map(x => `<button class="prow" type="button" data-act="pracusefor" data-id="${esc(pr.id)}" data-v="${esc(x.id)}" style="grid-template-columns:1fr auto">
+      <span><span class="pname">${esc(pracDay(x.date))}${x.start ? ' · ' + esc(x.start) + (x.end ? '–' + esc(x.end) : '') : ''}</span><span class="psub">${esc(x.venue || '')}</span></span><span class="tag wait">Use</span></button>`).join('')}</div>`
+      : `<div class="empty"><strong>Every coming practice has a plan</strong>Add a practice to the calendar first, and this plan can be used for it.</div>`}
+    <button class="btn quiet wide" data-act="pracnew" data-tid="${esc(t.id)}" style="margin-top:8px">Add a practice</button>
     <button class="btn quiet wide" data-act="closesheet" style="margin-top:8px">Cancel</button>`, true);
 }
 
@@ -8691,12 +9091,12 @@ function tickRun() {
 const LS_SESS = 'sm.sess.v1';
 const LS_SESS_SEEN = 'sm.sessSeen';
 const sessKey = () => LS_SESS + ':' + clubKey();
-const SESS_BLANK = () => ({ sessions: {}, booked: {}, came: {}, fees: {}, pay: {}, splans: {}, avail: {}, seats: {}, dirty: {}, refused: {} });
+const SESS_BLANK = () => ({ sessions: {}, booked: {}, came: {}, fees: {}, pay: {}, splans: {}, avail: {}, seats: {}, away: {}, dirty: {}, refused: {} });
 /* How many path segments down each kind's records sit: a session is one node,
    a booking is one per player per session, a register one per session. A merge
    walks to exactly this depth and no further, so a record is always taken or
    kept whole and never half of one with half of the other. */
-const SESS_DEPTH = { sessions: 2, booked: 3, came: 2, fees: 3, pay: 2, splans: 2, avail: 2, seats: 3 };
+const SESS_DEPTH = { sessions: 2, booked: 3, came: 2, fees: 3, pay: 2, splans: 2, avail: 2, seats: 3, away: 3 };
 const SESS_KIND = { one: '1-1', group: 'Group' };
 const BOOK = { asked: 'Asked', in: 'Booked', wait: 'Waiting list', no: 'Not this time', out: 'Withdrew' };
 const BOOK_ORDER = { asked: 0, in: 1, wait: 2, no: 3, out: 4 };
@@ -8827,6 +9227,44 @@ function permitCovers(p, date, a, b) {
   if (!p.start || !p.end) return true;
   return minOf(p.start) <= a && b <= minOf(p.end);
 }
+/* When a field can be used at all, whatever the club has booked: the lights go
+   off at nine, the school has it until four, it's shut for reseeding in
+   November. Opening hours are per weekday, and only what is set constrains
+   anything: a day with no hours is open, a day marked closed is shut. Closures
+   are dates. Both are club settings on the field, under access/org/venues
+   with everything else about it, so the admin rule already covers them. */
+function fieldHours(f) {
+  const out = {};
+  for (let d = 0; d <= 6; d++) {
+    const h = ((f && f.hours) || {})['d' + d];
+    if (!h || typeof h !== 'object') continue;
+    if (h.closed) out[d] = { closed: true };
+    else if (hm(h.from) && hm(h.to) && minOf(hm(h.to)) > minOf(hm(h.from))) out[d] = { from: hm(h.from), to: hm(h.to) };
+  }
+  return out;
+}
+function fieldClosures(f) {
+  return Object.entries((f && f.closed) || {}).map(([id, c]) => c && typeof c === 'object' && okDay(c.from) ? {
+    id: c.id || id, from: c.from, until: okDay(c.until) && c.until >= c.from ? c.until : c.from, note: String(c.note || '').slice(0, 120)
+  } : null).filter(Boolean).sort((a, b) => a.from.localeCompare(b.from));
+}
+const closureText = c => (c.from === c.until ? dayLabel(c.from) : `${dayLabel(c.from)} to ${dayLabel(c.until)}`) + (c.note ? ` (${c.note})` : '');
+function hoursText(f) {
+  const h = fieldHours(f), days = Object.keys(h).map(Number).sort();
+  return days.map(d => `${WEEKDAYS[d]} ${h[d].closed ? 'closed' : niceTime(h[d].from) + '–' + niceTime(h[d].to)}`).join(', ');
+}
+/* Why the field can't be used then, in words, or '' if it can. */
+const DAYS_LONG = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+function fieldShut(f, date, a, b) {
+  if (!f || !okDay(date)) return '';
+  const c = fieldClosures(f).find(x => x.from <= date && date <= x.until);
+  if (c) return `${f.name} is closed ${closureText(c)}`;
+  const wd = weekdayOf(date), h = fieldHours(f)[wd];
+  if (!h) return '';
+  if (h.closed) return `${f.name} isn't open on ${DAYS_LONG[wd]}s`;
+  if (a < minOf(h.from) || b > minOf(h.to)) return `${f.name} is open ${niceTime(h.from)}–${niceTime(h.to)} on ${DAYS_LONG[wd]}s`;
+  return '';
+}
 function permitText(p) {
   const days = p.days.length === 7 ? 'Every day' : [...p.days].sort().map(i => WEEKDAYS[i]).join(', ') || 'No days';
   const hours = p.start && p.end ? ` ${niceTime(p.start)}–${niceTime(p.end)}` : ' all day';
@@ -8846,6 +9284,7 @@ const fmtMoney = n => { n = Math.round((Number(n) || 0) * 100) / 100; return mon
    worse off than one with no button. A coach's refused write stays on her
    phone, marked, and says so, the way a refused practice plan does. */
 function sessPut(path, value, undo) {
+  noteMine(path);
   const prev = getDeep(sess, path);
   const v = value == null ? null : JSON.parse(JSON.stringify(value));   // the database refuses undefined anywhere in a write
   if (v == null) delDeep(sess, path); else setDeep(sess, path, v);
@@ -8914,6 +9353,8 @@ const sessOn = () => !!(rtdb && fb && me && wsCode() && wsRead && !needsSignIn()
 function sessWanted() {
   if (!canSessions()) return [];
   const want = ['sessions', 'booked', 'came', 'avail', 'seats'];
+  // coaches' time off is the coaches' and the admins', never a family's
+  if (isAdmin(me.uid) || isCoachAny(me.uid)) want.push('away');
   const all = sessAll();
   if (isAdmin(me.uid)) want.push('fees', 'pay');
   else {
@@ -9031,16 +9472,23 @@ function busyItems(date) {
   for (const it of calItems(teams().map(t => t.id))) {
     if (it.date !== date || it.called || !it.start) continue;
     const [a, b] = span(it.start, it.end, it.mins);
-    const f = fieldOfText(it.venue), t = state.teams[it.tid] || {};
-    out.push({ key: it.key, kind: it.kind, label: `${t.name || 'A team'}: ${it.title}`, a, b, field: f ? f.id : null, coaches: Object.keys(teamAccess(it.tid).coaches || {}), tid: it.tid, pids: null });
+    const f = fieldOfText(it.venue), t = state.teams[it.tid] || {}, out_ = calledOut(it.key);
+    // a coach who called out of it is not due there, so she is free for something else then
+    out.push({ key: it.key, kind: it.kind, label: `${t.name || 'A team'}: ${it.title}`, a, b, field: f ? f.id : null, venue: it.venue || '',
+      coaches: coachesOf(it.tid).filter(u => !out_.includes(u)), tid: it.tid, pids: null });
   }
   for (const s of sessAll()) {
     if (s.date !== date || s.called || !s.start) continue;
     const [a, b] = span(s.start, s.end, 60);
     const f = sessField(s);
-    out.push({ key: 's:' + s.id, kind: 'session', label: `${sessTitle(s)} (${s.coachName})`, a, b, field: f ? f.id : null, coaches: [s.coach], tid: null,
+    out.push({ key: 's:' + s.id, kind: 'session', label: `${sessTitle(s)} (${s.coachName})`, a, b, field: f ? f.id : null, venue: s.place || '', coaches: calledOut('s:' + s.id).includes(s.coach) ? [] : [s.coach], tid: null,
       pids: bookingsOf(s.id).filter(x => x.st === 'in' || x.st === 'asked').map(x => x.pid) });
   }
+  /* A coach's time off is a busy item of its own, hers alone: it takes her out
+     of find-a-time and out of her own bookable slots, and the planner says when
+     she is due somewhere during it. */
+  for (const r of awayAll()) for (const [a, b] of awaySpans(r, date))
+    out.push({ key: 'o:' + r.uid + ':' + r.id, kind: 'away', label: `Time off (${coachName(r.uid)})`, a, b, field: null, venue: '', coaches: [r.uid], tid: null, pids: null, away: r });
   return out;
 }
 const timeOf = x => `${niceTime(pad2(Math.floor(x.a / 60) % 24) + ':' + pad2(x.a % 60))}`;
@@ -9054,14 +9502,17 @@ function sessClashes(s) {
   const list = xs => xs.map(x => `${x.label} at ${timeOf(x)}`).join('; ');
   const f = sessField(s);
   if (f) {
-    const pm = permitsOf(f);
+    const pm = permitsOf(f), shut = fieldShut(f, s.date, a, b);
+    if (shut) out.push(shut);
     if (pm.length && !pm.some(p => permitCovers(p, s.date, a, b))) out.push(`Outside the club's permit for ${f.name}: ${pm.map(permitText).join('; ')}`);
     const pitches = Math.max(1, Math.round(Number(f.pitches)) || 1);
     const here = others.filter(x => x.field === f.id);
     if (here.length + 1 > pitches) out.push(`${f.name} has ${pitches} pitch${pitches === 1 ? '' : 'es'}, and this is on top of ${list(here)}`);
   }
-  const coachBusy = others.filter(x => x.coaches.includes(s.coach));
+  const coachBusy = others.filter(x => x.coaches.includes(s.coach) && !x.away);
   if (coachBusy.length) out.push(`${s.coachName} is also due at ${list(coachBusy)}`);
+  const off = others.filter(x => x.away && x.coaches.includes(s.coach));
+  if (off.length) out.push(`${s.coachName} has time off then: ${off.map(x => awayText(x.away)).join('; ')}`);
   for (const x of bookingsOf(s.id)) {
     if (x.st !== 'in' && x.st !== 'asked') continue;
     const tid = x.b.tid || (x.who && x.who.t.id);
@@ -9082,6 +9533,8 @@ function fieldDays(f, from, days = 14) {
     const here = busyItems(date).filter(x => x.field === f.id).sort((x, y) => x.a - y.a);
     for (const x of here) {
       const flags = [];
+      const shut = fieldShut(f, date, x.a, x.b);
+      if (shut) flags.push(shut.replace(f.name + ' ', ''));
       if (pm.length && !pm.some(p => permitCovers(p, date, x.a, x.b))) flags.push('outside the permit');
       const n = here.filter(o => o.a < x.b && x.a < o.b).length;
       if (n > pitches) flags.push(`${n} at once on ${pitches} pitch${pitches === 1 ? '' : 'es'}`);
@@ -9339,6 +9792,7 @@ function sheetSess(id) {
       ${later ? row('Repeats', `Weekly · ${later} more after this`) : ''}
     </dl>
     ${clashes.length ? `<div class="card planwarn">${clashes.map(c => `<p>${esc(c)}</p>`).join('')}</div>` : ''}
+    ${callOutBlock('s:' + s.id, '', s.date, !!me && s.coach === me.uid)}
     ${sessFamilyBlock(s)}
     ${run ? sessPlayersBlock(s) + sessRegisterBlock(s) + sessFeesBlock(s) + sessDrillsBlock(s) : ''}
     ${s.date ? `<div class="row wrap" style="margin-bottom:10px">
@@ -9705,6 +10159,8 @@ function sessFieldsView() {
       <div class="spread"><b>${esc(f.name)}</b>${bad ? `<span class="tag off">${bad} to look at</span>` : ''}</div>
       ${f.address ? `<span class="rowsub">${esc(f.address)}</span>` : ''}
       <span class="rowsub">${esc([`${Math.max(1, Number(f.pitches) || 1)} pitch${Number(f.pitches) > 1 ? 'es' : ''}`, f.surface, f.lights ? 'lights' : ''].filter(Boolean).join(' · '))}</span>
+      ${hoursText(f) ? `<span class="rowsub">Open: ${esc(hoursText(f))}</span>` : ''}
+      ${fieldClosures(f).filter(c => c.until >= today).slice(0, 2).map(c => `<span class="rowsub">Closed ${esc(closureText(c))}</span>`).join('')}
       ${pm.length ? pm.map(p => `<span class="rowsub">Permit: ${esc(permitText(p))}</span>`).join('') : '<span class="rowsub">No permits listed</span>'}
       <span class="rowsub">This week: ${days.length} booked${bad ? `, ${bad} outside the permit or double-booked` : ''}</span></button>`;
   }).join('') : `<div class="empty"><strong>No fields yet</strong>${admin ? 'Add the places the club trains, with the permits you hold for each, and every session and practice is checked against them.' : 'An admin adds the club’s fields and permits.'}</div>`}
@@ -9727,6 +10183,8 @@ function sheetField(id) {
       ${f.address ? `<dt>Address</dt><dd>${esc(f.address)}</dd>` : ''}
       <dt>Pitches</dt><dd>${Math.max(1, Number(f.pitches) || 1)}${f.surface ? ' · ' + esc(f.surface) : ''}${f.lights ? ' · lights' : ''}</dd>
       ${f.notes ? `<dt>Notes</dt><dd>${esc(f.notes).replace(/\n/g, '<br>')}</dd>` : ''}
+      <dt>Open</dt><dd>${hoursText(f) ? esc(hoursText(f)) + '; any time on the other days' : 'Any time: no hours set'}</dd>
+      ${fieldClosures(f).filter(c => c.until >= today).length ? `<dt>Closed</dt><dd>${fieldClosures(f).filter(c => c.until >= today).map(c => esc(closureText(c))).join('<br>')}</dd>` : ''}
       <dt>Permits</dt><dd>${pm.length ? pm.map(p => esc(permitText(p)) + (p.note ? `<span class="rowsub">${esc(p.note)}</span>` : '')).join('<br>') : 'None listed, so nothing is checked against one'}</dd>
     </dl>
     ${(f.address || f.name) && I ? `<a class="btn quiet sm" href="${esc(I.mapLink(f.address || f.name))}" target="_blank" rel="noopener" style="margin-bottom:10px">Directions</a>` : ''}
@@ -9740,6 +10198,12 @@ function fieldFormRead() {
   for (const [k, sel] of [['name', '#fdName'], ['address', '#fdAddress'], ['pitches', '#fdPitches'], ['notes', '#fdNotes']]) {
     const el = $(sel); if (el && typeof el.value === 'string') f[k] = el.value;
   }
+  f.hours.forEach((h, d) => {
+    for (const [k, sel] of [['from', '#fhFrom_' + d], ['to', '#fhTo_' + d]]) { const el = $(sel); if (el && typeof el.value === 'string') h[k] = el.value; }
+  });
+  f.closures.forEach((c, i) => {
+    for (const [k, sel] of [['from', '#fcFrom_' + i], ['until', '#fcUntil_' + i], ['note', '#fcNote_' + i]]) { const el = $(sel); if (el && typeof el.value === 'string') c[k] = el.value; }
+  });
   f.permits.forEach((p, i) => {
     for (const [k, sel] of [['start', '#pmStart_' + i], ['end', '#pmEnd_' + i], ['from', '#pmFrom_' + i], ['until', '#pmUntil_' + i], ['ref', '#pmRef_' + i], ['note', '#pmNote_' + i]]) {
       const el = $(sel); if (el && typeof el.value === 'string') p[k] = el.value;
@@ -9747,8 +10211,10 @@ function fieldFormRead() {
   });
 }
 function fieldFormOf(f, name) {
-  return f ? { id: f.id, name: f.name || '', address: f.address || '', pitches: String(f.pitches || 1), surface: f.surface || '', lights: !!f.lights, notes: f.notes || '', permits: permitsOf(f).map(p => ({ ...p })) }
-    : { id: null, name: name || '', address: '', pitches: '1', surface: '', lights: false, notes: '', permits: [] };
+  const hours = d => { const h = fieldHours(f)[d]; return h ? { from: h.from || '', to: h.to || '', closed: !!h.closed } : { from: '', to: '', closed: false }; };
+  return f ? { id: f.id, name: f.name || '', address: f.address || '', pitches: String(f.pitches || 1), surface: f.surface || '', lights: !!f.lights, notes: f.notes || '', permits: permitsOf(f).map(p => ({ ...p })),
+    hours: [0, 1, 2, 3, 4, 5, 6].map(hours), closures: fieldClosures(f).map(c => ({ ...c })) }
+    : { id: null, name: name || '', address: '', pitches: '1', surface: '', lights: false, notes: '', permits: [], hours: [0, 1, 2, 3, 4, 5, 6].map(() => ({ from: '', to: '', closed: false })), closures: [] };
 }
 function sheetFieldForm() {
   const f = fieldForm; if (!f) return;
@@ -9759,6 +10225,18 @@ function sheetFieldForm() {
     <label class="field"><span>Pitches</span><input type="number" id="fdPitches" min="1" max="20" value="${esc(f.pitches)}"></label>
     <div class="chips" style="margin-bottom:10px">${['Grass', 'Turf', 'Indoor'].map(x => chip('fieldsurface', x, f.surface === x, x)).join('')}${chip('fieldlights', '1', f.lights, 'Lights')}</div>
     <label class="field"><span>Notes</span><textarea id="fdNotes" rows="2" placeholder="Gate code, parking, who to call">${esc(f.notes)}</textarea></label>
+    <p class="lbl">Opening hours</p>
+    <div class="card" style="margin-bottom:8px">${f.hours.map((h, d) => `<div class="fhrow"><b>${WEEKDAYS[d]}</b>
+      ${h.closed ? '<span class="muted">Closed</span><span></span>' : `<input type="time" id="fhFrom_${d}" value="${esc(h.from)}" aria-label="${WEEKDAYS[d]} opens"><input type="time" id="fhTo_${d}" value="${esc(h.to)}" aria-label="${WEEKDAYS[d]} closes">`}
+      ${chip('fieldshut', d, h.closed, 'Closed')}</div>`).join('')}
+      <p class="muted" style="margin:6px 0 0">Blank is any time. When the lights go off, when the school has it: anything here outside these hours is flagged.</p></div>
+    <p class="lbl">Closed on dates</p>
+    ${f.closures.map((c, i) => `<div class="card" style="margin-bottom:8px">
+      <div class="grid2"><label class="field"><span>From</span><input type="date" id="fcFrom_${i}" value="${esc(c.from)}"></label>
+        <label class="field"><span>Until</span><input type="date" id="fcUntil_${i}" value="${esc(c.until)}"></label></div>
+      <label class="field"><span>Why</span><input type="text" id="fcNote_${i}" maxlength="120" value="${esc(c.note)}" placeholder="Reseeding, the school's sports day"></label>
+      <button class="btn quiet sm" data-act="fieldcloserm" data-i="${i}">Remove</button></div>`).join('')}
+    <button class="btn quiet wide" data-act="fieldclose" style="margin-bottom:10px">Add dates it's closed</button>
     <p class="lbl">Permits</p>
     ${f.permits.map((p, i) => `<div class="card" style="margin-bottom:8px">
       <div class="chips" style="margin-bottom:8px">${WEEKDAYS.map((w, d) => chip('fieldday', d, p.days.includes(d), w, i)).join('')}</div>
@@ -9827,8 +10305,8 @@ const SESS_ACTS = new Set(['sesstab', 'sessscope', 'sesspast', 'sessopen', 'sess
   'sessfeeclear', 'sessremind', 'sessmoney', 'sessmonth', 'sesshourscoach', 'sesspay', 'sesspayper', 'sesspaysave', 'sesspayclear',
   'sessdrills', 'sessdrilladd', 'sessdrillrm', 'sessdrillmin', 'sessdrillq', 'sesstell', 'sessics', 'reachdm', 'reachcopy',
   'fieldopen', 'fieldnew', 'fieldedit', 'fieldsave', 'fielddel', 'fieldpermit', 'fieldpermitrm', 'fieldday', 'fieldsurface',
-  'fieldlights', 'fieldfromtext']);
-const FIELD_EDIT = new Set(['fieldnew', 'fieldedit', 'fieldsave', 'fielddel', 'fieldpermit', 'fieldpermitrm', 'fieldday', 'fieldsurface', 'fieldlights', 'fieldfromtext']);
+  'fieldlights', 'fieldfromtext', 'fieldshut', 'fieldclose', 'fieldcloserm']);
+const FIELD_EDIT = new Set(['fieldnew', 'fieldedit', 'fieldsave', 'fielddel', 'fieldpermit', 'fieldpermitrm', 'fieldday', 'fieldsurface', 'fieldlights', 'fieldfromtext', 'fieldshut', 'fieldclose', 'fieldcloserm']);
 const RUN_ACTS = new Set(['sessedit', 'sesscall', 'sessdel', 'sessbook', 'sesspick', 'sessregister', 'sesscame', 'sessdrills', 'sessdrilladd',
   'sessdrillrm', 'sessdrillmin', 'sessdrillq', 'sesstell']);
 
@@ -10046,7 +10524,7 @@ function onSessAct(a, d) {
   if (a === 'fieldopen') { sheetField(d.id); return; }
   if (a === 'fieldnew' || a === 'fieldfromtext') { ui.view = 'sessions'; u.tab = 'fields'; fieldForm = fieldFormOf(null, a === 'fieldfromtext' ? d.v : ''); sheetFieldForm(); return; }
   if (a === 'fieldedit') { const f = fieldById(d.id); if (!f) return; fieldForm = fieldFormOf(f); sheetFieldForm(); return; }
-  if (['fieldpermit', 'fieldpermitrm', 'fieldday', 'fieldsurface', 'fieldlights'].includes(a)) {
+  if (['fieldpermit', 'fieldpermitrm', 'fieldday', 'fieldsurface', 'fieldlights', 'fieldshut', 'fieldclose', 'fieldcloserm'].includes(a)) {
     const f = fieldForm; if (!f) return;
     fieldFormRead();
     const i = Number(d.i);
@@ -10055,6 +10533,9 @@ function onSessAct(a, d) {
     if (a === 'fieldday' && f.permits[i]) { const n = Number(d.v); const ds = f.permits[i].days; f.permits[i].days = ds.includes(n) ? ds.filter(x => x !== n) : [...ds, n].sort(); }
     if (a === 'fieldsurface') f.surface = f.surface === d.v ? '' : String(d.v);
     if (a === 'fieldlights') f.lights = !f.lights;
+    if (a === 'fieldshut' && f.hours[Number(d.v)]) { const h = f.hours[Number(d.v)]; h.closed = !h.closed; }
+    if (a === 'fieldclose') f.closures.push({ id: uid(), from: '', until: '', note: '' });
+    if (a === 'fieldcloserm') f.closures.splice(i, 1);
     sheetFieldForm(); return;
   }
   if (a === 'fieldsave') {
@@ -10071,9 +10552,25 @@ function onSessAct(a, d) {
         ref: String(p.ref || '').trim().slice(0, 60), note: String(p.note || '').trim().slice(0, 120) };
     }
     const dropped = f.permits.filter(p => !p.days.length).length;
+    // only what constrains is kept: a day with no hours is open, and a half-typed row is said, not guessed at
+    const hours = {};
+    let halfHours = 0;
+    f.hours.forEach((h, d) => {
+      const from = hm(h.from), to = hm(h.to);
+      if (h.closed) hours['d' + d] = { closed: true };
+      else if (from && to && minOf(to) > minOf(from)) hours['d' + d] = { from, to };
+      else if (from || to) halfHours++;
+    });
+    if (halfHours) { toast('Give each day both an opening and a closing time, or leave it blank'); return; }
+    const closed = {};
+    for (const c of f.closures) {
+      if (!okDay(c.from)) continue;
+      const cid = c.id || uid();
+      closed[cid] = { id: cid, from: c.from, until: okDay(c.until) && c.until >= c.from ? c.until : c.from, note: String(c.note || '').trim().slice(0, 120) };
+    }
     quiet(`access/org/venues/${id}`, JSON.parse(JSON.stringify({
       id, name, address: String(f.address || '').trim().slice(0, 160), pitches: clamp(Math.round(Number(f.pitches)) || 1, 1, 20),
-      surface: f.surface || '', lights: !!f.lights, notes: String(f.notes || '').trim().slice(0, 1000), permits
+      surface: f.surface || '', lights: !!f.lights, notes: String(f.notes || '').trim().slice(0, 1000), permits, hours, closed
     })));
     saveLocal(); fieldForm = null; sheetField(id); render();
     toast(dropped ? `Saved · ${dropped} permit${dropped === 1 ? '' : 's'} with no days left off` : 'Saved'); return;
@@ -10752,6 +11249,7 @@ function viewMyCal() {
       `<button class="chip" type="button" data-act="mycalf" data-v="${esc(k)}" aria-pressed="${ui.myCal === k}">${l}</button>`).join('')}</div>` : ''}
     ${canBook ? `<button class="btn wide" data-act="sesstab" data-k="list">Book a 1-1 with a coach</button>` : ''}
     ${calMonth(dated, 'mycalday')}
+    ${awayCard()}
     <div class="card"><h2 style="margin-bottom:0">Coming up</h2>
       ${ahead.length ? `<div class="plist">${myCalList(ahead)}</div>`
       : `<p class="muted" style="margin-bottom:0">Nothing coming up.${myCalTeams().length ? '' : ' Once you coach a team, or a child of yours is on one, its games and practices are here.'}</p>`}</div>
@@ -10875,12 +11373,17 @@ function viewAdmin() {
         <span class="muted">Edit</span></button>`).join('') || '<p class="muted" style="margin:0">No teams yet.</p>'}</div>
       <div style="margin-top:10px"><button class="btn quiet wide" data-act="newteam">Add a team</button></div></div>
 
+    <div class="card"><h2 style="margin-bottom:8px">Planning for the club</h2>
+      <p class="muted" style="margin-top:0">What collides across the teams, when everyone involved is free, and picture day laid out around what each team already has on.</p>
+      <button class="btn quiet wide" data-act="planner">Plan</button></div>
+
     <div class="card"><h2 style="margin-bottom:8px">Fields and permits</h2>
       <p class="muted" style="margin-top:0">${fieldList().length ? `${fieldList().length} field${fieldList().length === 1 ? '' : 's'}.` : 'None yet.'} The places the club trains, the permits you hold for each and when, and what is booked on them.</p>
       <button class="btn quiet wide" data-act="sesstab" data-k="fields">Fields</button></div>
     <div class="card"><h2 style="margin-bottom:8px">Club drills</h2>
       <p class="muted" style="margin-top:0">${(() => { const n = shelfItems('club').length; return n ? `${n} drill${n === 1 ? '' : 's'} the club's coaches have shared.` : 'None yet. Coaches share their own drills into it, and you can tidy or remove any of them.'; })()} Coaches and admins see them; trackers and parents never do.</p>
-      <button class="btn quiet wide" data-act="clubdrills">Look after the club's drills</button></div>
+      <button class="btn quiet wide" data-act="clubdrills">Look after the club's drills</button>
+      <button class="btn quiet wide" data-act="tpllist" data-k="clubTpl" style="margin-top:8px">The club's templates${(() => { const n = tplItems('clubTpl').length; return n ? ' · ' + n : ''; })()}</button></div>
 
     <div class="card"><h2 style="margin-bottom:8px">Bulk import</h2>
       <p class="muted" style="margin-top:0">A whole season at once — teams, rosters, fixtures, past results, the club's fields and permits, and training sessions — from one JSON file. It adds and updates, and never removes anything.</p>
@@ -10888,6 +11391,777 @@ function viewAdmin() {
 
     ${aiButton('club')}
   </div>`;
+}
+
+/* ---------------- coaches' time off ---------------- */
+/* ROADMAP's "coaches' own unavailability", in the three shapes a coach says it:
+
+     weekly    "never Mondays", "not before 6 on Tuesdays", until a date or not
+     dates     "away 12–19 October", "Thursday 3–4, the dentist"
+     callout   "I can't make Tuesday's practice": one entry or session
+
+   At training/{code}/away/{uid}/{id}. Not under access/members, which ROADMAP
+   first suggested: every account in the club reads the workspace and any of
+   them can write a member's node, so a parent could read a coach's week and
+   forge it. Here the rule lets a coach write only her own and an admin
+   anyone's, and only coaches and admins read it, so it syncs with training
+   sessions' machinery (merge on read, dirty marks, refused said per record)
+   and only coaches' and admins' phones ever hold it.
+
+   It is read, not obeyed: time off and call-outs make a coach busy in
+   busyItems(), which is what the planner, find-a-time and her bookable slots
+   already read; and a call-out takes her off the entry, so a team whose every
+   coach has called out is said to have nobody. Nothing is cancelled for her. */
+const AWAY_KIND = { weekly: 'Every week', dates: 'Dates away', callout: 'Called out' };
+const AWAY_NOTE = 80;
+const coachesOf = tid => Object.keys(teamAccess(tid).coaches || {});
+function normAway(raw, u, id) {
+  if (!raw || typeof raw !== 'object' || !AWAY_KIND[raw.kind]) return null;
+  const str = (v, n) => (v == null || typeof v === 'object' ? '' : String(v)).trim().slice(0, n);
+  const r = { id: str(raw.id || id, 60), uid: u, kind: raw.kind, note: str(raw.note, AWAY_NOTE), start: hm(raw.start), end: hm(raw.end), at: Number(raw.at) || 0, by: str(raw.by, 60) };
+  if (r.start && r.end && minOf(r.end) <= minOf(r.start)) r.start = r.end = '';
+  if (!r.start || !r.end) r.start = r.end = '';
+  if (r.kind === 'weekly') {
+    r.days = [...new Set(arrOf(raw.days).map(Number))].filter(n => Number.isInteger(n) && n >= 0 && n <= 6).sort();
+    r.from = okDay(raw.from) ? raw.from : ''; r.to = okDay(raw.to) ? raw.to : '';
+    return r.days.length ? r : null;
+  }
+  if (r.kind === 'dates') {
+    r.from = okDay(raw.from) ? raw.from : ''; r.to = okDay(raw.to) && raw.to >= r.from ? raw.to : r.from;
+    return r.from ? r : null;
+  }
+  r.item = /^[egs]:[\w-]+$/.test(str(raw.item, 80)) ? str(raw.item, 80) : '';
+  r.tid = str(raw.tid, 60); r.date = okDay(raw.date) ? raw.date : ''; r.title = str(raw.title, 80);
+  return r.item ? r : null;
+}
+function awayAll() {
+  const out = [];
+  for (const [u, recs] of Object.entries(sess.away || {})) if (recs && typeof recs === 'object')
+    for (const [id, raw] of Object.entries(recs)) { const r = normAway(raw, u, id); if (r) out.push(r); }
+  return out;
+}
+const awayOf = u => awayAll().filter(r => r.uid === u);
+/* The minutes of one day a record takes, as [from, to] pairs. A call-out
+   takes none: it is about one entry, and the entry knows. */
+function awaySpans(r, date) {
+  if (!okDay(date) || r.kind === 'callout') return [];
+  if (r.kind === 'weekly' && (!r.days.includes(weekdayOf(date)) || (r.from && date < r.from) || (r.to && date > r.to))) return [];
+  if (r.kind === 'dates' && (date < r.from || date > r.to)) return [];
+  return [r.start ? [minOf(r.start), minOf(r.end)] : [0, 1440]];
+}
+// who has called out of one calendar item or session, by its key ('e:id', 'g:id', 's:id')
+const calledOut = key => awayAll().filter(r => r.kind === 'callout' && r.item === key).map(r => r.uid);
+const callOutOf = (u, key) => awayAll().find(r => r.uid === u && r.kind === 'callout' && r.item === key) || null;
+function awayText(r) {
+  const hours = r.start ? `${niceTime(r.start)}–${niceTime(r.end)}` : 'all day';
+  const note = r.note ? ` (${r.note})` : '';
+  if (r.kind === 'weekly') {
+    const days = r.days.length === 7 ? 'Every day' : 'Every ' + r.days.map(i => WEEKDAYS[i]).join(', ');
+    const span = r.to ? ` until ${dayLabel(r.to)}` : r.from && r.from > todayStr() ? ` from ${dayLabel(r.from)}` : '';
+    return `${days}, ${hours}${span}${note}`;
+  }
+  if (r.kind === 'dates') return `${r.from === r.to ? dayLabel(r.from) : dayLabel(r.from) + ' to ' + dayLabel(r.to)}, ${hours}${note}`;
+  return `Can't make ${r.title || 'it'}${r.date ? ', ' + dayLabel(r.date) : ''}${note}`;
+}
+// still to come, or still going: what her list shows and the planner lists
+function awayCurrent(r, today = todayStr()) {
+  if (r.kind === 'weekly') return !r.to || r.to >= today;
+  if (r.kind === 'dates') return r.to >= today;
+  return !r.date || r.date >= today;
+}
+/* Is she off for any of [a, b) on that date? The record, or null. */
+function awayDuring(u, date, a, b) {
+  for (const r of awayOf(u)) for (const [x, y] of awaySpans(r, date)) if (x < b && a < y) return r;
+  return null;
+}
+const awayOn = () => !!me && (!gated() || isAdmin(me.uid) || isCoachAny(me.uid));
+
+/* Where a coach is at a given time: free, due somewhere (and where), or off
+   (time off, or called out of the one thing she'd be at). Only people who
+   coach a team now are coaches here: one taken off every team is gone for
+   good, and time off is the "for now". `skip` leaves out the item being
+   covered, so a coach called out of it doesn't count as busy with it. */
+function coachStatus(u, date, a, b, skip = []) {
+  const off = awayDuring(u, date, a, b);
+  if (off) return { state: 'off', why: awayText(off) };
+  const items = busyItems(date).filter(x => !x.away && x.a < b && a < x.b);
+  const due = items.filter(x => !skip.includes(x.key) && x.coaches.includes(u));
+  if (due.length) return { state: 'busy', why: due.map(x => `${x.label} at ${timeOf(x)}`).join('; ') };
+  // called out of something then, the one being covered included: not free for it
+  const runs = x => (x.tid ? coachesOf(x.tid) : [(sessById(x.key.slice(2)) || {}).coach]).includes(u);
+  const out = items.filter(x => runs(x) && calledOut(x.key).includes(u));
+  // out of the very thing being covered is no cover for it; out of something else, she's free then
+  if (!out.length) return { state: 'free', why: '' };
+  return { state: out.some(x => skip.includes(x.key)) ? 'out' : 'free', why: `called out of ${out.map(x => x.label).join('; ')}` };
+}
+const freeCoaches = (date, a, b, skip = []) => [...coachUids()].filter(u => coachStatus(u, date, a, b, skip).state === 'free').sort((x, y) => coachName(x).localeCompare(coachName(y)));
+
+/* Her own list, on My calendar. */
+let awayForm = null;
+function awayCard() {
+  if (!awayOn()) return '';
+  const mine = awayOf(me.uid).filter(r => awayCurrent(r)).sort((x, y) => (x.from || x.date || '').localeCompare(y.from || y.date || ''));
+  return `<div class="card"><div class="spread"><h2 style="margin:0">Time off</h2><button class="btn quiet sm" data-act="awaynew">Add</button></div>
+    ${mine.length ? `<div class="plist" style="margin-top:8px">${mine.map(r => `<div class="prow" style="grid-template-columns:1fr auto">
+      <span><span class="pname">${esc(AWAY_KIND[r.kind])}</span><span class="psub">${esc(awayText(r))}</span></span>
+      <button class="btn quiet sm" data-act="awayrm" data-id="${esc(r.id)}">Remove</button></div>`).join('')}</div>`
+      : `<p class="muted" style="margin:6px 0 0">Nights you can't do, or dates you're away. Your club's admins see it when they plan, your bookable times leave it out, and it's never shown to families.</p>`}
+    ${sessState.away === 'refused' ? '<p class="rolebar warn">Saved on this phone only: the club\'s rules may not include time off yet.</p>' : ''}</div>`;
+}
+function awayFormRead() {
+  const f = awayForm; if (!f) return;
+  for (const [k, id] of [['from', '#awFrom'], ['to', '#awTo'], ['start', '#awStart'], ['end', '#awEnd'], ['note', '#awNote']]) { const el = $(id); if (el && typeof el.value === 'string') f[k] = el.value; }
+}
+function sheetAway() {
+  const f = awayForm; if (!f) return;
+  const chip = (act, v, on, l) => `<button class="chip" type="button" data-act="${act}" data-v="${v}" aria-pressed="${!!on}">${l}</button>`;
+  const forOther = f.u && f.u !== me.uid;
+  openSheet(`<h3>${forOther ? 'Time off for ' + esc(coachName(f.u)) : 'Time off'}</h3>
+    <div class="chips" style="margin-bottom:10px">${chip('awaykind', 'weekly', f.kind === 'weekly', 'Every week')}${chip('awaykind', 'dates', f.kind === 'dates', 'Dates away')}</div>
+    ${f.kind === 'weekly' ? `<p class="lbl">Which days</p><div class="chips" style="margin-bottom:10px">${WEEKDAYS.map((w, i) => chip('awayday', i, f.days.includes(i), w)).join('')}</div>` : ''}
+    <div class="grid2">
+      <label class="field"><span>${f.kind === 'weekly' ? 'Starting (optional)' : 'From'}</span><input type="date" id="awFrom" value="${esc(f.from)}"></label>
+      <label class="field"><span>${f.kind === 'weekly' ? 'Until (optional)' : 'To'}</span><input type="date" id="awTo" value="${esc(f.to)}"></label>
+    </div>
+    <div class="grid2">
+      <label class="field"><span>From (blank is all day)</span><input type="time" id="awStart" value="${esc(f.start)}"></label>
+      <label class="field"><span>Until</span><input type="time" id="awEnd" value="${esc(f.end)}"></label>
+    </div>
+    <label class="field"><span>Note (optional)</span><input type="text" id="awNote" maxlength="${AWAY_NOTE}" value="${esc(f.note)}" placeholder="Work late, holiday"></label>
+    <p class="muted" style="margin-top:0">The club's coaches and admins can read it, so keep the note general.</p>
+    <button class="btn wide" data-act="awaysave">Save</button>
+    <button class="btn quiet wide" data-act="closesheet" style="margin-top:8px">Cancel</button>`, true);
+}
+function sheetCallOut(key, tid, date, who) {
+  const other = who && who !== me.uid;
+  openSheet(`<h3>${other ? `Call ${esc(coachName(who))} off?` : "Can't make it?"}</h3>
+    <p class="muted" style="margin-top:0">${tid ? `The team's other coaches and the club's admins see that you can't. Nothing is called off, and families aren't told.` : `The club's admins see that you can't. The session isn't called off, and families aren't told: call it off or hand it over from the session itself.`}</p>
+    <label class="field"><span>Note (optional)</span><input type="text" id="coNote" maxlength="${AWAY_NOTE}" placeholder="Work, ill"></label>
+    <button class="btn wide" data-act="awayoutgo" data-k="${esc(key)}" data-tid="${esc(tid || '')}" data-d="${esc(date || '')}"${other ? ` data-u="${esc(who)}"` : ''}>${other ? `Call ${esc(coachName(who))} off` : "I can't make it"}</button>
+    <button class="btn quiet wide" data-act="closesheet" style="margin-top:8px">Cancel</button>`, true);
+}
+/* For an entry's sheet: who has called out, to those running the team, and
+   the button for a coach of the team herself. */
+function callOutBlock(key, tid, date, run) {
+  if (!awayOn()) return '';
+  const outs = awayAll().filter(r => r.kind === 'callout' && r.item === key);
+  const mine = outs.find(r => r.uid === me.uid);
+  const staff = tid ? canEditTeam(tid) : run || canAdmin();
+  const none = tid && coachesOf(tid).length && coachesOf(tid).every(u => outs.some(r => r.uid === u));
+  const it = none ? calItems([tid]).find(x => x.key === key) : null;
+  const cover = it && it.start && canAdmin() ? freeCoaches(it.date, minOf(it.start), it.end ? minOf(it.end) : minOf(it.start) + (it.mins || 60), [key]) : [];
+  const list = staff && outs.length ? `<div class="rolebar warn" style="margin-bottom:10px">${outs.map(r => `${esc(r.uid === me.uid ? 'You' : coachName(r.uid))} can't make it${r.by && r.by !== r.uid ? ` (called off by ${esc(r.by === me.uid ? 'you' : coachName(r.by))})` : ''}${r.note ? ` (${esc(r.note)})` : ''}`).join('<br>')}${none ? `<br><b>No coach left for it.</b>${cover.length ? ` Free then: ${esc(cover.map(coachName).join(', '))}.` : ''}` : ''}</div>` : '';
+  const mayOut = tid ? coachesOf(tid).includes(me.uid) : run;
+  const future = !date || date >= todayStr();
+  const btn = mayOut && future ? (mine ? `<button class="btn quiet wide" data-act="awayback" data-id="${esc(mine.id)}" style="margin-bottom:8px">I can make it after all</button>`
+    : `<button class="btn quiet wide" data-act="awayout" data-k="${esc(key)}" data-tid="${esc(tid || '')}" data-d="${esc(date || '')}" style="margin-bottom:8px">I can't make this</button>`) : '';
+  /* An admin calls a coach off it, or puts her back: the coach is said by
+     name, and the record says who made it. */
+  let adm = '';
+  if (canAdmin() && future) {
+    const s0 = !tid ? sessById(key.slice(2)) : null;
+    const cs = (tid ? coachesOf(tid) : s0 ? [s0.coach] : []).filter(u => u !== me.uid);
+    adm = cs.map(u => { const r = outs.find(x => x.uid === u); return r
+      ? `<button class="btn quiet sm" data-act="awayback" data-u="${esc(u)}" data-id="${esc(r.id)}">Put ${esc(coachName(u))} back on</button>`
+      : `<button class="btn quiet sm" data-act="awayout" data-u="${esc(u)}" data-k="${esc(key)}" data-tid="${esc(tid || '')}" data-d="${esc(date || '')}">Call ${esc(coachName(u))} off</button>`; }).join('');
+    if (adm) adm = `<div class="row wrap" style="margin-bottom:10px">${adm}</div>`;
+  }
+  return list + btn + adm;
+}
+const AWAY_ACTS = new Set(['awaynew', 'awaykind', 'awayday', 'awaysave', 'awayrm', 'awayout', 'awayoutgo', 'awayback']);
+function onAwayAct(a, d) {
+  // checked here: a record is always the signed-in coach's own, and only a coach or an admin has any
+  if (!awayOn()) { closeSheet(); toast(me ? 'Time off is for coaches and admins' : 'Sign in first'); return; }
+  // whose: her own, or, for an admin, the coach the button names
+  const who = d.u || (awayForm && awayForm.u) || me.uid;
+  if (who !== me.uid && !canAdmin()) { closeSheet(); toast("Only an admin changes another coach's time off"); return; }
+  const rec = (u, id) => awayOf(u).find(r => r.id === id);
+  if (a === 'awaynew') { awayForm = { u: d.u || me.uid, kind: 'weekly', days: [], from: '', to: '', start: '', end: '', note: '' }; sheetAway(); return; }
+  if (a === 'awaykind' || a === 'awayday') {
+    awayFormRead();
+    if (a === 'awaykind') awayForm.kind = d.v === 'dates' ? 'dates' : 'weekly';
+    else { const n = Number(d.v); awayForm.days = awayForm.days.includes(n) ? awayForm.days.filter(x => x !== n) : [...awayForm.days, n].sort(); }
+    sheetAway(); return;
+  }
+  if (a === 'awaysave') {
+    awayFormRead();
+    const f = awayForm; if (!f) return;
+    const start = hm(f.start), end = hm(f.end);
+    if ((start || end) && !(start && end && minOf(end) > minOf(start))) { toast('Give a start and an end, or leave both blank for all day'); return; }
+    if (f.kind === 'weekly' && !f.days.length) { toast('Pick at least one day'); return; }
+    if (f.kind === 'dates' && !okDay(f.from)) { toast('Pick the first day'); return; }
+    if (f.kind === 'dates' && okDay(f.to) && f.to < f.from) { toast('The last day is before the first'); return; }
+    const id = uid();
+    const rec_ = { id, kind: f.kind, start, end, note: String(f.note || '').trim().slice(0, AWAY_NOTE), by: me.uid, at: nowMs(),
+      ...(f.kind === 'weekly' ? { days: f.days, from: okDay(f.from) ? f.from : '', to: okDay(f.to) ? f.to : '' } : { from: f.from, to: okDay(f.to) ? f.to : f.from }) };
+    sessPut(`away/${who}/${id}`, rec_);
+    awayForm = null; closeSheet(); render(); toast(who === me.uid ? 'Saved' : `Saved for ${coachName(who)}`); return;
+  }
+  if (a === 'awayrm' || a === 'awayback') {
+    if (!rec(who, d.id)) { toast('That is not yours to remove'); return; }
+    sessPut(`away/${who}/${d.id}`, null);
+    closeSheet(); render(); toast(a === 'awayback' ? (who === me.uid ? 'You are back on it' : `${coachName(who)} is back on it`) : 'Removed'); return;
+  }
+  if (a === 'awayout' || a === 'awayoutgo') {
+    const key = String(d.k || ''), [kind, id] = key.split(':'), tid = d.tid || '';
+    // only a coach of the team (or the coach a session names) calls out of it, and only once
+    const s = kind === 's' ? sessById(id) : null;
+    if (kind === 's' ? !(s && s.coach === who) : !(tid && coachesOf(tid).includes(who))) { closeSheet(); toast(who === me.uid ? 'Only its own coach calls out of that' : `${coachName(who)} doesn't coach that`); return; }
+    if (callOutOf(who, key)) { closeSheet(); toast(who === me.uid ? 'You have already said' : `${coachName(who)} is already off it`); return; }
+    if (a === 'awayout') { sheetCallOut(key, tid, d.d, who); return; }
+    const it = s ? null : calItems([tid]).find(x => x.key === key);
+    if (!s && !it) { closeSheet(); toast('That is not on the calendar any more'); return; }
+    const rid = uid();
+    sessPut(`away/${who}/${rid}`, { id: rid, kind: 'callout', item: key, tid, date: (s || it).date || '', start: (s || it).start || '', end: (s || it).end || '',
+      title: s ? sessTitle(s) : `${(state.teams[tid] || {}).name || 'Team'}: ${it.title}`, note: String(($('#coNote') || {}).value || '').trim().slice(0, AWAY_NOTE), by: me.uid, at: nowMs() });
+    closeSheet(); render(); toast(who === me.uid ? 'Said. The other coaches and the admins can see it' : `${coachName(who)} is called off it`); return;
+  }
+}
+
+/* ---------------- club activity ---------------- */
+/* What an admin needs to hear about without going to look: a coach calling
+   out or calling another off, time off, practices, games and events added,
+   moved, called off or deleted on any team, and sessions families booked or
+   asked for. A coach hears the call-outs on her own teams and her sessions,
+   and being called off herself.
+
+   Worked out the way sessNews() works out a family's news: what this phone
+   saw last time, kept per account and club, against what it holds now. The
+   first look at each source tells nobody anything (what's already there is
+   not news), a source that hasn't loaded yet is left alone rather than read
+   as everything gone, and nothing this phone did itself is news to it
+   (noteMine(), from every write path). Nothing is sent anywhere: like
+   messages, it is heard while Minutes is open, and kept to read later. */
+const LS_NEWS = 'sm.clubNews', LS_NEWS_SEEN = 'sm.clubSeen', LS_NEWS_READ = 'sm.clubRead';
+const NEWS_KEEP = 60;
+const mineTouched = new Set();
+let newsLast = '';
+function noteMine(path) {
+  const p = String(path || '').split('/');
+  if (p[0] === 'teams' && p[2] === 'events' && p[3]) mineTouched.add(`e:${p[1]}:${p[3]}`);
+  else if (p[0] === 'matches' && p[1]) mineTouched.add('g:' + p[1]);
+  else if (p[0] === 'sessions' && p[1]) mineTouched.add('s:' + p[1]);
+  else if (p[0] === 'booked' && p[1]) mineTouched.add(p[2] ? `b:${p[1]}:${p[2]}` : 'b:' + p[1]);
+  else if (p[0] === 'away' && p[1] && p[2]) mineTouched.add(`o:${p[1]}:${p[2]}`);
+}
+const newsKey = k => k + ':' + clubKey() + ':' + (me ? me.uid : '');
+const newsGet = (k, dflt) => { try { const v = JSON.parse(localStorage.getItem(newsKey(k)) || 'null'); return v == null ? dflt : v; } catch (e) { return dflt; } };
+const newsItems = () => (me ? arrOf(newsGet(LS_NEWS, [])).filter(x => x && x.title) : []);
+const newsUnread = () => { const r = Number(newsGet(LS_NEWS_READ, 0)) || 0; return newsItems().filter(x => x.at > r).length; };
+const newsFor = () => !!me && (canAdmin() || isCoachAny(me.uid));
+const whenOfIt = (date, start) => `${okDay(date) ? dayLabel(date) : 'No date'}${start ? ' ' + niceTime(start) : ''}`;
+
+/* Everything news is made of, per source: key -> [signature, words, meta]. */
+function newsNow() {
+  const admin = canAdmin(), myTeams_ = new Set(teams().filter(t => coachesOf(t.id).includes(me.uid)).map(t => t.id));
+  const src = { cal: !fb || wsRead, sess: !fb || (sessLoaded.has('sessions') && sessLoaded.has('booked')), away: !fb || sessLoaded.has('away') };
+  const now = {};
+  if (src.cal && admin) {
+    for (const t of teams()) for (const [id, e] of Object.entries(t.events || {})) {
+      if (!e || typeof e !== 'object') continue;
+      now[`e:${t.id}:${id}`] = [[e.date, hm(e.start), e.called || '', e.title || ''].join('|'), `${t.name || 'A team'}: ${e.title || CAL_KIND[e.kind === 'practice' ? 'practice' : 'event']}`,
+        { src: 'cal', kind: e.kind === 'practice' ? 'practice' : 'event', tid: t.id, id, date: e.date, start: hm(e.start), venue: e.venue || '', called: e.called || '', by: e.by || '', club: e.club || '', series: e.series || '' }];
+    }
+    for (const m of Object.values(state.matches || {})) {
+      if (!m || !m.id || !state.teams[m.teamId]) continue;
+      now['g:' + m.id] = [[m.date || '', hm(m.kickoff), m.called || '', m.opponent || ''].join('|'), `${shortTeam(m.teamId)} v ${m.opponent || 'TBC'}`,
+        { src: 'cal', kind: 'game', tid: m.teamId, id: m.id, date: m.date || '', start: hm(m.kickoff), venue: m.venue || '', called: m.called || '', by: m.by || '' }];
+    }
+  }
+  if (src.away) for (const r of awayAll()) {
+    const mineToHear = r.kind === 'callout' && (admin || r.uid === me.uid || (r.tid ? myTeams_.has(r.tid) : (sessById((r.item || '').slice(2)) || {}).coach === me.uid));
+    if (!(admin || mineToHear)) continue;
+    if (r.kind !== 'callout' && !admin) continue;
+    now[`o:${r.uid}:${r.id}`] = ['1', r.kind === 'callout' ? `${coachName(r.uid)} on ${r.title || 'it'}` : `${coachName(r.uid)}'s time off`, { src: 'away', r }];
+  }
+  if (src.sess && admin) {
+    for (const x of sessAll()) {
+      now['s:' + x.id] = [[x.date, x.start, x.called || ''].join('|'), `${sessTitle(x)} with ${x.coachName}`, { src: 'sess', s: x }];
+      for (const b of bookingsOf(x.id)) now[`b:${x.id}:${b.pid}`] = [b.st, `${whoName(b)}: ${sessTitle(x)}`, { src: 'sess', s: x, b }];
+    }
+  }
+  return { now, src };
+}
+function clubNews() {
+  if (!newsFor() || (fb && !wsRead)) return;
+  const { now, src } = newsNow();
+  const seen = newsGet(LS_NEWS_SEEN, null);
+  const old = seen && typeof seen === 'object' ? seen : { src: {}, k: {} };
+  old.src = old.src || {}; old.k = old.k || {};
+  const out = [], groups = {};
+  const by = u => (u && u !== me.uid ? ' · by ' + coachName(u) : '');
+  const go = m => (m.src === 'cal' ? `cal|${m.kind}|${m.tid}|${m.id}` : m.src === 'sess' ? `sess|${m.s.id}` : m.r && m.r.item ? (m.r.item[0] === 's' ? `sess|${m.r.item.slice(2)}` : `cal|${m.r.item[0] === 'g' ? 'game' : 'item'}|${m.r.tid}|${m.r.item.slice(2)}`) : '');
+  const add = (title, body, m) => out.push({ title, body, go: m ? go(m) : '' });
+  for (const [k, [sig, words, m]] of Object.entries(now)) {
+    if (!old.src[m.src]) continue;                              // the first look at a source is not news
+    const was = old.k[k];
+    if (was && was[0] === sig) continue;
+    if (mineTouched.has(k) || (m.b && mineTouched.has('b:' + m.s.id))) continue;
+    if (m.src === 'cal') {
+      const what = m.kind === 'game' ? 'game' : m.kind;
+      if (!was) {
+        if (m.by === me.uid) continue;
+        // a weekly series, or one club-wide booking, is one piece of news, not ten
+        const g = m.club ? 'c:' + m.club : m.series ? 'r:' + m.series : '';
+        if (g) { (groups[g] = groups[g] || []).push({ words, m }); continue; }
+        add(`New ${what}: ${words}`, `${whenOfIt(m.date, m.start)}${m.venue ? ' · ' + m.venue : ''}${by(m.by)}`, m);
+      } else {
+        const [od, os, oc] = was[0].split('|');
+        if (m.called && m.called !== oc) add(`${CALLED[m.called] || 'Called off'}: ${words}`, whenOfIt(m.date, m.start), m);
+        else if (!m.called && oc) add(`Back on: ${words}`, whenOfIt(m.date, m.start), m);
+        else if (od !== m.date || os !== m.start) add(`Moved: ${words}`, `Now ${whenOfIt(m.date, m.start)}`, m);
+      }
+    } else if (m.src === 'away' && !was) {
+      const r = m.r;
+      if (r.by === me.uid) continue;
+      if (r.kind === 'callout') add(r.by && r.by !== r.uid ? `${coachName(r.by)} called ${r.uid === me.uid ? 'you' : coachName(r.uid)} off ${r.title || 'it'}` : `${coachName(r.uid)} can't make ${r.title || 'it'}`,
+        `${r.date ? dayLabel(r.date) + (r.start ? ' ' + niceTime(r.start) : '') : ''}${r.note ? ' · ' + r.note : ''}`, m);
+      else add(`Time off: ${coachName(r.uid)}`, awayText(r), m);
+    } else if (m.src === 'sess') {
+      const x = m.s;
+      if (m.b) {
+        if (m.b.b.by === me.uid) continue;
+        // a time a family booked is said once, from the booking, which is what names the child
+        if (x.slot && m.b.st === 'in' && !was) { add(`Booked by a family: ${sessTitle(x)} with ${x.coachName}`, `${whenOfIt(x.date, x.start)} · ${whoName(m.b)}`, m); continue; }
+        if (m.b.st === 'asked') add(`Asked for a place: ${whoName(m.b)}`, `${sessTitle(x)} with ${x.coachName} · ${whenOfIt(x.date, x.start)}`, m);
+        else if (m.b.st === 'out') add(`Withdrew: ${whoName(m.b)}`, `${sessTitle(x)} with ${x.coachName} · ${whenOfIt(x.date, x.start)}`, m);
+      } else if (!was) {
+        if (x.slot || x.by === me.uid || x.coach === me.uid) continue;
+        add(`New session: ${sessTitle(x)} with ${x.coachName}`, whenOfIt(x.date, x.start), m);
+      } else if (x.called && x.called !== was[0].split('|')[2]) add(`${CALLED[x.called]}: ${sessTitle(x)} with ${x.coachName}`, whenOfIt(x.date, x.start), m);
+    }
+  }
+  for (const list of Object.values(groups)) {
+    const { m, words } = list[0], n = list.length;
+    if (m.club) add(`Booked for ${n} team${n === 1 ? '' : 's'}: ${words.replace(/^[^:]*: /, '')}`, `${whenOfIt(m.date, m.start)}${by(m.by)}`, m);
+    else add(`New weekly ${m.kind}: ${words}`, `${n} week${n === 1 ? '' : 's'} from ${whenOfIt(list.map(x => x.m.date).sort()[0], m.start)}${by(m.by)}`, m);
+  }
+  // gone since last time: a deleted entry or game, or a coach back on something she'd called out of
+  for (const [k, was] of Object.entries(old.k)) {
+    if (now[k] || mineTouched.has(k)) continue;
+    const s0 = k[0] === 'e' || k[0] === 'g' ? 'cal' : k[0] === 'o' ? 'away' : k[0] === 's' || k[0] === 'b' ? 'sess' : '';
+    if (!s0 || !src[s0] || !old.src[s0]) continue;
+    if (s0 === 'cal') add(`Deleted: ${was[1]}`, '', null);
+    else if (s0 === 'away' && / on /.test(was[1])) add(`Back on: ${was[1].replace(' on ', ' is back on ')}`, '', null);
+  }
+  for (const k of [...mineTouched]) mineTouched.delete(k);
+  // what was seen is kept per source; one that hasn't loaded keeps what it had
+  const keep = { src: { ...old.src }, k: {} };
+  for (const [k, v] of Object.entries(old.k)) { const s0 = k[0] === 'e' || k[0] === 'g' ? 'cal' : k[0] === 'o' ? 'away' : 'sess'; if (!src[s0]) keep.k[k] = v; }
+  for (const [k, [sig, words, m]] of Object.entries(now)) keep.k[k] = [sig, words];
+  for (const [s0, ok] of Object.entries(src)) if (ok) keep.src[s0] = 1;
+  // every redraw comes through here, so the store is only written when what was seen has changed
+  const kept = JSON.stringify(keep);
+  if (kept !== newsLast) { newsLast = kept; try { localStorage.setItem(newsKey(LS_NEWS_SEEN), kept); } catch (e) { } }
+  if (!out.length) return;
+  const at = nowMs();
+  const items = [...out.map((x, i) => ({ id: at + '-' + i, at: at + i / 1000, ...x })).reverse(), ...newsItems()].slice(0, NEWS_KEEP);
+  keepStored(newsKey(LS_NEWS), JSON.stringify(items));
+  for (const x of out.slice(0, 3)) ping(x.title, x.body, 'minutes-club-' + x.title);
+  if (out.length > 3) ping('Club activity', `${out.length - 3} more`, 'minutes-club-more');
+}
+/* At the top of the inbox: the latest, newest first, the unread marked. */
+function newsCard() {
+  const items = newsItems(); if (!items.length) return '';
+  const read = Number(newsGet(LS_NEWS_READ, 0)) || 0;
+  const shown = ui.newsAll ? items : items.slice(0, 8);
+  const html = `<div class="card"><div class="spread"><h2 style="margin:0">Club activity</h2><span class="muted">${canAdmin() ? 'the whole club' : 'your teams'}</span></div>
+    <div class="plist" style="margin-top:8px">${shown.map(x => `<button class="prow${x.at > read ? ' unread' : ''}" type="button" data-act="newsopen" data-k="${esc(x.go || '')}" style="grid-template-columns:minmax(0,1fr) auto">
+      <span style="min-width:0"><span class="pname" style="white-space:normal">${esc(x.title)}</span>${x.body ? `<span class="psub">${esc(x.body)}</span>` : ''}</span><span class="msgwhen">${esc(whenShort(Math.floor(x.at)))}</span></button>`).join('')}</div>
+    ${items.length > 8 && !ui.newsAll ? `<button class="btn quiet wide" data-act="newsall" style="margin-top:8px">Show all ${items.length}</button>` : ''}</div>`;
+  try { localStorage.setItem(newsKey(LS_NEWS_READ), JSON.stringify(nowMs() + 1)); } catch (e) { }
+  return html;
+}
+
+/* ---------------- planning for the club ---------------- */
+/* ROADMAP's *Next: planning for the club*. A club admin scheduling the season
+   asks one question in many shapes: when is everyone involved free? All the
+   facts are already in the club (each team's games and calendar, who coaches
+   which team, which families have children on which teams, the training
+   sessions and the fields with their permits); this joins them up. It builds
+   on busyItems(), the join training sessions already use, rather than a
+   second one.
+
+   Three parts, in ROADMAP's order:
+   - Clashes: read-only, nothing written. Two things at one place at once, a
+     coach due in two places, a family with two children due in two places.
+   - Find a time: the slots where none of the chosen teams, their coaches or
+     their families is busy, best first, each saying what it would clash
+     with. Booking one writes one entry per team, sharing a `club` id, the
+     way a weekly practice shares `series`: an admin can already write every
+     team's events, so no new node and no new rule, and each team can move or
+     call off its own copy.
+   - Picture day: one place, one window, a slot each, laid out back to back
+     around what each team already has on, siblings next to each other so a
+     family makes one trip.
+
+   Admins only, so children's names are shown, as everywhere else an admin
+   looks. A game against another club is fixed by a league; the planner says
+   what it clashes with and never offers to move it. */
+const canPlanClub = () => canAdmin();
+const PLANNER_ACTS = new Set(['planner', 'plback', 'pltab', 'plcw', 'plrange', 'pltm', 'plfind', 'plbook', 'plkind', 'plbookgo', 'plpictm', 'plpic', 'plpicgo']);
+function plannerUi() {
+  if (!ui.planner || typeof ui.planner !== 'object') ui.planner = {};
+  const p = ui.planner;
+  if (!['clash', 'find', 'pic', 'coach'].includes(p.tab)) p.tab = 'clash';
+  const cw = p.cw && typeof p.cw === 'object' ? p.cw : {};
+  p.cw = { date: okDay(cw.date) ? cw.date : todayStr(), h0: hm(cw.h0) || '17:00', h1: hm(cw.h1) || '18:30' };
+  if (![7, 14, 28].includes(p.days)) p.days = 14;
+  const today = todayStr();
+  const f = p.find && typeof p.find === 'object' ? p.find : {};
+  p.find = { tids: Array.isArray(f.tids) ? f.tids.filter(x => state.teams[x]) : [], len: [30, 45, 60, 90, 120, 180].includes(Number(f.len)) ? Number(f.len) : 60,
+    from: okDay(f.from) && f.from >= today ? f.from : today, days: [7, 14, 28].includes(Number(f.days)) ? Number(f.days) : 14,
+    h0: hm(f.h0) || '16:00', h1: hm(f.h1) || '20:00', field: f.field && fieldById(f.field) ? f.field : '', ran: !!f.ran };
+  const c = p.pic && typeof p.pic === 'object' ? p.pic : {};
+  p.pic = { date: okDay(c.date) && c.date >= today ? c.date : addDays(today, 14), venue: String(c.venue || ''), h0: hm(c.h0) || '09:00', h1: hm(c.h1) || '13:00',
+    slot: [5, 10, 15, 20, 30].includes(Number(c.slot)) ? Number(c.slot) : 10, tids: Array.isArray(c.tids) ? c.tids.filter(x => state.teams[x]) : teams().map(t => t.id) };
+  return p;
+}
+/* Whatever has been typed, read back before a redraw throws it away. */
+function plannerRead() {
+  const p = plannerUi(), val = id => { const el = $('#' + id); return el && typeof el.value === 'string' ? el.value : null; };
+  for (const [k, id] of [['from', 'plFrom'], ['h0', 'plH0'], ['h1', 'plH1'], ['len', 'plLen'], ['days', 'plDays'], ['field', 'plField']]) { const v = val(id); if (v != null) p.find[k] = k === 'len' || k === 'days' ? Number(v) : v; }
+  for (const [k, id] of [['date', 'pcDate'], ['venue', 'pcVenue'], ['h0', 'pcH0'], ['h1', 'pcH1'], ['slot', 'pcSlot']]) { const v = val(id); if (v != null) p.pic[k] = k === 'slot' ? Number(v) : v; }
+  for (const [k, id] of [['date', 'cwDate'], ['h0', 'cwH0'], ['h1', 'cwH1']]) { const v = val(id); if (v != null) p.cw[k] = v; }
+  plannerUi();
+}
+const minHm = x => pad2(Math.floor(x / 60) % 24) + ':' + pad2(x % 60);
+const placeKey = x => (x.field ? 'f:' + x.field : normPlace(x.venue) ? 't:' + normPlace(x.venue) : '');
+
+/* Families, as guardian uids, with the children each has on a team. */
+function teamFams(tid) {
+  const out = {};
+  for (const p of players(state.teams[tid])) if (p.active !== false)
+    for (const u of Object.keys(p.guardians || {})) (out[u] = out[u] || []).push(p);
+  return out;
+}
+function itemFams(x, cache) {
+  if (x.tid) return (cache[x.tid] = cache[x.tid] || teamFams(x.tid));
+  const out = {};
+  for (const pid of x.pids || []) { const w = playerById(pid); if (w) for (const u of Object.keys(w.p.guardians || {})) (out[u] = out[u] || []).push(w.p); }
+  return out;
+}
+const coachName = u => ((acc().members || {})[u] || {}).name || (me && u === me.uid ? whoAmI() : '') || 'A coach';
+const shortTeam = tid => (state.teams[tid] || {}).name || 'a team';
+
+/* What collides on one day, in words. Each pair is said once. */
+function clubClashesOn(date) {
+  const items = busyItems(date), out = [], cache = {};
+  const ov = (x, y) => x.a < y.b && y.a < x.b;
+  for (let i = 0; i < items.length; i++) for (let j = i + 1; j < items.length; j++) {
+    const x = items[i], y = items[j];
+    if (!ov(x, y)) continue;
+    // time off clashes with nothing but what its own coach is due at
+    if (x.away || y.away) {
+      const off = x.away ? x : y, other = x.away ? y : x;
+      if (!other.away && other.coaches.includes(off.away.uid))
+        out.push({ kind: 'away', text: `${coachName(off.away.uid)} has time off (${awayText(off.away)}) but is due at ${other.label} at ${timeOf(other)}` });
+      continue;
+    }
+    const both = `${x.label} at ${timeOf(x)} and ${y.label} at ${timeOf(y)}`;
+    const pk = placeKey(x);
+    if (pk && pk === placeKey(y)) {
+      const f = x.field ? fieldById(x.field) : null, pitches = f ? Math.max(1, Math.round(Number(f.pitches)) || 1) : 1;
+      const at = items.filter(z => placeKey(z) === pk && ov(z, x) && ov(z, y)).length;
+      if (at > pitches) out.push({ kind: 'place', text: `${f ? f.name : x.venue}${f && pitches > 1 ? ` (${pitches} pitches)` : ''}: ${both}` });
+    }
+    for (const u of x.coaches.filter(c => y.coaches.includes(c))) out.push({ kind: 'coach', text: `${coachName(u)} is due at ${both}` });
+    if (x.tid && x.tid === y.tid) continue;
+    const fx = itemFams(x, cache), fy = itemFams(y, cache);
+    const common = Object.keys(fx).filter(u => fy[u]);
+    if (common.length) {
+      const kids = common.map(u => [...fx[u], ...fy[u]].filter((p, k, a) => a.findIndex(q => q.id === p.id) === k).map(p => p.name).join(' and ')).filter(Boolean);
+      out.push({ kind: 'family', text: `${common.length} famil${common.length === 1 ? 'y has' : 'ies have'} children at ${both}${kids.length ? ': ' + kids.join('; ') : ''}` });
+    }
+  }
+  // something at a field when the field can't be had
+  for (const x of items) {
+    const f = x.field ? fieldById(x.field) : null, shut = f ? fieldShut(f, date, x.a, x.b) : '';
+    if (shut) out.push({ kind: 'field', text: `${x.label} at ${timeOf(x)}: ${shut}` });
+  }
+  /* A team entry its coaches can't make: everyone called out or off is a
+     clash; some out with somebody still on is said, so it isn't a surprise. */
+  for (const x of items) {
+    if (!x.tid) continue;
+    const cs = coachesOf(x.tid); if (!cs.length) continue;
+    const outs = calledOut(x.key);
+    const why = u => outs.includes(u) ? `${coachName(u)} called out` : awayDuring(u, date, x.a, x.b) ? `${coachName(u)} has time off` : '';
+    const left = cs.filter(u => !why(u));
+    if (!left.length) { const cover = freeCoaches(date, x.a, x.b, [x.key]); out.push({ kind: 'nocoach', text: `No coach for ${x.label} at ${timeOf(x)}: ${cs.map(why).join(', ')}${cover.length ? `. Free then: ${cover.map(coachName).join(', ')}` : ''}` }); }
+    else if (outs.length) out.push({ kind: 'callout', text: `${outs.map(coachName).join(', ')} called out of ${x.label} at ${timeOf(x)}; ${left.map(coachName).join(', ')} still on` });
+  }
+  return out;
+}
+function plannerClashes(from, days) {
+  const out = [];
+  for (let i = 0; i < days; i++) { const date = addDays(from, i); for (const c of clubClashesOn(date)) out.push({ date, ...c }); }
+  return out;
+}
+
+/* The slot a team usually practises in, as "weekday start", from its own
+   calendar: the one it has most often. A tie-break, never a reason. */
+function usualSlot(tid) {
+  const n = {};
+  for (const e of Object.values((state.teams[tid] || {}).events || {})) if (e && e.kind === 'practice' && okDay(e.date) && hm(e.start)) { const k = weekdayOf(e.date) + ' ' + hm(e.start); n[k] = (n[k] || 0) + 1; }
+  const best = Object.entries(n).sort((a, b) => b[1] - a[1])[0];
+  return best && best[1] >= 2 ? best[0] : '';
+}
+/* Every start, every half hour inside the hours given, scored by who it
+   would clash with: one of the chosen teams already busy is all but ruled
+   out, a full or unpermitted field next, then coaches, then families. */
+function findTimes(f) {
+  const tids = f.tids.length ? f.tids : teams().map(t => t.id);
+  if (!tids.length) return [];
+  const coaches = new Set(tids.flatMap(tid => Object.keys(teamAccess(tid).coaches || {})));
+  const famCache = {}, fams = new Set(tids.flatMap(tid => Object.keys(itemFams({ tid }, famCache))));
+  const usual = new Set(tids.map(usualSlot).filter(Boolean));
+  const fld = f.field ? fieldById(f.field) : null, pm = fld ? permitsOf(fld) : [], pitches = fld ? Math.max(1, Math.round(Number(fld.pitches)) || 1) : 1;
+  const h0 = minOf(f.h0), h1 = minOf(f.h1), now = new Date(nowMs()), nowMin = now.getHours() * 60 + now.getMinutes();
+  const out = [];
+  for (let i = 0; i < f.days; i++) {
+    const date = addDays(f.from, i), items = busyItems(date);
+    for (let a = h0; a + f.len <= h1; a += 30) {
+      if (date === todayStr() && a <= nowMin) continue;
+      const b = a + f.len, hit = items.filter(x => x.a < b && a < x.b);
+      const teamsBusy = tids.filter(tid => hit.some(x => x.tid === tid));
+      // coaches and families count where they are due somewhere else; a chosen team's own practice is said once, above
+      const elsewhere = hit.filter(x => !tids.includes(x.tid));
+      const coachBusy = [...coaches].filter(u => elsewhere.some(x => x.coaches.includes(u)));
+      const famBusy = new Set();
+      for (const x of elsewhere) for (const u of Object.keys(itemFams(x, famCache))) if (fams.has(u)) famBusy.add(u);
+      const outside = !!(fld && pm.length && !pm.some(p => permitCovers(p, date, a, b)));
+      const shut = fld ? fieldShut(fld, date, a, b) : '';
+      const full = !!(fld && hit.filter(x => x.field === fld.id).length >= pitches);
+      const isUsual = usual.has(weekdayOf(date) + ' ' + minHm(a));
+      const why = [
+        ...teamsBusy.map(tid => `${shortTeam(tid)} has ${hit.filter(x => x.tid === tid).map(x => x.label.replace(/^[^:]*: /, '') + ' at ' + timeOf(x)).join(', ')}`),
+        ...(shut ? [shut] : []), ...(full ? [`${fld.name} is full then`] : []), ...(outside ? [`outside the club's permit for ${fld.name}`] : []),
+        ...(coachBusy.length ? [`${coachBusy.map(coachName).join(', ')} ${coachBusy.length === 1 ? 'is' : 'are'} busy`] : []),
+        ...(famBusy.size ? [`${famBusy.size} famil${famBusy.size === 1 ? 'y has' : 'ies have'} a child somewhere else`] : [])
+      ];
+      out.push({ date, a, b, cost: teamsBusy.length * 1000 + (shut ? 600 : 0) + (full ? 500 : 0) + (outside ? 200 : 0) + coachBusy.length * 20 + famBusy.size * 2 - (isUsual ? 5 : 0), why, usual: isUsual });
+    }
+  }
+  return out.sort((x, y) => x.cost - y.cost || (x.date + minHm(x.a)).localeCompare(y.date + minHm(y.a)));
+}
+
+/* Picture day: siblings next to each other, then each team the first slot
+   from where the last one ended that it and its coaches are free for. */
+function picOrder(tids) {
+  const cache = {}, fam = Object.fromEntries(tids.map(t => [t, itemFams({ tid: t }, cache)]));
+  const w = (x, y) => Object.keys(fam[x]).filter(u => fam[y][u]).length;
+  const name = t => shortTeam(t);
+  const left = [...tids].sort((x, y) => name(x).localeCompare(name(y)));
+  if (!left.length) return [];
+  const total = t => left.reduce((n, o) => n + (o === t ? 0 : w(t, o)), 0);
+  left.sort((x, y) => total(y) - total(x) || name(x).localeCompare(name(y)));
+  const order = [left.shift()];
+  while (left.length) {
+    const last = order[order.length - 1];
+    left.sort((x, y) => w(last, y) - w(last, x) || name(x).localeCompare(name(y)));
+    order.push(left.shift());
+  }
+  return order.map((t, i) => ({ tid: t, sib: i ? w(order[i - 1], t) : 0 }));
+}
+function picLayout(c) {
+  if (!okDay(c.date)) return { slots: [], left: [] };
+  const items = busyItems(c.date), h1 = minOf(c.h1);
+  let at = minOf(c.h0);
+  const slots = [], left = [];
+  for (const { tid, sib } of picOrder(c.tids)) {
+    const coaches = Object.keys(teamAccess(tid).coaches || {});
+    const busy = a => items.some(x => x.a < a + c.slot && a < x.b && (x.tid === tid || x.coaches.some(u => coaches.includes(u))));
+    let a = at;
+    while (a + c.slot <= h1 && busy(a)) a += c.slot;
+    if (a + c.slot > h1) { left.push(tid); continue; }
+    slots.push({ tid, a, b: a + c.slot, sib });
+    at = a + c.slot;
+  }
+  return { slots, left };
+}
+
+/* One entry per team, sharing a `club` id, each at its own path: one write
+   per team, at the depth the rule on teams/$tid sits at. */
+function bookClubWide(tids, fields) {
+  const club = uid(), at = nowMs();
+  for (const tid of tids) {
+    if (!state.teams[tid]) continue;
+    const id = uid();
+    quiet(`teams/${tid}/events/${id}`, { id, kind: fields.kind === 'practice' ? 'practice' : 'event', title: fields.title, date: fields.date,
+      start: fields.start, end: fields.end, venue: fields.venue || '', notes: '', public: false, club, createdAt: at, ...(me ? { by: me.uid } : {}) });
+  }
+  saveLocal(); schedulePublish();
+  return club;
+}
+
+function viewPlanner() {
+  if (!canPlanClub()) return `<div class="empty"><strong>Club admins only</strong>Planning across the club's teams is for its admins.</div>`;
+  const p = plannerUi();
+  const tab = (k, l) => `<button class="chip" type="button" data-act="pltab" data-k="${k}" aria-pressed="${p.tab === k}">${l}</button>`;
+  const body = p.tab === 'find' ? plannerFind(p) : p.tab === 'pic' ? plannerPic(p) : p.tab === 'coach' ? plannerCoaches(p) : plannerClashView(p);
+  return `<div class="stack">
+    <div class="spread"><h2>Planning for the club</h2><button class="btn quiet sm" data-act="plback">Back</button></div>
+    <div class="chips">${tab('clash', 'Clashes')}${tab('find', 'Find a time')}${tab('coach', 'Coaches')}${tab('pic', 'Picture day')}</div>
+    ${body}</div>`;
+}
+function plannerClashView(p) {
+  const today = todayStr(), list = plannerClashes(today, p.days);
+  const icon = { place: 'Same place', coach: 'Coach', family: 'Families', away: 'Time off', nocoach: 'No coach', callout: 'Called out', field: 'Field' };
+  const end = addDays(today, p.days - 1);
+  const off = awayAll().filter(r => r.kind !== 'callout' && awayCurrent(r) && (r.kind === 'weekly' ? !r.from || r.from <= end : r.from <= end));
+  const byDay = {};
+  for (const c of list) (byDay[c.date] = byDay[c.date] || []).push(c);
+  return `<div class="chips">${[7, 14, 28].map(n => `<button class="chip" type="button" data-act="plrange" data-v="${n}" aria-pressed="${p.days === n}">${n === 7 ? 'This week' : n + ' days'}</button>`).join('')}</div>
+    ${list.length ? Object.entries(byDay).map(([date, cs]) => `<div class="card"><h4 style="margin:0 0 6px">${esc(dayLabel(date))}</h4>
+      ${cs.map(c => `<p style="margin:0 0 6px"><span class="tag off">${icon[c.kind]}</span> ${esc(c.text)}</p>`).join('')}</div>`).join('')
+      : `<div class="empty"><strong>Nothing collides</strong>No two things at one place at once, no coach due in two places or on time off, and no family with children due in two places, in the next ${p.days} days.</div>`}
+    ${off.length ? `<div class="card"><h4 style="margin:0 0 6px">Coaches' time off</h4>${off.map(r => `<p style="margin:0 0 4px"><b>${esc(coachName(r.uid))}</b> · ${esc(awayText(r))}</p>`).join('')}</div>` : ''}
+    <p class="muted">From every team's games and calendar, the training sessions, who coaches which team, and which families have children on which teams. A place is a field from Fields where one matches, or the same words typed. Nothing here is stored or sent.</p>`;
+}
+/* Who can coach then: every coach, free first, each saying where she is
+   otherwise, with her time off below and a way for the admin to add some or
+   call her off. */
+function plannerCoaches(p) {
+  const c = p.cw, a = minOf(c.h0), b = Math.max(minOf(c.h1), a + 15);
+  const order = { free: 0, out: 1, busy: 2, off: 3 };
+  const label = { free: 'Free', out: 'Free', busy: 'Busy', off: 'Off' };
+  const rows = [...coachUids()].map(u => ({ u, ...coachStatus(u, c.date, a, b) }))
+    .sort((x, y) => order[x.state] - order[y.state] || coachName(x.u).localeCompare(coachName(y.u)));
+  const teamsOf = u => teams().filter(t => coachesOf(t.id).includes(u)).map(t => t.name || 'Team').join(', ');
+  return `<div class="card">
+    <div class="grid2"><label class="field"><span>Day</span><input type="date" id="cwDate" value="${esc(c.date)}"></label>
+      <span></span></div>
+    <div class="grid2"><label class="field"><span>From</span><input type="time" id="cwH0" value="${esc(c.h0)}"></label>
+      <label class="field"><span>Until</span><input type="time" id="cwH1" value="${esc(c.h1)}"></label></div>
+    <button class="btn wide" data-act="plcw">Who's free</button></div>
+    ${rows.length ? `<div class="plist">${rows.map(r => `<div class="prow" style="grid-template-columns:1fr auto">
+      <span><span class="pname">${esc(coachName(r.u))}</span><span class="psub">${esc([teamsOf(r.u), r.why].filter(Boolean).join(' · '))}</span></span>
+      <span class="tag${r.state === 'off' || r.state === 'busy' ? ' off' : ''}">${label[r.state]}</span></div>`).join('')}</div>`
+      : `<div class="empty"><strong>No coaches yet</strong>Give someone a coach's role on a team under People.</div>`}
+    <div class="card"><h2 style="margin-bottom:6px">Time off</h2>
+      ${[...coachUids()].sort((x, y) => coachName(x).localeCompare(coachName(y))).map(u => {
+    const recs = awayOf(u).filter(r => awayCurrent(r));
+    return `<div style="margin-bottom:10px"><div class="spread"><b>${esc(coachName(u))}</b><button class="btn quiet sm" data-act="awaynew" data-u="${esc(u)}">Add</button></div>
+        ${recs.map(r => `<div class="spread" style="margin-top:4px"><span class="muted">${esc(awayText(r))}${r.by && r.by !== u ? ` · by ${esc(coachName(r.by))}` : ''}</span>
+          <button class="btn quiet sm" data-act="awayrm" data-u="${esc(u)}" data-id="${esc(r.id)}">Remove</button></div>`).join('') || '<span class="muted">None</span>'}</div>`;
+  }).join('') || '<p class="muted">No coaches yet.</p>'}
+      <p class="muted" style="margin-bottom:0">Time off is "for now". Taking someone off a team for good is under People; once she coaches no team she isn't listed here.</p></div>`;
+}
+function plannerFind(p) {
+  const f = p.find, ts = teams();
+  const chip = (v, on, l) => `<button class="chip" type="button" data-act="pltm" data-v="${esc(v)}" aria-pressed="${on}">${esc(l)}</button>`;
+  const res = f.ran ? findTimes(f).slice(0, 8) : [];
+  return `<div class="card">
+    <p class="lbl" style="margin-top:0">Who</p>
+    <div class="chips" style="margin-bottom:10px">${chip('all', !f.tids.length, 'The whole club')}${ts.map(t => chip(t.id, f.tids.includes(t.id), t.name || 'Team')).join('')}</div>
+    <div class="grid2">
+      <label class="field"><span>How long</span><select id="plLen">${[30, 45, 60, 90, 120, 180].map(m => `<option value="${m}"${m === f.len ? ' selected' : ''}>${m < 60 ? m + ' minutes' : m / 60 + (m === 60 ? ' hour' : ' hours')}</option>`).join('')}</select></label>
+      <label class="field"><span>Where</span><select id="plField"><option value="">Anywhere</option>${fieldList().map(x => `<option value="${esc(x.id)}"${x.id === f.field ? ' selected' : ''}>${esc(x.name)}</option>`).join('')}</select></label>
+    </div>
+    <div class="grid2">
+      <label class="field"><span>From</span><input type="date" id="plFrom" value="${esc(f.from)}"></label>
+      <label class="field"><span>Over</span><select id="plDays">${[7, 14, 28].map(n => `<option value="${n}"${n === f.days ? ' selected' : ''}>${n} days</option>`).join('')}</select></label>
+    </div>
+    <div class="grid2">
+      <label class="field"><span>No earlier than</span><input type="time" id="plH0" value="${esc(f.h0)}"></label>
+      <label class="field"><span>Done by</span><input type="time" id="plH1" value="${esc(f.h1)}"></label>
+    </div>
+    <button class="btn wide" data-act="plfind">Find times</button></div>
+    ${f.ran ? (res.length ? `<div class="plist">${res.map(r => `<button class="prow" type="button" data-act="plbook" data-d="${esc(r.date)}" data-a="${r.a}" style="grid-template-columns:1fr auto">
+      <span><span class="pname">${esc(dayLabel(r.date))} · ${esc(niceTime(minHm(r.a)))}–${esc(niceTime(minHm(r.b)))}</span>
+        <span class="psub">${r.why.length ? esc(r.why.join('; ')) : 'Nobody involved is busy'}${r.usual ? ' · their usual slot' : ''}</span></span>
+      <span class="tag${r.cost >= 500 ? ' off' : r.why.length ? ' wait' : ''}">${r.cost >= 500 ? 'Clash' : r.why.length ? 'Close' : 'Free'}</span></button>`).join('')}</div>
+      <p class="muted">Best first: nobody busy, then the fewest people affected, then a team's usual practice slot. Tap one to put it on the calendars.</p>`
+      : `<div class="empty"><strong>No times fit</strong>Widen the hours or the days.</div>`) : ''}`;
+}
+function plannerPic(p) {
+  const c = p.pic, ts = teams(), lay = picLayout(c);
+  const chip = (v, on, l) => `<button class="chip" type="button" data-act="plpictm" data-v="${esc(v)}" aria-pressed="${on}">${esc(l)}</button>`;
+  return `<div class="card">
+    <div class="grid2">
+      <label class="field"><span>Day</span><input type="date" id="pcDate" value="${esc(c.date)}"></label>
+      <label class="field"><span>Each team gets</span><select id="pcSlot">${[5, 10, 15, 20, 30].map(m => `<option value="${m}"${m === c.slot ? ' selected' : ''}>${m} minutes</option>`).join('')}</select></label>
+    </div>
+    <div class="grid2">
+      <label class="field"><span>From</span><input type="time" id="pcH0" value="${esc(c.h0)}"></label>
+      <label class="field"><span>Until</span><input type="time" id="pcH1" value="${esc(c.h1)}"></label>
+    </div>
+    <label class="field"><span>Where</span><input type="text" id="pcVenue" value="${esc(c.venue)}" placeholder="Clubhouse, by the main pitch"></label>
+    <p class="lbl">Teams</p>
+    <div class="chips" style="margin-bottom:10px">${ts.map(t => chip(t.id, c.tids.includes(t.id), t.name || 'Team')).join('')}</div>
+    <button class="btn quiet wide" data-act="plpic">Lay it out</button></div>
+    ${lay.slots.length ? `<div class="card"><div class="plist">${lay.slots.map(x => `<div class="prow" style="grid-template-columns:auto 1fr">
+      <span class="pnum">${esc(niceTime(minHm(x.a)))}</span><span><span class="pname">${esc(shortTeam(x.tid))}</span>${x.sib ? `<span class="psub">${x.sib} famil${x.sib === 1 ? 'y' : 'ies'} with a child on the team before</span>` : ''}</span></div>`).join('')}</div>
+      ${lay.left.length ? `<p class="muted">No room before ${esc(niceTime(c.h1))} for ${esc(lay.left.map(shortTeam).join(', '))}.</p>` : ''}
+      <button class="btn wide" data-act="plpicgo" style="margin-top:10px">Put ${lay.slots.length === 1 ? 'it' : lay.slots.length === 2 ? 'both' : 'all ' + lay.slots.length} on the team calendars</button></div>`
+      : `<div class="empty"><strong>Nothing laid out</strong>Pick the day, the window and the teams.</div>`}
+    <p class="muted">Each team goes in the first slot it and its coaches are free for, siblings' teams next to each other so a family makes one trip. Each team's entry is its own: a team can move or call off its slot without touching the rest.</p>`;
+}
+function sheetPlBook(date, a) {
+  const p = plannerUi(); p.lastD = date; p.lastA = a;
+  const f = p.find, fld = f.field ? fieldById(f.field) : null;
+  const tids = f.tids.length ? f.tids : teams().map(t => t.id);
+  openSheet(`<h3>${esc(dayLabel(date))} · ${esc(niceTime(minHm(a)))}–${esc(niceTime(minHm(a + f.len)))}</h3>
+    <p class="muted" style="margin-top:0">On the calendar of ${tids.length === 1 ? esc(shortTeam(tids[0])) : tids.length + ' teams'}, one entry each. Each team can move or call off its own.</p>
+    <label class="field"><span>What</span><input type="text" id="pbTitle" value="" placeholder="Coaches' meeting, extra practice, party" maxlength="80"></label>
+    <label class="field"><span>Where</span><input type="text" id="pbVenue" value="${esc(fld ? fld.name : '')}" maxlength="80"></label>
+    <div class="chips" style="margin-bottom:10px"><button class="chip" type="button" data-act="plkind" data-v="event" aria-pressed="${p.kind !== 'practice'}">Something else</button>
+      <button class="chip" type="button" data-act="plkind" data-v="practice" aria-pressed="${p.kind === 'practice'}">A practice</button></div>
+    <p class="muted" style="margin-top:0">For each team only, not the share link. A coach can put it on the share link from her own calendar.</p>
+    <button class="btn wide" data-act="plbookgo" data-d="${esc(date)}" data-a="${a}">Put it on the calendars</button>
+    <button class="btn quiet wide" data-act="closesheet" style="margin-top:8px">Cancel</button>`, true);
+}
+function onPlannerAct(a, d) {
+  // checked here, not just by the screen being hidden: this writes to every team's calendar
+  if (!canPlanClub()) { closeSheet(); toast('Planning is for club admins'); render(); return; }
+  plannerRead();
+  const p = plannerUi();
+  if (a === 'planner') { ui.view = 'planner'; render(); toTop(); return; }
+  if (a === 'plback') { ui.view = 'admin'; render(); return; }
+  if (a === 'pltab') { p.tab = d.k; render(); return; }
+  if (a === 'plcw') { render(); return; }
+  if (a === 'plrange') { p.days = Number(d.v); render(); return; }
+  if (a === 'pltm') {
+    if (d.v === 'all') p.find.tids = [];
+    else p.find.tids = p.find.tids.includes(d.v) ? p.find.tids.filter(x => x !== d.v) : [...p.find.tids, d.v];
+    render(); return;
+  }
+  if (a === 'plfind') {
+    if (!okDay(p.find.from)) { toast('Pick a day to start from'); return; }
+    if (minOf(p.find.h1) - minOf(p.find.h0) < p.find.len) { toast('Those hours are shorter than it is'); return; }
+    p.find.ran = true; render(); return;
+  }
+  if (a === 'plbook') { sheetPlBook(d.d, Number(d.a)); return; }
+  if (a === 'plkind') {
+    // the sheet is drawn again for the chip; what was typed in it is put back
+    const keep = [($('#pbTitle') || {}).value, ($('#pbVenue') || {}).value];
+    p.kind = d.v === 'practice' ? 'practice' : 'event';
+    sheetPlBook(p.lastD, p.lastA);
+    ['#pbTitle', '#pbVenue'].forEach((sel, i) => { const el = $(sel); if (el && keep[i] != null) el.value = keep[i]; });
+    return;
+  }
+  if (a === 'plbookgo') {
+    const title = String(($('#pbTitle') || {}).value || '').trim().slice(0, 80);
+    if (!title) { toast('Say what it is'); return; }
+    const date = d.d, st = Number(d.a), tids = p.find.tids.length ? p.find.tids : teams().map(t => t.id);
+    if (!okDay(date) || !Number.isFinite(st)) return;
+    bookClubWide(tids, { title, kind: p.kind, date, start: minHm(st), end: minHm(st + p.find.len), venue: String(($('#pbVenue') || {}).value || '').trim().slice(0, 80) });
+    closeSheet(); render(); toast(`On ${tids.length} team calendar${tids.length === 1 ? '' : 's'}`); return;
+  }
+  if (a === 'plpictm') { p.pic.tids = p.pic.tids.includes(d.v) ? p.pic.tids.filter(x => x !== d.v) : [...p.pic.tids, d.v]; render(); return; }
+  if (a === 'plpic') { render(); return; }
+  if (a === 'plpicgo') {
+    const c = p.pic, lay = picLayout(c);
+    if (!lay.slots.length) return;
+    if (!confirm(`Put picture day on ${lay.slots.length} team calendar${lay.slots.length === 1 ? '' : 's'}?`)) return;
+    const club = uid(), at = nowMs();
+    for (const x of lay.slots) {
+      const id = uid();
+      quiet(`teams/${x.tid}/events/${id}`, { id, kind: 'event', title: 'Picture day', date: c.date, start: minHm(x.a), end: minHm(x.b), venue: c.venue.trim().slice(0, 80),
+        notes: '', public: false, club, createdAt: at, ...(me ? { by: me.uid } : {}) });
+    }
+    saveLocal(); schedulePublish(); render(); toast(`Picture day is on ${lay.slots.length} calendar${lay.slots.length === 1 ? '' : 's'}`); return;
+  }
 }
 
 /* ---------------- ticking ---------------- */
@@ -12540,6 +13814,18 @@ function onAct(e) {
   if (a === 'drillopen') { followDrillLink(d.id, d.k); return; }
   if (PRACTICE_ACTS.has(a) && !canTrain()) { closeSheet(); toast('Practice is for coaches and admins'); render(); return; }
   if (SESS_ACTS.has(a)) { onSessAct(a, d); return; }
+  if (PLANNER_ACTS.has(a)) { onPlannerAct(a, d); return; }
+  if (AWAY_ACTS.has(a)) { onAwayAct(a, d); return; }
+  if (a === 'newsall') { ui.newsAll = true; render(); return; }
+  if (a === 'newsopen') {
+    const [k, kind, tid, id] = String(d.k || '').split('|');
+    if (k === 'sess' && sessById(kind)) { sheetSess(kind); return; }
+    if (k === 'cal' && state.teams[tid]) {
+      const it = calItems([tid]).find(x => x.id === id && (kind === 'item' || x.kind === kind));
+      if (it) { sheetCalItem(it.kind, tid, id); return; }
+    }
+    toast('That is not here any more'); return;
+  }
 
   if (a === 'practab') {
     const p = practiceUi();
@@ -12548,6 +13834,13 @@ function onAct(e) {
     render(); return;
   }
   if (a === 'drill') { sheetDrill(d.id, undefined, true); return; }
+  // from What needs work: the library, narrowed to the drills that answer it
+  if (a === 'nwdrills') {
+    const p = practiceUi(), L = drillLib();
+    if (!L || !signalOf(L, d.k)) return;
+    p.f = { ...PRACTICE_BLANK(), sig: d.k }; p.tab = 'drills'; p.shelf = 'all'; p.pick = null; p.run = null;
+    ui.view = 'practice'; saveUi(); render(); toTop(); return;
+  }
   if (a === 'drillpic') { sheetDrill(d.id, d.k === 'move'); return; }
   if (a === 'drillsend') { sheetSendDrill(d.id); return; }
   if (a === 'drillsendshare') {
@@ -12698,6 +13991,70 @@ function onAct(e) {
     return;
   }
 
+  /* ---- templates ---- */
+  if (TPL_ACTS.has(a)) {
+    const L = drillLib(), t = d.v ? findTpl(d.v) : null;
+    if (a === 'tpllist') { sheetTplList(d.k); return; }
+    if (a === 'tplopen') { if (!t) { toast('That template is not on this phone'); return; } sheetTpl(t); return; }
+    if (a === 'tplcopy') {
+      if (!t || !me) { toast(me ? 'That template is not on this phone' : 'Sign in to keep your own templates'); return; }
+      putDrill('mineTpl', tplFrom(t, { name: t.name, from: { shelf: t.shelf, id: t.id, v: t.v } }));
+      closeSheet(); toast('Copied to your templates'); return;
+    }
+    if (a === 'tplshare') {
+      if (!t || !tplMine(t) || !canShareTpl()) { toast('Only a coach or an admin shares with the club'); return; }
+      putDrill('clubTpl', tplFrom(t, { from: { shelf: 'mineTpl', id: t.id, v: t.v }, ...clubStamp() }));
+      closeSheet(); toast('Shared with the club. Yours is unchanged.'); return;
+    }
+    if (a === 'tpldel') {
+      // checked here, not just by the button being hidden: a club template is the club's
+      if (!t || !tplCanEdit(t)) { toast('Only an admin, or the coach who shared it, removes a club template'); return; }
+      if (!confirm('Delete this template? Plans made from it keep their drills.')) return;
+      dropDrill(t.shelf, t.id); sheetTplList(t.shelf); return;
+    }
+    /* Everything below touches a plan, which is that team's coaches' and the
+       club's admins' only. */
+    const tp = team();
+    if (!tp || !canPlan(tp.id)) { closeSheet(); toast("Only this team's coaches plan its practices"); return; }
+    const pr = d.id ? practiceById(tp.id, d.id) : null;
+    if (a === 'tplsave') { if (pr) sheetTplSave(pr); return; }
+    if (a === 'tplsavego') {
+      if (!pr) return;
+      const name = String(($('#tplName') || {}).value || '').trim().slice(0, 80);
+      if (!name) { toast('Give it a name'); return; }
+      const raw = rawPlan(tp.id, pr.id);
+      const src = { name, minutes: pr.minutes, focus: raw.focus, blocks: raw.blocks };
+      if (d.k === 'clubTpl') {
+        if (!canShareTpl()) { toast('Only a coach or an admin saves to the club'); return; }
+        putDrill('clubTpl', tplFrom(src, clubStamp()));
+      } else {
+        if (!me) { toast('Sign in to keep your own templates'); return; }
+        putDrill('mineTpl', tplFrom(src, {}));
+      }
+      closeSheet(); toast(d.k === 'clubTpl' ? 'Saved to the club\'s templates' : 'Saved to your templates'); return;
+    }
+    if (a === 'tplpick') { if (pr) sheetTplPick(pr); return; }
+    if (a === 'tpluse') {
+      if (!pr || !t) return;
+      if (pr.blocks.length && !confirm('Swap the drills in this plan for the template\'s?')) return;
+      const c = rawPlan(tp.id, pr.id);
+      c.blocks = clone(t.blocks); if (t.focus.signals.length) c.focus = clone(t.focus);
+      if (!pr.end) c.minutes = t.minutes;
+      c.tpl = { shelf: t.shelf, id: t.id, v: t.v };
+      putPractice(c); closeSheet(); render(); toast('Planned from ' + t.name); return;
+    }
+    if (a === 'tplplan') { if (t) sheetTplPlan(t); return; }
+    if (a === 'tplplango') {
+      const e = planEntry(tp.id, d.id);
+      if (!t || !e) { toast('That practice is not on the calendar any more'); return; }
+      if (practiceById(tp.id, e.id)) { toast('That practice has a plan already'); return; }
+      planFromEntry(tp.id, e, { minutes: t.minutes, focus: t.focus, blocks: t.blocks, tpl: { shelf: t.shelf, id: t.id, v: t.v } });
+      const p = practiceUi(); ui.view = 'practice'; p.tab = 'plans'; p.open = e.id; p.pick = null; p.run = null;
+      closeSheet(); render(); toTop(); toast('Planned for ' + pracDay(e.date)); return;
+    }
+    return;
+  }
+
   /* ---- practice plans ---- */
   if (PLAN_ACTS.has(a)) {
     // from the calendar, which can show several teams at once: the button names its team
@@ -12708,7 +14065,8 @@ function onAct(e) {
     const pr = d.id ? practiceById(tp.id, d.id) : null;
     const i = Number(d.i);
     const by = () => ({ by: me ? me.uid : null, byName: whoAmI() || null });
-    const edit = fn => { if (!pr) return; const c = clone(pr); fn(c); putPractice(c); render(); };
+    // edits start from what is stored, not what is drawn: the day and place are the calendar's, never copied back
+    const edit = fn => { if (!pr) return; const c = rawPlan(tp.id, pr.id); fn(c); putPractice(c); render(); };
     // the same Add, and the same sheet, as the calendar's: one way to put a practice on
     if (a === 'pracnew') { calForm = { ...calFormNew(tp.id), plan: true }; sheetCalEvent(); return; }
     if (a === 'pracfromcal') {
@@ -12725,21 +14083,12 @@ function onAct(e) {
     if (a === 'pracpast') { p.past = true; render(); return; }
     if (a === 'pracedit') { if (pr) sheetPractice(pr); return; }
     if (a === 'pracsave') {
-      const date = String($('#prDate').value || '').trim();
-      if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) { toast('Pick a date'); return; }
-      const start = String($('#prStart').value || '').trim();
-      if (start && !/^\d{2}:\d{2}$/.test(start)) { toast('That start time doesn\'t look right'); return; }
-      const minutes = clamp(Number($('#prLen').value) || 60, 10, 240);
-      const place = String($('#prPlace').value || '').trim().slice(0, 80);
+      if (!pr) return;
       const sig = String($('#prFocus').value || '');
       const focus = { signals: sig && L && L.SIGNALS[sig] ? [sig] : [] };
-      if (pr) putPractice({ ...clone(pr), date, start, minutes, place, focus });
-      else {
-        const id = uid();
-        putPractice({ id, teamId: tp.id, date, start, minutes, place, focus, blocks: [], status: 'plan', made: nowMs(), ...by() });
-        p.open = id;
-      }
-      p.tab = 'plans'; closeSheet(); render(); if (!pr) toTop(); return;
+      const lenEl = $('#prLen'), len = lenEl && lenEl.value ? clamp(Number(lenEl.value) || 60, 10, 240) : null;
+      putPractice({ ...rawPlan(tp.id, pr.id), focus, ...(len ? { minutes: len } : {}) });
+      p.tab = 'plans'; closeSheet(); render(); return;
     }
     if (a === 'pracpick') { if (!pr) return; p.pick = pr.id; p.open = pr.id; p.tab = 'drills'; render(); toTop(); return; }
     if (a === 'pracpickdone') { p.pick = null; p.tab = 'plans'; if (pr) p.open = pr.id; render(); return; }
@@ -12752,9 +14101,9 @@ function onAct(e) {
         if (!confirm('Adding this to the practice shares it with this team\'s coaches. Add it?')) return;
         p.mineShared = true;
       }
-      const c = clone(pr); c.blocks.push(drillBlock(L, dr)); putPractice(c);
+      const c = rawPlan(tp.id, pr.id); c.blocks.push(drillBlock(L, dr)); putPractice(c);
       closeSheet(); render();
-      toast(`Added. ${c.blocks.length} drill${c.blocks.length === 1 ? '' : 's'}, ${blockTotal(c)} of ${c.minutes} min`);
+      toast(`Added. ${c.blocks.length} drill${c.blocks.length === 1 ? '' : 's'}, ${blockTotal(c)} of ${pr.minutes} min`);
       return;
     }
     if (a === 'pracsuggest') {
@@ -12788,16 +14137,16 @@ function onAct(e) {
       edit(c => { c.review = { ...(c.review || {}), note, at: nowMs(), ...by() }; c.status = 'done'; });
       closeSheet(); toast('Saved'); return;
     }
-    if (a === 'pracagain') {
-      if (!pr) return;
-      let date = /^\d{4}-\d{2}-\d{2}$/.test(pr.date) ? addDays(pr.date, 7) : addDays(todayIso(), 7);
-      while (date < todayIso()) date = addDays(date, 7);
-      const c = { ...clone(pr), id: uid(), date, status: 'plan', made: nowMs(), ...by() };
-      delete c.review;
-      putPractice(c); p.open = c.id; render(); toast('Planned for ' + pracDay(date)); return;
+    if (a === 'pracagain') { if (pr) sheetUseFor(pr); return; }
+    if (a === 'pracusefor') {
+      const e = planEntry(tp.id, d.v);
+      if (!pr || !e) { toast('That practice is not on the calendar any more'); render(); return; }
+      if (practiceById(tp.id, e.id)) { toast('That practice has a plan already'); return; }
+      planFromEntry(tp.id, e, pr);
+      p.open = e.id; closeSheet(); render(); toTop(); toast('Planned for ' + pracDay(e.date)); return;
     }
     if (a === 'pracrm') {
-      if (!pr || !confirm('Delete this practice? The plan goes for every coach on the team.')) return;
+      if (!pr || !confirm('Delete this plan? It goes for every coach on the team; the practice stays on the calendar.')) return;
       dropPractice(tp.id, pr.id);
       p.open = null; p.run = null; if (p.pick === pr.id) p.pick = null;
       render(); return;
@@ -13827,7 +15176,7 @@ function onAct(e) {
     if (d.id) { commit(`matches/${d.id}`, { ...state.matches[d.id], ...base }); ui.matchId = d.id; }
     else {
       const id = uid();
-      commit(`matches/${id}`, { id, teamId: t.id, currentHalf: 1, periods: {}, planned: {}, positions: {}, stints: {}, createdAt: Date.now(), ...base });
+      commit(`matches/${id}`, { id, teamId: t.id, currentHalf: 1, periods: {}, planned: {}, positions: {}, stints: {}, createdAt: Date.now(), ...(me ? { by: me.uid } : {}), ...base });
       ui.matchId = id; ui.view = 'game'; ui.gameView = 'subs';
     }
     if (pick === 'custom') { ui.editFid = GAME_SHAPE; ui.view = 'formation'; }
@@ -14039,6 +15388,7 @@ function uiToHash() {
   if (ui.view === 'people') return '#/club/people';
   if (ui.view === 'club') return '#/club';
   if (ui.view === 'admin') return '#/club/settings';
+  if (ui.view === 'planner') return '#/club/planner';
   if (ui.view === 'mine') return '#/my-players';
   if (ui.view === 'mycal') return '#/my-calendar';
   if (ui.view === 'inbox') return '#/messages';
@@ -14051,7 +15401,7 @@ function uiToHash() {
 function hashToUi() {
   const p = decodeURIComponent(location.hash.replace(/^#\/?/, '')).split('/').filter(Boolean);
   if (!p.length) return false;
-  if (p[0] === 'club') { ui.view = p[1] === 'settings' ? 'admin' : p[1] === 'people' ? 'people' : 'club'; return true; }
+  if (p[0] === 'club') { ui.view = p[1] === 'settings' ? 'admin' : p[1] === 'people' ? 'people' : p[1] === 'planner' ? 'planner' : 'club'; return true; }
   if (p[0] === 'my-players') { ui.view = 'mine'; return true; }
   if (p[0] === 'my-calendar') { ui.view = 'mycal'; return true; }
   if (p[0] === 'messages') {

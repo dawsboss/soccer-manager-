@@ -160,6 +160,7 @@ try {
     ui.view='admin'; render(); console.log('  rendered club settings with readiness');
     appOwners={own:true}; state.access.index={own:true};
     ui.view='admin'; render(); console.log('  readiness renders when everything passes too');
+    ['clash','find','pic'].forEach(k=>{ui.view='planner'; ui.planner={tab:k,find:{ran:true}}; render();}); console.log('  rendered the planner: clashes, find a time, picture day');
     ['all','pending','coach','tracker','parent'].forEach(f=>{ui.peopleFilter=f; render();});
     console.log('  all five people filters rendered');
     ui.peopleSort='joined'; render(); console.log('  people sorted by join date');

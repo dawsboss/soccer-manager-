@@ -7,9 +7,12 @@
    - The plan is that team's coaches' and the club's admins'. A coach browsing
      another team's library reads its drills and never touches its plans, and
      a parent's phone never even asks the database for one.
-   - When and where is the whole club's, without the plan. The schedule entry
-     is checked for exactly what it carries, because "the parents can see it"
-     is the whole point and "the parents can see the review" would be a leak.
+   - A plan hangs off its calendar practice and takes day, time, place and
+     length from it. When and where is the calendar's, which the whole team
+     reads, so parents get it without the plan and nothing is copied to the
+     old schedule node any more. A plan made before that is moved onto an
+     entry under its own id, once, and a plan whose entry was deleted is
+     kept, not deleted with it.
    - Merge, never replace (CLAUDE.md's invariant for the workspace, which the
      workspace itself still breaks: test/sync.js pins that gap). A plan made
      offline survives the club's answer, and is sent again after a reload.
@@ -56,18 +59,23 @@ function fill(A, v) { for (const [k, x] of Object.entries(v)) A.dom.node('#' + k
 const A = H.loadApp({ config: CONFIG, firebase: makeFakebase() });
 function as(uid, tid = 't1') {
   A.state = club();
-  A.train = { practices: {}, schedule: {}, dirty: {} };
+  A.train = { practices: {}, dirty: {}, drills: {}, drillDirty: {}, tpls: {}, tplDirty: {} };
   A.me = uid ? { uid, name: uid } : null;
   A.appOwners = {};
   A.ui.teamId = tid; A.ui.view = 'practice';
   A.ui.practice = { tab: 'plans' };
   A.toasts.length = 0;
 }
-function plan(extra = {}) {
-  fill(A, { prDate: '2026-09-15', prStart: '17:30', prLen: '60', prPlace: 'Lakeside Park', prFocus: '', ...extra });
-  A.click({ act: 'pracnew' });
-  A.click({ act: 'pracsave', id: '' });
-  return A.practiceById('t1', A.ui.practice.open);
+/* A practice is added on the calendar, from the Practice tab's Add, which
+   makes its plan and opens it; what it's for is the plan's own, set after. */
+function plan(extra = {}, X = A) {
+  const v = { prDate: '2026-09-15', prStart: '17:30', prLen: '60', prPlace: 'Lakeside Park', prFocus: '', ...extra };
+  X.click({ act: 'pracnew', tid: 't1' });
+  for (const [k, x] of Object.entries({ evTitle: '', evDate: v.prDate, evStart: v.prStart, evEnd: v.prStart ? X.addMins(v.prStart, Number(v.prLen)) : '', evVenue: v.prPlace, evNotes: '' })) X.dom.node('#' + k).value = x;
+  X.click({ act: 'calsave', tid: 't1' });
+  const id = X.ui.practice.open;
+  if (v.prFocus) { X.click({ act: 'pracedit', id }); X.dom.node('#prFocus').value = v.prFocus; X.click({ act: 'pracsave', id }); }
+  return X.practiceById('t1', id);
 }
 
 (async () => {
@@ -100,20 +108,22 @@ function plan(extra = {}) {
   {
     as('jaz');
     A.render();
-    check('the Add here is the calendar\'s Add', /<button class="btn sm" data-act="pracnew" data-tid="t1">Add<\/button>/.test(A.rendered()), true);
+    check('the Add here is the calendar\'s Add', /<button class="btn sm" data-act="pracnew" data-tid="t1">Add a practice<\/button>/.test(A.rendered()), true);
     A.click({ act: 'pracnew' });
     const fromPlans = sheet(A);
     A.click({ act: 'calnew', tid: 't1' });
     check('and opens the very same sheet', fromPlans, sheet(A));
     check('set to a practice', /data-act="calkind" data-v="practice" aria-pressed="true"/.test(fromPlans), true);
-    fill(A, { prDate: 'next tuesday', prStart: '', prLen: '60', prPlace: '', prFocus: '' });
-    A.click({ act: 'pracsave', id: '' });
+    fill(A, { evTitle: '', evDate: 'next tuesday', evStart: '', evEnd: '', evVenue: '', evNotes: '' });
+    A.click({ act: 'calsave', tid: 't1' });
     check('a date that is not a date is refused', A.lastToast(), 'Pick a date');
     check('and nothing is made', A.teamPractices('t1').length, 0);
 
     const pr = plan({ prFocus: 'late-goals' });
     check('a practice is made', !!pr, true);
     check('on the date given', pr.date, '2026-09-15');
+    check('on the calendar, under the plan\'s id', A.state.teams.t1.events[pr.id].date, '2026-09-15');
+    deepEq('the plan itself carries no day, time or place', ['date', 'start', 'place'].filter(k => k in A.train.practices.t1[pr.id]), []);
     check('filed under its team', pr.teamId, 't1');
     deepEq('with what it is for', pr.focus.signals, ['late-goals']);
     check('and opened', A.ui.practice.open, pr.id);
@@ -266,12 +276,32 @@ function plan(extra = {}) {
     const n = A.practiceById('t1', pr.id).blocks.length;
     A.click({ act: 'pracdel', id: pr.id, i: '0' });
     check('a drill can be taken out', A.practiceById('t1', pr.id).blocks.length, n - 1);
-    fill(A, { prDate: '2026-09-16', prStart: '18:00', prLen: '90', prPlace: 'Hill End', prFocus: '' });
-    A.click({ act: 'pracsave', id: pr.id });
+    A.click({ act: 'pracedit', id: pr.id });
+    check('editing the plan sends day, time and place to the calendar', new RegExp('data-act="caledit" data-tid="t1" data-id="' + pr.id + '"').test(sheet(A)), true);
+    check('and asks no date of its own', /id="prDate"/.test(sheet(A)), false);
+    A.click({ act: 'caledit', tid: 't1', id: pr.id });
+    fill(A, { evTitle: 'Practice', evDate: '2026-09-16', evStart: '18:00', evEnd: '19:30', evVenue: 'Hill End', evNotes: '' });
+    A.click({ act: 'calsave', tid: 't1' });
     const e = A.practiceById('t1', pr.id);
-    check('editing moves it', e.date + ' ' + e.start + ' ' + e.minutes + ' ' + e.place, '2026-09-16 18:00 90 Hill End');
+    check('moving the practice on the calendar moves the plan', e.date + ' ' + e.start + ' ' + e.minutes + ' ' + e.place, '2026-09-16 18:00 90 Hill End');
     check('and keeps its drills', e.blocks.length, n - 1);
     check('still one practice, not two', A.teamPractices('t1').length, 1);
+    deepEq('and nothing of the move is copied into the plan', ['date', 'start', 'place'].filter(k => k in A.train.practices.t1[pr.id]), []);
+
+    A.click({ act: 'caledit', tid: 't1', id: pr.id }); A.click({ act: 'calcall', tid: 't1' });
+    A.ui.practice.open = null; A.render();
+    check('called off on the calendar, the plan is still listed', new RegExp('data-act="pracopen" data-id="' + pr.id + '"').test(A.rendered()), true);
+    check('struck through and saying so', /<s>Wed 16 Sep[^<]*<\/s>/.test(A.rendered()) && /tag off">Cancelled/.test(A.rendered()), true);
+    A.click({ act: 'caledit', tid: 't1', id: pr.id }); A.click({ act: 'calcall', tid: 't1' });
+
+    global.confirm = () => true;
+    A.click({ act: 'caledit', tid: 't1', id: pr.id }); A.click({ act: 'caldel', tid: 't1' });
+    check('deleting the entry keeps the plan', !!A.practiceById('t1', pr.id), true);
+    check('which knows it is orphaned', A.practiceById('t1', pr.id).orphan, true);
+    A.ui.practice.open = null; A.render();
+    check('and is listed under Earlier, not on any day', A.rendered().indexOf('Earlier') < A.rendered().indexOf('Not on the calendar'), true);
+    A.ui.practice.open = pr.id; A.render();
+    check('its plan says what happened, and offers a template', /taken off the calendar/.test(A.rendered()) && /data-act="tplsave"/.test(A.rendered()), true);
   }
 
   console.log('\n--- adding from the library ---');
@@ -365,16 +395,27 @@ function plan(extra = {}) {
     check('the line is saved', A.practiceById('t1', pr.id).review.note, 'The rondo clicked');
     check('stamped with who', A.practiceById('t1', pr.id).review.by, 'jaz');
 
+    A.click({ act: 'pracsuggest', id: pr.id });
     A.click({ act: 'pracagain', id: pr.id });
+    check('use this plan for… offers nothing when every practice has a plan', /Every coming practice has a plan/.test(sheet(A)), true);
+    A.click({ act: 'calnew', tid: 't1' });
+    fill(A, { evTitle: '', evDate: '2026-09-22', evStart: '17:30', evEnd: '18:30', evVenue: '', evNotes: '' });
+    A.click({ act: 'calsave', tid: 't1' });
+    const next = Object.values(A.state.teams.t1.events).find(e => e.date === '2026-09-22');
+    A.click({ act: 'pracagain', id: pr.id });
+    check('and then offers the coming practice with no plan', new RegExp('data-act="pracusefor" data-id="' + pr.id + '" data-v="' + next.id + '"').test(sheet(A)), true);
+    A.click({ act: 'pracusefor', id: pr.id, v: next.id });
     const copy = A.practiceById('t1', A.ui.practice.open);
-    check('plan it again makes a new one', copy.id !== pr.id, true);
-    check('a week on', copy.date, A.addDays(pr.date, 7));
+    check('using it plans that practice', copy.id, next.id);
+    check('on its day', copy.date, '2026-09-22');
     check('not yet reviewed', copy.status + ' ' + (copy.review === undefined), 'plan true');
-    check('with the same drills', copy.blocks.length, pr.blocks.length);
+    check('with the same drills', copy.blocks.map(b => b.drill.id).join(), A.practiceById('t1', pr.id).blocks.map(b => b.drill.id).join());
+    check('and the first plan is untouched', A.practiceById('t1', pr.id).review.note, 'The rondo clicked');
 
     A.click({ act: 'pracrm', id: copy.id });
-    check('delete takes it away', A.practiceById('t1', copy.id), null);
+    check('delete takes the plan away', A.practiceById('t1', copy.id), null);
     check('and remembers to tell the club', A.train.dirty['t1/' + copy.id], -1);
+    check('but the practice stays on the calendar', !!A.state.teams.t1.events[next.id], true);
   }
 
   console.log('\n--- the list ---');
@@ -395,19 +436,80 @@ function plan(extra = {}) {
     as('jaz');
     const pr = plan({ prDate: '2026-09-14', prPlace: 'Lakeside Park' });
     A.click({ act: 'pracsuggest', id: pr.id });
-    const w = A.whenOf(A.practiceById('t1', pr.id));
-    deepEq('the schedule carries date, time and place only', Object.keys(w).sort(), ['date', 'end', 'minutes', 'place', 'start']);
     A.ui.view = 'matches'; A.render();
     check('the coach sees the next practice on Games', /Next practice/.test(A.rendered()) && /Mon 14 Sep · 17:30–18:30/.test(A.rendered()), true);
     check('and can open it from there', /data-act="pracopen"/.test(A.rendered()), true);
 
+    const evs = A.state.teams.t1.events;
     as('mum');
-    A.train = { practices: {}, schedule: { t1: { s1: { date: '2026-09-14', start: '17:30', end: '18:30', place: 'Lakeside Park' } } }, dirty: {} };
+    A.state.teams.t1.events = evs;
     A.ui.view = 'matches'; A.render();
-    check('a parent sees the time and place', /Next practice/.test(A.rendered()) && /Lakeside Park/.test(A.rendered()), true);
+    check('a parent sees the time and place, from the calendar', /Next practice/.test(A.rendered()) && /Lakeside Park/.test(A.rendered()), true);
     check('but nothing to open', /data-act="pracopen"/.test(A.rendered()), false);
-    A.train.schedule.t1.s1.date = '2026-09-01'; A.render();
-    check('a practice already past is not "next"', /Next practice/.test(A.rendered()), false);
+    evs[pr.id].called = 'cancelled'; A.render();
+    check('one called off is not "next"', /Next practice/.test(A.rendered()), false);
+    evs[pr.id].called = null; evs[pr.id].date = '2026-09-01'; A.render();
+    check('nor one already past', /Next practice/.test(A.rendered()), false);
+  }
+
+  console.log('\n--- what needs work ---');
+  {
+    /* Finished games built by hand: goals with a time in match seconds and a
+       scorer, shots with on/off target, set pieces by side. */
+    let n = 0;
+    const game = (o = {}) => {
+      const id = 'g' + (++n), m = { id, teamId: 't1', date: '2026-09-0' + n, opponent: 'Opp ' + n, ended: true, periodCount: 2, periodMinutes: 25,
+        periods: { 0: { start: 1, end: 2 } }, goals: {}, shots: {}, events: {} };
+      (o.goals || []).forEach((g, i) => { m.goals['x' + i] = { side: g[0], t: g[1], pid: g[2] || null, assist: g[3] || null }; });
+      (o.shots || []).forEach((x, i) => { m.shots['s' + i] = { side: x[0], onTarget: !!x[1], t: 10 * i }; });
+      (o.events || []).forEach((x, i) => { m.events['e' + i] = { kind: x[0], side: x[1], t: x[2] || 10 * i }; });
+      return m;
+    };
+    const with_ = gs => { as('jaz'); A.state.matches = Object.fromEntries(gs.map(m => [m.id, m])); };
+    const sigs = () => A.needsWork(A.state.teams.t1).sigs.map(x => x.k);
+
+    with_([game(), game()]);
+    check('two games are too few to say anything', A.needsWork(A.state.teams.t1).sigs.length, 0);
+    A.ui.view = 'season'; A.render();
+    check('and the card says so', /After 3 finished games/.test(A.rendered()), true);
+
+    // losing heavily, conceding late, one scorer; no shots tapped at all
+    const late = [['them', 2400], ['them', 2600], ['them', 300], ['us', 100, 'p3']];
+    with_([1, 2, 3, 4].map(() => game({ goals: late })).concat([game({ goals: [['us', 50, 'p3'], ['us', 60, 'p3']] })]));
+    const s1 = sigs();
+    check('conceding a goal a game more than we score fires', s1.includes('conceding'), true);
+    check('so does 40% of goals against in the last quarter', s1.includes('late-goals'), true);
+    check('and one player scoring most of ours', s1.includes('one-scorer'), true);
+    check('no shots tapped is not "we never shoot"', s1.includes('few-shots') || s1.includes('shots-against'), false);
+    check('it is said to be unknown instead', A.needsWork(A.state.teams.t1).unknown.includes('shots'), true);
+    check('no assists ever tapped is not "we never pass"', s1.includes('solo-goals'), false);
+    A.ui.view = 'season'; A.render();
+    const html = A.rendered();
+    check('the card shows the numbers behind each', /12 against and 6 for in the last 5 games/.test(html), true);
+    check('and drills that answer it, for the team\'s age', /data-act="drill" data-id="/.test(html), true);
+    const conc = A.drillsFor(L, A.state.teams.t1, 'conceding', 999);
+    check('every drill offered suits a U11', conc.every(d => d.ages[0] <= 11 && 11 <= d.ages[1] && d.signals.includes('conceding')), true);
+    check('at most three stand out', A.needsWork(A.state.teams.t1).sigs.length >= 3 && (html.match(/class="nwsig"/g) || []).length, 3);
+    check('without a name from the roster', /Player \d/.test(html.slice(html.indexOf('What needs work'), html.indexOf('What needs work') + 3000)), false);
+
+    // out-shot, off target, fouls and corners, in games that tracked them
+    const shots = [...Array(5)].map(() => ['us', false]).concat([['us', true]], [...Array(8)].map(() => ['them', true]));
+    const evs = [['foul', 'us'], ['foul', 'us'], ['corner', 'them'], ['corner', 'them']];
+    with_([1, 2, 3].map(() => game({ shots, events: evs, goals: [['us', 100], ['them', 200]] })));
+    const s2 = sigs();
+    check('fewer shots than theirs fires', s2.includes('few-shots'), true);
+    check('and theirs over 125% of ours', s2.includes('shots-against'), true);
+    check('under 40% on target, from ten or more', s2.includes('off-target'), true);
+    check('fouls over 150% of theirs', s2.includes('fouls'), true);
+    check('corners against over 150% of ours', s2.includes('corners-against'), true);
+    check('an even scoreline does not fire conceding', s2.includes('conceding'), false);
+    A.click({ act: 'nwdrills', k: 'few-shots' });
+    check('All → opens the library on that signal', [A.ui.view, A.ui.practice.tab, A.ui.practice.f.sig].join(' '), 'practice drills few-shots');
+
+    for (const who of ['mum', 'trk']) {
+      const ms = A.state.matches; as(who); A.state.matches = ms; A.ui.view = 'season'; A.render();
+      check(who + ': no What needs work card', /What needs work/.test(A.rendered()), false);
+    }
   }
 
   /* ---------- part two: against the fake database ---------- */
@@ -461,21 +563,19 @@ function plan(extra = {}) {
     D.render(); D.render();
     check('once, however often it redraws', fbk.countReads(TR + 'practices/t1'), 1);
 
-    const remote = { r1: { id: 'r1', teamId: 't1', date: '2026-09-17', start: '17:30', minutes: 60, blocks: { 0: { drill: { shelf: 'builtin', id: L.DRILLS[0].id }, name: L.DRILLS[0].name, minutes: 10 } }, status: 'plan', at: 1 } };
+    const remote = { r1: { id: 'r1', teamId: 't1', eid: 'r1', date: '2026-09-17', start: '17:30', minutes: 60, blocks: { 0: { drill: { shelf: 'builtin', id: L.DRILLS[0].id }, name: L.DRILLS[0].name, minutes: 10 } }, status: 'plan', at: 1 } };
     fbk.deliver(TR + 'practices/t1', remote); await D.flush();
     check('the club\'s plans arrive', !!D.practiceById('t1', 'r1'), true);
     check('with their blocks as a list', Array.isArray(D.practiceById('t1', 'r1').blocks), true);
     check('and are kept on the phone', /"r1"/.test(D.storage.getItem('sm.train.v1:' + CODE) || ''), true);
 
-    D.dom.node('#prDate').value = '2026-09-19'; D.dom.node('#prStart').value = '10:00'; D.dom.node('#prLen').value = '60';
-    D.dom.node('#prPlace').value = 'Hill End'; D.dom.node('#prFocus').value = '';
-    D.click({ act: 'pracsave', id: '' });
-    const id = D.ui.practice.open;
+    const id = plan({ prDate: '2026-09-19', prStart: '10:00', prPlace: 'Hill End' }, D).id;
     await D.flush();
-    const pw = written(fbk, TR + 'practices/t1/' + id), sw = written(fbk, TR + 'schedule/t1/' + id);
+    const pw = written(fbk, TR + 'practices/t1/' + id);
     check('a new plan is written, one plan at that depth', pw && pw.id, id);
     check('and the team\'s collection never whole', fbk.record.writes.some(w => w.path === TR + 'practices/t1'), false);
-    deepEq('its schedule entry carries no plan', Object.keys(sw || {}).sort(), ['date', 'end', 'minutes', 'place', 'start']);
+    check('its practice is written to the calendar, one entry', (written(fbk, WS + '/teams/t1/events/' + id) || {}).date, '2026-09-19');
+    check('and nothing goes to the old schedule', fbk.record.writes.some(w => w.path.includes('/schedule/')), false);
     check('acknowledged, it is no longer pending', D.train.dirty['t1/' + id], undefined);
 
     /* The club's answer after that write doesn't include it yet (another
@@ -483,9 +583,7 @@ function plan(extra = {}) {
        deleted, and this one has nothing pending. So a pending one is the
        case that matters: make one, refuse its write, and answer without it. */
     fbk.refuseWrites(p => p.startsWith('training/'));
-    D.dom.node('#prDate').value = '2026-09-21';
-    D.click({ act: 'pracsave', id: '' });
-    const off = D.ui.practice.open;
+    const off = plan({ prDate: '2026-09-21' }, D).id;
     await D.flush();
     check('a refused write leaves it on the phone', !!D.practiceById('t1', off), true);
     check('still pending', D.train.dirty['t1/' + off] !== undefined, true);
@@ -506,8 +604,57 @@ function plan(extra = {}) {
     D2.ui.view = 'practice'; D2.ui.practice = { tab: 'plans' }; D2.render();
     fbk2.deliver(TR + 'practices/t1', { [id]: pw }); await D2.flush();
     check('and the first answer sends it again', !!written(fbk2, TR + 'practices/t1/' + off), true);
-    check('its schedule too', !!written(fbk2, TR + 'schedule/t1/' + off), true);
+    check('and still nothing to the schedule', fbk2.record.writes.some(w => w.path.includes('/schedule/')), false);
     check('then it is no longer pending', D2.train.dirty['t1/' + off], undefined);
+  }
+
+  console.log('\n--- plans from before the calendar move onto it ---');
+  {
+    const old = {
+      o1: { id: 'o1', teamId: 't1', date: '2026-09-24', start: '18:00', minutes: 75, place: 'Hill End', blocks: [], status: 'plan', made: 5, by: 'jaz', at: 1 },
+      o2: { id: 'o2', teamId: 't1', date: '2026-09-02', start: '17:00', minutes: 60, place: '', blocks: [], status: 'done', at: 1 },
+      gone: { id: 'gone', teamId: 't1', eid: 'gone', blocks: [], status: 'plan', at: 1 }
+    };
+    {
+      const { D, fbk } = await device('mum');
+      D.ui.view = 'matches'; D.render();
+      check('a parent\'s phone moves nothing', fbk.record.writes.some(w => w.path.includes('/events/')), false);
+    }
+    const { D, fbk } = await device('jaz');
+    D.ui.view = 'practice'; D.ui.practice = { tab: 'plans' }; D.render();
+    fbk.holdWrites(() => true);                 // no signal: nothing is acknowledged
+    fbk.deliver(TR + 'practices/t1', old); await D.flush();
+    const e1 = D.state.teams.t1.events.o1;
+    check('a plan with its own date gets a calendar entry, under its own id', !!e1 && e1.kind, 'practice');
+    check('from its day, time and place', [e1.date, e1.start, e1.end, e1.venue].join(' '), '2026-09-24 18:00 19:15 Hill End');
+    check('for the team only, as the calendar does by default', e1.public, false);
+    check('a past one too, so its register has somewhere to hang', !!D.state.teams.t1.events.o2, true);
+    check('the plan is marked as moved', D.train.practices.t1.o1.eid, 'o1');
+    check('a plan whose entry was deleted is not given one back', !!(D.state.teams.t1.events || {}).gone, false);
+    check('the entry is in the outbox before anything is acknowledged', /teams\/t1\/events\/o1/.test(Object.entries(D.storage._d).filter(([k]) => k.startsWith('sm.pending.v1')).map(([, v]) => v).join()), true);
+
+    /* Reload before anything reached the club: the entry is in the outbox and
+       the plan is still pending, so nothing is moved twice and nothing lost. */
+    const saved = D.storage._d;
+    const fbk2 = makeFakebase();
+    const D2 = H.loadApp({ firebase: fbk2, config: CONFIG, storage: { ...saved } });
+    await D2.flush(); fbk2.signIn('jaz'); await D2.flush(); fbk2.deliver(WS, club()); await D2.flush();
+    check('after a reload the entry is still owed and sent', (written(fbk2, WS + '/teams/t1/events/o1') || {}).date, '2026-09-24');
+    D2.ui.view = 'practice'; D2.ui.practice = { tab: 'plans' }; D2.render();
+    fbk2.deliver(TR + 'practices/t1', old); await D2.flush();
+    check('and the plan, marked, is sent again', (written(fbk2, TR + 'practices/t1/o1') || {}).eid, 'o1');
+    const entryWrites = fbk2.record.writes.filter(w => w.path === WS + '/teams/t1/events/o1').length;
+    fbk2.deliver(TR + 'practices/t1', { ...old, o1: { ...old.o1, eid: 'o1' }, o2: { ...old.o2, eid: 'o2' } }); await D2.flush();
+    check('once marked, it is never moved again', fbk2.record.writes.filter(w => w.path === WS + '/teams/t1/events/o1').length, entryWrites);
+    check('the moved plan reads from its entry', D2.practiceById('t1', 'o1').onCal, true);
+    check('nothing is deleted on the way', fbk2.record.removes.some(p => p.includes('/practices/')), false);
+
+    const pend = { ...old.o1, id: 'p9', date: '2026-09-25' };
+    const { D: D3, fbk: fbk3 } = await device('jaz', { ['sm.train.v1:' + CODE]: JSON.stringify({ practices: { t1: { p9: pend } }, dirty: { 't1/p9': 9 } }) });
+    fbk3.refuseWrites(p => p.startsWith('training/'));
+    D3.ui.view = 'practice'; D3.ui.practice = { tab: 'plans' }; D3.render();
+    fbk3.deliver(TR + 'practices/t1', {}); await D3.flush();
+    check('a plan with something pending stays where it is until it is sent', !!(D3.state.teams.t1.events || {}).p9, false);
   }
 
   console.log('\n--- a malformed plan cannot break the next coach\'s screen ---');
@@ -537,14 +684,15 @@ function plan(extra = {}) {
 
   console.log('\n--- a parent\'s phone never asks for a plan ---');
   {
-    const { D, fbk } = await device('mum');
+    const c = club(); c.teams.t1.events = { e1: { id: 'e1', kind: 'practice', date: '2026-09-14', start: '17:30', end: '18:30', venue: 'Lakeside Park' } };
+    const fbk = makeFakebase();
+    const D = H.loadApp({ firebase: fbk, config: CONFIG, storage: { 'sm.workspace': CODE } });
+    await D.flush(); fbk.signIn('mum'); await D.flush(); fbk.deliver(WS, c); await D.flush();
     D.ui.view = 'matches'; D.render();
-    check('it reads when and where', fbk.watching(TR + 'schedule/t1'), true);
+    check('the next practice comes from the calendar', /Next practice/.test(D.rendered()) && /Lakeside Park/.test(D.rendered()), true);
+    check('with no plan or schedule read at all', fbk.readPaths().some(p => /^training\/[^/]+\/(practices|schedule)/.test(p)), false);
     D.ui.view = 'practice'; D.render();
     check('and never the plans', fbk.readPaths().some(p => p.includes('/practices')), false);
-    fbk.deliver(TR + 'schedule/t1', { s1: { date: '2026-09-14', start: '17:30', end: '18:30', place: 'Lakeside Park', minutes: 60 } }); await D.flush();
-    D.ui.view = 'matches'; D.render();
-    check('and shows the next practice', /Next practice/.test(D.rendered()) && /Lakeside Park/.test(D.rendered()), true);
   }
 
   console.log('\n--- a refused read ---');
