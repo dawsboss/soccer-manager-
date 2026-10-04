@@ -285,8 +285,9 @@ function writeOne(D, extra = {}) {
     toDrills(D);
     const d = writeOne(D);
     D.ui.view = 'practice'; D.ui.practice = { tab: 'plans' };
-    type(D, { prDate: '2026-09-15', prStart: '17:30', prLen: '60', prPlace: 'Lakeside', prFocus: '' });
-    D.click({ act: 'pracnew' }); D.click({ act: 'pracsave', id: '' });
+    D.click({ act: 'pracnew', tid: 't1' });
+    type(D, { evTitle: '', evDate: '2026-09-15', evStart: '17:30', evEnd: '18:30', evVenue: 'Lakeside', evNotes: '' });
+    D.click({ act: 'calsave', tid: 't1' });
     const pid = D.ui.practice.open;
     D.click({ act: 'pracpick', id: pid });
     let asked = null;

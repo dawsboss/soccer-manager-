@@ -6796,7 +6796,7 @@ const drillDiagram = () => (typeof window !== 'undefined' && window.DrillDiagram
 const canTrain = () => !gated() || isOwner() || (!!me && teams().some(t => isCoach(t.id, me.uid)));
 /* The plan's own actions also need the team: a coach browsing another age
    group can read its drills but never touch its plans. */
-const PLAN_ACTS = new Set(['pracnew', 'pracfromcal', 'pracopen', 'pracback', 'pracpast', 'pracedit', 'pracsave', 'pracpick', 'pracpickdone', 'pracadd',
+const PLAN_ACTS = new Set(['pracnew', 'pracfromcal', 'pracusefor', 'pracopen', 'pracback', 'pracpast', 'pracedit', 'pracsave', 'pracpick', 'pracpickdone', 'pracadd',
   'pracsuggest', 'pracmin', 'pracmove', 'pracdel', 'pracnote', 'pracnotesave', 'pracreview', 'pracrate', 'pracreviewsave', 'pracagain',
   'pracrm', 'pracrun', 'rungo', 'runpause', 'runreset', 'runnext', 'runprev', 'runstop', 'runpic']);
 /* The club's drills and her own: reaching any of these needs Practice, and
@@ -7334,11 +7334,21 @@ function refreshDrillList() {
    club hasn't acknowledged is `dirty`, and a dirty plan is never overwritten
    by what the club says. It's sent again instead.
 
-   When and where also goes to schedule/{tid}/{pid}, which the whole club
-   reads. That's how a parent gets the time and place without the plan. */
+   A plan hangs off a calendar practice: it is keyed by the entry's id
+   (teams/{tid}/events/{eid}) and takes its day, time, place and length from
+   that entry every time it's read, so the calendar is the one list of
+   practices and nothing can disagree with it about when practice is. The plan
+   keeps only what is the plan's: the focus, the drills, the review. Parents
+   read when and where off the calendar, which they could always read, so the
+   old copy at schedule/{tid}/{pid} is no longer written (its rule stays until
+   no app in the wild still writes it).
+
+   A plan whose entry was deleted is orphaned, never deleted with it: delete
+   never cascades. A plan made before this, with its own date and no entry, is
+   moved onto one by movePlans(). */
 const LS_TRAIN = 'sm.train.v1';
 const trainKey = () => LS_TRAIN + ':' + clubKey();
-const TRAIN_BLANK = () => ({ practices: {}, schedule: {}, dirty: {}, drills: {}, drillDirty: {} });
+const TRAIN_BLANK = () => ({ practices: {}, dirty: {}, drills: {}, drillDirty: {}, tpls: {}, tplDirty: {} });
 let train = TRAIN_BLANK();
 const trainState = {};            // tid -> 'synced' | 'refused', as the database last answered
 let trainWatch = new Map();       // 'practices/t1' -> unsubscribe
@@ -7378,9 +7388,36 @@ function normPractice(p, tid, pid) {
 /* A signal by its key, and only one of the library's own: a key read off a
    plan is somebody's typing. */
 const signalOf = (L, k) => (L && k && Object.prototype.hasOwnProperty.call(L.SIGNALS, k) ? L.SIGNALS[k] : null);
-const teamPractices = tid => Object.values(train.practices[tid] || {}).map(p => normPractice(p, tid, p && p.id)).filter(Boolean)
+/* The calendar practice a plan hangs off, if it is still there. */
+function planEntry(tid, pid) {
+  const e = ((state.teams[tid] || {}).events || {})[pid];
+  return e && typeof e === 'object' && e.kind === 'practice' ? e : null;
+}
+/* A plan as the screens read it: its own fields, with when and where laid
+   over from its calendar entry. `onCal` is a plan with an entry; `orphan` is
+   one whose entry has gone; neither is a plan from before the calendar, still
+   carrying its own date until movePlans() gets to it. */
+function withEntry(pr) {
+  if (!pr) return null;
+  const e = planEntry(pr.teamId, pr.id);
+  if (!e) return { ...pr, onCal: false, orphan: !!pr.eid, called: '' };
+  const s = hm(e.start), en = hm(e.end);
+  const len = s && en && minOf(en) > minOf(s) ? minOf(en) - minOf(s) : pr.minutes;
+  return { ...pr, date: okDay(e.date) ? e.date : '', start: s, end: s && en ? en : '', place: String(e.venue || ''),
+    minutes: clamp(len, 10, 600), called: CALLED[e.called] ? e.called : '', onCal: true, orphan: false };
+}
+const teamPractices = tid => Object.values(train.practices[tid] || {}).map(p => withEntry(normPractice(p, tid, p && p.id))).filter(Boolean)
   .sort((a, b) => (a.date + a.start).localeCompare(b.date + b.start));
-const practiceById = (tid, pid) => { const p = (train.practices[tid] || {})[pid]; return p ? normPractice(p, tid, pid) : null; };
+/* What is stored, normalised but with nothing laid over it: what an edit
+   starts from, so the calendar's day and place never get written into a plan. */
+function rawPlan(tid, pid) {
+  const p = (train.practices[tid] || {})[pid], n = p ? normPractice(p, tid, pid) : null;
+  if (!n) return null;
+  // normalising fills in a blank day and place; a plan that had none keeps none
+  for (const k of ['date', 'start', 'place']) if (!ownKey(p, k)) delete n[k];
+  return clone(n);
+}
+const practiceById = (tid, pid) => { const p = (train.practices[tid] || {})[pid]; return p ? withEntry(normPractice(p, tid, pid)) : null; };
 /* The plan is that team's coaches' and the club's admins', and nobody else's,
    whatever the rest of the screen lets them read. */
 const canPlan = tid => !!tid && !!state.teams[tid] && canTrain() && canEditTeam(tid);
@@ -7396,14 +7433,6 @@ function pracDay(iso) {
 }
 const pracTimes = p => (/^\d{2}:\d{2}$/.test(String(p.start || '')) ? p.start + '–' + (/^\d{2}:\d{2}$/.test(String(p.end || '')) ? p.end : addMins(p.start, Number(p.minutes) || 60)) : '');
 const blockTotal = pr => pr.blocks.reduce((n, b) => n + b.minutes, 0);
-
-/* The half the whole club may read: no drills, no notes, no review. */
-function whenOf(p) {
-  const w = { date: p.date, minutes: p.minutes };
-  if (p.start) { w.start = p.start; w.end = addMins(p.start, p.minutes); }
-  if (p.place) w.place = p.place;
-  return w;
-}
 
 /* Every change to a plan goes through here: kept on the phone first, marked
    dirty with the version sent, then sent. One plan per write, at the depth the
@@ -7428,8 +7457,7 @@ function sendPractice(tid, pid) {
   if (!fb || !code || mark === undefined) return;
   const p = mark === -1 ? null : (train.practices[tid] || {})[pid];
   if (mark !== -1 && !p) return;
-  const ref = kind => fb.ref(fb.db, `training/${code}/${kind}/${tid}/${pid}`);
-  Promise.all([fb.set(ref('practices'), p), fb.set(ref('schedule'), p ? whenOf(normPractice(p, tid, pid)) : null)])
+  fb.set(fb.ref(fb.db, `training/${code}/practices/${tid}/${pid}`), p)
     .then(() => {
       // only the version that was sent is clean; a change made since is still owed
       if (train.dirty[k] === mark) { delete train.dirty[k]; saveTrain(); }
@@ -7461,11 +7489,49 @@ function mergePractices(tid, remote, resend) {
   train.practices[tid] = out;
   saveTrain();
   if (resend) for (const k of Object.keys(train.dirty)) if (k.startsWith(tid + '/')) sendPractice(tid, k.slice(tid.length + 1));
+  movePlans(tid);
   render();
 }
 
+/* Plans made before plans hung off the calendar carry their own date, time
+   and place and have no entry. Each is moved onto one, on a phone that may
+   plan for the team: a practice entry is made from its day, time and place
+   (team only, the calendar's default) under the plan's own id, and the plan
+   is marked with `eid` so it reads from the entry from then on.
+
+   Using the plan's own id is what makes this safe to run anywhere, any number
+   of times: two coaches' phones moving the same plan at once write the same
+   entry to the same place, there is no old copy to delete once the new one is
+   acknowledged, and a reload halfway leaves nothing half-moved. `eid` is what
+   stops it running twice on a plan, and what keeps a plan whose entry was
+   deleted on purpose from bringing the entry back. A plan with something
+   pending stays where it is until it's sent, unless there is no database to
+   send it to, in which case this phone's copy is the only one there is. */
+function movePlans(tid, drawing = false) {
+  if (!canPlan(tid)) return 0;
+  const t = state.teams[tid], local = !fb || !wsCode();
+  let n = 0;
+  for (const [pid, raw] of Object.entries(train.practices[tid] || {})) {
+    if (!raw || raw.eid || (!local && train.dirty[tid + '/' + pid] !== undefined)) continue;
+    const p = normPractice(raw, tid, pid);
+    if (!p || !okDay(p.date) || !/^[\w-]+$/.test(pid)) continue;
+    if (!planEntry(tid, pid)) {
+      const e = { id: pid, kind: 'practice', title: CAL_KIND.practice, date: p.date, start: p.start, end: p.start ? addMins(p.start, p.minutes) : '',
+        venue: p.place, notes: '', public: false, createdAt: Number(raw.made) || nowMs(), ...(raw.by ? { by: String(raw.by) } : {}) };
+      quiet(`teams/${tid}/events/${pid}`, e);
+    }
+    const c = JSON.parse(JSON.stringify(raw)); c.eid = pid;
+    (train.practices[tid] = train.practices[tid] || {})[pid] = c;
+    train.dirty[tid + '/' + pid] = nowMs();
+    sendPractice(tid, pid);
+    n++;
+  }
+  if (n) { saveTrain(); saveLocal(); schedulePublish(); if (t && !drawing) render(); }
+  return n;
+}
+
 /* Read one team at a time, when a screen needs it: practices when the Plans
-   list opens, the schedule when the games list does. A parent's phone never
+   list opens. A parent's phone never
    asks for a plan, so it never holds one. Needs a signed-in account, because
    every training rule does. A refusal gets one retry, for the same reason
    wireBase() retries: in the first second after boot a refusal is as likely to
@@ -7478,7 +7544,6 @@ function watchTrain(kind, tid) {
   let first = true;
   trainWatch.set(key, () => { });
   const off = mod.onValue(mod.ref(db, `training/${wsCode()}/${key}`), s => {
-    if (kind === 'schedule') { train.schedule[tid] = s.val() || {}; saveTrain(); render(); return; }
     trainState[tid] = 'synced';
     mergePractices(tid, s.val(), first);
     first = false;
@@ -7500,17 +7565,16 @@ function resetTrainWatch() {
   for (const k of Object.keys(trainState)) delete trainState[k];
 }
 
-/* The next practice, from what the club published plus whatever this phone
-   has planned and not sent yet. */
+/* The next practice is the calendar's, which everyone on the team reads: one
+   not called off, today or later. A plan from before the calendar that
+   hasn't been moved onto it yet counts too, on the phone that holds it. */
 function nextPractice(tid) {
   const today = todayIso(), by = {};
-  for (const [pid, s] of Object.entries(train.schedule[tid] || {})) if (s && s.date) by[pid] = { id: pid, ...s };
-  for (const p of teamPractices(tid)) by[p.id] = { id: p.id, ...whenOf(p) };
-  for (const [k, v] of Object.entries(train.dirty)) if (v === -1 && k.startsWith(tid + '/')) delete by[k.slice(tid.length + 1)];
+  for (const x of calItems([tid])) if (x.kind === 'practice' && !x.called && x.date) by[x.id] = { id: x.id, date: x.date, start: x.start, end: x.end, place: x.venue };
+  if (canPlan(tid)) for (const p of teamPractices(tid)) if (!p.onCal && !p.orphan && p.date && !by[p.id]) by[p.id] = { id: p.id, date: p.date, start: p.start, minutes: p.minutes, place: p.place };
   return Object.values(by).filter(x => x.date >= today).sort((a, b) => (a.date + (a.start || '')).localeCompare(b.date + (b.start || '')))[0] || null;
 }
 function nextPracticeCard(t) {
-  watchTrain('schedule', t.id);
   const nx = nextPractice(t.id); if (!nx) return '';
   const open = canPlan(t.id) && !!practiceById(t.id, nx.id);
   const body = `<span class="lbl" style="margin:0">Next practice</span>
@@ -8439,18 +8503,22 @@ function practicePlansView(L) {
   watchTrain('practices', t.id);
   const p = practiceUi();
   if (p.open) { const pr = practiceById(t.id, p.open); if (pr) return planView(L, t, pr); p.open = null; }
+  // with no database there is nobody to wait for, so plans from before the calendar move as soon as they're drawn
+  if (!fb || !wsCode()) movePlans(t.id, true);
   const all = teamPractices(t.id), today = todayIso();
-  const past = all.filter(x => x.date < today).reverse();
-  /* A practice is added once, on the calendar, whichever tab the coach is on,
-     so the ones put there with nothing planned yet are listed here too, ready
-     to plan, rather than a second list of practices the calendar never sees. */
+  /* The list is the calendar's practices, each with its plan or a way to
+     plan it: a practice is added once, on the calendar, whichever tab the
+     coach is on. A plan whose entry was deleted (orphan) is listed under
+     Earlier whatever its date, since it is no longer on any day. */
+  const past = all.filter(x => x.orphan || x.date < today).sort((a, b) => (b.date + b.start).localeCompare(a.date + a.start));
   const unplanned = calItems([t.id]).filter(x => x.kind === 'practice' && x.date >= today && !x.called && !practiceById(t.id, x.id))
     .map(x => ({ cal: x, date: x.date, start: x.start }));
-  const next = [...all.filter(x => x.date >= today), ...unplanned].sort((a, b) => (a.date + (a.start || '')).localeCompare(b.date + (b.start || '')));
+  const next = [...all.filter(x => !x.orphan && x.date >= today), ...unplanned].sort((a, b) => (a.date + (a.start || '')).localeCompare(b.date + (b.start || '')));
   return `${trainNote(t.id)}
-    <div class="spread"><h2>Practices</h2><button class="btn sm" data-act="pracnew" data-tid="${esc(t.id)}">Add</button></div>
+    <div class="spread"><h2>Practices</h2><button class="btn sm" data-act="pracnew" data-tid="${esc(t.id)}">Add a practice</button></div>
+    ${tplStrip(L, t)}
     ${next.length ? `<div class="plist">${next.map(x => x.cal ? calPracRow(x.cal) : pracRow(L, x, today)).join('')}</div>`
-      : `<div class="empty"><strong>Nothing planned yet</strong>Add one, and the drills, the timings and the kit list are on your phone at the field, signal or not.</div>`}
+      : `<div class="empty"><strong>No practices coming up</strong>Add one, and it goes on the team's calendar; then the drills, the timings and the kit list are on your phone at the field, signal or not.</div>`}
     ${past.length ? `<p class="lbl" style="margin:6px 0 0">Earlier</p><div class="plist">${past.slice(0, p.past ? 60 : 5).map(x => pracRow(L, x, today)).join('')}</div>
       ${past.length > 5 && !p.past ? `<button class="btn quiet wide" data-act="pracpast">Show all ${past.length}</button>` : ''}` : ''}`;
 }
@@ -8462,23 +8530,29 @@ function calPracRow(it) {
 }
 /* A plan for a calendar practice is keyed by the entry's id and starts from
    its day, time and place, so the practice and its plan are one thing. */
-function planFromEntry(tid, e) {
+function planFromEntry(tid, e, from) {
+  /* No date, time or place of its own: those are the entry's. The length is
+     kept only for an entry with no end time, which has none to give. */
   const prev = teamPractices(tid).slice(-1)[0] || {};
-  const s = hm(e.start), en = hm(e.end);
-  const len = s && en && minOf(en) > minOf(s) ? minOf(en) - minOf(s) : prev.minutes || 60;
   return putPractice({
-    id: e.id, eid: e.id, teamId: tid, date: e.date, start: s, minutes: clamp(len, 10, 240), place: e.venue || '',
-    focus: { signals: [] }, blocks: [], status: 'plan', made: nowMs(), by: me ? me.uid : null, byName: whoAmI() || null
+    id: e.id, eid: e.id, teamId: tid, minutes: (from && from.minutes) || prev.minutes || 60,
+    focus: from ? clone(from.focus) : { signals: [] }, blocks: from ? clone(from.blocks) : [], status: 'plan', made: nowMs(),
+    ...(from && from.tpl ? { tpl: from.tpl } : {}), by: me ? me.uid : null, byName: whoAmI() || null
   });
 }
 
 function pracRow(L, pr, today) {
   const n = pr.blocks.length, s = signalOf(L, pr.focus.signals[0]);
-  const tag = pr.status === 'done' ? `<span class="tag">${pr.review && pr.review.rating ? '★ ' + pr.review.rating : 'Done'}</span>`
-    : pr.date < today ? '<span class="tag wait">How did it go?</span>' : '<span class="tag">Planned</span>';
+  /* Called off is said and struck through, as the calendar does it; the plan
+     stays, because the practice may well be put back on. */
+  const tag = pr.orphan ? '<span class="tag off">Not on the calendar</span>'
+    : pr.called ? `<span class="tag off">${CALLED[pr.called]}</span>`
+      : pr.status === 'done' ? `<span class="tag">${pr.review && pr.review.rating ? '★ ' + pr.review.rating : 'Done'}</span>`
+        : pr.date < today ? '<span class="tag wait">How did it go?</span>' : '<span class="tag">Planned</span>';
   const sub = [pr.place, n ? `${n} drill${n === 1 ? '' : 's'} · ${blockTotal(pr)} min` : 'no drills yet', s ? s.label : ''].filter(Boolean).join(' · ');
+  const day = `${esc(pracDay(pr.date))}${pr.start ? ' · ' + esc(pracTimes(pr)) : ''}`;
   return `<button class="prow" type="button" data-act="pracopen" data-id="${esc(pr.id)}" style="grid-template-columns:1fr auto">
-    <span><span class="pname">${esc(pracDay(pr.date))}${pr.start ? ' · ' + esc(pracTimes(pr)) : ''}</span><span class="psub">${esc(sub)}</span></span>${tag}</button>`;
+    <span><span class="pname">${pr.called ? `<s>${day}</s>` : day}</span><span class="psub">${esc(sub)}</span></span>${tag}</button>`;
 }
 
 function planView(L, t, pr) {
@@ -8504,10 +8578,13 @@ function planView(L, t, pr) {
     ? `<div class="card"><div class="spread"><h4 style="margin:0">How it went</h4><button class="btn quiet sm" data-act="pracreview" data-id="${id}">Change</button></div>
         <p style="margin:6px 0 0"><span class="stars">${'★'.repeat(r.rating)}<span class="dim">${'★'.repeat(5 - r.rating)}</span></span>${r.note ? ' · ' + esc(r.note) : ''}</p></div>`
     : pr.date <= today ? `<button class="btn wide" data-act="pracreview" data-id="${id}">How did it go?</button>` : '';
+  const where = pr.orphan ? `<div class="rolebar warn">This practice was taken off the calendar. The plan is kept: use it for another practice, save it as a template, or delete it.</div>`
+    : pr.called ? `<div class="rolebar warn">${CALLED[pr.called]}. The plan is kept in case it's back on.</div>` : '';
   return `${trainNote(t.id)}
     <button class="drilllink planback" data-act="pracback">‹ All practices</button>
+    ${where}
     <div class="card">
-      <div class="spread"><span><b class="planday">${esc(pracDay(pr.date))}</b><span class="rowsub">${esc([pracTimes(pr), pr.place].filter(Boolean).join(' · ') || 'No time or place yet')}</span></span>
+      <div class="spread"><span><b class="planday">${pr.called ? `<s>${esc(pracDay(pr.date))}</s>` : esc(pracDay(pr.date))}</b><span class="rowsub">${esc([pracTimes(pr), pr.place].filter(Boolean).join(' · ') || 'No time or place yet')}</span></span>
         <button class="btn quiet sm" data-act="pracedit" data-id="${id}">Edit</button></div>
       ${s ? `<div class="drillsignal"><b>${esc(s.label)}</b><span>${esc(s.means)}</span></div>` : ''}
       <p class="muted" style="margin:8px 0 0">${total} of ${pr.minutes} min planned${pr.blocks.length ? ` · ${pr.blocks.length} drill${pr.blocks.length === 1 ? '' : 's'}` : ''}</p>
@@ -8519,8 +8596,9 @@ function planView(L, t, pr) {
       <button class="btn quiet" style="flex:1" data-act="pracsuggest" data-id="${id}">${pr.blocks.length ? 'Suggest another' : 'Suggest a session'}</button></div>
     ${kit ? `<div class="card"><h4 style="margin:0 0 4px">Bring</h4><p style="margin:0">${esc(kit)}</p></div>` : ''}
     ${review}
-    <div class="row" style="gap:8px"><button class="btn quiet" style="flex:2" data-act="pracagain" data-id="${id}">Again next week</button>
-      <button class="btn quiet danger" style="flex:1" data-act="pracrm" data-id="${id}">Delete</button></div>`;
+    <div class="row" style="gap:8px"><button class="btn quiet" style="flex:1" data-act="pracagain" data-id="${id}">Use this plan for…</button>
+      <button class="btn quiet" style="flex:1" data-act="tplsave" data-id="${id}">Save as a template</button></div>
+    <button class="btn quiet danger wide" data-act="pracrm" data-id="${id}">Delete the plan</button>`;
 }
 
 /* Adding drills from the library, with where they're going said on top. */
@@ -8536,26 +8614,38 @@ function pickTarget() {
   return p.pick && t && canPlan(t.id) ? practiceById(t.id, p.pick) : null;
 }
 
+/* The plan's own half: what it's for, and how long it runs when the calendar
+   entry has no end time to say. Day, time and place are the calendar's, and
+   are changed there, so there is one place a practice moves. */
 function sheetPractice(pr) {
-  const L = drillLib(), t = team(); if (!t) return;
-  const prev = teamPractices(t.id).slice(-1)[0] || {};
-  const v = pr || { date: addDays(todayIso(), 1), start: prev.start || '', minutes: prev.minutes || 60, place: prev.place || '', focus: { signals: [] } };
-  const sig = (v.focus && v.focus.signals || [])[0] || '';
+  const L = drillLib(), t = team(); if (!t || !pr) return;
+  const sig = (pr.focus && pr.focus.signals || [])[0] || '';
   const lens = [30, 45, 60, 75, 90, 105, 120];
-  if (!lens.includes(v.minutes)) lens.push(v.minutes);
-  openSheet(`<h3>${pr ? 'Edit the practice' : 'Plan a practice'}</h3>
-    <div class="grid2">
-      <label class="field"><span>Date</span><input type="date" id="prDate" value="${esc(v.date)}"></label>
-      <label class="field"><span>Start</span><input type="time" id="prStart" value="${esc(v.start)}"></label>
-    </div>
-    <div class="grid2">
-      <label class="field"><span>Length</span><select id="prLen">${lens.sort((a, b) => a - b).map(m => `<option value="${m}"${m === v.minutes ? ' selected' : ''}>${m} minutes</option>`).join('')}</select></label>
-      <label class="field"><span>Place</span><input type="text" id="prPlace" value="${esc(v.place)}" placeholder="Lakeside Park, field 2" maxlength="80"></label>
-    </div>
+  if (!lens.includes(pr.minutes)) lens.push(pr.minutes);
+  const fixed = pr.onCal && !!pr.end;
+  openSheet(`<h3>Edit the plan</h3>
     <label class="field"><span>What it's for</span><select id="prFocus"><option value="">Nothing in particular</option>${L ? Object.entries(L.SIGNALS).map(([k, s]) =>
       `<option value="${esc(k)}"${k === sig ? ' selected' : ''}>${esc(s.label)}</option>`).join('') : ''}</select></label>
-    <p class="muted" style="margin-top:0">The whole club sees the date, time and place, so parents know when and where. Only this team's coaches and the club's admins see the plan.</p>
-    <button class="btn wide" data-act="pracsave" data-id="${pr ? esc(pr.id) : ''}">${pr ? 'Save' : 'Plan it'}</button>
+    ${fixed ? '' : `<label class="field"><span>Length</span><select id="prLen">${lens.sort((a, b) => a - b).map(m => `<option value="${m}"${m === pr.minutes ? ' selected' : ''}>${m} minutes</option>`).join('')}</select></label>`}
+    ${pr.onCal ? `<p class="muted" style="margin-top:0">${esc([pracDay(pr.date), pracTimes(pr), pr.place].filter(Boolean).join(' · '))}. The day, time and place are the calendar's, which the whole team sees; only this team's coaches and the club's admins see the plan.</p>
+      <button class="btn quiet wide" data-act="caledit" data-tid="${esc(t.id)}" data-id="${esc(pr.id)}" style="margin-bottom:8px">Change the day, time or place</button>` : ''}
+    <button class="btn wide" data-act="pracsave" data-id="${esc(pr.id)}">Save</button>
+    <button class="btn quiet wide" data-act="closesheet" style="margin-top:8px">Cancel</button>`, true);
+}
+
+function tplStrip() { return ''; }
+
+/* Use this plan for another practice: the coming ones with no plan yet. */
+function sheetUseFor(pr) {
+  const t = team(); if (!t || !pr) return;
+  const today = todayIso();
+  const free = calItems([t.id]).filter(x => x.kind === 'practice' && x.date >= today && !x.called && x.id !== pr.id && !practiceById(t.id, x.id)).slice(0, 12);
+  openSheet(`<h3>Use this plan for…</h3>
+    <p class="muted" style="margin-top:0">The drills and what it's for are copied; this plan stays as it is.</p>
+    ${free.length ? `<div class="plist">${free.map(x => `<button class="prow" type="button" data-act="pracusefor" data-id="${esc(pr.id)}" data-v="${esc(x.id)}" style="grid-template-columns:1fr auto">
+      <span><span class="pname">${esc(pracDay(x.date))}${x.start ? ' · ' + esc(x.start) + (x.end ? '–' + esc(x.end) : '') : ''}</span><span class="psub">${esc(x.venue || '')}</span></span><span class="tag wait">Use</span></button>`).join('')}</div>`
+      : `<div class="empty"><strong>Every coming practice has a plan</strong>Add a practice to the calendar first, and this plan can be used for it.</div>`}
+    <button class="btn quiet wide" data-act="pracnew" data-tid="${esc(t.id)}" style="margin-top:8px">Add a practice</button>
     <button class="btn quiet wide" data-act="closesheet" style="margin-top:8px">Cancel</button>`, true);
 }
 
@@ -12668,7 +12758,8 @@ function onAct(e) {
     const pr = d.id ? practiceById(tp.id, d.id) : null;
     const i = Number(d.i);
     const by = () => ({ by: me ? me.uid : null, byName: whoAmI() || null });
-    const edit = fn => { if (!pr) return; const c = clone(pr); fn(c); putPractice(c); render(); };
+    // edits start from what is stored, not what is drawn: the day and place are the calendar's, never copied back
+    const edit = fn => { if (!pr) return; const c = rawPlan(tp.id, pr.id); fn(c); putPractice(c); render(); };
     // the same Add, and the same sheet, as the calendar's: one way to put a practice on
     if (a === 'pracnew') { calForm = { ...calFormNew(tp.id), plan: true }; sheetCalEvent(); return; }
     if (a === 'pracfromcal') {
@@ -12685,21 +12776,12 @@ function onAct(e) {
     if (a === 'pracpast') { p.past = true; render(); return; }
     if (a === 'pracedit') { if (pr) sheetPractice(pr); return; }
     if (a === 'pracsave') {
-      const date = String($('#prDate').value || '').trim();
-      if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) { toast('Pick a date'); return; }
-      const start = String($('#prStart').value || '').trim();
-      if (start && !/^\d{2}:\d{2}$/.test(start)) { toast('That start time doesn\'t look right'); return; }
-      const minutes = clamp(Number($('#prLen').value) || 60, 10, 240);
-      const place = String($('#prPlace').value || '').trim().slice(0, 80);
+      if (!pr) return;
       const sig = String($('#prFocus').value || '');
       const focus = { signals: sig && L && L.SIGNALS[sig] ? [sig] : [] };
-      if (pr) putPractice({ ...clone(pr), date, start, minutes, place, focus });
-      else {
-        const id = uid();
-        putPractice({ id, teamId: tp.id, date, start, minutes, place, focus, blocks: [], status: 'plan', made: nowMs(), ...by() });
-        p.open = id;
-      }
-      p.tab = 'plans'; closeSheet(); render(); if (!pr) toTop(); return;
+      const lenEl = $('#prLen'), len = lenEl && lenEl.value ? clamp(Number(lenEl.value) || 60, 10, 240) : null;
+      putPractice({ ...rawPlan(tp.id, pr.id), focus, ...(len ? { minutes: len } : {}) });
+      p.tab = 'plans'; closeSheet(); render(); return;
     }
     if (a === 'pracpick') { if (!pr) return; p.pick = pr.id; p.open = pr.id; p.tab = 'drills'; render(); toTop(); return; }
     if (a === 'pracpickdone') { p.pick = null; p.tab = 'plans'; if (pr) p.open = pr.id; render(); return; }
@@ -12712,9 +12794,9 @@ function onAct(e) {
         if (!confirm('Adding this to the practice shares it with this team\'s coaches. Add it?')) return;
         p.mineShared = true;
       }
-      const c = clone(pr); c.blocks.push(drillBlock(L, dr)); putPractice(c);
+      const c = rawPlan(tp.id, pr.id); c.blocks.push(drillBlock(L, dr)); putPractice(c);
       closeSheet(); render();
-      toast(`Added. ${c.blocks.length} drill${c.blocks.length === 1 ? '' : 's'}, ${blockTotal(c)} of ${c.minutes} min`);
+      toast(`Added. ${c.blocks.length} drill${c.blocks.length === 1 ? '' : 's'}, ${blockTotal(c)} of ${pr.minutes} min`);
       return;
     }
     if (a === 'pracsuggest') {
@@ -12748,16 +12830,16 @@ function onAct(e) {
       edit(c => { c.review = { ...(c.review || {}), note, at: nowMs(), ...by() }; c.status = 'done'; });
       closeSheet(); toast('Saved'); return;
     }
-    if (a === 'pracagain') {
-      if (!pr) return;
-      let date = /^\d{4}-\d{2}-\d{2}$/.test(pr.date) ? addDays(pr.date, 7) : addDays(todayIso(), 7);
-      while (date < todayIso()) date = addDays(date, 7);
-      const c = { ...clone(pr), id: uid(), date, status: 'plan', made: nowMs(), ...by() };
-      delete c.review;
-      putPractice(c); p.open = c.id; render(); toast('Planned for ' + pracDay(date)); return;
+    if (a === 'pracagain') { if (pr) sheetUseFor(pr); return; }
+    if (a === 'pracusefor') {
+      const e = planEntry(tp.id, d.v);
+      if (!pr || !e) { toast('That practice is not on the calendar any more'); render(); return; }
+      if (practiceById(tp.id, e.id)) { toast('That practice has a plan already'); return; }
+      planFromEntry(tp.id, e, pr);
+      p.open = e.id; closeSheet(); render(); toTop(); toast('Planned for ' + pracDay(e.date)); return;
     }
     if (a === 'pracrm') {
-      if (!pr || !confirm('Delete this practice? The plan goes for every coach on the team.')) return;
+      if (!pr || !confirm('Delete this plan? It goes for every coach on the team; the practice stays on the calendar.')) return;
       dropPractice(tp.id, pr.id);
       p.open = null; p.run = null; if (p.pick === pr.id) p.pick = null;
       render(); return;

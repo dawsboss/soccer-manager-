@@ -292,7 +292,7 @@
             ".read": "auth != null && (root.child('workspaces/' + $code + '/access/admins/' + auth.uid).exists() || root.child('workspaces/' + $code + '/access/teamIndex/' + $tid + '/' + auth.uid).val() === 'coach' || (!root.child('workspaces/' + $code + '/access/teamIndex').exists() && root.child('workspaces/' + $code + '/access/coachIndex/' + auth.uid).exists()))",
             "$pid": {
               ".write": "auth != null && (root.child('workspaces/' + $code + '/access/admins/' + auth.uid).exists() || root.child('workspaces/' + $code + '/access/teamIndex/' + $tid + '/' + auth.uid).val() === 'coach' || (!root.child('workspaces/' + $code + '/access/teamIndex').exists() && root.child('workspaces/' + $code + '/access/coachIndex/' + auth.uid).exists()))",
-              ".validate": "newData.hasChildren(['id', 'teamId', 'date']) && newData.child('id').val() === $pid && newData.child('teamId').val() === $tid"
+              ".validate": "newData.hasChildren(['id', 'teamId']) && newData.child('id').val() === $pid && newData.child('teamId').val() === $tid"
             }
           }
         },

@@ -8,6 +8,54 @@ before this point lives only in the git log.
 
 ---
 
+## Practice plans hang off the calendar — 2026-10-04
+
+The owner settled it on 2026-10-03 (*do practice plans hang off the
+calendar? Yes*), and the Add buttons were already one. This finishes it: a
+plan no longer has a date, time or place of its own. It is keyed by its
+calendar practice's id and reads day, start, end, place, length and whether
+it's called off from `teams/{tid}/events/{eid}` every time it's drawn
+(`withEntry()`), so there is one list of practices and nothing that can
+disagree with it about when practice is. Edits start from what is stored
+(`rawPlan()`), so the calendar's day is never copied back into the plan.
+
+- **Plans → the list is the calendar's practices**, each with its plan or
+  *Plan it*. *Add a practice* is the calendar's own sheet. Editing a plan
+  edits what it's for (and its length when the entry has no end time) and
+  sends day, time and place to the calendar.
+- **Called off**: the plan stays, struck through and saying so. **Deleted
+  entry**: the plan is kept, never deleted with it, and listed under
+  *Earlier* as *Not on the calendar*, offering *Save as a template* and
+  *Delete the plan*.
+- **Again next week** is now **Use this plan for…**: the coming practices
+  with no plan yet; the drills and the focus are copied.
+- **`schedule` is no longer written or read.** The next practice on Games
+  comes from the calendar, which everyone on the team could always read, so a
+  parent's phone now reads no training node at all. The `schedule` rule stays
+  for now, because an older app in the wild still writes it; remove it in a
+  later change.
+- **Older plans move across by themselves** (`movePlans()`), on a coach's or
+  an admin's phone, after the club's copy of the plans arrives: a practice
+  entry is made from the plan's day, time and place, team only, *under the
+  plan's own id*, and the plan is marked `eid`. The brief suggested a new id
+  and deleting the old plan once the new one was acknowledged; the same id
+  gets the same result with nothing to delete, so two phones moving the same
+  plan write the same entry, and a reload halfway leaves nothing half-moved.
+  `eid` stops a plan being moved twice, and stops an entry deleted on purpose
+  from coming back. A plan with something pending waits until it is sent.
+- **The rule**: `practices/$tid/$pid` now needs `id` and `teamId` only, so a
+  plan with no date is accepted; an older app's dated plan still is. **Paste
+  `database.rules.json` before this ships**, or a new plan is refused and
+  stays on the phone (the screen says so).
+
+`test/plans.js` makes practices through the calendar now, and pins the move
+(including a reload before anything was acknowledged), called-off and
+deleted entries, *Use this plan for…*, and the next practice read from the
+calendar by a parent's phone that reads no training at all. `test/rules.js`
+has the plan with no date.
+
+---
+
 ## Writing a drill: five things, then draw it on a pitch — 2026-10-03
 
 The owner: *the write a drill is really confusing for a user. Also I have no

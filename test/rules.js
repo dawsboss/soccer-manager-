@@ -646,7 +646,11 @@ reads('owners are not world-readable', OUT, 'shareOwners/sh1', false);
   writes('an admin plans for any team', ADM, T + 'practices/t2/x', plan('x', 't2'), true);
   writes('filed under the wrong team', COACH, T + 'practices/t1/x', plan('x', 't2'), false);
   writes('under an id that is not its own', COACH, T + 'practices/t1/x', plan('y', 't1'), false);
-  writes('with no date', COACH, T + 'practices/t1/x', { id: 'x', teamId: 't1' }, false);
+  /* A plan hangs off its calendar entry and takes its day from there, so it
+     carries no date; an older app still sends one, and that is fine too. */
+  writes('with no date: the calendar entry has it', COACH, T + 'practices/t1/x', { id: 'x', teamId: 't1', eid: 'x', blocks: [] }, true);
+  writes('and an older app\'s, with its own date', COACH, T + 'practices/t1/x', plan('x', 't1'), true);
+  writes('with no team named', COACH, T + 'practices/t1/x', { id: 'x' }, false);
   writes('the team\'s whole collection at once', COACH, T + 'practices/t1', { x: plan('x', 't1') }, false);
   reads('nobody lists every team\'s plans', ADM, T + 'practices', false);
   reads('nor the whole training node', ADM, 'training/CLUB', false);
