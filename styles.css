@@ -104,6 +104,11 @@ input[type=text],input[type=number],input[type=date],input[type=time],input[type
 label.field{display:block;margin-bottom:10px}
 label.field span{display:block;font-size:13px;color:var(--ink-soft);margin-bottom:4px}
 .grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.fhrow{display:grid;grid-template-columns:36px 1fr 1fr auto;gap:6px;align-items:center;margin-bottom:6px}
+.fhrow input{min-width:0;width:100%;padding:8px 2px;font-size:13px}
+.fhrow .chip{padding-left:10px;padding-right:10px}
+.grid2>*{min-width:0}
+.grid2 input{min-width:0;width:100%}
 
 .empty{
   border:1px dashed var(--line);border-radius:var(--r);

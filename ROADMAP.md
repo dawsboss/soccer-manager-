@@ -168,8 +168,10 @@ Decide which when a club with shared fields asks.
 > **Built, 2026-10-04**, all four steps, as Admin → *Plan* (`viewPlanner()`,
 > `test/planner.js`): clashes, find a time, booking one entry per team with a
 > shared `club` id, and picture day. Not built from *What is missing* below:
-> a weekly availability per venue beyond the permits fields already carry,
-> and coaches' own "never Mondays". Games are said, never offered to move.
+> nothing: per-field opening hours and closures, and coaches' own time off
+> (weekly, dates away, calling out of one entry), were built the same day,
+> the time off at `training/{code}/away` rather than `access/members` (CHANGELOG
+> says why). Games are said, never offered to move.
 
 The next piece of work, and the reason the calendar, answers and attendance
 were built the way they were. A club admin scheduling the season asks one

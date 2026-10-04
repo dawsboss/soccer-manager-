@@ -121,6 +121,10 @@ the same name silently replaces the first (the planner's first
 `clashesOn(date)` did that to the game plan's `clashesOn(t, m)`; every suite
 passed and the page was blank).
 
+**Then, build 83:** coaches' time off (`training/{code}/away`, new rule
+block, `test/away.js`) and field opening hours and closures (no rule change).
+**Paste `database.rules.json` again** for time off to leave the phone.
+
 ## Was next: planning for the club (now built, above)
 
 The owner's next ask: help club admins plan future events — who (teams,

@@ -156,6 +156,56 @@ function as(uid, c = club()) {
     check('each in its own slot, at the place given', pics.every(e => e.venue === 'Clubhouse' && e.end > e.start), true);
   }
 
+  console.log('\n--- a field\'s hours and closures ---');
+  {
+    const c = club();
+    // Tuesday is weekday 1; the lights go off at 6:30, it's shut on Sundays and for a week in October
+    c.access.org = { venues: { v1: { id: 'v1', name: 'Lakeside Park', pitches: 2,
+      hours: { d1: { from: '16:00', to: '18:30' }, d6: { closed: true } },
+      closed: { x1: { id: 'x1', from: '2026-10-05', until: '2026-10-11', note: 'Reseeding' } } } } };
+    as('boss', c);
+    const f = A.fieldById('v1');
+    check('inside its hours is fine', A.fieldShut(f, TUE, 16 * 60 + 30, 17 * 60 + 30), '');
+    check('running past them is said', A.fieldShut(f, TUE, 17 * 60 + 30, 19 * 60), 'Lakeside Park is open 4pm–6:30pm on Tuesdays');
+    check('a day marked closed', A.fieldShut(f, '2026-09-20', 600, 660), 'Lakeside Park isn\'t open on Sundays');
+    check('a day with no hours set is open', A.fieldShut(f, '2026-09-16', 0, 1440), '');
+    check('closed dates win over hours', A.fieldShut(f, '2026-10-06', 16 * 60 + 30, 17 * 60), 'Lakeside Park is closed Mon 5 Oct to Sun 11 Oct (Reseeding)');
+    const cs = A.clubClashesOn(TUE);
+    check('the planner flags G13\'s practice running past the lights', cs.some(x => x.kind === 'field' && /^G13 Storm: Practice at 6pm: Lakeside Park is open 4pm–6:30pm/.test(x.text)), true);
+    check('and not G11\'s, which ends in time', cs.some(x => x.kind === 'field' && /G11 Flight/.test(x.text)), false);
+    const ft = A.findTimes({ tids: ['t3'], len: 60, from: TUE, days: 1, h0: '16:00', h1: '20:00', field: 'v1', ran: true });
+    check('find a time at the field never puts a shut slot first', ft[0].b <= 18 * 60 + 30 && !ft[0].why.length, true);
+    check('a slot after the lights go off says why', ft.find(r => r.a === 19 * 60).why[0], 'Lakeside Park is open 4pm–6:30pm on Tuesdays');
+    A.state.matches = {};
+    A.sess = { ...A.sess, sessions: { s1: { id: 's1', kind: 'one', title: '1-1', coach: 'kim', coachName: 'Kim', date: '2026-10-07', start: '17:00', end: '18:00', field: 'v1', cap: 1 } } };
+    check('a session on a closed date is flagged to its coach', A.sessClashes(A.sessById('s1')).some(x => /closed .*Reseeding/.test(x)), true);
+
+    A.ui.view = 'sessions'; A.ui.sess = { tab: 'fields' };
+    A.click({ act: 'fieldedit', id: 'v1' });
+    check('the field form has the hours, one row a day', (sheet(A).match(/class="fhrow"/g) || []).length, 7);
+    check('Sunday shown closed', /data-act="fieldshut" data-v="6" aria-pressed="true"/.test(sheet(A)), true);
+    const v = { fdName: 'Lakeside Park', fdAddress: '', fdPitches: '2', fdNotes: '', fhFrom_1: '16:00', fhTo_1: '18:30', fcFrom_0: '2026-10-05', fcUntil_0: '2026-10-11', fcNote_0: 'Reseeding' };
+    for (let d = 0; d < 7; d++) if (d !== 1) Object.assign(v, { ['fhFrom_' + d]: '', ['fhTo_' + d]: '' });
+    v.fhFrom_3 = '17:00';
+    for (const [k, x] of Object.entries(v)) A.dom.node('#' + k).value = x;
+    A.click({ act: 'fieldsave' });
+    check('a day with only an opening time is refused', A.lastToast(), 'Give each day both an opening and a closing time, or leave it blank');
+    A.dom.node('#fhTo_3').value = '20:00';
+    A.click({ act: 'fieldclose' });
+    for (const [k, x] of Object.entries({ fcFrom_1: '2026-12-24', fcUntil_1: '', fcNote_1: 'Holidays' })) A.dom.node('#' + k).value = x;
+    A.click({ act: 'fieldshut', v: '0' });
+    A.click({ act: 'fieldsave' });
+    const saved = A.state.access.org.venues.v1;
+    deepEq('what constrains is saved, and only that', Object.keys(saved.hours).sort(), ['d0', 'd1', 'd3', 'd6']);
+    check('Monday closed, Thursday 5 to 8', saved.hours.d0.closed + ' ' + saved.hours.d3.from + '–' + saved.hours.d3.to, 'true 17:00–20:00');
+    check('a one-day closure ends the day it starts', Object.values(saved.closed).find(x => x.note === 'Holidays').until, '2026-12-24');
+
+    as('kim', c); A.ui.view = 'sessions'; A.ui.sess = { tab: 'fields' };
+    const before = JSON.stringify(A.state.access.org);
+    A.click({ act: 'fieldshut', v: '2' }); A.click({ act: 'fieldsave' });
+    check('a coach cannot change a field\'s hours', JSON.stringify(A.state.access.org), before);
+  }
+
   console.log('\n--- against the database: one write per team ---');
   {
     const fbk = makeFakebase();

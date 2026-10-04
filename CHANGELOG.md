@@ -8,6 +8,34 @@ before this point lives only in the git log.
 
 ---
 
+## Field hours and closures — 2026-10-04 (build 83)
+
+The other half of the owner's ask (*the per-field thing would be amazing*),
+and ROADMAP's "when pitches can be had at all": the lights go off at nine,
+the school has it until four, it's shut for reseeding in November.
+
+- **Opening hours per weekday**, on the field's form: an opening and a
+  closing time, or *Closed*, for each day. Only what constrains is saved: a
+  day left blank is open any time, so a field with no hours checks nothing,
+  as before. A day with only one of the two times is refused, not guessed.
+- **Closed on dates**: from, until (one day if blank) and why.
+- Stored on the field with everything else about it
+  (`access/org/venues/{id}/hours`, `closed`), under the admin rule that
+  already covers fields, so no rule change.
+- `fieldShut()` says why the field can't be used then (*Lakeside Park is open
+  4pm–6:30pm on Tuesdays*, *is closed 2 Nov to 15 Nov (Reseeding)*), and it
+  is asked everywhere permits already were: the session's clash card, the
+  field's own next two weeks, the planner's Clashes (*Field*), and find-a-time
+  with a field chosen, which ranks a shut slot with the clashes.
+- The field card and sheet show the hours and the coming closures.
+
+`test/planner.js` pins the hours, the closures winning over hours, the
+planner, find-a-time, a session on a closed date, the form (half-typed
+refused, only constraints saved) and a coach unable to change it. Also:
+date inputs side by side no longer overflow the sheet at phone width.
+
+---
+
 ## Coaches' time off: nights off, dates away, calling out — 2026-10-04
 
 The owner: *get the coaches block out, call out, and all their kinds of

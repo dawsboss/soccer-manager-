@@ -2,7 +2,7 @@
    Static app. Data lives in localStorage, and mirrors to Firebase Realtime
    Database when a config + workspace code are present. */
 
-const BUILD = '82';
+const BUILD = '83';
 const BUILT = '2026-10-03';
 /* index.html carries the build it was published with. If this file is newer, the
    browser handed us a cached page — the exact failure that has eaten hours. */
@@ -9177,6 +9177,44 @@ function permitCovers(p, date, a, b) {
   if (!p.start || !p.end) return true;
   return minOf(p.start) <= a && b <= minOf(p.end);
 }
+/* When a field can be used at all, whatever the club has booked: the lights go
+   off at nine, the school has it until four, it's shut for reseeding in
+   November. Opening hours are per weekday, and only what is set constrains
+   anything: a day with no hours is open, a day marked closed is shut. Closures
+   are dates. Both are club settings on the field, under access/org/venues
+   with everything else about it, so the admin rule already covers them. */
+function fieldHours(f) {
+  const out = {};
+  for (let d = 0; d <= 6; d++) {
+    const h = ((f && f.hours) || {})['d' + d];
+    if (!h || typeof h !== 'object') continue;
+    if (h.closed) out[d] = { closed: true };
+    else if (hm(h.from) && hm(h.to) && minOf(hm(h.to)) > minOf(hm(h.from))) out[d] = { from: hm(h.from), to: hm(h.to) };
+  }
+  return out;
+}
+function fieldClosures(f) {
+  return Object.entries((f && f.closed) || {}).map(([id, c]) => c && typeof c === 'object' && okDay(c.from) ? {
+    id: c.id || id, from: c.from, until: okDay(c.until) && c.until >= c.from ? c.until : c.from, note: String(c.note || '').slice(0, 120)
+  } : null).filter(Boolean).sort((a, b) => a.from.localeCompare(b.from));
+}
+const closureText = c => (c.from === c.until ? dayLabel(c.from) : `${dayLabel(c.from)} to ${dayLabel(c.until)}`) + (c.note ? ` (${c.note})` : '');
+function hoursText(f) {
+  const h = fieldHours(f), days = Object.keys(h).map(Number).sort();
+  return days.map(d => `${WEEKDAYS[d]} ${h[d].closed ? 'closed' : niceTime(h[d].from) + '–' + niceTime(h[d].to)}`).join(', ');
+}
+/* Why the field can't be used then, in words, or '' if it can. */
+const DAYS_LONG = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+function fieldShut(f, date, a, b) {
+  if (!f || !okDay(date)) return '';
+  const c = fieldClosures(f).find(x => x.from <= date && date <= x.until);
+  if (c) return `${f.name} is closed ${closureText(c)}`;
+  const wd = weekdayOf(date), h = fieldHours(f)[wd];
+  if (!h) return '';
+  if (h.closed) return `${f.name} isn't open on ${DAYS_LONG[wd]}s`;
+  if (a < minOf(h.from) || b > minOf(h.to)) return `${f.name} is open ${niceTime(h.from)}–${niceTime(h.to)} on ${DAYS_LONG[wd]}s`;
+  return '';
+}
 function permitText(p) {
   const days = p.days.length === 7 ? 'Every day' : [...p.days].sort().map(i => WEEKDAYS[i]).join(', ') || 'No days';
   const hours = p.start && p.end ? ` ${niceTime(p.start)}–${niceTime(p.end)}` : ' all day';
@@ -9413,7 +9451,8 @@ function sessClashes(s) {
   const list = xs => xs.map(x => `${x.label} at ${timeOf(x)}`).join('; ');
   const f = sessField(s);
   if (f) {
-    const pm = permitsOf(f);
+    const pm = permitsOf(f), shut = fieldShut(f, s.date, a, b);
+    if (shut) out.push(shut);
     if (pm.length && !pm.some(p => permitCovers(p, s.date, a, b))) out.push(`Outside the club's permit for ${f.name}: ${pm.map(permitText).join('; ')}`);
     const pitches = Math.max(1, Math.round(Number(f.pitches)) || 1);
     const here = others.filter(x => x.field === f.id);
@@ -9443,6 +9482,8 @@ function fieldDays(f, from, days = 14) {
     const here = busyItems(date).filter(x => x.field === f.id).sort((x, y) => x.a - y.a);
     for (const x of here) {
       const flags = [];
+      const shut = fieldShut(f, date, x.a, x.b);
+      if (shut) flags.push(shut.replace(f.name + ' ', ''));
       if (pm.length && !pm.some(p => permitCovers(p, date, x.a, x.b))) flags.push('outside the permit');
       const n = here.filter(o => o.a < x.b && x.a < o.b).length;
       if (n > pitches) flags.push(`${n} at once on ${pitches} pitch${pitches === 1 ? '' : 'es'}`);
@@ -10067,6 +10108,8 @@ function sessFieldsView() {
       <div class="spread"><b>${esc(f.name)}</b>${bad ? `<span class="tag off">${bad} to look at</span>` : ''}</div>
       ${f.address ? `<span class="rowsub">${esc(f.address)}</span>` : ''}
       <span class="rowsub">${esc([`${Math.max(1, Number(f.pitches) || 1)} pitch${Number(f.pitches) > 1 ? 'es' : ''}`, f.surface, f.lights ? 'lights' : ''].filter(Boolean).join(' · '))}</span>
+      ${hoursText(f) ? `<span class="rowsub">Open: ${esc(hoursText(f))}</span>` : ''}
+      ${fieldClosures(f).filter(c => c.until >= today).slice(0, 2).map(c => `<span class="rowsub">Closed ${esc(closureText(c))}</span>`).join('')}
       ${pm.length ? pm.map(p => `<span class="rowsub">Permit: ${esc(permitText(p))}</span>`).join('') : '<span class="rowsub">No permits listed</span>'}
       <span class="rowsub">This week: ${days.length} booked${bad ? `, ${bad} outside the permit or double-booked` : ''}</span></button>`;
   }).join('') : `<div class="empty"><strong>No fields yet</strong>${admin ? 'Add the places the club trains, with the permits you hold for each, and every session and practice is checked against them.' : 'An admin adds the club’s fields and permits.'}</div>`}
@@ -10089,6 +10132,8 @@ function sheetField(id) {
       ${f.address ? `<dt>Address</dt><dd>${esc(f.address)}</dd>` : ''}
       <dt>Pitches</dt><dd>${Math.max(1, Number(f.pitches) || 1)}${f.surface ? ' · ' + esc(f.surface) : ''}${f.lights ? ' · lights' : ''}</dd>
       ${f.notes ? `<dt>Notes</dt><dd>${esc(f.notes).replace(/\n/g, '<br>')}</dd>` : ''}
+      <dt>Open</dt><dd>${hoursText(f) ? esc(hoursText(f)) + '; any time on the other days' : 'Any time: no hours set'}</dd>
+      ${fieldClosures(f).filter(c => c.until >= today).length ? `<dt>Closed</dt><dd>${fieldClosures(f).filter(c => c.until >= today).map(c => esc(closureText(c))).join('<br>')}</dd>` : ''}
       <dt>Permits</dt><dd>${pm.length ? pm.map(p => esc(permitText(p)) + (p.note ? `<span class="rowsub">${esc(p.note)}</span>` : '')).join('<br>') : 'None listed, so nothing is checked against one'}</dd>
     </dl>
     ${(f.address || f.name) && I ? `<a class="btn quiet sm" href="${esc(I.mapLink(f.address || f.name))}" target="_blank" rel="noopener" style="margin-bottom:10px">Directions</a>` : ''}
@@ -10102,6 +10147,12 @@ function fieldFormRead() {
   for (const [k, sel] of [['name', '#fdName'], ['address', '#fdAddress'], ['pitches', '#fdPitches'], ['notes', '#fdNotes']]) {
     const el = $(sel); if (el && typeof el.value === 'string') f[k] = el.value;
   }
+  f.hours.forEach((h, d) => {
+    for (const [k, sel] of [['from', '#fhFrom_' + d], ['to', '#fhTo_' + d]]) { const el = $(sel); if (el && typeof el.value === 'string') h[k] = el.value; }
+  });
+  f.closures.forEach((c, i) => {
+    for (const [k, sel] of [['from', '#fcFrom_' + i], ['until', '#fcUntil_' + i], ['note', '#fcNote_' + i]]) { const el = $(sel); if (el && typeof el.value === 'string') c[k] = el.value; }
+  });
   f.permits.forEach((p, i) => {
     for (const [k, sel] of [['start', '#pmStart_' + i], ['end', '#pmEnd_' + i], ['from', '#pmFrom_' + i], ['until', '#pmUntil_' + i], ['ref', '#pmRef_' + i], ['note', '#pmNote_' + i]]) {
       const el = $(sel); if (el && typeof el.value === 'string') p[k] = el.value;
@@ -10109,8 +10160,10 @@ function fieldFormRead() {
   });
 }
 function fieldFormOf(f, name) {
-  return f ? { id: f.id, name: f.name || '', address: f.address || '', pitches: String(f.pitches || 1), surface: f.surface || '', lights: !!f.lights, notes: f.notes || '', permits: permitsOf(f).map(p => ({ ...p })) }
-    : { id: null, name: name || '', address: '', pitches: '1', surface: '', lights: false, notes: '', permits: [] };
+  const hours = d => { const h = fieldHours(f)[d]; return h ? { from: h.from || '', to: h.to || '', closed: !!h.closed } : { from: '', to: '', closed: false }; };
+  return f ? { id: f.id, name: f.name || '', address: f.address || '', pitches: String(f.pitches || 1), surface: f.surface || '', lights: !!f.lights, notes: f.notes || '', permits: permitsOf(f).map(p => ({ ...p })),
+    hours: [0, 1, 2, 3, 4, 5, 6].map(hours), closures: fieldClosures(f).map(c => ({ ...c })) }
+    : { id: null, name: name || '', address: '', pitches: '1', surface: '', lights: false, notes: '', permits: [], hours: [0, 1, 2, 3, 4, 5, 6].map(() => ({ from: '', to: '', closed: false })), closures: [] };
 }
 function sheetFieldForm() {
   const f = fieldForm; if (!f) return;
@@ -10121,6 +10174,18 @@ function sheetFieldForm() {
     <label class="field"><span>Pitches</span><input type="number" id="fdPitches" min="1" max="20" value="${esc(f.pitches)}"></label>
     <div class="chips" style="margin-bottom:10px">${['Grass', 'Turf', 'Indoor'].map(x => chip('fieldsurface', x, f.surface === x, x)).join('')}${chip('fieldlights', '1', f.lights, 'Lights')}</div>
     <label class="field"><span>Notes</span><textarea id="fdNotes" rows="2" placeholder="Gate code, parking, who to call">${esc(f.notes)}</textarea></label>
+    <p class="lbl">Opening hours</p>
+    <div class="card" style="margin-bottom:8px">${f.hours.map((h, d) => `<div class="fhrow"><b>${WEEKDAYS[d]}</b>
+      ${h.closed ? '<span class="muted">Closed</span><span></span>' : `<input type="time" id="fhFrom_${d}" value="${esc(h.from)}" aria-label="${WEEKDAYS[d]} opens"><input type="time" id="fhTo_${d}" value="${esc(h.to)}" aria-label="${WEEKDAYS[d]} closes">`}
+      ${chip('fieldshut', d, h.closed, 'Closed')}</div>`).join('')}
+      <p class="muted" style="margin:6px 0 0">Blank is any time. When the lights go off, when the school has it: anything here outside these hours is flagged.</p></div>
+    <p class="lbl">Closed on dates</p>
+    ${f.closures.map((c, i) => `<div class="card" style="margin-bottom:8px">
+      <div class="grid2"><label class="field"><span>From</span><input type="date" id="fcFrom_${i}" value="${esc(c.from)}"></label>
+        <label class="field"><span>Until</span><input type="date" id="fcUntil_${i}" value="${esc(c.until)}"></label></div>
+      <label class="field"><span>Why</span><input type="text" id="fcNote_${i}" maxlength="120" value="${esc(c.note)}" placeholder="Reseeding, the school's sports day"></label>
+      <button class="btn quiet sm" data-act="fieldcloserm" data-i="${i}">Remove</button></div>`).join('')}
+    <button class="btn quiet wide" data-act="fieldclose" style="margin-bottom:10px">Add dates it's closed</button>
     <p class="lbl">Permits</p>
     ${f.permits.map((p, i) => `<div class="card" style="margin-bottom:8px">
       <div class="chips" style="margin-bottom:8px">${WEEKDAYS.map((w, d) => chip('fieldday', d, p.days.includes(d), w, i)).join('')}</div>
@@ -10189,8 +10254,8 @@ const SESS_ACTS = new Set(['sesstab', 'sessscope', 'sesspast', 'sessopen', 'sess
   'sessfeeclear', 'sessremind', 'sessmoney', 'sessmonth', 'sesshourscoach', 'sesspay', 'sesspayper', 'sesspaysave', 'sesspayclear',
   'sessdrills', 'sessdrilladd', 'sessdrillrm', 'sessdrillmin', 'sessdrillq', 'sesstell', 'sessics', 'reachdm', 'reachcopy',
   'fieldopen', 'fieldnew', 'fieldedit', 'fieldsave', 'fielddel', 'fieldpermit', 'fieldpermitrm', 'fieldday', 'fieldsurface',
-  'fieldlights', 'fieldfromtext']);
-const FIELD_EDIT = new Set(['fieldnew', 'fieldedit', 'fieldsave', 'fielddel', 'fieldpermit', 'fieldpermitrm', 'fieldday', 'fieldsurface', 'fieldlights', 'fieldfromtext']);
+  'fieldlights', 'fieldfromtext', 'fieldshut', 'fieldclose', 'fieldcloserm']);
+const FIELD_EDIT = new Set(['fieldnew', 'fieldedit', 'fieldsave', 'fielddel', 'fieldpermit', 'fieldpermitrm', 'fieldday', 'fieldsurface', 'fieldlights', 'fieldfromtext', 'fieldshut', 'fieldclose', 'fieldcloserm']);
 const RUN_ACTS = new Set(['sessedit', 'sesscall', 'sessdel', 'sessbook', 'sesspick', 'sessregister', 'sesscame', 'sessdrills', 'sessdrilladd',
   'sessdrillrm', 'sessdrillmin', 'sessdrillq', 'sesstell']);
 
@@ -10408,7 +10473,7 @@ function onSessAct(a, d) {
   if (a === 'fieldopen') { sheetField(d.id); return; }
   if (a === 'fieldnew' || a === 'fieldfromtext') { ui.view = 'sessions'; u.tab = 'fields'; fieldForm = fieldFormOf(null, a === 'fieldfromtext' ? d.v : ''); sheetFieldForm(); return; }
   if (a === 'fieldedit') { const f = fieldById(d.id); if (!f) return; fieldForm = fieldFormOf(f); sheetFieldForm(); return; }
-  if (['fieldpermit', 'fieldpermitrm', 'fieldday', 'fieldsurface', 'fieldlights'].includes(a)) {
+  if (['fieldpermit', 'fieldpermitrm', 'fieldday', 'fieldsurface', 'fieldlights', 'fieldshut', 'fieldclose', 'fieldcloserm'].includes(a)) {
     const f = fieldForm; if (!f) return;
     fieldFormRead();
     const i = Number(d.i);
@@ -10417,6 +10482,9 @@ function onSessAct(a, d) {
     if (a === 'fieldday' && f.permits[i]) { const n = Number(d.v); const ds = f.permits[i].days; f.permits[i].days = ds.includes(n) ? ds.filter(x => x !== n) : [...ds, n].sort(); }
     if (a === 'fieldsurface') f.surface = f.surface === d.v ? '' : String(d.v);
     if (a === 'fieldlights') f.lights = !f.lights;
+    if (a === 'fieldshut' && f.hours[Number(d.v)]) { const h = f.hours[Number(d.v)]; h.closed = !h.closed; }
+    if (a === 'fieldclose') f.closures.push({ id: uid(), from: '', until: '', note: '' });
+    if (a === 'fieldcloserm') f.closures.splice(i, 1);
     sheetFieldForm(); return;
   }
   if (a === 'fieldsave') {
@@ -10433,9 +10501,25 @@ function onSessAct(a, d) {
         ref: String(p.ref || '').trim().slice(0, 60), note: String(p.note || '').trim().slice(0, 120) };
     }
     const dropped = f.permits.filter(p => !p.days.length).length;
+    // only what constrains is kept: a day with no hours is open, and a half-typed row is said, not guessed at
+    const hours = {};
+    let halfHours = 0;
+    f.hours.forEach((h, d) => {
+      const from = hm(h.from), to = hm(h.to);
+      if (h.closed) hours['d' + d] = { closed: true };
+      else if (from && to && minOf(to) > minOf(from)) hours['d' + d] = { from, to };
+      else if (from || to) halfHours++;
+    });
+    if (halfHours) { toast('Give each day both an opening and a closing time, or leave it blank'); return; }
+    const closed = {};
+    for (const c of f.closures) {
+      if (!okDay(c.from)) continue;
+      const cid = c.id || uid();
+      closed[cid] = { id: cid, from: c.from, until: okDay(c.until) && c.until >= c.from ? c.until : c.from, note: String(c.note || '').trim().slice(0, 120) };
+    }
     quiet(`access/org/venues/${id}`, JSON.parse(JSON.stringify({
       id, name, address: String(f.address || '').trim().slice(0, 160), pitches: clamp(Math.round(Number(f.pitches)) || 1, 1, 20),
-      surface: f.surface || '', lights: !!f.lights, notes: String(f.notes || '').trim().slice(0, 1000), permits
+      surface: f.surface || '', lights: !!f.lights, notes: String(f.notes || '').trim().slice(0, 1000), permits, hours, closed
     })));
     saveLocal(); fieldForm = null; sheetField(id); render();
     toast(dropped ? `Saved · ${dropped} permit${dropped === 1 ? '' : 's'} with no days left off` : 'Saved'); return;
@@ -11542,6 +11626,11 @@ function clubClashesOn(date) {
       out.push({ kind: 'family', text: `${common.length} famil${common.length === 1 ? 'y has' : 'ies have'} children at ${both}${kids.length ? ': ' + kids.join('; ') : ''}` });
     }
   }
+  // something at a field when the field can't be had
+  for (const x of items) {
+    const f = x.field ? fieldById(x.field) : null, shut = f ? fieldShut(f, date, x.a, x.b) : '';
+    if (shut) out.push({ kind: 'field', text: `${x.label} at ${timeOf(x)}: ${shut}` });
+  }
   /* A team entry its coaches can't make: everyone called out or off is a
      clash; some out with somebody still on is said, so it isn't a surprise. */
   for (const x of items) {
@@ -11593,15 +11682,16 @@ function findTimes(f) {
       const famBusy = new Set();
       for (const x of elsewhere) for (const u of Object.keys(itemFams(x, famCache))) if (fams.has(u)) famBusy.add(u);
       const outside = !!(fld && pm.length && !pm.some(p => permitCovers(p, date, a, b)));
+      const shut = fld ? fieldShut(fld, date, a, b) : '';
       const full = !!(fld && hit.filter(x => x.field === fld.id).length >= pitches);
       const isUsual = usual.has(weekdayOf(date) + ' ' + minHm(a));
       const why = [
         ...teamsBusy.map(tid => `${shortTeam(tid)} has ${hit.filter(x => x.tid === tid).map(x => x.label.replace(/^[^:]*: /, '') + ' at ' + timeOf(x)).join(', ')}`),
-        ...(full ? [`${fld.name} is full then`] : []), ...(outside ? [`outside the club's permit for ${fld.name}`] : []),
+        ...(shut ? [shut] : []), ...(full ? [`${fld.name} is full then`] : []), ...(outside ? [`outside the club's permit for ${fld.name}`] : []),
         ...(coachBusy.length ? [`${coachBusy.map(coachName).join(', ')} ${coachBusy.length === 1 ? 'is' : 'are'} busy`] : []),
         ...(famBusy.size ? [`${famBusy.size} famil${famBusy.size === 1 ? 'y has' : 'ies have'} a child somewhere else`] : [])
       ];
-      out.push({ date, a, b, cost: teamsBusy.length * 1000 + (full ? 500 : 0) + (outside ? 200 : 0) + coachBusy.length * 20 + famBusy.size * 2 - (isUsual ? 5 : 0), why, usual: isUsual });
+      out.push({ date, a, b, cost: teamsBusy.length * 1000 + (shut ? 600 : 0) + (full ? 500 : 0) + (outside ? 200 : 0) + coachBusy.length * 20 + famBusy.size * 2 - (isUsual ? 5 : 0), why, usual: isUsual });
     }
   }
   return out.sort((x, y) => x.cost - y.cost || (x.date + minHm(x.a)).localeCompare(y.date + minHm(y.a)));
@@ -11703,7 +11793,7 @@ function plannerFind(p) {
     ${f.ran ? (res.length ? `<div class="plist">${res.map(r => `<button class="prow" type="button" data-act="plbook" data-d="${esc(r.date)}" data-a="${r.a}" style="grid-template-columns:1fr auto">
       <span><span class="pname">${esc(dayLabel(r.date))} · ${esc(niceTime(minHm(r.a)))}–${esc(niceTime(minHm(r.b)))}</span>
         <span class="psub">${r.why.length ? esc(r.why.join('; ')) : 'Nobody involved is busy'}${r.usual ? ' · their usual slot' : ''}</span></span>
-      <span class="tag${r.cost >= 1000 ? ' off' : r.why.length ? ' wait' : ''}">${r.cost >= 1000 ? 'Clash' : r.why.length ? 'Close' : 'Free'}</span></button>`).join('')}</div>
+      <span class="tag${r.cost >= 500 ? ' off' : r.why.length ? ' wait' : ''}">${r.cost >= 500 ? 'Clash' : r.why.length ? 'Close' : 'Free'}</span></button>`).join('')}</div>
       <p class="muted">Best first: nobody busy, then the fewest people affected, then a team's usual practice slot. Tap one to put it on the calendars.</p>`
       : `<div class="empty"><strong>No times fit</strong>Widen the hours or the days.</div>`) : ''}`;
 }
