@@ -2,7 +2,7 @@
    Static app. Data lives in localStorage, and mirrors to Firebase Realtime
    Database when a config + workspace code are present. */
 
-const BUILD = '81';
+const BUILD = '82';
 const BUILT = '2026-10-03';
 /* index.html carries the build it was published with. If this file is newer, the
    browser handed us a cached page — the exact failure that has eaten hours. */
@@ -4270,7 +4270,7 @@ function render() {
   let inGame = ui.view === 'game';
   // a game screen with no game is just four buttons that do nothing
   if (inGame && !match() && !teamMatches(ui.teamId).length) { ui.view = 'matches'; inGame = false; }
-  if (ui.view === 'admin' && !canAdmin()) ui.view = 'club';
+  if ((ui.view === 'admin' || ui.view === 'planner') && !canAdmin()) ui.view = 'club';
   if (ui.view === 'mine' && !guardsAnyone()) ui.view = 'matches';
   /* Not before the club has been read: a link to #/messages opened cold on a
      new phone renders before it knows anybody's role, and sending it to the
@@ -4357,7 +4357,7 @@ function render() {
         v === 'season' ? viewSeason() : v === 'calendar' ? viewCalendar() :
           v === 'formation' ? viewFormation() : v === 'club' ? viewClub() : v === 'people' ? viewPeople() : v === 'admin' ? viewAdmin()
             : v === 'mine' ? viewMine() : v === 'teamset' ? viewTeamSet() : v === 'practice' ? viewPractice()
-              : v === 'inbox' ? viewInbox() : v === 'thread' ? viewThread() : v === 'sessions' ? viewSessions() : v === 'mycal' ? viewMyCal()
+              : v === 'inbox' ? viewInbox() : v === 'thread' ? viewThread() : v === 'sessions' ? viewSessions() : v === 'mycal' ? viewMyCal() : v === 'planner' ? viewPlanner()
               : v === 'setup' ? viewSetup() : viewMatches());
   syncHash();
   if (drillLink) setTimeout(openDrillLink, 0);
@@ -9374,13 +9374,13 @@ function busyItems(date) {
     if (it.date !== date || it.called || !it.start) continue;
     const [a, b] = span(it.start, it.end, it.mins);
     const f = fieldOfText(it.venue), t = state.teams[it.tid] || {};
-    out.push({ key: it.key, kind: it.kind, label: `${t.name || 'A team'}: ${it.title}`, a, b, field: f ? f.id : null, coaches: Object.keys(teamAccess(it.tid).coaches || {}), tid: it.tid, pids: null });
+    out.push({ key: it.key, kind: it.kind, label: `${t.name || 'A team'}: ${it.title}`, a, b, field: f ? f.id : null, venue: it.venue || '', coaches: Object.keys(teamAccess(it.tid).coaches || {}), tid: it.tid, pids: null });
   }
   for (const s of sessAll()) {
     if (s.date !== date || s.called || !s.start) continue;
     const [a, b] = span(s.start, s.end, 60);
     const f = sessField(s);
-    out.push({ key: 's:' + s.id, kind: 'session', label: `${sessTitle(s)} (${s.coachName})`, a, b, field: f ? f.id : null, coaches: [s.coach], tid: null,
+    out.push({ key: 's:' + s.id, kind: 'session', label: `${sessTitle(s)} (${s.coachName})`, a, b, field: f ? f.id : null, venue: s.place || '', coaches: [s.coach], tid: null,
       pids: bookingsOf(s.id).filter(x => x.st === 'in' || x.st === 'asked').map(x => x.pid) });
   }
   return out;
@@ -11217,6 +11217,10 @@ function viewAdmin() {
         <span class="muted">Edit</span></button>`).join('') || '<p class="muted" style="margin:0">No teams yet.</p>'}</div>
       <div style="margin-top:10px"><button class="btn quiet wide" data-act="newteam">Add a team</button></div></div>
 
+    <div class="card"><h2 style="margin-bottom:8px">Planning for the club</h2>
+      <p class="muted" style="margin-top:0">What collides across the teams, when everyone involved is free, and picture day laid out around what each team already has on.</p>
+      <button class="btn quiet wide" data-act="planner">Plan</button></div>
+
     <div class="card"><h2 style="margin-bottom:8px">Fields and permits</h2>
       <p class="muted" style="margin-top:0">${fieldList().length ? `${fieldList().length} field${fieldList().length === 1 ? '' : 's'}.` : 'None yet.'} The places the club trains, the permits you hold for each and when, and what is booked on them.</p>
       <button class="btn quiet wide" data-act="sesstab" data-k="fields">Fields</button></div>
@@ -11231,6 +11235,337 @@ function viewAdmin() {
 
     ${aiButton('club')}
   </div>`;
+}
+
+/* ---------------- planning for the club ---------------- */
+/* ROADMAP's *Next: planning for the club*. A club admin scheduling the season
+   asks one question in many shapes: when is everyone involved free? All the
+   facts are already in the club (each team's games and calendar, who coaches
+   which team, which families have children on which teams, the training
+   sessions and the fields with their permits); this joins them up. It builds
+   on busyItems(), the join training sessions already use, rather than a
+   second one.
+
+   Three parts, in ROADMAP's order:
+   - Clashes: read-only, nothing written. Two things at one place at once, a
+     coach due in two places, a family with two children due in two places.
+   - Find a time: the slots where none of the chosen teams, their coaches or
+     their families is busy, best first, each saying what it would clash
+     with. Booking one writes one entry per team, sharing a `club` id, the
+     way a weekly practice shares `series`: an admin can already write every
+     team's events, so no new node and no new rule, and each team can move or
+     call off its own copy.
+   - Picture day: one place, one window, a slot each, laid out back to back
+     around what each team already has on, siblings next to each other so a
+     family makes one trip.
+
+   Admins only, so children's names are shown, as everywhere else an admin
+   looks. A game against another club is fixed by a league; the planner says
+   what it clashes with and never offers to move it. */
+const canPlanClub = () => canAdmin();
+const PLANNER_ACTS = new Set(['planner', 'plback', 'pltab', 'plrange', 'pltm', 'plfind', 'plbook', 'plkind', 'plbookgo', 'plpictm', 'plpic', 'plpicgo']);
+function plannerUi() {
+  if (!ui.planner || typeof ui.planner !== 'object') ui.planner = {};
+  const p = ui.planner;
+  if (!['clash', 'find', 'pic'].includes(p.tab)) p.tab = 'clash';
+  if (![7, 14, 28].includes(p.days)) p.days = 14;
+  const today = todayStr();
+  const f = p.find && typeof p.find === 'object' ? p.find : {};
+  p.find = { tids: Array.isArray(f.tids) ? f.tids.filter(x => state.teams[x]) : [], len: [30, 45, 60, 90, 120, 180].includes(Number(f.len)) ? Number(f.len) : 60,
+    from: okDay(f.from) && f.from >= today ? f.from : today, days: [7, 14, 28].includes(Number(f.days)) ? Number(f.days) : 14,
+    h0: hm(f.h0) || '16:00', h1: hm(f.h1) || '20:00', field: f.field && fieldById(f.field) ? f.field : '', ran: !!f.ran };
+  const c = p.pic && typeof p.pic === 'object' ? p.pic : {};
+  p.pic = { date: okDay(c.date) && c.date >= today ? c.date : addDays(today, 14), venue: String(c.venue || ''), h0: hm(c.h0) || '09:00', h1: hm(c.h1) || '13:00',
+    slot: [5, 10, 15, 20, 30].includes(Number(c.slot)) ? Number(c.slot) : 10, tids: Array.isArray(c.tids) ? c.tids.filter(x => state.teams[x]) : teams().map(t => t.id) };
+  return p;
+}
+/* Whatever has been typed, read back before a redraw throws it away. */
+function plannerRead() {
+  const p = plannerUi(), val = id => { const el = $('#' + id); return el && typeof el.value === 'string' ? el.value : null; };
+  for (const [k, id] of [['from', 'plFrom'], ['h0', 'plH0'], ['h1', 'plH1'], ['len', 'plLen'], ['days', 'plDays'], ['field', 'plField']]) { const v = val(id); if (v != null) p.find[k] = k === 'len' || k === 'days' ? Number(v) : v; }
+  for (const [k, id] of [['date', 'pcDate'], ['venue', 'pcVenue'], ['h0', 'pcH0'], ['h1', 'pcH1'], ['slot', 'pcSlot']]) { const v = val(id); if (v != null) p.pic[k] = k === 'slot' ? Number(v) : v; }
+  plannerUi();
+}
+const minHm = x => pad2(Math.floor(x / 60) % 24) + ':' + pad2(x % 60);
+const placeKey = x => (x.field ? 'f:' + x.field : normPlace(x.venue) ? 't:' + normPlace(x.venue) : '');
+
+/* Families, as guardian uids, with the children each has on a team. */
+function teamFams(tid) {
+  const out = {};
+  for (const p of players(state.teams[tid])) if (p.active !== false)
+    for (const u of Object.keys(p.guardians || {})) (out[u] = out[u] || []).push(p);
+  return out;
+}
+function itemFams(x, cache) {
+  if (x.tid) return (cache[x.tid] = cache[x.tid] || teamFams(x.tid));
+  const out = {};
+  for (const pid of x.pids || []) { const w = playerById(pid); if (w) for (const u of Object.keys(w.p.guardians || {})) (out[u] = out[u] || []).push(w.p); }
+  return out;
+}
+const coachName = u => ((acc().members || {})[u] || {}).name || (me && u === me.uid ? whoAmI() : '') || 'A coach';
+const shortTeam = tid => (state.teams[tid] || {}).name || 'a team';
+
+/* What collides on one day, in words. Each pair is said once. */
+function clubClashesOn(date) {
+  const items = busyItems(date), out = [], cache = {};
+  const ov = (x, y) => x.a < y.b && y.a < x.b;
+  for (let i = 0; i < items.length; i++) for (let j = i + 1; j < items.length; j++) {
+    const x = items[i], y = items[j];
+    if (!ov(x, y)) continue;
+    const both = `${x.label} at ${timeOf(x)} and ${y.label} at ${timeOf(y)}`;
+    const pk = placeKey(x);
+    if (pk && pk === placeKey(y)) {
+      const f = x.field ? fieldById(x.field) : null, pitches = f ? Math.max(1, Math.round(Number(f.pitches)) || 1) : 1;
+      const at = items.filter(z => placeKey(z) === pk && ov(z, x) && ov(z, y)).length;
+      if (at > pitches) out.push({ kind: 'place', text: `${f ? f.name : x.venue}${f && pitches > 1 ? ` (${pitches} pitches)` : ''}: ${both}` });
+    }
+    for (const u of x.coaches.filter(c => y.coaches.includes(c))) out.push({ kind: 'coach', text: `${coachName(u)} is due at ${both}` });
+    if (x.tid && x.tid === y.tid) continue;
+    const fx = itemFams(x, cache), fy = itemFams(y, cache);
+    const common = Object.keys(fx).filter(u => fy[u]);
+    if (common.length) {
+      const kids = common.map(u => [...fx[u], ...fy[u]].filter((p, k, a) => a.findIndex(q => q.id === p.id) === k).map(p => p.name).join(' and ')).filter(Boolean);
+      out.push({ kind: 'family', text: `${common.length} famil${common.length === 1 ? 'y has' : 'ies have'} children at ${both}${kids.length ? ': ' + kids.join('; ') : ''}` });
+    }
+  }
+  return out;
+}
+function plannerClashes(from, days) {
+  const out = [];
+  for (let i = 0; i < days; i++) { const date = addDays(from, i); for (const c of clubClashesOn(date)) out.push({ date, ...c }); }
+  return out;
+}
+
+/* The slot a team usually practises in, as "weekday start", from its own
+   calendar: the one it has most often. A tie-break, never a reason. */
+function usualSlot(tid) {
+  const n = {};
+  for (const e of Object.values((state.teams[tid] || {}).events || {})) if (e && e.kind === 'practice' && okDay(e.date) && hm(e.start)) { const k = weekdayOf(e.date) + ' ' + hm(e.start); n[k] = (n[k] || 0) + 1; }
+  const best = Object.entries(n).sort((a, b) => b[1] - a[1])[0];
+  return best && best[1] >= 2 ? best[0] : '';
+}
+/* Every start, every half hour inside the hours given, scored by who it
+   would clash with: one of the chosen teams already busy is all but ruled
+   out, a full or unpermitted field next, then coaches, then families. */
+function findTimes(f) {
+  const tids = f.tids.length ? f.tids : teams().map(t => t.id);
+  if (!tids.length) return [];
+  const coaches = new Set(tids.flatMap(tid => Object.keys(teamAccess(tid).coaches || {})));
+  const famCache = {}, fams = new Set(tids.flatMap(tid => Object.keys(itemFams({ tid }, famCache))));
+  const usual = new Set(tids.map(usualSlot).filter(Boolean));
+  const fld = f.field ? fieldById(f.field) : null, pm = fld ? permitsOf(fld) : [], pitches = fld ? Math.max(1, Math.round(Number(fld.pitches)) || 1) : 1;
+  const h0 = minOf(f.h0), h1 = minOf(f.h1), now = new Date(nowMs()), nowMin = now.getHours() * 60 + now.getMinutes();
+  const out = [];
+  for (let i = 0; i < f.days; i++) {
+    const date = addDays(f.from, i), items = busyItems(date);
+    for (let a = h0; a + f.len <= h1; a += 30) {
+      if (date === todayStr() && a <= nowMin) continue;
+      const b = a + f.len, hit = items.filter(x => x.a < b && a < x.b);
+      const teamsBusy = tids.filter(tid => hit.some(x => x.tid === tid));
+      // coaches and families count where they are due somewhere else; a chosen team's own practice is said once, above
+      const elsewhere = hit.filter(x => !tids.includes(x.tid));
+      const coachBusy = [...coaches].filter(u => elsewhere.some(x => x.coaches.includes(u)));
+      const famBusy = new Set();
+      for (const x of elsewhere) for (const u of Object.keys(itemFams(x, famCache))) if (fams.has(u)) famBusy.add(u);
+      const outside = !!(fld && pm.length && !pm.some(p => permitCovers(p, date, a, b)));
+      const full = !!(fld && hit.filter(x => x.field === fld.id).length >= pitches);
+      const isUsual = usual.has(weekdayOf(date) + ' ' + minHm(a));
+      const why = [
+        ...teamsBusy.map(tid => `${shortTeam(tid)} has ${hit.filter(x => x.tid === tid).map(x => x.label.replace(/^[^:]*: /, '') + ' at ' + timeOf(x)).join(', ')}`),
+        ...(full ? [`${fld.name} is full then`] : []), ...(outside ? [`outside the club's permit for ${fld.name}`] : []),
+        ...(coachBusy.length ? [`${coachBusy.map(coachName).join(', ')} ${coachBusy.length === 1 ? 'is' : 'are'} busy`] : []),
+        ...(famBusy.size ? [`${famBusy.size} famil${famBusy.size === 1 ? 'y has' : 'ies have'} a child somewhere else`] : [])
+      ];
+      out.push({ date, a, b, cost: teamsBusy.length * 1000 + (full ? 500 : 0) + (outside ? 200 : 0) + coachBusy.length * 20 + famBusy.size * 2 - (isUsual ? 5 : 0), why, usual: isUsual });
+    }
+  }
+  return out.sort((x, y) => x.cost - y.cost || (x.date + minHm(x.a)).localeCompare(y.date + minHm(y.a)));
+}
+
+/* Picture day: siblings next to each other, then each team the first slot
+   from where the last one ended that it and its coaches are free for. */
+function picOrder(tids) {
+  const cache = {}, fam = Object.fromEntries(tids.map(t => [t, itemFams({ tid: t }, cache)]));
+  const w = (x, y) => Object.keys(fam[x]).filter(u => fam[y][u]).length;
+  const name = t => shortTeam(t);
+  const left = [...tids].sort((x, y) => name(x).localeCompare(name(y)));
+  if (!left.length) return [];
+  const total = t => left.reduce((n, o) => n + (o === t ? 0 : w(t, o)), 0);
+  left.sort((x, y) => total(y) - total(x) || name(x).localeCompare(name(y)));
+  const order = [left.shift()];
+  while (left.length) {
+    const last = order[order.length - 1];
+    left.sort((x, y) => w(last, y) - w(last, x) || name(x).localeCompare(name(y)));
+    order.push(left.shift());
+  }
+  return order.map((t, i) => ({ tid: t, sib: i ? w(order[i - 1], t) : 0 }));
+}
+function picLayout(c) {
+  if (!okDay(c.date)) return { slots: [], left: [] };
+  const items = busyItems(c.date), h1 = minOf(c.h1);
+  let at = minOf(c.h0);
+  const slots = [], left = [];
+  for (const { tid, sib } of picOrder(c.tids)) {
+    const coaches = Object.keys(teamAccess(tid).coaches || {});
+    const busy = a => items.some(x => x.a < a + c.slot && a < x.b && (x.tid === tid || x.coaches.some(u => coaches.includes(u))));
+    let a = at;
+    while (a + c.slot <= h1 && busy(a)) a += c.slot;
+    if (a + c.slot > h1) { left.push(tid); continue; }
+    slots.push({ tid, a, b: a + c.slot, sib });
+    at = a + c.slot;
+  }
+  return { slots, left };
+}
+
+/* One entry per team, sharing a `club` id, each at its own path: one write
+   per team, at the depth the rule on teams/$tid sits at. */
+function bookClubWide(tids, fields) {
+  const club = uid(), at = nowMs();
+  for (const tid of tids) {
+    if (!state.teams[tid]) continue;
+    const id = uid();
+    quiet(`teams/${tid}/events/${id}`, { id, kind: fields.kind === 'practice' ? 'practice' : 'event', title: fields.title, date: fields.date,
+      start: fields.start, end: fields.end, venue: fields.venue || '', notes: '', public: false, club, createdAt: at, ...(me ? { by: me.uid } : {}) });
+  }
+  saveLocal(); schedulePublish();
+  return club;
+}
+
+function viewPlanner() {
+  if (!canPlanClub()) return `<div class="empty"><strong>Club admins only</strong>Planning across the club's teams is for its admins.</div>`;
+  const p = plannerUi();
+  const tab = (k, l) => `<button class="chip" type="button" data-act="pltab" data-k="${k}" aria-pressed="${p.tab === k}">${l}</button>`;
+  const body = p.tab === 'find' ? plannerFind(p) : p.tab === 'pic' ? plannerPic(p) : plannerClashView(p);
+  return `<div class="stack">
+    <div class="spread"><h2>Planning for the club</h2><button class="btn quiet sm" data-act="plback">Back</button></div>
+    <div class="chips">${tab('clash', 'Clashes')}${tab('find', 'Find a time')}${tab('pic', 'Picture day')}</div>
+    ${body}</div>`;
+}
+function plannerClashView(p) {
+  const today = todayStr(), list = plannerClashes(today, p.days);
+  const icon = { place: 'Same place', coach: 'Coach', family: 'Families' };
+  const byDay = {};
+  for (const c of list) (byDay[c.date] = byDay[c.date] || []).push(c);
+  return `<div class="chips">${[7, 14, 28].map(n => `<button class="chip" type="button" data-act="plrange" data-v="${n}" aria-pressed="${p.days === n}">${n === 7 ? 'This week' : n + ' days'}</button>`).join('')}</div>
+    ${list.length ? Object.entries(byDay).map(([date, cs]) => `<div class="card"><h4 style="margin:0 0 6px">${esc(dayLabel(date))}</h4>
+      ${cs.map(c => `<p style="margin:0 0 6px"><span class="tag off">${icon[c.kind]}</span> ${esc(c.text)}</p>`).join('')}</div>`).join('')
+      : `<div class="empty"><strong>Nothing collides</strong>No two things at one place at once, no coach due in two places, and no family with children due in two places, in the next ${p.days} days.</div>`}
+    <p class="muted">From every team's games and calendar, the training sessions, who coaches which team, and which families have children on which teams. A place is a field from Fields where one matches, or the same words typed. Nothing here is stored or sent.</p>`;
+}
+function plannerFind(p) {
+  const f = p.find, ts = teams();
+  const chip = (v, on, l) => `<button class="chip" type="button" data-act="pltm" data-v="${esc(v)}" aria-pressed="${on}">${esc(l)}</button>`;
+  const res = f.ran ? findTimes(f).slice(0, 8) : [];
+  return `<div class="card">
+    <p class="lbl" style="margin-top:0">Who</p>
+    <div class="chips" style="margin-bottom:10px">${chip('all', !f.tids.length, 'The whole club')}${ts.map(t => chip(t.id, f.tids.includes(t.id), t.name || 'Team')).join('')}</div>
+    <div class="grid2">
+      <label class="field"><span>How long</span><select id="plLen">${[30, 45, 60, 90, 120, 180].map(m => `<option value="${m}"${m === f.len ? ' selected' : ''}>${m < 60 ? m + ' minutes' : m / 60 + (m === 60 ? ' hour' : ' hours')}</option>`).join('')}</select></label>
+      <label class="field"><span>Where</span><select id="plField"><option value="">Anywhere</option>${fieldList().map(x => `<option value="${esc(x.id)}"${x.id === f.field ? ' selected' : ''}>${esc(x.name)}</option>`).join('')}</select></label>
+    </div>
+    <div class="grid2">
+      <label class="field"><span>From</span><input type="date" id="plFrom" value="${esc(f.from)}"></label>
+      <label class="field"><span>Over</span><select id="plDays">${[7, 14, 28].map(n => `<option value="${n}"${n === f.days ? ' selected' : ''}>${n} days</option>`).join('')}</select></label>
+    </div>
+    <div class="grid2">
+      <label class="field"><span>No earlier than</span><input type="time" id="plH0" value="${esc(f.h0)}"></label>
+      <label class="field"><span>Done by</span><input type="time" id="plH1" value="${esc(f.h1)}"></label>
+    </div>
+    <button class="btn wide" data-act="plfind">Find times</button></div>
+    ${f.ran ? (res.length ? `<div class="plist">${res.map(r => `<button class="prow" type="button" data-act="plbook" data-d="${esc(r.date)}" data-a="${r.a}" style="grid-template-columns:1fr auto">
+      <span><span class="pname">${esc(dayLabel(r.date))} · ${esc(niceTime(minHm(r.a)))}–${esc(niceTime(minHm(r.b)))}</span>
+        <span class="psub">${r.why.length ? esc(r.why.join('; ')) : 'Nobody involved is busy'}${r.usual ? ' · their usual slot' : ''}</span></span>
+      <span class="tag${r.cost >= 1000 ? ' off' : r.why.length ? ' wait' : ''}">${r.cost >= 1000 ? 'Clash' : r.why.length ? 'Close' : 'Free'}</span></button>`).join('')}</div>
+      <p class="muted">Best first: nobody busy, then the fewest people affected, then a team's usual practice slot. Tap one to put it on the calendars.</p>`
+      : `<div class="empty"><strong>No times fit</strong>Widen the hours or the days.</div>`) : ''}`;
+}
+function plannerPic(p) {
+  const c = p.pic, ts = teams(), lay = picLayout(c);
+  const chip = (v, on, l) => `<button class="chip" type="button" data-act="plpictm" data-v="${esc(v)}" aria-pressed="${on}">${esc(l)}</button>`;
+  return `<div class="card">
+    <div class="grid2">
+      <label class="field"><span>Day</span><input type="date" id="pcDate" value="${esc(c.date)}"></label>
+      <label class="field"><span>Each team gets</span><select id="pcSlot">${[5, 10, 15, 20, 30].map(m => `<option value="${m}"${m === c.slot ? ' selected' : ''}>${m} minutes</option>`).join('')}</select></label>
+    </div>
+    <div class="grid2">
+      <label class="field"><span>From</span><input type="time" id="pcH0" value="${esc(c.h0)}"></label>
+      <label class="field"><span>Until</span><input type="time" id="pcH1" value="${esc(c.h1)}"></label>
+    </div>
+    <label class="field"><span>Where</span><input type="text" id="pcVenue" value="${esc(c.venue)}" placeholder="Clubhouse, by the main pitch"></label>
+    <p class="lbl">Teams</p>
+    <div class="chips" style="margin-bottom:10px">${ts.map(t => chip(t.id, c.tids.includes(t.id), t.name || 'Team')).join('')}</div>
+    <button class="btn quiet wide" data-act="plpic">Lay it out</button></div>
+    ${lay.slots.length ? `<div class="card"><div class="plist">${lay.slots.map(x => `<div class="prow" style="grid-template-columns:auto 1fr">
+      <span class="pnum">${esc(niceTime(minHm(x.a)))}</span><span><span class="pname">${esc(shortTeam(x.tid))}</span>${x.sib ? `<span class="psub">${x.sib} famil${x.sib === 1 ? 'y' : 'ies'} with a child on the team before</span>` : ''}</span></div>`).join('')}</div>
+      ${lay.left.length ? `<p class="muted">No room before ${esc(niceTime(c.h1))} for ${esc(lay.left.map(shortTeam).join(', '))}.</p>` : ''}
+      <button class="btn wide" data-act="plpicgo" style="margin-top:10px">Put ${lay.slots.length === 1 ? 'it' : lay.slots.length === 2 ? 'both' : 'all ' + lay.slots.length} on the team calendars</button></div>`
+      : `<div class="empty"><strong>Nothing laid out</strong>Pick the day, the window and the teams.</div>`}
+    <p class="muted">Each team goes in the first slot it and its coaches are free for, siblings' teams next to each other so a family makes one trip. Each team's entry is its own: a team can move or call off its slot without touching the rest.</p>`;
+}
+function sheetPlBook(date, a) {
+  const p = plannerUi(); p.lastD = date; p.lastA = a;
+  const f = p.find, fld = f.field ? fieldById(f.field) : null;
+  const tids = f.tids.length ? f.tids : teams().map(t => t.id);
+  openSheet(`<h3>${esc(dayLabel(date))} · ${esc(niceTime(minHm(a)))}–${esc(niceTime(minHm(a + f.len)))}</h3>
+    <p class="muted" style="margin-top:0">On the calendar of ${tids.length === 1 ? esc(shortTeam(tids[0])) : tids.length + ' teams'}, one entry each. Each team can move or call off its own.</p>
+    <label class="field"><span>What</span><input type="text" id="pbTitle" value="" placeholder="Coaches' meeting, extra practice, party" maxlength="80"></label>
+    <label class="field"><span>Where</span><input type="text" id="pbVenue" value="${esc(fld ? fld.name : '')}" maxlength="80"></label>
+    <div class="chips" style="margin-bottom:10px"><button class="chip" type="button" data-act="plkind" data-v="event" aria-pressed="${p.kind !== 'practice'}">Something else</button>
+      <button class="chip" type="button" data-act="plkind" data-v="practice" aria-pressed="${p.kind === 'practice'}">A practice</button></div>
+    <p class="muted" style="margin-top:0">For each team only, not the share link. A coach can put it on the share link from her own calendar.</p>
+    <button class="btn wide" data-act="plbookgo" data-d="${esc(date)}" data-a="${a}">Put it on the calendars</button>
+    <button class="btn quiet wide" data-act="closesheet" style="margin-top:8px">Cancel</button>`, true);
+}
+function onPlannerAct(a, d) {
+  // checked here, not just by the screen being hidden: this writes to every team's calendar
+  if (!canPlanClub()) { closeSheet(); toast('Planning is for club admins'); render(); return; }
+  plannerRead();
+  const p = plannerUi();
+  if (a === 'planner') { ui.view = 'planner'; render(); toTop(); return; }
+  if (a === 'plback') { ui.view = 'admin'; render(); return; }
+  if (a === 'pltab') { p.tab = d.k; render(); return; }
+  if (a === 'plrange') { p.days = Number(d.v); render(); return; }
+  if (a === 'pltm') {
+    if (d.v === 'all') p.find.tids = [];
+    else p.find.tids = p.find.tids.includes(d.v) ? p.find.tids.filter(x => x !== d.v) : [...p.find.tids, d.v];
+    render(); return;
+  }
+  if (a === 'plfind') {
+    if (!okDay(p.find.from)) { toast('Pick a day to start from'); return; }
+    if (minOf(p.find.h1) - minOf(p.find.h0) < p.find.len) { toast('Those hours are shorter than it is'); return; }
+    p.find.ran = true; render(); return;
+  }
+  if (a === 'plbook') { sheetPlBook(d.d, Number(d.a)); return; }
+  if (a === 'plkind') {
+    // the sheet is drawn again for the chip; what was typed in it is put back
+    const keep = [($('#pbTitle') || {}).value, ($('#pbVenue') || {}).value];
+    p.kind = d.v === 'practice' ? 'practice' : 'event';
+    sheetPlBook(p.lastD, p.lastA);
+    ['#pbTitle', '#pbVenue'].forEach((sel, i) => { const el = $(sel); if (el && keep[i] != null) el.value = keep[i]; });
+    return;
+  }
+  if (a === 'plbookgo') {
+    const title = String(($('#pbTitle') || {}).value || '').trim().slice(0, 80);
+    if (!title) { toast('Say what it is'); return; }
+    const date = d.d, st = Number(d.a), tids = p.find.tids.length ? p.find.tids : teams().map(t => t.id);
+    if (!okDay(date) || !Number.isFinite(st)) return;
+    bookClubWide(tids, { title, kind: p.kind, date, start: minHm(st), end: minHm(st + p.find.len), venue: String(($('#pbVenue') || {}).value || '').trim().slice(0, 80) });
+    closeSheet(); render(); toast(`On ${tids.length} team calendar${tids.length === 1 ? '' : 's'}`); return;
+  }
+  if (a === 'plpictm') { p.pic.tids = p.pic.tids.includes(d.v) ? p.pic.tids.filter(x => x !== d.v) : [...p.pic.tids, d.v]; render(); return; }
+  if (a === 'plpic') { render(); return; }
+  if (a === 'plpicgo') {
+    const c = p.pic, lay = picLayout(c);
+    if (!lay.slots.length) return;
+    if (!confirm(`Put picture day on ${lay.slots.length} team calendar${lay.slots.length === 1 ? '' : 's'}?`)) return;
+    const club = uid(), at = nowMs();
+    for (const x of lay.slots) {
+      const id = uid();
+      quiet(`teams/${x.tid}/events/${id}`, { id, kind: 'event', title: 'Picture day', date: c.date, start: minHm(x.a), end: minHm(x.b), venue: c.venue.trim().slice(0, 80),
+        notes: '', public: false, club, createdAt: at, ...(me ? { by: me.uid } : {}) });
+    }
+    saveLocal(); schedulePublish(); render(); toast(`Picture day is on ${lay.slots.length} calendar${lay.slots.length === 1 ? '' : 's'}`); return;
+  }
 }
 
 /* ---------------- ticking ---------------- */
@@ -12883,6 +13218,7 @@ function onAct(e) {
   if (a === 'drillopen') { followDrillLink(d.id, d.k); return; }
   if (PRACTICE_ACTS.has(a) && !canTrain()) { closeSheet(); toast('Practice is for coaches and admins'); render(); return; }
   if (SESS_ACTS.has(a)) { onSessAct(a, d); return; }
+  if (PLANNER_ACTS.has(a)) { onPlannerAct(a, d); return; }
 
   if (a === 'practab') {
     const p = practiceUi();
@@ -14445,6 +14781,7 @@ function uiToHash() {
   if (ui.view === 'people') return '#/club/people';
   if (ui.view === 'club') return '#/club';
   if (ui.view === 'admin') return '#/club/settings';
+  if (ui.view === 'planner') return '#/club/planner';
   if (ui.view === 'mine') return '#/my-players';
   if (ui.view === 'mycal') return '#/my-calendar';
   if (ui.view === 'inbox') return '#/messages';
@@ -14457,7 +14794,7 @@ function uiToHash() {
 function hashToUi() {
   const p = decodeURIComponent(location.hash.replace(/^#\/?/, '')).split('/').filter(Boolean);
   if (!p.length) return false;
-  if (p[0] === 'club') { ui.view = p[1] === 'settings' ? 'admin' : p[1] === 'people' ? 'people' : 'club'; return true; }
+  if (p[0] === 'club') { ui.view = p[1] === 'settings' ? 'admin' : p[1] === 'people' ? 'people' : p[1] === 'planner' ? 'planner' : 'club'; return true; }
   if (p[0] === 'my-players') { ui.view = 'mine'; return true; }
   if (p[0] === 'my-calendar') { ui.view = 'mycal'; return true; }
   if (p[0] === 'messages') {

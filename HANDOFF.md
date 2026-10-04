@@ -102,7 +102,26 @@ calendars, with a calendar that is the person's rather than the team's.
   calendar lives on Club home and is linked from each team's Calendar tab,
   not in the top-left switcher.
 
-## Next conversation: planning for the club
+## The to-do list, built (branch `ccr-0c6516a4-bvhzzu`, 2026-10-04, build 82)
+
+Four entries in `CHANGELOG.md`: practice plans hang off the calendar,
+templates, *what needs work* on Season, and planning for the club (Admin →
+*Plan*). Waiting on the owner:
+
+- **Paste `database.rules.json`** before this build reaches coaches: the
+  `practices` rule no longer needs a date, and a new plan (which has none)
+  is refused by the old rule and stays on the phone. `node test/rules.js`
+  passes.
+- **Later, remove the `schedule` rule**, once nothing older than build 82 is
+  in use. Not in the same change that stopped writing it, on purpose.
+
+Found on the way: `test/version.js` now compiles app.js as a module, because
+the other suites eval it as a script, where a second top-level function of
+the same name silently replaces the first (the planner's first
+`clashesOn(date)` did that to the game plan's `clashesOn(t, m)`; every suite
+passed and the page was blank).
+
+## Was next: planning for the club (now built, above)
 
 The owner's next ask: help club admins plan future events — who (teams,
 coaches, families) is busy when, and when they are free — for games,

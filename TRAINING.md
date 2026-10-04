@@ -10,9 +10,9 @@ drills, each with an animated diagram, and a guide to what each of nine
 positions is for), the renderer that draws those diagrams
 (`drill-diagram.js`), the Practice tab that shows them, a team's age,
 practice plans with their rules, and the other two shelves: a coach's own
-drills (Mine) and the club's (Club), with their rules. Templates are next,
-and plans moving onto the calendar with them; **`TRAINING-NEXT.md` is the
-brief for that work.**
+drills (Mine) and the club's (Club), with their rules, plans hanging off
+the calendar's practices, templates on both shelves, and *what needs work* on
+Season. Next are the AI steps (step 8) and import (step 9).
 Everything not built is still a proposal, and the questions at the end are the
 decisions it needs.
 
@@ -581,15 +581,18 @@ too. The bridge doesn't change shape.
    only. Not built from this step: templates (they belong to Mine and Club),
    and the "shares your drill with your team" notice, which needs Mine.
    Blocks hold built-in drills only, by reference, for the same reason.*
+   *Since 2026-10-04 a plan hangs off its calendar practice: keyed by the
+   entry's id, reading day, time, place and length from it, `schedule` no
+   longer written, older plans moved onto an entry under their own id.*
 4. **Mine.** `userLibrary/{uid}`; save to mine; edit; templates. *Built,
-   except templates: the shelf, the editor, save to mine, "the original has
+   templates included (2026-10-04, as a plan with no calendar entry): the shelf, the editor, save to mine, "the original has
    changed", links, Mine drills copied whole into plans with the "shares it
    with this team's coaches" notice, the cache cleared on sign-out, and the
    app owner's read-once support view. Its rules are in
    `database.rules.json` with `test/rules.js` cases, and `test/library.js`
    covers the app side.*
 5. **Club.** Share to the club, copy from it, curation under Admin. *Built,
-   except templates. Curation is the same card, with Edit and Remove for
+   templates included. Curation is the same card, with Edit and Remove for
    admins and for the coach who shared it, reached from Admin → Club
    drills. As built, the write rule checks the team's own coach list
    (`access/teams/{team}/coaches`) rather than `teamIndex`, so sharing needs
@@ -597,8 +600,9 @@ too. The bridge doesn't change shape.
 6. **Pictures for a coach's own drills.** The diagram editor, then links.
    *Links built with step 4. Drawings built as "have an AI draw it", with
    `DrillDiagram.clean()` guarding every stored drawing; drawing by hand,
-   tap by tap, is not built.*
-7. **What needs work.** The signals card on Season.
+   tap by tap, built since as *Draw it on a pitch*.*
+7. **What needs work.** The signals card on Season. *Built: `needsWork()`,
+   with the thresholds in the table above, for coaches and admins.*
 8. **The AI steps.** The library in the prompt, then paste-back.
 9. **Import.** A `"drills"` list in Admin's bulk import file, for a club that
    already keeps its drills in a spreadsheet. Merges by name, never replaces,

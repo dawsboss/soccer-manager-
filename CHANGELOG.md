@@ -8,6 +8,47 @@ before this point lives only in the git log.
 
 ---
 
+## Planning for the club — 2026-10-04 (build 82)
+
+ROADMAP's *Next: planning for the club*, all four steps, as Admin → *Plan*.
+An admin scheduling the season asks one question in many shapes: when is
+everyone involved free? Every fact was already in the club; this joins them,
+building on `busyItems()` (the join training sessions use) rather than a
+second one.
+
+- **Clashes**, this week, 14 or 28 days: two things at one place at once (a
+  field from Fields, with its number of pitches, or the same words typed),
+  a coach due in two places, and a family with children due in two places,
+  by name, since the screen is the admins'. A read: nothing written.
+- **Find a time** for some teams or the whole club: how long, from when, over
+  how many days, between which hours, optionally at which field. Every half
+  hour that fits is scored: a chosen team already busy is all but ruled
+  out, then a full or unpermitted field, then coaches and families due
+  somewhere else, with a team's usual practice slot as the tie-break. Each
+  slot says what it clashes with.
+- **Book it**: one entry per team at `teams/{tid}/events/{eid}`, sharing a
+  `club` id the way a weekly practice shares `series`, each its own write,
+  team-only. No new node and no new rule: an admin can already write every
+  team's calendar, and each team can move or call off its own copy.
+- **Picture day**: a day, a window, a slot length and the teams; siblings'
+  teams are put next to each other, each team gets the first slot it and its
+  coaches are free for, a team with no room left is said rather than
+  squeezed in, and one tap books every slot.
+
+Admins only, checked in the click handler as well as on the screen. Games
+against other clubs are shown as what they are and never offered to move.
+`test/planner.js` is new; `test/smoke.js` draws all three tabs.
+
+Also in this build: **`test/version.js` compiles app.js as a module**, the
+way `index.html` loads it. The suites eval it as a script, where a second
+top-level function of the same name quietly replaces the first: the
+planner's first draft declared a `clashesOn(date)` beside the game plan's
+`clashesOn(t, m)`, every suite passed, and the page itself was blank. Found
+by looking at the new screens in Chromium at phone width, which is now a
+test.
+
+---
+
 ## What needs work, on the Season tab — 2026-10-04
 
 TRAINING.md's step 7, and the first step of its road to the AI helper, with

@@ -43,6 +43,7 @@ const SUITES = [
   ['avail', 'coaches\' bookable times, a family booking one, and my calendar'],
   ['safekeep', 'nothing floats away: one count, a full phone, a whole backup'],
   ['library', 'the club\'s drills and a coach\'s own, and who sees which'],
+  ['planner', 'planning for the club: clashes, a time for everyone, picture day'],
   ['smoke', 'every view renders without throwing'],
   ['sandbox', 'the test club, and database isolation'],
   ['rules', 'the database rules, as database.rules.json has them']
