@@ -105,6 +105,10 @@
         }
       }
     },
+    "rulesVersion": {
+      ".read": true,
+      ".write": "newData.isNumber() && newData.val() === 1"
+    },
     "public": {
       "$share": {
         ".read": true,

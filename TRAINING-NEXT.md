@@ -43,9 +43,9 @@ all still binding:
 2. `TRAINING.md`: *Practices*, *Moving between shelves*, *Data model*,
    *Rules sketch*, *Offline*, *Build order*, and *Decisions* (the calendar
    one is settled there too).
-3. `HANDOFF.md`: how the calendar and the attendance register work. The
-   calendar comment in `app.js` (search `/* --- calendar --- */`) has the
-   entry's shape.
+3. The calendar comment in `app.js` (search `/* --- calendar --- */`) for
+   the entry's shape, and README's **The calendar** for how it and the
+   attendance register work.
 
 ## Where things stand
 
@@ -99,13 +99,12 @@ Built, and on this branch:
 drills leave the phone (README → *The database rules*). Until then the
 Drills screen says *Saved on this phone only*.
 
-**Started on `main` (2026-10-03).** The owner asked for the Practice tab's
-Add and the Calendar's Add to be the same, so they are now one button and one
-sheet: a practice added from either goes on the calendar, and a plan made for
-it is keyed by the entry's id (`eid`) and starts from its day, time and place.
-A plan opens from its calendar entry. What's left of step 1 below: take when
-and where from the entry on read rather than a copy, retire `schedule` and its
-rule, and move plans made the old way onto entries.
+**Done on `main` (2026-10-03, CHANGELOG *One Add for a practice*).** The
+Practice tab's Add and the Calendar's Add are one button and one sheet; a
+practice added from either goes on the calendar; a plan made for it is keyed
+by the entry's id and starts from its day, time and place; Plans lists the
+calendar's unplanned practices as *Plan it*; a practice's calendar sheet has
+*Plan this practice* / *Open the plan*. Step 1 below is only what is left.
 
 ## What to build, in this order
 
@@ -115,14 +114,11 @@ The calendar already has practices: `teams/{tid}/events/{eid}` with
 `kind: 'practice'`, `date`, `start`, `end`, `venue`, `called`, `series`.
 Everyone on the team reads them, through the workspace.
 
-- **Key a plan by the entry's id**: `training/{code}/practices/{tid}/{eid}`.
-  The plan stops carrying `date`, `start`, `place`, `minutes`; it reads them
-  from the entry (length is `end − start`). Keep `focus`, `blocks`, `status`,
-  `review`, `by`, `byName`, `at`.
-- **Plans → the list is the calendar's practices** for this team, each with
-  its plan or *Plan it*. *Plan a practice* becomes *Add a practice*, which
-  makes a calendar entry through the calendar's own code (don't write a
-  second way to make one) and opens its plan.
+- **Read when and where from the entry.** New plans are already keyed by
+  the entry's id (`training/{code}/practices/{tid}/{eid}`), but still carry
+  their own copy of `date`, `start`, `place`, `minutes`. Stop carrying them;
+  read them from the entry (length is `end − start`). Keep `focus`, `blocks`,
+  `status`, `review`, `by`, `byName`, `at`.
 - **Called off**: the plan stays and the row says so, struck through like
   the calendar. **Deleted entry**: the plan is orphaned, never deleted with
   it (delete never cascades). Show orphans under *Earlier* with *Save as a
@@ -178,11 +174,9 @@ A template is a plan with no calendar entry.
 
 ### 3. Then, as TRAINING.md has it
 
-- **Step 6, the rest of pictures**: drawing by hand, tap by tap, in the
-  same format. The AI route and the guard are built: `DrillDiagram.clean()`
-  rebuilds every stored drawing and `cleanDrawing()` holds it to `parse()`,
-  so a hand editor only has to produce the format; anything it writes goes
-  through the same door.
+- **Step 6, pictures, is done**: the AI route and drawing tap by tap on a
+  board in the editor (CHANGELOG *Writing a drill*), both through
+  `cleanDrawing()`.
 - **Step 7, what needs work**: the signals card on Season.
 
 ## The rules: little left to write

@@ -45,6 +45,7 @@ const SUITES = [
   ['library', 'the club\'s drills and a coach\'s own, and who sees which'],
   ['smoke', 'every view renders without throwing'],
   ['sandbox', 'the test club, and database isolation'],
+  ['rulesver', 'an admin is told when the published rules are behind'],
   ['rules', 'the database rules, as database.rules.json has them']
 ];
 
