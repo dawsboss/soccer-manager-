@@ -8,6 +8,40 @@ before this point lives only in the git log.
 
 ---
 
+## A player's own sign-in, given by her coach — 2026-10-05 (build 94, rules version 5)
+
+The owner's decisions on AUTH.md's four questions: *the coach gives the
+player account, not parents, on request; she can post and read; she sees the
+same as the parents; age is up to the coach and club for now.*
+
+- **Squad → her page → Make her a sign-in link.** A single-use, 14-day
+  `player` invite naming her by shirt number, which the team's coach (or an
+  admin) makes. It's the first invite a coach may make, and the rules allow
+  only this kind. Its id never goes into the club: the coach's phone keeps it
+  to show again, the admins' list has it, and *Withdraw* or a new link kills
+  it. *Remove* beside her account (or on People) takes the sign-in away, and
+  her parents keep theirs.
+- **Her own pointer, `players/{pid}/self/{uid}`, never `guardians`.** She is
+  not her own parent, so every parent right was decided again: she sees what
+  a parent sees (herself by name under *My season*, teammates by the club's
+  preset, Live, Stats, the recap, the calendar, notices), answers *Are you
+  going?* for herself only, and doesn't book or pay for sessions
+  (`myChildren()` now feeds all of that code).
+- **Her family's conversation, never her own.** She reads and writes in
+  each of her parents' conversations with the coaches, where they see every
+  word. The `dm` rule finds them through her player record's `guardians`,
+  and no thread is ever keyed by a player, so a coach can't reach her where
+  her parents can't see. That's the safeguarding line, held by the rules
+  and not just the screen.
+- **A fifth lookup table, `access/teamPlayers`**, checked against `self`, so
+  she reads her team's notices and the rule can find her parents. It is
+  rebuilt like the others (`syncTeamPlayers()`). `hasAnyRole()` counts `self`
+  too: before this, an admin's phone would have taken her out of the club's
+  index on its next connect.
+- **Rules version 5**: `self`, `teamPlayers`, and player clauses in `invites`,
+  `clubInvites`, `rsvp`, `board` and `dm`. `test/rules.js` walks every door
+  (49 new cases), and `test/players.js` pins the app's side.
+
 ## No more workspace codes; a child's parents, plural; a player's own account, designed — 2026-10-05 (build 93)
 
 The owner: *workspace codes are weird, get rid of them. A kid can belong to

@@ -2,7 +2,7 @@
    Static app. Data lives in localStorage, and mirrors to Firebase Realtime
    Database when a config + workspace code are present. */
 
-const BUILD = '93';
+const BUILD = '94';
 const BUILT = '2026-10-05';
 /* The version of database.rules.json this app was written against. The rules
    carry the same number in rulesVersion's .write, which accepts that number
@@ -11,7 +11,7 @@ const BUILT = '2026-10-05';
    never pasted look exactly like a coach with no signal: "saved on this phone
    only", one feature at a time. test/rules.js holds the two numbers together
    and fails when the rules change without this going up. */
-const RULES_VERSION = 4;
+const RULES_VERSION = 5;
 /* index.html carries the build it was published with. If this file is newer, the
    browser handed us a cached page — the exact failure that has eaten hours. */
 const pageBuild = () => {
@@ -892,6 +892,18 @@ function isGuardian(tid, uid) {
   const t = state.teams[tid];
   return Object.values((t && t.players) || {}).some(p => ((p.guardians || {})[uid]));
 }
+/* A player with her own sign-in, given by her coach: teams/{tid}/players/{pid}/self/{uid}.
+   Kept apart from guardians, because she is not her own parent: what a
+   parent may do is decided again for her, never inherited by accident. */
+function isSelfOn(tid, uid) {
+  if (!uid) return false;
+  const t = state.teams[tid];
+  return Object.values((t && t.players) || {}).some(p => ((p.self || {})[uid]));
+}
+const isMe = p => !!(me && p && (p.self || {})[me.uid]);
+// her own child, or herself: the one player a family account sees by name
+const isMine = p => !!(me && p && ((p.guardians || {})[me.uid] || (p.self || {})[me.uid]));
+const famRole = r => r === 'parent' || r === 'player';
 function roleIn(tid, uid) {
   if (!uid) return null;
   if (me && me.uid === uid && isOwner()) return 'owner';
@@ -899,6 +911,7 @@ function roleIn(tid, uid) {
   if (isCoach(tid, uid)) return 'coach';
   if (isTracker(tid, uid)) return 'tracker';
   if (isGuardian(tid, uid)) return 'parent';
+  if (isSelfOn(tid, uid)) return 'player';
   return null;
 }
 /* AUTH.md's "What parents actually see": a parent gets her own child by name
@@ -915,17 +928,17 @@ const rosterOpen = () => ((acc().org || {}).rosterOpen) === true;
 function namesNarrowed(tid) {
   if (!gated() || !me || canAdmin() || rosterOpen()) return false;
   if (teams().some(x => isCoach(x.id, me.uid) || isTracker(x.id, me.uid))) return false;
-  return roleIn(tid, me.uid) === 'parent';
+  return famRole(roleIn(tid, me.uid));
 }
 /* A player as this viewer may see her: the name, or "#7" (a player with no
    number is "A teammate"). Unescaped, like p.name; callers escape. */
 function shownName(t, p) {
   if (!p) return 'Unknown';
-  if (!t || !namesNarrowed(t.id) || (p.guardians || {})[me.uid]) return p.name || 'Unknown';
+  if (!t || !namesNarrowed(t.id) || isMine(p)) return p.name || 'Unknown';
   const n = p.number == null ? '' : String(p.number).trim();
   return n ? '#' + n : 'A teammate';
 }
-const ROLE_LABEL = { owner: 'App owner', admin: 'Org admin', coach: 'Coach', tracker: 'Tracker', parent: 'Parent', viewer: 'Viewer' };
+const ROLE_LABEL = { owner: 'App owner', admin: 'Org admin', coach: 'Coach', tracker: 'Tracker', parent: 'Parent', player: 'Player', viewer: 'Viewer' };
 
 /* Whoever looks after the app itself. Read from the database root, never from
    this file — a personal email committed to a public repo gets scraped, sticks
@@ -947,7 +960,7 @@ function hasAnyRole(uid) {
   for (const ta of Object.values(a.teams || {}))
     if ((ta.coaches || {})[uid] || (ta.trackers || {})[uid]) return true;
   for (const t of Object.values(state.teams || {}))
-    if (Object.values(t.players || {}).some(p => (p.guardians || {})[uid])) return true;
+    if (Object.values(t.players || {}).some(p => (p.guardians || {})[uid] || (p.self || {})[uid])) return true;
   return false;
 }
 function logAccess(act, targetUid, extra) {
@@ -1083,7 +1096,36 @@ function syncTeamParents(tid) {
     if (!want[u]) { delDeep(state, `access/teamParents/${tid}/${u}`); remoteDel(`access/teamParents/${tid}/${u}`); changed = true; }
   if (changed) saveLocal();
 }
-function syncAllTeamParents() { for (const tid of Object.keys(state.teams || {})) syncTeamParents(tid); }
+function syncAllTeamParents() { for (const tid of Object.keys(state.teams || {})) { syncTeamParents(tid); syncTeamPlayers(tid); } }
+
+/* The same one-hop answer for a player with her own sign-in:
+     access/teamPlayers/{teamId}/{uid} = the player id whose `self` lists her
+   It is what lets her read the team's notices, and it is how the rule finds
+   which family's conversations are hers to read and write in: her player
+   record's guardians. No rule falls back on this table being missing, so
+   unlike teamParents its first entry closes no bridge, and the player's own
+   phone writes hers when she accepts. Rebuilt on an admin's or that team's
+   coach's connect, like the others. */
+function playersWanted(tid) {
+  const want = {};
+  for (const p of players(state.teams[tid]))
+    for (const u of Object.keys(p.self || {})) if (!want[u]) want[u] = p.id;
+  return want;
+}
+// SERVER.md: a lookup table rebuilt by phones on connect; a server trigger would keep it true at once.
+function syncTeamPlayers(tid) {
+  if (!tid || !me || !state.teams[tid]) return;
+  if (!isAdmin(me.uid) && !isCoach(tid, me.uid)) return;
+  const want = playersWanted(tid), now = (acc().teamPlayers || {})[tid] || {};
+  const team = state.teams[tid];
+  const holds = (u, pid) => !!((((team.players || {})[pid] || {}).self || {})[u]);
+  let changed = false;
+  for (const [u, pid] of Object.entries(want))
+    if (!now[u] || !holds(u, now[u])) { quiet(`access/teamPlayers/${tid}/${u}`, pid); changed = true; }
+  for (const u of Object.keys(now))
+    if (!want[u]) { delDeep(state, `access/teamPlayers/${tid}/${u}`); remoteDel(`access/teamPlayers/${tid}/${u}`); changed = true; }
+  if (changed) saveLocal();
+}
 
 /* Who may publish a team's read-only mirror. public/{share} is world-readable
    by design, but its write rule is the one hole AUTH.md names outright, and it
@@ -1203,7 +1245,7 @@ function myTeams() {
   if (canAdmin()) return all;
   const coachAnywhere = all.some(t => isCoach(t.id, me.uid));
   if (coachAnywhere) return all;
-  const mine = all.filter(t => isTracker(t.id, me.uid) || isGuardian(t.id, me.uid));
+  const mine = all.filter(t => isTracker(t.id, me.uid) || isGuardian(t.id, me.uid) || isSelfOn(t.id, me.uid));
   return mine;
 }
 /* Every player this account is a guardian of, across every team it can see.
@@ -1214,10 +1256,13 @@ function myPlayers() {
   const out = [];
   for (const t of teams())
     for (const p of Object.values(t.players || {}))
-      if ((p.guardians || {})[me.uid]) out.push({ t, p });
+      if (isMine(p)) out.push({ t, p });
   return out.sort((a, b) => (a.p.name || '').localeCompare(b.p.name || ''));
 }
-const guardsAnyone = () => myPlayers().length > 0;
+/* Her children and nobody else: booking, places and fees are a parent's to
+   handle, never a player's own sign-in (the session rules check guardians). */
+const myChildren = () => !me ? [] : myPlayers().filter(x => (x.p.guardians || {})[me.uid]);
+const guardsAnyone = () => myChildren().length > 0;
 /* My players cuts across clubs as well as teams (AUTH.md, "A parent with three
    children in two clubs"): her children in every other club she is in, read
    from that club's cut-down copy. mirrorSlim() keeps her own children and
@@ -1247,7 +1292,7 @@ function elsewhereKids() {
   kidsCache = { uid: me.uid, ver: mirrorVer, day, at: now, here: wsCode(), list };
   return list;
 }
-const anyPlayers = () => guardsAnyone() || elsewhereKids().length > 0;
+const anyPlayers = () => myPlayers().length > 0 || elsewhereKids().length > 0;
 const allKidNames = () => [...myPlayers().map(x => x.p.name), ...elsewhereKids().map(x => x.name)];
 
 function canEditTeam(tid) {
@@ -1277,7 +1322,7 @@ function myRole() {
 const restricted = () => {
   if (isOwner()) return null;
   const r = myRole();
-  if (r === 'tracker' || r === 'parent') return r;
+  if (r === 'tracker' || r === 'parent' || r === 'player') return r;
   return me && !canEditTeam(ui.teamId) ? 'viewer' : null;
 };
 
@@ -1291,7 +1336,7 @@ const restricted = () => {
    `node test/rules.js` says where they still fall short of this. */
 const COACH_ACTS = new Set([
   // the squad
-  'addplayer', 'editplayer', 'saveplayer', 'delplayer', 'pickphoto', 'dropphoto', 'toggleguard',
+  'addplayer', 'editplayer', 'saveplayer', 'delplayer', 'pickphoto', 'dropphoto', 'toggleguard', 'selfinvite', 'selfinvdrop', 'selfdrop',
   // the fixture list
   'newmatch', 'editmatch', 'savematch', 'delmatch',
   // the team's own settings
@@ -1449,6 +1494,7 @@ function maybeLoadInvite() {
 
 function inviteWhat(v) {
   const role = INVITE_ROLES[v.role] || v.role;
+  if (v.role === 'player') return `a player, #${esc(v.playerNo || '?')} on <b>${esc(v.teamName || 'a team')}</b>, with your own sign-in`;
   return v.role === 'parent'
     ? `a parent of ${v.playerNo ? '#' + esc(v.playerNo) : 'a player'} on <b>${esc(v.teamName || 'a team')}</b>`
     : `${role.toLowerCase()} of <b>${esc(v.teamName || 'a team')}</b>`;
@@ -1502,6 +1548,7 @@ async function redeemInvite() {
     if (!v.used) await put('invites/' + id + '/used', { by: who, at });
     await put(W + 'access/members/' + who, { name: me.name || '', email: me.email || '', at });
     if (v.role === 'parent') await put(W + `teams/${v.team}/players/${v.player}/guardians/${who}`, id);
+    else if (v.role === 'player') await put(W + `teams/${v.team}/players/${v.player}/self/${who}`, id);
     else await put(W + `access/teams/${v.team}/${v.role === 'coach' ? 'coaches' : 'trackers'}/${who}`, id);
     await put(W + 'access/index/' + who, id);
   } catch (e) {
@@ -1510,7 +1557,8 @@ async function redeemInvite() {
       : ((e && e.code) || String(e));
     render(); return;
   }
-  if (v.role !== 'parent') await soft(put(W + `access/teamIndex/${v.team}/${who}`, v.role));
+  if (v.role === 'player') await soft(put(W + `access/teamPlayers/${v.team}/${who}`, v.player));
+  else if (v.role !== 'parent') await soft(put(W + `access/teamIndex/${v.team}/${who}`, v.role));
   /* Refused while the table does not exist yet, which is fine: the rules fall
      back to the club-wide index until an admin's device creates it, and that
      device puts her in it. */
@@ -1519,7 +1567,7 @@ async function redeemInvite() {
   await soft(put('userOrgs/' + who + '/' + ws, { name: v.clubName || '', at }));
   await soft(put(W + 'access/log/' + uid(), {
     at, act: 'joined by invite as', by: who, byName: me.name || null,
-    target: who, targetName: INVITE_ROLES[v.role] || v.role, team: v.team, teamName: v.teamName || null
+    target: who, targetName: INVITE_ROLES[v.role] || ROLE_LABEL[v.role] || v.role, team: v.team, teamName: v.teamName || null
   }));
   await soft(mod.remove(mod.ref(db, 'invites/' + id)));   // spent: nothing left to replay
   dropInvite();
@@ -1640,7 +1688,7 @@ function inviteStatus(v) {
 }
 
 const inviteList = () => Object.entries(clubInv || {}).map(([id, v]) => ({ id, ...v })).sort((a, b) => (b.at || 0) - (a.at || 0));
-const inviteFor = v => `${esc(INVITE_ROLES[v.role] || v.role)}${v.role === 'parent' && v.playerName ? ' of ' + esc(v.playerName) : ''} · ${esc(v.teamName || '')}`;
+const inviteFor = v => `${esc(INVITE_ROLES[v.role] || ROLE_LABEL[v.role] || v.role)}${(v.role === 'parent' || v.role === 'player') && v.playerName ? ' of ' + esc(v.playerName) : ''} · ${esc(v.teamName || '')}`;
 
 /* Open invites first and all of them, because those are the ones an admin
    comes back for: to copy the link again, or to kill it. Used and expired
@@ -2159,11 +2207,26 @@ const isStaff = tid => !!me && (canAdmin() || isCoach(tid, me.uid));
    and that team's notices are not hers. */
 function msgTeams() {
   if (!me || !fb || !wsCode() || needsSignIn() || !anyAdmins()) return [];
-  return teams().filter(t => isStaff(t.id) || isTracker(t.id, me.uid) || isGuardian(t.id, me.uid));
+  return teams().filter(t => isStaff(t.id) || isTracker(t.id, me.uid) || isGuardian(t.id, me.uid) || isSelfOn(t.id, me.uid));
 }
 const staffTeams = () => msgTeams().filter(t => isStaff(t.id));
 // a coach whose own child is in her squad talks to herself as staff, not as a family
 const famTeams = () => msgTeams().filter(t => !isStaff(t.id) && isGuardian(t.id, me.uid));
+/* The family conversations this account writes in, as {tid, fam}: a parent's
+   own, and for a player with her own sign-in each of her parents'. Never one
+   keyed by a player, so a coach never talks to a child where her parents
+   cannot see it (the rules refuse that thread too). */
+function famThreads() {
+  const out = famTeams().map(t => ({ tid: t.id, fam: me.uid }));
+  for (const t of msgTeams()) {
+    if (isStaff(t.id) || isGuardian(t.id, me.uid)) continue;
+    const fams = new Set();
+    for (const p of Object.values(t.players || {})) if (isMe(p)) for (const u of Object.keys(p.guardians || {})) fams.add(u);
+    for (const fam of fams) out.push({ tid: t.id, fam });
+  }
+  return out;
+}
+const myThread = (tid, fam) => !!me && famThreads().some(x => x.tid === tid && x.fam === fam);
 const msgOn = () => msgTeams().length > 0;
 
 function saveMsgs() {
@@ -2202,7 +2265,7 @@ function watchMessages() {
   const code = msgFor.code, want = {};
   for (const t of msgTeams()) want[`board/${code}/${t.id}`] = { kind: 'board', tid: t.id };
   for (const t of staffTeams()) want[`dm/${code}/${t.id}`] = { kind: 'dm', tid: t.id };
-  for (const t of famTeams()) want[`dm/${code}/${t.id}/${me.uid}`] = { kind: 'dm', tid: t.id, fam: me.uid };
+  for (const x of famThreads()) want[`dm/${code}/${x.tid}/${x.fam}`] = { kind: 'dm', tid: x.tid, fam: x.fam };
   for (const p of Object.keys(msgSubs)) if (!want[p]) {
     try { msgSubs[p](); } catch (e) { }
     delete msgSubs[p]; delete msgPrimed[p];
@@ -2304,7 +2367,7 @@ function unreadCount() {
   let n = news;
   for (const t of msgTeams()) n += notices(t.id).filter(noticeUnread).length;
   for (const t of staffTeams()) for (const fam of Object.keys(msgs.dm[t.id] || {})) n += threadUnread(t.id, fam) ? 1 : 0;
-  for (const t of famTeams()) n += threadUnread(t.id, me.uid) ? 1 : 0;
+  for (const x of famThreads()) n += threadUnread(x.tid, x.fam) ? 1 : 0;
   return n;
 }
 
@@ -2405,7 +2468,7 @@ function viewInboxMsgs() {
   if (!msgOn() && !wsRead && fbConfig().apiKey) return `<div class="empty"><strong>Connecting…</strong>Messages appear once Minutes has reached the club.</div>`;
   if (!msgOn()) return `<div class="empty"><strong>No messages here</strong>
     ${!anyAdmins() ? 'Messages start once the club has an admin.' : 'Messages are for the teams you coach, track or have a child in.'}</div>`;
-  const mine = msgTeams(), staff = staffTeams(), fams = famTeams();
+  const mine = msgTeams(), staff = staffTeams(), fams = famThreads();
   const many = mine.length > 1;
   const all = mine.flatMap(t => notices(t.id)).sort((a, b) => (b.at || 0) - (a.at || 0));
   const shown = ui.msgAll ? all : all.slice(0, MSG_SHOW);
@@ -2438,7 +2501,9 @@ function viewInboxMsgs() {
         <span class="rowsub">${last ? `${last.by === me.uid ? 'You: ' : ''}${esc(String(last.text || '').slice(0, 80))}` : esc(sub)}</span></span>
       <span class="msgwhen">${n ? `<span class="msgdot">${n}</span>` : last ? esc(whenShort(last.at)) : ''}</span></button>`;
   };
-  const famConvs = fams.map(t => convRow(t.id, me.uid, `Coaches of ${teamLabel(t)}`, 'Ask a question, say she is ill, anything for the coaches'));
+  const famConvs = fams.map(x => x.fam === me.uid
+    ? convRow(x.tid, x.fam, `Coaches of ${teamLabel(state.teams[x.tid])}`, 'Ask a question, say she is ill, anything for the coaches')
+    : convRow(x.tid, x.fam, `${esc(familyName(x.fam))} and the coaches of ${teamLabel(state.teams[x.tid])}`, 'Your family’s conversation with the coaches'));
   const staffConvs = staff.flatMap(t => Object.keys(msgs.dm[t.id] || {})
     .concat(Object.values(msgs.outbox || {}).filter(o => o.kind === 'dm' && o.tid === t.id).map(o => o.fam))
     .filter((f, i, a) => a.indexOf(f) === i)
@@ -2466,7 +2531,7 @@ function viewInboxMsgs() {
 function viewThread() {
   const th = ui.thread || {};
   const t = state.teams[th.tid];
-  const mayRead = t && me && (isStaff(t.id) || (th.fam === me.uid && isGuardian(t.id, me.uid)));
+  const mayRead = t && me && (isStaff(t.id) || myThread(t.id, th.fam));
   if (!mayRead) { ui.view = 'inbox'; ui.thread = null; return viewInbox(); }
   const asStaff = isStaff(t.id) && th.fam !== me.uid;
   const kids = asStaff ? childrenOf(t.id, th.fam) : [];
@@ -2481,7 +2546,7 @@ function viewThread() {
     <div class="card"><div class="thread" id="thread">${threadHtml(t.id, th.fam)}</div>
       <textarea id="msgText" rows="3" maxlength="${MSG_MAX}" placeholder="Write a message" data-draft="${esc(draftKey)}">${esc((ui.msgDraft || {})[draftKey] || '')}</textarea>
       <div class="row" style="margin-top:8px;justify-content:flex-end"><button class="btn" data-act="msgsend" data-tid="${t.id}" data-fam="${esc(th.fam)}">Send</button></div></div>
-    <p class="muted">Every coach of ${teamLabel(t)} and the club's admins can read this conversation — never one coach alone. Nobody can edit or delete a message once it is sent.</p>
+    <p class="muted">Every coach of ${teamLabel(t)} and the club's admins can read this conversation — never one coach alone${!asStaff && th.fam !== me.uid ? `, and so can ${esc(familyName(th.fam))}` : ''}. Nobody can edit or delete a message once it is sent.</p>
   </div>`;
 }
 function threadHtml(tid, fam) {
@@ -4725,9 +4790,9 @@ function render() {
   const hideForParent = ['roster', 'teamset'];
   for (const v of hideForParent) {
     const b = document.querySelector(`#tabs [data-view="${v}"]`);
-    if (b) b.hidden = lim === 'parent' || (v === 'teamset' && lim === 'tracker');
+    if (b) b.hidden = famRole(lim) || (v === 'teamset' && lim === 'tracker');
   }
-  if (hideForParent.includes(ui.view) && lim === 'parent') ui.view = anyPlayers() ? 'mine' : 'matches';
+  if (hideForParent.includes(ui.view) && famRole(lim)) ui.view = anyPlayers() ? 'mine' : 'matches';
   if (ui.view === 'teamset' && lim === 'tracker') ui.view = 'matches';
   /* Practice is a coach's and an admin's, on any team: the library isn't
      about one team, and a parent or a tracker never gets the tab at all. */
@@ -4743,7 +4808,7 @@ function render() {
   /* Live is the one game screen everybody gets. Where a role lands when its
      tab is not allowed is its working screen, not the first in the list: a
      tracker is there to log, a coach to make subs. */
-  const allowed = lim === 'tracker' ? ['live', 'track', 'stats', 'recap'] : lim === 'parent' || lim === 'viewer' ? ['live', 'stats', 'recap'] : ['live', 'subs', 'track', 'stats', 'recap', 'pitch', 'plan'];
+  const allowed = lim === 'tracker' ? ['live', 'track', 'stats', 'recap'] : famRole(lim) || lim === 'viewer' ? ['live', 'stats', 'recap'] : ['live', 'subs', 'track', 'stats', 'recap', 'pitch', 'plan'];
   // the recap is the story of a finished game; before full time there is no story yet
   const recapOk = !!(inGame && match() && gameStatus(match()) === 'done');
   /* Once the coach has pressed End game, the screens for running one (Subs,
@@ -4775,7 +4840,7 @@ function render() {
     ? `<div class="rolebar">Viewing <b>${teamLabel(team())}</b> from another team in the club. You can read it, not change it.</div>` : '';
   // "you can read, not change" is about the team; on Messages a parent writes, and on the Calendar she answers
   const roleNote = lim && lim !== 'viewer' && v !== 'inbox' && v !== 'thread'
-    ? `<div class="rolebar">Signed in as <b>${esc(ROLE_LABEL[lim])}</b> — ${lim === 'tracker' ? "you can log events and make the coach's planned subs when they are due, but not run the clock or make other subs" : lim === 'parent' && v === 'sessions' ? 'you can ask for a place for your child, and withdraw her' : lim === 'parent' ? 'you can read, and say from the Calendar whether your child is coming' : 'you can read, not change'}.</div>`
+    ? `<div class="rolebar">Signed in as <b>${esc(ROLE_LABEL[lim])}</b> — ${lim === 'tracker' ? "you can log events and make the coach's planned subs when they are due, but not run the clock or make other subs" : lim === 'parent' && v === 'sessions' ? 'you can ask for a place for your child, and withdraw her' : lim === 'parent' ? 'you can read, and say from the Calendar whether your child is coming' : lim === 'player' ? 'you can read, and say from the Calendar whether you are coming' : 'you can read, not change'}.</div>`
     : '';
   /* Never let a rehearsal pass for the real thing. Both facts are worth saying
      out loud: a test club holds invented data and publishes nothing, and a
@@ -6804,8 +6869,9 @@ const RSVP_NOTE_MAX = 140;
 const rsvpKey = it => (it.kind === 'game' ? 'g_' : 'e_') + it.id;
 const rsvpOf = (tid, key, pid) => ((((state.rsvp || {})[tid] || {})[key] || {})[pid]) || null;
 const rsvpSquad = tid => players(state.teams[tid]).filter(p => p.active !== false);
-// her own children on this team, by the guardian list rather than by role, as the rule asks
-const myKids = tid => !me ? [] : rsvpSquad(tid).filter(p => (p.guardians || {})[me.uid]);
+// her own children on this team (or herself, a player with her own sign-in), by the lists the rule reads
+const myKids = tid => !me ? [] : rsvpSquad(tid).filter(isMine);
+const goingQ = p => isMe(p) ? 'Are you going?' : `Is ${firstName(p)} going?`;
 const canRsvp = (tid, pid) => canEditTeam(tid) || myKids(tid).some(p => p.id === pid);
 // a past or called-off entry is read, not answered
 const rsvpOpen = it => !!it.date && !it.called && !calPast(it) && !(it.kind === 'game' && it.status !== 'upcoming');
@@ -6874,7 +6940,7 @@ function rsvpBlock(it) {
   const kids = myKids(it.tid);
   if (kids.length) return `<div class="rsvpbox">${kids.map(p => {
     const r = rsvpOf(it.tid, key, p.id);
-    return `<p class="lbl">${open ? `Is ${esc(firstName(p))} going?` : esc(firstName(p))}</p>
+    return `<p class="lbl">${open ? esc(goingQ(p)) : esc(firstName(p))}</p>
       ${open ? rsvpChips(it, p, 'sheet') : `<p style="margin:0 0 8px">${r ? esc(RSVP[r.v]) : 'Not answered'}</p>`}
       ${open && r ? `<div class="row" style="margin:8px 0 4px"><input type="text" id="rsvpNote_${esc(p.id)}" maxlength="${RSVP_NOTE_MAX}" value="${esc(r.note || '')}" placeholder="Anything the coach should know?" style="flex:1">
         <button class="btn quiet sm" data-act="rsvpnote" data-tid="${esc(it.tid)}" data-k="${esc(key)}" data-pid="${esc(p.id)}" data-kind="${it.kind}" data-id="${esc(it.id)}">Save</button></div>` : ''}`;
@@ -7158,7 +7224,7 @@ function calNextCard(it, all) {
     ${live ? '' : `<div class="row wrap" style="margin-top:10px">
       ${it.venue && I ? `<a class="btn quiet sm" href="${esc(I.mapLink(it.venue))}" target="_blank" rel="noopener">Directions</a>` : ''}
       <button class="btn quiet sm" data-act="calitem" data-k="${it.kind}" data-tid="${esc(it.tid)}" data-id="${esc(it.id)}">Add to my calendar</button></div>`}
-    ${rsvpOpen(it) && !canEditTeam(it.tid) ? myKids(it.tid).map(p => `<p class="lbl" style="margin-top:12px">Is ${esc(firstName(p))} going?</p>${rsvpChips(it, p, 'next')}`).join('')
+    ${rsvpOpen(it) && !canEditTeam(it.tid) ? myKids(it.tid).map(p => `<p class="lbl" style="margin-top:12px">${esc(goingQ(p))}</p>${rsvpChips(it, p, 'next')}`).join('')
       : rsvpOpen(it) && rsvpLine(it) ? `<p class="muted" style="margin:8px 0 0">${esc(rsvpLine(it))}</p>` : ''}
   </div>`;
 }
@@ -7727,8 +7793,9 @@ function viewMine() {
   if (!list.length && !away.length) return `<div class="empty"><strong>Nobody linked yet</strong>
     A coach links your account to your player, and she shows up here.</div>`;
 
+  const justMe = list.length && list.every(x => isMe(x.p)) && !away.length;
   return `<div class="stack">
-    <h2>My players</h2>
+    <h2>${justMe ? 'My season' : 'My players'}</h2>
     ${list.map(({ t, p }) => {
     const ms = teamMatches(t.id);
     const played = ms.reduce((a, m) => a + playedSec(m, p.id), 0);
@@ -8272,7 +8339,7 @@ function sheetDrillRefused(why) {
   const body = {
     club: `<h3>This drill is for the club's coaches</h3>
       <p>It's on the club's own shelf, which only the club's coaches and admins can open${me ? '' : ', signed in'}. ${!me ? 'If you coach here, sign in with the account the club knows and open the link again.'
-        : lim === 'parent' ? "You're signed in as a parent, so it stays closed to you." : lim === 'tracker' ? "You're signed in as a tracker, so it stays closed to you."
+        : famRole(lim) ? `You're signed in as a ${lim}, so it stays closed to you.` : lim === 'tracker' ? "You're signed in as a tracker, so it stays closed to you."
         : "Your account isn't a coach or an admin here, so it stays closed to you."} The drills that come with the app open for anyone.</p>`,
     mine: `<h3>That drill is private</h3><p>It's on a coach's own shelf, which only she can open. Ask her to share it with the club and send the club's copy.</p>`,
     gone: `<h3>That drill isn't here</h3><p>It isn't in this club's drills any more. Whoever shared it may have removed it.</p>`,
@@ -10219,7 +10286,7 @@ function sessWanted() {
   else {
     for (const s of all) if (s.coach === me.uid) want.push('fees/' + s.id);
     if (isCoachAny(me.uid)) want.push('pay/' + me.uid);
-    for (const { p } of myPlayers()) for (const s of all) if (bookOf(s.id, p.id)) want.push('fees/' + s.id + '/' + p.id);
+    for (const { p } of myChildren()) for (const s of all) if (bookOf(s.id, p.id)) want.push('fees/' + s.id + '/' + p.id);
   }
   const open = sessById(sessUi().open);
   if (open && canRun(open)) want.push('splans/' + open.id);
@@ -10280,7 +10347,7 @@ function sessNews() {
   try { seen = JSON.parse(localStorage.getItem(lsk) || 'null'); } catch (e) { }
   const first = !seen || typeof seen !== 'object';
   const now = {}, news = [];
-  const kids = myPlayers();
+  const kids = myChildren();
   for (const s of sessAll()) {
     const when = `${dayLabel(s.date)}${s.start ? ' ' + niceTime(s.start) : ''}`;
     for (const { p } of kids) {
@@ -10438,7 +10505,7 @@ const feesKnown = (sid, pid) => !fb || sessLoaded.has('fees') || sessLoaded.has(
    the same as one nobody paid. */
 function familyOwed() {
   const rows = [];
-  for (const { p } of myPlayers()) for (const s of sessAll()) {
+  for (const { p } of myChildren()) for (const s of sessAll()) {
     if (!s.price || s.called) continue;
     const b = bookOf(s.id, p.id);
     if (b && b.st === 'in' && !feeOf(s.id, p.id) && feesKnown(s.id, p.id)) rows.push({ s, p });
@@ -10482,7 +10549,7 @@ function sessAttendance(pid) {
    one of their players', a family only her own child's. Never on the share
    link or the feed — a 1-1 is a child, a time and a place. */
 function sessCalItems(tids) {
-  const out = [], kids = new Set(myPlayers().map(x => x.p.id));
+  const out = [], kids = new Set(myChildren().map(x => x.p.id));
   for (const s of sessAll()) {
     for (const tid of tids) {
       const xs = bookingsOf(s.id).filter(x => (x.st === 'in' || x.st === 'asked' || x.st === 'wait') && (x.b.tid || (x.who && x.who.t.id)) === tid);
@@ -10536,7 +10603,7 @@ function sessClubLine() {
     const asks = run.reduce((n, s) => n + bookingsOf(s.id).filter(x => x.st === 'asked').length, 0);
     return [`${run.length} coming up`, asks ? `${asks} asking for a spot` : ''].filter(Boolean).join(' · ') + ' · 1-1s and small groups, any team';
   }
-  const kids = myPlayers();
+  const kids = myChildren();
   const booked = ahead.filter(s => kids.some(({ p }) => (bookOf(s.id, p.id) || {}).st === 'in')).length;
   const open = ahead.filter(s => s.open && kids.some(({ t, p }) => fitsAges(s, t) && !bookOf(s.id, p.id))).length;
   return [booked ? `${booked} booked` : '', open ? `${open} open to ask for` : ''].filter(Boolean).join(' · ') || '1-1s and small groups with the club’s coaches';
@@ -10559,7 +10626,7 @@ function sessRow(s, fam) {
   const xs = bookingsOf(s.id), n = xs.filter(x => x.st === 'in').length, asks = xs.filter(x => x.st === 'asked').length;
   const sub = [sessPlace(s), 'with ' + s.coachName];
   if (fam) {
-    for (const { p } of myPlayers()) { const b = bookOf(s.id, p.id); if (b) sub.push(`${firstName(p)}: ${BOOK[b.st].toLowerCase()}`); }
+    for (const { p } of myChildren()) { const b = bookOf(s.id, p.id); if (b) sub.push(`${firstName(p)}: ${BOOK[b.st].toLowerCase()}`); }
     if (s.open && !s.called && !sessPast(s) && s.kind === 'group') sub.push(spotsLeft(s) ? `${spotsLeft(s)} spot${spotsLeft(s) === 1 ? '' : 's'} left` : 'full');
   } else {
     sub.push(s.kind === 'one' ? (n ? xs.filter(x => x.st === 'in').map(whoName).join(', ') : 'free') : `${n} of ${s.cap} booked`);
@@ -10610,7 +10677,7 @@ function sessListView() {
 /* A family's one list: what she owes, her children's sessions, then the open
    ones that suit their ages. Never another child's name. */
 function familySessions(staff) {
-  const kids = myPlayers(); if (!kids.length) return '';
+  const kids = myChildren(); if (!kids.length) return '';
   const all = sessAll();
   const hers = s => kids.some(({ p }) => { const b = bookOf(s.id, p.id); return b && b.st !== 'out'; });
   const ahead = all.filter(s => !sessPast(s) && hers(s));
@@ -10674,7 +10741,7 @@ function sheetSess(id) {
 /* The family's part of a session's sheet: each of her children, and what she
    can do about each — ask, with what she wants to work on, or withdraw. */
 function sessFamilyBlock(s) {
-  const kids = myPlayers(); if (!kids.length) return '';
+  const kids = myChildren(); if (!kids.length) return '';
   const over = sessPast(s) || !!s.called;
   const rows = kids.map(({ t, p }) => {
     const b = bookOf(s.id, p.id), name = esc(firstName(p));
@@ -11268,7 +11335,7 @@ function onSessAct(a, d) {
 
   /* -- a family asks, or withdraws, for her own child -- */
   if (a === 'sessask' || a === 'sesswithdraw') {
-    const kid = myPlayers().find(x => x.p.id === d.pid);
+    const kid = myChildren().find(x => x.p.id === d.pid);
     if (!s || !kid) { closeSheet(); toast('You can only ask for your own child'); render(); return; }
     const b = bookOf(s.id, d.pid);
     const undo = 'Not saved — the club’s database rules need the training sessions block from README';
@@ -11656,7 +11723,7 @@ function kidBusy(b, sl, kid) {
     && (x.pids ? x.pids.includes(kid.p.id) : x.tid === kid.t.id));
 }
 // the children of hers a block suits; an age range is a guide, as on a session
-const blockKids = b => myPlayers().filter(({ t }) => fitsAges(b, t));
+const blockKids = b => myChildren().filter(({ t }) => fitsAges(b, t));
 // slots a session made from this block holds that its grid no longer offers
 const blockStray = (b, sl) => sessAll().filter(s => s.slot === b.id && !sl.some(x => x.sid === s.id));
 
@@ -11962,7 +12029,7 @@ function onAvailAct(a, d) {
   }
 
   /* -- a family books a place for her own child -- */
-  if (a === 'slotkid') { if (myPlayers().some(k => k.p.id === d.pid)) u.kid = d.pid; sheetBlock(d.id); return; }
+  if (a === 'slotkid') { if (myChildren().some(k => k.p.id === d.pid)) u.kid = d.pid; sheetBlock(d.id); return; }
   if (a === 'slotpick') {
     if (!b) { closeSheet(); return; }
     if (!blockKids(b).length) { toast('You can only book for your own child'); return; }
@@ -12003,7 +12070,7 @@ function onAvailAct(a, d) {
   }
   if (a === 'slotcancel') {
     const s = sessById(d.id);
-    const kid = s ? myPlayers().find(k => k.p.id === d.pid) : null;
+    const kid = s ? myChildren().find(k => k.p.id === d.pid) : null;
     const bk = kid ? bookOf(s.id, kid.p.id) : null;
     if (!s || !s.slot || !kid || !bk) { closeSheet(); toast('You can only cancel your own child’s place'); render(); return; }
     if (sessPast(s) || s.called) return;
@@ -12213,8 +12280,8 @@ function mirrorSlim(part, v) {
   const mine = u => me && u === me.uid;
   if (part === 'teams') return Object.fromEntries(Object.entries(v).filter(([, t]) => t && typeof t === 'object').map(([id, t]) => [id, {
     id, name: t.name || '', events: t.events || {},
-    players: Object.fromEntries(Object.entries(t.players || {}).filter(([, p]) => p && p.guardians && Object.keys(p.guardians).some(mine))
-      .map(([pid, p]) => [pid, { id: pid, name: p.name || '', guardians: { [me.uid]: true } }]))
+    players: Object.fromEntries(Object.entries(t.players || {}).filter(([, p]) => p && ((p.guardians && Object.keys(p.guardians).some(mine)) || (p.self && Object.keys(p.self).some(mine))))
+      .map(([pid, p]) => [pid, { id: pid, name: p.name || '', ...((p.guardians || {})[me.uid] ? { guardians: { [me.uid]: true } } : { self: { [me.uid]: true } }) }]))
   }]));
   if (part === 'matches') return Object.fromEntries(Object.entries(v).filter(([, m]) => m && typeof m === 'object').map(([id, m]) => [id,
     Object.fromEntries(['id', 'teamId', 'opponent', 'date', 'kickoff', 'venue', 'called', 'home', 'periodCount', 'periodMinutes', 'currentHalf', 'ended', 'periods', 'createdAt']
@@ -14086,6 +14153,8 @@ function rolesHeld(uid, scope) {
     if (isTracker(x.id, uid)) out.push({ x, r: 'tracker' });
     for (const p of Object.values(x.players || {}))
       if ((p.guardians || {})[uid]) out.push({ x, r: 'parent', p });
+    for (const p of Object.values(x.players || {}))
+      if ((p.self || {})[uid]) out.push({ x, r: 'player', p });
   }
   return out;
 }
@@ -14096,7 +14165,7 @@ function rolesHeld(uid, scope) {
 function roleTags(uid, scope) {
   const by = {};
   for (const v of rolesHeld(uid, scope)) (by[v.r] = by[v.r] || new Set()).add(v.x.name || 'Team');
-  return ['coach', 'tracker', 'parent'].filter(r => by[r]).map(r => {
+  return ['coach', 'tracker', 'parent', 'player'].filter(r => by[r]).map(r => {
     const names = [...by[r]];
     const what = names.length > 2 ? `${names.length} teams` : names.join(', ');
     return `<span class="tag">${esc(ROLE_LABEL[r])}<i>${esc(what)}</i></span>`;
@@ -14144,8 +14213,8 @@ function sheetPersonRoles(uid) {
     <p class="lbl">${isAdmin(uid) ? 'Admin covers every team. Also' : 'Roles'}</p>
     ${held.length ? held.map(v => `<div class="opt spread">
       <span><b>${esc(ROLE_LABEL[v.r])}</b>${v.p ? ` of ${pname(v.p)}` : ''}<span class="rowsub">${esc(v.x.name || 'Team')}</span></span>
-      ${v.r === 'parent'
-      ? `<button class="btn quiet sm" data-act="prunguard" data-uid="${uid}" data-tid="${v.x.id}" data-pid="${v.p.id}">Remove</button>`
+      ${v.r === 'parent' || v.r === 'player'
+      ? `<button class="btn quiet sm" data-act="${v.r === 'player' ? 'prunself' : 'prunguard'}" data-uid="${uid}" data-tid="${v.x.id}" data-pid="${v.p.id}">Remove</button>`
       : `<button class="btn quiet sm" data-act="setrolet" data-uid="${uid}" data-tid="${v.x.id}" data-r="${v.r}">Remove</button>`}</div>`).join('')
       : `<p class="muted" style="margin-top:0">${isAdmin(uid) ? 'Nothing else.' : 'None yet — waiting to be let in. Until they have a role they see nothing of the club.'}</p>`}
 
@@ -14436,6 +14505,41 @@ function sheetPlanned() {
     <button class="btn wide" data-act="saveplan" style="margin-top:6px">Save planned minutes</button>`);
 }
 
+/* A player's own sign-in, the coach's to give (AUTH.md, "A player with her
+   own account"). Off unless she or her family asks; no age rule, because that
+   is the coach's and the club's call. The link is an ordinary single-use
+   invite of role `player`, which the rules let this team's coaches and the
+   admins make. Its id is the secret, so it is never written into the club:
+   this phone keeps it to show again, the admins' list has it, and making a
+   new one withdraws the old. */
+const LS_SELFINV = 'sm.selfinv.v1';
+function selfInvites() {
+  if (!me) return {};
+  try { const v = JSON.parse(localStorage.getItem(LS_SELFINV + ':' + clubKey() + ':' + me.uid) || '{}'); return v && typeof v === 'object' ? v : {}; } catch (e) { return {}; }
+}
+function keepSelfInvites(v) { if (me) keepStored(LS_SELFINV + ':' + clubKey() + ':' + me.uid, JSON.stringify(v)); }
+function selfInviteFor(pid) {
+  const v = selfInvites()[pid];
+  return v && (v.expiresAt || 0) > nowMs() ? v : null;
+}
+function selfCard(t, p) {
+  const accounts = Object.keys(p.self || {});
+  const named = u => { const m = (acc().members || {})[u] || {}; return m.name || m.email || 'Her account'; };
+  const v = selfInviteFor(p.id), link = v ? inviteLink(v.id) : '';
+  const canShare = typeof navigator !== 'undefined' && typeof navigator.share === 'function';
+  return `<p class="lbl">Her own sign-in</p>
+    ${accounts.map(u => `<div class="prow" style="grid-template-columns:1fr auto"><span><span class="pname">${esc(named(u))}</span>
+      <span class="rowsub">Signs in as ${esc(firstName(p))}</span></span>
+      <button class="btn quiet sm" data-act="selfdrop" data-pid="${p.id}" data-uid="${esc(u)}">Remove</button></div>`).join('')}
+    ${v ? `<div class="codebox">${esc(link)}</div>
+      <div class="row" style="margin-bottom:8px"><button class="btn sm" data-act="copylink" data-v="${esc(link)}">Copy</button>
+        ${canShare ? `<button class="btn quiet sm" data-act="inviteshare" data-v="${esc(link)}">Share</button>` : ''}
+        <button class="btn quiet sm" data-act="selfinvdrop" data-pid="${p.id}">Withdraw</button>
+        <span class="muted">works once, until ${esc(new Date(v.expiresAt).toLocaleDateString())}</span></div>`
+    : `<button class="btn quiet wide" data-act="selfinvite" data-pid="${p.id}" style="margin-bottom:8px">${accounts.length ? 'Another sign-in link for her' : 'Make her a sign-in link'}</button>`}
+    <p class="muted" style="margin-top:0">Only when she or her family asks. With it she sees what her parents see — her own minutes, the calendar, the games — says whether she is coming, and reads and writes in her family's conversation with the coaches, where her parents see every word. She never has a conversation with a coach on her own.</p>`;
+}
+
 function sheetPlayer(p) {
   p = migrate(p);
   const t = team();
@@ -14483,7 +14587,8 @@ function sheetPlayer(p) {
     <div class="chips" style="margin-bottom:14px">
       ${members().map(u => `<button class="chip" type="button" data-act="toggleguard" data-pid="${p.id}" data-uid="${u.uid}" aria-pressed="${!!((p.guardians || {})[u.uid])}">${esc(u.name || u.email || 'Unnamed')}</button>`).join('') || '<span class="muted">Nobody has signed in yet.</span>'}
     </div>
-    <p class="muted" style="margin-top:-8px">A guardian can read this team and sees her under My players. Linking someone here is what makes them a parent.</p>` : ''}
+    <p class="muted" style="margin-top:-8px">A guardian can read this team and sees her under My players. Linking someone here is what makes them a parent.</p>
+    ${selfCard(t, p)}` : ''}
 
     <p class="lbl">Plays better alongside</p>
     <div class="chips" style="margin-bottom:14px">
@@ -15698,7 +15803,7 @@ function onAct(e) {
   }
   if (a === 'msgsend') {
     const el = $('#msgText'), text = String((el && el.value) || '').trim();
-    const mine = me && d.fam === me.uid && isGuardian(d.tid, me.uid);
+    const mine = myThread(d.tid, d.fam);
     if (!msgFor || !(mine || isStaff(d.tid))) { toast('This conversation is not yours to write in'); return; }
     if (!text) return;
     queueMsg('dm', d.tid, d.fam, text.slice(0, MSG_MAX));
@@ -15755,6 +15860,19 @@ function onAct(e) {
     syncIndex(uid);
     f.player = null;
     sheetPersonRoles(uid); return;
+  }
+  if (a === 'prunself') {
+    if (!mayGrant(d.tid)) { toast('Club admins and that team\u2019s coaches only'); return; }
+    const x = state.teams[d.tid], p = x && (x.players || {})[d.pid];
+    if (!p) return;
+    const on = (p.self || {})[d.uid];
+    if (on) {
+      forgetInvite(on);
+      drop(`teams/${d.tid}/players/${d.pid}/self/${d.uid}`);
+      logAccess('removed player sign-in', d.uid, { team: d.tid, teamName: x.name || null, player: p.name });
+      syncIndex(d.uid); syncTeamPlayers(d.tid);
+    }
+    sheetPersonRoles(d.uid); return;
   }
   if (a === 'prunguard') {
     if (!mayGrant(d.tid)) { toast('Club admins and that team\u2019s coaches only'); return; }
@@ -16414,6 +16532,33 @@ function onAct(e) {
     closeSheet(); return;
   }
   if (a === 'closesheet') { closeSheet(); return; }
+  if (a === 'selfinvite' || a === 'selfinvdrop') {
+    const p = (t.players || {})[d.pid]; if (!p) return;
+    const all = selfInvites(), old = all[d.pid];
+    if (old) {
+      forgetInvite(old.id);
+      if (fb) Promise.resolve(fb.remove(fb.ref(fb.db, 'clubInvites/' + wsCode() + '/' + old.id))).catch(() => { });
+      delete all[d.pid]; keepSelfInvites(all);
+    }
+    if (a === 'selfinvdrop') { toast('Withdrawn — the link no longer works'); sheetPlayer(p); return; }
+    if (!fb || !rtdb || !me) { toast(me ? 'Needs a connection to the database' : 'Sign in first'); return; }
+    writeInvite(t, 'player', p, '').then(({ id, doc }) => {
+      all[d.pid] = { id, at: doc.at, expiresAt: doc.expiresAt }; keepSelfInvites(all);
+      logAccess('made a sign-in link for player', null, { team: t.id, teamName: t.name || null, player: p.name });
+      sheetPlayer(state.teams[t.id].players[d.pid]);
+    }, e => toast(/permission|denied/i.test((e && e.code) || '') ? 'The database refused it — are the newest rules from README published?' : 'Could not make the link — no connection'));
+    return;
+  }
+  if (a === 'selfdrop') {
+    const p = (t.players || {})[d.pid]; if (!p) return;
+    const on = (p.self || {})[d.uid];
+    if (!on || !confirm(`Take away ${p.name}'s own sign-in? Her parents keep theirs.`)) return;
+    forgetInvite(on);
+    drop(`teams/${t.id}/players/${d.pid}/self/${d.uid}`);
+    logAccess('removed player sign-in', d.uid, { team: t.id, teamName: t.name || null, player: p.name });
+    syncIndex(d.uid); syncTeamPlayers(t.id);
+    sheetPlayer(state.teams[t.id].players[d.pid]); return;
+  }
   if (a === 'toggleguard') {
     const p = t.players[d.pid];
     const on = ((p.guardians || {})[d.uid]);
@@ -16425,7 +16570,7 @@ function onAct(e) {
   }
   if (a === 'delplayer') {
     if (!confirm('Remove this player from the roster?')) return;
-    drop(`teams/${t.id}/players/${d.pid}`); syncTeamParents(t.id); closeSheet(); return;
+    drop(`teams/${t.id}/players/${d.pid}`); syncTeamParents(t.id); syncTeamPlayers(t.id); closeSheet(); return;
   }
 
   if (a === 'newmatch') {

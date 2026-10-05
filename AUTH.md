@@ -128,33 +128,35 @@ Same shape. Every team in the club, editable. If she has a child, **My players**
 
 ## A player with her own account
 
-*Not built. A design to agree before any code, the way the rest of this document was written.*
+**Built** (2026-10, build 94, rules version 5), as the owner decided it:
 
-A U8 has no account; a U16 often wants one and has a phone. The model already has the slot for it: a player is a record her parents point at through `guardians`, and a child can have any number of those. Her own account is one more pointer, kept **separate from `guardians`**:
+1. **Her coach gives it, on request**, and so may an admin. Never a parent. It is off unless she or her family asks.
+2. **She reads and posts** in her family's conversation with the coaches.
+3. **She sees the same as her parents**: herself by name, teammates as the club's *What parents see* preset says.
+4. **No age rule.** That is the coach's and the club's call for now.
+
+The model, unchanged from the design. A player is a record her parents point at through `guardians`, any number of them. Her own account is one more pointer, kept **separate from `guardians`**:
 
 ```
-teams/{tid}/players/{pid}/self/{uid}: true | inviteId
+teams/{tid}/players/{pid}/self/{uid}: inviteId
+access/teamPlayers/{tid}/{uid}: pid        the lookup table the rules read
 ```
 
-Separate because she is not her own parent. `roleIn()` would give `'player'`, and every right a parent holds is decided again for her, not inherited by accident: answering for, booking and paying for sessions, the family conversation.
+Separate because she is not her own parent. `roleIn()` gives `'player'`, and every right a parent holds was decided again for her rather than inherited:
 
-What follows, unless the owner decides otherwise:
+| | A parent | Her own sign-in |
+| --- | --- | --- |
+| Reads the team, Live, Stats, recap, calendar, notices | Yes | Yes |
+| Teammates' names | By the club's preset | By the club's preset |
+| Says "going" | For her children | For herself; a parent may change it |
+| Family conversation with the coaches | Her own | Each of her parents', where they see every word; never one of her own |
+| Books and pays for sessions | Yes | No |
 
-- **Her parent gives it to her.** My players → *Give Ella her own sign-in* makes a single-use invite for role `player` on that one child. The rule lets a guardian of that player make it, plus the team's coaches and the admins. That way a club never hands a child an account behind her family's back.
-- **She sees what her parent sees about her**: her minutes, her team's calendar, Live, Stats and the recap, and the team's notices. Teammates follow the club's *What parents see* preset.
-- **She answers "going" for herself**, at the same `rsvp/{tid}/{item}/{pid}` node, stamped with her uid. The coach's override still wins (`isOut()`), and a parent can change her answer.
-- **She never has a conversation with a coach on her own.** Safeguarding guidance (SafeSport in the US, the FA in England) is that adults don't message minors one-to-one. She can read, and perhaps post in, her family's conversation, where her parents and every coach and admin see every word, and nowhere else.
-- **A lookup table, because rules cannot iterate:** `access/teamPlayers/{tid}/{uid}: pid`, derived like `teamParents`, plus her entry in `access/index`.
-- **At 18** she can stay on with nobody else linked; nothing about the record changes.
+**How she gets in.** The coach taps *Make her a sign-in link* on the player's page. It is a single-use `player` invite naming the child by shirt number. The rules let that team's coaches make one, as well as admins, and only a `player` one, so this is still not the "coaches make personal invites" item. Spending it writes `self`, then `access/index`, then `access/teamPlayers`, in the order the rules check them. The invite id is the secret, so it never goes into the club. The coach's phone keeps it to show again, the admins' list has it, and a new link withdraws the old one.
 
-Rules touched: `teams/$tid/players/$pid/self` (written by spending an invite, like `guardians`), `rsvp`, `board` (read), `dm` (if she may post), `invites` (role `player`, made by a guardian), and the new lookup table. `test/rules.js` would walk all of them before anything is pasted.
+**Safeguarding.** Guidance (SafeSport in the US, the FA in England) is that adults don't message minors one-to-one. The `dm` rule lets her read and write a family thread only when its owner is in her player record's `guardians`, and her own uid never qualifies as a family. So a coach can only reach her where her parents read along. `test/rules.js` and `test/players.js` pin both sides.
 
-Four decisions for the owner before it is built:
-
-1. Who may give a player her account: her parent only, or the team's coach as well?
-2. May she post in her family's conversation, or only read it?
-3. Teammates: by shirt number like a parent, or by name, since she knows them anyway?
-4. From what age, if any? A club setting such as "U13 and up", or left to each family?
+Not built: a player in more than one club seeing her other clubs' messages (the cut-down copy of another club doesn't carry her parents' uids, and won't just for this).
 
 ## Should admins configure what each role sees?
 
@@ -224,6 +226,7 @@ Roles are **derived from where a uid appears**, not stored as a string on the us
 | Coach | `teams/{t}/coaches/{uid}` | Everything for that team |
 | Tracker | `teams/{t}/trackers/{uid}` | Track tab only — no clock, and no subs beyond the coach's locked-in plan (told when, never who) |
 | Parent | `guardians/{uid}` on any player in the team | Read that team, including names |
+| Player | `self/{uid}` on her own player record, given by her coach | What her parents see; answers for herself; her family's conversations |
 | Public | Holds a share link | Read the published mirror — numbers only |
 
 A parent of two players on different teams simply appears in two `guardians` lists. Nothing special is needed.

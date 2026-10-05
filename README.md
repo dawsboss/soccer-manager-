@@ -103,6 +103,18 @@ Two limits worth knowing:
 - **This is the screen, not the database.** A parent's phone reads the whole workspace, as it always has, so the names are in what it holds; the app chooses not to draw them. Moving them out of a parent's reach is the `orgs/{orgId}` work in AUTH.md, which hasn't started.
 - **My players spans clubs.** Her children in every other club she's in are listed under this club's own, named with their team and club, with the next thing to get them to and *Open that club for her minutes*. It comes from the cut-down copy My calendar already keeps (her own children, no stints), so there are no minutes for another club until it's opened.
 
+## A player's own sign-in
+
+For an older player who asks. On her page in Squad, her coach (or an admin) taps **Make her a sign-in link**: a single-use link, good for 14 days, which names her by shirt number and nothing else. Off unless someone asks, and no age rule; that is the coach's and the club's call.
+
+- **She sees what her parents see**: her own minutes under *My season*, the team's calendar, Live, Stats and the recap, teammates by shirt number unless the club shows the whole roster, and the team's notices.
+- **She says whether she's coming** ("Are you going?"), for herself only. Her parents can still change it, and the coach's word wins as always.
+- **She reads and writes in her family's conversation with the coaches**, one per parent account, where her parents see every word. She never has one of her own, so no coach talks to her where her parents can't see. The rules refuse that conversation too.
+- **She doesn't book or pay for sessions**; that stays with her parents.
+- **Taking it away** is *Remove* beside her account on the same page, or on People. Her parents keep theirs. *Withdraw* kills a link nobody has used yet.
+
+Needs rules version 5 (`teamPlayers`, `self`, and the player clauses in `invites`, `clubInvites`, `rsvp`, `board` and `dm`). Until it's pasted, making the link is refused and says so.
+
 ## Messages
 
 The bell in the top bar, for anyone with a role in a club that has an admin.
@@ -254,6 +266,7 @@ What each part is doing:
 - **`claims/$ws/$tid/$uid`** is a parent's request through that link — a shirt number and optionally the child's first name. Only its author writes it, only with a live link to that team, and never with an approval in it. **`approved`** is written by that team's coach or an admin, once, in their own name; they can also delete a request to turn it down. The author and the team's coaches and admins read it.
 - **`access/index/$uid`** gains one clause for the team link: a team's coach may write it for someone whose request to *her* team she approved, with that team's id as the value. A coach still cannot let in anyone who did not ask.
 - **`access/teamParents/$tid/$uid`** is the parent list for one team, and the third lookup table for the same reason as the other two: a rule cannot walk the squad to ask whether someone is a guardian. Its value is a player id, and a write is only accepted if that player really lists that account in `guardians` — so the list can never say more than the squad does. A parent adds herself when she accepts an invite; the team's coach or an admin keeps it in step. Only an admin may create the table, because its first entry closes the bridge below on every team at once, and the app does that by itself on an admin's next connect.
+- **`access/teamPlayers/$tid/$uid`** is the same for a player with her own sign-in: its value is her player id, accepted only if that player's `self` lists her. It lets her read the team's notices, and it is how the `dm` rule finds her family: she may read and write in the conversation of any account in her player record's `guardians`, and never starts one of her own. **`teams/$tid/players/$pid/self/$uid`** is written by spending a `player` invite, exactly as `guardians` is by a parent invite; a `player` invite may be made by that team's coach (in `teamIndex`) as well as an admin, and she may list it on `clubInvites` for the admins. `rsvp` accepts her answer for her own player.
 - **`board/$code/$tid`** is a team's notices. Readable by that team's families (`teamParents`), coaches and trackers (`teamIndex`), and the admins — not by the rest of the club. While `teamParents` does not exist yet, it falls back to anyone indexed in the club, so pasting this locks nobody out. That team's coaches and the admins post, each in their own name, and only the author or an admin deletes one. **`seen/$uid`** is each reader's own tick, which is how a coach sees who has not read it.
 - **`dm/$code/$tid/$fam`** is one family's conversation with that team's coaches. Only a family on that team's parent list can start one (club-wide while the list is missing). Readable by that family, the team's coaches and the admins — no one coach alone, and no other family. Messages are append-only: nobody edits or deletes one, admins included. There is no bridge for a club without `teamIndex`: these are new nodes, so failing closed locks nobody out of anything, and until an admin's device has written the table only admins can read or post.
 
