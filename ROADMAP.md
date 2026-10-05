@@ -76,15 +76,11 @@ owner, which is why it is written down here rather than built.
 ### Calendar sync, beyond the first version
 
 Built: `worker/calendar.mjs` serves any `public/{id}` as a feed, the team's
-members get a feed with practices in it, and the share page offers the season's.
-What is left:
+members get a feed with practices in it, the share page offers the season's,
+and (2026-10-05) **My calendar has one address per person**: every team, child,
+session and club of hers, no names, revoked alone. That closed *one address
+per person* and *a parent's own children only*. What is left:
 
-- **One address per person, not per team.** Today replacing a leaked team
-  address makes every family subscribe again. Per-person feed ids would let one
-  be revoked alone, at the cost of a public node per member.
-- **A parent's own children only.** A parent with two daughters on two teams
-  subscribes twice. One feed across her teams needs a document keyed by her,
-  and the same care as above.
 - **Answers in the feed.** "Ella: going" in the calendar entry would be handy,
   but answers are about named children and the feed is world-readable by
   address. Not without a feed that is not world-readable, which means the

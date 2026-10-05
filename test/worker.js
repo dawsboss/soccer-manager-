@@ -72,7 +72,8 @@ const DB = 'https://club-db.example.firebaseio.com';
   const docs = {
     sh_flight: A.publicDoc(t),
     c_flightfeed: A.calendarDoc(t),
-    f_g1game: A.fixtureDoc(t, A.state.matches.g1)
+    f_g1game: A.fixtureDoc(t, A.state.matches.g1),
+    m_myfeedaddr: A.myFeedDoc()
   };
 
   const calls = [];
@@ -127,6 +128,16 @@ const DB = 'https://club-db.example.firebaseio.com';
     const one = await (await get('/f_g1game.ics')).text();
     check('a game\'s own feed has that game only', (one.match(/BEGIN:VEVENT/g) || []).length, 1);
     check('and links to that game\'s page', /URL:https:\/\/x\.test\/game\.html\?t=f_g1game&g=g1/.test(one), true);
+  }
+
+  console.log('\n--- one person\'s feed: My calendar ---');
+  {
+    const body = await (await get('/m_myfeedaddr.ics')).text();
+    check('named My calendar', /X-WR-CALNAME:My calendar/.test(body), true);
+    check('every game and entry of hers, each titled with its team', (body.match(/BEGIN:VEVENT/g) || []).length + ' ' + /SUMMARY:G14 Flight v Northgate/.test(body) + ' ' + /SUMMARY:G14 Flight: Practice/.test(body), '5 true true');
+    check('the called-off practice is marked', /SUMMARY:CANCELLED: G14 Flight: Practice/.test(body), true);
+    check('links back to My calendar', /URL:https:\/\/x\.test\/index\.html#\/my-calendar/.test(body), true);
+    check('no child\'s name in it', /Ella|Fitzgerald/.test(body) || /Ella|Fitzgerald/.test(JSON.stringify(docs.m_myfeedaddr)), false);
   }
 
   console.log('\n--- gone, and down ---');

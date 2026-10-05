@@ -13,6 +13,8 @@
      /{id}.ics   a season link's id     games, and entries marked for the share link
                  a game's own id        that game
                  a calendar-feed id     every game and entry: the members' feed
+                 a My calendar id       one person's calendar, across teams and
+                                        clubs, already titled and with no names
 
    Setup is in README, under "Calendar sync". The one setting is your
    database's address, here or as DATABASE_URL in the Worker's settings. */
@@ -183,6 +185,15 @@ const DATABASE_URL = '';      // e.g. https://your-project-default-rtdb.firebase
         url: url ? url('event', id) : ''
       });
     }
+    /* A person's own feed (My calendar) carries its items already titled,
+       across teams and clubs, so they are taken as they are. */
+    for (const [id, it] of Object.entries((doc && doc.items) || {})) {
+      if (!it || !okDate(it.date)) continue;
+      out.push({
+        uid: id, title: String(it.title || 'Calendar entry'), date: it.date, start: it.start, end: it.end, mins: it.mins,
+        venue: it.venue || '', desc: it.desc || '', called: it.called || '', url: url ? url('mine', id) : ''
+      });
+    }
     return out.sort((a, b) => a.date.localeCompare(b.date) || String(a.start || '').localeCompare(String(b.start || '')));
   }
   function niceTime(t) {
@@ -223,13 +234,14 @@ export default {
     // a link that was replaced, or a game that was deleted, is simply gone
     if (!doc || typeof doc !== 'object' || !doc.team) return say(404, 'No such calendar');
 
-    /* Where each entry links back to. The members' feed opens the app, where
-       signing in decides what anyone sees; a share-link feed opens the share
-       page it came from. */
+    /* Where each entry links back to. My calendar's feed and the members'
+       feed open the app, where signing in decides what anyone sees; a
+       share-link feed opens the share page it came from. */
     const app = String((doc.link && doc.link.app) || '');
     const site = app.replace(/[^/]*$/, '');
     const tid = encodeURIComponent(String((doc.link && doc.link.teamId) || ''));
     const back = (kind, x) => !/^https?:\/\//.test(site) ? ''
+      : doc.mine ? `${app}#/my-calendar`
       : doc.calendar ? (kind === 'game' ? `${app}#/team/${tid}/game/${encodeURIComponent(x)}/live` : `${app}#/team/${tid}/calendar`)
         : doc.fixture ? `${site}game.html?t=${id}&g=${encodeURIComponent(x)}`
           : `${site}live.html?t=${id}#${kind === 'game' ? 'g' : 'e'}=${encodeURIComponent(x)}`;
