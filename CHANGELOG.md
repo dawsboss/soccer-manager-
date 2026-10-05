@@ -35,7 +35,7 @@ never its own, and then about them going.
   says the page reloaded (`rereadClub()` in the harness).
 - Any club made with an earlier build from inside another may hold copies of
   the old club's teams and games. Remove them by deleting each copied team
-  (Setup), which takes its games with it and leaves the original club alone.
+  (its Edit sheet, *Delete this team and its games*), which takes its games with it and leaves the original club alone.
   Not game by game: a copied game carries the original's share id, and
   deleting a game takes its share page down, the original's included.
 
