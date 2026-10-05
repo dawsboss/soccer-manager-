@@ -132,6 +132,8 @@ const EXPORTS = `{
   /* storage + environment */
   dataKey, clubKey, envPrefix, envName, wsCode, fbConfig, isSandbox,
   loadLocal, saveLocal, purgeClub, markSynced, noteDenied, knownClubs,
+  /* a page reads its club and database once; this is what a reload does to them */
+  rereadClub: () => { wsHeld = null; envHeld = null; },
   stampOf, stampKey, stampLabel, trackersIn, typedName, stampedBy,
   /* sync */
   getApp, initAuth, initSync, mergeNode, IDENTITY, pushAll, remoteSet, remoteDel,

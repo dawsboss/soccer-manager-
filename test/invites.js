@@ -391,6 +391,42 @@ const CLUB = {
     check('by reloading into it', A.dom.reloads, 1);
   }
   {
+    /* A reload is not instant: the old page keeps running, and redrawing, until
+       the new one arrives. In that gap storage already names the new club while
+       memory still holds the old one, so anything kept per club was filed under
+       the new club's name, and the new club opened to "Deleted:" for every game
+       and practice the old one had. */
+    const club = JSON.parse(JSON.stringify(CLUB));
+    club.teams.t1.events = { e1: { id: 'e1', kind: 'practice', title: 'Practice', date: '2031-05-01', start: '18:00' } };
+    club.matches = { g1: { id: 'g1', teamId: 't1', opponent: 'Storm', date: '2031-05-03', kickoff: '10:00' } };
+    const { A, fbk } = await boot({ storage: { 'sm.workspace': 'CLUB' } });
+    fbk.signIn('adm', { name: 'Ada' }); await A.flush();
+    fbk.deliver('.info/connected', true);
+    fbk.deliver('workspaces/CLUB', club); await A.flush();
+    A.render(); A.render();
+    A.click({ act: 'newclub' });
+    A.dom.node('#newClubName').value = 'Hillside FC';
+    A.click({ act: 'newclubgo' }); await A.flush(20);
+    const code = A.storage.getItem('sm.workspace');
+    check('the new club is opened', code !== 'CLUB' && /^sm-/.test(code), true);
+    const under = () => Object.keys(A.storage._d).filter(k => k.includes(code)).join(' ');
+    A.render();                                            // the old page, still drawing before the reload lands
+    check('what club activity saw is not filed under the new club', under(), '');
+    A.saveLocal();
+    check('nor the old club\'s copy', under(), '');
+    check('the old club\'s copy stays its own', JSON.parse(A.storage.getItem('sm.data.v1:CLUB')).teams.t1.name, 'Flight');
+    const fb2 = makeFakebase();
+    const B = H.loadApp({ firebase: fb2, config: CONFIG, storage: A.storage._d });
+    await B.flush();
+    fb2.signIn('adm', { name: 'Ada' }); await B.flush();
+    fb2.deliver('.info/connected', true);
+    fb2.deliver('workspaces/' + code, { access: { org: { name: 'Hillside FC' }, admins: { adm: true }, index: { adm: true }, members: { adm: { name: 'Ada' } } } }); await B.flush();
+    B.render();
+    check('the new club opens empty', Object.keys(B.state.teams || {}).join(), '');
+    check('nor sent to it', fb2.record.writes.filter(w => /\/(teams|matches)\//.test(w.path)).map(w => w.path).join(' '), '');
+    check('and with no news of anything deleted', B.newsItems().map(x => x.title).join(' | '), '');
+  }
+  {
     const { A, fbk } = await boot({ storage: { 'sm.workspace': 'CLUB' } });
     fbk.signIn('coach'); await A.flush();
     fbk.deliver('.info/connected', true);

@@ -102,7 +102,7 @@ A.schedulePublish();
 check('publishing is refused for a test club', A.pubState.error, 'Test club — nothing is published');
 
 // the same call on an ordinary club gets as far as the connection check
-LS.setItem('sm.workspace', 'REALCODE');
+LS.setItem('sm.workspace', 'REALCODE'); A.rereadClub();
 delete seeded.access.org.sandbox;
 A.schedulePublish();
 check('an ordinary club is not blocked here', A.pubState.error, 'Not connected to Firebase');
@@ -111,7 +111,7 @@ check('an ordinary club is not blocked here', A.pubState.error, 'Not connected t
 
 console.log('\n--- one code, two databases ---');
 const prodKey = A.dataKey();
-LS.setItem('sm.env', 'sandbox');
+LS.setItem('sm.env', 'sandbox'); A.rereadClub();
 const sbKey = A.dataKey();
 check('the same code stores under two keys', prodKey !== sbKey, true);
 check('production keeps the bare key', prodKey, 'sm.data.v1:REALCODE');
@@ -123,7 +123,7 @@ console.log('    overwrite this device\'s copy of the real season.');
 LS.setItem('sm.data.v1:sandbox~ONLY-IN-SANDBOX', JSON.stringify({ access: { org: { name: 'Sandbox only' } } }));
 LS.setItem('sm.data.v1:ONLY-IN-PROD', JSON.stringify({ access: { org: { name: 'Prod only' } } }));
 const inSandbox = A.knownClubs().map(c => c.code);
-LS.removeItem('sm.env');
+LS.removeItem('sm.env'); A.rereadClub();
 const inProd = A.knownClubs().map(c => c.code);
 check('the sandbox switcher shows sandbox clubs', inSandbox.includes('ONLY-IN-SANDBOX'), true);
 check('and not production ones', inSandbox.includes('ONLY-IN-PROD'), false);
