@@ -86,6 +86,21 @@ const MIN = 60000;
     check('the helper', [A.shownName(A.state.teams.t1, A.state.teams.t1.players.p1), A.shownName(A.state.teams.t1, A.state.teams.t1.players.p2)].join(), 'Ella Fitzgerald,#8');
   }
 
+  console.log('\n--- a child with more than one parent, a parent with more than one child ---');
+  {
+    setup('dad');
+    A.state.teams.t1.players.p1.guardians.dad = 'inv123';   // a second parent, let in by invite: the value is the invite id
+    A.state.teams.t1.players.p2.guardians = { dad: true };   // and he has a second child on the team
+    A.state.access.index.dad = true;
+    const s = screens();
+    check('either parent sees their child by name', /Ella Fitzgerald/.test(s.stats), true);
+    check('a second child on the same team by name too', /Mia Kowalski/.test(s.stats), true);
+    check('everyone else still by number', /Rosa|Delgado/.test(s.stats) || !/A teammate/.test(s.stats), false);
+    check('both under My players', A.myPlayers().map(x => x.p.name).join(), 'Ella Fitzgerald,Mia Kowalski');
+    setup('mum');
+    check('the first parent is unaffected', /Ella Fitzgerald/.test(screens().stats) && !others.test(screens().stats), true);
+  }
+
   console.log('\n--- who still sees names ---');
   for (const [who, why] of [['boss', 'an admin'], ['coach', 'this team\'s coach'], ['trk', 'its tracker'], ['jaz', 'a coach of another team, child or not']]) {
     setup(who);

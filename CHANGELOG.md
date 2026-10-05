@@ -8,6 +8,32 @@ before this point lives only in the git log.
 
 ---
 
+## No more workspace codes; a child's parents, plural; a player's own account, designed — 2026-10-05 (build 93)
+
+The owner: *workspace codes are weird, get rid of them. A kid can belong to
+multiple parents, and once older may have an account of her own.*
+
+- **Workspace codes are gone from every screen.** Everyone else had stopped
+  seeing them when invites arrived; the app owner's *Change workspace code*
+  box, written as a stopgap "until per-person invites exist", was the last
+  one, and it's removed with its four actions. A phone reaches a club by an
+  invite, a team link, the switcher (`userOrgs`, which every phone backfills
+  for the clubs it reads) or by starting one. Setup's *Workspace* card is
+  *Club* and names the club. The lock screen says *This club needs a sign-in*
+  and offers her other clubs. The code survives as the club's id inside
+  database paths, which AUTH.md always meant it to become. Renaming those
+  paths (`orgs/`) would change nothing anyone sees, so it isn't part of this.
+- **A child with several parents** was already one `guardians` list, and
+  every check asks whether *this* account is in it. `test/parents.js` now
+  pins two parents of one child, and one parent of two children, on the
+  same team. The squad-invite sheet says how a second parent gets in: it
+  makes one link per child without a parent, so the second uses the team
+  link or one more invite.
+- **A player's own account** is designed in AUTH.md rather than built. It's
+  a separate `self` entry beside `guardians`, given by her parent, and never
+  a one-to-one conversation with a coach. Four questions for the owner come
+  first, because each one is a safeguarding or club-policy call, not code.
+
 ## What a parent sees: her child by name, the rest by number; My players across clubs — 2026-10-05 (build 92)
 
 The owner asked for the rest of `AUTH.md`. Most of its build order had

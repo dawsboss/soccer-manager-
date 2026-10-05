@@ -47,7 +47,7 @@ Open `index.html` in a browser, or serve the folder. Everything works immediatel
 
    There is one ruleset, for every club. A database runs one set of rules for every club in it, and this site is for any club that comes to it, so there is no "starter" set for new clubs and a stricter one for established ones: a new club is made under the same rules every other club runs on (see **The database rules** below).
 
-4. Sign in (Setup → Account), then tap the club button at the top left → **+ Start a new club**, give it a name, and *Start it*. That creates the club, with you as its admin, and opens it. (A device with no club open has the same button under Setup → Workspace. The app owner's *Connect to a workspace* still works too.) Nobody else types the code: everyone else joins with an invite link — see **Joining a club** below. Signed out, the app still works, but only on that one device.
+4. Sign in (Setup → Account), then tap the club button at the top left → **+ Start a new club**, give it a name, and *Start it*. That creates the club, with you as its admin, and opens it. (A device with no club open has the same button under Setup → Club.) There is no code to type or share: everyone else joins with an invite link — see **Joining a club** below — and a phone finds the clubs its account is in by itself. Signed out, the app still works, but only on that one device.
 
 Two things that will silently reject a write if you tighten the `public` block: a team with **no games yet** publishes without a `games` child at all, because Realtime Database drops empty objects — so never require `games`. And never add a `"$other": { ".validate": false }` catch-all: the document also contains `record` and `updated`, and a wildcard matches those too, failing the whole write.
 
@@ -64,7 +64,7 @@ Why it is tolerable for now, and only for now:
 
 The proper fix is the first job for authentication: make `.write` require `auth.uid` to be a coach of the team that owns the share. Anonymous auth is *not* a shortcut here — anonymous uids are per-device, so two coaches on two devices would get different ids and only one could publish, and clearing browser storage would lock a coach out of their own share.
 
-The API key in `firebase-config.js` is not a secret; the rules above are what gate access. The long random workspace code is the shared password. Anyone who has it can read and write that workspace, which is fine for minutes and rosters — if you want real accounts later, turn on Firebase Authentication and change the rules to `"auth != null"`.
+The API key in `firebase-config.js` is not a secret; the rules above are what gate access. A club's id (the `{code}` in `workspaces/{code}`) is plumbing, not a password: nobody types it or sees it, and knowing it gets you nothing without a role the rules can find.
 
 The badge in the top bar shows `synced`, `offline`, or `this device`, and `3 to send` while changes made on this phone haven't reached the club yet. Nothing lives only on the phone: every change is kept in an outbox on the phone until the database confirms it has it, so a game tracked with no signal reaches the club even if the app is closed and reopened before the signal comes back. Plans, drills and messages do the same. A change the club's database refuses (usually because the rules haven't been pasted yet) is kept, tried again every time the phone connects, and said on every screen, with a list under Settings; it is only dropped if you choose to. A phone used before it joined a club is offered, under Settings, a way for an admin to add those teams to the club. If both devices edit the same game while one is offline, last write wins.
 
@@ -280,8 +280,8 @@ same rules.
 Paste the previous version of `database.rules.json` back in and publish — on
 GitHub, open the file's **History**, pick the commit before the change, tap
 **Raw**. Access returns immediately; nothing is lost. The app also detects the
-refusal and shows a sign-in screen with a way to change account or workspace
-code rather than a broken page.
+refusal and shows a sign-in screen with a way to change account or club rather
+than a broken page.
 
 ### What is still not enforced
 
@@ -308,7 +308,7 @@ refused write is a bug.
 
 ### 2. A test club — the flows, on invented data
 
-**Setup → Workspace → Make a test club** (app owner only). Seeds a club called
+**Setup → Club → Make a test club** (app owner only). Seeds a club called
 Sandbox FC: two squads, invented names, four games with one in progress, and
 three people waiting in `access/members` with no roles yet. That is exactly the
 state a club moving off the old open rules is in (the steps above), so you can rehearse
@@ -328,7 +328,7 @@ grants, and nothing below it can take that back.
 
 ### 3. A second database — everything, including rules
 
-**Setup → Workspace → Database** switches which Firebase database the app talks
+**Setup → Club → Database** switches which Firebase database the app talks
 to. Declare them in `firebase-config.js`:
 
 ```js

@@ -2,7 +2,7 @@
    Static app. Data lives in localStorage, and mirrors to Firebase Realtime
    Database when a config + workspace code are present. */
 
-const BUILD = '92';
+const BUILD = '93';
 const BUILT = '2026-10-05';
 /* The version of database.rules.json this app was written against. The rules
    carry the same number in rulesVersion's .write, which accepts that number
@@ -1775,6 +1775,7 @@ function sheetSquadInvites(tid) {
       ${missing.length ? `<button class="btn wide" data-act="squadinvitego" data-tid="${tid}">Make ${missing.length} link${missing.length === 1 ? '' : 's'}</button>` : ''}
       <div class="plist" style="margin-top:10px">${list.map(row).join('')}</div>`
     : `<p class="muted">Every player on the squad has a parent linked.</p>`}
+    <p class="muted">A child can have any number of parents. For a second one (or a grandparent who does the driving), post the team link, or make one more link from People → <i>Invite someone</i>.</p>
     <button class="btn quiet wide" data-act="closesheet">Done</button>`);
 }
 // SERVER.md: one invite at a time from the admin's phone; a server would make the squad's in one call.
@@ -4853,11 +4854,12 @@ function purgedScreen() {
 
 function lockScreen() {
   return `<div class="stack">
-    <div class="empty"><strong>This workspace needs a sign-in</strong>
+    <div class="empty"><strong>This club needs a sign-in</strong>
       ${me ? `You are signed in as <b>${esc(me.name)}</b>, but no role has been granted to this account yet. Ask the club admin for an invite link.`
       : 'The data here is protected. Sign in with the account a coach has given access to.'}
       <div class="row" style="margin-top:14px;justify-content:center">
         ${me ? `<button class="btn quiet" data-act="signout">Sign out</button>` : `<button class="btn" data-act="signinsheet">Sign in</button>`}
+        ${me && Object.keys(myClubs || {}).some(c => c !== wsCode()) ? `<button class="btn quiet" data-act="clubswitch">Your other clubs</button>` : ''}
       </div></div>
     <p class="muted" style="text-align:center">Read-only score pages need none of this — they keep working from their own link.</p>
   </div>`;
@@ -4941,7 +4943,7 @@ function sheetAccount() {
     <button class="opt" data-act="goview" data-v="mycal"><b>My calendar</b>
       <span class="rowsub">Everything of yours, in every club you're in</span></button>
     <button class="opt" data-act="goview" data-v="setup"><b>Settings</b>
-      <span class="rowsub">Workspace, sharing, backup, version</span></button>
+      <span class="rowsub">Account, club, sharing, backup, version</span></button>
     ${anyPlayers() ? `<button class="opt" data-act="goview" data-v="mine"><b>My players</b>
       <span class="rowsub">${allKidNames().map(esc).join(', ')}</span></button>` : ''}
     <button class="btn danger wide" data-act="signout" style="margin-top:8px">Sign out</button>
@@ -5006,7 +5008,7 @@ function sheetClubMenu() {
     ${me ? `<button class="opt" data-act="goview" data-v="mycal"><b>My calendar</b>
       <span class="rowsub">Every team of yours, your children and your sessions</span></button>` : ''}
     <button class="opt" data-act="goview" data-v="setup"><b>Your settings</b>
-      <span class="rowsub">Account, workspace, sharing, backup</span></button>
+      <span class="rowsub">Account, club, sharing, backup</span></button>
     ${me ? `<button class="opt" data-act="signout"><b>Sign out</b>
       <span class="rowsub">${esc(me.email || me.name)}</span></button>`
       : `<button class="opt" data-act="signinsheet"><b>Sign in</b></button>`}`);
@@ -12701,14 +12703,12 @@ function viewSetup() {
       ${isOwner() ? `<button class="btn quiet wide" data-act="peeklib" style="margin-top:8px">Look at someone's drills, for support</button>` : ''}`
       : '<p class="muted" style="margin-bottom:0">Signed out, everything stays on this device. Sign in to share it with your club.</p>'}</div>
 
-    <div class="card"><h2 style="margin-bottom:8px">Workspace</h2>
+    <div class="card"><h2 style="margin-bottom:8px">Club</h2>
       <p class="muted" style="margin-top:0">Firebase config is ${cfgOk ? 'in place' : 'not filled in — see README.md'}.</p>
-      <p class="muted"${isOwner() ? '' : ' style="margin-bottom:0"'}>${code ? 'Connected. Clubs are invite only — an admin sends you a link, there is no code to type.' : 'Not connected to a club yet. Open the invite link a club admin sent you to join one.'}</p>
+      <p class="muted"${isOwner() ? '' : ' style="margin-bottom:0"'}>${code ? `Connected to <b>${esc((acc().org || {}).name || 'your club')}</b>. People join a club by the invite link an admin sends them.` : 'Not in a club on this phone yet. Open the invite link a club admin sent you, or start one.'}</p>
       ${!code && Object.keys(myClubs || {}).length ? `<button class="btn wide" data-act="clubswitch" style="margin-bottom:10px">Your clubs</button>` : ''}
       ${!code && canNewClub() ? `<button class="btn quiet wide" data-act="newclub" style="margin-bottom:10px">Start a new club</button>` : ''}
-      ${isOwner() ? `<button class="btn quiet wide" data-act="setwscode">${code ? 'Change workspace code' : 'Connect to a workspace'}</button>
-      <p class="muted">Owner-only stopgap until per-person invites exist — nobody else sees this.</p>
-      <div class="row"><button class="btn quiet" data-act="envsheet">Database: ${esc(envName() || 'production')}</button>
+      ${isOwner() ? `<div class="row"><button class="btn quiet" data-act="envsheet">Database: ${esc(envName() || 'production')}</button>
       <button class="btn quiet" data-act="maketestclub">Make a test club</button></div>
       <p class="muted" style="margin-bottom:0">A test club is invented data with publishing switched off — safe to grant roles in, take apart and retire. Rules belong to a database rather than to a club, though, so a rules change has to be rehearsed in another database, not just another club.</p>` : ''}</div>
 
@@ -14366,20 +14366,6 @@ function sheetEnv() {
     <p class="muted" style="margin-bottom:0">Switching reloads and forgets the open code, since a club belongs to the database it lives in. Each database keeps its own local copies, so neither can overwrite what the other holds.</p>`);
 }
 
-function sheetWorkspace() {
-  const code = wsCode();
-  const cfgOk = !!fbConfig().apiKey;
-  openSheet(`<h3>Workspace code</h3>
-    <p class="muted" style="margin-top:0">${cfgOk ? 'Every device with this exact code sees the same teams and games. It is case sensitive and the order of the characters matters.' : 'No Firebase config in this build, so this device is on its own.'}</p>
-    ${code ? `<div class="codebox" id="codeShow">${esc(code)}</div>
-      <div class="row" style="margin-bottom:12px"><button class="btn quiet sm" data-act="copycode">Copy it</button>
-      <span class="muted">${code.length} characters</span></div>` : ''}
-    <label class="field"><span>Switch to a different code</span><input type="text" id="wsCode" value="${esc(code)}" autocapitalize="off" autocorrect="off" spellcheck="false"></label>
-    <div class="row"><button class="btn" data-act="savews">Save and reload</button>
-    <button class="btn quiet" data-act="gencode">Make one up</button></div>
-    <p class="muted" style="margin-bottom:0">Each code keeps its own copy on this device, so switching away and back does not lose anything.</p>`);
-}
-
 function sheetTeams() {
   openSheet(`<h3>Switch team</h3>
     ${myTeams().map(t => `<button class="opt" data-act="pickteam" data-id="${t.id}" aria-current="${t.id === ui.teamId}">
@@ -15818,7 +15804,6 @@ function onAct(e) {
     if (t && ensureFixtureShares(t)) { claimTeamIds(t.id); schedulePublish(); }
     sheetShare(); return;
   }
-  if (a === 'setwscode') { sheetWorkspace(); return; }
   if (a === 'envsheet') { sheetEnv(); return; }
   if (a === 'setenv') {
     if (!isOwner()) { toast('App owner only'); return; }
@@ -15955,7 +15940,7 @@ function onAct(e) {
     sheetPeople(); return;
   }
   if (a === 'republish') {
-    if (!fb) { toast('Not connected — check the workspace code'); return; }
+    if (!fb) { toast('Not connected to the club — check the signal and that you are signed in'); return; }
     // every page goes out, the game pages and the calendar feed too, changed or not
     pubSeen = {};
     ensureFixtureShares(t); claimTeamIds(t.id);
@@ -16693,16 +16678,6 @@ function onAct(e) {
     commit(`matches/${m.id}/planned`, plan); closeSheet(); return;
   }
 
-  if (a === 'savews') {
-    const v = $('#wsCode').value.trim();
-    if (v) localStorage.setItem(LS_WS, v); else localStorage.removeItem(LS_WS);
-    location.reload(); return;
-  }
-  if (a === 'gencode') { $('#wsCode').value = 'sm-' + uid() + uid(); return; }
-  if (a === 'copycode') {
-    navigator.clipboard.writeText(wsCode()).then(() => toast('Code copied'), () => toast('Could not copy — select it by hand'));
-    return;
-  }
   if (a === 'export') {
     if (!canAdmin()) { toast('Only club admins can export the full data'); return; }
     if (fb) toast('Gathering the club\u2019s training records…');

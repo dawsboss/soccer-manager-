@@ -34,6 +34,8 @@ Written whenever a role is granted, alongside the existing `access/index`. On si
 
 The org id stays exactly what the workspace code is today, so **nothing migrates** — the same trick that let roles land without moving data. The club gets a display name (`access/org/name`) and the id becomes plumbing.
 
+**Built** (2026-10, build 93): the code is gone from every screen. The app owner's code box, its last appearance, is removed. A phone reaches a club by an invite, a team link, the switcher (`userOrgs`, which every phone backfills for the clubs it reads) or by starting one. The code lives on only as the club's id inside database paths, as this section intended.
+
 ## The account flow
 
 **Signed out** — a plain page. What the app is, and a sign-in button. No data, no roster, nothing.
@@ -123,6 +125,36 @@ Same shape. Every team in the club, editable. If she has a child, **My players**
 - **No console, and no mode switch.** The game screens *are* the coach's console, and the Admin tab is the club's. A third wrapper would only add a layer over things already one tap away.
 
 **Built** (2026-10): My players lists her children across teams and, since build 92, across clubs. Children in another club come from the cut-down copy My calendar already keeps of every club in `userOrgs` (`mirrorSlim()`: her own children, every game's when and where, no stints), so they show with team, club and what's next, and *Open that club* for the minutes; the copy gained nothing for it. She does not land on My players at sign-in; she lands in a club, which is still what the switcher picks.
+
+## A player with her own account
+
+*Not built. A design to agree before any code, the way the rest of this document was written.*
+
+A U8 has no account; a U16 often wants one and has a phone. The model already has the slot for it: a player is a record her parents point at through `guardians`, and a child can have any number of those. Her own account is one more pointer, kept **separate from `guardians`**:
+
+```
+teams/{tid}/players/{pid}/self/{uid}: true | inviteId
+```
+
+Separate because she is not her own parent. `roleIn()` would give `'player'`, and every right a parent holds is decided again for her, not inherited by accident: answering for, booking and paying for sessions, the family conversation.
+
+What follows, unless the owner decides otherwise:
+
+- **Her parent gives it to her.** My players → *Give Ella her own sign-in* makes a single-use invite for role `player` on that one child. The rule lets a guardian of that player make it, plus the team's coaches and the admins. That way a club never hands a child an account behind her family's back.
+- **She sees what her parent sees about her**: her minutes, her team's calendar, Live, Stats and the recap, and the team's notices. Teammates follow the club's *What parents see* preset.
+- **She answers "going" for herself**, at the same `rsvp/{tid}/{item}/{pid}` node, stamped with her uid. The coach's override still wins (`isOut()`), and a parent can change her answer.
+- **She never has a conversation with a coach on her own.** Safeguarding guidance (SafeSport in the US, the FA in England) is that adults don't message minors one-to-one. She can read, and perhaps post in, her family's conversation, where her parents and every coach and admin see every word, and nowhere else.
+- **A lookup table, because rules cannot iterate:** `access/teamPlayers/{tid}/{uid}: pid`, derived like `teamParents`, plus her entry in `access/index`.
+- **At 18** she can stay on with nobody else linked; nothing about the record changes.
+
+Rules touched: `teams/$tid/players/$pid/self` (written by spending an invite, like `guardians`), `rsvp`, `board` (read), `dm` (if she may post), `invites` (role `player`, made by a guardian), and the new lookup table. `test/rules.js` would walk all of them before anything is pasted.
+
+Four decisions for the owner before it is built:
+
+1. Who may give a player her account: her parent only, or the team's coach as well?
+2. May she post in her family's conversation, or only read it?
+3. Teammates: by shirt number like a parent, or by name, since she knows them anyway?
+4. From what age, if any? A club setting such as "U13 and up", or left to each family?
 
 ## Should admins configure what each role sees?
 
@@ -241,11 +273,11 @@ The existing `workspaces/{code}` node is already organisation-shaped — many te
 2. Copy `workspaces/{code}/teams` to `orgs/{orgId}/teams`, adding that admin as coach of each.
 3. Repoint matches at the new team ids.
 4. Keep the old node readable for a fortnight, so nothing is lost if the copy goes wrong.
-5. Retire workspace codes once every coach has signed in.
+5. Retire workspace codes once every coach has signed in. *(Done for people in build 93: nobody types or sees one. The paths still say `workspaces/`.)*
 
 Do the migration with a button in the app, on a copy, not by hand in the console.
 
-**Status (2026-10): not started, and a decision for the owner rather than the next step.** Everything this document asked of the org model shipped without moving a byte: the workspace code *is* the org id (as "The code becomes the organisation" said it would be), roles are derived from where a uid appears under `workspaces/{code}/access`, and the four lookup tables do what `teamMembers` was for. What the move would still buy:
+**Status (2026-10): not started, and a decision for the owner rather than the next step.** Everything this document asked of the org model shipped without moving a byte: the workspace code *is* the org id (as "The code becomes the organisation" said it would be), roles are derived from where a uid appears under `workspaces/{code}/access`, and the four lookup tables do what `teamMembers` was for. Renaming `workspaces/` to `orgs/` on its own would change nothing anyone sees: the codes left the screen in build 93 without it. What the move would still buy:
 
 - **Names a parent's phone never receives.** Today anyone indexed reads the whole workspace, so "other players by shirt number" is the screen's choice (above). A squad node readable only by that team's coaches and admins is the only way to make it the database's.
 - **Teams one club can't read.** A coach reads every team by design; the move would let a club choose otherwise in the rules, not just on screen.
