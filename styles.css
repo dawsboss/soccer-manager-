@@ -851,3 +851,30 @@ button.nextprac{cursor:pointer}
 .barrow .stepbtn{width:28px}
 .barrow .sharebtn{width:40px}
 .barrow .backbtn{width:34px;flex:none}
+
+/* ---------- line charts (recap and season) ---------- */
+.lcbox{margin-top:10px}
+.lcbox b{font-size:14px}
+.lcend{font-family:"Barlow Condensed",sans-serif;font-weight:700;font-size:17px;font-variant-numeric:tabular-nums}
+.lchart{display:block;width:100%;height:auto;margin-top:2px}
+.lc-grid{stroke:var(--line);stroke-width:.6}
+.lc-ref{stroke:var(--ink-soft);stroke-width:.8;stroke-dasharray:2 3}
+.lc-v{stroke:var(--ink-soft);stroke-width:.8;stroke-dasharray:3 3}
+.lc-ax{font-size:9px;fill:var(--ink-soft);font-family:"Barlow",system-ui,sans-serif}
+.lc-line{fill:none;stroke-width:2;stroke-linejoin:round;stroke-linecap:round}
+.lc-line.us,.lc-line.one{stroke:var(--field)}
+.lc-line.them{stroke:var(--bench);stroke-dasharray:5 3}
+.lc-dot{stroke:#fff;stroke-width:1}
+.lc-dot.us,.lc-dot.one{fill:var(--field)}
+.lc-dot.them{fill:var(--bench)}
+.lc-goal{stroke:#fff;stroke-width:1}
+.lc-goal.us{fill:var(--field-deep)}
+.lc-goal.them{fill:var(--ink)}
+.wlegend .k.dash{background:repeating-linear-gradient(90deg,var(--bench),var(--bench) 4px,transparent 4px,transparent 6px);height:3px;vertical-align:3px}
+.lctable{overflow-x:auto;margin-top:8px}
+.lctable table{border-collapse:collapse;font-size:13px;white-space:nowrap}
+.lctable th,.lctable td{padding:3px 8px;border-bottom:1px solid var(--line);text-align:center}
+.lctable th:first-child,.lctable td:first-child{text-align:left}
+.tlogrow .t{display:flex;flex-direction:column;line-height:1.15}
+.tlogrow .t small{font-size:11px;color:var(--ink-soft);font-weight:500}
+.chip small{opacity:.65;margin-left:2px}

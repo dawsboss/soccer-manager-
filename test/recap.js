@@ -181,4 +181,76 @@ console.log('--- a game with only a score still says something ---');
   check('the clean sheet is noticed', A.recapNotes(A.state.teams.t1, m, A.recap(A.state.teams.t1, m)).good.some(x => /clean sheet/.test(x)), true);
 }
 
+console.log('--- an ended game: Recap, Stats and the Log, nothing for running it ---');
+{
+  for (const v of ['subs', 'track', 'plan', 'pitch']) {
+    setup({}, 'jaz'); A.ui.gameView = v; A.render();
+    check(`${v} sends a coach to the recap`, A.ui.gameView, 'recap');
+  }
+  setup({}, 'jaz'); A.ui.gameView = 'live'; A.render();
+  check('Live stays, as the log', A.ui.gameView, 'live');
+  check('which is the match log, not the follow card', /Match log/.test(A.rendered()) && !/Notify me/.test(A.rendered()), true);
+  A.click({ act: 'openmatch', id: 'g1' });
+  check('opening a finished game lands on its recap', A.ui.gameView, 'recap');
+  check('the coach can reopen it from there', /data-act="reopengame"/.test(A.rendered()), true);
+  setup({}, 'mum'); A.ui.gameView = 'recap'; A.render();
+  check('a parent cannot', /data-act="reopengame"/.test(A.rendered()), false);
+
+  // a last half that ran out without End game still has spells open: Subs stays
+  const notYet = setup({ ended: false, currentHalf: 3 }, 'jaz');
+  check('it counts as done', A.gameStatus(notYet), 'done');
+  A.ui.gameView = 'subs'; A.render();
+  check('but Subs stays until End game is pressed', A.ui.gameView, 'subs');
+}
+
+console.log('--- the log: in order, timed, filtered ---');
+{
+  const m = setup();
+  const html = A.logCard(A.state.teams.t1, m);
+  const feed = html.slice(html.indexOf('class="feed"'));
+  const at = s => feed.indexOf(s);
+  check('kick-off comes first', at('Kick-off') > -1 && at('Kick-off') < at('Goal'), true);
+  check('full time comes last', at('Full time') > at('Goal'), true);
+  check('each line has the match clock', /<span class="t">0?5:00</.test(html), true);
+  // kick-off was at T0 - 90 min in UTC; the log shows that moment in local time
+  const ko = new Date(T0 - 90 * MIN);
+  check('and the time of day', html.includes(`<small>${String(ko.getHours()).padStart(2, '0')}:${String(ko.getMinutes()).padStart(2, '0')}</small>`), true);
+  A.click({ act: 'logkind', v: 'goal' });
+  const goals = A.logCard(A.state.teams.t1, m);
+  check('filtered to goals, four lines', (goals.match(/class="feedrow tlogrow"/g) || []).length, 4);
+  A.click({ act: 'logkind', v: 'nonsense' });
+  check('a kind it does not know shows everything', A.ui.logKind, 'all');
+}
+
+console.log('--- how it built up ---');
+{
+  const m = setup();
+  const t = A.state.teams.t1;
+  const lines = A.recapLines(t, m, A.recap(t, m));
+  deepEq('one chart per thing recorded, nothing for what was not', lines.map(x => x.k), ['goals', 'shots', 'corner']);
+  check('shots end on the full count', `${lines[1].us}–${lines[1].them}`, '9–3');
+  const fin = lines[1].rows[lines[1].rows.length - 1];
+  check('the table finishes on the same totals', `${fin.us}–${fin.them}`, '9–3');
+  check('and at 10 minutes it was 2–0', `${lines[1].rows[0].us}–${lines[1].rows[0].them}`, '2–0');
+  check('half time is drawn', /class="lc-v"/.test(lines[1].svg), true);
+  check('goals are marked on the shots chart', (lines[1].svg.match(/class="lc-goal/g) || []).length, 4);
+}
+
+console.log('--- the season, game by game ---');
+{
+  setup();
+  const t = A.state.teams.t1;
+  check('one finished game with something in it is not a trend', A.seasonTrends({ ...t, id: 'none' }), null);
+  const s = A.seasonTrends(t);
+  deepEq('oldest first', s.games.map(m => m.id), ['g0', 'g1']);
+  const shots = s.charts.find(c => c.label === 'Shots');
+  check('a game that never counted shots is a gap, not a zero', shots.vals[0], null);
+  check('the one that did is there', shots.vals[1].us, 9);
+  check('goals are there for both', s.charts.find(c => c.label === 'Goals').vals.map(v => v.us).join(','), '0,3');
+  A.ui.view = 'season'; A.render();
+  check('Season draws it', /Game by game/.test(A.rendered()), true);
+  const all = JSON.stringify(s.charts.map(c => c.svg));
+  check('no child is named in the charts', ['Ella', 'Mia', 'Rosa', 'Nakamura'].some(x => all.includes(x)), false);
+}
+
 H.summary('the recap');

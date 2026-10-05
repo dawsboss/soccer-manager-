@@ -8,6 +8,35 @@ before this point lives only in the git log.
 
 ---
 
+## A finished game is its recap; lines through the game and the season; the match log — 2026-10-05 (build 91)
+
+The owner: *a line graph for each thing recorded, by time. Across the season
+would be amazing. Once a game ends it should no longer have the plan, sub,
+track and all — the recap seems the most important. And something to show
+the time-stamped log.*
+
+- **Once End game is pressed, a game is Recap · Stats · Log.** Subs, Track,
+  Plan and Pitch are put away, and opening a finished game lands on its recap.
+  Only `ended` does this, not a last half that ran out: until End game closes
+  them, players' spells are still open and Subs and Track are where it's
+  pressed. A coach or admin can **Reopen the game** from the recap to fix
+  something, which brings the tabs back.
+- **How it built up**, on the recap: one small chart per thing recorded
+  (goals, shots, corners, fouls, throw-ins, goal kicks, keeper claims), each a
+  running total for both teams, with half time and the goals marked, and a
+  table of the totals every ten minutes. One chart each rather than a dozen
+  lines on one, because on a phone that is a tangle and each count has its own
+  scale. Ours solid green, theirs dashed grey.
+- **Game by game**, on Season: the same idea across the season, one point per
+  finished game, oldest first — goals, shots, shots on target, each set piece,
+  and possession against 50%. A game that didn't record a thing is a gap in
+  its line, never a zero. With a table.
+- **The match log**: on a finished game, Live becomes Log, everything
+  recorded in order with the match clock and the time of day (what lines a
+  moment up with someone's video), filtered by goals, subs, shots or set
+  pieces. Players coming off at the final whistle are no longer listed as
+  subs, here or on Live.
+
 ## A recap for every finished game; the game count; an Edit button — 2026-10-05 (build 90)
 
 The owner: *the count for games isn't backwards, the newest is 1/x and not x/x.
