@@ -237,6 +237,41 @@ people/{uid}/
   phones is open: a server's job, done by a phone until there is one
   (`SERVER.md`, *Busy at another club*).
 
+## Alerts from every club
+
+Followed up 2026-10-05: *people should still have a way to get notifications
+for all clubs, and when clicked it moves them over to that club, so a coach can
+respond to a parent quicker. Cancelled games can interrupt your current view of
+another game.*
+
+A phone that is in several clubs already listens to each of them (above), so
+it hears from all of them too:
+
+- **Messages.** Each other club is listened to as its own inbox would be: a
+  coach every family's conversation on the teams she coaches, a family her own
+  conversation and her children's teams' notices (`watchElseMessages()`,
+  running the club's own `msgTeams()` against its copy). The open club's inbox
+  is unchanged; its new messages become alerts too.
+- **Her calendar.** A game, practice or event of hers (a team she coaches or
+  tracks, or a child of hers is on) called off, back on, moved or new, in any
+  club, the open one included (`calAlerts()`). A weekly series is one alert.
+  An admin hears the open club's changes from club activity instead, not twice.
+- **Interrupting.** An alert pops up (system notification, buzz, toast) and
+  then sits in a bar above whatever is on screen, a game included, until she
+  opens or dismisses it; called off and moved by a day or half an hour are
+  drawn as urgent. **Open** goes where it happened: in the open club straight
+  to the conversation, the game or the team's calendar; in another club by
+  switching to it with that place on the address, so the page comes back
+  there after the reload.
+- **The bell** counts every club's: unread conversations and notices in the
+  other clubs, and calendar alerts not yet looked at. The inbox has a *From
+  all your clubs* card with each club's unread and the latest alerts.
+- **Not news:** the first look at a club or a conversation (opening the app
+  never fires a week of alerts), anything this phone did itself, anything in
+  the past. Kept per account (`sm.alerts.v1:{uid}`), forgotten on sign-out.
+- **Only while the page is open.** A closed phone hears nothing; that is push,
+  and push needs a server (`SERVER.md`, *Alerts from every club*).
+
 **Who sees what.** With sharing off (the default) a coach is exactly as
 before: each club sees what she does in that club and nothing of the other.
 With it on, the coaches and admins of every club she is in see that she is

@@ -8,6 +8,31 @@ before this point lives only in the git log.
 
 ---
 
+## Alerts from every club — 2026-10-05 (build 89)
+
+The owner: *people should still have a way to get notifications for all clubs,
+and when clicked it moves them over to that club, so a coach can respond to a
+parent quicker. Cancelled games can interrupt your current view of another
+game.*
+
+- **Messages from every club.** Each club you're in is listened to as its own
+  inbox would be, so a family writing to you in another club pops up straight
+  away, naming the club.
+- **Your calendar, from every club.** A game, practice or event of yours called
+  off, back on, moved or new, in any club (the open one included), is an alert;
+  a weekly series is one. Parents get these for their children's teams, which
+  they didn't before.
+- **It interrupts.** Every alert pops up and then waits in a bar over whatever
+  is on screen, a game included, until opened or dismissed; called off and
+  big moves are drawn as urgent. **Open** goes to the conversation, the game or
+  the team's calendar, switching club if it has to.
+- **One bell for every club**, and *From all your clubs* in the inbox with each
+  club's unread and the latest alerts.
+- Never on a first look (opening the app fires nothing old), never what your
+  own phone did, and an admin hears the open club's changes once, from club
+  activity. Still only while the page is open: push needs a server, and
+  `SERVER.md` now says so for this too.
+
 ## A phone in every club; the top row names the screen; SERVER.md — 2026-10-04 (build 88, rules version 4)
 
 The owner: *a phone should be a part of as many clubs as they want. Are there

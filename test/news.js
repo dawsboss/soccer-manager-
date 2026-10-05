@@ -145,7 +145,9 @@ const has = (D, re) => titles(D).some(t => re.test(t));
     const p = await device('mum');
     p.D.render();
     set(p.D, club({ e1: ev('e1'), e6: ev('e6') }));
-    check('a parent hears none of it', p.D.newsItems().length + (p.D.unreadCount() || 0), 0);
+    check('a parent hears none of the club\'s activity', p.D.newsItems().length, 0);
+    // her own child's calendar is hers to hear about, as an alert (test/alerts.js), not as club activity
+    check('only her own calendar\'s change', p.D.alertsList().map(x => x.title).join(), 'New practice: Practice (G11 Flight)');
   }
 
   H.summary('club activity');

@@ -144,6 +144,17 @@ does the bookkeeping, not that the phone works offline first.
   for everybody instead of on each phone. The "first look is not news" care
   goes away.
 
+### Alerts from every club
+- **Now:** a phone in several clubs listens to every one of them for messages
+  to her and for changes to her own calendar (a game called off, moved, back on
+  or new), works out what is new on the phone, and shows it in a bar over the
+  screen (`pushAlert()`, `calAlerts()`, `watchElseMessages()`). That is a
+  listener per team per club on every phone she has, and it only works while
+  the page is open.
+- **With a server:** it sees the change once, works out who it concerns, and
+  pushes to their phones whether the app is open or not. The phone keeps the
+  bar and the Open button, and stops listening to every club for news.
+
 ### Email
 - **Now:** *Email or share* opens the person's own mail app with everybody in
   bcc (`mailto:`), and the coach presses send.
