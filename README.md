@@ -96,6 +96,13 @@ Two limits worth knowing:
 - **Firebase words the sign-in email itself.** It reads as "sign in to …", not "you are invited" — a text to say it is coming saves a confused parent.
 - **An invite belongs to the database it was made in.** One made in a test database only works on a device pointed at that database.
 
+## What a parent sees
+
+- **Her own children by name, the rest of the squad by shirt number.** On Stats, Season, Live, the match log and the recap, a parent's child is named and every other child is `#8` (or *A teammate*, with no number). The Squad and team settings tabs stay closed to her, as before. Only someone who is nothing but a parent in the club is narrowed: an admin, a coach (of any team, with a child on another or not) and a tracker see names.
+- **Or the whole roster, if the club says so.** Club admin → **What parents see** has the two choices AUTH.md allows: *Shirt numbers only* (the default) and *The whole roster by name*. Only an admin changes it (`access/org/rosterOpen`, under the rule the club's details already use).
+- **This is the screen, not the database.** A parent's phone reads the whole workspace, as it always has, so the names are in what it holds; the app chooses not to draw them. Moving them out of a parent's reach is the `orgs/{orgId}` work in AUTH.md, which hasn't started.
+- **My players spans clubs.** Her children in every other club she's in are listed under this club's own, named with their team and club, with the next thing to get them to and *Open that club for her minutes*. It comes from the cut-down copy My calendar already keeps (her own children, no stints), so there are no minutes for another club until it's opened.
+
 ## Messages
 
 The bell in the top bar, for anyone with a role in a club that has an admin.

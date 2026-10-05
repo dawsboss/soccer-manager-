@@ -8,6 +8,37 @@ before this point lives only in the git log.
 
 ---
 
+## What a parent sees: her child by name, the rest by number; My players across clubs — 2026-10-05 (build 92)
+
+The owner asked for the rest of `AUTH.md`. Most of its build order had
+already shipped on `workspaces/{code}`, under other names. Two of its promises
+had not:
+
+- **"Other players by shirt number only."** The Squad tab was closed to a
+  parent, but Stats, Season, Live, the match log and the recap still named
+  every child, and the parent's role description already said they didn't.
+  `shownName()` now draws her own child by name and everyone else as `#8`
+  (*A teammate* with no number). Only someone who is nothing but a parent in
+  the club is narrowed. An admin, a coach of any team (AUTH.md's "coach with
+  a child elsewhere" gets the real view) and a tracker see names, and so does
+  everybody before the club has an admin.
+- **The one preset AUTH.md allows.** Club admin → *What parents see*: shirt
+  numbers only (the default) or the whole roster by name. It's a single
+  boolean at `access/org/rosterOpen`, admins only, checked in the handler,
+  under the rule the club's details already use, so the rules are unchanged.
+  It is a screen setting and says so. A parent's phone reads the whole
+  workspace, so no rule can withhold names until the `orgs/{orgId}` move.
+- **My players across clubs.** AUTH.md's parent with Iris at Riverside. Her
+  children in her other clubs come from the copy My calendar already keeps,
+  with team, club, what's next and *Open that club for her minutes*. Nothing
+  was added to that copy, which still has no stints, so it shows no minutes.
+  `guardsAnyone()` stays about the open club, because booking a session is.
+
+`AUTH.md` now says where each build step stands. The `orgs/{orgId}` migration
+is written up as not started and as the owner's decision, with what it would
+buy and what it would cost, rather than as the next step. `test/parents.js`
+pins all of this.
+
 ## A finished game is its recap; lines through the game and the season; the match log — 2026-10-05 (build 91)
 
 The owner: *a line graph for each thing recorded, by time. Across the season

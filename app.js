@@ -2,8 +2,8 @@
    Static app. Data lives in localStorage, and mirrors to Firebase Realtime
    Database when a config + workspace code are present. */
 
-const BUILD = '91';
-const BUILT = '2026-10-04';
+const BUILD = '92';
+const BUILT = '2026-10-05';
 /* The version of database.rules.json this app was written against. The rules
    carry the same number in rulesVersion's .write, which accepts that number
    and nothing else, so writing it is a question only the published rules can
@@ -901,6 +901,30 @@ function roleIn(tid, uid) {
   if (isGuardian(tid, uid)) return 'parent';
   return null;
 }
+/* AUTH.md's "What parents actually see": a parent gets her own child by name
+   and the rest of the squad by shirt number, because she is not an insider.
+   Only someone who is nothing more than a parent in this club is narrowed: a
+   coach reading another age group, or a coach whose daughter plays elsewhere
+   in the club, gets the real view (AUTH.md, "A coach with a child elsewhere").
+   The club can say otherwise, one setting with two values (access/org/rosterOpen),
+   because "parents see the whole roster" is a real policy difference between
+   clubs. This is the screen's decision, not the database's: a parent's phone
+   holds the squad, as it always has, the way needsSignIn() hides a cached club
+   it still holds. */
+const rosterOpen = () => ((acc().org || {}).rosterOpen) === true;
+function namesNarrowed(tid) {
+  if (!gated() || !me || canAdmin() || rosterOpen()) return false;
+  if (teams().some(x => isCoach(x.id, me.uid) || isTracker(x.id, me.uid))) return false;
+  return roleIn(tid, me.uid) === 'parent';
+}
+/* A player as this viewer may see her: the name, or "#7" (a player with no
+   number is "A teammate"). Unescaped, like p.name; callers escape. */
+function shownName(t, p) {
+  if (!p) return 'Unknown';
+  if (!t || !namesNarrowed(t.id) || (p.guardians || {})[me.uid]) return p.name || 'Unknown';
+  const n = p.number == null ? '' : String(p.number).trim();
+  return n ? '#' + n : 'A teammate';
+}
 const ROLE_LABEL = { owner: 'App owner', admin: 'Org admin', coach: 'Coach', tracker: 'Tracker', parent: 'Parent', viewer: 'Viewer' };
 
 /* Whoever looks after the app itself. Read from the database root, never from
@@ -1194,6 +1218,37 @@ function myPlayers() {
   return out.sort((a, b) => (a.p.name || '').localeCompare(b.p.name || ''));
 }
 const guardsAnyone = () => myPlayers().length > 0;
+/* My players cuts across clubs as well as teams (AUTH.md, "A parent with three
+   children in two clubs"): her children in every other club she is in, read
+   from that club's cut-down copy. mirrorSlim() keeps her own children and
+   every game's when and where, and no stints, so there are no minutes here;
+   the card says which club to open for them. Never a write, and nothing added
+   to the copy for it. guardsAnyone() stays about this club, because booking a
+   session here is. */
+let kidsCache = null;
+function elsewhereKids() {
+  if (!me) return [];
+  const day = todayStr(), now = Math.floor(nowMs() / 60000);
+  if (kidsCache && kidsCache.uid === me.uid && kidsCache.ver === mirrorVer && kidsCache.day === day && kidsCache.at === now && kidsCache.here === wsCode())
+    return kidsCache.list;
+  const list = [];
+  for (const [code, c] of youClubs()) {
+    const got = withClub(c, () => myPlayers().map(({ t, p }) => {
+      const live = teamMatches(t.id).find(m => gameStatus(m) === 'live');
+      const nx = calNext(calItems([t.id]).filter(x => !(x.kind === 'game' && x.status === 'live')));
+      return {
+        code, club: c.name, at: mirrorLive.has(code) ? 0 : c.at || 0, team: t.name || '', name: p.name || '',
+        live: live ? { opponent: live.opponent || '' } : null,
+        next: nx ? { kind: nx.kind, title: nx.title || '', date: nx.date || '', start: nx.start || '', venue: nx.venue || '' } : null
+      };
+    })) || [];
+    list.push(...got);
+  }
+  kidsCache = { uid: me.uid, ver: mirrorVer, day, at: now, here: wsCode(), list };
+  return list;
+}
+const anyPlayers = () => guardsAnyone() || elsewhereKids().length > 0;
+const allKidNames = () => [...myPlayers().map(x => x.p.name), ...elsewhereKids().map(x => x.name)];
 
 function canEditTeam(tid) {
   if (!gated()) return true;                  // a fresh club has to be set up somehow
@@ -4658,7 +4713,7 @@ function render() {
   // a game screen with no game is just four buttons that do nothing
   if (inGame && !match() && !teamMatches(ui.teamId).length) { ui.view = 'matches'; inGame = false; }
   if ((ui.view === 'admin' || ui.view === 'planner') && !canAdmin()) ui.view = 'club';
-  if (ui.view === 'mine' && !guardsAnyone()) ui.view = 'matches';
+  if (ui.view === 'mine' && !anyPlayers()) ui.view = 'matches';
   /* Not before the club has been read: a link to #/messages opened cold on a
      new phone renders before it knows anybody's role, and sending it to the
      club then would lose where it was going for good. */
@@ -4671,7 +4726,7 @@ function render() {
     const b = document.querySelector(`#tabs [data-view="${v}"]`);
     if (b) b.hidden = lim === 'parent' || (v === 'teamset' && lim === 'tracker');
   }
-  if (hideForParent.includes(ui.view) && lim === 'parent') ui.view = guardsAnyone() ? 'mine' : 'matches';
+  if (hideForParent.includes(ui.view) && lim === 'parent') ui.view = anyPlayers() ? 'mine' : 'matches';
   if (ui.view === 'teamset' && lim === 'tracker') ui.view = 'matches';
   /* Practice is a coach's and an admin's, on any team: the library isn't
      about one team, and a parent or a tracker never gets the tab at all. */
@@ -4853,8 +4908,8 @@ function viewClub() {
       <span class="rowsub">${myTeams().length} team${myTeams().length === 1 ? '' : 's'} you can reach</span></div></div>
     ${me || !gated() ? `<button class="card" data-act="goview" data-v="mycal" style="text-align:left;width:100%">
       <b>My calendar</b><span class="rowsub">${esc(myCalLine())}</span></button>` : ''}
-    ${guardsAnyone() ? `<button class="card" data-act="goview" data-v="mine" style="text-align:left;width:100%">
-      <b>My players</b><span class="rowsub">${myPlayers().map(x => esc(x.p.name)).join(', ')}</span></button>` : ''}
+    ${anyPlayers() ? `<button class="card" data-act="goview" data-v="mine" style="text-align:left;width:100%">
+      <b>My players</b><span class="rowsub">${allKidNames().map(esc).join(', ')}</span></button>` : ''}
     ${canSessions() ? `<button class="card" data-act="goview" data-v="sessions" style="text-align:left;width:100%">
       <b>Training sessions</b><span class="rowsub">${esc(sessClubLine())}</span></button>` : ''}
     ${list.length ? list.map(t => {
@@ -4887,8 +4942,8 @@ function sheetAccount() {
       <span class="rowsub">Everything of yours, in every club you're in</span></button>
     <button class="opt" data-act="goview" data-v="setup"><b>Settings</b>
       <span class="rowsub">Workspace, sharing, backup, version</span></button>
-    ${guardsAnyone() ? `<button class="opt" data-act="goview" data-v="mine"><b>My players</b>
-      <span class="rowsub">${myPlayers().map(x => esc(x.p.name)).join(', ')}</span></button>` : ''}
+    ${anyPlayers() ? `<button class="opt" data-act="goview" data-v="mine"><b>My players</b>
+      <span class="rowsub">${allKidNames().map(esc).join(', ')}</span></button>` : ''}
     <button class="btn danger wide" data-act="signout" style="margin-top:8px">Sign out</button>
     <p class="muted">Club settings live under the club itself, since you may belong to more than one.</p>`);
 }
@@ -4946,8 +5001,8 @@ function sheetClubMenu() {
   openSheet(`<h3>${esc(org)}</h3>
     ${canAdmin() ? `<button class="opt" data-act="goview" data-v="admin"><b>Club admin</b>
       <span class="rowsub">Teams, people and roles, club details</span></button>` : ''}
-    ${guardsAnyone() ? `<button class="opt" data-act="goview" data-v="mine"><b>My players</b>
-      <span class="rowsub">${myPlayers().length} linked to your account</span></button>` : ''}
+    ${anyPlayers() ? `<button class="opt" data-act="goview" data-v="mine"><b>My players</b>
+      <span class="rowsub">${allKidNames().length} linked to your account</span></button>` : ''}
     ${me ? `<button class="opt" data-act="goview" data-v="mycal"><b>My calendar</b>
       <span class="rowsub">Every team of yours, your children and your sessions</span></button>` : ''}
     <button class="opt" data-act="goview" data-v="setup"><b>Your settings</b>
@@ -5198,7 +5253,7 @@ function viewStats() {
 
   const now = nowMs();
   const us = teamLabel(t), them = esc(m.opponent || 'Them');
-  const nm = id => { const p = (t.players || {})[id]; return p ? esc(p.name) : 'Unknown'; };
+  const nm = id => esc(shownName(t, (t.players || {})[id]));
   const sc = score(m), sh = shotTally(m);
   const halves = [...new Set(segments(m).map(x => x.half || 1))].sort();
   const byHalf = (list, pick) => halves.map(h => list.filter(x => halfOfSec(m, x.t) === h).filter(pick).length);
@@ -5271,7 +5326,7 @@ function viewStats() {
     const rs = roleSummary(m, p.id, now);
     return `<div class="prow">
       <span class="pnum">${esc(p.number ?? '')}</span>
-      <span><span class="pname">${esc(p.name)}</span><span class="psub">${esc(rs) || (pd > 0 ? mins(pd) + ' min planned' : 'no plan set')}</span></span>
+      <span><span class="pname">${esc(shownName(t, p))}</span><span class="psub">${esc(rs) || (pd > 0 ? mins(pd) + ' min planned' : 'no plan set')}</span></span>
       <span class="pmins"><span data-live="pmins" data-mid="${m.id}" data-pid="${p.id}">${mins(pl)}</span><small> min</small><span data-live="diff" data-mid="${m.id}" data-pid="${p.id}">${diffTag(pl, pd)}</span></span>
     </div>`;
   }).join('')}</div></div>`;
@@ -5295,8 +5350,9 @@ function viewStats() {
 
    The went-well and to-work-on lists are rules over those numbers, each one
    carrying the number that tripped it, so a coach can see why it was said and
-   argue with it. A family sees this too: it is the same names and minutes the
-   Stats tab already shows her, and nothing in it is new about any child. */
+   argue with it. A family sees this too: the same minutes the Stats tab shows
+   her, other children by number as there (shownName()), and nothing in it is
+   new about any child. */
 function recap(t, m, now = nowMs()) {
   const L = Math.max(1, elapsedSec(m, now));
   const goals = goalList(m), shots = shotList(m), evs = evList(m);
@@ -5442,7 +5498,7 @@ function viewRecap() {
 
   const r = recap(t, m), notes = recapNotes(t, m, r);
   const us = teamLabel(t), them = esc(m.opponent || 'Them');
-  const nm = id => { const p = (t.players || {})[id]; return p ? esc(p.name) : 'Unknown'; };
+  const nm = id => esc(shownName(t, (t.players || {})[id]));
   const mn = sec => Math.round(sec / 60);
   const res = r.sc.us > r.sc.them ? 'A win' : r.sc.us < r.sc.them ? 'A loss' : 'A draw';
   const every = (k, what) => k ? `<div class="wtile"><b>${mn(r.L / k) || 1}<small> min</small></b><span>between ${what}</span></div>` : '';
@@ -5670,7 +5726,7 @@ function logCard(t, m) {
   const row = x => `<div class="feedrow tlogrow" data-kind="${x.kind}"${x.side ? ` data-side="${x.side}"` : ''}>
       <span class="t">${x.kind === 'end' ? 'FT' : x.kind === 'break' ? 'HT' : mmss(x.t)}<small>${esc(clockAt(x.t))}</small></span>
       <span><b>${esc(x.title)}</b>${x.detail ? `<span class="fd">${esc(x.detail)}</span>` : ''}
-        ${x.key === 'start:1' && starters.length ? `<span class="fd">Starting: ${starters.map(p => esc(p.name)).join(', ')}</span>` : ''}</span>
+        ${x.key === 'start:1' && starters.length ? `<span class="fd">Starting: ${starters.map(p => esc(shownName(t, p))).join(', ')}</span>` : ''}</span>
       ${x.score ? `<span class="fscore">${x.score}</span>` : '<span></span>'}</div>`;
   const counts = Object.fromEntries(LOG_KINDS.map(([c]) => [c, c === 'all' ? all.length : all.filter(x => x.kind === c).length]));
   return `<div class="card"><h2 style="margin-bottom:4px">Match log</h2>
@@ -5690,7 +5746,7 @@ function logCard(t, m) {
 function feedItems(t, m) {
   const us = (t && t.name) || 'Us', them = m.opponent || 'Them';
   const sideName = sd => sd === 'us' ? us : them;
-  const nm = id => { const p = ((t && t.players) || {})[id]; return p ? p.name || 'Unknown' : 'Unknown'; };
+  const nm = id => shownName(t, ((t && t.players) || {})[id]);
   const pc = m.periodCount || 2;
   const out = [];
 
@@ -5785,7 +5841,7 @@ function viewFeed() {
   const row = x => `<div class="feedrow" data-kind="${x.kind}"${x.side ? ` data-side="${x.side}"` : ''}>
       <span class="t">${x.kind === 'end' ? 'FT' : x.kind === 'break' ? 'HT' : feedMin(x.t)}</span>
       <span><b>${esc(x.title)}</b>${x.detail ? `<span class="fd">${esc(x.detail)}</span>` : ''}
-        ${x.key === 'start:1' && starters.length ? `<span class="fd">Starting: ${starters.map(p => esc(p.name)).join(', ')}</span>` : ''}</span>
+        ${x.key === 'start:1' && starters.length ? `<span class="fd">Starting: ${starters.map(p => esc(shownName(t, p))).join(', ')}</span>` : ''}</span>
       ${x.score ? `<span class="fscore">${x.score}</span>` : '<span></span>'}</div>`;
   const feed = `<div class="card"><h2 style="margin-bottom:8px">What's happened</h2>
       <div class="chips" style="margin-bottom:10px"><button class="chip" type="button" data-act="feedall" data-v="0" aria-pressed="${!everything}">Key moments</button>
@@ -7466,7 +7522,7 @@ function viewSeason() {
     const bits = [r.g ? `${r.g} goal${r.g === 1 ? '' : 's'}` : '', r.a ? `${r.a} assist${r.a === 1 ? '' : 's'}` : '', r.sh ? `${r.sh} shot${r.sh === 1 ? '' : 's'}` : ''].filter(Boolean).join(' · ');
     return `<div class="prow">
       <span class="pnum">${esc(r.p.number ?? '')}</span>
-      <span><span class="pname">${esc(r.p.name)}</span>
+      <span><span class="pname">${esc(shownName(t, r.p))}</span>
         ${r.pd > 0 ? `<div class="bar"><i style="width:${pct}%" data-owed="${owed}" data-over="${over}"></i><u style="left:100%"></u></div>` : ''}
         <span class="psub">${r.pd > 0 ? `${mins(r.pd)} planned · ${r.diff < 0 ? mins(-r.diff) + ' owed' : mins(r.diff) + ' over'}` : 'no plan set'}${bits ? ' · ' + bits : ''}</span>
         ${r.rs ? `<span class="psub">${esc(r.rs)}</span>` : ''}</span>
@@ -7665,8 +7721,8 @@ function sheetFormations() {
 }
 /* --- my players: the same page whatever else you are here --- */
 function viewMine() {
-  const list = myPlayers();
-  if (!list.length) return `<div class="empty"><strong>Nobody linked yet</strong>
+  const list = myPlayers(), away = elsewhereKids();
+  if (!list.length && !away.length) return `<div class="empty"><strong>Nobody linked yet</strong>
     A coach links your account to your player, and she shows up here.</div>`;
 
   return `<div class="stack">
@@ -7717,7 +7773,18 @@ function viewMine() {
           <span class="tag session">Training</span></button>` : '')(sessAll().find(s => !sessPast(s) && !s.called && (b => b && b.st !== 'out' && b.st !== 'no')(bookOf(s.id, p.id))))}
       </div></div>`;
   }).join('')}
-    <p class="muted">Minutes are across every game this season. Tap a game for the full picture.</p>
+    ${away.map(k => `<div class="card">
+      <div class="row"><span class="crest blank">${esc((k.name || '?').slice(0, 1))}</span>
+        <span><b style="font-size:18px">${esc(k.name)}</b><span class="rowsub">${esc(k.team)} · ${esc(k.club)}</span></span></div>
+      <div class="plist" style="margin-top:10px">
+        ${k.live ? `<div class="prow" style="grid-template-columns:1fr"><span><span class="pname">Playing now — ${esc(k.live.opponent || 'TBC')}</span></span></div>` : ''}
+        ${k.next ? `<div class="prow" style="grid-template-columns:1fr auto"><span><span class="pname">Next — ${esc(k.next.title)}</span>
+          <span class="rowsub">${[relDay(k.next.date) || dayLabel(k.next.date), niceTime(k.next.start), k.next.venue].filter(Boolean).map(esc).join(' · ')}</span></span>
+          <span class="tag ${esc(k.next.kind)}">${CAL_KIND[k.next.kind] || ''}</span></div>` : ''}
+      </div>
+      <button class="btn quiet wide" data-act="switchclub" data-code="${esc(k.code)}" style="margin-top:10px">Open ${esc(k.club)} for her minutes</button>
+      ${k.at ? `<p class="muted" style="margin:6px 0 0">No signal from ${esc(k.club)} yet — as of ${esc(new Date(k.at).toLocaleString([], { weekday: 'short', hour: 'numeric', minute: '2-digit' }))}</p>` : ''}</div>`).join('')}
+    ${list.length ? '<p class="muted">Minutes are across every game this season. Tap a game for the full picture.</p>' : ''}
   </div>`;
 }
 
@@ -12690,6 +12757,12 @@ function viewAdmin() {
       <label class="field"><span>Name</span><input type="text" id="orgName" value="${esc(org.name || '')}" placeholder="Lakeside Soccer Club"></label>
       <button class="btn quiet wide" data-act="saveorg">Save</button></div>
 
+    <div class="card"><h2 style="margin-bottom:8px">What parents see</h2>
+      <p class="muted" style="margin-top:0">A parent always sees her own child by name. The rest of the squad, on Stats, Season, Live and the recap:</p>
+      <div class="chips">${[[false, 'Shirt numbers only'], [true, 'The whole roster by name']].map(([v, l]) =>
+      `<button class="chip" type="button" data-act="rosteropen" data-v="${v ? 1 : 0}" aria-pressed="${rosterOpen() === v}">${l}</button>`).join('')}</div>
+      <p class="muted" style="margin-bottom:0">For the screen only: a parent's phone still holds the squad it reads, as it always has. Coaches, trackers and admins always see names.</p></div>
+
     ${isOwner() && Object.keys(retiredClubs).length ? `<div class="card"><h2 style="margin-bottom:8px">Retired clubs</h2>
       <p class="muted" style="margin-top:0">Closed but not deleted. Everyone else's devices have let go of these; yours has not, so you can still open one and export it. Removing the data is a Firebase console job, whenever you decide.</p>
       <div class="plist">${Object.entries(retiredClubs).map(([code, r]) => `<div class="prow" style="grid-template-columns:1fr auto">
@@ -14485,7 +14558,7 @@ function sheetFixClock() {
 function sheetFixSub(i) {
   const r = lastLog[i]; if (!r) return;
   const t = team();
-  const nm = id => { const p = (t.players || {})[id]; return p ? esc(p.name) : 'Unknown'; };
+  const nm = id => esc(shownName(t, (t.players || {})[id]));
   openSheet(`<h3>${r.on ? nm(r.on) + ' on' : ''}${r.on && r.off ? ' for ' : ''}${r.off ? nm(r.off) + ' off' : ''}</h3>
     <p class="muted" style="margin-top:0">Logged at ${mmss(r.t)}.</p>
     <div class="chips" style="margin-bottom:14px">
@@ -16049,6 +16122,10 @@ function onAct(e) {
   if (a === 'pickorglogo') { pickImage('access/org/logo', 'Badge saved'); return; }
   if (a === 'pickphoto') { pickImage(`teams/${t.id}/players/${d.pid}/photo`, 'Photo saved'); return; }
   if (a === 'dropphoto') { drop(`teams/${t.id}/players/${d.pid}/photo`); closeSheet(); return; }
+  if (a === 'rosteropen') {
+    if (!canAdmin()) { toast('Only a club admin can change that'); return; }
+    commit('access/org/rosterOpen', d.v === '1'); toast('Saved'); return;
+  }
   if (a === 'saveorg') { commit('access/org/name', $('#orgName').value.trim() || 'Club'); toast('Saved'); return; }
   if (a === 'droplogo') { drop(`teams/${d.id}/logo`); closeSheet(); return; }
   if (a === 'delteam') {

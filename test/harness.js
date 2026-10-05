@@ -139,7 +139,7 @@ const EXPORTS = `{
   /* roles */
   acc, members, anyAdmins, isAdmin, isCoach, isTracker, isGuardian, roleIn,
   isOwner, canAdmin, approved, hasAnyRole, syncIndex, myTeams, myPlayers, rolesHeld, roleTags,
-  guardsAnyone, canEditTeam, readOnlyHere, myRole, restricted, auditLog,
+  guardsAnyone, shownName, namesNarrowed, rosterOpen, elsewhereKids, anyPlayers, allKidNames, canEditTeam, readOnlyHere, myRole, restricted, auditLog,
   gated, needsSignIn, cacheMe, cachedMe,
   /* model helpers */
   teams, team, players, teamMatches, match, segments, elapsedSec, halfSec,
