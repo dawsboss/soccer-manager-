@@ -56,11 +56,20 @@ does the bookkeeping, not that the phone works offline first.
   every club it holds (`myFeedDoc()`, each item through `feedItem()`) and
   writes it to `public/{id}` whenever it changes (`feedPublish()`), but only
   from a phone that has heard from every one of her clubs this session, so an
-  old copy never overwrites a newer one. A practice moved in club B reaches her
-  subscribed calendar only once one of her phones has been open since. Because
+  old copy never overwrites a newer one. Because
   it is `public/`, it carries no child's name and no club code, and another
   club's typed titles are left out (that phone holds her own children, not the
   squad to check them against).
+- **It lags.** The feed is only as fresh as the last time one of her phones
+  was open with a signal and had heard from all her clubs. A practice moved or
+  called off in any club, by anyone, reaches her subscribed calendar only after
+  that; a parent who never opens the app keeps the old time in her calendar
+  indefinitely. Then the calendar app adds its own delay on top: Apple and
+  Outlook come back about hourly, Google every several hours. So a change made
+  this morning can show in her calendar this afternoon, or not until she next
+  opens the app. The screen says so ("it catches up with a club once your phone
+  has been open since the change"), and the app itself (My calendar, alerts)
+  is always current; the feed is the copy that trails.
 - **With a server:** it writes the feed on every change in any of her clubs,
   with no phone open, and could serve the full detail (her children's names,
   who is coming) behind a private link instead of a public node.
