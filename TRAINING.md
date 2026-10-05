@@ -11,10 +11,11 @@ positions is for), the renderer that draws those diagrams
 (`drill-diagram.js`), the Practice tab that shows them, a team's age,
 practice plans with their rules, and the other two shelves: a coach's own
 drills (Mine) and the club's (Club), with their rules, plans hanging off
-the calendar's practices, templates on both shelves, and *what needs work* on
-Season. Next are the AI steps (step 8) and import (step 9).
-Everything not built is still a proposal, and the questions at the end are the
-decisions it needs.
+the calendar's practices, templates on both shelves, *what needs work* on
+Season, the AI steps (step 8: the library in the prompt, the answer pasted
+back, the last practices as context) and drills in the bulk import (step 9).
+Every step of the build order is built. What is left is the one open decision
+at the end, and the *drills a player has done* screen (`ROADMAP.md`).
 
 ---
 
@@ -603,10 +604,28 @@ too. The bridge doesn't change shape.
    tap by tap, on a board in the drill editor.*
 7. **What needs work.** The signals card on Season. *Built: `needsWork()`,
    with the thresholds in the table above, for coaches and admins.*
-8. **The AI steps.** The library in the prompt, then paste-back.
+8. **The AI steps.** The library in the prompt, then paste-back. *Built
+   (2026-10-05): a plan's* Ask an AI for a session *(`pracAiPrompt()`) carries
+   the team's age and squad, its signals with their numbers, the last three
+   reviewed practices as context (rated, what they were for, and whether that
+   is still showing, with the warning that a few games prove nothing), and up
+   to sixty fitting drills as `[id]` lines, those for the practice's focus
+   first. The club's and her own drills go in only with* Include our own
+   drills*, by name and what each trains. The reply's* SESSION *lines
+   (`pracAiParse()`) become the plan's drills, nothing loaded while a token is
+   unknown; her own drills are copied whole, as Add does, after the same "this
+   shares it with the team's coaches" question. Ask an AI's* Practice plan
+   *topic carries the library too. Step 4 of* Towards the AI helper *is the
+   context block; there is no stored "how that signal moved" beyond whether it
+   still fires.*
 9. **Import.** A `"drills"` list in Admin's bulk import file, for a club that
    already keeps its drills in a spreadsheet. Merges by name, never replaces,
-   like everything else that file does.
+   like everything else that file does. *Built (2026-10-05), from JSON or a
+   CSV with a* Setup*,* How it runs *or* Coaching points *column
+   (`importDrills()`): matched by name on the club's shelf, updated field by
+   field with its version bumped, lists held to the library's vocabularies
+   (words or labels; a word it doesn't know is said and left out), and the
+   same five things and the heading age the drill editor insists on.*
 
 Step 1 touches nothing in `CLAUDE.md`'s ordering. Step 3 is the first new root
 node since invites, so it's a high-stakes schema change in `CLAUDE.md`'s sense:

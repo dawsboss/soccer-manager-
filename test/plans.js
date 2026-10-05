@@ -177,6 +177,62 @@ function plan(extra = {}, X = A) {
     check('a tracker cannot plan one', A.practiceById('t1', e.id), null);
   }
 
+  console.log('\n--- asking an AI for a session, and bringing it back ---');
+  {
+    as('jaz');
+    const pr = plan({ prFocus: 'late-goals' });
+    A.ui.practice.open = pr.id; A.render();
+    check('the plan offers it', /data-act="pracai"/.test(A.rendered()), true);
+    A.click({ act: 'pracai', id: pr.id });
+    check('the sheet carries the prompt and a box for the answer', /id="aiPrompt"/.test(sheet(A)) && /id="pracAiAnswer"/.test(sheet(A)), true);
+    const prompt = own => A.pracAiPrompt(L, A.state.teams.t1, A.practiceById('t1', pr.id), own);
+    const q = prompt(false);
+    check('the prompt says the age, the length and the squad', /U11/.test(q) && /60-minute/.test(q) && /12 players, 1 of them keepers/.test(q), true);
+    check('and what the practice is for', /Late goals|late/i.test(q), true);
+    const ids = [...q.split('DRILLS I CAN RUN')[1].split('\n\nBuild')[0].matchAll(/^\[([a-z0-9-]+)\]/gm)].map(m => m[1]);
+    check('it lists drills by id, from the library', ids.length > 10 && ids.every(id => L.DRILLS.some(d => d.id === id)), true);
+    check('only ones a U11 squad of twelve can run', ids.map(id => L.DRILLS.find(d => d.id === id)).every(d => d.ages[0] <= 11 && 11 <= d.ages[1] && d.players.min <= 12), true);
+    check('those for what it is for first', L.DRILLS.find(d => d.id === ids[0]).signals.includes('late-goals'), true);
+    check('no more than sixty', ids.length <= 60, true);
+    check('and asks for the answer in a shape the app reads', /SESSION\n\[drill-id\] 10/.test(q), true);
+    check('no player named', /Player \d/.test(q), false);
+
+    A.train.drills = { cx: { ...L.DRILLS.find(d => d.id === 'ball-mastery-box'), id: 'cx', name: 'Our secret rondo', by: 'jaz', byName: 'Jaz', v: 1 } };
+    A.click({ act: 'pracai', id: pr.id });
+    check('our own drills stay out unless she says', /Our secret rondo/.test(sheet(A)), false);
+    A.click({ act: 'pracaiown', id: pr.id, v: '1' });
+    check('then they are in', /Our secret rondo/.test(sheet(A)), true);
+    const q2 = prompt(true);
+    check('then by name and what it trains', /\[club:cx\] Our secret rondo — trains/.test(q2), true);
+    check('never the card', /sole rolls/.test(q2.split('OUR OWN DRILLS')[1] || ''), false);
+    A.click({ act: 'pracaiown', id: pr.id, v: '0' });
+
+    const reply = 'Great idea! Here is the plan.\n\n1. Warm-up [ball-mastery-box] 10 minutes — get touches in\n\nSESSION\n[ball-mastery-box] 10\n[' + ids[0] + '] 20\n[club:cx] 15\n';
+    A.dom.node('#pracAiAnswer').value = reply;
+    A.click({ act: 'pracaiuse', id: pr.id });
+    check('one of our own, when they were not in the prompt, is said and nothing is loaded', /not in the prompt/.test(String(A.dom.node('#pracAiMsg').innerHTML)) && A.practiceById('t1', pr.id).blocks.length, 0);
+    A.dom.node('#pracAiAnswer').value = 'SESSION\n[ball-mastery-box] 10\n[no-such-drill] 20';
+    A.click({ act: 'pracaiuse', id: pr.id });
+    check('a drill not in the library is said, not dropped', /\[no-such-drill\] is not a drill/.test(String(A.dom.node('#pracAiMsg').innerHTML)) && A.practiceById('t1', pr.id).blocks.length, 0);
+    A.dom.node('#pracAiAnswer').value = reply.replace('[club:cx] 15\n', '');
+    A.click({ act: 'pracaiuse', id: pr.id });
+    const got = A.practiceById('t1', pr.id).blocks;
+    check('read from under SESSION, in order, with the minutes', got.map(b => b.drill.id + ' ' + b.minutes).join(), 'ball-mastery-box 10,' + ids[0] + ' 20');
+    check('built-in drills by reference, like any plan', got.every(b => b.drill.shelf === 'builtin' && b.name), true);
+    A.click({ act: 'pracai', id: pr.id }); A.click({ act: 'pracaiown', id: pr.id, v: '1' });
+    A.dom.node('#pracAiAnswer').value = 'SESSION\n[club:cx] 15\n[ball-mastery-box]';
+    global.confirm = () => true;
+    A.click({ act: 'pracaiuse', id: pr.id });
+    const got2 = A.practiceById('t1', pr.id).blocks;
+    check('with our own included: copied whole, as Add does', got2[0].drill.shelf === 'club' && !!got2[0].drill.card && got2[0].minutes, 15);
+    check('no minutes given: the drill\'s middle', got2[1].minutes, Math.round((L.DRILLS.find(d => d.id === 'ball-mastery-box').minutes[0] + L.DRILLS.find(d => d.id === 'ball-mastery-box').minutes[1]) / 2));
+    A.ui.practice.aiOwn = false; A.train.drills = {};
+
+    as('trk'); A.dom.node('#sheet').innerHTML = '';
+    A.click({ act: 'pracai', id: pr.id });
+    check('a tracker never gets the prompt', /pracAiAnswer/.test(sheet(A)), false);
+  }
+
   console.log('\n--- suggesting a session ---');
   {
     as('jaz');

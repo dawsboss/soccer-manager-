@@ -6,6 +6,8 @@
 > app older than build 82 is in use (and its `rules.js` cases with it), and
 > the screen for *drills a player has done*, which is now one lookup (a
 > register at `teams/{tid}/attend/{eid}`, a plan at `practices/{tid}/{eid}`).
+> Since then (2026-10-05) `TRAINING.md`'s steps 8 and 9, the AI steps and
+> drills in the bulk import, are built too.
 > One deviation: old plans move onto an entry under their *own* id rather
 > than a new one, so there is no old copy to delete (CHANGELOG says why).
 > The rest of this file is the brief as it was written.

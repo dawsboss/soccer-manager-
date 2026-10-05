@@ -48,9 +48,31 @@ does the bookkeeping, not that the phone works offline first.
   moment (`withClub()`). That is one listener per part per club, on every phone
   of hers, all the time.
 - **With a server:** one request, "my calendar", answered across every club,
-  and pushed when it changes. It also makes a **subscribable My calendar feed**
-  possible (today the Worker reads only `public/`, and a person's calendar has
-  children's names in it).
+  and pushed when it changes. It would also serve My calendar's feed from the
+  clubs themselves (below), names and all, behind a private link.
+
+### My calendar's feed
+- **Now:** once she turns it on, her own phone builds her calendar feed from
+  every club it holds (`myFeedDoc()`, each item through `feedItem()`) and
+  writes it to `public/{id}` whenever it changes (`feedPublish()`), but only
+  from a phone that has heard from every one of her clubs this session, so an
+  old copy never overwrites a newer one. Because
+  it is `public/`, it carries no child's name and no club code, and another
+  club's typed titles are left out (that phone holds her own children, not the
+  squad to check them against).
+- **It lags.** The feed is only as fresh as the last time one of her phones
+  was open with a signal and had heard from all her clubs. A practice moved or
+  called off in any club, by anyone, reaches her subscribed calendar only after
+  that; a parent who never opens the app keeps the old time in her calendar
+  indefinitely. Then the calendar app adds its own delay on top: Apple and
+  Outlook come back about hourly, Google every several hours. So a change made
+  this morning can show in her calendar this afternoon, or not until she next
+  opens the app. The screen says so ("it catches up with a club once your phone
+  has been open since the change"), and the app itself (My calendar, alerts)
+  is always current; the feed is the copy that trails.
+- **With a server:** it writes the feed on every change in any of her clubs,
+  with no phone open, and could serve the full detail (her children's names,
+  who is coming) behind a private link instead of a public node.
 
 ### Which clubs an account is in
 - **Now:** any phone that reads a club it holds a role in writes the bookmark
@@ -113,7 +135,8 @@ does the bookkeeping, not that the phone works offline first.
   and may read nothing else, because it holds no credentials.
 - **With a server:** the feed can be served from the club's own data, so the
   members' feed doesn't need its own public copy, and a person's own feed (My
-  calendar, children's names and all) becomes possible behind a private link.
+  calendar's, *My calendar's feed* above) can carry names behind a private link
+  instead of leaving them out.
 
 ---
 
