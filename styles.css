@@ -400,7 +400,8 @@ label.field span{display:block;font-size:13px;color:var(--ink-soft);margin-botto
   padding:10px 13px;text-align:left;
 }
 .gb-label{font-size:12px;color:var(--ink-soft);flex:none}
-.gb-name{flex:1;min-width:0;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.gb-name{flex:1;min-width:0;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;line-height:1.2}
+.gb-name small{display:block;font-weight:500;font-size:12px;color:var(--ink-soft);overflow:hidden;text-overflow:ellipsis}
 .gb-hint{font-size:12px;color:var(--field-deep);flex:none}
 .gamebar svg{color:var(--ink-soft);flex:none}
 
@@ -794,3 +795,59 @@ button.nextprac{cursor:pointer}
 /* a coach's bookable times */
 :is(.dots,.calkey) .dot.avail{background:#1F8A80}
 .tag.avail{background:#DDF2EF;color:#135C55}
+
+/* ---------- edit a game, from the game bar ---------- */
+.editbtn{flex-direction:column;gap:2px;width:44px;font-size:10.5px;font-weight:600;line-height:1}
+
+/* ---------- recap: a finished game, told back ----------
+   Bigger and bolder than Stats on purpose: this is the screen a coach shows a
+   team on the walk back, so the headline numbers carry across a car park. */
+.wrapcard{border-radius:14px;padding:18px 16px;color:#fff;background:var(--field-deep)}
+.wrapcard.hero{background:linear-gradient(140deg,#0F4A2D,var(--field) 70%,#3C9A68)}
+.wrapcard.tone2{background:linear-gradient(140deg,#16242C,#2B4250)}
+.wrapcard.tone3{background:linear-gradient(140deg,#5B2A86,#8A3E7C)}
+.wkick{display:block;font-size:12px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;opacity:.8}
+.wscore{font-family:"Barlow Condensed",sans-serif;font-weight:700;font-size:72px;line-height:1;margin:8px 0 4px;font-variant-numeric:tabular-nums}
+.wscore small{font-size:48px;opacity:.6;margin:0 4px}
+.wline{margin:0;font-size:17px}
+.wtiles{display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:14px;margin-top:12px}
+.wtile b{display:block;font-family:"Barlow Condensed",sans-serif;font-size:40px;line-height:1;font-variant-numeric:tabular-nums}
+.wtile b small,.wstars b small{font-size:16px;font-weight:500;opacity:.8}
+.wtile span{display:block;font-size:13px;opacity:.85;margin-top:2px}
+.wstars{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:14px;margin-top:12px}
+.wstars .lbl{display:block;font-size:12px;color:inherit;opacity:.8;margin-bottom:2px}
+.wstars b{display:block;font-family:"Barlow Condensed",sans-serif;font-size:21px;line-height:1.15}
+.wlegend{display:flex;gap:14px;font-size:13px;color:var(--ink-soft);margin-bottom:8px;flex-wrap:wrap}
+.wlegend .k{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:5px;vertical-align:-1px}
+.wlegend .k.us{background:var(--field)}
+.wlegend .k.them{background:var(--bench)}
+.wlegend .k.goal{background:var(--ink);border-radius:50%}
+.spells{display:flex;gap:2px;align-items:stretch}
+.spell{flex:1;min-width:0;display:flex;flex-direction:column}
+.spell .up,.spell .dn{height:56px;display:flex;flex-direction:column;align-items:center}
+.spell .up{justify-content:flex-end;border-bottom:1px solid var(--ink-soft)}
+.spell .dn{justify-content:flex-start}
+.spell i{display:block;width:70%;max-width:26px;min-height:0}
+.spell .up i{background:var(--field);border-radius:4px 4px 0 0}
+.spell .dn i{background:var(--bench);border-radius:0 0 4px 4px}
+.spell .gdot{font-size:9px;line-height:1.2;color:var(--ink);letter-spacing:-1px}
+.spell .sl{font-size:11px;color:var(--ink-soft);text-align:center;margin-top:3px}
+.wpair{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:12px}
+.wpair .lbl{display:block;font-size:12px;color:var(--ink-soft)}
+.wpair b{display:block;font-family:"Barlow Condensed",sans-serif;font-size:22px}
+.wpair .muted{font-size:13px}
+.wtable{margin-top:10px;font-size:13px}
+.wtable summary{color:var(--focus);cursor:pointer}
+.wtable .statgrid{margin-top:8px;gap:4px 8px}
+.wnotes h2{margin-bottom:8px}
+.wnotes ul{margin:0;padding-left:20px}
+.wnotes li{margin:4px 0}
+.wnotes.good{border-left:4px solid var(--field)}
+.wnotes.work{border-left:4px solid var(--owed)}
+/* Six things share the game bar's row on a phone; the name needs the room
+   more than the buttons need their padding. */
+.barrow{gap:6px}
+.barrow .gamebar{padding:8px 10px;gap:8px}
+.barrow .stepbtn{width:28px}
+.barrow .sharebtn{width:40px}
+.barrow .backbtn{width:34px;flex:none}

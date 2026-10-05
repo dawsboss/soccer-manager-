@@ -336,7 +336,9 @@ console.log('\n--- game details live on Plan, not under the pitch ---');
 {
   setup();
   A.ui.view = 'game'; A.ui.gameView = 'pitch'; A.render();
-  check('the Pitch tab no longer carries them', /data-act="editmatch"/.test(A.rendered()), false);
+  // the one way in from the pitch is the game bar's Edit button, the same on every game tab
+  check('the Pitch tab no longer carries them', (A.rendered().match(/data-act="editmatch"/g) || []).length, 1);
+  check('beyond the Edit button in the game bar', /class="sharebtn editbtn" data-act="editmatch"/.test(A.rendered()), true);
   A.ui.gameView = 'plan'; A.render();
   check('Plan opens with them', /Edit game<\/button>/.test(A.rendered()), true);
   A.click({ act: 'pickgame' });

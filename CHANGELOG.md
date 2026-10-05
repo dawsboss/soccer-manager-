@@ -8,6 +8,31 @@ before this point lives only in the git log.
 
 ---
 
+## A recap for every finished game; the game count; an Edit button — 2026-10-05 (build 90)
+
+The owner: *the count for games isn't backwards, the newest is 1/x and not x/x.
+There should be a more obvious edit button for coaches/admins. I want another
+stats page for closed out games that is more useful — knowing when and how
+often, a report at the end like a Spotify Wrapped, and the things that went
+well and not well.*
+
+- **The game count runs the way a season does.** The first game played is 1,
+  the latest is x of x, so a game keeps its number as more are added. It now
+  sits under the opponent's name, with the date, so the bar has room.
+- **Edit on the game bar**, on every game tab, for the team's coaches and the
+  club's admins only. The handler checks too, so a stale screen is not a way in.
+- **Recap**, a new game tab that appears once a game is over (everyone who can
+  read Stats gets it): the score big; *when it happened*, chances per five- or
+  ten-minute spell, ours above the line and theirs below, with the best and
+  toughest spell and a table; *how often*, minutes between goals, shots and
+  corners, the first goal and the longest wait for a shot; *what went well* and
+  *what to work on*, each sentence carrying the number behind it (answered a
+  goal or let one straight back in, late and early goals, shots on target,
+  halves, corners, fouls, possession, minutes against the plan, against the
+  season's average); half by half; standouts; and this game against the season
+  so far. Worked out from what Stats already reads, so it writes nothing and
+  never reaches `public/`. Stats links to it once a game is done.
+
 ## Alerts from every club — 2026-10-05 (build 89)
 
 The owner: *people should still have a way to get notifications for all clubs,

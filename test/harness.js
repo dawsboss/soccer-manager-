@@ -155,7 +155,7 @@ const EXPORTS = `{
   SUB_LEAD, SUB_UNDO_MS,
   pitchNow, benchCalls, benchFrom, benchText, sheetBench, sheetBenchAll,
   /* stats */
-  goalList, score, EVENTS, evOf, evLabel, evCount, evList, possOn, shotList,
+  goalList, score, EVENTS, evOf, evLabel, evCount, evList, possOn, shotList, recap, recapNotes, viewRecap, gameBar,
   shotTally, possMarkers, possession, subEvents, deleteSub,
   /* actions */
   startClock, pauseClock, endHalf, endGame, putOnField, takeOffField, swap,
