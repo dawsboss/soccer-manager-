@@ -76,7 +76,9 @@ training/{code}/
                        notes, series?, called?, by, at }
   booked/{sid}/{pid} { tid, st, by, at, want? }           // st below
   came/{sid}         { pid: true | false }
-  fees/{sid}/{pid}   { paid, how, at, by }                // how: cash, card, transfer, waived, other
+  fees/{sid}/{pid}   { paid, how, at, by, pack? }         // how: cash, card, transfer, waived, other, package
+  packs/{tid}/{pid}/{id}   { id, n, price, kind, until?, paid, how, note?, at, by }   // kind: any, one, group
+  packuse/{tid}/{pid}/{id}/{sid}   { by, at }             // one place of a package, used
   pay/{uid}          { rate, per: 'hour' | 'session' }
   splans/{sid}       { blocks: [ { drill: { shelf, id, v }, name, minutes, note } ], by, at }
 
@@ -84,6 +86,7 @@ workspaces/{code}/access/org/
   venues/{fid}       { id, name, address, pitches, surface, lights, notes,
                        permits: { {pmid}: { days: [0..6], start, end, from, until, ref, note } } }
   money              the currency sign fees are shown with, '$' by default
+  packs              true while the club sells packages (admins switch it)
 ```
 
 **A booking's `st`:**
@@ -201,6 +204,21 @@ Park, field 2" is at "Lakeside Park"). Entries with no time are left out:
 - **Marking paid writes one fee per place**: what was paid, how, when, and by
   whom. There are no card payments: this is a static site with no server, so
   it is the club's book of who has paid, not a till.
+- **Packages** (built 2026-10-05, on the owner's ask, off until an admin
+  turns them on): a number of sessions for a set price, sold to one player,
+  for any session, 1-1s or groups, with an optional use-by date. Using a
+  place is a way of paying it: the fee says `package` and names the package,
+  and `packuse` marks the place, because that is what is counted and a coach
+  can read only her own sessions' fees. A rule cannot count, so the app keeps
+  the count, as it keeps a group's spots (`rules.js` prints it). Only admins
+  sell or change one; the session's coach or an admin uses a place; the
+  family reads her own child's and what is left; coaches read every package,
+  to use one. A place is taken from the package that runs out first, never
+  one past its use-by date, and given back when the fee is cleared or the
+  place is no longer owed. **The places left at the use-by date** are the
+  decision this section used to wait on: the app keeps them, says the
+  package ended with places unused, and leaves what that means (a refund,
+  an extension, nothing) to the club, which can change the date.
 - **Coach hours** are the sessions each coach ran in a month: past, not called
   off, start to end. With a rate set (per hour or per session), the screen
   shows what that comes to, and copies as a table for whoever runs payroll.
@@ -249,9 +267,6 @@ screen with a message, as an RSVP is.
 
 ## Not built yet, and why
 
-- **Packages** (ten sessions for a set price). One price per session for now;
-  a package is a fee covering several places, and wants a decision about what
-  happens to the unused ones.
 - **Two coaches on one session.** One `coach` keeps every rule a single hop.
 - **Outside trainers** who aren't in the club. They'd need an account and a
   role that isn't "coach of a team", which is `AUTH.md`'s territory.

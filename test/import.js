@@ -473,7 +473,44 @@ check('read as fields, and needing no team', fc.kind + ' ' + !!fc.needsTeam, 'fi
 const fp = A.importPlan(fc.data);
 check('a field added', fp.counts.newFields, 1);
 check('nothing it can\'t tell', A.csvImport('Colour,Size\nred,4\n', {}).error.startsWith('Couldn\'t tell'), true);
-check('a template for each, readable by itself', ['roster', 'schedule', 'fields'].every(k => { const c = A.csvImport(A.CSV_TEMPLATES[k], {}); return !c.error && !A.importPlan(c.data).errors.length; }), true);
+check('a template for each, readable by itself', ['roster', 'schedule', 'fields', 'drills'].every(k => { const c = A.csvImport(A.CSV_TEMPLATES[k], {}); return !c.error && !A.importPlan(c.data).errors.length; }), true);
+}
+
+console.log('\n--- the club\'s drills ---');
+{
+  admin(); A.train = { practices: {}, dirty: {}, drills: {}, drillDirty: {}, tpls: {}, tplDirty: {} };
+  const drill = (extra = {}) => ({ name: 'Gates dribble', summary: 'Through the gates', setup: 'Cones as gates', how: ['Dribble through a gate', 'Find another'], points: ['Eyes up'], ...extra });
+  const p1 = A.importPlan({ drills: [drill({ type: 'Technical', ages: 'U7-U10', minutes: '10-15', players: '6-16', skills: ['dribbling', 'Ball mastery'], signals: 'Few shots; nonsense', links: ['https://example.org/v', 'http://insecure.example'] })] });
+  deepEq('a drill list on its own is a file', p1.errors, []);
+  check('one drill added', p1.counts.newDrills, 1);
+  check('a word the library doesn\'t know is said', p1.warnings.some(w => /"nonsense"/.test(w)), true);
+  check('and only https links kept', p1.warnings.some(w => /only https/.test(w)), true);
+  check('said in the summary', A.importSummary(p1.counts), 'adds 1 drill');
+  const d = p1.trainWrites[0][1];
+  check('words or labels, held to the library\'s own', d.skills.join() + ' ' + d.signals.join() + ' ' + d.type, 'dribbling,ball-mastery few-shots technical');
+  check('ranges read as ranges', JSON.stringify([d.ages, d.minutes, d.players]), JSON.stringify([[7, 10], [10, 15], { min: 6, best: 6, max: 16 }]));
+  check('on the club\'s shelf, as the admin\'s', d.by + ' ' + d.byName + ' ' + JSON.stringify(d.team), 'adm Ada ""');
+  A.applyImport(p1);
+  check('there after importing', A.shelfItems('club').map(x => x.name).join(), 'Gates dribble');
+  check('the same file again changes nothing', A.importPlan({ drills: [drill({ type: 'Technical', ages: 'U7-U10', minutes: '10-15', players: '6-16', skills: ['dribbling', 'Ball mastery'], signals: 'Few shots', links: ['https://example.org/v'] })] }).trainWrites.length, 0);
+  const p2 = A.importPlan({ drills: [{ name: 'gates  DRIBBLE', why: 'Beating a player starts with the head up' }] });
+  check('matched by name: updated, not doubled', p2.counts.newDrills + ' ' + p2.counts.drills, '0 1');
+  const u = p2.trainWrites[0][1];
+  check('field by field, the rest kept, its version bumped', u.why.startsWith('Beating') && u.setup === 'Cones as gates' && u.v === 2 && u.name === 'Gates dribble', true);
+  const p3 = A.importPlan({ drills: [drill({ name: 'No setup', setup: '' }), drill({ name: 'Headers', skills: ['heading'], ages: 'U8-U10' })] });
+  check('the five things the editor insists on, insisted on', p3.errors.some(e => /No setup.*set it up/.test(e)), true);
+  check('and no heading below U11', p3.errors.some(e => /Headers.*U11/.test(e)), true);
+  check('nothing planned while an error is left', A.importPlan({ drills: [drill({ name: 'Fine' }), drill({ name: 'Bad', how: [] })] }).errors.length > 0, true);
+  const csv = A.csvImport(A.CSV_TEMPLATES.drills, {});
+  check('a drills spreadsheet, read by its headings, with no team asked for', csv.kind + ' ' + !!csv.needsTeam, 'drills false');
+  const cd = csv.data.drills[0];
+  check('steps and points split a line each', Array.isArray(A.importPlan(csv.data).trainWrites[0][1].how) && A.importPlan(csv.data).trainWrites[0][1].how.length, 3);
+  check('the sheet\'s link kept', A.importPlan(csv.data).trainWrites[0][1].media[0].url, 'https://example.org/gates');
+  check('one name, one drill', cd.name, 'Gates dribble');
+  A.me = { uid: 'co', name: 'Coach' }; A.state.access.teams = { t1: { coaches: { co: true } } };
+  A.dom.node('#sheet').innerHTML = '';
+  A.click({ act: 'importgo' });
+  check('a coach cannot import', A.shelfItems('club').length, 1);
 }
 
 console.log('\n--- a registration system\'s roster and events, tab-separated ---');

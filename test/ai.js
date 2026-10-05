@@ -72,7 +72,8 @@ console.log('--- every prompt: numbers in, names out ---');
   for (const scope of Object.keys(A.AI_TOPICS)) {
     for (const [k] of A.AI_TOPICS[scope]) {
       const txt = A.aiPrompt(scope, k); n++;
-      for (const nm of NAMES) for (const part of nm.split(' ')) if (txt.includes(part)) leaks.push(`${scope}/${k}: ${part}`);
+      // as a word, the way the scrub matches: "Jo" is a name, the drill "Jockey in a channel" is not
+      for (const nm of NAMES) for (const part of nm.split(' ')) if (new RegExp(`(^|[^\\p{L}])${part}(?![\\p{L}])`, 'u').test(txt)) leaks.push(`${scope}/${k}: ${part}`);
       if (txt.includes('ankle')) leaks.push(`${scope}/${k}: note`);
       if (txt.includes('mum')) leaks.push(`${scope}/${k}: guardian`);
     }

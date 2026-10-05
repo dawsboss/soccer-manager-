@@ -8,7 +8,7 @@ before this point lives only in the git log.
 
 ---
 
-## A player's stronger foot; inviting the families an imported roster names — 2026-10-05 (build 93)
+## A player's stronger foot; inviting the families an imported roster names — 2026-10-05 (build 94)
 
 The owner: *when importing there should be an option to invite the parents'
 emails and coaches that don't have accounts already* — and *should we have a
@@ -37,7 +37,7 @@ feet sometimes.*
 - Not done: a coach making these for her own team (still admins only, as
   everywhere else invites are made), and invites from a JSON file.
 
- — 2026-10-05 (build 92)
+## Roster and events exports read as they come — 2026-10-05 (build 93)
 
 The owner had a roster and an events file from their registration system,
 both tab-separated, and asked for an import for them rather than retyping them
@@ -63,7 +63,75 @@ headings, so most of each file was quietly "not used".
 - Times with seconds (`09:30:00`) already read; the test now pins it with the
   owner's exact headings, run twice to show the second run adds nothing.
 
-; lines through the game and the season; the match log — 2026-10-05 (build 91)
+## My calendar in your own calendar; the AI and import steps for training; packages — 2026-10-05 (build 92, rules version 5)
+
+The owner: *fix up the Calendar sync to match the My calendar one since that
+will have the most helpful information. In the My calendar would a parent see
+their other clubs? They should. Finish off the TRAINING.md file. Packages is a
+cool idea! Add it as an option for admin to turn it on.*
+
+**A parent does see her other clubs on My calendar**, and did already: a child
+on a team in another club puts that team's games and practices on it, named
+for the club, with a chip per club. `test/mycal.js` now pins it for a parent,
+not only a coach.
+
+**Calendar sync is My calendar's now.** One address per person, from *My
+calendar → Turn on calendar sync*: every game, practice, event, training
+session and bookable time on it, from every club her account is in, in Apple,
+Google or Outlook. A team's Calendar tab points there first and keeps its own
+team feed under it, because families already subscribed to those. The feed is
+`public/`, as the team feed is, so it is built to the same promise and more:
+no child is named (a booked session is *Training: Finishing*, never whose),
+everything typed in the open club goes through the names of every player the
+phone knows, another club's entries carry the team, the kind, the time and the
+place but not what was typed there (that phone holds her own children, not the
+squad to check against), and entries are keyed by a one-way hash so no club's
+code is in it. Off until she turns it on; the id is claimed in `shareOwners`
+before the first write and kept at `people/{uid}/set/feed` so her other phones
+write to the same address; *Replace this address* and *Turn it off* take the
+old one down. Her phone writes it only once it has heard from every club it
+holds this session, and only when it changed, so an old copy never overwrites
+a newer one; `SERVER.md` says what that costs (a club's change reaches her
+calendar once one of her phones has been open since). `ics.js` reads the new
+document and the Worker links its entries back to My calendar.
+
+**Training's build order is finished.** Step 8: a practice plan has *Ask an AI
+for a session*, a prompt with the team's age and squad, what the numbers say
+needs work, the last three practices she reviewed (with the plain warning that
+a few youth games prove nothing), and the drills that fit by `[id]`, up to
+sixty, those for the practice's focus first. The club's drills and her own go
+in only when she says, by name and what each trains, never the card. She
+pastes the reply back and its *SESSION* lines become the plan; nothing loads
+while a token is unknown. Ask an AI's *Practice plan* topic carries the library
+too, so it stops inventing drills. Still copy out, paste back: the app never
+calls a model. Step 9: the bulk import takes the club's drills, as a `drills`
+list or a spreadsheet with *Setup*, *How it runs* and *Coaching points*
+columns (there is a template), matched by name and merged like everything else
+there, lists held to the library's own words, and the same five things the
+drill editor insists on.
+
+**Packages**, off until an admin turns them on (*Training sessions → Fees →
+Packages*). An admin sells a player a number of sessions for a price (any
+session, 1-1s or groups, an optional use-by date); the coach marks a booked
+place *Package* instead of collecting for it, and it comes off the one that
+runs out first. *Not paid after all* puts the place back, and a place
+withdrawn or called off after it was used is listed to give back. The family
+sees what she bought and what is left. A package is a fee covering several
+places, so using one is a fee (`how: 'package'`, naming it) plus a mark at
+`packuse/{tid}/{pid}/{id}/{sid}`, which is what is counted, because a coach
+reads only her own sessions' fees. SESSIONS.md had parked this on what happens
+to unused places: the app keeps them, says when a package ended with some
+left, and leaves the rest to the club.
+
+**Rules version 5**: `people/$uid/set/feed`, and `training/$code/packs` and
+`packuse`, with a fee allowed to say `package` only for a package that exists
+for that child. A rule cannot count, so it cannot refuse an eleventh place on a
+ten-place package; `rules.js` prints that beside the spots it cannot count
+either. Paste `database.rules.json` once.
+
+---
+
+## A finished game is its recap; lines through the game and the season; the match log — 2026-10-05 (build 91)
 
 The owner: *a line graph for each thing recorded, by time. Across the season
 would be amazing. Once a game ends it should no longer have the plan, sub,

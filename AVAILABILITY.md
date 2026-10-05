@@ -287,10 +287,14 @@ says so.
 
 ## Not built yet, and why
 
-- **A personal calendar feed** to subscribe to. The feed Worker reads only
-  `public/`, and a person's calendar has children's names and 1-1s in it. A
-  `.ics` per item is offered, as it is for sessions.
+- **A personal calendar feed with names in it.** *Built without them
+  (2026-10-05)*: My calendar's *Turn on calendar sync* publishes the whole of
+  it, every club, to `public/{id}` with no child's name and no club code
+  (`README.md`, **Calendar sync**). One with her children's names, or who is
+  coming, needs a feed that isn't world-readable by address, which means the
+  Worker holding a credential, a different project (`SERVER.md`).
 - **A waiting list on a full group.** A family can ask for a place on any
   session the coach leaves open; a full slot just isn't offered.
-- **Packages and late-cancellation charges**: the club's policy, marked by
-  hand as fees are today.
+- **Late-cancellation charges**: the club's policy, marked by hand as fees
+  are today. Packages are built (`SESSIONS.md`), and a booked slot's place
+  comes off one like any session's.

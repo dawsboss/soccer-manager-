@@ -331,6 +331,71 @@ function newSession(v = {}) {
     deepEq('and goes to the family\'s address', A.reach.emails, ['mo@x.test']);
   }
 
+  console.log('\n--- packages, when the club sells them ---');
+  {
+    as('boss'); A.ui.sess = { tab: 'fees' }; A.render();
+    check('off until an admin turns it on', /data-act="sesspacks" data-v="1" aria-pressed="false"/.test(A.rendered()) && /data-act="sesspknew"/.test(A.rendered()), false);
+    A.click({ act: 'sesspacks', v: '1' });
+    check('one setting on the club', A.state.access.org.packs, true);
+    A.render();
+    check('then sold from Fees', /data-act="sesspknew"/.test(A.rendered()), true);
+    A.click({ act: 'sesspknew' });
+    fill(A, { pkWho: 't1/p1', pkN: '3', pkPrice: '50', pkUntil: '', pkPaid: '50', pkNote: '' });
+    A.click({ act: 'sesspkkind', v: 'group' });
+    A.click({ act: 'sesspksave' });
+    const ks = A.packsOf('p1');
+    check('a package for that child', ks.length + ' ' + ks[0].n + ' ' + ks[0].kind + ' ' + ks[0].price, '1 3 group 50');
+    check('written at its own path, under her team', Object.keys(A.sess.dirty).some(k => k === `packs/t1/p1/${ks[0].id}`), true);
+    const packs = JSON.parse(JSON.stringify(A.sess.packs));
+
+    as('jaz'); A.state.access.org = { packs: true }; A.sess.packs = JSON.parse(JSON.stringify(packs)); A.sess.packuse = {};
+    put('g1', { date: day(-3), price: 20 }); book('g1', 'p1', 't1');
+    put('g2', { date: day(-2), price: 20 }); book('g2', 'p1', 't1');
+    put('g3', { date: day(-1), price: 20, kind: 'one', cap: 1 }); book('g3', 'p1', 't1');
+    put('g4', { date: day(1), price: 20 }); book('g4', 'p1', 't1');
+    put('g5', { date: day(2), price: 20 }); book('g5', 'p1', 't1');
+    A.click({ act: 'sessfee', k: 'g1/p1' });
+    check('the fee sheet offers the package, and starts on it', A.feeForm.how + ' ' + /data-act="sessfeehow" data-v="package"/.test(sheet(A)), 'package true');
+    A.click({ act: 'sessfeesave' });
+    const k = A.packsOf('p1')[0];
+    check('a place comes off it', k.left + ' of ' + k.n, '2 of 3');
+    check('the fee says so, and names it', A.feeOf('g1', 'p1').how + ' ' + A.feeOf('g1', 'p1').pack + ' ' + A.feeOf('g1', 'p1').paid, `package ${k.id} 0`);
+    const order = Object.keys(A.sess.dirty);
+    check('counted before the fee that names it', order.indexOf(`packuse/t1/p1/${k.id}/g1`) < order.indexOf('fees/g1/p1'), true);
+    A.click({ act: 'sessfee', k: 'g3/p1' });
+    check('not a 1-1 on a package for groups', /data-v="package"/.test(sheet(A)) + ' ' + A.feeForm.how, 'false cash');
+    A.click({ act: 'sessfee', k: 'g2/p1,g4/p1,g5/p1' });
+    A.click({ act: 'sessfeesave' });
+    check('several at once, as far as it goes', A.packsOf('p1')[0].left + ' ' + /no package place left/.test(A.lastToast()), '0 true');
+    check('the last one still owes', !A.feeOf('g5', 'p1'), true);
+    A.click({ act: 'sessfee', k: 'g4/p1' });
+    A.click({ act: 'sessfeeclear' });
+    check('not paid after all: the place goes back on it', A.packsOf('p1')[0].left + ' ' + !A.feeOf('g4', 'p1'), '1 true');
+    book('g2', 'p1', 't1', 'out');
+    A.ui.sess = { tab: 'fees' }; A.render();
+    check('a place no longer owed is said, to give back', /data-act="sesspkback" data-k="g2\/p1"/.test(A.rendered()), true);
+    A.click({ act: 'sesspkback', k: 'g2/p1' });
+    check('and given back', A.packsOf('p1')[0].left + ' ' + !A.feeOf('g2', 'p1'), '2 true');
+    A.click({ act: 'sesspknew' });
+    check('a coach cannot sell one', A.lastToast(), 'Club admins look after packages');
+    A.sess.packs.t1.p1[k.id].until = day(1);
+    check('one with an end date is not used after it', !!A.packFor(A.sessById('g5'), 'p1'), false);
+    A.sess.packs.t1.p1[k.id].until = '';
+
+    as('mum'); A.state.access.org = { packs: true }; A.sess.packs = JSON.parse(JSON.stringify(packs)); A.sess.packuse = { t1: { p1: { [k.id]: { g1: { by: 'jaz', at: 1 } } } } };
+    A.render();
+    check('the family sees what she bought and what is left', /Packages/.test(A.rendered()) && /2 of 3 left/.test(A.rendered()), true);
+    check('and no other child\'s name', OTHER_NAMES.some(n => A.rendered().includes(n)) || ['Ella', 'Maya', 'Nia', 'Zoe', 'Iris'].some(n => A.rendered().includes(n)), false);
+    A.click({ act: 'sesspacks', v: '0' });
+    check('a family cannot switch them off', A.lastToast(), 'Club admins look after packages');
+    as('boss'); A.state.access.org = { packs: true }; A.sess.packs = JSON.parse(JSON.stringify(packs)); A.sess.packuse = {};
+    global.confirm = () => true;
+    A.click({ act: 'sesspacks', v: '0' });
+    check('an admin switches them off', A.state.access.org.packs == null, true);
+    A.state.access.org = {}; A.render();
+    check('and they go from every screen', /Package/.test(A.rendered().replace(/Packages<\/h2>[\s\S]*?<\/div>/, '')), false);
+  }
+
   console.log('\n--- coach hours ---');
   {
     as('boss');
@@ -552,7 +617,19 @@ function newSession(v = {}) {
   }
   {
     const { fbk } = await device('trk');
-    check('a tracker reads none of it', fbk.readPaths().some(p => /^training\/CLUB\/(sessions|booked|came|fees|pay|splans)/.test(p)), false);
+    check('a tracker reads none of it', fbk.readPaths().some(p => /^training\/CLUB\/(sessions|booked|came|fees|pay|splans|packs|packuse)/.test(p)), false);
+  }
+  {
+    const { D, fbk } = await device('mum');
+    check('no packages read while the club sells none', fbk.readPaths().some(p => p.startsWith(TR + 'pack')), false);
+    fbk.deliver(WS + '/access', { ...club().access, org: { packs: true } }); await D.flush(); D.render();
+    check('then a family reads her own child\'s', fbk.watching(TR + 'packs/t1/p1') && fbk.watching(TR + 'packuse/t1/p1'), true);
+    check('and nobody else\'s', fbk.watching(TR + 'packs'), false);
+  }
+  {
+    const { D, fbk } = await device('jaz');
+    fbk.deliver(WS + '/access', { ...club().access, org: { packs: true } }); await D.flush(); D.render();
+    check('a coach reads them all, to use one on a place', fbk.watching(TR + 'packs') && fbk.watching(TR + 'packuse'), true);
   }
 
   console.log('\n--- writes, at the depth the rules sit at ---');

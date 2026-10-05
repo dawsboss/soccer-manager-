@@ -225,5 +225,73 @@ const nameIn = v => names.some(n => JSON.stringify(v).includes(n));
     check('and is refused a coach\'s calendar', String(D.dom.node('#sheet').innerHTML), '');
   }
 
+  console.log('\n--- a parent: her children in every club ---');
+  {
+    const { D, fbk } = await boot('mum', { practiceOn: day(2) });
+    const mumHill = hillTeams(3);
+    mumHill.h1.players.k.guardians = { mum: true };
+    const deliverMum = async teamsV => {
+      fbk.deliver('workspaces/HILL/teams', teamsV);
+      fbk.deliver('workspaces/HILL/matches', hillMatches);
+      fbk.deliver('workspaces/HILL/access', { ...hillAccess, index: { jaz: true, mum: true } });
+      for (const p of ['sessions', 'booked', 'avail']) fbk.deliver('training/HILL/' + p, {});
+      await D.flush();
+    };
+    await deliverMum(mumHill);
+    const keys = D.myCalItems('all').map(x => x.key);
+    check('her child\'s practice in the other club is on My calendar', keys.includes('y:HILL:e:e9'), true);
+    check('and that team\'s game', keys.includes('y:HILL:g:g1'), true);
+    check('beside her child\'s here', keys.includes('e:e1'), true);
+    check('a chip for each club', D.myCalFilters().map(([k]) => k).filter(k => k.startsWith('c:')).join(), 'c:CLUB,c:HILL');
+
+    console.log('\n--- one calendar feed for all of it ---');
+    global.window.SOCCER_CALENDAR_FEED = '';
+    D.ui.view = 'mycal'; D.render();
+    check('no feed for the site: a copy to add instead', /data-act="myfeedics"/.test(D.rendered()) && !/data-act="myfeed"/.test(D.rendered()), true);
+    global.window.SOCCER_CALENDAR_FEED = 'https://feed.example.workers.dev';
+    D.render();
+    check('off until she turns it on', /data-act="myfeed" data-v="on"/.test(D.rendered()), true);
+    check('nothing published before', fbk.record.writes.some(x => /^public\/m/.test(x.path)), false);
+    D.sess.sessions.s9 = { id: 's9', kind: 'one', cap: 1, coach: 'jaz', coachName: 'Jaz', title: 'Rosa finishing', date: day(4), start: '09:00', end: '10:00' };
+    D.sess.booked.s9 = { p1: { st: 'in', by: 'mum' } };
+    D.click({ act: 'myfeed', v: 'on' }); await D.flush(); D.timers.run(); await D.flush();
+    const paths = fbk.record.writes.map(x => x.path);
+    const set = (fbk.writtenTo('people/mum/set').slice(-1)[0] || {}).value || {};
+    const id = set.feed || '';
+    check('an address of its own, kept with her settings', /^m\w{10,}$/.test(id), true);
+    check('still private about busy times', set.share, false);
+    check('claimed before anything is written there', paths.indexOf('shareOwners/' + id) >= 0 && paths.indexOf('shareOwners/' + id) < paths.indexOf('public/' + id), true);
+    const doc = (fbk.writtenTo('public/' + id).slice(-1)[0] || {}).value || {};
+    const items = Object.values(doc.items || {});
+    check('a feed the Worker reads', doc.mine === true && !!doc.team && doc.team.name, 'My calendar');
+    const titles = items.map(x => x.title).sort();
+    check('both clubs\' entries, titled with the team', titles.includes('G11 Flight: Practice') && titles.includes('Hill U12: Practice') && titles.includes('Hill U12 v Storm'), true);
+    check('her child\'s training session, the child not named', titles.includes('Training: a player finishing'), true);
+    check('the other club named in the description', items.some(x => /Hillside FC/.test(x.desc || '')), true);
+    check('no child\'s name anywhere in it', nameIn(doc) || /Kai/.test(JSON.stringify(doc)), false);
+    check('no club code either', /HILL|CLUB/.test(JSON.stringify(doc)), false);
+    D.render();
+    check('subscribe buttons once it is on', /webcal:\/\/feed\.example\.workers\.dev\/m\w+\.ics/.test(D.rendered()), true);
+    const n0 = fbk.writtenTo('public/' + id).length;
+    D.render(); D.timers.run(); await D.flush();
+    check('nothing rewritten while nothing changed', fbk.writtenTo('public/' + id).length, n0);
+    mumHill.h1.events.e9.called = 'cancelled';
+    await deliverMum(mumHill);
+    D.render(); D.timers.run(); await D.flush();
+    const doc2 = (fbk.writtenTo('public/' + id).slice(-1)[0] || {}).value || {};
+    check('a practice called off in the other club follows', Object.values(doc2.items || {}).some(x => x.title === 'Hill U12: Practice' && x.called === 'cancelled'), true);
+
+    console.log('\n--- a new address, and off ---');
+    global.confirm = () => true;
+    D.click({ act: 'myfeed', v: 'new' }); await D.flush(); D.timers.run(); await D.flush();
+    const id2 = ((fbk.writtenTo('people/mum/set').slice(-1)[0] || {}).value || {}).feed;
+    check('replaced: a different address', !!id2 && id2 !== id, true);
+    check('and the old one taken down', fbk.record.removes.includes('public/' + id), true);
+    D.click({ act: 'myfeed', v: 'off' }); await D.flush();
+    check('off: the address taken down', fbk.record.removes.includes('public/' + id2), true);
+    check('and gone from her settings', 'feed' in ((fbk.writtenTo('people/mum/set').slice(-1)[0] || {}).value || {}), false);
+    global.window.SOCCER_CALENDAR_FEED = '';
+  }
+
   H.summary('my calendar');
 })();

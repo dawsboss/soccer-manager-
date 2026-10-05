@@ -107,7 +107,7 @@
     },
     "rulesVersion": {
       ".read": true,
-      ".write": "newData.isNumber() && newData.val() === 4"
+      ".write": "newData.isNumber() && newData.val() === 5"
     },
     "public": {
       "$share": {
@@ -483,7 +483,7 @@
                 ".validate": "newData.isNumber() && newData.val() >= 0"
               },
               "how": {
-                ".validate": "newData.isString() && (newData.val() === 'cash' || newData.val() === 'card' || newData.val() === 'transfer' || newData.val() === 'waived' || newData.val() === 'other')"
+                ".validate": "newData.isString() && (newData.val() === 'cash' || newData.val() === 'card' || newData.val() === 'transfer' || newData.val() === 'waived' || newData.val() === 'other' || (newData.val() === 'package' && newData.parent().child('pack').isString() && root.child('training/' + $code + '/packs/' + root.child('training/' + $code + '/booked/' + $sid + '/' + $pid + '/tid').val() + '/' + $pid + '/' + newData.parent().child('pack').val()).exists()))"
               },
               "at": {
                 ".validate": "newData.isNumber()"
@@ -494,8 +494,82 @@
               "byName": {
                 ".validate": "newData.isString()"
               },
+              "pack": {
+                ".validate": "newData.isString() && newData.val().length <= 60"
+              },
               "$other": {
                 ".validate": false
+              }
+            }
+          }
+        },
+        "packs": {
+          ".read": "auth != null && (root.child('workspaces/' + $code + '/access/admins/' + auth.uid).exists() || root.child('workspaces/' + $code + '/access/coachIndex/' + auth.uid).exists())",
+          "$tid": {
+            "$pid": {
+              ".read": "auth != null && root.child('workspaces/' + $code + '/teams/' + $tid + '/players/' + $pid + '/guardians/' + auth.uid).exists()",
+              "$pack": {
+                ".write": "auth != null && root.child('workspaces/' + $code + '/access/admins/' + auth.uid).exists()",
+                ".validate": "newData.hasChildren(['id', 'n', 'at', 'by']) && newData.child('id').val() === $pack",
+                "id": {
+                  ".validate": "newData.isString()"
+                },
+                "n": {
+                  ".validate": "newData.isNumber() && newData.val() >= 1 && newData.val() <= 100"
+                },
+                "price": {
+                  ".validate": "newData.isNumber() && newData.val() >= 0"
+                },
+                "kind": {
+                  ".validate": "newData.isString() && (newData.val() === 'any' || newData.val() === 'one' || newData.val() === 'group')"
+                },
+                "until": {
+                  ".validate": "newData.isString() && newData.val().length === 10"
+                },
+                "paid": {
+                  ".validate": "newData.isNumber() && newData.val() >= 0"
+                },
+                "how": {
+                  ".validate": "newData.isString() && (newData.val() === 'cash' || newData.val() === 'card' || newData.val() === 'transfer' || newData.val() === 'waived' || newData.val() === 'other')"
+                },
+                "note": {
+                  ".validate": "newData.isString() && newData.val().length <= 200"
+                },
+                "at": {
+                  ".validate": "newData.isNumber()"
+                },
+                "by": {
+                  ".validate": "newData.isString()"
+                },
+                "byName": {
+                  ".validate": "newData.isString()"
+                },
+                "$other": {
+                  ".validate": false
+                }
+              }
+            }
+          }
+        },
+        "packuse": {
+          ".read": "auth != null && (root.child('workspaces/' + $code + '/access/admins/' + auth.uid).exists() || root.child('workspaces/' + $code + '/access/coachIndex/' + auth.uid).exists())",
+          "$tid": {
+            "$pid": {
+              ".read": "auth != null && root.child('workspaces/' + $code + '/teams/' + $tid + '/players/' + $pid + '/guardians/' + auth.uid).exists()",
+              "$pack": {
+                "$sid": {
+                  ".write": "auth != null && (root.child('workspaces/' + $code + '/access/admins/' + auth.uid).exists() || (root.child('training/' + $code + '/sessions/' + $sid + '/coach').val() === auth.uid && root.child('workspaces/' + $code + '/access/coachIndex/' + auth.uid).exists())) && (!newData.exists() || root.child('training/' + $code + '/packs/' + $tid + '/' + $pid + '/' + $pack).exists())",
+                  ".validate": "newData.hasChildren(['by', 'at'])",
+                  "by": {
+                    ".validate": "newData.isString()"
+                  },
+                  "at": {
+                    ".validate": "newData.isNumber()"
+                  },
+                  "$other": {
+                    ".validate": false
+                  }
+                }
               }
             }
           }
@@ -553,6 +627,9 @@
           "share": {},
           "at": {
             ".validate": "newData.isNumber()"
+          },
+          "feed": {
+            ".validate": "newData.isString() && newData.val().length >= 6 && newData.val().length <= 40"
           },
           "$other": {
             ".validate": false

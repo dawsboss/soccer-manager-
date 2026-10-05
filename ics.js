@@ -161,6 +161,15 @@
         url: url ? url('event', id) : ''
       });
     }
+    /* A person's own feed (My calendar) carries its items already titled,
+       across teams and clubs, so they are taken as they are. */
+    for (const [id, it] of Object.entries((doc && doc.items) || {})) {
+      if (!it || !okDate(it.date)) continue;
+      out.push({
+        uid: id, title: String(it.title || 'Calendar entry'), date: it.date, start: it.start, end: it.end, mins: it.mins,
+        venue: it.venue || '', desc: it.desc || '', called: it.called || '', url: url ? url('mine', id) : ''
+      });
+    }
     return out.sort((a, b) => a.date.localeCompare(b.date) || String(a.start || '').localeCompare(String(b.start || '')));
   }
   function niceTime(t) {
