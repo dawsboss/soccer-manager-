@@ -611,6 +611,39 @@ reads('owners are not world-readable', OUT, 'shareOwners/sh1', false);
   console.log('  ^ a list of bookmarks, not a grant: reading the club is still');
   console.log('    the index\'s decision.');
 
+  console.log('\n--- a player\'s own account: the coach gives it ---');
+  {
+    const pbase = { ...base, by: 'coach', role: 'player', player: 'p1' };
+    writes('the team\'s coach makes one for a player on it', COACH, 'invites/pl1', pbase, true);
+    writes('an admin makes one', ADM, 'invites/pl1', { ...pbase, by: 'adm' }, true);
+    writes('a player invite must name a player', COACH, 'invites/pl1', { ...pbase, player: undefined }, false);
+    writes('not for a player who is not on the team', COACH, 'invites/pl1', { ...pbase, player: 'nope' }, false);
+    writes('a coach of another team cannot', OTHER, 'invites/pl1', { ...pbase, by: 'other' }, false);
+    writes('a parent cannot, not even for her own child', MUM, 'invites/pl1', { ...pbase, by: 'mum' }, false);
+    writes('the tracker cannot', TRK, 'invites/pl1', { ...pbase, by: 'trk' }, false);
+    writes('and a coach still cannot make any other kind', COACH, 'invites/pl1', { ...pbase, role: 'parent' }, false);
+    DB.invites.pl1 = pbase;
+    DB.invites.spl = { ...pbase, used: { by: 'newbie', at: NOW } };
+    writes('she lists it for the admins', COACH, 'clubInvites/CLUB/pl1', { role: 'player', team: 't1' }, true);
+    writes('not as another team\'s', COACH, 'clubInvites/CLUB/pl1', { role: 'player', team: 't2' }, false);
+    writes('not as another kind of invite', COACH, 'clubInvites/CLUB/pl1', { role: 'coach', team: 't1' }, false);
+    writes('not an invite she did not make', COACH, 'clubInvites/CLUB/sc', { role: 'player', team: 't1' }, false);
+    DB.clubInvites.CLUB.pl1 = { role: 'player', team: 't1' };
+    writes('and takes it off the list', COACH, 'clubInvites/CLUB/pl1', null, true);
+    writes('another team\'s coach cannot', OTHER, 'clubInvites/CLUB/pl1', null, false);
+    writes('nor a coach take a coach invite off it', COACH, 'clubInvites/CLUB/sc', null, false);
+    writes('the coach withdraws the invite itself', COACH, 'invites/pl1', null, true);
+    console.log('  spending one:');
+    writes('the player\'s own account on that player', SAM, W + 'teams/t1/players/p1/self/newbie', 'spl', true);
+    writes('not on another player', SAM, W + 'teams/t1/players/p2/self/newbie', 'spl', false);
+    writes('a player invite does not make a parent', SAM, W + 'teams/t1/players/p1/guardians/newbie', 'spl', false);
+    writes('nor a parent invite a player', SAM, W + 'teams/t1/players/p1/self/newbie', 'sp', false);
+    writes('nor somebody else onto the player', SAM, W + 'teams/t1/players/p1/self/rando', 'spl', false);
+    writes('it indexes her account in the club', SAM, W + 'access/index/newbie', 'spl', true);
+    writes('and nothing more of the team', SAM, W + 'teams/t1/players/p1/name', 'spl', false);
+    delete DB.invites.pl1; delete DB.invites.spl;
+  }
+
   delete DB.invites; delete DB.clubInvites;
 }
 
@@ -988,6 +1021,49 @@ reads('owners are not world-readable', OUT, 'shareOwners/sh1', false);
     console.log('  ^ the same width as before the table existed, so pasting these rules');
     console.log('    locks nobody out; an admin\'s next connect closes it.');
     A.teamParents = saved;
+  }
+
+  console.log('\n--- a player with her own account ---');
+  {
+    /* Ella has her own sign-in, given by her coach. She reads what her parents
+       read and writes in her family's conversations, where her parents and
+       every coach and admin see each word, and never has one of her own. */
+    const ELLA = { uid: 'ella' };
+    DB.workspaces.CLUB.teams.t1.players.p1.self = { ella: 'spl' };
+    DB.workspaces.CLUB.teams.t1.players.p1.guardians = { mum: true, dad2: true };
+    A.index.ella = true;
+    const TPL = 'workspaces/CLUB/access/teamPlayers/';
+    writes('she puts herself on the team\'s player list, naming herself', ELLA, TPL + 't1/ella', 'p1', true);
+    writes('not naming another player', ELLA, TPL + 't1/ella', 'p2', false);
+    writes('a parent cannot put herself on it', MUM, TPL + 't1/mum', 'p1', false);
+    writes('the coach can put her on it', COACH, TPL + 't1/ella', 'p1', true);
+    writes('another team\'s coach cannot', OTHER, TPL + 't1/ella', 'p1', false);
+    A.teamPlayers = { t1: { ella: 'p1' } };
+    reads('she reads her team\'s notices', ELLA, 'board/CLUB/t1', true);
+    reads('not another team\'s', ELLA, 'board/CLUB/t2', false);
+    writes('and ticks one seen', ELLA, 'board/CLUB/t1/n1/seen/ella', NOW, true);
+    writes('but cannot post one', ELLA, 'board/CLUB/t1/n9', post('ella'), false);
+    reads('she reads her mum\'s conversation with the coaches', ELLA, 'dm/CLUB/t1/mum', true);
+    reads('and her other parent\'s', ELLA, 'dm/CLUB/t1/dad2', true);
+    reads('never another family\'s', ELLA, 'dm/CLUB/t1/dad', false);
+    reads('nor the list of them', ELLA, 'dm/CLUB/t1', false);
+    writes('she writes in her family\'s conversation', ELLA, 'dm/CLUB/t1/mum/m/x1', msg('ella'), true);
+    writes('not signed as her mum', ELLA, 'dm/CLUB/t1/mum/m/x1', msg('mum'), false);
+    writes('not in another family\'s', ELLA, 'dm/CLUB/t1/dad/m/x1', msg('ella'), false);
+    writes('and never starts one of her own with the coaches', ELLA, 'dm/CLUB/t1/ella/m/x1', msg('ella'), false);
+    writes('she marks her family\'s read', ELLA, 'dm/CLUB/t1/mum/seen/ella', NOW, true);
+    writes('the coach still reads it all', COACH, 'dm/CLUB/t1/mum/m/x2', msg('coach'), true);
+    const R = 'workspaces/CLUB/rsvp/t1/g_g1/';
+    writes('she says whether she is going', ELLA, R + 'p1', { v: 'yes', by: 'ella', at: NOW }, true);
+    writes('not for a teammate', ELLA, R + 'p2', { v: 'yes', by: 'ella', at: NOW }, false);
+    writes('and her mum can still change it', MUM, R + 'p1', { v: 'no', by: 'mum', at: NOW }, true);
+    writes('she writes nothing of the team', ELLA, 'workspaces/CLUB/teams/t1/players/p1/name', 'Ellie', false);
+    writes('nor gives herself a parent', ELLA, 'workspaces/CLUB/teams/t1/players/p1/guardians/ella', true, false);
+    delete DB.workspaces.CLUB.teams.t1.players.p1.self;
+    reads('taken off the player, she reads no conversation', ELLA, 'dm/CLUB/t1/mum', false);
+    writes('nor answers for her', ELLA, R + 'p1', { v: 'yes', by: 'ella', at: NOW }, false);
+    DB.workspaces.CLUB.teams.t1.players.p1.guardians = { mum: true };
+    delete A.teamPlayers; delete A.index.ella;
   }
 
   console.log('\n--- before teamIndex exists, coaches wait; nobody else gets in ---');

@@ -8,6 +8,96 @@ before this point lives only in the git log.
 
 ---
 
+## A player's own sign-in, given by her coach — 2026-10-05 (build 97, rules version 6)
+
+The owner's decisions on AUTH.md's four questions: *the coach gives the
+player account, not parents, on request; she can post and read; she sees the
+same as the parents; age is up to the coach and club for now.*
+
+- **Squad → her page → Make her a sign-in link.** A single-use, 14-day
+  `player` invite naming her by shirt number, which the team's coach (or an
+  admin) makes. It's the first invite a coach may make, and the rules allow
+  only this kind. Its id never goes into the club: the coach's phone keeps it
+  to show again, the admins' list has it, and *Withdraw* or a new link kills
+  it. *Remove* beside her account (or on People) takes the sign-in away, and
+  her parents keep theirs.
+- **Her own pointer, `players/{pid}/self/{uid}`, never `guardians`.** She is
+  not her own parent, so every parent right was decided again: she sees what
+  a parent sees (herself by name under *My season*, teammates by the club's
+  preset, Live, Stats, the recap, the calendar, notices), answers *Are you
+  going?* for herself only, and doesn't book or pay for sessions
+  (`myChildren()` now feeds all of that code).
+- **Her family's conversation, never her own.** She reads and writes in
+  each of her parents' conversations with the coaches, where they see every
+  word. The `dm` rule finds them through her player record's `guardians`,
+  and no thread is ever keyed by a player, so a coach can't reach her where
+  her parents can't see. That's the safeguarding line, held by the rules
+  and not just the screen.
+- **A fifth lookup table, `access/teamPlayers`**, checked against `self`, so
+  she reads her team's notices and the rule can find her parents. It is
+  rebuilt like the others (`syncTeamPlayers()`). `hasAnyRole()` counts `self`
+  too: before this, an admin's phone would have taken her out of the club's
+  index on its next connect.
+- **Rules version 6**: `self`, `teamPlayers`, and player clauses in `invites`,
+  `clubInvites`, `rsvp`, `board` and `dm`. `test/rules.js` walks every door
+  (49 new cases), and `test/players.js` pins the app's side.
+
+## No more workspace codes; a child's parents, plural; a player's own account, designed — 2026-10-05 (build 96)
+
+The owner: *workspace codes are weird, get rid of them. A kid can belong to
+multiple parents, and once older may have an account of her own.*
+
+- **Workspace codes are gone from every screen.** Everyone else had stopped
+  seeing them when invites arrived; the app owner's *Change workspace code*
+  box, written as a stopgap "until per-person invites exist", was the last
+  one, and it's removed with its four actions. A phone reaches a club by an
+  invite, a team link, the switcher (`userOrgs`, which every phone backfills
+  for the clubs it reads) or by starting one. Setup's *Workspace* card is
+  *Club* and names the club. The lock screen says *This club needs a sign-in*
+  and offers her other clubs. The code survives as the club's id inside
+  database paths, which AUTH.md always meant it to become. Renaming those
+  paths (`orgs/`) would change nothing anyone sees, so it isn't part of this.
+- **A child with several parents** was already one `guardians` list, and
+  every check asks whether *this* account is in it. `test/parents.js` now
+  pins two parents of one child, and one parent of two children, on the
+  same team. The squad-invite sheet says how a second parent gets in: it
+  makes one link per child without a parent, so the second uses the team
+  link or one more invite.
+- **A player's own account** is designed in AUTH.md rather than built. It's
+  a separate `self` entry beside `guardians`, given by her parent, and never
+  a one-to-one conversation with a coach. Four questions for the owner come
+  first, because each one is a safeguarding or club-policy call, not code.
+
+## What a parent sees: her child by name, the rest by number; My players across clubs — 2026-10-05 (build 95)
+
+The owner asked for the rest of `AUTH.md`. Most of its build order had
+already shipped on `workspaces/{code}`, under other names. Two of its promises
+had not:
+
+- **"Other players by shirt number only."** The Squad tab was closed to a
+  parent, but Stats, Season, Live, the match log and the recap still named
+  every child, and the parent's role description already said they didn't.
+  `shownName()` now draws her own child by name and everyone else as `#8`
+  (*A teammate* with no number). Only someone who is nothing but a parent in
+  the club is narrowed. An admin, a coach of any team (AUTH.md's "coach with
+  a child elsewhere" gets the real view) and a tracker see names, and so does
+  everybody before the club has an admin.
+- **The one preset AUTH.md allows.** Club admin → *What parents see*: shirt
+  numbers only (the default) or the whole roster by name. It's a single
+  boolean at `access/org/rosterOpen`, admins only, checked in the handler,
+  under the rule the club's details already use, so the rules are unchanged.
+  It is a screen setting and says so. A parent's phone reads the whole
+  workspace, so no rule can withhold names until the `orgs/{orgId}` move.
+- **My players across clubs.** AUTH.md's parent with Iris at Riverside. Her
+  children in her other clubs come from the copy My calendar already keeps,
+  with team, club, what's next and *Open that club for her minutes*. Nothing
+  was added to that copy, which still has no stints, so it shows no minutes.
+  `guardsAnyone()` stays about the open club, because booking a session is.
+
+`AUTH.md` now says where each build step stands. The `orgs/{orgId}` migration
+is written up as not started and as the owner's decision, with what it would
+buy and what it would cost, rather than as the next step. `test/parents.js`
+pins all of this.
 ## A player's stronger foot; inviting the families an imported roster names — 2026-10-05 (build 94)
 
 The owner: *when importing there should be an option to invite the parents'
