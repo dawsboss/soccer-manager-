@@ -473,7 +473,116 @@ check('read as fields, and needing no team', fc.kind + ' ' + !!fc.needsTeam, 'fi
 const fp = A.importPlan(fc.data);
 check('a field added', fp.counts.newFields, 1);
 check('nothing it can\'t tell', A.csvImport('Colour,Size\nred,4\n', {}).error.startsWith('Couldn\'t tell'), true);
-check('a template for each, readable by itself', ['roster', 'schedule', 'fields'].every(k => { const c = A.csvImport(A.CSV_TEMPLATES[k], {}); return !c.error && !A.importPlan(c.data).errors.length; }), true);
+check('a template for each, readable by itself', ['roster', 'schedule', 'fields', 'drills'].every(k => { const c = A.csvImport(A.CSV_TEMPLATES[k], {}); return !c.error && !A.importPlan(c.data).errors.length; }), true);
+}
+
+console.log('\n--- the club\'s drills ---');
+{
+  admin(); A.train = { practices: {}, dirty: {}, drills: {}, drillDirty: {}, tpls: {}, tplDirty: {} };
+  const drill = (extra = {}) => ({ name: 'Gates dribble', summary: 'Through the gates', setup: 'Cones as gates', how: ['Dribble through a gate', 'Find another'], points: ['Eyes up'], ...extra });
+  const p1 = A.importPlan({ drills: [drill({ type: 'Technical', ages: 'U7-U10', minutes: '10-15', players: '6-16', skills: ['dribbling', 'Ball mastery'], signals: 'Few shots; nonsense', links: ['https://example.org/v', 'http://insecure.example'] })] });
+  deepEq('a drill list on its own is a file', p1.errors, []);
+  check('one drill added', p1.counts.newDrills, 1);
+  check('a word the library doesn\'t know is said', p1.warnings.some(w => /"nonsense"/.test(w)), true);
+  check('and only https links kept', p1.warnings.some(w => /only https/.test(w)), true);
+  check('said in the summary', A.importSummary(p1.counts), 'adds 1 drill');
+  const d = p1.trainWrites[0][1];
+  check('words or labels, held to the library\'s own', d.skills.join() + ' ' + d.signals.join() + ' ' + d.type, 'dribbling,ball-mastery few-shots technical');
+  check('ranges read as ranges', JSON.stringify([d.ages, d.minutes, d.players]), JSON.stringify([[7, 10], [10, 15], { min: 6, best: 6, max: 16 }]));
+  check('on the club\'s shelf, as the admin\'s', d.by + ' ' + d.byName + ' ' + JSON.stringify(d.team), 'adm Ada ""');
+  A.applyImport(p1);
+  check('there after importing', A.shelfItems('club').map(x => x.name).join(), 'Gates dribble');
+  check('the same file again changes nothing', A.importPlan({ drills: [drill({ type: 'Technical', ages: 'U7-U10', minutes: '10-15', players: '6-16', skills: ['dribbling', 'Ball mastery'], signals: 'Few shots', links: ['https://example.org/v'] })] }).trainWrites.length, 0);
+  const p2 = A.importPlan({ drills: [{ name: 'gates  DRIBBLE', why: 'Beating a player starts with the head up' }] });
+  check('matched by name: updated, not doubled', p2.counts.newDrills + ' ' + p2.counts.drills, '0 1');
+  const u = p2.trainWrites[0][1];
+  check('field by field, the rest kept, its version bumped', u.why.startsWith('Beating') && u.setup === 'Cones as gates' && u.v === 2 && u.name === 'Gates dribble', true);
+  const p3 = A.importPlan({ drills: [drill({ name: 'No setup', setup: '' }), drill({ name: 'Headers', skills: ['heading'], ages: 'U8-U10' })] });
+  check('the five things the editor insists on, insisted on', p3.errors.some(e => /No setup.*set it up/.test(e)), true);
+  check('and no heading below U11', p3.errors.some(e => /Headers.*U11/.test(e)), true);
+  check('nothing planned while an error is left', A.importPlan({ drills: [drill({ name: 'Fine' }), drill({ name: 'Bad', how: [] })] }).errors.length > 0, true);
+  const csv = A.csvImport(A.CSV_TEMPLATES.drills, {});
+  check('a drills spreadsheet, read by its headings, with no team asked for', csv.kind + ' ' + !!csv.needsTeam, 'drills false');
+  const cd = csv.data.drills[0];
+  check('steps and points split a line each', Array.isArray(A.importPlan(csv.data).trainWrites[0][1].how) && A.importPlan(csv.data).trainWrites[0][1].how.length, 3);
+  check('the sheet\'s link kept', A.importPlan(csv.data).trainWrites[0][1].media[0].url, 'https://example.org/gates');
+  check('one name, one drill', cd.name, 'Gates dribble');
+  A.me = { uid: 'co', name: 'Coach' }; A.state.access.teams = { t1: { coaches: { co: true } } };
+  A.dom.node('#sheet').innerHTML = '';
+  A.click({ act: 'importgo' });
+  check('a coach cannot import', A.shelfItems('club').length, 1);
+}
+
+console.log('\n--- a registration system\'s roster and events, tab-separated ---');
+{
+admin();
+const T = rows => rows.map(r => r.join('\t')).join('\n') + '\n';
+const rosterTsv = T([
+  ['team_id', 'team', 'season_id', 'season', 'level', 'birth_year', 'team_gender', 'coach_id', 'coach_first_name', 'coach_last_name', 'coach_email', 'player_id', 'player_first_name', 'player_last_name', 'player_gender', 'player_birth_date', 'player_birth_year', 'player_position', 'player_number', 'player_Foot', 'parent1_email', 'parent1_first_name', 'parent1_last_name', 'parent1_mobile_number', 'parent2_email', 'parent2_first_name', 'parent2_last_name', 'parent2_mobile_number', 'street', 'city', 'state', 'zip'],
+  ['t1', 'Flight G12', 's1', 'Fall 2026', 'Premier', '2014', 'F', 'c1', 'Jaz', 'Patel', 'jaz@example.com', 'p1', 'Ada', 'Lovelace', 'F', '2014-02-01', '2014', 'Goalkeeper', '1', 'Right', 'mum@example.com', 'Mary', 'Lovelace', '555-0101', '', '', '', '', '1 Lake Rd', 'Lakeside', 'MN', '55001'],
+  ['t1', 'Flight G12', 's1', 'Fall 2026', 'Premier', '2014', 'F', 'c1', 'Jaz', 'Patel', 'jaz@example.com', 'p2', 'Bea', 'Smith', 'F', '2014-05-09', '2014', 'Midfielder', '7', 'Left', 'dad@example.com', 'Tom', 'Smith', '555-0102', 'mum2@example.com', 'Sue', 'Smith', '555-0103', '2 Hill St', 'Lakeside', 'MN', '55001']
+]);
+const rr = A.csvImport(rosterTsv, {});
+check('read as a roster, with its own team column', rr.kind + ' ' + !!rr.needsTeam, 'players false');
+const rrp = A.importPlan(rr.data);
+deepEq('no errors', rrp.errors, []);
+A.applyImport(rrp);
+const ft = Object.values(A.state.teams).find(x => x.name === 'Flight G12');
+check('team and birth year', ft && ft.birthYear, 2014);
+const bea = Object.values(ft.players).find(p => p.name === 'Bea Smith');
+check('number and position from player_ columns', bea.number + ' ' + bea.preferred, '7 Mid');
+check('foot is a field of its own, not a note', bea.foot + ' ' + (bea.note || ''), 'L ');
+const said = JSON.stringify(A.state);
+check('no parent, email, phone, address or birth date kept', ['@example.com', '555-01', 'Lake Rd', '55001', '2014-05-09', 'Mary'].some(x => said.includes(x)), false);
+check('the columns it left are said', ['parent1_mobile_number', 'street', 'coach_first_name'].every(h => rr.unused.includes(h)), true);
+
+const eventsTsv = T([
+  ['date', 'start_time', 'end_time', 'event', 'team_id', 'team_name', 'head_coach', 'field_id', 'location', 'field_identifier', 'address'],
+  ['2026-10-06', '5:30 PM', '7:00 PM', 'Practice', 't1', 'Flight G12', 'Jaz Patel', 'f1', 'Lakeside Park', 'Field 3', '1 Park Ave'],
+  ['10/10/2026', '09:30:00', '11:00:00', 'Game vs Northgate', 't1', 'Flight G12', 'Jaz Patel', 'f1', 'Lakeside Park', 'Field 1', '1 Park Ave'],
+  ['10/17/2026', '10:00 AM', '', 'Riverside @ Flight G12', 't1', 'Flight G12', 'Jaz Patel', 'f2', 'Riverside Rec', '', '9 River Rd'],
+  ['10/24/2026', '10:00 AM', '', 'Flight G12 @ Hill End (Away)', 't1', 'Flight G12', 'Jaz Patel', 'f2', 'Hill End', '', ''],
+  ['10/31/2026', '9:00 AM', '', 'Game', 't1', 'Flight G12', 'Jaz Patel', '', 'TBD', '', ''],
+  ['11/01/2026', '4:00 PM', '6:00 PM', 'Team party at the clubhouse', 't1', 'Flight G12', 'Jaz Patel', '', 'Clubhouse', '', '']
+]);
+const ev = A.csvImport(eventsTsv, {});
+check('read as a schedule', ev.kind, 'schedule');
+check('practice, games and other entries', [ev.data.practices.length, ev.data.games.length, ev.data.events.length].join(), '1,3,2');
+deepEq('opponent and home or away from the event text', ev.data.games.map(g => g.opponent + ':' + g.home), ['Northgate:home', 'Riverside:home', 'Hill End:away']);
+check('location and field identifier are one place', ev.data.practices[0].venue, 'Lakeside Park, Field 3');
+check('a game with no opponent is an entry, and said', ev.data.events[0].title === 'Game' && ev.warnings.length === 1 && /Row 6/.test(ev.warnings[0]), true);
+check('"at" is not a game', ev.data.events[1].title, 'Team party at the clubhouse');
+deepEq('the places with an address become fields, once each', ev.data.fields.map(f => f.name + ':' + f.address), ['Lakeside Park:1 Park Ave', 'Riverside Rec:9 River Rd']);
+const evp = A.importPlan(ev.data);
+deepEq('no errors', evp.errors, []);
+check('onto the team the roster made', evp.counts.newTeams, 0);
+check('every write at a depth the rules grant', onlyDepths(evp), true);
+A.applyImport(evp);
+const g = Object.values(A.state.matches).find(m => m.opponent === 'Northgate');
+check('kick-off read from seconds', g.kickoff, '09:30');
+check('the same file again adds nothing', A.importPlan(A.csvImport(eventsTsv, {}).data).writes.length, 0);
+}
+
+console.log('\n--- a player\'s stronger foot ---');
+{
+admin();
+const r = A.importPlan({ teams: [{ name: 'Feet', players: [{ name: 'Lefty', foot: 'left' }, { name: 'Odd', foot: 'sideways' }] }] });
+check('read from a file', Object.values(r.writes[0][1].players).find(p => p.name === 'Lefty').foot, 'L');
+check('anything else is said, not guessed', r.warnings.some(w => /sideways/.test(w)), true);
+const slots = A.presetsFor(7)['2-3-1'];
+const lb = slots.find(x => x.label === 'LB'), rb = slots.find(x => x.label === 'RB'), cm = slots.find(x => x.label === 'CM');
+const L = { id: 'l', preferred: 'Back', canPlay: [], foot: 'L' }, R = { id: 'r', preferred: 'Back', canPlay: [], foot: 'R' };
+check('a left-footer suits the left more than the right', A.fit(L, lb) > A.fit(L, rb), true);
+check('the middle has no side', A.footFit(L, cm), 0);
+check('never more than a step of position preference', A.fit({ preferred: 'Back', foot: 'R' }, lb) > A.fit({ preferred: 'Mid', canPlay: ['Back'], foot: 'L' }, lb), true);
+const as = A.assignSlots([R, L], [lb, rb]);
+check('two equal backs go to their own sides', as[lb.id] + as[rb.id], 'lr');
+check('no foot noted changes nothing', A.footFit({ preferred: 'Back' }, lb) + A.footFit({ foot: 'B' }, lb), 0);
+
+A.state.teams.f1 = { id: 'f1', name: 'Feet', players: { x: { id: 'x', name: 'Ola', number: '3', active: true, preferred: '', canPlay: [], rating: 3 } } };
+A.ui.teamId = 'f1';
+A.sheetPlayer(A.state.teams.f1.players.x);
+check('the player sheet asks for it', /Stronger foot/.test(A.dom.node('#sheet').innerHTML), true);
 }
 
 H.summary('bulk import');

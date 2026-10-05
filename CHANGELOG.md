@@ -8,7 +8,7 @@ before this point lives only in the git log.
 
 ---
 
-## A player's own sign-in, given by her coach — 2026-10-05 (build 94, rules version 5)
+## A player's own sign-in, given by her coach — 2026-10-05 (build 97, rules version 6)
 
 The owner's decisions on AUTH.md's four questions: *the coach gives the
 player account, not parents, on request; she can post and read; she sees the
@@ -38,11 +38,11 @@ same as the parents; age is up to the coach and club for now.*
   rebuilt like the others (`syncTeamPlayers()`). `hasAnyRole()` counts `self`
   too: before this, an admin's phone would have taken her out of the club's
   index on its next connect.
-- **Rules version 5**: `self`, `teamPlayers`, and player clauses in `invites`,
+- **Rules version 6**: `self`, `teamPlayers`, and player clauses in `invites`,
   `clubInvites`, `rsvp`, `board` and `dm`. `test/rules.js` walks every door
   (49 new cases), and `test/players.js` pins the app's side.
 
-## No more workspace codes; a child's parents, plural; a player's own account, designed — 2026-10-05 (build 93)
+## No more workspace codes; a child's parents, plural; a player's own account, designed — 2026-10-05 (build 96)
 
 The owner: *workspace codes are weird, get rid of them. A kid can belong to
 multiple parents, and once older may have an account of her own.*
@@ -68,7 +68,7 @@ multiple parents, and once older may have an account of her own.*
   a one-to-one conversation with a coach. Four questions for the owner come
   first, because each one is a safeguarding or club-policy call, not code.
 
-## What a parent sees: her child by name, the rest by number; My players across clubs — 2026-10-05 (build 92)
+## What a parent sees: her child by name, the rest by number; My players across clubs — 2026-10-05 (build 95)
 
 The owner asked for the rest of `AUTH.md`. Most of its build order had
 already shipped on `workspaces/{code}`, under other names. Two of its promises
@@ -98,6 +98,128 @@ had not:
 is written up as not started and as the owner's decision, with what it would
 buy and what it would cost, rather than as the next step. `test/parents.js`
 pins all of this.
+## A player's stronger foot; inviting the families an imported roster names — 2026-10-05 (build 94)
+
+The owner: *when importing there should be an option to invite the parents'
+emails and coaches that don't have accounts already* — and *should we have a
+field for what foot they are? You play someone on a side because of dominant
+feet sometimes.*
+
+- **Stronger foot** on the player sheet: Left, Right, Both or not noted
+  (`foot`: `L`, `R`, `B` on the player). Squad shows it, the AI prompt carries
+  it, and the import reads it (`player_Foot`, `Foot`, or `"foot"` in JSON)
+  as a field rather than the note build 92 made of it. **The planner leans a
+  left-footer to the left**: a quarter-point in `fit()` for her own side, a
+  quarter against the other, read from where the spot sits on the pitch. That
+  is less than keeping her where she was last block and less than any step of
+  position preference, so it only decides between otherwise-equal players and
+  never fights what the coach set.
+- **Invite them too?** after importing a roster that has parents' or coaches'
+  emails. One personal invite per parent per child and per coach per team,
+  made with the same `writeInvite()` as People → Invite someone and bound to
+  the email, so a forwarded link is useless. Skipped: anyone whose account
+  (by its email) already has that role, and anyone with an open invite for
+  it, so next season's import only invites the new families. Making the
+  invites and having Firebase email them are two taps, so an admin can stop
+  between them and send the links her own way. The emails never go into the
+  import's data or the club; they sit on that screen until it is closed, and
+  are written only into the invites, where invites already keep them.
+- Not done: a coach making these for her own team (still admins only, as
+  everywhere else invites are made), and invites from a JSON file.
+
+## Roster and events exports read as they come — 2026-10-05 (build 93)
+
+The owner had a roster and an events file from their registration system,
+both tab-separated, and asked for an import for them rather than retyping them
+as JSON. The spreadsheet import already read tabs; it didn't know these
+headings, so most of each file was quietly "not used".
+
+- **Roster:** `player_number`, `player_position` and `player_Foot` are read
+  (the foot as the player's note, since there is no field for it), alongside
+  `team`, `birth_year` and the player's names it already knew. Parents' names,
+  emails and phones, the home address, birth dates and gender stay out: they
+  are listed as not used and nothing of them is written. Getting parents in
+  is still an invite or a team link, not an email in a file.
+- **Events:** `event` is the type, and when there is no opponent column the
+  opponent is read out of it — *Game vs Northgate*, *@ Riverside*, *Riverside @
+  Us* — with our own name on either side deciding home or away. "at" is not
+  read as a game, so *Team party at the clubhouse* stays an entry. A row that
+  says it's a game but names nobody used to block the whole file with an
+  error; now it goes on the calendar as an entry titled by its event and the
+  sheet says which row. `location` and `field_identifier` become one place,
+  and a location with an `address` becomes a club field, which the calendar
+  already finds by name in a venue. Other events take their title from the
+  event text instead of a plain "Event".
+- Times with seconds (`09:30:00`) already read; the test now pins it with the
+  owner's exact headings, run twice to show the second run adds nothing.
+
+## My calendar in your own calendar; the AI and import steps for training; packages — 2026-10-05 (build 92, rules version 5)
+
+The owner: *fix up the Calendar sync to match the My calendar one since that
+will have the most helpful information. In the My calendar would a parent see
+their other clubs? They should. Finish off the TRAINING.md file. Packages is a
+cool idea! Add it as an option for admin to turn it on.*
+
+**A parent does see her other clubs on My calendar**, and did already: a child
+on a team in another club puts that team's games and practices on it, named
+for the club, with a chip per club. `test/mycal.js` now pins it for a parent,
+not only a coach.
+
+**Calendar sync is My calendar's now.** One address per person, from *My
+calendar → Turn on calendar sync*: every game, practice, event, training
+session and bookable time on it, from every club her account is in, in Apple,
+Google or Outlook. A team's Calendar tab points there first and keeps its own
+team feed under it, because families already subscribed to those. The feed is
+`public/`, as the team feed is, so it is built to the same promise and more:
+no child is named (a booked session is *Training: Finishing*, never whose),
+everything typed in the open club goes through the names of every player the
+phone knows, another club's entries carry the team, the kind, the time and the
+place but not what was typed there (that phone holds her own children, not the
+squad to check against), and entries are keyed by a one-way hash so no club's
+code is in it. Off until she turns it on; the id is claimed in `shareOwners`
+before the first write and kept at `people/{uid}/set/feed` so her other phones
+write to the same address; *Replace this address* and *Turn it off* take the
+old one down. Her phone writes it only once it has heard from every club it
+holds this session, and only when it changed, so an old copy never overwrites
+a newer one; `SERVER.md` says what that costs (a club's change reaches her
+calendar once one of her phones has been open since). `ics.js` reads the new
+document and the Worker links its entries back to My calendar.
+
+**Training's build order is finished.** Step 8: a practice plan has *Ask an AI
+for a session*, a prompt with the team's age and squad, what the numbers say
+needs work, the last three practices she reviewed (with the plain warning that
+a few youth games prove nothing), and the drills that fit by `[id]`, up to
+sixty, those for the practice's focus first. The club's drills and her own go
+in only when she says, by name and what each trains, never the card. She
+pastes the reply back and its *SESSION* lines become the plan; nothing loads
+while a token is unknown. Ask an AI's *Practice plan* topic carries the library
+too, so it stops inventing drills. Still copy out, paste back: the app never
+calls a model. Step 9: the bulk import takes the club's drills, as a `drills`
+list or a spreadsheet with *Setup*, *How it runs* and *Coaching points*
+columns (there is a template), matched by name and merged like everything else
+there, lists held to the library's own words, and the same five things the
+drill editor insists on.
+
+**Packages**, off until an admin turns them on (*Training sessions → Fees →
+Packages*). An admin sells a player a number of sessions for a price (any
+session, 1-1s or groups, an optional use-by date); the coach marks a booked
+place *Package* instead of collecting for it, and it comes off the one that
+runs out first. *Not paid after all* puts the place back, and a place
+withdrawn or called off after it was used is listed to give back. The family
+sees what she bought and what is left. A package is a fee covering several
+places, so using one is a fee (`how: 'package'`, naming it) plus a mark at
+`packuse/{tid}/{pid}/{id}/{sid}`, which is what is counted, because a coach
+reads only her own sessions' fees. SESSIONS.md had parked this on what happens
+to unused places: the app keeps them, says when a package ended with some
+left, and leaves the rest to the club.
+
+**Rules version 5**: `people/$uid/set/feed`, and `training/$code/packs` and
+`packuse`, with a fee allowed to say `package` only for a package that exists
+for that child. A rule cannot count, so it cannot refuse an eleventh place on a
+ten-place package; `rules.js` prints that beside the spots it cannot count
+either. Paste `database.rules.json` once.
+
+---
 
 ## A finished game is its recap; lines through the game and the season; the match log — 2026-10-05 (build 91)
 

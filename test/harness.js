@@ -183,7 +183,7 @@ const EXPORTS = `{
   sheetDrillFilters, PRACTICE_ACTS, PRACTICE_BLANK,
   /* practice plans */
   PLAN_ACTS, canPlan, teamPractices, practiceById, putPractice, dropPractice, mergePractices,
-  suggestPlan, planWarnings, planKit, needsWork, drillsFor, nextPractice, movePlans, planEntry, rawPlan, addMins, todayIso, pracDay,
+  suggestPlan, pracAiPrompt, pracAiParse, planWarnings, planKit, needsWork, drillsFor, nextPractice, movePlans, planEntry, rawPlan, addMins, todayIso, pracDay,
   syncCoachIndex, syncAllCoachIndex, coachTeamOf, readiness,
   get train() { return train }, set train(v) { train = v }, get trainState() { return trainState },
   /* the club's drills and a coach's own */
@@ -208,6 +208,8 @@ const EXPORTS = `{
   /* invites */
   get invite() { return invite }, get clubInv() { return clubInv }, get myClubs() { return myClubs },
   secretId, inviteLink, redeemInvite, makeInvite, inviteScreen,
+  get importContacts() { return importContacts }, importInviteRows, inviteImported, mailImported,
+  fit, assignSlots, footFit, FOOT, sheetPlayer,
   /* messages */
   msgTeams, staffTeams, famTeams, msgOn, unreadCount, notices, threadMsgs, threadUnread,
   families, guardianEmails, childrenOf, viewInbox, viewThread, watchMessages, sheetPostShare,
@@ -219,13 +221,13 @@ const EXPORTS = `{
   get reach() { return reach }, get sessForm() { return sessForm },
   sessAll, sessById, normSess, bookingsOf, bookOf, spotsLeft, canSessions, canOffer, canRun, sessClashes, busyItems,
   fieldList, fieldById, fieldOfText, permitsOf, permitCovers, fieldDays, looseVenues, hoursFor, payOf, payFor, feeRows,
-  familyOwed, feeOf, sessAttendance, sessCalItems, sessMerge, sessPut, watchSess, sessNews, viewSessions, sheetSess,
+  familyOwed, feeOf, packsOf, packFor, get feeForm() { return feeForm }, sessAttendance, sessCalItems, sessMerge, sessPut, watchSess, sessNews, viewSessions, sheetSess,
   sessUi, SESS_ACTS, sessMessage, reachFor, fmtMoney, sessClubLine, calendarDoc, publicDoc, viewMine, viewClub,
   /* bookable times, and my calendar */
   blockAll, blockById, blockSlots, normBlock, slotSid, canEditBlock, kidBusy, blockKids, availView, familyAvail, sheetBlock,
   AVAIL_ACTS, myCalItems, myCalTeams, myCalFilters, viewMyCal, myCalLine, createClub, blockValue, healBlocks, seatsOf, freeSeat, placesTaken, openSlotsOf, slotAt, slotKey,
   /* my calendar, across clubs */
-  get you() { return you }, busyOf, youCalItems, youBusy, youClubs, elsewhereOn, sharing, sheetPersonCal, viewScope, crumbs, watchMirror, mirrorSlim,
+  get you() { return you }, busyOf, myFeedDoc, myFeedId, feedItem, youCalItems, youBusy, youClubs, elsewhereOn, sharing, sheetPersonCal, viewScope, crumbs, watchMirror, mirrorSlim,
   alertsList: () => alertsHere().list, alertBar, calAlerts, elseUnread, openAlert, noteMine,
   /* safekeeping: what is owed, a full phone, and the backup */
   otherOwed, pendingCount, refusedCount, backupDoc, trainingCopy, isBackupData, keepStored,

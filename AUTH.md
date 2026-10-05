@@ -34,7 +34,7 @@ Written whenever a role is granted, alongside the existing `access/index`. On si
 
 The org id stays exactly what the workspace code is today, so **nothing migrates** — the same trick that let roles land without moving data. The club gets a display name (`access/org/name`) and the id becomes plumbing.
 
-**Built** (2026-10, build 93): the code is gone from every screen. The app owner's code box, its last appearance, is removed. A phone reaches a club by an invite, a team link, the switcher (`userOrgs`, which every phone backfills for the clubs it reads) or by starting one. The code lives on only as the club's id inside database paths, as this section intended.
+**Built** (2026-10, build 96): the code is gone from every screen. The app owner's code box, its last appearance, is removed. A phone reaches a club by an invite, a team link, the switcher (`userOrgs`, which every phone backfills for the clubs it reads) or by starting one. The code lives on only as the club's id inside database paths, as this section intended.
 
 ## The account flow
 
@@ -124,11 +124,11 @@ Same shape. Every team in the club, editable. If she has a child, **My players**
 - **My players cuts across everything.** Always present when you are a guardian of anyone, regardless of which context you are in.
 - **No console, and no mode switch.** The game screens *are* the coach's console, and the Admin tab is the club's. A third wrapper would only add a layer over things already one tap away.
 
-**Built** (2026-10): My players lists her children across teams and, since build 92, across clubs. Children in another club come from the cut-down copy My calendar already keeps of every club in `userOrgs` (`mirrorSlim()`: her own children, every game's when and where, no stints), so they show with team, club and what's next, and *Open that club* for the minutes; the copy gained nothing for it. She does not land on My players at sign-in; she lands in a club, which is still what the switcher picks.
+**Built** (2026-10): My players lists her children across teams and, since build 95, across clubs. Children in another club come from the cut-down copy My calendar already keeps of every club in `userOrgs` (`mirrorSlim()`: her own children, every game's when and where, no stints), so they show with team, club and what's next, and *Open that club* for the minutes; the copy gained nothing for it. She does not land on My players at sign-in; she lands in a club, which is still what the switcher picks.
 
 ## A player with her own account
 
-**Built** (2026-10, build 94, rules version 5), as the owner decided it:
+**Built** (2026-10, build 97, rules version 6), as the owner decided it:
 
 1. **Her coach gives it, on request**, and so may an admin. Never a parent. It is off unless she or her family asks.
 2. **She reads and posts** in her family's conversation with the coaches.
@@ -170,7 +170,7 @@ The honest version of this feature, when it is time, is **two or three named pre
 
 That one is worth adding now if the club has an opinion. The free matrix is worth deferring until a club asks for something the presets cannot express.
 
-**Built** (2026-10, build 92): the one preset, as `access/org/rosterOpen` (*Shirt numbers only*, the default, or *The whole roster by name*), on Club admin, admins only. It is a screen setting, not a rule: a parent indexed in the club reads the whole workspace today, so no rule can withhold the names from her. Making it a rule is the `orgs/{orgId}` move below, which gives the squad its own readable-by node.
+**Built** (2026-10, build 95): the one preset, as `access/org/rosterOpen` (*Shirt numbers only*, the default, or *The whole roster by name*), on Club admin, admins only. It is a screen setting, not a rule: a parent indexed in the club reads the whole workspace today, so no rule can withhold the names from her. Making it a rule is the `orgs/{orgId}` move below, which gives the squad its own readable-by node.
 
 ## Joining: parents claim, coaches approve
 
@@ -276,11 +276,11 @@ The existing `workspaces/{code}` node is already organisation-shaped — many te
 2. Copy `workspaces/{code}/teams` to `orgs/{orgId}/teams`, adding that admin as coach of each.
 3. Repoint matches at the new team ids.
 4. Keep the old node readable for a fortnight, so nothing is lost if the copy goes wrong.
-5. Retire workspace codes once every coach has signed in. *(Done for people in build 93: nobody types or sees one. The paths still say `workspaces/`.)*
+5. Retire workspace codes once every coach has signed in. *(Done for people in build 96: nobody types or sees one. The paths still say `workspaces/`.)*
 
 Do the migration with a button in the app, on a copy, not by hand in the console.
 
-**Status (2026-10): not started, and a decision for the owner rather than the next step.** Everything this document asked of the org model shipped without moving a byte: the workspace code *is* the org id (as "The code becomes the organisation" said it would be), roles are derived from where a uid appears under `workspaces/{code}/access`, and the four lookup tables do what `teamMembers` was for. Renaming `workspaces/` to `orgs/` on its own would change nothing anyone sees: the codes left the screen in build 93 without it. What the move would still buy:
+**Status (2026-10): not started, and a decision for the owner rather than the next step.** Everything this document asked of the org model shipped without moving a byte: the workspace code *is* the org id (as "The code becomes the organisation" said it would be), roles are derived from where a uid appears under `workspaces/{code}/access`, and the four lookup tables do what `teamMembers` was for. Renaming `workspaces/` to `orgs/` on its own would change nothing anyone sees: the codes left the screen in build 96 without it. What the move would still buy:
 
 - **Names a parent's phone never receives.** Today anyone indexed reads the whole workspace, so "other players by shirt number" is the screen's choice (above). A squad node readable only by that team's coaches and admins is the only way to make it the database's.
 - **Teams one club can't read.** A coach reads every team by design; the move would let a club choose otherwise in the rules, not just on screen.
@@ -298,7 +298,7 @@ Worth stating so it is deliberate and not an accident of implementation:
 
 That last line is a decision to revisit with the club, not a technical constraint. Some clubs publish rosters freely; assume they do not until told otherwise.
 
-**Built** (2026-10, build 92): `shownName()` draws her own child by name and everyone else by shirt number (*A teammate* with none) on Stats, Season, Live, the match log and the recap, for anyone who is only a parent in the club. Admins, coaches of any team and trackers see names; so does everyone before the club has an admin. The club's preset above turns it off. `test/parents.js` pins it.
+**Built** (2026-10, build 95): `shownName()` draws her own child by name and everyone else by shirt number (*A teammate* with none) on Stats, Season, Live, the match log and the recap, for anyone who is only a parent in the club. Admins, coaches of any team and trackers see names; so does everyone before the club has an admin. The club's preset above turns it off. `test/parents.js` pins it.
 
 ## Build order
 
