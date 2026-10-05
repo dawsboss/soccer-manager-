@@ -8,7 +8,33 @@ before this point lives only in the git log.
 
 ---
 
-## A finished game is its recap; lines through the game and the season; the match log — 2026-10-05 (build 91)
+## Roster and events exports read as they come — 2026-10-05 (build 92)
+
+The owner had a roster and an events file from their registration system,
+both tab-separated, and asked for an import for them rather than retyping them
+as JSON. The spreadsheet import already read tabs; it didn't know these
+headings, so most of each file was quietly "not used".
+
+- **Roster:** `player_number`, `player_position` and `player_Foot` are read
+  (the foot as the player's note, since there is no field for it), alongside
+  `team`, `birth_year` and the player's names it already knew. Parents' names,
+  emails and phones, the home address, birth dates and gender stay out: they
+  are listed as not used and nothing of them is written. Getting parents in
+  is still an invite or a team link, not an email in a file.
+- **Events:** `event` is the type, and when there is no opponent column the
+  opponent is read out of it — *Game vs Northgate*, *@ Riverside*, *Riverside @
+  Us* — with our own name on either side deciding home or away. "at" is not
+  read as a game, so *Team party at the clubhouse* stays an entry. A row that
+  says it's a game but names nobody used to block the whole file with an
+  error; now it goes on the calendar as an entry titled by its event and the
+  sheet says which row. `location` and `field_identifier` become one place,
+  and a location with an `address` becomes a club field, which the calendar
+  already finds by name in a venue. Other events take their title from the
+  event text instead of a plain "Event".
+- Times with seconds (`09:30:00`) already read; the test now pins it with the
+  owner's exact headings, run twice to show the second run adds nothing.
+
+; lines through the game and the season; the match log — 2026-10-05 (build 91)
 
 The owner: *a line graph for each thing recorded, by time. Across the season
 would be amazing. Once a game ends it should no longer have the plan, sub,

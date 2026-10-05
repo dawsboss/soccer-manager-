@@ -613,11 +613,12 @@ Admin → *Import from a spreadsheet or file* takes a season at once — teams, 
 - **Matched by team, date, start and kind**, so running it again adds nothing; a changed place or end time updates the entries it matches, one field at a time, and nothing the file doesn't mention is touched.
 - **Games take the match-day details too:** `home` (`home`, `away`, `neutral`, or `H`/`A`), `arrive` (the time to be there), `kit` (or `uniform`) and `notes`. Times can be `09:30`, `9:30am` or `9am`.
 
-**Spreadsheets.** Save a sheet as CSV and choose it, or paste it, and the import reads it by its headings — one sheet at a time:
+**Spreadsheets.** Save a sheet as CSV or tab-separated (TSV) and choose it, or paste it, and the import reads it by its headings — one sheet at a time:
 
 - **A roster**: `Name` (or `First name` and `Last name`), `Number` (`Jersey`, `#`), `Position`, `Goalkeeper`, `Notes`, and `Team`. With no `Team` column, the sheet asks which team it is for, or the name of a new one.
 - **A schedule**: `Date`, `Start` (`Time`, `Kick-off`), `End` or `Duration`, `Type` (game, practice, or anything else for an event), `Opponent` — or `Home team` and `Away team`, and it works out which is you — `Home/Away`, `Location`, `Arrival`, `Uniform`, `Notes`, and `Team`. A row with an opponent and no type is a game. Dates can be `2026-10-04`, `10/4/2026` or `Oct 4, 2026`; a slashed date is read month first unless a day over twelve in the same column says it's day first.
 - **Fields**: `Name`, `Address`, `Pitches`, `Surface`, `Lights`, `Notes`.
+- **Registration-system exports** read as they come. A roster with `team`, `birth_year`, `player_first_name`, `player_last_name`, `player_number`, `player_position` and `player_Foot` (kept as a note, *Left foot*) — and its parents' names, emails, phones and home address are listed as not used and never stored. A schedule with `date`, `start_time`, `end_time`, `event`, `team_name`, `location`, `field_identifier` and `address`: the location and field identifier become one place (*Lakeside Park, Field 3*), each location with an address becomes a club field, and an `event` like *Game vs Northgate*, *@ Riverside* or *Riverside @ Lakeside Thunder* is a game against the side that isn't you (`vs` home, `@` away, a trailing *(Away)* wins). An event that says it's a game but names nobody goes on the calendar as an entry, and the sheet says so.
 - A heading it doesn't know is listed as not used, never guessed at, and every problem is given by its row number. Templates for each are on the import sheet.
 
 **Fields and training sessions** go in the same file, beside `teams` or on their own:

@@ -2,7 +2,7 @@
    Static app. Data lives in localStorage, and mirrors to Firebase Realtime
    Database when a config + workspace code are present. */
 
-const BUILD = '91';
+const BUILD = '92';
 const BUILT = '2026-10-04';
 /* The version of database.rules.json this app was written against. The rules
    carry the same number in rulesVersion's .write, which accepts that number
@@ -3563,13 +3563,14 @@ const CSV_COLS = {
   name: ['name', 'player', 'playername', 'fullname', 'title', 'eventname', 'fieldname'],
   first: ['firstname', 'first', 'givenname', 'forename', 'playerfirstname'],
   last: ['lastname', 'last', 'surname', 'familyname', 'playerlastname'],
-  number: ['number', 'no', 'num', 'jersey', 'jerseynumber', 'jerseyno', 'shirt', 'shirtnumber', 'uniformnumber'],
-  position: ['position', 'pos', 'preferredposition'],
+  number: ['number', 'no', 'num', 'jersey', 'jerseynumber', 'jerseyno', 'shirt', 'shirtnumber', 'uniformnumber', 'playernumber', 'playerjersey', 'playerjerseynumber'],
+  position: ['position', 'pos', 'preferredposition', 'playerposition'],
+  foot: ['foot', 'playerfoot', 'preferredfoot', 'strongfoot', 'dominantfoot'],
   also: ['also', 'otherpositions', 'canplay'],
   gk: ['gk', 'keeper', 'goalkeeper'],
   rating: ['rating'], note: ['note', 'notes', 'comments', 'details', 'description'], active: ['active'],
   born: ['birthyear', 'born', 'yearofbirth'],
-  type: ['type', 'kind', 'eventtype', 'category'],
+  type: ['type', 'kind', 'eventtype', 'category', 'event'],
   date: ['date', 'day', 'gamedate', 'eventdate', 'startdate', 'matchdate'],
   start: ['start', 'time', 'starttime', 'kickoff', 'kickofftime', 'from'],
   end: ['end', 'endtime', 'finish', 'until', 'to'],
@@ -3578,6 +3579,7 @@ const CSV_COLS = {
   hometeam: ['hometeam', 'home'], awayteam: ['awayteam', 'away', 'visitor', 'visitingteam'],
   homeaway: ['homeaway', 'ha', 'homeoraway', 'ground'],
   venue: ['venue', 'location', 'where', 'place', 'field', 'pitch', 'locationname'],
+  spot: ['fieldidentifier', 'fieldnumber', 'fieldno', 'pitchnumber', 'subfield'],
   arrive: ['arrive', 'arrival', 'arrivaltime', 'arriveby', 'meettime'],
   kit: ['kit', 'uniform', 'colours', 'colors', 'jerseycolor'],
   score: ['score', 'result', 'finalscore'],
@@ -3613,6 +3615,29 @@ function csvDate(v, dayFirst) {
 }
 const CSV_GAME = /game|match|fixture|league|cup|friendly|tournament|scrimmage|playoff/i;
 const CSV_PRACTICE = /practi[cs]e|training|session/i;
+/* An export with one Event column (and no Opponent) writes the game into it:
+   "Game vs Northgate", "@ Riverside", "Flight vs Northgate", "Riverside @
+   Flight". Our own name on either side says which is the opponent and who is
+   at home; otherwise "vs" is home and "@" away, as fixture lists write them.
+   "at" is left alone on purpose: "Picture day at the clubhouse" is no game. */
+function csvVersus(text, ours) {
+  const x = String(text || '').trim().match(/^(.*?)\s*(?:\b(?:vs\.?|v\.?|versus)\s+|(@)\s*)(.+)$/i);
+  if (!x) return null;
+  const away = !!x[2];
+  let left = x[1].trim(), right = x[3].trim(), home;
+  const said = right.match(/\s*\((home|away|h|a)\)\s*$/i);
+  if (said) { right = right.slice(0, said.index).trim(); home = /^h/i.test(said[1]) ? 'home' : 'away'; }
+  const k = importKey(ours);
+  if (k && importKey(right) === k && left) return { opponent: left, home: home || (away ? 'home' : 'away') };
+  const gameWords = !left || (CSV_GAME.test(left) && left.split(/\s+/).length <= 3);
+  if (!right) return null;
+  if ((k && importKey(left) === k) || gameWords) return { opponent: right, home: home || (away ? 'away' : 'home') };
+  return { opponent: right, ...(home ? { home } : {}) };
+}
+const csvFoot = v => {
+  const s = String(v || '').trim();
+  return !s ? '' : /^l/i.test(s) ? 'Left foot' : /^r/i.test(s) ? 'Right foot' : /^(b|either|two)/i.test(s) ? 'Both feet' : 'Foot: ' + s;
+};
 /* Reads a spreadsheet into importPlan()'s shape. `team` is the team every
    row is for when the sheet has no team column, as the import sheet asks. */
 function csvImport(text, opts = {}) {
@@ -3633,13 +3658,15 @@ function csvImport(text, opts = {}) {
   const needsTeam = kind !== 'fields' && !has('team');
   const teamOf = o => String(o.team || opts.team || '').trim();
   if (needsTeam && !String(opts.team || '').trim()) return { kind, needsTeam, unused, rows: recs.length, error: 'This spreadsheet has no "Team" column, so pick the team it is for.' };
-  const data = {};
+  const data = {}, warnings = [];
   if (kind === 'players') {
     const byTeam = new Map();
     for (const o of recs) {
       const name = o.name || [o.first, o.last].filter(Boolean).join(' ');
       const p = { row: o.row, name };
       for (const k of ['number', 'position', 'also', 'gk', 'rating', 'note', 'active']) if (o[k] !== undefined) p[k] = o[k];
+      // which foot is a coach's note, not a field of its own
+      if (o.foot && !p.note) p.note = csvFoot(o.foot);
       const tn = teamOf(o);
       if (!byTeam.has(tn)) byTeam.set(tn, { name: tn, players: [] });
       const tt = byTeam.get(tn);
@@ -3658,36 +3685,50 @@ function csvImport(text, opts = {}) {
     const slashed = recs.map(o => String(o.date || '').trim().match(/^(\d{1,2})[-/.](\d{1,2})[-/.]\d{2,4}/)).filter(Boolean);
     const dayFirst = slashed.some(x => Number(x[1]) > 12);
     data.games = []; data.practices = []; data.events = [];
+    const places = new Map();
     for (const o of recs) {
       const team = teamOf(o);
       const date = csvDate(o.date, dayFirst) || o.date || '';
       const ty = String(o.type || '');
+      const practice = CSV_PRACTICE.test(ty) || (!ty && /practi[cs]e|training/i.test(o.name || ''));
       let opponent = o.opponent, home = o.homeaway;
       if (!opponent && o.hometeam && o.awayteam) {
         const ours = importKey(team);
         if (importKey(o.hometeam) === ours) { opponent = o.awayteam; home = home || 'home'; }
         else if (importKey(o.awayteam) === ours) { opponent = o.hometeam; home = home || 'away'; }
       }
-      const isGame = CSV_GAME.test(ty) || (!ty && !!opponent) || (!!opponent && !CSV_PRACTICE.test(ty));
-      if (isGame) {
-        const g = { row: o.row, team, opponent: opponent || '', date };
+      if (!opponent && !practice) {
+        const vs = csvVersus(ty, team) || csvVersus(o.name, team);
+        if (vs) { opponent = vs.opponent; if (home === undefined) home = vs.home; }
+      }
+      // "Lakeside Park" and "Field 3" in two columns are one place, which a club field is found in by name
+      const venue = [o.venue, o.spot].filter(Boolean).join(', ') || undefined;
+      if (o.venue && o.address && !places.has(importKey(o.venue))) places.set(importKey(o.venue), { row: o.row, name: o.venue, address: o.address });
+      const isGame = !practice && (CSV_GAME.test(ty) || !!opponent);
+      if (isGame && !opponent) warnings.push(`Row ${o.row}: "${ty}" names no opponent, so it went on the calendar as an entry rather than a game.`);
+      if (isGame && opponent) {
+        const g = { row: o.row, team, opponent, date };
         if (o.start) g.kickoff = o.start;
-        for (const [k, to] of [['venue', 'venue'], ['arrive', 'arrive'], ['kit', 'kit'], ['note', 'notes'], ['score', 'score'], ['side', 'side']]) if (o[k] !== undefined) g[to] = o[k];
-        if (home !== undefined) g.home = home;
+        for (const [k, to] of [['arrive', 'arrive'], ['kit', 'kit'], ['note', 'notes'], ['score', 'score'], ['side', 'side']]) if (o[k] !== undefined) g[to] = o[k];
+        if (venue !== undefined) g.venue = venue;
+        if (home) g.home = home;
         data.games.push(g);
       } else {
         const e = { row: o.row, team, date };
-        if (o.name) e.title = o.name;
-        for (const [k, to] of [['start', 'start'], ['end', 'end'], ['minutes', 'minutes'], ['venue', 'venue'], ['note', 'notes'], ['public', 'public']]) if (o[k] !== undefined) e[to] = o[k];
-        (CSV_PRACTICE.test(ty) || (!ty && /practi[cs]e|training/i.test(o.name || '')) ? data.practices : data.events).push(e);
+        if (o.name) e.title = o.name; else if (ty && !practice) e.title = ty;
+        for (const [k, to] of [['start', 'start'], ['end', 'end'], ['minutes', 'minutes'], ['note', 'notes'], ['public', 'public']]) if (o[k] !== undefined) e[to] = o[k];
+        if (venue !== undefined) e.venue = venue;
+        (practice ? data.practices : data.events).push(e);
       }
     }
     for (const k of ['games', 'practices', 'events']) if (!data[k].length) delete data[k];
+    // a schedule that gives each place's address brings the club's fields with it
+    if (places.size) data.fields = [...places.values()];
     // a schedule for a team that isn't here yet makes it, as a roster would
     const names = [...new Set(recs.map(teamOf).filter(Boolean))];
     if (names.length) data.teams = names.map(name => ({ name }));
   }
-  return { data, kind, needsTeam, unused, rows: recs.length };
+  return { data, kind, needsTeam, unused, rows: recs.length, warnings };
 }
 const CSV_KIND = { players: 'a roster', schedule: 'a schedule', fields: 'a list of fields' };
 /* Templates to fill in, so nobody has to guess the headings. */
@@ -3748,7 +3789,7 @@ function sheetImport(text, team) {
       <label class="field"><span>Or a new team's name</span><input type="text" id="impNewTeam" maxlength="80" placeholder="Lakeside Thunder G12"></label>` : '';
   const list = (items, cls) => items.length ? `<div class="implist ${cls}">${items.slice(0, 30).map(esc).join('<br>')}${items.length > 30 ? `<br>…and ${items.length - 30} more` : ''}</div>` : '';
   openSheet(`<h3>Bulk import</h3>
-    <p class="muted" style="margin-top:0">Coming from another app or a spreadsheet? Save each sheet as CSV — a roster, a schedule of games and practices, a list of fields — and bring them in one at a time, or everything at once as one JSON file. Teams, players and fields are matched by name, games by team, date and opponent, practices by team, date and start, and sessions by date, start and coach, so running the same file twice changes nothing. Nothing already here is removed.</p>
+    <p class="muted" style="margin-top:0">Coming from another app or a spreadsheet? Save each sheet as CSV or tab-separated (TSV) — a roster, a schedule of games and practices, a list of fields — and bring them in one at a time, or everything at once as one JSON file. Teams, players and fields are matched by name, games by team, date and opponent, practices by team, date and start, and sessions by date, start and coach, so running the same file twice changes nothing. Nothing already here is removed.</p>
     <div class="row" style="margin-bottom:10px">
       <button class="btn quiet sm" data-act="importfile">Choose a file</button>
       <button class="btn quiet sm" data-act="importexample">Show an example</button>
@@ -3768,7 +3809,7 @@ function sheetImport(text, team) {
     ${plan ? `${list(plan.errors, 'warn alert')}
       ${plan.errors.length ? '<p class="muted">Fix those and check again — nothing is imported while any are left.</p>'
       : `<p><b>This ${plan.backup ? 'backup' : 'file'} ${esc(importSummary(plan.counts))}.</b></p>`}
-      ${list(plan.warnings, '')}
+      ${list([...((csv && csv.warnings) || []), ...plan.warnings], '')}
       ${!plan.errors.length && (plan.writes.length || plan.sessWrites.length || plan.trainWrites.length) ? `<button class="btn wide" data-act="importgo">Import it</button>` : ''}` : ''}
     <p class="muted" style="margin-bottom:0">It holds children's names, so treat the file the way you would the roster itself. Names never reach the parent pages.</p>`);
 }
