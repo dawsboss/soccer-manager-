@@ -2,7 +2,7 @@
    Static app. Data lives in localStorage, and mirrors to Firebase Realtime
    Database when a config + workspace code are present. */
 
-const BUILD = '86';
+const BUILD = '89';
 const BUILT = '2026-10-04';
 /* The version of database.rules.json this app was written against. The rules
    carry the same number in rulesVersion's .write, which accepts that number
@@ -11,7 +11,7 @@ const BUILT = '2026-10-04';
    never pasted look exactly like a coach with no signal: "saved on this phone
    only", one feature at a time. test/rules.js holds the two numbers together
    and fails when the rules change without this going up. */
-const RULES_VERSION = 2;
+const RULES_VERSION = 4;
 /* index.html carries the build it was published with. If this file is newer, the
    browser handed us a cached page — the exact failure that has eaten hours. */
 const pageBuild = () => {
@@ -419,6 +419,8 @@ async function initAuth() {
       const uid = me ? me.uid : null;
       // her own drills are hers, not the phone's: gone the moment she is
       if (mineUid && mineUid !== uid) forgetMine();
+      // and so is her calendar of every club she is in
+      if (you.uid && you.uid !== uid) forgetYou();
       // identity changed after boot — e.g. someone signs in from the lock
       // screen — so any earlier refusal is stale; read the workspace again
       if (prevUid !== undefined && prevUid !== uid) {
@@ -710,6 +712,7 @@ function overlayPending(target, under) {
 }
 /* The connect-time read: the club's copy, with what this phone made and the
    club hasn't got laid over it, then all of that sent again. */
+// SERVER.md: stays with a server too: the phone still works offline first.
 function mergeConnect(v) {
   const remote = { teams: v.teams || {}, matches: v.matches || {}, access: v.access || {}, rsvp: v.rsvp || {} };
   const owed = [];
@@ -726,6 +729,7 @@ function mergeConnect(v) {
   state = remote;
   return owed;
 }
+// SERVER.md: stays with a server too: the phone still works offline first.
 function flushPending() {
   if (!fb) return;
   for (const [p, e] of pendingList()) sendPending(p, e.n, e.v, e.del).catch(() => { });
@@ -792,6 +796,7 @@ function paintSync() {
    this sends it on every connect too, so a plan made offline reaches the
    club even if nobody opens Plans again. Messages do the same from their
    outbox whenever the app is open. */
+// SERVER.md: stays with a server too: the phone still works offline first.
 function flushTraining() {
   if (!fb || !me) return;
   for (const k of Object.keys(train.dirty || {})) { const i = k.indexOf('/'); if (i > 0) sendPractice(k.slice(0, i), k.slice(i + 1)); }
@@ -903,6 +908,7 @@ const ROLE_LABEL = { owner: 'App owner', admin: 'Org admin', coach: 'Coach', tra
    around in history, and needs a deploy to change. Set it by hand in the
    Firebase console; the rules make it read-only to everyone. */
 let appOwners = {};
+// SERVER.md: opens buttons the rules don't back (rules.js gap 2); a server would make it a real role.
 const isOwner = () => !!(me && appOwners[me.uid]);
 const canAdmin = () => isOwner() || (me && isAdmin(me.uid));
 /* Mirrors what the security rule checks, so the UI and the database agree. */
@@ -932,6 +938,7 @@ function logAccess(act, targetUid, extra) {
 }
 const auditLog = () => Object.values(acc().log || {}).sort((a, b) => b.at - a.at);
 
+// SERVER.md: a lookup table rebuilt by phones on connect; a server trigger would keep it true at once.
 function syncIndex(uid) {
   if (!uid) return;
   syncCoachIndex(uid);
@@ -961,6 +968,7 @@ function syncIndex(uid) {
    A tracker can still write more of a match than the interface offers her. That
    is the limit of what a rule can express without per-field rules, and AUTH.md
    already says so; what this closes is the cross-team hole and the parent one. */
+// SERVER.md: a lookup table rebuilt by phones on connect; a server trigger would keep it true at once.
 function syncTeamIndex(tid) {
   if (!tid) return;
   const ta = teamAccess(tid), want = {};
@@ -992,6 +1000,7 @@ function coachTeamOf(uid) {
   const ts = acc().teams || {};
   return Object.keys(ts).sort().find(tid => ((ts[tid] || {}).coaches || {})[uid]) || null;
 }
+// SERVER.md: a lookup table rebuilt by phones on connect; a server trigger would keep it true at once.
 function syncCoachIndex(uid) {
   if (!uid) return;
   const now = (acc().coachIndex || {})[uid] || null;
@@ -1033,6 +1042,7 @@ function parentsWanted(tid) {
     for (const u of Object.keys(p.guardians || {})) if (!want[u]) want[u] = p.id;
   return want;
 }
+// SERVER.md: a lookup table rebuilt by phones on connect; a server trigger would keep it true at once.
 function syncTeamParents(tid) {
   if (!tid || !me || !state.teams[tid]) return;
   if (!isAdmin(me.uid) && !isCoach(tid, me.uid)) return;
@@ -1089,6 +1099,7 @@ function claimTeamIds(tid) {
    sharing on. The id lives on the game, so it follows the game and dies with
    it. Readers never make one: the button that needs it waits for the coach's
    phone to have published. */
+// SERVER.md: an older game gets its link from whichever phone opens it next; a server would give it one.
 function ensureFixtureShares(t) {
   if (!t || !t.share || !canEditTeam(t.id)) return false;
   let made = false;
@@ -1297,6 +1308,7 @@ let rtdb = null;        // { db, mod } once the database module has loaded, code
    written a higher number). Asked once a session, by an admin's phone,
    because an admin is the one who can paste them. */
 let rulesCheck = null;
+// SERVER.md: an admin pastes the rules by hand and her phone checks; a server deploys them with the code.
 function checkRules() {
   if (!rtdb || rulesCheck) return;
   rulesCheck = 'asking';
@@ -1422,6 +1434,7 @@ function inviteScreen() {
    a write against what is there when it arrives. The first four writes are
    the grant; the rest is bookkeeping, and a refusal there leaves the grant
    standing — an admin's device rebuilds the team index on its next connect. */
+// SERVER.md: several writes in the order the rules need; a server would do it in one call.
 async function redeemInvite() {
   if (!invite || invite.status !== 'ready' || !rtdb || !me) return;
   const id = invite.id, v = invite.doc, who = me.uid, ws = v.ws, at = nowMs();
@@ -1470,6 +1483,7 @@ async function redeemInvite() {
    half-made one is not cheap to explain. The code is long and random, so the
    trust-on-first-use window rules.js prints is a code nobody else knows. */
 let newClubBusy = false;
+// SERVER.md: a new club claimed by the first writer (trust-on-first-use); a server would issue it.
 async function createClub(name) {
   if (!rtdb || !me || newClubBusy) return false;
   const code = 'sm-' + uid() + uid(), who = me.uid, at = nowMs();
@@ -1540,6 +1554,7 @@ function watchMyClubs() {
 /* Keep this account's list of clubs true without anybody being told to: any
    device that reads a club it holds a role in writes the bookmark, so people
    who joined before this existed pick it up on their next connect. */
+// SERVER.md: the bookmark is kept true by whichever phone reads the club; a server would write it with the role.
 function noteMyClub() {
   const code = wsCode();
   if (!rtdb || !me || !code || !myClubs || isSandbox()) return;
@@ -1707,6 +1722,7 @@ function sheetSquadInvites(tid) {
     : `<p class="muted">Every player on the squad has a parent linked.</p>`}
     <button class="btn quiet wide" data-act="closesheet">Done</button>`);
 }
+// SERVER.md: one invite at a time from the admin's phone; a server would make the squad's in one call.
 async function inviteSquad(tid) {
   const t = state.teams[tid];
   if (!t || !canAdmin()) { toast('Club admins only'); return; }
@@ -1967,6 +1983,7 @@ function claimMatches(t, c) {
   return players(t).filter(p => p.active !== false && nums.includes(String(p.number ?? '').trim().toLowerCase()));
 }
 
+// SERVER.md: approval written before the index entry, for the rules; a server would do it in one call.
 async function approveClaim(tid, u, pids) {
   const t = state.teams[tid];
   if (!t || !mayGrant(tid)) { toast('Club admins and that team’s coaches only'); return; }
@@ -2109,6 +2126,7 @@ function rootSet(p, v) {
    squad's cache is kept for an unsynced game, but nothing here exists only on
    this device except the outbox, and a private conversation does not belong on
    a phone somebody else may sign in on next. */
+// SERVER.md: notices heard only while the page is open; a server sender would push them.
 function watchMessages() {
   const key = me && rtdb && fb && wsCode() && !needsSignIn() ? clubKey() + '|' + me.uid : null;
   if (key !== (msgFor && msgFor.key)) {
@@ -2171,7 +2189,9 @@ function onMsgs(p, w, v) {
   }
   const fresh = msgNews(p, w);
   saveMsgs();
-  for (const x of fresh) ping(x.title, x.body, 'minutes-msg-' + x.id, x.urgent ? [200, 80, 200, 80, 200] : [150, 60, 150]);
+  // an alert each, which pops up as before and also waits over the screen until she opens it
+  for (const x of fresh) pushAlert({ id: 'm:' + x.id, code: msgFor.code, kind: 'msg', urgent: x.urgent, title: x.title, body: x.body,
+    hash: w.kind === 'board' ? '#/messages' : `#/messages/${w.tid}/${x.fam || w.fam}` });
   msgPaint();
 }
 
@@ -2190,7 +2210,7 @@ function msgNews(p, w) {
       if (w.fam && fam !== w.fam) continue;
       const mark = (th.seen || {})[msgFor.uid] || 0;
       for (const [id, x] of Object.entries(th.m || {}))
-        items.push({ id, by: x.by, seen: (x.at || 0) <= mark,
+        items.push({ id, fam, by: x.by, seen: (x.at || 0) <= mark,
           title: w.fam ? `${x.byName || 'A coach'} · ${tn}` : `${familyName(fam)} · ${tn}`, body: x.text });
     }
   }
@@ -2222,7 +2242,8 @@ function threadUnread(tid, fam) {
   return threadMsgs(tid, fam).filter(x => x.by !== me.uid && !x.status && (x.at || 0) > mark).length;
 }
 function unreadCount() {
-  const news = newsFor() ? newsUnread() : 0;
+  // every club's: the other clubs' unread messages, and alerts about her calendar not looked at yet
+  const news = (newsFor() ? newsUnread() : 0) + (me ? elseUnread() + alertsUnread() : 0);
   if (!msgFor) return news;
   let n = news;
   for (const t of msgTeams()) n += notices(t.id).filter(noticeUnread).length;
@@ -2317,7 +2338,10 @@ function queueMsg(kind, tid, fam, text, extra) {
 
 /* ---- screens ---- */
 function viewInbox() {
-  const news = newsFor() ? newsCard() : '';
+  // opening the inbox reads the calendar alerts, as it reads club activity
+  if (me && alertsHere().list.some(x => x.kind === 'cal' && !x.read)) { for (const x of alerts.list) if (x.kind === 'cal') x.read = true; saveAlerts(); }
+  const news = (me ? alertsCard() : '') + (newsFor() ? newsCard() : '');
+  if (!msgOn() && news) return `<div class="stack">${news}</div>`;
   if (news && !msgOn()) return `<div class="stack">${news}</div>`;
   return news ? viewInboxMsgs().replace('<div class="stack">', '<div class="stack">' + news) : viewInboxMsgs();
 }
@@ -2483,7 +2507,7 @@ function msgPaint() {
 function paintBell(shut) {
   const n = shut ? 0 : unreadCount();
   const b = $('#inboxBtn');
-  if (b) { b.hidden = !!shut || !(msgOn() || (newsFor() && newsItems().length)); b.dataset.n = n ? String(n) : ''; }
+  if (b) { b.hidden = !!shut || !(msgOn() || (newsFor() && newsItems().length) || alertsHere().list.length || youClubs().length); b.dataset.n = n ? String(n) : ''; }
   const c = $('#inboxN'); if (c) c.textContent = n ? (n > 9 ? '9+' : String(n)) : '';
   if (typeof document !== 'undefined') document.title = (n ? `(${n}) ` : '') + 'Minutes — soccer sub tracker';
 }
@@ -2654,7 +2678,10 @@ const IMPORT_EXAMPLE = {
     ],
     games: [
       { opponent: 'Riverside', date: '2026-09-06', kickoff: '10:00', venue: 'Lakeside Park', periods: 2, minutes: 30, side: 9, score: '3-1', scorers: [7, 7, 10] },
-      { opponent: 'Northgate', date: '2026-10-04', kickoff: '09:30', venue: 'Northgate Rec, field 2', periods: 2, minutes: 30, side: 9, shape: '3-3-2' }
+      { opponent: 'Northgate', date: '2026-10-04', kickoff: '09:30', venue: 'Northgate Rec, field 2', periods: 2, minutes: 30, side: 9, shape: '3-3-2', home: 'away', arrive: '09:00', kit: 'White shirts' }
+    ],
+    practices: [
+      { date: '2026-09-08', start: '17:30', end: '19:00', where: 'Lakeside Park', weekly: { days: ['Tue', 'Thu'], until: '2026-11-26' } }
     ]
   }],
   fields: [{
@@ -2683,7 +2710,7 @@ function importScore(v) {
 /* Pure: reads `data` against the club as it stands and returns what importing
    it would do. Nothing in state changes until applyImport(). */
 function importPlan(data, cur = state) {
-  const out = { writes: [], sessWrites: [], trainWrites: [], errors: [], warnings: [], counts: { newTeams: 0, teams: 0, newPlayers: 0, players: 0, newGames: 0, games: 0, results: 0, newFields: 0, fields: 0, newSessions: 0, sessions: 0, bookings: 0, training: 0 } };
+  const out = { writes: [], sessWrites: [], trainWrites: [], errors: [], warnings: [], counts: { newTeams: 0, teams: 0, newPlayers: 0, players: 0, newGames: 0, games: 0, results: 0, newPractices: 0, newEvents: 0, entries: 0, newFields: 0, fields: 0, newSessions: 0, sessions: 0, bookings: 0, training: 0 } };
   const put = (path, value) => out.writes.push([path, value]);
   if (!data || typeof data !== 'object' || Array.isArray(data)) { out.errors.push('The file should be one JSON object with a "teams", "fields" or "sessions" list in it.'); return out; }
 
@@ -2696,14 +2723,23 @@ function importPlan(data, cur = state) {
   const fresh = new Set();
   const teamList = Array.isArray(data.teams) ? data.teams : [];
   const looseGames = Array.isArray(data.games) ? data.games : [];
-  const training = ['fields', 'sessions'].some(k => data[k] !== undefined);
-  if (!teamList.length && !looseGames.length && !training) { out.errors.push('Nothing to import: expected a "teams" list, and optionally "games", "fields" and "sessions" lists.'); return out; }
+  const training = ['fields', 'sessions', 'practices', 'events'].some(k => data[k] !== undefined);
+  if (!teamList.length && !looseGames.length && !training) { out.errors.push('Nothing to import: expected a "teams" list, and optionally "games", "practices", "events", "fields" and "sessions" lists.'); return out; }
 
   // drafts of every team touched, so later rows in the file see earlier ones
   const byName = {};
   for (const t of Object.values(cur.teams || {})) if (t && t.name) byName[importKey(t.name)] = { t, isNew: false };
   const gameIndex = {};
   for (const m of Object.values(cur.matches || {})) if (m && m.teamId) gameIndex[[m.teamId, m.date || '', importKey(m.opponent)].join('|')] = m;
+
+  /* A calendar entry is matched by its team, date, start and whether it is a
+     practice, so a second run, or a weekly practice already typed in by hand,
+     adds nothing twice. */
+  const entryIndex = {};
+  const entryKey = (tid, date, start, kind) => [tid, date, start, kind].join('|');
+  for (const t of Object.values(cur.teams || {})) for (const e of Object.values((t && t.events) || {}))
+    if (e && e.id) entryIndex[entryKey(t.id, e.date || '', hm(e.start), e.kind === 'practice' ? 'practice' : 'event')] = e;
+  const freshEntry = new Set();
 
   const teamFor = (name, where, create) => {
     const k = importKey(name);
@@ -2783,11 +2819,28 @@ function importPlan(data, cur = state) {
     const label = `${where} (${opponent})`;
     const date = String(firstOf(g, 'date') ?? '').trim();
     if (date && !/^\d{4}-\d{2}-\d{2}$/.test(date)) { out.errors.push(`${label}: date "${date}" should be written 2026-10-04.`); return; }
-    const kickoff = String(firstOf(g, 'kickoff', 'time') ?? '').trim();
-    if (kickoff && !/^\d{1,2}:\d{2}$/.test(kickoff)) { out.errors.push(`${label}: kick-off "${kickoff}" should be written 09:30.`); return; }
+    const kickoff = String(firstOf(g, 'kickoff', 'time', 'start') ?? '').trim();
+    if (kickoff && !importTime(kickoff)) { out.errors.push(`${label}: kick-off "${kickoff}" should be written 09:30.`); return; }
     const fields = { opponent };
     if (date) fields.date = date;
-    if (kickoff) fields.kickoff = kickoff.padStart(5, '0');
+    if (kickoff) fields.kickoff = importTime(kickoff);
+    /* The match-day details a fixture list carries: home or away, when to
+       be there, and what to wear. Read loosely, since every league writes
+       them its own way, and left out (said) when they can't be read. */
+    const ha = firstOf(g, 'home', 'homeAway', 'ground');
+    if (ha !== undefined) {
+      const h = importHome(ha);
+      if (h) fields.home = h; else out.warnings.push(`${label}: "${ha}" is not home, away or neutral, so it was left out.`);
+    }
+    const arr = firstOf(g, 'arrive', 'arrival', 'arriveBy');
+    if (arr !== undefined) {
+      const at = importTime(arr);
+      if (at) fields.arrive = at; else out.warnings.push(`${label}: arrive by "${arr}" is not a time, so it was left out.`);
+    }
+    const kit = firstOf(g, 'kit', 'uniform', 'colours', 'colors');
+    if (kit !== undefined) fields.kit = String(kit).trim().slice(0, 80);
+    const gn = firstOf(g, 'notes', 'note');
+    if (gn !== undefined) fields.notes = String(gn).trim().slice(0, 2000);
     const venue = firstOf(g, 'venue', 'where', 'location');
     if (venue !== undefined) fields.venue = String(venue).trim();
     const pc = firstOf(g, 'periods', 'periodCount');
@@ -2873,6 +2926,80 @@ function importPlan(data, cur = state) {
     out.counts.newGames++;
   };
 
+  /* A practice or another entry on a team's calendar, as the Calendar tab
+     makes one: teams/{tid}/events/{eid}, one per week for a weekly one,
+     sharing a series id. Team-only unless the file says "public". */
+  const addEntry = (entry, x, where, kind0) => {
+    const t = entry.t;
+    if (!x || typeof x !== 'object') { out.errors.push(`${where}: expected an entry like {"date": "2026-10-06", "start": "17:30", "end": "19:00"}.`); return; }
+    const ty = String(firstOf(x, 'type', 'kind') ?? '').trim();
+    const kind = kind0 || (/practi[cs]e|training/i.test(ty) ? 'practice' : 'event');
+    const title0 = String(firstOf(x, 'title', 'name', 'what') ?? '').trim().slice(0, 80);
+    const label = `${where} (${title0 || CAL_KIND[kind]})`;
+    const errs = out.errors.length;
+    const date = importDate(firstOf(x, 'date'));
+    if (!date) out.errors.push(`${label}: date ${JSON.stringify(firstOf(x, 'date') ?? '')} should be written 2026-10-06.`);
+    const st0 = firstOf(x, 'start', 'time', 'from'), en0 = firstOf(x, 'end', 'finish', 'until', 'to');
+    const start = st0 === undefined ? '' : importTime(st0);
+    if (start === null) out.errors.push(`${label}: start "${st0}" should be written 17:30 or 5:30pm.`);
+    let end = en0 === undefined ? '' : importTime(en0);
+    if (end === null) out.errors.push(`${label}: end "${en0}" should be written 19:00 or 7pm.`);
+    const dur = firstOf(x, 'minutes', 'duration', 'length');
+    if (!end && start && dur !== undefined) {
+      const n = Number(String(dur).replace(/[^0-9.]/g, ''));
+      if (n > 0 && n <= 600) end = minHm((minOf(start) + n) % 1440);
+      else out.warnings.push(`${label}: ${JSON.stringify(dur)} is not a number of minutes, so it has no end time.`);
+    }
+    const rep = firstOf(x, 'weekly', 'repeat', 'repeats');
+    let days = [], until = '';
+    if (rep !== undefined && rep !== false && rep !== '') {
+      const r = typeof rep === 'object' ? rep : { until: rep };
+      until = importDate(firstOf(r, 'until', 'to', 'end', 'ending'));
+      const d = importDays(firstOf(r, 'days', 'day'));
+      if (!until) out.errors.push(`${label}: a weekly ${kind === 'practice' ? 'practice' : 'entry'} needs the date of the last one ("until": "2026-12-16").`);
+      if (d.bad.length) out.errors.push(`${label}: "${d.bad.join(', ')}" ${d.bad.length === 1 ? 'is not a day' : 'are not days'}.`);
+      days = d.days;
+    }
+    if (out.errors.length > errs) return;
+    // only what the file gives is changed on an entry already here
+    const given = { kind };
+    if (title0) given.title = title0;
+    if (end) given.end = end;
+    const venue = firstOf(x, 'venue', 'where', 'location', 'field', 'place');
+    if (venue !== undefined) given.venue = String(venue).trim().slice(0, 120);
+    const notes = firstOf(x, 'notes', 'note', 'details');
+    if (notes !== undefined) given.notes = String(notes).trim().slice(0, 2000);
+    const pub = firstOf(x, 'public', 'shared');
+    if (pub !== undefined) given.public = importBool(pub, false);
+    const fields = { title: CAL_KIND[kind], start, end: '', venue: '', notes: '', public: false, ...given };
+    const dates = until ? seriesDates(date, until, days.length ? days : [weekdayOf(date)]) : [date];
+    if (until && !dates.length) { out.warnings.push(`${label}: no days between ${date} and ${until}, so nothing was added.`); return; }
+    if (until && dates.length >= SERIES_MAX) out.warnings.push(`${label}: only the first ${SERIES_MAX} weeks were added; add the rest as a second entry.`);
+    if (!start) out.warnings.push(`${label}: no start time, so it shows as "time to be confirmed".`);
+    const old = dates.map(d => entryIndex[entryKey(t.id, d, start, kind)]).find(e => e && !freshEntry.has(e.id) && e.series);
+    const series = dates.length > 1 ? (old ? old.series : uid()) : null;
+    let twice = false, updated = false;
+    for (const d of dates) {
+      const k = entryKey(t.id, d, start, kind), had = entryIndex[k];
+      if (had && freshEntry.has(had.id)) { twice = true; continue; }
+      if (had) {
+        const changed = Object.entries(given).filter(([f, v]) => JSON.stringify(had[f] ?? (f === 'public' ? false : '')) !== JSON.stringify(v));
+        for (const [f, v] of changed) { had[f] = v; put(`teams/${t.id}/events/${had.id}/${f}`, v); }
+        if (changed.length) updated = true;
+        continue;
+      }
+      const id = uid();
+      const e = { id, ...fields, date: d, ...(series ? { series } : {}), createdAt: nowMs(), ...(me ? { by: me.uid } : {}) };
+      // a brand-new team is written whole, so its calendar rides along with it
+      if (entry.isNew) { t.events = t.events || {}; t.events[id] = e; } else put(`teams/${t.id}/events/${id}`, e);
+      entryIndex[k] = e; freshEntry.add(id);
+      out.counts[kind === 'practice' ? 'newPractices' : 'newEvents']++;
+    }
+    if (updated) out.counts.entries++;
+    if (twice) out.warnings.push(`${label}: appears twice in the file, so it was imported once.`);
+  };
+  const rowOr = (x, dflt) => (x && typeof x === 'object' && x.row ? `Row ${x.row}` : dflt);
+
   teamList.forEach((tt, i) => {
     const where = `Team ${i + 1}`;
     if (!tt || typeof tt !== 'object') { out.errors.push(`${where}: expected a team like {"name": "...", "players": [...]}.`); return; }
@@ -2889,15 +3016,27 @@ function importPlan(data, cur = state) {
       else if (Number(entry.t.birthYear) !== n) out.warnings.push(`${w}: already born ${entry.t.birthYear} here, so ${n} was left out.`);
     }
     if (tt.players !== undefined && !Array.isArray(tt.players)) out.errors.push(`${w}: "players" should be a list.`);
-    else (tt.players || []).forEach((p, j) => addPlayer(entry, p, `${w}, player ${j + 1}`));
+    else (tt.players || []).forEach((p, j) => addPlayer(entry, p, rowOr(p, `${w}, player ${j + 1}`)));
     if (tt.games !== undefined && !Array.isArray(tt.games)) out.errors.push(`${w}: "games" should be a list.`);
-    else (tt.games || []).forEach((g, j) => addGame(entry, g, `${w}, game ${j + 1}`));
+    else (tt.games || []).forEach((g, j) => addGame(entry, g, rowOr(g, `${w}, game ${j + 1}`)));
+    for (const [k, kind, one] of [['practices', 'practice', 'practice'], ['events', null, 'entry']]) {
+      if (tt[k] !== undefined && !Array.isArray(tt[k])) out.errors.push(`${w}: "${k}" should be a list.`);
+      else (tt[k] || []).forEach((x, j) => addEntry(entry, x, rowOr(x, `${w}, ${one} ${j + 1}`), kind));
+    }
   });
   looseGames.forEach((g, j) => {
-    const where = `Game ${j + 1}`;
+    const where = rowOr(g, `Game ${j + 1}`);
     const entry = teamFor(g && g.team, where, false); if (!entry) return;
     addGame(entry, g, where);
   });
+  for (const [k, kind, one] of [['practices', 'practice', 'Practice'], ['events', null, 'Entry']]) {
+    if (data[k] !== undefined && !Array.isArray(data[k])) { out.errors.push(`"${k}" should be a list.`); continue; }
+    (data[k] || []).forEach((x, j) => {
+      const where = rowOr(x, `${one} ${j + 1}`);
+      const entry = teamFor(x && x.team, where, false); if (!entry) return;
+      addEntry(entry, x, where, kind);
+    });
+  }
 
   // after the teams, so a session can book a player the same file has just added
   importTraining(data, out, byName, acc0);
@@ -2965,6 +3104,7 @@ async function trainingCopy(extra = {}) {
   });
   return { T, missed, known };
 }
+// SERVER.md: a backup is an admin remembering to tap; a server would take them nightly.
 async function backupDoc() {
   const { T, missed } = await trainingCopy();
   return { doc: { ...clone(state), training: T, savedAt: nowMs(), build: BUILD }, missed };
@@ -3095,13 +3235,17 @@ function importDays(v) {
 /* "17:30", "5:30pm" or "5pm". A bare "17" is not a time: it is as likely to be
    a number of minutes. */
 function importTime(v) {
-  const x = String(v ?? '').trim().toLowerCase().match(/^(\d{1,2})(?::(\d{2}))?\s*(am|pm)?$/);
+  const x = String(v ?? '').trim().toLowerCase().replace(/\./g, '').match(/^(\d{1,2})(?::(\d{2}))?(?::00)?\s*(am|pm)?$/);
   if (!x || (x[2] === undefined && !x[3])) return null;
   let h = Number(x[1]); const m = Number(x[2] || 0);
   if (x[3]) { if (h < 1 || h > 12) return null; h = h % 12 + (x[3] === 'pm' ? 12 : 0); }
   return h <= 23 && m <= 59 ? pad2(h) + ':' + pad2(m) : null;
 }
 const importDate = v => (/^\d{4}-\d{2}-\d{2}$/.test(String(v ?? '').trim()) ? String(v).trim() : null);
+const importHome = v => {
+  const k = String(v ?? '').trim().toLowerCase();
+  return /^(h|home|host|hosting|vs\.?)$/.test(k) ? 'home' : /^(a|away|@|at|visiting|visitor)$/.test(k) ? 'away' : /^(n|neutral|neutral ground|tournament)$/.test(k) ? 'neutral' : '';
+};
 const importBool = (v, dflt) => (v === undefined || v === null || v === '' ? dflt : !(v === false || /^(n|no|false|0|off)$/i.test(String(v).trim())));
 function importMoney(v) {
   if (v === undefined || v === null || v === '' || /^free$/i.test(String(v).trim())) return 0;
@@ -3158,7 +3302,7 @@ function importTraining(data, out, byName, acc0) {
   for (const f of Object.values(venues)) if (f && f.id && f.name) fieldByName[importKey(f.name)] = { f, isNew: false };
   if (data.fields !== undefined && !Array.isArray(data.fields)) out.errors.push('"fields" should be a list.');
   else (data.fields || []).forEach((x, i) => {
-    const where = `Field ${i + 1}`;
+    const where = x && x.row ? `Row ${x.row}` : `Field ${i + 1}`;
     if (!x || typeof x !== 'object') { out.errors.push(`${where}: expected a field like {"name": "Lakeside Park", "permits": [...]}.`); return; }
     const name = String(firstOf(x, 'name') ?? '').trim().slice(0, 80);
     if (!name) { out.errors.push(`${where}: a field needs a name.`); return; }
@@ -3359,11 +3503,11 @@ function importSummary(c) {
   const bits = [];
   const n = (k, one, many) => c[k] ? `${c[k]} ${c[k] === 1 ? one : many}` : null;
   const add = [n('newTeams', 'team', 'teams'), n('newPlayers', 'player', 'players'), n('newGames', 'game', 'games'),
-    n('newFields', 'field', 'fields'), n('newSessions', 'session', 'sessions'), n('bookings', 'booking', 'bookings'),
+    n('newPractices', 'practice', 'practices'), n('newEvents', 'calendar entry', 'calendar entries'), n('newFields', 'field', 'fields'), n('newSessions', 'session', 'sessions'), n('bookings', 'booking', 'bookings'),
     n('training', 'training record', 'training records')].filter(Boolean);
   if (add.length) bits.push('adds ' + add.join(', '));
   const upd = [n('teams', 'team', 'teams'), n('players', 'player', 'players'), n('games', 'game', 'games'),
-    n('fields', 'field', 'fields'), n('sessions', 'session', 'sessions')].filter(Boolean);
+    n('entries', 'calendar entry', 'calendar entries'), n('fields', 'field', 'fields'), n('sessions', 'session', 'sessions')].filter(Boolean);
   if (upd.length) bits.push('updates ' + upd.join(', '));
   if (c.results) bits.push(`${c.results} with a final score`);
   return bits.length ? bits.join(' · ') : 'nothing new — everything in it is already here';
@@ -3372,6 +3516,7 @@ function importSummary(c) {
 /* Writes at the depth the rules sit at: a whole team or game only when it is
    new, a single field of one that already exists. The same order a
    hand-entered team and its games would go out in. */
+// SERVER.md: one write at a time from the admin's phone; a server would apply the whole file or none.
 function applyImport(plan) {
   for (const [path, value] of plan.writes) { setDeep(state, path, value); remoteSet(path, value); }
   saveLocal();
@@ -3381,7 +3526,195 @@ function applyImport(plan) {
   render(); schedulePublish();
 }
 
+/* ---- spreadsheets ---- */
+/* Most clubs arrive with a spreadsheet, not a JSON file: a roster from the
+   registration system, a fixture list from the league, a practice schedule
+   somebody typed up. So a CSV (what any spreadsheet saves as) is read into
+   the same shape the JSON takes and planned by the same importPlan(), with
+   every promise that makes: matched, merged, never replacing, nothing written
+   while an error is left. The columns are matched by name, loosely, because
+   no two systems export the same headings; a column it can't place is said,
+   never guessed at. */
+function parseCsv(text) {
+  const src = String(text || '').replace(/^﻿/, '');
+  const firstLine = src.split(/\r?\n/, 1)[0] || '';
+  const count = ch => firstLine.split(ch).length - 1;
+  const delim = count('\t') > count(',') && count('\t') >= count(';') ? '\t' : count(';') > count(',') ? ';' : ',';
+  const rows = [];
+  let row = [], cell = '', q = false;
+  for (let i = 0; i < src.length; i++) {
+    const c = src[i];
+    if (q) {
+      if (c === '"') { if (src[i + 1] === '"') { cell += '"'; i++; } else q = false; }
+      else cell += c;
+    } else if (c === '"' && cell.trim() === '') { cell = ''; q = true; }
+    else if (c === delim) { row.push(cell); cell = ''; }
+    else if (c === '\n' || c === '\r') {
+      if (c === '\r' && src[i + 1] === '\n') i++;
+      row.push(cell); rows.push(row); row = []; cell = '';
+    } else cell += c;
+  }
+  if (cell !== '' || row.length) { row.push(cell); rows.push(row); }
+  return rows.map(r => r.map(x => x.trim())).filter(r => r.some(Boolean));
+}
+/* Heading, as most exports write it, to what it is. */
+const CSV_COLS = {
+  team: ['team', 'teamname', 'squad', 'division', 'agegroup'],
+  name: ['name', 'player', 'playername', 'fullname', 'title', 'eventname', 'fieldname'],
+  first: ['firstname', 'first', 'givenname', 'forename', 'playerfirstname'],
+  last: ['lastname', 'last', 'surname', 'familyname', 'playerlastname'],
+  number: ['number', 'no', 'num', 'jersey', 'jerseynumber', 'jerseyno', 'shirt', 'shirtnumber', 'uniformnumber'],
+  position: ['position', 'pos', 'preferredposition'],
+  also: ['also', 'otherpositions', 'canplay'],
+  gk: ['gk', 'keeper', 'goalkeeper'],
+  rating: ['rating'], note: ['note', 'notes', 'comments', 'details', 'description'], active: ['active'],
+  born: ['birthyear', 'born', 'yearofbirth'],
+  type: ['type', 'kind', 'eventtype', 'category'],
+  date: ['date', 'day', 'gamedate', 'eventdate', 'startdate', 'matchdate'],
+  start: ['start', 'time', 'starttime', 'kickoff', 'kickofftime', 'from'],
+  end: ['end', 'endtime', 'finish', 'until', 'to'],
+  minutes: ['duration', 'length', 'durationminutes', 'mins', 'minutes'],
+  opponent: ['opponent', 'opponents', 'opposition', 'vs', 'versus', 'against', 'opponentname'],
+  hometeam: ['hometeam', 'home'], awayteam: ['awayteam', 'away', 'visitor', 'visitingteam'],
+  homeaway: ['homeaway', 'ha', 'homeoraway', 'ground'],
+  venue: ['venue', 'location', 'where', 'place', 'field', 'pitch', 'locationname'],
+  arrive: ['arrive', 'arrival', 'arrivaltime', 'arriveby', 'meettime'],
+  kit: ['kit', 'uniform', 'colours', 'colors', 'jerseycolor'],
+  score: ['score', 'result', 'finalscore'],
+  side: ['side', 'aside', 'format', 'playersaside'],
+  address: ['address', 'streetaddress'], pitches: ['pitches', 'fields', 'numberoffields', 'numberofpitches'],
+  surface: ['surface', 'turf'], lights: ['lights', 'lit', 'floodlights'],
+  public: ['public', 'shared', 'onsharelink']
+};
+const CSV_ALIAS = Object.fromEntries(Object.entries(CSV_COLS).flatMap(([k, vs]) => vs.map(v => [v, k])));
+const csvHead = h => (String(h).trim() === '#' ? 'number' : CSV_ALIAS[String(h).toLowerCase().replace(/[^a-z0-9]/g, '')] || null);
+/* "2026-10-04", "10/04/2026", "4/10/26", "Oct 4, 2026", "Sat 4 October
+   2026". A slashed date is month first unless a day over twelve in the same
+   column says otherwise; the file is read one way throughout, never row by row. */
+const MONTH_IX = { jan: 1, feb: 2, mar: 3, apr: 4, may: 5, jun: 6, jul: 7, aug: 8, sep: 9, oct: 10, nov: 11, dec: 12 };
+function csvDate(v, dayFirst) {
+  const s = String(v || '').trim().toLowerCase().replace(/(\d)(st|nd|rd|th)\b/g, '$1');
+  const ok = (y, m, d) => {
+    y = Number(y); m = Number(m); d = Number(d);
+    if (y < 100) y += 2000;
+    if (!(m >= 1 && m <= 12 && d >= 1 && d <= 31 && y >= 2000 && y < 2100)) return null;
+    const out = `${y}-${pad2(m)}-${pad2(d)}`;
+    return dayStr(dateOf(out)) === out ? out : null;
+  };
+  let x = s.match(/^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})/);
+  if (x) return ok(x[1], x[2], x[3]);
+  x = s.match(/^(\d{1,2})[-/.](\d{1,2})[-/.](\d{2,4})\b/);
+  if (x) return dayFirst ? ok(x[3], x[2], x[1]) : ok(x[3], x[1], x[2]);
+  x = s.match(/(\d{1,2})\s+([a-z]{3})[a-z]*\.?,?\s+(\d{4})/);
+  if (x && MONTH_IX[x[2]]) return ok(x[3], MONTH_IX[x[2]], x[1]);
+  x = s.match(/([a-z]{3})[a-z]*\.?\s+(\d{1,2}),?\s+(\d{4})/);
+  if (x && MONTH_IX[x[1]]) return ok(x[3], MONTH_IX[x[1]], x[2]);
+  return null;
+}
+const CSV_GAME = /game|match|fixture|league|cup|friendly|tournament|scrimmage|playoff/i;
+const CSV_PRACTICE = /practi[cs]e|training|session/i;
+/* Reads a spreadsheet into importPlan()'s shape. `team` is the team every
+   row is for when the sheet has no team column, as the import sheet asks. */
+function csvImport(text, opts = {}) {
+  const rows = parseCsv(text);
+  if (rows.length < 2) return { error: 'A spreadsheet needs a heading row, and at least one row under it.' };
+  const head = rows[0].map(csvHead);
+  const unused = rows[0].filter((h, i) => h && !head[i]);
+  const has = k => head.includes(k);
+  const recs = rows.slice(1).map((r, i) => {
+    const o = { row: i + 2 };
+    head.forEach((k, j) => { if (k && r[j] !== undefined && r[j] !== '' && o[k] === undefined) o[k] = r[j]; });
+    return o;
+  });
+  const kind = has('date') ? 'schedule'
+    : (has('address') || has('pitches') || has('surface') || has('lights')) && !has('first') && !has('number') ? 'fields'
+      : has('name') || has('first') || has('last') ? 'players' : null;
+  if (!kind) return { error: `Couldn't tell what this spreadsheet holds from its headings (${rows[0].join(', ')}). A roster needs a "Name" (or "First name" and "Last name") column, a schedule a "Date" column, and a list of fields "Name" and "Address".`, unused };
+  const needsTeam = kind !== 'fields' && !has('team');
+  const teamOf = o => String(o.team || opts.team || '').trim();
+  if (needsTeam && !String(opts.team || '').trim()) return { kind, needsTeam, unused, rows: recs.length, error: 'This spreadsheet has no "Team" column, so pick the team it is for.' };
+  const data = {};
+  if (kind === 'players') {
+    const byTeam = new Map();
+    for (const o of recs) {
+      const name = o.name || [o.first, o.last].filter(Boolean).join(' ');
+      const p = { row: o.row, name };
+      for (const k of ['number', 'position', 'also', 'gk', 'rating', 'note', 'active']) if (o[k] !== undefined) p[k] = o[k];
+      const tn = teamOf(o);
+      if (!byTeam.has(tn)) byTeam.set(tn, { name: tn, players: [] });
+      const tt = byTeam.get(tn);
+      if (o.born !== undefined && tt.born === undefined) tt.born = o.born;
+      tt.players.push(p);
+    }
+    data.teams = [...byTeam.values()];
+  } else if (kind === 'fields') {
+    data.fields = recs.map(o => {
+      const f = { row: o.row, name: o.name || o.venue || '' };
+      for (const k of ['address', 'pitches', 'surface', 'lights']) if (o[k] !== undefined) f[k] = o[k];
+      if (o.note !== undefined) f.notes = o.note;
+      return f;
+    });
+  } else {
+    const slashed = recs.map(o => String(o.date || '').trim().match(/^(\d{1,2})[-/.](\d{1,2})[-/.]\d{2,4}/)).filter(Boolean);
+    const dayFirst = slashed.some(x => Number(x[1]) > 12);
+    data.games = []; data.practices = []; data.events = [];
+    for (const o of recs) {
+      const team = teamOf(o);
+      const date = csvDate(o.date, dayFirst) || o.date || '';
+      const ty = String(o.type || '');
+      let opponent = o.opponent, home = o.homeaway;
+      if (!opponent && o.hometeam && o.awayteam) {
+        const ours = importKey(team);
+        if (importKey(o.hometeam) === ours) { opponent = o.awayteam; home = home || 'home'; }
+        else if (importKey(o.awayteam) === ours) { opponent = o.hometeam; home = home || 'away'; }
+      }
+      const isGame = CSV_GAME.test(ty) || (!ty && !!opponent) || (!!opponent && !CSV_PRACTICE.test(ty));
+      if (isGame) {
+        const g = { row: o.row, team, opponent: opponent || '', date };
+        if (o.start) g.kickoff = o.start;
+        for (const [k, to] of [['venue', 'venue'], ['arrive', 'arrive'], ['kit', 'kit'], ['note', 'notes'], ['score', 'score'], ['side', 'side']]) if (o[k] !== undefined) g[to] = o[k];
+        if (home !== undefined) g.home = home;
+        data.games.push(g);
+      } else {
+        const e = { row: o.row, team, date };
+        if (o.name) e.title = o.name;
+        for (const [k, to] of [['start', 'start'], ['end', 'end'], ['minutes', 'minutes'], ['venue', 'venue'], ['note', 'notes'], ['public', 'public']]) if (o[k] !== undefined) e[to] = o[k];
+        (CSV_PRACTICE.test(ty) || (!ty && /practi[cs]e|training/i.test(o.name || '')) ? data.practices : data.events).push(e);
+      }
+    }
+    for (const k of ['games', 'practices', 'events']) if (!data[k].length) delete data[k];
+    // a schedule for a team that isn't here yet makes it, as a roster would
+    const names = [...new Set(recs.map(teamOf).filter(Boolean))];
+    if (names.length) data.teams = names.map(name => ({ name }));
+  }
+  return { data, kind, needsTeam, unused, rows: recs.length };
+}
+const CSV_KIND = { players: 'a roster', schedule: 'a schedule', fields: 'a list of fields' };
+/* Templates to fill in, so nobody has to guess the headings. */
+const CSV_TEMPLATES = {
+  roster: 'Team,First name,Last name,Number,Position,Goalkeeper,Notes\nLakeside Thunder G12,Ada,Lovelace,1,GK,yes,\nLakeside Thunder G12,Bea,Smith,7,Forward,,Strong left foot\n',
+  schedule: 'Team,Type,Date,Start,End,Opponent,Home/Away,Location,Arrive,Uniform,Notes\nLakeside Thunder G12,Game,2026-10-04,09:30,,Northgate,Away,Northgate Rec field 2,09:00,Blue shirts,\nLakeside Thunder G12,Practice,2026-10-06,17:30,19:00,,,Lakeside Park,,,Bring water\n',
+  fields: 'Name,Address,Pitches,Surface,Lights,Notes\nLakeside Park,1 Lake Rd,2,Grass,yes,Gate code 4471\n'
+};
+const isJsonText = txt => /^\s*[{[]/.test(String(txt || ''));
+/* The text in the box, read as JSON or as a spreadsheet: { data, csv, bad }. */
+function importRead(txt, team) {
+  if (!String(txt || '').trim()) return {};
+  if (isJsonText(txt)) { try { return { data: JSON.parse(txt) }; } catch (err) { return { bad: 'That is not valid JSON: ' + err.message }; } }
+  const csv = csvImport(txt, { team });
+  return csv.error ? { bad: csv.error, csv } : { data: csv.data, csv };
+}
+
 let pendingImport = null;
+/* The team a spreadsheet with no team column is for: a new name typed in
+   wins over the list, and with neither the last one picked stands. */
+function importTeamPicked() {
+  const nw = $('#impNewTeam'), pick = $('#impTeam');
+  const typed = nw && typeof nw.value === 'string' ? nw.value.trim() : '';
+  if (typed) return typed.slice(0, 80);
+  if (pick && typeof pick.value === 'string' && pick.value) return pick.value;
+  return (pendingImport && pendingImport.team) || '';
+}
 /* A backup carrying training records needs the club's answer to "what do you
    already have" before it can be planned, so the sheet asks once per file and
    draws again when the answer comes. Undefined: nothing to ask. */
@@ -3398,26 +3731,38 @@ function restoreKnown(data, txt) {
   });
   return 'checking';
 }
-function sheetImport(text) {
-  pendingImport = text == null ? pendingImport : { text };
+function sheetImport(text, team) {
+  pendingImport = text == null ? pendingImport : { text, team: team !== undefined ? team : (pendingImport && pendingImport.team) || '' };
   const txt = (pendingImport && pendingImport.text) || '';
-  let plan = null, bad = null, checking = false;
-  if (txt.trim()) {
-    try {
-      const data = JSON.parse(txt);
-      const k = restoreKnown(data, txt);
-      if (k === 'checking') checking = true; else plan = importPlan(data, k ? { ...state, trainingKnown: k } : state);
-    } catch (err) { bad = 'That is not valid JSON: ' + err.message; }
+  let plan = null, checking = false;
+  const read = importRead(txt, pendingImport && pendingImport.team);
+  const bad = read.bad || null, csv = read.csv || null;
+  if (read.data) {
+    const k = restoreKnown(read.data, txt);
+    if (k === 'checking') checking = true; else plan = importPlan(read.data, k ? { ...state, trainingKnown: k } : state);
   }
+  const tName = (pendingImport && pendingImport.team) || '';
+  const teamPick = csv && csv.needsTeam ? `<label class="field"><span>Which team is this ${csv.kind === 'players' ? 'roster' : 'schedule'} for?</span>
+      <select id="impTeam"><option value="">Pick a team</option>${teams().map(t => `<option value="${esc(t.name || '')}"${importKey(t.name) === importKey(tName) ? ' selected' : ''}>${esc(t.name || 'Untitled team')}</option>`).join('')}
+      ${tName && !teams().some(t => importKey(t.name) === importKey(tName)) ? `<option value="${esc(tName)}" selected>${esc(tName)} (new)</option>` : ''}</select></label>
+      <label class="field"><span>Or a new team's name</span><input type="text" id="impNewTeam" maxlength="80" placeholder="Lakeside Thunder G12"></label>` : '';
   const list = (items, cls) => items.length ? `<div class="implist ${cls}">${items.slice(0, 30).map(esc).join('<br>')}${items.length > 30 ? `<br>…and ${items.length - 30} more` : ''}</div>` : '';
   openSheet(`<h3>Bulk import</h3>
-    <p class="muted" style="margin-top:0">Teams, rosters, games, fields and training sessions from one JSON file. Teams, players and fields are matched by name, games by team, date and opponent, and sessions by date, start and coach, so running the same file twice changes nothing. Nothing already here is removed.</p>
+    <p class="muted" style="margin-top:0">Coming from another app or a spreadsheet? Save each sheet as CSV — a roster, a schedule of games and practices, a list of fields — and bring them in one at a time, or everything at once as one JSON file. Teams, players and fields are matched by name, games by team, date and opponent, practices by team, date and start, and sessions by date, start and coach, so running the same file twice changes nothing. Nothing already here is removed.</p>
     <div class="row" style="margin-bottom:10px">
       <button class="btn quiet sm" data-act="importfile">Choose a file</button>
       <button class="btn quiet sm" data-act="importexample">Show an example</button>
     </div>
-    <label class="field"><span>Or paste it here</span><textarea id="impText" rows="8" spellcheck="false" placeholder='{"teams": [{"name": "...", "players": [...], "games": [...]}]}'>${esc(txt)}</textarea></label>
+    <p class="muted" style="margin:0 0 6px">Spreadsheet templates, with the headings it reads:</p>
+    <div class="row" style="margin-bottom:10px">
+      <button class="btn quiet sm" data-act="importtpl" data-v="roster">Roster</button>
+      <button class="btn quiet sm" data-act="importtpl" data-v="schedule">Games and practices</button>
+      <button class="btn quiet sm" data-act="importtpl" data-v="fields">Fields</button>
+    </div>
+    <label class="field"><span>Or paste it here</span><textarea id="impText" rows="8" spellcheck="false" placeholder='Team,Type,Date,Start,Opponent,Location&#10;… or {"teams": [{"name": "...", "players": [...], "games": [...]}]}'>${esc(txt)}</textarea></label>
+    ${teamPick}
     <button class="btn quiet wide" data-act="importcheck" style="margin-bottom:10px">Check it</button>
+    ${csv && csv.kind ? `<p class="muted">Read as ${CSV_KIND[csv.kind]}: ${csv.rows} row${csv.rows === 1 ? '' : 's'}.${csv.unused && csv.unused.length ? ` Not used: ${esc(csv.unused.join(', '))}.` : ''}</p>` : ''}
     ${bad ? list([bad], 'warn alert') : ''}
     ${checking ? '<p class="muted"><b>Checking what the club already has…</b> A backup with training records is only restored where the club has nothing, so it asks first.</p>' : ''}
     ${plan ? `${list(plan.errors, 'warn alert')}
@@ -4317,7 +4662,7 @@ function render() {
   /* Not before the club has been read: a link to #/messages opened cold on a
      new phone renders before it knows anybody's role, and sending it to the
      club then would lose where it was going for good. */
-  if ((ui.view === 'inbox' || ui.view === 'thread') && !shut && (wsRead || !fbConfig().apiKey) && !msgOn() && !(ui.view === 'inbox' && newsFor() && newsItems().length)) ui.view = 'club';
+  if ((ui.view === 'inbox' || ui.view === 'thread') && !shut && (wsRead || !fbConfig().apiKey) && !msgOn() && !(ui.view === 'inbox' && ((newsFor() && newsItems().length) || alertsHere().list.length || elseUnread()))) ui.view = 'club';
   // the same wait, for the same reason: a family's link to a session opened cold
   if (ui.view === 'sessions' && !shut && (wsRead || !fbConfig().apiKey) && !canSessions()) ui.view = 'club';
   // a parent has no business reading the rest of the squad's names or the plan
@@ -4399,7 +4744,7 @@ function render() {
   const here = [v, g, ui.matchId, ui.teamId].join('|');
   const keepY = here === lastScreen && typeof window !== 'undefined' ? window.scrollY || 0 : null;
   lastScreen = here;
-  app.innerHTML = envNote + saveNote + joinNote + roleNote + roNote + (
+  app.innerHTML = envNote + saveNote + (shut ? '' : alertBar()) + joinNote + roleNote + roNote + (
     v === 'game' ? (g === 'track' ? viewTrack() : g === 'stats' ? viewStats() : g === 'pitch' ? viewMatch() : g === 'plan' ? viewPlan() : g === 'subs' ? viewSubs() : viewFeed()) :
       v === 'roster' ? viewRoster() :
         v === 'season' ? viewSeason() : v === 'calendar' ? viewCalendar() :
@@ -4419,6 +4764,9 @@ function render() {
   watchMessages();
   watchClaims();
   watchSess();
+  watchYou();
+  watchMirror();
+  if (!shut) { watchBusy(); youPublishSoon(); watchElseMessages(); calAlerts(); }
   clubNews();
   paintBell(shut);
 }
@@ -4451,11 +4799,32 @@ function lockScreen() {
 
 /* Club › Team › Game. Each segment is its own switcher, so the structure of the
    app is the navigation rather than something you have to learn. */
+/* Which of the three a screen belongs to. A team's tabs (and its games, and
+   its game shape) are the team's; My calendar is the person's, across every
+   club she is in; everything else (club home, settings, people, sessions,
+   messages) is the club's. The crumbs say exactly that much and no more: a
+   team left in them on Settings reads as "these are the team's settings". */
+const TEAM_VIEWS = ['matches', 'calendar', 'practice', 'roster', 'season', 'teamset', 'game'];
+const viewScope = (v = ui.view) => v === 'mycal' ? 'me'
+  : TEAM_VIEWS.includes(v) || (v === 'formation' && ui.editFid === GAME_SHAPE) ? 'team' : 'club';
+/* The screen itself, for the screens that are not a team's: the row ends in
+   where you are, so Club › People reads as the club's people and never as a
+   team's. Club home is the club alone. */
+const VIEW_CRUMB = {
+  mycal: 'My calendar', setup: 'Your settings', people: 'People', admin: 'Club settings', sessions: 'Training sessions',
+  planner: 'Planner', inbox: 'Messages', thread: 'Messages', mine: 'My players', formation: 'Shapes'
+};
 function crumbs() {
+  const sep = '<span class="crumb-sep">\u203a</span>';
+  const here = VIEW_CRUMB[ui.view] && viewScope() !== 'team'
+    ? `${sep}<span class="crumb" aria-current="page"><span class="crumb-k">${viewScope() === 'me' ? 'Yours' : 'Screen'}</span>${esc(VIEW_CRUMB[ui.view])}</span>` : '';
+  if (viewScope() === 'me' && me)
+    return `<button class="crumb" data-act="accountsheet"><span class="crumb-k">You</span>${esc(me.name || me.email || 'Your account')}</button>${here}`;
   const org = (acc().org || {}).name || 'Club';
-  const t = team();
+  const t = viewScope() === 'team' ? team() : null;
   const m = ui.view === 'game' ? match() : null;
   const out = [`<button class="crumb crumb-club" data-act="goview" data-v="club">${clubCrest('xs')}<span><span class="crumb-k">Club</span>${esc(org)}</span></button>`];
+  if (here) out.push(here);
   if (t) out.push(`<span class="crumb-sep">\u203a</span>
     <button class="crumb" data-act="goteam" data-id="${t.id}"><span class="crumb-k">Team</span>${teamLabel(t)}</button>`);
   if (m) out.push(`<span class="crumb-sep">\u203a</span>
@@ -4503,6 +4872,8 @@ function sheetAccount() {
   const r = myRole();
   openSheet(`<h3>${esc(me.name)}</h3>
     <p class="muted" style="margin-top:0">${esc(me.email || '')}${r ? ` · ${esc(ROLE_LABEL[r])}` : ''}</p>
+    <button class="opt" data-act="goview" data-v="mycal"><b>My calendar</b>
+      <span class="rowsub">Everything of yours, in every club you're in</span></button>
     <button class="opt" data-act="goview" data-v="setup"><b>Settings</b>
       <span class="rowsub">Workspace, sharing, backup, version</span></button>
     ${guardsAnyone() ? `<button class="opt" data-act="goview" data-v="mine"><b>My players</b>
@@ -5048,6 +5419,7 @@ function feedNotify(t, m, x) {
    notification when the tab is in the background and they said yes, otherwise
    a toast on the screen they are looking at, and a buzz either way. The Live
    tab's goals and the messages both come through here. */
+// SERVER.md: a notification from an open page only; real push needs a server sender.
 function ping(title, body, tag, buzz) {
   let shown = false;
   try {
@@ -7697,6 +8069,7 @@ function mergePractices(tid, remote, resend) {
    deleted on purpose from bringing the entry back. A plan with something
    pending stays where it is until it's sent, unless there is no database to
    send it to, in which case this phone's copy is the only one there is. */
+// SERVER.md: old plans moved by whichever phone opens them; a server would migrate once.
 function movePlans(tid, drawing = false) {
   if (!canPlan(tid)) return 0;
   const t = state.teams[tid], local = !fb || !wsCode();
@@ -9255,6 +9628,7 @@ function hoursText(f) {
 }
 /* Why the field can't be used then, in words, or '' if it can. */
 const DAYS_LONG = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+// SERVER.md: permits and hours checked only on the phone; a server could check them on save.
 function fieldShut(f, date, a, b) {
   if (!f || !okDay(date)) return '';
   const c = fieldClosures(f).find(x => x.from <= date && date <= x.until);
@@ -9413,6 +9787,7 @@ function watchSess() {
    hears about families asking and withdrawing. Nobody hears about their own
    taps, and the first read on a phone tells nobody anything: what is already
    there is not news. */
+// SERVER.md: worked out per phone while the page is open; a server would push it.
 function sessNews() {
   if (!me || !sessFor || !sessLoaded.has('sessions') || !sessLoaded.has('booked')) return;
   const lsk = LS_SESS_SEEN + ':' + clubKey() + ':' + me.uid;
@@ -9466,6 +9841,7 @@ function sessNews() {
 /* Everything with a time on one day, across the club: every team's practices,
    games and events, and every session. A team entry ties up its coaches and
    its whole squad; a session its coach and the players booked or asking. */
+// SERVER.md: who is busy, from what this phone holds plus what others' phones published; a server would know it all.
 function busyItems(date) {
   const out = [];
   const span = (start, end, mins) => { const a = minOf(start); let b = end ? minOf(end) : a + (mins || 60); if (b <= a) b += 1440; return [a, b]; };
@@ -9489,11 +9865,16 @@ function busyItems(date) {
      she is due somewhere during it. */
   for (const r of awayAll()) for (const [a, b] of awaySpans(r, date))
     out.push({ key: 'o:' + r.uid + ':' + r.id, kind: 'away', label: `Time off (${coachName(r.uid)})`, a, b, field: null, venue: '', coaches: [r.uid], tid: null, pids: null, away: r });
+  /* Busy at another club: hers from her other clubs, held on this phone,
+     and any coach's who shares it. A coach is due there as she is due here, so it takes her out
+     of find-a-time and her bookable slots and is said as a clash. */
+  out.push(...elsewhereOn(date));
   return out;
 }
 const timeOf = x => `${niceTime(pad2(Math.floor(x.a / 60) % 24) + ':' + pad2(x.a % 60))}`;
 /* What a session collides with, in words for its coach and the admins. Read
    only, worked out from what this phone already holds; nothing is stored. */
+// SERVER.md: clashes worked out on the phone from what it holds; a server could check them on save.
 function sessClashes(s) {
   if (!s || !okDay(s.date) || !s.start || s.called) return [];
   const out = [];
@@ -10737,6 +11118,7 @@ function blockSlots(b) {
 /* What the block offers, as the rule reads it: every slot on the grid the
    coach is free for, with its start as a timestamp. Taken and past slots stay
    listed; the seats and the clock refuse those. */
+// SERVER.md: the slot list the rules read, because rules can't count; a server books directly.
 function openSlotsOf(b) {
   const out = {};
   if (b.off) return out;
@@ -10757,6 +11139,7 @@ function scheduleHeal() {
   if (healTimer || typeof setTimeout !== 'function') return;
   healTimer = setTimeout(() => { healTimer = null; healBlocks(); }, 1500);
 }
+// SERVER.md: slots and seats kept true by the coach's or an admin's phone; a server would book in a transaction.
 function healBlocks() {
   if (!me || (fb && !(sessLoaded.has('avail') && sessLoaded.has('sessions')))) return 0;
   let n = 0;
@@ -11183,14 +11566,24 @@ function myCalFilters() {
   const staff = !!me && (myRoleTeams().size > 0 || isCoachAny(me.uid) || blockAll().some(b => b.coach === me.uid));
   if (kids.length > 1 || (kids.length && staff)) for (const { p } of kids) out.push(['p:' + p.id, esc(firstName(p))]);
   if (kids.length && staff) out.push(['me', 'My coaching']);
+  // a chip per club, once there is more than one: the person's calendar, not this club's
+  const others = youClubs();
+  if (others.length) {
+    out.push(['c:' + wsCode(), esc((acc().org || {}).name || 'This club')]);
+    for (const [code, c] of others) out.push(['c:' + code, esc(c.name || 'Another club')]);
+  }
   return out;
 }
-function myCalItems() {
-  const f = myCalFilters().some(([k]) => k === ui.myCal) ? ui.myCal : 'all';
+/* `hereOnly` is the club open on this phone and nothing else, which is what a
+   summary of it for her other phones and clubs is made from. */
+function myCalItems(f0 = ui.myCal, hereOnly = false) {
+  const f = hereOnly ? 'all' : myCalFilters().some(([k]) => k === f0) ? f0 : 'all';
+  const elsewhere = !hereOnly && (f === 'all' || (f.startsWith('c:') && f !== 'c:' + wsCode()));
+  if (f.startsWith('c:') && f !== 'c:' + wsCode()) return youCalItems(f.slice(2));
   const kids = myPlayers(), kid = f.startsWith('p:') ? kids.find(k => k.p.id === f.slice(2)) : null;
-  const tids = f === 'all' ? myCalTeams() : f === 'me' ? [...myRoleTeams()] : kid ? [kid.t.id] : [];
+  const tids = f === 'all' || f.startsWith('c:') ? myCalTeams() : f === 'me' ? [...myRoleTeams()] : kid ? [kid.t.id] : [];
   const out = calItems(tids);
-  const mineToo = f === 'all' || f === 'me';
+  const mineToo = f === 'all' || f === 'me' || f.startsWith('c:');
   for (const s of sessAll()) {
     const run = !!me && mineToo && s.coach === me.uid;
     const xs = f === 'me' ? [] : bookingsOf(s.id).filter(x => (x.st === 'in' || x.st === 'asked' || x.st === 'wait')
@@ -11206,9 +11599,14 @@ function myCalItems() {
     key: 'a:' + b.id, kind: 'avail', tid: '', id: b.id, date: b.date, start: b.start, end: b.end, mins: 0,
     title: 'Bookable: ' + blockLabel(b), venue: blockPlace(b), called: b.off ? 'cancelled' : ''
   });
+  if (elsewhere) out.push(...youCalItems());
   return out.sort(calOrder);
 }
 function myCalRow(it) {
+  if (it.club) return `<div class="prow calrow">
+    <span class="caltime">${it.start ? niceTime(it.start) : 'TBC'}</span>
+    <span style="min-width:0"><span class="pname">${esc(it.title)}</span><span class="psub">${esc([it.clubName, it.team, it.venue].filter(Boolean).join(' · '))}</span></span>
+    ${it.called ? `<span class="tag off">${CALLED[it.called] || 'Off'}</span>` : `<span class="tag">${esc(CAL_KIND[it.kind] || (it.kind === 'session' ? 'Training' : it.kind === 'avail' ? 'Bookable' : 'Game'))}</span>`}</div>`;
   if (it.kind === 'avail') { const b = blockById(it.id); return b ? availRow(b, false, false) : ''; }
   if (it.kind !== 'session') return calRow(it, true);
   const s = sessById(it.id); if (!s) return '';
@@ -11233,6 +11631,7 @@ function myCalLine() {
   const next = myCalItems().find(x => x.date && !x.called && x.kind !== 'avail' && (x.kind !== 'session' || x.firm) && !calPast(x));
   if (!next) return 'Your teams, your children and your sessions, in one place';
   const t = state.teams[next.tid];
+  if (next.club) return `Next: ${next.title} (${next.clubName}) · ${relDay(next.date) || dayLabel(next.date)}${next.start ? ' ' + niceTime(next.start) : ''}`;
   return `Next: ${next.title}${t && myCalTeams().length > 1 ? ' (' + t.name + ')' : ''} · ${relDay(next.date) || dayLabel(next.date)}${next.start ? ' ' + niceTime(next.start) : ''}`;
 }
 function viewMyCal() {
@@ -11249,12 +11648,14 @@ function viewMyCal() {
       `<button class="chip" type="button" data-act="mycalf" data-v="${esc(k)}" aria-pressed="${ui.myCal === k}">${l}</button>`).join('')}</div>` : ''}
     ${canBook ? `<button class="btn wide" data-act="sesstab" data-k="list">Book a 1-1 with a coach</button>` : ''}
     ${calMonth(dated, 'mycalday')}
+    ${youNote()}
     ${awayCard()}
     <div class="card"><h2 style="margin-bottom:0">Coming up</h2>
       ${ahead.length ? `<div class="plist">${myCalList(ahead)}</div>`
       : `<p class="muted" style="margin-bottom:0">Nothing coming up.${myCalTeams().length ? '' : ' Once you coach a team, or a child of yours is on one, its games and practices are here.'}</p>`}</div>
     ${past.length ? `<button class="btn quiet wide" data-act="calpast">${ui.calPast ? 'Hide' : 'Show'} what has already happened (${past.length})</button>
       ${ui.calPast ? `<div class="card"><div class="plist">${myCalList(past.slice(0, 80))}</div></div>` : ''}` : ''}
+    ${youShareCard()}
     <p class="muted">Each team's own calendar is still on its Calendar tab; that is the one the share link mirrors.</p>
   </div>`;
 }
@@ -11262,6 +11663,542 @@ function sheetMyCalDay(date) {
   const items = myCalItems().filter(x => x.date === date);
   openSheet(`<h3>${esc(dayLabel(date))}</h3>
     <div class="plist">${items.map(myCalRow).join('') || '<p class="muted">Nothing on.</p>'}</div>`);
+}
+
+/* ---------------- my calendar, across clubs ---------------- */
+/* AVAILABILITY.md, "My calendar is yours, not a club's". A phone is in every
+   club its account is in: the one open on screen is synced in full as it
+   always was, and every other one is listened to as well, read-only, for what
+   My calendar and "who is free" need of it (its teams and games, its sessions
+   and bookable times), and kept on the phone so it is there with no signal.
+   Nothing about a club is written anywhere new to make that work. Her busy
+   times (a date and two times, nothing else) go to people/{uid}/busy/{tag}
+   only while she has said they may: private is the default, and the rules
+   refuse them otherwise. SERVER.md: a server would publish those itself. */
+const LS_MIRROR = 'sm.mirror.v1';           // per account: her other clubs, cut to what My calendar needs
+const MIRROR_WS = ['teams', 'matches', 'access'], MIRROR_TR = ['sessions', 'booked', 'avail'];
+const YOU_BLANK = () => ({ uid: null, clubs: {}, set: null, refused: false });
+let you = YOU_BLANK();
+let youWatch = null;                        // the uid whose own setting is being listened to
+let youSent = {};                           // busy tags written this session, by their content
+const mirrorWatch = new Map();              // code: [unsubscribe, …]
+const mirrorLive = new Set();               // codes the database has answered for this session
+let mirrorVer = 0;                          // bumped on every answer, so computed items can be kept
+const mirrorCache = {};                     // code: { ver, day, items }
+const busyOf = {};                          // other coaches' shared busy times, by uid
+const busyWatch = new Map();                // uid: unsubscribe
+function loadYou(u) {
+  you = { ...YOU_BLANK(), uid: u };
+  try {
+    const d = JSON.parse(localStorage.getItem(LS_MIRROR + ':' + u) || 'null');
+    if (d && typeof d === 'object') { you.clubs = d.clubs && typeof d.clubs === 'object' ? d.clubs : {}; you.set = d.set || null; }
+  } catch (e) { }
+}
+let mirrorSaveT = null;
+const saveYou = () => { if (you.uid) keepStored(LS_MIRROR + ':' + you.uid, JSON.stringify({ clubs: you.clubs, set: you.set })); };
+function saveYouSoon() {
+  if (mirrorSaveT || typeof setTimeout !== 'function') return;
+  mirrorSaveT = setTimeout(() => { mirrorSaveT = null; saveYou(); }, 1000);
+}
+const youHere = () => { if (me && you.uid !== me.uid) loadYou(me.uid); return me ? you : YOU_BLANK(); };
+const unwatchClub = code => {
+  for (const off of mirrorWatch.get(code) || []) try { if (typeof off === 'function') off(); } catch (e) { }
+  mirrorWatch.delete(code); mirrorLive.delete(code);
+};
+/* Hers, not the phone's, like her own drills: gone when she is. The clubs'
+   own copies (the open one's outbox included) are not touched. */
+function forgetYou() {
+  if (you.uid) try { localStorage.removeItem(LS_MIRROR + ':' + you.uid); } catch (e) { }
+  for (const code of [...mirrorWatch.keys()]) unwatchClub(code);
+  you = YOU_BLANK(); youWatch = null; youSent = {};
+  for (const k of Object.keys(mirrorCache)) delete mirrorCache[k];
+  for (const off of busyWatch.values()) try { if (typeof off === 'function') off(); } catch (e) { }
+  busyWatch.clear();
+  for (const k of Object.keys(busyOf)) delete busyOf[k];
+  forgetAlerts();
+}
+const sharing = () => !!(youHere().set && you.set.share === true);
+/* What My calendar needs of another club, and no more: her own children
+   (not the squad), every game's when and where, her own bookable times, and
+   only the bookings that are her children's. The open club's full copy stays
+   where it always was; this is a second, smaller one. */
+// SERVER.md: a phone's cut-down copy of another club; not needed once a server answers for it.
+function mirrorSlim(part, v) {
+  v = v && typeof v === 'object' ? v : {};
+  const mine = u => me && u === me.uid;
+  if (part === 'teams') return Object.fromEntries(Object.entries(v).filter(([, t]) => t && typeof t === 'object').map(([id, t]) => [id, {
+    id, name: t.name || '', events: t.events || {},
+    players: Object.fromEntries(Object.entries(t.players || {}).filter(([, p]) => p && p.guardians && Object.keys(p.guardians).some(mine))
+      .map(([pid, p]) => [pid, { id: pid, name: p.name || '', guardians: { [me.uid]: true } }]))
+  }]));
+  if (part === 'matches') return Object.fromEntries(Object.entries(v).filter(([, m]) => m && typeof m === 'object').map(([id, m]) => [id,
+    Object.fromEntries(['id', 'teamId', 'opponent', 'date', 'kickoff', 'venue', 'called', 'home', 'periodCount', 'periodMinutes', 'currentHalf', 'ended', 'periods', 'createdAt']
+      .filter(k => m[k] !== undefined).map(k => [k, m[k]]))]));
+  if (part === 'access') return { org: { name: ((v.org || {}).name) || '' }, admins: v.admins || {}, index: v.index || {}, teams: v.teams || {}, coachIndex: v.coachIndex || {} };
+  if (part === 'avail') return Object.fromEntries(Object.entries(v).filter(([, b]) => b && mine(b.coach)));
+  return v;
+}
+/* Every club the account is in, other than the one open, listened to for as
+   long as it is: one read per part, and an answer redraws whatever asked. A
+   club left, or retired, is let go, and its copy with it. */
+// SERVER.md: every club held on every phone of hers; a server would answer "my calendar" in one request.
+function watchMirror() {
+  if (!rtdb || !me || !myClubs || isSandbox()) return;
+  youHere();
+  const here = wsCode(), who = me.uid;
+  for (const code of [...mirrorWatch.keys()]) if (code === here || !myClubs[code] || retiredClubs[code]) { unwatchClub(code); delete mirrorParts[code]; }
+  for (const code of Object.keys(you.clubs)) if (!myClubs[code] || retiredClubs[code]) { delete you.clubs[code]; saveYouSoon(); }
+  const { db, mod } = rtdb;
+  for (const code of Object.keys(myClubs)) {
+    if (code === here || retiredClubs[code] || mirrorWatch.has(code) || code.startsWith(SANDBOX_PREFIX)) continue;
+    const offs = [];
+    mirrorWatch.set(code, offs);
+    const take = (part, sub) => snap => {
+      if (!me || me.uid !== who || !mirrorWatch.has(code)) return;
+      const c = you.clubs[code] = you.clubs[code] || { ws: {}, tr: {} };
+      c[sub][part] = mirrorSlim(part, snap.val());
+      (mirrorParts[code] = mirrorParts[code] || new Set()).add(part);
+      if (sub === 'ws' && part === 'access') c.name = c.ws.access.org.name || (myClubs[code] || {}).name || '';
+      c.at = nowMs();
+      mirrorLive.add(code); mirrorVer++;
+      saveYouSoon();
+      youPublishSoon();
+      render();
+    };
+    for (const p of MIRROR_WS) offs.push(mod.onValue(mod.ref(db, `workspaces/${code}/${p}`), take(p, 'ws'), () => { }));
+    for (const p of MIRROR_TR) offs.push(mod.onValue(mod.ref(db, `training/${code}/${p}`), take(p, 'tr'), () => { }));
+  }
+}
+/* The other clubs she is in that this phone holds a copy of. */
+function youClubs() {
+  if (!me) return [];
+  const here = wsCode();
+  return Object.entries(youHere().clubs).filter(([code, c]) => code !== here && c && c.ws && (!myClubs || myClubs[code]) && !retiredClubs[code])
+    .map(([code, c]) => [code, { ...c, name: c.name || ((myClubs || {})[code] || {}).name || 'Another club' }])
+    .sort((a, b) => a[1].name.localeCompare(b[1].name));
+}
+/* Another club, as its own phone would draw her calendar of it: the same
+   functions, run for a moment against its copy instead of this one's.
+   Synchronous, so nothing else can see the swap. Kept until it changes. */
+// SERVER.md: another club's calendar worked out on this phone; a server would do it once.
+function withClub(c, fn) {
+  const s0 = state, x0 = sess;
+  state = { teams: {}, matches: {}, rsvp: {}, ...(c.ws || {}), access: (c.ws || {}).access || {} };
+  sess = { ...SESS_BLANK(), ...(c.tr || {}) };
+  try { return fn(); } catch (e) { return null; } finally { state = s0; sess = x0; }
+}
+function mirrorItems(code, c) {
+  const day = todayStr(), had = mirrorCache[code];
+  if (had && had.ver === mirrorVer && had.day === day) return had.items;
+  const items = withClub(c, () => myCalItems('all', true).map(it => ({ ...it, team: (state.teams[it.tid] || {}).name || '' }))) || [];
+  mirrorCache[code] = { ver: mirrorVer, day, items };
+  return items;
+}
+/* Another club's entries, in My calendar's shape. Read-only here: tapping one
+   would need that club open, so a row says which club it is. */
+function youCalItems(only) {
+  const out = [];
+  for (const [code, c] of youClubs()) {
+    if (only && code !== only) continue;
+    for (const it of mirrorItems(code, c)) out.push({
+      key: 'y:' + code + ':' + it.key, kind: it.kind, club: code, clubName: c.name, tid: '', id: it.id,
+      date: it.date, start: it.start, end: it.end, mins: it.mins, title: it.title, venue: it.venue, team: it.team,
+      called: it.called, status: it.status, firm: it.kind !== 'session' || !!it.firm
+    });
+  }
+  return out.sort(calOrder);
+}
+/* What she is busy with, from calendar items: firm, on, with a time, from
+   today. Bookable times are not busy; they are when she's free to be booked. */
+function youBusy(items) {
+  const out = {};
+  let n = 0;
+  for (const x of items) {
+    if (!x || !okDay(x.date) || !x.start || x.called || x.kind === 'avail' || (x.kind === 'session' && !x.firm) || x.date < todayStr() || n >= 300) continue;
+    let e = x.end;
+    if (!e) e = minHm(Math.min(minOf(x.start) + (Number(x.mins) || 60), 23 * 60 + 59));
+    out['b' + (++n)] = { d: x.date, s: x.start, e };
+  }
+  return out;
+}
+const youPath = k => `people/${me.uid}/${k}`;
+function youWrite(path, value) {
+  if (!rtdb) return Promise.resolve(false);
+  const { db, mod } = rtdb;
+  const ref = mod.ref(db, path);
+  return Promise.resolve(value === null ? mod.remove(ref) : mod.set(ref, value))
+    .then(() => { if (you.refused) { you.refused = false; render(); } return true; },
+      () => { if (!you.refused) { you.refused = true; render(); } return false; });
+}
+/* Her shared busy times, one entry per club: the open one from its full copy,
+   the others from theirs. Only what changed is written, and only from a phone
+   that has heard from the club this session, so an old copy never overwrites
+   a newer one another phone of hers sent. SERVER.md: this is her phone doing
+   a server's job, and it means a club's change reaches the others only when
+   one of her phones is open. */
+// SERVER.md: her own phone publishes her busy times; a server would answer "is she free" itself.
+function youPublish() {
+  if (!me || !rtdb || !sharing()) return;
+  const clubs = [];
+  const here = wsCode();
+  if (here && wsRead && !isSandbox() && !needsSignIn() && (approved(me.uid) || isAdmin(me.uid))) clubs.push([here, myCalItems('all', true)]);
+  for (const [code] of youClubs()) if (mirrorLive.has(code)) clubs.push([code, youCalItems(code)]);
+  for (const [code, items] of clubs) {
+    const tag = clubTag(code), b = youBusy(items), sig = canon(b);
+    if (youSent[tag] === sig) continue;
+    youSent[tag] = sig;
+    youWrite(youPath('busy/' + tag), Object.keys(b).length ? { at: nowMs(), b } : null);
+  }
+}
+let youTimer = null;
+function youPublishSoon() {
+  if (youTimer || typeof setTimeout !== 'function' || !sharing()) return;
+  youTimer = setTimeout(() => { youTimer = null; youPublish(); }, 2000);
+}
+/* Whether she shares, which every phone of hers needs to know. */
+function watchYou() {
+  if (!rtdb || !me || youWatch === me.uid) return;
+  const who = youWatch = me.uid;
+  youHere();
+  const { db, mod } = rtdb;
+  mod.onValue(mod.ref(db, `people/${who}/set`), snap => {
+    if (!me || me.uid !== who) return;
+    const v = snap.val();
+    // a phone that changed it offline keeps its own word until it has been sent
+    if (v && typeof v === 'object' && (Number(v.at) || 0) >= (Number((you.set || {}).at) || 0)) { you.set = { share: v.share === true, at: Number(v.at) || 0 }; saveYou(); youPublishSoon(); }
+    if (ui.view === 'mycal') render();
+  }, () => { });
+}
+/* Others' shared busy times, for the coaches of this club, read on the phones
+   that ask who is free: coaches' and admins'. A private calendar has nothing
+   there, so the listener just answers empty. */
+// SERVER.md: listening for others' busy times; a server would answer who is free.
+function watchBusy() {
+  if (!rtdb || !me || !awayOn()) return;
+  const { db, mod } = rtdb;
+  for (const u of coachUids()) {
+    if (u === me.uid || busyWatch.has(u)) continue;
+    busyWatch.set(u, null);
+    const off = mod.onValue(mod.ref(db, `people/${u}/busy`), snap => {
+      const v = snap.val() || {};
+      if (canon(v) === canon(busyOf[u] || {})) return;
+      busyOf[u] = v; render();
+    }, () => { });
+    busyWatch.set(u, off);
+  }
+}
+/* Busy at another club, as busyItems() has it: hers from her other clubs,
+   everyone else's from what they share, leaving out the club open here (its
+   own entries are in busyItems already, in full). */
+// SERVER.md: other clubs' busy times, as phones published them; a server would know them first-hand.
+function elsewhereOn(date) {
+  const out = [], here = wsCode(), tag = here ? clubTag(here) : '';
+  const span = (s, e, m) => { const a = minOf(s); let b = e ? minOf(e) : a + (m || 60); if (b <= a) b += 1440; return [a, b]; };
+  if (me) for (const x of youCalItems()) {
+    if (x.date !== date || !x.start || x.called || x.kind === 'avail' || !x.firm) continue;
+    const [a, b] = span(x.start, x.end, x.mins);
+    out.push({ key: x.key, kind: 'elsewhere', label: `${x.clubName}: ${x.title}`, a, b, field: null, venue: '', coaches: [me.uid], tid: null, pids: null });
+  }
+  for (const [u, byTag] of Object.entries(busyOf)) {
+    if (me && u === me.uid) continue;
+    for (const [t, v] of Object.entries(byTag || {})) {
+      if (t === tag || !v) continue;
+      for (const [i, x] of Object.entries(v.b || {})) {
+        if (!x || x.d !== date || !hm(x.s)) continue;
+        const [a, b] = span(hm(x.s), hm(x.e), 60);
+        out.push({ key: `x:${u}:${t}:${i}`, kind: 'elsewhere', label: 'another club', a, b, field: null, venue: '', coaches: [u], tid: null, pids: null });
+      }
+    }
+  }
+  return out;
+}
+async function setSharing(on) {
+  if (!me) return;
+  youHere();
+  you.set = { share: !!on, at: nowMs() };
+  saveYou();
+  render();
+  if (!rtdb) return;
+  // the setting first: the rules refuse a busy time while it is not a yes
+  const ok = await youWrite(youPath('set'), you.set);
+  if (!ok) { toast('Not saved: the database refused it. Its rules may need updating.'); return; }
+  youSent = {};
+  if (on) { youPublish(); toast('Your busy times are shared'); }
+  else { await youWrite(youPath('busy'), null); toast('Your calendar is private'); }
+}
+/* Said only when it matters: a club this phone hasn't heard from this
+   session, with how old its copy is. */
+function youNote() {
+  const old = youClubs().filter(([code]) => !mirrorLive.has(code));
+  const bits = old.map(([, c]) => `${esc(c.name)} as of ${c.at ? esc(dayLabel(dayStr(new Date(Number(c.at))))) + ' ' + esc(niceTime(minHm(new Date(Number(c.at)).getHours() * 60 + new Date(Number(c.at)).getMinutes()))) : 'never'}`);
+  return (bits.length ? `<p class="muted" style="margin:0">${bits.join('; ')}. It catches up as soon as there's a signal.</p>` : '')
+    + (you.refused ? '<p class="rolebar warn">Sharing didn\'t go through: the database\'s rules may not include My calendar yet.</p>' : '');
+}
+/* ---------------- alerts, from every club ---------------- */
+/* The owner: "people should still have a way to get notifications for all
+   clubs, and when clicked it moves them over to that club, so a coach can
+   respond to a parent quicker. Cancelled games can interrupt your current view
+   of another game." So a phone that is in several clubs hears from all of
+   them: a message to her (as the open club's inbox already does, now from
+   every club), and a change to her own calendar (a game or practice of hers
+   called off, back on, moved, or new). Each one pops up as it happens, and
+   sits in a bar over whatever is on screen until she opens or dismisses it;
+   Open goes straight there, switching club if it has to.
+
+   Worked out on the phone from what it is already listening to, like club
+   activity: the first look at anything is not news, nothing this phone did
+   itself is, and nothing is sent anywhere. SERVER.md: a server would push
+   these to a closed phone. */
+const LS_ALERTS = 'sm.alerts.v1';           // per account: the alerts, and each club's calendar as last seen
+const ALERT_MAX = 40;
+const ALERT_KINDS = ['game', 'practice', 'event'];
+let alerts = { uid: null, list: [], cal: {} };
+const elseMsg = {};                          // path: { code, kind, tid, fam, v } for the other clubs' messages
+const elseMsgSubs = new Map();               // path: unsubscribe
+const elsePrimed = {};                       // path: ids already there at the first read
+const mirrorParts = {};                      // code: the parts of its copy that have answered this session
+function alertsHere() {
+  if (!me) return { uid: null, list: [], cal: {} };
+  if (alerts.uid !== me.uid) {
+    alerts = { uid: me.uid, list: [], cal: {} };
+    try {
+      const d = JSON.parse(localStorage.getItem(LS_ALERTS + ':' + me.uid) || 'null');
+      if (d && typeof d === 'object') { alerts.list = Array.isArray(d.list) ? d.list : []; alerts.cal = d.cal && typeof d.cal === 'object' ? d.cal : {}; }
+    } catch (e) { }
+  }
+  return alerts;
+}
+const saveAlerts = () => { if (alerts.uid) keepStored(LS_ALERTS + ':' + alerts.uid, JSON.stringify({ list: alerts.list, cal: alerts.cal })); };
+function forgetAlerts() {
+  if (alerts.uid) try { localStorage.removeItem(LS_ALERTS + ':' + alerts.uid); } catch (e) { }
+  alerts = { uid: null, list: [], cal: {} };
+  for (const off of elseMsgSubs.values()) try { if (typeof off === 'function') off(); } catch (e) { }
+  elseMsgSubs.clear();
+  for (const o of [elseMsg, elsePrimed, mirrorParts]) for (const k of Object.keys(o)) delete o[k];
+}
+const clubNameOf = code => code === wsCode() ? ((acc().org || {}).name || 'This club')
+  : ((youHere().clubs[code] || {}).name || ((myClubs || {})[code] || {}).name || 'Another club');
+/* One alert: popped up now, kept for the inbox, and drawn over the screen
+   until it is opened or dismissed. */
+// SERVER.md: an alert is heard only by a phone with the page open; a server would push it.
+function pushAlert(a) {
+  alertsHere();
+  if (!alerts.uid || alerts.list.some(x => x.id === a.id)) return;
+  const x = { ...a, body: String(a.body || '').slice(0, 160), at: nowMs(), read: false, shut: false };
+  alerts.list = [x, ...alerts.list].slice(0, ALERT_MAX);
+  saveAlerts();
+  ping(x.code === wsCode() ? x.title : `${clubNameOf(x.code)} · ${x.title}`, x.body, 'minutes-alert-' + x.id, x.urgent ? [200, 80, 200, 80, 200] : [150, 60, 150]);
+}
+const alertsUnread = () => alertsHere().list.filter(x => !x.read && x.kind === 'cal').length;
+
+/* -- her calendar, in every club -- */
+/* What each club's calendar of hers looks like now: games, practices and
+   events, with the date, time and whether it is on. Only once the club has
+   answered this session, so a copy still loading is never read as everything
+   having been deleted, or as everything new. */
+function alertCal(code) {
+  if (code === wsCode()) {
+    if ((fb && !wsRead) || needsSignIn()) return null;
+    return myCalItems('all', true).filter(it => ALERT_KINDS.includes(it.kind)).map(it => ({ ...it, team: (state.teams[it.tid] || {}).name || '' }));
+  }
+  const c = youHere().clubs[code];
+  if (!c || !MIRROR_WS.every(p => (mirrorParts[code] || new Set()).has(p))) return null;
+  return mirrorItems(code, c).filter(it => ALERT_KINDS.includes(it.kind));
+}
+const alertHash = it => it.kind === 'game' ? `#/team/${it.tid}/game/${it.id}/live` : `#/team/${it.tid}/calendar`;
+// SERVER.md: changes to her calendar worked out on her phone, per club; a server would send them once.
+function calAlerts() {
+  if (!me || !rtdb) return;
+  alertsHere();
+  const today = todayStr(), codes = [wsCode(), ...youClubs().map(([code]) => code)].filter(Boolean);
+  let changed = false;
+  for (const code of codes) {
+    // an admin already hears every change in the open club from club activity
+    if (code === wsCode() && canAdmin()) continue;
+    const items = alertCal(code); if (!items) continue;
+    const now = {};
+    for (const it of items) if (it.date && it.date >= today) now[it.key] = [it.date, it.start || '', it.called || ''].join('|');
+    const was = alerts.cal[code];
+    alerts.cal[code] = now;
+    if (canon(was || null) !== canon(now)) changed = true;
+    if (!was) continue;                                   // the first look at a club is not news
+    const series = {};
+    for (const it of items) {
+      const sig = now[it.key]; if (!sig || was[it.key] === sig) continue;
+      if (code === wsCode() && mineTouched.has(it.kind === 'game' ? 'g:' + it.id : `e:${it.tid}:${it.id}`)) continue;
+      const words = `${it.title}${it.team ? ' (' + it.team + ')' : ''}`;
+      const when = whenOfIt(it.date, it.start);
+      const base = { code, kind: 'cal', hash: alertHash(it) };
+      if (!was[it.key]) {
+        if (it.series) { (series[it.series] = series[it.series] || []).push(it); continue; }
+        pushAlert({ ...base, id: `c:${code}:${it.key}:new`, title: `New ${it.kind}: ${words}`, body: `${when}${it.venue ? ' · ' + it.venue : ''}` });
+        continue;
+      }
+      const [od, os, oc] = was[it.key].split('|');
+      if (it.called && it.called !== oc) pushAlert({ ...base, urgent: true, id: `c:${code}:${it.key}:${sig}`, title: `${CALLED[it.called] || 'Called off'}: ${words}`, body: when });
+      else if (!it.called && oc) pushAlert({ ...base, id: `c:${code}:${it.key}:${sig}`, title: `Back on: ${words}`, body: when });
+      else if (od !== it.date || os !== (it.start || '')) pushAlert({ ...base, urgent: od !== it.date || Math.abs(minOf(os || '00:00') - minOf(it.start || '00:00')) >= 30, id: `c:${code}:${it.key}:${sig}`, title: `Moved: ${words}`, body: `Now ${when}` });
+    }
+    // a weekly series is one piece of news, not ten
+    for (const xs of Object.values(series)) {
+      const it = xs[0];
+      pushAlert({ code, kind: 'cal', hash: alertHash(it), id: `c:${code}:r:${it.series}`, title: `New ${it.kind}${xs.length > 1 ? 's' : ''}: ${it.title}${it.team ? ' (' + it.team + ')' : ''}`, body: xs.length > 1 ? `${xs.length} of them, from ${whenOfIt(it.date, it.start)}` : whenOfIt(it.date, it.start) });
+    }
+  }
+  if (changed) saveAlerts();
+}
+
+/* -- messages, in her other clubs -- */
+/* The same listeners the open club's inbox has (its notices for every team she
+   works on or has a child in; as staff every family's conversation, as a family
+   her own), for every other club she is in, worked out from that club's copy. */
+function elseMsgWant() {
+  const want = {};
+  for (const [code, c] of youClubs()) {
+    const r = withClub(c, () => ({ all: msgTeams().map(t => t.id), staff: staffTeams().map(t => t.id), fam: famTeams().map(t => t.id) }));
+    if (!r) continue;
+    for (const tid of r.all) want[`board/${code}/${tid}`] = { code, kind: 'board', tid };
+    for (const tid of r.staff) want[`dm/${code}/${tid}`] = { code, kind: 'dm', tid };
+    for (const tid of r.fam) want[`dm/${code}/${tid}/${me.uid}`] = { code, kind: 'dm', tid, fam: me.uid };
+  }
+  return want;
+}
+// SERVER.md: other clubs' messages heard only while the page is open; a server sender would push them.
+function watchElseMessages() {
+  if (!rtdb || !me || !fb) return;
+  const want = elseMsgWant();
+  for (const p of [...elseMsgSubs.keys()]) if (!want[p]) {
+    try { const off = elseMsgSubs.get(p); if (typeof off === 'function') off(); } catch (e) { }
+    elseMsgSubs.delete(p); delete elseMsg[p]; delete elsePrimed[p];
+  }
+  const { db, mod } = rtdb, who = me.uid;
+  for (const [p, w] of Object.entries(want)) {
+    if (elseMsgSubs.has(p)) continue;
+    elseMsgSubs.set(p, null);
+    const off = mod.onValue(mod.ref(db, p), s => {
+      if (!me || me.uid !== who || !elseMsgSubs.has(p)) return;
+      elseMsg[p] = { ...w, v: s.val() || {} };
+      elseMsgNews(p);
+      render();
+    }, () => { });
+    if (elseMsgSubs.has(p)) elseMsgSubs.set(p, off);
+  }
+}
+/* Every message on one path, as the inbox counts them: seen or not, by whom. */
+function elseMsgItems(p) {
+  const x = elseMsg[p]; if (!x) return [];
+  const c = youHere().clubs[x.code] || {};
+  const tn = ((((c.ws || {}).teams || {})[x.tid]) || {}).name || 'Your team';
+  const out = [];
+  if (x.kind === 'board') {
+    for (const [id, m] of Object.entries(x.v)) if (m && typeof m === 'object')
+      out.push({ id, by: m.by, seen: !!(m.seen || {})[me.uid], urgent: !!m.urgent, title: `${m.urgent ? 'Urgent · ' : ''}${tn} · ${m.byName || 'a coach'}`, body: m.text, hash: '#/messages' });
+  } else {
+    const threads = x.fam ? { [x.fam]: x.v } : x.v;
+    for (const [fam, th] of Object.entries(threads || {})) {
+      if (!th || typeof th !== 'object') continue;
+      const mark = (th.seen || {})[me.uid] || 0;
+      for (const [id, m] of Object.entries(th.m || {})) if (m && typeof m === 'object')
+        out.push({ id, fam, by: m.by, seen: (m.at || 0) <= mark, title: `${m.byName || (x.fam ? 'A coach' : 'A family')} · ${tn}`, body: m.text, hash: `#/messages/${x.tid}/${fam}` });
+    }
+  }
+  return out;
+}
+function elseMsgNews(p) {
+  const items = elseMsgItems(p), known = elsePrimed[p];
+  elsePrimed[p] = new Set(items.map(x => x.id));
+  if (!known) return;
+  for (const x of items) if (!known.has(x.id) && x.by !== me.uid && !x.seen)
+    pushAlert({ id: 'm:' + x.id, code: elseMsg[p].code, kind: 'msg', urgent: x.urgent, title: x.title, body: x.body, hash: x.hash });
+}
+/* Unread in her other clubs, as each club's own inbox would count it: a
+   notice each, a conversation once however many are waiting in it. */
+function elseUnread(code) {
+  let n = 0;
+  for (const p of Object.keys(elseMsg)) {
+    if (code && elseMsg[p].code !== code) continue;
+    const xs = elseMsgItems(p).filter(x => x.by !== me.uid && !x.seen);
+    n += elseMsg[p].kind === 'board' ? xs.length : new Set(xs.map(x => x.fam)).size;
+  }
+  return n;
+}
+
+/* -- on screen -- */
+/* The newest alert she hasn't opened or dismissed, over whatever is on
+   screen, a game included: a game called off is worth interrupting for. */
+function alertBar() {
+  const a = alertsHere().list.find(x => !x.read && !x.shut);
+  if (!a) return '';
+  const more = alerts.list.filter(x => !x.read && !x.shut).length - 1;
+  const where = a.code === wsCode() ? '' : `<span class="pill">${esc(clubNameOf(a.code))}</span> `;
+  return `<div class="rolebar${a.urgent ? ' warn' : ''} alertbar">${where}<b>${esc(a.title)}</b>${a.body ? ' · ' + esc(a.body) : ''}
+    <span class="row" style="margin-top:6px;gap:6px">
+      <button class="btn sm" data-act="alertgo" data-id="${esc(a.id)}">Open${a.code === wsCode() ? '' : ' in ' + esc(clubNameOf(a.code))}</button>
+      <button class="btn quiet sm" data-act="alertx" data-id="${esc(a.id)}">Dismiss</button>
+      ${more > 0 ? `<button class="linkbtn dark" data-act="alertall">${more} more</button>` : ''}</span></div>`;
+}
+/* Open: here, by the same routes a link would take; in another club, by
+   switching to it with the place on the address, which is where the page
+   comes back to after the reload. */
+function openAlert(id) {
+  const a = alertsHere().list.find(x => x.id === id); if (!a) return;
+  a.read = true; a.shut = true; saveAlerts();
+  closeSheet();
+  if (a.code === wsCode()) {
+    // a history entry of its own, so Back returns to whatever she was looking at
+    try { location.hash = a.hash; } catch (e) { }
+    if (!hashToUi()) ui.view = 'club';
+    render(); return;
+  }
+  if (!myClubs || !myClubs[a.code]) { toast('You are no longer in that club'); render(); return; }
+  try {
+    localStorage.setItem(LS_WS, a.code);
+    history.replaceState(null, '', location.pathname + location.search + a.hash);
+  } catch (e) { }
+  location.reload();
+}
+/* The inbox's card for the other clubs: unread messages in each, and the
+   latest alerts from anywhere, each opening where it happened. */
+function alertsCard() {
+  const list = alertsHere().list.slice(0, 15);
+  const clubs = youClubs().map(([code, c]) => [code, c.name, elseUnread(code)]).filter(([, , n]) => n);
+  if (!list.length && !clubs.length) return '';
+  return `<div class="card"><h2 style="margin-bottom:6px">From all your clubs</h2>
+    ${clubs.map(([code, name, n]) => `<div class="spread" style="padding:6px 0"><span><b>${esc(name)}</b> · ${n} unread</span>
+      <button class="btn quiet sm" data-act="switchclubto" data-code="${esc(code)}" data-hash="#/messages">Open</button></div>`).join('')}
+    ${list.length ? `<div class="plist">${list.map(a => `<button class="prow" type="button" data-act="alertgo" data-id="${esc(a.id)}" style="grid-template-columns:1fr auto">
+      <span style="min-width:0"><span class="pname">${a.read ? '' : '• '}${esc(a.title)}</span><span class="psub">${esc([clubNameOf(a.code), a.body, whenShort(a.at)].filter(Boolean).join(' · '))}</span></span>
+      <span class="muted">Open</span></button>`).join('')}</div>` : ''}</div>`;
+}
+
+function youShareCard() {
+  if (!me || !fbConfig().apiKey) return '';
+  const on = sharing();
+  return `<div class="card"><h2 style="margin-bottom:6px">Who sees your calendar</h2>
+    <div class="chips" style="margin-bottom:8px">
+      <button class="chip" type="button" data-act="youshare" data-v="0" aria-pressed="${!on}">Private</button>
+      <button class="chip" type="button" data-act="youshare" data-v="1" aria-pressed="${on}">Share when I'm busy</button></div>
+    <p class="muted" style="margin:0">${on
+      ? 'Coaches and admins in your clubs see the times you are busy at another club, so they don\'t book you then: the times only, never what, where or which club. Families never see them. Anyone signed in who has your account id could read them too.'
+      : 'Only you see this calendar. Each club sees what you do in that club, as it always has, and nothing of your other clubs.'}</p></div>`;
+}
+/* Somebody's next fortnight, as this club can see it: what they coach or run
+   here, their time off, and, if they share it, when they are busy elsewhere. */
+function sheetPersonCal(u) {
+  const name = coachName(u);
+  let html = '';
+  for (let i = 0; i < 14; i++) {
+    const date = addDays(todayStr(), i);
+    const xs = busyItems(date).filter(x => x.coaches.includes(u)).sort((x, y) => x.a - y.a);
+    if (!xs.length) continue;
+    html += `<p class="calhead">${esc(dayLabel(date))}</p>` + xs.map(x => `<div class="prow calrow"><span class="caltime">${timeOf(x)}</span>
+      <span style="min-width:0"><span class="pname">${esc(x.kind === 'elsewhere' && u !== (me && me.uid) ? 'Busy at another club' : x.label)}</span></span></div>`).join('');
+  }
+  const shared = me && u === me.uid ? sharing() : Object.keys(busyOf[u] || {}).some(t => t !== clubTag(wsCode()));
+  openSheet(`<h3>${esc(name)}: the next two weeks</h3>
+    <div class="plist">${html || '<p class="muted">Nothing on.</p>'}</div>
+    <p class="muted">${shared ? `Includes when ${esc(name)} is busy at another club, which ${esc(name)} has chosen to share. Only the times are shared.`
+      : `Only what is in this club. Anything ${esc(name)} does at another club is private unless shared from My calendar.`}</p>`);
 }
 
 function viewSetup() {
@@ -11386,8 +12323,8 @@ function viewAdmin() {
       <button class="btn quiet wide" data-act="tpllist" data-k="clubTpl" style="margin-top:8px">The club's templates${(() => { const n = tplItems('clubTpl').length; return n ? ' · ' + n : ''; })()}</button></div>
 
     <div class="card"><h2 style="margin-bottom:8px">Bulk import</h2>
-      <p class="muted" style="margin-top:0">A whole season at once — teams, rosters, fixtures, past results, the club's fields and permits, and training sessions — from one JSON file. It adds and updates, and never removes anything.</p>
-      <button class="btn quiet wide" data-act="bulkimport">Import teams, games, fields and sessions</button></div>
+      <p class="muted" style="margin-top:0">Moving from another app or a spreadsheet? A whole season at once — rosters, games, practices, the club's fields and permits, and training sessions — from CSV files or one JSON file. It adds and updates, and never removes anything.</p>
+      <button class="btn quiet wide" data-act="bulkimport">Import from a spreadsheet or file</button></div>
 
     ${aiButton('club')}
   </div>`;
@@ -11682,6 +12619,7 @@ function newsNow() {
   }
   return { now, src };
 }
+// SERVER.md: worked out per phone, per source, while the page is open; a server would push it once.
 function clubNews() {
   if (!newsFor() || (fb && !wsRead)) return;
   const { now, src } = newsNow();
@@ -11892,6 +12830,7 @@ function clubClashesOn(date) {
   }
   return out;
 }
+// SERVER.md: clashes worked out on the phone from what it holds; a server could check them on save.
 function plannerClashes(from, days) {
   const out = [];
   for (let i = 0; i < days; i++) { const date = addDays(from, i); for (const c of clubClashesOn(date)) out.push({ date, ...c }); }
@@ -12435,6 +13374,7 @@ function publicEvents(t, all) {
    whoever they forward it to) holds that game and nothing else: no season, no
    record, no other fixtures, no practices. `fixture` tells the page there is no
    season to go back to. */
+// SERVER.md: built on the phone for the public mirror; a server trigger would build it.
 function fixtureDoc(t, m) {
   return {
     team: { name: t.name || 'Team', logo: t.logo || null },
@@ -12450,6 +13390,7 @@ function fixtureDoc(t, m) {
    players, no minutes, no shirt numbers, and free text through pubText(). What
    keeps team-only entries off the open web is the id, which the app shows only
    to the team's signed-in members, and which a coach can replace at any time. */
+// SERVER.md: built on the phone for the public mirror; a server trigger would build it.
 function calendarDoc(t) {
   const games = {};
   for (const m of teamMatches(t.id)) games[m.id] = {
@@ -12471,6 +13412,7 @@ let pubState = { at: null, error: null };   // surfaced in the share sheet
 let denied = false;                         // rules refused us; show the door
 let purged = null;                          // 'access' | 'retired'
 let retiredClubs = {};                      // app owner's view of what is closed
+// SERVER.md: the share pages are written by whichever phone made the change; a server trigger would write them.
 function schedulePublish() {
   const t = team();
   /* A rehearsal must never reach public/. That tier is world-readable and keyed
@@ -12493,6 +13435,7 @@ function schedulePublish() {
    share sheet reports on, and a republish on load is what heals a fixed
    config. A game's own page and the calendar feed are written only when what
    they carry has changed, or a sub tap would rewrite thirty fixtures. */
+// SERVER.md: the share pages are written by whichever phone made the change; a server trigger would write them.
 function publishTeam(t) {
   const docs = [];
   let mainWrite = null;
@@ -12627,7 +13570,7 @@ function viewPeople() {
         <td class="dim">${when(u.at)}</td>
         <td class="right">${none
         ? `<button class="btn sm" data-act="personedit" data-uid="${u.uid}">Let in</button>`
-        : `<button class="btn quiet sm" data-act="personedit" data-uid="${u.uid}">Roles</button>`}</td>
+        : `${isCoachAny(u.uid) || isAdmin(u.uid) ? `<button class="btn quiet sm" data-act="personcal" data-uid="${u.uid}">Calendar</button> ` : ''}<button class="btn quiet sm" data-act="personedit" data-uid="${u.uid}">Roles</button>`}</td>
       </tr>`).join('') || '<tr><td colspan="5" class="dim">Nobody matches that filter.</td></tr>'}</tbody>
     </table></div>
 
@@ -13687,6 +14630,7 @@ function replaceNames(text, subs) {
    here becomes "a player" before it is written, not before it is drawn. Every
    word of every name, as the AI prompt does: "Rose Park" losing a word is the
    safe way round, and the coach is told when it happens. */
+// SERVER.md: the scrub stays, but would run on the server's write of the mirror.
 function pubText(t, s) {
   if (!s) return '';
   const subs = [];
@@ -14351,6 +15295,7 @@ function onAct(e) {
   }
   if (a === 'teammenu') { sheetTeams(); return; }
   if (a === 'goview') { ui.view = d.v; closeSheet(); render(); return; }
+  if (a === 'accountsheet') { if (me) sheetAccount(); else sheetSignIn(); return; }
   if (a === 'retireclub') {
     if (!canAdmin()) { toast('Club admins and the app owner only'); return; }
     if (!fb) { toast('Not connected'); return; }
@@ -15026,6 +15971,16 @@ function onAct(e) {
   }
   if (a === 'calday') { sheetCalDay(d.v); return; }
   if (a === 'mycalday') { sheetMyCalDay(d.v); return; }
+  if (a === 'alertgo') { openAlert(d.id); return; }
+  if (a === 'alertx') { const x = alertsHere().list.find(y => y.id === d.id); if (x) { x.shut = true; saveAlerts(); } render(); return; }
+  if (a === 'alertall') { ui.view = 'inbox'; ui.thread = null; closeSheet(); render(); return; }
+  if (a === 'switchclubto') {
+    if (!myClubs || !myClubs[d.code]) return;
+    try { localStorage.setItem(LS_WS, d.code); history.replaceState(null, '', location.pathname + location.search + (d.hash || '')); } catch (e) { }
+    location.reload(); return;
+  }
+  if (a === 'youshare') { if (!me) return; setSharing(d.v === '1' || d.v === 1); return; }
+  if (a === 'personcal') { if (!awayOn() || !d.uid) return; sheetPersonCal(d.uid); return; }
   if (a === 'mycalf') { ui.myCal = String(d.v || 'all'); render(); return; }
   if (a === 'calitem') { sheetCalItem(d.k, d.tid, d.id); return; }
   if (a === 'calgame') {
@@ -15298,7 +16253,7 @@ function onAct(e) {
   if (a === 'bulkimport') { if (!canAdmin()) { toast('Only club admins can import'); return; } sheetImport(null); return; }
   if (a === 'import' || a === 'importfile') {
     if (!canAdmin()) { toast('Only club admins can import'); return; }
-    const inp = document.createElement('input'); inp.type = 'file'; inp.accept = 'application/json,.json,.txt';
+    const inp = document.createElement('input'); inp.type = 'file'; inp.accept = 'application/json,.json,.txt,.csv,.tsv,text/csv';
     inp.onchange = () => {
       const f = inp.files[0]; if (!f) return;
       const r = new FileReader();
@@ -15309,20 +16264,31 @@ function onAct(e) {
     inp.click(); return;
   }
   if (a === 'importexample') { sheetImport(JSON.stringify(IMPORT_EXAMPLE, null, 2)); return; }
-  if (a === 'importcheck') { sheetImport($('#impText').value); return; }
+  if (a === 'importcheck') { sheetImport($('#impText').value, importTeamPicked()); return; }
+  if (a === 'importtpl') {
+    const body = CSV_TEMPLATES[d.v]; if (!body) return;
+    const blob = new Blob([body], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url; link.download = `minutes-${d.v}-template.csv`;
+    link.click(); URL.revokeObjectURL(url);
+    return;
+  }
   if (a === 'importgo') {
     if (!canAdmin()) { toast('Only club admins can import'); return; }
     // planned again against the club as it is now, not as it was when checked
     let plan;
-    const txt = $('#impText').value;
-    try {
-      const data = JSON.parse(txt);
-      if (!pendingImport || pendingImport.text !== txt) pendingImport = { text: txt };
+    const txt = $('#impText').value, team = importTeamPicked();
+    const read = importRead(txt, team);
+    if (!read.data) { sheetImport(txt, team); return; }
+    {
+      const data = read.data;
+      if (!pendingImport || pendingImport.text !== txt) pendingImport = { text: txt, team };
       const k = restoreKnown(data, txt);
-      if (k === 'checking') { sheetImport(txt); return; }
+      if (k === 'checking') { sheetImport(txt, team); return; }
       plan = importPlan(data, k ? { ...state, trainingKnown: k } : state);
-    } catch (err) { sheetImport(txt); return; }
-    if (plan.errors.length || !(plan.writes.length + plan.sessWrites.length + plan.trainWrites.length)) { sheetImport(txt); return; }
+    }
+    if (plan.errors.length || !(plan.writes.length + plan.sessWrites.length + plan.trainWrites.length)) { sheetImport(txt, team); return; }
     if (!confirm(`Import into ${(acc().org || {}).name || 'this club'}? It ${importSummary(plan.counts)}.`)) return;
     applyImport(plan); pendingImport = null; closeSheet();
     toast('Imported: ' + importSummary(plan.counts)); return;

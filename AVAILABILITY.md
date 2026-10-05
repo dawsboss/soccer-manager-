@@ -184,6 +184,107 @@ entry exists once, under its team or in `training/`, and both calendars draw
 it. It stays out of the top-left club switcher: that button is about which
 club you're in, and a calendar is about you within it.
 
+## My calendar is yours, not a club's
+
+Followed up 2026-10-04: *My calendar should be to my account, so no club
+included, since if I work for more than one my calendar becomes more complex.
+Then when people need to know my availability they can without going to
+another club's page. But some people want privacy, so there should be a
+default private, and they can make it public if they want.*
+
+Followed up again the same day: *a phone should be a part of as many clubs as
+it wants.*
+
+So My calendar moves out of the club. The top row says **You › My
+calendar**, not the club, it opens from the account button as well as the
+club page, and it carries every club the account is in.
+
+**A phone is in every club its account is in.** The one on screen is synced
+in full, exactly as before (its outbox, its lookup tables, everything). Every
+other club in `userOrgs` is listened to as well, read-only, for what My
+calendar and "who is free" need of it: its teams, games and access, and its
+sessions, bookings and bookable times (`watchMirror()`). That copy is cut down
+before it is kept (`mirrorSlim()`): her own children and not the squad, every
+game's when and where but not its stints or goals, her own bookable times and
+her own children's bookings. It is kept on the phone per account
+(`sm.mirror.v1:{uid}`) so My calendar has every club with no signal, says "as
+of" for a club it hasn't heard from this session, and is forgotten on sign-out.
+My calendar runs each club's own calendar code against its copy for a moment
+(`withClub()`), so an entry looks the same whichever club is open. Switching
+which club is on screen still reloads the page; that is the one place a
+phone still works on one club at a time.
+
+Nothing about a club is written anywhere new for this: the phone reads what
+it is already allowed to read.
+
+```
+people/{uid}/
+  set           { share: true | false, at }                                  // her eyes only
+  busy/{tag}    { at, b: { i1: { d, s, e }, … } }                             // anyone signed in
+```
+
+- `set.share` is **off unless she turns it on**, and only she can read it.
+- `busy/{tag}` is her busy times, **and nothing else**: a date, a start and
+  an end. No title, no place, no team, no club. The rule refuses any other
+  field, so a later change to the app cannot put one there by accident, and
+  refuses any busy time at all while `set.share` is not `true` — private is
+  enforced by the database, not by her phone's goodwill. Turning sharing off
+  deletes the lot. `{tag}` is `clubTag(code)`, the one-way tag drill links
+  already use, so a club's code never leaves it this way, and a viewer in
+  one of her clubs can leave out the times of the club she is looking from
+  (she sees those in full already). Her phones write it (`youPublish()`),
+  which means a change in one club reaches the others only while one of her
+  phones is open: a server's job, done by a phone until there is one
+  (`SERVER.md`, *Busy at another club*).
+
+## Alerts from every club
+
+Followed up 2026-10-05: *people should still have a way to get notifications
+for all clubs, and when clicked it moves them over to that club, so a coach can
+respond to a parent quicker. Cancelled games can interrupt your current view of
+another game.*
+
+A phone that is in several clubs already listens to each of them (above), so
+it hears from all of them too:
+
+- **Messages.** Each other club is listened to as its own inbox would be: a
+  coach every family's conversation on the teams she coaches, a family her own
+  conversation and her children's teams' notices (`watchElseMessages()`,
+  running the club's own `msgTeams()` against its copy). The open club's inbox
+  is unchanged; its new messages become alerts too.
+- **Her calendar.** A game, practice or event of hers (a team she coaches or
+  tracks, or a child of hers is on) called off, back on, moved or new, in any
+  club, the open one included (`calAlerts()`). A weekly series is one alert.
+  An admin hears the open club's changes from club activity instead, not twice.
+- **Interrupting.** An alert pops up (system notification, buzz, toast) and
+  then sits in a bar above whatever is on screen, a game included, until she
+  opens or dismisses it; called off and moved by a day or half an hour are
+  drawn as urgent. **Open** goes where it happened: in the open club straight
+  to the conversation, the game or the team's calendar; in another club by
+  switching to it with that place on the address, so the page comes back
+  there after the reload.
+- **The bell** counts every club's: unread conversations and notices in the
+  other clubs, and calendar alerts not yet looked at. The inbox has a *From
+  all your clubs* card with each club's unread and the latest alerts.
+- **Not news:** the first look at a club or a conversation (opening the app
+  never fires a week of alerts), anything this phone did itself, anything in
+  the past. Kept per account (`sm.alerts.v1:{uid}`), forgotten on sign-out.
+- **Only while the page is open.** A closed phone hears nothing; that is push,
+  and push needs a server (`SERVER.md`, *Alerts from every club*).
+
+**Who sees what.** With sharing off (the default) a coach is exactly as
+before: each club sees what she does in that club and nothing of the other.
+With it on, the coaches and admins of every club she is in see that she is
+busy then, as *busy at another club*, wherever this app already asks who is
+free: find a time, the planner's clashes, covering a call-out, a session's
+clashes, and her own bookable slots. Her **Calendar** on People shows the
+next fortnight of it. Families never see it.
+
+**What the rules cannot hold.** Anyone signed in who knows her uid can read
+her shared busy times; a uid is only ever shown to people in a club with
+her, but it is not a secret. That is what *shared* means, and the switch
+says so.
+
 ## Not built yet, and why
 
 - **A personal calendar feed** to subscribe to. The feed Worker reads only

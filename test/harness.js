@@ -169,7 +169,7 @@ const EXPORTS = `{
   /* test club */
   seedSandbox,
   /* bulk import */
-  importPlan, applyImport, importSummary, sheetImport, IMPORT_EXAMPLE,
+  importPlan, applyImport, importSummary, sheetImport, IMPORT_EXAMPLE, csvImport, parseCsv, csvDate, CSV_TEMPLATES,
   /* the calendar */
   calItems, calPast, calNext, calTeams, seriesDates, seriesOf, icsItem, opponentMessage,
   viewCalendar, sheetCalItem, sheetCalEvent, calFormNew, publicEvents, pubText, mayAct,
@@ -224,6 +224,9 @@ const EXPORTS = `{
   /* bookable times, and my calendar */
   blockAll, blockById, blockSlots, normBlock, slotSid, canEditBlock, kidBusy, blockKids, availView, familyAvail, sheetBlock,
   AVAIL_ACTS, myCalItems, myCalTeams, myCalFilters, viewMyCal, myCalLine, createClub, blockValue, healBlocks, seatsOf, freeSeat, placesTaken, openSlotsOf, slotAt, slotKey,
+  /* my calendar, across clubs */
+  get you() { return you }, busyOf, youCalItems, youBusy, youClubs, elsewhereOn, sharing, sheetPersonCal, viewScope, crumbs, watchMirror, mirrorSlim,
+  alertsList: () => alertsHere().list, alertBar, calAlerts, elseUnread, openAlert, noteMine,
   /* safekeeping: what is owed, a full phone, and the backup */
   otherOwed, pendingCount, refusedCount, backupDoc, trainingCopy, isBackupData, keepStored,
   get lastBackup() { return lastBackup }, get storeFail() { return storeFail }, set storeFail(v) { storeFail = v }

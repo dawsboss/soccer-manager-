@@ -27,6 +27,19 @@ const qv = f => (idx.match(new RegExp(f.replace('.', '\\.') + '\\?v=(\\d+)')) ||
 const all = [...idx.matchAll(/([\w.-]+)\?v=(\d+)/g)].map(m => [m[1], m[2]]);
 const ASSETS = ['styles.css', 'ics.js', 'drills.js', 'drill-diagram.js', 'app.js'];
 
+/* SERVER.md lists every job a phone does today that a server would do. It
+   names functions so the day there is one, nobody has to rediscover them; a
+   name that no longer exists is a list that has drifted from the code. */
+{
+  const server = fs.readFileSync(root('SERVER.md'), 'utf8');
+  const named = [...new Set([...server.matchAll(/`(\w+)\(\)`/g)].map(m => m[1]))];
+  const gone = named.filter(n => !new RegExp(`(^|\\n)(async )?function ${n}\\(|(^|\\n)const ${n} = `).test(app));
+  console.log('--- SERVER.md names functions that exist ---');
+  check(`every one of the ${named.length} functions SERVER.md names is in app.js`, gone.join(', '), '');
+  const unmarked = named.filter(n => !new RegExp(`// SERVER\\.md:[^\\n]*\\n(async )?(function ${n}\\(|const ${n} = )`).test(app));
+  check('and each carries a SERVER.md: line at the code', unmarked.join(', '), '');
+}
+
 console.log('--- the markers CLAUDE.md names ---');
 console.log('  app.js BUILD      :', build);
 console.log('  index meta build  :', meta);

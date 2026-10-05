@@ -8,6 +8,105 @@ before this point lives only in the git log.
 
 ---
 
+## Alerts from every club — 2026-10-05 (build 89)
+
+The owner: *people should still have a way to get notifications for all clubs,
+and when clicked it moves them over to that club, so a coach can respond to a
+parent quicker. Cancelled games can interrupt your current view of another
+game.*
+
+- **Messages from every club.** Each club you're in is listened to as its own
+  inbox would be, so a family writing to you in another club pops up straight
+  away, naming the club.
+- **Your calendar, from every club.** A game, practice or event of yours called
+  off, back on, moved or new, in any club (the open one included), is an alert;
+  a weekly series is one. Parents get these for their children's teams, which
+  they didn't before.
+- **It interrupts.** Every alert pops up and then waits in a bar over whatever
+  is on screen, a game included, until opened or dismissed; called off and
+  big moves are drawn as urgent. **Open** goes to the conversation, the game or
+  the team's calendar, switching club if it has to.
+- **One bell for every club**, and *From all your clubs* in the inbox with each
+  club's unread and the latest alerts.
+- Never on a first look (opening the app fires nothing old), never what your
+  own phone did, and an admin hears the open club's changes once, from club
+  activity. Still only while the page is open: push needs a server, and
+  `SERVER.md` now says so for this too.
+
+## A phone in every club; the top row names the screen; SERVER.md — 2026-10-04 (build 88, rules version 4)
+
+The owner: *a phone should be a part of as many clubs as they want. Are there
+other screens that shouldn't show the team in the top row? I think the top
+row should switch to the view you're looking at. And note down everywhere that
+will change when we have a server — a phone having to update that a coach is
+busy for another club is ridiculous in the future.*
+
+- **A phone is in every club its account is in.** The club on screen is still
+  synced in full; every other one is now listened to as well, read-only, for
+  its teams, games, sessions and bookable times, and kept on the phone cut
+  down to what My calendar needs. My calendar shows every club live, works
+  with no signal, and says "as of" for a club it hasn't heard from. This
+  replaces the per-club summary each phone used to write to
+  `people/{uid}/cal`, which is gone, so nothing about a club is stored under a
+  person any more.
+- **The top row names the screen.** Club › People, Club › Training sessions,
+  Club › Planner, Club › Messages, Club › Club settings, Club › Your settings,
+  Club › My players, Club › Shapes; You › My calendar; a team's tabs Club ›
+  Team (› Game) as before.
+- **SERVER.md** lists every job a phone does today that a server would do:
+  busy times across clubs, holding every club, the lookup tables, bookable
+  slots and seats, the share pages, joining and new clubs, notifications and
+  email, the rules, migrations, backups and imports. Each function it names
+  carries a `// SERVER.md:` line, and `test/version.js` fails if one goes
+  missing.
+
+**Rules version 4**: `people/{uid}/cal` removed (version 3 was never
+published). Paste `database.rules.json` to turn sharing on.
+
+## My calendar is yours, across clubs; import from spreadsheets — 2026-10-04 (build 87, rules version 3)
+
+The owner: *when I go to my settings, my calendar or something else, the team
+should become deselected and just the club selected. My calendar should be
+to my account, so no club included, since if I work for more than one my
+calendar becomes more complex. Then people can know my availability without
+going to another club's page — but private by default, public if I want.
+And a way to import fields, games, practices, etc. in bulk, so clubs can
+switch to this easily.*
+
+- **The crumbs say whose a screen is.** A team's tabs carry Club › Team;
+  settings, people, sessions, messages and club home carry the club alone;
+  My calendar carries **You**. A team left in the crumbs on Settings read as
+  "these are the team's settings".
+- **My calendar covers every club you're in**, from the account button as
+  well as the club page, with a chip per club. A phone still holds one club,
+  so each of your phones writes a summary of the club it has open to
+  `people/{uid}/cal/{code}`, which only you can read, and My calendar opened
+  online also reads each other club's teams and games itself, so a moved
+  practice shows moved. `AVAILABILITY.md` has the design.
+- **Private by default; share if you want.** *Who sees your calendar* →
+  *Share when I'm busy* publishes the times you are busy (a date and two
+  times, nothing else; no title, place or club) to `people/{uid}/busy`. The
+  coaches and admins of your clubs then see you as busy at another club
+  wherever the app asks who is free — find a time, the planner, covering a
+  call-out, session clashes, and your own bookable slots — and **People →
+  Calendar** shows anyone's next fortnight as the club sees it. The rules
+  refuse any busy time while sharing is off, and turning it off deletes them.
+- **Import from a spreadsheet.** The bulk import reads CSV as well as JSON: a
+  roster, a schedule (games, practices and other entries sorted by type or
+  by whether there's an opponent; *Home team*/*Away team* worked out), or a
+  list of fields, by their headings, with templates to download. A sheet
+  with no team column asks which team it's for. Problems are given by row,
+  and nothing is written while one is left, as before.
+- **Practices and events import**, from either: one entry per week of a
+  weekly practice, sharing a series as *Every week* does, matched by team,
+  date, start and kind so a second run adds nothing. Games take their
+  match-day details (home or away, arrive by, kit, notes), and times can be
+  written `9:30am`.
+
+**Rules version 3**: the new `people` root block. Paste `database.rules.json`;
+until then other clubs stay on the phone that saw them and sharing is
+refused, and the screen says so.
+
 ## Time boxes keep their colon — 2026-10-04
 
 Editing a goal, shot, event or sub time opens a number pad, which has no colon

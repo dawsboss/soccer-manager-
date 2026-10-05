@@ -614,6 +614,42 @@ reads('owners are not world-readable', OUT, 'shareOwners/sh1', false);
   delete DB.invites; delete DB.clubInvites;
 }
 
+/* ---------------- a calendar of your own ---------------- */
+
+/* AVAILABILITY.md, "My calendar is yours, not a club's". Her phone reads her
+   other clubs itself, so nothing about a club is stored under her; her busy
+   times are readable by anyone signed in, carry nothing but times, and
+   cannot be written at all until she says so. */
+{
+  console.log('\n--- my calendar, across clubs ---');
+  const P = 'people/coach/';
+  writes('no summary of a club is kept for her anywhere', COACH, P + 'cal/CLUB', { name: 'Lakeside SC', at: NOW }, false);
+  writes('nor anything else under her name', COACH, P + 'notes', { x: 1 }, false);
+  reads('nobody lists everyone', OWNER, 'people', false);
+  DB.people = { coach: {} };
+  const busy = { at: NOW, b: { i1: { d: '2026-10-05', s: '17:00', e: '18:30' } } };
+  writes('private by default: no busy times while sharing is off', COACH, P + 'busy/abc123', busy, false);
+  writes('I say whether to share', COACH, P + 'set', { share: true, at: NOW }, true);
+  writes('it is a yes or a no', COACH, P + 'set', { share: 'everyone', at: NOW }, false);
+  writes('nobody says it for me', ADM, P + 'set', { share: true, at: NOW }, false);
+  reads('nobody else reads it', ADM, P + 'set', false);
+  DB.people.coach.set = { share: true, at: NOW };
+  writes('shared: my busy times go up', COACH, P + 'busy/abc123', busy, true);
+  writes('times only: no title', COACH, P + 'busy/abc123', { at: NOW, b: { i1: { ...busy.b.i1, t: 'Practice' } } }, false);
+  writes('and no place, or which club', COACH, P + 'busy/abc123', { at: NOW, club: 'CLUB', b: busy.b }, false);
+  writes('not in somebody else\'s name', ADM, P + 'busy/abc123', busy, false);
+  DB.people.coach.busy = { abc123: busy };
+  reads('anyone signed in reads them', RANDO, P + 'busy', true);
+  reads('not signed out', null, P + 'busy', false);
+  DB.people.coach.set = { share: false, at: NOW };
+  writes('turned private, nothing more goes up', COACH, P + 'busy/abc123', busy, false);
+  writes('and what was there comes down', COACH, P + 'busy', null, true);
+  writes('only by me', ADM, P + 'busy', null, false);
+  console.log('  ^ shared means readable by anyone signed in who knows her uid;');
+  console.log('    a uid is only shown inside a club she is in, but it is no secret.');
+  delete DB.people;
+}
+
 /* ---------------- practices ---------------- */
 
 /* TRAINING.md: drills and plans are the club's and the coach's own work, so a
@@ -1597,7 +1633,12 @@ console.log(`
 
  10. A family can hold a second seat for the same child by hand-made writes.
      Her own booking names one seat; the coach's phone clears a seat with no
-     booking on it after ten minutes.`);
+     booking on it after ten minutes.
+
+ 11. Somebody's shared busy times are readable by anyone signed in who knows
+     her uid. A uid is only shown inside a club she is in, and the times
+     carry nothing but a date and two times; private is the default, and the
+     rules refuse any busy time while she has not said to share.`);
 
 console.log(`\n${failures ? failures + ' EXPECTATION(S) FAILED' : 'all expectations hold'}`);
 process.exit(failures ? 1 : 0);

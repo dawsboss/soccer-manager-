@@ -26,7 +26,7 @@ const clickImport = o => {
   A.click({ act: 'importgo' });
 };
 const onlyDepths = plan => plan.writes.every(([p]) =>
-  /^teams\/[\w-]+(\/players\/[\w-]+(\/\w+)?|\/birthYear)?$/.test(p) || /^matches\/[\w-]+(\/\w+)?$/.test(p)
+  /^teams\/[\w-]+(\/players\/[\w-]+(\/\w+)?|\/events\/[\w-]+(\/\w+)?|\/birthYear)?$/.test(p) || /^matches\/[\w-]+(\/\w+)?$/.test(p)
   || /^access\/org\/venues\/[\w-]+(\/\w+|\/permits\/[\w-]+)?$/.test(p))
   // a session and a booking each at its own path under training/{code}, never a collection
   && (plan.sessWrites || []).every(([p]) => /^sessions\/[\w-]+$/.test(p) || /^booked\/[\w-]+\/[\w-]+$/.test(p));
@@ -363,5 +363,117 @@ check('this club\'s copy of the team kept', A.state.teams[t.id].name, 'Renamed h
 check('the club\'s admins untouched — the old import dropped them', !!A.state.access.admins.adm, true);
 check('the tracked game came back whole', Object.keys(A.state.matches[next.id].stints).length, 1);
 check('loading it again adds nothing', A.importPlan(backup).writes.length, 0);
+
+/* ---------------- practices and the rest of the calendar ---------------- */
+
+console.log('\n--- practices, events and match-day details ---');
+{
+admin();
+A.applyImport(A.importPlan({ teams: [{ name: 'Flight' }] }));
+const fl = Object.values(A.state.teams)[0];
+const cal = {
+  practices: [{ team: 'Flight', date: '2026-09-07', start: '5:30pm', end: '19:00', where: 'Lakeside Park', weekly: { days: ['Mon', 'Wed'], until: '2026-09-30' } }],
+  events: [{ team: 'Flight', title: 'Picture day', date: '2026-09-20', start: '10:00', minutes: 30 }],
+  games: [{ team: 'Flight', opponent: 'Riverside', date: '2026-09-13', kickoff: '9am', home: 'A', arrive: '8:30 am', uniform: 'Blue shirts' }]
+};
+const cp = A.importPlan(cal);
+deepEq('no errors', cp.errors, []);
+check('a weekly practice is one entry per week, Mondays and Wednesdays', cp.counts.newPractices, 8);
+check('and the picture day', cp.counts.newEvents, 1);
+check('each at its own path on the team\'s calendar', cp.writes.filter(([p]) => /^teams\/[\w-]+\/events\/[\w-]+$/.test(p)).length, 9);
+check('every write at a depth the rules grant', onlyDepths(cp), true);
+const pr = cp.writes.map(([, v]) => v).filter(v => v && v.kind === 'practice');
+check('sharing one series', new Set(pr.map(v => v.series)).size === 1 && !!pr[0].series, true);
+check('the time read from "5:30pm"', pr[0].start + '-' + pr[0].end, '17:30-19:00');
+check('team-only unless the file says so', pr.every(v => v.public === false), true);
+const pic = cp.writes.map(([, v]) => v).find(v => v && v.title === 'Picture day');
+check('an end worked out from its length', pic && pic.end, '10:30');
+const gm = cp.writes.map(([, v]) => v).find(v => v && v.opponent === 'Riverside');
+check('a game\'s kick-off read from "9am"', gm.kickoff, '09:00');
+check('away, arrive by, and the kit', [gm.home, gm.arrive, gm.kit].join(' '), 'away 08:30 Blue shirts');
+A.applyImport(cp);
+check('on the calendar', A.calItems([fl.id]).filter(x => x.kind === 'practice').length, 8);
+check('a second run adds nothing', A.importPlan(cal).writes.length, 0);
+const moved = JSON.parse(JSON.stringify(cal)); moved.practices[0].where = 'Hill End';
+const mp = A.importPlan(moved);
+check('a changed place updates each week, one field each', mp.writes.every(([p]) => /\/events\/[\w-]+\/venue$/.test(p)) && mp.writes.length, 8);
+const handMade = Object.values(A.state.teams[fl.id].events).find(e => e.kind === 'practice');
+A.state.teams[fl.id].events[handMade.id].public = true;
+check('a practice already shared stays shared when the file is silent', A.importPlan(cal).writes.length, 0);
+const fresh = A.importPlan({ teams: [{ name: 'Storm', practices: [{ date: '2026-09-08', start: '18:00' }] }] });
+check('a new team\'s practices go out with it, in its one write', fresh.writes.length === 1 && Object.keys(fresh.writes[0][1].events).length, 1);
+check('a bad date is an error', A.importPlan({ practices: [{ team: 'Flight', date: '8 Sept', start: '18:00' }] }).errors.length, 1);
+check('a practice for a team that isn\'t here is an error', A.importPlan({ practices: [{ team: 'Nobody', date: '2026-09-08' }] }).errors.length, 1);
+}
+
+/* ---------------- spreadsheets ---------------- */
+
+console.log('\n--- a spreadsheet, as other apps export them ---');
+{
+admin();
+const roster = 'First Name,Last Name,Jersey #,Position,Date of birth\nAda,Lovelace,1,Goalkeeper,2015-02-01\n"Smith, Jr",Bea,7,Striker,2015-03-01\n';
+let r = A.csvImport(roster, {});
+check('a roster with no team column asks for the team', r.needsTeam && !!r.error, true);
+r = A.csvImport(roster, { team: 'Flight' });
+check('read as a roster', r.kind, 'players');
+check('two players', r.data.teams[0].players.length, 2);
+check('first and last names joined, a quoted comma kept', r.data.teams[0].players[1].name, 'Smith, Jr Bea');
+check('a column it can\'t place is said', r.unused.join(), 'Date of birth');
+const rp = A.importPlan(r.data);
+deepEq('no errors', rp.errors, []);
+check('makes the team it was picked for', rp.counts.newTeams + ' ' + rp.counts.newPlayers, '1 2');
+check('a striker is a forward', Object.values(rp.writes[0][1].players).find(p => p.number === '7').preferred, 'Forward');
+check('nobody\'s date of birth', /2015-0/.test(JSON.stringify(rp.writes)), false);
+
+A.click({ act: 'bulkimport' });
+A.dom.node('#impText').value = roster;
+A.dom.node('#impTeam').value = '';
+A.dom.node('#impNewTeam').value = '';
+A.click({ act: 'importgo' });
+check('nothing written while the team is missing', Object.keys(A.state.teams).length, 0);
+check('and the sheet says why', /pick the team/.test(A.dom.node('#sheet').innerHTML), true);
+A.dom.node('#impNewTeam').value = 'Flight';
+A.click({ act: 'importgo' });
+check('picked, it imports', Object.values(A.state.teams).map(x => x.name + ':' + Object.keys(x.players).length).join(), 'Flight:2');
+
+const sched = [
+  'Team,Event Type,Date,Start Time,End Time,Home Team,Away Team,Location,Arrival Time,Uniform,Notes',
+  'Flight,Game,10/4/2026,9:30 AM,,Flight,Northgate,Lakeside Park,9:00 AM,Blue,',
+  'Flight,League game,10/11/2026,10:00 AM,,Riverside,Flight,Riverside Rec,,White,Bring both kits',
+  'Flight,Practice,10/6/2026,5:30 PM,7:00 PM,,,Lakeside Park,,,',
+  'Flight,Team party,10/18/2026,4:00 PM,6:00 PM,,,Clubhouse,,,Families welcome'
+].join('\r\n');
+const s1 = A.csvImport(sched, {});
+check('read as a schedule', s1.kind, 'schedule');
+check('games, practices and the rest sorted by their type', [s1.data.games.length, s1.data.practices.length, s1.data.events.length].join(), '2,1,1');
+check('month first, as written', s1.data.games[0].date, '2026-10-04');
+check('ours at home: the other side is the opponent', s1.data.games[0].opponent + ' ' + s1.data.games[0].home, 'Northgate home');
+check('ours away', s1.data.games[1].opponent + ' ' + s1.data.games[1].home, 'Riverside away');
+const sp = A.importPlan(s1.data);
+deepEq('no errors', sp.errors, []);
+check('two games, a practice and a party', [sp.counts.newGames, sp.counts.newPractices, sp.counts.newEvents].join(), '2,1,1');
+A.applyImport(sp);
+const g1 = Object.values(A.state.matches).find(m => m.opponent === 'Northgate');
+check('kick-off, arrive by and kit', [g1.kickoff, g1.arrive, g1.kit].join(' '), '09:30 09:00 Blue');
+check('the same sheet again adds nothing', A.importPlan(A.csvImport(sched, {}).data).writes.length, 0);
+const eu = A.csvImport('Team;Date;Time;Opponent\nFlight;25/10/2026;10:00;Hill End\nFlight;1/11/2026;10:00;Storm\n', {});
+check('a day past twelve reads the whole column day first', eu.data.games.map(g => g.date).join(), '2026-10-25,2026-11-01');
+check('semicolons too', eu.kind, 'schedule');
+check('"Oct 4, 2026" and "Sat 4 October 2026"', A.csvImport('Team,Date,Opponent\nFlight,"Oct 4, 2026",X\nFlight,Sat 4 October 2026,Y\n', {}).data.games.map(g => g.date).join(), '2026-10-04,2026-10-04');
+const badRow = A.importPlan(A.csvImport('Team,Date,Opponent\nFlight,next week,X\n', {}).data);
+check('a date it can\'t read is an error, by row', badRow.errors.length === 1 && /^Row 2/.test(badRow.errors[0]), true);
+const before = JSON.stringify(A.state);
+A.dom.node('#impText').value = 'Team,Date,Opponent\nFlight,next week,X\nFlight,2026-12-01,Y\n';
+A.click({ act: 'importgo' });
+check('and nothing is written while it is there', JSON.stringify(A.state) === before, true);
+
+const fieldsCsv = 'Name,Address,Pitches,Surface,Lights\nLakeside Park,1 Lake Rd,2,Grass,yes\n';
+const fc = A.csvImport(fieldsCsv, {});
+check('read as fields, and needing no team', fc.kind + ' ' + !!fc.needsTeam, 'fields false');
+const fp = A.importPlan(fc.data);
+check('a field added', fp.counts.newFields, 1);
+check('nothing it can\'t tell', A.csvImport('Colour,Size\nred,4\n', {}).error.startsWith('Couldn\'t tell'), true);
+check('a template for each, readable by itself', ['roster', 'schedule', 'fields'].every(k => { const c = A.csvImport(A.CSV_TEMPLATES[k], {}); return !c.error && !A.importPlan(c.data).errors.length; }), true);
+}
 
 H.summary('bulk import');
