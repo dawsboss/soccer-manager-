@@ -513,4 +513,76 @@ console.log('\n--- the club\'s drills ---');
   check('a coach cannot import', A.shelfItems('club').length, 1);
 }
 
+console.log('\n--- a registration system\'s roster and events, tab-separated ---');
+{
+admin();
+const T = rows => rows.map(r => r.join('\t')).join('\n') + '\n';
+const rosterTsv = T([
+  ['team_id', 'team', 'season_id', 'season', 'level', 'birth_year', 'team_gender', 'coach_id', 'coach_first_name', 'coach_last_name', 'coach_email', 'player_id', 'player_first_name', 'player_last_name', 'player_gender', 'player_birth_date', 'player_birth_year', 'player_position', 'player_number', 'player_Foot', 'parent1_email', 'parent1_first_name', 'parent1_last_name', 'parent1_mobile_number', 'parent2_email', 'parent2_first_name', 'parent2_last_name', 'parent2_mobile_number', 'street', 'city', 'state', 'zip'],
+  ['t1', 'Flight G12', 's1', 'Fall 2026', 'Premier', '2014', 'F', 'c1', 'Jaz', 'Patel', 'jaz@example.com', 'p1', 'Ada', 'Lovelace', 'F', '2014-02-01', '2014', 'Goalkeeper', '1', 'Right', 'mum@example.com', 'Mary', 'Lovelace', '555-0101', '', '', '', '', '1 Lake Rd', 'Lakeside', 'MN', '55001'],
+  ['t1', 'Flight G12', 's1', 'Fall 2026', 'Premier', '2014', 'F', 'c1', 'Jaz', 'Patel', 'jaz@example.com', 'p2', 'Bea', 'Smith', 'F', '2014-05-09', '2014', 'Midfielder', '7', 'Left', 'dad@example.com', 'Tom', 'Smith', '555-0102', 'mum2@example.com', 'Sue', 'Smith', '555-0103', '2 Hill St', 'Lakeside', 'MN', '55001']
+]);
+const rr = A.csvImport(rosterTsv, {});
+check('read as a roster, with its own team column', rr.kind + ' ' + !!rr.needsTeam, 'players false');
+const rrp = A.importPlan(rr.data);
+deepEq('no errors', rrp.errors, []);
+A.applyImport(rrp);
+const ft = Object.values(A.state.teams).find(x => x.name === 'Flight G12');
+check('team and birth year', ft && ft.birthYear, 2014);
+const bea = Object.values(ft.players).find(p => p.name === 'Bea Smith');
+check('number and position from player_ columns', bea.number + ' ' + bea.preferred, '7 Mid');
+check('foot is a field of its own, not a note', bea.foot + ' ' + (bea.note || ''), 'L ');
+const said = JSON.stringify(A.state);
+check('no parent, email, phone, address or birth date kept', ['@example.com', '555-01', 'Lake Rd', '55001', '2014-05-09', 'Mary'].some(x => said.includes(x)), false);
+check('the columns it left are said', ['parent1_mobile_number', 'street', 'coach_first_name'].every(h => rr.unused.includes(h)), true);
+
+const eventsTsv = T([
+  ['date', 'start_time', 'end_time', 'event', 'team_id', 'team_name', 'head_coach', 'field_id', 'location', 'field_identifier', 'address'],
+  ['2026-10-06', '5:30 PM', '7:00 PM', 'Practice', 't1', 'Flight G12', 'Jaz Patel', 'f1', 'Lakeside Park', 'Field 3', '1 Park Ave'],
+  ['10/10/2026', '09:30:00', '11:00:00', 'Game vs Northgate', 't1', 'Flight G12', 'Jaz Patel', 'f1', 'Lakeside Park', 'Field 1', '1 Park Ave'],
+  ['10/17/2026', '10:00 AM', '', 'Riverside @ Flight G12', 't1', 'Flight G12', 'Jaz Patel', 'f2', 'Riverside Rec', '', '9 River Rd'],
+  ['10/24/2026', '10:00 AM', '', 'Flight G12 @ Hill End (Away)', 't1', 'Flight G12', 'Jaz Patel', 'f2', 'Hill End', '', ''],
+  ['10/31/2026', '9:00 AM', '', 'Game', 't1', 'Flight G12', 'Jaz Patel', '', 'TBD', '', ''],
+  ['11/01/2026', '4:00 PM', '6:00 PM', 'Team party at the clubhouse', 't1', 'Flight G12', 'Jaz Patel', '', 'Clubhouse', '', '']
+]);
+const ev = A.csvImport(eventsTsv, {});
+check('read as a schedule', ev.kind, 'schedule');
+check('practice, games and other entries', [ev.data.practices.length, ev.data.games.length, ev.data.events.length].join(), '1,3,2');
+deepEq('opponent and home or away from the event text', ev.data.games.map(g => g.opponent + ':' + g.home), ['Northgate:home', 'Riverside:home', 'Hill End:away']);
+check('location and field identifier are one place', ev.data.practices[0].venue, 'Lakeside Park, Field 3');
+check('a game with no opponent is an entry, and said', ev.data.events[0].title === 'Game' && ev.warnings.length === 1 && /Row 6/.test(ev.warnings[0]), true);
+check('"at" is not a game', ev.data.events[1].title, 'Team party at the clubhouse');
+deepEq('the places with an address become fields, once each', ev.data.fields.map(f => f.name + ':' + f.address), ['Lakeside Park:1 Park Ave', 'Riverside Rec:9 River Rd']);
+const evp = A.importPlan(ev.data);
+deepEq('no errors', evp.errors, []);
+check('onto the team the roster made', evp.counts.newTeams, 0);
+check('every write at a depth the rules grant', onlyDepths(evp), true);
+A.applyImport(evp);
+const g = Object.values(A.state.matches).find(m => m.opponent === 'Northgate');
+check('kick-off read from seconds', g.kickoff, '09:30');
+check('the same file again adds nothing', A.importPlan(A.csvImport(eventsTsv, {}).data).writes.length, 0);
+}
+
+console.log('\n--- a player\'s stronger foot ---');
+{
+admin();
+const r = A.importPlan({ teams: [{ name: 'Feet', players: [{ name: 'Lefty', foot: 'left' }, { name: 'Odd', foot: 'sideways' }] }] });
+check('read from a file', Object.values(r.writes[0][1].players).find(p => p.name === 'Lefty').foot, 'L');
+check('anything else is said, not guessed', r.warnings.some(w => /sideways/.test(w)), true);
+const slots = A.presetsFor(7)['2-3-1'];
+const lb = slots.find(x => x.label === 'LB'), rb = slots.find(x => x.label === 'RB'), cm = slots.find(x => x.label === 'CM');
+const L = { id: 'l', preferred: 'Back', canPlay: [], foot: 'L' }, R = { id: 'r', preferred: 'Back', canPlay: [], foot: 'R' };
+check('a left-footer suits the left more than the right', A.fit(L, lb) > A.fit(L, rb), true);
+check('the middle has no side', A.footFit(L, cm), 0);
+check('never more than a step of position preference', A.fit({ preferred: 'Back', foot: 'R' }, lb) > A.fit({ preferred: 'Mid', canPlay: ['Back'], foot: 'L' }, lb), true);
+const as = A.assignSlots([R, L], [lb, rb]);
+check('two equal backs go to their own sides', as[lb.id] + as[rb.id], 'lr');
+check('no foot noted changes nothing', A.footFit({ preferred: 'Back' }, lb) + A.footFit({ foot: 'B' }, lb), 0);
+
+A.state.teams.f1 = { id: 'f1', name: 'Feet', players: { x: { id: 'x', name: 'Ola', number: '3', active: true, preferred: '', canPlay: [], rating: 3 } } };
+A.ui.teamId = 'f1';
+A.sheetPlayer(A.state.teams.f1.players.x);
+check('the player sheet asks for it', /Stronger foot/.test(A.dom.node('#sheet').innerHTML), true);
+}
+
 H.summary('bulk import');

@@ -2,7 +2,7 @@
    Static app. Data lives in localStorage, and mirrors to Firebase Realtime
    Database when a config + workspace code are present. */
 
-const BUILD = '92';
+const BUILD = '94';
 const BUILT = '2026-10-04';
 /* The version of database.rules.json this app was written against. The rules
    carry the same number in rulesVersion's .write, which accepts that number
@@ -93,10 +93,18 @@ function fit(p, slot) {
   if (!slot) return 0;
   if (slot.role === 'GK') return p.gk || p.preferred === 'GK' ? 3 : -3;
   if (p.gk) return -1;
-  if (p.preferred === slot.role) return 2;
-  if ((p.canPlay || []).includes(slot.role)) return 1;
-  return p.anywhere === false ? -1 : 0;
+  const v = p.preferred === slot.role ? 2 : (p.canPlay || []).includes(slot.role) ? 1 : p.anywhere === false ? -1 : 0;
+  return v + footFit(p, slot);
 }
+/* Which foot she kicks with, as the coach noted it: L, R or B (both). A
+   left-footer on the left of the shape is a small nudge, never a reason on
+   its own: smaller than keeping her where she was last block (0.5) and than
+   any step of position preference, so it only decides between equals. The
+   side is read from where the spot sits, so a coach's own shape gets it too. */
+const FOOT = { L: 'Left', R: 'Right', B: 'Both' };
+const slotSide = slot => slot && typeof slot.x === 'number' ? (slot.x < 40 ? 'L' : slot.x > 60 ? 'R' : '') : '';
+const footFit = (p, slot) => p.foot && (p.foot === 'L' || p.foot === 'R') && slotSide(slot) ? (p.foot === slotSide(slot) ? 0.25 : -0.25) : 0;
+const footLabel = f => f === 'B' ? 'both feet' : FOOT[f] ? FOOT[f].toLowerCase() + ' foot' : '';
 
 /* Greedy best-fit assignment of an XI to the shape's spots. prev keeps players
    in the role they held last block rather than rotating them for no reason. */
@@ -1772,6 +1780,100 @@ async function makeInvite() {
   render();
 }
 
+/* ---------------- invites from an imported roster ---------------- */
+/* A registration system's roster carries every family's email and the
+   coach's, so after importing it the admin is offered an invite for each:
+   the same personal, single-use, email-bound invite People → Invite someone
+   makes, one per parent per child and one per coach per team. Nothing is
+   offered to anyone who already has that role here (matched by the email
+   their account signed in with), or who has an open invite for it, so
+   importing next season's roster invites only the new families. Making the
+   invites and sending the emails are two taps, so the admin can make them,
+   look, and copy links by hand instead of having Firebase send them. The
+   emails live only in this variable until then: an invite is the one place
+   they are written, where they already go (invites/{id}, clubInvites). */
+let importContacts = null;   // { list: [{ role, team, player?, email }], made: { key: inviteId }, sent: { key: true } }
+const contactKey = c => [c.role, importKey(c.team), importKey(c.player), c.email].join('|');
+function contactCount(list) {
+  const fam = list.filter(c => c.role === 'parent').length, co = list.filter(c => c.role === 'coach').length;
+  return [fam ? `${fam} parent email${fam === 1 ? '' : 's'}` : '', co ? `${co} coach email${co === 1 ? '' : 's'}` : ''].filter(Boolean).join(' and ');
+}
+/* Each contact, worked out against the club as it is now. */
+function importInviteRows(c) {
+  const ic = c || importContacts;
+  if (!ic) return [];
+  const byName = {};
+  for (const t of Object.values(state.teams || {})) if (t && t.name) byName[importKey(t.name)] = t;
+  const uidsOf = email => members().filter(u => String(u.email || '').toLowerCase() === email).map(u => u.uid);
+  return ic.list.map(x => {
+    const key = contactKey(x), t = byName[importKey(x.team)] || null;
+    const p = t && x.player ? Object.values(t.players || {}).find(q => importKey(q.name) === importKey(x.player)) || null : null;
+    const row = { ...x, key, t, p };
+    if (!t || (x.role === 'parent' && !p)) return { ...row, st: 'missing' };
+    if (ic.made[key]) return { ...row, st: 'made', id: ic.made[key] };
+    const uids = uidsOf(x.email);
+    if (x.role === 'coach' ? uids.some(u => isCoach(t.id, u)) : uids.some(u => ((p.guardians || {})[u]))) return { ...row, st: 'has' };
+    const open = inviteList().find(v => v.role === x.role && v.team === t.id && !v.used && (v.expiresAt || 0) > nowMs()
+      && String(v.email || '').toLowerCase() === x.email && (x.role !== 'parent' || v.player === p.id));
+    if (open) return { ...row, st: 'open', id: open.id };
+    return { ...row, st: 'todo' };
+  });
+}
+function sheetImportInvites() {
+  if (!importContacts) return;
+  watchClubInvites();
+  const rows = importInviteRows();
+  const n = st => rows.filter(r => r.st === st).length;
+  const todo = n('todo'), linked = rows.filter(r => r.st === 'made' || r.st === 'open');
+  const unsent = linked.filter(r => !importContacts.sent[r.key]);
+  const canMail = !!(authMod && fbAuth);
+  const what = r => r.role === 'coach' ? `Coach · ${esc(r.team)}` : `Parent of ${esc(r.player)} · ${esc(r.team)}`;
+  const state_ = r => r.st === 'has' ? 'Already has it' : r.st === 'missing' ? 'Not found here' : r.st === 'todo' ? 'No invite yet'
+    : importContacts.sent[r.key] ? 'Invite made · email sent' : r.st === 'open' ? 'Has an open invite' : 'Invite made';
+  openSheet(`<h3>Invite them too?</h3>
+    <p class="muted" style="margin-top:0">The file had ${esc(contactCount(importContacts.list))}. Each invite works once, for ${INVITE_DAYS} days, and only for the email it names — so a forwarded link is no use to anyone else. Anyone who already has that role here is skipped.</p>
+    <div class="plist" style="margin-bottom:12px">${rows.map(r => `<div class="prow" style="grid-template-columns:1fr auto">
+      <span><span class="pname">${esc(r.email)}</span><span class="rowsub">${what(r)}</span></span>
+      <span class="rowsub" style="text-align:right">${state_(r)}${r.id && r.st !== 'has' ? `<br><button class="btn quiet sm" data-act="copylink" data-v="${esc(inviteLink(r.id))}">Copy link</button>` : ''}</span></div>`).join('')}</div>
+    ${todo ? `<button class="btn wide" data-act="importinvitego" style="margin-bottom:8px">Make ${todo} invite${todo === 1 ? '' : 's'}</button>` : ''}
+    ${unsent.length && canMail ? `<button class="btn ${todo ? 'quiet ' : ''}wide" data-act="importinvitemail" style="margin-bottom:8px">Email ${unsent.length} of them the link</button>
+    <p class="muted">Firebase sends it, worded as a sign-in link rather than an invitation, so a message to the team saying it's coming helps. Every link is also under People → Invites to copy or send again.</p>` : ''}
+    <button class="btn quiet wide" data-act="importinviteskip">${todo || unsent.length ? 'Not now' : 'Done'}</button>`);
+}
+// SERVER.md: one invite at a time from the admin's phone; a server would make the roster's in one call.
+async function inviteImported() {
+  if (!importContacts) return;
+  if (!canAdmin()) { toast('Club admins only'); return; }
+  if (!fb || !rtdb || !me) { toast(me ? 'Needs a connection to the database' : 'Sign in first'); return; }
+  const ic = importContacts;
+  let n = 0;
+  for (const r of importInviteRows(ic).filter(x => x.st === 'todo')) {
+    try { ic.made[r.key] = (await writeInvite(r.t, r.role, r.role === 'parent' ? r.p : null, r.email)).id; n++; } catch (e) {
+      toast(/permission|denied/i.test((e && e.code) || '') ? 'The database refused it — are the invite rules from README published?' : 'Stopped — no connection');
+      break;
+    }
+  }
+  if (n) logAccess('invited', null, { targetName: n + ' from an imported roster' });
+  if (importContacts === ic) sheetImportInvites();
+}
+// SERVER.md: the sign-in emails go one at a time from the admin's phone; a server would send them.
+async function mailImported() {
+  if (!importContacts) return;
+  if (!canAdmin()) { toast('Club admins only'); return; }
+  if (!authMod || !fbAuth) { toast('Sign-in is not available on this build'); return; }
+  const ic = importContacts;
+  let n = 0;
+  for (const r of importInviteRows(ic).filter(x => (x.st === 'made' || x.st === 'open') && !ic.sent[x.key])) {
+    try { await authMod.sendSignInLinkToEmail(fbAuth, r.email, { url: inviteLink(r.id), handleCodeInApp: true }); ic.sent[r.key] = true; n++; } catch (err) {
+      toast(`Sent ${n}, then: ${authMessage(err)}`);
+      if (importContacts === ic) sheetImportInvites();
+      return;
+    }
+  }
+  toast(`Sent ${n} email${n === 1 ? '' : 's'}`);
+  if (importContacts === ic) sheetImportInvites();
+}
+
 /* ---------------- team links: parents ask, coaches approve ---------------- */
 /* AUTH.md's bulk path. One link per team, posted once in the team chat; each
    parent signs in, types their child's shirt number, and a coach of the team
@@ -2664,6 +2766,7 @@ const IMPORT_ROLES = {
   forward: 'Forward', striker: 'Forward', attack: 'Forward', attacker: 'Forward', fwd: 'Forward', st: 'Forward'
 };
 const importRole = v => IMPORT_ROLES[String(v || '').trim().toLowerCase().replace(/[^a-z]/g, '')] || null;
+const importFoot = v => { const s = String(v ?? '').trim(); return /^l/i.test(s) ? 'L' : /^r/i.test(s) ? 'R' : /^(b|either|two)/i.test(s) ? 'B' : null; };
 const importKey = s => String(s ?? '').trim().toLowerCase().replace(/\s+/g, ' ');
 const firstOf = (o, ...ks) => { for (const k of ks) if (o[k] !== undefined && o[k] !== null && o[k] !== '') return o[k]; return undefined; };
 
@@ -2790,6 +2893,11 @@ function importPlan(data, cur = state) {
     if (ms !== undefined) {
       const n = Number(ms);
       if (n > 0) fields.maxStint = n; else out.warnings.push(`${where} (${name}): longest stint ${JSON.stringify(ms)} is not a number of minutes, so it was left out.`);
+    }
+    const ft = firstOf(p, 'foot', 'strongFoot', 'preferredFoot');
+    if (ft !== undefined) {
+      const f = importFoot(ft);
+      if (f) fields.foot = f; else out.warnings.push(`${where} (${name}): "${ft}" is not left, right or both, so the foot was left out.`);
     }
     const note = firstOf(p, 'note', 'notes');
     if (note !== undefined) fields.note = String(note).trim();
@@ -3673,13 +3781,14 @@ const CSV_COLS = {
   name: ['name', 'player', 'playername', 'fullname', 'title', 'eventname', 'fieldname'],
   first: ['firstname', 'first', 'givenname', 'forename', 'playerfirstname'],
   last: ['lastname', 'last', 'surname', 'familyname', 'playerlastname'],
-  number: ['number', 'no', 'num', 'jersey', 'jerseynumber', 'jerseyno', 'shirt', 'shirtnumber', 'uniformnumber'],
-  position: ['position', 'pos', 'preferredposition'],
+  number: ['number', 'no', 'num', 'jersey', 'jerseynumber', 'jerseyno', 'shirt', 'shirtnumber', 'uniformnumber', 'playernumber', 'playerjersey', 'playerjerseynumber'],
+  position: ['position', 'pos', 'preferredposition', 'playerposition'],
+  foot: ['foot', 'playerfoot', 'preferredfoot', 'strongfoot', 'dominantfoot'],
   also: ['also', 'otherpositions', 'canplay'],
   gk: ['gk', 'keeper', 'goalkeeper'],
   rating: ['rating'], note: ['note', 'notes', 'comments', 'details', 'description'], active: ['active'],
   born: ['birthyear', 'born', 'yearofbirth'],
-  type: ['type', 'kind', 'eventtype', 'category'],
+  type: ['type', 'kind', 'eventtype', 'category', 'event'],
   date: ['date', 'day', 'gamedate', 'eventdate', 'startdate', 'matchdate'],
   start: ['start', 'time', 'starttime', 'kickoff', 'kickofftime', 'from'],
   end: ['end', 'endtime', 'finish', 'until', 'to'],
@@ -3688,6 +3797,7 @@ const CSV_COLS = {
   hometeam: ['hometeam', 'home'], awayteam: ['awayteam', 'away', 'visitor', 'visitingteam'],
   homeaway: ['homeaway', 'ha', 'homeoraway', 'ground'],
   venue: ['venue', 'location', 'where', 'place', 'field', 'pitch', 'locationname'],
+  spot: ['fieldidentifier', 'fieldnumber', 'fieldno', 'pitchnumber', 'subfield'],
   arrive: ['arrive', 'arrival', 'arrivaltime', 'arriveby', 'meettime'],
   kit: ['kit', 'uniform', 'colours', 'colors', 'jerseycolor'],
   score: ['score', 'result', 'finalscore'],
@@ -3729,13 +3839,40 @@ function csvDate(v, dayFirst) {
 }
 const CSV_GAME = /game|match|fixture|league|cup|friendly|tournament|scrimmage|playoff/i;
 const CSV_PRACTICE = /practi[cs]e|training|session/i;
+/* An export with one Event column (and no Opponent) writes the game into it:
+   "Game vs Northgate", "@ Riverside", "Flight vs Northgate", "Riverside @
+   Flight". Our own name on either side says which is the opponent and who is
+   at home; otherwise "vs" is home and "@" away, as fixture lists write them.
+   "at" is left alone on purpose: "Picture day at the clubhouse" is no game. */
+function csvVersus(text, ours) {
+  const x = String(text || '').trim().match(/^(.*?)\s*(?:\b(?:vs\.?|v\.?|versus)\s+|(@)\s*)(.+)$/i);
+  if (!x) return null;
+  const away = !!x[2];
+  let left = x[1].trim(), right = x[3].trim(), home;
+  const said = right.match(/\s*\((home|away|h|a)\)\s*$/i);
+  if (said) { right = right.slice(0, said.index).trim(); home = /^h/i.test(said[1]) ? 'home' : 'away'; }
+  const k = importKey(ours);
+  if (k && importKey(right) === k && left) return { opponent: left, home: home || (away ? 'home' : 'away') };
+  const gameWords = !left || (CSV_GAME.test(left) && left.split(/\s+/).length <= 3);
+  if (!right) return null;
+  if ((k && importKey(left) === k) || gameWords) return { opponent: right, home: home || (away ? 'away' : 'home') };
+  return { opponent: right, ...(home ? { home } : {}) };
+}
 /* Reads a spreadsheet into importPlan()'s shape. `team` is the team every
    row is for when the sheet has no team column, as the import sheet asks. */
 function csvImport(text, opts = {}) {
   const rows = parseCsv(text);
   if (rows.length < 2) return { error: 'A spreadsheet needs a heading row, and at least one row under it.' };
   const head = rows[0].map(csvHead);
-  const unused = rows[0].filter((h, i) => h && !head[i]);
+  /* Parents' and coaches' emails are read for one thing only: offering to
+     invite them once the roster is in. They never go into the import's data,
+     so nothing about them is written to the club; they are held on this screen
+     until the admin makes the invites or closes it. */
+  const flat = rows[0].map(h => String(h).toLowerCase().replace(/[^a-z0-9]/g, ''));
+  const parentMail = flat.map((h, i) => /^(parent|guardian|mother|father|mom|mum|dad)\d*(email|emailaddress)\d*$/.test(h) ? i : -1).filter(i => i >= 0);
+  const coachMail = flat.map((h, i) => /^(head)?coach\d*(email|emailaddress)$/.test(h) ? i : -1).filter(i => i >= 0);
+  const mailCol = new Set([...parentMail, ...coachMail]);
+  const unused = rows[0].filter((h, i) => h && !head[i] && !mailCol.has(i));
   const has = k => head.includes(k);
   const recs = rows.slice(1).map((r, i) => {
     const o = { row: i + 2 };
@@ -3750,14 +3887,23 @@ function csvImport(text, opts = {}) {
   const needsTeam = kind !== 'fields' && kind !== 'drills' && !has('team');
   const teamOf = o => String(o.team || opts.team || '').trim();
   if (needsTeam && !String(opts.team || '').trim()) return { kind, needsTeam, unused, rows: recs.length, error: 'This spreadsheet has no "Team" column, so pick the team it is for.' };
-  const data = {};
+  const data = {}, warnings = [], contacts = [], seenMail = new Set();
+  const addContact = (role, team, player, email) => {
+    email = String(email || '').trim().toLowerCase();
+    if (!team || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return;
+    const k = [role, importKey(team), importKey(player), email].join('|');
+    if (!seenMail.has(k)) { seenMail.add(k); contacts.push({ role, team, ...(player ? { player } : {}), email }); }
+  };
   if (kind === 'players') {
     const byTeam = new Map();
     for (const o of recs) {
       const name = o.name || [o.first, o.last].filter(Boolean).join(' ');
       const p = { row: o.row, name };
-      for (const k of ['number', 'position', 'also', 'gk', 'rating', 'note', 'active']) if (o[k] !== undefined) p[k] = o[k];
+      for (const k of ['number', 'position', 'also', 'gk', 'rating', 'note', 'active', 'foot']) if (o[k] !== undefined) p[k] = o[k];
       const tn = teamOf(o);
+      const r = rows[o.row - 1];
+      for (const i of coachMail) addContact('coach', tn, '', r[i]);
+      if (name) for (const i of parentMail) addContact('parent', tn, name, r[i]);
       if (!byTeam.has(tn)) byTeam.set(tn, { name: tn, players: [] });
       const tt = byTeam.get(tn);
       if (o.born !== undefined && tt.born === undefined) tt.born = o.born;
@@ -3782,41 +3928,55 @@ function csvImport(text, opts = {}) {
     const slashed = recs.map(o => String(o.date || '').trim().match(/^(\d{1,2})[-/.](\d{1,2})[-/.]\d{2,4}/)).filter(Boolean);
     const dayFirst = slashed.some(x => Number(x[1]) > 12);
     data.games = []; data.practices = []; data.events = [];
+    const places = new Map();
     for (const o of recs) {
       const team = teamOf(o);
       const date = csvDate(o.date, dayFirst) || o.date || '';
       const ty = String(o.type || '');
+      const practice = CSV_PRACTICE.test(ty) || (!ty && /practi[cs]e|training/i.test(o.name || ''));
       let opponent = o.opponent, home = o.homeaway;
       if (!opponent && o.hometeam && o.awayteam) {
         const ours = importKey(team);
         if (importKey(o.hometeam) === ours) { opponent = o.awayteam; home = home || 'home'; }
         else if (importKey(o.awayteam) === ours) { opponent = o.hometeam; home = home || 'away'; }
       }
-      const isGame = CSV_GAME.test(ty) || (!ty && !!opponent) || (!!opponent && !CSV_PRACTICE.test(ty));
-      if (isGame) {
-        const g = { row: o.row, team, opponent: opponent || '', date };
+      if (!opponent && !practice) {
+        const vs = csvVersus(ty, team) || csvVersus(o.name, team);
+        if (vs) { opponent = vs.opponent; if (home === undefined) home = vs.home; }
+      }
+      // "Lakeside Park" and "Field 3" in two columns are one place, which a club field is found in by name
+      const venue = [o.venue, o.spot].filter(Boolean).join(', ') || undefined;
+      if (o.venue && o.address && !places.has(importKey(o.venue))) places.set(importKey(o.venue), { row: o.row, name: o.venue, address: o.address });
+      const isGame = !practice && (CSV_GAME.test(ty) || !!opponent);
+      if (isGame && !opponent) warnings.push(`Row ${o.row}: "${ty}" names no opponent, so it went on the calendar as an entry rather than a game.`);
+      if (isGame && opponent) {
+        const g = { row: o.row, team, opponent, date };
         if (o.start) g.kickoff = o.start;
-        for (const [k, to] of [['venue', 'venue'], ['arrive', 'arrive'], ['kit', 'kit'], ['note', 'notes'], ['score', 'score'], ['side', 'side']]) if (o[k] !== undefined) g[to] = o[k];
-        if (home !== undefined) g.home = home;
+        for (const [k, to] of [['arrive', 'arrive'], ['kit', 'kit'], ['note', 'notes'], ['score', 'score'], ['side', 'side']]) if (o[k] !== undefined) g[to] = o[k];
+        if (venue !== undefined) g.venue = venue;
+        if (home) g.home = home;
         data.games.push(g);
       } else {
         const e = { row: o.row, team, date };
-        if (o.name) e.title = o.name;
-        for (const [k, to] of [['start', 'start'], ['end', 'end'], ['minutes', 'minutes'], ['venue', 'venue'], ['note', 'notes'], ['public', 'public']]) if (o[k] !== undefined) e[to] = o[k];
-        (CSV_PRACTICE.test(ty) || (!ty && /practi[cs]e|training/i.test(o.name || '')) ? data.practices : data.events).push(e);
+        if (o.name) e.title = o.name; else if (ty && !practice) e.title = ty;
+        for (const [k, to] of [['start', 'start'], ['end', 'end'], ['minutes', 'minutes'], ['note', 'notes'], ['public', 'public']]) if (o[k] !== undefined) e[to] = o[k];
+        if (venue !== undefined) e.venue = venue;
+        (practice ? data.practices : data.events).push(e);
       }
     }
     for (const k of ['games', 'practices', 'events']) if (!data[k].length) delete data[k];
+    // a schedule that gives each place's address brings the club's fields with it
+    if (places.size) data.fields = [...places.values()];
     // a schedule for a team that isn't here yet makes it, as a roster would
     const names = [...new Set(recs.map(teamOf).filter(Boolean))];
     if (names.length) data.teams = names.map(name => ({ name }));
   }
-  return { data, kind, needsTeam, unused, rows: recs.length };
+  return { data, kind, needsTeam, unused, rows: recs.length, warnings, contacts };
 }
 const CSV_KIND = { players: 'a roster', schedule: 'a schedule', fields: 'a list of fields', drills: 'the club\'s drills' };
 /* Templates to fill in, so nobody has to guess the headings. */
 const CSV_TEMPLATES = {
-  roster: 'Team,First name,Last name,Number,Position,Goalkeeper,Notes\nLakeside Thunder G12,Ada,Lovelace,1,GK,yes,\nLakeside Thunder G12,Bea,Smith,7,Forward,,Strong left foot\n',
+  roster: 'Team,First name,Last name,Number,Position,Foot,Goalkeeper,Notes\nLakeside Thunder G12,Ada,Lovelace,1,GK,Right,yes,\nLakeside Thunder G12,Bea,Smith,7,Forward,Left,,Fades after 25 minutes\n',
   schedule: 'Team,Type,Date,Start,End,Opponent,Home/Away,Location,Arrive,Uniform,Notes\nLakeside Thunder G12,Game,2026-10-04,09:30,,Northgate,Away,Northgate Rec field 2,09:00,Blue shirts,\nLakeside Thunder G12,Practice,2026-10-06,17:30,19:00,,,Lakeside Park,,,Bring water\n',
   fields: 'Name,Address,Pitches,Surface,Lights,Notes\nLakeside Park,1 Lake Rd,2,Grass,yes,Gate code 4471\n',
   drills: 'Name,Summary,Setup,How it runs,Coaching points,Type,Ages,Minutes,Players,Skills,Helps with,Link\nGates dribble,Dribble through as many cone gates as you can in a minute,"20 x 20 yd area, eight pairs of cones as gates, a ball each","Dribble through a gate, then find another; Count gates in 60 seconds; Beat your score",Eyes up between gates; Small touches near a gate,Technical,U7-U10,10-15,6-16,Dribbling; Ball mastery,,https://example.org/gates\n'
@@ -3873,7 +4033,7 @@ function sheetImport(text, team) {
       <label class="field"><span>Or a new team's name</span><input type="text" id="impNewTeam" maxlength="80" placeholder="Lakeside Thunder G12"></label>` : '';
   const list = (items, cls) => items.length ? `<div class="implist ${cls}">${items.slice(0, 30).map(esc).join('<br>')}${items.length > 30 ? `<br>…and ${items.length - 30} more` : ''}</div>` : '';
   openSheet(`<h3>Bulk import</h3>
-    <p class="muted" style="margin-top:0">Coming from another app or a spreadsheet? Save each sheet as CSV — a roster, a schedule of games and practices, a list of fields, the club's drills — and bring them in one at a time, or everything at once as one JSON file. Teams, players, fields and drills are matched by name, games by team, date and opponent, practices by team, date and start, and sessions by date, start and coach, so running the same file twice changes nothing. Nothing already here is removed.</p>
+    <p class="muted" style="margin-top:0">Coming from another app or a spreadsheet? Save each sheet as CSV or tab-separated (TSV) — a roster, a schedule of games and practices, a list of fields, the club's drills — and bring them in one at a time, or everything at once as one JSON file. Teams, players, fields and drills are matched by name, games by team, date and opponent, practices by team, date and start, and sessions by date, start and coach, so running the same file twice changes nothing. Nothing already here is removed.</p>
     <div class="row" style="margin-bottom:10px">
       <button class="btn quiet sm" data-act="importfile">Choose a file</button>
       <button class="btn quiet sm" data-act="importexample">Show an example</button>
@@ -3889,12 +4049,13 @@ function sheetImport(text, team) {
     ${teamPick}
     <button class="btn quiet wide" data-act="importcheck" style="margin-bottom:10px">Check it</button>
     ${csv && csv.kind ? `<p class="muted">Read as ${CSV_KIND[csv.kind]}: ${csv.rows} row${csv.rows === 1 ? '' : 's'}.${csv.unused && csv.unused.length ? ` Not used: ${esc(csv.unused.join(', '))}.` : ''}</p>` : ''}
+    ${csv && csv.contacts && csv.contacts.length ? `<p class="muted">${esc(contactCount(csv.contacts))} in it. Once it's imported you can invite them, or not — no email is kept or sent until you say.</p>` : ''}
     ${bad ? list([bad], 'warn alert') : ''}
     ${checking ? '<p class="muted"><b>Checking what the club already has…</b> A backup with training records is only restored where the club has nothing, so it asks first.</p>' : ''}
     ${plan ? `${list(plan.errors, 'warn alert')}
       ${plan.errors.length ? '<p class="muted">Fix those and check again — nothing is imported while any are left.</p>'
       : `<p><b>This ${plan.backup ? 'backup' : 'file'} ${esc(importSummary(plan.counts))}.</b></p>`}
-      ${list(plan.warnings, '')}
+      ${list([...((csv && csv.warnings) || []), ...plan.warnings], '')}
       ${!plan.errors.length && (plan.writes.length || plan.sessWrites.length || plan.trainWrites.length) ? `<button class="btn wide" data-act="importgo">Import it</button>` : ''}` : ''}
     <p class="muted" style="margin-bottom:0">It holds children's names, so treat the file the way you would the roster itself. Names never reach the parent pages.</p>`);
 }
@@ -7468,6 +7629,7 @@ function viewRoster() {
     if (p.gk) bits.push('keeper');
     if (p.preferred) bits.push('best at ' + p.preferred);
     if ((p.canPlay || []).length) bits.push('also ' + p.canPlay.join('/'));
+    if (FOOT[p.foot]) bits.push(footLabel(p.foot));
     if (p.anywhere === false) bits.push('fixed position');
     const np = Object.keys(p.pairs || {}).length, na = Object.keys(p.avoid || {}).length;
     if (np) bits.push(np + ' pairing' + (np > 1 ? 's' : ''));
@@ -15001,6 +15163,12 @@ function sheetPlayer(p) {
       <label class="field"><span>Goalkeeper</span><select id="epGk"><option value="0"${p.gk ? '' : ' selected'}>No</option><option value="1"${p.gk ? ' selected' : ''}>Yes</option></select></label>
     </div>
 
+    <p class="lbl">Stronger foot</p>
+    <div class="chips" style="margin-bottom:14px">
+      ${[['', 'Not noted'], ['L', 'Left'], ['R', 'Right'], ['B', 'Both']].map(([k, l]) => `<button class="chip" type="button" data-act="pickone" data-grp="foot" data-v="${k}" aria-pressed="${(FOOT[p.foot] ? p.foot : '') === k}">${l}</button>`).join('')}
+      <span class="muted" style="align-self:center">the planner leans left-footers left</span>
+    </div>
+
     ${canAdmin() || isCoach(t.id, me && me.uid) ? `<p class="lbl">Guardians — accounts that follow her</p>
     <div class="chips" style="margin-bottom:14px">
       ${members().map(u => `<button class="chip" type="button" data-act="toggleguard" data-pid="${p.id}" data-uid="${u.uid}" aria-pressed="${!!((p.guardians || {})[u.uid])}">${esc(u.name || u.email || 'Unnamed')}</button>`).join('') || '<span class="muted">Nobody has signed in yet.</span>'}
@@ -15440,7 +15608,7 @@ function aiPlanFacts(t, m, lab) {
   const blocks = planBlocks(m), projected = planSeconds(m);
   const rows = roster.map(p => {
     const season = earlier.reduce((n, x) => n + playedSec(x, p.id), 0);
-    const where = p.gk ? 'goalkeeper' : [p.preferred ? 'best at ' + p.preferred : '', (p.canPlay || []).length ? 'also ' + p.canPlay.join('/') : '', p.anywhere === false ? 'only those' : ''].filter(Boolean).join(', ');
+    const where = p.gk ? 'goalkeeper' : [p.preferred ? 'best at ' + p.preferred : '', (p.canPlay || []).length ? 'also ' + p.canPlay.join('/') : '', p.anywhere === false ? 'only those' : '', FOOT[p.foot] ? footLabel(p.foot) : ''].filter(Boolean).join(', ');
     return `- ${L(p.id)}: my target ${m.planned && m.planned[p.id] != null ? m.planned[p.id] + ' min' : 'not set'}`
       + `${blocks.length ? `, my plan gives ${mins(projected[p.id] || 0)}` : ''}`
       + `${where ? '; ' + where : ''}; strength ${rating(p)}/5${p.maxStint ? `; longest spell ${p.maxStint} min` : ''}`
@@ -16700,6 +16868,7 @@ function onAct(e) {
     chip('avoid').forEach(id => avoid[id] = true);
     const rEl = document.querySelector('[data-act="pickone"][data-grp="rating"][aria-pressed="true"]');
     const pEl = document.querySelector('[data-act="pickone"][data-grp="pref"][aria-pressed="true"]');
+    const fEl = document.querySelector('[data-act="pickone"][data-grp="foot"][aria-pressed="true"]');
     const anyEl = document.querySelector('[data-act="toggleanywhere"]');
     const stint = $('#epStint').value.trim();
     quiet(`teams/${t.id}/players/${d.pid}`, {
@@ -16713,6 +16882,7 @@ function onAct(e) {
       rating: rEl ? Number(rEl.dataset.v) : rating(p),
       maxStint: stint ? Number(stint) : null,
       gk: $('#epGk').value === '1',
+      foot: fEl ? (FOOT[fEl.dataset.v] ? fEl.dataset.v : null) : (p.foot || null),
       note: $('#epNote').value.trim(),
       pairs, avoid
     });
@@ -17335,8 +17505,15 @@ function onAct(e) {
     }
     if (plan.errors.length || !(plan.writes.length + plan.sessWrites.length + plan.trainWrites.length)) { sheetImport(txt, team); return; }
     if (!confirm(`Import into ${(acc().org || {}).name || 'this club'}? It ${importSummary(plan.counts)}.`)) return;
-    applyImport(plan); pendingImport = null; closeSheet();
-    toast('Imported: ' + importSummary(plan.counts)); return;
+    applyImport(plan); pendingImport = null;
+    toast('Imported: ' + importSummary(plan.counts));
+    if (read.csv && read.csv.contacts && read.csv.contacts.length) { importContacts = { list: read.csv.contacts, made: {}, sent: {} }; sheetImportInvites(); }
+    else closeSheet();
+    return;
+  }
+  if (a === 'importinvitego') { inviteImported(); return; }
+  if (a === 'importinvitemail') { mailImported(); return; }
+  if (a === 'importinviteskip') { importContacts = null; closeSheet(); return;
   }
 }
 document.addEventListener('click', onAct);

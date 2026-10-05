@@ -146,12 +146,16 @@ does the bookkeeping, not that the phone works offline first.
   the order the rules need (spend the invite, take the role, add herself to the
   index) (`redeemInvite()`); approving a team-link request is the coach writing
   the approval before the index entry (`approveClaim()`); a squad of parent
-  links is made one invite at a time (`inviteSquad()`); a new club is claimed by
+  links is made one invite at a time (`inviteSquad()`), and so are the
+  invites for the emails an imported roster carries (`inviteImported()`),
+  whose sign-in emails Firebase sends one call at a time from the admin's phone
+  (`mailImported()`), stopping at its daily limit; a new club is claimed by
   the first person to write its admin list (`createClub()`), which is
   trust-on-first-use (rules.js, gap 3). Anything half-done after a dropped
   signal is undone by hand on the phone.
 - **With a server:** each is one call that does all of it or none of it, and a
-  new club's code is issued by the server rather than claimed. The ordering
+  new club's code is issued by the server rather than claimed. Invitations go
+  out as real invitation emails from the club, not Firebase sign-in links. The ordering
   care, the bootstrap clauses and gap 3 go away.
 
 ---

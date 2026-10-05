@@ -208,6 +208,8 @@ const EXPORTS = `{
   /* invites */
   get invite() { return invite }, get clubInv() { return clubInv }, get myClubs() { return myClubs },
   secretId, inviteLink, redeemInvite, makeInvite, inviteScreen,
+  get importContacts() { return importContacts }, importInviteRows, inviteImported, mailImported,
+  fit, assignSlots, footFit, FOOT, sheetPlayer,
   /* messages */
   msgTeams, staffTeams, famTeams, msgOn, unreadCount, notices, threadMsgs, threadUnread,
   families, guardianEmails, childrenOf, viewInbox, viewThread, watchMessages, sheetPostShare,

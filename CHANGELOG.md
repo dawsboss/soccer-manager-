@@ -8,6 +8,61 @@ before this point lives only in the git log.
 
 ---
 
+## A player's stronger foot; inviting the families an imported roster names — 2026-10-05 (build 94)
+
+The owner: *when importing there should be an option to invite the parents'
+emails and coaches that don't have accounts already* — and *should we have a
+field for what foot they are? You play someone on a side because of dominant
+feet sometimes.*
+
+- **Stronger foot** on the player sheet: Left, Right, Both or not noted
+  (`foot`: `L`, `R`, `B` on the player). Squad shows it, the AI prompt carries
+  it, and the import reads it (`player_Foot`, `Foot`, or `"foot"` in JSON)
+  as a field rather than the note build 92 made of it. **The planner leans a
+  left-footer to the left**: a quarter-point in `fit()` for her own side, a
+  quarter against the other, read from where the spot sits on the pitch. That
+  is less than keeping her where she was last block and less than any step of
+  position preference, so it only decides between otherwise-equal players and
+  never fights what the coach set.
+- **Invite them too?** after importing a roster that has parents' or coaches'
+  emails. One personal invite per parent per child and per coach per team,
+  made with the same `writeInvite()` as People → Invite someone and bound to
+  the email, so a forwarded link is useless. Skipped: anyone whose account
+  (by its email) already has that role, and anyone with an open invite for
+  it, so next season's import only invites the new families. Making the
+  invites and having Firebase email them are two taps, so an admin can stop
+  between them and send the links her own way. The emails never go into the
+  import's data or the club; they sit on that screen until it is closed, and
+  are written only into the invites, where invites already keep them.
+- Not done: a coach making these for her own team (still admins only, as
+  everywhere else invites are made), and invites from a JSON file.
+
+## Roster and events exports read as they come — 2026-10-05 (build 93)
+
+The owner had a roster and an events file from their registration system,
+both tab-separated, and asked for an import for them rather than retyping them
+as JSON. The spreadsheet import already read tabs; it didn't know these
+headings, so most of each file was quietly "not used".
+
+- **Roster:** `player_number`, `player_position` and `player_Foot` are read
+  (the foot as the player's note, since there is no field for it), alongside
+  `team`, `birth_year` and the player's names it already knew. Parents' names,
+  emails and phones, the home address, birth dates and gender stay out: they
+  are listed as not used and nothing of them is written. Getting parents in
+  is still an invite or a team link, not an email in a file.
+- **Events:** `event` is the type, and when there is no opponent column the
+  opponent is read out of it — *Game vs Northgate*, *@ Riverside*, *Riverside @
+  Us* — with our own name on either side deciding home or away. "at" is not
+  read as a game, so *Team party at the clubhouse* stays an entry. A row that
+  says it's a game but names nobody used to block the whole file with an
+  error; now it goes on the calendar as an entry titled by its event and the
+  sheet says which row. `location` and `field_identifier` become one place,
+  and a location with an `address` becomes a club field, which the calendar
+  already finds by name in a venue. Other events take their title from the
+  event text instead of a plain "Event".
+- Times with seconds (`09:30:00`) already read; the test now pins it with the
+  owner's exact headings, run twice to show the second run adds nothing.
+
 ## My calendar in your own calendar; the AI and import steps for training; packages — 2026-10-05 (build 92, rules version 5)
 
 The owner: *fix up the Calendar sync to match the My calendar one since that
