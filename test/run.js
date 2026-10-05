@@ -22,6 +22,7 @@ const SUITES = [
   ['subs', 'a locked-in plan, called from the sideline'],
   ['stats', 'tallies, and what reaches the public tier'],
   ['feed', 'the Live tab, and what it notifies'],
+  ['recap', 'a finished game told back: when, how often, what went well'],
   ['calendar', 'the season calendar, and what reaches the share link'],
   ['rsvp', 'parents say who is coming, for their own child only'],
   ['attend', 'who came, and the season counted from it'],

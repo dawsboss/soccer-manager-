@@ -336,7 +336,9 @@ console.log('\n--- game details live on Plan, not under the pitch ---');
 {
   setup();
   A.ui.view = 'game'; A.ui.gameView = 'pitch'; A.render();
-  check('the Pitch tab no longer carries them', /data-act="editmatch"/.test(A.rendered()), false);
+  // the one way in from the pitch is the game bar's Edit button, the same on every game tab
+  check('the Pitch tab no longer carries them', (A.rendered().match(/data-act="editmatch"/g) || []).length, 1);
+  check('beyond the Edit button in the game bar', /class="sharebtn editbtn" data-act="editmatch"/.test(A.rendered()), true);
   A.ui.gameView = 'plan'; A.render();
   check('Plan opens with them', /Edit game<\/button>/.test(A.rendered()), true);
   A.click({ act: 'pickgame' });
@@ -511,10 +513,14 @@ console.log('\n--- deleting a sub from the match log ---');
   m = setup();
   A.endGame(m);
   m = A.state.matches.g1;
-  i = rowOf(m, r => r.off === 'p1' && !r.on);
-  A.click({ act: 'delsub', i: String(i) });
+  /* An ended game no longer draws Track (the recap takes its place), so its
+     log can't be tapped; the guard lives in deleteSub() for whatever reaches it. */
+  A.ui.gameView = 'track'; A.render();
+  check('an ended game puts Track away', A.ui.gameView, 'recap');
+  const ft = A.subEvents(m).find(r => r.off === 'p1' && !r.on);
+  const why = A.deleteSub(m, ft);
   check('the full-time "off" cannot be deleted', !!A.openStint(A.state.matches.g1, 'p1'), false);
-  check('and says why', /final whistle/.test(A.lastToast()), true);
+  check('and says why', /final whistle/.test(why), true);
 }
 
 H.summary('stints and the sub actions');

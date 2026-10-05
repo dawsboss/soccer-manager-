@@ -8,6 +8,60 @@ before this point lives only in the git log.
 
 ---
 
+## A finished game is its recap; lines through the game and the season; the match log — 2026-10-05 (build 91)
+
+The owner: *a line graph for each thing recorded, by time. Across the season
+would be amazing. Once a game ends it should no longer have the plan, sub,
+track and all — the recap seems the most important. And something to show
+the time-stamped log.*
+
+- **Once End game is pressed, a game is Recap · Stats · Log.** Subs, Track,
+  Plan and Pitch are put away, and opening a finished game lands on its recap.
+  Only `ended` does this, not a last half that ran out: until End game closes
+  them, players' spells are still open and Subs and Track are where it's
+  pressed. A coach or admin can **Reopen the game** from the recap to fix
+  something, which brings the tabs back.
+- **How it built up**, on the recap: one small chart per thing recorded
+  (goals, shots, corners, fouls, throw-ins, goal kicks, keeper claims), each a
+  running total for both teams, with half time and the goals marked, and a
+  table of the totals every ten minutes. One chart each rather than a dozen
+  lines on one, because on a phone that is a tangle and each count has its own
+  scale. Ours solid green, theirs dashed grey.
+- **Game by game**, on Season: the same idea across the season, one point per
+  finished game, oldest first — goals, shots, shots on target, each set piece,
+  and possession against 50%. A game that didn't record a thing is a gap in
+  its line, never a zero. With a table.
+- **The match log**: on a finished game, Live becomes Log, everything
+  recorded in order with the match clock and the time of day (what lines a
+  moment up with someone's video), filtered by goals, subs, shots or set
+  pieces. Players coming off at the final whistle are no longer listed as
+  subs, here or on Live.
+
+## A recap for every finished game; the game count; an Edit button — 2026-10-05 (build 90)
+
+The owner: *the count for games isn't backwards, the newest is 1/x and not x/x.
+There should be a more obvious edit button for coaches/admins. I want another
+stats page for closed out games that is more useful — knowing when and how
+often, a report at the end like a Spotify Wrapped, and the things that went
+well and not well.*
+
+- **The game count runs the way a season does.** The first game played is 1,
+  the latest is x of x, so a game keeps its number as more are added. It now
+  sits under the opponent's name, with the date, so the bar has room.
+- **Edit on the game bar**, on every game tab, for the team's coaches and the
+  club's admins only. The handler checks too, so a stale screen is not a way in.
+- **Recap**, a new game tab that appears once a game is over (everyone who can
+  read Stats gets it): the score big; *when it happened*, chances per five- or
+  ten-minute spell, ours above the line and theirs below, with the best and
+  toughest spell and a table; *how often*, minutes between goals, shots and
+  corners, the first goal and the longest wait for a shot; *what went well* and
+  *what to work on*, each sentence carrying the number behind it (answered a
+  goal or let one straight back in, late and early goals, shots on target,
+  halves, corners, fouls, possession, minutes against the plan, against the
+  season's average); half by half; standouts; and this game against the season
+  so far. Worked out from what Stats already reads, so it writes nothing and
+  never reaches `public/`. Stats links to it once a game is done.
+
 ## Alerts from every club — 2026-10-05 (build 89)
 
 The owner: *people should still have a way to get notifications for all clubs,

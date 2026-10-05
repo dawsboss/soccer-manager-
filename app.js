@@ -2,7 +2,7 @@
    Static app. Data lives in localStorage, and mirrors to Firebase Realtime
    Database when a config + workspace code are present. */
 
-const BUILD = '89';
+const BUILD = '91';
 const BUILT = '2026-10-04';
 /* The version of database.rules.json this app was written against. The rules
    carry the same number in rulesVersion's .write, which accepts that number
@@ -4687,10 +4687,21 @@ function render() {
   /* Live is the one game screen everybody gets. Where a role lands when its
      tab is not allowed is its working screen, not the first in the list: a
      tracker is there to log, a coach to make subs. */
-  const allowed = lim === 'tracker' ? ['live', 'track', 'stats'] : lim === 'parent' || lim === 'viewer' ? ['live', 'stats'] : ['live', 'subs', 'track', 'stats', 'pitch', 'plan'];
-  if (!allowed.includes(ui.gameView)) ui.gameView = lim === 'tracker' ? 'track' : lim ? 'live' : 'subs';
+  const allowed = lim === 'tracker' ? ['live', 'track', 'stats', 'recap'] : lim === 'parent' || lim === 'viewer' ? ['live', 'stats', 'recap'] : ['live', 'subs', 'track', 'stats', 'recap', 'pitch', 'plan'];
+  // the recap is the story of a finished game; before full time there is no story yet
+  const recapOk = !!(inGame && match() && gameStatus(match()) === 'done');
+  /* Once the coach has pressed End game, the screens for running one (Subs,
+     Track, Plan, Pitch) have nothing left to do, and the recap is what
+     everyone opens it for; Live becomes its log. Only `ended`, not a last
+     half that ran out: until End game closes them, players' spells are still
+     open, and Subs and Track are where it is pressed. Reopening brings them back. */
+  const closed = !!(inGame && match() && match().ended);
+  if (closed) for (const v of ['subs', 'track', 'plan', 'pitch']) if (allowed.includes(v)) allowed.splice(allowed.indexOf(v), 1);
+  if (!allowed.includes(ui.gameView)) ui.gameView = closed ? 'recap' : lim === 'tracker' ? 'track' : lim ? 'live' : 'subs';
+  if (ui.gameView === 'recap' && inGame && match() && !recapOk) ui.gameView = 'stats';
   for (const b of document.querySelectorAll('#subtabs button')) {
-    b.hidden = !allowed.includes(b.dataset.gview);
+    b.hidden = !allowed.includes(b.dataset.gview) || (b.dataset.gview === 'recap' && !recapOk);
+    if (b.dataset.gview === 'live') b.textContent = closed ? 'Log' : 'Live';
     b.setAttribute('aria-current', String(b.dataset.gview === ui.gameView));
   }
   const openM = inGame ? match() : null;
@@ -4745,7 +4756,7 @@ function render() {
   const keepY = here === lastScreen && typeof window !== 'undefined' ? window.scrollY || 0 : null;
   lastScreen = here;
   app.innerHTML = envNote + saveNote + (shut ? '' : alertBar()) + joinNote + roleNote + roNote + (
-    v === 'game' ? (g === 'track' ? viewTrack() : g === 'stats' ? viewStats() : g === 'pitch' ? viewMatch() : g === 'plan' ? viewPlan() : g === 'subs' ? viewSubs() : viewFeed()) :
+    v === 'game' ? (g === 'track' ? viewTrack() : g === 'stats' ? viewStats() : g === 'recap' ? viewRecap() : g === 'pitch' ? viewMatch() : g === 'plan' ? viewPlan() : g === 'subs' ? viewSubs() : viewFeed()) :
       v === 'roster' ? viewRoster() :
         v === 'season' ? viewSeason() : v === 'calendar' ? viewCalendar() :
           v === 'formation' ? viewFormation() : v === 'club' ? viewClub() : v === 'people' ? viewPeople() : v === 'admin' ? viewAdmin()
@@ -4964,17 +4975,22 @@ function gameBar(t, m) {
   const n = teamMatches(t.id).length;
   const list = teamMatches(t.id);
   const i = list.findIndex(x => x.id === m.id);
-  const older = i > -1 ? list[i + 1] : null;     // list runs newest first
+  /* The list runs newest first, but the count runs the way a season does: the
+     first game played is 1, so the latest is n of n and the number a game
+     carries never changes as more are added. */
+  const older = i > -1 ? list[i + 1] : null;
   const newer = i > 0 ? list[i - 1] : null;
   return `<button class="backbtn" data-act="backgames" aria-label="All games">
     <svg viewBox="0 0 12 12" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7.5 2L3.5 6l4 4"/></svg></button>
   ${older ? `<button class="stepbtn" data-act="pickgame2" data-id="${older.id}" aria-label="Older game" title="${esc(older.opponent || '')}">‹</button>` : ''}
   <button class="gamebar" data-act="pickgame">
-    <span class="gb-name">${esc(m.opponent || 'Unnamed')}${m.date ? ' · ' + shortDate(m.date) : ''}</span>
+    <span class="gb-name">${esc(m.opponent || 'Unnamed')}<small>${[m.date ? shortDate(m.date) : '', n > 1 && i > -1 ? `<span class="gb-hint">${n - i}/${n}</span>` : ''].filter(Boolean).join(' · ')}</small></span>
     <span class="gb-score">${sc.us}–${sc.them}</span>
-    ${n > 1 ? `<span class="gb-hint">${i + 1}/${n}</span>` : ''}
   </button>
   ${newer ? `<button class="stepbtn" data-act="pickgame2" data-id="${newer.id}" aria-label="Newer game" title="${esc(newer.opponent || '')}">›</button>` : ''}
+  ${canEditTeam(t.id) ? `<button class="sharebtn editbtn" data-act="editmatch" data-id="${m.id}" aria-label="Edit this game" title="Edit this game">
+    <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg><span>Edit</span></button>` : ''}
   <button class="sharebtn" data-act="sharesheet" aria-label="Share">
     <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
       <circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/>
@@ -5260,11 +5276,407 @@ function viewStats() {
     </div>`;
   }).join('')}</div></div>`;
 
+  const recapLink = gameStatus(m) === 'done' ? `<button class="btn wide" data-act="opengview" data-v="recap">See the game recap — when, how often, what went well</button>` : '';
   return `<div class="stack">
     <div class="barrow">${gameBar(t, m)}</div>
-    ${headline}${halfTable}${shotsCard}${mapCard}${possCard}${evCard}${goalsCard}${minutesCard}
+    ${headline}${recapLink}${halfTable}${shotsCard}${mapCard}${possCard}${evCard}${goalsCard}${minutesCard}
     ${restricted() ? '' : aiButton('game')}
   </div>`;
+}
+
+/* --- recap: the game, told back once it is over ---
+   Stats is the tallies; it answers "how many". A coach walking off the pitch
+   also wants "when" and "how often": which ten minutes were ours, how long we
+   went without a shot, whether we answered a goal or let one straight back in.
+   Everything here is worked out from what Stats already reads (goals, shots,
+   set pieces, stints), so it needs no new data, writes nothing, and can never
+   disagree with the other tabs. It is only offered once the game is done,
+   because "your best spell" halfway through a game is a guess.
+
+   The went-well and to-work-on lists are rules over those numbers, each one
+   carrying the number that tripped it, so a coach can see why it was said and
+   argue with it. A family sees this too: it is the same names and minutes the
+   Stats tab already shows her, and nothing in it is new about any child. */
+function recap(t, m, now = nowMs()) {
+  const L = Math.max(1, elapsedSec(m, now));
+  const goals = goalList(m), shots = shotList(m), evs = evList(m);
+  const sc = score(m), sh = shotTally(m);
+  // a goal is a shot on target, as shotTally() counts it
+  const attempts = side => [...shots.filter(x => x.side === side), ...goals.filter(x => x.side === side)]
+    .map(x => x.t || 0).sort((a, b) => a - b);
+  const att = { us: attempts('us'), them: attempts('them') };
+
+  /* Spells of five minutes for a short game, ten for a long one, so there are
+     six to ten of them either way. A scrap left over at the end (the 30 seconds
+     of stoppage after 80:00) joins the spell before it rather than becoming a
+     column of its own that nothing could happen in. */
+  const bs = L <= 3000 ? 300 : 600;
+  const n = Math.max(1, Math.round(L / bs));
+  const spells = Array.from({ length: n }, (_, i) => ({
+    from: i * bs, to: i === n - 1 ? L : (i + 1) * bs,
+    us: { goals: 0, on: 0, off: 0, corners: 0 }, them: { goals: 0, on: 0, off: 0, corners: 0 }
+  }));
+  const at = sec => spells[clamp(Math.floor((sec || 0) / bs), 0, n - 1)];
+  for (const g of goals) if (g.side === 'us' || g.side === 'them') at(g.t)[g.side].goals++;
+  for (const x of shots) if (x.side === 'us' || x.side === 'them') at(x.t)[x.side][x.onTarget ? 'on' : 'off']++;
+  for (const x of evs) if (x.kind === 'corner' && (x.side === 'us' || x.side === 'them')) at(x.t)[x.side].corners++;
+  // how dangerous a spell was: a goal outweighs a shot on target outweighs one off it
+  const threat = s => s.goals * 3 + s.on * 1.5 + s.off + s.corners * 0.5;
+  for (const s of spells) { s.usT = threat(s.us); s.themT = threat(s.them); }
+  const pickSpell = (side, other) => spells.filter(s => s[side] > 0)
+    .sort((a, b) => (b[side] - b[other]) - (a[side] - a[other]) || b[side] - a[side])[0] || null;
+  const best = pickSpell('usT', 'themT'), worst = pickSpell('themT', 'usT');
+
+  // the longest stretch with no attempt, from kick-off to full time
+  const drought = list => {
+    const pts = [0, ...list, L];
+    let g = { from: 0, to: 0, len: 0 };
+    for (let i = 1; i < pts.length; i++) if (pts[i] - pts[i - 1] > g.len) g = { from: pts[i - 1], to: pts[i], len: pts[i] - pts[i - 1] };
+    return g;
+  };
+
+  const halves = [...new Set(segments(m).filter(x => x.start).map(x => x.half || 1))].sort((a, b) => a - b);
+  const byHalf = halves.map(h => {
+    const inH = x => halfOfSec(m, x.t || 0) === h;
+    const c = side => ({ goals: goals.filter(x => x.side === side && inH(x)).length, shots: att[side].filter(x => halfOfSec(m, x) === h).length });
+    return { h, name: halfName(m, h), us: c('us'), them: c('them') };
+  });
+
+  /* A goal answered within five minutes, or one let in within five of scoring
+     ours: the two swings a coach remembers from the sideline. */
+  const W = 300;
+  const usG = goals.filter(x => x.side === 'us'), themG = goals.filter(x => x.side === 'them');
+  const answered = themG.filter(g => usG.some(u => u.t > g.t && u.t - g.t <= W)).length;
+  const letBack = usG.filter(g => themG.some(x => x.t > g.t && x.t - g.t <= W)).length;
+  const late = L >= 1200 ? { us: usG.filter(g => g.t >= L - 600).length, them: themG.filter(g => g.t >= L - 600).length } : null;
+  const early = L >= 1200 ? { us: usG.filter(g => g.t < 600).length, them: themG.filter(g => g.t < 600).length } : null;
+
+  const corners = { us: evCount(m, 'corner', 'us'), them: evCount(m, 'corner', 'them') };
+  const fouls = { us: evCount(m, 'foul', 'us'), them: evCount(m, 'foul', 'them') };
+  const po = possession(m, now);
+
+  // players: who scored and set them up, and how the minutes were shared
+  const tally = key => {
+    const c = {};
+    for (const g of usG) if (g[key]) c[g[key]] = (c[g[key]] || 0) + 1;
+    return Object.entries(c).map(([pid, k]) => ({ pid, n: k })).sort((a, b) => b.n - a.n);
+  };
+  const played = squad(t, m).map(p => ({ pid: p.id, sec: playedSec(m, p.id, now), plan: plannedSec(m, p.id) }))
+    .filter(x => x.sec > 0).sort((a, b) => b.sec - a.sec);
+  const short = played.filter(x => x.plan > 0 && x.plan - x.sec >= 300);
+
+  // the rest of the season, for "more than usual"; only games that counted shots
+  const others = teamMatches(t.id).filter(x => x.id !== m.id && gameStatus(x) === 'done');
+  const withShots = others.filter(x => shotList(x).length);
+  const avgShots = withShots.length ? withShots.reduce((a, x) => a + shotTally(x).usOn + shotTally(x).usOff, 0) / withShots.length : null;
+  const avgFor = others.length ? others.reduce((a, x) => a + score(x).us, 0) / others.length : null;
+  const avgAg = others.length ? others.reduce((a, x) => a + score(x).them, 0) / others.length : null;
+
+  return {
+    L, sc, sh, att, spells, bs, best, worst, byHalf, answered, letBack, late, early, corners, fouls, po,
+    drought: { us: drought(att.us), them: drought(att.them) },
+    firstGoal: { us: usG[0] || null, them: themG[0] || null },
+    scorers: tally('pid'), assists: tally('assist'), played, short,
+    season: { games: others.length, shotGames: withShots.length, avgShots, avgFor, avgAg }
+  };
+}
+
+/* What went well and what to work on, as plain sentences. Each rule says only
+   what the numbers show, and needs enough of them to be worth saying: three
+   shots on target out of four is not a pattern. */
+function recapNotes(t, m, r) {
+  const good = [], work = [];
+  const them = m.opponent || 'them';
+  const shotsUs = r.att.us.length, shotsThem = r.att.them.length;
+  const onUs = r.sh.usOn, pctOn = shotsUs ? Math.round(onUs / shotsUs * 100) : 0;
+  const perMin = (k, L) => k ? Math.max(1, Math.round(L / 60 / k)) : null;
+  const span = (a, b) => `${feedMin(a)}–${feedMin(Math.max(a, b - 1))}`;
+  const pl = (k, w) => `${k} ${w}${k === 1 ? '' : 's'}`;
+  const counted = shotsUs + shotsThem > 0;
+
+  if (r.sc.us > r.sc.them) good.push(`Won it, ${r.sc.us}–${r.sc.them}.`);
+  if (r.sc.them === 0 && r.L >= 600) good.push('A clean sheet — nothing let in.');
+  if (r.sc.us === 0 && r.L >= 600) work.push(shotsUs ? `No goal from ${pl(shotsUs, 'shot')}.` : 'No goal, and no shot recorded.');
+  if (counted && shotsUs >= shotsThem + 2) good.push(`Outshot ${them} ${shotsUs} to ${shotsThem}.`);
+  if (counted && shotsThem >= shotsUs + 2) work.push(`Outshot ${shotsThem} to ${shotsUs}.`);
+  if (shotsUs >= 4 && pctOn >= 50) good.push(`${pctOn}% of shots on target (${onUs} of ${shotsUs}).`);
+  if (shotsUs >= 4 && pctOn < 40) work.push(`Only ${pctOn}% of shots on target (${onUs} of ${shotsUs}).`);
+  if (shotsUs >= 3 && r.sc.us / shotsUs >= 0.3) good.push(`Clinical: ${r.sc.us} from ${pl(shotsUs, 'shot')}.`);
+  if (r.answered) good.push(`Hit straight back ${r.answered === 1 ? 'after conceding' : r.answered + ' times after conceding'}, inside five minutes.`);
+  if (r.letBack) work.push(`Let one in within five minutes of scoring${r.letBack > 1 ? ` (${r.letBack} times)` : ''}.`);
+  if (r.late && r.late.us) good.push(`Finished strong: ${pl(r.late.us, 'goal')} in the last ten minutes.`);
+  if (r.late && r.late.them) work.push(`Conceded ${r.late.them === 1 ? 'one' : r.late.them} in the last ten minutes.`);
+  if (r.early && r.early.them) work.push(`Conceded ${r.early.them === 1 ? 'one' : r.early.them} in the first ten minutes.`);
+  if (r.early && r.early.us) good.push(`Fast start: ${pl(r.early.us, 'goal')} in the first ten minutes.`);
+  if (counted && r.L >= 1800 && r.drought.us.len >= Math.max(900, r.L / 4)) work.push(`${Math.round(r.drought.us.len / 60)} minutes without a shot (${span(r.drought.us.from, r.drought.us.to)}).`);
+  if (counted && r.L >= 1800 && r.drought.them.len >= Math.max(1200, r.L / 2)) good.push(`Kept ${them} without a shot for ${Math.round(r.drought.them.len / 60)} minutes (${span(r.drought.them.from, r.drought.them.to)}).`);
+  if (r.byHalf.length === 2) {
+    const [a, b] = r.byHalf, d = s => s.us.shots - s.them.shots + 2 * (s.us.goals - s.them.goals);
+    if (counted && d(b) - d(a) >= 3) good.push(`Better in the ${b.name.toLowerCase()}: ${b.us.shots} shots to ${b.them.shots}, after ${a.us.shots} to ${a.them.shots}.`);
+    if (counted && d(a) - d(b) >= 3) work.push(`Less on top in the ${b.name.toLowerCase()}: ${b.us.shots} shots to ${b.them.shots}, after ${a.us.shots} to ${a.them.shots}.`);
+  }
+  if (r.corners.us + r.corners.them >= 4 && r.corners.us >= r.corners.them * 2) good.push(`Won ${r.corners.us} corners to their ${r.corners.them} — pinning them back.`);
+  if (r.corners.us >= 4 && r.sc.us === 0) work.push(`${r.corners.us} corners and nothing from them.`);
+  if (r.fouls.us >= 4 && r.fouls.us >= r.fouls.them + 3) work.push(`Gave away ${r.fouls.us} fouls to their ${r.fouls.them}.`);
+  if (r.fouls.them >= 4 && r.fouls.them >= r.fouls.us + 3) good.push(`Gave away only ${r.fouls.us} fouls to their ${r.fouls.them}.`);
+  if (r.po.changes > 2 && r.po.settled) {
+    const pct = Math.round(r.po.us / r.po.settled * 100);
+    if (pct >= 55) good.push(`Kept the ball: ${pct}% of settled play.`);
+    if (pct <= 45) work.push(`Chased the ball: ${pct}% of settled play.`);
+  }
+  if (r.scorers.length >= 3) good.push(`Goals shared around — ${r.scorers.length} different scorers.`);
+  if (r.short.length) work.push(`${pl(r.short.length, 'player')} got five or more minutes less than planned.`);
+  else if (r.played.length && r.played.some(x => x.plan > 0)) good.push('Everyone got the minutes they were planned for.');
+  if (r.season.avgShots != null && shotsUs >= r.season.avgShots + 3) good.push(`${shotsUs} shots — more than the ${r.season.avgShots.toFixed(1)} a game so far.`);
+  if (r.season.avgShots != null && r.season.shotGames >= 2 && shotsUs <= r.season.avgShots - 3) work.push(`${shotsUs} shots — fewer than the ${r.season.avgShots.toFixed(1)} a game so far.`);
+  return { good, work };
+}
+
+function viewRecap() {
+  const t = team(); if (!t) return needTeam();
+  let m = match();
+  if (!m || m.teamId !== t.id) { const l = teamMatches(t.id); m = l[0] || null; ui.matchId = m ? m.id : null; }
+  if (!m) return `<div class="empty"><strong>No game yet</strong>Create a game first.</div>`;
+  const bar = `<div class="barrow">${gameBar(t, m)}</div>`;
+  if (gameStatus(m) !== 'done') return `<div class="stack">${bar}<div class="empty"><strong>The recap comes at full time</strong>Once the game is over, this tells it back: when it went well, how often things happened, and what to work on.</div></div>`;
+
+  const r = recap(t, m), notes = recapNotes(t, m, r);
+  const us = teamLabel(t), them = esc(m.opponent || 'Them');
+  const nm = id => { const p = (t.players || {})[id]; return p ? esc(p.name) : 'Unknown'; };
+  const mn = sec => Math.round(sec / 60);
+  const res = r.sc.us > r.sc.them ? 'A win' : r.sc.us < r.sc.them ? 'A loss' : 'A draw';
+  const every = (k, what) => k ? `<div class="wtile"><b>${mn(r.L / k) || 1}<small> min</small></b><span>between ${what}</span></div>` : '';
+
+  const hero = `<div class="wrapcard hero">
+    <span class="wkick">${esc(m.date ? shortDate(m.date) : 'Full time')}${m.venue ? ' · ' + esc(m.venue) : ''}</span>
+    <div class="wscore">${r.sc.us}<small>–</small>${r.sc.them}</div>
+    <p class="wline">${res} for ${us} against ${them}, over ${mn(r.L)} minutes.</p></div>`;
+
+  /* The spells chart: ours up, theirs down, one column per spell, so a
+     pattern ("we die after half time") is a shape you can see. Same two
+     colours as the possession bar on Stats. A goal is a dot on its column. */
+  const top = Math.max(1, ...r.spells.map(s => Math.max(s.usT, s.themT)));
+  const label = s => `${feedMin(s.from)}–${feedMin(Math.max(s.from, s.to - 1))}`;
+  const desc = (s, side) => { const x = s[side]; return [x.goals && `${x.goals} goal${x.goals > 1 ? 's' : ''}`, (x.on + x.off) && `${x.on + x.off} shot${x.on + x.off > 1 ? 's' : ''}`, x.corners && `${x.corners} corner${x.corners > 1 ? 's' : ''}`].filter(Boolean).join(', ') || 'nothing'; };
+  const anyThreat = r.spells.some(s => s.usT || s.themT);
+  const spells = anyThreat ? `<div class="card"><h2 style="margin-bottom:4px">When it happened</h2>
+    <p class="muted" style="margin:0 0 10px">${mn(r.bs)}-minute spells: goals, shots and corners.</p>
+    <div class="wlegend"><span><i class="k us"></i>${us}</span><span><i class="k them"></i>${them}</span><span><i class="k goal"></i>goal</span></div>
+    <div class="spells" role="img" aria-label="Chances in each spell, ${us} above the line, ${them} below">${r.spells.map(s => `<div class="spell" title="${esc(label(s))}: ${us} ${esc(desc(s, 'us'))}; ${them} ${esc(desc(s, 'them'))}">
+      <div class="up">${s.us.goals ? `<span class="gdot">${'●'.repeat(Math.min(3, s.us.goals))}</span>` : ''}<i style="height:${Math.round(s.usT / top * 100)}%"></i></div>
+      <div class="dn"><i style="height:${Math.round(s.themT / top * 100)}%"></i>${s.them.goals ? `<span class="gdot">${'●'.repeat(Math.min(3, s.them.goals))}</span>` : ''}</div>
+      <span class="sl">${feedMin(s.from)}</span></div>`).join('')}</div>
+    ${r.best || r.worst ? `<div class="wpair">${r.best ? `<div><span class="lbl">Best spell</span><b>${esc(label(r.best))}</b><span class="muted">${esc(desc(r.best, 'us'))}</span></div>` : ''}${r.worst ? `<div><span class="lbl">Toughest spell</span><b>${esc(label(r.worst))}</b><span class="muted">${them}: ${esc(desc(r.worst, 'them'))}</span></div>` : ''}</div>` : ''}
+    <details class="wtable"><summary>As a table</summary><div class="statgrid" style="grid-template-columns:1fr 1fr 1fr">
+      <span class="tallyhead">Spell</span><span class="tallyhead">${us}</span><span class="tallyhead">${them}</span>
+      ${r.spells.map(s => `<span class="tallylbl">${esc(label(s))}</span><span>${esc(desc(s, 'us'))}</span><span>${esc(desc(s, 'them'))}</span>`).join('')}
+    </div></details></div>` : '';
+
+  const often = (r.att.us.length || r.corners.us || r.sc.us) ? `<div class="wrapcard tone2"><span class="wkick">How often</span>
+    <div class="wtiles">${every(r.sc.us, 'goals')}${every(r.att.us.length, 'shots')}${every(r.corners.us, 'corners')}
+    ${r.firstGoal.us ? `<div class="wtile"><b>${feedMin(r.firstGoal.us.t)}</b><span>first goal</span></div>` : ''}
+    ${r.att.us.length ? `<div class="wtile"><b>${mn(r.drought.us.len)}<small> min</small></b><span>longest wait for a shot, ${feedMin(r.drought.us.from)}–${feedMin(Math.max(r.drought.us.from, r.drought.us.to - 1))}</span></div>` : ''}
+    ${r.att.them.length || r.sc.them ? `<div class="wtile"><b>${r.att.them.length ? mn(r.L / r.att.them.length) || 1 : '–'}<small>${r.att.them.length ? ' min' : ''}</small></b><span>between ${them}'s shots</span></div>` : ''}</div></div>` : '';
+
+  const halfCard = r.byHalf.length > 1 && (r.att.us.length + r.att.them.length) ? `<div class="card"><h2 style="margin-bottom:10px">Half by half</h2>
+    <div class="statgrid" style="grid-template-columns:1fr ${r.byHalf.map(() => '56px').join(' ')}">
+      <span></span>${r.byHalf.map(h => `<span class="tallyhead">${esc(h.name).replace(' half', '').replace(' quarter', '')}</span>`).join('')}
+      <span class="tallylbl">Goals</span>${r.byHalf.map(h => `<b>${h.us.goals}–${h.them.goals}</b>`).join('')}
+      <span class="tallylbl">Shots</span>${r.byHalf.map(h => `<b>${h.us.shots}–${h.them.shots}</b>`).join('')}
+    </div></div>` : '';
+
+  const most = r.played[0];
+  const stars = (r.scorers.length || r.assists.length || most) ? `<div class="wrapcard tone3"><span class="wkick">Standouts</span>
+    <div class="wstars">
+      ${r.scorers.length ? `<div><span class="lbl">Goals</span>${r.scorers.map(x => `<b>${nm(x.pid)}${x.n > 1 ? ` <small>×${x.n}</small>` : ''}</b>`).join('')}</div>` : ''}
+      ${r.assists.length ? `<div><span class="lbl">Set them up</span>${r.assists.map(x => `<b>${nm(x.pid)}${x.n > 1 ? ` <small>×${x.n}</small>` : ''}</b>`).join('')}</div>` : ''}
+      ${most ? `<div><span class="lbl">Most minutes</span><b>${nm(most.pid)} <small>${mn(most.sec)} min</small></b></div>` : ''}
+      ${r.played.length ? `<div><span class="lbl">Played</span><b>${r.played.length} <small>player${r.played.length === 1 ? '' : 's'}</small></b></div>` : ''}
+    </div></div>` : '';
+
+  const list = (cls, title, xs) => `<div class="card wnotes ${cls}"><h2>${title}</h2>${xs.length
+    ? `<ul>${xs.map(x => `<li>${esc(x)}</li>`).join('')}</ul>` : `<p class="muted" style="margin:0">Nothing stood out from what was recorded.</p>`}</div>`;
+  const notesCards = list('good', 'What went well', notes.good) + list('work', 'What to work on', notes.work)
+    + (shotList(m).length + evList(m).length ? '' : `<p class="muted">Count shots and corners on the Track tab next game and this tells you far more — when you were on top and how often you got a shot away.</p>`);
+
+  const season = r.season.games ? `<div class="card"><h2 style="margin-bottom:10px">Against the season so far</h2>
+    <div class="statgrid" style="grid-template-columns:1fr 84px 84px">
+      <span></span><span class="tallyhead">This game</span><span class="tallyhead">Average</span>
+      <span class="tallylbl">Scored</span><b>${r.sc.us}</b><b>${r.season.avgFor.toFixed(1)}</b>
+      <span class="tallylbl">Let in</span><b>${r.sc.them}</b><b>${r.season.avgAg.toFixed(1)}</b>
+      ${r.season.avgShots != null && r.att.us.length ? `<span class="tallylbl">Shots</span><b>${r.att.us.length}</b><b>${r.season.avgShots.toFixed(1)}</b>` : ''}
+    </div><p class="muted" style="margin-bottom:0">From ${r.season.games} other finished game${r.season.games === 1 ? '' : 's'}.</p></div>` : '';
+
+  const more = `<div class="row"><button class="btn quiet" style="flex:1" data-act="opengview" data-v="live">Match log</button><button class="btn quiet" style="flex:1" data-act="opengview" data-v="stats">All the stats</button></div>`;
+  /* Ending the game puts the Subs, Track, Plan and Pitch tabs away, so this
+     is the way back to them when it was ended by mistake or a sub needs its
+     time fixing. Coaches and admins only, as reopengame always was. */
+  const reopen = m.ended && canEditTeam(t.id) && !restricted() ? `<p class="muted" style="text-align:center;margin:4px 0 0">Ended by mistake, or something to correct? <button class="linkbtn dark" data-act="reopengame">Reopen the game</button></p>` : '';
+  return `<div class="stack recap">${bar}${hero}${spells}${recapLinesCard(t, m, r)}${often}${notesCards}${halfCard}${stars}${season}${more}${reopen}</div>`;
+}
+
+/* --- line charts: the recap's "how it built up" and the season's trends ---
+   One small chart per thing recorded, never one chart with a dozen lines:
+   on a phone a dozen lines is a tangle, and each count lives on its own scale
+   (twelve throw-ins and two goals on one axis flattens the goals). Ours is a
+   solid line in the possession bar's green, theirs dashed in its grey, so
+   who is who never rests on colour alone, and every chart has the same
+   numbers as a table underneath. Drawn as plain SVG at a fixed shape, so the
+   lettering scales with the phone instead of stretching. */
+const LC = { W: 320, H: 92, L: 30, R: 10, T: 8, B: 18 };
+const lcX = f => LC.L + f * (LC.W - LC.L - LC.R);
+const lcY = (v, top) => LC.T + (1 - (top ? v / top : 0)) * (LC.H - LC.T - LC.B);
+const niceTop = v => v <= 4 ? Math.max(1, Math.ceil(v)) : v <= 10 ? Math.ceil(v / 2) * 2 : Math.ceil(v / 5) * 5;
+
+/* series: [{ side: 'us'|'them'|'one', pts: [{ f, v, tip } | null] }] with f
+   in 0..1 across. `step` draws a running total, which climbs at each event
+   and stays flat between; otherwise points are joined, and a null breaks the
+   line (a game that did not record this). */
+function lineChart({ series, step, top, vlines = [], xLabels = [], marks = [], ref, pct }) {
+  const T = top || niceTop(Math.max(1, ...series.flatMap(s => s.pts.filter(Boolean).map(p => p.v))));
+  const y = v => lcY(v, T);
+  // a gridline at 1.5 goals asks a question nobody has; only whole numbers get one
+  const grid = [0, ...(Number.isInteger(T / 2) || pct ? [T / 2] : []), T].map(v => `<line class="lc-grid" x1="${LC.L}" x2="${LC.W - LC.R}" y1="${y(v)}" y2="${y(v)}"/>
+    <text class="lc-ax" x="${LC.L - 4}" y="${y(v) + 3}" text-anchor="end">${Number.isInteger(v) ? v : v.toFixed(1)}${pct ? '%' : ''}</text>`).join('');
+  const refLine = ref != null ? `<line class="lc-ref" x1="${LC.L}" x2="${LC.W - LC.R}" y1="${y(ref)}" y2="${y(ref)}"/>` : '';
+  const vl = vlines.map(v => `<line class="lc-v" x1="${lcX(v.f)}" x2="${lcX(v.f)}" y1="${LC.T}" y2="${LC.H - LC.B}"/>`).join('');
+  const xl = xLabels.map(v => `<text class="lc-ax" x="${lcX(v.f)}" y="${LC.H - 5}" text-anchor="${v.f <= 0 ? 'start' : v.f >= 1 ? 'end' : 'middle'}">${esc(v.label)}</text>`).join('');
+  const mk = marks.map(x => `<circle class="lc-goal ${x.side}" cx="${lcX(x.f)}" cy="${LC.H - LC.B}" r="3"><title>${esc(x.tip)}</title></circle>`).join('');
+  const lines = series.map(s => {
+    let d = '';
+    if (step) {
+      d = `M${lcX(0)},${y(0)}`;
+      for (const p of s.pts) d += `H${lcX(p.f).toFixed(1)}V${y(p.v).toFixed(1)}`;
+      d += `H${lcX(1)}`;
+    } else {
+      let pen = false;
+      for (const p of s.pts) { if (!p) { pen = false; continue; } d += `${pen ? 'L' : 'M'}${lcX(p.f).toFixed(1)},${y(p.v).toFixed(1)}`; pen = true; }
+    }
+    // a hit target bigger than the mark, with the reading in its title
+    const dots = s.pts.filter(Boolean).map(p => `<circle class="lc-dot ${s.side}" cx="${lcX(p.f).toFixed(1)}" cy="${y(p.v).toFixed(1)}" r="${step ? 2.2 : 3}"><title>${esc(p.tip || '')}</title></circle>`).join('');
+    return `<path class="lc-line ${s.side}" d="${d}"/>${dots}`;
+  }).join('');
+  return `<svg class="lchart" viewBox="0 0 ${LC.W} ${LC.H}" role="img">${grid}${refLine}${vl}${lines}${mk}${xl}</svg>`;
+}
+
+/* The game's running totals, one chart per thing recorded. Match seconds run
+   across; half time is a line, goals are dots on the axis, so a goal that
+   turned the game shows up as the place a line starts climbing. */
+function recapLines(t, m, r) {
+  const L = r.L, f = sec => clamp((sec || 0) / L, 0, 1);
+  const us = t.name || 'Us', them = m.opponent || 'Them';
+  const run = (times, side, label) => times.slice().sort((a, b) => a - b).map((s, i) => ({ f: f(s), v: i + 1, tip: `${feedMin(s)} — ${side === 'us' ? us : them}: ${i + 1} ${label}` }));
+  const kinds = [
+    { k: 'goals', label: 'Goals', us: goalList(m).filter(x => x.side === 'us').map(x => x.t), them: goalList(m).filter(x => x.side === 'them').map(x => x.t) },
+    { k: 'shots', label: 'Shots', us: r.att.us, them: r.att.them },
+    ...EVENTS.map(e => ({ k: e.k, label: e.label, us: evList(m).filter(x => x.kind === e.k && x.side === 'us').map(x => x.t), them: evList(m).filter(x => x.kind === e.k && x.side === 'them').map(x => x.t) }))
+  ].filter(x => x.us.length + x.them.length > 0);
+
+  // where one half ends and the next starts, on the match clock
+  const ends = []; let acc = 0, prev = null;
+  for (const s of segments(m).filter(x => x.start)) {
+    if (prev != null && (s.half || 1) !== prev) ends.push(acc);
+    acc += Math.floor(((s.end || nowMs()) - s.start) / 1000); prev = s.half || 1;
+  }
+  const vlines = ends.filter(s => s > 0 && s < L).map(s => ({ f: f(s) }));
+  const xLabels = [{ f: 0, label: '0′' }, ...ends.filter(s => s > 0 && s < L).map(s => ({ f: f(s), label: (m.periodCount || 2) === 2 ? 'HT' : feedMin(s) })), { f: 1, label: 'FT' }];
+  const marks = goalList(m).filter(g => g.side === 'us' || g.side === 'them').map(g => ({ f: f(g.t), side: g.side, tip: `${feedMin(g.t)} goal — ${g.side === 'us' ? us : them}` }));
+  return kinds.map(x => ({
+    k: x.k, label: x.label, us: x.us.length, them: x.them.length,
+    svg: lineChart({ step: true, vlines, xLabels, marks: x.k === 'goals' ? [] : marks,
+      series: [{ side: 'them', pts: run(x.them, 'them', x.label.toLowerCase()) }, { side: 'us', pts: run(x.us, 'us', x.label.toLowerCase()) }] }),
+    // the table: the running totals at each ten minutes (five in a short game), and at the end
+    rows: r.spells.map(s => s.to).map(sec => ({ at: sec, us: x.us.filter(v => v < sec || sec >= L).length, them: x.them.filter(v => v < sec || sec >= L).length }))
+  }));
+}
+
+function recapLinesCard(t, m, r) {
+  const list = recapLines(t, m, r);
+  if (!list.length) return '';
+  const us = teamLabel(t), them = esc(m.opponent || 'Them');
+  return `<div class="card"><h2 style="margin-bottom:4px">How it built up</h2>
+    <p class="muted" style="margin:0 0 8px">Running totals through the game. Where the lines pull apart, someone was on top; flat is nothing happening.</p>
+    <div class="wlegend"><span><i class="k us"></i>${us}</span><span><i class="k them dash"></i>${them}</span><span><i class="k goal"></i>goal</span></div>
+    ${list.map(x => `<div class="lcbox"><div class="spread"><b>${esc(x.label)}</b><span class="lcend"><span class="on">${x.us}</span> – <span class="muted">${x.them}</span></span></div>${x.svg}</div>`).join('')}
+    <details class="wtable"><summary>As a table</summary><div class="lctable"><table><thead><tr><th>By</th>${list.map(x => `<th>${esc(x.label)}</th>`).join('')}</tr></thead>
+      <tbody>${list[0].rows.map((row, i) => `<tr><td>${row.at >= r.L ? 'FT' : feedMin(row.at - 1)}</td>${list.map(x => `<td>${x.rows[i].us}–${x.rows[i].them}</td>`).join('')}</tr>`).join('')}</tbody></table></div></details></div>`;
+}
+
+/* --- the season, game by game ---
+   One point per finished game, oldest on the left, so a coach can see whether
+   what the team practises is moving the numbers. A game that did not record
+   a thing is a gap in that line, never a zero: the first games of a season
+   often predate shot counting, and a zero there would read as a collapse. */
+function seasonTrends(t) {
+  const games = teamMatches(t.id).filter(m => gameStatus(m) === 'done').slice().reverse();
+  if (games.length < 2) return null;
+  const n = games.length, f = i => n === 1 ? .5 : i / (n - 1);
+  const name = m => `${m.opponent || 'Game'}${m.date ? ' · ' + shortDate(m.date) : ''}`;
+  const mk = (pick, label) => {
+    const vals = games.map((m, i) => { const v = pick(m); return v == null ? null : { i, ...v }; });
+    if (!vals.some(Boolean)) return null;
+    return { label, vals };
+  };
+  const hasShots = m => shotList(m).length > 0;
+  const hasEv = k => m => evList(m).some(x => x.kind === k);
+  const out = [
+    mk(m => ({ us: score(m).us, them: score(m).them }), 'Goals'),
+    mk(m => hasShots(m) ? { us: shotTally(m).usOn + shotTally(m).usOff, them: shotTally(m).themOn + shotTally(m).themOff } : null, 'Shots'),
+    mk(m => hasShots(m) ? (() => { const s = shotTally(m), a = s.usOn + s.usOff, b = s.themOn + s.themOff; return { us: a ? Math.round(s.usOn / a * 100) : null, them: b ? Math.round(s.themOn / b * 100) : null, pct: true }; })() : null, 'Shots on target'),
+    ...EVENTS.map(e => mk(m => hasEv(e.k)(m) ? { us: evCount(m, e.k, 'us'), them: evCount(m, e.k, 'them') } : null, e.label)),
+    mk(m => { const p = possession(m, nowMs()); return p.changes > 2 && p.settled ? { one: Math.round(p.us / p.settled * 100), pct: true } : null; }, 'Possession')
+  ].filter(Boolean);
+  const xLabels = n <= 8 ? games.map((m, i) => ({ f: f(i), label: String(i + 1) })) : [{ f: 0, label: '1' }, { f: .5, label: String(Math.ceil(n / 2)) }, { f: 1, label: String(n) }];
+  const us = t.name || 'Us';
+  return {
+    games, xLabels,
+    charts: out.map(c => {
+      const pct = c.vals.some(v => v && v.pct);
+      const side = s => ({ side: s, pts: c.vals.map(v => v && v[s] != null ? { f: f(v.i), v: v[s], tip: `${v.i + 1}. ${name(games[v.i])} — ${s === 'us' ? us : s === 'them' ? (games[v.i].opponent || 'Them') : us}: ${v[s]}${pct ? '%' : ''}` } : null) });
+      const one = c.vals.some(v => v && v.one != null);
+      const series = one ? [side('one')] : [side('them'), side('us')];
+      return { label: c.label, pct, one, vals: c.vals,
+        svg: lineChart({ series, xLabels, pct, top: pct ? 100 : undefined, ref: one ? 50 : undefined }) };
+    })
+  };
+}
+
+function seasonTrendsCard(t) {
+  const s = seasonTrends(t);
+  if (!s) return '';
+  const us = teamLabel(t);
+  const cell = (v, k, pct) => v && v[k] != null ? v[k] + (pct ? '%' : '') : '–';
+  return `<div class="card"><h2 style="margin-bottom:4px">Game by game</h2>
+    <p class="muted" style="margin:0 0 8px">Each finished game, oldest first. A gap means that game didn't record it.</p>
+    <div class="wlegend"><span><i class="k us"></i>${us}</span><span><i class="k them dash"></i>Opponent</span></div>
+    ${s.charts.map(c => `<div class="lcbox"><b>${esc(c.label)}</b>${c.svg}</div>`).join('')}
+    <details class="wtable"><summary>As a table</summary><div class="lctable"><table><thead><tr><th>Game</th>${s.charts.map(c => `<th>${esc(c.label)}</th>`).join('')}</tr></thead>
+      <tbody>${s.games.map((m, i) => `<tr><td>${i + 1}. ${esc(m.opponent || 'Game')}</td>${s.charts.map(c => `<td>${c.one ? cell(c.vals[i], 'one', c.pct) : `${cell(c.vals[i], 'us', c.pct)}–${cell(c.vals[i], 'them', c.pct)}`}</td>`).join('')}</tr>`).join('')}</tbody></table></div></details></div>`;
+}
+
+/* --- the log: everything recorded, in order, with the time it happened ---
+   The Live tab's feed is newest first because it is for following a game.
+   Once the game is over the question turns into "what happened, in order",
+   and "at what time" matters as much as the match minute: it is what lines a
+   moment up with somebody's video. Same items as the feed, so it can never
+   disagree with it, oldest first, with a filter by kind. */
+const LOG_KINDS = [['all', 'Everything'], ['goal', 'Goals'], ['sub', 'Subs'], ['shot', 'Shots'], ['set', 'Set pieces']];
+function logCard(t, m) {
+  const k = ui.logKind || 'all';
+  const all = feedItems(t, m).slice().reverse();
+  const shown = k === 'all' ? all : all.filter(x => x.kind === k);
+  const clockAt = sec => { const ms = absAt(m, sec); if (ms == null) return ''; const d = new Date(ms); return pad2(d.getHours()) + ':' + pad2(d.getMinutes()); };
+  const starters = squad(t, m).filter(p => stintsOf(m, p.id).some(([, s]) => s.on === 0));
+  const row = x => `<div class="feedrow tlogrow" data-kind="${x.kind}"${x.side ? ` data-side="${x.side}"` : ''}>
+      <span class="t">${x.kind === 'end' ? 'FT' : x.kind === 'break' ? 'HT' : mmss(x.t)}<small>${esc(clockAt(x.t))}</small></span>
+      <span><b>${esc(x.title)}</b>${x.detail ? `<span class="fd">${esc(x.detail)}</span>` : ''}
+        ${x.key === 'start:1' && starters.length ? `<span class="fd">Starting: ${starters.map(p => esc(p.name)).join(', ')}</span>` : ''}</span>
+      ${x.score ? `<span class="fscore">${x.score}</span>` : '<span></span>'}</div>`;
+  const counts = Object.fromEntries(LOG_KINDS.map(([c]) => [c, c === 'all' ? all.length : all.filter(x => x.kind === c).length]));
+  return `<div class="card"><h2 style="margin-bottom:4px">Match log</h2>
+    <p class="muted" style="margin:0 0 10px">Everything recorded, in order: the match clock, and the time of day it happened.</p>
+    <div class="chips" style="margin-bottom:10px">${LOG_KINDS.filter(([c]) => c === 'all' || counts[c]).map(([c, label]) => `<button class="chip" type="button" data-act="logkind" data-v="${c}" aria-pressed="${k === c}">${label} <small>${counts[c]}</small></button>`).join('')}</div>
+    ${shown.length ? `<div class="feed">${shown.map(row).join('')}</div>` : '<p class="muted" style="margin:0">Nothing of that kind was recorded.</p>'}</div>`;
 }
 
 /* --- live: the game as it happens, in words, for anyone following ---
@@ -5323,8 +5735,11 @@ function feedItems(t, m) {
   }
 
   // starters are part of kick-off; a move between spots is the coach's business
+  const whistle = m.ended ? elapsedSec(m) : null;
   for (const r of subEvents(m)) {
     if (r.move) continue;
+    // End game closes everyone's spell at the whistle; that is full time, not a sub
+    if (whistle != null && r.off && !r.on && r.t >= whistle) continue;
     const title = r.on && r.off ? `${nm(r.on)} on for ${nm(r.off)}` : r.on ? `${nm(r.on)} on` : `${nm(r.off)} off`;
     out.push({ t: r.t, key: `sub:${r.onSid || ''}:${r.offSid || ''}`, kind: 'sub', title: 'Sub', detail: title });
   }
@@ -5390,9 +5805,10 @@ function viewFeed() {
       ? `On for this game. Goals, kick-off, half time and full time ${canNotify && Notification.permission === 'granted' ? 'pop up on this device' : 'buzz and show here'} while this page is open.`
       : 'Get goals, kick-off, half time and full time on this device while this page is open, even in another tab.'}</p></div>`;
 
+  // once the coach has ended it, following is over and the feed becomes the record
   return `<div class="stack">
     <div class="barrow">${gameBar(t, m)}</div>
-    ${head}${follow}${feed}
+    ${head}${m.ended ? logCard(t, m) : follow + feed}
   </div>`;
 }
 
@@ -7058,7 +7474,7 @@ function viewSeason() {
   }).join('')}</div></div>` : '<div class="empty"><strong>No players yet</strong>Add the squad first.</div>';
 
   return `<div class="stack">
-    ${record}${needsWorkCard(t)}${shotsCard}${possCard}${evCard}${results}${playersCard}${attendanceCard(t)}
+    ${record}${seasonTrendsCard(t)}${needsWorkCard(t)}${shotsCard}${possCard}${evCard}${results}${playersCard}${attendanceCard(t)}
     ${restricted() ? '' : aiButton('team')}
   </div>`;
 }
@@ -15173,6 +15589,7 @@ function onAct(e) {
   if (a === 'delev') { drop(`matches/${m.id}/events/${d.id}`); closeSheet(); return; }
   if (a === 'logfilter') { ui.logFilter = d.v; render(); return; }
   if (a === 'feedall') { ui.feedAll = d.v === '1'; render(); return; }
+  if (a === 'logkind') { ui.logKind = LOG_KINDS.some(([k]) => k === d.v) ? d.v : 'all'; render(); return; }
   if (a === 'feedfollow') {
     if (d.v !== '1') { ui.follow = null; render(); return; }
     ui.follow = ui.matchId; feedSeen = null; watchFeed();
@@ -16107,7 +16524,12 @@ function onAct(e) {
     navigator.clipboard.writeText(d.v).then(() => toast('Copied'), () => toast('Could not copy — select it by hand'));
     return;
   }
-  if (a === 'editmatch') { sheetMatch(state.matches[d.id]); return; }
+  if (a === 'editmatch') {
+    // the button is drawn only for the team's coaches and admins; a stale screen is not a permission
+    const g = state.matches[d.id];
+    if (!g || !canEditTeam(g.teamId)) { toast('Only the team’s coach can change this game'); return; }
+    sheetMatch(g); return;
+  }
   if (a === 'backgames') { ui.view = 'matches'; ui.picked = null; render(); return; }
   if (a === 'openmatch') { ui.matchId = d.id; ui.view = 'game'; ui.gameView = 'subs'; render(); return; }
   if (a === 'savematch') {
@@ -16436,7 +16858,7 @@ function hashToUi() {
       if (!state.matches[p[3]]) return false;
       ui.matchId = p[3]; ui.view = 'game';
       if (p[4] === 'shape') { ui.view = 'formation'; ui.editFid = GAME_SHAPE; return true; }
-      if (['live', 'subs', 'track', 'stats', 'pitch', 'plan'].includes(p[4])) ui.gameView = p[4];
+      if (['live', 'subs', 'track', 'stats', 'recap', 'pitch', 'plan'].includes(p[4])) ui.gameView = p[4];
       return true;
     }
     if (p[2] === 'shape' && p[3]) { ui.editFid = p[3]; ui.view = 'formation'; return true; }
