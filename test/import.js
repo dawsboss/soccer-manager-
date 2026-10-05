@@ -494,10 +494,10 @@ const ft = Object.values(A.state.teams).find(x => x.name === 'Flight G12');
 check('team and birth year', ft && ft.birthYear, 2014);
 const bea = Object.values(ft.players).find(p => p.name === 'Bea Smith');
 check('number and position from player_ columns', bea.number + ' ' + bea.preferred, '7 Mid');
-check('foot kept as a note', bea.note, 'Left foot');
+check('foot is a field of its own, not a note', bea.foot + ' ' + (bea.note || ''), 'L ');
 const said = JSON.stringify(A.state);
 check('no parent, email, phone, address or birth date kept', ['@example.com', '555-01', 'Lake Rd', '55001', '2014-05-09', 'Mary'].some(x => said.includes(x)), false);
-check('the columns it left are said', ['parent1_email', 'street', 'coach_email'].every(h => rr.unused.includes(h)), true);
+check('the columns it left are said', ['parent1_mobile_number', 'street', 'coach_first_name'].every(h => rr.unused.includes(h)), true);
 
 const eventsTsv = T([
   ['date', 'start_time', 'end_time', 'event', 'team_id', 'team_name', 'head_coach', 'field_id', 'location', 'field_identifier', 'address'],
@@ -524,6 +524,28 @@ A.applyImport(evp);
 const g = Object.values(A.state.matches).find(m => m.opponent === 'Northgate');
 check('kick-off read from seconds', g.kickoff, '09:30');
 check('the same file again adds nothing', A.importPlan(A.csvImport(eventsTsv, {}).data).writes.length, 0);
+}
+
+console.log('\n--- a player\'s stronger foot ---');
+{
+admin();
+const r = A.importPlan({ teams: [{ name: 'Feet', players: [{ name: 'Lefty', foot: 'left' }, { name: 'Odd', foot: 'sideways' }] }] });
+check('read from a file', Object.values(r.writes[0][1].players).find(p => p.name === 'Lefty').foot, 'L');
+check('anything else is said, not guessed', r.warnings.some(w => /sideways/.test(w)), true);
+const slots = A.presetsFor(7)['2-3-1'];
+const lb = slots.find(x => x.label === 'LB'), rb = slots.find(x => x.label === 'RB'), cm = slots.find(x => x.label === 'CM');
+const L = { id: 'l', preferred: 'Back', canPlay: [], foot: 'L' }, R = { id: 'r', preferred: 'Back', canPlay: [], foot: 'R' };
+check('a left-footer suits the left more than the right', A.fit(L, lb) > A.fit(L, rb), true);
+check('the middle has no side', A.footFit(L, cm), 0);
+check('never more than a step of position preference', A.fit({ preferred: 'Back', foot: 'R' }, lb) > A.fit({ preferred: 'Mid', canPlay: ['Back'], foot: 'L' }, lb), true);
+const as = A.assignSlots([R, L], [lb, rb]);
+check('two equal backs go to their own sides', as[lb.id] + as[rb.id], 'lr');
+check('no foot noted changes nothing', A.footFit({ preferred: 'Back' }, lb) + A.footFit({ foot: 'B' }, lb), 0);
+
+A.state.teams.f1 = { id: 'f1', name: 'Feet', players: { x: { id: 'x', name: 'Ola', number: '3', active: true, preferred: '', canPlay: [], rating: 3 } } };
+A.ui.teamId = 'f1';
+A.sheetPlayer(A.state.teams.f1.players.x);
+check('the player sheet asks for it', /Stronger foot/.test(A.dom.node('#sheet').innerHTML), true);
 }
 
 H.summary('bulk import');

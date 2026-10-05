@@ -22,7 +22,8 @@ function makeFakebase() {
     authSubscribers: 0,
     listeners: [],       // every read, in the order it was registered
     writes: [],          // { path, value }
-    removes: []          // path
+    removes: [],         // path
+    mails: []            // { email, url } — sign-in links Firebase would have emailed
   };
 
   let authCb = null;
@@ -54,7 +55,7 @@ function makeFakebase() {
       },
       isSignInWithEmailLink: () => false,
       signInWithEmailLink: () => Promise.resolve({ user: currentUser }),
-      sendSignInLinkToEmail: () => Promise.resolve(),
+      sendSignInLinkToEmail: (auth, email, opts) => { record.mails.push({ email, url: opts && opts.url }); return Promise.resolve(); },
       signInWithEmailAndPassword: () => Promise.resolve({ user: currentUser }),
       createUserWithEmailAndPassword: () => Promise.resolve({ user: currentUser }),
       signOut: () => Promise.resolve(),

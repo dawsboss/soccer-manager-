@@ -419,5 +419,61 @@ const CLUB = {
     check('signed out, the handler refuses', fbk.record.writes.some(w => /^workspaces\/sm-/.test(w.path)), false);
   }
 
+  console.log('\n--- inviting the people an imported roster names ---');
+  {
+    const club = JSON.parse(JSON.stringify(CLUB));
+    club.access.members.coach.email = 'jaz@x.test';
+    club.access.members.mum = { name: 'Mum', email: 'mum@x.test' };
+    club.teams.t1.players.p1.name = 'Ella Moss';
+    club.teams.t1.players.p1.guardians = { mum: true };
+    const { A, fbk } = await boot({ storage: { 'sm.workspace': 'CLUB' } });
+    fbk.signIn('adm', { name: 'Ada' }); await A.flush();
+    fbk.deliver('workspaces/CLUB', club); await A.flush();
+    const tsv = [
+      ['team', 'player_first_name', 'player_last_name', 'player_number', 'coach_email', 'parent1_email', 'parent2_email', 'parent1_mobile_number'],
+      ['Flight', 'Ella', 'Moss', '7', 'jaz@x.test', 'MUM@x.test', 'dad@x.test', '555-0101'],
+      ['Flight', 'Bea', 'Smith', '9', 'new.coach@x.test', 'bea.mum@x.test', 'not an email', '555-0102']
+    ].map(r => r.join('\t')).join('\n');
+    A.click({ act: 'bulkimport' });
+    A.dom.node('#impText').value = tsv;
+    A.click({ act: 'importcheck' });
+    check('the check says the emails are there, and nothing is sent yet', /3 parent emails and 2 coach emails in it[\s\S]*no email is kept or sent/.test(A.rendered('#sheet')), true);
+    A.click({ act: 'importgo' }); await A.flush();
+    check('no email is in the club after importing', /@x\.test/.test(JSON.stringify(A.state.teams)), false);
+    check('no invite made before asked', fbk.record.writes.some(w => w.path.startsWith('invites/')), false);
+    const sheet = A.rendered('#sheet');
+    check('it offers the invites', /Invite them too\?/.test(sheet), true);
+    const st = Object.fromEntries(A.importInviteRows().map(r => [r.role + ':' + r.email, r.st]));
+    deepEq('who gets one and who is skipped', st, {
+      'coach:jaz@x.test': 'has', 'parent:mum@x.test': 'has', 'parent:dad@x.test': 'todo',
+      'coach:new.coach@x.test': 'todo', 'parent:bea.mum@x.test': 'todo'
+    });
+    check('offers exactly those three', /Make 3 invites/.test(sheet), true);
+    A.click({ act: 'importinvitego' }); await A.flush(20);
+    const made = fbk.record.writes.filter(w => /^invites\/[^/]+$/.test(w.path)).map(w => w.value);
+    deepEq('one each, bound to its email', made.map(v => v.role + ':' + v.email).sort(), ['coach:new.coach@x.test', 'parent:bea.mum@x.test', 'parent:dad@x.test']);
+    const bea = Object.values(A.state.teams.t1.players).find(p => p.name === 'Bea Smith');
+    check('a parent\'s is for her own child, by id', made.find(v => v.email === 'bea.mum@x.test').player, bea.id);
+    check('and names no child', made.some(v => /Ella|Bea|Moss|Smith/.test(JSON.stringify(v))), false);
+    check('none sent until asked', fbk.record.mails.length, 0);
+    const before = fbk.record.writes.length;
+    A.click({ act: 'importinvitego' }); await A.flush(20);
+    check('asking again makes nothing new', fbk.record.writes.slice(before).some(w => w.path.startsWith('invites/')), false);
+    A.click({ act: 'importinvitemail' }); await A.flush(20);
+    deepEq('the emails go to those three, each with its own link', fbk.record.mails.map(m => m.email + ' ' + (m.url || '').includes('invite=')).sort(),
+      ['bea.mum@x.test true', 'dad@x.test true', 'new.coach@x.test true']);
+    A.click({ act: 'importinvitemail' }); await A.flush(20);
+    check('and are not sent twice', fbk.record.mails.length, 3);
+    A.click({ act: 'importinviteskip' });
+    check('closing forgets the emails', A.importContacts, null);
+  }
+  {
+    const { A, fbk } = await boot({ storage: { 'sm.workspace': 'CLUB' } });
+    fbk.signIn('coach', { name: 'Jaz' }); await A.flush();
+    fbk.deliver('workspaces/CLUB', JSON.parse(JSON.stringify(CLUB))); await A.flush();
+    A.click({ act: 'importinvitego' }); await A.flush(20);
+    check('nobody else gets the invites made', fbk.record.writes.some(w => w.path.startsWith('invites/')), false);
+  }
+
   H.summary('invites');
 })();
