@@ -8,6 +8,32 @@ before this point lives only in the git log.
 
 ---
 
+## A plan for replacing GotSport, and a server allowed — 2026-10-06 (docs only)
+
+The owner: *I kind of want to try and replace GotSport honestly*, and, asked,
+*I am more than willing to have server side code*, registration data
+protected, and GotSport kept for the state's part for now.
+
+- **`GOTSPORT.md`**, written before any code like `SESSIONS.md` was: what a
+  club does in GotSport and what replaces each part (season registration,
+  card payments through Stripe Connect, push, email, tryouts, coach
+  compliance, living alongside GotSport), where the new data lives and who
+  may read it, the server's ground rules, a build order (push first, then
+  names behind the database, then registration, then payments) and the
+  questions still open for the owner.
+- **A server is allowed.** CLAUDE.md, README, ROADMAP, SERVER.md and
+  SESSIONS.md said "no server-side component"; they now say Cloud Functions
+  on the same Firebase project are allowed, with the rules that keep the
+  phone offline-first, secrets out of the repo and every function checking
+  its caller. Still no AI calls, and the Worker stays read-only.
+- **AUTH.md's migration** is no longer only "the owner's call": the owner
+  decided names and registration data are protected at the database, before
+  registration opens to families.
+
+No code changed, so no build number.
+
+---
+
 ## A club schedule for admins, and shared field time — 2026-10-06 (build 101)
 
 The owner: *the admin being thrown into My calendar isn't great. They need a

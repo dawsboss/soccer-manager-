@@ -1,15 +1,18 @@
 # What changes when there is a server
 
 This app is a static site and a Firebase database (CLAUDE.md, *Conventions*).
-Nothing runs anywhere except on somebody's phone. So every job that belongs to
+Until the first Cloud Function ships, nothing runs anywhere except on
+somebody's phone. **The owner approved server-side code on 2026-10-06**:
+Cloud Functions on the same Firebase project, push first, then payments and
+email (`GOTSPORT.md`). The jobs below then move to it one at a time, each
+with its test, never in one rewrite. So every job that belongs to
 nobody in particular (keeping a list in step, telling one club what happened in
 another, counting places, sending a message to a closed phone) is done today by
 whichever phone happens to be open and allowed to do it. That works, but each of
 those jobs is only as current as the last time the right person opened the app.
 
-This file lists every place that is true, so that the day there is a server
-(Cloud Functions on the same database, or any backend holding admin
-credentials), nobody has to rediscover them. Each entry says what a phone does
+This file lists every place that is true, so that as the server takes jobs
+over (Cloud Functions on the same database), nobody has to rediscover them. Each entry says what a phone does
 now, where, what a server would do instead, and what goes away.
 
 **Rule for new work:** anything a phone does on behalf of somebody else, or
