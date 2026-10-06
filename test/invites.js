@@ -455,6 +455,40 @@ const CLUB = {
     check('signed out, the handler refuses', fbk.record.writes.some(w => /^workspaces\/sm-/.test(w.path)), false);
   }
 
+  {
+    /* And back the other way: a team imported into the new club, then a switch
+       back to the old one. The same gap filed the new club's copy and what club
+       activity had seen there under the old club, which then opened to
+       "Deleted:" for every practice and game it still had. */
+    const OLD = JSON.parse(JSON.stringify(CLUB));
+    OLD.access.admins = { adm: true }; OLD.access.index = { adm: true }; OLD.access.members = { adm: { name: 'Ada' } };
+    OLD.teams.t1.events = { e1: { id: 'e1', kind: 'practice', title: 'Practice', date: '2031-05-01', start: '18:00' } };
+    OLD.matches = { g1: { id: 'g1', teamId: 't1', opponent: 'Storm', date: '2031-05-03', kickoff: '10:00' } };
+    const NEW = { access: { org: { name: 'Hillside FC' }, admins: { adm: true }, index: { adm: true }, members: { adm: { name: 'Ada' } } },
+      teams: { n1: { id: 'n1', name: 'Hill U9', players: {}, events: { x1: { id: 'x1', kind: 'practice', title: 'Practice', date: '2031-06-01', start: '17:00' } } } },
+      matches: { m1: { id: 'm1', teamId: 'n1', opponent: 'Rovers', date: '2031-06-02', kickoff: '09:00' } } };
+    const open = async (code, doc, storage) => {
+      const fbk = makeFakebase();
+      const P = H.loadApp({ firebase: fbk, config: CONFIG, storage });
+      await P.flush();
+      fbk.signIn('adm', { name: 'Ada' }); await P.flush();
+      fbk.deliver('.info/connected', true);
+      fbk.deliver('workspaces/' + code, doc); await P.flush();
+      P.render(); P.render();
+      return { P, fbk };
+    };
+    const { P: A } = await open('CLUB', OLD, { 'sm.workspace': 'CLUB' });     // she has been here before
+    A.storage.setItem('sm.workspace', 'HILL');
+    const { P: N } = await open('HILL', NEW, A.storage._d);                  // in the new club, its team imported
+    N.click({ act: 'switchclub', code: 'CLUB' });
+    check('the switcher opens the old club', N.storage.getItem('sm.workspace') + ' ' + N.dom.reloads, 'CLUB 1');
+    N.render(); N.saveLocal();                                               // the new club's page, before the reload lands
+    const { P: B, fbk: fb3 } = await open('CLUB', OLD, N.storage._d);
+    check('the old club opens with its own teams only', Object.keys(B.state.teams).join(), 't1');
+    check('nothing of the new club is sent to it', fb3.record.writes.filter(w => /\/(teams|matches)\//.test(w.path)).map(w => w.path).join(' '), '');
+    check('and nothing it still has is called deleted', B.newsItems().map(x => x.title).join(' | '), '');
+  }
+
   console.log('\n--- inviting the people an imported roster names ---');
   {
     const club = JSON.parse(JSON.stringify(CLUB));
