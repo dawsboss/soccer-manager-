@@ -104,11 +104,12 @@ console.log('\n--- only a coach or admin adds players and games ---');
   const html = (view) => { A.ui.view = view; A.render(); return A.rendered(); };
   const offers = (who, tid) => {
     as(club(), who, tid);
-    const roster = html('roster'), games = html('matches');
+    // games are added from the calendar's +, whose sheet has "A game"
+    const roster = html('roster'), games = html('calendar');
     return {
       addPlayer: roster.includes('data-act="addplayer"'),
       editPlayer: roster.includes('data-act="editplayer"'),
-      addGame: games.includes('data-act="newmatch"')
+      addGame: games.includes('class="calfab"')
     };
   };
   const all = { addPlayer: true, editPlayer: true, addGame: true };
@@ -117,6 +118,19 @@ console.log('\n--- only a coach or admin adds players and games ---');
   deepEq('a coach on her own team, all three', offers('jaz', 't1'), all);
   deepEq('a coach on another team, none', offers('jaz', 't2'), none);
   deepEq('a tracker, none', offers('trk', 't1'), none);
+
+  /* The Team tab is Squad's foot since build 102: the set-up is the team's
+     coaches' to change, readable by a coach of another age group, and a
+     tracker, who logs games for the squad, doesn't get it. */
+  const setUp = (who, tid) => { as(club(), who, tid); return html('roster'); };
+  let h = setUp('jaz', 't1');
+  check('a coach has the team\'s set-up under her squad', /Team set-up/.test(h) && /data-act="formations"/.test(h) && /data-act="trackcfg"/.test(h) && /data-act="editteam"/.test(h), true);
+  h = setUp('jaz', 't2');
+  check('another team\'s coach reads it and changes nothing', /Team set-up/.test(h) && !/data-act="formations"|data-act="trackcfg"|data-act="editteam"/.test(h), true);
+  h = setUp('trk', 't1');
+  check('a tracker has the squad and not the set-up', /class="plist"/.test(h) && !/Team set-up/.test(h), true);
+  as(club(), 'boss'); A.ui.view = 'teamset'; A.render();
+  check('a link to the old Team tab opens Squad', A.ui.view, 'roster');
 
   // a hidden button is not the only thing in the way
   const tries = (who, tid, act, extra) => {

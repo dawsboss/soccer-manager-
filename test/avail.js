@@ -276,9 +276,10 @@ const slotSess = (sid, extra = {}) => ({ id: sid, kind: 'one', cap: 1, coach: 'j
     check('not another team\'s', keys.includes('e:e2'), false);
     check('nor another child\'s session', keys.includes('s:sx'), false);
     A.ui.view = 'mycal'; A.render();
-    check('it draws', /My calendar/.test(A.rendered()) && /1-1 session with Jaz/.test(A.rendered()), true);
+    // one child on one team: My calendar is her team's calendar, so there is one calendar and no choice to make
+    check('it draws, on the one calendar', A.ui.view + ' ' + /1-1 session with Jaz/.test(A.rendered()), 'calendar true');
     check('with no other child\'s name', /Ella|Another 1-1/.test(A.rendered()), false);
-    check('the club page has the card', (A.ui.view = 'club', A.render(), /<b>My calendar<\/b>/.test(A.rendered())), true);
+    check('the club page has the card', (A.ui.view = 'club', A.render(), /<b>Calendar<\/b>/.test(A.rendered())), true);
     check('and it says what is next', /Next: Practice/.test(A.rendered()), true);
   }
   {
@@ -295,6 +296,7 @@ const slotSess = (sid, extra = {}) => ({ id: sid, kind: 'one', cap: 1, coach: 'j
     check('and her bookable times', keys.includes('a:b1'), true);
     A.ui.view = 'mycal'; A.render();
     check('drawn with the times', /1-1s until 7pm/.test(A.rendered()), true);
+    check('which is more than her team, so My calendar is a choice', A.calSels().join() + ' ' + A.calSel(), 'team,mine,club mine');
     A.state.teams.t1.players.p1.guardians = { jaz: true };
     check('a coach who is also a parent can narrow it', A.myCalFilters().map(([k]) => k).join(), 'all,p:p1,me');
     A.ui.myCal = 'p:p1';
@@ -305,11 +307,11 @@ const slotSess = (sid, extra = {}) => ({ id: sid, kind: 'one', cap: 1, coach: 'j
     // the club's whole schedule is Club schedule's; My calendar is only ever hers
     check('an admin who works no team has none of the club\'s teams on hers', A.myCalTeams().join(), '');
     A.ui.view = 'mycal'; A.render();
-    check('and it draws', /My calendar/.test(A.rendered()), true);
-    check('pointing her at the club\'s schedule', /data-act="schedule"/.test(A.rendered()), true);
+    check('and it draws, as the club\'s', A.ui.view + ' ' + A.calSels().includes('mine'), 'calendar false');
+    check('offering her every team', /data-act="calscope" data-v="club"/.test(A.rendered()), true);
   }
   {
-    as('jaz');
+    as('jaz'); putBlock('b1');
     A.ui.view = 'mycal';
     check('it has its own address', A.uiToHash(), '#/my-calendar');
   }

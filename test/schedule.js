@@ -1,23 +1,24 @@
-/* The club schedule: the owner's "the admin being thrown into My calendar
-   isn't great. They need a way to schedule out games and stuff easier. Also
-   practices: some teams share fields, which is ok. Just note that there is a
-   shared field time."
+/* The club's schedule, on the one Calendar. The owner, first: "the admin
+   being thrown into My calendar isn't great. They need a way to schedule out
+   games and stuff easier. Also practices: some teams share fields, which is
+   ok. Just note that there is a shared field time." Then: "having a team
+   calendar, club calendar and my calendar is too much" (build 102), so Club
+   schedule became All teams on the Calendar, and its week the club's week
+   under it for an admin.
 
    What's pinned here:
 
-   - It's the admins'. A coach, a tracker or a parent is sent back to Club
-     home, and an action that reaches the handler anyway is refused with
-     nothing written.
-   - An admin lands on the club's schedule from Club home, and My calendar is
-     only hers: an admin who works no team isn't offered an empty one first.
-   - Every team's week on one screen, narrowed by team and by kind, with what
-     is still missing a date, time or place, and teams with no practice.
+   - Every team's week on one screen, ticked by team and kind, with what is
+     still missing a date, time or place, and teams with no practice: an
+     admin's, under All teams. A parent is never offered All teams for teams
+     that aren't hers, and nobody but an admin gets the club's week.
+   - An admin lands on it from Club home; My calendar is only ever hers.
    - Two teams practising on one field at once is a note on both entries,
      never a clash; a game short of a pitch is.
-   - Adding opens the sheet a team's coach uses, for the team picked, and
-     keeps her on the schedule. A run of games is one write per game at
-     matches/{id}, in the shape the team's last game had, a row with no
-     opponent refused and an empty row left out. */
+   - Adding opens the sheet a team's coach uses, for a team she may change
+     (checked again in the handler), and keeps her on the calendar. A run of
+     games is one write per game at matches/{id}, in the shape the team's last
+     game had, a row with no opponent refused and an empty row left out. */
 
 const H = require('./harness');
 const { check } = H;
@@ -52,6 +53,7 @@ const A = H.loadApp({ config: CONFIG, firebase: makeFakebase() });
 function as(uid, c = club()) {
   A.state = c; A.me = uid ? { uid, name: uid } : null; A.appOwners = {};
   A.ui.teamId = 't1'; A.ui.view = 'schedule'; A.ui.sched = {}; A.toasts.length = 0;
+  A.ui.calSel = null; A.ui.calOff = {}; A.ui.calKOff = {}; A.ui.calDay = null; A.ui.calView = null; A.ui.calTree = false;
 }
 const fill = vals => { for (const [k, v] of Object.entries(vals)) A.dom.node('#' + k).value = v; };
 
@@ -59,70 +61,80 @@ const fill = vals => { for (const [k, v] of Object.entries(vals)) A.dom.node('#'
 
   console.log('--- who has it ---');
   {
-    for (const who of ['jaz', 'mum', 'trk']) {
+    // the coach of two teams sees every team, as a coach does; a parent and a tracker only theirs
+    as('jaz'); A.render();
+    check('jaz: the old address is the Calendar, on All teams', A.ui.view + ' ' + A.calSel(), 'calendar club');
+    check('jaz: but no club\'s week, which is an admin\'s', /class="card clubweek"/.test(A.rendered()), false);
+    for (const who of ['mum', 'trk']) {
       as(who); A.render();
-      check(who + ': the screen sends them back', A.ui.view, 'club');
-      check(who + ': no Club schedule card on Club home', /data-act="schedule"/.test(A.rendered()), false);
+      check(who + ': no All teams to show her what isn\'t hers', A.ui.view + ' ' + A.calSels().includes('club'), 'calendar false');
+      check(who + ': no club\'s week', /clubweek/.test(A.rendered()), false);
+      check(who + ': no Calendar card for the club on Club home', (A.ui.view = 'club', A.render(), /data-act="schedule"/.test(A.rendered())), false);
       const before = JSON.stringify(A.state);
       A.ui.sched = { add: 'games' };
       A.click({ act: 'schedfor', tid: 't1' });
-      check(who + ': adding through the handler is refused', A.lastToast(), 'The club schedule is for club admins');
+      check(who + ': adding through the handler is refused', A.lastToast(), 'Only a team’s coaches and the club’s admins add to its calendar');
       A.click({ act: 'sgsave' });
       check(who + ': and nothing is written', JSON.stringify(A.state), before);
     }
+    as('jaz');
+    A.ui.sched = { add: 'games' };
+    A.click({ act: 'schedfor', tid: 't3' });
+    check('a coach adding to a team that isn\'t hers is refused', A.lastToast(), 'Only that team’s coaches and the club’s admins can add to it');
+
     as('boss'); A.ui.view = 'club'; A.render();
-    check('an admin has it first on Club home', /data-act="schedule"[^>]*>\s*<b>Club schedule<\/b>/.test(A.rendered()), true);
-    check('saying what is on this week', /This week: /.test(A.rendered()), true);
+    check('an admin has the Calendar first on Club home', /data-act="schedule"[^>]*>\s*<b>Calendar<\/b>/.test(A.rendered()), true);
+    check('saying what is on this week', /Every team · This week: /.test(A.rendered()), true);
     check('and is not offered an empty My calendar ahead of it', /data-v="mycal"/.test(A.rendered()), false);
     check('her own calendar holds only her own', A.myCalOwn(), false);
     A.click({ act: 'schedule' });
-    check('it opens', A.ui.view, 'schedule');
-    check('at its own address', A.uiToHash(), '#/club/schedule');
+    check('it opens on every team', A.ui.view + ' ' + A.calSel() + ' ' + A.calTeams().length, 'calendar club 3');
+    check('at its own address', A.uiToHash(), '#/club/calendar');
     A.ui.view = 'club';
     global.location.hash = '#/club/schedule';
-    check('and the address opens it', A.hashToUi() && A.ui.view, 'schedule');
+    check('and the old address opens it', A.hashToUi() && A.ui.view + ' ' + A.ui.calSel, 'calendar club');
     A.ui.view = 'admin'; A.render();
     check('Club settings has it too', /data-act="schedule"/.test(A.rendered()), true);
-    A.ui.view = 'calendar'; A.render();
-    check('and so does a team\'s Calendar tab, for an admin', /data-act="schedule"/.test(A.rendered()), true);
+    A.ui.view = 'calendar'; A.ui.calSel = 'team'; A.render();
+    check('and a team\'s Calendar offers it, for an admin', /data-act="calscope" data-v="club"/.test(A.rendered()), true);
 
-    // an admin who also coaches still has her own calendar on Club home
+    // an admin who also coaches has her own calendar a tap away, and the club's on Club home
     const c = club(); c.access.teams.t3 = { coaches: { boss: true } };
     as('boss', c); A.ui.view = 'club'; A.render();
-    check('an admin who coaches keeps My calendar', /data-v="mycal"/.test(A.rendered()), true);
+    check('an admin who coaches has the club\'s Calendar on Club home', /data-act="schedule"/.test(A.rendered()), true);
+    A.click({ act: 'accountsheet' });
+    check('and My calendar from her account', /data-v="mycal"/.test(sheet(A)), true);
   }
 
   console.log('\n--- a week of the club ---');
   {
-    as('boss'); A.ui.sched = { week: TUE }; A.render();
+    as('boss'); A.ui.view = 'calendar'; A.ui.calSel = 'club'; A.ui.calView = 'week'; A.ui.calDay = TUE; A.render();
     const html = A.rendered();
     check('the week runs Monday to Sunday', /14 Sep – 20 Sep/.test(html), true);
     check('every team\'s entries, under their day', /G11 Flight/.test(html) && /G13 Storm/.test(html) && /Team photo/.test(html), true);
     const w = A.schedWeek();
     check('counted', [w.games, w.practices, w.events].join(), '0,2,1');
     check('a team with no practice this week is said', w.idle.join(), 't3');
-    check('on screen', /No practice this week: B9 Comets/.test(html), true);
-    check('a day with nothing has a way to add to it', /data-act="schedadd" data-v="2026-09-14"/.test(html), true);
+    check('on screen, in the club\'s week', /class="card clubweek"/.test(html) && /No practice this week: B9 Comets/.test(html), true);
+    check('a day with nothing has a way to add to it', /class="tg-slot"[^>]*data-act="schedadd" data-v="2026-09-14" data-t="18:00"/.test(html), true);
 
-    A.click({ act: 'schedteam', tid: 't2' });
-    check('one team picked from all of them is that team alone', A.schedWeek().tids.join(), 't2');
-    A.click({ act: 'schedteam', tid: 't1' });
-    check('then each tap adds one', A.schedWeek().tids.sort().join(), 't1,t2');
-    A.click({ act: 'schedteam', tid: '' });
-    check('and All teams is all of them', A.schedWeek().tids.length, 3);
-    A.click({ act: 'schedkind', v: 'practice' });
+    A.click({ act: 'caltog', tid: 't1' });
+    check('a team unticked is left out of the week', A.schedWeek().tids.sort().join(), 't2,t3');
+    A.click({ act: 'caltog', g: 'all' });
+    check('and the club is all of them', A.schedWeek().tids.length, 3);
+    A.click({ act: 'calkind', v: 'practice' });
     check('a kind can be left out', A.schedWeek().items.some(x => x.kind === 'practice'), false);
-    A.click({ act: 'schedkind', v: 'practice' });
+    A.click({ act: 'calkind', v: 'practice' });
 
-    A.click({ act: 'schedweek', v: '1' });
-    check('next week', A.ui.sched.week, '2026-09-21');
-    A.click({ act: 'schedweek', v: '0' });
-    check('back to this one', A.ui.sched.week, '2026-09-07');
+    A.click({ act: 'calstep', v: '1' });
+    check('next week', A.schedWeek().week, '2026-09-21');
+    A.click({ act: 'calstep', v: '0' });
+    check('back to this one', A.schedWeek().week, '2026-09-07');
 
     const todo = A.schedTodo(['t1', 't2', 't3']);
     check('still to settle: the photo with no time or place', todo.some(r => r.x.title === 'Team photo' && r.miss.join() === 'time,place'), true);
     check('and nothing already played', todo.some(r => r.x.id === 'm0'), false);
-    A.ui.sched.week = TUE; A.render();
+    A.ui.calDay = TUE; A.render();
     check('listed on the screen', /Still to settle/.test(A.rendered()) && /No time, no place yet/.test(A.rendered()), true);
   }
 
@@ -146,8 +158,8 @@ const fill = vals => { for (const [k, v] of Object.entries(vals)) A.dom.node('#'
     const g = A.calItems(['t3']).find(x => x.id === 'g1');
     check('a game on a one-pitch field with a practice on it is a clash', A.fieldMates(g).clash, true);
     check('said as one', /^Field clash: /.test(A.fieldMatesLine(g)), true);
-    A.ui.sched = { week: TUE }; A.render();
-    check('and counted on the schedule', A.schedWeek().clash > 0 && /no pitch left/.test(A.rendered()), true);
+    A.ui.view = 'calendar'; A.ui.calSel = 'club'; A.ui.calDay = TUE; A.render();
+    check('and counted in the club\'s week', A.schedWeek().clash > 0 && /no pitch left/.test(A.rendered()), true);
     c.access.org = { venues: { v1: { id: 'v1', name: 'Lakeside Park', pitches: 3 } } };
     check('with a pitch for each, the game only shares', A.fieldMates(g).clash, false);
     c.teams.t2.events.e2.called = 'cancelled';
@@ -157,7 +169,7 @@ const fill = vals => { for (const [k, v] of Object.entries(vals)) A.dom.node('#'
 
   console.log('\n--- adding from the schedule ---');
   {
-    as('boss'); A.ui.sched = { week: TUE }; A.render();
+    as('boss'); A.ui.calDay = TUE; A.render();
     A.click({ act: 'schedadd', v: TUE });
     check('Add asks what and for which team', /data-act="schedaddk" data-v="games"/.test(sheet(A)) && /data-act="schedfor" data-tid="t3"/.test(sheet(A)), true);
     check('each team saying the shape of its games', /7v7 · 4 × 12 min/.test(sheet(A)), true);
@@ -171,7 +183,7 @@ const fill = vals => { for (const [k, v] of Object.entries(vals)) A.dom.node('#'
     A.click({ act: 'savematch', id: '' });
     const made = Object.values(A.state.matches).find(m => m.opponent === 'Riverside');
     check('the game is B9\'s', made && made.teamId, 't3');
-    check('and she is still on the schedule', A.ui.view, 'schedule');
+    check('and she is still on the calendar', A.ui.view + ' ' + A.calSel(), 'calendar club');
     check('told it was added', A.lastToast(), 'Game added for B9 Comets');
     check('B9 is the open team, so its share link is what republishes', A.ui.teamId, 't3');
     // a game added the usual way still opens it
@@ -189,7 +201,7 @@ const fill = vals => { for (const [k, v] of Object.entries(vals)) A.dom.node('#'
     fill({ evTitle: '', evDate: '2026-09-16', evStart: '17:30', evEnd: '18:30', evVenue: 'Lakeside Park', evNotes: '', evUntil: '' });
     A.click({ act: 'calsave', tid: 't1' });
     check('and lands on its calendar', Object.values(A.state.teams.t1.events).some(e => e.date === '2026-09-16' && e.kind === 'practice'), true);
-    check('still on the schedule', A.ui.view, 'schedule');
+    check('still on the calendar', A.ui.view + ' ' + A.calSel(), 'calendar club');
   }
 
   console.log('\n--- a run of games ---');
@@ -216,7 +228,7 @@ const fill = vals => { for (const [k, v] of Object.entries(vals)) A.dom.node('#'
     check('each as Create game makes it', run.every(m => m.currentHalf === 1 && m.periodCount === 4 && m.periodMinutes === 12 && m.onFieldCount === 7 && m.stints && m.periods), true);
     check('with what was typed', [run[0].date, run[0].kickoff, run[0].home, run[0].venue].join(' '), '2026-09-19 09:00 home Lakeside Park');
     check('told how many', A.lastToast(), '2 games added for B9 Comets');
-    check('still on the schedule', A.ui.view, 'schedule');
+    check('still on the calendar', A.ui.view + ' ' + A.calSel(), 'calendar club');
   }
 
   console.log('\n--- against the database: one write per game ---');

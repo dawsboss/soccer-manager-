@@ -4,12 +4,12 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#17603C">
-<meta name="build" content="101">
+<meta name="build" content="102">
 <title>Minutes — soccer sub tracker</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600&family=Barlow+Condensed:wght@500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="styles.css?v=101">
+<link rel="stylesheet" href="styles.css?v=102">
 </head>
 <body>
 
@@ -26,13 +26,12 @@
     <button class="avatar" id="avatar" type="button" aria-label="Your account"></button>
   </div>
   <nav class="crumbs" id="crumbs" aria-label="Where you are"></nav>
+  <!-- Four, not six: the games are on the Calendar, and the team's set-up is on Squad (build 102). -->
   <nav class="tabs" id="tabs">
-    <button type="button" data-view="matches">Games</button>
     <button type="button" data-view="calendar">Calendar</button>
     <button type="button" data-view="practice" hidden>Practice</button>
     <button type="button" data-view="roster">Squad</button>
     <button type="button" data-view="season">Season</button>
-    <button type="button" data-view="teamset">Team</button>
   </nav>
   <nav class="tabs subtabs" id="subtabs" hidden>
     <button type="button" data-gview="live">Live</button>
@@ -52,12 +51,12 @@
 <div class="toast" id="toast" hidden></div>
 
 <script src="firebase-config.js"></script>
-<script src="ics.js?v=101"></script>
+<script src="ics.js?v=102"></script>
 <!-- Content, not code: the drill library and the diagrams that draw it. Plain
      scripts before the module, so they are on window when app.js runs, and
      cache-busted with the same build number so a cached copy can't disagree. -->
-<script src="drills.js?v=101"></script>
-<script src="drill-diagram.js?v=101"></script>
-<script type="module" src="app.js?v=101"></script>
+<script src="drills.js?v=102"></script>
+<script src="drill-diagram.js?v=102"></script>
+<script type="module" src="app.js?v=102"></script>
 </body>
 </html>
