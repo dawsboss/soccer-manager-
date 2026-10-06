@@ -51,6 +51,7 @@ const SUITES = [
   ['away', 'coaches\' time off: nights, dates away, calling out'],
   ['news', 'club activity: what an admin hears, and a coach, and never a parent'],
   ['planner', 'planning for the club: clashes, a time for everyone, picture day'],
+  ['schedule', 'the club schedule: every team\'s week for its admins, adding to any team, and shared fields'],
   ['smoke', 'every view renders without throwing'],
   ['sandbox', 'the test club, and database isolation'],
   ['rulesver', 'an admin is told when the published rules are behind'],

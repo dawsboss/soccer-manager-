@@ -32,6 +32,7 @@ const cases = [
   [{ view: 'game', teamId: 't7', matchId: 'g3', gameView: 'subs' }, '#/team/t7/game/g3/subs'],
   [{ view: 'club' }, '#/club'],
   [{ view: 'admin' }, '#/club/settings'],
+  [{ view: 'schedule' }, '#/club/schedule'],
   [{ view: 'mine' }, '#/my-players'],
   [{ view: 'setup' }, '#/settings'],
   [{ view: 'sessions' }, '#/training']

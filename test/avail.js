@@ -302,9 +302,11 @@ const slotSess = (sid, extra = {}) => ({ id: sid, kind: 'one', cap: 1, coach: 'j
   }
   {
     as('boss');
-    check('an admin who works no team sees the club\'s teams', A.myCalTeams().sort().join(), 't1,t2');
+    // the club's whole schedule is Club schedule's; My calendar is only ever hers
+    check('an admin who works no team has none of the club\'s teams on hers', A.myCalTeams().join(), '');
     A.ui.view = 'mycal'; A.render();
     check('and it draws', /My calendar/.test(A.rendered()), true);
+    check('pointing her at the club\'s schedule', /data-act="schedule"/.test(A.rendered()), true);
   }
   {
     as('jaz');
