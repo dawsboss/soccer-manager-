@@ -356,7 +356,15 @@ console.log('\n--- a whole club in one file ---');
 club2();
 const whole = A.importPlan(A.IMPORT_EXAMPLE);
 deepEq('the example has no errors', whole.errors, []);
-check('its team, its field and its sessions', [whole.counts.newTeams, whole.counts.newFields, whole.counts.newSessions > 2].join(), '1,1,true');
+check('its team, its two fields and its sessions', [whole.counts.newTeams, whole.counts.newFields, whole.counts.newSessions > 2].join(), '1,2,true');
+{
+  // the example shows a complex: its pitches each their own surface, the ones round the back their own address
+  const lp = whole.writes.find(w => w[1] && w[1].name === 'Lakeside Park')[1];
+  check('the example\'s complex has its four pitches, grass, turf and indoor', Object.values(lp.parts).sort((a, b) => a.o - b.o).map(p => p.name + ':' + p.surface).join(), 'Field 1:Grass,Field 2:Grass,The turf:Turf,The dome:Indoor');
+  check('and counts them', lp.pitches, 4);
+  check('the turf at its own address', Object.values(lp.parts).find(p => p.name === 'The turf').address, '40 Back Lane');
+  check('a plain field keeps just its count', whole.writes.find(w => w[1] && w[1].name === 'Northgate Rec')[1].pitches, 2);
+}
 check('booking a player the same file adds', whole.sessWrites.some(([p, v]) => p.startsWith('booked/') && v.st === 'in'), true);
 A.state = JSON.parse(held.state); A.sess = JSON.parse(held.sess); A.me = { uid: 'adm', name: 'Ada' };
 
@@ -516,6 +524,13 @@ const rv = pcp.writes.find(w => w[1] && w[1].name === 'Riverside')[1];
 check('Riverside with its two pitches', Object.values(rv.parts).map(p => p.name + ':' + p.surface).join(), 'North:Grass,South:Turf');
 check('"Pitch name" works beside "Name" too', A.csvImport('Name,Pitch name,Surface\nRiverside,East,Turf\n', {}).data.fields[0].parts[0].name, 'East');
 check('nothing it can\'t tell', A.csvImport('Colour,Size\nred,4\n', {}).error.startsWith('Couldn\'t tell'), true);
+{
+  const ft = A.importPlan(A.csvImport(A.CSV_TEMPLATES.fields, {}).data);
+  const lp = ft.writes.find(w => w[1] && w[1].name === 'Lakeside Park')[1];
+  check('the fields template folds a complex into one field', ft.counts.newFields, 2);
+  check('with a row per pitch, grass, turf and indoor', Object.values(lp.parts).sort((a, b) => a.o - b.o).map(p => p.name + ':' + p.surface + ':' + p.lights).join(), 'Field 1:Grass:false,Field 2:Grass:false,The turf:Turf:true,The dome:Indoor:true');
+  check('the field row describes the field', [lp.address, lp.notes, lp.pitches].join('|'), '1 Lake Rd|Gate code 4471|4');
+}
 check('a template for each, readable by itself', ['roster', 'schedule', 'fields', 'drills'].every(k => { const c = A.csvImport(A.CSV_TEMPLATES[k], {}); return !c.error && !A.importPlan(c.data).errors.length; }), true);
 }
 

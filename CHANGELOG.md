@@ -8,6 +8,26 @@ before this point lives only in the git log.
 
 ---
 
+## The import templates show a complex — 2026-10-06 (build 101)
+
+The owner: *make the template you forgot to add for the bulk imports; I don't
+know how it's supposed to look with the new option of field types at a
+complex.* Build 100 taught the import to read each pitch of a field, but the
+sheet's *Show an example* still gave a field as `"pitches": 2`, so nothing on
+screen showed what a complex looks like in a file.
+
+- **Show an example** now lists Lakeside Park's four pitches, two grass, a
+  turf one and an indoor dome, the back two at their own address on another
+  street, beside a plain field that only says how many pitches it has.
+- **The Fields spreadsheet template** is the same complex: a row for the field
+  with no pitch name, then a row per pitch with its surface, lights and
+  address, and a one-row field with a count. README carries it as a block to
+  copy.
+- `test/import.js` imports both and requires the four pitches with their
+  surfaces, the turf's own address, and two fields, not six.
+
+---
+
 ## Each pitch of a field described on its own — 2026-10-06 (build 100)
 
 The owner: *fields should have a description for each field the complex has;

@@ -2,7 +2,7 @@
    Static app. Data lives in localStorage, and mirrors to Firebase Realtime
    Database when a config + workspace code are present. */
 
-const BUILD = '100';
+const BUILD = '101';
 const BUILT = '2026-10-05';
 /* The version of database.rules.json this app was written against. The rules
    carry the same number in rulesVersion's .write, which accepts that number
@@ -2919,9 +2919,20 @@ const IMPORT_EXAMPLE = {
       { date: '2026-09-08', start: '17:30', end: '19:00', where: 'Lakeside Park', weekly: { days: ['Tue', 'Thu'], until: '2026-11-26' } }
     ]
   }],
+  /* A complex is one field with its pitches listed, each its own surface,
+     lights and, when it's round the back on another street, its own address.
+     A field with nothing to say about its pitches gives just how many. */
   fields: [{
-    name: 'Lakeside Park', address: '1 Lake Rd', pitches: 2, surface: 'Grass', lights: true,
+    name: 'Lakeside Park', address: '1 Lake Rd', surface: 'Grass', lights: true,
+    pitches: [
+      { name: 'Field 1', surface: 'Grass', description: 'Full size, 11v11' },
+      { name: 'Field 2', surface: 'Grass', lights: false, description: '9v9 and 7v7' },
+      { name: 'The turf', surface: 'Turf', lights: true, address: '40 Back Lane', notes: 'No metal studs' },
+      { name: 'The dome', surface: 'Indoor', address: '40 Back Lane', notes: 'Winter only, flats or turf shoes' }
+    ],
     permits: [{ days: ['Mon', 'Wed'], start: '16:00', end: '20:00', from: '2026-09-01', until: '2026-11-30', number: 'City parks #4471' }]
+  }, {
+    name: 'Northgate Rec', address: '22 North St', pitches: 2, surface: 'Grass'
   }],
   /* "coach" is the name or email of a coach or admin here; left out, the
      session is whoever imports it. */
@@ -4184,7 +4195,10 @@ const CSV_KIND = { players: 'a roster', schedule: 'a schedule', fields: 'a list 
 const CSV_TEMPLATES = {
   roster: 'Team,First name,Last name,Number,Position,Foot,Goalkeeper,Notes\nLakeside Thunder G12,Ada,Lovelace,1,GK,Right,yes,\nLakeside Thunder G12,Bea,Smith,7,Forward,Left,,Fades after 25 minutes\n',
   schedule: 'Team,Type,Date,Start,End,Opponent,Home/Away,Location,Arrive,Uniform,Notes\nLakeside Thunder G12,Game,2026-10-04,09:30,,Northgate,Away,Northgate Rec field 2,09:00,Blue shirts,\nLakeside Thunder G12,Practice,2026-10-06,17:30,19:00,,,Lakeside Park,,,Bring water\n',
-  fields: 'Name,Pitch name,Address,Pitches,Surface,Lights,Notes\nLakeside Park,,1 Lake Rd,3,Grass,yes,Gate code 4471\nLakeside Park,Field 1,,,Grass,,Full size 11v11\nLakeside Park,The turf,40 Back Lane,,Turf,yes,No metal studs\n',
+  /* A complex is a row for the field (no pitch name) and a row per pitch,
+     each with its own surface, lights and address if it has one; a field
+     with nothing to say about its pitches is one row with how many. */
+  fields: 'Name,Pitch name,Address,Pitches,Surface,Lights,Notes\nLakeside Park,,1 Lake Rd,,Grass,yes,Gate code 4471\nLakeside Park,Field 1,,,Grass,,Full size 11v11\nLakeside Park,Field 2,,,Grass,no,9v9 and 7v7\nLakeside Park,The turf,40 Back Lane,,Turf,yes,Round the back; no metal studs\nLakeside Park,The dome,40 Back Lane,,Indoor,yes,Winter only\nNorthgate Rec,,22 North St,2,Grass,,\n',
   drills: 'Name,Summary,Setup,How it runs,Coaching points,Type,Ages,Minutes,Players,Skills,Helps with,Link\nGates dribble,Dribble through as many cone gates as you can in a minute,"20 x 20 yd area, eight pairs of cones as gates, a ball each","Dribble through a gate, then find another; Count gates in 60 seconds; Beat your score",Eyes up between gates; Small touches near a gate,Technical,U7-U10,10-15,6-16,Dribbling; Ball mastery,,https://example.org/gates\n'
 };
 const isJsonText = txt => /^\s*[{[]/.test(String(txt || ''));
