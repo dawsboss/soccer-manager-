@@ -186,6 +186,7 @@ try {
       e2:{id:'e2',kind:'event',title:'Team photo',date:'2026-09-20',called:'cancelled',public:true}};
     ui.calAll=true; ui.calPast=true; render();
     ui.calMonth='2026-10'; render(); ui.calMonth=null; ui.calAll=false;
+    ui.calTree=true; for (const v of ['day','week','month','list']) { ui.calView=v; render(); } ui.calView=null; ui.calTree=false;
     // answers, the sync card with a feed set up, and the sheets that show them
     state.rsvp={t_ok:{e_e1:{p2:{v:'yes',by:'mumU',at:1,note:'late'}}}};
     window.SOCCER_CALENDAR_FEED='https://feed.example'; state.teams.t_ok.calFeed='cFeed1'; render();
