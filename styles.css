@@ -935,14 +935,18 @@ button.nextprac{cursor:pointer}
 .calnavs .btn[aria-current="date"]{color:var(--ink-soft)}
 .calmini{background:#fff;border:1px solid var(--line);border-radius:var(--r);padding:10px}
 
-/* which calendars */
-.calcals{background:#fff;border:1px solid var(--line);border-radius:var(--r);padding:10px 12px;display:flex;flex-direction:column;gap:8px}
-.calcals .seg{background:var(--paper);border-color:transparent}
-.calcals .seg button[aria-pressed="false"]{color:var(--ink)}
-.calcalsbtn{width:100%;font-size:15px}
-.calcalsbtn > span:first-child{font-weight:600}
-.calicon{color:var(--field-deep);margin-right:4px}
-.calcals .caltree,.calcals .chips{margin-top:2px}
+/* which calendars: the choice as chips, the finer ones behind the ☰ */
+.calsels .chip{display:inline-flex;align-items:center;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.calsels .chip .dot{display:inline-block;flex:none;width:9px;height:9px;border-radius:50%;margin-right:6px}
+.calsels .chip[aria-pressed="true"] .dot{box-shadow:0 0 0 1.5px #fff}
+.calmenu{flex:none;width:36px;height:36px;display:flex;align-items:center;justify-content:center;position:relative;
+  background:#fff;border:1px solid var(--line);border-radius:10px;color:var(--field-deep);padding:0}
+.calmenu[aria-expanded="true"]{background:var(--field-deep);border-color:var(--field-deep);color:#fff}
+/* something is left out: said by a dot on the ☰, and in words inside */
+.calmenu[data-on="1"]::after{content:"";position:absolute;top:-3px;right:-3px;width:10px;height:10px;border-radius:50%;
+  background:var(--owed);box-shadow:0 0 0 2px var(--paper)}
+.calcals{background:#fff;border:1px solid var(--line);border-radius:var(--r);padding:12px;display:flex;flex-direction:column;gap:8px}
+.calcals .caltree{margin-top:0}
 
 /* Schedule: a day a row, the date down the left, today circled */
 .agenda{display:flex;flex-direction:column}
@@ -1015,6 +1019,8 @@ button.ev:active{filter:brightness(.92)}
 .tg-ev[data-past="1"]{opacity:.6}
 .tg-ev[data-called="1"]{background:#fff;color:var(--ink-soft);box-shadow:inset 0 0 0 1.5px var(--ev),0 0 0 1px #fff}
 .tg-ev[data-called="1"] b{text-decoration:line-through}
+.tg-ev[data-short="1"] span{display:none}
+.tg-ev[data-short="1"]{padding-top:1px;padding-bottom:1px}
 .tg-week .tg-ev{padding:2px 3px;font-size:11px}
 .tg-week .tg-ev span{display:none}
 .tg-more{position:absolute;z-index:1;margin-left:1px;border:0;border-radius:6px;background:var(--ink-soft);color:#fff;
@@ -1024,6 +1030,7 @@ button.ev:active{filter:brightness(.92)}
 .tg-allday .mg-ev{font-size:11px}
 @media (min-width:760px){
   .tg-week .tg-ev span{display:block}
+  .tg-week .tg-ev[data-short="1"] span{display:none}
   .tg{--gut:52px}
 }
 
