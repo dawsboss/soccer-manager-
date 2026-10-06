@@ -8,6 +8,44 @@ before this point lives only in the git log.
 
 ---
 
+## Starting a new club no longer drags the old one along — 2026-10-05 (build 98)
+
+The owner: *when I made a new club it told me all my teams were deleted when
+I was in one*, and then: *when I clicked import for the new club and added
+team I went to the other club and it said stuff was deleted when it wasn't.*
+
+Every club switch (a new club, the switcher, an invite, an alert's Open)
+writes the next club's code to the phone and reloads. A reload is not
+instant: the old page keeps running, and redrawing, until the new one
+arrives. `wsCode()` read the code from storage every time it was asked, so in
+that gap it already named the new club while memory still held the old one.
+Everything kept per club was filed under the wrong club: the old club's whole
+local copy was saved as the new club's, the new club opened holding the old
+club's teams, and its first connect sent them into the new club's database —
+which is how a brand-new club came to tell its admin about teams that were
+never its own, and then about them going.
+
+- **`wsCode()` and `envName()` are read once per page** and held. Storage
+  says which club to open next; the page says which one is open. Nothing that
+  switches club changes, because every one of them reloads.
+- `test/invites.js` starts a club with a team, a practice and a game, draws
+  and saves in the gap before the reload, then boots the new club from what
+  the phone kept: nothing of the old club under the new one's name, an empty
+  club, no team or game sent to it, no *Deleted* news. The old code fails it.
+  `test/sandbox.js` switched code and database on one running page; it now
+  says the page reloaded (`rereadClub()` in the harness).
+- It ran both ways. Switching back to the old club after importing a team
+  into the new one filed the new club's copy, and what club activity had seen
+  there, under the old club: the old club opened to *Deleted:* for every
+  practice and game it still had, and sent the imported team and its games
+  into itself. `test/invites.js` walks that too, through the club switcher.
+- Any club made with an earlier build from inside another may hold copies of
+  the old club's teams and games, and the old club copies of what was imported
+  into the new one. Remove them by deleting each copied team
+  (its Edit sheet, *Delete this team and its games*), which takes its games with it and leaves the original club alone.
+  Not game by game: a copied game carries the original's share id, and
+  deleting a game takes its share page down, the original's included.
+
 ## A player's own sign-in, given by her coach — 2026-10-05 (build 97, rules version 6)
 
 The owner's decisions on AUTH.md's four questions: *the coach gives the
