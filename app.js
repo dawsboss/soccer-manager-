@@ -2,7 +2,7 @@
    Static app. Data lives in localStorage, and mirrors to Firebase Realtime
    Database when a config + workspace code are present. */
 
-const BUILD = '98';
+const BUILD = '99';
 const BUILT = '2026-10-05';
 /* The version of database.rules.json this app was written against. The rules
    carry the same number in rulesVersion's .write, which accepts that number
@@ -7412,7 +7412,7 @@ function opponentMessage(t, m) {
     ? `${fixture} on ${when} is ${CALLED[m.called].toLowerCase()}.`
     : `${fixture}: ${when}${m.kickoff ? ', kick-off ' + niceTime(m.kickoff) : ''}.`];
   const I = ICS();
-  if (m.venue) lines.push(`Where: ${m.venue}${I ? ' — ' + I.mapLink(m.venue) : ''}`);
+  if (m.venue) lines.push(`Where: ${m.venue}${I ? ' — ' + I.mapLink(venueAddress(m.venue)) : ''}`);
   if (m.kit) lines.push(`We will be in ${m.kit}.`);
   if (gameLink(t, m)) lines.push(`Details and the live score: ${gameLink(t, m)}`);
   return lines.join('\n');
@@ -7524,7 +7524,7 @@ function calNextCard(it, all) {
       ${bits.length ? `<p class="muted" style="margin:2px 0 0">${esc(bits.join(' · '))}</p>` : ''}
     </button>
     ${live ? '' : `<div class="row wrap" style="margin-top:10px">
-      ${it.venue && I ? `<a class="btn quiet sm" href="${esc(I.mapLink(it.venue))}" target="_blank" rel="noopener">Directions</a>` : ''}
+      ${it.venue && I ? `<a class="btn quiet sm" href="${esc(I.mapLink(venueAddress(it.venue)))}" target="_blank" rel="noopener">Directions</a>` : ''}
       <button class="btn quiet sm" data-act="calitem" data-k="${it.kind}" data-tid="${esc(it.tid)}" data-id="${esc(it.id)}">Add to my calendar</button></div>`}
     ${rsvpOpen(it) && !canEditTeam(it.tid) ? myKids(it.tid).map(p => `<p class="lbl" style="margin-top:12px">${esc(goingQ(p))}</p>${rsvpChips(it, p, 'next')}`).join('')
       : rsvpOpen(it) && rsvpLine(it) ? `<p class="muted" style="margin:8px 0 0">${esc(rsvpLine(it))}</p>` : ''}
@@ -7582,6 +7582,7 @@ function sheetCalItem(kind, tid, id) {
     <dl class="facts">
       ${row('When', esc(dayLabel(it.date)) + (it.date ? ' · ' + esc(span) : ''))}
       ${row('Where', esc(it.venue))}
+      ${(fv => (pt => pt ? row(esc(pt.name), esc(pitchText(fv, pt))) : '')(pitchOfText(fv, it.venue)))(fieldOfText(it.venue))}
       ${m ? row('Ground', esc(HOME_AWAY[m.home] || '')) + row('Arrive by', esc(niceTime(m.arrive))) + row('Kit', esc(m.kit || ''))
       + row('Format', `${m.onFieldCount || 11}v${m.onFieldCount || 11} · ${m.periodCount || 2} × ${m.periodMinutes || 40} min`) : ''}
       ${row('Notes', esc((m ? m.notes : e && e.notes) || '').replace(/\n/g, '<br>'))}
@@ -7591,7 +7592,7 @@ function sheetCalItem(kind, tid, id) {
     ${rsvpBlock(it)}
     ${attendBlock(it)}
     ${it.date ? `<div class="row wrap" style="margin-bottom:10px">
-      ${it.venue && I ? `<a class="btn quiet sm" href="${esc(I.mapLink(it.venue))}" target="_blank" rel="noopener">Directions</a>` : ''}
+      ${it.venue && I ? `<a class="btn quiet sm" href="${esc(I.mapLink(venueAddress(it.venue)))}" target="_blank" rel="noopener">Directions</a>` : ''}
       ${I ? `<a class="btn quiet sm" href="${esc(I.googleLink(icsItem(it)))}" target="_blank" rel="noopener">Google Calendar</a>` : ''}
       <button class="btn quiet sm" data-act="calics" data-k="${kind}" data-tid="${esc(tid)}" data-id="${esc(id)}">Apple or Outlook</button></div>` : ''}
     ${m ? `<button class="btn wide" data-act="calgame" data-tid="${esc(tid)}" data-id="${esc(id)}" style="margin-bottom:8px">Open the game</button>` : ''}
@@ -10551,7 +10552,41 @@ function fieldOfText(text) {
 }
 const sessField = s => fieldById(s.field) || fieldOfText(s.place);
 const sessPlace = s => { const f = fieldById(s.field); return f ? f.name + (s.place ? ', ' + s.place : '') : s.place; };
-const sessAddress = s => { const f = sessField(s); return (f && f.address) || sessPlace(s); };
+const sessAddress = s => { const f = sessField(s), p = pitchOfText(f, s.place); return (p && p.address) || (f && f.address) || sessPlace(s); };
+/* The pitches of a complex, each described on its own: Lakeside has two grass
+   pitches and a turf one, and the turf is round the back on another street.
+   They sit on the field as `parts`, so the admin rule on access/org/venues
+   already covers them. `pitches` stays the count the clash check reads, and is
+   never fewer than the pitches described. */
+const SURFACES = ['Grass', 'Turf', 'Indoor'];
+function pitchesOf(f) {
+  return Object.entries((f && f.parts) || {}).map(([id, p]) => p && typeof p === 'object' && String(p.name || '').trim() ? {
+    id: String(p.id || id), name: String(p.name).trim().slice(0, 60), surface: SURFACES.includes(p.surface) ? p.surface : '',
+    lights: !!p.lights, address: String(p.address || '').trim().slice(0, 160), notes: String(p.notes || '').trim().slice(0, 500), o: Number(p.o) || 0
+  } : null).filter(Boolean).sort((a, b) => a.o - b.o || a.name.localeCompare(b.name));
+}
+const pitchCount = f => Math.max(1, Math.round(Number(f && f.pitches)) || 1, pitchesOf(f).length);
+/* Which described pitch a place names, by the same rule as fieldOfText: its
+   name inside the words, longest first, so "Field 12" is not "Field 1". */
+function pitchOfText(f, text) {
+  const n = ' ' + normPlace(text) + ' ';
+  if (!f || !n.trim()) return null;
+  let best = null;
+  for (const p of pitchesOf(f)) {
+    const pn = normPlace(p.name);
+    if (pn && n.includes(' ' + pn + ' ') && (!best || pn.length > normPlace(best.name).length)) best = p;
+  }
+  return best;
+}
+/* What a pitch is like, in a line: its own surface and lights, or the
+   complex's when it doesn't say. */
+const pitchText = (f, p) => [p.surface || (f && f.surface) || '', p.lights || (!p.surface && f && f.lights) ? 'lights' : '', p.address ? p.address : '', p.notes].filter(Boolean).join(' · ');
+/* A calendar venue is free text: where to send someone for directions is the
+   pitch's own address when it has one, then the field's, then the words. */
+function venueAddress(text) {
+  const f = fieldOfText(text), p = pitchOfText(f, text);
+  return (p && p.address) || (f && f.address) || text;
+}
 function permitsOf(f) {
   return Object.entries((f && f.permits) || {}).map(([id, p]) => p && typeof p === 'object' ? {
     id: p.id || id, days: [].concat(p.days == null ? [] : Object.values(typeof p.days === 'object' ? p.days : [p.days])).map(Number).filter(n => n >= 0 && n <= 6),
@@ -10950,14 +10985,15 @@ function busyItems(date) {
     const [a, b] = span(it.start, it.end, it.mins);
     const f = fieldOfText(it.venue), t = state.teams[it.tid] || {}, out_ = calledOut(it.key);
     // a coach who called out of it is not due there, so she is free for something else then
-    out.push({ key: it.key, kind: it.kind, label: `${t.name || 'A team'}: ${it.title}`, a, b, field: f ? f.id : null, venue: it.venue || '',
+    const pt = pitchOfText(f, it.venue);
+    out.push({ key: it.key, kind: it.kind, label: `${t.name || 'A team'}: ${it.title}`, a, b, field: f ? f.id : null, pitch: pt ? pt.id : null, venue: it.venue || '',
       coaches: coachesOf(it.tid).filter(u => !out_.includes(u)), tid: it.tid, pids: null });
   }
   for (const s of sessAll()) {
     if (s.date !== date || s.called || !s.start) continue;
     const [a, b] = span(s.start, s.end, 60);
-    const f = sessField(s);
-    out.push({ key: 's:' + s.id, kind: 'session', label: `${sessTitle(s)} (${s.coachName})`, a, b, field: f ? f.id : null, venue: s.place || '', coaches: calledOut('s:' + s.id).includes(s.coach) ? [] : [s.coach], tid: null,
+    const f = sessField(s), pt = pitchOfText(f, s.place);
+    out.push({ key: 's:' + s.id, kind: 'session', label: `${sessTitle(s)} (${s.coachName})`, a, b, field: f ? f.id : null, pitch: pt ? pt.id : null, venue: s.place || '', coaches: calledOut('s:' + s.id).includes(s.coach) ? [] : [s.coach], tid: null,
       pids: bookingsOf(s.id).filter(x => x.st === 'in' || x.st === 'asked').map(x => x.pid) });
   }
   /* A coach's time off is a busy item of its own, hers alone: it takes her out
@@ -10986,9 +11022,12 @@ function sessClashes(s) {
     const pm = permitsOf(f), shut = fieldShut(f, s.date, a, b);
     if (shut) out.push(shut);
     if (pm.length && !pm.some(p => permitCovers(p, s.date, a, b))) out.push(`Outside the club's permit for ${f.name}: ${pm.map(permitText).join('; ')}`);
-    const pitches = Math.max(1, Math.round(Number(f.pitches)) || 1);
+    const pitches = pitchCount(f);
     const here = others.filter(x => x.field === f.id);
     if (here.length + 1 > pitches) out.push(`${f.name} has ${pitches} pitch${pitches === 1 ? '' : 'es'}, and this is on top of ${list(here)}`);
+    // a named pitch can be double-booked even when the field has room
+    const pt = pitchOfText(f, s.place), same = pt ? here.filter(x => x.pitch === pt.id) : [];
+    if (same.length) out.push(`${pt.name} at ${f.name} is also booked for ${list(same)}`);
   }
   const coachBusy = others.filter(x => x.coaches.includes(s.coach) && !x.away);
   if (coachBusy.length) out.push(`${s.coachName} is also due at ${list(coachBusy)}`);
@@ -11007,7 +11046,7 @@ function sessClashes(s) {
    entries count too, because a field double-booked by a team practice and a
    1-1 is double-booked whoever made which. */
 function fieldDays(f, from, days = 14) {
-  const pm = permitsOf(f), pitches = Math.max(1, Math.round(Number(f.pitches)) || 1);
+  const pm = permitsOf(f), pitches = pitchCount(f), names = Object.fromEntries(pitchesOf(f).map(p => [p.id, p.name]));
   const out = [];
   for (let i = 0; i < days; i++) {
     const date = addDays(from, i);
@@ -11019,6 +11058,7 @@ function fieldDays(f, from, days = 14) {
       if (pm.length && !pm.some(p => permitCovers(p, date, x.a, x.b))) flags.push('outside the permit');
       const n = here.filter(o => o.a < x.b && x.a < o.b).length;
       if (n > pitches) flags.push(`${n} at once on ${pitches} pitch${pitches === 1 ? '' : 'es'}`);
+      else if (x.pitch && here.some(o => o !== x && o.pitch === x.pitch && o.a < x.b && x.a < o.b)) flags.push(`${names[x.pitch]} booked twice`);
       out.push({ date, x, flags });
     }
   }
@@ -11267,6 +11307,7 @@ function sheetSess(id) {
     <dl class="facts">
       ${row('When', esc(dayLabel(s.date)) + ' · ' + esc(span))}
       ${row('Where', esc(sessPlace(s) || 'To be confirmed') + (f ? ` · <button class="textbtn" data-act="fieldopen" data-id="${esc(f.id)}">about this field</button>` : ''))}
+      ${(pt => pt ? row(esc(pt.name), esc(pitchText(f, pt))) : '')(pitchOfText(f, s.place))}
       ${row('Working on', esc(s.focus))}
       ${row('Price', s.price ? esc(fmtMoney(s.price)) : '')}
       ${row('Spots', s.kind === 'group' ? `${n} of ${s.cap} booked${asks ? ` · ${asks} asking` : ''}${waits ? ` · ${waits} waiting` : ''}` : '')}
@@ -11465,7 +11506,7 @@ function sheetSessForm() {
   const chip = (act, v, on, label) => `<button class="chip" type="button" data-act="${act}" data-v="${v}" aria-pressed="${!!on}">${label}</button>`;
   const opt = (v, l, cur) => `<option value="${esc(v)}"${String(cur) === String(v) ? ' selected' : ''}>${esc(l)}</option>`;
   const ageOpts = cur => opt('', 'Any', cur) + Array.from({ length: 16 }, (_, i) => i + 4).map(a => opt(a, uLabel(a), cur)).join('');
-  const fields = fieldList();
+  const fields = fieldList(), pts = pitchesOf(fieldById(f.field)), onPt = pitchOfText(fieldById(f.field), f.place);
   const preview = f.checked ? sessClashes(sessFromForm(f)) : [];
   openSheet(`<h3>${isNew ? 'New session' : 'Edit session'}</h3>
     <div class="chips" style="margin-bottom:12px">${chip('sesskind', 'one', f.kind === 'one', '1-1')}${chip('sesskind', 'group', f.kind === 'group', 'Small group')}</div>
@@ -11476,7 +11517,8 @@ function sheetSessForm() {
       <label class="field"><span>Starts</span><input type="time" id="ssStart" value="${esc(f.start)}"></label>
       <label class="field"><span>Ends</span><input type="time" id="ssEnd" value="${esc(f.end)}"></label>
     </div>
-    <label class="field"><span>Field</span><select id="ssField">${opt('', fields.length ? 'Somewhere else' : 'No fields listed yet', f.field)}${fields.map(x => opt(x.id, x.name, f.field)).join('')}</select></label>
+    <label class="field"><span>Field</span><select id="ssField" data-pick="sessfield">${opt('', fields.length ? 'Somewhere else' : 'No fields listed yet', f.field)}${fields.map(x => opt(x.id, x.name, f.field)).join('')}</select></label>
+    ${pts.length ? `<div class="chips" style="margin-bottom:10px">${pts.map(p => chip('sesspitch', esc(p.name), onPt && onPt.id === p.id, esc(p.name) + (p.surface ? ' · ' + p.surface : ''))).join('')}</div>` : ''}
     <label class="field"><span>${fieldById(f.field) ? 'Which part' : 'Where'}</span><input type="text" id="ssPlace" maxlength="120" value="${esc(f.place)}" placeholder="${fieldById(f.field) ? 'Pitch 2, the goalmouth' : 'Lakeside Park, field 3'}"></label>
     ${f.kind === 'group' ? `<label class="field"><span>Spots</span><input type="number" id="ssCap" min="1" max="60" value="${esc(f.cap)}"></label>` : ''}
     <div class="grid2">
@@ -11646,7 +11688,8 @@ function sessFieldsView() {
     return `<button class="card" type="button" data-act="fieldopen" data-id="${esc(f.id)}" style="text-align:left;width:100%">
       <div class="spread"><b>${esc(f.name)}</b>${bad ? `<span class="tag off">${bad} to look at</span>` : ''}</div>
       ${f.address ? `<span class="rowsub">${esc(f.address)}</span>` : ''}
-      <span class="rowsub">${esc([`${Math.max(1, Number(f.pitches) || 1)} pitch${Number(f.pitches) > 1 ? 'es' : ''}`, f.surface, f.lights ? 'lights' : ''].filter(Boolean).join(' · '))}</span>
+      <span class="rowsub">${esc([`${pitchCount(f)} pitch${pitchCount(f) > 1 ? 'es' : ''}`, f.surface, f.lights ? 'lights' : ''].filter(Boolean).join(' · '))}</span>
+      ${pitchesOf(f).map(p => `<span class="rowsub">${esc(p.name)}${pitchText(f, p) ? ': ' + esc(pitchText(f, p)) : ''}</span>`).join('')}
       ${hoursText(f) ? `<span class="rowsub">Open: ${esc(hoursText(f))}</span>` : ''}
       ${fieldClosures(f).filter(c => c.until >= today).slice(0, 2).map(c => `<span class="rowsub">Closed ${esc(closureText(c))}</span>`).join('')}
       ${pm.length ? pm.map(p => `<span class="rowsub">Permit: ${esc(permitText(p))}</span>`).join('') : '<span class="rowsub">No permits listed</span>'}
@@ -11669,7 +11712,10 @@ function sheetField(id) {
   openSheet(`<h3>${esc(f.name)}</h3>
     <dl class="facts">
       ${f.address ? `<dt>Address</dt><dd>${esc(f.address)}</dd>` : ''}
-      <dt>Pitches</dt><dd>${Math.max(1, Number(f.pitches) || 1)}${f.surface ? ' · ' + esc(f.surface) : ''}${f.lights ? ' · lights' : ''}</dd>
+      <dt>Pitches</dt><dd>${pitchCount(f)}${f.surface ? ' · ' + esc(f.surface) : ''}${f.lights ? ' · lights' : ''}</dd>
+      ${pitchesOf(f).map(p => `<dt>${esc(p.name)}</dt><dd>${esc([p.surface || f.surface, p.lights ? 'lights' : ''].filter(Boolean).join(' · ') || 'No surface given')}
+        ${p.address ? `<span class="rowsub">${esc(p.address)}${I ? ` · <a href="${esc(I.mapLink(p.address))}" target="_blank" rel="noopener">directions</a>` : ''}</span>` : ''}
+        ${p.notes ? `<span class="rowsub">${esc(p.notes).replace(/\n/g, '<br>')}</span>` : ''}</dd>`).join('')}
       ${f.notes ? `<dt>Notes</dt><dd>${esc(f.notes).replace(/\n/g, '<br>')}</dd>` : ''}
       <dt>Open</dt><dd>${hoursText(f) ? esc(hoursText(f)) + '; any time on the other days' : 'Any time: no hours set'}</dd>
       ${fieldClosures(f).filter(c => c.until >= today).length ? `<dt>Closed</dt><dd>${fieldClosures(f).filter(c => c.until >= today).map(c => esc(closureText(c))).join('<br>')}</dd>` : ''}
@@ -11686,6 +11732,9 @@ function fieldFormRead() {
   for (const [k, sel] of [['name', '#fdName'], ['address', '#fdAddress'], ['pitches', '#fdPitches'], ['notes', '#fdNotes']]) {
     const el = $(sel); if (el && typeof el.value === 'string') f[k] = el.value;
   }
+  f.parts.forEach((p, i) => {
+    for (const [k, sel] of [['name', '#ptName_' + i], ['address', '#ptAddress_' + i], ['notes', '#ptNotes_' + i]]) { const el = $(sel); if (el && typeof el.value === 'string') p[k] = el.value; }
+  });
   f.hours.forEach((h, d) => {
     for (const [k, sel] of [['from', '#fhFrom_' + d], ['to', '#fhTo_' + d]]) { const el = $(sel); if (el && typeof el.value === 'string') h[k] = el.value; }
   });
@@ -11700,9 +11749,9 @@ function fieldFormRead() {
 }
 function fieldFormOf(f, name) {
   const hours = d => { const h = fieldHours(f)[d]; return h ? { from: h.from || '', to: h.to || '', closed: !!h.closed } : { from: '', to: '', closed: false }; };
-  return f ? { id: f.id, name: f.name || '', address: f.address || '', pitches: String(f.pitches || 1), surface: f.surface || '', lights: !!f.lights, notes: f.notes || '', permits: permitsOf(f).map(p => ({ ...p })),
+  return f ? { id: f.id, name: f.name || '', address: f.address || '', pitches: String(f.pitches || 1), surface: f.surface || '', lights: !!f.lights, notes: f.notes || '', permits: permitsOf(f).map(p => ({ ...p })), parts: pitchesOf(f).map(p => ({ ...p })),
     hours: [0, 1, 2, 3, 4, 5, 6].map(hours), closures: fieldClosures(f).map(c => ({ ...c })) }
-    : { id: null, name: name || '', address: '', pitches: '1', surface: '', lights: false, notes: '', permits: [], hours: [0, 1, 2, 3, 4, 5, 6].map(() => ({ from: '', to: '', closed: false })), closures: [] };
+    : { id: null, name: name || '', address: '', pitches: '1', surface: '', lights: false, notes: '', permits: [], parts: [], hours: [0, 1, 2, 3, 4, 5, 6].map(() => ({ from: '', to: '', closed: false })), closures: [] };
 }
 function sheetFieldForm() {
   const f = fieldForm; if (!f) return;
@@ -11713,6 +11762,15 @@ function sheetFieldForm() {
     <label class="field"><span>Pitches</span><input type="number" id="fdPitches" min="1" max="20" value="${esc(f.pitches)}"></label>
     <div class="chips" style="margin-bottom:10px">${['Grass', 'Turf', 'Indoor'].map(x => chip('fieldsurface', x, f.surface === x, x)).join('')}${chip('fieldlights', '1', f.lights, 'Lights')}</div>
     <label class="field"><span>Notes</span><textarea id="fdNotes" rows="2" placeholder="Gate code, parking, who to call">${esc(f.notes)}</textarea></label>
+    <p class="lbl">Each pitch</p>
+    ${f.parts.map((p, i) => `<div class="card" style="margin-bottom:8px">
+      <label class="field"><span>Name</span><input type="text" id="ptName_${i}" maxlength="60" value="${esc(p.name)}" placeholder="Field 2, the turf"></label>
+      <div class="chips" style="margin-bottom:10px">${SURFACES.map(x => chip('fieldptsurface', x, p.surface === x, x, i)).join('')}${chip('fieldptlights', '1', p.lights, 'Lights', i)}</div>
+      <label class="field"><span>Address, if it's not the field's</span><input type="text" id="ptAddress_${i}" maxlength="160" value="${esc(p.address)}" placeholder="Back gate, 40 Mill Lane"></label>
+      <label class="field"><span>Description</span><textarea id="ptNotes_${i}" rows="2" maxlength="500" placeholder="Small-sided, 7v7 goals; no metal studs on the turf">${esc(p.notes)}</textarea></label>
+      <button class="btn quiet sm" data-act="fieldptrm" data-i="${i}">Remove this pitch</button></div>`).join('')}
+    <button class="btn quiet wide" data-act="fieldpt" style="margin-bottom:6px">Describe a pitch</button>
+    <p class="muted" style="margin-top:0">When a practice's venue or a session names a pitch (“Lakeside Park, Field 2”), directions go to its address, and two things on that pitch at once are flagged.</p>
     <p class="lbl">Opening hours</p>
     <div class="card" style="margin-bottom:8px">${f.hours.map((h, d) => `<div class="fhrow"><b>${WEEKDAYS[d]}</b>
       ${h.closed ? '<span class="muted">Closed</span><span></span>' : `<input type="time" id="fhFrom_${d}" value="${esc(h.from)}" aria-label="${WEEKDAYS[d]} opens"><input type="time" id="fhTo_${d}" value="${esc(h.to)}" aria-label="${WEEKDAYS[d]} closes">`}
@@ -11787,17 +11845,17 @@ function sheetReach() {
 /* ---- what the buttons do ---- */
 /* Each action checks who is asking itself, in here: a hidden button is not the
    only thing between an account and a write. The rules are the real line. */
-const SESS_ACTS = new Set(['sesstab', 'sessscope', 'sesspast', 'sessopen', 'sessnew', 'sessedit', 'sesskind', 'sessopenask', 'sessrepeat',
+const SESS_ACTS = new Set(['sesstab', 'sessscope', 'sesspast', 'sessopen', 'sessnew', 'sessedit', 'sesskind', 'sessopenask', 'sessrepeat', 'sessfield', 'sesspitch',
   'sesswd', 'sessscopeed', 'sesscheck', 'sesssave', 'sesscall', 'sessdel', 'sessbook', 'sesspick', 'sesspickteam', 'sesspicktoggle',
   'sesspickscope', 'sesspicksave', 'sessask', 'sesswithdraw', 'sessregister', 'sesscame', 'sessfee', 'sessfeehow', 'sessfeesave',
   'sessfeeclear', 'sessremind', 'sessmoney', 'sessmonth', 'sesshourscoach', 'sesspay', 'sesspayper', 'sesspaysave', 'sesspayclear',
   'sessdrills', 'sessdrilladd', 'sessdrillrm', 'sessdrillmin', 'sessdrillq', 'sesstell', 'sessics', 'reachdm', 'reachcopy',
   'fieldopen', 'fieldnew', 'fieldedit', 'fieldsave', 'fielddel', 'fieldpermit', 'fieldpermitrm', 'fieldday', 'fieldsurface',
-  'fieldlights', 'fieldfromtext', 'fieldshut', 'fieldclose', 'fieldcloserm',
+  'fieldlights', 'fieldfromtext', 'fieldshut', 'fieldclose', 'fieldcloserm', 'fieldpt', 'fieldptrm', 'fieldptsurface', 'fieldptlights',
   'sesspacks', 'sesspknew', 'sesspkopen', 'sesspkkind', 'sesspkhow', 'sesspksave', 'sesspkdel', 'sesspkback']);
 // selling, changing and switching packages on are the admins'; using a place of one is the session's coach's, through Fees
 const PACK_ADMIN = new Set(['sesspacks', 'sesspknew', 'sesspkopen', 'sesspkkind', 'sesspkhow', 'sesspksave', 'sesspkdel']);
-const FIELD_EDIT = new Set(['fieldnew', 'fieldedit', 'fieldsave', 'fielddel', 'fieldpermit', 'fieldpermitrm', 'fieldday', 'fieldsurface', 'fieldlights', 'fieldfromtext', 'fieldshut', 'fieldclose', 'fieldcloserm']);
+const FIELD_EDIT = new Set(['fieldnew', 'fieldedit', 'fieldsave', 'fielddel', 'fieldpermit', 'fieldpermitrm', 'fieldday', 'fieldsurface', 'fieldlights', 'fieldfromtext', 'fieldshut', 'fieldclose', 'fieldcloserm', 'fieldpt', 'fieldptrm', 'fieldptsurface', 'fieldptlights']);
 const RUN_ACTS = new Set(['sessedit', 'sesscall', 'sessdel', 'sessbook', 'sesspick', 'sessregister', 'sesscame', 'sessdrills', 'sessdrilladd',
   'sessdrillrm', 'sessdrillmin', 'sessdrillq', 'sesstell']);
 
@@ -11808,7 +11866,7 @@ function onSessAct(a, d) {
   if (PACK_ADMIN.has(a) && !canAdmin()) { closeSheet(); toast('Club admins look after packages'); render(); return; }
   const s = d.id ? sessById(d.id) : null;
   if (RUN_ACTS.has(a) && !canRun(s)) { closeSheet(); toast(s ? 'Only the coach running it, or an admin, can change that' : 'That session is not on this phone any more'); render(); return; }
-  const staffOnly = ['sessnew', 'sesskind', 'sessopenask', 'sessrepeat', 'sesswd', 'sessscopeed', 'sesscheck', 'sesssave', 'sesspickteam',
+  const staffOnly = ['sessnew', 'sesskind', 'sessfield', 'sesspitch', 'sessopenask', 'sessrepeat', 'sesswd', 'sessscopeed', 'sesscheck', 'sesssave', 'sesspickteam',
     'sesspicktoggle', 'sesspickscope', 'sesspicksave', 'sessfee', 'sessfeehow', 'sessfeesave', 'sessfeeclear', 'sessremind', 'sessmonth', 'sesshourscoach', 'sesspkback'];
   if (staffOnly.includes(a) && !canOffer()) { closeSheet(); toast('That is for coaches and admins'); render(); return; }
   const by = () => (me && me.uid) || 'device';
@@ -11823,7 +11881,7 @@ function onSessAct(a, d) {
   /* -- the form -- */
   if (a === 'sessnew') { sessForm = sessFormNew(d.v); sheetSessForm(); return; }
   if (a === 'sessedit') { sessForm = sessFormEdit(s); sheetSessForm(); return; }
-  if (['sesskind', 'sessopenask', 'sessrepeat', 'sesswd', 'sessscopeed', 'sesscheck'].includes(a)) {
+  if (['sesskind', 'sessopenask', 'sessrepeat', 'sesswd', 'sessscopeed', 'sesscheck', 'sessfield', 'sesspitch'].includes(a)) {
     if (!sessForm) return;
     sessFormRead();
     const f = sessForm;
@@ -11834,6 +11892,9 @@ function onSessAct(a, d) {
     if (a === 'sesswd') { const i = Number(d.v); f.days = f.days.includes(i) ? f.days.filter(x => x !== i) : [...f.days, i]; }
     if (a === 'sessscopeed') f.scope = d.v === 'later' ? 'later' : 'one';
     if (a === 'sesscheck') f.checked = true;
+    // the select is read above; redrawing is what shows the new field's pitches
+    if (a === 'sessfield') { f.field = fieldById(d.v) ? d.v : ''; f.checked = false; }
+    if (a === 'sesspitch') { const pt = pitchOfText(fieldById(f.field), f.place); f.place = pt && pt.name === d.v ? '' : String(d.v || '').slice(0, 120); f.checked = false; }
     sheetSessForm(); return;
   }
   if (a === 'sesssave') { saveSessForm(); return; }
@@ -12074,7 +12135,7 @@ function onSessAct(a, d) {
   if (a === 'fieldopen') { sheetField(d.id); return; }
   if (a === 'fieldnew' || a === 'fieldfromtext') { ui.view = 'sessions'; u.tab = 'fields'; fieldForm = fieldFormOf(null, a === 'fieldfromtext' ? d.v : ''); sheetFieldForm(); return; }
   if (a === 'fieldedit') { const f = fieldById(d.id); if (!f) return; fieldForm = fieldFormOf(f); sheetFieldForm(); return; }
-  if (['fieldpermit', 'fieldpermitrm', 'fieldday', 'fieldsurface', 'fieldlights', 'fieldshut', 'fieldclose', 'fieldcloserm'].includes(a)) {
+  if (['fieldpermit', 'fieldpermitrm', 'fieldday', 'fieldsurface', 'fieldlights', 'fieldshut', 'fieldclose', 'fieldcloserm', 'fieldpt', 'fieldptrm', 'fieldptsurface', 'fieldptlights'].includes(a)) {
     const f = fieldForm; if (!f) return;
     fieldFormRead();
     const i = Number(d.i);
@@ -12086,6 +12147,10 @@ function onSessAct(a, d) {
     if (a === 'fieldshut' && f.hours[Number(d.v)]) { const h = f.hours[Number(d.v)]; h.closed = !h.closed; }
     if (a === 'fieldclose') f.closures.push({ id: uid(), from: '', until: '', note: '' });
     if (a === 'fieldcloserm') f.closures.splice(i, 1);
+    if (a === 'fieldpt' && f.parts.length < 20) f.parts.push({ id: uid(), name: `Pitch ${f.parts.length + 1}`, surface: '', lights: false, address: '', notes: '' });
+    if (a === 'fieldptrm') f.parts.splice(i, 1);
+    if (a === 'fieldptsurface' && f.parts[i]) f.parts[i].surface = f.parts[i].surface === d.v ? '' : String(d.v);
+    if (a === 'fieldptlights' && f.parts[i]) f.parts[i].lights = !f.parts[i].lights;
     sheetFieldForm(); return;
   }
   if (a === 'fieldsave') {
@@ -12118,9 +12183,21 @@ function onSessAct(a, d) {
       const cid = c.id || uid();
       closed[cid] = { id: cid, from: c.from, until: okDay(c.until) && c.until >= c.from ? c.until : c.from, note: String(c.note || '').trim().slice(0, 120) };
     }
+    // a pitch with no name can't be named by a venue, so it isn't kept; two with one name would be one pitch to the clash check
+    const parts = {}, seenPt = new Set();
+    let o = 0;
+    for (const p of f.parts) {
+      const pn = String(p.name || '').trim().slice(0, 60);
+      if (!pn) continue;
+      if (seenPt.has(normPlace(pn))) { toast(`Two pitches are called ${pn}`); return; }
+      seenPt.add(normPlace(pn));
+      const ptid = p.id || uid();
+      parts[ptid] = { id: ptid, name: pn, surface: SURFACES.includes(p.surface) ? p.surface : '', lights: !!p.lights,
+        address: String(p.address || '').trim().slice(0, 160), notes: String(p.notes || '').trim().slice(0, 500), o: o++ };
+    }
     quiet(`access/org/venues/${id}`, JSON.parse(JSON.stringify({
-      id, name, address: String(f.address || '').trim().slice(0, 160), pitches: clamp(Math.round(Number(f.pitches)) || 1, 1, 20),
-      surface: f.surface || '', lights: !!f.lights, notes: String(f.notes || '').trim().slice(0, 1000), permits, hours, closed
+      id, name, address: String(f.address || '').trim().slice(0, 160), pitches: clamp(Math.max(Math.round(Number(f.pitches)) || 1, o), 1, 20),
+      surface: f.surface || '', lights: !!f.lights, notes: String(f.notes || '').trim().slice(0, 1000), permits, hours, closed, parts
     })));
     saveLocal(); fieldForm = null; sheetField(id); render();
     toast(dropped ? `Saved · ${dropped} permit${dropped === 1 ? '' : 's'} with no days left off` : 'Saved'); return;
@@ -14109,7 +14186,7 @@ function clubClashesOn(date) {
     const both = `${x.label} at ${timeOf(x)} and ${y.label} at ${timeOf(y)}`;
     const pk = placeKey(x);
     if (pk && pk === placeKey(y)) {
-      const f = x.field ? fieldById(x.field) : null, pitches = f ? Math.max(1, Math.round(Number(f.pitches)) || 1) : 1;
+      const f = x.field ? fieldById(x.field) : null, pitches = f ? pitchCount(f) : 1;
       const at = items.filter(z => placeKey(z) === pk && ov(z, x) && ov(z, y)).length;
       if (at > pitches) out.push({ kind: 'place', text: `${f ? f.name : x.venue}${f && pitches > 1 ? ` (${pitches} pitches)` : ''}: ${both}` });
     }
@@ -14164,7 +14241,7 @@ function findTimes(f) {
   const coaches = new Set(tids.flatMap(tid => Object.keys(teamAccess(tid).coaches || {})));
   const famCache = {}, fams = new Set(tids.flatMap(tid => Object.keys(itemFams({ tid }, famCache))));
   const usual = new Set(tids.map(usualSlot).filter(Boolean));
-  const fld = f.field ? fieldById(f.field) : null, pm = fld ? permitsOf(fld) : [], pitches = fld ? Math.max(1, Math.round(Number(fld.pitches)) || 1) : 1;
+  const fld = f.field ? fieldById(f.field) : null, pm = fld ? permitsOf(fld) : [], pitches = fld ? pitchCount(fld) : 1;
   const h0 = minOf(f.h0), h1 = minOf(f.h1), now = new Date(nowMs()), nowMin = now.getHours() * 60 + now.getMinutes();
   const out = [];
   for (let i = 0; i < f.days; i++) {

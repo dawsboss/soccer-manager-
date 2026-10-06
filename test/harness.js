@@ -222,7 +222,7 @@ const EXPORTS = `{
   get sess() { return sess }, set sess(v) { sess = v }, get sessLoaded() { return sessLoaded }, get sessState() { return sessState },
   get reach() { return reach }, get sessForm() { return sessForm },
   sessAll, sessById, normSess, bookingsOf, bookOf, spotsLeft, canSessions, canOffer, canRun, sessClashes, busyItems,
-  fieldList, fieldById, fieldOfText, permitsOf, permitCovers, fieldDays, looseVenues, hoursFor, payOf, payFor, feeRows,
+  fieldList, fieldById, fieldOfText, pitchesOf, pitchOfText, pitchCount, venueAddress, sessAddress, permitsOf, permitCovers, fieldDays, looseVenues, hoursFor, payOf, payFor, feeRows,
   familyOwed, feeOf, packsOf, packFor, get feeForm() { return feeForm }, sessAttendance, sessCalItems, sessMerge, sessPut, watchSess, sessNews, viewSessions, sheetSess,
   sessUi, SESS_ACTS, sessMessage, reachFor, fmtMoney, sessClubLine, calendarDoc, publicDoc, viewMine, viewClub,
   /* bookable times, and my calendar */

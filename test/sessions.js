@@ -496,6 +496,74 @@ function newSession(v = {}) {
     check('the form checks before saving', /Jaz is also due|has 1 pitch|No clashes/.test(sheet(A)), true);
   }
 
+  console.log('\n--- each pitch of a field ---');
+  {
+    as('jaz');
+    A.state.access.org = {};
+    A.click({ act: 'fieldnew' });
+    as('boss');
+    const D = day(5);
+    const base = { fdName: 'Mill Fields', fdAddress: '1 Mill Rd', fdPitches: '1', fdNotes: '' };
+    A.click({ act: 'fieldnew' });
+    fill(A, base);
+    A.click({ act: 'fieldpt' }); A.click({ act: 'fieldpt' }); A.click({ act: 'fieldpt' });
+    check('each pitch gets its own card', /ptName_2/.test(sheet(A)), true);
+    fill(A, { ...base, ptName_0: 'Field 1', ptAddress_0: '', ptNotes_0: 'Full size, 11v11',
+      ptName_1: 'Field 12', ptAddress_1: '', ptNotes_1: '',
+      ptName_2: 'The turf', ptAddress_2: '40 Back Lane', ptNotes_2: 'No metal studs' });
+    A.click({ act: 'fieldptsurface', i: '0', v: 'Grass' });
+    A.click({ act: 'fieldptsurface', i: '2', v: 'Turf' });
+    A.click({ act: 'fieldptlights', i: '2', v: '1' });
+    A.click({ act: 'fieldsave' });
+    const f = A.fieldList().find(x => x.name === 'Mill Fields');
+    const pts = A.pitchesOf(f);
+    check('three pitches described, in the order given', pts.map(p => p.name).join(), 'Field 1,Field 12,The turf');
+    deepEq('each with its own surface, lights, address and description', [pts[2].surface, pts[2].lights, pts[2].address, pts[2].notes], ['Turf', true, '40 Back Lane', 'No metal studs']);
+    check('the count is never fewer than the pitches described', f.pitches, 3);
+    check('saved on the field, under the club settings the admin rule covers', Object.keys(A.state.access.org.venues[f.id].parts).length, 3);
+    A.click({ act: 'fieldopen', id: f.id });
+    check('the field\'s page describes each pitch', /The turf/.test(sheet(A)) && /No metal studs/.test(sheet(A)) && /40 Back Lane/.test(sheet(A)), true);
+    check('a venue naming a pitch finds it', (A.pitchOfText(f, 'Mill Fields, the turf') || {}).id, pts[2].id);
+    check('the longer name wins: Field 12 is not Field 1', (A.pitchOfText(f, 'Mill Fields field 12') || {}).id, pts[1].id);
+    check('directions go to the pitch\'s own address', A.venueAddress('Mill Fields, The turf'), '40 Back Lane');
+    check('or the field\'s, when the pitch has none', A.venueAddress('Mill Fields, Field 1'), '1 Mill Rd');
+    check('and a venue that is no field stays as typed', A.venueAddress('Somewhere Else'), 'Somewhere Else');
+
+    A.click({ act: 'fieldedit', id: f.id });
+    fill(A, { ...base, fdPitches: '3', ptName_0: 'Field 1', ptAddress_0: '', ptNotes_0: '', ptName_1: 'field 1', ptAddress_1: '', ptNotes_1: '', ptName_2: 'The turf', ptAddress_2: '', ptNotes_2: '' });
+    A.click({ act: 'fieldsave' });
+    check('two pitches with one name are refused', /Two pitches are called/.test(A.lastToast()), true);
+    check('and nothing is written', A.pitchesOf(A.fieldById(f.id))[1].name, 'Field 12');
+    A.closeSheet && A.closeSheet();
+
+    const venues = JSON.parse(JSON.stringify(A.state.access.org.venues));
+    as('jaz');
+    A.state.access.org = { venues };
+    A.state.teams.t1.events = { e9: { id: 'e9', kind: 'practice', title: 'Practice', date: D, start: '17:00', end: '18:00', venue: 'Mill Fields, the turf' } };
+    put('pt1', { date: D, start: '17:30', end: '18:30', field: f.id, place: 'The turf' });
+    put('pt2', { date: D, start: '17:30', end: '18:30', field: f.id, place: 'Field 12' });
+    const c1 = A.sessClashes(A.sessById('pt1'));
+    check('three pitches hold three at once', c1.some(c => /has 3 pitches/.test(c)), false);
+    check('but the same pitch twice is a clash', c1.some(c => /The turf at Mill Fields is also booked for G11 Flight: Practice/.test(c)), true);
+    check('another pitch is not', A.sessClashes(A.sessById('pt2')).some(c => /also booked for/.test(c)), false);
+    check('the field\'s week flags it', A.fieldDays(A.fieldById(f.id), D, 1).some(x => x.flags.includes('The turf booked twice')), true);
+    A.click({ act: 'sessopen', id: 'pt1' });
+    check('the session says what its pitch is like', /No metal studs/.test(sheet(A)), true);
+    check('and sends families to its address', A.sessAddress(A.sessById('pt1')), '40 Back Lane');
+
+    newSession({ ssField: f.id, ssPlace: '' });
+    A.dom.node('#ssField').value = f.id;
+    A.click({ act: 'sessfield', v: f.id });
+    check('picking the field offers its pitches', /data-act="sesspitch"/.test(sheet(A)) && /The turf · Turf/.test(sheet(A)), true);
+    A.click({ act: 'sesspitch', v: 'Field 12' });
+    check('a tap names the pitch', A.dom.node('#ssPlace').value === 'Field 12' || /value="Field 12"/.test(sheet(A)), true);
+    A.dom.node('#ssPlace').value = 'Field 12';   // the redrawn input, which the stub DOM doesn't parse
+    A.click({ act: 'sesspitch', v: 'Field 12' });
+    check('a second tap takes it off', /id="ssPlace" maxlength="120" value=""/.test(sheet(A)), true);
+    A.closeSheet && A.closeSheet();
+    A.state.teams.t1.events = {};
+  }
+
   console.log('\n--- on the calendar, and never on the share link ---');
   {
     as('jaz');
