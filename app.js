@@ -2,7 +2,7 @@
    Static app. Data lives in localStorage, and mirrors to Firebase Realtime
    Database when a config + workspace code are present. */
 
-const BUILD = '100';
+const BUILD = '101';
 const BUILT = '2026-10-05';
 /* The version of database.rules.json this app was written against. The rules
    carry the same number in rulesVersion's .write, which accepts that number
@@ -5123,6 +5123,7 @@ function toast(msg) {
 }
 
 /* ---------------- rendering ---------------- */
+let placeMemo = null;     // one draw's shared-field lookups; see placeDay()
 function render() {
   /* Settle whether this device may see the club before drawing a single thing.
      The crumbs are chrome, but they carry the club and the team name, so a lock
@@ -5150,7 +5151,7 @@ function render() {
   let inGame = ui.view === 'game';
   // a game screen with no game is just four buttons that do nothing
   if (inGame && !match() && !teamMatches(ui.teamId).length) { ui.view = 'matches'; inGame = false; }
-  if ((ui.view === 'admin' || ui.view === 'planner') && !canAdmin()) ui.view = 'club';
+  if ((ui.view === 'admin' || ui.view === 'planner' || ui.view === 'schedule') && !canAdmin()) ui.view = 'club';
   if (ui.view === 'mine' && !anyPlayers()) ui.view = 'matches';
   /* Not before the club has been read: a link to #/messages opened cold on a
      new phone renders before it knows anybody's role, and sending it to the
@@ -5248,14 +5249,17 @@ function render() {
   const here = [v, g, ui.matchId, ui.teamId].join('|');
   const keepY = here === lastScreen && typeof window !== 'undefined' ? window.scrollY || 0 : null;
   lastScreen = here;
-  app.innerHTML = envNote + saveNote + (shut ? '' : alertBar()) + joinNote + roleNote + roNote + (
-    v === 'game' ? (g === 'track' ? viewTrack() : g === 'stats' ? viewStats() : g === 'recap' ? viewRecap() : g === 'pitch' ? viewMatch() : g === 'plan' ? viewPlan() : g === 'subs' ? viewSubs() : viewFeed()) :
-      v === 'roster' ? viewRoster() :
-        v === 'season' ? viewSeason() : v === 'calendar' ? viewCalendar() :
-          v === 'formation' ? viewFormation() : v === 'club' ? viewClub() : v === 'people' ? viewPeople() : v === 'admin' ? viewAdmin()
-            : v === 'mine' ? viewMine() : v === 'teamset' ? viewTeamSet() : v === 'practice' ? viewPractice()
-              : v === 'inbox' ? viewInbox() : v === 'thread' ? viewThread() : v === 'sessions' ? viewSessions() : v === 'mycal' ? viewMyCal() : v === 'planner' ? viewPlanner()
-              : v === 'setup' ? viewSetup() : viewMatches());
+  placeMemo = new Map();
+  try {
+    app.innerHTML = envNote + saveNote + (shut ? '' : alertBar()) + joinNote + roleNote + roNote + (
+      v === 'game' ? (g === 'track' ? viewTrack() : g === 'stats' ? viewStats() : g === 'recap' ? viewRecap() : g === 'pitch' ? viewMatch() : g === 'plan' ? viewPlan() : g === 'subs' ? viewSubs() : viewFeed()) :
+        v === 'roster' ? viewRoster() :
+          v === 'season' ? viewSeason() : v === 'calendar' ? viewCalendar() :
+            v === 'formation' ? viewFormation() : v === 'club' ? viewClub() : v === 'people' ? viewPeople() : v === 'admin' ? viewAdmin()
+              : v === 'mine' ? viewMine() : v === 'teamset' ? viewTeamSet() : v === 'practice' ? viewPractice()
+                : v === 'inbox' ? viewInbox() : v === 'thread' ? viewThread() : v === 'sessions' ? viewSessions() : v === 'mycal' ? viewMyCal() : v === 'planner' ? viewPlanner() : v === 'schedule' ? viewSchedule()
+                : v === 'setup' ? viewSetup() : viewMatches());
+  } finally { placeMemo = null; }
   syncHash();
   if (drillLink) setTimeout(openDrillLink, 0);
   if (keepY && (window.scrollY || 0) !== keepY) { try { window.scrollTo(0, keepY); } catch (e) { } }
@@ -5317,7 +5321,7 @@ const viewScope = (v = ui.view) => v === 'mycal' ? 'me'
    team's. Club home is the club alone. */
 const VIEW_CRUMB = {
   mycal: 'My calendar', setup: 'Your settings', people: 'People', admin: 'Club settings', sessions: 'Training sessions',
-  planner: 'Planner', inbox: 'Messages', thread: 'Messages', mine: 'My players', formation: 'Shapes'
+  planner: 'Planner', schedule: 'Club schedule', inbox: 'Messages', thread: 'Messages', mine: 'My players', formation: 'Shapes'
 };
 function crumbs() {
   const sep = '<span class="crumb-sep">\u203a</span>';
@@ -5345,7 +5349,9 @@ function viewClub() {
     <h2>${esc(org)}</h2>
     <div class="clubhead">${clubCrest('lg')}<div><b>${esc(org)}</b>
       <span class="rowsub">${myTeams().length} team${myTeams().length === 1 ? '' : 's'} you can reach</span></div></div>
-    ${me || !gated() ? `<button class="card" data-act="goview" data-v="mycal" style="text-align:left;width:100%">
+    ${canAdmin() && list.length ? `<button class="card" data-act="schedule" style="text-align:left;width:100%">
+      <b>Club schedule</b><span class="rowsub">${esc(schedLine())}</span></button>` : ''}
+    ${(me || !gated()) && myCalOwn() ? `<button class="card" data-act="goview" data-v="mycal" style="text-align:left;width:100%">
       <b>My calendar</b><span class="rowsub">${esc(myCalLine())}</span></button>` : ''}
     ${anyPlayers() ? `<button class="card" data-act="goview" data-v="mine" style="text-align:left;width:100%">
       <b>My players</b><span class="rowsub">${allKidNames().map(esc).join(', ')}</span></button>` : ''}
@@ -5438,7 +5444,9 @@ function sheetClubSwitch() {
 function sheetClubMenu() {
   const org = (acc().org || {}).name || 'Club';
   openSheet(`<h3>${esc(org)}</h3>
-    ${canAdmin() ? `<button class="opt" data-act="goview" data-v="admin"><b>Club admin</b>
+    ${canAdmin() ? `<button class="opt" data-act="schedule"><b>Club schedule</b>
+      <span class="rowsub">Every team's games and practices, and adding to any of them</span></button>
+    <button class="opt" data-act="goview" data-v="admin"><b>Club admin</b>
       <span class="rowsub">Teams, people and roles, club details</span></button>` : ''}
     ${anyPlayers() ? `<button class="opt" data-act="goview" data-v="mine"><b>My players</b>
       <span class="rowsub">${allKidNames().length} linked to your account</span></button>` : ''}
@@ -7519,6 +7527,8 @@ function calRow(it, all) {
     edit && it.kind !== 'game' && it.public ? 'on the share link' : '', rsvpLine(it),
     edit && attendDue(it) && calPast(it) ? (a => a ? `${Object.values(a).filter(Boolean).length} came` : 'no register yet')(attendOf(it.tid, it.id)) : '',
     edit && !it.called && !calPast(it) ? coachOutLine(it) : ''].filter(Boolean);
+  // on a line of its own: at the end of the one above, a narrow row cut it off
+  const mates = calPast(it) ? '' : fieldMatesLine(it);
   const m = it.kind === 'game' ? state.matches[it.id] : null;
   const right = it.called ? `<span class="tag off">${CALLED[it.called]}</span>`
     : m && it.status !== 'upcoming' ? `<span class="pmins">${score(m).us}<small>–${score(m).them}</small></span>`
@@ -7526,7 +7536,7 @@ function calRow(it, all) {
       : all ? '' : `<span class="tag ${it.kind}">${CAL_KIND[it.kind]}</span>`;
   return `<button class="prow calrow${all ? ' tc' : ''}" type="button" data-act="calitem" data-k="${it.kind}" data-tid="${esc(it.tid)}" data-id="${esc(it.id)}" data-called="${it.called ? 1 : 0}"${all ? ` style="--tc:${teamHue(it.tid)}"` : ''}>
     <span class="caltime">${it.start ? niceTime(it.start) : it.date ? 'All day' : 'TBC'}</span>
-    <span style="min-width:0"><span class="pname">${all ? calTeamName(t) : ''}${esc(it.title)}</span>${sub.length ? `<span class="psub">${esc(sub.join(' · '))}</span>` : ''}</span>
+    <span style="min-width:0"><span class="pname">${all ? calTeamName(t) : ''}${esc(it.title)}</span>${sub.length ? `<span class="psub">${esc(sub.join(' · '))}</span>` : ''}${mates ? `<span class="psub">${esc(mates)}</span>` : ''}</span>
     ${right}</button>`;
 }
 /* A training session on a team's calendar. Its coach and the team's coaches
@@ -7785,7 +7795,8 @@ function viewCalendar() {
   }
   return `<div class="stack">
     <div class="spread"><h2>Calendar</h2>${edit ? `<button class="btn sm" data-act="calnew" data-tid="${esc(t.id)}"${pick ? ` data-v="${pick}"` : ''}>Add</button>` : ''}</div>
-    ${me ? '<button class="textbtn" data-act="goview" data-v="mycal" style="align-self:flex-start">My calendar: everything of yours, every team</button>' : ''}
+    ${canAdmin() ? '<button class="textbtn" data-act="schedule" style="align-self:flex-start">Club schedule: every team, a week at a time</button>' : ''}
+    ${me && myCalOwn() ? '<button class="textbtn" data-act="goview" data-v="mycal" style="align-self:flex-start">My calendar: everything of yours, every team</button>' : ''}
     ${calTree(t, mine)}
     ${calBar(v)}
     ${next && v === 'list' ? calNextCard(next, all) : ''}
@@ -7814,6 +7825,8 @@ function sheetCalItem(kind, tid, id) {
       ${row('When', esc(dayLabel(it.date)) + (it.date ? ' · ' + esc(span) : ''))}
       ${row('Where', esc(it.venue))}
       ${(fv => (pt => pt ? row(esc(pt.name), esc(pitchText(fv, pt))) : '')(pitchOfText(fv, it.venue)))(fieldOfText(it.venue))}
+      ${(fm => fm ? row(fm.clash ? 'Field clash' : 'Shared field', esc(fm.mates.map(y => `${shortTeam(y.tid)}: ${y.title}, ${niceTime(y.start)}`).join('; '))
+        + (fm.clash ? '' : '<br><span class="muted">Another team is on the field then too.</span>')) : '')(fieldMates(it))}
       ${m ? row('Ground', esc(HOME_AWAY[m.home] || '')) + row('Arrive by', esc(niceTime(m.arrive))) + row('Kit', esc(m.kit || ''))
       + row('Format', `${m.onFieldCount || 11}v${m.onFieldCount || 11} · ${m.periodCount || 2} × ${m.periodMinutes || 40} min`) : ''}
       ${row('Notes', esc((m ? m.notes : e && e.notes) || '').replace(/\n/g, '<br>'))}
@@ -11230,6 +11243,55 @@ function busyItems(date) {
   return out;
 }
 const timeOf = x => `${niceTime(pad2(Math.floor(x.a / 60) % 24) + ':' + pad2(x.a % 60))}`;
+/* ---- shared field time ---- */
+/* The owner: "some teams share fields, which is ok. Just note that there is a
+   shared field time." Two teams practising on one field at once is how most
+   clubs run (half a pitch each, or a pitch each on a complex), so it is said
+   as a note on both entries and never as a clash. What is still a clash is a
+   game or anything that isn't a practice with no pitch left for it (or on the
+   very pitch something else names): a game needs its pitch. One rule, read by
+   the planner, the club schedule and each entry's row. */
+const bothPractice = (x, y) => x.kind === 'practice' && y.kind === 'practice';
+function placeClash(x, y, pitches, at) {
+  const samePitch = !!(x.pitch && x.pitch === y.pitch);
+  return (at > pitches || samePitch) && !bothPractice(x, y);
+}
+/* A team's entries on one day, with a place and a time, as busyItems() has
+   them. Kept for one draw only: render() sets placeMemo and clears it after,
+   so a screen of rows reads the club once, and anything outside a draw (a
+   sheet, a test) reads it fresh. placeMemo is declared by render(). */
+function placeDay(date) {
+  if (placeMemo && placeMemo.has(date)) return placeMemo.get(date);
+  const out = [];
+  for (const it of calItems(teams().map(t => t.id))) {
+    if (it.date !== date || it.called || !it.start) continue;
+    const a = minOf(it.start); let b = it.end ? minOf(it.end) : a + (it.mins || 60); if (b <= a) b += 1440;
+    const f = fieldOfText(it.venue), pt = pitchOfText(f, it.venue);
+    const x = { key: it.key, kind: it.kind, tid: it.tid, title: it.title, start: it.start, a, b, field: f ? f.id : null, pitch: pt ? pt.id : null, venue: it.venue || '' };
+    x.pk = placeKey(x);
+    if (x.pk) out.push(x);
+  }
+  if (placeMemo) placeMemo.set(date, out);
+  return out;
+}
+/* Who else is at this entry's place while it is on, other teams only, and
+   whether that is a shared field (fine) or a clash (a game short of a pitch). */
+function fieldMates(it) {
+  if (!it || !it.date || !it.start || it.called || it.kind === 'session') return null;
+  const day = placeDay(it.date), x = day.find(y => y.key === it.key);
+  if (!x) return null;
+  const mates = day.filter(y => y !== x && y.tid !== x.tid && y.pk === x.pk && y.a < x.b && x.a < y.b);
+  if (!mates.length) return null;
+  const f = x.field ? fieldById(x.field) : null, pitches = f ? pitchCount(f) : 1;
+  const clash = mates.some(y => placeClash(x, y, pitches, 1 + mates.filter(z => z.a < y.b && y.a < z.b).length));
+  return { mates, clash, place: f ? f.name : x.venue };
+}
+/* The line under an entry: "Shared field: G13 Storm 6pm". */
+function fieldMatesLine(it) {
+  const fm = fieldMates(it); if (!fm) return '';
+  const who = fm.mates.map(y => `${shortTeam(y.tid)} ${niceTime(y.start)}`).join(', ');
+  return (fm.clash ? 'Field clash: ' : 'Shared field: ') + who;
+}
 /* What a session collides with, in words for its coach and the admins. Read
    only, worked out from what this phone already holds; nothing is stored. */
 // SERVER.md: clashes worked out on the phone from what it holds; a server could check them on save.
@@ -13024,10 +13086,18 @@ function myRoleTeams() {
 }
 function myCalTeams() {
   const out = new Set([...myRoleTeams(), ...myPlayers().map(k => k.t.id)]);
-  // an admin who works no team of her own, or a club before anyone signs in, sees the club's
-  if (!out.size && (canAdmin() || !gated())) for (const t of myTeams()) out.add(t.id);
+  /* A club before anyone signs in has nobody's calendar yet, so it shows the
+     club's. An admin who works no team of her own used to get the club's too,
+     which made a personal calendar the club's planning screen; that is Club
+     schedule now, and hers holds only what is hers. */
+  if (!out.size && !gated()) for (const t of myTeams()) out.add(t.id);
   return [...out];
 }
+/* Whether My calendar has anything of hers at all: a team, a child, a
+   session she runs or a time she offers here, or another club. An admin with
+   none of those is not offered an empty one ahead of the club's schedule. */
+const myCalOwn = () => myCalTeams().length > 0 || youClubs().length > 0
+  || (!!me && (sessAll().some(s => s.coach === me.uid) || blockAll().some(b => b.coach === me.uid)));
 function myCalFilters() {
   const out = [['all', 'Everything']];
   const kids = myPlayers();
@@ -13112,6 +13182,7 @@ function viewMyCal() {
   const canBook = guardsAnyone() && blockAll().some(b => b.date >= todayStr() && !b.off && blockKids(b).length && blockSlots(b).some(x => x.free));
   return `<div class="stack">
     <h2>My calendar</h2>
+    ${canAdmin() && teams().length ? `<button class="textbtn" data-act="schedule" style="align-self:flex-start">The whole club, every team: Club schedule</button>` : ''}
     ${filters.length > 1 ? `<div class="chips">${filters.map(([k, l]) =>
       `<button class="chip" type="button" data-act="mycalf" data-v="${esc(k)}" aria-pressed="${ui.myCal === k}">${l}</button>`).join('')}</div>` : ''}
     ${canBook ? `<button class="btn wide" data-act="sesstab" data-k="list">Book a 1-1 with a coach</button>` : ''}
@@ -13120,7 +13191,7 @@ function viewMyCal() {
     ${awayCard()}
     <div class="card"><h2 style="margin-bottom:0">Coming up</h2>
       ${ahead.length ? `<div class="plist">${myCalList(calCut(ahead, calN('myahead')))}</div>${calMoreBtn('myahead', ahead.length - calCut(ahead, calN('myahead')).length, 'more')}`
-      : `<p class="muted" style="margin-bottom:0">Nothing coming up.${myCalTeams().length ? '' : ' Once you coach a team, or a child of yours is on one, its games and practices are here.'}</p>`}</div>
+      : `<p class="muted" style="margin-bottom:0">Nothing coming up.${myCalTeams().length ? '' : ` Once you coach a team, or a child of yours is on one, its games and practices are here.${canAdmin() ? ' The club\'s are on Club schedule.' : ''}`}</p>`}</div>
     ${past.length ? `<button class="btn quiet wide" data-act="calpast">${ui.calPast ? 'Hide' : 'Show'} what has already happened (${past.length})</button>
       ${ui.calPast ? `<div class="card"><div class="plist">${myCalList(calCut(past, calN('mypast')))}</div>${calMoreBtn('mypast', past.length - calCut(past, calN('mypast')).length, 'earlier')}</div>` : ''}` : ''}
     ${myFeedCard()}
@@ -13920,8 +13991,9 @@ function viewAdmin() {
       <div style="margin-top:10px"><button class="btn quiet wide" data-act="newteam">Add a team</button></div></div>
 
     <div class="card"><h2 style="margin-bottom:8px">Planning for the club</h2>
-      <p class="muted" style="margin-top:0">What collides across the teams, when everyone involved is free, and picture day laid out around what each team already has on.</p>
-      <button class="btn quiet wide" data-act="planner">Plan</button></div>
+      <p class="muted" style="margin-top:0">Every team's week on one screen, with games, a run of fixtures or practices added to any team from it. Then what collides across the teams, when everyone involved is free, and picture day laid out around what each team already has on.</p>
+      <button class="btn wide" data-act="schedule">Club schedule</button>
+      <button class="btn quiet wide" data-act="planner" style="margin-top:8px">Clashes, find a time, picture day</button></div>
 
     <div class="card"><h2 style="margin-bottom:8px">Fields and permits</h2>
       <p class="muted" style="margin-top:0">${fieldList().length ? `${fieldList().length} field${fieldList().length === 1 ? '' : 's'}.` : 'None yet.'} The places the club trains, the permits you hold for each and when, and what is booked on them.</p>
@@ -14410,7 +14482,10 @@ function clubClashesOn(date) {
     if (pk && pk === placeKey(y)) {
       const f = x.field ? fieldById(x.field) : null, pitches = f ? pitchCount(f) : 1;
       const at = items.filter(z => placeKey(z) === pk && ov(z, x) && ov(z, y)).length;
-      if (at > pitches) out.push({ kind: 'place', text: `${f ? f.name : x.venue}${f && pitches > 1 ? ` (${pitches} pitches)` : ''}: ${both}` });
+      const where = `${f ? f.name : x.venue}${f && pitches > 1 ? ` (${pitches} pitches)` : ''}`;
+      // two teams on one field is fine and only said; a game short of a pitch is the clash
+      if (placeClash(x, y, pitches, at)) out.push({ kind: 'place', text: `${where}: ${both}` });
+      else if (x.tid !== y.tid) out.push({ kind: 'shared', text: `${where}: ${both}` });
     }
     for (const u of x.coaches.filter(c => y.coaches.includes(c))) out.push({ kind: 'coach', text: `${coachName(u)} is due at ${both}` });
     if (x.tid && x.tid === y.tid) continue;
@@ -14479,7 +14554,11 @@ function findTimes(f) {
       for (const x of elsewhere) for (const u of Object.keys(itemFams(x, famCache))) if (fams.has(u)) famBusy.add(u);
       const outside = !!(fld && pm.length && !pm.some(p => permitCovers(p, date, a, b)));
       const shut = fld ? fieldShut(fld, date, a, b) : '';
-      const full = !!(fld && hit.filter(x => x.field === fld.id).length >= pitches);
+      /* Practices on the field leave room to share it, and are said, not
+         counted against the slot; a game or a session there takes its pitch. */
+      const atFld = fld ? hit.filter(x => x.field === fld.id) : [];
+      const full = !!(fld && atFld.filter(x => x.kind !== 'practice').length >= pitches);
+      const sharing = full ? [] : atFld.filter(x => x.kind === 'practice' && x.tid && !tids.includes(x.tid));
       const isUsual = usual.has(weekdayOf(date) + ' ' + minHm(a));
       const why = [
         ...teamsBusy.map(tid => `${shortTeam(tid)} has ${hit.filter(x => x.tid === tid).map(x => x.label.replace(/^[^:]*: /, '') + ' at ' + timeOf(x)).join(', ')}`),
@@ -14487,7 +14566,8 @@ function findTimes(f) {
         ...(coachBusy.length ? [`${coachBusy.map(coachName).join(', ')} ${coachBusy.length === 1 ? 'is' : 'are'} busy`] : []),
         ...(famBusy.size ? [`${famBusy.size} famil${famBusy.size === 1 ? 'y has' : 'ies have'} a child somewhere else`] : [])
       ];
-      out.push({ date, a, b, cost: teamsBusy.length * 1000 + (shut ? 600 : 0) + (full ? 500 : 0) + (outside ? 200 : 0) + coachBusy.length * 20 + famBusy.size * 2 - (isUsual ? 5 : 0), why, usual: isUsual });
+      const shared = sharing.length ? `shares ${fld.name} with ${[...new Set(sharing.map(x => shortTeam(x.tid)))].join(', ')}` : '';
+      out.push({ date, a, b, cost: teamsBusy.length * 1000 + (shut ? 600 : 0) + (full ? 500 : 0) + (outside ? 200 : 0) + coachBusy.length * 20 + famBusy.size * 2 + (shared ? 1 : 0) - (isUsual ? 5 : 0), why, shared, usual: isUsual });
     }
   }
   return out.sort((x, y) => x.cost - y.cost || (x.date + minHm(x.a)).localeCompare(y.date + minHm(y.a)));
@@ -14553,7 +14633,9 @@ function viewPlanner() {
     ${body}</div>`;
 }
 function plannerClashView(p) {
-  const today = todayStr(), list = plannerClashes(today, p.days);
+  const today = todayStr(), every = plannerClashes(today, p.days);
+  // a shared field is a note, listed apart, so it never reads as something to fix
+  const list = every.filter(c => c.kind !== 'shared'), shared = every.filter(c => c.kind === 'shared');
   const icon = { place: 'Same place', coach: 'Coach', family: 'Families', away: 'Time off', nocoach: 'No coach', callout: 'Called out', field: 'Field' };
   const end = addDays(today, p.days - 1);
   const off = awayAll().filter(r => r.kind !== 'callout' && awayCurrent(r) && (r.kind === 'weekly' ? !r.from || r.from <= end : r.from <= end));
@@ -14562,9 +14644,12 @@ function plannerClashView(p) {
   return `<div class="chips">${[7, 14, 28].map(n => `<button class="chip" type="button" data-act="plrange" data-v="${n}" aria-pressed="${p.days === n}">${n === 7 ? 'This week' : n + ' days'}</button>`).join('')}</div>
     ${list.length ? Object.entries(byDay).map(([date, cs]) => `<div class="card"><h4 style="margin:0 0 6px">${esc(dayLabel(date))}</h4>
       ${cs.map(c => `<p style="margin:0 0 6px"><span class="tag off">${icon[c.kind]}</span> ${esc(c.text)}</p>`).join('')}</div>`).join('')
-      : `<div class="empty"><strong>Nothing collides</strong>No two things at one place at once, no coach due in two places or on time off, and no family with children due in two places, in the next ${p.days} days.</div>`}
+      : `<div class="empty"><strong>Nothing collides</strong>No game short of a pitch, no coach due in two places or on time off, and no family with children due in two places, in the next ${p.days} days.</div>`}
+    ${shared.length ? `<div class="card"><h4 style="margin:0 0 6px">Shared field time</h4>
+      <p class="muted" style="margin-top:0">Teams on one field at once. Fine for practices; here so nobody is surprised to find another team there.</p>
+      ${shared.map(c => `<p style="margin:0 0 6px"><b>${esc(dayLabel(c.date))}</b> · ${esc(c.text)}</p>`).join('')}</div>` : ''}
     ${off.length ? `<div class="card"><h4 style="margin:0 0 6px">Coaches' time off</h4>${off.map(r => `<p style="margin:0 0 4px"><b>${esc(coachName(r.uid))}</b> · ${esc(awayText(r))}</p>`).join('')}</div>` : ''}
-    <p class="muted">From every team's games and calendar, the training sessions, who coaches which team, and which families have children on which teams. A place is a field from Fields where one matches, or the same words typed. Nothing here is stored or sent.</p>`;
+    <p class="muted">From every team's games and calendar, the training sessions, who coaches which team, and which families have children on which teams. A place is a field from Fields where one matches, or the same words typed. Practices may share a field; anything else needs a pitch of its own. Nothing here is stored or sent.</p>`;
 }
 /* Who can coach then: every coach, free first, each saying where she is
    otherwise, with her time off below and a way for the admin to add some or
@@ -14617,7 +14702,7 @@ function plannerFind(p) {
     <button class="btn wide" data-act="plfind">Find times</button></div>
     ${f.ran ? (res.length ? `<div class="plist">${res.map(r => `<button class="prow" type="button" data-act="plbook" data-d="${esc(r.date)}" data-a="${r.a}" style="grid-template-columns:1fr auto">
       <span><span class="pname">${esc(dayLabel(r.date))} · ${esc(niceTime(minHm(r.a)))}–${esc(niceTime(minHm(r.b)))}</span>
-        <span class="psub">${r.why.length ? esc(r.why.join('; ')) : 'Nobody involved is busy'}${r.usual ? ' · their usual slot' : ''}</span></span>
+        <span class="psub">${r.why.length ? esc(r.why.join('; ')) : 'Nobody involved is busy'}${r.shared ? ' · ' + esc(r.shared) : ''}${r.usual ? ' · their usual slot' : ''}</span></span>
       <span class="tag${r.cost >= 500 ? ' off' : r.why.length ? ' wait' : ''}">${r.cost >= 500 ? 'Clash' : r.why.length ? 'Close' : 'Free'}</span></button>`).join('')}</div>
       <p class="muted">Best first: nobody busy, then the fewest people affected, then a team's usual practice slot. Tap one to put it on the calendars.</p>`
       : `<div class="empty"><strong>No times fit</strong>Widen the hours or the days.</div>`) : ''}`;
@@ -14709,6 +14794,237 @@ function onPlannerAct(a, d) {
         notes: '', public: false, club, createdAt: at, ...(me ? { by: me.uid } : {}) });
     }
     saveLocal(); schedulePublish(); render(); toast(`Picture day is on ${lay.slots.length} calendar${lay.slots.length === 1 ? '' : 's'}`); return;
+  }
+}
+
+/* ---------------- the club schedule ---------------- */
+/* The owner: "the admin being thrown into My calendar isn't great. They need
+   a way to schedule out games and stuff easier." My calendar is a person's,
+   and an admin who ran no team of her own was handed the whole club there:
+   a club tool in a personal place, a long list with no week to look at and no
+   way to add to a team without first opening that team.
+
+   This is the club's own: every team's games, practices and events a week at
+   a time, in each team's colour; who is sharing a field; what is still
+   missing a date, a time or a place; which teams have no practice that week;
+   and Add for any team from one sheet, including a run of games for one team
+   at once. Admins only, beside the planner, and checked in the handler.
+
+   It stores nothing of its own. Adding opens the same game and calendar
+   sheets a team's coach uses, with the team picked made the open one (so the
+   republish that follows goes to that team's share link), and a run of games
+   is the same game each of those writes, one per path at matches/{id}. */
+const SCHED_ACTS = new Set(['schedule', 'schedweek', 'schedteam', 'schedkind', 'schedadd', 'schedaddk', 'schedfor', 'sgrow', 'sgdrop', 'sgsave']);
+const SCHED_KINDS = CAL_KINDS.filter(([k]) => k !== 'session');
+function schedUi() {
+  if (!ui.sched || typeof ui.sched !== 'object') ui.sched = {};
+  const s = ui.sched, mon = d => addDays(d, -weekdayOf(d));
+  s.week = mon(okDay(s.week) ? s.week : todayStr());
+  s.off = s.off && typeof s.off === 'object' ? s.off : {};
+  s.kOff = s.kOff && typeof s.kOff === 'object' ? s.kOff : {};
+  if (!['game', 'games', 'practice', 'event'].includes(s.add)) s.add = 'game';
+  return s;
+}
+const schedTids = s => teams().map(t => t.id).filter(id => !s.off[id]);
+/* A new game for a team starts in the shape its last one had: a U9 side
+   playing 7v7 in quarters should not be typed in again for every fixture. */
+function gameDefaults(tid) {
+  const last = teamMatches(tid).slice().sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0))[0];
+  return last ? { periodCount: last.periodCount == 4 ? 4 : 2, periodMinutes: Number(last.periodMinutes) || 40, onFieldCount: [5, 7, 9, 11].includes(Number(last.onFieldCount)) ? Number(last.onFieldCount) : 11 } : {};
+}
+/* One week of the club, counted: what is on, what shares a field, what
+   clashes. The Club home card and the screen both read it. */
+function schedWeek(s = schedUi()) {
+  const end = addDays(s.week, 6), tids = schedTids(s);
+  const items = calItems(tids).filter(x => !s.kOff[x.kind] && x.date >= s.week && x.date <= end);
+  const on = items.filter(x => !x.called);
+  const n = k => on.filter(x => x.kind === k).length;
+  let shared = 0, clash = 0;
+  for (const x of on) { const fm = fieldMates(x); if (fm) { if (fm.clash) clash++; else shared++; } }
+  const idle = s.kOff.practice ? [] : tids.filter(tid => !on.some(x => x.tid === tid && x.kind === 'practice'));
+  return { end, tids, items, games: n('game'), practices: n('practice'), events: n('event'), called: items.length - on.length, shared, clash, idle };
+}
+function schedLine() {
+  const w = schedWeek({ ...schedUi(), week: addDays(todayStr(), -weekdayOf(todayStr())), off: {}, kOff: {} });
+  const bits = [w.games && `${w.games} game${w.games === 1 ? '' : 's'}`, w.practices && `${w.practices} practice${w.practices === 1 ? '' : 's'}`,
+    w.events && `${w.events} other`].filter(Boolean);
+  return `This week: ${bits.length ? bits.join(', ') : 'nothing on yet'}${w.clash ? ` · ${w.clash} with no pitch left` : ''}`;
+}
+/* Still to settle, from today on: a game or an entry with no date, no time or
+   no place, which is what a family can't plan around. */
+function schedTodo(tids) {
+  const today = todayStr();
+  return calItems(tids).filter(x => !x.called && (x.kind !== 'game' || x.status === 'upcoming') && (!x.date || x.date >= today))
+    .map(x => ({ x, miss: [!x.date && 'date', !x.start && 'time', !x.venue && 'place'].filter(Boolean) })).filter(r => r.miss.length);
+}
+function viewSchedule() {
+  if (!canAdmin()) return `<div class="empty"><strong>Club admins only</strong>The whole club's schedule is for its admins. Each team's is on its Calendar tab.</div>`;
+  const s = schedUi(), ts = teams();
+  if (!ts.length) return `<div class="empty"><strong>No teams yet</strong>Add a team, then its games and practices go here.
+    <div style="margin-top:14px"><button class="btn" data-act="newteam">Add a team</button></div></div>`;
+  const w = schedWeek(s), today = todayStr();
+  const here = s.week <= today && today <= w.end;
+  const allOn = ts.every(t => !s.off[t.id]);
+  const tchip = t => `<button class="chip" type="button" data-act="schedteam" data-tid="${esc(t.id)}" aria-pressed="${!s.off[t.id]}"><i class="dot" style="background:${teamHue(t.id)}"></i>${esc(t.name || 'Untitled team')}</button>`;
+  const todo = schedTodo(w.tids), todoShown = todo.slice(0, 8);
+  const sum = [w.games && `${w.games} game${w.games === 1 ? '' : 's'}`, w.practices && `${w.practices} practice${w.practices === 1 ? '' : 's'}`,
+    w.events && `${w.events} other`, w.called && `${w.called} called off`].filter(Boolean).join(' · ') || 'Nothing on';
+  const days = [0, 1, 2, 3, 4, 5, 6].map(i => {
+    const d = addDays(s.week, i), list = w.items.filter(x => x.date === d), rel = relDay(d);
+    return `<div class="spread" style="margin-top:12px"><p class="calhead${d === today ? ' now' : ''}" style="margin:0">${esc(dayLabel(d))}${rel ? ` <span>· ${rel}</span>` : ''}</p>
+        <button class="textbtn" data-act="schedadd" data-v="${d}" aria-label="Add on ${esc(dayLabel(d))}">+ Add</button></div>
+      ${list.length ? `<div class="plist">${list.map(x => calRow(x, true)).join('')}</div>` : '<p class="muted calnone">Nothing on</p>'}`;
+  }).join('');
+  return `<div class="stack">
+    <div class="spread"><h2>Club schedule</h2><button class="btn sm" data-act="schedadd" data-v="${here ? today : s.week}">Add</button></div>
+    <div class="row wrap" style="gap:8px">
+      <button class="btn quiet sm" data-act="schedaddk" data-v="games" data-open="1">Schedule a run of games</button>
+      <button class="btn quiet sm" data-act="planner">Clashes and finding a time</button></div>
+    <div class="card calcals">
+      <p class="lbl" style="margin-top:0">Teams</p>
+      <div class="chips">${ts.length > 1 ? `<button class="chip" type="button" data-act="schedteam" data-tid="" aria-pressed="${allOn}">All teams</button>` : ''}${ts.map(tchip).join('')}</div>
+      <p class="lbl" style="margin:10px 0 6px">Show</p>
+      <div class="chips">${SCHED_KINDS.map(([k, l]) => `<button class="chip" type="button" data-act="schedkind" data-v="${k}" aria-pressed="${!s.kOff[k]}"><i class="dot ${k}"></i>${l}</button>`).join('')}</div></div>
+    <div class="spread calnav">
+      <button class="stepbtn" data-act="schedweek" data-v="-1" aria-label="Previous week">‹</button>
+      <b>${esc(dayLabel(s.week).slice(4))} – ${esc(dayLabel(w.end).slice(4))}</b>
+      <button class="stepbtn" data-act="schedweek" data-v="1" aria-label="Next week">›</button></div>
+    ${here ? '' : '<button class="textbtn" data-act="schedweek" data-v="0" style="align-self:center">Back to this week</button>'}
+    <div class="card">
+      <p style="margin:0"><b>${esc(sum)}</b></p>
+      ${w.shared ? `<p class="muted" style="margin:6px 0 0">${w.shared} on a shared field: another team is on the same field at the same time. Fine for practices; each says who with.</p>` : ''}
+      ${w.clash ? `<p class="warn alert" style="margin:6px 0 0">${w.clash} ${w.clash === 1 ? 'entry has' : 'entries have'} no pitch left: a game, or something other than a practice, on a field already full then. Marked <b>Field clash</b> below.</p>` : ''}
+      ${w.idle.length ? `<p class="muted" style="margin:6px 0 0">No practice this week: ${esc(w.idle.map(shortTeam).join(', '))}</p>` : ''}
+      ${days}</div>
+    ${todo.length ? `<div class="card"><h2 style="margin-bottom:6px">Still to settle</h2>
+      <p class="muted" style="margin-top:0">Coming up with no date, time or place, which is what a family can't plan around.</p>
+      <div class="plist">${todoShown.map(({ x, miss }) => `<button class="prow calrow tc" type="button" data-act="calitem" data-k="${x.kind}" data-tid="${esc(x.tid)}" data-id="${esc(x.id)}" style="--tc:${teamHue(x.tid)}">
+        <span class="caltime">${x.date ? esc(shortDate(x.date)) : 'TBC'}</span>
+        <span style="min-width:0"><span class="pname">${calTeamName(state.teams[x.tid] || {})}${esc(x.title)}</span><span class="psub">No ${miss.join(', no ')} yet</span></span></button>`).join('')}</div>
+      ${todo.length > todoShown.length ? `<p class="muted" style="margin-bottom:0">And ${todo.length - todoShown.length} more.</p>` : ''}</div>` : ''}
+    <p class="muted">Every team's own calendar is still on its Calendar tab, and that is what its share link mirrors. Tap an entry to open it, change it or call it off.</p>
+  </div>`;
+}
+
+/* Add: what, then which team, then the sheet a team's coach would use. */
+function sheetSchedAdd(date) {
+  const s = schedUi(); s.addDate = okDay(date) ? date : '';
+  const k = s.add;
+  const chip = (v, l) => `<button class="chip" type="button" data-act="schedaddk" data-v="${v}" aria-pressed="${k === v}">${l}</button>`;
+  const groups = calGroups(teams().filter(t => canEditTeam(t.id)));
+  openSheet(`<h3>Add to the schedule</h3>
+    ${s.addDate && k !== 'games' ? `<p class="muted" style="margin-top:0">${esc(dayLabel(s.addDate))}</p>` : ''}
+    <div class="chips" style="margin-bottom:12px">${chip('game', 'A game')}${chip('games', 'A run of games')}${chip('practice', 'Practice')}${chip('event', 'Something else')}</div>
+    ${k === 'games' ? '<p class="muted" style="margin-top:0">The season\'s fixtures for one team in one go: a row a game.</p>' : ''}
+    ${k === 'practice' ? '<p class="muted" style="margin-top:0">Every week as well, from the next sheet. Sharing a field with another team is fine; the schedule notes it.</p>' : ''}
+    ${groups.map(g => `${groups.length > 1 ? `<p class="lbl">${esc(g.label)}</p>` : '<p class="lbl">For which team</p>'}
+      ${g.teams.map(t => `<button class="opt" data-act="schedfor" data-tid="${esc(t.id)}" style="border-left:4px solid ${teamHue(t.id)}"><b>${teamLabel(t)}</b>
+        <span class="rowsub">${esc((gd => gd.onFieldCount ? `${gd.onFieldCount}v${gd.onFieldCount} · ${gd.periodCount} × ${gd.periodMinutes} min` : 'No games yet')(gameDefaults(t.id)))}</span></button>`).join('')}`).join('')}
+    ${k === 'event' ? '<p class="muted">The same thing for several teams at once (a meeting, picture day) is under <b>Clashes and finding a time</b>, which books one entry on each.</p>' : ''}`, true);
+}
+
+let gamesForm = null;
+const SG_MAX = 40;
+function gamesFormNew(tid, date) {
+  const g = gameDefaults(tid), first = okDay(date) ? date : '';
+  return { tid, count: g.periodCount || 2, len: g.periodMinutes || 40, side: g.onFieldCount || 11,
+    rows: [0, 1, 2].map(i => ({ date: first ? addDays(first, 7 * i) : '', kick: '', opp: '', home: '', venue: '' })) };
+}
+/* Whatever has been typed, read back before a redraw throws it away. */
+function gamesRead() {
+  const f = gamesForm; if (!f) return;
+  const v = id => { const el = $('#' + id); return el && typeof el.value === 'string' ? el.value : null; };
+  for (const [k, id] of [['count', 'sgCount'], ['len', 'sgLen'], ['side', 'sgSide']]) { const x = v(id); if (x != null && Number(x)) f[k] = Number(x); }
+  f.rows.forEach((r, i) => {
+    for (const [k, id] of [['date', 'sgDate'], ['kick', 'sgKick'], ['opp', 'sgOpp'], ['home', 'sgHome'], ['venue', 'sgVenue']]) { const x = v(id + '_' + i); if (x != null) r[k] = x; }
+  });
+}
+function sheetGames() {
+  const f = gamesForm; if (!f) return;
+  const t = state.teams[f.tid]; if (!t) return;
+  const sel = (on, v, l) => `<option value="${v}"${on ? ' selected' : ''}>${l}</option>`;
+  openSheet(`<h3>Games for ${teamLabel(t)}</h3>
+    <p class="muted" style="margin-top:0">A row a game. Each is its own game, as if added from the team's Games tab; a row with no opponent is left out.</p>
+    <div class="grid2">
+      <label class="field"><span>Halves or quarters</span><select id="sgCount">${sel(f.count !== 4, 2, '2 halves')}${sel(f.count === 4, 4, '4 quarters')}</select></label>
+      <label class="field"><span>Minutes each</span><input type="number" inputmode="numeric" id="sgLen" value="${esc(String(f.len))}"></label></div>
+    <label class="field"><span>Players on the pitch</span><select id="sgSide">${[5, 7, 9, 11].map(n => sel(f.side === n, n, `${n} v ${n}`)).join('')}</select></label>
+    ${f.rows.map((r, i) => `<div class="card" style="margin-bottom:10px"><div class="spread"><b>Game ${i + 1}</b>
+        ${f.rows.length > 1 ? `<button class="btn quiet sm" data-act="sgdrop" data-v="${i}">Remove</button>` : ''}</div>
+      <label class="field"><span>Opponent</span><input type="text" id="sgOpp_${i}" value="${esc(r.opp)}" placeholder="Riverside United" maxlength="80"></label>
+      <div class="grid2"><label class="field"><span>Date</span><input type="date" id="sgDate_${i}" value="${esc(r.date)}"></label>
+        <label class="field"><span>Kick-off</span><input type="time" id="sgKick_${i}" value="${esc(r.kick)}"></label></div>
+      <div class="grid2"><label class="field"><span>Home or away</span><select id="sgHome_${i}">${sel(!HOME_AWAY[r.home], '', 'Not set')}${Object.entries(HOME_AWAY).map(([k, l]) => sel(r.home === k, k, l)).join('')}</select></label>
+        <label class="field"><span>Where</span><input type="text" id="sgVenue_${i}" value="${esc(r.venue)}" placeholder="Lakeside Park, field 3" maxlength="120"></label></div></div>`).join('')}
+    ${f.rows.length < SG_MAX ? '<button class="btn quiet wide" data-act="sgrow" style="margin-bottom:8px">Another game</button>' : ''}
+    <button class="btn wide" data-act="sgsave">Add the games</button>
+    <button class="btn quiet wide" data-act="closesheet" style="margin-top:8px">Cancel</button>`);
+}
+function onSchedAct(a, d) {
+  // checked here, not just by the screen being hidden: this adds to any team in the club
+  if (!canAdmin()) { closeSheet(); toast('The club schedule is for club admins'); render(); return; }
+  const s = schedUi();
+  if (a === 'schedule') { ui.view = 'schedule'; closeSheet(); render(); toTop(); return; }
+  if (a === 'schedweek') { const n = Number(d.v) || 0; s.week = n ? addDays(s.week, 7 * n) : todayStr(); schedUi(); saveUi(); render(); return; }
+  if (a === 'schedteam') {
+    const ids = teams().map(t => t.id);
+    // from everything, a team on its own is what's wanted; after that each tap adds or takes one away
+    if (!d.tid) s.off = {};
+    else if (ids.every(id => !s.off[id])) { s.off = {}; for (const id of ids) if (id !== d.tid) s.off[id] = true; }
+    else { if (s.off[d.tid]) delete s.off[d.tid]; else s.off[d.tid] = true; if (ids.every(id => s.off[id])) s.off = {}; }
+    saveUi(); render(); return;
+  }
+  if (a === 'schedkind') { if (s.kOff[d.v]) delete s.kOff[d.v]; else s.kOff[d.v] = true; saveUi(); render(); return; }
+  if (a === 'schedadd') { sheetSchedAdd(d.v); return; }
+  // from the screen's own button there is no day picked yet
+  if (a === 'schedaddk') { s.add = d.v; schedUi(); sheetSchedAdd(d.open ? '' : s.addDate); return; }
+  if (a === 'schedfor') {
+    const tid = d.tid;
+    if (!state.teams[tid] || !canEditTeam(tid)) { toast('Only that team’s coaches and the club’s admins can add to it'); return; }
+    // the team picked is the open one, so what follows is published to its share link
+    ui.teamId = tid;
+    const date = s.addDate || '';
+    if (s.add === 'game') { closeSheet(); sheetMatch(null, { ...gameDefaults(tid), date: date || todayStr() }, 'sched'); return; }
+    if (s.add === 'games') { gamesForm = gamesFormNew(tid, date); sheetGames(); return; }
+    calForm = calFormNew(tid, date); calForm.kind = s.add === 'event' ? 'event' : 'practice';
+    if (calForm.kind === 'event') calForm.start = calForm.end = calForm.venue = '';
+    sheetCalEvent(); return;
+  }
+  if (a === 'sgrow' || a === 'sgdrop') {
+    if (!gamesForm) return;
+    gamesRead();
+    const rows = gamesForm.rows;
+    if (a === 'sgdrop') { if (rows.length > 1) rows.splice(Number(d.v), 1); }
+    else if (rows.length < SG_MAX) {
+      // fixtures are weekly more often than not, at the same time
+      const last = rows[rows.length - 1] || {};
+      rows.push({ date: okDay(last.date) ? addDays(last.date, 7) : '', kick: last.kick || '', opp: '', home: '', venue: '' });
+    }
+    sheetGames(); return;
+  }
+  if (a === 'sgsave') {
+    if (!gamesForm) return;
+    gamesRead();
+    const f = gamesForm, t = state.teams[f.tid];
+    if (!t || !canEditTeam(f.tid)) { toast('Only that team’s coaches and the club’s admins can add to it'); return; }
+    const rows = f.rows.map((r, i) => ({ ...r, i })).filter(r => String(r.opp).trim() || okDay(r.date) || hm(r.kick) || String(r.venue).trim());
+    const bad = rows.find(r => !String(r.opp).trim());
+    if (bad) { toast(`Game ${bad.i + 1} needs an opponent`); return; }
+    if (!rows.length) { toast('Type in at least one opponent'); return; }
+    const side = [5, 7, 9, 11].includes(f.side) ? f.side : 11, count = f.count === 4 ? 4 : 2;
+    const len = Math.min(90, Math.max(1, Math.round(f.len) || 40)), at = nowMs();
+    ui.teamId = f.tid;
+    // one game per write, at matches/{id}, exactly as Create game makes it
+    for (const r of rows) {
+      const id = uid();
+      quiet(`matches/${id}`, { id, teamId: f.tid, currentHalf: 1, periods: {}, planned: {}, positions: {}, stints: {}, createdAt: at, ...(me ? { by: me.uid } : {}),
+        opponent: String(r.opp).trim().slice(0, 80), date: okDay(r.date) ? r.date : '', kickoff: hm(r.kick), venue: String(r.venue).trim().slice(0, 120),
+        home: HOME_AWAY[r.home] ? r.home : '', arrive: '', kit: '', notes: '', veoUrl: '',
+        periodCount: count, periodMinutes: len, onFieldCount: side, formation: resolveShape(t, 'auto', side) });
+    }
+    gamesForm = null;
+    saveLocal(); schedulePublish(); closeSheet(); render();
+    toast(`${rows.length} game${rows.length === 1 ? '' : 's'} added for ${t.name || 'the team'}`); return;
   }
 }
 
@@ -15496,9 +15812,13 @@ function sheetTeams() {
     ${canAdmin() ? `<button class="btn wide" data-act="newteam">Add a team</button>` : ''}`);
 }
 
-function sheetMatch(m, pre) {
+/* `from` is where a new game was started: from the club schedule an admin is
+   adding fixtures, so saving keeps her there instead of opening the game. */
+let matchFrom = null;
+function sheetMatch(m, pre, from) {
   const t = team();
   const isNew = !m;
+  matchFrom = isNew ? from || null : null;
   // today as the coach's phone reads it; toISOString() is tomorrow by the evening in America
   m = m || { periodCount: 2, periodMinutes: 40, onFieldCount: 11, date: todayStr(), ...(pre || {}) };
   openSheet(`<h3>${isNew ? 'New game' : 'Game details'}</h3>
@@ -16405,6 +16725,7 @@ function onAct(e) {
   if (PRACTICE_ACTS.has(a) && !canTrain()) { closeSheet(); toast('Practice is for coaches and admins'); render(); return; }
   if (SESS_ACTS.has(a)) { onSessAct(a, d); return; }
   if (PLANNER_ACTS.has(a)) { onPlannerAct(a, d); return; }
+  if (SCHED_ACTS.has(a)) { onSchedAct(a, d); return; }
   if (AWAY_ACTS.has(a)) { onAwayAct(a, d); return; }
   if (a === 'newsall') { ui.newsAll = true; render(); return; }
   if (a === 'newsopen') {
@@ -17894,8 +18215,11 @@ function onAct(e) {
     else {
       const id = uid();
       commit(`matches/${id}`, { id, teamId: t.id, currentHalf: 1, periods: {}, planned: {}, positions: {}, stints: {}, createdAt: Date.now(), ...(me ? { by: me.uid } : {}), ...base });
-      ui.matchId = id; ui.view = 'game'; ui.gameView = 'subs';
+      ui.matchId = id;
+      if (matchFrom === 'sched') toast(`Game added for ${t.name || 'the team'}`);
+      else { ui.view = 'game'; ui.gameView = 'subs'; }
     }
+    matchFrom = null;
     if (pick === 'custom') { ui.editFid = GAME_SHAPE; ui.view = 'formation'; }
     closeSheet(); render(); return;
   }
@@ -18149,6 +18473,7 @@ function uiToHash() {
   if (ui.view === 'club') return '#/club';
   if (ui.view === 'admin') return '#/club/settings';
   if (ui.view === 'planner') return '#/club/planner';
+  if (ui.view === 'schedule') return '#/club/schedule';
   if (ui.view === 'mine') return '#/my-players';
   if (ui.view === 'mycal') return '#/my-calendar';
   if (ui.view === 'inbox') return '#/messages';
@@ -18161,7 +18486,7 @@ function uiToHash() {
 function hashToUi() {
   const p = decodeURIComponent(location.hash.replace(/^#\/?/, '')).split('/').filter(Boolean);
   if (!p.length) return false;
-  if (p[0] === 'club') { ui.view = p[1] === 'settings' ? 'admin' : p[1] === 'people' ? 'people' : p[1] === 'planner' ? 'planner' : 'club'; return true; }
+  if (p[0] === 'club') { ui.view = p[1] === 'settings' ? 'admin' : p[1] === 'people' ? 'people' : p[1] === 'planner' ? 'planner' : p[1] === 'schedule' ? 'schedule' : 'club'; return true; }
   if (p[0] === 'my-players') { ui.view = 'mine'; return true; }
   if (p[0] === 'my-calendar') { ui.view = 'mycal'; return true; }
   if (p[0] === 'messages') {

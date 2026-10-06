@@ -72,12 +72,26 @@ function as(uid, c = club()) {
   {
     as('boss');
     const cs = A.clubClashesOn(TUE);
-    check('two teams at one place at once, the place typed two ways', cs.some(c => c.kind === 'place' && /G11 Flight: Practice at 5:30pm and G13 Storm: Practice at 6pm/.test(c.text)), true);
+    /* The owner: "some teams share fields, which is ok. Just note that there
+       is a shared field time." Two practices on one field is a note. */
+    check('two teams practising at one place at once, typed two ways, is a shared field', cs.some(c => c.kind === 'shared' && /G11 Flight: Practice at 5:30pm and G13 Storm: Practice at 6pm/.test(c.text)), true);
+    check('and not a clash', cs.some(c => c.kind === 'place'), false);
     check('a coach due in two places', cs.some(c => c.kind === 'coach' && /^Jaz is due at/.test(c.text)), true);
     check('a family with children on both teams', cs.some(c => c.kind === 'family' && /^1 family has children at/.test(c.text) && /Ella and Sam/.test(c.text)), true);
     check('a family on one team only is not counted', cs.some(c => /Mia|Zoe/.test(c.text)), false);
     A.render();
-    check('the screen lists them under the day', /Tue 15 Sep/.test(A.rendered()) && /Same place/.test(A.rendered()), true);
+    check('the screen lists them under the day', /Tue 15 Sep/.test(A.rendered()) && /Coach/.test(A.rendered()), true);
+    check('the shared field apart, as a note', /Shared field time/.test(A.rendered()) && !/Same place/.test(A.rendered()), true);
+
+    // a game needs its pitch: on a one-pitch field with a practice, that is a clash
+    const g = club();
+    g.matches.m1 = { id: 'm1', teamId: 't3', opponent: 'Riverside', date: TUE, kickoff: '18:00', venue: 'Lakeside Park', periodCount: 2, periodMinutes: 25 };
+    as('boss', g);
+    const gc = A.clubClashesOn(TUE);
+    check('a game on a field a practice has is a clash', gc.some(c => c.kind === 'place' && /B9 Comets: v Riverside/.test(c.text)), true);
+    check('while the two practices are still only shared', gc.some(c => c.kind === 'place' && /G11 Flight: Practice at 5:30pm and G13 Storm/.test(c.text)), false);
+    g.access.org = { venues: { v1: { id: 'v1', name: 'Lakeside Park', pitches: 3 } } };
+    check('with a pitch each, the game is only sharing too', A.clubClashesOn(TUE).some(c => c.kind === 'place'), false);
 
     const c = club();
     c.access.org = { venues: { v1: { id: 'v1', name: 'Lakeside Park', pitches: 2 } } };
@@ -85,6 +99,11 @@ function as(uid, c = club()) {
     check('a field with two pitches holds two at once', A.clubClashesOn(TUE).some(x => x.kind === 'place'), false);
     c.teams.t2.events.e2.called = 'cancelled';
     check('something called off clashes with nothing', A.clubClashesOn(TUE).length, 0);
+    delete c.teams.t2.events.e2.called;
+    const f1 = A.findTimes({ tids: ['t3'], len: 60, from: TUE, days: 1, h0: '17:00', h1: '19:00', field: 'v1', ran: true });
+    const at530 = f1.find(r => r.a === 17 * 60 + 30);
+    check('find a time: practices on the field are shared, not full', at530.why.some(w => /full/.test(w)), false);
+    check('and the slot says who with', at530.shared, 'shares Lakeside Park with G11 Flight, G13 Storm');
     check('nothing was written to look', A.state.teams.t1.events.e1.called === undefined, true);
   }
 

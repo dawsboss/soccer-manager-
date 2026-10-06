@@ -8,6 +8,51 @@ before this point lives only in the git log.
 
 ---
 
+## A club schedule for admins, and shared field time — 2026-10-06 (build 101)
+
+The owner: *the admin being thrown into My calendar isn't great. They need a
+way to schedule out games and stuff easier. Also practices: some teams share
+fields, which is ok. Just note that there is a shared field time.*
+
+An admin who ran no team of her own was given the whole club on My calendar,
+which made a personal calendar the club's planning screen: one long list, no
+week to look at, and no way to add to a team without opening that team first.
+And two teams practising on one field at once was listed as a clash to fix,
+when that is how most clubs run.
+
+- **Club schedule** (`viewSchedule()`, `#/club/schedule`), admins only and
+  checked in the handler. First on an admin's Club home, and on Club
+  settings, the club menu and each team's Calendar tab. Every team's games,
+  practices and events a week at a time, in each team's colour, narrowed by
+  team or kind; a count for the week; teams with no practice that week; and
+  *Still to settle*: what is coming up with no date, time or place.
+- **Add for any team from one sheet**: a game, a practice, something else,
+  or **a run of games**, a row per fixture with date, kick-off, opponent,
+  home or away and place. A new game starts in the shape that team's last
+  one had (7v7 in quarters stays 7v7 in quarters). Adding opens the same
+  sheets a team's coach uses, makes the picked team the open one so its
+  share link is what republishes, and keeps the admin on the schedule
+  instead of opening each game. A run of games is one write per game at
+  `matches/{id}`, as *Create game* makes it. Nothing new is stored, so no
+  rule changes.
+- **My calendar is only hers.** An admin who runs no team, has no child and
+  no sessions isn't offered an empty My calendar ahead of the club's
+  schedule, and hers no longer fills up with the club's teams; it points to
+  Club schedule instead. A club before anyone signs in still shows the
+  club's there, as before.
+- **Shared field time is a note, not a clash.** Two practices on one field
+  at once (same field from Fields, or the same words typed) are said on
+  both entries, *Shared field: G13 Storm 6pm*, wherever the entry is drawn
+  and when it is opened, and in the planner under *Shared field time*, apart
+  from the clashes. A game, or anything other than a practice, with no pitch
+  left for it (more at once than the field has pitches, or the same named
+  pitch) is still a clash, now marked *Field clash* on the entry too. Find a
+  time no longer calls a field full because practices are on it; it says
+  which teams the slot would share it with. Training sessions' own clash
+  check is unchanged.
+
+---
+
 ## Each pitch of a field described on its own — 2026-10-06 (build 100)
 
 The owner: *fields should have a description for each field the complex has;

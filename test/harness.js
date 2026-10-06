@@ -197,6 +197,8 @@ const EXPORTS = `{
   /* rendering + routing */
   render, uiToHash, hashToUi, clubTag,
   clubClashesOn, coachStatus, freeCoaches, clubNews, newsFor, newsItems, newsUnread, fieldShut, fieldHours, fieldClosures, awayAll, awaySpans, calledOut, findTimes, picOrder, picLayout, plannerClashes, PLANNER_ACTS,
+  /* the club schedule, and fields shared */
+  viewSchedule, schedWeek, schedTodo, schedLine, gameDefaults, fieldMates, fieldMatesLine, placeClash, myCalOwn, SCHED_ACTS, get gamesForm() { return gamesForm },
   /* the mutable module-scoped bindings */
   get state() { return state }, set state(v) { state = v },
   get ui() { return ui },
