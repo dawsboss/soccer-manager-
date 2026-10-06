@@ -34,6 +34,8 @@ Written whenever a role is granted, alongside the existing `access/index`. On si
 
 The org id stays exactly what the workspace code is today, so **nothing migrates** — the same trick that let roles land without moving data. The club gets a display name (`access/org/name`) and the id becomes plumbing.
 
+**Built** (2026-10, build 96): the code is gone from every screen. The app owner's code box, its last appearance, is removed. A phone reaches a club by an invite, a team link, the switcher (`userOrgs`, which every phone backfills for the clubs it reads) or by starting one. The code lives on only as the club's id inside database paths, as this section intended.
+
 ## The account flow
 
 **Signed out** — a plain page. What the app is, and a sign-in button. No data, no roster, nothing.
@@ -122,6 +124,40 @@ Same shape. Every team in the club, editable. If she has a child, **My players**
 - **My players cuts across everything.** Always present when you are a guardian of anyone, regardless of which context you are in.
 - **No console, and no mode switch.** The game screens *are* the coach's console, and the Admin tab is the club's. A third wrapper would only add a layer over things already one tap away.
 
+**Built** (2026-10): My players lists her children across teams and, since build 95, across clubs. Children in another club come from the cut-down copy My calendar already keeps of every club in `userOrgs` (`mirrorSlim()`: her own children, every game's when and where, no stints), so they show with team, club and what's next, and *Open that club* for the minutes; the copy gained nothing for it. She does not land on My players at sign-in; she lands in a club, which is still what the switcher picks.
+
+## A player with her own account
+
+**Built** (2026-10, build 97, rules version 6), as the owner decided it:
+
+1. **Her coach gives it, on request**, and so may an admin. Never a parent. It is off unless she or her family asks.
+2. **She reads and posts** in her family's conversation with the coaches.
+3. **She sees the same as her parents**: herself by name, teammates as the club's *What parents see* preset says.
+4. **No age rule.** That is the coach's and the club's call for now.
+
+The model, unchanged from the design. A player is a record her parents point at through `guardians`, any number of them. Her own account is one more pointer, kept **separate from `guardians`**:
+
+```
+teams/{tid}/players/{pid}/self/{uid}: inviteId
+access/teamPlayers/{tid}/{uid}: pid        the lookup table the rules read
+```
+
+Separate because she is not her own parent. `roleIn()` gives `'player'`, and every right a parent holds was decided again for her rather than inherited:
+
+| | A parent | Her own sign-in |
+| --- | --- | --- |
+| Reads the team, Live, Stats, recap, calendar, notices | Yes | Yes |
+| Teammates' names | By the club's preset | By the club's preset |
+| Says "going" | For her children | For herself; a parent may change it |
+| Family conversation with the coaches | Her own | Each of her parents', where they see every word; never one of her own |
+| Books and pays for sessions | Yes | No |
+
+**How she gets in.** The coach taps *Make her a sign-in link* on the player's page. It is a single-use `player` invite naming the child by shirt number. The rules let that team's coaches make one, as well as admins, and only a `player` one, so this is still not the "coaches make personal invites" item. Spending it writes `self`, then `access/index`, then `access/teamPlayers`, in the order the rules check them. The invite id is the secret, so it never goes into the club. The coach's phone keeps it to show again, the admins' list has it, and a new link withdraws the old one.
+
+**Safeguarding.** Guidance (SafeSport in the US, the FA in England) is that adults don't message minors one-to-one. The `dm` rule lets her read and write a family thread only when its owner is in her player record's `guardians`, and her own uid never qualifies as a family. So a coach can only reach her where her parents read along. `test/rules.js` and `test/players.js` pin both sides.
+
+Not built: a player in more than one club seeing her other clubs' messages (the cut-down copy of another club doesn't carry her parents' uids, and won't just for this).
+
 ## Should admins configure what each role sees?
 
 **No — not yet, and probably not as a free matrix.** Three reasons, in order of how much they would hurt:
@@ -133,6 +169,8 @@ Same shape. Every team in the club, editable. If she has a child, **My players**
 The honest version of this feature, when it is time, is **two or three named presets** — "parents see their own child only" versus "parents see the whole roster" — because that is a genuine club-policy difference rather than an arbitrary switch. One setting, two values, rules that check one boolean.
 
 That one is worth adding now if the club has an opinion. The free matrix is worth deferring until a club asks for something the presets cannot express.
+
+**Built** (2026-10, build 95): the one preset, as `access/org/rosterOpen` (*Shirt numbers only*, the default, or *The whole roster by name*), on Club admin, admins only. It is a screen setting, not a rule: a parent indexed in the club reads the whole workspace today, so no rule can withhold the names from her. Making it a rule is the `orgs/{orgId}` move below, which gives the squad its own readable-by node.
 
 ## Joining: parents claim, coaches approve
 
@@ -154,6 +192,8 @@ Google, email + password, and email magic link, all enabled.
 Turn **on** the "one account per email address" setting in the Firebase console — it is the default. With three methods live, the same person will eventually sign in a different way than they signed up; that setting makes one email mean one account instead of quietly creating a second one with no access.
 
 Magic link is the one to point parents at. No password to forget, and forgotten passwords are the support burden that will otherwise land on the coach.
+
+**Built**: all three, in the app's sign-in sheet. The "one account per email" setting is a Firebase console switch and cannot be checked from the app.
 
 ## Data model
 
@@ -186,6 +226,7 @@ Roles are **derived from where a uid appears**, not stored as a string on the us
 | Coach | `teams/{t}/coaches/{uid}` | Everything for that team |
 | Tracker | `teams/{t}/trackers/{uid}` | Track tab only — no clock, and no subs beyond the coach's locked-in plan (told when, never who) |
 | Parent | `guardians/{uid}` on any player in the team | Read that team, including names |
+| Player | `self/{uid}` on her own player record, given by her coach | What her parents see; answers for herself; her family's conversations |
 | Public | Holds a share link | Read the published mirror — numbers only |
 
 A parent of two players on different teams simply appears in two `guardians` lists. Nothing special is needed.
@@ -223,7 +264,9 @@ A parent of two players on different teams simply appears in two `guardians` lis
 
 The parent read clause needs work — `players.hasChild(auth.uid)` is wrong as written, since guardians sit one level deeper and RTDB cannot iterate children in a rule. The practical fix is a **flat index**: `teamMembers/{teamId}/{uid}: role`, written whenever a guardian or coach is added, and read directly in the rule. Denormalised, but rules can only do direct lookups, so the index is not optional.
 
-**This closes the public write hole.** `shareOwners/{shareId}/{uid}` is written when a coach creates the share, so only that team's coaches can publish. Do not reach for anonymous auth as a shortcut: anonymous uids are per-device, so two coaches would get different ids and only one could publish, and clearing browser storage would lock a coach out of her own share.
+**Built, on `workspaces/{code}` rather than `orgs/{orgId}`**: the flat index became four, `access/index`, `access/teamIndex/{tid}` (`coach` or `tracker`), `access/teamParents/{tid}` and `access/coachIndex`, all derived and rebuilt every connect (CLAUDE.md, the invariants). One ruleset, `database.rules.json`, with `node test/rules.js` walking it for every kind of account.
+
+**This closes the public write hole.** `shareOwners/{shareId}/{uid}` is written when a coach creates the share, so only that team's coaches can publish. **Built.** Do not reach for anonymous auth as a shortcut: anonymous uids are per-device, so two coaches would get different ids and only one could publish, and clearing browser storage would lock a coach out of her own share.
 
 ## Migration
 
@@ -233,9 +276,17 @@ The existing `workspaces/{code}` node is already organisation-shaped — many te
 2. Copy `workspaces/{code}/teams` to `orgs/{orgId}/teams`, adding that admin as coach of each.
 3. Repoint matches at the new team ids.
 4. Keep the old node readable for a fortnight, so nothing is lost if the copy goes wrong.
-5. Retire workspace codes once every coach has signed in.
+5. Retire workspace codes once every coach has signed in. *(Done for people in build 96: nobody types or sees one. The paths still say `workspaces/`.)*
 
 Do the migration with a button in the app, on a copy, not by hand in the console.
+
+**Status (2026-10): not started, and a decision for the owner rather than the next step.** Everything this document asked of the org model shipped without moving a byte: the workspace code *is* the org id (as "The code becomes the organisation" said it would be), roles are derived from where a uid appears under `workspaces/{code}/access`, and the four lookup tables do what `teamMembers` was for. Renaming `workspaces/` to `orgs/` on its own would change nothing anyone sees: the codes left the screen in build 96 without it. What the move would still buy:
+
+- **Names a parent's phone never receives.** Today anyone indexed reads the whole workspace, so "other players by shirt number" is the screen's choice (above). A squad node readable only by that team's coaches and admins is the only way to make it the database's.
+- **Teams one club can't read.** A coach reads every team by design; the move would let a club choose otherwise in the rules, not just on screen.
+- **A fixture two clubs share** (ROADMAP, *Opponents*, step 2).
+
+What it costs: every path in `app.js`, the rules, `test/rules.js`, the outbox, the mirrors and the backups, a fortnight with both trees live, and a copy of a real club's season, during which an old phone writing to the old tree is data lost. CLAUDE.md treats any schema change as high-stakes. Do it only for one of the three reasons above, between seasons, and on the sandbox club first.
 
 ## What parents actually see
 
@@ -247,6 +298,8 @@ Worth stating so it is deliberate and not an accident of implementation:
 
 That last line is a decision to revisit with the club, not a technical constraint. Some clubs publish rosters freely; assume they do not until told otherwise.
 
+**Built** (2026-10, build 95): `shownName()` draws her own child by name and everyone else by shirt number (*A teammate* with none) on Stats, Season, Live, the match log and the recap, for anyone who is only a parent in the club. Admins, coaches of any team and trackers see names; so does everyone before the club has an admin. The club's preset above turns it off. `test/parents.js` pins it.
+
 ## Build order
 
 1. Enable the three sign-in methods; add sign-in UI and an auth gate.
@@ -257,3 +310,12 @@ That last line is a decision to revisit with the club, not a technical constrain
 6. Parent view.
 
 Steps 1 to 4 are invisible to parents and safe to ship mid-season. Step 5 is the one that changes how people get in — ship it between seasons, or to one team first.
+
+Where each step stands (2026-10):
+
+1. **Built.** Google, email and password, and magic link; `needsSignIn()` is the gate.
+2. **Built on `workspaces/{code}`**, with the four lookup tables in place of `teamMembers`.
+3. **Not built**, and no longer needed for anything above. See *Migration*: it is now about moving names out of a parent's reach, and it is the owner's call.
+4. **Built.** One ruleset; `shareOwners` closed the public write hole.
+5. **Built.** Team links and the coach's approval list (`joinCodes`, `claims`), per-person invites, and a squad of parent invites at once.
+6. **Built.** Parents see their own child by name and the rest by number, the club's one preset, and My players across clubs.

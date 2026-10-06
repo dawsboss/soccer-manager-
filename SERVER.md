@@ -85,10 +85,11 @@ does the bookkeeping, not that the phone works offline first.
 
 ## The lookup tables the rules read
 
-- **Now:** `access/index`, `access/teamIndex`, `access/teamParents` and
-  `access/coachIndex` are rebuilt from where a uid appears, by admins' and
-  coaches' phones on every connect (`syncIndex()`, `syncTeamIndex()`,
-  `syncTeamParents()`, `syncCoachIndex()`). Until one of them connects after a
+- **Now:** `access/index`, `access/teamIndex`, `access/teamParents`,
+  `access/teamPlayers` and `access/coachIndex` are rebuilt from where a uid
+  appears, by admins' and coaches' phones on every connect (`syncIndex()`,
+  `syncTeamIndex()`, `syncTeamParents()`, `syncTeamPlayers()`,
+  `syncCoachIndex()`). Until one of them connects after a
   change, the table is stale: a parent unlinked by an older phone keeps reading
   that team's notices (rules.js, gap 5). The rules carry *bridges* for clubs
   whose tables don't exist yet.
