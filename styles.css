@@ -932,7 +932,12 @@ button.nextprac{cursor:pointer}
 .caltitle span{font-size:13px;color:var(--ink-soft);vertical-align:3px}
 .calnavs{display:flex;align-items:center;gap:6px;flex:none}
 .calnavs .stepbtn{height:34px}
-.calnavs .btn[aria-current="date"]{color:var(--ink-soft)}
+/* Today, as a calendar app draws it: a little calendar with today's date on it */
+.caltoday{flex:none;width:36px;height:34px;display:flex;align-items:center;justify-content:center;
+  background:#fff;border:1px solid var(--line);border-radius:10px;color:var(--field-deep);padding:0}
+.caltoday i{display:block;width:21px;height:21px;border:2px solid currentColor;border-top-width:5px;border-radius:4px;
+  font-style:normal;font-size:11px;font-weight:700;line-height:13px;text-align:center;font-variant-numeric:tabular-nums}
+.caltoday[aria-current="date"]{color:var(--ink-soft)}
 .calmini{background:#fff;border:1px solid var(--line);border-radius:var(--r);padding:10px}
 
 /* which calendars: the choice as chips, the finer ones behind the ☰ */

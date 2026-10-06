@@ -7971,7 +7971,11 @@ function calPanel(sel, offer) {
 function calTitle(v, d) {
   const [y, mo] = d.split('-').map(Number);
   if (v === 'day') return dayLabel(d) + (relDay(d) ? ' · ' + relDay(d) : '');
-  if (v === 'week') { const a = addDays(d, -weekdayOf(d)), b = addDays(a, 6); return `${dayLabel(a).slice(4)} – ${dayLabel(b).slice(4)}`; }
+  // "5–11 Oct", or "28 Sep – 4 Oct" across a month: short enough for a phone's bar
+  if (v === 'week') {
+    const a = dateOf(addDays(d, -weekdayOf(d))), b = dateOf(addDays(d, 6 - weekdayOf(d)));
+    return a.getMonth() === b.getMonth() ? `${a.getDate()}–${b.getDate()} ${MONTHS[b.getMonth()]}` : `${a.getDate()} ${MONTHS[a.getMonth()]} – ${b.getDate()} ${MONTHS[b.getMonth()]}`;
+  }
   return `${MONTHS_LONG[mo - 1]} ${y}`;
 }
 function calBar(v, items, multi, sel, offer) {
@@ -7986,7 +7990,7 @@ function calBar(v, items, multi, sel, offer) {
       <button type="button" class="caltitle" data-act="calmini" aria-expanded="${!!ui.calMini}">${esc(calTitle(v, v === 'schedule' ? today : d))} <span aria-hidden="true">${ui.calMini ? '▴' : '▾'}</span></button>
       ${step ? `<span class="calnavs">
         <button type="button" class="stepbtn" data-act="calstep" data-v="-1" aria-label="Previous ${step}">‹</button>
-        <button type="button" class="btn quiet sm" data-act="calstep" data-v="0"${here ? ' aria-current="date"' : ''}>Today</button>
+        <button type="button" class="caltoday" data-act="calstep" data-v="0" aria-label="Today" title="Today"${here ? ' aria-current="date"' : ''}><i>${dateOf(today).getDate()}</i></button>
         <button type="button" class="stepbtn" data-act="calstep" data-v="1" aria-label="Next ${step}">›</button></span>` : ''}
     </div>
     ${ui.calTree ? calPanel(sel, offer) : ''}

@@ -32,7 +32,9 @@ there were just too many places to look.
 - **One calendar.** Which calendars it shows is a choice at its top: the open
   team, **My calendar** (her teams, her children's, the sessions she runs, the
   times she offers, her other clubs) or **All teams** (every team she can see,
-  ticked by age group and team in the tree). Each is offered only when it
+  ticked by age group and team in the tree behind the ☰ beside the title,
+  which also keeps her children, her clubs and the kinds of thing, with a dot
+  on it when something is left out). Each is offered only when it
   shows more than the others, so a parent with one child on one team has one
   calendar and nothing to choose, and a parent of two gets My calendar but no
   All teams. The choice is kept on the phone like the view; nothing is
