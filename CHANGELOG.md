@@ -8,6 +8,44 @@ before this point lives only in the git log.
 
 ---
 
+## Each pitch of a field described on its own — 2026-10-06 (build 100)
+
+The owner: *fields should have a description for each field the complex has;
+some have turf and grass and then different addresses for the field.* A field
+was one surface, one address and a count of pitches, so a complex with two
+grass pitches out front and a turf one round the back on another street
+could only be described in its notes, and every family was sent to the front
+gate.
+
+- **Each pitch can be described** in the field's editor (*Each pitch*): its
+  name, grass, turf or indoor, lights, its own address when it has one, and a
+  description. They live on the field as `parts`, under `access/org/venues`,
+  so the admin rule that already covers fields covers them and no rule
+  changes. `pitches` is saved as never fewer than the pitches described, so
+  an older phone still counts the field right.
+- **A venue that names a pitch finds it**, by the same rule a venue finds a
+  field (its name in the words, ignoring case and punctuation, longest
+  first, so *Field 12* is not *Field 1*). Directions on a practice, a game, a
+  session and the message for the other team go to the pitch's address, then
+  the field's, then the words; the entry and the session show what the pitch
+  is like. Nothing new is stored on an entry or a session: which pitch is
+  read from the words, so every venue typed before this keeps working.
+- **A new session offers the field's pitches** as chips once a field is
+  picked, which fill in *Which part*.
+- **The bulk import takes them.** In JSON, a field's `pitches` is a count or
+  a list of the pitches, each with its name, surface, lights, address and
+  description. In a spreadsheet, a `Pitch name` column (or a sheet headed
+  `Field, Pitch`) makes a row describe that pitch, and a field's rows become
+  one field. A pitch is matched by name, changed only by what the file says,
+  never removed, so running a file twice writes nothing; the fields template
+  shows a complex with two pitches.
+- **The same pitch twice at once is a clash**, on the session and on the
+  field's two weeks, even when the field has pitches to spare. Two pitches
+  with one name are refused on save, because the check could not tell them
+  apart.
+
+---
+
 ## The Calendar tab reads like a calendar app — 2026-10-06 (build 99)
 
 With a whole season in for all twelve teams, *All my teams* drew every entry

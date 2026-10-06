@@ -84,7 +84,8 @@ training/{code}/
 
 workspaces/{code}/access/org/
   venues/{fid}       { id, name, address, pitches, surface, lights, notes,
-                       permits: { {pmid}: { days: [0..6], start, end, from, until, ref, note } } }
+                       permits: { {pmid}: { days: [0..6], start, end, from, until, ref, note } },
+                       parts: { {ptid}: { id, name, surface, lights, address, notes, o } } }   // each pitch
   money              the currency sign fees are shown with, '$' by default
   packs              true while the club sells packages (admins switch it)
 ```
@@ -182,8 +183,10 @@ Read-only, worked out on the phone from what it already holds:
   A field with no permits listed is not checked; there is nothing to check
   against.
 - **The field is full.** More things at once at one field than it has pitches
-  (`pitches`, 1 by default): other sessions, and team practices and games
-  whose venue names that field.
+  (`pitches`, 1 by default, never fewer than the pitches described): other
+  sessions, and team practices and games whose venue names that field.
+- **The pitch is taken.** Two things at once whose place names the same
+  described pitch, even when the field has room.
 - **The coach is busy.** She runs another session then, or coaches a team that
   has a practice or game then.
 - **A player is busy.** A booked player's team has a practice or game then, or
@@ -270,8 +273,14 @@ screen with a message, as an RSVP is.
 - **Two coaches on one session.** One `coach` keeps every rule a single hop.
 - **Outside trainers** who aren't in the club. They'd need an account and a
   role that isn't "coach of a team", which is `AUTH.md`'s territory.
-- **Field-level pitches** (field 2 of Lakeside). Clashes count against the
-  field's number of pitches, not a named pitch.
+- **Booking a named pitch.** Each pitch of a field can be described (its
+  name, surface, lights, its own address and a description, under the field's
+  `parts`), and a session or calendar venue that names one ("Lakeside Park,
+  the turf") gets its address for directions, its description on the
+  session, and a clash when something else names the same pitch at the same
+  time. Nothing stores which pitch: it is read from the words, as the field
+  is, so a venue that names no pitch still counts only against the field's
+  number of pitches.
 
 ## Bulk import
 

@@ -27,7 +27,7 @@ const clickImport = o => {
 };
 const onlyDepths = plan => plan.writes.every(([p]) =>
   /^teams\/[\w-]+(\/players\/[\w-]+(\/\w+)?|\/events\/[\w-]+(\/\w+)?|\/birthYear)?$/.test(p) || /^matches\/[\w-]+(\/\w+)?$/.test(p)
-  || /^access\/org\/venues\/[\w-]+(\/\w+|\/permits\/[\w-]+)?$/.test(p))
+  || /^access\/org\/venues\/[\w-]+(\/\w+|\/permits\/[\w-]+|\/parts\/[\w-]+(\/\w+)?)?$/.test(p))
   // a session and a booking each at its own path under training/{code}, never a collection
   && (plan.sessWrites || []).every(([p]) => /^sessions\/[\w-]+$/.test(p) || /^booked\/[\w-]+\/[\w-]+$/.test(p));
 
@@ -234,6 +234,37 @@ check('its pitches updated', A.fieldById(lf.id).pitches, 3);
 check('a permit already listed is not added twice; a new one is', A.permitsOf(A.fieldById(lf.id)).length, 3);
 check('"from" and "to" read as times when they are times', A.permitsOf(A.fieldById(lf.id)).some(p => p.days.join() === '4' && p.start === '17:00'), true);
 check('and nothing it had is gone', A.fieldById(lf.id).address, '1 Lake Rd');
+
+console.log('\n--- each pitch of a field ---');
+const pitchFile = { fields: [{ name: 'Lakeside Park', pitches: [
+  { name: 'Field 1', surface: 'grass', description: 'Full size, 11v11' },
+  { name: 'The turf', surface: 'TURF', lights: 'yes', address: '40 Back Lane', notes: 'No metal studs' },
+  'Field 12', { name: 'field 1' }, { name: 'Mud', surface: 'mud' }] }] };
+const ptp = A.importPlan(pitchFile);
+deepEq('a list of pitches is fine', ptp.errors, []);
+check('a pitch named twice is said, and imported once', ptp.warnings.some(w => /pitch field 1 appears twice/.test(w)), true);
+check('a surface that is none of the three is said and left out', ptp.warnings.some(w => /"mud" is not grass, turf or indoor/.test(w)), true);
+check('every write at a depth the rules grant', onlyDepths(ptp), true);
+clickImport(pitchFile);
+const pf = A.fieldById(lf.id), ppts = A.pitchesOf(pf);
+check('onto the field already here, matched by name', A.fieldList().length, 1);
+check('four pitches, in the file\'s order', ppts.map(p => p.name).join(), 'Field 1,The turf,Field 12,Mud');
+deepEq('each described', [ppts[1].surface, ppts[1].lights, ppts[1].address, ppts[1].notes], ['Turf', true, '40 Back Lane', 'No metal studs']);
+check('a description is its notes', ppts[0].notes, 'Full size, 11v11');
+check('the count rises to the pitches described', pf.pitches, 4);
+check('and its permits are untouched', A.permitsOf(pf).length, 3);
+check('the same file again changes nothing', A.importPlan(pitchFile).writes.length, 0);
+const ptUpd = { fields: [{ name: 'Lakeside Park', pitches: [{ name: 'the turf', surface: 'Grass' }] }] };
+const pu = A.importPlan(ptUpd);
+deepEq('a pitch named again changes only what the file says', pu.writes.map(w => w[0].split('/').slice(-1)[0] + '=' + w[1]), ['surface=Grass']);
+clickImport(ptUpd);
+check('and keeps the rest', A.pitchesOf(A.fieldById(lf.id))[1].address, '40 Back Lane');
+check('no pitch is ever removed', A.pitchesOf(A.fieldById(lf.id)).length, 4);
+check('a count in the file never undoes the described ones', A.importPlan({ fields: [{ name: 'Lakeside Park', pitches: 2 }] }).writes.length, 0);
+const newPt = A.importPlan({ fields: [{ name: 'Mill Fields', parts: [{ name: 'A' }, { name: 'B' }, { name: 'C' }] }] });
+const nf = newPt.writes.find(w => /^access\/org\/venues\/[\w-]+$/.test(w[0]))[1];
+check('a new field brings its pitches in its one write', Object.keys(nf.parts).length + ' pitches, counted ' + nf.pitches, '3 pitches, counted 3');
+check('a pitch with no name is an error', A.importPlan({ fields: [{ name: 'X', pitches: [{ surface: 'Turf' }] }] }).errors.some(e => /a pitch needs a name/.test(e)), true);
 
 const badFields = A.importPlan({ fields: [{ name: 'X', permits: [{ days: 'Funday', start: '16:00', end: '18:00' }] },
   { name: 'Y', permits: [{ days: 'Mon', start: '18:00', end: '16:00' }] }, { permits: [] }, { name: 'Z', permits: [{ start: '16:00', end: '18:00' }] }] });
@@ -472,6 +503,18 @@ const fc = A.csvImport(fieldsCsv, {});
 check('read as fields, and needing no team', fc.kind + ' ' + !!fc.needsTeam, 'fields false');
 const fp = A.importPlan(fc.data);
 check('a field added', fp.counts.newFields, 1);
+const pitchCsv = 'Field,Pitch,Address,Surface,Lights,Notes\nRiverside,,2 River Rd,,,Park by the gate\nRiverside,North,,Grass,,\nRiverside,South,9 Side St,Turf,yes,Small-sided\nHill End,,3 Hill Rd,Grass,,\n';
+const pcsv = A.csvImport(pitchCsv, {});
+check('a sheet headed Field, Pitch is fields', pcsv.kind, 'fields');
+check('one field per name, however many rows', pcsv.data.fields.map(f => f.name).join(), 'Riverside,Hill End');
+deepEq('a row with a pitch describes the pitch', pcsv.data.fields[0].parts[1], { name: 'South', address: '9 Side St', surface: 'Turf', lights: 'yes', notes: 'Small-sided' });
+check('and one without describes the field', pcsv.data.fields[0].address + ' / ' + pcsv.data.fields[0].notes, '2 River Rd / Park by the gate');
+check('a field with no pitch rows has none', pcsv.data.fields[1].parts, undefined);
+const pcp = A.importPlan(pcsv.data);
+deepEq('and it imports cleanly', pcp.errors, []);
+const rv = pcp.writes.find(w => w[1] && w[1].name === 'Riverside')[1];
+check('Riverside with its two pitches', Object.values(rv.parts).map(p => p.name + ':' + p.surface).join(), 'North:Grass,South:Turf');
+check('"Pitch name" works beside "Name" too', A.csvImport('Name,Pitch name,Surface\nRiverside,East,Turf\n', {}).data.fields[0].parts[0].name, 'East');
 check('nothing it can\'t tell', A.csvImport('Colour,Size\nred,4\n', {}).error.startsWith('Couldn\'t tell'), true);
 check('a template for each, readable by itself', ['roster', 'schedule', 'fields', 'drills'].every(k => { const c = A.csvImport(A.CSV_TEMPLATES[k], {}); return !c.error && !A.importPlan(c.data).errors.length; }), true);
 }
