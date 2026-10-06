@@ -2,7 +2,7 @@
    Static app. Data lives in localStorage, and mirrors to Firebase Realtime
    Database when a config + workspace code are present. */
 
-const BUILD = '97';
+const BUILD = '98';
 const BUILT = '2026-10-05';
 /* The version of database.rules.json this app was written against. The rules
    carry the same number in rulesVersion's .write, which accepts that number
@@ -294,7 +294,7 @@ function keepStored(key, text) {
 }
 function saveLocal() { keepStored(dataKey(), JSON.stringify(state)); }
 function saveUi() {
-  try { localStorage.setItem(LS_UI, JSON.stringify({ view: ui.view, teamId: ui.teamId, matchId: ui.matchId, sortBy: ui.sortBy, plan: ui.plan, gameView: ui.gameView, follow: ui.follow || null, feedAll: !!ui.feedAll, practice: ui.practice || null, sess: ui.sess ? { tab: ui.sess.tab, scope: ui.sess.scope, month: ui.sess.month } : null, tabs: 2 })); } catch (e) { }
+  try { localStorage.setItem(LS_UI, JSON.stringify({ view: ui.view, teamId: ui.teamId, matchId: ui.matchId, sortBy: ui.sortBy, plan: ui.plan, gameView: ui.gameView, follow: ui.follow || null, feedAll: !!ui.feedAll, practice: ui.practice || null, sess: ui.sess ? { tab: ui.sess.tab, scope: ui.sess.scope, month: ui.sess.month } : null, calView: ui.calView || null, calAll: !!ui.calAll, calOff: ui.calOff || {}, calKOff: ui.calKOff || {}, calTree: !!ui.calTree, tabs: 2 })); } catch (e) { }
 }
 function loadLocal() {
   try {
@@ -7084,11 +7084,23 @@ const calNext = items => items.find(x => x.kind === 'game' && x.status === 'live
   || items.find(x => x.date && !x.called && !calPast(x)) || null;
 
 /* The teams the calendar is showing. Anyone who can see more than one team
-   (a parent with two children, a coach, an admin) can see them all at once. */
+   (a parent with two children, a coach, an admin) can see them all at once,
+   and untick the ones she doesn't want, as a calendar app does: a club with a
+   dozen teams on one screen is a wall, and the coach of two of them wants two. */
 function calTeams() {
   const mine = myTeams();
-  if (ui.calAll && mine.length > 1) return mine.map(t => t.id);
+  if (ui.calAll && mine.length > 1) { const off = ui.calOff || {}; return mine.map(t => t.id).filter(id => !off[id]); }
   return ui.teamId ? [ui.teamId] : [];
+}
+/* Tick exactly these. The open team on its own is "this team", the old view,
+   so a phone that has narrowed back to it is in the same state as one that
+   never widened. */
+function calSetOn(ids) {
+  const mine = myTeams().map(t => t.id), on = new Set(ids.filter(id => mine.includes(id)));
+  if (on.size === 1 && on.has(ui.teamId)) { ui.calAll = false; ui.calOff = {}; return; }
+  ui.calAll = true;
+  ui.calOff = {};
+  for (const id of mine) if (!on.has(id)) ui.calOff[id] = true;
 }
 
 const seriesOf = (t, sid) => Object.values((t && t.events) || {}).filter(e => e && sid && e.series === sid)
@@ -7360,7 +7372,7 @@ function calSyncCard(t, all) {
   const base = feedBase();
   // the one most people want: every team and club of theirs, in one subscription
   const mine = me ? `<button class="btn wide" data-act="goview" data-v="mycal" style="margin-bottom:10px">Everything of yours, in one calendar: My calendar</button>` : '';
-  const list = all ? myTeams() : [t];
+  const list = all ? calTeams().map(id => state.teams[id]).filter(Boolean) : [t];
   const copyNote = `Everything still to come${all ? ' for these teams' : ''}, as a file your phone\u2019s calendar opens. It is a copy: if a time changes later, add it again — each entry replaces its earlier self in calendars that allow it.`;
   if (!base) return `<div class="card"><h2 style="margin-bottom:8px">In your own calendar</h2>
     ${mine}
@@ -7418,17 +7430,18 @@ function calRow(it, all) {
   const t = state.teams[it.tid] || {};
   const edit = canEditTeam(it.tid);
   // most entries are the team's own, so it is the exception that gets marked
-  const sub = [it.venue, it.home && HOME_AWAY[it.home], all ? t.name : '',
+  const sub = [it.venue, it.home && HOME_AWAY[it.home],
     edit && it.kind !== 'game' && it.public ? 'on the share link' : '', rsvpLine(it),
     edit && attendDue(it) && calPast(it) ? (a => a ? `${Object.values(a).filter(Boolean).length} came` : 'no register yet')(attendOf(it.tid, it.id)) : '',
     edit && !it.called && !calPast(it) ? coachOutLine(it) : ''].filter(Boolean);
   const m = it.kind === 'game' ? state.matches[it.id] : null;
   const right = it.called ? `<span class="tag off">${CALLED[it.called]}</span>`
     : m && it.status !== 'upcoming' ? `<span class="pmins">${score(m).us}<small>–${score(m).them}</small></span>`
-      : `<span class="tag ${it.kind}">${CAL_KIND[it.kind]}</span>`;
-  return `<button class="prow calrow" type="button" data-act="calitem" data-k="${it.kind}" data-tid="${esc(it.tid)}" data-id="${esc(it.id)}" data-called="${it.called ? 1 : 0}">
+      // with several teams the title already says it ("B12 Thunder Practice"), and the width is the team's
+      : all ? '' : `<span class="tag ${it.kind}">${CAL_KIND[it.kind]}</span>`;
+  return `<button class="prow calrow${all ? ' tc' : ''}" type="button" data-act="calitem" data-k="${it.kind}" data-tid="${esc(it.tid)}" data-id="${esc(it.id)}" data-called="${it.called ? 1 : 0}"${all ? ` style="--tc:${teamHue(it.tid)}"` : ''}>
     <span class="caltime">${it.start ? niceTime(it.start) : it.date ? 'All day' : 'TBC'}</span>
-    <span style="min-width:0"><span class="pname">${esc(it.title)}</span>${sub.length ? `<span class="psub">${esc(sub.join(' · '))}</span>` : ''}</span>
+    <span style="min-width:0"><span class="pname">${all ? calTeamName(t) : ''}${esc(it.title)}</span>${sub.length ? `<span class="psub">${esc(sub.join(' · '))}</span>` : ''}</span>
     ${right}</button>`;
 }
 /* A training session on a team's calendar. Its coach and the team's coaches
@@ -7436,12 +7449,15 @@ function calRow(it, all) {
 function sessCalRow(it, all) {
   const s = sessById(it.id); if (!s) return '';
   const t = state.teams[it.tid] || {};
-  const sub = [it.venue, all ? t.name : '', it.who.map(x => `${canEditTeam(it.tid) ? whoName(x) : firstName(x.who ? x.who.p : {})}${x.st === 'in' ? '' : ' (' + BOOK[x.st].toLowerCase() + ')'}`).join(', ')].filter(Boolean);
-  return `<button class="prow calrow" type="button" data-act="sessopen" data-id="${esc(s.id)}" data-called="${it.called ? 1 : 0}">
+  const sub = [it.venue, it.who.map(x => `${canEditTeam(it.tid) ? whoName(x) : firstName(x.who ? x.who.p : {})}${x.st === 'in' ? '' : ' (' + BOOK[x.st].toLowerCase() + ')'}`).join(', ')].filter(Boolean);
+  return `<button class="prow calrow${all ? ' tc' : ''}" type="button" data-act="sessopen" data-id="${esc(s.id)}" data-called="${it.called ? 1 : 0}"${all ? ` style="--tc:${teamHue(it.tid)}"` : ''}>
     <span class="caltime">${it.start ? niceTime(it.start) : 'TBC'}</span>
-    <span style="min-width:0"><span class="pname">${esc(it.title)}</span>${sub.length ? `<span class="psub">${esc(sub.join(' · '))}</span>` : ''}</span>
-    ${it.called ? `<span class="tag off">${CALLED[it.called]}</span>` : '<span class="tag session">Training</span>'}</button>`;
+    <span style="min-width:0"><span class="pname">${all ? calTeamName(t) : ''}${esc(it.title)}</span>${sub.length ? `<span class="psub">${esc(sub.join(' · '))}</span>` : ''}</span>
+    ${it.called ? `<span class="tag off">${CALLED[it.called]}</span>` : all ? '' : '<span class="tag session">Training</span>'}</button>`;
 }
+/* With several teams on one screen the team is the first thing read, in its
+   own colour, ahead of "Practice" — twelve rows of "Practice" say nothing. */
+const calTeamName = t => `<b class="tname">${esc(t.name || 'Untitled team')}</b> `;
 function calList(items, all) {
   let out = '', last = null;
   for (const it of items) {
@@ -7457,7 +7473,7 @@ function calList(items, all) {
 
 /* A month at a glance: a dot per thing on each day, coloured by kind. It is
    for finding a day; the list below it is for reading one. */
-function calMonth(items, dayAct = 'calday') {
+function calMonth(items, dayAct = 'calpick', opt = {}) {
   const today = todayStr();
   const ym = /^\d{4}-\d{2}$/.test(ui.calMonth || '') ? ui.calMonth : today.slice(0, 7);
   const [y, mo] = ym.split('-').map(Number);
@@ -7469,8 +7485,10 @@ function calMonth(items, dayAct = 'calday') {
   for (let i = 0; i < lead; i++) cells += '<span></span>';
   for (let n = 1; n <= days; n++) {
     const d = `${ym}-${pad2(n)}`, list = on[d] || [];
-    const attrs = `class="calday" data-today="${d === today ? 1 : 0}" data-past="${d < today ? 1 : 0}"`;
-    const dots = list.slice(0, 3).map(x => `<i class="dot ${x.kind}${x.called ? ' off' : ''}"></i>`).join('');
+    const attrs = `class="calday" data-today="${d === today ? 1 : 0}" data-past="${d < today ? 1 : 0}"${opt.sel === d ? ' data-sel="1"' : ''}`;
+    // a day with ten teams on it is three dots and a count, not ten dots running off the cell
+    const dots = list.slice(0, 3).map(x => `<i class="dot ${x.kind}${x.called ? ' off' : ''}"${opt.hue ? ` style="background:${opt.hue(x)}"` : ''}></i>`).join('')
+      + (list.length > 3 ? `<small>+${list.length - 3}</small>` : '');
     cells += list.length
       ? `<button type="button" ${attrs} data-act="${dayAct}" data-v="${d}" aria-label="${esc(dayLabel(d))}: ${list.length} on">${n}<span class="dots">${dots}</span></button>`
       : `<span ${attrs}>${n}<span class="dots"></span></span>`;
@@ -7481,9 +7499,10 @@ function calMonth(items, dayAct = 'calday') {
       <b>${MONTHS_LONG[mo - 1]} ${y}</b>
       <button class="stepbtn" data-act="calmonth" data-v="1" aria-label="Next month">›</button></div>
     <div class="calgrid">${cells}</div>
-    <div class="spread" style="margin-top:8px">
+    ${opt.hue ? '' : `<div class="spread" style="margin-top:8px">
       <span class="calkey"><i class="dot game"></i>Game <i class="dot practice"></i>Practice <i class="dot event"></i>Other${items.some(x => x.kind === 'session') ? ' <i class="dot session"></i>Training' : ''}${items.some(x => x.kind === 'avail') ? ' <i class="dot avail"></i>Bookable' : ''}</span>
-      ${ym !== today.slice(0, 7) ? '<button class="textbtn" data-act="calmonth" data-v="0">This month</button>' : ''}</div>
+      ${ym !== today.slice(0, 7) ? '<button class="textbtn" data-act="calmonth" data-v="0">This month</button>' : ''}</div>`}
+    ${opt.after || ''}
   </div>`;
 }
 
@@ -7520,35 +7539,173 @@ function calNextCard(it, all) {
   </div>`;
 }
 
+/* ---- the Calendar tab: views, the list of calendars, and paging ----
+   A season of twelve teams is a thousand entries. The tab reads like a
+   calendar app: a day, a week, a month or the running list, the teams ticked
+   on and off in a tree (club, age group, team), and no list ever drawn whole —
+   it pages, so "what has already happened" is twenty-five rows and a button,
+   not 374. */
+const CAL_VIEWS = [['day', 'Day'], ['week', 'Week'], ['month', 'Month'], ['list', 'List']];
+const CAL_PAGE = 25;
+const CAL_KINDS = [['game', 'Games'], ['practice', 'Practices'], ['event', 'Other'], ['session', 'Training']];
+/* A colour per team, the same wherever it appears, picked by the team's place
+   in the club's list so every phone in the club agrees on it. Twelve that sit
+   on white and stay apart from each other. */
+const TEAM_HUES = ['#1E7A4C', '#0E5FA8', '#C97A0E', '#6B3FA0', '#B3261E', '#1F8A80', '#8A5A00', '#C2185B',
+  '#3F51B5', '#558B2F', '#5D4037', '#00838F', '#7B1FA2', '#E65100', '#455A64', '#827717'];
+function teamHue(tid) {
+  const i = teams().findIndex(t => t.id === tid);
+  return TEAM_HUES[(i < 0 ? 0 : i) % TEAM_HUES.length];
+}
+const calView = () => CAL_VIEWS.some(([k]) => k === ui.calView) ? ui.calView : 'list';
+const calDay = () => okDay(ui.calDay) ? ui.calDay : todayStr();
+const calKindOn = k => !(ui.calKOff || {})[k];
+/* Where one page of a list stops: after n, finishing the day it lands in, so a
+   page never ends half way down a Saturday. */
+function calCut(list, n) {
+  if (list.length <= n) return list;
+  let i = n; while (i < list.length && list[i].date === list[n - 1].date) i++;
+  return list.slice(0, i);
+}
+const calN = k => Math.max(CAL_PAGE, Number((ui.calN || {})[k]) || CAL_PAGE);
+const calMoreBtn = (k, left, what) => left > 0
+  ? `<button class="btn quiet wide" data-act="calmore" data-k="${k}" style="margin-top:10px">Show ${Math.min(left, CAL_PAGE)} ${what}${left > CAL_PAGE ? ` (${left} in all)` : ''}</button>` : '';
+
+/* The tree of calendars: the club, its age groups, its teams. Ticking a group
+   ticks every team in it; a group half ticked says so. Teams with no birth year
+   set sit under "Other teams" rather than being guessed into an age. */
+function calGroups(mine) {
+  const by = new Map();
+  for (const t of mine) {
+    const u = teamUAge(t), k = u == null ? 'other' : 'u' + u;
+    if (!by.has(k)) by.set(k, { k, u, label: u == null ? 'Other teams' : uLabel(u), teams: [] });
+    by.get(k).teams.push(t);
+  }
+  return [...by.values()].sort((a, b) => (a.u == null) - (b.u == null) || (a.u || 0) - (b.u || 0));
+}
+const calCk = (on, hue) => `<span class="calck" data-on="${on === true ? 1 : on === 'some' ? 2 : 0}"${hue ? ` style="--tc:${hue}"` : ''} aria-hidden="true"></span>`;
+function calTree(t, mine) {
+  const on = new Set(calTeams());
+  const kinds = CAL_KINDS.filter(([k]) => k !== 'session' || ui.calHasSess);
+  const kOff = kinds.filter(([k]) => !calKindOn(k)).length;
+  const sum = [mine.length > 1 ? `${on.size} of ${mine.length} teams` : '', kOff ? `${kinds.length - kOff} of ${kinds.length} kinds` : ''].filter(Boolean).join(' · ');
+  const state3 = ts => { const n = ts.filter(x => on.has(x.id)).length; return n === ts.length ? true : n ? 'some' : false; };
+  let tree = '';
+  if (mine.length > 1) {
+    const groups = calGroups(mine);
+    const leaf = x => `<button type="button" class="calleaf" role="checkbox" aria-checked="${on.has(x.id)}" data-act="caltog" data-tid="${esc(x.id)}">
+        ${calCk(on.has(x.id), teamHue(x.id))}<span>${teamLabel(x)}</span>${x.id === t.id ? '<small>open</small>' : ''}</button>`;
+    tree = `<div class="caltree">
+      <button type="button" class="calleaf club" role="checkbox" aria-checked="${state3(mine) === true}" data-act="caltog" data-g="all">
+        ${calCk(state3(mine))}<b>${esc((acc().org || {}).name || 'All my teams')}</b></button>
+      ${groups.map(g => groups.length > 1 ? `<div class="calgrp">
+        <button type="button" class="calleaf grp" role="checkbox" aria-checked="${state3(g.teams) === true}" data-act="caltog" data-g="${esc(g.k)}">
+          ${calCk(state3(g.teams))}<span>${esc(g.label)}</span><small>${g.teams.filter(x => on.has(x.id)).length} of ${g.teams.length}</small></button>
+        <div class="calkids">${g.teams.map(leaf).join('')}</div></div>` : `<div class="calkids">${g.teams.map(leaf).join('')}</div>`).join('')}
+    </div>`;
+  }
+  // the two everyone wants, one tap away without opening the tree
+  const quick = mine.length > 1 ? `<div class="chips" style="margin-top:10px">
+      <button class="chip" data-act="calscope" data-v="team" aria-pressed="${!ui.calAll}">Only ${teamLabel(t)}</button>
+      <button class="chip" data-act="calscope" data-v="all" aria-pressed="${!!ui.calAll && !Object.keys(ui.calOff || {}).length}">All my teams</button></div>` : '';
+  return `<div class="card calcals">
+    <button type="button" class="plainbtn spread" data-act="caltree" aria-expanded="${!!ui.calTree}" style="width:100%">
+      <b>Calendars</b><span class="muted">${esc(sum || 'Showing everything')} ${ui.calTree ? '▴' : '▾'}</span></button>
+    ${quick}
+    ${ui.calTree ? `${tree}
+      <p class="lbl" style="margin:12px 0 6px">Show</p>
+      <div class="chips">${kinds.map(([k, l]) => `<button class="chip" data-act="calkind" data-v="${k}" aria-pressed="${calKindOn(k)}"><i class="dot ${k}"></i>${l}</button>`).join('')}</div>` : ''}
+  </div>`;
+}
+
+/* The bar over Day, Week and Month: which view, back, forward, and today. */
+function calBar(v) {
+  const d = calDay(), today = todayStr();
+  let title = '', here = false;
+  if (v === 'day') { title = dayLabel(d) + (relDay(d) ? ' · ' + relDay(d) : ''); here = d === today; }
+  if (v === 'week') {
+    const a = addDays(d, -weekdayOf(d)), b = addDays(a, 6);
+    title = `${dayLabel(a).slice(4)} – ${dayLabel(b).slice(4)}`; here = a <= today && today <= b;
+  }
+  return `<div class="chips calviews" role="tablist">${CAL_VIEWS.map(([k, l]) =>
+    `<button class="chip" role="tab" data-act="calview" data-v="${k}" aria-pressed="${v === k}">${l}</button>`).join('')}</div>
+    ${v === 'day' || v === 'week' ? `<div class="spread calnav">
+      <button class="stepbtn" data-act="calstep" data-v="-1" aria-label="Previous ${v}">‹</button>
+      <b>${esc(title)}</b>
+      <button class="stepbtn" data-act="calstep" data-v="1" aria-label="Next ${v}">›</button></div>
+      ${here ? '' : `<button class="textbtn" data-act="calstep" data-v="0" style="align-self:center">Back to today</button>`}` : ''}`;
+}
+
+/* One day's entries, or a line saying there are none. */
+function calDayList(items, d, all, edit, tid) {
+  const list = items.filter(x => x.date === d);
+  return list.length ? `<div class="plist">${list.map(x => calRow(x, all)).join('')}</div>`
+    : `<p class="muted" style="margin:6px 0 0">Nothing on.${edit ? ` <button class="textbtn" data-act="calnew" data-tid="${esc(tid)}" data-v="${d}">Add something</button>` : ''}</p>`;
+}
+
 function viewCalendar() {
   const t = team(); if (!t) return needTeam();
   const mine = myTeams();
-  const all = !!ui.calAll && mine.length > 1;
+  const shown = calTeams();
+  const all = shown.length > 1 || (shown.length === 1 && shown[0] !== t.id);
   // sessions are drawn here, never in calItems(): that list feeds the share link and the calendar feed
-  const items = [...calItems(calTeams()), ...sessCalItems(calTeams())].sort(calOrder);
+  const every = [...calItems(shown), ...sessCalItems(shown)].sort(calOrder);
+  ui.calHasSess = every.some(x => x.kind === 'session');
+  const items = every.filter(x => calKindOn(x.kind));
   const dated = items.filter(x => x.date);
-  const ahead = dated.filter(x => !calPast(x));
-  const past = dated.filter(calPast).reverse();
-  const undated = items.filter(x => !x.date && !(x.kind === 'game' && x.status === 'done'));
   // a session she has only asked for is not somewhere to drive to yet
   const next = calNext(items.filter(x => x.kind !== 'session' || x.firm));
   const edit = canEditTeam(t.id);
-  return `<div class="stack">
-    <div class="spread"><h2>Calendar</h2>${edit ? `<button class="btn sm" data-act="calnew" data-tid="${esc(t.id)}">Add</button>` : ''}</div>
-    ${me ? '<button class="textbtn" data-act="goview" data-v="mycal" style="align-self:flex-start">My calendar: everything of yours, every team</button>' : ''}
-    ${mine.length > 1 ? `<div class="chips">
-      <button class="chip" data-act="calscope" data-v="team" aria-pressed="${!all}">${teamLabel(t)}</button>
-      <button class="chip" data-act="calscope" data-v="all" aria-pressed="${all}">All my teams</button></div>` : ''}
-    ${next ? calNextCard(next, all) : ''}
-    ${calMonth(dated)}
-    <div class="card"><h2 style="margin-bottom:0">Coming up</h2>
-      ${ahead.length ? `<div class="plist">${calList(ahead, all)}</div>`
+  const v = calView(), d = calDay();
+  let body = '', pick = v === 'day' || v === 'week' ? d : '';
+  if (!shown.length) body = `<div class="card"><p class="muted" style="margin:0">No calendars ticked. Open <b>Calendars</b> and tick a team.</p></div>`;
+  else if (v === 'day') {
+    // a strip of the week to hop along, then the day itself
+    const a = addDays(d, -weekdayOf(d));
+    const strip = [0, 1, 2, 3, 4, 5, 6].map(i => {
+      const x = addDays(a, i), n = dated.filter(y => y.date === x);
+      return `<button type="button" class="calday" data-act="calpick" data-v="${x}" data-today="${x === todayStr() ? 1 : 0}" data-past="${x < todayStr() ? 1 : 0}"${x === d ? ' data-sel="1"' : ''} aria-label="${esc(dayLabel(x))}: ${n.length} on">
+        <small>${WEEKDAYS[i].slice(0, 2)}</small>${dateOf(x).getDate()}<span class="dots">${n.slice(0, 3).map(y => `<i class="dot ${y.kind}"${all ? ` style="background:${teamHue(y.tid)}"` : ''}></i>`).join('')}</span></button>`;
+    }).join('');
+    body = `<div class="card"><div class="calgrid">${strip}</div></div>
+      <div class="card">${calDayList(dated, d, all, edit, t.id)}</div>`;
+  } else if (v === 'week') {
+    const a = addDays(d, -weekdayOf(d));
+    body = `<div class="card">${[0, 1, 2, 3, 4, 5, 6].map(i => {
+      const x = addDays(a, i), list = dated.filter(y => y.date === x), rel = relDay(x);
+      return `<p class="calhead${x === todayStr() ? ' now' : ''}">${esc(dayLabel(x))}${rel ? ` <span>· ${rel}</span>` : ''}</p>
+        ${list.length ? `<div class="plist">${list.map(y => calRow(y, all)).join('')}</div>` : '<p class="muted calnone">Nothing on</p>'}`;
+    }).join('')}</div>`;
+  } else if (v === 'month') {
+    // the chosen day follows the month shown, so paging months never hides the list under it
+    const ym = /^\d{4}-\d{2}$/.test(ui.calMonth || '') ? ui.calMonth : todayStr().slice(0, 7);
+    const sel = d.startsWith(ym) ? d : (ym === todayStr().slice(0, 7) ? todayStr() : ym + '-01');
+    pick = sel;
+    body = calMonth(dated, 'calpick', {
+      sel, hue: all ? x => teamHue(x.tid) : null,
+      after: `<p class="calhead">${esc(dayLabel(sel))}${relDay(sel) ? ` <span>· ${relDay(sel)}</span>` : ''}</p>${calDayList(dated, sel, all, edit, t.id)}`
+    });
+  } else {
+    const ahead = dated.filter(x => !calPast(x));
+    const past = dated.filter(calPast).reverse();
+    const undated = items.filter(x => !x.date && !(x.kind === 'game' && x.status === 'done'));
+    const aheadShown = calCut(ahead, calN('ahead')), pastShown = calCut(past, calN('past'));
+    body = `<div class="card"><h2 style="margin-bottom:0">Coming up</h2>
+      ${ahead.length ? `<div class="plist">${calList(aheadShown, all)}</div>${calMoreBtn('ahead', ahead.length - aheadShown.length, 'more')}`
       : `<p class="muted" style="margin-bottom:0">Nothing on the calendar yet.${edit ? ' Add the season’s practices with <b>Add</b>, and games from the Games tab.' : ' The coach adds games and practices here.'}</p>`}</div>
     ${undated.length ? `<div class="card"><h2 style="margin-bottom:8px">Date to be confirmed</h2>
       <div class="plist">${undated.map(x => calRow(x, all)).join('')}</div></div>` : ''}
     ${past.length ? `<button class="btn quiet wide" data-act="calpast">${ui.calPast ? 'Hide' : 'Show'} what has already happened (${past.length})</button>
-      ${ui.calPast ? `<div class="card"><div class="plist">${calList(past, all)}</div></div>` : ''}` : ''}
-    ${calSyncCard(t, all)}
+      ${ui.calPast ? `<div class="card"><div class="plist">${calList(pastShown, all)}</div>${calMoreBtn('past', past.length - pastShown.length, 'earlier')}</div>` : ''}` : ''}`;
+  }
+  return `<div class="stack">
+    <div class="spread"><h2>Calendar</h2>${edit ? `<button class="btn sm" data-act="calnew" data-tid="${esc(t.id)}"${pick ? ` data-v="${pick}"` : ''}>Add</button>` : ''}</div>
+    ${me ? '<button class="textbtn" data-act="goview" data-v="mycal" style="align-self:flex-start">My calendar: everything of yours, every team</button>' : ''}
+    ${calTree(t, mine)}
+    ${calBar(v)}
+    ${next && v === 'list' ? calNextCard(next, all) : ''}
+    ${body}
+    ${calSyncCard(t, ui.calAll && mine.length > 1)}
   </div>`;
 }
 
@@ -7588,15 +7745,6 @@ function sheetCalItem(kind, tid, id) {
       <button class="btn quiet wide" data-act="copytext" data-v="${esc(opponentMessage(t, m))}">Copy a message for the other team</button>` : ''}
     ${e && e.kind === 'practice' && canPlan(tid) ? `<button class="btn wide" data-act="pracfromcal" data-tid="${esc(tid)}" data-id="${esc(id)}" style="margin-bottom:8px">${practiceById(tid, id) ? 'Open the plan' : 'Plan this practice'}</button>` : ''}
     ${e && edit ? `<button class="btn quiet wide" data-act="caledit" data-tid="${esc(tid)}" data-id="${esc(id)}">Edit</button>` : ''}`);
-}
-
-function sheetCalDay(date) {
-  const items = [...calItems(calTeams()), ...sessCalItems(calTeams())].sort(calOrder).filter(x => x.date === date);
-  const all = !!ui.calAll && myTeams().length > 1;
-  const edit = canEditTeam(ui.teamId);
-  openSheet(`<h3>${esc(dayLabel(date))}</h3>
-    <div class="plist">${items.map(x => calRow(x, all)).join('') || '<p class="muted">Nothing on.</p>'}</div>
-    ${edit ? `<button class="btn quiet wide" data-act="calnew" data-tid="${esc(ui.teamId)}" data-v="${date}" style="margin-top:10px">Add something on this day</button>` : ''}`);
 }
 
 /* The add/edit sheet keeps its fields in calForm and reads them back before
@@ -12809,10 +12957,10 @@ function viewMyCal() {
     ${youNote()}
     ${awayCard()}
     <div class="card"><h2 style="margin-bottom:0">Coming up</h2>
-      ${ahead.length ? `<div class="plist">${myCalList(ahead)}</div>`
+      ${ahead.length ? `<div class="plist">${myCalList(calCut(ahead, calN('myahead')))}</div>${calMoreBtn('myahead', ahead.length - calCut(ahead, calN('myahead')).length, 'more')}`
       : `<p class="muted" style="margin-bottom:0">Nothing coming up.${myCalTeams().length ? '' : ' Once you coach a team, or a child of yours is on one, its games and practices are here.'}</p>`}</div>
     ${past.length ? `<button class="btn quiet wide" data-act="calpast">${ui.calPast ? 'Hide' : 'Show'} what has already happened (${past.length})</button>
-      ${ui.calPast ? `<div class="card"><div class="plist">${myCalList(past.slice(0, 80))}</div></div>` : ''}` : ''}
+      ${ui.calPast ? `<div class="card"><div class="plist">${myCalList(calCut(past, calN('mypast')))}</div>${calMoreBtn('mypast', past.length - calCut(past, calN('mypast')).length, 'earlier')}</div>` : ''}` : ''}
     ${myFeedCard()}
     ${youShareCard()}
     <p class="muted">Each team's own calendar is still on its Calendar tab; that is the one the share link mirrors.</p>
@@ -17364,7 +17512,7 @@ function onAct(e) {
      the coach's, checked by mayAct() against the team the button names. Acting
      on an entry makes its team the open one, so the republish that follows a
      change goes to that team's share link and not to whichever was open. */
-  if (a === 'calscope') { ui.calAll = d.v === 'all'; render(); return; }
+  if (a === 'calscope') { ui.calAll = d.v === 'all'; ui.calOff = {}; saveUi(); render(); return; }
   if (a === 'calpast') { ui.calPast = !ui.calPast; render(); return; }
   if (a === 'calmonth') {
     const cur = /^\d{4}-\d{2}$/.test(ui.calMonth || '') ? ui.calMonth : todayStr().slice(0, 7);
@@ -17373,7 +17521,37 @@ function onAct(e) {
     ui.calMonth = Number(d.v) ? `${x.getFullYear()}-${pad2(x.getMonth() + 1)}` : null;
     render(); return;
   }
-  if (a === 'calday') { sheetCalDay(d.v); return; }
+  if (a === 'calview') {
+    if (!CAL_VIEWS.some(([k]) => k === d.v)) return;
+    ui.calView = d.v;
+    // the month opens on the day being looked at, not wherever it was last left
+    if (d.v === 'month') ui.calMonth = calDay().slice(0, 7) === todayStr().slice(0, 7) ? null : calDay().slice(0, 7);
+    saveUi(); render(); return;
+  }
+  if (a === 'calstep') {
+    const n = Number(d.v) || 0;
+    ui.calDay = n ? addDays(calDay(), n * (calView() === 'week' ? 7 : 1)) : null;
+    render(); return;
+  }
+  if (a === 'calpick') { if (!okDay(d.v)) return; ui.calDay = d.v; render(); return; }
+  if (a === 'caltree') { ui.calTree = !ui.calTree; saveUi(); render(); return; }
+  if (a === 'caltog') {
+    const mine = myTeams(), on = new Set(calTeams());
+    const ids = d.tid ? [d.tid] : d.g === 'all' ? mine.map(x => x.id)
+      : ((calGroups(mine).find(g => g.k === d.g) || {}).teams || []).map(x => x.id);
+    if (!ids.length) return;
+    // a group or the club: all ticked turns them off, anything less ticks the lot
+    const to = !ids.every(id => on.has(id));
+    for (const id of ids) to ? on.add(id) : on.delete(id);
+    calSetOn([...on]); ui.calN = {}; saveUi(); render(); return;
+  }
+  if (a === 'calkind') {
+    if (!CAL_KINDS.some(([k]) => k === d.v)) return;
+    ui.calKOff = { ...(ui.calKOff || {}) };
+    if (ui.calKOff[d.v]) delete ui.calKOff[d.v]; else ui.calKOff[d.v] = true;
+    saveUi(); render(); return;
+  }
+  if (a === 'calmore') { ui.calN = { ...(ui.calN || {}), [d.k]: calN(d.k) + CAL_PAGE }; render(); return; }
   if (a === 'mycalday') { sheetMyCalDay(d.v); return; }
   if (a === 'alertgo') { openAlert(d.id); return; }
   if (a === 'alertx') { const x = alertsHere().list.find(y => y.id === d.id); if (x) { x.shut = true; saveAlerts(); } render(); return; }

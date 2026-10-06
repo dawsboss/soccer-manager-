@@ -171,7 +171,7 @@ const EXPORTS = `{
   /* bulk import */
   importPlan, applyImport, importSummary, sheetImport, IMPORT_EXAMPLE, csvImport, parseCsv, csvDate, CSV_TEMPLATES,
   /* the calendar */
-  calItems, calPast, calNext, calTeams, seriesDates, seriesOf, icsItem, opponentMessage,
+  calItems, calPast, calNext, calTeams, calGroups, teamHue, seriesDates, seriesOf, icsItem, opponentMessage,
   viewCalendar, sheetCalItem, sheetCalEvent, calFormNew, publicEvents, pubText, mayAct,
   todayStr, dayLabel, niceTime, hm, addDays, weekdayOf, CALLED, HOME_AWAY, SERIES_MAX,
   get calForm() { return calForm },

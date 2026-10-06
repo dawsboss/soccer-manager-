@@ -8,6 +8,36 @@ before this point lives only in the git log.
 
 ---
 
+## The Calendar tab reads like a calendar app — 2026-10-06 (build 98)
+
+With a whole season in for all twelve teams, *All my teams* drew every entry
+the club has, one under another, and *what has already happened* was 374 rows
+in a single card. Nothing on the tab was wrong; there was just no way to look
+at less of it.
+
+- **Day, Week, Month and List.** Day is a strip of the week to hop along and
+  that day's entries; Week is seven days, Monday first; Month is the grid,
+  with the chosen day's entries under it instead of a sheet over it. List is
+  the old screen and still the default. Each has back, forward and *Back to
+  today*, and *Add* starts on the day being looked at.
+- **Calendars, as a tree.** Club › age group (from each team's birth year;
+  teams without one under *Other teams*) › team, each a tick box. Ticking a
+  group ticks its teams; a half-ticked group says so. *Only this team* and
+  *All my teams* stay one tap away without opening it, and Games, Practices,
+  Other and Training can be hidden too. The view and the ticks are kept on
+  the phone like the rest of the screen state; they are a way of looking,
+  not data, and nothing is written to the club.
+- **A colour per team.** Picked by the team's place in the club's list, so
+  every phone agrees. With more than one team showing, each row leads with
+  its team's name in that colour down a coloured edge, the month's dots take
+  it, and the kind tag (which only repeated the title) gives its width back.
+- **No list is drawn whole.** *Coming up* and *what has already happened*
+  page 25 at a time, never stopping half way through a day, with *Show 25
+  more (n in all)*. My calendar pages the same way.
+- The calendar file and the feed list follow the ticked teams.
+
+---
+
 ## A player's own sign-in, given by her coach — 2026-10-05 (build 97, rules version 6)
 
 The owner's decisions on AUTH.md's four questions: *the coach gives the

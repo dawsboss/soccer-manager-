@@ -878,3 +878,40 @@ button.nextprac{cursor:pointer}
 .tlogrow .t{display:flex;flex-direction:column;line-height:1.15}
 .tlogrow .t small{font-size:11px;color:var(--ink-soft);font-weight:500}
 .chip small{opacity:.65;margin-left:2px}
+
+/* ---------- the calendar's views and its list of calendars ---------- */
+/* A row from one of several teams carries that team's colour down its left
+   edge, as a calendar app colours each calendar; the tag still says the kind. */
+.calrow.tc{border-left:4px solid var(--tc);padding-left:8px}
+.calday[data-sel="1"]{background:var(--field-deep);color:#fff}
+.calday[data-sel="1"] .dot{box-shadow:0 0 0 1px #fff}
+.calday small{font-size:10px;font-weight:500;line-height:1;color:inherit;opacity:.8}
+.dots small{font-size:9px;line-height:6px}
+.calviews{justify-content:center}
+.calviews .chip{flex:1;justify-content:center}
+.calnav{align-items:center}
+.calhead.now{color:var(--field-deep)}
+.calnone{margin:2px 0 0;font-size:13px}
+.calcals .plainbtn{background:none;border:0;padding:0;font:inherit;color:inherit;cursor:pointer;text-align:left}
+.caltree{margin-top:10px;display:flex;flex-direction:column;gap:2px}
+.calleaf{display:flex;align-items:center;gap:10px;width:100%;background:none;border:0;border-radius:8px;
+  padding:8px 6px;font:inherit;color:inherit;text-align:left;cursor:pointer;min-height:40px}
+.calleaf:active{background:var(--field-wash)}
+.calleaf small{margin-left:auto;color:var(--ink-soft);font-size:12px}
+.calleaf.grp{font-weight:600}
+.calkids{padding-left:22px;border-left:1px solid var(--line);margin-left:15px}
+.calgrp + .calgrp,.caltree > .calkids{margin-top:2px}
+.calck{flex:none;width:20px;height:20px;border-radius:5px;border:2px solid var(--tc,var(--field-deep));position:relative}
+.calck[data-on="1"]{background:var(--tc,var(--field-deep))}
+.calck[data-on="1"]::after{content:"";position:absolute;left:5px;top:1px;width:5px;height:10px;border:solid #fff;border-width:0 2px 2px 0;transform:rotate(45deg)}
+.calck[data-on="2"]::after{content:"";position:absolute;left:3px;right:3px;top:7px;height:2px;background:var(--tc,var(--field-deep))}
+.calcals .chip .dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:5px;background:var(--bench)}
+.calcals .chip .dot.game{background:var(--field)}
+.calcals .chip .dot.practice{background:var(--focus)}
+.calcals .chip .dot.event{background:var(--owed)}
+.calcals .chip .dot.session{background:#6B3FA0}
+.calrow.tc{padding-top:6px;padding-bottom:6px}
+.calrow.tc .tag:not(.off){font-size:11px;padding:2px 6px}
+.calrow .tname{color:var(--tc);font-weight:700}
+.calrow.tc .psub{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.calcals .chip[aria-pressed="true"] .dot{box-shadow:0 0 0 1.5px #fff}
