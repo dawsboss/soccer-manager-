@@ -123,8 +123,13 @@ Needs the server. The club is paid, not the app.
   the payment. Only the server writes `reg/{code}/paid/...`; the rules refuse
   everyone else. The registration shows *Paid* only then.
 - **Payment plans** (deposit then instalments), **discounts** (siblings, early
-  bird), **financial aid** (an admin waives some or all) and **refunds** (an
-  admin asks, the function refunds through Stripe and records it).
+  bird) and **financial aid** (an admin waives some or all), as the club sets
+  them up.
+- **Refunds are the club's.** The club takes the money, so its refund policy
+  and the refund itself are the club's, done in its own Stripe dashboard.
+  Minutes points families at the club and shows a refund once Stripe reports
+  it (the same webhook); it has no refund screen and no refund rules of its
+  own (owner, 2026-10-06).
 - **What already exists moves onto it.** Training session fees and packages
   (`SESSIONS.md`, *Fees and hours*) are a book of who paid today. Once the
   till exists, a family can pay a session or a package by card the same way,
@@ -132,8 +137,8 @@ Needs the server. The club is paid, not the app.
 - **The treasurer's view:** income by program, outstanding, refunds, a CSV
   for the accounts.
 
-Open: whether Minutes takes a fee on each payment (Stripe Connect can) is a
-business decision for the owner, not a technical one.
+**Decided 2026-10-06:** each club connects its own Stripe account, and
+Minutes takes no fee on payments.
 
 ### 3. Push notifications
 
@@ -167,13 +172,20 @@ No server needed.
 
 ### 6. Coach and volunteer compliance
 
-No server needed for the records. Each coach's SafeSport, background check,
+No server needed for the records. The club plays under the Maryland State
+Youth Soccer Association (MSYSA), which per its own pages (msysa.org, checked
+2026-10-06) asks of every team and club official, through GotSport: the full
+SafeSport course on first registration and the refresher every year after,
+concussion training, and a background check every year, which MSYSA starts
+only once SafeSport and concussion training are done. So the records Minutes
+keeps are those, in that order. Each coach's SafeSport, background check,
 concussion course and coaching licence, with the date done and the date it
 lapses, at `staff/{code}/{uid}`, admins only (and the coach reads her own).
 Admins see who lapses next and who has lapsed. The app does not run the
-checks: the association does, through GotSport, for now. Whether a lapsed
-coach is kept off a team's sideline or only flagged is the club's policy; the
-default is flagged, the way time off is read and never obeyed.
+checks: MSYSA does, through GotSport, for now. **A lapsed or soon-to-lapse
+record is flagged to the admins and to that coach, and nothing else** (owner,
+2026-10-06): she is not taken off a team or a sideline, the way time off is
+read and never obeyed.
 
 ### 7. Living alongside GotSport
 
@@ -260,8 +272,8 @@ Not planned until someone needs them, because each is a product of its own:
   | Evaluations | No | No | Yes; an evaluator her own | No |
   | Compliance | No | Her own | Yes | No |
 
-  A separate registrar role (all registrations, no team or match rights) is
-  an open question; until it is decided, registration is admins'.
+  There is no separate registrar role: registration is admins' (owner,
+  2026-10-06).
 - **The squad's names move out of a parent's reach** (decision 2, above).
   AUTH.md, *Migration*, says a squad node readable only by a team's coaches,
   trackers and admins is the only way to make *other players by shirt
@@ -277,9 +289,16 @@ Not planned until someone needs them, because each is a product of its own:
   with a medical note and a guardian's phone number typed into every field.
 - **Backups:** *Download a copy* includes registrations only on an admin's
   phone, and says that it contains medical details before it saves.
-- **How long it is kept** is an open question for the owner: a sensible
-  default is care details deleted a season after the child leaves, payments
-  kept as long as the club's accounts need them.
+- **How long it is kept** (owner, 2026-10-06): **for good, until the family
+  deletes it or the account is deleted.** Seasons pile up as history; nothing
+  expires on a timer. A family's *Delete* on a registration removes it, its
+  care copy and its evaluations; deleting the account removes every
+  registration, care copy and payment record of that account in every club.
+  Deleting an account is a function (an Auth delete trigger), because it
+  reaches into clubs the phone is not open on. What a delete takes with it
+  is the club's copy of that family's waiver agreement and payment history
+  in Minutes; Stripe keeps its own record of the payment in the club's
+  account. The screen says so before the family confirms.
 
 ---
 
@@ -298,10 +317,11 @@ hold.
    design, written into AUTH.md before the code (*Protecting the data* and
    *Season registration* above).
 4. **Registration, without payment.** Programs, the link, the form, waivers,
-   accepting and placing, care details for coaches, the GotSport export.
-   Families can pay the old way meanwhile, recorded as now.
-5. **Payments.** Stripe Connect, Checkout, the webhook, plans, discounts,
-   refunds, the treasurer's view; session fees and packages onto the same
+   accepting and placing, care details for coaches, the GotSport export,
+   a family's *Delete*, and the account-delete function. Families can pay
+   the old way meanwhile, recorded as now.
+5. **Payments.** Stripe Connect, Checkout, the webhook (payments and the
+   club's refunds), plans, discounts, the treasurer's view; session fees and packages onto the same
    till.
 6. **Email.**
 7. **Tryouts and evaluations.**
@@ -311,16 +331,18 @@ hold.
 
 Later, and only on demand: leagues, tournaments, the state's part.
 
-## Open questions for the owner
+## The owner's answers (2026-10-06, second round)
 
-- **Stripe:** each club its own connected account (recommended), and whether
-  Minutes takes a fee per payment.
-- **A registrar role,** or admins only.
-- **How long registration and care data is kept.**
-- **GotSport files:** a real roster export, schedule export and GotSport's
-  registration import template, to map the columns.
-- **Which state association** the club plays under, so its rules on
-  registration and compliance can be checked rather than assumed.
-- **Refunds:** the club's policy (deadline, partial, a fee kept back), so
-  the screen can offer what the policy allows and no more.
-- **Lapsed compliance:** flagged only (the default), or kept off a sideline.
+- **Stripe:** each club connects its own account; Minutes takes no fee.
+- **Registrar role:** none. Registration is admins'.
+- **Keeping data:** for good, until the family deletes it or the account is
+  deleted (*Protecting the data*).
+- **GotSport files:** later. The import (step 9) waits for them.
+- **State association:** Maryland (MSYSA), which runs registration,
+  SafeSport, concussion training and background checks through GotSport.
+- **Refunds:** the club's policy and the club's doing, in its own Stripe
+  account (*Payments*).
+- **Lapsed compliance:** flagged to the admins and that coach, nothing more.
+
+Still open: a real GotSport roster export, schedule export and registration
+import template, when the owner has them.

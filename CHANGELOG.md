@@ -32,6 +32,14 @@ protected, and GotSport kept for the state's part for now.
 
 No code changed, so no build number.
 
+**Then the owner's answers to its open questions**, recorded in it: each club
+its own Stripe account and no fee taken; refunds are the club's, done in its
+own Stripe account; no registrar role; registration data kept until the
+family or the account deletes it; the club is in Maryland (MSYSA, which runs
+SafeSport, concussion training and background checks through GotSport), so
+compliance records follow MSYSA's list; a lapsed record flagged to the admins
+and that coach and nothing more; GotSport sample files later.
+
 ---
 
 ## A club schedule for admins, and shared field time — 2026-10-06 (build 101)
