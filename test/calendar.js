@@ -16,8 +16,12 @@
      called off, never something already over, and a game being played beats
      everything.
    - A club's whole season is a thousand entries, so nothing draws it whole:
-     a day, a week or a month at a time, the list paged, and teams and kinds
-     ticked off in a tree, as a calendar app does.
+     a day, a week or a month at a time, the Schedule paged, and teams and
+     kinds ticked off in a tree, as a calendar app does. Day and Week are the
+     hours with each entry where it falls, overlaps side by side and a "+n"
+     past what fits; Month is the grid with what's on in each day.
+   - It is the one calendar: the open team, My calendar or All teams is a
+     choice made on it, offered only when it shows something more.
    - The calendar file is one a phone will actually open: CRLF, folded lines,
      floating times, cancelled entries marked as cancelled. */
 
@@ -69,7 +73,7 @@ function setup() {
   };
   A.me = null;
   A.ui.teamId = 't1'; A.ui.matchId = null; A.ui.view = 'calendar';
-  A.ui.calAll = false; A.ui.calPast = false; A.ui.calMonth = null;
+  A.ui.calSel = null; A.ui.calPast = false; A.ui.calMonth = null; A.ui.calMini = false; A.ui.myCal = null;
   A.ui.calView = null; A.ui.calDay = null; A.ui.calOff = {}; A.ui.calKOff = {}; A.ui.calN = {}; A.ui.calTree = false;
   sets = []; removes = [];
   A.fb = {
@@ -144,20 +148,22 @@ console.log('--- the screen, for each role ---');
   check('she sees which entries are on the share link', /on the share link/.test(h), true);
   check('a called-off game is struck through, not hidden', /data-called="1"/.test(h), true);
   check('undated games have their own place', /Date to be confirmed/.test(h), true);
-  check('— with no time to show, it says TBC, not "All day"', /<span class="caltime">TBC<\/span>/.test(h), true);
+  check('— with no time to show, it says TBC, not "All day"', /<span class="ev-sub">TBC<\/span>/.test(h), true);
 
   A.me = { uid: 'mumU', name: 'Mum' };
   h = html();
-  check('a parent sees the calendar', /Coming up/.test(h), true);
+  check('a parent sees the calendar', /class="agenda"/.test(h), true);
   check('with tonight\'s practice in it', /data-id="e3"/.test(h), true);
   check('and no Add button', /data-act="calnew"/.test(h), false);
   check('what is on the share link is the coach\'s business, not hers', /on the share link/.test(h), false);
-  check('two children on two teams: she can see both at once', /All my teams/.test(h), true);
-  A.ui.calAll = true;
+  check('two children on two teams: she can see both at once', /data-act="calscope" data-v="mine"[^>]*>My calendar</.test(h), true);
+  check('— and no All teams, which would show her nothing more', /data-v="club"/.test(h), false);
+  A.click({ act: 'calscope', v: 'mine' });
   h = html();
   check('all her teams on one calendar', /data-id="s1"/.test(h) && /data-id="e3"/.test(h), true);
   check('each entry says which team', /G12 Storm/.test(h) && /G14 Flight/.test(h), true);
-  A.ui.calAll = false;
+  check('in its own colour', h.includes('--ev:' + A.teamHue('t1')) && h.includes('--ev:' + A.teamHue('t2')), true);
+  A.ui.calSel = null;
 
   A.ui.view = 'mine';
   h = html();
@@ -165,7 +171,7 @@ console.log('--- the screen, for each role ---');
 
   A.me = { uid: 'trackU', name: 'Tracker' };
   A.ui.view = 'calendar';
-  check('a tracker sees it too', /Coming up/.test(html()), true);
+  check('a tracker sees it too', /class="agenda"/.test(html()), true);
   check('read only', /data-act="calnew"/.test(html()), false);
 }
 
@@ -439,24 +445,30 @@ console.log('--- a club\'s whole season: views, the tree of calendars, and pagin
 {
   setup();
   A.me = { uid: 'mumU', name: 'Mum' };
-  const rows = h => (h.match(/class="prow calrow/g) || []).length;
+  const rows = h => (h.match(/class="ev"/g) || []).length;
   // a season's worth behind her (and this morning's game, which is over too): sixty practices already over
   for (let i = 1; i <= 60; i++) A.state.teams.t1.events['old' + i] = { id: 'old' + i, kind: 'practice', title: 'Practice', date: A.addDays('2026-09-11', -i), start: '18:00', end: '19:00' };
   A.ui.calPast = true;
   let h = html();
-  check('the list is the view nobody has chosen one', /Coming up/.test(h), true);
+  check('the Schedule is the view nobody has chosen one', A.calView() + ' ' + /class="agenda"/.test(h), 'schedule true');
+  const days = [...h.matchAll(/<div class="agdate" aria-label="([^"]+)"/g)].map(x => x[1]);
+  check('each day once, the date down the left', days.length > 5 && new Set(days).size === days.length, true);
   check('what has happened says how much there is', /already happened \(61\)/.test(h), true);
   check('but draws one page of it, not all of it', /data-id="old24"/.test(h) && !/data-id="old25"/.test(h), true);
+  check('in the order it happened, up to now', h.indexOf('data-id="old2"') < h.indexOf('data-id="old1"') && h.indexOf('data-id="g1"') < h.indexOf('class="agline"') && h.indexOf('class="agline"') < h.lastIndexOf('data-id="e3"'), true);
   check('with a button for the rest', /data-act="calmore" data-k="past"/.test(h), true);
   A.click({ act: 'calmore', k: 'past' });
   h = html();
   check('which draws the next page', /data-id="old49"/.test(h) && !/data-id="old50"/.test(h), true);
   A.click({ act: 'calmore', k: 'past' });
   check('until there is no more', /data-k="past"/.test(html()), false);
+  check('an old name for it is still the Schedule', (A.click({ act: 'calview', v: 'list' }), A.calView()), 'schedule');
 
   A.click({ act: 'calview', v: 'day' });
   h = html();
   check('the day view is today', /data-id="e3"/.test(h) && !/data-id="e1"/.test(h), true);
+  check('drawn on the hours, where it falls', /class="tg"[^>]*--cols:1/.test(h) && /data-act="calitem" data-k="practice" data-tid="t1" data-id="e3" class="tg-ev"[^>]*top:calc\(var\(--hr\) \* 11\.000\)/.test(h), true);
+  check('the bar says which day', /Sat 12 Sep · Today/.test(h), true);
   A.click({ act: 'calstep', v: 1 });
   check('forward a day is Sunday, with nothing on', /Nothing on/.test(html()), true);
   A.click({ act: 'calpick', v: '2026-09-15' });
@@ -468,31 +480,71 @@ console.log('--- a club\'s whole season: views, the tree of calendars, and pagin
 
   A.click({ act: 'calview', v: 'week' });
   h = html();
-  check('the week is seven days, Monday first', (h.match(/class="calhead/g) || []).length === 7 && /Mon 7 Sep/.test(h), true);
+  check('the week is seven days, Monday first', (h.match(/class="tg-day"/g) || []).length === 7 && /data-v="2026-09-07"[^>]*aria-label="Mon 7 Sep"/.test(h), true);
+  check('side by side on the hours', /class="tg tg-week"[^>]*--cols:7/.test(h), true);
   check('with this week\'s entries and not next week\'s', /data-id="e3"/.test(h) && /data-id="old1"/.test(h) && !/data-id="e1"/.test(h), true);
+  check('what is over is faded', /data-id="old1" class="tg-ev" data-called="0" data-past="1"/.test(h), true);
   A.click({ act: 'calstep', v: 1 });
   check('next week has Tuesday\'s practice', /data-id="e1"/.test(html()), true);
+  A.click({ act: 'calgoday', v: '2026-09-15' });
+  check('a day\'s heading opens that day', A.calView() + ' ' + A.ui.calDay, 'day 2026-09-15');
+  A.click({ act: 'calview', v: 'week' });
 
   A.click({ act: 'calview', v: 'month' });
   h = html();
-  check('the month is the grid', /class="calgrid"/.test(h) && /data-act="calpick"/.test(h), true);
-  check('under it, the day being looked at', /data-sel="1"/.test(h) && /data-id="g2"/.test(h) && !/data-id="e1"/.test(h), true);
+  check('the month is the grid', /class="mg-grid"/.test(h) && /data-act="calpick"/.test(h), true);
+  check('six weeks or fewer, whole weeks', (h.match(/class="mg-cell"/g) || []).length % 7, 0);
+  check('what is on is in the day, by name', /class="mg-ev"[^>]*>(<span class="mg-x">[^<]*<\/span>)*v Northgate</.test(h), true);
+  check('under it, the day being looked at', /data-v="2026-09-15"[^>]*data-sel="1"/.test(h) && /data-id="e1"/.test(h) && !/data-id="g2"/.test(h), true);
+  A.click({ act: 'calpick', v: '2026-09-19' });
+  h = html();
+  check('a day tapped is the one listed', /data-v="2026-09-19"[^>]*data-sel="1"/.test(h) && /data-id="g2"/.test(h) && !/data-id="e1"/.test(h), true);
+  A.click({ act: 'calstep', v: 1 });
+  check('forward a month is October, on its first', A.ui.calDay, '2026-10-01');
+  A.click({ act: 'calstep', v: -1 });
+  check('and back is this month, on today', A.ui.calDay, null);
   A.click({ act: 'calview', v: 'nonsense' });
   check('an unknown view is refused', A.ui.calView, 'month');
-  A.click({ act: 'calview', v: 'list' });
+
+  console.log('  (the small month under the title)');
+  A.click({ act: 'calview', v: 'schedule' });
+  A.click({ act: 'calmini' });
+  h = html();
+  check('the title opens a small month', /class="calmini"/.test(h) && /data-act="calpick" data-v="2026-09-24"/.test(h), true);
+  A.click({ act: 'calpick', v: '2026-09-24' });
+  check('a day picked on the Schedule opens that day', A.calView() + ' ' + A.ui.calDay + ' ' + !!A.ui.calMini, 'day 2026-09-24 false');
+  A.click({ act: 'calstep', v: 0 });
+  A.click({ act: 'calview', v: 'schedule' });
+
+  console.log('  (the hours)');
+  {
+    const at = (id, start, end, extra = {}) => ({ key: id, id, kind: 'practice', tid: 't1', date: '2026-09-15', start, end, mins: 0, title: id, ...extra });
+    const lay = A.layDay([at('a', '18:00', '19:00'), at('b', '18:30', '19:30'), at('c', '20:00', '21:00')], 3);
+    check('two at once share the width', lay.filter(x => x.n === 2).map(x => x.it.id + x.col).join(), 'a0,b1');
+    check('one on its own has it all', lay.find(x => x.it && x.it.id === 'c').n, 1);
+    const many = A.layDay(['p', 'q', 'r', 's', 't'].map(id => at(id, '18:00', '19:00')), 3);
+    check('past three at once, the rest are "+n"', many.filter(x => !x.more).length + ' ' + (many.find(x => x.more) || {}).more, '2 3');
+    check('an evening runs to its end', A.gridHours([at('x', '19:00', '22:30')]).join(), '7,23');
+    check('an early start opens the morning', A.gridHours([at('x', '06:15', '07:00')]).join(), '6,21');
+    check('past midnight stops at the bottom of the day', A.gridHours([at('x', '23:00', '01:00')]).join(), '7,24');
+    check('a game runs as long as it is played', A.gridHours([{ ...at('g', '19:00', ''), kind: 'game', mins: 95 }]).join(), '7,21');
+    check('a time is written the short way', [A.evWhen(at('a', '18:00', '19:15')), A.evWhen(at('a', '11:30', '13:00')), A.evWhen(at('a', '', '')), A.evWhen({ start: '' })].join(' | '), '6–7:15pm | 11:30am–1pm | All day | TBC');
+  }
 
   console.log('  (the tree)');
+  // nobody signed in, before a club has an admin: every team is anybody's to look at
   setup();
-  A.me = { uid: 'mumU', name: 'Mum' };
   A.click({ act: 'caltree' });
   h = html();
-  check('the tree lists both her teams', /data-act="caltog" data-tid="t1"/.test(h) && /data-act="caltog" data-tid="t2"/.test(h), true);
+  deepEq('this team or All teams, and no My calendar for nobody', A.calSels(), ['team', 'club']);
+  check('the tree lists both teams', /data-act="caltog" data-tid="t1"/.test(h) && /data-act="caltog" data-tid="t2"/.test(h), true);
   check('one team ticked: only the open one', A.calTeams().join(), 't1');
   A.click({ act: 'caltog', tid: 't2' });
-  check('ticking another shows both', A.calTeams().sort().join(), 't1,t2');
+  check('ticking another shows both', A.calTeams().sort().join() + ' ' + A.ui.calSel, 't1,t2 club');
   h = html();
-  check('each row carries its team\'s colour', /class="prow calrow tc"[^>]*style="--tc:#/.test(h), true);
+  check('each entry carries its team\'s colour', h.includes('--ev:' + A.teamHue('t1')) && h.includes('--ev:' + A.teamHue('t2')), true);
   check('two teams, two colours', A.teamHue('t1') !== A.teamHue('t2'), true);
+  check('and its name', /<b class="ev-team">G12 Storm<\/b>/.test(h), true);
   A.click({ act: 'caltog', tid: 't1' });
   check('the open team can be unticked', A.calTeams().join(), 't2');
   check('— and the calendar shows only the other', /data-id="s1"/.test(html()) && !/data-id="e3"/.test(html()), true);
@@ -503,7 +555,9 @@ console.log('--- a club\'s whole season: views, the tree of calendars, and pagin
   A.click({ act: 'caltog', g: 'all' });
   check('and again unticks them', A.calTeams().length, 0);
   A.click({ act: 'calscope', v: 'team' });
-  check('"Only" this team is the old view', A.calTeams().join() + ' ' + A.ui.calAll, 't1 false');
+  check('the open team on its own is "this team"', A.calTeams().join() + ' ' + A.ui.calSel, 't1 team');
+  A.click({ act: 'calscope', v: 'mine' });
+  check('a calendar not on offer is refused', A.calSel(), 'team');
   A.click({ act: 'caltog', tid: 'nobodys' });
   check('a team she cannot see is never ticked', A.calTeams().join(), 't1');
 
@@ -523,9 +577,84 @@ console.log('--- a club\'s whole season: views, the tree of calendars, and pagin
   A.click({ act: 'calkind', v: 'cake' });
   check('a kind that isn\'t one is refused', Object.keys(A.ui.calKOff).length, 0);
 
+  console.log('  (adding)');
   A.me = { uid: 'coachU', name: 'Jaz' }; lockDown();
-  A.ui.calView = 'week'; A.ui.calDay = '2026-09-14';
-  check('Add, in a week, starts on the day being looked at', /data-act="calnew" data-tid="t1" data-v="2026-09-14"/.test(html()), true);
+  A.ui.calSel = 'team'; A.ui.calView = 'week'; A.ui.calDay = '2026-09-14';
+  h = html();
+  check('Add, in a week, starts on the day being looked at', /class="calfab" data-act="calnew" data-tid="t1" data-v="2026-09-14"/.test(h), true);
+  check('each hour of a day is a place to add', /class="tg-slot"[^>]*data-act="calnew" data-tid="t1" data-v="2026-09-16" data-t="18:00"/.test(h), true);
+  A.click({ act: 'calnew', tid: 't1', v: '2026-09-16', t: '17:00' });
+  check('— which starts then, as long as practice usually runs', [A.calForm.date, A.calForm.start, A.calForm.end].join(' '), '2026-09-16 17:00 18:15');
+  A.ui.calSel = 'club';
+  h = html();
+  check('with another team on screen she cannot change, the + is still hers alone', /class="calfab" data-act="calnew" data-tid="t1"/.test(h), true);
+  A.me = { uid: 'bossU', name: 'Boss' };
+  h = html();
+  check('an admin with every team on screen is asked which', /class="calfab" data-act="schedadd"/.test(h), true);
+  A.me = { uid: 'mumU', name: 'Mum' };
+  check('a parent has no +, and no hour to tap', /calfab|tg-slot/.test(html()), false);
+}
+
+console.log('--- the games are on the calendar ---');
+{
+  /* The Games tab was a list of games, one tap from each. It is the Calendar
+     now: a game being played is on top and opens with one tap, Next up opens
+     the game, and the + adds one. Opening a game lands each role on the screen
+     it works from, and a game added for later leaves her on the calendar. */
+  setup(); lockDown();
+  const tabs = require('fs').readFileSync(require('path').join(__dirname, '..', 'index.html'), 'utf8').match(/data-view="[a-z]+"/g).join(' ');
+  check('four tabs for a team', tabs, 'data-view="calendar" data-view="practice" data-view="roster" data-view="season"');
+  A.me = { uid: 'coachU', name: 'Jaz' };
+  const g2 = A.state.matches.g2;
+  g2.periods = { 0: { half: 1, start: H.clock.t - 5 * MIN } };
+  let h = html();
+  check('a game being played is on top', /class="card callive"[^>]*data-act="calgame" data-tid="t1" data-id="g2" data-g="subs"/.test(h), true);
+  check('— with its score and minutes', /data-live="gmins" data-mid="g2"/.test(h), true);
+  A.click({ act: 'calgame', tid: 't1', id: 'g2', g: 'subs' });
+  check('one tap and the coach is on Subs', A.ui.view + ' ' + A.ui.gameView + ' ' + A.ui.matchId, 'game subs g2');
+  A.click({ act: 'backgames' });
+  check('the back arrow is the calendar again', A.ui.view, 'calendar');
+  A.me = { uid: 'trackU' };
+  check('a tracker\'s card opens Track', /data-act="calgame" data-tid="t1" data-id="g2" data-g="track"/.test(html()), true);
+  A.me = { uid: 'mumU' };
+  check('a parent\'s opens Live', /data-act="calgame" data-tid="t1" data-id="g2" data-g="live"/.test(html()), true);
+  g2.periods = {};
+
+  A.me = { uid: 'coachU', name: 'Jaz' };
+  const open = (id, extra = {}) => { A.ui.view = 'calendar'; A.click({ act: 'calgame', tid: 't1', id, ...extra }); return A.ui.gameView; };
+  check('a game next week opens on its plan', open('g2'), 'plan');
+  g2.date = '2026-09-12';
+  check('one today opens on Subs, where the clock starts', open('g2'), 'subs');
+  check('a game played opens on its log', open('g1'), 'live');
+  A.me = { uid: 'mumU' };
+  check('a parent opens it Live', open('g2'), 'live');
+  g2.date = '2026-09-19';
+
+  A.me = { uid: 'coachU', name: 'Jaz' };
+  A.ui.view = 'calendar'; A.render();
+  A.click({ act: 'calnew', tid: 't1', v: '2026-09-26' });
+  check('the +\'s sheet has a game', /data-act="newmatch" data-from="cal"/.test(sheet()), true);
+  check('and a run of games', /data-act="calgames" data-tid="t1"/.test(sheet()), true);
+  A.click({ act: 'newmatch', from: 'cal' });
+  type({ mOpp: 'Westfield', mDate: '2026-09-26', mKick: '10:00', mVenue: '', mHome: '', mArrive: '', mKit: '', mNotes: '', mCount: '2', mLen: '40', mSide: '9', mShape: 'auto', mVeo: '' });
+  A.click({ act: 'savematch', id: '' });
+  check('a game added for later leaves her on the calendar', A.ui.view, 'calendar');
+  check('— saying so', A.lastToast(), 'Game added: Sat 26 Sep');
+  check('— and it is there', A.calItems(['t1']).some(x => x.kind === 'game' && x.title === 'v Westfield'), true);
+  A.click({ act: 'calnew', tid: 't1', v: '2026-09-12' });
+  A.click({ act: 'newmatch', from: 'cal' });
+  type({ mOpp: 'Today FC', mDate: '2026-09-12', mKick: '16:00' });
+  A.click({ act: 'savematch', id: '' });
+  check('one for today is the game she is about to run: it opens', A.ui.view + ' ' + A.ui.gameView, 'game subs');
+  A.ui.view = 'calendar';
+  A.click({ act: 'calnew', tid: 't1', v: '2026-10-03' });
+  type({ evTitle: '', evDate: '2026-10-03', evStart: '', evEnd: '', evVenue: '', evNotes: '', evUntil: '' });
+  A.click({ act: 'calgames', tid: 't1' });
+  check('a run of games starts on the day picked, a week apart', A.gamesForm && A.gamesForm.tid + ' ' + A.gamesForm.rows.map(r => r.date).join(), 't1 2026-10-03,2026-10-10,2026-10-17');
+  A.me = { uid: 'mumU' };
+  A.toasts.length = 0;
+  A.click({ act: 'calgames', tid: 't1' });
+  check('a parent is refused it', A.lastToast(), "Only this team's coaches can change that");
 }
 
 console.log('--- calendar sync ---');

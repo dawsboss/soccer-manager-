@@ -492,16 +492,17 @@ function plan(extra = {}, X = A) {
     as('jaz');
     const pr = plan({ prDate: '2026-09-14', prPlace: 'Lakeside Park' });
     A.click({ act: 'pracsuggest', id: pr.id });
-    A.ui.view = 'matches'; A.render();
-    check('the coach sees the next practice on Games', /Next practice/.test(A.rendered()) && /Mon 14 Sep · 17:30–18:30/.test(A.rendered()), true);
-    check('and can open it from there', /data-act="pracopen"/.test(A.rendered()), true);
+    A.ui.view = 'calendar'; A.render();
+    // the Games tab this card was on is the Calendar now, where it is the next thing on
+    check('the coach sees the next practice on the Calendar', /Next practice/.test(A.rendered()) && /In 2 days · 5:30pm/.test(A.rendered()), true);
+    check('and can open its plan from there', /data-act="pracfromcal" data-tid="t1" data-id="[^"]+">Open the plan/.test(A.rendered()), true);
 
     const evs = A.state.teams.t1.events;
     as('mum');
     A.state.teams.t1.events = evs;
-    A.ui.view = 'matches'; A.render();
+    A.ui.view = 'calendar'; A.render();
     check('a parent sees the time and place, from the calendar', /Next practice/.test(A.rendered()) && /Lakeside Park/.test(A.rendered()), true);
-    check('but nothing to open', /data-act="pracopen"/.test(A.rendered()), false);
+    check('but nothing to open', /data-act="prac(open|fromcal)"/.test(A.rendered()), false);
     evs[pr.id].called = 'cancelled'; A.render();
     check('one called off is not "next"', /Next practice/.test(A.rendered()), false);
     evs[pr.id].called = null; evs[pr.id].date = '2026-09-01'; A.render();
@@ -744,7 +745,7 @@ function plan(extra = {}, X = A) {
     const fbk = makeFakebase();
     const D = H.loadApp({ firebase: fbk, config: CONFIG, storage: { 'sm.workspace': CODE } });
     await D.flush(); fbk.signIn('mum'); await D.flush(); fbk.deliver(WS, c); await D.flush();
-    D.ui.view = 'matches'; D.render();
+    D.ui.view = 'calendar'; D.render();
     check('the next practice comes from the calendar', /Next practice/.test(D.rendered()) && /Lakeside Park/.test(D.rendered()), true);
     check('with no plan or schedule read at all', fbk.readPaths().some(p => /^training\/[^/]+\/(practices|schedule)/.test(p)), false);
     D.ui.view = 'practice'; D.render();

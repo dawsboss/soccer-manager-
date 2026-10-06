@@ -14,25 +14,25 @@ const { check } = H;
 
 const A = H.loadApp({});
 A.state = {
-  teams: { t7: { id: 't7', name: 'Flight', players: {} } },
+  teams: { t7: { id: 't7', name: 'Flight', players: {} }, t8: { id: 't8', name: 'Storm', players: {} } },
   matches: { g3: { id: 'g3', teamId: 't7' } },
   access: {}
 };
 
 const reset = () => Object.assign(A.ui,
-  { view: 'matches', gameView: 'subs', teamId: null, matchId: null, editFid: null });
+  { view: 'calendar', gameView: 'subs', teamId: null, matchId: null, editFid: null, calSel: null });
 
 const cases = [
-  [{ view: 'matches', teamId: 't7' }, '#/team/t7/games'],
+  [{ view: 'calendar', teamId: 't7', calSel: 'team' }, '#/team/t7/calendar'],
   [{ view: 'roster', teamId: 't7' }, '#/team/t7/squad'],
   [{ view: 'season', teamId: 't7' }, '#/team/t7/season'],
-  [{ view: 'teamset', teamId: 't7' }, '#/team/t7/planning'],
   [{ view: 'game', teamId: 't7', matchId: 'g3', gameView: 'stats' }, '#/team/t7/game/g3/stats'],
   [{ view: 'game', teamId: 't7', matchId: 'g3', gameView: 'live' }, '#/team/t7/game/g3/live'],
   [{ view: 'game', teamId: 't7', matchId: 'g3', gameView: 'subs' }, '#/team/t7/game/g3/subs'],
   [{ view: 'club' }, '#/club'],
   [{ view: 'admin' }, '#/club/settings'],
-  [{ view: 'schedule' }, '#/club/schedule'],
+  // the Calendar with every team on it says so in its address
+  [{ view: 'calendar', calSel: 'club' }, '#/club/calendar'],
   [{ view: 'mine' }, '#/my-players'],
   [{ view: 'setup' }, '#/settings'],
   [{ view: 'sessions' }, '#/training']
@@ -52,6 +52,23 @@ for (const [st, path] of cases) {
   const same = Object.entries(st).every(([k, v]) => A.ui[k] === v);
   check(path.padEnd(26) + ' accepted', accepted, true);
   check(path.padEnd(26) + ' restored exactly', same, true);
+}
+
+console.log('\n--- the screens that moved still answer their old addresses ---');
+{
+  /* Build 102 put the games on the Calendar, the team's set-up on Squad, and
+     Club schedule and My calendar into the one Calendar. Links to the old
+     screens are in texts, calendar files and bookmarks; each lands where what
+     it showed went. */
+  const lands = hash => { reset(); A.ui.view = 'nowhere'; global.location.hash = hash; A.hashToUi(); return [A.ui.view, A.ui.calSel, A.ui.teamId].filter(Boolean).join(' '); };
+  check('#/team/t7/games is the team\'s calendar', lands('#/team/t7/games'), 'calendar team t7');
+  check('#/team/t7/planning is Squad', lands('#/team/t7/planning'), 'roster t7');
+  check('#/club/schedule is All teams', lands('#/club/schedule'), 'calendar club');
+  check('#/my-calendar is My calendar', lands('#/my-calendar'), 'calendar mine');
+  for (const [old, now] of [['matches', 'calendar'], ['teamset', 'roster'], ['schedule', 'calendar'], ['mycal', 'calendar']]) {
+    reset(); A.ui.view = old; A.normView();
+    check(`a screen saved as ${old} opens ${now}`, A.ui.view, now);
+  }
 }
 
 console.log('\n--- a link to something this device does not have is refused ---');

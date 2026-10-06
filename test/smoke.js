@@ -152,7 +152,7 @@ try {
     me=null; state.access={};
     ui.view='club'; render(); console.log('  rendered club home');
     ui.view='sessions'; render(); console.log('  rendered training sessions');
-    ui.view='mycal'; render(); console.log('  rendered my calendar');
+    ui.view='mycal'; render(); console.log('  rendered my calendar (the calendar, with mine ticked)');
     ui.view='sessions'; ui.sess={tab:'avail'}; render(); ui.sess={tab:'list'}; console.log('  rendered bookable times');
     state.access={admins:{own:true},members:{own:{name:'Grant',email:'g@x',at:Date.now()},u9:{name:'New Person',email:'n@x',at:Date.now()}},teams:{},index:{}};
     me={uid:'own',name:'Grant'}; appOwners={};
@@ -161,11 +161,11 @@ try {
     appOwners={own:true}; state.access.index={own:true};
     ui.view='admin'; render(); console.log('  readiness renders when everything passes too');
     ['clash','find','pic'].forEach(k=>{ui.view='planner'; ui.planner={tab:k,find:{ran:true}}; render();}); console.log('  rendered the planner: clashes, find a time, picture day');
-    ui.view='schedule'; ui.sched={}; render(); console.log('  rendered the club schedule');
+    ui.view='schedule'; ui.sched={}; render(); console.log('  rendered the club schedule (the calendar, every team)');
     ['all','pending','coach','tracker','parent'].forEach(f=>{ui.peopleFilter=f; render();});
     console.log('  all five people filters rendered');
     ui.peopleSort='joined'; render(); console.log('  people sorted by join date');
-    ui.view='teamset'; render(); console.log('  rendered team page');
+    ui.view='teamset'; render(); console.log('  rendered the team page (Squad, with its set-up)');
     ui.view='practice'; render(); practiceUi().tab='positions'; render(); practiceUi().tab='drills';
     sheetDrill(window.SOCCER_DRILLS.DRILLS[0].id); sheetRole(window.SOCCER_DRILLS.ROLE_GUIDE[0].id); sheetDrillFilters();
     console.log('  rendered practice: drills, positions, a drill card, a position, the filters');
@@ -176,7 +176,7 @@ try {
     practiceUi().run={pid:'pp1',i:0,left:null,endsAt:null}; render(); practiceUi().run.endsAt=Date.now()-1000; render(); practiceUi().run=null;
     sheetPractice(null); sheetPractice(pp); sheetReview(pp); sheetBlockNote(pp,0);
     ui.view='matches'; render();
-    console.log('  rendered practice plans: the list, a plan, run mode, its sheets, and the next practice on Games');
+    console.log('  rendered practice plans: the list, a plan, run mode, its sheets, and the next practice on the Calendar');
     ui.view='setup'; render();
     ui.view='match'; render();
     ui.view='roster'; render();
@@ -185,9 +185,14 @@ try {
     ui.teamId='t_ok'; ui.view='calendar'; render();
     state.teams.t_ok.events={e1:{id:'e1',kind:'practice',title:'Practice',date:'2026-09-15',start:'18:00',end:'19:30',venue:'Field 3'},
       e2:{id:'e2',kind:'event',title:'Team photo',date:'2026-09-20',called:'cancelled',public:true}};
-    ui.calAll=true; ui.calPast=true; render();
-    ui.calMonth='2026-10'; render(); ui.calMonth=null; ui.calAll=false;
-    ui.calTree=true; for (const v of ['day','week','month','list']) { ui.calView=v; render(); } ui.calView=null; ui.calTree=false;
+    ui.calSel='club'; ui.calPast=true; render();
+    ui.calMini=true; ui.calMonth='2026-10'; render(); ui.calMonth=null; ui.calMini=false; ui.calSel=null;
+    // every view, for every choice of calendars, with the list of calendars open
+    ui.calTree=true;
+    for (const sel of ['team','club','mine']) for (const v of ['schedule','day','week','month','list']) { ui.calSel=sel; ui.calView=v; render(); }
+    ui.calView='week'; ui.calDay='2026-09-14'; render(); ui.calDay=null;
+    ui.calView=null; ui.calTree=false; ui.calSel=null;
+    console.log('  rendered every calendar view, for this team, mine and every team');
     // answers, the sync card with a feed set up, and the sheets that show them
     state.rsvp={t_ok:{e_e1:{p2:{v:'yes',by:'mumU',at:1,note:'late'}}}};
     window.SOCCER_CALENDAR_FEED='https://feed.example'; state.teams.t_ok.calFeed='cFeed1'; render();

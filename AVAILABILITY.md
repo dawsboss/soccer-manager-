@@ -169,9 +169,11 @@ and nothing is left on her screen.
 
 ## A calendar of your own
 
-The team Calendar tab stays: it is what a team's coach plans on and what the
-share link mirrors. Beside it, **My calendar** (Club home, first card; a link
-on each team's Calendar; `#/my-calendar`) is the person's:
+There is one Calendar, the first tab of every team, and **My calendar** is a
+choice at its top (also *Calendar* on Club home for anyone but an admin,
+*My calendar* in the account menu, and `#/my-calendar`). The open team on its
+own is what a team's coach plans on and what the share link mirrors; My
+calendar is the person's:
 
 - every team she coaches or tracks, and every team a child of hers is on,
   with their games, practices and events;
@@ -179,9 +181,10 @@ on each team's Calendar; `#/my-calendar`) is the person's:
 - for a coach, her bookable times.
 
 A chip per child, and one for her coaching, narrows it. It reads from the
-same lists the team calendar does, so there is nothing to keep in step: an
-entry exists once, under its team or in `training/`, and both calendars draw
-it. It stays out of the top-left club switcher: that button is about which
+same lists the team's does, so there is nothing to keep in step: an entry
+exists once, under its team or in `training/`, and whichever is ticked draws
+it. It is offered only when it holds more than the open team: a parent with
+one child on one team has one calendar and nothing to choose. It stays out of the top-left club switcher: that button is about which
 club you're in, and a calendar is about you within it.
 
 ## My calendar is yours, not a club's
@@ -195,9 +198,15 @@ default private, and they can make it public if they want.*
 Followed up again the same day: *a phone should be a part of as many clubs as
 it wants.*
 
-So My calendar moves out of the club. The top row says **You › My
-calendar**, not the club, it opens from the account button as well as the
-club page, and it carries every club the account is in.
+So My calendar moves out of the club: it opens from the account button as
+well as the club page, and it carries every club the account is in.
+
+Followed up 2026-10-06: *having a team calendar, club calendar and my
+calendar is too much.* So there is one Calendar, the first tab of every team,
+and My calendar is a choice at its top beside the open team and All teams.
+What it holds is unchanged; its top row is now the team's (Club › Team), as
+the Calendar is a team's tab whatever is ticked on it, the way a calendar app
+is the same app whichever calendars it shows.
 
 **A phone is in every club its account is in.** The one on screen is synced
 in full, exactly as before (its outbox, its lookup tables, everything). Every
