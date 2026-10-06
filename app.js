@@ -2,7 +2,7 @@
    Static app. Data lives in localStorage, and mirrors to Firebase Realtime
    Database when a config + workspace code are present. */
 
-const BUILD = '98';
+const BUILD = '99';
 const BUILT = '2026-10-05';
 /* The version of database.rules.json this app was written against. The rules
    carry the same number in rulesVersion's .write, which accepts that number
@@ -183,7 +183,16 @@ function delDeep(obj, path) {
 }
 
 /* ---------------- storage ---------------- */
-const wsCode = () => (localStorage.getItem(LS_WS) || '').trim();
+/* The club this page holds, read once. Every switch writes the next club's
+   code and reloads, but a reload is not instant: the old page keeps running,
+   and redrawing, until the new one arrives. Read live, the code named the new
+   club while memory still held the old one, so the old club's copy, what club
+   activity had seen of it and the rest were all filed under the new club, which
+   then opened holding the old club's teams, or told its admin every one of
+   them had been deleted. Storage says which club to open next; this says which
+   one is open. */
+let wsHeld = null;
+const wsCode = () => (wsHeld !== null ? wsHeld : (wsHeld = (localStorage.getItem(LS_WS) || '').trim()));
 
 /* Who was signed in here last time. Firebase Auth restores a session from its
    own storage, but only once its module has loaded from the CDN — which does
@@ -219,7 +228,9 @@ function cachedMe() {
    needs the keys it changes: a second Realtime Database in the same project is
    a databaseURL and nothing else, and a whole separate project is a full config
    object. Switching reloads, so nothing has to unpick a live connection. */
-const envName = () => (localStorage.getItem(LS_ENV) || '').trim();
+// held for the page's life, like wsCode(): switching database reloads too
+let envHeld = null;
+const envName = () => (envHeld !== null ? envHeld : (envHeld = (localStorage.getItem(LS_ENV) || '').trim()));
 const envList = () => window.SOCCER_FIREBASE_ENVS || {};
 function fbConfig() {
   const base = window.SOCCER_FIREBASE_CONFIG || {};
@@ -461,7 +472,7 @@ async function initAuth() {
 
 async function initSync() {
   const cfg = fbConfig();
-  const code = localStorage.getItem(LS_WS);
+  const code = wsCode();
   if (!cfg || !cfg.apiKey || !cfg.databaseURL) { setSync('off', 'this device'); return; }
   try {
     const app = await getApp();
@@ -13645,7 +13656,7 @@ function sheetPersonCal(u) {
 }
 
 function viewSetup() {
-  const code = localStorage.getItem(LS_WS) || '';
+  const code = wsCode();
   const cfgOk = !!fbConfig().apiKey;
   const r = myRole();
   return `<div class="stack">
