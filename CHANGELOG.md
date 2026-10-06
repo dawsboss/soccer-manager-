@@ -32,6 +32,13 @@ gate.
   read from the words, so every venue typed before this keeps working.
 - **A new session offers the field's pitches** as chips once a field is
   picked, which fill in *Which part*.
+- **The bulk import takes them.** In JSON, a field's `pitches` is a count or
+  a list of the pitches, each with its name, surface, lights, address and
+  description. In a spreadsheet, a `Pitch name` column (or a sheet headed
+  `Field, Pitch`) makes a row describe that pitch, and a field's rows become
+  one field. A pitch is matched by name, changed only by what the file says,
+  never removed, so running a file twice writes nothing; the fields template
+  shows a complex with two pitches.
 - **The same pitch twice at once is a clash**, on the session and on the
   field's two weeks, even when the field has pitches to spare. Two pitches
   with one name are refused on save, because the check could not tell them

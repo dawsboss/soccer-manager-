@@ -3642,6 +3642,27 @@ function importDrills(data, out) {
     out.trainWrites.push(['drill', d]); out.counts.newDrills++;
   });
 }
+/* One pitch of a field, as a file gives it: only what the file says, so a
+   second file naming the pitch with nothing but its surface changes only that. */
+function importPitch(p, label, out) {
+  if (typeof p === 'string') p = { name: p };
+  if (!p || typeof p !== 'object') { out.errors.push(`${label}: expected a pitch like {"name": "Field 2", "surface": "Turf"}.`); return null; }
+  const name = String(firstOf(p, 'name', 'pitch') ?? '').trim().slice(0, 60);
+  if (!name) { out.errors.push(`${label}: a pitch needs a name.`); return null; }
+  const pt = { name };
+  const sf = firstOf(p, 'surface');
+  if (sf !== undefined) {
+    const v = SURFACES.find(x => x.toLowerCase() === String(sf).trim().toLowerCase());
+    if (v) pt.surface = v; else out.warnings.push(`${label} (${name}): "${sf}" is not grass, turf or indoor, so its surface was left out.`);
+  }
+  const li = firstOf(p, 'lights');
+  if (li !== undefined) pt.lights = importBool(li, false);
+  const ad = firstOf(p, 'address');
+  if (ad !== undefined) pt.address = String(ad).trim().slice(0, 160);
+  const nt = firstOf(p, 'notes', 'note', 'description');
+  if (nt !== undefined) pt.notes = String(nt).trim().slice(0, 500);
+  return pt;
+}
 function importTraining(data, out, byName, acc0) {
   const put = (p, v) => out.writes.push([p, v]);
   const sput = (p, v) => out.sessWrites.push([p, v]);
@@ -3660,7 +3681,18 @@ function importTraining(data, out, byName, acc0) {
     const fields = {};
     const addr = firstOf(x, 'address');
     if (addr !== undefined) fields.address = String(addr).trim().slice(0, 160);
-    const pc = firstOf(x, 'pitches');
+    /* "pitches" is how many, or a list of the pitches themselves, each
+       described: matched by name, updated by what the file says, only added. */
+    let pc = firstOf(x, 'pitches');
+    const ptIn = Array.isArray(pc) ? pc : firstOf(x, 'parts') !== undefined ? firstOf(x, 'parts') : undefined;
+    if (Array.isArray(pc)) pc = undefined;
+    const pts = [];
+    if (ptIn !== undefined && !Array.isArray(ptIn)) out.errors.push(`${label}: "parts" should be a list of pitches.`);
+    else (ptIn || []).forEach((p, j) => {
+      const pt = importPitch(p, `${label}, pitch ${j + 1}`, out); if (!pt) return;
+      if (pts.some(q => normPlace(q.name) === normPlace(pt.name))) { out.warnings.push(`${label}: the pitch ${pt.name} appears twice, so it was imported once.`); return; }
+      pts.push(pt);
+    });
     if (pc !== undefined) {
       const n = Number(pc);
       if (Number.isInteger(n) && n >= 1 && n <= 20) fields.pitches = n;
@@ -3682,6 +3714,9 @@ function importTraining(data, out, byName, acc0) {
     if (had) {
       const f = had.f;
       let changed = false;
+      // a count the file gives is never fewer than the pitches there will be, or a second run would undo the first
+      const total = new Set([...pitchesOf(f), ...pts].map(q => normPlace(q.name))).size;
+      if (fields.pitches !== undefined) fields.pitches = Math.min(20, Math.max(fields.pitches, total));
       for (const [fk, v] of Object.entries(fields)) if (JSON.stringify(f[fk]) !== JSON.stringify(v)) { f[fk] = v; put(`access/org/venues/${f.id}/${fk}`, v); changed = true; }
       const have = new Set(permitsOf(f).map(permitKey));
       for (const pm of permits) {
@@ -3691,13 +3726,31 @@ function importTraining(data, out, byName, acc0) {
         put(`access/org/venues/${f.id}/permits/${pid}`, { id: pid, ...pm });
         changed = true;
       }
+      const cur = pitchesOf(f);
+      let o = cur.reduce((m, q) => Math.max(m, q.o + 1), 0);
+      for (const pt of pts) {
+        const q = cur.find(c => normPlace(c.name) === normPlace(pt.name));
+        if (q) {
+          for (const [pk, v] of Object.entries(pt)) if (pk !== 'name' && q[pk] !== v) { f.parts[q.id][pk] = v; put(`access/org/venues/${f.id}/parts/${q.id}/${pk}`, v); changed = true; }
+          continue;
+        }
+        const ptid = uid(), rec = { id: ptid, surface: '', lights: false, address: '', notes: '', ...pt, o: o++ };
+        (f.parts = f.parts || {})[ptid] = rec; cur.push(rec);
+        put(`access/org/venues/${f.id}/parts/${ptid}`, rec);
+        changed = true;
+      }
+      // never fewer pitches counted than described, so an older phone counts it right too
+      if (cur.length > (Number(f.pitches) || 1)) { f.pitches = Math.min(20, cur.length); put(`access/org/venues/${f.id}/pitches`, f.pitches); }
       if (changed) out.counts.fields++;
       return;
     }
     const id = uid(), pms = {};
     const seen = new Set();
     for (const pm of permits) { if (seen.has(permitKey(pm))) continue; seen.add(permitKey(pm)); const pid = uid(); pms[pid] = { id: pid, ...pm }; }
-    const f = { id, name, address: '', pitches: 1, surface: '', lights: false, notes: '', ...fields, permits: pms };
+    const parts = {};
+    pts.forEach((pt, o) => { const ptid = uid(); parts[ptid] = { id: ptid, surface: '', lights: false, address: '', notes: '', ...pt, o }; });
+    const f = { id, name, address: '', pitches: 1, surface: '', lights: false, notes: '', ...fields, permits: pms, parts };
+    f.pitches = Math.min(20, Math.max(Number(f.pitches) || 1, pts.length));
     put(`access/org/venues/${id}`, f);
     fieldByName[k] = { f, isNew: true };
     out.counts.newFields++;
@@ -3929,7 +3982,7 @@ const CSV_COLS = {
   hometeam: ['hometeam', 'home'], awayteam: ['awayteam', 'away', 'visitor', 'visitingteam'],
   homeaway: ['homeaway', 'ha', 'homeoraway', 'ground'],
   venue: ['venue', 'location', 'where', 'place', 'field', 'pitch', 'locationname'],
-  spot: ['fieldidentifier', 'fieldnumber', 'fieldno', 'pitchnumber', 'subfield'],
+  spot: ['fieldidentifier', 'fieldnumber', 'fieldno', 'pitchnumber', 'subfield', 'pitchname', 'pitchdescription'],
   arrive: ['arrive', 'arrival', 'arrivaltime', 'arriveby', 'meettime'],
   kit: ['kit', 'uniform', 'colours', 'colors', 'jerseycolor'],
   score: ['score', 'result', 'finalscore'],
@@ -4050,12 +4103,33 @@ function csvImport(text, opts = {}) {
       return d;
     });
   } else if (kind === 'fields') {
-    data.fields = recs.map(o => {
-      const f = { row: o.row, name: o.name || o.venue || '' };
-      for (const k of ['address', 'pitches', 'surface', 'lights']) if (o[k] !== undefined) f[k] = o[k];
-      if (o.note !== undefined) f.notes = o.note;
-      return f;
-    });
+    /* A row with a pitch on it describes that pitch (its surface, lights,
+       address and notes); a row without one describes the field. The pitch is
+       a "Pitch name" or "Field number" column, or, in a sheet headed "Field,
+       Pitch", the second of the two place columns. Rows of one field become
+       one field, so a complex is as many rows as it has pitches. */
+    const placeCols = head.map((k, i) => k === 'venue' ? i : -1).filter(i => i >= 0);
+    const nameCol = head.indexOf('name') >= 0 ? head.indexOf('name') : placeCols[0];
+    const spotCol = head.indexOf('spot') >= 0 ? head.indexOf('spot') : placeCols.find(i => i !== nameCol);
+    const cell = (o, i) => (i === undefined || i < 0 ? '' : String(rows[o.row - 1][i] ?? '').trim());
+    const byField = new Map();
+    for (const o of recs) {
+      const name = cell(o, nameCol), pitch = cell(o, spotCol);
+      const key = importKey(name) || 'row' + o.row;
+      if (!byField.has(key)) byField.set(key, { row: o.row, name });
+      const f = byField.get(key);
+      if (pitch) {
+        const pt = { name: pitch };
+        for (const k of ['address', 'surface', 'lights']) if (o[k] !== undefined) pt[k] = o[k];
+        if (o.note !== undefined) pt.notes = o.note;
+        (f.pitches_ = f.pitches_ || []).push(pt);
+        if (o.pitches !== undefined && f.pitches === undefined) f.pitches = o.pitches;
+        continue;
+      }
+      for (const k of ['address', 'pitches', 'surface', 'lights']) if (o[k] !== undefined && f[k] === undefined) f[k] = o[k];
+      if (o.note !== undefined && f.notes === undefined) f.notes = o.note;
+    }
+    data.fields = [...byField.values()].map(({ pitches_, ...f }) => pitches_ ? { ...f, parts: pitches_ } : f);
   } else {
     const slashed = recs.map(o => String(o.date || '').trim().match(/^(\d{1,2})[-/.](\d{1,2})[-/.]\d{2,4}/)).filter(Boolean);
     const dayFirst = slashed.some(x => Number(x[1]) > 12);
@@ -4110,7 +4184,7 @@ const CSV_KIND = { players: 'a roster', schedule: 'a schedule', fields: 'a list 
 const CSV_TEMPLATES = {
   roster: 'Team,First name,Last name,Number,Position,Foot,Goalkeeper,Notes\nLakeside Thunder G12,Ada,Lovelace,1,GK,Right,yes,\nLakeside Thunder G12,Bea,Smith,7,Forward,Left,,Fades after 25 minutes\n',
   schedule: 'Team,Type,Date,Start,End,Opponent,Home/Away,Location,Arrive,Uniform,Notes\nLakeside Thunder G12,Game,2026-10-04,09:30,,Northgate,Away,Northgate Rec field 2,09:00,Blue shirts,\nLakeside Thunder G12,Practice,2026-10-06,17:30,19:00,,,Lakeside Park,,,Bring water\n',
-  fields: 'Name,Address,Pitches,Surface,Lights,Notes\nLakeside Park,1 Lake Rd,2,Grass,yes,Gate code 4471\n',
+  fields: 'Name,Pitch name,Address,Pitches,Surface,Lights,Notes\nLakeside Park,,1 Lake Rd,3,Grass,yes,Gate code 4471\nLakeside Park,Field 1,,,Grass,,Full size 11v11\nLakeside Park,The turf,40 Back Lane,,Turf,yes,No metal studs\n',
   drills: 'Name,Summary,Setup,How it runs,Coaching points,Type,Ages,Minutes,Players,Skills,Helps with,Link\nGates dribble,Dribble through as many cone gates as you can in a minute,"20 x 20 yd area, eight pairs of cones as gates, a ball each","Dribble through a gate, then find another; Count gates in 60 seconds; Beat your score",Eyes up between gates; Small touches near a gate,Technical,U7-U10,10-15,6-16,Dribbling; Ball mastery,,https://example.org/gates\n'
 };
 const isJsonText = txt => /^\s*[{[]/.test(String(txt || ''));
