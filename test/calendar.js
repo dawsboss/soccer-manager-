@@ -15,6 +15,9 @@
    - "Next" is the thing a parent has to get her daughter to: never something
      called off, never something already over, and a game being played beats
      everything.
+   - A club's whole season is a thousand entries, so nothing draws it whole:
+     a day, a week or a month at a time, the list paged, and teams and kinds
+     ticked off in a tree, as a calendar app does.
    - The calendar file is one a phone will actually open: CRLF, folded lines,
      floating times, cancelled entries marked as cancelled. */
 
@@ -67,6 +70,7 @@ function setup() {
   A.me = null;
   A.ui.teamId = 't1'; A.ui.matchId = null; A.ui.view = 'calendar';
   A.ui.calAll = false; A.ui.calPast = false; A.ui.calMonth = null;
+  A.ui.calView = null; A.ui.calDay = null; A.ui.calOff = {}; A.ui.calKOff = {}; A.ui.calN = {}; A.ui.calTree = false;
   sets = []; removes = [];
   A.fb = {
     db: {}, base: 'workspaces/CLUB', ref: (db, path) => path,
@@ -428,6 +432,100 @@ console.log('--- a game link reaches that game and nothing else ---');
   removes = [];
   A.click({ act: 'delmatch', id: 'g3' });
   check('deleting a game takes its page down with it', removes.includes('public/' + gone) && removes.includes('shareOwners/' + gone), true);
+}
+
+
+console.log('--- a club\'s whole season: views, the tree of calendars, and paging ---');
+{
+  setup();
+  A.me = { uid: 'mumU', name: 'Mum' };
+  const rows = h => (h.match(/class="prow calrow/g) || []).length;
+  // a season's worth behind her (and this morning's game, which is over too): sixty practices already over
+  for (let i = 1; i <= 60; i++) A.state.teams.t1.events['old' + i] = { id: 'old' + i, kind: 'practice', title: 'Practice', date: A.addDays('2026-09-11', -i), start: '18:00', end: '19:00' };
+  A.ui.calPast = true;
+  let h = html();
+  check('the list is the view nobody has chosen one', /Coming up/.test(h), true);
+  check('what has happened says how much there is', /already happened \(61\)/.test(h), true);
+  check('but draws one page of it, not all of it', /data-id="old24"/.test(h) && !/data-id="old25"/.test(h), true);
+  check('with a button for the rest', /data-act="calmore" data-k="past"/.test(h), true);
+  A.click({ act: 'calmore', k: 'past' });
+  h = html();
+  check('which draws the next page', /data-id="old49"/.test(h) && !/data-id="old50"/.test(h), true);
+  A.click({ act: 'calmore', k: 'past' });
+  check('until there is no more', /data-k="past"/.test(html()), false);
+
+  A.click({ act: 'calview', v: 'day' });
+  h = html();
+  check('the day view is today', /data-id="e3"/.test(h) && !/data-id="e1"/.test(h), true);
+  A.click({ act: 'calstep', v: 1 });
+  check('forward a day is Sunday, with nothing on', /Nothing on/.test(html()), true);
+  A.click({ act: 'calpick', v: '2026-09-15' });
+  check('the week strip picks a day', /data-id="e1"/.test(html()), true);
+  A.click({ act: 'calpick', v: 'not a day' });
+  check('— and nothing else', A.ui.calDay, '2026-09-15');
+  A.click({ act: 'calstep', v: 0 });
+  check('back to today', A.ui.calDay, null);
+
+  A.click({ act: 'calview', v: 'week' });
+  h = html();
+  check('the week is seven days, Monday first', (h.match(/class="calhead/g) || []).length === 7 && /Mon 7 Sep/.test(h), true);
+  check('with this week\'s entries and not next week\'s', /data-id="e3"/.test(h) && /data-id="old1"/.test(h) && !/data-id="e1"/.test(h), true);
+  A.click({ act: 'calstep', v: 1 });
+  check('next week has Tuesday\'s practice', /data-id="e1"/.test(html()), true);
+
+  A.click({ act: 'calview', v: 'month' });
+  h = html();
+  check('the month is the grid', /class="calgrid"/.test(h) && /data-act="calpick"/.test(h), true);
+  check('under it, the day being looked at', /data-sel="1"/.test(h) && /data-id="g2"/.test(h) && !/data-id="e1"/.test(h), true);
+  A.click({ act: 'calview', v: 'nonsense' });
+  check('an unknown view is refused', A.ui.calView, 'month');
+  A.click({ act: 'calview', v: 'list' });
+
+  console.log('  (the tree)');
+  setup();
+  A.me = { uid: 'mumU', name: 'Mum' };
+  A.click({ act: 'caltree' });
+  h = html();
+  check('the tree lists both her teams', /data-act="caltog" data-tid="t1"/.test(h) && /data-act="caltog" data-tid="t2"/.test(h), true);
+  check('one team ticked: only the open one', A.calTeams().join(), 't1');
+  A.click({ act: 'caltog', tid: 't2' });
+  check('ticking another shows both', A.calTeams().sort().join(), 't1,t2');
+  h = html();
+  check('each row carries its team\'s colour', /class="prow calrow tc"[^>]*style="--tc:#/.test(h), true);
+  check('two teams, two colours', A.teamHue('t1') !== A.teamHue('t2'), true);
+  A.click({ act: 'caltog', tid: 't1' });
+  check('the open team can be unticked', A.calTeams().join(), 't2');
+  check('— and the calendar shows only the other', /data-id="s1"/.test(html()) && !/data-id="e3"/.test(html()), true);
+  A.click({ act: 'caltog', tid: 't2' });
+  check('nothing ticked is an empty calendar, said', /No calendars ticked/.test(html()), true);
+  A.click({ act: 'caltog', g: 'all' });
+  check('the club ticks every team', A.calTeams().sort().join(), 't1,t2');
+  A.click({ act: 'caltog', g: 'all' });
+  check('and again unticks them', A.calTeams().length, 0);
+  A.click({ act: 'calscope', v: 'team' });
+  check('"Only" this team is the old view', A.calTeams().join() + ' ' + A.ui.calAll, 't1 false');
+  A.click({ act: 'caltog', tid: 'nobodys' });
+  check('a team she cannot see is never ticked', A.calTeams().join(), 't1');
+
+  A.state.teams.t1.birthYear = 2013; A.state.teams.t2.birthYear = 2015;
+  h = html();
+  check('teams with an age sit under it', /U14/.test(h) && /U12/.test(h), true);
+  const u12 = A.calGroups(A.myTeams()).find(g => g.label === 'U12').k;
+  A.click({ act: 'caltog', g: u12 });
+  check('ticking an age group ticks its teams', A.calTeams().sort().join(), 't1,t2');
+
+  A.click({ act: 'calkind', v: 'practice' });
+  h = html();
+  check('practices can be hidden', /data-id="e3"/.test(h) || /data-id="e1"/.test(h), false);
+  check('— games stay', /data-id="g2"/.test(h), true);
+  A.click({ act: 'calkind', v: 'practice' });
+  check('and brought back', /data-id="e1"/.test(html()), true);
+  A.click({ act: 'calkind', v: 'cake' });
+  check('a kind that isn\'t one is refused', Object.keys(A.ui.calKOff).length, 0);
+
+  A.me = { uid: 'coachU', name: 'Jaz' }; lockDown();
+  A.ui.calView = 'week'; A.ui.calDay = '2026-09-14';
+  check('Add, in a week, starts on the day being looked at', /data-act="calnew" data-tid="t1" data-v="2026-09-14"/.test(html()), true);
 }
 
 console.log('--- calendar sync ---');
