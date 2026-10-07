@@ -195,9 +195,11 @@ does the bookkeeping, not that the phone works offline first.
 - **With a server:** it sees the change once, works out who it concerns, and
   pushes to their phones whether the app is open or not. The phone keeps the
   bar and the Open button, and stops listening to every club for news.
-  Messages are pushed already (build 104, *Notifications* above), from every
-  club she is in, since a token is per account, not per club; the calendar
-  changes are next.
+  Messages are pushed (build 104, *Notifications* above), and so is a game
+  or practice of hers called off, back on, moved or new in the next two
+  weeks (build 105, `functions/push.js`), from every club she is in, since a
+  token is per account, not per club. The bar here still comes from the
+  phone, for a phone without notifications turned on.
 
 ### Email
 - **Now:** *Email or share* opens the person's own mail app with everybody in

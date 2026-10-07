@@ -8,6 +8,56 @@ before this point lives only in the git log.
 
 ---
 
+## A practice called off reaches a closed phone — 2026-10-07 (build 105)
+
+The urgent half of the calendar. A subscribed calendar cannot be told there
+is something new (Google may take hours), and the app's own alerts needed it
+open, so a practice called off at five o'clock reached families when they
+next looked. Now a game or practice in the next two weeks that is **called
+off, back on, moved or new** is pushed to everyone on that team: its
+families, its players who sign in, its coaches and trackers. Not the admins,
+whom club activity tells, unless they are on the team.
+
+- **The same news as the app's alerts** (`calAlerts()`), in the same words
+  (*Cancelled: U11 Storm: Practice*, *Moved: U11 Storm v Northgate*, *Now
+  Sun 12 Oct 10am*), and the same silences: a new place or title, a
+  deletion, anything past or further off than two weeks. A weekly practice
+  added is one push. Cancelled and a new day are urgent; fifteen minutes
+  later is not.
+- **Five more triggers on the one sender**, not a second job: `pushEntry` on
+  a practice or event, and one each on a game's `date`, `kickoff` and
+  `called`. Never a whole game: a game being played is written every few
+  seconds, and none of that wakes the server. `test/push.js` saves goals,
+  subs, the clock, the register and a whole game with only its game changed,
+  and requires that nothing runs.
+- **Told once.** A game moved to another day and time is two triggers for
+  one change, and Cloud Functions may hand over an event twice, so the
+  server keeps the last thing it told per entry at `serverState/calSent`, a
+  node no rule grants any phone (`test/rules.js` checks), and only the
+  first to claim it speaks.
+- **Who did it is on the record** (the owner: *practice, games and team
+  things should be coaches only, so knowing who did it is important*). Every
+  calendar write now carries `edit: { by, at }`: stamped in `remoteSet()`,
+  where every calendar write passes, so no screen can forget it, and only for
+  the team's coaches and admins (a tracker saving the game she is tracking
+  has changed nothing in it). A whole entry or game carries it inside; a
+  field written alone (calling one off is just `called`) sends it beside,
+  first. The server leaves her out, on every phone of hers, and names her to
+  the rest: *Thu 8 Oct 6pm · Jaz*. A stamp more than five minutes old is
+  from an earlier change and says nothing about this one.
+- **Rules version 8, and the calendar is the coaches'.** A stamp is refused
+  in anyone's name but the writer's (sent back unchanged inside a bigger
+  write it passes, or saving a team would be refused for every entry another
+  coach last touched). A game's date, kick-off, called-off, place and
+  opponent are now the team's coaches' and the admins' at the database too:
+  a tracker could reschedule a game before, though the app never offered it.
+  Practices and events already were. The usual bridge: a club with no team
+  index yet is as before. `test/rules.js`'s evaluator now gives `.validate`
+  the writer's auth, as the database does; no rule had leaned on it before.
+
+The rig in `test/fakebase.js` now models a write of any depth waking only the
+triggers whose own path it changed, as the database does.
+
 ## The server deploys itself — 2026-10-07 (build 104)
 
 The owner asked for a way to ship server changes without anybody running

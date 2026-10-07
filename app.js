@@ -2,7 +2,7 @@
    Static app. Data lives in localStorage, and mirrors to Firebase Realtime
    Database when a config + workspace code are present. */
 
-const BUILD = '104';
+const BUILD = '105';
 const BUILT = '2026-10-07';
 /* The version of database.rules.json this app was written against. The rules
    carry the same number in rulesVersion's .write, which accepts that number
@@ -11,7 +11,7 @@ const BUILT = '2026-10-07';
    never pasted look exactly like a coach with no signal: "saved on this phone
    only", one feature at a time. test/rules.js holds the two numbers together
    and fails when the rules change without this going up. */
-const RULES_VERSION = 7;
+const RULES_VERSION = 8;
 /* index.html carries the build it was published with. If this file is newer, the
    browser handed us a cached page — the exact failure that has eaten hours. */
 const pageBuild = () => {
@@ -881,10 +881,33 @@ function pushAll() {
    (syncIndex() and the rest), so they never need the outbox; queuing them
    would only mean a refused copy of something derived nagging forever. */
 const DERIVED = /^access\/(index|teamIndex|coachIndex|teamParents)(\/|$)/;
+/* Who changed the calendar, and when. A game or a calendar entry is the
+   coaches' (the rules say so), and the club should be able to say which of
+   them called a practice off: the server leaves her out of the notification
+   it sends the team and names her in it. Stamped here, where every calendar
+   write passes, so no screen can forget: a whole entry or game carries
+   `edit: { by, at }`, and a single field written on its own (calling one off
+   is just `called`) sends the stamp beside it. The rules refuse a stamp in
+   anyone's name but the writer's. A delete carries none: there is nothing
+   left to stamp. */
+const CAL_PATH = /^(teams\/[^/]+\/events\/[^/]+|matches\/[^/]+)(\/(date|start|end|kickoff|called|venue|title|opponent|kind|series))?$/;
+function calStamp(path, v) {
+  const m = me && CAL_PATH.exec(path);
+  if (!m || v === null) return v;
+  // only who may change the calendar stamps it: a tracker saving the game she is tracking has changed nothing in it
+  const p = m[1].split('/');
+  const tid = p[0] === 'teams' ? p[1] : ((v && typeof v === 'object' && !m[2] && v.teamId) || ((state.matches || {})[p[1]] || {}).teamId);
+  if (!tid || !isCoach(tid, me.uid)) return v;
+  const stamp = { by: me.uid, at: nowMs() };
+  if (!m[2]) return v && typeof v === 'object' ? { ...v, edit: stamp } : v;
+  setDeep(state, m[1] + '/edit', stamp);
+  remoteSet(m[1] + '/edit', stamp);
+  return v;
+}
 function remoteSet(path, value) {
   noteMine(path);
   if (!fb) return;
-  const v = value === undefined ? null : value;
+  const v = calStamp(path, value === undefined ? null : value);
   if (DERIVED.test(path)) { const w = Promise.resolve(fb.set(fb.ref(fb.db, fb.base + '/' + path), v)); w.catch(() => { }); return w; }
   return sendPending(path, notePending(path, v), v);
 }
