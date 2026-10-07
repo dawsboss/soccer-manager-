@@ -189,12 +189,13 @@ function makeServer(seed = {}) {
   };
   const clone = v => (v === undefined ? null : JSON.parse(JSON.stringify(v)));
   const reads = [], removes = [], sends = [];
+  let down = false;
   let answer = () => ({ success: true });
   const ref = p => ({
     path: segs(p).join('/'),
     get root() { return ref(''); },
     child: c => ref(segs(p).concat(segs(c)).join('/')),
-    get: () => { reads.push(segs(p).join('/')); return Promise.resolve({ val: () => clone(at(p)), exists: () => at(p) != null }); },
+    get: () => { reads.push(segs(p).join('/')); if (down) return Promise.reject(new Error('unavailable')); return Promise.resolve({ val: () => clone(at(p)), exists: () => at(p) != null }); },
     remove: () => { removes.push(segs(p).join('/')); put(p, null); return Promise.resolve(); },
     set: v => { put(p, v); return Promise.resolve(); }
   });
@@ -213,6 +214,12 @@ function makeServer(seed = {}) {
       onValueCreated(path, handler) {
         const t = { kind: 'created', path: String(path).replace(/^\//, ''), handler };
         return t;
+      }
+    },
+    'firebase-functions/v2/https': {
+      onRequest(opts, handler) {
+        if (typeof opts === 'function') { handler = opts; opts = {}; }
+        return { kind: 'https', opts, handler };
       }
     },
     'firebase-admin/app': { initializeApp: () => ({ name: '[DEFAULT]' }) },
@@ -252,6 +259,8 @@ function makeServer(seed = {}) {
     tree, reads, removes, sends, triggers, loadFunctions, ref, at: p => clone(at(p)), put,
     /* every message handed to Cloud Messaging, flattened */
     sent: () => sends.flat(),
+    /* the database refusing every read, the way an outage looks from here */
+    down(v = true) { down = v; return this; },
     /* how Cloud Messaging answers each token: return { success } or { success: false, error: { code } } */
     answer(fn) { answer = fn; return this; },
     /* A create at `p`: written to the tree, then every trigger whose pattern
@@ -266,8 +275,22 @@ function makeServer(seed = {}) {
       }
       return out;
     },
+    /* An HTTPS function asked for `path` (what Express calls req.path), the
+       way a calendar app would ask. Resolves to { status, headers, body }. */
+    async request(name, path, method = 'GET') {
+      const t = triggers[name];
+      if (!t || t.kind !== 'https') throw new Error(name + ' is not an HTTPS function');
+      const res = { status: 0, headers: {}, body: undefined };
+      const r = {
+        status(n) { res.status = n; return r; },
+        set(h) { Object.assign(res.headers, h); return r; },
+        send(b) { res.body = b; return r; }
+      };
+      await t.handler({ method, path }, r);
+      return res;
+    },
     /* which triggers would wake for a write at `p` */
-    woken: p => Object.entries(triggers).filter(([, t]) => params(t.path, p)).map(([n]) => n)
+    woken: p => Object.entries(triggers).filter(([, t]) => t.kind === 'created' && params(t.path, p)).map(([n]) => n)
   };
 }
 

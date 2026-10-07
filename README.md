@@ -423,26 +423,22 @@ Practices default to the team only on purpose. A share link gets forwarded, and 
 
 ## Calendar sync
 
-A calendar app subscribes to a web address and goes back to it on its own schedule, from its own servers, without running any of this app's JavaScript. A static site cannot answer that, so sync is one small extra piece: `worker/calendar.mjs`, a Cloudflare Worker. It reads one node of `public/` (the same node a share page reads) and returns it as a calendar. It holds no credentials and cannot write anything. It asks the database exactly what anyone on the internet could ask (`public/{id}.json`), so it cannot see more than the share pages can. It is the one part of this project that is not a static file, and it is optional: without it, everything else works and the calendar offers a copy instead.
+A calendar app subscribes to a web address and goes back to it on its own schedule, from its own servers, without running any of this app's JavaScript. A static site cannot answer that, so the club's server does: the `calendar` function in `functions/` (`functions/calendar.js`), deployed with the notifications (**Notifications to a closed phone**, steps 1 and 2). It reads one node of `public/` (the same node a share page reads) and returns it as a calendar, and writes nothing. It runs on the server, but what it may read is exactly what the share pages can: an address is a plain id or it is refused before anything is read.
 
-Set it up once for the club:
+`firebase-config.js` names it as `window.SOCCER_CALENDAR_FEED` (`https://us-central1-<project>.cloudfunctions.net/calendar`). Until the functions are deployed that address answers nothing, so deploy before families subscribe; with it blank, the calendar offers a one-off copy instead. In the app, anyone signed in opens **My calendar → Turn on calendar sync** for their own, and a coach can turn on a team's from its Season.
 
-1. A free Cloudflare account → **Workers & Pages** → **Create** → **Create Worker**. Name it something like `minutes-calendar` and deploy the hello-world it starts with.
-2. **Edit code**, delete what is there, paste the whole of `worker/calendar.mjs`, and **Deploy**.
-3. The Worker's **Settings → Variables and Secrets** → add `DATABASE_URL` with your database address (`databaseURL` in `firebase-config.js`, e.g. `https://your-project-default-rtdb.firebaseio.com`). Or put it in the `DATABASE_URL` line at the top of the file before pasting.
-4. Copy the Worker's address (`https://minutes-calendar.<you>.workers.dev`) into `firebase-config.js` as `window.SOCCER_CALENDAR_FEED`, commit, and let the site deploy.
-5. In the app, anyone signed in opens **My calendar → Turn on calendar sync** for their own, and a coach can turn on a team's from its Season.
+(Until build 104 this was a Cloudflare Worker, pasted in by hand. It is retired: one server, deployed one way.)
 
 Four addresses come out of it, all `https://<worker>/{id}.ics`:
 
 - **My calendar's feed** (on My calendar, one per person, off until she turns it on): every game, practice, event, training session and bookable time on her My calendar, from every club her account is in. It is built on her phone with **no child's name in it** (a booked session reads *Training: Finishing*, never whose; anything typed in the open club goes through the names of every player the phone knows, and another club's entries carry the team, the kind, the time and the place, not what was typed), and no club's code (entries are keyed by a one-way hash). The id is kept at `people/{uid}/set/feed`, so her other phones publish to the same address; *Replace this address* and *Turn it off* take the old one down. Because her phone writes it, a club's change reaches her calendar once one of her phones has been open since (`SERVER.md`).
 - **The team's feed** (from the team's Season, for the team's signed-in members): every game and every entry, **team-only practices included**, because a subscribed calendar without practices is not the calendar. That means a team-only practice is published under this feed's id, world-readable by anyone who has the address, the same way the share link works. So the address is shown only inside the app, to the team's members. It holds no names, no players, no minutes and no answers. A coach can **Replace this address** at any time, which stops the old one and means everyone subscribes again.
 - **The season link's feed** (on the share page, for grandparents and friends): the games, and only the entries marked for the share link.
-- **A game's own** feed (that one game). Nothing offers it, but the same Worker answers it.
+- **A game's own** feed (that one game). Nothing offers it, but the same function answers it.
 
-How quickly a change arrives is up to the calendar app, not us. Apple and Outlook come back roughly hourly (the feed asks for that). Google refreshes subscribed calendars on its own schedule, often every several hours, and nothing a feed says changes that.
+How quickly a change arrives is up to the calendar app, not us. Apple and Outlook come back roughly hourly (the feed asks for that). Google refreshes subscribed calendars on its own schedule, often every several hours, and nothing a feed says changes that: a subscribed calendar has no way to be told there is something new. What is urgent (a game called off) is for notifications, not the calendar.
 
-After any change to `ics.js`, run `node worker/make.js` to copy it into the Worker, then paste the Worker again. `node test/worker.js` fails until the two match, so the feed and the app never describe a fixture differently.
+After any change to `ics.js`, run `node functions/make.js` to copy it into `functions/` (only that folder is uploaded), and deploy. `node test/calfeed.js` fails until the two match, so the feed and the app never describe a fixture differently.
 
 Nothing about the calendar needed a rule change: entries live under `teams/{tid}/events/{eid}`, below the rule that already lets a team's coaches and the club's admins change the team, and nobody else. `node test/rules.js` pins that.
 
@@ -502,7 +498,7 @@ Setup → **Share with parents** creates a long random share id for the team and
 - **Season** — `live.html?t=<share>`. Text it once. It shows the season record, whatever game is happening now, what is coming up (every game, plus any practice or event marked for the share link), and every result. Each entry adds to a phone's calendar, and so does the whole of what is coming up.
 - **One game** — `game.html?t=<gameShare>&g=<gameId>`. Kick-off time, venue, home or away, arrive-by, kit, notes, score, live clock, who is on, minutes played and the substitutions. Each game is published under its own id, so this link holds that game and nothing else: nobody can reach the season page from it. Game links made before this change carried the season link's id; *Make a new link and kill the old one* retires those.
 
-Teams can carry a crest — Setup → Teams → tap the team → *Add a crest*. It is resized to 192px and re-encoded in the browser before saving, and it shows in the app header and at the top of the shared pages. It cannot appear in the text-message preview image, which is a fixed file; that needs the Cloudflare Worker.
+Teams can carry a crest — Setup → Teams → tap the team → *Add a crest*. It is resized to 192px and re-encoded in the browser before saving, and it shows in the app header and at the top of the shared pages. It cannot appear in the text-message preview image, which is a fixed file; that needs the page rendered on the server, which would now be a function.
 
 Both are reached from the share button beside the game bar, and both show the game you are currently looking at — switch games in the bar to share a different one. Setup is only where sharing is turned on and where links are rotated.
 
@@ -510,7 +506,7 @@ They are two separate HTML files purely so the text-message preview differs: `li
 
 **No child's name is ever published.** The mirror carries shirt numbers only — not names, not player ids. That is enforced by what gets written, not by what the page chooses to display, so there is nothing to find in the payload. *Rotate* makes a new share id and deletes the old node, which kills every link previously sent.
 
-Link previews in text messages are scraped without running JavaScript, so each card is fixed at whatever its file's meta tags say. iMessage also freezes previews at send time, so a live-updating card in a message thread is not possible on any platform. Tapping through opens a page that does update by itself. If the score must appear in the preview itself, that needs a Cloudflare Worker to inject it server-side — see ROADMAP.md.
+Link previews in text messages are scraped without running JavaScript, so each card is fixed at whatever its file's meta tags say. iMessage also freezes previews at send time, so a live-updating card in a message thread is not possible on any platform. Tapping through opens a page that does update by itself. If the score must appear in the preview itself, that needs the server to inject it (a function) — see ROADMAP.md.
 
 ## Hosting on GitHub Pages
 
@@ -611,7 +607,7 @@ public/{calFeed}     { team, link, calendar: true,
                        events: { eventId: { ...every entry, team-only included } } }      // no players, no numbers
 ```
 
-Written by the coaches' app on a 1.2 second debounce. Read by `live.html`, which recomputes the clock from `periods` against Firebase's server time, so it ticks between pushes instead of waiting for one. The calendar feed Worker reads the same nodes.
+Written by the coaches' app on a 1.2 second debounce. Read by `live.html`, which recomputes the clock from `periods` against Firebase's server time, so it ticks between pushes instead of waiting for one. The calendar feed (`functions/calendar.js`) reads the same nodes.
 
 ## Backup
 

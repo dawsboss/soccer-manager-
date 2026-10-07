@@ -273,7 +273,7 @@ const nameIn = v => names.some(n => JSON.stringify(v).includes(n));
     check('claimed before anything is written there', paths.indexOf('shareOwners/' + id) >= 0 && paths.indexOf('shareOwners/' + id) < paths.indexOf('public/' + id), true);
     const doc = (fbk.writtenTo('public/' + id).slice(-1)[0] || {}).value || {};
     const items = Object.values(doc.items || {});
-    check('a feed the Worker reads', doc.mine === true && !!doc.team && doc.team.name, 'My calendar');
+    check('a feed the calendar function reads', doc.mine === true && !!doc.team && doc.team.name, 'My calendar');
     const titles = items.map(x => x.title).sort();
     check('both clubs\' entries, titled with the team', titles.includes('G11 Flight: Practice') && titles.includes('Hill U12: Practice') && titles.includes('Hill U12 v Storm'), true);
     check('her child\'s training session, the child not named', titles.includes('Training: a player finishing'), true);

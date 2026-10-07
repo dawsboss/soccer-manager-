@@ -7694,8 +7694,9 @@ function attendanceCard(t) {
 
 /* Calendar sync. A calendar app subscribes to an address and comes back to it
    on its own schedule, from its own servers, never running a line of ours — so
-   a static site cannot answer it. worker/calendar.mjs does: it reads the
-   public/ node an id names and returns it as a calendar. Where it lives goes in
+   a static site cannot answer it. The `calendar` function does
+   (functions/calendar.js): it reads the public/ node an id names and returns
+   it as a calendar. Where it lives goes in
    firebase-config.js as SOCCER_CALENDAR_FEED; until it is set, the calendar
    offers a copy to add instead, as it did before. */
 const feedBase = () => {
@@ -14242,7 +14243,7 @@ function youShareCard() {
    1-1s in it. This is one address for the person: every item My calendar
    draws, from every club her phone holds, as one feed.
 
-   It goes where the Worker can read it, public/{id}, so it is built to the
+   It goes where the calendar feed can read it, public/{id}, so it is built to the
    same promise as the team feed: what a family needs to turn up and nothing
    else. No child is named: no "Kai: going", no booked child on a session,
    and every free-text field from the open club goes through the names of

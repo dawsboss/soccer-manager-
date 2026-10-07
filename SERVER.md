@@ -135,10 +135,13 @@ does the bookkeeping, not that the phone works offline first.
   scrubbed by the same `pubText()` rules, every time. `shareOwners` and the
   publish debounce go away.
 
-### Calendar sync (the Worker)
-- **Now:** `worker/calendar.mjs` turns `public/{id}.json` into a calendar feed,
-  and may read nothing else, because it holds no credentials.
-- **With a server:** the feed can be served from the club's own data, so the
+### Calendar sync
+- **Moved to the server (build 104), as it was:** the `calendar` function
+  (`functions/calendar.js`) turns `public/{id}` into a calendar feed, and
+  reads nothing else. It was a Cloudflare Worker until then. What it serves
+  is still what the phones published (`schedulePublish()`, `feedPublish()`),
+  so it is only as fresh as that.
+- **Next, now that it is a function:** the feed can be served from the club's own data, so the
   members' feed doesn't need its own public copy, and a person's own feed (My
   calendar's, *My calendar's feed* above) can carry names behind a private link
   instead of leaving them out.

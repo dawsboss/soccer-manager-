@@ -26,7 +26,7 @@ const SUITES = [
   ['calendar', 'the one calendar: views, which calendars, and what reaches the share link'],
   ['rsvp', 'parents say who is coming, for their own child only'],
   ['attend', 'who came, and the season counted from it'],
-  ['worker', 'the calendar feed reads public/ and nothing else'],
+  ['calfeed', 'the calendar feed reads public/ and nothing else'],
   ['ai', 'the AI prompt carries numbers, never names'],
   ['roles', 'roles derived from where a uid appears'],
   ['visibility', 'which teams each account sees and edits'],

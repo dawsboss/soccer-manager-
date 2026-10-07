@@ -1,15 +1,16 @@
-/* The calendar feed: worker/calendar.mjs, the one piece that runs off the
-   static site.
+/* The calendar feed: functions/calendar.js, what a phone's calendar
+   subscribes to. It was a Cloudflare Worker until build 104 and this was
+   test/worker.js; the checks are the same ones, against the function.
 
    What matters, in the order it would hurt:
 
-   - It can only ever read public/. The id in the address goes straight into a
-     database URL, so anything that is not a plain id is refused before a
-     request is made — a feed must never become a way to ask for
-     workspaces/{code}.
-   - It carries the same ics.js the app does, byte for byte. Cloudflare's
-     editor takes one file, so the Worker keeps a copy; a copy that drifts
-     would describe the same fixture two ways.
+   - It can only ever read public/. It runs with admin credentials, so the id
+     in the address is the whole wall: anything that is not a plain id is
+     refused before a read is made, and a feed must never become a way to ask
+     for workspaces/{code}.
+   - It carries the same ics.js the app does, byte for byte. Only functions/ is
+     uploaded, so it keeps a copy; a copy that drifts would describe the same
+     fixture two ways.
    - What it serves is what the app published: the members' feed has the
      practices, a game's own feed has that game, and none of them has a name.
    - A replaced or deleted link is gone (404), and a database that is down is a
@@ -18,37 +19,27 @@
 
 const fs = require('fs');
 const path = require('path');
-const { pathToFileURL } = require('url');
 const H = require('./harness');
 const { check } = H;
+const { makeServer } = require('./fakebase');
 
 const ROOT = path.join(__dirname, '..');
-const RealURL = URL;
-const realFetch = global.fetch;
-const DB = 'https://club-db.example.firebaseio.com';
 
 (async () => {
-  console.log('--- the Worker carries the app\'s own ics.js ---');
+  console.log('--- the feed carries the app\'s own ics.js ---');
   {
-    const src = fs.readFileSync(path.join(ROOT, 'worker', 'calendar.mjs'), 'utf8');
     const ics = fs.readFileSync(path.join(ROOT, 'ics.js'), 'utf8');
-    const START = '/* ---- ics.js, copied in by worker/make.js: do not edit by hand ---- */\n';
-    const END = '/* ---- end of ics.js ---- */\n';
-    const a = src.indexOf(START), b = src.indexOf(END);
-    check('both markers are there', a >= 0 && b > a, true);
-    const same = src.slice(a + START.length, b) === ics;
-    check('byte for byte — run `node worker/make.js` if not', same, true);
+    let copy = null;
+    try { copy = fs.readFileSync(path.join(ROOT, 'functions', 'ics.js'), 'utf8'); } catch (e) { }
+    check('byte for byte — run `node functions/make.js` if not', copy === ics, true);
+    check('the Cloudflare Worker is retired, not kept as a second way', fs.existsSync(path.join(ROOT, 'worker')), false);
+    const cfg = fs.readFileSync(path.join(ROOT, 'firebase-config.js'), 'utf8');
+    check('the site points at the function', /SOCCER_CALENDAR_FEED = 'https:\/\/us-central1-[\w-]+\.cloudfunctions\.net\/calendar'/.test(cfg), true);
   }
-
-  /* Imported before the app boots: the harness gives the app a fake `window`,
-     and a Worker has none — its copy of ics.js has to find globalThis, as it
-     will on Cloudflare. */
-  const W = (await import(pathToFileURL(path.join(ROOT, 'worker', 'calendar.mjs')).href)).default;
 
   /* The app's own documents, so the feed is tested against what really gets
      published rather than a hand-written guess at it. */
   const A = H.loadApp({});
-  global.URL = RealURL;            // the harness stubs URL for downloads; the Worker needs the real one
   A.state = {
     teams: {
       t1: {
@@ -76,30 +67,30 @@ const DB = 'https://club-db.example.firebaseio.com';
     m_myfeedaddr: A.myFeedDoc()
   };
 
-  const calls = [];
-  let down = false;
-  global.fetch = async u => {
-    calls.push(String(u));
-    if (down === 'throw') throw new Error('network');
-    if (down) return new Response('nope', { status: 503 });
-    const m = /\/public\/([^/]+)\.json$/.exec(String(u));
-    return new Response(JSON.stringify(m && docs[m[1]] !== undefined ? docs[m[1]] : null), { headers: { 'Content-Type': 'application/json' } });
+  /* The function as deployed, on the fake server, with the documents the app
+     publishes sitting in public/ where the share pages read them. */
+  const S = makeServer({ public: docs, workspaces: { CLUB: { access: { admins: { adm: true } }, teams: { t1: { name: 'Secret' } } } } });
+  S.loadFunctions();
+  const get = async (p, method = 'GET') => {
+    const r = await S.request('calendar', p, method);
+    return { status: r.status, headers: { get: k => r.headers[Object.keys(r.headers).find(h => h.toLowerCase() === k)] }, text: async () => String(r.body ?? '') };
   };
-  const env = { DATABASE_URL: DB + '/' };
-  const get = (p, e = env, method = 'GET') => W.fetch(new Request('https://feed.example.workers.dev' + p, { method }), e);
 
   console.log('\n--- only ever public/, and only a plain id ---');
-  for (const bad of ['/..%2Fworkspaces%2FCLUB.ics', '/a%2Fb.ics', '/abc.ics', '/x/y.ics', '/sh_flight.json?print=pretty', '/', '/workspaces/CLUB.ics', '/sh%20flight.ics']) {
-    calls.length = 0;
+  for (const bad of ['/..%2Fworkspaces%2FCLUB.ics', '/../workspaces/CLUB.ics', '/a%2Fb.ics', '/abc.ics', '/x/y.ics', '/sh_flight.json?print=pretty', '/', '/workspaces/CLUB.ics', '/sh%20flight.ics', '/sh.flight.ics']) {
+    S.reads.length = 0;
     const r = await get(bad);
-    check(`${bad.padEnd(34)} refused`, String(r.status) + (calls.length ? ' after a fetch' : ''), '404');
+    check(`${bad.padEnd(34)} refused`, String(r.status) + (S.reads.length ? ' after a read' : ''), '404');
   }
-  calls.length = 0;
+  S.reads.length = 0;
   await get('/sh_flight.ics');
-  check('a good id asks for exactly public/{id}.json', calls.join(), DB + '/public/sh_flight.json');
-  check('a POST is refused', (await get('/sh_flight.ics', env, 'POST')).status, 405);
-  check('no database address, no guessing', (await get('/sh_flight.ics', {})).status, 500);
-  check('an address with a path is not a database address', (await get('/sh_flight.ics', { DATABASE_URL: DB + '/workspaces' })).status, 500);
+  check('a good id reads exactly public/{id}', S.reads.join(), 'public/sh_flight');
+  check('a POST is refused', (await get('/sh_flight.ics', 'POST')).status, 405);
+  {
+    const src = fs.readFileSync(path.join(ROOT, 'functions', 'calendar.js'), 'utf8');
+    const built = [...src.matchAll(/env\.get\(([^)]*)\)/g)].map(m => m[1].trim());
+    check('the only path it ever builds is public/ and the id', built.join(), "'public/' + id");
+  }
 
   console.log('\n--- the members\' feed ---');
   {
@@ -116,7 +107,7 @@ const DB = 'https://club-db.example.firebaseio.com';
     check('nor shirt numbers', /"n":/.test(JSON.stringify(docs.c_flightfeed)), false);
     check('an imported 9:30 kick-off is 09:30 in the feed', /DTSTART:20260919T093000/.test(body), true);
     check('without .ics on the end works too', (await get('/c_flightfeed')).status, 200);
-    check('HEAD answers with no body', await (await get('/c_flightfeed.ics', env, 'HEAD')).text(), '');
+    check('HEAD answers with no body', await (await get('/c_flightfeed.ics', 'HEAD')).text(), '');
   }
 
   console.log('\n--- the share link\'s feed, and a game\'s own ---');
@@ -142,12 +133,9 @@ const DB = 'https://club-db.example.firebaseio.com';
 
   console.log('\n--- gone, and down ---');
   check('a replaced link is gone', (await get('/c_oldaddress.ics')).status, 404);
-  down = true;
-  check('the database refusing is a 502, so calendars keep what they had', (await get('/c_flightfeed.ics')).status, 502);
-  down = 'throw';
-  check('so is the network failing', (await get('/c_flightfeed.ics')).status, 502);
-  down = false;
+  S.down();
+  check('the database failing is a 502, so calendars keep what they had', (await get('/c_flightfeed.ics')).status, 502);
+  S.down(false);
 
-  global.fetch = realFetch;
   H.summary('the calendar feed');
 })().catch(e => { console.error(e); process.exit(1); });

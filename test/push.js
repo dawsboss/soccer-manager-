@@ -69,7 +69,7 @@ const toUid = (S, u) => S.sent().filter(m => m.data.uid === u);
   console.log('--- the functions that are deployed ---');
   {
     const S = server();
-    deepEq('two triggers, one per thing that is news', Object.keys(S.triggers).sort(), ['pushMessage', 'pushNotice']);
+    deepEq('two triggers, one per thing that is news', Object.keys(S.triggers).filter(n => S.triggers[n].kind === 'created').sort(), ['pushMessage', 'pushNotice']);
     check('a new notice wakes the notice sender', S.woken('board/CLUB/t1/n1').join(), 'pushNotice');
     check('a new family message wakes the message sender', S.woken('dm/CLUB/t1/mum/m/x1').join(), 'pushMessage');
     check('a read marker under a notice wakes nothing', S.woken('board/CLUB/t1/n1/seen/mum').length, 0);

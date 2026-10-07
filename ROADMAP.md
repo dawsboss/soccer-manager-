@@ -3,7 +3,7 @@
 `CLAUDE.md` points here for the detail behind its ordering. The ordering itself
 lives there — concurrent edits, then tracker stamps and the Track rework, then
 roles and organisations with "stamps become identities" as one project, then
-shareable read-only pages and the Cloudflare Worker — and later items assume the
+shareable read-only pages and server-rendered previews — and later items assume the
 earlier ones hold. This file was missing from the repository until now; it
 starts with the ideas that do not have a place in that order yet.
 
@@ -87,7 +87,7 @@ order*, step 2).
 
 ### Calendar sync, beyond the first version
 
-Built: `worker/calendar.mjs` serves any `public/{id}` as a feed, the team's
+Built: the `calendar` function (`functions/calendar.js`, a Cloudflare Worker until build 104) serves any `public/{id}` as a feed, the team's
 members get a feed with practices in it, the share page offers the season's,
 and (2026-10-05) **My calendar has one address per person**: every team, child,
 session and club of hers, no names, revoked alone. That closed *one address
@@ -95,8 +95,9 @@ per person* and *a parent's own children only*. What is left:
 
 - **Answers in the feed.** "Ella: going" in the calendar entry would be handy,
   but answers are about named children and the feed is world-readable by
-  address. Not without a feed that is not world-readable, which means the
-  Worker holding a credential, which is a different project.
+  address. Not without a feed that is not world-readable: a second function,
+  reading the club's own data behind a private link. Possible now the feed is
+  a function (build 104), and its own piece of work.
 
 ### Who is coming, next
 

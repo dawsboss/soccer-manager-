@@ -16,10 +16,11 @@ window.SOCCER_FIREBASE_CONFIG = {
   measurementId: "G-9C7RFNTDL0"
 };
 
-// Optional: where the calendar feed Worker lives (worker/calendar.mjs), so
-// families can subscribe and their calendars follow every change. Leave it
-// blank and the calendar offers a one-off copy instead. README, "Calendar sync".
-window.SOCCER_CALENDAR_FEED = '';
+// Where the calendar feed is served, so families can subscribe and their
+// calendars follow every change: the `calendar` function in functions/, on this
+// project (README, "Calendar sync"). Answers once the functions are deployed;
+// blank, and the calendar offers a one-off copy instead.
+window.SOCCER_CALENDAR_FEED = 'https://us-central1-soccer-manager-272ff.cloudfunctions.net/calendar';
 
 // Optional: notifications to a closed phone. The public half of the project's web
 // push key pair: Firebase console > Project settings > Cloud Messaging > Web Push

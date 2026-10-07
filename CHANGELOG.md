@@ -8,6 +8,31 @@ before this point lives only in the git log.
 
 ---
 
+## The calendar feed moves onto the club's server — 2026-10-07 (build 104)
+
+The owner had never set up the Cloudflare Worker that served calendar feeds,
+so subscribing was off and the calendar only offered a one-off copy. With a
+server arriving for notifications anyway, a second platform with its own
+account and its own paste-it-in-by-hand deploy was cost for nothing.
+
+- **The `calendar` function** (`functions/calendar.js`) is the Worker, moved:
+  the same `ics.js`, the same address shape (`…/calendar/{id}.ics`), the
+  same documents from `public/`, the same 404 for a replaced link and 502 for
+  a database that is down. It runs with admin credentials now, so the id
+  check is the whole wall between an address and the club's data; the only
+  path it ever builds is `public/` and the id, and `test/calfeed.js` (what
+  was `test/worker.js`, run against the function as deployed) pins that.
+- **`firebase-config.js` points at it**, so families can subscribe as soon as
+  the functions are deployed. At most three instances: a club's calendars
+  poll hourly, and a flood of requests should be slow, not a bill.
+- **`worker/` is gone**, and `node functions/make.js` copies `ics.js` where
+  the function needs it (only `functions/` is uploaded).
+
+What did not change: a calendar app still comes back when it chooses (Apple
+and Outlook about hourly, Google every several hours). A subscribed
+calendar cannot be told there is something new; a game called off is for
+notifications.
+
 ## Notifications reach a closed phone: the server's first job — 2026-10-07 (build 104)
 
 `GOTSPORT.md`'s build order, step 2: *the server, with push as its first job*.

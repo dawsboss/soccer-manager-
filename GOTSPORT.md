@@ -280,16 +280,19 @@ Not planned until someone needs them, because each is a product of its own:
   the same lookup tables the rules read, and is tested the way `rules.js`
   tests the rules: for every kind of account, against the fake Firebase.
 - **Secrets** (Stripe, email) live in Secret Manager. Never in the repo, never
-  in `firebase-config.js`, never in the Worker.
+  in `firebase-config.js`.
 - **Webhooks are idempotent:** the event id is recorded before the effect.
 - **SERVER.md is the list of what moves next.** Each job there that a phone
   does on someone else's behalf can move to a function once the server
   exists. Move them one at a time, each with its test, rather than in one
   rewrite.
 - **Still no AI.** Neither the app nor the server calls an AI model.
-- **The Worker stays as it is:** read-only, no credentials, `public/` only.
-  Anything needing a secret or the club's data is a function, not the
-  Worker.
+- **One server.** The calendar feed was a Cloudflare Worker; it moved into
+  `functions/` in build 104 (the owner, 2026-10-07: no Cloudflare account,
+  one deploy). It still reads only `public/` and writes nothing.
+- **Deploying:** by hand for now (README); a GitHub Action that tests and
+  deploys `functions/` (and, once the owner says so, the rules) on every
+  merge to main is next, so a change ships the way the site does.
 
 ---
 

@@ -12,16 +12,21 @@
    - nothing at the sideline waits on it. The phone stays offline-first; the
      server does the jobs that belong to nobody in particular.
 
-   Triggers listen on every database instance in the project (the default),
-   and read from the instance the event came from, `event.data.ref.root`, so
-   a second database for rehearsing rules (firebase-config.js,
-   SOCCER_FIREBASE_ENVS) is answered from its own data and its own phones'
-   tokens, never the real club's. */
+   The database triggers listen on every database instance in the project
+   (the default), and read from the instance the event came from,
+   `event.data.ref.root`, so a second database for rehearsing rules
+   (firebase-config.js, SOCCER_FIREBASE_ENVS) is answered from its own data
+   and its own phones' tokens, never the real club's. The calendar feed has no
+   event to come from and reads the default database: the one the site's
+   firebase-config.js points every phone at. */
 
 const { onValueCreated } = require('firebase-functions/v2/database');
+const { onRequest } = require('firebase-functions/v2/https');
+const { getDatabase } = require('firebase-admin/database');
 const { initializeApp } = require('firebase-admin/app');
 const { getMessaging } = require('firebase-admin/messaging');
 const push = require('./push');
+const feed = require('./calendar');
 
 initializeApp();
 
@@ -45,3 +50,14 @@ exports.pushNotice = onValueCreated('/board/{code}/{tid}/{id}', event =>
    one is a create; the read markers live beside them under seen/, not here. */
 exports.pushMessage = onValueCreated('/dm/{code}/{tid}/{fam}/m/{id}', event =>
   push.onMessage(envOf(event), event.params, event.data.val()));
+
+/* The calendar feed (calendar.js): https://{region}-{project}.cloudfunctions.net/calendar/{id}.ics,
+   which is what firebase-config.js names as SOCCER_CALENDAR_FEED. Anyone may
+   ask, because a calendar app asks with no account; what it can be handed is
+   one public/ document. A few instances at most: a club's calendars poll
+   hourly, and a cap means a flood of requests is slow, not a bill. */
+exports.calendar = onRequest({ invoker: 'public', maxInstances: 3 }, async (req, res) => {
+  const root = getDatabase().ref();
+  const r = await feed.serve({ method: req.method, path: req.path }, { get: p => root.child(p).get().then(s => s.val()) });
+  res.status(r.status).set(r.headers).send(r.body);
+});
