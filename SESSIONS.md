@@ -205,8 +205,9 @@ Park, field 2" is at "Lakeside Park"). Entries with no time are left out:
   charge it marks the fee by hand, and one who wants to let a family off marks
   it **waived**.
 - **Marking paid writes one fee per place**: what was paid, how, when, and by
-  whom. There are no card payments: this is a static site with no server, so
-  it is the club's book of who has paid, not a till.
+  whom. There are no card payments yet, so it is the club's book of who has
+  paid, not a till. Card payments through Stripe come with the server
+  (`GOTSPORT.md`, *Payments*), and session fees and packages move onto them.
 - **Packages** (built 2026-10-05, on the owner's ask, off until an admin
   turns them on): a number of sessions for a set price, sold to one player,
   for any session, 1-1s or groups, with an optional use-by date. Using a

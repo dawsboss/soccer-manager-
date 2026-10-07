@@ -7,6 +7,12 @@ shareable read-only pages and the Cloudflare Worker — and later items assume t
 earlier ones hold. This file was missing from the repository until now; it
 starts with the ideas that do not have a place in that order yet.
 
+## Replacing GotSport
+
+`GOTSPORT.md` is the plan (2026-10-06): registration, payments, push, email,
+tryouts and coach compliance, so a club uses GotSport only for what its state
+association requires. It is also where the server comes in.
+
 ## Training
 
 `TRAINING.md` is the design and records what is built; `TRAINING-NEXT.md` is
@@ -25,8 +31,8 @@ seconds and the periods carry wall-clock timestamps (`absAt()` /
 
 Open questions before building it:
 
-- **Where the video comes from.** This stays a static site with no server, so
-  the stream has to live somewhere else — YouTube Live, Veo, or similar — and
+- **Where the video comes from.** The server (Cloud Functions) is for
+  bookkeeping, not video, so the stream has to live somewhere else — YouTube Live, Veo, or similar — and
   the app would embed it. Each game already has a Veo link field.
 - **Who may watch.** Video of children is more sensitive than the names the
   public mirror already refuses to publish. The in-app feed shows names to
@@ -60,9 +66,9 @@ push needs three things, and only the last is server-side:
 
 The data model is already shaped for it: every notice and message is one
 append-only node with its sender, so a function has exactly one thing to
-trigger on and nothing to diff. This is the point where "static site with a
-Firebase backend only" (CLAUDE.md) stops being true — a decision for the
-owner, which is why it is written down here rather than built.
+trigger on and nothing to diff. **Decided 2026-10-06:** the owner approved
+server-side code, and this is the server's first job (`GOTSPORT.md`, *Build
+order*, step 2).
 
 ### Messages, next steps
 

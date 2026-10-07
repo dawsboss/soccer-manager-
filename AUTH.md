@@ -288,6 +288,8 @@ Do the migration with a button in the app, on a copy, not by hand in the console
 
 What it costs: every path in `app.js`, the rules, `test/rules.js`, the outbox, the mirrors and the backups, a fortnight with both trees live, and a copy of a real club's season, during which an old phone writing to the old tree is data lost. CLAUDE.md treats any schema change as high-stakes. Do it only for one of the three reasons above, between seasons, and on the sandbox club first.
 
+**Decided 2026-10-06:** the owner wants registration data and the squad's names protected by the database, not the screen. `GOTSPORT.md` (*Protecting the data*, *Build order* step 3) schedules the first reason above (the full move, or only a squad node) before season registration opens to families, designed together with a club-level record of each child. That design is written here before any code.
+
 ## What parents actually see
 
 Worth stating so it is deliberate and not an accident of implementation:
@@ -315,7 +317,7 @@ Where each step stands (2026-10):
 
 1. **Built.** Google, email and password, and magic link; `needsSignIn()` is the gate.
 2. **Built on `workspaces/{code}`**, with the four lookup tables in place of `teamMembers`.
-3. **Not built**, and no longer needed for anything above. See *Migration*: it is now about moving names out of a parent's reach, and it is the owner's call.
+3. **Not built.** See *Migration*: it is now about moving names out of a parent's reach, and the owner decided (2026-10-06) to do that before registration opens (`GOTSPORT.md`).
 4. **Built.** One ruleset; `shareOwners` closed the public write hole.
 5. **Built.** Team links and the coach's approval list (`joinCodes`, `claims`), per-person invites, and a squad of parent invites at once.
 6. **Built.** Parents see their own child by name and the rest by number, the club's one preset, and My players across clubs.
