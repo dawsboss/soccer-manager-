@@ -1,20 +1,27 @@
 name: Deploy the server
 
-# The club's Cloud Functions (functions/: notifications and the calendar feed)
-# deploy themselves when they change on main, the way the site does in
-# deploy.yml. The database rules do not: they apply to every club at once, so
-# publishing them is a button somebody presses (Actions → Deploy the server →
-# Run workflow → tick "rules"), after the same tests.
+# Everything that lives on Firebase rather than GitHub Pages deploys itself
+# when it changes on main, the way the site does in deploy.yml:
+#   - database.rules.json, the rules, when it changed (the owner, 2026-10-07)
+#   - functions/ (notifications and the calendar feed), when it changed
+# after every suite has passed, including rules.js against the very file that
+# is about to be published. "Run workflow" by hand deploys the functions, and
+# the rules too with "rules" ticked.
+#
+# The rules apply to every club in the database at once, and a wrong ruleset
+# fails silently (reads work, every write is refused), so this publishes them
+# only after rules.js passes, and then reads the live version back
+# (tools/live-rules.js) so a run that says it published really did.
 #
 # Needs one repository secret, FIREBASE_SERVICE_ACCOUNT: the JSON key of a
 # Google Cloud service account allowed to deploy (README, "Deploying the
-# server"). Without it this says so and stops, green, so a fork or a club
-# that has not set it up is not shown a red cross on every merge.
+# server"). Without it this says so and stops, green.
 
 on:
   push:
     branches: [main]
     paths:
+      - 'database.rules.json'
       - 'functions/**'
       - 'ics.js'
       - 'firebase.json'
@@ -47,6 +54,36 @@ jobs:
 
       - uses: actions/checkout@v4
         if: env.HAS_KEY == 'true'
+        with:
+          fetch-depth: 0
+
+      # What this push changed. A first push, or a "before" GitHub no longer
+      # has, counts as everything having changed: deploying again is harmless,
+      # missing a change is not.
+      - name: What changed?
+        id: what
+        if: env.HAS_KEY == 'true'
+        env:
+          EVENT: ${{ github.event_name }}
+          BEFORE: ${{ github.event.before }}
+          TICKED: ${{ inputs.rules }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT" = "workflow_dispatch" ]; then
+            echo "functions=true" >> "$GITHUB_OUTPUT"
+            echo "rules=${TICKED:-false}" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if [ -z "$BEFORE" ] || [ "$BEFORE" = "0000000000000000000000000000000000000000" ] || ! git cat-file -e "$BEFORE^{commit}" 2>/dev/null; then
+            CHANGED=$(git ls-files)
+          else
+            CHANGED=$(git diff --name-only "$BEFORE" "$GITHUB_SHA")
+          fi
+          echo "$CHANGED" | grep -qx 'database.rules.json' && R=true || R=false
+          echo "$CHANGED" | grep -qE '^(functions/|ics\.js$|firebase\.json$|\.firebaserc$|\.github/workflows/server\.yml$)' && F=true || F=false
+          echo "rules=$R" >> "$GITHUB_OUTPUT"
+          echo "functions=$F" >> "$GITHUB_OUTPUT"
+          echo "rules: $R, functions: $F"
 
       - uses: actions/setup-node@v4
         if: env.HAS_KEY == 'true'
@@ -58,24 +95,28 @@ jobs:
         if: env.HAS_KEY == 'true'
         run: node test/run.js
 
-      - name: Install the functions' packages
-        if: env.HAS_KEY == 'true'
-        run: npm ci --prefix functions
-
       - uses: google-github-actions/auth@v2
         if: env.HAS_KEY == 'true'
         with:
           credentials_json: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
 
-      # --force: allow the CLI to set up what a first deploy needs (it otherwise
-      # stops to ask about cleaning up old builds, and nobody is there to answer).
-      - name: Deploy the functions
-        if: env.HAS_KEY == 'true'
-        run: npx --yes firebase-tools@15 deploy --only functions --non-interactive --force
-
+      # First, so a functions deploy that fails cannot hold back the rules the
+      # app on the site already expects.
       - name: Publish the database rules
-        if: env.HAS_KEY == 'true' && github.event_name == 'workflow_dispatch' && inputs.rules
+        if: env.HAS_KEY == 'true' && steps.what.outputs.rules == 'true'
         run: |
           node test/rules.js > /dev/null
           npx --yes firebase-tools@15 deploy --only database --non-interactive
-          node tools/live-rules.js
+          # the live version, read back; a few tries in case it takes a moment to show
+          for i in 1 2 3; do node tools/live-rules.js && exit 0; sleep 5; done
+          exit 1
+
+      - name: Install the functions' packages
+        if: env.HAS_KEY == 'true' && steps.what.outputs.functions == 'true'
+        run: npm ci --prefix functions
+
+      # --force: allow the CLI to set up what a first deploy needs (it otherwise
+      # stops to ask about cleaning up old builds, and nobody is there to answer).
+      - name: Deploy the functions
+        if: env.HAS_KEY == 'true' && steps.what.outputs.functions == 'true'
+        run: npx --yes firebase-tools@15 deploy --only functions --non-interactive --force

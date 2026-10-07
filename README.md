@@ -157,7 +157,7 @@ The club's server is three Cloud Functions on the same Firebase project, in `fun
 
 Without the secret the workflow says so and deploys nothing. From a computer instead: `npm install -g firebase-tools`, `firebase login`, `(cd functions && npm ci)`, `firebase deploy --only functions`.
 
-**The rules can go the same way.** *Run workflow* with **rules** ticked runs every suite, publishes `database.rules.json` and checks the live version (`tools/live-rules.js`). It is never automatic: the rules apply to every club in the database at once, so publishing them stays a choice somebody makes. Pasting them in the console still works too.
+**The rules go the same way.** A merge that changes `database.rules.json` publishes it, after every suite (`test/rules.js` among them) has passed, and then reads the live version back (`tools/live-rules.js`), so a green run means the club is on it. *Run workflow* with **rules** ticked publishes them by hand. The rules apply to every club in the database at once, so a change to them gets the same care in review as any other; pasting them in the console still works too.
 
 If a notification never arrives: the functions' logs are in the Firebase console (Functions → the function → Logs). A send refused for permission usually means the **Firebase Cloud Messaging API** is switched off for the project in Google Cloud's API library.
 

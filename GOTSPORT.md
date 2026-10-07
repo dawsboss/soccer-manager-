@@ -291,10 +291,10 @@ Not planned until someone needs them, because each is a product of its own:
   one deploy). It still reads only `public/` and writes nothing.
 - **Deploying:** `.github/workflows/server.yml` tests and deploys
   `functions/` on every merge to main, as the site deploys itself, with a
-  service account key held as a GitHub secret. The rules publish from the
-  same workflow only when someone runs it by hand with *rules* ticked: they
-  apply to every club at once, so that stays a choice (README, *Deploying
-  the server*).
+  service account key held as a GitHub secret. The rules publish the same
+  way when `database.rules.json` changes (the owner, 2026-10-07), after
+  `rules.js` passes and checked live afterwards (README, *Deploying the
+  server*).
 
 ---
 

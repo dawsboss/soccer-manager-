@@ -17,10 +17,12 @@ deploys itself, using a service account key the owner adds once as a GitHub
 secret (README, **Deploying the server**, has the three steps). Without the
 secret it says so and deploys nothing, rather than a red cross on every merge.
 
-The rules can go the same way, but only on purpose: *Run workflow* with
-**rules** ticked runs the suites, publishes `database.rules.json` and checks
-the live version. Never on a merge, because the rules apply to every club in
-the database at once and publishing them should stay a choice somebody makes.
+The rules go the same way (the owner asked for it): a merge that changes
+`database.rules.json` publishes it, after every suite including `rules.js`
+has passed and before the functions, then reads the live version back so a
+green run means the club is on it. *Run workflow* with **rules** ticked does
+it by hand. The rules apply to every club at once, so a rules change on main
+is reviewed as one.
 
 `functions/package-lock.json` pins what was tested, and `.firebaserc` names
 the project so nothing has to be typed.
