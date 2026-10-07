@@ -28,7 +28,7 @@ window.SOCCER_CALENDAR_FEED = 'https://us-central1-soccer-manager-272ff.cloudfun
 // only once the functions are deployed (README, "Notifications to a closed phone"):
 // the app offers notifications whenever it is filled in, and without the server
 // nothing would ever be sent. Blank, and nothing about them is offered.
-window.SOCCER_PUSH_KEY = '';
+window.SOCCER_PUSH_KEY = 'BBzBzLZqwAdX3Ih8A2NFjUjR_mpE4ouH1vB7udcINm1fHfngTJbPOjMYyZv3KjxdXfhROU44kkJvfWJ4E2GHc98';
 
 // Optional: other databases to point this app at, for trying auth and rules
 // changes somewhere that is not the club with this season's data in it.
