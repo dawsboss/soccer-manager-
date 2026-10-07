@@ -8,6 +8,58 @@ before this point lives only in the git log.
 
 ---
 
+## The Calendar is yours, and today says where now is — 2026-10-07 (build 103)
+
+The owner, after trying build 102: *when clicking in a day like in the
+monthly view, I want a red line showing the current time of day*, and *the
+calendar is in a weird spot. The calendar is versatile and not tied to one
+team, not even one club, it is per person.* Build 102 made the one Calendar
+the first tab of every team, so it sat under whichever team was open with
+Club › Team over it, though most of what it could show (My calendar, other
+clubs, All teams) was no one team's.
+
+- **A red line at now in today's list**, wherever today is listed, as the
+  hours on Day and Week already had: the day under the Month grid when it is
+  today, and today on the Schedule, between what has started and what
+  hasn't (anything all day above it). Today is drawn on the Schedule even
+  with nothing left on it, once the list runs past it, with the line and
+  *Nothing else on today*, so the Schedule always says where now is.
+- **The Calendar is the person's.** It has its own button up top, beside
+  Messages and the account, with today's date on it, lit while it is open.
+  Its top row is **You › Calendar** again, and its address (`#/calendar`, or
+  `#/calendar/all` for All teams) names no team or club. It opens on **My
+  calendar**, now offered to anyone with anything of her own (a team, a
+  child, a session she runs, a time she offers, another club) rather than
+  only when that was more than the open team, and a coach's has her
+  players' sessions with other coaches on it, as her team's calendar did.
+  **All teams** is beside it for whoever can see more teams than her own. The
+  open team stopped being a calendar of its own: one team is that team
+  ticked alone on All teams, and a phone that had chosen it gets My calendar.
+- **Three tabs a team: Season, Squad, Practice.** Season is where a team
+  opens now: the game being played on top, one tap from the game; the next
+  game, with directions, *Open the game* and, for a family, *Is Ella going?*;
+  the next practice, said the way the calendar says it; *{team} on the
+  calendar*; the results and charts; and **Games**, every game played and to
+  come, called-off ones marked, with *Add a game*. The team's calendar
+  subscription (*Apple Calendar*, *Google Calendar*, a coach turning it on)
+  moved to Season too, and its one-off copy is that team's, whatever the
+  Calendar is showing. A parent has Season alone, so no row of tabs.
+- **Back goes where she came from.** A game opened from the Calendar goes
+  back to the Calendar, one opened from Season back to the team, and the
+  arrow says which.
+- **Getting around with no team in the crumbs**: the You crumb's sheet has
+  Club home, an entry's sheet names its team as a link to the team, and Club
+  home's *Calendar · Every team* ticks every team, whatever was unticked
+  before. Old addresses still land: `#/team/{id}/calendar` is the Calendar
+  with that team on it, `#/team/{id}/games` the team's Season,
+  `#/club/calendar` and `#/club/schedule` All teams, `#/my-calendar` My
+  calendar.
+
+No rule changes, nothing stored differently, and the share link, the calendar
+feeds and what reaches `public/` are as they were.
+
+---
+
 ## Four tabs, and one calendar that reads like Google Calendar — 2026-10-06 (build 102)
 
 The owner: *I really like all the information in the pages but I feel like

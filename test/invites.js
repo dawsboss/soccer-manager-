@@ -155,6 +155,8 @@ const CLUB = {
     check('the device stays where it was until accepted', A.storage.getItem('sm.workspace'), 'OTHER');
     A.click({ act: 'invitedismiss' });
     check('not now: the invite is dropped', A.storage.getItem('sm.invite'), null);
+    // the Calendar she lands on is hers and names no club, so ask the club's own screen
+    A.ui.view = 'club'; A.render();
     check('and the club is back', /Lakeside SC/.test(A.rendered('#crumbs')), true);
   }
 

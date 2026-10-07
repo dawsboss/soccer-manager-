@@ -23,7 +23,8 @@ const reset = () => Object.assign(A.ui,
   { view: 'calendar', gameView: 'subs', teamId: null, matchId: null, editFid: null, calSel: null });
 
 const cases = [
-  [{ view: 'calendar', teamId: 't7', calSel: 'team' }, '#/team/t7/calendar'],
+  // the Calendar is the person's: no team and no club in its address
+  [{ view: 'calendar' }, '#/calendar'],
   [{ view: 'roster', teamId: 't7' }, '#/team/t7/squad'],
   [{ view: 'season', teamId: 't7' }, '#/team/t7/season'],
   [{ view: 'game', teamId: 't7', matchId: 'g3', gameView: 'stats' }, '#/team/t7/game/g3/stats'],
@@ -31,8 +32,6 @@ const cases = [
   [{ view: 'game', teamId: 't7', matchId: 'g3', gameView: 'subs' }, '#/team/t7/game/g3/subs'],
   [{ view: 'club' }, '#/club'],
   [{ view: 'admin' }, '#/club/settings'],
-  // the Calendar with every team on it says so in its address
-  [{ view: 'calendar', calSel: 'club' }, '#/club/calendar'],
   [{ view: 'mine' }, '#/my-players'],
   [{ view: 'setup' }, '#/settings'],
   [{ view: 'sessions' }, '#/training']
@@ -54,18 +53,35 @@ for (const [st, path] of cases) {
   check(path.padEnd(26) + ' restored exactly', same, true);
 }
 
+console.log('\n--- the Calendar says which calendars it shows ---');
+{
+  // nobody signed in has no My calendar: All teams is the only one, and the plain address
+  reset(); A.ui.calSel = 'club';
+  check('All teams on its own is just the Calendar', A.uiToHash(), '#/calendar');
+  A.me = { uid: 'u1' }; A.state.access = { teams: { t7: { coaches: { u1: true } } } };
+  reset(); A.ui.calSel = 'club';
+  check('beside My calendar, All teams says so', A.uiToHash(), '#/calendar/all');
+  const back = hash => { reset(); A.ui.view = 'nowhere'; global.location.hash = hash; A.hashToUi(); return A.ui.view + ' ' + A.calSel(); };
+  check('— and comes back as All teams', back('#/calendar/all'), 'calendar club');
+  check('the plain address is hers', back('#/calendar'), 'calendar mine');
+  A.me = null; A.state.access = {};
+}
+
 console.log('\n--- the screens that moved still answer their old addresses ---');
 {
   /* Build 102 put the games on the Calendar, the team's set-up on Squad, and
-     Club schedule and My calendar into the one Calendar. Links to the old
-     screens are in texts, calendar files and bookmarks; each lands where what
-     it showed went. */
+     Club schedule and My calendar into the one Calendar; build 103 made that
+     Calendar the person's, at an address with no team or club in it, and a
+     team's games its Season's. Links to the old screens are in texts,
+     calendar files and bookmarks; each lands where what it showed went. */
   const lands = hash => { reset(); A.ui.view = 'nowhere'; global.location.hash = hash; A.hashToUi(); return [A.ui.view, A.ui.calSel, A.ui.teamId].filter(Boolean).join(' '); };
-  check('#/team/t7/games is the team\'s calendar', lands('#/team/t7/games'), 'calendar team t7');
+  check('#/team/t7/games is the team\'s Season, which lists its games', lands('#/team/t7/games'), 'season t7');
+  check('#/team/t7/calendar is the Calendar, with that team on it', lands('#/team/t7/calendar'), 'calendar club t7');
   check('#/team/t7/planning is Squad', lands('#/team/t7/planning'), 'roster t7');
+  check('#/club/calendar is All teams', lands('#/club/calendar'), 'calendar club');
   check('#/club/schedule is All teams', lands('#/club/schedule'), 'calendar club');
   check('#/my-calendar is My calendar', lands('#/my-calendar'), 'calendar mine');
-  for (const [old, now] of [['matches', 'calendar'], ['teamset', 'roster'], ['schedule', 'calendar'], ['mycal', 'calendar']]) {
+  for (const [old, now] of [['matches', 'season'], ['teamset', 'roster'], ['schedule', 'calendar'], ['mycal', 'calendar']]) {
     reset(); A.ui.view = old; A.normView();
     check(`a screen saved as ${old} opens ${now}`, A.ui.view, now);
   }

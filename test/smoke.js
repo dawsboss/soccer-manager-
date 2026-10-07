@@ -189,10 +189,10 @@ try {
     ui.calMini=true; ui.calMonth='2026-10'; render(); ui.calMonth=null; ui.calMini=false; ui.calSel=null;
     // every view, for every choice of calendars, with the list of calendars open
     ui.calTree=true;
-    for (const sel of ['team','club','mine']) for (const v of ['schedule','day','week','month','list']) { ui.calSel=sel; ui.calView=v; render(); }
+    for (const sel of ['mine','club','team']) for (const v of ['schedule','day','week','month','list']) { ui.calSel=sel; ui.calView=v; render(); }
     ui.calView='week'; ui.calDay='2026-09-14'; render(); ui.calDay=null;
     ui.calView=null; ui.calTree=false; ui.calSel=null;
-    console.log('  rendered every calendar view, for this team, mine and every team');
+    console.log('  rendered every calendar view, for mine, every team, and a phone that last chose the open team');
     // answers, the sync card with a feed set up, and the sheets that show them
     state.rsvp={t_ok:{e_e1:{p2:{v:'yes',by:'mumU',at:1,note:'late'}}}};
     window.SOCCER_CALENDAR_FEED='https://feed.example'; state.teams.t_ok.calFeed='cFeed1'; render();

@@ -89,14 +89,15 @@ const fill = vals => { for (const [k, v] of Object.entries(vals)) A.dom.node('#'
     check('her own calendar holds only her own', A.myCalOwn(), false);
     A.click({ act: 'schedule' });
     check('it opens on every team', A.ui.view + ' ' + A.calSel() + ' ' + A.calTeams().length, 'calendar club 3');
-    check('at its own address', A.uiToHash(), '#/club/calendar');
+    check('at the Calendar\'s address, All teams being the only calendar she has', A.uiToHash(), '#/calendar');
     A.ui.view = 'club';
     global.location.hash = '#/club/schedule';
     check('and the old address opens it', A.hashToUi() && A.ui.view + ' ' + A.ui.calSel, 'calendar club');
     A.ui.view = 'admin'; A.render();
     check('Club settings has it too', /data-act="schedule"/.test(A.rendered()), true);
-    A.ui.view = 'calendar'; A.ui.calSel = 'team'; A.render();
-    check('and a team\'s Calendar offers it, for an admin', /data-act="calscope" data-v="club"/.test(A.rendered()), true);
+    A.ui.view = 'calendar'; A.click({ act: 'caltog', tid: 't1' });
+    A.ui.view = 'club'; A.click({ act: 'schedule' });
+    check('"Every team" means every team, whatever was unticked before', A.calTeams().length, 3);
 
     // an admin who also coaches has her own calendar a tap away, and the club's on Club home
     const c = club(); c.access.teams.t3 = { coaches: { boss: true } };
@@ -104,6 +105,11 @@ const fill = vals => { for (const [k, v] of Object.entries(vals)) A.dom.node('#'
     check('an admin who coaches has the club\'s Calendar on Club home', /data-act="schedule"/.test(A.rendered()), true);
     A.click({ act: 'accountsheet' });
     check('and My calendar from her account', /data-v="mycal"/.test(sheet(A)), true);
+    A.ui.view = 'calendar'; A.ui.calSel = null; A.render();
+    check('the Calendar is hers first, with All teams beside it', A.calSel() + ' ' + /data-act="calscope" data-v="club"/.test(A.rendered()), 'mine true');
+    A.ui.view = 'club'; A.click({ act: 'schedule' });
+    check('Club home\'s card opens All teams', A.calSel(), 'club');
+    check('— whose address says so', A.uiToHash(), '#/calendar/all');
   }
 
   console.log('\n--- a week of the club ---');
