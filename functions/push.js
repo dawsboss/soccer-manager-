@@ -190,9 +190,12 @@ async function onMessage(env, params, v) {
    and trackers, its families, its players who sign in), held to the squad.
    Not the admins: an admin of twenty teams would hear every change in the
    club, which club activity already tells her when she opens the app, unless
-   she is on the team herself. The person who made the change is not known to
-   the database (entries carry no editor), so the phone that made it tells its
-   own service worker, which stays quiet about it (sw.js, `mine`).
+   she is on the team herself. Every calendar write carries who made it
+   (`edit: { by, at }`, stamped by the app in remoteSet() and held by the
+   rules to the writer's own uid), so the coach who called it off is left out,
+   on every phone of hers, and named to everyone else. A stamp more than a few
+   minutes old is from an earlier change (an older app that wrote none since),
+   and is not trusted to say who made this one.
 
    Games are written every few seconds while one is being played, so nothing
    here listens to a whole game: index.js wakes this for its date, kick-off
@@ -202,6 +205,7 @@ async function onMessage(env, params, v) {
    serverState/calSent/{code}/{key}, a node no phone can read or write (no
    rule grants it), and a transaction there lets exactly one of them speak. */
 const SOON_DAYS = 14;
+const EDIT_FRESH_MS = 5 * 60000;
 const CAL_CALLED = { cancelled: 'Cancelled', postponed: 'Postponed' };
 const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -284,30 +288,34 @@ async function calChange(env, code, before, it) {
   const body = news.kind === 'moved' ? `Now ${whenOf(it)}` : news.kind === 'new' && said !== key ? `Weekly, from ${whenOf(it)}` : whenOf(it);
   const hash = it.kind === 'game' ? `#/team/${it.tid}/game/${it.id}/live` : `#/team/${it.tid}/calendar`;
   const people = teamReaders(f);
+  const ed = it.edit && typeof it.edit === 'object' ? it.edit : null;
+  const by = ed && ed.by && Math.abs(now - (Number(ed.at) || 0)) < EDIT_FRESH_MS ? String(ed.by) : null;
+  if (by) people.delete(by);
+  const who = by ? memberName(f, by) : '';
   const list = await messagesFor(env, people, () => ({
-    title, body: short(body), tag: 'cal:' + code + ':' + said, key: 'cal:' + code + ':' + key, code, hash, urgent: news.urgent ? '1' : ''
+    title, body: short(body + (who ? ' · ' + who : '')), tag: 'cal:' + code + ':' + said, code, hash, urgent: news.urgent ? '1' : ''
   }));
-  return { to: [...people].sort(), news: news.kind, ...(await deliver(env, list)) };
+  return { to: [...people].sort(), news: news.kind, by, ...(await deliver(env, list)) };
 }
 
 /* A practice or event, teams/{tid}/events/{eid}: the whole entry, before and after. */
 async function onEntry(env, params, before, after) {
   const shape = e => (e && typeof e === 'object' ? {
     kind: e.kind === 'practice' ? 'practice' : 'event', tid: params.tid, id: params.eid,
-    date: e.date, start: e.start, called: e.called || '', title: e.title || '', series: e.series || ''
+    date: e.date, start: e.start, called: e.called || '', title: e.title || '', series: e.series || '', edit: e.edit || null
   } : null);
   return calChange(env, params.code, shape(before), shape(after));
 }
 
 /* A game, matches/{mid}: woken by one field, `field`, which was `was`. The
    rest is read as it stands now, a field at a time, never the whole game. */
-const GAME_FIELDS = ['teamId', 'date', 'kickoff', 'called', 'opponent'];
+const GAME_FIELDS = ['teamId', 'date', 'kickoff', 'called', 'opponent', 'edit'];
 async function onGameField(env, params, field, was) {
   const base = `workspaces/${params.code}/matches/${params.mid}/`;
   const vals = await Promise.all(GAME_FIELDS.map(k => env.get(base + k)));
   const g = Object.fromEntries(GAME_FIELDS.map((k, i) => [k, vals[i]]));
   if (!g.teamId) return { to: [], sent: 0, failed: 0, removed: [] };
-  const shape = m => ({ kind: 'game', tid: m.teamId, id: params.mid, date: m.date, start: m.kickoff, called: m.called || '', title: m.opponent || '' });
+  const shape = m => ({ kind: 'game', tid: m.teamId, id: params.mid, date: m.date, start: m.kickoff, called: m.called || '', title: m.opponent || '', edit: m.edit || null });
   const after = shape(g);
   /* A kick-off appearing where there was none is either a new game (its date
      arrives in the same write, and that event tells it) or a time added to a

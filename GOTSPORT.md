@@ -192,9 +192,11 @@ weekly series added is one push. Five more triggers on the same sender:
 game itself, which a live game writes every few seconds. Two of them can
 fire for one save (a new day and time), so the server keeps the last thing
 it told per entry at `serverState/calSent/{code}/{key}`, a node no rule
-grants anyone, and a transaction there lets one of them speak. Entries
-carry no editor, so the coach's own phone tells its service worker what it
-changed and stays quiet about it.
+grants anyone, and a transaction there lets one of them speak. Every
+calendar write carries who made it (`edit: { by, at }`, rules version 8,
+held to the writer's own uid), so the coach who called it off is left out
+and named to everyone else; and a game's when and whether became the
+coaches' and admins' at the database, as practices already were.
 
 **Left of this step:** a followed game's goals (following is per phone
 today and would need to be stored) and club activity for admins.

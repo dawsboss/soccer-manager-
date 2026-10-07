@@ -84,12 +84,55 @@
                   }
                 }
               }
+            },
+            "events": {
+              "$eid": {
+                "edit": {
+                  ".validate": "newData.hasChildren(['by', 'at']) && ((newData.child('by').val() === auth.uid && newData.child('at').isNumber()) || (newData.child('by').val() === data.child('by').val() && newData.child('at').val() === data.child('at').val()))",
+                  "by": {
+                    ".validate": "newData.isString()"
+                  },
+                  "at": {
+                    ".validate": "newData.isNumber()"
+                  },
+                  "$other": {
+                    ".validate": false
+                  }
+                }
+              }
             }
           }
         },
         "matches": {
           "$mid": {
-            ".write": "auth != null && (root.child('workspaces/' + $code + '/access/admins/' + auth.uid).exists() || root.child('workspaces/' + $code + '/access/teamIndex/' + newData.child('teamId').val() + '/' + auth.uid).exists() || root.child('workspaces/' + $code + '/access/teamIndex/' + data.child('teamId').val() + '/' + auth.uid).exists() || (!root.child('workspaces/' + $code + '/access/teamIndex').exists() && root.child('workspaces/' + $code + '/access/index/' + auth.uid).exists()))"
+            ".write": "auth != null && (root.child('workspaces/' + $code + '/access/admins/' + auth.uid).exists() || root.child('workspaces/' + $code + '/access/teamIndex/' + newData.child('teamId').val() + '/' + auth.uid).exists() || root.child('workspaces/' + $code + '/access/teamIndex/' + data.child('teamId').val() + '/' + auth.uid).exists() || (!root.child('workspaces/' + $code + '/access/teamIndex').exists() && root.child('workspaces/' + $code + '/access/index/' + auth.uid).exists()))",
+            "date": {
+              ".validate": "newData.val() === data.val() || root.child('workspaces/' + $code + '/access/admins/' + auth.uid).exists() || root.child('workspaces/' + $code + '/access/teamIndex/' + newData.parent().child('teamId').val() + '/' + auth.uid).val() === 'coach' || (!root.child('workspaces/' + $code + '/access/teamIndex').exists() && root.child('workspaces/' + $code + '/access/index/' + auth.uid).exists())"
+            },
+            "kickoff": {
+              ".validate": "newData.val() === data.val() || root.child('workspaces/' + $code + '/access/admins/' + auth.uid).exists() || root.child('workspaces/' + $code + '/access/teamIndex/' + newData.parent().child('teamId').val() + '/' + auth.uid).val() === 'coach' || (!root.child('workspaces/' + $code + '/access/teamIndex').exists() && root.child('workspaces/' + $code + '/access/index/' + auth.uid).exists())"
+            },
+            "called": {
+              ".validate": "newData.val() === data.val() || root.child('workspaces/' + $code + '/access/admins/' + auth.uid).exists() || root.child('workspaces/' + $code + '/access/teamIndex/' + newData.parent().child('teamId').val() + '/' + auth.uid).val() === 'coach' || (!root.child('workspaces/' + $code + '/access/teamIndex').exists() && root.child('workspaces/' + $code + '/access/index/' + auth.uid).exists())"
+            },
+            "venue": {
+              ".validate": "newData.val() === data.val() || root.child('workspaces/' + $code + '/access/admins/' + auth.uid).exists() || root.child('workspaces/' + $code + '/access/teamIndex/' + newData.parent().child('teamId').val() + '/' + auth.uid).val() === 'coach' || (!root.child('workspaces/' + $code + '/access/teamIndex').exists() && root.child('workspaces/' + $code + '/access/index/' + auth.uid).exists())"
+            },
+            "opponent": {
+              ".validate": "newData.val() === data.val() || root.child('workspaces/' + $code + '/access/admins/' + auth.uid).exists() || root.child('workspaces/' + $code + '/access/teamIndex/' + newData.parent().child('teamId').val() + '/' + auth.uid).val() === 'coach' || (!root.child('workspaces/' + $code + '/access/teamIndex').exists() && root.child('workspaces/' + $code + '/access/index/' + auth.uid).exists())"
+            },
+            "edit": {
+              ".validate": "newData.hasChildren(['by', 'at']) && ((newData.child('by').val() === auth.uid && newData.child('at').isNumber()) || (newData.child('by').val() === data.child('by').val() && newData.child('at').val() === data.child('at').val()))",
+              "by": {
+                ".validate": "newData.isString()"
+              },
+              "at": {
+                ".validate": "newData.isNumber()"
+              },
+              "$other": {
+                ".validate": false
+              }
+            }
           }
         },
         "rsvp": {
@@ -121,7 +164,7 @@
     },
     "rulesVersion": {
       ".read": true,
-      ".write": "newData.isNumber() && newData.val() === 7"
+      ".write": "newData.isNumber() && newData.val() === 8"
     },
     "public": {
       "$share": {

@@ -35,31 +35,6 @@ async function setHere(uid) {
   try { const c = await caches.open(STORE); await c.put(ME_KEY, new Response(String(uid || ''))); } catch (e) { }
 }
 
-/* What this phone changed on the calendar itself, for ten minutes. The
-   database does not record who moved a practice, so the server tells the
-   whole team, the coach who moved it included; her own phone, which the page
-   told, keeps quiet about it. Her other phones still say it, which is a fair
-   confirmation that it went. */
-const MINE_KEY = 'mine', MINE_MS = 10 * 60000;
-async function mineNow() {
-  try {
-    const c = await caches.open(STORE);
-    const r = await c.match(MINE_KEY);
-    const all = r ? JSON.parse(await r.text()) : {};
-    const now = Date.now(), out = {};
-    for (const [k, at] of Object.entries(all || {})) if (now - at < MINE_MS) out[k] = at;
-    return out;
-  } catch (e) { return {}; }
-}
-async function noteMine(key) {
-  try {
-    const all = await mineNow();
-    all[String(key)] = Date.now();
-    const c = await caches.open(STORE);
-    await c.put(MINE_KEY, new Response(JSON.stringify(all)));
-  } catch (e) { }
-}
-
 /* Safari takes away push from a site that gets one and shows nothing, so on
    an Apple device a notification is always shown, even with Minutes open in
    front of her. Elsewhere, a page she is looking at already shows its own
@@ -83,7 +58,6 @@ function payload(e) {
     code: String(d.code || ''),
     hash: String(d.hash || '#/messages'),
     uid: String(d.uid || ''),
-    key: String(d.key || ''),
     urgent: d.urgent === '1'
   };
 }
@@ -93,8 +67,6 @@ async function onPush(e) {
   const wins = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
   const looking = wins.some(c => c.visibilityState === 'visible' && c.focused);
   if (looking && !apple()) return;
-  // a change this phone made itself is not news to it (Apple aside, as above)
-  if (d.key && !apple() && (await mineNow())[d.key]) return;
   const here = await whoIsHere();
   const theirs = here !== null && d.uid && here !== d.uid;
   return self.registration.showNotification(theirs ? 'Minutes' : d.title, {
@@ -130,7 +102,6 @@ self.addEventListener('install', () => self.skipWaiting());
 self.addEventListener('activate', e => e.waitUntil(self.clients.claim()));
 self.addEventListener('message', e => {
   if (e.data && e.data.type === 'me') e.waitUntil(setHere(e.data.uid));
-  if (e.data && e.data.type === 'mine' && e.data.key) e.waitUntil(noteMine(e.data.key));
 });
 self.addEventListener('push', e => e.waitUntil(onPush(e)));
 self.addEventListener('notificationclick', e => e.waitUntil(onClick(e)));

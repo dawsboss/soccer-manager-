@@ -267,10 +267,35 @@ const toUid = (S, u) => S.sent().filter(m => m.data.uid === u);
     check('urgent', m.data.urgent, '1');
     check('opening the team\'s calendar', m.data.hash, '#/team/t1/calendar');
     check('tagged for the entry', m.data.tag, 'cal:CLUB:e_e1');
-    check('and keyed, so the phone that did it can keep quiet', m.data.key, 'cal:CLUB:e_e1');
+    check('nobody named: the entry says nobody changed it lately', m.data.body.includes(' · '), false);
     S.sends.length = 0;
     const again = (await S.fire(W + 'teams/t1/events/e1/called', null)).pushEntry;
     check('called back on', again.news + ' / ' + toUid(S, 'mum')[0].data.title, 'back / Back on: Flight: Practice');
+  }
+  {
+    // the app stamps every calendar change with who made it (remoteSet()), the rules hold it to her own uid
+    const S = calServer();
+    await S.fire(W + 'teams/t1/events/e1/edit', { by: 'coach', at: Date.now() });
+    const r = (await S.fire(W + 'teams/t1/events/e1/called', 'cancelled')).pushEntry;
+    check('the coach who called it off is not told, on either phone', toUid(S, 'coach').length, 0);
+    check('the rest of the team is', r.to.join(), 'ella,mum,rosamum,trk');
+    check('and told who did it', toUid(S, 'mum')[0].data.body.endsWith(' · Jaz'), true);
+    const n = S.sent().length;
+    await S.fire(W + 'teams/t1/events/e1/edit', { by: 'adm', at: Date.now() });
+    check('a stamp on its own is not news', S.sent().length, n);
+  }
+  {
+    // a stamp left from a change an hour ago says nothing about this one
+    const S = calServer();
+    S.put(W + 'teams/t1/events/e1/edit', { by: 'coach', at: Date.now() - 3600000 });
+    await S.fire(W + 'teams/t1/events/e1/called', 'cancelled');
+    check('an old stamp: nobody left out, nobody named', toUid(S, 'coach').length + ' ' + toUid(S, 'mum')[0].data.body.includes(' · '), '2 false');
+  }
+  {
+    const S = calServer();
+    S.put(W + 'matches/g1/edit', { by: 'adm', at: Date.now() });
+    await S.fire(W + 'matches/g1/kickoff', '10:30');
+    check('a game moved by an admin names her', toUid(S, 'mum')[0].data.body.endsWith(' · Ada'), true);
   }
   {
     const S = calServer();
@@ -441,12 +466,6 @@ const toUid = (S, u) => S.sent().filter(m => m.data.uid === u);
     A.ui.view = 'inbox'; A.render();
     check('and Messages stops asking', A.rendered().includes('Notifications on this phone'), false);
 
-    const n0 = b.posted.length;
-    A.noteMine('teams/t1/events/e1/called'); A.noteMine('matches/g1'); A.noteMine('matches/g1/kickoff');
-    A.noteMine('matches/g1/events/x9'); A.noteMine('matches/g1/stints/s1'); A.noteMine('teams/t1/attend/e1/p1');
-    await A.flush();
-    deepEq('the worker is told what this phone changed on the calendar, and only that', b.posted.slice(n0).map(m => m.type + ' ' + m.key),
-      ['mine cal:CLUB:e_e1', 'mine cal:CLUB:g_g1', 'mine cal:CLUB:g_g1']);
     A.click({ act: 'pushoff' }); await A.flush();
     check('off: the club\'s copy is taken down', tokRemoves(fbk).join(), 'pushTokens/mum/fTok0000000000000000000001:APA91b-first');
     check('and the browser\'s subscription deleted', fbk.record.tokenDrops, 1);
@@ -470,7 +489,7 @@ const toUid = (S, u) => S.sent().filter(m => m.data.uid === u);
     const fbk = makeFakebase().refuseWrites(p => p.startsWith('pushTokens/'));
     const { A } = await boot('mum', { fbk });
     A.click({ act: 'pushon' }); await A.flush();
-    check('rules not published: said, by version', /refused.*version 7/.test(A.lastToast()), true);
+    check('rules not published: said, by version', new RegExp('refused.*version ' + A.RULES_VERSION).test(A.lastToast()), true);
     check('and not claimed to be on', A.pushRec, null);
   }
 
@@ -616,19 +635,6 @@ const toUid = (S, u) => S.sent().filter(m => m.data.uid === u);
     const iw = worker({ wins: looking, ua: 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) Safari/604.1' });
     await iw.push(DATA);
     check('except on an iPhone, which takes push away from a site that shows nothing', iw.shown.length, 1);
-  }
-  {
-    const CAL = { ...DATA, title: 'Cancelled: Flight: Practice', tag: 'cal:CLUB:e_e1', key: 'cal:CLUB:e_e1', hash: '#/team/t1/calendar' };
-    const w = worker();
-    await w.fire('message', { data: { type: 'mine', key: 'cal:CLUB:e_e1' } });
-    await w.push(CAL);
-    check('a change this phone made is not news to it', w.shown.length, 0);
-    await w.push({ ...CAL, key: 'cal:CLUB:e_e2', tag: 'cal:CLUB:e_e2' });
-    check('another change still is', w.shown.length, 1);
-    const iw = worker({ ua: 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) Safari/604.1' });
-    await iw.fire('message', { data: { type: 'mine', key: 'cal:CLUB:e_e1' } });
-    await iw.push(CAL);
-    check('except on an iPhone, which must show every push', iw.shown.length, 1);
   }
   {
     const w = worker();

@@ -181,7 +181,7 @@ function granted(op, p, auth, after) {
 
 /* .validate does not cascade: it has to hold at the written node and at every
    node under it that carries data. Deletes skip it entirely. */
-function validated(p, value, after) {
+function validated(p, value, after, auth = null) {
   if (value === null) return true;
   const paths = [];
   (function walk(pp, v) {
@@ -195,7 +195,8 @@ function validated(p, value, after) {
     if (!link || link.at !== pp) continue;          // no rule reaches this deep
     const expr = link.node['.validate'];
     if (expr === undefined) continue;
-    const ctx = { auth: null, now: NOW, root: snap(DB, ''), data: snap(DB, pp), newData: snap(after, pp), ...link.vars };
+    // .validate sees the writer's auth, as the database gives it; the stamp rules lean on that
+    const ctx = { auth, now: NOW, root: snap(DB, ''), data: snap(DB, pp), newData: snap(after, pp), ...link.vars };
     if (!evalExpr(expr, ctx)) return false;
   }
   return true;
@@ -204,7 +205,7 @@ function validated(p, value, after) {
 const canRead = (p, auth) => granted('read', p, auth);
 function canWrite(p, value, auth) {
   const after = withWrite(DB, p, value);
-  return granted('write', p, auth, after) && validated(p, value, after);
+  return granted('write', p, auth, after) && validated(p, value, after, auth);
 }
 
 /* ---------------- the mock club ---------------- */
@@ -391,6 +392,44 @@ writes('a new game carries the team it belongs to', COACH, 'workspaces/CLUB/matc
 writes('and cannot be filed under another team', COACH, 'workspaces/CLUB/matches/g9', { id: 'g9', teamId: 't2' }, false);
 console.log('  ^ this is the hole README called "still not enforced": the index');
 console.log('    is club-wide, so every indexed account could write every team.');
+
+/* The calendar is the coaches' (the owner, 2026-10-07): a tracker works a
+   game, she does not reschedule it. And the club can say who changed it:
+   every calendar write carries `edit: { by, at }`, which the rules hold to
+   the writer's own uid. Sent back unchanged inside a bigger write (a whole
+   team saved) it passes, or saving a team would be refused for every entry
+   another coach last touched. */
+{
+  console.log('\n--- the calendar: the coaches\', and who changed it ---');
+  const G = 'workspaces/CLUB/matches/g1/';
+  writes('a tracker cannot move a game', TRK, G + 'date', '2026-10-11', false);
+  writes('nor change its kick-off', TRK, G + 'kickoff', '11:00', false);
+  writes('nor call it off', TRK, G + 'called', 'cancelled', false);
+  writes('nor where, nor who against', TRK, G + 'venue', 'Pitch 9', false);
+  writes('its coach can', COACH, G + 'called', 'cancelled', true);
+  writes('and an admin', ADM, G + 'date', '2026-10-11', true);
+  writes('another team\'s coach cannot', OTHER, G + 'kickoff', '11:00', false);
+  writes('a tracker still saves the whole game, its when untouched', TRK, 'workspaces/CLUB/matches/g1', { ...DB.workspaces.CLUB.matches.g1, goals: { x: { t: 1 } } }, true);
+  writes('but not with a new date in it', TRK, 'workspaces/CLUB/matches/g1', { ...DB.workspaces.CLUB.matches.g1, date: '2026-10-11' }, false);
+  writes('the coach stamps her change as hers', COACH, G + 'edit', { by: 'coach', at: NOW }, true);
+  writes('never as someone else\'s', COACH, G + 'edit', { by: 'adm', at: NOW }, false);
+  writes('a stamp is who and when, nothing more', COACH, G + 'edit', { by: 'coach', at: NOW, why: 'rain' }, false);
+  writes('a whole game carries hers', COACH, 'workspaces/CLUB/matches/g1', { ...DB.workspaces.CLUB.matches.g1, edit: { by: 'coach', at: NOW } }, true);
+  writes('not someone else\'s', COACH, 'workspaces/CLUB/matches/g1', { ...DB.workspaces.CLUB.matches.g1, edit: { by: 'adm', at: NOW } }, false);
+  const E = 'workspaces/CLUB/teams/t1/events/e1/';
+  DB.workspaces.CLUB.teams.t1.events = { e1: { id: 'e1', kind: 'practice', date: '2026-10-08', start: '18:00', edit: { by: 'adm', at: 5 } } };
+  writes('a practice called off, stamped by its coach', COACH, E + 'edit', { by: 'coach', at: NOW }, true);
+  writes('not in the admin\'s name', COACH, E + 'edit', { by: 'adm', at: NOW }, false);
+  writes('the team saved whole, the admin\'s old stamp sent back as it was', COACH, 'workspaces/CLUB/teams/t1', { ...DB.workspaces.CLUB.teams.t1 }, true);
+  writes('but not altered', COACH, 'workspaces/CLUB/teams/t1', { ...DB.workspaces.CLUB.teams.t1, events: { e1: { ...DB.workspaces.CLUB.teams.t1.events.e1, edit: { by: 'adm', at: NOW } } } }, false);
+  writes('a tracker still cannot touch the practice', TRK, E + 'called', 'cancelled', false);
+  writes('nor a parent', MUM, E + 'called', 'cancelled', false);
+  delete DB.workspaces.CLUB.teams.t1.events;
+  const saved = DB.workspaces.CLUB.access.teamIndex;
+  delete DB.workspaces.CLUB.access.teamIndex;
+  writes('before the team index: any indexed account, as elsewhere', TRK, G + 'date', '2026-10-11', true);
+  DB.workspaces.CLUB.access.teamIndex = saved;
+}
 
 console.log('\n--- the collections themselves are not writable ---');
 writes('the whole teams node', ADM, 'workspaces/CLUB/teams', {}, false);
@@ -1729,7 +1768,9 @@ console.log(`
      rules can say "may touch this team's games" but not "may add a goal and
      nothing else" without a rule per field. AUTH.md's table already scopes a
      tracker to the Track tab as an interface promise; this is the limit of
-     what the database can hold her to.
+     what the database can hold her to. When and whether a game is played
+     (date, kick-off, called off, place, opponent) is held: since version 8
+     those are the team's coaches' and the admins'.
 
   2. The app owner has no standing in these rules at all. appOwners is read by
      the app, never by a rule, so isOwner() opens buttons the database then

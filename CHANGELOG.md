@@ -35,14 +35,28 @@ whom club activity tells, unless they are on the team.
   server keeps the last thing it told per entry at `serverState/calSent`, a
   node no rule grants any phone (`test/rules.js` checks), and only the
   first to claim it speaks.
-- **Not to the phone that did it.** Entries carry no editor, so the server
-  cannot leave the coach who moved the practice out. Her phone tells its own
-  service worker what it changed, which keeps quiet for ten minutes; her
-  other phones still say it. (An iPhone shows every push it gets, so hers
-  will too.)
+- **Who did it is on the record** (the owner: *practice, games and team
+  things should be coaches only, so knowing who did it is important*). Every
+  calendar write now carries `edit: { by, at }`: stamped in `remoteSet()`,
+  where every calendar write passes, so no screen can forget it, and only for
+  the team's coaches and admins (a tracker saving the game she is tracking
+  has changed nothing in it). A whole entry or game carries it inside; a
+  field written alone (calling one off is just `called`) sends it beside,
+  first. The server leaves her out, on every phone of hers, and names her to
+  the rest: *Thu 8 Oct 6pm · Jaz*. A stamp more than five minutes old is
+  from an earlier change and says nothing about this one.
+- **Rules version 8, and the calendar is the coaches'.** A stamp is refused
+  in anyone's name but the writer's (sent back unchanged inside a bigger
+  write it passes, or saving a team would be refused for every entry another
+  coach last touched). A game's date, kick-off, called-off, place and
+  opponent are now the team's coaches' and the admins' at the database too:
+  a tracker could reschedule a game before, though the app never offered it.
+  Practices and events already were. The usual bridge: a club with no team
+  index yet is as before. `test/rules.js`'s evaluator now gives `.validate`
+  the writer's auth, as the database does; no rule had leaned on it before.
 
-No rule change; the rig in `test/fakebase.js` now models a write of any depth
-waking only the triggers whose own path it changed, as the database does.
+The rig in `test/fakebase.js` now models a write of any depth waking only the
+triggers whose own path it changed, as the database does.
 
 ## The server deploys itself — 2026-10-07 (build 104)
 

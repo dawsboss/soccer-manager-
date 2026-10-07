@@ -11,7 +11,7 @@ const BUILT = '2026-10-07';
    never pasted look exactly like a coach with no signal: "saved on this phone
    only", one feature at a time. test/rules.js holds the two numbers together
    and fails when the rules change without this going up. */
-const RULES_VERSION = 7;
+const RULES_VERSION = 8;
 /* index.html carries the build it was published with. If this file is newer, the
    browser handed us a cached page — the exact failure that has eaten hours. */
 const pageBuild = () => {
@@ -881,10 +881,33 @@ function pushAll() {
    (syncIndex() and the rest), so they never need the outbox; queuing them
    would only mean a refused copy of something derived nagging forever. */
 const DERIVED = /^access\/(index|teamIndex|coachIndex|teamParents)(\/|$)/;
+/* Who changed the calendar, and when. A game or a calendar entry is the
+   coaches' (the rules say so), and the club should be able to say which of
+   them called a practice off: the server leaves her out of the notification
+   it sends the team and names her in it. Stamped here, where every calendar
+   write passes, so no screen can forget: a whole entry or game carries
+   `edit: { by, at }`, and a single field written on its own (calling one off
+   is just `called`) sends the stamp beside it. The rules refuse a stamp in
+   anyone's name but the writer's. A delete carries none: there is nothing
+   left to stamp. */
+const CAL_PATH = /^(teams\/[^/]+\/events\/[^/]+|matches\/[^/]+)(\/(date|start|end|kickoff|called|venue|title|opponent|kind|series))?$/;
+function calStamp(path, v) {
+  const m = me && CAL_PATH.exec(path);
+  if (!m || v === null) return v;
+  // only who may change the calendar stamps it: a tracker saving the game she is tracking has changed nothing in it
+  const p = m[1].split('/');
+  const tid = p[0] === 'teams' ? p[1] : ((v && typeof v === 'object' && !m[2] && v.teamId) || ((state.matches || {})[p[1]] || {}).teamId);
+  if (!tid || !isCoach(tid, me.uid)) return v;
+  const stamp = { by: me.uid, at: nowMs() };
+  if (!m[2]) return v && typeof v === 'object' ? { ...v, edit: stamp } : v;
+  setDeep(state, m[1] + '/edit', stamp);
+  remoteSet(m[1] + '/edit', stamp);
+  return v;
+}
 function remoteSet(path, value) {
   noteMine(path);
   if (!fb) return;
-  const v = value === undefined ? null : value;
+  const v = calStamp(path, value === undefined ? null : value);
   if (DERIVED.test(path)) { const w = Promise.resolve(fb.set(fb.ref(fb.db, fb.base + '/' + path), v)); w.catch(() => { }); return w; }
   return sendPending(path, notePending(path, v), v);
 }
@@ -2722,21 +2745,6 @@ function pushCheck() {
       if (nowMs() - (r.at || 0) > PUSH_FRESH_MS)
         return rootPut(path(token), { at: nowMs(), ua: deviceName() }).then(() => pushSave({ ...r, at: nowMs() }));
     }).catch(() => { pushChecked = null; });
-}
-
-/* A change to the calendar made here is pushed to the whole team by the
-   server, which cannot tell who made it (entries carry no editor), so this
-   phone's own service worker is told, and keeps quiet when the push for it
-   arrives. A game's own writes (goals, subs, the clock) are not calendar
-   changes and are not passed on. */
-function swMine(p) {
-  if (!pushRec || typeof navigator === 'undefined' || !navigator.serviceWorker || !navigator.serviceWorker.ready) return;
-  const code = wsCode();
-  let key = null;
-  if (p[0] === 'teams' && p[2] === 'events' && p[3]) key = `cal:${code}:e_${p[3]}`;
-  else if (p[0] === 'matches' && p[1] && (!p[2] || ['date', 'kickoff', 'called'].includes(p[2]))) key = `cal:${code}:g_${p[1]}`;
-  if (!key || !code) return;
-  try { Promise.resolve(navigator.serviceWorker.ready).then(r => { if (r && r.active) r.active.postMessage({ type: 'mine', key }); }).catch(() => { }); } catch (e) { }
 }
 
 /* A notification tapped while Minutes is open: the service worker says where. */
@@ -14786,7 +14794,6 @@ const mineTouched = new Set();
 let newsLast = '';
 function noteMine(path) {
   const p = String(path || '').split('/');
-  swMine(p);
   if (p[0] === 'teams' && p[2] === 'events' && p[3]) mineTouched.add(`e:${p[1]}:${p[3]}`);
   else if (p[0] === 'matches' && p[1]) mineTouched.add('g:' + p[1]);
   else if (p[0] === 'sessions' && p[1]) mineTouched.add('s:' + p[1]);
