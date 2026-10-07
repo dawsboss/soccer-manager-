@@ -155,12 +155,20 @@ The club's server is three Cloud Functions on the same Firebase project, in `fun
 
 1. **Pay-as-you-go (Blaze).** Firebase console → the project → **Upgrade** at the bottom left → **Blaze**, with a card. Cloud Functions need it; at one club's volume the expected bill is nothing, inside the free allowance, but check Firebase's current pricing before telling anyone a number. Then Google Cloud console → **Billing → Budgets & alerts** → a budget of a few dollars, so anything unexpected emails you.
 2. **A deploy key for GitHub.** Google Cloud console, this project → **IAM & Admin → Service Accounts → Create service account** (`github-deployer`), with three roles: **Editor**, **Service Account User** (it deploys functions that run as the project's own account) and **Service Usage Admin** (a first deploy switches on the Google services functions need). Open it → **Keys → Add key → JSON**. On GitHub: the repository → **Settings → Secrets and variables → Actions → New repository secret**, named `FIREBASE_SERVICE_ACCOUNT`, the whole file as its value. Delete the file.
-3. **Merge to main**, or **Actions → Deploy the server → Run workflow**. The first deploy takes several minutes while Google switches on what functions need; if it fails at that stage, run it once more.
+3. **Once, as the project's Owner: let Google's own accounts deliver database events.** The first functions deploy needs three grants to Google's service agents, which a deploy key rightly cannot make. In the Google Cloud console, open Cloud Shell (**>_** at the top right) and run these, with your project id and number (Project settings shows both; the deploy's log prints the exact lines if they are missing):
+   ```
+   gcloud projects add-iam-policy-binding PROJECT_ID --member=serviceAccount:service-PROJECT_NUMBER@gcp-sa-pubsub.iam.gserviceaccount.com --role=roles/iam.serviceAccountTokenCreator
+   gcloud projects add-iam-policy-binding PROJECT_ID --member=serviceAccount:PROJECT_NUMBER-compute@developer.gserviceaccount.com --role=roles/run.invoker
+   gcloud projects add-iam-policy-binding PROJECT_ID --member=serviceAccount:PROJECT_NUMBER-compute@developer.gserviceaccount.com --role=roles/eventarc.eventReceiver
+   ```
+   Or IAM → **Grant access** for each, with the same accounts and roles (Service Account Token Creator, Cloud Run Invoker, Eventarc Event Receiver). Never give the deploy key the power to grant roles itself: a leaked key could then grant itself anything.
+4. **Merge to main**, or **Actions → Deploy the server → Run workflow**. The first deploy takes several minutes while Google switches on what functions need; if it fails at that stage, run it once more.
 
 If a deploy fails on permissions, the message names what is missing; add the role to `github-deployer` (IAM & Admin → IAM → its pencil → Add another role) and run it again:
 - *Permission denied to get service [cloudfunctions.googleapis.com]*: **Service Usage Admin**.
 - *You must have permission iam.serviceAccounts.ActAs*: **Service Account User**.
-- *Failed to list functions*, seconds after "Enabling now…": nothing missing, the services Google just switched on are not answering yet. Run it again in a minute or two.
+- *Failed to list functions*: **Editor** is missing, or (seconds after "Enabling now…") the services Google just switched on are not answering yet, so run it again in a minute or two.
+- *We failed to modify the IAM policy for the project*: step 3 above has not been done.
 
 Without the secret the workflow says so and deploys nothing. From a computer instead: `npm install -g firebase-tools`, `firebase login`, `(cd functions && npm ci)`, `firebase deploy --only functions`.
 
