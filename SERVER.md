@@ -1,11 +1,12 @@
 # What changes when there is a server
 
 This app is a static site and a Firebase database (CLAUDE.md, *Conventions*).
-Until the first Cloud Function ships, nothing runs anywhere except on
-somebody's phone. **The owner approved server-side code on 2026-10-06**:
-Cloud Functions on the same Firebase project, push first, then payments and
-email (`GOTSPORT.md`). The jobs below then move to it one at a time, each
-with its test, never in one rewrite. So every job that belongs to
+**The owner approved server-side code on 2026-10-06**: Cloud Functions on the
+same Firebase project, push first, then payments and email (`GOTSPORT.md`).
+The first ones shipped in build 104: `functions/` pushes team notices and
+family messages to closed phones. The jobs below move to it one at a time,
+each with its test, never in one rewrite; everything else here still runs on
+somebody's phone. So every job that belongs to
 nobody in particular (keeping a list in step, telling one club what happened in
 another, counting places, sending a message to a closed phone) is done today by
 whichever phone happens to be open and allowed to do it. That works, but each of
@@ -134,10 +135,13 @@ does the bookkeeping, not that the phone works offline first.
   scrubbed by the same `pubText()` rules, every time. `shareOwners` and the
   publish debounce go away.
 
-### Calendar sync (the Worker)
-- **Now:** `worker/calendar.mjs` turns `public/{id}.json` into a calendar feed,
-  and may read nothing else, because it holds no credentials.
-- **With a server:** the feed can be served from the club's own data, so the
+### Calendar sync
+- **Moved to the server (build 104), as it was:** the `calendar` function
+  (`functions/calendar.js`) turns `public/{id}` into a calendar feed, and
+  reads nothing else. It was a Cloudflare Worker until then. What it serves
+  is still what the phones published (`schedulePublish()`, `feedPublish()`),
+  so it is only as fresh as that.
+- **Next, now that it is a function:** the feed can be served from the club's own data, so the
   members' feed doesn't need its own public copy, and a person's own feed (My
   calendar's, *My calendar's feed* above) can carry names behind a private link
   instead of leaving them out.
@@ -167,13 +171,19 @@ does the bookkeeping, not that the phone works offline first.
 ## Telling people things
 
 ### Notifications
-- **Now:** every phone works out for itself what is new since it last looked,
-  per source, and shows it while the page is open (`clubNews()`, `sessNews()`,
-  `watchMessages()`, `ping()`). A closed phone hears nothing.
-- **With a server:** real push to a closed phone (ROADMAP, *Notifications with
-  the page closed*: a service worker, FCM tokens, and a sender), worked out once
-  for everybody instead of on each phone. The "first look is not news" care
-  goes away.
+- **Moved, for messages (build 104):** a new team notice or family message is
+  pushed by the server to the phones of whoever may read it
+  (`functions/push.js`, the `pushNotice` and `pushMessage` triggers), with the
+  app closed. The open page still pops it up and counts it on the bell
+  (`watchMessages()`), because a phone without notifications turned on, or a
+  club without the server, has only that.
+- **Now, for everything else:** every phone works out for itself what is new
+  since it last looked, per source, and shows it while the page is open
+  (`clubNews()`, `sessNews()`, `ping()`). A closed phone hears nothing of
+  club activity, a session booked, or a followed game's goals.
+- **With a server:** the same sender takes each of those on as a trigger of
+  its own, worked out once for everybody instead of on each phone, and the
+  "first look is not news" care goes away.
 
 ### Alerts from every club
 - **Now:** a phone in several clubs listens to every one of them for messages
@@ -185,6 +195,9 @@ does the bookkeeping, not that the phone works offline first.
 - **With a server:** it sees the change once, works out who it concerns, and
   pushes to their phones whether the app is open or not. The phone keeps the
   bar and the Open button, and stops listening to every club for news.
+  Messages are pushed already (build 104, *Notifications* above), from every
+  club she is in, since a token is per account, not per club; the calendar
+  changes are next.
 
 ### Email
 - **Now:** *Email or share* opens the person's own mail app with everybody in

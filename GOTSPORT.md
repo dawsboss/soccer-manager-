@@ -150,6 +150,45 @@ function that sends when a notice, a family message, a calendar change or a
 followed game's goal is written, to whoever the rules already say may read
 it. *Email or share* stays for whoever turned notifications off.
 
+**Built 2026-10-07 (build 104), the first half:** team notices and family
+messages. What it is, so the next jobs are built the same way:
+
+- **The sender** is `functions/index.js` (two triggers, `pushNotice` on
+  `board/{code}/{tid}/{id}` and `pushMessage` on `dm/{code}/{tid}/{fam}/m/{id}`,
+  creates only) and `functions/push.js`, which holds the judgement and imports
+  nothing from Firebase, so `test/push.js` runs it on the fake server
+  (`makeServer()` in `test/fakebase.js`, which requires the deployed
+  `index.js` with Firebase swapped out).
+- **Who hears** is who the rules let read it, from the same lookup tables,
+  *and* held to the squad, so a stale table entry never reaches a family the
+  squad no longer names; never the author; never the rules' bridge clauses
+  (a club with no `teamParents` table pushes to no family until an admin's
+  phone builds it). Tested for every kind of account, the way `rules.js`
+  tests the rules.
+- **What it says** is the title the open app pops up, the text cut to 240
+  characters, and where to open it. The tag is the message id, so a trigger
+  delivered twice replaces its own notification: the push version of
+  "record the event id before the effect".
+- **Tokens** are `pushTokens/{uid}/{token}` (`{ at, ua }`, rules version 7),
+  owner-only. A phone gives hers up on signing out (taken down while still
+  signed in, then the browser's subscription deleted), and when it finds
+  another account signed in; the server deletes any token Cloud Messaging
+  says is gone. A push for an account no longer signed in on the phone is shown
+  without its words.
+- **The service worker** (`sw.js`) shows a push and opens the place it is
+  about, switching club the way an alert's *Open* does. No fetch handler: it
+  does not serve the app from a cache (its comment says why). With
+  `manifest.webmanifest` and the icons, Minutes installs to the Home Screen,
+  which is also what an iPhone needs before it delivers any push (8, below).
+
+**Left of this step:** a calendar change to her own teams (called off,
+moved, back on, new: today `calAlerts()` on an open phone), a followed
+game's goals (following is per phone today and would need to be stored),
+and club activity for admins. Each is another trigger on the same sender;
+the calendar one needs care, because `matches/{mid}` is written every few
+seconds during a game, so it triggers on the few fields that matter
+(date, time, place, status), never the whole game.
+
 ### 4. Email
 
 Needs the server. Registration received, payment receipts, *your child is on
@@ -228,8 +267,7 @@ Not planned until someone needs them, because each is a product of its own:
 ## The server
 
 - **What it is:** Firebase Cloud Functions on the same project as the
-  database, in `functions/`, deployed with `firebase deploy --only
-  functions`. It needs Firebase's pay-as-you-go plan; at one club's volume
+  database, in `functions/`, deployed by `.github/workflows/server.yml`. It needs Firebase's pay-as-you-go plan; at one club's volume
   the cost is expected to be small. Check current pricing before telling a
   club a number.
 - **What stays the same:** the phone is offline-first and nothing at the
@@ -241,16 +279,22 @@ Not planned until someone needs them, because each is a product of its own:
   the same lookup tables the rules read, and is tested the way `rules.js`
   tests the rules: for every kind of account, against the fake Firebase.
 - **Secrets** (Stripe, email) live in Secret Manager. Never in the repo, never
-  in `firebase-config.js`, never in the Worker.
+  in `firebase-config.js`.
 - **Webhooks are idempotent:** the event id is recorded before the effect.
 - **SERVER.md is the list of what moves next.** Each job there that a phone
   does on someone else's behalf can move to a function once the server
   exists. Move them one at a time, each with its test, rather than in one
   rewrite.
 - **Still no AI.** Neither the app nor the server calls an AI model.
-- **The Worker stays as it is:** read-only, no credentials, `public/` only.
-  Anything needing a secret or the club's data is a function, not the
-  Worker.
+- **One server.** The calendar feed was a Cloudflare Worker; it moved into
+  `functions/` in build 104 (the owner, 2026-10-07: no Cloudflare account,
+  one deploy). It still reads only `public/` and writes nothing.
+- **Deploying:** `.github/workflows/server.yml` tests and deploys
+  `functions/` on every merge to main, as the site deploys itself, with a
+  service account key held as a GitHub secret. The rules publish the same
+  way when `database.rules.json` changes (the owner, 2026-10-07), after
+  `rules.js` passes and checked live afterwards (README, *Deploying the
+  server*).
 
 ---
 
@@ -312,7 +356,9 @@ hold.
 2. **The server, with push as its first job.** `functions/`, the deploy
    steps in README, a test rig for functions on the fake Firebase, the
    service worker and manifest, and the push sender. Small, and it fixes the
-   biggest everyday gap families have.
+   biggest everyday gap families have. *Built 2026-10-07 for notices and
+   family messages (build 104, Push notifications above); calendar changes
+   and followed games are left.*
 3. **Names behind the database, and the child as a club-level person.** One
    design, written into AUTH.md before the code (*Protecting the data* and
    *Season registration* above).

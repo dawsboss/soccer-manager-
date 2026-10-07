@@ -686,6 +686,36 @@ reads('owners are not world-readable', OUT, 'shareOwners/sh1', false);
   delete DB.people;
 }
 
+/* ---------------- a phone's notifications ---------------- */
+
+/* GOTSPORT.md, Push notifications. Each phone that turns notifications on
+   leaves its Cloud Messaging token under its own account, for the server to
+   send to. A token is the address of one person's phone, so it is hers alone:
+   nobody lists them, nobody else adds one under her name (which would send
+   her conversations to their phone), and the server, which writes with admin
+   credentials, is the only other thing that ever touches them. */
+{
+  console.log('\n--- a phone\'s notifications ---');
+  const TOK = 'fA1b2C3d4E5:APA91bHxYz_abc-DEF123456789';
+  const P = 'pushTokens/mum/';
+  writes('I leave my phone\'s address for the server', MUM, P + TOK, { at: NOW, ua: 'iPhone' }, true);
+  writes('nobody leaves one under my name', COACH, P + TOK, { at: NOW }, false);
+  writes('not even an admin', ADM, P + TOK, { at: NOW }, false);
+  writes('nor signed out', OUT, P + TOK, { at: NOW }, false);
+  writes('when it was left, and nothing else', MUM, P + TOK, { at: NOW, uid: 'coach' }, false);
+  writes('a time is a number', MUM, P + TOK, { at: 'today' }, false);
+  writes('and the phone\'s name is short', MUM, P + TOK, { at: NOW, ua: 'x'.repeat(61) }, false);
+  writes('a token, not a word', MUM, P + 'abc', { at: NOW }, false);
+  DB.pushTokens = { mum: { [TOK]: { at: NOW } } };
+  reads('I read my own', MUM, P, true);
+  reads('nobody else reads them', ADM, P, false);
+  reads('the app owner neither', OWNER, P, false);
+  reads('nobody lists everyone\'s', ADM, 'pushTokens', false);
+  writes('I take mine away', MUM, P + TOK, null, true);
+  writes('nobody else does', COACH, P + TOK, null, false);
+  delete DB.pushTokens;
+}
+
 /* ---------------- practices ---------------- */
 
 /* TRAINING.md: drills and plans are the club's and the coach's own work, so a

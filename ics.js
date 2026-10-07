@@ -3,11 +3,12 @@
 
    A classic script rather than a module, for two reasons. The test harness
    loads app.js as a function body, where a static import is a syntax error;
-   and the Cloudflare Worker on the roadmap is the only way a calendar can ever
-   *subscribe* to a season and see changes land by themselves (a calendar app
-   fetches a feed server-side and never runs our JavaScript), so this file is
-   written to be dropped into that Worker unchanged: no DOM, no Firebase, plain
-   data in and text out.
+   the calendar feed (functions/calendar.js, a Cloudflare Worker until build
+   104) is the only way a calendar can ever *subscribe* to a season and see
+   changes land by themselves (a calendar app fetches a feed server-side and
+   never runs our JavaScript), so this file is written to run there unchanged:
+   no DOM, no Firebase, plain data in and text out. functions/make.js copies it
+   across.
 
    Times are "floating" — 20261004T093000 with no zone and no Z. A fixture is
    9:30 wherever the pitch is, and a floating time is exactly that: the
@@ -132,7 +133,7 @@
 
   /* A published document (public/{id}: the season link, one game, or the
      members' calendar feed) as calendar items. The share page uses it for
-     "add all", and the calendar feed Worker for the whole feed, so the two can
+     "add all", and the calendar feed function for the whole feed, so the two can
      never describe the same fixture differently. `url(kind, id)` says where an
      entry links back to, since only the caller knows which page that is. */
   function docItems(doc, url) {

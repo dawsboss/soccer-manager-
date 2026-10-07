@@ -1,0 +1,505 @@
+/* Notifications to a closed phone: the server's first job (GOTSPORT.md,
+   Build order, step 2).
+
+   Three parts, each tested where it runs:
+
+   - The sender, functions/index.js and functions/push.js, on the fake
+     server (test/fakebase.js, makeServer()): the deployed file is required
+     with firebase-functions and firebase-admin swapped for fakes, and fed
+     writes the way Cloud Functions would. It writes with admin credentials
+     and the rules never see it, so what rules.js does for the rules this does
+     for it: every kind of account, and who must NOT hear. A push carries the
+     message's words to a lock screen; one sent to the wrong person is the
+     message read by the wrong person.
+   - The page, app.js, on the fake Firebase: turning notifications on and off,
+     the token following the account that is signed in, and a tapped
+     notification landing in the right club.
+   - The service worker, sw.js, run as it is in a sandbox with a fake `self`:
+     what it shows, for whom, and where a tap goes. */
+
+const fs = require('fs');
+const path = require('path');
+const vm = require('vm');
+const H = require('./harness');
+const { check, deepEq } = H;
+const { makeFakebase, makeServer } = require('./fakebase');
+const push = require('../functions/push');
+
+/* ---------------- the club, as the server reads it ---------------- */
+
+const tok = (who, n = 1) => `fTok_${who}_${n}_0000000000:APA91b-${who}`;
+const CLUB = {
+  access: {
+    org: { name: 'Lakeside SC' },
+    admins: { adm: true },
+    index: { adm: true, coach: true, trk: true, mum: true, rosamum: true, other: true, dad: true, newbie: true, ella: true },
+    members: {
+      adm: { name: 'Ada' }, coach: { name: 'Jaz' }, trk: { name: 'Tia' }, mum: { name: 'Mo', email: 'mo@x.test' },
+      rosamum: { name: 'Rae' }, other: { name: 'Kim' }, dad: { name: 'Dev' }, ella: { name: 'Ella' }
+    },
+    teams: { t1: { coaches: { coach: true }, trackers: { trk: true } }, t2: { coaches: { other: true } } },
+    teamIndex: { t1: { coach: 'coach', trk: 'tracker' }, t2: { other: 'coach' } },
+    // `stale` is still in the table but the squad no longer names her: the table is derived and can lag
+    teamParents: { t1: { mum: 'p1', rosamum: 'p2', stale: 'p2' }, t2: { dad: 'q1' } },
+    teamPlayers: { t1: { ella: 'p1' } }
+  },
+  teams: {
+    t1: { id: 't1', name: 'Flight', players: {
+      p1: { id: 'p1', name: 'Ella', number: '7', guardians: { mum: true }, self: { ella: true } },
+      p2: { id: 'p2', name: 'Rosa', number: '9', guardians: { rosamum: true } }
+    } },
+    t2: { id: 't2', name: 'Storm', players: { q1: { id: 'q1', name: 'Gia', number: '3', guardians: { dad: true } } } }
+  },
+  matches: {}
+};
+const EVERYONE = ['adm', 'coach', 'trk', 'mum', 'rosamum', 'other', 'dad', 'newbie', 'ella', 'stale'];
+function server(extra) {
+  const tokens = {};
+  for (const u of EVERYONE) tokens[u] = { [tok(u)]: { at: 1, ua: 'iPhone' } };
+  tokens.coach[tok('coach', 2)] = { at: 1, ua: 'Mac' };   // a coach with two phones gets it on both
+  const S = makeServer({ workspaces: { CLUB: JSON.parse(JSON.stringify(CLUB)) }, pushTokens: tokens, ...(extra || {}) });
+  S.loadFunctions();
+  return S;
+}
+const owners = S => [...new Set(S.sent().map(m => m.data.uid))].sort();
+const toUid = (S, u) => S.sent().filter(m => m.data.uid === u);
+
+(async () => {
+
+  console.log('--- the functions that are deployed ---');
+  {
+    const S = server();
+    deepEq('two triggers, one per thing that is news', Object.keys(S.triggers).filter(n => S.triggers[n].kind === 'created').sort(), ['pushMessage', 'pushNotice']);
+    check('a new notice wakes the notice sender', S.woken('board/CLUB/t1/n1').join(), 'pushNotice');
+    check('a new family message wakes the message sender', S.woken('dm/CLUB/t1/mum/m/x1').join(), 'pushMessage');
+    check('a read marker under a notice wakes nothing', S.woken('board/CLUB/t1/n1/seen/mum').length, 0);
+    check('nor one in a conversation', S.woken('dm/CLUB/t1/mum/seen/coach').length, 0);
+    // a live game is a write a second; none of it should cost a function call
+    check('nothing in the club itself wakes the server', S.woken('workspaces/CLUB/matches/g1/events/e1').length, 0);
+    const src = fs.readFileSync(path.join(__dirname, '..', 'functions', 'index.js'), 'utf8');
+    check('it reads from the database the event came from', /event\.data\.ref\.root/.test(src), true);
+    check('and never calls an AI model', /anthropic|openai|gemini|generativ/i.test(src + fs.readFileSync(path.join(__dirname, '..', 'functions', 'push.js'), 'utf8')), false);
+  }
+
+  console.log('\n--- a team notice: who hears it ---');
+  {
+    const S = server();
+    const r = await S.fire('board/CLUB/t1/n1', { by: 'coach', byName: 'Jaz', at: 5, text: 'Bring water, it is hot' });
+    const res = r.pushNotice;
+    deepEq('the admins, the team\'s tracker, its families and its player', res.to, ['adm', 'ella', 'mum', 'rosamum', 'trk']);
+    deepEq('and those are exactly the phones sent to', owners(S), ['adm', 'ella', 'mum', 'rosamum', 'trk']);
+    check('not the coach who wrote it', toUid(S, 'coach').length, 0);
+    check('not another age group\'s coach', toUid(S, 'other').length, 0);
+    check('nor its families', toUid(S, 'dad').length, 0);
+    check('nor someone in the club with no role on the team', toUid(S, 'newbie').length, 0);
+    check('nor a family the table still lists but the squad does not', toUid(S, 'stale').length, 0);
+    check('one message per phone', res.sent, 5);
+    const m = toUid(S, 'mum')[0];
+    check('titled the way the open app pops it up', m.data.title, 'Flight · Jaz');
+    check('with what the coach wrote', m.data.body, 'Bring water, it is hot');
+    check('opening the notices', m.data.hash, '#/messages');
+    check('in this club', m.data.code, 'CLUB');
+    check('tagged with the notice, so a repeat replaces itself', m.data.tag, 'n1');
+    check('addressed to the account it was sent for', m.data.uid, 'mum');
+    check('to that phone', m.token, tok('mum'));
+    check('sent at once, kept for a day at most', JSON.stringify(m.webpush.headers), JSON.stringify({ Urgency: 'high', TTL: '86400' }));
+    check('every value a string, as Cloud Messaging requires', Object.values(m.data).every(v => typeof v === 'string'), true);
+    const reads = S.reads.filter(p => !/^(workspaces\/CLUB\/|retired\/CLUB$|pushTokens\/)/.test(p));
+    deepEq('it read nothing but this club and the phones it sent to', reads, []);
+    check('and no phone of anyone it did not send to', S.reads.filter(p => /^pushTokens\/(coach|other|dad|newbie|stale)$/.test(p)).length, 0);
+  }
+  {
+    const S = server();
+    await S.fire('board/CLUB/t1/n2', { by: 'adm', byName: 'Ada', at: 5, text: 'Pitch 3 is shut', urgent: true });
+    check('an admin\'s notice reaches the coach, on both her phones', toUid(S, 'coach').length, 2);
+    check('urgent says so first', toUid(S, 'mum')[0].data.title, 'Urgent · Flight · Ada');
+    check('and asks to stay on screen', toUid(S, 'mum')[0].data.urgent, '1');
+    check('not the admin who wrote it', toUid(S, 'adm').length, 0);
+  }
+  {
+    const S = server();
+    await S.fire('board/CLUB/t2/n3', { by: 'other', byName: 'Kim', at: 5, text: 'Storm only' });
+    deepEq('another team\'s notice stays with that team', owners(S), ['adm', 'dad']);
+  }
+
+  console.log('\n--- a family conversation: who hears it ---');
+  {
+    const S = server();
+    const r = await S.fire('dm/CLUB/t1/mum/m/x1', { by: 'mum', byName: 'Mo', at: 5, text: 'Ella has a cold' });
+    deepEq('the admins, the team\'s coach, and Ella on her own sign-in', r.pushMessage.to, ['adm', 'coach', 'ella']);
+    check('not the tracker: trackers never read a family\'s conversation', toUid(S, 'trk').length, 0);
+    check('never another family on the team', toUid(S, 'rosamum').length, 0);
+    check('nor another age group\'s coach', toUid(S, 'other').length, 0);
+    check('not the parent who wrote it', toUid(S, 'mum').length, 0);
+    const c = toUid(S, 'coach')[0];
+    check('the coach sees whose conversation it is', c.data.title, 'Mo · Flight');
+    check('and what she said', c.data.body, 'Ella has a cold');
+    check('opening that conversation', c.data.hash, '#/messages/t1/mum');
+    check('Ella sees it from her mum', toUid(S, 'ella')[0].data.title, 'Mo · Flight');
+  }
+  {
+    const S = server();
+    await S.fire('dm/CLUB/t1/mum/m/x2', { by: 'coach', byName: 'Jaz', at: 5, text: 'Get well soon' });
+    deepEq('a coach\'s reply: the family, her daughter, the admins', owners(S), ['adm', 'ella', 'mum']);
+    check('the family sees who replied', toUid(S, 'mum')[0].data.title, 'Jaz · Flight');
+    check('the admins see whose conversation, and who spoke', toUid(S, 'adm')[0].data.title + ' / ' + toUid(S, 'adm')[0].data.body, 'Mo · Flight / Jaz: Get well soon');
+    check('not the coach who wrote it, on either phone', toUid(S, 'coach').length, 0);
+  }
+  {
+    const S = server();
+    await S.fire('dm/CLUB/t1/rosamum/m/x3', { by: 'rosamum', byName: 'Rae', at: 5, text: 'Rosa is away' });
+    check('Ella is not told about another family\'s conversation', toUid(S, 'ella').length, 0);
+    check('nor Ella\'s mum', toUid(S, 'mum').length, 0);
+  }
+  {
+    // the player's own record must name the family, whatever the table says
+    const S = server();
+    S.put('workspaces/CLUB/teams/t1/players/p1/self', null);
+    await S.fire('dm/CLUB/t1/mum/m/x4', { by: 'mum', byName: 'Mo', at: 5, text: 'x' });
+    check('a player taken off her own record is not told', toUid(S, 'ella').length, 0);
+  }
+  {
+    // a coach who is also a parent on her team reads it as staff, and is told once
+    const S = server();
+    S.put('workspaces/CLUB/teams/t1/players/p2/guardians/coach', true);
+    S.put('workspaces/CLUB/access/teamParents/t1/coach', 'p2');
+    await S.fire('board/CLUB/t1/n4', { by: 'adm', byName: 'Ada', at: 5, text: 'x' });
+    check('a coach with a child on her team: once per phone', toUid(S, 'coach').length, 2);
+  }
+
+  console.log('\n--- what is never sent ---');
+  {
+    const S = server({ retired: { CLUB: { at: 1 } } });
+    await S.fire('board/CLUB/t1/n5', { by: 'coach', byName: 'Jaz', at: 5, text: 'x' });
+    check('nothing from a retired club', S.sent().length, 0);
+  }
+  {
+    const S = server();
+    await S.fire('board/CLUB/t9/n6', { by: 'coach', byName: 'Jaz', at: 5, text: 'x' });
+    check('nothing for a team the club does not have', S.sent().length, 0);
+    await S.fire('board/CLUB/t1/n7', { by: 'coach', byName: 'Jaz', at: 5 });
+    check('nothing with no words', S.sent().length, 0);
+    await S.fire('dm/CLUB/t1/mum/m/x5', { byName: 'Mo', at: 5, text: 'x' });
+    check('nothing nobody wrote', S.sent().length, 0);
+  }
+  {
+    // a club whose lookup tables were never built: the rules' bridge lets every indexed account read, the sender does not
+    const S = server();
+    S.put('workspaces/CLUB/access/teamParents', null);
+    await S.fire('board/CLUB/t1/n8', { by: 'coach', byName: 'Jaz', at: 5, text: 'x' });
+    deepEq('no table, no families: only those the rules name directly', owners(S), ['adm', 'ella', 'trk']);
+  }
+  {
+    const S = server();
+    const long = 'word '.repeat(200);
+    await S.fire('board/CLUB/t1/n9', { by: 'coach', byName: 'Jaz', at: 5, text: long });
+    const b = toUid(S, 'mum')[0].data.body;
+    check('a long notice is cut short for the lock screen', b.length, push.BODY_MAX);
+    check('and says so', b.endsWith('…'), true);
+  }
+
+  console.log('\n--- phones that are gone ---');
+  {
+    const S = server();
+    S.answer(t => t === tok('coach', 2) ? { success: false, error: { code: 'messaging/registration-token-not-registered' } }
+      : t === tok('trk') ? { success: false, error: { code: 'messaging/internal-error' } } : { success: true });
+    const r = (await S.fire('board/CLUB/t1/n10', { by: 'adm', byName: 'Ada', at: 5, text: 'x' })).pushNotice;
+    check('a phone Cloud Messaging says is gone is taken off', S.at('pushTokens/coach/' + tok('coach', 2)), null);
+    check('her other phone stays', !!S.at('pushTokens/coach/' + tok('coach')), true);
+    check('a passing failure keeps the phone', !!S.at('pushTokens/trk/' + tok('trk')), true);
+    check('and the rest are still sent', r.sent, 4);
+    check('counted', r.failed, 2);
+  }
+  {
+    const S = server();
+    const many = {};
+    for (let i = 0; i < 620; i++) many[tok('mum', i + 10)] = { at: 1 };
+    S.put('pushTokens/mum', many);
+    const r = (await S.fire('board/CLUB/t1/n11', { by: 'coach', byName: 'Jaz', at: 5, text: 'x' })).pushNotice;
+    check('more phones than one send takes go in batches', S.sends.length, 2);
+    check('and every one is sent', r.sent, 620 + 4);
+  }
+
+  /* ---------------- the page ---------------- */
+
+  console.log('\n--- turning it on, on the phone ---');
+  const CONFIG = { apiKey: 'k', databaseURL: 'https://prod.example', projectId: 'p', messagingSenderId: '1', appId: 'a' };
+  const KEY = 'BPushKeyFromTheFirebaseConsole0123456789';
+  function browser(opts = {}) {
+    const b = { posted: [], swListeners: [], registered: [], perm: opts.perm || 'default', answer: opts.answer || 'granted' };
+    const reg = { scope: 'https://x.test/', active: { postMessage: m => b.posted.push(m) } };
+    b.reg = reg;
+    b.navigator = {
+      userAgent: opts.ua || 'Mozilla/5.0 (Linux; Android 14) Chrome/130',
+      serviceWorker: opts.noSw ? undefined : {
+        register: f => { b.registered.push(f); return Promise.resolve(reg); },
+        ready: Promise.resolve(reg),
+        addEventListener: (t, fn) => b.swListeners.push([t, fn])
+      }
+    };
+    b.window = { ...(opts.noPush ? {} : { PushManager: function () { } }), ...(opts.key === false ? {} : { SOCCER_PUSH_KEY: KEY }) };
+    global.Notification = opts.noNotification ? undefined : {
+      get permission() { return b.perm; },
+      requestPermission: () => { b.asked = (b.asked || 0) + 1; b.perm = b.answer; return Promise.resolve(b.answer); }
+    };
+    if (opts.noNotification) delete global.Notification;
+    return b;
+  }
+  async function boot(who, opts = {}) {
+    const b = browser(opts);
+    const fbk = opts.fbk || makeFakebase();
+    const A = H.loadApp({ firebase: fbk, config: CONFIG, navigator: b.navigator, window: b.window, search: opts.search, hash: opts.hash,
+      storage: { 'sm.workspace': 'CLUB', ...(opts.storage || {}) } });
+    await A.flush();
+    if (who) fbk.signIn(who, { name: (CLUB.access.members[who] || {}).name || who });
+    await A.flush();
+    if (opts.online !== false) fbk.deliver('.info/connected', true);
+    fbk.deliver('workspaces/CLUB', JSON.parse(JSON.stringify(CLUB))); await A.flush();
+    return { A, fbk, b };
+  }
+  const tokWrites = fbk => fbk.record.writes.filter(w => w.path.startsWith('pushTokens/'));
+  const tokRemoves = fbk => fbk.record.removes.filter(p => p.startsWith('pushTokens/'));
+
+  {
+    const { A, b } = await boot('mum', { key: false });
+    check('no push key for the club: nothing is offered', A.pushSupport(), 'unset');
+    A.ui.view = 'setup'; A.render();
+    check('and Settings says nothing about it', A.rendered().includes('Notifications on this phone'), false);
+    check('the worker is not even registered', b.registered.length, 0);
+  }
+  {
+    const { A } = await boot('mum', { ua: 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) Safari/604.1', noPush: true });
+    check('an iPhone in a browser tab is told to add it to the Home Screen', A.pushSupport(), 'install');
+    A.ui.view = 'setup'; A.render();
+    check('in so many words', A.rendered().includes('Add to Home Screen'), true);
+    check('with nothing to tap that cannot work', A.rendered().includes('data-act="pushon"'), false);
+  }
+  {
+    const { A } = await boot('mum', { noSw: true });
+    check('a browser with no push at all says so', A.pushSupport(), 'no');
+  }
+  {
+    const { A } = await boot('mum', { perm: 'denied' });
+    check('blocked in the browser\'s settings is said', A.pushSupport(), 'blocked');
+  }
+  {
+    const { A, fbk, b } = await boot(null);
+    A.click({ act: 'pushon' }); await A.flush();
+    check('signed out: nothing to leave a token for', A.lastToast(), 'Sign in first');
+    check('and nothing written', tokWrites(fbk).length, 0);
+    check('nobody was asked', b.asked || 0, 0);
+  }
+  {
+    const { A, fbk, b } = await boot('mum');
+    check('a parent may turn it on: it is her own phone', A.pushSupport(), 'ok');
+    check('the worker is registered at load, ready for a tap', b.registered.join(), 'sw.js');
+    A.ui.view = 'inbox'; A.render();
+    check('Messages offers it', A.rendered().includes('data-act="pushon"'), true);
+    check('instead of the open-page pop-ups', A.rendered().includes('Pop-ups on this device'), false);
+    A.click({ act: 'pushon' }); await A.flush();
+    check('the browser is asked, from the tap', b.asked, 1);
+    check('the token is asked for with the club\'s key', fbk.record.tokens.map(t => t.vapidKey).join(), KEY);
+    check('and for Minutes\' own worker', fbk.record.tokens[0].reg, b.reg);
+    const w = tokWrites(fbk);
+    check('one write, at her own address', w.map(x => x.path).join(), 'pushTokens/mum/' + fbk.token);
+    deepEq('holding when, and what kind of phone', Object.keys(w[0].value).sort(), ['at', 'ua']);
+    check('which is all a phone is called', w[0].value.ua, 'Android');
+    check('kept on the phone as hers', A.pushRec.uid + ' ' + A.pushRec.token, 'mum ' + fbk.token);
+    check('so it is on', A.pushOn(), true);
+    check('the worker is told who is signed in', b.posted.some(m => m.type === 'me' && m.uid === 'mum'), true);
+    A.ui.view = 'setup'; A.render();
+    check('Settings says it is on, with a way off', A.rendered().includes('data-act="pushoff"'), true);
+    A.ui.view = 'inbox'; A.render();
+    check('and Messages stops asking', A.rendered().includes('Notifications on this phone'), false);
+
+    A.click({ act: 'pushoff' }); await A.flush();
+    check('off: the club\'s copy is taken down', tokRemoves(fbk).join(), 'pushTokens/mum/fTok0000000000000000000001:APA91b-first');
+    check('and the browser\'s subscription deleted', fbk.record.tokenDrops, 1);
+    check('and the phone forgets it', A.pushRec, null);
+    check('so it is off', A.pushOn(), false);
+  }
+  {
+    const { A, fbk } = await boot('mum', { online: false });
+    A.click({ act: 'pushon' }); await A.flush();
+    check('with no signal it waits for one', A.lastToast(), 'Turn notifications on with a signal');
+    check('nothing written', tokWrites(fbk).length, 0);
+    check('and nothing claimed', A.pushRec, null);
+  }
+  {
+    const { A, fbk } = await boot('mum', { answer: 'denied' });
+    A.click({ act: 'pushon' }); await A.flush();
+    check('she says no: nothing is left anywhere', tokWrites(fbk).length + fbk.record.tokens.length, 0);
+    check('and she is told where to change her mind', /settings/.test(A.lastToast()), true);
+  }
+  {
+    const fbk = makeFakebase().refuseWrites(p => p.startsWith('pushTokens/'));
+    const { A } = await boot('mum', { fbk });
+    A.click({ act: 'pushon' }); await A.flush();
+    check('rules not published: said, by version', /refused.*version 7/.test(A.lastToast()), true);
+    check('and not claimed to be on', A.pushRec, null);
+  }
+
+  console.log('\n--- the token follows whoever is signed in ---');
+  {
+    const { A, fbk, b } = await boot('mum');
+    A.click({ act: 'pushon' }); await A.flush();
+    const left = 'pushTokens/mum/' + fbk.token;
+    const removesBefore = fbk.record.removes.length;
+    A.click({ act: 'signout' }); await A.flush();
+    check('signing out takes her phone\'s address down', fbk.record.removes.slice(removesBefore).join(), left);
+    check('and deletes the browser\'s subscription', fbk.record.tokenDrops, 1);
+    check('and forgets it', A.pushRec, null);
+    fbk.signOut(); await A.flush();
+    check('the worker is told nobody is signed in', b.posted[b.posted.length - 1].uid, '');
+  }
+  {
+    // left by mum, and the phone now opens as somebody else: she signed out with no signal, or another browser session
+    const stored = { 'sm.push.v1': JSON.stringify({ uid: 'mum', token: tok('mum'), env: '', at: Date.now() }) };
+    const { A, fbk } = await boot('coach', { storage: stored, perm: 'granted' });
+    check('another account: the old token is given up', A.pushRec, null);
+    check('by deleting the browser\'s subscription', fbk.record.tokenDrops, 1);
+    check('never written under the new account', tokWrites(fbk).length, 0);
+    check('nor touching hers, which only she may', tokRemoves(fbk).length, 0);
+  }
+  {
+    const fbk = makeFakebase();
+    const stored = { 'sm.push.v1': JSON.stringify({ uid: 'mum', token: 'fTokOldOldOldOldOldOldOld:APA91b-old', env: '', at: Date.now() }) };
+    const { A } = await boot('mum', { fbk, storage: stored, perm: 'granted' });
+    check('the browser has a new token: the club gets it', tokWrites(fbk).map(w => w.path).join(), 'pushTokens/mum/' + fbk.token);
+    check('and the old one comes down', tokRemoves(fbk).join(), 'pushTokens/mum/fTokOldOldOldOldOldOldOld:APA91b-old');
+    check('the phone keeps the new one', A.pushRec.token, fbk.token);
+  }
+  {
+    const fbk = makeFakebase();
+    const week = 8 * 86400000;
+    const stored = { 'sm.push.v1': JSON.stringify({ uid: 'mum', token: fbk.token, env: '', at: Date.now() - week }) };
+    await boot('mum', { fbk, storage: stored, perm: 'granted' });
+    check('a week on, its date is freshened', tokWrites(fbk).length, 1);
+    check('nothing taken down', tokRemoves(fbk).length, 0);
+  }
+  {
+    const fbk = makeFakebase();
+    const stored = { 'sm.push.v1': JSON.stringify({ uid: 'mum', token: fbk.token, env: '', at: Date.now() }) };
+    await boot('mum', { fbk, storage: stored, perm: 'granted' });
+    check('the same token, recently: nothing written', tokWrites(fbk).length + tokRemoves(fbk).length, 0);
+  }
+  {
+    const stored = { 'sm.push.v1': JSON.stringify({ uid: 'mum', token: tok('mum'), env: '', at: Date.now() }) };
+    const { A, fbk } = await boot('mum', { storage: stored, perm: 'default' });
+    check('taken back in the browser: the server stops trying', tokRemoves(fbk).join(), 'pushTokens/mum/' + tok('mum'));
+    check('and it reads as off', A.pushRec, null);
+  }
+
+  console.log('\n--- a tapped notification lands where it happened ---');
+  {
+    const { A, b } = await boot('mum');
+    const [, onMsg] = b.swListeners.find(([t]) => t === 'message') || [];
+    check('the page listens to its worker', typeof onMsg, 'function');
+    onMsg({ data: { type: 'open', code: 'CLUB', hash: '#/messages/t1/mum' } }); await A.flush();
+    check('this club: straight to the conversation', A.ui.view + ' ' + (A.ui.thread || {}).fam, 'thread mum');
+    const was = global.location.hash, reloads = A.dom.reloads || 0;
+    onMsg({ data: { type: 'open', code: 'CLUB', hash: 'javascript:alert(1)' } }); await A.flush();
+    onMsg({ data: { type: 'open', code: 'OTHER', hash: 'https://evil.test/' } }); await A.flush();
+    check('anything but a place in the app is ignored', global.location.hash + ' ' + (A.dom.reloads || 0), was + ' ' + reloads);
+  }
+  {
+    const fbk = makeFakebase();
+    const { A } = await boot('mum', { fbk, search: '?open=OTHER', hash: '#/messages' });
+    check('opened by a tap from another club: noted', A.pushOpen, 'OTHER');
+    check('and taken off the address', A.dom.replaced.includes('open='), false);
+    fbk.deliver('userOrgs/mum', { CLUB: { name: 'Lakeside SC' } }); await A.flush();
+    check('not her club: nothing switches', A.storage.getItem('sm.workspace') + ' ' + (A.dom.reloads || 0), 'CLUB 0');
+  }
+  {
+    const fbk = makeFakebase();
+    const { A } = await boot('mum', { fbk, search: '?open=OTHER', hash: '#/messages' });
+    fbk.deliver('userOrgs/mum', { CLUB: { name: 'Lakeside SC' }, OTHER: { name: 'Hill FC' } }); await A.flush();
+    check('her club: it switches there', A.storage.getItem('sm.workspace'), 'OTHER');
+    check('and reloads into it', A.dom.reloads, 1);
+  }
+  {
+    const { A } = await boot('mum', { search: '?open=CLUB' });
+    check('the club already open: nothing to switch', A.pushOpen, null);
+  }
+
+  /* ---------------- the service worker ---------------- */
+
+  console.log('\n--- the service worker ---');
+  const SW = fs.readFileSync(path.join(__dirname, '..', 'sw.js'), 'utf8');
+  function worker(opts = {}) {
+    const w = { handlers: {}, shown: [], opened: [], store: {}, wins: opts.wins || [] };
+    const self = {
+      navigator: { userAgent: opts.ua || 'Mozilla/5.0 (Linux; Android 14) Chrome/130' },
+      addEventListener: (t, fn) => { w.handlers[t] = fn; },
+      skipWaiting() { },
+      registration: { scope: 'https://x.test/app/', showNotification: (title, o) => { w.shown.push({ title, ...o }); return Promise.resolve(); } },
+      clients: {
+        matchAll: () => Promise.resolve(w.wins),
+        openWindow: url => { w.opened.push(url); return Promise.resolve(); },
+        claim: () => Promise.resolve()
+      }
+    };
+    const caches = { open: () => Promise.resolve({
+      match: k => Promise.resolve(k in w.store ? { text: () => Promise.resolve(w.store[k]) } : undefined),
+      put: (k, r) => { w.store[k] = r.body; return Promise.resolve(); }
+    }) };
+    function Response(body) { this.body = String(body); }
+    vm.runInNewContext(SW, { self, caches, Response, console });
+    w.fire = async (type, e) => { let p; w.handlers[type]({ ...e, waitUntil: x => { p = x; } }); await p; };
+    w.push = data => w.fire('push', { data: { json: () => ({ data, from: '1', fcmMessageId: 'x' }) } });
+    return w;
+  }
+  const DATA = { title: 'Flight · Jaz', body: 'Bring water', tag: 'n1', code: 'CLUB', hash: '#/messages', uid: 'mum', urgent: '' };
+  {
+    const w = worker();
+    check('no fetch handler: it never serves the app from a copy of its own', 'fetch' in w.handlers, false);
+    await w.push(DATA);
+    check('a push is shown', w.shown.length, 1);
+    check('with the server\'s title', w.shown[0].title, 'Flight · Jaz');
+    check('and its words', w.shown[0].body, 'Bring water');
+    check('tagged, so a repeat replaces it', w.shown[0].tag, 'n1');
+    check('remembering where it opens', JSON.stringify(w.shown[0].data), JSON.stringify({ code: 'CLUB', hash: '#/messages' }));
+  }
+  {
+    const w = worker();
+    await w.fire('message', { data: { type: 'me', uid: 'coach' } });
+    await w.push(DATA);
+    check('for an account not signed in here: shown without its words', w.shown[0].body.includes('Bring water') || w.shown[0].title.includes('Jaz'), false);
+    check('and a tap opens nothing of hers', w.shown[0].data.hash, '');
+    await w.fire('message', { data: { type: 'me', uid: '' } });
+    await w.push(DATA);
+    check('signed out: the same', w.shown[1].body.includes('Bring water'), false);
+    await w.fire('message', { data: { type: 'me', uid: 'mum' } });
+    await w.push(DATA);
+    check('signed back in as her: in full', w.shown[2].body, 'Bring water');
+  }
+  {
+    const looking = [{ visibilityState: 'visible', focused: true, focus() { }, postMessage() { } }];
+    const w = worker({ wins: looking });
+    await w.push(DATA);
+    check('Minutes open in front of her: the page says it, not the system', w.shown.length, 0);
+    const iw = worker({ wins: looking, ua: 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) Safari/604.1' });
+    await iw.push(DATA);
+    check('except on an iPhone, which takes push away from a site that shows nothing', iw.shown.length, 1);
+  }
+  {
+    const w = worker();
+    await w.push({ ...DATA, urgent: '1' });
+    check('urgent stays on screen until she sees it', w.shown[0].requireInteraction, true);
+  }
+  {
+    const told = [];
+    const win = { visibilityState: 'hidden', focused: false, focus() { told.push('focus'); return Promise.resolve(); }, postMessage: m => told.push(m) };
+    const w = worker({ wins: [win] });
+    await w.fire('notificationclick', { notification: { close() { told.push('closed'); }, data: { code: 'OTHER', hash: '#/messages/t1/mum' } } });
+    check('a tap closes it, brings Minutes forward, and says where', JSON.stringify(told), JSON.stringify(['closed', 'focus', { type: 'open', code: 'OTHER', hash: '#/messages/t1/mum' }]));
+    check('without opening a second one', w.opened.length, 0);
+  }
+  {
+    const w = worker();
+    await w.fire('notificationclick', { notification: { close() { }, data: { code: 'OTHER', hash: '#/messages/t1/mum' } } });
+    check('with none open, it opens one there, the club on the address', w.opened[0], 'https://x.test/app/?open=OTHER#/messages/t1/mum');
+  }
+
+  H.summary('notifications to a closed phone');
+})().catch(e => { console.error(e); process.exit(1); });

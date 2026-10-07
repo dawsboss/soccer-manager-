@@ -23,8 +23,11 @@ function makeFakebase() {
     listeners: [],       // every read, in the order it was registered
     writes: [],          // { path, value }
     removes: [],         // path
-    mails: []            // { email, url } — sign-in links Firebase would have emailed
+    mails: [],           // { email, url } — sign-in links Firebase would have emailed
+    tokens: [],          // getToken calls: { vapidKey, reg }
+    tokenDrops: 0        // deleteToken calls
   };
+  let nextToken = 'fTok0000000000000000000001:APA91b-first';
 
   let authCb = null;
   let currentUser = null;
@@ -62,6 +65,19 @@ function makeFakebase() {
       updateProfile: () => Promise.resolve(),
       GoogleAuthProvider: function () { },
       signInWithPopup: () => Promise.resolve({ user: currentUser })
+    },
+
+    /* Cloud Messaging on the page: a token per browser until it is deleted,
+       which is what makes the next one different. */
+    messaging: {
+      getMessaging: app => ({ app, _fake: true }),
+      isSupported: () => Promise.resolve(true),
+      getToken(m, opts) {
+        record.tokens.push({ vapidKey: opts && opts.vapidKey, reg: opts && opts.serviceWorkerRegistration });
+        if (record.tokenFail) return Promise.reject(record.tokenFail);
+        return Promise.resolve(nextToken);
+      },
+      deleteToken() { record.tokenDrops++; nextToken = nextToken.replace(/\d+:/, n => String(Number(n.slice(0, -1)) + 1).padStart(n.length - 1, '0') + ':'); return Promise.resolve(true); }
     },
 
     database: {
@@ -106,6 +122,11 @@ function makeFakebase() {
     totalReads: path => record.listeners.filter(l => l.path === path).length,
     writtenTo: path => record.writes.filter(w => w.path === path),
 
+    /* ---- Cloud Messaging ---- */
+    get token() { return nextToken; },
+    /* the browser hands out a different token from now on, as a real one does now and then */
+    rotateToken(t) { nextToken = t; return this; },
+
     /* ---- auth, on the test's schedule ---- */
     signIn(uid, extra = {}) {
       currentUser = {
@@ -144,4 +165,133 @@ function makeFakebase() {
   };
 }
 
-module.exports = { makeFakebase, snap };
+/* ---------------- the server's side ---------------- */
+
+/* The functions in functions/ run with admin credentials against a database
+   tree and Cloud Messaging. This is both, in memory: a tree the test seeds and
+   reads back, and a messenger that records every send and answers each token
+   the way the test says (a dead phone, a passing failure).
+
+   `loadFunctions()` requires functions/index.js with firebase-functions and
+   firebase-admin swapped for fakes, so what is under test is the deployed
+   file, its trigger paths included, not a copy of its wiring. `fire()` hands
+   a trigger a write the way Cloud Functions would: the path's {params}, and a
+   snapshot whose ref reaches back to this tree. */
+function makeServer(seed = {}) {
+  const tree = JSON.parse(JSON.stringify(seed));
+  const segs = p => String(p || '').split('/').filter(Boolean);
+  const at = p => { let cur = tree; for (const k of segs(p)) { if (!cur || typeof cur !== 'object') return undefined; cur = cur[k]; } return cur; };
+  const put = (p, v) => {
+    const ks = segs(p); let cur = tree;
+    for (const k of ks.slice(0, -1)) { if (!cur[k] || typeof cur[k] !== 'object') cur[k] = {}; cur = cur[k]; }
+    if (v === null || v === undefined) delete cur[ks[ks.length - 1]];
+    else cur[ks[ks.length - 1]] = JSON.parse(JSON.stringify(v));
+  };
+  const clone = v => (v === undefined ? null : JSON.parse(JSON.stringify(v)));
+  const reads = [], removes = [], sends = [];
+  let down = false;
+  let answer = () => ({ success: true });
+  const ref = p => ({
+    path: segs(p).join('/'),
+    get root() { return ref(''); },
+    child: c => ref(segs(p).concat(segs(c)).join('/')),
+    get: () => { reads.push(segs(p).join('/')); if (down) return Promise.reject(new Error('unavailable')); return Promise.resolve({ val: () => clone(at(p)), exists: () => at(p) != null }); },
+    remove: () => { removes.push(segs(p).join('/')); put(p, null); return Promise.resolve(); },
+    set: v => { put(p, v); return Promise.resolve(); }
+  });
+  const messaging = {
+    sendEach(messages) {
+      if (messages.length > 500) return Promise.reject(new Error('messaging/invalid-argument: more than 500 messages'));
+      sends.push(messages.map(m => JSON.parse(JSON.stringify(m))));
+      return Promise.resolve({ responses: messages.map(m => answer(m.token, m)) });
+    }
+  };
+  const triggers = {};
+
+  /* The modules functions/index.js requires, by name. */
+  const modules = {
+    'firebase-functions/v2/database': {
+      onValueCreated(path, handler) {
+        const t = { kind: 'created', path: String(path).replace(/^\//, ''), handler };
+        return t;
+      }
+    },
+    'firebase-functions/v2/https': {
+      onRequest(opts, handler) {
+        if (typeof opts === 'function') { handler = opts; opts = {}; }
+        return { kind: 'https', opts, handler };
+      }
+    },
+    'firebase-admin/app': { initializeApp: () => ({ name: '[DEFAULT]' }) },
+    'firebase-admin/messaging': { getMessaging: () => messaging },
+    'firebase-admin/database': { getDatabase: () => ({ ref }) }
+  };
+
+  function loadFunctions(file = require('path').join(__dirname, '..', 'functions', 'index.js')) {
+    const Module = require('module');
+    const real = Module._load;
+    Module._load = function (req, parent, isMain) {
+      if (Object.prototype.hasOwnProperty.call(modules, req)) return modules[req];
+      if (/^firebase-(admin|functions)/.test(req)) throw new Error('functions/ asked for ' + req + ', which the rig does not fake');
+      return real.apply(this, arguments);
+    };
+    try {
+      delete require.cache[require.resolve(file)];
+      const exp = require(file);
+      for (const [name, t] of Object.entries(exp)) triggers[name] = t;
+      return exp;
+    } finally { Module._load = real; }
+  }
+
+  /* Match a concrete path against a trigger's pattern, {name} for a segment. */
+  function params(pattern, p) {
+    const a = segs(pattern), b = segs(p);
+    if (a.length !== b.length) return null;
+    const out = {};
+    for (let i = 0; i < a.length; i++) {
+      const m = /^\{(\w+)\}$/.exec(a[i]);
+      if (m) out[m[1]] = b[i]; else if (a[i] !== b[i]) return null;
+    }
+    return out;
+  }
+
+  return {
+    tree, reads, removes, sends, triggers, loadFunctions, ref, at: p => clone(at(p)), put,
+    /* every message handed to Cloud Messaging, flattened */
+    sent: () => sends.flat(),
+    /* the database refusing every read, the way an outage looks from here */
+    down(v = true) { down = v; return this; },
+    /* how Cloud Messaging answers each token: return { success } or { success: false, error: { code } } */
+    answer(fn) { answer = fn; return this; },
+    /* A create at `p`: written to the tree, then every trigger whose pattern
+       matches runs, as Cloud Functions would. Resolves to what each returned. */
+    async fire(p, value) {
+      put(p, value);
+      const out = {};
+      for (const [name, t] of Object.entries(triggers)) {
+        const prm = t.kind === 'created' && params(t.path, p);
+        if (!prm) continue;
+        out[name] = await t.handler({ params: prm, data: { val: () => clone(at(p)), ref: ref(p) } });
+      }
+      return out;
+    },
+    /* An HTTPS function asked for `path` (what Express calls req.path), the
+       way a calendar app would ask. Resolves to { status, headers, body }. */
+    async request(name, path, method = 'GET') {
+      const t = triggers[name];
+      if (!t || t.kind !== 'https') throw new Error(name + ' is not an HTTPS function');
+      const res = { status: 0, headers: {}, body: undefined };
+      const r = {
+        status(n) { res.status = n; return r; },
+        set(h) { Object.assign(res.headers, h); return r; },
+        send(b) { res.body = b; return r; }
+      };
+      await t.handler({ method, path }, r);
+      return res;
+    },
+    /* which triggers would wake for a write at `p` */
+    woken: p => Object.entries(triggers).filter(([, t]) => t.kind === 'created' && params(t.path, p)).map(([n]) => n)
+  };
+}
+
+module.exports = { makeFakebase, makeServer, snap };

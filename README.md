@@ -1,6 +1,6 @@
 # Minutes
 
-A sideline tracker for soccer coaches: multiple teams, rosters, planned vs actual minutes, a match clock, and a pitch you can drag players around on. Static files and a Firebase database, no build step, no AI calls. Server-side code (Cloud Functions on the same Firebase project) is allowed and planned for push, payments and email; see [`GOTSPORT.md`](GOTSPORT.md).
+A sideline tracker for soccer coaches: multiple teams, rosters, planned vs actual minutes, a match clock, and a pitch you can drag players around on. Static files and a Firebase database, no build step, no AI calls. Server-side code (Cloud Functions on the same Firebase project, in [`functions/`](functions)) sends notifications to closed phones, and is planned for payments and email; see [`GOTSPORT.md`](GOTSPORT.md).
 
 ## What it does
 
@@ -15,7 +15,7 @@ A sideline tracker for soccer coaches: multiple teams, rosters, planned vs actua
 - **Game plan.** Builds a block-by-block schedule from planned minutes, ratings, stint caps and pairings. Each block is a fixed XI; substitutions happen at the boundaries. It shows projected minutes against planned for every player, so you can see where the constraints cost someone time before kickoff. During the game the plan card shows the next change and makes those subs in one tap.
 - **Lock in the plan, and let the tracker call the subs.** *Lock in* on the Plan tab freezes the snapshots and says whether the club has them or only this phone does. The Track and Subs tabs then count down to each planned change on the half clock, turn loud when it is due, and make every change with one tap (*Subs are on*) at the minute it is pressed — undoable for two minutes, or *Not now* if the change is not happening. A tracker gets the time and how many subs, never the names, and cannot make any other sub.
 - **Tell the bench.** Each change written as the calls a coach makes at the bench: who goes on, at which spot and for whom, who switches spots, who comes off, and the starting lineup spot by spot at kick-off. It works from the pitch as it really is, so hand-made subs are accounted for. *Copy as a message* sends it to an assistant, and the *Bench sheet* lists every change in the game.
-- **Live, for everyone following.** The Live tab inside a game is the play-by-play: the score, the clock, and what has happened — kick-off, goals with the score after each, subs, half time, full time — with shots and set pieces one tap away under *Everything*. It is the one game screen every role gets, parents and trackers included. *Notify me* turns each goal, kick-off, half time and full time into a buzz and a pop-up on that device, but only while the page is open: there is no push sender yet, so nothing reaches a closed phone. Push is the first job of the planned server ([`GOTSPORT.md`](GOTSPORT.md)). The coach's old Live screen — minutes, bench, subs — is now the **Subs** tab.
+- **Live, for everyone following.** The Live tab inside a game is the play-by-play: the score, the clock, and what has happened — kick-off, goals with the score after each, subs, half time, full time — with shots and set pieces one tap away under *Everything*. It is the one game screen every role gets, parents and trackers included. *Notify me* turns each goal, kick-off, half time and full time into a buzz and a pop-up on that device, but only while the page is open: the server pushes messages to a closed phone (**Notifications to a closed phone**, below), not yet a followed game. The coach's old Live screen — minutes, bench, subs — is now the **Subs** tab.
 - **Live pairing check.** A banner appears if two players you marked *keep apart* end up on the pitch together.
 - **Fixing mistakes.** Tap any line in the sub log to nudge it by 5, 15, 30 or 60 seconds, or type the exact time. *Add a sub* records one that happened before you tapped. *Fix minutes* opens a player's spells on the pitch and lets you edit or delete each one. *Clock reading wrong?* shifts the current half and the total together.
 - **Per-game availability.** Mark players out for one game without touching their season totals.
@@ -126,9 +126,40 @@ The bell in the top bar, for anyone with a role in a club that has an admin.
 - **Family conversations.** A parent gets one conversation per team with that team's coaches: *Ella has a cold, she'll miss Thursday.* Every coach of the team and the admins see it and can reply — never one coach alone, which is the safeguarding-friendly shape — and nobody else. Messages cannot be edited or deleted.
 - **No signal.** A message written at a pitch with no signal waits in an outbox on the phone and goes when the connection returns, even after a reload. One the database refuses says *Not sent* with *Try again*.
 
-**What "notifications" means here.** Until the push sender is built (the first server job in [`GOTSPORT.md`](GOTSPORT.md)), nothing can wake a phone that has closed Minutes. A message pops up (or buzzes) while Minutes is open in any tab, with a system notification when the tab is in the background and the person allowed it, and otherwise waits with a count on the bell. To reach everyone *now*, use **Email or share** on the notice. Real push is in ROADMAP, with what it needs.
+**What "notifications" means here.** With Minutes open, a message pops up (or buzzes) in any tab, and waits with a count on the bell. With it closed, a phone hears only if the club has the server set up and that person turned **Notifications on this phone** on (below); everyone else hears the next time they open Minutes. To reach everyone *now*, whatever their phone, use **Email or share** on the notice.
 
 **Needs the `board` and `dm` rule blocks published** — they are in both rule sets above. Without them posting says *Not sent — the database refused it*.
+
+## Notifications to a closed phone
+
+A team notice, or a message in a family conversation, reaches the phones of everyone who may read it, with Minutes closed and the screen off: the team's families, coaches and trackers for a notice; the family, the team's coaches and the admins for a conversation; never the person who wrote it. That is the club's server (`functions/`; the design is [`GOTSPORT.md`](GOTSPORT.md), *Push notifications* and *The server*), set up once as **Deploying the server** below says, plus two things:
+
+1. **Rules version 7**, which adds `pushTokens` (each person's phones, readable and writable by that account alone).
+2. **The web push key** in `firebase-config.js` as `window.SOCCER_PUSH_KEY`: Firebase console → Project settings → **Cloud Messaging** → *Web Push certificates* → **Generate key pair**. Public, not a secret. The app offers notifications as soon as it is set, so set it once the server is deployed.
+
+Then **each person turns it on, on each phone:** Settings → **Notifications on this phone** → *Turn on* (Messages offers it too). Parents, players, trackers and coaches alike: it is their own phone, so it needs no role.
+- **iPhone and iPad** (iOS 16.4 or later) deliver notifications only to a site added to the Home Screen: in Safari, **Share → Add to Home Screen**, open Minutes from the new icon, and turn it on there. The app says so when it is opened in a browser tab.
+- **Android** and computers: any browser that supports web push, straight from the page.
+
+What it does not do yet: a followed game's goals, a practice or game called off or moved, and club activity still reach a phone only while Minutes is open on it. They are the next jobs for the same sender (`GOTSPORT.md`, *Build order*).
+
+Signing out takes the phone's address down while still signed in, and deletes the browser's subscription, so a phone handed to someone else stops getting her messages. A push that still arrives for an account no longer signed in on the phone (signed out with no signal, say) is shown without its words. `node test/push.js` holds all of this, and who the server tells, for every kind of account.
+
+If nothing arrives: check the functions' logs in the Firebase console (Functions → the function → Logs). A send refused for permission usually means the **Firebase Cloud Messaging API** is switched off for the project in Google Cloud's API library.
+
+## Deploying the server
+
+The club's server is three Cloud Functions on the same Firebase project, in `functions/`: `pushNotice` and `pushMessage` (notifications) and `calendar` (calendar sync). `.github/workflows/server.yml` tests and deploys them whenever they change on main, as the site deploys itself. Set up once:
+
+1. **Pay-as-you-go (Blaze).** Firebase console → the project → **Upgrade** at the bottom left → **Blaze**, with a card. Cloud Functions need it; at one club's volume the expected bill is nothing, inside the free allowance, but check Firebase's current pricing before telling anyone a number. Then Google Cloud console → **Billing → Budgets & alerts** → a budget of a few dollars, so anything unexpected emails you.
+2. **A deploy key for GitHub.** Google Cloud console, this project → **IAM & Admin → Service Accounts → Create service account** (`github-deployer`), roles **Editor** and **Service Account User**. Open it → **Keys → Add key → JSON**. On GitHub: the repository → **Settings → Secrets and variables → Actions → New repository secret**, named `FIREBASE_SERVICE_ACCOUNT`, the whole file as its value. Delete the file.
+3. **Merge to main**, or **Actions → Deploy the server → Run workflow**. The first deploy takes several minutes while Google switches on what functions need; if it fails at that stage, run it once more.
+
+Without the secret the workflow says so and deploys nothing. From a computer instead: `npm install -g firebase-tools`, `firebase login`, `(cd functions && npm ci)`, `firebase deploy --only functions`.
+
+**The rules go the same way.** A merge that changes `database.rules.json` publishes it, after every suite (`test/rules.js` among them) has passed, and then reads the live version back (`tools/live-rules.js`), so a green run means the club is on it. *Run workflow* with **rules** ticked publishes them by hand. The rules apply to every club in the database at once, so a change to them gets the same care in review as any other; pasting them in the console still works too.
+
+If a notification never arrives: the functions' logs are in the Firebase console (Functions → the function → Logs). A send refused for permission usually means the **Firebase Cloud Messaging API** is switched off for the project in Google Cloud's API library.
 
 ## Deleting a club
 
@@ -397,26 +428,22 @@ Practices default to the team only on purpose. A share link gets forwarded, and 
 
 ## Calendar sync
 
-A calendar app subscribes to a web address and goes back to it on its own schedule, from its own servers, without running any of this app's JavaScript. A static site cannot answer that, so sync is one small extra piece: `worker/calendar.mjs`, a Cloudflare Worker. It reads one node of `public/` (the same node a share page reads) and returns it as a calendar. It holds no credentials and cannot write anything. It asks the database exactly what anyone on the internet could ask (`public/{id}.json`), so it cannot see more than the share pages can. It is the one part of this project that is not a static file, and it is optional: without it, everything else works and the calendar offers a copy instead.
+A calendar app subscribes to a web address and goes back to it on its own schedule, from its own servers, without running any of this app's JavaScript. A static site cannot answer that, so the club's server does: the `calendar` function in `functions/` (`functions/calendar.js`), deployed with the notifications (**Deploying the server**, below). It reads one node of `public/` (the same node a share page reads) and returns it as a calendar, and writes nothing. It runs on the server, but what it may read is exactly what the share pages can: an address is a plain id or it is refused before anything is read.
 
-Set it up once for the club:
+`firebase-config.js` names it as `window.SOCCER_CALENDAR_FEED` (`https://us-central1-<project>.cloudfunctions.net/calendar`). Until the functions are deployed that address answers nothing, so deploy before families subscribe; with it blank, the calendar offers a one-off copy instead. In the app, anyone signed in opens **My calendar → Turn on calendar sync** for their own, and a coach can turn on a team's from its Season.
 
-1. A free Cloudflare account → **Workers & Pages** → **Create** → **Create Worker**. Name it something like `minutes-calendar` and deploy the hello-world it starts with.
-2. **Edit code**, delete what is there, paste the whole of `worker/calendar.mjs`, and **Deploy**.
-3. The Worker's **Settings → Variables and Secrets** → add `DATABASE_URL` with your database address (`databaseURL` in `firebase-config.js`, e.g. `https://your-project-default-rtdb.firebaseio.com`). Or put it in the `DATABASE_URL` line at the top of the file before pasting.
-4. Copy the Worker's address (`https://minutes-calendar.<you>.workers.dev`) into `firebase-config.js` as `window.SOCCER_CALENDAR_FEED`, commit, and let the site deploy.
-5. In the app, anyone signed in opens **My calendar → Turn on calendar sync** for their own, and a coach can turn on a team's from its Season.
+(Until build 104 this was a Cloudflare Worker, pasted in by hand. It is retired: one server, deployed one way.)
 
 Four addresses come out of it, all `https://<worker>/{id}.ics`:
 
 - **My calendar's feed** (on My calendar, one per person, off until she turns it on): every game, practice, event, training session and bookable time on her My calendar, from every club her account is in. It is built on her phone with **no child's name in it** (a booked session reads *Training: Finishing*, never whose; anything typed in the open club goes through the names of every player the phone knows, and another club's entries carry the team, the kind, the time and the place, not what was typed), and no club's code (entries are keyed by a one-way hash). The id is kept at `people/{uid}/set/feed`, so her other phones publish to the same address; *Replace this address* and *Turn it off* take the old one down. Because her phone writes it, a club's change reaches her calendar once one of her phones has been open since (`SERVER.md`).
 - **The team's feed** (from the team's Season, for the team's signed-in members): every game and every entry, **team-only practices included**, because a subscribed calendar without practices is not the calendar. That means a team-only practice is published under this feed's id, world-readable by anyone who has the address, the same way the share link works. So the address is shown only inside the app, to the team's members. It holds no names, no players, no minutes and no answers. A coach can **Replace this address** at any time, which stops the old one and means everyone subscribes again.
 - **The season link's feed** (on the share page, for grandparents and friends): the games, and only the entries marked for the share link.
-- **A game's own** feed (that one game). Nothing offers it, but the same Worker answers it.
+- **A game's own** feed (that one game). Nothing offers it, but the same function answers it.
 
-How quickly a change arrives is up to the calendar app, not us. Apple and Outlook come back roughly hourly (the feed asks for that). Google refreshes subscribed calendars on its own schedule, often every several hours, and nothing a feed says changes that.
+How quickly a change arrives is up to the calendar app, not us. Apple and Outlook come back roughly hourly (the feed asks for that). Google refreshes subscribed calendars on its own schedule, often every several hours, and nothing a feed says changes that: a subscribed calendar has no way to be told there is something new. What is urgent (a game called off) is for notifications, not the calendar.
 
-After any change to `ics.js`, run `node worker/make.js` to copy it into the Worker, then paste the Worker again. `node test/worker.js` fails until the two match, so the feed and the app never describe a fixture differently.
+After any change to `ics.js`, run `node functions/make.js` to copy it into `functions/` (only that folder is uploaded), and deploy. `node test/calfeed.js` fails until the two match, so the feed and the app never describe a fixture differently.
 
 Nothing about the calendar needed a rule change: entries live under `teams/{tid}/events/{eid}`, below the rule that already lets a team's coaches and the club's admins change the team, and nobody else. `node test/rules.js` pins that.
 
@@ -476,7 +503,7 @@ Setup → **Share with parents** creates a long random share id for the team and
 - **Season** — `live.html?t=<share>`. Text it once. It shows the season record, whatever game is happening now, what is coming up (every game, plus any practice or event marked for the share link), and every result. Each entry adds to a phone's calendar, and so does the whole of what is coming up.
 - **One game** — `game.html?t=<gameShare>&g=<gameId>`. Kick-off time, venue, home or away, arrive-by, kit, notes, score, live clock, who is on, minutes played and the substitutions. Each game is published under its own id, so this link holds that game and nothing else: nobody can reach the season page from it. Game links made before this change carried the season link's id; *Make a new link and kill the old one* retires those.
 
-Teams can carry a crest — Setup → Teams → tap the team → *Add a crest*. It is resized to 192px and re-encoded in the browser before saving, and it shows in the app header and at the top of the shared pages. It cannot appear in the text-message preview image, which is a fixed file; that needs the Cloudflare Worker.
+Teams can carry a crest — Setup → Teams → tap the team → *Add a crest*. It is resized to 192px and re-encoded in the browser before saving, and it shows in the app header and at the top of the shared pages. It cannot appear in the text-message preview image, which is a fixed file; that needs the page rendered on the server, which would now be a function.
 
 Both are reached from the share button beside the game bar, and both show the game you are currently looking at — switch games in the bar to share a different one. Setup is only where sharing is turned on and where links are rotated.
 
@@ -484,11 +511,11 @@ They are two separate HTML files purely so the text-message preview differs: `li
 
 **No child's name is ever published.** The mirror carries shirt numbers only — not names, not player ids. That is enforced by what gets written, not by what the page chooses to display, so there is nothing to find in the payload. *Rotate* makes a new share id and deletes the old node, which kills every link previously sent.
 
-Link previews in text messages are scraped without running JavaScript, so each card is fixed at whatever its file's meta tags say. iMessage also freezes previews at send time, so a live-updating card in a message thread is not possible on any platform. Tapping through opens a page that does update by itself. If the score must appear in the preview itself, that needs a Cloudflare Worker to inject it server-side — see ROADMAP.md.
+Link previews in text messages are scraped without running JavaScript, so each card is fixed at whatever its file's meta tags say. iMessage also freezes previews at send time, so a live-updating card in a message thread is not possible on any platform. Tapping through opens a page that does update by itself. If the score must appear in the preview itself, that needs the server to inject it (a function) — see ROADMAP.md.
 
 ## Hosting on GitHub Pages
 
-Push the folder to a repo, then Settings → Pages → deploy from branch, root. It is all static, so nothing else is needed. Add the site to the home screen on her phone and tablet for a full-screen launch.
+Push the folder to a repo, then Settings → Pages → deploy from branch, root. The site is all static, so nothing else is needed for it (`functions/` is the server's, deployed to Firebase and left off the site). Add the site to the home screen on her phone and tablet for a full-screen launch, with its own icon (`manifest.webmanifest`); on an iPhone that is also what lets it get notifications.
 
 ## Data model
 
@@ -585,7 +612,7 @@ public/{calFeed}     { team, link, calendar: true,
                        events: { eventId: { ...every entry, team-only included } } }      // no players, no numbers
 ```
 
-Written by the coaches' app on a 1.2 second debounce. Read by `live.html`, which recomputes the clock from `periods` against Firebase's server time, so it ticks between pushes instead of waiting for one. The calendar feed Worker reads the same nodes.
+Written by the coaches' app on a 1.2 second debounce. Read by `live.html`, which recomputes the clock from `periods` against Firebase's server time, so it ticks between pushes instead of waiting for one. The calendar feed (`functions/calendar.js`) reads the same nodes.
 
 ## Backup
 
