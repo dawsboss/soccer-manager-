@@ -170,6 +170,7 @@ If a deploy fails on permissions, the message names what is missing; add the rol
 - *Failed to list functions*: **Editor** is missing, or (seconds after "Enabling now…") the services Google just switched on are not answering yet, so run it again in a minute or two.
 - *We failed to modify the IAM policy for the project*: step 3 above has not been done.
 - *The permission cloudfunctions.functions.setIamPolicy is required to deploy … calendar*: **Cloud Functions Admin**.
+- *Permission denied while using the Eventarc Service Agent … Retry the deployment in a few minutes*: nothing missing; the very first deploy of database-triggered functions waits on Google. Run it again after five minutes.
 
 Without the secret the workflow says so and deploys nothing. From a computer instead: `npm install -g firebase-tools`, `firebase login`, `(cd functions && npm ci)`, `firebase deploy --only functions`.
 
