@@ -197,7 +197,16 @@ function makeServer(seed = {}) {
     child: c => ref(segs(p).concat(segs(c)).join('/')),
     get: () => { reads.push(segs(p).join('/')); if (down) return Promise.reject(new Error('unavailable')); return Promise.resolve({ val: () => clone(at(p)), exists: () => at(p) != null }); },
     remove: () => { removes.push(segs(p).join('/')); put(p, null); return Promise.resolve(); },
-    set: v => { put(p, v); return Promise.resolve(); }
+    set: v => { put(p, v); return Promise.resolve(); },
+    /* One at a time, as the database runs them: `fn` sees what is there and
+       returns what to write, or undefined to leave it. */
+    transaction: fn => {
+      const cur = clone(at(p));
+      const next = fn(cur);
+      if (next === undefined) return Promise.resolve({ committed: false, snapshot: { val: () => cur } });
+      put(p, next);
+      return Promise.resolve({ committed: true, snapshot: { val: () => clone(next) } });
+    }
   });
   const messaging = {
     sendEach(messages) {
@@ -214,6 +223,9 @@ function makeServer(seed = {}) {
       onValueCreated(path, handler) {
         const t = { kind: 'created', path: String(path).replace(/^\//, ''), handler };
         return t;
+      },
+      onValueWritten(path, handler) {
+        return { kind: 'written', path: String(path).replace(/^\//, ''), handler };
       }
     },
     'firebase-functions/v2/https': {
@@ -263,15 +275,49 @@ function makeServer(seed = {}) {
     down(v = true) { down = v; return this; },
     /* how Cloud Messaging answers each token: return { success } or { success: false, error: { code } } */
     answer(fn) { answer = fn; return this; },
-    /* A create at `p`: written to the tree, then every trigger whose pattern
-       matches runs, as Cloud Functions would. Resolves to what each returned. */
+    /* A write at `p`, of any depth, as the database would take it: written to
+       the tree, then every trigger whose own path changed runs, the way Cloud
+       Functions would. A trigger on a deeper path than the write wakes if the
+       write changed what is there (a whole game saved with a new date wakes
+       the date's trigger, and nothing else's); one on a shallower path wakes
+       for any change beneath it. A create trigger wakes only where nothing was.
+       Resolves to what each returned, by name (an array if it ran twice). */
     async fire(p, value) {
+      const before = JSON.parse(JSON.stringify(tree));
+      const atIn = (t, q) => { let cur = t; for (const k of segs(q)) { if (!cur || typeof cur !== 'object') return undefined; cur = cur[k]; } return cur; };
       put(p, value);
       const out = {};
+      const ws = segs(p);
       for (const [name, t] of Object.entries(triggers)) {
-        const prm = t.kind === 'created' && params(t.path, p);
-        if (!prm) continue;
-        out[name] = await t.handler({ params: prm, data: { val: () => clone(at(p)), ref: ref(p) } });
+        if (t.kind !== 'created' && t.kind !== 'written') continue;
+        const ps = segs(t.path);
+        // every concrete path of the trigger's shape this write could have touched
+        let cands = [{ prm: {}, path: [] }];
+        for (let i = 0; i < ps.length; i++) {
+          const m = /^\{(\w+)\}$/.exec(ps[i]);
+          const next = [];
+          for (const c of cands) {
+            if (i < ws.length) {
+              if (m) next.push({ prm: { ...c.prm, [m[1]]: ws[i] }, path: c.path.concat(ws[i]) });
+              else if (ps[i] === ws[i]) next.push({ prm: c.prm, path: c.path.concat(ws[i]) });
+            } else if (m) {
+              const ks = new Set([...Object.keys(Object(atIn(before, c.path.join('/')) || {})), ...Object.keys(Object(atIn(tree, c.path.join('/')) || {}))]);
+              for (const k of ks) next.push({ prm: { ...c.prm, [m[1]]: k }, path: c.path.concat(k) });
+            } else next.push({ prm: c.prm, path: c.path.concat(ps[i]) });
+          }
+          cands = next;
+        }
+        for (const c of cands) {
+          const q = c.path.join('/');
+          const was = clone(atIn(before, q)), now = clone(atIn(tree, q));
+          if (JSON.stringify(was) === JSON.stringify(now)) continue;
+          if (t.kind === 'created' && (was !== null || now === null)) continue;
+          const data = t.kind === 'created'
+            ? { val: () => now, ref: ref(q) }
+            : { before: { val: () => was, ref: ref(q) }, after: { val: () => now, ref: ref(q) } };
+          const r = await t.handler({ params: c.prm, data });
+          out[name] = name in out ? [].concat(out[name], r) : r;
+        }
       }
       return out;
     },
@@ -290,7 +336,16 @@ function makeServer(seed = {}) {
       return res;
     },
     /* which triggers would wake for a write at `p` */
-    woken: p => Object.entries(triggers).filter(([, t]) => t.kind === 'created' && params(t.path, p)).map(([n]) => n)
+    woken: p => Object.entries(triggers).filter(([, t]) => t.kind !== 'https' && params(t.path, p)).map(([n]) => n),
+    /* which triggers actually run for a write, without keeping it */
+    async wouldWake(p, value) {
+      const keep = JSON.stringify(tree), sent = sends.length, rm = removes.length;
+      const ran = Object.keys(await this.fire(p, value));
+      for (const k of Object.keys(tree)) delete tree[k];
+      Object.assign(tree, JSON.parse(keep));
+      sends.length = sent; removes.length = rm;
+      return ran;
+    }
   };
 }
 

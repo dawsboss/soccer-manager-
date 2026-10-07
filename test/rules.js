@@ -714,6 +714,13 @@ reads('owners are not world-readable', OUT, 'shareOwners/sh1', false);
   writes('I take mine away', MUM, P + TOK, null, true);
   writes('nobody else does', COACH, P + TOK, null, false);
   delete DB.pushTokens;
+  // the server's own notes (which calendar change it last told), kept with admin credentials
+  DB.serverState = { calSent: { CLUB: { e_e1: { sig: '2026-10-08|18:00|cancelled', at: NOW } } } };
+  reads('the server\'s notes: no admin reads them', ADM, 'serverState', false);
+  reads('nor a coach', COACH, 'serverState/calSent/CLUB', false);
+  writes('nobody writes them', ADM, 'serverState/calSent/CLUB/e_e1', { sig: 'x', at: NOW }, false);
+  writes('nor clears them', COACH, 'serverState/calSent/CLUB/e_e1', null, false);
+  delete DB.serverState;
 }
 
 /* ---------------- practices ---------------- */

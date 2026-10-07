@@ -176,4 +176,145 @@ async function onMessage(env, params, v) {
   return { to: [...people].sort(), ...(await deliver(env, list)) };
 }
 
-module.exports = { onNotice, onMessage, noticeReaders, threadReaders, teamFacts, BODY_MAX, BATCH };
+/* ---------------- a change to the calendar ---------------- */
+
+/* A game or practice of hers called off, back on, moved, or new: the same
+   four things the open app's alerts say (`calAlerts()` in app.js), with the
+   same signature (date, start, called) and the same silences: a change of
+   place or title is not news, nor is a deletion, nor anything already past.
+   Pushed only when it is soon, because that is when a closed phone needs to
+   hear it: a game moved next March reaches her through the calendar, a
+   practice called off tonight should not wait for it.
+
+   Who: everyone on that team, from the same tables as a notice (its coaches
+   and trackers, its families, its players who sign in), held to the squad.
+   Not the admins: an admin of twenty teams would hear every change in the
+   club, which club activity already tells her when she opens the app, unless
+   she is on the team herself. The person who made the change is not known to
+   the database (entries carry no editor), so the phone that made it tells its
+   own service worker, which stays quiet about it (sw.js, `mine`).
+
+   Games are written every few seconds while one is being played, so nothing
+   here listens to a whole game: index.js wakes this for its date, kick-off
+   and called-off fields alone, and this reads only the handful of fields it
+   needs. Two of those can change in one save (moved to Sunday at 10), which
+   is two events for one piece of news, so the last signature told is kept at
+   serverState/calSent/{code}/{key}, a node no phone can read or write (no
+   rule grants it), and a transaction there lets exactly one of them speak. */
+const SOON_DAYS = 14;
+const CAL_CALLED = { cancelled: 'Cancelled', postponed: 'Postponed' };
+const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const okDay = d => /^\d{4}-\d{2}-\d{2}$/.test(String(d || ''));
+const hm = t => { const m = /^(\d{1,2}):(\d{2})$/.exec(String(t || '')); return m ? m[1].padStart(2, '0') + ':' + m[2] : ''; };
+const calSig = x => (x && okDay(x.date) ? [x.date, hm(x.start), x.called || ''].join('|') : null);
+const dayOf = (d, now) => {
+  const [y, mo, da] = d.split('-').map(Number);
+  return Date.UTC(y, mo - 1, da);
+};
+/* The club's own time zone is not stored anywhere, so "today" is taken a day
+   wide either side of UTC's: a practice tonight in California is never "past". */
+function soon(date, now) {
+  if (!okDay(date)) return false;
+  const day = dayOf(date), t = now - (now % 86400000);
+  return day >= t - 86400000 && day <= t + SOON_DAYS * 86400000;
+}
+function whenOf(x) {
+  if (!okDay(x.date)) return 'No date';
+  const [y, mo, d] = x.date.split('-').map(Number);
+  const w = new Date(Date.UTC(y, mo - 1, d)).getUTCDay();
+  let out = `${DAYS[w]} ${d} ${MONTHS[mo - 1]}`;
+  const t = hm(x.start);
+  if (t) {
+    const [h, mi] = t.split(':').map(Number);
+    out += ' ' + ((h % 12) || 12) + (mi ? ':' + String(mi).padStart(2, '0') : '') + (h >= 12 ? 'pm' : 'am');
+  }
+  return out;
+}
+
+/* What changed, in the app's words; null when it is not news. */
+function calNews(before, after) {
+  const was = calSig(before), now = calSig(after);
+  if (!now) return null;                                   // deleted, or no date: the app says nothing either
+  if (was === now) return null;
+  if (!was) return { kind: 'new' };
+  const [od, os, oc] = was.split('|');
+  if (after.called && after.called !== oc) return { kind: 'called', urgent: true };
+  if (!after.called && oc) return { kind: 'back' };
+  if (od !== after.date || os !== hm(after.start)) return { kind: 'moved', urgent: od !== after.date };
+  return null;
+}
+
+/* Everyone on the team, held to the squad. */
+function teamReaders(f) {
+  const out = new Set(keys(f.tIndex));
+  for (const u of keys(f.tParents)) if (parentOn(f, u)) out.add(u);
+  for (const u of keys(f.tPlayers)) if (selfOn(f, u)) out.add(u);
+  return out;
+}
+
+/* One entry changed. `it` is the entry after, `before` what it was, both in
+   the calendar's shape: { kind: 'game'|'practice'|'event', tid, id, date,
+   start, called, title, series }. */
+async function calChange(env, code, before, it) {
+  const none = { to: [], sent: 0, failed: 0, removed: [] };
+  const now = env.now ? env.now() : Date.now();
+  const x = it || before;
+  if (!x || !x.tid || !(soon(it && it.date, now) || soon(before && before.date, now))) return none;
+  const news = calNews(before, it);
+  if (!news) return none;
+  /* A weekly series made or changed at once is one piece of news, as in the
+     app: told once for the series, then quiet about it for a few minutes. */
+  const key = (it.kind === 'game' ? 'g_' : 'e_') + it.id;
+  const said = news.kind === 'new' && it.series ? 's_' + it.series : key;
+  const sig = calSig(it);
+  const told = await env.claim('serverState/calSent/' + code + '/' + said,
+    old => (said !== key ? (old && old.at > now - 10 * 60000 ? undefined : { sig, at: now }) : (old && old.sig === sig ? undefined : { sig, at: now })));
+  if (!told) return none;
+
+  const f = await teamFacts(env, code, it.tid);
+  if (f.retired || !f.team) return none;
+  const tn = f.team.name || 'Your team';
+  const words = it.kind === 'game' ? `${tn} v ${it.title || 'TBC'}` : `${tn}: ${it.title || (it.kind === 'practice' ? 'Practice' : 'Team event')}`;
+  const what = it.kind === 'game' ? 'game' : it.kind === 'practice' ? 'practice' : 'event';
+  const title = news.kind === 'called' ? `${CAL_CALLED[it.called] || 'Called off'}: ${words}`
+    : news.kind === 'back' ? `Back on: ${words}`
+    : news.kind === 'moved' ? `Moved: ${words}`
+    : `New ${what}${said !== key ? 's' : ''}: ${words}`;
+  const body = news.kind === 'moved' ? `Now ${whenOf(it)}` : news.kind === 'new' && said !== key ? `Weekly, from ${whenOf(it)}` : whenOf(it);
+  const hash = it.kind === 'game' ? `#/team/${it.tid}/game/${it.id}/live` : `#/team/${it.tid}/calendar`;
+  const people = teamReaders(f);
+  const list = await messagesFor(env, people, () => ({
+    title, body: short(body), tag: 'cal:' + code + ':' + said, key: 'cal:' + code + ':' + key, code, hash, urgent: news.urgent ? '1' : ''
+  }));
+  return { to: [...people].sort(), news: news.kind, ...(await deliver(env, list)) };
+}
+
+/* A practice or event, teams/{tid}/events/{eid}: the whole entry, before and after. */
+async function onEntry(env, params, before, after) {
+  const shape = e => (e && typeof e === 'object' ? {
+    kind: e.kind === 'practice' ? 'practice' : 'event', tid: params.tid, id: params.eid,
+    date: e.date, start: e.start, called: e.called || '', title: e.title || '', series: e.series || ''
+  } : null);
+  return calChange(env, params.code, shape(before), shape(after));
+}
+
+/* A game, matches/{mid}: woken by one field, `field`, which was `was`. The
+   rest is read as it stands now, a field at a time, never the whole game. */
+const GAME_FIELDS = ['teamId', 'date', 'kickoff', 'called', 'opponent'];
+async function onGameField(env, params, field, was) {
+  const base = `workspaces/${params.code}/matches/${params.mid}/`;
+  const vals = await Promise.all(GAME_FIELDS.map(k => env.get(base + k)));
+  const g = Object.fromEntries(GAME_FIELDS.map((k, i) => [k, vals[i]]));
+  if (!g.teamId) return { to: [], sent: 0, failed: 0, removed: [] };
+  const shape = m => ({ kind: 'game', tid: m.teamId, id: params.mid, date: m.date, start: m.kickoff, called: m.called || '', title: m.opponent || '' });
+  const after = shape(g);
+  /* A kick-off appearing where there was none is either a new game (its date
+     arrives in the same write, and that event tells it) or a time added to a
+     dated one, which is not worth a buzz. Either way, not this event's to say. */
+  if (field === 'kickoff' && (was === null || was === undefined)) return { to: [], sent: 0, failed: 0, removed: [] };
+  const before = field === 'date' && (was === null || was === undefined) ? null : shape({ ...g, [field]: was });
+  return calChange(env, params.code, before, after);
+}
+
+module.exports = { onNotice, onMessage, onEntry, onGameField, calNews, calSig, whenOf, teamReaders, noticeReaders, threadReaders, teamFacts, BODY_MAX, BATCH, SOON_DAYS, GAME_FIELDS };

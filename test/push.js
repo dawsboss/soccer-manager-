@@ -75,7 +75,8 @@ const toUid = (S, u) => S.sent().filter(m => m.data.uid === u);
     check('a read marker under a notice wakes nothing', S.woken('board/CLUB/t1/n1/seen/mum').length, 0);
     check('nor one in a conversation', S.woken('dm/CLUB/t1/mum/seen/coach').length, 0);
     // a live game is a write a second; none of it should cost a function call
-    check('nothing in the club itself wakes the server', S.woken('workspaces/CLUB/matches/g1/events/e1').length, 0);
+    check('nothing in the club itself wakes the message senders', S.woken('workspaces/CLUB/matches/g1/events/e1').length, 0);
+    deepEq('the calendar\'s: one for entries, one per field of a game that says when', Object.keys(S.triggers).filter(n => S.triggers[n].kind === 'written').sort(), ['pushEntry', 'pushGameCalled', 'pushGameDate', 'pushGameKickoff']);
     const src = fs.readFileSync(path.join(__dirname, '..', 'functions', 'index.js'), 'utf8');
     check('it reads from the database the event came from', /event\.data\.ref\.root/.test(src), true);
     check('and never calls an AI model', /anthropic|openai|gemini|generativ/i.test(src + fs.readFileSync(path.join(__dirname, '..', 'functions', 'push.js'), 'utf8')), false);
@@ -220,6 +221,134 @@ const toUid = (S, u) => S.sent().filter(m => m.data.uid === u);
     check('and every one is sent', r.sent, 620 + 4);
   }
 
+  /* ---------------- a change to the calendar ---------------- */
+
+  console.log('\n--- a change to the calendar: what wakes the server ---');
+  const day = n => { const d = new Date(Date.now() + n * 86400000); return d.toISOString().slice(0, 10); };
+  const W = 'workspaces/CLUB/';
+  function calServer() {
+    const S = server();
+    S.put(W + 'teams/t1/events', {
+      e1: { id: 'e1', kind: 'practice', title: 'Practice', date: day(1), start: '18:00', end: '19:15', venue: 'Lakeside Park' },
+      far: { id: 'far', kind: 'practice', title: 'Practice', date: day(30), start: '18:00' },
+      old: { id: 'old', kind: 'practice', title: 'Practice', date: day(-3), start: '18:00' }
+    });
+    S.put(W + 'teams/t2/events', { s1: { id: 's1', kind: 'practice', title: 'Practice', date: day(2), start: '17:00' } });
+    S.put(W + 'matches', {
+      g1: { id: 'g1', teamId: 't1', opponent: 'Northgate', date: day(3), kickoff: '09:30', venue: 'Northgate Rec', currentHalf: 1, periods: {}, stints: {} }
+    });
+    return S;
+  }
+  {
+    const S = calServer();
+    check('a goal wakes nothing', (await S.wouldWake(W + 'matches/g1/events/x1', { type: 'goal', t: 60 })).length, 0);
+    check('nor a sub', (await S.wouldWake(W + 'matches/g1/stints/s1', { pid: 'p1', start: 0 })).length, 0);
+    check('nor the clock', (await S.wouldWake(W + 'matches/g1/periods/0', { start: 1 })).length, 0);
+    const g = S.at(W + 'matches/g1');
+    check('nor the whole game saved with only its game changed', (await S.wouldWake(W + 'matches/g1', { ...g, stints: { s1: { pid: 'p1' } } })).length, 0);
+    deepEq('the whole game saved with a new date wakes the date\'s trigger alone', await S.wouldWake(W + 'matches/g1', { ...g, date: day(4) }), ['pushGameDate']);
+    deepEq('a practice changed wakes the entry\'s', await S.wouldWake(W + 'teams/t1/events/e1/start', '18:30'), ['pushEntry']);
+    check('the register taken wakes nothing', (await S.wouldWake(W + 'teams/t1/attend/e1/p1', true)).length, 0);
+    check('nor a player edited', (await S.wouldWake(W + 'teams/t1/players/p1/number', '8')).length, 0);
+  }
+
+  console.log('\n--- a change to the calendar: who hears what ---');
+  {
+    const S = calServer();
+    const r = (await S.fire(W + 'teams/t1/events/e1/called', 'cancelled')).pushEntry;
+    check('tomorrow\'s practice called off is news', r.news, 'called');
+    deepEq('to the whole team: coach, tracker, families, its player', r.to, ['coach', 'ella', 'mum', 'rosamum', 'trk']);
+    check('not the admins, whom club activity tells', toUid(S, 'adm').length, 0);
+    check('nor another team, nor someone with no role on it', toUid(S, 'other').length + toUid(S, 'dad').length + toUid(S, 'newbie').length, 0);
+    check('nor a family the squad no longer names', toUid(S, 'stale').length, 0);
+    const m = toUid(S, 'mum')[0];
+    check('said the way the app says it', m.data.title, 'Cancelled: Flight: Practice');
+    check('with when it was', m.data.body, require('../functions/push').whenOf({ date: day(1), start: '18:00' }));
+    check('urgent', m.data.urgent, '1');
+    check('opening the team\'s calendar', m.data.hash, '#/team/t1/calendar');
+    check('tagged for the entry', m.data.tag, 'cal:CLUB:e_e1');
+    check('and keyed, so the phone that did it can keep quiet', m.data.key, 'cal:CLUB:e_e1');
+    S.sends.length = 0;
+    const again = (await S.fire(W + 'teams/t1/events/e1/called', null)).pushEntry;
+    check('called back on', again.news + ' / ' + toUid(S, 'mum')[0].data.title, 'back / Back on: Flight: Practice');
+  }
+  {
+    const S = calServer();
+    const r = (await S.fire(W + 'teams/t1/events/e1/start', '18:30')).pushEntry;
+    check('moved half an hour', r.news + ' / ' + toUid(S, 'mum')[0].data.title, 'moved / Moved: Flight: Practice');
+    check('saying when it is now', toUid(S, 'mum')[0].data.body.startsWith('Now '), true);
+  }
+  {
+    const S = calServer();
+    await S.fire(W + 'teams/t1/events/e1/venue', 'Pitch 4');
+    await S.fire(W + 'teams/t1/events/e1/title', 'Shooting practice');
+    await S.fire(W + 'teams/t1/events/e1/end', '19:30');
+    check('a new place, title or end time is not a buzz, as in the app', S.sent().length, 0);
+    await S.fire(W + 'teams/t1/events/e1', null);
+    check('nor a deletion, as in the app', S.sent().length, 0);
+    await S.fire(W + 'teams/t1/events/far/called', 'cancelled');
+    check('nor anything a month away: the calendar says it', S.sent().length, 0);
+    await S.fire(W + 'teams/t1/events/old/called', 'cancelled');
+    check('nor anything past', S.sent().length, 0);
+  }
+  {
+    const S = calServer();
+    // Cloud Functions delivers at least once: the very same event, handed over again
+    const before = S.at(W + 'teams/t1/events/e1');
+    await S.fire(W + 'teams/t1/events/e1/called', 'cancelled');
+    const after = S.at(W + 'teams/t1/events/e1');
+    const ev = { params: { code: 'CLUB', tid: 't1', eid: 'e1' }, data: { before: { val: () => before, ref: S.ref(W + 'teams/t1/events/e1') }, after: { val: () => after, ref: S.ref(W + 'teams/t1/events/e1') } } };
+    await S.triggers.pushEntry.handler(ev);
+    check('the same change delivered twice is told once', S.sent().filter(m => m.data.uid === 'mum').length, 1);
+    check('the server\'s own note of it is where no phone can reach', !!S.at('serverState/calSent/CLUB/e_e1'), true);
+  }
+  {
+    const S = calServer();
+    const g = S.at(W + 'matches/g1');
+    const r = await S.fire(W + 'matches/g1', { ...g, date: day(4), kickoff: '11:00' });
+    check('a game moved to another day and time wakes two triggers', Object.keys(r).sort().join(), 'pushGameDate,pushGameKickoff');
+    check('and is told once', toUid(S, 'mum').length, 1);
+    const m = toUid(S, 'mum')[0];
+    check('as moved', m.data.title, 'Moved: Flight v Northgate');
+    check('urgent, a new day', m.data.urgent, '1');
+    check('opening the game', m.data.hash, '#/team/t1/game/g1/live');
+    S.sends.length = 0;
+    await S.fire(W + 'matches/g1/called', 'postponed');
+    check('postponed says so', toUid(S, 'mum')[0].data.title, 'Postponed: Flight v Northgate');
+    S.sends.length = 0;
+    await S.fire(W + 'matches/g1/kickoff', '11:15');
+    check('a quarter of an hour later is still a move, not urgent', toUid(S, 'mum')[0].data.title + ' ' + toUid(S, 'mum')[0].data.urgent, 'Moved: Flight v Northgate ');
+  }
+  {
+    const S = calServer();
+    const r = await S.fire(W + 'matches/g2', { id: 'g2', teamId: 't1', opponent: 'Riverside', date: day(5), kickoff: '10:00', currentHalf: 1 });
+    check('a new game this week is told once', toUid(S, 'mum').length, 1);
+    check('as new', toUid(S, 'mum')[0].data.title, 'New game: Flight v Riverside');
+    S.sends.length = 0;
+    await S.fire(W + 'matches/g3', { id: 'g3', teamId: 't1', opponent: 'Hill', currentHalf: 1 });
+    check('one with no date yet is not', S.sent().length, 0);
+    await S.fire(W + 'matches/g2', null);
+    check('nor a game deleted', S.sent().length, 0);
+  }
+  {
+    const S = calServer();
+    for (const [id, n] of [['w1', 1], ['w2', 8], ['w3', 15]])
+      await S.fire(W + `teams/t1/events/${id}`, { id, kind: 'practice', title: 'Practice', date: day(n), start: '18:00', series: 'ser1' });
+    check('a weekly practice added is one piece of news, not one a week', toUid(S, 'mum').length, 1);
+    check('said as weekly', toUid(S, 'mum')[0].data.title + ' / ' + toUid(S, 'mum')[0].data.body.startsWith('Weekly, from'), 'New practices: Flight: Practice / true');
+  }
+  {
+    const S = calServer();
+    S.put('retired', { CLUB: { at: 1 } });
+    await S.fire(W + 'teams/t1/events/e1/called', 'cancelled');
+    check('nothing from a retired club', S.sent().length, 0);
+  }
+  {
+    const P = require('../functions/push');
+    check('when is said as the app says it', P.whenOf({ date: '2026-10-10', start: '18:00' }), 'Sat 10 Oct 6pm');
+    check('half past, and no time at all', P.whenOf({ date: '2026-10-10', start: '9:30' }) + ' / ' + P.whenOf({ date: '2026-10-10' }), 'Sat 10 Oct 9:30am / Sat 10 Oct');
+  }
+
   /* ---------------- the page ---------------- */
 
   console.log('\n--- turning it on, on the phone ---');
@@ -312,6 +441,12 @@ const toUid = (S, u) => S.sent().filter(m => m.data.uid === u);
     A.ui.view = 'inbox'; A.render();
     check('and Messages stops asking', A.rendered().includes('Notifications on this phone'), false);
 
+    const n0 = b.posted.length;
+    A.noteMine('teams/t1/events/e1/called'); A.noteMine('matches/g1'); A.noteMine('matches/g1/kickoff');
+    A.noteMine('matches/g1/events/x9'); A.noteMine('matches/g1/stints/s1'); A.noteMine('teams/t1/attend/e1/p1');
+    await A.flush();
+    deepEq('the worker is told what this phone changed on the calendar, and only that', b.posted.slice(n0).map(m => m.type + ' ' + m.key),
+      ['mine cal:CLUB:e_e1', 'mine cal:CLUB:g_g1', 'mine cal:CLUB:g_g1']);
     A.click({ act: 'pushoff' }); await A.flush();
     check('off: the club\'s copy is taken down', tokRemoves(fbk).join(), 'pushTokens/mum/fTok0000000000000000000001:APA91b-first');
     check('and the browser\'s subscription deleted', fbk.record.tokenDrops, 1);
@@ -481,6 +616,19 @@ const toUid = (S, u) => S.sent().filter(m => m.data.uid === u);
     const iw = worker({ wins: looking, ua: 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) Safari/604.1' });
     await iw.push(DATA);
     check('except on an iPhone, which takes push away from a site that shows nothing', iw.shown.length, 1);
+  }
+  {
+    const CAL = { ...DATA, title: 'Cancelled: Flight: Practice', tag: 'cal:CLUB:e_e1', key: 'cal:CLUB:e_e1', hash: '#/team/t1/calendar' };
+    const w = worker();
+    await w.fire('message', { data: { type: 'mine', key: 'cal:CLUB:e_e1' } });
+    await w.push(CAL);
+    check('a change this phone made is not news to it', w.shown.length, 0);
+    await w.push({ ...CAL, key: 'cal:CLUB:e_e2', tag: 'cal:CLUB:e_e2' });
+    check('another change still is', w.shown.length, 1);
+    const iw = worker({ ua: 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) Safari/604.1' });
+    await iw.fire('message', { data: { type: 'mine', key: 'cal:CLUB:e_e1' } });
+    await iw.push(CAL);
+    check('except on an iPhone, which must show every push', iw.shown.length, 1);
   }
   {
     const w = worker();

@@ -20,7 +20,7 @@
    event to come from and reads the default database: the one the site's
    firebase-config.js points every phone at. */
 
-const { onValueCreated } = require('firebase-functions/v2/database');
+const { onValueCreated, onValueWritten } = require('firebase-functions/v2/database');
 const { onRequest } = require('firebase-functions/v2/https');
 const { getDatabase } = require('firebase-admin/database');
 const { initializeApp } = require('firebase-admin/app');
@@ -30,14 +30,17 @@ const feed = require('./calendar');
 
 initializeApp();
 
-/* What push.js is allowed to touch: reads and deletes on this event's own
-   database, and Cloud Messaging. */
+/* What push.js is allowed to touch: reads, deletes and the one transaction it
+   keeps its own notes with, on this event's own database, and Cloud Messaging. */
 function envOf(event) {
-  const root = event.data.ref.root;
+  // a create hands over the snapshot, a write a before/after pair
+  const root = (event.data.after || event.data).ref.root;
   return {
     get: p => root.child(p).get().then(s => s.val()),
     remove: p => root.child(p).remove(),
-    send: messages => getMessaging().sendEach(messages)
+    send: messages => getMessaging().sendEach(messages),
+    // a transaction: `fn` gets what is there and returns what to write, or undefined to leave it
+    claim: (p, fn) => root.child(p).transaction(fn).then(r => !!r.committed)
   };
 }
 
@@ -50,6 +53,21 @@ exports.pushNotice = onValueCreated('/board/{code}/{tid}/{id}', event =>
    one is a create; the read markers live beside them under seen/, not here. */
 exports.pushMessage = onValueCreated('/dm/{code}/{tid}/{fam}/m/{id}', event =>
   push.onMessage(envOf(event), event.params, event.data.val()));
+
+/* A practice or event on a team's calendar changed: the entry, before and
+   after. Entries are small and nothing writes them during a game (the
+   register sits beside them, at teams/{tid}/attend), so the whole entry is
+   the right thing to watch. */
+exports.pushEntry = onValueWritten('/workspaces/{code}/teams/{tid}/events/{eid}', event =>
+  push.onEntry(envOf(event), event.params, event.data.before.val(), event.data.after.val()));
+
+/* A game's when and whether, one field each and never the game itself: a
+   game being played is written every few seconds (goals, subs, the clock),
+   and none of that may wake the server. Its date, kick-off and called-off
+   fields change only when somebody reschedules it. */
+for (const field of ['date', 'kickoff', 'called'])
+  exports['pushGame' + field[0].toUpperCase() + field.slice(1)] = onValueWritten(`/workspaces/{code}/matches/{mid}/${field}`, event =>
+    push.onGameField(envOf(event), event.params, field, event.data.before.val()));
 
 /* The calendar feed (calendar.js): https://{region}-{project}.cloudfunctions.net/calendar/{id}.ics,
    which is what firebase-config.js names as SOCCER_CALENDAR_FEED. Anyone may

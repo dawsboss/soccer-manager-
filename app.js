@@ -2,7 +2,7 @@
    Static app. Data lives in localStorage, and mirrors to Firebase Realtime
    Database when a config + workspace code are present. */
 
-const BUILD = '104';
+const BUILD = '105';
 const BUILT = '2026-10-07';
 /* The version of database.rules.json this app was written against. The rules
    carry the same number in rulesVersion's .write, which accepts that number
@@ -2722,6 +2722,21 @@ function pushCheck() {
       if (nowMs() - (r.at || 0) > PUSH_FRESH_MS)
         return rootPut(path(token), { at: nowMs(), ua: deviceName() }).then(() => pushSave({ ...r, at: nowMs() }));
     }).catch(() => { pushChecked = null; });
+}
+
+/* A change to the calendar made here is pushed to the whole team by the
+   server, which cannot tell who made it (entries carry no editor), so this
+   phone's own service worker is told, and keeps quiet when the push for it
+   arrives. A game's own writes (goals, subs, the clock) are not calendar
+   changes and are not passed on. */
+function swMine(p) {
+  if (!pushRec || typeof navigator === 'undefined' || !navigator.serviceWorker || !navigator.serviceWorker.ready) return;
+  const code = wsCode();
+  let key = null;
+  if (p[0] === 'teams' && p[2] === 'events' && p[3]) key = `cal:${code}:e_${p[3]}`;
+  else if (p[0] === 'matches' && p[1] && (!p[2] || ['date', 'kickoff', 'called'].includes(p[2]))) key = `cal:${code}:g_${p[1]}`;
+  if (!key || !code) return;
+  try { Promise.resolve(navigator.serviceWorker.ready).then(r => { if (r && r.active) r.active.postMessage({ type: 'mine', key }); }).catch(() => { }); } catch (e) { }
 }
 
 /* A notification tapped while Minutes is open: the service worker says where. */
@@ -14771,6 +14786,7 @@ const mineTouched = new Set();
 let newsLast = '';
 function noteMine(path) {
   const p = String(path || '').split('/');
+  swMine(p);
   if (p[0] === 'teams' && p[2] === 'events' && p[3]) mineTouched.add(`e:${p[1]}:${p[3]}`);
   else if (p[0] === 'matches' && p[1]) mineTouched.add('g:' + p[1]);
   else if (p[0] === 'sessions' && p[1]) mineTouched.add('s:' + p[1]);
