@@ -51,7 +51,7 @@ Read `AUTH.md`, `ROADMAP.md`, `SECURITY.md` before touching auth, access, sharin
 - `test/harness.js` is the shared rig: the stubbed DOM, a clock the test drives, a captured click handler (which is the only way to reach the ~120 actions that are inline branches in one listener), and `loadApp()`. Write new tests on it rather than a fourth copy of the stubs.
 - `.github/workflows/test.yml` runs `test/run.js` on every push and pull request.
 
-Changes to `functions/` or `sw.js` need `node test/run.js` the same way (`test/push.js` runs both as they are), and `functions/` is deployed by hand: `firebase deploy --only functions` (README, **Notifications to a closed phone**). The suites never need `npm install`: `functions/push.js` imports nothing from Firebase on purpose, and the rig fakes what `index.js` requires.
+Changes to `functions/` or `sw.js` need `node test/run.js` the same way (`test/push.js` runs both as they are), and `functions/` deploys itself on a merge to main (`.github/workflows/server.yml`, once the `FIREBASE_SERVICE_ACCOUNT` secret is set; README, **Deploying the server**). The rules publish from the same workflow only when someone runs it with **rules** ticked, never on a merge. The suites never need `npm install`: `functions/push.js` imports nothing from Firebase on purpose, and the rig fakes what `index.js` requires.
 
 ## Required after every change to the rules (`database.rules.json`)
 

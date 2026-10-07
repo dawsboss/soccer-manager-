@@ -132,29 +132,34 @@ The bell in the top bar, for anyone with a role in a club that has an admin.
 
 ## Notifications to a closed phone
 
-A team notice, or a message in a family conversation, reaches the phones of everyone who may read it, with Minutes closed and the screen off: the team's families, coaches and trackers for a notice; the family, the team's coaches and the admins for a conversation; never the person who wrote it. That takes the club's first piece of server-side code, `functions/` (the design is [`GOTSPORT.md`](GOTSPORT.md), *Push notifications* and *The server*), and a few steps once:
+A team notice, or a message in a family conversation, reaches the phones of everyone who may read it, with Minutes closed and the screen off: the team's families, coaches and trackers for a notice; the family, the team's coaches and the admins for a conversation; never the person who wrote it. That is the club's server (`functions/`; the design is [`GOTSPORT.md`](GOTSPORT.md), *Push notifications* and *The server*), set up once as **Deploying the server** below says, plus two things:
 
-1. **Firebase's pay-as-you-go plan (Blaze).** Cloud Functions need it. At one club's volume the cost is expected to be pennies, but it needs a card on file; check Firebase's current pricing before telling anyone a number, and set a budget alert in Google Cloud while you are there.
-2. **Deploy the functions** from a computer, once and after every change to `functions/`:
-   ```
-   npm install -g firebase-tools
-   firebase login
-   firebase use --add            # pick the club's project
-   (cd functions && npm install)
-   firebase deploy --only functions
-   ```
-   That deploys two: `pushNotice` and `pushMessage`. They listen to every database in the project, and answer each from its own data, so a second database for rehearsing rules (below) uses its own phones and never the real club's.
-3. **Rules version 7**, which adds `pushTokens` (each person's phones, readable and writable by that account alone). Paste `database.rules.json` as usual, or `firebase deploy --only database`.
-4. **The web push key.** Firebase console → Project settings → **Cloud Messaging** → *Web Push certificates* → **Generate key pair**. Copy the key into `firebase-config.js` as `window.SOCCER_PUSH_KEY`, commit, and let the site deploy. It is public, not a secret. The app offers notifications as soon as it is set, so set it after step 2.
-5. **Each person turns it on, on each phone:** Settings → **Notifications on this phone** → *Turn on* (Messages offers it too). Parents, players, trackers and coaches alike: it is their own phone, so it needs no role.
-   - **iPhone and iPad** (iOS 16.4 or later) deliver notifications only to a site added to the Home Screen: in Safari, **Share → Add to Home Screen**, open Minutes from the new icon, and turn it on there. The app says so when it is opened in a browser tab.
-   - **Android** and computers: any browser that supports web push, straight from the page.
+1. **Rules version 7**, which adds `pushTokens` (each person's phones, readable and writable by that account alone).
+2. **The web push key** in `firebase-config.js` as `window.SOCCER_PUSH_KEY`: Firebase console → Project settings → **Cloud Messaging** → *Web Push certificates* → **Generate key pair**. Public, not a secret. The app offers notifications as soon as it is set, so set it once the server is deployed.
+
+Then **each person turns it on, on each phone:** Settings → **Notifications on this phone** → *Turn on* (Messages offers it too). Parents, players, trackers and coaches alike: it is their own phone, so it needs no role.
+- **iPhone and iPad** (iOS 16.4 or later) deliver notifications only to a site added to the Home Screen: in Safari, **Share → Add to Home Screen**, open Minutes from the new icon, and turn it on there. The app says so when it is opened in a browser tab.
+- **Android** and computers: any browser that supports web push, straight from the page.
 
 What it does not do yet: a followed game's goals, a practice or game called off or moved, and club activity still reach a phone only while Minutes is open on it. They are the next jobs for the same sender (`GOTSPORT.md`, *Build order*).
 
 Signing out takes the phone's address down while still signed in, and deletes the browser's subscription, so a phone handed to someone else stops getting her messages. A push that still arrives for an account no longer signed in on the phone (signed out with no signal, say) is shown without its words. `node test/push.js` holds all of this, and who the server tells, for every kind of account.
 
 If nothing arrives: check the functions' logs in the Firebase console (Functions → the function → Logs). A send refused for permission usually means the **Firebase Cloud Messaging API** is switched off for the project in Google Cloud's API library.
+
+## Deploying the server
+
+The club's server is three Cloud Functions on the same Firebase project, in `functions/`: `pushNotice` and `pushMessage` (notifications) and `calendar` (calendar sync). `.github/workflows/server.yml` tests and deploys them whenever they change on main, as the site deploys itself. Set up once:
+
+1. **Pay-as-you-go (Blaze).** Firebase console → the project → **Upgrade** at the bottom left → **Blaze**, with a card. Cloud Functions need it; at one club's volume the expected bill is nothing, inside the free allowance, but check Firebase's current pricing before telling anyone a number. Then Google Cloud console → **Billing → Budgets & alerts** → a budget of a few dollars, so anything unexpected emails you.
+2. **A deploy key for GitHub.** Google Cloud console, this project → **IAM & Admin → Service Accounts → Create service account** (`github-deployer`), roles **Editor** and **Service Account User**. Open it → **Keys → Add key → JSON**. On GitHub: the repository → **Settings → Secrets and variables → Actions → New repository secret**, named `FIREBASE_SERVICE_ACCOUNT`, the whole file as its value. Delete the file.
+3. **Merge to main**, or **Actions → Deploy the server → Run workflow**. The first deploy takes several minutes while Google switches on what functions need; if it fails at that stage, run it once more.
+
+Without the secret the workflow says so and deploys nothing. From a computer instead: `npm install -g firebase-tools`, `firebase login`, `(cd functions && npm ci)`, `firebase deploy --only functions`.
+
+**The rules can go the same way.** *Run workflow* with **rules** ticked runs every suite, publishes `database.rules.json` and checks the live version (`tools/live-rules.js`). It is never automatic: the rules apply to every club in the database at once, so publishing them stays a choice somebody makes. Pasting them in the console still works too.
+
+If a notification never arrives: the functions' logs are in the Firebase console (Functions → the function → Logs). A send refused for permission usually means the **Firebase Cloud Messaging API** is switched off for the project in Google Cloud's API library.
 
 ## Deleting a club
 
@@ -423,7 +428,7 @@ Practices default to the team only on purpose. A share link gets forwarded, and 
 
 ## Calendar sync
 
-A calendar app subscribes to a web address and goes back to it on its own schedule, from its own servers, without running any of this app's JavaScript. A static site cannot answer that, so the club's server does: the `calendar` function in `functions/` (`functions/calendar.js`), deployed with the notifications (**Notifications to a closed phone**, steps 1 and 2). It reads one node of `public/` (the same node a share page reads) and returns it as a calendar, and writes nothing. It runs on the server, but what it may read is exactly what the share pages can: an address is a plain id or it is refused before anything is read.
+A calendar app subscribes to a web address and goes back to it on its own schedule, from its own servers, without running any of this app's JavaScript. A static site cannot answer that, so the club's server does: the `calendar` function in `functions/` (`functions/calendar.js`), deployed with the notifications (**Deploying the server**, below). It reads one node of `public/` (the same node a share page reads) and returns it as a calendar, and writes nothing. It runs on the server, but what it may read is exactly what the share pages can: an address is a plain id or it is refused before anything is read.
 
 `firebase-config.js` names it as `window.SOCCER_CALENDAR_FEED` (`https://us-central1-<project>.cloudfunctions.net/calendar`). Until the functions are deployed that address answers nothing, so deploy before families subscribe; with it blank, the calendar offers a one-off copy instead. In the app, anyone signed in opens **My calendar → Turn on calendar sync** for their own, and a coach can turn on a team's from its Season.
 

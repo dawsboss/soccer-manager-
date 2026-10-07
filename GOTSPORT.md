@@ -267,8 +267,7 @@ Not planned until someone needs them, because each is a product of its own:
 ## The server
 
 - **What it is:** Firebase Cloud Functions on the same project as the
-  database, in `functions/`, deployed with `firebase deploy --only
-  functions`. It needs Firebase's pay-as-you-go plan; at one club's volume
+  database, in `functions/`, deployed by `.github/workflows/server.yml`. It needs Firebase's pay-as-you-go plan; at one club's volume
   the cost is expected to be small. Check current pricing before telling a
   club a number.
 - **What stays the same:** the phone is offline-first and nothing at the
@@ -290,9 +289,12 @@ Not planned until someone needs them, because each is a product of its own:
 - **One server.** The calendar feed was a Cloudflare Worker; it moved into
   `functions/` in build 104 (the owner, 2026-10-07: no Cloudflare account,
   one deploy). It still reads only `public/` and writes nothing.
-- **Deploying:** by hand for now (README); a GitHub Action that tests and
-  deploys `functions/` (and, once the owner says so, the rules) on every
-  merge to main is next, so a change ships the way the site does.
+- **Deploying:** `.github/workflows/server.yml` tests and deploys
+  `functions/` on every merge to main, as the site deploys itself, with a
+  service account key held as a GitHub secret. The rules publish from the
+  same workflow only when someone runs it by hand with *rules* ticked: they
+  apply to every club at once, so that stays a choice (README, *Deploying
+  the server*).
 
 ---
 

@@ -8,6 +8,23 @@ before this point lives only in the git log.
 
 ---
 
+## The server deploys itself — 2026-10-07 (build 104)
+
+The owner asked for a way to ship server changes without anybody running
+commands on a computer. `.github/workflows/server.yml` runs every suite and
+deploys `functions/` whenever it changes on main, the way the site already
+deploys itself, using a service account key the owner adds once as a GitHub
+secret (README, **Deploying the server**, has the three steps). Without the
+secret it says so and deploys nothing, rather than a red cross on every merge.
+
+The rules can go the same way, but only on purpose: *Run workflow* with
+**rules** ticked runs the suites, publishes `database.rules.json` and checks
+the live version. Never on a merge, because the rules apply to every club in
+the database at once and publishing them should stay a choice somebody makes.
+
+`functions/package-lock.json` pins what was tested, and `.firebaserc` names
+the project so nothing has to be typed.
+
 ## The calendar feed moves onto the club's server — 2026-10-07 (build 104)
 
 The owner had never set up the Cloudflare Worker that served calendar feeds,

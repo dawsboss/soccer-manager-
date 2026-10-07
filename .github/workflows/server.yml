@@ -1,0 +1,81 @@
+name: Deploy the server
+
+# The club's Cloud Functions (functions/: notifications and the calendar feed)
+# deploy themselves when they change on main, the way the site does in
+# deploy.yml. The database rules do not: they apply to every club at once, so
+# publishing them is a button somebody presses (Actions → Deploy the server →
+# Run workflow → tick "rules"), after the same tests.
+#
+# Needs one repository secret, FIREBASE_SERVICE_ACCOUNT: the JSON key of a
+# Google Cloud service account allowed to deploy (README, "Deploying the
+# server"). Without it this says so and stops, green, so a fork or a club
+# that has not set it up is not shown a red cross on every merge.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'functions/**'
+      - 'ics.js'
+      - 'firebase.json'
+      - '.firebaserc'
+      - '.github/workflows/server.yml'
+  workflow_dispatch:
+    inputs:
+      rules:
+        description: 'Also publish database.rules.json (every club, at once)'
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+# Two deploys of one project at once fight over it; a newer one waits.
+concurrency:
+  group: firebase
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      HAS_KEY: ${{ secrets.FIREBASE_SERVICE_ACCOUNT != '' }}
+    steps:
+      - name: Is deploying set up?
+        if: env.HAS_KEY != 'true'
+        run: echo "::notice::FIREBASE_SERVICE_ACCOUNT is not set, so nothing was deployed. README, Deploying the server."
+
+      - uses: actions/checkout@v4
+        if: env.HAS_KEY == 'true'
+
+      - uses: actions/setup-node@v4
+        if: env.HAS_KEY == 'true'
+        with:
+          node-version: '22'
+
+      # Every suite, the server's and the rules' included, before anything leaves.
+      - name: Run every suite
+        if: env.HAS_KEY == 'true'
+        run: node test/run.js
+
+      - name: Install the functions' packages
+        if: env.HAS_KEY == 'true'
+        run: npm ci --prefix functions
+
+      - uses: google-github-actions/auth@v2
+        if: env.HAS_KEY == 'true'
+        with:
+          credentials_json: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+
+      # --force: allow the CLI to set up what a first deploy needs (it otherwise
+      # stops to ask about cleaning up old builds, and nobody is there to answer).
+      - name: Deploy the functions
+        if: env.HAS_KEY == 'true'
+        run: npx --yes firebase-tools@15 deploy --only functions --non-interactive --force
+
+      - name: Publish the database rules
+        if: env.HAS_KEY == 'true' && github.event_name == 'workflow_dispatch' && inputs.rules
+        run: |
+          node test/rules.js > /dev/null
+          npx --yes firebase-tools@15 deploy --only database --non-interactive
+          node tools/live-rules.js
