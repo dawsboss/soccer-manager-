@@ -173,7 +173,8 @@ const valueAt = (fbk, p) => { const w = fbk.writtenTo(p); return w.length ? w[w.
     const html = A.rendered();
     check('Squad shows who is asking', /Sam/.test(html) && /#9/.test(html), true);
     check('with the player that number matches picked', /data-pid="p2" aria-pressed="true"/.test(html), true);
-    check('and nobody else picked', /aria-pressed="true"/.test(html.replace(/data-pid="p2" aria-pressed="true"/, '')), false);
+    // (the team's set-up under the squad has pressed chips of its own: what is counted)
+    check('and nobody else picked', /data-pid="[^"]*" aria-pressed="true"/.test(html.replace(/data-pid="p2" aria-pressed="true"/, '')), false);
     A.click({ act: 'claimok', tid: 't1', uid: 'sam' }); await A.flush(20);
     const p = paths(fbk);
     check('the approval is written', (valueAt(fbk, 'claims/CLUB/t1/sam/approved') || {}).by, 'coach');

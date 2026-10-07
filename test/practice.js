@@ -70,7 +70,7 @@ console.log('--- who gets the Practice tab ---');
 
   as('trk');
   check('a tracker has NO tab', (A.render(), tab().hidden), true);
-  check('and a link to it lands on the games list', open(), 'matches');
+  check('and a link to it lands on the team\'s Season, where the games are', open(), 'season');
   check('with no drill on the screen', /data-act="drill"/.test(A.rendered()), false);
 
   as('mum');

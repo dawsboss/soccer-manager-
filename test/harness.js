@@ -30,9 +30,10 @@ const APP_PATH = path.join(__dirname, '..', 'app.js');
 /* Every unknown property reads as undefined rather than throwing, so render()
    can touch whatever it likes on a node this stub never thought about. */
 const mk = () => new Proxy({
-  dataset: {}, style: {}, value: '', textContent: '', innerHTML: '', hidden: false,
+  dataset: {}, style: {}, value: '', textContent: '', innerHTML: '', hidden: false, attrs: {},
   classList: { add() { }, remove() { } },
-  addEventListener() { }, removeEventListener() { }, setAttribute() { }, getAttribute() { return null },
+  // remembered, so what render() marks on a fixed button (the Calendar's aria-current) can be read back
+  addEventListener() { }, removeEventListener() { }, setAttribute(k, v) { this.attrs[k] = String(v); }, getAttribute(k) { return k in this.attrs ? this.attrs[k] : null },
   setPointerCapture() { }, click() { }, getBoundingClientRect: () => ({ left: 0, top: 0, width: 300, height: 400 }),
   querySelector: () => mk(), querySelectorAll: () => [], closest: () => null, appendChild() { }
 }, { get(t, k) { return k in t ? t[k] : undefined; }, set(t, k, v) { t[k] = v; return true; } });
@@ -175,6 +176,8 @@ const EXPORTS = `{
   /* the calendar */
   calItems, calPast, calNext, calTeams, calGroups, teamHue, seriesDates, seriesOf, icsItem, opponentMessage,
   viewCalendar, sheetCalItem, sheetCalEvent, calFormNew, publicEvents, pubText, mayAct,
+  calSels, calSel, calEntries, calMulti, calEditTeams, evHue, evWhen, layDay, gridHours, calView, calDay, CAL_VIEWS, KIND_HUE, normView, GAME_VIEWS,
+  calDayList, calAgenda, calShowTeam,
   todayStr, dayLabel, niceTime, hm, addDays, weekdayOf, CALLED, HOME_AWAY, SERIES_MAX,
   get calForm() { return calForm },
   fixtureDoc, calendarDoc, publishTeam, ensureFixtureShares, claimTeamIds, outIds, familySaidNo, attendance, attendLine, attendOf, attendUntaken, cameToGame,
@@ -197,8 +200,9 @@ const EXPORTS = `{
   /* rendering + routing */
   render, uiToHash, hashToUi, clubTag,
   clubClashesOn, coachStatus, freeCoaches, clubNews, newsFor, newsItems, newsUnread, fieldShut, fieldHours, fieldClosures, awayAll, awaySpans, calledOut, findTimes, picOrder, picLayout, plannerClashes, PLANNER_ACTS,
-  /* the club schedule, and fields shared */
-  viewSchedule, schedWeek, schedTodo, schedLine, gameDefaults, fieldMates, fieldMatesLine, placeClash, myCalOwn, SCHED_ACTS, get gamesForm() { return gamesForm },
+  /* the club's week, adding to any team, and fields shared */
+  schedWeek, schedTodo, schedLine, gameDefaults, fieldMates, fieldMatesLine, placeClash, myCalOwn, SCHED_ACTS, get gamesForm() { return gamesForm },
+  viewRoster, teamSetUp,
   /* the mutable module-scoped bindings */
   get state() { return state }, set state(v) { state = v },
   get ui() { return ui },
@@ -229,7 +233,7 @@ const EXPORTS = `{
   sessUi, SESS_ACTS, sessMessage, reachFor, fmtMoney, sessClubLine, calendarDoc, publicDoc, viewMine, viewClub,
   /* bookable times, and my calendar */
   blockAll, blockById, blockSlots, normBlock, slotSid, canEditBlock, kidBusy, blockKids, availView, familyAvail, sheetBlock,
-  AVAIL_ACTS, myCalItems, myCalTeams, myCalFilters, viewMyCal, myCalLine, createClub, blockValue, healBlocks, seatsOf, freeSeat, placesTaken, openSlotsOf, slotAt, slotKey,
+  AVAIL_ACTS, myCalItems, myCalTeams, myCalTids, myCalFilters, myCalLine, createClub, blockValue, healBlocks, seatsOf, freeSeat, placesTaken, openSlotsOf, slotAt, slotKey,
   /* my calendar, across clubs */
   get you() { return you }, busyOf, myFeedDoc, myFeedId, feedItem, youCalItems, youBusy, youClubs, elsewhereOn, sharing, sheetPersonCal, viewScope, crumbs, watchMirror, mirrorSlim,
   alertsList: () => alertsHere().list, alertBar, calAlerts, elseUnread, openAlert, noteMine,

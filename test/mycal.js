@@ -3,8 +3,8 @@
    design. What is easy to get quietly wrong, and so is pinned here:
 
    - The top row says whose a screen is and which one: a team's tabs carry
-     Club › Team, club screens Club › the screen, My calendar You › My
-     calendar.
+     Club › Team, club screens Club › the screen. My calendar is a choice on
+     the one Calendar (build 102), which is a team's tab like the others.
    - Every other club the account is in is listened to as well as the open
      one, read-only, for its teams, games, sessions and bookable times, and
      kept on the phone cut down to what My calendar needs: her own children,
@@ -86,7 +86,7 @@ const nameIn = v => names.some(n => JSON.stringify(v).includes(n));
   console.log('--- whose screen it is, and which ---');
   {
     const { D } = await boot('jaz');
-    D.ui.view = 'matches'; D.render();
+    D.ui.view = 'season'; D.render();
     check('a team\'s tab carries the club and the team', /Club<\/span>/.test(D.crumbs()) && /Team<\/span>/.test(D.crumbs()), true);
     for (const [v, name] of [['setup', 'Your settings'], ['people', 'People'], ['sessions', 'Training sessions'], ['inbox', 'Messages'], ['admin', 'Club settings'], ['planner', 'Planner'], ['mine', 'My players']]) {
       D.ui.view = v;
@@ -94,8 +94,13 @@ const nameIn = v => names.some(n => JSON.stringify(v).includes(n));
     }
     D.ui.view = 'club';
     check('club home: the club alone', /Club<\/span>/.test(D.crumbs()) && !/Screen<\/span>|Team<\/span>/.test(D.crumbs()), true);
-    D.ui.view = 'mycal';
-    check('My calendar: You › My calendar, no club, no team', /You<\/span>/.test(D.crumbs()) && D.crumbs().includes('My calendar</span>') && !/Club<\/span>/.test(D.crumbs()) && !/Team<\/span>/.test(D.crumbs()), true);
+    D.ui.view = 'mycal'; D.render();
+    // the Calendar is the person's, even with one team and nothing else of hers yet
+    check('My calendar is the Calendar', D.ui.view + ' ' + D.calSel(), 'calendar mine');
+    check('— hers, not a club\'s or a team\'s: You › Calendar', /You<\/span>/.test(D.crumbs()) && D.crumbs().includes('Calendar</span>') && !/Club<\/span>|Team<\/span>/.test(D.crumbs()), true);
+    check('— and the button up top says it is open', D.dom.node('#calBtn').getAttribute('aria-current'), 'true');
+    D.ui.view = 'season'; D.render();
+    check('— and not when it isn\'t', D.dom.node('#calBtn').getAttribute('aria-current'), 'false');
     D.ui.view = 'formation'; D.ui.editFid = '@game';
     check('the game\'s shape is the team\'s', D.viewScope(), 'team');
     D.ui.view = 'formation'; D.ui.editFid = 'f1';
@@ -120,7 +125,12 @@ const nameIn = v => names.some(n => JSON.stringify(v).includes(n));
     check('one club alone', D.myCalItems('c:HILL').every(x => x.club === 'HILL') && D.myCalItems('c:HILL').length, 3);
     check('this club alone leaves the other out', D.myCalItems('c:CLUB').some(x => x.club), false);
     D.ui.view = 'mycal'; D.ui.myCal = 'all'; D.render();
-    check('drawn with the club\'s name', /Hillside FC · Hill U12 · Hill Park/.test(D.rendered()), true);
+    check('another club is on the one calendar, hers', D.calSels().join() + ' ' + D.calSel(), 'mine mine');
+    check('— with nothing to choose between', /data-act="calscope"/.test(D.rendered()), false);
+    check('— with a chip for each club', /data-act="mycalf" data-v="c:HILL"/.test((D.click({ act: 'caltree' }), D.rendered())), true);
+    D.click({ act: 'caltree' });
+    check('drawn with the club\'s name', /Hillside FC · Hill U12/.test(D.rendered()) && /Hill Park/.test(D.rendered()), true);
+    check('in a colour of its own, and opening nothing here', /<div class="ev" data-called="0" data-past="0" style="--ev:#546E7A">/.test(D.rendered()), true);
     check('not the open club, which is held in full already', D.youClubs().map(([c]) => c).join(), 'HILL');
     check('heard from this session: no "as of"', /as of/.test(D.rendered()), false);
     check('the club open here is untouched', Object.keys(D.state.teams).join() + ' ' + D.state.access.org.name, 't1 Lakeside SC');

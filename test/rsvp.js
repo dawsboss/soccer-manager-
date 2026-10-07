@@ -206,7 +206,9 @@ function rest() {
     g1().periods = { 0: { half: 1, start: H.clock.t - 60000 } };
     check('kicked off: the "no" still reads as out', sq().includes('p2'), false);
     as('mumU'); A.ui.view = 'calendar';
-    check('and her parent is not asked any more', /Is Ella going/.test(html()), false);
+    // the game being played is on top, live; "next" is whatever comes after it, and that may still ask
+    check('and her parent is not asked any more', /data-act="rsvp"[^>]*data-k="g_g1"/.test(html()), false);
+    check('— it is on top, being played', /class="card callive"[^>]*data-id="g1"/.test(html()), true);
   }
 
   console.log('--- a tracker ---');

@@ -550,6 +550,12 @@ table.grid td.right{text-align:right}
 .chk[data-ok="0"]{color:var(--over)}
 .plainbtn{background:none;border:0;padding:0;color:inherit;font:inherit}
 .avatar.swap{border-radius:9px;background:rgba(255,255,255,.12)}
+/* The Calendar's own button carries today's date in its icon, as a phone's calendar app does, and
+   stays lit while the Calendar is open: no tab underlines it any more. */
+.calbtn{position:relative}
+.calbtn-d{position:absolute;left:0;right:0;top:12.5px;font-size:8.5px;font-weight:700;line-height:10px;
+  text-align:center;font-variant-numeric:tabular-nums;pointer-events:none}
+.calbtn[aria-current="true"]{background:#fff;border-color:#fff;color:var(--field-deep)}
 
 /* ---------- plan snapshots ---------- */
 /* wrapped, not scrolled sideways: a sideways strip snaps back to 0:00 on every redraw */
@@ -915,3 +921,175 @@ button.nextprac{cursor:pointer}
 .calrow .tname{color:var(--tc);font-weight:700}
 .calrow.tc .psub{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .calcals .chip[aria-pressed="true"] .dot{box-shadow:0 0 0 1.5px #fff}
+
+/* ---------- one calendar, drawn as a calendar app draws one (build 102) ---------- */
+/* A segmented control: the view, and which calendars. */
+.seg{display:flex;background:#fff;border:1px solid var(--line);border-radius:10px;padding:3px;gap:3px}
+.seg button{flex:1 1 0;min-width:0;background:none;border:0;border-radius:7px;padding:7px 6px;font-size:14px;font-weight:500;
+  color:var(--ink-soft);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.seg button[aria-pressed="true"]{background:var(--field-deep);color:#fff}
+.seg .dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px;vertical-align:1px}
+.seg button[aria-pressed="true"] .dot{box-shadow:0 0 0 1.5px #fff}
+
+/* the bar: the title (which opens a small month), back, today, forward */
+.caltop{display:flex;align-items:center;gap:8px;min-height:40px}
+.caltitle{flex:1;min-width:0;background:none;border:0;padding:2px 0;text-align:left;color:var(--ink);
+  font-family:"Barlow Condensed",sans-serif;font-weight:600;font-size:23px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.caltitle span{font-size:13px;color:var(--ink-soft);vertical-align:3px}
+.calnavs{display:flex;align-items:center;gap:6px;flex:none}
+.calnavs .stepbtn{height:34px}
+/* Today, as a calendar app draws it: a little calendar with today's date on it */
+.caltoday{flex:none;width:36px;height:34px;display:flex;align-items:center;justify-content:center;
+  background:#fff;border:1px solid var(--line);border-radius:10px;color:var(--field-deep);padding:0}
+.caltoday i{display:block;width:21px;height:21px;border:2px solid currentColor;border-top-width:5px;border-radius:4px;
+  font-style:normal;font-size:11px;font-weight:700;line-height:13px;text-align:center;font-variant-numeric:tabular-nums}
+.caltoday[aria-current="date"]{color:var(--ink-soft)}
+.calmini{background:#fff;border:1px solid var(--line);border-radius:var(--r);padding:10px}
+
+/* which calendars: the choice as chips, the finer ones behind the ☰ */
+.calsels .chip{display:inline-flex;align-items:center;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.calsels .chip .dot{display:inline-block;flex:none;width:9px;height:9px;border-radius:50%;margin-right:6px}
+.calsels .chip[aria-pressed="true"] .dot{box-shadow:0 0 0 1.5px #fff}
+.calmenu{flex:none;width:36px;height:36px;display:flex;align-items:center;justify-content:center;position:relative;
+  background:#fff;border:1px solid var(--line);border-radius:10px;color:var(--field-deep);padding:0}
+.calmenu[aria-expanded="true"]{background:var(--field-deep);border-color:var(--field-deep);color:#fff}
+/* something is left out: said by a dot on the ☰, and in words inside */
+.calmenu[data-on="1"]::after{content:"";position:absolute;top:-3px;right:-3px;width:10px;height:10px;border-radius:50%;
+  background:var(--owed);box-shadow:0 0 0 2px var(--paper)}
+.calcals{background:#fff;border:1px solid var(--line);border-radius:var(--r);padding:12px;display:flex;flex-direction:column;gap:8px}
+.calcals .caltree{margin-top:0}
+
+/* Schedule: a day a row, the date down the left, today circled */
+.agenda{display:flex;flex-direction:column}
+.agmonth{font-family:"Barlow Condensed",sans-serif;font-weight:600;font-size:19px;margin:12px 0 4px;color:var(--ink)}
+.agenda > .agmonth:first-child{margin-top:0}
+.agday{display:grid;grid-template-columns:46px minmax(0,1fr);gap:8px;padding:5px 0}
+.agdate{display:flex;flex-direction:column;align-items:center;padding-top:2px;line-height:1.05}
+.agdate small{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--ink-soft)}
+.agdate b{font-family:"Barlow Condensed",sans-serif;font-size:23px;font-weight:600;width:36px;height:36px;
+  display:flex;align-items:center;justify-content:center;border-radius:50%}
+.agday[data-today="1"] .agdate small{color:var(--field-deep)}
+.agday[data-today="1"] .agdate b{background:var(--field-deep);color:#fff}
+.agday[data-past="1"] .agdate{opacity:.6}
+.agevs{display:flex;flex-direction:column;gap:6px;min-width:0}
+/* where what has happened ends and what is to come begins */
+.agline{display:block;position:relative;height:2px;background:#C5221F;margin:3px 0 3px 6px;border-radius:1px}
+.agline::before{content:"";position:absolute;left:-6px;top:-4px;width:10px;height:10px;border-radius:50%;background:#C5221F}
+.calearlier{align-self:center}
+
+/* an entry, filled with its calendar's colour */
+.ev{display:flex;flex-direction:column;gap:1px;width:100%;min-width:0;text-align:left;font:inherit;
+  background:var(--ev,var(--field));color:#fff;border:0;border-radius:9px;padding:8px 11px}
+button.ev:active{filter:brightness(.92)}
+.ev-top{display:flex;align-items:baseline;gap:8px;min-width:0}
+.ev-title{flex:1;min-width:0;font-weight:600;font-size:15.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ev-team{font-weight:700}
+.ev-sub{display:block;font-size:13px;opacity:.93;overflow-wrap:anywhere}
+.ev-score{flex:none;font-family:"Barlow Condensed",sans-serif;font-weight:700;font-size:17px;font-variant-numeric:tabular-nums}
+.ev-live{flex:none;align-self:center;font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;
+  background:#fff;color:#C5221F;border-radius:4px;padding:1px 5px}
+.ev-tag{flex:none;align-self:center;font-size:11.5px;font-weight:600;background:rgba(255,255,255,.22);border-radius:4px;padding:1px 6px}
+.ev[data-past="1"]{opacity:.6}
+/* called off: still there, so nobody turns up, but plainly not on */
+.ev[data-called="1"]{background:#fff;color:var(--ink-soft);box-shadow:inset 0 0 0 1.5px var(--ev,var(--line))}
+.ev[data-called="1"] .ev-title{text-decoration:line-through}
+.ev[data-called="1"] .ev-tag{background:#FBE7E3;color:#6E2317}
+
+/* Day and Week: the hours down the left, entries where they fall */
+.tg{--hr:50px;--gut:44px;background:#fff;border:1px solid var(--line);border-radius:var(--r);overflow:hidden}
+.tg-week{--hr:44px}
+.tg-row{display:grid;grid-template-columns:var(--gut) repeat(var(--cols),minmax(0,1fr))}
+.tg-head{border-bottom:1px solid var(--line)}
+.tg-day{background:none;border:0;padding:6px 0 5px;display:flex;flex-direction:column;align-items:center;gap:1px;
+  line-height:1.05;color:var(--ink);font:inherit;min-width:0}
+.tg-day small{font-size:10.5px;font-weight:600;text-transform:uppercase;letter-spacing:.03em;color:var(--ink-soft)}
+.tg-day b{font-family:"Barlow Condensed",sans-serif;font-size:19px;font-weight:600;width:30px;height:30px;
+  display:flex;align-items:center;justify-content:center;border-radius:50%}
+.tg-day[data-today="1"] small{color:var(--field-deep)}
+.tg-day[data-today="1"] b{background:var(--field-deep);color:#fff}
+.tg-day[data-past="1"]{opacity:.6}
+.tg-allday{border-bottom:1px solid var(--line);align-items:start}
+.tg-allday > div{display:flex;flex-direction:column;gap:2px;padding:3px 2px;border-left:1px solid var(--line);min-width:0}
+.tg-gl{font-size:10px;color:var(--ink-soft);text-align:right;padding:5px 5px 0 0;line-height:1.1}
+.tg-adwrap{display:block;min-width:0;cursor:pointer}
+.tg-body{position:relative;height:calc(var(--hr) * var(--rows))}
+.tg-gutter{position:relative}
+.tg-gutter span{position:absolute;right:5px;transform:translateY(-50%);font-size:10.5px;color:var(--ink-soft);white-space:nowrap}
+.tg-gutter .tg-first{top:3px;transform:none}
+.tg-col{position:relative;border-left:1px solid var(--line);min-width:0;
+  background-image:repeating-linear-gradient(to bottom,#E1E8EB 0 1px,transparent 1px var(--hr))}
+.tg-col[data-today="1"]{background-color:rgba(30,122,76,.045)}
+.tg-slot{position:absolute;left:0;right:0;height:var(--hr);background:none;border:0;padding:0;cursor:pointer}
+.tg-slot:hover{background:rgba(23,96,60,.06)}
+.tg-slot:active{background:rgba(23,96,60,.12)}
+.tg-ev{position:absolute;z-index:1;margin-left:1px;min-height:20px;overflow:hidden;display:flex;flex-direction:column;
+  background:var(--ev);color:#fff;border:0;border-radius:6px;padding:3px 5px;text-align:left;font:inherit;font-size:12px;line-height:1.2;
+  box-shadow:0 0 0 1px #fff}
+.tg-ev b{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tg-ev span{opacity:.92;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11px}
+.tg-ev[data-past="1"]{opacity:.6}
+.tg-ev[data-called="1"]{background:#fff;color:var(--ink-soft);box-shadow:inset 0 0 0 1.5px var(--ev),0 0 0 1px #fff}
+.tg-ev[data-called="1"] b{text-decoration:line-through}
+.tg-ev[data-short="1"] span{display:none}
+.tg-ev[data-short="1"]{padding-top:1px;padding-bottom:1px}
+.tg-week .tg-ev{padding:2px 3px;font-size:11px}
+.tg-week .tg-ev span{display:none}
+.tg-more{position:absolute;z-index:1;margin-left:1px;border:0;border-radius:6px;background:var(--ink-soft);color:#fff;
+  font-size:12px;font-weight:700;padding:0;box-shadow:0 0 0 1px #fff}
+.tg-now{position:absolute;left:-1px;right:0;height:2px;background:#C5221F;z-index:2;pointer-events:none}
+.tg-now::before{content:"";position:absolute;left:-4px;top:-4px;width:10px;height:10px;border-radius:50%;background:#C5221F}
+.tg-allday .mg-ev{font-size:11px}
+@media (min-width:760px){
+  .tg-week .tg-ev span{display:block}
+  .tg-week .tg-ev[data-short="1"] span{display:none}
+  .tg{--gut:52px}
+}
+
+/* Month: the grid, with what's on in each day */
+.mg{background:#fff;border:1px solid var(--line);border-radius:var(--r);overflow:hidden}
+.mg-wd{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));border-bottom:1px solid var(--line)}
+.mg-wd span{font-size:10.5px;font-weight:600;text-transform:uppercase;letter-spacing:.04em;color:var(--ink-soft);text-align:center;padding:5px 0}
+.mg-grid{display:grid;grid-template-columns:repeat(7,minmax(0,1fr))}
+.mg-cell{min-height:76px;min-width:0;display:flex;flex-direction:column;align-items:stretch;gap:2px;padding:3px 2px 4px;
+  background:none;border:0;border-top:1px solid var(--line);border-left:1px solid var(--line);font:inherit;color:inherit;text-align:left}
+.mg-cell:nth-child(7n+1){border-left:0}
+.mg-cell:nth-child(-n+7){border-top:0}
+.mg-n{align-self:center;font-size:12.5px;font-weight:600;width:24px;height:24px;flex:none;
+  display:flex;align-items:center;justify-content:center;border-radius:50%}
+.mg-cell[data-out="1"]{background:#F6F8F9}
+.mg-cell[data-out="1"] .mg-n{color:var(--ink-soft);font-weight:400}
+.mg-cell[data-today="1"] .mg-n{background:var(--field-deep);color:#fff}
+.mg-cell[data-sel="1"]{background:var(--field-wash)}
+.mg-cell[data-sel="1"][data-today="0"] .mg-n{box-shadow:inset 0 0 0 2px var(--field-deep)}
+.mg-ev{display:block;background:var(--ev);color:#fff;border-radius:4px;padding:1px 3px;font-size:10.5px;line-height:1.35;
+  white-space:nowrap;overflow:hidden;text-overflow:clip}
+.mg-ev[data-called="1"]{background:#fff;color:var(--ink-soft);box-shadow:inset 0 0 0 1px var(--ev);text-decoration:line-through}
+.mg-ev[data-past="1"]{opacity:.6}
+.mg-more{font-size:10.5px;font-weight:700;color:var(--ink-soft);padding:0 3px}
+.mg-x{display:none}
+@media (min-width:760px){
+  .mg-cell{min-height:96px;padding:4px}
+  .mg-ev{font-size:11.5px;padding:1px 5px}
+  .mg-x{display:inline}
+}
+
+/* the + in the corner */
+.calfab{position:fixed;right:max(16px,calc((100vw - 900px) / 2 + 16px));bottom:calc(20px + env(safe-area-inset-bottom));z-index:45;
+  width:56px;height:56px;border-radius:16px;border:0;background:var(--field-deep);color:#fff;
+  display:flex;align-items:center;justify-content:center;box-shadow:0 4px 12px rgba(0,0,0,.28),0 1px 3px rgba(0,0,0,.2)}
+.calfab:active{transform:translateY(1px)}
+.stack.calendar{padding-bottom:64px}
+
+/* on top: a game being played, and what's next */
+.callive{display:flex;align-items:center;gap:10px;width:100%;text-align:left;font:inherit;color:inherit;border-left:4px solid #C5221F}
+.callive-t{flex:1;min-width:0;display:flex;flex-direction:column}
+.callive .ev-live{background:#C5221F;color:#fff}
+.calnext{border-left:4px solid var(--ev,var(--field))}
+.calstrip{background:#fff;border:1px solid var(--line);border-radius:var(--r);padding:6px}
+
+/* an entry opened, in its calendar's colour */
+.sheet h3.evhead{display:flex;align-items:center;gap:10px}
+.evhead i{flex:none;width:14px;height:14px;border-radius:4px;background:var(--ev)}
+
+/* Squad: the team's set-up under the players */
+.sechead{margin:10px 0 -4px}

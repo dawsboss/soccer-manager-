@@ -4,12 +4,12 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#17603C">
-<meta name="build" content="101">
+<meta name="build" content="103">
 <title>Minutes — soccer sub tracker</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600&family=Barlow+Condensed:wght@500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="styles.css?v=101">
+<link rel="stylesheet" href="styles.css?v=103">
 </head>
 <body>
 
@@ -17,6 +17,11 @@
   <div class="topbar-main">
     <span class="brand" id="brand">Minutes<span class="ver" id="ver"></span></span>
     <span class="sync" id="syncBadge" title="Sync status">local</span>
+    <!-- The Calendar is the person's, across every team and club, so it lives up here beside
+         Messages and the account rather than under one team (build 103). -->
+    <button class="avatar swap calbtn" id="calBtn" type="button" aria-label="Calendar" title="Calendar">
+      <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <rect x="3.5" y="5" width="17" height="15.5" rx="2.5"/><path d="M3.5 10h17M8.5 3v4M15.5 3v4"/></svg><span class="calbtn-d" id="calBtnDay"></span></button>
     <button class="avatar swap bell" id="inboxBtn" type="button" aria-label="Messages" title="Messages" hidden>
       <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
         <path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg><span class="belln" id="inboxN"></span></button>
@@ -26,13 +31,12 @@
     <button class="avatar" id="avatar" type="button" aria-label="Your account"></button>
   </div>
   <nav class="crumbs" id="crumbs" aria-label="Where you are"></nav>
+  <!-- A team's own: its season (results, the game being played, what's next), its squad with its
+       set-up, and practice. The games are on the person's Calendar, up top (build 103). -->
   <nav class="tabs" id="tabs">
-    <button type="button" data-view="matches">Games</button>
-    <button type="button" data-view="calendar">Calendar</button>
-    <button type="button" data-view="practice" hidden>Practice</button>
-    <button type="button" data-view="roster">Squad</button>
     <button type="button" data-view="season">Season</button>
-    <button type="button" data-view="teamset">Team</button>
+    <button type="button" data-view="roster">Squad</button>
+    <button type="button" data-view="practice" hidden>Practice</button>
   </nav>
   <nav class="tabs subtabs" id="subtabs" hidden>
     <button type="button" data-gview="live">Live</button>
@@ -52,12 +56,12 @@
 <div class="toast" id="toast" hidden></div>
 
 <script src="firebase-config.js"></script>
-<script src="ics.js?v=101"></script>
+<script src="ics.js?v=103"></script>
 <!-- Content, not code: the drill library and the diagrams that draw it. Plain
      scripts before the module, so they are on window when app.js runs, and
      cache-busted with the same build number so a cached copy can't disagree. -->
-<script src="drills.js?v=101"></script>
-<script src="drill-diagram.js?v=101"></script>
-<script type="module" src="app.js?v=101"></script>
+<script src="drills.js?v=103"></script>
+<script src="drill-diagram.js?v=103"></script>
+<script type="module" src="app.js?v=103"></script>
 </body>
 </html>

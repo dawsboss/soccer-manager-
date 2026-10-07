@@ -8,6 +8,129 @@ before this point lives only in the git log.
 
 ---
 
+## The Calendar is yours, and today says where now is — 2026-10-07 (build 103)
+
+The owner, after trying build 102: *when clicking in a day like in the
+monthly view, I want a red line showing the current time of day*, and *the
+calendar is in a weird spot. The calendar is versatile and not tied to one
+team, not even one club, it is per person.* Build 102 made the one Calendar
+the first tab of every team, so it sat under whichever team was open with
+Club › Team over it, though most of what it could show (My calendar, other
+clubs, All teams) was no one team's.
+
+- **A red line at now in today's list**, wherever today is listed, as the
+  hours on Day and Week already had: the day under the Month grid when it is
+  today, and today on the Schedule, between what has started and what
+  hasn't (anything all day above it). Today is drawn on the Schedule even
+  with nothing left on it, once the list runs past it, with the line and
+  *Nothing else on today*, so the Schedule always says where now is.
+- **The Calendar is the person's.** It has its own button up top, beside
+  Messages and the account, with today's date on it, lit while it is open.
+  Its top row is **You › Calendar** again, and its address (`#/calendar`, or
+  `#/calendar/all` for All teams) names no team or club. It opens on **My
+  calendar**, now offered to anyone with anything of her own (a team, a
+  child, a session she runs, a time she offers, another club) rather than
+  only when that was more than the open team, and a coach's has her
+  players' sessions with other coaches on it, as her team's calendar did.
+  **All teams** is beside it for whoever can see more teams than her own. The
+  open team stopped being a calendar of its own: one team is that team
+  ticked alone on All teams, and a phone that had chosen it gets My calendar.
+- **Three tabs a team: Season, Squad, Practice.** Season is where a team
+  opens now: the game being played on top, one tap from the game; the next
+  game, with directions, *Open the game* and, for a family, *Is Ella going?*;
+  the next practice, said the way the calendar says it; *{team} on the
+  calendar*; the results and charts; and **Games**, every game played and to
+  come, called-off ones marked, with *Add a game*. The team's calendar
+  subscription (*Apple Calendar*, *Google Calendar*, a coach turning it on)
+  moved to Season too, and its one-off copy is that team's, whatever the
+  Calendar is showing. A parent has Season alone, so no row of tabs.
+- **Back goes where she came from.** A game opened from the Calendar goes
+  back to the Calendar, one opened from Season back to the team, and the
+  arrow says which.
+- **Getting around with no team in the crumbs**: the You crumb's sheet has
+  Club home, an entry's sheet names its team as a link to the team, and Club
+  home's *Calendar · Every team* ticks every team, whatever was unticked
+  before. Old addresses still land: `#/team/{id}/calendar` is the Calendar
+  with that team on it, `#/team/{id}/games` the team's Season,
+  `#/club/calendar` and `#/club/schedule` All teams, `#/my-calendar` My
+  calendar.
+
+No rule changes, nothing stored differently, and the share link, the calendar
+feeds and what reaches `public/` are as they were.
+
+---
+
+## Four tabs, and one calendar that reads like Google Calendar — 2026-10-06 (build 102)
+
+The owner: *I really like all the information in the pages but I feel like
+there are too many tabs under the teams pages*, *having a team calendar, club
+calendar, and my calendar is too much*, and *the calendar seems to not be
+intuitive; make it more Google Calendar.* A coach had six tabs on every team
+(Games, Calendar, Practice, Squad, Season, Team), and the question "what's on"
+had four answers: the Games list, the team's Calendar, Club schedule and My
+calendar, each looking at a week its own way. Nothing they showed was wrong;
+there were just too many places to look.
+
+- **Four tabs a team: Calendar, Practice, Squad, Season.** The Games tab was a
+  list of what the calendar already held, so the games are on the Calendar: a
+  game being played sits on top and opens with one tap (on Subs for its
+  coach, Track for its tracker, Live for everyone else), *Next up* has *Open
+  the game* (on Plan before the day, Subs on it), and the game bar's back
+  arrow goes back to the calendar. The Team tab is the foot of Squad: the
+  name and crest at the top, and shapes, what to count and parent links under
+  the players, *Team set-up*. A tracker keeps the squad without the set-up, a
+  parent neither, as before. Every game is still a tap from Season's results
+  and the game bar's picker.
+- **One calendar.** Which calendars it shows is a choice at its top: the open
+  team, **My calendar** (her teams, her children's, the sessions she runs, the
+  times she offers, her other clubs) or **All teams** (every team she can see,
+  ticked by age group and team in the tree behind the ☰ beside the title,
+  which also keeps her children, her clubs and the kinds of thing, with a dot
+  on it when something is left out). Each is offered only when it
+  shows more than the others, so a parent with one child on one team has one
+  calendar and nothing to choose, and a parent of two gets My calendar but no
+  All teams. The choice is kept on the phone like the view; nothing is
+  written. Club schedule is All teams, and its week (what's on, shared field
+  time, clashes, teams with no practice, what is still missing a date, time
+  or place) is the club's week under the calendar, for admins. My calendar's
+  extras are there when it is ticked: booking a 1-1, time off, the feed and
+  sharing busy times. Opening a team, from its crumb or Club home, shows that
+  team's.
+- **Drawn the way Google Calendar draws one.** **Schedule**: every day with
+  something on, the date down the left with today circled, months headed, and
+  each entry filled with its calendar's colour, struck through when it's off,
+  faded once it's over; what has already happened opens above it, in order,
+  with a red line at now. **Day** and **Week**: the hours down the side, each
+  entry where it falls and as long as it runs, things on at once side by
+  side (past three in a week, or four in a day, a *+n* that opens the day),
+  what has no time along the top, and a red line at now; the grid opens out
+  for an early start or a late finish. **Month**: the grid, whole weeks, what's
+  on in each day by name and colour with *+n* past three, and the day tapped
+  listed under it. Back, *Today* and forward step a day, a week or a month;
+  the title opens a small month to jump to any day. With one team the colour
+  says what it is (game, practice, other, training); with more, whose.
+- **A + in the corner adds**, as in a calendar app, at the day being looked
+  at, and on Day and Week every hour is a place to tap to add something then
+  (it starts then, and runs as long as practice usually does). One team she
+  can change opens that team's sheet, which now has *A run of games* beside
+  *A game*; several (an admin on All teams, a coach of two) ask which first,
+  as Club schedule's Add did, and that sheet is no longer admins' only: it
+  offers the teams she may change and the handler checks the one picked. A
+  game added for a later day leaves her on the calendar; one for today opens,
+  because it is the game she is about to run.
+- **Old addresses land where things went**: `#/team/{id}/games` is the team's
+  calendar, `#/team/{id}/planning` is Squad, `#/club/schedule` is All teams,
+  `#/my-calendar` is My calendar, and a phone that saved one of the old screens
+  opens the new one. The Calendar's own address says which calendars it shows
+  (`#/team/{id}/calendar`, `#/my-calendar`, `#/club/calendar`).
+- My calendar's feed card no longer drew "[object Object]" where the button
+  for My calendar used to be (it named the coach's own drill library).
+
+No rule changes, nothing stored differently, and the share link, the calendar
+feeds and what reaches `public/` are as they were.
+
+---
+
 ## A plan for replacing GotSport, and a server allowed — 2026-10-06 (docs only)
 
 The owner: *I kind of want to try and replace GotSport honestly*, and, asked,
@@ -39,6 +162,7 @@ family or the account deletes it; the club is in Maryland (MSYSA, which runs
 SafeSport, concussion training and background checks through GotSport), so
 compliance records follow MSYSA's list; a lapsed record flagged to the admins
 and that coach and nothing more; GotSport sample files later.
+
 
 ---
 
