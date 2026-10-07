@@ -2,8 +2,8 @@
    Static app. Data lives in localStorage, and mirrors to Firebase Realtime
    Database when a config + workspace code are present. */
 
-const BUILD = '102';
-const BUILT = '2026-10-06';
+const BUILD = '103';
+const BUILT = '2026-10-07';
 /* The version of database.rules.json this app was written against. The rules
    carry the same number in rulesVersion's .write, which accepts that number
    and nothing else, so writing it is a question only the published rules can
@@ -5128,12 +5128,12 @@ function toast(msg) {
 
 /* ---------------- rendering ---------------- */
 let placeMemo = null;     // one draw's shared-field lookups; see placeDay()
-/* Screens that became the one Calendar, or part of Squad, still have links,
-   saved screen state and older code pointing at them (build 102). Each lands
-   where what it showed went: the games list and both other calendars on the
-   Calendar, with My calendar or All teams ticked, and the team's settings on
-   Squad. */
-const VIEW_MOVED = { matches: 'calendar', mycal: 'calendar', schedule: 'calendar', teamset: 'roster' };
+/* Screens that moved still have links, saved screen state and older code
+   pointing at them. Each lands where what it showed went: the games list on
+   the team's Season, whose results it was (build 103; it was the Calendar in
+   102), both other calendars on the one Calendar with My calendar or All
+   teams ticked, and the team's settings on Squad. */
+const VIEW_MOVED = { matches: 'season', mycal: 'calendar', schedule: 'calendar', teamset: 'roster' };
 const GAME_VIEWS = ['live', 'subs', 'track', 'stats', 'recap', 'pitch', 'plan'];
 function normView() {
   const was = ui.view;
@@ -5169,7 +5169,7 @@ function render() {
   document.body.dataset.role = lim || '';
   let inGame = ui.view === 'game';
   // a game screen with no game is just four buttons that do nothing
-  if (inGame && !match() && !teamMatches(ui.teamId).length) { ui.view = 'calendar'; inGame = false; }
+  if (inGame && !match() && !teamMatches(ui.teamId).length) { ui.view = 'season'; inGame = false; }
   if ((ui.view === 'admin' || ui.view === 'planner') && !canAdmin()) ui.view = 'club';
   if (ui.view === 'mine' && !anyPlayers()) ui.view = 'calendar';
   /* Not before the club has been read: a link to #/messages opened cold on a
@@ -5181,17 +5181,17 @@ function render() {
   // a parent has no business reading the rest of the squad's names or the team's set-up
   const sb = document.querySelector('#tabs [data-view="roster"]');
   if (sb) sb.hidden = famRole(lim);
-  if (ui.view === 'roster' && famRole(lim)) ui.view = anyPlayers() ? 'mine' : 'calendar';
+  if (ui.view === 'roster' && famRole(lim)) ui.view = anyPlayers() ? 'mine' : 'season';
   /* Practice is a coach's and an admin's, on any team: the library isn't
      about one team, and a parent or a tracker never gets the tab at all. */
   const train = canTrain();
   const pb = document.querySelector('#tabs [data-view="practice"]');
   if (pb) pb.hidden = !train;
-  if (ui.view === 'practice' && !train) ui.view = 'calendar';
-  // club admin and account settings are not team-level, so the tab row steps aside
-  const teamLevel = ['calendar', 'practice', 'roster', 'season'].includes(ui.view);
+  if (ui.view === 'practice' && !train) ui.view = 'season';
+  // club admin, account settings and the person's calendar are not team-level, so the tab row steps aside
+  const teamLevel = ['season', 'roster', 'practice'].includes(ui.view);
   if (ui.view === 'people' && !canAdmin() && !teams().some(x => isCoach(x.id, me && me.uid))) ui.view = 'club';
-  const tabView = ui.view === 'formation' ? (ui.editFid === GAME_SHAPE ? 'calendar' : 'admin') : inGame ? 'calendar' : ui.view;
+  const tabView = ui.view === 'formation' ? (ui.editFid === GAME_SHAPE ? 'season' : 'admin') : inGame ? 'season' : ui.view;
   for (const b of document.querySelectorAll('#tabs button')) b.setAttribute('aria-current', String(b.dataset.view === tabView));
   /* Live is the one game screen everybody gets. Where a role lands when its
      tab is not allowed is its working screen, not the first in the list: a
@@ -5215,8 +5215,13 @@ function render() {
   }
   const openM = inGame ? match() : null;
   const st = $('#subtabs'); if (st) st.hidden = shut || !(inGame && openM);
-  // two stacked rows of tabs read as a mistake; show whichever one applies
-  const tb = $('#tabs'); if (tb) tb.hidden = shut || !!(inGame && openM) || !teamLevel || !team();
+  // two stacked rows of tabs read as a mistake; show whichever one applies, and one tab alone (a parent's Season) is no row at all
+  const tabsOn = [...document.querySelectorAll('#tabs button')].filter(b => !b.hidden).length;
+  const tb = $('#tabs'); if (tb) tb.hidden = shut || !!(inGame && openM) || !teamLevel || !team() || tabsOn < 2;
+  // the Calendar's own button, up top: today's date on it, and pressed while it is open
+  const cbn = $('#calBtn');
+  if (cbn) { cbn.hidden = shut; cbn.setAttribute('aria-current', String(ui.view === 'calendar')); }
+  const cbd = $('#calBtnDay'); if (cbd) cbd.textContent = String(dateOf(todayStr()).getDate());
   const app = $('#app');
   const v = ui.view;
   paintBell(shut);
@@ -5323,16 +5328,17 @@ function lockScreen() {
 
 /* Club › Team › Game. Each segment is its own switcher, so the structure of the
    app is the navigation rather than something you have to learn. */
-/* Which a screen belongs to: a team's tabs (and its games, and its game
-   shape) are the team's; everything else (club home, settings, people,
-   sessions, messages) is the club's. The crumbs say exactly that much and no
-   more: a team left in them on Settings reads as "these are the team's
-   settings". The Calendar is a team's tab whatever is ticked on it, the way
-   a calendar app is the same app whichever calendars it shows; with no team
-   to open, it is the club's. ('me' was My calendar's, which is the
-   Calendar's own now.) */
-const TEAM_VIEWS = ['calendar', 'practice', 'roster', 'season', 'game'];
-const viewScope = (v = ui.view) => (TEAM_VIEWS.includes(v) && (v !== 'calendar' || team())) || (v === 'formation' && ui.editFid === GAME_SHAPE) ? 'team' : 'club';
+/* Which of the three a screen belongs to. A team's tabs (and its games, and
+   its game shape) are the team's; the Calendar is the person's, across every
+   team and club she is in, whichever calendars are ticked on it; everything
+   else (club home, settings, people, sessions, messages) is the club's. The
+   crumbs say exactly that much and no more: a team left in them on Settings
+   reads as "these are the team's settings". The owner, on the Calendar as a
+   team's tab (build 102): "the calendar is in a weird spot. The calendar is
+   versatile and not tied to one team, not even one club, it is per person." */
+const TEAM_VIEWS = ['season', 'roster', 'practice', 'game'];
+const viewScope = (v = ui.view) => v === 'calendar' ? (me ? 'me' : 'club')
+  : TEAM_VIEWS.includes(v) || (v === 'formation' && ui.editFid === GAME_SHAPE) ? 'team' : 'club';
 /* The screen itself, for the screens that are not a team's: the row ends in
    where you are, so Club › People reads as the club's people and never as a
    team's. Club home is the club alone. */
@@ -5343,7 +5349,9 @@ const VIEW_CRUMB = {
 function crumbs() {
   const sep = '<span class="crumb-sep">\u203a</span>';
   const here = VIEW_CRUMB[ui.view] && viewScope() !== 'team'
-    ? `${sep}<span class="crumb" aria-current="page"><span class="crumb-k">Screen</span>${esc(VIEW_CRUMB[ui.view])}</span>` : '';
+    ? `${sep}<span class="crumb" aria-current="page"><span class="crumb-k">${viewScope() === 'me' ? 'Yours' : 'Screen'}</span>${esc(VIEW_CRUMB[ui.view])}</span>` : '';
+  if (viewScope() === 'me' && me)
+    return `<button class="crumb" data-act="accountsheet"><span class="crumb-k">You</span>${esc(me.name || me.email || 'Your account')}</button>${here}`;
   const org = (acc().org || {}).name || 'Club';
   const t = viewScope() === 'team' ? team() : null;
   const m = ui.view === 'game' ? match() : null;
@@ -5399,7 +5407,9 @@ function sheetAccount() {
   openSheet(`<h3>${esc(me.name)}</h3>
     <p class="muted" style="margin-top:0">${esc(me.email || '')}${r ? ` · ${esc(ROLE_LABEL[r])}` : ''}</p>
     <button class="opt" data-act="goview" data-v="mycal"><b>My calendar</b>
-      <span class="rowsub">The Calendar, with everything of yours from every club you're in</span></button>
+      <span class="rowsub">Everything of yours, from every club you're in</span></button>
+    ${wsCode() || teams().length ? `<button class="opt" data-act="goview" data-v="club"><b>${esc((acc().org || {}).name || 'Club home')}</b>
+      <span class="rowsub">Club home: its teams, and everything else in it</span></button>` : ''}
     <button class="opt" data-act="goview" data-v="setup"><b>Settings</b>
       <span class="rowsub">Account, club, sharing, backup, version</span></button>
     ${anyPlayers() ? `<button class="opt" data-act="goview" data-v="mine"><b>My players</b>
@@ -5497,7 +5507,8 @@ function gameBar(t, m) {
      carries never changes as more are added. */
   const older = i > -1 ? list[i + 1] : null;
   const newer = i > 0 ? list[i - 1] : null;
-  return `<button class="backbtn" data-act="backgames" aria-label="Back to the calendar" title="Back to the calendar">
+  const back = ui.gameFrom === 'calendar' ? 'Back to the calendar' : 'Back to the team';
+  return `<button class="backbtn" data-act="backgames" aria-label="${back}" title="${back}">
     <svg viewBox="0 0 12 12" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7.5 2L3.5 6l4 4"/></svg></button>
   ${older ? `<button class="stepbtn" data-act="pickgame2" data-id="${older.id}" aria-label="Older game" title="${esc(older.opponent || '')}">‹</button>` : ''}
   <button class="gamebar" data-act="pickgame">
@@ -7191,26 +7202,41 @@ function calPast(it) {
 const calNext = items => items.find(x => x.kind === 'game' && x.status === 'live')
   || items.find(x => x.date && !x.called && !calPast(x)) || null;
 
-/* The teams the calendar is showing. Anyone who can see more than one team
-   (a parent with two children, a coach, an admin) can see them all at once,
-   and untick the ones she doesn't want, as a calendar app does: a club with a
-   dozen teams on one screen is a wall, and the coach of two of them wants two.
-   Which of the open team, My calendar or All teams is calSel()'s. */
+/* The teams the calendar is showing: hers, on My calendar, or every team she
+   can see on All teams with the ones she doesn't want unticked, as a calendar
+   app does: a club with a dozen teams on one screen is a wall, and the coach
+   of two of them wants two. Which of the two is calSel()'s. */
 function calTeams() {
-  const sel = calSel();
-  if (sel === 'club') { const off = ui.calOff || {}; return myTeams().map(t => t.id).filter(id => !off[id]); }
-  if (sel === 'mine') return myCalTids();
-  return ui.teamId ? [ui.teamId] : [];
+  if (calSel() === 'mine') return myCalTids();
+  const off = ui.calOff || {};
+  return myTeams().map(t => t.id).filter(id => !off[id]);
 }
-/* Tick exactly these. The open team on its own is "this team", so a phone
-   that has narrowed back to it is in the same state as one that never
-   widened; anything else is All teams with the rest unticked. */
+/* Tick exactly these, on All teams. */
 function calSetOn(ids) {
   const mine = myTeams().map(t => t.id), on = new Set(ids.filter(id => mine.includes(id)));
-  if (on.size === 1 && on.has(ui.teamId)) { ui.calSel = 'team'; ui.calOff = {}; return; }
   ui.calSel = 'club';
   ui.calOff = {};
   for (const id of mine) if (!on.has(id)) ui.calOff[id] = true;
+}
+/* A link to one team's calendar (an alert, a calendar file, an old address,
+   the team's own Season): the Calendar with that team on it, on My calendar
+   if it is hers and All teams if not. `only` leaves the others off. */
+function calShowTeam(tid, only) {
+  ui.view = 'calendar';
+  if (!state.teams[tid]) return;
+  ui.teamId = tid;
+  const offer = calSels();
+  if (offer.includes('club') && (only || !(offer.includes('mine') && myCalTeams().includes(tid)))) {
+    ui.calSel = 'club';
+    ui.calOff = { ...(ui.calOff || {}) };
+    if (only) for (const t of myTeams()) ui.calOff[t.id] = t.id !== tid;
+    delete ui.calOff[tid];
+    return;
+  }
+  ui.calSel = offer[0] || 'club';
+  // on My calendar, one child's team on its own is that child's
+  const kids = myPlayers().filter(k => k.t.id === tid);
+  ui.myCal = only && kids.length === 1 && myCalTids().length > 1 ? 'p:' + kids[0].p.id : 'all';
 }
 
 const seriesOf = (t, sid) => Object.values((t && t.events) || {}).filter(e => e && sid && e.series === sid)
@@ -7477,7 +7503,8 @@ const googleSub = u => 'https://calendar.google.com/calendar/render?cid=' + enco
 /* The "in your own calendar" card. With a feed, each team's subscribe buttons
    (or the coach's switch to turn it on); a one-off copy stays as the fallback
    for a phone that will not subscribe. Without one, the copy is all there is,
-   and an admin is told what would change that. */
+   and an admin is told what would change that. One team's is on its Season,
+   since the Calendar became the person's; All teams has the ticked teams'. */
 function calSyncCard(t, all) {
   const base = feedBase();
   // the one most people want: every team and club of theirs, in one subscription, from My calendar
@@ -7487,7 +7514,7 @@ function calSyncCard(t, all) {
   if (!base) return `<div class="card"><h2 style="margin-bottom:8px">In your own calendar</h2>
     ${mine}
     <p class="muted" style="margin-top:0">${copyNote}</p>
-    <button class="btn quiet wide" data-act="calicsall">Add what is coming up</button>
+    <button class="btn quiet wide" data-act="calicsall"${all ? '' : ` data-tid="${esc(t.id)}"`}>Add what is coming up</button>
     ${canAdmin() ? '<p class="muted" style="margin-bottom:0">A calendar that follows every change by itself needs the calendar feed set up once for the club — README, <b>Calendar sync</b>.</p>' : ''}
     ${!all && t.share ? `<p class="muted" style="margin-bottom:0">Grandparents and friends without an account: the season link shows the games, and anything marked for the share link, with no names.</p>` : ''}</div>`;
   const rows = list.map(x => {
@@ -7508,7 +7535,7 @@ function calSyncCard(t, all) {
     ${rows}
     ${isSandbox() ? '<p class="muted">Test club: nothing is published, so a subscription here stays empty.</p>' : ''}
     <p class="muted">The address shows practices as well as games — never names — so keep it to the team. Outlook: <i>Add calendar \u2192 From internet</i> and paste the address.</p>
-    <button class="btn quiet wide" data-act="calicsall">Or add a one-off copy</button></div>`;
+    <button class="btn quiet wide" data-act="calicsall"${all ? '' : ` data-tid="${esc(t.id)}"`}>Or add a one-off copy</button></div>`;
 }
 
 /* What the coach texts the other team's coach, already written. The game link
@@ -7541,26 +7568,33 @@ function coachOutLine(it) {
    Calendar". There were three screens for one question, what's on: a team's
    Calendar tab, the admins' Club schedule and My calendar, each with its own
    way of looking at a week, and the Games tab beside them listing the games a
-   fourth way. Now there is one Calendar, the first tab of every team, drawn
-   the way a calendar app draws one (Schedule, Day, Week and Month, today,
-   back and forward, a + to add, a colour per calendar), and which calendars
-   it shows is a choice made in it, as a calendar app ticks them on and off:
+   fourth way. Now there is one Calendar, drawn the way a calendar app draws
+   one (Schedule, Day, Week and Month, today, back and forward, a + to add, a
+   colour per calendar), and which calendars it shows is a choice made in it,
+   as a calendar app ticks them on and off.
 
-   - the open team: its games, practices and events, and its players'
-     sessions. What the share link mirrors.
+   It was the first tab of every team (build 102) until the owner said "the
+   calendar is in a weird spot. The calendar is versatile and not tied to one
+   team, not even one club, it is per person." So it is the person's (build
+   103): a button of its own up top, beside Messages and the account, with
+   You › Calendar for its crumbs, and two calendars to tick:
+
    - My calendar: everything of hers. The teams she coaches, tracks or has a
-     child on, the sessions she runs and her children's, the times she offers,
-     and her other clubs. Offered only when that is more than this team, so a
-     parent with one child on one team has one calendar and no choice to make.
+     child on, the sessions she runs and her children's (and, for a coach,
+     her players' with other coaches), the times she offers, and her other
+     clubs. Hers whenever she has any of that, which is nearly everyone.
    - All teams: every team she can see, ticked on and off in a tree (club, age
      group, team). Offered when that is more than hers: an admin's whole club,
-     with what still needs settling that week.
+     with what still needs settling that week. One team on its own is a team
+     ticked alone here, which is where its Season's "on the calendar" goes.
 
-   The choice is kept on the phone with the view, and nothing is written to
-   the club for it. Old addresses still land here: #/my-calendar is My
-   calendar, #/club/schedule is All teams, #/team/{id}/games is the team's.
-   Games are the matches that already exist, read and never copied; a game
-   being played sits on top, one tap from the game. */
+   One of the two is no choice, and is not drawn: a parent sees her calendar
+   and nothing else. The choice is kept on the phone with the view, and
+   nothing is written to the club for it. Old addresses still land here:
+   #/my-calendar is My calendar, #/club/schedule and #/club/calendar All teams,
+   #/team/{id}/calendar that team on it. Games are the matches that already
+   exist, read and never copied; a game being played sits on top, one tap from
+   the game, as it does on its team's Season. */
 const CAL_VIEWS = [['schedule', 'Schedule'], ['day', 'Day'], ['week', 'Week'], ['month', 'Month']];
 const CAL_PAGE = 25;
 const CAL_KINDS = [['game', 'Games'], ['practice', 'Practices'], ['event', 'Other'], ['session', 'Training'], ['avail', 'Bookable']];
@@ -7595,31 +7629,40 @@ const calMoreBtn = (k, left, what) => left > 0
 
 /* ---- which calendars ---- */
 const CAL_SEL_LABEL = { mine: 'My calendar', club: 'All teams' };
-/* What this phone offers, in this order. My calendar is offered for what is
-   hers by a role or a child, never for the club's teams standing in for
-   nobody's (myCalTeams() does that before a club has an admin): that is All
-   teams, and nobody signed in has a My calendar at all. */
+/* What this phone offers, in this order: My calendar, for whoever has anything
+   of her own (a team she coaches or tracks, a child's, a session she runs, a
+   time she offers, another club), and All teams when she can see more teams
+   than hers. My calendar is never the club's teams standing in for nobody's
+   (myCalTeams() does that before a club has an admin): that is All teams,
+   and nobody signed in has a My calendar at all. One choice is no choice, and
+   is not drawn: a parent with one child sees her calendar and nothing else. */
 function calSels() {
-  const t = team(), out = [];
-  if (t) out.push('team');
+  const out = [];
   const own = me ? [...new Set([...myRoleTeams(), ...myPlayers().map(k => k.t.id)])] : [];
-  const more = !!me && (own.length > 1 || (own.length === 1 && (!t || own[0] !== t.id)) || youClubs().length > 0
+  const mine = !!me && (own.length > 0 || youClubs().length > 0
     || sessAll().some(s => s.coach === me.uid) || blockAll().some(b => b.coach === me.uid));
-  if (more) out.push('mine');
+  if (mine) out.push('mine');
   const all = myTeams();
-  if (all.length > 1 && (!more || all.some(x => !own.includes(x.id)))) out.push('club');
+  if (all.length && (!mine || all.some(x => !own.includes(x.id)))) out.push('club');
   return out;
 }
-/* The one showing: what she chose, while it is still on offer. */
+/* The one showing: what she chose, while it is still on offer, else hers. */
 function calSel() {
   const offer = calSels();
-  return offer.includes(ui.calSel) ? ui.calSel : offer[0] || 'team';
+  return offer.includes(ui.calSel) ? ui.calSel : offer[0] || 'club';
 }
 /* Everything the calendars ticked hold, before the kinds are applied.
    Sessions are drawn here and never put in calItems(): that list feeds the
    share link and the calendar feed. */
 function calEntries(sel = calSel()) {
-  if (sel === 'mine') return myCalItems();
+  if (sel === 'mine') {
+    /* Her players' sessions with other coaches, as her team's calendar always
+       showed them: on her screen, and never in her feed or her busy times,
+       which myCalItems() feeds and which are about where she is. */
+    const out = myCalItems(), have = new Set(out.map(x => x.key));
+    for (const x of sessCalItems(myCalTids().filter(id => canEditTeam(id)))) if (!have.has(x.key)) { have.add(x.key); out.push(x); }
+    return out.sort(calOrder);
+  }
   const tids = calTeams();
   return [...calItems(tids), ...sessCalItems(tids)].sort(calOrder);
 }
@@ -7630,12 +7673,12 @@ function evHue(it, multi) {
   if (it.kind === 'avail' || (it.kind === 'session' && !it.tid)) return KIND_HUE[it.kind];
   return multi && it.tid ? teamHue(it.tid) : KIND_HUE[it.kind] || KIND_HUE.event;
 }
-/* The teams on screen she may add to: the ticked ones, or the open one. */
+/* The teams she may add to from the calendar: the ones on it she may change,
+   or, with none ticked, any she may. */
 function calEditTeams(sel = calSel()) {
-  const t = team();
-  if (sel === 'team') return t && canEditTeam(t.id) ? [t.id] : [];
-  const on = (sel === 'mine' ? myCalTeams() : calTeams()).filter(id => state.teams[id] && canEditTeam(id));
-  return on.length ? on : sel === 'club' ? myTeams().map(x => x.id).filter(canEditTeam) : [];
+  const may = ids => ids.filter(id => state.teams[id] && canEditTeam(id));
+  const on = may(sel === 'mine' ? myCalTeams() : calTeams());
+  return on.length ? on : sel === 'club' ? may(myTeams().map(x => x.id)) : [];
 }
 
 /* ---- one entry ---- */
@@ -7710,36 +7753,51 @@ function evBlock(it, multi, geo, short) {
 const evChip = (it, multi) => `<span class="mg-ev" data-called="${it.called ? 1 : 0}" data-past="${calPast(it) ? 1 : 0}" style="--ev:${evHue(it, multi)}">${it.start ? `<span class="mg-x">${esc(niceTime(it.start).replace(/:00/, ''))} </span>` : ''}${multi && it.tid ? `<span class="mg-x">${esc(shortTeam(it.tid))} </span>` : ''}${esc(it.kind === 'avail' ? 'Bookable' : it.title)}</span>`;
 
 /* ---- the Schedule: every day with something on, in order ---- */
-/* `now` is where what has happened ends and what is to come begins, when
-   both are drawn: a red line there, as a calendar app marks the time. */
-function calAgenda(items, multi, now = -1) {
-  const today = todayStr();
-  let out = '', day = null, month = null;
-  const close = () => { if (day) out += '</div></div>'; };
-  for (const [i, it] of items.entries()) {
-    if (it.date !== day) {
-      close();
-      if (it.date.slice(0, 7) !== month) {
-        month = it.date.slice(0, 7);
-        const [y, mo] = month.split('-').map(Number);
-        out += `<p class="agmonth">${MONTHS_LONG[mo - 1]}${y !== Number(today.slice(0, 4)) ? ' ' + y : ''}</p>`;
-      }
-      day = it.date;
-      const rel = relDay(day);
-      out += `<div class="agday" data-today="${day === today ? 1 : 0}" data-past="${day < today ? 1 : 0}">
-        <div class="agdate" aria-label="${esc(dayLabel(day))}${rel ? ', ' + rel : ''}"><small>${WEEKDAYS[weekdayOf(day)]}</small><b>${dateOf(day).getDate()}</b></div><div class="agevs">`;
-    }
-    if (i === now) out += '<i class="agline" aria-label="Now"></i>';
+/* The owner: "when clicking in a day like in the monthly view, I want a red
+   line showing the current time of day." Today, wherever it is listed, has a
+   red line at now, as the hours on Day and Week do: what has no time, and
+   whatever has started, above it, what is still to start below. A day with
+   nothing on today still gets it. */
+const NOW_LINE = '<i class="agline" role="separator" aria-label="Now"></i>';
+function dayRows(list, multi, d) {
+  if (d !== todayStr()) return list.map(x => evRow(x, multi)).join('');
+  const n = new Date(nowMs()), at = n.getHours() * 60 + n.getMinutes();
+  let out = '', lined = false;
+  for (const it of list) {
+    if (!lined && hm(it.start) && minOf(hm(it.start)) > at) { out += NOW_LINE; lined = true; }
     out += evRow(it, multi);
   }
-  close();
+  return out + (lined ? '' : NOW_LINE);
+}
+/* `today` draws today in its place even with nothing on it, once the list
+   runs past it, so the Schedule always says where now is. */
+function calAgenda(items, multi, opt = {}) {
+  const today = todayStr(), days = [];
+  for (const it of items) {
+    const last = days[days.length - 1];
+    if (last && last[0] === it.date) last[1].push(it); else days.push([it.date, [it]]);
+  }
+  if (opt.today && !days.some(([d]) => d === today) && days.some(([d]) => d > today)) days.splice(days.findIndex(([d]) => d > today), 0, [today, []]);
+  let out = '', month = null;
+  for (const [d, list] of days) {
+    if (d.slice(0, 7) !== month) {
+      month = d.slice(0, 7);
+      const [y, mo] = month.split('-').map(Number);
+      out += `<p class="agmonth">${MONTHS_LONG[mo - 1]}${y !== Number(today.slice(0, 4)) ? ' ' + y : ''}</p>`;
+    }
+    const rel = relDay(d);
+    out += `<div class="agday" data-today="${d === today ? 1 : 0}" data-past="${d < today ? 1 : 0}">
+      <div class="agdate" aria-label="${esc(dayLabel(d))}${rel ? ', ' + rel : ''}"><small>${WEEKDAYS[weekdayOf(d)]}</small><b>${dateOf(d).getDate()}</b></div>
+      <div class="agevs">${list.length ? dayRows(list, multi, d) : NOW_LINE + '<p class="muted calnone">Nothing else on today</p>'}</div></div>`;
+  }
   return `<div class="agenda">${out}</div>`;
 }
-/* One day's entries, or a line saying there are none. */
+/* One day's entries, or a line saying there are none: under the month, the
+   day tapped, with now marked on it when it is today. */
 function calDayList(items, d, multi, add) {
   const list = items.filter(x => x.date === d);
-  return list.length ? `<div class="agevs">${list.map(x => evRow(x, multi)).join('')}</div>`
-    : `<p class="muted calnone">Nothing on.${add ? ` <button class="textbtn" ${add} data-v="${d}">Add something</button>` : ''}</p>`;
+  return list.length ? `<div class="agevs">${dayRows(list, multi, d)}</div>`
+    : `${d === todayStr() ? `<div class="agevs">${NOW_LINE}</div>` : ''}<p class="muted calnone">Nothing on.${add ? ` <button class="textbtn" ${add} data-v="${d}">Add something</button>` : ''}</p>`;
 }
 
 /* ---- Day and Week: the hours, and what's on in them ---- */
@@ -7871,7 +7929,7 @@ function calLiveCards(items, multi) {
 }
 /* The thing a parent opened the app for, with the buttons that follow from
    it: how to get there, put it in my calendar, and for a game, the game. */
-function calNextCard(it, multi) {
+function calNextCard(it, multi, label) {
   const t = state.teams[it.tid] || {};
   if (it.kind === 'session') {
     return `<div class="card calnext" style="--ev:${evHue(it, multi)}"><span class="muted">Next up${multi && it.tid ? ' · ' + teamLabel(t) : ''}</span>
@@ -7888,7 +7946,7 @@ function calNextCard(it, multi) {
   // a practice next is the next practice, with its plan a tap away for whoever plans it
   const plan = it.kind === 'practice' && canPlan(it.tid);
   return `<div class="card calnext" style="--ev:${evHue(it, multi)}">
-    <span class="muted">${it.kind === 'practice' ? 'Next practice' : 'Next up'}${multi ? ' · ' + teamLabel(t) : ''}</span>
+    <span class="muted">${label || (it.kind === 'practice' ? 'Next practice' : 'Next up')}${multi ? ' · ' + teamLabel(t) : ''}</span>
     <button class="plainbtn" data-act="calitem" data-k="${it.kind}" data-tid="${esc(it.tid)}" data-id="${esc(it.id)}" style="display:block;width:100%;text-align:left">
       <div class="spread" style="margin-top:4px"><b style="font-size:19px">${esc(it.title)}</b><span class="tag ${it.kind}">${CAL_KIND[it.kind]}</span></div>
       <p style="margin:4px 0 0"><b>${esc(when)}</b>${it.home ? ' · ' + esc(HOME_AWAY[it.home]) : ''}</p>
@@ -7918,14 +7976,12 @@ function calGroups(mine) {
   return [...by.values()].sort((a, b) => (a.u == null) - (b.u == null) || (a.u || 0) - (b.u || 0));
 }
 const calCk = (on, hue) => `<span class="calck" data-on="${on === true ? 1 : on === 'some' ? 2 : 0}"${hue ? ` style="--tc:${hue}"` : ''} aria-hidden="true"></span>`;
-/* Which calendars, at the top: the open team, My calendar and All teams, as
-   chips, when there is more than one to choose between. */
+/* Which calendars, at the top: My calendar and All teams, as chips, when
+   there are both to choose between. */
 function calChooser(sel, offer) {
   if (offer.length < 2) return '';
-  const t = team();
-  const label = k => k === 'team' ? (t ? esc(t.name || 'Untitled team') : 'This team') : CAL_SEL_LABEL[k];
   return `<div class="chips calsels" role="tablist" aria-label="Which calendar">${offer.map(k =>
-    `<button class="chip" type="button" role="tab" data-act="calscope" data-v="${k}" aria-pressed="${sel === k}">${k === 'team' && t ? `<i class="dot" style="background:${teamHue(t.id)}"></i>` : ''}${label(k)}</button>`).join('')}</div>`;
+    `<button class="chip" type="button" role="tab" data-act="calscope" data-v="${k}" aria-pressed="${sel === k}">${CAL_SEL_LABEL[k]}</button>`).join('')}</div>`;
 }
 /* What the finer choices leave out, in a few words, or nothing. */
 function calLeftOut(sel) {
@@ -7939,7 +7995,7 @@ function calLeftOut(sel) {
    the tree, her children and clubs on My calendar, and the kinds of thing,
    each kind's chip in the colour it has when one team is showing. */
 function calPanel(sel, offer) {
-  const t = team(), mine = myTeams(), on = new Set(calTeams());
+  const mine = myTeams(), on = new Set(calTeams());
   const kinds = CAL_KINDS.filter(([k]) => (k !== 'session' || ui.calHasSess) && (k !== 'avail' || ui.calHasAvail));
   const filt = sel === 'mine' ? myCalFilters() : [];
   const state3 = ts => { const n = ts.filter(x => on.has(x.id)).length; return n === ts.length ? true : n ? 'some' : false; };
@@ -7947,7 +8003,7 @@ function calPanel(sel, offer) {
   if (sel !== 'mine' && offer.includes('club')) {
     const groups = calGroups(mine);
     const leaf = x => `<button type="button" class="calleaf" role="checkbox" aria-checked="${on.has(x.id)}" data-act="caltog" data-tid="${esc(x.id)}">
-        ${calCk(on.has(x.id), teamHue(x.id))}<span>${teamLabel(x)}</span>${t && x.id === t.id ? '<small>open</small>' : ''}</button>`;
+        ${calCk(on.has(x.id), teamHue(x.id))}<span>${teamLabel(x)}</span></button>`;
     tree = `<p class="lbl" style="margin:0 0 4px">Teams</p><div class="caltree">
       <button type="button" class="calleaf club" role="checkbox" aria-checked="${state3(mine) === true}" data-act="caltog" data-g="all">
         ${calCk(state3(mine))}<b>${esc((acc().org || {}).name || 'All teams')}</b></button>
@@ -8034,8 +8090,9 @@ function clubWeekCard() {
 
 /* ---- the screen ---- */
 function viewCalendar() {
-  const t = team(), offer = calSels(), sel = calSel();
-  if (!t && sel !== 'mine') return needTeam();
+  const offer = calSels(), sel = calSel();
+  if (!teams().length && !offer.includes('mine')) return needTeam();
+  if (!offer.length) return `<div class="empty"><strong>Nothing on your calendar yet</strong>Once you coach a team, or a child of yours is on one, its games and practices are here, from every club you're in.</div>`;
   const every = calEntries(sel);
   ui.calHasSess = every.some(x => x.kind === 'session');
   ui.calHasAvail = every.some(x => x.kind === 'avail');
@@ -8077,11 +8134,10 @@ function viewCalendar() {
     const list = [...pastShown, ...aheadShown];
     // a session she has only asked for is not somewhere to drive to yet
     const next = calNext(items.filter(x => !x.club && x.kind !== 'avail' && (x.kind !== 'session' || x.firm) && !(x.kind === 'game' && x.status === 'live')));
-    const prac = sel === 'team' && t ? nextPracticeCard(t) : '';
-    body = `${next ? calNextCard(next, multi) : ''}${next && next.kind === 'practice' ? '' : prac}
+    body = `${next ? calNextCard(next, multi) : ''}
     ${past.length ? `<button class="textbtn calearlier" data-act="calpast">${ui.calPast ? 'Hide' : 'Show'} what has already happened (${past.length})</button>` : ''}
     ${pastShown.length ? calMoreBtn('past', past.length - pastShown.length, 'earlier') : ''}
-    ${list.length ? calAgenda(list, multi, pastShown.length && aheadShown.length ? pastShown.length : -1) : ''}
+    ${list.length ? calAgenda(list, multi, { today: true }) : ''}
     ${ahead.length ? calMoreBtn('ahead', ahead.length - aheadShown.length, 'more')
       : `<div class="card"><p class="muted" style="margin:0">Nothing coming up.${ed.length ? ' Tap <b>+</b> to add the season’s games and practices.' : sel === 'mine' && !myCalTeams().length ? ' Once you coach a team, or a child of yours is on one, its games and practices are here.' : ' The coach adds games and practices here.'}</p></div>`}
     ${undated.length ? `<div class="card"><h2 style="margin-bottom:8px">Date to be confirmed</h2><div class="agevs">${undated.map(x => evRow(x, multi)).join('')}</div></div>` : ''}`;
@@ -8094,8 +8150,8 @@ function viewCalendar() {
     ${canBook ? `<button class="btn wide" data-act="sesstab" data-k="list">Book a 1-1 with a coach</button>` : ''}
     ${sel === 'mine' ? youNote() : ''}
     ${body}
-    ${sel === 'club' && canAdmin() && t ? clubWeekCard() : ''}
-    ${sel === 'mine' ? awayCard() + myFeedCard() + youShareCard() : t ? calSyncCard(t, sel === 'club') : ''}
+    ${sel === 'club' && canAdmin() ? clubWeekCard() : ''}
+    ${sel === 'mine' ? awayCard() + myFeedCard() + youShareCard() : (t => t ? calSyncCard(t, calTeams().length > 1) : '')(state.teams[calTeams()[0]] || team())}
     ${calFab(ed, v)}
   </div>`;
 }
@@ -8116,7 +8172,7 @@ function sheetCalItem(kind, tid, id) {
   // the same colour it has on the calendar behind it
   openSheet(`<h3 class="evhead" style="--ev:${evHue(it, calTeams().length > 1)}"><i aria-hidden="true"></i>${esc(it.title)}</h3>
     ${it.called ? `<div class="warn alert" style="margin-bottom:10px"><b>${CALLED[it.called]}.</b>${m && it.called === 'postponed' ? ' A new date will be set.' : ''}</div>` : ''}
-    <p class="muted" style="margin-top:0">${teamLabel(t)} · ${CAL_KIND[kind]}${e && edit ? (e.public ? ' · on the share link' : ' · team only') : ''}</p>
+    <p class="muted" style="margin-top:0"><button class="textbtn" data-act="goteam" data-id="${esc(tid)}">${teamLabel(t)}</button> · ${CAL_KIND[kind]}${e && edit ? (e.public ? ' · on the share link' : ' · team only') : ''}</p>
     <dl class="facts">
       ${row('When', esc(dayLabel(it.date)) + (it.date ? ' · ' + esc(span) : ''))}
       ${row('Where', esc(it.venue))}
@@ -8385,7 +8441,9 @@ function viewSeason() {
       <span class="muted">${Math.round(pc / ptot * 100)}% scrappy</span></div>
     <p class="muted" style="margin-bottom:0">Settled play across ${possGames} of ${ms.length} game${ms.length === 1 ? '' : 's'}${possGames < ms.length ? ', ignoring those with too little recorded to judge' : ''}.</p></div>` : '';
 
-  const results = ms.length ? `<div class="card"><h2 style="margin-bottom:10px">Results</h2>
+  // the team's fixture list: every game, played and to come, one tap from each, and where a coach adds one
+  const results = ms.length || !readOnlyHere() ? `<div class="card"><div class="spread" style="margin-bottom:10px"><h2>Games</h2>${addGameBtn('btn sm')}</div>
+    ${ms.length ? '' : '<p class="muted" style="margin:0">No games yet. Add one, or a season of them from the + on the Calendar.</p>'}
     <div class="plist">${ms.map(m => {
     const sc = score(m), st = gameStatus(m);
     const r = st !== 'done' ? '' : sc.us > sc.them ? 'W' : sc.us === sc.them ? 'D' : 'L';
@@ -8393,7 +8451,7 @@ function viewSeason() {
       <span class="resbadge" data-r="${r}">${r || '·'}</span>
       <span><span class="pname">${esc(m.opponent || 'TBC')}</span>
         <span class="psub">${[shortDate(m.date), m.venue].filter(Boolean).map(esc).join(' · ') || 'no date'}</span></span>
-      <span class="pmins">${st === 'upcoming' ? '<small>upcoming</small>' : `${sc.us}<small>–${sc.them}</small>`}</span></button>`;
+      <span class="pmins">${CALLED[m.called] && st === 'upcoming' ? `<span class="tag off">${CALLED[m.called]}</span>` : st === 'upcoming' ? '<small>upcoming</small>' : `${sc.us}<small>–${sc.them}</small>`}</span></button>`;
   }).join('')}</div></div>` : '';
 
   const rows = players(t).map(p => {
@@ -8426,8 +8484,17 @@ function viewSeason() {
       <span class="pmins">${mins(r.pl)}<small> min</small></span></div>`;
   }).join('')}</div></div>` : '<div class="empty"><strong>No players yet</strong>Add the squad first.</div>';
 
+  /* The team's page opens here, so what is happening now leads it: a game
+     being played, one tap from the game, then the next game (with who is
+     coming, for a family) and the next practice. The team's calendar is the
+     person's Calendar with only this team on it. */
+  const its = calItems([t.id]);
+  const live = calLiveCards(its.filter(x => x.kind === 'game' && x.status === 'live'), false);
+  const nextGame = calNext(its.filter(x => x.kind === 'game' && x.status !== 'live'));
   return `<div class="stack">
-    ${record}${seasonTrendsCard(t)}${needsWorkCard(t)}${shotsCard}${possCard}${evCard}${results}${playersCard}${attendanceCard(t)}
+    ${live}${nextGame ? calNextCard(nextGame, false, 'Next game') : ''}${nextPracticeCard(t)}
+    <button class="textbtn" data-act="teamcal" data-tid="${esc(t.id)}" style="align-self:flex-start">${teamLabel(t)} on the calendar</button>
+    ${record}${seasonTrendsCard(t)}${needsWorkCard(t)}${shotsCard}${possCard}${evCard}${results}${calSyncCard(t, false)}${playersCard}${attendanceCard(t)}
     ${restricted() ? '' : aiButton('team')}
   </div>`;
 }
@@ -8937,7 +9004,7 @@ function practiceDrillsView(L) {
         <select data-pick="dfpick" data-k="sort" aria-label="Sort">${Object.entries(PRACTICE_SORTS).map(([k, [l]]) => opt(f.sort, [k, l])).join('')}</select>
         <button class="btn ${n ? '' : 'quiet '}sm" data-act="drillfilters">${n ? 'Filters · ' + n : 'Filters'}</button>
       </div>
-      ${u == null && f.age === 'team' && canEditTeam(ui.teamId) ? `<p class="muted" style="margin:8px 0 0">Give the team a birth year (Team → Team name and crest) and the list starts at the right age.</p>` : ''}
+      ${u == null && f.age === 'team' && canEditTeam(ui.teamId) ? `<p class="muted" style="margin:8px 0 0">Give the team a birth year (Squad → Name and crest) and the list starts at the right age.</p>` : ''}
       ${s ? `<div class="drillsignal"><b>${esc(s.label)}</b><span>${esc(s.means)}</span></div>` : ''}
       ${shapes.length ? `<div class="chips" style="margin-top:8px">${shapes.map(k =>
         `<button class="chip" type="button" data-act="dfpick" data-k="shape" data-v="${esc(f.shape === k ? '' : k)}" aria-pressed="${f.shape === k}">${esc(k)} drills</button>`).join('')}</div>` : ''}
@@ -9514,8 +9581,11 @@ function nextPractice(tid) {
 function nextPracticeCard(t) {
   const nx = nextPractice(t.id); if (!nx) return '';
   const open = canPlan(t.id) && !!practiceById(t.id, nx.id);
+  // said as the calendar says it, since it sits under the calendar's next game on Season
+  const end = nx.end || (hm(nx.start) ? addMins(hm(nx.start), Number(nx.minutes) || 60) : '');
+  const when = [relDay(nx.date) || dayLabel(nx.date), hm(nx.start) ? evWhen({ start: nx.start, end }) : ''].filter(Boolean).join(' · ');
   const body = `<span class="lbl" style="margin:0">Next practice</span>
-    <b>${esc(pracDay(nx.date))}${nx.start ? ' · ' + esc(pracTimes(nx)) : ''}</b>${nx.place ? `<span class="muted">${esc(nx.place)}</span>` : ''}`;
+    <b>${esc(when)}</b>${nx.place ? `<span class="muted">${esc(nx.place)}</span>` : ''}`;
   return open ? `<button type="button" class="card nextprac" data-act="pracopen" data-id="${esc(nx.id)}">${body}</button>` : `<div class="card nextprac">${body}</div>`;
 }
 
@@ -11700,8 +11770,8 @@ function sessAttendance(pid) {
   }
   return r;
 }
-/* A team's players' sessions, for that team's calendar: its coaches see every
-   one of their players', a family only her own child's. Never on the share
+/* A team's players' sessions, for the Calendar with that team on it: its
+   coaches see every one of their players', a family only her own child's. Never on the share
    link or the feed — a 1-1 is a child, a time and a place. */
 function sessCalItems(tids) {
   const out = [], kids = new Set(myChildren().map(x => x.p.id));
@@ -13356,7 +13426,7 @@ function onAvailAct(a, d) {
    of hers across the club, not one team's. The teams she coaches or tracks,
    every team a child of hers is on, the sessions she runs and her children's,
    and the times she has offered, then her other clubs. It reads the same
-   lists the team's calendar does, so an entry exists once and both draw it;
+   lists All teams does, so an entry exists once and both draw it;
    her calendar feed and her shared busy times are made from it too. */
 /* The teams that are hers: coached or tracked, and her children's. */
 function myRoleTeams() {
@@ -15142,7 +15212,8 @@ function sheetGames() {
 }
 function onSchedAct(a, d) {
   // where to look is anybody's: the Calendar shows All teams if it is hers to see, and what is if not
-  if (a === 'schedule') { ui.view = 'calendar'; ui.calSel = 'club'; closeSheet(); saveUi(); render(); toTop(); return; }
+  // Club home's "Calendar · Every team": All teams, every one of them ticked, as the card says
+  if (a === 'schedule') { ui.view = 'calendar'; ui.calSel = 'club'; ui.calOff = {}; closeSheet(); saveUi(); render(); toTop(); return; }
   // checked here, not just by the + being drawn: this adds to any team she can change, and only those
   if (!teams().some(x => canEditTeam(x.id))) { closeSheet(); toast('Only a team’s coaches and the club’s admins add to its calendar'); render(); return; }
   const s = schedUi();
@@ -17494,8 +17565,8 @@ function onAct(e) {
     if (d.code === wsCode()) { closeSheet(); ui.view = 'club'; render(); return; }
     localStorage.setItem(LS_WS, d.code); location.reload(); return;
   }
-  // a team opened is that team's calendar, whichever calendars were ticked before
-  if (a === 'goteam') { ui.teamId = d.id; ui.view = 'calendar'; ui.calSel = 'team'; ui.gameView = 'subs'; closeSheet(); saveUi(); render(); return; }
+  // a team opened is its Season, which leads with the game on now, the next one and the next practice
+  if (a === 'goteam') { ui.teamId = d.id; ui.view = 'season'; ui.gameView = 'subs'; closeSheet(); render(); return; }
   if (a === 'gotoplayer') {
     ui.teamId = d.tid; ui.matchId = d.id; ui.view = 'game'; ui.gameView = 'stats'; render(); return;   // deliberate: a parent wants the numbers
   }
@@ -17788,7 +17859,7 @@ function onAct(e) {
 
   if (a === 'newteam') { closeSheet(); sheetTeam(null); return; }
   if (a === 'editteam') { sheetTeam(state.teams[d.id]); return; }
-  if (a === 'pickteam') { ui.teamId = d.id; ui.matchId = null; if (ui.view === 'calendar') ui.calSel = 'team'; closeSheet(); render(); return; }
+  if (a === 'pickteam') { ui.teamId = d.id; ui.matchId = null; if (ui.view === 'calendar') ui.view = 'season'; closeSheet(); render(); return; }
   if (a === 'saveteam') {
     const name = $('#tName').value.trim(); if (!name) { toast('Give the team a name'); return; }
     const bEl = $('#tBirth'), braw = bEl && bEl.value != null ? String(bEl.value).trim() : '';
@@ -18176,15 +18247,18 @@ function onAct(e) {
      the coach's, checked by mayAct() against the team the button names. Acting
      on an entry makes its team the open one, so the republish that follows a
      change goes to that team's share link and not to whichever was open. */
-  /* Which calendars: the open team, My calendar or All teams. "all" is the
-     old name for All teams, from before there were three. */
+  /* Which calendars: My calendar or All teams. "all" is the old name for All
+     teams, and "team" (the open team's, before build 103) is no longer one. */
   if (a === 'calscope') {
     const v = d.v === 'all' ? 'club' : d.v;
     if (!calSels().includes(v)) return;
     ui.calSel = v; if (v === 'club' && d.v === 'all') ui.calOff = {};
-    ui.calN = {}; saveUi(); render(); return;
+    // from a team's Season too (its calendar card offers My calendar)
+    ui.view = 'calendar'; ui.calN = {}; saveUi(); render(); return;
   }
   if (a === 'calpast') { ui.calPast = !ui.calPast; render(); return; }
+  // from a team's Season: that team on the Calendar, on its own
+  if (a === 'teamcal') { calShowTeam(d.tid, true); ui.calN = {}; saveUi(); render(); toTop(); return; }
   // the small month under the title: paging it, and opening it
   if (a === 'calmonth') {
     const cur = /^\d{4}-\d{2}$/.test(ui.calMonth || '') ? ui.calMonth : todayStr().slice(0, 7);
@@ -18274,6 +18348,8 @@ function onAct(e) {
   if (a === 'calitem') { sheetCalItem(d.k, d.tid, d.id); return; }
   if (a === 'calgame') {
     const g = state.matches[d.id]; if (!g) return;
+    // back goes where she came from: the Calendar, or the team's Season and its cards
+    ui.gameFrom = ui.view === 'calendar' ? 'calendar' : 'season';
     ui.teamId = d.tid; ui.matchId = d.id; ui.view = 'game'; ui.picked = null;
     /* Before kick-off a coach has a plan to make, and on the day the clock to
        start; once it is on, the subs. A tracker logs; everyone else follows
@@ -18289,11 +18365,12 @@ function onAct(e) {
     return;
   }
   if (a === 'calicsall') {
-    const all = calTeams().length > 1;
-    const list = calItems(calTeams()).filter(x => x.date && !calPast(x)).map(icsItem)
+    // one team's, from its Season; otherwise whatever the Calendar is showing
+    const tids = d.tid && state.teams[d.tid] ? [d.tid] : calTeams(), all = tids.length > 1;
+    const list = calItems(tids).filter(x => x.date && !calPast(x)).map(icsItem)
       // confirmed sessions too: the same file is what a family puts in her own calendar
-      .concat(sessCalItems(calTeams()).filter(x => x.firm && x.date && !calPast(x)).map(x => sessIcs(sessById(x.id))));
-    downloadIcs(all ? ((acc().org || {}).name || 'Club') : ((t && t.name) || 'Team'), list);
+      .concat(sessCalItems(tids).filter(x => x.firm && x.date && !calPast(x)).map(x => sessIcs(sessById(x.id))));
+    downloadIcs(all ? ((acc().org || {}).name || 'Club') : ((state.teams[tids[0]] || t || {}).name || 'Team'), list);
     return;
   }
   if (a === 'calnew') {
@@ -18406,8 +18483,8 @@ function onAct(e) {
     if (!g || !canEditTeam(g.teamId)) { toast('Only the team’s coach can change this game'); return; }
     sheetMatch(g); return;
   }
-  if (a === 'backgames') { ui.view = 'calendar'; ui.picked = null; render(); return; }
-  if (a === 'openmatch') { ui.matchId = d.id; ui.view = 'game'; ui.gameView = 'subs'; render(); return; }
+  if (a === 'backgames') { ui.view = ui.gameFrom === 'calendar' ? 'calendar' : 'season'; ui.gameFrom = null; ui.picked = null; render(); return; }
+  if (a === 'openmatch') { ui.matchId = d.id; ui.view = 'game'; ui.gameView = 'subs'; ui.gameFrom = null; render(); return; }
   if (a === 'savematch') {
     const side = Number($('#mSide').value);
     const base = {
@@ -18684,14 +18761,10 @@ function uiToHash() {
   if (ui.view === 'game' && t && m) return `#/team/${t}/game/${m}/${ui.gameView}`;
   if (ui.view === 'formation' && t && ui.editFid === GAME_SHAPE && m) return `#/team/${t}/game/${m}/shape`;
   if (ui.view === 'formation' && t) return `#/team/${t}/shape/${ui.editFid}`;
-  /* The Calendar's address says which calendars it shows, so a link, a
-     reload and the back button bring back the same ones. */
-  if (ui.view === 'calendar') {
-    const sel = calSel();
-    if (sel === 'mine') return '#/my-calendar';
-    if (sel === 'club') return '#/club/calendar';
-    return t ? `#/team/${t}/calendar` : '#/calendar';
-  }
+  /* The Calendar is the person's, at an address of its own that names no team
+     and no club, and says which calendars it shows, so a link, a reload and
+     the back button bring back the same ones. */
+  if (ui.view === 'calendar') return calSel() === 'club' && calSels().includes('mine') ? '#/calendar/all' : '#/calendar';
   if (['practice', 'roster', 'season'].includes(ui.view) && t) {
     const seg = { practice: 'practice', roster: 'squad', season: 'season' }[ui.view];
     return `#/team/${t}/${seg}`;
@@ -18711,12 +18784,14 @@ function uiToHash() {
 function hashToUi() {
   const p = decodeURIComponent(location.hash.replace(/^#\/?/, '')).split('/').filter(Boolean);
   if (!p.length) return false;
-  // #/club/schedule was the admins' Club schedule, which is All teams on the Calendar now
+  /* #/club/schedule was the admins' Club schedule and #/club/calendar its next
+     address (build 102): All teams on the Calendar. #/my-calendar is what My
+     calendar's feed links back to. */
   if (p[0] === 'club' && (p[1] === 'calendar' || p[1] === 'schedule')) { ui.view = 'calendar'; ui.calSel = 'club'; return true; }
   if (p[0] === 'club') { ui.view = p[1] === 'settings' ? 'admin' : p[1] === 'people' ? 'people' : p[1] === 'planner' ? 'planner' : 'club'; return true; }
   if (p[0] === 'my-players') { ui.view = 'mine'; return true; }
   if (p[0] === 'my-calendar') { ui.view = 'calendar'; ui.calSel = 'mine'; return true; }
-  if (p[0] === 'calendar') { ui.view = 'calendar'; return true; }
+  if (p[0] === 'calendar') { ui.view = 'calendar'; ui.calSel = p[1] === 'all' ? 'club' : 'mine'; return true; }
   if (p[0] === 'messages') {
     if (p[1] && p[2] && state.teams[p[1]]) { ui.view = 'thread'; ui.thread = { tid: p[1], fam: p[2] }; return true; }
     ui.view = 'inbox'; return true;
@@ -18752,10 +18827,12 @@ function hashToUi() {
       return true;
     }
     if (p[2] === 'shape' && p[3]) { ui.editFid = p[3]; ui.view = 'formation'; return true; }
-    // games and planning were tabs of their own until build 102: the games are on the calendar, the team's set-up on Squad
-    const back = { games: 'calendar', calendar: 'calendar', practice: 'practice', squad: 'roster', season: 'season', planning: 'roster' }[p[2]];
-    ui.view = back || 'calendar';
-    if (ui.view === 'calendar') ui.calSel = 'team';
+    /* A team's calendar is the person's Calendar with that team on it (alerts
+       and calendar files link here); its games were a tab of their own, and
+       are its Season now, and its settings ("planning") are on Squad. */
+    if (p[2] === 'calendar') { calShowTeam(p[1]); return true; }
+    const back = { games: 'season', practice: 'practice', squad: 'roster', season: 'season', planning: 'roster' }[p[2]];
+    ui.view = back || 'season';
     return true;
   }
   return false;
@@ -18780,6 +18857,8 @@ const csEl = $('#clubSwitch');
 if (csEl) csEl.addEventListener('click', sheetClubSwitch);
 const ibEl = $('#inboxBtn');
 if (ibEl) ibEl.addEventListener('click', () => { ui.view = 'inbox'; ui.thread = null; closeSheet(); render(); });
+const cbEl = $('#calBtn');
+if (cbEl) cbEl.addEventListener('click', () => { ui.view = 'calendar'; ui.picked = null; closeSheet(); render(); toTop(); });
 // a tab brought back to the front has now read what arrived while it was behind
 if (typeof document !== 'undefined' && document.addEventListener)
   document.addEventListener('visibilitychange', () => { if (!document.hidden && (ui.view === 'inbox' || ui.view === 'thread')) render(); });

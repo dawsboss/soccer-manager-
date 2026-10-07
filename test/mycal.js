@@ -86,7 +86,7 @@ const nameIn = v => names.some(n => JSON.stringify(v).includes(n));
   console.log('--- whose screen it is, and which ---');
   {
     const { D } = await boot('jaz');
-    D.ui.view = 'calendar'; D.render();
+    D.ui.view = 'season'; D.render();
     check('a team\'s tab carries the club and the team', /Club<\/span>/.test(D.crumbs()) && /Team<\/span>/.test(D.crumbs()), true);
     for (const [v, name] of [['setup', 'Your settings'], ['people', 'People'], ['sessions', 'Training sessions'], ['inbox', 'Messages'], ['admin', 'Club settings'], ['planner', 'Planner'], ['mine', 'My players']]) {
       D.ui.view = v;
@@ -95,9 +95,12 @@ const nameIn = v => names.some(n => JSON.stringify(v).includes(n));
     D.ui.view = 'club';
     check('club home: the club alone', /Club<\/span>/.test(D.crumbs()) && !/Screen<\/span>|Team<\/span>/.test(D.crumbs()), true);
     D.ui.view = 'mycal'; D.render();
-    // one team and nothing else of hers yet: My calendar would be that team's, so it is
-    check('My calendar is the Calendar', D.ui.view + ' ' + D.calSels().join(), 'calendar team');
-    check('— a team\'s tab like the rest: Club › Team', /Club<\/span>/.test(D.crumbs()) && /Team<\/span>/.test(D.crumbs()), true);
+    // the Calendar is the person's, even with one team and nothing else of hers yet
+    check('My calendar is the Calendar', D.ui.view + ' ' + D.calSel(), 'calendar mine');
+    check('— hers, not a club\'s or a team\'s: You › Calendar', /You<\/span>/.test(D.crumbs()) && D.crumbs().includes('Calendar</span>') && !/Club<\/span>|Team<\/span>/.test(D.crumbs()), true);
+    check('— and the button up top says it is open', D.dom.node('#calBtn').getAttribute('aria-current'), 'true');
+    D.ui.view = 'season'; D.render();
+    check('— and not when it isn\'t', D.dom.node('#calBtn').getAttribute('aria-current'), 'false');
     D.ui.view = 'formation'; D.ui.editFid = '@game';
     check('the game\'s shape is the team\'s', D.viewScope(), 'team');
     D.ui.view = 'formation'; D.ui.editFid = 'f1';
@@ -122,8 +125,8 @@ const nameIn = v => names.some(n => JSON.stringify(v).includes(n));
     check('one club alone', D.myCalItems('c:HILL').every(x => x.club === 'HILL') && D.myCalItems('c:HILL').length, 3);
     check('this club alone leaves the other out', D.myCalItems('c:CLUB').some(x => x.club), false);
     D.ui.view = 'mycal'; D.ui.myCal = 'all'; D.render();
-    check('another club makes My calendar more than her team: it is ticked', D.calSels().join() + ' ' + D.calSel(), 'team,mine mine');
-    check('— saying what it shows', /data-act="calscope" data-v="mine" aria-pressed="true">My calendar</.test(D.rendered()), true);
+    check('another club is on the one calendar, hers', D.calSels().join() + ' ' + D.calSel(), 'mine mine');
+    check('— with nothing to choose between', /data-act="calscope"/.test(D.rendered()), false);
     check('— with a chip for each club', /data-act="mycalf" data-v="c:HILL"/.test((D.click({ act: 'caltree' }), D.rendered())), true);
     D.click({ act: 'caltree' });
     check('drawn with the club\'s name', /Hillside FC · Hill U12/.test(D.rendered()) && /Hill Park/.test(D.rendered()), true);

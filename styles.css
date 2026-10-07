@@ -550,6 +550,12 @@ table.grid td.right{text-align:right}
 .chk[data-ok="0"]{color:var(--over)}
 .plainbtn{background:none;border:0;padding:0;color:inherit;font:inherit}
 .avatar.swap{border-radius:9px;background:rgba(255,255,255,.12)}
+/* The Calendar's own button carries today's date in its icon, as a phone's calendar app does, and
+   stays lit while the Calendar is open: no tab underlines it any more. */
+.calbtn{position:relative}
+.calbtn-d{position:absolute;left:0;right:0;top:12.5px;font-size:8.5px;font-weight:700;line-height:10px;
+  text-align:center;font-variant-numeric:tabular-nums;pointer-events:none}
+.calbtn[aria-current="true"]{background:#fff;border-color:#fff;color:var(--field-deep)}
 
 /* ---------- plan snapshots ---------- */
 /* wrapped, not scrolled sideways: a sideways strip snaps back to 0:00 on every redraw */

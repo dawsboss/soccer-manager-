@@ -30,9 +30,10 @@ const APP_PATH = path.join(__dirname, '..', 'app.js');
 /* Every unknown property reads as undefined rather than throwing, so render()
    can touch whatever it likes on a node this stub never thought about. */
 const mk = () => new Proxy({
-  dataset: {}, style: {}, value: '', textContent: '', innerHTML: '', hidden: false,
+  dataset: {}, style: {}, value: '', textContent: '', innerHTML: '', hidden: false, attrs: {},
   classList: { add() { }, remove() { } },
-  addEventListener() { }, removeEventListener() { }, setAttribute() { }, getAttribute() { return null },
+  // remembered, so what render() marks on a fixed button (the Calendar's aria-current) can be read back
+  addEventListener() { }, removeEventListener() { }, setAttribute(k, v) { this.attrs[k] = String(v); }, getAttribute(k) { return k in this.attrs ? this.attrs[k] : null },
   setPointerCapture() { }, click() { }, getBoundingClientRect: () => ({ left: 0, top: 0, width: 300, height: 400 }),
   querySelector: () => mk(), querySelectorAll: () => [], closest: () => null, appendChild() { }
 }, { get(t, k) { return k in t ? t[k] : undefined; }, set(t, k, v) { t[k] = v; return true; } });
@@ -176,6 +177,7 @@ const EXPORTS = `{
   calItems, calPast, calNext, calTeams, calGroups, teamHue, seriesDates, seriesOf, icsItem, opponentMessage,
   viewCalendar, sheetCalItem, sheetCalEvent, calFormNew, publicEvents, pubText, mayAct,
   calSels, calSel, calEntries, calMulti, calEditTeams, evHue, evWhen, layDay, gridHours, calView, calDay, CAL_VIEWS, KIND_HUE, normView, GAME_VIEWS,
+  calDayList, calAgenda, calShowTeam,
   todayStr, dayLabel, niceTime, hm, addDays, weekdayOf, CALLED, HOME_AWAY, SERIES_MAX,
   get calForm() { return calForm },
   fixtureDoc, calendarDoc, publishTeam, ensureFixtureShares, claimTeamIds, outIds, familySaidNo, attendance, attendLine, attendOf, attendUntaken, cameToGame,

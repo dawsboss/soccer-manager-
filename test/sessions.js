@@ -568,9 +568,11 @@ function newSession(v = {}) {
   {
     as('jaz');
     put('c1', { title: 'Secret 1-1', date: day(2), kind: 'one', cap: 1 }); book('c1', 'p1', 't1');
-    put('c2', { title: 'Another 1-1', date: day(2), kind: 'one', cap: 1, start: '18:00', end: '19:00' }); book('c2', 'p0', 't1');
+    put('c2', { title: 'Another 1-1', date: day(2), kind: 'one', cap: 1, start: '18:00', end: '19:00', coach: 'other', coachName: 'Olu' }); book('c2', 'p0', 't1');
     A.ui.view = 'calendar'; A.ui.teamId = 't1'; A.render();
-    check('the team\'s coach sees her players\' sessions', /Secret 1-1 with Jaz/.test(A.rendered()) && /Another 1-1/.test(A.rendered()), true);
+    // her Calendar is hers: what she runs, and her players' sessions with somebody else, saying who
+    check('the team\'s coach sees the sessions she runs', /Secret 1-1/.test(A.rendered()), true);
+    check('and her players\' sessions with another coach', /Another 1-1 with Olu/.test(A.rendered()), true);
     check('tagged as training', /tag session/.test(A.rendered()), true);
     A.me = { uid: 'mum', name: 'Mo' };
     A.render();

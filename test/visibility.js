@@ -104,12 +104,14 @@ console.log('\n--- only a coach or admin adds players and games ---');
   const html = (view) => { A.ui.view = view; A.render(); return A.rendered(); };
   const offers = (who, tid) => {
     as(club(), who, tid);
-    // games are added from the calendar's +, whose sheet has "A game"
-    const roster = html('roster'), games = html('calendar');
+    /* a team's games are added from its Season (Add a game); the Calendar's +
+       is the person's, for whichever of her own teams, so it says nothing
+       about the team that is open */
+    const roster = html('roster'), season = html('season');
     return {
       addPlayer: roster.includes('data-act="addplayer"'),
       editPlayer: roster.includes('data-act="editplayer"'),
-      addGame: games.includes('class="calfab"')
+      addGame: season.includes('data-act="newmatch"')
     };
   };
   const all = { addPlayer: true, editPlayer: true, addGame: true };
