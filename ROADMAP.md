@@ -70,6 +70,12 @@ trigger on and nothing to diff. **Decided 2026-10-06:** the owner approved
 server-side code, and this is the server's first job (`GOTSPORT.md`, *Build
 order*, step 2).
 
+> **Built 2026-10-07 (build 104)** for notices and family messages: all three
+> pieces as above (`sw.js` and `manifest.webmanifest`, tokens at
+> `pushTokens/{uid}/{token}`, and `functions/`). *Notify me* on a game, a
+> calendar change and club activity are not pushed yet; `GOTSPORT.md`, *Push
+> notifications*, has what is left and how.
+
 ### Messages, next steps
 
 - **Game and practice notices.** A *Tell the families* button on a game's

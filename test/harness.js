@@ -239,13 +239,17 @@ const EXPORTS = `{
   alertsList: () => alertsHere().list, alertBar, calAlerts, elseUnread, openAlert, noteMine,
   /* safekeeping: what is owed, a full phone, and the backup */
   otherOwed, pendingCount, refusedCount, backupDoc, trainingCopy, isBackupData, keepStored,
+  /* notifications to a closed phone */
+  pushSupport, pushOn, pushCard, pushCheck, pushTurnOn, pushTurnOff, captureOpen, maybePushOpen, openIn, deviceName,
+  get pushRec() { return pushRec }, get pushOpen() { return pushOpen }, get pushBusy() { return pushBusy },
   get lastBackup() { return lastBackup }, get storeFail() { return storeFail }, set storeFail(v) { storeFail = v }
 }`;
 
 const FB_URLS = {
   app: 'firebase-app.js',
   auth: 'firebase-auth.js',
-  database: 'firebase-database.js'
+  database: 'firebase-database.js',
+  messaging: 'firebase-messaging.js'
 };
 
 function appSource(firebase) {
@@ -291,7 +295,9 @@ function loadApp(opts = {}) {
     addEventListener() { },
     SOCCER_FIREBASE_CONFIG: opts.config === undefined ? null : opts.config,
     SOCCER_FIREBASE_ENVS: opts.envs || undefined,
-    ...(opts.drills === false ? {} : { SOCCER_DRILLS: require('../drills.js'), DrillDiagram: require('../drill-diagram.js') })
+    ...(opts.drills === false ? {} : { SOCCER_DRILLS: require('../drills.js'), DrillDiagram: require('../drill-diagram.js') }),
+    // what a browser adds on top (PushManager, matchMedia, the club's push key), for the suites that need one
+    ...(opts.window || {})
   };
   global.location = {
     reload() { dom.reloads = (dom.reloads || 0) + 1; },
@@ -300,7 +306,9 @@ function loadApp(opts = {}) {
   };
   // what the address bar was rewritten to, so a test can see a parameter taken off it
   global.history = { replaceState(s, t, url) { dom.replaced = url; } };
-  global.navigator = { clipboard: { writeText: () => Promise.resolve() } };
+  /* Node 21+ has a navigator of its own, a getter with no setter, so a plain
+     assignment is silently dropped and the app would read Node's. */
+  Object.defineProperty(global, 'navigator', { value: { clipboard: { writeText: () => Promise.resolve() }, ...(opts.navigator || {}) }, configurable: true, writable: true });
   global.setTimeout = timers.setTimeout;
   global.clearTimeout = timers.clearTimeout;
   global.setInterval = timers.setInterval;

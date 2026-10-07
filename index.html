@@ -4,12 +4,20 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#17603C">
-<meta name="build" content="103">
+<meta name="build" content="104">
+<!-- Installable: added to the Home Screen it opens full-screen with its own icon, and on an
+     iPhone that is the only way a site can get notifications at all (iOS 16.4+). -->
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon-192.png" type="image/png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Minutes">
 <title>Minutes — soccer sub tracker</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600&family=Barlow+Condensed:wght@500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="styles.css?v=103">
+<link rel="stylesheet" href="styles.css?v=104">
 </head>
 <body>
 
@@ -56,12 +64,12 @@
 <div class="toast" id="toast" hidden></div>
 
 <script src="firebase-config.js"></script>
-<script src="ics.js?v=103"></script>
+<script src="ics.js?v=104"></script>
 <!-- Content, not code: the drill library and the diagrams that draw it. Plain
      scripts before the module, so they are on window when app.js runs, and
      cache-busted with the same build number so a cached copy can't disagree. -->
-<script src="drills.js?v=103"></script>
-<script src="drill-diagram.js?v=103"></script>
-<script type="module" src="app.js?v=103"></script>
+<script src="drills.js?v=104"></script>
+<script src="drill-diagram.js?v=104"></script>
+<script type="module" src="app.js?v=104"></script>
 </body>
 </html>

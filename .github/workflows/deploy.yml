@@ -31,7 +31,8 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p _site
-          rsync -a --exclude '.git' --exclude '.github' --exclude '_site' ./ _site/
+          # functions/ is the server's code, deployed to Firebase, never served as a page
+          rsync -a --exclude '.git' --exclude '.github' --exclude '_site' --exclude 'functions' ./ _site/
           cd _site
 
           BUILT="$(date -u +%Y-%m-%d) Â· ${SHA:0:7}"

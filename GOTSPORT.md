@@ -150,6 +150,45 @@ function that sends when a notice, a family message, a calendar change or a
 followed game's goal is written, to whoever the rules already say may read
 it. *Email or share* stays for whoever turned notifications off.
 
+**Built 2026-10-07 (build 104), the first half:** team notices and family
+messages. What it is, so the next jobs are built the same way:
+
+- **The sender** is `functions/index.js` (two triggers, `pushNotice` on
+  `board/{code}/{tid}/{id}` and `pushMessage` on `dm/{code}/{tid}/{fam}/m/{id}`,
+  creates only) and `functions/push.js`, which holds the judgement and imports
+  nothing from Firebase, so `test/push.js` runs it on the fake server
+  (`makeServer()` in `test/fakebase.js`, which requires the deployed
+  `index.js` with Firebase swapped out).
+- **Who hears** is who the rules let read it, from the same lookup tables,
+  *and* held to the squad, so a stale table entry never reaches a family the
+  squad no longer names; never the author; never the rules' bridge clauses
+  (a club with no `teamParents` table pushes to no family until an admin's
+  phone builds it). Tested for every kind of account, the way `rules.js`
+  tests the rules.
+- **What it says** is the title the open app pops up, the text cut to 240
+  characters, and where to open it. The tag is the message id, so a trigger
+  delivered twice replaces its own notification: the push version of
+  "record the event id before the effect".
+- **Tokens** are `pushTokens/{uid}/{token}` (`{ at, ua }`, rules version 7),
+  owner-only. A phone gives hers up on signing out (taken down while still
+  signed in, then the browser's subscription deleted), and when it finds
+  another account signed in; the server deletes any token Cloud Messaging
+  says is gone. A push for an account no longer signed in on the phone is shown
+  without its words.
+- **The service worker** (`sw.js`) shows a push and opens the place it is
+  about, switching club the way an alert's *Open* does. No fetch handler: it
+  does not serve the app from a cache (its comment says why). With
+  `manifest.webmanifest` and the icons, Minutes installs to the Home Screen,
+  which is also what an iPhone needs before it delivers any push (8, below).
+
+**Left of this step:** a calendar change to her own teams (called off,
+moved, back on, new: today `calAlerts()` on an open phone), a followed
+game's goals (following is per phone today and would need to be stored),
+and club activity for admins. Each is another trigger on the same sender;
+the calendar one needs care, because `matches/{mid}` is written every few
+seconds during a game, so it triggers on the few fields that matter
+(date, time, place, status), never the whole game.
+
 ### 4. Email
 
 Needs the server. Registration received, payment receipts, *your child is on
@@ -312,7 +351,9 @@ hold.
 2. **The server, with push as its first job.** `functions/`, the deploy
    steps in README, a test rig for functions on the fake Firebase, the
    service worker and manifest, and the push sender. Small, and it fixes the
-   biggest everyday gap families have.
+   biggest everyday gap families have. *Built 2026-10-07 for notices and
+   family messages (build 104, Push notifications above); calendar changes
+   and followed games are left.*
 3. **Names behind the database, and the child as a club-level person.** One
    design, written into AUTH.md before the code (*Protecting the data* and
    *Season registration* above).

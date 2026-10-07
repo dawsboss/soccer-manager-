@@ -2,7 +2,7 @@
    Static app. Data lives in localStorage, and mirrors to Firebase Realtime
    Database when a config + workspace code are present. */
 
-const BUILD = '103';
+const BUILD = '104';
 const BUILT = '2026-10-07';
 /* The version of database.rules.json this app was written against. The rules
    carry the same number in rulesVersion's .write, which accepts that number
@@ -11,7 +11,7 @@ const BUILT = '2026-10-07';
    never pasted look exactly like a coach with no signal: "saved on this phone
    only", one feature at a time. test/rules.js holds the two numbers together
    and fails when the rules change without this going up. */
-const RULES_VERSION = 6;
+const RULES_VERSION = 7;
 /* index.html carries the build it was published with. If this file is newer, the
    browser handed us a cached page — the exact failure that has eaten hours. */
 const pageBuild = () => {
@@ -463,6 +463,7 @@ async function initAuth() {
         }
       }
       authReadyResolve();
+      pushCheck();
       maybeLoadInvite();
       maybeLoadJoin();
       watchMyClubs();
@@ -485,7 +486,7 @@ async function initSync() {
     rtdb = { db, mod: dbMod };
     // an invite and the list of my clubs are both read before any workspace,
     // because a device with neither code nor role is exactly who needs them
-    authReady.then(() => { maybeLoadInvite(); maybeLoadJoin(); watchMyClubs(); });
+    authReady.then(() => { maybeLoadInvite(); maybeLoadJoin(); watchMyClubs(); pushCheck(); });
 
     // appOwners is root-level and has nothing to do with any one workspace —
     // read it before a code even exists. A device with no workspace still
@@ -1672,6 +1673,7 @@ function watchMyClubs() {
     if (!me || me.uid !== who) return;
     myClubs = s.val() || {};
     noteMyClub();
+    maybePushOpen();
     maybeOpenMyClub();
     render();
   }, () => { });
@@ -2362,7 +2364,7 @@ function rootSet(p, v) {
    squad's cache is kept for an unsynced game, but nothing here exists only on
    this device except the outbox, and a private conversation does not belong on
    a phone somebody else may sign in on next. */
-// SERVER.md: notices heard only while the page is open; a server sender would push them.
+// SERVER.md: the pop-up and the bell come from this page; functions/push.js pushes the same news to a closed phone.
 function watchMessages() {
   const key = me && rtdb && fb && wsCode() && !needsSignIn() ? clubKey() + '|' + me.uid : null;
   if (key !== (msgFor && msgFor.key)) {
@@ -2572,6 +2574,210 @@ function queueMsg(kind, tid, fam, text, extra) {
   return id;
 }
 
+/* ---- notifications to a closed phone ---- */
+/* GOTSPORT.md, Push notifications: the server's first job. A phone that turns
+   notifications on leaves its Cloud Messaging token at
+   pushTokens/{uid}/{token}, readable and writable by that account alone, and
+   functions/push.js sends each new notice and family message to the tokens of
+   whoever the rules let read it. Everything above this still runs: the open
+   page pops up and counts on the bell as it always has, and a push is the
+   same news reaching a phone that has Minutes closed.
+
+   A token is the address of one person's phone, so it belongs to whoever is
+   signed in, and is given up the moment she isn't: on signing out (taken down
+   while she is still signed in, then the browser's subscription deleted), and
+   if a phone finds another account signed in than the one that left it. The
+   service worker is told who is signed in, and shows a push meant for
+   anybody else without its words, for the one case none of that can reach (a
+   phone signed out with no signal).
+
+   Needs the club's Firebase project to have the functions deployed and a
+   web push key (firebase-config.js, SOCCER_PUSH_KEY): README, Notifications
+   to a closed phone. Without a key nothing here is offered. */
+const LS_PUSH = 'sm.push.v1';   // { uid, token, env, at }: the token this phone left, and for whom
+const PUSH_FRESH_MS = 7 * 86400000;
+let pushRec = null, pushBusy = false, pushOpen = null, pushChecked = null;
+let swRegP = null, msgModP = null;
+
+const pushKey = () => fbConfig().vapidKey || (typeof window !== 'undefined' && window.SOCCER_PUSH_KEY) || '';
+function pushLoad() { try { const r = JSON.parse(localStorage.getItem(LS_PUSH) || 'null'); pushRec = r && r.uid && r.token ? r : null; } catch (e) { pushRec = null; } }
+function pushSave(r) {
+  pushRec = r || null;
+  try { r ? localStorage.setItem(LS_PUSH, JSON.stringify(r)) : localStorage.removeItem(LS_PUSH); } catch (e) { }
+}
+const uaStr = () => (typeof navigator !== 'undefined' && navigator.userAgent) || '';
+const iosDevice = () => /iPhone|iPad|iPod/.test(uaStr()) || (/Macintosh/.test(uaStr()) && typeof navigator !== 'undefined' && navigator.maxTouchPoints > 1);
+const standalone = () => {
+  try { if (typeof navigator !== 'undefined' && navigator.standalone) return true; } catch (e) { }
+  try { return !!(typeof window !== 'undefined' && window.matchMedia && window.matchMedia('(display-mode: standalone)').matches); } catch (e) { return false; }
+};
+// what the phone is called on the token, for a list of her phones one day; never anything about her
+const deviceName = () => { const u = uaStr(); return /iPhone/.test(u) ? 'iPhone' : /iPad/.test(u) || iosDevice() ? 'iPad' : /Android/.test(u) ? 'Android' : /Macintosh/.test(u) ? 'Mac' : /Windows/.test(u) ? 'Windows' : 'Browser'; };
+
+/* What this phone can do: 'unset' (the club has no push key, so nothing is
+   offered), 'install' (an iPhone in a browser tab: only an app on the Home
+   Screen gets notifications), 'no', 'blocked' (she said no in the browser,
+   and only its settings can undo that), or 'ok'. */
+function pushSupport() {
+  if (!fbConfig().apiKey || !pushKey()) return 'unset';
+  const nav = typeof navigator !== 'undefined' ? navigator : {};
+  const win = typeof window !== 'undefined' ? window : {};
+  if (!nav.serviceWorker || !('PushManager' in win) || typeof Notification === 'undefined')
+    return iosDevice() && !standalone() ? 'install' : 'no';
+  if (Notification.permission === 'denied') return 'blocked';
+  return 'ok';
+}
+const pushOn = () => !!(me && pushRec && pushRec.uid === me.uid && (pushRec.env || '') === envName()
+  && typeof Notification !== 'undefined' && Notification.permission === 'granted');
+
+function swReg() {
+  if (!swRegP) swRegP = Promise.resolve(navigator.serviceWorker.register('sw.js'));
+  return swRegP;
+}
+function messagingMod() {
+  if (!msgModP) msgModP = Promise.all([getApp(), import('https://www.gstatic.com/firebasejs/10.12.2/firebase-messaging.js')])
+    .then(([app, mod]) => ({ mod, messaging: mod.getMessaging(app) }));
+  return msgModP.catch(e => { msgModP = null; throw e; });
+}
+const rootPut = (p, v) => rtdb ? Promise.resolve(rtdb.mod.set(rtdb.mod.ref(rtdb.db, p), v)) : Promise.reject(new Error('not connected'));
+const rootDrop = p => rtdb ? Promise.resolve(rtdb.mod.remove(rtdb.mod.ref(rtdb.db, p))) : Promise.reject(new Error('not connected'));
+/* Unsubscribes this browser: whatever account's token it was, the server's
+   next send to it fails and the server takes it down. */
+function dropBrowserToken() { return messagingMod().then(m => m.mod.deleteToken(m.messaging)).catch(() => { }); }
+/* The service worker shows a push meant for anybody else without its words. */
+function tellSw() {
+  try {
+    if (typeof navigator === 'undefined' || !navigator.serviceWorker || !navigator.serviceWorker.ready) return;
+    const uid = me ? me.uid : '';
+    Promise.resolve(navigator.serviceWorker.ready).then(r => { if (r && r.active) r.active.postMessage({ type: 'me', uid }); }).catch(() => { });
+  } catch (e) { }
+}
+
+/* From the tap: browsers refuse a permission prompt nobody asked for, and
+   Safari refuses one asked after anything was awaited, so the question is
+   the first thing this does. Online only, like booking a slot: a token the
+   club never got sends nothing, and saying "on" for it would be a lie. */
+async function pushTurnOn() {
+  if (!me) { toast('Sign in first'); return; }
+  if (pushSupport() !== 'ok' || pushBusy) { render(); return; }
+  let perm;
+  try { perm = Notification.permission === 'granted' ? 'granted' : Notification.requestPermission(); } catch (e) { perm = 'default'; }
+  if (!rtdb || !online) { toast('Turn notifications on with a signal'); return; }
+  pushBusy = true; render();
+  const uid = me.uid;
+  try {
+    if (await perm !== 'granted') { toast(Notification.permission === 'denied' ? 'Notifications are blocked in this browser\'s settings' : 'Notifications not turned on'); return; }
+    const reg = await swReg();
+    const m = await messagingMod();
+    const token = await m.mod.getToken(m.messaging, { vapidKey: pushKey(), serviceWorkerRegistration: reg });
+    if (!token || !/^[^.#$\[\]\/]{20,400}$/.test(token)) throw new Error('no usable token');
+    if (!me || me.uid !== uid) return;
+    await rootPut(`pushTokens/${uid}/${token}`, { at: nowMs(), ua: deviceName() });
+    if (pushRec && pushRec.uid === uid && pushRec.token !== token) rootDrop(`pushTokens/${uid}/${pushRec.token}`).catch(() => { });
+    pushSave({ uid, token, env: envName(), at: nowMs() });
+    tellSw();
+    toast('Notifications are on for this phone');
+  } catch (e) {
+    toast(/permission|denied/i.test((e && (e.code || e.message)) || '')
+      ? 'Not turned on: the database refused it. Are the rules (version ' + RULES_VERSION + ') published?' : 'Could not turn notifications on');
+  } finally { pushBusy = false; render(); }
+}
+
+/* Off, by her, or because she is signing out: the club's copy goes first,
+   while she is still signed in to take it down, then the browser's. */
+function pushTurnOff() {
+  const r = pushRec;
+  pushSave(null);
+  if (r && me && r.uid === me.uid) rootDrop(`pushTokens/${r.uid}/${r.token}`).catch(() => { });
+  if (r) dropBrowserToken();
+  render();
+}
+
+/* On every change of account, and once the database is there: a token left
+   by some other account is given up; her own is checked against what the
+   browser holds now (tokens change), and its date kept fresh, so the server
+   can tell a phone in a drawer from one in use. */
+function pushCheck() {
+  tellSw();
+  if (!pushRec) return;
+  if (!me || pushRec.uid !== me.uid || (pushRec.env || '') !== envName()) { pushSave(null); dropBrowserToken(); return; }
+  if (!rtdb || pushSupport() === 'unset') return;
+  const r = pushRec, path = t => `pushTokens/${r.uid}/${t}`;
+  if (typeof Notification === 'undefined' || Notification.permission !== 'granted') {
+    // taken back in the browser's settings: nothing more will arrive, so stop the server trying
+    pushSave(null); rootDrop(path(r.token)).catch(() => { }); return;
+  }
+  if (pushChecked === r.uid) return;
+  pushChecked = r.uid;
+  Promise.all([swReg(), messagingMod()])
+    .then(([reg, m]) => m.mod.getToken(m.messaging, { vapidKey: pushKey(), serviceWorkerRegistration: reg }))
+    .then(token => {
+      if (!pushRec || pushRec.uid !== r.uid || !token) return;
+      if (token !== r.token) {
+        return rootPut(path(token), { at: nowMs(), ua: deviceName() }).then(() => {
+          rootDrop(path(r.token)).catch(() => { });
+          pushSave({ ...r, token, at: nowMs() });
+        });
+      }
+      if (nowMs() - (r.at || 0) > PUSH_FRESH_MS)
+        return rootPut(path(token), { at: nowMs(), ua: deviceName() }).then(() => pushSave({ ...r, at: nowMs() }));
+    }).catch(() => { pushChecked = null; });
+}
+
+/* A notification tapped while Minutes is open: the service worker says where. */
+function pushListen() {
+  try {
+    if (typeof navigator === 'undefined' || !navigator.serviceWorker || !navigator.serviceWorker.addEventListener) return;
+    navigator.serviceWorker.addEventListener('message', e => {
+      const d = e && e.data;
+      if (d && d.type === 'open' && typeof d.hash === 'string' && d.hash.startsWith('#/')) openIn(d.code || wsCode(), d.hash);
+    });
+    // registered on every load where it can be, so the worker is there for the tap
+    if (pushKey() && fbConfig().apiKey) swReg().catch(() => { swRegP = null; });
+  } catch (e) { }
+}
+
+/* ...or with it closed: a new page opens with the club on the address. Taken
+   off the address at once, and acted on only once this account's own list of
+   clubs says she is in it; a link somebody made up switches nothing. */
+function captureOpen() {
+  try {
+    const q = new URLSearchParams(location.search || '');
+    const c = (q.get('open') || '').trim();
+    if (!c) return;
+    q.delete('open');
+    const rest = q.toString();
+    history.replaceState(null, '', location.pathname + (rest ? '?' + rest : '') + (location.hash || ''));
+    if (c !== wsCode()) pushOpen = c;
+  } catch (e) { }
+}
+function maybePushOpen() {
+  if (!pushOpen || !myClubs) return;
+  const c = pushOpen; pushOpen = null;
+  if (!myClubs[c] || c === wsCode()) return;
+  try { localStorage.setItem(LS_WS, c); } catch (e) { return; }
+  location.reload();
+}
+
+function pushCard(where) {
+  if (!me) return '';
+  const sup = pushSupport();
+  if (sup === 'unset') return '';
+  const on = pushOn();
+  if (where === 'inbox' && (on || sup === 'no' || sup === 'blocked')) return '';
+  const say = pushBusy ? 'Turning on…'
+    : sup === 'install' ? 'On an iPhone or iPad, Minutes can notify you once it is on your Home Screen: tap <b>Share</b>, then <b>Add to Home Screen</b>, open Minutes from there, and turn them on.'
+    : sup === 'no' ? 'This browser can\'t get notifications from a website. Minutes still pops up while it is open.'
+    : sup === 'blocked' ? 'Notifications are blocked for Minutes in this browser\'s settings. Allow them there, then come back here.'
+    : on ? 'On. Team notices and messages reach this phone even with Minutes closed.'
+    : 'Team notices and messages reach this phone even with Minutes closed.';
+  const btn = pushBusy || sup !== 'ok' ? ''
+    : on ? '<button class="btn quiet sm" data-act="pushoff">Turn off</button>'
+    : '<button class="btn sm" data-act="pushon">Turn on</button>';
+  return `<div class="card"><div class="spread"><b>Notifications on this phone</b>${btn}</div>
+    <p class="muted" style="margin:6px 0 0">${say}</p></div>`;
+}
+
 /* ---- screens ---- */
 function viewInbox() {
   // opening the inbox reads the calendar alerts, as it reads club activity
@@ -2591,7 +2797,8 @@ function viewInboxMsgs() {
   const shown = ui.msgAll ? all : all.slice(0, MSG_SHOW);
 
   const canPop = typeof Notification !== 'undefined';
-  const alerts = canPop && Notification.permission === 'default' ? `<div class="card"><div class="spread"><b>Pop-ups on this device</b>
+  // where the club offers push, that card is the one to show; it asks for the same permission
+  const alerts = pushSupport() !== 'unset' ? pushCard('inbox') : canPop && Notification.permission === 'default' ? `<div class="card"><div class="spread"><b>Pop-ups on this device</b>
       <button class="btn sm" data-act="msgalerts">Turn on</button></div>
     <p class="muted" style="margin:6px 0 0">A message pops up while Minutes is open, even in another tab.</p></div>` : '';
 
@@ -13985,17 +14192,21 @@ function alertBar() {
 function openAlert(id) {
   const a = alertsHere().list.find(x => x.id === id); if (!a) return;
   a.read = true; a.shut = true; saveAlerts();
+  openIn(a.code, a.hash);
+}
+/* The move itself, shared with a tapped notification (pushListen()). */
+function openIn(code, hash) {
   closeSheet();
-  if (a.code === wsCode()) {
+  if (code === wsCode()) {
     // a history entry of its own, so Back returns to whatever she was looking at
-    try { location.hash = a.hash; } catch (e) { }
+    try { location.hash = hash; } catch (e) { }
     if (!hashToUi()) ui.view = 'club';
     render(); return;
   }
-  if (!myClubs || !myClubs[a.code]) { toast('You are no longer in that club'); render(); return; }
+  if (!myClubs || !myClubs[code]) { toast('You are no longer in that club'); render(); return; }
   try {
-    localStorage.setItem(LS_WS, a.code);
-    history.replaceState(null, '', location.pathname + location.search + a.hash);
+    localStorage.setItem(LS_WS, code);
+    history.replaceState(null, '', location.pathname + location.search + hash);
   } catch (e) { }
   location.reload();
 }
@@ -14194,6 +14405,8 @@ function viewSetup() {
       ${canTrain() ? `<button class="btn quiet wide" data-act="mydrills">My drills</button>` : ''}
       ${isOwner() ? `<button class="btn quiet wide" data-act="peeklib" style="margin-top:8px">Look at someone's drills, for support</button>` : ''}`
       : '<p class="muted" style="margin-bottom:0">Signed out, everything stays on this device. Sign in to share it with your club.</p>'}</div>
+
+    ${pushCard('settings')}
 
     <div class="card"><h2 style="margin-bottom:8px">Club</h2>
       <p class="muted" style="margin-top:0">Firebase config is ${cfgOk ? 'in place' : 'not filled in — see README.md'}.</p>
@@ -17420,6 +17633,9 @@ function onAct(e) {
      checks for itself who may do it, rather than trusting what was drawn. */
   if (a === 'inbox') { ui.view = 'inbox'; ui.thread = null; closeSheet(); render(); return; }
   if (a === 'msgall') { ui.msgAll = true; render(); return; }
+  // anyone signed in, for her own phone: the rule is hers alone, so nothing here needs a role
+  if (a === 'pushon') { pushTurnOn(); return; }
+  if (a === 'pushoff') { pushTurnOff(); toast('Notifications are off for this phone'); return; }
   if (a === 'msgalerts') {
     try { if (typeof Notification !== 'undefined') Notification.requestPermission().then(() => render(), () => { }); } catch (e) { }
     return;
@@ -17746,6 +17962,8 @@ function onAct(e) {
   if (a === 'signout') {
     const n = mineUnsent();
     if (n && !confirm(`${n} change${n === 1 ? '' : 's'} to your own drills ha${n === 1 ? 's' : 've'}n't reached the database yet, and signing out takes your drills off this phone. Sign out anyway?`)) return;
+    // her phone's address comes down while she is still signed in to take it down
+    if (pushRec) pushTurnOff();
     authMod.signOut(fbAuth).then(() => { closeSheet(); toast('Signed out'); }); return;
   }
   if (a === 'peeklib') {
@@ -18877,6 +19095,8 @@ if (typeof window !== 'undefined' && window.addEventListener) {
 /* ---------------- boot ---------------- */
 captureInvite();
 captureJoin();
+captureOpen();
+pushLoad();
 loadLocal();
 /* Provisional, so an offline device renders for the person who was using it
    rather than sitting on a lock screen. onAuthStateChanged overwrites it either
@@ -18884,4 +19104,5 @@ loadLocal();
 me = cachedMe();
 hashToUi();     // a shared link wins over whatever was last open
 render();
+pushListen();
 (async () => { await initAuth(); await initSync(); })();

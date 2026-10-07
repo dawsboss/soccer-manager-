@@ -121,7 +121,7 @@
     },
     "rulesVersion": {
       ".read": true,
-      ".write": "newData.isNumber() && newData.val() === 6"
+      ".write": "newData.isNumber() && newData.val() === 7"
     },
     "public": {
       "$share": {
@@ -678,6 +678,24 @@
             "$other": {
               ".validate": false
             }
+          }
+        }
+      }
+    },
+    "pushTokens": {
+      "$uid": {
+        ".read": "auth != null && auth.uid === $uid",
+        "$token": {
+          ".write": "auth != null && auth.uid === $uid",
+          ".validate": "newData.hasChildren(['at']) && $token.length >= 20 && $token.length <= 400",
+          "at": {
+            ".validate": "newData.isNumber()"
+          },
+          "ua": {
+            ".validate": "newData.isString() && newData.val().length <= 60"
+          },
+          "$other": {
+            ".validate": false
           }
         }
       }

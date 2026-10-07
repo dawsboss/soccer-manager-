@@ -8,6 +8,59 @@ before this point lives only in the git log.
 
 ---
 
+## Notifications reach a closed phone: the server's first job — 2026-10-07 (build 104)
+
+`GOTSPORT.md`'s build order, step 2: *the server, with push as its first job*.
+Until now a notice or a family message reached a phone only while Minutes was
+open on it, and the coach's fallback was *Email or share*. That was the
+biggest everyday gap families had, and the smallest piece of the GotSport
+plan that needs a server, so it goes first and proves the pipeline.
+
+- **The server exists.** `functions/` holds the club's Cloud Functions, two of
+  them: `pushNotice` on a new `board/{code}/{tid}/{id}` and `pushMessage` on a
+  new `dm/{code}/{tid}/{fam}/m/{id}`. Creates only, so a read marker or a live
+  game never wakes them. They read from whichever database the write was in,
+  so a rehearsal database answers from its own phones. Deployed by hand with
+  `firebase deploy --only functions` (README, **Notifications to a closed
+  phone**, has the five steps, the Blaze plan among them).
+- **Who hears it is who may read it.** The sender writes with admin
+  credentials and the rules never see it, so it checks rather than trusts:
+  the rules' readers, from the same lookup tables, held to the squad as well,
+  never the author, and never through a bridge clause (pushing to every
+  indexed account would be wider than any screen). A notice reaches the
+  team's families, its player with her own sign-in, its trackers, coaches and
+  the admins; a family's conversation reaches that family, the player whose
+  record names it, the team's coaches and the admins, and never a tracker or
+  another family. The title is the one the open app pops up, the text cut to
+  240 characters; a tap opens that conversation, switching club if it has to.
+- **Each person turns it on for her own phone**, in Settings or Messages:
+  *Notifications on this phone*. No role needed, because the token is hers:
+  `pushTokens/{uid}/{token}`, readable and writable by that account alone
+  (**rules version 7**). On an iPhone in a browser tab it says to add Minutes
+  to the Home Screen first, which iOS requires; signed out, offline, blocked
+  or refused by the rules, it says which and claims nothing.
+- **The token follows the account.** Signing out takes it down while she is
+  still signed in, then deletes the browser's subscription; a phone that finds
+  another account signed in gives the old one up; a token the browser changed
+  is replaced, and one whose permission was taken back is removed. The
+  service worker is told who is signed in and shows a push for anyone else
+  without its words, for the phone signed out with no signal. The server
+  deletes any token Cloud Messaging says is gone.
+- **Minutes installs like an app.** `manifest.webmanifest`, an icon (the
+  centre of a pitch) and `sw.js`. The worker only shows pushes and opens
+  them: it has no fetch handler, so it never serves a cached copy of the app
+  that could disagree with the build the page says it is.
+- **`test/push.js`**, and a rig to run functions in CI with nothing installed:
+  `makeServer()` in `test/fakebase.js` requires the deployed `index.js` with
+  Firebase swapped out, so the triggers' paths are tested, not a copy. The
+  judgement lives in `functions/push.js`, which imports nothing from Firebase.
+  The harness also stopped losing its `navigator` to Node 22's own.
+
+Not pushed yet, and next on the same sender: a calendar change to her own
+teams, a followed game's goals, club activity. Nothing about the outbox, the
+local copies or what works with no signal changed: the server does the job
+that belonged to nobody, and the sideline waits on nothing.
+
 ## The Calendar is yours, and today says where now is — 2026-10-07 (build 103)
 
 The owner, after trying build 102: *when clicking in a day like in the

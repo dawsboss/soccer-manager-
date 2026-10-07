@@ -1,6 +1,6 @@
 # Minutes
 
-A sideline tracker for soccer coaches: multiple teams, rosters, planned vs actual minutes, a match clock, and a pitch you can drag players around on. Static files and a Firebase database, no build step, no AI calls. Server-side code (Cloud Functions on the same Firebase project) is allowed and planned for push, payments and email; see [`GOTSPORT.md`](GOTSPORT.md).
+A sideline tracker for soccer coaches: multiple teams, rosters, planned vs actual minutes, a match clock, and a pitch you can drag players around on. Static files and a Firebase database, no build step, no AI calls. Server-side code (Cloud Functions on the same Firebase project, in [`functions/`](functions)) sends notifications to closed phones, and is planned for payments and email; see [`GOTSPORT.md`](GOTSPORT.md).
 
 ## What it does
 
@@ -15,7 +15,7 @@ A sideline tracker for soccer coaches: multiple teams, rosters, planned vs actua
 - **Game plan.** Builds a block-by-block schedule from planned minutes, ratings, stint caps and pairings. Each block is a fixed XI; substitutions happen at the boundaries. It shows projected minutes against planned for every player, so you can see where the constraints cost someone time before kickoff. During the game the plan card shows the next change and makes those subs in one tap.
 - **Lock in the plan, and let the tracker call the subs.** *Lock in* on the Plan tab freezes the snapshots and says whether the club has them or only this phone does. The Track and Subs tabs then count down to each planned change on the half clock, turn loud when it is due, and make every change with one tap (*Subs are on*) at the minute it is pressed — undoable for two minutes, or *Not now* if the change is not happening. A tracker gets the time and how many subs, never the names, and cannot make any other sub.
 - **Tell the bench.** Each change written as the calls a coach makes at the bench: who goes on, at which spot and for whom, who switches spots, who comes off, and the starting lineup spot by spot at kick-off. It works from the pitch as it really is, so hand-made subs are accounted for. *Copy as a message* sends it to an assistant, and the *Bench sheet* lists every change in the game.
-- **Live, for everyone following.** The Live tab inside a game is the play-by-play: the score, the clock, and what has happened — kick-off, goals with the score after each, subs, half time, full time — with shots and set pieces one tap away under *Everything*. It is the one game screen every role gets, parents and trackers included. *Notify me* turns each goal, kick-off, half time and full time into a buzz and a pop-up on that device, but only while the page is open: there is no push sender yet, so nothing reaches a closed phone. Push is the first job of the planned server ([`GOTSPORT.md`](GOTSPORT.md)). The coach's old Live screen — minutes, bench, subs — is now the **Subs** tab.
+- **Live, for everyone following.** The Live tab inside a game is the play-by-play: the score, the clock, and what has happened — kick-off, goals with the score after each, subs, half time, full time — with shots and set pieces one tap away under *Everything*. It is the one game screen every role gets, parents and trackers included. *Notify me* turns each goal, kick-off, half time and full time into a buzz and a pop-up on that device, but only while the page is open: the server pushes messages to a closed phone (**Notifications to a closed phone**, below), not yet a followed game. The coach's old Live screen — minutes, bench, subs — is now the **Subs** tab.
 - **Live pairing check.** A banner appears if two players you marked *keep apart* end up on the pitch together.
 - **Fixing mistakes.** Tap any line in the sub log to nudge it by 5, 15, 30 or 60 seconds, or type the exact time. *Add a sub* records one that happened before you tapped. *Fix minutes* opens a player's spells on the pitch and lets you edit or delete each one. *Clock reading wrong?* shifts the current half and the total together.
 - **Per-game availability.** Mark players out for one game without touching their season totals.
@@ -126,9 +126,35 @@ The bell in the top bar, for anyone with a role in a club that has an admin.
 - **Family conversations.** A parent gets one conversation per team with that team's coaches: *Ella has a cold, she'll miss Thursday.* Every coach of the team and the admins see it and can reply — never one coach alone, which is the safeguarding-friendly shape — and nobody else. Messages cannot be edited or deleted.
 - **No signal.** A message written at a pitch with no signal waits in an outbox on the phone and goes when the connection returns, even after a reload. One the database refuses says *Not sent* with *Try again*.
 
-**What "notifications" means here.** Until the push sender is built (the first server job in [`GOTSPORT.md`](GOTSPORT.md)), nothing can wake a phone that has closed Minutes. A message pops up (or buzzes) while Minutes is open in any tab, with a system notification when the tab is in the background and the person allowed it, and otherwise waits with a count on the bell. To reach everyone *now*, use **Email or share** on the notice. Real push is in ROADMAP, with what it needs.
+**What "notifications" means here.** With Minutes open, a message pops up (or buzzes) in any tab, and waits with a count on the bell. With it closed, a phone hears only if the club has the server set up and that person turned **Notifications on this phone** on (below); everyone else hears the next time they open Minutes. To reach everyone *now*, whatever their phone, use **Email or share** on the notice.
 
 **Needs the `board` and `dm` rule blocks published** — they are in both rule sets above. Without them posting says *Not sent — the database refused it*.
+
+## Notifications to a closed phone
+
+A team notice, or a message in a family conversation, reaches the phones of everyone who may read it, with Minutes closed and the screen off: the team's families, coaches and trackers for a notice; the family, the team's coaches and the admins for a conversation; never the person who wrote it. That takes the club's first piece of server-side code, `functions/` (the design is [`GOTSPORT.md`](GOTSPORT.md), *Push notifications* and *The server*), and a few steps once:
+
+1. **Firebase's pay-as-you-go plan (Blaze).** Cloud Functions need it. At one club's volume the cost is expected to be pennies, but it needs a card on file; check Firebase's current pricing before telling anyone a number, and set a budget alert in Google Cloud while you are there.
+2. **Deploy the functions** from a computer, once and after every change to `functions/`:
+   ```
+   npm install -g firebase-tools
+   firebase login
+   firebase use --add            # pick the club's project
+   (cd functions && npm install)
+   firebase deploy --only functions
+   ```
+   That deploys two: `pushNotice` and `pushMessage`. They listen to every database in the project, and answer each from its own data, so a second database for rehearsing rules (below) uses its own phones and never the real club's.
+3. **Rules version 7**, which adds `pushTokens` (each person's phones, readable and writable by that account alone). Paste `database.rules.json` as usual, or `firebase deploy --only database`.
+4. **The web push key.** Firebase console → Project settings → **Cloud Messaging** → *Web Push certificates* → **Generate key pair**. Copy the key into `firebase-config.js` as `window.SOCCER_PUSH_KEY`, commit, and let the site deploy. It is public, not a secret. The app offers notifications as soon as it is set, so set it after step 2.
+5. **Each person turns it on, on each phone:** Settings → **Notifications on this phone** → *Turn on* (Messages offers it too). Parents, players, trackers and coaches alike: it is their own phone, so it needs no role.
+   - **iPhone and iPad** (iOS 16.4 or later) deliver notifications only to a site added to the Home Screen: in Safari, **Share → Add to Home Screen**, open Minutes from the new icon, and turn it on there. The app says so when it is opened in a browser tab.
+   - **Android** and computers: any browser that supports web push, straight from the page.
+
+What it does not do yet: a followed game's goals, a practice or game called off or moved, and club activity still reach a phone only while Minutes is open on it. They are the next jobs for the same sender (`GOTSPORT.md`, *Build order*).
+
+Signing out takes the phone's address down while still signed in, and deletes the browser's subscription, so a phone handed to someone else stops getting her messages. A push that still arrives for an account no longer signed in on the phone (signed out with no signal, say) is shown without its words. `node test/push.js` holds all of this, and who the server tells, for every kind of account.
+
+If nothing arrives: check the functions' logs in the Firebase console (Functions → the function → Logs). A send refused for permission usually means the **Firebase Cloud Messaging API** is switched off for the project in Google Cloud's API library.
 
 ## Deleting a club
 
@@ -488,7 +514,7 @@ Link previews in text messages are scraped without running JavaScript, so each c
 
 ## Hosting on GitHub Pages
 
-Push the folder to a repo, then Settings → Pages → deploy from branch, root. It is all static, so nothing else is needed. Add the site to the home screen on her phone and tablet for a full-screen launch.
+Push the folder to a repo, then Settings → Pages → deploy from branch, root. The site is all static, so nothing else is needed for it (`functions/` is the server's, deployed to Firebase and left off the site). Add the site to the home screen on her phone and tablet for a full-screen launch, with its own icon (`manifest.webmanifest`); on an iPhone that is also what lets it get notifications.
 
 ## Data model
 

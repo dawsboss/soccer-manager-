@@ -21,6 +21,14 @@ window.SOCCER_FIREBASE_CONFIG = {
 // blank and the calendar offers a one-off copy instead. README, "Calendar sync".
 window.SOCCER_CALENDAR_FEED = '';
 
+// Optional: notifications to a closed phone. The public half of the project's web
+// push key pair: Firebase console > Project settings > Cloud Messaging > Web Push
+// certificates > Generate key pair, and copy the key it shows. Not a secret. Set it
+// only once the functions are deployed (README, "Notifications to a closed phone"):
+// the app offers notifications whenever it is filled in, and without the server
+// nothing would ever be sent. Blank, and nothing about them is offered.
+window.SOCCER_PUSH_KEY = '';
+
 // Optional: other databases to point this app at, for trying auth and rules
 // changes somewhere that is not the club with this season's data in it.
 //
