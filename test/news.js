@@ -107,8 +107,8 @@ const has = (D, re) => titles(D).some(t => re.test(t));
     check('a family asking for a place', has(D, /^Asked for a place: Ella$/), true);
     check('a new session a coach made', has(D, /^New session: Finishing with Kim$/), true);
 
-    D.ui.view = 'inbox'; D.render();
-    check('the inbox opens on club activity', /Club activity/.test(D.rendered()), true);
+    D.ui.view = 'notes'; D.render();
+    check('the bell opens on club activity', /Club activity/.test(D.rendered()), true);
     check('opening it marks it read', D.newsUnread(), 0);
     const it = D.newsItems().find(x => x.title === 'New game: G13 Storm v Riverside');
     D.click({ act: 'newsopen', k: it.go });

@@ -164,7 +164,7 @@
     },
     "rulesVersion": {
       ".read": true,
-      ".write": "newData.isNumber() && newData.val() === 8"
+      ".write": "newData.isNumber() && newData.val() === 10"
     },
     "public": {
       "$share": {
@@ -265,6 +265,40 @@
                 ".write": "auth != null && $uid === auth.uid && (auth.uid === $fam || (root.child('workspaces/' + $code + '/teams/' + $tid + '/players/' + root.child('workspaces/' + $code + '/access/teamPlayers/' + $tid + '/' + auth.uid).val() + '/self/' + auth.uid).exists() && root.child('workspaces/' + $code + '/teams/' + $tid + '/players/' + root.child('workspaces/' + $code + '/access/teamPlayers/' + $tid + '/' + auth.uid).val() + '/guardians/' + $fam).exists()) || root.child('workspaces/' + $code + '/access/admins/' + auth.uid).exists() || root.child('workspaces/' + $code + '/access/teamIndex/' + $tid + '/' + auth.uid).val() === 'coach')",
                 ".validate": "newData.isNumber()"
               }
+            },
+            "got": {
+              "$uid": {
+                ".write": "auth != null && $uid === auth.uid && (auth.uid === $fam || (root.child('workspaces/' + $code + '/teams/' + $tid + '/players/' + root.child('workspaces/' + $code + '/access/teamPlayers/' + $tid + '/' + auth.uid).val() + '/self/' + auth.uid).exists() && root.child('workspaces/' + $code + '/teams/' + $tid + '/players/' + root.child('workspaces/' + $code + '/access/teamPlayers/' + $tid + '/' + auth.uid).val() + '/guardians/' + $fam).exists()) || root.child('workspaces/' + $code + '/access/admins/' + auth.uid).exists() || root.child('workspaces/' + $code + '/access/teamIndex/' + $tid + '/' + auth.uid).val() === 'coach')",
+                ".validate": "newData.isNumber()"
+              }
+            }
+          }
+        }
+      }
+    },
+    "staffdm": {
+      "$code": {
+        "$cid": {
+          ".read": "auth != null && ($cid.beginsWith(auth.uid + '~') || $cid.endsWith('~' + auth.uid)) && (root.child('workspaces/' + $code + '/access/admins/' + auth.uid).exists() || root.child('workspaces/' + $code + '/access/coachIndex/' + auth.uid).exists())",
+          "m": {
+            "$id": {
+              ".write": "auth != null && !data.exists() && newData.child('by').val() === auth.uid && ($cid.beginsWith(auth.uid + '~') || $cid.endsWith('~' + auth.uid)) && (root.child('workspaces/' + $code + '/access/admins/' + auth.uid).exists() || root.child('workspaces/' + $code + '/access/coachIndex/' + auth.uid).exists())",
+              ".validate": "newData.hasChildren(['by', 'at', 'text'])",
+              "text": {
+                ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 4000"
+              }
+            }
+          },
+          "seen": {
+            "$uid": {
+              ".write": "auth != null && $uid === auth.uid && ($cid.beginsWith(auth.uid + '~') || $cid.endsWith('~' + auth.uid)) && (root.child('workspaces/' + $code + '/access/admins/' + auth.uid).exists() || root.child('workspaces/' + $code + '/access/coachIndex/' + auth.uid).exists())",
+              ".validate": "newData.isNumber()"
+            }
+          },
+          "got": {
+            "$uid": {
+              ".write": "auth != null && $uid === auth.uid && ($cid.beginsWith(auth.uid + '~') || $cid.endsWith('~' + auth.uid)) && (root.child('workspaces/' + $code + '/access/admins/' + auth.uid).exists() || root.child('workspaces/' + $code + '/access/coachIndex/' + auth.uid).exists())",
+              ".validate": "newData.isNumber()"
             }
           }
         }
@@ -690,6 +724,13 @@
           },
           "$other": {
             ".validate": false
+          }
+        },
+        "mute": {
+          ".read": "auth != null && auth.uid === $uid",
+          "$k": {
+            ".write": "auth != null && auth.uid === $uid",
+            ".validate": "newData.isBoolean() && ($k === 'msg' || $k === 'notice' || $k === 'cal' || $k === 'news')"
           }
         },
         "busy": {

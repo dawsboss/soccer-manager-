@@ -708,6 +708,15 @@ a.btn{display:inline-block;text-decoration:none}
 .bubble .btext{display:block;overflow-wrap:anywhere}
 .bubble .bwhen{display:block;font-size:11.5px;color:var(--ink-soft);margin-top:2px}
 #msgText,#postText{width:100%}
+/* where her message has got to: ◷ waiting, ✓ sent, ✓✓ delivered, ✓✓ read (blue, as phones draw it) */
+.bubble.me[data-act]{cursor:pointer}
+.bubble.me .bwhen{text-align:right}
+.tick{font-weight:700;letter-spacing:-2px;margin-right:2px}
+.tick.wait{letter-spacing:0}
+.tick.read{color:#1F6FD1}
+.lockline{color:var(--ink-soft);font-size:12.5px;text-align:left;padding:0}
+.lockline .linkbtn,.linkbtn.lockline{color:var(--ink-soft);padding:0;font-size:inherit}
+.lock{vertical-align:-1px;margin-right:2px}
 
 /* ---------- team links ---------- */
 .claims{display:flex;flex-direction:column;gap:10px;margin-top:8px}
@@ -1093,3 +1102,15 @@ button.ev:active{filter:brightness(.92)}
 
 /* Squad: the team's set-up under the players */
 .sechead{margin:10px 0 -4px}
+
+/* New message: a searchable list, tap to choose one or several (build 107) */
+.pickrow{grid-template-columns:minmax(0,1fr) auto;padding:7px 11px}
+.pickrow + .pickrow{margin-top:-2px}
+#msgFind{width:100%;font:inherit;font-size:16px;padding:10px 12px;border:1px solid var(--line);border-radius:9px;background:#fff;margin-bottom:10px}
+.pickbox{width:22px;height:22px;border:2px solid var(--line);border-radius:6px;display:inline-flex;align-items:center;justify-content:center;font-weight:700;font-size:13px;color:#fff}
+.pickrow[aria-pressed="true"]{border-color:var(--field-deep);background:var(--field-wash)}
+.pickrow[aria-pressed="true"] .pickbox{background:var(--field-deep);border-color:var(--field-deep)}
+.pickfoot{position:sticky;bottom:calc(-20px - env(safe-area-inset-bottom));background:var(--card);padding:10px 0 4px;margin-top:6px;border-top:1px solid var(--line)}
+.pickgroups{flex-wrap:nowrap;overflow-x:auto;margin:0 0 10px;padding-bottom:2px;-webkit-overflow-scrolling:touch}
+.pickgroups .chip{flex:0 0 auto;white-space:nowrap}
+.pickgroups .chip[aria-pressed="true"] .muted{color:inherit;opacity:.8}

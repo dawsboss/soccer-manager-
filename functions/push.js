@@ -95,10 +95,14 @@ function threadReaders(f, fam) {
   return { staff, family };
 }
 
-/* Every phone of each person, as one message each. */
-async function messagesFor(env, people, data) {
+/* Every phone of each person, as one message each, leaving out whoever has
+   turned this kind off (people/{uid}/mute/{topic}, hers alone in the rules,
+   set from Settings on any of her phones): 'msg' a conversation, 'notice' a
+   team notice, 'cal' a change to her calendar. Her phones aren't even read. */
+async function messagesFor(env, people, data, topic) {
   const out = [];
-  const lists = await Promise.all([...people].map(async u => [u, await env.get('pushTokens/' + u)]));
+  const muted = await Promise.all([...people].map(async u => [u, topic ? (await env.get('people/' + u + '/mute/' + topic)) === true : false]));
+  const lists = await Promise.all(muted.filter(([, m]) => !m).map(async ([u]) => [u, await env.get('pushTokens/' + u)]));
   for (const [u, toks] of lists)
     for (const token of keys(toks))
       out.push({
@@ -153,7 +157,7 @@ async function onNotice(env, params, v) {
     title: `${v.urgent ? 'Urgent · ' : ''}${tn} · ${v.byName || 'a coach'}`,
     body: short(v.text), tag: id, code, hash: '#/messages', urgent: v.urgent ? '1' : ''
   });
-  const list = await messagesFor(env, people, data);
+  const list = await messagesFor(env, people, data, 'notice');
   return { to: [...people].sort(), ...(await deliver(env, list)) };
 }
 
@@ -172,8 +176,34 @@ async function onMessage(env, params, v) {
     ? { title: `${famName} · ${tn}`, body: short(v.by === fam ? v.text : `${who}: ${v.text}`) }
     : { title: `${who} · ${tn}`, body: short(v.text) };
   const people = new Set([...staff, ...family]);
-  const list = await messagesFor(env, people, u => ({ ...data(u), tag: id, code, hash: `#/messages/${tid}/${fam}`, urgent: '' }));
+  const list = await messagesFor(env, people, u => ({ ...data(u), tag: id, code, hash: `#/messages/${tid}/${fam}`, urgent: '' }), 'msg');
   return { to: [...people].sort(), ...(await deliver(env, list)) };
+}
+
+/* Two colleagues, staffdm/{code}/{a}~{b}/m/{id} (build 106): the rule's
+   readers are those two, while each is an admin or a coach of some team
+   (coachIndex). So the one person told is the other of the pair, and only if
+   the author is one of the pair and both are still staff. The id is checked
+   to be exactly two plain uids: a made-up one names nobody. */
+async function onStaff(env, params, v) {
+  const none = { to: [], sent: 0, failed: 0, removed: [] };
+  if (!v || typeof v !== 'object' || !v.by || typeof v.text !== 'string' || !v.text || !params || !params.code || !params.cid || !params.id) return none;
+  const { code, cid, id } = params;
+  const pair = String(cid).split('~');
+  if (pair.length !== 2 || pair.some(u => !/^[^.#$\[\]\/~]{1,128}$/.test(u)) || pair[0] === pair[1] || !pair.includes(v.by)) return none;
+  const W = 'workspaces/' + code;
+  const [retired, admins, coachIndex] = await Promise.all([
+    env.get('retired/' + code), env.get(W + '/access/admins'), env.get(W + '/access/coachIndex')
+  ]);
+  if (retired) return none;
+  const staff = u => has(admins, u) || has(coachIndex, u);
+  if (!pair.every(staff)) return none;
+  const other = pair.find(u => u !== v.by);
+  const people = new Set([other]);
+  const list = await messagesFor(env, people, () => ({
+    title: v.byName || 'A colleague', body: short(v.text), tag: id, code, hash: `#/messages/with/${v.by}`, urgent: ''
+  }), 'msg');
+  return { to: [other], ...(await deliver(env, list)) };
 }
 
 /* ---------------- a change to the calendar ---------------- */
@@ -294,7 +324,7 @@ async function calChange(env, code, before, it) {
   const who = by ? memberName(f, by) : '';
   const list = await messagesFor(env, people, () => ({
     title, body: short(body + (who ? ' · ' + who : '')), tag: 'cal:' + code + ':' + said, code, hash, urgent: news.urgent ? '1' : ''
-  }));
+  }), 'cal');
   return { to: [...people].sort(), news: news.kind, by, ...(await deliver(env, list)) };
 }
 
@@ -325,4 +355,4 @@ async function onGameField(env, params, field, was) {
   return calChange(env, params.code, before, after);
 }
 
-module.exports = { onNotice, onMessage, onEntry, onGameField, calNews, calSig, whenOf, teamReaders, noticeReaders, threadReaders, teamFacts, BODY_MAX, BATCH, SOON_DAYS, GAME_FIELDS };
+module.exports = { onNotice, onMessage, onStaff, onEntry, onGameField, calNews, calSig, whenOf, teamReaders, noticeReaders, threadReaders, teamFacts, BODY_MAX, BATCH, SOON_DAYS, GAME_FIELDS };

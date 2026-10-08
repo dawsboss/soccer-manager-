@@ -8,7 +8,7 @@ before this point lives only in the git log.
 
 ---
 
-## Two links that could run someone else's code — 2026-10-08 (build 106)
+## Two links that could run someone else's code — 2026-10-08 (build 109)
 
 Found looking for what else needed locking down. `esc()` keeps a link inside
 its quotes, but it cannot stop a `javascript:` address, which runs on this
@@ -25,7 +25,7 @@ site when tapped: the site where a coach's sign-in and the club's copy live.
 
 ---
 
-## My calendar's feed comes from the server, and leaves with the role — 2026-10-08 (build 106)
+## My calendar's feed comes from the server, and leaves with the role — 2026-10-08 (build 109)
 
 The third job off SERVER.md's list. A person's calendar feed (one address,
 every club) was built by her own phone from what it held, so it was only as
@@ -66,7 +66,7 @@ her own children there, not the names to scrub them with.
 
 ---
 
-## Access taken away stays taken away, signal or no signal — 2026-10-08 (build 106)
+## Access taken away stays taken away, signal or no signal — 2026-10-08 (build 109)
 
 The owner asked whether someone whose access is withdrawn can turn off Wi-Fi
 and mobile data and keep the club. Online, the answer was already no: the
@@ -150,6 +150,117 @@ with the right role happened to open the app (`rules.js`, gap 5).
 
 No app or rules change, so no new build: it starts working when the
 functions deploy on merge.
+
+---
+
+## New message shows what there is to choose from — 2026-10-08 (build 108)
+
+The owner searched a team and got *Nobody matches*, with no idea what was
+there: the list holds only parents who have signed in and been linked to
+their child, and that team's had not.
+
+- **Teams as chips** across the top of New message (and *Coaches and
+  admins*), each with how many people it holds, so the options are on screen
+  before she guesses a name. One tap narrows the list to it, and *Choose all*
+  takes everyone in it.
+- **Who can't be written to yet, and why.** Under a team, or for a search
+  that names a child or a team, the children whose parents have not signed in
+  are listed by name with where to invite them (Squad → Parents, or the team
+  link). Staff only: a family's phone never lists other children.
+- **A search that names a team but finds nobody** says *Nobody on U11 Storm
+  you can message yet*, not *Nobody matches*.
+
+## Writing to anyone, or to several people at once — 2026-10-08 (build 107)
+
+The owner: messages to teams are nice, but writing to specific people is
+needed too, and choosing them was a tough screen with a lot of people (the
+team picker turned into a long dropdown).
+
+**New message is one searchable list** of everyone she may write to: the
+families on the teams she coaches (an admin, every team), the club's other
+coaches and admins, or for a family the coaches of each of her teams. Type
+any part of a name, a child's name, a team or a role (*flight parent*,
+*coach*, *ella*); every word has to match. The people she talks to most
+recently come first. No team to choose before a person.
+
+**Tap one person, or several.** One opens the conversation. Several get one
+message, written once, sent into each person's own conversation: nobody sees
+who else got it, replies come back where they always did, and a family's
+copy is read by that team's coaches and the admins exactly as if it had been
+sent alone. *Choose all N* takes everyone a search found. Each recipient is
+checked in the handler as a single send would be, so someone no longer hers
+to write to is left out rather than sent to.
+
+No rule changes: every message is the same write a single one would be.
+
+## Each kind of notification can be turned off — 2026-10-08 (build 106)
+
+The owner: *notifications should be able to be turned off.* Until now the
+only switch was per phone, and only for a closed phone; the pop-ups, the
+banner over the screen and the buzz could not be stopped at all.
+
+**What notifies you**, on the Notifications screen and in Settings: Messages,
+Team notices, Games and practices (with training sessions), and Club
+activity (only for those who get it), each On or Off. Off means no pop-up,
+no buzz, no banner and no push to a locked phone, on every phone she uses;
+the item still waits, counted, on Messages or under the bell. A game she
+follows with *Notify me* is still its own choice, on the game.
+
+Kept at `people/{uid}/mute/{kind}`, readable and writable by her alone, one
+yes-or-no per kind (rules version 10). `functions/push.js` reads each
+reader's switch before it reads her phones, so a muted kind costs no token
+lookup either. A refusal (rules not published yet) is taken back off the
+screen and said.
+
+## Messages get a button of their own, and coaches can write first — 2026-10-08 (build 106)
+
+The owner couldn't find how to start a conversation, and when asked, said
+coaches and admins should be able to start one, that messages need a place
+of their own rather than sharing the bell with notifications, and that a
+message should say where it has got to.
+
+- **Two buttons up top.** A speech bubble for **Messages** (conversations
+  and team notices, `#/messages`), and the bell for **Notifications**
+  (changes to her calendar in any club, and club activity,
+  `#/notifications`). Each has its own count. A message from another club is
+  on Messages too, under *From your other clubs*.
+- **New message.** A coach picks a family on a team she coaches; an admin, a
+  family on any team. It is the same conversation the family would have
+  started, so it is still read by every coach of the team and the admins,
+  never one coach alone. The rules already let staff write there; the
+  handler now checks the family is on that team. A family's *Coaches of …*
+  row is unchanged, and a player with her own sign-in still reads her
+  family's conversation, which is where a coach asks about an injury.
+- **Coaches and admins talk to each other.** `staffdm/{code}/{a}~{b}`, one
+  conversation per pair, the two uids sorted, readable and writable by those
+  two only while each is an admin or on `coachIndex`. No admin reads anyone
+  else's. A rule cannot list somebody's conversations, but it can answer
+  for one pair, so each phone listens once per colleague and nothing has to
+  be created first: the first message works offline through the outbox like
+  any other.
+- **Where a message has got to.** Under each of hers: ◷ waiting for a signal
+  (or sending), ✓ sent (the club's database has it), ✓✓ delivered (somebody
+  else's phone has it), and a blue ✓✓ read. Tapping one says who has it and
+  who read it, and when. Delivered is a new marker, `got/{uid}`, written by
+  the receiving phone for itself beside `seen/{uid}`. Both are written as the
+  later of now and the newest message they cover, so a phone whose clock is
+  behind the sender's still counts it.
+- **A lock, saying exactly how private.** Every conversation names who can
+  read it, and *How private?* says: kept to those people by the database's
+  rules, encrypted on the way (HTTPS) and where Google stores it, **not
+  end-to-end encrypted** (whoever runs the club's Firebase project can read
+  the database), a copy on each phone until sign-out, and nothing editable.
+  The screen never claims more than that.
+- **Push.** `pushStaffMessage` sends a colleague's message to the other of
+  the pair, only while both are staff and the author is one of them
+  (`test/push.js`).
+
+Rules version 9 (`got` under `dm`, and the `staffdm` block). Until it is
+published, a coach writing first to a family works (the old rules already
+allowed it), but colleagues' messages are refused and kept with *Not sent*,
+and the delivered tick never comes. Not built: group conversations among
+staff, and hearing colleagues' messages from a club that isn't open (push
+covers a closed phone).
 
 ---
 
