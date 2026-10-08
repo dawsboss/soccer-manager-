@@ -174,8 +174,7 @@ under **Before families come on** can be done without disturbing anyone.
     ```
     "owners": { "$uid": { ".write": "auth != null
         && root.child(W + 'access/admins/' + $uid).exists()
-        && ((!data.parent().exists() && $uid === auth.uid
-             && !root.child(W + 'access/index').exists())               // a brand-new club only
+        && ((!data.parent().exists() && $uid === auth.uid)            // the first claim
             || (root.child(W + 'access/owners/' + auth.uid).exists()
                 && (!data.exists() || $uid === auth.uid)))" } },     // add one; step down
     "admins": {
@@ -198,12 +197,13 @@ under **Before families come on** can be done without disturbing anyone.
     that predate this go on working when the rules are pasted before the app.
   - **Getting one.** A new club writes `owners/{me}` straight after
     `admins/{me}` (`createClub()` and the bootstrap in `claimadmin`, and
-    `rules.js`'s brand-new-club walk), so whoever starts a club owns it. That
-    write has to come before `index/{me}`: the first-claim clause holds only
-    while the club has no `access/index`, which every club that already exists
-    has, so no admin of an existing club can claim it, by the app or by hand.
-    An existing club is given its owner in the console (decided below); until
-    then the bridge keeps it on today's rules.
+    `rules.js`'s brand-new-club walk), so whoever starts a club owns it. A club
+    that already exists shows its admins *Become the club owner* on Club admin
+    while it has none, and the first admin to tap it is the owner. Every admin
+    is told at once (the notification below), so a grab does not go unseen,
+    and it is no worse than today, when any admin can already remove all the
+    others. Until someone claims it, the bridge keeps the club on today's
+    rules.
   - **Writes at the right depth.** `pushAll()` writes `access/admins` whole
     today; once a club has an owner that is refused, so it has to write one
     admin at a time (CLAUDE.md, *Write at the depth the rule sits at*), and
@@ -234,22 +234,21 @@ under **Before families come on** can be done without disturbing anyone.
 - **Decided (the owner, 2026-10-08):**
   1. A list of owners, not exactly one.
   2. Admins still appoint admins.
-  3. The existing club's owner is the app owner, set by hand. *Owner* step,
-     after the rules are published: Firebase console → Realtime Database →
-     `workspaces/{code}/access/owners/{her uid}` = `true` (her uid is the one
-     under `appOwners`; she must already be in that club's `access/admins`,
-     which the rule requires of every owner). Add a second owner from the app
-     afterwards.
+  3. The existing club's owner is the app owner, by the claim button rather
+     than the console (the owner, later the same day). *Owner* step, the day
+     the rules are published: open Club admin and tap *Become the club owner*
+     before anyone else does, then add a second owner from People.
   4. Nothing else is owner-only for now: removing admins and their index
      entries, owners, and retiring the club.
 - **Done when:** `test/rules.js` refuses an admin removing another admin, an
-  owner, or another admin's index entry, or claiming the owner of a club
-  that already exists; lets an owner do all three to a
+  owner, another admin's index entry, or claiming a club that already has an
+  owner; lets an owner do all three to a
   non-owner; lets an admin appoint and step down; walks a brand-new club to
   an owner; and keeps today's behaviour on a club with no `owners`.
   `test/access.js` shows every admin and owner, the removed one included,
-  told of each admin or owner change, nobody else told, and the
-  `clubAudit` record written. The People screen offers *Remove admin* to
+  told of each admin or owner change (a claim included), nobody else told,
+  and the `clubAudit` record written. The claim button shows only to admins
+  of a club with no owner, and the handler checks both. The People screen offers *Remove admin* to
   owners only, and the handler checks it (as `retireclub` checks
   `canAdmin()`).
 
