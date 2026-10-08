@@ -156,6 +156,14 @@ under **Before families come on** can be done without disturbing anyone.
     entry of another admin, which only an owner may*. `retired/$code` becomes
     owner-only once the club has an owner (the same bridge). Raise the rules
     version.
+  - **Both trees (since the move to `orgs/`).** The same hole is on
+    `orgs/{code}/access/admins`, so the owner goes on both:
+    `workspaces/{code}/access/owners` and `orgs/{code}/access/owners`, the
+    clauses above written once in `tools/rules-source.json` (never in
+    `database.rules.json`, which `node tools/rules-build.js` writes), and
+    `moveClub` carries `owners` across with `admins`. On `orgs/` the phone's
+    diary is `orgs/{code}/log`, not `access/log`. Once every club has moved,
+    only the `orgs/` half is left.
   - **The bridge.** A club with no `owners` keeps exactly today's rules: one
     clause on `admins` that switches off the moment `owners` exists. Clubs
     that predate this go on working when the rules are pasted before the app.
