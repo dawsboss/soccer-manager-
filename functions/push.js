@@ -95,10 +95,14 @@ function threadReaders(f, fam) {
   return { staff, family };
 }
 
-/* Every phone of each person, as one message each. */
-async function messagesFor(env, people, data) {
+/* Every phone of each person, as one message each, leaving out whoever has
+   turned this kind off (people/{uid}/mute/{topic}, hers alone in the rules,
+   set from Settings on any of her phones): 'msg' a conversation, 'notice' a
+   team notice, 'cal' a change to her calendar. Her phones aren't even read. */
+async function messagesFor(env, people, data, topic) {
   const out = [];
-  const lists = await Promise.all([...people].map(async u => [u, await env.get('pushTokens/' + u)]));
+  const muted = await Promise.all([...people].map(async u => [u, topic ? (await env.get('people/' + u + '/mute/' + topic)) === true : false]));
+  const lists = await Promise.all(muted.filter(([, m]) => !m).map(async ([u]) => [u, await env.get('pushTokens/' + u)]));
   for (const [u, toks] of lists)
     for (const token of keys(toks))
       out.push({
@@ -153,7 +157,7 @@ async function onNotice(env, params, v) {
     title: `${v.urgent ? 'Urgent · ' : ''}${tn} · ${v.byName || 'a coach'}`,
     body: short(v.text), tag: id, code, hash: '#/messages', urgent: v.urgent ? '1' : ''
   });
-  const list = await messagesFor(env, people, data);
+  const list = await messagesFor(env, people, data, 'notice');
   return { to: [...people].sort(), ...(await deliver(env, list)) };
 }
 
@@ -172,7 +176,7 @@ async function onMessage(env, params, v) {
     ? { title: `${famName} · ${tn}`, body: short(v.by === fam ? v.text : `${who}: ${v.text}`) }
     : { title: `${who} · ${tn}`, body: short(v.text) };
   const people = new Set([...staff, ...family]);
-  const list = await messagesFor(env, people, u => ({ ...data(u), tag: id, code, hash: `#/messages/${tid}/${fam}`, urgent: '' }));
+  const list = await messagesFor(env, people, u => ({ ...data(u), tag: id, code, hash: `#/messages/${tid}/${fam}`, urgent: '' }), 'msg');
   return { to: [...people].sort(), ...(await deliver(env, list)) };
 }
 
@@ -198,7 +202,7 @@ async function onStaff(env, params, v) {
   const people = new Set([other]);
   const list = await messagesFor(env, people, () => ({
     title: v.byName || 'A colleague', body: short(v.text), tag: id, code, hash: `#/messages/with/${v.by}`, urgent: ''
-  }));
+  }), 'msg');
   return { to: [other], ...(await deliver(env, list)) };
 }
 
@@ -320,7 +324,7 @@ async function calChange(env, code, before, it) {
   const who = by ? memberName(f, by) : '';
   const list = await messagesFor(env, people, () => ({
     title, body: short(body + (who ? ' · ' + who : '')), tag: 'cal:' + code + ':' + said, code, hash, urgent: news.urgent ? '1' : ''
-  }));
+  }), 'cal');
   return { to: [...people].sort(), news: news.kind, by, ...(await deliver(env, list)) };
 }
 

@@ -164,7 +164,7 @@
     },
     "rulesVersion": {
       ".read": true,
-      ".write": "newData.isNumber() && newData.val() === 9"
+      ".write": "newData.isNumber() && newData.val() === 10"
     },
     "public": {
       "$share": {
@@ -724,6 +724,13 @@
           },
           "$other": {
             ".validate": false
+          }
+        },
+        "mute": {
+          ".read": "auth != null && auth.uid === $uid",
+          "$k": {
+            ".write": "auth != null && auth.uid === $uid",
+            ".validate": "newData.isBoolean() && ($k === 'msg' || $k === 'notice' || $k === 'cal' || $k === 'news')"
           }
         },
         "busy": {

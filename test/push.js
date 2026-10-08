@@ -108,8 +108,8 @@ const toUid = (S, u) => S.sent().filter(m => m.data.uid === u);
     check('to that phone', m.token, tok('mum'));
     check('sent at once, kept for a day at most', JSON.stringify(m.webpush.headers), JSON.stringify({ Urgency: 'high', TTL: '86400' }));
     check('every value a string, as Cloud Messaging requires', Object.values(m.data).every(v => typeof v === 'string'), true);
-    const reads = S.reads.filter(p => !/^(workspaces\/CLUB\/|retired\/CLUB$|pushTokens\/)/.test(p));
-    deepEq('it read nothing but this club and the phones it sent to', reads, []);
+    const reads = S.reads.filter(p => !/^(workspaces\/CLUB\/|retired\/CLUB$|pushTokens\/|people\/[^/]+\/mute\/notice$)/.test(p));
+    deepEq('it read nothing but this club, each reader\'s switch for notices, and the phones it sent to', reads, []);
     check('and no phone of anyone it did not send to', S.reads.filter(p => /^pushTokens\/(coach|other|dad|newbie|stale)$/.test(p)).length, 0);
   }
   {
@@ -136,8 +136,8 @@ const toUid = (S, u) => S.sent().filter(m => m.data.uid === u);
     const m = toUid(S, 'other')[0];
     check('titled with who wrote it', m.data.title, 'Jaz');
     check('opening the conversation with her', m.data.hash, '#/messages/with/coach');
-    const reads = S.reads.filter(p => !/^(workspaces\/CLUB\/access\/(admins|coachIndex)$|retired\/CLUB$|pushTokens\/other$)/.test(p));
-    deepEq('it read the two tables, and her phones, nothing else', reads, []);
+    const reads = S.reads.filter(p => !/^(workspaces\/CLUB\/access\/(admins|coachIndex)$|retired\/CLUB$|pushTokens\/other$|people\/other\/mute\/msg$)/.test(p));
+    deepEq('it read the two tables, her switch for messages, and her phones, nothing else', reads, []);
   }
   {
     const S = server();
@@ -207,6 +207,24 @@ const toUid = (S, u) => S.sent().filter(m => m.data.uid === u);
     S.put('workspaces/CLUB/access/teamParents/t1/coach', 'p2');
     await S.fire('board/CLUB/t1/n4', { by: 'adm', byName: 'Ada', at: 5, text: 'x' });
     check('a coach with a child on her team: once per phone', toUid(S, 'coach').length, 2);
+  }
+
+  console.log('\n--- a kind she turned off ---');
+  {
+    // people/{uid}/mute/{kind}: hers alone in the rules; the server reads it before reading her phones
+    const S = server({ people: { mum: { mute: { notice: true } }, coach: { mute: { msg: true } }, other: { mute: { msg: true } } } });
+    await S.fire('board/CLUB/t1/n1', { by: 'coach', byName: 'Jaz', at: 5, text: 'Bring water' });
+    check('notices off: she gets none', toUid(S, 'mum').length, 0);
+    check('and her phones are not even looked up', S.reads.includes('pushTokens/mum'), false);
+    check('everyone else on the team still does', owners(S).join(), 'adm,ella,rosamum,trk');
+    await S.fire('dm/CLUB/t1/mum/m/x1', { by: 'adm', byName: 'Ada', at: 5, text: 'About fees' });
+    check('but her conversation still reaches her: only notices are off', toUid(S, 'mum').length, 1);
+    check('the coach, with messages off, is not pushed it', toUid(S, 'coach').length, 0);
+    await S.fire('staffdm/CLUB/coach~other/m/s1', { by: 'coach', byName: 'Jaz', at: 5, text: 'Thursday?' });
+    check('nor a colleague with messages off', toUid(S, 'other').length, 0);
+    const T = server({ people: { mum: { mute: { notice: false } } } });
+    await T.fire('board/CLUB/t1/n1', { by: 'coach', byName: 'Jaz', at: 5, text: 'Bring water' });
+    check('turned back on (false), she is told again', toUid(T, 'mum').length, 1);
   }
 
   console.log('\n--- what is never sent ---');
@@ -298,6 +316,7 @@ const toUid = (S, u) => S.sent().filter(m => m.data.uid === u);
     const S = calServer();
     const r = (await S.fire(W + 'teams/t1/events/e1/called', 'cancelled')).pushEntry;
     check('tomorrow\'s practice called off is news', r.news, 'called');
+    check('read against each person\'s switch for calendar changes', S.reads.includes('people/mum/mute/cal'), true);
     deepEq('to the whole team: coach, tracker, families, its player', r.to, ['coach', 'ella', 'mum', 'rosamum', 'trk']);
     check('not the admins, whom club activity tells', toUid(S, 'adm').length, 0);
     check('nor another team, nor someone with no role on it', toUid(S, 'other').length + toUid(S, 'dad').length + toUid(S, 'newbie').length, 0);

@@ -11,7 +11,7 @@ const BUILT = '2026-10-07';
    never pasted look exactly like a coach with no signal: "saved on this phone
    only", one feature at a time. test/rules.js holds the two numbers together
    and fails when the rules change without this going up. */
-const RULES_VERSION = 9;
+const RULES_VERSION = 10;
 /* index.html carries the build it was published with. If this file is newer, the
    browser handed us a cached page — the exact failure that has eaten hours. */
 const pageBuild = () => {
@@ -2418,6 +2418,7 @@ function rootSet(p, v) {
    a phone somebody else may sign in on next. */
 // SERVER.md: the pop-up and the bell come from this page; functions/push.js pushes the same news to a closed phone.
 function watchMessages() {
+  watchMute();
   const key = me && rtdb && fb && wsCode() && !needsSignIn() ? clubKey() + '|' + me.uid : null;
   if (key !== (msgFor && msgFor.key)) {
     for (const off of Object.values(msgSubs)) { try { off(); } catch (e) { } }
@@ -2484,7 +2485,7 @@ function onMsgs(p, w, v) {
   markGot(w);
   saveMsgs();
   // an alert each, which pops up as before and also waits over the screen until she opens it
-  for (const x of fresh) pushAlert({ id: 'm:' + x.id, code: msgFor.code, kind: 'msg', urgent: x.urgent, title: x.title, body: x.body,
+  for (const x of fresh) pushAlert({ id: 'm:' + x.id, code: msgFor.code, kind: 'msg', topic: w.kind === 'board' ? 'notice' : 'msg', urgent: x.urgent, title: x.title, body: x.body,
     hash: w.kind === 'board' ? '#/messages' : w.kind === 'sd' ? `#/messages/with/${sdOther(w.cid)}` : `#/messages/${w.tid}/${x.fam || w.fam}` });
   msgPaint();
 }
@@ -2868,6 +2869,77 @@ function maybePushOpen() {
   location.reload();
 }
 
+/* ---- what notifies her ---- */
+/* Four kinds, each on unless she turns it off: conversations, team notices,
+   changes to her games and practices (and training sessions), and club
+   activity. Off means no pop-up, no buzz, no banner over the screen and no
+   notification on a closed phone; it still waits, counted, on Messages or
+   under the bell. Kept at people/{uid}/mute/{kind}, hers alone in the rules,
+   so it holds on all her phones and functions/push.js reads it before
+   pushing. A copy on the phone answers while there is no signal. */
+const MUTE_KINDS = [
+  ['msg', 'Messages', 'Conversations with families, coaches and admins'],
+  ['notice', 'Team notices', 'What the coaches post to the team'],
+  ['cal', 'Games and practices', 'Called off, back on, moved or new, and training sessions'],
+  ['news', 'Club activity', 'Changes on teams across the club']
+];
+const LS_MUTE = 'sm.mute.v1';
+let mute = { uid: null, v: {} }, muteOff = null;
+function muteHere() {
+  if (!me) return {};
+  if (mute.uid !== me.uid) {
+    mute = { uid: me.uid, v: {} };
+    try { const v = JSON.parse(localStorage.getItem(LS_MUTE + ':' + me.uid) || 'null'); if (v && typeof v === 'object') mute.v = v; } catch (e) { }
+  }
+  return mute.v;
+}
+const muted = k => !!k && muteHere()[k] === true;
+function watchMute() {
+  const uid = me && rtdb ? me.uid : null;
+  if ((muteOff && muteOff.uid) === uid) return;
+  if (muteOff) { try { muteOff.off(); } catch (e) { } muteOff = null; }
+  if (!uid) return;
+  const { db, mod } = rtdb;
+  muteOff = { uid, off: null };
+  const off = mod.onValue(mod.ref(db, `people/${uid}/mute`), sn => {
+    if (!me || me.uid !== uid) return;
+    muteHere();
+    const v = sn.val() || {};
+    mute.v = Object.fromEntries(MUTE_KINDS.map(([k]) => [k, v[k] === true]).filter(([, x]) => x));
+    try { localStorage.setItem(LS_MUTE + ':' + uid, JSON.stringify(mute.v)); } catch (e) { }
+  }, () => { });
+  if (muteOff) muteOff.off = typeof off === 'function' ? off : () => { };
+}
+function setMute(k, off) {
+  if (!me || !MUTE_KINDS.some(([x]) => x === k)) return;
+  const uid = me.uid, was = muteHere()[k] === true;
+  if (off) mute.v[k] = true; else delete mute.v[k];
+  try { localStorage.setItem(LS_MUTE + ':' + uid, JSON.stringify(mute.v)); } catch (e) { }
+  render();
+  if (!rtdb) { toast('Saved on this phone. Sign in to a club for it to reach your other phones'); return; }
+  rootPut(`people/${uid}/mute/${k}`, !!off).catch(err => {
+    if (!me || me.uid !== uid) return;
+    if (was) mute.v[k] = true; else delete mute.v[k];
+    try { localStorage.setItem(LS_MUTE + ':' + uid, JSON.stringify(mute.v)); } catch (e) { }
+    render();
+    toast(/permission|denied/i.test((err && (err.code || err.message)) || '')
+      ? 'Not saved: the database refused it. Are the rules (version ' + RULES_VERSION + ') published?' : 'Not saved');
+  });
+}
+/* The kinds that can reach her at all: no Club activity switch for a parent,
+   who never hears any. */
+function muteCard() {
+  if (!me) return '';
+  const kinds = MUTE_KINDS.filter(([k]) => k === 'news' ? newsFor() : true);
+  return `<div class="card"><h2 style="margin-bottom:4px">What notifies you</h2>
+    <p class="muted" style="margin:0 0 8px">Off means no pop-up, no buzz and no notification on a locked phone, on every phone you use. It still waits for you${kinds.some(([k]) => k === 'msg' || k === 'notice') ? ' on Messages or' : ''} under the bell.</p>
+    <div class="plist">${kinds.map(([k, name, sub]) => {
+      const off = muted(k);
+      return `<div class="prow" style="grid-template-columns:minmax(0,1fr) auto"><span style="min-width:0"><span class="pname">${name}</span><span class="psub">${sub}</span></span>
+        <span class="chips" style="flex-wrap:nowrap"><button class="chip" type="button" data-act="muteset" data-k="${k}" data-v="0" aria-pressed="${!off}">On</button><button class="chip" type="button" data-act="muteset" data-k="${k}" data-v="1" aria-pressed="${off}">Off</button></span></div>`;
+    }).join('')}</div></div>`;
+}
+
 function pushCard(where) {
   if (!me) return '';
   const sup = pushSupport();
@@ -2897,7 +2969,7 @@ function viewNotes() {
   const cards = (me ? alertsCard('notes') : '') + (newsFor() ? newsCard() : '');
   return `<div class="stack"><h2>Notifications</h2>
     ${cards || `<div class="empty"><strong>Nothing new</strong>Changes to your games and practices, in any of your clubs${newsFor() ? ', and club activity' : ''}, show up here.</div>`}
-    ${pushCard('notes')}</div>`;
+    ${pushCard('notes')}${muteCard()}</div>`;
 }
 function viewInbox() {
   const other = me ? alertsCard('msgs') : '';
@@ -12009,6 +12081,7 @@ function sessNews() {
     news.push(['Cancelled a time', String(seen[k])]);
   }
   try { localStorage.setItem(lsk, JSON.stringify(now)); } catch (e) { }
+  if (muted('cal')) return;
   for (const [title, body] of news.slice(0, 3)) ping(title, body, 'minutes-sess-' + title + body);
   if (news.length > 3) ping('Training sessions', `${news.length - 3} more changes`, 'minutes-sess-more');
 }
@@ -14279,9 +14352,12 @@ const clubNameOf = code => code === wsCode() ? ((acc().org || {}).name || 'This 
 function pushAlert(a) {
   alertsHere();
   if (!alerts.uid || alerts.list.some(x => x.id === a.id)) return;
-  const x = { ...a, body: String(a.body || '').slice(0, 160), at: nowMs(), read: false, shut: false };
+  // a kind she turned off is kept to read, and nothing more: no banner, no pop-up
+  const quiet = muted(a.topic || (a.kind === 'cal' ? 'cal' : ''));
+  const x = { ...a, body: String(a.body || '').slice(0, 160), at: nowMs(), read: false, shut: quiet };
   alerts.list = [x, ...alerts.list].slice(0, ALERT_MAX);
   saveAlerts();
+  if (quiet) return;
   ping(x.code === wsCode() ? x.title : `${clubNameOf(x.code)} · ${x.title}`, x.body, 'minutes-alert-' + x.id, x.urgent ? [200, 80, 200, 80, 200] : [150, 60, 150]);
 }
 const alertsUnread = () => alertsHere().list.filter(x => !x.read && x.kind === 'cal').length;
@@ -14404,7 +14480,7 @@ function elseMsgNews(p) {
   elsePrimed[p] = new Set(items.map(x => x.id));
   if (!known) return;
   for (const x of items) if (!known.has(x.id) && x.by !== me.uid && !x.seen)
-    pushAlert({ id: 'm:' + x.id, code: elseMsg[p].code, kind: 'msg', urgent: x.urgent, title: x.title, body: x.body, hash: x.hash });
+    pushAlert({ id: 'm:' + x.id, code: elseMsg[p].code, kind: 'msg', topic: elseMsg[p].kind === 'board' ? 'notice' : 'msg', urgent: x.urgent, title: x.title, body: x.body, hash: x.hash });
 }
 /* Unread in her other clubs, as each club's own inbox would count it: a
    notice each, a conversation once however many are waiting in it. */
@@ -14657,6 +14733,7 @@ function viewSetup() {
       : '<p class="muted" style="margin-bottom:0">Signed out, everything stays on this device. Sign in to share it with your club.</p>'}</div>
 
     ${pushCard('settings')}
+    ${muteCard()}
 
     <div class="card"><h2 style="margin-bottom:8px">Club</h2>
       <p class="muted" style="margin-top:0">Firebase config is ${cfgOk ? 'in place' : 'not filled in — see README.md'}.</p>
@@ -15140,6 +15217,7 @@ function clubNews() {
   const at = nowMs();
   const items = [...out.map((x, i) => ({ id: at + '-' + i, at: at + i / 1000, ...x })).reverse(), ...newsItems()].slice(0, NEWS_KEEP);
   keepStored(newsKey(LS_NEWS), JSON.stringify(items));
+  if (muted('news')) return;
   for (const x of out.slice(0, 3)) ping(x.title, x.body, 'minutes-club-' + x.title);
   if (out.length > 3) ping('Club activity', `${out.length - 3} more`, 'minutes-club-more');
 }
@@ -17885,6 +17963,8 @@ function onAct(e) {
   if (a === 'msgall') { ui.msgAll = true; render(); return; }
   // anyone signed in, for her own phone: the rule is hers alone, so nothing here needs a role
   if (a === 'pushon') { pushTurnOn(); return; }
+  // hers alone, for her own account: nothing here needs a role
+  if (a === 'muteset') { setMute(d.k, d.v === '1'); return; }
   if (a === 'pushoff') { pushTurnOff(); toast('Notifications are off for this phone'); return; }
   if (a === 'msgalerts') {
     try { if (typeof Notification !== 'undefined') Notification.requestPermission().then(() => render(), () => { }); } catch (e) { }

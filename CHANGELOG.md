@@ -8,6 +8,25 @@ before this point lives only in the git log.
 
 ---
 
+## Each kind of notification can be turned off — 2026-10-08 (build 106)
+
+The owner: *notifications should be able to be turned off.* Until now the
+only switch was per phone, and only for a closed phone; the pop-ups, the
+banner over the screen and the buzz could not be stopped at all.
+
+**What notifies you**, on the Notifications screen and in Settings: Messages,
+Team notices, Games and practices (with training sessions), and Club
+activity (only for those who get it), each On or Off. Off means no pop-up,
+no buzz, no banner and no push to a locked phone, on every phone she uses;
+the item still waits, counted, on Messages or under the bell. A game she
+follows with *Notify me* is still its own choice, on the game.
+
+Kept at `people/{uid}/mute/{kind}`, readable and writable by her alone, one
+yes-or-no per kind (rules version 10). `functions/push.js` reads each
+reader's switch before it reads her phones, so a muted kind costs no token
+lookup either. A refusal (rules not published yet) is taken back off the
+screen and said.
+
 ## Messages get a button of their own, and coaches can write first — 2026-10-08 (build 106)
 
 The owner couldn't find how to start a conversation, and when asked, said

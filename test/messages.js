@@ -312,11 +312,49 @@ const NOTE = (A, by, text, extra) => ({ by, byName: CLUB.access.members[by].name
     const { A } = await boot('coach');
     A.click({ act: 'notes' }); await A.flush();
     check('the bell opens Notifications', A.ui.view === 'notes' && /Notifications/.test(A.rendered()), true);
-    check('with no messages on it', /Conversations|Team notices|data-act="msgnew"/.test(A.rendered()), false);
+    check('with no messages on it', /<h2[^>]*>Conversations|data-act="msgnew"|data-act="postnew"/.test(A.rendered()), false);
     check('at its own address', A.uiToHash(), '#/notifications');
     A.click({ act: 'msgprivacy' });
     const p = String(A.dom.node('#sheet').innerHTML);
     check('privacy is said plainly, never claiming end-to-end', /Not end-to-end encrypted/.test(p) && /HTTPS/.test(p), true);
+  }
+
+  console.log('\n--- turning a kind of notification off ---');
+  {
+    const { A, fbk } = await boot('mum');
+    fbk.deliver('board/CLUB/t1', {}); fbk.deliver('dm/CLUB/t1/mum', null); await A.flush();
+    check('her own switches are read, from her own place', fbk.watching('people/mum/mute'), true);
+    A.click({ act: 'notes' }); await A.flush();
+    check('offered on Notifications', /What notifies you/.test(A.rendered()) && /data-act="muteset" data-k="notice"/.test(A.rendered()), true);
+    check('a parent has no Club activity switch, hearing none', /data-k="news"/.test(A.rendered()), false);
+    A.click({ act: 'muteset', k: 'notice', v: '1' }); await A.flush();
+    check('one write, hers, at that kind', fbk.writtenTo('people/mum/mute/notice').map(w => w.value).join(), 'true');
+    const before = A.toasts.length;
+    fbk.deliver('board/CLUB/t1', { n1: NOTE(A, 'coach', 'Bring water') }); await A.flush();
+    check('notices off: no pop-up', A.toasts.length, before);
+    check('no banner over the screen', /alertbar/.test(A.rendered()), false);
+    check('but it waits on Messages, counted', A.msgUnread(), 1);
+    fbk.deliver('dm/CLUB/t1/mum', { m: { c1: { by: 'coach', byName: 'Jaz', at: A.nowMs(), text: 'See you Saturday' } } }); await A.flush();
+    check('her conversations still pop up', /See you Saturday/.test(A.lastToast() || ''), true);
+    A.click({ act: 'muteset', k: 'notice', v: '0' }); await A.flush();
+    check('and back on', fbk.writtenTo('people/mum/mute/notice').map(w => w.value).join(), 'true,false');
+    A.click({ act: 'muteset', k: 'everything', v: '1' }); await A.flush();
+    check('only the four kinds', fbk.record.writes.some(w => w.path === 'people/mum/mute/everything'), false);
+  }
+  {
+    // set on another phone: this one hears it from the database
+    const { A, fbk } = await boot('coach');
+    fbk.deliver('dm/CLUB/t1', null); fbk.deliver('people/coach/mute', { msg: true }); await A.flush();
+    const before = A.toasts.length;
+    fbk.deliver('dm/CLUB/t1', { mum: { m: { d1: { by: 'mum', byName: 'Mo', at: A.nowMs(), text: 'Late today' } } } }); await A.flush();
+    check('switched off on another phone, quiet on this one', A.toasts.length, before);
+    check('and still counted', A.msgUnread(), 1);
+  }
+  {
+    const fbk = makeFakebase().refuseWrites(p => p.startsWith('people/'));
+    const { A } = await boot('mum', { fbk });
+    A.click({ act: 'muteset', k: 'msg', v: '1' }); await A.flush();
+    check('refused by older rules: taken back and said', /version/.test(A.lastToast() || '') && /aria-pressed="true">On/.test((A.click({ act: 'notes' }), A.rendered())), true);
   }
 
   console.log('\n--- no signal, and refusals ---');
