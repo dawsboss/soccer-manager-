@@ -2,7 +2,7 @@
    Static app. Data lives in localStorage, and mirrors to Firebase Realtime
    Database when a config + workspace code are present. */
 
-const BUILD = '105';
+const BUILD = '106';
 const BUILT = '2026-10-07';
 /* The version of database.rules.json this app was written against. The rules
    carry the same number in rulesVersion's .write, which accepts that number
@@ -29,6 +29,11 @@ const LS_DENIED = 'sm.denied';   // first refusal, per club
 const LS_ENV = 'sm.env';         // which Firebase environment this device talks to
 const LS_ME = 'sm.me';           // who was last verified signed in on this device
 const DENY_GRACE_H = 24;
+/* How long a phone keeps drawing a club it has not been able to check with.
+   Long enough for a coach whose phone never finds a signal at the fields, and
+   short enough that someone whose access was taken away while she kept her
+   phone offline does not keep a working copy of the club for good. */
+const OFFLINE_DAYS = 30;
 /* A club whose code starts with this is invented data for rehearsing on. */
 const SANDBOX_PREFIX = 'test-';
 
@@ -352,11 +357,16 @@ function purgeClub(code, why) {
     localStorage.removeItem(LS_SESS + ':' + k);
     localStorage.removeItem(LS_PENDING + ':' + k);
     localStorage.removeItem(LS_SEEN + ':' + k);
+    // the family conversations this phone kept of the club, for every account that read them here
+    const mk = LS_MSGS + ':' + k + ':', gone = [];
+    for (let i = 0; i < localStorage.length; i++) { const x = localStorage.key(i); if (x && x.startsWith(mk)) gone.push(x); }
+    for (const x of gone) localStorage.removeItem(x);
   } catch (e) { }
-  if (code === wsCode()) { state = { teams: {}, matches: {}, access: {}, rsvp: {} }; train = TRAIN_BLANK(); sess = SESS_BLANK(); pending = { seq: 0, w: {} }; purged = why; render(); }
+  if (code === wsCode()) { state = { teams: {}, matches: {}, access: {}, rsvp: {} }; train = TRAIN_BLANK(); sess = SESS_BLANK(); pending = { seq: 0, w: {} }; msgs = { board: {}, dm: {}, outbox: {} }; purged = why; render(); }
 }
 
 function markSynced() {
+  unconfirmed = false;
   try {
     localStorage.setItem(LS_SYNCED + ':' + clubKey(), String(Date.now()));
     localStorage.removeItem(LS_DENIED + ':' + clubKey());
@@ -365,6 +375,36 @@ function markSynced() {
 
 /* Refusal is not instant deletion: a botched rules change would otherwise wipe a
    coach's offline copy before anyone noticed. It has to persist for a day. */
+/* What a phone is still allowed to draw at boot, before the club has said
+   anything. Holding the copy and drawing it are two decisions (CLAUDE.md), and
+   this is the second, made from what the phone already knows:
+
+   - Refused once, refused until the club says otherwise. `denied` lived only
+     in memory, so someone whose access was withdrawn could turn off her signal,
+     reload, and have the whole club drawn again from the copy. The refusal is
+     on the phone (LS_DENIED); the copy stays a day in case the refusal was a
+     mistake, so a good read brings everything back, outbox and all.
+   - A day past the refusal, the copy goes even with no signal, as noteDenied()
+     would have done online.
+   - A copy the club has not confirmed for OFFLINE_DAYS is not drawn until it
+     has (`unconfirmed`), and is kept: an unsent game may be in it.
+
+   Only for a club that has an admin and a database to ask (gated()). A device
+   clock turned back defeats the last two; nothing on a phone can stop that,
+   which is why the rules, not this, are what decide who reads the club. */
+function copyCheck() {
+  if (!gated()) return;
+  const k = clubKey();
+  try {
+    const first = Number(localStorage.getItem(LS_DENIED + ':' + k) || 0);
+    if (first && Date.now() - first > DENY_GRACE_H * 3600e3) { purgeClub(wsCode(), 'access'); return; }
+    if (first) denied = true;
+    const at = Number(localStorage.getItem(LS_SYNCED + ':' + k) || 0);
+    // a copy from before this check starts its clock now rather than being shut out
+    if (!at) localStorage.setItem(LS_SYNCED + ':' + k, String(Date.now()));
+    else if (Date.now() - at > OFFLINE_DAYS * 864e5) unconfirmed = true;
+  } catch (e) { }
+}
 function noteDenied() {
   const k = LS_DENIED + ':' + clubKey();
   try {
@@ -5379,7 +5419,7 @@ function render() {
      screen with the crumbs still drawn has leaked most of what there was. */
   const inviting = !!invite;
   const joining = !inviting && !!join && !join.hidden;
-  const shut = inviting || joining || !!purged || denied || needsSignIn();
+  const shut = inviting || joining || !!purged || denied || unconfirmed || needsSignIn();
   const t = team();
   if (!t && teams().length) { ui.teamId = teams()[0].id; }
   const vis = myTeams();
@@ -5459,6 +5499,7 @@ function render() {
   if (joining) { app.innerHTML = joinScreen(); saveUi(); watchMessages(); return; }
   if (purged) { app.innerHTML = purgedScreen(); saveUi(); watchMessages(); return; }
   if (denied || needsSignIn()) { app.innerHTML = lockScreen(); saveUi(); watchMessages(); return; }
+  if (unconfirmed) { app.innerHTML = unconfirmedScreen(); saveUi(); return; }
   const roNote = lim === 'viewer' && team()
     ? `<div class="rolebar">Viewing <b>${teamLabel(team())}</b> from another team in the club. You can read it, not change it.</div>` : '';
   // "you can read, not change" is about the team; on Messages a parent writes, and on the Calendar she answers
@@ -5541,6 +5582,14 @@ function purgedScreen() {
     <div class="row" style="margin-top:14px;justify-content:center">
       <button class="btn quiet" data-act="clubswitch">Other clubs</button></div></div>
     <p class="muted" style="text-align:center">Anything downloaded with <b>Download a copy</b> is yours and is not affected.</p></div>`;
+}
+
+function unconfirmedScreen() {
+  return `<div class="stack"><div class="empty"><strong>Connect once to carry on</strong>
+    This phone has not been able to check with the club for more than ${OFFLINE_DAYS} days, so it is not showing what it holds until it has.
+    Turn on Wi-Fi or mobile data for a moment: nothing on this phone has been lost, and anything not yet sent goes as soon as it connects.
+    <div class="row" style="margin-top:14px;justify-content:center">
+      <button class="btn quiet" data-act="clubswitch">Other clubs</button></div></div></div>`;
 }
 
 function lockScreen() {
@@ -9428,7 +9477,7 @@ function openDrillLink() {
   if (L.DRILLS.some(x => x.id === key)) { show(); return; }
   if (!/^club:[^/]+$/.test(key)) { drillLink = null; sheetDrillRefused(/^mine:/.test(key) ? 'mine' : 'bad'); return; }
   // the lock screen, an invite or a join comes first; signing in brings the link back
-  if (invite || (join && !join.hidden) || purged || denied || needsSignIn()) return;
+  if (invite || (join && !join.hidden) || purged || denied || unconfirmed || needsSignIn()) return;
   const waiting = !!fbConfig().apiKey && nowMs() - w.at < DRILL_LINK_WAIT;
   /* From another of her clubs: open that one, with the link still on the
      address so it opens the drill once the club has loaded. Only a club this
@@ -13846,7 +13895,9 @@ function watchMirror() {
 function youClubs() {
   if (!me) return [];
   const here = wsCode();
-  return Object.entries(youHere().clubs).filter(([code, c]) => code !== here && c && c.ws && (!myClubs || myClubs[code]) && !retiredClubs[code])
+  // another club's copy that has not heard from it in OFFLINE_DAYS is not drawn either, as copyCheck() says
+  return Object.entries(youHere().clubs).filter(([code, c]) => code !== here && c && c.ws && (!myClubs || myClubs[code]) && !retiredClubs[code]
+    && !(c.at && nowMs() - Number(c.at) > OFFLINE_DAYS * 864e5))
     .map(([code, c]) => [code, { ...c, name: c.name || ((myClubs || {})[code] || {}).name || 'Another club' }])
     .sort((a, b) => a[1].name.localeCompare(b[1].name));
 }
@@ -15816,6 +15867,7 @@ let pubTimer;
 let pubSeen = {};                           // what each public id last carried, so unchanged ones are not rewritten
 let pubState = { at: null, error: null };   // surfaced in the share sheet
 let denied = false;                         // rules refused us; show the door
+let unconfirmed = false;                    // no word from the club for OFFLINE_DAYS; drawn again once there is
 let purged = null;                          // 'access' | 'retired'
 let retiredClubs = {};                      // app owner's view of what is closed
 // SERVER.md: the share pages are written by whichever phone made the change; a server trigger would write them.
@@ -19127,6 +19179,7 @@ loadLocal();
    rather than sitting on a lock screen. onAuthStateChanged overwrites it either
    way a moment later, and a sign-out has already cleared it. */
 me = cachedMe();
+copyCheck();
 hashToUi();     // a shared link wins over whatever was last open
 render();
 pushListen();

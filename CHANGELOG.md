@@ -8,6 +8,37 @@ before this point lives only in the git log.
 
 ---
 
+## Access taken away stays taken away, signal or no signal — 2026-10-08 (build 106)
+
+The owner asked whether someone whose access is withdrawn can turn off Wi-Fi
+and mobile data and keep the club. Online, the answer was already no: the
+database refuses her, the club is hidden at once and the phone's copy is
+cleared a day later. Offline, there were two holes.
+
+- **A refusal was forgotten on reload.** It lived only in memory, so after
+  one refusal she could go offline, reload, and have the whole club drawn
+  from the phone's copy again, for as long as she stayed offline. Now the
+  refusal is kept on the phone: the club stays shut through any number of
+  offline reloads, and a day after the refusal the copy is cleared even with
+  no signal. The day's wait is still there so a mistaken refusal loses
+  nothing; one good read brings everything back.
+- **A copy was drawn for ever without the club confirming it.** The comment
+  on `purgeClub()` said a long-unopened copy ends; nothing did it. Now a
+  club the phone has not been able to check with for **30 days** is not
+  drawn until it does (*Connect once to carry on*), and another club's copy
+  on My calendar the same. The copy is kept, not cleared: an unsent game may
+  be in it. Thirty days is so a coach whose phone never finds signal at the
+  fields still has her squad.
+- **Clearing a club takes its cached family conversations too**, which it
+  used to leave behind.
+
+What a phone already held can still be screenshotted, and a device clock
+turned back gets past the thirty days; nothing on a phone can stop either.
+What decides who reads the club is the rules, and those refuse her the
+moment the lookup tables change, which the server now does at once.
+
+---
+
 ## The share pages follow the calendar, whoever changed it — 2026-10-08 (functions only)
 
 The second job off SERVER.md's list. A team's share link, its games' own
