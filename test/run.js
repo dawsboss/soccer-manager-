@@ -60,7 +60,8 @@ const SUITES = [
   ['smoke', 'every view renders without throwing'],
   ['sandbox', 'the test club, and database isolation'],
   ['rulesver', 'an admin is told when the published rules are behind'],
-  ['rules', 'the database rules, as database.rules.json has them']
+  ['rules', 'the database rules, as database.rules.json has them'],
+  ['rules-orgs', 'the same rules with every club moved to orgs/, and who reads each part there']
 ];
 
 const verbose = process.argv.includes('--verbose') || process.argv.includes('-v');

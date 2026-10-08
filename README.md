@@ -244,6 +244,33 @@ the `retired` and `appOwners` blocks shown earlier in this file; those appear
 there to explain what they are for, not to be pasted on their own. Publishing
 a partial ruleset is how a club ends up half protected.
 
+**It is built, not typed.** While clubs move from `workspaces/{code}` to
+`orgs/{code}` (AUTH.md, *The move to `orgs/{orgId}`*), every rule that looks
+into a club has to ask whichever tree that club is on, about two hundred
+lookups. So the rules you edit are **`tools/rules-source.json`**, written
+against `workspaces/` as they always were, with the new `orgs/$code` tree
+beside it; `node tools/rules-build.js` writes `database.rules.json` from it,
+turning each lookup into "the old tree while the club is there, the new one
+once it has moved". `node test/rules.js` fails if the two disagree, and
+walks every check twice, once with the club on each tree. Once every club has
+moved, the old tree comes out and the source is the published file again.
+
+- **`orgs/$code`** has no read of its own: each part says who reads it. The
+  teams, games, answers, the roster (shirt numbers, and names only while the
+  club opens the roster), staff names (`names`), the club's settings (`org`)
+  and the lookup tables are the whole club's. The squad (`squad/$tid`, every
+  child's record) is that team's coaches and trackers, every coach in the
+  club and the admins; a family reads her own child's record and a player
+  her own, one at a time. Members' emails are the admins' and coaches', each
+  person's own entry hers; the access log is the admins'. A player record
+  under a team is refused, so names cannot creep back into the part
+  everyone reads.
+- **One tree per club.** Nobody can start `orgs/{code}` while the old tree
+  holds that code, nor start the old tree again under a code that has moved
+  (`workspaces/{code}/moved`, written by the server alone): every root rule
+  decides which tree to read by whether `orgs/{code}/access` exists, so
+  making it exist would be taking the club over.
+
 **There is no second, open set.** Rules belong to the database, not to a club,
 so whatever is published applies to every club in it at once, and this site
 is for any club that turns up. A brand-new club is made under the same rules
@@ -286,8 +313,9 @@ What each part is doing:
 - **`rulesVersion`** is the number above. Anyone may write it, signed in or
   not, but only the one number these rules are, so the write is a question
   only the published rules can answer, and the only write that can succeed
-  changes nothing. Whoever changes `database.rules.json` raises it (and
-  `RULES_VERSION` in `app.js`); `node test/rules.js` fails until they do.
+  changes nothing. Whoever changes the rules raises it (in
+  `tools/rules-source.json`, and `RULES_VERSION` in `app.js`), builds, and
+  stamps; `node test/rules.js` fails until they do.
 - **Reading anything** needs a signed-in account listed in `access/index`. The `!data.child('access/index').exists()` clause is the bootstrap: a brand-new workspace with no index yet stays readable, so it can be set up in the first place. It stops mattering the moment the first role is granted.
 - **`access/members/$uid`** is self-writable. That is how a new coach knocks on the door: they sign in, register themselves, and an admin can then see them to assign a role. It grants no data access on its own. Somebody else's entry is an admin's to change (rules version 11): names on sessions, People and bookable times come from it, so a parent could otherwise rename a coach. A coach of any team (`access/coachIndex`) may only fill in an entry that is not there yet, which is all approving a family through the team link does; while a club has no `coachIndex`, anyone in it may fill in a missing one, and nobody but her or an admin changes one already there.
 - **`admins`** can only be changed by an existing admin — except when there are none, which is the bootstrap for claiming it.
