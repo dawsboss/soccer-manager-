@@ -11,12 +11,13 @@
 
    The care, because this rewrites a whole club with admin credentials:
 
-   - **One write.** The new tree, the old one replaced by a `moved` marker,
-     and a copy of the old one kept aside at serverState/moved/{code}/{at}
+   - **One switch, however many batches.** The database refuses a write
+     that wakes more than a thousand function runs, so the club is copied
+     and taken away in batches (see *in steps*, below), but which tree it is
+     on changes in one small write: no phone ever sees it on both trees, or
+     on neither. The old tree is kept aside at serverState/moved/{code}/{at}
      (no rule reaches serverState/, so it is the console's and the server's
-     alone) all go in a single multi-path update, which the database applies
-     whole or not at all. No phone ever sees a club on both trees, or on
-     neither.
+     alone).
    - **Not while a game is being played.** A tracker's goal landing between
      the read and the write would be lost, so a club with a game running is
      refused and told why.
@@ -119,12 +120,95 @@ function layout(ws) {
 
 /* The request at moveRequests/{code}: { by, at }. Resolves to what happened,
    which is also written beside it as `result` for the admin's phone. */
+/* The database refuses one write that would wake more than a thousand
+   function runs (TOO_MANY_TRIGGERS), and a whole club in one write wakes a
+   run for every player, practice and game it touches, on both trees. The
+   first move did it in one write and was refused for any club of a real
+   size. So it goes in steps, none of them visible to a phone until the one
+   that matters:
+
+   1. A marker, serverState/moving/{code}: every function that keeps a club
+      in step (index.js, `quiet()`) leaves a club alone while it is there, so
+      the copy is not half-updated under the move, and the old tree emptying
+      is not read as everybody leaving the club.
+   2. The old tree kept whole at serverState/moved/{code}/{at}.
+   3. The new tree written in batches, everything but `access`. The rules
+      decide which tree a club is on by whether orgs/{code}/access exists, so
+      until then the club is on the old tree for every phone and every rule.
+   4. Every part read back and compared. A difference: the copy is taken
+      away again (in batches) and the old tree was never touched.
+   5. One small write: the new tree's access in, the old tree's out, and the
+      `moved` marker. From here the club is on orgs/ and nobody can write the
+      old tree (its rules need the access it no longer has).
+   6. The rest of the old tree taken away, in batches. A failure here leaves
+      a moved club with old copies on the server; asking again finishes it.
+   7. The marker removed, and My calendar's feeds told the club changed. */
+const BATCH = 100;        // children per write: a player wakes at most three runs, an entry two
+const GAME_BATCH = 50;    // a game wakes up to eight (its date, kick-off, called-off, place, opponent)
+async function inBatches(env, base, obj, size = BATCH, value = x => x) {
+  const ks = keys(obj);
+  for (let i = 0; i < ks.length; i += size) {
+    const patch = {};
+    for (const k of ks.slice(i, i + size)) patch[`${base}/${k}`] = value(obj[k]);
+    await env.update(patch);
+  }
+}
+const gone = () => null;
+
+/* Steps 3 and 4: the new tree without its access, then compared. */
+async function copyTree(env, O, doc) {
+  const { access, teams = {}, squad = {}, roster = {}, matches = {}, rsvp = {}, members = {}, names = {}, log = {}, org, ...other } = doc;
+  if (org) await env.set(`${O}/org`, org);
+  await inBatches(env, `${O}/members`, members);
+  await inBatches(env, `${O}/names`, names);
+  await inBatches(env, `${O}/log`, log, 500);
+  for (const [tid, r] of Object.entries(roster)) await env.set(`${O}/roster/${tid}`, r);
+  for (const [tid, ps] of Object.entries(squad)) await inBatches(env, `${O}/squad/${tid}`, ps);
+  for (const [tid, t] of Object.entries(teams)) {
+    const { events, ...rest } = t || {};
+    await env.set(`${O}/teams/${tid}`, rest);
+    await inBatches(env, `${O}/teams/${tid}/events`, events || {});
+  }
+  await inBatches(env, `${O}/matches`, matches, GAME_BATCH);
+  for (const [tid, r] of Object.entries(rsvp)) await env.set(`${O}/rsvp/${tid}`, r);
+  for (const [k, v] of Object.entries(other)) await env.set(`${O}/${k}`, v);
+  const off = [];
+  for (const k of Object.keys(doc)) {
+    if (k === 'access') continue;
+    if (!same(doc[k], await env.get(`${O}/${k}`))) off.push(k);
+  }
+  return off;
+}
+
+/* A club tree taken away in batches, the parts that wake runs first: each
+   team's entries and players, then the games, then what is left at once. */
+async function clearTree(env, base, tree, keep = []) {
+  if (!tree || typeof tree !== 'object') return;
+  for (const [tid, t] of Object.entries(tree.teams || {})) {
+    await inBatches(env, `${base}/teams/${tid}/events`, (t && t.events) || {}, BATCH, gone);
+    await inBatches(env, `${base}/teams/${tid}/players`, (t && t.players) || {}, BATCH, gone);
+  }
+  for (const [tid, ps] of Object.entries(tree.squad || {})) await inBatches(env, `${base}/squad/${tid}`, ps || {}, BATCH, gone);
+  await inBatches(env, `${base}/teams`, tree.teams || {}, BATCH, gone);
+  await inBatches(env, `${base}/matches`, tree.matches || {}, GAME_BATCH, gone);
+  for (const k of Object.keys(tree)) if (!keep.includes(k)) await env.set(`${base}/${k}`, null);
+  if (!keep.length) await env.set(base, null);   // nothing of it left to wake anything
+}
+
 /* Whatever goes wrong, the admin's phone hears it: an error thrown here
    would leave the request with no answer and her phone waiting for ever. */
 async function onRequest(env, params, req, now = Date.now()) {
+  const code = params && params.code;
   try { return await moveIt(env, params, req, now); } catch (e) {
-    const code = params && params.code;
-    const result = { ok: false, why: 'The server could not move it (' + String((e && e.message) || e).slice(0, 200) + '). Nothing was changed.', at: now };
+    let state = 'Nothing was changed.';
+    if (okKey(code)) {
+      // before the switch: take the half-made copy away again; after it, asking again finishes
+      try {
+        if (await env.get(`orgs/${code}/access`)) state = 'The club has moved; ask again to finish tidying the old copy away.';
+        else { await clearTree(env, `orgs/${code}`, await env.get(`orgs/${code}`)); await env.set(`serverState/moving/${code}`, null); }
+      } catch (e2) { state = 'Ask again to tidy up.'; }
+    }
+    const result = { ok: false, why: 'The server could not move it (' + String((e && e.message) || e).slice(0, 200) + '). ' + state, at: now };
     if (okKey(code)) await Promise.resolve(env.set(`moveRequests/${code}/result`, result)).catch(() => { });
     return result;
   }
@@ -137,32 +221,52 @@ async function moveIt(env, params, req, now) {
     return result;
   };
   if (!okKey(code) || !req || typeof req !== 'object' || !okKey(req.by)) return answer(false, 'That request names nobody.');
-  const W = 'workspaces/' + code;
-  const [ws, onOrgs, retired] = await Promise.all([env.get(W), env.get(`orgs/${code}/access`), env.get('retired/' + code)]);
+  const W = 'workspaces/' + code, O = 'orgs/' + code;
+  const [ws, onOrgs, retired] = await Promise.all([env.get(W), env.get(`${O}/access`), env.get('retired/' + code)]);
   if (retired) return answer(false, 'This club has been retired.');
-  if (onOrgs) return answer(false, 'This club has already moved.');
+
+  /* Moved, but the old tree was not all taken away (step 6 failed): an
+     admin of the club as it is now asking again finishes it. */
+  if (onOrgs) {
+    const left = ws && typeof ws === 'object' && Object.keys(ws).some(k => k !== 'moved');
+    if (!left) return answer(false, 'This club has already moved.');
+    if (!has(onOrgs.admins, req.by)) return answer(false, 'Only an admin of the club can move it.');
+    await env.set(`serverState/moving/${code}`, { by: req.by, at: now });
+    await clearTree(env, W, ws, ['moved']);
+    await env.set(`serverState/moving/${code}`, null);
+    return answer(true, 'The old copy is tidied away.');
+  }
   if (!ws || typeof ws !== 'object' || ws.moved || !ws.access) return answer(false, 'There is no club here to move.');
   if (!has(ws.access.admins, req.by)) return answer(false, 'Only an admin of the club can move it.');
   if (Object.values(ws.matches || {}).some(running)) return answer(false, 'A game is being played. Move the club once it has finished.');
 
-  const doc = layout(ws);
-  await env.update({
-    [`orgs/${code}`]: doc,
-    [W]: { moved: { to: 'orgs', at: now, by: req.by } },
-    [`serverState/moved/${code}/${now}`]: ws
-  });
+  await env.set(`serverState/moving/${code}`, { by: req.by, at: now });
+  // a copy a failed move left behind is taken away before this one starts
+  const stale = await env.get(O);
+  if (stale) await clearTree(env, O, stale);
+  await env.set(`serverState/moved/${code}/${now}`, ws);
 
-  const back = await env.get(`orgs/${code}`);
-  const off = Object.keys({ ...(norm(doc) || {}), ...(norm(back) || {}) }).filter(k => !same((doc || {})[k], (back || {})[k]));
+  const doc = layout(ws);
+  const off = await copyTree(env, O, doc);
   if (off.length) {
-    await env.update({ [`orgs/${code}`]: null, [W]: ws });
+    await clearTree(env, O, await env.get(O));
+    await env.set(`serverState/moving/${code}`, null);
     return answer(false, 'The copy did not match (' + off.join(', ') + '), so nothing was moved.');
   }
+
+  // step 5: the switch
+  await env.update({ [`${O}/access`]: doc.access, [`${W}/access`]: null, [`${W}/moved`]: { to: 'orgs', at: now, by: req.by } });
+  // step 6: the old tree, without its access, taken away in batches
+  const { access: _a, ...rest } = ws;
+  await clearTree(env, W, rest, ['moved']);
+  await env.set(`serverState/moving/${code}`, null);
+  if (env.touched) await Promise.resolve(env.touched(code)).catch(() => { });
+
   const count = o => keys(o).length;
   return answer(true, '', {
-    teams: count(doc.teams), players: Object.values(doc.squad).reduce((n, s) => n + count(s), 0),
+    teams: count(doc.teams), players: Object.values(doc.squad || {}).reduce((n, s) => n + count(s), 0),
     games: count(doc.matches), people: count(doc.access.index)
   });
 }
 
-module.exports = { onRequest, layout, running, norm, same };
+module.exports = { onRequest, layout, running, norm, same, BATCH, GAME_BATCH };

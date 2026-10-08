@@ -23,6 +23,18 @@ anything, its answer included. Nothing in the club was touched.
   minutes (like the ones made before this fix) offers *Try again*.
 - **The fake server refuses `undefined` as the real one does**, so the
   tests now fail the way production did (`test/move.js`).
+- **The move goes in batches.** The next try said *TOO_MANY_TRIGGERS*:
+  the database refuses one write that would wake more than a thousand
+  function runs, and moving a whole club in one write wakes one for every
+  player, practice and game, on both trees. It now copies the club a batch
+  at a time, checks the copy, switches it in one small write, and takes the
+  old tree away a batch at a time. While it runs, every other function
+  leaves the club alone (`serverState/moving/{code}`), so nothing is half
+  updated and the old tree emptying is not read as everybody leaving (which
+  would have taken their bookmarks to the club). A failure before the
+  switch takes the copy away; one after it is finished by asking again. The
+  fake server now enforces the limit too, and `test/move.js` moves a club
+  of 480 players, 1,200 entries and 250 games.
 
 ---
 

@@ -297,9 +297,12 @@ function makeServer(seed = {}) {
     child: c => ref(segs(p).concat(segs(c)).join('/')),
     get: () => { reads.push(shown(segs(p).join('/'))); if (down) return Promise.reject(new Error('unavailable')); return Promise.resolve({ val: () => clone(at(p)), exists: () => at(p) != null }); },
     remove: () => { removes.push(shown(segs(p).join('/'))); put(p, null); return Promise.resolve(); },
-    set: v => { put(p, v); return Promise.resolve(); },
+    set: v => limited([p], () => put(p, v)),
     // a multi-path update: each key a path under this one, null deleting it
-    update: o => { for (const [k, v] of Object.entries(o || {})) put(segs(p).concat(segs(k)).join('/'), v); return Promise.resolve(); },
+    update: o => {
+      const ps = Object.keys(o || {}).map(k => segs(p).concat(segs(k)).join('/'));
+      return limited(ps, () => { for (const [k, v] of Object.entries(o || {})) put(segs(p).concat(segs(k)).join('/'), v); });
+    },
     /* One at a time, as the database runs them: `fn` sees what is there and
        returns what to write, or undefined to leave it. */
     transaction: fn => {
@@ -318,6 +321,57 @@ function makeServer(seed = {}) {
     }
   };
   const triggers = {};
+  /* Every trigger a write wakes: for each written path, every concrete path
+     of each trigger's shape it could have touched, kept where what is there
+     changed (a create trigger only where nothing was). */
+  function wakes(before, written) {
+    const atIn = (t, q) => { let cur = t; for (const k of segs(q)) { if (!cur || typeof cur !== 'object') return undefined; cur = cur[k]; } return cur; };
+    const out = [], seen = new Set();
+    for (const ws of written) for (const [name, t] of Object.entries(triggers)) {
+      if (t.kind !== 'created' && t.kind !== 'written') continue;   // https and schedule wake on nothing written
+      const ps = segs(t.path);
+      let cands = [{ prm: {}, path: [] }];
+      for (let i = 0; i < ps.length; i++) {
+        const m = /^\{(\w+)\}$/.exec(ps[i]);
+        const next = [];
+        for (const c of cands) {
+          if (i < ws.length) {
+            if (m) next.push({ prm: { ...c.prm, [m[1]]: ws[i] }, path: c.path.concat(ws[i]) });
+            else if (ps[i] === ws[i]) next.push({ prm: c.prm, path: c.path.concat(ws[i]) });
+          } else if (m) {
+            const ks = new Set([...Object.keys(Object(atIn(before, c.path.join('/')) || {})), ...Object.keys(Object(atIn(tree, c.path.join('/')) || {}))]);
+            for (const k of ks) next.push({ prm: { ...c.prm, [m[1]]: k }, path: c.path.concat(k) });
+          } else next.push({ prm: c.prm, path: c.path.concat(ps[i]) });
+        }
+        cands = next;
+      }
+      for (const c of cands) {
+        const q = c.path.join('/');
+        if (seen.has(name + ' ' + q)) continue;
+        const was = clone(atIn(before, q)), now = clone(atIn(tree, q));
+        if (JSON.stringify(was) === JSON.stringify(now)) continue;
+        if (t.kind === 'created' && (was !== null || now === null)) continue;
+        seen.add(name + ' ' + q);
+        out.push({ name, t, prm: c.prm, q, was, now });
+      }
+    }
+    return out;
+  }
+  /* The database refuses a write that would wake more than a thousand runs
+     (TOO_MANY_TRIGGERS), whole: nothing of it is kept. The functions' own
+     writes are held to it here, as they are in production, once the
+     functions are loaded. */
+  const TRIGGER_LIMIT = 1000;
+  function limited(paths, apply) {
+    const before = JSON.parse(JSON.stringify(tree));
+    apply();
+    if (!Object.keys(triggers).length) return Promise.resolve();
+    const n = wakes(before, paths.map(segs)).length;
+    if (n <= TRIGGER_LIMIT) return Promise.resolve();
+    for (const k of Object.keys(tree)) delete tree[k];
+    Object.assign(tree, before);
+    return Promise.reject(new Error('TOO_MANY_TRIGGERS: This request would cause too many functions to be triggered.'));
+  }
 
   /* The modules functions/index.js requires, by name. */
   const modules = {
@@ -430,43 +484,22 @@ function makeServer(seed = {}) {
        Resolves to what each returned, by name (an array if it ran twice). */
     async fire(p, value) {
       const before = JSON.parse(JSON.stringify(tree));
-      const atIn = (t, q) => { let cur = t; for (const k of segs(q)) { if (!cur || typeof cur !== 'object') return undefined; cur = cur[k]; } return cur; };
       const out = {};
       const ws = segs(write(p, value));
-      for (const [name, t] of Object.entries(triggers)) {
-        if (t.kind !== 'created' && t.kind !== 'written') continue;   // https and schedule wake on nothing written
-        const ps = segs(t.path);
-        // every concrete path of the trigger's shape this write could have touched
-        let cands = [{ prm: {}, path: [] }];
-        for (let i = 0; i < ps.length; i++) {
-          const m = /^\{(\w+)\}$/.exec(ps[i]);
-          const next = [];
-          for (const c of cands) {
-            if (i < ws.length) {
-              if (m) next.push({ prm: { ...c.prm, [m[1]]: ws[i] }, path: c.path.concat(ws[i]) });
-              else if (ps[i] === ws[i]) next.push({ prm: c.prm, path: c.path.concat(ws[i]) });
-            } else if (m) {
-              const ks = new Set([...Object.keys(Object(atIn(before, c.path.join('/')) || {})), ...Object.keys(Object(atIn(tree, c.path.join('/')) || {}))]);
-              for (const k of ks) next.push({ prm: { ...c.prm, [m[1]]: k }, path: c.path.concat(k) });
-            } else next.push({ prm: c.prm, path: c.path.concat(ps[i]) });
-          }
-          cands = next;
-        }
-        for (const c of cands) {
-          const q = c.path.join('/');
-          const was = clone(atIn(before, q)), now = clone(atIn(tree, q));
-          if (JSON.stringify(was) === JSON.stringify(now)) continue;
-          if (t.kind === 'created' && (was !== null || now === null)) continue;
-          const data = t.kind === 'created'
-            ? { val: () => now, ref: ref(q) }
-            : { before: { val: () => was, ref: ref(q) }, after: { val: () => now, ref: ref(q) } };
-          const r = await t.handler({ params: c.prm, data });
-          const n = plain(name);
-          if (reported(n)) out[n] = n in out ? [].concat(out[n], r) : r;
-        }
+      for (const w of wakes(before, [ws])) {
+        const { name, t, prm, q, was, now } = w;
+        const data = t.kind === 'created'
+          ? { val: () => now, ref: ref(q) }
+          : { before: { val: () => was, ref: ref(q) }, after: { val: () => now, ref: ref(q) } };
+        const r = await t.handler({ params: prm, data });
+        const n = plain(name);
+        if (reported(n)) out[n] = n in out ? [].concat(out[n], r) : r;
       }
       return out;
     },
+    /* How many function runs one write would wake, as the database counts
+       them for TOO_MANY_TRIGGERS. */
+    wakeCount(before, paths) { return wakes(before, paths.map(segs)).length; },
     /* An HTTPS function asked for `path` (what Express calls req.path), the
        way a calendar app would ask. Resolves to { status, headers, body }. */
     async request(name, path, method = 'GET') {

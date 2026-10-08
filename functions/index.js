@@ -119,7 +119,21 @@ const TREE_PATHS = {
 function both(name, pattern, make, handler) {
   for (const tree of ['workspaces', 'orgs'])
     exports[name + (tree === 'orgs' ? 'Orgs' : '')] = make(TREE_PATHS[tree](pattern),
-      event => handler({ ...event, params: { ...event.params, tree } }));
+      quiet(event => handler({ ...event, params: { ...event.params, tree } })));
+}
+/* While a club is moving (move.js; serverState/moving/{code}) every function
+   that keeps a club in step leaves it alone: the move writes the new tree a
+   batch at a time and takes the old one away the same way, and a function
+   acting on half of it would put in step what is about to be replaced, or
+   read the old tree emptying as everybody leaving the club (and take their
+   bookmarks with them). The move writes everything they would have. */
+function quiet(handler) {
+  return async event => {
+    const root = (event.data.after || event.data).ref.root;
+    const code = event.params && event.params.code;
+    if (code && (await root.child('serverState/moving/' + code).get()).val()) return null;
+    return handler(event);
+  };
 }
 
 both('pushEntry', '{code}/teams/{tid}/events/{eid}', onValueWritten, event =>
@@ -158,12 +172,12 @@ both('accessSelf', '{code}/{squad}/{pid}/self', onValueWritten, event => Promise
    numbers the whole club reads in place of the squad. A child's record is
    watched one child at a time, so saving the whole squad wakes only the
    children that changed. */
-exports.namesMember = onValueWritten('/orgs/{code}/members/{uid}', event =>
-  access.onMember(writerOf(event), event.params));
-exports.rosterPlayer = onValueWritten('/orgs/{code}/squad/{tid}/{pid}', event =>
-  access.onSquadPlayer(writerOf(event), event.params));
-exports.rosterOpen = onValueWritten('/orgs/{code}/org/rosterOpen', event =>
-  access.onRosterOpen(writerOf(event), event.params));
+exports.namesMember = onValueWritten('/orgs/{code}/members/{uid}', quiet(event =>
+  access.onMember(writerOf(event), event.params)));
+exports.rosterPlayer = onValueWritten('/orgs/{code}/squad/{tid}/{pid}', quiet(event =>
+  access.onSquadPlayer(writerOf(event), event.params)));
+exports.rosterOpen = onValueWritten('/orgs/{code}/org/rosterOpen', quiet(event =>
+  access.onRosterOpen(writerOf(event), event.params)));
 
 /* Moving a club to orgs/ (move.js), when one of its admins asks by writing
    moveRequests/{code}. A create only: the answer is written beside the
@@ -174,7 +188,9 @@ exports.moveClub = onValueCreated('/moveRequests/{code}', event => {
   return move.onRequest({
     get: p => root.child(p).get().then(s => s.val()),
     set: (p, v) => root.child(p).set(v),
-    update: patch => root.update(patch)
+    update: patch => root.update(patch),
+    // the club's people and calendar changed under My calendar's feeds, which slept through the move
+    touched: code => mycal.touchClub(markerOf(event), code)
   }, event.params, event.data.val());
 });
 
