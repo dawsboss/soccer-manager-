@@ -257,7 +257,11 @@ console.log('--- a practice every week ---');
   sets = [];
   A.click({ act: 'calcall', tid: 't1' });
   check('called off, not deleted', A.state.teams.t1.events[second.id].called, 'cancelled');
-  check('— one small write, below the entry', eventWrites().join(), `workspaces/CLUB/teams/t1/events/${second.id}/called`);
+  check('— two small writes below the entry: who did it, then what', eventWrites().join(), `workspaces/CLUB/teams/t1/events/${second.id}/edit,workspaces/CLUB/teams/t1/events/${second.id}/called`);
+  {
+    const st = (sets.find(([p]) => p.endsWith('/edit')) || [])[1] || {};
+    check('— the stamp is hers, and now', st.by + ' ' + (st.at === A.nowMs()), A.me.uid + ' true');
+  }
   check('— never next', A.calNext(A.calItems(['t1'])).id !== second.id, true);
   A.click({ act: 'caledit', tid: 't1', id: second.id });
   A.click({ act: 'calcall', tid: 't1' });

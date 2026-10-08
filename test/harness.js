@@ -241,7 +241,7 @@ const EXPORTS = `{
   /* safekeeping: what is owed, a full phone, and the backup */
   otherOwed, pendingCount, refusedCount, backupDoc, trainingCopy, isBackupData, keepStored,
   /* notifications to a closed phone */
-  pushSupport, pushOn, pushCard, pushCheck, pushTurnOn, pushTurnOff, captureOpen, maybePushOpen, openIn, deviceName,
+  RULES_VERSION, pushSupport, pushOn, pushCard, pushCheck, pushTurnOn, pushTurnOff, captureOpen, maybePushOpen, openIn, deviceName,
   get pushRec() { return pushRec }, get pushOpen() { return pushOpen }, get pushBusy() { return pushBusy },
   get lastBackup() { return lastBackup }, get storeFail() { return storeFail }, set storeFail(v) { storeFail = v }
 }`;

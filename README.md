@@ -132,7 +132,7 @@ The speech bubble in the top bar, for anyone with a role in a club that has an a
 
 **What "notifications" means here.** With Minutes open, a message pops up (or buzzes) in any tab, and waits with a count on Messages. With it closed, a phone hears only if the club has the server set up and that person turned **Notifications on this phone** on (below); everyone else hears the next time they open Minutes. To reach everyone *now*, whatever their phone, use **Email or share** on the notice.
 
-**Needs the `board`, `dm` and `staffdm` rule blocks published** (rules version 8 for `staffdm` and the delivered marker). Without them sending says *Not sent — the database refused it*.
+**Needs the `board`, `dm` and `staffdm` rule blocks published** (rules version 9 for `staffdm` and the delivered marker). Without them sending says *Not sent — the database refused it*.
 
 ## Notifications to a closed phone
 
@@ -145,7 +145,9 @@ Then **each person turns it on, on each phone:** Settings → **Notifications on
 - **iPhone and iPad** (iOS 16.4 or later) deliver notifications only to a site added to the Home Screen: in Safari, **Share → Add to Home Screen**, open Minutes from the new icon, and turn it on there. The app says so when it is opened in a browser tab.
 - **Android** and computers: any browser that supports web push, straight from the page.
 
-What it does not do yet: a followed game's goals, a practice or game called off or moved, and club activity still reach a phone only while Minutes is open on it. They are the next jobs for the same sender (`GOTSPORT.md`, *Build order*).
+**Calendar changes too** (build 105): a game or practice in the next two weeks called off, back on, moved, or newly added reaches everyone on that team: *Cancelled: U11 Storm: Practice*, *Moved: U11 Storm v Northgate, now Sun 12 Oct 10am*. The same changes the app's own alerts say, and the same ones it doesn't: a new place or title, a deletion, anything further off (the subscribed calendar has those) or already past. A weekly practice added is one notification, not one a week. It says who made the change (*Thu 8 Oct 6pm · Jaz*), and she isn't told about her own. Every calendar change records who made it (rules version 8), and only the team's coaches and the club's admins can make one: the database refuses a tracker moving a game, as it already refused anyone else changing a practice.
+
+What it does not do yet: a followed game's goals, and club activity for admins, still reach a phone only while Minutes is open on it.
 
 Signing out takes the phone's address down while still signed in, and deletes the browser's subscription, so a phone handed to someone else stops getting her messages. A push that still arrives for an account no longer signed in on the phone (signed out with no signal, say) is shown without its words. `node test/push.js` holds all of this, and who the server tells, for every kind of account.
 
@@ -156,8 +158,23 @@ If nothing arrives: check the functions' logs in the Firebase console (Functions
 The club's server is three Cloud Functions on the same Firebase project, in `functions/`: `pushNotice` and `pushMessage` (notifications) and `calendar` (calendar sync). `.github/workflows/server.yml` tests and deploys them whenever they change on main, as the site deploys itself. Set up once:
 
 1. **Pay-as-you-go (Blaze).** Firebase console → the project → **Upgrade** at the bottom left → **Blaze**, with a card. Cloud Functions need it; at one club's volume the expected bill is nothing, inside the free allowance, but check Firebase's current pricing before telling anyone a number. Then Google Cloud console → **Billing → Budgets & alerts** → a budget of a few dollars, so anything unexpected emails you.
-2. **A deploy key for GitHub.** Google Cloud console, this project → **IAM & Admin → Service Accounts → Create service account** (`github-deployer`), roles **Editor** and **Service Account User**. Open it → **Keys → Add key → JSON**. On GitHub: the repository → **Settings → Secrets and variables → Actions → New repository secret**, named `FIREBASE_SERVICE_ACCOUNT`, the whole file as its value. Delete the file.
-3. **Merge to main**, or **Actions → Deploy the server → Run workflow**. The first deploy takes several minutes while Google switches on what functions need; if it fails at that stage, run it once more.
+2. **A deploy key for GitHub.** Google Cloud console, this project → **IAM & Admin → Service Accounts → Create service account** (`github-deployer`), with four roles: **Editor**, **Service Account User** (it deploys functions that run as the project's own account), **Service Usage Admin** (a first deploy switches on the Google services functions need) and **Cloud Functions Admin** (the calendar feed is a public function, since a calendar app asks with no account, and making one public takes it). Open it → **Keys → Add key → JSON**. On GitHub: the repository → **Settings → Secrets and variables → Actions → New repository secret**, named `FIREBASE_SERVICE_ACCOUNT`, the whole file as its value. Delete the file.
+3. **Once, as the project's Owner: let Google's own accounts deliver database events.** The first functions deploy needs three grants to Google's service agents, which a deploy key rightly cannot make. In the Google Cloud console, open Cloud Shell (**>_** at the top right) and run these, with your project id and number (Project settings shows both; the deploy's log prints the exact lines if they are missing):
+   ```
+   gcloud projects add-iam-policy-binding PROJECT_ID --member=serviceAccount:service-PROJECT_NUMBER@gcp-sa-pubsub.iam.gserviceaccount.com --role=roles/iam.serviceAccountTokenCreator
+   gcloud projects add-iam-policy-binding PROJECT_ID --member=serviceAccount:PROJECT_NUMBER-compute@developer.gserviceaccount.com --role=roles/run.invoker
+   gcloud projects add-iam-policy-binding PROJECT_ID --member=serviceAccount:PROJECT_NUMBER-compute@developer.gserviceaccount.com --role=roles/eventarc.eventReceiver
+   ```
+   Or IAM → **Grant access** for each, with the same accounts and roles (Service Account Token Creator, Cloud Run Invoker, Eventarc Event Receiver). Never give the deploy key the power to grant roles itself: a leaked key could then grant itself anything.
+4. **Merge to main**, or **Actions → Deploy the server → Run workflow**. The first deploy takes several minutes while Google switches on what functions need; if it fails at that stage, run it once more.
+
+If a deploy fails on permissions, the message names what is missing; add the role to `github-deployer` (IAM & Admin → IAM → its pencil → Add another role) and run it again:
+- *Permission denied to get service [cloudfunctions.googleapis.com]*: **Service Usage Admin**.
+- *You must have permission iam.serviceAccounts.ActAs*: **Service Account User**.
+- *Failed to list functions*: **Editor** is missing, or (seconds after "Enabling now…") the services Google just switched on are not answering yet, so run it again in a minute or two.
+- *We failed to modify the IAM policy for the project*: step 3 above has not been done.
+- *The permission cloudfunctions.functions.setIamPolicy is required to deploy … calendar*: **Cloud Functions Admin**.
+- *Permission denied while using the Eventarc Service Agent … Retry the deployment in a few minutes*: nothing missing; the very first deploy of database-triggered functions waits on Google. Run it again after five minutes.
 
 Without the secret the workflow says so and deploys nothing. From a computer instead: `npm install -g firebase-tools`, `firebase login`, `(cd functions && npm ci)`, `firebase deploy --only functions`.
 

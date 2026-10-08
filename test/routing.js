@@ -35,7 +35,7 @@ const cases = [
   [{ view: 'mine' }, '#/my-players'],
   [{ view: 'setup' }, '#/settings'],
   [{ view: 'sessions' }, '#/training'],
-  // build 105: messages and notifications are two screens
+  // build 106: messages and notifications are two screens
   [{ view: 'inbox' }, '#/messages'],
   [{ view: 'notes' }, '#/notifications']
 ];

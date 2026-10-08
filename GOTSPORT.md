@@ -181,13 +181,25 @@ messages. What it is, so the next jobs are built the same way:
   `manifest.webmanifest` and the icons, Minutes installs to the Home Screen,
   which is also what an iPhone needs before it delivers any push (8, below).
 
-**Left of this step:** a calendar change to her own teams (called off,
-moved, back on, new: today `calAlerts()` on an open phone), a followed
-game's goals (following is per phone today and would need to be stored),
-and club activity for admins. Each is another trigger on the same sender;
-the calendar one needs care, because `matches/{mid}` is written every few
-seconds during a game, so it triggers on the few fields that matter
-(date, time, place, status), never the whole game.
+**Calendar changes, built 2026-10-07 (build 105):** a game or practice
+called off, back on, moved or new, within the next two weeks, pushed to
+everyone on that team (not the admins, whom club activity tells). The same
+four things and the same silences as the open app's alerts (`calAlerts()`):
+a new place or title is not news, nor a deletion, nor anything past, and a
+weekly series added is one push. Five more triggers on the same sender:
+`pushEntry` on `teams/{tid}/events/{eid}`, and `pushGameDate`,
+`pushGameKickoff`, `pushGameCalled` on those fields of a game, never the
+game itself, which a live game writes every few seconds. Two of them can
+fire for one save (a new day and time), so the server keeps the last thing
+it told per entry at `serverState/calSent/{code}/{key}`, a node no rule
+grants anyone, and a transaction there lets one of them speak. Every
+calendar write carries who made it (`edit: { by, at }`, rules version 8,
+held to the writer's own uid), so the coach who called it off is left out
+and named to everyone else; and a game's when and whether became the
+coaches' and admins' at the database, as practices already were.
+
+**Left of this step:** a followed game's goals (following is per phone
+today and would need to be stored) and club activity for admins.
 
 ### 4. Email
 
