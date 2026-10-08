@@ -15761,6 +15761,7 @@ function publicDoc(t) {
    needs to turn up: no series id, no author, no note of who added it. Free
    text goes through pubText() like the game's own notes. `all` is the members'
    calendar feed, which carries the team-only entries too — see calendarDoc(). */
+// SERVER.md: functions/mirror.js builds the same entries whenever they change, from any phone.
 function publicEvents(t, all) {
   const out = {};
   for (const [id, e] of Object.entries(t.events || {})) {
