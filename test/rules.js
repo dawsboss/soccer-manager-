@@ -1019,6 +1019,51 @@ reads('owners are not world-readable', OUT, 'shareOwners/sh1', false);
   writes('the coach marks it read', COACH, 'dm/CLUB/t1/mum/seen/coach', NOW, true);
   writes('not as somebody else', COACH, 'dm/CLUB/t1/mum/seen/mum', NOW, false);
   writes('another family cannot', MUM, 'dm/CLUB/t1/dad/seen/mum', NOW, false);
+  // "delivered": each reader's phone says it has the conversation, beside its read marker and under the same rule
+  writes('the parent\'s phone says it got it', MUM, 'dm/CLUB/t1/mum/got/mum', NOW, true);
+  writes('the coach\'s phone says it got it', COACH, 'dm/CLUB/t1/mum/got/coach', NOW, true);
+  writes('not as somebody else', COACH, 'dm/CLUB/t1/mum/got/mum', NOW, false);
+  writes('not another family\'s', MUM, 'dm/CLUB/t1/dad/got/mum', NOW, false);
+  writes('not a coach of another team', OTHER, 'dm/CLUB/t1/mum/got/other', NOW, false);
+  writes('only a time', MUM, 'dm/CLUB/t1/mum/got/mum', 'yes', false);
+  // a coach or admin may be the one to start a family's conversation
+  writes('the coach writes first to a family', COACH, 'dm/CLUB/t1/mum/m/x2', msg('coach'), true);
+
+  console.log('\n--- coaches and admins talking to each other ---');
+  // staffdm/{code}/{a}~{b}: two people, both a coach or an admin, and nobody else, admins included
+  const SD = 'staffdm/CLUB/coach~other';
+  reads('a coach reads her conversation with another coach', COACH, SD, true);
+  reads('and so does the other coach', OTHER, SD, true);
+  reads('an admin who is not in it does not', ADM, SD, false);
+  reads('nor a parent', MUM, SD, false);
+  reads('nor the tracker', TRK, SD, false);
+  reads('nobody reads the list of them', ADM, 'staffdm/CLUB', false);
+  reads('an admin reads her own with a coach', ADM, 'staffdm/CLUB/adm~coach', true);
+  reads('signed out does not', OUT, SD, false);
+  writes('a coach writes to a coach', COACH, SD + '/m/s1', msg('coach'), true);
+  writes('the other answers', OTHER, SD + '/m/s1', msg('other'), true);
+  writes('not in the other\'s name', COACH, SD + '/m/s1', msg('other'), false);
+  writes('an admin writes to a coach', ADM, 'staffdm/CLUB/adm~coach/m/s1', msg('adm'), true);
+  writes('nobody writes into a conversation that is not hers', ADM, SD + '/m/s1', msg('adm'), false);
+  writes('a parent cannot start one, even naming herself', MUM, 'staffdm/CLUB/coach~mum/m/s1', msg('mum'), false);
+  writes('nor the tracker', TRK, 'staffdm/CLUB/coach~trk/m/s1', msg('trk'), false);
+  writes('nor somebody unknown', RANDO, 'staffdm/CLUB/coach~rando/m/s1', msg('rando'), false);
+  writes('a name merely containing hers is not hers', COACH, 'staffdm/CLUB/xcoach~other/m/s1', msg('coach'), false);
+  writes('nobody edits a message', COACH, SD + '/m/d1/text', 'changed', false);
+  writes('an empty one is refused', COACH, SD + '/m/s1', { ...msg('coach'), text: '' }, false);
+  writes('the whole conversation cannot be written', COACH, SD, { m: {} }, false);
+  writes('she marks it read', OTHER, SD + '/seen/other', NOW, true);
+  writes('and her phone says it got it', OTHER, SD + '/got/other', NOW, true);
+  writes('not for the other', OTHER, SD + '/seen/coach', NOW, false);
+  writes('not on somebody else\'s', ADM, SD + '/got/adm', NOW, false);
+  {
+    // a coach who has left (off coachIndex) neither reads nor writes there any more
+    const ci = DB.workspaces.CLUB.access.coachIndex;
+    DB.workspaces.CLUB.access.coachIndex = { coach: 't1' };
+    reads('a coach no longer coaching cannot read it', OTHER, SD, false);
+    writes('nor write in it', OTHER, SD + '/m/s1', msg('other'), false);
+    DB.workspaces.CLUB.access.coachIndex = ci;
+  }
 
   console.log('\n--- the parent list itself ---');
   const TP = 'workspaces/CLUB/access/teamParents/';

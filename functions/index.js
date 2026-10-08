@@ -51,6 +51,10 @@ exports.pushNotice = onValueCreated('/board/{code}/{tid}/{id}', event =>
 exports.pushMessage = onValueCreated('/dm/{code}/{tid}/{fam}/m/{id}', event =>
   push.onMessage(envOf(event), event.params, event.data.val()));
 
+/* A new message between two coaches or admins (build 105). Append-only too. */
+exports.pushStaffMessage = onValueCreated('/staffdm/{code}/{cid}/m/{id}', event =>
+  push.onStaff(envOf(event), event.params, event.data.val()));
+
 /* The calendar feed (calendar.js): https://{region}-{project}.cloudfunctions.net/calendar/{id}.ics,
    which is what firebase-config.js names as SOCCER_CALENDAR_FEED. Anyone may
    ask, because a calendar app asks with no account; what it can be handed is

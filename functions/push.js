@@ -176,4 +176,30 @@ async function onMessage(env, params, v) {
   return { to: [...people].sort(), ...(await deliver(env, list)) };
 }
 
-module.exports = { onNotice, onMessage, noticeReaders, threadReaders, teamFacts, BODY_MAX, BATCH };
+/* Two colleagues, staffdm/{code}/{a}~{b}/m/{id} (build 105): the rule's
+   readers are those two, while each is an admin or a coach of some team
+   (coachIndex). So the one person told is the other of the pair, and only if
+   the author is one of the pair and both are still staff. The id is checked
+   to be exactly two plain uids: a made-up one names nobody. */
+async function onStaff(env, params, v) {
+  const none = { to: [], sent: 0, failed: 0, removed: [] };
+  if (!v || typeof v !== 'object' || !v.by || typeof v.text !== 'string' || !v.text || !params || !params.code || !params.cid || !params.id) return none;
+  const { code, cid, id } = params;
+  const pair = String(cid).split('~');
+  if (pair.length !== 2 || pair.some(u => !/^[^.#$\[\]\/~]{1,128}$/.test(u)) || pair[0] === pair[1] || !pair.includes(v.by)) return none;
+  const W = 'workspaces/' + code;
+  const [retired, admins, coachIndex] = await Promise.all([
+    env.get('retired/' + code), env.get(W + '/access/admins'), env.get(W + '/access/coachIndex')
+  ]);
+  if (retired) return none;
+  const staff = u => has(admins, u) || has(coachIndex, u);
+  if (!pair.every(staff)) return none;
+  const other = pair.find(u => u !== v.by);
+  const people = new Set([other]);
+  const list = await messagesFor(env, people, () => ({
+    title: v.byName || 'A colleague', body: short(v.text), tag: id, code, hash: `#/messages/with/${v.by}`, urgent: ''
+  }));
+  return { to: [other], ...(await deliver(env, list)) };
+}
+
+module.exports = { onNotice, onMessage, onStaff, noticeReaders, threadReaders, teamFacts, BODY_MAX, BATCH };

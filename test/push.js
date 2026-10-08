@@ -41,7 +41,8 @@ const CLUB = {
     teamIndex: { t1: { coach: 'coach', trk: 'tracker' }, t2: { other: 'coach' } },
     // `stale` is still in the table but the squad no longer names her: the table is derived and can lag
     teamParents: { t1: { mum: 'p1', rosamum: 'p2', stale: 'p2' }, t2: { dad: 'q1' } },
-    teamPlayers: { t1: { ella: 'p1' } }
+    teamPlayers: { t1: { ella: 'p1' } },
+    coachIndex: { coach: 't1', other: 't2' }
   },
   teams: {
     t1: { id: 't1', name: 'Flight', players: {
@@ -69,7 +70,9 @@ const toUid = (S, u) => S.sent().filter(m => m.data.uid === u);
   console.log('--- the functions that are deployed ---');
   {
     const S = server();
-    deepEq('two triggers, one per thing that is news', Object.keys(S.triggers).filter(n => S.triggers[n].kind === 'created').sort(), ['pushMessage', 'pushNotice']);
+    deepEq('three triggers, one per thing that is news', Object.keys(S.triggers).filter(n => S.triggers[n].kind === 'created').sort(), ['pushMessage', 'pushNotice', 'pushStaffMessage']);
+    check('a message between colleagues wakes its sender', S.woken('staffdm/CLUB/coach~other/m/s1').join(), 'pushStaffMessage');
+    check('its markers wake nothing', S.woken('staffdm/CLUB/coach~other/got/other').length + S.woken('staffdm/CLUB/coach~other/seen/other').length, 0);
     check('a new notice wakes the notice sender', S.woken('board/CLUB/t1/n1').join(), 'pushNotice');
     check('a new family message wakes the message sender', S.woken('dm/CLUB/t1/mum/m/x1').join(), 'pushMessage');
     check('a read marker under a notice wakes nothing', S.woken('board/CLUB/t1/n1/seen/mum').length, 0);
@@ -120,6 +123,44 @@ const toUid = (S, u) => S.sent().filter(m => m.data.uid === u);
     const S = server();
     await S.fire('board/CLUB/t2/n3', { by: 'other', byName: 'Kim', at: 5, text: 'Storm only' });
     deepEq('another team\'s notice stays with that team', owners(S), ['adm', 'dad']);
+  }
+
+  console.log('\n--- two colleagues: who hears it ---');
+  {
+    const S = server();
+    const r = await S.fire('staffdm/CLUB/coach~other/m/s1', { by: 'coach', byName: 'Jaz', at: 5, text: 'Can you take Thursday?' });
+    deepEq('the other coach, and nobody else', r.pushStaffMessage.to, ['other']);
+    deepEq('those are the only phones sent to', owners(S), ['other']);
+    check('not an admin: it is theirs alone', toUid(S, 'adm').length, 0);
+    const m = toUid(S, 'other')[0];
+    check('titled with who wrote it', m.data.title, 'Jaz');
+    check('opening the conversation with her', m.data.hash, '#/messages/with/coach');
+    const reads = S.reads.filter(p => !/^(workspaces\/CLUB\/access\/(admins|coachIndex)$|retired\/CLUB$|pushTokens\/other$)/.test(p));
+    deepEq('it read the two tables, and her phones, nothing else', reads, []);
+  }
+  {
+    const S = server();
+    const r = await S.fire('staffdm/CLUB/adm~coach/m/s2', { by: 'adm', byName: 'Ada', at: 5, text: 'Fees are due' });
+    deepEq('an admin to a coach', r.pushStaffMessage.to, ['coach']);
+    check('on both her phones', toUid(S, 'coach').length, 2);
+  }
+  for (const [label, cid, by] of [
+    ['a parent named in the pair is nobody to tell', 'coach~mum', 'coach'],
+    ['nor a tracker', 'coach~trk', 'coach'],
+    ['an author not in the pair sends nothing', 'coach~other', 'adm'],
+    ['nor a pair of one', 'coach~coach', 'coach'],
+    ['nor three', 'adm~coach~other', 'adm']
+  ]) {
+    const S = server();
+    const r = await S.fire(`staffdm/CLUB/${cid}/m/s3`, { by, byName: 'x', at: 5, text: 'hi' });
+    check(label, (r.pushStaffMessage || { to: [] }).to.length + S.sent().length, 0);
+  }
+  {
+    // a coach who has left the club is not told, and cannot be the one telling
+    const S = server();
+    await S.fire('workspaces/CLUB/access/coachIndex/other', null);
+    const r = await S.fire('staffdm/CLUB/coach~other/m/s4', { by: 'coach', byName: 'Jaz', at: 5, text: 'still there?' });
+    check('nobody, once the other is no longer staff', r.pushStaffMessage.to.length + S.sent().length, 0);
   }
 
   console.log('\n--- a family conversation: who hears it ---');
@@ -335,7 +376,7 @@ const toUid = (S, u) => S.sent().filter(m => m.data.uid === u);
     const fbk = makeFakebase().refuseWrites(p => p.startsWith('pushTokens/'));
     const { A } = await boot('mum', { fbk });
     A.click({ act: 'pushon' }); await A.flush();
-    check('rules not published: said, by version', /refused.*version 7/.test(A.lastToast()), true);
+    check('rules not published: said, by version', /refused.*version 8/.test(A.lastToast()), true);
     check('and not claimed to be on', A.pushRec, null);
   }
 

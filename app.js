@@ -2,7 +2,7 @@
    Static app. Data lives in localStorage, and mirrors to Firebase Realtime
    Database when a config + workspace code are present. */
 
-const BUILD = '104';
+const BUILD = '105';
 const BUILT = '2026-10-07';
 /* The version of database.rules.json this app was written against. The rules
    carry the same number in rulesVersion's .write, which accepts that number
@@ -11,7 +11,7 @@ const BUILT = '2026-10-07';
    never pasted look exactly like a coach with no signal: "saved on this phone
    only", one feature at a time. test/rules.js holds the two numbers together
    and fails when the rules change without this going up. */
-const RULES_VERSION = 7;
+const RULES_VERSION = 8;
 /* index.html carries the build it was published with. If this file is newer, the
    browser handed us a cached page — the exact failure that has eaten hours. */
 const pageBuild = () => {
@@ -2298,6 +2298,20 @@ function joinCard(t) {
                                           audit log: nobody edits or deletes a
                                           message, admins included.
      dm/.../{familyUid}/seen/{uid}        each side's read marker.
+     dm/.../{familyUid}/got/{uid}         each reader's phone saying it has
+                                          the conversation up to then: the
+                                          "delivered" under a message.
+     staffdm/{code}/{a}~{b}/m/{id}        two of the club's coaches and admins
+                                          talking to each other (build 105),
+                                          the two uids sorted. Readable by
+                                          those two while they are staff, and
+                                          nobody else, admins included. Its
+                                          own seen/ and got/ the same way.
+
+   Either side starts a family conversation: a parent with the coaches, or a
+   coach or admin with a family on her team (build 105). It is the same one
+   thread either way, so a coach writing first never makes a private line to
+   one parent: every coach of the team and the admins still read it.
 
    A notice board readable club-wide is no wider than what the rules already
    let a parent read (every team's games and squad); the app shows each person
@@ -2313,7 +2327,7 @@ function joinCard(t) {
 const LS_MSGS = 'sm.msgs';
 const MSG_MAX = 4000;
 const MSG_SHOW = 25;           // notices drawn before "Show older"
-let msgs = { board: {}, dm: {}, outbox: {} };
+let msgs = { board: {}, dm: {}, sd: {}, outbox: {} };
 let msgFor = null;             // { key, ls, uid, code } the watchers belong to
 let msgSubs = {};              // path -> unsubscribe
 let msgPrimed = {};            // path -> keys already there at the first read
@@ -2346,7 +2360,22 @@ function famThreads() {
   return out;
 }
 const myThread = (tid, fam) => !!me && famThreads().some(x => x.tid === tid && x.fam === fam);
-const msgOn = () => msgTeams().length > 0;
+/* Coaches and admins talking to each other. Staff here is what the staffdm
+   rule reads: an admin, or a coach of any team (coachIndex). The app owner
+   with no role in the club is neither, and the rule would refuse her. */
+const staffUid = u => !!u && (isAdmin(u) || isCoachAny(u));
+const amStaff = () => !!me && !!fb && !!wsCode() && !needsSignIn() && anyAdmins() && staffUid(me.uid);
+function colleagues() {
+  if (!amStaff()) return [];
+  const out = new Set([...Object.keys(acc().admins || {}), ...coachUids()]);
+  out.delete(me.uid);
+  return [...out].filter(staffUid);
+}
+// one conversation per pair, whoever writes first: the two uids sorted, so both phones name it alike
+const sdId = (a, b) => [a, b].sort().join('~');
+const sdOther = cid => String(cid || '').split('~').find(u => u !== (me && me.uid)) || '';
+const myStaffChat = cid => amStaff() && String(cid || '').split('~').includes(me.uid) && staffUid(sdOther(cid));
+const msgOn = () => msgTeams().length > 0 || colleagues().length > 0;
 
 function saveMsgs() {
   if (!msgFor) return;
@@ -2371,12 +2400,12 @@ function watchMessages() {
     for (const off of Object.values(msgSubs)) { try { off(); } catch (e) { } }
     if (msgFor && !me) { try { localStorage.removeItem(msgFor.ls); } catch (e) { } }
     msgSubs = {}; msgPrimed = {};
-    msgs = { board: {}, dm: {}, outbox: {} };
+    msgs = { board: {}, dm: {}, sd: {}, outbox: {} };
     msgFor = key ? { key, ls: msgsKey(me.uid), uid: me.uid, code: wsCode() } : null;
     if (msgFor) {
       try {
         const c = JSON.parse(localStorage.getItem(msgFor.ls) || 'null');
-        if (c) msgs = { board: c.board || {}, dm: c.dm || {}, outbox: c.outbox || {} };
+        if (c) msgs = { board: c.board || {}, dm: c.dm || {}, sd: c.sd || {}, outbox: c.outbox || {} };
       } catch (e) { }
     }
   }
@@ -2385,6 +2414,8 @@ function watchMessages() {
   for (const t of msgTeams()) want[`board/${code}/${t.id}`] = { kind: 'board', tid: t.id };
   for (const t of staffTeams()) want[`dm/${code}/${t.id}`] = { kind: 'dm', tid: t.id };
   for (const x of famThreads()) want[`dm/${code}/${x.tid}/${x.fam}`] = { kind: 'dm', tid: x.tid, fam: x.fam };
+  // one listener per colleague: a rule cannot list her conversations, but it can answer for each pair
+  for (const u of colleagues()) { const cid = sdId(me.uid, u); want[`staffdm/${code}/${cid}`] = { kind: 'sd', cid }; }
   for (const p of Object.keys(msgSubs)) if (!want[p]) {
     try { msgSubs[p](); } catch (e) { }
     delete msgSubs[p]; delete msgPrimed[p];
@@ -2407,13 +2438,14 @@ function watchMessages() {
 function onMsgs(p, w, v) {
   if (!msgFor) return;
   if (w.kind === 'board') msgs.board[w.tid] = v || {};
+  else if (w.kind === 'sd') { if (v) msgs.sd[w.cid] = v; else delete msgs.sd[w.cid]; }
   else if (w.fam) {
     const all = { ...(msgs.dm[w.tid] || {}) };
     if (v) all[w.fam] = v; else delete all[w.fam];
     msgs.dm[w.tid] = all;
   } else msgs.dm[w.tid] = v || {};
   const landed = id => w.kind === 'board' ? !!((v || {})[id])
-    : w.fam ? !!(((v || {}).m || {})[id]) : Object.values(v || {}).some(th => (th.m || {})[id]);
+    : w.fam || w.kind === 'sd' ? !!(((v || {}).m || {})[id]) : Object.values(v || {}).some(th => (th.m || {})[id]);
   const first = !msgPrimed[p];
   for (const [id, o] of Object.entries(msgs.outbox)) {
     if (!o.path.startsWith(p + '/')) continue;
@@ -2426,10 +2458,11 @@ function onMsgs(p, w, v) {
     else if (first && o.status === 'sending') sendOut(id);
   }
   const fresh = msgNews(p, w);
+  markGot(w);
   saveMsgs();
   // an alert each, which pops up as before and also waits over the screen until she opens it
   for (const x of fresh) pushAlert({ id: 'm:' + x.id, code: msgFor.code, kind: 'msg', urgent: x.urgent, title: x.title, body: x.body,
-    hash: w.kind === 'board' ? '#/messages' : `#/messages/${w.tid}/${x.fam || w.fam}` });
+    hash: w.kind === 'board' ? '#/messages' : w.kind === 'sd' ? `#/messages/with/${sdOther(w.cid)}` : `#/messages/${w.tid}/${x.fam || w.fam}` });
   msgPaint();
 }
 
@@ -2443,6 +2476,10 @@ function msgNews(p, w) {
     for (const [id, x] of Object.entries(msgs.board[w.tid] || {}))
       items.push({ id, by: x.by, seen: !!(x.seen || {})[msgFor.uid], urgent: !!x.urgent,
         title: `${x.urgent ? 'Urgent · ' : ''}${tn} · ${x.byName || 'a coach'}`, body: x.text });
+  } else if (w.kind === 'sd') {
+    const th = msgs.sd[w.cid] || {}, mark = (th.seen || {})[msgFor.uid] || 0;
+    for (const [id, x] of Object.entries(th.m || {}))
+      items.push({ id, by: x.by, seen: (x.at || 0) <= mark, title: x.byName || 'A colleague', body: x.text });
   } else {
     for (const [fam, th] of Object.entries(msgs.dm[w.tid] || {})) {
       if (w.fam && fam !== w.fam) continue;
@@ -2460,7 +2497,7 @@ function msgNews(p, w) {
 
 /* ---- reading ---- */
 const outFor = (kind, tid, fam) => Object.entries(msgs.outbox || {})
-  .filter(([, o]) => o.kind === kind && o.tid === tid && (kind === 'board' || o.fam === fam))
+  .filter(([, o]) => o.kind === kind && (kind === 'sd' ? o.cid === tid : o.tid === tid && (kind === 'board' || o.fam === fam)))
   .map(([id, o]) => ({ id, ...o.value, status: o.status }));
 // the outbox's copy wins over the database's echo of it, so it keeps its status
 const withOut = (sent, out) => { const ids = new Set(out.map(x => x.id)); return sent.filter(x => !ids.has(x.id)).concat(out); };
@@ -2473,22 +2510,42 @@ function threadMsgs(tid, fam) {
   const sent = Object.entries(thread(tid, fam).m || {}).map(([id, x]) => ({ id, ...x }));
   return withOut(sent, outFor('dm', tid, fam)).sort((a, b) => (a.at || 0) - (b.at || 0));
 }
-const noticeUnread = x => !!me && x.by !== me.uid && !x.status && !(x.seen || {})[me.uid];
-function threadUnread(tid, fam) {
-  if (!me) return 0;
-  const mark = (thread(tid, fam).seen || {})[me.uid] || 0;
-  return threadMsgs(tid, fam).filter(x => x.by !== me.uid && !x.status && (x.at || 0) > mark).length;
+/* A conversation of either kind, as one thing the thread screen and the list
+   draw: { tid, fam } for a family's with a team's coaches, { cid } for two
+   colleagues'. */
+const convOf = c => c && c.cid ? (msgs.sd[c.cid] || {}) : thread(c.tid, c.fam);
+function convMsgs(c) {
+  if (!c.cid) return threadMsgs(c.tid, c.fam);
+  const sent = Object.entries(convOf(c).m || {}).map(([id, x]) => ({ id, ...x }));
+  return withOut(sent, outFor('sd', c.cid)).sort((a, b) => (a.at || 0) - (b.at || 0));
 }
-function unreadCount() {
-  // every club's: the other clubs' unread messages, and alerts about her calendar not looked at yet
-  const news = (newsFor() ? newsUnread() : 0) + (me ? elseUnread() + alertsUnread() : 0);
-  if (!msgFor) return news;
-  let n = news;
+function convUnread(c) {
+  if (!me) return 0;
+  const mark = (convOf(c).seen || {})[me.uid] || 0;
+  return convMsgs(c).filter(x => x.by !== me.uid && !x.status && (x.at || 0) > mark).length;
+}
+const convPath = c => c.cid ? `staffdm/${msgFor.code}/${c.cid}` : `dm/${msgFor.code}/${c.tid}/${c.fam}`;
+const convHash = c => c.cid ? `#/messages/with/${sdOther(c.cid)}` : `#/messages/${c.tid}/${c.fam}`;
+/* A marker is a time, compared with a message's own time. Never earlier than
+   the newest message it covers, so a phone whose clock runs behind the
+   sender's still counts that message read or received. */
+const markAt = c => Math.max(nowMs(), ...convMsgs(c).filter(x => !x.status).map(x => x.at || 0));
+const noticeUnread = x => !!me && x.by !== me.uid && !x.status && !(x.seen || {})[me.uid];
+const threadUnread = (tid, fam) => convUnread({ tid, fam });
+/* Two counts, on two buttons: what people wrote (Messages), and what is new
+   (the bell: changes to her calendar and club activity). */
+function msgUnread() {
+  // every club's: the other clubs' unread messages count here too
+  let n = me ? elseUnread() : 0;
+  if (!msgFor) return n;
   for (const t of msgTeams()) n += notices(t.id).filter(noticeUnread).length;
   for (const t of staffTeams()) for (const fam of Object.keys(msgs.dm[t.id] || {})) n += threadUnread(t.id, fam) ? 1 : 0;
   for (const x of famThreads()) n += threadUnread(x.tid, x.fam) ? 1 : 0;
+  for (const cid of Object.keys(msgs.sd || {})) if (myStaffChat(cid)) n += convUnread({ cid }) ? 1 : 0;
   return n;
 }
+const notesUnread = () => (newsFor() ? newsUnread() : 0) + (me ? alertsUnread() : 0);
+const unreadCount = () => msgUnread() + notesUnread();
 
 /* Families on a team, by account: a parent of two in the same squad is one
    family, and it is families a coach is asking about when she asks who has
@@ -2540,11 +2597,39 @@ function markSeen() {
     saveMsgs();
   }
   if (ui.view === 'thread' && ui.thread) {
-    const { tid, fam } = ui.thread;
-    if (!threadUnread(tid, fam)) return;
-    setDeep(msgs.dm, `${tid}/${fam}/seen/${u}`, at);
-    rootSet(`dm/${code}/${tid}/${fam}/seen/${u}`, at).catch(() => { });
+    const c = ui.thread;
+    if (!convUnread(c)) return;
+    const when = markAt(c);
+    if (c.cid) setDeep(msgs.sd, `${c.cid}/seen/${u}`, when);
+    else setDeep(msgs.dm, `${c.tid}/${c.fam}/seen/${u}`, when);
+    rootSet(`${convPath(c)}/seen/${u}`, when).catch(() => { });
     saveMsgs();
+  }
+}
+/* "Delivered": this phone has the conversation, up to its newest message from
+   anybody else. Written by the phone that got it, for itself, whenever a
+   listener brings something newer than it last said; the sender sees it as a
+   second tick. It says the phone has it, not that she looked: that is seen. */
+/* Asked once per conversation per newest message: a database still on older
+   rules refuses the marker, Firebase takes its own copy back, the listener
+   fires again, and without this that would be the same write for ever. */
+const gotAsked = new Map();
+function markGot(w) {
+  if (!msgFor || w.kind === 'board') return;
+  const u = msgFor.uid;
+  const convs = w.kind === 'sd' ? [{ cid: w.cid }]
+    : Object.keys(msgs.dm[w.tid] || {}).filter(fam => !w.fam || fam === w.fam).map(fam => ({ tid: w.tid, fam }));
+  for (const c of convs) {
+    const th = convOf(c);
+    const newest = Math.max(0, ...Object.values(th.m || {}).filter(x => x && x.by !== u).map(x => x.at || 0));
+    if (!newest || ((th.got || {})[u] || 0) >= newest) continue;
+    const key = msgFor.key + '|' + convPath(c);
+    if (gotAsked.get(key) >= newest) continue;
+    gotAsked.set(key, newest);
+    const when = Math.max(nowMs(), newest);
+    if (c.cid) setDeep(msgs.sd, `${c.cid}/got/${u}`, when);
+    else setDeep(msgs.dm, `${c.tid}/${c.fam}/got/${u}`, when);
+    rootSet(`${convPath(c)}/got/${u}`, when).catch(() => { });
   }
 }
 
@@ -2568,8 +2653,9 @@ function sendOut(id) {
 function queueMsg(kind, tid, fam, text, extra) {
   const id = uid();
   const value = { by: me.uid, byName: me.name || 'Someone', at: nowMs(), text, ...(extra || {}) };
-  const path = kind === 'board' ? `board/${msgFor.code}/${tid}/${id}` : `dm/${msgFor.code}/${tid}/${fam}/m/${id}`;
-  msgs.outbox[id] = { kind, tid, fam: fam || null, path, value, status: 'sending' };
+  // for a colleagues' conversation, tid is its id
+  const path = kind === 'board' ? `board/${msgFor.code}/${tid}/${id}` : kind === 'sd' ? `staffdm/${msgFor.code}/${tid}/m/${id}` : `dm/${msgFor.code}/${tid}/${fam}/m/${id}`;
+  msgs.outbox[id] = kind === 'sd' ? { kind, cid: tid, path, value, status: 'sending' } : { kind, tid, fam: fam || null, path, value, status: 'sending' };
   sendOut(id);
   return id;
 }
@@ -2779,13 +2865,27 @@ function pushCard(where) {
 }
 
 /* ---- screens ---- */
-function viewInbox() {
-  // opening the inbox reads the calendar alerts, as it reads club activity
+/* Notifications: what is new. Changes to her calendar in any club, and club
+   activity. Never somebody's message: those are on Messages, with a count of
+   their own (build 105). */
+function viewNotes() {
+  // opening it reads the calendar alerts, as it reads club activity
   if (me && alertsHere().list.some(x => x.kind === 'cal' && !x.read)) { for (const x of alerts.list) if (x.kind === 'cal') x.read = true; saveAlerts(); }
-  const news = (me ? alertsCard() : '') + (newsFor() ? newsCard() : '');
-  if (!msgOn() && news) return `<div class="stack">${news}</div>`;
-  if (news && !msgOn()) return `<div class="stack">${news}</div>`;
-  return news ? viewInboxMsgs().replace('<div class="stack">', '<div class="stack">' + news) : viewInboxMsgs();
+  const cards = (me ? alertsCard('notes') : '') + (newsFor() ? newsCard() : '');
+  return `<div class="stack"><h2>Notifications</h2>
+    ${cards || `<div class="empty"><strong>Nothing new</strong>Changes to your games and practices, in any of your clubs${newsFor() ? ', and club activity' : ''}, show up here.</div>`}
+    ${pushCard('notes')}</div>`;
+}
+function viewInbox() {
+  const other = me ? alertsCard('msgs') : '';
+  if (!msgOn()) return other ? `<div class="stack"><h2>Messages</h2>${other}</div>` : viewInboxMsgs();
+  return viewInboxMsgs().replace('<!--others-->', other);
+}
+const LOCK_SVG = '<svg class="lock" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>';
+// a colleague as the list and the thread name her: who, and what she is in the club
+function colleagueLabel(u) {
+  const ts = teams().filter(t => (teamAccess(t.id).coaches || {})[u]).map(t => t.name).filter(Boolean);
+  return [isAdmin(u) ? 'Admin' : 'Coach', ts.join(', ')].filter(Boolean).join(' · ');
 }
 function viewInboxMsgs() {
   if (!msgOn() && !wsRead && fbConfig().apiKey) return `<div class="empty"><strong>Connecting…</strong>Messages appear once Minutes has reached the club.</div>`;
@@ -2818,73 +2918,187 @@ function viewInboxMsgs() {
     </div>`;
   };
 
-  const convRow = (tid, fam, label, sub) => {
-    const l = threadMsgs(tid, fam), last = l[l.length - 1], n = threadUnread(tid, fam);
-    return `<button class="prow convrow${n ? ' unread' : ''}" data-act="thread" data-tid="${tid}" data-fam="${fam}">
+  const convRow = (c, label, sub) => {
+    const l = convMsgs(c), last = l[l.length - 1], n = convUnread(c);
+    const at = c.cid ? `data-act="sdopen" data-u="${esc(sdOther(c.cid))}"` : `data-act="thread" data-tid="${c.tid}" data-fam="${esc(c.fam)}"`;
+    return { last: last ? last.at || 0 : 0, n, html: `<button class="prow convrow${n ? ' unread' : ''}" ${at}>
       <span><span class="pname">${label}</span>
         <span class="rowsub">${last ? `${last.by === me.uid ? 'You: ' : ''}${esc(String(last.text || '').slice(0, 80))}` : esc(sub)}</span></span>
-      <span class="msgwhen">${n ? `<span class="msgdot">${n}</span>` : last ? esc(whenShort(last.at)) : ''}</span></button>`;
+      <span class="msgwhen">${n ? `<span class="msgdot">${n}</span>` : last ? esc(whenShort(last.at)) : ''}</span></button>` };
   };
+  // hers with the coaches stay listed even before a word is said: that is how a family starts one
   const famConvs = fams.map(x => x.fam === me.uid
-    ? convRow(x.tid, x.fam, `Coaches of ${teamLabel(state.teams[x.tid])}`, 'Ask a question, say she is ill, anything for the coaches')
-    : convRow(x.tid, x.fam, `${esc(familyName(x.fam))} and the coaches of ${teamLabel(state.teams[x.tid])}`, 'Your family’s conversation with the coaches'));
+    ? convRow(x, `Coaches of ${teamLabel(state.teams[x.tid])}`, 'Ask a question, say she is ill, anything for the coaches')
+    : convRow(x, `${esc(familyName(x.fam))} and the coaches of ${teamLabel(state.teams[x.tid])}`, 'Your family’s conversation with the coaches'));
   const staffConvs = staff.flatMap(t => Object.keys(msgs.dm[t.id] || {})
     .concat(Object.values(msgs.outbox || {}).filter(o => o.kind === 'dm' && o.tid === t.id).map(o => o.fam))
-    .filter((f, i, a) => a.indexOf(f) === i)
-    .map(fam => ({ t, fam, last: (threadMsgs(t.id, fam).slice(-1)[0] || {}).at || 0 })))
-    .sort((a, b) => (threadUnread(b.t.id, b.fam) ? 1 : 0) - (threadUnread(a.t.id, a.fam) ? 1 : 0) || b.last - a.last)
-    .map(({ t, fam }) => {
+    .filter((f, i, a) => a.indexOf(f) === i && convMsgs({ tid: t.id, fam: f }).length)
+    .map(fam => {
       const kids = childrenOf(t.id, fam);
-      return convRow(t.id, fam, `${esc(familyName(fam))}${kids.length ? ` <span class="muted">· ${esc(kids.join(', '))}</span>` : ''}${many ? ` <span class="pill">${esc(t.name || '')}</span>` : ''}`, '');
-    });
+      return convRow({ tid: t.id, fam }, `${esc(familyName(fam))}${kids.length ? ` <span class="muted">· ${esc(kids.join(', '))}</span>` : ''}${many ? ` <span class="pill">${esc(t.name || '')}</span>` : ''}`, '');
+    }));
+  const sdConvs = colleagues().map(u => ({ cid: sdId(me.uid, u), u }))
+    .filter(x => convMsgs(x).length)
+    .map(x => convRow(x, `${esc(familyName(x.u))} <span class="muted">· ${esc(colleagueLabel(x.u))}</span>`, ''));
+  const rows = [...staffConvs, ...sdConvs].sort((a, b) => (b.n ? 1 : 0) - (a.n ? 1 : 0) || b.last - a.last);
+  const list = famConvs.concat(rows).map(r => r.html).join('');
+  const canStart = staff.length || colleagues().length || fams.length > 1;
 
   return `<div class="stack">
     <div class="spread"><h2>Messages</h2>
-      ${staff.length ? `<button class="btn sm" data-act="postnew">Post a notice</button>` : ''}</div>
+      ${canStart ? `<button class="btn sm" data-act="msgnew">New message</button>` : ''}</div>
     ${alerts}
-    ${fams.length || staff.length ? `<div class="card"><h2 style="margin-bottom:8px">${staff.length ? 'From families' : 'Talk to the coaches'}</h2>
-      ${staff.length && !staffConvs.length && !famConvs.length ? `<p class="muted" style="margin:0">Nothing yet. A parent's message to the coaches lands here.</p>` : ''}
-      <div class="plist">${famConvs.join('')}${staffConvs.join('')}</div></div>` : ''}
-    <div class="card"><h2 style="margin-bottom:8px">Team notices</h2>
-      ${shown.length ? shown.map(notice).join('') : `<p class="muted" style="margin:0">${staff.length ? 'Nothing posted yet. A notice goes to every family on the team.' : 'Nothing from the coaches yet.'}</p>`}
+    <!--others-->
+    <div class="card"><h2 style="margin-bottom:8px">Conversations</h2>
+      ${list ? `<div class="plist">${list}</div>` : `<p class="muted" style="margin:0">Nothing yet. Tap <b>New message</b> to write to ${staff.length ? 'a family on your team' : ''}${staff.length && colleagues().length ? ', or ' : ''}${colleagues().length ? 'another coach or an admin' : ''}.</p>`}
+      <p class="muted lockline" style="margin:8px 0 0">${LOCK_SVG} Private: each conversation is readable only by the people in it. <button class="linkbtn" data-act="msgprivacy">How private?</button></p></div>
+    <div class="card"><div class="spread"><h2 style="margin:0">Team notices</h2>
+      ${staff.length ? `<button class="btn quiet sm" data-act="postnew">Post a notice</button>` : ''}</div>
+      <div style="margin-top:8px">${shown.length ? shown.map(notice).join('') : `<p class="muted" style="margin:0">${staff.length ? 'Nothing posted yet. A notice goes to every family on the team.' : 'Nothing from the coaches yet.'}</p>`}</div>
       ${all.length > shown.length ? `<button class="btn quiet wide" data-act="msgall">Show ${all.length - shown.length} older</button>` : ''}</div>
-    <p class="muted">Messages pop up while Minutes is open on a phone, and wait here with a badge until then.${staff.length ? ' To reach everyone right now, use <b>Email or share</b> on a notice.' : ''}</p>
+    <p class="muted">Messages pop up while Minutes is open on a phone, and wait here with a count until then.${staff.length ? ' To reach everyone right now, use <b>Email or share</b> on a notice.' : ''}</p>
   </div>`;
 }
 
+/* Who can read a conversation, in words: the lock line and the privacy sheet
+   both say it, and it is exactly what the rules let read it. */
+function convReaders(c) {
+  if (c.cid) return `you and ${esc(familyName(sdOther(c.cid)))}`;
+  const t = state.teams[c.tid];
+  const fam = c.fam === me.uid ? 'you' : esc(familyName(c.fam));
+  return `${fam}, the coaches of ${teamLabel(t)} and the club's admins`;
+}
 function viewThread() {
-  const th = ui.thread || {};
-  const t = state.teams[th.tid];
-  const mayRead = t && me && (isStaff(t.id) || myThread(t.id, th.fam));
+  const c = ui.thread || {};
+  if (c.cid) {
+    if (!myStaffChat(c.cid)) { ui.view = 'inbox'; ui.thread = null; return viewInbox(); }
+    const u = sdOther(c.cid);
+    return threadScreen(c, `<b>${esc(familyName(u))}</b><span class="rowsub">${esc(colleagueLabel(u))}</span>`,
+      `Only you and ${esc(familyName(u))} can read this conversation — no other coach, and no admin. Nobody can edit or delete a message once it is sent.`);
+  }
+  const t = state.teams[c.tid];
+  const mayRead = t && me && (isStaff(t.id) || myThread(t.id, c.fam));
   if (!mayRead) { ui.view = 'inbox'; ui.thread = null; return viewInbox(); }
-  const asStaff = isStaff(t.id) && th.fam !== me.uid;
-  const kids = asStaff ? childrenOf(t.id, th.fam) : [];
+  const asStaff = isStaff(t.id) && c.fam !== me.uid;
+  const kids = asStaff ? childrenOf(t.id, c.fam) : [];
   const coaches = staffNames(t.id);
   const head = asStaff
-    ? `<b>${esc(familyName(th.fam))}</b><span class="rowsub">${kids.length ? 'Parent of ' + esc(kids.join(', ')) + ' · ' : ''}${teamLabel(t)}</span>`
+    ? `<b>${esc(familyName(c.fam))}</b><span class="rowsub">${kids.length ? 'Parent of ' + esc(kids.join(', ')) + ' · ' : ''}${teamLabel(t)}</span>`
     : `<b>Coaches of ${teamLabel(t)}</b><span class="rowsub">${coaches.length ? esc(coaches.join(', ')) : 'The team’s coaches'}</span>`;
-  const draftKey = th.tid + '/' + th.fam;
+  return threadScreen(c, head,
+    `Every coach of ${teamLabel(t)} and the club's admins can read this conversation — never one coach alone${!asStaff && c.fam !== me.uid ? `, and so can ${esc(familyName(c.fam))}` : ''}. Nobody can edit or delete a message once it is sent.`);
+}
+function threadScreen(c, head, foot) {
+  const draftKey = c.cid ? 'sd/' + c.cid : c.tid + '/' + c.fam;
+  const to = c.cid ? `data-cid="${esc(c.cid)}"` : `data-tid="${c.tid}" data-fam="${esc(c.fam)}"`;
   return `<div class="stack">
     <div class="row"><button class="btn quiet sm" data-act="inbox">‹ Messages</button></div>
-    <div class="card">${head}</div>
-    <div class="card"><div class="thread" id="thread">${threadHtml(t.id, th.fam)}</div>
+    <div class="card">${head}
+      <button class="linkbtn lockline" type="button" data-act="msgprivacy" style="display:block;margin-top:6px">${LOCK_SVG} Private · only ${convReaders(c)} can read this</button></div>
+    <div class="card"><div class="thread" id="thread">${threadHtml(c)}</div>
       <textarea id="msgText" rows="3" maxlength="${MSG_MAX}" placeholder="Write a message" data-draft="${esc(draftKey)}">${esc((ui.msgDraft || {})[draftKey] || '')}</textarea>
-      <div class="row" style="margin-top:8px;justify-content:flex-end"><button class="btn" data-act="msgsend" data-tid="${t.id}" data-fam="${esc(th.fam)}">Send</button></div></div>
-    <p class="muted">Every coach of ${teamLabel(t)} and the club's admins can read this conversation — never one coach alone${!asStaff && th.fam !== me.uid ? `, and so can ${esc(familyName(th.fam))}` : ''}. Nobody can edit or delete a message once it is sent.</p>
+      <div class="row" style="margin-top:8px;justify-content:flex-end"><button class="btn" data-act="msgsend" ${to}>Send</button></div></div>
+    <p class="muted">${foot}</p>
   </div>`;
 }
-function threadHtml(tid, fam) {
-  const l = threadMsgs(tid, fam);
+/* Where one of hers has got to, as a messaging app shows it:
+   waiting for a signal, sent (the club's server has it), delivered (somebody
+   else's phone has it) and read (somebody else has opened the conversation
+   since). Delivered and read come from the got/ and seen/ markers. */
+function msgState(c, x) {
+  if (x.status === 'refused') return 'refused';
+  if (x.status === 'sending') return online ? 'sending' : 'waiting';
+  const th = convOf(c), at = x.at || 0;
+  const past = o => Object.entries(o || {}).filter(([u, v]) => u !== me.uid && (Number(v) || 0) >= at);
+  if (past(th.seen).length) return 'read';
+  if (past(th.got).length) return 'delivered';
+  return 'sent';
+}
+const TICK = {
+  waiting: ['tick wait', '◷', 'Waiting for a signal'], sending: ['tick wait', '◷', 'Sending'],
+  sent: ['tick', '✓', 'Sent'], delivered: ['tick', '✓✓', 'Delivered'], read: ['tick read', '✓✓', 'Read']
+};
+function threadHtml(c, fam) {
+  if (typeof c === 'string') c = { tid: c, fam };
+  const l = convMsgs(c);
   if (!l.length) return `<p class="muted" style="margin:0">No messages yet.</p>`;
-  // "Seen" under my last message once anybody on the other side has opened it since
-  const other = Object.entries(thread(tid, fam).seen || {}).filter(([u]) => u !== me.uid).map(([, v]) => v);
-  const lastMine = [...l].reverse().find(x => x.by === me.uid && !x.status);
-  const seenMine = lastMine && other.some(v => v >= (lastMine.at || 0));
-  return l.map(x => `<div class="bubble${x.by === me.uid ? ' me' : ''}">
-      ${x.by === me.uid ? '' : `<span class="bwho">${esc(x.byName || 'Someone')}</span>`}
+  return l.map(x => {
+    const mine = x.by === me.uid, st = mine ? msgState(c, x) : '';
+    const tick = TICK[st];
+    const when = st === 'refused' ? `Not sent · <button class="linkbtn" data-act="msgretry" data-id="${x.id}">Try again</button>`
+      : `${esc(whenShort(x.at))}${tick ? ` <span class="${tick[0]}" title="${tick[2]}">${tick[1]}</span> ${tick[2]}` : ''}`;
+    return `<div class="bubble${mine ? ' me' : ''}"${mine && st !== 'refused' ? ` data-act="msginfo" data-id="${x.id}" role="button" tabindex="0"` : ''}>
+      ${mine ? '' : `<span class="bwho">${esc(x.byName || 'Someone')}</span>`}
       <span class="btext">${msgText(x.text)}</span>
-      <span class="bwhen">${x.status === 'sending' ? 'Sending…' : x.status === 'refused'
-      ? `Not sent · <button class="linkbtn" data-act="msgretry" data-id="${x.id}">Try again</button>` : esc(whenShort(x.at))}${x === lastMine && seenMine ? ' · Seen' : ''}</span></div>`).join('');
+      <span class="bwhen">${when}</span></div>`;
+  }).join('');
+}
+const whenLong = ms => ms ? new Date(ms).toLocaleString([], { weekday: 'short', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' }) : '';
+/* Message info: the four steps, with who and when for the last two. */
+function sheetMsgInfo(id) {
+  const c = ui.thread; if (!c || !me) return;
+  const x = convMsgs(c).find(m => m.id === id); if (!x || x.by !== me.uid) return;
+  const st = msgState(c, x), th = convOf(c), at = x.at || 0;
+  const who = o => Object.entries(o || {}).filter(([u, v]) => u !== me.uid && (Number(v) || 0) >= at)
+    .sort((a, b) => a[1] - b[1]).map(([u, v]) => [u, v]);
+  const read = who(th.seen), got = who(th.got);
+  const gotAll = new Map(got);
+  for (const [u, v] of read) if (!gotAll.has(u)) gotAll.set(u, v);
+  const step = (ok, label, detail) => `<div class="prow" style="grid-template-columns:22px 1fr"><span class="${ok ? 'tick read' : 'muted'}">${ok ? '✓' : '·'}</span>
+    <span><span class="pname">${label}</span>${detail ? `<span class="rowsub">${detail}</span>` : ''}</span></div>`;
+  const names = list => list.map(([u, v]) => `${esc(familyName(u))}, ${esc(whenLong(v))}`).join('<br>');
+  const saved = st !== 'waiting' && st !== 'sending';
+  openSheet(`<h3>Message info</h3>
+    <p class="muted" style="margin-top:0">“${esc(String(x.text || '').slice(0, 120))}${String(x.text || '').length > 120 ? '…' : ''}”</p>
+    <div class="plist">
+      ${step(true, 'Written on this phone', esc(whenLong(at)))}
+      ${step(saved, saved ? 'Sent — the club’s server has it' : 'Not sent yet', saved ? '' : online ? 'Sending now' : 'Waiting for a signal. It goes by itself, even if Minutes is closed and opened again.')}
+      ${step(gotAll.size > 0, gotAll.size ? 'Delivered' : 'Not delivered yet', gotAll.size ? names([...gotAll]) : 'Nobody else’s phone has had it yet. It arrives when they next open Minutes, or as a notification if they turned those on.')}
+      ${step(read.length > 0, read.length ? 'Read' : 'Not read yet', read.length ? names(read) : '')}
+    </div>
+    <button class="btn quiet wide" data-act="closesheet" style="margin-top:12px">Done</button>`);
+}
+/* Saying exactly how private this is. Access is narrowed by the database's
+   rules; the connection and the stored copy are encrypted by Google; it is not
+   end-to-end encrypted, and whoever runs the club's Firebase project can read
+   the database. Never claim more than that. */
+function sheetPrivacy() {
+  const c = ui.view === 'thread' ? ui.thread : null;
+  openSheet(`<h3>${LOCK_SVG} How private are messages?</h3>
+    ${c ? `<p><b>Who can read this one:</b> ${convReaders(c)}. The club's database refuses everybody else.</p>` : ''}
+    <p><b>Kept to the people in it.</b> A family's conversation is readable by that family, the team's coaches and the club's admins — never one coach alone, and never another family. A conversation between two coaches or admins is readable by those two only. Trackers, other parents and anyone outside the club cannot open any of it.</p>
+    <p><b>Encrypted on the way and where it is kept.</b> Messages travel over an encrypted connection (HTTPS) and are stored encrypted by Google, which hosts the club's database.</p>
+    <p><b>Not end-to-end encrypted.</b> Whoever runs the club's Firebase project can open the database and read it, as with email or most club apps. Don't send card numbers or passwords here.</p>
+    <p><b>On phones.</b> A copy stays on each phone that opens the conversation, so it works with no signal, and is wiped when that person signs out.</p>
+    <p><b>Permanent.</b> Nobody can edit or delete a message once it is sent, admins included.</p>
+    <button class="btn quiet wide" data-act="closesheet">Done</button>`);
+}
+/* New message: whoever she may start a conversation with, and nobody else.
+   A family, the coaches of each of her teams; a coach, the families on the
+   teams she coaches (an admin, on every team) and the club's other coaches
+   and admins. Each opens the conversation; nothing is written until she
+   sends. */
+function sheetNewMsg() {
+  if (!me || !msgFor) return;
+  const fams = famThreads(), staff = staffTeams(), cols = colleagues();
+  if (staff.length && !staff.some(t => t.id === ui.newTid)) ui.newTid = (staff.find(t => t.id === ui.teamId) || staff[0]).id;
+  const row = (attrs, name, sub) => `<button class="prow convrow" type="button" ${attrs}><span><span class="pname">${name}</span>${sub ? `<span class="rowsub">${sub}</span>` : ''}</span><span class="muted">›</span></button>`;
+  const famRows = fams.map(x => row(`data-act="thread" data-tid="${x.tid}" data-fam="${esc(x.fam)}"`, `Coaches of ${teamLabel(state.teams[x.tid])}`, esc(staffNames(x.tid).join(', '))));
+  const tid = ui.newTid;
+  const fl = staff.length ? families(tid).map(u => ({ u, kids: childrenOf(tid, u) })).sort((a, b) => (a.kids[0] || '').localeCompare(b.kids[0] || '')) : [];
+  const famPick = staff.length ? `<h4>A family</h4>
+    ${staff.length > 1 ? pickOne('msgnewteam', 'tid', tid, staff.map(t => [t.id, teamLabel(t)]), '') : ''}
+    ${fl.length ? `<div class="plist">${fl.map(x => row(`data-act="msgto" data-tid="${tid}" data-fam="${esc(x.u)}"`, esc(familyName(x.u)), x.kids.length ? 'Parent of ' + esc(x.kids.join(', ')) : '')).join('')}</div>
+      <p class="muted">Every coach of ${teamLabel(state.teams[tid])} and the admins read it with you. A player with her own sign-in reads her family's.</p>`
+      : `<p class="muted">No parent on ${teamLabel(state.teams[tid])} has an account yet — invite them from Squad or People.</p>`}` : '';
+  const colPick = cols.length ? `<h4>A coach or admin</h4><div class="plist">${cols
+    .map(u => ({ u, n: familyName(u) })).sort((a, b) => a.n.localeCompare(b.n))
+    .map(x => row(`data-act="sdopen" data-u="${esc(x.u)}"`, esc(x.n), esc(colleagueLabel(x.u)))).join('')}</div>
+    <p class="muted">Just the two of you: no other coach and no admin reads it.</p>` : '';
+  openSheet(`<h3>New message</h3>
+    ${famRows.length ? `<h4>The coaches</h4><div class="plist">${famRows.join('')}</div>` : ''}
+    ${famPick}${colPick}
+    <button class="btn quiet wide" data-act="closesheet" style="margin-top:12px">Cancel</button>`);
 }
 
 function sheetPost(tid, text = '', urgent = false) {
@@ -2944,16 +3158,23 @@ function sheetPostSeen(tid, id) {
 function msgPaint() {
   const a = typeof document !== 'undefined' ? document.activeElement : null;
   if (ui.view === 'thread' && ui.thread && a && a.id === 'msgText') {
-    const el = $('#thread'); if (el) el.innerHTML = threadHtml(ui.thread.tid, ui.thread.fam);
+    const el = $('#thread'); if (el) el.innerHTML = threadHtml(ui.thread);
     paintBell(); markSeen(); return;
   }
   render();
 }
+/* The two buttons up top, each with its own count: Messages for what people
+   wrote, the bell for what is new. */
+const notesOn = () => !!me && ((newsFor() && newsItems().length > 0) || alertsHere().list.some(x => x.kind !== 'msg') || youClubs().length > 0);
+const msgsOn = () => !!me && (msgOn() || alertsHere().list.some(x => x.kind === 'msg') || elseUnread() > 0);
 function paintBell(shut) {
-  const n = shut ? 0 : unreadCount();
-  const b = $('#inboxBtn');
-  if (b) { b.hidden = !!shut || !(msgOn() || (newsFor() && newsItems().length) || alertsHere().list.length || youClubs().length); b.dataset.n = n ? String(n) : ''; }
-  const c = $('#inboxN'); if (c) c.textContent = n ? (n > 9 ? '9+' : String(n)) : '';
+  const m = shut ? 0 : msgUnread(), b = shut ? 0 : notesUnread(), n = m + b;
+  const badge = (btn, num, on, k) => {
+    const el = $(btn); if (el) { el.hidden = !!shut || !on; el.dataset.n = k ? String(k) : ''; }
+    const c = $(num); if (c) c.textContent = k ? (k > 9 ? '9+' : String(k)) : '';
+  };
+  badge('#msgBtn', '#msgN', !shut && msgsOn(), m);
+  badge('#bellBtn', '#bellN', !shut && notesOn(), b);
   if (typeof document !== 'undefined') document.title = (n ? `(${n}) ` : '') + 'Minutes — soccer sub tracker';
 }
 
@@ -5382,7 +5603,8 @@ function render() {
   /* Not before the club has been read: a link to #/messages opened cold on a
      new phone renders before it knows anybody's role, and sending it to the
      club then would lose where it was going for good. */
-  if ((ui.view === 'inbox' || ui.view === 'thread') && !shut && (wsRead || !fbConfig().apiKey) && !msgOn() && !(ui.view === 'inbox' && ((newsFor() && newsItems().length) || alertsHere().list.length || elseUnread()))) ui.view = 'club';
+  if ((ui.view === 'inbox' || ui.view === 'thread') && !shut && (wsRead || !fbConfig().apiKey) && !msgOn() && !(ui.view === 'inbox' && msgsOn())) ui.view = 'club';
+  if (ui.view === 'notes' && !shut && !me) ui.view = 'club';
   // the same wait, for the same reason: a family's link to a session opened cold
   if (ui.view === 'sessions' && !shut && (wsRead || !fbConfig().apiKey) && !canSessions()) ui.view = 'club';
   // a parent has no business reading the rest of the squad's names or the team's set-up
@@ -5439,7 +5661,7 @@ function render() {
   const roNote = lim === 'viewer' && team()
     ? `<div class="rolebar">Viewing <b>${teamLabel(team())}</b> from another team in the club. You can read it, not change it.</div>` : '';
   // "you can read, not change" is about the team; on Messages a parent writes, and on the Calendar she answers
-  const roleNote = lim && lim !== 'viewer' && v !== 'inbox' && v !== 'thread'
+  const roleNote = lim && lim !== 'viewer' && v !== 'inbox' && v !== 'thread' && v !== 'notes'
     ? `<div class="rolebar">Signed in as <b>${esc(ROLE_LABEL[lim])}</b> — ${lim === 'tracker' ? "you can log events and make the coach's planned subs when they are due, but not run the clock or make other subs" : lim === 'parent' && v === 'sessions' ? 'you can ask for a place for your child, and withdraw her' : lim === 'parent' ? 'you can read, and say from the Calendar whether your child is coming' : lim === 'player' ? 'you can read, and say from the Calendar whether you are coming' : 'you can read, not change'}.</div>`
     : '';
   /* Never let a rehearsal pass for the real thing. Both facts are worth saying
@@ -5484,7 +5706,7 @@ function render() {
           v === 'season' ? viewSeason() :
             v === 'formation' ? viewFormation() : v === 'club' ? viewClub() : v === 'people' ? viewPeople() : v === 'admin' ? viewAdmin()
               : v === 'mine' ? viewMine() : v === 'practice' ? viewPractice()
-                : v === 'inbox' ? viewInbox() : v === 'thread' ? viewThread() : v === 'sessions' ? viewSessions() : v === 'planner' ? viewPlanner()
+                : v === 'inbox' ? viewInbox() : v === 'notes' ? viewNotes() : v === 'thread' ? viewThread() : v === 'sessions' ? viewSessions() : v === 'planner' ? viewPlanner()
                 : v === 'setup' ? viewSetup() : viewCalendar());
   } finally { placeMemo = null; }
   syncHash();
@@ -5551,7 +5773,7 @@ const viewScope = (v = ui.view) => v === 'calendar' ? (me ? 'me' : 'club')
    team's. Club home is the club alone. */
 const VIEW_CRUMB = {
   calendar: 'Calendar', setup: 'Your settings', people: 'People', admin: 'Club settings', sessions: 'Training sessions',
-  planner: 'Planner', inbox: 'Messages', thread: 'Messages', mine: 'My players', formation: 'Shapes'
+  planner: 'Planner', inbox: 'Messages', thread: 'Messages', notes: 'Notifications', mine: 'My players', formation: 'Shapes'
 };
 function crumbs() {
   const sep = '<span class="crumb-sep">\u203a</span>';
@@ -14213,11 +14435,15 @@ function openIn(code, hash) {
 }
 /* The inbox's card for the other clubs: unread messages in each, and the
    latest alerts from anywhere, each opening where it happened. */
-function alertsCard() {
-  const list = alertsHere().list.slice(0, 15);
-  const clubs = youClubs().map(([code, c]) => [code, c.name, elseUnread(code)]).filter(([, , n]) => n);
+/* 'msgs' is the Messages screen's (messages from her other clubs, and how
+   many are unread in each); 'notes' the bell's (everything else that popped
+   up, from any club). A message from this club is in its conversation. */
+function alertsCard(where) {
+  const msgsHere = where === 'msgs';
+  const list = alertsHere().list.filter(a => msgsHere ? a.kind === 'msg' && a.code !== wsCode() : a.kind !== 'msg').slice(0, 15);
+  const clubs = msgsHere ? youClubs().map(([code, c]) => [code, c.name, elseUnread(code)]).filter(([, , n]) => n) : [];
   if (!list.length && !clubs.length) return '';
-  return `<div class="card"><h2 style="margin-bottom:6px">From all your clubs</h2>
+  return `<div class="card"><h2 style="margin-bottom:6px">${msgsHere ? 'From your other clubs' : 'From all your clubs'}</h2>
     ${clubs.map(([code, name, n]) => `<div class="spread" style="padding:6px 0"><span><b>${esc(name)}</b> · ${n} unread</span>
       <button class="btn quiet sm" data-act="switchclubto" data-code="${esc(code)}" data-hash="#/messages">Open</button></div>`).join('')}
     ${list.length ? `<div class="plist">${list.map(a => `<button class="prow" type="button" data-act="alertgo" data-id="${esc(a.id)}" style="grid-template-columns:1fr auto">
@@ -17641,7 +17867,23 @@ function onAct(e) {
     try { if (typeof Notification !== 'undefined') Notification.requestPermission().then(() => render(), () => { }); } catch (e) { }
     return;
   }
-  if (a === 'thread') { ui.view = 'thread'; ui.thread = { tid: d.tid, fam: d.fam }; render(); return; }
+  if (a === 'thread') { closeSheet(); ui.view = 'thread'; ui.thread = { tid: d.tid, fam: d.fam }; render(); return; }
+  if (a === 'notes') { ui.view = 'notes'; ui.thread = null; closeSheet(); render(); return; }
+  if (a === 'msgnew') { sheetNewMsg(); return; }
+  if (a === 'msgnewteam') { ui.newTid = d.v; sheetNewMsg(); return; }
+  if (a === 'msgprivacy') { sheetPrivacy(); return; }
+  if (a === 'msginfo') { sheetMsgInfo(d.id); return; }
+  // a coach or admin starting a family's conversation: only a family on a team she is staff on
+  if (a === 'msgto') {
+    if (!msgFor || !isStaff(d.tid) || !families(d.tid).includes(d.fam)) { toast('Only this team’s coaches and the club admins can write to its families'); return; }
+    closeSheet(); ui.view = 'thread'; ui.thread = { tid: d.tid, fam: d.fam }; render(); return;
+  }
+  // two colleagues: both must be coaches or admins here, as the rule says
+  if (a === 'sdopen') {
+    const cid = me ? sdId(me.uid, d.u) : '';
+    if (!msgFor || !d.u || d.u === (me && me.uid) || !myStaffChat(cid)) { toast('Coaches and admins write to each other here'); return; }
+    closeSheet(); ui.view = 'thread'; ui.thread = { cid }; render(); return;
+  }
   if (a === 'postnew') { if (!staffTeams().length) { toast('Only coaches and admins post notices'); return; } sheetPost(ui.postTid || ui.teamId); return; }
   if (a === 'postteam') { const el = $('#postText'); sheetPost(d.v, el ? el.value : '', !!ui.postUrgent); return; }
   if (a === 'posturgent') { const el = $('#postText'); sheetPost(ui.postTid, el ? el.value : '', !ui.postUrgent); return; }
@@ -17672,8 +17914,17 @@ function onAct(e) {
   }
   if (a === 'msgsend') {
     const el = $('#msgText'), text = String((el && el.value) || '').trim();
+    if (d.cid) {
+      if (!msgFor || !myStaffChat(d.cid)) { toast('This conversation is not yours to write in'); return; }
+      if (!text) return;
+      queueMsg('sd', d.cid, null, text.slice(0, MSG_MAX));
+      if (ui.msgDraft) delete ui.msgDraft['sd/' + d.cid];
+      if (el) el.value = '';
+      render(); return;
+    }
     const mine = myThread(d.tid, d.fam);
-    if (!msgFor || !(mine || isStaff(d.tid))) { toast('This conversation is not yours to write in'); return; }
+    // staff write to a family on the team, never to an account the squad doesn't name
+    if (!msgFor || !(mine || (isStaff(d.tid) && (families(d.tid).includes(d.fam) || convMsgs({ tid: d.tid, fam: d.fam }).length)))) { toast('This conversation is not yours to write in'); return; }
     if (!text) return;
     queueMsg('dm', d.tid, d.fam, text.slice(0, MSG_MAX));
     if (ui.msgDraft) delete ui.msgDraft[d.tid + '/' + d.fam];
@@ -18542,7 +18793,8 @@ function onAct(e) {
   if (a === 'calmore') { ui.calN = { ...(ui.calN || {}), [d.k]: calN(d.k) + CAL_PAGE }; render(); return; }
   if (a === 'alertgo') { openAlert(d.id); return; }
   if (a === 'alertx') { const x = alertsHere().list.find(y => y.id === d.id); if (x) { x.shut = true; saveAlerts(); } render(); return; }
-  if (a === 'alertall') { ui.view = 'inbox'; ui.thread = null; closeSheet(); render(); return; }
+  // the rest of what is waiting: messages are on Messages, everything else under the bell
+  if (a === 'alertall') { ui.view = alertsHere().list.some(x => !x.read && !x.shut && x.kind !== 'msg') ? 'notes' : 'inbox'; ui.thread = null; closeSheet(); render(); return; }
   if (a === 'switchclubto') {
     if (!myClubs || !myClubs[d.code]) return;
     try { localStorage.setItem(LS_WS, d.code); history.replaceState(null, '', location.pathname + location.search + (d.hash || '')); } catch (e) { }
@@ -18994,6 +19246,8 @@ function uiToHash() {
   if (ui.view === 'planner') return '#/club/planner';
   if (ui.view === 'mine') return '#/my-players';
   if (ui.view === 'inbox') return '#/messages';
+  if (ui.view === 'notes') return '#/notifications';
+  if (ui.view === 'thread' && ui.thread && ui.thread.cid) return `#/messages/with/${sdOther(ui.thread.cid)}`;
   if (ui.view === 'thread' && ui.thread) return `#/messages/${ui.thread.tid}/${ui.thread.fam}`;
   if (ui.view === 'setup') return '#/settings';
   if (ui.view === 'sessions') { const tb = (ui.sess || {}).tab; return '#/training' + (tb && tb !== 'list' && SESS_TABS[tb] ? '/' + tb : ''); }
@@ -19012,9 +19266,12 @@ function hashToUi() {
   if (p[0] === 'my-calendar') { ui.view = 'calendar'; ui.calSel = 'mine'; return true; }
   if (p[0] === 'calendar') { ui.view = 'calendar'; ui.calSel = p[1] === 'all' ? 'club' : 'mine'; return true; }
   if (p[0] === 'messages') {
+    // with a colleague: the address names the other person, never the pair, so it reads the same from either side
+    if (p[1] === 'with' && p[2] && me) { ui.view = 'thread'; ui.thread = { cid: sdId(me.uid, p[2]) }; return true; }
     if (p[1] && p[2] && state.teams[p[1]]) { ui.view = 'thread'; ui.thread = { tid: p[1], fam: p[2] }; return true; }
     ui.view = 'inbox'; return true;
   }
+  if (p[0] === 'notifications') { ui.view = 'notes'; return true; }
   if (p[0] === 'settings') { ui.view = 'setup'; return true; }
   /* #/drill/{key} is a drill a coach sent. The screen stays where it was and
      the drill opens over it, once: the hash goes straight back to the screen's
@@ -19074,8 +19331,10 @@ const avEl = $('#avatar');
 if (avEl) avEl.addEventListener('click', () => (me ? sheetAccount() : sheetSignIn()));
 const csEl = $('#clubSwitch');
 if (csEl) csEl.addEventListener('click', sheetClubSwitch);
-const ibEl = $('#inboxBtn');
+const ibEl = $('#msgBtn');
 if (ibEl) ibEl.addEventListener('click', () => { ui.view = 'inbox'; ui.thread = null; closeSheet(); render(); });
+const blEl = $('#bellBtn');
+if (blEl) blEl.addEventListener('click', () => { ui.view = 'notes'; ui.thread = null; closeSheet(); render(); });
 const cbEl = $('#calBtn');
 if (cbEl) cbEl.addEventListener('click', () => { ui.view = 'calendar'; ui.picked = null; closeSheet(); render(); toTop(); });
 // a tab brought back to the front has now read what arrived while it was behind
