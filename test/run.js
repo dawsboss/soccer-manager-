@@ -27,6 +27,7 @@ const SUITES = [
   ['rsvp', 'parents say who is coming, for their own child only'],
   ['attend', 'who came, and the season counted from it'],
   ['calfeed', 'the calendar feed reads public/ and nothing else'],
+  ['ids', 'share, game, feed and club ids come from the secure generator'],
   ['ai', 'the AI prompt carries numbers, never names'],
   ['roles', 'roles derived from where a uid appears'],
   ['visibility', 'which teams each account sees and edits'],

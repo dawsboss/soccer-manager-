@@ -8,6 +8,26 @@ before this point lives only in the git log.
 
 ---
 
+## Share, game, feed and club ids from the secure generator — 2026-10-08 (build 110)
+
+SECURITY.md, SEC-4. Invites and team links already came from the browser's
+secure random generator; a team's share link, each game's link, a team's
+calendar feed, My calendar's address and a new club's code still came from
+`uid()`, which is `Math.random`. Each of those ids is the whole of what
+stands between a stranger and what it opens, and `Math.random` is built for
+speed, not secrets.
+
+- **`randId(prefix)`**: 16 bytes from `crypto.getRandomValues`, as hex, so
+  every id is 33 characters or so and passes the feed's id check (6–80
+  letters, digits, `_`, `-`) and the rule on My calendar's address (6–40).
+  `secretId()` is the same thing at 18 bytes, unchanged in length.
+- **No `Math.random` fallback.** A phone with no secure generator cannot
+  run Firebase either, and a weak id that looks strong is worse than none.
+- Ids already handed out keep working; *New link* and *New address* make a
+  strong one. `test/ids.js` traces each kind of id back to the generator.
+
+---
+
 ## Two links that could run someone else's code — 2026-10-08 (build 109)
 
 Found looking for what else needed locking down. `esc()` keeps a link inside

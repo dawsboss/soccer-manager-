@@ -216,7 +216,7 @@ const EXPORTS = `{
   get pubState() { return pubState },
   /* invites */
   get invite() { return invite }, get clubInv() { return clubInv }, get myClubs() { return myClubs },
-  secretId, inviteLink, redeemInvite, makeInvite, inviteScreen,
+  secretId, randId, inviteLink, redeemInvite, makeInvite, inviteScreen,
   get importContacts() { return importContacts }, importInviteRows, inviteImported, mailImported,
   fit, assignSlots, footFit, FOOT, sheetPlayer,
   /* messages */

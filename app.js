@@ -2,7 +2,7 @@
    Static app. Data lives in localStorage, and mirrors to Firebase Realtime
    Database when a config + workspace code are present. */
 
-const BUILD = '109';
+const BUILD = '110';
 const BUILT = '2026-10-07';
 /* The version of database.rules.json this app was written against. The rules
    carry the same number in rulesVersion's .write, which accepts that number
@@ -1256,7 +1256,7 @@ function claimTeamIds(tid) {
 function ensureFixtureShares(t) {
   if (!t || !t.share || !canEditTeam(t.id)) return false;
   let made = false;
-  for (const m of teamMatches(t.id)) if (!m.share) { quiet(`matches/${m.id}/share`, 'f' + uid() + uid()); made = true; }
+  for (const m of teamMatches(t.id)) if (!m.share) { quiet(`matches/${m.id}/share`, randId('f')); made = true; }
   if (made) saveLocal();
   return made;
 }
@@ -1515,15 +1515,21 @@ let clubInvWatch = null;
 let myClubs = null;     // userOrgs/{uid}
 let myClubsUid = null;
 
-/* Long enough that guessing one is not a plan. Share ids get away with
-   Math.random because a share is read-only; an invite is a grant. */
-function secretId() {
-  try {
-    const b = new Uint8Array(18);
-    crypto.getRandomValues(b);
-    return 'i' + Array.from(b, x => x.toString(16).padStart(2, '0')).join('');
-  } catch (e) { return 'i' + uid() + uid() + uid() + uid(); }
+/* Long enough that guessing one is not a plan, and from the browser's secure
+   generator: every id that is the whole of someone's access goes through
+   here, never uid(), which is Math.random. An invite and a team link are
+   grants; a share, game or feed id is the only thing between a stranger and
+   a team's fixtures; a club's code is what the trust-on-first-use claim
+   rules.js prints rests on. Hex, so it passes the feed's and the rules' id
+   checks (letters, digits, `_`, `-`) whatever the prefix. No Math.random
+   fallback: a phone without crypto.getRandomValues cannot run Firebase
+   either, and a weak id that looks strong is worse than a refusal. */
+function randId(prefix, bytes = 16) {
+  const b = new Uint8Array(bytes);
+  crypto.getRandomValues(b);
+  return prefix + Array.from(b, x => x.toString(16).padStart(2, '0')).join('');
 }
+function secretId() { return randId('i', 18); }
 
 const inviteLink = id => location.origin + location.pathname + '?invite=' + encodeURIComponent(id);
 
@@ -1676,7 +1682,7 @@ let newClubBusy = false;
 // SERVER.md: a new club claimed by the first writer (trust-on-first-use); a server would issue it.
 async function createClub(name) {
   if (!rtdb || !me || newClubBusy) return false;
-  const code = 'sm-' + uid() + uid(), who = me.uid, at = nowMs();
+  const code = randId('sm-'), who = me.uid, at = nowMs();
   const { db, mod } = rtdb;
   const put = (p, val) => mod.set(mod.ref(db, p), val);
   const W = 'workspaces/' + code + '/';
@@ -14857,7 +14863,7 @@ async function setMyFeed(how) {
   if (!me || !fb) return;
   youHere();
   const old = myFeedId();
-  const id = how === 'off' ? '' : 'm' + uid() + uid();
+  const id = how === 'off' ? '' : randId('m');
   const put = (p, v) => Promise.resolve(v === null ? fb.remove(fb.ref(fb.db, p)) : fb.set(fb.ref(fb.db, p), v)).then(() => true, () => false);
   if (id && !(await put('shareOwners/' + id, { [me.uid]: true }))) { toast('Not turned on: the database refused it. Its rules may need updating.'); return; }
   const set = { share: sharing(), at: nowMs() };
@@ -18523,7 +18529,7 @@ function onAct(e) {
     return;
   }
   if (a === 'makeshare') {
-    commit(`teams/${t.id}/share`, 's' + uid() + uid());
+    commit(`teams/${t.id}/share`, randId('s'));
     claimShare(t.id);            // before publishing: the write rule checks this list
     schedulePublish(); sheetShare(); return;
   }
@@ -18532,8 +18538,8 @@ function onAct(e) {
     /* Every game link goes with the season link. A family holding last
        month's game link is one forward away from whoever it was sent to. */
     const old = [t.share, ...teamMatches(t.id).map(m => m.share)].filter(Boolean);
-    for (const m of teamMatches(t.id)) if (m.share) quiet(`matches/${m.id}/share`, 'f' + uid() + uid());
-    commit(`teams/${t.id}/share`, 's' + uid() + uid());
+    for (const m of teamMatches(t.id)) if (m.share) quiet(`matches/${m.id}/share`, randId('f'));
+    commit(`teams/${t.id}/share`, randId('s'));
     claimShare(t.id);
     if (fb) for (const id of old) {
       fb.remove(fb.ref(fb.db, 'public/' + id));
@@ -19246,7 +19252,7 @@ function onAct(e) {
     const old = x.calFeed;
     if (a === 'calsyncnew' && !confirm('Everyone subscribed stops getting changes until they subscribe again with the new address. Do this if the address has reached someone it should not have. Continue?')) return;
     ui.teamId = d.tid;          // the publish that follows goes to this team's pages
-    commit(`teams/${d.tid}/calFeed`, 'c' + uid() + uid());
+    commit(`teams/${d.tid}/calFeed`, randId('c'));
     if (fb && old) { fb.remove(fb.ref(fb.db, 'public/' + old)); fb.remove(fb.ref(fb.db, 'shareOwners/' + old)); }
     toast(old ? 'New address made — the old one has stopped working' : 'Calendar sync is on');
     return;
