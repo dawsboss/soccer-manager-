@@ -8,6 +8,23 @@ before this point lives only in the git log.
 
 ---
 
+## New message shows what there is to choose from — 2026-10-08 (build 108)
+
+The owner searched a team and got *Nobody matches*, with no idea what was
+there: the list holds only parents who have signed in and been linked to
+their child, and that team's had not.
+
+- **Teams as chips** across the top of New message (and *Coaches and
+  admins*), each with how many people it holds, so the options are on screen
+  before she guesses a name. One tap narrows the list to it, and *Choose all*
+  takes everyone in it.
+- **Who can't be written to yet, and why.** Under a team, or for a search
+  that names a child or a team, the children whose parents have not signed in
+  are listed by name with where to invite them (Squad → Parents, or the team
+  link). Staff only: a family's phone never lists other children.
+- **A search that names a team but finds nobody** says *Nobody on U11 Storm
+  you can message yet*, not *Nobody matches*.
+
 ## Writing to anyone, or to several people at once — 2026-10-08 (build 107)
 
 The owner: messages to teams are nice, but writing to specific people is
