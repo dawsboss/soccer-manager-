@@ -2,6 +2,12 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
+<!-- SECURITY.md, SEC-3: a safety net under every link and every piece of typed text. Scripts
+     only from this site, Firebase's SDK (gstatic), Google sign-in (apis.google.com) and the
+     database's long-polling fallback (its frames too); never inline, so a `javascript:` link or an injected
+     <script> does nothing. Styles need 'unsafe-inline' for the style= attributes the app draws.
+     A <meta> because GitHub Pages cannot send headers; test/version.js holds every page to it. -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://www.gstatic.com https://apis.google.com https://*.firebaseio.com https://*.firebasedatabase.app; connect-src 'self' https://*.googleapis.com https://*.firebaseio.com wss://*.firebaseio.com https://*.firebasedatabase.app wss://*.firebasedatabase.app https://*.cloudfunctions.net https://www.gstatic.com; frame-src https://*.firebaseapp.com https://*.web.app https://accounts.google.com https://apis.google.com https://*.firebaseio.com https://*.firebasedatabase.app; img-src 'self' data: blob: https:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; manifest-src 'self'; worker-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#17603C">
 <title>Match day</title>

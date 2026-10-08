@@ -8,6 +8,31 @@ before this point lives only in the git log.
 
 ---
 
+## A Content-Security-Policy on every page — 2026-10-08 (build 110)
+
+SECURITY.md, SEC-3. Data in this app is typed by many people and drawn with
+`innerHTML`. `esc()` covers text, but a missed `javascript:` link or a
+script slipped into a page would run on this site, where a coach's sign-in
+and the club's copy live; both bugs in SEC-D4 were that.
+
+- **`index.html`, `live.html` and `game.html` carry one policy**, as a
+  `<meta>` because GitHub Pages cannot send headers: scripts only from this
+  site, Firebase's SDK (`www.gstatic.com`), Google sign-in
+  (`apis.google.com`) and the database's long-polling fallback; never
+  inline, never `eval`. Connections to the database, Google's APIs (Auth,
+  push registration) and the functions; frames for sign-in and the
+  database's fallback; `object-src 'none'`, `base-uri 'self'`. Styles keep
+  `'unsafe-inline'` for the `style=` attributes the app draws.
+- **Tried in Chromium against the live project**: the database read over
+  both the WebSocket and long-polling, Google sign-in's popup and frame, the
+  service worker, the push hosts, and both share pages, with nothing
+  refused; a `javascript:` link, an `onerror=` and an injected `<script>`
+  placed in the page did nothing.
+- `test/version.js` holds every page to having it, first, the same on each,
+  with no inline scripts allowed.
+
+---
+
 ## Only you, an admin, or a coach filling a gap changes your name — 2026-10-08 (build 110, rules version 11)
 
 SECURITY.md, SEC-2. `access/members/{uid}` (each person's name and email)
