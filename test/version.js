@@ -95,4 +95,36 @@ console.log('\n--- the public pages ---');
   }
 }
 
+/* SECURITY.md, SEC-3. Every page carries the same Content-Security-Policy,
+   as a <meta> (GitHub Pages sends no headers), ahead of anything it loads: a
+   policy that arrives after a script has already run protects nothing.
+   Scripts never inline and never eval, so a `javascript:` link or an injected
+   <script> in typed text does nothing; no plugins; no <base> pointing the
+   page elsewhere. It was tried in Chromium against the live project: Google
+   sign-in, the database (WebSocket and long-polling), push and the share
+   pages. Widening it is a change to try there again, not just to pass this. */
+console.log('\n--- the Content-Security-Policy ---');
+{
+  const pages = fs.readdirSync(root('.')).filter(f => f.endsWith('.html')).sort();
+  const policies = {};
+  for (const f of pages) {
+    // comments out first: one may well mention a <script> without being one
+    const src = fs.readFileSync(root(f), 'utf8').replace(/<!--[\s\S]*?-->/g, '');
+    const m = /<meta http-equiv="Content-Security-Policy" content="([^"]+)">/.exec(src);
+    check(f + ' carries a policy', !!m, true);
+    if (!m) continue;
+    const at = src.indexOf(m[0]);
+    const first = Math.min(...['<script', '<link', '<style'].map(t => src.indexOf(t)).filter(i => i >= 0));
+    check('— before anything it loads', at < first, true);
+    const dir = Object.fromEntries(m[1].split(';').map(x => x.trim().split(/\s+/)).filter(x => x[0]).map(([k, ...v]) => [k, v]));
+    const script = dir['script-src'] || [];
+    check('— scripts named, never inline or eval', script.length > 0 && !script.some(v => /unsafe|data:|blob:|^\*$|^https:$/.test(v)), true);
+    check('— the default is this site', (dir['default-src'] || []).join(' '), "'self'");
+    check('— no plugins', (dir['object-src'] || []).join(' '), "'none'");
+    check('— no <base> elsewhere', (dir['base-uri'] || []).join(' '), "'self'");
+    policies[f] = m[1];
+  }
+  check('one policy, the same on every page', new Set(Object.values(policies)).size, 1);
+}
+
 H.summary('version markers');

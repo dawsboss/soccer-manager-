@@ -84,7 +84,9 @@ const rest = S => canon({ ...S.at('workspaces/CLUB'), access: { ...S.at(W + 'acc
   console.log('--- the triggers that are deployed ---');
   {
     const S = server();
-    deepEq('one per place a role lives', Object.keys(S.triggers).filter(n => /^access/.test(n)).sort(), ['accessAdmin', 'accessGuardians', 'accessSelf', 'accessStaff']);
+    deepEq('one per place a role lives', Object.keys(S.triggers).filter(n => /^access/.test(n)).sort(), 
+      // each once per tree while clubs move to orgs/ (functions/index.js, both())
+      ['accessAdmin', 'accessAdminOrgs', 'accessGuardians', 'accessGuardiansOrgs', 'accessSelf', 'accessSelfOrgs', 'accessStaff', 'accessStaffOrgs']);
     deepEq('an admin given', await S.wouldWake(W + 'access/admins/new', true), ['accessAdmin']);
     deepEq('a coach given', await S.wouldWake(W + 'access/teams/t1/coaches/new', true), ['accessStaff']);
     deepEq('a family linked', await S.wouldWake(W + 'teams/t1/players/p2/guardians/new', true), ['accessGuardians']);
@@ -251,11 +253,13 @@ const rest = S => canon({ ...S.at('workspaces/CLUB'), access: { ...S.at(W + 'acc
     const S = server();
     const ev = { params: { code: 'CLUB', tid: 't1', pid: 'p1' }, data: { before: { val: () => ({ mum: true, twice: true }), ref: S.ref(W + 'teams/t1/players/p1/guardians') }, after: { val: () => ({ twice: true }), ref: S.ref(W + 'teams/t1/players/p1/guardians') } } };
     // the removal's event arrives after mum was linked again: the club, not the event, decides
-    await S.triggers.accessGuardians.handler(ev);
+    // the trigger on the tree this pass keeps its clubs on
+    const guardians = S.triggers[require('./fakebase').ORGS_MODE ? 'accessGuardiansOrgs' : 'accessGuardians'];
+    await guardians.handler(ev);
     check('a removal delivered after she was linked again keeps her', A_(S, 'teamParents/t1/mum'), 'p1');
     check('and her place in the club', A_(S, 'index/mum'), 'inv_mum');
     const before = JSON.stringify(club(S));
-    await S.triggers.accessGuardians.handler(ev);
+    await guardians.handler(ev);
     check('the same event twice changes nothing', JSON.stringify(club(S)), before);
   }
   {

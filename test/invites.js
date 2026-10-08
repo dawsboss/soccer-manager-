@@ -65,7 +65,8 @@ const CLUB = {
     check('and offers to accept', /data-act="inviteaccept"/.test(A.rendered()), true);
     check('crumbs stay empty until joined', A.rendered('#crumbs'), '');
 
-    A.click({ act: 'inviteaccept' }); await A.flush(20);
+    // which tree: the old one refuses a phone not in the club yet, as it does while the club is there
+    A.click({ act: 'inviteaccept' }); await A.flush(); fbk.refuse('workspaces/CLUB/moved'); await A.flush(20);
     const p = paths(fbk);
     const at = x => p.indexOf(x);
     check('spends the invite, as Sam', JSON.stringify((valueAt(fbk, 'invites/' + ID + '/used') || {}).by), '"sam"');
@@ -91,7 +92,8 @@ const CLUB = {
     fbk.signIn('mum', { name: 'Mum', email: 'mum@x.test' }); await A.flush();
     fbk.deliver('invites/' + ID, inviteDoc(A, { role: 'parent', player: 'p1', playerNo: '7' })); await A.flush();
     check('it names the shirt, not the child', /parent of #7 on <b>Flight/.test(A.rendered()), true);
-    A.click({ act: 'inviteaccept' }); await A.flush(20);
+    // which tree: the old one refuses a phone not in the club yet, as it does while the club is there
+    A.click({ act: 'inviteaccept' }); await A.flush(); fbk.refuse('workspaces/CLUB/moved'); await A.flush(20);
     check('guardian of that one player', valueAt(fbk, 'workspaces/CLUB/teams/t1/players/p1/guardians/mum'), ID);
     check('not a coach or tracker', paths(fbk).some(x => x.includes('/access/teams/')), false);
     check('and not in the team index', paths(fbk).some(x => x.includes('/teamIndex/')), false);
@@ -106,7 +108,8 @@ const CLUB = {
     fbk.signIn('sam'); await A.flush();
     fbk.deliver('invites/' + ID, inviteDoc(A)); await A.flush();
     fbk.refuseWrites(p => p.includes('/access/teams/'));
-    A.click({ act: 'inviteaccept' }); await A.flush(20);
+    // which tree: the old one refuses a phone not in the club yet, as it does while the club is there
+    A.click({ act: 'inviteaccept' }); await A.flush(); fbk.refuse('workspaces/CLUB/moved'); await A.flush(20);
     check('it says so', /Could not open the invite/.test(A.rendered()) && /refused/.test(A.rendered()), true);
     check('the index is never attempted', paths(fbk).some(x => x.endsWith('/access/index/sam')), false);
     check('the device is not pointed at the club', A.storage.getItem('sm.workspace'), null);
@@ -140,7 +143,8 @@ const CLUB = {
     fbk.signIn('sam'); await A.flush();
     fbk.deliver('invites/' + ID, inviteDoc(A, { used: { by: 'sam', at: 1 } })); await A.flush();
     check('spent by me already: can still finish', /data-act="inviteaccept"/.test(A.rendered()), true);
-    A.click({ act: 'inviteaccept' }); await A.flush(20);
+    // which tree: the old one refuses a phone not in the club yet, as it does while the club is there
+    A.click({ act: 'inviteaccept' }); await A.flush(); fbk.refuse('workspaces/CLUB/moved'); await A.flush(20);
     check('without spending it twice', fbk.writtenTo('invites/' + ID + '/used').length, 0);
     check('and the role is written', valueAt(fbk, 'workspaces/CLUB/access/teams/t1/coaches/sam'), ID);
   }
@@ -375,17 +379,20 @@ const CLUB = {
     A.click({ act: 'newclub' });
     A.dom.node('#newClubName').value = '';
     A.click({ act: 'newclubgo' });
-    check('a club needs a name', fbk.record.writes.filter(w => /^workspaces\/sm-/.test(w.path)).length, 0);
+    check('a club needs a name', fbk.record.writes.filter(w => /^(workspaces|orgs)\/sm-/.test(w.path)).length, 0);
     A.dom.node('#newClubName').value = '  Hillside FC ';
     A.click({ act: 'newclubgo' }); await A.flush(20);
-    const ws = fbk.record.writes.filter(w => /^workspaces\/sm-/.test(w.path));
+    // a new club is made on orgs/ (AUTH.md, The move to orgs/{orgId}): the old tree only shrinks
+    check('nothing on the old tree', fbk.record.writes.filter(w => /^workspaces\/sm-/.test(w.path)).length, 0);
+    const ws = fbk.record.writes.filter(w => /^orgs\/sm-/.test(w.path));
     const code = ws.length ? ws[0].path.split('/')[1] : '';
-    const p = paths(fbk), at = x => p.indexOf('workspaces/' + code + '/' + x);
+    const p = paths(fbk), at = x => p.indexOf('orgs/' + code + '/' + x);
     check('at a new code, not this club\'s', !!code && code !== 'CLUB', true);
-    check('admin first, as the rules need', ws[0] && ws[0].path, 'workspaces/' + code + '/access/admins/coach');
+    check('admin first, as the rules need', ws[0] && ws[0].path, 'orgs/' + code + '/access/admins/coach');
     check('then the index', at('access/index/coach') > at('access/admins/coach'), true);
-    check('she is a member', (valueAt(fbk, 'workspaces/' + code + '/access/members/coach') || {}).name, 'Jaz');
-    check('and the club has its name, trimmed', valueAt(fbk, 'workspaces/' + code + '/access/org/name'), 'Hillside FC');
+    check('she is a member', (valueAt(fbk, 'orgs/' + code + '/members/coach') || {}).name, 'Jaz');
+    check('and the club has its name, trimmed', valueAt(fbk, 'orgs/' + code + '/org/name'), 'Hillside FC');
+    check('her name, and only that, where families can see it', JSON.stringify(valueAt(fbk, 'orgs/' + code + '/names/coach')), '{"name":"Jaz"}');
     check('nothing of the old club goes with it', ws.some(w => /\/teams|\/matches/.test(w.path)), false);
     check('the old club is not written to', fbk.record.writes.some(w => w.path.startsWith('workspaces/CLUB/access/admins')), false);
     check('it goes on her list of clubs', (valueAt(fbk, 'userOrgs/coach/' + code) || {}).name, 'Hillside FC');
@@ -411,7 +418,8 @@ const CLUB = {
     A.click({ act: 'newclubgo' }); await A.flush(20);
     const code = A.storage.getItem('sm.workspace');
     check('the new club is opened', code !== 'CLUB' && /^sm-/.test(code), true);
-    const under = () => Object.keys(A.storage._d).filter(k => k.includes(code)).join(' ');
+    // which tree it is on is the one thing kept under its code from the start
+    const under = () => Object.keys(A.storage._d).filter(k => k.includes(code) && !k.startsWith('sm.tree.v1:')).join(' ');
     A.render();                                            // the old page, still drawing before the reload lands
     check('what club activity saw is not filed under the new club', under(), '');
     A.saveLocal();
@@ -422,7 +430,7 @@ const CLUB = {
     await B.flush();
     fb2.signIn('adm', { name: 'Ada' }); await B.flush();
     fb2.deliver('.info/connected', true);
-    fb2.deliver('workspaces/' + code, { access: { org: { name: 'Hillside FC' }, admins: { adm: true }, index: { adm: true }, members: { adm: { name: 'Ada' } } } }); await B.flush();
+    await fb2.serve('orgs/' + code, { access: { admins: { adm: true }, index: { adm: true } }, org: { name: 'Hillside FC' }, members: { adm: { name: 'Ada' } } }, () => B.flush());
     B.render();
     check('the new club opens empty', Object.keys(B.state.teams || {}).join(), '');
     check('nor sent to it', fb2.record.writes.filter(w => /\/(teams|matches)\//.test(w.path)).map(w => w.path).join(' '), '');
@@ -433,7 +441,7 @@ const CLUB = {
     fbk.signIn('coach'); await A.flush();
     fbk.deliver('.info/connected', true);
     fbk.deliver('workspaces/CLUB', CLUB); await A.flush();
-    fbk.refuseWrites(p => /^workspaces\/sm-/.test(p));
+    fbk.refuseWrites(p => /^(workspaces|orgs)\/sm-/.test(p));
     A.click({ act: 'newclub' });
     A.dom.node('#newClubName').value = 'Hillside FC';
     A.click({ act: 'newclubgo' }); await A.flush(20);
@@ -448,13 +456,13 @@ const CLUB = {
     A.click({ act: 'newclub' });
     A.dom.node('#newClubName').value = 'Hillside FC';
     A.click({ act: 'newclubgo' }); await A.flush(20);
-    check('with no signal nothing is half-made', fbk.record.writes.some(w => /^workspaces\/sm-/.test(w.path)), false);
+    check('with no signal nothing is half-made', fbk.record.writes.some(w => /^(workspaces|orgs)\/sm-/.test(w.path)), false);
   }
   {
     const { A, fbk } = await boot({ storage: { 'sm.workspace': 'CLUB' } });
     fbk.signOut(); await A.flush();
     A.click({ act: 'newclubgo' }); await A.flush(5);
-    check('signed out, the handler refuses', fbk.record.writes.some(w => /^workspaces\/sm-/.test(w.path)), false);
+    check('signed out, the handler refuses', fbk.record.writes.some(w => /^(workspaces|orgs)\/sm-/.test(w.path)), false);
   }
 
   {

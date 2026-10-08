@@ -122,7 +122,7 @@ const valueAt = (fbk, p) => { const w = fbk.writtenTo(p); return w.length ? w[w.
 
     A.dom.node('#joinShirt').value = ' 9 ';
     A.dom.node('#joinChild').value = 'Bea';
-    A.click({ act: 'joinsend' }); await A.flush(20);
+    A.click({ act: 'joinsend' }); await A.flush(); fbk.refuse('workspaces/CLUB/moved'); await A.flush(20);   // the old tree refuses a phone not in the club yet
     const c = valueAt(fbk, 'claims/CLUB/t1/sam');
     check('the request carries the link and the number', c && c.code + '#' + c.shirt, CODE + '#9');
     check('and the name she typed for her own child', c && c.child, 'Bea');

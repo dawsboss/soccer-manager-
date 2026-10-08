@@ -290,6 +290,142 @@ What it costs: every path in `app.js`, the rules, `test/rules.js`, the outbox, t
 
 **Decided 2026-10-06:** the owner wants registration data and the squad's names protected by the database, not the screen. `GOTSPORT.md` (*Protecting the data*, *Build order* step 3) schedules the first reason above (the full move, or only a squad node) before season registration opens to families, designed together with a club-level record of each child. That design is written here before any code.
 
+**Decided 2026-10-08 (SECURITY.md, SEC-1): the full move**, not only a squad node. The design is the next section, and its four smaller decisions were settled the same day. **Built the same day (build 110)**; each club moves when its admin presses *Move*.
+
+## The move to `orgs/{orgId}`
+
+Written 2026-10-08, before any code, for SECURITY.md's SEC-1: *keep the squad out of parents' reach*. Families are not on the app yet (owner, 2026-10-08), so this is the window to do it without moving anyone's phone mid-season.
+
+### What it is for
+
+Today `workspaces/{code}` has one `.read`, at the top, for everyone in `access/index`. Realtime Database rules cascade — a read granted at a node cannot be taken back below it — so a parent's phone receives, and keeps in localStorage:
+
+- every child on every team: name, shirt number, the coach's `note`, `rating`, `pairs` and `avoid` (who to keep together or apart), `photo`, `preferred`/`canPlay`/`foot`, and who each child's guardians are;
+- every member's name **and email** (`access/members`);
+- the audit trail, which names people and players (`access/log`).
+
+The screen hides most of it (`shownName()`); developer tools do not. The move gives each of those an audience in the rules instead. It is also the start the other two reasons in *Migration* need (teams a club can't read, a fixture two clubs share), though neither is built here.
+
+### One id, not two
+
+**`orgId` is the workspace code, unchanged.** The code has been the club's internal id since build 96 and nobody sees it. Keeping it means everything already keyed by it stays where it is and needs no migration: `training/{code}`, `board/`, `dm/`, `staffdm/`, `claims/`, `joinCodes/`, `clubInvites/`, `invites/{id}/ws`, `userOrgs/{uid}/{code}`, `retired/{code}`, `people/{uid}/busy/{clubTag(code)}`, the local copies' keys (`sm.*:{club}`) and every link in anyone's hands. Only the `workspaces/{code}` subtree moves, to `orgs/{code}`, and is split by who reads it.
+
+### Where everything goes
+
+| Today, under `workspaces/{code}/` | Moves to `orgs/{code}/` | Read by |
+| --- | --- | --- |
+| `access/org` (name, badge, venues, `rosterOpen`, `sandbox`) | `org` | everyone in the club |
+| `access/admins`, `access/teams/{tid}` (coaches, trackers) | `access/admins`, `access/teams` | everyone in the club (who runs what is not private, and the role functions need it on every phone) |
+| `access/index`, `teamIndex`, `coachIndex`, `teamParents`, `teamPlayers` | the same, under `access/` | everyone in the club (uids and ids only) |
+| `access/members/{uid}` (name, email) | `members/{uid}` | staff only (below), and each person her own |
+| — | `names/{uid}`: `{ name }` for staff only, **derived** | everyone in the club, so a family sees who her coach is |
+| `access/log` | `log` | admins only |
+| `teams/{tid}` without `players` (name, logo, settings, `events`, `attend`, `share`, `calFeed`, `join`) | `teams/{tid}` | everyone in the club |
+| `teams/{tid}/players/{pid}` (the whole record) | `squad/{tid}/{pid}` | that team's staff, every coach, admins; **and that child's own family, and the player herself** |
+| — | `roster/{tid}/{pid}`: `{ number, active }`, plus `name` only while `org/rosterOpen` is on, **derived** | everyone in the club |
+| `matches/{mid}` | `matches/{mid}` | everyone in the club (keyed by player id; no names in it today, and `test/stats.js`'s name scan is extended to a game record to keep it so) |
+| `rsvp/{tid}/…` | `rsvp/{tid}/…` | everyone in the club, as today: keyed by player id, and the screen narrows it |
+
+**Staff** here means: an admin (`access/admins`), a coach of any team (`access/coachIndex`), or anyone with a role on that team (`access/teamIndex/{tid}/{uid}`, coach or tracker). That is exactly who `namesNarrowed()` shows names to today, with one narrowing: **a tracker reads her own team's squad, not every team's.** A rule cannot ask "a tracker of any team" without a sixth lookup table, and a tracker has no reason to see another team's children (decided, see *Decisions*).
+
+A family's read of her own child is the rule at `squad/$tid/$pid`: `data.child('guardians/' + auth.uid).exists() || data.child('self/' + auth.uid).exists()`. One record, never the list: she cannot read `squad/{tid}`, so her phone asks for each of her children by path (it knows them from `access/teamParents/{tid}/{uid}`, whose value is the player id, and `teamPlayers` for a player herself).
+
+`teams/$tid` refuses a `players` child (`.validate: false`), so no old code path can put names back where everyone reads them.
+
+### The rules
+
+`orgs/$o` has **no `.read` of its own**: each child above carries its own, so nothing cascades past where it should. Writes keep today's shape and today's lookup tables, moved: the team rule on `teams/$tid` and on `squad/$tid` (its coaches and admins), the invite and approval clauses on `squad/$tid/$pid/guardians|self`, the bootstrap on `access/admins` and `access/index`, members as SEC-2 left them. `names/`, `roster/` and `log` reads aside, every rule is a path rename of one that `test/rules.js` already walks.
+
+Every root rule that looks into a club today (`training`, `board`, `dm`, `staffdm`, `claims`, `joinCodes`, `clubInvites`, `rsvp`, `public`'s owners…) says `root.child('workspaces/' + $code + '/access/…')`, 198 times. During the move each of those reads **the tree the club is on**: `orgs/` once `orgs/{code}/access/index` exists, otherwise `workspaces/`. Written once as a pattern and generated, not typed 198 times: `database.rules.json` stays the file that is published, built from a source with a `CLUB(path)` macro by a script `test/rules.js` checks it against (the same way `functions/make.js` keeps `functions/ics.js` in step). The macro goes once every club has moved and the `workspaces/` branch is gone.
+
+A club that has moved keeps a `workspaces/{code}/moved` marker and nothing else. Its bootstrap clauses (`access/admins` and `access/index` while empty) check that marker, so an old phone finding an empty workspace cannot claim it and push its copy back into the old tree (`wireBase()`'s `pushAll()` on an empty read). Every other write there is refused already, because the lookup tables it needs are gone.
+
+### How each phone reads
+
+Today: one `onlyOnce` read of the whole workspace (`wireBase()`), merged into local state (`mergeConnect()`), then child listeners on `teams`, `matches`, `rsvp` and one on `access`. That single read is refused for a parent once nothing grants it at the top, so it becomes **one read per part, each one this account may make**:
+
+- everyone: `org`, `access`, `names`, `teams`, `roster`, `matches`, `rsvp`;
+- staff: `squad/{tid}` for each team she may read (all of them for an admin or a coach), `members`;
+- admins: `log`;
+- a family or a player: `squad/{tid}/{pid}` for each of her own children, from `teamParents`/`teamPlayers`.
+
+The first answer of each is merged as today (`mergeConnect()` per part, the outbox laid over it), then the same child listeners. "Synced" still means every part this phone asked for has answered.
+
+**`state.teams[tid].players` is assembled on the phone, not stored that way**: the squad where this account reads it, otherwise the roster's numbers with her own children's records laid on top. Everything that reads `t.players` today (`shownName()`, the planner, the recap, the share pages) keeps working unchanged, and on a parent's phone it simply has nothing more to show than numbers. That is what makes `test/parents.js`' *Done when* true: it runs against what the phone holds, not what it hides.
+
+**A parent's phone forgets what it should never have held.** The first time it reads a moved club, it drops every player record that is not one of hers from `state`, the local copy, the backup and the other-clubs copy (`you.clubs`; `mirrorSlim()` already cut those down) and `access.members`, `access.log`. Merge-on-read would otherwise keep yesterday's whole squad forever. The same check runs whenever her roles change (a guardian unlinked: that child's record goes too).
+
+### Writes and the outbox
+
+Paths in the outbox and in `remoteSet()` are relative to the club (`fb.base`), so most of the app never sees the move. One translation, in `remoteSet()`/`remoteDel()` and nowhere else:
+
+- `teams/{tid}/players/{pid}…` → `squad/{tid}/{pid}…`;
+- `access/members/{uid}` → `members/{uid}`; `access/log/{id}` → `log/{id}`; `access/org…` → `org…`;
+- a whole-team write (`teams/{tid}` with `players` inside, as saving a team and `pushAll()` do) is split into the team without players and `squad/{tid}`, each at its rule's depth, in that order.
+
+A refused or offline write already in a phone's outbox from before the move is replayed through the same translation, so nothing tracked at a field with no signal is lost by the move. `calStamp()` and `noteMine()` see the path before translation, as now.
+
+### The server
+
+Every function that reads a club (`functions/access.js`, `push.js`, `mirror.js`, `mycal.js`) takes the club's root (`workspaces/` or `orgs/`) from one helper and reads guardians from `squad/`, and each trigger is registered on both trees until the old one is gone. Two new derived tables, kept the way `functions/access.js` keeps the lookup tables (same sources, nothing started that is missing, an event late or twice leaving them right):
+
+- **`roster/{tid}/{pid}`** from `squad/{tid}/{pid}`: number and `active`, and the name only while `org/rosterOpen` is on (the club's one preset, `test/parents.js`). A coach's phone writes it too, beside each squad write, so a club without the functions deployed still shows numbers; the server's copy wins on the next change.
+- **`names/{uid}`** from `members/{uid}` for every uid in `access/admins`, `access/teams/*/coaches|trackers`: the name, never the email. Left when the role goes.
+
+Both are tested in `test/access.js` for every kind of account, like the rest of that suite.
+
+### Moving a club
+
+A callable function, `moveClub`, for an admin of that club (checked against `workspaces/{code}/access/admins`, as the rules would): one transaction-free run, because nothing writes while the club is moving.
+
+1. Refuse unless the caller is an admin, the club is not retired, and `orgs/{code}` is empty.
+2. Copy `workspaces/{code}` to `serverState/moved/{code}/{at}`, untouched: the fortnight's way back (no rule reaches `serverState/`, so it is the console's and the server's alone). Daily backups (SECURITY.md, SEC-7) should be on before the first real club moves.
+3. Write `orgs/{code}` in the order the rules need: `access/admins`, `access/index`, the other lookup tables, `org`, `members`, `names`, `log`, `teams` (without players), `squad`, `roster`, `matches`, `rsvp`.
+4. Read it back and compare, part by part, with the copy (player ids, games, stints, events, registers, answers). Any difference: delete `orgs/{code}`, leave the workspace as it was, and say what differed.
+5. Replace `workspaces/{code}` with `{ moved: { to: 'orgs', at, by } }`.
+
+Each phone notices on its next read (the moved marker, or a refusal it cannot explain), switches `fb.base` to `orgs/{code}`, replays its outbox through the translation above, and reads as *How each phone reads* says. The admin presses one button, *Move this club*, under Check readiness, which lists what it is about to move first.
+
+Order: **the test club first** (Setup → Make a test club), then the owner's own club, then any other, each with the owner watching. A club made after the release is made in `orgs/` from the start (`createClub()` and the bootstrap write there), so the old tree only ever shrinks.
+
+### What changes, file by file
+
+- `database.rules.json` (generated, as above), rules version 12; `test/rules.js` walks both trees, a moved club, and every reader of `squad`, `members`, `names`, `roster` and `log`.
+- `app.js`: `fb.base` chosen per club; `wireBase()` reading per part; the assembly of `t.players`; the forgetting on a parent's phone; the path translation in `remoteSet()`/`remoteDel()`; `pushAll()`, `createClub()`, `redeemInvite()`, `approveClaim()` and the join flow writing the new paths; `backupDoc()` holding only what the phone may read; *Move this club*.
+- `functions/`: the root helper, `squad` in place of `teams/{tid}/players`, `roster`, `names`, `moveClub`, triggers on both trees.
+- Tests: `sync.js` (reads per part, a moved club, the outbox replayed), `parents.js` and `players.js` against what the phone receives, `access.js` (roster, names), `invites.js`, `join.js`, `push.js`, `mirror.js`, `mycalfeed.js`, and a new `move.js` for `moveClub` (every kind of caller, a failed comparison leaving the club untouched, an old phone's push refused).
+
+### Build order
+
+1. **Rules** for `orgs/` beside `workspaces/`, generated, with `test/rules.js` walking both. Publishing them changes nothing for a club that has not moved. *Built (build 110, rules version 12).*
+2. **The server**: the root helper, both trees, `roster`, `names`, `moveClub`, all tested on the fake server. *Built (build 110).*
+3. **The app**: per-part reads, the assembly, the translation, the forgetting, the button. Every suite green against both a moved and an unmoved club. *Built (build 110).*
+4. **The test club moves**, then a real one, with the owner. *Waiting on the owner*: the functions deployed and rules version 12 published (both happen on a merge to main once the deploy secret is set), then *Move* on the test club, then on the real one.
+5. **A fortnight on**, nobody on the old tree: the `workspaces/` branch and the macro come out of the rules, the triggers on the old tree go, and `serverState/moved/` is cleared.
+
+### As built, and where it differs from the above
+
+- **The macro is a build step.** `tools/rules-source.json` is what is edited (the old tree, the new tree and every root rule written against `workspaces/` as before); `node tools/rules-build.js` writes `database.rules.json`, wrapping each lookup into a club as *the old tree while the club is there, the new one once it has moved* (`orgs/{code}/access` exists). `test/rules.js` fails if the two disagree, and runs every check twice (`node test/run.js rules-orgs` is the second pass, every club in its mock moved).
+- **The move is asked for in the database, not by a callable function.** The admin writes `moveRequests/{code}` as herself (the rules let only an admin of that club), and the `moveClub` trigger checks her again, moves the club in one multi-path update (the new tree, the old one replaced by its `moved` marker, the copy at `serverState/moved/{code}/{at}`), reads it back, and writes its answer beside the request. That keeps the phone on the database SDK it already has, and the fake server tests it as it tests every other trigger (`test/move.js`).
+- **A club is on exactly one tree, and the rules keep it so.** Nobody can start `orgs/{code}` while the old tree holds the code (it would hand them every root rule for that club), nor write anything on the old tree of a club that has moved or is on the new one — not even her own member entry, which a phone that has not heard of the move would otherwise write on signing in.
+- **A phone does not write until it knows the tree.** Every write waits in the outbox until the session's first read of the club (`sendPending()`, `fb.held`), so nothing made at a field before the phone heard of the move goes to the old tree; the first read sends it all, translated (`clubPath()`, `clubWrites()`).
+- **A move under an open phone deletes nothing.** From the old tree it looks like everything being deleted; removals wait a tick for the `moved` marker that came in the same write, and if it came the phone reads the new tree instead.
+- **A twin is found by asking.** The lookup tables name one child per family per team, so a family's phone asks once for each number on the roster it has not asked about before, and remembers the answer (`sm.kids.v1`).
+- **Trackers get staff names, not emails.** A rule cannot ask "a tracker of any team" without a sixth table (decision 1), so `members/` (emails) is read by admins and coaches; a tracker, like a family, reads `names/`.
+- **The app's suites run once, on the old tree, and `test/orgs.js` covers the app on the new one** (what a family's phone asks for and holds, what staff read, where every write goes, the outbox across the move, a role changing, the Move card, another club on orgs/). The rules and the server suites run on both trees; the app's rig answers reads one path at a time, and a second pass of every app suite would have meant a second rig.
+
+### Decisions for the owner
+
+All four decided by the owner on 2026-10-08, as recommended:
+
+1. **Trackers read only their own team's squad.** No sixth lookup table.
+2. **Coaches of other teams keep reading every squad.** Writing stays as
+   today: a squad is changed only by that team's coaches and the club's
+   admins (and a family's or player's own `guardians`/`self` entry through
+   an invite or an approval).
+3. **Member emails are readable by all staff.** As built, staff here is admins and coaches: see *As built*, trackers.
+4. **The access log is admins' only.**
+
 ## What parents actually see
 
 Worth stating so it is deliberate and not an accident of implementation:
@@ -317,7 +453,7 @@ Where each step stands (2026-10):
 
 1. **Built.** Google, email and password, and magic link; `needsSignIn()` is the gate.
 2. **Built on `workspaces/{code}`**, with the four lookup tables in place of `teamMembers`.
-3. **Not built.** See *Migration*: it is now about moving names out of a parent's reach, and the owner decided (2026-10-06) to do that before registration opens (`GOTSPORT.md`).
+3. **Built (build 110), each club moving when its admin presses Move.** See *The move to `orgs/{orgId}`*: the owner chose the full move (2026-10-08, SECURITY.md SEC-1) to take names out of a parent's reach before registration opens (`GOTSPORT.md`).
 4. **Built.** One ruleset; `shareOwners` closed the public write hole.
 5. **Built.** Team links and the coach's approval list (`joinCodes`, `claims`), per-person invites, and a squad of parent invites at once.
 6. **Built.** Parents see their own child by name and the rest by number, the club's one preset, and My players across clubs.

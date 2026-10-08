@@ -138,6 +138,7 @@ const EXPORTS = `{
   stampOf, stampKey, stampLabel, trackersIn, typedName, stampedBy,
   /* sync */
   getApp, initAuth, initSync, mergeNode, IDENTITY, pushAll, remoteSet, remoteDel,
+  clubTree, setClubTree, onOrgs, clubPath, clubWrites, probeTree, moveCard, rosterOf, get moveReq() { return moveReq },
   quiet, commit, drop, nowMs,
   /* roles */
   acc, members, anyAdmins, isAdmin, isCoach, isTracker, isGuardian, roleIn,
@@ -216,7 +217,7 @@ const EXPORTS = `{
   get pubState() { return pubState },
   /* invites */
   get invite() { return invite }, get clubInv() { return clubInv }, get myClubs() { return myClubs },
-  secretId, inviteLink, redeemInvite, makeInvite, inviteScreen,
+  secretId, randId, inviteLink, redeemInvite, makeInvite, inviteScreen,
   get importContacts() { return importContacts }, importInviteRows, inviteImported, mailImported,
   fit, assignSlots, footFit, FOOT, sheetPlayer,
   /* messages */

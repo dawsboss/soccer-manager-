@@ -32,6 +32,7 @@ const feed = require('./calendar');
 const access = require('./access');
 const mirror = require('./mirror');
 const mycal = require('./mycal');
+const move = require('./move');
 
 initializeApp();
 
@@ -104,7 +105,24 @@ exports.pushStaffMessage = onValueCreated('/staffdm/{code}/{cid}/m/{id}', event 
    after. Entries are small and nothing writes them during a game (the
    register sits beside them, at teams/{tid}/attend), so the whole entry is
    the right thing to watch. */
-exports.pushEntry = onValueWritten('/workspaces/{code}/teams/{tid}/events/{eid}', event =>
+/* Every trigger on a club is registered twice, once per tree, while clubs
+   move from workspaces/{code} to orgs/{code} (AUTH.md, *The move to
+   `orgs/{orgId}`*): `both()` makes the pair, the second named with Orgs on
+   the end, and tells each handler which tree it woke on (params.tree), so
+   nothing has to ask. Where the new tree puts a part elsewhere (the squad out
+   from under its team), the pattern says so with {squad}, written as the old
+   tree's teams/{tid}/players or the new one's squad/{tid}. */
+const TREE_PATHS = {
+  workspaces: p => '/workspaces/' + p.replace('{squad}', 'teams/{tid}/players'),
+  orgs: p => '/orgs/' + p.replace('{squad}', 'squad/{tid}')
+};
+function both(name, pattern, make, handler) {
+  for (const tree of ['workspaces', 'orgs'])
+    exports[name + (tree === 'orgs' ? 'Orgs' : '')] = make(TREE_PATHS[tree](pattern),
+      event => handler({ ...event, params: { ...event.params, tree } }));
+}
+
+both('pushEntry', '{code}/teams/{tid}/events/{eid}', onValueWritten, event =>
   push.onEntry(envOf(event), event.params, event.data.before.val(), event.data.after.val()));
 
 /* A game's when and whether, one field each and never the game itself: a
@@ -112,7 +130,7 @@ exports.pushEntry = onValueWritten('/workspaces/{code}/teams/{tid}/events/{eid}'
    and none of that may wake the server. Its date, kick-off and called-off
    fields change only when somebody reschedules it. */
 for (const field of ['date', 'kickoff', 'called'])
-  exports['pushGame' + field[0].toUpperCase() + field.slice(1)] = onValueWritten(`/workspaces/{code}/matches/{mid}/${field}`, event =>
+  both('pushGame' + field[0].toUpperCase() + field.slice(1), `{code}/matches/{mid}/${field}`, onValueWritten, event =>
     push.onGameField(envOf(event), event.params, field, event.data.before.val()));
 
 /* The lookup tables the rules read (access.js; SERVER.md, "The lookup tables
@@ -121,19 +139,44 @@ for (const field of ['date', 'kickoff', 'called'])
    each as deep as the role itself: a coach saving the whole team writes
    teams/{tid} every time, and only a change to a player's guardians or self
    may wake these. */
-exports.accessAdmin = onValueWritten('/workspaces/{code}/access/admins/{uid}', event =>
+both('accessAdmin', '{code}/access/admins/{uid}', onValueWritten, event =>
   access.onAdmin(writerOf(event), event.params));
 /* The three on a team's people also mark the club for My calendar's feeds
    (mycal.js, below): who is on a team is what decides whose calendar it is in. */
-exports.accessStaff = onValueWritten('/workspaces/{code}/access/teams/{tid}', event => Promise.all([
+both('accessStaff', '{code}/access/teams/{tid}', onValueWritten, event => Promise.all([
   access.onTeamStaff(writerOf(event), event.params, event.data.before.val(), event.data.after.val()),
   markRoles(event, [...staffIn(event.data.before.val()), ...staffIn(event.data.after.val())])]).then(r => r[0]));
-exports.accessGuardians = onValueWritten('/workspaces/{code}/teams/{tid}/players/{pid}/guardians', event => Promise.all([
+both('accessGuardians', '{code}/{squad}/{pid}/guardians', onValueWritten, event => Promise.all([
   access.onGuardians(writerOf(event), event.params, event.data.before.val(), event.data.after.val()),
   markRoles(event, [...peopleIn(event.data.before.val()), ...peopleIn(event.data.after.val())])]).then(r => r[0]));
-exports.accessSelf = onValueWritten('/workspaces/{code}/teams/{tid}/players/{pid}/self', event => Promise.all([
+both('accessSelf', '{code}/{squad}/{pid}/self', onValueWritten, event => Promise.all([
   access.onSelf(writerOf(event), event.params, event.data.before.val(), event.data.after.val()),
   markRoles(event, [...peopleIn(event.data.before.val()), ...peopleIn(event.data.after.val())])]).then(r => r[0]));
+
+/* The two parts only orgs/ has (access.js): staff names, so a family can
+   see who her coach is without reading anyone's email, and the roster, the
+   numbers the whole club reads in place of the squad. A child's record is
+   watched one child at a time, so saving the whole squad wakes only the
+   children that changed. */
+exports.namesMember = onValueWritten('/orgs/{code}/members/{uid}', event =>
+  access.onMember(writerOf(event), event.params));
+exports.rosterPlayer = onValueWritten('/orgs/{code}/squad/{tid}/{pid}', event =>
+  access.onSquadPlayer(writerOf(event), event.params));
+exports.rosterOpen = onValueWritten('/orgs/{code}/org/rosterOpen', event =>
+  access.onRosterOpen(writerOf(event), event.params));
+
+/* Moving a club to orgs/ (move.js), when one of its admins asks by writing
+   moveRequests/{code}. A create only: the answer is written beside the
+   request, and the admin deletes it to ask again. One multi-path update, so
+   it gets `update` on the event's own database as well as get and set. */
+exports.moveClub = onValueCreated('/moveRequests/{code}', event => {
+  const root = event.data.ref.root;
+  return move.onRequest({
+    get: p => root.child(p).get().then(s => s.val()),
+    set: (p, v) => root.child(p).set(v),
+    update: patch => root.update(patch)
+  }, event.params, event.data.val());
+});
 
 /* The calendar half of the share pages (mirror.js; SERVER.md, "The share
    pages"): a team's entries, and a game's when and where, rewritten on its
@@ -142,10 +185,10 @@ exports.accessSelf = onValueWritten('/workspaces/{code}/teams/{tid}/players/{pid
    never whole, because a game being played is written every few seconds. */
 /* Both also mark the club for My calendar's feeds, which carry the same
    entries and games. */
-exports.mirrorEvents = onValueWritten('/workspaces/{code}/teams/{tid}/events', event => Promise.all([
+both('mirrorEvents', '{code}/teams/{tid}/events', onValueWritten, event => Promise.all([
   mirror.onEvents(mirrorOf(event), event.params), markClub(event)]).then(r => r[0]));
 for (const field of mirror.GAME_FIELDS)
-  exports['mirrorGame' + field[0].toUpperCase() + field.slice(1)] = onValueWritten(`/workspaces/{code}/matches/{mid}/${field}`, event => Promise.all([
+  both('mirrorGame' + field[0].toUpperCase() + field.slice(1), `{code}/matches/{mid}/${field}`, onValueWritten, event => Promise.all([
     mirror.onGame(mirrorOf(event), event.params), markClub(event)]).then(r => r[0]));
 
 /* My calendar's feeds (mycal.js; SERVER.md, "My calendar's feed"). The

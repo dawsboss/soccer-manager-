@@ -58,7 +58,10 @@ const has = (o, s) => JSON.stringify(o || null).toLowerCase().includes(s.toLower
   {
     const S = server();
     deepEq('one for a team\'s entries, one per field of a game that says when or where',
-      Object.keys(S.triggers).filter(n => /^mirror/.test(n)).sort(),
+      Object.keys(S.triggers).filter(n => /^mirror/.test(n) && !/Orgs$/.test(n)).sort(),
+      ['mirrorEvents', 'mirrorGameCalled', 'mirrorGameDate', 'mirrorGameKickoff', 'mirrorGameOpponent', 'mirrorGameVenue']);
+    // and the same again for a club on orgs/ (functions/index.js, both())
+    deepEq('— each once more for a club on orgs/', Object.keys(S.triggers).filter(n => /^mirror.*Orgs$/.test(n)).map(n => n.replace(/Orgs$/, '')).sort(),
       ['mirrorEvents', 'mirrorGameCalled', 'mirrorGameDate', 'mirrorGameKickoff', 'mirrorGameOpponent', 'mirrorGameVenue']);
     check('a practice moved wakes the entries\' one', (await S.wouldWake(W + 'teams/t1/events/e1/start', '18:30')).includes('mirrorEvents'), true);
     check('a game moved wakes its date\'s', (await S.wouldWake(W + 'matches/g1/date', '2026-10-19')).includes('mirrorGameDate'), true);
