@@ -8,6 +8,20 @@ before this point lives only in the git log.
 
 ---
 
+## The Move button asks — 2026-10-08 (build 111)
+
+The *Move* button on Club settings said the database refused it and asked
+whether rules version 12 was published, though it was. Before asking, the
+app cleared any earlier request so it could write a fresh one, and it did
+that even when there was none. The database counts deleting nothing as a
+write, and the move request's rule allows deleting only a request that is
+there, so the clearing was refused and the request never went. It now
+clears an earlier request only when there is one. No rules change, so
+nothing needs publishing. `test/rules.js` pins the refusal and
+`test/orgs.js` stands it in for the button.
+
+---
+
 ## Families' phones hold only their own children — 2026-10-08 (build 110, rules version 12)
 
 SECURITY.md, SEC-1, and AUTH.md, *The move to `orgs/{orgId}`*. Everyone in a
