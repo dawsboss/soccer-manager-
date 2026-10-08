@@ -112,7 +112,8 @@ const ORGS = { CLUB: { name: 'Lakeside SC', at: 1 }, HILL: { name: 'Hillside', a
     check('urgent is drawn as such', /rolebar warn alertbar/.test(bar(D)), true);
     D.click({ act: 'alertx', id: D.alertsList()[0].id });
     check('Dismiss takes the bar away', bar(D), '');
-    check('the inbox keeps it', (D.ui.view = 'inbox', D.render(), /From all your clubs[\s\S]*Pitch is waterlogged/.test(D.rendered())), true);
+    check('Messages keeps it, under her other clubs', (D.ui.view = 'inbox', D.render(), /From your other clubs[\s\S]*Pitch is waterlogged/.test(D.rendered())), true);
+    check('and the bell does not: a message is not a notification', (D.ui.view = 'notes', D.render(), /Pitch is waterlogged/.test(D.rendered())), false);
   }
 
   console.log('\n--- her calendar, in every club ---');

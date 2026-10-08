@@ -54,6 +54,10 @@ exports.pushNotice = onValueCreated('/board/{code}/{tid}/{id}', event =>
 exports.pushMessage = onValueCreated('/dm/{code}/{tid}/{fam}/m/{id}', event =>
   push.onMessage(envOf(event), event.params, event.data.val()));
 
+/* A new message between two coaches or admins (build 106). Append-only too. */
+exports.pushStaffMessage = onValueCreated('/staffdm/{code}/{cid}/m/{id}', event =>
+  push.onStaff(envOf(event), event.params, event.data.val()));
+
 /* A practice or event on a team's calendar changed: the entry, before and
    after. Entries are small and nothing writes them during a game (the
    register sits beside them, at teams/{tid}/attend), so the whole entry is

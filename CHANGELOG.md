@@ -8,6 +8,75 @@ before this point lives only in the git log.
 
 ---
 
+## Each kind of notification can be turned off — 2026-10-08 (build 106)
+
+The owner: *notifications should be able to be turned off.* Until now the
+only switch was per phone, and only for a closed phone; the pop-ups, the
+banner over the screen and the buzz could not be stopped at all.
+
+**What notifies you**, on the Notifications screen and in Settings: Messages,
+Team notices, Games and practices (with training sessions), and Club
+activity (only for those who get it), each On or Off. Off means no pop-up,
+no buzz, no banner and no push to a locked phone, on every phone she uses;
+the item still waits, counted, on Messages or under the bell. A game she
+follows with *Notify me* is still its own choice, on the game.
+
+Kept at `people/{uid}/mute/{kind}`, readable and writable by her alone, one
+yes-or-no per kind (rules version 10). `functions/push.js` reads each
+reader's switch before it reads her phones, so a muted kind costs no token
+lookup either. A refusal (rules not published yet) is taken back off the
+screen and said.
+
+## Messages get a button of their own, and coaches can write first — 2026-10-08 (build 106)
+
+The owner couldn't find how to start a conversation, and when asked, said
+coaches and admins should be able to start one, that messages need a place
+of their own rather than sharing the bell with notifications, and that a
+message should say where it has got to.
+
+- **Two buttons up top.** A speech bubble for **Messages** (conversations
+  and team notices, `#/messages`), and the bell for **Notifications**
+  (changes to her calendar in any club, and club activity,
+  `#/notifications`). Each has its own count. A message from another club is
+  on Messages too, under *From your other clubs*.
+- **New message.** A coach picks a family on a team she coaches; an admin, a
+  family on any team. It is the same conversation the family would have
+  started, so it is still read by every coach of the team and the admins,
+  never one coach alone. The rules already let staff write there; the
+  handler now checks the family is on that team. A family's *Coaches of …*
+  row is unchanged, and a player with her own sign-in still reads her
+  family's conversation, which is where a coach asks about an injury.
+- **Coaches and admins talk to each other.** `staffdm/{code}/{a}~{b}`, one
+  conversation per pair, the two uids sorted, readable and writable by those
+  two only while each is an admin or on `coachIndex`. No admin reads anyone
+  else's. A rule cannot list somebody's conversations, but it can answer
+  for one pair, so each phone listens once per colleague and nothing has to
+  be created first: the first message works offline through the outbox like
+  any other.
+- **Where a message has got to.** Under each of hers: ◷ waiting for a signal
+  (or sending), ✓ sent (the club's database has it), ✓✓ delivered (somebody
+  else's phone has it), and a blue ✓✓ read. Tapping one says who has it and
+  who read it, and when. Delivered is a new marker, `got/{uid}`, written by
+  the receiving phone for itself beside `seen/{uid}`. Both are written as the
+  later of now and the newest message they cover, so a phone whose clock is
+  behind the sender's still counts it.
+- **A lock, saying exactly how private.** Every conversation names who can
+  read it, and *How private?* says: kept to those people by the database's
+  rules, encrypted on the way (HTTPS) and where Google stores it, **not
+  end-to-end encrypted** (whoever runs the club's Firebase project can read
+  the database), a copy on each phone until sign-out, and nothing editable.
+  The screen never claims more than that.
+- **Push.** `pushStaffMessage` sends a colleague's message to the other of
+  the pair, only while both are staff and the author is one of them
+  (`test/push.js`).
+
+Rules version 9 (`got` under `dm`, and the `staffdm` block). Until it is
+published, a coach writing first to a family works (the old rules already
+allowed it), but colleagues' messages are refused and kept with *Not sent*,
+and the delivered tick never comes. Not built: group conversations among
+staff, and hearing colleagues' messages from a club that isn't open (push
+covers a closed phone).
+
 ## A practice called off reaches a closed phone — 2026-10-07 (build 105)
 
 The urgent half of the calendar. A subscribed calendar cannot be told there

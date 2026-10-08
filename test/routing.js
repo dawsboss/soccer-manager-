@@ -34,7 +34,10 @@ const cases = [
   [{ view: 'admin' }, '#/club/settings'],
   [{ view: 'mine' }, '#/my-players'],
   [{ view: 'setup' }, '#/settings'],
-  [{ view: 'sessions' }, '#/training']
+  [{ view: 'sessions' }, '#/training'],
+  // build 106: messages and notifications are two screens
+  [{ view: 'inbox' }, '#/messages'],
+  [{ view: 'notes' }, '#/notifications']
 ];
 
 console.log('--- the screen turns into a readable path ---');
@@ -65,6 +68,19 @@ console.log('\n--- the Calendar says which calendars it shows ---');
   check('— and comes back as All teams', back('#/calendar/all'), 'calendar club');
   check('the plain address is hers', back('#/calendar'), 'calendar mine');
   A.me = null; A.state.access = {};
+}
+
+console.log('\n--- a conversation between two colleagues names the other one ---');
+{
+  A.me = { uid: 'u1' };
+  reset(); A.ui.view = 'thread'; A.ui.thread = { cid: 'u1~u9' };
+  check('the address names who it is with', A.uiToHash(), '#/messages/with/u9');
+  reset(); A.ui.view = 'nowhere'; global.location.hash = '#/messages/with/u9'; A.hashToUi();
+  check('and comes back as the same pair, sorted', A.ui.view + ' ' + A.ui.thread.cid, 'thread u1~u9');
+  A.me = { uid: 'z1' };
+  reset(); A.ui.view = 'nowhere'; global.location.hash = '#/messages/with/u9'; A.hashToUi();
+  check('from the other side too', A.ui.thread.cid, 'u9~z1');
+  A.me = null;
 }
 
 console.log('\n--- the screens that moved still answer their old addresses ---');

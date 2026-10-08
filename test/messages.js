@@ -61,7 +61,7 @@ const NOTE = (A, by, text, extra) => ({ by, byName: CLUB.access.members[by].name
     check('never to every family\'s', fbk.watching('dm/CLUB/t1'), false);
     check('nor another family\'s', fbk.watching('dm/CLUB/t1/dad'), false);
     check('nor a team she has no child on', fbk.watching('board/CLUB/t2'), false);
-    check('the bell is drawn', A.dom.node('#inboxBtn').hidden, false);
+    check('Messages is drawn', A.dom.node('#msgBtn').hidden, false);
   }
   {
     const { fbk } = await boot('coach');
@@ -84,7 +84,7 @@ const NOTE = (A, by, text, extra) => ({ by, byName: CLUB.access.members[by].name
     const club = JSON.parse(JSON.stringify(CLUB)); club.access.admins = {};
     const { A, fbk } = await boot('coach', { club });
     check('no admin yet: no messages at all', fbk.readPaths().some(p => /^(board|dm)\//.test(p)), false);
-    check('and no bell', A.dom.node('#inboxBtn').hidden, true);
+    check('and no Messages', A.dom.node('#msgBtn').hidden, true);
   }
 
   console.log('\n--- what arrives, and what is news ---');
@@ -93,7 +93,8 @@ const NOTE = (A, by, text, extra) => ({ by, byName: CLUB.access.members[by].name
     fbk.deliver('board/CLUB/t1', { n1: NOTE(A, 'coach', 'Old news') }); await A.flush();
     check('the first read notifies nothing', A.toasts.length, 0);
     check('but it counts as unread', A.unreadCount(), 1);
-    check('and the bell says so', A.dom.node('#inboxN').textContent, '1');
+    check('and Messages says so', A.dom.node('#msgN').textContent, '1');
+    check('not the bell: a notice is a message, not a notification', A.dom.node('#bellN').textContent, '');
     fbk.deliver('board/CLUB/t1', { n1: NOTE(A, 'coach', 'Old news'), n2: NOTE(A, 'coach', 'Training moved to 6pm', { urgent: true }) }); await A.flush();
     check('a new notice pops up', /Urgent · Flight · Jaz · Training moved to 6pm/.test(A.lastToast() || ''), true);
     const before = A.toasts.length;
@@ -179,6 +180,181 @@ const NOTE = (A, by, text, extra) => ({ by, byName: CLUB.access.members[by].name
     A.dom.node('#msgText').value = 'hello';
     A.click({ act: 'msgsend', tid: 't1', fam: 'mum' }); await A.flush();
     check('another team\'s coach cannot write to Flight\'s families', writes(fbk, 'dm/').length, 0);
+  }
+
+  console.log('\n--- a coach or admin writes first ---');
+  {
+    const { A, fbk } = await boot('coach');
+    fbk.deliver('dm/CLUB/t1', null); await A.flush();
+    A.click({ act: 'inbox' }); await A.flush();
+    check('she is offered a new message', /data-act="msgnew"/.test(A.rendered()), true);
+    A.click({ act: 'msgnew' });
+    const sheet = String(A.dom.node('#sheet').innerHTML);
+    check('listing each family on her team, with whose parent', /Mo[\s\S]*Parent of Ella/.test(sheet) && /Dev[\s\S]*Parent of Bea/.test(sheet), true);
+    check('and the other coaches and admins', /data-act="sdopen" data-u="adm"/.test(sheet) && /data-act="sdopen" data-u="other"/.test(sheet), true);
+    check('never a tracker', /data-u="trk"/.test(sheet), false);
+    check('nor another team\'s family', /data-act="msgto" data-tid="t2"/.test(sheet), false);
+    A.click({ act: 'msgto', tid: 't1', fam: 'mum' }); await A.flush();
+    check('the family\'s conversation opens, empty', A.ui.view === 'thread' && /No messages yet/.test(A.rendered()), true);
+    check('and says who reads it, with a lock', /class="lock"[\s\S]*Private · only Mo, the coaches of/.test(A.rendered()), true);
+    A.dom.node('#msgText').value = 'Ella was great today';
+    A.click({ act: 'msgsend', tid: 't1', fam: 'mum' }); await A.flush();
+    const w = writes(fbk, 'dm/CLUB/t1/mum/m/');
+    check('written into that family\'s one conversation', w.length === 1 && w[0].value.by === 'coach', true);
+    fbk.deliver('dm/CLUB/t1', { mum: { m: { [w[0].path.split('/').pop()]: w[0].value } } }); await A.flush();
+    check('Sent once the database has it', A.msgState({ tid: 't1', fam: 'mum' }, A.convMsgs({ tid: 't1', fam: 'mum' })[0]), 'sent');
+    A.click({ act: 'msgto', tid: 't1', fam: 'trk' }); await A.flush();
+    check('not to somebody who is not a family on the team', A.ui.view === 'thread' && A.ui.thread.fam === 'trk', false);
+    A.click({ act: 'msgto', tid: 't2', fam: 'mum' }); await A.flush();
+    check('nor on a team she does not coach', A.ui.thread && A.ui.thread.tid, 't1');
+    A.dom.node('#msgText').value = 'sneaky';
+    A.click({ act: 'msgsend', tid: 't1', fam: 'trk' }); await A.flush();
+    check('and the handler refuses the write too', writes(fbk, 'dm/CLUB/t1/trk/').length, 0);
+  }
+  {
+    // the parent's side: the coach's first message lands in her own conversation, and her phone says it got it
+    const { A, fbk } = await boot('mum');
+    fbk.deliver('dm/CLUB/t1/mum', null); await A.flush();
+    const at = A.nowMs() - 1000;
+    fbk.deliver('dm/CLUB/t1/mum', { m: { c1: { by: 'coach', byName: 'Jaz', at, text: 'Ella was great today' } } }); await A.flush();
+    check('it pops up', /Jaz · Flight · Ella was great today/.test(A.lastToast() || ''), true);
+    const got = writes(fbk, 'dm/CLUB/t1/mum/got/mum');
+    check('her phone says it has it, once', got.length, 1);
+    check('no earlier than the message', got[0] && got[0].value >= at, true);
+    check('not read just by arriving', writes(fbk, 'dm/CLUB/t1/mum/seen/').length, 0);
+    // a club still on older rules: the marker is refused and Firebase hands back the conversation without it
+    fbk.deliver('dm/CLUB/t1/mum', { m: { c1: { by: 'coach', byName: 'Jaz', at, text: 'Ella was great today' } } }); await A.flush();
+    fbk.deliver('dm/CLUB/t1/mum', { m: { c1: { by: 'coach', byName: 'Jaz', at, text: 'Ella was great today' } } }); await A.flush();
+    check('a refused marker is not asked for again and again', writes(fbk, 'dm/CLUB/t1/mum/got/mum').length, 1);
+    check('counted on Messages', A.msgUnread(), 1);
+    check('not under the bell', A.notesUnread(), 0);
+  }
+  {
+    // the coach's side again: a second tick, then read, and who
+    const { A, fbk } = await boot('coach');
+    const at = A.nowMs() - 60000;
+    const th = (extra) => ({ mum: { m: { c1: { by: 'coach', byName: 'Jaz', at, text: 'Ella was great today' } }, ...extra } });
+    fbk.deliver('dm/CLUB/t1', th()); await A.flush();
+    A.click({ act: 'thread', tid: 't1', fam: 'mum' }); await A.flush();
+    const one = () => A.msgState({ tid: 't1', fam: 'mum' }, A.convMsgs({ tid: 't1', fam: 'mum' })[0]);
+    check('one tick: the server has it', one(), 'sent');
+    check('drawn as Sent, with the time', /✓<\/span> Sent/.test(A.rendered()), true);
+    fbk.deliver('dm/CLUB/t1', th({ got: { mum: at + 5000 } })); await A.flush();
+    check('two: her phone has it', one(), 'delivered');
+    check('drawn as Delivered', /✓✓<\/span> Delivered/.test(A.rendered()), true);
+    fbk.deliver('dm/CLUB/t1', th({ got: { mum: at + 5000 }, seen: { mum: at + 9000 } })); await A.flush();
+    check('read once she opens it', one(), 'read');
+    check('drawn blue', /tick read[^>]*>✓✓<\/span> Read/.test(A.rendered()), true);
+    const id = A.convMsgs({ tid: 't1', fam: 'mum' })[0].id;
+    A.click({ act: 'msginfo', id });
+    const info = String(A.dom.node('#sheet').innerHTML);
+    check('message info names who has it and who read it', /Delivered[\s\S]*Mo,[\s\S]*Read[\s\S]*Mo,/.test(info), true);
+    fbk.deliver('dm/CLUB/t1', th({ got: { coach: at + 9000 } })); await A.flush();
+    check('her own marker is not a delivery', one(), 'sent');
+  }
+  {
+    // a reply with no signal says so, and goes when it comes back
+    const pre = makeFakebase();
+    const realSet = pre.modules.database.set;
+    pre.modules.database.set = (ref, v) => /^dm\//.test(ref.path) && /\/m\//.test(ref.path) ? new Promise(() => { }) : realSet(ref, v);
+    const { A, fbk } = await boot('coach', { fbk: pre });
+    fbk.deliver('.info/connected', false); fbk.deliver('dm/CLUB/t1', null); await A.flush();
+    A.click({ act: 'msgto', tid: 't1', fam: 'mum' }); await A.flush();
+    A.dom.node('#msgText').value = 'Bring shin pads';
+    A.click({ act: 'msgsend', tid: 't1', fam: 'mum' }); await A.flush();
+    check('waiting for a signal, said as such', /Waiting for a signal/.test(A.rendered()), true);
+  }
+
+  console.log('\n--- coaches and admins, to each other ---');
+  {
+    const { A, fbk } = await boot('coach');
+    check('a coach listens to her conversation with each colleague', fbk.watching('staffdm/CLUB/' + A.sdId('coach', 'other')) && fbk.watching('staffdm/CLUB/' + A.sdId('adm', 'coach')), true);
+    check('named the same from either side', A.sdId('other', 'coach'), A.sdId('coach', 'other'));
+    check('never one with a tracker or a parent', fbk.readPaths().some(p => /^staffdm\/.*(trk|mum|dad)/.test(p)), false);
+    check('nor the list of them', fbk.watching('staffdm/CLUB'), false);
+    A.click({ act: 'sdopen', u: 'other' }); await A.flush();
+    check('opens, just the two of them', /Private · only you and Kim/.test(A.rendered()) && /no other coach, and no admin/.test(A.rendered()), true);
+    check('at an address naming the other', A.uiToHash(), '#/messages/with/other');
+    A.dom.node('#msgText').value = 'Can you take my Thursday session?';
+    A.click({ act: 'msgsend', cid: A.sdId('coach', 'other') }); await A.flush();
+    const w = writes(fbk, 'staffdm/');
+    check('one write, at one message in their conversation', w.length === 1 && w[0].path.startsWith('staffdm/CLUB/coach~other/m/') && w[0].value.by === 'coach', true);
+    fbk.deliver('staffdm/CLUB/coach~other', { m: { [w[0].path.split('/').pop()]: w[0].value } });
+    fbk.deliver('staffdm/CLUB/adm~coach', null); await A.flush();
+    A.click({ act: 'inbox' }); await A.flush();
+    check('listed under Conversations with what she is', /Kim <span class="muted">· Coach · Storm/.test(A.rendered()), true);
+    A.click({ act: 'sdopen', u: 'trk' }); await A.flush();
+    check('not with a tracker', A.ui.view, 'inbox');
+    A.click({ act: 'sdopen', u: 'mum' }); await A.flush();
+    check('nor a parent', A.ui.view, 'inbox');
+  }
+  {
+    const { A, fbk } = await boot('other');
+    fbk.deliver('staffdm/CLUB/coach~other', null); await A.flush();
+    fbk.deliver('staffdm/CLUB/coach~other', { m: { s1: { by: 'coach', byName: 'Jaz', at: A.nowMs(), text: 'Can you take my Thursday session?' } } }); await A.flush();
+    check('the other coach is told', /Jaz · Can you take my Thursday/.test(A.lastToast() || ''), true);
+    check('and her phone says it has it', writes(fbk, 'staffdm/CLUB/coach~other/got/other').length, 1);
+    check('counted on Messages', A.msgUnread(), 1);
+    A.click({ act: 'sdopen', u: 'coach' }); await A.flush();
+    check('opening it marks it read', writes(fbk, 'staffdm/CLUB/coach~other/seen/other').length, 1);
+  }
+  for (const who of ['mum', 'trk']) {
+    const { A, fbk } = await boot(who);
+    check(`a ${who === 'mum' ? 'parent' : 'tracker'} listens to no colleagues' conversation`, fbk.readPaths().some(p => p.startsWith('staffdm/')), false);
+    A.click({ act: 'sdopen', u: 'coach' }); await A.flush();
+    A.dom.node('#msgText').value = 'hi';
+    A.click({ act: 'msgsend', cid: 'coach~' + who }); await A.flush();
+    check('and cannot write in one', writes(fbk, 'staffdm/').length, 0);
+  }
+
+  console.log('\n--- two buttons: Messages and the bell ---');
+  {
+    const { A } = await boot('coach');
+    A.click({ act: 'notes' }); await A.flush();
+    check('the bell opens Notifications', A.ui.view === 'notes' && /Notifications/.test(A.rendered()), true);
+    check('with no messages on it', /<h2[^>]*>Conversations|data-act="msgnew"|data-act="postnew"/.test(A.rendered()), false);
+    check('at its own address', A.uiToHash(), '#/notifications');
+    A.click({ act: 'msgprivacy' });
+    const p = String(A.dom.node('#sheet').innerHTML);
+    check('privacy is said plainly, never claiming end-to-end', /Not end-to-end encrypted/.test(p) && /HTTPS/.test(p), true);
+  }
+
+  console.log('\n--- turning a kind of notification off ---');
+  {
+    const { A, fbk } = await boot('mum');
+    fbk.deliver('board/CLUB/t1', {}); fbk.deliver('dm/CLUB/t1/mum', null); await A.flush();
+    check('her own switches are read, from her own place', fbk.watching('people/mum/mute'), true);
+    A.click({ act: 'notes' }); await A.flush();
+    check('offered on Notifications', /What notifies you/.test(A.rendered()) && /data-act="muteset" data-k="notice"/.test(A.rendered()), true);
+    check('a parent has no Club activity switch, hearing none', /data-k="news"/.test(A.rendered()), false);
+    A.click({ act: 'muteset', k: 'notice', v: '1' }); await A.flush();
+    check('one write, hers, at that kind', fbk.writtenTo('people/mum/mute/notice').map(w => w.value).join(), 'true');
+    const before = A.toasts.length;
+    fbk.deliver('board/CLUB/t1', { n1: NOTE(A, 'coach', 'Bring water') }); await A.flush();
+    check('notices off: no pop-up', A.toasts.length, before);
+    check('no banner over the screen', /alertbar/.test(A.rendered()), false);
+    check('but it waits on Messages, counted', A.msgUnread(), 1);
+    fbk.deliver('dm/CLUB/t1/mum', { m: { c1: { by: 'coach', byName: 'Jaz', at: A.nowMs(), text: 'See you Saturday' } } }); await A.flush();
+    check('her conversations still pop up', /See you Saturday/.test(A.lastToast() || ''), true);
+    A.click({ act: 'muteset', k: 'notice', v: '0' }); await A.flush();
+    check('and back on', fbk.writtenTo('people/mum/mute/notice').map(w => w.value).join(), 'true,false');
+    A.click({ act: 'muteset', k: 'everything', v: '1' }); await A.flush();
+    check('only the four kinds', fbk.record.writes.some(w => w.path === 'people/mum/mute/everything'), false);
+  }
+  {
+    // set on another phone: this one hears it from the database
+    const { A, fbk } = await boot('coach');
+    fbk.deliver('dm/CLUB/t1', null); fbk.deliver('people/coach/mute', { msg: true }); await A.flush();
+    const before = A.toasts.length;
+    fbk.deliver('dm/CLUB/t1', { mum: { m: { d1: { by: 'mum', byName: 'Mo', at: A.nowMs(), text: 'Late today' } } } }); await A.flush();
+    check('switched off on another phone, quiet on this one', A.toasts.length, before);
+    check('and still counted', A.msgUnread(), 1);
+  }
+  {
+    const fbk = makeFakebase().refuseWrites(p => p.startsWith('people/'));
+    const { A } = await boot('mum', { fbk });
+    A.click({ act: 'muteset', k: 'msg', v: '1' }); await A.flush();
+    check('refused by older rules: taken back and said', /version/.test(A.lastToast() || '') && /aria-pressed="true">On/.test((A.click({ act: 'notes' }), A.rendered())), true);
   }
 
   console.log('\n--- no signal, and refusals ---');
@@ -272,7 +448,7 @@ const NOTE = (A, by, text, extra) => ({ by, byName: CLUB.access.members[by].name
     A.click({ act: 'thread', tid: 't1', fam: 'mum' }); await A.flush();
     fbk.signOut(); await A.flush();
     check('signed out, nothing of it is drawn', /Private reply/.test(A.rendered()), false);
-    check('the bell goes', A.dom.node('#inboxBtn').hidden, true);
+    check('Messages goes', A.dom.node('#msgBtn').hidden, true);
     check('and this device forgets it', A.storage.getItem('sm.msgs:CLUB:mum'), null);
   }
 
