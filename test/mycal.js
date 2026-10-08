@@ -265,9 +265,14 @@ const nameIn = v => names.some(n => JSON.stringify(v).includes(n));
     D.sess.sessions.s9 = { id: 's9', kind: 'one', cap: 1, coach: 'jaz', coachName: 'Jaz', title: 'Rosa finishing', date: day(4), start: '09:00', end: '10:00' };
     D.sess.booked.s9 = { p1: { st: 'in', by: 'mum' } };
     D.click({ act: 'myfeed', v: 'on' }); await D.flush(); D.timers.run(); await D.flush();
-    const paths = fbk.record.writes.map(x => x.path);
     const set = (fbk.writtenTo('people/mum/set').slice(-1)[0] || {}).value || {};
     const id = set.feed || '';
+    // the phone asks whether the server keeps this address before it writes a thing there
+    check('nothing written to the new address before the phone has heard who keeps it', fbk.writtenTo('public/' + id).length, 0);
+    check('it asks', fbk.watching('public/' + id + '/by'), true);
+    fbk.deliver('public/' + id + '/by', null);
+    D.timers.run(); await D.flush();
+    const paths = fbk.record.writes.map(x => x.path);
     check('an address of its own, kept with her settings', /^m\w{10,}$/.test(id), true);
     check('still private about busy times', set.share, false);
     check('claimed before anything is written there', paths.indexOf('shareOwners/' + id) >= 0 && paths.indexOf('shareOwners/' + id) < paths.indexOf('public/' + id), true);
@@ -290,6 +295,18 @@ const nameIn = v => names.some(n => JSON.stringify(v).includes(n));
     D.render(); D.timers.run(); await D.flush();
     const doc2 = (fbk.writtenTo('public/' + id).slice(-1)[0] || {}).value || {};
     check('a practice called off in the other club follows', Object.values(doc2.items || {}).some(x => x.title === 'Hill U12: Practice' && x.called === 'cancelled'), true);
+
+    console.log('\n--- the server takes the feed over ---');
+    D.ui.view = 'mycal'; D.render();
+    check('until it does, the card says her phone keeps it', /once your phone has been open since the change/.test(D.rendered()), true);
+    fbk.deliver('public/' + id + '/by', 'server');
+    D.render();
+    check('once the server writes it, the card says so', /within a few minutes of a change, whether or not your phone is open/.test(D.rendered()), true);
+    const n1 = fbk.writtenTo('public/' + id).length;
+    mumHill.h1.events.e9.called = null;
+    await deliverMum(mumHill);
+    D.render(); D.timers.run(); await D.flush();
+    check('and her phone stops writing it, however much changes', fbk.writtenTo('public/' + id).length, n1);
 
     console.log('\n--- a new address, and off ---');
     global.confirm = () => true;

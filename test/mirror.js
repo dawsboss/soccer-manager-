@@ -122,10 +122,11 @@ const has = (o, s) => JSON.stringify(o || null).toLowerCase().includes(s.toLower
   }
   {
     const S = server(c => { c.teams.t1.share = '../workspaces'; c.teams.t1.calFeed = 'x/y'; });
-    const before = JSON.stringify(S.tree);
+    const tree = () => { const t = JSON.parse(JSON.stringify(S.tree)); delete t.serverState; return JSON.stringify(t); };
+    const before = tree();
     await S.fire(W + 'teams/t1/events/e1/public', true);
     S.put(W + 'teams/t1/events/e1/public', null);
-    check('a share id with a path in it is never followed', JSON.stringify(S.tree), before);
+    check('a share id with a path in it is never followed', tree(), before);
   }
 
   console.log('--- games: when and where, never the play ---');

@@ -8,6 +8,47 @@ before this point lives only in the git log.
 
 ---
 
+## My calendar's feed comes from the server, and leaves with the role — 2026-10-08 (build 106)
+
+The third job off SERVER.md's list. A person's calendar feed (one address,
+every club) was built by her own phone from what it held, so it was only as
+fresh as the last time one of her phones was open with a signal; a parent
+who never opened the app kept last month's practice times in her calendar.
+And another club's typed titles were left out, because her phone held only
+her own children there, not the names to scrub them with.
+
+- **The server builds it** (`functions/mycal.js`): from her roles in each
+  club she is in (her teams, her children's teams, the sessions she runs or
+  her children are in, her bookable times), the same items under the same
+  ids as the phone built, so a calendar already subscribed sees no
+  difference but freshness. Every club's typed titles are there now, every
+  word of every player's name in that club taken out.
+- **A few minutes after a change, not on every write.** Triggers on
+  entries, a game's when and where, a team's people, sessions, bookings and
+  bookable times only mark the club (`serverState/myCal`); `myCalBuild`
+  rebuilds the feeds those marks reach every five minutes, each club read
+  once however many feeds it is in. A weekly practice added a week at a
+  time is one rebuild, not thirty, and a game being played marks nothing.
+- **A role taken away is out of her calendar on the next run**, whether or
+  not a phone of hers is ever opened again. Her list of clubs only says
+  where to look, so a club she adds to it herself gives her nothing.
+- **It writes her page and nobody else's**: the address in her own setting,
+  claimed by her alone, and a My calendar page or nothing yet. Naming
+  someone else's feed, or a team's share link, as her own writes nothing.
+- **Her phone hands it over.** The server marks its page `by: 'server'`;
+  her phones wait to hear who keeps the address before their first write,
+  and stop once the server does. The card on My calendar says which.
+- **A team's calendar address is for its staff now.** One address shared by
+  a whole team cannot be taken back from one family, so a family taken off
+  the team went on receiving its practices for as long as the coach left the
+  address alone. Families are pointed at My calendar's feed, which is
+  theirs alone and leaves the team with them; coaches, trackers and admins
+  still have the team's, for a website or a noticeboard, and are told to
+  replace it when someone leaves. Families already subscribed to a team's
+  address keep receiving it until a coach replaces it once.
+
+---
+
 ## Access taken away stays taken away, signal or no signal — 2026-10-08 (build 106)
 
 The owner asked whether someone whose access is withdrawn can turn off Wi-Fi

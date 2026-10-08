@@ -56,7 +56,23 @@ does the bookkeeping, not that the phone works offline first.
   clubs themselves (below), names and all, behind a private link.
 
 ### My calendar's feed
-- **Now:** once she turns it on, her own phone builds her calendar feed from
+- **Moved to the server (2026-10-08):** `functions/mycal.js` builds each
+  person's feed from the clubs themselves: her teams, her children's teams,
+  the sessions she runs or her children are in, and her bookable times, worked
+  out from her roles in each club (never from her list of clubs, which she
+  can write). Triggers only mark what changed (`serverState/myCal`), and
+  `myCalBuild` rebuilds the marked feeds every five minutes, each club read
+  once per run. Every club's typed titles are there now, scrubbed of that
+  club's names. It writes only a page she alone claims that is a My calendar
+  page, and marks it `by: 'server'`; her phones see that and stop writing it
+  (`feedPublish()` waits to hear before its first write). A team she is taken
+  off leaves her feed on the next run, phone or no phone. `test/mycalfeed.js`
+  holds it to the phone's own `myFeedDoc()`, item for item and id for id.
+- **What is left:** the default database only (a rehearsal database's feeds
+  stay the phone's); a team renamed shows in feeds with the next change to
+  that club; the full detail (her children's names, who is coming) would
+  still need a private link, not `public/`.
+- **Before the server, and still where it is not deployed:** once she turns it on, her own phone builds her calendar feed from
   every club it holds (`myFeedDoc()`, each item through `feedItem()`) and
   writes it to `public/{id}` whenever it changes (`feedPublish()`), but only
   from a phone that has heard from every one of her clubs this session, so an
@@ -74,9 +90,6 @@ does the bookkeeping, not that the phone works offline first.
   opens the app. The screen says so ("it catches up with a club once your phone
   has been open since the change"), and the app itself (My calendar, alerts)
   is always current; the feed is the copy that trails.
-- **With a server:** it writes the feed on every change in any of her clubs,
-  with no phone open, and could serve the full detail (her children's names,
-  who is coming) behind a private link instead of a public node.
 
 ### Which clubs an account is in
 - **Partly moved (2026-10-08):** the server writes the bookmark when an

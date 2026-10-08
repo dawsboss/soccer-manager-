@@ -72,6 +72,8 @@ function server(edit) {
 const W = 'workspaces/CLUB/';
 // the database keeps no empty node; the fake does, so an emptied one reads as gone here too
 const A_ = (S, p) => { const v = S.at(W + 'access/' + p); return v && typeof v === 'object' && !Object.keys(v).length ? null : v; };
+// the club and everything around it, without the server's own notes (serverState/, which no phone reads)
+const club = S => { const t = JSON.parse(JSON.stringify(S.tree)); delete t.serverState; return t; };
 // key order is not the database's business
 const canon = v => JSON.stringify(v, (k, x) => (x && typeof x === 'object' && !Array.isArray(x) ? Object.fromEntries(Object.keys(x).sort().map(n => [n, x[n]])) : x));
 // everything under the club except the tables a change to `who` may move
@@ -252,17 +254,17 @@ const rest = S => canon({ ...S.at('workspaces/CLUB'), access: { ...S.at(W + 'acc
     await S.triggers.accessGuardians.handler(ev);
     check('a removal delivered after she was linked again keeps her', A_(S, 'teamParents/t1/mum'), 'p1');
     check('and her place in the club', A_(S, 'index/mum'), 'inv_mum');
-    const before = JSON.stringify(S.tree);
+    const before = JSON.stringify(club(S));
     await S.triggers.accessGuardians.handler(ev);
-    check('the same event twice changes nothing', JSON.stringify(S.tree), before);
+    check('the same event twice changes nothing', JSON.stringify(club(S)), before);
   }
   {
     const S = server();
     S.put('retired/CLUB', true);
-    const before = canon(S.tree);
+    const before = canon(club(S));
     await S.fire(W + 'teams/t1/players/p1/guardians/mum', null);
     S.put(W + 'teams/t1/players/p1/guardians/mum', 'inv_mum');
-    check('a retired club is left exactly as it was', canon(S.tree), before);
+    check('a retired club is left exactly as it was', canon(club(S)), before);
   }
   {
     const S = server();

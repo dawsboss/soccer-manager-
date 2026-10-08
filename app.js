@@ -7797,7 +7797,16 @@ function calSyncCard(t, all) {
     <button class="btn quiet wide" data-act="calicsall"${all ? '' : ` data-tid="${esc(t.id)}"`}>Add what is coming up</button>
     ${canAdmin() ? '<p class="muted" style="margin-bottom:0">A calendar that follows every change by itself needs the calendar feed set up once for the club — README, <b>Calendar sync</b>.</p>' : ''}
     ${!all && t.share ? `<p class="muted" style="margin-bottom:0">Grandparents and friends without an account: the season link shows the games, and anything marked for the share link, with no names.</p>` : ''}</div>`;
-  const rows = list.map(x => {
+  /* A team's address is one for everybody on it, so it cannot be taken back
+     from one family without stopping it for all of them: a family taken off
+     the team would go on getting its practices, times and places for as long
+     as the coach left it. So it is the team's staff's, for a club website or
+     a noticeboard, and a family's calendar is My calendar's, which is hers
+     alone and follows her roles (functions/mycal.js). */
+  const staffOf = id => !gated() || canAdmin() || (!!me && (isCoach(id, me.uid) || isTracker(id, me.uid)));
+  const famOnly = list.filter(x => !staffOf(x.id));
+  const famNote = famOnly.length ? `<p class="muted">${all ? famOnly.map(teamLabel).join(', ') + ': y' : 'Y'}our own calendar link is on My calendar: ${famOnly.length > 1 ? 'these teams' : 'this team'} and everything else of yours, in one subscription that is yours alone.</p>` : '';
+  const rows = list.filter(x => staffOf(x.id)).map(x => {
     const u = feedUrl(x.calFeed);
     if (u) return `<div class="syncrow">${all ? `<p class="lbl">${teamLabel(x)}</p>` : ''}
       <div class="row wrap">
@@ -7811,10 +7820,10 @@ function calSyncCard(t, all) {
   }).join('');
   return `<div class="card"><h2 style="margin-bottom:8px">In your own calendar</h2>
     ${mine}
-    <p class="muted" style="margin-top:0">${mine ? `Or ${all ? 'each team' : 'this team'} alone: s` : 'S'}ubscribe once and your calendar follows every change — a moved kick-off, a called-off practice, a new tournament. Apple and Outlook check about every hour; Google keeps its own pace, often several hours.</p>
-    ${rows}
+    ${rows ? `<p class="muted" style="margin-top:0">${mine ? `Or ${all ? 'each team' : 'this team'} alone: s` : 'S'}ubscribe once and your calendar follows every change — a moved kick-off, a called-off practice, a new tournament. Apple and Outlook check about every hour; Google keeps its own pace, often several hours.</p>` : ''}
+    ${rows}${famNote}
     ${isSandbox() ? '<p class="muted">Test club: nothing is published, so a subscription here stays empty.</p>' : ''}
-    <p class="muted">The address shows practices as well as games — never names — so keep it to the team. Outlook: <i>Add calendar \u2192 From internet</i> and paste the address.</p>
+    ${rows ? `<p class="muted">The address shows practices as well as games — never names. It is the team's, not one person's: replace it when someone leaves the team, or it keeps reaching them. Outlook: <i>Add calendar \u2192 From internet</i> and paste the address.</p>` : ''}
     <button class="btn quiet wide" data-act="calicsall"${all ? '' : ` data-tid="${esc(t.id)}"`}>Or add a one-off copy</button></div>`;
 }
 
@@ -14386,12 +14395,37 @@ function myFeedDoc() {
    session, and only when what it carries has changed: an old copy of a club
    must never overwrite what another phone of hers sent a minute ago. */
 let feedSent = '';
+/* Whether the server keeps this address now (functions/mycal.js). It marks
+   the page it writes `by: 'server'`, and once it has, every phone of hers
+   leaves it alone: two writers building from different copies would take
+   turns overwriting each other, and the phone's is the one that lags. A
+   phone waits to hear before it writes at all, so a page the server already
+   keeps is never replaced by a phone's older copy, even for a moment. Where
+   the functions are not deployed nobody writes `by`, and the phone carries
+   on as it always has. */
+let feedBy = { id: '', server: null, off: null };   // server: null until the database has said
+function feedOwner(id) {
+  if (feedBy.id === id) return feedBy.server;
+  if (typeof feedBy.off === 'function') try { feedBy.off(); } catch (e) { }
+  feedBy = { id, server: null, off: null };
+  if (!rtdb) return null;
+  const { db, mod } = rtdb;
+  feedBy.off = mod.onValue(mod.ref(db, `public/${id}/by`), s => {
+    if (feedBy.id !== id) return;
+    const was = feedBy.server;
+    feedBy.server = s.val() === 'server';
+    if (!feedBy.server) feedPublishSoon();
+    if (was !== feedBy.server) render();
+  }, () => { if (feedBy.id === id && feedBy.server === null) { feedBy.server = false; feedPublishSoon(); } });
+  return null;
+}
 // SERVER.md: her own phone keeps her calendar feed up to date; a server would write it on every change.
 function feedPublish() {
   const id = myFeedId();
   if (!id || !fb || !me || isSandbox() || needsSignIn()) return;
   if (wsCode() && !wsRead) return;
   if (youClubs().some(([code]) => !mirrorLive.has(code))) return;
+  if (feedOwner(id) !== false) return;      // the server's, or not heard yet
   const doc = myFeedDoc(), sig = id + JSON.stringify({ ...doc, updated: 0 });
   if (sig === feedSent) return;
   feedSent = sig;
@@ -14435,7 +14469,9 @@ function myFeedCard() {
     <button class="btn wide" data-act="myfeed" data-v="on">Turn on calendar sync</button>
     ${copy}</div>`;
   return `<div class="card"><h2 style="margin-bottom:8px">In your own calendar</h2>
-    <p class="muted" style="margin-top:0">Subscribe once and your calendar follows every change in every club. Apple and Outlook check about every hour; Google keeps its own pace, often several hours. It catches up with a club once your phone has been open since the change.</p>
+    <p class="muted" style="margin-top:0">Subscribe once and your calendar follows every change in every club. Apple and Outlook check about every hour; Google keeps its own pace, often several hours. ${feedBy.id === id && feedBy.server
+      ? 'The club\u2019s server keeps it up to date within a few minutes of a change, whether or not your phone is open, and a team you are taken off leaves it.'
+      : 'It catches up with a club once your phone has been open since the change.'}</p>
     <div class="row wrap">
       <a class="btn sm" href="${esc(webcal(u))}">Apple Calendar</a>
       <a class="btn quiet sm" href="${esc(googleSub(u))}" target="_blank" rel="noopener">Google Calendar</a>
