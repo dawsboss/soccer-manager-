@@ -2,7 +2,7 @@
    Static app. Data lives in localStorage, and mirrors to Firebase Realtime
    Database when a config + workspace code are present. */
 
-const BUILD = '111';
+const BUILD = '112';
 const BUILT = '2026-10-07';
 /* The version of database.rules.json this app was written against. The rules
    carry the same number in rulesVersion's .write, which accepts that number
@@ -1647,9 +1647,14 @@ let moveReq = null;     // { code, sent, result } while this phone is waiting on
 let moveWatch = null;
 function moveCard() {
   if (onOrgs() || !canAdmin()) return '';
+  // a request asked from this phone or another, before a reload or not: what it is waiting on, or what the server said
+  watchMove(wsCode());
   const r = moveReq && moveReq.code === wsCode() ? moveReq : null;
   const res = r && r.result;
+  // no answer in two minutes: the server never took it up (it acts only on a new request), so asking again is offered
+  const stale = !!(r && !res && nowMs() - (r.sent || 0) > 120000);
   const status = !r ? ''
+    : stale ? '<p class="warn">No answer came back from the server. Nothing has changed; ask again.</p>'
     : res && res.ok ? '<p><b>Moved.</b> Reading the club again…</p>'
     : res ? `<p class="warn">Not moved: ${esc(res.why || 'the server said no')}</p>`
     : '<p class="muted">Asked. Waiting for the server: a minute or so. If nothing happens, the club\'s functions may not be deployed yet (README, <b>Deploying the server</b>).</p>';
@@ -1657,17 +1662,20 @@ function moveCard() {
       <p class="muted" style="margin-top:0">Today everyone in the club can read all of it at the database, so a family's phone holds every child's name, the coaches' notes and ratings, and everyone's email; the app only hides them. Moving the club splits it so each family receives her own child and the others' shirt numbers, and nothing more. Nothing about how the app looks changes.</p>
       <p class="muted">It needs a signal, takes a minute, and is refused while a game is being played. A copy of the club as it is now is kept on the server. Try it on a test club first.</p>
       ${status}
-      ${r && !res ? '' : `<button class="btn wide" data-act="moveclub">${res && !res.ok ? 'Try again' : 'Move ' + esc((acc().org || {}).name || 'this club')}</button>`}</div>`;
+      ${r && !res && !stale ? '' : `<button class="btn wide" data-act="moveclub">${(res && !res.ok) || stale ? 'Try again' : 'Move ' + esc((acc().org || {}).name || 'this club')}</button>`}</div>`;
 }
 function watchMove(code) {
   if (!rtdb || moveWatch === code) return;
   moveWatch = code;
   const { db, mod } = rtdb;
-  mod.onValue(mod.ref(db, 'moveRequests/' + code + '/result'), sn => {
-    const res = sn.val();
-    if (!res || !moveReq || moveReq.code !== code) return;
-    moveReq.result = res;
-    if (res.ok) {
+  mod.onValue(mod.ref(db, 'moveRequests/' + code), sn => {
+    const req = sn.val();
+    if (!req) return;
+    const res = req.result || null;
+    const had = moveReq && moveReq.code === code && moveReq.result;
+    moveReq = { code, sent: req.at || nowMs(), result: res };
+    if (!res) { render(); return; }
+    if (res.ok && !(had && had.ok)) {
       setClubTree(code, 'orgs');
       toast('Moved: each family now receives only her own child');
       attachWorkspace();
@@ -1691,6 +1699,7 @@ async function askMove() {
     moveReq = { code, sent: nowMs(), result: null };
     render();
     await mod.set(ref, { by: me.uid, at: nowMs() });
+    moveReq = { code, sent: nowMs(), result: null };   // the old answer, heard while clearing it, is not this one's
   } catch (e) {
     moveReq = null;
     toast(/permission|denied/i.test((e && e.code) || '') ? 'The database refused it — are the rules (version ' + RULES_VERSION + ') published?' : 'Not asked — check the signal');
