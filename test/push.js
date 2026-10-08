@@ -76,7 +76,7 @@ const toUid = (S, u) => S.sent().filter(m => m.data.uid === u);
     check('nor one in a conversation', S.woken('dm/CLUB/t1/mum/seen/coach').length, 0);
     // a live game is a write a second; none of it should cost a function call
     check('nothing in the club itself wakes the message senders', S.woken('workspaces/CLUB/matches/g1/events/e1').length, 0);
-    deepEq('the calendar\'s: one for entries, one per field of a game that says when', Object.keys(S.triggers).filter(n => S.triggers[n].kind === 'written').sort(), ['pushEntry', 'pushGameCalled', 'pushGameDate', 'pushGameKickoff']);
+    deepEq('the calendar\'s: one for entries, one per field of a game that says when', Object.keys(S.triggers).filter(n => S.triggers[n].kind === 'written' && /^push/.test(n)).sort(), ['pushEntry', 'pushGameCalled', 'pushGameDate', 'pushGameKickoff']);
     const src = fs.readFileSync(path.join(__dirname, '..', 'functions', 'index.js'), 'utf8');
     check('it reads from the database the event came from', /event\.data\.ref\.root/.test(src), true);
     check('and never calls an AI model', /anthropic|openai|gemini|generativ/i.test(src + fs.readFileSync(path.join(__dirname, '..', 'functions', 'push.js'), 'utf8')), false);

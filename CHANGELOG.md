@@ -8,6 +8,38 @@ before this point lives only in the git log.
 
 ---
 
+## Who may read what is kept true by the server — 2026-10-08 (functions only)
+
+The first job off SERVER.md's list. The rules answer "may she read this?"
+from five lookup tables (`access/index`, `teamIndex`, `teamParents`,
+`teamPlayers`, `coachIndex`), and until now only an admin's or a coach's
+phone rebuilt them, when it next connected. So a parent the coach unlinked
+kept reading that team's notices, and stayed in the club, until somebody
+with the right role happened to open the app (`rules.js`, gap 5).
+
+- **Four triggers, one per place a role lives** (`accessAdmin`,
+  `accessStaff`, `accessGuardians`, `accessSelf`, in `functions/access.js`):
+  a club's admins, a team's coaches and trackers, a player's guardians, a
+  player's own sign-in. Each recomputes only the entries its change could
+  have moved, from what the club holds at that moment, so an event Cloud
+  Functions delivers late or twice still leaves the tables right. Game-day
+  writes, and a team saved whole with nobody's role changed, wake none of it.
+- **The same answer the phones give**, which go on doing it for clubs
+  without the server; `test/access.js` holds the two to each other. An index
+  entry that is there is never rewritten, since its value may be the invite
+  that granted it.
+- **It never starts a missing table.** The rules fall back to the old
+  club-wide behaviour while `teamIndex` or `teamParents` is missing, and one
+  entry would end that for every other team at once, so building one whole
+  is still an admin's phone's job.
+- **The club bookmark follows the role**: written with a person's first role
+  in a club, removed with her last, with the invite her entry named.
+
+No app or rules change, so no new build: it starts working when the
+functions deploy on merge.
+
+---
+
 ## A practice called off reaches a closed phone — 2026-10-07 (build 105)
 
 The urgent half of the calendar. A subscribed calendar cannot be told there

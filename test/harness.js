@@ -189,7 +189,7 @@ const EXPORTS = `{
   /* practice plans */
   PLAN_ACTS, canPlan, teamPractices, practiceById, putPractice, dropPractice, mergePractices,
   suggestPlan, pracAiPrompt, pracAiParse, planWarnings, planKit, needsWork, drillsFor, nextPractice, movePlans, planEntry, rawPlan, addMins, todayIso, pracDay,
-  syncCoachIndex, syncAllCoachIndex, coachTeamOf, readiness,
+  syncCoachIndex, syncAllCoachIndex, coachTeamOf, parentsWanted, playersWanted, readiness,
   get train() { return train }, set train(v) { train = v }, get trainState() { return trainState },
   /* the club's drills and a coach's own */
   SHELF, SHELVES, LIB_ACTS, TPL_ACTS, tplItems, findTpl, normTemplate, canCurateTpl, normDrill, cardOf, findDrill, drillOrigin, drillPool, shelfItems, canCurate, shareTeam,

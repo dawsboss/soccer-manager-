@@ -79,7 +79,10 @@ does the bookkeeping, not that the phone works offline first.
   who is coming) behind a private link instead of a public node.
 
 ### Which clubs an account is in
-- **Now:** any phone that reads a club it holds a role in writes the bookmark
+- **Partly moved (2026-10-08):** the server writes the bookmark when an
+  account gets its first role in a club and removes it when she loses her
+  last (`functions/access.js`, with the lookup tables below).
+- **Still:** any phone that reads a club it holds a role in writes the bookmark
   `userOrgs/{uid}/{code}` (`noteMyClub()`), and admins tidy it when a role is
   withdrawn.
 - **With a server:** written when the role is granted and removed when it is
@@ -89,7 +92,23 @@ does the bookkeeping, not that the phone works offline first.
 
 ## The lookup tables the rules read
 
-- **Now:** `access/index`, `access/teamIndex`, `access/teamParents`,
+- **Moved to the server (2026-10-08), alongside the phones:** four triggers
+  (`accessAdmin`, `accessStaff`, `accessGuardians`, `accessSelf`, in
+  `functions/access.js`) watch every place a role lives (a club's admins, a
+  team's coaches and trackers, a player's guardians and own sign-in) and
+  recompute the entries that change touched, from what the club holds at
+  that moment: the uid's `access/index` entry and her bookmark at
+  `userOrgs/{uid}/{code}`, the team's `teamIndex`, `teamParents` and
+  `teamPlayers`, and `coachIndex`. Same sources and same values as the
+  phones, so they never fight; `test/access.js` holds the two to the same
+  answer. A parent unlinked by the coach is off the team the moment it
+  happens, wherever the functions are deployed (gap 5). What it does not
+  do yet: start a table a club doesn't have (`teamIndex`, `teamParents`,
+  `index`), because the first entry would close the rules' bridge for every
+  other team at once. So the bridges stay, and so do the phones' rebuilds
+  below, for a club whose functions aren't deployed and for building a
+  missing table whole.
+- **Before the server, and still:** `access/index`, `access/teamIndex`, `access/teamParents`,
   `access/teamPlayers` and `access/coachIndex` are rebuilt from where a uid
   appears, by admins' and coaches' phones on every connect (`syncIndex()`,
   `syncTeamIndex()`, `syncTeamParents()`, `syncTeamPlayers()`,
@@ -97,10 +116,10 @@ does the bookkeeping, not that the phone works offline first.
   change, the table is stale: a parent unlinked by an older phone keeps reading
   that team's notices (rules.js, gap 5). The rules carry *bridges* for clubs
   whose tables don't exist yet.
-- **With a server:** a trigger on `access/teams` and on each team's players
-  rebuilds them the moment anything changes, or they become custom claims on
-  the account. The bridges, and the "nothing else may write them" care, go
-  away.
+- **What is left:** once every club's tables exist, a one-off run that
+  builds any missing one whole, after which the bridges, the phones'
+  rebuilds and the "nothing else may write them" care can go. Or custom
+  claims on the account instead of tables.
 
 ---
 

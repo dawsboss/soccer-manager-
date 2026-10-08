@@ -3,7 +3,8 @@
    Deployed with `firebase deploy --only functions` from the repository root
    (README, "Notifications to a closed phone"). Each export is one job; the
    judgement in each lives in a file of its own that imports nothing from
-   Firebase, so test/push.js runs it against the fake database.
+   Firebase, so test/push.js and test/access.js run it against the fake
+   database.
 
    Two rules for everything added here, from CLAUDE.md's Conventions:
    - a function writes with admin credentials and bypasses the rules, so one
@@ -27,6 +28,7 @@ const { initializeApp } = require('firebase-admin/app');
 const { getMessaging } = require('firebase-admin/messaging');
 const push = require('./push');
 const feed = require('./calendar');
+const access = require('./access');
 
 initializeApp();
 
@@ -41,6 +43,19 @@ function envOf(event) {
     send: messages => getMessaging().sendEach(messages),
     // a transaction: `fn` gets what is there and returns what to write, or undefined to leave it
     claim: (p, fn) => root.child(p).transaction(fn).then(r => !!r.committed)
+  };
+}
+
+/* What access.js may touch: reads, and writes and deletes of the lookup
+   tables, a person's club bookmark and a spent invite, on this event's own
+   database. It is the one job here that writes what the rules read, so it
+   gets `set` and push.js does not. */
+function writerOf(event) {
+  const root = event.data.after.ref.root;
+  return {
+    get: p => root.child(p).get().then(s => s.val()),
+    set: (p, v) => root.child(p).set(v),
+    remove: p => root.child(p).remove()
   };
 }
 
@@ -68,6 +83,21 @@ exports.pushEntry = onValueWritten('/workspaces/{code}/teams/{tid}/events/{eid}'
 for (const field of ['date', 'kickoff', 'called'])
   exports['pushGame' + field[0].toUpperCase() + field.slice(1)] = onValueWritten(`/workspaces/{code}/matches/{mid}/${field}`, event =>
     push.onGameField(envOf(event), event.params, field, event.data.before.val()));
+
+/* The lookup tables the rules read (access.js; SERVER.md, "The lookup tables
+   the rules read"), rebuilt the moment a role changes rather than when an
+   admin's or coach's phone next connects. One trigger per place a role lives,
+   each as deep as the role itself: a coach saving the whole team writes
+   teams/{tid} every time, and only a change to a player's guardians or self
+   may wake these. */
+exports.accessAdmin = onValueWritten('/workspaces/{code}/access/admins/{uid}', event =>
+  access.onAdmin(writerOf(event), event.params));
+exports.accessStaff = onValueWritten('/workspaces/{code}/access/teams/{tid}', event =>
+  access.onTeamStaff(writerOf(event), event.params, event.data.before.val(), event.data.after.val()));
+exports.accessGuardians = onValueWritten('/workspaces/{code}/teams/{tid}/players/{pid}/guardians', event =>
+  access.onGuardians(writerOf(event), event.params, event.data.before.val(), event.data.after.val()));
+exports.accessSelf = onValueWritten('/workspaces/{code}/teams/{tid}/players/{pid}/self', event =>
+  access.onSelf(writerOf(event), event.params, event.data.before.val(), event.data.after.val()));
 
 /* The calendar feed (calendar.js): https://{region}-{project}.cloudfunctions.net/calendar/{id}.ics,
    which is what firebase-config.js names as SOCCER_CALENDAR_FEED. Anyone may
