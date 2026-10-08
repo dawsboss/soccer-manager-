@@ -211,7 +211,7 @@ function validated(p, value, after, auth = null, base = DB) {
 }
 
 /* The whole walk runs twice: once as written, against clubs on
-   workspaces/{code}, and once (test/rules-orgs.js) against the same clubs
+   workspaces/{code}, and once (`node test/run.js rules-orgs`, RULES_TREE=orgs) against the same clubs
    moved to orgs/{code} (AUTH.md, *The move to `orgs/{orgId}`*). The checks
    below say what they always said, in the old tree's paths; in orgs mode
    each club in the mock is moved the way moveClub moves it before every
@@ -1942,6 +1942,23 @@ reads('owners are not world-readable', OUT, 'shareOwners/sh1', false);
   wk('nobody writes the moved marker but the server', OA, 'workspaces/GONE/moved', null, false);
   wk('a brand-new code starts on orgs/', RANDO, 'orgs/BRANDNEW/access/admins/rando', true, true);
   delete DB.workspaces.OLDC; delete DB.workspaces.GONE;
+
+  console.log('\n--- asking for a club to be moved ---');
+  /* moveRequests/{code}: an admin of the club asks, as herself; the server
+     (functions/move.js) checks her again before it moves anything. */
+  writes('its admin asks', ADM, 'moveRequests/CLUB', { by: 'adm', at: NOW }, true);
+  writes('not in someone else\'s name', ADM, 'moveRequests/CLUB', { by: 'coach', at: NOW }, false);
+  writes('a coach does not', COACH, 'moveRequests/CLUB', { by: 'coach', at: NOW }, false);
+  writes('nor a parent', MUM, 'moveRequests/CLUB', { by: 'mum', at: NOW }, false);
+  writes('nor a stranger', RANDO, 'moveRequests/CLUB', { by: 'rando', at: NOW }, false);
+  writes('nor an answer written by a phone', ADM, 'moveRequests/CLUB', { by: 'adm', at: NOW, result: { ok: true } }, false);
+  DB.moveRequests = { CLUB: { by: 'adm', at: 1, result: { ok: false, why: 'A game is being played.' } } };
+  reads('she reads the answer', ADM, 'moveRequests/CLUB', true);
+  reads('a coach does not', COACH, 'moveRequests/CLUB', false);
+  writes('she clears it to ask again', ADM, 'moveRequests/CLUB', null, true);
+  writes('a coach cannot', COACH, 'moveRequests/CLUB', null, false);
+  writes('nor ask over the top of one', ADM, 'moveRequests/CLUB', { by: 'adm', at: 2 }, false);
+  delete DB.moveRequests;
 
   console.log('\n--- a club on orgs/: the root rules follow it there ---');
   w('its coach plans a practice', OC, 'training/ORGC/practices/t1/pr9', { id: 'pr9', teamId: 't1', date: '2026-10-12' }, true);

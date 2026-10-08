@@ -411,6 +411,22 @@
         ".write": "auth != null && ((!root.child('orgs/' + $code + '/access').exists() && root.child('workspaces/' + $code + '/access/admins/' + auth.uid).exists()) || (root.child('orgs/' + $code + '/access').exists() && root.child('orgs/' + $code + '/access/admins/' + auth.uid).exists()))"
       }
     },
+    "moveRequests": {
+      "$code": {
+        ".read": "auth != null && ((!root.child('orgs/' + $code + '/access').exists() && root.child('workspaces/' + $code + '/access/admins/' + auth.uid).exists()) || (root.child('orgs/' + $code + '/access').exists() && root.child('orgs/' + $code + '/access/admins/' + auth.uid).exists()))",
+        ".write": "auth != null && ((!data.exists() && newData.child('by').val() === auth.uid && ((!root.child('orgs/' + $code + '/access').exists() && root.child('workspaces/' + $code + '/access/admins/' + auth.uid).exists()) || (root.child('orgs/' + $code + '/access').exists() && root.child('orgs/' + $code + '/access/admins/' + auth.uid).exists()))) || (data.exists() && !newData.exists() && ((!root.child('orgs/' + $code + '/access').exists() && root.child('workspaces/' + $code + '/access/admins/' + auth.uid).exists()) || (root.child('orgs/' + $code + '/access').exists() && root.child('orgs/' + $code + '/access/admins/' + auth.uid).exists()))))",
+        ".validate": "newData.hasChildren(['by', 'at'])",
+        "by": {
+          ".validate": "newData.isString()"
+        },
+        "at": {
+          ".validate": "newData.isNumber()"
+        },
+        "$other": {
+          ".validate": false
+        }
+      }
+    },
     "appOwners": {
       ".read": "auth != null",
       ".write": false

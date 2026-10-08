@@ -53,6 +53,8 @@
    second phone of hers finds the club without waiting for the first
    (SERVER.md, "Which clubs an account is in"). */
 
+const { where, readAccess, readTeams } = require('./club');
+
 const keys = o => Object.keys(o && typeof o === 'object' ? o : {});
 const has = (o, k) => !!(o && typeof o === 'object' && o[k] !== undefined && o[k] !== null && o[k] !== false);
 const same = (a, b) => JSON.stringify(a || null) === JSON.stringify(b || null);
@@ -62,14 +64,15 @@ const okKey = k => typeof k === 'string' && k.length > 0 && !/[.#$\[\]\/]/.test(
 /* Everything this needs about one club, read once per event. Teams are read
    whole because a uid's roles can be on any team's squad; role changes are
    rare (an invite, a coach changing a parent), never the game-day writes. */
-async function clubFacts(env, code) {
-  const W = 'workspaces/' + code;
-  const [retired, access, teams] = await Promise.all([
+async function clubFacts(env, code, tree) {
+  const L = await where(env.get, code, tree);
+  const [retired, access, teams, names] = await Promise.all([
     env.get('retired/' + code),
-    env.get(W + '/access'),
-    env.get(W + '/teams')
+    readAccess(env.get, L),
+    readTeams(env.get, L),
+    L.names ? env.get(L.names) : null
   ]);
-  return { retired: !!retired, access: access || {}, teams: teams || {} };
+  return { L, retired: !!retired, access: access || {}, teams: teams || {}, names: names || {} };
 }
 const squad = (f, tid) => ((f.teams[tid] || {}).players) || {};
 const teamAcc = (f, tid) => ((f.access.teams || {})[tid]) || {};
@@ -112,7 +115,7 @@ async function syncLinked(env, f, code, table, field, tid, out) {
   const now = (all || {})[tid] || {};
   const want = linkedWanted(f, tid, field);
   const holds = (u, pid) => has((squad(f, tid)[pid] || {})[field], u);
-  const base = `workspaces/${code}/access/${table}/${tid}/`;
+  const base = `${f.L.access}/${table}/${tid}/`;
   for (const [u, pid] of Object.entries(want))
     if (!now[u] || !holds(u, now[u])) { await env.set(base + u, pid); out.push('set ' + table + '/' + tid + '/' + u); }
   for (const u of keys(now))
@@ -124,7 +127,7 @@ async function syncTeamIndex(env, f, code, tid, out) {
   const now = f.access.teamIndex[tid] || null;
   const want = teamIndexWanted(f, tid);
   if (same(now, keys(want).length ? want : null)) return;
-  const p = `workspaces/${code}/access/teamIndex/${tid}`;
+  const p = `${f.L.access}/teamIndex/${tid}`;
   if (keys(want).length) { await env.set(p, want); out.push('set teamIndex/' + tid); }
   else { await env.remove(p); out.push('del teamIndex/' + tid); }
 }
@@ -135,7 +138,7 @@ async function syncCoachIndex(env, f, code, uid, out) {
   if (now && has(teamAcc(f, now).coaches, uid)) return;
   const want = coachTeamOf(f, uid);
   if (want === now) return;
-  const p = `workspaces/${code}/access/coachIndex/${uid}`;
+  const p = `${f.L.access}/coachIndex/${uid}`;
   if (want) { await env.set(p, want); out.push('set coachIndex/' + uid); }
   else { await env.remove(p); out.push('del coachIndex/' + uid); }
 }
@@ -144,7 +147,7 @@ async function syncIndex(env, f, code, uid, out, now) {
   const index = f.access.index;
   if (hasRole(f, uid)) {
     // no table at all is a club still being made: its first admin writes it herself
-    if (index && !has(index, uid)) { await env.set(`workspaces/${code}/access/index/${uid}`, true); out.push('set index/' + uid); }
+    if (index && !has(index, uid)) { await env.set(`${f.L.access}/index/${uid}`, true); out.push('set index/' + uid); }
     if (!(await env.get(`userOrgs/${uid}/${code}`))) {
       await env.set(`userOrgs/${uid}/${code}`, { name: ((f.access.org || {}).name) || '', at: now });
       out.push('set userOrgs/' + uid);
@@ -153,7 +156,7 @@ async function syncIndex(env, f, code, uid, out, now) {
   }
   if (index && has(index, uid)) {
     const v = index[uid];
-    await env.remove(`workspaces/${code}/access/index/${uid}`); out.push('del index/' + uid);
+    await env.remove(`${f.L.access}/index/${uid}`); out.push('del index/' + uid);
     // forgetInvite(): the invite her entry named, if it was one of this club's
     if (typeof v === 'string' && okKey(v) && (await env.get(`invites/${v}/ws`)) === code) {
       await env.remove('invites/' + v); out.push('del invite');
@@ -166,10 +169,10 @@ async function syncIndex(env, f, code, uid, out, now) {
    `tids` the teams whose per-team tables it could have moved, and `coaches`
    whether it was a team's coaches (coachIndex). Resolves to what it did, for
    the tests and the function's log. */
-async function settle(env, code, { uids = [], tids = [], parents = false, players = false, coaches = false }, now = Date.now()) {
+async function settle(env, code, { uids = [], tids = [], parents = false, players = false, coaches = false, tree }, now = Date.now()) {
   const out = [];
   if (!okKey(code)) return out;
-  const f = await clubFacts(env, code);
+  const f = await clubFacts(env, code, tree);
   if (f.retired) return out;
   for (const tid of tids.filter(okKey)) {
     if (coaches) await syncTeamIndex(env, f, code, tid, out);
@@ -179,7 +182,83 @@ async function settle(env, code, { uids = [], tids = [], parents = false, player
   for (const uid of [...new Set(uids)].filter(okKey)) {
     if (coaches) await syncCoachIndex(env, f, code, uid, out);
     await syncIndex(env, f, code, uid, out, now);
+    await syncName(env, f, uid, out);
   }
+  return out;
+}
+
+/* ---------------- the two parts only orgs/ has ---------------- */
+
+/* names/{uid}: a member's name, for staff only, so a family can see who her
+   coach is without reading anyone's email (members/ is admins' and coaches').
+   Staff is what hasRole() counts short of a family: an admin, or a coach or
+   tracker of any team. Her name, never her email; gone with her last staff
+   role. */
+function isStaff(f, uid) {
+  if (has(f.access.admins, uid)) return true;
+  return Object.values(f.access.teams || {}).some(ta => has(ta && ta.coaches, uid) || has(ta && ta.trackers, uid));
+}
+async function syncName(env, f, uid, out) {
+  if (!f.L.names) return;
+  const m = (f.access.members || {})[uid] || {};
+  const name = typeof m.name === 'string' ? m.name.slice(0, 80) : '';
+  const want = isStaff(f, uid) && name ? { name } : null;
+  if (same(f.names[uid], want)) return;
+  if (want) { await env.set(`${f.L.names}/${uid}`, want); out.push('set names/' + uid); }
+  else { await env.remove(`${f.L.names}/${uid}`); out.push('del names/' + uid); }
+}
+
+/* members/{uid} on orgs/: her name changed, so the copy families read does. */
+async function onMember(env, params, now) {
+  const out = [];
+  const { code, uid } = params || {};
+  if (!okKey(code) || !okKey(uid)) return out;
+  const f = await clubFacts(env, code, 'orgs');
+  if (f.retired) return out;
+  await syncName(env, f, uid, out);
+  return out;
+}
+
+/* roster/{tid}/{pid}: what the whole club reads of a child on orgs/ — her
+   shirt number and whether she plays, and her name only while the club has
+   opened the roster (org/rosterOpen, the club's one preset). The squad is
+   read by its staff and her own family; this is everyone else's view of it.
+   A coach's phone writes it beside each squad change too, so a club without
+   the functions deployed still has numbers; this keeps it true whoever
+   changed the squad. */
+function rosterEntry(p, open) {
+  if (!p || typeof p !== 'object') return null;
+  const n = p.number;
+  const out = { number: typeof n === 'number' || typeof n === 'string' ? n : '', active: p.active !== false };
+  if (open && typeof p.name === 'string' && p.name) out.name = p.name.slice(0, 80);
+  return out;
+}
+async function syncRoster(env, code, tid, pid, out) {
+  const B = `orgs/${code}`;
+  const [p, open, now] = await Promise.all([env.get(`${B}/squad/${tid}/${pid}`), env.get(`${B}/org/rosterOpen`), env.get(`${B}/roster/${tid}/${pid}`)]);
+  const want = rosterEntry(p, open === true);
+  if (same(now, want)) return;
+  if (want) { await env.set(`${B}/roster/${tid}/${pid}`, want); out.push('set roster/' + tid + '/' + pid); }
+  else { await env.remove(`${B}/roster/${tid}/${pid}`); out.push('del roster/' + tid + '/' + pid); }
+}
+/* squad/{tid}/{pid}: one child's record, any depth. */
+async function onSquadPlayer(env, params) {
+  const out = [];
+  const { code, tid, pid } = params || {};
+  if (!okKey(code) || !okKey(tid) || !okKey(pid) || (await env.get('retired/' + code))) return out;
+  await syncRoster(env, code, tid, pid, out);
+  return out;
+}
+/* org/rosterOpen: names in or out of every team's roster at once. */
+async function onRosterOpen(env, params) {
+  const out = [];
+  const { code } = params || {};
+  if (!okKey(code) || (await env.get('retired/' + code))) return out;
+  const B = `orgs/${code}`;
+  const [squad, roster] = await Promise.all([env.get(`${B}/squad`), env.get(`${B}/roster`)]);
+  const seen = new Set();
+  for (const [tid, ps] of Object.entries(squad || {})) for (const pid of keys(ps)) { seen.add(tid + '/' + pid); await syncRoster(env, code, tid, pid, out); }
+  for (const [tid, ps] of Object.entries(roster || {})) for (const pid of keys(ps)) if (!seen.has(tid + '/' + pid)) await syncRoster(env, code, tid, pid, out);
   return out;
 }
 
@@ -187,21 +266,21 @@ const both = (before, after) => [...new Set([...keys(before), ...keys(after)])];
 
 /* access/admins/{uid}: one admin given or taken away. */
 function onAdmin(env, params, now) {
-  return settle(env, params.code, { uids: [params.uid] }, now);
+  return settle(env, params.code, { uids: [params.uid], tree: params.tree }, now);
 }
 /* access/teams/{tid}: a team's coaches and trackers. */
 function onTeamStaff(env, params, before, after, now) {
   const b = before || {}, a = after || {};
   const uids = [...both(b.coaches, a.coaches), ...both(b.trackers, a.trackers)];
-  return settle(env, params.code, { uids, tids: [params.tid], coaches: true }, now);
+  return settle(env, params.code, { uids, tids: [params.tid], coaches: true, tree: params.tree }, now);
 }
 /* teams/{tid}/players/{pid}/guardians: a player's families. */
 function onGuardians(env, params, before, after, now) {
-  return settle(env, params.code, { uids: both(before, after), tids: [params.tid], parents: true }, now);
+  return settle(env, params.code, { uids: both(before, after), tids: [params.tid], parents: true, tree: params.tree }, now);
 }
 /* teams/{tid}/players/{pid}/self: a player's own sign-in. */
 function onSelf(env, params, before, after, now) {
-  return settle(env, params.code, { uids: both(before, after), tids: [params.tid], players: true }, now);
+  return settle(env, params.code, { uids: both(before, after), tids: [params.tid], players: true, tree: params.tree }, now);
 }
 
-module.exports = { settle, onAdmin, onTeamStaff, onGuardians, onSelf, hasRole, teamIndexWanted, linkedWanted, coachTeamOf };
+module.exports = { settle, onAdmin, onTeamStaff, onGuardians, onSelf, onMember, onSquadPlayer, onRosterOpen, rosterEntry, isStaff, hasRole, teamIndexWanted, linkedWanted, coachTeamOf };

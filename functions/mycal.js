@@ -48,6 +48,7 @@
    Nothing in here imports Firebase; index.js hands it `get`, `set`,
    `remove` and `claim` (a transaction). test/mycalfeed.js runs it. */
 
+const { where, readAccess, readTeams } = require('./club');
 const keys = o => Object.keys(o && typeof o === 'object' ? o : {});
 const has = (o, k) => !!(o && typeof o === 'object' && o[k] !== undefined && o[k] !== null && o[k] !== false);
 const okKey = k => typeof k === 'string' && k.length > 0 && !/[.#$\[\]\/]/.test(k);
@@ -108,9 +109,10 @@ function memo(env) {
    so a database that is down never empties her calendar. */
 async function clubItems(read, uid, code) {
   if (!okKey(code) || code.startsWith(SANDBOX_PREFIX)) return [];
-  const W = `workspaces/${code}/`, T = `training/${code}/`;
+  const T = `training/${code}/`;
+  const L = await where(read, code);
   const [retired, access, teams, matches, sessions, booked, avail] = await Promise.all([
-    read('retired/' + code), read(W + 'access'), read(W + 'teams'), read(W + 'matches'),
+    read('retired/' + code), readAccess(read, L), readTeams(read, L), read(L.matches),
     read(T + 'sessions'), read(T + 'booked'), read(T + 'avail')
   ]);
   if (retired || (access && access.org && access.org.sandbox)) return [];
@@ -246,7 +248,7 @@ async function run(env, now = Date.now()) {
   const read = memo(env);
   const who = new Set(keys(people).filter(okKey));
   // everyone in a club that changed: the club's own index says who is in it
-  for (const code of keys(clubs).filter(okKey)) for (const u of keys(await read(`workspaces/${code}/access/index`))) if (okKey(u)) who.add(u);
+  for (const code of keys(clubs).filter(okKey)) for (const u of keys(await read(`${(await where(read, code)).access}/index`))) if (okKey(u)) who.add(u);
   const out = {};
   for (const uid of [...who].sort()) {
     try { out[uid] = await publish(env, read, uid, now); } catch (e) { out[uid] = 'failed'; }
