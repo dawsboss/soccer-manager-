@@ -102,7 +102,7 @@ const O = 'orgs/CLUB/';
     deepEq('the old tree kept aside, exactly', Object.values(kept)[0], was);
 
     console.log('\n--- what each part holds ---');
-    deepEq('the teams, without their players', S.at(O + 'teams/t1'), { id: 't1', name: 'Flight', events: was.teams.t1.events, attend: was.teams.t1.attend });
+    check('the teams, without their players', move.same(S.at(O + 'teams/t1'), { id: 't1', name: 'Flight', events: was.teams.t1.events, attend: was.teams.t1.attend }), true);
     deepEq('the squad, whole, where only staff and each child\'s own family read it', S.at(O + 'squad/t1'), was.teams.t1.players);
     deepEq('the roster: numbers and who plays, no names, no notes', S.at(O + 'roster/t1'), { p1: { number: '7', active: true }, p2: { number: 9, active: true }, p3: { number: '', active: false } });
     deepEq('staff names: the admin, the coach, the tracker, and no email', S.at(O + 'names'), { adm: { name: 'Ada' }, coach: { name: 'Jaz' }, trk: { name: 'Tam' } });
@@ -142,13 +142,21 @@ const O = 'orgs/CLUB/';
     check('with no empty parts made up', S.at(O + 'log') === null && S.at(O + 'rsvp') === null, true);
   }
   {
-    // anything the server trips over is an answer, never silence
+    // anything the server trips over is an answer, never silence, and the half-made copy goes
     const S = server();
-    const env = { get: p => S.ref(p).get().then(s => s.val()), set: (p, v) => S.ref(p).set(v), update: () => Promise.reject(new Error('the database is busy')) };
+    const was = JSON.parse(JSON.stringify(S.at('workspaces/CLUB')));
+    let failed = false;
+    const env = {
+      get: p => S.ref(p).get().then(s => s.val()), set: (p, v) => S.ref(p).set(v),
+      update: patch => (!failed && Object.keys(patch).some(k => k.startsWith('orgs/CLUB/squad')) ? (failed = true, Promise.reject(new Error('the database is busy'))) : S.ref('').update(patch))
+    };
     const r = await move.onRequest(env, { code: 'CLUB' }, { by: 'adm', at: NOW }, NOW);
     check('a server error is said, not swallowed', /could not move it \(the database is busy\)/.test(r.why) && r.ok === false, true);
     check('— written beside the request for her phone', /the database is busy/.test(result(S).why || ''), true);
-    check('— and nothing was moved', !!S.at('orgs/CLUB'), false);
+    check('— saying nothing was changed', /Nothing was changed/.test(r.why), true);
+    check('— the half-made copy taken away', S.at('orgs/CLUB'), null);
+    deepEq('— the old tree as it was', S.at('workspaces/CLUB'), was);
+    check('— and the club no longer marked as moving', S.at('serverState/moving/CLUB'), null);
   }
 
   console.log('\n--- nothing half moved ---');
@@ -159,7 +167,7 @@ const O = 'orgs/CLUB/';
     const env = {
       get: p => S.ref(p).get().then(s => {
         const v = s.val();
-        if (p === 'orgs/CLUB' && v) delete v.squad.t1.p2;
+        if (p === 'orgs/CLUB/squad' && v) delete v.t1.p2;
         return v;
       }),
       set: (p, v) => S.ref(p).set(v),
@@ -168,8 +176,80 @@ const O = 'orgs/CLUB/';
     const r = await move.onRequest(env, { code: 'CLUB' }, { by: 'adm', at: NOW }, NOW);
     check('a copy that does not match is not a move', r.ok, false);
     check('— it says which part', /squad/.test(r.why), true);
-    deepEq('the old tree is back as it was', S.at('workspaces/CLUB'), was);
-    check('and the new one gone', S.at('orgs/CLUB'), null);
+    deepEq('the old tree is as it was', S.at('workspaces/CLUB'), was);
+    check('and the copy gone', S.at('orgs/CLUB'), null);
+    check('no phone ever saw it on orgs/: its access was never written', S.at('orgs/CLUB/access'), null);
+  }
+
+  console.log('\n--- a club of a real size ---');
+  {
+    /* The database refuses one write that would wake more than a thousand
+       function runs (TOO_MANY_TRIGGERS); the fake server now does too. The
+       first move wrote the club in one go and was refused for exactly this:
+       it is in batches now, none of them over the limit. */
+    const big = c => {
+      for (let t = 1; t <= 4; t++) {
+        const tid = 'b' + t, players = {}, events = {};
+        for (let i = 0; i < 120; i++) players['q' + t + '_' + i] = { id: 'q' + t + '_' + i, name: 'Kid ' + t + ' ' + i, number: String(i), guardians: { ['fam' + t + '_' + i]: true } };
+        for (let i = 0; i < 300; i++) events['e' + t + '_' + i] = { id: 'e' + t + '_' + i, kind: 'practice', date: '2026-10-' + String(1 + (i % 28)).padStart(2, '0'), start: '18:00' };
+        c.teams[tid] = { id: tid, name: 'Team ' + t, players, events };
+        c.access.teams[tid] = { coaches: { coach: true } };
+      }
+      for (let i = 0; i < 250; i++) c.matches['m' + i] = { id: 'm' + i, teamId: 'b' + (1 + (i % 4)), opponent: 'Rivals', date: '2026-09-01', kickoff: '10:00', venue: 'Park', ended: true };
+    };
+    const S = server(big);
+    const all = require('../functions/move').layout(JSON.parse(JSON.stringify(S.at('workspaces/CLUB'))));
+    const n = S.wakeCount(JSON.parse(JSON.stringify(S.tree)), ['orgs/CLUB']);
+    let refused = '';
+    await S.ref('').update({ 'orgs/CLUB': all }).catch(e => { refused = e.message; });
+    check('in one write it would be refused, as it was', /TOO_MANY_TRIGGERS/.test(refused) || n > 1000, true);
+    S.put('orgs/CLUB', null);
+    S.put('userOrgs/fam1_0', { CLUB: { name: 'Lakeside SC', at: 1 } });
+    await ask(S, 'adm');
+    check('in batches it moves', result(S).ok, true);
+    check('every player', result(S).players, 483);
+    check('every game', result(S).games, 251);
+    check('nothing left on the old tree but its marker', Object.keys(S.at('workspaces/CLUB')).join(), 'moved');
+    check('the functions left the club alone while it moved: nobody lost her bookmark', !!S.at('userOrgs/fam1_0/CLUB'), true);
+    check('— and the moving marker is gone', S.at('serverState/moving/CLUB'), null);
+  }
+
+  console.log('\n--- while a club is moving ---');
+  {
+    // without the marker, a family unlinked loses her place in the club at once (access.js)
+    const S0 = server();
+    await S0.fire('workspaces/CLUB/teams/t1/players/p1/guardians/mum', null);
+    check('normally, a family taken off loses her place', S0.at('workspaces/CLUB/access/index/mum'), null);
+    // with it, the old tree emptying under a move is not read as everybody leaving
+    const S = server();
+    S.put('serverState/moving/CLUB', { by: 'adm', at: NOW });
+    await S.fire('workspaces/CLUB/teams/t1/players/p1/guardians/mum', null);
+    check('while moving, nothing is taken from her', S.at('workspaces/CLUB/access/index/mum'), 'inv_mum');
+    S.put('orgs/CLUB/squad/t1/p1', { id: 'p1', name: 'Rosa Lind', number: '7' });
+    await S.fire('orgs/CLUB/squad/t1/p1/number', '8');
+    check('— nor is the half-made new tree put in step', S.at('orgs/CLUB/roster/t1/p1'), null);
+  }
+
+  console.log('\n--- moved, but the old copy not all taken away ---');
+  {
+    const S = server();
+    let n = 0;
+    const env = {
+      get: p => S.ref(p).get().then(s => s.val()), set: (p, v) => S.ref(p).set(v),
+      // the first batch of the old tree's removal fails, after the switch
+      update: patch => (Object.keys(patch).some(k => k.startsWith('workspaces/CLUB/teams/')) && n++ === 0 ? Promise.reject(new Error('the database is busy')) : S.ref('').update(patch))
+    };
+    const r = await move.onRequest(env, { code: 'CLUB' }, { by: 'adm', at: NOW }, NOW);
+    check('it says the club moved and the old copy is still to tidy', /has moved; ask again/.test(r.why), true);
+    check('the club is on orgs/', !!S.at(O + 'access/admins/adm'), true);
+    check('nobody can write the old tree: its access is gone', S.at('workspaces/CLUB/access'), null);
+    await S.fire('moveRequests/CLUB', null);
+    await ask(S, 'coach');
+    check('only an admin may finish it', /Only an admin/.test(result(S).why), true);
+    await S.fire('moveRequests/CLUB', null);
+    await ask(S, 'adm');
+    check('asked again, it finishes', result(S).ok, true);
+    check('— the old tree is its marker alone', Object.keys(S.at('workspaces/CLUB')).join(), 'moved');
   }
 
   console.log('\n--- a club that opens its roster ---');
