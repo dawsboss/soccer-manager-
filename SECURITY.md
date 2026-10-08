@@ -95,41 +95,84 @@ under **Before families come on** can be done without disturbing anyone.
 ### SEC-5 · Protect `main` on GitHub
 - **Status:** To do · **Kind:** Owner · **Size:** Minutes
 - **Why:** a merge to `main` publishes the database rules and the server for
-  every club (`.github/workflows/server.yml`).
-- **What to do:** GitHub → the repository → *Settings → Rules → Rulesets* (or
-  *Branches → Branch protection*): on `main`, require a pull request and the
-  *Tests* check (`.github/workflows/test.yml`) passing, and block
-  force-pushes and deletion.
-- **Done when:** a direct push to `main` is refused.
+  every club (`.github/workflows/server.yml`), and since SEC-6 a run from
+  `main` is the only thing Google lets deploy, so `main` is the door.
+- **What to do:** GitHub → the repository → *Settings → Rules → Rulesets →
+  New ruleset → New branch ruleset*:
+  - *Ruleset name* `main`, *Enforcement status* **Active**.
+  - *Target branches* → *Add target* → **Include default branch**.
+  - Tick **Restrict deletions**, **Block force pushes**, **Require a pull
+    request before merging** (0 approvals is fine while you are the only
+    reviewer; it still stops a push straight to `main`), and **Require status
+    checks to pass** → *Add checks* → `test` (the job in the *Tests*
+    workflow, `.github/workflows/test.yml`; it is offered once it has run on
+    a pull request, which it has).
+  - Leave *Bypass list* empty, so nobody's account, yours included, can push
+    round it by accident. **Create**.
+- **Done when:** `git push origin main` from a checkout is refused with
+  *protected branch*, and a pull request with a red `test` cannot be merged.
 
 ### SEC-6 · Deploy without a stored key
-- **Status:** To do · **Kind:** Owner, with a small workflow change · **Size:** An hour
+- **Status:** Code done; the owner's half to do · **Kind:** Owner, with a small
+  workflow change · **Size:** An hour
 - **Why:** `FIREBASE_SERVICE_ACCOUNT` is a long-lived Google key with
   *Editor* on the whole project. If it leaked, so would every club's data.
-- **What to do:** set up Google's *Workload Identity Federation* for this
-  repository, so GitHub signs in for each run without a stored key; give the
-  account only the roles a deploy needs (README, *Deploying the server*);
-  change `server.yml` to sign in that way; then delete the old key and the
-  secret.
-- **Done when:** a deploy works with the secret removed, and the service
-  account has no keys listed in Google Cloud.
+- **Done in code:** `server.yml` signs in through Google's *Workload Identity
+  Federation* whenever the repository variables `GCP_WORKLOAD_IDENTITY_PROVIDER`
+  and `GCP_SERVICE_ACCOUNT` are set (`id-token: write`, no secret), and uses
+  the old secret only otherwise, with a warning on every run that does, so the
+  switch never leaves a run with nothing to deploy with.
+- **What is left (owner):** README, *Deploying the server*, step 2, has the
+  commands: make the pool and the provider, held by its condition to
+  `dawsboss/soccer-manager-` on `refs/heads/main`; let that provider act as
+  `github-deployer`; set the two variables; run *Deploy the server* from
+  `main`; once green, delete the account's key and the
+  `FIREBASE_SERVICE_ACCOUNT` secret, and run it again. The account keeps the
+  four roles README lists, which is what a functions and rules deploy needed
+  when it was set up; with no key, only a run of `main` (SEC-5) can use them.
+- **Done when:** a deploy works with the secret removed (no *Still on a stored
+  key?* warning in the run), and the service account has no keys listed in
+  Google Cloud.
 
 ### SEC-7 · Daily database backups
 - **Status:** To do · **Kind:** Owner · **Size:** Minutes
 - **Why:** the way back from a bad import, a bug, or someone with admin
   rights deleting things. *Download a copy* only helps if somebody remembered.
-- **What to do:** Firebase console → Realtime Database → *Backups* → turn on
-  daily backups (needs the Blaze plan, which the server already uses).
-- **Done when:** the console lists a backup from the last day.
+- **What to do:** Firebase console → *Realtime Database* → the **Backups** tab
+  → **Enable automated daily backups** (needs the Blaze plan, which the
+  server already uses). It writes a gzipped copy of the whole database to a
+  Cloud Storage bucket each day. That copy is every child in every club, so:
+  - leave the bucket private (Google Cloud console → *Cloud Storage → Buckets*
+    → the backup bucket → *Permissions*: no `allUsers` or
+    `allAuthenticatedUsers`), and
+  - give it an end: the bucket → *Lifecycle* → **Add a rule** → *Delete
+    object*, *Age* 30 days. A month of days to go back to, and a child who
+    left the club is gone from the backups a month later too.
+- **Done when:** the Backups tab lists a backup from the last day, and the
+  bucket has the 30-day rule. Try one restore into a second database
+  (`firebase-config.js`, `SOCCER_FIREBASE_ENVS`), never over the live one.
 
 ### SEC-8 · Sign-in settings
 - **Status:** To do · **Kind:** Owner · **Size:** Minutes
 - **Why:** an admin's account is the club.
-- **What to do:** Firebase console → Authentication → *Settings*: turn on
-  *email enumeration protection*, and check *Authorized domains* lists only
-  this site and the Firebase ones. Ask every admin to turn on 2-Step
-  Verification for their Google account.
-- **Done when:** both settings are on and each admin has confirmed.
+- **What to do:** Firebase console → *Authentication* → **Settings**:
+  - *User actions* → tick **Email enumeration protection** → **Save**. Then
+    a wrong password and an email with no account both say *Wrong email or
+    password* (the app already reads `auth/invalid-credential` that way,
+    `authMessage()`), so the sign-in box no longer tells a stranger who has an
+    account.
+  - *Authorized domains*: keep only `dawsboss.github.io` (the site),
+    `soccer-manager-272ff.firebaseapp.com` and `soccer-manager-272ff.web.app`
+    (Firebase's own, which Google sign-in uses), and `localhost` only while
+    you run the app from your own computer. Delete anything else: a domain on
+    that list is one that can sign people in to this project.
+  - Ask every admin (People → the admins) to turn on 2-Step Verification for
+    their Google account (myaccount.google.com → *Security*) and to sign in
+    with **Google**, not an email and password: a password made in the app
+    has no second step, and Firebase's own second step needs the paid
+    *Identity Platform* upgrade.
+- **Done when:** both settings are saved and each admin has confirmed 2-Step
+  Verification and signs in with Google.
 
 ---
 

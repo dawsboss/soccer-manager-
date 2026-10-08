@@ -95,4 +95,20 @@ console.log('\n--- the public pages ---');
   }
 }
 
+console.log('\n--- deploying without a stored key (SECURITY.md, SEC-6) ---');
+{
+  /* The deploy signs in to Google through Workload Identity Federation,
+     named by two repository variables, and falls back to the old JSON key only
+     while those are missing. Pinned so a later edit cannot quietly go back to
+     needing a long-lived key with Editor on every club's data. */
+  const wf = fs.readFileSync(root('.github/workflows/server.yml'), 'utf8');
+  check('server.yml may ask GitHub for an id token', /^\s*id-token:\s*write\s*$/m.test(wf), true);
+  check('and signs in with the provider and the account the variables name',
+    /workload_identity_provider:\s*\$\{\{\s*vars\.GCP_WORKLOAD_IDENTITY_PROVIDER\s*\}\}/.test(wf) &&
+    /service_account:\s*\$\{\{\s*vars\.GCP_SERVICE_ACCOUNT\s*\}\}/.test(wf), true);
+  // the key step runs only when the keyless one does not
+  const keyStep = (wf.match(/- uses: google-github-actions\/auth@\S+\n\s*if: ([^\n]*)\n\s*with:\n\s*credentials_json/) || [])[1] || '';
+  check('the stored key is used only when keyless sign-in is not set up', /env\.KEYLESS != 'true'/.test(keyStep), true);
+}
+
 H.summary('version markers');

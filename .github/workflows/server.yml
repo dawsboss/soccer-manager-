@@ -13,9 +13,15 @@ name: Deploy the server
 # only after rules.js passes, and then reads the live version back
 # (tools/live-rules.js) so a run that says it published really did.
 #
-# Needs one repository secret, FIREBASE_SERVICE_ACCOUNT: the JSON key of a
-# Google Cloud service account allowed to deploy (README, "Deploying the
-# server"). Without it this says so and stops, green.
+# Signs in to Google without a stored key (SECURITY.md, SEC-6): GitHub hands
+# each run a short-lived token that Google's Workload Identity Federation
+# swaps for the deploy account, and only for runs from this repository's main.
+# Two repository variables (not secrets; neither one is a credential) name
+# them: GCP_WORKLOAD_IDENTITY_PROVIDER and GCP_SERVICE_ACCOUNT (README,
+# "Deploying the server"). Until they are set, the old repository secret
+# FIREBASE_SERVICE_ACCOUNT (a JSON key) still works, so the switch can be made
+# without a run that deploys nothing; once a keyless deploy has gone green the
+# key and the secret are deleted. With neither, this says so and stops, green.
 
 on:
   push:
@@ -36,6 +42,8 @@ on:
 
 permissions:
   contents: read
+  # the token Workload Identity Federation swaps for the deploy account
+  id-token: write
 
 # Two deploys of one project at once fight over it; a newer one waits.
 concurrency:
@@ -46,11 +54,17 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     env:
-      HAS_KEY: ${{ secrets.FIREBASE_SERVICE_ACCOUNT != '' }}
+      # keyless when the two variables are there, the old key otherwise
+      KEYLESS: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER != '' && vars.GCP_SERVICE_ACCOUNT != '' }}
+      HAS_KEY: ${{ (vars.GCP_WORKLOAD_IDENTITY_PROVIDER != '' && vars.GCP_SERVICE_ACCOUNT != '') || secrets.FIREBASE_SERVICE_ACCOUNT != '' }}
     steps:
       - name: Is deploying set up?
         if: env.HAS_KEY != 'true'
-        run: echo "::notice::FIREBASE_SERVICE_ACCOUNT is not set, so nothing was deployed. README, Deploying the server."
+        run: echo "::notice::Neither GCP_WORKLOAD_IDENTITY_PROVIDER and GCP_SERVICE_ACCOUNT nor FIREBASE_SERVICE_ACCOUNT is set, so nothing was deployed. README, Deploying the server."
+
+      - name: Still on a stored key?
+        if: env.HAS_KEY == 'true' && env.KEYLESS != 'true'
+        run: echo "::warning::Deploying with the stored key FIREBASE_SERVICE_ACCOUNT. Switch to signing in without one (SECURITY.md, SEC-6; README, Deploying the server)."
 
       - uses: actions/checkout@v4
         if: env.HAS_KEY == 'true'
@@ -96,7 +110,14 @@ jobs:
         run: node test/run.js
 
       - uses: google-github-actions/auth@v2
-        if: env.HAS_KEY == 'true'
+        if: env.KEYLESS == 'true'
+        with:
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_SERVICE_ACCOUNT }}
+
+      # the old way, only until the key is deleted
+      - uses: google-github-actions/auth@v2
+        if: env.HAS_KEY == 'true' && env.KEYLESS != 'true'
         with:
           credentials_json: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
 

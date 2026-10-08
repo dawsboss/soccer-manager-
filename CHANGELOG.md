@@ -8,6 +8,35 @@ before this point lives only in the git log.
 
 ---
 
+## Deploying without a stored key, and the owner's four settings — 2026-10-08
+
+SECURITY.md's SEC-5 to SEC-8. Three of them are settings only the owner's
+account can change (GitHub, Firebase, Google), so what changed for those is
+the instructions: exact clicks, and what to check afterwards. SEC-6 needed
+code too.
+
+- **The server deploys with no key stored anywhere** (SEC-6). The secret
+  `FIREBASE_SERVICE_ACCOUNT` was a long-lived Google key with Editor on the
+  whole project: every club's data, for anyone who ever got hold of it.
+  `server.yml` now signs in through Workload Identity Federation: GitHub gives
+  each run a short-lived token naming the repository and branch, and Google
+  lets it act as the deploy account only for this repository's `main`. The
+  two repository variables that name the provider and the account are not
+  secrets. Until they are set, the old key still works, with a warning on
+  every run, so switching over never leaves a merge with nothing to deploy
+  with; README, *Deploying the server*, has the commands and the order to
+  delete the key in. `test/version.js` holds the workflow to it.
+- **Protecting `main`** (SEC-5), with the ruleset's settings spelled out and
+  the check named as GitHub shows it (`test`).
+- **Daily backups** (SEC-7), with the bucket kept private and a 30-day end,
+  because a backup is every child in every club.
+- **Sign-in settings** (SEC-8): email enumeration protection (the app already
+  says *Wrong email or password* for the error it brings), the exact
+  authorised domains, and admins on Google sign-in with 2-Step Verification,
+  since a password made in the app has no second step.
+
+---
+
 ## Two links that could run someone else's code — 2026-10-08 (build 109)
 
 Found looking for what else needed locking down. `esc()` keeps a link inside
