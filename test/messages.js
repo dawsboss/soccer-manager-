@@ -191,10 +191,13 @@ const NOTE = (A, by, text, extra) => ({ by, byName: CLUB.access.members[by].name
     A.click({ act: 'msgnew' });
     const sheet = String(A.dom.node('#sheet').innerHTML);
     check('listing each family on her team, with whose parent', /Mo[\s\S]*Parent of Ella/.test(sheet) && /Dev[\s\S]*Parent of Bea/.test(sheet), true);
-    check('and the other coaches and admins', /data-act="sdopen" data-u="adm"/.test(sheet) && /data-act="sdopen" data-u="other"/.test(sheet), true);
-    check('never a tracker', /data-u="trk"/.test(sheet), false);
-    check('nor another team\'s family', /data-act="msgto" data-tid="t2"/.test(sheet), false);
-    A.click({ act: 'msgto', tid: 't1', fam: 'mum' }); await A.flush();
+    check('and the other coaches and admins', /data-k="c:adm"/.test(sheet) && /data-k="c:other"/.test(sheet), true);
+    check('never a tracker', /data-k="c:trk"|:trk"/.test(sheet), false);
+    check('nor another team\'s family', /data-k="f:t2:/.test(sheet), false);
+    check('no team dropdown to work through', /<select/.test(sheet), false);
+    A.click({ act: 'msgpick', k: 'f:t1:mum' });
+    check('tapping one chooses her', /Write to Mo/.test(String(A.dom.node('#msgPickFoot').innerHTML)), true);
+    A.click({ act: 'msgpickgo' }); await A.flush();
     check('the family\'s conversation opens, empty', A.ui.view === 'thread' && /No messages yet/.test(A.rendered()), true);
     check('and says who reads it, with a lock', /class="lock"[\s\S]*Private · only Mo, the coaches of/.test(A.rendered()), true);
     A.dom.node('#msgText').value = 'Ella was great today';
@@ -263,6 +266,53 @@ const NOTE = (A, by, text, extra) => ({ by, byName: CLUB.access.members[by].name
     A.dom.node('#msgText').value = 'Bring shin pads';
     A.click({ act: 'msgsend', tid: 't1', fam: 'mum' }); await A.flush();
     check('waiting for a signal, said as such', /Waiting for a signal/.test(A.rendered()), true);
+  }
+
+  console.log('\n--- finding people, and writing to several ---');
+  {
+    const { A, fbk } = await boot('adm');
+    fbk.deliver('dm/CLUB/t1', null); fbk.deliver('dm/CLUB/t2', null); await A.flush();
+    A.click({ act: 'msgnew' });
+    const find = q => { A.dom.node('#msgFind').value = q; A.ui.msgPick.q = q; return A.pickMatches().map(p => p.key).sort().join(' '); };
+    check('an admin can find anyone she may write to', find(''), 'c:coach c:other f:t1:dad f:t1:mum');
+    check('by a child\'s name', find('ella'), 'f:t1:mum');
+    check('by the parent\'s', find('dev'), 'f:t1:dad');
+    check('by team', find('flight'), 'c:coach f:t1:dad f:t1:mum');
+    check('by role', find('coach'), 'c:coach c:other');
+    check('every word has to match', find('flight parent bea'), 'f:t1:dad');
+    find('flight parent');
+    A.click({ act: 'msgpickall' });
+    check('choose all that match', A.ui.msgPick.sel.sort().join(' '), 'f:t1:dad f:t1:mum');
+    A.click({ act: 'msgpick', k: 'c:other' });
+    A.click({ act: 'msgpickgo' });
+    check('several: one message to write', /To 3 people/.test(String(A.dom.node('#sheet').innerHTML)), true);
+    check('saying nobody sees who else got it', /Nobody sees who else got it/.test(String(A.dom.node('#sheet').innerHTML)), true);
+    A.dom.node('#multiText').value = 'Fees for the spring are due Friday';
+    A.click({ act: 'msgmulti' }); await A.flush();
+    const w = fbk.record.writes.filter(x => /\/m\//.test(x.path)).map(x => x.path.replace(/\/m\/.*/, '')).sort();
+    check('each into their own conversation, never one shared', w.join(' '), 'dm/CLUB/t1/dad dm/CLUB/t1/mum staffdm/CLUB/adm~other');
+    check('all the same words', fbk.record.writes.filter(x => /\/m\//.test(x.path)).every(x => x.value.text === 'Fees for the spring are due Friday'), true);
+    check('and back on Messages', A.ui.view, 'inbox');
+  }
+  {
+    // a choice that is no longer hers is left out, not sent
+    const { A, fbk } = await boot('coach');
+    fbk.deliver('dm/CLUB/t1', null); await A.flush();
+    A.click({ act: 'msgnew' });
+    A.ui.msgPick.sel = ['f:t1:mum', 'f:t2:dad'];
+    A.click({ act: 'msgpickgo' });
+    check('a family on a team she does not coach is not even offered', /To 2 people/.test(String(A.dom.node('#sheet').innerHTML)), false);
+    A.ui.msgPick = { q: '', sel: ['f:t1:mum', 'f:t1:dad'] };
+    A.click({ act: 'msgpickgo' });
+    A.dom.node('#multiText').value = 'hi';
+    A.state.access.teams.t1.coaches = {};   // taken off the team while the sheet was open
+    A.click({ act: 'msgmulti' }); await A.flush();
+    check('taken off the team, nothing goes', fbk.record.writes.filter(x => /^dm\//.test(x.path) && /\/m\//.test(x.path)).length, 0);
+  }
+  {
+    const { A } = await boot('mum');
+    A.click({ act: 'msgnew' });
+    check('a parent finds only the coaches of her teams', A.pickMatches().map(p => p.key).join(), 'f:t1:mum');
   }
 
   console.log('\n--- coaches and admins, to each other ---');
