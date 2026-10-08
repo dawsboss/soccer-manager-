@@ -103,7 +103,11 @@ Two limits worth knowing:
 
 - **Her own children by name, the rest of the squad by shirt number.** On Stats, Season, Live, the match log and the recap, a parent's child is named and every other child is `#8` (or *A teammate*, with no number). Squad, with the team's set-up under it, stays closed to her, as before. Only someone who is nothing but a parent in the club is narrowed: an admin, a coach (of any team, with a child on another or not) and a tracker see names.
 - **Or the whole roster, if the club says so.** Club admin → **What parents see** has the two choices AUTH.md allows: *Shirt numbers only* (the default) and *The whole roster by name*. Only an admin changes it (`access/org/rosterOpen`, under the rule the club's details already use).
-- **This is the screen, not the database.** A parent's phone reads the whole workspace, as it always has, so the names are in what it holds; the app chooses not to draw them. Moving them out of a parent's reach is the `orgs/{orgId}` work in AUTH.md, which hasn't started.
+- **On a club that has moved, it is the database too.** A club on the old tree (`workspaces/{code}`) is read whole by everyone in it, so a parent's phone holds the names and the app chooses not to draw them. Once the club has moved to `orgs/{code}` (below), her phone is sent her own children's records, the others' shirt numbers and the staff's names, and nothing else: no other child's name, note or rating, nobody's email, no access log.
+
+### Moving a club so families' phones hold only their own
+
+Club settings → **Keep the squad off families' phones** → *Move* (admins only). The phone asks the server (`moveRequests/{code}`), which checks she is an admin, refuses while a game is being played, moves the club to `orgs/{code}` in one write, reads it back and compares, keeps a copy of the old tree on the server (`serverState/moved/`), and answers. Every phone notices on its next read and carries on, its outbox included; nothing about the screens changes. It needs the functions deployed and rules version 12 published (both happen on a merge to main, **Deploying the server**). Turn on daily backups first, and move a test club made before build 110 first (one made since already starts on the new tree). New clubs start on `orgs/`. AUTH.md, *The move to `orgs/{orgId}`*, has the design; SECURITY.md, SEC-1, the steps.
 - **My players spans clubs.** Her children in every other club she's in are listed under this club's own, named with their team and club, with the next thing to get them to and *Open that club for her minutes*. It comes from the cut-down copy My calendar already keeps (her own children, no stints), so there are no minutes for another club until it's opened.
 
 ## A player's own sign-in
@@ -571,6 +575,8 @@ Link previews in text messages are scraped without running JavaScript, so each c
 Push the folder to a repo, then Settings → Pages → deploy from branch, root. The site is all static, so nothing else is needed for it (`functions/` is the server's, deployed to Firebase and left off the site). Add the site to the home screen on her phone and tablet for a full-screen launch, with its own icon (`manifest.webmanifest`); on an iPhone that is also what lets it get notifications.
 
 ## Data model
+
+A club on the old tree, below. On `orgs/{code}` (AUTH.md, *The move to `orgs/{orgId}`*) the same records are split by who reads them: `teams/{teamId}` without `players`, which are `squad/{teamId}/{playerId}`; `access/members` and `access/org` and `access/log` are `members`, `org` and `log`; and two parts are derived for families, `roster/{teamId}/{playerId}` (`{ number, active, name? }`, the name only while the roster is open) and `names/{uid}` (`{ name }`, staff only). The app keeps the old shape in memory and translates every path (`clubPath()`).
 
 ```
 rsvp/{teamId}/{g_matchId | e_eventId}/{playerId}   { v: 'yes' | 'no' | 'maybe', by, at, note }

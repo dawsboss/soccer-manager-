@@ -19,26 +19,38 @@ under **Before families come on** can be done without disturbing anyone.
 ## Before families come on
 
 ### SEC-1 · Keep the squad out of parents' reach
-- **Status:** Decided, designed, not built · **Kind:** Code · **Size:** Large
+- **Status:** Built (build 110) · to roll out, club by club · **Kind:** Owner, now · **Size:** Minutes per club
 - **Decided 2026-10-08:** the full `orgs/{orgId}` move, under the same id as
-  the workspace code. The design, its build order and the four smaller
-  decisions (all settled the same day) are in `AUTH.md`, *The move to `orgs/{orgId}`*.
+  the workspace code. The design, how it was built, and the four smaller
+  decisions are in `AUTH.md`, *The move to `orgs/{orgId}`*.
 - **Why:** everyone with a role in a club reads all of `workspaces/{code}` at
   the database. A parent's phone holds every child on every team, with the
   coach's note on each, their ratings and who to keep apart, and every
   member's name and email (`access/members`). The app shows her other children
   by shirt number (`shownName()`), but that is the screen's choice: the data
   is on her phone and readable with a browser's developer tools.
-- **What to do:** `GOTSPORT.md` (*Protecting the data*, build order step 3)
-  and `AUTH.md` (*Migration*) already say this happens before families come
-  on. Write the design into `AUTH.md` first: either the full `orgs/{orgId}`
-  move, or only a squad node readable by a team's coaches, trackers and the
-  club's admins, with a parent reading her own child's record and the rest by
-  number. Then the rules, the app's reads and a migration, tried on the test
-  club first.
-- **Done when:** `test/rules.js` refuses a parent's read of another child's
-  record, notes and the member list; `test/parents.js` passes against data a
-  parent's phone actually receives, not what it hides.
+- **Built:** on `orgs/{code}` each part of a club has its own readers. A
+  family reads her own children's records, the others' shirt numbers
+  (`roster/`), the staff's names (`names/`), and nothing of anyone's notes,
+  ratings or email; the access log is the admins'. `test/rules.js` refuses
+  her the squad, another child's record, the members and the log (both
+  passes); `test/orgs.js` checks what her phone asks for and holds, in memory
+  and in its copy. A club moves when an admin presses *Move* (Club settings,
+  *Keep the squad off families' phones*); the server checks her, moves it in
+  one write, compares, and keeps the old tree aside. New clubs start there.
+- **To roll out:**
+  1. Merge to `main`, so the functions deploy and rules version 12 is
+     published (both from `.github/workflows/server.yml` once the
+     `FIREBASE_SERVICE_ACCOUNT` secret is set; check with
+     `node tools/live-rules.js`).
+  2. Turn on daily backups first (SEC-7).
+  3. Move a test club made before build 110 (a new one already starts on
+     the new tree), and check it as a coach and as a parent.
+  4. Move the real club, between games.
+  5. A fortnight on, with every club moved, take the old tree out
+     (`AUTH.md`, build order step 5).
+- **Done when:** every club in the database is on `orgs/` (no
+  `workspaces/{code}` holds anything but a `moved` marker).
 
 ---
 
@@ -159,6 +171,11 @@ clock turned back gets past `OFFLINE_DAYS`; no app can stop either.
   `<script>` in a template. The Content-Security-Policy refuses them, so one
   that works in a test does nothing on a phone. A new place a page loads from
   or talks to goes into the policy on all three pages, tried in Chromium.
+- **A path into a club goes through `clubPath()`** (the server's
+  `functions/club.js`), never `'workspaces/' + code`: on a moved club the
+  squad, members and log are elsewhere and read by fewer people, and a write
+  aimed at the old tree is refused. Nothing a family may not read goes in
+  `roster/`, `names/`, `teams/`, `matches/` or `rsvp/`.
 - **Every rules change raises the version** and is reviewed as a change for
   every club.
 

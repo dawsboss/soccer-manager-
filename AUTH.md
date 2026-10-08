@@ -290,7 +290,7 @@ What it costs: every path in `app.js`, the rules, `test/rules.js`, the outbox, t
 
 **Decided 2026-10-06:** the owner wants registration data and the squad's names protected by the database, not the screen. `GOTSPORT.md` (*Protecting the data*, *Build order* step 3) schedules the first reason above (the full move, or only a squad node) before season registration opens to families, designed together with a club-level record of each child. That design is written here before any code.
 
-**Decided 2026-10-08 (SECURITY.md, SEC-1): the full move**, not only a squad node. The design is the next section, and its four smaller decisions were settled the same day.
+**Decided 2026-10-08 (SECURITY.md, SEC-1): the full move**, not only a squad node. The design is the next section, and its four smaller decisions were settled the same day. **Built the same day (build 110)**; each club moves when its admin presses *Move*.
 
 ## The move to `orgs/{orgId}`
 
@@ -397,11 +397,22 @@ Order: **the test club first** (Setup → Make a test club), then the owner's ow
 
 ### Build order
 
-1. **Rules** for `orgs/` beside `workspaces/`, generated, with `test/rules.js` walking both. Publishing them changes nothing for a club that has not moved.
-2. **The server**: the root helper, both trees, `roster`, `names`, `moveClub`, all tested on the fake server.
-3. **The app**: per-part reads, the assembly, the translation, the forgetting, the button. Every suite green against both a moved and an unmoved club.
-4. **The test club moves**, then a real one, with the owner.
+1. **Rules** for `orgs/` beside `workspaces/`, generated, with `test/rules.js` walking both. Publishing them changes nothing for a club that has not moved. *Built (build 110, rules version 12).*
+2. **The server**: the root helper, both trees, `roster`, `names`, `moveClub`, all tested on the fake server. *Built (build 110).*
+3. **The app**: per-part reads, the assembly, the translation, the forgetting, the button. Every suite green against both a moved and an unmoved club. *Built (build 110).*
+4. **The test club moves**, then a real one, with the owner. *Waiting on the owner*: the functions deployed and rules version 12 published (both happen on a merge to main once the deploy secret is set), then *Move* on the test club, then on the real one.
 5. **A fortnight on**, nobody on the old tree: the `workspaces/` branch and the macro come out of the rules, the triggers on the old tree go, and `serverState/moved/` is cleared.
+
+### As built, and where it differs from the above
+
+- **The macro is a build step.** `tools/rules-source.json` is what is edited (the old tree, the new tree and every root rule written against `workspaces/` as before); `node tools/rules-build.js` writes `database.rules.json`, wrapping each lookup into a club as *the old tree while the club is there, the new one once it has moved* (`orgs/{code}/access` exists). `test/rules.js` fails if the two disagree, and runs every check twice (`node test/run.js rules-orgs` is the second pass, every club in its mock moved).
+- **The move is asked for in the database, not by a callable function.** The admin writes `moveRequests/{code}` as herself (the rules let only an admin of that club), and the `moveClub` trigger checks her again, moves the club in one multi-path update (the new tree, the old one replaced by its `moved` marker, the copy at `serverState/moved/{code}/{at}`), reads it back, and writes its answer beside the request. That keeps the phone on the database SDK it already has, and the fake server tests it as it tests every other trigger (`test/move.js`).
+- **A club is on exactly one tree, and the rules keep it so.** Nobody can start `orgs/{code}` while the old tree holds the code (it would hand them every root rule for that club), nor write anything on the old tree of a club that has moved or is on the new one — not even her own member entry, which a phone that has not heard of the move would otherwise write on signing in.
+- **A phone does not write until it knows the tree.** Every write waits in the outbox until the session's first read of the club (`sendPending()`, `fb.held`), so nothing made at a field before the phone heard of the move goes to the old tree; the first read sends it all, translated (`clubPath()`, `clubWrites()`).
+- **A move under an open phone deletes nothing.** From the old tree it looks like everything being deleted; removals wait a tick for the `moved` marker that came in the same write, and if it came the phone reads the new tree instead.
+- **A twin is found by asking.** The lookup tables name one child per family per team, so a family's phone asks once for each number on the roster it has not asked about before, and remembers the answer (`sm.kids.v1`).
+- **Trackers get staff names, not emails.** A rule cannot ask "a tracker of any team" without a sixth table (decision 1), so `members/` (emails) is read by admins and coaches; a tracker, like a family, reads `names/`.
+- **The app's suites run once, on the old tree, and `test/orgs.js` covers the app on the new one** (what a family's phone asks for and holds, what staff read, where every write goes, the outbox across the move, a role changing, the Move card, another club on orgs/). The rules and the server suites run on both trees; the app's rig answers reads one path at a time, and a second pass of every app suite would have meant a second rig.
 
 ### Decisions for the owner
 
@@ -412,7 +423,7 @@ All four decided by the owner on 2026-10-08, as recommended:
    today: a squad is changed only by that team's coaches and the club's
    admins (and a family's or player's own `guardians`/`self` entry through
    an invite or an approval).
-3. **Member emails are readable by all staff.**
+3. **Member emails are readable by all staff.** As built, staff here is admins and coaches: see *As built*, trackers.
 4. **The access log is admins' only.**
 
 ## What parents actually see
@@ -442,7 +453,7 @@ Where each step stands (2026-10):
 
 1. **Built.** Google, email and password, and magic link; `needsSignIn()` is the gate.
 2. **Built on `workspaces/{code}`**, with the four lookup tables in place of `teamMembers`.
-3. **Designed, not built.** See *The move to `orgs/{orgId}`*: the owner chose the full move (2026-10-08, SECURITY.md SEC-1) to take names out of a parent's reach before registration opens (`GOTSPORT.md`).
+3. **Built (build 110), each club moving when its admin presses Move.** See *The move to `orgs/{orgId}`*: the owner chose the full move (2026-10-08, SECURITY.md SEC-1) to take names out of a parent's reach before registration opens (`GOTSPORT.md`).
 4. **Built.** One ruleset; `shareOwners` closed the public write hole.
 5. **Built.** Team links and the coach's approval list (`joinCodes`, `claims`), per-person invites, and a squad of parent invites at once.
 6. **Built.** Parents see their own child by name and the rest by number, the club's one preset, and My players across clubs.

@@ -8,6 +8,50 @@ before this point lives only in the git log.
 
 ---
 
+## Families' phones hold only their own children — 2026-10-08 (build 110, rules version 12)
+
+SECURITY.md, SEC-1, and AUTH.md, *The move to `orgs/{orgId}`*. Everyone in a
+club read all of `workspaces/{code}` at the database, so a parent's phone
+held every child on every team, the coach's notes and ratings on each, who
+to keep apart, and every member's email. The app drew the others by shirt
+number, but that was the screen's choice; the data was on her phone.
+
+- **A club can move to `orgs/{code}`**, where each part has its own readers.
+  The squad (`squad/{tid}`) is its team's staff's, every coach's and the
+  admins'; a child's record is also her own family's and her own. Everyone
+  in the club reads the teams, games and answers, a roster of shirt numbers
+  (`roster/`, names only while the club opens the roster) and the staff's
+  names (`names/`, never an email). Emails (`members/`) are the admins' and
+  coaches'; the access log is the admins'. The id stays the workspace
+  code, so training, messages, invites, links and every phone's copies stay
+  where they are.
+- **The admin presses Move** (Club settings, *Keep the squad off families'
+  phones*). The server checks she is an admin, refuses while a game is
+  being played, moves the club in one write, reads it back and compares,
+  puts it back if anything differs, and keeps the old tree aside. The
+  lookup tables are built whole on the way, closing the old tree's bridges.
+  New clubs start on the new tree.
+- **Every phone carries on.** It reads a moved club a part at a time and
+  puts the familiar shape back together, so no screen changed. A family's
+  phone forgets every other child the moment it sees the move, before it
+  reads anything. Writes wait in the outbox until the session's first read
+  says which tree the club is on, so a goal tracked at a field before the
+  phone heard of the move goes to the new tree; a move under an open phone
+  reads as everything being deleted, so removals wait a tick for the
+  moved marker and nothing is deleted or reported.
+- **The rules are built now** (`tools/rules-source.json` →
+  `node tools/rules-build.js` → `database.rules.json`): about two hundred
+  lookups into a club each ask whichever tree it is on. Nobody can start
+  `orgs/` under a code the old tree holds, which would hand them every rule
+  for that club, nor write to the old tree of a moved club. `rules.js`,
+  the four server suites and the new `orgs.js` and `move.js` check both
+  trees.
+- **Still to do, by the owner:** merge (the functions deploy and the rules
+  publish), turn on daily backups, move an older test club, then the real
+  one (SECURITY.md, SEC-1).
+
+---
+
 ## A Content-Security-Policy on every page — 2026-10-08 (build 110)
 
 SECURITY.md, SEC-3. Data in this app is typed by many people and drawn with
