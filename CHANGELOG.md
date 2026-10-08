@@ -8,6 +8,27 @@ before this point lives only in the git log.
 
 ---
 
+## Offline is not signed out — 2026-10-08 (build 113)
+
+With the phone's internet and mobile data off, the app opened on *This club
+needs a sign-in*, while swiping back showed the club for a moment: the copy
+was on the phone the whole time. With no signal, Firebase's sign-in library
+cannot check the session with its server, and it can come back saying nobody
+is signed in. The app took that at its word, forgot who was using the phone
+and locked the club in front of its own coach, at the one place this app is
+for.
+
+- **A "nobody" while the phone is offline leaves the person this phone last
+  verified signed in**, unless she pressed Sign out (here or in another tab;
+  Sign out now forgets her before Firebase hears it). It is asked again when
+  the signal comes back, and if Firebase still has nobody, she is signed out
+  then. The rules still decide what her account may read; this only decides
+  what the phone draws from its own copy, as the cached identity always has.
+- `test/sync.js` pins all four: offline, back online, Sign out offline, and
+  signed out in another tab.
+
+---
+
 ## Moving a club that has nothing logged — 2026-10-08 (build 112)
 
 The *Move* button waited for the server and nothing came back. The server
