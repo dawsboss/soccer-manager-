@@ -79,7 +79,7 @@ const toUid = (S, u) => S.sent().filter(m => m.data.uid === u);
     check('nor one in a conversation', S.woken('dm/CLUB/t1/mum/seen/coach').length, 0);
     // a live game is a write a second; none of it should cost a function call
     check('nothing in the club itself wakes the message senders', S.woken('workspaces/CLUB/matches/g1/events/e1').length, 0);
-    deepEq('the calendar\'s: one for entries, one per field of a game that says when', Object.keys(S.triggers).filter(n => S.triggers[n].kind === 'written').sort(), ['pushEntry', 'pushGameCalled', 'pushGameDate', 'pushGameKickoff']);
+    deepEq('the calendar\'s: one for entries, one per field of a game that says when', Object.keys(S.triggers).filter(n => S.triggers[n].kind === 'written' && /^push/.test(n)).sort(), ['pushEntry', 'pushGameCalled', 'pushGameDate', 'pushGameKickoff']);
     const src = fs.readFileSync(path.join(__dirname, '..', 'functions', 'index.js'), 'utf8');
     check('it reads from the database the event came from', /event\.data\.ref\.root/.test(src), true);
     check('and never calls an AI model', /anthropic|openai|gemini|generativ/i.test(src + fs.readFileSync(path.join(__dirname, '..', 'functions', 'push.js'), 'utf8')), false);
@@ -305,8 +305,8 @@ const toUid = (S, u) => S.sent().filter(m => m.data.uid === u);
     check('nor the clock', (await S.wouldWake(W + 'matches/g1/periods/0', { start: 1 })).length, 0);
     const g = S.at(W + 'matches/g1');
     check('nor the whole game saved with only its game changed', (await S.wouldWake(W + 'matches/g1', { ...g, stints: { s1: { pid: 'p1' } } })).length, 0);
-    deepEq('the whole game saved with a new date wakes the date\'s trigger alone', await S.wouldWake(W + 'matches/g1', { ...g, date: day(4) }), ['pushGameDate']);
-    deepEq('a practice changed wakes the entry\'s', await S.wouldWake(W + 'teams/t1/events/e1/start', '18:30'), ['pushEntry']);
+    deepEq('the whole game saved with a new date wakes the date\'s trigger alone', (await S.wouldWake(W + 'matches/g1', { ...g, date: day(4) })).filter(n => /^push/.test(n)), ['pushGameDate']);
+    deepEq('a practice changed wakes the entry\'s', (await S.wouldWake(W + 'teams/t1/events/e1/start', '18:30')).filter(n => /^push/.test(n)), ['pushEntry']);
     check('the register taken wakes nothing', (await S.wouldWake(W + 'teams/t1/attend/e1/p1', true)).length, 0);
     check('nor a player edited', (await S.wouldWake(W + 'teams/t1/players/p1/number', '8')).length, 0);
   }
@@ -391,7 +391,7 @@ const toUid = (S, u) => S.sent().filter(m => m.data.uid === u);
     const S = calServer();
     const g = S.at(W + 'matches/g1');
     const r = await S.fire(W + 'matches/g1', { ...g, date: day(4), kickoff: '11:00' });
-    check('a game moved to another day and time wakes two triggers', Object.keys(r).sort().join(), 'pushGameDate,pushGameKickoff');
+    check('a game moved to another day and time wakes two push triggers', Object.keys(r).filter(n => /^push/.test(n)).sort().join(), 'pushGameDate,pushGameKickoff');
     check('and is told once', toUid(S, 'mum').length, 1);
     const m = toUid(S, 'mum')[0];
     check('as moved', m.data.title, 'Moved: Flight v Northgate');

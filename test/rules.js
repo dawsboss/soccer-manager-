@@ -1844,12 +1844,14 @@ console.log(`
      it, and naming an address closes it; the interface says so where the
      invite is made.
 
-  5. The parent list is only as fresh as the last device that synced it. Its
+  5. The parent list is only as fresh as the last thing that synced it. Its
      entries can only ever name a real guardian at the moment they are
-     written, but a parent unlinked by an older copy of the app keeps reading
+     written. Where the functions are deployed, the server takes an unlinked
+     parent off the moment it happens (functions/access.js, test/access.js);
+     without them, a parent unlinked by an older copy of the app keeps reading
      that team's notices until an admin's or the coach's next connect takes
      her off. While the list does not exist at all, notices fall back to
-     club-wide, as they were.
+     club-wide, as they were, and the server does not start it.
 
   6. A parent can answer for her child under an item key that names no game
      or entry. The rule checks whose child it is, not that the thing exists,

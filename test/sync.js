@@ -535,5 +535,102 @@ async function boot(opts = {}) {
     check('through the import, which merges and never replaces', /Bulk import/.test(String(A.dom.node('#sheet').innerHTML)) && /Before the club/.test(String(A.dom.node('#sheet').innerHTML)), true);
   }
 
+  console.log('\n--- access taken away: turning the signal off does not bring the club back ---');
+  {
+    /* The loophole the owner asked about: a parent whose access was withdrawn,
+       refused once, turns off Wi-Fi and mobile data and reloads. The refusal
+       used to live only in memory, so the copy was drawn again in full. */
+    const now = H.clock.t;
+    const club = { teams: { t1: { id: 't1', name: 'G14 Flight', players: { p1: { id: 'p1', name: 'Ella Stone', guardians: { mumU: true } } } } }, matches: {}, access: { admins: { bossU: true }, index: { bossU: true, mumU: true } } };
+    const seed = extra => ({
+      'sm.data.v1:FLIGHT': JSON.stringify(club),
+      'sm.me': JSON.stringify({ uid: 'mumU', name: 'Mo' }),
+      'sm.msgs:FLIGHT:mumU': JSON.stringify({ board: {}, dm: { t1: { mumU: { m: { x: { text: 'Ella is off sick' } } } } } }),
+      ...extra
+    });
+    // the squad, where every name is: the calendar it opens on names no team
+    const drawn = A => { A.ui.view = 'roster'; A.ui.teamId = 't1'; A.render(); return String(A.dom.node('#app').innerHTML) + String(A.dom.node('#crumbs').innerHTML); };
+    // no signIn(): auth never answers, which is a phone with no signal
+    {
+      const { A, fbk } = await boot({ storage: seed({ 'sm.denied:FLIGHT': String(now - 2 * 3600e3), 'sm.synced:FLIGHT': String(now - 3 * 3600e3) }) });
+      check('refused two hours ago, offline now: the club stays shut', A.denied, true);
+      check('no team name drawn', drawn(A).includes('G14 Flight'), false);
+      check('no child\'s name drawn', drawn(A).includes('Ella'), false);
+      check('the copy is still on the phone, in case the refusal was a mistake', A.storage.getItem('sm.data.v1:FLIGHT') !== null, true);
+      fbk.signIn('mumU');
+      await A.flush();
+      fbk.deliver(WS, club);
+      await A.flush();
+      check('and a good read brings it all back', A.denied, false);
+      check('drawn again', drawn(A).includes('G14 Flight'), true);
+      check('the refusal forgotten', A.storage.getItem('sm.denied:FLIGHT'), null);
+    }
+    {
+      const { A } = await boot({ storage: seed({ 'sm.denied:FLIGHT': String(now - 25 * 3600e3), 'sm.synced:FLIGHT': String(now - 26 * 3600e3) }) });
+      check('refused more than a day ago: offline, the copy goes anyway', A.purged, 'access');
+      check('the stored club is gone', A.storage.getItem('sm.data.v1:FLIGHT'), null);
+      check('and the family conversations kept with it', A.storage.getItem('sm.msgs:FLIGHT:mumU'), null);
+      check('nothing of it drawn', drawn(A).includes('G14 Flight') || drawn(A).includes('Ella'), false);
+    }
+  }
+
+  console.log('\n--- a copy the club has not confirmed in thirty days is not drawn ---');
+  {
+    const now = H.clock.t;
+    const club = { teams: { t1: { id: 't1', name: 'G14 Flight', players: { p1: { id: 'p1', name: 'Ella Stone' } } } }, matches: {}, access: { admins: { bossU: true }, index: { bossU: true, coachU: true }, teams: { t1: { coaches: { coachU: true } } } } };
+    // the squad, where every name is: the calendar it opens on names no team
+    const drawn = A => { A.ui.view = 'roster'; A.ui.teamId = 't1'; A.render(); return String(A.dom.node('#app').innerHTML) + String(A.dom.node('#crumbs').innerHTML); };
+    const base = { 'sm.data.v1:FLIGHT': JSON.stringify(club), 'sm.me': JSON.stringify({ uid: 'coachU', name: 'Jaz' }) };
+    {
+      const { A, fbk } = await boot({ storage: { ...base, 'sm.synced:FLIGHT': String(now - 31 * 864e5) } });
+      check('thirty-one days with no word from the club: not drawn', A.unconfirmed, true);
+      check('no team name', drawn(A).includes('G14 Flight'), false);
+      check('she is told to connect once', drawn(A).includes('Connect once'), true);
+      check('and nothing is thrown away: an unsent game may be in it', A.storage.getItem('sm.data.v1:FLIGHT') !== null, true);
+      fbk.signIn('coachU');
+      await A.flush();
+      fbk.deliver(WS, club);
+      await A.flush();
+      check('the club answers: drawn again', A.unconfirmed, false);
+      check('her team is back', drawn(A).includes('G14 Flight'), true);
+    }
+    {
+      const { A } = await boot({ storage: { ...base, 'sm.synced:FLIGHT': String(now - 29 * 864e5) } });
+      check('twenty-nine days: a coach who never finds signal at the fields still has her squad', drawn(A).includes('G14 Flight'), true);
+    }
+    {
+      const { A } = await boot({ storage: { ...base } });
+      check('a copy from before this check is drawn', drawn(A).includes('G14 Flight'), true);
+      check('and its clock starts now', A.storage.getItem('sm.synced:FLIGHT'), String(now));
+    }
+    {
+      const { A } = await boot({ config: null, storage: { ...base, 'sm.synced:FLIGHT': String(now - 400 * 864e5) } });
+      check('a phone with no database to ask is never shut out of its own copy', drawn(A).includes('G14 Flight'), true);
+    }
+    {
+      const { A } = await boot({ storage: { ...base, 'sm.denied:FLIGHT': String(now - 3600e3) } });
+      // the pre-lockdown case: no admin yet, nothing to confirm against
+      const open = JSON.parse(base['sm.data.v1:FLIGHT']); open.access = {};
+      const { A: B } = await boot({ storage: { ...base, 'sm.data.v1:FLIGHT': JSON.stringify(open), 'sm.denied:FLIGHT': String(now - 3600e3) } });
+      check('a refusal shuts a club with an admin', A.denied, true);
+      check('but a club still being set up, with no admin, stays open', drawn(B).includes('G14 Flight'), true);
+    }
+  }
+
+  console.log('\n--- another club\'s copy goes quiet the same way ---');
+  {
+    const { A } = await boot({ storage: { 'sm.me': JSON.stringify({ uid: 'coachU', name: 'Jaz' }) } });
+    A.me = { uid: 'coachU', name: 'Jaz' };
+    const now = H.clock.t;
+    A.you.uid = 'coachU';
+    A.you.clubs = {
+      FRESH: { name: 'Fresh FC', at: now - 864e5, ws: { teams: {}, matches: {}, access: { org: { name: 'Fresh FC' } } }, tr: {} },
+      STALE: { name: 'Stale FC', at: now - 40 * 864e5, ws: { teams: {}, matches: {}, access: { org: { name: 'Stale FC' } } }, tr: {} }
+    };
+    const names = A.youClubs().map(([code]) => code);
+    check('a club heard from yesterday is drawn on My calendar', names.includes('FRESH'), true);
+    check('one not heard from in forty days is not', names.includes('STALE'), false);
+  }
+
   H.summary('auth and sync');
 })().catch(e => { console.error('CRASH:', e && e.stack || e); process.exit(1); });

@@ -422,9 +422,16 @@ async function signIn() {
    where the rules already decide what anyone may see. */
 function accessBlock() {
   const link = doc && doc.link;
-  const appUrl = link && link.app;
-  const deep = appUrl && link.teamId
-    ? `${appUrl}#/team/${link.teamId}${openGame ? '/game/' + openGame + '/stats' : '/season'}`
+  /* The app is the one beside this page, never wherever the published page
+     says. A page under an id nobody has claimed can be written by any
+     signed-in account, so the address it names is whatever its writer chose, and a
+     `javascript:` address in this button would run on this site, where a
+     coach's sign-in lives. The team and game go through encodeURIComponent
+     for the same reason. */
+  const appUrl = pageBase() + 'index.html';
+  const tid = link && typeof link.teamId === 'string' ? encodeURIComponent(link.teamId) : '';
+  const deep = tid
+    ? `${appUrl}#/team/${tid}${openGame ? '/game/' + encodeURIComponent(openGame) + '/stats' : '/season'}`
     : appUrl;
   if (!authMod) return '';
   if (!viewer) return `<div class="card"><div class="spread">

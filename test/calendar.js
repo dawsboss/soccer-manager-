@@ -739,17 +739,23 @@ console.log('--- calendar sync ---');
   global.window.SOCCER_CALENDAR_FEED = 'https://feed.example.workers.dev';
   check('with one, the coach can turn it on', /Turn on calendar sync/.test(html()), true);
   A.me = { uid: 'mumU' };
-  check('a parent is told the coach has not yet', /coach has not turned calendar sync on yet/.test(html()), true);
+  check('a parent is not offered the team\'s address: hers is on My calendar', /Your own calendar link is on My calendar/.test(html()) && !/coach has not turned calendar sync on yet/.test(html()), true);
   A.click({ act: 'calsyncon', tid: 't1' });
   check('and cannot turn it on herself', A.state.teams.t1.calFeed, undefined);
   A.me = { uid: 'coachU' };
   A.click({ act: 'calsyncon', tid: 't1' });
   const feed = A.state.teams.t1.calFeed;
   check('on: the team has a feed id', /^c\w+$/.test(feed || ''), true);
+  check('the coach subscribes in Apple Calendar', html().includes(`href="webcal://feed.example.workers.dev/${feed}.ics"`), true);
+  check('or Google', html().includes('calendar.google.com/calendar/render?cid=' + encodeURIComponent(`webcal://feed.example.workers.dev/${feed}.ics`)), true);
+  check('and is told it is the team\'s, to replace when someone leaves', /replace it when someone leaves the team/.test(html()), true);
   A.me = { uid: 'mumU' };
   const h = html();
-  check('a parent subscribes in Apple Calendar', h.includes(`href="webcal://feed.example.workers.dev/${feed}.ics"`), true);
-  check('or Google', h.includes('calendar.google.com/calendar/render?cid=' + encodeURIComponent(`webcal://feed.example.workers.dev/${feed}.ics`)), true);
+  /* One address for the whole team cannot be taken back from one family, so a
+     family taken off the team would go on receiving it; hers is My calendar's,
+     which the server builds from her roles and which leaves the team with her. */
+  check('a parent is never shown the team\'s address', h.includes(feed), false);
+  check('she is pointed at her own, on My calendar', /Your own calendar link is on My calendar/.test(h), true);
   check('a parent cannot replace the address', /calsyncnew/.test(h), false);
   const doc = A.calendarDoc(A.state.teams.t1);
   check('the feed carries team-only practices', 'e1' in doc.events && 'e3' in doc.events, true);

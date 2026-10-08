@@ -287,4 +287,16 @@ console.log('--- share links ---');
   check('a team with no share has no link', A.teamLink({ id: 'x' }), '');
 }
 
+console.log('--- the share page never takes the app\'s address from what it is showing ---');
+{
+  /* public/{id} is writable by any signed-in account while nobody has claimed
+     the id, so whatever a page says about where the app is came from its
+     writer. A javascript: address in "Open in Minutes" would run on this site,
+     where a coach is signed in. live.js builds the address from its own. */
+  const live = require('fs').readFileSync(require('path').join(__dirname, '..', 'live.js'), 'utf8');
+  check('live.js never reads link.app', /link\s*\.\s*app|\[['"]app['"]\]/.test(live), false);
+  check('it builds the app\'s address beside itself', /pageBase\(\) \+ 'index\.html'/.test(live), true);
+  check('and encodes the team and game it links to', /encodeURIComponent\(link\.teamId\)/.test(live) && /encodeURIComponent\(openGame\)/.test(live), true);
+}
+
 H.summary('stats and the public mirror');

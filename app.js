@@ -2,7 +2,7 @@
    Static app. Data lives in localStorage, and mirrors to Firebase Realtime
    Database when a config + workspace code are present. */
 
-const BUILD = '108';
+const BUILD = '109';
 const BUILT = '2026-10-07';
 /* The version of database.rules.json this app was written against. The rules
    carry the same number in rulesVersion's .write, which accepts that number
@@ -29,6 +29,11 @@ const LS_DENIED = 'sm.denied';   // first refusal, per club
 const LS_ENV = 'sm.env';         // which Firebase environment this device talks to
 const LS_ME = 'sm.me';           // who was last verified signed in on this device
 const DENY_GRACE_H = 24;
+/* How long a phone keeps drawing a club it has not been able to check with.
+   Long enough for a coach whose phone never finds a signal at the fields, and
+   short enough that someone whose access was taken away while she kept her
+   phone offline does not keep a working copy of the club for good. */
+const OFFLINE_DAYS = 30;
 /* A club whose code starts with this is invented data for rehearsing on. */
 const SANDBOX_PREFIX = 'test-';
 
@@ -352,11 +357,16 @@ function purgeClub(code, why) {
     localStorage.removeItem(LS_SESS + ':' + k);
     localStorage.removeItem(LS_PENDING + ':' + k);
     localStorage.removeItem(LS_SEEN + ':' + k);
+    // the family conversations this phone kept of the club, for every account that read them here
+    const mk = LS_MSGS + ':' + k + ':', gone = [];
+    for (let i = 0; i < localStorage.length; i++) { const x = localStorage.key(i); if (x && x.startsWith(mk)) gone.push(x); }
+    for (const x of gone) localStorage.removeItem(x);
   } catch (e) { }
-  if (code === wsCode()) { state = { teams: {}, matches: {}, access: {}, rsvp: {} }; train = TRAIN_BLANK(); sess = SESS_BLANK(); pending = { seq: 0, w: {} }; purged = why; render(); }
+  if (code === wsCode()) { state = { teams: {}, matches: {}, access: {}, rsvp: {} }; train = TRAIN_BLANK(); sess = SESS_BLANK(); pending = { seq: 0, w: {} }; msgs = { board: {}, dm: {}, outbox: {} }; purged = why; render(); }
 }
 
 function markSynced() {
+  unconfirmed = false;
   try {
     localStorage.setItem(LS_SYNCED + ':' + clubKey(), String(Date.now()));
     localStorage.removeItem(LS_DENIED + ':' + clubKey());
@@ -365,6 +375,36 @@ function markSynced() {
 
 /* Refusal is not instant deletion: a botched rules change would otherwise wipe a
    coach's offline copy before anyone noticed. It has to persist for a day. */
+/* What a phone is still allowed to draw at boot, before the club has said
+   anything. Holding the copy and drawing it are two decisions (CLAUDE.md), and
+   this is the second, made from what the phone already knows:
+
+   - Refused once, refused until the club says otherwise. `denied` lived only
+     in memory, so someone whose access was withdrawn could turn off her signal,
+     reload, and have the whole club drawn again from the copy. The refusal is
+     on the phone (LS_DENIED); the copy stays a day in case the refusal was a
+     mistake, so a good read brings everything back, outbox and all.
+   - A day past the refusal, the copy goes even with no signal, as noteDenied()
+     would have done online.
+   - A copy the club has not confirmed for OFFLINE_DAYS is not drawn until it
+     has (`unconfirmed`), and is kept: an unsent game may be in it.
+
+   Only for a club that has an admin and a database to ask (gated()). A device
+   clock turned back defeats the last two; nothing on a phone can stop that,
+   which is why the rules, not this, are what decide who reads the club. */
+function copyCheck() {
+  if (!gated()) return;
+  const k = clubKey();
+  try {
+    const first = Number(localStorage.getItem(LS_DENIED + ':' + k) || 0);
+    if (first && Date.now() - first > DENY_GRACE_H * 3600e3) { purgeClub(wsCode(), 'access'); return; }
+    if (first) denied = true;
+    const at = Number(localStorage.getItem(LS_SYNCED + ':' + k) || 0);
+    // a copy from before this check starts its clock now rather than being shut out
+    if (!at) localStorage.setItem(LS_SYNCED + ':' + k, String(Date.now()));
+    else if (Date.now() - at > OFFLINE_DAYS * 864e5) unconfirmed = true;
+  } catch (e) { }
+}
 function noteDenied() {
   const k = LS_DENIED + ':' + clubKey();
   try {
@@ -3734,7 +3774,10 @@ function importPlan(data, cur = state) {
       else out.warnings.push(`${label}: ${side}-a-side is not 5, 7, 9 or 11, so it was left at the default.`);
     }
     const veo = firstOf(g, 'veo', 'veoUrl');
-    if (veo !== undefined) fields.veoUrl = String(veo).trim();
+    if (veo !== undefined) {
+      fields.veoUrl = veoIn(veo);
+      if (String(veo).trim() && !fields.veoUrl) out.warnings.push(`${label}: the Veo link does not start with https://, so it was left out.`);
+    }
     const sc = importScore(firstOf(g, 'score', 'result'));
     if (sc === false) out.warnings.push(`${label}: score ${JSON.stringify(firstOf(g, 'score', 'result'))} should be written "3-1", so it was left out.`);
 
@@ -5775,7 +5818,7 @@ function render() {
      screen with the crumbs still drawn has leaked most of what there was. */
   const inviting = !!invite;
   const joining = !inviting && !!join && !join.hidden;
-  const shut = inviting || joining || !!purged || denied || needsSignIn();
+  const shut = inviting || joining || !!purged || denied || unconfirmed || needsSignIn();
   const t = team();
   if (!t && teams().length) { ui.teamId = teams()[0].id; }
   const vis = myTeams();
@@ -5856,6 +5899,7 @@ function render() {
   if (joining) { app.innerHTML = joinScreen(); saveUi(); watchMessages(); return; }
   if (purged) { app.innerHTML = purgedScreen(); saveUi(); watchMessages(); return; }
   if (denied || needsSignIn()) { app.innerHTML = lockScreen(); saveUi(); watchMessages(); return; }
+  if (unconfirmed) { app.innerHTML = unconfirmedScreen(); saveUi(); return; }
   const roNote = lim === 'viewer' && team()
     ? `<div class="rolebar">Viewing <b>${teamLabel(team())}</b> from another team in the club. You can read it, not change it.</div>` : '';
   // "you can read, not change" is about the team; on Messages a parent writes, and on the Calendar she answers
@@ -5938,6 +5982,14 @@ function purgedScreen() {
     <div class="row" style="margin-top:14px;justify-content:center">
       <button class="btn quiet" data-act="clubswitch">Other clubs</button></div></div>
     <p class="muted" style="text-align:center">Anything downloaded with <b>Download a copy</b> is yours and is not affected.</p></div>`;
+}
+
+function unconfirmedScreen() {
+  return `<div class="stack"><div class="empty"><strong>Connect once to carry on</strong>
+    This phone has not been able to check with the club for more than ${OFFLINE_DAYS} days, so it is not showing what it holds until it has.
+    Turn on Wi-Fi or mobile data for a moment: nothing on this phone has been lost, and anything not yet sent goes as soon as it connects.
+    <div class="row" style="margin-top:14px;justify-content:center">
+      <button class="btn quiet" data-act="clubswitch">Other clubs</button></div></div></div>`;
 }
 
 function lockScreen() {
@@ -7694,7 +7746,7 @@ function gameDetailsCard(m) {
     ${readOnlyHere() ? '' : `<button class="btn quiet sm" data-act="editmatch" data-id="${m.id}" style="flex:none">Edit game</button>`}</div>
     ${CALLED[m.called] ? `<div class="warn alert" style="margin-top:10px"><b>${CALLED[m.called]}.</b> It shows that way on the calendar and the share pages.</div>` : ''}
     ${m.notes ? `<p class="muted" style="margin:10px 0 0">${esc(m.notes)}</p>` : ''}
-    ${m.veoUrl ? `<p style="margin:10px 0 0"><a href="${esc(m.veoUrl)}" target="_blank" rel="noopener">Open the Veo recording</a></p>` : ''}
+    ${linkOk(m.veoUrl) ? `<p style="margin:10px 0 0"><a href="${esc(m.veoUrl)}" target="_blank" rel="noopener noreferrer">Open the Veo recording</a></p>` : ''}
   </div>`;
 }
 
@@ -8145,7 +8197,16 @@ function calSyncCard(t, all) {
     <button class="btn quiet wide" data-act="calicsall"${all ? '' : ` data-tid="${esc(t.id)}"`}>Add what is coming up</button>
     ${canAdmin() ? '<p class="muted" style="margin-bottom:0">A calendar that follows every change by itself needs the calendar feed set up once for the club — README, <b>Calendar sync</b>.</p>' : ''}
     ${!all && t.share ? `<p class="muted" style="margin-bottom:0">Grandparents and friends without an account: the season link shows the games, and anything marked for the share link, with no names.</p>` : ''}</div>`;
-  const rows = list.map(x => {
+  /* A team's address is one for everybody on it, so it cannot be taken back
+     from one family without stopping it for all of them: a family taken off
+     the team would go on getting its practices, times and places for as long
+     as the coach left it. So it is the team's staff's, for a club website or
+     a noticeboard, and a family's calendar is My calendar's, which is hers
+     alone and follows her roles (functions/mycal.js). */
+  const staffOf = id => !gated() || canAdmin() || (!!me && (isCoach(id, me.uid) || isTracker(id, me.uid)));
+  const famOnly = list.filter(x => !staffOf(x.id));
+  const famNote = famOnly.length ? `<p class="muted">${all ? famOnly.map(teamLabel).join(', ') + ': y' : 'Y'}our own calendar link is on My calendar: ${famOnly.length > 1 ? 'these teams' : 'this team'} and everything else of yours, in one subscription that is yours alone.</p>` : '';
+  const rows = list.filter(x => staffOf(x.id)).map(x => {
     const u = feedUrl(x.calFeed);
     if (u) return `<div class="syncrow">${all ? `<p class="lbl">${teamLabel(x)}</p>` : ''}
       <div class="row wrap">
@@ -8159,10 +8220,10 @@ function calSyncCard(t, all) {
   }).join('');
   return `<div class="card"><h2 style="margin-bottom:8px">In your own calendar</h2>
     ${mine}
-    <p class="muted" style="margin-top:0">${mine ? `Or ${all ? 'each team' : 'this team'} alone: s` : 'S'}ubscribe once and your calendar follows every change — a moved kick-off, a called-off practice, a new tournament. Apple and Outlook check about every hour; Google keeps its own pace, often several hours.</p>
-    ${rows}
+    ${rows ? `<p class="muted" style="margin-top:0">${mine ? `Or ${all ? 'each team' : 'this team'} alone: s` : 'S'}ubscribe once and your calendar follows every change — a moved kick-off, a called-off practice, a new tournament. Apple and Outlook check about every hour; Google keeps its own pace, often several hours.</p>` : ''}
+    ${rows}${famNote}
     ${isSandbox() ? '<p class="muted">Test club: nothing is published, so a subscription here stays empty.</p>' : ''}
-    <p class="muted">The address shows practices as well as games — never names — so keep it to the team. Outlook: <i>Add calendar \u2192 From internet</i> and paste the address.</p>
+    ${rows ? `<p class="muted">The address shows practices as well as games — never names. It is the team's, not one person's: replace it when someone leaves the team, or it keeps reaching them. Outlook: <i>Add calendar \u2192 From internet</i> and paste the address.</p>` : ''}
     <button class="btn quiet wide" data-act="calicsall"${all ? '' : ` data-tid="${esc(t.id)}"`}>Or add a one-off copy</button></div>`;
 }
 
@@ -9825,7 +9886,7 @@ function openDrillLink() {
   if (L.DRILLS.some(x => x.id === key)) { show(); return; }
   if (!/^club:[^/]+$/.test(key)) { drillLink = null; sheetDrillRefused(/^mine:/.test(key) ? 'mine' : 'bad'); return; }
   // the lock screen, an invite or a join comes first; signing in brings the link back
-  if (invite || (join && !join.hidden) || purged || denied || needsSignIn()) return;
+  if (invite || (join && !join.hidden) || purged || denied || unconfirmed || needsSignIn()) return;
   const waiting = !!fbConfig().apiKey && nowMs() - w.at < DRILL_LINK_WAIT;
   /* From another of her clubs: open that one, with the link still on the
      address so it opens the drill once the club has loaded. Only a club this
@@ -10344,6 +10405,12 @@ function cleanDrawing(dg) {
   return c && !D.parse(c).errors.length && JSON.stringify(c).length <= 12000 ? c : null;
 }
 const linkOk = u => typeof u === 'string' && u.length <= 500 && /^https:\/\/[^\s"'<>]+$/.test(u);
+/* A game's Veo link, as typed or imported: https or nothing. Anyone who can
+   write a game (a tracker included, rules.js gap 1) can put anything in it,
+   and esc() keeps a link inside its quotes but cannot stop a `javascript:`
+   address running on this site, where the coach's sign-in lives; so it is
+   checked here on the way in and by linkOk() again where it is drawn. */
+const veoIn = v => { const u = String(v == null ? '' : v).trim(); return linkOk(u) ? u : ''; };
 
 /* Whatever comes back from the database, or out of a plan, goes through this.
    Any coach can write a club drill and the rules check only its name and its
@@ -14244,7 +14311,9 @@ function watchMirror() {
 function youClubs() {
   if (!me) return [];
   const here = wsCode();
-  return Object.entries(youHere().clubs).filter(([code, c]) => code !== here && c && c.ws && (!myClubs || myClubs[code]) && !retiredClubs[code])
+  // another club's copy that has not heard from it in OFFLINE_DAYS is not drawn either, as copyCheck() says
+  return Object.entries(youHere().clubs).filter(([code, c]) => code !== here && c && c.ws && (!myClubs || myClubs[code]) && !retiredClubs[code]
+    && !(c.at && nowMs() - Number(c.at) > OFFLINE_DAYS * 864e5))
     .map(([code, c]) => [code, { ...c, name: c.name || ((myClubs || {})[code] || {}).name || 'Another club' }])
     .sort((a, b) => a[1].name.localeCompare(b[1].name));
 }
@@ -14740,12 +14809,37 @@ function myFeedDoc() {
    session, and only when what it carries has changed: an old copy of a club
    must never overwrite what another phone of hers sent a minute ago. */
 let feedSent = '';
+/* Whether the server keeps this address now (functions/mycal.js). It marks
+   the page it writes `by: 'server'`, and once it has, every phone of hers
+   leaves it alone: two writers building from different copies would take
+   turns overwriting each other, and the phone's is the one that lags. A
+   phone waits to hear before it writes at all, so a page the server already
+   keeps is never replaced by a phone's older copy, even for a moment. Where
+   the functions are not deployed nobody writes `by`, and the phone carries
+   on as it always has. */
+let feedBy = { id: '', server: null, off: null };   // server: null until the database has said
+function feedOwner(id) {
+  if (feedBy.id === id) return feedBy.server;
+  if (typeof feedBy.off === 'function') try { feedBy.off(); } catch (e) { }
+  feedBy = { id, server: null, off: null };
+  if (!rtdb) return null;
+  const { db, mod } = rtdb;
+  feedBy.off = mod.onValue(mod.ref(db, `public/${id}/by`), s => {
+    if (feedBy.id !== id) return;
+    const was = feedBy.server;
+    feedBy.server = s.val() === 'server';
+    if (!feedBy.server) feedPublishSoon();
+    if (was !== feedBy.server) render();
+  }, () => { if (feedBy.id === id && feedBy.server === null) { feedBy.server = false; feedPublishSoon(); } });
+  return null;
+}
 // SERVER.md: her own phone keeps her calendar feed up to date; a server would write it on every change.
 function feedPublish() {
   const id = myFeedId();
   if (!id || !fb || !me || isSandbox() || needsSignIn()) return;
   if (wsCode() && !wsRead) return;
   if (youClubs().some(([code]) => !mirrorLive.has(code))) return;
+  if (feedOwner(id) !== false) return;      // the server's, or not heard yet
   const doc = myFeedDoc(), sig = id + JSON.stringify({ ...doc, updated: 0 });
   if (sig === feedSent) return;
   feedSent = sig;
@@ -14789,7 +14883,9 @@ function myFeedCard() {
     <button class="btn wide" data-act="myfeed" data-v="on">Turn on calendar sync</button>
     ${copy}</div>`;
   return `<div class="card"><h2 style="margin-bottom:8px">In your own calendar</h2>
-    <p class="muted" style="margin-top:0">Subscribe once and your calendar follows every change in every club. Apple and Outlook check about every hour; Google keeps its own pace, often several hours. It catches up with a club once your phone has been open since the change.</p>
+    <p class="muted" style="margin-top:0">Subscribe once and your calendar follows every change in every club. Apple and Outlook check about every hour; Google keeps its own pace, often several hours. ${feedBy.id === id && feedBy.server
+      ? 'The club\u2019s server keeps it up to date within a few minutes of a change, whether or not your phone is open, and a team you are taken off leaves it.'
+      : 'It catches up with a club once your phone has been open since the change.'}</p>
     <div class="row wrap">
       <a class="btn sm" href="${esc(webcal(u))}">Apple Calendar</a>
       <a class="btn quiet sm" href="${esc(googleSub(u))}" target="_blank" rel="noopener">Google Calendar</a>
@@ -16168,6 +16264,7 @@ function publicDoc(t) {
    needs to turn up: no series id, no author, no note of who added it. Free
    text goes through pubText() like the game's own notes. `all` is the members'
    calendar feed, which carries the team-only entries too — see calendarDoc(). */
+// SERVER.md: functions/mirror.js builds the same entries whenever they change, from any phone.
 function publicEvents(t, all) {
   const out = {};
   for (const [id, e] of Object.entries(t.events || {})) {
@@ -16222,6 +16319,7 @@ let pubTimer;
 let pubSeen = {};                           // what each public id last carried, so unchanged ones are not rewritten
 let pubState = { at: null, error: null };   // surfaced in the share sheet
 let denied = false;                         // rules refused us; show the door
+let unconfirmed = false;                    // no word from the club for OFFLINE_DAYS; drawn again once there is
 let purged = null;                          // 'access' | 'retired'
 let retiredClubs = {};                      // app owner's view of what is closed
 // SERVER.md: the share pages are written by whichever phone made the change; a server trigger would write them.
@@ -19200,7 +19298,7 @@ function onAct(e) {
       opponent: $('#mOpp').value.trim(), date: $('#mDate').value,
       kickoff: $('#mKick').value || '', venue: $('#mVenue').value.trim(),
       periodCount: Number($('#mCount').value), periodMinutes: Number($('#mLen').value) || 40,
-      onFieldCount: side, veoUrl: $('#mVeo').value.trim(),
+      onFieldCount: side, veoUrl: veoIn($('#mVeo').value),
       home: HOME_AWAY[$('#mHome').value] ? $('#mHome').value : '', arrive: hm($('#mArrive').value),
       kit: $('#mKit').value.trim(), notes: $('#mNotes').value.trim()
     };
@@ -19602,6 +19700,7 @@ loadLocal();
    rather than sitting on a lock screen. onAuthStateChanged overwrites it either
    way a moment later, and a sign-out has already cleared it. */
 me = cachedMe();
+copyCheck();
 hashToUi();     // a shared link wins over whatever was last open
 render();
 pushListen();

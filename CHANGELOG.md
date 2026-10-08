@@ -8,6 +8,151 @@ before this point lives only in the git log.
 
 ---
 
+## Two links that could run someone else's code — 2026-10-08 (build 109)
+
+Found looking for what else needed locking down. `esc()` keeps a link inside
+its quotes, but it cannot stop a `javascript:` address, which runs on this
+site when tapped: the site where a coach's sign-in and the club's copy live.
+
+- **The share page's *Open in Minutes*** took the app's address from the
+  page it was showing. A page under an id nobody has claimed can be written
+  by any signed-in account, so anyone could make a share link whose button
+  ran their script for whichever coach tapped it. `live.js` now builds the
+  address from its own location, and encodes the team and game it names.
+- **A game's Veo link** was drawn as typed, and anyone who can write a game
+  (a tracker included) could type anything. It is now `https` or nothing:
+  checked when typed, when imported (with a warning) and again when drawn.
+
+---
+
+## My calendar's feed comes from the server, and leaves with the role — 2026-10-08 (build 109)
+
+The third job off SERVER.md's list. A person's calendar feed (one address,
+every club) was built by her own phone from what it held, so it was only as
+fresh as the last time one of her phones was open with a signal; a parent
+who never opened the app kept last month's practice times in her calendar.
+And another club's typed titles were left out, because her phone held only
+her own children there, not the names to scrub them with.
+
+- **The server builds it** (`functions/mycal.js`): from her roles in each
+  club she is in (her teams, her children's teams, the sessions she runs or
+  her children are in, her bookable times), the same items under the same
+  ids as the phone built, so a calendar already subscribed sees no
+  difference but freshness. Every club's typed titles are there now, every
+  word of every player's name in that club taken out.
+- **A few minutes after a change, not on every write.** Triggers on
+  entries, a game's when and where, a team's people, sessions, bookings and
+  bookable times only mark the club (`serverState/myCal`); `myCalBuild`
+  rebuilds the feeds those marks reach every five minutes, each club read
+  once however many feeds it is in. A weekly practice added a week at a
+  time is one rebuild, not thirty, and a game being played marks nothing.
+- **A role taken away is out of her calendar on the next run**, whether or
+  not a phone of hers is ever opened again. Her list of clubs only says
+  where to look, so a club she adds to it herself gives her nothing.
+- **It writes her page and nobody else's**: the address in her own setting,
+  claimed by her alone, and a My calendar page or nothing yet. Naming
+  someone else's feed, or a team's share link, as her own writes nothing.
+- **Her phone hands it over.** The server marks its page `by: 'server'`;
+  her phones wait to hear who keeps the address before their first write,
+  and stop once the server does. The card on My calendar says which.
+- **A team's calendar address is for its staff now.** One address shared by
+  a whole team cannot be taken back from one family, so a family taken off
+  the team went on receiving its practices for as long as the coach left the
+  address alone. Families are pointed at My calendar's feed, which is
+  theirs alone and leaves the team with them; coaches, trackers and admins
+  still have the team's, for a website or a noticeboard, and are told to
+  replace it when someone leaves. Families already subscribed to a team's
+  address keep receiving it until a coach replaces it once.
+
+---
+
+## Access taken away stays taken away, signal or no signal — 2026-10-08 (build 109)
+
+The owner asked whether someone whose access is withdrawn can turn off Wi-Fi
+and mobile data and keep the club. Online, the answer was already no: the
+database refuses her, the club is hidden at once and the phone's copy is
+cleared a day later. Offline, there were two holes.
+
+- **A refusal was forgotten on reload.** It lived only in memory, so after
+  one refusal she could go offline, reload, and have the whole club drawn
+  from the phone's copy again, for as long as she stayed offline. Now the
+  refusal is kept on the phone: the club stays shut through any number of
+  offline reloads, and a day after the refusal the copy is cleared even with
+  no signal. The day's wait is still there so a mistaken refusal loses
+  nothing; one good read brings everything back.
+- **A copy was drawn for ever without the club confirming it.** The comment
+  on `purgeClub()` said a long-unopened copy ends; nothing did it. Now a
+  club the phone has not been able to check with for **30 days** is not
+  drawn until it does (*Connect once to carry on*), and another club's copy
+  on My calendar the same. The copy is kept, not cleared: an unsent game may
+  be in it. Thirty days is so a coach whose phone never finds signal at the
+  fields still has her squad.
+- **Clearing a club takes its cached family conversations too**, which it
+  used to leave behind.
+
+What a phone already held can still be screenshotted, and a device clock
+turned back gets past the thirty days; nothing on a phone can stop either.
+What decides who reads the club is the rules, and those refuse her the
+moment the lookup tables change, which the server now does at once.
+
+---
+
+## The share pages follow the calendar, whoever changed it — 2026-10-08 (functions only)
+
+The second job off SERVER.md's list. A team's share link, its games' own
+pages and its members' calendar feed were written only by the phone that
+made a change, and only for the team open on it. So picture day booked
+across every team, a run of games added from All teams, an import, or a
+practice called off from a phone that then lost signal reached families'
+share pages and subscribed calendars only when somebody next opened that
+team.
+
+- **`mirrorEvents`** rewrites a team's entries on its season link (only
+  those marked for it, so making one team-only takes it off at once) and
+  its members' feed (every one).
+- **`mirrorGame…`**, one per field (date, kick-off, called off, place,
+  opponent), rewrites a game's when and where wherever it already is, and
+  adds a game new to the members' feed. Never on the whole game: the score,
+  minutes and log while it is played stay the sideline phone's, and a goal
+  wakes nothing.
+- **The same promises as the phone's copy:** free text scrubbed of every
+  player's name, a page that does not exist never made, a test club never
+  published. `test/mirror.js` holds it to the app's own builders.
+
+---
+
+## Who may read what is kept true by the server — 2026-10-08 (functions only)
+
+The first job off SERVER.md's list. The rules answer "may she read this?"
+from five lookup tables (`access/index`, `teamIndex`, `teamParents`,
+`teamPlayers`, `coachIndex`), and until now only an admin's or a coach's
+phone rebuilt them, when it next connected. So a parent the coach unlinked
+kept reading that team's notices, and stayed in the club, until somebody
+with the right role happened to open the app (`rules.js`, gap 5).
+
+- **Four triggers, one per place a role lives** (`accessAdmin`,
+  `accessStaff`, `accessGuardians`, `accessSelf`, in `functions/access.js`):
+  a club's admins, a team's coaches and trackers, a player's guardians, a
+  player's own sign-in. Each recomputes only the entries its change could
+  have moved, from what the club holds at that moment, so an event Cloud
+  Functions delivers late or twice still leaves the tables right. Game-day
+  writes, and a team saved whole with nobody's role changed, wake none of it.
+- **The same answer the phones give**, which go on doing it for clubs
+  without the server; `test/access.js` holds the two to each other. An index
+  entry that is there is never rewritten, since its value may be the invite
+  that granted it.
+- **It never starts a missing table.** The rules fall back to the old
+  club-wide behaviour while `teamIndex` or `teamParents` is missing, and one
+  entry would end that for every other team at once, so building one whole
+  is still an admin's phone's job.
+- **The club bookmark follows the role**: written with a person's first role
+  in a club, removed with her last, with the invite her entry named.
+
+No app or rules change, so no new build: it starts working when the
+functions deploy on merge.
+
+---
+
 ## New message shows what there is to choose from — 2026-10-08 (build 108)
 
 The owner searched a team and got *Nobody matches*, with no idea what was
@@ -116,6 +261,8 @@ allowed it), but colleagues' messages are refused and kept with *Not sent*,
 and the delivered tick never comes. Not built: group conversations among
 staff, and hearing colleagues' messages from a club that isn't open (push
 covers a closed phone).
+
+---
 
 ## A practice called off reaches a closed phone — 2026-10-07 (build 105)
 

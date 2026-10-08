@@ -132,7 +132,7 @@ const EXPORTS = `{
   uid, esc, clamp, mmss, mins, setDeep, delDeep, parseTime, migrate,
   /* storage + environment */
   dataKey, clubKey, envPrefix, envName, wsCode, fbConfig, isSandbox,
-  loadLocal, saveLocal, purgeClub, markSynced, noteDenied, knownClubs,
+  loadLocal, saveLocal, purgeClub, markSynced, noteDenied, copyCheck, unconfirmedScreen, gameDetailsCard, veoIn, linkOk, knownClubs,
   /* a page reads its club and database once; this is what a reload does to them */
   rereadClub: () => { wsHeld = null; envHeld = null; },
   stampOf, stampKey, stampLabel, trackersIn, typedName, stampedBy,
@@ -189,7 +189,7 @@ const EXPORTS = `{
   /* practice plans */
   PLAN_ACTS, canPlan, teamPractices, practiceById, putPractice, dropPractice, mergePractices,
   suggestPlan, pracAiPrompt, pracAiParse, planWarnings, planKit, needsWork, drillsFor, nextPractice, movePlans, planEntry, rawPlan, addMins, todayIso, pracDay,
-  syncCoachIndex, syncAllCoachIndex, coachTeamOf, readiness,
+  syncCoachIndex, syncAllCoachIndex, coachTeamOf, parentsWanted, playersWanted, readiness,
   get train() { return train }, set train(v) { train = v }, get trainState() { return trainState },
   /* the club's drills and a coach's own */
   SHELF, SHELVES, LIB_ACTS, TPL_ACTS, tplItems, findTpl, normTemplate, canCurateTpl, normDrill, cardOf, findDrill, drillOrigin, drillPool, shelfItems, canCurate, shareTeam,
@@ -211,6 +211,7 @@ const EXPORTS = `{
   get appOwners() { return appOwners }, set appOwners(v) { appOwners = v },
   get denied() { return denied }, set denied(v) { denied = v },
   get purged() { return purged },
+  get unconfirmed() { return unconfirmed }, set unconfirmed(v) { unconfirmed = v },
   get retiredClubs() { return retiredClubs },
   get pubState() { return pubState },
   /* invites */
