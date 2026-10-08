@@ -6,7 +6,7 @@
         "access": {
           "members": {
             "$uid": {
-              ".write": "auth != null && ($uid === auth.uid || root.child('workspaces/' + $code + '/access/index/' + auth.uid).exists())"
+              ".write": "auth != null && ($uid === auth.uid || root.child('workspaces/' + $code + '/access/admins/' + auth.uid).exists() || (!data.exists() && newData.exists() && root.child('workspaces/' + $code + '/access/index/' + auth.uid).exists() && (root.child('workspaces/' + $code + '/access/coachIndex/' + auth.uid).exists() || !root.child('workspaces/' + $code + '/access/coachIndex').exists())))"
             }
           },
           "admins": {
@@ -164,7 +164,7 @@
     },
     "rulesVersion": {
       ".read": true,
-      ".write": "newData.isNumber() && newData.val() === 10"
+      ".write": "newData.isNumber() && newData.val() === 11"
     },
     "public": {
       "$share": {

@@ -289,7 +289,7 @@ What each part is doing:
   changes nothing. Whoever changes `database.rules.json` raises it (and
   `RULES_VERSION` in `app.js`); `node test/rules.js` fails until they do.
 - **Reading anything** needs a signed-in account listed in `access/index`. The `!data.child('access/index').exists()` clause is the bootstrap: a brand-new workspace with no index yet stays readable, so it can be set up in the first place. It stops mattering the moment the first role is granted.
-- **`access/members/$uid`** is self-writable. That is how a new coach knocks on the door: they sign in, register themselves, and an admin can then see them to assign a role. It grants no data access on its own.
+- **`access/members/$uid`** is self-writable. That is how a new coach knocks on the door: they sign in, register themselves, and an admin can then see them to assign a role. It grants no data access on its own. Somebody else's entry is an admin's to change (rules version 11): names on sessions, People and bookable times come from it, so a parent could otherwise rename a coach. A coach of any team (`access/coachIndex`) may only fill in an entry that is not there yet, which is all approving a family through the team link does; while a club has no `coachIndex`, anyone in it may fill in a missing one, and nobody but her or an admin changes one already there.
 - **`admins`** can only be changed by an existing admin — except when there are none, which is the bootstrap for claiming it.
 - **`index`** is the flat lookup the read rule uses. Rules cannot iterate, so it cannot walk every team asking whether you are in it; the app mirrors every role grant into this one node.
 - **`access/org`** is the club name and badge, so it follows the admin rule.

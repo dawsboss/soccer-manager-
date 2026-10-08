@@ -8,6 +8,27 @@ before this point lives only in the git log.
 
 ---
 
+## Only you, an admin, or a coach filling a gap changes your name — 2026-10-08 (build 110, rules version 11)
+
+SECURITY.md, SEC-2. `access/members/{uid}` (each person's name and email)
+could be written by anyone with a role in the club, so a parent could rename
+the admin or a coach, and every coach's name on sessions, People and
+bookable times comes from there (`personName()`).
+
+- **Her own entry, or an admin.** Nobody else changes or deletes one that
+  is there.
+- **A coach of any team may fill in an entry that is not there yet**
+  (`access/coachIndex`), which is all approving a family through the team
+  link does (`approveClaim()`). A parent or a tracker fills in nobody.
+- **A bridge for a club with no `coachIndex`:** anyone in the club may fill
+  in a missing entry, as approving always needed, and still nobody but her
+  or an admin changes one already there. The table appearing closes it.
+- Rules version 11. Every write the app makes still goes through: signing
+  in, starting a club, an invite, the team link, a coach approving, and an
+  admin pushing the club (`test/rules.js`).
+
+---
+
 ## Share, game, feed and club ids from the secure generator — 2026-10-08 (build 110)
 
 SECURITY.md, SEC-4. Invites and team links already came from the browser's

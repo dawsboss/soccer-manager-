@@ -464,7 +464,38 @@ console.log('\n--- knocking on the door: access/members ---');
 writes('new account registers itself', NEWB, 'workspaces/CLUB/access/members/newbie', { name: 'Sam' }, true);
 writes('unknown account registers itself', RANDO, 'workspaces/CLUB/access/members/rando', { name: 'Rando' }, true);
 writes('but not as somebody else', RANDO, 'workspaces/CLUB/access/members/adm', { name: 'Not Ada' }, false);
-writes('an indexed person may tidy any entry', COACH, 'workspaces/CLUB/access/members/newbie', { name: 'Sam T' }, true);
+/* SEC-2. Names on sessions, People and bookable times come from here
+   (personName()), so a parent renaming the admin or a coach was a parent
+   speaking in their name. Her own entry, an admin, or a coach filling in
+   somebody who is not there yet (approveClaim(), a family let in through the
+   team link before she ever opened the app) — nothing else. */
+writes('a parent does not rename the admin', MUM, 'workspaces/CLUB/access/members/adm', { name: 'Not Ada' }, false);
+writes('nor a coach', MUM, 'workspaces/CLUB/access/members/coach', { name: 'Not Jaz' }, false);
+writes('nor delete one', MUM, 'workspaces/CLUB/access/members/coach', null, false);
+writes('a tracker does not change someone else\'s', TRK, 'workspaces/CLUB/access/members/newbie', { name: 'Sam T' }, false);
+writes('a coach does not change one already there', COACH, 'workspaces/CLUB/access/members/newbie', { name: 'Sam T' }, false);
+writes('— nor delete it', COACH, 'workspaces/CLUB/access/members/newbie', null, false);
+writes('a coach fills in a family not there yet', COACH, 'workspaces/CLUB/access/members/asker', { name: 'Asha', email: '', at: NOW }, true);
+writes('a parent does not fill one in', MUM, 'workspaces/CLUB/access/members/asker', { name: 'Asha' }, false);
+writes('nor a tracker', TRK, 'workspaces/CLUB/access/members/asker', { name: 'Asha' }, false);
+writes('an admin changes anyone\'s', ADM, 'workspaces/CLUB/access/members/newbie', { name: 'Sam T' }, true);
+writes('— and takes one away', ADM, 'workspaces/CLUB/access/members/newbie', null, true);
+writes('everyone changes her own', MUM, 'workspaces/CLUB/access/members/mum', { name: 'Mia', email: 'mia@example.com', at: NOW }, true);
+writes('— and a coach hers', COACH, 'workspaces/CLUB/access/members/coach', { name: 'Jaz B', at: 2 }, true);
+{
+  /* The bridge: a club whose coachIndex was never built cannot tell a coach
+     from a parent, so anyone in the club may fill in a missing entry, as
+     approving a family always needed; changing one already there is still
+     hers or an admin's. The table appearing closes it. */
+  const ci = DB.workspaces.CLUB.access.coachIndex;
+  delete DB.workspaces.CLUB.access.coachIndex;
+  writes('no coachIndex: a coach still fills in a family', COACH, 'workspaces/CLUB/access/members/asker', { name: 'Asha' }, true);
+  writes('— as anyone in the club may', MUM, 'workspaces/CLUB/access/members/asker', { name: 'Asha' }, true);
+  writes('— but nobody changes one already there', MUM, 'workspaces/CLUB/access/members/adm', { name: 'Not Ada' }, false);
+  writes('— and a stranger fills in nobody', RANDO, 'workspaces/CLUB/access/members/asker', { name: 'Asha' }, false);
+  DB.workspaces.CLUB.access.coachIndex = ci;
+  writes('the table appearing closes it', MUM, 'workspaces/CLUB/access/members/asker', { name: 'Asha' }, false);
+}
 
 console.log('\n--- who may grant a role ---');
 writes('admin appoints another admin', ADM, 'workspaces/CLUB/access/admins/coach', true, true);
