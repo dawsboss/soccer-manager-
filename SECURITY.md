@@ -37,57 +37,6 @@ under **Before families come on** can be done without disturbing anyone.
   record, notes and the member list; `test/parents.js` passes against data a
   parent's phone actually receives, not what it hides.
 
-### SEC-2 · Only you, an admin, or a coach filling a gap can change your name
-- **Status:** To do · **Kind:** Code (rules) · **Size:** Small
-- **Why:** `access/members/{uid}` (each person's name and email) can be
-  written by anyone with a role in the club, so a parent can rename the admin
-  or a coach. Coach names on sessions, People and bookable times come from it
-  (`personName()`).
-- **What to do:** narrow the rule on `access/members/$uid` to: her own entry;
-  an admin; or a coach of any team (`access/coachIndex`) writing an entry that
-  does not exist yet, which is all `approveClaim()` does. Keep a bridge for a
-  club without `coachIndex`. Raise the rules version (CLAUDE.md, *Required
-  after every change to the rules*).
-- **Done when:** `test/rules.js` refuses a parent, a tracker and a coach
-  changing someone else's existing entry, and still lets every write the app
-  makes through (`approveClaim()`, `redeemInvite()`, joining by team link,
-  an admin's push).
-
-### SEC-3 · A Content-Security-Policy on every page
-- **Status:** To do · **Kind:** Code · **Size:** Medium
-- **Why:** a safety net under every link and every piece of typed text. Data
-  in this app is typed by many people and drawn with `innerHTML`; `esc()`
-  covers text, but a missed `javascript:` link or an injected script would
-  run on this site, where a coach's sign-in lives. A policy that allows
-  scripts only from this site and Firebase's would have made both bugs in
-  **Done** (SEC-D4) harmless.
-- **What to do:** a `<meta http-equiv="Content-Security-Policy">` on
-  `index.html`, `live.html` and `game.html` (GitHub Pages cannot send
-  headers): scripts from `'self'` and `https://www.gstatic.com`; connections
-  to the Firebase database, Auth and the functions; frames for Google sign-in;
-  `object-src 'none'`, `base-uri 'self'`. No `'unsafe-inline'` for scripts;
-  styles will need it for the `style=` attributes.
-- **Done when:** checked in a real browser (Chromium is installed here):
-  Google sign-in, the database, push and the share pages all work, and a
-  `javascript:` link placed in a page does nothing. A test in
-  `test/version.js` holds every page to having the policy.
-
-### SEC-4 · Unguessable share, game, feed and club ids
-- **Status:** To do · **Kind:** Code · **Size:** Small
-- **Why:** invites and team links already use the browser's secure random
-  generator (`secretId()`). Share links, game links, calendar feeds, My
-  calendar's feed and a new club's code still come from `uid()`, which is
-  `Math.random`, a generator not meant for secrets.
-- **What to do:** make those ids from `crypto.getRandomValues` like
-  `secretId()`: `teams/{tid}/share`, `teams/{tid}/calFeed`, a game's `share`
-  (`ensureFixtureShares()`), My calendar's address (`setMyFeed()`) and
-  `createClub()`'s code. Keep within what reads them: the feed's id check is
-  6–80 letters, digits, `_` and `-` (`functions/calendar.js`), and the rule on
-  `people/{uid}/set/feed` allows 6–40 characters.
-- **Done when:** a test makes each kind of id and finds it comes from
-  `crypto.getRandomValues`, is long enough, and passes the feed's and the
-  rule's checks.
-
 ---
 
 ## Settings to change (no code)
@@ -201,7 +150,12 @@ clock turned back gets past `OFFLINE_DAYS`; no app can stop either.
   tables the rules read, and is tested for every kind of account; a function
   that writes what the rules read never starts a table that is missing
   (CLAUDE.md, *Conventions* and the invariants).
-- **A secret id comes from `crypto.getRandomValues`**, never `uid()`.
+- **A secret id comes from `randId()`** (`crypto.getRandomValues`), never
+  `uid()`.
+- **No inline script, ever**: no `on…=` handler, no `javascript:` address, no
+  `<script>` in a template. The Content-Security-Policy refuses them, so one
+  that works in a test does nothing on a phone. A new place a page loads from
+  or talks to goes into the policy on all three pages, tried in Chromium.
 - **Every rules change raises the version** and is reviewed as a change for
   every club.
 
@@ -232,3 +186,23 @@ The share page's *Open in Minutes* took the app's address from the page,
 which anyone signed in can write under an unclaimed id; it now builds it from
 its own location. A game's Veo link is `https` or nothing, typed, imported
 and drawn (`test/stats.js`, `test/import.js`). Commit `b0aabd5`.
+
+### SEC-D5 · Only you, an admin, or a coach filling a gap changes your name
+`access/members/{uid}` is her own or an admin's to change; a coach of any
+team may only fill in an entry that is not there yet, which is all
+approving a family does, with a narrower bridge for a club with no
+`coachIndex` (`test/rules.js`, rules version 11). Commit `abab960`.
+
+### SEC-D6 · A Content-Security-Policy on every page
+One policy on `index.html`, `live.html` and `game.html`: scripts from this
+site, Firebase's SDK, Google sign-in and the database's long-polling
+fallback, never inline. Tried in Chromium against the live project (the
+database both ways, Google sign-in, the service worker and push hosts, the
+share pages), and an injected `javascript:` link, `onerror` and `<script>`
+did nothing; `test/version.js` holds every page to it. Commit `fa45c9f`.
+
+### SEC-D7 · Unguessable share, game, feed and club ids
+Share links, game links, team and My calendar feeds and a new club's code
+come from `randId()`, `crypto.getRandomValues`, with no `Math.random`
+fallback; ids already handed out keep working until replaced
+(`test/ids.js`). Commit `df08462`.
