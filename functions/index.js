@@ -29,6 +29,7 @@ const { getMessaging } = require('firebase-admin/messaging');
 const push = require('./push');
 const feed = require('./calendar');
 const access = require('./access');
+const mirror = require('./mirror');
 
 initializeApp();
 
@@ -56,6 +57,16 @@ function writerOf(event) {
     get: p => root.child(p).get().then(s => s.val()),
     set: (p, v) => root.child(p).set(v),
     remove: p => root.child(p).remove()
+  };
+}
+
+/* What mirror.js may touch: reads, and one multi-path update of public/ pages
+   that already exist, on this event's own database. */
+function mirrorOf(event) {
+  const root = event.data.after.ref.root;
+  return {
+    get: p => root.child(p).get().then(s => s.val()),
+    update: patch => root.update(patch)
   };
 }
 
@@ -98,6 +109,17 @@ exports.accessGuardians = onValueWritten('/workspaces/{code}/teams/{tid}/players
   access.onGuardians(writerOf(event), event.params, event.data.before.val(), event.data.after.val()));
 exports.accessSelf = onValueWritten('/workspaces/{code}/teams/{tid}/players/{pid}/self', event =>
   access.onSelf(writerOf(event), event.params, event.data.before.val(), event.data.after.val()));
+
+/* The calendar half of the share pages (mirror.js; SERVER.md, "The share
+   pages"): a team's entries, and a game's when and where, rewritten on its
+   season link, game link and members' feed whoever changed them. Entries are
+   watched whole, as pushEntry watches each one; a game only field by field,
+   never whole, because a game being played is written every few seconds. */
+exports.mirrorEvents = onValueWritten('/workspaces/{code}/teams/{tid}/events', event =>
+  mirror.onEvents(mirrorOf(event), event.params));
+for (const field of mirror.GAME_FIELDS)
+  exports['mirrorGame' + field[0].toUpperCase() + field.slice(1)] = onValueWritten(`/workspaces/{code}/matches/{mid}/${field}`, event =>
+    mirror.onGame(mirrorOf(event), event.params));
 
 /* The calendar feed (calendar.js): https://{region}-{project}.cloudfunctions.net/calendar/{id}.ics,
    which is what firebase-config.js names as SOCCER_CALENDAR_FEED. Anyone may

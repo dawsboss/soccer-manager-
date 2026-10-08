@@ -198,6 +198,8 @@ function makeServer(seed = {}) {
     get: () => { reads.push(segs(p).join('/')); if (down) return Promise.reject(new Error('unavailable')); return Promise.resolve({ val: () => clone(at(p)), exists: () => at(p) != null }); },
     remove: () => { removes.push(segs(p).join('/')); put(p, null); return Promise.resolve(); },
     set: v => { put(p, v); return Promise.resolve(); },
+    // a multi-path update: each key a path under this one, null deleting it
+    update: o => { for (const [k, v] of Object.entries(o || {})) put(segs(p).concat(segs(k)).join('/'), v); return Promise.resolve(); },
     /* One at a time, as the database runs them: `fn` sees what is there and
        returns what to write, or undefined to leave it. */
     transaction: fn => {

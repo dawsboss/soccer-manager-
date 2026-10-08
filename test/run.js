@@ -38,6 +38,7 @@ const SUITES = [
   ['messages', 'notices and family conversations, read and written by whom'],
   ['push', 'notifications to a closed phone: who the server tells, and the phone that asked'],
   ['access', 'the lookup tables the rules read, kept true by the server the moment a role changes'],
+  ['mirror', 'the share pages\' calendar, kept in step by the server whoever changed it'],
   ['import', 'bulk import merges, and never replaces'],
   ['drills', 'the built-in drill library holds together'],
   ['practice', 'the Practice tab, and who gets it'],

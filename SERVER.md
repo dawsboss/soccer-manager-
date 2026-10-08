@@ -145,14 +145,28 @@ does the bookkeeping, not that the phone works offline first.
 ## What families and the other team see
 
 ### The share pages
-- **Now:** the public mirror (`public/{share}`) is written by the coach's or
+- **Moved to the server for the calendar (2026-10-08), alongside the
+  phones:** `mirrorEvents` and the `mirrorGame…` triggers
+  (`functions/mirror.js`) rewrite a team's entries on its season link and
+  members' feed whenever they change, and a game's when and where (date,
+  kick-off, place, opponent, called off, kit, notes) on every page that
+  carries it, whoever made the change and whatever happened to their signal
+  afterwards. A game new to the members' feed is added there. Free text goes
+  through the same scrub as `pubText()`, a page that does not exist is never
+  made, and a test club never reaches `public/`. `test/mirror.js` holds it to
+  the app's own `publicEvents()` and `calendarDoc()`.
+- **Left on the phone, on purpose:** a game's score, minutes and log while it
+  is played (the sideline phone is the only place they exist, and waking the
+  server on every tap buys nothing); a new game on the season link and its own
+  page, and a deleted game's page coming down.
+- **Before the server, and still:** the public mirror (`public/{share}`) is written by the coach's or
   admin's phone a moment after a change (`schedulePublish()`, `publishTeam()`,
   `fixtureDoc()`, `calendarDoc()`), and a game made before game links gets its
   id from whichever phone opens it next (`ensureFixtureShares()`). A change made
   from a phone that then loses signal reaches the share page late.
-- **With a server:** a trigger on the team and its games writes the mirror,
-  scrubbed by the same `pubText()` rules, every time. `shareOwners` and the
-  publish debounce go away.
+- **What is left:** the season link's and a game page's new games, and
+  taking a deleted game's page down, from the server too; then `shareOwners`
+  and the publish debounce can go.
 
 ### Calendar sync
 - **Moved to the server (build 104), as it was:** the `calendar` function

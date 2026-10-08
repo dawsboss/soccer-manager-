@@ -8,6 +8,30 @@ before this point lives only in the git log.
 
 ---
 
+## The share pages follow the calendar, whoever changed it — 2026-10-08 (functions only)
+
+The second job off SERVER.md's list. A team's share link, its games' own
+pages and its members' calendar feed were written only by the phone that
+made a change, and only for the team open on it. So picture day booked
+across every team, a run of games added from All teams, an import, or a
+practice called off from a phone that then lost signal reached families'
+share pages and subscribed calendars only when somebody next opened that
+team.
+
+- **`mirrorEvents`** rewrites a team's entries on its season link (only
+  those marked for it, so making one team-only takes it off at once) and
+  its members' feed (every one).
+- **`mirrorGame…`**, one per field (date, kick-off, called off, place,
+  opponent), rewrites a game's when and where wherever it already is, and
+  adds a game new to the members' feed. Never on the whole game: the score,
+  minutes and log while it is played stay the sideline phone's, and a goal
+  wakes nothing.
+- **The same promises as the phone's copy:** free text scrubbed of every
+  player's name, a page that does not exist never made, a test club never
+  published. `test/mirror.js` holds it to the app's own builders.
+
+---
+
 ## Who may read what is kept true by the server — 2026-10-08 (functions only)
 
 The first job off SERVER.md's list. The rules answer "may she read this?"
