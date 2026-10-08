@@ -287,6 +287,101 @@ function trackersIn(m) {
 }
 const dataKey = () => LS_DATA + ':' + clubKey();
 
+/* ---------------- which tree a club is on ---------------- */
+
+/* A club lives at workspaces/{code} until it moves to orgs/{code} (AUTH.md,
+   *The move to `orgs/{orgId}`*; SECURITY.md, SEC-1). On the new tree its
+   parts are split by who may read them: the squad out from under each team,
+   members, the club's settings and the log out of access. The app keeps the
+   old shape in memory and on the phone (a team with its players, access with
+   org and members inside), so nothing that draws a screen had to change;
+   what changes is where each write goes (clubPath(), the one translation)
+   and how the club is read (wireOrgs()).
+
+   Which tree is remembered per club, so a phone at a field with no signal
+   still sends its outbox to the right place once it has one. It is found out
+   from the old tree, which any signed-in phone may read once a club has
+   moved (it holds nothing but the `moved` marker), and which holds nothing
+   for a club made on the new one. */
+const LS_TREE = 'sm.tree.v1';
+const treeKey = code => LS_TREE + ':' + envPrefix() + code;
+function clubTree(code = wsCode()) {
+  try { return localStorage.getItem(treeKey(code)) === 'orgs' ? 'orgs' : 'workspaces'; } catch (e) { return 'workspaces'; }
+}
+function setClubTree(code, tree) {
+  if (!code) return;
+  try { if (tree === 'orgs' || tree === 'workspaces') localStorage.setItem(treeKey(code), tree); else localStorage.removeItem(treeKey(code)); } catch (e) { }
+}
+const onOrgs = (code = wsCode()) => clubTree(code) === 'orgs';
+/* A path inside a club, as the app names it (the old tree's shape), to where
+   it lives on the club's tree. */
+function clubPath(rel, code = wsCode(), tree = clubTree(code)) {
+  rel = String(rel || '');
+  if (tree !== 'orgs') return 'workspaces/' + code + (rel ? '/' + rel : '');
+  const r = rel.replace(/^teams\/([^/]+)\/players(?=\/|$)/, 'squad/$1').replace(/^access\/(members|org|log)(?=\/|$)/, '$1');
+  return 'orgs/' + code + (r ? '/' + r : '');
+}
+/* The writes one app write becomes. On the old tree, itself. On the new one,
+   a whole team is two (the team, then its squad), each at its rule's depth. */
+function clubWrites(rel, v, code = wsCode(), tree = clubTree(code)) {
+  const m = tree === 'orgs' && /^teams\/([^/]+)$/.exec(rel);
+  if (!m) return [[clubPath(rel, code, tree), v]];
+  if (v === null || v === undefined) return [[clubPath(rel, code, tree), null], [clubPath(rel + '/players', code, tree), null]];
+  const { players, ...team } = v || {};
+  return [[clubPath(rel, code, tree), team], [clubPath(rel + '/players', code, tree), players || null]];
+}
+/* A family's phone holds her own children and nobody else's on orgs/. The
+   copy kept from before the move had the whole squad, and merge-on-read
+   would keep it, so it goes the moment the move is seen, before anything is
+   read: everyone but her own children (and, for a tracker, her own team). */
+function forgetOthersChildren() {
+  if (!me) return;
+  const u = me.uid;
+  if (isAdmin(u) || Object.values(acc().teams || {}).some(ta => ((ta && ta.coaches) || {})[u])) return;
+  for (const [tid, t] of Object.entries(state.teams || {})) {
+    if (!t || typeof t !== 'object' || isTracker(tid, u)) continue;
+    t.players = Object.fromEntries(Object.entries(t.players || {}).filter(([, p]) => isMine(p)));
+  }
+  delete (state.access || {}).log;
+  if (state.access && state.access.members) state.access.members = Object.fromEntries(Object.entries(state.access.members).map(([k, m]) => [k, { name: (m && m.name) || '' }]));
+  saveLocal();
+}
+/* names/{uid} on orgs/: a staff member's name, for families, who cannot read
+   members (it has everyone's email). The server keeps it; an admin's or
+   coach's own phone writes her own too, once a session, so a club without
+   the functions deployed still has its coaches' names on families' phones. */
+let namedHere = '';
+// SERVER.md: a staff member's name for families on orgs/; the role triggers and namesMember keep it too.
+function staffName() {
+  if (!fb || !me || !onOrgs() || namedHere === wsCode() + me.uid) return;
+  const a = acc(), u = me.uid;
+  if (!isAdmin(u) && !(a.coachIndex || {})[u]) return;
+  namedHere = wsCode() + u;
+  Promise.resolve(fb.set(fb.ref(fb.db, clubPath('names/' + u)), { name: String(me.name || '').slice(0, 80) })).catch(() => { });
+}
+/* Which tree a club is on, for a club this phone has not read yet (an
+   invite, a team link, another club she is in). Two small reads, never the
+   club: the old tree's `moved` marker (any signed-in phone may read a moved
+   club's old tree, since it holds nothing else; a phone not in a club still
+   there is refused, which says the same thing), then, if there is no marker,
+   whether the new tree has the club (there, or refused). Remembered either
+   way: a club only ever moves one way, and the open club's read notices that
+   (wireBase()), as does the copy of another club (watchMirror()). */
+function probeTree(code) {
+  if (!rtdb || !code) return Promise.resolve(clubTree(code));
+  let known = null;
+  try { known = localStorage.getItem(treeKey(code)); } catch (e) { }
+  if (known === 'orgs' || known === 'workspaces') return Promise.resolve(known);
+  const { db, mod } = rtdb;
+  const read = p => new Promise(res => mod.onValue(mod.ref(db, p), sn => res({ v: sn.val() }), () => res({ refused: true }), { onlyOnce: true }));
+  const keep = tree => { try { localStorage.setItem(treeKey(code), tree); } catch (e) { } return tree; };
+  return read('workspaces/' + code + '/moved').then(m => {
+    if (m.refused) return keep('workspaces');
+    if (m.v) return keep('orgs');
+    return read('orgs/' + code + '/access/admins').then(o => keep(o.refused || o.v ? 'orgs' : 'workspaces'));
+  });
+}
+
 /* Every store that holds data goes through here, because a phone whose
    storage is full refuses the write, and before this the refusal was
    swallowed: the change looked saved, lived only in the open page, and was
@@ -358,8 +453,10 @@ function purgeClub(code, why) {
     localStorage.removeItem(LS_PENDING + ':' + k);
     localStorage.removeItem(LS_SEEN + ':' + k);
     // the family conversations this phone kept of the club, for every account that read them here
-    const mk = LS_MSGS + ':' + k + ':', gone = [];
-    for (let i = 0; i < localStorage.length; i++) { const x = localStorage.key(i); if (x && x.startsWith(mk)) gone.push(x); }
+    localStorage.removeItem('sm.tree.v1:' + k);
+    // and which of a moved club's children were hers, for every account that asked here
+    const mk = LS_MSGS + ':' + k + ':', kk = 'sm.kids.v1:' + k + ':', gone = [];
+    for (let i = 0; i < localStorage.length; i++) { const x = localStorage.key(i); if (x && (x.startsWith(mk) || x.startsWith(kk))) gone.push(x); }
     for (const x of gone) localStorage.removeItem(x);
   } catch (e) { }
   if (code === wsCode()) { state = { teams: {}, matches: {}, access: {}, rsvp: {} }; train = TRAIN_BLANK(); sess = SESS_BLANK(); pending = { seq: 0, w: {} }; msgs = { board: {}, dm: {}, outbox: {} }; purged = why; render(); }
@@ -546,7 +643,9 @@ async function initSync() {
 
     if (!code) { setSync('off', 'no code'); return; }
 
-    fb = { db, ref: dbMod.ref, set: dbMod.set, remove: dbMod.remove, base: 'workspaces/' + code };
+    // base follows the club's tree (clubTree()), which can change under it the first time a moved club is read
+    // held until the first read says which tree the club is on (sendPending())
+    fb = { db, ref: dbMod.ref, set: dbMod.set, remove: dbMod.remove, held: true, get base() { return clubPath('', code); } };
     fb.childAdded = dbMod.onChildAdded;
 
     // One full read to get in sync, then child-level listeners so an update to
@@ -587,36 +686,73 @@ async function initSync() {
     for (const c of knownClubs()) watchRetired(c.code);
     watchRetired(code);
 
+    /* The club has been read, on either tree: merged, never replaced, with
+       what this phone owes the club laid back on top and sent again. */
+    function connected(v) {
+      fb.held = false;   // the tree is known: what waited in the outbox goes now
+      if (!v) { pushAll(); flushPending(); }
+      else {
+        // merged, never replaced: what this phone owes the club goes back on top, and back out
+        const owed = mergeConnect(v);
+        wsRead = true;
+        saveLocal(); markSynced(); render();
+        flushPending();
+        for (const [p, x] of owed) remoteSet(p, x);
+        /* Close the migration bridge without anybody being told to. The
+           per-team rules fall back to the old club-wide index while
+           access/teamIndex is missing; an admin's device is the only one
+           allowed to write it, so it does, once, on the way in. */
+        if (canAdmin()) { syncAllTeamIndex(); syncAllCoachIndex(); }
+        else if (me) syncCoachIndex(me.uid);
+        // an admin, or each coach for her own team, heals the parent list
+        syncAllTeamParents();
+        noteMyClub();
+      }
+      flushTraining();
+      schedulePublish();   // republish on load, so a fixed config heals itself
+    }
+
     function wireBase(attempt) {
-      dbMod.onValue(dbMod.ref(db, fb.base), snap => {
+      if (onOrgs(code)) return wireOrgs(attempt);
+      dbMod.onValue(dbMod.ref(db, 'workspaces/' + code), snap => {
         denied = false;
         const v = snap.val();
-        if (!v) pushAll();
-        else {
-          // merged, never replaced: what this phone owes the club goes back on top, and back out
-          const owed = mergeConnect(v);
-          wsRead = true;
-          saveLocal(); markSynced(); render();
-          flushPending();
-          for (const [p, x] of owed) remoteSet(p, x);
-          /* Close the migration bridge without anybody being told to. The
-             per-team rules fall back to the old club-wide index while
-             access/teamIndex is missing; an admin's device is the only one
-             allowed to write it, so it does, once, on the way in. */
-          if (canAdmin()) { syncAllTeamIndex(); syncAllCoachIndex(); }
-          else if (me) syncCoachIndex(me.uid);
-          // an admin, or each coach for her own team, heals the parent list
-          syncAllTeamParents();
-          noteMyClub();
+        /* Moved to orgs/, or never on the old tree at all (a club made on the
+           new one, or a code nobody has written): the new tree from now on. */
+        if (!v || v.moved) {
+          setClubTree(code, 'orgs');
+          forgetOthersChildren();
+          return wireOrgs(0);
         }
-        flushTraining();
-        schedulePublish();   // republish on load, so a fixed config heals itself
+        connected(v);
+
+        /* The club moving to orgs/ while this phone is reading it looks, from
+           here, like everything in it being deleted: the server replaces the
+           old tree with its `moved` marker in one write. So the marker is
+           watched, and anything that empties the club waits a tick before it
+           is believed. The database raises every event of one write together,
+           so by then the marker has said whether it was a move; if it was,
+           the old tree is let go and the new one read, and nothing was ever
+           deleted here (nor reported as deleted by club activity). */
+        let gone = false;
+        const unlessMoved = fn => Promise.resolve().then(() => { if (!gone) fn(); });
+        dbMod.onValue(dbMod.ref(db, 'workspaces/' + code + '/moved'), ms => {
+          if (!ms.val() || gone) return;
+          gone = true;
+          setClubTree(code, 'orgs');
+          forgetOthersChildren();
+          wireOrgs(0);
+        }, () => { });
 
         // membership is small and read whole; it does not need child-level listeners
         dbMod.onValue(dbMod.ref(db, fb.base + '/access'), cs => {
-          state.access = cs.val() || {};
-          overlayPending(state.access, 'access');
-          saveLocal(); noteMyClub(); render();
+          if (gone) return;
+          const take = () => {
+            state.access = cs.val() || {};
+            overlayPending(state.access, 'access');
+            saveLocal(); noteMyClub(); render();
+          };
+          if (cs.val()) take(); else unlessMoved(take);
         });
 
         // rsvp per team, like teams and matches: one parent's answer never redraws from a whole-club read
@@ -624,7 +760,7 @@ async function initSync() {
           if (!state[coll]) state[coll] = {};
           const r = dbMod.ref(db, fb.base + '/' + coll);
           const upsert = cs => {
-            if (ui.dragging) return;
+            if (gone || ui.dragging) return;
             const inc = cs.val(); if (!inc) return;
             state[coll][cs.key] = mergeNode(state[coll][cs.key], inc);
             noteSeen(coll, cs.key);
@@ -636,11 +772,11 @@ async function initSync() {
           };
           dbMod.onChildAdded(r, upsert);
           dbMod.onChildChanged(r, upsert);
-          dbMod.onChildRemoved(r, cs => {
+          dbMod.onChildRemoved(r, cs => unlessMoved(() => {
             if (ui.dragging) return;
             if (pendingList().some(([p, e]) => p.startsWith(coll + '/' + cs.key) && e.v !== null)) return;
             delete state[coll][cs.key]; saveLocal(); render();
-          });
+          }));
         }
       }, err => {
         // A denial in the first second or two after boot is usually the ID
@@ -653,6 +789,194 @@ async function initSync() {
         }
         onDenied(err);
       }, { onlyOnce: true });
+    }
+
+    /* ---------------- a club on orgs/ ---------------- */
+
+    /* On orgs/{code} nothing grants the club whole (SECURITY.md, SEC-1): each
+       part has its own readers, so a phone reads the parts its account may,
+       and puts back together the shape the rest of the app knows — a team
+       with its players, access with org and members inside. Staff read the
+       squads; a family reads the roster's numbers and her own children's
+       records, one at a time, and so holds nobody else's child at all. */
+    const OB = () => 'orgs/' + code;
+    let orgsOffs = [], orgsGen = 0;
+    const orgsOff = () => { for (const f of orgsOffs) { try { if (typeof f === 'function') f(); } catch (e) { } } orgsOffs = []; };
+    // one read; resolves undefined where the rules refuse it, rejects only for the access read
+    const once = (p, strict) => new Promise((res, rej) => dbMod.onValue(dbMod.ref(db, OB() + '/' + p), s => res(s.val()),
+      e => (strict ? rej(e) : res(undefined)), { onlyOnce: true }));
+
+    /* What this account may read here, from access alone. */
+    function orgsReach(a) {
+      const u = me && me.uid;
+      a = a || {};
+      const admin = !!(u && (a.admins || {})[u]);
+      const all = admin || !!(u && (a.coachIndex || {})[u]);
+      const staffTeams = u ? Object.keys(a.teamIndex || {}).filter(t => ((a.teamIndex || {})[t] || {})[u]).sort() : [];
+      const fam = {};
+      for (const tbl of ['teamParents', 'teamPlayers'])
+        for (const [t, row] of Object.entries(a[tbl] || {})) if (u && row && typeof row[u] === 'string') (fam[t] = fam[t] || []).push(row[u]);
+      return { admin, all, staffTeams, fam };
+    }
+    const reachKey = r => JSON.stringify([r.admin, r.all, r.staffTeams, Object.keys(r.fam).sort()]);
+
+    /* Her own children, team by team. The lookup tables name one child per
+       team; a second on the same team (twins) is found by asking for each
+       number on the roster once, and remembered, yes or no, so the next
+       connect asks only about players new since. */
+    const kidsKey = () => 'sm.kids.v1:' + clubKey() + ':' + (me ? me.uid : '');
+    function kidsSeen() { try { return JSON.parse(localStorage.getItem(kidsKey()) || '{}') || {}; } catch (e) { return {}; } }
+    async function findKids(r, roster, squads) {
+      const seen = kidsSeen(), out = {};
+      for (const [tid, named] of Object.entries(r.fam)) {
+        if (tid in squads) continue;
+        const row = seen[tid] = seen[tid] || {};
+        for (const pid of named) row[pid] = 1;
+        for (const pid of Object.keys((roster || {})[tid] || {})) if (!(pid in row)) row[pid] = 2;   // 2: not asked yet
+        out[tid] = {};
+        await Promise.all(Object.entries(row).filter(([, v]) => v).map(async ([pid]) => {
+          const p = await once('squad/' + tid + '/' + pid);
+          row[pid] = p ? 1 : 0;
+          if (p) out[tid][pid] = p;
+        }));
+      }
+      keepStored(kidsKey(), JSON.stringify(seen));
+      return out;
+    }
+
+    async function readOrgs() {
+      const access = await once('access', true);
+      if (access === null) return null;
+      const r = orgsReach(access);
+      const [org, names, teams, roster, matches, rsvp, membersV, log, mine] = await Promise.all([
+        once('org'), once('names'), once('teams'), r.all ? null : once('roster'), once('matches'), once('rsvp'),
+        r.all ? once('members') : null, r.admin ? once('log') : null,
+        // her own entry, which is hers to read when the rest of members is not
+        !r.all && me ? once('members/' + me.uid) : null]);
+      const squads = {};
+      await Promise.all((r.all ? Object.keys(teams || {}) : r.staffTeams).map(async t => { const v = await once('squad/' + t); if (v !== undefined) squads[t] = v || {}; }));
+      const kids = await findKids(r, roster, squads);
+      return { r, access, org, names, teams, roster, matches, rsvp, members: membersV, mine, log, squads, kids };
+    }
+
+    const namesAsMembers = n => Object.fromEntries(Object.entries(n || {}).filter(([, x]) => x && typeof x === 'object').map(([u, x]) => [u, { name: String(x.name || '') }]));
+    function fromRoster(row, kids) {
+      const out = {};
+      for (const [pid, e] of Object.entries(row || {})) if (e && typeof e === 'object')
+        out[pid] = { id: pid, name: typeof e.name === 'string' ? e.name : '', number: e.number != null ? e.number : '', active: e.active !== false };
+      for (const [pid, p] of Object.entries(kids || {})) if (p && typeof p === 'object') out[pid] = { ...p, id: pid };
+      return out;
+    }
+    function orgsClub(x) {
+      const members = x.r.all ? (x.members || {}) : { ...namesAsMembers(x.names), ...(x.mine && me ? { [me.uid]: x.mine } : {}) };
+      const access = { ...(x.access || {}), ...(x.org ? { org: x.org } : {}), members, ...(x.log ? { log: x.log } : {}) };
+      const teams = {};
+      for (const [tid, t] of Object.entries(x.teams || {})) {
+        if (!t || typeof t !== 'object') continue;
+        teams[tid] = { ...t, players: tid in x.squads ? (x.squads[tid] || {}) : fromRoster((x.roster || {})[tid], x.kids[tid]) };
+      }
+      return { teams, matches: x.matches || {}, access, rsvp: x.rsvp || {} };
+    }
+
+    /* After the first read, the same parts listened to: a change to one never
+       redraws from a whole-club read, and what this phone still owes the club
+       stays on top of what it says. */
+    function listenOrgs(x) {
+      orgsOff();
+      const gen = ++orgsGen;
+      const r = x.r, live = () => gen === orgsGen;
+      const val = (p, cb) => orgsOffs.push(dbMod.onValue(dbMod.ref(db, OB() + '/' + p), cs => { if (live()) cb(cs.val()); }, () => { }));
+      const setAcc = (k, v) => {
+        state.access = state.access || {};
+        if (v === null || v === undefined) delete state.access[k]; else state.access[k] = v;
+        overlayPending(state.access, 'access');
+        saveLocal(); noteMyClub(); render();
+      };
+      val('access', a => {
+        const keep = state.access || {};
+        state.access = { ...(a || {}), ...(keep.org ? { org: keep.org } : {}), members: keep.members || {}, ...(keep.log ? { log: keep.log } : {}) };
+        overlayPending(state.access, 'access');
+        saveLocal(); noteMyClub(); render();
+        // what she may read here changed (a role given or taken): read the club again
+        if (reachKey(orgsReach(a)) !== reachKey(r)) attachWorkspace();
+      });
+      val('org', v => setAcc('org', v));
+      if (r.all) val('members', v => setAcc('members', v || {}));
+      else {
+        const own = { names: x.names, mine: x.mine };
+        const put = () => setAcc('members', { ...namesAsMembers(own.names), ...(own.mine && me ? { [me.uid]: own.mine } : {}) });
+        val('names', v => { own.names = v; put(); });
+        if (me) val('members/' + me.uid, v => { own.mine = v; put(); });
+      }
+      if (r.admin) val('log', v => setAcc('log', v));
+
+      const squadOf = {}, roster = { now: x.roster || {} }, kids = x.kids;
+      const putPlayers = tid => {
+        const t = state.teams[tid];
+        if (!t || typeof t !== 'object') return;
+        t.players = tid in squadOf ? (squadOf[tid] || {}) : fromRoster(roster.now[tid], kids[tid]);
+        overlayPending(t, 'teams/' + tid);
+      };
+      const watchSquad = tid => {
+        if (tid in squadOf) return;
+        squadOf[tid] = (x.squads || {})[tid] || {};
+        val('squad/' + tid, v => { squadOf[tid] = v || {}; putPlayers(tid); saveLocal(); render(); });
+      };
+      for (const tid of r.all ? Object.keys(x.teams || {}) : r.staffTeams) watchSquad(tid);
+      if (!r.all) {
+        val('roster', v => { roster.now = v || {}; for (const tid of Object.keys(state.teams || {})) if (!(tid in squadOf)) putPlayers(tid); saveLocal(); render(); });
+        for (const [tid, ps] of Object.entries(kids)) for (const pid of Object.keys(ps))
+          val('squad/' + tid + '/' + pid, v => { if (v) kids[tid][pid] = v; else delete kids[tid][pid]; putPlayers(tid); saveLocal(); render(); });
+      }
+
+      for (const coll of ['teams', 'matches', 'rsvp']) {
+        if (!state[coll]) state[coll] = {};
+        const ref = dbMod.ref(db, OB() + '/' + coll);
+        const upsert = cs => {
+          if (!live() || ui.dragging) return;
+          const inc = cs.val(); if (!inc) return;
+          const prev = state[coll][cs.key];
+          state[coll][cs.key] = mergeNode(prev, inc);
+          // a team's players are not in the team on this tree: they stay where they were read
+          if (coll === 'teams') {
+            state.teams[cs.key].players = (prev && prev.players) || {};
+            if (r.all) watchSquad(cs.key);
+            putPlayers(cs.key);
+          }
+          noteSeen(coll, cs.key);
+          const own = { [cs.key]: state[coll][cs.key] };
+          overlayPending(own, coll);
+          if (own[cs.key]) state[coll][cs.key] = own[cs.key]; else delete state[coll][cs.key];
+          saveLocal(); render();
+        };
+        orgsOffs.push(dbMod.onChildAdded(ref, upsert));
+        orgsOffs.push(dbMod.onChildChanged(ref, upsert));
+        orgsOffs.push(dbMod.onChildRemoved(ref, cs => {
+          if (!live() || ui.dragging) return;
+          if (pendingList().some(([p, e]) => p.startsWith(coll + '/' + cs.key) && e.v !== null)) return;
+          delete state[coll][cs.key]; saveLocal(); render();
+        }));
+      }
+    }
+
+    function wireOrgs(attempt) {
+      orgsOff();
+      const gen = ++orgsGen;
+      readOrgs().then(x => {
+        if (gen !== orgsGen) return;
+        denied = false;
+        if (!x) { connected(null); return; }
+        connected(orgsClub(x));
+        staffName();
+        listenOrgs(x);
+      }, err => {
+        if (gen !== orgsGen) return;
+        if (/permission|denied/i.test((err && err.code) || '') && attempt < 2) {
+          setTimeout(() => wireOrgs(attempt + 1), (attempt + 1) * 900);
+          return;
+        }
+        onDenied(err);
+      });
     }
 
     await authReady;   // don't read the workspace until we know who, if anyone, is signed in
@@ -753,12 +1077,31 @@ function settle(path, n, ok, err) {
   else return;          // anything else: still owed, and sent again on the next connect
   savePending(); render();
 }
+/* One app write, sent wherever the club's tree keeps it (clubWrites(): on
+   orgs/ a whole team is its team and its squad), settled once all of it has
+   landed. */
+function remoteWrite(path, v, del) {
+  // the old tree: exactly the path it always was (fb.base), the new one through the translation
+  const ws = onOrgs() ? clubWrites(path, del ? null : v) : [[fb.base + '/' + path, del ? null : v]];
+  // a set of null deletes as surely as a remove, and some callers take an answer back that way
+  return Promise.all(ws.map(([p, x]) => (del ? fb.remove(fb.ref(fb.db, p)) : fb.set(fb.ref(fb.db, p), x === undefined ? null : x))));
+}
+/* Until this session's first read of the club says which tree it is on, a
+   write waits in the outbox (where it already is) instead of going out: sent
+   to the tree this phone remembers, it would reach the old one for a club
+   that moved while the phone was away, and a club only ever lives on one.
+   The first read sends everything owed (flushPending()), and whoever was
+   waiting on one of these writes hears when that send lands. A stand-in
+   `fb` with no `held` (the tests' own) is never held. */
+let heldSends = [];
 function sendPending(path, n, v, del) {
+  if (fb && fb.held) return new Promise((res, rej) => heldSends.push({ path, res, rej }));
   let w;
-  try { w = del ? fb.remove(fb.ref(fb.db, fb.base + '/' + path)) : fb.set(fb.ref(fb.db, fb.base + '/' + path), v); }
+  try { w = remoteWrite(path, v, del); }
   catch (e) { return Promise.reject(e); }
   const p = Promise.resolve(w);
   p.then(() => settle(path, n, true), e => settle(path, n, false, e));
+  rosterAfter(path);
   return p;
 }
 /* A caller that undoes its own change when it's refused (an answer taken back
@@ -778,6 +1121,8 @@ function overlayPending(target, under) {
    club hasn't got laid over it, then all of that sent again. */
 // SERVER.md: stays with a server too: the phone still works offline first.
 function mergeConnect(v) {
+  // a copy: what this phone owes is laid over it, and the snapshot it came in is not ours to change
+  v = clone(v);
   const remote = { teams: v.teams || {}, matches: v.matches || {}, access: v.access || {}, rsvp: v.rsvp || {} };
   const owed = [];
   for (const coll of ['teams', 'matches']) {
@@ -795,8 +1140,12 @@ function mergeConnect(v) {
 }
 // SERVER.md: stays with a server too: the phone still works offline first.
 function flushPending() {
-  if (!fb) return;
-  for (const [p, e] of pendingList()) sendPending(p, e.n, e.v, e.del).catch(() => { });
+  if (!fb || fb.held) return;
+  const waiting = heldSends; heldSends = [];
+  const sent = new Map();
+  for (const [p, e] of pendingList()) { const pr = sendPending(p, e.n, e.v, e.del); pr.catch(() => { }); sent.set(p, pr); }
+  // a write superseded or dropped while it waited has nothing left to wait for
+  for (const w of waiting) (sent.get(w.path) || Promise.resolve()).then(w.res, w.rej);
 }
 
 /* What a pending write is, in words: the coach is deciding whether to drop
@@ -921,6 +1270,29 @@ function pushAll() {
    (syncIndex() and the rest), so they never need the outbox; queuing them
    would only mean a refused copy of something derived nagging forever. */
 const DERIVED = /^access\/(index|teamIndex|coachIndex|teamParents)(\/|$)/;
+/* roster/{tid} on orgs/: what the whole club reads of a squad (a number,
+   whether she plays, and her name only while the club opens the roster). The
+   server keeps it from the squad; the phone that changed the squad writes it
+   too, so a club without the functions deployed still shows numbers. Derived
+   like the lookup tables, so never queued: the next squad change, or the
+   server, puts a refused one right. */
+function rosterOf(t) {
+  const open = (acc().org || {}).rosterOpen === true, out = {};
+  for (const [pid, p] of Object.entries((t && t.players) || {})) {
+    if (!p || typeof p !== 'object') continue;
+    const n = p.number;
+    out[pid] = { number: typeof n === 'number' || typeof n === 'string' ? n : '', active: p.active !== false, ...(open && p.name ? { name: String(p.name).slice(0, 80) } : {}) };
+  }
+  return out;
+}
+// SERVER.md: the roster families read on orgs/; rosterPlayer keeps it too.
+function rosterAfter(path) {
+  const m = fb && !fb.held && onOrgs() && /^teams\/([^/]+)(\/players(\/|$)|$)/.exec(path);
+  if (!m || !canEditTeam(m[1])) return;
+  const t = state.teams[m[1]], r = t ? rosterOf(t) : {};
+  const ref = fb.ref(fb.db, clubPath('roster/' + m[1]));
+  Promise.resolve(Object.keys(r).length ? fb.set(ref, r) : fb.remove(ref)).catch(() => { });
+}
 /* Who changed the calendar, and when. A game or a calendar entry is the
    coaches' (the rules say so), and the club should be able to say which of
    them called a practice off: the server leaves her out of the notification
@@ -948,13 +1320,14 @@ function remoteSet(path, value) {
   noteMine(path);
   if (!fb) return;
   const v = calStamp(path, value === undefined ? null : value);
-  if (DERIVED.test(path)) { const w = Promise.resolve(fb.set(fb.ref(fb.db, fb.base + '/' + path), v)); w.catch(() => { }); return w; }
+  // derived, and rebuilt on every connect: one made before the club has been read is not worth keeping
+  if (DERIVED.test(path)) { if (fb.held) return Promise.resolve(); const w = Promise.resolve(fb.set(fb.ref(fb.db, onOrgs() ? clubPath(path) : fb.base + '/' + path), v)); w.catch(() => { }); return w; }
   return sendPending(path, notePending(path, v), v);
 }
 function remoteDel(path) {
   noteMine(path);
   if (!fb) return;
-  if (DERIVED.test(path)) { Promise.resolve(fb.remove(fb.ref(fb.db, fb.base + '/' + path))).catch(() => { }); return; }
+  if (DERIVED.test(path)) { if (fb.held) return; Promise.resolve(fb.remove(fb.ref(fb.db, onOrgs() ? clubPath(path) : fb.base + '/' + path))).catch(() => { }); return; }
   sendPending(path, notePending(path, null, true), null, true).catch(() => { });
 }
 
@@ -1264,6 +1637,63 @@ function ensureFixtureShares(t) {
 /* What has to be true before the tighter rules can be published. Every line is
    a way to lock the club out, and all of them are invisible until you try to
    write something at a game. */
+/* Moving the club to orgs/ (AUTH.md, *The move to `orgs/{orgId}`*;
+   SECURITY.md, SEC-1). The admin asks by writing moveRequests/{code} as
+   herself; the server (functions/move.js) checks her again, moves the club in
+   one write, compares, and writes its answer beside the request. Online
+   only, and nothing waits on it at the sideline: until the answer comes the
+   club is exactly where it was. */
+let moveReq = null;     // { code, sent, result } while this phone is waiting on, or has heard, the server
+let moveWatch = null;
+function moveCard() {
+  if (onOrgs() || !canAdmin()) return '';
+  const r = moveReq && moveReq.code === wsCode() ? moveReq : null;
+  const res = r && r.result;
+  const status = !r ? ''
+    : res && res.ok ? '<p><b>Moved.</b> Reading the club again…</p>'
+    : res ? `<p class="warn">Not moved: ${esc(res.why || 'the server said no')}</p>`
+    : '<p class="muted">Asked. Waiting for the server: a minute or so. If nothing happens, the club\'s functions may not be deployed yet (README, <b>Deploying the server</b>).</p>';
+  return `<div class="card"><h2 style="margin-bottom:8px">Keep the squad off families' phones</h2>
+      <p class="muted" style="margin-top:0">Today everyone in the club can read all of it at the database, so a family's phone holds every child's name, the coaches' notes and ratings, and everyone's email; the app only hides them. Moving the club splits it so each family receives her own child and the others' shirt numbers, and nothing more. Nothing about how the app looks changes.</p>
+      <p class="muted">It needs a signal, takes a minute, and is refused while a game is being played. A copy of the club as it is now is kept on the server. Try it on a test club first.</p>
+      ${status}
+      ${r && !res ? '' : `<button class="btn wide" data-act="moveclub">${res && !res.ok ? 'Try again' : 'Move ' + esc((acc().org || {}).name || 'this club')}</button>`}</div>`;
+}
+function watchMove(code) {
+  if (!rtdb || moveWatch === code) return;
+  moveWatch = code;
+  const { db, mod } = rtdb;
+  mod.onValue(mod.ref(db, 'moveRequests/' + code + '/result'), sn => {
+    const res = sn.val();
+    if (!res || !moveReq || moveReq.code !== code) return;
+    moveReq.result = res;
+    if (res.ok) {
+      setClubTree(code, 'orgs');
+      toast('Moved: each family now receives only her own child');
+      attachWorkspace();
+    }
+    render();
+  }, () => { });
+}
+async function askMove() {
+  const code = wsCode();
+  if (!canAdmin() || !rtdb || !me || !code || onOrgs()) return;
+  if (!online) { toast('Moving the club needs a signal'); return; }
+  const { db, mod } = rtdb;
+  const ref = mod.ref(db, 'moveRequests/' + code);
+  try {
+    await mod.remove(ref);   // an earlier answer, so this is a new request
+    moveReq = { code, sent: nowMs(), result: null };
+    render();
+    await mod.set(ref, { by: me.uid, at: nowMs() });
+  } catch (e) {
+    moveReq = null;
+    toast(/permission|denied/i.test((e && e.code) || '') ? 'The database refused it — are the rules (version ' + RULES_VERSION + ') published?' : 'Not asked — check the signal');
+    render(); return;
+  }
+  watchMove(code);
+}
+
 function readiness() {
   const a = acc();
   const rows = [];
@@ -1305,6 +1735,11 @@ function readiness() {
           : 'not checked yet — needs a signal'
   });
   rows.push({ ok: Object.keys(appOwners).length > 0, label: 'An app owner exists', detail: Object.keys(appOwners).length ? 'yes' : 'set appOwners in the console' });
+  rows.push({
+    ok: onOrgs(), label: 'Families\' phones hold only their own children',
+    detail: onOrgs() ? 'yes: the club has moved, and the database decides who reads each part'
+      : 'not yet: every family\'s phone holds the whole squad, and the app only hides it (Move the club, below)'
+  });
   return rows;
 }
 
@@ -1635,30 +2070,32 @@ async function redeemInvite() {
   const { db, mod } = rtdb;
   const put = (p, val) => mod.set(mod.ref(db, p), val);
   const soft = pr => Promise.resolve(pr).catch(() => { });
-  const W = 'workspaces/' + ws + '/';
   invite.status = 'working'; render();
+  // the club's own paths, on whichever tree it is on (clubPath(): her member entry and a child's record moved on orgs/)
+  const tree = await probeTree(ws);
+  const W = rel => clubPath(rel, ws, tree);
   try {
     if (!v.used) await put('invites/' + id + '/used', { by: who, at });
-    await put(W + 'access/members/' + who, { name: me.name || '', email: me.email || '', at });
-    if (v.role === 'parent') await put(W + `teams/${v.team}/players/${v.player}/guardians/${who}`, id);
-    else if (v.role === 'player') await put(W + `teams/${v.team}/players/${v.player}/self/${who}`, id);
-    else await put(W + `access/teams/${v.team}/${v.role === 'coach' ? 'coaches' : 'trackers'}/${who}`, id);
-    await put(W + 'access/index/' + who, id);
+    await put(W('access/members/' + who), { name: me.name || '', email: me.email || '', at });
+    if (v.role === 'parent') await put(W(`teams/${v.team}/players/${v.player}/guardians/${who}`), id);
+    else if (v.role === 'player') await put(W(`teams/${v.team}/players/${v.player}/self/${who}`), id);
+    else await put(W(`access/teams/${v.team}/${v.role === 'coach' ? 'coaches' : 'trackers'}/${who}`), id);
+    await put(W('access/index/' + who), id);
   } catch (e) {
     invite.status = 'error';
     invite.err = /permission|denied/i.test((e && e.code) || '') ? 'The database refused it — the invite may have expired or been withdrawn'
       : ((e && e.code) || String(e));
     render(); return;
   }
-  if (v.role === 'player') await soft(put(W + `access/teamPlayers/${v.team}/${who}`, v.player));
-  else if (v.role !== 'parent') await soft(put(W + `access/teamIndex/${v.team}/${who}`, v.role));
+  if (v.role === 'player') await soft(put(W(`access/teamPlayers/${v.team}/${who}`), v.player));
+  else if (v.role !== 'parent') await soft(put(W(`access/teamIndex/${v.team}/${who}`), v.role));
   /* Refused while the table does not exist yet, which is fine: the rules fall
      back to the club-wide index until an admin's device creates it, and that
      device puts her in it. */
-  else await soft(put(W + `access/teamParents/${v.team}/${who}`, v.player));
+  else await soft(put(W(`access/teamParents/${v.team}/${who}`), v.player));
   await soft(put('clubInvites/' + ws + '/' + id + '/used', { by: who, at, name: me.name || '' }));
   await soft(put('userOrgs/' + who + '/' + ws, { name: v.clubName || '', at }));
-  await soft(put(W + 'access/log/' + uid(), {
+  await soft(put(W('access/log/' + uid()), {
     at, act: 'joined by invite as', by: who, byName: me.name || null,
     target: who, targetName: INVITE_ROLES[v.role] || ROLE_LABEL[v.role] || v.role, team: v.team, teamName: v.teamName || null
   }));
@@ -1685,13 +2122,16 @@ async function createClub(name) {
   const code = randId('sm-'), who = me.uid, at = nowMs();
   const { db, mod } = rtdb;
   const put = (p, val) => mod.set(mod.ref(db, p), val);
-  const W = 'workspaces/' + code + '/';
+  /* A new club is made on orgs/ (AUTH.md, *The move to `orgs/{orgId}`*):
+     the old tree only ever shrinks. */
+  const W = rel => clubPath(rel, code, 'orgs');
   newClubBusy = true;
   try {
-    await put(W + 'access/admins/' + who, true);
-    await put(W + 'access/index/' + who, true);
-    await put(W + 'access/members/' + who, { name: me.name || '', email: me.email || '', at });
-    await put(W + 'access/org/name', name);
+    await put(W('access/admins/' + who), true);
+    await put(W('access/index/' + who), true);
+    await put(W('access/members/' + who), { name: me.name || '', email: me.email || '', at });
+    await put(W('access/org/name'), name);
+    await Promise.resolve(put(W('names/' + who), { name: String(me.name || '').slice(0, 80) })).catch(() => { });
   } catch (e) {
     newClubBusy = false;
     toast(/permission|denied/i.test((e && e.code) || '') ? 'The database refused it — the rules may not be published yet'
@@ -1700,6 +2140,7 @@ async function createClub(name) {
   }
   // the bookmark is what puts it in every one of her devices' club lists
   await Promise.resolve(put('userOrgs/' + who + '/' + code, { name, at })).catch(() => { });
+  setClubTree(code, 'orgs');
   try { localStorage.setItem(LS_WS, code); } catch (e) { }
   location.reload();
   return true;
@@ -2178,7 +2619,7 @@ async function sendClaim() {
   join.status = 'working'; render();
   try {
     // so a coach or admin sees who is asking, as they would anyone who signed in
-    await mod.set(mod.ref(db, `workspaces/${v.ws}/access/members/${who}`), { name: me.name || '', email: me.email || '', at });
+    await mod.set(mod.ref(db, clubPath('access/members/' + who, v.ws, await probeTree(v.ws))), { name: me.name || '', email: me.email || '', at });
     await mod.set(mod.ref(db, `claims/${v.ws}/${v.team}/${who}`), {
       code: join.code, shirt, ...(child ? { child } : {}), name: me.name || '', email: me.email || '', at
     });
@@ -14309,9 +14750,54 @@ function watchMirror() {
       youPublishSoon();
       render();
     };
-    for (const p of MIRROR_WS) offs.push(mod.onValue(mod.ref(db, `workspaces/${code}/${p}`), take(p, 'ws'), () => { }));
     for (const p of MIRROR_TR) offs.push(mod.onValue(mod.ref(db, `training/${code}/${p}`), take(p, 'tr'), () => { }));
+    if (clubTree(code) === 'orgs') { watchMirrorOrgs(code, offs, take); continue; }
+    /* The old tree until it shows no club there (moved, or made on the new
+       one): then ask which (probeTree()) and read that instead. A club that
+       has not moved costs nothing extra. */
+    for (const p of MIRROR_WS) offs.push(mod.onValue(mod.ref(db, `workspaces/${code}/${p}`), sn => {
+      if (p === 'access' && !sn.val()) {
+        setClubTree(code, null);   // whatever was remembered, the old tree has no club here now
+        probeTree(code).then(tree => {
+          if (tree !== 'orgs' || mirrorWatch.get(code) !== offs) return;
+          unwatchClub(code); watchMirror();
+        });
+        return;
+      }
+      take(p, 'ws')(sn);
+    }, () => { }));
   }
+}
+/* Another club of hers on orgs/: what My calendar needs, part by part, as
+   the old tree's whole read gave it — access with the club's name in it, the
+   games, and the teams with her own children on them (and nobody else's,
+   which she could not read there anyway). */
+function watchMirrorOrgs(code, offs, take) {
+  const { db, mod } = rtdb;
+  const B = 'orgs/' + code, part = { access: null, org: null, teams: null, kids: {} }, watching = new Set();
+  const give = (p, v) => take(p, 'ws')({ val: () => v });
+  const putAccess = () => { if (part.access) give('access', { ...part.access, org: part.org || {} }); };
+  const putTeams = () => {
+    if (!part.teams) return;
+    give('teams', Object.fromEntries(Object.entries(part.teams).map(([tid, t]) => [tid, { ...(t || {}), players: part.kids[tid] || {} }])));
+  };
+  const watchKids = () => {
+    const u = me && me.uid, a = part.access || {};
+    for (const tbl of ['teamParents', 'teamPlayers']) for (const [tid, row] of Object.entries(a[tbl] || {})) {
+      const pid = row && u && row[u];
+      if (typeof pid !== 'string' || watching.has(tid + '/' + pid)) continue;
+      watching.add(tid + '/' + pid);
+      offs.push(mod.onValue(mod.ref(db, `${B}/squad/${tid}/${pid}`), sn => {
+        const k = part.kids[tid] = part.kids[tid] || {};
+        if (sn.val()) k[pid] = sn.val(); else delete k[pid];
+        putTeams();
+      }, () => { }));
+    }
+  };
+  offs.push(mod.onValue(mod.ref(db, B + '/access'), sn => { part.access = sn.val() || {}; putAccess(); watchKids(); }, () => { }));
+  offs.push(mod.onValue(mod.ref(db, B + '/org'), sn => { part.org = sn.val(); putAccess(); }, () => { }));
+  offs.push(mod.onValue(mod.ref(db, B + '/teams'), sn => { part.teams = sn.val() || {}; putTeams(); }, () => { }));
+  offs.push(mod.onValue(mod.ref(db, B + '/matches'), take('matches', 'ws'), () => { }));
 }
 /* The other clubs she is in that this phone holds a copy of. */
 function youClubs() {
@@ -15008,6 +15494,7 @@ function viewAdmin() {
         ${code === wsCode() ? '<span class="muted">open now</span>'
       : `<button class="btn quiet sm" data-act="switchclub" data-code="${esc(code)}">Open</button>`}</div>`).join('')}</div></div>` : ''}
 
+${moveCard()}
     <div class="card"><h2 style="margin-bottom:8px">Retire this club</h2>
       <p class="muted" style="margin-top:0">Marks it closed. Every device holding a copy clears it on next connect — except the app owner's, so it can still be opened and exported. <b>Nothing is deleted.</b> The data stays until the app owner removes it in the Firebase console.</p>
       <button class="btn danger wide" data-act="retireclub">Retire ${esc((acc().org || {}).name || 'this club')}</button></div>
@@ -18352,6 +18839,12 @@ function onAct(e) {
   if (a === 'teammenu') { sheetTeams(); return; }
   if (a === 'goview') { ui.view = d.v; closeSheet(); render(); return; }
   if (a === 'accountsheet') { if (me) sheetAccount(); else sheetSignIn(); return; }
+  if (a === 'moveclub') {
+    // the button is drawn for admins only; the handler asks again, as retiring a club does
+    if (!canAdmin()) return;
+    if (!confirm('Move ' + ((acc().org || {}).name || 'this club') + ' so families\' phones hold only their own children? It takes a minute and needs a signal.')) return;
+    askMove(); return;
+  }
   if (a === 'retireclub') {
     if (!canAdmin()) { toast('Club admins and the app owner only'); return; }
     if (!fb) { toast('Not connected'); return; }

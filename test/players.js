@@ -99,7 +99,7 @@ async function boot(who, ws = club(), extra = {}) {
       by: 'coach', byName: 'Jaz', at: A.nowMs() - 1000, expiresAt: A.nowMs() + 7 * 864e5 });
     await A.flush();
     check('it says what she is joining as', /a player, #7 on <b>G15 Flight<\/b>, with your own sign-in/.test(A.rendered()), true);
-    A.click({ act: 'inviteaccept' }); await A.flush(20);
+    A.click({ act: 'inviteaccept' }); await A.flush(); fbk.refuse('workspaces/CLUB/moved'); await A.flush(20);   // the old tree refuses a phone not in the club yet
     const p = paths(fbk), at = x => p.indexOf(x);
     check('on her own player record, carrying the invite id', valueAt(fbk, 'workspaces/CLUB/teams/t1/players/p1/self/ella'), ID);
     check('never as her own parent', p.some(x => x.includes('/guardians/')), false);

@@ -1940,6 +1940,12 @@ reads('owners are not world-readable', OUT, 'shareOwners/sh1', false);
   wk('— nor its index', RANDO, 'workspaces/GONE/access/index/rando', true, false);
   wk('nor under a code orgs/ holds', RANDO, 'workspaces/ORGC/access/admins/rando', true, false);
   wk('nobody writes the moved marker but the server', OA, 'workspaces/GONE/moved', null, false);
+  /* Not even her own entry: the old tree's one write a stranger could make.
+     A phone that has not heard of the move writes it on signing in, and it
+     would put access back under the old tree, which is how every phone tells
+     a club still there from one that has moved. */
+  wk('nobody writes her own name on the old tree of a moved club', RANDO, 'workspaces/GONE/access/members/rando', { name: 'R' }, false);
+  wk('— nor of a club on orgs/', OM, 'workspaces/ORGC/access/members/om', { name: 'Mo' }, false);
   wk('a brand-new code starts on orgs/', RANDO, 'orgs/BRANDNEW/access/admins/rando', true, true);
   delete DB.workspaces.OLDC; delete DB.workspaces.GONE;
 

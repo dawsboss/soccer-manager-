@@ -47,6 +47,7 @@ const SUITES = [
   ['mirror-orgs', 'the share pages\' calendar, with every club on orgs/'],
   ['mycalfeed-orgs', 'my calendar\'s feed, with every club on orgs/'],
   ['move', 'moving a club to orgs/: only its admin, all or nothing, and the roster and staff names after'],
+  ['orgs', 'the app on a moved club: a family\'s phone holds her own children and numbers, staff read the squads, every write lands there'],
   ['import', 'bulk import merges, and never replaces'],
   ['drills', 'the built-in drill library holds together'],
   ['practice', 'the Practice tab, and who gets it'],

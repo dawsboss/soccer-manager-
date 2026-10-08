@@ -133,6 +133,26 @@ does the bookkeeping, not that the phone works offline first.
   builds any missing one whole, after which the bridges, the phones'
   rebuilds and the "nothing else may write them" care can go. Or custom
   claims on the account instead of tables.
+- **Moving a club to orgs/ builds them whole** (`functions/move.js`, the
+  `moveClub` trigger): every table from where each uid appears, so a moved
+  club carries no bridge. That is the one-off run above, one club at a time.
+
+### What families read on orgs/
+- **On the server (2026-10-08):** on a club that has moved to `orgs/{code}`
+  (AUTH.md, *The move to `orgs/{orgId}`*), families read the roster
+  (`roster/{tid}`: shirt numbers, and names only while the club opens the
+  roster) and staff names (`names/{uid}`: a name, never an email) in place
+  of the squad and the members. `rosterPlayer`, `rosterOpen` and
+  `namesMember` (functions/access.js), with the role triggers above, keep
+  both from the squad, the members and the roles the moment they change.
+- **On the phones too:** the phone that changes a squad writes its roster
+  beside it (`rosterAfter()`), and an admin's or coach's own phone writes her
+  own name once a session (`staffName()`), so a club without the functions
+  deployed still has numbers and coaches' names on families' phones. A
+  tracker's name, and a roster changed from a phone too old to write one,
+  wait for the server.
+- **What goes away:** both phone halves, once every club has the functions
+  deployed.
 
 ---
 

@@ -152,6 +152,26 @@ function makeFakebase() {
       for (const l of hit) l.cb(snap(value, key));
       return hit.length;
     },
+    /* A club on orgs/ is read a part at a time (app.js, wireOrgs()), each
+       part asked for only once the parts before it have answered. This
+       answers every read under `prefix` from `tree` (the club, in the new
+       layout), round after round as new reads appear, refusing any `deny`
+       picks the way a rule would. `flush` lets the app take each answer in. */
+    async serve(prefix, tree, flush, deny = () => false, rounds = 8) {
+      const done = new Set();
+      for (let i = 0; i < rounds; i++) {
+        const todo = record.listeners.filter(l => !l.spent && l.kind === 'value' && (l.path === prefix || l.path.startsWith(prefix + '/')) && !done.has(l));
+        if (!todo.length) break;
+        for (const l of todo) {
+          done.add(l);
+          if (deny(l.path)) { if (l.err) { spend(l); l.err({ code: 'PERMISSION_DENIED', message: 'permission_denied at ' + l.path }); } continue; }
+          let cur = tree;
+          for (const k of l.path.slice(prefix.length).split('/').filter(Boolean)) cur = cur && typeof cur === 'object' ? cur[k] : undefined;
+          spend(l); l.cb(snap(cur === undefined ? null : JSON.parse(JSON.stringify(cur)), l.path.split('/').pop()));
+        }
+        await flush();
+      }
+    },
     /* Refuse every write whose path the predicate picks, the way a rule would. */
     refuseWrites(pred) { record.refuse = pred; return this; },
     /* Take every write the predicate picks and never answer it: no signal. */
