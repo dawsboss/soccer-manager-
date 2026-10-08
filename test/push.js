@@ -70,7 +70,7 @@ const toUid = (S, u) => S.sent().filter(m => m.data.uid === u);
   console.log('--- the functions that are deployed ---');
   {
     const S = server();
-    deepEq('three triggers, one per thing that is news', Object.keys(S.triggers).filter(n => S.triggers[n].kind === 'created').sort(), ['pushMessage', 'pushNotice', 'pushStaffMessage']);
+    deepEq('three triggers, one per thing that is news', Object.keys(S.triggers).filter(n => S.triggers[n].kind === 'created' && /^push/.test(n)).sort(), ['pushMessage', 'pushNotice', 'pushStaffMessage']);
     check('a message between colleagues wakes its sender', S.woken('staffdm/CLUB/coach~other/m/s1').join(), 'pushStaffMessage');
     check('its markers wake nothing', S.woken('staffdm/CLUB/coach~other/got/other').length + S.woken('staffdm/CLUB/coach~other/seen/other').length, 0);
     check('a new notice wakes the notice sender', S.woken('board/CLUB/t1/n1').join(), 'pushNotice');
@@ -79,7 +79,9 @@ const toUid = (S, u) => S.sent().filter(m => m.data.uid === u);
     check('nor one in a conversation', S.woken('dm/CLUB/t1/mum/seen/coach').length, 0);
     // a live game is a write a second; none of it should cost a function call
     check('nothing in the club itself wakes the message senders', S.woken('workspaces/CLUB/matches/g1/events/e1').length, 0);
-    deepEq('the calendar\'s: one for entries, one per field of a game that says when', Object.keys(S.triggers).filter(n => S.triggers[n].kind === 'written' && /^push/.test(n)).sort(), ['pushEntry', 'pushGameCalled', 'pushGameDate', 'pushGameKickoff']);
+    deepEq('the calendar\'s: one for entries, one per field of a game that says when', Object.keys(S.triggers).filter(n => S.triggers[n].kind === 'written' && /^push/.test(n)).sort(), 
+      // each once per tree while clubs move to orgs/ (functions/index.js, both())
+      ['pushEntry', 'pushEntryOrgs', 'pushGameCalled', 'pushGameCalledOrgs', 'pushGameDate', 'pushGameDateOrgs', 'pushGameKickoff', 'pushGameKickoffOrgs']);
     const src = fs.readFileSync(path.join(__dirname, '..', 'functions', 'index.js'), 'utf8');
     check('it reads from the database the event came from', /event\.data\.ref\.root/.test(src), true);
     check('and never calls an AI model', /anthropic|openai|gemini|generativ/i.test(src + fs.readFileSync(path.join(__dirname, '..', 'functions', 'push.js'), 'utf8')), false);
@@ -108,7 +110,8 @@ const toUid = (S, u) => S.sent().filter(m => m.data.uid === u);
     check('to that phone', m.token, tok('mum'));
     check('sent at once, kept for a day at most', JSON.stringify(m.webpush.headers), JSON.stringify({ Urgency: 'high', TTL: '86400' }));
     check('every value a string, as Cloud Messaging requires', Object.values(m.data).every(v => typeof v === 'string'), true);
-    const reads = S.reads.filter(p => !/^(workspaces\/CLUB\/|retired\/CLUB$|pushTokens\/|people\/[^/]+\/mute\/notice$)/.test(p));
+    // this club, on whichever tree it is (asking which is a read of the new one's admins and index)
+    const reads = S.reads.filter(p => !/^((workspaces|orgs)\/CLUB\/|retired\/CLUB$|pushTokens\/|people\/[^/]+\/mute\/notice$)/.test(p));
     deepEq('it read nothing but this club, each reader\'s switch for notices, and the phones it sent to', reads, []);
     check('and no phone of anyone it did not send to', S.reads.filter(p => /^pushTokens\/(coach|other|dad|newbie|stale)$/.test(p)).length, 0);
   }
@@ -136,7 +139,7 @@ const toUid = (S, u) => S.sent().filter(m => m.data.uid === u);
     const m = toUid(S, 'other')[0];
     check('titled with who wrote it', m.data.title, 'Jaz');
     check('opening the conversation with her', m.data.hash, '#/messages/with/coach');
-    const reads = S.reads.filter(p => !/^(workspaces\/CLUB\/access\/(admins|coachIndex)$|retired\/CLUB$|pushTokens\/other$|people\/other\/mute\/msg$)/.test(p));
+    const reads = S.reads.filter(p => !/^((workspaces|orgs)\/CLUB\/access\/(admins|coachIndex|index)$|retired\/CLUB$|pushTokens\/other$|people\/other\/mute\/msg$)/.test(p));
     deepEq('it read the two tables, her switch for messages, and her phones, nothing else', reads, []);
   }
   {

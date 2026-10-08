@@ -373,7 +373,10 @@ hold.
    and followed games are left.*
 3. **Names behind the database, and the child as a club-level person.** One
    design, written into AUTH.md before the code (*Protecting the data* and
-   *Season registration* above).
+   *Season registration* above). *The names half built 2026-10-08 (build
+   110): the move to `orgs/{orgId}` (AUTH.md), each club moving when its admin
+   presses Move. The club-level record of each child is left, for
+   registration.*
 4. **Registration, without payment.** Programs, the link, the form, waivers,
    accepting and placing, care details for coaches, the GotSport export,
    a family's *Delete*, and the account-delete function. Families can pay

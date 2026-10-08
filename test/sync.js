@@ -24,6 +24,7 @@ const { makeFakebase } = require('./fakebase');
 const CONFIG = { apiKey: 'k', databaseURL: 'https://prod.example', projectId: 'p' };
 const CODE = 'FLIGHT';
 const WS = 'workspaces/' + CODE;
+const OB = 'orgs/' + CODE;   // the same club on the new tree (AUTH.md, The move to orgs/{orgId})
 
 /* A fresh app each time: module state is global to one load, and these tests
    are about what happens during boot. */
@@ -176,15 +177,22 @@ async function boot(opts = {}) {
     fbk.signIn('coachU');
     await A.flush();
     fbk.deliver(WS, null);                   // nothing there yet
+    /* Nothing on the old tree is a club made on the new one, or a code nobody
+       has written: either way it lives on orgs/ from now on (AUTH.md, *The
+       move to `orgs/{orgId}`*), and the new tree is asked. */
+    check('nothing on the old tree: the new one is read', fbk.watching(OB + '/access'), true);
+    fbk.deliver(OB + '/access', null);       // nor there
+    await A.flush();
     /* Not one set() of the whole node any more. The rules grant .write only on
-       the children of workspaces/$code, so seeding a club has to walk them in
-       an order each rule can allow — admins while it is empty, then the index
-       every other rule consults, then the data those two authorise. A single
-       set() at the base is refused outright once a club is locked down, which
-       is precisely the call that creates one. */
-    const base = fbk.writtenTo(WS);
-    check('nothing is written to the workspace node itself', base.length, 0);
-    const paths = fbk.record.writes.filter(w => w.path.startsWith(WS + '/')).map(w => w.path.slice(WS.length + 1));
+       the children of the club, so seeding a club has to walk them in an order
+       each rule can allow — admins while it is empty, then the index every
+       other rule consults, then the data those two authorise. A single set()
+       at the base is refused outright once a club is locked down, which is
+       precisely the call that creates one. */
+    check('nothing is written to the old tree at all', fbk.record.writes.filter(w => w.path.startsWith(WS)).map(w => w.path).join(), '');
+    const base = fbk.writtenTo(OB);
+    check('nothing is written to the club\'s node itself', base.length, 0);
+    const paths = fbk.record.writes.filter(w => w.path.startsWith(OB + '/')).map(w => w.path.slice(OB.length + 1));
     const at = p => paths.indexOf(p);
     check('the writer claims admin', at('access/admins/coachU') > -1, true);
     check('then indexes themselves', at('access/index/coachU') > at('access/admins/coachU'), true);
@@ -195,8 +203,9 @@ async function boot(opts = {}) {
     check('collections themselves are never written', at('teams') === -1 && at('matches') === -1, true);
     check('each game is pushed on its own', at('matches/gLocal') > at('access/index/coachU'), true);
     // access/log is never replayed: its rule demands each entry stamp its own writer
-    check('the audit log is not pushed wholesale', at('access/log'), -1);
-    check('carrying the offline game', !!fbk.record.writes.find(w => w.path === WS + '/matches/gLocal').value, true);
+    check('the audit log is not pushed wholesale', at('log'), -1);
+    check('a team on the new tree is two writes: the team, then its squad', at('teams/t1') > -1 && at('squad/t1') === -1 || at('squad/t1') > at('teams/t1'), true);
+    check('carrying the offline game', !!fbk.record.writes.find(w => w.path === OB + '/matches/gLocal').value, true);
     check('and the local copy survived', !!A.state.matches.gLocal, true);
   }
 
@@ -288,6 +297,8 @@ async function boot(opts = {}) {
     check('and the goal arrived', !!A.state.matches.g1.goals.x, true);
 
     fbk.deliverChild(WS + '/matches', 'g1', null, 'removed');
+    // a tick later: long enough to hear whether the whole club moved instead (wireBase())
+    await A.flush();
     check('a removal does remove it', A.state.matches.g1, undefined);
   }
 

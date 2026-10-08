@@ -152,6 +152,26 @@ function makeFakebase() {
       for (const l of hit) l.cb(snap(value, key));
       return hit.length;
     },
+    /* A club on orgs/ is read a part at a time (app.js, wireOrgs()), each
+       part asked for only once the parts before it have answered. This
+       answers every read under `prefix` from `tree` (the club, in the new
+       layout), round after round as new reads appear, refusing any `deny`
+       picks the way a rule would. `flush` lets the app take each answer in. */
+    async serve(prefix, tree, flush, deny = () => false, rounds = 8) {
+      const done = new Set();
+      for (let i = 0; i < rounds; i++) {
+        const todo = record.listeners.filter(l => !l.spent && l.kind === 'value' && (l.path === prefix || l.path.startsWith(prefix + '/')) && !done.has(l));
+        if (!todo.length) break;
+        for (const l of todo) {
+          done.add(l);
+          if (deny(l.path)) { if (l.err) { spend(l); l.err({ code: 'PERMISSION_DENIED', message: 'permission_denied at ' + l.path }); } continue; }
+          let cur = tree;
+          for (const k of l.path.slice(prefix.length).split('/').filter(Boolean)) cur = cur && typeof cur === 'object' ? cur[k] : undefined;
+          spend(l); l.cb(snap(cur === undefined ? null : JSON.parse(JSON.stringify(cur)), l.path.split('/').pop()));
+        }
+        await flush();
+      }
+    },
     /* Refuse every write whose path the predicate picks, the way a rule would. */
     refuseWrites(pred) { record.refuse = pred; return this; },
     /* Take every write the predicate picks and never answer it: no signal. */
@@ -177,11 +197,89 @@ function makeFakebase() {
    file, its trigger paths included, not a copy of its wiring. `fire()` hands
    a trigger a write the way Cloud Functions would: the path's {params}, and a
    snapshot whose ref reaches back to this tree. */
+/* The server suites run twice: as written, against clubs on workspaces/{code},
+   and once more (SERVER_TREE=orgs, test/run.js's *-orgs entries) with every
+   club in the seed moved to orgs/{code} the way moveClub lays it out (AUTH.md,
+   *The move to `orgs/{orgId}`*). The suites keep saying what they always said
+   in the old tree's paths: in orgs mode this server keeps its clubs in the new
+   layout, and every path a test hands it (a write, a read back, a ref) is the
+   old tree's view of that club, translated on the way in and out. The
+   functions themselves see the real new layout and real paths, so each
+   expectation the server was held to on the old tree holds on the new one.
+   Trigger names come back without their Orgs ending, so "this woke
+   accessGuardians" means the same thing in both passes. */
+const ORGS_MODE = process.env.SERVER_TREE === 'orgs';
+// a club as the old tree held it -> the new layout (no derived parts: the functions make those)
+function clubToOrgs(w, keep = {}) {
+  if (!w || typeof w !== 'object') return w;
+  const { members, org, log, ...access } = w.access || {};
+  const teams = {}, squad = {};
+  for (const [tid, t] of Object.entries(w.teams || {})) {
+    if (!t || typeof t !== 'object') { teams[tid] = t; continue; }
+    const { players, ...rest } = t;
+    teams[tid] = rest;
+    if (players) squad[tid] = players;
+  }
+  const out = { ...w, access: Object.keys(access).length ? access : undefined, org, members, log, teams, squad, names: keep.names, roster: keep.roster };
+  for (const k of Object.keys(out)) if (out[k] === undefined || (out[k] && typeof out[k] === 'object' && !Object.keys(out[k]).length)) delete out[k];
+  return Object.keys(out).length ? out : undefined;
+}
+// and back: what the old tree would hold
+function clubFromOrgs(o) {
+  if (!o || typeof o !== 'object') return o;
+  const { access, org, members, log, teams, squad, names, roster, ...rest } = o;
+  const acc = { ...(access || {}) };
+  if (org !== undefined) acc.org = org;
+  if (members !== undefined) acc.members = members;
+  if (log !== undefined) acc.log = log;
+  const ts = {};
+  for (const [tid, t] of Object.entries(teams || {})) ts[tid] = squad && squad[tid] ? { ...(t || {}), players: squad[tid] } : t;
+  for (const [tid, ps] of Object.entries(squad || {})) if (!ts[tid]) ts[tid] = { players: ps };
+  const out = { ...rest };
+  if (Object.keys(acc).length) out.access = acc;
+  if (Object.keys(ts).length) out.teams = ts;
+  return out;
+}
+// one path of the old tree -> where it lives on the new one
+function toOrgsPath(p) {
+  const m = /^\/?workspaces\/([^/]+)(?:\/(.*))?$/.exec(String(p || ''));
+  if (!m) return p;
+  const rest = (m[2] || '')
+    .replace(/^teams\/([^/]+)\/players(?=\/|$)/, 'squad/$1')
+    .replace(/^access\/(members|org|log)(?=\/|$)/, '$1');
+  return 'orgs/' + m[1] + (rest ? '/' + rest : '');
+}
+function fromOrgsPath(p) {
+  const m = /^orgs\/([^/]+)(?:\/(.*))?$/.exec(String(p || ''));
+  if (!m) return p;
+  const rest = (m[2] || '')
+    .replace(/^squad\/([^/]+)(?=\/|$)/, 'teams/$1/players')
+    .replace(/^(members|org|log)(?=\/|$)/, 'access/$1');
+  return 'workspaces/' + m[1] + (rest ? '/' + rest : '');
+}
+
 function makeServer(seed = {}) {
   const tree = JSON.parse(JSON.stringify(seed));
+  if (ORGS_MODE && tree.workspaces) {
+    tree.orgs = tree.orgs || {};
+    for (const [code, w] of Object.entries(tree.workspaces)) {
+      if (!w || typeof w !== 'object' || w.moved) continue;
+      const o = clubToOrgs(w);
+      if (o) tree.orgs[code] = o;
+      delete tree.workspaces[code];
+    }
+    if (!Object.keys(tree.workspaces).length) delete tree.workspaces;
+  }
   const segs = p => String(p || '').split('/').filter(Boolean);
   const at = p => { let cur = tree; for (const k of segs(p)) { if (!cur || typeof cur !== 'object') return undefined; cur = cur[k]; } return cur; };
+  /* The admin library refuses a write with `undefined` anywhere in it (the
+     move once failed on a club with nothing logged that way); so does this. */
+  const noUndefined = (v, at) => {
+    if (v === undefined) throw new Error('first argument contains undefined in property \'' + at + '\'');
+    if (v && typeof v === 'object') for (const [k, x] of Object.entries(v)) noUndefined(x, at + '.' + k);
+  };
   const put = (p, v) => {
+    if (v !== undefined && v !== null) noUndefined(v, p);
     const ks = segs(p); let cur = tree;
     for (const k of ks.slice(0, -1)) { if (!cur[k] || typeof cur[k] !== 'object') cur[k] = {}; cur = cur[k]; }
     if (v === null || v === undefined) delete cur[ks[ks.length - 1]];
@@ -191,12 +289,14 @@ function makeServer(seed = {}) {
   const reads = [], removes = [], sends = [];
   let down = false;
   let answer = () => ({ success: true });
-  const ref = p => ({
+  const shown = p => (ORGS_MODE ? fromOrgsPath(p) : p);
+  const ref = p => (ORGS_MODE && /^\/?workspaces\//.test(String(p || '')) ? realRef(toOrgsPath(p)) : realRef(p));
+  const realRef = p => ({
     path: segs(p).join('/'),
     get root() { return ref(''); },
     child: c => ref(segs(p).concat(segs(c)).join('/')),
-    get: () => { reads.push(segs(p).join('/')); if (down) return Promise.reject(new Error('unavailable')); return Promise.resolve({ val: () => clone(at(p)), exists: () => at(p) != null }); },
-    remove: () => { removes.push(segs(p).join('/')); put(p, null); return Promise.resolve(); },
+    get: () => { reads.push(shown(segs(p).join('/'))); if (down) return Promise.reject(new Error('unavailable')); return Promise.resolve({ val: () => clone(at(p)), exists: () => at(p) != null }); },
+    remove: () => { removes.push(shown(segs(p).join('/'))); put(p, null); return Promise.resolve(); },
     set: v => { put(p, v); return Promise.resolve(); },
     // a multi-path update: each key a path under this one, null deleting it
     update: o => { for (const [k, v] of Object.entries(o || {})) put(segs(p).concat(segs(k)).join('/'), v); return Promise.resolve(); },
@@ -272,8 +372,49 @@ function makeServer(seed = {}) {
     return out;
   }
 
+  /* What the tests see: in orgs mode, every club as the old tree would hold it. */
+  const view = () => {
+    if (!ORGS_MODE) return tree;
+    const v = JSON.parse(JSON.stringify(tree));
+    for (const [code, o] of Object.entries(v.orgs || {})) { (v.workspaces = v.workspaces || {})[code] = clubFromOrgs(o); }
+    delete v.orgs;
+    return v;
+  };
+  const viewAt = p => { let cur = view(); for (const k of segs(p)) { if (!cur || typeof cur !== 'object') return undefined; cur = cur[k]; } return cur; };
+  /* A write in the old tree's terms. In orgs mode the club it lands in is read
+     back the old way, written to, and laid out again, keeping what only the
+     new tree has (names, roster) for the functions to bring into line; the
+     path triggers are matched from is the club's whole new tree. */
+  const write = (p, v) => {
+    const m = ORGS_MODE && /^\/?workspaces\/([^/]+)(?:\/(.*))?$/.exec(String(p || ''));
+    if (!m) { put(p, v); return p; }
+    const code = m[1], old = (tree.orgs || {})[code];
+    const club = clubFromOrgs(old) || {};
+    const holder = { c: club };
+    const ks = segs(m[2] || '');
+    if (!ks.length) holder.c = v === null || v === undefined ? {} : JSON.parse(JSON.stringify(v));
+    else {
+      let cur = holder.c;
+      for (const k of ks.slice(0, -1)) { if (!cur[k] || typeof cur[k] !== 'object') cur[k] = {}; cur = cur[k]; }
+      if (v === null || v === undefined) delete cur[ks[ks.length - 1]]; else cur[ks[ks.length - 1]] = JSON.parse(JSON.stringify(v));
+    }
+    const next = clubToOrgs(holder.c, old || {});
+    tree.orgs = tree.orgs || {};
+    if (next) tree.orgs[code] = next; else delete tree.orgs[code];
+    return 'orgs/' + code;
+  };
+  const plain = n => (ORGS_MODE ? String(n).replace(/Orgs$/, '') : n);
+  /* The triggers only the new tree has (the roster and staff names, keeping
+     what families read in step) are left out of what fire() and woken()
+     report: the suites written for the old tree ask which of *their*
+     triggers woke. They still run; test/access.js checks them by name. */
+  const ORGS_ONLY = new Set(['rosterPlayer', 'rosterOpen', 'namesMember', 'moveClub']);
+  const reported = n => !(ORGS_MODE && ORGS_ONLY.has(n));
+
   return {
-    tree, reads, removes, sends, triggers, loadFunctions, ref, at: p => clone(at(p)), put,
+    get tree() { return view(); },
+    reads, removes, sends, triggers, loadFunctions, ref, at: p => clone(ORGS_MODE ? viewAt(p) : at(p)),
+    put: (p, v) => { write(p, v); },
     /* every message handed to Cloud Messaging, flattened */
     sent: () => sends.flat(),
     /* the database refusing every read, the way an outage looks from here */
@@ -290,9 +431,8 @@ function makeServer(seed = {}) {
     async fire(p, value) {
       const before = JSON.parse(JSON.stringify(tree));
       const atIn = (t, q) => { let cur = t; for (const k of segs(q)) { if (!cur || typeof cur !== 'object') return undefined; cur = cur[k]; } return cur; };
-      put(p, value);
       const out = {};
-      const ws = segs(p);
+      const ws = segs(write(p, value));
       for (const [name, t] of Object.entries(triggers)) {
         if (t.kind !== 'created' && t.kind !== 'written') continue;   // https and schedule wake on nothing written
         const ps = segs(t.path);
@@ -321,7 +461,8 @@ function makeServer(seed = {}) {
             ? { val: () => now, ref: ref(q) }
             : { before: { val: () => was, ref: ref(q) }, after: { val: () => now, ref: ref(q) } };
           const r = await t.handler({ params: c.prm, data });
-          out[name] = name in out ? [].concat(out[name], r) : r;
+          const n = plain(name);
+          if (reported(n)) out[n] = n in out ? [].concat(out[n], r) : r;
         }
       }
       return out;
@@ -347,7 +488,7 @@ function makeServer(seed = {}) {
       return t.handler({ scheduleTime: new Date().toISOString() });
     },
     /* which triggers would wake for a write at `p` */
-    woken: p => Object.entries(triggers).filter(([, t]) => (t.kind === 'created' || t.kind === 'written') && params(t.path, p)).map(([n]) => n),
+    woken: p => Object.entries(triggers).filter(([, t]) => (t.kind === 'created' || t.kind === 'written') && params(t.path, ORGS_MODE ? toOrgsPath(p) : p)).map(([n]) => plain(n)).filter(reported),
     /* which triggers actually run for a write, without keeping it */
     async wouldWake(p, value) {
       const keep = JSON.stringify(tree), sent = sends.length, rm = removes.length;
@@ -360,4 +501,4 @@ function makeServer(seed = {}) {
   };
 }
 
-module.exports = { makeFakebase, makeServer, snap };
+module.exports = { makeFakebase, makeServer, snap, ORGS_MODE, toOrgsPath, fromOrgsPath, clubToOrgs, clubFromOrgs };

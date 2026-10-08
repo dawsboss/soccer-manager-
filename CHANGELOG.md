@@ -8,6 +8,148 @@ before this point lives only in the git log.
 
 ---
 
+## Moving a club that has nothing logged — 2026-10-08 (build 112)
+
+The *Move* button waited for the server and nothing came back. The server
+built the new tree with any part the club did not have yet (no access log,
+no answers) left as `undefined`, and the database's own library refuses a
+write with an undefined anywhere in it, so the move failed before writing
+anything, its answer included. Nothing in the club was touched.
+
+- **The move leaves out parts a club does not have**, and any error it
+  meets is written back as its answer, so a phone is never left waiting.
+- **A reload no longer forgets the request.** The card shows a request
+  still waiting, then what the server said; one with no answer after two
+  minutes (like the ones made before this fix) offers *Try again*.
+- **The fake server refuses `undefined` as the real one does**, so the
+  tests now fail the way production did (`test/move.js`).
+
+---
+
+## The Move button asks — 2026-10-08 (build 111)
+
+The *Move* button on Club settings said the database refused it and asked
+whether rules version 12 was published, though it was. Before asking, the
+app cleared any earlier request so it could write a fresh one, and it did
+that even when there was none. The database counts deleting nothing as a
+write, and the move request's rule allows deleting only a request that is
+there, so the clearing was refused and the request never went. It now
+clears an earlier request only when there is one. No rules change, so
+nothing needs publishing. `test/rules.js` pins the refusal and
+`test/orgs.js` stands it in for the button.
+
+---
+
+## Families' phones hold only their own children — 2026-10-08 (build 110, rules version 12)
+
+SECURITY.md, SEC-1, and AUTH.md, *The move to `orgs/{orgId}`*. Everyone in a
+club read all of `workspaces/{code}` at the database, so a parent's phone
+held every child on every team, the coach's notes and ratings on each, who
+to keep apart, and every member's email. The app drew the others by shirt
+number, but that was the screen's choice; the data was on her phone.
+
+- **A club can move to `orgs/{code}`**, where each part has its own readers.
+  The squad (`squad/{tid}`) is its team's staff's, every coach's and the
+  admins'; a child's record is also her own family's and her own. Everyone
+  in the club reads the teams, games and answers, a roster of shirt numbers
+  (`roster/`, names only while the club opens the roster) and the staff's
+  names (`names/`, never an email). Emails (`members/`) are the admins' and
+  coaches'; the access log is the admins'. The id stays the workspace
+  code, so training, messages, invites, links and every phone's copies stay
+  where they are.
+- **The admin presses Move** (Club settings, *Keep the squad off families'
+  phones*). The server checks she is an admin, refuses while a game is
+  being played, moves the club in one write, reads it back and compares,
+  puts it back if anything differs, and keeps the old tree aside. The
+  lookup tables are built whole on the way, closing the old tree's bridges.
+  New clubs start on the new tree.
+- **Every phone carries on.** It reads a moved club a part at a time and
+  puts the familiar shape back together, so no screen changed. A family's
+  phone forgets every other child the moment it sees the move, before it
+  reads anything. Writes wait in the outbox until the session's first read
+  says which tree the club is on, so a goal tracked at a field before the
+  phone heard of the move goes to the new tree; a move under an open phone
+  reads as everything being deleted, so removals wait a tick for the
+  moved marker and nothing is deleted or reported.
+- **The rules are built now** (`tools/rules-source.json` →
+  `node tools/rules-build.js` → `database.rules.json`): about two hundred
+  lookups into a club each ask whichever tree it is on. Nobody can start
+  `orgs/` under a code the old tree holds, which would hand them every rule
+  for that club, nor write to the old tree of a moved club. `rules.js`,
+  the four server suites and the new `orgs.js` and `move.js` check both
+  trees.
+- **Still to do, by the owner:** merge (the functions deploy and the rules
+  publish), turn on daily backups, move an older test club, then the real
+  one (SECURITY.md, SEC-1).
+
+---
+
+## A Content-Security-Policy on every page — 2026-10-08 (build 110)
+
+SECURITY.md, SEC-3. Data in this app is typed by many people and drawn with
+`innerHTML`. `esc()` covers text, but a missed `javascript:` link or a
+script slipped into a page would run on this site, where a coach's sign-in
+and the club's copy live; both bugs in SEC-D4 were that.
+
+- **`index.html`, `live.html` and `game.html` carry one policy**, as a
+  `<meta>` because GitHub Pages cannot send headers: scripts only from this
+  site, Firebase's SDK (`www.gstatic.com`), Google sign-in
+  (`apis.google.com`) and the database's long-polling fallback; never
+  inline, never `eval`. Connections to the database, Google's APIs (Auth,
+  push registration) and the functions; frames for sign-in and the
+  database's fallback; `object-src 'none'`, `base-uri 'self'`. Styles keep
+  `'unsafe-inline'` for the `style=` attributes the app draws.
+- **Tried in Chromium against the live project**: the database read over
+  both the WebSocket and long-polling, Google sign-in's popup and frame, the
+  service worker, the push hosts, and both share pages, with nothing
+  refused; a `javascript:` link, an `onerror=` and an injected `<script>`
+  placed in the page did nothing.
+- `test/version.js` holds every page to having it, first, the same on each,
+  with no inline scripts allowed.
+
+---
+
+## Only you, an admin, or a coach filling a gap changes your name — 2026-10-08 (build 110, rules version 11)
+
+SECURITY.md, SEC-2. `access/members/{uid}` (each person's name and email)
+could be written by anyone with a role in the club, so a parent could rename
+the admin or a coach, and every coach's name on sessions, People and
+bookable times comes from there (`personName()`).
+
+- **Her own entry, or an admin.** Nobody else changes or deletes one that
+  is there.
+- **A coach of any team may fill in an entry that is not there yet**
+  (`access/coachIndex`), which is all approving a family through the team
+  link does (`approveClaim()`). A parent or a tracker fills in nobody.
+- **A bridge for a club with no `coachIndex`:** anyone in the club may fill
+  in a missing entry, as approving always needed, and still nobody but her
+  or an admin changes one already there. The table appearing closes it.
+- Rules version 11. Every write the app makes still goes through: signing
+  in, starting a club, an invite, the team link, a coach approving, and an
+  admin pushing the club (`test/rules.js`).
+
+---
+
+## Share, game, feed and club ids from the secure generator — 2026-10-08 (build 110)
+
+SECURITY.md, SEC-4. Invites and team links already came from the browser's
+secure random generator; a team's share link, each game's link, a team's
+calendar feed, My calendar's address and a new club's code still came from
+`uid()`, which is `Math.random`. Each of those ids is the whole of what
+stands between a stranger and what it opens, and `Math.random` is built for
+speed, not secrets.
+
+- **`randId(prefix)`**: 16 bytes from `crypto.getRandomValues`, as hex, so
+  every id is 33 characters or so and passes the feed's id check (6–80
+  letters, digits, `_`, `-`) and the rule on My calendar's address (6–40).
+  `secretId()` is the same thing at 18 bytes, unchanged in length.
+- **No `Math.random` fallback.** A phone with no secure generator cannot
+  run Firebase either, and a weak id that looks strong is worse than none.
+- Ids already handed out keep working; *New link* and *New address* make a
+  strong one. `test/ids.js` traces each kind of id back to the generator.
+
+---
+
 ## Two links that could run someone else's code — 2026-10-08 (build 109)
 
 Found looking for what else needed locking down. `esc()` keeps a link inside

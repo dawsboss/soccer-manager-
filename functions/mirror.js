@@ -37,6 +37,7 @@
 
    Nothing in here imports Firebase; index.js hands it `get` and `update`. */
 
+const { where } = require('./club');
 const keys = o => Object.keys(o && typeof o === 'object' ? o : {});
 const okKey = k => typeof k === 'string' && k.length > 0 && !/[.#$\[\]\/]/.test(k);
 // a public id is what the app makes: letters, digits, _ and -, as the feed checks
@@ -97,8 +98,8 @@ function gameWhen(team, m) {
   };
 }
 
-const sandbox = async (env, code) => String(code).startsWith(SANDBOX_PREFIX)
-  || !!(await env.get(`workspaces/${code}/access/org/sandbox`));
+const sandbox = async (env, code, L) => String(code).startsWith(SANDBOX_PREFIX)
+  || !!(await env.get(`${L.org}/sandbox`));
 // a page exists when it carries a team, as the feed asks; anything else is not ours to make
 const pageOf = async (env, id) => {
   if (!okId(id)) return null;
@@ -109,9 +110,12 @@ const pageOf = async (env, id) => {
 /* A team's entries changed: teams/{tid}/events, any depth. */
 async function onEvents(env, params, now = Date.now()) {
   const { code, tid } = params || {};
-  if (!okKey(code) || !okKey(tid) || (await env.get('retired/' + code)) || (await sandbox(env, code))) return [];
-  const W = `workspaces/${code}/teams/${tid}/`;
-  const [share, calFeed, players, events] = await Promise.all(['share', 'calFeed', 'players', 'events'].map(k => env.get(W + k)));
+  if (!okKey(code) || !okKey(tid)) return [];
+  const L = await where(env.get, code, params.tree);
+  if ((await env.get('retired/' + code)) || (await sandbox(env, code, L))) return [];
+  const W = L.team(tid) + '/';
+  // the players only to take their names out of what is published
+  const [share, calFeed, players, events] = await Promise.all([W + 'share', W + 'calFeed', L.squad(tid), W + 'events'].map(p => env.get(p)));
   const team = { players, events };
   const out = [], patch = {};
   for (const [id, all] of [[share, false], [calFeed, true]]) {
@@ -128,16 +132,18 @@ async function onEvents(env, params, now = Date.now()) {
 /* A game's date, kick-off, place, opponent or called-off changed. */
 async function onGame(env, params, now = Date.now()) {
   const { code, mid } = params || {};
-  if (!okKey(code) || !okKey(mid) || (await env.get('retired/' + code)) || (await sandbox(env, code))) return [];
-  const M = `workspaces/${code}/matches/${mid}/`;
+  if (!okKey(code) || !okKey(mid)) return [];
+  const L = await where(env.get, code, params.tree);
+  if ((await env.get('retired/' + code)) || (await sandbox(env, code, L))) return [];
+  const M = L.game(mid) + '/';
   // field by field: a game's stints and events are never read for this
   const vals = await Promise.all(GAME_READ.map(k => env.get(M + k)));
   const m = Object.fromEntries(GAME_READ.map((k, i) => [k, vals[i]]));
   /* A deleted game has no team to find its pages by; the phone that deleted
      it takes its page down (CLAUDE.md, a game link). */
   if (!okKey(m.teamId)) return [];
-  const T = `workspaces/${code}/teams/${m.teamId}/`;
-  const [share, calFeed, players] = await Promise.all(['share', 'calFeed', 'players'].map(k => env.get(T + k)));
+  const T = L.team(m.teamId) + '/';
+  const [share, calFeed, players] = await Promise.all([T + 'share', T + 'calFeed', L.squad(m.teamId)].map(p => env.get(p)));
   const when = gameWhen({ players }, m);
   const out = [], patch = {};
   const put = page => {

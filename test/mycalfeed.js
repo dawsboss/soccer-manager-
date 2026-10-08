@@ -262,7 +262,8 @@ const named = doc => NAMES.filter(n => JSON.stringify(doc || {}).includes(n));
     const S = server();
     S.put('serverState/myCal/people/mum', 1);
     const env = {
-      get: p => (p === 'workspaces/OTHER/matches' ? Promise.reject(new Error('unavailable')) : S.ref(p).get().then(s => s.val())),
+      // the other club's games, on whichever tree this pass keeps it
+      get: p => (require('./fakebase').fromOrgsPath(p) === 'workspaces/OTHER/matches' ? Promise.reject(new Error('unavailable')) : S.ref(p).get().then(s => s.val())),
       set: (p, v) => S.ref(p).set(v),
       claim: (p, fn) => S.ref(p).transaction(fn).then(r => !!r.committed)
     };

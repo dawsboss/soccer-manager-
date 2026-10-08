@@ -34,6 +34,8 @@ const BATCH = 500;   // Cloud Messaging's limit per sendEach call
 // tokens Cloud Messaging says are gone for good; any other failure may pass
 const DEAD = /(registration-token-not-registered|invalid-registration-token)$/;
 
+const { where, readTeam } = require('./club');
+
 const keys = o => Object.keys(o && typeof o === 'object' ? o : {});
 const short = s => {
   const t = String(s || '').replace(/\s+/g, ' ').trim();
@@ -41,16 +43,17 @@ const short = s => {
 };
 
 /* What the club says about one team, read once per event. */
-async function teamFacts(env, code, tid) {
-  const W = 'workspaces/' + code;
+async function teamFacts(env, code, tid, tree) {
+  const L = await where(env.get, code, tree);
+  const A = L.access;
   const [retired, admins, tIndex, tParents, tPlayers, team, members] = await Promise.all([
     env.get('retired/' + code),
-    env.get(W + '/access/admins'),
-    env.get(W + '/access/teamIndex/' + tid),
-    env.get(W + '/access/teamParents/' + tid),
-    env.get(W + '/access/teamPlayers/' + tid),
-    env.get(W + '/teams/' + tid),
-    env.get(W + '/access/members')
+    env.get(A + '/admins'),
+    env.get(A + '/teamIndex/' + tid),
+    env.get(A + '/teamParents/' + tid),
+    env.get(A + '/teamPlayers/' + tid),
+    readTeam(env.get, L, tid),
+    env.get(L.members)
   ]);
   return {
     retired: !!retired, admins: admins || {}, tIndex: tIndex || {}, tParents: tParents || {},
@@ -191,9 +194,9 @@ async function onStaff(env, params, v) {
   const { code, cid, id } = params;
   const pair = String(cid).split('~');
   if (pair.length !== 2 || pair.some(u => !/^[^.#$\[\]\/~]{1,128}$/.test(u)) || pair[0] === pair[1] || !pair.includes(v.by)) return none;
-  const W = 'workspaces/' + code;
+  const A = (await where(env.get, code)).access;
   const [retired, admins, coachIndex] = await Promise.all([
-    env.get('retired/' + code), env.get(W + '/access/admins'), env.get(W + '/access/coachIndex')
+    env.get('retired/' + code), env.get(A + '/admins'), env.get(A + '/coachIndex')
   ]);
   if (retired) return none;
   const staff = u => has(admins, u) || has(coachIndex, u);
@@ -290,7 +293,7 @@ function teamReaders(f) {
 /* One entry changed. `it` is the entry after, `before` what it was, both in
    the calendar's shape: { kind: 'game'|'practice'|'event', tid, id, date,
    start, called, title, series }. */
-async function calChange(env, code, before, it) {
+async function calChange(env, code, before, it, tree) {
   const none = { to: [], sent: 0, failed: 0, removed: [] };
   const now = env.now ? env.now() : Date.now();
   const x = it || before;
@@ -306,7 +309,7 @@ async function calChange(env, code, before, it) {
     old => (said !== key ? (old && old.at > now - 10 * 60000 ? undefined : { sig, at: now }) : (old && old.sig === sig ? undefined : { sig, at: now })));
   if (!told) return none;
 
-  const f = await teamFacts(env, code, it.tid);
+  const f = await teamFacts(env, code, it.tid, tree);
   if (f.retired || !f.team) return none;
   const tn = f.team.name || 'Your team';
   const words = it.kind === 'game' ? `${tn} v ${it.title || 'TBC'}` : `${tn}: ${it.title || (it.kind === 'practice' ? 'Practice' : 'Team event')}`;
@@ -334,14 +337,14 @@ async function onEntry(env, params, before, after) {
     kind: e.kind === 'practice' ? 'practice' : 'event', tid: params.tid, id: params.eid,
     date: e.date, start: e.start, called: e.called || '', title: e.title || '', series: e.series || '', edit: e.edit || null
   } : null);
-  return calChange(env, params.code, shape(before), shape(after));
+  return calChange(env, params.code, shape(before), shape(after), params.tree);
 }
 
 /* A game, matches/{mid}: woken by one field, `field`, which was `was`. The
    rest is read as it stands now, a field at a time, never the whole game. */
 const GAME_FIELDS = ['teamId', 'date', 'kickoff', 'called', 'opponent', 'edit'];
 async function onGameField(env, params, field, was) {
-  const base = `workspaces/${params.code}/matches/${params.mid}/`;
+  const base = (await where(env.get, params.code, params.tree)).game(params.mid) + '/';
   const vals = await Promise.all(GAME_FIELDS.map(k => env.get(base + k)));
   const g = Object.fromEntries(GAME_FIELDS.map((k, i) => [k, vals[i]]));
   if (!g.teamId) return { to: [], sent: 0, failed: 0, removed: [] };
@@ -352,7 +355,7 @@ async function onGameField(env, params, field, was) {
      dated one, which is not worth a buzz. Either way, not this event's to say. */
   if (field === 'kickoff' && (was === null || was === undefined)) return { to: [], sent: 0, failed: 0, removed: [] };
   const before = field === 'date' && (was === null || was === undefined) ? null : shape({ ...g, [field]: was });
-  return calChange(env, params.code, before, after);
+  return calChange(env, params.code, before, after, params.tree);
 }
 
 module.exports = { onNotice, onMessage, onStaff, onEntry, onGameField, calNews, calSig, whenOf, teamReaders, noticeReaders, threadReaders, teamFacts, BODY_MAX, BATCH, SOON_DAYS, GAME_FIELDS };

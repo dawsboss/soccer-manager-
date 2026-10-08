@@ -27,6 +27,7 @@ const SUITES = [
   ['rsvp', 'parents say who is coming, for their own child only'],
   ['attend', 'who came, and the season counted from it'],
   ['calfeed', 'the calendar feed reads public/ and nothing else'],
+  ['ids', 'share, game, feed and club ids come from the secure generator'],
   ['ai', 'the AI prompt carries numbers, never names'],
   ['roles', 'roles derived from where a uid appears'],
   ['visibility', 'which teams each account sees and edits'],
@@ -40,6 +41,13 @@ const SUITES = [
   ['access', 'the lookup tables the rules read, kept true by the server the moment a role changes'],
   ['mirror', 'the share pages\' calendar, kept in step by the server whoever changed it'],
   ['mycalfeed', 'my calendar\'s feed, built by the server from her roles in every club'],
+  // the server again, every club moved to orgs/: each expectation above holds there too
+  ['access-orgs', 'the lookup tables, with every club on orgs/'],
+  ['push-orgs', 'notifications, with every club on orgs/'],
+  ['mirror-orgs', 'the share pages\' calendar, with every club on orgs/'],
+  ['mycalfeed-orgs', 'my calendar\'s feed, with every club on orgs/'],
+  ['move', 'moving a club to orgs/: only its admin, all or nothing, and the roster and staff names after'],
+  ['orgs', 'the app on a moved club: a family\'s phone holds her own children and numbers, staff read the squads, every write lands there'],
   ['import', 'bulk import merges, and never replaces'],
   ['drills', 'the built-in drill library holds together'],
   ['practice', 'the Practice tab, and who gets it'],
@@ -59,7 +67,8 @@ const SUITES = [
   ['smoke', 'every view renders without throwing'],
   ['sandbox', 'the test club, and database isolation'],
   ['rulesver', 'an admin is told when the published rules are behind'],
-  ['rules', 'the database rules, as database.rules.json has them']
+  ['rules', 'the database rules, as database.rules.json has them'],
+  ['rules-orgs', 'the same rules with every club moved to orgs/, and who reads each part there']
 ];
 
 const verbose = process.argv.includes('--verbose') || process.argv.includes('-v');
@@ -71,8 +80,13 @@ let allGaps = [];
 
 for (const [name, what] of list) {
   const started = Date.now();
-  const r = spawnSync(process.execPath, [path.join(__dirname, name + '.js')], {
-    encoding: 'utf8', cwd: path.join(__dirname, '..')
+  /* A name ending -orgs is its suite run again with every club moved to
+     orgs/{code} (AUTH.md, *The move to `orgs/{orgId}`*): the same file, told
+     which tree to keep its clubs on. */
+  const orgs = /-orgs$/.test(name);
+  const r = spawnSync(process.execPath, [path.join(__dirname, name.replace(/-orgs$/, '') + '.js')], {
+    encoding: 'utf8', cwd: path.join(__dirname, '..'),
+    env: orgs ? { ...process.env, RULES_TREE: 'orgs', SERVER_TREE: 'orgs', APP_TREE: 'orgs' } : process.env
   });
   const ms = Date.now() - started;
   const out = (r.stdout || '') + (r.stderr || '');
@@ -85,7 +99,7 @@ for (const [name, what] of list) {
 
   const mark = ok ? 'ok  ' : 'FAIL';
   const note = gaps.length ? `  (${gaps.length} known gap${gaps.length === 1 ? '' : 's'})` : '';
-  console.log(`${mark} ${name.padEnd(11)} ${String(ms + 'ms').padStart(7)}  ${what}${note}`);
+  console.log(`${mark} ${name.padEnd(14)} ${String(ms + 'ms').padStart(7)}  ${what}${note}`);
   if (verbose) console.log(out.split('\n').map(l => '     ' + l).join('\n'));
   else if (!ok) {
     /* Show the whole failing suite: the assertions before a failure are usually
