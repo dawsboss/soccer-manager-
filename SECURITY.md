@@ -21,8 +21,8 @@ under **Before families come on** can be done without disturbing anyone.
 ### SEC-1 · Keep the squad out of parents' reach
 - **Status:** Decided, designed, not built · **Kind:** Code · **Size:** Large
 - **Decided 2026-10-08:** the full `orgs/{orgId}` move, under the same id as
-  the workspace code. The design, its build order and four smaller decisions
-  still open are in `AUTH.md`, *The move to `orgs/{orgId}`*.
+  the workspace code. The design, its build order and the four smaller
+  decisions (all settled the same day) are in `AUTH.md`, *The move to `orgs/{orgId}`*.
 - **Why:** everyone with a role in a club reads all of `workspaces/{code}` at
   the database. A parent's phone holds every child on every team, with the
   coach's note on each, their ratings and who to keep apart, and every

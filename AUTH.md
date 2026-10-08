@@ -290,7 +290,7 @@ What it costs: every path in `app.js`, the rules, `test/rules.js`, the outbox, t
 
 **Decided 2026-10-06:** the owner wants registration data and the squad's names protected by the database, not the screen. `GOTSPORT.md` (*Protecting the data*, *Build order* step 3) schedules the first reason above (the full move, or only a squad node) before season registration opens to families, designed together with a club-level record of each child. That design is written here before any code.
 
-**Decided 2026-10-08 (SECURITY.md, SEC-1): the full move**, not only a squad node. The design is the next section; no code is written until the owner has read it.
+**Decided 2026-10-08 (SECURITY.md, SEC-1): the full move**, not only a squad node. The design is the next section, and its four smaller decisions were settled the same day.
 
 ## The move to `orgs/{orgId}`
 
@@ -326,7 +326,7 @@ The screen hides most of it (`shownName()`); developer tools do not. The move gi
 | `matches/{mid}` | `matches/{mid}` | everyone in the club (keyed by player id; no names in it today, and `test/stats.js`'s name scan is extended to a game record to keep it so) |
 | `rsvp/{tid}/…` | `rsvp/{tid}/…` | everyone in the club, as today: keyed by player id, and the screen narrows it |
 
-**Staff** here means: an admin (`access/admins`), a coach of any team (`access/coachIndex`), or anyone with a role on that team (`access/teamIndex/{tid}/{uid}`, coach or tracker). That is exactly who `namesNarrowed()` shows names to today, with one narrowing: **a tracker reads her own team's squad, not every team's.** A rule cannot ask "a tracker of any team" without a sixth lookup table, and a tracker has no reason to see another team's children. *Owner to confirm* (see *Decisions*).
+**Staff** here means: an admin (`access/admins`), a coach of any team (`access/coachIndex`), or anyone with a role on that team (`access/teamIndex/{tid}/{uid}`, coach or tracker). That is exactly who `namesNarrowed()` shows names to today, with one narrowing: **a tracker reads her own team's squad, not every team's.** A rule cannot ask "a tracker of any team" without a sixth lookup table, and a tracker has no reason to see another team's children (decided, see *Decisions*).
 
 A family's read of her own child is the rule at `squad/$tid/$pid`: `data.child('guardians/' + auth.uid).exists() || data.child('self/' + auth.uid).exists()`. One record, never the list: she cannot read `squad/{tid}`, so her phone asks for each of her children by path (it knows them from `access/teamParents/{tid}/{uid}`, whose value is the player id, and `teamPlayers` for a player herself).
 
@@ -405,10 +405,15 @@ Order: **the test club first** (Setup → Make a test club), then the owner's ow
 
 ### Decisions for the owner
 
-1. **Trackers read only their own team's squad** (recommended), or every team's as the screen shows today, which needs a sixth lookup table.
-2. **Coaches of other teams keep reading every squad** (recommended: it is today's behaviour, and clubs move players between age groups), or only their own, which is the *teams one club can't read* reason in *Migration* and can come later as a club setting.
-3. **Member emails readable by all staff** (recommended: coaches need parents' addresses), or by admins only.
-4. **The access log becomes admins' only** (recommended: it is an audit trail of who was given what).
+All four decided by the owner on 2026-10-08, as recommended:
+
+1. **Trackers read only their own team's squad.** No sixth lookup table.
+2. **Coaches of other teams keep reading every squad.** Writing stays as
+   today: a squad is changed only by that team's coaches and the club's
+   admins (and a family's or player's own `guardians`/`self` entry through
+   an invite or an approval).
+3. **Member emails are readable by all staff.**
+4. **The access log is admins' only.**
 
 ## What parents actually see
 
