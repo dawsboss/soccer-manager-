@@ -628,4 +628,24 @@ A.sheetPlayer(A.state.teams.f1.players.x);
 check('the player sheet asks for it', /Stronger foot/.test(A.dom.node('#sheet').innerHTML), true);
 }
 
+console.log('\n--- a Veo link is https or nothing ---');
+{
+  /* esc() keeps a link inside its quotes but cannot stop a javascript: address
+     running on this site when it is tapped, and a file is anybody's. */
+  admin();
+  const p = A.importPlan({ teams: [{ name: 'Veo Test', games: [
+    { opponent: 'Hostile', date: '2026-11-01', veo: 'javascript:alert(document.cookie)' },
+    { opponent: 'Fine', date: '2026-11-02', veo: 'https://app.veo.co/matches/1' }
+  ] }] });
+  check('a javascript: link is a warning, not an error', p.errors.length === 0 && p.warnings.some(w => /Veo link does not start with https/.test(w)), true);
+  A.applyImport(p);
+  const ms = Object.values(A.state.matches);
+  check('and is left out of the game', (ms.find(m => m.opponent === 'Hostile') || {}).veoUrl || '', '');
+  check('an https one is kept', (ms.find(m => m.opponent === 'Fine') || {}).veoUrl, 'https://app.veo.co/matches/1');
+  for (const bad of ['javascript:alert(1)', 'JaVaScRiPt:alert(1)', ' javascript:alert(1)', 'data:text/html,<script>alert(1)</script>', 'http://veo.co/x', 'https://x.co/"onmouseover="alert(1)'])
+    check(`typed or saved, ${JSON.stringify(bad)} is nothing`, A.veoIn(bad), '');
+  check('a game written with one anyway (a tracker can) draws no link to it', /javascript:|Open the Veo recording/.test(A.gameDetailsCard({ id: 'gx', teamId: 't', veoUrl: 'javascript:alert(1)' })), false);
+  check('one with an https link does', /href="https:\/\/app\.veo\.co\/matches\/1"/.test(A.gameDetailsCard({ id: 'gy', teamId: 't', veoUrl: 'https://app.veo.co/matches/1' })), true);
+}
+
 H.summary('bulk import');

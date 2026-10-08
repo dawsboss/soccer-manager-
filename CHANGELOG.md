@@ -8,6 +8,23 @@ before this point lives only in the git log.
 
 ---
 
+## Two links that could run someone else's code — 2026-10-08 (build 106)
+
+Found looking for what else needed locking down. `esc()` keeps a link inside
+its quotes, but it cannot stop a `javascript:` address, which runs on this
+site when tapped: the site where a coach's sign-in and the club's copy live.
+
+- **The share page's *Open in Minutes*** took the app's address from the
+  page it was showing. A page under an id nobody has claimed can be written
+  by any signed-in account, so anyone could make a share link whose button
+  ran their script for whichever coach tapped it. `live.js` now builds the
+  address from its own location, and encodes the team and game it names.
+- **A game's Veo link** was drawn as typed, and anyone who can write a game
+  (a tracker included) could type anything. It is now `https` or nothing:
+  checked when typed, when imported (with a warning) and again when drawn.
+
+---
+
 ## My calendar's feed comes from the server, and leaves with the role — 2026-10-08 (build 106)
 
 The third job off SERVER.md's list. A person's calendar feed (one address,

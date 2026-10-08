@@ -3378,7 +3378,10 @@ function importPlan(data, cur = state) {
       else out.warnings.push(`${label}: ${side}-a-side is not 5, 7, 9 or 11, so it was left at the default.`);
     }
     const veo = firstOf(g, 'veo', 'veoUrl');
-    if (veo !== undefined) fields.veoUrl = String(veo).trim();
+    if (veo !== undefined) {
+      fields.veoUrl = veoIn(veo);
+      if (String(veo).trim() && !fields.veoUrl) out.warnings.push(`${label}: the Veo link does not start with https://, so it was left out.`);
+    }
     const sc = importScore(firstOf(g, 'score', 'result'));
     if (sc === false) out.warnings.push(`${label}: score ${JSON.stringify(firstOf(g, 'score', 'result'))} should be written "3-1", so it was left out.`);
 
@@ -7346,7 +7349,7 @@ function gameDetailsCard(m) {
     ${readOnlyHere() ? '' : `<button class="btn quiet sm" data-act="editmatch" data-id="${m.id}" style="flex:none">Edit game</button>`}</div>
     ${CALLED[m.called] ? `<div class="warn alert" style="margin-top:10px"><b>${CALLED[m.called]}.</b> It shows that way on the calendar and the share pages.</div>` : ''}
     ${m.notes ? `<p class="muted" style="margin:10px 0 0">${esc(m.notes)}</p>` : ''}
-    ${m.veoUrl ? `<p style="margin:10px 0 0"><a href="${esc(m.veoUrl)}" target="_blank" rel="noopener">Open the Veo recording</a></p>` : ''}
+    ${linkOk(m.veoUrl) ? `<p style="margin:10px 0 0"><a href="${esc(m.veoUrl)}" target="_blank" rel="noopener noreferrer">Open the Veo recording</a></p>` : ''}
   </div>`;
 }
 
@@ -10005,6 +10008,12 @@ function cleanDrawing(dg) {
   return c && !D.parse(c).errors.length && JSON.stringify(c).length <= 12000 ? c : null;
 }
 const linkOk = u => typeof u === 'string' && u.length <= 500 && /^https:\/\/[^\s"'<>]+$/.test(u);
+/* A game's Veo link, as typed or imported: https or nothing. Anyone who can
+   write a game (a tracker included, rules.js gap 1) can put anything in it,
+   and esc() keeps a link inside its quotes but cannot stop a `javascript:`
+   address running on this site, where the coach's sign-in lives; so it is
+   checked here on the way in and by linkOk() again where it is drawn. */
+const veoIn = v => { const u = String(v == null ? '' : v).trim(); return linkOk(u) ? u : ''; };
 
 /* Whatever comes back from the database, or out of a plan, goes through this.
    Any coach can write a club drill and the rules check only its name and its
@@ -18822,7 +18831,7 @@ function onAct(e) {
       opponent: $('#mOpp').value.trim(), date: $('#mDate').value,
       kickoff: $('#mKick').value || '', venue: $('#mVenue').value.trim(),
       periodCount: Number($('#mCount').value), periodMinutes: Number($('#mLen').value) || 40,
-      onFieldCount: side, veoUrl: $('#mVeo').value.trim(),
+      onFieldCount: side, veoUrl: veoIn($('#mVeo').value),
       home: HOME_AWAY[$('#mHome').value] ? $('#mHome').value : '', arrive: hm($('#mArrive').value),
       kit: $('#mKit').value.trim(), notes: $('#mNotes').value.trim()
     };
