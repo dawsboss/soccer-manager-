@@ -1102,3 +1102,12 @@ button.ev:active{filter:brightness(.92)}
 
 /* Squad: the team's set-up under the players */
 .sechead{margin:10px 0 -4px}
+
+/* New message: a searchable list, tap to choose one or several (build 107) */
+.pickrow{grid-template-columns:minmax(0,1fr) auto;padding:7px 11px}
+.pickrow + .pickrow{margin-top:-2px}
+#msgFind{width:100%;font:inherit;font-size:16px;padding:10px 12px;border:1px solid var(--line);border-radius:9px;background:#fff;margin-bottom:10px}
+.pickbox{width:22px;height:22px;border:2px solid var(--line);border-radius:6px;display:inline-flex;align-items:center;justify-content:center;font-weight:700;font-size:13px;color:#fff}
+.pickrow[aria-pressed="true"]{border-color:var(--field-deep);background:var(--field-wash)}
+.pickrow[aria-pressed="true"] .pickbox{background:var(--field-deep);border-color:var(--field-deep)}
+.pickfoot{position:sticky;bottom:calc(-20px - env(safe-area-inset-bottom));background:var(--card);padding:10px 0 4px;margin-top:6px;border-top:1px solid var(--line)}

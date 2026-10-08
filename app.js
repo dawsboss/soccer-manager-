@@ -2,7 +2,7 @@
    Static app. Data lives in localStorage, and mirrors to Firebase Realtime
    Database when a config + workspace code are present. */
 
-const BUILD = '106';
+const BUILD = '107';
 const BUILT = '2026-10-07';
 /* The version of database.rules.json this app was written against. The rules
    carry the same number in rulesVersion's .write, which accepts that number
@@ -3168,32 +3168,86 @@ function sheetPrivacy() {
     <p><b>Permanent.</b> Nobody can edit or delete a message once it is sent, admins included.</p>
     <button class="btn quiet wide" data-act="closesheet">Done</button>`);
 }
-/* New message: whoever she may start a conversation with, and nobody else.
-   A family, the coaches of each of her teams; a coach, the families on the
-   teams she coaches (an admin, on every team) and the club's other coaches
-   and admins. Each opens the conversation; nothing is written until she
-   sends. */
+/* New message: one list of everyone she may write to, found by typing, not
+   by working down team by team (a club of twenty teams made that a long
+   dropdown). A family: the coaches of each of her teams. A coach: the
+   families on the teams she coaches (an admin, every team) and the club's
+   other coaches and admins. A parent on two teams is two rows, because those
+   are two conversations, each read by that team's coaches.
+
+   Tap one, or several. One opens the conversation; several get the same
+   message, each in their own conversation, so nobody learns who else was
+   sent it and every reply comes back where the rules already say it may be
+   read. Nothing is written until she sends. */
+const PICK_SHOW = 40;
+function msgPeople() {
+  if (!me || !msgFor) return [];
+  const out = [];
+  for (const x of famThreads()) out.push({ key: `f:${x.tid}:${x.fam}`, c: { tid: x.tid, fam: x.fam }, kind: 'coaches',
+    name: `Coaches of ${(state.teams[x.tid] || {}).name || 'the team'}`, sub: staffNames(x.tid).join(', '), find: '' });
+  for (const t of staffTeams()) for (const u of families(t.id)) {
+    const kids = childrenOf(t.id, u);
+    out.push({ key: `f:${t.id}:${u}`, c: { tid: t.id, fam: u }, kind: 'family', name: familyName(u),
+      sub: [kids.length ? 'Parent of ' + kids.join(', ') : 'Parent', t.name].filter(Boolean).join(' · '), find: 'family parent' });
+  }
+  for (const u of colleagues()) out.push({ key: `c:${u}`, c: { cid: sdId(me.uid, u) }, kind: 'staff', name: familyName(u),
+    sub: colleagueLabel(u), find: 'staff coach admin' });
+  // the ones she talks to most recently first, then by name
+  for (const p of out) { const l = convMsgs(p.c); p.last = l.length ? l[l.length - 1].at || 0 : 0; }
+  return out.sort((a, b) => b.last - a.last || a.name.localeCompare(b.name));
+}
+const pickUi = () => (ui.msgPick = ui.msgPick || { q: '', sel: [] });
+function pickMatches() {
+  const q = String(pickUi().q || '').trim().toLowerCase().split(/\s+/).filter(Boolean);
+  return msgPeople().filter(p => q.every(w => `${p.name} ${p.sub} ${p.find}`.toLowerCase().includes(w)));
+}
+function pickListHtml() {
+  const u = pickUi(), all = pickMatches(), shown = all.slice(0, PICK_SHOW);
+  if (!all.length) return `<p class="muted" style="margin:8px 0">Nobody matches “${esc(u.q)}”.</p>`;
+  return `<div class="plist">${shown.map(p => {
+    const on = u.sel.includes(p.key);
+    return `<button class="prow convrow pickrow" type="button" data-act="msgpick" data-k="${esc(p.key)}" aria-pressed="${on}">
+      <span style="min-width:0"><span class="pname">${esc(p.name)}</span>${p.sub ? `<span class="rowsub">${esc(p.sub)}</span>` : ''}</span>
+      <span class="pickbox" aria-hidden="true">${on ? '✓' : ''}</span></button>`;
+  }).join('')}</div>
+    ${all.length > shown.length ? `<p class="muted" style="margin:8px 0 0">${all.length - shown.length} more — keep typing to narrow it down.</p>` : ''}
+    ${u.q && all.length > 1 && all.length <= PICK_SHOW && !all.every(p => u.sel.includes(p.key)) ? `<button class="btn quiet wide" data-act="msgpickall" style="margin-top:8px">Choose all ${all.length}</button>` : ''}`;
+}
+function pickFootHtml() {
+  const people = msgPeople(), sel = pickUi().sel.map(k => people.find(p => p.key === k)).filter(Boolean);
+  if (!sel.length) return `<p class="muted" style="margin:0">Tap one person to open your conversation, or several to send them all the same message.</p>`;
+  return `<div class="chips" style="margin-bottom:8px">${sel.map(p => `<button class="chip" type="button" data-act="msgpick" data-k="${esc(p.key)}" aria-pressed="true">${esc(p.name)} ×</button>`).join('')}</div>
+    <button class="btn wide" data-act="msgpickgo">${sel.length === 1 ? `Write to ${esc(sel[0].name)}` : `Write to ${sel.length} people`}</button>`;
+}
+/* Redraws the list and the chosen row in place, so the search box keeps its
+   focus and the phone's keyboard stays up while she types. */
+function pickPaint() {
+  const l = $('#msgPickList'); if (l) l.innerHTML = pickListHtml();
+  const f = $('#msgPickFoot'); if (f) f.innerHTML = pickFootHtml();
+}
 function sheetNewMsg() {
   if (!me || !msgFor) return;
-  const fams = famThreads(), staff = staffTeams(), cols = colleagues();
-  if (staff.length && !staff.some(t => t.id === ui.newTid)) ui.newTid = (staff.find(t => t.id === ui.teamId) || staff[0]).id;
-  const row = (attrs, name, sub) => `<button class="prow convrow" type="button" ${attrs}><span><span class="pname">${name}</span>${sub ? `<span class="rowsub">${sub}</span>` : ''}</span><span class="muted">›</span></button>`;
-  const famRows = fams.map(x => row(`data-act="thread" data-tid="${x.tid}" data-fam="${esc(x.fam)}"`, `Coaches of ${teamLabel(state.teams[x.tid])}`, esc(staffNames(x.tid).join(', '))));
-  const tid = ui.newTid;
-  const fl = staff.length ? families(tid).map(u => ({ u, kids: childrenOf(tid, u) })).sort((a, b) => (a.kids[0] || '').localeCompare(b.kids[0] || '')) : [];
-  const famPick = staff.length ? `<h4>A family</h4>
-    ${staff.length > 1 ? pickOne('msgnewteam', 'tid', tid, staff.map(t => [t.id, teamLabel(t)]), '') : ''}
-    ${fl.length ? `<div class="plist">${fl.map(x => row(`data-act="msgto" data-tid="${tid}" data-fam="${esc(x.u)}"`, esc(familyName(x.u)), x.kids.length ? 'Parent of ' + esc(x.kids.join(', ')) : '')).join('')}</div>
-      <p class="muted">Every coach of ${teamLabel(state.teams[tid])} and the admins read it with you. A player with her own sign-in reads her family's.</p>`
-      : `<p class="muted">No parent on ${teamLabel(state.teams[tid])} has an account yet — invite them from Squad or People.</p>`}` : '';
-  const colPick = cols.length ? `<h4>A coach or admin</h4><div class="plist">${cols
-    .map(u => ({ u, n: familyName(u) })).sort((a, b) => a.n.localeCompare(b.n))
-    .map(x => row(`data-act="sdopen" data-u="${esc(x.u)}"`, esc(x.n), esc(colleagueLabel(x.u)))).join('')}</div>
-    <p class="muted">Just the two of you: no other coach and no admin reads it.</p>` : '';
+  const u = pickUi();
+  const keys = new Set(msgPeople().map(p => p.key));
+  u.sel = u.sel.filter(k => keys.has(k));
   openSheet(`<h3>New message</h3>
-    ${famRows.length ? `<h4>The coaches</h4><div class="plist">${famRows.join('')}</div>` : ''}
-    ${famPick}${colPick}
-    <button class="btn quiet wide" data-act="closesheet" style="margin-top:12px">Cancel</button>`);
+    <input id="msgFind" type="search" autocomplete="off" aria-label="Find people" placeholder="Search a name, child, team, coach or admin" value="${esc(u.q)}">
+    <div id="msgPickList">${pickListHtml()}</div>
+    <div id="msgPickFoot" class="pickfoot">${pickFootHtml()}</div>
+    <button class="btn quiet wide" data-act="closesheet" style="margin-top:8px">Cancel</button>`);
+}
+/* Several people, one message: written once here, sent into each one's own
+   conversation. */
+function sheetMulti() {
+  const people = msgPeople(), sel = pickUi().sel.map(k => people.find(p => p.key === k)).filter(Boolean);
+  if (sel.length < 2) return;
+  const fam = sel.some(p => p.kind === 'family');
+  openSheet(`<h3>To ${sel.length} people</h3>
+    <p class="muted" style="margin-top:0">${esc(sel.map(p => p.name).join(', '))}</p>
+    <textarea id="multiText" rows="5" maxlength="${MSG_MAX}" placeholder="Write a message">${esc(ui.multiDraft || '')}</textarea>
+    <p class="muted">${LOCK_SVG} Each gets it in their own conversation with you${fam ? ', which their team’s coaches and the club’s admins also read' : ''}. Nobody sees who else got it, and replies come back to each conversation.</p>
+    <button class="btn wide" data-act="msgmulti">Send to ${sel.length}</button>
+    <button class="btn quiet wide" data-act="msgnew">‹ Back</button>`);
 }
 
 function sheetPost(tid, text = '', urgent = false) {
@@ -17973,7 +18027,38 @@ function onAct(e) {
   if (a === 'thread') { closeSheet(); ui.view = 'thread'; ui.thread = { tid: d.tid, fam: d.fam }; render(); return; }
   if (a === 'notes') { ui.view = 'notes'; ui.thread = null; closeSheet(); render(); return; }
   if (a === 'msgnew') { sheetNewMsg(); return; }
-  if (a === 'msgnewteam') { ui.newTid = d.v; sheetNewMsg(); return; }
+  if (a === 'msgpick') {
+    const u = pickUi();
+    u.sel = u.sel.includes(d.k) ? u.sel.filter(k => k !== d.k) : [...u.sel, d.k];
+    pickPaint(); return;
+  }
+  if (a === 'msgpickall') { const u = pickUi(); u.sel = [...new Set([...u.sel, ...pickMatches().map(p => p.key)])]; pickPaint(); return; }
+  if (a === 'msgpickgo') {
+    const people = msgPeople(), sel = pickUi().sel.map(k => people.find(p => p.key === k)).filter(Boolean);
+    if (!sel.length) return;
+    if (sel.length > 1) { sheetMulti(); return; }
+    const c = sel[0].c;
+    ui.msgPick = null; closeSheet();
+    ui.view = 'thread'; ui.thread = c.cid ? { cid: c.cid } : { tid: c.tid, fam: c.fam }; render(); return;
+  }
+  /* The same message into each chosen conversation. Every one is checked as a
+     single send would be: hers, a family on a team she is staff on, or a
+     colleague. One she may not write to is left out, never the whole lot. */
+  if (a === 'msgmulti') {
+    const el = $('#multiText'), text = String((el && el.value) || '').trim().slice(0, MSG_MAX);
+    if (!text) { toast('Write something first'); return; }
+    const people = msgPeople(), sel = pickUi().sel.map(k => people.find(p => p.key === k)).filter(Boolean);
+    let n = 0;
+    for (const p of sel) {
+      const c = p.c;
+      if (c.cid) { if (!myStaffChat(c.cid)) continue; queueMsg('sd', c.cid, null, text); n++; continue; }
+      if (!(myThread(c.tid, c.fam) || (isStaff(c.tid) && families(c.tid).includes(c.fam)))) continue;
+      queueMsg('dm', c.tid, c.fam, text); n++;
+    }
+    ui.msgPick = null; ui.multiDraft = ''; closeSheet();
+    ui.view = 'inbox'; ui.thread = null; render();
+    toast(n ? `Sent to ${n} ${n === 1 ? 'person' : 'people'}, each in their own conversation` : 'Not sent'); return;
+  }
   if (a === 'msgprivacy') { sheetPrivacy(); return; }
   if (a === 'msginfo') { sheetMsgInfo(d.id); return; }
   // a coach or admin starting a family's conversation: only a family on a team she is staff on
@@ -19268,6 +19353,8 @@ document.addEventListener('input', e => {
 /* The ideas box writes itself into the prompt as she types, and is kept per game
    so closing the sheet by accident does not lose a half-written plan. */
 document.addEventListener('input', e => {
+  if (e.target && e.target.id === 'msgFind') { pickUi().q = e.target.value; pickPaint(); return; }
+  if (e.target && e.target.id === 'multiText') { ui.multiDraft = e.target.value; return; }
   // a half-written message survives a redraw, a tab change and a reload
   if (e.target && e.target.id === 'msgText' && e.target.dataset && e.target.dataset.draft) {
     ui.msgDraft = { ...(ui.msgDraft || {}), [e.target.dataset.draft]: e.target.value };

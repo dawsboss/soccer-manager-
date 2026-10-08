@@ -8,6 +8,29 @@ before this point lives only in the git log.
 
 ---
 
+## Writing to anyone, or to several people at once — 2026-10-08 (build 107)
+
+The owner: messages to teams are nice, but writing to specific people is
+needed too, and choosing them was a tough screen with a lot of people (the
+team picker turned into a long dropdown).
+
+**New message is one searchable list** of everyone she may write to: the
+families on the teams she coaches (an admin, every team), the club's other
+coaches and admins, or for a family the coaches of each of her teams. Type
+any part of a name, a child's name, a team or a role (*flight parent*,
+*coach*, *ella*); every word has to match. The people she talks to most
+recently come first. No team to choose before a person.
+
+**Tap one person, or several.** One opens the conversation. Several get one
+message, written once, sent into each person's own conversation: nobody sees
+who else got it, replies come back where they always did, and a family's
+copy is read by that team's coaches and the admins exactly as if it had been
+sent alone. *Choose all N* takes everyone a search found. Each recipient is
+checked in the handler as a single send would be, so someone no longer hers
+to write to is left out rather than sent to.
+
+No rule changes: every message is the same write a single one would be.
+
 ## Each kind of notification can be turned off — 2026-10-08 (build 106)
 
 The owner: *notifications should be able to be turned off.* Until now the

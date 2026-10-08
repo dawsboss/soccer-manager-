@@ -222,7 +222,7 @@ const EXPORTS = `{
   msgTeams, staffTeams, famTeams, msgOn, unreadCount, notices, threadMsgs, threadUnread,
   families, guardianEmails, childrenOf, viewInbox, viewThread, watchMessages, sheetPostShare,
   get msgs() { return msgs }, get msgFor() { return msgFor },
-  msgUnread, notesUnread, colleagues, sdId, convMsgs, msgState, viewNotes, get online() { return online },
+  msgUnread, notesUnread, colleagues, sdId, convMsgs, msgState, viewNotes, msgPeople, pickMatches, get online() { return online },
   /* team links and squad invites */
   get join() { return join }, joinLink, claimMatches, pendingClaims, inviteSquad, sheetSquadInvites, joinCard,
   /* training sessions */
