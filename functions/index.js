@@ -33,6 +33,7 @@ const access = require('./access');
 const mirror = require('./mirror');
 const mycal = require('./mycal');
 const move = require('./move');
+const adminwatch = require('./adminwatch');
 
 initializeApp();
 
@@ -155,6 +156,25 @@ for (const field of ['date', 'kickoff', 'called'])
    may wake these. */
 both('accessAdmin', '{code}/access/admins/{uid}', onValueWritten, event =>
   access.onAdmin(writerOf(event), event.params));
+/* Who runs the club (adminwatch.js; SECURITY.md, SEC-D8): an admin or owner
+   given or taken away tells every admin and owner, the person it happened to
+   included, and is written to clubAudit/{code}. Its own trigger beside the
+   lookup tables', because it sends and keeps a record where access.js only
+   writes the tables. */
+function watchOf(event) {
+  const root = event.data.after.ref.root;
+  return {
+    get: p => root.child(p).get().then(s => s.val()),
+    // the record, and nothing else a rule reads
+    set: (p, v) => (/^clubAudit\//.test(p) ? root.child(p).set(v) : Promise.reject(new Error('adminwatch writes clubAudit/ only'))),
+    remove: p => root.child(p).remove(),
+    send: messages => getMessaging().sendEach(messages),
+    claim: (p, fn) => root.child(p).transaction(fn).then(r => !!r.committed)
+  };
+}
+for (const [kind, part] of [['admin', 'admins'], ['owner', 'owners']])
+  both('watch' + kind[0].toUpperCase() + kind.slice(1), `{code}/access/${part}/{uid}`, onValueWritten, event =>
+    adminwatch.onChange(watchOf(event), { ...event.params, eid: event.id }, kind, event.data.before.val(), event.data.after.val()));
 /* The three on a team's people also mark the club for My calendar's feeds
    (mycal.js, below): who is on a team is what decides whose calendar it is in. */
 both('accessStaff', '{code}/access/teams/{tid}', onValueWritten, event => Promise.all([

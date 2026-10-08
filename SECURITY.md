@@ -99,131 +99,6 @@ under **Before families come on** can be done without disturbing anyone.
 
 ## Later
 
-### SEC-9 · Admins cannot remove one another: a club owner
-- **Status:** To do, decided (the owner, 2026-10-08; below) · **Kind:** Code (rules, app, server), then Owner · **Size:** Large
-- **Why:** any admin can rewrite the whole admin list. `access/admins` has one
-  rule at the top (`!data.exists() || data.child(auth.uid).exists()`), so a
-  single admin account, taken over or fallen out with the club, can delete
-  every other admin and own the club. She does not even need to touch
-  `admins`: any admin may delete anyone's `access/index/{uid}`, which is the
-  entry the club-wide read checks, so she can shut another admin out of
-  reading the club while leaving her an admin on paper. The rules cannot tell
-  a rightful removal from a hostile one, so the answer is someone the rules
-  *can* tell apart: a club owner.
-- **The design** (the four questions it raised are answered under
-  *Decided* below):
-  - **The role.** `workspaces/{code}/access/owners/{uid}: true`. An owner is
-    always an admin as well, so not one existing rule has to learn a new role:
-    owning adds powers, it never replaces `admins`. In code it is
-    `isClubOwner()` and *Club owner* on screen, because "owner" already means
-    the app owner here (`isOwner()`, `appOwners`) and the two must never be
-    confused.
-  - **What only an owner may do.** Take someone else's admin away; take an
-    admin's `access/index` entry away; make or remove another owner; retire
-    the club (`retired/{code}`). Everything else an admin does today, she
-    still does, including making new admins.
-  - **What an admin may still do to admins.** Appoint one (a new entry,
-    `true`), and step down herself. She cannot remove another admin, and
-    nobody but the owner herself can take an owner's admin entry away.
-  - **Handing over.** An owner makes another admin an owner, then steps down.
-    The app refuses the last owner stepping down ("Someone has to stay owner",
-    as the last admin is refused today); a rule cannot count, so if it is
-    done by hand the club falls back to today's rules (the bridge below),
-    never to a club nobody can run.
-  - **A lost owner account.** Recovered by the app owner by hand in the
-    Firebase console, which is the only standing the app owner has (CLAUDE.md:
-    she has none in the rules). Two owners is the better answer, which is
-    why it is a list.
-  - **The rules**, as a sketch (`W` is `'workspaces/' + $code + '/'`):
-    ```
-    "owners": { "$uid": { ".write": "auth != null
-        && root.child(W + 'access/admins/' + $uid).exists()
-        && ((!data.parent().exists() && $uid === auth.uid)            // the first claim
-            || (root.child(W + 'access/owners/' + auth.uid).exists()
-                && (!data.exists() || $uid === auth.uid)))" } },     // add one; step down
-    "admins": {
-      ".write": "<today's rule> && !data.parent().child('owners').exists()",   // the bridge
-      "$uid": { ".write": "auth != null && (
-          !data.parent().exists()                                        // a new club's first admin
-          || (root.child(W + 'access/owners/' + auth.uid).exists()
-              && !root.child(W + 'access/owners/' + $uid).exists())     // an owner, about any non-owner
-          || (root.child(W + 'access/admins/' + auth.uid).exists()
-              && !data.exists() && newData.val() === true)               // an admin appoints
-          || ($uid === auth.uid && !newData.exists()
-              && !root.child(W + 'access/owners/' + $uid).exists()))" } }   // stepping down
-    ```
-    and on `access/index/$uid`, the admin clause gains *unless it removes the
-    entry of another admin, which only an owner may*. `retired/$code` becomes
-    owner-only once the club has an owner (the same bridge). Raise the rules
-    version.
-  - **Both trees (since the move to `orgs/`).** The same hole is on
-    `orgs/{code}/access/admins`, so the owner goes on both:
-    `workspaces/{code}/access/owners` and `orgs/{code}/access/owners`, the
-    clauses above written once in `tools/rules-source.json` (never in
-    `database.rules.json`, which `node tools/rules-build.js` writes), and
-    `moveClub` carries `owners` across with `admins`. On `orgs/` the phone's
-    diary is `orgs/{code}/log`, not `access/log`. Once every club has moved,
-    only the `orgs/` half is left.
-  - **The bridge.** A club with no `owners` keeps exactly today's rules: one
-    clause on `admins` that switches off the moment `owners` exists. Clubs
-    that predate this go on working when the rules are pasted before the app.
-  - **Getting one.** A new club writes `owners/{me}` straight after
-    `admins/{me}` (`createClub()` and the bootstrap in `claimadmin`, and
-    `rules.js`'s brand-new-club walk), so whoever starts a club owns it. A club
-    that already exists shows its admins *Become the club owner* on Club admin
-    while it has none, and the first admin to tap it is the owner. Every admin
-    is told at once (the notification below), so a grab does not go unseen,
-    and it is no worse than today, when any admin can already remove all the
-    others. Until someone claims it, the bridge keeps the club on today's
-    rules.
-  - **Writes at the right depth.** `pushAll()` writes `access/admins` whole
-    today; once a club has an owner that is refused, so it has to write one
-    admin at a time (CLAUDE.md, *Write at the depth the rule sits at*), and
-    `owners` likewise.
-  - **Everyone hears.** The `accessAdmin` trigger (`functions/access.js`)
-    already wakes on every admin change; add `accessOwner` beside it. Each
-    pushes to every admin and owner of the club, *the removed one included*
-    (her `pushTokens` are hers, not the club's), naming who did it from the
-    event's auth context if the functions SDK gives one, else from the
-    phone's matching `access/log` entry, trusted only while fresh, as the
-    calendar's `edit` stamp is. This kind is not mutable: an account-security
-    alert is not club activity. Each change is also written to
-    `clubAudit/{code}/{id}` (a new root block: readable by the club's admins,
-    `.write: false`, so only the server writes it). `access/log` stays as the
-    phone's own diary; this is the copy an admin cannot leave out.
-- **What it does not stop.** An admin can still delete teams, games and
-  members, read every child's record, and invite whoever she likes. The
-  owner stops a *takeover*, not vandalism; the way back from vandalism is
-  SEC-7's daily backups plus the audit record saying who and when. Owners
-  should have 2-Step Verification on before anyone else (SEC-8), since an
-  owner's account is now the club.
-- **Found while writing this:** `setrole` logs an admin change *after*
-  `commit()`/`drop()` has already changed `state`, so `access/log` says
-  *made admin* when someone was removed and *removed admin* when someone was
-  added (`app.js`, the `setrole` handler, `logAccess(isAdmin(uid) ? …)`). The
-  team-role branch reads `on` beforehand and is right. A one-line fix,
-  worth doing on its own before this task.
-- **Decided (the owner, 2026-10-08):**
-  1. A list of owners, not exactly one.
-  2. Admins still appoint admins.
-  3. The existing club's owner is the app owner, by the claim button rather
-     than the console (the owner, later the same day). *Owner* step, the day
-     the rules are published: open Club admin and tap *Become the club owner*
-     before anyone else does, then add a second owner from People.
-  4. Nothing else is owner-only for now: removing admins and their index
-     entries, owners, and retiring the club.
-- **Done when:** `test/rules.js` refuses an admin removing another admin, an
-  owner, another admin's index entry, or claiming a club that already has an
-  owner; lets an owner do all three to a
-  non-owner; lets an admin appoint and step down; walks a brand-new club to
-  an owner; and keeps today's behaviour on a club with no `owners`.
-  `test/access.js` shows every admin and owner, the removed one included,
-  told of each admin or owner change (a claim included), nobody else told,
-  and the `clubAudit` record written. The claim button shows only to admins
-  of a club with no owner, and the handler checks both. The People screen offers *Remove admin* to
-  owners only, and the handler checks it (as `retireclub` checks
-  `canAdmin()`).
-
 ### SEC-10 · Only the server publishes share pages
 - **Status:** To do · **Kind:** Code (server, app), then rules · **Size:** Large
 - **Why:** any signed-in Google account can claim an unused id under
@@ -410,3 +285,25 @@ Share links, game links, team and My calendar feeds and a new club's code
 come from `randId()`, `crypto.getRandomValues`, with no `Math.random`
 fallback; ids already handed out keep working until replaced
 (`test/ids.js`). Commit `df08462`.
+
+### SEC-D8 · Admins cannot remove one another: a club owner
+Any admin could rewrite the whole admin list, or take another admin's
+`access/index` entry and shut her out of the club. Now a club owner
+(`access/owners/{uid}`, always an admin too, a list) is the only one who
+takes an admin away, takes an admin's index entry, makes or removes another
+owner, or retires the club; admins still appoint admins and step down
+themselves, and nobody but an owner herself ends her ownership. Whoever
+starts a club owns it; a club from before this keeps the old rules until one
+of its admins taps *Become the club owner* (Club settings → People), the
+owner's decisions of 2026-10-08. On both trees, carried across by the move,
+rules version 13. The server (`functions/adminwatch.js`) pushes every admin
+or owner change to every admin and owner, the person it happened to
+included and never whoever did it (named from a fresh `access/log` entry,
+which the app now writes before the change, and with its real name: it used
+to log *made admin* for a removal), unmutable, and keeps it at
+`clubAudit/{code}`, which admins read and no phone writes (`test/rules.js`,
+`test/owners.js`, `test/move.js`). Build 113.
+*Owner* step, once rules version 13 is published: open Club settings →
+People and tap **Become the club owner** before anyone else, then make a
+second admin an owner. It does not stop an admin deleting teams or games;
+that is SEC-7's backups.
