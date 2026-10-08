@@ -2,7 +2,7 @@
    Static app. Data lives in localStorage, and mirrors to Firebase Realtime
    Database when a config + workspace code are present. */
 
-const BUILD = '110';
+const BUILD = '111';
 const BUILT = '2026-10-07';
 /* The version of database.rules.json this app was written against. The rules
    carry the same number in rulesVersion's .write, which accepts that number
@@ -1682,7 +1682,12 @@ async function askMove() {
   const { db, mod } = rtdb;
   const ref = mod.ref(db, 'moveRequests/' + code);
   try {
-    await mod.remove(ref);   // an earlier answer, so this is a new request
+    /* An earlier request (and its answer) is cleared so this is a new one,
+       but only if there is one: the rules count deleting nothing as a write,
+       and the move request's rule allows a delete only of a request that is
+       there, so clearing an empty one was refused and the move never asked. */
+    const was = await new Promise(res => mod.onValue(ref, sn => res(sn.val()), () => res(null), { onlyOnce: true }));
+    if (was) await mod.remove(ref);
     moveReq = { code, sent: nowMs(), result: null };
     render();
     await mod.set(ref, { by: me.uid, at: nowMs() });

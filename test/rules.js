@@ -1958,6 +1958,8 @@ reads('owners are not world-readable', OUT, 'shareOwners/sh1', false);
   writes('nor a parent', MUM, 'moveRequests/CLUB', { by: 'mum', at: NOW }, false);
   writes('nor a stranger', RANDO, 'moveRequests/CLUB', { by: 'rando', at: NOW }, false);
   writes('nor an answer written by a phone', ADM, 'moveRequests/CLUB', { by: 'adm', at: NOW, result: { ok: true } }, false);
+  // why the app looks before it clears: deleting a request that is not there is a write the rule refuses
+  writes('clearing one that is not there is refused', ADM, 'moveRequests/CLUB', null, false);
   DB.moveRequests = { CLUB: { by: 'adm', at: 1, result: { ok: false, why: 'A game is being played.' } } };
   reads('she reads the answer', ADM, 'moveRequests/CLUB', true);
   reads('a coach does not', COACH, 'moveRequests/CLUB', false);

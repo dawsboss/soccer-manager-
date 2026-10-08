@@ -273,7 +273,13 @@ const wrote = fbk => fbk.record.writes.map(w => w.path);
     fbk.deliver('.info/connected', true);
     fbk.deliver(WS, OLD()); await A.flush();
     check('she is offered the move', /data-act="moveclub"/.test(A.moveCard()), true);
+    /* The rules count deleting nothing as a write, and the move request's
+       rule refuses a delete of a request that is not there: the first build
+       of this button cleared one first, was refused, and never asked. */
+    fbk.refuseWrites((p, v) => p === 'moveRequests/CLUB' && v === null && !fbk.writtenTo('moveRequests/CLUB').length);
     A.click({ act: 'moveclub' }); await A.flush();
+    check('with no request there, nothing is deleted first', fbk.record.removes.includes('moveRequests/CLUB'), false);
+    fbk.deliver('moveRequests/CLUB', null); await A.flush();
     const req = (fbk.writtenTo('moveRequests/CLUB')[0] || {}).value || {};
     check('asked, as herself', req.by, 'adm');
     check('— and it says it is waiting', /Waiting for the server/.test(A.moveCard()), true);
@@ -283,6 +289,10 @@ const wrote = fbk => fbk.record.writes.map(w => w.path);
     check('— and offers to try again', /Try again/.test(A.moveCard()), true);
     check('the club stays where it was', A.onOrgs(), false);
     A.click({ act: 'moveclub' }); await A.flush();
+    // trying again: the last request is there, so it is cleared before the new one
+    fbk.deliver('moveRequests/CLUB', { by: 'adm', at: 1, result: { ok: false } }); await A.flush();
+    check('trying again clears the last request first', fbk.record.removes.includes('moveRequests/CLUB'), true);
+    check('— and asks again', fbk.writtenTo('moveRequests/CLUB').length, 2);
     fbk.deliver('moveRequests/CLUB/result', { ok: true, at: 2 }); await A.flush();
     check('moved: the phone reads the new tree', A.onOrgs() && fbk.watching(OB + '/access'), true);
     check('and the card is gone', A.moveCard(), '');
