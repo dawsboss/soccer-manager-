@@ -1111,3 +1111,6 @@ button.ev:active{filter:brightness(.92)}
 .pickrow[aria-pressed="true"]{border-color:var(--field-deep);background:var(--field-wash)}
 .pickrow[aria-pressed="true"] .pickbox{background:var(--field-deep);border-color:var(--field-deep)}
 .pickfoot{position:sticky;bottom:calc(-20px - env(safe-area-inset-bottom));background:var(--card);padding:10px 0 4px;margin-top:6px;border-top:1px solid var(--line)}
+.pickgroups{flex-wrap:nowrap;overflow-x:auto;margin:0 0 10px;padding-bottom:2px;-webkit-overflow-scrolling:touch}
+.pickgroups .chip{flex:0 0 auto;white-space:nowrap}
+.pickgroups .chip[aria-pressed="true"] .muted{color:inherit;opacity:.8}

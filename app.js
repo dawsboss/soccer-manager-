@@ -2,7 +2,7 @@
    Static app. Data lives in localStorage, and mirrors to Firebase Realtime
    Database when a config + workspace code are present. */
 
-const BUILD = '107';
+const BUILD = '108';
 const BUILT = '2026-10-07';
 /* The version of database.rules.json this app was written against. The rules
    carry the same number in rulesVersion's .write, which accepts that number
@@ -3183,27 +3183,73 @@ const PICK_SHOW = 40;
 function msgPeople() {
   if (!me || !msgFor) return [];
   const out = [];
-  for (const x of famThreads()) out.push({ key: `f:${x.tid}:${x.fam}`, c: { tid: x.tid, fam: x.fam }, kind: 'coaches',
+  for (const x of famThreads()) out.push({ key: `f:${x.tid}:${x.fam}`, c: { tid: x.tid, fam: x.fam }, kind: 'coaches', group: x.tid,
     name: `Coaches of ${(state.teams[x.tid] || {}).name || 'the team'}`, sub: staffNames(x.tid).join(', '), find: '' });
   for (const t of staffTeams()) for (const u of families(t.id)) {
     const kids = childrenOf(t.id, u);
-    out.push({ key: `f:${t.id}:${u}`, c: { tid: t.id, fam: u }, kind: 'family', name: familyName(u),
+    out.push({ key: `f:${t.id}:${u}`, c: { tid: t.id, fam: u }, kind: 'family', group: t.id, name: familyName(u),
       sub: [kids.length ? 'Parent of ' + kids.join(', ') : 'Parent', t.name].filter(Boolean).join(' · '), find: 'family parent' });
   }
-  for (const u of colleagues()) out.push({ key: `c:${u}`, c: { cid: sdId(me.uid, u) }, kind: 'staff', name: familyName(u),
+  for (const u of colleagues()) out.push({ key: `c:${u}`, c: { cid: sdId(me.uid, u) }, kind: 'staff', group: 'staff', name: familyName(u),
     sub: colleagueLabel(u), find: 'staff coach admin' });
   // the ones she talks to most recently first, then by name
   for (const p of out) { const l = convMsgs(p.c); p.last = l.length ? l[l.length - 1].at || 0 : 0; }
   return out.sort((a, b) => b.last - a.last || a.name.localeCompare(b.name));
 }
-const pickUi = () => (ui.msgPick = ui.msgPick || { q: '', sel: [] });
+const pickUi = () => (ui.msgPick = ui.msgPick || { q: '', sel: [], group: '' });
+const pickWords = () => String(pickUi().q || '').trim().toLowerCase().split(/\s+/).filter(Boolean);
 function pickMatches() {
-  const q = String(pickUi().q || '').trim().toLowerCase().split(/\s+/).filter(Boolean);
-  return msgPeople().filter(p => q.every(w => `${p.name} ${p.sub} ${p.find}`.toLowerCase().includes(w)));
+  const q = pickWords(), g = pickUi().group || '';
+  return msgPeople().filter(p => (!g || p.group === g) && q.every(w => `${p.name} ${p.sub} ${p.find}`.toLowerCase().includes(w)));
+}
+/* The teams she can write into, and her colleagues, as chips with how many
+   people each holds: what there is to choose from, before she has to guess a
+   name. A coach's teams are the ones she is staff on; a family's, her own. */
+function pickGroups() {
+  const people = msgPeople(), count = g => people.filter(p => p.group === g).length;
+  const ts = staffTeams().length ? staffTeams() : famThreads().map(x => state.teams[x.tid]).filter((t, i, a) => t && a.indexOf(t) === i);
+  const out = ts.map(t => [t.id, t.name || 'Team', count(t.id)]);
+  if (colleagues().length) out.push(['staff', 'Coaches and admins', count('staff')]);
+  return out;
+}
+function pickGroupsHtml() {
+  const gs = pickGroups(), g = pickUi().group || '';
+  // a family with one team has nothing to choose between; staff always see their teams, even one
+  if (!gs.length || (gs.length < 2 && !staffTeams().length)) return '';
+  return `<div class="chips pickgroups">${[['', 'Everyone', msgPeople().length], ...gs].map(([k, l, n]) =>
+    `<button class="chip" type="button" data-act="msgpickgroup" data-k="${esc(k)}" aria-pressed="${g === k}">${esc(l)} <span class="muted">${n}</span></button>`).join('')}</div>`;
+}
+/* Who a coach can't write to yet, and why: a child whose parents haven't
+   signed in and been linked to her is in the squad but has nobody to message.
+   Shown for the team she is looking at, or the children a search names, so an
+   empty list says what to do instead of looking broken. Staff only: these are
+   their own squads' names. */
+function pickUnreachable() {
+  const u = pickUi(), q = pickWords(), g = u.group || '';
+  const ts = staffTeams().filter(t => g ? t.id === g : q.length > 0);
+  const out = [];
+  for (const t of ts) for (const p of players(t)) {
+    if (p.active === false || Object.keys(p.guardians || {}).length) continue;
+    if (!g && !q.every(w => `${p.name || ''} ${t.name || ''} parent family`.toLowerCase().includes(w))) continue;
+    // under a team's own chip its name would be on every one of them
+    out.push(`${p.name || '#' + (p.number || '?')}${g ? '' : ' · ' + (t.name || 'Team')}`);
+  }
+  return out;
 }
 function pickListHtml() {
   const u = pickUi(), all = pickMatches(), shown = all.slice(0, PICK_SHOW);
-  if (!all.length) return `<p class="muted" style="margin:8px 0">Nobody matches “${esc(u.q)}”.</p>`;
+  const away = pickUnreachable();
+  const awayHtml = away.length ? `<p class="lbl" style="margin:12px 0 4px">No parent signed in yet</p>
+    <p class="muted" style="margin:0 0 6px">${esc(away.slice(0, 12).join(', '))}${away.length > 12 ? ` and ${away.length - 12} more` : ''}.
+    Their parents appear here once they have joined: invite them from <b>Squad → Parents</b>, or share the team link.</p>` : '';
+  if (!all.length) {
+    const team = staffTeams().concat(famThreads().map(x => state.teams[x.tid]).filter(Boolean))
+      .find(t => pickWords().length && pickWords().every(w => String(t.name || '').toLowerCase().includes(w)));
+    const why = !msgPeople().length ? 'Nobody here to message yet. Parents appear once they have signed in and been linked to their child.'
+      : team && !u.group ? `Nobody on ${esc(team.name)} you can message yet.`
+      : u.q ? `Nobody matches “${esc(u.q)}”${u.group ? ' here' : ''}.` : 'Nobody here to message yet.';
+    return `<p class="muted" style="margin:8px 0">${why}</p>${awayHtml}`;
+  }
   return `<div class="plist">${shown.map(p => {
     const on = u.sel.includes(p.key);
     return `<button class="prow convrow pickrow" type="button" data-act="msgpick" data-k="${esc(p.key)}" aria-pressed="${on}">
@@ -3211,7 +3257,8 @@ function pickListHtml() {
       <span class="pickbox" aria-hidden="true">${on ? '✓' : ''}</span></button>`;
   }).join('')}</div>
     ${all.length > shown.length ? `<p class="muted" style="margin:8px 0 0">${all.length - shown.length} more — keep typing to narrow it down.</p>` : ''}
-    ${u.q && all.length > 1 && all.length <= PICK_SHOW && !all.every(p => u.sel.includes(p.key)) ? `<button class="btn quiet wide" data-act="msgpickall" style="margin-top:8px">Choose all ${all.length}</button>` : ''}`;
+    ${(u.q || u.group) && all.length > 1 && all.length <= PICK_SHOW && !all.every(p => u.sel.includes(p.key)) ? `<button class="btn quiet wide" data-act="msgpickall" style="margin-top:8px">Choose all ${all.length}</button>` : ''}
+    ${awayHtml}`;
 }
 function pickFootHtml() {
   const people = msgPeople(), sel = pickUi().sel.map(k => people.find(p => p.key === k)).filter(Boolean);
@@ -3222,6 +3269,7 @@ function pickFootHtml() {
 /* Redraws the list and the chosen row in place, so the search box keeps its
    focus and the phone's keyboard stays up while she types. */
 function pickPaint() {
+  const gEl = $('#msgPickGroups'); if (gEl) gEl.innerHTML = pickGroupsHtml();
   const l = $('#msgPickList'); if (l) l.innerHTML = pickListHtml();
   const f = $('#msgPickFoot'); if (f) f.innerHTML = pickFootHtml();
 }
@@ -3231,7 +3279,8 @@ function sheetNewMsg() {
   const keys = new Set(msgPeople().map(p => p.key));
   u.sel = u.sel.filter(k => keys.has(k));
   openSheet(`<h3>New message</h3>
-    <input id="msgFind" type="search" autocomplete="off" aria-label="Find people" placeholder="Search a name, child, team, coach or admin" value="${esc(u.q)}">
+    <input id="msgFind" type="search" autocomplete="off" aria-label="Find people" placeholder="Search a name, a child or a team" value="${esc(u.q)}">
+    <div id="msgPickGroups">${pickGroupsHtml()}</div>
     <div id="msgPickList">${pickListHtml()}</div>
     <div id="msgPickFoot" class="pickfoot">${pickFootHtml()}</div>
     <button class="btn quiet wide" data-act="closesheet" style="margin-top:8px">Cancel</button>`);
@@ -18032,6 +18081,7 @@ function onAct(e) {
     u.sel = u.sel.includes(d.k) ? u.sel.filter(k => k !== d.k) : [...u.sel, d.k];
     pickPaint(); return;
   }
+  if (a === 'msgpickgroup') { const u = pickUi(); u.group = u.group === d.k ? '' : d.k; pickPaint(); return; }
   if (a === 'msgpickall') { const u = pickUi(); u.sel = [...new Set([...u.sel, ...pickMatches().map(p => p.key)])]; pickPaint(); return; }
   if (a === 'msgpickgo') {
     const people = msgPeople(), sel = pickUi().sel.map(k => people.find(p => p.key === k)).filter(Boolean);

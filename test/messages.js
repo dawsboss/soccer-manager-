@@ -313,6 +313,37 @@ const NOTE = (A, by, text, extra) => ({ by, byName: CLUB.access.members[by].name
     const { A } = await boot('mum');
     A.click({ act: 'msgnew' });
     check('a parent finds only the coaches of her teams', A.pickMatches().map(p => p.key).join(), 'f:t1:mum');
+    A.ui.msgPick.q = 'flight';
+    check('and is never shown which children have no parent signed in', /No parent signed in|Cleo/.test(A.pickListHtml()), false);
+  }
+  {
+    // what there is to choose from, before guessing a name
+    const { A } = await boot('coach');
+    A.click({ act: 'msgnew' });
+    const groups = String(A.dom.node('#sheet').innerHTML);
+    check('her team is a chip, with how many she can write to', /data-act="msgpickgroup" data-k="t1"[^>]*>Flight <span class="muted">2/.test(groups), true);
+    check('and her colleagues another', /data-k="staff"[^>]*>Coaches and admins <span class="muted">2/.test(groups), true);
+    A.click({ act: 'msgpickgroup', k: 'staff' });
+    check('a chip narrows the list to it', A.pickMatches().map(p => p.key).sort().join(' '), 'c:adm c:other');
+    A.click({ act: 'msgpickgroup', k: 't1' });
+    check('her team: its families', A.pickMatches().map(p => p.key).sort().join(' '), 'f:t1:dad f:t1:mum');
+    check('and the child with no parent signed in yet, said as such', /No parent signed in yet[\s\S]*Cleo\.[\s\S]*Squad → Parents/.test(A.pickListHtml()), true);
+    A.click({ act: 'msgpickgroup', k: 't1' });
+    A.ui.msgPick.q = 'cleo';
+    check('a search for that child says why she is not there', /No parent signed in yet[\s\S]*Cleo/.test(A.pickListHtml()), true);
+    A.ui.msgPick.q = 'storm';
+    check('another team\'s families are not offered, only its coach', A.pickMatches().map(p => p.key).join(), 'c:other');
+  }
+  {
+    // a team whose parents have not joined at all: not an empty, broken-looking list
+    const club = JSON.parse(JSON.stringify(CLUB));
+    for (const p of Object.values(club.teams.t1.players)) delete p.guardians;
+    const { A } = await boot('coach', { club });
+    A.click({ act: 'msgnew' });
+    A.ui.msgPick.q = 'flight';
+    const h = A.pickListHtml();
+    check('searching her team says nobody there yet', /Nobody on Flight you can message yet/.test(h), true);
+    check('and lists who is waiting on a parent', /Ella · Flight, Bea · Flight, Cleo · Flight/.test(h) || /Cleo · Flight/.test(h), true);
   }
 
   console.log('\n--- coaches and admins, to each other ---');
