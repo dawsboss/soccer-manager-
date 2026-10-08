@@ -8,6 +8,24 @@ before this point lives only in the git log.
 
 ---
 
+## Moving a club that has nothing logged — 2026-10-08 (build 112)
+
+The *Move* button waited for the server and nothing came back. The server
+built the new tree with any part the club did not have yet (no access log,
+no answers) left as `undefined`, and the database's own library refuses a
+write with an undefined anywhere in it, so the move failed before writing
+anything, its answer included. Nothing in the club was touched.
+
+- **The move leaves out parts a club does not have**, and any error it
+  meets is written back as its answer, so a phone is never left waiting.
+- **A reload no longer forgets the request.** The card shows a request
+  still waiting, then what the server said; one with no answer after two
+  minutes (like the ones made before this fix) offers *Try again*.
+- **The fake server refuses `undefined` as the real one does**, so the
+  tests now fail the way production did (`test/move.js`).
+
+---
+
 ## The Move button asks — 2026-10-08 (build 111)
 
 The *Move* button on Club settings said the database refused it and asked

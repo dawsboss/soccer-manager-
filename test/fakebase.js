@@ -272,7 +272,14 @@ function makeServer(seed = {}) {
   }
   const segs = p => String(p || '').split('/').filter(Boolean);
   const at = p => { let cur = tree; for (const k of segs(p)) { if (!cur || typeof cur !== 'object') return undefined; cur = cur[k]; } return cur; };
+  /* The admin library refuses a write with `undefined` anywhere in it (the
+     move once failed on a club with nothing logged that way); so does this. */
+  const noUndefined = (v, at) => {
+    if (v === undefined) throw new Error('first argument contains undefined in property \'' + at + '\'');
+    if (v && typeof v === 'object') for (const [k, x] of Object.entries(v)) noUndefined(x, at + '.' + k);
+  };
   const put = (p, v) => {
+    if (v !== undefined && v !== null) noUndefined(v, p);
     const ks = segs(p); let cur = tree;
     for (const k of ks.slice(0, -1)) { if (!cur[k] || typeof cur[k] !== 'object') cur[k] = {}; cur = cur[k]; }
     if (v === null || v === undefined) delete cur[ks[ks.length - 1]];

@@ -130,6 +130,27 @@ const O = 'orgs/CLUB/';
     check('— and nothing touched', S.at(O + 'teams/t1/name'), 'Flight');
   }
 
+  console.log('\n--- a club that has nothing logged and no answers yet ---');
+  {
+    /* The real database library refuses a write with an undefined anywhere in
+       it (the fake server now does too). The first move left a missing log
+       and missing answers as undefined, so a new club's move threw, wrote no
+       answer, and the admin's phone waited for ever. */
+    const S = server(c => { delete c.access.log; delete c.rsvp; });
+    await ask(S, 'adm');
+    check('it moves', result(S).ok, true);
+    check('with no empty parts made up', S.at(O + 'log') === null && S.at(O + 'rsvp') === null, true);
+  }
+  {
+    // anything the server trips over is an answer, never silence
+    const S = server();
+    const env = { get: p => S.ref(p).get().then(s => s.val()), set: (p, v) => S.ref(p).set(v), update: () => Promise.reject(new Error('the database is busy')) };
+    const r = await move.onRequest(env, { code: 'CLUB' }, { by: 'adm', at: NOW }, NOW);
+    check('a server error is said, not swallowed', /could not move it \(the database is busy\)/.test(r.why) && r.ok === false, true);
+    check('— written beside the request for her phone', /the database is busy/.test(result(S).why || ''), true);
+    check('— and nothing was moved', !!S.at('orgs/CLUB'), false);
+  }
+
   console.log('\n--- nothing half moved ---');
   {
     const S = server();

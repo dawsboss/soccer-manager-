@@ -284,7 +284,7 @@ const wrote = fbk => fbk.record.writes.map(w => w.path);
     check('asked, as herself', req.by, 'adm');
     check('— and it says it is waiting', /Waiting for the server/.test(A.moveCard()), true);
     check('nothing moves on the phone until the server answers', A.onOrgs(), false);
-    fbk.deliver('moveRequests/CLUB/result', { ok: false, why: 'A game is being played. Move the club once it has finished.' }); await A.flush();
+    fbk.deliver('moveRequests/CLUB', { by: 'adm', at: 1, result: { ok: false, why: 'A game is being played. Move the club once it has finished.' } }); await A.flush();
     check('a refusal says why', /A game is being played/.test(A.moveCard()), true);
     check('— and offers to try again', /Try again/.test(A.moveCard()), true);
     check('the club stays where it was', A.onOrgs(), false);
@@ -293,9 +293,25 @@ const wrote = fbk => fbk.record.writes.map(w => w.path);
     fbk.deliver('moveRequests/CLUB', { by: 'adm', at: 1, result: { ok: false } }); await A.flush();
     check('trying again clears the last request first', fbk.record.removes.includes('moveRequests/CLUB'), true);
     check('— and asks again', fbk.writtenTo('moveRequests/CLUB').length, 2);
-    fbk.deliver('moveRequests/CLUB/result', { ok: true, at: 2 }); await A.flush();
+    fbk.deliver('moveRequests/CLUB', { by: 'adm', at: 2, result: { ok: true, at: 2 } }); await A.flush();
     check('moved: the phone reads the new tree', A.onOrgs() && fbk.watching(OB + '/access'), true);
     check('and the card is gone', A.moveCard(), '');
+  }
+  {
+    /* She asked, and reloaded before the server answered: the card says it is
+       waiting, not offering the button again, and then says what came back. */
+    const { A, fbk } = await boot();
+    fbk.signIn('adm', { name: 'Ada' }); await A.flush();
+    fbk.deliver('.info/connected', true);
+    fbk.deliver(WS, OLD()); await A.flush();
+    A.moveCard();
+    fbk.deliver('moveRequests/CLUB', { by: 'adm', at: A.nowMs() - 20000 }); await A.flush();
+    check('after a reload, a request still waiting is shown as waiting', /Waiting for the server/.test(A.moveCard()) && !/data-act="moveclub"/.test(A.moveCard()), true);
+    fbk.deliver('moveRequests/CLUB', { by: 'adm', at: 1, result: { ok: false, why: 'The server could not move it (busy). Nothing was changed.' } }); await A.flush();
+    check('— and then what the server said', /could not move it \(busy\)/.test(A.moveCard()), true);
+    // a request from before this build that the server never answered
+    fbk.deliver('moveRequests/CLUB', { by: 'adm', at: A.nowMs() - 10 * 60000 }); await A.flush();
+    check('one never answered is not waited on for ever', /No answer came back/.test(A.moveCard()) && /Try again/.test(A.moveCard()), true);
   }
   for (const who of ['coachU', 'mumU']) {
     const { A, fbk } = await boot();

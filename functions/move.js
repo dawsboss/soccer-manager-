@@ -111,12 +111,25 @@ function layout(ws) {
   }
   // anything else a club holds at its top comes along as it is
   const other = Object.fromEntries(Object.entries(ws || {}).filter(([k]) => !['access', 'teams', 'matches', 'rsvp', 'moved'].includes(k)));
-  return { ...other, access, org, members, log, names, teams, squad, roster, matches: ws.matches, rsvp: ws.rsvp };
+  /* Without the parts a club does not have yet (no log, no answers): the
+     database's own library refuses a write with an undefined anywhere in it,
+     and a club with nothing logged used to fail the whole move that way. */
+  return JSON.parse(JSON.stringify({ ...other, access, org, members, log, names, teams, squad, roster, matches: ws.matches, rsvp: ws.rsvp }));
 }
 
 /* The request at moveRequests/{code}: { by, at }. Resolves to what happened,
    which is also written beside it as `result` for the admin's phone. */
+/* Whatever goes wrong, the admin's phone hears it: an error thrown here
+   would leave the request with no answer and her phone waiting for ever. */
 async function onRequest(env, params, req, now = Date.now()) {
+  try { return await moveIt(env, params, req, now); } catch (e) {
+    const code = params && params.code;
+    const result = { ok: false, why: 'The server could not move it (' + String((e && e.message) || e).slice(0, 200) + '). Nothing was changed.', at: now };
+    if (okKey(code)) await Promise.resolve(env.set(`moveRequests/${code}/result`, result)).catch(() => { });
+    return result;
+  }
+}
+async function moveIt(env, params, req, now) {
   const code = params && params.code;
   const answer = async (ok, why, extra = {}) => {
     const result = { ok, why, at: now, ...extra };
