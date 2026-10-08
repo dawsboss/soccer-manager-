@@ -135,42 +135,190 @@ under **Before families come on** can be done without disturbing anyone.
 
 ## Later
 
-### SEC-9 · Every admin hears when the admin list changes
-- **Status:** To do · **Kind:** Code (server) · **Size:** Medium
-- **Why:** any admin can rewrite the whole admin list
-  (`access/admins` has one rule at the top), so one admin account taken over
-  removes the others and owns the club. The rules cannot tell a rightful
-  removal from a hostile one.
-- **What to do:** the `accessAdmin` trigger (`functions/access.js`) already
-  wakes on every change. Have it push a notification to every admin, the
-  removed one included, and keep a record of every role change somewhere no
-  phone can write, readable by admins.
-- **Done when:** `test/access.js` shows each admin told of an admin added or
-  removed, and the record written; nobody else told.
+### SEC-9 · Admins cannot remove one another: a club owner
+- **Status:** To do · **Kind:** Decision, then code (rules, app, server) · **Size:** Large
+- **Why:** any admin can rewrite the whole admin list. `access/admins` has one
+  rule at the top (`!data.exists() || data.child(auth.uid).exists()`), so a
+  single admin account, taken over or fallen out with the club, can delete
+  every other admin and own the club. She does not even need to touch
+  `admins`: any admin may delete anyone's `access/index/{uid}`, which is the
+  entry the club-wide read checks, so she can shut another admin out of
+  reading the club while leaving her an admin on paper. The rules cannot tell
+  a rightful removal from a hostile one, so the answer is someone the rules
+  *can* tell apart: a club owner.
+- **The design (proposed; the owner decides the four questions below):**
+  - **The role.** `workspaces/{code}/access/owners/{uid}: true`. An owner is
+    always an admin as well, so not one existing rule has to learn a new role:
+    owning adds powers, it never replaces `admins`. In code it is
+    `isClubOwner()` and *Club owner* on screen, because "owner" already means
+    the app owner here (`isOwner()`, `appOwners`) and the two must never be
+    confused.
+  - **What only an owner may do.** Take someone else's admin away; take an
+    admin's `access/index` entry away; make or remove another owner; retire
+    the club (`retired/{code}`). Everything else an admin does today, she
+    still does, including making new admins.
+  - **What an admin may still do to admins.** Appoint one (a new entry,
+    `true`), and step down herself. She cannot remove another admin, and
+    nobody but the owner herself can take an owner's admin entry away.
+  - **Handing over.** An owner makes another admin an owner, then steps down.
+    The app refuses the last owner stepping down ("Someone has to stay owner",
+    as the last admin is refused today); a rule cannot count, so if it is
+    done by hand the club falls back to today's rules (the bridge below),
+    never to a club nobody can run.
+  - **A lost owner account.** Recovered by the app owner by hand in the
+    Firebase console, which is the only standing the app owner has (CLAUDE.md:
+    she has none in the rules). Two owners is the better answer, which is
+    why it is a list.
+  - **The rules**, as a sketch (`W` is `'workspaces/' + $code + '/'`):
+    ```
+    "owners": { "$uid": { ".write": "auth != null
+        && root.child(W + 'access/admins/' + $uid).exists()
+        && ((!data.parent().exists() && $uid === auth.uid)            // the first claim
+            || (root.child(W + 'access/owners/' + auth.uid).exists()
+                && (!data.exists() || $uid === auth.uid)))" } },     // add one; step down
+    "admins": {
+      ".write": "<today's rule> && !data.parent().child('owners').exists()",   // the bridge
+      "$uid": { ".write": "auth != null && (
+          !data.parent().exists()                                        // a new club's first admin
+          || (root.child(W + 'access/owners/' + auth.uid).exists()
+              && !root.child(W + 'access/owners/' + $uid).exists())     // an owner, about any non-owner
+          || (root.child(W + 'access/admins/' + auth.uid).exists()
+              && !data.exists() && newData.val() === true)               // an admin appoints
+          || ($uid === auth.uid && !newData.exists()
+              && !root.child(W + 'access/owners/' + $uid).exists()))" } }   // stepping down
+    ```
+    and on `access/index/$uid`, the admin clause gains *unless it removes the
+    entry of another admin, which only an owner may*. `retired/$code` becomes
+    owner-only once the club has an owner (the same bridge). Raise the rules
+    version.
+  - **The bridge.** A club with no `owners` keeps exactly today's rules: one
+    clause on `admins` that switches off the moment `owners` exists. Clubs
+    that predate this go on working when the rules are pasted before the app.
+  - **Getting one.** A new club writes `owners/{me}` straight after
+    `admins/{me}` (`createClub()` and the bootstrap in `claimadmin`, and
+    `rules.js`'s brand-new-club walk). An existing club shows its admins
+    *Become the club owner* on Club admin while it has none; the first to tap
+    it is the owner, and every admin is told (the notification below), so a
+    grab does not go unseen.
+  - **Writes at the right depth.** `pushAll()` writes `access/admins` whole
+    today; once a club has an owner that is refused, so it has to write one
+    admin at a time (CLAUDE.md, *Write at the depth the rule sits at*), and
+    `owners` likewise.
+  - **Everyone hears.** The `accessAdmin` trigger (`functions/access.js`)
+    already wakes on every admin change; add `accessOwner` beside it. Each
+    pushes to every admin and owner of the club, *the removed one included*
+    (her `pushTokens` are hers, not the club's), naming who did it from the
+    event's auth context if the functions SDK gives one, else from the
+    phone's matching `access/log` entry, trusted only while fresh, as the
+    calendar's `edit` stamp is. This kind is not mutable: an account-security
+    alert is not club activity. Each change is also written to
+    `clubAudit/{code}/{id}` (a new root block: readable by the club's admins,
+    `.write: false`, so only the server writes it). `access/log` stays as the
+    phone's own diary; this is the copy an admin cannot leave out.
+- **What it does not stop.** An admin can still delete teams, games and
+  members, read every child's record, and invite whoever she likes. The
+  owner stops a *takeover*, not vandalism; the way back from vandalism is
+  SEC-7's daily backups plus the audit record saying who and when. Owners
+  should have 2-Step Verification on before anyone else (SEC-8), since an
+  owner's account is now the club.
+- **Found while writing this:** `setrole` logs an admin change *after*
+  `commit()`/`drop()` has already changed `state`, so `access/log` says
+  *made admin* when someone was removed and *removed admin* when someone was
+  added (`app.js`, the `setrole` handler, `logAccess(isAdmin(uid) ? …)`). The
+  team-role branch reads `on` beforehand and is right. A one-line fix,
+  worth doing on its own before this task.
+- **Questions for the owner:**
+  1. A list of owners (two recommended), or exactly one?
+  2. May admins still appoint admins (recommended), or only owners?
+  3. For a club that already exists: first admin to claim (recommended,
+     with every admin told), or set by the app owner by hand?
+  4. Anything else owner-only beyond the four above (deleting a team, say)?
+- **Done when:** `test/rules.js` refuses an admin removing another admin, an
+  owner, or another admin's index entry; lets an owner do all three to a
+  non-owner; lets an admin appoint and step down; walks a brand-new club to
+  an owner; and keeps today's behaviour on a club with no `owners`.
+  `test/access.js` shows every admin and owner, the removed one included,
+  told of each admin or owner change, nobody else told, and the
+  `clubAudit` record written. The People screen offers *Remove admin* to
+  owners only, and the handler checks it (as `retireclub` checks
+  `canAdmin()`).
 
 ### SEC-10 · Share pages nobody in a club owns
-- **Status:** To do · **Kind:** Decision, then code (server) · **Size:** Medium
-- **Why:** any signed-in Google account can publish a page under an id nobody
-  has claimed, and `live.html?t=…` will show it on this site. Since SEC-D4 it
-  cannot run code, but it can show made-up fixtures ("Saturday's game is
-  cancelled") under the club's address.
-- **What to do:** decide between a server trigger on `public/{id}` that
-  removes a page whose owners are not a coach or admin of any club (and is
-  not one person's own My calendar page), or the share page saying plainly
-  which club and team published it.
-- **Done when:** a test publishes a page from an account with no role and it
-  is gone (or labelled) by the next check.
+- **Status:** To do · **Kind:** Decision, then code (server, share pages) · **Size:** Medium
+- **Why:** any signed-in Google account can claim an unused id under
+  `shareOwners`, publish a page at `public/{id}`, and send round
+  `live.html?t={id}`, which this site will draw. Since SEC-D4 it cannot run
+  code, and since SEC-4 it cannot take over a real page's id, but it can show
+  a made-up fixture ("Saturday's game is cancelled, meet at…") under the
+  club's own address, and a page has no way of saying who wrote it: the team
+  and club names on it are typed by whoever published it.
+- **The options:**
+  - *Delete* — a trigger on `public/{id}` removes a page no club points to.
+    Trouble: a coach's phone writes the page and the team's `share` in either
+    order, possibly offline for an hour, so the trigger would race a real
+    page and needs a grace period and a second look.
+  - *Label* (recommended) — the server, not the page, says who published it.
+    `functions/mirror.js` already wakes on every team and game write and
+    already reads each team's `share` and `calFeed` and each game's `share`.
+    Have it also write `pageClubs/{id}: { club, team }` (a new root block,
+    `.read: true`, `.write: false`) for each id a club points to, and remove
+    it when the id is replaced or the game deleted; and `myCal…` the same for
+    a person's My calendar page (`{ personal: true }`, no name). `live.html`
+    and `game.html` then show *Published by {club} · {team}* from that node,
+    and over a page with no entry, a plain warning that no club on this site
+    published it, before anything else on the page. Nothing is deleted, so
+    nothing real can be lost to a race; a fake page is visibly fake.
+  - The two combine later: the label first, a sweep of pages with no entry
+    after a week if fakes ever turn up.
+- **Done when:** `test/mirror.js` (or its own suite) shows `pageClubs`
+  written for a team's season link, its feed and each game link, moved when a
+  link is replaced, removed when a game is deleted, and never written for an
+  id no club points to; a page published from an account with no role draws
+  the warning on both share pages; the club and team named come from
+  `pageClubs`, never from the page. No child's name in `pageClubs`.
 
 ### SEC-11 · Firebase App Check
-- **Status:** To do · **Kind:** Code and Owner · **Size:** Medium
-- **Why:** it lets only this app, on this site, talk to the database and the
-  functions. It cuts scraping and scripted abuse; it does not stop a real
-  signed-in person.
-- **What to do:** register the site for App Check (reCAPTCHA Enterprise) in
-  the console, add it to the app and the share pages, watch the metrics for a
-  couple of weeks, then turn on enforcement for the database and functions.
-- **Done when:** enforced, with nothing refused that the app should be
-  allowed.
+- **Status:** To do · **Kind:** Owner, then code · **Size:** Medium
+- **Why:** it lets only this app, on this site, talk to the database. It cuts
+  scraping and scripted abuse (the unclaimed-id writes in SEC-10, a script
+  hammering `claims` or `invites`); it does not stop a real person signed in
+  through the real app, so it is a fence round the rules, never instead of
+  them.
+- **What to do:**
+  1. *Owner:* create a reCAPTCHA Enterprise key for the site's domain, then
+     Firebase console → *App Check* → register the web app with it. Leave
+     enforcement **off**.
+  2. *Code:* the key's public half goes in `firebase-config.js` beside
+     `SOCCER_PUSH_KEY` (`SOCCER_APPCHECK_KEY`, not a secret); blank means
+     App Check is not started, which is what keeps every test suite, a club
+     running with no Firebase, and local development working. `getApp()`
+     starts it (`firebase-app-check.js`, same SDK version, 10.12.2) before
+     the database is opened, with `isTokenAutoRefreshEnabled: true`; and the
+     same in `live.js` for the share pages, which read the database too.
+  3. Do SEC-3 first, or in the same change: the Content-Security-Policy has to
+     allow reCAPTCHA's script and frame (`www.google.com/recaptcha/`,
+     `www.gstatic.com/recaptcha/`) or App Check fails silently.
+  4. *Owner:* watch App Check's metrics for two weeks of real use, sideline
+     phones and home-screen iPhones included, until unverified requests are
+     only ones nobody can account for.
+  5. *Owner:* enforce for **Realtime Database** only.
+- **What must not be enforced:** the `calendar` function. Its callers are
+  Google, Apple and Outlook fetching a subscribed feed, which can never carry
+  an App Check token; enforcing it would empty every subscribed calendar. The
+  other functions are database triggers and a schedule, which App Check does
+  not touch; the server writes with admin credentials and is not affected
+  either. A future callable function (`GOTSPORT.md`'s payments) takes it
+  from the start.
+- **Offline:** the phone gets a token when it has signal and keeps it for its
+  lifetime (an hour by default; the console can lengthen it). With no signal
+  nothing is sent anyway, and the outbox resends once a fresh token is had,
+  so this adds no new way to lose a write. Check this on a phone before
+  step 5: a page left open overnight, then a goal tapped in airplane mode,
+  then signal back.
+- **Done when:** enforced on the database, with the metrics showing nothing
+  refused that the app sent; a test holds `getApp()` to starting App Check
+  only when the key is set; and the calendar feed still answers a plain
+  `curl`.
 
 ---
 
