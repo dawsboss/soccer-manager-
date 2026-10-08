@@ -136,7 +136,7 @@ under **Before families come on** can be done without disturbing anyone.
 ## Later
 
 ### SEC-9 · Admins cannot remove one another: a club owner
-- **Status:** To do · **Kind:** Decision, then code (rules, app, server) · **Size:** Large
+- **Status:** To do, decided (the owner, 2026-10-08; below) · **Kind:** Code (rules, app, server), then Owner · **Size:** Large
 - **Why:** any admin can rewrite the whole admin list. `access/admins` has one
   rule at the top (`!data.exists() || data.child(auth.uid).exists()`), so a
   single admin account, taken over or fallen out with the club, can delete
@@ -146,7 +146,8 @@ under **Before families come on** can be done without disturbing anyone.
   reading the club while leaving her an admin on paper. The rules cannot tell
   a rightful removal from a hostile one, so the answer is someone the rules
   *can* tell apart: a club owner.
-- **The design (proposed; the owner decides the four questions below):**
+- **The design** (the four questions it raised are answered under
+  *Decided* below):
   - **The role.** `workspaces/{code}/access/owners/{uid}: true`. An owner is
     always an admin as well, so not one existing rule has to learn a new role:
     owning adds powers, it never replaces `admins`. In code it is
@@ -173,7 +174,8 @@ under **Before families come on** can be done without disturbing anyone.
     ```
     "owners": { "$uid": { ".write": "auth != null
         && root.child(W + 'access/admins/' + $uid).exists()
-        && ((!data.parent().exists() && $uid === auth.uid)            // the first claim
+        && ((!data.parent().exists() && $uid === auth.uid
+             && !root.child(W + 'access/index').exists())               // a brand-new club only
             || (root.child(W + 'access/owners/' + auth.uid).exists()
                 && (!data.exists() || $uid === auth.uid)))" } },     // add one; step down
     "admins": {
@@ -196,10 +198,12 @@ under **Before families come on** can be done without disturbing anyone.
     that predate this go on working when the rules are pasted before the app.
   - **Getting one.** A new club writes `owners/{me}` straight after
     `admins/{me}` (`createClub()` and the bootstrap in `claimadmin`, and
-    `rules.js`'s brand-new-club walk). An existing club shows its admins
-    *Become the club owner* on Club admin while it has none; the first to tap
-    it is the owner, and every admin is told (the notification below), so a
-    grab does not go unseen.
+    `rules.js`'s brand-new-club walk), so whoever starts a club owns it. That
+    write has to come before `index/{me}`: the first-claim clause holds only
+    while the club has no `access/index`, which every club that already exists
+    has, so no admin of an existing club can claim it, by the app or by hand.
+    An existing club is given its owner in the console (decided below); until
+    then the bridge keeps it on today's rules.
   - **Writes at the right depth.** `pushAll()` writes `access/admins` whole
     today; once a club has an owner that is refused, so it has to write one
     admin at a time (CLAUDE.md, *Write at the depth the rule sits at*), and
@@ -227,14 +231,20 @@ under **Before families come on** can be done without disturbing anyone.
   added (`app.js`, the `setrole` handler, `logAccess(isAdmin(uid) ? …)`). The
   team-role branch reads `on` beforehand and is right. A one-line fix,
   worth doing on its own before this task.
-- **Questions for the owner:**
-  1. A list of owners (two recommended), or exactly one?
-  2. May admins still appoint admins (recommended), or only owners?
-  3. For a club that already exists: first admin to claim (recommended,
-     with every admin told), or set by the app owner by hand?
-  4. Anything else owner-only beyond the four above (deleting a team, say)?
+- **Decided (the owner, 2026-10-08):**
+  1. A list of owners, not exactly one.
+  2. Admins still appoint admins.
+  3. The existing club's owner is the app owner, set by hand. *Owner* step,
+     after the rules are published: Firebase console → Realtime Database →
+     `workspaces/{code}/access/owners/{her uid}` = `true` (her uid is the one
+     under `appOwners`; she must already be in that club's `access/admins`,
+     which the rule requires of every owner). Add a second owner from the app
+     afterwards.
+  4. Nothing else is owner-only for now: removing admins and their index
+     entries, owners, and retiring the club.
 - **Done when:** `test/rules.js` refuses an admin removing another admin, an
-  owner, or another admin's index entry; lets an owner do all three to a
+  owner, or another admin's index entry, or claiming the owner of a club
+  that already exists; lets an owner do all three to a
   non-owner; lets an admin appoint and step down; walks a brand-new club to
   an owner; and keeps today's behaviour on a club with no `owners`.
   `test/access.js` shows every admin and owner, the removed one included,
@@ -243,44 +253,63 @@ under **Before families come on** can be done without disturbing anyone.
   owners only, and the handler checks it (as `retireclub` checks
   `canAdmin()`).
 
-### SEC-10 · Share pages nobody in a club owns
-- **Status:** To do · **Kind:** Decision, then code (server, share pages) · **Size:** Medium
+### SEC-10 · Only the server publishes share pages
+- **Status:** To do · **Kind:** Code (server, app), then rules · **Size:** Large
 - **Why:** any signed-in Google account can claim an unused id under
   `shareOwners`, publish a page at `public/{id}`, and send round
   `live.html?t={id}`, which this site will draw. Since SEC-D4 it cannot run
   code, and since SEC-4 it cannot take over a real page's id, but it can show
   a made-up fixture ("Saturday's game is cancelled, meet at…") under the
-  club's own address, and a page has no way of saying who wrote it: the team
-  and club names on it are typed by whoever published it.
-- **The options:**
-  - *Delete* — a trigger on `public/{id}` removes a page no club points to.
-    Trouble: a coach's phone writes the page and the team's `share` in either
-    order, possibly offline for an hour, so the trigger would race a real
-    page and needs a grace period and a second look.
-  - *Label* (recommended) — the server, not the page, says who published it.
-    `functions/mirror.js` already wakes on every team and game write and
-    already reads each team's `share` and `calFeed` and each game's `share`.
-    Have it also write `pageClubs/{id}: { club, team }` (a new root block,
-    `.read: true`, `.write: false`) for each id a club points to, and remove
-    it when the id is replaced or the game deleted; and `myCal…` the same for
-    a person's My calendar page (`{ personal: true }`, no name). `live.html`
-    and `game.html` then show *Published by {club} · {team}* from that node,
-    and over a page with no entry, a plain warning that no club on this site
-    published it, before anything else on the page. Nothing is deleted, so
-    nothing real can be lost to a race; a fake page is visibly fake.
-  - The two combine later: the label first, a sweep of pages with no entry
-    after a week if fakes ever turn up.
-- **Done when:** `test/mirror.js` (or its own suite) shows `pageClubs`
-  written for a team's season link, its feed and each game link, moved when a
-  link is replaced, removed when a game is deleted, and never written for an
-  id no club points to; a page published from an account with no role draws
-  the warning on both share pages; the club and team named come from
-  `pageClubs`, never from the page. No child's name in `pageClubs`.
+  club's own address. The hole exists because phones publish: the rule has to
+  let a coach's phone write `public/`, and it cannot tell a coach from anyone
+  else for an id no club has claimed yet.
+- **The decision (the owner, 2026-10-08):** phones stop publishing. Only the
+  server writes `public/`, and the rule becomes `.write: false`. A fake page
+  then cannot be made at all, so nothing needs labelling or sweeping, and
+  `shareOwners` (and `claimShare()`, `claimTeamIds()`, the publish debounce)
+  goes. Labelling pages instead was considered and dropped: it leaves the
+  hole open and only warns about it.
+- **Why the phone can give this up.** It was kept on the phone because the
+  sideline phone is the only place a live score exists (SERVER.md, *The share
+  pages*). But that phone already writes every goal, sub and clock change to
+  the workspace, so a trigger hears it at the same moment the phone could
+  have published, a second or two later at most. It is more reliable, not
+  less: `publishTeam()` writes `public/` directly, outside the outbox, so a
+  page closed with no signal loses that publish; the workspace write behind
+  it survives in the outbox and the server publishes when it lands. Nothing
+  at the sideline waits on the server either way.
+- **What to do:**
+  1. *Server:* `functions/mirror.js` already writes a team's entries and a
+     game's when and where. Give it the rest of `publicDoc()` and
+     `fixtureDoc()` (score, the squad by number, minutes, the log, stats,
+     a new game added, a deleted game's page taken down), held to the app's
+     own functions as the calendar half is. Wake on the parts of a game play
+     writes (goals, stints, periods, shots and the like, each under its own
+     id) rather than the whole game, so a tap reads only that game, once.
+     A test club and a retired club are still never published.
+  2. *Server:* My calendar's page is already built by `functions/mycal.js`;
+     its phone fallback (`feedPublish()` until it sees `by: 'server'`) goes.
+  3. *App:* stop writing `public/` (`schedulePublish()`, `publishTeam()`,
+     `feedPublish()`, `claimShare()`, `ensureFixtureShares()`'s publishing);
+     the share sheet reports what the server last wrote (`updated` on the
+     page) instead of the phone's own write. Making the ids
+     (`teams/{tid}/share`, a game's `share`, `calFeed`) stays on the phone,
+     in the workspace, under the team's rule.
+  4. *Rules,* once phones on the old build are gone (families are not on
+     yet, so that is soon): `public/$share` `.write: false`, `shareOwners`
+     removed, the rules version raised. An old phone's publish is then
+     refused, which costs nothing: the server has already written the page.
+- **Done when:** `test/mirror.js` publishes a live game's score, minutes and
+  log from the workspace writes alone, item for item the same as the app's
+  `publicDoc()`, `fixtureDoc()` and `publicGame()` with no child's name;
+  `test/stats.js` finds no `public/` write from the phone; `test/rules.js`
+  refuses a `public/` write from every kind of account, an admin included;
+  SERVER.md's *The share pages* says it moved.
 
 ### SEC-11 · Firebase App Check
 - **Status:** To do · **Kind:** Owner, then code · **Size:** Medium
 - **Why:** it lets only this app, on this site, talk to the database. It cuts
-  scraping and scripted abuse (the unclaimed-id writes in SEC-10, a script
+  scraping and scripted abuse (the unclaimed-id pages, until SEC-10 closes them; a script
   hammering `claims` or `invites`); it does not stop a real person signed in
   through the real app, so it is a fence round the rules, never instead of
   them.
