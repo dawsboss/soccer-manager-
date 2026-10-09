@@ -96,7 +96,7 @@ Joining someone else's club is by invite, and there is no code to type. Starting
 2. The app makes a link — `…/?invite=<id>` — to copy, share, or, with an email, have Firebase send as a sign-in email.
 3. The person opens it on their phone, signs in, and sees *Join Lakeside SC as coach of Flight*. **Accept** gives them the role and opens the club. That is the whole of it for them.
 
-Each invite works **once**, for **one account**, and expires after **14 days**. With an email address on it, only that (verified) address can accept it; without one, whoever opens the link first gets the role, so send it somewhere private. The admin sees each invite under People — open ones first, used and expired ones folded away — and tapping one shows its link again to copy or share, who used it and whether they still hold the role, and a button to revoke it while it is unused. Withdrawing a role later also deletes the invite it came from, so it cannot be spent again.
+Whoever makes an invite chooses **how many people** can use it (one, the default, up to fifty) and **for how long** (a day to ninety days; fourteen by default). A link for several people carries a seat for each, and each person who opens it takes one; once they're all taken, the next person is told it's used up. An emailed invite and a player's own link are always for one person. With an email address on it, only that (verified) address can accept it; without one, whoever opens the link first gets the role, so send it somewhere private. The admin sees each invite under People — open ones first, used and expired ones folded away — and tapping one shows its link again to copy or share, who used it and whether they still hold the role, and a button to revoke it while it is unused. Withdrawing a role later also deletes the invite it came from, so it cannot be spent again.
 
 The invite shows the club, the team and who sent it — never a child's name. A parent invite names the player by shirt number, because a link gets forwarded.
 
@@ -139,16 +139,27 @@ For an older player who asks. On her page in Squad, her coach (or an admin) taps
 
 Needs rules version 6 (`teamPlayers`, `self`, and the player clauses in `invites`, `clubInvites`, `rsvp`, `board` and `dm`). Until it's pasted, making the link is refused and says so.
 
-## Supporters
+## Fans
 
 A grandparent, an aunt, a family friend who wants the games and the calendar on their own phone, without being a parent. On a club on `orgs/` (every club now).
 
-- **Anyone who can see the player asks for one.** Her family, from *My players* → **Supporters**; the player herself, the same way; her coach or an admin, from her page in Squad. Each makes a single-use link, good for 14 days, one per person. It names her by shirt number, never by name.
-- **The team's coach approves it.** Someone who opens a family's link signs in and is put on Squad → **Parents** → *Supporters asking*, beside the families' asks, saying which player and who asked for them; the coach taps *Let in as supporter* or *Turn down*. A link the coach or an admin made is approved already, so whoever opens it is let in.
-- **A supporter does less than a parent.** The calendar, Live, the scores, the recap and the team's notices, her player by name (with *you support her* under My players) and teammates by shirt number unless the club shows the whole roster. She doesn't say who is going, has no conversation with the coaches, and books no sessions. Notifications: the team's notices, calendar changes and a game she follows, like a family. Her phone reads her player's record and nobody else's, and nothing a coach wrote about her.
-- **Taking it away** is *Remove* beside her on the player's page in Squad, or on People. The family keeps theirs. *Withdraw* kills a link nobody has used yet.
+- **Anyone who can see the player asks for one.** Her family, from *My players* → **Fans**; the player herself, the same way; her coach or an admin, from her page in Squad. Each makes a link for as many people as they choose (one by default, two for both grandparents), for as long as they choose. It names her by shirt number, never by name.
+- **The team's coach approves it.** Someone who opens a family's link signs in and is put on Squad → **Parents** → *Fans asking*, beside the families' asks, saying which player and who asked for them; the coach taps *Let in as fan* or *Turn down*. A link the coach or an admin made is approved already, so whoever opens it is let in.
+- **A fan does less than a parent.** The calendar, Live, the scores, the recap and the team's notices, her player by name (with *you're her fan* under My players) and teammates by shirt number unless the club shows the whole roster. She doesn't say who is going, has no conversation with the coaches, and books no sessions. Notifications: the team's notices, calendar changes and a game she follows, like a family. Her phone reads her player's record and nobody else's, and nothing a coach wrote about her.
+- **Her family sees who.** *My players* → **Fans** lists each fan of their child by name (the name is kept on the child's record, which the family reads), with *Remove* beside each. Her coach and the admins can take one away too, from the player's page in Squad or from People. *Withdraw* kills a link nobody has used yet.
+- **A fan can leave.** Her card under *My players* has *Stop following*, which takes her off the record and, if it was her only role, out of the club.
 
-Needs rules version 16 (`supporters` on the child's record, `access/teamSupporters`, and the supporter clauses in `invites`, `claims` and `board`), on `orgs/` only. Until it's pasted, making the link is refused and says so.
+Needs rules version 17 (`fans` and `fanNames` on the child's record, `access/teamFans`, and the fan clauses in `invites`, `claims` and `board`), on `orgs/` only. Until it's pasted, making the link is refused and says so.
+
+## Links with limits
+
+Every link the app makes can be held to how many people and how long:
+
+- **Invites** (People → *Invite someone*, a squad's parent links, a player's own link, a fan link): how many people, and for how long. See **Joining a club**.
+- **The team link** (Squad → **Parents**): *No limit* and *Until you replace it* by default, as before, or up to a set number of families and for a set number of days. Each family takes one place before it can ask; an expired or used-up link says so before anyone types anything.
+- **Share pages and calendar feeds** (the season link, a game's own link, the team's calendar feed, My calendar's address): an end date. After it nobody can open the page, and a calendar subscribed to the feed is told it has gone. Pick a new end, or *No end*, to bring it back. There's no limit on the number of people for these: nobody signs in to open them, so there's nobody to count.
+
+Needs rules version 17.
 
 ## Messages
 

@@ -482,14 +482,14 @@ const toUid = (S, u) => S.sent().filter(m => m.data.uid === u);
     deepEq('and nothing read but whether anybody does', S.reads.filter(p => !/^serverState\/moving\//.test(p)), ['follow/CLUB/g1']);
   }
 
-  /* A player's supporters (AUTH.md, *More kinds of people*, 1): her team's
+  /* A player's fans (AUTH.md, *More kinds of people*, 1): her team's
      notices, its calendar and a game she follows, with her player by name;
      never a family's conversation. Laid onto the club here so both passes
      carry them; the app puts them only on orgs/. */
-  console.log('\n--- a supporter: what she hears ---');
+  console.log('\n--- a fan: what she hears ---');
   const withGran = S => {
-    S.put(W + 'teams/t1/players/p2/supporters', { gran: true });
-    S.put(W + 'access/teamSupporters', { t1: { gran: 'p2', ghost: 'p1' } });
+    S.put(W + 'teams/t1/players/p2/fans', { gran: true });
+    S.put(W + 'access/teamFans', { t1: { gran: 'p2', ghost: 'p1' } });
     S.put(W + 'access/index/gran', 't1');
     S.put('pushTokens/gran', { [tok('gran')]: { at: 1 } });
     S.put('pushTokens/ghost', { [tok('ghost')]: { at: 1 } });
@@ -515,9 +515,9 @@ const toUid = (S, u) => S.sent().filter(m => m.data.uid === u);
   }
   {
     const S = withGran(liveServer({ gran: { at: 1 } }));
-    S.put(W + 'access/teamSupporters/t1/gran', 'p2');
+    S.put(W + 'access/teamFans/t1/gran', 'p2');
     await S.fire(W + 'matches/g1/goals/x1', { t: 600, side: 'us', pid: 'p2', by: 'trk' });
-    check('a goal by the player she supports names her', (toUid(S, 'gran')[0] || { data: {} }).data.body, 'Rosa · Flight 1–0 Northgate');
+    check('a goal by the player she is a fan of names her', (toUid(S, 'gran')[0] || { data: {} }).data.body, 'Rosa · Flight 1–0 Northgate');
     S.sends.length = 0;
     await S.fire(W + 'matches/g1/goals/x2', { t: 700, side: 'us', pid: 'p1', by: 'trk' });
     check('a teammate\'s, roster closed, is a shirt number', (toUid(S, 'gran')[0] || { data: {} }).data.body, '#7 · Flight 2–0 Northgate');

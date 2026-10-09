@@ -8,6 +8,45 @@ before this point lives only in the git log.
 
 ---
 
+## Fans, and links with limits — 2026-10-09 (build 118)
+
+Two things the owner asked for once supporters were in.
+
+**Supporters are fans now**, everywhere (`fans/{uid}`, `access/teamFans`,
+invite role `fan`; the old names never reached a live database, since rules
+version 16 was not yet published), and the family decides about them:
+
+- **Her family sees who.** A fan's name is kept on the child's record
+  (`fanNames/{uid}`), because a family cannot read the club's members; she
+  writes it on accepting a coach's link, the coach writes it on approving.
+- **Her family takes one away**, from *My players* → Fans. The record and
+  the name go, then the team's table: the rules let anyone in the club clear
+  a `teamFans` entry once the record no longer names her. Her index entry
+  stays the staff's phones' and the server's to take.
+- **A fan leaves on her own**: *Stop following* on her card, and out of the
+  club if that was her only role.
+
+**Every link can be held to how many people and until when:**
+
+- **Invites** (admins', a squad's parent links, a player's own, a fan's):
+  one to fifty people, a day to ninety. A rule cannot count, so a link for
+  several carries a seat per person; whoever opens it takes a free seat and
+  then says it is hers (`took/{uid}`), which every grant rule now accepts
+  beside a single-use `used`. Its id starts `m` and nobody's leaving deletes
+  it under the others. One person and fourteen days stay the default; an
+  emailed invite and a player's own link are always for one.
+- **The team link**: no limits by default, as before, or seats and an end
+  date; an expired or full one says so before anyone types.
+- **Share pages and feeds** (season, a game's page, the team's feed, My
+  calendar's address): an end date, `until` on the page. The `public/` read
+  rule refuses it after that and the calendar function answers 410. No use
+  limit here: nobody signs in to open them.
+
+Rules version 17. New suite `test/links.js`; `rules.js`, `fans.js`,
+`calfeed.js`, `access.js` and `mycalfeed.js` walk the rest.
+
+---
+
 ## Supporters: a player's people — 2026-10-09 (build 117)
 
 The first of AUTH.md's new kinds of people, and the one clubs ask for most:

@@ -46,19 +46,19 @@ const short = s => {
 async function teamFacts(env, code, tid, tree) {
   const L = await where(env.get, code, tree);
   const A = L.access;
-  const [retired, admins, tIndex, tParents, tPlayers, tSupporters, team, members] = await Promise.all([
+  const [retired, admins, tIndex, tParents, tPlayers, tFans, team, members] = await Promise.all([
     env.get('retired/' + code),
     env.get(A + '/admins'),
     env.get(A + '/teamIndex/' + tid),
     env.get(A + '/teamParents/' + tid),
     env.get(A + '/teamPlayers/' + tid),
-    env.get(A + '/teamSupporters/' + tid),
+    env.get(A + '/teamFans/' + tid),
     readTeam(env.get, L, tid),
     env.get(L.members)
   ]);
   return {
     retired: !!retired, admins: admins || {}, tIndex: tIndex || {}, tParents: tParents || {},
-    tPlayers: tPlayers || {}, tSupporters: tSupporters || {}, team: team || null, members: members || {}
+    tPlayers: tPlayers || {}, tFans: tFans || {}, team: team || null, members: members || {}
   };
 }
 const squad = f => (f.team && f.team.players) || {};
@@ -67,8 +67,8 @@ const has = (o, k) => !!(o && typeof o === 'object' && o[k] !== undefined && o[k
 const parentOn = (f, u) => has(squad(f)[f.tParents[u]] && squad(f)[f.tParents[u]].guardians, u);
 // a player's own sign-in, held to her own record the same way
 const selfOn = (f, u) => has(squad(f)[f.tPlayers[u]] && squad(f)[f.tPlayers[u]].self, u);
-// a supporter (AUTH.md, *More kinds of people*, 1), held to her player's record the same way
-const supporterOn = (f, u) => has(squad(f)[f.tSupporters[u]] && squad(f)[f.tSupporters[u]].supporters, u);
+// a fan (AUTH.md, *More kinds of people*, 1), held to her player's record the same way
+const fanOn = (f, u) => has(squad(f)[f.tFans[u]] && squad(f)[f.tFans[u]].fans, u);
 const memberName = (f, u) => {
   const m = f.members[u] || {};
   return m.name || (m.email ? String(m.email).split('@')[0] : '') || '';
@@ -76,13 +76,13 @@ const memberName = (f, u) => {
 
 /* A team notice, board/{code}/{tid}/{id}: the board's read rule, without its
    bridge. Admins, the team's coaches and trackers, its families, its
-   players who sign in themselves, and its players' supporters. */
+   players who sign in themselves, and its players' fans. */
 function noticeReaders(f) {
   const out = new Set(keys(f.admins));
   for (const u of keys(f.tIndex)) out.add(u);
   for (const u of keys(f.tParents)) if (parentOn(f, u)) out.add(u);
   for (const u of keys(f.tPlayers)) if (selfOn(f, u)) out.add(u);
-  for (const u of keys(f.tSupporters)) if (supporterOn(f, u)) out.add(u);
+  for (const u of keys(f.tFans)) if (fanOn(f, u)) out.add(u);
   return out;
 }
 
@@ -286,13 +286,13 @@ function calNews(before, after) {
   return null;
 }
 
-/* Everyone on the team, held to the squad: its supporters too, whose
+/* Everyone on the team, held to the squad: its fans too, whose
    calendar it is as much as a family's. */
 function teamReaders(f) {
   const out = new Set(keys(f.tIndex));
   for (const u of keys(f.tParents)) if (parentOn(f, u)) out.add(u);
   for (const u of keys(f.tPlayers)) if (selfOn(f, u)) out.add(u);
-  for (const u of keys(f.tSupporters)) if (supporterOn(f, u)) out.add(u);
+  for (const u of keys(f.tFans)) if (fanOn(f, u)) out.add(u);
   return out;
 }
 
@@ -420,7 +420,7 @@ async function namer(env, L, tid, goal) {
   const staff = u => has(admins, u) || has(coachIndex, u) || Object.values(teamIndex && typeof teamIndex === 'object' ? teamIndex : {}).some(t => has(t, u));
   const shown = (p, u) => {
     if (!p || typeof p !== 'object') return '';
-    if (open === true || staff(u) || has(p.guardians, u) || has(p.self, u) || has(p.supporters, u)) return String(p.name || '');
+    if (open === true || staff(u) || has(p.guardians, u) || has(p.self, u) || has(p.fans, u)) return String(p.name || '');
     const n = p.number == null ? '' : String(p.number).trim();
     return n ? '#' + n : 'A teammate';
   };

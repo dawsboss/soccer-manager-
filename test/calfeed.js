@@ -137,5 +137,15 @@ const ROOT = path.join(__dirname, '..');
   check('the database failing is a 502, so calendars keep what they had', (await get('/c_flightfeed.ics')).status, 502);
   S.down(false);
 
+  console.log('\n--- an address with an end date ---');
+  {
+    S.put('public/c_flightold', { ...docs.c_flightfeed, until: Date.now() - 1000 });
+    S.put('public/c_flightnew', { ...docs.c_flightfeed, until: Date.now() + 864e5 });
+    const old = await get('/c_flightold.ics');
+    check('past it: gone, not missing', old.status, 410);
+    check('— and says why', /expired/.test(await old.text()), true);
+    check('before it: the calendar, as ever', (await get('/c_flightnew.ics')).status, 200);
+  }
+
   H.summary('the calendar feed');
 })().catch(e => { console.error(e); process.exit(1); });

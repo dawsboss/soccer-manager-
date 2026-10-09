@@ -2054,20 +2054,20 @@ reads('owners are not world-readable', OUT, 'shareOwners/sh1', false);
   w('— never edited', OA, O + 'log/l1', { at: 1, act: 'nothing happened', by: 'oa' }, false);
 
   /* AUTH.md, *More kinds of people*, 1 (the owner, 2026-10-09): a player's
-     supporters. Anyone who can see her asks with a link (an invite of role
-     `supporter`); the team's coach approves, and a coach or admin making the
-     link has approved already. On orgs/ only: squad/{tid}/{pid}/supporters/
-     {uid} on her record, and the sixth lookup table, teamSupporters. */
-  console.log('\n--- a club on orgs/: supporters, reading ---');
+     fans. Anyone who can see her asks with a link (an invite of role
+     `fan`); the team's coach approves, and a coach or admin making the
+     link has approved already. On orgs/ only: squad/{tid}/{pid}/fans/
+     {uid} on her record, and the sixth lookup table, teamFans. */
+  console.log('\n--- a club on orgs/: fans, reading ---');
   const savedInv = DB.invites, savedClaims = DB.claims, savedBoard = DB.board, savedDm = DB.dm;
-  ORGC.squad.t1.p1.supporters = { osup: 'isup0' };
-  ORGC.access.teamSupporters = { t1: { osup: 'p1' } };
+  ORGC.squad.t1.p1.fans = { osup: 'isup0' };
+  ORGC.access.teamFans = { t1: { osup: 'p1' } };
   ORGC.access.index.osup = 'isup0';
   DB.board = { ORGC: { t1: { n1: { by: 'oc', at: 1, text: 'Kit on Saturday' } }, t2: { n2: { by: 'oc2', at: 1, text: 'Owls only' } } } };
   DB.dm = { ORGC: { t1: { om: { m: { x: { by: 'om', at: 1, text: 'Ella is ill' } } } } } };
   const OSUP = { uid: 'osup' }, GRAN = { uid: 'gran' };
   for (const part of ['teams', 'matches', 'roster', 'names', 'org', 'rsvp'])
-    r('a supporter reads ' + part, OSUP, O + part, true);
+    r('a fan reads ' + part, OSUP, O + part, true);
   r('— her player\'s record', OSUP, O + 'squad/t1/p1', true);
   r('— not a teammate\'s', OSUP, O + 'squad/t1/p2', false);
   r('— nor the squad', OSUP, O + 'squad/t1', false);
@@ -2079,19 +2079,19 @@ reads('owners are not world-readable', OUT, 'shareOwners/sh1', false);
   r('— not the family\'s conversation with the coaches', OSUP, 'dm/ORGC/t1/om', false);
   w('she ticks a notice as seen', OSUP, 'board/ORGC/t1/n1/seen/osup', NOW, true);
 
-  console.log('\n--- a club on orgs/: supporters do less than a parent ---');
+  console.log('\n--- a club on orgs/: fans do less than a parent ---');
   w('she says nobody is going', OSUP, O + 'rsvp/t1/g_g1/p1', { v: 'yes', by: 'osup', at: NOW }, false);
   w('she writes in no family\'s conversation', OSUP, 'dm/ORGC/t1/om/m/y', { by: 'osup', at: NOW, text: 'hi' }, false);
   w('— nor starts her own', OSUP, 'dm/ORGC/t1/osup/m/y', { by: 'osup', at: NOW, text: 'hi' }, false);
   w('she changes nothing on her player', OSUP, O + 'squad/t1/p1/name', 'Ellie', false);
   w('she follows a game, as anyone in the club', OSUP, 'follow/ORGC/g1/osup', { at: NOW }, true);
-  w('she can step down herself', OSUP, O + 'squad/t1/p1/supporters/osup', null, true);
-  w('— but put nobody else there', OSUP, O + 'squad/t1/p1/supporters/gran', 'isup0', false);
+  w('she can step down herself', OSUP, O + 'squad/t1/p1/fans/osup', null, true);
+  w('— but put nobody else there', OSUP, O + 'squad/t1/p1/fans/gran', 'isup0', false);
 
-  console.log('\n--- a club on orgs/: asking for a supporter ---');
+  console.log('\n--- a club on orgs/: asking for a fan ---');
   DB.invites = {};
-  const sup = (by, x) => ({ ws: 'ORGC', team: 't1', role: 'supporter', player: 'p1', by, at: NOW, expiresAt: NOW + 864e5, ...(x || {}) });
-  w('her parent makes a supporter link', OM, 'invites/s1', sup('om'), true);
+  const sup = (by, x) => ({ ws: 'ORGC', team: 't1', role: 'fan', player: 'p1', by, at: NOW, expiresAt: NOW + 864e5, ...(x || {}) });
+  w('her parent makes a fan link', OM, 'invites/s1', sup('om'), true);
   w('— not one that says it is approved', OM, 'invites/s1', sup('om', { approved: true }), false);
   w('— not for another child', OM, 'invites/s1', sup('om', { player: 'p2' }), false);
   w('— not a parent link', OM, 'invites/s1', sup('om', { role: 'parent' }), false);
@@ -2102,16 +2102,16 @@ reads('owners are not world-readable', OUT, 'shareOwners/sh1', false);
   w('not another team\'s coach', OC2, 'invites/s1', sup('oc2', { approved: true }), false);
   w('— nor unapproved', OC2, 'invites/s1', sup('oc2'), false);
   w('not the tracker', OT, 'invites/s1', sup('ot'), false);
-  w('not a supporter, for another supporter', OSUP, 'invites/s1', sup('osup'), false);
+  w('not a fan, for another fan', OSUP, 'invites/s1', sup('osup'), false);
   w('not for a player who is not there', OC, 'invites/s1', sup('oc', { player: 'p9', approved: true }), false);
-  w('a supporter link must name a player', OA, 'invites/s1', { ...sup('oa'), player: null }, false);
+  w('a fan link must name a player', OA, 'invites/s1', { ...sup('oa'), player: null }, false);
   DB.invites = { s1: sup('om'), s2: sup('om', { player: 'p2' }) };
   w('her parent withdraws the link she made', OM, 'invites/s1', null, true);
   w('— not one somebody else made', OSELF, 'invites/s1', null, false);
 
-  console.log('\n--- a club on orgs/: a supporter her family asked for ---');
+  console.log('\n--- a club on orgs/: a fan her family asked for ---');
   DB.invites = { sf: sup('om', { used: { by: 'gran', at: NOW } }), sold: sup('om', { expiresAt: NOW - 1, used: { by: 'gran', at: NOW - 2 } }) };
-  w('she does not let herself in', GRAN, O + 'squad/t1/p1/supporters/gran', 'sf', false);
+  w('she does not let herself in', GRAN, O + 'squad/t1/p1/fans/gran', 'sf', false);
   w('— nor index herself', GRAN, O + 'access/index/gran', 'sf', false);
   const ask = x => ({ invite: 'sf', player: 'p1', name: 'Gran', email: 'gran@example.com', at: NOW, ...(x || {}) });
   w('she asks the coach, with the link she spent', GRAN, 'claims/ORGC/t1/gran', ask(), true);
@@ -2123,48 +2123,155 @@ reads('owners are not world-readable', OUT, 'shareOwners/sh1', false);
   DB.claims = { ORGC: { t1: { gran: ask() } } };
   r('the team\'s coach sees the ask', OC, 'claims/ORGC/t1', true);
   r('her parent does not', OM, 'claims/ORGC/t1', false);
-  w('the coach approves it', OC, 'claims/ORGC/t1/gran/approved', { by: 'oc', at: NOW, supporter: 'p1' }, true);
+  w('the coach approves it', OC, 'claims/ORGC/t1/gran/approved', { by: 'oc', at: NOW, fan: 'p1' }, true);
   w('her parent does not', OM, 'claims/ORGC/t1/gran/approved', { by: 'om', at: NOW }, false);
-  w('the coach puts her on the child\'s record', OC, O + 'squad/t1/p1/supporters/gran', true, true);
-  w('not the tracker', OT, O + 'squad/t1/p1/supporters/gran', true, false);
+  w('the coach puts her on the child\'s record', OC, O + 'squad/t1/p1/fans/gran', true, true);
+  w('not the tracker', OT, O + 'squad/t1/p1/fans/gran', true, false);
   w('— before approving, the coach cannot index her', OC, O + 'access/index/gran', 't1', false);
-  DB.claims.ORGC.t1.gran.approved = { by: 'oc', at: NOW, supporter: 'p1' };
-  ORGC.squad.t1.p1.supporters.gran = true;
+  DB.claims.ORGC.t1.gran.approved = { by: 'oc', at: NOW, fan: 'p1' };
+  ORGC.squad.t1.p1.fans.gran = true;
   w('— after, she can', OC, O + 'access/index/gran', 't1', true);
-  w('the coach puts her in the table', OC, O + 'access/teamSupporters/t1/gran', 'p1', true);
-  w('— naming the child she supports, no other', OC, O + 'access/teamSupporters/t1/gran', 'p2', false);
-  delete ORGC.squad.t1.p1.supporters.gran;
+  w('the coach puts her in the table', OC, O + 'access/teamFans/t1/gran', 'p1', true);
+  w('— naming the child she is a fan of, no other', OC, O + 'access/teamFans/t1/gran', 'p2', false);
+  delete ORGC.squad.t1.p1.fans.gran;
 
-  console.log('\n--- a club on orgs/: a supporter the coach asked for ---');
+  console.log('\n--- a club on orgs/: a fan the coach asked for ---');
   DB.invites = { sc: sup('oc', { approved: true, used: { by: 'gran', at: NOW } }), sold: sup('oc', { approved: true, expiresAt: NOW - 1, used: { by: 'gran', at: NOW - 2 } }),
     sx: sup('oc', { approved: true, player: 'p2', used: { by: 'gran', at: NOW } }) };
-  w('she lets herself in with it', GRAN, O + 'squad/t1/p1/supporters/gran', 'sc', true);
-  w('— not on another child', GRAN, O + 'squad/t1/p2/supporters/gran', 'sc', false);
-  w('— not once it has expired', GRAN, O + 'squad/t1/p1/supporters/gran', 'sold', false);
-  w('— not with somebody else\'s', RANDO, O + 'squad/t1/p1/supporters/rando', 'sc', false);
+  w('she lets herself in with it', GRAN, O + 'squad/t1/p1/fans/gran', 'sc', true);
+  w('— not on another child', GRAN, O + 'squad/t1/p2/fans/gran', 'sc', false);
+  w('— not once it has expired', GRAN, O + 'squad/t1/p1/fans/gran', 'sold', false);
+  w('— not with somebody else\'s', RANDO, O + 'squad/t1/p1/fans/rando', 'sc', false);
   w('— not as a parent', GRAN, O + 'squad/t1/p1/guardians/gran', 'sc', false);
   w('— not as the player', GRAN, O + 'squad/t1/p1/self/gran', 'sc', false);
   w('she indexes herself only once she is on the record', GRAN, O + 'access/index/gran', 'sc', false);
-  ORGC.squad.t1.p1.supporters.gran = 'sc';
+  ORGC.squad.t1.p1.fans.gran = 'sc';
   w('— then she can', GRAN, O + 'access/index/gran', 'sc', true);
-  w('— and put herself in the table', GRAN, O + 'access/teamSupporters/t1/gran', 'p1', true);
-  w('— not as another child\'s', GRAN, O + 'access/teamSupporters/t1/gran', 'p2', false);
+  w('— and put herself in the table', GRAN, O + 'access/teamFans/t1/gran', 'p1', true);
+  w('— not as another child\'s', GRAN, O + 'access/teamFans/t1/gran', 'p2', false);
   w('— nor as a parent', GRAN, O + 'access/teamParents/t1/gran', 'p1', false);
-  w('— nor anyone else in it', GRAN, O + 'access/teamSupporters/t1/osup', 'p1', false);
-  w('a parent cannot put herself in it', OM, O + 'access/teamSupporters/t1/om', 'p1', false);
-  w('the tracker cannot put anyone in it', OT, O + 'access/teamSupporters/t1/gran', 'p1', false);
-  delete ORGC.squad.t1.p1.supporters.gran;
-  // the old tree has no supporters (AUTH.md: orgs/ only), so a link to a club still there lets nobody in
+  w('— nor anyone else in it', GRAN, O + 'access/teamFans/t1/osup', 'p1', false);
+  w('a parent cannot put herself in it', OM, O + 'access/teamFans/t1/om', 'p1', false);
+  w('the tracker cannot put anyone in it', OT, O + 'access/teamFans/t1/gran', 'p1', false);
+  delete ORGC.squad.t1.p1.fans.gran;
+  // the old tree has no fans (AUTH.md: orgs/ only), so a link to a club still there lets nobody in
   DB.invites.sw = { ...sup('adm', { approved: true, used: { by: 'gran', at: NOW } }), ws: 'CLUB' };
-  w('a supporter link never indexes anyone on the old tree', GRAN, 'workspaces/CLUB/access/index/gran', 'sw', false);
-  w('— nor puts anyone on a record there', GRAN, 'workspaces/CLUB/teams/t1/players/p1/supporters/gran', 'sw', false);
+  w('a fan link never indexes anyone on the old tree', GRAN, 'workspaces/CLUB/access/index/gran', 'sw', false);
+  w('— nor puts anyone on a record there', GRAN, 'workspaces/CLUB/teams/t1/players/p1/fans/gran', 'sw', false);
 
-  delete ORGC.squad.t1.p1.supporters; delete ORGC.access.teamSupporters; delete ORGC.access.index.osup;
+  delete ORGC.squad.t1.p1.fans; delete ORGC.access.teamFans; delete ORGC.access.index.osup;
   DB.invites = savedInv; DB.claims = savedClaims; DB.board = savedBoard; DB.dm = savedDm;
   if (savedInv === undefined) delete DB.invites;
   if (savedClaims === undefined) delete DB.claims;
   if (savedBoard === undefined) delete DB.board;
   if (savedDm === undefined) delete DB.dm;
+
+  /* A fan's name on her player's record, and her family taking her off it
+     (the owner, 2026-10-09): the family sees who follows their child, and
+     decides; a fan can leave on her own. */
+  console.log('\n--- a club on orgs/: fans, named and taken away ---');
+  {
+    const saved = { inv: DB.invites };
+    ORGC.squad.t1.p1.fans = { ofan: true }; ORGC.squad.t1.p1.fanNames = { ofan: 'Gran Fitz' };
+    ORGC.access.teamFans = { t1: { ofan: 'p1' } }; ORGC.access.index.ofan = 't1';
+    const OFAN = { uid: 'ofan' };
+    r('her family reads who follows their child, by name', OM, O + 'squad/t1/p1/fanNames', true);
+    w('a fan writes her own name there', OFAN, O + 'squad/t1/p1/fanNames/ofan', 'Granny', true);
+    w('— nobody else\'s', OFAN, O + 'squad/t1/p1/fanNames/om', 'Mo', false);
+    w('— and none on a child she is not a fan of', OFAN, O + 'squad/t1/p2/fanNames/ofan', 'Gran', false);
+    w('— a name, not a story', OFAN, O + 'squad/t1/p1/fanNames/ofan', 'x'.repeat(81), false);
+    w('her family takes a fan off their child', OM, O + 'squad/t1/p1/fans/ofan', null, true);
+    w('— and her name', OM, O + 'squad/t1/p1/fanNames/ofan', null, true);
+    w('— but puts nobody on', OM, O + 'squad/t1/p1/fans/rando', true, false);
+    w('the player herself takes one off too', OSELF, O + 'squad/t1/p3/fans/x', null, true);
+    w('another family does not', OSELF, O + 'squad/t1/p1/fans/ofan', null, false);
+    w('nor a tracker', OT, O + 'squad/t1/p1/fans/ofan', null, false);
+    w('while the record still names her, nobody else clears her from the table', OM, O + 'access/teamFans/t1/ofan', null, false);
+    delete ORGC.squad.t1.p1.fans.ofan;
+    w('once it does not, anyone in the club clears the stale entry', OM, O + 'access/teamFans/t1/ofan', null, true);
+    w('— never someone outside it', RANDO, O + 'access/teamFans/t1/ofan', null, false);
+    ORGC.squad.t1.p1.fans.ofan = true;
+    w('a fan leaves: off the record', OFAN, O + 'squad/t1/p1/fans/ofan', null, true);
+    w('— her name', OFAN, O + 'squad/t1/p1/fanNames/ofan', null, true);
+    w('— the table', OFAN, O + 'access/teamFans/t1/ofan', null, true);
+    w('— and the club', OFAN, O + 'access/index/ofan', null, true);
+    delete ORGC.squad.t1.p1.fans; delete ORGC.squad.t1.p1.fanNames; delete ORGC.access.teamFans; delete ORGC.access.index.ofan;
+    DB.invites = saved.inv; if (saved.inv === undefined) delete DB.invites;
+  }
+
+  /* Links with limits (the owner, 2026-10-09): how many people may use one,
+     and until when. A rule cannot count, so a link for several carries one
+     seat per person, each taken once; a page anyone may open carries an end
+     date the read rule checks against the clock. */
+  console.log('\n--- a link for several people: one seat each ---');
+  {
+    const savedInv = DB.invites, savedJc = DB.joinCodes, savedCl = DB.claims, savedPub = DB.public;
+    const many = { ws: 'ORGC', team: 't1', role: 'parent', player: 'p2', by: 'oa', at: NOW, expiresAt: NOW + 864e5, max: 2, seats: { s1: true, s2: true } };
+    DB.invites = { im: JSON.parse(JSON.stringify(many)), ip: { ...JSON.parse(JSON.stringify(many)), expiresAt: NOW - 1 } };
+    const A1 = { uid: 'mo2' }, A2 = { uid: 'da2' }, A3 = { uid: 'xx3' };
+    w('an admin makes one for two people', OA, 'invites/inew', { ...many }, true);
+    w('— not with someone already on a seat', OA, 'invites/inew', { ...many, seat: { s1: { by: 'mo2', at: NOW } }, took: { mo2: 's1' } }, false);
+    w('— not for more than fifty', OA, 'invites/inew', { ...many, max: 51 }, false);
+    w('the first takes a seat', A1, 'invites/im/seat/s1', { by: 'mo2', at: NOW }, true);
+    w('— not in someone else\'s name', A1, 'invites/im/seat/s1', { by: 'da2', at: NOW }, false);
+    w('— not a seat the link does not have', A1, 'invites/im/seat/s9', { by: 'mo2', at: NOW }, false);
+    w('— not once it has expired', A1, 'invites/ip/seat/s1', { by: 'mo2', at: NOW }, false);
+    w('nor the single-use way, on a link with seats', A1, 'invites/im/used', { by: 'mo2', at: NOW }, false);
+    DB.invites.im.seat = { s1: { by: 'mo2', at: NOW } };
+    w('then says it is hers', A1, 'invites/im/took/mo2', 's1', true);
+    w('— not a seat somebody else holds', A2, 'invites/im/took/da2', 's1', false);
+    w('a taken seat is not taken again', A2, 'invites/im/seat/s1', { by: 'da2', at: NOW }, false);
+    w('the second takes the other', A2, 'invites/im/seat/s2', { by: 'da2', at: NOW }, true);
+    DB.invites.im.took = { mo2: 's1' };
+    w('nobody holds two', A1, 'invites/im/seat/s2', { by: 'mo2', at: NOW }, false);
+    w('a seat lets her in, as a spent invite does', A1, O + 'squad/t1/p2/guardians/mo2', 'im', true);
+    w('— and into the index', A1, O + 'access/index/mo2', 'im', true);
+    const savedCi = DB.clubInvites;
+    DB.clubInvites = { ...(DB.clubInvites || {}), ORGC: { im: { role: 'parent', team: 't1' } } };
+    w('— and ticks herself off on the admins\' list', A1, 'clubInvites/ORGC/im/took/mo2', { at: NOW }, true);
+    w('— not someone else', A1, 'clubInvites/ORGC/im/took/da2', { at: NOW }, false);
+    DB.clubInvites = savedCi; if (savedCi === undefined) delete DB.clubInvites;
+    DB.invites.im.seat.s2 = { by: 'da2', at: NOW };
+    w('full: a third has no seat to take', A3, 'invites/im/seat/s3', { by: 'xx3', at: NOW }, false);
+    w('— and is not let in', A3, O + 'squad/t1/p2/guardians/xx3', 'im', false);
+    w('nor is someone who took a seat but never said so', A2, O + 'squad/t1/p2/guardians/da2', 'im', false);
+    w('a seat holder does not delete the link for everyone', A1, 'invites/im', null, false);
+    w('its maker does', OA, 'invites/im', null, true);
+
+    console.log('\n--- a team link: until when, and for how many ---');
+    DB.joinCodes = {
+      jt: { ws: 'ORGC', team: 't1', by: 'oc', at: NOW, expiresAt: NOW + 864e5, max: 1, seats: { s1: true } },
+      jo: { ws: 'ORGC', team: 't1', by: 'oc', at: NOW, expiresAt: NOW - 1 },
+      jf: { ws: 'ORGC', team: 't1', by: 'oc', at: NOW }
+    };
+    const ask = code => ({ code, shirt: '9', at: NOW });
+    w('the coach makes one with an end date and seats', OC, 'joinCodes/jn', { ws: 'ORGC', team: 't1', by: 'oc', at: NOW, expiresAt: NOW + 864e5, max: 2, seats: { s1: true, s2: true } }, true);
+    w('a link with no limits still works as it did', A3, 'claims/ORGC/t1/xx3', ask('jf'), true);
+    w('an expired link takes no asks', A3, 'claims/ORGC/t1/xx3', ask('jo'), false);
+    w('— nor seats', A3, 'joinCodes/jo/seat/s1', { by: 'xx3', at: NOW }, false);
+    w('a link with seats: no ask without one', A3, 'claims/ORGC/t1/xx3', ask('jt'), false);
+    w('— she takes one', A3, 'joinCodes/jt/seat/s1', { by: 'xx3', at: NOW }, true);
+    DB.joinCodes.jt.seat = { s1: { by: 'xx3', at: NOW } };
+    w('— says it is hers', A3, 'joinCodes/jt/took/xx3', 's1', true);
+    DB.joinCodes.jt.took = { xx3: 's1' };
+    w('— then asks', A3, 'claims/ORGC/t1/xx3', ask('jt'), true);
+    w('the next has no seat left', A2, 'joinCodes/jt/seat/s2', { by: 'da2', at: NOW }, false);
+    w('— and no ask', A2, 'claims/ORGC/t1/da2', ask('jt'), false);
+
+    console.log('\n--- a share page or feed: until when ---');
+    DB.public = { pg: { team: { name: 'Hawks' }, until: NOW + 864e5 }, px: { team: { name: 'Hawks' }, until: NOW - 1 }, pn: { team: { name: 'Hawks' } } };
+    DB.shareOwners = { ...(DB.shareOwners || {}), pg: { oc: true }, px: { oc: true } };
+    r('a page before its end date opens, signed out too', OUT, 'public/pg', true);
+    r('a page past it does not', OUT, 'public/px', false);
+    r('— not even for its coach', OC, 'public/px', false);
+    r('a page with no end date opens as it did', OUT, 'public/pn', true);
+    w('its coach puts a new end date on it', OC, 'public/px/until', NOW + 864e5, true);
+    w('an end date is a time', OC, 'public/pg/until', 'soon', false);
+    w('My calendar\'s feed takes an end date', OM, 'people/om/set', { share: false, feed: 'abcdefgh', feedUntil: NOW + 864e5 }, true);
+    w('— a time, nothing else', OM, 'people/om/set', { share: false, feedUntil: 'never' }, false);
+    DB.invites = savedInv; DB.joinCodes = savedJc; DB.claims = savedCl; DB.public = savedPub;
+    for (const k of ['invites', 'joinCodes', 'claims']) if (DB[k] === undefined) delete DB[k];
+  }
 
   console.log('\n--- a club on orgs/: one tree each ---');
   /* A club is on exactly one tree, which is what lets every root rule ask

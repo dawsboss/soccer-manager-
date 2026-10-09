@@ -14,7 +14,7 @@
    from what she says.** userOrgs/{uid} only says which clubs to look in, and
    she can write it. In each club her items are those of the teams she
    coaches or tracks (access/teams), the teams a child of hers is on (a
-   player whose guardians or self list her) or a player she supports, the sessions she runs, the
+   player whose guardians or self list her) or a player she is a fan of, the sessions she runs, the
    sessions a child of hers is booked, asked or waiting for, and her own
    bookable times: the same as myCalItems(). A club she has no role in gives
    nothing, and the moment a role is taken away the next build leaves that
@@ -130,8 +130,8 @@ async function clubItems(read, uid, code) {
   for (const [tid, t] of Object.entries(ts))
     for (const [pid, p] of Object.entries((t && t.players) || {})) {
       if (p && (has(p.guardians, uid) || has(p.self, uid))) { mine.add(tid); kids.add(pid); }
-      // a supporter's player's team is hers too; her sessions are her family's business, not her supporter's
-      else if (p && has(p.supporters, uid)) mine.add(tid);
+      // a fan's player's team is hers too; her sessions are her family's business, not her fan's
+      else if (p && has(p.fans, uid)) mine.add(tid);
     }
 
   const out = [];
@@ -230,8 +230,11 @@ async function publish(env, read, uid, now) {
   const app = String((page && page.link && page.link.app) || '');
   const doc = { team: { name: 'My calendar' }, mine: true, by: 'server', items, updated: now };
   if (/^https:\/\//.test(app)) doc.link = { app };
+  // the end date she gave her address (people/{uid}/set/feedUntil): after it nobody reads the page, the calendar app included
+  const until = await read(`people/${uid}/set/feedUntil`);
+  if (typeof until === 'number' && until > 0) doc.until = until;
   // unchanged: leave it, so a calendar that asks sees the same page
-  if (page && page.by === 'server' && JSON.stringify(page.items || {}) === JSON.stringify(items)) return 'same';
+  if (page && page.by === 'server' && JSON.stringify(page.items || {}) === JSON.stringify(items) && (page.until || null) === (doc.until || null)) return 'same';
   await env.set('public/' + id, doc);
   return 'written';
 }
