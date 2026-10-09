@@ -496,6 +496,11 @@ const toUid = (S, u) => S.sent().filter(m => m.data.uid === u);
     check('her own child named, then the score', m.data.body, 'Ella · Flight 1–0 Northgate');
     check('another team\'s family, roster closed: a shirt number', toUid(S, 'dad')[0].data.body, '#7 · Flight 1–0 Northgate');
     check('opening the game\'s Live tab', m.data.hash, '#/team/t1/game/g1/live');
+    // a club viewer sees every child by name on screen (AUTH.md, *Club viewers, as built*), so here too
+    const SV = liveServer({ dad: { at: 1 } });
+    SV.put(W + 'access/viewers', { dad: true });
+    await SV.fire(W + 'matches/g1/goals/x1', { t: 600, side: 'us', pid: 'p1', by: 'trk', byName: 'Tia' });
+    check('the same family made a club viewer: the scorer by name', toUid(SV, 'dad')[0].data.body, 'Ella · Flight 1–0 Northgate');
     check('tagged as the open page tags it, so a phone showing both shows one', m.data.tag, 'minutes-g1-goal:x1');
     check('not held on the lock screen until dismissed', m.data.urgent, '');
     check('and kept an hour, not a day', m.webpush.headers.TTL, '3600');
@@ -926,6 +931,34 @@ const toUid = (S, u) => S.sent().filter(m => m.data.uid === u);
     const w = worker();
     await w.fire('notificationclick', { notification: { close() { }, data: { code: 'OTHER', hash: '#/messages/t1/mum' } } });
     check('with none open, it opens one there, the club on the address', w.opened[0], 'https://x.test/app/?open=OTHER#/messages/t1/mum');
+  }
+
+  /* A team helper (AUTH.md, *Team helpers*): the notices and calendar rules
+     read every teamIndex entry for the team, so she is told of both; a
+     family's conversation is read only by the 'coach' entries, so she never
+     hears one. Nothing in functions/push.js names her. */
+  console.log('\n--- a team helper ---');
+  {
+    const helper = S => {
+      S.put(W + 'access/teams/t1/helpers/hal', true);
+      S.put(W + 'access/teamIndex/t1/hal', 'helper');
+      S.put(W + 'access/index/hal', true);
+      S.put('pushTokens/hal', { [tok('hal')]: { at: 1, ua: 'iPhone' } });
+      return S;
+    };
+    let S = helper(server());
+    let r = await S.fire('board/CLUB/t1/n9', { by: 'coach', byName: 'Jaz', at: 5, text: 'Kit day' });
+    check('she hears her team\'s notices', r.pushNotice.to.includes('hal'), true);
+    S = helper(server());
+    r = await S.fire('board/CLUB/t1/n9', { by: 'hal', byName: 'Hal', at: 5, text: 'Kit day' });
+    check('— not one she posted herself', toUid(S, 'hal').length, 0);
+    check('— which the coach hears', toUid(S, 'coach').length > 0, true);
+    S = helper(server());
+    r = await S.fire('dm/CLUB/t1/mum/m/x9', { by: 'mum', byName: 'Mo', at: 5, text: 'Ella has a cold' });
+    check('never a family\'s conversation', toUid(S, 'hal').length, 0);
+    S = helper(calServer());
+    r = (await S.fire(W + 'teams/t1/events/e1/called', 'cancelled')).pushEntry;
+    check('she hears her team\'s calendar change', r.to.includes('hal'), true);
   }
 
   H.summary('notifications to a closed phone');

@@ -2053,119 +2053,55 @@ reads('owners are not world-readable', OUT, 'shareOwners/sh1', false);
   w('the log is still append-only, in her own name', OC, O + 'log/l2', { at: 2, act: 'x', by: 'oc' }, true);
   w('— never edited', OA, O + 'log/l1', { at: 1, act: 'nothing happened', by: 'oa' }, false);
 
-  /* AUTH.md, *More kinds of people*, 3 and 4 (the owner, 2026-10-09). A
-     club-wide viewer (a director) reads every team's calendar and games
-     with names, and nothing else. She is not in access/index, because the
-     index is what opens sessions, bookings, answers and following a game,
-     so each part she reads names her itself. A guest (a referee, a scout)
-     reads one game or one entry with names, until her `until`, and nothing
-     else: the rules read `now`, so it ends by itself. */
+  /* AUTH.md, *More kinds of people*, 3 (the owner, 2026-10-09). A club-wide
+     viewer (a director) is in the index like everyone else in the club, so
+     she reads what the index reads; beyond it, every team's squad, for the
+     names. No write rule names her, so she changes nothing. */
   console.log('\n--- a club on orgs/: club-wide viewers ---');
   ORGC.access.viewers = { ov: 'inv-v' };
+  ORGC.access.index.ov = 'inv-v';
   ORGC.coachNotes = { t1: { p1: { note: 'shy in goal' } } };
-  ORGC.rsvp = { t1: { g_g1: { p1: { v: 'yes', by: 'om', at: 1 } } } };
   const OV = { uid: 'ov' };
-  for (const part of ['teams', 'matches', 'org', 'names', 'access'])
+  for (const part of ['teams', 'matches', 'org', 'names', 'access', 'roster'])
     r('a viewer reads ' + part, OV, O + part, true);
   r('— every team\'s squad, so every child by name', OV, O + 'squad/t1', true);
   r('— another team\'s too', OV, O + 'squad/t2', true);
   r('not the members and their emails', OV, O + 'members', false);
+  r('— but her own entry', OV, O + 'members/ov', true);
   r('not the access log', OV, O + 'log', false);
   r('not the coach\'s notes', OV, O + 'coachNotes/t1/p1', false);
-  r('not who is coming', OV, O + 'rsvp', false);
   r('not a family\'s conversation', OV, 'dm/ORGC/t1/om', false);
   r('not the team\'s notices', OV, 'board/ORGC/t1', false);
-  r('not training sessions', OV, 'training/ORGC/sessions', false);
-  r('— their bookings', OV, 'training/ORGC/booked', false);
-  r('— their fees', OV, 'training/ORGC/fees', false);
   r('— practice plans', OV, 'training/ORGC/practices/t1', false);
+  r('— the club\'s drills', OV, 'training/ORGC/drills', false);
   w('she answers for nobody', OV, O + 'rsvp/t1/g_g1/p1', { v: 'no', by: 'ov', at: NOW }, false);
   w('she changes no game', OV, O + 'matches/g1/opponent', 'Elsewhere', false);
   w('— adds no goal', OV, O + 'matches/g1/goals/x', { t: 1 }, false);
   w('— changes no team', OV, O + 'teams/t1/name', 'Viewers FC', false);
   w('— nor a squad', OV, O + 'squad/t1/p1/name', 'Ellie', false);
+  w('— nor the coach\'s notes', OV, O + 'coachNotes/t1/p1/note', 'x', false);
   w('— posts no notice', OV, 'board/ORGC/t1/n1', { by: 'ov', at: NOW, text: 'hi' }, false);
-  w('— follows no game (that is the index\'s)', OV, 'follow/ORGC/g1/ov', { at: NOW }, false);
+  w('— writes in no family\'s conversation', OV, 'dm/ORGC/t1/om/m/x', { by: 'ov', at: NOW, text: 'hi' }, false);
   w('— and makes herself nothing more', OV, O + 'access/admins/ov', true, false);
+  w('— nor a coach', OV, O + 'access/teams/t1/coaches/ov', true, false);
   w('the admin makes someone a viewer', OA, O + 'access/viewers/nv', true, true);
+  w('— and indexes her', OA, O + 'access/index/nv', true, true);
   w('— and takes it away', OA, O + 'access/viewers/ov', null, true);
   w('a coach does not', OC, O + 'access/viewers/nv', true, false);
   w('nor a parent', OM, O + 'access/viewers/om', true, false);
   w('a stranger cannot make herself one', RANDO, O + 'access/viewers/rando', true, false);
   w('she steps down herself', OV, O + 'access/viewers/ov', null, true);
-  r('a stranger reads none of it', RANDO, O + 'matches', false);
   DB.invites = { 'inv-nv': { ws: 'ORGC', role: 'viewer', by: 'oa', expiresAt: NOW + 1e6, used: { by: 'nv', at: NOW } } };
   w('an invite to be a viewer, spent by her, makes her one', { uid: 'nv' }, O + 'access/viewers/nv', 'inv-nv', true);
+  w('— and indexes her', { uid: 'nv' }, O + 'access/index/nv', 'inv-nv', true);
   w('— not anyone else', RANDO, O + 'access/viewers/rando', 'inv-nv', false);
   DB.invites['inv-nv'].role = 'coach';
   w('— nor an invite to something else', { uid: 'nv' }, O + 'access/viewers/nv', 'inv-nv', false);
   delete DB.invites;
-  w('only an admin makes a viewer\'s invite', OA, 'invites/inv8', { ws: 'ORGC', by: 'oa', role: 'viewer', at: NOW, expiresAt: NOW + 1e9 }, true);
+  w('only an admin makes a viewer\'s invite, with no team', OA, 'invites/inv8', { ws: 'ORGC', by: 'oa', role: 'viewer', at: NOW, expiresAt: NOW + 1e9 }, true);
   w('— not a coach', OC, 'invites/inv8', { ws: 'ORGC', by: 'oc', role: 'viewer', at: NOW, expiresAt: NOW + 1e9 }, false);
-  delete ORGC.access.viewers; delete ORGC.coachNotes; delete ORGC.rsvp;
-
-  console.log('\n--- a club on orgs/: a guest for one game, for a while ---');
-  ORGC.matches.g2 = { id: 'g2', teamId: 't1', opponent: 'Hilltop' };
-  ORGC.matches.h1 = { id: 'h1', teamId: 't2', opponent: 'Brook' };
-  ORGC.teams.t1.events.e2 = { id: 'e2', date: '2026-10-11' };
-  ORGC.access.guests = { og: { team: 't1', item: 'g_g1', until: NOW + 3600e3 }, oge: { team: 't1', item: 'e_e1', until: NOW + 3600e3 }, old: { team: 't1', item: 'g_g1', until: NOW - 1 } };
-  const OG = { uid: 'og' }, OGE = { uid: 'oge' }, OLD = { uid: 'old' };
-  r('a guest reads her one game', OG, O + 'matches/g1', true);
-  r('— not another of the team\'s', OG, O + 'matches/g2', false);
-  r('— not the list of games', OG, O + 'matches', false);
-  r('— the team\'s squad, so the game has names', OG, O + 'squad/t1', true);
-  r('— not another team\'s', OG, O + 'squad/t2', false);
-  r('— the team\'s name', OG, O + 'teams/t1/name', true);
-  r('— not the rest of the team (its calendar)', OG, O + 'teams/t1', false);
-  r('— not one of its entries', OG, O + 'teams/t1/events/e1', false);
-  r('— the club\'s name', OG, O + 'org/name', true);
-  r('— not the rest of the club\'s settings', OG, O + 'org', false);
-  r('— her own guest entry', OG, O + 'access/guests/og', true);
-  r('— not anyone else\'s, nor access', OG, O + 'access', false);
-  for (const part of ['members', 'log', 'roster', 'names', 'rsvp', 'coachNotes'])
-    r('— not ' + part, OG, O + part, false);
-  r('— no conversations', OG, 'dm/ORGC/t1/om', false);
-  r('— no notices', OG, 'board/ORGC/t1', false);
-  r('a guest for a practice reads that entry', OGE, O + 'teams/t1/events/e1', true);
-  r('— not the next one', OGE, O + 'teams/t1/events/e2', false);
-  r('— nor any game', OGE, O + 'matches/g1', false);
-  r('once her time is up, the game is shut to her', OLD, O + 'matches/g1', false);
-  r('— and the names', OLD, O + 'squad/t1', false);
-  w('she writes nothing to the game', OG, O + 'matches/g1/goals/x', { t: 1 }, false);
-  w('— answers for nobody', OG, O + 'rsvp/t1/g_g1/p1', { v: 'yes', by: 'og', at: NOW }, false);
-  w('— does not move her own end time', OG, O + 'access/guests/og/until', NOW + 7200e3, false);
-  w('— nor point it at another game', OG, O + 'access/guests/og', { team: 't1', item: 'g_g2', until: NOW + 3600e3 }, false);
-  w('— but may leave', OG, O + 'access/guests/og', null, true);
-  w('the team\'s coach lets a guest in', OC, O + 'access/guests/ng', { team: 't1', item: 'g_g2', until: NOW + 3600e3, by: 'oc' }, true);
-  w('— and takes her out again', OC, O + 'access/guests/og', null, true);
-  w('not another team\'s coach', OC2, O + 'access/guests/ng', { team: 't1', item: 'g_g2', until: NOW + 3600e3 }, false);
-  w('— nor takes out one of this team\'s', OC2, O + 'access/guests/og', null, false);
-  w('— nor moves one onto her own team', OC2, O + 'access/guests/og', { team: 't2', item: 'g_h1', until: NOW + 3600e3 }, false);
-  w('not a tracker', OT, O + 'access/guests/ng', { team: 't1', item: 'g_g2', until: NOW + 3600e3 }, false);
-  w('not a parent', OM, O + 'access/guests/om', { team: 't1', item: 'g_g1', until: NOW + 3600e3 }, false);
-  w('not a stranger, for herself', RANDO, O + 'access/guests/rando', { team: 't1', item: 'g_g1', until: NOW + 3600e3 }, false);
-  w('the admin does', OA, O + 'access/guests/ng', { team: 't2', item: 'g_h1', until: NOW + 3600e3 }, true);
-  w('a guest is for a while: no more than a month', OA, O + 'access/guests/ng', { team: 't1', item: 'g_g1', until: NOW + 40 * 864e5 }, false);
-  w('— with an end time', OA, O + 'access/guests/ng', { team: 't1', item: 'g_g1' }, false);
-  w('— for a game or an entry', OA, O + 'access/guests/ng', { team: 't1', item: 'squad', until: NOW + 3600e3 }, false);
-  w('— and nothing more on it', OA, O + 'access/guests/ng', { team: 't1', item: 'g_g1', until: NOW + 3600e3, role: 'coach' }, false);
-  const gInv = { ws: 'ORGC', role: 'guest', team: 't1', item: 'g_g2', until: NOW + 3600e3, by: 'oc', at: NOW, expiresAt: NOW + 3600e3 };
-  w('the team\'s coach makes a guest\'s invite', OC, 'invites/ginv', gInv, true);
-  w('— not another team\'s coach', OC2, 'invites/ginv', { ...gInv, by: 'oc2' }, false);
-  w('— nor a tracker', OT, 'invites/ginv', { ...gInv, by: 'ot' }, false);
-  w('— nor one with no end time', OC, 'invites/ginv', { ...gInv, until: null }, false);
-  w('— she lists it for the club\'s admins', OC, 'clubInvites/ORGC/ginv', { role: 'guest', team: 't1', by: 'oc', at: NOW, expiresAt: NOW + 3600e3 }, false);
-  DB.invites = { ginv: { ...gInv, used: { by: 'ng', at: NOW } } };
-  w('— with it made, she lists it', OC, 'clubInvites/ORGC/ginv', { role: 'guest', team: 't1', by: 'oc', at: NOW, expiresAt: NOW + 3600e3 }, true);
-  w('— and not as anything else', OC, 'clubInvites/ORGC/ginv', { role: 'coach', team: 't1', by: 'oc', at: NOW, expiresAt: NOW + 3600e3 }, false);
-  const NG = { uid: 'ng' };
-  w('the guest who spent it lets herself in, as it says', NG, O + 'access/guests/ng', { team: 't1', item: 'g_g2', until: NOW + 3600e3, inv: 'ginv', name: 'Ref' }, true);
-  w('— not for longer', NG, O + 'access/guests/ng', { team: 't1', item: 'g_g2', until: NOW + 7200e3, inv: 'ginv' }, false);
-  w('— nor for another game', NG, O + 'access/guests/ng', { team: 't1', item: 'g_g1', until: NOW + 3600e3, inv: 'ginv' }, false);
-  w('— nor as a viewer', NG, O + 'access/viewers/ng', 'ginv', false);
-  w('— nor anyone else', RANDO, O + 'access/guests/rando', { team: 't1', item: 'g_g2', until: NOW + 3600e3, inv: 'ginv' }, false);
-  delete DB.invites;
-  delete ORGC.matches.g2; delete ORGC.matches.h1; delete ORGC.teams.t1.events.e2; delete ORGC.access.guests;
+  w('every other role still names its team', OA, 'invites/inv8', { ws: 'ORGC', by: 'oa', role: 'coach', at: NOW, expiresAt: NOW + 1e9 }, false);
+  delete ORGC.access.viewers; delete ORGC.access.index.ov; delete ORGC.coachNotes;
 
   console.log('\n--- a club on orgs/: one tree each ---');
   /* A club is on exactly one tree, which is what lets every root rule ask
@@ -2219,6 +2155,94 @@ reads('owners are not world-readable', OUT, 'shareOwners/sh1', false);
   r('the team\'s coach reads it', OC, 'dm/ORGC/t1/om', true);
   w('her answer, at orgs/', OM, O + 'rsvp/t1/g_g1/p1', { v: 'yes', by: 'om', at: NOW }, true);
   w('— not for another child', OM, O + 'rsvp/t1/g_g1/p2', { v: 'yes', by: 'om', at: NOW }, false);
+  /* AUTH.md, *More kinds of people*, 2: a team helper (a manager, a volunteer)
+     helps the coach prepare and does nothing on the day. Three rules asked
+     only whether a uid is in teamIndex for a team, and would have let her in
+     exactly as they let a tracker in; each is decided again here. */
+  console.log('\n--- a club on orgs/: a team helper ---');
+  {
+    const A = ORGC.access, OH = { uid: 'oh' };
+    A.index.oh = true; A.teams.t1.helpers = { oh: 'inv-h' }; A.teamIndex.t1.oh = 'helper'; A.helperIndex = { oh: 't1' };
+    ORGC.coachNotes = { t1: { p1: { note: 'shy in goal' } } };
+    const ev = { id: 'e2', kind: 'practice', date: '2026-10-14', start: '18:00', edit: { by: 'oh', at: NOW } };
+    r('she reads her team\'s squad, names and all', OH, O + 'squad/t1', true);
+    r('— not another team\'s', OH, O + 'squad/t2', false);
+    r('not the coach\'s notes', OH, O + 'coachNotes', false);
+    r('— nor one child\'s', OH, O + 'coachNotes/t1/p1', false);
+    r('not the members and their emails', OH, O + 'members', false);
+    r('not the access log', OH, O + 'log', false);
+    w('she does not change the squad', OH, O + 'squad/t1/p4', { id: 'p4', name: 'Nia' }, false);
+    w('— nor the roster', OH, O + 'roster/t1/p1/number', '8', false);
+    w('— nor the team itself', OH, O + 'teams/t1/name', 'Hawks B', false);
+    w('she adds a practice to her team\'s calendar', OH, O + 'teams/t1/events/e2', ev, true);
+    w('— calls one off', OH, O + 'teams/t1/events/e1/called', 'cancelled', true);
+    w('— stamped in nobody\'s name but hers', OH, O + 'teams/t1/events/e2', { ...ev, edit: { by: 'oc', at: NOW } }, false);
+    w('— not the whole calendar at once', OH, O + 'teams/t1/events', { e2: ev }, false);
+    w('— not another team\'s', OH, O + 'teams/t2/events/e2', ev, false);
+    w('she takes the register', OH, O + 'teams/t1/attend/e1', { p1: true }, true);
+    w('— not another team\'s', OH, O + 'teams/t2/attend/e1', { q1: true }, false);
+    w('she adds a game', OH, O + 'matches/g7', { id: 'g7', teamId: 't1', opponent: 'Rovers', date: '2026-10-18' }, true);
+    w('— not for another team', OH, O + 'matches/g7', { id: 'g7', teamId: 't2', opponent: 'Rovers' }, false);
+    w('she plans a game before kick-off', OH, O + 'matches/g1/plan', { blocks: { b1: { at: 0 } } }, true);
+    w('— moves it', OH, O + 'matches/g1/date', '2026-10-19', true);
+    w('— calls it off', OH, O + 'matches/g1/called', 'cancelled', true);
+    w('— marks a player out of it', OH, O + 'matches/g1/out/p1', true, true);
+    w('— or deletes it, while it is not played', OH, O + 'matches/g1', null, true);
+    w('she does not start the clock', OH, O + 'matches/g1/periods/0', { start: NOW }, false);
+    ORGC.matches.g1.periods = { 0: { start: NOW - 60000 } };
+    w('once it kicks off, not the plan', OH, O + 'matches/g1/plan', { blocks: {} }, false);
+    w('— nor a goal', OH, O + 'matches/g1/goals/x', { at: NOW }, false);
+    w('— nor deleting it', OH, O + 'matches/g1', null, false);
+    w('the tracker still logs it', OT, O + 'matches/g1/goals/x', { at: NOW }, true);
+    delete ORGC.matches.g1.periods;
+    ORGC.matches.g1.ended = true;
+    w('nor once it is over', OH, O + 'matches/g1/plan', { blocks: {} }, false);
+    delete ORGC.matches.g1.ended;
+    w('a tracker still cannot move a game', OT, O + 'matches/g1/date', '2026-10-19', false);
+    r('she reads her team\'s notices', OH, 'board/ORGC/t1', true);
+    w('— and posts one in her own name', OH, 'board/ORGC/t1/n1', { by: 'oh', at: NOW, text: 'Bring water' }, true);
+    w('— not in the coach\'s', OH, 'board/ORGC/t1/n1', { by: 'oc', at: NOW, text: 'Bring water' }, false);
+    w('— not to another team', OH, 'board/ORGC/t2/n1', { by: 'oh', at: NOW, text: 'Bring water' }, false);
+    w('a tracker still posts none', OT, 'board/ORGC/t1/n1', { by: 'ot', at: NOW, text: 'x' }, false);
+    r('she reads no family\'s conversation', OH, 'dm/ORGC/t1', false);
+    r('— not one family\'s', OH, 'dm/ORGC/t1/om', false);
+    w('— nor writes in one', OH, 'dm/ORGC/t1/om/m/x', { by: 'oh', at: NOW, text: 'hi' }, false);
+    r('she reads her team\'s practice plans', OH, 'training/ORGC/practices/t1', true);
+    w('— and plans one', OH, 'training/ORGC/practices/t1/pr9', { id: 'pr9', teamId: 't1', date: '2026-10-12' }, true);
+    r('— not another team\'s', OH, 'training/ORGC/practices/t2', false);
+    w('— nor plans one for it', OH, 'training/ORGC/practices/t2/pr9', { id: 'pr9', teamId: 't2' }, false);
+    r('she reads the club\'s drills', OH, 'training/ORGC/drills', true);
+    r('— and its templates', OH, 'training/ORGC/templates', true);
+    w('— shares a drill, in her own name for her team', OH, 'training/ORGC/drills/dh', { id: 'dh', name: 'Rondo', by: 'oh', team: 't1', at: NOW }, true);
+    w('— not for another team', OH, 'training/ORGC/drills/dh', { id: 'dh', name: 'Rondo', by: 'oh', team: 't2', at: NOW }, false);
+    w('— and a template', OH, 'training/ORGC/templates/th', { id: 'th', name: 'Tuesday', by: 'oh', team: 't1', at: NOW }, true);
+    r('a tracker reads no drills', OT, 'training/ORGC/drills', false);
+    w('her own drills shelf is hers, as anyone\'s is', OH, 'userLibrary/oh/drills/d1', { id: 'd1', name: 'Mine', at: NOW }, true);
+    w('she writes her own name for families', OH, O + 'names/oh', { name: 'Hal' }, true);
+    r('she is not a coach anywhere a coach is asked for: coaches\' time off', OH, 'training/ORGC/away', false);
+    w('— nor offers bookable times', OH, 'training/ORGC/avail/b1', { id: 'b1', coach: 'oh', date: '2026-10-20', start: '17:00', end: '18:00', kind: 'one', cap: 1 }, false);
+    r('— nor talks to colleagues as staff', OH, 'staffdm/ORGC/oc~oh', false);
+    // how she gets the role: an admin's invite, accepted the way a coach's is
+    DB.invites = { 'inv-h2': { ws: 'ORGC', team: 't1', role: 'helper', by: 'oa', expiresAt: NOW + 1e9, used: { by: 'nh', at: NOW } } };
+    const NH = { uid: 'nh' };
+    w('an admin makes a helper\'s invite', OA, 'invites/inv-h3', { ws: 'ORGC', team: 't1', role: 'helper', by: 'oa', at: NOW, expiresAt: NOW + 1e9 }, true);
+    w('a coach does not', OC, 'invites/inv-h3', { ws: 'ORGC', team: 't1', role: 'helper', by: 'oc', at: NOW, expiresAt: NOW + 1e9 }, false);
+    w('the invitee takes the role it names', NH, O + 'access/teams/t1/helpers/nh', 'inv-h2', true);
+    w('— not a coach\'s with it', NH, O + 'access/teams/t1/coaches/nh', 'inv-h2', false);
+    w('— not on another team', NH, O + 'access/teams/t2/helpers/nh', 'inv-h2', false);
+    w('her own teamIndex entry says helper', OH, O + 'access/teamIndex/t1/oh', 'helper', true);
+    w('— never coach', OH, O + 'access/teamIndex/t1/oh', 'coach', false);
+    w('— nor tracker', OH, O + 'access/teamIndex/t1/oh', 'tracker', false);
+    w('a coach cannot call herself a helper there', OC, O + 'access/teamIndex/t1/oc', 'helper', false);
+    w('her helperIndex entry names a team she helps', OH, O + 'access/helperIndex/oh', 't1', true);
+    w('— not one she does not', OH, O + 'access/helperIndex/oh', 't2', false);
+    w('— nobody writes hers for her but an admin', OC, O + 'access/helperIndex/oh', 't1', false);
+    w('she takes herself off it', OH, O + 'access/helperIndex/oh', null, true);
+    w('nobody makes herself one of the coaches\' index', OH, O + 'access/coachIndex/oh', 't1', false);
+    delete DB.invites; delete ORGC.coachNotes;
+    delete A.index.oh; delete A.teams.t1.helpers; delete A.teamIndex.t1.oh; delete A.helperIndex;
+  }
+
   w('an admin of the club makes an invite to it', OA, 'invites/inv9', { ws: 'ORGC', by: 'oa', role: 'coach', team: 't1', at: NOW, expiresAt: NOW + 1e9 }, true);
   w('a coach of another club does not', ADM, 'invites/inv9', { ws: 'ORGC', by: 'adm', role: 'coach', team: 't1', at: NOW, expiresAt: NOW + 1e9 }, false);
   delete DB.orgs.ORGC;

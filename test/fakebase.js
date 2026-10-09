@@ -501,7 +501,7 @@ function makeServer(seed = {}) {
      what families read in step) are left out of what fire() and woken()
      report: the suites written for the old tree ask which of *their*
      triggers woke. They still run; test/access.js checks them by name. */
-  const ORGS_ONLY = new Set(['rosterPlayer', 'rosterOpen', 'namesMember', 'moveClub', 'accessViewer', 'accessGuest']);
+  const ORGS_ONLY = new Set(['rosterPlayer', 'rosterOpen', 'namesMember', 'moveClub', 'accessViewer']);
   const reported = n => !(ORGS_MODE && ORGS_ONLY.has(n));
 
   return {

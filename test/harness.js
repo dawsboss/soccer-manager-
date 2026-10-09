@@ -143,7 +143,7 @@ const EXPORTS = `{
   /* roles */
   acc, members, anyAdmins, isAdmin, isCoach, isTracker, isGuardian, roleIn,
   isOwner, canAdmin, clubOwners, isClubOwner, hasClubOwner, mayRemoveAdmin, ownerCard, approved, hasAnyRole, syncIndex, myTeams, myPlayers, rolesHeld, roleTags,
-  isViewer, guestOf, guestLive, guestPhone, inClubOtherwise, sheetGuest, makeGuest, guestItem, guestUntil, guestsAt,
+  isViewer,
   guardsAnyone, myChildren, isSelfOn, isMine, famThreads, goingQ, canRsvp, syncTeamPlayers, shownName, namesNarrowed, rosterOpen, elsewhereKids, anyPlayers, allKidNames, canEditTeam, readOnlyHere, myRole, restricted, auditLog,
   gated, needsSignIn, cacheMe, cachedMe,
   /* model helpers */
@@ -191,7 +191,7 @@ const EXPORTS = `{
   /* practice plans */
   PLAN_ACTS, canPlan, teamPractices, practiceById, putPractice, dropPractice, mergePractices,
   suggestPlan, pracAiPrompt, pracAiParse, planWarnings, planKit, needsWork, drillsFor, nextPractice, movePlans, planEntry, rawPlan, addMins, todayIso, pracDay,
-  syncCoachIndex, syncAllCoachIndex, coachTeamOf, parentsWanted, playersWanted, readiness,
+  syncCoachIndex, syncAllCoachIndex, coachTeamOf, helperTeamOf, calStamp, postsTo, isStaff, mayGrant, syncTeamIndex, STAFF_KEY, HELPER_GAME_ACTS, isStaffAnywhere, isHelper, canCalTeam, canGameEdit, notKickedOff, parentsWanted, playersWanted, readiness,
   get train() { return train }, set train(v) { train = v }, get trainState() { return trainState },
   /* the club's drills and a coach's own */
   SHELF, SHELVES, LIB_ACTS, TPL_ACTS, tplItems, findTpl, normTemplate, canCurateTpl, normDrill, cardOf, findDrill, drillOrigin, drillPool, shelfItems, canCurate, shareTeam,

@@ -462,6 +462,8 @@ Stored on the child's record, beside `guardians` and `self`: `squad/{tid}/{pid}/
 
 The care here: three rules today ask only whether a uid is *in* `teamIndex` for a team, not which role, and they would let a helper in exactly as they let a tracker in. Each is decided again for her rather than inherited, and `test/rules.js` walks every one of them for a helper.
 
+**Built** (build 117, rules version 16), as written above, with these details. She has her own entry in `teamIndex` (`'helper'`, below `'tracker'` and `'coach'`, so someone who also tracks or coaches the team keeps that), which is what lets her read the squad and the notices; what she may change is checked against `access/teams/{tid}/helpers/{uid}` itself, so a helper who also tracks keeps both. The three "any role" rules came out as: **the squad**, yes (staff names); **notices**, yes, and she posts them (the board's write rule gained her); **a game**, narrowed: the match rule now asks for `'coach'` or `'tracker'`, and a helper writes a game of her team only while it has no `periods` and no `ended`, which is "before kick-off" in the only words a rule has (a rule still cannot say "the plan and nothing else", as for trackers). Its when and where (date, kick-off, called off, place, opponent) are hers too, as the rest of the calendar is. The calendar entries and the register each gained a clause on `events/$eid` and `attend/$eid`, one entry at a time, never the team. **One lookup table was added after all**, against the table above: `access/helperIndex/{uid}`, coachIndex's twin, because the club's drill and template shelves are read as a whole with no team in hand, and "a helper of any team" is not a question `teamIndex` can answer in one hop. Kept by the phones and `functions/access.js` exactly as coachIndex is, and never coachIndex itself. Only admins name a helper (the rules on `access/teams` already said so). The push readers needed no change: notices and calendar changes go to every `teamIndex` entry, family messages to `'coach'` entries only. Written for `orgs/` only, as *Order* says: on the old tree her invite cannot be accepted. `test/helpers.js` holds the screens and the click handler to it.
+
 **3. Club-wide viewers: every team's games, with names, and nothing else.** A director or a board member. Club-level, like admins: `access/viewers/{uid}`. No lookup table, because a rule can check that one path directly, the way it checks `admins`. Less than a parent: she reads every team's calendar, games, Live, stats and recaps, with the children's names (the roster's names, whatever the club's setting), and does nothing: no answers, no messages, no bookings, no writes anywhere in the club. Not the coach's notes, not members' emails, not the access log, not fees, not conversations.
 
 **4. Outside people: one game or one event, for a while.** A referee, a scout, a guest coach. Today the game link already gives anyone a game's page without signing in, and it stays that way: **no sign-in, no names**. This role is for when they need more, signed in and approved: `access/guests/{uid}: { team, item, until }`, made or approved by that team's coach or an admin, which the rules read with `now`, so it **ends by itself** at `until` with no phone or server having to remember. She reads that one game or entry, **with names**. A guest coach who should run subs is a tracker for the day, which needs a tracker's role with the same `until`.
@@ -481,14 +483,15 @@ Decided 2026-10-09: the coach's notes on a child (`note`, `rating`, `pairs`, `av
 
 **Built** (build 116, rules version 15), as written above, with two details. The phone sends the notes there a field at a time and only the fields a write carries (`clubWrites()`), so a whole team saved from a phone that has not read the notes yet, or may not, never wipes them; and notes still on a record from before are moved by the first phone of that team's coach or an admin to open the club (`moveCoachNotes()`: written to `coachNotes` first, then taken off the record, never overwriting a newer note), as `movePlans()` moved old plans. A family's or tracker's phone drops anything of the four it finds on a record. `moveClub` lays them out the same way for a club still on the old tree.
 
-### Club viewers and guests, as built
+### Club viewers, as built
 
-**Built** (build 117, rules version 16), on `orgs/` only, as written above, with these details:
+**Built** (build 118, rules version 17), on `orgs/` only, with these details:
 
-- **Neither is in `access/index`.** The index is what the root rules ask for sessions, bookings, answers (`rsvp`), conversations' bridges and following a game, so putting a viewer there would have handed her all of it. Instead the club's parts she reads (`access`, `org`, `names`, `teams`, `matches`, `squad/{tid}`) each name `access/viewers/{uid}` directly, and a guest's (`org/name`, `teams/{tid}/name`, the one `teams/{tid}/events/{eid}` or `matches/{mid}`, `squad/{tid}`) each name `access/guests/{uid}` with its `team`, `item` and `until > now`. The bookmark (`userOrgs`) still counts both, on the phones (`inClubOtherwise()`) and on the server (`accessViewer`, `accessGuest`).
-- **A viewer's names come from the squads**, which she reads whole on every team, with the coach's notes already off them (`coachNotes/`). Her phone never asks for `members`, `log`, `coachNotes` or `rsvp`.
-- **A guest's item is `g_{game}` or `e_{entry}`**, as `rsvp` keys them. Her entry is written only by the club's admins, that team's coaches (who may not move one onto another team), or by her spending an invite whose team, item and end it must match exactly; she may delete her own. An end more than 31 days out is refused. A guest's invite is made by that team's coach or an admin, and expires no later than the guest would.
-- **Not built:** a guest asking and a coach approving (a coach makes the link instead), push for either, and a guest who runs subs for the day (a tracker's role with an end, as above).
+- **A viewer is in `access/index`** like everyone else in the club (the owner, 2026-10-09), and `hasAnyRole()` and the server's `hasRole()` count `access/viewers/{uid}`, so admins' phones and `functions/access.js` keep her there. What keeps her to reading is that no write rule names her and the screen draws every team read-only (`restricted()` is `'viewer'` on every team). The index does open a few reads at the database that her screen never draws, as it does for a parent: training sessions and their bookings, and who is coming (`rsvp`). Members' emails, the access log, the coach's notes and every conversation stay closed, because none of those rules asks the index.
+- **Her names come from the squads**, the one read she has beyond the index (`squad/{tid}`, every team), with the coach's notes already off them (`coachNotes/`). A followed game's push names the scorer for her too (`functions/push.js`, `namer()`).
+- **Made by an admin**: People (the person's *Club viewer* chip) or an invite for the whole club, which names no team; accepting writes her viewer entry, then her index entry, as every invite does.
+
+**Guests were dropped** (the owner, 2026-10-09): the game link already gives a referee or a scout the game without signing in, and a signed-in guest added a sixth way into a club for little more.
 
 ### Order
 
@@ -496,9 +499,9 @@ Decided 2026-10-09: the coach's notes on a child (`note`, `rating`, `pairs`, `av
 
 1. **The coach's notes.** *Built (build 116, rules version 15).*
 2. **Supporters**: the most asked for, and they reuse the coach's approval list families already go through.
-3. **Team helpers.**
-4. **Club viewers**: the smallest, any time. *Built (build 117, rules version 16).*
-5. **Guests.** *Built (build 117, rules version 16).*
+3. **Team helpers.** *Built (build 117, rules version 16).*
+4. **Club viewers**: the smallest, any time. *Built (build 118, rules version 17).*
+5. **Guests.** *Dropped by the owner (2026-10-09): the game link covers a referee or a scout.*
 
 Each is its own build, rules version, CHANGELOG entry and test pass across every suite that walks every kind of account (`rules.js`, `push.js`, `access.js`, `visibility.js`, `roles.js`, `parents.js`, `orgs.js`). Steps 2 to 5 are written for `orgs/` only, after the old tree comes out (step 5 of the move, from 2026-10-23): writing their rules for `workspaces/` as well would be work for a tree nobody is on. Step 1 can go before that, on both trees.
 
@@ -508,7 +511,7 @@ Each is its own build, rules version, CHANGELOG entry and test pass across every
 2. **The coach's notes:** coaches and admins only. No one else, families and the player included.
 3. **Team helpers:** no family conversations. They help with drills and with planning practices and games.
 4. **Club viewers:** no emails, no log. Less than a parent, but they see the games with names.
-5. **Guests:** signed in and approved, with names. Not signed in (the game link), no names, as today.
+5. **Guests:** signed in and approved, with names. Not signed in (the game link), no names, as today. *Later the same day: guests dropped; the game link is enough. Viewers go in the index.*
 6. **Order:** as above.
 
 ## What parents actually see

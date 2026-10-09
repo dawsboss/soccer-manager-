@@ -95,12 +95,8 @@ does the bookkeeping, not that the phone works offline first.
 - **Partly moved (2026-10-08):** the server writes the bookmark when an
   account gets its first role in a club and removes it when she loses her
   last (`functions/access.js`, with the lookup tables below). A club-wide
-  viewer and a guest whose time is not up count for the bookmark but never
-  for the index (build 117): the rules name each directly, so the server's
-  `accessViewer` and `accessGuest` (orgs/ only) keep only her bookmark and
-  take away the invite she came by. A guest's bookmark outlives her `until`
-  until something about her changes; her phone shows nothing once it has
-  passed, and the rules refuse every read.
+  viewer counts as a role (build 118): `accessViewer` (orgs/ only) keeps her
+  index entry and bookmark, and takes away the invite she came by.
 - **Still:** any phone that reads a club it holds a role in writes the bookmark
   `userOrgs/{uid}/{code}` (`noteMyClub()`), and admins tidy it when a role is
   withdrawn.

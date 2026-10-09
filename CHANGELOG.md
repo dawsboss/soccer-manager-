@@ -8,41 +8,60 @@ before this point lives only in the git log.
 
 ---
 
-## Club-wide viewers and guests — 2026-10-09 (build 117, rules version 16)
+## Club-wide viewers — 2026-10-09 (build 118, rules version 17)
 
-AUTH.md, *More kinds of people*, 3 and 4, as the owner decided them: a
-director who should see every team's games with names and do nothing
-else, and a referee or scout who needs one game with names for a while.
-Until now the only ways in were roles that do much more (a coach reads
-members' emails and the squads' notes, a parent answers and messages), or
-the game link, which has no names on purpose.
+AUTH.md, *More kinds of people*, 3, as the owner decided it: a director or
+a board member who should see every team's games with names and do nothing
+else. Until now the only way in was a role that does much more (a coach
+reads members' emails, a parent answers and messages).
 
-- **A club viewer** (`access/viewers/{uid}`, orgs/ only) reads every team's
+- **A club viewer** (`access/viewers/{uid}`, orgs/ only) sees every team's
   calendar, games, Live, stats and recaps, with every child's name whatever
-  the club's roster setting. Not the members and their emails, the access
-  log, the coach's notes, who is coming, conversations, notices, training
-  sessions, bookings or fees, and she writes nothing anywhere in the club.
-  She is deliberately **not in `access/index`**, which is what opens
-  sessions, answers and following a game: each part she reads names her
-  instead. An admin makes one from People (*Club viewer*) or with an invite
-  for the whole club (*Invite someone* → *Club viewer*, no team).
-- **A guest** (`access/guests/{uid}: { team, item, until }`, orgs/ only)
-  reads one game or one calendar entry, its team's name and squad (for the
-  names) and the club's name, and nothing else, until `until`. The rules
-  read `until` against the database's clock, so it ends by itself; a guest
-  is at most a month. The team's coach or an admin makes the link from the
-  game's or entry's sheet (*Let a guest see this*, until the end of that
-  day, two days or a week after it), and can take a guest out there. Her
-  phone lands on the game (or the calendar, for an entry), writes nothing,
-  and once her time is up shows only that it has ended.
-- **The game link without signing in is unchanged**: no names, as before.
-- The server keeps a viewer's or guest's bookmark to the club
-  (`accessViewer`, `accessGuest`) and deletes the invite she came by when
-  she is taken out; a coach who stops coaching but still views the club
-  keeps hers.
-- Neither gets push yet: following a game needs the index, so on their
-  phones *Notify me* works while the page is open and asks the server for
-  nothing.
+  the club's roster setting. No members' emails, no access log, no coach's
+  notes, no messages, no answering who's coming, and she changes nothing:
+  every team is read-only for her, checked in the click handler and by the
+  rules, where no write names her.
+- **She is in the club's index**, like everyone else in it (the owner's
+  call), so admins' phones and the server keep her there, she can follow a
+  game, and its push names the scorer for her. Beyond the index she reads
+  every team's squad, for the names.
+- **An admin makes one** from People (*Club viewer*) or with *Invite
+  someone → Club viewer*, which asks for no team.
+- **Guests are not built**: the owner dropped them, since the game link
+  already gives a referee or a scout the game without signing in. That link
+  is unchanged and still carries no names.
+
+---
+
+## Team helpers: staff who help the coach prepare — 2026-10-09 (build 117)
+
+The first of AUTH.md's new kinds of people, as the owner decided them: a
+team manager, a volunteer or an assistant who helps the coach get ready and
+doesn't run the game, and reads no family's conversation.
+
+- **A role on one team**, `access/teams/{tid}/helpers/{uid}`, named by an
+  admin (People → *Invite someone* → Team helper, or giving the role to
+  someone already in). A coach can't, as the rules on `access/teams` already
+  had it.
+- **What she does**: the team's calendar (practices, events and games, one
+  entry at a time), the register, notices, practice plans, the drill shelves,
+  and a game's plan, who is out of it and its details **until kick-off**.
+  Never the clock, the subs or logging, never the squad, never the coach's
+  notes or members' emails, and Subs, Track and Pitch are not her tabs.
+- **The three rules that only asked "any role on this team?"** were decided
+  again: the squad and the notices let her read (she is staff); a game no
+  longer did. The match rule now asks for a coach or tracker, and a helper
+  writes a game only while it has no `periods` and no `ended`.
+- **One more lookup table than AUTH.md planned**, `access/helperIndex`,
+  coachIndex's twin, because the club's drill shelves are read whole and a
+  rule cannot ask "a helper of any team?" any other way. Kept by the phones
+  and `functions/access.js` like the others. `teamIndex` gains a `'helper'`
+  value, below tracker and coach.
+- **Push needed no change**: notices and calendar changes reach her as they
+  reach the rest of the team, a family's messages never do (`test/push.js`).
+- Rules version 16, written for `orgs/` (every club). `test/helpers.js` is
+  new; `rules.js`, `access.js` and `push.js` walk a helper through every rule
+  and table.
 
 ---
 

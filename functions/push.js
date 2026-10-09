@@ -12,7 +12,7 @@
    runs the rules.
 
    Who: exactly who the rules let read the thing, worked out from the same
-   lookup tables the rules read (CLAUDE.md, "Five flat lookup tables"), and
+   lookup tables the rules read (CLAUDE.md, "Six flat lookup tables"), and
    then held to the squad as well, so a stale table entry can never send a
    child's message to someone the squad no longer names. This function writes
    with admin credentials and bypasses the rules, which is why it checks
@@ -380,7 +380,7 @@ async function onGameField(env, params, field, was) {
 
    The scorer is named the way the screen names her (`shownName()`), worked
    out for each reader: by name to the admins, the coaches and trackers of
-   any team, her own family and herself, and to everyone once the club has
+   any team, the club's viewers, her own family and herself, and to everyone once the club has
    opened the roster (`org/rosterOpen`, the admins' one setting); otherwise
    by shirt number. That is also what a family's phone on orgs/ may read. A
    goal is usually tapped first and its scorer added after, so the scorer
@@ -407,11 +407,12 @@ async function namer(env, L, tid, goal) {
   const pids = [goal.pid, goal.assist].filter(x => typeof x === 'string' && x && !/[.#$\[\]\/]/.test(x));
   if (!pids.length) return () => '';
   const A = L.access;
-  const [admins, teamIndex, coachIndex, open, ...kids] = await Promise.all([
-    env.get(A + '/admins'), env.get(A + '/teamIndex'), env.get(A + '/coachIndex'), env.get(L.org + '/rosterOpen'),
+  const [admins, teamIndex, coachIndex, open, viewers, ...kids] = await Promise.all([
+    env.get(A + '/admins'), env.get(A + '/teamIndex'), env.get(A + '/coachIndex'), env.get(L.org + '/rosterOpen'), env.get(A + '/viewers'),
     ...pids.map(pid => env.get(L.player(tid, pid)))
   ]);
-  const staff = u => has(admins, u) || has(coachIndex, u) || Object.values(teamIndex && typeof teamIndex === 'object' ? teamIndex : {}).some(t => has(t, u));
+  // a club viewer sees every child by name on screen (namesNarrowed()), so here too
+  const staff = u => has(admins, u) || has(coachIndex, u) || has(viewers, u) || Object.values(teamIndex && typeof teamIndex === 'object' ? teamIndex : {}).some(t => has(t, u));
   const shown = (p, u) => {
     if (!p || typeof p !== 'object') return '';
     if (open === true || staff(u) || has(p.guardians, u) || has(p.self, u)) return String(p.name || '');
