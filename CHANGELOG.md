@@ -24,7 +24,12 @@ child already on a team), care details for coaches (a per-team copy), then
 registration itself as `GOTSPORT.md` step 4 laid it out: programs, the link
 and the form, versioned waivers only a family agrees to, accepting, placing,
 sessions for a child on no team, the GotSport export and deleting. Six build
-steps and five decisions for the owner. No code yet: it is a schema and
+steps and five decisions, which the owner made the same day: birth dates
+read by coaches and admins, care by her team's coaches and admins, a
+sessions-only registration accepted by an admin, every child already on a
+team given a record for her family to confirm, and a child whose family
+deletes its account taken off her team (her games keep her name and number)
+with her information kept on the admins' list to delete. No code yet: it is a schema and
 rules change, and this file is where those are settled first.
 
 ---

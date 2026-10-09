@@ -853,12 +853,15 @@ against.
   Firebase Auth's delete (`functions/forget.js`) reads `families/{uid}` and
   `userOrgs/{uid}` and, in every club: takes her out of every child's and
   squad record's `guardians` (and `self`, and `fans`), every lookup table, the
-  index, `members`, `names`; deletes the registrations, agreements and care of
-  every child she leaves with no family; and deletes her own `people/{uid}`,
+  index, `members`, `names`; and deletes her own `people/{uid}`,
   `pushTokens/{uid}`, `userLibrary/{uid}`, `families/{uid}`, `userOrgs/{uid}`.
-  A child left with no family keeps her name, number and games on her team
-  and loses her birth date, gender, care and registrations. What she wrote
-  to others (messages, notices) stays, as it would in any group chat. The
+  A child left with no family is taken off her team (`active: false`, so
+  past games keep her name and number), and her record, care and
+  registrations are **kept for the admins to decide**: marked `left: { at }`
+  and listed on Registrations under *Left the club*, with *Delete* beside
+  each (owner, 2026-10-09: it saves a mistaken delete, and the club may need
+  the information). Her own phone numbers in a care record's contacts go
+  with her. What she wrote to others (messages, notices) stays, as it would in any group chat. The
   phone deletes the Firebase account itself (the only thing it can), after
   signing her out of push; the function does the rest from the delete event.
 - **An admin deletes a child** (a child on no team, or one taken off every
@@ -902,7 +905,8 @@ fake server).
 ### Decisions for the owner
 
 Recommended answers in bold; each changes the rules, so they are settled
-before step 1.
+before step 1. **All five decided by the owner, 2026-10-09**: 1, 2, 3 and 5
+as recommended, and 4 differently (below the list).
 
 1. **Who reads a child's birth date:** **coaches of any team and admins**, as
    they read every squad; or admins and her own team's coaches only, which
@@ -918,6 +922,12 @@ before step 1.
 5. **Children already on teams:** **every one gets a record, and every family
    is asked to confirm** the next time she opens the app; or only children
    added from now on.
+
+On 4 the owner chose neither: *she is taken off the team, but past games
+keep her name and shirt number, and her information card is put on the
+admins' radar to delete, which saves them from a mistaken delete and keeps
+it if they need it.* So nothing about the child is deleted by the account
+going; *Deleting*, above, says how.
 
 ## What parents actually see
 
