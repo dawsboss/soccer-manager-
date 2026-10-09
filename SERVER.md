@@ -148,20 +148,22 @@ does the bookkeeping, not that the phone works offline first.
 
 ## Bookable times and training sessions
 
-- **Now:** a coach's bookable window carries the list of slots it still offers
-  (`slots`), worked out on her phone or an admin's from everything she is busy
-  with and written back (`healBlocks()`, `openSlotsOf()`). The rules check a
-  booking against that list because they cannot count, search or do dates. A
-  practice added from another phone is bookable until one of theirs next
-  opens the app (rules.js, gap 9). A seat taken with no booking behind it is let
-  go by the coach's phone after ten minutes (`SEAT_STALE`), and one child can
-  hold two seats by hand (gap 10). A family never writes `in` on an ordinary
-  session, because a rule can't count the places; the coach's phone keeps the
-  count (gap 8).
-- **With a server:** booking is one call that, inside a transaction, checks the
-  coach is really free now, counts the places and books. `slots`, `seats`,
-  `healBlocks()`, the seat clean-up and gaps 8 to 10 go away; a full group can
-  have a real waiting list.
+- **Moved (build 119): booking a coach's time is one call.** A family's
+  phone asks at `bookAsks/{code}/{uid}/{id}` and the server
+  (`functions/book.js`, the `bookAsk` trigger) answers beneath it: it checks
+  her child, the coach's calendar as it stands (her teams' practices and
+  games, the sessions she runs, her time off, her busy times elsewhere), the
+  child's, and counts the places inside one transaction before it writes the
+  session and the booking. A full slot has a real waiting list, worked
+  through by `bookFreed` the moment a place comes free. What went: the
+  block's `slots` and `seats`, the coach's and admins' phones keeping them
+  (`healBlocks`, `openSlotsOf`), the seat clean-up after ten minutes, and the
+  three gaps the rules printed for them (a practice bookable until a phone
+  redrew, a seat with no booking, one child holding two). AVAILABILITY.md,
+  *Booking is one call to the server*.
+- **Still on the phone:** an ordinary session's places. A family asks, and
+  the coach's phone keeps the count when she says yes (rules.js, gap 8);
+  that is the coach's decision, not bookkeeping, so it stays hers.
 
 ---
 
@@ -240,13 +242,19 @@ does the bookkeeping, not that the phone works offline first.
   `onFollowed` in `functions/push.js` sends the goals, each half starting,
   half time and full time to those phones. The open page still watches
   (`watchFeed()`), for a phone without notifications turned on.
-- **Now, for everything else:** every phone works out for itself what is new
-  since it last looked, per source, and shows it while the page is open
-  (`clubNews()`, `sessNews()`, `ping()`). A closed phone hears nothing of
-  club activity or a session booked.
-- **With a server:** the same sender takes each of those on as a trigger of
-  its own, worked out once for everybody instead of on each phone, and the
-  "first look is not news" care goes away.
+- **Moved, for training sessions and club activity (build 119):** a
+  booking changing, a session added, moved or called off, and a coach's
+  time off or call-out each wake a trigger of their own (`functions/news.js`:
+  `newsBooked`, `newsSession`, `newsAway`), which tells whoever the open
+  page would have told, in the same words: a family about her own child's
+  place and sessions, a coach about families asking, booking, waiting,
+  withdrawing and cancelling on hers, and the admins the club's activity
+  (and, from `functions/push.js`, every team's calendar changes and a
+  game, practice or event deleted, named from a note the server keeps of
+  each dated game at `serverState/calGame/`, and who deleted an entry from
+  the stamp the app writes just before). The open page still works it out for itself
+  while it is open (`clubNews()`, `sessNews()`, `ping()`), for a phone
+  without notifications turned on; that is all that is left on the phone.
 
 ### Alerts from every club
 - **Now:** a phone in several clubs listens to every one of them for messages

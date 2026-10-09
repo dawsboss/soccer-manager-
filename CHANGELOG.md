@@ -58,6 +58,81 @@ had claimed. The owner decided (2026-10-08) that phones stop publishing
 
 ---
 
+## Training sessions and club activity reach a closed phone — 2026-10-09 (build 119)
+
+The last of the server's notification work (GOTSPORT.md, build order step
+2). A family booking a coach's time, a place confirmed or turned down, a
+session called off, a coach calling out: each was worked out on each phone
+while Minutes was open on it, so a closed phone heard none of it, and an
+admin heard the club's activity only when she next opened the app.
+
+- **Three new triggers** (`functions/news.js`): a booking changing, a
+  session written, a coach's time off. Each tells whoever the open page
+  would tell, in its words, and nobody about what she did herself.
+- **A family** hears about her own child's place (booked, on the waiting
+  list, moved off it, not this time, taken off) and a session she is in
+  being moved or called off in the next two weeks; by first name, never
+  another child.
+- **A coach** hears families asking for, booking, waiting for, withdrawing
+  from and cancelling her sessions and times; her team's other coaches hear
+  when she calls out.
+- **The admins** hear the club's activity: every team's game or practice
+  new, moved, called off, back on or deleted (from the calendar's own
+  triggers, which told only the team before), a session added or called
+  off, a family booking a coach's time, call-outs and time off. Under their
+  own *Club activity* switch, so an admin of many teams can turn it off and
+  keep her own team's.
+- **A session saved carries who saved it** (`edit`), as calendar entries
+  do, so the coach who called it off is left out and the admins are told
+  who did.
+- **A deletion says who made it.** The app stamps a whole entry or game
+  with who is deleting it just before it goes (`remoteDel()`), so the
+  admins' *Deleted* for a practice or event leaves her out and names her.
+  A deleted game, gone field and all by the time the server hears, is named
+  from a note the server keeps of each dated game (`serverState/calGame/`,
+  which no phone reads); that note is not woken by the stamp, so an admin
+  who deletes a game still hears about it herself.
+
+---
+
+## Booking a coach's time is one call to the server, with a waiting list — 2026-10-09 (build 119)
+
+A family booked a coach's slot from her own phone, in three writes the rules
+checked one at a time: the slot's session, a numbered seat, then her child's
+booking naming it. A rule cannot count, search or do dates, so the coach's
+window carried a list of the slots it still offered, kept by the coach's or
+an admin's phone, and a key per place. That left three holes the rules
+printed (SERVER.md, *Bookable times and training sessions*): a practice
+added from another phone stayed bookable until one of theirs next opened
+the app, a seat taken with no booking behind it waited ten minutes to be
+let go, and one child could hold two seats by hand. And a full slot could
+only say no. Worth closing before payments, when a place will be money.
+
+- **Her phone asks; the server books** (`functions/book.js`, `bookAsk`). The
+  ask is one write at `bookAsks/{code}/{uid}/{id}`, hers alone; the answer
+  appears beneath it in a second or two. The server checks she is a
+  guardian of the child, that the start is on the coach's grid and not
+  past, that the coach is free as the club stands now (her teams'
+  practices and games, her other sessions, her time off and her busy times
+  at other clubs; a call-out frees her) and the child too, then counts the
+  places inside one transaction and writes the session and the booking.
+  Two families can never both have the last place, and a child is in a
+  slot once.
+- **A taken slot has a waiting list.** A family can join it instead; the
+  moment a place comes free (a family cancels, the coach takes a child off
+  or turns one down) the first on it is moved in (`bookFreed`).
+- **Cancelling is the same call**, held to the coach's notice and to nothing
+  being paid or marked; a slot nobody is left in goes, so the time is free.
+  A place on the waiting list can be given up any time.
+- **Seats and the slot list are gone**, with the coach's and admins'
+  phones keeping them; a block now carries its midnight (`day0`) for the
+  server to time slots by. Rules version 18: a family can no longer write a
+  slot's session or booking at all, `seats` is removed, and `bookAsks` is
+  added. Booking needs the functions deployed; without them her phone says
+  there was no answer.
+
+---
+
 ## Club-wide viewers — 2026-10-09 (build 118, rules version 17)
 
 AUTH.md, *More kinds of people*, 3, as the owner decided it: a director or

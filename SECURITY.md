@@ -119,8 +119,8 @@ owner has no standing in the rules; a brand-new club code is claimed by
 whoever writes it first; an invite with no email on it works for whoever
 opens it first, until it is spent or two weeks old; bookings and registers
 are readable across the club; shared busy times can be read by anyone signed
-in who knows the account id; and a rule cannot count seats or package
-places. Read that list before treating a refused or allowed write as a bug.
+in who knows the account id; and a rule cannot count an ordinary
+session's or a package's places (a booked slot's are counted by the server). Read that list before treating a refused or allowed write as a bug.
 Anything a phone already showed someone can be screenshotted, and a device
 clock turned back gets past `OFFLINE_DAYS`; no app can stop either.
 
