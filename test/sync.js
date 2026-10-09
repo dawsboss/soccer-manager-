@@ -628,6 +628,60 @@ async function boot(opts = {}) {
     }
   }
 
+  console.log('\n--- no signal is not signed out ---');
+  /* A phone opened in airplane mode can hear "nobody is signed in" from
+     Firebase Auth, which could not check the session with its server. The
+     owner, with her phone offline: "it takes me to a page that says you need
+     to sign in", the club still on the phone behind it. */
+  {
+    const club = { teams: { t1: { id: 't1', name: 'G14 Flight', players: { p1: { id: 'p1', name: 'Ella Stone' } } } }, matches: {}, access: { admins: { bossU: true }, index: { bossU: true, coachU: true }, teams: { t1: { coaches: { coachU: true } } } } };
+    const drawn = A => { A.ui.view = 'roster'; A.ui.teamId = 't1'; A.render(); return String(A.dom.node('#app').innerHTML); };
+    const storage = { 'sm.data.v1:FLIGHT': JSON.stringify(club), 'sm.me': JSON.stringify({ uid: 'coachU', name: 'Jaz' }) };
+    const offline = () => {
+      const on = [];
+      return { on, opts: { storage, app: { navigator: { onLine: false }, window: { addEventListener(type, fn) { if (type === 'online') on.push(fn); } } } } };
+    };
+    {
+      const { on, opts } = offline();
+      const { A, fbk } = await boot(opts);
+      fbk.signOut(); await A.flush();
+      check('offline, Firebase says nobody: she is still who this phone knows', A.me && A.me.uid, 'coachU');
+      check('not the lock screen', A.needsSignIn(), false);
+      check('her squad is drawn', drawn(A).includes('G14 Flight'), true);
+      check('and the phone still remembers her', A.cachedMe() && A.cachedMe().uid, 'coachU');
+      // the signal comes back and Firebase still has nobody: that is the answer
+      global.navigator.onLine = true;
+      for (const fn of on) fn();
+      await A.flush();
+      check('back online with nobody signed in: signed out', A.me, null);
+      check('the club is shut', A.needsSignIn(), true);
+      check('and nothing of it drawn', drawn(A).includes('G14 Flight'), false);
+    }
+    {
+      const { opts } = offline();
+      const { A, fbk } = await boot(opts);
+      fbk.signIn('coachU'); await A.flush();
+      A.click({ act: 'signout' }); await A.flush();
+      fbk.signOut(); await A.flush();
+      check('Sign out with no signal still signs her out', A.me, null);
+      check('and shuts the club', drawn(A).includes('G14 Flight'), false);
+    }
+    {
+      const { opts } = offline();
+      const { A, fbk } = await boot(opts);
+      // another tab signed her out: it cleared sm.me before Firebase told this one
+      A.storage.removeItem('sm.me');
+      fbk.signOut(); await A.flush();
+      check('signed out in another tab: not held here', A.me, null);
+    }
+    {
+      const { A, fbk } = await boot({ storage });
+      fbk.signOut(); await A.flush();
+      check('online, nobody is nobody', A.me, null);
+      check('and the club is shut', drawn(A).includes('G14 Flight'), false);
+    }
+  }
+
   console.log('\n--- another club\'s copy goes quiet the same way ---');
   {
     const { A } = await boot({ storage: { 'sm.me': JSON.stringify({ uid: 'coachU', name: 'Jaz' }) } });

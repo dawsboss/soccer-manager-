@@ -2,8 +2,8 @@
    Static app. Data lives in localStorage, and mirrors to Firebase Realtime
    Database when a config + workspace code are present. */
 
-const BUILD = '113';
-const BUILT = '2026-10-08';
+const BUILD = '114';
+const BUILT = '2026-10-09';
 /* The version of database.rules.json this app was written against. The rules
    carry the same number in rulesVersion's .write, which accepts that number
    and nothing else, so writing it is a question only the published rules can
@@ -515,6 +515,7 @@ function noteDenied() {
 /* ---------------- firebase sync ---------------- */
 let fbApp = null, fbAuth = null, authMod = null;
 let me = null;              // { uid, name, email } when signed in
+let authHeld = false;       // Firebase said nobody while offline; `me` is the identity last verified here (initAuth)
 let fb = null; // { db, ref, set, remove, onValue, base }
 let clockSkew = 0;           // serverTime - deviceTime, in ms
 let online = false;          // .info/connected, as the database last said
@@ -573,8 +574,19 @@ async function initAuth() {
     }
 
     let prevUid;
-    authMod.onAuthStateChanged(fbAuth, u => {
-      me = u ? { uid: u.uid, name: u.displayName || (u.email || '').split('@')[0] || 'Signed in', email: u.email || '', photo: u.photoURL || '' } : null;
+    const onAuth = u => {
+      /* "Nobody" with no signal is not an answer. A phone that opens the app
+         in airplane mode can be told nobody is signed in — Firebase Auth could
+         not check the session with its server — and taking that at its word
+         put the lock screen in front of the coach whose phone it is, the club
+         still on it, at the one place this app is for. So while the phone is
+         offline, a "nobody" that she did not ask for (Sign out clears sm.me
+         first, here or in another tab) leaves the identity this phone last
+         verified standing, and is asked again when the signal comes back. It
+         is not a permission: the rules still decide what this uid may read. */
+      const held = !u && me && navigator.onLine === false && (cachedMe() || {}).uid === me.uid;
+      authHeld = !!held;
+      if (!held) me = u ? { uid: u.uid, name: u.displayName || (u.email || '').split('@')[0] || 'Signed in', email: u.email || '', photo: u.photoURL || '' } : null;
       cacheMe(me);   // signing out clears it, which is what locks the club now
       const uid = me ? me.uid : null;
       // her own drills are hers, not the phone's: gone the moment she is
@@ -605,7 +617,11 @@ async function initAuth() {
       maybeLoadJoin();
       watchMyClubs();
       render();
-    });
+    };
+    authMod.onAuthStateChanged(fbAuth, onAuth);
+    // back in signal: whatever Firebase says now is the answer
+    if (typeof window !== 'undefined' && window.addEventListener)
+      window.addEventListener('online', () => { if (authHeld && !fbAuth.currentUser) onAuth(null); });
   } catch (e) {
     console.warn('auth unavailable', e);
     authReadyResolve(); // no auth module at all still counts as "resolved, signed out"
@@ -19141,6 +19157,8 @@ function onAct(e) {
     if (n && !confirm(`${n} change${n === 1 ? '' : 's'} to your own drills ha${n === 1 ? 's' : 've'}n't reached the database yet, and signing out takes your drills off this phone. Sign out anyway?`)) return;
     // her phone's address comes down while she is still signed in to take it down
     if (pushRec) pushTurnOff();
+    // said before Firebase hears it, so no tab holds on to her (initAuth, offline)
+    authHeld = false; cacheMe(null);
     authMod.signOut(fbAuth).then(() => { closeSheet(); toast('Signed out'); }); return;
   }
   if (a === 'peeklib') {
