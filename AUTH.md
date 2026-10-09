@@ -898,6 +898,17 @@ against.
    page in Squad, with a link to ring; an admin's backup leaves it out.*
 3. **Programs, the link, the form and waivers**, and Registrations for
    admins: accepting, the waiting list, declining.
+   *Built (build 124, rules version 23), with these details: every waiver
+   is a program's for now (the club-wide waiver asked once per child, at
+   `agreed/{cid}`, is not built); agreements live at
+   `agreed/{progId}/{cid}/{wid}_{v}` beside the registrations rather than
+   inside them, so a family rewriting her registration can never remove one;
+   a registration keeps who started it (`by`) and who sent it (`sentBy`);
+   `programs/{id}/closed` and deleting the link close it, and the rules
+   check both; the form needs a signal and writes straight to the club, in
+   the rules' order (`sendReg()`); dates are the app's to hold, the rules
+   check only `closed`. A family in the club sees an open program her child
+   fits, and a draft to finish, on My players.*
 4. **Placing on a team**, and **sessions for a child on no team**.
 5. **The GotSport export.**
 6. **Deleting**: a family's registration, an admin's child, and the

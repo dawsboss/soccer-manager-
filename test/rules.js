@@ -2276,6 +2276,91 @@ reads('nor read', COACH, 'shareOwners/sh1', false);
     delete ORGC.care; delete ORGC.teamCare; delete ORGC.children; delete ORGC.squad.t1.p1.child;
   }
 
+  /* Registration (AUTH.md, *Registration*): programs and waivers the club
+     reads and admins write; a program link anyone signed in reads by id; a
+     family who is not in the club makes her child through it, and her
+     registration, and agrees to waivers in her own name, once; only an admin
+     moves a registration past sent. */
+  console.log('\n--- a club on orgs/: registration ---');
+  {
+    const saved = { ro: DB.regOpen };
+    const prog = { id: 'f27', name: 'Fall 2027', kind: 'season', born: { lo: 2014, hi: 2019 }, waivers: { w1: true }, link: 'rl1', by: 'oa', at: NOW };
+    ORGC.programs = { f27: prog, old: { ...prog, id: 'old', closed: true } };
+    ORGC.waivers = { w1: { id: 'w1', title: 'Photos', v: 2, text: 'We may take photos.', by: 'oa', at: NOW } };
+    ORGC.children = { p1: { id: 'p1', first: 'Ella', club: true, by: 'oa', at: NOW, teams: { t1: 'p1' }, guardians: { om: 't1' } } };
+    DB.regOpen = { rl1: { ws: 'ORGC', prog: 'f27', name: 'Fall 2027', kind: 'season', by: 'oa', at: NOW }, rlx: { ws: 'ORGC', prog: 'old', name: 'Old', kind: 'season', by: 'oa', at: NOW, closed: true } };
+    const NEW = { uid: 'nfam' };
+    r('everyone in the club reads the programs', OM, O + 'programs', true);
+    r('— and the waivers', OT, O + 'waivers', true);
+    r('a stranger reads neither', NEW, O + 'programs', false);
+    r('— but reads a program link, by id', NEW, 'regOpen/rl1', true);
+    r('— not signed out', OUT, 'regOpen/rl1', false);
+    w('an admin makes a program', OA, O + 'programs/s28', { ...prog, id: 's28' }, true);
+    w('— with nothing it has no field for', OA, O + 'programs/s28', { ...prog, id: 's28', secret: 1 }, false);
+    w('a coach does not', OC, O + 'programs/s28', { ...prog, id: 's28', by: 'oc' }, false);
+    w('an admin publishes its link', OA, 'regOpen/rl2', { ws: 'ORGC', prog: 's28', name: 'Spring', kind: 'season', by: 'oa', at: NOW }, true);
+    w('— for her own club only', OC2, 'regOpen/rl2', { ws: 'ORGC', prog: 's28', name: 'Spring', kind: 'season', by: 'oc2', at: NOW }, false);
+    w('— and takes it down', OA, 'regOpen/rl1', null, true);
+    w('nobody else takes it down', OM, 'regOpen/rl1', null, false);
+    w('an admin writes a waiver', OA, O + 'waivers/w2', { id: 'w2', title: 'Kit', v: 1, text: 'Wear shin pads.', by: 'oa', at: NOW }, true);
+    w('a coach does not', OC, O + 'waivers/w2', { id: 'w2', title: 'Kit', v: 1, text: 'x', by: 'oc', at: NOW }, false);
+
+    console.log('\n--- a family who is not in the club yet ---');
+    const kid = { id: 'n1', first: 'Nia', last: 'Cole', born: '2016-03-03', gender: 'F', by: 'nfam', at: NOW, via: 'rl1', family: { nfam: 'rl1' }, confirmed: { by: 'nfam', at: NOW } };
+    w('makes her child through the link, as her family', NEW, O + 'children/n1', kid, true);
+    w('— not into the club', NEW, O + 'children/n1', { ...kid, club: true }, false);
+    w('— not onto a team', NEW, O + 'children/n1', { ...kid, teams: { t1: 'p9' } }, false);
+    w('— not through a closed link', NEW, O + 'children/n1', { ...kid, via: 'rlx', family: { nfam: 'rlx' } }, false);
+    w('— not through a link of another club', NEW, O + 'children/n1', { ...kid, via: 'nope', family: { nfam: 'nope' } }, false);
+    w('— not naming somebody else as the family', NEW, O + 'children/n1', { ...kid, family: { other: 'rl1' } }, false);
+    w('— not over a child already there', NEW, O + 'children/p1', { ...kid, id: 'p1' }, false);
+    ORGC.children.n1 = kid;
+    r('she reads the child she made', NEW, O + 'children/n1', true);
+    w('— and is not in the club for it', NEW, O + 'access/index/nfam', 'n1', false);
+    w('writes her care details', NEW, O + 'care/n1', { by: 'nfam', at: NOW, contacts: { 0: { name: 'Ann', phone: '555' } } }, true);
+    const reg = { st: 'sent', by: 'nfam', at: NOW, sentBy: 'nfam', sentAt: NOW, answers: { q1: 'Yes' }, fam: { name: 'Ann', email: 'ann@x.test' } };
+    w('sends the registration', NEW, O + 'regs/f27/n1', reg, true);
+    w('— not accepted by herself', NEW, O + 'regs/f27/n1', { ...reg, st: 'accepted' }, false);
+    w('— not for a closed program', NEW, O + 'regs/old/n1', reg, false);
+    w('— not for a program that is not there', NEW, O + 'regs/nope/n1', reg, false);
+    w('— not for somebody else\'s child', NEW, O + 'regs/f27/p1', reg, false);
+    w('— not placing her on a team', NEW, O + 'regs/f27/n1', { ...reg, team: 't1' }, false);
+    w('agrees to a waiver, in her own name', NEW, O + 'agreed/f27/n1/w1_2', { by: 'nfam', at: NOW, name: 'Ann Cole' }, true);
+    w('— not in somebody else\'s', NEW, O + 'agreed/f27/n1/w1_2', { by: 'om', at: NOW, name: 'Mo' }, false);
+    w('— not for another family\'s child', NEW, O + 'agreed/f27/p1/w1_2', { by: 'nfam', at: NOW, name: 'Ann' }, false);
+    w('staff do not agree for a family', OA, O + 'agreed/f27/n1/w1_2', { by: 'oa', at: NOW, name: 'Ann' }, false);
+    ORGC.agreed = { f27: { n1: { w1_2: { by: 'nfam', at: NOW, name: 'Ann Cole' } } } };
+    w('an agreement is never changed', NEW, O + 'agreed/f27/n1/w1_2', { by: 'nfam', at: NOW + 1, name: 'A' }, false);
+    w('— nor taken back', NEW, O + 'agreed/f27/n1/w1_2', null, false);
+    r('the admin reads every registration of a program', OA, O + 'regs/f27', true);
+    r('— and the agreements', OA, O + 'agreed/f27', true);
+    r('a coach reads neither', OC, O + 'regs/f27', false);
+    r('her family reads her own', NEW, O + 'regs/f27/n1', true);
+    r('— not the list', NEW, O + 'regs/f27', false);
+    ORGC.regs = { f27: { n1: reg } };
+    w('she withdraws it', NEW, O + 'regs/f27/n1', { ...reg, st: 'withdrawn' }, true);
+    w('the admin accepts it', OA, O + 'regs/f27/n1/st', 'accepted', true);
+    w('— with a note of her own', OA, O + 'regs/f27/n1/note', 'Sibling on U12', true);
+    w('— lets the child into the club', OA, O + 'children/n1/club', true, true);
+    ORGC.regs.f27.n1.st = 'accepted'; ORGC.regs.f27.n1.note = 'Sibling on U12'; ORGC.children.n1.club = true;
+    w('— and so the family', NEW, O + 'access/index/nfam', 'n1', true);
+    w('once accepted, the family does not send it back to waiting', NEW, O + 'regs/f27/n1', { ...reg, note: 'Sibling on U12' }, false);
+    w('— nor rewrite the admin\'s note', NEW, O + 'regs/f27/n1', { ...reg, st: 'withdrawn', note: 'nothing' }, false);
+    w('— but may withdraw', NEW, O + 'regs/f27/n1', { ...reg, st: 'withdrawn', note: 'Sibling on U12' }, true);
+
+    console.log('\n--- staff register a child for her family ---');
+    w('a coach puts a child into a program for her family, as a draft', OC, O + 'regs/f27/p1', { st: 'draft', by: 'oc', at: NOW }, true);
+    w('— never sent', OC, O + 'regs/f27/p1', { st: 'sent', by: 'oc', at: NOW, sentBy: 'oc' }, false);
+    w('— not over one that is there', OC, O + 'regs/f27/n1', { st: 'draft', by: 'oc', at: NOW }, false);
+    w('— not for a child that is not in the club', OC, O + 'regs/f27/zz', { st: 'draft', by: 'oc', at: NOW }, false);
+    w('a tracker does not', OT, O + 'regs/f27/p1', { st: 'draft', by: 'ot', at: NOW }, false);
+    ORGC.regs.f27.p1 = { st: 'draft', by: 'oc', at: NOW };
+    w('her family finishes it, keeping who started it', OM, O + 'regs/f27/p1', { st: 'sent', by: 'oc', at: NOW, sentBy: 'om', sentAt: NOW }, true);
+    w('— not claiming she started it', OM, O + 'regs/f27/p1', { st: 'sent', by: 'om', at: NOW, sentBy: 'om', sentAt: NOW }, false);
+    delete ORGC.programs; delete ORGC.waivers; delete ORGC.children; delete ORGC.regs; delete ORGC.agreed;
+    DB.regOpen = saved.ro; if (saved.ro === undefined) delete DB.regOpen;
+  }
+
   /* Links with limits (the owner, 2026-10-09): how many people may use one,
      and until when. A rule cannot count, so a link for several carries one
      seat per person, each taken once; a page anyone may open carries an end

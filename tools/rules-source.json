@@ -404,7 +404,7 @@
           ".read": "auth != null && (root.child('orgs/' + $code + '/access/admins/' + auth.uid).exists() || root.child('orgs/' + $code + '/access/coachIndex/' + auth.uid).exists())",
           "$cid": {
             ".read": "auth != null && (root.child('orgs/' + $code + '/access/admins/' + auth.uid).exists() || root.child('orgs/' + $code + '/access/coachIndex/' + auth.uid).exists() || data.child('guardians/' + auth.uid).exists() || data.child('family/' + auth.uid).exists() || data.child('self/' + auth.uid).exists())",
-            ".write": "auth != null && (root.child('orgs/' + $code + '/access/admins/' + auth.uid).exists() || (root.child('orgs/' + $code + '/access/coachIndex/' + auth.uid).exists() && !data.exists() && newData.child('by').val() === auth.uid && newData.child('club').val() === true && !newData.hasChild('guardians') && !newData.hasChild('family') && !newData.hasChild('self') && !newData.hasChild('confirmed') && !newData.hasChild('left')))",
+            ".write": "auth != null && (root.child('orgs/' + $code + '/access/admins/' + auth.uid).exists() || (root.child('orgs/' + $code + '/access/coachIndex/' + auth.uid).exists() && !data.exists() && newData.child('by').val() === auth.uid && newData.child('club').val() === true && !newData.hasChild('guardians') && !newData.hasChild('family') && !newData.hasChild('self') && !newData.hasChild('confirmed') && !newData.hasChild('left')) || (!data.exists() && newData.child('by').val() === auth.uid && newData.child('family/' + auth.uid).val() === newData.child('via').val() && root.child('regOpen/' + newData.child('via').val() + '/ws').val() === $code && root.child('regOpen/' + newData.child('via').val() + '/closed').val() !== true && !newData.hasChild('club') && !newData.hasChild('guardians') && !newData.hasChild('self') && !newData.hasChild('teams') && !newData.hasChild('left')))",
             ".validate": "newData.hasChildren(['id', 'by', 'at']) && newData.child('id').val() === $cid",
             "id": {
               ".validate": "newData.isString()"
@@ -568,6 +568,207 @@
             }
           }
         },
+        "programs": {
+          ".read": "auth != null && (root.child('orgs/' + $code + '/access/admins/' + auth.uid).exists() || root.child('orgs/' + $code + '/access/index/' + auth.uid).exists())",
+          "$prog": {
+            ".write": "auth != null && root.child('orgs/' + $code + '/access/admins/' + auth.uid).exists()",
+            ".validate": "newData.hasChildren(['id', 'name', 'kind', 'by', 'at']) && newData.child('id').val() === $prog",
+            "id": {
+              ".validate": "newData.isString() && newData.val().length <= 40"
+            },
+            "name": {
+              ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 80"
+            },
+            "kind": {
+              ".validate": "newData.val() === 'season' || newData.val() === 'camp' || newData.val() === 'tryout' || newData.val() === 'sessions' || newData.val() === 'other'"
+            },
+            "born": {
+              "lo": {
+                ".validate": "newData.isNumber()"
+              },
+              "hi": {
+                ".validate": "newData.isNumber()"
+              },
+              "$other": {
+                ".validate": false
+              }
+            },
+            "gender": {
+              ".validate": "newData.val() === 'F' || newData.val() === 'M'"
+            },
+            "opens": {
+              ".validate": "newData.isString() && newData.val().length <= 10"
+            },
+            "closes": {
+              ".validate": "newData.isString() && newData.val().length <= 10"
+            },
+            "cap": {
+              ".validate": "newData.isNumber()"
+            },
+            "fee": {
+              ".validate": "newData.isNumber()"
+            },
+            "feeNote": {
+              ".validate": "newData.isString() && newData.val().length <= 200"
+            },
+            "about": {
+              ".validate": "newData.isString() && newData.val().length <= 2000"
+            },
+            "asks": {
+              "$q": {
+                ".validate": "newData.hasChildren(['q'])",
+                "q": {
+                  ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 200"
+                },
+                "need": {
+                  ".validate": "newData.isBoolean()"
+                },
+                "o": {
+                  ".validate": "newData.isNumber()"
+                },
+                "$other": {
+                  ".validate": false
+                }
+              }
+            },
+            "waivers": {
+              "$w": {
+                ".validate": "newData.val() === true"
+              }
+            },
+            "link": {
+              ".validate": "newData.isString() && newData.val().length <= 80"
+            },
+            "by": {
+              ".validate": "newData.isString() && newData.val().length <= 80"
+            },
+            "at": {
+              ".validate": "newData.isNumber()"
+            },
+            "closed": {
+              ".validate": "newData.isBoolean()"
+            },
+            "$other": {
+              ".validate": false
+            }
+          }
+        },
+        "waivers": {
+          ".read": "auth != null && (root.child('orgs/' + $code + '/access/admins/' + auth.uid).exists() || root.child('orgs/' + $code + '/access/index/' + auth.uid).exists())",
+          "$wid": {
+            ".write": "auth != null && root.child('orgs/' + $code + '/access/admins/' + auth.uid).exists()",
+            ".validate": "newData.hasChildren(['id', 'title', 'v', 'text', 'by', 'at']) && newData.child('id').val() === $wid",
+            "id": {
+              ".validate": "newData.isString() && newData.val().length <= 40"
+            },
+            "title": {
+              ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 120"
+            },
+            "v": {
+              ".validate": "newData.isNumber()"
+            },
+            "text": {
+              ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 20000"
+            },
+            "by": {
+              ".validate": "newData.isString() && newData.val().length <= 80"
+            },
+            "at": {
+              ".validate": "newData.isNumber()"
+            },
+            "old": {
+              "$v": {
+                ".validate": "newData.hasChildren(['text', 'at'])",
+                "text": {
+                  ".validate": "newData.isString() && newData.val().length <= 20000"
+                },
+                "at": {
+                  ".validate": "newData.isNumber()"
+                },
+                "$other": {
+                  ".validate": false
+                }
+              }
+            },
+            "$other": {
+              ".validate": false
+            }
+          }
+        },
+        "regs": {
+          "$prog": {
+            ".read": "auth != null && root.child('orgs/' + $code + '/access/admins/' + auth.uid).exists()",
+            "$cid": {
+              ".read": "auth != null && (root.child('orgs/' + $code + '/access/admins/' + auth.uid).exists() || (root.child('orgs/' + $code + '/children/' + $cid + '/guardians/' + auth.uid).exists() || root.child('orgs/' + $code + '/children/' + $cid + '/family/' + auth.uid).exists()))",
+              ".write": "auth != null && (root.child('orgs/' + $code + '/access/admins/' + auth.uid).exists() || ((root.child('orgs/' + $code + '/children/' + $cid + '/guardians/' + auth.uid).exists() || root.child('orgs/' + $code + '/children/' + $cid + '/family/' + auth.uid).exists()) && root.child('orgs/' + $code + '/programs/' + $prog).exists() && newData.exists() && (newData.child('st').val() === 'withdrawn' || (newData.child('st').val() === 'sent' && root.child('orgs/' + $code + '/programs/' + $prog + '/closed').val() !== true && newData.child('sentBy').val() === auth.uid && (!data.exists() || data.child('st').val() === 'draft' || data.child('st').val() === 'sent' || data.child('st').val() === 'withdrawn')))) || (root.child('orgs/' + $code + '/access/coachIndex/' + auth.uid).exists() && !data.exists() && newData.child('st').val() === 'draft' && newData.child('by').val() === auth.uid && root.child('orgs/' + $code + '/children/' + $cid).exists() && root.child('orgs/' + $code + '/programs/' + $prog).exists()))",
+              ".validate": "newData.hasChildren(['st', 'by', 'at'])",
+              "st": {
+                ".validate": "newData.val() === 'draft' || newData.val() === 'sent' || newData.val() === 'accepted' || newData.val() === 'waitlist' || newData.val() === 'declined' || newData.val() === 'placed' || newData.val() === 'withdrawn'"
+              },
+              "by": {
+                ".validate": "newData.isString() && (!data.exists() || newData.val() === data.val() || root.child('orgs/' + $code + '/access/admins/' + auth.uid).exists())"
+              },
+              "at": {
+                ".validate": "newData.isNumber()"
+              },
+              "sentBy": {
+                ".validate": "newData.isString()"
+              },
+              "sentAt": {
+                ".validate": "newData.isNumber()"
+              },
+              "answers": {
+                "$q": {
+                  ".validate": "(newData.isString() && newData.val().length <= 500) || newData.isBoolean()"
+                }
+              },
+              "fam": {
+                "name": {
+                  ".validate": "newData.isString() && newData.val().length <= 80"
+                },
+                "email": {
+                  ".validate": "newData.isString() && newData.val().length <= 120"
+                },
+                "$other": {
+                  ".validate": false
+                }
+              },
+              "team": {
+                ".validate": "newData.isString() && (root.child('orgs/' + $code + '/access/admins/' + auth.uid).exists() || newData.val() === data.val())"
+              },
+              "note": {
+                ".validate": "newData.isString() && newData.val().length <= 500 && (root.child('orgs/' + $code + '/access/admins/' + auth.uid).exists() || newData.val() === data.val())"
+              },
+              "$other": {
+                ".validate": false
+              }
+            }
+          }
+        },
+        "agreed": {
+          "$prog": {
+            ".read": "auth != null && root.child('orgs/' + $code + '/access/admins/' + auth.uid).exists()",
+            "$cid": {
+              ".read": "auth != null && (root.child('orgs/' + $code + '/access/admins/' + auth.uid).exists() || (root.child('orgs/' + $code + '/children/' + $cid + '/guardians/' + auth.uid).exists() || root.child('orgs/' + $code + '/children/' + $cid + '/family/' + auth.uid).exists()))",
+              "$k": {
+                ".write": "auth != null && !data.exists() && newData.child('by').val() === auth.uid && (root.child('orgs/' + $code + '/children/' + $cid + '/guardians/' + auth.uid).exists() || root.child('orgs/' + $code + '/children/' + $cid + '/family/' + auth.uid).exists())",
+                ".validate": "newData.hasChildren(['by', 'at', 'name'])",
+                "by": {
+                  ".validate": "newData.isString() && newData.val().length <= 80"
+                },
+                "at": {
+                  ".validate": "newData.isNumber()"
+                },
+                "name": {
+                  ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 80"
+                },
+                "$other": {
+                  ".validate": false
+                }
+              }
+            }
+          }
+        },
         "roster": {
           ".read": "auth != null && (!root.child('orgs/' + $code + '/access/index').exists() || root.child('orgs/' + $code + '/access/index/' + auth.uid).exists())",
           "$tid": {
@@ -654,7 +855,7 @@
     },
     "rulesVersion": {
       ".read": true,
-      ".write": "newData.isNumber() && newData.val() === 22"
+      ".write": "newData.isNumber() && newData.val() === 23"
     },
     "public": {
       "$share": {
@@ -762,6 +963,107 @@
             ".write": "auth != null && $uid === auth.uid && (!newData.exists() || root.child('orgs/' + $code + '/children/' + $cid + '/family/' + $uid).exists() || root.child('orgs/' + $code + '/children/' + $cid + '/guardians/' + $uid).exists() || root.child('orgs/' + $code + '/children/' + $cid + '/self/' + $uid).exists())",
             ".validate": "newData.val() === true"
           }
+        }
+      }
+    },
+    "regOpen": {
+      "$link": {
+        ".read": "auth != null",
+        ".write": "auth != null && ((newData.exists() && root.child('orgs/' + newData.child('ws').val() + '/access/admins/' + auth.uid).exists() && (!data.exists() || data.child('ws').val() === newData.child('ws').val())) || (!newData.exists() && root.child('orgs/' + data.child('ws').val() + '/access/admins/' + auth.uid).exists()))",
+        ".validate": "newData.hasChildren(['ws', 'prog', 'name', 'kind', 'by', 'at'])",
+        "ws": {
+          ".validate": "newData.isString() && newData.val().length <= 80"
+        },
+        "prog": {
+          ".validate": "newData.isString() && newData.val().length <= 40"
+        },
+        "name": {
+          ".validate": "newData.isString() && newData.val().length <= 80"
+        },
+        "club": {
+          ".validate": "newData.isString() && newData.val().length <= 120"
+        },
+        "badge": {
+          ".validate": "newData.isString() && newData.val().length <= 200000"
+        },
+        "kind": {
+          ".validate": "newData.isString() && newData.val().length <= 20"
+        },
+        "born": {
+          "lo": {
+            ".validate": "newData.isNumber()"
+          },
+          "hi": {
+            ".validate": "newData.isNumber()"
+          },
+          "$other": {
+            ".validate": false
+          }
+        },
+        "gender": {
+          ".validate": "newData.val() === 'F' || newData.val() === 'M'"
+        },
+        "opens": {
+          ".validate": "newData.isString() && newData.val().length <= 10"
+        },
+        "closes": {
+          ".validate": "newData.isString() && newData.val().length <= 10"
+        },
+        "fee": {
+          ".validate": "newData.isNumber()"
+        },
+        "feeNote": {
+          ".validate": "newData.isString() && newData.val().length <= 200"
+        },
+        "about": {
+          ".validate": "newData.isString() && newData.val().length <= 2000"
+        },
+        "money": {
+          ".validate": "newData.isString() && newData.val().length <= 8"
+        },
+        "asks": {
+          "$q": {
+            "q": {
+              ".validate": "newData.isString() && newData.val().length <= 200"
+            },
+            "need": {
+              ".validate": "newData.isBoolean()"
+            },
+            "o": {
+              ".validate": "newData.isNumber()"
+            },
+            "$other": {
+              ".validate": false
+            }
+          }
+        },
+        "waivers": {
+          "$w": {
+            "title": {
+              ".validate": "newData.isString() && newData.val().length <= 120"
+            },
+            "v": {
+              ".validate": "newData.isNumber()"
+            },
+            "text": {
+              ".validate": "newData.isString() && newData.val().length <= 20000"
+            },
+            "$other": {
+              ".validate": false
+            }
+          }
+        },
+        "by": {
+          ".validate": "newData.isString() && newData.val().length <= 80"
+        },
+        "at": {
+          ".validate": "newData.isNumber()"
+        },
+        "closed": {
+          ".validate": "newData.isBoolean()"
+        },
+        "$other": {
+          ".validate": false
         }
       }
     },

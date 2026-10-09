@@ -8,6 +8,37 @@ before this point lives only in the git log.
 
 ---
 
+## Registration: programs, the link, the form and waivers — 2026-10-09 (build 124, rules version 23)
+
+Registration's third step (AUTH.md, *Registration*).
+
+- **Admins make programs** under Club settings → **Registrations**: a
+  season, a camp, tryouts, training sessions; birth years, girls or boys,
+  opening and closing dates, places, a fee (shown, never taken: families pay
+  the way the club says until payments are built), questions (a star for one
+  that must be answered) and the club's waivers. Each open program has a
+  link, made by the secure generator, to post anywhere.
+- **Waivers are the club's words, versioned.** Changing them makes a new
+  version (the old words kept), and the next registration asks again. Only a
+  family agrees, in her own name with her name typed, once per version; an
+  agreement is never changed or taken back.
+- **A family who is not in the club** opens the link, signs in, and fills one
+  form per child: her name, birth date and gender (held to the program's
+  years and who it is for), someone to call and what a coach must know, the
+  program's questions and its waivers. Her phone writes her child, her own
+  list, care, the registration and each agreement, in that order. She is not
+  in the club, and reads none of it, until the club says yes.
+- **Admins accept**, put on the waiting list or decline, with a note of their
+  own. Accepting lets the child into the club, and her family with her.
+- **A coach or an admin starts one for a family** from the child's record: a
+  draft her family finishes (the coach agrees to nothing), shown to the
+  family on My players beside any open program her child fits.
+
+Rules version 23. New suite `test/register.js`; `rules.js` walks who reads
+and writes each part.
+
+---
+
 ## Care details for the coach at the pitch — 2026-10-09 (build 123, rules version 22)
 
 Registration's second step (AUTH.md, *Care: what a coach needs at the

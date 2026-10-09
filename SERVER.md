@@ -222,7 +222,11 @@ does the bookkeeping, not that the phone works offline first.
   whose sign-in emails Firebase sends one call at a time from the admin's phone
   (`mailImported()`), stopping at its daily limit; a new club is claimed by
   the first person to write its admin list (`createClub()`), which is
-  trust-on-first-use (rules.js, gap 3). Anything half-done after a dropped
+  trust-on-first-use (rules.js, gap 3). Registering a child through a
+  program's link is the family's own phone writing her child, her list, care,
+  the registration and each agreement in that order (`sendReg()`), and an
+  admin accepting writes the child's `club` and the family's index entry
+  (the server's `accessChild` does the latter too). Anything half-done after a dropped
   signal is undone by hand on the phone.
 - **With a server:** each is one call that does all of it or none of it, and a
   new club's code is issued by the server rather than claimed. Invitations go

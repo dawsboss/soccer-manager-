@@ -2,7 +2,7 @@
    Static app. Data lives in localStorage, and mirrors to Firebase Realtime
    Database when a config + workspace code are present. */
 
-const BUILD = '123';
+const BUILD = '124';
 const BUILT = '2026-10-09';
 /* The version of database.rules.json this app was written against. The rules
    carry the same number in rulesVersion's .write, which accepts that number
@@ -11,7 +11,7 @@ const BUILT = '2026-10-09';
    never pasted look exactly like a coach with no signal: "saved on this phone
    only", one feature at a time. test/rules.js holds the two numbers together
    and fails when the rules change without this going up. */
-const RULES_VERSION = 22;
+const RULES_VERSION = 23;
 /* index.html carries the build it was published with. If this file is newer, the
    browser handed us a cached page — the exact failure that has eaten hours. */
 const pageBuild = () => {
@@ -45,7 +45,7 @@ const SANDBOX_PREFIX = 'test-';
    answer stored inside it would be lost to any edit made while a parent was
    answering; and the rule that lets a parent write here grants this node and
    nothing else, so a parent can never touch the team or the game. */
-let state = { teams: {}, matches: {}, access: {}, rsvp: {}, children: {}, care: {}, teamCare: {} };
+let state = { teams: {}, matches: {}, access: {}, rsvp: {}, children: {}, care: {}, teamCare: {}, programs: {}, waivers: {}, regs: {}, agreed: {} };
 let ui = { view: 'calendar', gameView: 'subs', teamId: null, matchId: null, picked: null, dragging: false, editFid: null, sortBy: 'need', plan: null, snapAt: null, snapSid: null };
 let lastLog = [];
 let lastScreen = null;   // the screen render() last drew, so a redraw of the same one keeps its scroll
@@ -375,6 +375,9 @@ function forgetOthersChildren() {
   // care details: her own children's, and no team's copy (that team's coaches' and the admins')
   state.care = Object.fromEntries(Object.entries(state.care || {}).filter(([cid]) => state.children[cid]));
   state.teamCare = {};
+  // registrations: her own children's, and nobody's agreements but through her own form
+  state.regs = Object.fromEntries(Object.entries(state.regs || {}).map(([p, rs]) => [p, Object.fromEntries(Object.entries(rs || {}).filter(([cid]) => state.children[cid]))]));
+  state.agreed = {};
   delete (state.access || {}).log;
   if (state.access && state.access.members) state.access.members = Object.fromEntries(Object.entries(state.access.members).map(([k, m]) => [k, { name: (m && m.name) || '' }]));
   saveLocal();
@@ -476,7 +479,7 @@ function loadLocal() {
       localStorage.removeItem(LS_DATA);
     }
     const d = JSON.parse(localStorage.getItem(dataKey()) || 'null');
-    if (d) state = { teams: d.teams || {}, matches: d.matches || {}, access: d.access || {}, rsvp: d.rsvp || {}, children: d.children || {}, care: d.care || {}, teamCare: d.teamCare || {} };
+    if (d) state = { teams: d.teams || {}, matches: d.matches || {}, access: d.access || {}, rsvp: d.rsvp || {}, children: d.children || {}, care: d.care || {}, teamCare: d.teamCare || {}, programs: d.programs || {}, waivers: d.waivers || {}, regs: d.regs || {}, agreed: d.agreed || {} };
     const u = JSON.parse(localStorage.getItem(LS_UI) || 'null');
     if (u) Object.assign(ui, u);
     /* Before build 61 'live' was the coach's subs screen. Someone who left a
@@ -691,6 +694,7 @@ async function initAuth() {
       pushCheck();
       maybeLoadInvite();
       maybeLoadJoin();
+      if (regx && regx.status !== 'working') { regx.status = 'idle'; maybeLoadReg(); }
       watchMyClubs();
       render();
     };
@@ -715,7 +719,7 @@ async function initSync() {
     rtdb = { db, mod: dbMod };
     // an invite and the list of my clubs are both read before any workspace,
     // because a device with neither code nor role is exactly who needs them
-    authReady.then(() => { maybeLoadInvite(); maybeLoadJoin(); watchMyClubs(); pushCheck(); });
+    authReady.then(() => { maybeLoadInvite(); maybeLoadJoin(); maybeLoadReg(); watchMyClubs(); pushCheck(); });
 
     // appOwners is root-level and has nothing to do with any one workspace —
     // read it before a code even exists. A device with no workspace still
@@ -973,7 +977,18 @@ async function initSync() {
       const care = {}, teamCare = {};
       if (!r.all && me) await Promise.all(Object.keys(children).map(async c => { const v = await once('care/' + c); if (v) care[c] = v; }));
       await Promise.all(careTeams(r, access).map(async t => { const v = await once('teamCare/' + t); if (v !== undefined) teamCare[t] = v || {}; }));
-      return { r, access, org, names, teams, roster, matches, rsvp, members: membersV, mine, log, squads, kids, notes, children, care, teamCare };
+      /* Registration (AUTH.md, *Registration*): the programs and waivers
+         everyone in the club reads; every registration and agreement for an
+         admin, a program at a time; her own children's for a family. */
+      const [programs, waivers] = await Promise.all([once('programs'), once('waivers')]);
+      const regs = {}, agreed = {};
+      await Promise.all(Object.keys(programs || {}).map(async pg => {
+        if (r.admin) {
+          const [rv, av] = await Promise.all([once('regs/' + pg), once('agreed/' + pg)]);
+          regs[pg] = rv || {}; agreed[pg] = av || {};
+        } else if (me) await Promise.all(Object.keys(children).filter(c => kidIsMine(children[c])).map(async c => { const v = await once('regs/' + pg + '/' + c); if (v) (regs[pg] = regs[pg] || {})[c] = v; }));
+      }));
+      return { r, access, org, names, teams, roster, matches, rsvp, members: membersV, mine, log, squads, kids, notes, children, care, teamCare, programs: programs || {}, waivers: waivers || {}, regs, agreed };
     }
 
     const namesAsMembers = n => Object.fromEntries(Object.entries(n || {}).filter(([, x]) => x && typeof x === 'object').map(([u, x]) => [u, { name: String(x.name || '') }]));
@@ -1005,7 +1020,7 @@ async function initSync() {
         if (!t || typeof t !== 'object') continue;
         teams[tid] = { ...t, players: tid in x.squads ? squadWith(x.squads[tid], (x.notes || {})[tid], x.r.all) : fromRoster((x.roster || {})[tid], x.kids[tid]) };
       }
-      return { teams, matches: x.matches || {}, access, rsvp: x.rsvp || {}, children: x.children || {}, care: x.care || {}, teamCare: x.teamCare || {} };
+      return { teams, matches: x.matches || {}, access, rsvp: x.rsvp || {}, children: x.children || {}, care: x.care || {}, teamCare: x.teamCare || {}, programs: x.programs || {}, waivers: x.waivers || {}, regs: x.regs || {}, agreed: x.agreed || {} };
     }
 
     /* After the first read, the same parts listened to: a change to one never
@@ -1065,6 +1080,21 @@ async function initSync() {
           saveLocal(); render();
         }, () => { }));
       };
+      const setPart = (k, v) => { state[k] = v || {}; overlayPending(state[k], k); saveLocal(); render(); };
+      val('programs', v => {
+        setPart('programs', v);
+        // an admin listens to each program's registrations and agreements as it appears
+        if (r.admin) for (const pg of Object.keys(v || {})) watchRegs(pg);
+      });
+      val('waivers', v => setPart('waivers', v));
+      const regsWatched = new Set();
+      const watchRegs = pg => {
+        if (regsWatched.has(pg)) return;
+        regsWatched.add(pg);
+        val('regs/' + pg, v => { state.regs = state.regs || {}; state.regs[pg] = v || {}; saveLocal(); render(); });
+        val('agreed/' + pg, v => { state.agreed = state.agreed || {}; state.agreed[pg] = v || {}; saveLocal(); render(); });
+      };
+      if (r.admin) for (const pg of Object.keys(x.programs || {})) watchRegs(pg);
       for (const t of careTeams(r, x.access)) val('teamCare/' + t, v => { state.teamCare = state.teamCare || {}; state.teamCare[t] = v || {}; saveLocal(); render(); });
       if (r.all) val('children', v => {
         state.children = v || {};
@@ -1294,7 +1324,7 @@ function overlayPending(target, under) {
 function mergeConnect(v) {
   // a copy: what this phone owes is laid over it, and the snapshot it came in is not ours to change
   v = clone(v);
-  const remote = { teams: v.teams || {}, matches: v.matches || {}, access: v.access || {}, rsvp: v.rsvp || {}, children: v.children || {}, care: v.care || {}, teamCare: v.teamCare || {} };
+  const remote = { teams: v.teams || {}, matches: v.matches || {}, access: v.access || {}, rsvp: v.rsvp || {}, children: v.children || {}, care: v.care || {}, teamCare: v.teamCare || {}, programs: v.programs || {}, waivers: v.waivers || {}, regs: v.regs || {}, agreed: v.agreed || {} };
   const owed = [];
   for (const coll of ['teams', 'matches']) {
     for (const [id, x] of Object.entries(state[coll] || {})) {
@@ -6782,7 +6812,7 @@ function render() {
   let inGame = ui.view === 'game';
   // a game screen with no game is just four buttons that do nothing
   if (inGame && !match() && !teamMatches(ui.teamId).length) { ui.view = 'season'; inGame = false; }
-  if ((ui.view === 'admin' || ui.view === 'planner') && !canAdmin()) ui.view = 'club';
+  if ((ui.view === 'admin' || ui.view === 'planner' || ui.view === 'regs') && !canAdmin()) ui.view = 'club';
   if (ui.view === 'mine' && !anyPlayers()) ui.view = 'calendar';
   /* Not before the club has been read: a link to #/messages opened cold on a
      new phone renders before it knows anybody's role, and sending it to the
@@ -6841,6 +6871,7 @@ function render() {
   const v = ui.view;
   paintBell(shut);
   if (inviting) { app.innerHTML = inviteScreen(); saveUi(); watchMessages(); return; }
+  if (regx) { app.innerHTML = regScreen(); saveUi(); watchMessages(); return; }
   if (joining) { app.innerHTML = joinScreen(); saveUi(); watchMessages(); return; }
   if (purged) { app.innerHTML = purgedScreen(); saveUi(); watchMessages(); return; }
   if (denied || needsSignIn()) { app.innerHTML = lockScreen(); saveUi(); watchMessages(); return; }
@@ -6894,7 +6925,7 @@ function render() {
           v === 'season' ? viewSeason() :
             v === 'formation' ? viewFormation() : v === 'club' ? viewClub() : v === 'people' ? viewPeople() : v === 'admin' ? viewAdmin()
               : v === 'mine' ? viewMine() : v === 'practice' ? viewPractice()
-                : v === 'inbox' ? viewInbox() : v === 'notes' ? viewNotes() : v === 'thread' ? viewThread() : v === 'sessions' ? viewSessions() : v === 'planner' ? viewPlanner()
+                : v === 'inbox' ? viewInbox() : v === 'notes' ? viewNotes() : v === 'thread' ? viewThread() : v === 'sessions' ? viewSessions() : v === 'planner' ? viewPlanner() : v === 'regs' ? viewRegs()
                 : v === 'setup' ? viewSetup() : viewCalendar());
   } finally { placeMemo = null; }
   syncHash();
@@ -10355,7 +10386,7 @@ function viewMine() {
   const justMe = list.length && list.every(x => isMe(x.p)) && !away.length;
   return `<div class="stack">
     <h2>${justMe ? 'My season' : 'My players'}</h2>
-    ${recs}
+    ${recs}${regCards()}
     ${list.map(({ t, p, sup }) => {
     const ms = teamMatches(t.id);
     const played = ms.reduce((a, m) => a + playedSec(m, p.id), 0);
@@ -16043,6 +16074,9 @@ ${moveCard()}
       <button class="btn wide" data-act="schedule">Calendar: all teams</button>
       <button class="btn quiet wide" data-act="planner" style="margin-top:8px">Clashes, find a time, picture day</button></div>
 
+    ${onOrgs() ? `<div class="card"><h2 style="margin-bottom:8px">Registrations</h2>
+      <p class="muted" style="margin-top:0">${(n => n ? `${n} program${n === 1 ? '' : 's'}.` : 'None yet.')(programsAll().length)} What families register their children for, with its link, waivers, and who has registered.</p>
+      <button class="btn quiet wide" data-act="goview" data-v="regs">Registrations</button></div>` : ''}
     <div class="card"><h2 style="margin-bottom:8px">Fields and permits</h2>
       <p class="muted" style="margin-top:0">${fieldList().length ? `${fieldList().length} field${fieldList().length === 1 ? '' : 's'}.` : 'None yet.'} The places the club trains, the permits you hold for each and when, and what is booked on them.</p>
       <button class="btn quiet wide" data-act="sesstab" data-k="fields">Fields</button></div>
@@ -18178,6 +18212,8 @@ function sheetKid(cid) {
       : `<p style="margin:0 0 6px"><b>Born:</b> ${shown(c.born ? dayLabel(c.born) : '')}</p>
     <p style="margin:0 0 12px"><b>Gender:</b> ${shown(KID_GENDER[c.gender] || '')}</p>`}
     ${mayCare(c) ? careForm(careOf(c.id)) : ''}
+    ${!fam && mayDraftReg() ? (ps => ps.length ? `<p class="lbl">Register her for</p><p class="muted" style="margin-top:0">Her family is asked to finish it: what is missing, and the waivers, which only they can agree to.</p>
+      <div class="chips" style="margin-bottom:14px">${ps.map(pr => `<button class="chip" type="button" data-act="regdraft" data-prog="${esc(pr.id)}" data-id="${esc(c.id)}">${esc(pr.name)}</button>`).join('')}</div>` : '')(programsAll().filter(pr => progOpen(pr) && !regsOf(pr.id)[c.id] && !progFits(pr, c.born, c.gender))) : ''}
     ${ask ? `<button class="btn wide" data-act="kidconfirm" data-id="${esc(c.id)}">Confirm</button>`
       : edit ? `<button class="btn wide" data-act="kidsave" data-id="${esc(c.id)}">Save</button>` : ''}
     <button class="btn quiet wide" data-act="closesheet" style="margin-top:8px">${ask ? 'Later' : 'Close'}</button>`, true);
@@ -18198,6 +18234,363 @@ function kidCards() {
 function familyList(cid) {
   if (!fb || !me || !wsCode()) return;
   Promise.resolve(fb.set(fb.ref(fb.db, `families/${me.uid}/${wsCode()}/${cid}`), true)).catch(() => { });
+}
+
+/* ---------------- registration ---------------- */
+/* AUTH.md, *Registration* (step 3). A program is one thing to register for
+   (a season, a camp, tryouts, training sessions), with its birth years,
+   dates, fee (shown, never taken: payments are GOTSPORT.md step 5), its
+   questions and its waivers. Admins make them under Club → Registrations; a
+   program that is open has a link (regOpen/{id}, readable by anyone signed
+   in who has the id) which carries what a family who is not in the club yet
+   needs to fill the form, and nothing else. The family's child, care
+   details, registration and agreements are written by her own phone, in her
+   own name; only an admin moves a registration past sent, and accepting
+   lets the child, and so her family, into the club. A coach or an admin may
+   start one for a family (a draft) that her family finishes. */
+const REG_KIND = { season: 'Season', camp: 'Camp', tryout: 'Tryouts', sessions: 'Training sessions', other: 'Other' };
+const REG_ST = { draft: 'Waiting for the family', sent: 'Waiting for the club', accepted: 'Accepted', waitlist: 'On the waiting list', declined: 'Not this time', placed: 'On a team', withdrawn: 'Withdrawn' };
+const programsAll = () => Object.values(state.programs || {}).filter(p => p && p.id).sort((a, b) => (b.at || 0) - (a.at || 0));
+const waiversAll = () => Object.values(state.waivers || {}).filter(w => w && w.id).sort((a, b) => String(a.title).localeCompare(String(b.title)));
+const regsOf = prog => (state.regs || {})[prog] || {};
+const progOpen = (pr, day = todayStr()) => !!pr && !pr.closed && (!pr.opens || pr.opens <= day) && (!pr.closes || pr.closes >= day);
+const regLink = id => location.origin + location.pathname + '?reg=' + encodeURIComponent(id);
+const canRegs = () => !!(me && onOrgs() && canAdmin());
+const mayDraftReg = () => !!(me && onOrgs() && (isAdmin(me.uid) || (acc().coachIndex || {})[me.uid]));
+// why this child cannot be in this program, or ''
+function progFits(pr, born, gender) {
+  const y = born ? Number(String(born).slice(0, 4)) : null;
+  if (pr.born && y && (y < pr.born.lo || y > pr.born.hi)) return `${pr.name} is for children born ${pr.born.lo}${pr.born.hi !== pr.born.lo ? '–' + pr.born.hi : ''}`;
+  if (pr.gender && gender && gender !== pr.gender) return `${pr.name} is for ${pr.gender === 'F' ? 'girls' : 'boys'}`;
+  return '';
+}
+const progAsks = pr => Object.entries(pr.asks || {}).filter(([, q]) => q && q.q).sort((a, b) => (a[1].o || 0) - (b[1].o || 0));
+const progLine = pr => [REG_KIND[pr.kind] || '', pr.born ? `born ${pr.born.lo}${pr.born.hi !== pr.born.lo ? '–' + pr.born.hi : ''}` : '', pr.gender ? (pr.gender === 'F' ? 'girls' : 'boys') : '',
+  pr.closes ? 'closes ' + dayLabel(pr.closes) : '', pr.fee ? fmtMoney(pr.fee) : ''].filter(Boolean).join(' · ');
+
+/* The program link: what a family who is not in the club reads. Its own
+   copy of the program and of each waiver's text, so she needs nothing else
+   of the club's. Written by the admin's phone whenever the program or a
+   waiver it asks for changes, and taken down when it closes. */
+function regOpenDoc(pr) {
+  const org = acc().org || {};
+  const waivers = {};
+  for (const w of Object.keys(pr.waivers || {})) { const x = (state.waivers || {})[w]; if (x) waivers[w] = { title: x.title, v: x.v, text: x.text }; }
+  const asks = {};
+  for (const [k, q] of progAsks(pr)) asks[k] = { q: q.q, ...(q.need ? { need: true } : {}), o: q.o || 0 };
+  const out = { ws: wsCode(), prog: pr.id, name: pr.name, kind: pr.kind, club: String(org.name || '').slice(0, 120), money: String(org.money || '$').slice(0, 8), asks, waivers, by: me.uid, at: nowMs() };
+  for (const k of ['born', 'gender', 'opens', 'closes', 'fee', 'feeNote', 'about']) if (pr[k] !== undefined && pr[k] !== null && pr[k] !== '') out[k] = pr[k];
+  return out;
+}
+function publishProgram(pr) {
+  if (!fb || !onOrgs() || !pr || !pr.link) return Promise.resolve(false);
+  const ref = fb.ref(fb.db, 'regOpen/' + pr.link);
+  return Promise.resolve(pr.closed ? fb.remove(ref) : fb.set(ref, regOpenDoc(pr))).then(() => true, () => false);
+}
+
+/* ---- admins: programs, waivers and who has registered ---- */
+function viewRegs() {
+  if (!canRegs()) return `<div class="empty"><strong>Club admins only</strong>Registration is the club's admins'.</div>`;
+  const u = ui.regs = ui.regs || {};
+  const pr = u.prog && (state.programs || {})[u.prog];
+  if (pr) return viewRegList(pr);
+  const left = Object.values(state.children || {}).filter(c => c && c.left);
+  return `<div class="stack">
+    <div class="spread"><h2>Registrations</h2><button class="btn quiet sm" data-act="goview" data-v="admin">Back</button></div>
+    <p class="muted" style="margin-top:0">What families register their children for: a season, a camp, tryouts, training sessions. Each open program has a link to post wherever families will see it. Fees are shown, not taken; families pay the way you tell them.</p>
+    ${programsAll().map(p => {
+    const rs = Object.values(regsOf(p.id)), waiting = rs.filter(r => r && r.st === 'sent').length;
+    return `<button class="card" data-act="regprog" data-id="${esc(p.id)}" style="text-align:left;width:100%">
+      <b>${esc(p.name)}</b><span class="rowsub">${esc([p.closed ? 'Closed' : progOpen(p) ? 'Open' : 'Not open yet', progLine(p)].filter(Boolean).join(' · '))}</span>
+      <span class="rowsub">${rs.length} registered${waiting ? ` · ${waiting} waiting for you` : ''}</span></button>`;
+  }).join('') || '<div class="empty"><strong>No programs yet</strong>Make one, add its waivers, and post its link.</div>'}
+    <button class="btn wide" data-act="progedit">New program</button>
+    <div class="card"><h2 style="margin-bottom:8px">Waivers</h2>
+      <p class="muted" style="margin-top:0">The club's own words. A family agrees in her own name; change the words and the next registration asks again.</p>
+      <div class="plist">${waiversAll().map(w => `<button class="prow" type="button" data-act="waiveredit" data-id="${esc(w.id)}" style="grid-template-columns:1fr auto">
+        <span><span class="pname">${esc(w.title)}</span><span class="rowsub">Version ${w.v}</span></span><span class="muted">Edit</span></button>`).join('') || '<p class="muted" style="margin:0">None yet.</p>'}</div>
+      <button class="btn quiet wide" data-act="waiveredit" style="margin-top:10px">New waiver</button></div>
+    ${left.length ? `<div class="card"><h2 style="margin-bottom:8px">Left the club</h2>
+      <p class="muted" style="margin-top:0">Children whose family has deleted its account. Kept until you decide.</p>
+      <div class="plist">${left.map(c => `<button class="prow" type="button" data-act="kidopen" data-id="${esc(c.id)}" style="grid-template-columns:1fr"><span class="pname">${esc(kidName(c))}</span></button>`).join('')}</div></div>` : ''}
+  </div>`;
+}
+function viewRegList(pr) {
+  const u = ui.regs, f = u.st || 'all';
+  const rows = Object.entries(regsOf(pr.id)).filter(([, r]) => r && (f === 'all' || r.st === f))
+    .map(([cid, r]) => ({ cid, r, c: (state.children || {})[cid] || {} }))
+    .sort((a, b) => (b.r.sentAt || b.r.at || 0) - (a.r.sentAt || a.r.at || 0));
+  const chip = (k, l) => `<button class="chip" type="button" data-act="regfilter" data-k="${k}" aria-pressed="${f === k}">${l}</button>`;
+  return `<div class="stack">
+    <div class="spread"><h2>${esc(pr.name)}</h2><button class="btn quiet sm" data-act="regprog" data-id="">Back</button></div>
+    <p class="muted" style="margin-top:0">${esc([pr.closed ? 'Closed' : progOpen(pr) ? 'Open' : 'Not open yet', progLine(pr)].filter(Boolean).join(' · '))}</p>
+    ${pr.link && !pr.closed ? `<div class="row"><button class="btn" data-act="copylink" data-v="${esc(regLink(pr.link))}">Copy the link</button>
+      <button class="btn quiet" data-act="progedit" data-id="${esc(pr.id)}">Edit</button></div>`
+      : `<button class="btn quiet" data-act="progedit" data-id="${esc(pr.id)}">Edit</button>`}
+    <div class="chips">${chip('all', 'All')}${chip('sent', 'Waiting')}${chip('accepted', 'Accepted')}${chip('waitlist', 'Waiting list')}${chip('draft', 'Family to finish')}${chip('declined', 'Declined')}${chip('withdrawn', 'Withdrawn')}</div>
+    <div class="plist">${rows.map(({ cid, r, c }) => `<button class="prow" type="button" data-act="regopenone" data-prog="${esc(pr.id)}" data-id="${esc(cid)}" style="grid-template-columns:1fr auto">
+      <span><span class="pname">${esc(kidName(c))}${c.confirmed ? '' : ' <span class="tag wait">unconfirmed</span>'}</span>
+        <span class="rowsub">${esc([c.born ? 'born ' + dayLabel(c.born) : '', KID_GENDER[c.gender] || '', (r.fam || {}).name || ''].filter(Boolean).join(' · '))}</span></span>
+      <span class="tag">${esc(REG_ST[r.st] || r.st)}</span></button>`).join('') || '<p class="muted">Nobody here yet.</p>'}</div>
+  </div>`;
+}
+function sheetRegOne(prog, cid) {
+  const pr = (state.programs || {})[prog], r = regsOf(prog)[cid], c = (state.children || {})[cid] || {};
+  if (!pr || !r) return;
+  const ag = ((state.agreed || {})[prog] || {})[cid] || {};
+  const want = Object.keys(pr.waivers || {}).map(w => (state.waivers || {})[w]).filter(Boolean);
+  openSheet(`<h3>${esc(kidName(c))}</h3>
+    <p class="muted" style="margin-top:0">${esc(pr.name)} · ${esc(REG_ST[r.st] || r.st)}</p>
+    <p style="margin:0 0 6px"><b>Born:</b> ${c.born ? esc(dayLabel(c.born)) : 'not given'} · <b>Gender:</b> ${esc(KID_GENDER[c.gender] || 'not given')}</p>
+    <p style="margin:0 0 6px"><b>Registered by:</b> ${esc([(r.fam || {}).name, (r.fam || {}).email].filter(Boolean).join(' · ') || (r.by === 'club' ? 'the club' : 'staff, for her family'))}</p>
+    <p style="margin:0 0 12px"><b>Her details:</b> ${c.confirmed ? 'confirmed by her family' : 'not confirmed by her family yet'}</p>
+    ${progAsks(pr).map(([k, q]) => `<p style="margin:0 0 6px"><b>${esc(q.q)}</b><br>${esc(String(((r.answers || {})[k]) ?? '—'))}</p>`).join('')}
+    ${want.length ? `<p class="lbl">Waivers</p>${want.map(w => (a => `<p style="margin:0 0 6px">${esc(w.title)}: ${a ? `agreed by ${esc(a.name)}, ${esc(new Date(a.at).toLocaleDateString())}` : '<b>not agreed to this version</b>'}</p>`)(ag[w.id + '_' + w.v])).join('')}` : ''}
+    <label class="field"><span>Note (admins only)</span><input type="text" id="regNote" maxlength="500" value="${esc(r.note || '')}"></label>
+    <div class="row" style="flex-wrap:wrap;gap:8px">
+      ${['accepted', 'waitlist', 'declined'].map(st => `<button class="btn${st === 'accepted' ? '' : ' quiet'}" data-act="regset" data-prog="${esc(prog)}" data-id="${esc(cid)}" data-st="${st}" ${r.st === st ? 'disabled' : ''}>${{ accepted: 'Accept', waitlist: 'Waiting list', declined: 'Decline' }[st]}</button>`).join('')}
+    </div>
+    <button class="btn quiet wide" data-act="closesheet" style="margin-top:8px">Close</button>`, true);
+}
+function sheetProgram(id) {
+  const pr = id ? (state.programs || {})[id] : null;
+  const e = ui.progEdit = ui.progEdit && ui.progEdit.id === (id || '') ? ui.progEdit : { id: id || '', w: { ...((pr || {}).waivers || {}) } };
+  const v = pr || {};
+  openSheet(`<h3>${pr ? 'Edit ' + esc(pr.name) : 'New program'}</h3>
+    <label class="field"><span>Name</span><input type="text" id="pName" maxlength="80" value="${esc(v.name || '')}" placeholder="Fall 2027"></label>
+    <label class="field"><span>Kind</span><select id="pKind">${Object.entries(REG_KIND).map(([k, l]) => `<option value="${k}"${(v.kind || 'season') === k ? ' selected' : ''}>${l}</option>`).join('')}</select></label>
+    <div class="grid2">
+      <label class="field"><span>Born from</span><input type="number" inputmode="numeric" id="pLo" value="${esc(v.born ? String(v.born.lo) : '')}" placeholder="any"></label>
+      <label class="field"><span>Born up to</span><input type="number" inputmode="numeric" id="pHi" value="${esc(v.born ? String(v.born.hi) : '')}" placeholder="any"></label>
+    </div>
+    <label class="field"><span>For</span><select id="pGender"><option value="">Everyone</option><option value="F"${v.gender === 'F' ? ' selected' : ''}>Girls</option><option value="M"${v.gender === 'M' ? ' selected' : ''}>Boys</option></select></label>
+    <div class="grid2">
+      <label class="field"><span>Opens</span><input type="date" id="pOpens" value="${esc(v.opens || '')}"></label>
+      <label class="field"><span>Closes</span><input type="date" id="pCloses" value="${esc(v.closes || '')}"></label>
+    </div>
+    <div class="grid2">
+      <label class="field"><span>Places</span><input type="number" inputmode="numeric" id="pCap" value="${esc(v.cap != null ? String(v.cap) : '')}" placeholder="no limit"></label>
+      <label class="field"><span>Fee</span><input type="number" inputmode="decimal" id="pFee" value="${esc(v.fee != null ? String(v.fee) : '')}" placeholder="none"></label>
+    </div>
+    <label class="field"><span>How to pay</span><input type="text" id="pFeeNote" maxlength="200" value="${esc(v.feeNote || '')}" placeholder="Bank transfer to the club, reference her name"></label>
+    <label class="field"><span>About it</span><textarea id="pAbout" rows="2" maxlength="2000">${esc(v.about || '')}</textarea></label>
+    <label class="field"><span>Questions, one a line (start with * if it must be answered)</span><textarea id="pAsks" rows="3">${esc(progAsks(v).map(([, q]) => (q.need ? '*' : '') + q.q).join('\n'))}</textarea></label>
+    <p class="lbl">Waivers it asks for</p>
+    <div class="chips" style="margin-bottom:14px">${waiversAll().map(w => `<button class="chip" type="button" data-act="progwaiver" data-id="${esc(w.id)}" aria-pressed="${!!e.w[w.id]}">${esc(w.title)}</button>`).join('') || '<span class="muted">No waivers yet: add them under Registrations.</span>'}</div>
+    <button class="btn wide" data-act="progsave" data-id="${esc(id || '')}">Save</button>
+    ${pr ? `<button class="btn quiet wide" data-act="progclose" data-id="${esc(id)}" style="margin-top:8px">${pr.closed ? 'Open it again' : 'Close it: the link stops working'}</button>` : ''}
+    <button class="btn quiet wide" data-act="closesheet" style="margin-top:8px">Cancel</button>`, true);
+}
+function sheetWaiver(id) {
+  const w = id ? (state.waivers || {})[id] : null;
+  openSheet(`<h3>${w ? esc(w.title) : 'New waiver'}</h3>
+    <label class="field"><span>Title</span><input type="text" id="wTitle" maxlength="120" value="${esc((w || {}).title || '')}" placeholder="Photos and video"></label>
+    <label class="field"><span>The words a family agrees to</span><textarea id="wText" rows="8" maxlength="20000">${esc((w || {}).text || '')}</textarea></label>
+    ${w ? `<p class="muted">Version ${w.v}. Changing the words makes a new version, and families are asked again the next time they register.</p>` : ''}
+    <button class="btn wide" data-act="waiversave" data-id="${esc(id || '')}">Save</button>
+    <button class="btn quiet wide" data-act="closesheet" style="margin-top:8px">Cancel</button>`, true);
+}
+// the questions as an admin typed them, one a line, back into the program's shape
+function asksFrom(text, was) {
+  const out = {}, by = {};
+  for (const [k, q] of Object.entries(was || {})) by[q.q] = k;
+  String(text || '').split('\n').map(x => x.trim()).filter(Boolean).slice(0, 20).forEach((line, i) => {
+    const need = line.startsWith('*'), q = line.replace(/^\*\s*/, '').slice(0, 200);
+    if (!q) return;
+    const k = by[q] || ('q' + uid().slice(0, 8));
+    out[k] = { q, o: i, ...(need ? { need: true } : {}) };
+  });
+  return out;
+}
+
+/* ---- a family registering: the program link, or a draft to finish ---- */
+const LS_REG = 'sm.reg';
+let regx = null;
+// Taken off the address bar at load and kept, like an invite: signing in can lose the page.
+function captureReg() {
+  try {
+    const q = new URLSearchParams(location.search || '');
+    const id = (q.get('reg') || '').trim();
+    if (id) {
+      localStorage.setItem(LS_REG, id);
+      q.delete('reg');
+      const rest = q.toString();
+      history.replaceState(null, '', location.pathname + (rest ? '?' + rest : '') + (location.hash || ''));
+    }
+    const held = (localStorage.getItem(LS_REG) || '').trim();
+    regx = held ? { id: held, status: 'idle' } : null;
+  } catch (e) { regx = null; }
+}
+function openReg(id) {
+  try { localStorage.setItem(LS_REG, id); } catch (e) { }
+  regx = { id, status: 'idle' };
+  maybeLoadReg(); render();
+}
+function dropReg() { try { localStorage.removeItem(LS_REG); } catch (e) { } regx = null; }
+/* The link, then her children in that club (her own list, and the ones this
+   phone holds when it is the open club), each child's registration for it,
+   her care details and what she has agreed to. Each read is one she may make
+   whether or not she is in the club yet. */
+function maybeLoadReg() {
+  if (!regx || !rtdb || !me || regx.status !== 'idle') return;
+  regx.status = 'loading';
+  const { db, mod } = rtdb, id = regx.id, who = me.uid;
+  const once = p => new Promise(res => mod.onValue(mod.ref(db, p), s => res(s.val()), () => res(undefined), { onlyOnce: true }));
+  const mine = () => regx && regx.id === id && me && me.uid === who;
+  (async () => {
+    const doc = await once('regOpen/' + id);
+    if (!mine()) return;
+    if (doc === undefined) { regx.status = 'error'; render(); return; }
+    if (!doc || doc.closed) { regx.status = 'gone'; render(); return; }
+    const ws = doc.ws, B = 'orgs/' + ws + '/';
+    const listed = Object.keys((await once(`families/${who}/${ws}`)) || {});
+    const here = ws === wsCode() ? myClubKids().map(c => c.id) : [];
+    const kids = {}, regs = {}, care = {}, agreed = {};
+    await Promise.all([...new Set([...listed, ...here])].map(async c => {
+      const v = await once(B + 'children/' + c);
+      if (!v || typeof v !== 'object') return;
+      kids[c] = v;
+      const [r, cr, ag] = await Promise.all([once(B + 'regs/' + doc.prog + '/' + c), once(B + 'care/' + c), once(B + 'agreed/' + doc.prog + '/' + c)]);
+      regs[c] = r || null; care[c] = cr || null; agreed[c] = ag || {};
+    }));
+    if (!mine()) return;
+    Object.assign(regx, { doc, kids, regs, care, agreed, status: 'ready' });
+    render();
+  })();
+}
+function regScreen() {
+  const box = (title, body, btns) => `<div class="stack"><div class="empty"><strong>${title}</strong>${body}
+    <div class="row" style="margin-top:14px;justify-content:center">${btns}</div></div></div>`;
+  const later = `<button class="btn quiet" data-act="regdismiss">Not now</button>`;
+  const s = regx.status, d = regx.doc || {};
+  if (!fbConfig().apiKey) return box('Registration', 'This copy of the app is not connected to a database.', later);
+  if (!me) return box('Register a child with the club', 'Sign in first, with the account you want to keep: it is how the club will know you.', `<button class="btn" data-act="signinsheet">Sign in</button>${later}`);
+  if (s === 'idle' || s === 'loading') return box('Opening…', 'This needs a signal.', later);
+  if (s === 'gone') return box('Registration has closed', 'That link no longer works. Ask the club whether it is taking registrations.', `<button class="btn" data-act="regdismiss">OK</button>`);
+  if (s === 'error') return box('Could not open it', 'Check the signal and try again.', `<button class="btn" data-act="regretry">Try again</button>${later}`);
+  if (s === 'working') return box('Sending…', 'Keep this page open.', '');
+  if (regx.form) return regForm();
+  const kids = Object.values(regx.kids || {});
+  const fee = d.fee ? `${esc(d.money || '$')}${esc(String(d.fee))}` : '';
+  return `<div class="stack">
+    <h2>${esc(d.name || 'Registration')}</h2>
+    <p class="muted" style="margin-top:0">${esc(d.club || 'The club')} · ${esc([REG_KIND[d.kind] || '', d.born ? `for children born ${d.born.lo}${d.born.hi !== d.born.lo ? '–' + d.born.hi : ''}` : '', d.gender ? (d.gender === 'F' ? 'girls' : 'boys') : '', d.closes ? 'closes ' + dayLabel(d.closes) : ''].filter(Boolean).join(' · '))}</p>
+    ${d.about ? `<p>${esc(d.about)}</p>` : ''}
+    ${fee ? `<p><b>Fee:</b> ${fee}${d.feeNote ? ' · ' + esc(d.feeNote) : ''}. Paid to the club the way it says; nothing is taken here.</p>` : ''}
+    ${regx.sent ? `<div class="rolebar">Sent. The club will look at it and you'll see here how it stands.</div>` : ''}
+    ${kids.map(c => {
+    const r = regx.regs[c.id];
+    const act = !r || r.st === 'withdrawn' ? 'Register' : r.st === 'draft' ? 'Finish' : r.st === 'sent' ? 'Change' : '';
+    return `<div class="card"><b>${esc(kidName(c))}</b><span class="rowsub">${esc(r ? REG_ST[r.st] || r.st : 'Not registered for this')}</span>
+      ${act ? `<button class="btn${r && r.st === 'draft' ? '' : ' quiet'} wide" data-act="regform" data-id="${esc(c.id)}" style="margin-top:10px">${act}</button>` : ''}</div>`;
+  }).join('')}
+    <button class="btn wide" data-act="regform" data-id="new">Register ${kids.length ? 'another' : 'a'} child</button>
+    <button class="btn quiet wide" data-act="regdismiss">Close</button>
+  </div>`;
+}
+function regForm() {
+  const d = regx.doc, cid = regx.form, c = cid === 'new' ? {} : regx.kids[cid] || {};
+  const r = cid === 'new' ? null : regx.regs[cid], ag = cid === 'new' ? {} : regx.agreed[cid] || {};
+  const pick = regx.agree = regx.agree || {};
+  const asks = Object.entries(d.asks || {}).sort((a, b) => (a[1].o || 0) - (b[1].o || 0));
+  const ws = Object.entries(d.waivers || {});
+  return `<div class="stack">
+    <h2>${esc(d.name)}</h2>
+    ${r && r.st === 'draft' ? `<p class="muted" style="margin-top:0">The club started this for you. Check it, fill in what is missing and send it.</p>` : ''}
+    <div class="grid2">
+      <label class="field"><span>Her first name</span><input type="text" id="kFirst" maxlength="60" value="${esc(c.first || '')}"></label>
+      <label class="field"><span>Last name</span><input type="text" id="kLast" maxlength="60" value="${esc(c.last || '')}"></label>
+    </div>
+    <label class="field"><span>Birth date</span><input type="date" id="kBorn" value="${esc(c.born || '')}"></label>
+    <p class="lbl">Gender, as the state's registration asks</p>
+    <div class="chips" style="margin-bottom:14px">${Object.entries(KID_GENDER).map(([k, l]) => `<button class="chip" type="button" data-act="pickone" data-grp="kgender" data-v="${k}" aria-pressed="${c.gender === k}">${l}</button>`).join('')}</div>
+    ${careForm(cid === 'new' ? null : regx.care[cid])}
+    ${asks.map(([k, q]) => `<label class="field"><span>${esc(q.q)}${q.need ? ' *' : ''}</span><textarea id="ra_${esc(k)}" rows="1" maxlength="500">${esc(String(((r || {}).answers || {})[k] ?? ''))}</textarea></label>`).join('')}
+    ${ws.length ? `<p class="lbl">Waivers</p>${ws.map(([w, x]) => ag[w + '_' + x.v] ? `<p class="muted">${esc(x.title)}: agreed already.</p>`
+      : `<div class="card"><b>${esc(x.title)}</b><p style="white-space:pre-wrap;margin:6px 0">${esc(x.text)}</p>
+        <button class="chip" type="button" data-act="regagree" data-w="${esc(w)}" aria-pressed="${!!pick[w]}">I agree</button></div>`).join('')}
+      <label class="field"><span>Your full name, as your signature</span><input type="text" id="rwName" maxlength="80" value="${esc(me.name || '')}"></label>` : ''}
+    <button class="btn wide" data-act="regsend">Send</button>
+    <button class="btn quiet wide" data-act="regform" data-id="">Back</button>
+  </div>`;
+}
+/* Sending: each write awaited, in the order the rules read them (the child,
+   her own list, care, the registration, then each agreement), straight to
+   the club's tree: it needs a signal, as booking a coach's time does, and
+   says so rather than leaving half a registration on the phone. */
+// SERVER.md: several writes in the order the rules need; a server would do it in one call.
+async function sendReg() {
+  if (!regx || regx.status !== 'ready' || !regx.form || !rtdb || !me) return;
+  const d = regx.doc, ws = d.ws, B = 'orgs/' + ws + '/', who = me.uid, at = nowMs();
+  const fresh = regx.form === 'new', cid = fresh ? uid() : regx.form, c = fresh ? {} : regx.kids[cid] || {};
+  const first = $('#kFirst').value.trim().slice(0, 60), last = $('#kLast').value.trim().slice(0, 60), born = $('#kBorn').value;
+  const gEl = document.querySelector('[data-act="pickone"][data-grp="kgender"][aria-pressed="true"]');
+  const gender = gEl && KID_GENDER[gEl.dataset.v] ? gEl.dataset.v : (c.gender || '');
+  if (!first) { toast('Her first name, please'); return; }
+  if (!born || !BORN_OK.test(born) || !gender) { toast('Her birth date and gender, please: the club needs both'); return; }
+  const why = progFits(d, born, gender);
+  if (why) { toast(why); return; }
+  const cr = careRead();
+  if (cr.why) { toast(cr.why); return; }
+  if (!cr.rec.contacts) { toast('Someone the coach can call, please'); return; }
+  const answers = {};
+  for (const [k, q] of Object.entries(d.asks || {})) {
+    const v = ($('#ra_' + k).value || '').trim().slice(0, 500);
+    if (q.need && !v) { toast(`Please answer: ${q.q}`); return; }
+    if (v) answers[k] = v;
+  }
+  const ag = fresh ? {} : regx.agreed[cid] || {};
+  const owed = Object.entries(d.waivers || {}).filter(([w, x]) => !ag[w + '_' + x.v]);
+  if (owed.some(([w]) => !(regx.agree || {})[w])) { toast('Each waiver needs your agreement'); return; }
+  const sig = owed.length ? ($('#rwName').value || '').trim().slice(0, 80) : '';
+  if (owed.length && !sig) { toast('Type your full name to sign'); return; }
+  const { db, mod } = rtdb;
+  const put = (p, v) => mod.set(mod.ref(db, p), v);
+  regx.status = 'working'; render();
+  try {
+    if (fresh) await put(B + 'children/' + cid, { id: cid, first, ...(last ? { last } : {}), born, gender, by: who, at, via: regx.id, family: { [who]: regx.id }, confirmed: { by: who, at } });
+    else {
+      for (const [f, v] of [['first', first], ['last', last], ['born', born], ['gender', gender]]) if (v && c[f] !== v) await put(B + `children/${cid}/${f}`, v);
+      if (!c.confirmed) await put(B + `children/${cid}/confirmed`, { by: who, at });
+    }
+    await put(`families/${who}/${ws}/${cid}`, true);
+    const was = fresh ? null : regx.care[cid];
+    if (!careSame(cr.rec, was)) await put(B + 'care/' + cid, { ...cr.rec, by: who, at });
+    const r0 = fresh ? null : regx.regs[cid];
+    await put(B + `regs/${d.prog}/${cid}`, {
+      st: 'sent', by: r0 && r0.by ? r0.by : who, at: r0 && r0.at ? r0.at : at, sentBy: who, sentAt: at, answers,
+      fam: { name: String(me.name || '').slice(0, 80), email: String(me.email || '').slice(0, 120) }
+    });
+    for (const [w, x] of owed) await put(B + `agreed/${d.prog}/${cid}/${w}_${x.v}`, { by: who, at, name: sig });
+    if (ws === wsCode()) noteMine('children/' + cid);
+    Object.assign(regx, { status: 'idle', form: null, agree: {}, sent: true });
+    maybeLoadReg();
+    toast('Sent');
+  } catch (e) {
+    regx.status = 'ready';
+    toast(/permission|denied/i.test(String((e && e.code) || e)) ? 'The club\'s database refused it. Registration may have closed, or the club has not updated its rules yet.' : 'Not sent: check the signal and try again.');
+    render();
+  }
+}
+/* What a family in the club sees on My players: a registration the club
+   started for her to finish, and each open program a child of hers fits. */
+function regCards() {
+  if (!me || !onOrgs()) return '';
+  const out = [];
+  for (const pr of programsAll()) {
+    if (!progOpen(pr) || !pr.link) continue;
+    for (const c of myClubKids()) {
+      const r = regsOf(pr.id)[c.id];
+      if (r && r.st === 'draft') out.push(`<div class="card"><b>Finish ${esc(c.first || 'her')}’s registration for ${esc(pr.name)}</b>
+        <p class="muted" style="margin:6px 0 10px">The club started it; it needs you to check it and agree to its waivers.</p>
+        <button class="btn wide" data-act="regopen" data-id="${esc(pr.link)}">Finish it</button></div>`);
+      else if (!r && !progFits(pr, c.born, c.gender) && c.born) out.push(`<div class="card"><b>${esc(pr.name)} is open</b>
+        <p class="muted" style="margin:6px 0 10px">${esc(progLine(pr))}</p>
+        <button class="btn quiet wide" data-act="regopen" data-id="${esc(pr.link)}">Register ${esc(c.first || 'her')}</button></div>`);
+      else if (r && r.st !== 'withdrawn') out.push(`<p class="muted">${esc(c.first || 'Your child')} · ${esc(pr.name)}: ${esc(REG_ST[r.st] || r.st)}</p>`);
+    }
+  }
+  return out.join('');
 }
 
 /* A player's own sign-in, the coach's to give (AUTH.md, "A player with her
@@ -19987,6 +20380,99 @@ function onAct(e) {
     else toast('Saved');
     closeSheet(); render(); return;
   }
+  /* Registration (AUTH.md, *Registration*). The family's form needs nobody's
+     role (she may not be in the club yet: the rules hold her to her own
+     child); everything an admin does is checked here as well as drawn only
+     for her; a draft for a family is staff's. */
+  if (a === 'regopen') { closeSheet(); openReg(d.id); return; }
+  if (a === 'regdismiss') { dropReg(); render(); return; }
+  if (a === 'regretry') { if (regx) { regx.status = 'idle'; maybeLoadReg(); } render(); return; }
+  if (a === 'regform') { if (regx) { regx.form = d.id || null; regx.agree = {}; } render(); return; }
+  if (a === 'regagree') { if (regx) { const g = regx.agree = regx.agree || {}; g[d.w] = !g[d.w]; } render(); return; }
+  if (a === 'regsend') { sendReg(); return; }
+  if (a === 'regdraft') {
+    const c = clubKids()[d.id], pr = (state.programs || {})[d.prog];
+    if (!mayDraftReg() || !c || !pr) { toast('A coach or an admin starts a registration for a family'); return; }
+    if (!progOpen(pr)) { toast(`${pr.name} is not open`); return; }
+    if (regsOf(pr.id)[c.id]) { toast(`${c.first || 'She'} is registered for it already`); return; }
+    const rec = { st: 'draft', by: me.uid, at: nowMs() };
+    Promise.resolve(fb && fb.set(fb.ref(fb.db, clubPath(`regs/${pr.id}/${c.id}`)), rec)).then(() => {
+      setDeep(state, `regs/${pr.id}/${c.id}`, rec); saveLocal(); noteMine(`regs/${pr.id}/${c.id}`);
+      toast(`Started: her family is asked to finish it`); render();
+    }, () => toast('Refused: she may have a registration for it already'));
+    closeSheet(); return;
+  }
+  if (['regprog', 'regfilter', 'regopenone', 'regset', 'progedit', 'progwaiver', 'progsave', 'progclose', 'waiveredit', 'waiversave'].includes(a)) {
+    if (!canRegs()) { toast('Registration is the club admins\''); return; }
+    const u = ui.regs = ui.regs || {};
+    if (a === 'regprog') { u.prog = d.id || null; u.st = 'all'; render(); return; }
+    if (a === 'regfilter') { u.st = d.k; render(); return; }
+    if (a === 'regopenone') { sheetRegOne(d.prog, d.id); return; }
+    if (a === 'regset') {
+      const pr = (state.programs || {})[d.prog], r = regsOf(d.prog)[d.id], c = clubKids()[d.id];
+      if (!pr || !r) return;
+      const note = ($('#regNote').value || '').trim().slice(0, 500);
+      if (note !== (r.note || '')) { if (note) commit(`regs/${d.prog}/${d.id}/note`, note); else drop(`regs/${d.prog}/${d.id}/note`); }
+      commit(`regs/${d.prog}/${d.id}/st`, d.st);
+      /* Accepting lets the child into the club, and so her family: the
+         index rule lets them in through her, and the server does it too. */
+      if (d.st === 'accepted' && c) {
+        if (c.club !== true) commit(`children/${c.id}/club`, true);
+        for (const fu of Object.keys(c.family || {})) if (!(acc().index || {})[fu]) quiet(`access/index/${fu}`, c.id);
+        saveLocal();
+      }
+      toast(REG_ST[d.st]); closeSheet(); render(); return;
+    }
+    if (a === 'progedit') { ui.progEdit = null; sheetProgram(d.id || ''); return; }
+    if (a === 'progwaiver') { const e = ui.progEdit; if (e) { if (e.w[d.id]) delete e.w[d.id]; else e.w[d.id] = true; } if (el.setAttribute) el.setAttribute('aria-pressed', String(!!(e && e.w[d.id]))); return; }
+    if (a === 'progsave') {
+      const was = d.id ? (state.programs || {})[d.id] : null;
+      const name = $('#pName').value.trim().slice(0, 80);
+      if (!name) { toast('Give it a name'); return; }
+      const lo = Number($('#pLo').value) || null, hi = Number($('#pHi').value) || null;
+      if ((lo || hi) && (!lo || !hi || lo > hi || lo < 1990 || hi > 2100)) { toast('Both birth years, the earlier first'); return; }
+      const opens = $('#pOpens').value, closes = $('#pCloses').value;
+      if (opens && closes && closes < opens) { toast('It closes before it opens'); return; }
+      const num = id => { const v = $(id).value.trim(); return v === '' ? null : Number(v); };
+      const cap = num('#pCap'), fee = num('#pFee');
+      if ((cap !== null && !(cap >= 1)) || (fee !== null && !(fee >= 0))) { toast('Places and fee are numbers'); return; }
+      const id = was ? was.id : uid();
+      const rec = {
+        id, name, kind: REG_KIND[$('#pKind').value] ? $('#pKind').value : 'season', by: me.uid, at: nowMs(),
+        link: was && was.link ? was.link : randId('r', 12), asks: asksFrom($('#pAsks').value, (was || {}).asks),
+        waivers: { ...((ui.progEdit || {}).w || {}) },
+        ...(lo ? { born: { lo, hi } } : {}), ...($('#pGender').value === 'F' || $('#pGender').value === 'M' ? { gender: $('#pGender').value } : {}),
+        ...(opens ? { opens } : {}), ...(closes ? { closes } : {}), ...(cap !== null ? { cap } : {}), ...(fee !== null ? { fee } : {}),
+        ...($('#pFeeNote').value.trim() ? { feeNote: $('#pFeeNote').value.trim().slice(0, 200) } : {}),
+        ...($('#pAbout').value.trim() ? { about: $('#pAbout').value.trim().slice(0, 2000) } : {}),
+        ...(was && was.closed ? { closed: true } : {})
+      };
+      commit(`programs/${id}`, rec); publishProgram(rec);
+      ui.progEdit = null; closeSheet(); u.prog = id; render(); toast('Saved'); return;
+    }
+    if (a === 'progclose') {
+      const pr = (state.programs || {})[d.id];
+      if (!pr) return;
+      const rec = { ...pr, at: nowMs() };
+      if (pr.closed) delete rec.closed; else rec.closed = true;
+      commit(`programs/${pr.id}`, rec); publishProgram(rec);
+      closeSheet(); render(); toast(rec.closed ? 'Closed: the link no longer works' : 'Open again'); return;
+    }
+    if (a === 'waiveredit') { sheetWaiver(d.id || ''); return; }
+    if (a === 'waiversave') {
+      const was = d.id ? (state.waivers || {})[d.id] : null;
+      const title = $('#wTitle').value.trim().slice(0, 120), text = $('#wText').value.trim().slice(0, 20000);
+      if (!title || !text) { toast('A title and the words, please'); return; }
+      const id = was ? was.id : uid();
+      const changed = was && was.text !== text;
+      const rec = { id, title, text, v: was ? (changed ? was.v + 1 : was.v) : 1, by: me.uid, at: nowMs(), ...(was && was.old ? { old: was.old } : {}) };
+      // the words a family agreed to are kept: an agreement names its version
+      if (changed) rec.old = { ...(rec.old || {}), [was.v]: { text: was.text, at: was.at || nowMs() } };
+      commit(`waivers/${id}`, rec);
+      for (const pr of programsAll()) if ((pr.waivers || {})[id] && !pr.closed) publishProgram(pr);
+      closeSheet(); render(); toast(changed ? `Saved as version ${rec.v}: families are asked again` : 'Saved'); return;
+    }
+  }
   if (a === 'fansheet' || a === 'faninvite' || a === 'faninvdrop') {
     const t2 = state.teams[d.tid], p = t2 && (t2.players || {})[d.pid];
     if (!mayFanAsk(d.tid, p)) { toast('Her family, her coach or an admin asks for a fan'); return; }
@@ -21186,6 +21672,7 @@ function uiToHash() {
   if (ui.view === 'club') return '#/club';
   if (ui.view === 'admin') return '#/club/settings';
   if (ui.view === 'planner') return '#/club/planner';
+  if (ui.view === 'regs') return '#/club/registrations';
   if (ui.view === 'mine') return '#/my-players';
   if (ui.view === 'inbox') return '#/messages';
   if (ui.view === 'notes') return '#/notifications';
@@ -21203,7 +21690,7 @@ function hashToUi() {
      address (build 102): All teams on the Calendar. #/my-calendar is what My
      calendar's feed links back to. */
   if (p[0] === 'club' && (p[1] === 'calendar' || p[1] === 'schedule')) { ui.view = 'calendar'; ui.calSel = 'club'; return true; }
-  if (p[0] === 'club') { ui.view = p[1] === 'settings' ? 'admin' : p[1] === 'people' ? 'people' : p[1] === 'planner' ? 'planner' : 'club'; return true; }
+  if (p[0] === 'club') { ui.view = p[1] === 'settings' ? 'admin' : p[1] === 'people' ? 'people' : p[1] === 'planner' ? 'planner' : p[1] === 'registrations' ? 'regs' : 'club'; return true; }
   if (p[0] === 'my-players') { ui.view = 'mine'; return true; }
   if (p[0] === 'my-calendar') { ui.view = 'calendar'; ui.calSel = 'mine'; return true; }
   if (p[0] === 'calendar') { ui.view = 'calendar'; ui.calSel = p[1] === 'all' ? 'club' : 'mine'; return true; }
@@ -21297,6 +21784,7 @@ if (typeof window !== 'undefined' && window.addEventListener) {
 /* ---------------- boot ---------------- */
 captureInvite();
 captureJoin();
+captureReg();
 captureOpen();
 pushLoad();
 loadLocal();
