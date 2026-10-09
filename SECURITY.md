@@ -18,7 +18,25 @@ under **Before families come on** can be done without disturbing anyone.
 
 ## Before families come on
 
-Nothing left here: SEC-1 is done (SEC-D9 below).
+SEC-1 is done (SEC-D9 below).
+
+### SEC-12 · The coach's notes are coaches' and admins' only
+- **Status:** To do · **Kind:** Code (server, app), then rules · **Size:** Medium
+- **Decided 2026-10-09 (the owner):** a coach's `note`, `rating`, `pairs`
+  and `avoid` on a child are read by coaches and admins only. No one else:
+  not trackers, not her family, not the player herself, and not the new
+  roles in AUTH.md, *More kinds of people*.
+- **Why:** on `orgs/` they sit on the child's own record,
+  `squad/{tid}/{pid}`, which her family and the player read. A note like
+  "keep away from #9" or a low rating reaching the family is the kind of
+  thing that ends up in a parents' group chat.
+- **Plan:** AUTH.md, *The coach's notes come off the child's record
+  first*: a `coachNotes/{tid}/{pid}` node with its own readers, moved
+  there by the server, written there by the phone through `clubPath()`,
+  and refused on `squad/` afterwards.
+- **Done when:** `test/rules.js` refuses a family, a player and a tracker
+  the notes on both trees, `test/orgs.js` finds none on a family's phone,
+  and the coach still sees and edits them.
 
 ---
 

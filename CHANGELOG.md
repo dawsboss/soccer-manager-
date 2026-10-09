@@ -16,7 +16,13 @@ helpers (a manager, a volunteer), club-wide viewers (a director) and
 outside people (a referee, a scout, a guest coach). AUTH.md, *More kinds of
 people*, says where each would live, what it reads and does, what each
 costs in the rules, the app and the server, the order to build them in,
-and six decisions for the owner. No code yet: a role is a schema and rules
+and the owner's six decisions (the same day): supporters asked for by
+anyone and approved by the coach; helpers who plan practices and games but
+read no family's conversations; viewers who see games with names and
+nothing more; signed-in guests with names, the game link still without.
+And one that comes first: the coach's notes on a child are coaches' and
+admins' only, so they come off the child's record before any new role
+reads it (SECURITY.md, SEC-12). No code yet: a role is a schema and rules
 change, and this file is where those are settled first.
 
 ---
