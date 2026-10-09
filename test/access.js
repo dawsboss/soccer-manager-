@@ -77,7 +77,7 @@ const club = S => { const t = JSON.parse(JSON.stringify(S.tree)); delete t.serve
 // key order is not the database's business
 const canon = v => JSON.stringify(v, (k, x) => (x && typeof x === 'object' && !Array.isArray(x) ? Object.fromEntries(Object.keys(x).sort().map(n => [n, x[n]])) : x));
 // everything under the club except the tables a change to `who` may move
-const rest = S => canon({ ...S.at('workspaces/CLUB'), access: { ...S.at(W + 'access'), index: null, teamIndex: null, teamParents: null, teamPlayers: null, coachIndex: null } });
+const rest = S => canon({ ...S.at('workspaces/CLUB'), access: { ...S.at(W + 'access'), index: null, teamIndex: null, teamParents: null, teamPlayers: null, coachIndex: null, helperIndex: null } });
 
 (async () => {
 
@@ -85,24 +85,25 @@ const rest = S => canon({ ...S.at('workspaces/CLUB'), access: { ...S.at(W + 'acc
   {
     const S = server();
     deepEq('one per place a role lives', Object.keys(S.triggers).filter(n => /^access/.test(n)).sort(), 
-      // each once per tree while clubs move to orgs/ (functions/index.js, both())
-      // a player's fans live on orgs/ only (AUTH.md, *More kinds of people*, 1)
-      ['accessAdmin', 'accessAdminOrgs', 'accessFansOrgs', 'accessGuardians', 'accessGuardiansOrgs', 'accessSelf', 'accessSelfOrgs', 'accessStaff', 'accessStaffOrgs']);
+      // each once per tree while clubs move to orgs/ (functions/index.js, both()); a club viewer and a player's fans only on orgs/
+      ['accessAdmin', 'accessAdminOrgs', 'accessFansOrgs', 'accessGuardians', 'accessGuardiansOrgs', 'accessSelf', 'accessSelfOrgs', 'accessStaff', 'accessStaffOrgs', 'accessViewer']);
     // and who runs the club is told (adminwatch.js, test/owners.js)
     deepEq('an admin given', (await S.wouldWake(W + 'access/admins/new', true)).sort(), ['accessAdmin', 'watchAdmin']);
-    deepEq('a coach given', await S.wouldWake(W + 'access/teams/t1/coaches/new', true), ['accessStaff']);
-    deepEq('a family linked', await S.wouldWake(W + 'teams/t1/players/p2/guardians/new', true), ['accessGuardians']);
-    deepEq('a player\'s own sign-in', await S.wouldWake(W + 'teams/t1/players/p2/self/new', true), ['accessSelf']);
+    // the share pages wake on play and on a player (mirror.js, test/mirror.js); what is asked here is the tables
+    const mine = ns => ns.filter(n => !/^(publish|mirror)/.test(n));
+    deepEq('a coach given', mine(await S.wouldWake(W + 'access/teams/t1/coaches/new', true)), ['accessStaff']);
+    deepEq('a family linked', mine(await S.wouldWake(W + 'teams/t1/players/p2/guardians/new', true)), ['accessGuardians']);
+    deepEq('a player\'s own sign-in', mine(await S.wouldWake(W + 'teams/t1/players/p2/self/new', true)), ['accessSelf']);
     const g = S.at(W + 'matches/g1');
-    check('a goal wakes none of it', (await S.wouldWake(W + 'matches/g1/events/x1', { type: 'goal', t: 60 })).length, 0);
-    check('nor a sub', (await S.wouldWake(W + 'matches/g1/stints/s1', { pid: 'p1', start: 0 })).length, 0);
-    check('nor a whole game saved', (await S.wouldWake(W + 'matches/g1', { ...g, score: 2 })).length, 0);
-    check('nor a player\'s number', (await S.wouldWake(W + 'teams/t1/players/p1/number', '8')).length, 0);
-    check('nor the register', (await S.wouldWake(W + 'teams/t1/attend/e1/p1', true)).length, 0);
+    check('a goal wakes none of it', mine(await S.wouldWake(W + 'matches/g1/events/x1', { type: 'goal', t: 60 })).length, 0);
+    check('nor a sub', mine(await S.wouldWake(W + 'matches/g1/stints/s1', { pid: 'p1', start: 0 })).length, 0);
+    check('nor a whole game saved', mine(await S.wouldWake(W + 'matches/g1', { ...g, score: 2 })).length, 0);
+    check('nor a player\'s number', mine(await S.wouldWake(W + 'teams/t1/players/p1/number', '8')).length, 0);
+    check('nor the register', mine(await S.wouldWake(W + 'teams/t1/attend/e1/p1', true)).length, 0);
     const t = S.at(W + 'teams/t1');
-    check('nor the whole team saved with nobody\'s role changed', (await S.wouldWake(W + 'teams/t1', { ...t, name: 'Flight FC' })).length, 0);
+    check('nor the whole team saved with nobody\'s role changed', mine(await S.wouldWake(W + 'teams/t1', { ...t, name: 'Flight FC' })).length, 0);
     const t2 = JSON.parse(JSON.stringify(t)); t2.players.p2.guardians.newmum = true;
-    deepEq('the whole team saved with one family added wakes that player\'s alone', await S.wouldWake(W + 'teams/t1', t2), ['accessGuardians']);
+    deepEq('the whole team saved with one family added wakes that player\'s alone', mine(await S.wouldWake(W + 'teams/t1', t2)), ['accessGuardians']);
     check('a member\'s name changed wakes nothing', (await S.wouldWake(W + 'access/members/mum', { name: 'Mo' })).length, 0);
     check('nor the tables themselves, so it never wakes itself', (await S.wouldWake(W + 'access/index/zz', true)).length + (await S.wouldWake(W + 'access/teamParents/t1/zz', 'p1')).length, 0);
   }
@@ -219,6 +220,43 @@ const rest = S => canon({ ...S.at('workspaces/CLUB'), access: { ...S.at(W + 'acc
     await S.fire(W + 'access/teams/t1/coaches/newc', true);
     check('a club with no teamIndex yet: not started by one coach (the bridge)', A_(S, 'teamIndex'), null);
     check('coachIndex has no bridge, so it is written', A_(S, 'coachIndex/newc'), 't1');
+  }
+
+  console.log('--- team helpers (AUTH.md, *More kinds of people*, 2) ---');
+  {
+    const S = server();
+    await S.fire(W + 'access/teams/t1/helpers/hlp', 'inv_h');
+    check('a helper given: the team\'s index says helper', A_(S, 'teamIndex/t1/hlp'), 'helper');
+    check('her helperIndex names the team, for the training rules', A_(S, 'helperIndex/hlp'), 't1');
+    check('she is never in the coaches\' index', A_(S, 'coachIndex/hlp'), null);
+    check('in the club', A_(S, 'index/hlp'), true);
+    check('with a bookmark', !!S.at('userOrgs/hlp/CLUB'), true);
+    check('the team\'s other entries as they were', canon(A_(S, 'teamIndex/t1')), canon({ coach: 'coach', trk: 'tracker', hlp: 'helper' }));
+    await S.fire(W + 'access/teams/t1/helpers/trk', true);
+    check('a tracker who helps as well stays tracker in the index', A_(S, 'teamIndex/t1/trk'), 'tracker');
+    check('— and is in helperIndex all the same', A_(S, 'helperIndex/trk'), 't1');
+    await S.fire(W + 'access/teams/t1/helpers/coach', true);
+    check('a coach who helps too stays coach', A_(S, 'teamIndex/t1/coach'), 'coach');
+    await S.fire(W + 'access/teams/t1/helpers/hlp', null);
+    check('taken away: off the team\'s index', A_(S, 'teamIndex/t1/hlp'), null);
+    check('— out of helperIndex', A_(S, 'helperIndex/hlp'), null);
+    check('— out of the club, with no other role', A_(S, 'index/hlp'), null);
+    check('— and her bookmark goes', S.at('userOrgs/hlp/CLUB'), null);
+    await S.fire(W + 'access/teams/t1/helpers/trk', null);
+    check('the tracker\'s help taken away: still tracker', A_(S, 'teamIndex/t1/trk'), 'tracker');
+    check('— out of helperIndex', A_(S, 'helperIndex/trk'), null);
+    check('— still in the club', A_(S, 'index/trk'), true);
+  }
+  {
+    const S = server(c => { c.access.teams.t2.helpers = { h2: true }; c.access.teams.t1.helpers = { h2: true }; c.access.helperIndex = { h2: 't2' }; c.access.index.h2 = true; });
+    await S.fire(W + 'access/teams/t2/helpers/h2', null);
+    check('a helper of two teams loses the one helperIndex named: it moves to the other', A_(S, 'helperIndex/h2'), 't1');
+    check('— and she stays in the club', A_(S, 'index/h2'), true);
+  }
+  {
+    const S = server(c => { c.access.members.hlp = { name: 'Hal', email: 'hal@example.com' }; });
+    await S.fire(W + 'access/teams/t1/helpers/hlp', true);
+    check('on the old tree there is no names/ to write', S.at(W + 'names'), null);
   }
 
   console.log('--- admins, and a player\'s own sign-in ---');
@@ -346,6 +384,38 @@ const rest = S => canon({ ...S.at('workspaces/CLUB'), access: { ...S.at(W + 'acc
     check('but never the link others are still to use', !!S.at('invites/mShared0001'), true);
   }
 
+  /* AUTH.md, *More kinds of people*, 3, on orgs/ only. A club viewer is in
+     the index like any role (the owner, 2026-10-09): given, she is indexed
+     and bookmarked; a coach who stops coaching but still views the club
+     stays; taken away, she leaves both and the invite she came by goes. */
+  console.log('--- a club viewer (orgs/ only) ---');
+  {
+    const O = 'orgs/VC/';
+    const S = makeServer({
+      orgs: { VC: {
+        access: { admins: { adm: true }, index: { adm: true, coach: true }, teams: { t1: { coaches: { coach: true } } }, teamIndex: { t1: { coach: 'coach' } },
+          viewers: { coach: true } },
+        org: { name: 'Viewers FC' }, members: {}, teams: { t1: { id: 't1', name: 'Flight' } }, squad: { t1: {} }
+      } },
+      userOrgs: {},
+      invites: { inv_dee: { ws: 'VC', role: 'viewer' } }
+    });
+    S.loadFunctions();
+    // in the orgs pass the fake server reads every club back in the old tree's shape
+    const IX = u => (require('./fakebase').ORGS_MODE ? 'workspaces/VC/' : O) + 'access/index/' + u;
+    await S.fire(O + 'access/viewers/dee', 'inv_dee');
+    check('a viewer given: she is indexed', S.at(IX('dee')), true);
+    check('— and bookmarked', !!S.at('userOrgs/dee/VC'), true);
+    S.put('userOrgs/coach/VC', { name: 'Viewers FC', at: 1 });
+    await S.fire(O + 'access/teams/t1/coaches', null);
+    check('a coach who stops coaching but still views the club stays indexed', !!S.at(IX('coach')), true);
+    check('— and keeps her bookmark', !!S.at('userOrgs/coach/VC'), true);
+    await S.fire(O + 'access/viewers/dee', null);
+    check('a viewer taken away leaves the index', !!S.at(IX('dee')), false);
+    check('— and her bookmark', !!S.at('userOrgs/dee/VC'), false);
+    check('— and the invite she came by goes', !!S.at('invites/inv_dee'), false);
+  }
+
   console.log('--- the same answer the phones give ---');
   {
     const A = H.loadApp({});
@@ -354,6 +424,9 @@ const rest = S => canon({ ...S.at('workspaces/CLUB'), access: { ...S.at(W + 'acc
     club.teams.t1.players.p3 = { id: 'p3', name: 'Ivy', guardians: { dad: true, mum: true }, self: { ivy: true }, fans: { gran: true, dad: 'inv_x' } };
     club.teams.t2.players.q1.fans = { gran: true };
     club.access.teams.t2.trackers = { coach: true, trk: true };
+    // and helpers: one alone, one who also tracks, a coach who also helps
+    club.access.teams.t1.helpers = { hlp: true, trk: true };
+    club.access.teams.t2.helpers = { coach: true, hlp2: true };
     A.state = club; A.me = { uid: 'adm', name: 'adm' }; A.appOwners = {};
     const f = { access: club.access, teams: club.teams };
     for (const tid of ['t1', 't2']) {
@@ -361,13 +434,17 @@ const rest = S => canon({ ...S.at('workspaces/CLUB'), access: { ...S.at(W + 'acc
       deepEq(`teamPlayers for ${tid}`, access.linkedWanted(f, tid, 'self'), A.playersWanted(tid));
       deepEq(`teamFans for ${tid}`, access.linkedWanted(f, tid, 'fans'), A.fansWanted(tid));
       const want = {};
+      for (const u of Object.keys(club.access.teams[tid].helpers || {})) want[u] = 'helper';
       for (const u of Object.keys(club.access.teams[tid].trackers || {})) want[u] = 'tracker';
       for (const u of Object.keys(club.access.teams[tid].coaches || {})) want[u] = 'coach';
       deepEq(`teamIndex for ${tid}`, access.teamIndexWanted(f, tid), want);
     }
-    for (const u of ['adm', 'coach', 'coach2', 'trk', 'mum', 'dad', 'twice', 'ella', 'ivy', 'gran', 'nobody']) {
+    for (const u of ['adm', 'coach', 'coach2', 'trk', 'mum', 'dad', 'twice', 'ella', 'ivy', 'hlp', 'hlp2', 'gran', 'nobody']) {
       check(`whether ${u} has a role`, access.hasRole(f, u), A.hasAnyRole(u));
       check(`which team ${u}'s coachIndex names`, access.coachTeamOf(f, u), A.coachTeamOf(u));
+      check(`which team ${u}'s helperIndex names`, access.helperTeamOf(f, u), A.helperTeamOf(u));
+      // the staff name families read: the server's isStaff() and the phone's staffName() agree on who is staff
+      check(`whether ${u} is staff`, access.isStaff(f, u), A.isStaffAnywhere(u));
     }
   }
 

@@ -52,20 +52,16 @@ Open `index.html` in a browser, or serve the folder. Everything works immediatel
 
 4. Sign in (Setup → Account), then tap the club button at the top left → **+ Start a new club**, give it a name, and *Start it*. That creates the club, with you as its admin, and opens it. (A device with no club open has the same button under Setup → Club.) There is no code to type or share: everyone else joins with an invite link — see **Joining a club** below — and a phone finds the clubs its account is in by itself. Signed out, the app still works, but only on that one device.
 
-Two things that will silently reject a write if you tighten the `public` block: a team with **no games yet** publishes without a `games` child at all, because Realtime Database drops empty objects — so never require `games`. And never add a `"$other": { ".validate": false }` catch-all: the document also contains `record` and `updated`, and a wildcard matches those too, failing the whole write.
+**Only the club's server writes the share pages** (`public/`, SECURITY.md, SEC-10). The rule is `.write: false` for every account, admins included: phones make the ids (in the club, under the team's rule), and the server's functions build each page from the club as the phones write goals, subs and changes to it (`functions/mirror.js`). So nobody holding a link, and nobody signed in, can put anything at a share link, and a page a coach's phone could never finish publishing with no signal is published by the server once the phone's changes land. Without the functions deployed (**Deploying the server**) no share page is written at all.
 
-If links are not working, open **Setup → Share with parents**. It now reports whether the last publish succeeded and shows the rejection reason if not, with a **Republish now** button.
+If links are not working, open **Setup → Share with parents**: it says when the server last wrote the page, or that it has not built it yet.
 
-**Write is open, and that is a known gap.** There is no authentication yet, so the only thing stopping someone who holds a link from writing to that node is the shape check above. What that check buys: a vandal cannot inject arbitrary keys or free text, only something that already looks like a scoreboard. What it does not buy: they could still post a wrong score.
+Why the pages are safe to be world-readable:
 
-Why it is tolerable for now, and only for now:
-
-- The node is **derived**. The coaches' app rewrites it on every change, so anything tampered with is gone at the next sub.
+- The node is **derived**. The server rewrites it from the club on every change.
 - It contains **no names and no player ids**, so there is nothing there worth stealing.
-- The real record lives under `workspaces/` and is never read by the public page.
+- The real record lives in the club and is never read by the public page.
 - Share ids are long and random, so the node is not discoverable without the link.
-
-The proper fix is the first job for authentication: make `.write` require `auth.uid` to be a coach of the team that owns the share. Anonymous auth is *not* a shortcut here — anonymous uids are per-device, so two coaches on two devices would get different ids and only one could publish, and clearing browser storage would lock a coach out of their own share.
 
 The API key in `firebase-config.js` is not a secret; the rules above are what gate access. A club's id (the `{code}` in `workspaces/{code}`) is plumbing, not a password: nobody types it or sees it, and knowing it gets you nothing without a role the rules can find.
 
@@ -92,13 +88,17 @@ Each person can see and add ways to sign in from **Your account**, and there is 
 
 Joining someone else's club is by invite, and there is no code to type. Starting your own is not: anyone signed in can tap the club button at the top left → **+ Start a new club** and be its admin. The club they were in is untouched and stays in their list; a new club needs a signal, because it is made at the database there and then rather than queued on the phone.
 
-1. A club admin opens **People → Invite someone**, picks Coach, Tracker or Parent (and which player, for a parent), and optionally an email address.
+1. A club admin opens **People → Invite someone**, picks Coach, Tracker, Team helper or Parent (and which player, for a parent), and optionally an email address.
 2. The app makes a link — `…/?invite=<id>` — to copy, share, or, with an email, have Firebase send as a sign-in email.
 3. The person opens it on their phone, signs in, and sees *Join Lakeside SC as coach of Flight*. **Accept** gives them the role and opens the club. That is the whole of it for them.
 
 Whoever makes an invite chooses **how many people** can use it (one, the default, up to fifty) and **for how long** (a day to ninety days; fourteen by default). A link for several people carries a seat for each, and each person who opens it takes one; once they're all taken, the next person is told it's used up. An emailed invite and a player's own link are always for one person. With an email address on it, only that (verified) address can accept it; without one, whoever opens the link first gets the role, so send it somewhere private. The admin sees each invite under People — open ones first, used and expired ones folded away — and tapping one shows its link again to copy or share, who used it and whether they still hold the role, and a button to revoke it while it is unused. Withdrawing a role later also deletes the invite it came from, so it cannot be spent again.
 
 The invite shows the club, the team and who sent it — never a child's name. A parent invite names the player by shirt number, because a link gets forwarded.
+
+### A club viewer
+
+A director or a board member sees every team's calendar and games with the children's names, and nothing else: no emails, no access log, no coach's notes, no messages, no answering who's coming, no changes. An admin makes one from **People** (the person's *Club viewer* chip) or with **Invite someone → Club viewer**, which asks for no team. It needs rules version 17 published. The game link without signing in is unchanged and still carries no names.
 
 ### A whole squad of parents
 
@@ -127,6 +127,17 @@ Two limits worth knowing:
 Club settings → **Keep the squad off families' phones** → *Move* (admins only). The phone asks the server (`moveRequests/{code}`), which checks she is an admin, refuses while a game is being played, copies the club to `orgs/{code}` in batches, reads it back and compares, switches it over in one small write, keeps a copy of the old tree on the server (`serverState/moved/`), and answers. Every phone notices on its next read and carries on, its outbox included; nothing about the screens changes. It needs the functions deployed and rules version 12 published (both happen on a merge to main, **Deploying the server**). Turn on daily backups first, and move a test club made before build 110 first (one made since already starts on the new tree). New clubs start on `orgs/`. **Every club has moved** (2026-10-09), so the button only matters for a club made before build 110 that turns up later. AUTH.md, *The move to `orgs/{orgId}`*, has the design; SECURITY.md, SEC-D9, what it closed.
 - **My players spans clubs.** Her children in every other club she's in are listed under this club's own, named with their team and club, with the next thing to get them to and *Open that club for her minutes*. It comes from the cut-down copy My calendar already keeps (her own children, no stints), so there are no minutes for another club until it's opened.
 
+## A team helper
+
+A team manager, a volunteer or an assistant: someone who helps the coach get ready and doesn't run the game (AUTH.md, *More kinds of people*). An admin makes one, by **People → Invite someone → Team helper** or by giving the role to someone already in the club; a coach can't.
+
+- **She sees what the team's staff see**: its squad by name, its calendar, its games, Live, Stats and the recap. Not the coach's notes on a child, not members' emails, and only her own team.
+- **She helps prepare**: adds and changes the team's practices, events and games, calls one off, takes the register, posts notices, plans practices from the Practice tab, uses the drill shelves (her own, and the club's, which she can share to), and plans a game, picks who is out of it and edits it **until it kicks off**.
+- **She doesn't run the day**: no clock, no subs, no logging, and once a game has kicked off its plan is read-only for her. She doesn't change the squad, and she reads no family's conversation.
+- **She is told** of her team's notices and calendar changes, like the rest of the team.
+
+Needs rules version 16 (`helpers` and `helperIndex` under `access`, and her clauses in the team's `events` and `attend`, `matches`, `board`, and the `training` blocks' `practices`, `drills` and `templates`). It is written for clubs on `orgs/`, which is every club now.
+
 ## A player's own sign-in
 
 For an older player who asks. On her page in Squad, her coach (or an admin) taps **Make her a sign-in link**: a single-use link, good for 14 days, which names her by shirt number and nothing else. Off unless someone asks, and no age rule; that is the coach's and the club's call.
@@ -149,7 +160,7 @@ A grandparent, an aunt, a family friend who wants the games and the calendar on 
 - **Her family sees who.** *My players* → **Fans** lists each fan of their child by name (the name is kept on the child's record, which the family reads), with *Remove* beside each. Her coach and the admins can take one away too, from the player's page in Squad or from People. *Withdraw* kills a link nobody has used yet.
 - **A fan can leave.** Her card under *My players* has *Stop following*, which takes her off the record and, if it was her only role, out of the club.
 
-Needs rules version 17 (`fans` and `fanNames` on the child's record, `access/teamFans`, and the fan clauses in `invites`, `claims` and `board`), on `orgs/` only. Until it's pasted, making the link is refused and says so.
+Needs rules version 20 (`fans` and `fanNames` on the child's record, `access/teamFans`, and the fan clauses in `invites`, `claims` and `board`), on `orgs/` only. Until it's pasted, making the link is refused and says so.
 
 ## Links with limits
 
@@ -159,7 +170,7 @@ Every link the app makes can be held to how many people and how long:
 - **The team link** (Squad → **Parents**): *No limit* and *Until you replace it* by default, as before, or up to a set number of families and for a set number of days. Each family takes one place before it can ask; an expired or used-up link says so before anyone types anything.
 - **Share pages and calendar feeds** (the season link, a game's own link, the team's calendar feed, My calendar's address): an end date. After it nobody can open the page, and a calendar subscribed to the feed is told it has gone. Pick a new end, or *No end*, to bring it back. There's no limit on the number of people for these: nobody signs in to open them, so there's nobody to count.
 
-Needs rules version 17.
+Needs rules version 20. Share pages are written by the server (build 120), so an end date takes effect once the functions are deployed.
 
 ## Messages
 
@@ -194,7 +205,7 @@ Each person can also turn off a whole kind (messages, team notices, games and pr
 
 **A game you follow too** (build 116): *Notify me* on a game's Live tab sends its goals, kick-off, the start of each later half, half time and full time to every phone you turned notifications on for, with Minutes closed: *Goal — U11 Storm*, *Ella · U11 Storm 2–1 Northgate*. The scorer is named the way the club's setting says (Club settings, names or shirt numbers): coaches, trackers, admins and her own family always see the name, other families only while the club shows names, and `#7` otherwise. A scorer added a moment after the goal updates the same notification rather than sending a second. Nothing is said about a game that ended or was played hours ago (a goal sent late from a phone with no signal, a game reopened). Following is kept at `follow/{code}/{game}/{uid}`, hers alone (rules version 14), only for a game of her club that hasn't ended, and the server clears it at full time.
 
-What it does not do yet: club activity for admins still reaches a phone only while Minutes is open on it.
+**Training sessions and club activity too** (build 119): a family hears when her child's place is confirmed, put on the waiting list, moved off it, turned down or taken off, and when a session she is in is moved or called off; a coach hears families asking for, booking, waiting for, withdrawing from and cancelling her sessions and times; and the admins hear the club's activity as the bell lists it — a game or practice new, moved, called off, back on or deleted on any team (saying who deleted it), a session added or called off, a family booking a coach's time, and a coach calling out or taking time off. Families never hear club activity. *Games and practices* in **What notifies you** covers a family's and a coach's own sessions; *Club activity* covers the rest.
 
 Signing out takes the phone's address down while still signed in, and deletes the browser's subscription, so a phone handed to someone else stops getting her messages. A push that still arrives for an account no longer signed in on the phone (signed out with no signal, say) is shown without its words. `node test/push.js` holds all of this, and who the server tells, for every kind of account.
 
@@ -202,7 +213,7 @@ If nothing arrives: check the functions' logs in the Firebase console (Functions
 
 ## Deploying the server
 
-The club's server is Cloud Functions on the same Firebase project, in `functions/`: `pushNotice`, `pushMessage`, `pushEntry` and the `pushGame…` triggers (notifications), `calendar` (calendar sync), `mirrorEvents` and the `mirrorGame…` triggers, which keep the share pages' and members' feed's practices and fixtures up to date whoever changed them, and the four `access…` triggers, which keep the lookup tables the rules read up to date the moment someone's role changes, and `myCalBuild` with the `myCal…` triggers, which build each person's My calendar feed (SERVER.md). Nothing to set up for any of these beyond deploying: they need no key and no setting. `myCalBuild` runs every five minutes on Cloud Scheduler, which the first deploy switches on for the project (the deploy key's **Service Usage Admin** role is what lets it); if that deploy says Cloud Scheduler is not enabled, enable **Cloud Scheduler API** in Google Cloud's API library and deploy again. `.github/workflows/server.yml` tests and deploys them whenever they change on main, as the site deploys itself. Set up once:
+The club's server is Cloud Functions on the same Firebase project, in `functions/`: `pushNotice`, `pushMessage`, `pushEntry` and the `pushGame…` triggers (notifications), `calendar` (calendar sync), `mirrorEvents` and the `publish…` triggers, which write the share pages and the members' feed (the only thing that does: SECURITY.md, SEC-10), and the four `access…` triggers, which keep the lookup tables the rules read up to date the moment someone's role changes, and `myCalBuild` with the `myCal…` triggers, which build each person's My calendar feed (SERVER.md). Nothing to set up for any of these beyond deploying: they need no key and no setting. `myCalBuild` runs every five minutes on Cloud Scheduler, which the first deploy switches on for the project (the deploy key's **Service Usage Admin** role is what lets it); if that deploy says Cloud Scheduler is not enabled, enable **Cloud Scheduler API** in Google Cloud's API library and deploy again. `.github/workflows/server.yml` tests and deploys them whenever they change on main, as the site deploys itself. Set up once:
 
 1. **Pay-as-you-go (Blaze).** Firebase console → the project → **Upgrade** at the bottom left → **Blaze**, with a card. Cloud Functions need it; at one club's volume the expected bill is nothing, inside the free allowance, but check Firebase's current pricing before telling anyone a number. Then Google Cloud console → **Billing → Budgets & alerts** → a budget of a few dollars, so anything unexpected emails you.
 2. **A deploy key for GitHub.** Google Cloud console, this project → **IAM & Admin → Service Accounts → Create service account** (`github-deployer`), with four roles: **Editor**, **Service Account User** (it deploys functions that run as the project's own account), **Service Usage Admin** (a first deploy switches on the Google services functions need) and **Cloud Functions Admin** (the calendar feed is a public function, since a calendar app asks with no account, and making one public takes it). Open it → **Keys → Add key → JSON**. On GitHub: the repository → **Settings → Secrets and variables → Actions → New repository secret**, named `FIREBASE_SERVICE_ACCOUNT`, the whole file as its value. Delete the file.
@@ -222,6 +233,10 @@ If a deploy fails on permissions, the message names what is missing; add the rol
 - *We failed to modify the IAM policy for the project*: step 3 above has not been done.
 - *The permission cloudfunctions.functions.setIamPolicy is required to deploy … calendar*: **Cloud Functions Admin**.
 - *Permission denied while using the Eventarc Service Agent … Retry the deployment in a few minutes*: nothing missing; the very first deploy of database-triggered functions waits on Google. Run it again after five minutes.
+
+**The site's address, for calendar links.** An entry in a subscribed calendar links back into the app (a game to its page, a practice to the team's calendar, My calendar's entries to My calendar), and the server cannot know where the site is, so `functions/.env` says: `SOCCER_SITE=https://dawsboss.github.io/soccer-manager-/index.html`. It is committed (it is not a secret) and loaded on every deploy. If the site moves (a custom domain), change it there; `test/mirror.js` holds it to an `https` address ending `index.html`.
+
+**Share pages need the functions.** Since build 120 phones never write `public/` and the rules refuse it (version 19): a club whose functions are not deployed has share links that never fill in.
 
 Without the secret the workflow says so and deploys nothing. From a computer instead: `npm install -g firebase-tools`, `firebase login`, `(cd functions && npm ci)`, `firebase deploy --only functions`.
 
@@ -346,15 +361,16 @@ in a commit. `node test/rules.js` reads *these files* and checks them; it also
 fails if a whole ruleset reappears in this README, since a second copy is the
 one that drifts. Run it first.
 
-**It is safe to paste before the app has caught up.** Two lookup tables make the
-per-team and per-share rules possible — `access/teamIndex` and
-`shareOwners/{shareId}` — and neither exists on a club that predates them. So
-each of those rules carries a clause that falls back to the old club-wide
-behaviour *while its table is missing*, and stops doing so the moment the table
-appears. Nothing to sequence, and no way to lock the club out by pasting early.
+**It is safe to paste before the app has caught up.** A lookup table makes the
+per-team rules possible — `access/teamIndex` — and it does not exist on a club
+that predates it. So each of those rules carries a clause that falls back to
+the old club-wide behaviour *while its table is missing*, and stops doing so
+the moment the table appears. Nothing to sequence, and no way to lock the club
+out by pasting early. (`shareOwners/{shareId}` was the other, for the share
+pages; since rules version 19 only the server writes those, and it is gone.)
 
-The app fills both in by itself: an admin's device writes `teamIndex` on its
-next connect, and a share claims its owner list on its next publish. **Club
+The app fills it in by itself: an admin's device writes `teamIndex` on its
+next connect. **Club
 settings → Check readiness** shows whether that has happened. Until every line
 there has a tick, the club is protected but not yet *tightly* — a tracker or
 a parent can still write another team's data, exactly as before.
@@ -395,10 +411,8 @@ What each part is doing:
 - **`training/$code/templates/$id`** and **`userLibrary/$uid/templates/$id`** are practice templates, under exactly the rules of the club's drills and a coach's own.
 - **`training/$code/sessions/$sid`** is a training session (a 1-1 or a small group, belonging to no team). The whole club reads them. A coach (in `coachIndex`) makes one in her own name and changes or deletes only those that name her; she can't hand one to someone else. An admin makes, moves and deletes any. With no `coachIndex` yet, only admins can: the bridge fails closed, as practices' does.
 - **`training/$code/booked/$sid/$pid`** is one player's place in a session. The club reads them, as it does `rsvp`. The session's coach and the admins write anything. A family writes only for a child whose `guardians` holds her uid, in her own name, without changing the team the booking names, and only `asked` (while the session is open, and not after the coach has answered) or `out` (withdrawing, any time). **A family can never give herself a place**: a rule cannot count spots, so the coach keeps the count and only she or an admin says `in`.
-- **`training/$code/avail/$bid`** is one coach's bookable times on one date: 1-1s or a small group. The club reads them. A coach (in `coachIndex`) writes her own and only her own, as with sessions; an admin writes anyone's. A start and an end as `HH:MM`, a slot length of 15–240 minutes, one place for a 1-1 and up to 60 for a group, a price of nothing or more, and two lists the family rules read: `slots`, the slots it still offers, each with its start as a timestamp, and `seats`, one key per place.
-- **A family books a slot** by making a session herself, which the `sessions/$sid` rule allows for exactly one shape: for a child whose `guardians` holds her uid, in her own name, under the id `k_{coach}_{date}_{HHMM}` its time gives it where nothing is yet, at a start the window's `slots` lists, with that slot's end and timestamp, still in the future, at the window's price, size, kind and notice, in a week that isn't taken off, and not open to asks. That id is what stops two families making one time.
-- **`training/$code/seats/$sid/$n`** is one place in a booked slot. The club reads them. A family takes a seat nobody holds, that the window has, for her own child, while the slot is listed, not called off and not started; she lets it go once her booking is gone. The session's coach and the admins write any. A rule cannot count, so this is how a group refuses one child too many.
-- A family's booking on a slot is `in`, written where nothing was, naming a seat she holds for that child, before the slot starts; she deletes it, or marks it `out`, only before the coach's notice. She deletes the slot itself only if she made it and nobody holds a seat or booking on it. `rules.js` prints what is left to the app: how fresh the window's list of slots is, and a second seat held for one child.
+- **`training/$code/avail/$bid`** is one coach's bookable times on one date: 1-1s or a small group. The club reads them. A coach (in `coachIndex`) writes her own and only her own, as with sessions; an admin writes anyone's. A start and an end as `HH:MM`, a slot length of 15–240 minutes, one place for a 1-1 and up to 60 for a group, a price of nothing or more, and `day0`, the coach's phone's midnight that day, so the server can tell when each slot starts.
+- **A family books a slot by asking the server** (rules version 18): `bookAsks/$code/$uid/$id`, readable and writable by that account alone, an ask in her own name in a club she is in, stamped within ten minutes of now (a phone's clock can be out), which she deletes once answered and never answers herself. The server (`functions/book.js`) checks her child, the coach's calendar and the places inside a transaction, and writes the session and the booking; a full slot has a waiting list. A family never writes a slot's session or booking; on an ordinary session she still asks and withdraws. There are no seats any more.
 - **`training/$code/came/$sid`** is a session's register: the session's coach or an admin writes it, the club reads it.
 - **`training/$code/fees/$sid/$pid`** is what was paid for one place. Money, so narrowed by the rules themselves: admins read them all, the session's coach reads and writes her own sessions', and a family reads her own child's. Nobody else reads one.
 - **`training/$code/packs/$tid/$pid/$id`** is a package of sessions sold to one player. Only admins write one: at most 100 places, a kind of `any`, `one` or `group`, an optional use-by date. Admins and coaches (in `coachIndex`) read them all, because the coach marking a place needs to know what is left; a family reads her own child's. **`packuse/$tid/$pid/$id/$sid`** is one place used: written by the session's coach or an admin, only for a package that exists, read like the packages. A rule cannot count, so it cannot refuse an eleventh place on a ten-place package; the app counts, as it counts spots. A fee marked `package` must name a package that exists for that child.
@@ -411,7 +425,7 @@ What each part is doing:
 - **`clubInvites/$code`** is the admin's list, readable only by admins. It lives outside the workspace on purpose: everyone indexed can read the whole workspace, and a list of unspent coach invites in a parent's hands is a parent who can make herself a coach.
 - **`userOrgs/$uid`** is which clubs an account belongs to, so a second device finds them without a code. Only its owner reads it. It is a list of bookmarks, not a grant: reading a club is still `access/index`'s decision.
 - **`rsvp/$tid/$item/$pid`** is who is coming: one answer per child per game or calendar entry. A parent may write it for a child whose `guardians` list holds her uid, a coach for anyone on her team, an admin for anyone, and each answer must be stamped with the writer's own uid. It is a node of its own, not part of the game or the team, so the one thing this rule hands a parent is her own child's answer. An answer is `yes`, `no` or `maybe`, an optional note of at most 140 characters, and nothing else. Until this block is published, parents' answers are refused and the app says so.
-- **`public/$share`** stays world-readable — that is the whole point of the parent links — but writing now needs an account. That closes the hole where anyone holding a share link could overwrite the scoreboard.
+- **`public/$share`** stays world-readable — that is the whole point of the parent links — and nobody writes it: the server builds every page with admin credentials (rules version 19, SECURITY.md, SEC-10). That closes the hole where any signed-in account could make a page under an id no club had claimed, and `shareOwners` went with it.
 - **`joinCodes/$jc`** is a team link: club, team, and the names shown on it. Readable by id only, like an invite; made and retired by that team's coach or an admin, never edited. It grants nothing on its own.
 - **`claims/$ws/$tid/$uid`** is a parent's request through that link — a shirt number and optionally the child's first name. Only its author writes it, only with a live link to that team, and never with an approval in it. **`approved`** is written by that team's coach or an admin, once, in their own name; they can also delete a request to turn it down. The author and the team's coaches and admins read it.
 - **`access/index/$uid`** gains one clause for the team link: a team's coach may write it for someone whose request to *her* team she approved, with that team's id as the value. A coach still cannot let in anyone who did not ask.
@@ -480,9 +494,9 @@ state a club moving off the old open rules is in (the steps above), so you can r
 all of them — claim admin, grant and withdraw roles, check readiness, get
 refused, retire it — on data nobody cares about.
 
-A test club carries a warm banner on every screen, and **publishing is switched
-off inside it**, so a seeded game can never overwrite a `public/` node that real
-families are reading. It lives in whichever database you are pointed at, under a
+A test club carries a warm banner on every screen, and **the server never
+publishes it** (nor makes its game links), so a seeded game can never overwrite
+a `public/` node that real families are reading. It lives in whichever database you are pointed at, under a
 code beginning `test-`; delete the node in the console when you are done.
 
 What it does **not** cover is a rules change. Rules belong to a database, not to
@@ -584,10 +598,10 @@ Nothing about the calendar needed a rule change: entries live under `teams/{tid}
 A coach says when she is free, for 1-1s or a small group, and families book a place themselves, with no back and forth. **Training sessions → Bookable times → Add times**: 1-1s or a small group (with how many places), a window (Tuesdays 5–7pm, say), the slot length (30, 45, 60 or 90 minutes), where, the price, an age range, how late a family can cancel, and *Every week* until a date. Each week is its own, so *Not this week* takes one off without touching the rest. A coach offers and changes her own times; an admin anyone's. The design is [`AVAILABILITY.md`](AVAILABILITY.md).
 
 - **Synced with the teams' calendars.** A practice or game for any team the coach coaches, and any session she runs, takes out the slots it overlaps by itself: add a practice on Tuesday at six and six o'clock stops being offered. A slot that overlaps the child's own team practice isn't offered to her family either.
-- **Booking.** A family sees *Book a time with a coach* on her Training sessions list, picks a free slot for her child (a group says how many places are left), says what she wants to work on, and it's booked: no waiting for a reply. It needs a signal, because it is first come, first served; if two families go for the last place at once the database lets one in and tells the other to pick again.
+- **Booking.** A family sees *Book a time with a coach* on her Training sessions list, picks a free slot for her child (a group says how many places are left), says what she wants to work on, and the club's server books it in a second or two: no waiting for the coach to reply. It needs a signal, because it is first come, first served; if two families go for the last place at once the server lets one in and tells the other. A taken slot offers its **waiting list**: whoever asked first is moved in the moment a place comes free, and told. Booking needs the functions deployed (**Deploying the server**); without them nobody answers and her phone says so.
 - **A booked slot is a session.** It shows on the coach's list, and everything sessions do (the register, fees, hours, clashes, notices, the player's record, the team calendar) works on it. The coach is told when a family books or cancels.
-- **Cancelling.** The family cancels from the session's page, up to the notice the coach set (24 hours by default), and the place goes back on offer. Later than that, she messages the coach, who can still take her off.
-- **The database holds families to it, not just the app.** A slot has to be one the coach's window still offers, on its grid and at its length, not in the past, at her price, with no more children than places, and cancelling has to be before her notice; a hand-made write that tries otherwise is refused. The window's list of open slots leaves out whatever the coach is busy with, and her phone or an admin's keeps that list current whenever they open the app.
+- **Cancelling.** The family cancels from the session's page, up to the notice the coach set (24 hours by default), and the place goes to the first on the waiting list, or back on offer. Later than that, she messages the coach, who can still take her off. A place on the waiting list can be given up any time.
+- **The server holds families to it, not just the app.** A slot has to be on the coach's grid, not in the past, at a time she is free (her teams' calendars, her sessions, her time off and her busy times elsewhere, as they stand when the family asks), with the child free too, and no more children than places, counted in one transaction; cancelling has to be before her notice. A family cannot write a booking herself at all.
 - **Never on the share link**, like sessions.
 
 ### My calendar
@@ -599,7 +613,7 @@ A coach says when she is free, for 1-1s or a small group, and families book a pl
 - **In your own calendar.** *Turn on calendar sync* gives one address for all of it (Apple, Google, Outlook), with no names in it, not even her children's; *Add a one-off copy* works with no feed set up. See **Calendar sync**.
 - **Private by default.** *Who sees your calendar* → **Share when I'm busy** lets the coaches and admins of her clubs see the times she is busy at another club — the times only, never what, where or which club — wherever the app asks who is free: find a time, the planner's clashes, covering a call-out, a session's clashes and her bookable slots. **People → Calendar** shows anyone's next fortnight as the club sees it. Families never see it. **Private** takes it all down. Sharing needs the `people` rule block published; until then it is refused and the screen says so. The other clubs on My calendar need nothing new.
 
-Sessions need the `training` block's `sessions`, `booked`, `came`, `fees`, `pay`, `splans`, `avail` and `seats` rules published (and `packs` and `packuse` for packages) (**The database rules**). Until then they stay on the phone they were made on, the screen says *Some of this is on this phone only*, and a family's ask is refused and taken back off the screen with a message.
+Sessions need the `training` block's `sessions`, `booked`, `came`, `fees`, `pay`, `splans` and `avail` rules published, and the root `bookAsks` block for families booking a time, (and `packs` and `packuse` for packages) (**The database rules**). Until then they stay on the phone they were made on, the screen says *Some of this is on this phone only*, and a family's ask is refused and taken back off the screen with a message.
 
 ## How long share links last
 
@@ -608,7 +622,7 @@ Sessions need the `training` block's `sessions`, `booked`, `came`, `fees`, `pay`
 Three things end one:
 
 - **Rotate** — Share → *Make a new link and kill the old one*. Every link previously sent stops working immediately, the season link and every game's own link alike.
-- **Retire the club** — the mirror stops being updated, so it freezes at the last published state rather than going away.
+- **Retire the club** — the server stops updating the mirror, so it freezes at the last published state rather than going away.
 - **Delete `public/<share>` in the console** — the link goes dead.
 
 For a season that is usually what you want: text it in September, it works in May. If a family leaves mid-season, rotate and re-send to everyone else. An expiry date per link is worth adding when someone actually needs it — see ROADMAP.
@@ -682,11 +696,11 @@ training/{code}/packuse/{tid}/{pid}/{id}/{sid}
 training/{code}/pay/{uid}           { rate, per: 'hour' | 'session' }
 training/{code}/splans/{sid}        { blocks: [ { drill: { shelf, id, v }, name, minutes, note } ], by, at }
 training/{code}/avail/{bid}         { id, coach, coachName, date, start, end, kind: 'one' | 'group', cap, title, len,
-                                      field, place, price, ages, notice, note, series, off, by, at,
-                                      slots: { t1700: { end, at } }, seats: { s1: true } }   // one date each
+                                      field, place, price, ages, notice, note, series, off, by, at, day0 }   // one date each
 training/{code}/sessions/k_{coach}_{date}_{HHMM}
                                     a slot a family booked: a session, plus { slot, t0, notice, pid, tid, by }
-training/{code}/seats/{sid}/{s1}    { pid, tid, by, at }                  // one place in a booked slot
+bookAsks/{code}/{uid}/{id}          { op: 'book' | 'cancel', block, start, sid, tid, pid, want, wait, at,
+                                      answer: { ok, st, sid, why, at } }   // the answer is the server's
 workspaces/{code}/access/org/venues/{fieldId}
                                     { id, name, address, pitches, surface, lights, notes, parts,
                                       permits: { id: { id, days: [0..6], start, end, from, until, ref, note } } }

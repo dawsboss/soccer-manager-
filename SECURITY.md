@@ -67,64 +67,10 @@ SEC-1 and SEC-12 are done (SEC-D9 and SEC-D10 below).
 
 ## Later
 
-### SEC-10 · Only the server publishes share pages
-- **Status:** To do · **Kind:** Code (server, app), then rules · **Size:** Large
-- **Why:** any signed-in Google account can claim an unused id under
-  `shareOwners`, publish a page at `public/{id}`, and send round
-  `live.html?t={id}`, which this site will draw. Since SEC-D4 it cannot run
-  code, and since SEC-4 it cannot take over a real page's id, but it can show
-  a made-up fixture ("Saturday's game is cancelled, meet at…") under the
-  club's own address. The hole exists because phones publish: the rule has to
-  let a coach's phone write `public/`, and it cannot tell a coach from anyone
-  else for an id no club has claimed yet.
-- **The decision (the owner, 2026-10-08):** phones stop publishing. Only the
-  server writes `public/`, and the rule becomes `.write: false`. A fake page
-  then cannot be made at all, so nothing needs labelling or sweeping, and
-  `shareOwners` (and `claimShare()`, `claimTeamIds()`, the publish debounce)
-  goes. Labelling pages instead was considered and dropped: it leaves the
-  hole open and only warns about it.
-- **Why the phone can give this up.** It was kept on the phone because the
-  sideline phone is the only place a live score exists (SERVER.md, *The share
-  pages*). But that phone already writes every goal, sub and clock change to
-  the workspace, so a trigger hears it at the same moment the phone could
-  have published, a second or two later at most. It is more reliable, not
-  less: `publishTeam()` writes `public/` directly, outside the outbox, so a
-  page closed with no signal loses that publish; the workspace write behind
-  it survives in the outbox and the server publishes when it lands. Nothing
-  at the sideline waits on the server either way.
-- **What to do:**
-  1. *Server:* `functions/mirror.js` already writes a team's entries and a
-     game's when and where. Give it the rest of `publicDoc()` and
-     `fixtureDoc()` (score, the squad by number, minutes, the log, stats,
-     a new game added, a deleted game's page taken down), held to the app's
-     own functions as the calendar half is. Wake on the parts of a game play
-     writes (goals, stints, periods, shots and the like, each under its own
-     id) rather than the whole game, so a tap reads only that game, once.
-     A test club and a retired club are still never published.
-  2. *Server:* My calendar's page is already built by `functions/mycal.js`;
-     its phone fallback (`feedPublish()` until it sees `by: 'server'`) goes.
-  3. *App:* stop writing `public/` (`schedulePublish()`, `publishTeam()`,
-     `feedPublish()`, `claimShare()`, `ensureFixtureShares()`'s publishing);
-     the share sheet reports what the server last wrote (`updated` on the
-     page) instead of the phone's own write. Making the ids
-     (`teams/{tid}/share`, a game's `share`, `calFeed`) stays on the phone,
-     in the workspace, under the team's rule.
-  4. *Rules,* once phones on the old build are gone (families are not on
-     yet, so that is soon): `public/$share` `.write: false`, `shareOwners`
-     removed, the rules version raised. An old phone's publish is then
-     refused, which costs nothing: the server has already written the page.
-- **Done when:** `test/mirror.js` publishes a live game's score, minutes and
-  log from the workspace writes alone, item for item the same as the app's
-  `publicDoc()`, `fixtureDoc()` and `publicGame()` with no child's name;
-  `test/stats.js` finds no `public/` write from the phone; `test/rules.js`
-  refuses a `public/` write from every kind of account, an admin included;
-  SERVER.md's *The share pages* says it moved.
-
 ### SEC-11 · Firebase App Check
 - **Status:** To do · **Kind:** Owner, then code · **Size:** Medium
 - **Why:** it lets only this app, on this site, talk to the database. It cuts
-  scraping and scripted abuse (the unclaimed-id pages, until SEC-10 closes them; a script
-  hammering `claims` or `invites`); it does not stop a real person signed in
+  scraping and scripted abuse (a script hammering `claims` or `invites`); it does not stop a real person signed in
   through the real app, so it is a fence round the rules, never instead of
   them.
 - **What to do:**
@@ -173,8 +119,8 @@ owner has no standing in the rules; a brand-new club code is claimed by
 whoever writes it first; an invite with no email on it works for whoever
 opens it first, until it is spent or two weeks old; bookings and registers
 are readable across the club; shared busy times can be read by anyone signed
-in who knows the account id; and a rule cannot count seats or package
-places. Read that list before treating a refused or allowed write as a bug.
+in who knows the account id; and a rule cannot count an ordinary
+session's or a package's places (a booked slot's are counted by the server). Read that list before treating a refused or allowed write as a bug.
 Anything a phone already showed someone can be screenshotted, and a device
 clock turned back gets past `OFFLINE_DAYS`; no app can stop either.
 
@@ -301,3 +247,24 @@ are moved by that team's coach's or an admin's phone the first time it opens
 the club (`test/rules.js` both passes, `test/orgs.js`, `test/move.js`).
 Build 116. It also clears the way for the new roles in AUTH.md, *More kinds
 of people*, none of which may read them.
+
+### SEC-D11 · Only the server publishes share pages
+Any signed-in account could claim an unused id under `shareOwners`, publish
+a page at `public/{id}` and send round `live.html?t={id}`, a made-up fixture
+under the club's own address. Decided by the owner (2026-10-08): phones stop
+publishing. `public/` is `.write: false` for every account, admins included,
+and `shareOwners` is gone (rules version 19). The server builds every page
+from the club (`functions/mirror.js`, with the app's game math ported to
+`functions/game.js`), waking on each part of a game play writes (a goal, a
+sub, the clock, each under its own id, never the game whole), a game's
+answers, a player's number or name, and a team's own fields and entries; a
+queue per team keeps two runs from writing a page in the wrong order. It
+adds new games, takes a deleted game's or a replaced id's page down, and
+keeps whose page is whose (`serverState/pages`), so no club can write over
+another's, and taking an id away takes nobody else's page down. My
+calendar's phone fallback is gone too: `functions/mycal.js` builds it and
+takes a replaced address down. Phones still make the ids, in the club; the
+share sheet says when the server last wrote the page (`test/mirror.js`, item
+for item against the app's `publicDoc()`, `fixtureDoc()` and `publicGame()`;
+`test/stats.js`, no `public/` write from the phone; `test/rules.js` both
+passes, every kind of account refused). Build 120.

@@ -301,8 +301,9 @@ const DB = {
        the dangerous one if you lock down while still in it. */
     FRESH: { teams: { t9: { id: 't9', name: 'New team' } } }
   },
-  /* Who may publish a team's mirror. public/ is world-readable by design; this
-     is what stops anyone holding a link from writing to it. */
+  /* Who used to be allowed to publish a team's mirror, still in the database
+     from before only the server wrote public/ (SECURITY.md, SEC-10). No rule
+     reads it, and nobody may read or write it. */
   shareOwners: { sh1: { adm: true, coach: true } },
   /* Practice plans, outside the workspace so the connect-time read never
      carries them to a parent's phone. The plan is coaches' and admins'; when
@@ -399,8 +400,9 @@ console.log('\n--- the calendar: under the team, so the team rule decides ---');
   writes('nor a tracker', TRK, 'workspaces/CLUB/teams/t1/attend/e1', { p1: true }, false);
   writes('nor another team\'s coach', OTHER, 'workspaces/CLUB/teams/t1/attend/e1', { p1: true }, false);
   reads('a parent reads it with the rest of the club', MUM, 'workspaces/CLUB/teams/t1/events/e1', true);
-  writes('and the published copy takes a calendar', COACH, 'public/sh1/events', { e2: { kind: 'event', title: 'Team photo', date: '2026-09-20' } }, true);
-  writes('with the whole mirror in one write too', COACH, 'public/sh1', { team: { name: 'Flight' }, games: { g1: { status: 'upcoming', called: 'cancelled', home: 'away' } }, events: { e2: { kind: 'event', date: '2026-09-20' } }, record: { w: 0 }, updated: 1 }, true);
+  // the published copy is the server's to write (functions/mirror.js), never a phone's
+  writes('the coach\'s phone cannot write the published copy\'s calendar', COACH, 'public/sh1/events', { e2: { kind: 'event', title: 'Team photo', date: '2026-09-20' } }, false);
+  writes('nor the whole mirror in one write', COACH, 'public/sh1', { team: { name: 'Flight' }, games: { g1: { status: 'upcoming', called: 'cancelled', home: 'away' } }, events: { e2: { kind: 'event', date: '2026-09-20' } }, record: { w: 0 }, updated: 1 }, false);
 }
 
 console.log('\n--- who is coming: a parent for her own child, a coach for anyone ---');
@@ -657,22 +659,24 @@ reads('readable once signed in', RANDO, 'appOwners', true);
 reads('not readable signed out', OUT, 'appOwners', false);
 writes('nobody can write it, owner included', OWNER, 'appOwners/rando', true, false);
 
-console.log('\n--- the published mirror ---');
+console.log('\n--- the published mirror: the server writes it, nobody else ---');
 reads('anyone at all can read it', OUT, 'public/sh1', true);
-writes('signed out cannot write it', OUT, 'public/sh1/games/g1/status', 'done', false);
-writes('nor can any passing account', RANDO, 'public/sh1/games/g1/status', 'done', false);
-writes('only an owner of that share', COACH, 'public/sh1/games/g1/status', 'done', true);
-console.log('  ^ the write hole AUTH.md names, closed by shareOwners/{shareId}.');
-writes('a team needs a name', COACH, 'public/sh1/team', { name: 'Flight' }, true);
-writes('a team without one is rejected', COACH, 'public/sh1/team', { logo: 'x' }, false);
-writes('a game needs a status', COACH, 'public/sh1/games/g2', { status: 'live' }, true);
-writes('a game without one is rejected', COACH, 'public/sh1/games/g2', { score: 1 }, false);
+/* SECURITY.md, SEC-10: a phone could publish under any id nobody had claimed,
+   so anyone signed in could put a made-up fixture under the club's address.
+   Now only the server writes public/ (functions/mirror.js and mycal.js, with
+   admin credentials), and the rule refuses every account, whatever it is. */
+for (const [who, a] of [['signed out', OUT], ['a passing account', RANDO], ['an account with no role', NEWB], ['a parent', MUM],
+  ['a tracker', TRK], ['the team\'s coach', COACH], ['another team\'s coach', OTHER], ['the club\'s admin', ADM], ['the app owner', OWNER]]) {
+  writes(`${who} cannot write a page`, a, 'public/sh1/games/g1/status', 'done', false);
+  writes(`— nor make one under an id nobody has`, a, 'public/brandnew', { team: { name: 'Saturday is cancelled' }, games: { g1: { status: 'upcoming' } } }, false);
+  writes(`— nor take one down`, a, 'public/sh1', null, false);
+}
+console.log('  ^ the write hole AUTH.md names, closed for good: nothing to claim, nothing to label.');
 
-console.log('\n--- claiming a share ---');
-writes('an unclaimed share can be claimed', RANDO, 'shareOwners/brandnew', { rando: true }, true);
-writes('a claimed one cannot be taken', RANDO, 'shareOwners/sh1', { rando: true }, false);
-writes('its owner may add a co-owner', COACH, 'shareOwners/sh1/newbie', true, true);
-reads('owners are not world-readable', OUT, 'shareOwners/sh1', false);
+console.log('\n--- shareOwners is gone ---');
+writes('an unclaimed share can no longer be claimed', RANDO, 'shareOwners/brandnew', { rando: true }, false);
+writes('nor a claimed one added to', COACH, 'shareOwners/sh1/newbie', true, false);
+reads('nor read', COACH, 'shareOwners/sh1', false);
 
 /* ---------------- invites ---------------- */
 
@@ -1665,14 +1669,13 @@ reads('owners are not world-readable', OUT, 'shareOwners/sh1', false);
 /* ---------------- bookable times, and a family booking one ---------------- */
 
 /* AVAILABILITY.md: a coach's window, cut into slots families book
-   themselves, one child each for a 1-1 or up to its spots for a group. A
-   booked slot is an ordinary session, made by the first family, whose id is
-   the coach, the day and the start, so two families making the same time
-   write one key. A rule cannot count, so a place is a numbered seat, and a
-   seat that exists cannot be taken twice. The window carries the slots it
-   still offers, each with its start as a timestamp, so the rule can hold a
-   booking to the grid and to the clock: not in the past, and not cancelled
-   inside the coach's notice. */
+   themselves, one child each for a 1-1 or up to its places for a group. A
+   rule cannot count, search or do dates, so a family's phone no longer books
+   by writing (it did, in three writes held to a list of slots and a numbered
+   seat each): it asks the server at bookAsks/{code}/{uid}/{id}, which counts
+   the places inside a transaction and writes the session and the booking
+   with admin credentials (functions/book.js, test/book.js). What is left for
+   the rules: who may ask, and that nobody but the server answers. */
 {
   const T = 'training/CLUB/';
   const H = 3600000;
@@ -1684,12 +1687,10 @@ reads('owners are not world-readable', OUT, 'shareOwners/sh1', false);
   const group = (id, extra = {}) => block(id, { kind: 'group', cap: 2, seats: { s1: true, s2: true }, ...extra });
   DB.training.CLUB.avail = {
     b1: block('b1'), b2: block('b2', { coach: 'other' }), b3: block('b3', { off: true, date: '2026-10-14' }),
-    g1: group('g1', { date: '2026-10-08' }),
-    bp: block('bp', { date: '2025-09-01', slots: { t1700: { end: '18:00', at: NOW - H } } })
+    g1: group('g1', { date: '2026-10-08' })
   };
   DB.training.CLUB.sessions = {};
   DB.training.CLUB.booked = {};
-  DB.training.CLUB.seats = {};
   const sid = (start = '18:00', coach = 'coach', date = D) => 'k_' + coach + '_' + date + '_' + start.replace(':', '');
   const slot = (extra = {}) => {
     const v = { kind: 'one', coach: 'coach', date: D, start: '18:00', end: '19:00', t0: AT18, price: 30, notice: 24, open: false, cap: 1,
@@ -1697,9 +1698,7 @@ reads('owners are not world-readable', OUT, 'shareOwners/sh1', false);
     v.id = extra.id || sid(v.start, v.coach, v.date);
     return v;
   };
-  const gslot = (extra = {}) => slot({ kind: 'group', cap: 2, slot: 'g1', date: '2026-10-08', ...extra });
-  const seat = (extra = {}) => ({ pid: 'p1', tid: 't1', by: 'mum', at: NOW, ...extra });
-  const book = (extra = {}) => ({ tid: 't1', st: 'in', by: 'mum', at: NOW, seat: 's1', ...extra });
+  const book = (extra = {}) => ({ tid: 't1', st: 'in', by: 'mum', at: NOW, ...extra });
   const GRAN = { uid: 'gran' };
   DB.workspaces.CLUB.teams.t1.players.p2.guardians = { gran: true };
 
@@ -1708,8 +1707,7 @@ reads('owners are not world-readable', OUT, 'shareOwners/sh1', false);
   reads('a coach does', COACH, T + 'avail', true);
   reads('a stranger does not', RANDO, T + 'avail', false);
   reads('signed out does not', OUT, T + 'avail', false);
-  reads('the club reads who holds which seat', MUM, T + 'seats', true);
-  reads('a stranger does not', RANDO, T + 'seats', false);
+  reads('nobody reads seats any more: there are none', MUM, T + 'seats', false);
 
   console.log('\n--- bookable times: a coach sets her own, an admin anyone\'s ---');
   writes('a coach offers her own 1-1s', COACH, T + 'avail/x', block('x'), true);
@@ -1734,6 +1732,8 @@ reads('owners are not world-readable', OUT, 'shareOwners/sh1', false);
   writes('a group of none', COACH, T + 'avail/x', group('x', { cap: 0 }), false);
   writes('a price below nothing', COACH, T + 'avail/x', block('x', { price: -1 }), false);
   writes('a slot with no start time', COACH, T + 'avail/x', block('x', { slots: { t1700: { end: '18:00' } } }), false);
+  writes('with her own midnight, for the server to time the slots by', COACH, T + 'avail/x', block('x', { day0: AT17 - 17 * H }), true);
+  writes('which is a number', COACH, T + 'avail/x', block('x', { day0: 'today' }), false);
   writes('the whole collection at once', COACH, T + 'avail', { x: block('x') }, false);
   {
     const ci = DB.workspaces.CLUB.access.coachIndex;
@@ -1743,120 +1743,60 @@ reads('owners are not world-readable', OUT, 'shareOwners/sh1', false);
     DB.workspaces.CLUB.access.coachIndex = ci;
   }
 
-  console.log('\n--- a family makes a slot, only one the window offers ---');
-  writes('a parent makes 6pm for her own child', MUM, T + 'sessions/' + sid(), slot(), true);
-  writes('or 5pm', MUM, T + 'sessions/' + sid('17:00'), slot({ start: '17:00', end: '18:00', t0: AT17 }), true);
-  writes('not for somebody else\'s child', MUM, T + 'sessions/' + sid(), slot({ pid: 'p2' }), false);
-  writes('not claiming another team', MUM, T + 'sessions/' + sid(), slot({ tid: 't2' }), false);
-  writes('not in somebody else\'s name', MUM, T + 'sessions/' + sid(), slot({ by: 'coach' }), false);
-  writes('not off the grid: 5:30 is no slot of the window', MUM, T + 'sessions/' + sid('17:30'), slot({ start: '17:30', end: '18:30' }), false);
-  writes('not longer than the slot', MUM, T + 'sessions/' + sid(), slot({ end: '19:30' }), false);
-  writes('not shorter either', MUM, T + 'sessions/' + sid(), slot({ end: '18:30' }), false);
-  writes('not a start time of her own', MUM, T + 'sessions/' + sid(), slot({ t0: AT18 + 1 }), false);
-  writes('not on another day', MUM, T + 'sessions/' + sid('18:00', 'coach', '2026-10-09'), slot({ date: '2026-10-09' }), false);
-  writes('not with another coach than the window\'s', MUM, T + 'sessions/' + sid('18:00', 'other'), slot({ coach: 'other' }), false);
-  writes('not in a window that does not exist', MUM, T + 'sessions/' + sid(), slot({ slot: 'nope' }), false);
-  writes('not in a week taken off', MUM, T + 'sessions/' + sid('18:00', 'coach', '2026-10-14'), slot({ slot: 'b3', date: '2026-10-14' }), false);
-  writes('not in the past', MUM, T + 'sessions/' + sid('17:00', 'coach', '2025-09-01'), slot({ slot: 'bp', date: '2025-09-01', start: '17:00', end: '18:00', t0: NOW - H }), false);
-  writes('not at a price of her own', MUM, T + 'sessions/' + sid(), slot({ price: 0 }), false);
-  writes('not with a notice of her own', MUM, T + 'sessions/' + sid(), slot({ notice: 0 }), false);
-  writes('not with more room than the window', MUM, T + 'sessions/' + sid(), slot({ cap: 6 }), false);
-  writes('not as a group when the window is 1-1s', MUM, T + 'sessions/' + sid(), slot({ kind: 'group', cap: 1 }), false);
-  writes('not open to other families\' asks', MUM, T + 'sessions/' + sid(), slot({ open: true }), false);
-  writes('not under an id of her choosing', MUM, T + 'sessions/mine', slot({ id: 'mine' }), false);
-  writes('not under another time\'s id', MUM, T + 'sessions/' + sid('17:00'), slot({ id: sid('17:00') }), false);
-  writes('a tracker cannot', TRK, T + 'sessions/' + sid(), slot({ by: 'trk' }), false);
-  writes('nor a stranger', RANDO, T + 'sessions/' + sid(), slot({ by: 'rando' }), false);
-  {
-    const keep = DB.training.CLUB.avail.b1.slots;
-    DB.training.CLUB.avail.b1.slots = { t1700: keep.t1700 };
-    writes('not a slot the window no longer offers (the coach is busy then)', MUM, T + 'sessions/' + sid(), slot(), false);
-    DB.training.CLUB.avail.b1.slots = keep;
-  }
-  DB.training.CLUB.sessions[sid()] = slot({ by: 'gran', pid: 'p2' });
-  writes('a time somebody already made is not made again', MUM, T + 'sessions/' + sid(), slot(), false);
-  console.log('  ^ the slot\'s id is its time, so two families making 6pm write one key and one gets it.');
-  delete DB.training.CLUB.sessions[sid()];
-
-  console.log('\n--- then a seat, then the booking ---');
+  console.log('\n--- a family no longer books by writing ---');
+  writes('she cannot make a slot herself', MUM, T + 'sessions/' + sid(), slot(), false);
+  writes('nor a group slot', MUM, T + 'sessions/' + sid('18:00', 'coach', '2026-10-08'), slot({ kind: 'group', cap: 2, slot: 'g1', date: '2026-10-08' }), false);
+  writes('nor take a seat', MUM, T + 'seats/' + sid() + '/s1', { pid: 'p1', tid: 't1', by: 'mum', at: NOW }, false);
   DB.training.CLUB.sessions[sid()] = slot();
-  writes('she takes the 1-1\'s one seat', MUM, T + 'seats/' + sid() + '/s1', seat(), true);
-  writes('not a seat the window does not have', MUM, T + 'seats/' + sid() + '/s2', seat(), false);
-  writes('not for another child', MUM, T + 'seats/' + sid() + '/s1', seat({ pid: 'p2' }), false);
-  writes('not in another\'s name', MUM, T + 'seats/' + sid() + '/s1', seat({ by: 'gran' }), false);
-  DB.training.CLUB.seats[sid()] = { s1: seat() };
-  writes('a seat that is taken is not taken twice', GRAN, T + 'seats/' + sid() + '/s1', seat({ pid: 'p2', by: 'gran' }), false);
-  console.log('  ^ a rule cannot count places; it can refuse a seat that exists.');
-  writes('then books her child into it', MUM, T + 'booked/' + sid() + '/p1', book(), true);
-  writes('not on a seat that is not hers', GRAN, T + 'booked/' + sid() + '/p2', book({ by: 'gran' }), false);
-  writes('not naming a seat she does not hold', MUM, T + 'booked/' + sid() + '/p1', book({ seat: 's2' }), false);
-  writes('not another child', MUM, T + 'booked/' + sid() + '/p2', book(), false);
-  writes('not on a session a coach made', MUM, T + 'booked/s9/p1', book(), false);
-  DB.training.CLUB.booked[sid()] = { p1: { tid: 't1', st: 'no', by: 'coach', at: 1, seat: 's1' } };
-  writes('once the coach has had her say, not "in" again', MUM, T + 'booked/' + sid() + '/p1', book(), false);
+  writes('nor book her child into a slot', MUM, T + 'booked/' + sid() + '/p1', book(), false);
+  writes('nor put her child on its waiting list', MUM, T + 'booked/' + sid() + '/p1', book({ st: 'wait' }), false);
   DB.training.CLUB.booked[sid()] = { p1: book() };
-
-  console.log('\n--- a group: anyone may join, up to its seats ---');
-  const G = sid('18:00', 'coach', '2026-10-08');
-  writes('the first family makes the group slot', MUM, T + 'sessions/' + G, gslot(), true);
-  DB.training.CLUB.sessions[G] = gslot();
-  DB.training.CLUB.seats[G] = {};
-  writes('and takes a seat', MUM, T + 'seats/' + G + '/s1', seat(), true);
-  DB.training.CLUB.seats[G] = { s1: seat() };
-  writes('another family joins, on the next seat', GRAN, T + 'seats/' + G + '/s2', seat({ pid: 'p2', by: 'gran' }), true);
-  DB.training.CLUB.seats[G].s2 = seat({ pid: 'p2', by: 'gran' });
-  writes('and books into it', GRAN, T + 'booked/' + G + '/p2', book({ by: 'gran', seat: 's2' }), true);
-  writes('past the last seat, nobody gets in', MUM, T + 'seats/' + G + '/s3', seat(), false);
-  writes('the coach can still add a player herself', COACH, T + 'booked/' + G + '/p0', { tid: 't1', st: 'in', by: 'coach', at: NOW }, true);
-  delete DB.training.CLUB.seats[G].s2;
-  {
-    const keep = DB.training.CLUB.avail.g1.slots;
-    DB.training.CLUB.avail.g1.slots = {};
-    writes('a slot the window has stopped offering takes nobody new', GRAN, T + 'seats/' + G + '/s2', seat({ pid: 'p2', by: 'gran' }), false);
-    DB.training.CLUB.avail.g1.slots = keep;
-  }
-  DB.training.CLUB.sessions[G].called = 'cancelled';
-  writes('nor one the coach has called off', GRAN, T + 'seats/' + G + '/s2', seat({ pid: 'p2', by: 'gran' }), false);
-  delete DB.training.CLUB.sessions[G];
-  delete DB.training.CLUB.seats[G];
-
-  console.log('\n--- cancelling, held to the coach\'s notice ---');
-  writes('she takes her booking off, a day and more ahead', MUM, T + 'booked/' + sid() + '/p1', null, true);
-  writes('another family cannot take it off', GRAN, T + 'booked/' + sid() + '/p1', null, false);
-  writes('nor withdraw it', GRAN, T + 'booked/' + sid() + '/p1', book({ st: 'out', by: 'gran' }), false);
-  writes('her seat cannot go while her booking is on it', MUM, T + 'seats/' + sid() + '/s1', null, false);
-  {
-    DB.training.CLUB.sessions[sid()] = slot({ t0: NOW + 3 * H });
-    writes('inside the notice, she cannot take it off', MUM, T + 'booked/' + sid() + '/p1', null, false);
-    writes('nor mark it withdrawn', MUM, T + 'booked/' + sid() + '/p1', book({ st: 'out' }), false);
-    writes('the coach still can', COACH, T + 'booked/' + sid() + '/p1', { ...book(), st: 'out', by: 'coach' }, true);
-    DB.training.CLUB.sessions[sid()] = slot({ t0: NOW + 3 * H, notice: 0 });
-    writes('with no notice set, she can until it starts', MUM, T + 'booked/' + sid() + '/p1', null, true);
-    DB.training.CLUB.sessions[sid()] = slot({ t0: NOW - H, notice: 0 });
-    writes('but not once it has started', MUM, T + 'booked/' + sid() + '/p1', null, false);
-    DB.training.CLUB.sessions[sid()] = slot();
-  }
-  writes('a session with a booking on it stays', MUM, T + 'sessions/' + sid(), null, false);
-  delete DB.training.CLUB.booked[sid()];
-  writes('then her seat goes', MUM, T + 'seats/' + sid() + '/s1', null, true);
-  writes('a session with a seat held stays', MUM, T + 'sessions/' + sid(), null, false);
-  delete DB.training.CLUB.seats[sid()];
-  writes('then the slot itself, and the time is free', MUM, T + 'sessions/' + sid(), null, true);
-  writes('another family cannot delete it', GRAN, T + 'sessions/' + sid(), null, false);
-  DB.training.CLUB.came = { [sid()]: { p1: true } };
-  writes('not once the register has been taken', MUM, T + 'sessions/' + sid(), null, false);
-  delete DB.training.CLUB.came;
-  DB.training.CLUB.fees = { [sid()]: { p1: { paid: 30, how: 'cash', at: 1, by: 'coach' } } };
-  writes('nor once it has been paid for', MUM, T + 'sessions/' + sid(), null, false);
-  delete DB.training.CLUB.fees;
-  writes('nor can she delete a session a coach made', MUM, T + 'sessions/s1', null, false);
-  DB.training.CLUB.seats[sid()] = { s1: seat() };
-  writes('the coach clears any seat on her own slot', COACH, T + 'seats/' + sid(), null, true);
-  writes('another coach cannot', OTHER, T + 'seats/' + sid(), null, false);
+  writes('nor take her booking off: the server checks the notice', MUM, T + 'booked/' + sid() + '/p1', null, false);
+  writes('nor mark it withdrawn', MUM, T + 'booked/' + sid() + '/p1', book({ st: 'out' }), false);
+  writes('nor delete the slot', MUM, T + 'sessions/' + sid(), null, false);
+  console.log('  ^ booking, the waiting list and cancelling a slot go through the server (bookAsks below).');
+  writes('the coach still takes a child off her own slot', COACH, T + 'booked/' + sid() + '/p1', { ...book(), st: 'out', by: 'coach' }, true);
+  writes('and adds one herself', COACH, T + 'booked/' + sid() + '/p0', { tid: 't1', st: 'in', by: 'coach', at: NOW }, true);
+  writes('another coach cannot', OTHER, T + 'booked/' + sid() + '/p0', { tid: 't1', st: 'in', by: 'other', at: NOW }, false);
   writes('the coach deletes the slot, as any session of hers', COACH, T + 'sessions/' + sid(), null, true);
+  writes('an admin does', ADM, T + 'sessions/' + sid(), null, true);
+  {
+    // an ordinary session a coach opened to asks: a family still asks and withdraws there herself
+    DB.training.CLUB.sessions.s5 = { id: 's5', kind: 'group', coach: 'coach', date: D, start: '18:00', cap: 6, open: true };
+    writes('on an ordinary open session she still asks', MUM, T + 'booked/s5/p1', book({ st: 'asked' }), true);
+    DB.training.CLUB.booked.s5 = { p1: book({ st: 'in', by: 'coach' }) };
+    writes('and withdraws, at any time', MUM, T + 'booked/s5/p1', book({ st: 'out' }), true);
+    writes('but never books herself in', MUM, T + 'booked/s5/p1', book({ st: 'in' }), false);
+    delete DB.training.CLUB.sessions.s5; delete DB.training.CLUB.booked.s5;
+  }
+
+  console.log('\n--- asking the server: bookAsks ---');
+  const A = 'bookAsks/CLUB/';
+  const ask = (extra = {}) => ({ op: 'book', block: 'b1', start: '18:00', tid: 't1', pid: 'p1', at: NOW, ...extra });
+  writes('a family asks, in her own name', MUM, A + 'mum/a1', ask(), true);
+  writes('with what her child wants, and for the waiting list', MUM, A + 'mum/a1', ask({ want: 'Weak foot', wait: true }), true);
+  writes('or to cancel', MUM, A + 'mum/a1', { op: 'cancel', sid: sid(), pid: 'p1', at: NOW }, true);
+  writes('not in somebody else\'s name', MUM, A + 'gran/a1', ask(), false);
+  writes('not with the answer already written', MUM, A + 'mum/a1', { ...ask(), answer: { ok: true, st: 'in' } }, false);
+  writes('not something else', MUM, A + 'mum/a1', ask({ op: 'steal' }), false);
+  writes('stamped by a phone whose clock is a few minutes out', MUM, A + 'mum/a1', ask({ at: NOW + 4 * 60000 }), true);
+  writes('not stamped an hour ago, or ahead', MUM, A + 'mum/a1', ask({ at: NOW - H }), false);
+  writes('nor an hour ahead', MUM, A + 'mum/a1', ask({ at: NOW + H }), false);
+  writes('nor without a child', MUM, A + 'mum/a1', { op: 'book', at: NOW }, false);
+  writes('not to a club she is not in', RANDO, A + 'rando/a1', ask(), false);
+  writes('signed out, not at all', OUT, A + 'x/a1', ask(), false);
+  reads('she reads her own asks and their answers', MUM, A + 'mum', true);
+  reads('not another family\'s', GRAN, A + 'mum', false);
+  reads('not an admin either', ADM, A + 'mum', false);
+  DB.bookAsks = { CLUB: { mum: { a1: { ...ask(), answer: { ok: true, st: 'in', at: NOW } } } } };
+  writes('the answer is never hers to write', MUM, A + 'mum/a1/answer', { ok: true, st: 'in', at: NOW }, false);
+  writes('nor is an ask changed once made', MUM, A + 'mum/a1', ask({ pid: 'p2' }), false);
+  writes('she clears it away when she has read it', MUM, A + 'mum/a1', null, true);
+  writes('nobody else does', GRAN, A + 'mum/a1', null, false);
+  delete DB.bookAsks;
 
   delete DB.workspaces.CLUB.teams.t1.players.p2.guardians;
-  for (const k of ['avail', 'sessions', 'booked', 'seats']) delete DB.training.CLUB[k];
+  for (const k of ['avail', 'sessions', 'booked']) delete DB.training.CLUB[k];
 }
 
 /* ---------------- coaches' time off ---------------- */
@@ -2260,18 +2200,68 @@ reads('owners are not world-readable', OUT, 'shareOwners/sh1', false);
 
     console.log('\n--- a share page or feed: until when ---');
     DB.public = { pg: { team: { name: 'Hawks' }, until: NOW + 864e5 }, px: { team: { name: 'Hawks' }, until: NOW - 1 }, pn: { team: { name: 'Hawks' } } };
-    DB.shareOwners = { ...(DB.shareOwners || {}), pg: { oc: true }, px: { oc: true } };
     r('a page before its end date opens, signed out too', OUT, 'public/pg', true);
     r('a page past it does not', OUT, 'public/px', false);
     r('— not even for its coach', OC, 'public/px', false);
     r('a page with no end date opens as it did', OUT, 'public/pn', true);
-    w('its coach puts a new end date on it', OC, 'public/px/until', NOW + 864e5, true);
-    w('an end date is a time', OC, 'public/pg/until', 'soon', false);
+    // the end date is set on the team or game, and the server puts it on the page (SEC-10: no phone writes public/)
+    w('not even its coach writes it onto the page', OC, 'public/px/until', NOW + 864e5, false);
     w('My calendar\'s feed takes an end date', OM, 'people/om/set', { share: false, feed: 'abcdefgh', feedUntil: NOW + 864e5 }, true);
     w('— a time, nothing else', OM, 'people/om/set', { share: false, feedUntil: 'never' }, false);
     DB.invites = savedInv; DB.joinCodes = savedJc; DB.claims = savedCl; DB.public = savedPub;
     for (const k of ['invites', 'joinCodes', 'claims']) if (DB[k] === undefined) delete DB[k];
   }
+
+  /* AUTH.md, *More kinds of people*, 3 (the owner, 2026-10-09). A club-wide
+     viewer (a director) is in the index like everyone else in the club, so
+     she reads what the index reads; beyond it, every team's squad, for the
+     names. No write rule names her, so she changes nothing. */
+  console.log('\n--- a club on orgs/: club-wide viewers ---');
+  ORGC.access.viewers = { ov: 'inv-v' };
+  ORGC.access.index.ov = 'inv-v';
+  ORGC.coachNotes = { t1: { p1: { note: 'shy in goal' } } };
+  const OV = { uid: 'ov' };
+  for (const part of ['teams', 'matches', 'org', 'names', 'access', 'roster'])
+    r('a viewer reads ' + part, OV, O + part, true);
+  r('— every team\'s squad, so every child by name', OV, O + 'squad/t1', true);
+  r('— another team\'s too', OV, O + 'squad/t2', true);
+  r('not the members and their emails', OV, O + 'members', false);
+  r('— but her own entry', OV, O + 'members/ov', true);
+  r('not the access log', OV, O + 'log', false);
+  r('not the coach\'s notes', OV, O + 'coachNotes/t1/p1', false);
+  r('not a family\'s conversation', OV, 'dm/ORGC/t1/om', false);
+  r('not the team\'s notices', OV, 'board/ORGC/t1', false);
+  r('— practice plans', OV, 'training/ORGC/practices/t1', false);
+  r('— the club\'s drills', OV, 'training/ORGC/drills', false);
+  w('she answers for nobody', OV, O + 'rsvp/t1/g_g1/p1', { v: 'no', by: 'ov', at: NOW }, false);
+  w('she changes no game', OV, O + 'matches/g1/opponent', 'Elsewhere', false);
+  w('— adds no goal', OV, O + 'matches/g1/goals/x', { t: 1 }, false);
+  w('— writes no share page: only the server does (SECURITY.md, SEC-D11)', OV, 'public/sh1/games/g1/status', 'done', false);
+  w('— changes no team', OV, O + 'teams/t1/name', 'Viewers FC', false);
+  w('— nor a squad', OV, O + 'squad/t1/p1/name', 'Ellie', false);
+  w('— nor the coach\'s notes', OV, O + 'coachNotes/t1/p1/note', 'x', false);
+  w('— posts no notice', OV, 'board/ORGC/t1/n1', { by: 'ov', at: NOW, text: 'hi' }, false);
+  w('— writes in no family\'s conversation', OV, 'dm/ORGC/t1/om/m/x', { by: 'ov', at: NOW, text: 'hi' }, false);
+  w('— and makes herself nothing more', OV, O + 'access/admins/ov', true, false);
+  w('— nor a coach', OV, O + 'access/teams/t1/coaches/ov', true, false);
+  w('the admin makes someone a viewer', OA, O + 'access/viewers/nv', true, true);
+  w('— and indexes her', OA, O + 'access/index/nv', true, true);
+  w('— and takes it away', OA, O + 'access/viewers/ov', null, true);
+  w('a coach does not', OC, O + 'access/viewers/nv', true, false);
+  w('nor a parent', OM, O + 'access/viewers/om', true, false);
+  w('a stranger cannot make herself one', RANDO, O + 'access/viewers/rando', true, false);
+  w('she steps down herself', OV, O + 'access/viewers/ov', null, true);
+  DB.invites = { 'inv-nv': { ws: 'ORGC', role: 'viewer', by: 'oa', expiresAt: NOW + 1e6, used: { by: 'nv', at: NOW } } };
+  w('an invite to be a viewer, spent by her, makes her one', { uid: 'nv' }, O + 'access/viewers/nv', 'inv-nv', true);
+  w('— and indexes her', { uid: 'nv' }, O + 'access/index/nv', 'inv-nv', true);
+  w('— not anyone else', RANDO, O + 'access/viewers/rando', 'inv-nv', false);
+  DB.invites['inv-nv'].role = 'coach';
+  w('— nor an invite to something else', { uid: 'nv' }, O + 'access/viewers/nv', 'inv-nv', false);
+  delete DB.invites;
+  w('only an admin makes a viewer\'s invite, with no team', OA, 'invites/inv8', { ws: 'ORGC', by: 'oa', role: 'viewer', at: NOW, expiresAt: NOW + 1e9 }, true);
+  w('— not a coach', OC, 'invites/inv8', { ws: 'ORGC', by: 'oc', role: 'viewer', at: NOW, expiresAt: NOW + 1e9 }, false);
+  w('every other role still names its team', OA, 'invites/inv8', { ws: 'ORGC', by: 'oa', role: 'coach', at: NOW, expiresAt: NOW + 1e9 }, false);
+  delete ORGC.access.viewers; delete ORGC.access.index.ov; delete ORGC.coachNotes;
 
   console.log('\n--- a club on orgs/: one tree each ---');
   /* A club is on exactly one tree, which is what lets every root rule ask
@@ -2325,6 +2315,97 @@ reads('owners are not world-readable', OUT, 'shareOwners/sh1', false);
   r('the team\'s coach reads it', OC, 'dm/ORGC/t1/om', true);
   w('her answer, at orgs/', OM, O + 'rsvp/t1/g_g1/p1', { v: 'yes', by: 'om', at: NOW }, true);
   w('— not for another child', OM, O + 'rsvp/t1/g_g1/p2', { v: 'yes', by: 'om', at: NOW }, false);
+  /* AUTH.md, *More kinds of people*, 2: a team helper (a manager, a volunteer)
+     helps the coach prepare and does nothing on the day. Three rules asked
+     only whether a uid is in teamIndex for a team, and would have let her in
+     exactly as they let a tracker in; each is decided again here. */
+  console.log('\n--- a club on orgs/: a team helper ---');
+  {
+    const A = ORGC.access, OH = { uid: 'oh' };
+    A.index.oh = true; A.teams.t1.helpers = { oh: 'inv-h' }; A.teamIndex.t1.oh = 'helper'; A.helperIndex = { oh: 't1' };
+    ORGC.coachNotes = { t1: { p1: { note: 'shy in goal' } } };
+    const ev = { id: 'e2', kind: 'practice', date: '2026-10-14', start: '18:00', edit: { by: 'oh', at: NOW } };
+    r('she reads her team\'s squad, names and all', OH, O + 'squad/t1', true);
+    r('— not another team\'s', OH, O + 'squad/t2', false);
+    r('not the coach\'s notes', OH, O + 'coachNotes', false);
+    r('— nor one child\'s', OH, O + 'coachNotes/t1/p1', false);
+    r('not the members and their emails', OH, O + 'members', false);
+    r('not the access log', OH, O + 'log', false);
+    w('she does not change the squad', OH, O + 'squad/t1/p4', { id: 'p4', name: 'Nia' }, false);
+    w('— nor the roster', OH, O + 'roster/t1/p1/number', '8', false);
+    w('— nor the team itself', OH, O + 'teams/t1/name', 'Hawks B', false);
+    // nor a share page: only the server writes public/ (SECURITY.md, SEC-D11)
+    w('— nor a share page', OH, 'public/sh1/games/g1/status', 'done', false);
+    w('— nor one under an id nobody has', OH, 'public/helperpage', { team: { name: 'Hawks' } }, false);
+    w('she adds a practice to her team\'s calendar', OH, O + 'teams/t1/events/e2', ev, true);
+    w('— calls one off', OH, O + 'teams/t1/events/e1/called', 'cancelled', true);
+    w('— stamped in nobody\'s name but hers', OH, O + 'teams/t1/events/e2', { ...ev, edit: { by: 'oc', at: NOW } }, false);
+    w('— not the whole calendar at once', OH, O + 'teams/t1/events', { e2: ev }, false);
+    w('— not another team\'s', OH, O + 'teams/t2/events/e2', ev, false);
+    w('she takes the register', OH, O + 'teams/t1/attend/e1', { p1: true }, true);
+    w('— not another team\'s', OH, O + 'teams/t2/attend/e1', { q1: true }, false);
+    w('she adds a game', OH, O + 'matches/g7', { id: 'g7', teamId: 't1', opponent: 'Rovers', date: '2026-10-18' }, true);
+    w('— not for another team', OH, O + 'matches/g7', { id: 'g7', teamId: 't2', opponent: 'Rovers' }, false);
+    w('she plans a game before kick-off', OH, O + 'matches/g1/plan', { blocks: { b1: { at: 0 } } }, true);
+    w('— moves it', OH, O + 'matches/g1/date', '2026-10-19', true);
+    w('— calls it off', OH, O + 'matches/g1/called', 'cancelled', true);
+    w('— marks a player out of it', OH, O + 'matches/g1/out/p1', true, true);
+    w('— or deletes it, while it is not played', OH, O + 'matches/g1', null, true);
+    w('she does not start the clock', OH, O + 'matches/g1/periods/0', { start: NOW }, false);
+    ORGC.matches.g1.periods = { 0: { start: NOW - 60000 } };
+    w('once it kicks off, not the plan', OH, O + 'matches/g1/plan', { blocks: {} }, false);
+    w('— nor a goal', OH, O + 'matches/g1/goals/x', { at: NOW }, false);
+    w('— nor deleting it', OH, O + 'matches/g1', null, false);
+    w('the tracker still logs it', OT, O + 'matches/g1/goals/x', { at: NOW }, true);
+    delete ORGC.matches.g1.periods;
+    ORGC.matches.g1.ended = true;
+    w('nor once it is over', OH, O + 'matches/g1/plan', { blocks: {} }, false);
+    delete ORGC.matches.g1.ended;
+    w('a tracker still cannot move a game', OT, O + 'matches/g1/date', '2026-10-19', false);
+    r('she reads her team\'s notices', OH, 'board/ORGC/t1', true);
+    w('— and posts one in her own name', OH, 'board/ORGC/t1/n1', { by: 'oh', at: NOW, text: 'Bring water' }, true);
+    w('— not in the coach\'s', OH, 'board/ORGC/t1/n1', { by: 'oc', at: NOW, text: 'Bring water' }, false);
+    w('— not to another team', OH, 'board/ORGC/t2/n1', { by: 'oh', at: NOW, text: 'Bring water' }, false);
+    w('a tracker still posts none', OT, 'board/ORGC/t1/n1', { by: 'ot', at: NOW, text: 'x' }, false);
+    r('she reads no family\'s conversation', OH, 'dm/ORGC/t1', false);
+    r('— not one family\'s', OH, 'dm/ORGC/t1/om', false);
+    w('— nor writes in one', OH, 'dm/ORGC/t1/om/m/x', { by: 'oh', at: NOW, text: 'hi' }, false);
+    r('she reads her team\'s practice plans', OH, 'training/ORGC/practices/t1', true);
+    w('— and plans one', OH, 'training/ORGC/practices/t1/pr9', { id: 'pr9', teamId: 't1', date: '2026-10-12' }, true);
+    r('— not another team\'s', OH, 'training/ORGC/practices/t2', false);
+    w('— nor plans one for it', OH, 'training/ORGC/practices/t2/pr9', { id: 'pr9', teamId: 't2' }, false);
+    r('she reads the club\'s drills', OH, 'training/ORGC/drills', true);
+    r('— and its templates', OH, 'training/ORGC/templates', true);
+    w('— shares a drill, in her own name for her team', OH, 'training/ORGC/drills/dh', { id: 'dh', name: 'Rondo', by: 'oh', team: 't1', at: NOW }, true);
+    w('— not for another team', OH, 'training/ORGC/drills/dh', { id: 'dh', name: 'Rondo', by: 'oh', team: 't2', at: NOW }, false);
+    w('— and a template', OH, 'training/ORGC/templates/th', { id: 'th', name: 'Tuesday', by: 'oh', team: 't1', at: NOW }, true);
+    r('a tracker reads no drills', OT, 'training/ORGC/drills', false);
+    w('her own drills shelf is hers, as anyone\'s is', OH, 'userLibrary/oh/drills/d1', { id: 'd1', name: 'Mine', at: NOW }, true);
+    w('she writes her own name for families', OH, O + 'names/oh', { name: 'Hal' }, true);
+    r('she is not a coach anywhere a coach is asked for: coaches\' time off', OH, 'training/ORGC/away', false);
+    w('— nor offers bookable times', OH, 'training/ORGC/avail/b1', { id: 'b1', coach: 'oh', date: '2026-10-20', start: '17:00', end: '18:00', kind: 'one', cap: 1 }, false);
+    r('— nor talks to colleagues as staff', OH, 'staffdm/ORGC/oc~oh', false);
+    // how she gets the role: an admin's invite, accepted the way a coach's is
+    DB.invites = { 'inv-h2': { ws: 'ORGC', team: 't1', role: 'helper', by: 'oa', expiresAt: NOW + 1e9, used: { by: 'nh', at: NOW } } };
+    const NH = { uid: 'nh' };
+    w('an admin makes a helper\'s invite', OA, 'invites/inv-h3', { ws: 'ORGC', team: 't1', role: 'helper', by: 'oa', at: NOW, expiresAt: NOW + 1e9 }, true);
+    w('a coach does not', OC, 'invites/inv-h3', { ws: 'ORGC', team: 't1', role: 'helper', by: 'oc', at: NOW, expiresAt: NOW + 1e9 }, false);
+    w('the invitee takes the role it names', NH, O + 'access/teams/t1/helpers/nh', 'inv-h2', true);
+    w('— not a coach\'s with it', NH, O + 'access/teams/t1/coaches/nh', 'inv-h2', false);
+    w('— not on another team', NH, O + 'access/teams/t2/helpers/nh', 'inv-h2', false);
+    w('her own teamIndex entry says helper', OH, O + 'access/teamIndex/t1/oh', 'helper', true);
+    w('— never coach', OH, O + 'access/teamIndex/t1/oh', 'coach', false);
+    w('— nor tracker', OH, O + 'access/teamIndex/t1/oh', 'tracker', false);
+    w('a coach cannot call herself a helper there', OC, O + 'access/teamIndex/t1/oc', 'helper', false);
+    w('her helperIndex entry names a team she helps', OH, O + 'access/helperIndex/oh', 't1', true);
+    w('— not one she does not', OH, O + 'access/helperIndex/oh', 't2', false);
+    w('— nobody writes hers for her but an admin', OC, O + 'access/helperIndex/oh', 't1', false);
+    w('she takes herself off it', OH, O + 'access/helperIndex/oh', null, true);
+    w('nobody makes herself one of the coaches\' index', OH, O + 'access/coachIndex/oh', 't1', false);
+    delete DB.invites; delete ORGC.coachNotes;
+    delete A.index.oh; delete A.teams.t1.helpers; delete A.teamIndex.t1.oh; delete A.helperIndex;
+  }
+
   w('an admin of the club makes an invite to it', OA, 'invites/inv9', { ws: 'ORGC', by: 'oa', role: 'coach', team: 't1', at: NOW, expiresAt: NOW + 1e9 }, true);
   w('a coach of another club does not', ADM, 'invites/inv9', { ws: 'ORGC', by: 'adm', role: 'coach', team: 't1', at: NOW, expiresAt: NOW + 1e9 }, false);
   delete DB.orgs.ORGC;
@@ -2396,9 +2477,11 @@ console.log(`
   - The index escalation. Being in access/index no longer lets you put anyone
     else in it — which was a grant of the whole club to anyone already holding
     any role. Self-removal survives, because that was the clause's real intent.
-  - The public write hole. public/{share} now needs shareOwners/{share}/{uid},
-    which is AUTH.md's design and step 4 of its build order. Anonymous auth is
-    not an option here and AUTH.md says why.
+  - The public write hole. Nobody writes public/{share} but the server
+    (SECURITY.md, SEC-10): \`.write: false\` for every account, admins
+    included, so a page cannot be made under an id no club has, and
+    shareOwners is gone. Anonymous auth was never an option and AUTH.md says
+    why.
 
   Still open, deliberately:
 
@@ -2451,19 +2534,13 @@ console.log(`
      six. It refuses anyone but the session's coach or an admin giving a place;
      the coach's phone keeps the count.
 
-  9. A family books only a slot its coach's window still lists, on its grid,
-     at its start time, price, size and notice, under the id its time gives
-     it, and only into a seat the window has; she cancels only before the
-     coach's notice. Which slots a window lists, though, is written by its
-     coach's and the admins' phones, which leave out anything she is busy
-     with: a team practice added from another phone is bookable until one of
-     theirs next opens the app. The app checks the clash itself as well.
+  9. A booked slot is not counted by the rules at all: a family cannot write
+     one. Her phone asks the server (bookAsks), which checks her child, the
+     coach's calendar as it stands, and the places inside a transaction
+     (functions/book.js, test/book.js). Where the functions are not
+     deployed, nobody answers, and a family cannot book a time.
 
- 10. A family can hold a second seat for the same child by hand-made writes.
-     Her own booking names one seat; the coach's phone clears a seat with no
-     booking on it after ten minutes.
-
- 11. Somebody's shared busy times are readable by anyone signed in who knows
+ 10. Somebody's shared busy times are readable by anyone signed in who knows
      her uid. A uid is only shown inside a club she is in, and the times
      carry nothing but a date and two times; private is the default, and the
      rules refuse any busy time while she has not said to share.`);

@@ -1,10 +1,10 @@
 /* The lookup tables the rules read, kept true the moment a role changes.
 
    SERVER.md, "The lookup tables the rules read". The rules cannot iterate, so
-   six flat tables answer their questions in one hop (CLAUDE.md, "Five flat
-   lookup tables", and the sixth since build 117): access/index, teamIndex,
-   teamParents, teamPlayers, teamFans and coachIndex. Each is derived from where a uid appears, and until now only an
-   admin's or a coach's phone rebuilt them, on connect (syncIndex() and its
+   seven flat tables answer their questions in one hop (CLAUDE.md, "Six flat
+   lookup tables", and teamFans since build 121): access/index, teamIndex,
+   teamParents, teamPlayers, teamFans, coachIndex and helperIndex. Each is derived from where a uid appears, and
+   until now only an admin's or a coach's phone rebuilt them, on connect (syncIndex() and its
    siblings in app.js). Between a change and that phone's next connect the
    table was stale: a parent the coach unlinked kept reading the team's
    notices until somebody with the right role opened the app (rules.js, gap
@@ -25,9 +25,10 @@
      given back finds the role and keeps the entry.
    - **The same answer the phones give.** The same sources (admins, a team's
      coaches and trackers, a player's guardians, self and fans) and the same values
-     (`'coach'` wins over `'tracker'`; a parent's, a player's and a
+     (`'coach'` wins over `'tracker'`, and both over `'helper'`; a parent's, a player's and a
      fan's entry is a player id that really lists her; coachIndex names a team she coaches,
-     the first by id, and is left alone while the one it names stays true).
+     the first by id, and is left alone while the one it names stays true;
+     helperIndex the same for a team she helps).
      So a phone and the server never fight over an entry, and the phones go
      on doing it too, for a club whose functions are not deployed.
    - **Never close a bridge.** The rules fall back to the old club-wide
@@ -36,8 +37,8 @@
      club with no access/index at all as one still being made. One entry
      written for one team would end that fallback for every other team at
      once, so a table that does not exist yet is left for an admin's phone to
-     build whole. coachIndex, teamPlayers and teamFans carry no bridge
-     and are written whenever they are owed.
+     build whole. coachIndex, helperIndex, teamPlayers and teamFans carry no bridge and are written
+     whenever they are owed.
    - **An index entry is never rewritten while it is there.** Its value may be
      the invite id that granted it, or the team a coach approved a claim to,
      and the rule checked that when it was written. Everything reads only
@@ -79,9 +80,10 @@ const teamAcc = (f, tid) => ((f.access.teams || {})[tid]) || {};
 
 /* hasAnyRole() in app.js, against the server's copy. */
 function hasRole(f, uid) {
-  if (has(f.access.admins, uid)) return true;
+  // a club viewer is in the index like everyone else in the club (AUTH.md, *Club viewers, as built*)
+  if (has(f.access.admins, uid) || has(f.access.viewers, uid)) return true;
   for (const ta of Object.values(f.access.teams || {}))
-    if (has(ta && ta.coaches, uid) || has(ta && ta.trackers, uid)) return true;
+    if (has(ta && ta.coaches, uid) || has(ta && ta.trackers, uid) || has(ta && ta.helpers, uid)) return true;
   for (const t of Object.values(f.teams))
     for (const p of Object.values((t && t.players) || {}))
       if (p && (has(p.guardians, uid) || has(p.self, uid) || has(p.fans, uid))) return true;
@@ -91,6 +93,7 @@ function hasRole(f, uid) {
 /* What each table should say, as the phones work it out. */
 function teamIndexWanted(f, tid) {
   const ta = teamAcc(f, tid), want = {};
+  for (const u of keys(ta.helpers)) if (has(ta.helpers, u)) want[u] = 'helper';
   for (const u of keys(ta.trackers)) if (has(ta.trackers, u)) want[u] = 'tracker';
   for (const u of keys(ta.coaches)) if (has(ta.coaches, u)) want[u] = 'coach';   // coach wins
   return want;
@@ -104,6 +107,10 @@ function linkedWanted(f, tid, field) {
 }
 function coachTeamOf(f, uid) {
   return keys(f.access.teams).sort().find(tid => has(teamAcc(f, tid).coaches, uid)) || null;
+}
+// helperTeamOf() in app.js: the same for a team helper
+function helperTeamOf(f, uid) {
+  return keys(f.access.teams).sort().find(tid => has(teamAcc(f, tid).helpers, uid)) || null;
 }
 
 /* Bring one per-team table (teamParents, teamPlayers or teamFans) for one team into
@@ -132,15 +139,21 @@ async function syncTeamIndex(env, f, code, tid, out) {
   else { await env.remove(p); out.push('del teamIndex/' + tid); }
 }
 
-async function syncCoachIndex(env, f, code, uid, out) {
-  const now = (f.access.coachIndex || {})[uid] || null;
-  // any team she coaches will do, so only rewrite it once the one it names stops being true
-  if (now && has(teamAcc(f, now).coaches, uid)) return;
-  const want = coachTeamOf(f, uid);
+/* coachIndex, and its twin helperIndex (AUTH.md, *Team helpers*): one team
+   she coaches, or helps, for the training rules' "of any team". */
+async function syncOneIndex(env, f, uid, out, table, key, teamOf) {
+  const now = (f.access[table] || {})[uid] || null;
+  // any team will do, so only rewrite it once the one it names stops being true
+  if (now && has(teamAcc(f, now)[key], uid)) return;
+  const want = teamOf(f, uid);
   if (want === now) return;
-  const p = `${f.L.access}/coachIndex/${uid}`;
-  if (want) { await env.set(p, want); out.push('set coachIndex/' + uid); }
-  else { await env.remove(p); out.push('del coachIndex/' + uid); }
+  const p = `${f.L.access}/${table}/${uid}`;
+  if (want) { await env.set(p, want); out.push('set ' + table + '/' + uid); }
+  else { await env.remove(p); out.push('del ' + table + '/' + uid); }
+}
+async function syncCoachIndex(env, f, code, uid, out) {
+  await syncOneIndex(env, f, uid, out, 'coachIndex', 'coaches', coachTeamOf);
+  await syncOneIndex(env, f, uid, out, 'helperIndex', 'helpers', helperTeamOf);
 }
 
 async function syncIndex(env, f, code, uid, out, now) {
@@ -157,13 +170,16 @@ async function syncIndex(env, f, code, uid, out, now) {
   if (index && has(index, uid)) {
     const v = index[uid];
     await env.remove(`${f.L.access}/index/${uid}`); out.push('del index/' + uid);
-    // forgetInvite(): the invite her entry named, if it was one of this club's
-    // never a link for several people (seats): the others still to use it would lose it with her
-    if (typeof v === 'string' && okKey(v) && (await env.get(`invites/${v}/ws`)) === code && !(await env.get(`invites/${v}/seats`))) {
-      await env.remove('invites/' + v); out.push('del invite');
-    }
+    await forgetInvite(env, code, v, out);
   }
   if (await env.get(`userOrgs/${uid}/${code}`)) { await env.remove(`userOrgs/${uid}/${code}`); out.push('del userOrgs/' + uid); }
+}
+// forgetInvite(): the invite a role named, if it was one of this club's
+async function forgetInvite(env, code, v, out) {
+  // never a link for several people (seats): the others still to use it would lose it with her
+  if (typeof v === 'string' && okKey(v) && (await env.get(`invites/${v}/ws`)) === code && !(await env.get(`invites/${v}/seats`))) {
+    await env.remove('invites/' + v); out.push('del invite');
+  }
 }
 
 /* One role source changed. `uids` are the accounts named before or after,
@@ -193,12 +209,12 @@ async function settle(env, code, { uids = [], tids = [], parents = false, player
 
 /* names/{uid}: a member's name, for staff only, so a family can see who her
    coach is without reading anyone's email (members/ is admins' and coaches').
-   Staff is what hasRole() counts short of a family: an admin, or a coach or
-   tracker of any team. Her name, never her email; gone with her last staff
+   Staff is what hasRole() counts short of a family: an admin, or a coach,
+   tracker or helper of any team. Her name, never her email; gone with her last staff
    role. */
 function isStaff(f, uid) {
   if (has(f.access.admins, uid)) return true;
-  return Object.values(f.access.teams || {}).some(ta => has(ta && ta.coaches, uid) || has(ta && ta.trackers, uid));
+  return Object.values(f.access.teams || {}).some(ta => has(ta && ta.coaches, uid) || has(ta && ta.trackers, uid) || has(ta && ta.helpers, uid));
 }
 async function syncName(env, f, uid, out) {
   if (!f.L.names) return;
@@ -270,12 +286,21 @@ const both = (before, after) => [...new Set([...keys(before), ...keys(after)])];
 function onAdmin(env, params, now) {
   return settle(env, params.code, { uids: [params.uid], tree: params.tree }, now);
 }
-/* access/teams/{tid}: a team's coaches and trackers. */
+/* access/teams/{tid}: a team's coaches, trackers and helpers. */
 function onTeamStaff(env, params, before, after, now) {
   const b = before || {}, a = after || {};
-  const uids = [...both(b.coaches, a.coaches), ...both(b.trackers, a.trackers)];
+  const uids = [...both(b.coaches, a.coaches), ...both(b.trackers, a.trackers), ...both(b.helpers, a.helpers)];
   return settle(env, params.code, { uids, tids: [params.tid], coaches: true, tree: params.tree }, now);
 }
+/* access/viewers/{uid} (orgs/ only): a club viewer given or taken away.
+   She is in the index like any role, so this is the same settle, plus the
+   invite her viewer entry named once it is gone. */
+async function onViewer(env, params, before, after, now) {
+  const out = await settle(env, params.code, { uids: [params.uid], tree: 'orgs' }, now);
+  if (!after && okKey(params.code)) await forgetInvite(env, params.code, before, out);
+  return out;
+}
+
 /* teams/{tid}/players/{pid}/guardians: a player's families. */
 function onGuardians(env, params, before, after, now) {
   return settle(env, params.code, { uids: both(before, after), tids: [params.tid], parents: true, tree: params.tree }, now);
@@ -290,4 +315,4 @@ function onFans(env, params, before, after, now) {
   return settle(env, params.code, { uids: both(before, after), tids: [params.tid], fans: true, tree: params.tree }, now);
 }
 
-module.exports = { settle, onAdmin, onTeamStaff, onGuardians, onSelf, onFans, onMember, onSquadPlayer, onRosterOpen, rosterEntry, isStaff, hasRole, teamIndexWanted, linkedWanted, coachTeamOf };
+module.exports = { settle, onAdmin, onTeamStaff, onGuardians, onSelf, onViewer, onFans, onMember, onSquadPlayer, onRosterOpen, rosterEntry, isStaff, hasRole, teamIndexWanted, linkedWanted, coachTeamOf, helperTeamOf };

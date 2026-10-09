@@ -97,15 +97,16 @@ console.log('\n--- it stays off the public tier ---');
 const t = Object.values(seeded.teams)[0];
 t.share = 'a-real-looking-share-id';
 A.ui.teamId = t.id;
-A.fb = null;
-A.schedulePublish();
-check('publishing is refused for a test club', A.pubState.error, 'Test club — nothing is published');
+A.state.matches.zz = { id: 'zz', teamId: t.id, date: '2026-10-10' };
+A.shareIds();
+check('no game ids are made for a test club, which the server never publishes', A.state.matches.zz.share, undefined);
+A.click({ act: 'sharesheet' });
+check('and the share sheet says nothing is published', /Test club — nothing is published/.test(String(A.dom.node('#sheet').innerHTML || '')), true);
+delete A.state.matches.zz;
 
-// the same call on an ordinary club gets as far as the connection check
+// an ordinary club, for what follows
 LS.setItem('sm.workspace', 'REALCODE'); A.rereadClub();
 delete seeded.access.org.sandbox;
-A.schedulePublish();
-check('an ordinary club is not blocked here', A.pubState.error, 'Not connected to Firebase');
 
 /* ---------------- environments keep their copies apart ---------------- */
 

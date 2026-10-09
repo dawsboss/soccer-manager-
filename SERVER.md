@@ -56,45 +56,32 @@ does the bookkeeping, not that the phone works offline first.
   clubs themselves (below), names and all, behind a private link.
 
 ### My calendar's feed
-- **Moved to the server (2026-10-08):** `functions/mycal.js` builds each
-  person's feed from the clubs themselves: her teams, her children's teams,
-  the sessions she runs or her children are in, and her bookable times, worked
-  out from her roles in each club (never from her list of clubs, which she
-  can write). Triggers only mark what changed (`serverState/myCal`), and
-  `myCalBuild` rebuilds the marked feeds every five minutes, each club read
-  once per run. Every club's typed titles are there now, scrubbed of that
-  club's names. It writes only a page she alone claims that is a My calendar
-  page, and marks it `by: 'server'`; her phones see that and stop writing it
-  (`feedPublish()` waits to hear before its first write). A team she is taken
-  off leaves her feed on the next run, phone or no phone. `test/mycalfeed.js`
-  holds it to the phone's own `myFeedDoc()`, item for item and id for id.
-- **What is left:** the default database only (a rehearsal database's feeds
-  stay the phone's); a team renamed shows in feeds with the next change to
+- **Moved to the server (2026-10-08), and only there (2026-10-09, SECURITY.md,
+  SEC-10):** `functions/mycal.js` builds each person's feed from the clubs
+  themselves: her teams, her children's teams, the sessions she runs or her
+  children are in, and her bookable times, worked out from her roles in each
+  club (never from her list of clubs, which she can write). Triggers only mark
+  what changed (`serverState/myCal`), and `myCalBuild` rebuilds the marked
+  feeds every five minutes, each club read once per run. Every club's typed
+  titles are there, scrubbed of that club's names. It writes only an address
+  the server has down as hers (`serverState/pages`, shared with the team
+  pages, so one id is never both), and takes an address she replaces or turns
+  off down the moment her setting changes. Her phone writes her setting and
+  nothing else; `myFeedDoc()` (each item through `feedItem()`) is what the
+  server is held to, item for item and id for id (`test/mycalfeed.js`). A team
+  she is taken off leaves her feed on the next run, phone or no phone.
+- **What is left:** the default database only (a rehearsal database has no
+  My calendar feed); a team renamed shows in feeds with the next change to
   that club; the full detail (her children's names, who is coming) would
-  still need a private link, not `public/`.
-- **Before the server, and still where it is not deployed:** once she turns it on, her own phone builds her calendar feed from
-  every club it holds (`myFeedDoc()`, each item through `feedItem()`) and
-  writes it to `public/{id}` whenever it changes (`feedPublish()`), but only
-  from a phone that has heard from every one of her clubs this session, so an
-  old copy never overwrites a newer one. Because
-  it is `public/`, it carries no child's name and no club code, and another
-  club's typed titles are left out (that phone holds her own children, not the
-  squad to check them against).
-- **It lags.** The feed is only as fresh as the last time one of her phones
-  was open with a signal and had heard from all her clubs. A practice moved or
-  called off in any club, by anyone, reaches her subscribed calendar only after
-  that; a parent who never opens the app keeps the old time in her calendar
-  indefinitely. Then the calendar app adds its own delay on top: Apple and
-  Outlook come back about hourly, Google every several hours. So a change made
-  this morning can show in her calendar this afternoon, or not until she next
-  opens the app. The screen says so ("it catches up with a club once your phone
-  has been open since the change"), and the app itself (My calendar, alerts)
-  is always current; the feed is the copy that trails.
+  still need a private link, not `public/`. Then the calendar app adds its own
+  delay: Apple and Outlook come back about hourly, Google every several hours.
 
 ### Which clubs an account is in
 - **Partly moved (2026-10-08):** the server writes the bookmark when an
   account gets its first role in a club and removes it when she loses her
-  last (`functions/access.js`, with the lookup tables below).
+  last (`functions/access.js`, with the lookup tables below). A club-wide
+  viewer counts as a role (build 118): `accessViewer` (orgs/ only) keeps her
+  index entry and bookmark, and takes away the invite she came by.
 - **Still:** any phone that reads a club it holds a role in writes the bookmark
   `userOrgs/{uid}/{code}` (`noteMyClub()`), and admins tidy it when a role is
   withdrawn.
@@ -122,7 +109,7 @@ does the bookkeeping, not that the phone works offline first.
   below, for a club whose functions aren't deployed and for building a
   missing table whole.
 - **Before the server, and still:** `access/index`, `access/teamIndex`, `access/teamParents`,
-  `access/teamPlayers`, `access/teamFans` (build 117, `orgs/` only) and
+  `access/teamPlayers`, `access/teamFans` (build 121, `orgs/` only) and
   `access/coachIndex` are rebuilt from where a uid
   appears, by admins' and coaches' phones on every connect (`syncIndex()`,
   `syncTeamIndex()`, `syncTeamParents()`, `syncTeamPlayers()`,
@@ -163,55 +150,59 @@ does the bookkeeping, not that the phone works offline first.
 
 ## Bookable times and training sessions
 
-- **Now:** a coach's bookable window carries the list of slots it still offers
-  (`slots`), worked out on her phone or an admin's from everything she is busy
-  with and written back (`healBlocks()`, `openSlotsOf()`). The rules check a
-  booking against that list because they cannot count, search or do dates. A
-  practice added from another phone is bookable until one of theirs next
-  opens the app (rules.js, gap 9). A seat taken with no booking behind it is let
-  go by the coach's phone after ten minutes (`SEAT_STALE`), and one child can
-  hold two seats by hand (gap 10). A family never writes `in` on an ordinary
-  session, because a rule can't count the places; the coach's phone keeps the
-  count (gap 8).
-- **With a server:** booking is one call that, inside a transaction, checks the
-  coach is really free now, counts the places and books. `slots`, `seats`,
-  `healBlocks()`, the seat clean-up and gaps 8 to 10 go away; a full group can
-  have a real waiting list.
+- **Moved (build 119): booking a coach's time is one call.** A family's
+  phone asks at `bookAsks/{code}/{uid}/{id}` and the server
+  (`functions/book.js`, the `bookAsk` trigger) answers beneath it: it checks
+  her child, the coach's calendar as it stands (her teams' practices and
+  games, the sessions she runs, her time off, her busy times elsewhere), the
+  child's, and counts the places inside one transaction before it writes the
+  session and the booking. A full slot has a real waiting list, worked
+  through by `bookFreed` the moment a place comes free. What went: the
+  block's `slots` and `seats`, the coach's and admins' phones keeping them
+  (`healBlocks`, `openSlotsOf`), the seat clean-up after ten minutes, and the
+  three gaps the rules printed for them (a practice bookable until a phone
+  redrew, a seat with no booking, one child holding two). AVAILABILITY.md,
+  *Booking is one call to the server*.
+- **Still on the phone:** an ordinary session's places. A family asks, and
+  the coach's phone keeps the count when she says yes (rules.js, gap 8);
+  that is the coach's decision, not bookkeeping, so it stays hers.
 
 ---
 
 ## What families and the other team see
 
 ### The share pages
-- **Moved to the server for the calendar (2026-10-08), alongside the
-  phones:** `mirrorEvents` and the `mirrorGame…` triggers
-  (`functions/mirror.js`) rewrite a team's entries on its season link and
-  members' feed whenever they change, and a game's when and where (date,
-  kick-off, place, opponent, called off, kit, notes) on every page that
-  carries it, whoever made the change and whatever happened to their signal
-  afterwards. A game new to the members' feed is added there. Free text goes
-  through the same scrub as `pubText()`, a page that does not exist is never
-  made, and a test club never reaches `public/`. `test/mirror.js` holds it to
-  the app's own `publicEvents()` and `calendarDoc()`.
-- **Left on the phone, on purpose:** a game's score, minutes and log while it
-  is played (the sideline phone is the only place they exist, and waking the
-  server on every tap buys nothing); a new game on the season link and its own
-  page, and a deleted game's page coming down.
-- **Before the server, and still:** the public mirror (`public/{share}`) is written by the coach's or
-  admin's phone a moment after a change (`schedulePublish()`, `publishTeam()`,
-  `fixtureDoc()`, `calendarDoc()`), and a game made before game links gets its
-  id from whichever phone opens it next (`ensureFixtureShares()`). A change made
-  from a phone that then loses signal reaches the share page late.
-- **What is left:** the season link's and a game page's new games, and
-  taking a deleted game's page down, from the server too; then `shareOwners`
-  and the publish debounce can go.
+- **Moved to the server, and only there (2026-10-09, SECURITY.md, SEC-10):**
+  only the server writes `public/`; the rule is `.write: false`.
+  `functions/mirror.js` builds every page of a team (the season link, each
+  game's own page, the members' feed) from the club, as `publicDoc()`,
+  `fixtureDoc()` and `calendarDoc()` describe them (`functions/game.js`, the
+  game math ported, held to the app item for item by `test/mirror.js`). It
+  wakes on what the phones already write: each part of a game on its own
+  (a goal, a sub, the clock, never the game whole), a game's answers, a
+  player's name, number or whether she plays, a team's name, badge and page
+  ids, and its entries. Work for one team goes through a queue so two runs
+  never write a page in the wrong order. A new game reaches every page, a
+  deleted game's page comes down, an id replaced takes the old page with it,
+  and the server keeps whose page is whose (`serverState/pages`), so no club
+  can write over another's. A test club and a retired club are never
+  published.
+- **Still on the phone:** making the ids, in the club, under the team's rule:
+  the season link and the feed when the coach asks, and each game's own id
+  (`ensureFixtureShares()`), which an older game gets from whichever coach's
+  phone opens it next. The share sheet shows when the server last wrote the
+  page.
+- **Better than before:** a page used to be written from the sideline phone
+  outside the outbox, so a page closed with no signal lost its publish. The
+  writes behind it are in the outbox, and the server publishes when they land.
 
 ### Calendar sync
 - **Moved to the server (build 104), as it was:** the `calendar` function
   (`functions/calendar.js`) turns `public/{id}` into a calendar feed, and
   reads nothing else. It was a Cloudflare Worker until then. What it serves
-  is still what the phones published (`schedulePublish()`, `feedPublish()`),
-  so it is only as fresh as that.
+  is what the server published (above, and *My calendar's feed*). Its links
+  back into the app come from `SOCCER_SITE` in `functions/.env` (README,
+  *Deploying the server*), or a page from before that carried one.
 - **Next, now that it is a function:** the feed can be served from the club's own data, so the
   members' feed doesn't need its own public copy, and a person's own feed (My
   calendar's, *My calendar's feed* above) can carry names behind a private link
@@ -225,7 +216,7 @@ does the bookkeeping, not that the phone works offline first.
   the order the rules need (spend the invite, take the role, add herself to the
   index) (`redeemInvite()`); approving a team-link request is the coach writing
   the approval before the index entry (`approveClaim()`), and a fan's
-  ask the same way (`approveFan()`, build 117); a squad of parent
+  ask the same way (`approveFan()`, build 121); a squad of parent
   links is made one invite at a time (`inviteSquad()`), and so are the
   invites for the emails an imported roster carries (`inviteImported()`),
   whose sign-in emails Firebase sends one call at a time from the admin's phone
@@ -254,13 +245,19 @@ does the bookkeeping, not that the phone works offline first.
   `onFollowed` in `functions/push.js` sends the goals, each half starting,
   half time and full time to those phones. The open page still watches
   (`watchFeed()`), for a phone without notifications turned on.
-- **Now, for everything else:** every phone works out for itself what is new
-  since it last looked, per source, and shows it while the page is open
-  (`clubNews()`, `sessNews()`, `ping()`). A closed phone hears nothing of
-  club activity or a session booked.
-- **With a server:** the same sender takes each of those on as a trigger of
-  its own, worked out once for everybody instead of on each phone, and the
-  "first look is not news" care goes away.
+- **Moved, for training sessions and club activity (build 119):** a
+  booking changing, a session added, moved or called off, and a coach's
+  time off or call-out each wake a trigger of their own (`functions/news.js`:
+  `newsBooked`, `newsSession`, `newsAway`), which tells whoever the open
+  page would have told, in the same words: a family about her own child's
+  place and sessions, a coach about families asking, booking, waiting,
+  withdrawing and cancelling on hers, and the admins the club's activity
+  (and, from `functions/push.js`, every team's calendar changes and a
+  game, practice or event deleted, named from a note the server keeps of
+  each dated game at `serverState/calGame/`, and who deleted an entry from
+  the stamp the app writes just before). The open page still works it out for itself
+  while it is open (`clubNews()`, `sessNews()`, `ping()`), for a phone
+  without notifications turned on; that is all that is left on the phone.
 
 ### Alerts from every club
 - **Now:** a phone in several clubs listens to every one of them for messages

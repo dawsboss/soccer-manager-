@@ -335,6 +335,14 @@ function makeServer(seed = {}) {
     get root() { return ref(''); },
     child: c => ref(segs(p).concat(segs(c)).join('/')),
     get: () => { reads.push(shown(segs(p).join('/'))); if (down) return Promise.reject(new Error('unavailable')); return Promise.resolve({ val: () => clone(at(p)), exists: () => at(p) != null }); },
+    // a query on one child's value, as the admin library runs orderByChild(k).equalTo(v)
+    orderByChild: k => ({ equalTo: v => ({ get: () => {
+      reads.push(shown(segs(p).join('/')) + '?' + k + '=' + v);
+      if (down) return Promise.reject(new Error('unavailable'));
+      const all = at(p), out = {};
+      for (const [id, x] of Object.entries(all && typeof all === 'object' ? all : {})) if (x && typeof x === 'object' && x[k] === v) out[id] = x;
+      return Promise.resolve({ val: () => (Object.keys(out).length ? clone(out) : null) });
+    } }) }),
     remove: () => { removes.push(shown(segs(p).join('/'))); put(p, null); return Promise.resolve(); },
     set: v => limited([p], () => put(p, v)),
     // a multi-path update: each key a path under this one, null deleting it
@@ -501,7 +509,7 @@ function makeServer(seed = {}) {
      what families read in step) are left out of what fire() and woken()
      report: the suites written for the old tree ask which of *their*
      triggers woke. They still run; test/access.js checks them by name. */
-  const ORGS_ONLY = new Set(['rosterPlayer', 'rosterOpen', 'namesMember', 'moveClub']);
+  const ORGS_ONLY = new Set(['rosterPlayer', 'rosterOpen', 'namesMember', 'moveClub', 'accessViewer']);
   const reported = n => !(ORGS_MODE && ORGS_ONLY.has(n));
 
   return {

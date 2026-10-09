@@ -93,7 +93,7 @@ function seedRandom(seed = 1) {
 
 /* ---------------- timers the test can step ---------------- */
 
-/* Not a black hole: schedulePublish debounces by 1200ms and wireBase retries a
+/* Not a black hole: debounced writes wait on these and wireBase retries a
    denied read with backoff. Recording them lets a test run those paths on
    purpose instead of never. */
 function makeTimers() {
@@ -143,6 +143,7 @@ const EXPORTS = `{
   /* roles */
   acc, members, anyAdmins, isAdmin, isCoach, isTracker, isGuardian, roleIn,
   isOwner, canAdmin, clubOwners, isClubOwner, hasClubOwner, mayRemoveAdmin, ownerCard, approved, hasAnyRole, syncIndex, myTeams, myPlayers, rolesHeld, roleTags,
+  isViewer,
   guardsAnyone, myChildren, isSelfOn, isMine, famThreads, goingQ, canRsvp, syncTeamPlayers, shownName, namesNarrowed, rosterOpen, elsewhereKids, anyPlayers, allKidNames, canEditTeam, readOnlyHere, myRole, restricted, auditLog,
   gated, needsSignIn, cacheMe, cachedMe,
   /* model helpers */
@@ -166,7 +167,7 @@ const EXPORTS = `{
   moveSub, subQuiet, applyStaged, movePos, switchTo, subAt, restartMatch,
   adjustClock, tapLive, putOn, stage, staged, stagedIds, isStaged,
   /* public mirror */
-  publicGame, publicDoc, schedulePublish, shareBase, teamLink, gameLink,
+  publicGame, publicDoc, shareIds, pageAt, shareBase, teamLink, gameLink,
   gameStatus, shirtOf,
   /* AI prompt helper */
   aiPrompt, aiLabels, aiScrub, AI_TOPICS, sheetAi, aiSlotNames, aiPlanAsk, aiPlanParse,
@@ -181,8 +182,7 @@ const EXPORTS = `{
   calDayList, calAgenda, calShowTeam,
   todayStr, dayLabel, niceTime, hm, addDays, weekdayOf, CALLED, HOME_AWAY, SERIES_MAX,
   get calForm() { return calForm },
-  fixtureDoc, calendarDoc, publishTeam, ensureFixtureShares, claimTeamIds, outIds, familySaidNo, attendance, attendLine, attendOf, attendUntaken, cameToGame,
-  get pubSeen() { return pubSeen },
+  fixtureDoc, calendarDoc, ensureFixtureShares, outIds, familySaidNo, attendance, attendLine, attendOf, attendUntaken, cameToGame,
   /* practice */
   canTrain, seasonEndYear, uAge, teamUAge, uLabel, practiceUi, practiceAge,
   practiceDrills, practiceActive, viewPractice, sheetDrill, sheetRole,
@@ -190,7 +190,8 @@ const EXPORTS = `{
   /* practice plans */
   PLAN_ACTS, canPlan, teamPractices, practiceById, putPractice, dropPractice, mergePractices,
   suggestPlan, pracAiPrompt, pracAiParse, planWarnings, planKit, needsWork, drillsFor, nextPractice, movePlans, planEntry, rawPlan, addMins, todayIso, pracDay,
-  syncCoachIndex, syncAllCoachIndex, coachTeamOf, parentsWanted, playersWanted, fansWanted, syncTeamFans, myFanOf, iFan, isFanOn, approveFan, makeFanLink, sheetFans, fanCard, readiness, forgetInvite, readLimits, limitFields, dropFan,
+  syncCoachIndex, syncAllCoachIndex, coachTeamOf, helperTeamOf, calStamp, postsTo, isStaff, mayGrant, syncTeamIndex, STAFF_KEY, HELPER_GAME_ACTS, isStaffAnywhere, isHelper, canCalTeam, canGameEdit, notKickedOff, parentsWanted, playersWanted, readiness,
+  fansWanted, syncTeamFans, myFanOf, iFan, isFanOn, approveFan, makeFanLink, sheetFans, fanCard, forgetInvite, readLimits, limitFields, dropFan,
   get train() { return train }, set train(v) { train = v }, get trainState() { return trainState },
   /* the club's drills and a coach's own */
   SHELF, SHELVES, LIB_ACTS, TPL_ACTS, tplItems, findTpl, normTemplate, canCurateTpl, normDrill, cardOf, findDrill, drillOrigin, drillPool, shelfItems, canCurate, shareTeam,
@@ -214,7 +215,6 @@ const EXPORTS = `{
   get purged() { return purged },
   get unconfirmed() { return unconfirmed }, set unconfirmed(v) { unconfirmed = v },
   get retiredClubs() { return retiredClubs },
-  get pubState() { return pubState },
   /* invites */
   get invite() { return invite }, get clubInv() { return clubInv }, get myClubs() { return myClubs },
   secretId, randId, inviteLink, redeemInvite, makeInvite, inviteScreen,
@@ -236,7 +236,7 @@ const EXPORTS = `{
   sessUi, SESS_ACTS, sessMessage, reachFor, fmtMoney, sessClubLine, calendarDoc, publicDoc, viewMine, viewClub,
   /* bookable times, and my calendar */
   blockAll, blockById, blockSlots, normBlock, slotSid, canEditBlock, kidBusy, blockKids, availView, familyAvail, sheetBlock,
-  AVAIL_ACTS, myCalItems, myCalTeams, myCalTids, myCalFilters, myCalLine, createClub, blockValue, healBlocks, seatsOf, freeSeat, placesTaken, openSlotsOf, slotAt, slotKey,
+  AVAIL_ACTS, myCalItems, myCalTeams, myCalTids, myCalFilters, myCalLine, createClub, blockValue, placesTaken, slotAt, askBooking, bookWhy,
   /* my calendar, across clubs */
   get you() { return you }, busyOf, myFeedDoc, myFeedId, feedItem, youCalItems, youBusy, youClubs, elsewhereOn, sharing, sheetPersonCal, viewScope, crumbs, watchMirror, mirrorSlim,
   alertsList: () => alertsHere().list, alertBar, calAlerts, elseUnread, openAlert, noteMine,

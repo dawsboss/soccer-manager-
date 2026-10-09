@@ -2,7 +2,7 @@
    Static app. Data lives in localStorage, and mirrors to Firebase Realtime
    Database when a config + workspace code are present. */
 
-const BUILD = '118';
+const BUILD = '121';
 const BUILT = '2026-10-09';
 /* The version of database.rules.json this app was written against. The rules
    carry the same number in rulesVersion's .write, which accepts that number
@@ -11,7 +11,7 @@ const BUILT = '2026-10-09';
    never pasted look exactly like a coach with no signal: "saved on this phone
    only", one feature at a time. test/rules.js holds the two numbers together
    and fails when the rules change without this going up. */
-const RULES_VERSION = 17;
+const RULES_VERSION = 20;
 /* index.html carries the build it was published with. If this file is newer, the
    browser handed us a cached page — the exact failure that has eaten hours. */
 const pageBuild = () => {
@@ -250,7 +250,7 @@ const envPrefix = () => (envName() ? envName() + '~' : '');
 const clubKey = () => envPrefix() + (wsCode() || 'local');
 
 /* Marked in two places on purpose. The code prefix is local and readable before
-   any database round-trip — schedulePublish() has to know before it fires. The
+   any database round-trip, as the share ids and nothing published need. The
    access/org flag syncs, so a second device opening the same club also knows it
    is a rehearsal. */
 const isSandbox = () => wsCode().startsWith(SANDBOX_PREFIX) || !!(acc().org || {}).sandbox;
@@ -383,7 +383,7 @@ let namedHere = '';
 function staffName() {
   if (!fb || !me || !onOrgs() || namedHere === wsCode() + me.uid) return;
   const a = acc(), u = me.uid;
-  if (!isAdmin(u) && !(a.coachIndex || {})[u]) return;
+  if (!isAdmin(u) && !(a.coachIndex || {})[u] && !(a.helperIndex || {})[u]) return;
   namedHere = wsCode() + u;
   Promise.resolve(fb.set(fb.ref(fb.db, clubPath('names/' + u)), { name: String(me.name || '').slice(0, 80) })).catch(() => { });
 }
@@ -795,7 +795,7 @@ async function initSync() {
         noteMyClub();
       }
       flushTraining();
-      schedulePublish();   // republish on load, so a fixed config heals itself
+      shareIds();   // a game made elsewhere, or before game links, gets its id here
     }
 
     function wireBase(attempt) {
@@ -903,9 +903,11 @@ async function initSync() {
       // her own children, herself, or the player she is a fan of: each a record she reads by path
       for (const tbl of ['teamParents', 'teamPlayers', 'teamFans'])
         for (const [t, row] of Object.entries(a[tbl] || {})) if (u && row && typeof row[u] === 'string') (fam[t] = fam[t] || []).push(row[u]);
-      return { admin, all, staffTeams, fam };
+      // a club viewer reads every squad, for the names, and none of the coach's notes
+      const view = !!(u && (a.viewers || {})[u]);
+      return { admin, all, staffTeams, fam, view };
     }
-    const reachKey = r => JSON.stringify([r.admin, r.all, r.staffTeams, Object.keys(r.fam).sort()]);
+    const reachKey = r => JSON.stringify([r.admin, r.all, r.staffTeams, Object.keys(r.fam).sort(), !!r.view]);
 
     /* Her own children, team by team. The lookup tables name one child per
        team; a second on the same team (twins) is found by asking for each
@@ -935,13 +937,14 @@ async function initSync() {
       const access = await once('access', true);
       if (access === null) return null;
       const r = orgsReach(access);
+      const wide = r.all || r.view;
       const [org, names, teams, roster, matches, rsvp, membersV, log, mine] = await Promise.all([
-        once('org'), once('names'), once('teams'), r.all ? null : once('roster'), once('matches'), once('rsvp'),
+        once('org'), once('names'), once('teams'), wide ? null : once('roster'), once('matches'), once('rsvp'),
         r.all ? once('members') : null, r.admin ? once('log') : null,
         // her own entry, which is hers to read when the rest of members is not
         !r.all && me ? once('members/' + me.uid) : null]);
       const squads = {};
-      await Promise.all((r.all ? Object.keys(teams || {}) : r.staffTeams).map(async t => { const v = await once('squad/' + t); if (v !== undefined) squads[t] = v || {}; }));
+      await Promise.all((wide ? Object.keys(teams || {}) : r.staffTeams).map(async t => { const v = await once('squad/' + t); if (v !== undefined) squads[t] = v || {}; }));
       const kids = await findKids(r, roster, squads);
       // the coach's notes (SEC-12), for the coaches and admins who may read them
       const notes = r.all ? (await once('coachNotes')) || {} : {};
@@ -1025,8 +1028,8 @@ async function initSync() {
         squadOf[tid] = (x.squads || {})[tid] || {};
         val('squad/' + tid, v => { squadOf[tid] = v || {}; putPlayers(tid); saveLocal(); render(); });
       };
-      for (const tid of r.all ? Object.keys(x.teams || {}) : r.staffTeams) watchSquad(tid);
-      if (!r.all) {
+      for (const tid of r.all || r.view ? Object.keys(x.teams || {}) : r.staffTeams) watchSquad(tid);
+      if (!r.all && !r.view) {
         val('roster', v => { roster.now = v || {}; for (const tid of Object.keys(state.teams || {})) if (!(tid in squadOf)) putPlayers(tid); saveLocal(); render(); });
         for (const [tid, ps] of Object.entries(kids)) for (const pid of Object.keys(ps))
           val('squad/' + tid + '/' + pid, v => { if (v) kids[tid][pid] = v; else delete kids[tid][pid]; putPlayers(tid); saveLocal(); render(); });
@@ -1043,7 +1046,7 @@ async function initSync() {
           // a team's players are not in the team on this tree: they stay where they were read
           if (coll === 'teams') {
             state.teams[cs.key].players = (prev && prev.players) || {};
-            if (r.all) watchSquad(cs.key);
+            if (r.all || r.view) watchSquad(cs.key);
             putPlayers(cs.key);
           }
           noteSeen(coll, cs.key);
@@ -1146,7 +1149,7 @@ const pendingList = () => Object.entries(pending.w).sort((a, b) => a[1].n - b[1]
    "synced" is never said while any of it is still only here. */
 const SESS_WHAT = { sessions: 'a training session', booked: 'a place in a training session', came: 'a training session\'s register',
   fees: 'a training session fee', pay: 'a coach\'s pay rate', splans: 'a training session\'s drills',
-  avail: 'a coach\'s bookable times', seats: 'a place in a bookable slot', away: 'a coach\'s time off' };
+  avail: 'a coach\'s bookable times', away: 'a coach\'s time off' };
 function otherOwed() {
   const out = [];
   for (const k of Object.keys(train.dirty || {})) {
@@ -1364,6 +1367,7 @@ function pushAll() {
   else if (mine) steps.push(['access/index/' + mine, true]);
   if (a.teamIndex) steps.push(['access/teamIndex', a.teamIndex]);
   if (a.coachIndex) steps.push(['access/coachIndex', a.coachIndex]);
+  if (a.helperIndex) steps.push(['access/helperIndex', a.helperIndex]);
   for (const u of Object.keys(a.members || {})) steps.push(['access/members/' + u, a.members[u]]);
   for (const k of ['org', 'teams']) if (a[k]) steps.push(['access/' + k, a[k]]);
   for (const tid of Object.keys(state.teams || {})) steps.push(['teams/' + tid, state.teams[tid]]);
@@ -1376,7 +1380,7 @@ function pushAll() {
 /* The four lookup tables are rebuilt from the roles on every connect
    (syncIndex() and the rest), so they never need the outbox; queuing them
    would only mean a refused copy of something derived nagging forever. */
-const DERIVED = /^access\/(index|teamIndex|coachIndex|teamParents)(\/|$)/;
+const DERIVED = /^access\/(index|teamIndex|coachIndex|helperIndex|teamParents)(\/|$)/;
 /* roster/{tid} on orgs/: what the whole club reads of a squad (a number,
    whether she plays, and her name only while the club opens the roster). The
    server keeps it from the squad; the phone that changed the squad writes it
@@ -1417,7 +1421,7 @@ function calStamp(path, v) {
   // only who may change the calendar stamps it: a tracker saving the game she is tracking has changed nothing in it
   const p = m[1].split('/');
   const tid = p[0] === 'teams' ? p[1] : ((v && typeof v === 'object' && !m[2] && v.teamId) || ((state.matches || {})[p[1]] || {}).teamId);
-  if (!tid || !isCoach(tid, me.uid)) return v;
+  if (!tid || !(isCoach(tid, me.uid) || isHelper(tid, me.uid))) return v;
   const stamp = { by: me.uid, at: nowMs() };
   if (!m[2]) return v && typeof v === 'object' ? { ...v, edit: stamp } : v;
   setDeep(state, m[1] + '/edit', stamp);
@@ -1432,16 +1436,25 @@ function remoteSet(path, value) {
   if (DERIVED.test(path)) { if (fb.held) return Promise.resolve(); const w = Promise.resolve(fb.set(fb.ref(fb.db, onOrgs() ? clubPath(path) : fb.base + '/' + path), v)); w.catch(() => { }); return w; }
   return sendPending(path, notePending(path, v), v);
 }
-function remoteDel(path) {
+function remoteDel(path, was) {
   noteMine(path);
   if (!fb) return;
+  /* A whole entry or game deleted carries nothing to say who did it, so its
+     stamp is written just before, as calStamp() writes one beside a field:
+     the server reads it from what was there, leaves her out of the
+     admins' "Deleted" and names her (functions/push.js). */
+  const del = me && /^(teams\/([^/]+)\/events\/[^/]+|matches\/([^/]+))$/.exec(path);
+  if (del) {
+    const tid = del[2] || (was && was.teamId) || ((state.matches || {})[del[3]] || {}).teamId;
+    if (tid && (isCoach(tid, me.uid) || isHelper(tid, me.uid))) remoteSet(path + '/edit', { by: me.uid, at: nowMs() });
+  }
   if (DERIVED.test(path)) { if (fb.held) return; Promise.resolve(fb.remove(fb.ref(fb.db, onOrgs() ? clubPath(path) : fb.base + '/' + path))).catch(() => { }); return; }
   sendPending(path, notePending(path, null, true), null, true).catch(() => { });
 }
 
 function quiet(path, value) { setDeep(state, path, value); remoteSet(path, value); }
-function commit(path, value) { setDeep(state, path, value); saveLocal(); remoteSet(path, value); render(); schedulePublish(); }
-function drop(path) { delDeep(state, path); saveLocal(); remoteDel(path); render(); schedulePublish(); }
+function commit(path, value) { setDeep(state, path, value); saveLocal(); remoteSet(path, value); render(); shareIds(); }
+function drop(path) { const was = getDeep(state, path); delDeep(state, path); saveLocal(); remoteDel(path, was); render(); shareIds(); }
 
 /* ---------------- roles ---------------- */
 /* Roles are derived from where a uid appears, never stored as a string on the
@@ -1471,6 +1484,14 @@ function mayRemoveAdmin(uid) {
 const teamAccess = tid => ((acc().teams || {})[tid] || {});
 const isCoach = (tid, uid) => !!(uid && (isAdmin(uid) || (teamAccess(tid).coaches || {})[uid]));
 const isTracker = (tid, uid) => !!(uid && (teamAccess(tid).trackers || {})[uid]);
+/* A team helper (AUTH.md, *More kinds of people*, 2): a manager, a volunteer,
+   an assistant, named on one team like its coaches and trackers. She helps
+   the coach prepare (the calendar, the register, notices, practice plans, a
+   game's plan before kick-off, the drill shelves) and does nothing on the
+   day: the clock and the subs stay the coach's and the tracker's. Not the
+   squad, not the coach's notes, not families' conversations. */
+const isHelper = (tid, uid) => !!(uid && (teamAccess(tid).helpers || {})[uid]);
+const helpsAny = uid => !!uid && Object.values(acc().teams || {}).some(ta => ((ta || {}).helpers || {})[uid]);
 function isGuardian(tid, uid) {
   if (!uid) return false;
   const t = state.teams[tid];
@@ -1488,6 +1509,15 @@ const isMe = p => !!(me && p && (p.self || {})[me.uid]);
 // her own child, or herself: the one player a family account sees by name
 const isMine = p => !!(me && p && ((p.guardians || {})[me.uid] || (p.self || {})[me.uid]));
 const famRole = r => r === 'parent' || r === 'player';
+/* AUTH.md, *More kinds of people*, 3: a club-wide viewer (a director, a
+   board member) reads every team's calendar and games with the children's
+   names, and does nothing else: no answers, no messages, no bookings, no
+   writes. Club-level, like admins (access/viewers/{uid}), and in the club's
+   index like everyone else in it (the owner, 2026-10-09), so hasAnyRole()
+   counts her; what keeps her to reading is that no write rule names her,
+   and the screen draws every team read-only. The one read only she has
+   beyond the index is every team's squad, for the names. */
+const isViewer = uid => !!(uid && (acc().viewers || {})[uid]);
 /* A player's fans (AUTH.md, *More kinds of people*, 1): a grandparent,
    an aunt, a family friend. Under the player, not beside her parents:
    teams/{tid}/players/{pid}/fans/{uid}, on orgs/ only. Kept apart from
@@ -1509,8 +1539,10 @@ function roleIn(tid, uid) {
   if (isAdmin(uid)) return 'admin';
   if (isCoach(tid, uid)) return 'coach';
   if (isTracker(tid, uid)) return 'tracker';
+  if (isHelper(tid, uid)) return 'helper';
   if (isGuardian(tid, uid)) return 'parent';
   if (isSelfOn(tid, uid)) return 'player';
+  if (isViewer(uid)) return 'viewer';
   if (isFanOn(tid, uid)) return 'fan';
   return null;
 }
@@ -1526,8 +1558,9 @@ function roleIn(tid, uid) {
    it still holds. */
 const rosterOpen = () => ((acc().org || {}).rosterOpen) === true;
 function namesNarrowed(tid) {
-  if (!gated() || !me || canAdmin() || rosterOpen()) return false;
-  if (teams().some(x => isCoach(x.id, me.uid) || isTracker(x.id, me.uid))) return false;
+  // a club viewer was let in to see the games with names (AUTH.md, the owner's decision 4)
+  if (!gated() || !me || canAdmin() || rosterOpen() || isViewer(me.uid)) return false;
+  if (teams().some(x => isCoach(x.id, me.uid) || isTracker(x.id, me.uid) || isHelper(x.id, me.uid))) return false;
   return readerRole(roleIn(tid, me.uid));
 }
 /* A player as this viewer may see her: the name, or "#7" (a player with no
@@ -1538,7 +1571,7 @@ function shownName(t, p) {
   const n = p.number == null ? '' : String(p.number).trim();
   return n ? '#' + n : 'A teammate';
 }
-const ROLE_LABEL = { owner: 'App owner', admin: 'Org admin', coach: 'Coach', tracker: 'Tracker', parent: 'Parent', player: 'Player', fan: 'Fan', viewer: 'Viewer' };
+const ROLE_LABEL = { owner: 'App owner', admin: 'Org admin', coach: 'Coach', tracker: 'Tracker', helper: 'Team helper', parent: 'Parent', player: 'Player', fan: 'Fan', viewer: 'Viewer' };
 
 /* Whoever looks after the app itself. Read from the database root, never from
    this file — a personal email committed to a public repo gets scraped, sticks
@@ -1556,9 +1589,9 @@ const approved = uid => !!(uid && (acc().index || {})[uid]);
    flat node that a rule can check in a single lookup. */
 function hasAnyRole(uid) {
   const a = acc();
-  if ((a.admins || {})[uid]) return true;
+  if ((a.admins || {})[uid] || (a.viewers || {})[uid]) return true;
   for (const ta of Object.values(a.teams || {}))
-    if ((ta.coaches || {})[uid] || (ta.trackers || {})[uid]) return true;
+    if ((ta.coaches || {})[uid] || (ta.trackers || {})[uid] || (ta.helpers || {})[uid]) return true;
   for (const t of Object.values(state.teams || {}))
     if (Object.values(t.players || {}).some(p => (p.guardians || {})[uid] || (p.self || {})[uid] || (p.fans || {})[uid])) return true;
   return false;
@@ -1594,13 +1627,17 @@ function syncIndex(uid) {
    parent — could write every team's data. Rules cannot iterate, so the answer
    has to be one direct lookup, and that is what this node is:
 
-     access/teamIndex/{teamId}/{uid} = 'coach' | 'tracker'
+     access/teamIndex/{teamId}/{uid} = 'coach' | 'tracker' | 'helper'
 
    The value carries the role because the two are not the same permission. A
    coach may change the squad; a tracker may only log events on a game and make
    the coach's locked-in subs, so the rules let 'coach' write teams/{tid} and let
    either write a match belonging to that team. Admins are deliberately absent — the rule checks access/admins
    directly, and mirroring them here would be a second place to forget.
+
+   A helper's entry is what lets her read the squad and the notices; what she
+   may change is checked against the helpers list itself, so a helper who
+   also tracks (whose entry says tracker) keeps both.
 
    A tracker can still write more of a match than the interface offers her. That
    is the limit of what a rule can express without per-field rules, and AUTH.md
@@ -1609,6 +1646,7 @@ function syncIndex(uid) {
 function syncTeamIndex(tid) {
   if (!tid) return;
   const ta = teamAccess(tid), want = {};
+  for (const u of Object.keys(ta.helpers || {})) want[u] = 'helper';
   for (const u of Object.keys(ta.trackers || {})) want[u] = 'tracker';
   for (const u of Object.keys(ta.coaches || {})) want[u] = 'coach';   // coach wins
   const now = ((acc().teamIndex || {})[tid]) || {};
@@ -1637,21 +1675,36 @@ function coachTeamOf(uid) {
   const ts = acc().teams || {};
   return Object.keys(ts).sort().find(tid => ((ts[tid] || {}).coaches || {})[uid]) || null;
 }
+/* helperIndex is its twin for team helpers, for the same one question with
+   no team in hand (the club's drill shelves). Never coachIndex: that would
+   make her a coach everywhere the table is read. */
+function helperTeamOf(uid) {
+  const ts = acc().teams || {};
+  return Object.keys(ts).sort().find(tid => ((ts[tid] || {}).helpers || {})[uid]) || null;
+}
+// the server's isStaff(): who it names for families at names/ (functions/access.js)
+function isStaffAnywhere(uid) {
+  return !!uid && (isAdmin(uid) || Object.values(acc().teams || {}).some(ta => !!(((ta || {}).coaches || {})[uid] || ((ta || {}).trackers || {})[uid] || ((ta || {}).helpers || {})[uid])));
+}
+function syncOneIndex(uid, table, key, teamOf) {
+  const now = (acc()[table] || {})[uid] || null;
+  // any team will do, so only rewrite it once the one it names stops being true
+  if (now && (teamAccess(now)[key] || {})[uid]) return;
+  const want = teamOf(uid);
+  if (want === now) return;
+  if (want) quiet(`access/${table}/${uid}`, want);
+  else { delDeep(state, `access/${table}/${uid}`); remoteDel(`access/${table}/${uid}`); }
+  saveLocal();
+}
 // SERVER.md: a lookup table rebuilt by phones on connect; a server trigger would keep it true at once.
 function syncCoachIndex(uid) {
   if (!uid) return;
-  const now = (acc().coachIndex || {})[uid] || null;
-  // any team she coaches will do, so only rewrite it once the one it names stops being true
-  if (now && (teamAccess(now).coaches || {})[uid]) return;
-  const want = coachTeamOf(uid);
-  if (want === now) return;
-  if (want) quiet(`access/coachIndex/${uid}`, want);
-  else { delDeep(state, `access/coachIndex/${uid}`); remoteDel(`access/coachIndex/${uid}`); }
-  saveLocal();
+  syncOneIndex(uid, 'coachIndex', 'coaches', coachTeamOf);
+  syncOneIndex(uid, 'helperIndex', 'helpers', helperTeamOf);
 }
 function syncAllCoachIndex() {
-  const uids = new Set(Object.keys(acc().coachIndex || {}));
-  for (const ta of Object.values(acc().teams || {})) for (const u of Object.keys((ta || {}).coaches || {})) uids.add(u);
+  const uids = new Set([...Object.keys(acc().coachIndex || {}), ...Object.keys(acc().helperIndex || {})]);
+  for (const ta of Object.values(acc().teams || {})) for (const k of ['coaches', 'helpers']) for (const u of Object.keys((ta || {})[k] || {})) uids.add(u);
   for (const u of uids) syncCoachIndex(u);
 }
 
@@ -1756,44 +1809,12 @@ function syncTeamFans(tid) {
   if (changed) saveLocal();
 }
 
-/* Who may publish a team's read-only mirror. public/{share} is world-readable
-   by design, but its write rule is the one hole AUTH.md names outright, and it
-   is closed by a list the rule can look up in one hop. Anonymous auth is not an
-   option here and AUTH.md says why. */
-function claimShare(tid) {
-  const t = (state.teams || {})[tid];
-  if (!fb || !t || !t.share) return;
-  const owners = {};
-  for (const u of Object.keys(acc().admins || {})) owners[u] = true;
-  for (const u of Object.keys(teamAccess(tid).coaches || {})) owners[u] = true;
-  if (me) owners[me.uid] = true;
-  fb.set(fb.ref(fb.db, 'shareOwners/' + t.share), owners).catch(() => { });
-}
-function claimAllShares() { for (const t of Object.values(state.teams || {})) if (t.share) claimShare(t.id); }
-/* A team now publishes under more ids than its season link: one per game, so a
-   game link carries that game and nothing else, and one for the members'
-   calendar feed. Each needs its owners claimed before the first write, exactly
-   as the season link does. Once a session per id is enough — the season link
-   above keeps being refreshed on every publish, as it always was. */
-const claimed = new Set();
-function claimTeamIds(tid) {
-  const t = (state.teams || {})[tid];
-  if (!fb || !t) return;
-  const owners = {};
-  for (const u of Object.keys(acc().admins || {})) owners[u] = true;
-  for (const u of Object.keys(teamAccess(tid).coaches || {})) owners[u] = true;
-  if (me) owners[me.uid] = true;
-  const ids = [t.calFeed, ...(t.share ? teamMatches(tid).map(m => m.share) : [])].filter(Boolean);
-  for (const id of ids) {
-    if (claimed.has(id)) continue;
-    claimed.add(id);
-    fb.set(fb.ref(fb.db, 'shareOwners/' + id), owners).catch(() => claimed.delete(id));
-  }
-}
-/* Every game gets its own share id the first time a coach publishes with
-   sharing on. The id lives on the game, so it follows the game and dies with
-   it. Readers never make one: the button that needs it waits for the coach's
-   phone to have published. */
+/* Every game of a team with sharing on gets its own share id, made here on
+   the coach's phone and written to the game like any other change. The id
+   lives on the game, so it follows the game and dies with it; the server
+   builds the page under it (functions/mirror.js) when it hears the id
+   written. Readers never make one: the button that needs it waits for the
+   coach's phone to have made it. */
 // SERVER.md: an older game gets its link from whichever phone opens it next; a server would give it one.
 function ensureFixtureShares(t) {
   if (!t || !t.share || !canEditTeam(t.id)) return false;
@@ -1951,8 +1972,8 @@ function myTeams() {
   if (!me) return [];                          // after it, signed out sees nothing
   if (canAdmin()) return all;
   const coachAnywhere = all.some(t => isCoach(t.id, me.uid));
-  if (coachAnywhere) return all;
-  const mine = all.filter(t => isTracker(t.id, me.uid) || isGuardian(t.id, me.uid) || isSelfOn(t.id, me.uid) || isFanOn(t.id, me.uid));
+  if (coachAnywhere || isViewer(me.uid)) return all;
+  const mine = all.filter(t => isTracker(t.id, me.uid) || isHelper(t.id, me.uid) || isGuardian(t.id, me.uid) || isSelfOn(t.id, me.uid) || isFanOn(t.id, me.uid));
   return mine;
 }
 /* Every player this account is a guardian of, across every team it can see.
@@ -2020,10 +2041,18 @@ function canEditTeam(tid) {
   return canAdmin() || isCoach(tid, me.uid);
 }
 const readOnlyHere = () => !canEditTeam(ui.teamId);
+/* What a team helper changes as well as its coaches and the admins: the
+   calendar (games before kick-off included), the register and the notices.
+   Never the squad, and never a game once it has kicked off: the rules hold
+   her to both (a match's helper clause needs no `periods` and no `ended`). */
+const notKickedOff = m => !!m && !m.ended && !Object.keys(m.periods || {}).length;
+const canCalTeam = tid => canEditTeam(tid) || !!(me && tid && isHelper(tid, me.uid));
+const canGameEdit = m => !!m && (canEditTeam(m.teamId) || (canCalTeam(m.teamId) && notKickedOff(m)));
 /* The squad and the fixture list are the coach's. A tracker logs a game and a
    parent reads one; neither adds a player or a game, and nor does a coach of
-   another age group. The button is only drawn for whoever may press it. */
-const addGameBtn = cls => readOnlyHere() ? '' : `<button class="${cls}" data-act="newmatch">Add a game</button>`;
+   another age group. A helper adds games, as she adds anything else to the
+   calendar. The button is only drawn for whoever may press it. */
+const addGameBtn = cls => canCalTeam(ui.teamId) ? `<button class="${cls}" data-act="newmatch">Add a game</button>` : '';
 
 /* My role here. Nobody is locked out by an empty membership list: until someone
    is actually given a role, everyone keeps the access they have today. */
@@ -2041,7 +2070,7 @@ function myRole() {
 const restricted = () => {
   if (isOwner()) return null;
   const r = myRole();
-  if (r === 'tracker' || readerRole(r)) return r;
+  if (r === 'tracker' || r === 'helper' || readerRole(r)) return r;
   return me && !canEditTeam(ui.teamId) ? 'viewer' : null;
 };
 
@@ -2073,6 +2102,14 @@ const COACH_ACTS = new Set([
   // the calendar
   'calnew', 'calgames', 'caledit', 'calsave', 'caldel', 'calcall', 'caleditgame', 'calsyncon', 'calsyncnew', 'attend', 'attsave'
 ]);
+/* What a team helper may do of COACH_ACTS on her own team: the calendar and
+   the register, and a game's plan, its when and where and who is out, only
+   before kick-off. */
+const HELPER_ACTS = new Set(['calnew', 'calgames', 'caledit', 'calsave', 'caldel', 'calcall', 'caleditgame', 'attend', 'attsave']);
+const HELPER_GAME_ACTS = new Set(['newmatch', 'editmatch', 'savematch', 'delmatch',
+  'makeplan', 'planall', 'saveplan', 'evensplit', 'availability', 'toggleavail', 'toggleout',
+  'editgameshape', 'gameshapepreset', 'planlock', 'planunlock', 'applyblock', 'fillslot',
+  'snapstart', 'snapadd', 'snapdel', 'snaptime', 'snapslot', 'snapclear', 'snapplayer', 'snapwipe', 'snapfill']);
 const LOG_ACTS = new Set([
   'goal', 'savegoal', 'delgoal', 'shot', 'saveshot', 'delshot', 'ev', 'saveev', 'delev',
   'poss', 'saveposs', 'delposs', 'undoposs', 'trackerclean', 'dropby'
@@ -2086,6 +2123,11 @@ function mayAct(a, m, d) {
   const tid = (a.startsWith('cal') || a === 'attend' || a === 'attsave') && d && d.tid ? d.tid
     : m && m.teamId && !['newmatch', 'addplayer', 'editplayer', 'saveplayer', 'delplayer'].includes(a) ? m.teamId : ui.teamId;
   if (canEditTeam(tid)) return true;
+  if (me && isHelper(tid, me.uid)) {
+    if (HELPER_ACTS.has(a)) return true;
+    // a game that is not there yet (Add a game) has not kicked off
+    if (HELPER_GAME_ACTS.has(a)) return a === 'newmatch' || notKickedOff(a === 'editmatch' || a === 'delmatch' ? (state.matches[d && d.id] || m) : m);
+  }
   return log && !!me && isTracker(tid, me.uid);
 }
 
@@ -2167,7 +2209,11 @@ async function takeSeat(put, base, v, who, at) {
     return k;
   }
 }
-const INVITE_ROLES = { coach: 'Coach', tracker: 'Tracker', parent: 'Parent' };
+const INVITE_ROLES = { coach: 'Coach', tracker: 'Tracker', helper: 'Team helper', parent: 'Parent', viewer: 'Club viewer' };
+// where each staff role is named on a team: access/teams/{tid}/{key}/{uid}
+const STAFF_KEY = { coach: 'coaches', tracker: 'trackers', helper: 'helpers' };
+// a role for the whole club, with no team to pick
+const CLUB_ROLES = new Set(['viewer']);
 let rtdb = null;        // { db, mod } once the database module has loaded, code or not
 /* null until asked, then 'asking', 'ok', 'old' (the published rules predate
    this app) or 'app' (this app predates them: another phone has already
@@ -2273,6 +2319,7 @@ function inviteWhat(v) {
   const role = INVITE_ROLES[v.role] || v.role;
   if (v.role === 'player') return `a player, #${esc(v.playerNo || '?')} on <b>${esc(v.teamName || 'a team')}</b>, with your own sign-in`;
   if (v.role === 'fan') return `a fan of ${v.playerNo ? '#' + esc(v.playerNo) : 'a player'} on <b>${esc(v.teamName || 'a team')}</b>: the calendar, the games as they happen and the team's notices${v.approved ? '' : '. A coach of the team says yes before you see anything'}`;
+  if (v.role === 'viewer') return 'a club viewer: every team\u2019s games and calendar, to read';
   return v.role === 'parent'
     ? `a parent of ${v.playerNo ? '#' + esc(v.playerNo) : 'a player'} on <b>${esc(v.teamName || 'a team')}</b>`
     : `${role.toLowerCase()} of <b>${esc(v.teamName || 'a team')}</b>`;
@@ -2346,7 +2393,8 @@ async function redeemInvite() {
       if (v.role === 'parent') await put(W(`teams/${v.team}/players/${v.player}/guardians/${who}`), id);
       else if (v.role === 'player') await put(W(`teams/${v.team}/players/${v.player}/self/${who}`), id);
       else if (v.role === 'fan') await put(W(`teams/${v.team}/players/${v.player}/fans/${who}`), id);
-      else await put(W(`access/teams/${v.team}/${v.role === 'coach' ? 'coaches' : 'trackers'}/${who}`), id);
+      else if (v.role === 'viewer') await put(W('access/viewers/' + who), id);
+      else await put(W(`access/teams/${v.team}/${STAFF_KEY[v.role] || 'trackers'}/${who}`), id);
       await put(W('access/index/' + who), id);
     }
   } catch (e) {
@@ -2370,7 +2418,12 @@ async function redeemInvite() {
     await soft(put(W(`teams/${v.team}/players/${v.player}/fanNames/${who}`), String(me.name || me.email || 'A fan').slice(0, 80)));
     await soft(put(W(`access/teamFans/${v.team}/${who}`), v.player));
   }
-  else if (v.role !== 'parent') await soft(put(W(`access/teamIndex/${v.team}/${who}`), v.role));
+  else if (v.role === 'viewer') { /* club-wide: no per-team table to join */ }
+  else if (v.role !== 'parent') {
+    await soft(put(W(`access/teamIndex/${v.team}/${who}`), v.role));
+    // the club's drill shelves ask "a helper of any team?" with no team in hand
+    if (v.role === 'helper') await soft(put(W(`access/helperIndex/${who}`), v.team));
+  }
   /* Refused while the table does not exist yet, which is fine: the rules fall
      back to the club-wide index until an admin's device creates it, and that
      device puts her in it. */
@@ -2379,7 +2432,7 @@ async function redeemInvite() {
   await soft(put('userOrgs/' + who + '/' + ws, { name: v.clubName || '', at }));
   await soft(put(W('access/log/' + uid()), {
     at, act: 'joined by invite as', by: who, byName: me.name || null,
-    target: who, targetName: INVITE_ROLES[v.role] || ROLE_LABEL[v.role] || v.role, team: v.team, teamName: v.teamName || null
+    target: who, targetName: INVITE_ROLES[v.role] || ROLE_LABEL[v.role] || v.role, team: v.team || null, teamName: v.teamName || null
   }));
   // spent: nothing left to replay. A link for several stays for the rest, until its date.
   if (!v.seats) await soft(mod.remove(mod.ref(db, 'invites/' + id)));
@@ -2515,7 +2568,7 @@ function inviteStatus(v) {
 }
 
 const inviteList = () => Object.entries(clubInv || {}).map(([id, v]) => ({ id, ...v })).sort((a, b) => (b.at || 0) - (a.at || 0));
-const inviteFor = v => `${esc(INVITE_ROLES[v.role] || ROLE_LABEL[v.role] || v.role)}${(v.role === 'parent' || v.role === 'player') && v.playerName ? ' of ' + esc(v.playerName) : ''} · ${esc(v.teamName || '')}`;
+const inviteFor = v => `${esc(INVITE_ROLES[v.role] || ROLE_LABEL[v.role] || v.role)}${(v.role === 'parent' || v.role === 'player') && v.playerName ? ' of ' + esc(v.playerName) : ''}${v.teamName ? ' · ' + esc(v.teamName) : CLUB_ROLES.has(v.role) ? ' · the whole club' : ''}`;
 
 /* Open invites first and all of them, because those are the ones an admin
    comes back for: to copy the link again, or to kill it. Used and expired
@@ -2553,7 +2606,7 @@ function sheetInviteDetail(id) {
   const st = inviteStatus(v), link = inviteLink(id);
   const when = ms => ms ? new Date(ms).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' }) : 'unknown';
   const who = v.used && (acc().members || {})[v.used.by];
-  const stillHas = v.used && (v.role === 'parent'
+  const stillHas = v.used && (v.role === 'viewer' ? isViewer(v.used.by) : v.role === 'parent'
     ? !!(((((state.teams[v.team] || {}).players || {})[v.player] || {}).guardians || {})[v.used.by])
     : v.role === 'coach' ? isCoach(v.team, v.used.by) : isTracker(v.team, v.used.by));
   const canShare = typeof navigator !== 'undefined' && typeof navigator.share === 'function';
@@ -2591,8 +2644,9 @@ function sheetInvite() {
     <p class="lbl">As</p>
     <div class="chips" style="margin-bottom:12px">${Object.entries(INVITE_ROLES).map(([k, l]) =>
     `<button class="chip" type="button" data-act="invitepick" data-k="role" data-v="${k}" aria-pressed="${f.role === k}">${l}</button>`).join('')}</div>
-    <p class="lbl">Team</p>
-    ${pickOne('invitepick', 'team', f.team, teams().map(x => [x.id, esc(x.name || 'Team')]), 'Add a team first.')}
+    ${CLUB_ROLES.has(f.role) ? `<p class="muted" style="margin-top:0">Reads every team's calendar and games, with the children's names, and nothing else: no emails, no access log, no coach's notes, no messages, no answering who's coming, no changes.</p>` : `<p class="lbl">Team</p>
+    ${pickOne('invitepick', 'team', f.team, teams().map(x => [x.id, esc(x.name || 'Team')]), 'Add a team first.')}`}
+    ${f.role === 'helper' ? `<p class="muted" style="margin-top:-4px">A manager or a volunteer: the team's calendar, register, notices, practice plans and game plans before kick-off, and the drills. Not the squad, the clock or the subs, and no family's conversations.</p>` : ''}
     ${f.role === 'parent' ? `<p class="lbl">Parent of</p>
     ${pickOne('invitepick', 'player', f.player, players.map(p => [p.id, `${p.number ? '#' + esc(p.number) + ' ' : ''}${esc(p.name || '')}`]), 'No players on this team.')}` : ''}
     <label class="field"><span>Their email — optional</span><input type="email" id="invEmail" placeholder="Leave empty for a link to send yourself" autocapitalize="off" autocorrect="off"></label>
@@ -2612,13 +2666,13 @@ async function writeInvite(t, role, p, email, lim = {}) {
      the child's name: the invite is readable by anyone holding the link, and a
      link gets forwarded. The admin's own list can carry it; only admins read that. */
   const doc = {
-    ws: wsCode(), team: t.id, teamName: t.name || '', role,
+    ws: wsCode(), ...(t ? { team: t.id, teamName: t.name || '' } : {}), role,
     clubName: (acc().org || {}).name || '', by: me.uid, byName: me.name || '',
     at, expiresAt: at + (lim.days || INVITE_DAYS) * 864e5, ...seatsFor(uses)
   };
   if (p) { doc.player = p.id; if (p.number) doc.playerNo = String(p.number); }
   if (email) doc.email = email;
-  const listed = { role: doc.role, team: doc.team, teamName: doc.teamName, by: doc.by, byName: doc.byName, at, expiresAt: doc.expiresAt, ...(uses > 1 ? { max: uses } : {}) };
+  const listed = { role: doc.role, ...(t ? { team: doc.team, teamName: doc.teamName } : {}), by: doc.by, byName: doc.byName, at, expiresAt: doc.expiresAt, ...(uses > 1 ? { max: uses } : {}) };
   if (p) { listed.playerName = p.name || ''; listed.player = p.id; }
   if (email) listed.email = email;
   await fb.set(fb.ref(fb.db, 'invites/' + id), doc);
@@ -2679,8 +2733,9 @@ async function makeInvite() {
   if (!canAdmin()) { toast('Club admins only'); return; }
   if (!fb || !rtdb || !me) { toast(me ? 'Needs a connection to the database' : 'Sign in first'); return; }
   const f = ui.inv || {};
-  const t = state.teams[f.team];
-  if (!t) { toast('Pick a team'); return; }
+  const club = CLUB_ROLES.has(f.role);
+  const t = club ? null : state.teams[f.team];
+  if (!t && !club) { toast('Pick a team'); return; }
   if (!INVITE_ROLES[f.role]) { toast('Pick a role'); return; }
   const p = f.role === 'parent' ? (t.players || {})[f.player] : null;
   if (f.role === 'parent' && !p) { toast('Pick the player'); return; }
@@ -2694,12 +2749,12 @@ async function makeInvite() {
     return;
   }
   const { id, doc } = made;
-  logAccess('invited', null, { targetName: (email || 'someone') + ' as ' + f.role, team: t.id, teamName: t.name || null });
+  logAccess('invited', null, { targetName: (email || 'someone') + ' as ' + f.role, team: t ? t.id : null, teamName: t ? t.name || null : null });
   ui.inv = null;
   const link = inviteLink(id);
   const canShare = typeof navigator !== 'undefined' && typeof navigator.share === 'function';
   openSheet(`<h3>Invite ready</h3>
-    <p class="muted" style="margin-top:0">${esc(INVITE_ROLES[doc.role])} on <b>${esc(doc.teamName)}</b>${email ? ` for <b>${esc(email)}</b>` : ''}. ${usesLine(doc.max || 1, doc.expiresAt)}.</p>
+    <p class="muted" style="margin-top:0">${esc(INVITE_ROLES[doc.role])}${doc.teamName ? ` on <b>${esc(doc.teamName)}</b>` : ' for the whole club'}${email ? ` for <b>${esc(email)}</b>` : ''}. ${usesLine(doc.max || 1, doc.expiresAt)}.</p>
     <div class="codebox">${esc(link)}</div>
     <div class="row" style="margin-bottom:10px"><button class="btn" data-act="copylink" data-v="${esc(link)}">Copy link</button>
     ${canShare ? `<button class="btn quiet" data-act="inviteshare" data-v="${esc(link)}">Share…</button>` : ''}</div>
@@ -3216,9 +3271,14 @@ const isStaff = tid => !!me && (canAdmin() || isCoach(tid, me.uid));
 function msgTeams() {
   if (!me || !fb || !wsCode() || needsSignIn() || !anyAdmins()) return [];
   // a fan reads her player's team's notices; she has no conversation of her own (famThreads())
-  return teams().filter(t => isStaff(t.id) || isTracker(t.id, me.uid) || isGuardian(t.id, me.uid) || isSelfOn(t.id, me.uid) || isFanOn(t.id, me.uid));
+  return teams().filter(t => isStaff(t.id) || isTracker(t.id, me.uid) || isHelper(t.id, me.uid) || isGuardian(t.id, me.uid) || isSelfOn(t.id, me.uid) || isFanOn(t.id, me.uid));
 }
 const staffTeams = () => msgTeams().filter(t => isStaff(t.id));
+/* Who posts a team's notices: its staff, and its helpers (AUTH.md, *Team
+   helpers*). Not who reads its families' conversations: that stays
+   isStaff(), and a helper reads none (the owner, 2026-10-09). */
+const postsTo = tid => isStaff(tid) || !!(me && isHelper(tid, me.uid));
+const noticeTeams = () => msgTeams().filter(t => postsTo(t.id));
 // a coach whose own child is in her squad talks to herself as staff, not as a family
 const famTeams = () => msgTeams().filter(t => !isStaff(t.id) && isGuardian(t.id, me.uid));
 /* The family conversations this account writes in, as {tid, fam}: a parent's
@@ -3860,7 +3920,7 @@ function viewInboxMsgs() {
       <div class="msgbody">${msgText(x.text)}</div>
       ${x.status === 'sending' ? '<div class="msgfoot">Sending — goes when there is a signal</div>' : ''}
       ${x.status === 'refused' ? `<div class="msgfoot bad">Not sent <button class="linkbtn" data-act="msgretry" data-id="${x.id}">Try again</button> <button class="linkbtn" data-act="msgdiscard" data-id="${x.id}">Discard</button></div>` : ''}
-      ${!x.status && isStaff(x.tid) ? `<div class="msgfoot"><button class="linkbtn" data-act="postseen" data-tid="${x.tid}" data-id="${x.id}">Seen by ${seen} of ${fam.length} famil${fam.length === 1 ? 'y' : 'ies'}</button>
+      ${!x.status && postsTo(x.tid) ? `<div class="msgfoot"><button class="linkbtn" data-act="postseen" data-tid="${x.tid}" data-id="${x.id}">Seen by ${seen} of ${fam.length} famil${fam.length === 1 ? 'y' : 'ies'}</button>
         <button class="linkbtn" data-act="postshare" data-tid="${x.tid}" data-id="${x.id}">Email or share</button>
         ${x.by === me.uid || canAdmin() ? `<button class="linkbtn" data-act="postdel" data-tid="${x.tid}" data-id="${x.id}">Delete</button>` : ''}</div>` : ''}
     </div>`;
@@ -3901,7 +3961,7 @@ function viewInboxMsgs() {
       ${list ? `<div class="plist">${list}</div>` : `<p class="muted" style="margin:0">Nothing yet. Tap <b>New message</b> to write to ${staff.length ? 'a family on your team' : ''}${staff.length && colleagues().length ? ', or ' : ''}${colleagues().length ? 'another coach or an admin' : ''}.</p>`}
       <p class="muted lockline" style="margin:8px 0 0">${LOCK_SVG} Private: each conversation is readable only by the people in it. <button class="linkbtn" data-act="msgprivacy">How private?</button></p></div>
     <div class="card"><div class="spread"><h2 style="margin:0">Team notices</h2>
-      ${staff.length ? `<button class="btn quiet sm" data-act="postnew">Post a notice</button>` : ''}</div>
+      ${noticeTeams().length ? `<button class="btn quiet sm" data-act="postnew">Post a notice</button>` : ''}</div>
       <div style="margin-top:8px">${shown.length ? shown.map(notice).join('') : `<p class="muted" style="margin:0">${staff.length ? 'Nothing posted yet. A notice goes to every family on the team.' : 'Nothing from the coaches yet.'}</p>`}</div>
       ${all.length > shown.length ? `<button class="btn quiet wide" data-act="msgall">Show ${all.length - shown.length} older</button>` : ''}</div>
     <p class="muted">Messages pop up while Minutes is open on a phone, and wait here with a count until then.${staff.length ? ' To reach everyone right now, use <b>Email or share</b> on a notice.' : ''}</p>
@@ -4153,7 +4213,7 @@ function sheetMulti() {
 }
 
 function sheetPost(tid, text = '', urgent = false) {
-  const list = staffTeams();
+  const list = noticeTeams();
   if (!list.length) return;
   if (!list.some(t => t.id === tid)) tid = (list.find(t => t.id === ui.teamId) || list[0]).id;
   ui.postTid = tid; ui.postUrgent = urgent;
@@ -4787,9 +4847,9 @@ function importPlan(data, cur = state) {
    this phone can get them: its own copy, laid over the club's wherever the
    club could be asked, and the download says if some of it could not be. */
 let lastBackup = null;     // the last download's contents, for the tests and for nothing else
-// bookable times and their seats go last: a restored seat names a session that has to be there first
+// bookable times go last
 // packages before the fees that name them: the fee rule checks the package is there
-const TRAIN_KINDS = [['sessions', 1], ['booked', 2], ['came', 1], ['packs', 3], ['packuse', 4], ['fees', 2], ['pay', 1], ['splans', 1], ['avail', 1], ['seats', 2], ['away', 2]];
+const TRAIN_KINDS = [['sessions', 1], ['booked', 2], ['came', 1], ['packs', 3], ['packuse', 4], ['fees', 2], ['pay', 1], ['splans', 1], ['avail', 1], ['away', 2]];
 const isBackupData = data => !!(data && data.teams && !Array.isArray(data.teams) && typeof data.teams === 'object'
   && (data.matches === undefined || (typeof data.matches === 'object' && !Array.isArray(data.matches))));
 function fetchOnce(path, ms = 6000) {
@@ -5412,7 +5472,7 @@ function applyImport(plan) {
   // sessions after the teams and fields they name, through the store that resends them
   for (const [path, value] of plan.sessWrites || []) sessPut(path, value);
   for (const [what, value] of plan.trainWrites || []) { if (what === 'practice') putPractice(value); else if (what === 'drill') putDrill('club', value); else if (what === 'template') putDrill('clubTpl', value); }
-  render(); schedulePublish();
+  render(); shareIds();
 }
 
 /* ---- spreadsheets ---- */
@@ -6679,7 +6739,9 @@ function render() {
   /* Live is the one game screen everybody gets. Where a role lands when its
      tab is not allowed is its working screen, not the first in the list: a
      tracker is there to log, a coach to make subs. */
-  const allowed = lim === 'tracker' ? ['live', 'track', 'stats', 'recap'] : readerRole(lim) || lim === 'viewer' ? ['live', 'stats', 'recap'] : ['live', 'subs', 'track', 'stats', 'recap', 'pitch', 'plan'];
+  /* A helper prepares a game and follows it: its plan (read-only once it has
+     kicked off), never the clock or the subs. */
+  const allowed = lim === 'tracker' ? ['live', 'track', 'stats', 'recap'] : lim === 'helper' ? ['live', 'plan', 'stats', 'recap'] : readerRole(lim) || lim === 'viewer' ? ['live', 'stats', 'recap'] : ['live', 'subs', 'track', 'stats', 'recap', 'pitch', 'plan'];
   // the recap is the story of a finished game; before full time there is no story yet
   const recapOk = !!(inGame && match() && gameStatus(match()) === 'done');
   /* Once the coach has pressed End game, the screens for running one (Subs,
@@ -6714,7 +6776,8 @@ function render() {
   if (denied || needsSignIn()) { app.innerHTML = lockScreen(); saveUi(); watchMessages(); return; }
   if (unconfirmed) { app.innerHTML = unconfirmedScreen(); saveUi(); return; }
   const roNote = lim === 'viewer' && team()
-    ? `<div class="rolebar">Viewing <b>${teamLabel(team())}</b> from another team in the club. You can read it, not change it.</div>` : '';
+    ? `<div class="rolebar">${me && isViewer(me.uid) && !teams().some(x => isCoach(x.id, me.uid)) ? `Viewing <b>${teamLabel(team())}</b> as a club viewer. You can read it, not change it.`
+      : `Viewing <b>${teamLabel(team())}</b> from another team in the club. You can read it, not change it.`}</div>` : '';
   // "you can read, not change" is about the team; on Messages a parent writes, and on the Calendar she answers
   const roleNote = lim && lim !== 'viewer' && v !== 'inbox' && v !== 'thread' && v !== 'notes'
     ? `<div class="rolebar">Signed in as <b>${esc(ROLE_LABEL[lim])}</b> — ${lim === 'tracker' ? "you can log events and make the coach's planned subs when they are due, but not run the clock or make other subs" : lim === 'parent' && v === 'sessions' ? 'you can ask for a place for your child, and withdraw her' : lim === 'parent' ? 'you can read, and say from the Calendar whether your child is coming' : lim === 'player' ? 'you can read, and say from the Calendar whether you are coming' : lim === 'fan' ? 'you follow the calendar, the games and the notices; the family answers and talks to the coaches' : 'you can read, not change'}.</div>`
@@ -6778,7 +6841,7 @@ function render() {
   watchSess();
   watchYou();
   watchMirror();
-  if (!shut) { watchBusy(); youPublishSoon(); feedPublishSoon(); watchElseMessages(); calAlerts(); }
+  if (!shut) { watchBusy(); youPublishSoon(); watchElseMessages(); calAlerts(); }
   clubNews();
   paintBell(shut);
 }
@@ -8389,7 +8452,7 @@ function viewPlan() {
       : `<div class="card"><h2 style="margin-bottom:10px">Next change</h2>${nextChange(m, el, name)}</div>`;
 
   let lockCard = '';
-  if (blocks.length && !readOnlyHere()) {
+  if (blocks.length && canGameEdit(m)) {
     if (locked) {
       const l = m.plan.locked, sv = lockSaved(m);
       const at = new Date(l.at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
@@ -8582,7 +8645,7 @@ function gameDetailsCard(m) {
       <div class="muted">${m.periodCount || 2} × ${m.periodMinutes || 40} min · ${cap}v${cap} · ${esc(m.formation ? m.formation.name : 'no shape')}</div>
       ${[HOME_AWAY[m.home], m.arrive ? 'arrive by ' + niceTime(m.arrive) : '', m.kit ? 'kit: ' + m.kit : ''].filter(Boolean).length
       ? `<div class="muted">${esc([HOME_AWAY[m.home], m.arrive ? 'arrive by ' + niceTime(m.arrive) : '', m.kit ? 'kit: ' + m.kit : ''].filter(Boolean).join(' · '))}</div>` : ''}</div>
-    ${readOnlyHere() ? '' : `<button class="btn quiet sm" data-act="editmatch" data-id="${m.id}" style="flex:none">Edit game</button>`}</div>
+    ${canGameEdit(m) ? `<button class="btn quiet sm" data-act="editmatch" data-id="${m.id}" style="flex:none">Edit game</button>` : ''}</div>
     ${CALLED[m.called] ? `<div class="warn alert" style="margin-top:10px"><b>${CALLED[m.called]}.</b> It shows that way on the calendar and the share pages.</div>` : ''}
     ${m.notes ? `<p class="muted" style="margin:10px 0 0">${esc(m.notes)}</p>` : ''}
     ${linkOk(m.veoUrl) ? `<p style="margin:10px 0 0"><a href="${esc(m.veoUrl)}" target="_blank" rel="noopener noreferrer">Open the Veo recording</a></p>` : ''}
@@ -8869,7 +8932,7 @@ function rsvpChips(it, p, from) {
 function rsvpLine(it) {
   if (!rsvpOpen(it)) return '';
   const key = rsvpKey(it);
-  if (canEditTeam(it.tid)) { const c = rsvpCounts(it.tid, key); return c.yes + c.no + c.maybe ? countLine(c) : ''; }
+  if (canCalTeam(it.tid)) { const c = rsvpCounts(it.tid, key); return c.yes + c.no + c.maybe ? countLine(c) : ''; }
   return myKids(it.tid).map(p => { const r = rsvpOf(it.tid, key, p.id); return `${firstName(p)}: ${r ? RSVP_SHORT[r.v] : 'not answered'}`; }).join(' · ');
 }
 
@@ -8957,7 +9020,7 @@ const attendUntaken = t => calItems([t.id]).filter(it => it.kind !== 'game' && !
 /* On an entry's sheet, for the coach: the register once it is taken, and the
    button to take it from the day itself onwards. */
 function attendBlock(it) {
-  if (!canEditTeam(it.tid) || !attendDue(it)) return '';
+  if (!canCalTeam(it.tid) || !attendDue(it)) return '';
   const a = attendOf(it.tid, it.id), squad_ = rsvpSquad(it.tid);
   if (!a) return `<div class="rsvpbox"><p class="lbl">Who came</p>
     <button class="btn quiet wide" data-act="attend" data-tid="${esc(it.tid)}" data-id="${esc(it.id)}">Take attendance</button></div>`;
@@ -8988,7 +9051,7 @@ function sheetAttend() {
 /* The Season tab's register, for the coach: who misses most, practices first
    because that is where the question usually is. */
 function attendanceCard(t) {
-  if (!canEditTeam(t.id)) return '';
+  if (!canCalTeam(t.id)) return '';
   const rows = players(t).filter(p => p.active !== false).map(p => ({ p, r: attendance(t, p.id) }));
   const untaken = attendUntaken(t).length;
   if (!rows.some(x => x.r.practice.of + x.r.event.of + x.r.game.of + x.r.session.of) && !untaken) return '';
@@ -9204,7 +9267,7 @@ function evHue(it, multi) {
 /* The teams she may add to from the calendar: the ones on it she may change,
    or, with none ticked, any she may. */
 function calEditTeams(sel = calSel()) {
-  const may = ids => ids.filter(id => state.teams[id] && canEditTeam(id));
+  const may = ids => ids.filter(id => state.teams[id] && canCalTeam(id));
   const on = may(sel === 'mine' ? myCalTeams() : calTeams());
   return on.length ? on : sel === 'club' ? may(myTeams().map(x => x.id)) : [];
 }
@@ -9220,7 +9283,7 @@ function evWhen(it) {
 const evTeam = tid => `<b class="ev-team">${esc((state.teams[tid] || {}).name || 'Untitled team')}</b> `;
 /* What the coach needs to know at a glance, and a parent about her own. */
 function evNotes(it) {
-  const edit = canEditTeam(it.tid);
+  const edit = canCalTeam(it.tid);
   return [edit && it.kind !== 'game' && it.public ? 'on the share link' : '', rsvpLine(it),
     edit && attendDue(it) && calPast(it) ? (a => a ? `${Object.values(a).filter(Boolean).length} came` : 'no register yet')(attendOf(it.tid, it.id)) : '',
     edit && !it.called && !calPast(it) ? coachOutLine(it) : ''].filter(Boolean);
@@ -9692,7 +9755,8 @@ function sheetCalItem(kind, tid, id) {
   if (!it) { closeSheet(); return; }
   const m = kind === 'game' ? state.matches[id] : null;
   const e = m ? null : (t.events || {})[id];
-  const edit = canEditTeam(tid);
+  // a helper's say over a game ends at kick-off, as the rules' does
+  const edit = m ? canGameEdit(m) : canCalTeam(tid);
   const I = ICS();
   const span = it.start ? niceTime(it.start) + (it.end ? '–' + niceTime(it.end) : '') : 'All day';
   const row = (k, v) => v ? `<dt>${k}</dt><dd>${v}</dd>` : '';
@@ -9816,7 +9880,7 @@ function calTargets() {
   return f.scope === 'later' && e.series ? seriesOf(t, e.series).filter(x => (x.date || '') >= (e.date || '')) : [e];
 }
 function calDone(msg) {
-  saveLocal(); schedulePublish(); closeSheet(); render();
+  saveLocal(); shareIds(); closeSheet(); render();
   if (msg) toast(msg);
 }
 function saveCalEvent() {
@@ -10325,7 +10389,9 @@ function teamSetUp(t, ro) {
    same as every other screen. */
 const drillLib = () => (typeof window !== 'undefined' && window.SOCCER_DRILLS && window.SOCCER_DRILLS.DRILLS) ? window.SOCCER_DRILLS : null;
 const drillDiagram = () => (typeof window !== 'undefined' && window.DrillDiagram && window.DrillDiagram.svg) ? window.DrillDiagram : null;
-const canTrain = () => !gated() || isOwner() || (!!me && teams().some(t => isCoach(t.id, me.uid)));
+/* A team helper too (AUTH.md, *Team helpers*: "they help with drills and with
+   planning practices"), by her own clauses in the rules, never coachIndex. */
+const canTrain = () => !gated() || isOwner() || (!!me && teams().some(t => isCoach(t.id, me.uid) || isHelper(t.id, me.uid)));
 /* The plan's own actions also need the team: a coach browsing another age
    group can read its drills but never touch its plans. */
 const PLAN_ACTS = new Set(['pracnew', 'pracfromcal', 'pracusefor', 'pracopen', 'pracback', 'pracpast', 'pracedit', 'pracsave', 'pracpick', 'pracpickdone', 'pracadd',
@@ -10954,7 +11020,7 @@ function rawPlan(tid, pid) {
 const practiceById = (tid, pid) => { const p = (train.practices[tid] || {})[pid]; return p ? withEntry(normPractice(p, tid, pid)) : null; };
 /* The plan is that team's coaches' and the club's admins', and nobody else's,
    whatever the rest of the screen lets them read. */
-const canPlan = tid => !!tid && !!state.teams[tid] && canTrain() && canEditTeam(tid);
+const canPlan = tid => !!tid && !!state.teams[tid] && canTrain() && canCalTeam(tid);
 
 const isoDay = ms => { const d = new Date(ms); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); };
 const todayIso = () => isoDay(nowMs());
@@ -11061,7 +11127,7 @@ function movePlans(tid, drawing = false) {
     sendPractice(tid, pid);
     n++;
   }
-  if (n) { saveTrain(); saveLocal(); schedulePublish(); if (t && !drawing) render(); }
+  if (n) { saveTrain(); saveLocal(); shareIds(); if (t && !drawing) render(); }
   return n;
 }
 
@@ -11335,14 +11401,16 @@ function drillOrigin(d) {
 }
 
 /* Who may change a club drill in place. Mirrors the rule: an admin, or the
-   coach who shared it while she still coaches the team it names. */
-const canCurate = d => !!(me && d && d.shelf === 'club' && (isAdmin(me.uid) || (d.by === me.uid && !!(teamAccess(d.team).coaches || {})[me.uid])));
-/* The team a shared drill is filed under, which the rule checks she coaches. */
+   coach (or team helper) who shared it while she still coaches or helps the
+   team it names. */
+const staffOf = (tid, uid) => !!(((teamAccess(tid).coaches || {})[uid]) || ((teamAccess(tid).helpers || {})[uid]));
+const canCurate = d => !!(me && d && d.shelf === 'club' && (isAdmin(me.uid) || (d.by === me.uid && staffOf(d.team, me.uid))));
+/* The team a shared drill is filed under, which the rule checks she coaches or helps. */
 function shareTeam() {
   if (!me) return null;
   const t = team();
-  if (t && ((teamAccess(t.id).coaches || {})[me.uid] || isAdmin(me.uid))) return t.id;
-  return coachTeamOf(me.uid) || (isAdmin(me.uid) ? (teams()[0] || {}).id || null : null);
+  if (t && (staffOf(t.id, me.uid) || isAdmin(me.uid))) return t.id;
+  return coachTeamOf(me.uid) || helperTeamOf(me.uid) || (isAdmin(me.uid) ? (teams()[0] || {}).id || null : null);
 }
 
 function putDrill(shelf, d) {
@@ -12398,7 +12466,7 @@ function sheetTplList(shelf) {
     <div class="chips" style="margin-bottom:10px">${Object.entries(TPL_SHELVES).map(([k, l]) => `<button class="chip" type="button" data-act="tpllist" data-k="${k}" aria-pressed="${k === shelf}">${l}</button>`).join('')}</div>
     ${tplNote(shelf)}
     ${list.length ? `<div class="plist">${list.map(t => tplRow(t, 'tplopen')).join('')}</div>`
-      : `<div class="empty"><strong>None yet</strong>${shelf === 'mineTpl' ? "Open a practice's plan and tap Save as a template. Yours follow you to any club, and nobody else sees them." : "A coach saves one straight to the club, or shares one of her own. Coaches and admins see them; trackers and parents never do."}</div>`}
+      : `<div class="empty"><strong>None yet</strong>${shelf === 'mineTpl' ? "Open a practice's plan and tap Save as a template. Yours follow you to any club, and nobody else sees them." : "A coach saves one straight to the club, or shares one of her own. Coaches, team helpers and admins see them; trackers and parents never do."}</div>`}
     <button class="btn quiet wide" data-act="closesheet" style="margin-top:10px">Done</button>`, true);
 }
 function sheetTpl(t) {
@@ -12557,12 +12625,12 @@ function tickRun() {
 const LS_SESS = 'sm.sess.v1';
 const LS_SESS_SEEN = 'sm.sessSeen';
 const sessKey = () => LS_SESS + ':' + clubKey();
-const SESS_BLANK = () => ({ sessions: {}, booked: {}, came: {}, fees: {}, packs: {}, packuse: {}, pay: {}, splans: {}, avail: {}, seats: {}, away: {}, dirty: {}, refused: {} });
+const SESS_BLANK = () => ({ sessions: {}, booked: {}, came: {}, fees: {}, packs: {}, packuse: {}, pay: {}, splans: {}, avail: {}, away: {}, dirty: {}, refused: {} });
 /* How many path segments down each kind's records sit: a session is one node,
    a booking is one per player per session, a register one per session. A merge
    walks to exactly this depth and no further, so a record is always taken or
    kept whole and never half of one with half of the other. */
-const SESS_DEPTH = { sessions: 2, booked: 3, came: 2, fees: 3, packs: 4, packuse: 5, pay: 2, splans: 2, avail: 2, seats: 3, away: 3 };
+const SESS_DEPTH = { sessions: 2, booked: 3, came: 2, fees: 3, packs: 4, packuse: 5, pay: 2, splans: 2, avail: 2, away: 3 };
 const SESS_KIND = { one: '1-1', group: 'Group' };
 const BOOK = { asked: 'Asked', in: 'Booked', wait: 'Waiting list', no: 'Not this time', out: 'Withdrew' };
 const BOOK_ORDER = { asked: 0, in: 1, wait: 2, no: 3, out: 4 };
@@ -12916,6 +12984,10 @@ function sessPut(path, value, undo) {
   noteMine(path);
   const prev = getDeep(sess, path);
   const v = value == null ? null : JSON.parse(JSON.stringify(value));   // the database refuses undefined anywhere in a write
+  /* A whole session carries who last changed it, as a calendar entry does
+     (calStamp()), so the server's push leaves her out of hearing that she
+     called it off (functions/news.js). */
+  if (v && me && /^sessions\/[^/]+$/.test(path)) v.edit = { by: me.uid, at: nowMs() };
   if (v == null) delDeep(sess, path); else setDeep(sess, path, v);
   sess.dirty[path] = nowMs() + '.' + (++sessSeq);
   saveSess();
@@ -12930,7 +13002,7 @@ function sessSend(path, undo) {
      once the session is gone they are nobody's to delete. One connection
      applies writes in the order they were made. */
   if (kind === 'sessions' && getDeep(sess, path) === undefined)
-    for (const k of ['booked', 'seats', 'came', 'fees', 'splans']) if (sess.dirty[k + '/' + id] !== undefined) sessSend(k + '/' + id);
+    for (const k of ['booked', 'came', 'fees', 'splans']) if (sess.dirty[k + '/' + id] !== undefined) sessSend(k + '/' + id);
   const v = getDeep(sess, path);
   rootSet(`training/${code}/${path}`, v === undefined ? null : v).then(() => {
     // only the version that was sent is clean; a change made since is still owed
@@ -12981,7 +13053,7 @@ function sessMerge(path, remote, resend) {
 const sessOn = () => !!(rtdb && fb && me && wsCode() && wsRead && !needsSignIn());
 function sessWanted() {
   if (!canSessions()) return [];
-  const want = ['sessions', 'booked', 'came', 'avail', 'seats'];
+  const want = ['sessions', 'booked', 'came', 'avail'];
   // coaches' time off is the coaches' and the admins', never a family's
   if (isAdmin(me.uid) || isCoachAny(me.uid)) want.push('away');
   const all = sessAll();
@@ -13012,7 +13084,6 @@ function watchSess() {
     sessFor = key;
   }
   if (!key) return;
-  scheduleHeal();
   const want = new Set(sessWanted());
   for (const p of Object.keys(sessSubs)) if (!want.has(p)) { try { sessSubs[p](); } catch (e) { } delete sessSubs[p]; }
   const { db, mod } = rtdb, code = wsCode();
@@ -13513,8 +13584,8 @@ function sessFamilyBlock(s) {
     if (b && b.st !== 'out') {
       const fee = s.price && b.st === 'in' ? (feeOf(s.id, p.id) ? ' · paid' : feesKnown(s.id, p.id) ? ` · ${esc(fmtMoney(s.price))} to pay` : '') : '';
       return `<div class="rsvprow"><span><b>${name}</b><span class="rowsub">${esc(BOOK[b.st])}${fee}${b.want ? ' · wants: ' + esc(b.want) : ''}</span></span>
-        ${over || b.st === 'no' ? '' : s.slot && b.st === 'in'
-        ? `<button class="btn quiet sm" data-act="slotcancel" data-id="${esc(s.id)}" data-pid="${esc(p.id)}">Cancel this time</button>`
+        ${over || b.st === 'no' ? '' : s.slot && (b.st === 'in' || b.st === 'wait')
+        ? `<button class="btn quiet sm" data-act="slotcancel" data-id="${esc(s.id)}" data-pid="${esc(p.id)}">${b.st === 'wait' ? 'Leave the waiting list' : 'Cancel this time'}</button>`
         : `<button class="btn quiet sm" data-act="sesswithdraw" data-id="${esc(s.id)}" data-pid="${esc(p.id)}">${b.st === 'in' ? 'Can’t make it' : 'Withdraw'}</button>`}</div>`;
     }
     if (over || !s.open || !fitsAges(s, t)) return b ? `<div class="rsvprow"><span><b>${name}</b><span class="rowsub">Withdrew</span></span></div>` : '';
@@ -14084,7 +14155,7 @@ function onSessAct(a, d) {
   if (a === 'sessdel') {
     if (bookingsOf(s.id).some(x => feeOf(s.id, x.pid))) { toast('Payments are recorded against it, so call it off instead'); return; }
     if (!confirm('Delete this session, with its bookings and register? Calling it off keeps the record instead.')) return;
-    for (const k of ['booked', 'seats', 'came', 'fees', 'splans']) if (getDeep(sess, k + '/' + s.id) !== undefined || fb) sessPut(k + '/' + s.id, null);
+    for (const k of ['booked', 'came', 'fees', 'splans']) if (getDeep(sess, k + '/' + s.id) !== undefined || fb) sessPut(k + '/' + s.id, null);
     sessPut('sessions/' + s.id, null);
     u.open = null; closeSheet(); render(); toast('Deleted'); return;
   }
@@ -14095,8 +14166,6 @@ function onSessAct(a, d) {
     const st = BOOK[d.v] ? d.v : null; if (!st || st === 'asked') return;
     if (st === 'in' && b.st !== 'in' && spotsLeft(s) === 0) { toast('No spots left — take someone off, waitlist this one, or add spots'); return; }
     sessPut(`booked/${s.id}/${d.pid}`, bookingVal(b, st));
-    // a place she gave up in a slot goes back to the families
-    if (s.slot && (st === 'out' || st === 'no')) for (const x of seatsOf(s.id)) if (x.pid === d.pid) sessPut(`seats/${s.id}/${x.n}`, null);
     sheetSess(s.id); render(); return;
   }
   if (a === 'sesspick') { sessPick = { sid: s.id, tid: ui.teamId, picked: [], scope: 'one' }; sheetSessPick(); return; }
@@ -14118,9 +14187,6 @@ function onSessAct(a, d) {
       if (b && b.st === 'in') continue;
       const st = spotsLeft(sessById(x.id)) > 0 ? 'in' : 'wait';
       if (st === 'wait') waited++;
-      // on a family-bookable slot, a player the coach adds takes a seat too, so the families' count stays true
-      const blk = x.slot ? blockById(x.slot) : null, seat = blk && st === 'in' && !seatsOf(x.id).some(y => y.pid === pid) ? freeSeat(blk, x.id) : null;
-      if (seat) sessPut(`seats/${x.id}/${seat}`, { pid, tid: w.t.id, by: by(), at: nowMs() });
       sessPut(`booked/${x.id}/${pid}`, bookingVal({ ...(b || {}), tid: w.t.id }, st));
     }
     sessPick = null; sheetSess(base.id); render();
@@ -14448,25 +14514,22 @@ function saveSessForm() {
    register, fees, hours, clashes, the team calendar) then works on it
    unchanged, because it is one.
 
-   The rules hold a family to the window, and they can only look things up,
-   never count or search. So the block carries what they need to look up:
-   `slots`, the times it still offers, each with its start as a timestamp
-   (the grid, the length, and "not in the past" and "not inside the notice"
-   become comparisons), and `seats`, one key per place. A family takes a
-   place by taking a seat nobody holds, which is how a group of six refuses
-   the seventh. `slots` leaves out whatever the coach is busy with, and her
-   phone and the admins' keep it so (`healBlocks()`), as the lookup tables
-   are kept: derived, rebuilt, never typed. */
+   A family books by asking the server (`askBooking()`, functions/book.js;
+   SERVER.md, *Bookable times and training sessions*), which checks her
+   child, the coach's calendar as it stands and the places, inside one
+   transaction, and writes the session and the booking. The rules cannot
+   count, search or do dates, so a family's phone never writes a slot
+   booking itself any more: what this phone works out about a slot (free,
+   full, taken out by a practice) is what it shows, and the server decides.
+   A full slot has a waiting list, worked through by the server as places
+   come free. */
 const SLOT_LENS = [30, 45, 60, 90];
 const NOTICE_HOURS = [0, 12, 24, 48];
 const BLOCK_KIND = { one: '1-1s', group: 'Small group' };
 const clockOf = m => pad2(Math.floor(m / 60) % 24) + ':' + pad2(m % 60);
 // keys a database will not turn into an array: 's1' and 't1700', never 1 and 1700
-const slotKey = start => 't' + String(start).replace(':', '');
-const seatKeys = cap => Array.from({ length: cap }, (_, i) => 's' + (i + 1));
 const slotSid = (coach, date, start) => 'k_' + coach + '_' + date + '_' + String(start).replace(':', '');
 const slotAt = (date, start) => dateOf(date).getTime() + minOf(start) * 60000;
-const SEAT_STALE = 10 * 60000;
 const agesOf = raw => {
   const a = raw && typeof raw === 'object' ? Object.values(raw).map(Number) : null;
   return a && a.length === 2 && a.every(n => Number.isInteger(n) && n >= 4 && n <= 19) && a[0] <= a[1] ? a : null;
@@ -14501,18 +14564,9 @@ const minsNow = () => { const d = new Date(nowMs()); return d.getHours() * 60 + 
 const startMs = s => Number(s.t0) || slotAt(s.date, s.start || '00:00');
 const hoursUntil = s => (startMs(s) - nowMs()) / 3600000;
 
-/* ---- seats: a place in a slot ---- */
-const seatsOf = sid => Object.entries(((sess.seats || {})[sid]) || {}).filter(([, v]) => v && typeof v === 'object' && v.pid).map(([n, v]) => ({ n, ...v }));
-/* Who is in a slot: everyone the coach or a family has booked, and anyone
-   holding a seat whose booking has not landed yet. Somebody taken off, or
-   turned down, is not, whatever seat she still holds. */
-function placesTaken(sid) {
-  const ins = new Set(bookingsOf(sid).filter(x => x.st === 'in').map(x => x.pid));
-  for (const st of seatsOf(sid)) if (!bookOf(sid, st.pid)) ins.add(st.pid);
-  return ins.size;
-}
-const freeSeat = (b, sid) => { const held = new Set(seatsOf(sid).map(x => x.n)); return seatKeys(b.cap).find(k => !held.has(k)) || null; };
-
+/* Who is in a slot: everyone the coach, a family or the waiting list has
+   booked in. Somebody taken off, or turned down, is not. */
+const placesTaken = sid => nIn(sid);
 /* The block cut into its slots, each with whatever keeps it from being
    booked. A coach's team calendar is her busy time: a practice or game for a
    team she coaches, or another session she runs, takes out the slots it
@@ -14522,7 +14576,6 @@ function blockSlots(b) {
   if (!b || !b.start || !b.end) return out;
   const from = minOf(b.start), to = minOf(b.end);
   const busy = busyItems(b.date).filter(x => x.coaches.includes(b.coach));
-  const listed = ((sess.avail || {})[b.id] || {}).slots || {};
   const today = todayStr(), now = minsNow();
   for (let a = from; a + b.len <= to && out.length < 48; a += b.len) {
     const start = clockOf(a), end = clockOf(a + b.len), sid = slotSid(b.coach, b.date, start);
@@ -14531,59 +14584,14 @@ function blockSlots(b) {
     const past = b.date < today || (b.date === today && a <= now);
     const taken = s ? placesTaken(sid) : 0;
     const left = s && s.called ? 0 : Math.max(0, b.cap - taken);
-    const free = !clash.length && !past && !b.off && !!listed[slotKey(start)] && left > 0 && !!freeSeat(b, sid);
-    out.push({ start, end, sid, a, s, clash, past, taken, left, free });
+    const open = !clash.length && !past && !b.off && !(s && s.called);
+    // full: a slot somebody holds with no place left, which a family can still wait for
+    out.push({ start, end, sid, a, s, clash, past, taken, left, free: open && left > 0, full: open && !!s && left === 0 });
   }
   return out;
 }
-/* What the block offers, as the rule reads it: every slot on the grid the
-   coach is free for, with its start as a timestamp. Taken and past slots stay
-   listed; the seats and the clock refuse those. */
-// SERVER.md: the slot list the rules read, because rules can't count; a server books directly.
-function openSlotsOf(b) {
-  const out = {};
-  if (b.off) return out;
-  for (const x of blockSlots(b)) if (!x.clash.length) out[slotKey(x.start)] = { end: x.end, at: slotAt(b.date, x.start) };
-  return out;
-}
-const seatMap = cap => Object.fromEntries(seatKeys(cap).map(k => [k, true]));
+// the same value written the same way, whatever order its keys came in
 const canon = v => (v && typeof v === 'object' ? '{' + Object.keys(v).sort().map(k => k + ':' + canon(v[k])).join(',') + '}' : JSON.stringify(v));
-
-/* Keeps what the rules read true. A practice added to a team she coaches, a
-   session she now runs, a week taken off: her phone, or an admin's, rewrites
-   the block's list of slots the next time it draws, as the lookup tables are
-   rebuilt on connect. Only changed blocks are written, so it settles. Also
-   lets go of seats nobody is using: one whose child was taken off or turned
-   down, or one held ten minutes with no booking behind it. */
-let healTimer = null;
-function scheduleHeal() {
-  if (healTimer || typeof setTimeout !== 'function') return;
-  healTimer = setTimeout(() => { healTimer = null; healBlocks(); }, 1500);
-}
-// SERVER.md: slots and seats kept true by the coach's or an admin's phone; a server would book in a transaction.
-function healBlocks() {
-  if (!me || (fb && !(sessLoaded.has('avail') && sessLoaded.has('sessions')))) return 0;
-  let n = 0;
-  const today = todayStr();
-  for (const b of blockAll()) {
-    if (b.date < today || !(b.coach === me.uid ? canEditBlock(b) : canAdmin())) continue;
-    const raw = sess.avail[b.id] || {};
-    const want = { slots: openSlotsOf(b), seats: seatMap(b.cap) };
-    if (canon(raw.slots || {}) === canon(want.slots) && canon(raw.seats || {}) === canon(want.seats)) continue;
-    sessPut('avail/' + b.id, { ...raw, ...want });
-    n++;
-  }
-  if (!fb || sessLoaded.has('seats')) for (const sid of Object.keys(sess.seats || {})) {
-    const s = sessById(sid);
-    if (!s || !s.slot || sessPast(s) || !canRun(s) || (s.coach !== (me && me.uid) && !canAdmin())) continue;
-    for (const st of seatsOf(sid)) {
-      const bk = bookOf(sid, st.pid);
-      if (bk ? bk.st === 'out' || bk.st === 'no' : nowMs() - (Number(st.at) || 0) > SEAT_STALE) { sessPut(`seats/${sid}/${st.n}`, null); n++; }
-    }
-  }
-  if (n) render();
-  return n;
-}
 
 /* What a child of hers already has then: her team's practice or game, or a
    session she is in. Offered to the family as taken by it, never booked over. */
@@ -14641,7 +14649,7 @@ function familyAvail() {
   const list = blockAll().filter(b => b.date >= today && !b.off && blockKids(b).length && blockSlots(b).some(x => x.free));
   if (!list.length) return '';
   return `<div class="card"><h2 style="margin-bottom:0">Book a time with a coach</h2>
-    <p class="muted" style="margin:4px 0 0">Pick a free slot and the place is yours, no waiting for a reply.</p>
+    <p class="muted" style="margin:4px 0 0">Pick a free slot and the place is yours in a second or two, with no waiting for the coach to reply.</p>
     ${availDays(list.slice(0, 40), true, true)}</div>`;
 }
 
@@ -14660,12 +14668,16 @@ function sheetBlock(id) {
   const slotRow = x => {
     const when = `${niceTime(x.start)}–${niceTime(x.end)}`;
     const count = group ? `${x.taken} of ${b.cap}` : '';
-    const mineIn = x.s && kids.some(k => (bookOf(x.s.id, k.p.id) || {}).st === 'in');
+    const held = k => ['in', 'wait'].includes((bookOf(x.s.id, k.p.id) || {}).st);
+    const mineIn = x.s && kids.some(held);
     if (x.s && (canRun(x.s) || mineIn) && !(mineIn && !edit && x.free && kid && !bookOf(x.s.id, kid.p.id))) {
       const label = x.s.called ? CALLED[x.s.called] : canRun(x.s) ? [count, names(x.s)].filter(Boolean).join(' · ')
-        : kids.filter(k => (bookOf(x.s.id, k.p.id) || {}).st === 'in').map(k => firstName(k.p) + ' is in').join(', ');
+        : kids.filter(held).map(k => firstName(k.p) + ((bookOf(x.s.id, k.p.id) || {}).st === 'wait' ? ' is on the waiting list' : ' is in')).join(', ');
       return `<button class="opt spread" type="button" data-act="sessopen" data-id="${esc(x.s.id)}"><span>${when}</span><span class="on">${esc(label)}</span></button>`;
     }
+    // full, but she can wait for a place: the server moves the first in line in when one comes free
+    if (!edit && kid && x.full && !kidBusy(b, x, kid).length)
+      return `<button class="opt spread" type="button" data-act="slotpick" data-id="${esc(b.id)}" data-v="${esc(x.start)}" data-wait="1"><span><b>${when}</b><span class="rowsub">${group ? `All ${b.cap} places taken` : 'Taken'}</span></span><span class="tag">Waiting list</span></button>`;
     const why = x.past ? 'gone' : b.off ? 'off' : x.clash.length ? (edit ? x.clash.map(c => c.label).join('; ') : 'not free')
       : x.s && x.s.called ? CALLED[x.s.called] : x.s && !x.left ? 'full' : !x.free ? 'not open yet' : '';
     if (why) return `<div class="opt spread"><span class="muted">${when}</span><span class="muted">${esc([count, why].filter(Boolean).join(' · '))}</span></div>`;
@@ -14702,17 +14714,93 @@ function sheetBlock(id) {
       <p class="muted" style="margin-bottom:0">Slots already booked stay booked whatever happens here; each is a session of yours, to move or call off from its own page.</p>` : ''}`);
 }
 
-function sheetSlotBook(bid, start) {
+function sheetSlotBook(bid, start, wait) {
   const b = blockById(bid), u = sessUi();
   const kid = blockKids(b || {}).find(k => k.p.id === u.kid) || (b ? blockKids(b)[0] : null);
   const x = b ? blockSlots(b).find(y => y.start === start) : null;
   if (!b || !kid || !x) { closeSheet(); return; }
+  if (wait && x.full) {
+    openSheet(`<h3>Waiting list for ${esc(niceTime(x.start))}</h3>
+    <p class="muted" style="margin-top:0">${esc(blockLabel(b))} with ${esc(b.coachName)} · ${esc(dayLabel(b.date))}, ${esc(niceTime(x.start))}–${esc(niceTime(x.end))}. Every place is taken. If one comes free, the first on the list gets it, and you are told.</p>
+    <label class="field"><span>What she wants to work on</span><textarea id="slotWant" rows="2" maxlength="${WANT_MAX}" placeholder="Weak foot, crossing, a drill she liked"></textarea></label>
+    <button class="btn wide" data-act="slotbook" data-id="${esc(b.id)}" data-v="${esc(x.start)}" data-pid="${esc(kid.p.id)}" data-wait="1" style="margin-bottom:8px">Put ${esc(firstName(kid.p))} on the waiting list</button>
+    <button class="btn quiet wide" data-act="availopen" data-id="${esc(b.id)}">Back</button>`);
+    return;
+  }
   openSheet(`<h3>Book ${esc(niceTime(x.start))} for ${esc(firstName(kid.p))}</h3>
     <p class="muted" style="margin-top:0">${esc(blockLabel(b))} with ${esc(b.coachName)} · ${esc(dayLabel(b.date))}, ${esc(niceTime(x.start))}–${esc(niceTime(x.end))}${blockPlace(b) ? ' · ' + esc(blockPlace(b)) : ''}${b.kind === 'group' ? ` · ${x.left} of ${b.cap} places left` : ''}</p>
     <label class="field"><span>What she wants to work on</span><textarea id="slotWant" rows="2" maxlength="${WANT_MAX}" placeholder="Weak foot, crossing, a drill she liked"></textarea></label>
     <p class="muted">${b.price ? `${esc(fmtMoney(b.price))}, paid to the coach or the club the way you usually do. ` : ''}${b.notice ? `You can cancel here up to ${b.notice} hours before; after that, message the coach.` : 'You can cancel here any time before it starts.'}</p>
     <button class="btn wide" data-act="slotbook" data-id="${esc(b.id)}" data-v="${esc(x.start)}" data-pid="${esc(kid.p.id)}" style="margin-bottom:8px">Book it</button>
     <button class="btn quiet wide" data-act="availopen" data-id="${esc(b.id)}">Back</button>`);
+}
+
+/* ---- asking the server ---- */
+/* A family's booking or cancelling is one call to the server (functions/
+   book.js): the ask is written at bookAsks/{code}/{uid}/{id}, hers alone in
+   the rules, and the answer appears beneath it. Never queued: with no signal
+   it is refused before it is asked, and an answer that does not come is said
+   as that, not as a no (the place, if it was taken, appears anyway, because
+   the sessions and bookings are listened to). The ask is cleared away once
+   it has been answered or given up on. */
+const BOOK_WAIT = 30000;
+const noBlanks = o => Object.fromEntries(Object.entries(o).filter(([, v]) => v !== null && v !== undefined && v !== ''));
+function askBooking(v) {
+  const { db, mod } = rtdb;
+  const path = `bookAsks/${wsCode()}/${me.uid}/${uid()}`;
+  return new Promise(resolve => {
+    let off = null, done = false, timer = null;
+    const finish = ans => {
+      if (done) return;
+      done = true;
+      if (timer) clearTimeout(timer);
+      if (typeof off === 'function') off();
+      Promise.resolve().then(() => mod.remove(mod.ref(db, path))).catch(() => { });
+      resolve(ans);
+    };
+    timer = setTimeout(() => finish(null), BOOK_WAIT);
+    Promise.resolve().then(() => mod.set(mod.ref(db, path), { ...v, at: nowMs() })).then(() => {
+      if (done) return;
+      off = mod.onValue(mod.ref(db, path + '/answer'), sn => { const ans = sn.val(); if (ans) finish(ans); }, () => finish(null));
+    }, e => finish({ ok: false, why: /permission|denied/i.test((e && e.code) || '') ? 'rules' : 'signal' }));
+  });
+}
+/* The server's no, in words. */
+function bookWhy(ans, kid) {
+  if (!ans) return 'No answer from the club yet. If the place is yours it will show here in a moment; if not, try again.';
+  const n = kid ? firstName(kid.p) : 'Your child';
+  return ({
+    full: 'Somebody has just taken the last place — you can join the waiting list instead',
+    busy: 'The coach is not free then any more — pick another time',
+    kidbusy: `${n} has something else then`,
+    past: 'That time has already started',
+    off: 'The coach has taken that week off',
+    gone: 'That time is not offered any more',
+    called: 'That time has been called off',
+    no: 'The coach has said not this time — message her',
+    family: 'You can only book for your own child',
+    notice: `Less than ${ans.notice || 'the coach’s notice in'} hours to go — message the coach to cancel`,
+    paid: 'It has been paid for or marked — ask the coach',
+    rules: `The club’s database refused it — are the rules (version ${RULES_VERSION}) published?`
+  })[ans.why] || 'Not done — check the signal and try again';
+}
+/* A club with no database (on this phone only) has nobody to race: the slot
+   and the booking are written here, as any session of hers is. */
+function bookHere(b, x, kid, want) {
+  const who = (me && me.uid) || 'device';
+  if (!x.s) sessPut('sessions/' + x.sid, noBlanks({
+    id: x.sid, kind: b.kind, title: b.title, coach: b.coach, coachName: b.coachName, date: b.date, start: x.start, end: x.end,
+    t0: slotAt(b.date, x.start), field: b.field, place: b.place, cap: b.cap, open: false, slot: b.id, pid: kid.p.id, tid: kid.t.id,
+    price: b.price, notice: b.notice, ages: b.ages, by: who, made: nowMs(), at: nowMs()
+  }));
+  sessPut(`booked/${x.sid}/${kid.p.id}`, bookingVal({ tid: kid.t.id }, 'in', { want }));
+  render(); sheetSess(x.sid);
+  toast(`Booked: ${firstName(kid.p)}, ${dayLabel(b.date)} ${niceTime(x.start)}`);
+}
+function cancelHere(s, kid) {
+  sessPut(`booked/${s.id}/${kid.p.id}`, null);
+  if (!bookingsOf(s.id).some(x => x.pid !== kid.p.id)) sessPut('sessions/' + s.id, null);
+  render(); toast('Cancelled');
 }
 
 /* ---- the form ---- */
@@ -14791,14 +14879,14 @@ function sheetBlockForm() {
       <div class="chips" style="margin-bottom:10px">${chip('availscopeed', 'one', f.scope !== 'later', 'Just this week')}${chip('availscopeed', 'later', f.scope === 'later', 'This and every later week')}</div>` : ''}
     <button class="btn wide" data-act="availsave">${isNew ? (n > 1 ? `Offer ${n} days` : 'Offer it') : 'Save'}</button>`);
 }
-/* A block as it is written: what the form said, and the two lists the rules
-   read worked out from it there and then, so a family can book the moment it
-   reaches the club rather than after the next heal. */
+/* A block as it is written: what the form said, and this phone's midnight on
+   its date, which only a phone in the club's time zone knows, so the server
+   can tell when each slot starts. The two lists the old rules read (`slots`
+   and `seats`) are left off: the server books now. */
 function blockValue(base) {
   const v = { ...base };
-  const nb = normBlock(v, v.id);
-  v.slots = openSlotsOf(nb);
-  v.seats = seatMap(nb.cap);
+  delete v.slots; delete v.seats;
+  if (okDay(v.date)) v.day0 = dateOf(v.date).getTime();
   return v;
 }
 function saveBlockForm() {
@@ -14902,40 +14990,35 @@ function onAvailAct(a, d) {
   if (a === 'slotpick') {
     if (!b) { closeSheet(); return; }
     if (!blockKids(b).length) { toast('You can only book for your own child'); return; }
-    sheetSlotBook(b.id, d.v); return;
+    sheetSlotBook(b.id, d.v, d.wait === '1'); return;
   }
   if (a === 'slotbook') {
     const kid = b ? blockKids(b).find(k => k.p.id === d.pid) : null;
     if (!b || !kid) { closeSheet(); toast('You can only book for your own child'); render(); return; }
     if (fb && !me) { toast('Sign in first'); return; }
     const x = blockSlots(b).find(y => y.start === d.v);
-    if (x && x.s && (bookOf(x.sid, kid.p.id) || {}).st === 'in') { toast(`${firstName(kid.p)} is already in`); return; }
-    if (!x || !x.free) { toast('That time is not free any more'); sheetBlock(b.id); return; }
+    const wait = d.wait === '1';
+    const mine = x && x.s ? (bookOf(x.sid, kid.p.id) || {}).st : null;
+    if (mine === 'in' || mine === 'wait') { toast(`${firstName(kid.p)} is already ${mine === 'in' ? 'in' : 'on the waiting list'}`); return; }
+    if (!x || !(x.free || (wait && x.full))) { toast('That time is not free any more'); sheetBlock(b.id); return; }
     if (kidBusy(b, x, kid).length) { toast(`${firstName(kid.p)} has something else then`); return; }
     // first come, first served: a booking that waited in a queue would be a promise nobody can keep
     if (fb && !online) { toast('Booking a time needs a signal — it is first come, first served'); return; }
-    const seat = freeSeat(b, x.sid);
     const el = $('#slotWant');
     const want = String((el && el.value) || '').trim().slice(0, WANT_MAX);
-    const raw = sess.avail[b.id] || {}, who = (me && me.uid) || 'device';
-    const msg = 'Not booked — somebody may have just taken that place. Pick another.';
-    if (!x.s) {
-      const s = {
-        id: x.sid, kind: b.kind, title: b.title, coach: b.coach, coachName: b.coachName, date: b.date, start: x.start, end: x.end,
-        t0: ((raw.slots || {})[slotKey(x.start)] || {}).at || slotAt(b.date, x.start), field: b.field, place: b.place, cap: b.cap, open: false, slot: b.id, pid: kid.p.id, tid: kid.t.id,
-        by: who, made: nowMs(), at: nowMs()
-      };
-      /* The rule compares these with the block's exactly, so each is copied as
-         stored, or left out with it; the start time too, as the coach's phone
-         worked it out, so a phone in another time zone cannot disagree. */
-      for (const k of ['price', 'notice']) if (raw[k] !== undefined && raw[k] !== null) s[k] = raw[k];
-      if (b.ages) s.ages = b.ages;
-      sessPut('sessions/' + x.sid, s, msg);
-    }
-    sessPut(`seats/${x.sid}/${seat}`, { pid: kid.p.id, tid: kid.t.id, by: who, at: nowMs() }, msg);
-    sessPut(`booked/${x.sid}/${kid.p.id}`, bookingVal({ tid: kid.t.id }, 'in', { want, seat }), msg);
-    render(); sheetSess(x.sid);
-    toast(`Booked: ${firstName(kid.p)}, ${dayLabel(b.date)} ${niceTime(x.start)}`); return;
+    if (!fb) { bookHere(b, x, kid, want); return; }
+    openSheet(`<h3>${wait ? 'Joining the waiting list' : 'Booking'}…</h3><p class="muted">Asking the club for ${esc(niceTime(x.start))} on ${esc(dayLabel(b.date))}. This takes a second or two.</p>`);
+    askBooking(noBlanks({ op: 'book', block: b.id, start: x.start, tid: kid.t.id, pid: kid.p.id, want: want || null, wait: wait || null })).then(ans => {
+      if (ans && ans.ok) {
+        render(); sheetSess(ans.sid);
+        toast(ans.st === 'wait' ? `On the waiting list: ${firstName(kid.p)}, ${dayLabel(b.date)} ${niceTime(x.start)} — you'll hear if a place comes free`
+          : `Booked: ${firstName(kid.p)}, ${dayLabel(b.date)} ${niceTime(x.start)}`);
+        return;
+      }
+      render(); sheetBlock(b.id);
+      toast(bookWhy(ans, kid));
+    });
+    return;
   }
   if (a === 'slotcancel') {
     const s = sessById(d.id);
@@ -14943,19 +15026,23 @@ function onAvailAct(a, d) {
     const bk = kid ? bookOf(s.id, kid.p.id) : null;
     if (!s || !s.slot || !kid || !bk) { closeSheet(); toast('You can only cancel your own child’s place'); render(); return; }
     if (sessPast(s) || s.called) return;
+    const waiting = bk.st === 'wait';
     if (feeOf(s.id, kid.p.id) || (sess.came || {})[s.id]) { toast('It has been paid for or marked — ask the coach'); return; }
     const notice = Number(s.notice) || 0;
-    if (notice && hoursUntil(s) < notice) { toast(`Less than ${notice} hours to go — message the coach to cancel`); return; }
-    if (!confirm(`Cancel ${firstName(kid.p)}’s place on ${dayLabel(s.date)} at ${niceTime(s.start)}? It goes back to the coach’s free times.`)) return;
-    const msg = 'Not cancelled — the club’s database refused it. Ask the coach.';
-    const who = (me && me.uid) || 'device';
+    if (!waiting && notice && hoursUntil(s) < notice) { toast(`Less than ${notice} hours to go — message the coach to cancel`); return; }
+    if (!confirm(waiting ? `Take ${firstName(kid.p)} off the waiting list for ${dayLabel(s.date)} at ${niceTime(s.start)}?`
+      : `Cancel ${firstName(kid.p)}’s place on ${dayLabel(s.date)} at ${niceTime(s.start)}? It goes back to the coach’s free times.`)) return;
+    if (fb && !online) { toast('Cancelling needs a signal, so the place goes straight to whoever is next'); return; }
     sessDropped.add(s.id + '/' + kid.p.id);
-    // in the order the rules need: the booking, then her seat, then the slot if nobody else is in it
-    sessPut(`booked/${s.id}/${kid.p.id}`, null, msg);
-    for (const st of seatsOf(s.id)) if (st.pid === kid.p.id && (!me || st.by === who)) sessPut(`seats/${s.id}/${st.n}`, null, msg);
-    const others = bookingsOf(s.id).some(x => x.pid !== kid.p.id) || seatsOf(s.id).some(x => x.pid !== kid.p.id);
-    if (!others && (!me || s.by === who)) sessPut('sessions/' + s.id, null, msg);
-    u.open = null; closeSheet(); render(); toast('Cancelled — the coach is told'); return;
+    u.open = null; closeSheet();
+    if (!fb) { cancelHere(s, kid); return; }
+    askBooking({ op: 'cancel', sid: s.id, pid: kid.p.id }).then(ans => {
+      render();
+      if (ans && ans.ok) { toast(waiting ? 'Off the waiting list' : 'Cancelled — the coach is told'); return; }
+      sessDropped.delete(s.id + '/' + kid.p.id);
+      toast(bookWhy(ans, kid));
+    });
+    return;
   }
 }
 
@@ -15293,7 +15380,7 @@ function watchYou() {
     if (!me || me.uid !== who) return;
     const v = snap.val();
     // a phone that changed it offline keeps its own word until it has been sent
-    if (v && typeof v === 'object' && (Number(v.at) || 0) >= (Number((you.set || {}).at) || 0)) { you.set = { share: v.share === true, at: Number(v.at) || 0, ...(typeof v.feed === 'string' ? { feed: v.feed } : {}), ...(typeof v.feedUntil === 'number' ? { feedUntil: v.feedUntil } : {}) }; saveYou(); youPublishSoon(); feedPublishSoon(); }
+    if (v && typeof v === 'object' && (Number(v.at) || 0) >= (Number((you.set || {}).at) || 0)) { you.set = { share: v.share === true, at: Number(v.at) || 0, ...(typeof v.feed === 'string' ? { feed: v.feed } : {}), ...(typeof v.feedUntil === 'number' ? { feedUntil: v.feedUntil } : {}) }; saveYou(); youPublishSoon(); }
     if (ui.view === 'mycal') render();
   }, () => { });
 }
@@ -15637,11 +15724,10 @@ function youShareCard() {
    are left out: its entries carry the team, the kind, the time and the place.
    Item ids are hashed, so no club's code reaches the open web either.
 
-   Off until she turns it on. The id is claimed in shareOwners like a share
-   link, and kept at people/{uid}/set/feed so her other phones publish to the
-   same address; replacing it kills the old one. SERVER.md: her phone writes
-   it, so a change in a club reaches her calendar only once one of her phones
-   has been open since. */
+   Off until she turns it on. The id is kept at people/{uid}/set/feed, and the
+   server builds the page there (functions/mycal.js) and takes a replaced one
+   down; her phone never writes it (SECURITY.md, SEC-10). myFeedDoc() is what
+   the server's feed is held to (test/mycalfeed.js). */
 const myFeedId = () => (me && youHere().set && typeof you.set.feed === 'string' && you.set.feed) || '';
 function feedScrub() {
   const subs = [];
@@ -15655,7 +15741,7 @@ function feedScrub() {
   return s => (s ? replaceNames(String(s), subs).text : '');
 }
 /* One item of My calendar as the feed carries it, or null. */
-// SERVER.md: each item made safe for public/ on her phone; a server would build it from the club.
+// SERVER.md: the server builds her feed (functions/mycal.js); this is what each item of it is held to.
 function feedItem(it, scrub) {
   if (!it || !okDay(it.date)) return null;
   const other = !!it.club;
@@ -15681,7 +15767,7 @@ function feedItem(it, scrub) {
   return ['k' + clubTag((it.club || wsCode() || '') + '|' + it.key), doc];
 }
 const FEED_BACK_DAYS = 60, FEED_MAX = 400;
-// SERVER.md: built on her phone for public/; a server would build her feed itself.
+// SERVER.md: the server builds her feed (functions/mycal.js) and writes it; this is what it is held to.
 function myFeedDoc() {
   const scrub = feedScrub(), from = addDays(todayStr(), -FEED_BACK_DAYS), items = {};
   let n = 0;
@@ -15693,68 +15779,19 @@ function myFeedDoc() {
   }
   return { team: { name: 'My calendar' }, mine: true, link: { app: shareBase() + 'index.html' }, items, updated: nowMs(), ...untilOf(me && youHere().set && you.set.feedUntil) };
 }
-/* Written only from a phone that has heard from every club it holds this
-   session, and only when what it carries has changed: an old copy of a club
-   must never overwrite what another phone of hers sent a minute ago. */
-let feedSent = '';
-/* Whether the server keeps this address now (functions/mycal.js). It marks
-   the page it writes `by: 'server'`, and once it has, every phone of hers
-   leaves it alone: two writers building from different copies would take
-   turns overwriting each other, and the phone's is the one that lags. A
-   phone waits to hear before it writes at all, so a page the server already
-   keeps is never replaced by a phone's older copy, even for a moment. Where
-   the functions are not deployed nobody writes `by`, and the phone carries
-   on as it always has. */
-let feedBy = { id: '', server: null, off: null };   // server: null until the database has said
-function feedOwner(id) {
-  if (feedBy.id === id) return feedBy.server;
-  if (typeof feedBy.off === 'function') try { feedBy.off(); } catch (e) { }
-  feedBy = { id, server: null, off: null };
-  if (!rtdb) return null;
-  const { db, mod } = rtdb;
-  feedBy.off = mod.onValue(mod.ref(db, `public/${id}/by`), s => {
-    if (feedBy.id !== id) return;
-    const was = feedBy.server;
-    feedBy.server = s.val() === 'server';
-    if (!feedBy.server) feedPublishSoon();
-    if (was !== feedBy.server) render();
-  }, () => { if (feedBy.id === id && feedBy.server === null) { feedBy.server = false; feedPublishSoon(); } });
-  return null;
-}
-// SERVER.md: her own phone keeps her calendar feed up to date; a server would write it on every change.
-function feedPublish() {
-  const id = myFeedId();
-  if (!id || !fb || !me || isSandbox() || needsSignIn()) return;
-  if (wsCode() && !wsRead) return;
-  if (youClubs().some(([code]) => !mirrorLive.has(code))) return;
-  if (feedOwner(id) !== false) return;      // the server's, or not heard yet
-  const doc = myFeedDoc(), sig = id + JSON.stringify({ ...doc, updated: 0 });
-  if (sig === feedSent) return;
-  feedSent = sig;
-  Promise.resolve(fb.set(fb.ref(fb.db, 'public/' + id), doc)).catch(() => { feedSent = ''; });
-}
-let feedTimer = null;
-function feedPublishSoon() {
-  if (feedTimer || typeof setTimeout !== 'function' || !myFeedId()) return;
-  feedTimer = setTimeout(() => { feedTimer = null; feedPublish(); }, 2500);
-}
-/* On, a new address, or off. The claim goes first, because the public rule
-   lets only the id's owners write it once it is claimed; then the setting,
-   so her other phones know the address; then the feed itself. */
+/* On, a new address, or off: her setting, and nothing else. The server
+   builds the page at the address (functions/mycal.js) and takes a replaced
+   or turned-off one down; only it writes public/ (SECURITY.md, SEC-10). */
 async function setMyFeed(how) {
   if (!me || !fb) return;
   youHere();
   const old = myFeedId();
   const id = how === 'off' ? '' : randId('m');
-  const put = (p, v) => Promise.resolve(v === null ? fb.remove(fb.ref(fb.db, p)) : fb.set(fb.ref(fb.db, p), v)).then(() => true, () => false);
-  if (id && !(await put('shareOwners/' + id, { [me.uid]: true }))) { toast('Not turned on: the database refused it. Its rules may need updating.'); return; }
   const set = { share: sharing(), at: nowMs() };
   if (id) set.feed = id;
-  if (!(await put(youPath('set'), set))) { toast('Not saved: the database refused it. Its rules may need updating.'); if (id) put('shareOwners/' + id, null); return; }
+  const ok = await Promise.resolve(fb.set(fb.ref(fb.db, youPath('set')), set)).then(() => true, () => false);
+  if (!ok) { toast('Not saved: the database refused it. Its rules may need updating.'); return; }
   you.set = set; saveYou();
-  if (old) { await put('public/' + old, null); put('shareOwners/' + old, null); }
-  feedSent = '';
-  if (id) feedPublish();
   render();
   toast(how === 'off' ? 'Calendar sync is off — the address has stopped working' : old ? 'New address made — the old one has stopped working' : 'Calendar sync is on');
 }
@@ -15771,9 +15808,7 @@ function myFeedCard() {
     <button class="btn wide" data-act="myfeed" data-v="on">Turn on calendar sync</button>
     ${copy}</div>`;
   return `<div class="card"><h2 style="margin-bottom:8px">In your own calendar</h2>
-    <p class="muted" style="margin-top:0">Subscribe once and your calendar follows every change in every club. Apple and Outlook check about every hour; Google keeps its own pace, often several hours. ${feedBy.id === id && feedBy.server
-      ? 'The club\u2019s server keeps it up to date within a few minutes of a change, whether or not your phone is open, and a team you are taken off leaves it.'
-      : 'It catches up with a club once your phone has been open since the change.'}</p>
+    <p class="muted" style="margin-top:0">Subscribe once and your calendar follows every change in every club. Apple and Outlook check about every hour; Google keeps its own pace, often several hours. The club\u2019s server keeps it up to date within a few minutes of a change, whether or not your phone is open, and a team you are taken off leaves it.</p>
     <div class="row wrap">
       <a class="btn sm" href="${esc(webcal(u))}">Apple Calendar</a>
       <a class="btn quiet sm" href="${esc(googleSub(u))}" target="_blank" rel="noopener">Google Calendar</a>
@@ -15941,7 +15976,7 @@ ${moveCard()}
       <p class="muted" style="margin-top:0">${fieldList().length ? `${fieldList().length} field${fieldList().length === 1 ? '' : 's'}.` : 'None yet.'} The places the club trains, the permits you hold for each and when, and what is booked on them.</p>
       <button class="btn quiet wide" data-act="sesstab" data-k="fields">Fields</button></div>
     <div class="card"><h2 style="margin-bottom:8px">Club drills</h2>
-      <p class="muted" style="margin-top:0">${(() => { const n = shelfItems('club').length; return n ? `${n} drill${n === 1 ? '' : 's'} the club's coaches have shared.` : 'None yet. Coaches share their own drills into it, and you can tidy or remove any of them.'; })()} Coaches and admins see them; trackers and parents never do.</p>
+      <p class="muted" style="margin-top:0">${(() => { const n = shelfItems('club').length; return n ? `${n} drill${n === 1 ? '' : 's'} the club's coaches have shared.` : 'None yet. Coaches share their own drills into it, and you can tidy or remove any of them.'; })()} Coaches, team helpers and admins see them; trackers and parents never do.</p>
       <button class="btn quiet wide" data-act="clubdrills">Look after the club's drills</button>
       <button class="btn quiet wide" data-act="tpllist" data-k="clubTpl" style="margin-top:8px">The club's templates${(() => { const n = tplItems('clubTpl').length; return n ? ' · ' + n : ''; })()}</button></div>
 
@@ -16561,7 +16596,7 @@ function bookClubWide(tids, fields) {
     quiet(`teams/${tid}/events/${id}`, { id, kind: fields.kind === 'practice' ? 'practice' : 'event', title: fields.title, date: fields.date,
       start: fields.start, end: fields.end, venue: fields.venue || '', notes: '', public: false, club, createdAt: at, ...(me ? { by: me.uid } : {}) });
   }
-  saveLocal(); schedulePublish();
+  saveLocal(); shareIds();
   return club;
 }
 
@@ -16736,7 +16771,7 @@ function onPlannerAct(a, d) {
       quiet(`teams/${x.tid}/events/${id}`, { id, kind: 'event', title: 'Picture day', date: c.date, start: minHm(x.a), end: minHm(x.b), venue: c.venue.trim().slice(0, 80),
         notes: '', public: false, club, createdAt: at, ...(me ? { by: me.uid } : {}) });
     }
-    saveLocal(); schedulePublish(); render(); toast(`Picture day is on ${lay.slots.length} calendar${lay.slots.length === 1 ? '' : 's'}`); return;
+    saveLocal(); shareIds(); render(); toast(`Picture day is on ${lay.slots.length} calendar${lay.slots.length === 1 ? '' : 's'}`); return;
   }
 }
 
@@ -16803,7 +16838,7 @@ function sheetSchedAdd(date, time) {
   const s = schedUi(); s.addDate = okDay(date) ? date : ''; s.addTime = hm(time);
   const k = s.add;
   const chip = (v, l) => `<button class="chip" type="button" data-act="schedaddk" data-v="${v}" aria-pressed="${k === v}">${l}</button>`;
-  const groups = calGroups(teams().filter(t => canEditTeam(t.id)));
+  const groups = calGroups(teams().filter(t => canCalTeam(t.id)));
   openSheet(`<h3>Add to the calendar</h3>
     ${s.addDate && k !== 'games' ? `<p class="muted" style="margin-top:0">${esc(dayLabel(s.addDate))}${s.addTime ? ' at ' + esc(niceTime(s.addTime)) : ''}</p>` : ''}
     <div class="chips" style="margin-bottom:12px">${chip('game', 'A game')}${chip('games', 'A run of games')}${chip('practice', 'Practice')}${chip('event', 'Something else')}</div>
@@ -16857,14 +16892,14 @@ function onSchedAct(a, d) {
   // Club home's "Calendar · Every team": All teams, every one of them ticked, as the card says
   if (a === 'schedule') { ui.view = 'calendar'; ui.calSel = 'club'; ui.calOff = {}; closeSheet(); saveUi(); render(); toTop(); return; }
   // checked here, not just by the + being drawn: this adds to any team she can change, and only those
-  if (!teams().some(x => canEditTeam(x.id))) { closeSheet(); toast('Only a team’s coaches and the club’s admins add to its calendar'); render(); return; }
+  if (!teams().some(x => canCalTeam(x.id))) { closeSheet(); toast('Only a team’s coaches and the club’s admins add to its calendar'); render(); return; }
   const s = schedUi();
   if (a === 'schedadd') { sheetSchedAdd(d.v, d.t); return; }
   // from a button with no day of its own there is no day picked yet
   if (a === 'schedaddk') { s.add = d.v; schedUi(); sheetSchedAdd(d.open ? '' : s.addDate, d.open ? '' : s.addTime); return; }
   if (a === 'schedfor') {
     const tid = d.tid;
-    if (!state.teams[tid] || !canEditTeam(tid)) { toast('Only that team’s coaches and the club’s admins can add to it'); return; }
+    if (!state.teams[tid] || !canCalTeam(tid)) { toast('Only that team’s coaches and the club’s admins can add to it'); return; }
     // the team picked is the open one, so what follows is published to its share link
     ui.teamId = tid;
     const date = s.addDate || '', time = s.addTime || '';
@@ -16891,7 +16926,7 @@ function onSchedAct(a, d) {
     if (!gamesForm) return;
     gamesRead();
     const f = gamesForm, t = state.teams[f.tid];
-    if (!t || !canEditTeam(f.tid)) { toast('Only that team’s coaches and the club’s admins can add to it'); return; }
+    if (!t || !canCalTeam(f.tid)) { toast('Only that team’s coaches and the club’s admins can add to it'); return; }
     const rows = f.rows.map((r, i) => ({ ...r, i })).filter(r => String(r.opp).trim() || okDay(r.date) || hm(r.kick) || String(r.venue).trim());
     const bad = rows.find(r => !String(r.opp).trim());
     if (bad) { toast(`Game ${bad.i + 1} needs an opponent`); return; }
@@ -16908,7 +16943,7 @@ function onSchedAct(a, d) {
         periodCount: count, periodMinutes: len, onFieldCount: side, formation: resolveShape(t, 'auto', side) });
     }
     gamesForm = null;
-    saveLocal(); schedulePublish(); closeSheet(); render();
+    saveLocal(); shareIds(); closeSheet(); render();
     toast(`${rows.length} game${rows.length === 1 ? '' : 's'} added for ${t.name || 'the team'}`); return;
   }
 }
@@ -17095,7 +17130,10 @@ function tapPlayer(pid) {
 /* ---------------- public mirror ---------------- */
 /* Published to its own node under a share id. Contains shirt numbers and never
    a name, so the public tier is private by construction rather than by the UI
-   choosing to hide things. */
+   choosing to hide things. Only the server publishes (SECURITY.md, SEC-10):
+   functions/game.js builds the pages from the club, and publicGame(),
+   publicDoc(), fixtureDoc() and calendarDoc() below are what test/mirror.js
+   holds it to, item for item. Nothing here writes public/. */
 /* A club with no badge still gets a mark, so the header never looks unfinished. */
 const BALL = `<span class="crest ball" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">
   <circle cx="12" cy="12" r="9.2"/><path d="M12 6.6l3.6 2.6-1.4 4.2h-4.4L8.4 9.2z"/>
@@ -17128,7 +17166,8 @@ function publicGame(t, m) {
     status: gameStatus(m), score: score(m), shots: shotTally(m),
     events: Object.fromEntries(EVENTS.map(e => [e.k, { us: evCount(m, e.k, 'us'), them: evCount(m, e.k, 'them') }])
       .filter(([, v]) => v.us + v.them > 0)),
-    poss: (() => { const p = possession(m); return { us: p.us, them: p.them, contested: p.contested, changes: p.changes }; })(),
+    // the game's own team's setting, not whichever team is open on this phone
+    poss: (() => { const p = possession(m, nowMs(), t.possMin != null ? Number(t.possMin) : 5); return { us: p.us, them: p.them, contested: p.contested, changes: p.changes }; })(),
     players: roster.map(p => ({
       n: shirtOf(p), sec: playedSec(m, p.id), on: onField(m, p.id),
       spot: currentSpot(m, p.id) || null, plan: (m.planned || {})[p.id] || 0
@@ -17141,6 +17180,7 @@ function publicGame(t, m) {
   };
 }
 
+// SERVER.md: functions/game.js builds this page and only the server writes it; this is what it is held to.
 function publicDoc(t) {
   const games = {};
   let w = 0, d = 0, l = 0, gf = 0, ga = 0;
@@ -17178,7 +17218,7 @@ function untilChips(kind, cur, attrs) {
    needs to turn up: no series id, no author, no note of who added it. Free
    text goes through pubText() like the game's own notes. `all` is the members'
    calendar feed, which carries the team-only entries too — see calendarDoc(). */
-// SERVER.md: functions/mirror.js builds the same entries whenever they change, from any phone.
+// SERVER.md: functions/game.js builds the same entries for the pages; only the server writes them.
 function publicEvents(t, all) {
   const out = {};
   for (const [id, e] of Object.entries(t.events || {})) {
@@ -17197,7 +17237,7 @@ function publicEvents(t, all) {
    whoever they forward it to) holds that game and nothing else: no season, no
    record, no other fixtures, no practices. `fixture` tells the page there is no
    season to go back to. */
-// SERVER.md: built on the phone for the public mirror; a server trigger would build it.
+// SERVER.md: functions/game.js builds this page and only the server writes it; this is what it is held to.
 function fixtureDoc(t, m) {
   return {
     team: { name: t.name || 'Team', logo: t.logo || null },
@@ -17213,7 +17253,7 @@ function fixtureDoc(t, m) {
    players, no minutes, no shirt numbers, and free text through pubText(). What
    keeps team-only entries off the open web is the id, which the app shows only
    to the team's signed-in members, and which a coach can replace at any time. */
-// SERVER.md: built on the phone for the public mirror; a server trigger would build it.
+// SERVER.md: functions/game.js builds this page and only the server writes it; this is what it is held to.
 function calendarDoc(t) {
   const games = {};
   for (const m of teamMatches(t.id)) games[m.id] = {
@@ -17229,68 +17269,36 @@ function calendarDoc(t) {
   };
 }
 
-let pubTimer;
-let pubSeen = {};                           // what each public id last carried, so unchanged ones are not rewritten
-let pubState = { at: null, error: null };   // surfaced in the share sheet
 let denied = false;                         // rules refused us; show the door
 let unconfirmed = false;                    // no word from the club for OFFLINE_DAYS; drawn again once there is
 let purged = null;                          // 'access' | 'retired'
 let retiredClubs = {};                      // app owner's view of what is closed
-// SERVER.md: the share pages are written by whichever phone made the change; a server trigger would write them.
-function schedulePublish() {
-  const t = team();
-  /* A rehearsal must never reach public/. That tier is world-readable and keyed
-     by share id, so a seeded club carrying a copied share would quietly serve
-     invented scores to families holding a real link. Checked here rather than at
-     the call sites: every write path funnels through this one function. */
-  if (isSandbox()) { pubState = { at: null, error: 'Test club — nothing is published' }; return; }
-  if (!fb) { pubState = { at: null, error: 'Not connected to Firebase' }; return; }
-  if (!t || !(t.share || t.calFeed)) return;
-  /* The public write rule checks shareOwners/{share}. A share made before that
-     node existed has none, and the rule lets an unclaimed share through only
-     until someone claims it — so claim it here, on the way past. Publishing is
-     the one thing only a coach or admin of this team ever does. */
-  if (canEditTeam(t.id)) { if (t.share) claimShare(t.id); ensureFixtureShares(t); claimTeamIds(t.id); }
-  clearTimeout(pubTimer);
-  pubTimer = setTimeout(() => publishTeam(t), 1200);
+/* Only the server writes the share pages (SECURITY.md, SEC-10;
+   functions/mirror.js): it hears every change this phone writes to the club,
+   goals and subs included, and builds the pages from that. All a phone does
+   is make the ids the pages live under, in the club, under the team's rule:
+   the season link and the calendar feed when the coach asks, and each game's
+   own id here, for every team with sharing on that this phone may change. A
+   test club gets none, since the server never publishes one. */
+function shareIds() {
+  if (isSandbox()) return;
+  for (const t of Object.values(state.teams || {})) if (t && t.share && canEditTeam(t.id)) ensureFixtureShares(t);
 }
-
-/* The season link is written every time, as it always was: it is the one the
-   share sheet reports on, and a republish on load is what heals a fixed
-   config. A game's own page and the calendar feed are written only when what
-   they carry has changed, or a sub tap would rewrite thirty fixtures. */
-// SERVER.md: the share pages are written by whichever phone made the change; a server trigger would write them.
-function publishTeam(t) {
-  const docs = [];
-  let mainWrite = null;
-  if (t.share) {
-    docs.push([t.share, publicDoc(t), true]);
-    for (const m of teamMatches(t.id)) if (m.share) docs.push([m.share, fixtureDoc(t, m), false]);
-  }
-  if (t.calFeed) docs.push([t.calFeed, calendarDoc(t), false]);
-  for (const [id, doc, main] of docs) {
-    const sig = JSON.stringify({ ...doc, updated: 0 });
-    if (!main && pubSeen[id] === sig) continue;
-    pubSeen[id] = sig;
-    // try/catch does not catch this — set() rejects asynchronously
-    const w = fb.set(fb.ref(fb.db, 'public/' + id), doc)
-      .then(() => { if (main) pubState = { at: nowMs(), error: null }; })
-      .catch(e => {
-        delete pubSeen[id];        // try again next time rather than believe it landed
-        console.error('publish failed', e);
-        if (!main) return;
-        const code = (e && e.code) || (e && e.message) || 'unknown';
-        pubState = {
-          at: null,
-          error: /permission|denied/i.test(code)
-            ? 'Firebase rejected the write. Realtime Database needs a "public" rules block alongside "workspaces" — see README.'
-            : String(code)
-        };
-        render();
-      });
-    if (main) mainWrite = w;
-  }
-  return mainWrite;     // settles once the season page has landed or been refused; the share sheet waits on it
+/* When the server last wrote a page, for the share sheet: read from the page
+   itself, once per opening, since this phone no longer writes it. */
+const pageAt = {};          // public id -> updated, null while unknown, false if there is no page
+function readPageAt(id) {
+  if (!id || !rtdb || pageAt[id] !== undefined) return;
+  pageAt[id] = null;
+  const { db, mod } = rtdb;
+  try {
+    mod.onValue(mod.ref(db, `public/${id}/updated`), snap => {
+      const v = snap.val();
+      pageAt[id] = Number(v) > 0 ? Number(v) : false;
+      const sh = $('#sheet');
+      if (sh && !sh.hidden && String(sh.innerHTML).includes('data-pageat')) sheetShare();
+    }, () => { pageAt[id] = false; }, { onlyOnce: true });
+  } catch (e) { pageAt[id] = undefined; }
 }
 
 const shareBase = () => location.origin + location.pathname.replace(/[^/]*$/, '');
@@ -17486,6 +17494,7 @@ function rolesHeld(uid, scope) {
   for (const x of scope) {
     if (!isAdmin(uid) && isCoach(x.id, uid)) out.push({ x, r: 'coach' });
     if (isTracker(x.id, uid)) out.push({ x, r: 'tracker' });
+    if (isHelper(x.id, uid)) out.push({ x, r: 'helper' });
     for (const p of Object.values(x.players || {}))
       if ((p.guardians || {})[uid]) out.push({ x, r: 'parent', p });
     for (const p of Object.values(x.players || {}))
@@ -17502,7 +17511,8 @@ function rolesHeld(uid, scope) {
 function roleTags(uid, scope) {
   const by = {};
   for (const v of rolesHeld(uid, scope)) (by[v.r] = by[v.r] || new Set()).add(v.x.name || 'Team');
-  return ['coach', 'tracker', 'parent', 'player', 'fan'].filter(r => by[r]).map(r => {
+  return (isViewer(uid) && !isAdmin(uid) ? `<span class="tag">${esc(INVITE_ROLES.viewer)}<i>every team</i></span>` : '')
+    + ['coach', 'tracker', 'helper', 'parent', 'player', 'fan'].filter(r => by[r]).map(r => {
     const names = [...by[r]];
     const what = names.length > 2 ? `${names.length} teams` : names.join(', ');
     return `<span class="tag">${esc(ROLE_LABEL[r])}<i>${esc(what)}</i></span>`;
@@ -17524,8 +17534,9 @@ function pickOne(act, k, cur, items, empty) {
 }
 
 /* A coach may hand out roles on her own team; an admin on any. Checked in the
-   handlers too, not only by what the sheet draws. */
-const mayGrant = tid => canAdmin() || !!(me && tid && isCoach(tid, me.uid));
+   handlers too, not only by what the sheet draws. A helper is the admins'
+   to name (AUTH.md, *Team helpers*), as the rules on access/teams have it. */
+const mayGrant = (tid, role) => role === 'helper' ? canAdmin() : canAdmin() || !!(me && tid && isCoach(tid, me.uid));
 
 function sheetPersonRoles(uid) {
   const u = (acc().members || {})[uid] || {};
@@ -17547,7 +17558,9 @@ function sheetPersonRoles(uid) {
     <div class="chips" style="margin-bottom:14px">
       <button class="chip" type="button" data-act="setrole" data-uid="${uid}" data-r="admin" aria-pressed="${isAdmin(uid)}">Club admin</button>
       ${isAdmin(uid) && (isClubOwner(uid) || (me && isClubOwner(me.uid))) ? `<button class="chip" type="button" data-act="setowner" data-uid="${uid}" aria-pressed="${isClubOwner(uid)}">Club owner</button>` : ''}
+      ${isAdmin(uid) ? '' : `<button class="chip" type="button" data-act="setviewer" data-uid="${uid}" aria-pressed="${isViewer(uid)}">Club viewer</button>`}
     </div>
+    ${isViewer(uid) && !isAdmin(uid) ? '<p class="muted" style="margin-top:-6px">Reads every team\u2019s calendar and games with names. No emails, no log, no messages, no answering, no changes.</p>' : ''}
     ${isClubOwner(uid) ? `<p class="muted" style="margin-top:-6px">${me && uid === me.uid ? 'You own the club: only an owner takes an admin away. Tap Club owner to step down once someone else owns it too.' : 'Owns the club. Only she can step down as owner.'}</p>`
         : isAdmin(uid) && hasClubOwner() && !(me && isClubOwner(me.uid)) && me && uid !== me.uid ? '<p class="muted" style="margin-top:-6px">Only the club owner can take an admin away.</p>' : ''}` : ''}
     <p class="lbl">${isAdmin(uid) ? 'Admin covers every team. Also' : 'Roles'}</p>
@@ -17559,15 +17572,15 @@ function sheetPersonRoles(uid) {
       : `<p class="muted" style="margin-top:0">${isAdmin(uid) ? 'Nothing else.' : 'None yet — waiting to be let in. Until they have a role they see nothing of the club.'}</p>`}
 
     ${scope.length ? `<p class="lbl" style="margin-top:14px">${held.length || isAdmin(uid) ? 'Give a role' : 'Let them in as'}</p>
-    <div class="chips" style="margin-bottom:12px">${[['parent', 'Parent'], ['tracker', 'Tracker'], ['coach', 'Coach']].map(([k, l]) =>
+    <div class="chips" style="margin-bottom:12px">${[['parent', 'Parent'], ['tracker', 'Tracker'], ...(admin ? [['helper', 'Team helper']] : []), ['coach', 'Coach']].map(([k, l]) =>
         `<button class="chip" type="button" data-act="prpick" data-k="role" data-v="${k}" aria-pressed="${f.role === k}">${l}</button>`).join('')}</div>
     <p class="lbl">Team</p>
     ${pickOne('prpick', 'team', f.team, scope.map(x => [x.id, esc(x.name || 'Team')]), 'No teams yet.')}
     ${f.role === 'parent' && t ? `<p class="lbl">Parent of</p>
     ${pickOne('prpick', 'player', f.player, players.map(p => [p.id, pname(p)]), 'No players on this team.')}` : ''}
     <button class="btn wide" data-act="praddrole" data-uid="${uid}"${already ? ' disabled' : ''}>${already ? 'Already has that role'
-        : `Make ${f.role === 'parent' ? 'parent' : f.role}${t ? ' on ' + esc(t.name || 'the team') : ''}`}</button>
-    <p class="muted">${{ parent: 'Reads that team, and sees their child under My players. Other children show by shirt number.', tracker: 'Logs goals, shots and set pieces on that team’s games, and makes the coach’s locked-in subs.', coach: 'Runs that team: squad, games, subs and plan.' }[f.role]}</p>` : ''}
+        : `Make ${f.role === 'helper' ? 'team helper' : f.role}${t ? ' on ' + esc(t.name || 'the team') : ''}`}</button>
+    <p class="muted">${{ parent: 'Reads that team, and sees their child under My players. Other children show by shirt number.', tracker: 'Logs goals, shots and set pieces on that team’s games, and makes the coach’s locked-in subs.', helper: 'Helps the coach prepare: the calendar, the register, notices, practice plans, the drills, and a game’s plan before kick-off. Not the squad, the clock or the subs, and no family’s conversations.', coach: 'Runs that team: squad, games, subs and plan.' }[f.role]}</p>` : ''}
     <button class="btn quiet wide" data-act="closesheet" style="margin-top:6px">Done</button>`);
 }
 
@@ -17601,12 +17614,12 @@ function sheetShare() {
   // the links are public anyway, so anyone who can see the team may copy them;
   // making, killing and republishing them is the coach's
   const ro = !canEditTeam(t.id);
-  const st = pubState.error
-    ? `<div class="warn alert" style="margin-bottom:14px"><b>Not published.</b><br>${esc(pubState.error)}<br>
-       <span class="muted">Check Realtime Database → Rules for a <code>public</code> block, then tap Republish.</span></div>`
-    : pubState.at
-      ? `<p class="muted" style="margin-top:0">Published ${new Date(pubState.at).toLocaleTimeString()}. Links below are live.</p>`
-      : `<p class="muted" style="margin-top:0">Not published yet this session — tap Republish to force it.</p>`;
+  if (t.share) readPageAt(t.share);
+  const at = t.share ? pageAt[t.share] : undefined;
+  const st = isSandbox() ? `<p class="muted" style="margin-top:0" data-pageat>Test club — nothing is published.</p>`
+    : at ? `<p class="muted" style="margin-top:0" data-pageat>Updated by the club's server ${new Date(at).toLocaleString()}. Links below are live.</p>`
+      : at === false ? `<p class="muted" style="margin-top:0" data-pageat>The club's server has not built this page yet. It does within a minute of the link being made, once the club's server is set up (README, <b>Deploying the server</b>).</p>`
+        : `<p class="muted" style="margin-top:0" data-pageat>Checking when the page was last updated…</p>`;
 
   openSheet(`<h3>Share ${teamLabel(t)}</h3>
     ${t.share ? st + `
@@ -17624,8 +17637,7 @@ function sheetShare() {
       : `<p class="muted" style="margin-top:0">${ro ? 'This game\u2019s own link appears once the coach\u2019s phone has published it.' : 'This game\u2019s own link is being made — it appears here in a moment.'}</p>`}` : ''}
 
       <p class="muted">Anyone with a link can read it. Nobody can change anything, and no child's name is published — only shirt numbers.</p>
-      ${ro ? '' : `<button class="btn quiet wide" data-act="republish" style="margin-bottom:8px">Republish now</button>
-      <button class="btn danger wide" data-act="rotateshare">Make a new link and kill the old one</button>`}`
+      ${ro ? '' : `<button class="btn danger wide" data-act="rotateshare">Make a new link and kill the old one</button>`}`
       : ro ? `<p class="muted" style="margin-top:0">This team's coach has not set up parent links yet.</p>`
       : `<p class="muted" style="margin-top:0">Creates a long random address. Only people you send it to can find it.</p>
       <button class="btn wide" data-act="makeshare">Create the share links</button>`}
@@ -18720,7 +18732,7 @@ function replaceNames(text, subs) {
    here becomes "a player" before it is written, not before it is drawn. Every
    word of every name, as the AI prompt does: "Rose Park" losing a word is the
    safe way round, and the coach is told when it happens. */
-// SERVER.md: the scrub stays, but would run on the server's write of the mirror.
+// SERVER.md: the server's pages run the same scrub (functions/game.js, scrubber()).
 function pubText(t, s) {
   if (!s) return '';
   const subs = [];
@@ -19361,18 +19373,18 @@ function onAct(e) {
     if (!msgFor || !d.u || d.u === (me && me.uid) || !myStaffChat(cid)) { toast('Coaches and admins write to each other here'); return; }
     closeSheet(); ui.view = 'thread'; ui.thread = { cid }; render(); return;
   }
-  if (a === 'postnew') { if (!staffTeams().length) { toast('Only coaches and admins post notices'); return; } sheetPost(ui.postTid || ui.teamId); return; }
+  if (a === 'postnew') { if (!noticeTeams().length) { toast('Only a team\u2019s coaches, helpers and the admins post notices'); return; } sheetPost(ui.postTid || ui.teamId); return; }
   if (a === 'postteam') { const el = $('#postText'); sheetPost(d.v, el ? el.value : '', !!ui.postUrgent); return; }
   if (a === 'posturgent') { const el = $('#postText'); sheetPost(ui.postTid, el ? el.value : '', !ui.postUrgent); return; }
   if (a === 'postsend') {
     const tid = ui.postTid, el = $('#postText'), text = String((el && el.value) || '').trim();
-    if (!msgFor || !isStaff(tid)) { toast('Only this team’s coaches and the club admins can post to it'); return; }
+    if (!msgFor || !postsTo(tid)) { toast('Only this team’s coaches, helpers and the club admins can post to it'); return; }
     if (!text) { toast('Write something first'); return; }
     const id = queueMsg('board', tid, null, text.slice(0, MSG_MAX), ui.postUrgent ? { urgent: true } : null);
     ui.postUrgent = false; ui.view = 'inbox';
     sheetPostShare(tid, id); render(); return;
   }
-  if (a === 'postshare') { if (isStaff(d.tid)) sheetPostShare(d.tid, d.id); return; }
+  if (a === 'postshare') { if (postsTo(d.tid)) sheetPostShare(d.tid, d.id); return; }
   if (a === 'postsharetext') {
     const x = notices(d.tid).find(n => n.id === d.id); if (!x) return;
     const text = `${(state.teams[d.tid] || {}).name || 'Team'} — ${x.byName || 'coach'}:\n${x.text}`;
@@ -19380,10 +19392,10 @@ function onAct(e) {
     navigator.clipboard.writeText(text).then(() => toast('Copied — paste it into the team chat'), () => toast('Could not copy'));
     return;
   }
-  if (a === 'postseen') { if (isStaff(d.tid)) sheetPostSeen(d.tid, d.id); return; }
+  if (a === 'postseen') { if (postsTo(d.tid)) sheetPostSeen(d.tid, d.id); return; }
   if (a === 'postdel') {
     const x = notices(d.tid).find(n => n.id === d.id);
-    if (!x || !msgFor || !isStaff(d.tid) || (x.by !== me.uid && !canAdmin())) { toast('Only whoever posted it, or an admin, can delete it'); return; }
+    if (!x || !msgFor || !postsTo(d.tid) || (x.by !== me.uid && !canAdmin())) { toast('Only whoever posted it, or an admin, can delete it'); return; }
     if (!confirm('Delete this notice for everyone?')) return;
     delete (msgs.board[d.tid] || {})[d.id]; saveMsgs();
     Promise.resolve(fb.remove(fb.ref(fb.db, `board/${msgFor.code}/${d.tid}/${d.id}`))).catch(() => toast('Not deleted — the database refused it'));
@@ -19420,8 +19432,8 @@ function onAct(e) {
   if (a === 'personedit') { sheetPersonRoles(d.uid); return; }
   if (a === 'peoplesort') { ui.peopleSort = ui.peopleSort === 'joined' ? 'name' : 'joined'; render(); return; }
   if (a === 'setrolet') {
-    if (!mayGrant(d.tid)) { toast('Club admins and that team\u2019s coaches only'); return; }
-    const key = d.r === 'coach' ? 'coaches' : 'trackers';
+    if (!mayGrant(d.tid, d.r)) { toast(d.r === 'helper' ? 'Club admins only' : 'Club admins and that team\u2019s coaches only'); return; }
+    const key = STAFF_KEY[d.r] || 'trackers';
     const on = ((teamAccess(d.tid)[key] || {})[d.uid]);
     if (on) { forgetInvite(on); drop(`access/teams/${d.tid}/${key}/${d.uid}`); }
     else commit(`access/teams/${d.tid}/${key}/${d.uid}`, true);
@@ -19437,7 +19449,7 @@ function onAct(e) {
   if (a === 'praddrole') {
     const f = ui.pr || {}, uid = d.uid, tid = f.team, x = state.teams[tid];
     if (!x) { toast('Pick a team'); return; }
-    if (!mayGrant(tid)) { toast('Club admins and that team\u2019s coaches only'); return; }
+    if (!mayGrant(tid, f.role)) { toast(f.role === 'helper' ? 'Club admins only' : 'Club admins and that team\u2019s coaches only'); return; }
     if (f.role === 'parent') {
       const p = (x.players || {})[f.player];
       if (!p) { toast('Pick the player'); return; }
@@ -19446,8 +19458,8 @@ function onAct(e) {
         logAccess('linked guardian', uid, { team: tid, teamName: x.name || null, player: p.name });
       }
       syncTeamParents(tid);
-    } else if (f.role === 'coach' || f.role === 'tracker') {
-      const key = f.role === 'coach' ? 'coaches' : 'trackers';
+    } else if (STAFF_KEY[f.role]) {
+      const key = STAFF_KEY[f.role];
       if (!((teamAccess(tid)[key] || {})[uid])) {
         commit(`access/teams/${tid}/${key}/${uid}`, true);
         logAccess('made ' + f.role, uid, { team: tid, teamName: x.name || null });
@@ -19524,7 +19536,8 @@ function onAct(e) {
   }
   if (a === 'sharesheet') {
     // a game made before game links existed gets its own id now, so the sheet has one to show
-    if (t && ensureFixtureShares(t)) { claimTeamIds(t.id); schedulePublish(); }
+    if (t && !isSandbox()) ensureFixtureShares(t);
+    if (t && t.share) delete pageAt[t.share];      // asked afresh each time the sheet opens
     sheetShare(); return;
   }
   if (a === 'envsheet') { sheetEnv(); return; }
@@ -19549,7 +19562,6 @@ function onAct(e) {
     syncAllTeamIndex();
     syncAllCoachIndex();
     syncAllTeamParents();
-    claimAllShares();
     render();
     toast('Lookup tables written — let it sync, then check the list again');
     return;
@@ -19565,6 +19577,15 @@ function onAct(e) {
     ui.inv = f; sheetInvite(); return;
   }
   if (a === 'invitemake') { makeInvite(); return; }
+  if (a === 'setviewer') {
+    if (!canAdmin()) { toast('Club admins only'); return; }
+    const on = (acc().viewers || {})[d.uid];
+    logAccess(on ? 'removed viewer' : 'made viewer', d.uid);
+    if (on) { forgetInvite(on); drop(`access/viewers/${d.uid}`); }
+    else commit(`access/viewers/${d.uid}`, true);
+    syncIndex(d.uid);
+    sheetPersonRoles(d.uid); return;
+  }
   if (a === 'inviteopen') { if (!canAdmin()) { toast('Club admins only'); return; } sheetInviteDetail(d.id); return; }
   if (a === 'invitepast') { ui.invPast = !ui.invPast; render(); return; }
   if (a === 'invitedrop') {
@@ -19669,7 +19690,8 @@ function onAct(e) {
       const set = { ...(you.set || {}), share: sharing(), at: nowMs() };
       if (until) set.feedUntil = until; else delete set.feedUntil;
       Promise.resolve(fb.set(fb.ref(fb.db, youPath('set')), set)).then(() => {
-        you.set = set; saveYou(); feedSent = ''; feedPublish(); render();
+        // the server rebuilds her page when her setting changes (functions/mycal.js), end date and all
+        you.set = set; saveYou(); render();
       }, () => toast('Not saved: the database refused it. Its rules may need updating.'));
       return;
     }
@@ -19677,7 +19699,7 @@ function onAct(e) {
     if (!t2 || !canEditTeam(t2.id)) { toast('The team\u2019s coaches and club admins only'); return; }
     if (d.k === 'game') { if (!state.matches[d.mid]) return; commit(`matches/${d.mid}/shareUntil`, until); }
     else commit(`teams/${t2.id}/${d.k === 'feed' ? 'calFeedUntil' : 'shareUntil'}`, until);
-    publishTeam(state.teams[t2.id]);
+    // the server puts it on the page when it hears the change (functions/mirror.js): no phone writes public/ (SEC-10)
     if (d.k === 'feed') render(); else sheetShare();
     toast(until ? `Stops working on ${new Date(until).toLocaleDateString()}` : 'Works until you replace it');
     return;
@@ -19743,7 +19765,8 @@ function onAct(e) {
       else commit(`access/admins/${uid}`, true);
     } else {
       if (!tid) { toast('Pick a team first'); return; }
-      const key = r === 'coach' ? 'coaches' : 'trackers';
+      if (r === 'helper' && !canAdmin()) { toast('Club admins only'); return; }
+      const key = STAFF_KEY[r] || 'trackers';
       const on = ((teamAccess(tid)[key] || {})[uid]);
       if (on) { forgetInvite(on); drop(`access/teams/${tid}/${key}/${uid}`); }
       else commit(`access/teams/${tid}/${key}/${uid}`, true);
@@ -19752,32 +19775,18 @@ function onAct(e) {
     syncIndex(uid);
     sheetPeople(); return;
   }
-  if (a === 'republish') {
-    if (!fb) { toast('Not connected to the club — check the signal and that you are signed in'); return; }
-    // every page goes out, the game pages and the calendar feed too, changed or not
-    pubSeen = {};
-    ensureFixtureShares(t); claimTeamIds(t.id);
-    Promise.resolve(publishTeam(t)).then(() => { sheetShare(); toast(pubState.error ? 'Not published' : 'Published'); });
-    return;
-  }
   if (a === 'makeshare') {
-    commit(`teams/${t.id}/share`, randId('s'));
-    claimShare(t.id);            // before publishing: the write rule checks this list
-    schedulePublish(); sheetShare(); return;
+    commit(`teams/${t.id}/share`, randId('s'));   // the server builds the pages when it hears this
+    sheetShare(); return;
   }
   if (a === 'rotateshare') {
     if (!confirm('Anyone holding the old season link, or a link to any one game, loses access. Continue?')) return;
     /* Every game link goes with the season link. A family holding last
        month's game link is one forward away from whoever it was sent to. */
-    const old = [t.share, ...teamMatches(t.id).map(m => m.share)].filter(Boolean);
+    /* The server takes each old page down when it hears its id replaced. */
     for (const m of teamMatches(t.id)) if (m.share) quiet(`matches/${m.id}/share`, randId('f'));
     commit(`teams/${t.id}/share`, randId('s'));
-    claimShare(t.id);
-    if (fb) for (const id of old) {
-      fb.remove(fb.ref(fb.db, 'public/' + id));
-      fb.remove(fb.ref(fb.db, 'shareOwners/' + id));   // nothing left to own
-    }
-    schedulePublish(); sheetShare(); toast('New links made'); return;
+    sheetShare(); toast('New links made'); return;
   }
   if (a === 'copylink') {
     navigator.clipboard.writeText(d.v).then(() => toast('Link copied'), () => toast('Could not copy — select it by hand'));
@@ -20057,7 +20066,7 @@ function onAct(e) {
     const r = lastLog[Number(d.i)]; if (!r) return;
     const why = deleteSub(m, r);
     if (why) { toast(why); return; }
-    closeSheet(); render(); schedulePublish(); toast('Sub deleted'); return;
+    closeSheet(); render(); shareIds(); toast('Sub deleted'); return;
   }
   if (a === 'addsub') { sheetAddSub(); return; }
   if (a === 'doaddsub') {
@@ -20120,7 +20129,7 @@ function onAct(e) {
     if (due && (due.kind === 'due' || due.kind === 'soon') && due.b.start === b.start)
       quiet(`matches/${m.id}/planDone/${doneKey(b)}`, { ...rec, at: nowMs(), ...stampedBy() });
     const n = Math.max(diff.on.length, diff.off.length);
-    saveLocal(); render(); schedulePublish();
+    saveLocal(); render(); shareIds();
     closeSheet(); toast(n + (n === 1 ? ' sub made' : ' subs made')); return;
   }
   /* The sideline card. A tracker may do exactly this much to who is on the
@@ -20131,7 +20140,7 @@ function onAct(e) {
     if (a === 'subsundo') {
       const r = (m.planDone || {})[d.key]; if (!r) return;
       if (nowMs() - (r.at || 0) > SUB_UNDO_MS || !undoBlock(m, d.key)) { toast('Too late to undo from here — fix it in the match log'); render(); return; }
-      render(); schedulePublish();
+      render(); shareIds();
       toast(r.skipped ? 'Back on — the change is due again' : 'Undone — the pitch is back as it was');
       return;
     }
@@ -20425,7 +20434,8 @@ function onAct(e) {
        the game. A card that knows which (the live one, Next up) says so. */
     const st = gameStatus(g), coach = canEditTeam(d.tid);
     ui.gameView = GAME_VIEWS.includes(d.g) ? d.g
-      : coach ? (st === 'upcoming' && g.date !== todayStr() ? 'plan' : st === 'done' ? 'live' : 'subs') : 'live';
+      : coach ? (st === 'upcoming' && g.date !== todayStr() ? 'plan' : st === 'done' ? 'live' : 'subs')
+      : canGameEdit(g) ? 'plan' : 'live';
     closeSheet(); render(); return;
   }
   if (a === 'calics') {
@@ -20507,9 +20517,8 @@ function onAct(e) {
     if (!feedBase()) { toast('Calendar sync is not set up on this site yet'); return; }
     const old = x.calFeed;
     if (a === 'calsyncnew' && !confirm('Everyone subscribed stops getting changes until they subscribe again with the new address. Do this if the address has reached someone it should not have. Continue?')) return;
-    ui.teamId = d.tid;          // the publish that follows goes to this team's pages
+    // the server builds the new feed, and takes the old one down, when it hears this
     commit(`teams/${d.tid}/calFeed`, randId('c'));
-    if (fb && old) { fb.remove(fb.ref(fb.db, 'public/' + old)); fb.remove(fb.ref(fb.db, 'shareOwners/' + old)); }
     toast(old ? 'New address made — the old one has stopped working' : 'Calendar sync is on');
     return;
   }
@@ -20549,7 +20558,7 @@ function onAct(e) {
   if (a === 'editmatch') {
     // the button is drawn only for the team's coaches and admins; a stale screen is not a permission
     const g = state.matches[d.id];
-    if (!g || !canEditTeam(g.teamId)) { toast('Only the team’s coach can change this game'); return; }
+    if (!g || !canGameEdit(g)) { toast(canCalTeam(g && g.teamId) ? 'It has kicked off: the coach changes it from here' : 'Only the team’s coach can change this game'); return; }
     sheetMatch(g); return;
   }
   if (a === 'backgames') { ui.view = ui.gameFrom === 'calendar' ? 'calendar' : 'season'; ui.gameFrom = null; ui.picked = null; render(); return; }
@@ -20589,9 +20598,7 @@ function onAct(e) {
   }
   if (a === 'delmatch') {
     if (!confirm('Delete this game and its minutes?')) return;
-    // its own page goes with it, or the link keeps serving a game that no longer exists
-    const gone = (state.matches[d.id] || {}).share;
-    if (fb && gone) { fb.remove(fb.ref(fb.db, 'public/' + gone)); fb.remove(fb.ref(fb.db, 'shareOwners/' + gone)); }
+    // its own page goes with it: the server takes it down when it hears the game's id go
     drop(`matches/${d.id}`); ui.matchId = null; closeSheet(); render(); return;
   }
 

@@ -173,21 +173,20 @@ const sheet = A => String(A.dom.node('#sheet').innerHTML);
     A.click({ act: 'linkuntil', k: 'season', d: '30', tid: 't1' }); await A.flush(20);
     const u = A.state.teams.t1.shareUntil;
     check('the team keeps the date', Math.round((u - A.nowMs()) / 864e5), 30);
-    check('the season page carries it', (valueAt(fbk, 'public/shareSeason01') || {}).until, u);
-    check('— and the game\'s own page, which has none of its own', (valueAt(fbk, 'public/shareGame0001') || {}).until, u);
+    check('— written to the club, for the server to put on the page', valueAt(fbk, 'workspaces/CLUB/teams/t1/shareUntil'), u);
+    check('the phone writes no page itself (SEC-10)', wrote(fbk).some(p => p.startsWith('public/')), false);
     A.click({ act: 'linkuntil', k: 'game', d: '7', tid: 't1', mid: 'g1' }); await A.flush(20);
-    check('a game\'s page takes its own', Math.round(((valueAt(fbk, 'public/shareGame0001') || {}).until - A.nowMs()) / 864e5), 7);
-    check('the season\'s keeps its', (valueAt(fbk, 'public/shareSeason01') || {}).until, u);
+    check('a game\'s page takes its own', Math.round((valueAt(fbk, 'workspaces/CLUB/matches/g1/shareUntil') - A.nowMs()) / 864e5), 7);
     A.click({ act: 'linkuntil', k: 'feed', d: '90', tid: 't1' }); await A.flush(20);
-    check('the team\'s calendar feed takes one too', Math.round(((valueAt(fbk, 'public/feedTeam0001') || {}).until - A.nowMs()) / 864e5), 90);
+    check('the team\'s calendar feed takes one too', Math.round((valueAt(fbk, 'workspaces/CLUB/teams/t1/calFeedUntil') - A.nowMs()) / 864e5), 90);
     A.click({ act: 'linkuntil', k: 'season', d: '0', tid: 't1' }); await A.flush(20);
-    check('No end takes it off', [A.state.teams.t1.shareUntil, (valueAt(fbk, 'public/shareSeason01') || {}).until].join(), ',');
+    check('No end takes it off', A.state.teams.t1.shareUntil == null && valueAt(fbk, 'workspaces/CLUB/teams/t1/shareUntil') == null, true);
   }
   {
     const { A, fbk } = await boot('mum');
     const before = fbk.record.writes.length;
     A.click({ act: 'linkuntil', k: 'season', d: '1', tid: 't1' }); await A.flush(10);
-    check('a parent cannot put an end date on the team\'s link', fbk.record.writes.slice(before).some(w => /shareUntil|public\//.test(w.path)), false);
+    check('a parent cannot put an end date on the team\'s link', fbk.record.writes.slice(before).some(w => /shareUntil/.test(w.path)), false);
   }
   {
     const { A } = await boot('mum');

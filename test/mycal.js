@@ -267,18 +267,17 @@ const nameIn = v => names.some(n => JSON.stringify(v).includes(n));
     D.click({ act: 'myfeed', v: 'on' }); await D.flush(); D.timers.run(); await D.flush();
     const set = (fbk.writtenTo('people/mum/set').slice(-1)[0] || {}).value || {};
     const id = set.feed || '';
-    // the phone asks whether the server keeps this address before it writes a thing there
-    check('nothing written to the new address before the phone has heard who keeps it', fbk.writtenTo('public/' + id).length, 0);
-    check('it asks', fbk.watching('public/' + id + '/by'), true);
-    fbk.deliver('public/' + id + '/by', null);
-    D.timers.run(); await D.flush();
-    const paths = fbk.record.writes.map(x => x.path);
+    /* Only the server writes public/ (SECURITY.md, SEC-10; functions/mycal.js
+       builds the page, test/mycalfeed.js holds it to myFeedDoc()). Her phone
+       writes her setting and nothing else. */
+    const published = () => fbk.record.writes.filter(x => /^(public|shareOwners)\//.test(x.path)).length + fbk.record.removes.filter(p => /^(public|shareOwners)\//.test(p)).length;
     check('an address of its own, kept with her settings', /^m\w{10,}$/.test(id), true);
     check('still private about busy times', set.share, false);
-    check('claimed before anything is written there', paths.indexOf('shareOwners/' + id) >= 0 && paths.indexOf('shareOwners/' + id) < paths.indexOf('public/' + id), true);
-    const doc = (fbk.writtenTo('public/' + id).slice(-1)[0] || {}).value || {};
+    check('her phone writes nothing to public/ and claims nothing', published(), 0);
+    check('nor listens for who keeps it', fbk.watching('public/' + id + '/by'), false);
+    const doc = D.myFeedDoc();
     const items = Object.values(doc.items || {});
-    check('a feed the calendar function reads', doc.mine === true && !!doc.team && doc.team.name, 'My calendar');
+    check('what the server is held to: a feed the calendar function reads', doc.mine === true && !!doc.team && doc.team.name, 'My calendar');
     const titles = items.map(x => x.title).sort();
     check('both clubs\' entries, titled with the team', titles.includes('G11 Flight: Practice') && titles.includes('Hill U12: Practice') && titles.includes('Hill U12 v Storm'), true);
     check('her child\'s training session, the child not named', titles.includes('Training: a player finishing'), true);
@@ -287,36 +286,21 @@ const nameIn = v => names.some(n => JSON.stringify(v).includes(n));
     check('no club code either', /HILL|CLUB/.test(JSON.stringify(doc)), false);
     D.render();
     check('subscribe buttons once it is on', /webcal:\/\/feed\.example\.workers\.dev\/m\w+\.ics/.test(D.rendered()), true);
-    const n0 = fbk.writtenTo('public/' + id).length;
-    D.render(); D.timers.run(); await D.flush();
-    check('nothing rewritten while nothing changed', fbk.writtenTo('public/' + id).length, n0);
+    check('the card says the server keeps it', /within a few minutes of a change, whether or not your phone is open/.test(D.rendered()), true);
     mumHill.h1.events.e9.called = 'cancelled';
     await deliverMum(mumHill);
     D.render(); D.timers.run(); await D.flush();
-    const doc2 = (fbk.writtenTo('public/' + id).slice(-1)[0] || {}).value || {};
-    check('a practice called off in the other club follows', Object.values(doc2.items || {}).some(x => x.title === 'Hill U12: Practice' && x.called === 'cancelled'), true);
-
-    console.log('\n--- the server takes the feed over ---');
-    D.ui.view = 'mycal'; D.render();
-    check('until it does, the card says her phone keeps it', /once your phone has been open since the change/.test(D.rendered()), true);
-    fbk.deliver('public/' + id + '/by', 'server');
-    D.render();
-    check('once the server writes it, the card says so', /within a few minutes of a change, whether or not your phone is open/.test(D.rendered()), true);
-    const n1 = fbk.writtenTo('public/' + id).length;
-    mumHill.h1.events.e9.called = null;
-    await deliverMum(mumHill);
-    D.render(); D.timers.run(); await D.flush();
-    check('and her phone stops writing it, however much changes', fbk.writtenTo('public/' + id).length, n1);
+    check('a change in another club writes nothing to public/ either', published(), 0);
 
     console.log('\n--- a new address, and off ---');
     global.confirm = () => true;
     D.click({ act: 'myfeed', v: 'new' }); await D.flush(); D.timers.run(); await D.flush();
     const id2 = ((fbk.writtenTo('people/mum/set').slice(-1)[0] || {}).value || {}).feed;
     check('replaced: a different address', !!id2 && id2 !== id, true);
-    check('and the old one taken down', fbk.record.removes.includes('public/' + id), true);
+    check('the old one is the server\'s to take down, not the phone\'s', published(), 0);
     D.click({ act: 'myfeed', v: 'off' }); await D.flush();
-    check('off: the address taken down', fbk.record.removes.includes('public/' + id2), true);
     check('and gone from her settings', 'feed' in ((fbk.writtenTo('people/mum/set').slice(-1)[0] || {}).value || {}), false);
+    check('still nothing written to public/', published(), 0);
     global.window.SOCCER_CALENDAR_FEED = '';
   }
 

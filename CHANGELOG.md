@@ -8,13 +8,13 @@ before this point lives only in the git log.
 
 ---
 
-## Fans, and links with limits — 2026-10-09 (build 118)
+## Fans, and links with limits — 2026-10-09 (build 121)
 
-Two things the owner asked for once supporters were in.
+The first of AUTH.md's new kinds of people still to build (AUTH.md, *More kinds of people*, 1), as the owner decided it and then renamed it, and links with limits.
 
-**Supporters are fans now**, everywhere (`fans/{uid}`, `access/teamFans`,
-invite role `fan`; the old names never reached a live database, since rules
-version 16 was not yet published), and the family decides about them:
+**Fans: a player's people.** Grandparents, an aunt, a family friend who want the games and the calendar on their own phone. Anyone who can see the player asks with a link (her family, the player herself, her coach, an admin); the team's coach approves, and a coach or admin asking is approving. A fan reads less than a parent: the calendar, Live, scores, the recap and the team's notices, her player by name; never "going", a conversation or a session. Stored on the child's record (`squad/{tid}/{pid}/fans/{uid}`) with a lookup table, `access/teamFans`, kept by the phones and the server (`accessFansOrgs`); on `orgs/` only. New suite `test/fans.js`.
+
+**The family decides about them:**
 
 - **Her family sees who.** A fan's name is kept on the child's record
   (`fanNames/{uid}`), because a family cannot read the club's members; she
@@ -42,42 +42,192 @@ version 16 was not yet published), and the family decides about them:
   rule refuses it after that and the calendar function answers 410. No use
   limit here: nobody signs in to open them.
 
-Rules version 17. New suite `test/links.js`; `rules.js`, `fans.js`,
+Rules version 20, on top of main's 19 (helpers, viewers, server booking, server-published share pages). New suite `test/links.js`; `rules.js`, `fans.js`,
 `calfeed.js`, `access.js` and `mycalfeed.js` walk the rest.
 
 ---
 
-## Supporters: a player's people — 2026-10-09 (build 117)
+---
 
-The first of AUTH.md's new kinds of people, and the one clubs ask for most:
-grandparents, an aunt, a family friend who want the games and the calendar
-on their own phone. Until now the only way in was as a parent, which gave
-them a family's say (who is going, the conversation with the coaches,
-sessions) and a family's place in the safeguarding picture. The owner
-decided anyone who can see the player may ask, and the team's coach
-approves (AUTH.md, *More kinds of people*, 1).
+## Only the server publishes share pages — 2026-10-09 (build 120)
 
-- **Asking is a link.** Her family (from *My players* → Supporters), the
-  player herself, her coach or an admin makes a single-use invite of role
-  `supporter`, naming her by shirt number. A coach or admin asking is
-  approving: whoever opens their link is let in. A family's link lets the
-  person who opens it ask, on Squad → Parents beside the families' asks,
-  and the coach lets her in or turns her down.
-- **She does less than a parent.** The calendar, Live, scores, the recap
-  and the team's notices, her player by name and teammates by the club's
-  setting; never "going", never a conversation, never a session. Push for
-  notices, calendar changes and a followed game.
-- **Where it lives**: `squad/{tid}/{pid}/supporters/{uid}` on the child's
-  record, and a sixth lookup table, `access/teamSupporters`, which the
-  notices rule reads; on `orgs/` only, since every club is there and the
-  old tree comes out from 2026-10-23. Rules version 16. The index rule
-  refuses a supporter link's own index entry until the record names her, so
-  a family's link never lets anyone into the club by itself.
-- **The server keeps up**: the table (`accessSupportersOrgs`), who hears a
-  notice, a calendar change and whose name a goal carries, and My
-  calendar's feed (her player's team, not his sessions).
-- New suite `test/supporters.js`; supporters walked in `rules.js` (both
-  passes), `access.js`, `push.js` and `mycalfeed.js`.
+Any signed-in Google account could claim an id nobody had used under
+`shareOwners`, publish a page at `public/{id}`, and send round a link to it
+on this site: "Saturday's game is cancelled, meet at…" under the club's own
+address. The rule had to let phones write `public/`, because phones
+published, and it could not tell a coach from anyone else for an id no club
+had claimed. The owner decided (2026-10-08) that phones stop publishing
+(SECURITY.md, SEC-10, now SEC-D11).
+
+- **The server writes every share page.** `functions/mirror.js` builds the
+  season link, each game's own page and the members' feed from the club,
+  with the app's game math (minutes, who is on and where, the score, shots,
+  set pieces, possession, the sub log) ported to `functions/game.js` and
+  held item for item to the app's `publicDoc()`, `fixtureDoc()`,
+  `publicGame()` and `calendarDoc()` by `test/mirror.js`.
+- **It hears the sideline as fast as the phone published, and more
+  reliably.** It wakes on each part of a game the phone writes anyway (a
+  goal, a sub, the clock, each under its own id, never the game whole), a
+  game's answers, a player's number or name, a team's name, badge and ids,
+  and its entries. Those writes are in the phone's outbox; a publish never
+  was, so a page closed with no signal used to lose it.
+- **One run at a time per team.** A sub is two writes; a queue
+  (`serverState/publish`) keeps two runs from writing a page in the wrong
+  order, and a run that finds the queue busy leaves word and goes.
+- **New games reach every page, deleted games and replaced links come
+  down**, which used to be the phone's. Whose page is whose is the server's
+  record (`serverState/pages`), so another club naming a link writes
+  nothing there and taking it away takes nothing down; a page from before
+  is taken on only if this club's admin or coach owned it.
+- **My calendar's feed is the server's alone.** The phone's fallback
+  (`feedPublish()`) is gone, and a replaced or turned-off address is taken
+  down by the server when her setting changes.
+- **The phone makes ids and nothing else.** `schedulePublish()`,
+  `publishTeam()`, `claimShare()`, `claimTeamIds()` and *Republish now* are
+  gone. The share sheet says when the server last wrote the page.
+- **Rules version 19:** `public/$share` is `.write: false` for every
+  account, admins included, and `shareOwners` is gone. An old phone's
+  publish is refused, which costs nothing: the server already wrote it.
+- **Every calendar entry links back into the app.** The server cannot
+  know where the site is, so `functions/.env` says (`SOCCER_SITE`, the
+  GitHub Pages address, committed: it is not a secret). A game in a
+  subscribed calendar opens its page, a practice the team's calendar, and
+  My calendar's entries My calendar; each still carries home or away, when
+  to arrive, kit, notes, the place and, once played, the final score.
+- The move copies games twenty at a time now, since each part of a game
+  wakes a run.
+
+---
+
+## Training sessions and club activity reach a closed phone — 2026-10-09 (build 119)
+
+The last of the server's notification work (GOTSPORT.md, build order step
+2). A family booking a coach's time, a place confirmed or turned down, a
+session called off, a coach calling out: each was worked out on each phone
+while Minutes was open on it, so a closed phone heard none of it, and an
+admin heard the club's activity only when she next opened the app.
+
+- **Three new triggers** (`functions/news.js`): a booking changing, a
+  session written, a coach's time off. Each tells whoever the open page
+  would tell, in its words, and nobody about what she did herself.
+- **A family** hears about her own child's place (booked, on the waiting
+  list, moved off it, not this time, taken off) and a session she is in
+  being moved or called off in the next two weeks; by first name, never
+  another child.
+- **A coach** hears families asking for, booking, waiting for, withdrawing
+  from and cancelling her sessions and times; her team's other coaches hear
+  when she calls out.
+- **The admins** hear the club's activity: every team's game or practice
+  new, moved, called off, back on or deleted (from the calendar's own
+  triggers, which told only the team before), a session added or called
+  off, a family booking a coach's time, call-outs and time off. Under their
+  own *Club activity* switch, so an admin of many teams can turn it off and
+  keep her own team's.
+- **A session saved carries who saved it** (`edit`), as calendar entries
+  do, so the coach who called it off is left out and the admins are told
+  who did.
+- **A deletion says who made it.** The app stamps a whole entry or game
+  with who is deleting it just before it goes (`remoteDel()`), so the
+  admins' *Deleted* for a practice or event leaves her out and names her.
+  A deleted game, gone field and all by the time the server hears, is named
+  from a note the server keeps of each dated game (`serverState/calGame/`,
+  which no phone reads); that note is not woken by the stamp, so an admin
+  who deletes a game still hears about it herself.
+
+---
+
+## Booking a coach's time is one call to the server, with a waiting list — 2026-10-09 (build 119)
+
+A family booked a coach's slot from her own phone, in three writes the rules
+checked one at a time: the slot's session, a numbered seat, then her child's
+booking naming it. A rule cannot count, search or do dates, so the coach's
+window carried a list of the slots it still offered, kept by the coach's or
+an admin's phone, and a key per place. That left three holes the rules
+printed (SERVER.md, *Bookable times and training sessions*): a practice
+added from another phone stayed bookable until one of theirs next opened
+the app, a seat taken with no booking behind it waited ten minutes to be
+let go, and one child could hold two seats by hand. And a full slot could
+only say no. Worth closing before payments, when a place will be money.
+
+- **Her phone asks; the server books** (`functions/book.js`, `bookAsk`). The
+  ask is one write at `bookAsks/{code}/{uid}/{id}`, hers alone; the answer
+  appears beneath it in a second or two. The server checks she is a
+  guardian of the child, that the start is on the coach's grid and not
+  past, that the coach is free as the club stands now (her teams'
+  practices and games, her other sessions, her time off and her busy times
+  at other clubs; a call-out frees her) and the child too, then counts the
+  places inside one transaction and writes the session and the booking.
+  Two families can never both have the last place, and a child is in a
+  slot once.
+- **A taken slot has a waiting list.** A family can join it instead; the
+  moment a place comes free (a family cancels, the coach takes a child off
+  or turns one down) the first on it is moved in (`bookFreed`).
+- **Cancelling is the same call**, held to the coach's notice and to nothing
+  being paid or marked; a slot nobody is left in goes, so the time is free.
+  A place on the waiting list can be given up any time.
+- **Seats and the slot list are gone**, with the coach's and admins'
+  phones keeping them; a block now carries its midnight (`day0`) for the
+  server to time slots by. Rules version 18: a family can no longer write a
+  slot's session or booking at all, `seats` is removed, and `bookAsks` is
+  added. Booking needs the functions deployed; without them her phone says
+  there was no answer.
+
+---
+
+## Club-wide viewers — 2026-10-09 (build 118, rules version 17)
+
+AUTH.md, *More kinds of people*, 3, as the owner decided it: a director or
+a board member who should see every team's games with names and do nothing
+else. Until now the only way in was a role that does much more (a coach
+reads members' emails, a parent answers and messages).
+
+- **A club viewer** (`access/viewers/{uid}`, orgs/ only) sees every team's
+  calendar, games, Live, stats and recaps, with every child's name whatever
+  the club's roster setting. No members' emails, no access log, no coach's
+  notes, no messages, no answering who's coming, and she changes nothing:
+  every team is read-only for her, checked in the click handler and by the
+  rules, where no write names her.
+- **She is in the club's index**, like everyone else in it (the owner's
+  call), so admins' phones and the server keep her there, she can follow a
+  game, and its push names the scorer for her. Beyond the index she reads
+  every team's squad, for the names.
+- **An admin makes one** from People (*Club viewer*) or with *Invite
+  someone → Club viewer*, which asks for no team.
+- **Guests are not built**: the owner dropped them, since the game link
+  already gives a referee or a scout the game without signing in. That link
+  is unchanged and still carries no names.
+
+---
+
+## Team helpers: staff who help the coach prepare — 2026-10-09 (build 117)
+
+The first of AUTH.md's new kinds of people, as the owner decided them: a
+team manager, a volunteer or an assistant who helps the coach get ready and
+doesn't run the game, and reads no family's conversation.
+
+- **A role on one team**, `access/teams/{tid}/helpers/{uid}`, named by an
+  admin (People → *Invite someone* → Team helper, or giving the role to
+  someone already in). A coach can't, as the rules on `access/teams` already
+  had it.
+- **What she does**: the team's calendar (practices, events and games, one
+  entry at a time), the register, notices, practice plans, the drill shelves,
+  and a game's plan, who is out of it and its details **until kick-off**.
+  Never the clock, the subs or logging, never the squad, never the coach's
+  notes or members' emails, and Subs, Track and Pitch are not her tabs.
+- **The three rules that only asked "any role on this team?"** were decided
+  again: the squad and the notices let her read (she is staff); a game no
+  longer did. The match rule now asks for a coach or tracker, and a helper
+  writes a game only while it has no `periods` and no `ended`.
+- **One more lookup table than AUTH.md planned**, `access/helperIndex`,
+  coachIndex's twin, because the club's drill shelves are read whole and a
+  rule cannot ask "a helper of any team?" any other way. Kept by the phones
+  and `functions/access.js` like the others. `teamIndex` gains a `'helper'`
+  value, below tracker and coach.
+- **Push needed no change**: notices and calendar changes reach her as they
+  reach the rest of the team, a family's messages never do (`test/push.js`).
+- Rules version 16, written for `orgs/` (every club). `test/helpers.js` is
+  new; `rules.js`, `access.js` and `push.js` walk a helper through every rule
+  and table.
 
 ---
 
