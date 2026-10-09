@@ -41,8 +41,8 @@ the app. This document is the version after both.
 | --- | --- | --- |
 | **Bookable times** (a block) | One coach, one date, a window cut into slots of `len` minutes; 1-1s or a small group of `cap` | `training/{code}/avail/{bid}` |
 | **A booked slot** | An ordinary session, made by the first family to book it, whose id says which coach, day and start it is | `training/{code}/sessions/k_{coach}_{date}_{HHMM}` |
-| **A seat** | One place in that slot, held by one child | `training/{code}/seats/{sid}/{s1…}` |
-| Its booking | The child, `in`, naming her seat | `training/{code}/booked/{sid}/{pid}` |
+| Its booking | The child, `in` or `wait`, written by the server | `training/{code}/booked/{sid}/{pid}` |
+| **An ask** | A family asking the server to book or cancel; the answer is written beneath it | `bookAsks/{code}/{uid}/{id}` |
 
 **A booked slot is a session.** Everything `SESSIONS.md` built — the coach's
 list, the register, fees, coach hours, clashes, notices, the player's record,
@@ -61,47 +61,65 @@ training/{code}/
                   len,                                       // slot minutes: 30, 45, 60, 90
                   field, place, price, ages: [lo, hi] | null,
                   notice,                                    // hours before start a family can still cancel
-                  slots: { t1700: { end: '18:00', at }, … }, // what it offers; at = the start, epoch ms
-                  seats: { s1: true, … },                    // one key per place
+                  day0,                                      // the coach's phone's midnight that day, epoch ms
                   note, series?, off?, by, at }
   sessions/k_{coach}_{date}_{HHMM}
                 { ...a session, kind, cap, open: false,
-                  slot: bid, t0, price, notice,              // copied from the block, exactly
+                  slot: bid, t0, price, notice,              // copied from the block by the server
                   pid, tid, by }                             // the first family, and her child
-  seats/{sid}/{s1}    { pid, tid, by, at }
-  booked/{sid}/{pid}  { tid, st: 'in', by, at, seat, want? }
+  booked/{sid}/{pid}  { tid, st: 'in' | 'wait', by, at, want? }
+bookAsks/{code}/{uid}/{id}
+                { op: 'book', block, start, tid, pid, want?, wait?, at }
+              | { op: 'cancel', sid, pid, at }
+                answer: { ok, st?, sid?, why?, at }          // the server's alone
 ```
 
 `off: true` is a block taken off for that week: still on the coach's
-calendar, offering nothing (`slots` is empty).
+calendar, offering nothing.
 
-Keys are `s1` and `t1700`, never `1` and `1700`: the database hands back an
-object whose keys are mostly small integers as an array.
+A window written before build 119 also carries `slots` (each slot's start,
+as a timestamp) and `seats` (a key per place), which the old rules read. The
+server uses `slots` for a window with no `day0`; nothing writes either any
+more, and a block saved again drops them.
 
-## What the rules hold a family to
+## Booking is one call to the server (build 119)
 
-A rule can look things up; it cannot count, search, or do date arithmetic.
-So the block carries what the rule needs to look up, and the rest follows:
+Until build 119 a family's phone booked a slot itself, in three writes the
+rules held one at a time: the session (first family only), a numbered seat,
+and her child's booking naming it. A rule can look things up but cannot
+count, search or do dates, so the block had to carry what they looked up (the
+slots it still offered, worked out on the coach's or an admin's phone by
+`healBlocks()`; a seat key per place), and three things stayed open: a
+practice added from another phone was bookable until one of theirs next drew
+the app, a seat taken with no booking behind it waited ten minutes for the
+coach's phone to let it go, and one child could hold two seats by hand. A
+full slot could only say no.
 
-| The app's promise | How the rule keeps it |
+Now her phone asks (`askBooking()`), and the server (`functions/book.js`,
+`bookAsk`) answers beneath the ask:
+
+| What it checks | How |
 | --- | --- |
-| One family makes a slot | The slot's id is built from its coach, date and start, checked, and must not exist yet |
-| On the grid, the slot's length | Its start must be a key of the block's `slots`, its end that slot's `end` |
-| Not in the past | `t0` must equal the slot's `at`, and be after `now` |
-| Not when the coach is busy | The slot must still be in `slots`, which leaves out what she's busy with (below) |
-| No more children than places | A child takes a seat; a seat that exists can't be taken again; there are `cap` seat keys |
-| The coach's price, size and notice | `price`, `cap`, `kind`, `notice` must equal the block's |
-| Not a week taken off | The block isn't `off` |
-| Cancel only before the notice | Deleting or withdrawing a booking needs `t0 - now ≥ notice` hours |
-| Only her own child | Every family write checks the child's `guardians` |
+| She is in the club, and a guardian of the child | The club's index, and the child's `guardians` on the squad |
+| On the grid | The start is one the window's start, end and `len` give |
+| Not in the past | The slot's start, from `day0` (or an older window's `slots`), is after now |
+| Not a week taken off | The block isn't `off`, and the slot's session isn't called off |
+| The coach is free | Her teams' practices and games, the other sessions she runs, her time off and her shared busy times at other clubs, as the club stands now; a call-out frees her from its entry. A slot already held needs no second check |
+| The child is free | Her team's practices and games, and any other session she is in, asking for or waiting on |
+| No more children than places | Counted inside one transaction on the slot's bookings, which are keyed by child, so a child is in once and two families never both get the last place |
+| The coach's price, size and notice | Copied from the block onto the session the server makes |
+| Cancel only before the notice | A place `in` is given back only `notice` hours or more before; a place on the waiting list any time before it starts; nothing paid for or marked |
 
-**`slots` is derived, and kept so by the coach's phone and the admins'.**
-Whenever one of them draws the app, `healBlocks()` works out each upcoming
-block's slots from its window, leaving out any that overlap a practice or
-game of a team she coaches or a session she runs, and writes the block only
-if that differs. The same phones let go of seats nobody is using: a child
-taken off or turned down, or a seat held ten minutes with no booking behind
-it. This is the lookup tables' pattern: derived, rebuilt, never typed.
+**A full slot has a waiting list.** A family asks to wait, and is put on it
+in the order she asked. When a place comes free (a family cancels, the coach
+takes a child off or turns one down), the server moves the first on the list
+in (`bookFreed`), in the same kind of transaction. Only on a booked slot: on
+an ordinary session the waiting list is the coach's to work through.
+
+**The rules now hold a family to asking.** She writes only her own ask
+(`bookAsks/{code}/{uid}`, in a club she is in, never the answer), and never
+a slot's session or booking: on an ordinary session she still asks and
+withdraws herself, as before. `seats` is gone from the rules and the app.
 
 ## Who can do what
 
@@ -109,7 +127,7 @@ it. This is the lookup tables' pattern: derived, rebuilt, never typed.
 | --- | --- | --- | --- | --- |
 | Admin | Any coach's: make, change, take off, delete | — | Any | As any session |
 | Coach (any team) | Her own | — | Her own sessions' (as any session she runs) | Runs it |
-| Parent | Reads every block in the club | For her own child, in a slot the block lists, on a free seat | Her own child's, before the notice | Reads it, as any session she's in |
+| Parent | Reads every block in the club | Asks the server, for her own child | Asks the server, her own child's, before the notice | Reads it, as any session she's in |
 | Tracker only | — | — | — | — |
 
 ## Rules sketch
@@ -118,54 +136,47 @@ it. This is the lookup tables' pattern: derived, rebuilt, never typed.
   (an admin; or a coach in `coachIndex` writing a block that names her).
   Validated: `id` = `$bid`, coach, date, start and end as `HH:MM`, `kind` one
   or group, `cap` 1–60 and 1 for a 1-1, `len` 15–240, `price` ≥ 0, `notice`
-  0–168, each slot `{ end, at }`, each seat `true`.
-- `sessions/$sid` — a family **creates** a slot only as the table above
-  says, and **deletes** one only if she made it and nobody holds a seat or a
-  booking on it, and there's no register or fee.
-- `seats/$sid/$n` — read: the club. The session's coach or an admin writes
-  any. A family takes `$n` if nobody holds it, the block has that seat key,
-  the slot is still listed, the session isn't called off and hasn't started,
-  for her own child in her own name; she lets it go once her booking is gone.
-- `booked/$sid/$pid` — a family writes `in` where nothing was, for her own
-  child, on a slot that hasn't started, naming a seat she holds for that
-  child; deletes her own child's booking, or marks it `out`, only before the
-  notice.
+  0–168, `day0` a number.
+- `sessions/$sid` and `booked/$sid` — an admin, or the session's coach. A
+  family writes `asked` or `out` on an ordinary session only, never on a
+  booked slot.
+- `bookAsks/$code/$uid/$id` — read: that account. She makes an ask in her
+  own name in a club she is in, stamped within ten minutes of now (a phone's clock can be out), of the shape
+  above, and deletes it once answered; she never writes `answer`.
 
 **The bridge fails closed**, as sessions' does: no `coachIndex` yet, only
-admins make blocks; no `avail` rule published, nothing is offered.
+admins make blocks; no functions deployed, nobody answers, and a family's
+phone says there was no answer.
 
 ## What is still the app's
 
-Said in `rules.js`'s list at the end, beside the other deliberate ones:
-
-- **How fresh `slots` is.** It is as current as the last time the coach's
-  phone or an admin's drew the app. A practice added by another of the
-  team's coaches is bookable by a hand-made write until then; the app itself
-  checks the clash on every phone and never offers it.
-- **A second seat for one child.** A hand-made write can hold two seats for
-  one child (her booking names one). The coach's phone frees a seat with no
-  booking behind it after ten minutes.
-- **A coach going over.** The coach can add players past the seats herself;
-  that is her call, as it is on any session.
+- **A coach going over.** The coach can add players past the places
+  herself; that is her call, as it is on any session.
+- **What a family's phone offers.** It shows a slot as free from what it can
+  see; the coach's time off is not on a family's phone, so a slot she is off
+  for is offered and the server says no.
 
 ## Synced with the teams' calendars
 
 - **A coach's team calendar is her busy time.** A practice or game for any
   team she coaches takes out the slots it overlaps, and so do the sessions
-  she runs: on every phone at once, and from the rules' list when her phone
-  or an admin's next opens the app.
+  she runs: on every phone at once, and at the server the moment a family
+  asks.
 - **A booked slot is on the team calendar**, for that team's coaches and the
   child's family, as every session already is (`sessCalItems()`), and never on
   the share link or the feed.
 - **A child's own team is checked too.** A slot that overlaps her team's
-  practice or game is shown to her family as taken by it.
+  practice or game is shown to her family as taken by it, and refused by the
+  server.
 
 ## Booking needs a signal
 
-Making a slot and taking a seat are first come, first served. Every other
-family write here can wait in a queue; a booking that waited would be a
-promise the app can't keep. A family who loses a race is told to pick again
-and nothing is left on her screen.
+Booking is first come, first served. Every other family write here can wait
+in a queue; a booking that waited would be a promise the app can't keep. With
+no signal her phone does not ask; an answer that does not come in thirty
+seconds is said as that, not as a no (if the place was hers it appears
+anyway). Her phone takes back an ask it stopped waiting for, and the server
+leaves alone one that has been taken back, or is more than ten minutes old.
 
 ## A calendar of your own
 

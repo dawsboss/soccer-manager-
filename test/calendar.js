@@ -445,6 +445,24 @@ console.log('--- a game link reaches that game and nothing else ---');
 }
 
 
+console.log('--- a deletion says who made it ---');
+{
+  // the server tells the admins what was deleted, and leaves out (and names) whoever did it
+  setup(); lockDown(); A.me = { uid: 'coachU', name: 'Jaz' };
+  A.click({ act: 'caledit', tid: 't1', id: 'e1' });
+  A.click({ act: 'caldel', tid: 't1' });
+  const stamp = sets.find(([p]) => /teams\/t1\/events\/e1\/edit$/.test(p));
+  check('an entry deleted is stamped with who deleted it, just before', !!stamp && stamp[1].by, 'coachU');
+  check('then deleted', removes.some(p => /teams\/t1\/events\/e1$/.test(p)), true);
+  sets = [];
+  A.click({ act: 'delmatch', id: 'g3' });
+  const g = sets.find(([p]) => /matches\/g3\/edit$/.test(p));
+  check('so is a game, though it is gone from the phone by then', !!g && g[1].by, 'coachU');
+  setup(); lockDown(); A.me = { uid: 'trackU' };
+  A.click({ act: 'delmatch', id: 'g3' });
+  check('a tracker stamps nothing in her name', sets.some(([p]) => /\/edit$/.test(p)), false);
+}
+
 console.log('--- a club\'s whole season: views, the tree of calendars, and paging ---');
 {
   setup();

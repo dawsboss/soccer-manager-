@@ -1665,14 +1665,13 @@ reads('owners are not world-readable', OUT, 'shareOwners/sh1', false);
 /* ---------------- bookable times, and a family booking one ---------------- */
 
 /* AVAILABILITY.md: a coach's window, cut into slots families book
-   themselves, one child each for a 1-1 or up to its spots for a group. A
-   booked slot is an ordinary session, made by the first family, whose id is
-   the coach, the day and the start, so two families making the same time
-   write one key. A rule cannot count, so a place is a numbered seat, and a
-   seat that exists cannot be taken twice. The window carries the slots it
-   still offers, each with its start as a timestamp, so the rule can hold a
-   booking to the grid and to the clock: not in the past, and not cancelled
-   inside the coach's notice. */
+   themselves, one child each for a 1-1 or up to its places for a group. A
+   rule cannot count, search or do dates, so a family's phone no longer books
+   by writing (it did, in three writes held to a list of slots and a numbered
+   seat each): it asks the server at bookAsks/{code}/{uid}/{id}, which counts
+   the places inside a transaction and writes the session and the booking
+   with admin credentials (functions/book.js, test/book.js). What is left for
+   the rules: who may ask, and that nobody but the server answers. */
 {
   const T = 'training/CLUB/';
   const H = 3600000;
@@ -1684,12 +1683,10 @@ reads('owners are not world-readable', OUT, 'shareOwners/sh1', false);
   const group = (id, extra = {}) => block(id, { kind: 'group', cap: 2, seats: { s1: true, s2: true }, ...extra });
   DB.training.CLUB.avail = {
     b1: block('b1'), b2: block('b2', { coach: 'other' }), b3: block('b3', { off: true, date: '2026-10-14' }),
-    g1: group('g1', { date: '2026-10-08' }),
-    bp: block('bp', { date: '2025-09-01', slots: { t1700: { end: '18:00', at: NOW - H } } })
+    g1: group('g1', { date: '2026-10-08' })
   };
   DB.training.CLUB.sessions = {};
   DB.training.CLUB.booked = {};
-  DB.training.CLUB.seats = {};
   const sid = (start = '18:00', coach = 'coach', date = D) => 'k_' + coach + '_' + date + '_' + start.replace(':', '');
   const slot = (extra = {}) => {
     const v = { kind: 'one', coach: 'coach', date: D, start: '18:00', end: '19:00', t0: AT18, price: 30, notice: 24, open: false, cap: 1,
@@ -1697,9 +1694,7 @@ reads('owners are not world-readable', OUT, 'shareOwners/sh1', false);
     v.id = extra.id || sid(v.start, v.coach, v.date);
     return v;
   };
-  const gslot = (extra = {}) => slot({ kind: 'group', cap: 2, slot: 'g1', date: '2026-10-08', ...extra });
-  const seat = (extra = {}) => ({ pid: 'p1', tid: 't1', by: 'mum', at: NOW, ...extra });
-  const book = (extra = {}) => ({ tid: 't1', st: 'in', by: 'mum', at: NOW, seat: 's1', ...extra });
+  const book = (extra = {}) => ({ tid: 't1', st: 'in', by: 'mum', at: NOW, ...extra });
   const GRAN = { uid: 'gran' };
   DB.workspaces.CLUB.teams.t1.players.p2.guardians = { gran: true };
 
@@ -1708,8 +1703,7 @@ reads('owners are not world-readable', OUT, 'shareOwners/sh1', false);
   reads('a coach does', COACH, T + 'avail', true);
   reads('a stranger does not', RANDO, T + 'avail', false);
   reads('signed out does not', OUT, T + 'avail', false);
-  reads('the club reads who holds which seat', MUM, T + 'seats', true);
-  reads('a stranger does not', RANDO, T + 'seats', false);
+  reads('nobody reads seats any more: there are none', MUM, T + 'seats', false);
 
   console.log('\n--- bookable times: a coach sets her own, an admin anyone\'s ---');
   writes('a coach offers her own 1-1s', COACH, T + 'avail/x', block('x'), true);
@@ -1734,6 +1728,8 @@ reads('owners are not world-readable', OUT, 'shareOwners/sh1', false);
   writes('a group of none', COACH, T + 'avail/x', group('x', { cap: 0 }), false);
   writes('a price below nothing', COACH, T + 'avail/x', block('x', { price: -1 }), false);
   writes('a slot with no start time', COACH, T + 'avail/x', block('x', { slots: { t1700: { end: '18:00' } } }), false);
+  writes('with her own midnight, for the server to time the slots by', COACH, T + 'avail/x', block('x', { day0: AT17 - 17 * H }), true);
+  writes('which is a number', COACH, T + 'avail/x', block('x', { day0: 'today' }), false);
   writes('the whole collection at once', COACH, T + 'avail', { x: block('x') }, false);
   {
     const ci = DB.workspaces.CLUB.access.coachIndex;
@@ -1743,120 +1739,60 @@ reads('owners are not world-readable', OUT, 'shareOwners/sh1', false);
     DB.workspaces.CLUB.access.coachIndex = ci;
   }
 
-  console.log('\n--- a family makes a slot, only one the window offers ---');
-  writes('a parent makes 6pm for her own child', MUM, T + 'sessions/' + sid(), slot(), true);
-  writes('or 5pm', MUM, T + 'sessions/' + sid('17:00'), slot({ start: '17:00', end: '18:00', t0: AT17 }), true);
-  writes('not for somebody else\'s child', MUM, T + 'sessions/' + sid(), slot({ pid: 'p2' }), false);
-  writes('not claiming another team', MUM, T + 'sessions/' + sid(), slot({ tid: 't2' }), false);
-  writes('not in somebody else\'s name', MUM, T + 'sessions/' + sid(), slot({ by: 'coach' }), false);
-  writes('not off the grid: 5:30 is no slot of the window', MUM, T + 'sessions/' + sid('17:30'), slot({ start: '17:30', end: '18:30' }), false);
-  writes('not longer than the slot', MUM, T + 'sessions/' + sid(), slot({ end: '19:30' }), false);
-  writes('not shorter either', MUM, T + 'sessions/' + sid(), slot({ end: '18:30' }), false);
-  writes('not a start time of her own', MUM, T + 'sessions/' + sid(), slot({ t0: AT18 + 1 }), false);
-  writes('not on another day', MUM, T + 'sessions/' + sid('18:00', 'coach', '2026-10-09'), slot({ date: '2026-10-09' }), false);
-  writes('not with another coach than the window\'s', MUM, T + 'sessions/' + sid('18:00', 'other'), slot({ coach: 'other' }), false);
-  writes('not in a window that does not exist', MUM, T + 'sessions/' + sid(), slot({ slot: 'nope' }), false);
-  writes('not in a week taken off', MUM, T + 'sessions/' + sid('18:00', 'coach', '2026-10-14'), slot({ slot: 'b3', date: '2026-10-14' }), false);
-  writes('not in the past', MUM, T + 'sessions/' + sid('17:00', 'coach', '2025-09-01'), slot({ slot: 'bp', date: '2025-09-01', start: '17:00', end: '18:00', t0: NOW - H }), false);
-  writes('not at a price of her own', MUM, T + 'sessions/' + sid(), slot({ price: 0 }), false);
-  writes('not with a notice of her own', MUM, T + 'sessions/' + sid(), slot({ notice: 0 }), false);
-  writes('not with more room than the window', MUM, T + 'sessions/' + sid(), slot({ cap: 6 }), false);
-  writes('not as a group when the window is 1-1s', MUM, T + 'sessions/' + sid(), slot({ kind: 'group', cap: 1 }), false);
-  writes('not open to other families\' asks', MUM, T + 'sessions/' + sid(), slot({ open: true }), false);
-  writes('not under an id of her choosing', MUM, T + 'sessions/mine', slot({ id: 'mine' }), false);
-  writes('not under another time\'s id', MUM, T + 'sessions/' + sid('17:00'), slot({ id: sid('17:00') }), false);
-  writes('a tracker cannot', TRK, T + 'sessions/' + sid(), slot({ by: 'trk' }), false);
-  writes('nor a stranger', RANDO, T + 'sessions/' + sid(), slot({ by: 'rando' }), false);
-  {
-    const keep = DB.training.CLUB.avail.b1.slots;
-    DB.training.CLUB.avail.b1.slots = { t1700: keep.t1700 };
-    writes('not a slot the window no longer offers (the coach is busy then)', MUM, T + 'sessions/' + sid(), slot(), false);
-    DB.training.CLUB.avail.b1.slots = keep;
-  }
-  DB.training.CLUB.sessions[sid()] = slot({ by: 'gran', pid: 'p2' });
-  writes('a time somebody already made is not made again', MUM, T + 'sessions/' + sid(), slot(), false);
-  console.log('  ^ the slot\'s id is its time, so two families making 6pm write one key and one gets it.');
-  delete DB.training.CLUB.sessions[sid()];
-
-  console.log('\n--- then a seat, then the booking ---');
+  console.log('\n--- a family no longer books by writing ---');
+  writes('she cannot make a slot herself', MUM, T + 'sessions/' + sid(), slot(), false);
+  writes('nor a group slot', MUM, T + 'sessions/' + sid('18:00', 'coach', '2026-10-08'), slot({ kind: 'group', cap: 2, slot: 'g1', date: '2026-10-08' }), false);
+  writes('nor take a seat', MUM, T + 'seats/' + sid() + '/s1', { pid: 'p1', tid: 't1', by: 'mum', at: NOW }, false);
   DB.training.CLUB.sessions[sid()] = slot();
-  writes('she takes the 1-1\'s one seat', MUM, T + 'seats/' + sid() + '/s1', seat(), true);
-  writes('not a seat the window does not have', MUM, T + 'seats/' + sid() + '/s2', seat(), false);
-  writes('not for another child', MUM, T + 'seats/' + sid() + '/s1', seat({ pid: 'p2' }), false);
-  writes('not in another\'s name', MUM, T + 'seats/' + sid() + '/s1', seat({ by: 'gran' }), false);
-  DB.training.CLUB.seats[sid()] = { s1: seat() };
-  writes('a seat that is taken is not taken twice', GRAN, T + 'seats/' + sid() + '/s1', seat({ pid: 'p2', by: 'gran' }), false);
-  console.log('  ^ a rule cannot count places; it can refuse a seat that exists.');
-  writes('then books her child into it', MUM, T + 'booked/' + sid() + '/p1', book(), true);
-  writes('not on a seat that is not hers', GRAN, T + 'booked/' + sid() + '/p2', book({ by: 'gran' }), false);
-  writes('not naming a seat she does not hold', MUM, T + 'booked/' + sid() + '/p1', book({ seat: 's2' }), false);
-  writes('not another child', MUM, T + 'booked/' + sid() + '/p2', book(), false);
-  writes('not on a session a coach made', MUM, T + 'booked/s9/p1', book(), false);
-  DB.training.CLUB.booked[sid()] = { p1: { tid: 't1', st: 'no', by: 'coach', at: 1, seat: 's1' } };
-  writes('once the coach has had her say, not "in" again', MUM, T + 'booked/' + sid() + '/p1', book(), false);
+  writes('nor book her child into a slot', MUM, T + 'booked/' + sid() + '/p1', book(), false);
+  writes('nor put her child on its waiting list', MUM, T + 'booked/' + sid() + '/p1', book({ st: 'wait' }), false);
   DB.training.CLUB.booked[sid()] = { p1: book() };
-
-  console.log('\n--- a group: anyone may join, up to its seats ---');
-  const G = sid('18:00', 'coach', '2026-10-08');
-  writes('the first family makes the group slot', MUM, T + 'sessions/' + G, gslot(), true);
-  DB.training.CLUB.sessions[G] = gslot();
-  DB.training.CLUB.seats[G] = {};
-  writes('and takes a seat', MUM, T + 'seats/' + G + '/s1', seat(), true);
-  DB.training.CLUB.seats[G] = { s1: seat() };
-  writes('another family joins, on the next seat', GRAN, T + 'seats/' + G + '/s2', seat({ pid: 'p2', by: 'gran' }), true);
-  DB.training.CLUB.seats[G].s2 = seat({ pid: 'p2', by: 'gran' });
-  writes('and books into it', GRAN, T + 'booked/' + G + '/p2', book({ by: 'gran', seat: 's2' }), true);
-  writes('past the last seat, nobody gets in', MUM, T + 'seats/' + G + '/s3', seat(), false);
-  writes('the coach can still add a player herself', COACH, T + 'booked/' + G + '/p0', { tid: 't1', st: 'in', by: 'coach', at: NOW }, true);
-  delete DB.training.CLUB.seats[G].s2;
-  {
-    const keep = DB.training.CLUB.avail.g1.slots;
-    DB.training.CLUB.avail.g1.slots = {};
-    writes('a slot the window has stopped offering takes nobody new', GRAN, T + 'seats/' + G + '/s2', seat({ pid: 'p2', by: 'gran' }), false);
-    DB.training.CLUB.avail.g1.slots = keep;
-  }
-  DB.training.CLUB.sessions[G].called = 'cancelled';
-  writes('nor one the coach has called off', GRAN, T + 'seats/' + G + '/s2', seat({ pid: 'p2', by: 'gran' }), false);
-  delete DB.training.CLUB.sessions[G];
-  delete DB.training.CLUB.seats[G];
-
-  console.log('\n--- cancelling, held to the coach\'s notice ---');
-  writes('she takes her booking off, a day and more ahead', MUM, T + 'booked/' + sid() + '/p1', null, true);
-  writes('another family cannot take it off', GRAN, T + 'booked/' + sid() + '/p1', null, false);
-  writes('nor withdraw it', GRAN, T + 'booked/' + sid() + '/p1', book({ st: 'out', by: 'gran' }), false);
-  writes('her seat cannot go while her booking is on it', MUM, T + 'seats/' + sid() + '/s1', null, false);
-  {
-    DB.training.CLUB.sessions[sid()] = slot({ t0: NOW + 3 * H });
-    writes('inside the notice, she cannot take it off', MUM, T + 'booked/' + sid() + '/p1', null, false);
-    writes('nor mark it withdrawn', MUM, T + 'booked/' + sid() + '/p1', book({ st: 'out' }), false);
-    writes('the coach still can', COACH, T + 'booked/' + sid() + '/p1', { ...book(), st: 'out', by: 'coach' }, true);
-    DB.training.CLUB.sessions[sid()] = slot({ t0: NOW + 3 * H, notice: 0 });
-    writes('with no notice set, she can until it starts', MUM, T + 'booked/' + sid() + '/p1', null, true);
-    DB.training.CLUB.sessions[sid()] = slot({ t0: NOW - H, notice: 0 });
-    writes('but not once it has started', MUM, T + 'booked/' + sid() + '/p1', null, false);
-    DB.training.CLUB.sessions[sid()] = slot();
-  }
-  writes('a session with a booking on it stays', MUM, T + 'sessions/' + sid(), null, false);
-  delete DB.training.CLUB.booked[sid()];
-  writes('then her seat goes', MUM, T + 'seats/' + sid() + '/s1', null, true);
-  writes('a session with a seat held stays', MUM, T + 'sessions/' + sid(), null, false);
-  delete DB.training.CLUB.seats[sid()];
-  writes('then the slot itself, and the time is free', MUM, T + 'sessions/' + sid(), null, true);
-  writes('another family cannot delete it', GRAN, T + 'sessions/' + sid(), null, false);
-  DB.training.CLUB.came = { [sid()]: { p1: true } };
-  writes('not once the register has been taken', MUM, T + 'sessions/' + sid(), null, false);
-  delete DB.training.CLUB.came;
-  DB.training.CLUB.fees = { [sid()]: { p1: { paid: 30, how: 'cash', at: 1, by: 'coach' } } };
-  writes('nor once it has been paid for', MUM, T + 'sessions/' + sid(), null, false);
-  delete DB.training.CLUB.fees;
-  writes('nor can she delete a session a coach made', MUM, T + 'sessions/s1', null, false);
-  DB.training.CLUB.seats[sid()] = { s1: seat() };
-  writes('the coach clears any seat on her own slot', COACH, T + 'seats/' + sid(), null, true);
-  writes('another coach cannot', OTHER, T + 'seats/' + sid(), null, false);
+  writes('nor take her booking off: the server checks the notice', MUM, T + 'booked/' + sid() + '/p1', null, false);
+  writes('nor mark it withdrawn', MUM, T + 'booked/' + sid() + '/p1', book({ st: 'out' }), false);
+  writes('nor delete the slot', MUM, T + 'sessions/' + sid(), null, false);
+  console.log('  ^ booking, the waiting list and cancelling a slot go through the server (bookAsks below).');
+  writes('the coach still takes a child off her own slot', COACH, T + 'booked/' + sid() + '/p1', { ...book(), st: 'out', by: 'coach' }, true);
+  writes('and adds one herself', COACH, T + 'booked/' + sid() + '/p0', { tid: 't1', st: 'in', by: 'coach', at: NOW }, true);
+  writes('another coach cannot', OTHER, T + 'booked/' + sid() + '/p0', { tid: 't1', st: 'in', by: 'other', at: NOW }, false);
   writes('the coach deletes the slot, as any session of hers', COACH, T + 'sessions/' + sid(), null, true);
+  writes('an admin does', ADM, T + 'sessions/' + sid(), null, true);
+  {
+    // an ordinary session a coach opened to asks: a family still asks and withdraws there herself
+    DB.training.CLUB.sessions.s5 = { id: 's5', kind: 'group', coach: 'coach', date: D, start: '18:00', cap: 6, open: true };
+    writes('on an ordinary open session she still asks', MUM, T + 'booked/s5/p1', book({ st: 'asked' }), true);
+    DB.training.CLUB.booked.s5 = { p1: book({ st: 'in', by: 'coach' }) };
+    writes('and withdraws, at any time', MUM, T + 'booked/s5/p1', book({ st: 'out' }), true);
+    writes('but never books herself in', MUM, T + 'booked/s5/p1', book({ st: 'in' }), false);
+    delete DB.training.CLUB.sessions.s5; delete DB.training.CLUB.booked.s5;
+  }
+
+  console.log('\n--- asking the server: bookAsks ---');
+  const A = 'bookAsks/CLUB/';
+  const ask = (extra = {}) => ({ op: 'book', block: 'b1', start: '18:00', tid: 't1', pid: 'p1', at: NOW, ...extra });
+  writes('a family asks, in her own name', MUM, A + 'mum/a1', ask(), true);
+  writes('with what her child wants, and for the waiting list', MUM, A + 'mum/a1', ask({ want: 'Weak foot', wait: true }), true);
+  writes('or to cancel', MUM, A + 'mum/a1', { op: 'cancel', sid: sid(), pid: 'p1', at: NOW }, true);
+  writes('not in somebody else\'s name', MUM, A + 'gran/a1', ask(), false);
+  writes('not with the answer already written', MUM, A + 'mum/a1', { ...ask(), answer: { ok: true, st: 'in' } }, false);
+  writes('not something else', MUM, A + 'mum/a1', ask({ op: 'steal' }), false);
+  writes('stamped by a phone whose clock is a few minutes out', MUM, A + 'mum/a1', ask({ at: NOW + 4 * 60000 }), true);
+  writes('not stamped an hour ago, or ahead', MUM, A + 'mum/a1', ask({ at: NOW - H }), false);
+  writes('nor an hour ahead', MUM, A + 'mum/a1', ask({ at: NOW + H }), false);
+  writes('nor without a child', MUM, A + 'mum/a1', { op: 'book', at: NOW }, false);
+  writes('not to a club she is not in', RANDO, A + 'rando/a1', ask(), false);
+  writes('signed out, not at all', OUT, A + 'x/a1', ask(), false);
+  reads('she reads her own asks and their answers', MUM, A + 'mum', true);
+  reads('not another family\'s', GRAN, A + 'mum', false);
+  reads('not an admin either', ADM, A + 'mum', false);
+  DB.bookAsks = { CLUB: { mum: { a1: { ...ask(), answer: { ok: true, st: 'in', at: NOW } } } } };
+  writes('the answer is never hers to write', MUM, A + 'mum/a1/answer', { ok: true, st: 'in', at: NOW }, false);
+  writes('nor is an ask changed once made', MUM, A + 'mum/a1', ask({ pid: 'p2' }), false);
+  writes('she clears it away when she has read it', MUM, A + 'mum/a1', null, true);
+  writes('nobody else does', GRAN, A + 'mum/a1', null, false);
+  delete DB.bookAsks;
 
   delete DB.workspaces.CLUB.teams.t1.players.p2.guardians;
-  for (const k of ['avail', 'sessions', 'booked', 'seats']) delete DB.training.CLUB[k];
+  for (const k of ['avail', 'sessions', 'booked']) delete DB.training.CLUB[k];
 }
 
 /* ---------------- coaches' time off ---------------- */
@@ -2369,19 +2305,13 @@ console.log(`
      six. It refuses anyone but the session's coach or an admin giving a place;
      the coach's phone keeps the count.
 
-  9. A family books only a slot its coach's window still lists, on its grid,
-     at its start time, price, size and notice, under the id its time gives
-     it, and only into a seat the window has; she cancels only before the
-     coach's notice. Which slots a window lists, though, is written by its
-     coach's and the admins' phones, which leave out anything she is busy
-     with: a team practice added from another phone is bookable until one of
-     theirs next opens the app. The app checks the clash itself as well.
+  9. A booked slot is not counted by the rules at all: a family cannot write
+     one. Her phone asks the server (bookAsks), which checks her child, the
+     coach's calendar as it stands, and the places inside a transaction
+     (functions/book.js, test/book.js). Where the functions are not
+     deployed, nobody answers, and a family cannot book a time.
 
- 10. A family can hold a second seat for the same child by hand-made writes.
-     Her own booking names one seat; the coach's phone clears a seat with no
-     booking on it after ten minutes.
-
- 11. Somebody's shared busy times are readable by anyone signed in who knows
+ 10. Somebody's shared busy times are readable by anyone signed in who knows
      her uid. A uid is only shown inside a club she is in, and the times
      carry nothing but a date and two times; private is the default, and the
      rules refuse any busy time while she has not said to share.`);
