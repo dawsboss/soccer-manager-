@@ -100,6 +100,10 @@ Each invite works **once**, for **one account**, and expires after **14 days**. 
 
 The invite shows the club, the team and who sent it — never a child's name. A parent invite names the player by shirt number, because a link gets forwarded.
 
+### A club viewer
+
+A director or a board member sees every team's calendar and games with the children's names, and nothing else: no emails, no access log, no coach's notes, no messages, no answering who's coming, no changes. An admin makes one from **People** (the person's *Club viewer* chip) or with **Invite someone → Club viewer**, which asks for no team. It needs rules version 17 published. The game link without signing in is unchanged and still carries no names.
+
 ### A whole squad of parents
 
 Two ways, both on the team's **Squad** tab, in a **Parents** card for that team's coaches and the admins.

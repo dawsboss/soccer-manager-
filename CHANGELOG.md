@@ -8,6 +8,31 @@ before this point lives only in the git log.
 
 ---
 
+## Club-wide viewers — 2026-10-09 (build 118, rules version 17)
+
+AUTH.md, *More kinds of people*, 3, as the owner decided it: a director or
+a board member who should see every team's games with names and do nothing
+else. Until now the only way in was a role that does much more (a coach
+reads members' emails, a parent answers and messages).
+
+- **A club viewer** (`access/viewers/{uid}`, orgs/ only) sees every team's
+  calendar, games, Live, stats and recaps, with every child's name whatever
+  the club's roster setting. No members' emails, no access log, no coach's
+  notes, no messages, no answering who's coming, and she changes nothing:
+  every team is read-only for her, checked in the click handler and by the
+  rules, where no write names her.
+- **She is in the club's index**, like everyone else in it (the owner's
+  call), so admins' phones and the server keep her there, she can follow a
+  game, and its push names the scorer for her. Beyond the index she reads
+  every team's squad, for the names.
+- **An admin makes one** from People (*Club viewer*) or with *Invite
+  someone → Club viewer*, which asks for no team.
+- **Guests are not built**: the owner dropped them, since the game link
+  already gives a referee or a scout the game without signing in. That link
+  is unchanged and still carries no names.
+
+---
+
 ## Team helpers: staff who help the coach prepare — 2026-10-09 (build 117)
 
 The first of AUTH.md's new kinds of people, as the owner decided them: a
