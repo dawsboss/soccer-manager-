@@ -2,7 +2,7 @@
    Static app. Data lives in localStorage, and mirrors to Firebase Realtime
    Database when a config + workspace code are present. */
 
-const BUILD = '116';
+const BUILD = '117';
 const BUILT = '2026-10-09';
 /* The version of database.rules.json this app was written against. The rules
    carry the same number in rulesVersion's .write, which accepts that number
@@ -11,7 +11,7 @@ const BUILT = '2026-10-09';
    never pasted look exactly like a coach with no signal: "saved on this phone
    only", one feature at a time. test/rules.js holds the two numbers together
    and fails when the rules change without this going up. */
-const RULES_VERSION = 15;
+const RULES_VERSION = 16;
 /* index.html carries the build it was published with. If this file is newer, the
    browser handed us a cached page — the exact failure that has eaten hours. */
 const pageBuild = () => {
@@ -250,7 +250,7 @@ const envPrefix = () => (envName() ? envName() + '~' : '');
 const clubKey = () => envPrefix() + (wsCode() || 'local');
 
 /* Marked in two places on purpose. The code prefix is local and readable before
-   any database round-trip — schedulePublish() has to know before it fires. The
+   any database round-trip, as the share ids and nothing published need. The
    access/org flag syncs, so a second device opening the same club also knows it
    is a rehearsal. */
 const isSandbox = () => wsCode().startsWith(SANDBOX_PREFIX) || !!(acc().org || {}).sandbox;
@@ -795,7 +795,7 @@ async function initSync() {
         noteMyClub();
       }
       flushTraining();
-      schedulePublish();   // republish on load, so a fixed config heals itself
+      shareIds();   // a game made elsewhere, or before game links, gets its id here
     }
 
     function wireBase(attempt) {
@@ -1439,8 +1439,8 @@ function remoteDel(path) {
 }
 
 function quiet(path, value) { setDeep(state, path, value); remoteSet(path, value); }
-function commit(path, value) { setDeep(state, path, value); saveLocal(); remoteSet(path, value); render(); schedulePublish(); }
-function drop(path) { delDeep(state, path); saveLocal(); remoteDel(path); render(); schedulePublish(); }
+function commit(path, value) { setDeep(state, path, value); saveLocal(); remoteSet(path, value); render(); shareIds(); }
+function drop(path) { delDeep(state, path); saveLocal(); remoteDel(path); render(); shareIds(); }
 
 /* ---------------- roles ---------------- */
 /* Roles are derived from where a uid appears, never stored as a string on the
@@ -1710,44 +1710,12 @@ function syncTeamPlayers(tid) {
   if (changed) saveLocal();
 }
 
-/* Who may publish a team's read-only mirror. public/{share} is world-readable
-   by design, but its write rule is the one hole AUTH.md names outright, and it
-   is closed by a list the rule can look up in one hop. Anonymous auth is not an
-   option here and AUTH.md says why. */
-function claimShare(tid) {
-  const t = (state.teams || {})[tid];
-  if (!fb || !t || !t.share) return;
-  const owners = {};
-  for (const u of Object.keys(acc().admins || {})) owners[u] = true;
-  for (const u of Object.keys(teamAccess(tid).coaches || {})) owners[u] = true;
-  if (me) owners[me.uid] = true;
-  fb.set(fb.ref(fb.db, 'shareOwners/' + t.share), owners).catch(() => { });
-}
-function claimAllShares() { for (const t of Object.values(state.teams || {})) if (t.share) claimShare(t.id); }
-/* A team now publishes under more ids than its season link: one per game, so a
-   game link carries that game and nothing else, and one for the members'
-   calendar feed. Each needs its owners claimed before the first write, exactly
-   as the season link does. Once a session per id is enough — the season link
-   above keeps being refreshed on every publish, as it always was. */
-const claimed = new Set();
-function claimTeamIds(tid) {
-  const t = (state.teams || {})[tid];
-  if (!fb || !t) return;
-  const owners = {};
-  for (const u of Object.keys(acc().admins || {})) owners[u] = true;
-  for (const u of Object.keys(teamAccess(tid).coaches || {})) owners[u] = true;
-  if (me) owners[me.uid] = true;
-  const ids = [t.calFeed, ...(t.share ? teamMatches(tid).map(m => m.share) : [])].filter(Boolean);
-  for (const id of ids) {
-    if (claimed.has(id)) continue;
-    claimed.add(id);
-    fb.set(fb.ref(fb.db, 'shareOwners/' + id), owners).catch(() => claimed.delete(id));
-  }
-}
-/* Every game gets its own share id the first time a coach publishes with
-   sharing on. The id lives on the game, so it follows the game and dies with
-   it. Readers never make one: the button that needs it waits for the coach's
-   phone to have published. */
+/* Every game of a team with sharing on gets its own share id, made here on
+   the coach's phone and written to the game like any other change. The id
+   lives on the game, so it follows the game and dies with it; the server
+   builds the page under it (functions/mirror.js) when it hears the id
+   written. Readers never make one: the button that needs it waits for the
+   coach's phone to have made it. */
 // SERVER.md: an older game gets its link from whichever phone opens it next; a server would give it one.
 function ensureFixtureShares(t) {
   if (!t || !t.share || !canEditTeam(t.id)) return false;
@@ -5192,7 +5160,7 @@ function applyImport(plan) {
   // sessions after the teams and fields they name, through the store that resends them
   for (const [path, value] of plan.sessWrites || []) sessPut(path, value);
   for (const [what, value] of plan.trainWrites || []) { if (what === 'practice') putPractice(value); else if (what === 'drill') putDrill('club', value); else if (what === 'template') putDrill('clubTpl', value); }
-  render(); schedulePublish();
+  render(); shareIds();
 }
 
 /* ---- spreadsheets ---- */
@@ -6558,7 +6526,7 @@ function render() {
   watchSess();
   watchYou();
   watchMirror();
-  if (!shut) { watchBusy(); youPublishSoon(); feedPublishSoon(); watchElseMessages(); calAlerts(); }
+  if (!shut) { watchBusy(); youPublishSoon(); watchElseMessages(); calAlerts(); }
   clubNews();
   paintBell(shut);
 }
@@ -9596,7 +9564,7 @@ function calTargets() {
   return f.scope === 'later' && e.series ? seriesOf(t, e.series).filter(x => (x.date || '') >= (e.date || '')) : [e];
 }
 function calDone(msg) {
-  saveLocal(); schedulePublish(); closeSheet(); render();
+  saveLocal(); shareIds(); closeSheet(); render();
   if (msg) toast(msg);
 }
 function saveCalEvent() {
@@ -10838,7 +10806,7 @@ function movePlans(tid, drawing = false) {
     sendPractice(tid, pid);
     n++;
   }
-  if (n) { saveTrain(); saveLocal(); schedulePublish(); if (t && !drawing) render(); }
+  if (n) { saveTrain(); saveLocal(); shareIds(); if (t && !drawing) render(); }
   return n;
 }
 
@@ -15069,7 +15037,7 @@ function watchYou() {
     if (!me || me.uid !== who) return;
     const v = snap.val();
     // a phone that changed it offline keeps its own word until it has been sent
-    if (v && typeof v === 'object' && (Number(v.at) || 0) >= (Number((you.set || {}).at) || 0)) { you.set = { share: v.share === true, at: Number(v.at) || 0, ...(typeof v.feed === 'string' ? { feed: v.feed } : {}) }; saveYou(); youPublishSoon(); feedPublishSoon(); }
+    if (v && typeof v === 'object' && (Number(v.at) || 0) >= (Number((you.set || {}).at) || 0)) { you.set = { share: v.share === true, at: Number(v.at) || 0, ...(typeof v.feed === 'string' ? { feed: v.feed } : {}) }; saveYou(); youPublishSoon(); }
     if (ui.view === 'mycal') render();
   }, () => { });
 }
@@ -15413,11 +15381,10 @@ function youShareCard() {
    are left out: its entries carry the team, the kind, the time and the place.
    Item ids are hashed, so no club's code reaches the open web either.
 
-   Off until she turns it on. The id is claimed in shareOwners like a share
-   link, and kept at people/{uid}/set/feed so her other phones publish to the
-   same address; replacing it kills the old one. SERVER.md: her phone writes
-   it, so a change in a club reaches her calendar only once one of her phones
-   has been open since. */
+   Off until she turns it on. The id is kept at people/{uid}/set/feed, and the
+   server builds the page there (functions/mycal.js) and takes a replaced one
+   down; her phone never writes it (SECURITY.md, SEC-10). myFeedDoc() is what
+   the server's feed is held to (test/mycalfeed.js). */
 const myFeedId = () => (me && youHere().set && typeof you.set.feed === 'string' && you.set.feed) || '';
 function feedScrub() {
   const subs = [];
@@ -15431,7 +15398,7 @@ function feedScrub() {
   return s => (s ? replaceNames(String(s), subs).text : '');
 }
 /* One item of My calendar as the feed carries it, or null. */
-// SERVER.md: each item made safe for public/ on her phone; a server would build it from the club.
+// SERVER.md: the server builds her feed (functions/mycal.js); this is what each item of it is held to.
 function feedItem(it, scrub) {
   if (!it || !okDay(it.date)) return null;
   const other = !!it.club;
@@ -15457,7 +15424,7 @@ function feedItem(it, scrub) {
   return ['k' + clubTag((it.club || wsCode() || '') + '|' + it.key), doc];
 }
 const FEED_BACK_DAYS = 60, FEED_MAX = 400;
-// SERVER.md: built on her phone for public/; a server would build her feed itself.
+// SERVER.md: the server builds her feed (functions/mycal.js) and writes it; this is what it is held to.
 function myFeedDoc() {
   const scrub = feedScrub(), from = addDays(todayStr(), -FEED_BACK_DAYS), items = {};
   let n = 0;
@@ -15469,68 +15436,19 @@ function myFeedDoc() {
   }
   return { team: { name: 'My calendar' }, mine: true, link: { app: shareBase() + 'index.html' }, items, updated: nowMs() };
 }
-/* Written only from a phone that has heard from every club it holds this
-   session, and only when what it carries has changed: an old copy of a club
-   must never overwrite what another phone of hers sent a minute ago. */
-let feedSent = '';
-/* Whether the server keeps this address now (functions/mycal.js). It marks
-   the page it writes `by: 'server'`, and once it has, every phone of hers
-   leaves it alone: two writers building from different copies would take
-   turns overwriting each other, and the phone's is the one that lags. A
-   phone waits to hear before it writes at all, so a page the server already
-   keeps is never replaced by a phone's older copy, even for a moment. Where
-   the functions are not deployed nobody writes `by`, and the phone carries
-   on as it always has. */
-let feedBy = { id: '', server: null, off: null };   // server: null until the database has said
-function feedOwner(id) {
-  if (feedBy.id === id) return feedBy.server;
-  if (typeof feedBy.off === 'function') try { feedBy.off(); } catch (e) { }
-  feedBy = { id, server: null, off: null };
-  if (!rtdb) return null;
-  const { db, mod } = rtdb;
-  feedBy.off = mod.onValue(mod.ref(db, `public/${id}/by`), s => {
-    if (feedBy.id !== id) return;
-    const was = feedBy.server;
-    feedBy.server = s.val() === 'server';
-    if (!feedBy.server) feedPublishSoon();
-    if (was !== feedBy.server) render();
-  }, () => { if (feedBy.id === id && feedBy.server === null) { feedBy.server = false; feedPublishSoon(); } });
-  return null;
-}
-// SERVER.md: her own phone keeps her calendar feed up to date; a server would write it on every change.
-function feedPublish() {
-  const id = myFeedId();
-  if (!id || !fb || !me || isSandbox() || needsSignIn()) return;
-  if (wsCode() && !wsRead) return;
-  if (youClubs().some(([code]) => !mirrorLive.has(code))) return;
-  if (feedOwner(id) !== false) return;      // the server's, or not heard yet
-  const doc = myFeedDoc(), sig = id + JSON.stringify({ ...doc, updated: 0 });
-  if (sig === feedSent) return;
-  feedSent = sig;
-  Promise.resolve(fb.set(fb.ref(fb.db, 'public/' + id), doc)).catch(() => { feedSent = ''; });
-}
-let feedTimer = null;
-function feedPublishSoon() {
-  if (feedTimer || typeof setTimeout !== 'function' || !myFeedId()) return;
-  feedTimer = setTimeout(() => { feedTimer = null; feedPublish(); }, 2500);
-}
-/* On, a new address, or off. The claim goes first, because the public rule
-   lets only the id's owners write it once it is claimed; then the setting,
-   so her other phones know the address; then the feed itself. */
+/* On, a new address, or off: her setting, and nothing else. The server
+   builds the page at the address (functions/mycal.js) and takes a replaced
+   or turned-off one down; only it writes public/ (SECURITY.md, SEC-10). */
 async function setMyFeed(how) {
   if (!me || !fb) return;
   youHere();
   const old = myFeedId();
   const id = how === 'off' ? '' : randId('m');
-  const put = (p, v) => Promise.resolve(v === null ? fb.remove(fb.ref(fb.db, p)) : fb.set(fb.ref(fb.db, p), v)).then(() => true, () => false);
-  if (id && !(await put('shareOwners/' + id, { [me.uid]: true }))) { toast('Not turned on: the database refused it. Its rules may need updating.'); return; }
   const set = { share: sharing(), at: nowMs() };
   if (id) set.feed = id;
-  if (!(await put(youPath('set'), set))) { toast('Not saved: the database refused it. Its rules may need updating.'); if (id) put('shareOwners/' + id, null); return; }
+  const ok = await Promise.resolve(fb.set(fb.ref(fb.db, youPath('set')), set)).then(() => true, () => false);
+  if (!ok) { toast('Not saved: the database refused it. Its rules may need updating.'); return; }
   you.set = set; saveYou();
-  if (old) { await put('public/' + old, null); put('shareOwners/' + old, null); }
-  feedSent = '';
-  if (id) feedPublish();
   render();
   toast(how === 'off' ? 'Calendar sync is off — the address has stopped working' : old ? 'New address made — the old one has stopped working' : 'Calendar sync is on');
 }
@@ -15547,9 +15465,7 @@ function myFeedCard() {
     <button class="btn wide" data-act="myfeed" data-v="on">Turn on calendar sync</button>
     ${copy}</div>`;
   return `<div class="card"><h2 style="margin-bottom:8px">In your own calendar</h2>
-    <p class="muted" style="margin-top:0">Subscribe once and your calendar follows every change in every club. Apple and Outlook check about every hour; Google keeps its own pace, often several hours. ${feedBy.id === id && feedBy.server
-      ? 'The club\u2019s server keeps it up to date within a few minutes of a change, whether or not your phone is open, and a team you are taken off leaves it.'
-      : 'It catches up with a club once your phone has been open since the change.'}</p>
+    <p class="muted" style="margin-top:0">Subscribe once and your calendar follows every change in every club. Apple and Outlook check about every hour; Google keeps its own pace, often several hours. The club\u2019s server keeps it up to date within a few minutes of a change, whether or not your phone is open, and a team you are taken off leaves it.</p>
     <div class="row wrap">
       <a class="btn sm" href="${esc(webcal(u))}">Apple Calendar</a>
       <a class="btn quiet sm" href="${esc(googleSub(u))}" target="_blank" rel="noopener">Google Calendar</a>
@@ -16336,7 +16252,7 @@ function bookClubWide(tids, fields) {
     quiet(`teams/${tid}/events/${id}`, { id, kind: fields.kind === 'practice' ? 'practice' : 'event', title: fields.title, date: fields.date,
       start: fields.start, end: fields.end, venue: fields.venue || '', notes: '', public: false, club, createdAt: at, ...(me ? { by: me.uid } : {}) });
   }
-  saveLocal(); schedulePublish();
+  saveLocal(); shareIds();
   return club;
 }
 
@@ -16511,7 +16427,7 @@ function onPlannerAct(a, d) {
       quiet(`teams/${x.tid}/events/${id}`, { id, kind: 'event', title: 'Picture day', date: c.date, start: minHm(x.a), end: minHm(x.b), venue: c.venue.trim().slice(0, 80),
         notes: '', public: false, club, createdAt: at, ...(me ? { by: me.uid } : {}) });
     }
-    saveLocal(); schedulePublish(); render(); toast(`Picture day is on ${lay.slots.length} calendar${lay.slots.length === 1 ? '' : 's'}`); return;
+    saveLocal(); shareIds(); render(); toast(`Picture day is on ${lay.slots.length} calendar${lay.slots.length === 1 ? '' : 's'}`); return;
   }
 }
 
@@ -16683,7 +16599,7 @@ function onSchedAct(a, d) {
         periodCount: count, periodMinutes: len, onFieldCount: side, formation: resolveShape(t, 'auto', side) });
     }
     gamesForm = null;
-    saveLocal(); schedulePublish(); closeSheet(); render();
+    saveLocal(); shareIds(); closeSheet(); render();
     toast(`${rows.length} game${rows.length === 1 ? '' : 's'} added for ${t.name || 'the team'}`); return;
   }
 }
@@ -16870,7 +16786,10 @@ function tapPlayer(pid) {
 /* ---------------- public mirror ---------------- */
 /* Published to its own node under a share id. Contains shirt numbers and never
    a name, so the public tier is private by construction rather than by the UI
-   choosing to hide things. */
+   choosing to hide things. Only the server publishes (SECURITY.md, SEC-10):
+   functions/game.js builds the pages from the club, and publicGame(),
+   publicDoc(), fixtureDoc() and calendarDoc() below are what test/mirror.js
+   holds it to, item for item. Nothing here writes public/. */
 /* A club with no badge still gets a mark, so the header never looks unfinished. */
 const BALL = `<span class="crest ball" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">
   <circle cx="12" cy="12" r="9.2"/><path d="M12 6.6l3.6 2.6-1.4 4.2h-4.4L8.4 9.2z"/>
@@ -16903,7 +16822,8 @@ function publicGame(t, m) {
     status: gameStatus(m), score: score(m), shots: shotTally(m),
     events: Object.fromEntries(EVENTS.map(e => [e.k, { us: evCount(m, e.k, 'us'), them: evCount(m, e.k, 'them') }])
       .filter(([, v]) => v.us + v.them > 0)),
-    poss: (() => { const p = possession(m); return { us: p.us, them: p.them, contested: p.contested, changes: p.changes }; })(),
+    // the game's own team's setting, not whichever team is open on this phone
+    poss: (() => { const p = possession(m, nowMs(), t.possMin != null ? Number(t.possMin) : 5); return { us: p.us, them: p.them, contested: p.contested, changes: p.changes }; })(),
     players: roster.map(p => ({
       n: shirtOf(p), sec: playedSec(m, p.id), on: onField(m, p.id),
       spot: currentSpot(m, p.id) || null, plan: (m.planned || {})[p.id] || 0
@@ -16916,6 +16836,7 @@ function publicGame(t, m) {
   };
 }
 
+// SERVER.md: functions/game.js builds this page and only the server writes it; this is what it is held to.
 function publicDoc(t) {
   const games = {};
   let w = 0, d = 0, l = 0, gf = 0, ga = 0;
@@ -16941,7 +16862,7 @@ function publicDoc(t) {
    needs to turn up: no series id, no author, no note of who added it. Free
    text goes through pubText() like the game's own notes. `all` is the members'
    calendar feed, which carries the team-only entries too — see calendarDoc(). */
-// SERVER.md: functions/mirror.js builds the same entries whenever they change, from any phone.
+// SERVER.md: functions/game.js builds the same entries for the pages; only the server writes them.
 function publicEvents(t, all) {
   const out = {};
   for (const [id, e] of Object.entries(t.events || {})) {
@@ -16960,7 +16881,7 @@ function publicEvents(t, all) {
    whoever they forward it to) holds that game and nothing else: no season, no
    record, no other fixtures, no practices. `fixture` tells the page there is no
    season to go back to. */
-// SERVER.md: built on the phone for the public mirror; a server trigger would build it.
+// SERVER.md: functions/game.js builds this page and only the server writes it; this is what it is held to.
 function fixtureDoc(t, m) {
   return {
     team: { name: t.name || 'Team', logo: t.logo || null },
@@ -16976,7 +16897,7 @@ function fixtureDoc(t, m) {
    players, no minutes, no shirt numbers, and free text through pubText(). What
    keeps team-only entries off the open web is the id, which the app shows only
    to the team's signed-in members, and which a coach can replace at any time. */
-// SERVER.md: built on the phone for the public mirror; a server trigger would build it.
+// SERVER.md: functions/game.js builds this page and only the server writes it; this is what it is held to.
 function calendarDoc(t) {
   const games = {};
   for (const m of teamMatches(t.id)) games[m.id] = {
@@ -16992,68 +16913,36 @@ function calendarDoc(t) {
   };
 }
 
-let pubTimer;
-let pubSeen = {};                           // what each public id last carried, so unchanged ones are not rewritten
-let pubState = { at: null, error: null };   // surfaced in the share sheet
 let denied = false;                         // rules refused us; show the door
 let unconfirmed = false;                    // no word from the club for OFFLINE_DAYS; drawn again once there is
 let purged = null;                          // 'access' | 'retired'
 let retiredClubs = {};                      // app owner's view of what is closed
-// SERVER.md: the share pages are written by whichever phone made the change; a server trigger would write them.
-function schedulePublish() {
-  const t = team();
-  /* A rehearsal must never reach public/. That tier is world-readable and keyed
-     by share id, so a seeded club carrying a copied share would quietly serve
-     invented scores to families holding a real link. Checked here rather than at
-     the call sites: every write path funnels through this one function. */
-  if (isSandbox()) { pubState = { at: null, error: 'Test club — nothing is published' }; return; }
-  if (!fb) { pubState = { at: null, error: 'Not connected to Firebase' }; return; }
-  if (!t || !(t.share || t.calFeed)) return;
-  /* The public write rule checks shareOwners/{share}. A share made before that
-     node existed has none, and the rule lets an unclaimed share through only
-     until someone claims it — so claim it here, on the way past. Publishing is
-     the one thing only a coach or admin of this team ever does. */
-  if (canEditTeam(t.id)) { if (t.share) claimShare(t.id); ensureFixtureShares(t); claimTeamIds(t.id); }
-  clearTimeout(pubTimer);
-  pubTimer = setTimeout(() => publishTeam(t), 1200);
+/* Only the server writes the share pages (SECURITY.md, SEC-10;
+   functions/mirror.js): it hears every change this phone writes to the club,
+   goals and subs included, and builds the pages from that. All a phone does
+   is make the ids the pages live under, in the club, under the team's rule:
+   the season link and the calendar feed when the coach asks, and each game's
+   own id here, for every team with sharing on that this phone may change. A
+   test club gets none, since the server never publishes one. */
+function shareIds() {
+  if (isSandbox()) return;
+  for (const t of Object.values(state.teams || {})) if (t && t.share && canEditTeam(t.id)) ensureFixtureShares(t);
 }
-
-/* The season link is written every time, as it always was: it is the one the
-   share sheet reports on, and a republish on load is what heals a fixed
-   config. A game's own page and the calendar feed are written only when what
-   they carry has changed, or a sub tap would rewrite thirty fixtures. */
-// SERVER.md: the share pages are written by whichever phone made the change; a server trigger would write them.
-function publishTeam(t) {
-  const docs = [];
-  let mainWrite = null;
-  if (t.share) {
-    docs.push([t.share, publicDoc(t), true]);
-    for (const m of teamMatches(t.id)) if (m.share) docs.push([m.share, fixtureDoc(t, m), false]);
-  }
-  if (t.calFeed) docs.push([t.calFeed, calendarDoc(t), false]);
-  for (const [id, doc, main] of docs) {
-    const sig = JSON.stringify({ ...doc, updated: 0 });
-    if (!main && pubSeen[id] === sig) continue;
-    pubSeen[id] = sig;
-    // try/catch does not catch this — set() rejects asynchronously
-    const w = fb.set(fb.ref(fb.db, 'public/' + id), doc)
-      .then(() => { if (main) pubState = { at: nowMs(), error: null }; })
-      .catch(e => {
-        delete pubSeen[id];        // try again next time rather than believe it landed
-        console.error('publish failed', e);
-        if (!main) return;
-        const code = (e && e.code) || (e && e.message) || 'unknown';
-        pubState = {
-          at: null,
-          error: /permission|denied/i.test(code)
-            ? 'Firebase rejected the write. Realtime Database needs a "public" rules block alongside "workspaces" — see README.'
-            : String(code)
-        };
-        render();
-      });
-    if (main) mainWrite = w;
-  }
-  return mainWrite;     // settles once the season page has landed or been refused; the share sheet waits on it
+/* When the server last wrote a page, for the share sheet: read from the page
+   itself, once per opening, since this phone no longer writes it. */
+const pageAt = {};          // public id -> updated, null while unknown, false if there is no page
+function readPageAt(id) {
+  if (!id || !rtdb || pageAt[id] !== undefined) return;
+  pageAt[id] = null;
+  const { db, mod } = rtdb;
+  try {
+    mod.onValue(mod.ref(db, `public/${id}/updated`), snap => {
+      const v = snap.val();
+      pageAt[id] = Number(v) > 0 ? Number(v) : false;
+      const sh = $('#sheet');
+      if (sh && !sh.hidden && String(sh.innerHTML).includes('data-pageat')) sheetShare();
+    }, () => { pageAt[id] = false; }, { onlyOnce: true });
+  } catch (e) { pageAt[id] = undefined; }
 }
 
 const shareBase = () => location.origin + location.pathname.replace(/[^/]*$/, '');
@@ -17362,12 +17251,12 @@ function sheetShare() {
   // the links are public anyway, so anyone who can see the team may copy them;
   // making, killing and republishing them is the coach's
   const ro = !canEditTeam(t.id);
-  const st = pubState.error
-    ? `<div class="warn alert" style="margin-bottom:14px"><b>Not published.</b><br>${esc(pubState.error)}<br>
-       <span class="muted">Check Realtime Database → Rules for a <code>public</code> block, then tap Republish.</span></div>`
-    : pubState.at
-      ? `<p class="muted" style="margin-top:0">Published ${new Date(pubState.at).toLocaleTimeString()}. Links below are live.</p>`
-      : `<p class="muted" style="margin-top:0">Not published yet this session — tap Republish to force it.</p>`;
+  if (t.share) readPageAt(t.share);
+  const at = t.share ? pageAt[t.share] : undefined;
+  const st = isSandbox() ? `<p class="muted" style="margin-top:0" data-pageat>Test club — nothing is published.</p>`
+    : at ? `<p class="muted" style="margin-top:0" data-pageat>Updated by the club's server ${new Date(at).toLocaleString()}. Links below are live.</p>`
+      : at === false ? `<p class="muted" style="margin-top:0" data-pageat>The club's server has not built this page yet. It does within a minute of the link being made, once the club's server is set up (README, <b>Deploying the server</b>).</p>`
+        : `<p class="muted" style="margin-top:0" data-pageat>Checking when the page was last updated…</p>`;
 
   openSheet(`<h3>Share ${teamLabel(t)}</h3>
     ${t.share ? st + `
@@ -17383,8 +17272,7 @@ function sheetShare() {
       : `<p class="muted" style="margin-top:0">${ro ? 'This game\u2019s own link appears once the coach\u2019s phone has published it.' : 'This game\u2019s own link is being made — it appears here in a moment.'}</p>`}` : ''}
 
       <p class="muted">Anyone with a link can read it. Nobody can change anything, and no child's name is published — only shirt numbers.</p>
-      ${ro ? '' : `<button class="btn quiet wide" data-act="republish" style="margin-bottom:8px">Republish now</button>
-      <button class="btn danger wide" data-act="rotateshare">Make a new link and kill the old one</button>`}`
+      ${ro ? '' : `<button class="btn danger wide" data-act="rotateshare">Make a new link and kill the old one</button>`}`
       : ro ? `<p class="muted" style="margin-top:0">This team's coach has not set up parent links yet.</p>`
       : `<p class="muted" style="margin-top:0">Creates a long random address. Only people you send it to can find it.</p>
       <button class="btn wide" data-act="makeshare">Create the share links</button>`}
@@ -18370,7 +18258,7 @@ function replaceNames(text, subs) {
    here becomes "a player" before it is written, not before it is drawn. Every
    word of every name, as the AI prompt does: "Rose Park" losing a word is the
    safe way round, and the coach is told when it happens. */
-// SERVER.md: the scrub stays, but would run on the server's write of the mirror.
+// SERVER.md: the server's pages run the same scrub (functions/game.js, scrubber()).
 function pubText(t, s) {
   if (!s) return '';
   const subs = [];
@@ -19174,7 +19062,8 @@ function onAct(e) {
   }
   if (a === 'sharesheet') {
     // a game made before game links existed gets its own id now, so the sheet has one to show
-    if (t && ensureFixtureShares(t)) { claimTeamIds(t.id); schedulePublish(); }
+    if (t && !isSandbox()) ensureFixtureShares(t);
+    if (t && t.share) delete pageAt[t.share];      // asked afresh each time the sheet opens
     sheetShare(); return;
   }
   if (a === 'envsheet') { sheetEnv(); return; }
@@ -19199,7 +19088,6 @@ function onAct(e) {
     syncAllTeamIndex();
     syncAllCoachIndex();
     syncAllTeamParents();
-    claimAllShares();
     render();
     toast('Lookup tables written — let it sync, then check the list again');
     return;
@@ -19349,32 +19237,18 @@ function onAct(e) {
     syncIndex(uid);
     sheetPeople(); return;
   }
-  if (a === 'republish') {
-    if (!fb) { toast('Not connected to the club — check the signal and that you are signed in'); return; }
-    // every page goes out, the game pages and the calendar feed too, changed or not
-    pubSeen = {};
-    ensureFixtureShares(t); claimTeamIds(t.id);
-    Promise.resolve(publishTeam(t)).then(() => { sheetShare(); toast(pubState.error ? 'Not published' : 'Published'); });
-    return;
-  }
   if (a === 'makeshare') {
-    commit(`teams/${t.id}/share`, randId('s'));
-    claimShare(t.id);            // before publishing: the write rule checks this list
-    schedulePublish(); sheetShare(); return;
+    commit(`teams/${t.id}/share`, randId('s'));   // the server builds the pages when it hears this
+    sheetShare(); return;
   }
   if (a === 'rotateshare') {
     if (!confirm('Anyone holding the old season link, or a link to any one game, loses access. Continue?')) return;
     /* Every game link goes with the season link. A family holding last
        month's game link is one forward away from whoever it was sent to. */
-    const old = [t.share, ...teamMatches(t.id).map(m => m.share)].filter(Boolean);
+    /* The server takes each old page down when it hears its id replaced. */
     for (const m of teamMatches(t.id)) if (m.share) quiet(`matches/${m.id}/share`, randId('f'));
     commit(`teams/${t.id}/share`, randId('s'));
-    claimShare(t.id);
-    if (fb) for (const id of old) {
-      fb.remove(fb.ref(fb.db, 'public/' + id));
-      fb.remove(fb.ref(fb.db, 'shareOwners/' + id));   // nothing left to own
-    }
-    schedulePublish(); sheetShare(); toast('New links made'); return;
+    sheetShare(); toast('New links made'); return;
   }
   if (a === 'copylink') {
     navigator.clipboard.writeText(d.v).then(() => toast('Link copied'), () => toast('Could not copy — select it by hand'));
@@ -19654,7 +19528,7 @@ function onAct(e) {
     const r = lastLog[Number(d.i)]; if (!r) return;
     const why = deleteSub(m, r);
     if (why) { toast(why); return; }
-    closeSheet(); render(); schedulePublish(); toast('Sub deleted'); return;
+    closeSheet(); render(); shareIds(); toast('Sub deleted'); return;
   }
   if (a === 'addsub') { sheetAddSub(); return; }
   if (a === 'doaddsub') {
@@ -19717,7 +19591,7 @@ function onAct(e) {
     if (due && (due.kind === 'due' || due.kind === 'soon') && due.b.start === b.start)
       quiet(`matches/${m.id}/planDone/${doneKey(b)}`, { ...rec, at: nowMs(), ...stampedBy() });
     const n = Math.max(diff.on.length, diff.off.length);
-    saveLocal(); render(); schedulePublish();
+    saveLocal(); render(); shareIds();
     closeSheet(); toast(n + (n === 1 ? ' sub made' : ' subs made')); return;
   }
   /* The sideline card. A tracker may do exactly this much to who is on the
@@ -19728,7 +19602,7 @@ function onAct(e) {
     if (a === 'subsundo') {
       const r = (m.planDone || {})[d.key]; if (!r) return;
       if (nowMs() - (r.at || 0) > SUB_UNDO_MS || !undoBlock(m, d.key)) { toast('Too late to undo from here — fix it in the match log'); render(); return; }
-      render(); schedulePublish();
+      render(); shareIds();
       toast(r.skipped ? 'Back on — the change is due again' : 'Undone — the pitch is back as it was');
       return;
     }
@@ -20104,9 +19978,8 @@ function onAct(e) {
     if (!feedBase()) { toast('Calendar sync is not set up on this site yet'); return; }
     const old = x.calFeed;
     if (a === 'calsyncnew' && !confirm('Everyone subscribed stops getting changes until they subscribe again with the new address. Do this if the address has reached someone it should not have. Continue?')) return;
-    ui.teamId = d.tid;          // the publish that follows goes to this team's pages
+    // the server builds the new feed, and takes the old one down, when it hears this
     commit(`teams/${d.tid}/calFeed`, randId('c'));
-    if (fb && old) { fb.remove(fb.ref(fb.db, 'public/' + old)); fb.remove(fb.ref(fb.db, 'shareOwners/' + old)); }
     toast(old ? 'New address made — the old one has stopped working' : 'Calendar sync is on');
     return;
   }
@@ -20186,9 +20059,7 @@ function onAct(e) {
   }
   if (a === 'delmatch') {
     if (!confirm('Delete this game and its minutes?')) return;
-    // its own page goes with it, or the link keeps serving a game that no longer exists
-    const gone = (state.matches[d.id] || {}).share;
-    if (fb && gone) { fb.remove(fb.ref(fb.db, 'public/' + gone)); fb.remove(fb.ref(fb.db, 'shareOwners/' + gone)); }
+    // its own page goes with it: the server takes it down when it hears the game's id go
     drop(`matches/${d.id}`); ui.matchId = null; closeSheet(); render(); return;
   }
 

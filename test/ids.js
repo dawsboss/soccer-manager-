@@ -85,7 +85,7 @@ console.log('--- a team\'s share link and its games\' links ---');
   A.click({ act: 'makeshare' });
   const s = A.state.teams.t1.share;
   check('the season link', madeHere(s, 's', k) && reads(s), true);
-  k = calls;
+  // each game's id is made with it, on the way past (shareIds()), or here if not
   A.ensureFixtureShares(A.state.teams.t1);
   const g1 = A.state.matches.g1.share, g2 = A.state.matches.g2.share;
   check('each game\'s own link', madeHere(g1, 'f', k) && madeHere(g2, 'f', k) && reads(g1) && reads(g2), true);

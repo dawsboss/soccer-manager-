@@ -419,29 +419,24 @@ console.log('--- a game link reaches that game and nothing else ---');
   deepEq('a game\'s own page holds that game alone', Object.keys(fx.games), ['g2']);
   check('marked as one game, with no season behind it', fx.fixture + ' ' + ('record' in fx) + ' ' + ('events' in fx), 'g2 false false');
 
-  sets = [];
-  A.publishTeam(A.state.teams.t1);
-  const first = pubWrites();
-  check('publishing writes the season page and each game\'s own', first.length, 1 + games.length);
-  sets = [];
-  A.publishTeam(A.state.teams.t1);
-  deepEq('nothing changed: only the season page is rewritten', pubWrites(), ['public/sh_flight']);
+  /* Only the server writes the pages (functions/mirror.js; test/mirror.js
+     builds them from these same games and holds them to fixtureDoc()). */
   g2.kickoff = '10:15';
   sets = [];
-  A.publishTeam(A.state.teams.t1);
-  deepEq('a moved kick-off rewrites that game\'s page too', pubWrites(), ['public/sh_flight', 'public/' + g2.share]);
-
+  A.click({ act: 'sharesheet' });
+  check('the coach\'s phone writes no page, whatever changed', pubWrites().length, 0);
   const before = games.map(m => m.share);
   removes = [];
   A.ui.matchId = null;
   A.click({ act: 'rotateshare' });
   check('a new season link replaces every game\'s too', A.teamMatches('t1').every((m, i) => m.share && m.share !== before[i]), true);
-  check('and the old pages are taken down', before.every(id => removes.includes('public/' + id)), true);
+  check('the old pages are the server\'s to take down: the phone writes nothing to public/', removes.some(p => /^(public|shareOwners)\//.test(p)) || pubWrites().length > 0, false);
 
   const gone = A.state.matches.g3.share;
   removes = [];
   A.click({ act: 'delmatch', id: 'g3' });
-  check('deleting a game takes its page down with it', removes.includes('public/' + gone) && removes.includes('shareOwners/' + gone), true);
+  check('deleting a game: its id goes with it, which is what the server takes its page down on', !!gone && !A.state.matches.g3 && removes.some(p => /\/matches\/g3$/.test(p)), true);
+  check('— and the phone itself removes nothing in public/', removes.some(p => /^(public|shareOwners)\//.test(p)), false);
 }
 
 
@@ -764,7 +759,7 @@ console.log('--- calendar sync ---');
   removes = [];
   A.click({ act: 'calsyncnew', tid: 't1' });
   check('replacing it makes a new address', A.state.teams.t1.calFeed !== feed && /^c\w+$/.test(A.state.teams.t1.calFeed), true);
-  check('and the old one stops working', removes.includes('public/' + feed), true);
+  check('and the old one is the server\'s to take down, not the phone\'s', removes.some(p => /^(public|shareOwners)\//.test(p)), false);
   check('the team\'s copy is the team\'s, whatever the Calendar shows', /data-act="calicsall" data-tid="t1"/.test(html()), true);
   A.me = { uid: 'mumU' };
   A.click({ act: 'calscope', v: 'mine' });

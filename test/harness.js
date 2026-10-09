@@ -93,7 +93,7 @@ function seedRandom(seed = 1) {
 
 /* ---------------- timers the test can step ---------------- */
 
-/* Not a black hole: schedulePublish debounces by 1200ms and wireBase retries a
+/* Not a black hole: debounced writes wait on these and wireBase retries a
    denied read with backoff. Recording them lets a test run those paths on
    purpose instead of never. */
 function makeTimers() {
@@ -166,7 +166,7 @@ const EXPORTS = `{
   moveSub, subQuiet, applyStaged, movePos, switchTo, subAt, restartMatch,
   adjustClock, tapLive, putOn, stage, staged, stagedIds, isStaged,
   /* public mirror */
-  publicGame, publicDoc, schedulePublish, shareBase, teamLink, gameLink,
+  publicGame, publicDoc, shareIds, pageAt, shareBase, teamLink, gameLink,
   gameStatus, shirtOf,
   /* AI prompt helper */
   aiPrompt, aiLabels, aiScrub, AI_TOPICS, sheetAi, aiSlotNames, aiPlanAsk, aiPlanParse,
@@ -181,8 +181,7 @@ const EXPORTS = `{
   calDayList, calAgenda, calShowTeam,
   todayStr, dayLabel, niceTime, hm, addDays, weekdayOf, CALLED, HOME_AWAY, SERIES_MAX,
   get calForm() { return calForm },
-  fixtureDoc, calendarDoc, publishTeam, ensureFixtureShares, claimTeamIds, outIds, familySaidNo, attendance, attendLine, attendOf, attendUntaken, cameToGame,
-  get pubSeen() { return pubSeen },
+  fixtureDoc, calendarDoc, ensureFixtureShares, outIds, familySaidNo, attendance, attendLine, attendOf, attendUntaken, cameToGame,
   /* practice */
   canTrain, seasonEndYear, uAge, teamUAge, uLabel, practiceUi, practiceAge,
   practiceDrills, practiceActive, viewPractice, sheetDrill, sheetRole,
@@ -214,7 +213,6 @@ const EXPORTS = `{
   get purged() { return purged },
   get unconfirmed() { return unconfirmed }, set unconfirmed(v) { unconfirmed = v },
   get retiredClubs() { return retiredClubs },
-  get pubState() { return pubState },
   /* invites */
   get invite() { return invite }, get clubInv() { return clubInv }, get myClubs() { return myClubs },
   secretId, randId, inviteLink, redeemInvite, makeInvite, inviteScreen,

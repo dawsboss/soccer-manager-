@@ -299,4 +299,35 @@ console.log('--- the share page never takes the app\'s address from what it is s
   check('and encodes the team and game it links to', /encodeURIComponent\(link\.teamId\)/.test(live) && /encodeURIComponent\(openGame\)/.test(live), true);
 }
 
+console.log('--- the phone never writes public/: the server does (SECURITY.md, SEC-10) ---');
+{
+  /* Every tap of a game, and every share-link action, with a connection that
+     records where each write went. The server builds the pages from the
+     workspace writes these make (functions/mirror.js; test/mirror.js holds
+     what it builds to publicDoc() and publicGame() above). */
+  const m = setup();
+  const writes = [];
+  A.fb = {
+    db: {}, base: 'workspaces/CLUB', ref: (db, path) => path,
+    set: (path, v) => { writes.push(path); return Promise.resolve(); },
+    remove: path => { writes.push(path); return Promise.resolve(); }
+  };
+  global.confirm = () => true;
+  A.click({ act: 'goal', side: 'us' });
+  A.click({ act: 'goal', side: 'them' });
+  A.click({ act: 'shot', side: 'us', on: '1' });
+  A.click({ act: 'ev', side: 'us', kind: 'corner' });
+  A.swap(m, 'p1', 'p4');
+  A.click({ act: 'sharesheet' });
+  A.click({ act: 'rotateshare' });
+  A.click({ act: 'calsyncon', tid: 't1' });
+  A.click({ act: 'endgame' });
+  A.click({ act: 'delmatch', id: 'g1' });
+  A.timers.run();
+  check('the taps reached the club', writes.filter(p => /matches\/g1\/(goals|shots|events|stints)\//.test(p)).length >= 5, true);
+  check('and game ids were made there, for the server to build pages under', writes.some(p => /teams\/t1\/(share|calFeed)$/.test(p)), true);
+  deepEq('not one write to public/ or shareOwners', writes.filter(p => /^\/?(public|shareOwners)\//.test(p)), []);
+  A.fb = null;
+}
+
 H.summary('stats and the public mirror');

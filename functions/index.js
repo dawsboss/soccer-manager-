@@ -78,13 +78,21 @@ const peopleIn = v => Object.keys(v && typeof v === 'object' ? v : {});
 const markRoles = (event, uids) => Promise.all([markClub(event), ...[...new Set(uids)].map(u => mycal.touchPerson(markerOf(event), u))]);
 const staffIn = v => [...peopleIn(v && v.coaches), ...peopleIn(v && v.trackers)];
 
-/* What mirror.js may touch: reads, and one multi-path update of public/ pages
-   that already exist, on this event's own database. */
+/* What mirror.js may touch: reads, writes under public/ (the share pages,
+   which only the server writes: SECURITY.md, SEC-10), and its own notes at
+   serverState/pages and serverState/publish, on this event's own database;
+   and the site's address, for a calendar feed's links back
+   (functions/.env, SOCCER_SITE: https://…/index.html; blank leaves them out). */
 function mirrorOf(event) {
-  const root = event.data.after.ref.root;
+  const root = (event.data.after || event.data).ref.root;
+  const ours = p => /^(public|serverState\/pages|serverState\/publish)\//.test(p);
+  const refuse = p => Promise.reject(new Error('mirror writes public/ and its own notes only, not ' + p));
   return {
     get: p => root.child(p).get().then(s => s.val()),
-    update: patch => root.update(patch)
+    set: (p, v) => (ours(p) ? root.child(p).set(v) : refuse(p)),
+    update: patch => { const bad = Object.keys(patch).find(p => !ours(p)); return bad ? refuse(bad) : root.update(patch); },
+    claim: (p, fn) => (ours(p) ? root.child(p).transaction(fn).then(r => !!r.committed) : refuse(p)),
+    site: process.env.SOCCER_SITE || ''
   };
 }
 
@@ -231,18 +239,28 @@ exports.moveClub = onValueCreated('/moveRequests/{code}', event => {
   }, event.params, event.data.val());
 });
 
-/* The calendar half of the share pages (mirror.js; SERVER.md, "The share
-   pages"): a team's entries, and a game's when and where, rewritten on its
-   season link, game link and members' feed whoever changed them. Entries are
-   watched whole, as pushEntry watches each one; a game only field by field,
-   never whole, because a game being played is written every few seconds. */
-/* Both also mark the club for My calendar's feeds, which carry the same
-   entries and games. */
+/* The share pages (mirror.js; SERVER.md, "The share pages"): the only
+   writer of public/ for a team. A team's entries are watched whole, as
+   pushEntry watches each one; a game never whole, because a game being
+   played is written every few seconds, but each of its parts on its own
+   (matches/{mid}/{part}: a goal, a sub, the clock each wake one run, and a
+   whole game saved wakes only the parts that changed). Then a team's own
+   fields, a player one at a time, and a game's answers one game at a time. */
+/* The entries and a game's when and where also mark the club for My
+   calendar's feeds, which carry the same entries and games; play marks
+   nothing. */
 both('mirrorEvents', '{code}/teams/{tid}/events', onValueWritten, event => Promise.all([
   mirror.onEvents(mirrorOf(event), event.params), markClub(event)]).then(r => r[0]));
-for (const field of mirror.GAME_FIELDS)
-  both('mirrorGame' + field[0].toUpperCase() + field.slice(1), `{code}/matches/{mid}/${field}`, onValueWritten, event => Promise.all([
-    mirror.onGame(mirrorOf(event), event.params), markClub(event)]).then(r => r[0]));
+both('publishGame', '{code}/matches/{mid}/{part}', onValueWritten, event => Promise.all([
+  mirror.onGamePart(mirrorOf(event), event.params, event.data.before.val(), event.data.after.val()),
+  mirror.GAME_FIELDS.includes(event.params.part) ? markClub(event) : null]).then(r => r[0]));
+for (const field of mirror.TEAM_FIELDS)
+  both('publishTeam' + field[0].toUpperCase() + field.slice(1), `{code}/teams/{tid}/${field}`, onValueWritten, event =>
+    mirror.onTeamField(mirrorOf(event), event.params, field, event.data.before.val(), event.data.after.val()));
+both('publishPlayer', '{code}/{squad}/{pid}', onValueWritten, event =>
+  mirror.onPlayer(mirrorOf(event), event.params, event.data.before.val(), event.data.after.val()));
+both('publishAnswers', '{code}/rsvp/{tid}/{item}', onValueWritten, event =>
+  mirror.onAnswers(mirrorOf(event), event.params));
 
 /* My calendar's feeds (mycal.js; SERVER.md, "My calendar's feed"). The
    triggers above mark a club when its entries, games or people change; these
@@ -254,13 +272,23 @@ exports.myCalSessions = onValueWritten('/training/{code}/sessions/{sid}', markCl
 exports.myCalBooked = onValueWritten('/training/{code}/booked/{sid}/{pid}', markClub);
 exports.myCalAvail = onValueWritten('/training/{code}/avail/{bid}', markClub);
 exports.myCalClubs = onValueWritten('/userOrgs/{uid}/{code}', event => mycal.touchPerson(markerOf(event), event.params.uid));
-exports.myCalSetting = onValueWritten('/people/{uid}/set', event => mycal.touchPerson(markerOf(event), event.params.uid));
+/* Her setting: marked for the next build, and an address she replaced or
+   turned off taken down now (her phone no longer writes public/). */
+exports.myCalSetting = onValueWritten('/people/{uid}/set', event => {
+  const root = event.data.after.ref.root;
+  return Promise.all([mycal.touchPerson(markerOf(event), event.params.uid), mycal.onSetting({
+    get: p => root.child(p).get().then(s => s.val()),
+    set: (p, v) => (/^(public|serverState\/pages)\//.test(p) ? root.child(p).set(v) : Promise.reject(new Error('not ' + p))),
+    claim: (p, fn) => root.child(p).transaction(fn).then(r => !!r.committed)
+  }, event.params.uid, event.data.before.val(), event.data.after.val())]).then(r => r[1]);
+});
 /* The default database only: it has no event to say which instance, and a
    rehearsal database's feeds are not worth a second schedule. One instance,
    so two runs never build the same feed at once. */
 exports.myCalBuild = onSchedule({ schedule: 'every 5 minutes', maxInstances: 1 }, () => {
   const root = getDatabase().ref();
   return mycal.run({
+    site: process.env.SOCCER_SITE || '',
     get: p => root.child(p).get().then(s => s.val()),
     set: (p, v) => root.child(p).set(v),
     claim: (p, fn) => root.child(p).transaction(fn).then(r => !!r.committed)

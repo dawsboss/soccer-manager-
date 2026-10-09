@@ -56,40 +56,25 @@ does the bookkeeping, not that the phone works offline first.
   clubs themselves (below), names and all, behind a private link.
 
 ### My calendar's feed
-- **Moved to the server (2026-10-08):** `functions/mycal.js` builds each
-  person's feed from the clubs themselves: her teams, her children's teams,
-  the sessions she runs or her children are in, and her bookable times, worked
-  out from her roles in each club (never from her list of clubs, which she
-  can write). Triggers only mark what changed (`serverState/myCal`), and
-  `myCalBuild` rebuilds the marked feeds every five minutes, each club read
-  once per run. Every club's typed titles are there now, scrubbed of that
-  club's names. It writes only a page she alone claims that is a My calendar
-  page, and marks it `by: 'server'`; her phones see that and stop writing it
-  (`feedPublish()` waits to hear before its first write). A team she is taken
-  off leaves her feed on the next run, phone or no phone. `test/mycalfeed.js`
-  holds it to the phone's own `myFeedDoc()`, item for item and id for id.
-- **What is left:** the default database only (a rehearsal database's feeds
-  stay the phone's); a team renamed shows in feeds with the next change to
+- **Moved to the server (2026-10-08), and only there (2026-10-09, SECURITY.md,
+  SEC-10):** `functions/mycal.js` builds each person's feed from the clubs
+  themselves: her teams, her children's teams, the sessions she runs or her
+  children are in, and her bookable times, worked out from her roles in each
+  club (never from her list of clubs, which she can write). Triggers only mark
+  what changed (`serverState/myCal`), and `myCalBuild` rebuilds the marked
+  feeds every five minutes, each club read once per run. Every club's typed
+  titles are there, scrubbed of that club's names. It writes only an address
+  the server has down as hers (`serverState/pages`, shared with the team
+  pages, so one id is never both), and takes an address she replaces or turns
+  off down the moment her setting changes. Her phone writes her setting and
+  nothing else; `myFeedDoc()` (each item through `feedItem()`) is what the
+  server is held to, item for item and id for id (`test/mycalfeed.js`). A team
+  she is taken off leaves her feed on the next run, phone or no phone.
+- **What is left:** the default database only (a rehearsal database has no
+  My calendar feed); a team renamed shows in feeds with the next change to
   that club; the full detail (her children's names, who is coming) would
-  still need a private link, not `public/`.
-- **Before the server, and still where it is not deployed:** once she turns it on, her own phone builds her calendar feed from
-  every club it holds (`myFeedDoc()`, each item through `feedItem()`) and
-  writes it to `public/{id}` whenever it changes (`feedPublish()`), but only
-  from a phone that has heard from every one of her clubs this session, so an
-  old copy never overwrites a newer one. Because
-  it is `public/`, it carries no child's name and no club code, and another
-  club's typed titles are left out (that phone holds her own children, not the
-  squad to check them against).
-- **It lags.** The feed is only as fresh as the last time one of her phones
-  was open with a signal and had heard from all her clubs. A practice moved or
-  called off in any club, by anyone, reaches her subscribed calendar only after
-  that; a parent who never opens the app keeps the old time in her calendar
-  indefinitely. Then the calendar app adds its own delay on top: Apple and
-  Outlook come back about hourly, Google every several hours. So a change made
-  this morning can show in her calendar this afternoon, or not until she next
-  opens the app. The screen says so ("it catches up with a club once your phone
-  has been open since the change"), and the app itself (My calendar, alerts)
-  is always current; the feed is the copy that trails.
+  still need a private link, not `public/`. Then the calendar app adds its own
+  delay: Apple and Outlook come back about hourly, Google every several hours.
 
 ### Which clubs an account is in
 - **Partly moved (2026-10-08):** the server writes the bookmark when an
@@ -181,35 +166,37 @@ does the bookkeeping, not that the phone works offline first.
 ## What families and the other team see
 
 ### The share pages
-- **Moved to the server for the calendar (2026-10-08), alongside the
-  phones:** `mirrorEvents` and the `mirrorGame…` triggers
-  (`functions/mirror.js`) rewrite a team's entries on its season link and
-  members' feed whenever they change, and a game's when and where (date,
-  kick-off, place, opponent, called off, kit, notes) on every page that
-  carries it, whoever made the change and whatever happened to their signal
-  afterwards. A game new to the members' feed is added there. Free text goes
-  through the same scrub as `pubText()`, a page that does not exist is never
-  made, and a test club never reaches `public/`. `test/mirror.js` holds it to
-  the app's own `publicEvents()` and `calendarDoc()`.
-- **Left on the phone, on purpose:** a game's score, minutes and log while it
-  is played (the sideline phone is the only place they exist, and waking the
-  server on every tap buys nothing); a new game on the season link and its own
-  page, and a deleted game's page coming down.
-- **Before the server, and still:** the public mirror (`public/{share}`) is written by the coach's or
-  admin's phone a moment after a change (`schedulePublish()`, `publishTeam()`,
-  `fixtureDoc()`, `calendarDoc()`), and a game made before game links gets its
-  id from whichever phone opens it next (`ensureFixtureShares()`). A change made
-  from a phone that then loses signal reaches the share page late.
-- **What is left:** the season link's and a game page's new games, and
-  taking a deleted game's page down, from the server too; then `shareOwners`
-  and the publish debounce can go.
+- **Moved to the server, and only there (2026-10-09, SECURITY.md, SEC-10):**
+  only the server writes `public/`; the rule is `.write: false`.
+  `functions/mirror.js` builds every page of a team (the season link, each
+  game's own page, the members' feed) from the club, as `publicDoc()`,
+  `fixtureDoc()` and `calendarDoc()` describe them (`functions/game.js`, the
+  game math ported, held to the app item for item by `test/mirror.js`). It
+  wakes on what the phones already write: each part of a game on its own
+  (a goal, a sub, the clock, never the game whole), a game's answers, a
+  player's name, number or whether she plays, a team's name, badge and page
+  ids, and its entries. Work for one team goes through a queue so two runs
+  never write a page in the wrong order. A new game reaches every page, a
+  deleted game's page comes down, an id replaced takes the old page with it,
+  and the server keeps whose page is whose (`serverState/pages`), so no club
+  can write over another's. A test club and a retired club are never
+  published.
+- **Still on the phone:** making the ids, in the club, under the team's rule:
+  the season link and the feed when the coach asks, and each game's own id
+  (`ensureFixtureShares()`), which an older game gets from whichever coach's
+  phone opens it next. The share sheet shows when the server last wrote the
+  page.
+- **Better than before:** a page used to be written from the sideline phone
+  outside the outbox, so a page closed with no signal lost its publish. The
+  writes behind it are in the outbox, and the server publishes when they land.
 
 ### Calendar sync
 - **Moved to the server (build 104), as it was:** the `calendar` function
   (`functions/calendar.js`) turns `public/{id}` into a calendar feed, and
   reads nothing else. It was a Cloudflare Worker until then. What it serves
-  is still what the phones published (`schedulePublish()`, `feedPublish()`),
-  so it is only as fresh as that.
+  is what the server published (above, and *My calendar's feed*). Its links
+  back into the app come from `SOCCER_SITE` in `functions/.env` (README,
+  *Deploying the server*), or a page from before that carried one.
 - **Next, now that it is a function:** the feed can be served from the club's own data, so the
   members' feed doesn't need its own public copy, and a person's own feed (My
   calendar's, *My calendar's feed* above) can carry names behind a private link

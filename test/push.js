@@ -302,19 +302,21 @@ const toUid = (S, u) => S.sent().filter(m => m.data.uid === u);
     return S;
   }
   {
+    // the share pages wake on play too (mirror.js, test/mirror.js); what is asked here is the notifications
+    const notPages = ns => ns.filter(n => !/^(publish|mirror)/.test(n));
     const S = calServer();
-    check('a goal wakes nothing', (await S.wouldWake(W + 'matches/g1/events/x1', { type: 'goal', t: 60 })).length, 0);
-    check('nor a sub', (await S.wouldWake(W + 'matches/g1/stints/s1', { pid: 'p1', start: 0 })).length, 0);
+    check('a goal wakes nothing', notPages(await S.wouldWake(W + 'matches/g1/events/x1', { type: 'goal', t: 60 })).length, 0);
+    check('nor a sub', notPages(await S.wouldWake(W + 'matches/g1/stints/s1', { pid: 'p1', start: 0 })).length, 0);
     S.put(W + 'matches/g1/periods/0', { half: 1, start: 1 });
-    check('nor the clock stopping', (await S.wouldWake(W + 'matches/g1/periods/0/end', 5)).length, 0);
+    check('nor the clock stopping', notPages(await S.wouldWake(W + 'matches/g1/periods/0/end', 5)).length, 0);
     // a stretch of play starting wakes the followed-game sender (below), never the calendar's
-    check('nor the clock starting, for the calendar', (await S.wouldWake(W + 'matches/g1/periods/0', { start: 1 })).filter(n => /^push/.test(n)).length, 0);
+    check('nor the clock starting, for the calendar', notPages(await S.wouldWake(W + 'matches/g1/periods/0', { start: 1 })).filter(n => /^push/.test(n)).length, 0);
     const g = S.at(W + 'matches/g1');
-    check('nor the whole game saved with only its game changed', (await S.wouldWake(W + 'matches/g1', { ...g, stints: { s1: { pid: 'p1' } } })).length, 0);
-    deepEq('the whole game saved with a new date wakes the date\'s trigger alone', (await S.wouldWake(W + 'matches/g1', { ...g, date: day(4) })).filter(n => /^push/.test(n)), ['pushGameDate']);
-    deepEq('a practice changed wakes the entry\'s', (await S.wouldWake(W + 'teams/t1/events/e1/start', '18:30')).filter(n => /^push/.test(n)), ['pushEntry']);
-    check('the register taken wakes nothing', (await S.wouldWake(W + 'teams/t1/attend/e1/p1', true)).length, 0);
-    check('nor a player edited', (await S.wouldWake(W + 'teams/t1/players/p1/number', '8')).length, 0);
+    check('nor the whole game saved with only its game changed', notPages(await S.wouldWake(W + 'matches/g1', { ...g, stints: { s1: { pid: 'p1' } } })).length, 0);
+    deepEq('the whole game saved with a new date wakes the date\'s trigger alone', notPages(await S.wouldWake(W + 'matches/g1', { ...g, date: day(4) })).filter(n => /^push/.test(n)), ['pushGameDate']);
+    deepEq('a practice changed wakes the entry\'s', notPages(await S.wouldWake(W + 'teams/t1/events/e1/start', '18:30')).filter(n => /^push/.test(n)), ['pushEntry']);
+    check('the register taken wakes nothing', notPages(await S.wouldWake(W + 'teams/t1/attend/e1/p1', true)).length, 0);
+    check('nor a player edited', notPages(await S.wouldWake(W + 'teams/t1/players/p1/number', '8')).length, 0);
   }
 
   console.log('\n--- a change to the calendar: who hears what ---');
@@ -476,6 +478,8 @@ const toUid = (S, u) => S.sent().filter(m => m.data.uid === u);
   }
   {
     const S = liveServer();
+    // the share pages' run reads the game for its own reasons (test/mirror.js); this asks about the follow sender
+    for (const n of Object.keys(S.triggers)) if (/^publish/.test(n)) delete S.triggers[n];
     S.reads.length = 0;
     await S.fire(W + 'matches/g1/goals/x1', { t: 600, side: 'us' });
     check('a game nobody follows: nothing sent', S.sent().length, 0);
