@@ -102,7 +102,7 @@ function threadReaders(f, fam) {
    turned this kind off (people/{uid}/mute/{topic}, hers alone in the rules,
    set from Settings on any of her phones): 'msg' a conversation, 'notice' a
    team notice, 'cal' a change to her calendar. Her phones aren't even read. */
-async function messagesFor(env, people, data, topic) {
+async function messagesFor(env, people, data, topic, ttl) {
   const out = [];
   const muted = await Promise.all([...people].map(async u => [u, topic ? (await env.get('people/' + u + '/mute/' + topic)) === true : false]));
   const lists = await Promise.all(muted.filter(([, m]) => !m).map(async ([u]) => [u, await env.get('pushTokens/' + u)]));
@@ -114,7 +114,7 @@ async function messagesFor(env, people, data, topic) {
           token,
           data: { ...data(u), uid: u },
           // high: a coach's "we're running late" is no use an hour later; a day, then let it go
-          webpush: { headers: { Urgency: 'high', TTL: '86400' } }
+          webpush: { headers: { Urgency: 'high', TTL: ttl || '86400' } }
         }
       });
   return out;
@@ -358,4 +358,114 @@ async function onGameField(env, params, field, was) {
   return calChange(env, params.code, before, after, params.tree);
 }
 
-module.exports = { onNotice, onMessage, onStaff, onEntry, onGameField, messagesFor, deliver, calNews, calSig, whenOf, teamReaders, noticeReaders, threadReaders, teamFacts, BODY_MAX, BATCH, SOON_DAYS, GAME_FIELDS };
+/* ---------------- a game she follows ---------------- */
+
+/* The Live tab's *Notify me* (`feedNotify()` in app.js): goals, kick-off,
+   the start of each later half, half time and full time, the same items the
+   open page pops up, now reaching a phone with Minutes closed. Following was
+   only ever per page; the phone now also leaves `follow/{code}/{mid}/{uid}`
+   (hers alone in the rules, and only for a game of a club she is in that has
+   not ended), and this reads it.
+
+   What wakes it: never the game, which a game being played writes every few
+   seconds. A goal is created once, under its own id; a stretch of play is a
+   new `periods/{i}`, once per kick-off, restart or resume; `currentHalf` and
+   `ended` change once a half. index.js wakes this for those four alone, and
+   the first thing read is whether anybody follows the game, so a game nobody
+   follows costs one read per goal.
+
+   Who: whoever follows it, while she is still in the club (its index or its
+   admins: every role reads a game, so that is the rules' own reader), and not
+   whoever logged the goal. Nobody is named: the scorer's name is the one
+   thing on this screen a family on a moved club may not read for another
+   child (`shownName()`), and a lock screen is no place to work that out per
+   reader. The open page names whom she may see; the push says the score.
+
+   When: only while the game is being played. A goal the outbox delivers
+   hours late, a backup loaded or a game reopened next week is not news, so
+   nothing is said once the game has ended (but full time), or when its last
+   stretch of play started more than LIVE_MS ago, and full time only within
+   FT_FRESH_MS of the whistle. Each item is said once, kept at
+   serverState/followSent/{code}/{mid}/{key} (no rule grants it; a few keys
+   a game), and at full time the follows are cleared: the game is over for
+   everyone, as the Live tab's *Notify me* card is. */
+const LIVE_MS = 4 * 3600000;
+const FT_FRESH_MS = 30 * 60000;
+const FOLLOW_FIELDS = ['teamId', 'opponent', 'periodCount', 'currentHalf', 'ended', 'periods', 'goals'];
+const halfName = (pc, n) => (pc === 2 ? (n === 1 ? '1st half' : n === 2 ? '2nd half' : 'Extra ' + (n - 2))
+  : pc === 4 ? (['1st quarter', '2nd quarter', '3rd quarter', '4th quarter'][n - 1] || 'Extra ' + (n - 4)) : 'Period ' + n);
+
+/* what: 'goal' (id: the goal's), 'period' (id: the stretch of play's),
+   'half' or 'ended' (was: the field before). */
+async function onFollowed(env, params, what, id, was) {
+  const none = { to: [], sent: 0, failed: 0, removed: [] };
+  const { code, mid } = params || {};
+  if (!code || !mid) return none;
+  const F = 'follow/' + code + '/' + mid;
+  const follows = await env.get(F);
+  if (!keys(follows).length) return none;
+  const now = env.now ? env.now() : Date.now();
+  const L = await where(env.get, code, params.tree);
+  const base = L.game(mid) + '/';
+  const vals = await Promise.all(FOLLOW_FIELDS.map(k => env.get(base + k)));
+  const g = Object.fromEntries(FOLLOW_FIELDS.map((k, i) => [k, vals[i]]));
+  if (!g.teamId) return none;
+  const pc = Number(g.periodCount) || 2;
+  const periods = Object.entries(g.periods && typeof g.periods === 'object' ? g.periods : {})
+    .map(([i, p]) => ({ i: Number(i), ...(p && typeof p === 'object' ? p : {}) })).sort((a, b) => a.i - b.i);
+  const lastStart = Math.max(0, ...periods.map(p => Number(p.start) || 0));
+  const playing = !g.ended && now - lastStart < LIVE_MS;
+  // the notes stay: full time said by the last half running out is not said again by End game
+  const over = () => Promise.resolve(env.remove(F)).catch(() => { });
+
+  let item = null, by = null;
+  if (what === 'goal') {
+    const goal = g.goals && g.goals[id];
+    if (playing && goal && (goal.side === 'us' || goal.side === 'them')) {
+      item = { key: 'goal:' + id, title: null, side: goal.side, goal: true };
+      by = goal.by ? String(goal.by) : null;
+    }
+  } else if (what === 'period') {
+    const p = periods.find(x => String(x.i) === String(id));
+    const h = p && (Number(p.half) || 1);
+    // a half starts once; every later stretch of the same half is the clock resumed
+    if (playing && p && p.start && !periods.some(x => x.i < p.i && (Number(x.half) || 1) === h && x.start))
+      item = { key: 'start:' + h, title: h === 1 ? 'Kick-off' : `${halfName(pc, h)} under way` };
+  } else if (what === 'half') {
+    const h = Number(g.currentHalf) - 1;
+    if (h >= 1 && h > (Number(was) || 1) - 1) {
+      if (h >= pc) item = { key: 'ft', title: 'Full time', ft: true };
+      else if (playing) item = { key: 'brk:' + h, title: pc === 2 && h === 1 ? 'Half time' : `End of the ${halfName(pc, h).toLowerCase()}` };
+    }
+  } else if (what === 'ended') {
+    if (g.ended && !was) item = Math.abs(now - Number(g.ended)) < FT_FRESH_MS ? { key: 'ft', title: 'Full time', ft: true } : { ft: true, quiet: true };
+  }
+  if (!item) return none;
+  if (item.ft && (item.quiet || (what === 'half' && Math.abs(now - lastStart) > LIVE_MS))) { await over(); return none; }
+
+  const told = await env.claim('serverState/followSent/' + code + '/' + mid + '/' + item.key, old => (old ? undefined : { at: now }));
+  if (!told) { if (item.ft) await over(); return none; }
+
+  const A = L.access;
+  const [retired, admins, index, team] = await Promise.all([
+    env.get('retired/' + code), env.get(A + '/admins'), env.get(A + '/index'), env.get(L.team(g.teamId) + '/name')
+  ]);
+  if (retired) return none;
+  const people = new Set(keys(follows).filter(u => has(index, u) || has(admins, u)));
+  if (by) people.delete(by);
+  const tn = team || 'Us', them = g.opponent || 'Them';
+  let us = 0, th = 0;
+  for (const x of Object.values(g.goals && typeof g.goals === 'object' ? g.goals : {})) if (x && x.side === 'us') us++; else if (x && x.side === 'them') th++;
+  const title = item.goal ? `Goal — ${item.side === 'us' ? tn : them}` : item.title;
+  const list = await messagesFor(env, people, () => ({
+    title, body: short(`${tn} ${us}–${th} ${them}`),
+    // the open page's own tag (feedNotify), so a phone showing both shows one
+    // never urgent: that keeps it on the lock screen until dismissed (sw.js), which a goal is not worth
+    tag: 'minutes-' + mid + '-' + item.key, code, hash: `#/team/${g.teamId}/game/${mid}/live`, urgent: ''
+  }), null, '3600');   // a goal is news for an hour, not a day
+  const res = { to: [...people].sort(), item: item.key, ...(await deliver(env, list)) };
+  if (item.ft) await over();
+  return res;
+}
+
+module.exports = { onFollowed, LIVE_MS, FT_FRESH_MS, onNotice, onMessage, onStaff, onEntry, onGameField, messagesFor, deliver, calNews, calSig, whenOf, teamReaders, noticeReaders, threadReaders, teamFacts, BODY_MAX, BATCH, SOON_DAYS, GAME_FIELDS };

@@ -148,6 +148,21 @@ for (const field of ['date', 'kickoff', 'called'])
   both('pushGame' + field[0].toUpperCase() + field.slice(1), `{code}/matches/{mid}/${field}`, onValueWritten, event =>
     push.onGameField(envOf(event), event.params, field, event.data.before.val()));
 
+/* A game somebody follows (push.js, onFollowed): its goals, each stretch of
+   play starting, each half ending and full time. Four small things a game
+   being played writes once each, never the game: a goal is created once
+   under its own id, a stretch of play is a new periods/{i} (its end, written
+   when the clock stops, is beneath it and wakes nothing), and currentHalf
+   and ended change once a half. */
+both('followGoal', '{code}/matches/{mid}/goals/{gid}', onValueCreated, event =>
+  push.onFollowed(envOf(event), event.params, 'goal', event.params.gid));
+both('followPeriod', '{code}/matches/{mid}/periods/{i}', onValueCreated, event =>
+  push.onFollowed(envOf(event), event.params, 'period', event.params.i));
+both('followHalf', '{code}/matches/{mid}/currentHalf', onValueWritten, event =>
+  push.onFollowed(envOf(event), event.params, 'half', null, event.data.before.val()));
+both('followEnded', '{code}/matches/{mid}/ended', onValueWritten, event =>
+  push.onFollowed(envOf(event), event.params, 'ended', null, event.data.before.val()));
+
 /* The lookup tables the rules read (access.js; SERVER.md, "The lookup tables
    the rules read"), rebuilt the moment a role changes rather than when an
    admin's or coach's phone next connects. One trigger per place a role lives,

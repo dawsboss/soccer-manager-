@@ -290,7 +290,7 @@ What it costs: every path in `app.js`, the rules, `test/rules.js`, the outbox, t
 
 **Decided 2026-10-06:** the owner wants registration data and the squad's names protected by the database, not the screen. `GOTSPORT.md` (*Protecting the data*, *Build order* step 3) schedules the first reason above (the full move, or only a squad node) before season registration opens to families, designed together with a club-level record of each child. That design is written here before any code.
 
-**Decided 2026-10-08 (SECURITY.md, SEC-1): the full move**, not only a squad node. The design is the next section, and its four smaller decisions were settled the same day. **Built the same day (build 110)**; each club moves when its admin presses *Move*.
+**Decided 2026-10-08 (SECURITY.md, SEC-1): the full move**, not only a squad node. The design is the next section, and its four smaller decisions were settled the same day. **Built the same day (build 110), and every club has moved** (the owner, 2026-10-09); the old tree comes out a fortnight on (build order step 5).
 
 ## The move to `orgs/{orgId}`
 
@@ -400,8 +400,8 @@ Order: **the test club first** (Setup → Make a test club), then the owner's ow
 1. **Rules** for `orgs/` beside `workspaces/`, generated, with `test/rules.js` walking both. Publishing them changes nothing for a club that has not moved. *Built (build 110, rules version 12).*
 2. **The server**: the root helper, both trees, `roster`, `names`, `moveClub`, all tested on the fake server. *Built (build 110).*
 3. **The app**: per-part reads, the assembly, the translation, the forgetting, the button. Every suite green against both a moved and an unmoved club. *Built (build 110).*
-4. **The test club moves**, then a real one, with the owner. *Waiting on the owner*: the functions deployed and rules version 12 published (both happen on a merge to main once the deploy secret is set), then *Move* on the test club, then on the real one.
-5. **A fortnight on**, nobody on the old tree: the `workspaces/` branch and the macro come out of the rules, the triggers on the old tree go, and `serverState/moved/` is cleared.
+4. **The test club moves**, then a real one, with the owner. *Done (the owner, 2026-10-09): every club is on `orgs/`*, with the functions deployed and the rules published (version 13 by then).
+5. **A fortnight on** (from 2026-10-23), nobody on the old tree: the `workspaces/` branch and the macro come out of the rules, the triggers on the old tree go, and `serverState/moved/` is cleared.
 
 ### As built, and where it differs from the above
 
@@ -453,7 +453,7 @@ Where each step stands (2026-10):
 
 1. **Built.** Google, email and password, and magic link; `needsSignIn()` is the gate.
 2. **Built on `workspaces/{code}`**, with the four lookup tables in place of `teamMembers`.
-3. **Built (build 110), each club moving when its admin presses Move.** See *The move to `orgs/{orgId}`*: the owner chose the full move (2026-10-08, SECURITY.md SEC-1) to take names out of a parent's reach before registration opens (`GOTSPORT.md`).
+3. **Built (build 110), and every club has moved (2026-10-09).** See *The move to `orgs/{orgId}`*: the owner chose the full move (2026-10-08, SECURITY.md SEC-1) to take names out of a parent's reach before registration opens (`GOTSPORT.md`).
 4. **Built.** One ruleset; `shareOwners` closed the public write hole.
 5. **Built.** Team links and the coach's approval list (`joinCodes`, `claims`), per-person invites, and a squad of parent invites at once.
 6. **Built.** Parents see their own child by name and the rest by number, the club's one preset, and My players across clubs.

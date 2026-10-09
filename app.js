@@ -2,7 +2,7 @@
    Static app. Data lives in localStorage, and mirrors to Firebase Realtime
    Database when a config + workspace code are present. */
 
-const BUILD = '114';
+const BUILD = '115';
 const BUILT = '2026-10-09';
 /* The version of database.rules.json this app was written against. The rules
    carry the same number in rulesVersion's .write, which accepts that number
@@ -11,7 +11,7 @@ const BUILT = '2026-10-09';
    never pasted look exactly like a coach with no signal: "saved on this phone
    only", one feature at a time. test/rules.js holds the two numbers together
    and fails when the rules change without this going up. */
-const RULES_VERSION = 13;
+const RULES_VERSION = 14;
 /* index.html carries the build it was published with. If this file is newer, the
    browser handed us a cached page — the exact failure that has eaten hours. */
 const pageBuild = () => {
@@ -3490,8 +3490,8 @@ function pushCard(where) {
     : sup === 'install' ? 'On an iPhone or iPad, Minutes can notify you once it is on your Home Screen: tap <b>Share</b>, then <b>Add to Home Screen</b>, open Minutes from there, and turn them on.'
     : sup === 'no' ? 'This browser can\'t get notifications from a website. Minutes still pops up while it is open.'
     : sup === 'blocked' ? 'Notifications are blocked for Minutes in this browser\'s settings. Allow them there, then come back here.'
-    : on ? 'On. Team notices and messages reach this phone even with Minutes closed.'
-    : 'Team notices and messages reach this phone even with Minutes closed.';
+    : on ? 'On. Team notices, messages, changes to your games and practices, and games you follow reach this phone even with Minutes closed.'
+    : 'Team notices, messages, changes to your games and practices, and games you follow reach this phone even with Minutes closed.';
   const btn = pushBusy || sup !== 'ok' ? ''
     : on ? '<button class="btn quiet sm" data-act="pushoff">Turn off</button>'
     : '<button class="btn sm" data-act="pushon">Turn on</button>';
@@ -7501,17 +7501,22 @@ function viewFeed() {
     ${shown.length ? `<div class="feed">${shown.map(row).join('')}</div>`
       : `<p class="muted" style="margin:0">${st === 'upcoming' ? 'Nothing yet — this fills in from kick-off.' : 'Nothing logged yet.'}</p>`}</div>`;
 
-  /* Notifications are honest about what a static site can do: there is no
-     server to push from, so they come from this page while it is open — a
-     background tab or a phone with the page left up, not a phone that has
-     closed it. */
+  /* Honest about where they arrive: on a phone with notifications turned on
+     (pushOn()) the server sends them with Minutes closed; anywhere else they
+     come from this page while it is open, a background tab or a phone with
+     the page left up. */
   const following = ui.follow === m.id;
   const canNotify = typeof Notification !== 'undefined';
+  const closed = pushOn();
+  const offerPush = !closed && me && pushSupport() === 'ok' ? ' Turn notifications on for this phone, under the bell, to get them with Minutes closed too.' : '';
   const follow = st === 'done' ? '' : `<div class="card"><div class="spread"><h2>Notify me</h2>
       <button class="btn ${following ? 'quiet ' : ''}sm" data-act="feedfollow" data-v="${following ? 0 : 1}">${following ? 'Stop' : 'Turn on'}</button></div>
-    <p class="muted" style="margin:6px 0 0">${following
-      ? `On for this game. Goals, kick-off, half time and full time ${canNotify && Notification.permission === 'granted' ? 'pop up on this device' : 'buzz and show here'} while this page is open.`
-      : 'Get goals, kick-off, half time and full time on this device while this page is open, even in another tab.'}</p></div>`;
+    <p class="muted" style="margin:6px 0 0">${closed
+      ? (following ? 'On for this game. Goals, kick-off, half time and full time reach this phone even with Minutes closed, and any other phone you turned notifications on for.'
+        : 'Get goals, kick-off, half time and full time on this phone, even with Minutes closed.')
+      : following
+        ? `On for this game. Goals, kick-off, half time and full time ${canNotify && Notification.permission === 'granted' ? 'pop up on this device' : 'buzz and show here'} while this page is open.${offerPush}`
+        : 'Get goals, kick-off, half time and full time on this device while this page is open, even in another tab.'}</p></div>`;
 
   // once the coach has ended it, following is over and the feed becomes the record
   return `<div class="stack">
@@ -7524,6 +7529,7 @@ function viewFeed() {
    moment the sync lands. The first look at a game only takes note of what is
    already there — opening a game at half time should not fire every goal. */
 let feedSeen = null, feedSeenFor = null;
+// SERVER.md: the open page's own watch; a phone with notifications on hears the same from the server (onFollowed).
 function watchFeed() {
   const m = ui.follow ? state.matches[ui.follow] : null;
   if (!m) { feedSeen = null; feedSeenFor = null; return []; }
@@ -7534,6 +7540,27 @@ function watchFeed() {
   for (const x of fresh) { feedSeen.add(x.key); feedNotify(t, m, x); }
   return fresh;
 }
+/* Following is also left where the server can find it, so the same moments
+   reach her phones with Minutes closed (functions/push.js, onFollowed):
+   follow/{code}/{mid}/{uid}, hers alone in the rules and only for a game of
+   her club that has not ended. It is per account, as a push token's phone
+   is, and the server clears it at full time. The page's own watch above
+   still runs; on a phone with notifications on, sw.js shows nothing over an
+   open page, so the two never both buzz. Written straight away rather than
+   through an outbox: with no signal there is nobody to push to her anyway,
+   and the page still follows the game. A refusal is said only to someone it
+   costs, a phone with notifications on. */
+// SERVER.md: what the server reads to push a followed game (functions/push.js, onFollowed).
+function followRemote(mid, on) {
+  if (!me || !rtdb || !mid || !wsCode()) return;
+  const uid = me.uid, p = `follow/${wsCode()}/${mid}/${uid}`;
+  (on ? rootPut(p, { at: nowMs() }) : rootDrop(p)).catch(err => {
+    if (!on || !me || me.uid !== uid || !pushOn()) return;
+    toast(/permission|denied/i.test((err && (err.code || err.message)) || '')
+      ? 'This game notifies this page only: the database refused it. Are the rules (version ' + RULES_VERSION + ') published?'
+      : 'This game notifies this page only, for now');
+  });
+}
 function feedNotify(t, m, x) {
   const sc = score(m);
   const body = [x.detail, `${(t && t.name) || 'Us'} ${sc.us}–${sc.them} ${m.opponent || 'Them'}`].filter(Boolean).join(' · ');
@@ -7543,7 +7570,7 @@ function feedNotify(t, m, x) {
    notification when the tab is in the background and they said yes, otherwise
    a toast on the screen they are looking at, and a buzz either way. The Live
    tab's goals and the messages both come through here. */
-// SERVER.md: a notification from an open page only; real push needs a server sender.
+// SERVER.md: a notification from an open page only; the server pushes messages, calendar changes and a followed game, not club activity yet.
 function ping(title, body, tag, buzz) {
   let shown = false;
   try {
@@ -18710,8 +18737,10 @@ function onAct(e) {
   if (a === 'feedall') { ui.feedAll = d.v === '1'; render(); return; }
   if (a === 'logkind') { ui.logKind = LOG_KINDS.some(([k]) => k === d.v) ? d.v : 'all'; render(); return; }
   if (a === 'feedfollow') {
-    if (d.v !== '1') { ui.follow = null; render(); return; }
+    if (d.v !== '1') { followRemote(ui.follow, false); ui.follow = null; render(); return; }
+    if (ui.follow && ui.follow !== ui.matchId) followRemote(ui.follow, false);
     ui.follow = ui.matchId; feedSeen = null; watchFeed();
+    followRemote(ui.follow, true);
     // asked on the tap, because browsers refuse a permission prompt nobody asked for
     try {
       if (typeof Notification !== 'undefined' && Notification.permission === 'default') Notification.requestPermission().then(() => render(), () => { });

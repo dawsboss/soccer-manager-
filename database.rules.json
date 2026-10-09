@@ -399,7 +399,7 @@
     },
     "rulesVersion": {
       ".read": true,
-      ".write": "newData.isNumber() && newData.val() === 13"
+      ".write": "newData.isNumber() && newData.val() === 14"
     },
     "public": {
       "$share": {
@@ -1037,6 +1037,23 @@
           },
           "$other": {
             ".validate": false
+          }
+        }
+      }
+    },
+    "follow": {
+      "$code": {
+        "$mid": {
+          "$uid": {
+            ".read": "auth != null && auth.uid === $uid",
+            ".write": "auth != null && auth.uid === $uid && (!newData.exists() || ((((!root.child('orgs/' + $code + '/access').exists() && root.child('workspaces/' + $code + '/access/index/' + auth.uid).exists()) || (root.child('orgs/' + $code + '/access').exists() && root.child('orgs/' + $code + '/access/index/' + auth.uid).exists())) || ((!root.child('orgs/' + $code + '/access').exists() && root.child('workspaces/' + $code + '/access/admins/' + auth.uid).exists()) || (root.child('orgs/' + $code + '/access').exists() && root.child('orgs/' + $code + '/access/admins/' + auth.uid).exists()))) && ((!root.child('orgs/' + $code + '/access').exists() && root.child('workspaces/' + $code + '/matches/' + $mid + '/teamId').exists()) || (root.child('orgs/' + $code + '/access').exists() && root.child('orgs/' + $code + '/matches/' + $mid + '/teamId').exists())) && !((!root.child('orgs/' + $code + '/access').exists() && root.child('workspaces/' + $code + '/matches/' + $mid + '/ended').exists()) || (root.child('orgs/' + $code + '/access').exists() && root.child('orgs/' + $code + '/matches/' + $mid + '/ended').exists()))))",
+            ".validate": "newData.hasChildren(['at'])",
+            "at": {
+              ".validate": "newData.isNumber()"
+            },
+            "$other": {
+              ".validate": false
+            }
           }
         }
       }

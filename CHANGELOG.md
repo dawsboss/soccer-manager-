@@ -8,6 +8,48 @@ before this point lives only in the git log.
 
 ---
 
+## A game you follow reaches a closed phone — 2026-10-09 (build 115)
+
+The Live tab's *Notify me* only ever worked while the page was open: a
+grandparent following from home heard nothing once the phone locked, which
+is when they wanted it. Messages and calendar changes already reached a
+closed phone (builds 104 and 105); a followed game was the part of
+`GOTSPORT.md`'s step 2 still left.
+
+- **Following is stored, as well as kept on the page**: one record at
+  `follow/{code}/{game}/{uid}`, hers alone, written on *Turn on* and taken
+  away on *Stop* or when she follows another game (`followRemote()`). The
+  rules (version 14) allow it only for someone in the club and a game that
+  exists and hasn't ended; nobody lists who follows a game.
+- **The server sends what the page did** (`onFollowed` in
+  `functions/push.js`): goals, kick-off, each later half under way, half
+  time and full time, with the score, to every phone she turned
+  notifications on for. It wakes on a goal created, a stretch of play
+  created, `currentHalf` and `ended`, never on the game, which a live game
+  writes every few seconds; a game nobody follows costs one read per goal.
+- **Nobody is named, the scorer included.** On a club on `orgs/` a family
+  may not read another child's name, and a lock screen is no place to work
+  out who may see whom. The Live tab, once opened, names whom she may see.
+- **Nothing late.** A goal sent hours on from a phone that had no signal, a
+  backup loaded, or a game reopened next week says nothing; each moment is
+  said once (a redelivered event included), and the follows are cleared at
+  full time.
+- The Live tab's card and the Notifications card say when they reach the
+  phone with Minutes closed, and stop saying "while this page is open" when
+  that isn't so. A refusal from older rules is said only on a phone with
+  notifications on, where it costs something; the page keeps following.
+- `test/push.js` holds who hears what, what wakes the server, and the phone's
+  writes; `test/rules.js` the new rule on both trees.
+
+**The docs catch up with the move.** Every club is on `orgs/` (the owner,
+2026-10-09), so AUTH.md's build order step 4, SECURITY.md's SEC-1 (now
+SEC-D9, done), GOTSPORT.md, README and CLAUDE.md stop saying the move waits
+on the owner; what is left is taking the old tree out, a fortnight on
+(AUTH.md, step 5, from 2026-10-23). SERVER.md also stops saying the rules
+are pasted by hand: a merge to main publishes them.
+
+---
+
 ## Offline is not signed out — 2026-10-09 (build 114)
 
 With the phone's internet and mobile data off, the app opened on *This club

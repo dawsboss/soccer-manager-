@@ -135,7 +135,10 @@ does the bookkeeping, not that the phone works offline first.
   claims on the account instead of tables.
 - **Moving a club to orgs/ builds them whole** (`functions/move.js`, the
   `moveClub` trigger): every table from where each uid appears, so a moved
-  club carries no bridge. That is the one-off run above, one club at a time.
+  club carries no bridge. That was the one-off run above, one club at a time,
+  and every club has moved (2026-10-09). What is left is deleting: the
+  bridges, the phones' rebuilds and the old tree's triggers come out with the
+  old tree (AUTH.md, build order step 5, from 2026-10-23).
 
 ### What families read on orgs/
 - **On the server (2026-10-08):** on a club that has moved to `orgs/{code}`
@@ -243,10 +246,15 @@ does the bookkeeping, not that the phone works offline first.
   app closed. The open page still pops it up and counts it on the bell
   (`watchMessages()`), because a phone without notifications turned on, or a
   club without the server, has only that.
+- **Moved, for a followed game (build 115):** the Live tab's *Notify me*
+  is also stored (`follow/{code}/{mid}/{uid}`, `followRemote()`), and
+  `onFollowed` in `functions/push.js` sends the goals, each half starting,
+  half time and full time to those phones. The open page still watches
+  (`watchFeed()`), for a phone without notifications turned on.
 - **Now, for everything else:** every phone works out for itself what is new
   since it last looked, per source, and shows it while the page is open
   (`clubNews()`, `sessNews()`, `ping()`). A closed phone hears nothing of
-  club activity, a session booked, or a followed game's goals.
+  club activity or a session booked.
 - **With a server:** the same sender takes each of those on as a trigger of
   its own, worked out once for everybody instead of on each phone, and the
   "first look is not news" care goes away.
@@ -278,11 +286,13 @@ does the bookkeeping, not that the phone works offline first.
 ## Keeping the club's data safe and correct
 
 ### The rules themselves
-- **Now:** an admin pastes `database.rules.json` into the Firebase console by
-  hand, and her phone writes and checks `rulesVersion` to say whether that has
-  happened (`checkRules()`).
-- **With a server:** the rules are deployed with the code, and the version
-  check goes away.
+- **Moved to the deploy:** a merge to main that changes `database.rules.json`
+  publishes it (`.github/workflows/server.yml`), and reads the live version
+  back; nobody pastes them any more.
+- **Still on the phone:** an admin's phone writes and checks `rulesVersion`
+  (`checkRules()`), which now only catches a deploy that failed or a phone
+  running an older app. It can go once the deploy's own read-back is trusted
+  alone.
 
 ### What the rules cannot say
 - **Now:** a tracker can write more of a game than the screen offers her

@@ -198,8 +198,14 @@ held to the writer's own uid), so the coach who called it off is left out
 and named to everyone else; and a game's when and whether became the
 coaches' and admins' at the database, as practices already were.
 
-**Left of this step:** a followed game's goals (following is per phone
-today and would need to be stored) and club activity for admins.
+**A followed game, built 2026-10-09 (build 115):** the Live tab's *Notify
+me* is stored as `follow/{code}/{mid}/{uid}` (rules version 14), and the
+server sends its goals, each half starting, half time and full time to those
+phones, woken by a goal created, a stretch of play created, `currentHalf` and
+`ended`, never the game. Nobody named; nothing said once the game is over or
+hours old; cleared at full time.
+
+**Left of this step:** club activity for admins, and a session booked.
 
 ### 4. Email
 
@@ -369,13 +375,14 @@ hold.
    steps in README, a test rig for functions on the fake Firebase, the
    service worker and manifest, and the push sender. Small, and it fixes the
    biggest everyday gap families have. *Built 2026-10-07 for notices and
-   family messages (build 104, Push notifications above); calendar changes
-   and followed games are left.*
+   family messages (build 104, Push notifications above), calendar changes
+   (build 105) and a followed game (build 115); club activity and a
+   session booked are left.*
 3. **Names behind the database, and the child as a club-level person.** One
    design, written into AUTH.md before the code (*Protecting the data* and
    *Season registration* above). *The names half built 2026-10-08 (build
-   110): the move to `orgs/{orgId}` (AUTH.md), each club moving when its admin
-   presses Move. The club-level record of each child is left, for
+   110): the move to `orgs/{orgId}` (AUTH.md), and every club has moved
+   (2026-10-09). The club-level record of each child is left, for
    registration.*
 4. **Registration, without payment.** Programs, the link, the form, waivers,
    accepting and placing, care details for coaches, the GotSport export,
