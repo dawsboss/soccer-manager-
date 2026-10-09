@@ -8,6 +8,43 @@ before this point lives only in the git log.
 
 ---
 
+## More ways to sign in — 2026-10-09 (build 115)
+
+Google, an email link and a password were the only ways in, and a parent
+who lives on an iPhone or a work Microsoft account had to make do with one
+of those. Apple and Microsoft are now there too, for a club that switches
+them on.
+
+- **A button per company the club switched on.** Each method has to be
+  turned on in the Firebase console first, and one that isn't fails with a
+  code nobody at a sideline can read, so `firebase-config.js` lists them
+  (`SOCCER_SIGNIN`) and only those are drawn. Left out, it is Google alone,
+  as before. README, *Sign-in methods*, has the Apple and Azure setup.
+- **One person stays one account.** With "one account per email" on, an
+  email that already has an account is refused a new way in. The app now
+  says so, asks her to sign in the way she did before, and adds the new way
+  to that account (same email only), instead of leaving her stuck.
+- **Your account lists the ways you sign in** and adds the others, and
+  takes a name: Apple gives one only the first time, and its hidden email
+  address was being turned into a name.
+- **Forgot your password?** sends a reset link, without saying whether the
+  address has an account.
+- **An invite for one address explains itself** when Apple has hidden hers
+  or Microsoft never confirmed it, instead of an Accept the database refuses.
+- **The sign-in screens look the part.** A pitch-green header with the
+  club's crest, each company's button in its own colours and mark (drawn
+  inline, so nothing new is fetched and the CSP is unchanged), a switch
+  between *Email me a link* and *Use a password* instead of both at once,
+  a *Show* for the password, and email and password boxes styled like every
+  other box (they had been left bare). Your account has an avatar, and lists
+  the ways in with a tick each. The lock screen is the same card.
+- `test/signin.js` pins all of it.
+
+Not done: sign-in by phone number (cost per text, scripts the CSP blocks,
+and no email for invites or links). AUTH.md, *Sign-in*, says why.
+
+---
+
 ## Offline is not signed out — 2026-10-09 (build 114)
 
 With the phone's internet and mobile data off, the app opened on *This club
