@@ -31,6 +31,13 @@ them on.
   address has an account.
 - **An invite for one address explains itself** when Apple has hidden hers
   or Microsoft never confirmed it, instead of an Accept the database refuses.
+- **The sign-in screens look the part.** A pitch-green header with the
+  club's crest, each company's button in its own colours and mark (drawn
+  inline, so nothing new is fetched and the CSP is unchanged), a switch
+  between *Email me a link* and *Use a password* instead of both at once,
+  a *Show* for the password, and email and password boxes styled like every
+  other box (they had been left bare). Your account has an avatar, and lists
+  the ways in with a tick each. The lock screen is the same card.
 - `test/signin.js` pins all of it.
 
 Not done: sign-in by phone number (cost per text, scripts the CSP blocks,

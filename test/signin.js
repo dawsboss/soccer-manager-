@@ -35,8 +35,13 @@ const exists = (provider, email) => ({ code: 'auth/account-exists-with-different
     fbk.signOut(); await A.flush();
     A.click({ act: 'signinsheet' });
     check('nothing listed: Google alone, as before', /Continue with Google/.test(sheet(A)) && !/Apple|Microsoft/.test(sheet(A)), true);
-    check('email is always offered', /signin-link/.test(sheet(A)) && /signin-pass/.test(sheet(A)), true);
+    check('email is always offered, a link first', /signin-link/.test(sheet(A)) && /data-act="signin-mode" data-v="pass"/.test(sheet(A)), true);
+    A.dom.node('#authEmail').value = 'jo@x.test';
+    A.click({ act: 'signin-mode', v: 'pass' });
+    check('or a password', /signin-pass/.test(sheet(A)) && /signup-pass/.test(sheet(A)), true);
+    check('the email typed is kept across the switch', /value="jo@x\.test"/.test(sheet(A)), true);
     check('and a way back from a forgotten password', /signin-reset/.test(sheet(A)), true);
+    A.click({ act: 'signin-mode', v: 'link' });
   }
   {
     const { A, fbk } = await boot({ signin: ['google', 'apple', 'Microsoft', 'apple', 'facebook'] });
@@ -125,12 +130,12 @@ const exists = (provider, email) => ({ code: 'auth/account-exists-with-different
     fbk.signIn('jo', { name: 'Jo', email: 'jo@x.test', providers: ['password', 'google.com'] }); await A.flush();
     A.click({ act: 'signinsheet' });
     const s = sheet(A);
-    check('lists the ways she signs in', /Email \(a link or a password\)/.test(s) && /<li>Google<\/li>/.test(s), true);
+    check('lists the ways she signs in', /Email \(a link or a password\)/.test(s) && /<span>Google<\/span><span class="auth-tick"/.test(s), true);
     check('offers to add the others', /Add Apple/.test(s) && /Add Microsoft/.test(s) && !/Add Google/.test(s), true);
     A.click({ act: 'signin-add', v: 'microsoft' }); await A.flush();
     const lp = calls(fbk, 'linkPopup')[0] || {};
     check('adding one links it to this account', lp.provider === 'microsoft.com' && lp.uid === 'jo', true);
-    check('and it is then listed', /<li>Microsoft<\/li>/.test(sheet(A)) && !/Add Microsoft/.test(sheet(A)), true);
+    check('and it is then listed', /<span>Microsoft<\/span><span class="auth-tick"/.test(sheet(A)) && !/Add Microsoft/.test(sheet(A)), true);
     fbk.record.popupFail = { code: 'auth/credential-already-in-use' };
     A.click({ act: 'signin-add', v: 'apple' }); await A.flush();
     check('one that is someone else\'s account is refused in words', /already signs in to a different account/.test(A.lastToast()), true);
