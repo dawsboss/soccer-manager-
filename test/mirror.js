@@ -348,6 +348,20 @@ const named = o => NAMES.filter(n => new RegExp('\\b' + n + '\\b', 'i').test(JSO
     check('an id with a path in it is never followed', tree(), before);
   }
 
+  console.log('--- the site\'s address, for calendar entries\' links back ---');
+  {
+    const env = require('fs').readFileSync(require('path').join(__dirname, '..', 'functions', '.env'), 'utf8');
+    const site = (/^SOCCER_SITE=(.*)$/m.exec(env) || [])[1] || '';
+    check('functions/.env names the site, https and index.html', G.okApp(site) && /\/index\.html$/.test(site), true);
+    const S = server((c, pub) => { delete pub.feedT1aaaaa; });
+    process.env.SOCCER_SITE = site;
+    await S.fire(W + 'teams/t1/possMin', 6);
+    check('a feed the server builds new carries it', P(S, 'feedT1aaaaa/link/app'), site);
+    const r = await S.request('calendar', '/feedT1aaaaa.ics');
+    check('and the calendar feed links each entry back to the app', /URL[:;][^\r\n]*dawsboss\.github\.io\/soccer-manager-\/index\.html#\/team\/t1/.test(r.body.replace(/\r\n /g, '')), true);
+    process.env.SOCCER_SITE = SITE;
+  }
+
   console.log('--- the app itself writes nothing to public/ ---');
   {
     const src = require('fs').readFileSync(require('path').join(__dirname, '..', 'app.js'), 'utf8');

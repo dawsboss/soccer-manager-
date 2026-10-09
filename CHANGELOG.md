@@ -47,10 +47,14 @@ had claimed. The owner decided (2026-10-08) that phones stop publishing
 - **Rules version 17:** `public/$share` is `.write: false` for every
   account, admins included, and `shareOwners` is gone. An old phone's
   publish is refused, which costs nothing: the server already wrote it.
-- The site's address for calendar entries' links back is `SOCCER_SITE` in
-  `functions/.env` (README, *Deploying the server*), or the address a page
-  from before already carried. The move copies games twenty at a time
-  now, since each part of a game wakes a run.
+- **Every calendar entry links back into the app.** The server cannot
+  know where the site is, so `functions/.env` says (`SOCCER_SITE`, the
+  GitHub Pages address, committed: it is not a secret). A game in a
+  subscribed calendar opens its page, a practice the team's calendar, and
+  My calendar's entries My calendar; each still carries home or away, when
+  to arrive, kit, notes, the place and, once played, the final score.
+- The move copies games twenty at a time now, since each part of a game
+  wakes a run.
 
 ---
 
