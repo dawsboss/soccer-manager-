@@ -74,7 +74,7 @@ order*, step 2).
 > pieces as above (`sw.js` and `manifest.webmanifest`, tokens at
 > `pushTokens/{uid}/{token}`, and `functions/`). Calendar changes followed
 > (build 105), *Notify me* on a game (build 116), and training sessions and
-> club activity (build 117); `GOTSPORT.md`, *Push notifications*.
+> club activity (build 119); `GOTSPORT.md`, *Push notifications*.
 
 ### Messages, next steps
 

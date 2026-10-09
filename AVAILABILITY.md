@@ -77,14 +77,14 @@ bookAsks/{code}/{uid}/{id}
 `off: true` is a block taken off for that week: still on the coach's
 calendar, offering nothing.
 
-A window written before build 117 also carries `slots` (each slot's start,
+A window written before build 119 also carries `slots` (each slot's start,
 as a timestamp) and `seats` (a key per place), which the old rules read. The
 server uses `slots` for a window with no `day0`; nothing writes either any
 more, and a block saved again drops them.
 
-## Booking is one call to the server (build 117)
+## Booking is one call to the server (build 119)
 
-Until build 117 a family's phone booked a slot itself, in three writes the
+Until build 119 a family's phone booked a slot itself, in three writes the
 rules held one at a time: the session (first family only), a numbered seat,
 and her child's booking naming it. A rule can look things up but cannot
 count, search or do dates, so the block had to carry what they looked up (the

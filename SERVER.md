@@ -161,7 +161,7 @@ does the bookkeeping, not that the phone works offline first.
 
 ## Bookable times and training sessions
 
-- **Moved (build 117): booking a coach's time is one call.** A family's
+- **Moved (build 119): booking a coach's time is one call.** A family's
   phone asks at `bookAsks/{code}/{uid}/{id}` and the server
   (`functions/book.js`, the `bookAsk` trigger) answers beneath it: it checks
   her child, the coach's calendar as it stands (her teams' practices and
@@ -253,7 +253,7 @@ does the bookkeeping, not that the phone works offline first.
   `onFollowed` in `functions/push.js` sends the goals, each half starting,
   half time and full time to those phones. The open page still watches
   (`watchFeed()`), for a phone without notifications turned on.
-- **Moved, for training sessions and club activity (build 117):** a
+- **Moved, for training sessions and club activity (build 119):** a
   booking changing, a session added, moved or called off, and a coach's
   time off or call-out each wake a trigger of their own (`functions/news.js`:
   `newsBooked`, `newsSession`, `newsAway`), which tells whoever the open
