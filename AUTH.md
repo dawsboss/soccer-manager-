@@ -294,7 +294,7 @@ What it costs: every path in `app.js`, the rules, `test/rules.js`, the outbox, t
 
 **Decided 2026-10-06:** the owner wants registration data and the squad's names protected by the database, not the screen. `GOTSPORT.md` (*Protecting the data*, *Build order* step 3) schedules the first reason above (the full move, or only a squad node) before season registration opens to families, designed together with a club-level record of each child. That design is written here before any code.
 
-**Decided 2026-10-08 (SECURITY.md, SEC-1): the full move**, not only a squad node. The design is the next section, and its four smaller decisions were settled the same day. **Built the same day (build 110)**; each club moves when its admin presses *Move*.
+**Decided 2026-10-08 (SECURITY.md, SEC-1): the full move**, not only a squad node. The design is the next section, and its four smaller decisions were settled the same day. **Built the same day (build 110), and every club has moved** (the owner, 2026-10-09); the old tree comes out a fortnight on (build order step 5).
 
 ## The move to `orgs/{orgId}`
 
@@ -326,6 +326,7 @@ The screen hides most of it (`shownName()`); developer tools do not. The move gi
 | `access/log` | `log` | admins only |
 | `teams/{tid}` without `players` (name, logo, settings, `events`, `attend`, `share`, `calFeed`, `join`) | `teams/{tid}` | everyone in the club |
 | `teams/{tid}/players/{pid}` (the whole record) | `squad/{tid}/{pid}` | that team's staff, every coach, admins; **and that child's own family, and the player herself** |
+| the coach's `note`, `rating`, `pairs`, `avoid` on that record | `coachNotes/{tid}/{pid}` (since build 116; SECURITY.md, SEC-D10) | every coach and the admins; **not** trackers, the family or the player |
 | — | `roster/{tid}/{pid}`: `{ number, active }`, plus `name` only while `org/rosterOpen` is on, **derived** | everyone in the club |
 | `matches/{mid}` | `matches/{mid}` | everyone in the club (keyed by player id; no names in it today, and `test/stats.js`'s name scan is extended to a game record to keep it so) |
 | `rsvp/{tid}/…` | `rsvp/{tid}/…` | everyone in the club, as today: keyed by player id, and the screen narrows it |
@@ -404,8 +405,8 @@ Order: **the test club first** (Setup → Make a test club), then the owner's ow
 1. **Rules** for `orgs/` beside `workspaces/`, generated, with `test/rules.js` walking both. Publishing them changes nothing for a club that has not moved. *Built (build 110, rules version 12).*
 2. **The server**: the root helper, both trees, `roster`, `names`, `moveClub`, all tested on the fake server. *Built (build 110).*
 3. **The app**: per-part reads, the assembly, the translation, the forgetting, the button. Every suite green against both a moved and an unmoved club. *Built (build 110).*
-4. **The test club moves**, then a real one, with the owner. *Waiting on the owner*: the functions deployed and rules version 12 published (both happen on a merge to main once the deploy secret is set), then *Move* on the test club, then on the real one.
-5. **A fortnight on**, nobody on the old tree: the `workspaces/` branch and the macro come out of the rules, the triggers on the old tree go, and `serverState/moved/` is cleared.
+4. **The test club moves**, then a real one, with the owner. *Done (the owner, 2026-10-09): every club is on `orgs/`*, with the functions deployed and the rules published (version 13 by then).
+5. **A fortnight on** (from 2026-10-23), nobody on the old tree: the `workspaces/` branch and the macro come out of the rules, the triggers on the old tree go, and `serverState/moved/` is cleared.
 
 ### As built, and where it differs from the above
 
@@ -429,6 +430,77 @@ All four decided by the owner on 2026-10-08, as recommended:
    an invite or an approval).
 3. **Member emails are readable by all staff.** As built, staff here is admins and coaches: see *As built*, trackers.
 4. **The access log is admins' only.**
+
+## More kinds of people
+
+Written 2026-10-09, before any code. The owner expects four kinds of people who are not a coach, a tracker, a parent or the player herself: **team helpers**, **supporters**, **club-wide viewers** and **outside people**. Every club is on `orgs/` now, so each part of a club already has its own readers, and that is what makes these possible: a new role is a new set of readers, not a new copy of the club.
+
+### What does not change
+
+- **Roles stay fixed and named** (*Should admins configure what each role sees?*, above). Each kind below is a role with a fixed list of what it reads and does. No matrix of switches. The club's one names setting (`org/rosterOpen`) still decides which children a non-staff role sees by name.
+- **A role is where a uid appears**, never a string stored on a person. Each new role is a place in the club (a list under `access/` or on a child's record) and, only if a rule needs one, a derived lookup table kept by the phones and by `functions/access.js` like the five today.
+- **Joining is by invite**, single-use and expiring as today, with the role and its scope inside the invite. Withdrawing a role deletes it, and the server's role triggers take her out of every table at once.
+- **Safeguarding holds**: no new role messages a child one to one, and no new role reads a family's conversation that the family does not know about.
+
+### The four, one at a time
+
+**1. Supporters: a player's people.** Grandparents, an aunt, a family friend, who want the games and the calendar on their own phone. Unlike a guardian, a supporter is *under the player*. Anyone who can see the player may ask for one (her family, the player herself, a coach, an admin), and **the team's coach approves it**, the way she approves a family through the team link today (`claims`); a coach or an admin asking is approving. A supporter does less than a parent:
+
+| | A parent (guardian) | A supporter |
+| --- | --- | --- |
+| Calendar, Live, scores, recap, notices | Yes | Yes |
+| Her player by name | Yes | Yes |
+| Teammates' names | By the club's setting | By the club's setting |
+| Says "going" | Yes | No |
+| Messages the coaches | Yes | No |
+| Books and pays for sessions | Yes | No |
+| Push: notices, calendar changes, a followed game | Yes | Yes |
+
+Stored on the child's record, beside `guardians` and `self`: `squad/{tid}/{pid}/supporters/{uid}`, written only by the coach's approval, with a sixth lookup table, `access/teamSupporters/{tid}/{uid}: pid`, so the notice and calendar rules can find her in one step (the rule checks the record agrees, as `teamParents` does). Her phone reads her player's record by path, as a family's does, and that record no longer holds anything about the child that only coaches should see (*The coach's notes*, below).
+
+**2. Team helpers: staff who don't coach.** A team manager, a volunteer, an assistant. On one team, named on it like coaches and trackers: `access/teams/{tid}/helpers/{uid}`, and `teamIndex/{tid}/{uid}: 'helper'`. She sees what staff see on that team (names, the calendar, the register; not the coach's notes) and **helps the coach prepare**: the drills shelves, practice plans for her team, a game's plan before kick-off, notices, the calendar and the register. She does not read families' conversations, does not change the squad, and running the game on the day (subs, the clock) stays the coach's and the tracker's. The training rules find a coach through `coachIndex` today, so a helper needs her own clause in each one she is let into (drills, templates, practices), never an entry in `coachIndex`, which would make her a coach everywhere that table is read.
+
+The care here: three rules today ask only whether a uid is *in* `teamIndex` for a team, not which role, and they would let a helper in exactly as they let a tracker in. Each is decided again for her rather than inherited, and `test/rules.js` walks every one of them for a helper.
+
+**3. Club-wide viewers: every team's games, with names, and nothing else.** A director or a board member. Club-level, like admins: `access/viewers/{uid}`. No lookup table, because a rule can check that one path directly, the way it checks `admins`. Less than a parent: she reads every team's calendar, games, Live, stats and recaps, with the children's names (the roster's names, whatever the club's setting), and does nothing: no answers, no messages, no bookings, no writes anywhere in the club. Not the coach's notes, not members' emails, not the access log, not fees, not conversations.
+
+**4. Outside people: one game or one event, for a while.** A referee, a scout, a guest coach. Today the game link already gives anyone a game's page without signing in, and it stays that way: **no sign-in, no names**. This role is for when they need more, signed in and approved: `access/guests/{uid}: { team, item, until }`, made or approved by that team's coach or an admin, which the rules read with `now`, so it **ends by itself** at `until` with no phone or server having to remember. She reads that one game or entry, **with names**. A guest coach who should run subs is a tracker for the day, which needs a tracker's role with the same `until`.
+
+### What each one costs
+
+| | New place | New lookup table | Rules | App | Server |
+| --- | --- | --- | --- | --- | --- |
+| Supporter | `squad/…/supporters` | `teamSupporters` | squad read, notices, calendar, an ask anyone may make and the coach approves | role, tabs, *Ask for a supporter*, the coach's approval list, My calendar | `access.js` table, push readers, My calendar's feed |
+| Team helper | `access/teams/…/helpers` | none (`teamIndex` value) | the three "any role" rules decided again; notices, calendar, register, a game's plan; her own clause in drills, templates and practices | role, tabs, People, Practice | `access.js`, push readers, staff names |
+| Club viewer | `access/viewers` | none | the roster's names for her, every team's reads | role, every team read-only, People | `access.js` (index) |
+| Guest | `access/guests` | none | one game or entry, with `until` | invite with an end time, the guest's one screen | index kept in step with `until` |
+
+### The coach's notes come off the child's record first
+
+Decided 2026-10-09: the coach's notes on a child (`note`, `rating`, `pairs`, `avoid`) are **coaches' and admins' only**. Today they sit on the child's record, `squad/{tid}/{pid}`, which her family and the player herself read on `orgs/`, and which every new role above would read through it. So before any of them, those four fields move to a node of their own, `coachNotes/{tid}/{pid}` under the club, read and written by coaches (any team, as the squad is read today) and admins; not trackers, not helpers, not families, not the player. The move is the server's (as `moveClub` was), the phone writes there through `clubPath()`, and `squad/` refuses those fields afterwards so nothing puts them back. It is also SECURITY.md, SEC-12: it closes a read families have today, and families are not on the app yet.
+
+**Built** (build 116, rules version 15), as written above, with two details. The phone sends the notes there a field at a time and only the fields a write carries (`clubWrites()`), so a whole team saved from a phone that has not read the notes yet, or may not, never wipes them; and notes still on a record from before are moved by the first phone of that team's coach or an admin to open the club (`moveCoachNotes()`: written to `coachNotes` first, then taken off the record, never overwriting a newer note), as `movePlans()` moved old plans. A family's or tracker's phone drops anything of the four it finds on a record. `moveClub` lays them out the same way for a club still on the old tree.
+
+### Order
+
+**Only one thing has to come first: the coach's notes, above.** Every new role reads some part of a child's record or a squad, and none of them may see the notes. After that the four don't depend on each other, so the order is what the club needs first. Recommended:
+
+1. **The coach's notes.** *Built (build 116, rules version 15).*
+2. **Supporters**: the most asked for, and they reuse the coach's approval list families already go through.
+3. **Team helpers.**
+4. **Club viewers**: the smallest, any time.
+5. **Guests.**
+
+Each is its own build, rules version, CHANGELOG entry and test pass across every suite that walks every kind of account (`rules.js`, `push.js`, `access.js`, `visibility.js`, `roles.js`, `parents.js`, `orgs.js`). Steps 2 to 5 are written for `orgs/` only, after the old tree comes out (step 5 of the move, from 2026-10-23): writing their rules for `workspaces/` as well would be work for a tree nobody is on. Step 1 can go before that, on both trees.
+
+### Decided by the owner (2026-10-09)
+
+1. **Supporters:** anyone who can see the player may ask; the team's coach approves. (A coach or admin asking is approving.)
+2. **The coach's notes:** coaches and admins only. No one else, families and the player included.
+3. **Team helpers:** no family conversations. They help with drills and with planning practices and games.
+4. **Club viewers:** no emails, no log. Less than a parent, but they see the games with names.
+5. **Guests:** signed in and approved, with names. Not signed in (the game link), no names, as today.
+6. **Order:** as above.
 
 ## What parents actually see
 
@@ -457,7 +529,7 @@ Where each step stands (2026-10):
 
 1. **Built.** Google, email and password, and magic link; `needsSignIn()` is the gate.
 2. **Built on `workspaces/{code}`**, with the four lookup tables in place of `teamMembers`.
-3. **Built (build 110), each club moving when its admin presses Move.** See *The move to `orgs/{orgId}`*: the owner chose the full move (2026-10-08, SECURITY.md SEC-1) to take names out of a parent's reach before registration opens (`GOTSPORT.md`).
+3. **Built (build 110), and every club has moved (2026-10-09).** See *The move to `orgs/{orgId}`*: the owner chose the full move (2026-10-08, SECURITY.md SEC-1) to take names out of a parent's reach before registration opens (`GOTSPORT.md`).
 4. **Built.** One ruleset; `shareOwners` closed the public write hole.
 5. **Built.** Team links and the coach's approval list (`joinCodes`, `claims`), per-person invites, and a squad of parent invites at once.
 6. **Built.** Parents see their own child by name and the rest by number, the club's one preset, and My players across clubs.

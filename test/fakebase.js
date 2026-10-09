@@ -242,28 +242,38 @@ const ORGS_MODE = process.env.SERVER_TREE === 'orgs';
 function clubToOrgs(w, keep = {}) {
   if (!w || typeof w !== 'object') return w;
   const { members, org, log, ...access } = w.access || {};
-  const teams = {}, squad = {};
+  const teams = {}, squad = {}, coachNotes = {};
   for (const [tid, t] of Object.entries(w.teams || {})) {
     if (!t || typeof t !== 'object') { teams[tid] = t; continue; }
     const { players, ...rest } = t;
     teams[tid] = rest;
-    if (players) squad[tid] = players;
+    if (!players) continue;
+    // the coach's notes beside each record, as moveClub lays them out (SECURITY.md, SEC-12)
+    squad[tid] = {};
+    for (const [pid, p] of Object.entries(players)) {
+      if (!p || typeof p !== 'object') { squad[tid][pid] = p; continue; }
+      const rec = {}, notes = {};
+      for (const [k, v] of Object.entries(p)) (['note', 'rating', 'pairs', 'avoid'].includes(k) ? notes : rec)[k] = v;
+      squad[tid][pid] = rec;
+      if (Object.keys(notes).length) (coachNotes[tid] = coachNotes[tid] || {})[pid] = notes;
+    }
   }
-  const out = { ...w, access: Object.keys(access).length ? access : undefined, org, members, log, teams, squad, names: keep.names, roster: keep.roster };
+  const out = { ...w, access: Object.keys(access).length ? access : undefined, org, members, log, teams, squad, coachNotes, names: keep.names, roster: keep.roster };
   for (const k of Object.keys(out)) if (out[k] === undefined || (out[k] && typeof out[k] === 'object' && !Object.keys(out[k]).length)) delete out[k];
   return Object.keys(out).length ? out : undefined;
 }
 // and back: what the old tree would hold
 function clubFromOrgs(o) {
   if (!o || typeof o !== 'object') return o;
-  const { access, org, members, log, teams, squad, names, roster, ...rest } = o;
+  const { access, org, members, log, teams, squad, coachNotes, names, roster, ...rest } = o;
   const acc = { ...(access || {}) };
   if (org !== undefined) acc.org = org;
   if (members !== undefined) acc.members = members;
   if (log !== undefined) acc.log = log;
   const ts = {};
-  for (const [tid, t] of Object.entries(teams || {})) ts[tid] = squad && squad[tid] ? { ...(t || {}), players: squad[tid] } : t;
-  for (const [tid, ps] of Object.entries(squad || {})) if (!ts[tid]) ts[tid] = { players: ps };
+  const withNotes = (tid, ps) => Object.fromEntries(Object.entries(ps || {}).map(([pid, p]) => [pid, p && typeof p === 'object' ? { ...p, ...(((coachNotes || {})[tid] || {})[pid] || {}) } : p]));
+  for (const [tid, t] of Object.entries(teams || {})) ts[tid] = squad && squad[tid] ? { ...(t || {}), players: withNotes(tid, squad[tid]) } : t;
+  for (const [tid, ps] of Object.entries(squad || {})) if (!ts[tid]) ts[tid] = { players: withNotes(tid, ps) };
   const out = { ...rest };
   if (Object.keys(acc).length) out.access = acc;
   if (Object.keys(ts).length) out.teams = ts;

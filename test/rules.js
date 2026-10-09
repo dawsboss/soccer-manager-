@@ -922,6 +922,40 @@ reads('owners are not world-readable', OUT, 'shareOwners/sh1', false);
   delete DB.serverState;
 }
 
+/* ---------------- following a game ---------------- */
+
+/* The Live tab's *Notify me*, kept where the server can find it, so a goal
+   reaches a phone with Minutes closed (functions/push.js, onFollowed). Every
+   role may follow a game, because every role reads it; what is stored is
+   that she follows it and when, under her own uid, and the server is the
+   only other thing that reads or clears it. */
+{
+  console.log('\n--- following a game ---');
+  const F = 'follow/CLUB/g1/';
+  writes('a parent follows her team\'s game', MUM, F + 'mum', { at: NOW }, true);
+  writes('so does a tracker', TRK, F + 'trk', { at: NOW }, true);
+  writes('and an admin', ADM, F + 'adm', { at: NOW }, true);
+  writes('and its coach', COACH, F + 'coach', { at: NOW }, true);
+  writes('nobody follows it in someone else\'s name', COACH, F + 'mum', { at: NOW }, false);
+  writes('not someone the club does not know', RANDO, F + 'rando', { at: NOW }, false);
+  writes('nor signed out', OUT, F + 'mum', { at: NOW }, false);
+  writes('a game that does not exist', MUM, 'follow/CLUB/g9/mum', { at: NOW }, false);
+  writes('another club\'s game, by its code', MUM, 'follow/FRESH/g1/mum', { at: NOW }, false);
+  writes('when, and nothing else', MUM, F + 'mum', { at: NOW, name: 'Ella' }, false);
+  writes('a time is a number', MUM, F + 'mum', { at: 'now' }, false);
+  DB.follow = { CLUB: { g1: { mum: { at: NOW } } } };
+  reads('she reads her own', MUM, F + 'mum', true);
+  reads('nobody lists who follows a game', ADM, F, false);
+  reads('nor reads hers', COACH, F + 'mum', false);
+  writes('she stops', MUM, F + 'mum', null, true);
+  writes('nobody stops it for her', ADM, F + 'mum', null, false);
+  DB.workspaces.CLUB.matches.g1.ended = NOW;
+  writes('a game that has ended is not followed', TRK, F + 'trk', { at: NOW }, false);
+  writes('but she can still stop', MUM, F + 'mum', null, true);
+  delete DB.workspaces.CLUB.matches.g1.ended;
+  delete DB.follow;
+}
+
 /* ---------------- practices ---------------- */
 
 /* TRAINING.md: drills and plans are the club's and the coach's own work, so a
@@ -1975,6 +2009,35 @@ reads('owners are not world-readable', OUT, 'shareOwners/sh1', false);
   w('nor a tracker', OT, O + 'squad/t1/p4', { id: 'p4', name: 'Nia' }, false);
   w('nor a parent, her own child included', OM, O + 'squad/t1/p1/name', 'Ellie', false);
   w('the admin does', OA, O + 'squad/t2/q2', { id: 'q2', name: 'Kit' }, true);
+
+  /* SECURITY.md, SEC-12 (the owner, 2026-10-09): a coach's note, rating and
+     who to pair or keep apart are coaches' and admins' only. They come off
+     the child's record, which her family and she read, into coachNotes. */
+  console.log('\n--- a club on orgs/: the coach\'s notes ---');
+  ORGC.coachNotes = { t1: { p1: { note: 'shy in goal', rating: 4 }, p2: { avoid: { p1: true } } } };
+  r('the team\'s coach reads them', OC, O + 'coachNotes', true);
+  r('a coach of another team too, as she reads the squad', OC2, O + 'coachNotes', true);
+  r('the admin reads them', OA, O + 'coachNotes', true);
+  r('not the team\'s tracker', OT, O + 'coachNotes/t1', false);
+  r('not a parent, her own child\'s included', OM, O + 'coachNotes/t1/p1', false);
+  r('not the player herself', OSELF, O + 'coachNotes/t1/p3', false);
+  r('not a stranger', RANDO, O + 'coachNotes/t1/p1', false);
+  w('the coach writes a note', OC, O + 'coachNotes/t1/p1/note', 'Quick off the mark', true);
+  w('— a rating', OC, O + 'coachNotes/t1/p1/rating', 5, true);
+  w('— who to keep apart', OC, O + 'coachNotes/t1/p2/avoid', { p1: true }, true);
+  w('— or all of them for a player at once', OC, O + 'coachNotes/t1/p3', { note: 'x', rating: 3, pairs: { p1: true } }, true);
+  w('nothing else is kept there', OC, O + 'coachNotes/t1/p1', { note: 'x', name: 'Ella' }, false);
+  w('a rating is a number', OC, O + 'coachNotes/t1/p1/rating', 'great', false);
+  w('not another team\'s coach', OC2, O + 'coachNotes/t1/p1/note', 'x', false);
+  w('nor a tracker', OT, O + 'coachNotes/t1/p1/note', 'x', false);
+  w('nor a parent', OM, O + 'coachNotes/t1/p1/note', 'x', false);
+  w('the admin does', OA, O + 'coachNotes/t2/q1/note', 'x', true);
+  w('the child\'s record takes no note any more', OC, O + 'squad/t1/p1/note', 'x', false);
+  w('— nor a rating', OC, O + 'squad/t1/p1/rating', 3, false);
+  w('— nor who to pair or keep apart', OC, O + 'squad/t1/p2/avoid', { p1: true }, false);
+  w('— nor a whole record carrying one', OC, O + 'squad/t1/p4', { id: 'p4', name: 'Nia', note: 'x' }, false);
+  w('a note left on a record from before can be taken off it', OC, O + 'squad/t1/p1/note', null, true);
+  delete ORGC.coachNotes;
   w('the roster: a number and whether she plays', OC, O + 'roster/t1/p4', { number: '11', active: true }, true);
   w('— no name while the roster is closed', OC, O + 'roster/t1/p4', { number: '11', name: 'Nia' }, false);
   w('— nor anything else', OC, O + 'roster/t1/p4', { number: '11', note: 'quick' }, false);

@@ -18,39 +18,7 @@ under **Before families come on** can be done without disturbing anyone.
 
 ## Before families come on
 
-### SEC-1 · Keep the squad out of parents' reach
-- **Status:** Built (build 110) · to roll out, club by club · **Kind:** Owner, now · **Size:** Minutes per club
-- **Decided 2026-10-08:** the full `orgs/{orgId}` move, under the same id as
-  the workspace code. The design, how it was built, and the four smaller
-  decisions are in `AUTH.md`, *The move to `orgs/{orgId}`*.
-- **Why:** everyone with a role in a club reads all of `workspaces/{code}` at
-  the database. A parent's phone holds every child on every team, with the
-  coach's note on each, their ratings and who to keep apart, and every
-  member's name and email (`access/members`). The app shows her other children
-  by shirt number (`shownName()`), but that is the screen's choice: the data
-  is on her phone and readable with a browser's developer tools.
-- **Built:** on `orgs/{code}` each part of a club has its own readers. A
-  family reads her own children's records, the others' shirt numbers
-  (`roster/`), the staff's names (`names/`), and nothing of anyone's notes,
-  ratings or email; the access log is the admins'. `test/rules.js` refuses
-  her the squad, another child's record, the members and the log (both
-  passes); `test/orgs.js` checks what her phone asks for and holds, in memory
-  and in its copy. A club moves when an admin presses *Move* (Club settings,
-  *Keep the squad off families' phones*); the server checks her, moves it in
-  one write, compares, and keeps the old tree aside. New clubs start there.
-- **To roll out:**
-  1. Merge to `main`, so the functions deploy and rules version 12 is
-     published (both from `.github/workflows/server.yml` once the
-     `FIREBASE_SERVICE_ACCOUNT` secret is set; check with
-     `node tools/live-rules.js`).
-  2. Turn on daily backups first (SEC-7).
-  3. Move a test club made before build 110 (a new one already starts on
-     the new tree), and check it as a coach and as a parent.
-  4. Move the real club, between games.
-  5. A fortnight on, with every club moved, take the old tree out
-     (`AUTH.md`, build order step 5).
-- **Done when:** every club in the database is on `orgs/` (no
-  `workspaces/{code}` holds anything but a `moved` marker).
+SEC-1 and SEC-12 are done (SEC-D9 and SEC-D10 below).
 
 ---
 
@@ -307,3 +275,29 @@ to log *made admin* for a removal), unmutable, and keeps it at
 People and tap **Become the club owner** before anyone else, then make a
 second admin an owner. It does not stop an admin deleting teams or games;
 that is SEC-7's backups.
+
+### SEC-D9 · Keep the squad out of parents' reach
+Everyone with a role in a club used to read all of `workspaces/{code}`, so a
+parent's phone held every child on every team, the coach's notes and
+ratings, and every member's email; the screen only chose not to draw them.
+On `orgs/{code}` each part of a club has its own readers: a family reads her
+own children's records, the others' shirt numbers (`roster/`) and the
+staff's names (`names/`), never anyone's notes, ratings or email; the access
+log is the admins'. Built in build 110 (`test/rules.js` both passes,
+`test/orgs.js`, `test/move.js`; AUTH.md, *The move to `orgs/{orgId}`*), and
+every club moved by 2026-10-09 (the owner). What is left is tidying, not
+security: a fortnight on (from 2026-10-23), the old tree comes out of the
+rules and the server (AUTH.md, build order step 5).
+
+### SEC-D10 · The coach's notes are coaches' and admins' only
+A coach's note, rating and who to pair a child with or keep her apart from
+sat on the child's own record, which her family and the player read on
+`orgs/`. Decided by the owner (2026-10-09): coaches and admins only. They
+now live beside the record at `coachNotes/{tid}/{pid}`, which only coaches
+and admins read (not trackers, families or the player), and the record
+refuses them (rules version 15). The phone writes them there a field at a
+time, the server's move lays them out there, and notes already on a record
+are moved by that team's coach's or an admin's phone the first time it opens
+the club (`test/rules.js` both passes, `test/orgs.js`, `test/move.js`).
+Build 116. It also clears the way for the new roles in AUTH.md, *More kinds
+of people*, none of which may read them.

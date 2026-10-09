@@ -305,7 +305,10 @@ const toUid = (S, u) => S.sent().filter(m => m.data.uid === u);
     const S = calServer();
     check('a goal wakes nothing', (await S.wouldWake(W + 'matches/g1/events/x1', { type: 'goal', t: 60 })).length, 0);
     check('nor a sub', (await S.wouldWake(W + 'matches/g1/stints/s1', { pid: 'p1', start: 0 })).length, 0);
-    check('nor the clock', (await S.wouldWake(W + 'matches/g1/periods/0', { start: 1 })).length, 0);
+    S.put(W + 'matches/g1/periods/0', { half: 1, start: 1 });
+    check('nor the clock stopping', (await S.wouldWake(W + 'matches/g1/periods/0/end', 5)).length, 0);
+    // a stretch of play starting wakes the followed-game sender (below), never the calendar's
+    check('nor the clock starting, for the calendar', (await S.wouldWake(W + 'matches/g1/periods/0', { start: 1 })).filter(n => /^push/.test(n)).length, 0);
     const g = S.at(W + 'matches/g1');
     check('nor the whole game saved with only its game changed', (await S.wouldWake(W + 'matches/g1', { ...g, stints: { s1: { pid: 'p1' } } })).length, 0);
     deepEq('the whole game saved with a new date wakes the date\'s trigger alone', (await S.wouldWake(W + 'matches/g1', { ...g, date: day(4) })).filter(n => /^push/.test(n)), ['pushGameDate']);
@@ -438,6 +441,167 @@ const toUid = (S, u) => S.sent().filter(m => m.data.uid === u);
   }
 
   /* ---------------- the page ---------------- */
+
+  console.log('\n--- a game she follows: what wakes the server ---');
+  const ORGS_SERVER = process.env.SERVER_TREE === 'orgs';
+  function liveServer(follow) {
+    const S = server(follow ? { follow: { CLUB: { g1: follow } } } : undefined);
+    const t0 = Date.now() - 10 * 60000;
+    S.put(W + 'matches', {
+      g1: { id: 'g1', teamId: 't1', opponent: 'Northgate', date: day(0), kickoff: '09:30', periodCount: 2, currentHalf: 1,
+        periods: { 0: { half: 1, start: t0 } }, goals: {}, stints: { s1: { pid: 'p1', on: 0 } } }
+    });
+    return S;
+  }
+  // a trigger run a second time with the same event, as Cloud Functions may
+  const again = (S, name, prm, val) => {
+    const ref = S.ref(W + 'matches/g1');
+    // a create trigger's snapshot and a write trigger's before/after, either way
+    return S.triggers[name + (ORGS_SERVER ? 'Orgs' : '')].handler({ params: prm, data: { val: () => val, ref, before: { val: () => val, ref }, after: { val: () => val, ref } } });
+  };
+  {
+    const S = liveServer();
+    const wake = async (p, v) => (await S.wouldWake(W + p, v)).filter(n => /^follow/.test(n));
+    deepEq('a goal logged wakes the goal sender', await wake('matches/g1/goals/x1', { t: 600, side: 'us' }), ['followGoal']);
+    S.put(W + 'matches/g1/goals/x1', { t: 600, side: 'us' });
+    deepEq('its scorer added wakes the scorer\'s', await wake('matches/g1/goals/x1/pid', 'p1'), ['followScorer']);
+    deepEq('an assist added wakes nothing', await wake('matches/g1/goals/x1/assist', 'p2'), []);
+    deepEq('nor a sub', await wake('matches/g1/stints/s2', { pid: 'p2', on: 600 }), []);
+    deepEq('nor the clock stopping', await wake('matches/g1/periods/0/end', Date.now()), []);
+    deepEq('the clock starting again wakes the stretch-of-play sender', await wake('matches/g1/periods/1', { half: 1, start: Date.now() }), ['followPeriod']);
+    deepEq('half time wakes the half\'s', await wake('matches/g1/currentHalf', 2), ['followHalf']);
+    deepEq('End game wakes full time\'s', await wake('matches/g1/ended', Date.now()), ['followEnded']);
+    const g = S.at(W + 'matches/g1');
+    deepEq('the whole game saved with its goals as they were wakes nothing', await wake('matches/g1', { ...g, stints: { ...g.stints, s3: { pid: 'p2', on: 700 } } }), []);
+  }
+  {
+    const S = liveServer();
+    S.reads.length = 0;
+    await S.fire(W + 'matches/g1/goals/x1', { t: 600, side: 'us' });
+    check('a game nobody follows: nothing sent', S.sent().length, 0);
+    deepEq('and nothing read but whether anybody does', S.reads.filter(p => !/^serverState\/moving\//.test(p)), ['follow/CLUB/g1']);
+  }
+
+  console.log('\n--- a game she follows: who hears what ---');
+  {
+    // a family on the team, a family on another team (every role reads a game), the tracker, and someone no longer in the club
+    const S = liveServer({ mum: { at: 1 }, dad: { at: 1 }, trk: { at: 1 }, gone: { at: 1 } });
+    S.put('pushTokens/gone', { [tok('gone')]: { at: 1 } });
+    const r = (await S.fire(W + 'matches/g1/goals/x1', { t: 600, side: 'us', pid: 'p1', by: 'trk', byName: 'Tia' })).followGoal;
+    deepEq('whoever follows it, in the club, not whoever logged it', r.to, ['dad', 'mum']);
+    check('not someone the club no longer has', toUid(S, 'gone').length, 0);
+    check('nor anyone who does not follow it', toUid(S, 'coach').length + toUid(S, 'adm').length + toUid(S, 'rosamum').length, 0);
+    const m = toUid(S, 'mum')[0];
+    check('said the way the open page says it', m.data.title, 'Goal — Flight');
+    check('her own child named, then the score', m.data.body, 'Ella · Flight 1–0 Northgate');
+    check('another team\'s family, roster closed: a shirt number', toUid(S, 'dad')[0].data.body, '#7 · Flight 1–0 Northgate');
+    check('opening the game\'s Live tab', m.data.hash, '#/team/t1/game/g1/live');
+    check('tagged as the open page tags it, so a phone showing both shows one', m.data.tag, 'minutes-g1-goal:x1');
+    check('not held on the lock screen until dismissed', m.data.urgent, '');
+    check('and kept an hour, not a day', m.webpush.headers.TTL, '3600');
+    check('no name reaches a phone the club keeps names from', /Ella|Rosa|Gia/.test(JSON.stringify(toUid(S, 'dad'))), false);
+    check('read without anyone\'s switches: following is the switch', S.reads.some(p => /\/mute\//.test(p)), false);
+    const n = S.sent().length;
+    await again(S, 'followGoal', { code: 'CLUB', mid: 'g1', gid: 'x1', tree: ORGS_SERVER ? 'orgs' : 'workspaces' }, null);
+    check('the same goal delivered twice is said once', S.sent().length, n);
+    S.sends.length = 0;
+    await S.fire(W + 'matches/g1/goals/y1', { t: 900, side: 'them' });
+    check('theirs too, with the score after it', toUid(S, 'mum')[0].data.title + ' / ' + toUid(S, 'mum')[0].data.body, 'Goal — Northgate / Flight 1–1 Northgate');
+  }
+  {
+    // names follow the club's setting and the reader, as shownName() does on the screen
+    const S = liveServer({ coach: { at: 1 }, rosamum: { at: 1 }, ella: { at: 1 }, dad: { at: 1 }, other: { at: 1 } });
+    await S.fire(W + 'matches/g1/goals/x1', { t: 600, side: 'us', pid: 'p1', assist: 'p2' });
+    const body = u => (toUid(S, u)[0] || { data: {} }).data.body;
+    check('a coach sees names', body('coach'), 'Ella, assist Rosa · Flight 1–0 Northgate');
+    check('so does a coach of another team', body('other'), 'Ella, assist Rosa · Flight 1–0 Northgate');
+    check('the scorer herself sees her own name, and a number for the rest', body('ella'), 'Ella, assist #9 · Flight 1–0 Northgate');
+    check('the assist\'s family sees her child, and a number for the scorer', body('rosamum'), '#7, assist Rosa · Flight 1–0 Northgate');
+    check('another family: numbers', body('dad'), '#7, assist #9 · Flight 1–0 Northgate');
+    S.sends.length = 0;
+    S.put(W + 'access/org/rosterOpen', true);
+    await S.fire(W + 'matches/g1/goals/y1', { t: 700, side: 'us', pid: 'p2' });
+    check('once the club opens the roster, every family sees names', body('dad'), 'Rosa · Flight 2–0 Northgate');
+  }
+  {
+    // at the sideline the goal is tapped first and its scorer added after
+    const S = liveServer({ mum: { at: 1 }, dad: { at: 1 } });
+    await S.fire(W + 'matches/g1/goals/x1', { t: 600, side: 'us' });
+    check('the goal at once, nobody named yet', toUid(S, 'mum')[0].data.body, 'Flight 1–0 Northgate');
+    S.sends.length = 0;
+    await S.fire(W + 'matches/g1/goals/x1/pid', 'p1');
+    const m = toUid(S, 'mum')[0];
+    check('then again with the scorer', m.data.body, 'Ella · Flight 1–0 Northgate');
+    check('under the same tag, so it replaces the first', m.data.tag, 'minutes-g1-goal:x1');
+    check('a number for a family the club keeps names from', toUid(S, 'dad')[0].data.body, '#7 · Flight 1–0 Northgate');
+    S.sends.length = 0;
+    await again(S, 'followScorer', { code: 'CLUB', mid: 'g1', gid: 'x1', tree: ORGS_SERVER ? 'orgs' : 'workspaces' }, null);
+    check('said once', S.sent().length, 0);
+    await S.fire(W + 'matches/g1/goals/x1/pid', 'p2');
+    check('a scorer corrected is said again, with the right child', toUid(S, 'mum')[0] ? toUid(S, 'mum')[0].data.body : '', '#9 · Flight 1–0 Northgate');
+    S.sends.length = 0;
+    S.put(W + 'matches/g1/goals/q1', { t: 900, side: 'us' });   // arrived without the goal trigger telling it
+    await S.fire(W + 'matches/g1/goals/q1/pid', 'p1');
+    check('a scorer on a goal never told says nothing', S.sent().length, 0);
+    await S.fire(W + 'matches/g1/goals/x2', { t: 1000, side: 'us', pid: 'p1' });
+    const n = S.sent().length;
+    await again(S, 'followScorer', { code: 'CLUB', mid: 'g1', gid: 'x2', tree: ORGS_SERVER ? 'orgs' : 'workspaces' }, null);
+    check('a goal told with its scorer is not told again for her', S.sent().length, n);
+  }
+  {
+    const S = liveServer({ mum: { at: 1 } });
+    await S.fire(W + 'matches/g1/periods/0/end', Date.now());
+    await S.fire(W + 'matches/g1/periods/1', { half: 1, start: Date.now() });
+    check('the clock paused and started again is not kick-off', S.sent().length, 0);
+    await S.fire(W + 'matches/g1/periods/1/end', Date.now());
+    await S.fire(W + 'matches/g1/currentHalf', 2);
+    check('half time', toUid(S, 'mum').map(m => m.data.title).join(), 'Half time');
+    S.sends.length = 0;
+    await S.fire(W + 'matches/g1/periods/2', { half: 2, start: Date.now() });
+    check('the second half under way', toUid(S, 'mum').map(m => m.data.title).join(), '2nd half under way');
+    S.sends.length = 0;
+    await S.fire(W + 'matches/g1/ended', Date.now());
+    check('full time', toUid(S, 'mum').map(m => m.data.title).join(), 'Full time');
+    check('and following is over: the follows are cleared', S.at('follow/CLUB/g1') == null, true);
+    check('what it said is kept, so it is never said twice', !!S.at('serverState/followSent/CLUB/g1/ft'), true);
+    S.sends.length = 0;
+    await S.fire(W + 'matches/g1/goals/z1', { t: 3000, side: 'us' });
+    check('nothing after full time', S.sent().length, 0);
+  }
+  {
+    // kick-off: the first stretch of the first half
+    const S = liveServer({ mum: { at: 1 } });
+    S.put(W + 'matches/g1/periods', null);
+    await S.fire(W + 'matches/g1/periods/0', { half: 1, start: Date.now() });
+    check('kick-off', toUid(S, 'mum').map(m => m.data.title + ' / ' + m.data.body).join(), 'Kick-off / Flight 0–0 Northgate');
+  }
+  {
+    // a last half that runs out is full time, whether or not End game follows
+    const S = liveServer({ mum: { at: 1 } });
+    S.put(W + 'matches/g1/currentHalf', 2);
+    await S.fire(W + 'matches/g1/currentHalf', 3);
+    check('the last half ending is full time', toUid(S, 'mum').map(m => m.data.title).join(), 'Full time');
+    S.sends.length = 0;
+    S.put('follow/CLUB/g1', { mum: { at: 1 } });
+    await S.fire(W + 'matches/g1/ended', Date.now());
+    check('and End game after it does not say it twice', S.sent().length, 0);
+  }
+  {
+    // late: an outbox emptied hours on, a backup loaded, a game reopened next week
+    const S = liveServer({ mum: { at: 1 } });
+    S.put(W + 'matches/g1/periods/0/start', Date.now() - 6 * 3600000);
+    await S.fire(W + 'matches/g1/goals/x1', { t: 600, side: 'us' });
+    check('a goal from a game played hours ago is not news', S.sent().length, 0);
+    await S.fire(W + 'matches/g1/ended', Date.now() - 5 * 3600000);
+    check('nor its full time', S.sent().length, 0);
+    check('but the follows are still cleared', S.at('follow/CLUB/g1') == null, true);
+  }
+  {
+    const S = liveServer({ mum: { at: 1 } });
+    S.put('retired/CLUB', { at: 1, name: 'Lakeside SC' });
+    await S.fire(W + 'matches/g1/goals/x1', { t: 600, side: 'us' });
+    check('a retired club sends nothing', S.sent().length, 0);
+  }
 
   console.log('\n--- turning it on, on the phone ---');
   const CONFIG = { apiKey: 'k', databaseURL: 'https://prod.example', projectId: 'p', messagingSenderId: '1', appId: 'a' };
@@ -605,6 +769,52 @@ const toUid = (S, u) => S.sent().filter(m => m.data.uid === u);
     const { A, fbk } = await boot('mum', { storage: stored, perm: 'default' });
     check('taken back in the browser: the server stops trying', tokRemoves(fbk).join(), 'pushTokens/mum/' + tok('mum'));
     check('and it reads as off', A.pushRec, null);
+  }
+
+  console.log('\n--- following a game, on the phone ---');
+  /* The Live tab's Notify me is also left where the server finds it
+     (onFollowed, above), so the same moments reach her phones with Minutes
+     closed. */
+  const follows = fbk => fbk.record.writes.filter(w => w.path.startsWith('follow/'));
+  {
+    const { A, fbk } = await boot('mum');
+    A.ui.matchId = 'g1';
+    A.click({ act: 'feedfollow', v: '1' }); await A.flush();
+    deepEq('following a game is one write, under her own account', follows(fbk).map(w => w.path), ['follow/CLUB/g1/mum']);
+    check('saying when, and nothing about her or the game', Object.keys(follows(fbk)[0].value).join(), 'at');
+    A.ui.matchId = 'g2';
+    A.click({ act: 'feedfollow', v: '1' }); await A.flush();
+    check('following another game follows that one', follows(fbk).map(w => w.path).pop(), 'follow/CLUB/g2/mum');
+    check('and lets the first go: a page follows one game', fbk.record.removes.includes('follow/CLUB/g1/mum'), true);
+    A.click({ act: 'feedfollow', v: '0' }); await A.flush();
+    check('stopping takes it away', fbk.record.removes.includes('follow/CLUB/g2/mum') && A.ui.follow === null, true);
+  }
+  {
+    const fbk = makeFakebase().refuseWrites(p => p.startsWith('follow/'));
+    const { A } = await boot('mum', { fbk });
+    A.ui.matchId = 'g1';
+    const before = A.toasts.length;
+    A.click({ act: 'feedfollow', v: '1' }); await A.flush();
+    check('refused by older rules: the page still follows', A.ui.follow, 'g1');
+    check('and a phone without notifications on is not bothered with it', A.toasts.slice(before).join(), 'Following this game');
+  }
+  {
+    const fbk = makeFakebase().refuseWrites(p => p.startsWith('follow/'));
+    const { A } = await boot('mum', { fbk, perm: 'granted' });
+    A.click({ act: 'pushon' }); await A.flush();
+    check('(notifications on for this phone)', A.pushOn(), true);
+    A.ui.matchId = 'g1';
+    A.click({ act: 'feedfollow', v: '1' }); await A.flush();
+    check('with them on, a refusal is said: the closed phone would not hear', /page only.*version/.test(A.lastToast() || ''), true);
+    A.state.matches.g1 = { id: 'g1', teamId: 't1', opponent: 'Northgate', date: '2026-10-09', currentHalf: 1, periods: {} };
+    A.ui.teamId = 't1'; A.ui.view = 'game'; A.ui.gameView = 'live'; A.render();
+    check('the Live tab says they reach the phone closed, not only this page', /even with Minutes closed/.test(A.rendered()) && !/while this page is open/.test(A.rendered()), true);
+  }
+  {
+    const { A, fbk } = await boot(null);
+    A.ui.matchId = 'g1';
+    A.click({ act: 'feedfollow', v: '1' }); await A.flush();
+    check('signed out: the page follows, nothing is written', follows(fbk).length, 0);
   }
 
   console.log('\n--- a tapped notification lands where it happened ---');

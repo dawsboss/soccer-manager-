@@ -8,6 +8,99 @@ before this point lives only in the git log.
 
 ---
 
+## The coach's notes are coaches' and admins' only — 2026-10-09 (build 116)
+
+A coach's note on a child ("shy in goal"), her rating, and who to pair her
+with or keep her apart from sat on the child's own record. Since the move to
+`orgs/` that record is read by the child's family and the player herself,
+so a family could read what the coach wrote about her child with a
+browser's developer tools, and every new kind of person in AUTH.md would
+have read it too. The owner decided they are coaches' and admins' only
+(SECURITY.md, SEC-12, now SEC-D10).
+
+- **They have their own place**, `coachNotes/{tid}/{pid}` beside the
+  child's record, which only coaches (any team, as the squad) and admins
+  read; trackers, families and the player do not. The record refuses them
+  (rules version 15).
+- **Nothing changes on a coach's screen.** Her phone reads them and lays
+  them back on the player, and every write sends them there
+  (`clubWrites()`), a field at a time and only the fields it carries, so a
+  whole team saved from a phone that has not read the notes yet never wipes
+  them.
+- **Notes already on a record move by themselves**: the first time a coach
+  of that team or an admin opens the club, her phone writes each one to its
+  new place and only then takes it off the record, never overwriting a newer
+  one, and leaves it where it was if refused, to try again next time.
+- **A family's or tracker's phone drops them** from anything it reads, its
+  own child's record and its copy from before included.
+- The server's `moveClub` lays a club out the same way.
+
+---
+
+## AUTH.md: more kinds of people, designed before any code — 2026-10-09
+
+The owner expects to let in people who are not coaches, trackers, parents
+or the player: supporters under a player (grandparents and friends), team
+helpers (a manager, a volunteer), club-wide viewers (a director) and
+outside people (a referee, a scout, a guest coach). AUTH.md, *More kinds of
+people*, says where each would live, what it reads and does, what each
+costs in the rules, the app and the server, the order to build them in,
+and the owner's six decisions (the same day): supporters asked for by
+anyone and approved by the coach; helpers who plan practices and games but
+read no family's conversations; viewers who see games with names and
+nothing more; signed-in guests with names, the game link still without.
+And one that comes first: the coach's notes on a child are coaches' and
+admins' only, so they come off the child's record before any new role
+reads it (SECURITY.md, SEC-12). No code yet: a role is a schema and rules
+change, and this file is where those are settled first.
+
+---
+
+## A game you follow reaches a closed phone — 2026-10-09 (build 116)
+
+The Live tab's *Notify me* only ever worked while the page was open: a
+grandparent following from home heard nothing once the phone locked, which
+is when they wanted it. Messages and calendar changes already reached a
+closed phone (builds 104 and 105); a followed game was the part of
+`GOTSPORT.md`'s step 2 still left.
+
+- **Following is stored, as well as kept on the page**: one record at
+  `follow/{code}/{game}/{uid}`, hers alone, written on *Turn on* and taken
+  away on *Stop* or when she follows another game (`followRemote()`). The
+  rules (version 14) allow it only for someone in the club and a game that
+  exists and hasn't ended; nobody lists who follows a game.
+- **The server sends what the page did** (`onFollowed` in
+  `functions/push.js`): goals, kick-off, each later half under way, half
+  time and full time, with the score, to every phone she turned
+  notifications on for. It wakes on a goal created, a stretch of play
+  created, `currentHalf` and `ended`, never on the game, which a live game
+  writes every few seconds; a game nobody follows costs one read per goal.
+- **The scorer is named as the screen names her**, worked out for each
+  person it goes to: by name to admins, coaches and trackers, her own family
+  and herself, and to everyone once the club's admins open the roster
+  (*names or shirt numbers*, Club settings); otherwise `#7`. That is also
+  exactly what a family's phone may read on `orgs/`. A goal is usually
+  tapped first and its scorer added a moment later, so adding the scorer
+  sends the same notification again under the same tag: it replaces the
+  first, without a second buzz.
+- **Nothing late.** A goal sent hours on from a phone that had no signal, a
+  backup loaded, or a game reopened next week says nothing; each moment is
+  said once (a redelivered event included), and the follows are cleared at
+  full time.
+- The Live tab's card and the Notifications card say when they reach the
+  phone with Minutes closed, and stop saying "while this page is open" when
+  that isn't so. A refusal from older rules is said only on a phone with
+  notifications on, where it costs something; the page keeps following.
+- `test/push.js` holds who hears what, what wakes the server, and the phone's
+  writes; `test/rules.js` the new rule on both trees.
+
+**The docs catch up with the move.** Every club is on `orgs/` (the owner,
+2026-10-09), so AUTH.md's build order step 4, SECURITY.md's SEC-1 (now
+SEC-D9, done), GOTSPORT.md, README and CLAUDE.md stop saying the move waits
+on the owner; what is left is taking the old tree out, a fortnight on
+(AUTH.md, step 5, from 2026-10-23). SERVER.md also stops saying the rules
+are pasted by hand: a merge to main publishes them.
+
 ## More ways to sign in — 2026-10-09 (build 115)
 
 Google, an email link and a password were the only ways in, and a parent
