@@ -8,6 +8,42 @@ before this point lives only in the git log.
 
 ---
 
+## A child in the club — 2026-10-09 (build 122, rules version 21)
+
+Registration's first step (AUTH.md, *A child in the club, and
+registration*, step 1): a child is a person in the club, not only a row in
+one team's squad.
+
+- **One record per child**, `orgs/{code}/children/{cid}`: her name as her
+  family gives it, birth date, gender, the squad records that are her, her
+  family, and whether her family has confirmed it. Each squad record points
+  back (`child`). Coaches and admins read every child, as they read every
+  squad; a family reads her own by path; nobody else reads one.
+- **Every child already on a team gets one** (the owner's decision), made by
+  an admin's phone or the server from the squad, under the player's own id,
+  for her family to confirm.
+- **A coach adding a player registers her** with the club for her family.
+- **Her family confirms**, and only her family: the first time her phone
+  holds an unconfirmed child it asks, once (*Check Ella's details*: what the
+  club has, and only what is missing), then a card on My players until she
+  does. Her family, an admin, or the coach who added her (until the family
+  confirms) changes the record; checked in the click handler and the rules.
+- **Her family on a team is copied onto the child** as the squad says it,
+  by the server, staff phones and the family's own, and the rule lets a copy
+  say no more than the squad does. A family named on the child herself
+  (`family`, for a child on no team) comes from a parent invite that names
+  the child, and lets her into the club once an admin or coach has let the
+  child in (`club: true`).
+- **`families/{uid}`** at the root: each person's own list of her children,
+  so another phone finds a child on no team.
+
+Rules version 21. New suite `test/children.js`; `rules.js` (both passes) and
+`access.js` (both passes) walk the rest. Not yet: care details, programs,
+the link and form, waivers, placing, sessions for a child on no team, the
+GotSport export and deleting (steps 2 to 6).
+
+---
+
 ## AUTH.md: a child in the club, and registration, designed before any code — 2026-10-09
 
 A child exists today only as a row in one team's squad, so a family who

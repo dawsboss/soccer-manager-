@@ -886,7 +886,9 @@ against.
    lookup tables, *every child already here*, staff making a child with a
    parent invite that names her, the family's *Check her details*. Usable on
    its own: every family confirms her child, and next season has something to
-   start from.
+   start from. *Built (build 122): see *Step 1, as built*. The invite naming
+   a child on no team is in the rules; making one from the screen comes with
+   Registrations (step 3).*
 2. **Care details** for coaches (the source, the per-team copy, the server
    keeping it).
 3. **Programs, the link, the form and waivers**, and Registrations for
@@ -901,6 +903,45 @@ every suite that walks every kind of account. New suites: `children.js` (the
 record, confirming, every way in), `care.js`, `register.js` (programs, the
 form, waivers, accepting, placing, the export), `forget.js` (deleting, on the
 fake server).
+
+### Step 1, as built (build 122, rules version 21)
+
+The child's record, with these details where the build differs from the
+above:
+
+- **Her family on a team is a copy, never written by hand.** The child's
+  `guardians` and `self` hold each squad record's, valued with the team id.
+  The rule lets anyone signed in write one only while that team's squad
+  record of this child names her, and take one away only once it doesn't, so
+  a copy can never claim more than the squad says and nobody has to be
+  trusted to keep it. A family named on the child herself is a separate list,
+  `family/{uid}`, written by her with an invite naming the child (`child` on
+  a parent invite, which may then have no team). Placing a child on no team
+  copies `family` into the squad (step 4).
+- **Who keeps the copies:** the server on every squad record change
+  (`rosterPlayer`, now also `syncChild()` in `functions/access.js`), any
+  admin's or coach's phone on connect (`syncChildren()`), and a family's own
+  phone for herself, which is what first lets her read the record.
+- **Every child already here is made by an admin's phone, or the server,
+  without a button.** Each squad record with no `child` gets one: the
+  pointer first (the rule on a child's `teams` checks it), then the record,
+  under the player id, `by: 'club'`, unconfirmed. Both make the same record
+  (`childFrom()`). Written straight to the database, not through the outbox,
+  like the lookup tables: it is made again on every connect, and a club whose
+  rules are older should not be told on every screen.
+- **A coach adding a player registers her**: the squad record with `child`,
+  then the child (`by` the coach), once the squad write has landed.
+- **The index** counts a family named in `family` on a child with `club:
+  true` (`hasAnyRole()`, the server's `hasRole()`, and the index rule's new
+  clause, whose value is the child id). Her squads' copies are counted
+  through the squads, as before.
+- **Her own list** (`families/{uid}/{code}/{cid}`) is written when she
+  confirms, and listened to, not waited on, so a phone finds a child of hers
+  on no team.
+- **Asked for in step 1:** name, birth date and gender. Care details and
+  waivers join the same screen in steps 2 and 3.
+- **The backup** (*Download a copy*, admins) carries the children's records;
+  restoring one does not write them yet.
 
 ### Decisions for the owner
 

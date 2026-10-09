@@ -405,7 +405,8 @@ hold.
    program link is at the root (`regOpen/{linkId}`), with each family's list
    of her children (`families/{uid}`). A child can be in the club on no team,
    for training sessions, and a coach or an admin can register a child for a
-   family, who confirms it when she joins.*
+   family, who confirms it when she joins. Step 1, the child's record, built
+   2026-10-09 (build 122).*
 5. **Payments.** Stripe Connect, Checkout, the webhook (payments and the
    club's refunds), plans, discounts, the treasurer's view; session fees and packages onto the same
    till.

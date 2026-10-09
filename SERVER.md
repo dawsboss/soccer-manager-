@@ -313,6 +313,18 @@ does the bookkeeping, not that the phone works offline first.
   them, until an admin does.
 - **With a server:** a one-off migration, run once, and the code is deleted.
 
+### A child's club record
+- **Now:** every child already on a team is given a club record by the first
+  admin's phone to open the club, and the squad's families are copied onto
+  each record by any admin's or coach's phone, and by a family's own phone for
+  herself (`syncChildren()`; AUTH.md, *A child in the club*). The server does
+  both the moment a squad record changes (`rosterPlayer`, `functions/access.js`)
+  and keeps the index for a family named on a child the club let in
+  (`accessChild`), so the phones are the fallback for a club without the
+  functions deployed.
+- **With a server:** already there; the phones' half goes once every club has
+  the functions.
+
 ### Backups and imports
 - **Now:** a backup is an admin tapping *Download a copy* (`backupDoc()`), and
   a bulk import is planned and written from her phone, one record at a time at

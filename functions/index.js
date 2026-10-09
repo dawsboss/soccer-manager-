@@ -235,7 +235,11 @@ exports.accessViewer = onValueWritten('/orgs/{code}/access/viewers/{uid}', quiet
 exports.namesMember = onValueWritten('/orgs/{code}/members/{uid}', quiet(event =>
   access.onMember(writerOf(event), event.params)));
 exports.rosterPlayer = onValueWritten('/orgs/{code}/squad/{tid}/{pid}', quiet(event =>
-  access.onSquadPlayer(writerOf(event), event.params)));
+  access.onSquadPlayer(writerOf(event), event.params, event.data.before.val())));
+/* A child in the club (access.js; AUTH.md, *A child in the club*): a family
+   named on her, or the club letting her in, is who is in the index. */
+exports.accessChild = onValueWritten('/orgs/{code}/children/{cid}', quiet(event =>
+  access.onChildRecord(writerOf(event), event.params, event.data.before.val(), event.data.after.val())));
 exports.rosterOpen = onValueWritten('/orgs/{code}/org/rosterOpen', quiet(event =>
   access.onRosterOpen(writerOf(event), event.params)));
 

@@ -65,6 +65,7 @@ const SUITES = [
   ['players', 'a player\'s own sign-in: the coach gives it, she sees what her parents see, and talks to the coaches only where they do'],
   ['viewers', 'club-wide viewers see every team\'s games with names and nothing else, and are in the index like everyone else'],
   ['fans', 'a player\'s fans: anyone who can see her asks, her coach approves, and they read less than a parent'],
+  ['children', 'a child in the club: her record, read by staff and her own family, made for every child on a team, confirmed by her family alone'],
   ['links', 'links with limits: how many people may use one, and until when, for every kind of link'],
   ['mycal', 'my calendar is the person\'s, across clubs, and private unless she shares it'],
   ['safekeep', 'nothing floats away: one count, a full phone, a whole backup'],

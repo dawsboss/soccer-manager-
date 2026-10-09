@@ -162,6 +162,17 @@ A grandparent, an aunt, a family friend who wants the games and the calendar on 
 
 Needs rules version 20 (`fans` and `fanNames` on the child's record, `access/teamFans`, and the fan clauses in `invites`, `claims` and `board`), on `orgs/` only. Until it's pasted, making the link is refused and says so.
 
+## A child in the club
+
+The first step of registration (AUTH.md, *A child in the club, and registration*). Every child has one record in the club, not only a row in her team's squad, so she can be in the club on no team (for training sessions, once that is built) and next season starts from what her family already told the club. On `orgs/` (every club now).
+
+- **Every child already on a team has one**, made from the squad by the first admin's phone to open the club (or the server), for her family to confirm. **A coach adding a player** makes one too: she registers the child for her family.
+- **Her family confirms it, and nobody else can.** The first time a family's phone holds a child the club registered, it asks once: *Check Ella's details*, with what the club has (name, team and number) and only what is missing (birth date, gender). Then a card on *My players* until she does.
+- **Who changes it:** her family, an admin, or the coach who added her until her family has confirmed it. The team's own name for her (on Squad) stays the coach's. Staff see a child's record, and whether her family has confirmed it, under *Her club record* on her page in Squad.
+- **Who reads it:** coaches and admins (as they read every squad), and her own family. Never a tracker, a helper, a viewer or a fan; never `public/`.
+
+Needs rules version 21 (`children` under the club, the index clause for a child's family, `families` at the root, and a parent invite that names a child). Until it's pasted, the records are not made, and a family's confirmation waits on her phone and is said on every screen.
+
 ## Links with limits
 
 Every link the app makes can be held to how many people and how long:
