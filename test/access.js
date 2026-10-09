@@ -89,19 +89,21 @@ const rest = S => canon({ ...S.at('workspaces/CLUB'), access: { ...S.at(W + 'acc
       ['accessAdmin', 'accessAdminOrgs', 'accessGuardians', 'accessGuardiansOrgs', 'accessSelf', 'accessSelfOrgs', 'accessStaff', 'accessStaffOrgs', 'accessViewer']);
     // and who runs the club is told (adminwatch.js, test/owners.js)
     deepEq('an admin given', (await S.wouldWake(W + 'access/admins/new', true)).sort(), ['accessAdmin', 'watchAdmin']);
-    deepEq('a coach given', await S.wouldWake(W + 'access/teams/t1/coaches/new', true), ['accessStaff']);
-    deepEq('a family linked', await S.wouldWake(W + 'teams/t1/players/p2/guardians/new', true), ['accessGuardians']);
-    deepEq('a player\'s own sign-in', await S.wouldWake(W + 'teams/t1/players/p2/self/new', true), ['accessSelf']);
+    // the share pages wake on play and on a player (mirror.js, test/mirror.js); what is asked here is the tables
+    const mine = ns => ns.filter(n => !/^(publish|mirror)/.test(n));
+    deepEq('a coach given', mine(await S.wouldWake(W + 'access/teams/t1/coaches/new', true)), ['accessStaff']);
+    deepEq('a family linked', mine(await S.wouldWake(W + 'teams/t1/players/p2/guardians/new', true)), ['accessGuardians']);
+    deepEq('a player\'s own sign-in', mine(await S.wouldWake(W + 'teams/t1/players/p2/self/new', true)), ['accessSelf']);
     const g = S.at(W + 'matches/g1');
-    check('a goal wakes none of it', (await S.wouldWake(W + 'matches/g1/events/x1', { type: 'goal', t: 60 })).length, 0);
-    check('nor a sub', (await S.wouldWake(W + 'matches/g1/stints/s1', { pid: 'p1', start: 0 })).length, 0);
-    check('nor a whole game saved', (await S.wouldWake(W + 'matches/g1', { ...g, score: 2 })).length, 0);
-    check('nor a player\'s number', (await S.wouldWake(W + 'teams/t1/players/p1/number', '8')).length, 0);
-    check('nor the register', (await S.wouldWake(W + 'teams/t1/attend/e1/p1', true)).length, 0);
+    check('a goal wakes none of it', mine(await S.wouldWake(W + 'matches/g1/events/x1', { type: 'goal', t: 60 })).length, 0);
+    check('nor a sub', mine(await S.wouldWake(W + 'matches/g1/stints/s1', { pid: 'p1', start: 0 })).length, 0);
+    check('nor a whole game saved', mine(await S.wouldWake(W + 'matches/g1', { ...g, score: 2 })).length, 0);
+    check('nor a player\'s number', mine(await S.wouldWake(W + 'teams/t1/players/p1/number', '8')).length, 0);
+    check('nor the register', mine(await S.wouldWake(W + 'teams/t1/attend/e1/p1', true)).length, 0);
     const t = S.at(W + 'teams/t1');
-    check('nor the whole team saved with nobody\'s role changed', (await S.wouldWake(W + 'teams/t1', { ...t, name: 'Flight FC' })).length, 0);
+    check('nor the whole team saved with nobody\'s role changed', mine(await S.wouldWake(W + 'teams/t1', { ...t, name: 'Flight FC' })).length, 0);
     const t2 = JSON.parse(JSON.stringify(t)); t2.players.p2.guardians.newmum = true;
-    deepEq('the whole team saved with one family added wakes that player\'s alone', await S.wouldWake(W + 'teams/t1', t2), ['accessGuardians']);
+    deepEq('the whole team saved with one family added wakes that player\'s alone', mine(await S.wouldWake(W + 'teams/t1', t2)), ['accessGuardians']);
     check('a member\'s name changed wakes nothing', (await S.wouldWake(W + 'access/members/mum', { name: 'Mo' })).length, 0);
     check('nor the tables themselves, so it never wakes itself', (await S.wouldWake(W + 'access/index/zz', true)).length + (await S.wouldWake(W + 'access/teamParents/t1/zz', 'p1')).length, 0);
   }

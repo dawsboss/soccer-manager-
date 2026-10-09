@@ -52,20 +52,16 @@ Open `index.html` in a browser, or serve the folder. Everything works immediatel
 
 4. Sign in (Setup → Account), then tap the club button at the top left → **+ Start a new club**, give it a name, and *Start it*. That creates the club, with you as its admin, and opens it. (A device with no club open has the same button under Setup → Club.) There is no code to type or share: everyone else joins with an invite link — see **Joining a club** below — and a phone finds the clubs its account is in by itself. Signed out, the app still works, but only on that one device.
 
-Two things that will silently reject a write if you tighten the `public` block: a team with **no games yet** publishes without a `games` child at all, because Realtime Database drops empty objects — so never require `games`. And never add a `"$other": { ".validate": false }` catch-all: the document also contains `record` and `updated`, and a wildcard matches those too, failing the whole write.
+**Only the club's server writes the share pages** (`public/`, SECURITY.md, SEC-10). The rule is `.write: false` for every account, admins included: phones make the ids (in the club, under the team's rule), and the server's functions build each page from the club as the phones write goals, subs and changes to it (`functions/mirror.js`). So nobody holding a link, and nobody signed in, can put anything at a share link, and a page a coach's phone could never finish publishing with no signal is published by the server once the phone's changes land. Without the functions deployed (**Deploying the server**) no share page is written at all.
 
-If links are not working, open **Setup → Share with parents**. It now reports whether the last publish succeeded and shows the rejection reason if not, with a **Republish now** button.
+If links are not working, open **Setup → Share with parents**: it says when the server last wrote the page, or that it has not built it yet.
 
-**Write is open, and that is a known gap.** There is no authentication yet, so the only thing stopping someone who holds a link from writing to that node is the shape check above. What that check buys: a vandal cannot inject arbitrary keys or free text, only something that already looks like a scoreboard. What it does not buy: they could still post a wrong score.
+Why the pages are safe to be world-readable:
 
-Why it is tolerable for now, and only for now:
-
-- The node is **derived**. The coaches' app rewrites it on every change, so anything tampered with is gone at the next sub.
+- The node is **derived**. The server rewrites it from the club on every change.
 - It contains **no names and no player ids**, so there is nothing there worth stealing.
-- The real record lives under `workspaces/` and is never read by the public page.
+- The real record lives in the club and is never read by the public page.
 - Share ids are long and random, so the node is not discoverable without the link.
-
-The proper fix is the first job for authentication: make `.write` require `auth.uid` to be a coach of the team that owns the share. Anonymous auth is *not* a shortcut here — anonymous uids are per-device, so two coaches on two devices would get different ids and only one could publish, and clearing browser storage would lock a coach out of their own share.
 
 The API key in `firebase-config.js` is not a secret; the rules above are what gate access. A club's id (the `{code}` in `workspaces/{code}`) is plumbing, not a password: nobody types it or sees it, and knowing it gets you nothing without a role the rules can find.
 
@@ -195,7 +191,7 @@ If nothing arrives: check the functions' logs in the Firebase console (Functions
 
 ## Deploying the server
 
-The club's server is Cloud Functions on the same Firebase project, in `functions/`: `pushNotice`, `pushMessage`, `pushEntry` and the `pushGame…` triggers (notifications), `calendar` (calendar sync), `mirrorEvents` and the `mirrorGame…` triggers, which keep the share pages' and members' feed's practices and fixtures up to date whoever changed them, and the four `access…` triggers, which keep the lookup tables the rules read up to date the moment someone's role changes, and `myCalBuild` with the `myCal…` triggers, which build each person's My calendar feed (SERVER.md). Nothing to set up for any of these beyond deploying: they need no key and no setting. `myCalBuild` runs every five minutes on Cloud Scheduler, which the first deploy switches on for the project (the deploy key's **Service Usage Admin** role is what lets it); if that deploy says Cloud Scheduler is not enabled, enable **Cloud Scheduler API** in Google Cloud's API library and deploy again. `.github/workflows/server.yml` tests and deploys them whenever they change on main, as the site deploys itself. Set up once:
+The club's server is Cloud Functions on the same Firebase project, in `functions/`: `pushNotice`, `pushMessage`, `pushEntry` and the `pushGame…` triggers (notifications), `calendar` (calendar sync), `mirrorEvents` and the `publish…` triggers, which write the share pages and the members' feed (the only thing that does: SECURITY.md, SEC-10), and the four `access…` triggers, which keep the lookup tables the rules read up to date the moment someone's role changes, and `myCalBuild` with the `myCal…` triggers, which build each person's My calendar feed (SERVER.md). Nothing to set up for any of these beyond deploying: they need no key and no setting. `myCalBuild` runs every five minutes on Cloud Scheduler, which the first deploy switches on for the project (the deploy key's **Service Usage Admin** role is what lets it); if that deploy says Cloud Scheduler is not enabled, enable **Cloud Scheduler API** in Google Cloud's API library and deploy again. `.github/workflows/server.yml` tests and deploys them whenever they change on main, as the site deploys itself. Set up once:
 
 1. **Pay-as-you-go (Blaze).** Firebase console → the project → **Upgrade** at the bottom left → **Blaze**, with a card. Cloud Functions need it; at one club's volume the expected bill is nothing, inside the free allowance, but check Firebase's current pricing before telling anyone a number. Then Google Cloud console → **Billing → Budgets & alerts** → a budget of a few dollars, so anything unexpected emails you.
 2. **A deploy key for GitHub.** Google Cloud console, this project → **IAM & Admin → Service Accounts → Create service account** (`github-deployer`), with four roles: **Editor**, **Service Account User** (it deploys functions that run as the project's own account), **Service Usage Admin** (a first deploy switches on the Google services functions need) and **Cloud Functions Admin** (the calendar feed is a public function, since a calendar app asks with no account, and making one public takes it). Open it → **Keys → Add key → JSON**. On GitHub: the repository → **Settings → Secrets and variables → Actions → New repository secret**, named `FIREBASE_SERVICE_ACCOUNT`, the whole file as its value. Delete the file.
@@ -215,6 +211,10 @@ If a deploy fails on permissions, the message names what is missing; add the rol
 - *We failed to modify the IAM policy for the project*: step 3 above has not been done.
 - *The permission cloudfunctions.functions.setIamPolicy is required to deploy … calendar*: **Cloud Functions Admin**.
 - *Permission denied while using the Eventarc Service Agent … Retry the deployment in a few minutes*: nothing missing; the very first deploy of database-triggered functions waits on Google. Run it again after five minutes.
+
+**The site's address, for calendar links.** An entry in a subscribed calendar links back into the app (a game to its page, a practice to the team's calendar, My calendar's entries to My calendar), and the server cannot know where the site is, so `functions/.env` says: `SOCCER_SITE=https://dawsboss.github.io/soccer-manager-/index.html`. It is committed (it is not a secret) and loaded on every deploy. If the site moves (a custom domain), change it there; `test/mirror.js` holds it to an `https` address ending `index.html`.
+
+**Share pages need the functions.** Since build 120 phones never write `public/` and the rules refuse it (version 19): a club whose functions are not deployed has share links that never fill in.
 
 Without the secret the workflow says so and deploys nothing. From a computer instead: `npm install -g firebase-tools`, `firebase login`, `(cd functions && npm ci)`, `firebase deploy --only functions`.
 
@@ -339,15 +339,16 @@ in a commit. `node test/rules.js` reads *these files* and checks them; it also
 fails if a whole ruleset reappears in this README, since a second copy is the
 one that drifts. Run it first.
 
-**It is safe to paste before the app has caught up.** Two lookup tables make the
-per-team and per-share rules possible — `access/teamIndex` and
-`shareOwners/{shareId}` — and neither exists on a club that predates them. So
-each of those rules carries a clause that falls back to the old club-wide
-behaviour *while its table is missing*, and stops doing so the moment the table
-appears. Nothing to sequence, and no way to lock the club out by pasting early.
+**It is safe to paste before the app has caught up.** A lookup table makes the
+per-team rules possible — `access/teamIndex` — and it does not exist on a club
+that predates it. So each of those rules carries a clause that falls back to
+the old club-wide behaviour *while its table is missing*, and stops doing so
+the moment the table appears. Nothing to sequence, and no way to lock the club
+out by pasting early. (`shareOwners/{shareId}` was the other, for the share
+pages; since rules version 19 only the server writes those, and it is gone.)
 
-The app fills both in by itself: an admin's device writes `teamIndex` on its
-next connect, and a share claims its owner list on its next publish. **Club
+The app fills it in by itself: an admin's device writes `teamIndex` on its
+next connect. **Club
 settings → Check readiness** shows whether that has happened. Until every line
 there has a tick, the club is protected but not yet *tightly* — a tracker or
 a parent can still write another team's data, exactly as before.
@@ -402,7 +403,7 @@ What each part is doing:
 - **`clubInvites/$code`** is the admin's list, readable only by admins. It lives outside the workspace on purpose: everyone indexed can read the whole workspace, and a list of unspent coach invites in a parent's hands is a parent who can make herself a coach.
 - **`userOrgs/$uid`** is which clubs an account belongs to, so a second device finds them without a code. Only its owner reads it. It is a list of bookmarks, not a grant: reading a club is still `access/index`'s decision.
 - **`rsvp/$tid/$item/$pid`** is who is coming: one answer per child per game or calendar entry. A parent may write it for a child whose `guardians` list holds her uid, a coach for anyone on her team, an admin for anyone, and each answer must be stamped with the writer's own uid. It is a node of its own, not part of the game or the team, so the one thing this rule hands a parent is her own child's answer. An answer is `yes`, `no` or `maybe`, an optional note of at most 140 characters, and nothing else. Until this block is published, parents' answers are refused and the app says so.
-- **`public/$share`** stays world-readable — that is the whole point of the parent links — but writing now needs an account. That closes the hole where anyone holding a share link could overwrite the scoreboard.
+- **`public/$share`** stays world-readable — that is the whole point of the parent links — and nobody writes it: the server builds every page with admin credentials (rules version 19, SECURITY.md, SEC-10). That closes the hole where any signed-in account could make a page under an id no club had claimed, and `shareOwners` went with it.
 - **`joinCodes/$jc`** is a team link: club, team, and the names shown on it. Readable by id only, like an invite; made and retired by that team's coach or an admin, never edited. It grants nothing on its own.
 - **`claims/$ws/$tid/$uid`** is a parent's request through that link — a shirt number and optionally the child's first name. Only its author writes it, only with a live link to that team, and never with an approval in it. **`approved`** is written by that team's coach or an admin, once, in their own name; they can also delete a request to turn it down. The author and the team's coaches and admins read it.
 - **`access/index/$uid`** gains one clause for the team link: a team's coach may write it for someone whose request to *her* team she approved, with that team's id as the value. A coach still cannot let in anyone who did not ask.
@@ -471,9 +472,9 @@ state a club moving off the old open rules is in (the steps above), so you can r
 all of them — claim admin, grant and withdraw roles, check readiness, get
 refused, retire it — on data nobody cares about.
 
-A test club carries a warm banner on every screen, and **publishing is switched
-off inside it**, so a seeded game can never overwrite a `public/` node that real
-families are reading. It lives in whichever database you are pointed at, under a
+A test club carries a warm banner on every screen, and **the server never
+publishes it** (nor makes its game links), so a seeded game can never overwrite
+a `public/` node that real families are reading. It lives in whichever database you are pointed at, under a
 code beginning `test-`; delete the node in the console when you are done.
 
 What it does **not** cover is a rules change. Rules belong to a database, not to
@@ -599,7 +600,7 @@ Sessions need the `training` block's `sessions`, `booked`, `came`, `fees`, `pay`
 Three things end one:
 
 - **Rotate** — Share → *Make a new link and kill the old one*. Every link previously sent stops working immediately, the season link and every game's own link alike.
-- **Retire the club** — the mirror stops being updated, so it freezes at the last published state rather than going away.
+- **Retire the club** — the server stops updating the mirror, so it freezes at the last published state rather than going away.
 - **Delete `public/<share>` in the console** — the link goes dead.
 
 For a season that is usually what you want: text it in September, it works in May. If a family leaves mid-season, rotate and re-send to everyone else. An expiry date per link is worth adding when someone actually needs it — see ROADMAP.

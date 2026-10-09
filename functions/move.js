@@ -153,8 +153,11 @@ function layout(ws) {
    6. The rest of the old tree taken away, in batches. A failure here leaves
       a moved club with old copies on the server; asking again finishes it.
    7. The marker removed, and My calendar's feeds told the club changed. */
-const BATCH = 100;        // children per write: a player wakes at most three runs, an entry two
-const GAME_BATCH = 50;    // a game wakes up to eight (its date, kick-off, called-off, place, opponent)
+const BATCH = 100;        // children per write: a player wakes at most four runs, an entry two
+/* A game wakes one share-page run per part it has (mirror.js: up to
+   twenty-four), its calendar fields' and its follows' (one or two a goal):
+   twenty games stay well inside a thousand however long each was played. */
+const GAME_BATCH = 20;
 async function inBatches(env, base, obj, size = BATCH, value = x => x) {
   const ks = keys(obj);
   for (let i = 0; i < ks.length; i += size) {

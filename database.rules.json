@@ -462,26 +462,12 @@
     },
     "rulesVersion": {
       ".read": true,
-      ".write": "newData.isNumber() && newData.val() === 18"
+      ".write": "newData.isNumber() && newData.val() === 19"
     },
     "public": {
       "$share": {
         ".read": true,
-        ".write": "auth != null && (root.child('shareOwners/' + $share + '/' + auth.uid).exists() || !root.child('shareOwners/' + $share).exists())",
-        "team": {
-          ".validate": "newData.hasChild('name')"
-        },
-        "games": {
-          "$g": {
-            ".validate": "newData.hasChild('status')"
-          }
-        }
-      }
-    },
-    "shareOwners": {
-      "$share": {
-        ".read": "auth != null",
-        ".write": "auth != null && (!data.exists() || data.child(auth.uid).exists())"
+        ".write": false
       }
     },
     "retired": {

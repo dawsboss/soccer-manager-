@@ -301,8 +301,9 @@ const DB = {
        the dangerous one if you lock down while still in it. */
     FRESH: { teams: { t9: { id: 't9', name: 'New team' } } }
   },
-  /* Who may publish a team's mirror. public/ is world-readable by design; this
-     is what stops anyone holding a link from writing to it. */
+  /* Who used to be allowed to publish a team's mirror, still in the database
+     from before only the server wrote public/ (SECURITY.md, SEC-10). No rule
+     reads it, and nobody may read or write it. */
   shareOwners: { sh1: { adm: true, coach: true } },
   /* Practice plans, outside the workspace so the connect-time read never
      carries them to a parent's phone. The plan is coaches' and admins'; when
@@ -399,8 +400,9 @@ console.log('\n--- the calendar: under the team, so the team rule decides ---');
   writes('nor a tracker', TRK, 'workspaces/CLUB/teams/t1/attend/e1', { p1: true }, false);
   writes('nor another team\'s coach', OTHER, 'workspaces/CLUB/teams/t1/attend/e1', { p1: true }, false);
   reads('a parent reads it with the rest of the club', MUM, 'workspaces/CLUB/teams/t1/events/e1', true);
-  writes('and the published copy takes a calendar', COACH, 'public/sh1/events', { e2: { kind: 'event', title: 'Team photo', date: '2026-09-20' } }, true);
-  writes('with the whole mirror in one write too', COACH, 'public/sh1', { team: { name: 'Flight' }, games: { g1: { status: 'upcoming', called: 'cancelled', home: 'away' } }, events: { e2: { kind: 'event', date: '2026-09-20' } }, record: { w: 0 }, updated: 1 }, true);
+  // the published copy is the server's to write (functions/mirror.js), never a phone's
+  writes('the coach\'s phone cannot write the published copy\'s calendar', COACH, 'public/sh1/events', { e2: { kind: 'event', title: 'Team photo', date: '2026-09-20' } }, false);
+  writes('nor the whole mirror in one write', COACH, 'public/sh1', { team: { name: 'Flight' }, games: { g1: { status: 'upcoming', called: 'cancelled', home: 'away' } }, events: { e2: { kind: 'event', date: '2026-09-20' } }, record: { w: 0 }, updated: 1 }, false);
 }
 
 console.log('\n--- who is coming: a parent for her own child, a coach for anyone ---');
@@ -657,22 +659,24 @@ reads('readable once signed in', RANDO, 'appOwners', true);
 reads('not readable signed out', OUT, 'appOwners', false);
 writes('nobody can write it, owner included', OWNER, 'appOwners/rando', true, false);
 
-console.log('\n--- the published mirror ---');
+console.log('\n--- the published mirror: the server writes it, nobody else ---');
 reads('anyone at all can read it', OUT, 'public/sh1', true);
-writes('signed out cannot write it', OUT, 'public/sh1/games/g1/status', 'done', false);
-writes('nor can any passing account', RANDO, 'public/sh1/games/g1/status', 'done', false);
-writes('only an owner of that share', COACH, 'public/sh1/games/g1/status', 'done', true);
-console.log('  ^ the write hole AUTH.md names, closed by shareOwners/{shareId}.');
-writes('a team needs a name', COACH, 'public/sh1/team', { name: 'Flight' }, true);
-writes('a team without one is rejected', COACH, 'public/sh1/team', { logo: 'x' }, false);
-writes('a game needs a status', COACH, 'public/sh1/games/g2', { status: 'live' }, true);
-writes('a game without one is rejected', COACH, 'public/sh1/games/g2', { score: 1 }, false);
+/* SECURITY.md, SEC-10: a phone could publish under any id nobody had claimed,
+   so anyone signed in could put a made-up fixture under the club's address.
+   Now only the server writes public/ (functions/mirror.js and mycal.js, with
+   admin credentials), and the rule refuses every account, whatever it is. */
+for (const [who, a] of [['signed out', OUT], ['a passing account', RANDO], ['an account with no role', NEWB], ['a parent', MUM],
+  ['a tracker', TRK], ['the team\'s coach', COACH], ['another team\'s coach', OTHER], ['the club\'s admin', ADM], ['the app owner', OWNER]]) {
+  writes(`${who} cannot write a page`, a, 'public/sh1/games/g1/status', 'done', false);
+  writes(`— nor make one under an id nobody has`, a, 'public/brandnew', { team: { name: 'Saturday is cancelled' }, games: { g1: { status: 'upcoming' } } }, false);
+  writes(`— nor take one down`, a, 'public/sh1', null, false);
+}
+console.log('  ^ the write hole AUTH.md names, closed for good: nothing to claim, nothing to label.');
 
-console.log('\n--- claiming a share ---');
-writes('an unclaimed share can be claimed', RANDO, 'shareOwners/brandnew', { rando: true }, true);
-writes('a claimed one cannot be taken', RANDO, 'shareOwners/sh1', { rando: true }, false);
-writes('its owner may add a co-owner', COACH, 'shareOwners/sh1/newbie', true, true);
-reads('owners are not world-readable', OUT, 'shareOwners/sh1', false);
+console.log('\n--- shareOwners is gone ---');
+writes('an unclaimed share can no longer be claimed', RANDO, 'shareOwners/brandnew', { rando: true }, false);
+writes('nor a claimed one added to', COACH, 'shareOwners/sh1/newbie', true, false);
+reads('nor read', COACH, 'shareOwners/sh1', false);
 
 /* ---------------- invites ---------------- */
 
@@ -2013,6 +2017,7 @@ reads('owners are not world-readable', OUT, 'shareOwners/sh1', false);
   w('she answers for nobody', OV, O + 'rsvp/t1/g_g1/p1', { v: 'no', by: 'ov', at: NOW }, false);
   w('she changes no game', OV, O + 'matches/g1/opponent', 'Elsewhere', false);
   w('— adds no goal', OV, O + 'matches/g1/goals/x', { t: 1 }, false);
+  w('— writes no share page: only the server does (SECURITY.md, SEC-D11)', OV, 'public/sh1/games/g1/status', 'done', false);
   w('— changes no team', OV, O + 'teams/t1/name', 'Viewers FC', false);
   w('— nor a squad', OV, O + 'squad/t1/p1/name', 'Ellie', false);
   w('— nor the coach\'s notes', OV, O + 'coachNotes/t1/p1/note', 'x', false);
@@ -2110,6 +2115,9 @@ reads('owners are not world-readable', OUT, 'shareOwners/sh1', false);
     w('she does not change the squad', OH, O + 'squad/t1/p4', { id: 'p4', name: 'Nia' }, false);
     w('— nor the roster', OH, O + 'roster/t1/p1/number', '8', false);
     w('— nor the team itself', OH, O + 'teams/t1/name', 'Hawks B', false);
+    // nor a share page: only the server writes public/ (SECURITY.md, SEC-D11)
+    w('— nor a share page', OH, 'public/sh1/games/g1/status', 'done', false);
+    w('— nor one under an id nobody has', OH, 'public/helperpage', { team: { name: 'Hawks' } }, false);
     w('she adds a practice to her team\'s calendar', OH, O + 'teams/t1/events/e2', ev, true);
     w('— calls one off', OH, O + 'teams/t1/events/e1/called', 'cancelled', true);
     w('— stamped in nobody\'s name but hers', OH, O + 'teams/t1/events/e2', { ...ev, edit: { by: 'oc', at: NOW } }, false);
@@ -2250,9 +2258,11 @@ console.log(`
   - The index escalation. Being in access/index no longer lets you put anyone
     else in it — which was a grant of the whole club to anyone already holding
     any role. Self-removal survives, because that was the clause's real intent.
-  - The public write hole. public/{share} now needs shareOwners/{share}/{uid},
-    which is AUTH.md's design and step 4 of its build order. Anonymous auth is
-    not an option here and AUTH.md says why.
+  - The public write hole. Nobody writes public/{share} but the server
+    (SECURITY.md, SEC-10): \`.write: false\` for every account, admins
+    included, so a page cannot be made under an id no club has, and
+    shareOwners is gone. Anonymous auth was never an option and AUTH.md says
+    why.
 
   Still open, deliberately:
 

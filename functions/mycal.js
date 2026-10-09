@@ -3,7 +3,7 @@
    One address per person (people/{uid}/set/feed) that her phone's calendar
    subscribes to, holding everything of hers in every club she is in. Until
    now her own phone built it from what that phone held and wrote it to
-   public/{id} (myFeedDoc() and feedPublish() in app.js), so it was only as
+   public/{id} (myFeedDoc() and a feedPublish() now gone), so it was only as
    fresh as the last time one of her phones was open with a signal and had
    heard from every club, and a club's typed titles were left out of every
    club but the one open on that phone. Now the server builds it from the
@@ -30,11 +30,13 @@
    same entries.
 
    **It writes only her page.** The address must be the one in her own
-   setting, claimed by her alone in shareOwners (as setMyFeed() claims it),
-   and either not written yet or already a My calendar page (`mine`). So
-   naming a team's share link, or somebody else's feed, as her own address
-   writes nothing anywhere. The page says `by: 'server'`, which is how her
-   phones know to stop writing it themselves.
+   setting, and hers in the server's list of whose page is whose
+   (serverState/pages, which the team pages share: see hers()), and either
+   not written yet or already a My calendar page (`mine`). So naming a
+   team's share link, or somebody else's feed, as her own address writes
+   nothing anywhere. Only the server writes public/ (SECURITY.md, SEC-10):
+   her phone writes her setting, and an address she replaces or turns off is
+   taken down here (onSetting()).
 
    **When:** writing a feed on every change would rebuild fifteen families'
    feeds thirty times for a weekly practice added a week at a time. So the
@@ -212,25 +214,59 @@ async function feedItems(read, uid, now) {
   return items;
 }
 
+/* Is `id` her page? The server keeps who each public page belongs to at
+   serverState/pages/{id} (mirror.js keeps the teams' there too, so one id is
+   never both). An id with nobody's page under it is claimed for her: ids are
+   random (randId()), so naming one is making one. A page from before, which
+   her phone wrote, is hers if she alone claimed it in shareOwners (as
+   setMyFeed() used to) and it is a My calendar page. */
+const PAGES = 'serverState/pages';
+async function hers(env, read, uid, id) {
+  const want = { kind: 'mine', uid };
+  const mine = c => !!c && c.kind === 'mine' && c.uid === uid;
+  const cur = await env.get(`${PAGES}/${id}`);
+  if (cur) return mine(cur);
+  const [owners, page] = await Promise.all([read('shareOwners/' + id), read('public/' + id)]);
+  if (owners != null && !(has(owners, uid) && keys(owners).length === 1)) return false;
+  if (page != null && (typeof page !== 'object' || page.mine !== true || owners == null)) return false;
+  let got = false;
+  await env.claim(`${PAGES}/${id}`, c => { if (c == null) { got = true; return want; } got = mine(c); return undefined; });
+  return got;
+}
+
 /* Rebuild one person's feed, if she has one and it is hers to have. */
 async function publish(env, read, uid, now) {
   if (!okKey(uid)) return 'bad uid';
   const id = await read(`people/${uid}/set/feed`);
   if (!okId(id)) return 'no feed';
-  // her claim, and hers alone, as setMyFeed() makes it
-  const owners = await read('shareOwners/' + id);
-  if (!has(owners, uid) || keys(owners).length !== 1) return 'not hers';
+  if (!(await hers(env, read, uid, id))) return 'not hers';
   const page = await read('public/' + id);
   if (page && (typeof page !== 'object' || page.mine !== true)) return 'not a my calendar page';
   const items = await feedItems(read, uid, now);
   if (items === undefined) return 'unreadable';
-  const app = String((page && page.link && page.link.app) || '');
+  // the deployed address first, so a site that moves takes her feed's links with it
+  const app = String(env.site || (page && page.link && page.link.app) || '');
   const doc = { team: { name: 'My calendar' }, mine: true, by: 'server', items, updated: now };
-  if (/^https:\/\//.test(app)) doc.link = { app };
+  if (/^https:\/\/[^\s"'<>]+$/.test(app)) doc.link = { app };
   // unchanged: leave it, so a calendar that asks sees the same page
   if (page && page.by === 'server' && JSON.stringify(page.items || {}) === JSON.stringify(items)) return 'same';
   await env.set('public/' + id, doc);
   return 'written';
+}
+
+/* Her setting changed (people/{uid}/set): an address she replaced or turned
+   off is taken down at once, if it was hers. Her phone used to do it; only
+   the server writes public/ now (SECURITY.md, SEC-10). The new address is
+   built on the next run, which touchPerson() has asked for. */
+async function onSetting(env, uid, before, after) {
+  const old = before && typeof before === 'object' ? before.feed : null;
+  const now = after && typeof after === 'object' ? after.feed : null;
+  if (!okKey(uid) || !okId(old) || old === now) return 'kept';
+  const read = p => env.get(p);
+  if (!(await hers(env, read, uid, old))) return 'not hers';
+  await env.set('public/' + old, null);
+  await env.set(`${PAGES}/${old}`, null);
+  return 'taken down';
 }
 
 /* The marks. A club: something in it that is on somebody's calendar changed.
@@ -262,4 +298,4 @@ async function run(env, now = Date.now()) {
   return out;
 }
 
-module.exports = { run, publish, feedItems, clubItems, touchClub, touchPerson, clubTag, MARKS, FEED_BACK_DAYS, FEED_MAX };
+module.exports = { run, publish, onSetting, feedItems, clubItems, touchClub, touchPerson, clubTag, MARKS, FEED_BACK_DAYS, FEED_MAX };

@@ -8,6 +8,56 @@ before this point lives only in the git log.
 
 ---
 
+## Only the server publishes share pages — 2026-10-09 (build 120)
+
+Any signed-in Google account could claim an id nobody had used under
+`shareOwners`, publish a page at `public/{id}`, and send round a link to it
+on this site: "Saturday's game is cancelled, meet at…" under the club's own
+address. The rule had to let phones write `public/`, because phones
+published, and it could not tell a coach from anyone else for an id no club
+had claimed. The owner decided (2026-10-08) that phones stop publishing
+(SECURITY.md, SEC-10, now SEC-D11).
+
+- **The server writes every share page.** `functions/mirror.js` builds the
+  season link, each game's own page and the members' feed from the club,
+  with the app's game math (minutes, who is on and where, the score, shots,
+  set pieces, possession, the sub log) ported to `functions/game.js` and
+  held item for item to the app's `publicDoc()`, `fixtureDoc()`,
+  `publicGame()` and `calendarDoc()` by `test/mirror.js`.
+- **It hears the sideline as fast as the phone published, and more
+  reliably.** It wakes on each part of a game the phone writes anyway (a
+  goal, a sub, the clock, each under its own id, never the game whole), a
+  game's answers, a player's number or name, a team's name, badge and ids,
+  and its entries. Those writes are in the phone's outbox; a publish never
+  was, so a page closed with no signal used to lose it.
+- **One run at a time per team.** A sub is two writes; a queue
+  (`serverState/publish`) keeps two runs from writing a page in the wrong
+  order, and a run that finds the queue busy leaves word and goes.
+- **New games reach every page, deleted games and replaced links come
+  down**, which used to be the phone's. Whose page is whose is the server's
+  record (`serverState/pages`), so another club naming a link writes
+  nothing there and taking it away takes nothing down; a page from before
+  is taken on only if this club's admin or coach owned it.
+- **My calendar's feed is the server's alone.** The phone's fallback
+  (`feedPublish()`) is gone, and a replaced or turned-off address is taken
+  down by the server when her setting changes.
+- **The phone makes ids and nothing else.** `schedulePublish()`,
+  `publishTeam()`, `claimShare()`, `claimTeamIds()` and *Republish now* are
+  gone. The share sheet says when the server last wrote the page.
+- **Rules version 19:** `public/$share` is `.write: false` for every
+  account, admins included, and `shareOwners` is gone. An old phone's
+  publish is refused, which costs nothing: the server already wrote it.
+- **Every calendar entry links back into the app.** The server cannot
+  know where the site is, so `functions/.env` says (`SOCCER_SITE`, the
+  GitHub Pages address, committed: it is not a secret). A game in a
+  subscribed calendar opens its page, a practice the team's calendar, and
+  My calendar's entries My calendar; each still carries home or away, when
+  to arrive, kit, notes, the place and, once played, the final score.
+- The move copies games twenty at a time now, since each part of a game
+  wakes a run.
+
+---
+
 ## Training sessions and club activity reach a closed phone — 2026-10-09 (build 119)
 
 The last of the server's notification work (GOTSPORT.md, build order step

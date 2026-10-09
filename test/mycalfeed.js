@@ -108,7 +108,7 @@ const named = doc => NAMES.filter(n => JSON.stringify(doc || {}).includes(n));
     check('a booking', await marks('training/CLUB/booked/s1/p1', { st: 'asked', tid: 't1' }), true);
     check('a bookable time', await marks('training/CLUB/avail/b1/off', true), true);
     check('her clubs', await marks('userOrgs/mum/ELSE', { name: 'Elsewhere' }), true);
-    check('her own setting', await marks('people/mum/set/feed', 'mFeedMum0002'), true);
+    check('her own setting', await marks('people/mum/set/at', 2), true);
     check('a goal marks nothing', await marks(W + 'matches/g1/events/x1', { type: 'goal', t: 60 }), false);
     check('nor a sub', await marks(W + 'matches/g1/stints/s2', { pid: 'p2', start: 60 }), false);
     check('nor the clock', await marks(W + 'matches/g1/periods/0', { start: 1 }), false);
@@ -126,6 +126,15 @@ const named = doc => NAMES.filter(n => JSON.stringify(doc || {}).includes(n));
     check('her feed is written by the server', f.by, 'server');
     check('as a My calendar page', f.mine === true && f.team.name === 'My calendar', true);
     check('keeping the link back to the app her phone gave it', f.link.app, 'https://club.example/index.html');
+    // the site moves: the deployed address wins over the one her phone gave the page
+    process.env.SOCCER_SITE = 'https://moved.example/index.html';
+    await S.fire('people/mum/set/at', 3);
+    await S.tick('myCalBuild');
+    S.put('public/' + FEED + '/by', 'phone');      // so the page is rewritten though nothing in it changed
+    await S.fire('people/mum/set/at', 4);
+    await S.tick('myCalBuild');
+    check('a site that moves takes her feed\'s links with it', feedOf(S).link.app, 'https://moved.example/index.html');
+    delete process.env.SOCCER_SITE;
     deepEq('her child\'s team, her child\'s session, and the team she coaches in another club', titles(S), [
       'Flight v Northgate', 'Flight: Practice: a player in goal', 'Flight: Team photo', 'Hill U12: a player\'s birthday practice', 'Training: 1-1 session'
     ].sort());
@@ -238,8 +247,40 @@ const named = doc => NAMES.filter(n => JSON.stringify(doc || {}).includes(n));
     S.put('people/rae/set/feed', 'teamOnlyRae');
     await S.fire('people/rae/set/at', 4);
     const r2 = await S.tick('myCalBuild');
-    check('a page she alone claims that is not a My calendar page is left alone', r2.rae, 'not a my calendar page');
+    check('a page she alone claims that is not a My calendar page is left alone', r2.rae, 'not hers');
     check('untouched', S.at('public/teamOnlyRae/games') !== undefined && !S.at('public/teamOnlyRae/items'), true);
+  }
+
+  console.log('--- only the server writes public/: whose address is whose, and taking one down ---');
+  {
+    const S = server();
+    await S.fire('people/mum/set/at', 2);
+    await S.tick('myCalBuild');
+    deepEq('her page from before is taken on as hers', S.at('serverState/pages/' + FEED), { kind: 'mine', uid: 'mum' });
+    S.put('shareOwners', null);
+    await S.fire('people/mum/set/at', 3);
+    check('and kept hers with shareOwners gone', (await S.tick('myCalBuild')).mum === 'same' || feedOf(S).by === 'server', true);
+    // somebody naming her address after the server has it down as hers
+    S.put('people/rae/set', { share: false, feed: FEED });
+    await S.fire('people/rae/set/at', 5);
+    check('is refused', (await S.tick('myCalBuild')).rae, 'not hers');
+    // and turning it away again takes nothing down
+    await S.fire('people/rae/set', { share: false, at: 6 });
+    check('turning "her" address off takes nobody else\'s page down', !!feedOf(S), true);
+    // a new address: claimed for her the first time it is built
+    await S.fire('people/coach/set', { share: false, at: 7, feed: 'mFreshCoach01' });
+    check('the address she replaced is taken down at once', feedOf(S, CFEED), null);
+    await S.tick('myCalBuild');
+    check('the new one built by the server', feedOf(S, 'mFreshCoach01').by, 'server');
+    deepEq('and claimed for her', S.at('serverState/pages/mFreshCoach01'), { kind: 'mine', uid: 'coach' });
+    await S.fire('people/coach/set', { share: false, at: 8 });
+    check('turned off: taken down', feedOf(S, 'mFreshCoach01'), null);
+    check('and nobody\'s any more', S.at('serverState/pages/mFreshCoach01'), null);
+    // a team's page in the same list is never hers
+    S.put('serverState/pages/shareT1aaaa', { code: 'CLUB', kind: 'season', tid: 't1' });
+    S.put('people/rae/set', { share: false, feed: 'shareT1aaaa' });
+    await S.fire('people/rae/set/at', 9);
+    check('an id the server has down as a team\'s is not hers', (await S.tick('myCalBuild')).rae, 'not hers');
   }
   {
     const S = server(db => { db.people.mum.set.feed = '../workspaces'; });
