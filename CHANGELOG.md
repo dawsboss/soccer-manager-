@@ -8,6 +8,40 @@ before this point lives only in the git log.
 
 ---
 
+## Supporters: a player's people — 2026-10-09 (build 117)
+
+The first of AUTH.md's new kinds of people, and the one clubs ask for most:
+grandparents, an aunt, a family friend who want the games and the calendar
+on their own phone. Until now the only way in was as a parent, which gave
+them a family's say (who is going, the conversation with the coaches,
+sessions) and a family's place in the safeguarding picture. The owner
+decided anyone who can see the player may ask, and the team's coach
+approves (AUTH.md, *More kinds of people*, 1).
+
+- **Asking is a link.** Her family (from *My players* → Supporters), the
+  player herself, her coach or an admin makes a single-use invite of role
+  `supporter`, naming her by shirt number. A coach or admin asking is
+  approving: whoever opens their link is let in. A family's link lets the
+  person who opens it ask, on Squad → Parents beside the families' asks,
+  and the coach lets her in or turns her down.
+- **She does less than a parent.** The calendar, Live, scores, the recap
+  and the team's notices, her player by name and teammates by the club's
+  setting; never "going", never a conversation, never a session. Push for
+  notices, calendar changes and a followed game.
+- **Where it lives**: `squad/{tid}/{pid}/supporters/{uid}` on the child's
+  record, and a sixth lookup table, `access/teamSupporters`, which the
+  notices rule reads; on `orgs/` only, since every club is there and the
+  old tree comes out from 2026-10-23. Rules version 16. The index rule
+  refuses a supporter link's own index entry until the record names her, so
+  a family's link never lets anyone into the club by itself.
+- **The server keeps up**: the table (`accessSupportersOrgs`), who hears a
+  notice, a calendar change and whose name a goal carries, and My
+  calendar's feed (her player's team, not his sessions).
+- New suite `test/supporters.js`; supporters walked in `rules.js` (both
+  passes), `access.js`, `push.js` and `mycalfeed.js`.
+
+---
+
 ## The coach's notes are coaches' and admins' only — 2026-10-09 (build 116)
 
 A coach's note on a child ("shy in goal"), her rating, and who to pair her

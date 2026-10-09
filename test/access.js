@@ -86,7 +86,9 @@ const rest = S => canon({ ...S.at('workspaces/CLUB'), access: { ...S.at(W + 'acc
     const S = server();
     deepEq('one per place a role lives', Object.keys(S.triggers).filter(n => /^access/.test(n)).sort(), 
       // each once per tree while clubs move to orgs/ (functions/index.js, both())
-      ['accessAdmin', 'accessAdminOrgs', 'accessGuardians', 'accessGuardiansOrgs', 'accessSelf', 'accessSelfOrgs', 'accessStaff', 'accessStaffOrgs']);
+      ['accessAdmin', 'accessAdminOrgs', 'accessGuardians', 'accessGuardiansOrgs', 'accessSelf', 'accessSelfOrgs', 'accessStaff', 'accessStaffOrgs',
+        // a player's supporters live on orgs/ only (AUTH.md, *More kinds of people*, 1)
+        'accessSupportersOrgs']);
     // and who runs the club is told (adminwatch.js, test/owners.js)
     deepEq('an admin given', (await S.wouldWake(W + 'access/admins/new', true)).sort(), ['accessAdmin', 'watchAdmin']);
     deepEq('a coach given', await S.wouldWake(W + 'access/teams/t1/coaches/new', true), ['accessStaff']);
@@ -290,24 +292,71 @@ const rest = S => canon({ ...S.at('workspaces/CLUB'), access: { ...S.at(W + 'acc
     check('an invite another club owns is never deleted on this one\'s say', !!S.at('invites/inv_mum'), true);
   }
 
+  /* A player's supporters (AUTH.md, *More kinds of people*, 1): the sixth
+     table, teamSupporters, on orgs/ only. A club seeded straight onto orgs/,
+     so both passes walk the same thing. */
+  console.log('--- a supporter given and taken away (orgs/) ---');
+  {
+    const OC = 'orgs/OC/';
+    const S = makeServer({
+      orgs: { OC: {
+        access: { admins: { oa: true }, index: { oa: true, om: true, gran: 't1', aunt: true }, teams: { t1: { coaches: { ocoach: true } } },
+          teamIndex: { t1: { ocoach: 'coach' } }, teamParents: { t1: { om: 'p1' } } },
+        org: { name: 'Hillside' },
+        teams: { t1: { id: 't1', name: 'Hawks' }, t2: { id: 't2', name: 'Owls' } },
+        squad: { t1: { p1: { id: 'p1', name: 'Ella', guardians: { om: true }, supporters: { aunt: true } }, p2: { id: 'p2', name: 'Rosa' } },
+          t2: { q1: { id: 'q1', name: 'Bea' } } }
+      } },
+      userOrgs: { gran: { OC: { name: 'Hillside', at: 1 } }, aunt: { OC: { name: 'Hillside', at: 1 } } }
+    });
+    S.loadFunctions();
+    // the fake hands a club back the old tree's way in the orgs pass, access and all where it was
+    const ORGS_MODE = require('./fakebase').ORGS_MODE;
+    const raw = p => (ORGS_MODE ? p.replace(/^orgs\//, 'workspaces/') : p).split('/').reduce((c, k) => (c && typeof c === 'object' ? c[k] : undefined), S.tree);
+    const T = p => { const v = raw(OC + 'access/' + p); return v === undefined || (v && typeof v === 'object' && !Object.keys(v).length) ? null : v; };
+    // (and the roster, which wakes on any change to a child's record and finds nothing to do)
+    check('approving one wakes the supporters trigger', (await S.wouldWake(OC + 'squad/t1/p2/supporters/gran', true)).some(n => /^accessSupporters/.test(n)), true);
+    await S.fire(OC + 'squad/t1/p2/supporters/gran', true);
+    check('the coach approved her: she is in teamSupporters, naming her player', T('teamSupporters/t1/gran'), 'p2');
+    check('her index entry, the team the coach let her in to, is kept', T('index/gran'), 't1');
+    check('she is not made a family', T('teamParents/t1/gran'), null);
+    check('the family on that team is untouched', T('teamParents/t1/om'), 'p1');
+    check('nor given a staff name', raw(OC + 'names/gran') || null, null);
+    await S.fire(OC + 'squad/t1/p1/supporters/aunt', true);
+    check('a supporter of two players on two teams is in each team\'s table', [T('teamSupporters/t1/aunt'), T('teamSupporters/t2/aunt')].join(), 'p1,');
+    await S.fire(OC + 'squad/t2/q1/supporters/aunt', true);
+    check('— once the other team\'s record says so too', T('teamSupporters/t2/aunt'), 'q1');
+    await S.fire(OC + 'squad/t1/p2/supporters/gran', null);
+    check('taken away: out of the team\'s supporters', T('teamSupporters/t1/gran'), null);
+    check('out of the club, her last role gone', T('index/gran'), null);
+    check('and her bookmark with it', raw('userOrgs/gran/OC') || null, null);
+    await S.fire(OC + 'squad/t1/p1/supporters/aunt', null);
+    check('a supporter still on another team keeps the club', !!T('index/aunt'), true);
+    check('— and that team\'s table', T('teamSupporters/t2/aunt'), 'q1');
+    check('— and her bookmark', !!raw('userOrgs/aunt/OC'), true);
+    check('but not this team\'s', T('teamSupporters/t1/aunt'), null);
+  }
+
   console.log('--- the same answer the phones give ---');
   {
     const A = H.loadApp({});
     const club = CLUB();
     // a messier club: a player listing two families, a family on two players, a coach who also tracks
-    club.teams.t1.players.p3 = { id: 'p3', name: 'Ivy', guardians: { dad: true, mum: true }, self: { ivy: true } };
+    club.teams.t1.players.p3 = { id: 'p3', name: 'Ivy', guardians: { dad: true, mum: true }, self: { ivy: true }, supporters: { gran: true, dad: 'inv_x' } };
+    club.teams.t2.players.q1.supporters = { gran: true };
     club.access.teams.t2.trackers = { coach: true, trk: true };
     A.state = club; A.me = { uid: 'adm', name: 'adm' }; A.appOwners = {};
     const f = { access: club.access, teams: club.teams };
     for (const tid of ['t1', 't2']) {
       deepEq(`teamParents for ${tid}`, access.linkedWanted(f, tid, 'guardians'), A.parentsWanted(tid));
       deepEq(`teamPlayers for ${tid}`, access.linkedWanted(f, tid, 'self'), A.playersWanted(tid));
+      deepEq(`teamSupporters for ${tid}`, access.linkedWanted(f, tid, 'supporters'), A.supportersWanted(tid));
       const want = {};
       for (const u of Object.keys(club.access.teams[tid].trackers || {})) want[u] = 'tracker';
       for (const u of Object.keys(club.access.teams[tid].coaches || {})) want[u] = 'coach';
       deepEq(`teamIndex for ${tid}`, access.teamIndexWanted(f, tid), want);
     }
-    for (const u of ['adm', 'coach', 'coach2', 'trk', 'mum', 'dad', 'twice', 'ella', 'ivy', 'nobody']) {
+    for (const u of ['adm', 'coach', 'coach2', 'trk', 'mum', 'dad', 'twice', 'ella', 'ivy', 'gran', 'nobody']) {
       check(`whether ${u} has a role`, access.hasRole(f, u), A.hasAnyRole(u));
       check(`which team ${u}'s coachIndex names`, access.coachTeamOf(f, u), A.coachTeamOf(u));
     }

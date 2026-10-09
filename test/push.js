@@ -482,6 +482,47 @@ const toUid = (S, u) => S.sent().filter(m => m.data.uid === u);
     deepEq('and nothing read but whether anybody does', S.reads.filter(p => !/^serverState\/moving\//.test(p)), ['follow/CLUB/g1']);
   }
 
+  /* A player's supporters (AUTH.md, *More kinds of people*, 1): her team's
+     notices, its calendar and a game she follows, with her player by name;
+     never a family's conversation. Laid onto the club here so both passes
+     carry them; the app puts them only on orgs/. */
+  console.log('\n--- a supporter: what she hears ---');
+  const withGran = S => {
+    S.put(W + 'teams/t1/players/p2/supporters', { gran: true });
+    S.put(W + 'access/teamSupporters', { t1: { gran: 'p2', ghost: 'p1' } });
+    S.put(W + 'access/index/gran', 't1');
+    S.put('pushTokens/gran', { [tok('gran')]: { at: 1 } });
+    S.put('pushTokens/ghost', { [tok('ghost')]: { at: 1 } });
+    return S;
+  };
+  {
+    const S = withGran(server());
+    const r = (await S.fire('board/CLUB/t1/n9', { by: 'coach', byName: 'Jaz', at: 5, text: 'Kit on Saturday' })).pushNotice;
+    check('her player\'s team\'s notice reaches her', r.to.includes('gran'), true);
+    check('not someone the table names but the record does not', r.to.includes('ghost'), false);
+    S.sends.length = 0;
+    const o = (await S.fire('board/CLUB/t2/n9', { by: 'other', byName: 'Kim', at: 5, text: 'Storm only' })).pushNotice;
+    check('another team\'s does not', o.to.includes('gran'), false);
+    S.sends.length = 0;
+    const d = (await S.fire('dm/CLUB/t1/rosamum/m/x9', { by: 'coach', byName: 'Jaz', at: 5, text: 'Rosa was great' })).pushMessage;
+    check('nor the family\'s conversation with the coaches', (d.to || []).includes('gran') || toUid(S, 'gran').length > 0, false);
+  }
+  {
+    const S = withGran(calServer());
+    const r = (await S.fire(W + 'teams/t1/events/e1/called', 'cancelled')).pushEntry;
+    check('her player\'s practice called off reaches her', r.to.includes('gran'), true);
+    check('— not someone the record does not name', r.to.includes('ghost'), false);
+  }
+  {
+    const S = withGran(liveServer({ gran: { at: 1 } }));
+    S.put(W + 'access/teamSupporters/t1/gran', 'p2');
+    await S.fire(W + 'matches/g1/goals/x1', { t: 600, side: 'us', pid: 'p2', by: 'trk' });
+    check('a goal by the player she supports names her', (toUid(S, 'gran')[0] || { data: {} }).data.body, 'Rosa · Flight 1–0 Northgate');
+    S.sends.length = 0;
+    await S.fire(W + 'matches/g1/goals/x2', { t: 700, side: 'us', pid: 'p1', by: 'trk' });
+    check('a teammate\'s, roster closed, is a shirt number', (toUid(S, 'gran')[0] || { data: {} }).data.body, '#7 · Flight 2–0 Northgate');
+  }
+
   console.log('\n--- a game she follows: who hears what ---');
   {
     // a family on the team, a family on another team (every role reads a game), the tracker, and someone no longer in the club

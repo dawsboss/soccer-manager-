@@ -139,6 +139,17 @@ For an older player who asks. On her page in Squad, her coach (or an admin) taps
 
 Needs rules version 6 (`teamPlayers`, `self`, and the player clauses in `invites`, `clubInvites`, `rsvp`, `board` and `dm`). Until it's pasted, making the link is refused and says so.
 
+## Supporters
+
+A grandparent, an aunt, a family friend who wants the games and the calendar on their own phone, without being a parent. On a club on `orgs/` (every club now).
+
+- **Anyone who can see the player asks for one.** Her family, from *My players* → **Supporters**; the player herself, the same way; her coach or an admin, from her page in Squad. Each makes a single-use link, good for 14 days, one per person. It names her by shirt number, never by name.
+- **The team's coach approves it.** Someone who opens a family's link signs in and is put on Squad → **Parents** → *Supporters asking*, beside the families' asks, saying which player and who asked for them; the coach taps *Let in as supporter* or *Turn down*. A link the coach or an admin made is approved already, so whoever opens it is let in.
+- **A supporter does less than a parent.** The calendar, Live, the scores, the recap and the team's notices, her player by name (with *you support her* under My players) and teammates by shirt number unless the club shows the whole roster. She doesn't say who is going, has no conversation with the coaches, and books no sessions. Notifications: the team's notices, calendar changes and a game she follows, like a family. Her phone reads her player's record and nobody else's, and nothing a coach wrote about her.
+- **Taking it away** is *Remove* beside her on the player's page in Squad, or on People. The family keeps theirs. *Withdraw* kills a link nobody has used yet.
+
+Needs rules version 16 (`supporters` on the child's record, `access/teamSupporters`, and the supporter clauses in `invites`, `claims` and `board`), on `orgs/` only. Until it's pasted, making the link is refused and says so.
+
 ## Messages
 
 The speech bubble in the top bar, for anyone with a role in a club that has an admin. The bell beside it is **Notifications**: what is new (changes to your games and practices in any club, and club activity), never somebody's message. Each has its own count.

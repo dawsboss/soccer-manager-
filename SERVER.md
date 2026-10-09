@@ -122,10 +122,12 @@ does the bookkeeping, not that the phone works offline first.
   below, for a club whose functions aren't deployed and for building a
   missing table whole.
 - **Before the server, and still:** `access/index`, `access/teamIndex`, `access/teamParents`,
-  `access/teamPlayers` and `access/coachIndex` are rebuilt from where a uid
+  `access/teamPlayers`, `access/teamSupporters` (build 117, `orgs/` only) and
+  `access/coachIndex` are rebuilt from where a uid
   appears, by admins' and coaches' phones on every connect (`syncIndex()`,
   `syncTeamIndex()`, `syncTeamParents()`, `syncTeamPlayers()`,
-  `syncCoachIndex()`). Until one of them connects after a
+  `syncTeamSupporters()`, `syncCoachIndex()`). The server keeps
+  `teamSupporters` too (`accessSupportersOrgs`, `test/access.js`). Until one of them connects after a
   change, the table is stale: a parent unlinked by an older phone keeps reading
   that team's notices (rules.js, gap 5). The rules carry *bridges* for clubs
   whose tables don't exist yet.
@@ -222,7 +224,8 @@ does the bookkeeping, not that the phone works offline first.
 - **Now:** joining by invite is several writes from the invitee's own phone in
   the order the rules need (spend the invite, take the role, add herself to the
   index) (`redeemInvite()`); approving a team-link request is the coach writing
-  the approval before the index entry (`approveClaim()`); a squad of parent
+  the approval before the index entry (`approveClaim()`), and a supporter's
+  ask the same way (`approveSupporter()`, build 117); a squad of parent
   links is made one invite at a time (`inviteSquad()`), and so are the
   invites for the emails an imported roster carries (`inviteImported()`),
   whose sign-in emails Firebase sends one call at a time from the admin's phone

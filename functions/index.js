@@ -203,6 +203,14 @@ both('accessGuardians', '{code}/{squad}/{pid}/guardians', onValueWritten, event 
 both('accessSelf', '{code}/{squad}/{pid}/self', onValueWritten, event => Promise.all([
   access.onSelf(writerOf(event), event.params, event.data.before.val(), event.data.after.val()),
   markRoles(event, [...peopleIn(event.data.before.val()), ...peopleIn(event.data.after.val())])]).then(r => r[0]));
+/* A player's supporters (AUTH.md, *More kinds of people*, 1), on orgs/ only:
+   the old tree has no rule that writes one, so there is nothing to wake. */
+exports.accessSupportersOrgs = onValueWritten('/orgs/{code}/squad/{tid}/{pid}/supporters', quiet(event => {
+  const e = { ...event, params: { ...event.params, tree: 'orgs' } };
+  return Promise.all([
+    access.onSupporters(writerOf(e), e.params, event.data.before.val(), event.data.after.val()),
+    markRoles(e, [...peopleIn(event.data.before.val()), ...peopleIn(event.data.after.val())])]).then(r => r[0]);
+}));
 
 /* The two parts only orgs/ has (access.js): staff names, so a family can
    see who her coach is without reading anyone's email, and the roster, the

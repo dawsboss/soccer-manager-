@@ -14,7 +14,7 @@
    from what she says.** userOrgs/{uid} only says which clubs to look in, and
    she can write it. In each club her items are those of the teams she
    coaches or tracks (access/teams), the teams a child of hers is on (a
-   player whose guardians or self list her), the sessions she runs, the
+   player whose guardians or self list her) or a player she supports, the sessions she runs, the
    sessions a child of hers is booked, asked or waiting for, and her own
    bookable times: the same as myCalItems(). A club she has no role in gives
    nothing, and the moment a role is taken away the next build leaves that
@@ -128,8 +128,11 @@ async function clubItems(read, uid, code) {
   for (const [tid, ta] of Object.entries(acc.teams || {}))
     if (ts[tid] && (has(ta && ta.coaches, uid) || has(ta && ta.trackers, uid))) mine.add(tid);
   for (const [tid, t] of Object.entries(ts))
-    for (const [pid, p] of Object.entries((t && t.players) || {}))
+    for (const [pid, p] of Object.entries((t && t.players) || {})) {
       if (p && (has(p.guardians, uid) || has(p.self, uid))) { mine.add(tid); kids.add(pid); }
+      // a supporter's player's team is hers too; her sessions are her family's business, not her supporter's
+      else if (p && has(p.supporters, uid)) mine.add(tid);
+    }
 
   const out = [];
   const add = (key, doc) => out.push(['k' + clubTag(code + '|' + key), doc]);

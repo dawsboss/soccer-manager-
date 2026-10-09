@@ -2,7 +2,7 @@
    Static app. Data lives in localStorage, and mirrors to Firebase Realtime
    Database when a config + workspace code are present. */
 
-const BUILD = '116';
+const BUILD = '117';
 const BUILT = '2026-10-09';
 /* The version of database.rules.json this app was written against. The rules
    carry the same number in rulesVersion's .write, which accepts that number
@@ -11,7 +11,7 @@ const BUILT = '2026-10-09';
    never pasted look exactly like a coach with no signal: "saved on this phone
    only", one feature at a time. test/rules.js holds the two numbers together
    and fails when the rules change without this going up. */
-const RULES_VERSION = 15;
+const RULES_VERSION = 16;
 /* index.html carries the build it was published with. If this file is newer, the
    browser handed us a cached page — the exact failure that has eaten hours. */
 const pageBuild = () => {
@@ -368,7 +368,7 @@ function forgetOthersChildren() {
   for (const [tid, t] of Object.entries(state.teams || {})) {
     if (!t || typeof t !== 'object') continue;
     // a tracker keeps her own team's squad, but not the coach's notes on it (SEC-12)
-    t.players = Object.fromEntries(Object.entries(t.players || {}).filter(([, p]) => isTracker(tid, u) || isMine(p)).map(([pid, p]) => [pid, withoutCoach(p)]));
+    t.players = Object.fromEntries(Object.entries(t.players || {}).filter(([, p]) => isTracker(tid, u) || isMine(p) || iSupport(p)).map(([pid, p]) => [pid, withoutCoach(p)]));
   }
   delete (state.access || {}).log;
   if (state.access && state.access.members) state.access.members = Object.fromEntries(Object.entries(state.access.members).map(([k, m]) => [k, { name: (m && m.name) || '' }]));
@@ -900,7 +900,8 @@ async function initSync() {
       const all = admin || !!(u && (a.coachIndex || {})[u]);
       const staffTeams = u ? Object.keys(a.teamIndex || {}).filter(t => ((a.teamIndex || {})[t] || {})[u]).sort() : [];
       const fam = {};
-      for (const tbl of ['teamParents', 'teamPlayers'])
+      // her own children, herself, or the player she supports: each a record she reads by path
+      for (const tbl of ['teamParents', 'teamPlayers', 'teamSupporters'])
         for (const [t, row] of Object.entries(a[tbl] || {})) if (u && row && typeof row[u] === 'string') (fam[t] = fam[t] || []).push(row[u]);
       return { admin, all, staffTeams, fam };
     }
@@ -1487,6 +1488,21 @@ const isMe = p => !!(me && p && (p.self || {})[me.uid]);
 // her own child, or herself: the one player a family account sees by name
 const isMine = p => !!(me && p && ((p.guardians || {})[me.uid] || (p.self || {})[me.uid]));
 const famRole = r => r === 'parent' || r === 'player';
+/* A player's supporters (AUTH.md, *More kinds of people*, 1): a grandparent,
+   an aunt, a family friend. Under the player, not beside her parents:
+   teams/{tid}/players/{pid}/supporters/{uid}, on orgs/ only. Kept apart from
+   guardians and self for the same reason self is kept apart from guardians:
+   what a family may do (say who is going, message the coaches, book a
+   session) is decided again for her, never inherited by accident. She reads
+   the team, and her player by name; she answers, messages and books nothing. */
+function isSupporterOn(tid, uid) {
+  if (!uid) return false;
+  const t = state.teams[tid];
+  return Object.values((t && t.players) || {}).some(p => ((p.supporters || {})[uid]));
+}
+const iSupport = p => !!(me && p && (p.supporters || {})[me.uid]);
+// the roles that read a team without working on it: a family's, and a supporter's
+const readerRole = r => famRole(r) || r === 'supporter';
 function roleIn(tid, uid) {
   if (!uid) return null;
   if (me && me.uid === uid && isOwner()) return 'owner';
@@ -1495,6 +1511,7 @@ function roleIn(tid, uid) {
   if (isTracker(tid, uid)) return 'tracker';
   if (isGuardian(tid, uid)) return 'parent';
   if (isSelfOn(tid, uid)) return 'player';
+  if (isSupporterOn(tid, uid)) return 'supporter';
   return null;
 }
 /* AUTH.md's "What parents actually see": a parent gets her own child by name
@@ -1511,17 +1528,17 @@ const rosterOpen = () => ((acc().org || {}).rosterOpen) === true;
 function namesNarrowed(tid) {
   if (!gated() || !me || canAdmin() || rosterOpen()) return false;
   if (teams().some(x => isCoach(x.id, me.uid) || isTracker(x.id, me.uid))) return false;
-  return famRole(roleIn(tid, me.uid));
+  return readerRole(roleIn(tid, me.uid));
 }
 /* A player as this viewer may see her: the name, or "#7" (a player with no
    number is "A teammate"). Unescaped, like p.name; callers escape. */
 function shownName(t, p) {
   if (!p) return 'Unknown';
-  if (!t || !namesNarrowed(t.id) || isMine(p)) return p.name || 'Unknown';
+  if (!t || !namesNarrowed(t.id) || isMine(p) || iSupport(p)) return p.name || 'Unknown';
   const n = p.number == null ? '' : String(p.number).trim();
   return n ? '#' + n : 'A teammate';
 }
-const ROLE_LABEL = { owner: 'App owner', admin: 'Org admin', coach: 'Coach', tracker: 'Tracker', parent: 'Parent', player: 'Player', viewer: 'Viewer' };
+const ROLE_LABEL = { owner: 'App owner', admin: 'Org admin', coach: 'Coach', tracker: 'Tracker', parent: 'Parent', player: 'Player', supporter: 'Supporter', viewer: 'Viewer' };
 
 /* Whoever looks after the app itself. Read from the database root, never from
    this file — a personal email committed to a public repo gets scraped, sticks
@@ -1543,7 +1560,7 @@ function hasAnyRole(uid) {
   for (const ta of Object.values(a.teams || {}))
     if ((ta.coaches || {})[uid] || (ta.trackers || {})[uid]) return true;
   for (const t of Object.values(state.teams || {}))
-    if (Object.values(t.players || {}).some(p => (p.guardians || {})[uid] || (p.self || {})[uid])) return true;
+    if (Object.values(t.players || {}).some(p => (p.guardians || {})[uid] || (p.self || {})[uid] || (p.supporters || {})[uid])) return true;
   return false;
 }
 function logAccess(act, targetUid, extra) {
@@ -1679,7 +1696,7 @@ function syncTeamParents(tid) {
     if (!want[u]) { delDeep(state, `access/teamParents/${tid}/${u}`); remoteDel(`access/teamParents/${tid}/${u}`); changed = true; }
   if (changed) saveLocal();
 }
-function syncAllTeamParents() { for (const tid of Object.keys(state.teams || {})) { syncTeamParents(tid); syncTeamPlayers(tid); } }
+function syncAllTeamParents() { for (const tid of Object.keys(state.teams || {})) { syncTeamParents(tid); syncTeamPlayers(tid); syncTeamSupporters(tid); } }
 
 /* The same one-hop answer for a player with her own sign-in:
      access/teamPlayers/{teamId}/{uid} = the player id whose `self` lists her
@@ -1707,6 +1724,35 @@ function syncTeamPlayers(tid) {
     if (!now[u] || !holds(u, now[u])) { quiet(`access/teamPlayers/${tid}/${u}`, pid); changed = true; }
   for (const u of Object.keys(now))
     if (!want[u]) { delDeep(state, `access/teamPlayers/${tid}/${u}`); remoteDel(`access/teamPlayers/${tid}/${u}`); changed = true; }
+  if (changed) saveLocal();
+}
+
+/* The sixth, for a player's supporters (AUTH.md, *More kinds of people*, 1):
+     access/teamSupporters/{teamId}/{uid} = the player id whose `supporters` lists her
+   It is what lets her read the team's notices; every other part of the club
+   she reads through the index, and her player's record through the record
+   itself. Like teamPlayers it carries no bridge, so its first entry closes
+   nothing; her own phone writes hers when she lets herself in with a link a
+   coach made, and the coach's when she approves an ask. Rebuilt on an
+   admin's or that team's coach's connect, like the others, and by the server. */
+function supportersWanted(tid) {
+  const want = {};
+  for (const p of players(state.teams[tid]))
+    for (const u of Object.keys(p.supporters || {})) if (!want[u]) want[u] = p.id;
+  return want;
+}
+// SERVER.md: a lookup table rebuilt by phones on connect; a server trigger would keep it true at once.
+function syncTeamSupporters(tid) {
+  if (!tid || !me || !state.teams[tid] || !onOrgs()) return;
+  if (!isAdmin(me.uid) && !isCoach(tid, me.uid)) return;
+  const want = supportersWanted(tid), now = (acc().teamSupporters || {})[tid] || {};
+  const team = state.teams[tid];
+  const holds = (u, pid) => !!((((team.players || {})[pid] || {}).supporters || {})[u]);
+  let changed = false;
+  for (const [u, pid] of Object.entries(want))
+    if (!now[u] || !holds(u, now[u])) { quiet(`access/teamSupporters/${tid}/${u}`, pid); changed = true; }
+  for (const u of Object.keys(now))
+    if (!want[u]) { delDeep(state, `access/teamSupporters/${tid}/${u}`); remoteDel(`access/teamSupporters/${tid}/${u}`); changed = true; }
   if (changed) saveLocal();
 }
 
@@ -1906,7 +1952,7 @@ function myTeams() {
   if (canAdmin()) return all;
   const coachAnywhere = all.some(t => isCoach(t.id, me.uid));
   if (coachAnywhere) return all;
-  const mine = all.filter(t => isTracker(t.id, me.uid) || isGuardian(t.id, me.uid) || isSelfOn(t.id, me.uid));
+  const mine = all.filter(t => isTracker(t.id, me.uid) || isGuardian(t.id, me.uid) || isSelfOn(t.id, me.uid) || isSupporterOn(t.id, me.uid));
   return mine;
 }
 /* Every player this account is a guardian of, across every team it can see.
@@ -1953,8 +1999,20 @@ function elsewhereKids() {
   kidsCache = { uid: me.uid, ver: mirrorVer, day, at: now, here: wsCode(), list };
   return list;
 }
-const anyPlayers = () => myPlayers().length > 0 || elsewhereKids().length > 0;
-const allKidNames = () => [...myPlayers().map(x => x.p.name), ...elsewhereKids().map(x => x.name)];
+/* The players this account supports here (AUTH.md, *More kinds of people*,
+   1): beside myPlayers(), never in it, because everything that reads
+   myPlayers() (who is going, sessions, a child's own calendar chip) is a
+   family's to do. My players lists both, a supporter's lighter. */
+function mySupported() {
+  if (!me) return [];
+  const out = [];
+  for (const t of teams())
+    for (const p of Object.values(t.players || {}))
+      if (iSupport(p) && !isMine(p)) out.push({ t, p });
+  return out.sort((a, b) => (a.p.name || '').localeCompare(b.p.name || ''));
+}
+const anyPlayers = () => myPlayers().length > 0 || elsewhereKids().length > 0 || mySupported().length > 0;
+const allKidNames = () => [...myPlayers().map(x => x.p.name), ...mySupported().map(x => x.p.name), ...elsewhereKids().map(x => x.name)];
 
 function canEditTeam(tid) {
   if (!gated()) return true;                  // a fresh club has to be set up somehow
@@ -1983,7 +2041,7 @@ function myRole() {
 const restricted = () => {
   if (isOwner()) return null;
   const r = myRole();
-  if (r === 'tracker' || r === 'parent' || r === 'player') return r;
+  if (r === 'tracker' || readerRole(r)) return r;
   return me && !canEditTeam(ui.teamId) ? 'viewer' : null;
 };
 
@@ -2164,6 +2222,7 @@ function maybeLoadInvite() {
 function inviteWhat(v) {
   const role = INVITE_ROLES[v.role] || v.role;
   if (v.role === 'player') return `a player, #${esc(v.playerNo || '?')} on <b>${esc(v.teamName || 'a team')}</b>, with your own sign-in`;
+  if (v.role === 'supporter') return `a supporter of ${v.playerNo ? '#' + esc(v.playerNo) : 'a player'} on <b>${esc(v.teamName || 'a team')}</b>: the calendar, the games as they happen and the team's notices${v.approved ? '' : '. A coach of the team says yes before you see anything'}`;
   return v.role === 'parent'
     ? `a parent of ${v.playerNo ? '#' + esc(v.playerNo) : 'a player'} on <b>${esc(v.teamName || 'a team')}</b>`
     : `${role.toLowerCase()} of <b>${esc(v.teamName || 'a team')}</b>`;
@@ -2221,17 +2280,38 @@ async function redeemInvite() {
   try {
     if (!v.used) await put('invites/' + id + '/used', { by: who, at });
     await put(W('access/members/' + who), { name: me.name || '', email: me.email || '', at });
-    if (v.role === 'parent') await put(W(`teams/${v.team}/players/${v.player}/guardians/${who}`), id);
-    else if (v.role === 'player') await put(W(`teams/${v.team}/players/${v.player}/self/${who}`), id);
-    else await put(W(`access/teams/${v.team}/${v.role === 'coach' ? 'coaches' : 'trackers'}/${who}`), id);
-    await put(W('access/index/' + who), id);
+    /* A supporter her family or the player asked for (AUTH.md, *More kinds of
+       people*, 1) is let in by the team's coach, not by the link: the link
+       only lets her ask, on the coach's list beside the families' asks. One a
+       coach or admin made is approved already, and lets her in like any invite. */
+    if (v.role === 'supporter' && !v.approved) {
+      await put(`claims/${ws}/${v.team}/${who}`, {
+        invite: id, player: v.player, name: me.name || '', email: me.email || '', at,
+        ...(v.byName ? { askedBy: String(v.byName).slice(0, 80) } : {}), ...(v.playerNo ? { shirt: String(v.playerNo).slice(0, 40) } : {})
+      });
+    } else {
+      if (v.role === 'parent') await put(W(`teams/${v.team}/players/${v.player}/guardians/${who}`), id);
+      else if (v.role === 'player') await put(W(`teams/${v.team}/players/${v.player}/self/${who}`), id);
+      else if (v.role === 'supporter') await put(W(`teams/${v.team}/players/${v.player}/supporters/${who}`), id);
+      else await put(W(`access/teams/${v.team}/${v.role === 'coach' ? 'coaches' : 'trackers'}/${who}`), id);
+      await put(W('access/index/' + who), id);
+    }
   } catch (e) {
     invite.status = 'error';
     invite.err = /permission|denied/i.test((e && e.code) || '') ? 'The database refused it — the invite may have expired or been withdrawn'
       : ((e && e.code) || String(e));
     render(); return;
   }
+  if (v.role === 'supporter' && !v.approved) {
+    // asked, not in: the link is spent, and the coach's answer comes to the waiting screen
+    await soft(mod.remove(mod.ref(db, 'invites/' + id)));
+    dropInvite();
+    join = { code: 'sup:' + id, status: 'idle', sent: true, err: null, hidden: false,
+      doc: { ws, team: v.team, teamName: v.teamName || '', clubName: v.clubName || '', supporter: true } };
+    holdJoin(); maybeLoadJoin(); render(); return;
+  }
   if (v.role === 'player') await soft(put(W(`access/teamPlayers/${v.team}/${who}`), v.player));
+  else if (v.role === 'supporter') await soft(put(W(`access/teamSupporters/${v.team}/${who}`), v.player));
   else if (v.role !== 'parent') await soft(put(W(`access/teamIndex/${v.team}/${who}`), v.role));
   /* Refused while the table does not exist yet, which is fine: the rules fall
      back to the club-wide index until an admin's device creates it, and that
@@ -2692,7 +2772,7 @@ function captureJoin() {
       history.replaceState(null, '', location.pathname + (rest ? '?' + rest : '') + (location.hash || ''));
     }
     const held = JSON.parse(localStorage.getItem(LS_JOIN) || 'null');
-    join = held && held.code ? { code: held.code, status: 'idle', doc: held.doc || null, err: null, hidden: !!held.hidden } : null;
+    join = held && held.code ? { code: held.code, status: 'idle', doc: held.doc || null, err: null, hidden: !!held.hidden, sent: !!(held.doc && held.doc.supporter) } : null;
   } catch (e) { join = null; }
 }
 function holdJoin() {
@@ -2713,20 +2793,23 @@ function maybeLoadJoin() {
   const code = join.code, who = me.uid;
   join.status = 'loading';
   const { db, mod } = rtdb;
+  const watchClaim = v => mod.onValue(mod.ref(db, `claims/${v.ws}/${v.team}/${who}`), cs => {
+    if (!join || join.code !== code || !me || me.uid !== who) return;
+    const c = cs.val();
+    if (c && c.approved) { joinApproved(v); return; }
+    if (c) { join.status = 'sent'; join.sent = true; }
+    else join.status = join.sent ? 'declined' : 'ready';
+    render();
+  }, () => { join.status = v.supporter ? 'sent' : 'ready'; render(); });
+  // a supporter's ask has no team link behind it: the spent invite was the link
+  if (join.doc && join.doc.supporter) { watchClaim(join.doc); render(); return; }
   mod.onValue(mod.ref(db, 'joinCodes/' + code), s => {
     if (!join || join.code !== code || !me || me.uid !== who) return;
     const v = s.val();
     if (!v) { join.status = join.doc && join.sent ? join.status : 'gone'; render(); return; }
     join.doc = v; holdJoin();
     if (wsCode() === v.ws && isGuardian(v.team, who)) { dropJoin(); toast(`You're already in ${v.teamName || 'that team'}`); render(); return; }
-    mod.onValue(mod.ref(db, `claims/${v.ws}/${v.team}/${who}`), cs => {
-      if (!join || join.code !== code || !me || me.uid !== who) return;
-      const c = cs.val();
-      if (c && c.approved) { joinApproved(v); return; }
-      if (c) { join.status = 'sent'; join.sent = true; }
-      else join.status = join.sent ? 'declined' : 'ready';
-      render();
-    }, () => { join.status = 'ready'; render(); });
+    watchClaim(v);
   }, err => {
     if (!join || join.code !== code) return;
     join.status = 'error'; join.err = (err && err.code) || String(err);
@@ -2789,6 +2872,12 @@ function joinScreen() {
   if (!me) return box('Join your child’s team',
     'Sign in first. Use the account you want to keep — it is the one the coaches will know you by.',
     `<button class="btn" data-act="signinsheet">Sign in</button>${later}`);
+  // a supporter's ask was just written: waiting is what she is doing, while the watch starts
+  if ((s === 'sent' || ((s === 'idle' || s === 'loading') && join.sent)) && v.supporter) return box(`Waiting for a coach of ${tm}`,
+    `You have asked to follow a player at ${club} as a supporter. Once one of the team's coaches says yes, this opens the club by itself — you can close it meanwhile.`,
+    `<button class="btn quiet" data-act="joincancel">Cancel the request</button>${later}`);
+  if (s === 'declined' && v.supporter) return box('Not approved',
+    `A coach of ${tm} did not approve it. If that is a mistake, ask the family for a new link.`, `<button class="btn quiet" data-act="joindrop">OK</button>`);
   if (s === 'idle' || s === 'loading') return box('Opening the team link…', 'This needs a signal. It will carry on by itself once there is one.', later);
   if (s === 'working') return box('Sending…', `Asking the coaches of ${tm}.`, '');
   if (s === 'gone') return box('That team link no longer works',
@@ -2856,6 +2945,8 @@ function watchClaims() {
 }
 const pendingClaims = tid => Object.entries(claimsSeen[tid] || {}).filter(([, c]) => c && !c.approved)
   .map(([u, c]) => ({ uid: u, ...c })).sort((a, b) => (a.at || 0) - (b.at || 0));
+// an ask made with a supporter link names its invite; a family's names a shirt number
+const isSupAsk = c => !!(c && c.invite);
 // the shirt numbers a request names, matched to the squad; never a guess beyond that
 function claimMatches(t, c) {
   const nums = String(c.shirt || '').split(/[^0-9A-Za-z]+/).map(x => x.trim().toLowerCase()).filter(Boolean);
@@ -2887,6 +2978,34 @@ async function approveClaim(tid, u, pids) {
   saveLocal(); render();
   toast(`${c.name || c.email || 'They'} can open the team now`);
 }
+/* A supporter's ask approved (AUTH.md, *More kinds of people*, 1): the same
+   order as a family's — the approval first, which the index rule looks for —
+   then her place on the child's record, the index entry naming this team,
+   and the team's supporters table, which the rule holds to the record. */
+// SERVER.md: approval written before the index entry, for the rules; a server would do it in one call.
+async function approveSupporter(tid, u) {
+  const t = state.teams[tid];
+  if (!t || !mayGrant(tid)) { toast('Club admins and that team’s coaches only'); return; }
+  const c = (claimsSeen[tid] || {})[u];
+  const p = c && isSupAsk(c) && (t.players || {})[c.player];
+  if (!p) { toast(c ? 'That player is no longer on the squad' : 'That request has gone'); return; }
+  if (!fb || !me) { toast('Needs a connection to the database'); return; }
+  const at = nowMs();
+  try {
+    await fb.set(fb.ref(fb.db, `claims/${wsCode()}/${tid}/${u}/approved`), { by: me.uid, at, supporter: p.id });
+  } catch (e) {
+    toast(/permission|denied/i.test((e && e.code) || '') ? 'The database refused it — are the newest rules from README published?' : 'Not approved — no connection');
+    return;
+  }
+  setDeep(claimsSeen, `${tid}/${u}/approved`, { by: me.uid, at });
+  if (!((p.supporters || {})[u])) commit(`teams/${tid}/players/${p.id}/supporters/${u}`, true);
+  if (!(acc().index || {})[u]) quiet(`access/index/${u}`, tid);
+  if (!(acc().members || {})[u]) quiet(`access/members/${u}`, { name: c.name || '', email: c.email || '', at: c.at || at });
+  syncTeamSupporters(tid);
+  logAccess('approved as supporter', u, { team: tid, teamName: t.name || null, player: p.name });
+  saveLocal(); render();
+  toast(`${c.name || c.email || 'They'} can follow ${firstName(p)} now`);
+}
 function declineClaim(tid, u) {
   if (!mayGrant(tid)) { toast('Club admins and that team’s coaches only'); return; }
   if (!confirm('Turn this request down? They can ask again.')) return;
@@ -2917,10 +3036,21 @@ function joinCard(t) {
       <div class="row"><button class="btn sm" data-act="claimok" data-tid="${t.id}" data-uid="${esc(c.uid)}"${chosen.length ? '' : ' disabled'}>Let in as parent${chosen.length ? ' of ' + chosen.map(pid => esc(t.players[pid].name || '')).join(' & ') : ''}</button>
         <button class="btn quiet sm" data-act="claimno" data-tid="${t.id}" data-uid="${esc(c.uid)}">Turn down</button></div></div>`;
   };
+  const sreq = c => {
+    const p = (t.players || {})[c.player];
+    return `<div class="claim">
+      <div><b>${esc(c.name || c.email || 'Someone')}</b>${c.email && c.name ? ` <span class="muted">${esc(c.email)}</span>` : ''}</div>
+      <div class="rowsub">Asks to follow ${p ? esc(p.name || '') : 'a player no longer on the squad'} as a supporter${c.askedBy ? ' · asked for by ' + esc(c.askedBy) : ''} · ${esc(whenShort(c.at))}</div>
+      <div class="row" style="margin-top:8px"><button class="btn sm" data-act="supok" data-tid="${t.id}" data-uid="${esc(c.uid)}"${p ? '' : ' disabled'}>Let in as supporter</button>
+        <button class="btn quiet sm" data-act="claimno" data-tid="${t.id}" data-uid="${esc(c.uid)}">Turn down</button></div></div>`;
+  };
+  const fams = reqs.filter(c => !isSupAsk(c)), sups = reqs.filter(isSupAsk);
   const without = players(t).filter(p => needsParent(t, p)).length;
   return `<div class="card">
     <div class="spread"><h2>Parents</h2>${reqs.length ? `<span class="pill asking">${reqs.length} asking</span>` : ''}</div>
-    ${reqs.length ? `<div class="claims">${reqs.map(req).join('')}</div>` : ''}
+    ${fams.length ? `<div class="claims">${fams.map(req).join('')}</div>` : ''}
+    ${sups.length ? `<p class="lbl" style="margin-top:8px">Supporters asking</p><div class="claims">${sups.map(sreq).join('')}</div>
+      <p class="muted" style="margin:0 0 8px">A supporter sees the calendar, the games and the team's notices, and that player by name. She doesn't say who is going, message you or book sessions.</p>` : ''}
     <p class="muted" style="margin:8px 0">${link ? 'Post this link in the team chat. Parents sign in, type their child’s shirt number, and wait for you to let them in here.' : 'One link for the whole team: parents sign in, type their child’s shirt number, and you let them in here with a tap.'}</p>
     ${link ? `<div class="codebox">${esc(link)}</div>
       <div class="row" style="margin-bottom:8px"><button class="btn sm" data-act="copylink" data-v="${esc(link)}">Copy link</button>
@@ -2996,7 +3126,8 @@ const isStaff = tid => !!me && (canAdmin() || isCoach(tid, me.uid));
    and that team's notices are not hers. */
 function msgTeams() {
   if (!me || !fb || !wsCode() || needsSignIn() || !anyAdmins()) return [];
-  return teams().filter(t => isStaff(t.id) || isTracker(t.id, me.uid) || isGuardian(t.id, me.uid) || isSelfOn(t.id, me.uid));
+  // a supporter reads her player's team's notices; she has no conversation of her own (famThreads())
+  return teams().filter(t => isStaff(t.id) || isTracker(t.id, me.uid) || isGuardian(t.id, me.uid) || isSelfOn(t.id, me.uid) || isSupporterOn(t.id, me.uid));
 }
 const staffTeams = () => msgTeams().filter(t => isStaff(t.id));
 // a coach whose own child is in her squad talks to herself as staff, not as a family
@@ -6443,8 +6574,8 @@ function render() {
   if (ui.view === 'sessions' && !shut && (wsRead || !fbConfig().apiKey) && !canSessions()) ui.view = 'club';
   // a parent has no business reading the rest of the squad's names or the team's set-up
   const sb = document.querySelector('#tabs [data-view="roster"]');
-  if (sb) sb.hidden = famRole(lim);
-  if (ui.view === 'roster' && famRole(lim)) ui.view = anyPlayers() ? 'mine' : 'season';
+  if (sb) sb.hidden = readerRole(lim);
+  if (ui.view === 'roster' && readerRole(lim)) ui.view = anyPlayers() ? 'mine' : 'season';
   /* Practice is a coach's and an admin's, on any team: the library isn't
      about one team, and a parent or a tracker never gets the tab at all. */
   const train = canTrain();
@@ -6459,7 +6590,7 @@ function render() {
   /* Live is the one game screen everybody gets. Where a role lands when its
      tab is not allowed is its working screen, not the first in the list: a
      tracker is there to log, a coach to make subs. */
-  const allowed = lim === 'tracker' ? ['live', 'track', 'stats', 'recap'] : famRole(lim) || lim === 'viewer' ? ['live', 'stats', 'recap'] : ['live', 'subs', 'track', 'stats', 'recap', 'pitch', 'plan'];
+  const allowed = lim === 'tracker' ? ['live', 'track', 'stats', 'recap'] : readerRole(lim) || lim === 'viewer' ? ['live', 'stats', 'recap'] : ['live', 'subs', 'track', 'stats', 'recap', 'pitch', 'plan'];
   // the recap is the story of a finished game; before full time there is no story yet
   const recapOk = !!(inGame && match() && gameStatus(match()) === 'done');
   /* Once the coach has pressed End game, the screens for running one (Subs,
@@ -6497,7 +6628,7 @@ function render() {
     ? `<div class="rolebar">Viewing <b>${teamLabel(team())}</b> from another team in the club. You can read it, not change it.</div>` : '';
   // "you can read, not change" is about the team; on Messages a parent writes, and on the Calendar she answers
   const roleNote = lim && lim !== 'viewer' && v !== 'inbox' && v !== 'thread' && v !== 'notes'
-    ? `<div class="rolebar">Signed in as <b>${esc(ROLE_LABEL[lim])}</b> — ${lim === 'tracker' ? "you can log events and make the coach's planned subs when they are due, but not run the clock or make other subs" : lim === 'parent' && v === 'sessions' ? 'you can ask for a place for your child, and withdraw her' : lim === 'parent' ? 'you can read, and say from the Calendar whether your child is coming' : lim === 'player' ? 'you can read, and say from the Calendar whether you are coming' : 'you can read, not change'}.</div>`
+    ? `<div class="rolebar">Signed in as <b>${esc(ROLE_LABEL[lim])}</b> — ${lim === 'tracker' ? "you can log events and make the coach's planned subs when they are due, but not run the clock or make other subs" : lim === 'parent' && v === 'sessions' ? 'you can ask for a place for your child, and withdraw her' : lim === 'parent' ? 'you can read, and say from the Calendar whether your child is coming' : lim === 'player' ? 'you can read, and say from the Calendar whether you are coming' : lim === 'supporter' ? 'you follow the calendar, the games and the notices; the family answers and talks to the coaches' : 'you can read, not change'}.</div>`
     : '';
   /* Never let a rehearsal pass for the real thing. Both facts are worth saying
      out loud: a test club holds invented data and publishes nothing, and a
@@ -9993,14 +10124,15 @@ function sheetFormations() {
 }
 /* --- my players: the same page whatever else you are here --- */
 function viewMine() {
-  const list = myPlayers(), away = elsewhereKids();
+  // the players she supports come after her own, and their cards say less (supporter: true)
+  const list = [...myPlayers(), ...mySupported().map(x => ({ ...x, sup: true }))], away = elsewhereKids();
   if (!list.length && !away.length) return `<div class="empty"><strong>Nobody linked yet</strong>
     A coach links your account to your player, and she shows up here.</div>`;
 
   const justMe = list.length && list.every(x => isMe(x.p)) && !away.length;
   return `<div class="stack">
     <h2>${justMe ? 'My season' : 'My players'}</h2>
-    ${list.map(({ t, p }) => {
+    ${list.map(({ t, p, sup }) => {
     const ms = teamMatches(t.id);
     const played = ms.reduce((a, m) => a + playedSec(m, p.id), 0);
     const planned = ms.reduce((a, m) => a + plannedSec(m, p.id), 0);
@@ -10019,7 +10151,7 @@ function viewMine() {
         <div class="row">
           ${p.photo ? `<img class="crest" src="${esc(p.photo)}" alt="">` : `<span class="crest blank">${esc(p.number ?? '')}</span>`}
           <span><b style="font-size:18px">${esc(p.name)}</b>
-            <span class="rowsub">${esc(p.number ? '#' + p.number + ' · ' : '')}${teamLabel(t)}</span></span>
+            <span class="rowsub">${esc(p.number ? '#' + p.number + ' · ' : '')}${teamLabel(t)}${sup ? ' · you support her' : ''}</span></span>
         </div>
         <span class="pmins"><span data-live="smins" data-tid="${t.id}" data-pid="${p.id}">${mins(played)}</span><small> min</small>
           <span data-live="sdiff" data-tid="${t.id}" data-pid="${p.id}">${diffTag(played, planned)}</span></span>
@@ -10038,13 +10170,14 @@ function viewMine() {
         ${next ? `<button class="prow" data-act="calitem" data-k="${next.kind}" data-tid="${esc(t.id)}" data-id="${esc(next.id)}" style="grid-template-columns:1fr auto">
           <span><span class="pname">Next — ${esc(next.title)}</span>
             <span class="rowsub">${[relDay(next.date) || dayLabel(next.date), niceTime(next.start), next.venue,
-      rsvpOpen(next) ? (r => r ? RSVP[r.v] : 'Not answered yet')(rsvpOf(t.id, rsvpKey(next), p.id)) : ''].filter(Boolean).map(esc).join(' · ')}</span></span>
+      !sup && rsvpOpen(next) ? (r => r ? RSVP[r.v] : 'Not answered yet')(rsvpOf(t.id, rsvpKey(next), p.id)) : ''].filter(Boolean).map(esc).join(' · ')}</span></span>
           <span class="tag ${next.kind}">${CAL_KIND[next.kind]}</span></button>` : ''}
         ${(ns => ns ? `<button class="prow" data-act="sessopen" data-id="${esc(ns.id)}" style="grid-template-columns:1fr auto">
           <span><span class="pname">Next session — ${esc(sessTitle(ns))}</span>
             <span class="rowsub">${[relDay(ns.date) || dayLabel(ns.date), niceTime(ns.start), sessPlace(ns), 'with ' + ns.coachName, BOOK[bookOf(ns.id, p.id).st]].filter(Boolean).map(esc).join(' · ')}</span></span>
-          <span class="tag session">Training</span></button>` : '')(sessAll().find(s => !sessPast(s) && !s.called && (b => b && b.st !== 'out' && b.st !== 'no')(bookOf(s.id, p.id))))}
-      </div></div>`;
+          <span class="tag session">Training</span></button>` : '')(!sup && sessAll().find(s => !sessPast(s) && !s.called && (b => b && b.st !== 'out' && b.st !== 'no')(bookOf(s.id, p.id))))}
+      </div>
+      ${!sup && onOrgs() && fbConfig().apiKey ? `<button class="btn quiet wide" data-act="supsheet" data-tid="${t.id}" data-pid="${p.id}" style="margin-top:10px">${isMe(p) ? 'Your supporters' : 'Supporters'}${Object.keys(p.supporters || {}).length ? ' (' + Object.keys(p.supporters).length + ')' : ''}</button>` : ''}</div>`;
   }).join('')}
     ${away.map(k => `<div class="card">
       <div class="row"><span class="crest blank">${esc((k.name || '?').slice(0, 1))}</span>
@@ -10536,7 +10669,7 @@ function sheetDrillRefused(why) {
   const body = {
     club: `<h3>This drill is for the club's coaches</h3>
       <p>It's on the club's own shelf, which only the club's coaches and admins can open${me ? '' : ', signed in'}. ${!me ? 'If you coach here, sign in with the account the club knows and open the link again.'
-        : famRole(lim) ? `You're signed in as a ${lim}, so it stays closed to you.` : lim === 'tracker' ? "You're signed in as a tracker, so it stays closed to you."
+        : readerRole(lim) ? `You're signed in as a ${lim}, so it stays closed to you.` : lim === 'tracker' ? "You're signed in as a tracker, so it stays closed to you."
         : "Your account isn't a coach or an admin here, so it stays closed to you."} The drills that come with the app open for anyone.</p>`,
     mine: `<h3>That drill is private</h3><p>It's on a coach's own shelf, which only she can open. Ask her to share it with the club and send the club's copy.</p>`,
     gone: `<h3>That drill isn't here</h3><p>It isn't in this club's drills any more. Whoever shared it may have removed it.</p>`,
@@ -14753,7 +14886,7 @@ function myRoleTeams() {
   return out;
 }
 function myCalTeams() {
-  const out = new Set([...myRoleTeams(), ...myPlayers().map(k => k.t.id)]);
+  const out = new Set([...myRoleTeams(), ...myPlayers().map(k => k.t.id), ...mySupported().map(k => k.t.id)]);
   /* A club before anyone signs in has nobody's calendar yet, so it shows the
      club's. An admin who works no team of her own used to get the club's too,
      which made a personal calendar the club's planning screen; that is All
@@ -14885,8 +15018,9 @@ function mirrorSlim(part, v) {
   const mine = u => me && u === me.uid;
   if (part === 'teams') return Object.fromEntries(Object.entries(v).filter(([, t]) => t && typeof t === 'object').map(([id, t]) => [id, {
     id, name: t.name || '', events: t.events || {},
-    players: Object.fromEntries(Object.entries(t.players || {}).filter(([, p]) => p && ((p.guardians && Object.keys(p.guardians).some(mine)) || (p.self && Object.keys(p.self).some(mine))))
-      .map(([pid, p]) => [pid, { id: pid, name: p.name || '', ...((p.guardians || {})[me.uid] ? { guardians: { [me.uid]: true } } : { self: { [me.uid]: true } }) }]))
+    players: Object.fromEntries(Object.entries(t.players || {}).filter(([, p]) => p && ['guardians', 'self', 'supporters'].some(k => p[k] && Object.keys(p[k]).some(mine)))
+      // which of the three she is, and nothing else about who else is
+      .map(([pid, p]) => [pid, { id: pid, name: p.name || '', [['guardians', 'self', 'supporters'].find(k => (p[k] || {})[me.uid])]: { [me.uid]: true } }]))
   }]));
   if (part === 'matches') return Object.fromEntries(Object.entries(v).filter(([, m]) => m && typeof m === 'object').map(([id, m]) => [id,
     Object.fromEntries(['id', 'teamId', 'opponent', 'date', 'kickoff', 'venue', 'called', 'home', 'periodCount', 'periodMinutes', 'currentHalf', 'ended', 'periods', 'createdAt']
@@ -14955,7 +15089,7 @@ function watchMirrorOrgs(code, offs, take) {
   };
   const watchKids = () => {
     const u = me && me.uid, a = part.access || {};
-    for (const tbl of ['teamParents', 'teamPlayers']) for (const [tid, row] of Object.entries(a[tbl] || {})) {
+    for (const tbl of ['teamParents', 'teamPlayers', 'teamSupporters']) for (const [tid, row] of Object.entries(a[tbl] || {})) {
       const pid = row && u && row[u];
       if (typeof pid !== 'string' || watching.has(tid + '/' + pid)) continue;
       watching.add(tid + '/' + pid);
@@ -17253,6 +17387,8 @@ function rolesHeld(uid, scope) {
       if ((p.guardians || {})[uid]) out.push({ x, r: 'parent', p });
     for (const p of Object.values(x.players || {}))
       if ((p.self || {})[uid]) out.push({ x, r: 'player', p });
+    for (const p of Object.values(x.players || {}))
+      if ((p.supporters || {})[uid]) out.push({ x, r: 'supporter', p });
   }
   return out;
 }
@@ -17263,7 +17399,7 @@ function rolesHeld(uid, scope) {
 function roleTags(uid, scope) {
   const by = {};
   for (const v of rolesHeld(uid, scope)) (by[v.r] = by[v.r] || new Set()).add(v.x.name || 'Team');
-  return ['coach', 'tracker', 'parent', 'player'].filter(r => by[r]).map(r => {
+  return ['coach', 'tracker', 'parent', 'player', 'supporter'].filter(r => by[r]).map(r => {
     const names = [...by[r]];
     const what = names.length > 2 ? `${names.length} teams` : names.join(', ');
     return `<span class="tag">${esc(ROLE_LABEL[r])}<i>${esc(what)}</i></span>`;
@@ -17314,8 +17450,8 @@ function sheetPersonRoles(uid) {
     <p class="lbl">${isAdmin(uid) ? 'Admin covers every team. Also' : 'Roles'}</p>
     ${held.length ? held.map(v => `<div class="opt spread">
       <span><b>${esc(ROLE_LABEL[v.r])}</b>${v.p ? ` of ${pname(v.p)}` : ''}<span class="rowsub">${esc(v.x.name || 'Team')}</span></span>
-      ${v.r === 'parent' || v.r === 'player'
-      ? `<button class="btn quiet sm" data-act="${v.r === 'player' ? 'prunself' : 'prunguard'}" data-uid="${uid}" data-tid="${v.x.id}" data-pid="${v.p.id}">Remove</button>`
+      ${v.r === 'parent' || v.r === 'player' || v.r === 'supporter'
+      ? `<button class="btn quiet sm" data-act="${{ player: 'prunself', supporter: 'prunsup', parent: 'prunguard' }[v.r]}" data-uid="${uid}" data-tid="${v.x.id}" data-pid="${v.p.id}">Remove</button>`
       : `<button class="btn quiet sm" data-act="setrolet" data-uid="${uid}" data-tid="${v.x.id}" data-r="${v.r}">Remove</button>`}</div>`).join('')
       : `<p class="muted" style="margin-top:0">${isAdmin(uid) ? 'Nothing else.' : 'None yet — waiting to be let in. Until they have a role they see nothing of the club.'}</p>`}
 
@@ -17687,6 +17823,89 @@ function selfCard(t, p) {
     <p class="muted" style="margin-top:0">Only when she or her family asks. With it she sees what her parents see — her own minutes, the calendar, the games — says whether she is coming, and reads and writes in her family's conversation with the coaches, where her parents see every word. She never has a conversation with a coach on her own.</p>`;
 }
 
+/* A player's supporters (AUTH.md, *More kinds of people*, 1). Anyone who can
+   see her may ask for one: her family, she herself, her coach, an admin. The
+   ask is a single-use link, an invite of role `supporter`. From her coach or
+   an admin it is approved already; from her family it lets the person who
+   opens it ask, and the coach says yes on Squad. Its id is the secret, so it
+   is never written into the club: this phone keeps the links it made, to show
+   again and to withdraw. */
+const LS_SUPINV = 'sm.supinv.v1';
+function supInvites() {
+  if (!me) return {};
+  try { const v = JSON.parse(localStorage.getItem(LS_SUPINV + ':' + clubKey() + ':' + me.uid) || '{}'); return v && typeof v === 'object' ? v : {}; } catch (e) { return {}; }
+}
+function keepSupInvites(v) { if (me) keepStored(LS_SUPINV + ':' + clubKey() + ':' + me.uid, JSON.stringify(v)); }
+// the links still open for one player, newest first
+const supLinks = pid => Object.entries(supInvites()[pid] || {}).filter(([, v]) => v && (v.expiresAt || 0) > nowMs())
+  .map(([id, v]) => ({ id, ...v })).sort((a, b) => (b.at || 0) - (a.at || 0));
+// who may ask for one: the rules' list, short of the player's own supporters
+const maySupportAsk = (tid, p) => !!p && (mayGrant(tid) || isMine(p));
+async function makeSupporterLink(tid, pid) {
+  const t = state.teams[tid], p = t && (t.players || {})[pid];
+  if (!maySupportAsk(tid, p)) { toast('Her family, her coach or an admin asks for a supporter'); return false; }
+  if (!onOrgs()) { toast('Supporters need the club moved first (Admin → Move)'); return false; }
+  if (!fb || !rtdb || !me) { toast(me ? 'Needs a connection to the database' : 'Sign in first'); return false; }
+  const id = secretId(), at = nowMs();
+  // never the child's name: whoever holds the link reads it before anyone has said yes
+  const doc = {
+    ws: wsCode(), team: tid, teamName: t.name || '', role: 'supporter', player: pid,
+    clubName: (acc().org || {}).name || '', by: me.uid, byName: me.name || '', at, expiresAt: at + INVITE_DAYS * 864e5,
+    ...(p.number != null && String(p.number).trim() ? { playerNo: String(p.number) } : {}),
+    // a coach or an admin asking is approving (the owner, 2026-10-09)
+    ...(mayGrant(tid) ? { approved: true } : {})
+  };
+  try { await fb.set(fb.ref(fb.db, 'invites/' + id), doc); } catch (e) {
+    toast(/permission|denied/i.test((e && e.code) || '') ? 'The database refused it — are the newest rules from README published?' : 'Could not make the link — no connection');
+    return false;
+  }
+  const all = supInvites();
+  all[pid] = { ...(all[pid] || {}), [id]: { at, expiresAt: doc.expiresAt } };
+  keepSupInvites(all);
+  logAccess('made a supporter link', null, { team: tid, teamName: t.name || null, player: p.name || null });
+  return true;
+}
+function dropSupLink(pid, id) {
+  const all = supInvites();
+  if (!(all[pid] || {})[id]) return;
+  forgetInvite(id);
+  delete all[pid][id];
+  if (!Object.keys(all[pid]).length) delete all[pid];
+  keepSupInvites(all);
+}
+function supCard(t, p, from) {
+  const staff = mayGrant(t.id);
+  const accounts = Object.keys(p.supporters || {});
+  const named = u => { const m = (acc().members || {})[u] || {}; return m.name || m.email || 'A supporter'; };
+  const canShare = typeof navigator !== 'undefined' && typeof navigator.share === 'function';
+  const links = supLinks(p.id);
+  return `<p class="lbl">Supporters</p>
+    ${staff ? accounts.map(u => `<div class="prow" style="grid-template-columns:1fr auto"><span><span class="pname">${esc(named(u))}</span>
+      <span class="rowsub">Follows ${esc(firstName(p))}</span></span>
+      <button class="btn quiet sm" data-act="supdrop" data-tid="${t.id}" data-pid="${p.id}" data-uid="${esc(u)}" data-from="${from}">Remove</button></div>`).join('')
+      : accounts.length ? `<p style="margin:0 0 8px">${accounts.length} ${accounts.length === 1 ? 'supporter follows' : 'supporters follow'} ${esc(firstName(p))}. Her coach can take one away.</p>` : ''}
+    ${links.map(v => `<div class="codebox">${esc(inviteLink(v.id))}</div>
+      <div class="row" style="margin-bottom:8px"><button class="btn sm" data-act="copylink" data-v="${esc(inviteLink(v.id))}">Copy</button>
+        ${canShare ? `<button class="btn quiet sm" data-act="inviteshare" data-v="${esc(inviteLink(v.id))}">Share</button>` : ''}
+        <button class="btn quiet sm" data-act="supinvdrop" data-tid="${t.id}" data-pid="${p.id}" data-id="${esc(v.id)}" data-from="${from}">Withdraw</button>
+        <span class="muted">works once, until ${esc(new Date(v.expiresAt).toLocaleDateString())}</span></div>`).join('')}
+    <button class="btn quiet wide" data-act="supinvite" data-tid="${t.id}" data-pid="${p.id}" data-from="${from}" style="margin-bottom:8px">${links.length ? 'Another supporter link' : 'Make a supporter link'}</button>
+    <p class="muted" style="margin-top:0">For a grandparent, an aunt, a family friend. A supporter sees the calendar, the games as they happen, the scores and the team's notices, and ${esc(firstName(p))} by name; she doesn't say who is going, message the coaches or book sessions. One link per person: it works once, for ${INVITE_DAYS} days. ${staff ? 'You made it, so whoever opens it is let in.' : 'A coach of the team says yes before they see anything.'}</p>`;
+}
+function sheetSupporters(tid, pid) {
+  const t = state.teams[tid], p = t && (t.players || {})[pid];
+  if (!maySupportAsk(tid, p)) return;
+  openSheet(`<h3>${esc(isMe(p) ? 'Your supporters' : 'Supporters of ' + firstName(p))}</h3>
+    ${supCard(t, p, 'sheet')}
+    <button class="btn wide" data-act="closesheet">Done</button>`);
+}
+// after a change, back to whichever sheet it was made from
+function supRedraw(tid, pid, from) {
+  const p = ((state.teams[tid] || {}).players || {})[pid];
+  if (!p) { closeSheet(); return; }
+  if (from === 'player') { ui.teamId = tid; sheetPlayer(p); } else sheetSupporters(tid, pid);
+}
+
 function sheetPlayer(p) {
   p = migrate(p);
   const t = team();
@@ -17741,7 +17960,8 @@ function sheetPlayer(p) {
       ${members().map(u => `<button class="chip" type="button" data-act="toggleguard" data-pid="${p.id}" data-uid="${u.uid}" aria-pressed="${!!((p.guardians || {})[u.uid])}">${esc(u.name || u.email || 'Unnamed')}</button>`).join('') || '<span class="muted">Nobody has signed in yet.</span>'}
     </div>
     <p class="muted" style="margin-top:-8px">A guardian can read this team and sees her under My players. Linking someone here is what makes them a parent.</p>
-    ${selfCard(t, p)}` : ''}
+    ${selfCard(t, p)}
+    ${onOrgs() ? supCard(t, p, 'player') : ''}` : ''}
 
     <p class="lbl">Plays better alongside</p>
     <div class="chips" style="margin-bottom:14px">
@@ -19286,6 +19506,31 @@ function onAct(e) {
     approveClaim(d.tid, d.uid, pk); return;
   }
   if (a === 'claimno') { declineClaim(d.tid, d.uid); return; }
+  /* Supporters (AUTH.md, *More kinds of people*, 1). Each checked here as
+     well as by what was drawn: who may ask (her family, her coach, an admin)
+     and who may let in or take away (her coach, an admin). */
+  if (a === 'supok') { approveSupporter(d.tid, d.uid); return; }
+  if (a === 'supsheet' || a === 'supinvite' || a === 'supinvdrop') {
+    const t2 = state.teams[d.tid], p = t2 && (t2.players || {})[d.pid];
+    if (!maySupportAsk(d.tid, p)) { toast('Her family, her coach or an admin asks for a supporter'); return; }
+    if (a === 'supsheet') { sheetSupporters(d.tid, d.pid); return; }
+    if (a === 'supinvdrop') { dropSupLink(d.pid, d.id); toast('Withdrawn — the link no longer works'); supRedraw(d.tid, d.pid, d.from); return; }
+    makeSupporterLink(d.tid, d.pid).then(ok => { if (ok) supRedraw(d.tid, d.pid, d.from); });
+    return;
+  }
+  if (a === 'supdrop' || a === 'prunsup') {
+    if (!mayGrant(d.tid)) { toast('Club admins and that team\u2019s coaches only'); return; }
+    const t2 = state.teams[d.tid], p = t2 && (t2.players || {})[d.pid];
+    const on = p && (p.supporters || {})[d.uid];
+    if (!on) return;
+    if (a === 'supdrop' && !confirm(`Stop them following ${firstName(p)}? Her family keeps theirs.`)) return;
+    forgetInvite(on);
+    drop(`teams/${d.tid}/players/${d.pid}/supporters/${d.uid}`);
+    logAccess('removed supporter', d.uid, { team: d.tid, teamName: t2.name || null, player: p.name });
+    syncIndex(d.uid); syncTeamSupporters(d.tid);
+    if (a === 'prunsup') sheetPersonRoles(d.uid); else supRedraw(d.tid, d.pid, d.from);
+    return;
+  }
   if (a === 'claimadmin') {
     if (!me) { toast('Sign in first'); return; }
     if (anyAdmins()) { toast('Someone already claimed it'); return; }
@@ -19890,7 +20135,7 @@ function onAct(e) {
   }
   if (a === 'delplayer') {
     if (!confirm('Remove this player from the roster?')) return;
-    drop(`teams/${t.id}/players/${d.pid}`); syncTeamParents(t.id); syncTeamPlayers(t.id); closeSheet(); return;
+    drop(`teams/${t.id}/players/${d.pid}`); syncTeamParents(t.id); syncTeamPlayers(t.id); syncTeamSupporters(t.id); closeSheet(); return;
   }
 
   if (a === 'newmatch') {

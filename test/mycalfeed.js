@@ -284,7 +284,9 @@ const named = doc => NAMES.filter(n => JSON.stringify(doc || {}).includes(n));
     const A = H.loadApp({ storage: { 'sm.workspace': 'CLUB' } });
     const club = CLUB();
     A.state = club; A.sess = { ...A.sess, ...TRAINING() }; A.appOwners = {};
-    for (const who of ['mum', 'coach']) {
+    // a supporter (AUTH.md, *More kinds of people*, 1) of a child booked into a session: the team is hers, the session is not
+    club.teams.t1.players.p2.supporters = { gran: true };
+    for (const who of ['mum', 'coach', 'gran']) {
       A.me = { uid: who, name: who };
       const phone = A.myFeedDoc().items;
       const read = p => {
@@ -295,6 +297,7 @@ const named = doc => NAMES.filter(n => JSON.stringify(doc || {}).includes(n));
       };
       const server = Object.fromEntries(await mycal.clubItems(read, who, 'CLUB'));
       deepEq(`${who}: the same item ids`, Object.keys(server).sort(), Object.keys(phone).sort());
+      if (who === 'gran') check('gran: her player\'s team, not his sessions', Object.keys(server).length === 3 && !Object.values(server).some(x => /Rondos/.test(x.title)), true);
       for (const k of Object.keys(phone)) {
         const a = { ...phone[k] }, b = { ...server[k] };
         deepEq(`${who}: ${a.title}`, b, a);

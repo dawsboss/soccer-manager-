@@ -475,6 +475,8 @@ The care here: three rules today ask only whether a uid is *in* `teamIndex` for 
 | Club viewer | `access/viewers` | none | the roster's names for her, every team's reads | role, every team read-only, People | `access.js` (index) |
 | Guest | `access/guests` | none | one game or entry, with `until` | invite with an end time, the guest's one screen | index kept in step with `until` |
 
+**Built** (build 117, rules version 16), as written above, on `orgs/` only, with these details. The ask is a single-use invite of role `supporter` naming the player by shirt number; one a coach or admin makes carries `approved: true` (the rules let only them write it), and whoever opens it writes herself onto the record, then the index, then `teamSupporters`, as a player's own sign-in does. One a family or the player makes lets whoever opens it write an ask at `claims/{code}/{tid}/{uid}` naming the spent invite and the player, on the same list the team link's asks go to; the coach approves it (`approved`, then `supporters/{uid}`, then the index entry naming the team, then `teamSupporters`). The index rule refuses a supporter invite's own index entry until the record names her, so a family's link never lets anyone into the club on its own. The family sees how many supporters her child has, not who: she cannot read members. Her calendar feed carries her player's team but not his sessions. Not built: a family taking a supporter away (the coach and admins do), and a supporter stepping down from her own phone (the rules allow it; there is no button yet).
+
 ### The coach's notes come off the child's record first
 
 Decided 2026-10-09: the coach's notes on a child (`note`, `rating`, `pairs`, `avoid`) are **coaches' and admins' only**. Today they sit on the child's record, `squad/{tid}/{pid}`, which her family and the player herself read on `orgs/`, and which every new role above would read through it. So before any of them, those four fields move to a node of their own, `coachNotes/{tid}/{pid}` under the club, read and written by coaches (any team, as the squad is read today) and admins; not trackers, not helpers, not families, not the player. The move is the server's (as `moveClub` was), the phone writes there through `clubPath()`, and `squad/` refuses those fields afterwards so nothing puts them back. It is also SECURITY.md, SEC-12: it closes a read families have today, and families are not on the app yet.
@@ -486,7 +488,7 @@ Decided 2026-10-09: the coach's notes on a child (`note`, `rating`, `pairs`, `av
 **Only one thing has to come first: the coach's notes, above.** Every new role reads some part of a child's record or a squad, and none of them may see the notes. After that the four don't depend on each other, so the order is what the club needs first. Recommended:
 
 1. **The coach's notes.** *Built (build 116, rules version 15).*
-2. **Supporters**: the most asked for, and they reuse the coach's approval list families already go through.
+2. **Supporters**: the most asked for, and they reuse the coach's approval list families already go through. *Built (build 117, rules version 16).*
 3. **Team helpers.**
 4. **Club viewers**: the smallest, any time.
 5. **Guests.**

@@ -2053,6 +2053,119 @@ reads('owners are not world-readable', OUT, 'shareOwners/sh1', false);
   w('the log is still append-only, in her own name', OC, O + 'log/l2', { at: 2, act: 'x', by: 'oc' }, true);
   w('— never edited', OA, O + 'log/l1', { at: 1, act: 'nothing happened', by: 'oa' }, false);
 
+  /* AUTH.md, *More kinds of people*, 1 (the owner, 2026-10-09): a player's
+     supporters. Anyone who can see her asks with a link (an invite of role
+     `supporter`); the team's coach approves, and a coach or admin making the
+     link has approved already. On orgs/ only: squad/{tid}/{pid}/supporters/
+     {uid} on her record, and the sixth lookup table, teamSupporters. */
+  console.log('\n--- a club on orgs/: supporters, reading ---');
+  const savedInv = DB.invites, savedClaims = DB.claims, savedBoard = DB.board, savedDm = DB.dm;
+  ORGC.squad.t1.p1.supporters = { osup: 'isup0' };
+  ORGC.access.teamSupporters = { t1: { osup: 'p1' } };
+  ORGC.access.index.osup = 'isup0';
+  DB.board = { ORGC: { t1: { n1: { by: 'oc', at: 1, text: 'Kit on Saturday' } }, t2: { n2: { by: 'oc2', at: 1, text: 'Owls only' } } } };
+  DB.dm = { ORGC: { t1: { om: { m: { x: { by: 'om', at: 1, text: 'Ella is ill' } } } } } };
+  const OSUP = { uid: 'osup' }, GRAN = { uid: 'gran' };
+  for (const part of ['teams', 'matches', 'roster', 'names', 'org', 'rsvp'])
+    r('a supporter reads ' + part, OSUP, O + part, true);
+  r('— her player\'s record', OSUP, O + 'squad/t1/p1', true);
+  r('— not a teammate\'s', OSUP, O + 'squad/t1/p2', false);
+  r('— nor the squad', OSUP, O + 'squad/t1', false);
+  r('— nor the coach\'s notes', OSUP, O + 'coachNotes/t1/p1', false);
+  r('— nor the members and their emails', OSUP, O + 'members', false);
+  r('— nor the access log', OSUP, O + 'log', false);
+  r('— her team\'s notices', OSUP, 'board/ORGC/t1', true);
+  r('— not another team\'s', OSUP, 'board/ORGC/t2', false);
+  r('— not the family\'s conversation with the coaches', OSUP, 'dm/ORGC/t1/om', false);
+  w('she ticks a notice as seen', OSUP, 'board/ORGC/t1/n1/seen/osup', NOW, true);
+
+  console.log('\n--- a club on orgs/: supporters do less than a parent ---');
+  w('she says nobody is going', OSUP, O + 'rsvp/t1/g_g1/p1', { v: 'yes', by: 'osup', at: NOW }, false);
+  w('she writes in no family\'s conversation', OSUP, 'dm/ORGC/t1/om/m/y', { by: 'osup', at: NOW, text: 'hi' }, false);
+  w('— nor starts her own', OSUP, 'dm/ORGC/t1/osup/m/y', { by: 'osup', at: NOW, text: 'hi' }, false);
+  w('she changes nothing on her player', OSUP, O + 'squad/t1/p1/name', 'Ellie', false);
+  w('she follows a game, as anyone in the club', OSUP, 'follow/ORGC/g1/osup', { at: NOW }, true);
+  w('she can step down herself', OSUP, O + 'squad/t1/p1/supporters/osup', null, true);
+  w('— but put nobody else there', OSUP, O + 'squad/t1/p1/supporters/gran', 'isup0', false);
+
+  console.log('\n--- a club on orgs/: asking for a supporter ---');
+  DB.invites = {};
+  const sup = (by, x) => ({ ws: 'ORGC', team: 't1', role: 'supporter', player: 'p1', by, at: NOW, expiresAt: NOW + 864e5, ...(x || {}) });
+  w('her parent makes a supporter link', OM, 'invites/s1', sup('om'), true);
+  w('— not one that says it is approved', OM, 'invites/s1', sup('om', { approved: true }), false);
+  w('— not for another child', OM, 'invites/s1', sup('om', { player: 'p2' }), false);
+  w('— not a parent link', OM, 'invites/s1', sup('om', { role: 'parent' }), false);
+  w('— not in someone else\'s name', OM, 'invites/s1', sup('oc'), false);
+  w('the player makes one for herself', OSELF, 'invites/s1', sup('oself', { player: 'p3' }), true);
+  w('her coach makes one, approved', OC, 'invites/s1', sup('oc', { approved: true }), true);
+  w('the admin too', OA, 'invites/s1', sup('oa', { approved: true }), true);
+  w('not another team\'s coach', OC2, 'invites/s1', sup('oc2', { approved: true }), false);
+  w('— nor unapproved', OC2, 'invites/s1', sup('oc2'), false);
+  w('not the tracker', OT, 'invites/s1', sup('ot'), false);
+  w('not a supporter, for another supporter', OSUP, 'invites/s1', sup('osup'), false);
+  w('not for a player who is not there', OC, 'invites/s1', sup('oc', { player: 'p9', approved: true }), false);
+  w('a supporter link must name a player', OA, 'invites/s1', { ...sup('oa'), player: null }, false);
+  DB.invites = { s1: sup('om'), s2: sup('om', { player: 'p2' }) };
+  w('her parent withdraws the link she made', OM, 'invites/s1', null, true);
+  w('— not one somebody else made', OSELF, 'invites/s1', null, false);
+
+  console.log('\n--- a club on orgs/: a supporter her family asked for ---');
+  DB.invites = { sf: sup('om', { used: { by: 'gran', at: NOW } }), sold: sup('om', { expiresAt: NOW - 1, used: { by: 'gran', at: NOW - 2 } }) };
+  w('she does not let herself in', GRAN, O + 'squad/t1/p1/supporters/gran', 'sf', false);
+  w('— nor index herself', GRAN, O + 'access/index/gran', 'sf', false);
+  const ask = x => ({ invite: 'sf', player: 'p1', name: 'Gran', email: 'gran@example.com', at: NOW, ...(x || {}) });
+  w('she asks the coach, with the link she spent', GRAN, 'claims/ORGC/t1/gran', ask(), true);
+  w('— not naming another child', GRAN, 'claims/ORGC/t1/gran', ask({ player: 'p2' }), false);
+  w('— not on another team', GRAN, 'claims/ORGC/t2/gran', ask(), false);
+  w('— not approved already', GRAN, 'claims/ORGC/t1/gran', ask({ approved: { by: 'gran', at: NOW } }), false);
+  w('— not with a link somebody else spent', RANDO, 'claims/ORGC/t1/rando', ask(), false);
+  w('— nor one that names no link', GRAN, 'claims/ORGC/t1/gran', ask({ invite: null }), false);
+  DB.claims = { ORGC: { t1: { gran: ask() } } };
+  r('the team\'s coach sees the ask', OC, 'claims/ORGC/t1', true);
+  r('her parent does not', OM, 'claims/ORGC/t1', false);
+  w('the coach approves it', OC, 'claims/ORGC/t1/gran/approved', { by: 'oc', at: NOW, supporter: 'p1' }, true);
+  w('her parent does not', OM, 'claims/ORGC/t1/gran/approved', { by: 'om', at: NOW }, false);
+  w('the coach puts her on the child\'s record', OC, O + 'squad/t1/p1/supporters/gran', true, true);
+  w('not the tracker', OT, O + 'squad/t1/p1/supporters/gran', true, false);
+  w('— before approving, the coach cannot index her', OC, O + 'access/index/gran', 't1', false);
+  DB.claims.ORGC.t1.gran.approved = { by: 'oc', at: NOW, supporter: 'p1' };
+  ORGC.squad.t1.p1.supporters.gran = true;
+  w('— after, she can', OC, O + 'access/index/gran', 't1', true);
+  w('the coach puts her in the table', OC, O + 'access/teamSupporters/t1/gran', 'p1', true);
+  w('— naming the child she supports, no other', OC, O + 'access/teamSupporters/t1/gran', 'p2', false);
+  delete ORGC.squad.t1.p1.supporters.gran;
+
+  console.log('\n--- a club on orgs/: a supporter the coach asked for ---');
+  DB.invites = { sc: sup('oc', { approved: true, used: { by: 'gran', at: NOW } }), sold: sup('oc', { approved: true, expiresAt: NOW - 1, used: { by: 'gran', at: NOW - 2 } }),
+    sx: sup('oc', { approved: true, player: 'p2', used: { by: 'gran', at: NOW } }) };
+  w('she lets herself in with it', GRAN, O + 'squad/t1/p1/supporters/gran', 'sc', true);
+  w('— not on another child', GRAN, O + 'squad/t1/p2/supporters/gran', 'sc', false);
+  w('— not once it has expired', GRAN, O + 'squad/t1/p1/supporters/gran', 'sold', false);
+  w('— not with somebody else\'s', RANDO, O + 'squad/t1/p1/supporters/rando', 'sc', false);
+  w('— not as a parent', GRAN, O + 'squad/t1/p1/guardians/gran', 'sc', false);
+  w('— not as the player', GRAN, O + 'squad/t1/p1/self/gran', 'sc', false);
+  w('she indexes herself only once she is on the record', GRAN, O + 'access/index/gran', 'sc', false);
+  ORGC.squad.t1.p1.supporters.gran = 'sc';
+  w('— then she can', GRAN, O + 'access/index/gran', 'sc', true);
+  w('— and put herself in the table', GRAN, O + 'access/teamSupporters/t1/gran', 'p1', true);
+  w('— not as another child\'s', GRAN, O + 'access/teamSupporters/t1/gran', 'p2', false);
+  w('— nor as a parent', GRAN, O + 'access/teamParents/t1/gran', 'p1', false);
+  w('— nor anyone else in it', GRAN, O + 'access/teamSupporters/t1/osup', 'p1', false);
+  w('a parent cannot put herself in it', OM, O + 'access/teamSupporters/t1/om', 'p1', false);
+  w('the tracker cannot put anyone in it', OT, O + 'access/teamSupporters/t1/gran', 'p1', false);
+  delete ORGC.squad.t1.p1.supporters.gran;
+  // the old tree has no supporters (AUTH.md: orgs/ only), so a link to a club still there lets nobody in
+  DB.invites.sw = { ...sup('adm', { approved: true, used: { by: 'gran', at: NOW } }), ws: 'CLUB' };
+  w('a supporter link never indexes anyone on the old tree', GRAN, 'workspaces/CLUB/access/index/gran', 'sw', false);
+  w('— nor puts anyone on a record there', GRAN, 'workspaces/CLUB/teams/t1/players/p1/supporters/gran', 'sw', false);
+
+  delete ORGC.squad.t1.p1.supporters; delete ORGC.access.teamSupporters; delete ORGC.access.index.osup;
+  DB.invites = savedInv; DB.claims = savedClaims; DB.board = savedBoard; DB.dm = savedDm;
+  if (savedInv === undefined) delete DB.invites;
+  if (savedClaims === undefined) delete DB.claims;
+  if (savedBoard === undefined) delete DB.board;
+  if (savedDm === undefined) delete DB.dm;
+
   console.log('\n--- a club on orgs/: one tree each ---');
   /* A club is on exactly one tree, which is what lets every root rule ask
      "orgs/{code}/access exists" to know which tree to read. So nobody may
