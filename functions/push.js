@@ -12,7 +12,7 @@
    runs the rules.
 
    Who: exactly who the rules let read the thing, worked out from the same
-   lookup tables the rules read (CLAUDE.md, "Five flat lookup tables"), and
+   lookup tables the rules read (CLAUDE.md, "Six flat lookup tables"), and
    then held to the squad as well, so a stale table entry can never send a
    child's message to someone the squad no longer names. This function writes
    with admin credentials and bypasses the rules, which is why it checks

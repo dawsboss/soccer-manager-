@@ -77,7 +77,7 @@ const club = S => { const t = JSON.parse(JSON.stringify(S.tree)); delete t.serve
 // key order is not the database's business
 const canon = v => JSON.stringify(v, (k, x) => (x && typeof x === 'object' && !Array.isArray(x) ? Object.fromEntries(Object.keys(x).sort().map(n => [n, x[n]])) : x));
 // everything under the club except the tables a change to `who` may move
-const rest = S => canon({ ...S.at('workspaces/CLUB'), access: { ...S.at(W + 'access'), index: null, teamIndex: null, teamParents: null, teamPlayers: null, coachIndex: null } });
+const rest = S => canon({ ...S.at('workspaces/CLUB'), access: { ...S.at(W + 'access'), index: null, teamIndex: null, teamParents: null, teamPlayers: null, coachIndex: null, helperIndex: null } });
 
 (async () => {
 
@@ -220,6 +220,43 @@ const rest = S => canon({ ...S.at('workspaces/CLUB'), access: { ...S.at(W + 'acc
     check('coachIndex has no bridge, so it is written', A_(S, 'coachIndex/newc'), 't1');
   }
 
+  console.log('--- team helpers (AUTH.md, *More kinds of people*, 2) ---');
+  {
+    const S = server();
+    await S.fire(W + 'access/teams/t1/helpers/hlp', 'inv_h');
+    check('a helper given: the team\'s index says helper', A_(S, 'teamIndex/t1/hlp'), 'helper');
+    check('her helperIndex names the team, for the training rules', A_(S, 'helperIndex/hlp'), 't1');
+    check('she is never in the coaches\' index', A_(S, 'coachIndex/hlp'), null);
+    check('in the club', A_(S, 'index/hlp'), true);
+    check('with a bookmark', !!S.at('userOrgs/hlp/CLUB'), true);
+    check('the team\'s other entries as they were', canon(A_(S, 'teamIndex/t1')), canon({ coach: 'coach', trk: 'tracker', hlp: 'helper' }));
+    await S.fire(W + 'access/teams/t1/helpers/trk', true);
+    check('a tracker who helps as well stays tracker in the index', A_(S, 'teamIndex/t1/trk'), 'tracker');
+    check('— and is in helperIndex all the same', A_(S, 'helperIndex/trk'), 't1');
+    await S.fire(W + 'access/teams/t1/helpers/coach', true);
+    check('a coach who helps too stays coach', A_(S, 'teamIndex/t1/coach'), 'coach');
+    await S.fire(W + 'access/teams/t1/helpers/hlp', null);
+    check('taken away: off the team\'s index', A_(S, 'teamIndex/t1/hlp'), null);
+    check('— out of helperIndex', A_(S, 'helperIndex/hlp'), null);
+    check('— out of the club, with no other role', A_(S, 'index/hlp'), null);
+    check('— and her bookmark goes', S.at('userOrgs/hlp/CLUB'), null);
+    await S.fire(W + 'access/teams/t1/helpers/trk', null);
+    check('the tracker\'s help taken away: still tracker', A_(S, 'teamIndex/t1/trk'), 'tracker');
+    check('— out of helperIndex', A_(S, 'helperIndex/trk'), null);
+    check('— still in the club', A_(S, 'index/trk'), true);
+  }
+  {
+    const S = server(c => { c.access.teams.t2.helpers = { h2: true }; c.access.teams.t1.helpers = { h2: true }; c.access.helperIndex = { h2: 't2' }; c.access.index.h2 = true; });
+    await S.fire(W + 'access/teams/t2/helpers/h2', null);
+    check('a helper of two teams loses the one helperIndex named: it moves to the other', A_(S, 'helperIndex/h2'), 't1');
+    check('— and she stays in the club', A_(S, 'index/h2'), true);
+  }
+  {
+    const S = server(c => { c.access.members.hlp = { name: 'Hal', email: 'hal@example.com' }; });
+    await S.fire(W + 'access/teams/t1/helpers/hlp', true);
+    check('on the old tree there is no names/ to write', S.at(W + 'names'), null);
+  }
+
   console.log('--- admins, and a player\'s own sign-in ---');
   {
     const S = server();
@@ -297,19 +334,26 @@ const rest = S => canon({ ...S.at('workspaces/CLUB'), access: { ...S.at(W + 'acc
     // a messier club: a player listing two families, a family on two players, a coach who also tracks
     club.teams.t1.players.p3 = { id: 'p3', name: 'Ivy', guardians: { dad: true, mum: true }, self: { ivy: true } };
     club.access.teams.t2.trackers = { coach: true, trk: true };
+    // and helpers: one alone, one who also tracks, a coach who also helps
+    club.access.teams.t1.helpers = { hlp: true, trk: true };
+    club.access.teams.t2.helpers = { coach: true, hlp2: true };
     A.state = club; A.me = { uid: 'adm', name: 'adm' }; A.appOwners = {};
     const f = { access: club.access, teams: club.teams };
     for (const tid of ['t1', 't2']) {
       deepEq(`teamParents for ${tid}`, access.linkedWanted(f, tid, 'guardians'), A.parentsWanted(tid));
       deepEq(`teamPlayers for ${tid}`, access.linkedWanted(f, tid, 'self'), A.playersWanted(tid));
       const want = {};
+      for (const u of Object.keys(club.access.teams[tid].helpers || {})) want[u] = 'helper';
       for (const u of Object.keys(club.access.teams[tid].trackers || {})) want[u] = 'tracker';
       for (const u of Object.keys(club.access.teams[tid].coaches || {})) want[u] = 'coach';
       deepEq(`teamIndex for ${tid}`, access.teamIndexWanted(f, tid), want);
     }
-    for (const u of ['adm', 'coach', 'coach2', 'trk', 'mum', 'dad', 'twice', 'ella', 'ivy', 'nobody']) {
+    for (const u of ['adm', 'coach', 'coach2', 'trk', 'mum', 'dad', 'twice', 'ella', 'ivy', 'hlp', 'hlp2', 'nobody']) {
       check(`whether ${u} has a role`, access.hasRole(f, u), A.hasAnyRole(u));
       check(`which team ${u}'s coachIndex names`, access.coachTeamOf(f, u), A.coachTeamOf(u));
+      check(`which team ${u}'s helperIndex names`, access.helperTeamOf(f, u), A.helperTeamOf(u));
+      // the staff name families read: the server's isStaff() and the phone's staffName() agree on who is staff
+      check(`whether ${u} is staff`, access.isStaff(f, u), A.isStaffAnywhere(u));
     }
   }
 
