@@ -365,5 +365,102 @@ const named = doc => NAMES.filter(n => JSON.stringify(doc || {}).includes(n));
     }
   }
 
+  console.log('--- her busy times, for her other clubs, kept by the server ---');
+  {
+    // a fixed "now": these fixtures are dated, and the phone's own clock is the harness's
+    const NOW = Date.UTC(2026, 9, 10, 12);
+    const env = S => ({
+      get: p => S.ref(p).get().then(s => s.val()),
+      set: (p, v) => S.ref(p).set(v),
+      claim: (p, fn) => S.ref(p).transaction(fn).then(r => !!r.committed)
+    });
+    const TAG = mycal.clubTag('CLUB'), TAG_O = mycal.clubTag('OTHER');
+    const spans = v => Object.values((v && v.b) || {}).map(x => `${x.d} ${x.s}-${x.e}`).sort();
+    const S = server(db => { db.people.mum.set.share = true; });
+    S.put('serverState/myCal/people/mum', 1);
+    const r = await mycal.run(env(S), NOW);
+    check('a person who shares has hers written', r.busy.mum, 'written');
+    const b = S.at('people/mum/busy');
+    deepEq('one entry per club, under its tag, and no club code', Object.keys(b).sort(), [TAG, TAG_O].sort());
+    deepEq('this club: her child\'s team\'s practice and game, her child\'s place, nothing called off, no booking out',
+      spans(b[TAG]), ['2026-10-14 18:00-19:15', '2026-10-18 10:00-11:15', '2026-10-21 16:00-17:00']);
+    deepEq('the club she coaches at too', spans(b[TAG_O]), ['2026-10-17 10:00-11:00']);
+    check('a date and two times, nothing else: no title, no place, no name', named(b).length + /Practice|Rose|garden|Northgate|Lakeside/.test(JSON.stringify(b)), 0);
+    check('each stamped', b[TAG].at, NOW);
+    const r2 = await (async () => { S.put('serverState/myCal/people/mum', 2); return mycal.run(env(S), NOW + 60000); })();
+    check('nothing changed: nothing rewritten, the stamp kept', [r2.busy.mum, S.at('people/mum/busy/' + TAG).at].join(), ['same', NOW].join());
+
+    // a practice added at one club reaches the others with no phone of hers open
+    await S.fire(W + 'teams/t1/events/e9', { id: 'e9', kind: 'practice', date: '2026-10-24', start: '09:00', end: '10:30' });
+    await mycal.run(env(S), NOW + 120000);
+    check('a practice added: hers within the next build', spans(S.at('people/mum/busy/' + TAG)).includes('2026-10-24 09:00-10:30'), true);
+    await S.fire(W + 'teams/t1/events/e9/called', 'cancelled');
+    await mycal.run(env(S), NOW + 180000);
+    check('called off: gone again', spans(S.at('people/mum/busy/' + TAG)).includes('2026-10-24 09:00-10:30'), false);
+
+    // the coach: the sessions she runs make her busy, the times she offers never do
+    const SC = server(db => { db.people.coach.set.share = true; });
+    SC.put('serverState/myCal/people/coach', 1);
+    await mycal.run(env(SC), NOW);
+    deepEq('a coach: her team, the sessions she runs; not her bookable times', spans(SC.at('people/coach/busy/' + TAG)),
+      ['2026-10-14 18:00-19:15', '2026-10-18 10:00-11:15', '2026-10-20 16:00-17:00', '2026-10-21 16:00-17:00']);
+
+    // taken away: her role, the club, and her word
+    S.put(W + 'teams/t1/players/p1/guardians', null);
+    S.put('serverState/myCal/people/mum', 3);
+    await mycal.run(env(S), NOW + 240000);
+    check('her child taken off the team: that club\'s busy times go', S.at('people/mum/busy/' + TAG), null);
+    check('the other club\'s stay', spans(S.at('people/mum/busy/' + TAG_O)).length, 1);
+    S.put('userOrgs/mum/OTHER', null);
+    S.put('serverState/myCal/people/mum', 4);
+    await mycal.run(env(S), NOW + 300000);
+    check('a club she has left loses its entry', S.at('people/mum/busy'), null);
+    const SP = server(db => { db.people.mum.set.share = true; });
+    SP.put('serverState/myCal/people/mum', 1);
+    await mycal.run(env(SP), NOW);
+    await SP.fire('people/mum/set/share', false);
+    const r3 = await mycal.run(env(SP), NOW + 60000);
+    check('she turns sharing off on any phone: every one taken down on the next build', [r3.busy.mum, SP.at('people/mum/busy')].join(), ['taken down', null].join());
+    const r4 = await (async () => { SP.put('serverState/myCal/people/mum', 9); return mycal.run(env(SP), NOW + 120000); })();
+    check('and private stays private', [r4.busy.mum, SP.at('people/mum/busy')].join(), ['private', null].join());
+    const SN = server();
+    SN.put('serverState/myCal/people/mum', 1);
+    await mycal.run(env(SN), NOW);
+    check('private is the default: nothing written for somebody who never said yes', SN.at('people/mum/busy'), null);
+  }
+  {
+    // a club that cannot be read keeps what it had, and she is tried again
+    const NOW = Date.UTC(2026, 9, 10, 12);
+    const S = server(db => { db.people.mum.set.share = true; db.people.mum.busy = { [mycal.clubTag('OTHER')]: { at: 5, b: { b1: { d: '2026-10-17', s: '10:00', e: '11:00' } } } }; });
+    S.put('serverState/myCal/people/mum', 1);
+    const env = {
+      get: p => (require('./fakebase').fromOrgsPath(p) === 'workspaces/OTHER/matches' ? Promise.reject(new Error('unavailable')) : S.ref(p).get().then(s => s.val())),
+      set: (p, v) => S.ref(p).set(v),
+      claim: (p, fn) => S.ref(p).transaction(fn).then(r => !!r.committed)
+    };
+    const r = await mycal.run(env, NOW);
+    check('a club that could not be read: its busy times are kept as they were', S.at('people/mum/busy/' + mycal.clubTag('OTHER')).at, 5);
+    check('the club that could be read is written', !!S.at('people/mum/busy/' + mycal.clubTag('CLUB')), true);
+    check('and she is tried again', [r.busy.mum, !!S.at('serverState/myCal/people/mum')].join(), ['unreadable', true].join());
+  }
+  {
+    // the same times, in the same shape, as her phone's own youPublish()
+    const A = H.loadApp({ storage: { 'sm.workspace': 'CLUB' } });
+    A.clock.set(Date.UTC(2026, 9, 10, 12));
+    const club = CLUB();
+    A.state = club; A.sess = { ...A.sess, ...TRAINING() }; A.appOwners = {};
+    const read = p => {
+      let cur = { workspaces: { CLUB: club }, training: { CLUB: TRAINING() } };
+      for (const k of p.split('/')) cur = cur == null ? undefined : cur[k];
+      return Promise.resolve(cur === undefined ? null : cur);
+    };
+    for (const who of ['mum', 'coach']) {
+      A.me = { uid: who, name: who };
+      const phone = A.youBusy(A.myCalItems('all', true));
+      const server = mycal.busyTimes(await mycal.clubItems(read, who, 'CLUB'), '2026-10-10');
+      deepEq(`${who}: the same busy times as her phone writes`, server, phone);
+    }
+  }
+
   H.summary('My calendar\'s feed, built by the server');
 })().catch(e => { console.error(e); process.exit(1); });

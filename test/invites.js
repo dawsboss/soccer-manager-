@@ -18,7 +18,8 @@ const ID = 'iabc123';
 
 async function boot(opts = {}) {
   const fbk = makeFakebase();
-  const A = H.loadApp({ firebase: fbk, config: CONFIG, storage: opts.storage || {}, search: opts.search });
+  if (opts.refuse) fbk.refuseWrites(opts.refuse);
+  const A = H.loadApp({ firebase: fbk, config: CONFIG, storage: opts.storage || {}, search: opts.search, ...(opts.server ? { window: { SOCCER_SERVER: true } } : {}) });
   await A.flush();
   return { A, fbk };
 }
@@ -555,6 +556,95 @@ const CLUB = {
     fbk.deliver('workspaces/CLUB', JSON.parse(JSON.stringify(CLUB))); await A.flush();
     A.click({ act: 'importinvitego' }); await A.flush(20);
     check('nobody else gets the invites made', fbk.record.writes.some(w => w.path.startsWith('invites/')), false);
+  }
+
+  /* With the server deployed (firebase-config.js, SOCCER_SERVER; functions/
+     join.js, pinned by test/joinask.js), joining and starting a club are one
+     ask each: nothing of the club is written from the phone, and the phone's
+     own writes are only for rules too old to take the ask, or a server that
+     could not finish. */
+  console.log('\n--- with the server: one ask, all of it or none ---');
+  const asks = fbk => fbk.record.writes.filter(w => /^joinAsks\//.test(w.path));
+  const clubWrites = fbk => paths(fbk).filter(x => /^(workspaces|orgs)\//.test(x) || /^invites\/.+\//.test(x) || /^userOrgs\//.test(x));
+  {
+    const { A, fbk } = await boot({ search: '?invite=' + ID, server: true });
+    fbk.signIn('sam', { name: 'Sam', email: 'sam@x.test' }); await A.flush();
+    fbk.deliver('invites/' + ID, inviteDoc(A)); await A.flush();
+    A.click({ act: 'inviteaccept' }); await A.flush(20);
+    const ask = asks(fbk)[0];
+    check('accepting asks the server, in her own name', !!ask && ask.path.startsWith('joinAsks/sam/'), true);
+    deepEq('naming the invite, and the name she goes by', [ask.value.op, ask.value.invite, ask.value.name], ['invite', ID, 'Sam']);
+    check('and writes nothing of the club from the phone', clubWrites(fbk).join(), '');
+    check('it says it is working', /Joining…/.test(A.rendered()), true);
+    fbk.deliver(ask.path + '/answer', { ok: true, ws: 'CLUB', tree: 'orgs', role: 'coach', at: 1 }); await A.flush(20);
+    check('in: the phone opens the club', A.storage.getItem('sm.workspace'), 'CLUB');
+    check('on the tree the server says', A.storage.getItem('sm.tree.v1:CLUB'), 'orgs');
+    check('the invite forgotten, the ask cleared away, and a reload into it', [A.storage.getItem('sm.invite'), fbk.record.removes.includes(ask.path), A.dom.reloads].join(), ',true,1');
+  }
+  for (const [why, words] of [['expired', /has expired/], ['taken', /already been used/], ['full', /been used up/], ['wrongemail', /is for someone else/], ['gone', /no longer exists/]]) {
+    const { A, fbk } = await boot({ search: '?invite=' + ID, server: true });
+    fbk.signIn('sam', { name: 'Sam', email: 'sam@x.test' }); await A.flush();
+    fbk.deliver('invites/' + ID, inviteDoc(A)); await A.flush();
+    A.click({ act: 'inviteaccept' }); await A.flush(20);
+    fbk.deliver(asks(fbk)[0].path + '/answer', { ok: false, why, at: 1 }); await A.flush(20);
+    check(`the server's "${why}" is said as the invite screen says it`, words.test(A.rendered()), true);
+    check('— and the phone writes nothing of it', clubWrites(fbk).join() + (A.dom.reloads || 0), '0');
+  }
+  {
+    const { A, fbk } = await boot({ search: '?invite=' + ID, server: true });
+    fbk.signIn('sam', { name: 'Sam', email: 'sam@x.test' }); await A.flush();
+    fbk.deliver('userOrgs/sam', {}); await A.flush();
+    fbk.deliver('invites/' + ID, inviteDoc(A)); await A.flush();
+    A.click({ act: 'inviteaccept' }); await A.flush(20);
+    A.timers.run(); await A.flush(20);
+    check('no answer: said as that, never as a no', /No answer from the club yet/.test(A.rendered()), true);
+    check('and the phone does not go ahead on its own', clubWrites(fbk).join(), '');
+  }
+  {
+    // rules from before version 21 refuse the ask: the phone's own writes, as before
+    const { A, fbk } = await boot({ search: '?invite=' + ID, server: true, refuse: p => /^joinAsks\//.test(p) });
+    fbk.signIn('sam', { name: 'Sam', email: 'sam@x.test' }); await A.flush();
+    fbk.deliver('invites/' + ID, inviteDoc(A)); await A.flush();
+    A.click({ act: 'inviteaccept' }); await A.flush(); fbk.refuse('workspaces/CLUB/moved'); await A.flush(20);
+    check('the ask refused: the phone joins as it always did', [valueAt(fbk, 'workspaces/CLUB/access/teams/t1/coaches/sam'), A.storage.getItem('sm.workspace')].join(), ID + ',CLUB');
+  }
+  {
+    const { A, fbk } = await boot({ storage: { 'sm.workspace': 'CLUB' }, server: true });
+    fbk.signIn('coach', { name: 'Jaz', email: 'jaz@x.test' }); await A.flush();
+    fbk.deliver('.info/connected', true);
+    fbk.deliver('workspaces/CLUB', CLUB); await A.flush();
+    A.click({ act: 'newclub' });
+    A.dom.node('#newClubName').value = '  Hillside FC ';
+    A.click({ act: 'newclubgo' }); await A.flush(20);
+    const ask = asks(fbk)[0];
+    deepEq('a new club is asked for by name, never at a code the phone made up', [ask.value.op, ask.value.name, 'code' in ask.value], ['club', 'Hillside FC', false]);
+    check('nothing of a club written from the phone', fbk.record.writes.some(w => /^(workspaces|orgs)\/sm-/.test(w.path)), false);
+    fbk.deliver(ask.path + '/answer', { ok: true, ws: 'sm-0123456789abcdef0123456789abcdef', tree: 'orgs', at: 1 }); await A.flush(20);
+    check('the server\'s code is the one opened', A.storage.getItem('sm.workspace'), 'sm-0123456789abcdef0123456789abcdef');
+    check('on orgs/', A.storage.getItem('sm.tree.v1:sm-0123456789abcdef0123456789abcdef'), 'orgs');
+    check('by reloading into it', A.dom.reloads, 1);
+  }
+  {
+    const { A, fbk } = await boot({ storage: { 'sm.workspace': 'CLUB' }, server: true });
+    fbk.signIn('coach', { name: 'Jaz' }); await A.flush();
+    fbk.deliver('.info/connected', true);
+    fbk.deliver('workspaces/CLUB', CLUB); await A.flush();
+    A.click({ act: 'newclub' });
+    A.dom.node('#newClubName').value = 'Hillside FC';
+    A.click({ act: 'newclubgo' }); await A.flush(20);
+    A.timers.run(); await A.flush(20);
+    check('no answer: no second club made from the phone', [fbk.record.writes.some(w => /^(workspaces|orgs)\/sm-/.test(w.path)), A.storage.getItem('sm.workspace')].join(), 'false,CLUB');
+    check('and she is told where to look', /in your list of clubs/.test(A.lastToast()), true);
+  }
+  {
+    const { A, fbk } = await boot({ storage: { 'sm.workspace': 'CLUB' }, server: true, refuse: p => /^joinAsks\//.test(p) });
+    fbk.signIn('coach', { name: 'Jaz' }); await A.flush();
+    fbk.deliver('.info/connected', true);
+    fbk.deliver('workspaces/CLUB', CLUB); await A.flush();
+    A.click({ act: 'newclub' });
+    A.dom.node('#newClubName').value = 'Hillside FC';
+    A.click({ act: 'newclubgo' }); await A.flush(20);
+    check('rules too old for the ask: the phone makes it as before', fbk.record.writes.some(w => /^orgs\/sm-[0-9a-f]+\/access\/admins\/coach$/.test(w.path)), true);
   }
 
   H.summary('invites');

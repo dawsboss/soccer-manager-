@@ -36,6 +36,12 @@ window.SOCCER_SIGNIN = ['google'];
 // nothing would ever be sent. Blank, and nothing about them is offered.
 window.SOCCER_PUSH_KEY = 'BBzBzLZqwAdX3Ih8A2NFjUjR_mpE4ouH1vB7udcINm1fHfngTJbPOjMYyZv3KjxdXfhROU44kkJvfWJ4E2GHc98';
 
+// Optional: the club's server (functions/) is deployed on this project (README,
+// "Deploying the server"). Joining by invite, starting a club and a bulk import
+// then ask it first, and are done on the phone, as before, only where it cannot
+// be asked. Leave it out where the functions are not deployed.
+window.SOCCER_SERVER = true;
+
 // Optional: other databases to point this app at, for trying auth and rules
 // changes somewhere that is not the club with this season's data in it.
 //

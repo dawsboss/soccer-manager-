@@ -483,7 +483,7 @@
     },
     "rulesVersion": {
       ".read": true,
-      ".write": "newData.isNumber() && newData.val() === 20"
+      ".write": "newData.isNumber() && newData.val() === 21"
     },
     "public": {
       "$share": {
@@ -1161,6 +1161,61 @@
             ".validate": "newData.hasChildren(['at'])",
             "at": {
               ".validate": "newData.isNumber()"
+            },
+            "$other": {
+              ".validate": false
+            }
+          }
+        }
+      }
+    },
+    "joinAsks": {
+      "$uid": {
+        ".read": "auth != null && auth.uid === $uid",
+        "$id": {
+          ".write": "auth != null && auth.uid === $uid && ((!data.exists() && newData.exists()) || (data.exists() && !newData.exists()))",
+          ".validate": "newData.hasChildren(['op', 'at']) && (newData.child('op').val() === 'invite' || newData.child('op').val() === 'club') && newData.child('at').val() <= now + 600000 && newData.child('at').val() >= now - 600000",
+          "op": {
+            ".validate": "newData.isString()"
+          },
+          "invite": {
+            ".validate": "newData.isString() && newData.val().length <= 128"
+          },
+          "name": {
+            ".validate": "newData.isString() && newData.val().length <= 80"
+          },
+          "you": {
+            ".validate": "newData.isString() && newData.val().length <= 80"
+          },
+          "at": {
+            ".validate": "newData.isNumber()"
+          },
+          "$other": {
+            ".validate": false
+          }
+        }
+      }
+    },
+    "importAsks": {
+      "$code": {
+        "$uid": {
+          ".read": "auth != null && auth.uid === $uid",
+          "$id": {
+            ".write": "auth != null && auth.uid === $uid && ((!data.exists() && newData.exists() && root.child('workspaces/' + $code + '/access/admins/' + auth.uid).exists()) || (data.exists() && !newData.exists()))",
+            ".validate": "newData.hasChildren(['at', 'writes']) && newData.child('at').val() <= now + 600000 && newData.child('at').val() >= now - 600000",
+            "at": {
+              ".validate": "newData.isNumber()"
+            },
+            "tree": {
+              ".validate": "newData.val() === 'orgs' || newData.val() === 'workspaces'"
+            },
+            "writes": {
+              "$i": {
+                ".validate": "newData.hasChild('p') && $i.length <= 6",
+                "p": {
+                  ".validate": "newData.isString() && newData.val().length <= 600"
+                }
+              }
             },
             "$other": {
               ".validate": false

@@ -32,7 +32,19 @@ does the bookkeeping, not that the phone works offline first.
 ## People and their calendars
 
 ### Busy at another club
-- **Now:** a coach's own phone works out when she is busy in every club she is
+- **Moved to the server too (build 122):** `myCalBuild` (`functions/mycal.js`,
+  `publishBusy`) writes each sharing person's busy times from the clubs
+  themselves, on the same marks and the same five-minute runs as her feed,
+  in exactly the shape her phone writes (`people/{uid}/busy/{clubTag}`: a
+  date and two times), so a practice added in club B reaches club A within
+  minutes whether or not a phone of hers is open. Only while she shares;
+  turning it off on any phone takes them all down on the next run, and a
+  club she has left loses its entry. `test/mycalfeed.js` holds it to the
+  phone's `youBusy`, time for time.
+- **Still on the phone, and agreeing:** her own phones still write them (the
+  same values), and the clubs' phones still read them as below. What is left
+  for a server is the rest of *With a server*: answering "is she free" itself.
+- **Before the server:** a coach's own phone works out when she is busy in every club she is
   in and, if she shares, writes the times to `people/{uid}/busy/{tag}`
   (`youPublish()`). Other clubs' coaches' and admins' phones listen to those
   (`watchBusy()`) and fold them into who is free (`elsewhereOn()`, read by
@@ -212,7 +224,26 @@ does the bookkeeping, not that the phone works offline first.
 
 ## Joining and starting clubs
 
-- **Now:** joining by invite is several writes from the invitee's own phone in
+- **Moved (build 122): joining by invite and starting a club are one call.**
+  The phone asks at `joinAsks/{uid}/{id}` (hers alone, rules version 21) and
+  `functions/join.js` (`joinAsk`) answers beside it. An invite is checked as
+  the rules checked it (spent, expired, full, another email, an unconfirmed
+  address, a child or team gone, a retired club), spent inside one
+  transaction, and the grant, her member entry, her bookmark, the admin's
+  list and the log written in one multi-path write, then the lookup tables
+  by access.js's `settle`. A new club is made at a code the server makes
+  (crypto, checked free on both trees), with her as admin and owner, in one
+  write; a club is never made twice for one ask. The phone does them itself
+  (`redeemHere()`, `createHere()`) only where `SOCCER_SERVER` is not set or
+  the rules refuse the ask. `test/joinask.js`, and the page in
+  `test/invites.js`.
+- **What is left:** the bootstrap clauses (and so rules.js's gap 3) stay
+  until the server path has been live everywhere, as the bridge for a
+  database without the functions; approving a team-link request
+  (`approveClaim()`), a fan's ask (`approveFan()`), a squad of links
+  (`inviteSquad()`) and the imported roster's invites (`inviteImported()`,
+  `mailImported()`) are still the phone's; and real invitation emails.
+- **Before the server, and still the fallback:** joining by invite is several writes from the invitee's own phone in
   the order the rules need (spend the invite, take the role, add herself to the
   index) (`redeemInvite()`); approving a team-link request is the coach writing
   the approval before the index entry (`approveClaim()`), and a fan's
@@ -304,7 +335,17 @@ does the bookkeeping, not that the phone works offline first.
   refused, or warned about, at the moment of saving.
 
 ### Moving old data
-- **Now:** an older practice plan is moved onto its calendar entry by the first
+- **On the server (build 122):** `migrateOld` (`functions/migrate.js`), daily
+  until a run gets every club through, then never again (it reads one
+  marker and stops, `serverState/migrated/v1/done`). Each old plan gets its
+  practice entry under its own id and its `eid`, exactly as `movePlans()`
+  makes them; each coach's note still on a record on `orgs/` goes to
+  `coachNotes` (never over a newer one) and comes off the record in the same
+  write. A retired club is skipped, a club being moved waits a day.
+  `test/migrate.js`.
+- **What is left:** once `done` is set on the live database, delete
+  `movePlans()`, `moveCoachNotes()`, their tests and `functions/migrate.js`.
+- **Before the server, and still until then:** an older practice plan is moved onto its calendar entry by the first
   phone that opens it (`movePlans()`), and every phone carries that code for
   ever. The same for the coach's notes still on a child's record from before
   they had their own place (SECURITY.md, SEC-D10): the first phone of that
@@ -314,9 +355,18 @@ does the bookkeeping, not that the phone works offline first.
 - **With a server:** a one-off migration, run once, and the code is deleted.
 
 ### Backups and imports
-- **Now:** a backup is an admin tapping *Download a copy* (`backupDoc()`), and
-  a bulk import is planned and written from her phone, one record at a time at
-  the depth the rules sit at (`applyImport()`).
+- **Moved (build 122): a bulk import is applied by the server.** The phone
+  plans it as before and sends the planned writes in one ask
+  (`importAsks/{code}/{uid}/{id}`, admins only, rules version 21; laid out
+  for the club's tree and stamped by `importWrites()`). `functions/imports.js`
+  (`importAsk`) checks she is an admin now, that every write is inside the
+  club and in a part an import writes (never a role, a lookup table, another
+  club or the root, or nothing is written), and applies them in order in
+  batches the database takes; the plan is taken off the ask with the answer.
+  Once the ask lands a dropped signal loses nothing. Without an answer, or
+  with one that did not finish, the phone writes it itself (`applyImport()`),
+  which changes nothing twice. `test/importask.js`.
+- **Still:** a backup is an admin tapping *Download a copy* (`backupDoc()`).
 - **With a server:** nightly backups without anybody remembering, and an import
   that is checked and applied in one go, so a dropped signal half-way through
   can't leave half a season.

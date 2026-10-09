@@ -328,6 +328,8 @@ function makeServer(seed = {}) {
   const reads = [], removes = [], sends = [];
   let down = false;
   let answer = () => ({ success: true });
+  // the accounts Firebase Auth knows, as getUser() hands them back
+  const users = {};
   const shown = p => (ORGS_MODE ? fromOrgsPath(p) : p);
   const ref = p => (ORGS_MODE && /^\/?workspaces\//.test(String(p || '')) ? realRef(toOrgsPath(p)) : realRef(p));
   const realRef = p => ({
@@ -348,6 +350,9 @@ function makeServer(seed = {}) {
     // a multi-path update: each key a path under this one, null deleting it
     update: o => {
       const ps = Object.keys(o || {}).map(k => segs(p).concat(segs(k)).join('/'));
+      // the database refuses an update naming a path and another beneath it
+      const clash = ps.find(a => ps.some(b => b !== a && b.startsWith(a + '/')));
+      if (clash) return Promise.reject(new Error('Path ' + clash + ' is an ancestor of another path in the same update'));
       return limited(ps, () => { for (const [k, v] of Object.entries(o || {})) put(segs(p).concat(segs(k)).join('/'), v); });
     },
     /* One at a time, as the database runs them: `fn` sees what is there and
@@ -442,6 +447,7 @@ function makeServer(seed = {}) {
     },
     'firebase-admin/app': { initializeApp: () => ({ name: '[DEFAULT]' }) },
     'firebase-admin/messaging': { getMessaging: () => messaging },
+    'firebase-admin/auth': { getAuth: () => ({ getUser: uid => (users[uid] ? Promise.resolve(JSON.parse(JSON.stringify(users[uid]))) : Promise.reject(Object.assign(new Error('no user'), { code: 'auth/user-not-found' }))) }) },
     'firebase-admin/database': { getDatabase: () => ({ ref }) }
   };
 
@@ -514,7 +520,7 @@ function makeServer(seed = {}) {
 
   return {
     get tree() { return view(); },
-    reads, removes, sends, triggers, loadFunctions, ref, at: p => clone(ORGS_MODE ? viewAt(p) : at(p)),
+    reads, removes, sends, triggers, loadFunctions, users, ref, at: p => clone(ORGS_MODE ? viewAt(p) : at(p)),
     put: (p, v) => { write(p, v); },
     /* every message handed to Cloud Messaging, flattened */
     sent: () => sends.flat(),

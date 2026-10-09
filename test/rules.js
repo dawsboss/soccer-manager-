@@ -1795,6 +1795,55 @@ reads('nor read', COACH, 'shareOwners/sh1', false);
   writes('nobody else does', GRAN, A + 'mum/a1', null, false);
   delete DB.bookAsks;
 
+  /* Joining by invite and starting a club are one call to the server
+     (functions/join.js): her ask, in her own name, and nothing else. What
+     the invite allows is the server's to check, so the rule only keeps the
+     ask hers and its shape small. */
+  console.log('\n--- asking the server: joinAsks ---');
+  const J = 'joinAsks/';
+  writes('anyone signed in asks to join by an invite, in her own name', RANDO, J + 'rando/j1', { op: 'invite', invite: 'iABC', name: 'Rae', at: NOW }, true);
+  writes('or to start a club', RANDO, J + 'rando/j1', { op: 'club', name: 'Hillside FC', you: 'Rae', at: NOW }, true);
+  writes('not in somebody else\'s name', RANDO, J + 'mum/j1', { op: 'club', name: 'X', at: NOW }, false);
+  writes('not signed out', OUT, J + 'x/j1', { op: 'club', name: 'X', at: NOW }, false);
+  writes('not with an answer of her own', RANDO, J + 'rando/j1', { op: 'club', name: 'X', at: NOW, answer: { ok: true, ws: 'sm-x' } }, false);
+  writes('not naming the club code she wants', RANDO, J + 'rando/j1', { op: 'club', name: 'X', code: 'sm-mine', at: NOW }, false);
+  writes('not something else', RANDO, J + 'rando/j1', { op: 'admin', at: NOW }, false);
+  writes('not stamped an hour ago', RANDO, J + 'rando/j1', { op: 'club', name: 'X', at: NOW - H }, false);
+  writes('not a club name past 80 letters', RANDO, J + 'rando/j1', { op: 'club', name: 'x'.repeat(81), at: NOW }, false);
+  reads('she reads her own asks and their answers', RANDO, J + 'rando', true);
+  reads('nobody else\'s', ADM, J + 'rando', false);
+  DB.joinAsks = { rando: { j1: { op: 'club', name: 'X', at: NOW, answer: { ok: true, ws: 'sm-1', at: NOW } } } };
+  writes('the answer is never hers to write', RANDO, J + 'rando/j1/answer', { ok: true, ws: 'CLUB', at: NOW }, false);
+  writes('nor is an ask changed once made', RANDO, J + 'rando/j1', { op: 'club', name: 'Y', at: NOW }, false);
+  writes('she clears it away', RANDO, J + 'rando/j1', null, true);
+  writes('nobody else does', ADM, J + 'rando/j1', null, false);
+  delete DB.joinAsks;
+
+  /* A bulk import applied by the server (functions/imports.js): the
+     admin's plan, in one ask, and only an admin of that club may send one.
+     What each write may be is the server's to check, against the club. */
+  console.log('\n--- asking the server: importAsks ---');
+  const I = 'importAsks/CLUB/';
+  const plan = (extra = {}) => ({ at: NOW, tree: 'workspaces', writes: [{ p: 'workspaces/CLUB/teams/t9', v: { id: 't9', name: 'New' } }], ...extra });
+  writes('an admin sends an import, in her own name', ADM, I + 'adm/x1', plan(), true);
+  writes('not a coach', COACH, I + 'coach/x1', plan(), false);
+  writes('not a tracker', TRK, I + 'trk/x1', plan(), false);
+  writes('not a family', MUM, I + 'mum/x1', plan(), false);
+  writes('not somebody with no role here', RANDO, I + 'rando/x1', plan(), false);
+  writes('not signed out', OUT, I + 'x/x1', plan(), false);
+  writes('not in another admin\'s name', ADM, I + 'coach/x1', plan(), false);
+  writes('not with no writes', ADM, I + 'adm/x1', { at: NOW }, false);
+  writes('not with an answer of her own', ADM, I + 'adm/x1', plan({ answer: { ok: true } }), false);
+  writes('not stamped an hour ago', ADM, I + 'adm/x1', plan({ at: NOW - H }), false);
+  writes('not on a tree that is neither', ADM, I + 'adm/x1', plan({ tree: 'public' }), false);
+  reads('she reads her own asks and their answers', ADM, I + 'adm', true);
+  reads('nobody else\'s', COACH, I + 'adm', false);
+  DB.importAsks = { CLUB: { adm: { x1: { ...plan(), answer: { ok: true, n: 1, at: NOW } } } } };
+  writes('the answer is never hers to write', ADM, I + 'adm/x1/answer', { ok: true }, false);
+  writes('she clears it away', ADM, I + 'adm/x1', null, true);
+  writes('nobody else does', COACH, I + 'adm/x1', null, false);
+  delete DB.importAsks;
+
   delete DB.workspaces.CLUB.teams.t1.players.p2.guardians;
   for (const k of ['avail', 'sessions', 'booked']) delete DB.training.CLUB[k];
 }

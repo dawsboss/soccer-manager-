@@ -137,7 +137,11 @@ async function clubItems(read, uid, code) {
     }
 
   const out = [];
-  const add = (key, doc) => out.push(['k' + clubTag(code + '|' + key), doc]);
+  /* The third part, never in the feed, is whether it makes her busy
+     (youBusy() on the phone): everything firm and hers is, a session only
+     once she runs it or a child of hers has the place, and the times she
+     offers never are, since they are when she is free to be booked. */
+  const add = (key, doc, busy = true) => out.push(['k' + clubTag(code + '|' + key), doc, { busy }]);
   const timed = (doc, x) => {
     if (hm(x.start)) doc.start = hm(x.start);
     if (hm(x.end)) doc.end = hm(x.end);
@@ -169,14 +173,15 @@ async function clubItems(read, uid, code) {
   for (const [sid, s] of Object.entries(sessions || {})) {
     if (!s || typeof s !== 'object' || !okDay(s.date)) continue;
     const run = String(s.coach || '') === uid;
-    const hers = keys((booked || {})[sid]).some(pid => kids.has(pid) && BOOKED[(((booked || {})[sid] || {})[pid] || {}).st]);
+    const st = pid => ((((booked || {})[sid] || {})[pid]) || {}).st;
+    const hers = keys((booked || {})[sid]).some(pid => kids.has(pid) && BOOKED[st(pid)]);
     if (!run && !hers) continue;
     const title = String(s.title || '').slice(0, 80) || (s.kind === 'one' ? '1-1 session' : 'Group session');
     const doc = timed({ title: (run ? scrub(title) : 'Training: ' + scrub(title)).trim(), date: s.date, called: CALLED[s.called] ? s.called : '' }, s);
     const venue = scrub(placeOf(s));
     if (venue) doc.venue = venue;
     doc.desc = club;
-    add('s:' + String(s.id || sid), doc);
+    add('s:' + String(s.id || sid), doc, run || keys((booked || {})[sid]).some(pid => kids.has(pid) && st(pid) === 'in'));
   }
   // the times she has offered
   for (const [bid, b] of Object.entries(avail || {})) {
@@ -188,7 +193,7 @@ async function clubItems(read, uid, code) {
     const venue = scrub(placeOf(b));
     if (venue) doc.venue = venue;
     doc.desc = club;
-    add('a:' + String(b.id || bid), doc);
+    add('a:' + String(b.id || bid), doc, false);
   }
   return out;
 }
@@ -215,6 +220,60 @@ async function feedItems(read, uid, now) {
     if (!items[k]) { items[k] = doc; n++; }
   }
   return items;
+}
+
+/* Her busy times at each club, for the other clubs she is in (SERVER.md,
+   *Busy at another club*). Her own phone used to be the only thing that
+   wrote them (youPublish()), so a practice added at one club reached the
+   others only when one of her phones was next open with a signal and had
+   heard from both. Now every build writes them from the clubs themselves,
+   in exactly the shape her phone does (people/{uid}/busy/{clubTag(code)}:
+   { at, b: { b1: { d, s, e } } }, a date and two times and nothing else),
+   so the phones that ask who is free (watchBusy(), elsewhereOn()) read
+   them as they always have.
+
+   Only while she shares (people/{uid}/set/share === true, which the rules
+   insist on for her phone's writes too): private is the default, and the
+   moment she turns it off the next build takes every one of them down,
+   whichever phone she did it on. A club she is no longer in loses its
+   entry; a club that cannot be read keeps the one it had. */
+const BUSY_MAX = 300;
+const clock = m => pad2(Math.floor(m / 60) % 24) + ':' + pad2(m % 60);
+function busyTimes(xs, from) {
+  const out = {};
+  let n = 0;
+  for (const [, x, meta] of xs.slice().sort(order)) {
+    if (!meta || !meta.busy || !okDay(x.date) || !x.start || x.called || x.date < from || n >= BUSY_MAX) continue;
+    const e = x.end || clock(Math.min(minOf(x.start) + (Number(x.mins) || 60), 23 * 60 + 59));
+    out['b' + (++n)] = { d: x.date, s: x.start, e };
+  }
+  return out;
+}
+async function publishBusy(env, read, uid, now) {
+  if (!okKey(uid)) return 'bad uid';
+  const [share, had] = await Promise.all([read(`people/${uid}/set/share`), read(`people/${uid}/busy`)]);
+  if (share !== true) {
+    if (had == null) return 'private';
+    await env.set(`people/${uid}/busy`, null);
+    return 'taken down';
+  }
+  const old = had && typeof had === 'object' ? had : {};
+  const clubs = keys(await read('userOrgs/' + uid)).filter(okKey).sort();
+  // from yesterday, in the server's day: a phone in any time zone may still be on it, and a time gone by is harmless
+  const from = dayStr(now - 864e5);
+  const next = {};
+  let unreadable = false;
+  for (const code of clubs) {
+    const tag = clubTag(code), xs = await clubItems(read, uid, code);
+    if (xs === undefined) { unreadable = true; if (old[tag]) next[tag] = old[tag]; continue; }
+    const b = busyTimes(xs, from);
+    if (!keys(b).length) continue;
+    // unchanged keeps its stamp, so nothing is rewritten for nothing
+    next[tag] = old[tag] && JSON.stringify(old[tag].b || {}) === JSON.stringify(b) ? old[tag] : { at: now, b };
+  }
+  if (JSON.stringify(next) === JSON.stringify(old)) return unreadable ? 'unreadable' : 'same';
+  await env.set(`people/${uid}/busy`, keys(next).length ? next : null);
+  return unreadable ? 'unreadable' : 'written';
 }
 
 /* Is `id` her page? The server keeps who each public page belongs to at
@@ -291,11 +350,15 @@ async function run(env, now = Date.now()) {
   const who = new Set(keys(people).filter(okKey));
   // everyone in a club that changed: the club's own index says who is in it
   for (const code of keys(clubs).filter(okKey)) for (const u of keys(await read(`${(await where(read, code)).access}/index`))) if (okKey(u)) who.add(u);
-  const out = {};
+  const out = {}, busy = {};
   for (const uid of [...who].sort()) {
     try { out[uid] = await publish(env, read, uid, now); } catch (e) { out[uid] = 'failed'; }
+    try { busy[uid] = await publishBusy(env, read, uid, now); } catch (e) { busy[uid] = 'failed'; }
   }
-  const failed = new Set(Object.entries(out).filter(([, r]) => r === 'unreadable' || r === 'failed').map(([u]) => u));
+  // what each person's busy times came to, beside (never among) the feeds', which are keyed by uid
+  Object.defineProperty(out, 'busy', { value: busy, enumerable: false });
+  const bad = r => r === 'unreadable' || r === 'failed';
+  const failed = new Set([...Object.entries(out), ...Object.entries(busy)].filter(([, r]) => bad(r)).map(([u]) => u));
   const done = (p, at) => env.claim(p, cur => (cur === at ? null : undefined));
   for (const [code, at] of Object.entries(clubs || {})) await done(`${MARKS}/clubs/${code}`, at);
   // somebody whose feed could not be built keeps her own mark, and is tried again
@@ -304,4 +367,4 @@ async function run(env, now = Date.now()) {
   return out;
 }
 
-module.exports = { run, publish, onSetting, feedItems, clubItems, touchClub, touchPerson, clubTag, MARKS, FEED_BACK_DAYS, FEED_MAX };
+module.exports = { run, publish, publishBusy, busyTimes, onSetting, feedItems, clubItems, touchClub, touchPerson, clubTag, MARKS, FEED_BACK_DAYS, FEED_MAX };

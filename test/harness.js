@@ -174,7 +174,7 @@ const EXPORTS = `{
   /* test club */
   seedSandbox,
   /* bulk import */
-  importPlan, applyImport, importSummary, sheetImport, IMPORT_EXAMPLE, csvImport, parseCsv, csvDate, CSV_TEMPLATES,
+  importPlan, applyImport, importWrites, landImport, importVia, askServer, serverOn, redeemHere, createHere, importSummary, sheetImport, IMPORT_EXAMPLE, csvImport, parseCsv, csvDate, CSV_TEMPLATES,
   /* the calendar */
   calItems, calPast, calNext, calTeams, calGroups, teamHue, seriesDates, seriesOf, icsItem, opponentMessage,
   viewCalendar, sheetCalItem, sheetCalEvent, calFormNew, publicEvents, pubText, mayAct,

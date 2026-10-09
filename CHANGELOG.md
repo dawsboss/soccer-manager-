@@ -8,6 +8,47 @@ before this point lives only in the git log.
 
 ---
 
+## Four jobs move to the server — 2026-10-09 (build 122, rules version 21)
+
+SERVER.md's smaller jobs: each was a phone doing something for somebody else,
+or something that stayed true only while some phone was open.
+
+- **Joining by invite is one step.** Her phone asks (`joinAsks/{uid}/{id}`)
+  and `functions/join.js` checks the invite as the rules did, spends it in one
+  transaction (one invite is never two people's, one seat never two), and
+  writes the grant, her member entry, her bookmark, the admin's list and the
+  log in one write, then the lookup tables as the role triggers make them. A
+  dropped signal can no longer leave a spent invite and no role.
+- **A new club's code is the server's.** Starting a club asks the same way;
+  the server makes the code, checks it is free on both trees and writes the
+  club with her as admin and owner in one go. With no answer the phone says
+  so and makes nothing, so a slow server never means two clubs. The
+  bootstrap clauses stay for now as the bridge; once this is live they can
+  go, and with them rules.js's trust-on-first-use gap.
+- **Busy at another club stays current with no phone open.** The five-minute
+  My calendar build now also writes each sharing person's busy times from the
+  clubs themselves, in the shape her phone writes, so a practice added at one
+  club reaches the others within minutes. Private stays the default, and
+  turning sharing off on any phone takes every one down on the next run.
+- **Old practice plans and coach's notes are moved once, on the server.**
+  `migrateOld`, daily until every club has gone through and then never again:
+  each plan from before the calendar gets its entry, each note still on a
+  child's record goes to `coachNotes` in the same write it comes off the
+  record. The phones' halves go once the live run says done.
+- **A bulk import is applied by the server.** The admin's phone plans it as
+  before and sends the whole plan in one ask; the server checks she is an
+  admin and that every write is inside the club and in a part an import
+  writes (or writes nothing), and applies it in order in batches the
+  database takes. A phone switched off after the ask lands loses nothing.
+
+Each asks the server only where `firebase-config.js` sets the new
+`SOCCER_SERVER`; joining and importing fall back to the phone's own writes
+where the rules are too old to take the ask. New suites `joinask`,
+`importask` and `migrate` (each also on orgs/), and more in `mycalfeed`,
+`invites`, `rules` and `ids`.
+
+---
+
 ## Fans, and links with limits — 2026-10-09 (build 121)
 
 The first of AUTH.md's new kinds of people still to build (AUTH.md, *More kinds of people*, 1), as the owner decided it and then renamed it, and links with limits.
