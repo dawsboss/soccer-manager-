@@ -161,20 +161,22 @@ does the bookkeeping, not that the phone works offline first.
 
 ## Bookable times and training sessions
 
-- **Now:** a coach's bookable window carries the list of slots it still offers
-  (`slots`), worked out on her phone or an admin's from everything she is busy
-  with and written back (`healBlocks()`, `openSlotsOf()`). The rules check a
-  booking against that list because they cannot count, search or do dates. A
-  practice added from another phone is bookable until one of theirs next
-  opens the app (rules.js, gap 9). A seat taken with no booking behind it is let
-  go by the coach's phone after ten minutes (`SEAT_STALE`), and one child can
-  hold two seats by hand (gap 10). A family never writes `in` on an ordinary
-  session, because a rule can't count the places; the coach's phone keeps the
-  count (gap 8).
-- **With a server:** booking is one call that, inside a transaction, checks the
-  coach is really free now, counts the places and books. `slots`, `seats`,
-  `healBlocks()`, the seat clean-up and gaps 8 to 10 go away; a full group can
-  have a real waiting list.
+- **Moved (build 117): booking a coach's time is one call.** A family's
+  phone asks at `bookAsks/{code}/{uid}/{id}` and the server
+  (`functions/book.js`, the `bookAsk` trigger) answers beneath it: it checks
+  her child, the coach's calendar as it stands (her teams' practices and
+  games, the sessions she runs, her time off, her busy times elsewhere), the
+  child's, and counts the places inside one transaction before it writes the
+  session and the booking. A full slot has a real waiting list, worked
+  through by `bookFreed` the moment a place comes free. What went: the
+  block's `slots` and `seats`, the coach's and admins' phones keeping them
+  (`healBlocks`, `openSlotsOf`), the seat clean-up after ten minutes, and the
+  three gaps the rules printed for them (a practice bookable until a phone
+  redrew, a seat with no booking, one child holding two). AVAILABILITY.md,
+  *Booking is one call to the server*.
+- **Still on the phone:** an ordinary session's places. A family asks, and
+  the coach's phone keeps the count when she says yes (rules.js, gap 8);
+  that is the coach's decision, not bookkeeping, so it stays hers.
 
 ---
 

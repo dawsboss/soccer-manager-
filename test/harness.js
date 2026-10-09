@@ -236,7 +236,7 @@ const EXPORTS = `{
   sessUi, SESS_ACTS, sessMessage, reachFor, fmtMoney, sessClubLine, calendarDoc, publicDoc, viewMine, viewClub,
   /* bookable times, and my calendar */
   blockAll, blockById, blockSlots, normBlock, slotSid, canEditBlock, kidBusy, blockKids, availView, familyAvail, sheetBlock,
-  AVAIL_ACTS, myCalItems, myCalTeams, myCalTids, myCalFilters, myCalLine, createClub, blockValue, healBlocks, seatsOf, freeSeat, placesTaken, openSlotsOf, slotAt, slotKey,
+  AVAIL_ACTS, myCalItems, myCalTeams, myCalTids, myCalFilters, myCalLine, createClub, blockValue, placesTaken, slotAt, askBooking, bookWhy,
   /* my calendar, across clubs */
   get you() { return you }, busyOf, myFeedDoc, myFeedId, feedItem, youCalItems, youBusy, youClubs, elsewhereOn, sharing, sheetPersonCal, viewScope, crumbs, watchMirror, mirrorSlim,
   alertsList: () => alertsHere().list, alertBar, calAlerts, elseUnread, openAlert, noteMine,

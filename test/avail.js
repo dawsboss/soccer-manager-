@@ -3,27 +3,27 @@
 
    - Only a coach (her own times) or an admin (anyone's) offers or changes
      times, checked in the click handler, not only by what the screen draws.
-   - A block is 1-1s or a small group; it carries the slots it offers, each
-     with its start as a timestamp, and one seat key per place, because those
-     are what the rules read.
+   - A block is 1-1s or a small group; it carries its own midnight (`day0`),
+     which only the coach's phone knows, so the server can time each slot.
+     The lists the old rules read (`slots`, `seats`) are written no more.
    - A coach's team calendar is her busy time: a practice for a team she
-     coaches, or a session she runs, takes out the slots it overlaps, on the
-     screen at once and in the block's list of slots when her phone (or an
-     admin's) next draws. Seats nobody is using are let go.
-   - A family books a free place for her own child only: the slot's session
-     under the id the rule builds (first family only), a seat nobody holds,
-     then the booking naming it, each at its own path. It needs a signal; a
-     refusal is taken back off the screen. A full group offers nothing.
+     coaches, or a session she runs, takes out the slots it overlaps on the
+     screen; the server checks the same, and more, when a family asks.
+   - A family books a free place for her own child only, by asking the
+     server (bookAsks), never by writing a session or a booking herself. It
+     needs a signal; the server's no is said in words. A full slot offers
+     its waiting list.
    - Her child's own team practice is never booked over.
-   - She cancels her own child's place (booking, seat, then the slot if
-     nobody else is in it), not another child's, not inside the notice.
+   - She cancels her own child's place, or her place on the waiting list,
+     the same way, not another child's, not inside the notice.
    - She never sees another child's name. Times never reach public/.
    - My calendar is the person's: her teams, her children's, her sessions and
      her times, and nobody else's. */
 
 const H = require('./harness');
 const { check } = H;
-const { makeFakebase } = require('./fakebase');
+const { makeFakebase, makeServer } = require('./fakebase');
+const book = require('../functions/book');
 
 const CONFIG = { apiKey: 'k', databaseURL: 'https://prod.example', projectId: 'p' };
 const CODE = 'CLUB';
@@ -63,8 +63,8 @@ const A = H.loadApp({ config: CONFIG, firebase: makeFakebase() });
 const TODAY = A.todayStr();
 const day = n => A.addDays(TODAY, n);
 const pad = n => String(n).padStart(2, '0');
-/* The two lists the rules read, worked out here independently of the app:
-   every slot on the grid, start as a local timestamp, and a seat per place. */
+/* The two lists the old rules read, as a window from before the server
+   booked carries them: every slot on the grid, and a seat per place. */
 function lists(b) {
   const [y, m, d] = b.date.split('-').map(Number);
   const mins = t => { const [h, mi] = t.split(':').map(Number); return h * 60 + mi; };
@@ -82,7 +82,7 @@ const group = (id, extra = {}) => block(id, { kind: 'group', cap: 2, title: 'Fin
 
 function as(uid) {
   A.state = club();
-  A.sess = { sessions: {}, booked: {}, came: {}, fees: {}, pay: {}, splans: {}, avail: {}, seats: {}, dirty: {} };
+  A.sess = { sessions: {}, booked: {}, came: {}, fees: {}, pay: {}, splans: {}, avail: {}, dirty: {} };
   A.me = uid ? { uid, name: (club().access.members[uid] || {}).name || uid } : null;
   A.appOwners = {};
   A.ui.view = 'sessions'; A.ui.sess = { tab: 'list' }; A.ui.teamId = 't1'; A.ui.myCal = 'all';
@@ -110,9 +110,8 @@ const slotSess = (sid, extra = {}) => ({ id: sid, kind: 'one', cap: 1, coach: 'j
     check('cut into two slots', A.blockSlots(mine[0]).map(x => x.start).join(','), '17:00,18:00');
     check('both free', A.blockSlots(mine[0]).every(x => x.free), true);
     const raw = A.sess.avail[mine[0].id];
-    check('the slots the rules read are written with it', Object.keys(raw.slots).join(','), 't1700,t1800');
-    check('each with its start as a time on the clock', raw.slots.t1800.at, A.slotAt(day(3), '18:00'));
-    check('and one seat', Object.keys(raw.seats).join(','), 's1');
+    check('written with this phone\'s midnight that day, for the server to time slots by', raw.day0 + 18 * 3600000, A.slotAt(day(3), '18:00'));
+    check('and none of the lists the old rules read', raw.slots === undefined && raw.seats === undefined, true);
     check('each week one write, at its own path', Object.keys(A.sess.dirty).every(p => /^avail\/[\w]+$/.test(p)), true);
 
     A.click({ act: 'availnew' });
@@ -123,7 +122,6 @@ const slotSess = (sid, extra = {}) => ({ id: sid, kind: 'one', cap: 1, coach: 'j
     A.click({ act: 'availsave' });
     const g = A.blockAll().find(b => b.date === day(4));
     check('a small group too', g && g.kind + ' ' + g.cap + ' ' + g.title, 'group 6 Finishing group');
-    check('with a seat per place', Object.keys(A.sess.avail[g.id].seats).length, 6);
 
     A.click({ act: 'availnew' });
     A.click({ act: 'availrepeat', v: '0' });
@@ -152,7 +150,7 @@ const slotSess = (sid, extra = {}) => ({ id: sid, kind: 'one', cap: 1, coach: 'j
     A.click({ act: 'availoff', id: 'b1' });
     check('an admin takes a week off for any coach', A.blockById('b1').off, true);
     check('and nothing in it is free', A.blockSlots(A.blockById('b1')).some(x => x.free), false);
-    check('nor listed for the rules', Object.keys(A.sess.avail.b1.slots).length, 0);
+    check('and the old lists leave the block when it is written', A.sess.avail.b1.slots === undefined && A.sess.avail.b1.seats === undefined, true);
   }
 
   console.log('\n--- synced with the teams\' calendars ---');
@@ -163,39 +161,24 @@ const slotSess = (sid, extra = {}) => ({ id: sid, kind: 'one', cap: 1, coach: 'j
     check('a practice of a team she coaches takes out its slot', sl.find(x => x.start === '18:00').free, false);
     check('and says why', /G11 Flight/.test(sl.find(x => x.start === '18:00').clash[0].label), true);
     check('the rest stays free', sl.find(x => x.start === '17:00').free, true);
-    check('her phone takes it off the list the rules read', A.healBlocks(), 1);
-    check('so a family cannot book it even by hand', Object.keys(A.sess.avail.b1.slots).join(), 't1700');
-    check('and once it is right, nothing more is written', A.healBlocks(), 0);
     delete A.state.teams.t1.events.e1;
-    A.healBlocks();
-    check('the practice gone, the slot comes back', Object.keys(A.sess.avail.b1.slots).join(), 't1700,t1800');
+    check('the practice gone, the slot comes back', A.blockSlots(A.blockById('b1')).find(x => x.start === '18:00').free, true);
     A.state.teams.t2.events.e2 = { id: 'e2', kind: 'practice', date: day(3), start: '17:00', end: '18:00' };
     check('another team\'s practice does not take a slot', A.blockSlots(A.blockById('b1')).find(x => x.start === '17:00').free, true);
     A.sess.sessions.s9 = { id: 's9', kind: 'group', coach: 'jaz', date: day(3), start: '17:30', end: '18:30', cap: 4 };
     check('a session she runs does, once it overlaps', A.blockSlots(A.blockById('b1')).find(x => x.start === '17:00').free, false);
     putBlock('b0', { date: day(-1) });
     check('a past day offers nothing', A.blockSlots(A.blockById('b0')).some(x => x.free), false);
-    as('other'); putBlock('b1');
-    A.state.teams.t1.events.e1 = { id: 'e1', kind: 'practice', date: day(3), start: '18:00', end: '19:00' };
-    check('another coach\'s phone leaves her blocks alone', A.healBlocks(), 0);
-    as('boss'); putBlock('b1');
-    A.state.teams.t1.events.e1 = { id: 'e1', kind: 'practice', date: day(3), start: '18:00', end: '19:00' };
-    check('an admin\'s keeps them right', A.healBlocks(), 1);
+    check('nothing about a block is written for it: the server reads the calendar itself', Object.keys(A.sess.dirty).length, 0);
   }
   {
     as('jaz'); putBlock('b1');
     const sid = A.slotSid('jaz', day(3), '17:00');
     A.sess.sessions[sid] = slotSess(sid, { start: '17:00', end: '18:00' });
-    A.sess.seats[sid] = { s1: { pid: 'p1', tid: 't1', by: 'mum', at: A.nowMs() } };
-    check('a seat just taken, its booking on the way, is kept', A.healBlocks(), 0);
-    A.clock.set(A.nowMs() + 11 * 60000);
-    A.healBlocks();
-    check('one held ten minutes with no booking is let go', A.seatsOf(sid).length, 0);
-    A.sess.seats[sid] = { s1: { pid: 'p1', tid: 't1', by: 'mum', at: A.nowMs() } };
-    A.sess.booked[sid] = { p1: { tid: 't1', st: 'in', by: 'mum', at: 1, seat: 's1' } };
-    check('one with a booking behind it is kept', A.healBlocks(), 0);
+    A.sess.booked[sid] = { p1: { tid: 't1', st: 'in', by: 'mum', at: 1 } };
+    A.sess.dirty = {};
     A.click({ act: 'sessbook', id: sid, pid: 'p1', v: 'out' });
-    check('taking the player off gives the seat back', A.seatsOf(sid).length, 0);
+    check('taking a player off her slot is one write, the booking', Object.keys(A.sess.dirty).join(), 'booked/' + sid + '/p1');
   }
 
   console.log('\n--- a family sees and picks a time ---');
@@ -211,20 +194,21 @@ const slotSess = (sid, extra = {}) => ({ id: sid, kind: 'one', cap: 1, coach: 'j
     A.click({ act: 'slotbook', id: 'b1', v: '18:00', pid: 'p1' });
     const sid = A.slotSid('jaz', day(3), '18:00');
     check('on a phone with no club database it is kept here', (A.sessById(sid) || {}).pid, 'p1');
-    check('on the 1-1\'s seat', A.seatsOf(sid).map(x => x.n + ':' + x.pid).join(), 's1:p1');
-    check('and booked, naming it', A.bookOf(sid, 'p1').seat, 's1');
+    check('and booked', A.bookOf(sid, 'p1').st, 'in');
     check('the slot is no longer free', A.blockSlots(A.blockById('b1')).find(x => x.start === '18:00').free, false);
 
     as('mum'); putBlock('b1');
     const sid2 = A.slotSid('jaz', day(3), '17:00');
     A.sess.sessions[sid2] = slotSess(sid2, { start: '17:00', end: '18:00', pid: 'p0', by: 'gran' });
-    A.sess.booked[sid2] = { p0: { tid: 't1', st: 'in', by: 'gran', at: 1, seat: 's1' } };
-    A.sess.seats[sid2] = { s1: { pid: 'p0', tid: 't1', by: 'gran', at: 1 } };
+    A.sess.booked[sid2] = { p0: { tid: 't1', st: 'in', by: 'gran', at: 1 } };
     A.render();
     A.click({ act: 'availopen', id: 'b1' });
-    check('another family\'s 1-1 says full', /full/.test(sheet(A)), true);
+    check('another family\'s 1-1 says taken', /Taken/.test(sheet(A)), true);
     check('without her child\'s name', /Ella/.test(sheet(A) + A.rendered()), false);
-    check('and only the free one can be booked', (sheet(A).match(/data-act="slotpick"/g) || []).length, 1);
+    check('the free one can be booked', (sheet(A).match(/data-act="slotpick" data-id="b1" data-v="18:00">/g) || []).length, 1);
+    check('and the taken one waited for', /data-act="slotpick" data-id="b1" data-v="17:00" data-wait="1"/.test(sheet(A)), true);
+    A.click({ act: 'slotpick', id: 'b1', v: '17:00', wait: '1' });
+    check('which says what the waiting list is', /Waiting list for 5pm/.test(sheet(A)) && /data-wait="1"/.test(sheet(A)), true);
     A.ui.view = 'mycal'; A.render();
     check('nor is that child on her calendar', /Ella/.test(A.rendered()), false);
   }
@@ -232,14 +216,12 @@ const slotSess = (sid, extra = {}) => ({ id: sid, kind: 'one', cap: 1, coach: 'j
     as('mum'); putGroup('g1');
     const sid = A.slotSid('jaz', day(3), '17:00');
     A.sess.sessions[sid] = slotSess(sid, { kind: 'group', cap: 2, start: '17:00', end: '18:00', slot: 'g1', pid: 'p0', by: 'gran' });
-    A.sess.booked[sid] = { p0: { tid: 't1', st: 'in', by: 'gran', at: 1, seat: 's1' } };
-    A.sess.seats[sid] = { s1: { pid: 'p0', tid: 't1', by: 'gran', at: 1 } };
+    A.sess.booked[sid] = { p0: { tid: 't1', st: 'in', by: 'gran', at: 1 } };
     A.click({ act: 'availopen', id: 'g1' });
     check('a group with a place left can be joined', /1 of 2 places left/.test(sheet(A)), true);
     A.click({ act: 'slotbook', id: 'g1', v: '17:00', pid: 'p1' });
     check('joining writes no new session', A.sessById(sid).by, 'gran');
-    check('takes the next seat', A.seatsOf(sid).map(x => x.n).sort().join(), 's1,s2');
-    check('and books her child on it', A.bookOf(sid, 'p1').seat, 's2');
+    check('and books her child into it', A.bookOf(sid, 'p1').st, 'in');
     check('then the group is full', A.blockSlots(A.blockById('g1')).find(x => x.start === '17:00').free, false);
     A.click({ act: 'slotbook', id: 'g1', v: '17:00', pid: 'p1' });
     check('and booking again says she is in', /already in/.test(A.lastToast()), true);
@@ -267,7 +249,7 @@ const slotSess = (sid, extra = {}) => ({ id: sid, kind: 'one', cap: 1, coach: 'j
     A.state.teams.t2.events.e2 = { id: 'e2', kind: 'practice', date: day(2), start: '18:00', title: 'Storm practice' };
     const sid = A.slotSid('jaz', day(3), '18:00');
     A.sess.sessions[sid] = slotSess(sid);
-    A.sess.booked[sid] = { p1: { tid: 't1', st: 'in', by: 'mum', at: 1, seat: 's1' } };
+    A.sess.booked[sid] = { p1: { tid: 't1', st: 'in', by: 'mum', at: 1 } };
     A.sess.sessions.sx = { id: 'sx', kind: 'one', title: 'Another 1-1', coach: 'jaz', date: day(3), start: '09:00', end: '10:00', cap: 1 };
     A.sess.booked.sx = { p0: { tid: 't1', st: 'in', by: 'jaz', at: 1 } };
     const keys = A.myCalItems().map(x => x.key);
@@ -337,25 +319,51 @@ const slotSess = (sid, extra = {}) => ({ id: sid, kind: 'one', cap: 1, coach: 'j
     return { D, fbk };
   }
   async function load(D, fbk, v = {}) {
-    for (const k of ['avail', 'sessions', 'booked', 'seats', 'came']) fbk.deliver(TR + k, v[k] || {});
+    for (const k of ['avail', 'sessions', 'booked', 'came']) fbk.deliver(TR + k, v[k] || {});
     await D.flush();
   }
   const written = (fbk, p) => { const w = fbk.writtenTo(p); return w.length ? w[w.length - 1].value : undefined; };
   const remote = { b1: block('b1') };
   const SID = 'k_jaz_' + day(3) + '_1800';
 
+  /* The club's server, answering this phone's last ask with functions/book.js
+     as deployed, on the harness clock, over what the club holds; what it
+     writes then reaches the phone the way the club's copy does. */
+  async function answer(D, fbk, training) {
+    const asks = fbk.record.writes.filter(w => /^bookAsks\//.test(w.path) && w.value);
+    const w = asks[asks.length - 1];
+    if (!w) return { ans: null, S: null };
+    const S = makeServer({ workspaces: { [CODE]: club() }, training: { [CODE]: JSON.parse(JSON.stringify(training)) } });
+    const env = {
+      get: p => S.ref(p).get().then(x => x.val()), set: (p, v) => S.ref(p).set(v), remove: p => S.ref(p).remove(),
+      claim: (p, fn) => S.ref(p).transaction(fn).then(r => !!r.committed),
+      dated: (p, d) => S.ref(p).orderByChild('date').equalTo(d).get().then(x => x.val()),
+      now: () => D.nowMs()
+    };
+    const [, code, uid, id] = w.path.split('/');
+    await book.onAsk(env, { code, uid, id }, w.value);
+    for (const k of ['sessions', 'booked']) fbk.deliver(TR + k, S.at(TR + k) || {});
+    await D.flush();
+    const ans = S.at(w.path + '/answer');
+    fbk.deliver(w.path + '/answer', ans);
+    await D.flush();
+    return { ans, S, ask: w };
+  }
+  const askOf = fbk => fbk.record.writes.filter(w => /^bookAsks\//.test(w.path)).pop();
+  const ownWrites = fbk => fbk.record.writes.filter(w => w.path.startsWith(TR) && !w.path.startsWith(TR + 'avail'));
+
   console.log('\n--- what each phone listens to ---');
   {
     const { fbk } = await device('mum');
     check('a family reads the coaches\' times', fbk.watching(TR + 'avail'), true);
-    check('and who holds which seat', fbk.watching(TR + 'seats'), true);
+    check('and asks nothing about seats, which are gone', fbk.watching(TR + 'seats'), false);
   }
   {
     const { fbk } = await device('trk');
-    check('a tracker reads neither', fbk.watching(TR + 'avail') || fbk.watching(TR + 'seats'), false);
+    check('a tracker reads none of it', fbk.watching(TR + 'avail'), false);
   }
 
-  console.log('\n--- booking, against the database ---');
+  console.log('\n--- booking: one ask, the server answers ---');
   {
     const { D, fbk } = await device('mum');
     await load(D, fbk, { avail: remote });
@@ -364,119 +372,141 @@ const slotSess = (sid, extra = {}) => ({ id: sid, kind: 'one', cap: 1, coach: 'j
     D.dom.node('#slotWant').value = 'Weak foot';
     D.click({ act: 'slotbook', id: 'b1', v: '18:00', pid: 'p1' });
     await D.flush();
-    const s = written(fbk, TR + 'sessions/' + SID);
+    const ask = askOf(fbk);
+    check('she asks the server, under her own account', !!ask && ask.path.startsWith('bookAsks/CLUB/mum/'), true);
+    check('for the slot, her child and what she wants', ask && [ask.value.op, ask.value.block, ask.value.start, ask.value.pid, ask.value.tid, ask.value.want].join(), 'book,b1,18:00,p1,t1,Weak foot');
+    check('stamped now', ask && ask.value.at, D.nowMs());
+    check('and writes no session, booking or seat herself', ownWrites(fbk).length, 0);
+    check('while it is asked, the sheet says so', /Booking…/.test(sheet(D)), true);
+    check('listening for the answer beneath the ask', fbk.watching(ask.path + '/answer'), true);
+    const { ans, S } = await answer(D, fbk, { avail: remote });
+    check('the server books her child', ans && ans.ok && ans.st, 'in');
+    const s = S.at(TR + 'sessions/' + SID);
     check('the slot is a session under the id its time gives it', !!s, true);
-    check('the same id the rule builds', D.slotSid('jaz', day(3), '18:00'), SID);
+    check('the same id the app gives it', D.slotSid('jaz', day(3), '18:00'), SID);
     check('a 1-1, closed to asks', s && s.kind === 'one' && s.cap === 1 && s.open === false, true);
     check('naming the block, her child, and her', s && [s.slot, s.pid, s.tid, s.by].join(), 'b1,p1,t1,mum');
     check('at the start the block lists, to the millisecond', s && s.t0, remote.b1.slots.t1800.at);
-    check('and the block\'s price and notice, exactly', s && s.price === 30 && s.notice === 24, true);
-    check('inside the window', s && s.start === '18:00' && s.end === '19:00', true);
-    const seat = written(fbk, TR + 'seats/' + SID + '/s1');
-    check('then the seat', seat && seat.pid + seat.by, 'p1mum');
-    const b = written(fbk, TR + 'booked/' + SID + '/p1');
-    check('then her child is in it, on that seat', b && b.st + b.seat, 'ins1');
-    check('with what she wants to work on', b && b.want, 'Weak foot');
-    const order = fbk.record.writes.map(w => w.path);
-    const at = p => order.indexOf(TR + p);
-    check('session, seat, booking: the order the rules need', at('sessions/' + SID) < at('seats/' + SID + '/s1') && at('seats/' + SID + '/s1') < at('booked/' + SID + '/p1'), true);
-    check('never a whole collection', fbk.writtenTo(TR + 'sessions').length + fbk.writtenTo(TR + 'booked/' + SID).length + fbk.writtenTo(TR + 'seats/' + SID).length, 0);
-    check('the slot is no longer free', D.blockSlots(D.blockById('b1')).find(x => x.start === '18:00').free, false);
+    check('with the block\'s price and notice', s && s.price === 30 && s.notice === 24, true);
+    const bk = S.at(TR + 'booked/' + SID + '/p1');
+    check('her child in it, with what she wants to work on', bk && bk.st + ' ' + bk.want, 'in Weak foot');
+    check('her phone says so', /Booked: Rosa/.test(D.lastToast()), true);
+    check('the slot is no longer free on her screen', D.blockSlots(D.blockById('b1')).find(x => x.start === '18:00').free, false);
     check('and it is on her calendar', D.myCalItems().some(x => x.key === 's:' + SID), true);
+    check('the ask is cleared away once answered', fbk.record.removes.includes(ask.path), true);
     check('nothing is left owed', Object.keys(D.sess.dirty).length, 0);
+  }
+  {
+    const { D, fbk } = await device('gran');
+    const held = { avail: remote, sessions: { [SID]: slotSess(SID, { t0: remote.b1.slots.t1800.at }) }, booked: { [SID]: { p1: { tid: 't1', st: 'in', by: 'mum', at: 1 } } } };
+    await load(D, fbk, held);
+    D.click({ act: 'availopen', id: 'b1' });
+    check('a taken 1-1 offers another family its waiting list', /data-v="18:00" data-wait="1"/.test(sheet(D)), true);
+    D.click({ act: 'slotbook', id: 'b1', v: '18:00', pid: 'p0', wait: '1' });
+    await D.flush();
+    check('asking for the waiting list', askOf(fbk).value.wait, true);
+    const { ans } = await answer(D, fbk, held);
+    check('the server puts her child on it', ans && ans.st, 'wait');
+    check('and her phone says what that means', /waiting list.*place comes free/.test(D.lastToast()), true);
+    D.sheetSess(SID);
+    check('her sheet offers to leave it', /Leave the waiting list/.test(sheet(D)), true);
+    check('and never names the child who has the place', /Rosa/.test(sheet(D) + D.rendered()), false);
   }
   {
     const { D, fbk } = await device('mum');
     await load(D, fbk, { avail: remote });
-    fbk.record.refuse = p => /\/(sessions|seats|booked)\//.test(p);
     D.click({ act: 'slotbook', id: 'b1', v: '18:00', pid: 'p1' });
     await D.flush();
-    check('a time somebody just took is taken back off her screen', D.sessById(SID), null);
-    check('her seat and booking too', D.seatsOf(SID).length + (D.bookOf(SID, 'p1') ? 1 : 0), 0);
-    check('and she is told to pick another', /Pick another/.test(D.lastToast()), true);
-    check('nothing is left owed', Object.keys(D.sess.dirty).length, 0);
+    // the coach's time off is hers and the admins', never on a family's phone: the server knows it
+    const { ans } = await answer(D, fbk, { avail: remote, away: { jaz: { d: { id: 'd', kind: 'dates', from: day(3), to: day(3), by: 'jaz', at: 1 } } } });
+    check('the server says no when the coach is not free after all', ans && ans.why, 'busy');
+    check('and she is told, in words', /not free then/.test(D.lastToast()), true);
+    check('nothing booked on her screen', D.sessById(SID), null);
+  }
+  {
+    const { D, fbk } = await device('mum');
+    await load(D, fbk, { avail: remote });
+    fbk.record.refuse = p => /^bookAsks\//.test(p);
+    D.click({ act: 'slotbook', id: 'b1', v: '18:00', pid: 'p1' });
+    await D.flush();
+    check('a refused ask says the rules may be behind', new RegExp('version ' + D.RULES_VERSION).test(D.lastToast()), true);
+    check('and nothing is written to the club', ownWrites(fbk).length, 0);
+    check('no answer at all is said as that, not as a no', /No answer from the club yet/.test(D.bookWhy(null)), true);
   }
   {
     const { D, fbk } = await device('mum', { online: false });
     await load(D, fbk, { avail: remote });
     D.click({ act: 'slotbook', id: 'b1', v: '18:00', pid: 'p1' });
     await D.flush();
-    check('offline, nothing is sent', fbk.record.writes.some(w => /\/(sessions|seats|booked)\//.test(w.path)), false);
+    check('offline, nothing is asked: first come, first served needs a signal', fbk.record.writes.some(w => /^bookAsks\//.test(w.path)), false);
+    check('and she is told why', /needs a signal/.test(D.lastToast()), true);
   }
   {
     const { D, fbk } = await device('mum');
     const g = { g1: group('g1') }, G = 'k_jaz_' + day(3) + '_1700';
-    await load(D, fbk, {
-      avail: g, sessions: { [G]: slotSess(G, { kind: 'group', cap: 2, slot: 'g1', start: '17:00', end: '18:00', pid: 'p0', by: 'gran' }) },
-      booked: { [G]: { p0: { tid: 't1', st: 'in', by: 'gran', at: 1, seat: 's1' } } }, seats: { [G]: { s1: { pid: 'p0', tid: 't1', by: 'gran', at: 1 } } }
-    });
-    fbk.record.writes.length = 0;
+    const held = {
+      avail: g, sessions: { [G]: slotSess(G, { kind: 'group', cap: 2, slot: 'g1', start: '17:00', end: '18:00', pid: 'p0', by: 'gran', t0: g.g1.slots.t1700.at }) },
+      booked: { [G]: { p0: { tid: 't1', st: 'in', by: 'gran', at: 1 } } }
+    };
+    await load(D, fbk, held);
     D.click({ act: 'slotbook', id: 'g1', v: '17:00', pid: 'p1' });
     await D.flush();
-    check('joining a group writes no session', fbk.record.writes.some(w => w.path.startsWith(TR + 'sessions/')), false);
-    check('just the next seat and the booking', fbk.record.writes.map(w => w.path.slice(TR.length)).join(), `seats/${G}/s2,booked/${G}/p1`);
+    const { ans, S } = await answer(D, fbk, held);
+    check('joining a group: the server books her into the one already there', ans && ans.ok && ans.sid, G);
+    check('the session still the first family\'s', S.at(TR + 'sessions/' + G).by, 'gran');
+    check('two in it now', Object.values(S.at(TR + 'booked/' + G)).filter(x => x.st === 'in').length, 2);
   }
 
-  console.log('\n--- cancelling, against the database ---');
-  const mine = (extra = {}) => ({ [SID]: slotSess(SID, extra) });
-  const myBooking = { [SID]: { p1: { tid: 't1', st: 'in', by: 'mum', at: 1, seat: 's1' } } };
-  const mySeat = { [SID]: { s1: { pid: 'p1', tid: 't1', by: 'mum', at: 1 } } };
+  console.log('\n--- cancelling: the same way ---');
+  const mine = (extra = {}) => ({ [SID]: slotSess(SID, { t0: remote.b1.slots.t1800.at, ...extra }) });
+  const myBooking = { [SID]: { p1: { tid: 't1', st: 'in', by: 'mum', at: 1 } } };
   {
     const { D, fbk } = await device('mum');
-    await load(D, fbk, { avail: remote, sessions: mine(), booked: myBooking, seats: mySeat });
+    const held = { avail: remote, sessions: mine(), booked: myBooking };
+    await load(D, fbk, held);
     D.sheetSess(SID);
     check('her sheet offers to cancel it', /data-act="slotcancel"/.test(sheet(D)), true);
     fbk.record.writes.length = 0;
     D.click({ act: 'slotcancel', id: SID, pid: 'p1' });
     await D.flush();
-    const order = fbk.record.writes.map(w => w.path.slice(TR.length));
-    check('booking, seat, then the slot: the order the rules need', order.join(), `booked/${SID}/p1,seats/${SID}/s1,sessions/${SID}`);
-    check('all deleted', fbk.record.writes.every(w => w.value === null), true);
-    check('free on her screen', D.blockSlots(D.blockById('b1')).find(x => x.start === '18:00').free, true);
+    const ask = askOf(fbk);
+    check('she asks the server to cancel', ask && [ask.value.op, ask.value.sid, ask.value.pid].join(), `cancel,${SID},p1`);
+    check('writing nothing to the club herself', ownWrites(fbk).length, 0);
+    const { ans, S } = await answer(D, fbk, held);
+    check('the server takes her place off', ans && ans.ok && S.at(TR + 'booked/' + SID), null);
+    check('and the slot, with nobody left in it', S.at(TR + 'sessions/' + SID), null);
+    check('free again on her screen', D.blockSlots(D.blockById('b1')).find(x => x.start === '18:00').free, true);
+    check('and she is told', /Cancelled/.test(D.lastToast()), true);
   }
   {
     const { D, fbk } = await device('mum');
     const G = SID;
     await load(D, fbk, {
       avail: { g1: group('g1') }, sessions: { [G]: slotSess(G, { kind: 'group', cap: 2, slot: 'g1', pid: 'p0', by: 'gran' }) },
-      booked: { [G]: { p0: { tid: 't1', st: 'in', by: 'gran', at: 1, seat: 's1' }, p1: { tid: 't1', st: 'in', by: 'mum', at: 2, seat: 's2' } } },
-      seats: { [G]: { s1: { pid: 'p0', tid: 't1', by: 'gran', at: 1 }, s2: { pid: 'p1', tid: 't1', by: 'mum', at: 2 } } }
+      booked: { [G]: { p0: { tid: 't1', st: 'in', by: 'gran', at: 1 }, p1: { tid: 't1', st: 'in', by: 'mum', at: 2 } } }
     });
     fbk.record.writes.length = 0;
     D.click({ act: 'slotcancel', id: G, pid: 'p0' });
-    check('another child\'s place is not hers to cancel', fbk.record.writes.length, 0);
-    D.click({ act: 'slotcancel', id: G, pid: 'p1' });
-    await D.flush();
-    check('her own, in a group, leaves the group standing', fbk.record.writes.map(w => w.path.slice(TR.length)).join(), `booked/${G}/p1,seats/${G}/s2`);
+    check('another child\'s place is not hers to cancel: nothing is even asked', fbk.record.writes.length, 0);
   }
   {
     const { D, fbk } = await device('mum');
-    await load(D, fbk, { avail: remote, sessions: mine({ date: TODAY, start: '23:00', end: '23:59' }), booked: myBooking, seats: mySeat });
+    await load(D, fbk, { avail: remote, sessions: mine({ date: TODAY, start: '23:00', end: '23:59', t0: undefined }), booked: myBooking });
     fbk.record.writes.length = 0;
     D.click({ act: 'slotcancel', id: SID, pid: 'p1' });
     check('inside the notice, she is sent to the coach', /message the coach/.test(D.lastToast()), true);
-    check('and nothing is written', fbk.record.writes.length, 0);
+    check('and nothing is asked', fbk.record.writes.length, 0);
   }
 
-  console.log('\n--- the coach hears, and her phone keeps the lists ---');
+  console.log('\n--- the coach hears ---');
   {
     const { D, fbk } = await device('jaz');
     await load(D, fbk, { avail: remote });
-    fbk.deliver(TR + 'sessions', mine()); fbk.deliver(TR + 'seats', mySeat); fbk.deliver(TR + 'booked', myBooking); await D.flush();
+    fbk.deliver(TR + 'sessions', mine()); fbk.deliver(TR + 'booked', myBooking); await D.flush();
     check('a family booking one of her times', /Booked a time/.test(D.toasts.join('|')), true);
-    fbk.deliver(TR + 'booked', {}); fbk.deliver(TR + 'seats', {}); fbk.deliver(TR + 'sessions', {}); await D.flush();
+    fbk.deliver(TR + 'booked', {}); fbk.deliver(TR + 'sessions', {}); await D.flush();
     check('and cancelling it', /Cancelled a time/.test(D.lastToast() || ''), true);
     check('naming the child to her coach', /Rosa/.test(D.lastToast() || ''), true);
-  }
-  {
-    const { D, fbk } = await device('jaz');
-    await load(D, fbk, { avail: remote });
-    fbk.record.writes.length = 0;
-    const ws = club(); ws.teams.t1.events = { e1: { id: 'e1', kind: 'practice', date: day(3), start: '18:00', end: '19:00' } };
-    D.state.teams.t1.events = ws.teams.t1.events;
-    D.healBlocks(); await D.flush();
-    const w = written(fbk, TR + 'avail/b1');
-    check('a practice added to her team takes the slot off the list at the club', w && Object.keys(w.slots).join(), 't1700');
   }
   {
     const { D, fbk } = await device('jaz');
@@ -488,7 +518,7 @@ const slotSess = (sid, extra = {}) => ({ id: sid, kind: 'one', cap: 1, coach: 'j
     await D.flush();
     const ws = fbk.record.writes.filter(w => w.path.startsWith(TR + 'avail'));
     check('offering times writes each week at its own path', ws.length === 2 && ws.every(w => /^training\/CLUB\/avail\/\w+$/.test(w.path)), true);
-    check('each carrying its slots and seats', ws.every(w => w.value.slots && w.value.slots.t1700 && w.value.seats.s1), true);
+    check('each carrying its midnight, and no lists for the old rules', ws.every(w => typeof w.value.day0 === 'number' && !w.value.slots && !w.value.seats), true);
     check('and they reach the club', Object.keys(D.sess.dirty).length, 0);
   }
 

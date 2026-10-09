@@ -2,7 +2,7 @@
    Static app. Data lives in localStorage, and mirrors to Firebase Realtime
    Database when a config + workspace code are present. */
 
-const BUILD = '116';
+const BUILD = '117';
 const BUILT = '2026-10-09';
 /* The version of database.rules.json this app was written against. The rules
    carry the same number in rulesVersion's .write, which accepts that number
@@ -11,7 +11,7 @@ const BUILT = '2026-10-09';
    never pasted look exactly like a coach with no signal: "saved on this phone
    only", one feature at a time. test/rules.js holds the two numbers together
    and fails when the rules change without this going up. */
-const RULES_VERSION = 15;
+const RULES_VERSION = 16;
 /* index.html carries the build it was published with. If this file is newer, the
    browser handed us a cached page — the exact failure that has eaten hours. */
 const pageBuild = () => {
@@ -1145,7 +1145,7 @@ const pendingList = () => Object.entries(pending.w).sort((a, b) => a[1].n - b[1]
    "synced" is never said while any of it is still only here. */
 const SESS_WHAT = { sessions: 'a training session', booked: 'a place in a training session', came: 'a training session\'s register',
   fees: 'a training session fee', pay: 'a coach\'s pay rate', splans: 'a training session\'s drills',
-  avail: 'a coach\'s bookable times', seats: 'a place in a bookable slot', away: 'a coach\'s time off' };
+  avail: 'a coach\'s bookable times', away: 'a coach\'s time off' };
 function otherOwed() {
   const out = [];
   for (const k of Object.keys(train.dirty || {})) {
@@ -4567,9 +4567,9 @@ function importPlan(data, cur = state) {
    this phone can get them: its own copy, laid over the club's wherever the
    club could be asked, and the download says if some of it could not be. */
 let lastBackup = null;     // the last download's contents, for the tests and for nothing else
-// bookable times and their seats go last: a restored seat names a session that has to be there first
+// bookable times go last
 // packages before the fees that name them: the fee rule checks the package is there
-const TRAIN_KINDS = [['sessions', 1], ['booked', 2], ['came', 1], ['packs', 3], ['packuse', 4], ['fees', 2], ['pay', 1], ['splans', 1], ['avail', 1], ['seats', 2], ['away', 2]];
+const TRAIN_KINDS = [['sessions', 1], ['booked', 2], ['came', 1], ['packs', 3], ['packuse', 4], ['fees', 2], ['pay', 1], ['splans', 1], ['avail', 1], ['away', 2]];
 const isBackupData = data => !!(data && data.teams && !Array.isArray(data.teams) && typeof data.teams === 'object'
   && (data.matches === undefined || (typeof data.matches === 'object' && !Array.isArray(data.matches))));
 function fetchOnce(path, ms = 6000) {
@@ -12334,12 +12334,12 @@ function tickRun() {
 const LS_SESS = 'sm.sess.v1';
 const LS_SESS_SEEN = 'sm.sessSeen';
 const sessKey = () => LS_SESS + ':' + clubKey();
-const SESS_BLANK = () => ({ sessions: {}, booked: {}, came: {}, fees: {}, packs: {}, packuse: {}, pay: {}, splans: {}, avail: {}, seats: {}, away: {}, dirty: {}, refused: {} });
+const SESS_BLANK = () => ({ sessions: {}, booked: {}, came: {}, fees: {}, packs: {}, packuse: {}, pay: {}, splans: {}, avail: {}, away: {}, dirty: {}, refused: {} });
 /* How many path segments down each kind's records sit: a session is one node,
    a booking is one per player per session, a register one per session. A merge
    walks to exactly this depth and no further, so a record is always taken or
    kept whole and never half of one with half of the other. */
-const SESS_DEPTH = { sessions: 2, booked: 3, came: 2, fees: 3, packs: 4, packuse: 5, pay: 2, splans: 2, avail: 2, seats: 3, away: 3 };
+const SESS_DEPTH = { sessions: 2, booked: 3, came: 2, fees: 3, packs: 4, packuse: 5, pay: 2, splans: 2, avail: 2, away: 3 };
 const SESS_KIND = { one: '1-1', group: 'Group' };
 const BOOK = { asked: 'Asked', in: 'Booked', wait: 'Waiting list', no: 'Not this time', out: 'Withdrew' };
 const BOOK_ORDER = { asked: 0, in: 1, wait: 2, no: 3, out: 4 };
@@ -12707,7 +12707,7 @@ function sessSend(path, undo) {
      once the session is gone they are nobody's to delete. One connection
      applies writes in the order they were made. */
   if (kind === 'sessions' && getDeep(sess, path) === undefined)
-    for (const k of ['booked', 'seats', 'came', 'fees', 'splans']) if (sess.dirty[k + '/' + id] !== undefined) sessSend(k + '/' + id);
+    for (const k of ['booked', 'came', 'fees', 'splans']) if (sess.dirty[k + '/' + id] !== undefined) sessSend(k + '/' + id);
   const v = getDeep(sess, path);
   rootSet(`training/${code}/${path}`, v === undefined ? null : v).then(() => {
     // only the version that was sent is clean; a change made since is still owed
@@ -12758,7 +12758,7 @@ function sessMerge(path, remote, resend) {
 const sessOn = () => !!(rtdb && fb && me && wsCode() && wsRead && !needsSignIn());
 function sessWanted() {
   if (!canSessions()) return [];
-  const want = ['sessions', 'booked', 'came', 'avail', 'seats'];
+  const want = ['sessions', 'booked', 'came', 'avail'];
   // coaches' time off is the coaches' and the admins', never a family's
   if (isAdmin(me.uid) || isCoachAny(me.uid)) want.push('away');
   const all = sessAll();
@@ -12789,7 +12789,6 @@ function watchSess() {
     sessFor = key;
   }
   if (!key) return;
-  scheduleHeal();
   const want = new Set(sessWanted());
   for (const p of Object.keys(sessSubs)) if (!want.has(p)) { try { sessSubs[p](); } catch (e) { } delete sessSubs[p]; }
   const { db, mod } = rtdb, code = wsCode();
@@ -13290,8 +13289,8 @@ function sessFamilyBlock(s) {
     if (b && b.st !== 'out') {
       const fee = s.price && b.st === 'in' ? (feeOf(s.id, p.id) ? ' · paid' : feesKnown(s.id, p.id) ? ` · ${esc(fmtMoney(s.price))} to pay` : '') : '';
       return `<div class="rsvprow"><span><b>${name}</b><span class="rowsub">${esc(BOOK[b.st])}${fee}${b.want ? ' · wants: ' + esc(b.want) : ''}</span></span>
-        ${over || b.st === 'no' ? '' : s.slot && b.st === 'in'
-        ? `<button class="btn quiet sm" data-act="slotcancel" data-id="${esc(s.id)}" data-pid="${esc(p.id)}">Cancel this time</button>`
+        ${over || b.st === 'no' ? '' : s.slot && (b.st === 'in' || b.st === 'wait')
+        ? `<button class="btn quiet sm" data-act="slotcancel" data-id="${esc(s.id)}" data-pid="${esc(p.id)}">${b.st === 'wait' ? 'Leave the waiting list' : 'Cancel this time'}</button>`
         : `<button class="btn quiet sm" data-act="sesswithdraw" data-id="${esc(s.id)}" data-pid="${esc(p.id)}">${b.st === 'in' ? 'Can’t make it' : 'Withdraw'}</button>`}</div>`;
     }
     if (over || !s.open || !fitsAges(s, t)) return b ? `<div class="rsvprow"><span><b>${name}</b><span class="rowsub">Withdrew</span></span></div>` : '';
@@ -13861,7 +13860,7 @@ function onSessAct(a, d) {
   if (a === 'sessdel') {
     if (bookingsOf(s.id).some(x => feeOf(s.id, x.pid))) { toast('Payments are recorded against it, so call it off instead'); return; }
     if (!confirm('Delete this session, with its bookings and register? Calling it off keeps the record instead.')) return;
-    for (const k of ['booked', 'seats', 'came', 'fees', 'splans']) if (getDeep(sess, k + '/' + s.id) !== undefined || fb) sessPut(k + '/' + s.id, null);
+    for (const k of ['booked', 'came', 'fees', 'splans']) if (getDeep(sess, k + '/' + s.id) !== undefined || fb) sessPut(k + '/' + s.id, null);
     sessPut('sessions/' + s.id, null);
     u.open = null; closeSheet(); render(); toast('Deleted'); return;
   }
@@ -13872,8 +13871,6 @@ function onSessAct(a, d) {
     const st = BOOK[d.v] ? d.v : null; if (!st || st === 'asked') return;
     if (st === 'in' && b.st !== 'in' && spotsLeft(s) === 0) { toast('No spots left — take someone off, waitlist this one, or add spots'); return; }
     sessPut(`booked/${s.id}/${d.pid}`, bookingVal(b, st));
-    // a place she gave up in a slot goes back to the families
-    if (s.slot && (st === 'out' || st === 'no')) for (const x of seatsOf(s.id)) if (x.pid === d.pid) sessPut(`seats/${s.id}/${x.n}`, null);
     sheetSess(s.id); render(); return;
   }
   if (a === 'sesspick') { sessPick = { sid: s.id, tid: ui.teamId, picked: [], scope: 'one' }; sheetSessPick(); return; }
@@ -13895,9 +13892,6 @@ function onSessAct(a, d) {
       if (b && b.st === 'in') continue;
       const st = spotsLeft(sessById(x.id)) > 0 ? 'in' : 'wait';
       if (st === 'wait') waited++;
-      // on a family-bookable slot, a player the coach adds takes a seat too, so the families' count stays true
-      const blk = x.slot ? blockById(x.slot) : null, seat = blk && st === 'in' && !seatsOf(x.id).some(y => y.pid === pid) ? freeSeat(blk, x.id) : null;
-      if (seat) sessPut(`seats/${x.id}/${seat}`, { pid, tid: w.t.id, by: by(), at: nowMs() });
       sessPut(`booked/${x.id}/${pid}`, bookingVal({ ...(b || {}), tid: w.t.id }, st));
     }
     sessPick = null; sheetSess(base.id); render();
@@ -14225,25 +14219,22 @@ function saveSessForm() {
    register, fees, hours, clashes, the team calendar) then works on it
    unchanged, because it is one.
 
-   The rules hold a family to the window, and they can only look things up,
-   never count or search. So the block carries what they need to look up:
-   `slots`, the times it still offers, each with its start as a timestamp
-   (the grid, the length, and "not in the past" and "not inside the notice"
-   become comparisons), and `seats`, one key per place. A family takes a
-   place by taking a seat nobody holds, which is how a group of six refuses
-   the seventh. `slots` leaves out whatever the coach is busy with, and her
-   phone and the admins' keep it so (`healBlocks()`), as the lookup tables
-   are kept: derived, rebuilt, never typed. */
+   A family books by asking the server (`askBooking()`, functions/book.js;
+   SERVER.md, *Bookable times and training sessions*), which checks her
+   child, the coach's calendar as it stands and the places, inside one
+   transaction, and writes the session and the booking. The rules cannot
+   count, search or do dates, so a family's phone never writes a slot
+   booking itself any more: what this phone works out about a slot (free,
+   full, taken out by a practice) is what it shows, and the server decides.
+   A full slot has a waiting list, worked through by the server as places
+   come free. */
 const SLOT_LENS = [30, 45, 60, 90];
 const NOTICE_HOURS = [0, 12, 24, 48];
 const BLOCK_KIND = { one: '1-1s', group: 'Small group' };
 const clockOf = m => pad2(Math.floor(m / 60) % 24) + ':' + pad2(m % 60);
 // keys a database will not turn into an array: 's1' and 't1700', never 1 and 1700
-const slotKey = start => 't' + String(start).replace(':', '');
-const seatKeys = cap => Array.from({ length: cap }, (_, i) => 's' + (i + 1));
 const slotSid = (coach, date, start) => 'k_' + coach + '_' + date + '_' + String(start).replace(':', '');
 const slotAt = (date, start) => dateOf(date).getTime() + minOf(start) * 60000;
-const SEAT_STALE = 10 * 60000;
 const agesOf = raw => {
   const a = raw && typeof raw === 'object' ? Object.values(raw).map(Number) : null;
   return a && a.length === 2 && a.every(n => Number.isInteger(n) && n >= 4 && n <= 19) && a[0] <= a[1] ? a : null;
@@ -14278,18 +14269,9 @@ const minsNow = () => { const d = new Date(nowMs()); return d.getHours() * 60 + 
 const startMs = s => Number(s.t0) || slotAt(s.date, s.start || '00:00');
 const hoursUntil = s => (startMs(s) - nowMs()) / 3600000;
 
-/* ---- seats: a place in a slot ---- */
-const seatsOf = sid => Object.entries(((sess.seats || {})[sid]) || {}).filter(([, v]) => v && typeof v === 'object' && v.pid).map(([n, v]) => ({ n, ...v }));
-/* Who is in a slot: everyone the coach or a family has booked, and anyone
-   holding a seat whose booking has not landed yet. Somebody taken off, or
-   turned down, is not, whatever seat she still holds. */
-function placesTaken(sid) {
-  const ins = new Set(bookingsOf(sid).filter(x => x.st === 'in').map(x => x.pid));
-  for (const st of seatsOf(sid)) if (!bookOf(sid, st.pid)) ins.add(st.pid);
-  return ins.size;
-}
-const freeSeat = (b, sid) => { const held = new Set(seatsOf(sid).map(x => x.n)); return seatKeys(b.cap).find(k => !held.has(k)) || null; };
-
+/* Who is in a slot: everyone the coach, a family or the waiting list has
+   booked in. Somebody taken off, or turned down, is not. */
+const placesTaken = sid => nIn(sid);
 /* The block cut into its slots, each with whatever keeps it from being
    booked. A coach's team calendar is her busy time: a practice or game for a
    team she coaches, or another session she runs, takes out the slots it
@@ -14299,7 +14281,6 @@ function blockSlots(b) {
   if (!b || !b.start || !b.end) return out;
   const from = minOf(b.start), to = minOf(b.end);
   const busy = busyItems(b.date).filter(x => x.coaches.includes(b.coach));
-  const listed = ((sess.avail || {})[b.id] || {}).slots || {};
   const today = todayStr(), now = minsNow();
   for (let a = from; a + b.len <= to && out.length < 48; a += b.len) {
     const start = clockOf(a), end = clockOf(a + b.len), sid = slotSid(b.coach, b.date, start);
@@ -14308,59 +14289,14 @@ function blockSlots(b) {
     const past = b.date < today || (b.date === today && a <= now);
     const taken = s ? placesTaken(sid) : 0;
     const left = s && s.called ? 0 : Math.max(0, b.cap - taken);
-    const free = !clash.length && !past && !b.off && !!listed[slotKey(start)] && left > 0 && !!freeSeat(b, sid);
-    out.push({ start, end, sid, a, s, clash, past, taken, left, free });
+    const open = !clash.length && !past && !b.off && !(s && s.called);
+    // full: a slot somebody holds with no place left, which a family can still wait for
+    out.push({ start, end, sid, a, s, clash, past, taken, left, free: open && left > 0, full: open && !!s && left === 0 });
   }
   return out;
 }
-/* What the block offers, as the rule reads it: every slot on the grid the
-   coach is free for, with its start as a timestamp. Taken and past slots stay
-   listed; the seats and the clock refuse those. */
-// SERVER.md: the slot list the rules read, because rules can't count; a server books directly.
-function openSlotsOf(b) {
-  const out = {};
-  if (b.off) return out;
-  for (const x of blockSlots(b)) if (!x.clash.length) out[slotKey(x.start)] = { end: x.end, at: slotAt(b.date, x.start) };
-  return out;
-}
-const seatMap = cap => Object.fromEntries(seatKeys(cap).map(k => [k, true]));
+// the same value written the same way, whatever order its keys came in
 const canon = v => (v && typeof v === 'object' ? '{' + Object.keys(v).sort().map(k => k + ':' + canon(v[k])).join(',') + '}' : JSON.stringify(v));
-
-/* Keeps what the rules read true. A practice added to a team she coaches, a
-   session she now runs, a week taken off: her phone, or an admin's, rewrites
-   the block's list of slots the next time it draws, as the lookup tables are
-   rebuilt on connect. Only changed blocks are written, so it settles. Also
-   lets go of seats nobody is using: one whose child was taken off or turned
-   down, or one held ten minutes with no booking behind it. */
-let healTimer = null;
-function scheduleHeal() {
-  if (healTimer || typeof setTimeout !== 'function') return;
-  healTimer = setTimeout(() => { healTimer = null; healBlocks(); }, 1500);
-}
-// SERVER.md: slots and seats kept true by the coach's or an admin's phone; a server would book in a transaction.
-function healBlocks() {
-  if (!me || (fb && !(sessLoaded.has('avail') && sessLoaded.has('sessions')))) return 0;
-  let n = 0;
-  const today = todayStr();
-  for (const b of blockAll()) {
-    if (b.date < today || !(b.coach === me.uid ? canEditBlock(b) : canAdmin())) continue;
-    const raw = sess.avail[b.id] || {};
-    const want = { slots: openSlotsOf(b), seats: seatMap(b.cap) };
-    if (canon(raw.slots || {}) === canon(want.slots) && canon(raw.seats || {}) === canon(want.seats)) continue;
-    sessPut('avail/' + b.id, { ...raw, ...want });
-    n++;
-  }
-  if (!fb || sessLoaded.has('seats')) for (const sid of Object.keys(sess.seats || {})) {
-    const s = sessById(sid);
-    if (!s || !s.slot || sessPast(s) || !canRun(s) || (s.coach !== (me && me.uid) && !canAdmin())) continue;
-    for (const st of seatsOf(sid)) {
-      const bk = bookOf(sid, st.pid);
-      if (bk ? bk.st === 'out' || bk.st === 'no' : nowMs() - (Number(st.at) || 0) > SEAT_STALE) { sessPut(`seats/${sid}/${st.n}`, null); n++; }
-    }
-  }
-  if (n) render();
-  return n;
-}
 
 /* What a child of hers already has then: her team's practice or game, or a
    session she is in. Offered to the family as taken by it, never booked over. */
@@ -14418,7 +14354,7 @@ function familyAvail() {
   const list = blockAll().filter(b => b.date >= today && !b.off && blockKids(b).length && blockSlots(b).some(x => x.free));
   if (!list.length) return '';
   return `<div class="card"><h2 style="margin-bottom:0">Book a time with a coach</h2>
-    <p class="muted" style="margin:4px 0 0">Pick a free slot and the place is yours, no waiting for a reply.</p>
+    <p class="muted" style="margin:4px 0 0">Pick a free slot and the place is yours in a second or two, with no waiting for the coach to reply.</p>
     ${availDays(list.slice(0, 40), true, true)}</div>`;
 }
 
@@ -14437,12 +14373,16 @@ function sheetBlock(id) {
   const slotRow = x => {
     const when = `${niceTime(x.start)}–${niceTime(x.end)}`;
     const count = group ? `${x.taken} of ${b.cap}` : '';
-    const mineIn = x.s && kids.some(k => (bookOf(x.s.id, k.p.id) || {}).st === 'in');
+    const held = k => ['in', 'wait'].includes((bookOf(x.s.id, k.p.id) || {}).st);
+    const mineIn = x.s && kids.some(held);
     if (x.s && (canRun(x.s) || mineIn) && !(mineIn && !edit && x.free && kid && !bookOf(x.s.id, kid.p.id))) {
       const label = x.s.called ? CALLED[x.s.called] : canRun(x.s) ? [count, names(x.s)].filter(Boolean).join(' · ')
-        : kids.filter(k => (bookOf(x.s.id, k.p.id) || {}).st === 'in').map(k => firstName(k.p) + ' is in').join(', ');
+        : kids.filter(held).map(k => firstName(k.p) + ((bookOf(x.s.id, k.p.id) || {}).st === 'wait' ? ' is on the waiting list' : ' is in')).join(', ');
       return `<button class="opt spread" type="button" data-act="sessopen" data-id="${esc(x.s.id)}"><span>${when}</span><span class="on">${esc(label)}</span></button>`;
     }
+    // full, but she can wait for a place: the server moves the first in line in when one comes free
+    if (!edit && kid && x.full && !kidBusy(b, x, kid).length)
+      return `<button class="opt spread" type="button" data-act="slotpick" data-id="${esc(b.id)}" data-v="${esc(x.start)}" data-wait="1"><span><b>${when}</b><span class="rowsub">${group ? `All ${b.cap} places taken` : 'Taken'}</span></span><span class="tag">Waiting list</span></button>`;
     const why = x.past ? 'gone' : b.off ? 'off' : x.clash.length ? (edit ? x.clash.map(c => c.label).join('; ') : 'not free')
       : x.s && x.s.called ? CALLED[x.s.called] : x.s && !x.left ? 'full' : !x.free ? 'not open yet' : '';
     if (why) return `<div class="opt spread"><span class="muted">${when}</span><span class="muted">${esc([count, why].filter(Boolean).join(' · '))}</span></div>`;
@@ -14479,17 +14419,93 @@ function sheetBlock(id) {
       <p class="muted" style="margin-bottom:0">Slots already booked stay booked whatever happens here; each is a session of yours, to move or call off from its own page.</p>` : ''}`);
 }
 
-function sheetSlotBook(bid, start) {
+function sheetSlotBook(bid, start, wait) {
   const b = blockById(bid), u = sessUi();
   const kid = blockKids(b || {}).find(k => k.p.id === u.kid) || (b ? blockKids(b)[0] : null);
   const x = b ? blockSlots(b).find(y => y.start === start) : null;
   if (!b || !kid || !x) { closeSheet(); return; }
+  if (wait && x.full) {
+    openSheet(`<h3>Waiting list for ${esc(niceTime(x.start))}</h3>
+    <p class="muted" style="margin-top:0">${esc(blockLabel(b))} with ${esc(b.coachName)} · ${esc(dayLabel(b.date))}, ${esc(niceTime(x.start))}–${esc(niceTime(x.end))}. Every place is taken. If one comes free, the first on the list gets it, and you are told.</p>
+    <label class="field"><span>What she wants to work on</span><textarea id="slotWant" rows="2" maxlength="${WANT_MAX}" placeholder="Weak foot, crossing, a drill she liked"></textarea></label>
+    <button class="btn wide" data-act="slotbook" data-id="${esc(b.id)}" data-v="${esc(x.start)}" data-pid="${esc(kid.p.id)}" data-wait="1" style="margin-bottom:8px">Put ${esc(firstName(kid.p))} on the waiting list</button>
+    <button class="btn quiet wide" data-act="availopen" data-id="${esc(b.id)}">Back</button>`);
+    return;
+  }
   openSheet(`<h3>Book ${esc(niceTime(x.start))} for ${esc(firstName(kid.p))}</h3>
     <p class="muted" style="margin-top:0">${esc(blockLabel(b))} with ${esc(b.coachName)} · ${esc(dayLabel(b.date))}, ${esc(niceTime(x.start))}–${esc(niceTime(x.end))}${blockPlace(b) ? ' · ' + esc(blockPlace(b)) : ''}${b.kind === 'group' ? ` · ${x.left} of ${b.cap} places left` : ''}</p>
     <label class="field"><span>What she wants to work on</span><textarea id="slotWant" rows="2" maxlength="${WANT_MAX}" placeholder="Weak foot, crossing, a drill she liked"></textarea></label>
     <p class="muted">${b.price ? `${esc(fmtMoney(b.price))}, paid to the coach or the club the way you usually do. ` : ''}${b.notice ? `You can cancel here up to ${b.notice} hours before; after that, message the coach.` : 'You can cancel here any time before it starts.'}</p>
     <button class="btn wide" data-act="slotbook" data-id="${esc(b.id)}" data-v="${esc(x.start)}" data-pid="${esc(kid.p.id)}" style="margin-bottom:8px">Book it</button>
     <button class="btn quiet wide" data-act="availopen" data-id="${esc(b.id)}">Back</button>`);
+}
+
+/* ---- asking the server ---- */
+/* A family's booking or cancelling is one call to the server (functions/
+   book.js): the ask is written at bookAsks/{code}/{uid}/{id}, hers alone in
+   the rules, and the answer appears beneath it. Never queued: with no signal
+   it is refused before it is asked, and an answer that does not come is said
+   as that, not as a no (the place, if it was taken, appears anyway, because
+   the sessions and bookings are listened to). The ask is cleared away once
+   it has been answered or given up on. */
+const BOOK_WAIT = 30000;
+const noBlanks = o => Object.fromEntries(Object.entries(o).filter(([, v]) => v !== null && v !== undefined && v !== ''));
+function askBooking(v) {
+  const { db, mod } = rtdb;
+  const path = `bookAsks/${wsCode()}/${me.uid}/${uid()}`;
+  return new Promise(resolve => {
+    let off = null, done = false, timer = null;
+    const finish = ans => {
+      if (done) return;
+      done = true;
+      if (timer) clearTimeout(timer);
+      if (typeof off === 'function') off();
+      Promise.resolve().then(() => mod.remove(mod.ref(db, path))).catch(() => { });
+      resolve(ans);
+    };
+    timer = setTimeout(() => finish(null), BOOK_WAIT);
+    Promise.resolve().then(() => mod.set(mod.ref(db, path), { ...v, at: nowMs() })).then(() => {
+      if (done) return;
+      off = mod.onValue(mod.ref(db, path + '/answer'), sn => { const ans = sn.val(); if (ans) finish(ans); }, () => finish(null));
+    }, e => finish({ ok: false, why: /permission|denied/i.test((e && e.code) || '') ? 'rules' : 'signal' }));
+  });
+}
+/* The server's no, in words. */
+function bookWhy(ans, kid) {
+  if (!ans) return 'No answer from the club yet. If the place is yours it will show here in a moment; if not, try again.';
+  const n = kid ? firstName(kid.p) : 'Your child';
+  return ({
+    full: 'Somebody has just taken the last place — you can join the waiting list instead',
+    busy: 'The coach is not free then any more — pick another time',
+    kidbusy: `${n} has something else then`,
+    past: 'That time has already started',
+    off: 'The coach has taken that week off',
+    gone: 'That time is not offered any more',
+    called: 'That time has been called off',
+    no: 'The coach has said not this time — message her',
+    family: 'You can only book for your own child',
+    notice: `Less than ${ans.notice || 'the coach’s notice in'} hours to go — message the coach to cancel`,
+    paid: 'It has been paid for or marked — ask the coach',
+    rules: `The club’s database refused it — are the rules (version ${RULES_VERSION}) published?`
+  })[ans.why] || 'Not done — check the signal and try again';
+}
+/* A club with no database (on this phone only) has nobody to race: the slot
+   and the booking are written here, as any session of hers is. */
+function bookHere(b, x, kid, want) {
+  const who = (me && me.uid) || 'device';
+  if (!x.s) sessPut('sessions/' + x.sid, noBlanks({
+    id: x.sid, kind: b.kind, title: b.title, coach: b.coach, coachName: b.coachName, date: b.date, start: x.start, end: x.end,
+    t0: slotAt(b.date, x.start), field: b.field, place: b.place, cap: b.cap, open: false, slot: b.id, pid: kid.p.id, tid: kid.t.id,
+    price: b.price, notice: b.notice, ages: b.ages, by: who, made: nowMs(), at: nowMs()
+  }));
+  sessPut(`booked/${x.sid}/${kid.p.id}`, bookingVal({ tid: kid.t.id }, 'in', { want }));
+  render(); sheetSess(x.sid);
+  toast(`Booked: ${firstName(kid.p)}, ${dayLabel(b.date)} ${niceTime(x.start)}`);
+}
+function cancelHere(s, kid) {
+  sessPut(`booked/${s.id}/${kid.p.id}`, null);
+  if (!bookingsOf(s.id).some(x => x.pid !== kid.p.id)) sessPut('sessions/' + s.id, null);
+  render(); toast('Cancelled');
 }
 
 /* ---- the form ---- */
@@ -14568,14 +14584,14 @@ function sheetBlockForm() {
       <div class="chips" style="margin-bottom:10px">${chip('availscopeed', 'one', f.scope !== 'later', 'Just this week')}${chip('availscopeed', 'later', f.scope === 'later', 'This and every later week')}</div>` : ''}
     <button class="btn wide" data-act="availsave">${isNew ? (n > 1 ? `Offer ${n} days` : 'Offer it') : 'Save'}</button>`);
 }
-/* A block as it is written: what the form said, and the two lists the rules
-   read worked out from it there and then, so a family can book the moment it
-   reaches the club rather than after the next heal. */
+/* A block as it is written: what the form said, and this phone's midnight on
+   its date, which only a phone in the club's time zone knows, so the server
+   can tell when each slot starts. The two lists the old rules read (`slots`
+   and `seats`) are left off: the server books now. */
 function blockValue(base) {
   const v = { ...base };
-  const nb = normBlock(v, v.id);
-  v.slots = openSlotsOf(nb);
-  v.seats = seatMap(nb.cap);
+  delete v.slots; delete v.seats;
+  if (okDay(v.date)) v.day0 = dateOf(v.date).getTime();
   return v;
 }
 function saveBlockForm() {
@@ -14679,40 +14695,35 @@ function onAvailAct(a, d) {
   if (a === 'slotpick') {
     if (!b) { closeSheet(); return; }
     if (!blockKids(b).length) { toast('You can only book for your own child'); return; }
-    sheetSlotBook(b.id, d.v); return;
+    sheetSlotBook(b.id, d.v, d.wait === '1'); return;
   }
   if (a === 'slotbook') {
     const kid = b ? blockKids(b).find(k => k.p.id === d.pid) : null;
     if (!b || !kid) { closeSheet(); toast('You can only book for your own child'); render(); return; }
     if (fb && !me) { toast('Sign in first'); return; }
     const x = blockSlots(b).find(y => y.start === d.v);
-    if (x && x.s && (bookOf(x.sid, kid.p.id) || {}).st === 'in') { toast(`${firstName(kid.p)} is already in`); return; }
-    if (!x || !x.free) { toast('That time is not free any more'); sheetBlock(b.id); return; }
+    const wait = d.wait === '1';
+    const mine = x && x.s ? (bookOf(x.sid, kid.p.id) || {}).st : null;
+    if (mine === 'in' || mine === 'wait') { toast(`${firstName(kid.p)} is already ${mine === 'in' ? 'in' : 'on the waiting list'}`); return; }
+    if (!x || !(x.free || (wait && x.full))) { toast('That time is not free any more'); sheetBlock(b.id); return; }
     if (kidBusy(b, x, kid).length) { toast(`${firstName(kid.p)} has something else then`); return; }
     // first come, first served: a booking that waited in a queue would be a promise nobody can keep
     if (fb && !online) { toast('Booking a time needs a signal — it is first come, first served'); return; }
-    const seat = freeSeat(b, x.sid);
     const el = $('#slotWant');
     const want = String((el && el.value) || '').trim().slice(0, WANT_MAX);
-    const raw = sess.avail[b.id] || {}, who = (me && me.uid) || 'device';
-    const msg = 'Not booked — somebody may have just taken that place. Pick another.';
-    if (!x.s) {
-      const s = {
-        id: x.sid, kind: b.kind, title: b.title, coach: b.coach, coachName: b.coachName, date: b.date, start: x.start, end: x.end,
-        t0: ((raw.slots || {})[slotKey(x.start)] || {}).at || slotAt(b.date, x.start), field: b.field, place: b.place, cap: b.cap, open: false, slot: b.id, pid: kid.p.id, tid: kid.t.id,
-        by: who, made: nowMs(), at: nowMs()
-      };
-      /* The rule compares these with the block's exactly, so each is copied as
-         stored, or left out with it; the start time too, as the coach's phone
-         worked it out, so a phone in another time zone cannot disagree. */
-      for (const k of ['price', 'notice']) if (raw[k] !== undefined && raw[k] !== null) s[k] = raw[k];
-      if (b.ages) s.ages = b.ages;
-      sessPut('sessions/' + x.sid, s, msg);
-    }
-    sessPut(`seats/${x.sid}/${seat}`, { pid: kid.p.id, tid: kid.t.id, by: who, at: nowMs() }, msg);
-    sessPut(`booked/${x.sid}/${kid.p.id}`, bookingVal({ tid: kid.t.id }, 'in', { want, seat }), msg);
-    render(); sheetSess(x.sid);
-    toast(`Booked: ${firstName(kid.p)}, ${dayLabel(b.date)} ${niceTime(x.start)}`); return;
+    if (!fb) { bookHere(b, x, kid, want); return; }
+    openSheet(`<h3>${wait ? 'Joining the waiting list' : 'Booking'}…</h3><p class="muted">Asking the club for ${esc(niceTime(x.start))} on ${esc(dayLabel(b.date))}. This takes a second or two.</p>`);
+    askBooking(noBlanks({ op: 'book', block: b.id, start: x.start, tid: kid.t.id, pid: kid.p.id, want: want || null, wait: wait || null })).then(ans => {
+      if (ans && ans.ok) {
+        render(); sheetSess(ans.sid);
+        toast(ans.st === 'wait' ? `On the waiting list: ${firstName(kid.p)}, ${dayLabel(b.date)} ${niceTime(x.start)} — you'll hear if a place comes free`
+          : `Booked: ${firstName(kid.p)}, ${dayLabel(b.date)} ${niceTime(x.start)}`);
+        return;
+      }
+      render(); sheetBlock(b.id);
+      toast(bookWhy(ans, kid));
+    });
+    return;
   }
   if (a === 'slotcancel') {
     const s = sessById(d.id);
@@ -14720,19 +14731,23 @@ function onAvailAct(a, d) {
     const bk = kid ? bookOf(s.id, kid.p.id) : null;
     if (!s || !s.slot || !kid || !bk) { closeSheet(); toast('You can only cancel your own child’s place'); render(); return; }
     if (sessPast(s) || s.called) return;
+    const waiting = bk.st === 'wait';
     if (feeOf(s.id, kid.p.id) || (sess.came || {})[s.id]) { toast('It has been paid for or marked — ask the coach'); return; }
     const notice = Number(s.notice) || 0;
-    if (notice && hoursUntil(s) < notice) { toast(`Less than ${notice} hours to go — message the coach to cancel`); return; }
-    if (!confirm(`Cancel ${firstName(kid.p)}’s place on ${dayLabel(s.date)} at ${niceTime(s.start)}? It goes back to the coach’s free times.`)) return;
-    const msg = 'Not cancelled — the club’s database refused it. Ask the coach.';
-    const who = (me && me.uid) || 'device';
+    if (!waiting && notice && hoursUntil(s) < notice) { toast(`Less than ${notice} hours to go — message the coach to cancel`); return; }
+    if (!confirm(waiting ? `Take ${firstName(kid.p)} off the waiting list for ${dayLabel(s.date)} at ${niceTime(s.start)}?`
+      : `Cancel ${firstName(kid.p)}’s place on ${dayLabel(s.date)} at ${niceTime(s.start)}? It goes back to the coach’s free times.`)) return;
+    if (fb && !online) { toast('Cancelling needs a signal, so the place goes straight to whoever is next'); return; }
     sessDropped.add(s.id + '/' + kid.p.id);
-    // in the order the rules need: the booking, then her seat, then the slot if nobody else is in it
-    sessPut(`booked/${s.id}/${kid.p.id}`, null, msg);
-    for (const st of seatsOf(s.id)) if (st.pid === kid.p.id && (!me || st.by === who)) sessPut(`seats/${s.id}/${st.n}`, null, msg);
-    const others = bookingsOf(s.id).some(x => x.pid !== kid.p.id) || seatsOf(s.id).some(x => x.pid !== kid.p.id);
-    if (!others && (!me || s.by === who)) sessPut('sessions/' + s.id, null, msg);
-    u.open = null; closeSheet(); render(); toast('Cancelled — the coach is told'); return;
+    u.open = null; closeSheet();
+    if (!fb) { cancelHere(s, kid); return; }
+    askBooking({ op: 'cancel', sid: s.id, pid: kid.p.id }).then(ans => {
+      render();
+      if (ans && ans.ok) { toast(waiting ? 'Off the waiting list' : 'Cancelled — the coach is told'); return; }
+      sessDropped.delete(s.id + '/' + kid.p.id);
+      toast(bookWhy(ans, kid));
+    });
+    return;
   }
 }
 

@@ -8,6 +8,44 @@ before this point lives only in the git log.
 
 ---
 
+## Booking a coach's time is one call to the server, with a waiting list — 2026-10-09 (build 117)
+
+A family booked a coach's slot from her own phone, in three writes the rules
+checked one at a time: the slot's session, a numbered seat, then her child's
+booking naming it. A rule cannot count, search or do dates, so the coach's
+window carried a list of the slots it still offered, kept by the coach's or
+an admin's phone, and a key per place. That left three holes the rules
+printed (SERVER.md, *Bookable times and training sessions*): a practice
+added from another phone stayed bookable until one of theirs next opened
+the app, a seat taken with no booking behind it waited ten minutes to be
+let go, and one child could hold two seats by hand. And a full slot could
+only say no. Worth closing before payments, when a place will be money.
+
+- **Her phone asks; the server books** (`functions/book.js`, `bookAsk`). The
+  ask is one write at `bookAsks/{code}/{uid}/{id}`, hers alone; the answer
+  appears beneath it in a second or two. The server checks she is a
+  guardian of the child, that the start is on the coach's grid and not
+  past, that the coach is free as the club stands now (her teams'
+  practices and games, her other sessions, her time off and her busy times
+  at other clubs; a call-out frees her) and the child too, then counts the
+  places inside one transaction and writes the session and the booking.
+  Two families can never both have the last place, and a child is in a
+  slot once.
+- **A taken slot has a waiting list.** A family can join it instead; the
+  moment a place comes free (a family cancels, the coach takes a child off
+  or turns one down) the first on it is moved in (`bookFreed`).
+- **Cancelling is the same call**, held to the coach's notice and to nothing
+  being paid or marked; a slot nobody is left in goes, so the time is free.
+  A place on the waiting list can be given up any time.
+- **Seats and the slot list are gone**, with the coach's and admins'
+  phones keeping them; a block now carries its midnight (`day0`) for the
+  server to time slots by. Rules version 16: a family can no longer write a
+  slot's session or booking at all, `seats` is removed, and `bookAsks` is
+  added. Booking needs the functions deployed; without them her phone says
+  there was no answer.
+
+---
+
 ## The coach's notes are coaches' and admins' only — 2026-10-09 (build 116)
 
 A coach's note on a child ("shy in goal"), her rating, and who to pair her

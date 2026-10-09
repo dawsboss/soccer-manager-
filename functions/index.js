@@ -34,6 +34,7 @@ const mirror = require('./mirror');
 const mycal = require('./mycal');
 const move = require('./move');
 const adminwatch = require('./adminwatch');
+const booking = require('./book');
 
 initializeApp();
 
@@ -243,6 +244,27 @@ both('mirrorEvents', '{code}/teams/{tid}/events', onValueWritten, event => Promi
 for (const field of mirror.GAME_FIELDS)
   both('mirrorGame' + field[0].toUpperCase() + field.slice(1), `{code}/matches/{mid}/${field}`, onValueWritten, event => Promise.all([
     mirror.onGame(mirrorOf(event), event.params), markClub(event)]).then(r => r[0]));
+
+/* Booking a coach's time (book.js; SERVER.md, "Bookable times and training
+   sessions"). A family's phone asks at bookAsks/{code}/{uid}/{id}, a create
+   only, and the answer is written beside the ask; the place is counted and
+   taken inside one transaction on the slot's bookings. A place coming free
+   in a booked slot goes to the first on its waiting list. */
+function bookerOf(event) {
+  const root = (event.data.after || event.data).ref.root;
+  return {
+    get: p => root.child(p).get().then(s => s.val()),
+    set: (p, v) => root.child(p).set(v),
+    remove: p => root.child(p).remove(),
+    claim: (p, fn) => root.child(p).transaction(fn).then(r => !!r.committed),
+    // one day's records under a path (games, sessions), by their date
+    dated: (p, date) => root.child(p).orderByChild('date').equalTo(date).get().then(s => s.val())
+  };
+}
+exports.bookAsk = onValueCreated('/bookAsks/{code}/{uid}/{id}', quiet(event =>
+  booking.onAsk(bookerOf(event), event.params, event.data.val())));
+exports.bookFreed = onValueWritten('/training/{code}/booked/{sid}/{pid}', quiet(event =>
+  booking.onBooked(bookerOf(event), event.params, event.data.before.val(), event.data.after.val())));
 
 /* My calendar's feeds (mycal.js; SERVER.md, "My calendar's feed"). The
    triggers above mark a club when its entries, games or people change; these
