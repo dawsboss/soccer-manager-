@@ -270,7 +270,7 @@ The parent read clause needs work — `players.hasChild(auth.uid)` is wrong as w
 
 **Built, on `workspaces/{code}` rather than `orgs/{orgId}`**: the flat index became four, `access/index`, `access/teamIndex/{tid}` (`coach` or `tracker`), `access/teamParents/{tid}` and `access/coachIndex`, all derived and rebuilt every connect (CLAUDE.md, the invariants). One ruleset, `database.rules.json`, with `node test/rules.js` walking it for every kind of account.
 
-**This closes the public write hole.** `shareOwners/{shareId}/{uid}` is written when a coach creates the share, so only that team's coaches can publish. **Built**, and then **replaced (build 118, SECURITY.md, SEC-10):** an id nobody had claimed was still anyone's to publish under, so phones stopped publishing altogether; `public/` is `.write: false` and only the server writes it, and `shareOwners` is gone. Do not reach for anonymous auth as a shortcut: anonymous uids are per-device, so two coaches would get different ids and only one could publish, and clearing browser storage would lock a coach out of her own share.
+**This closes the public write hole.** `shareOwners/{shareId}/{uid}` is written when a coach creates the share, so only that team's coaches can publish. **Built**, and then **replaced (build 120, SECURITY.md, SEC-10):** an id nobody had claimed was still anyone's to publish under, so phones stopped publishing altogether; `public/` is `.write: false` and only the server writes it, and `shareOwners` is gone. Do not reach for anonymous auth as a shortcut: anonymous uids are per-device, so two coaches would get different ids and only one could publish, and clearing browser storage would lock a coach out of her own share.
 
 ## Migration
 
@@ -483,6 +483,16 @@ Decided 2026-10-09: the coach's notes on a child (`note`, `rating`, `pairs`, `av
 
 **Built** (build 116, rules version 15), as written above, with two details. The phone sends the notes there a field at a time and only the fields a write carries (`clubWrites()`), so a whole team saved from a phone that has not read the notes yet, or may not, never wipes them; and notes still on a record from before are moved by the first phone of that team's coach or an admin to open the club (`moveCoachNotes()`: written to `coachNotes` first, then taken off the record, never overwriting a newer note), as `movePlans()` moved old plans. A family's or tracker's phone drops anything of the four it finds on a record. `moveClub` lays them out the same way for a club still on the old tree.
 
+### Club viewers, as built
+
+**Built** (build 118, rules version 17), on `orgs/` only, with these details:
+
+- **A viewer is in `access/index`** like everyone else in the club (the owner, 2026-10-09), and `hasAnyRole()` and the server's `hasRole()` count `access/viewers/{uid}`, so admins' phones and `functions/access.js` keep her there. What keeps her to reading is that no write rule names her and the screen draws every team read-only (`restricted()` is `'viewer'` on every team). The index does open a few reads at the database that her screen never draws, as it does for a parent: training sessions and their bookings, and who is coming (`rsvp`). Members' emails, the access log, the coach's notes and every conversation stay closed, because none of those rules asks the index.
+- **Her names come from the squads**, the one read she has beyond the index (`squad/{tid}`, every team), with the coach's notes already off them (`coachNotes/`). A followed game's push names the scorer for her too (`functions/push.js`, `namer()`).
+- **Made by an admin**: People (the person's *Club viewer* chip) or an invite for the whole club, which names no team; accepting writes her viewer entry, then her index entry, as every invite does.
+
+**Guests were dropped** (the owner, 2026-10-09): the game link already gives a referee or a scout the game without signing in, and a signed-in guest added a sixth way into a club for little more.
+
 ### Order
 
 **Only one thing has to come first: the coach's notes, above.** Every new role reads some part of a child's record or a squad, and none of them may see the notes. After that the four don't depend on each other, so the order is what the club needs first. Recommended:
@@ -490,8 +500,8 @@ Decided 2026-10-09: the coach's notes on a child (`note`, `rating`, `pairs`, `av
 1. **The coach's notes.** *Built (build 116, rules version 15).*
 2. **Supporters**: the most asked for, and they reuse the coach's approval list families already go through.
 3. **Team helpers.** *Built (build 117, rules version 16).*
-4. **Club viewers**: the smallest, any time.
-5. **Guests.**
+4. **Club viewers**: the smallest, any time. *Built (build 118, rules version 17).*
+5. **Guests.** *Dropped by the owner (2026-10-09): the game link covers a referee or a scout.*
 
 Each is its own build, rules version, CHANGELOG entry and test pass across every suite that walks every kind of account (`rules.js`, `push.js`, `access.js`, `visibility.js`, `roles.js`, `parents.js`, `orgs.js`). Steps 2 to 5 are written for `orgs/` only, after the old tree comes out (step 5 of the move, from 2026-10-23): writing their rules for `workspaces/` as well would be work for a tree nobody is on. Step 1 can go before that, on both trees.
 
@@ -501,7 +511,7 @@ Each is its own build, rules version, CHANGELOG entry and test pass across every
 2. **The coach's notes:** coaches and admins only. No one else, families and the player included.
 3. **Team helpers:** no family conversations. They help with drills and with planning practices and games.
 4. **Club viewers:** no emails, no log. Less than a parent, but they see the games with names.
-5. **Guests:** signed in and approved, with names. Not signed in (the game link), no names, as today.
+5. **Guests:** signed in and approved, with names. Not signed in (the game link), no names, as today. *Later the same day: guests dropped; the game link is enough. Viewers go in the index.*
 6. **Order:** as above.
 
 ## What parents actually see
@@ -532,6 +542,6 @@ Where each step stands (2026-10):
 1. **Built.** Google, email and password, and magic link; `needsSignIn()` is the gate.
 2. **Built on `workspaces/{code}`**, with the four lookup tables in place of `teamMembers`.
 3. **Built (build 110), and every club has moved (2026-10-09).** See *The move to `orgs/{orgId}`*: the owner chose the full move (2026-10-08, SECURITY.md SEC-1) to take names out of a parent's reach before registration opens (`GOTSPORT.md`).
-4. **Built.** One ruleset; `shareOwners` closed the public write hole, and since build 118 only the server writes `public/` at all (SECURITY.md, SEC-10).
+4. **Built.** One ruleset; `shareOwners` closed the public write hole, and since build 120 only the server writes `public/` at all (SECURITY.md, SEC-10).
 5. **Built.** Team links and the coach's approval list (`joinCodes`, `claims`), per-person invites, and a squad of parent invites at once.
 6. **Built.** Parents see their own child by name and the rest by number, the club's one preset, and My players across clubs.

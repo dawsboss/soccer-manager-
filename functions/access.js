@@ -80,7 +80,8 @@ const teamAcc = (f, tid) => ((f.access.teams || {})[tid]) || {};
 
 /* hasAnyRole() in app.js, against the server's copy. */
 function hasRole(f, uid) {
-  if (has(f.access.admins, uid)) return true;
+  // a club viewer is in the index like everyone else in the club (AUTH.md, *Club viewers, as built*)
+  if (has(f.access.admins, uid) || has(f.access.viewers, uid)) return true;
   for (const ta of Object.values(f.access.teams || {}))
     if (has(ta && ta.coaches, uid) || has(ta && ta.trackers, uid) || has(ta && ta.helpers, uid)) return true;
   for (const t of Object.values(f.teams))
@@ -169,12 +170,15 @@ async function syncIndex(env, f, code, uid, out, now) {
   if (index && has(index, uid)) {
     const v = index[uid];
     await env.remove(`${f.L.access}/index/${uid}`); out.push('del index/' + uid);
-    // forgetInvite(): the invite her entry named, if it was one of this club's
-    if (typeof v === 'string' && okKey(v) && (await env.get(`invites/${v}/ws`)) === code) {
-      await env.remove('invites/' + v); out.push('del invite');
-    }
+    await forgetInvite(env, code, v, out);
   }
   if (await env.get(`userOrgs/${uid}/${code}`)) { await env.remove(`userOrgs/${uid}/${code}`); out.push('del userOrgs/' + uid); }
+}
+// forgetInvite(): the invite a role named, if it was one of this club's
+async function forgetInvite(env, code, v, out) {
+  if (typeof v === 'string' && okKey(v) && (await env.get(`invites/${v}/ws`)) === code) {
+    await env.remove('invites/' + v); out.push('del invite');
+  }
 }
 
 /* One role source changed. `uids` are the accounts named before or after,
@@ -286,6 +290,15 @@ function onTeamStaff(env, params, before, after, now) {
   const uids = [...both(b.coaches, a.coaches), ...both(b.trackers, a.trackers), ...both(b.helpers, a.helpers)];
   return settle(env, params.code, { uids, tids: [params.tid], coaches: true, tree: params.tree }, now);
 }
+/* access/viewers/{uid} (orgs/ only): a club viewer given or taken away.
+   She is in the index like any role, so this is the same settle, plus the
+   invite her viewer entry named once it is gone. */
+async function onViewer(env, params, before, after, now) {
+  const out = await settle(env, params.code, { uids: [params.uid], tree: 'orgs' }, now);
+  if (!after && okKey(params.code)) await forgetInvite(env, params.code, before, out);
+  return out;
+}
+
 /* teams/{tid}/players/{pid}/guardians: a player's families. */
 function onGuardians(env, params, before, after, now) {
   return settle(env, params.code, { uids: both(before, after), tids: [params.tid], parents: true, tree: params.tree }, now);
@@ -295,4 +308,4 @@ function onSelf(env, params, before, after, now) {
   return settle(env, params.code, { uids: both(before, after), tids: [params.tid], players: true, tree: params.tree }, now);
 }
 
-module.exports = { settle, onAdmin, onTeamStaff, onGuardians, onSelf, onMember, onSquadPlayer, onRosterOpen, rosterEntry, isStaff, hasRole, teamIndexWanted, linkedWanted, coachTeamOf, helperTeamOf };
+module.exports = { settle, onAdmin, onTeamStaff, onGuardians, onSelf, onViewer, onMember, onSquadPlayer, onRosterOpen, rosterEntry, isStaff, hasRole, teamIndexWanted, linkedWanted, coachTeamOf, helperTeamOf };

@@ -253,7 +253,7 @@ Any signed-in account could claim an unused id under `shareOwners`, publish
 a page at `public/{id}` and send round `live.html?t={id}`, a made-up fixture
 under the club's own address. Decided by the owner (2026-10-08): phones stop
 publishing. `public/` is `.write: false` for every account, admins included,
-and `shareOwners` is gone (rules version 17). The server builds every page
+and `shareOwners` is gone (rules version 19). The server builds every page
 from the club (`functions/mirror.js`, with the app's game math ported to
 `functions/game.js`), waking on each part of a game play writes (a goal, a
 sub, the clock, each under its own id, never the game whole), a game's
@@ -267,4 +267,4 @@ takes a replaced address down. Phones still make the ids, in the club; the
 share sheet says when the server last wrote the page (`test/mirror.js`, item
 for item against the app's `publicDoc()`, `fixtureDoc()` and `publicGame()`;
 `test/stats.js`, no `public/` write from the phone; `test/rules.js` both
-passes, every kind of account refused). Build 118.
+passes, every kind of account refused). Build 120.

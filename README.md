@@ -96,6 +96,10 @@ Each invite works **once**, for **one account**, and expires after **14 days**. 
 
 The invite shows the club, the team and who sent it — never a child's name. A parent invite names the player by shirt number, because a link gets forwarded.
 
+### A club viewer
+
+A director or a board member sees every team's calendar and games with the children's names, and nothing else: no emails, no access log, no coach's notes, no messages, no answering who's coming, no changes. An admin makes one from **People** (the person's *Club viewer* chip) or with **Invite someone → Club viewer**, which asks for no team. It needs rules version 17 published. The game link without signing in is unchanged and still carries no names.
+
 ### A whole squad of parents
 
 Two ways, both on the team's **Squad** tab, in a **Parents** card for that team's coaches and the admins.
@@ -210,7 +214,7 @@ If a deploy fails on permissions, the message names what is missing; add the rol
 
 **The site's address, for calendar links.** An entry in a subscribed calendar links back into the app (a game to its page, a practice to the team's calendar, My calendar's entries to My calendar), and the server cannot know where the site is, so `functions/.env` says: `SOCCER_SITE=https://dawsboss.github.io/soccer-manager-/index.html`. It is committed (it is not a secret) and loaded on every deploy. If the site moves (a custom domain), change it there; `test/mirror.js` holds it to an `https` address ending `index.html`.
 
-**Share pages need the functions.** Since build 118 phones never write `public/` and the rules refuse it (version 17): a club whose functions are not deployed has share links that never fill in.
+**Share pages need the functions.** Since build 120 phones never write `public/` and the rules refuse it (version 19): a club whose functions are not deployed has share links that never fill in.
 
 Without the secret the workflow says so and deploys nothing. From a computer instead: `npm install -g firebase-tools`, `firebase login`, `(cd functions && npm ci)`, `firebase deploy --only functions`.
 
@@ -341,7 +345,7 @@ that predates it. So each of those rules carries a clause that falls back to
 the old club-wide behaviour *while its table is missing*, and stops doing so
 the moment the table appears. Nothing to sequence, and no way to lock the club
 out by pasting early. (`shareOwners/{shareId}` was the other, for the share
-pages; since rules version 17 only the server writes those, and it is gone.)
+pages; since rules version 19 only the server writes those, and it is gone.)
 
 The app fills it in by itself: an admin's device writes `teamIndex` on its
 next connect. **Club
@@ -401,7 +405,7 @@ What each part is doing:
 - **`clubInvites/$code`** is the admin's list, readable only by admins. It lives outside the workspace on purpose: everyone indexed can read the whole workspace, and a list of unspent coach invites in a parent's hands is a parent who can make herself a coach.
 - **`userOrgs/$uid`** is which clubs an account belongs to, so a second device finds them without a code. Only its owner reads it. It is a list of bookmarks, not a grant: reading a club is still `access/index`'s decision.
 - **`rsvp/$tid/$item/$pid`** is who is coming: one answer per child per game or calendar entry. A parent may write it for a child whose `guardians` list holds her uid, a coach for anyone on her team, an admin for anyone, and each answer must be stamped with the writer's own uid. It is a node of its own, not part of the game or the team, so the one thing this rule hands a parent is her own child's answer. An answer is `yes`, `no` or `maybe`, an optional note of at most 140 characters, and nothing else. Until this block is published, parents' answers are refused and the app says so.
-- **`public/$share`** stays world-readable — that is the whole point of the parent links — and nobody writes it: the server builds every page with admin credentials (rules version 17, SECURITY.md, SEC-10). That closes the hole where any signed-in account could make a page under an id no club had claimed, and `shareOwners` went with it.
+- **`public/$share`** stays world-readable — that is the whole point of the parent links — and nobody writes it: the server builds every page with admin credentials (rules version 19, SECURITY.md, SEC-10). That closes the hole where any signed-in account could make a page under an id no club had claimed, and `shareOwners` went with it.
 - **`joinCodes/$jc`** is a team link: club, team, and the names shown on it. Readable by id only, like an invite; made and retired by that team's coach or an admin, never edited. It grants nothing on its own.
 - **`claims/$ws/$tid/$uid`** is a parent's request through that link — a shirt number and optionally the child's first name. Only its author writes it, only with a live link to that team, and never with an approval in it. **`approved`** is written by that team's coach or an admin, once, in their own name; they can also delete a request to turn it down. The author and the team's coaches and admins read it.
 - **`access/index/$uid`** gains one clause for the team link: a team's coach may write it for someone whose request to *her* team she approved, with that team's id as the value. A coach still cannot let in anyone who did not ask.
