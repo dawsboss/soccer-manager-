@@ -783,7 +783,8 @@ async function initSync() {
         wsRead = true;
         saveLocal(); markSynced(); render();
         flushPending();
-        for (const [p, x] of owed) remoteSet(p, x);
+        // a guest writes nothing to the club: whatever an older copy here holds stays here
+        if (!guestPhone()) for (const [p, x] of owed) remoteSet(p, x);
         /* Close the migration bridge without anybody being told to. The
            per-team rules fall back to the old club-wide index while
            access/teamIndex is missing; an admin's device is the only one
@@ -902,9 +903,11 @@ async function initSync() {
       const fam = {};
       for (const tbl of ['teamParents', 'teamPlayers'])
         for (const [t, row] of Object.entries(a[tbl] || {})) if (u && row && typeof row[u] === 'string') (fam[t] = fam[t] || []).push(row[u]);
-      return { admin, all, staffTeams, fam };
+      // a club viewer reads every squad, for the names, and none of the coach's notes
+      const view = !!(u && (a.viewers || {})[u]);
+      return { admin, all, staffTeams, fam, view };
     }
-    const reachKey = r => JSON.stringify([r.admin, r.all, r.staffTeams, Object.keys(r.fam).sort()]);
+    const reachKey = r => JSON.stringify([r.admin, r.all, r.staffTeams, Object.keys(r.fam).sort(), !!r.view]);
 
     /* Her own children, team by team. The lookup tables name one child per
        team; a second on the same team (twins) is found by asking for each
@@ -931,20 +934,59 @@ async function initSync() {
     }
 
     async function readOrgs() {
-      const access = await once('access', true);
+      let access;
+      try { access = await once('access', true); } catch (e) {
+        // not in the club, unless she is a guest at one game or entry of it, whose time is not up
+        const g = me ? await once('access/guests/' + me.uid) : null;
+        if (g && typeof g === 'object' && Number(g.until) > nowMs() && typeof g.item === 'string') return readGuest(g);
+        throw e;
+      }
       if (access === null) return null;
       const r = orgsReach(access);
+      const wide = r.all || r.view;
       const [org, names, teams, roster, matches, rsvp, membersV, log, mine] = await Promise.all([
-        once('org'), once('names'), once('teams'), r.all ? null : once('roster'), once('matches'), once('rsvp'),
+        once('org'), once('names'), once('teams'), wide ? null : once('roster'), once('matches'), once('rsvp'),
         r.all ? once('members') : null, r.admin ? once('log') : null,
         // her own entry, which is hers to read when the rest of members is not
         !r.all && me ? once('members/' + me.uid) : null]);
       const squads = {};
-      await Promise.all((r.all ? Object.keys(teams || {}) : r.staffTeams).map(async t => { const v = await once('squad/' + t); if (v !== undefined) squads[t] = v || {}; }));
+      await Promise.all((wide ? Object.keys(teams || {}) : r.staffTeams).map(async t => { const v = await once('squad/' + t); if (v !== undefined) squads[t] = v || {}; }));
       const kids = await findKids(r, roster, squads);
       // the coach's notes (SEC-12), for the coaches and admins who may read them
       const notes = r.all ? (await once('coachNotes')) || {} : {};
       return { r, access, org, names, teams, roster, matches, rsvp, members: membersV, mine, log, squads, kids, notes };
+    }
+
+    /* A guest's slice of the club, and all of it the rules let her read:
+       the club's and the team's names, the team's squad (so the game has
+       names), and the one game or entry. Put back into the shape the app
+       knows, with her own guest entry as the whole of access. */
+    async function readGuest(g) {
+      const tid = g.team, game = g.item.startsWith('g_'), id = g.item.slice(2);
+      const [orgName, teamName, squad, item] = await Promise.all([once('org/name'), once('teams/' + tid + '/name'),
+        once('squad/' + tid), once(game ? 'matches/' + id : 'teams/' + tid + '/events/' + id)]);
+      return { guest: g, tid, game, id, orgName, teamName, squad, item };
+    }
+    function guestClub(x) {
+      const team = { id: x.tid, name: typeof x.teamName === 'string' ? x.teamName : '', players: squadWith(x.squad, null, false) };
+      const ok = x.item && typeof x.item === 'object';
+      if (!x.game && ok) team.events = { [x.id]: x.item };
+      return {
+        teams: { [x.tid]: team }, matches: x.game && ok ? { [x.id]: x.item } : {},
+        access: { guests: { [me.uid]: x.guest }, org: { name: typeof x.orgName === 'string' ? x.orgName : '' }, members: {} }, rsvp: {}
+      };
+    }
+    function listenGuest(x) {
+      orgsOff();
+      const gen = ++orgsGen, live = () => gen === orgsGen;
+      const val = (p, cb) => orgsOffs.push(dbMod.onValue(dbMod.ref(db, OB() + '/' + p), cs => { if (live()) cb(cs.val()); }, () => { }));
+      /* Replaced whole, unlike every other read: a guest writes nothing, so
+         this phone never owes the club anything that a fresh copy could lose. */
+      const keep = () => { if (live()) { state = guestClub(x); saveLocal(); render(); } };
+      // her time changed or was taken away: read again, which the rules now refuse or narrow
+      val('access/guests/' + me.uid, v => { if (JSON.stringify(v) !== JSON.stringify(x.guest)) attachWorkspace(); });
+      val('squad/' + x.tid, v => { x.squad = v; keep(); });
+      val(x.game ? 'matches/' + x.id : 'teams/' + x.tid + '/events/' + x.id, v => { x.item = v; keep(); });
     }
 
     const namesAsMembers = n => Object.fromEntries(Object.entries(n || {}).filter(([, x]) => x && typeof x === 'object').map(([u, x]) => [u, { name: String(x.name || '') }]));
@@ -1024,8 +1066,8 @@ async function initSync() {
         squadOf[tid] = (x.squads || {})[tid] || {};
         val('squad/' + tid, v => { squadOf[tid] = v || {}; putPlayers(tid); saveLocal(); render(); });
       };
-      for (const tid of r.all ? Object.keys(x.teams || {}) : r.staffTeams) watchSquad(tid);
-      if (!r.all) {
+      for (const tid of r.all || r.view ? Object.keys(x.teams || {}) : r.staffTeams) watchSquad(tid);
+      if (!r.all && !r.view) {
         val('roster', v => { roster.now = v || {}; for (const tid of Object.keys(state.teams || {})) if (!(tid in squadOf)) putPlayers(tid); saveLocal(); render(); });
         for (const [tid, ps] of Object.entries(kids)) for (const pid of Object.keys(ps))
           val('squad/' + tid + '/' + pid, v => { if (v) kids[tid][pid] = v; else delete kids[tid][pid]; putPlayers(tid); saveLocal(); render(); });
@@ -1042,7 +1084,7 @@ async function initSync() {
           // a team's players are not in the team on this tree: they stay where they were read
           if (coll === 'teams') {
             state.teams[cs.key].players = (prev && prev.players) || {};
-            if (r.all) watchSquad(cs.key);
+            if (r.all || r.view) watchSquad(cs.key);
             putPlayers(cs.key);
           }
           noteSeen(coll, cs.key);
@@ -1068,6 +1110,7 @@ async function initSync() {
         if (gen !== orgsGen) return;
         denied = false;
         if (!x) { connected(null); return; }
+        if (x.guest) { connected(guestClub(x)); listenGuest(x); return; }
         connected(orgsClub(x));
         staffName();
         if (x.r.all) moveCoachNotes(x.squads, x.notes);
@@ -1487,6 +1530,26 @@ const isMe = p => !!(me && p && (p.self || {})[me.uid]);
 // her own child, or herself: the one player a family account sees by name
 const isMine = p => !!(me && p && ((p.guardians || {})[me.uid] || (p.self || {})[me.uid]));
 const famRole = r => r === 'parent' || r === 'player';
+/* AUTH.md, *More kinds of people*, 3: a club-wide viewer (a director, a
+   board member) reads every team's calendar and games with the children's
+   names, and does nothing else: no answers, no messages, no bookings, no
+   writes. Club-level, like admins (access/viewers/{uid}), and deliberately
+   not in access/index: the index is what opens sessions, bookings, answers
+   and following a game, so the rules name her on each part she reads
+   instead, and hasAnyRole() never counts her. */
+const isViewer = uid => !!(uid && (acc().viewers || {})[uid]);
+/* 4: a guest (a referee, a scout, a guest coach) reads one game or one
+   calendar entry, with names, until `until`: access/guests/{uid} = { team,
+   item: 'g_' + game | 'e_' + entry, until }. The rules read `until` against
+   the database's clock, so it ends by itself; the phone's clock only decides
+   what it draws. */
+function guestOf(uid) {
+  const g = uid && (acc().guests || {})[uid];
+  return g && typeof g === 'object' && typeof g.team === 'string' && typeof g.item === 'string' ? g : null;
+}
+const guestLive = g => !!(g && Number(g.until) > nowMs());
+// a phone holding only a guest's slice of a club: she cannot read access, so it has no admins in it
+const guestPhone = () => !!(me && guestOf(me.uid) && !anyAdmins());
 function roleIn(tid, uid) {
   if (!uid) return null;
   if (me && me.uid === uid && isOwner()) return 'owner';
@@ -1495,6 +1558,9 @@ function roleIn(tid, uid) {
   if (isTracker(tid, uid)) return 'tracker';
   if (isGuardian(tid, uid)) return 'parent';
   if (isSelfOn(tid, uid)) return 'player';
+  if (isViewer(uid)) return 'viewer';
+  const g = guestOf(uid);
+  if (g && g.team === tid && guestLive(g)) return 'guest';
   return null;
 }
 /* AUTH.md's "What parents actually see": a parent gets her own child by name
@@ -1509,7 +1575,8 @@ function roleIn(tid, uid) {
    it still holds. */
 const rosterOpen = () => ((acc().org || {}).rosterOpen) === true;
 function namesNarrowed(tid) {
-  if (!gated() || !me || canAdmin() || rosterOpen()) return false;
+  // a club viewer and a guest were let in to see the games with names (AUTH.md, the owner's decisions 4 and 5)
+  if (!gated() || !me || canAdmin() || rosterOpen() || isViewer(me.uid)) return false;
   if (teams().some(x => isCoach(x.id, me.uid) || isTracker(x.id, me.uid))) return false;
   return famRole(roleIn(tid, me.uid));
 }
@@ -1521,7 +1588,7 @@ function shownName(t, p) {
   const n = p.number == null ? '' : String(p.number).trim();
   return n ? '#' + n : 'A teammate';
 }
-const ROLE_LABEL = { owner: 'App owner', admin: 'Org admin', coach: 'Coach', tracker: 'Tracker', parent: 'Parent', player: 'Player', viewer: 'Viewer' };
+const ROLE_LABEL = { owner: 'App owner', admin: 'Org admin', coach: 'Coach', tracker: 'Tracker', parent: 'Parent', player: 'Player', viewer: 'Viewer', guest: 'Guest' };
 
 /* Whoever looks after the app itself. Read from the database root, never from
    this file — a personal email committed to a public repo gets scraped, sticks
@@ -1558,6 +1625,9 @@ function logAccess(act, targetUid, extra) {
 }
 const auditLog = () => Object.values(acc().log || {}).sort((a, b) => b.at - a.at);
 
+/* In the club without being indexed: a club viewer, or a guest whose time
+   is not up. Her bookmark to the club stays while either holds. */
+const inClubOtherwise = uid => isViewer(uid) || guestLive(guestOf(uid));
 // SERVER.md: a lookup table rebuilt by phones on connect; a server trigger would keep it true at once.
 function syncIndex(uid) {
   if (!uid) return;
@@ -1566,8 +1636,8 @@ function syncIndex(uid) {
   else {
     forgetInvite((acc().index || {})[uid]);
     delDeep(state, `access/index/${uid}`); remoteDel(`access/index/${uid}`);
-    // their bookmark to this club goes too, so no other device of theirs opens it
-    if (fb && wsCode()) Promise.resolve(fb.remove(fb.ref(fb.db, `userOrgs/${uid}/${wsCode()}`))).catch(() => { });
+    // their bookmark to this club goes too, so no other device of theirs opens it, unless she still views it or is a guest at it
+    if (fb && wsCode() && !inClubOtherwise(uid)) Promise.resolve(fb.remove(fb.ref(fb.db, `userOrgs/${uid}/${wsCode()}`))).catch(() => { });
   }
   saveLocal();
 }
@@ -1892,7 +1962,10 @@ function readiness() {
    and no way to sign in, so hiding anything there would be a dead end rather
    than a protection. One predicate for both, or the lock screen and the team
    list end up disagreeing about whether the club is protected. */
-const gated = () => anyAdmins() && !!fbConfig().apiKey;
+/* A guest's phone holds a club with no admins in it (she cannot read
+   access), so a guest anywhere in the copy gates it too: signed out, it
+   draws nothing, as any club with an admin. */
+const gated = () => (anyAdmins() || Object.keys(acc().guests || {}).length > 0) && !!fbConfig().apiKey;
 const needsSignIn = () => !me && gated();
 
 /* Who may see and change which team.
@@ -1905,8 +1978,9 @@ function myTeams() {
   if (!me) return [];                          // after it, signed out sees nothing
   if (canAdmin()) return all;
   const coachAnywhere = all.some(t => isCoach(t.id, me.uid));
-  if (coachAnywhere) return all;
-  const mine = all.filter(t => isTracker(t.id, me.uid) || isGuardian(t.id, me.uid) || isSelfOn(t.id, me.uid));
+  if (coachAnywhere || isViewer(me.uid)) return all;
+  const g = guestOf(me.uid), guestTeam = g && guestLive(g) ? g.team : null;
+  const mine = all.filter(t => isTracker(t.id, me.uid) || isGuardian(t.id, me.uid) || isSelfOn(t.id, me.uid) || t.id === guestTeam);
   return mine;
 }
 /* Every player this account is a guardian of, across every team it can see.
@@ -2062,7 +2136,9 @@ function mayAct(a, m, d) {
    deletes the invite it came from. */
 const LS_INVITE = 'sm.invite';
 const INVITE_DAYS = 14;
-const INVITE_ROLES = { coach: 'Coach', tracker: 'Tracker', parent: 'Parent' };
+const INVITE_ROLES = { coach: 'Coach', tracker: 'Tracker', parent: 'Parent', viewer: 'Club viewer' };
+// a role for the whole club, with no team to pick
+const CLUB_ROLES = new Set(['viewer']);
 let rtdb = null;        // { db, mod } once the database module has loaded, code or not
 /* null until asked, then 'asking', 'ok', 'old' (the published rules predate
    this app) or 'app' (this app predates them: another phone has already
@@ -2164,6 +2240,8 @@ function maybeLoadInvite() {
 function inviteWhat(v) {
   const role = INVITE_ROLES[v.role] || v.role;
   if (v.role === 'player') return `a player, #${esc(v.playerNo || '?')} on <b>${esc(v.teamName || 'a team')}</b>, with your own sign-in`;
+  if (v.role === 'viewer') return 'a club viewer: every team\u2019s games and calendar, to read';
+  if (v.role === 'guest') return `a guest at <b>${esc(v.itemLabel || 'one game')}</b> (${esc(v.teamName || 'a team')}), until ${esc(new Date(v.until || 0).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' }))}`;
   return v.role === 'parent'
     ? `a parent of ${v.playerNo ? '#' + esc(v.playerNo) : 'a player'} on <b>${esc(v.teamName || 'a team')}</b>`
     : `${role.toLowerCase()} of <b>${esc(v.teamName || 'a team')}</b>`;
@@ -2220,11 +2298,16 @@ async function redeemInvite() {
   const W = rel => clubPath(rel, ws, tree);
   try {
     if (!v.used) await put('invites/' + id + '/used', { by: who, at });
-    await put(W('access/members/' + who), { name: me.name || '', email: me.email || '', at });
+    /* A guest is not a member of the club: one game or entry, for a while,
+       and her entry is all of it. Neither she nor a viewer is indexed (the
+       rules name each on what she reads), so neither writes access/index. */
+    if (v.role === 'guest') await put(W('access/guests/' + who), { team: v.team, item: v.item, until: v.until, inv: id, name: String(me.name || '').slice(0, 80) });
+    else await put(W('access/members/' + who), { name: me.name || '', email: me.email || '', at });
     if (v.role === 'parent') await put(W(`teams/${v.team}/players/${v.player}/guardians/${who}`), id);
     else if (v.role === 'player') await put(W(`teams/${v.team}/players/${v.player}/self/${who}`), id);
-    else await put(W(`access/teams/${v.team}/${v.role === 'coach' ? 'coaches' : 'trackers'}/${who}`), id);
-    await put(W('access/index/' + who), id);
+    else if (v.role === 'viewer') await put(W('access/viewers/' + who), id);
+    else if (v.role !== 'guest') await put(W(`access/teams/${v.team}/${v.role === 'coach' ? 'coaches' : 'trackers'}/${who}`), id);
+    if (v.role !== 'viewer' && v.role !== 'guest') await put(W('access/index/' + who), id);
   } catch (e) {
     invite.status = 'error';
     invite.err = /permission|denied/i.test((e && e.code) || '') ? 'The database refused it — the invite may have expired or been withdrawn'
@@ -2232,6 +2315,7 @@ async function redeemInvite() {
     render(); return;
   }
   if (v.role === 'player') await soft(put(W(`access/teamPlayers/${v.team}/${who}`), v.player));
+  else if (v.role === 'viewer' || v.role === 'guest') { /* no lookup table: the rules check her entry directly */ }
   else if (v.role !== 'parent') await soft(put(W(`access/teamIndex/${v.team}/${who}`), v.role));
   /* Refused while the table does not exist yet, which is fine: the rules fall
      back to the club-wide index until an admin's device creates it, and that
@@ -2241,7 +2325,7 @@ async function redeemInvite() {
   await soft(put('userOrgs/' + who + '/' + ws, { name: v.clubName || '', at }));
   await soft(put(W('access/log/' + uid()), {
     at, act: 'joined by invite as', by: who, byName: me.name || null,
-    target: who, targetName: INVITE_ROLES[v.role] || ROLE_LABEL[v.role] || v.role, team: v.team, teamName: v.teamName || null
+    target: who, targetName: INVITE_ROLES[v.role] || ROLE_LABEL[v.role] || v.role, team: v.team || null, teamName: v.teamName || null
   }));
   await soft(mod.remove(mod.ref(db, 'invites/' + id)));   // spent: nothing left to replay
   dropInvite();
@@ -2342,7 +2426,7 @@ function watchMyClubs() {
 function noteMyClub() {
   const code = wsCode();
   if (!rtdb || !me || !code || !myClubs || isSandbox()) return;
-  if (!approved(me.uid) && !isAdmin(me.uid)) return;
+  if (!approved(me.uid) && !isAdmin(me.uid) && !inClubOtherwise(me.uid)) return;
   const name = (acc().org || {}).name || '';
   const had = myClubs[code];
   if (had && had.name === name) return;
@@ -2369,7 +2453,7 @@ function inviteStatus(v) {
 }
 
 const inviteList = () => Object.entries(clubInv || {}).map(([id, v]) => ({ id, ...v })).sort((a, b) => (b.at || 0) - (a.at || 0));
-const inviteFor = v => `${esc(INVITE_ROLES[v.role] || ROLE_LABEL[v.role] || v.role)}${(v.role === 'parent' || v.role === 'player') && v.playerName ? ' of ' + esc(v.playerName) : ''} · ${esc(v.teamName || '')}`;
+const inviteFor = v => `${esc(INVITE_ROLES[v.role] || ROLE_LABEL[v.role] || v.role)}${(v.role === 'parent' || v.role === 'player') && v.playerName ? ' of ' + esc(v.playerName) : ''}${v.role === 'guest' && v.itemLabel ? ' at ' + esc(v.itemLabel) : ''}${v.teamName ? ' · ' + esc(v.teamName) : CLUB_ROLES.has(v.role) ? ' · the whole club' : ''}`;
 
 /* Open invites first and all of them, because those are the ones an admin
    comes back for: to copy the link again, or to kill it. Used and expired
@@ -2407,7 +2491,8 @@ function sheetInviteDetail(id) {
   const st = inviteStatus(v), link = inviteLink(id);
   const when = ms => ms ? new Date(ms).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' }) : 'unknown';
   const who = v.used && (acc().members || {})[v.used.by];
-  const stillHas = v.used && (v.role === 'parent'
+  const stillHas = v.used && (v.role === 'viewer' ? isViewer(v.used.by) : v.role === 'guest' ? guestLive(guestOf(v.used.by))
+    : v.role === 'parent'
     ? !!(((((state.teams[v.team] || {}).players || {})[v.player] || {}).guardians || {})[v.used.by])
     : v.role === 'coach' ? isCoach(v.team, v.used.by) : isTracker(v.team, v.used.by));
   const canShare = typeof navigator !== 'undefined' && typeof navigator.share === 'function';
@@ -2444,8 +2529,8 @@ function sheetInvite() {
     <p class="lbl">As</p>
     <div class="chips" style="margin-bottom:12px">${Object.entries(INVITE_ROLES).map(([k, l]) =>
     `<button class="chip" type="button" data-act="invitepick" data-k="role" data-v="${k}" aria-pressed="${f.role === k}">${l}</button>`).join('')}</div>
-    <p class="lbl">Team</p>
-    ${pickOne('invitepick', 'team', f.team, teams().map(x => [x.id, esc(x.name || 'Team')]), 'Add a team first.')}
+    ${CLUB_ROLES.has(f.role) ? `<p class="muted" style="margin-top:0">Reads every team's calendar and games, with the children's names, and nothing else: no emails, no access log, no coach's notes, no messages, no answering who's coming, no changes.</p>` : `<p class="lbl">Team</p>
+    ${pickOne('invitepick', 'team', f.team, teams().map(x => [x.id, esc(x.name || 'Team')]), 'Add a team first.')}`}
     ${f.role === 'parent' ? `<p class="lbl">Parent of</p>
     ${pickOne('invitepick', 'player', f.player, players.map(p => [p.id, `${p.number ? '#' + esc(p.number) + ' ' : ''}${esc(p.name || '')}`]), 'No players on this team.')}` : ''}
     <label class="field"><span>Their email — optional</span><input type="email" id="invEmail" placeholder="Leave empty for a link anyone can use once" autocapitalize="off" autocorrect="off"></label>
@@ -2456,19 +2541,22 @@ function sheetInvite() {
 /* One invite, written where the rules want it: the invite itself, then the
    admin's list. Throws if either is refused, so a caller making a squad's
    worth stops at the first refusal instead of making fifteen half-invites. */
-async function writeInvite(t, role, p, email) {
+async function writeInvite(t, role, p, email, extra) {
   const id = secretId(), at = nowMs();
   /* What the invitee sees before joining. Club, team and who sent it — never
      the child's name: the invite is readable by anyone holding the link, and a
      link gets forwarded. The admin's own list can carry it; only admins read that. */
   const doc = {
-    ws: wsCode(), team: t.id, teamName: t.name || '', role,
+    ws: wsCode(), ...(t ? { team: t.id, teamName: t.name || '' } : {}), role,
     clubName: (acc().org || {}).name || '', by: me.uid, byName: me.name || '',
-    at, expiresAt: at + INVITE_DAYS * 864e5
+    at, expiresAt: at + INVITE_DAYS * 864e5, ...(extra || {})
   };
+  // a guest's link is no use once her time is up, so it lasts no longer
+  if (doc.until) doc.expiresAt = Math.min(doc.expiresAt, doc.until);
   if (p) { doc.player = p.id; if (p.number) doc.playerNo = String(p.number); }
   if (email) doc.email = email;
-  const listed = { role: doc.role, team: doc.team, teamName: doc.teamName, by: doc.by, byName: doc.byName, at, expiresAt: doc.expiresAt };
+  const listed = { role: doc.role, ...(t ? { team: doc.team, teamName: doc.teamName } : {}), by: doc.by, byName: doc.byName, at, expiresAt: doc.expiresAt,
+    ...(doc.itemLabel ? { itemLabel: doc.itemLabel, until: doc.until } : {}) };
   if (p) { listed.playerName = p.name || ''; listed.player = p.id; }
   if (email) listed.email = email;
   await fb.set(fb.ref(fb.db, 'invites/' + id), doc);
@@ -2528,8 +2616,9 @@ async function makeInvite() {
   if (!canAdmin()) { toast('Club admins only'); return; }
   if (!fb || !rtdb || !me) { toast(me ? 'Needs a connection to the database' : 'Sign in first'); return; }
   const f = ui.inv || {};
-  const t = state.teams[f.team];
-  if (!t) { toast('Pick a team'); return; }
+  const club = CLUB_ROLES.has(f.role);
+  const t = club ? null : state.teams[f.team];
+  if (!t && !club) { toast('Pick a team'); return; }
   if (!INVITE_ROLES[f.role]) { toast('Pick a role'); return; }
   const p = f.role === 'parent' ? (t.players || {})[f.player] : null;
   if (f.role === 'parent' && !p) { toast('Pick the player'); return; }
@@ -2542,12 +2631,12 @@ async function makeInvite() {
     return;
   }
   const { id, doc } = made;
-  logAccess('invited', null, { targetName: (email || 'someone') + ' as ' + f.role, team: t.id, teamName: t.name || null });
+  logAccess('invited', null, { targetName: (email || 'someone') + ' as ' + f.role, team: t ? t.id : null, teamName: t ? t.name || null : null });
   ui.inv = null;
   const link = inviteLink(id);
   const canShare = typeof navigator !== 'undefined' && typeof navigator.share === 'function';
   openSheet(`<h3>Invite ready</h3>
-    <p class="muted" style="margin-top:0">${esc(INVITE_ROLES[doc.role])} on <b>${esc(doc.teamName)}</b>${email ? ` for <b>${esc(email)}</b>` : ''}. Works once, for ${INVITE_DAYS} days.</p>
+    <p class="muted" style="margin-top:0">${esc(INVITE_ROLES[doc.role])}${doc.teamName ? ` on <b>${esc(doc.teamName)}</b>` : ' for the whole club'}${email ? ` for <b>${esc(email)}</b>` : ''}. Works once, for ${INVITE_DAYS} days.</p>
     <div class="codebox">${esc(link)}</div>
     <div class="row" style="margin-bottom:10px"><button class="btn" data-act="copylink" data-v="${esc(link)}">Copy link</button>
     ${canShare ? `<button class="btn quiet" data-act="inviteshare" data-v="${esc(link)}">Share…</button>` : ''}</div>
@@ -2555,6 +2644,74 @@ async function makeInvite() {
     <p class="muted">Firebase sends it, worded as a sign-in link rather than an invitation — worth a text to say it is coming.</p>` : ''}
     <button class="btn quiet wide" data-act="closesheet">Done</button>`);
   render();
+}
+
+/* ---------------- a guest at one game or entry ---------------- */
+/* AUTH.md, *More kinds of people*, 4. A referee, a scout or a guest coach
+   who needs more than the game link (which stays name-free, for anyone): a
+   link the team's coach or an admin makes for this one game or calendar
+   entry, ending at a time she picks. Whoever opens it signs in and reads
+   that one thing, with names, until then; the rules read the end against
+   the database's clock, so nobody has to remember to take it away. A guest
+   coach who should run subs is a tracker for the day, which this is not. */
+const mayGuest = tid => !!(me && tid && (canAdmin() || isCoach(tid, me.uid)));
+const GUEST_FOR = { day: 'Until the end of that day', two: 'Two days after it', week: 'A week after it' };
+function guestItem(tid, item) {
+  const t = state.teams[tid], id = String(item || '').slice(2);
+  if (!t) return null;
+  if (String(item).startsWith('g_')) {
+    const m = state.matches[id];
+    return m && m.teamId === tid ? { date: m.date || '', label: `the game against ${m.opponent || 'TBC'}${m.date ? ' on ' + dayLabel(m.date) : ''}` } : null;
+  }
+  const e = (t.events || {})[id];
+  // the kind, not the title: a title is typed freely, and the link is readable by whoever holds it
+  return e ? { date: e.date || '', label: `${CAL_KIND[e.kind === 'practice' ? 'practice' : 'event'] || 'An entry'}${e.date ? ' on ' + dayLabel(e.date) : ''}` } : null;
+}
+function guestUntil(date, k) {
+  const end = date ? new Date(date + 'T23:59:00').getTime() : NaN;
+  const base = Number.isFinite(end) && end > nowMs() ? end : nowMs() + 864e5;
+  return base + ({ day: 0, two: 2, week: 7 }[k] || 0) * 864e5;
+}
+const guestsAt = (tid, item) => Object.entries(acc().guests || {})
+  .filter(([, g]) => g && g.team === tid && g.item === item).map(([uid, g]) => ({ uid, ...g }));
+function sheetGuest(tid, item) {
+  const it = guestItem(tid, item);
+  if (!it || !mayGuest(tid)) { closeSheet(); return; }
+  const f = ui.guest && ui.guest.item === item ? ui.guest : (ui.guest = { tid, item, k: 'day' });
+  const when = ms => new Date(ms).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' });
+  const list = guestsAt(tid, item);
+  openSheet(`<h3>Let a guest see this</h3>
+    <p class="muted" style="margin-top:0">A referee, a scout, a guest coach: a link that lets one person, signed in, see <b>${esc(it.label)}</b> with the players' names, and nothing else of the club, until the time below. The game link without signing in stays as it is, with no names.</p>
+    <p class="lbl">For how long</p>
+    <div class="chips" style="margin-bottom:6px">${Object.entries(GUEST_FOR).map(([k, l]) =>
+    `<button class="chip" type="button" data-act="guestpick" data-v="${k}" aria-pressed="${f.k === k}">${l}</button>`).join('')}</div>
+    <p class="muted">Ends ${esc(when(guestUntil(it.date, f.k)))}, by itself.</p>
+    <button class="btn wide" data-act="guestmake" data-tid="${esc(tid)}" data-item="${esc(item)}">Make the link</button>
+    ${list.length ? `<p class="lbl" style="margin-top:14px">Guests now</p>${list.map(g => `<div class="opt spread">
+      <span><b>${esc(g.name || 'A guest')}</b><span class="rowsub">${guestLive(g) ? 'until ' + esc(when(g.until)) : 'ended'}</span></span>
+      <button class="btn quiet sm" data-act="guestdrop" data-tid="${esc(tid)}" data-item="${esc(item)}" data-uid="${esc(g.uid)}">Remove</button></div>`).join('')}` : ''}
+    <button class="btn quiet wide" data-act="closesheet" style="margin-top:8px">Done</button>`);
+}
+async function makeGuest(tid, item) {
+  if (!mayGuest(tid)) { toast('That team\u2019s coaches and club admins only'); return; }
+  if (!fb || !rtdb || !me) { toast(me ? 'Needs a connection to the database' : 'Sign in first'); return; }
+  const t = state.teams[tid], it = guestItem(tid, item);
+  if (!t || !it) return;
+  const until = guestUntil(it.date, (ui.guest || {}).k);
+  let made;
+  try { made = await writeInvite(t, 'guest', null, '', { item, until, itemLabel: it.label }); } catch (e) {
+    toast(/permission|denied/i.test((e && e.code) || '') ? 'The database refused it — the rules may not be published yet' : 'Could not make the link');
+    return;
+  }
+  logAccess('invited', null, { targetName: 'a guest at ' + it.label, team: tid, teamName: t.name || null });
+  const link = inviteLink(made.id);
+  const canShare = typeof navigator !== 'undefined' && typeof navigator.share === 'function';
+  openSheet(`<h3>Guest link ready</h3>
+    <p class="muted" style="margin-top:0">${esc(it.label)}, until ${esc(new Date(until).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' }))}. Works once, for one account.</p>
+    <div class="codebox">${esc(link)}</div>
+    <div class="row" style="margin-bottom:10px"><button class="btn" data-act="copylink" data-v="${esc(link)}">Copy link</button>
+    ${canShare ? `<button class="btn quiet" data-act="inviteshare" data-v="${esc(link)}">Share…</button>` : ''}</div>
+    <button class="btn quiet wide" data-act="closesheet">Done</button>`);
 }
 
 /* ---------------- invites from an imported roster ---------------- */
@@ -6411,7 +6568,17 @@ function render() {
      screen with the crumbs still drawn has leaked most of what there was. */
   const inviting = !!invite;
   const joining = !inviting && !!join && !join.hidden;
-  const shut = inviting || joining || !!purged || denied || unconfirmed || needsSignIn();
+  // a guest whose time is up keeps her copy, as anyone's phone does, and is shown none of it
+  const guestGone = guestPhone() && !guestLive(guestOf(me.uid));
+  const shut = inviting || joining || !!purged || denied || unconfirmed || needsSignIn() || guestGone;
+  /* A guest's phone holds one game or entry and lands on it: anywhere else
+     would be the empty shell of a club she cannot see. */
+  if (guestPhone() && !guestGone) {
+    const g = guestOf(me.uid), id = g.item.slice(2);
+    ui.teamId = g.team;
+    if (g.item.startsWith('g_') && state.matches[id]) { ui.view = 'game'; ui.matchId = id; }
+    else if (ui.view !== 'calendar') ui.view = 'calendar';
+  }
   const t = team();
   if (!t && teams().length) { ui.teamId = teams()[0].id; }
   const vis = myTeams();
@@ -6492,9 +6659,15 @@ function render() {
   if (joining) { app.innerHTML = joinScreen(); saveUi(); watchMessages(); return; }
   if (purged) { app.innerHTML = purgedScreen(); saveUi(); watchMessages(); return; }
   if (denied || needsSignIn()) { app.innerHTML = lockScreen(); saveUi(); watchMessages(); return; }
+  if (guestGone) {
+    app.innerHTML = `<div class="stack"><div class="empty"><strong>Your time as a guest has ended</strong>You were let in to one ${guestOf(me.uid).item.startsWith('g_') ? 'game' : 'calendar entry'} until ${esc(new Date(guestOf(me.uid).until).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' }))}. Ask the team's coach for a new link if you still need it.</div></div>`;
+    saveUi(); return;
+  }
   if (unconfirmed) { app.innerHTML = unconfirmedScreen(); saveUi(); return; }
   const roNote = lim === 'viewer' && team()
-    ? `<div class="rolebar">Viewing <b>${teamLabel(team())}</b> from another team in the club. You can read it, not change it.</div>` : '';
+    ? `<div class="rolebar">${guestPhone() ? `A guest at one ${match() ? 'game' : 'entry'} of <b>${teamLabel(team())}</b>, until ${esc(new Date(guestOf(me.uid).until).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' }))}. You can read it, not change it.`
+      : me && isViewer(me.uid) && !teams().some(x => isCoach(x.id, me.uid)) ? `Viewing <b>${teamLabel(team())}</b> as a club viewer. You can read it, not change it.`
+      : `Viewing <b>${teamLabel(team())}</b> from another team in the club. You can read it, not change it.`}</div>` : '';
   // "you can read, not change" is about the team; on Messages a parent writes, and on the Calendar she answers
   const roleNote = lim && lim !== 'viewer' && v !== 'inbox' && v !== 'thread' && v !== 'notes'
     ? `<div class="rolebar">Signed in as <b>${esc(ROLE_LABEL[lim])}</b> — ${lim === 'tracker' ? "you can log events and make the coach's planned subs when they are due, but not run the clock or make other subs" : lim === 'parent' && v === 'sessions' ? 'you can ask for a place for your child, and withdraw her' : lim === 'parent' ? 'you can read, and say from the Calendar whether your child is coming' : lim === 'player' ? 'you can read, and say from the Calendar whether you are coming' : 'you can read, not change'}.</div>`
@@ -7603,7 +7776,7 @@ function viewFeed() {
   const offerPush = !closed && me && pushSupport() === 'ok' ? ' Turn notifications on for this phone, under the bell, to get them with Minutes closed too.' : '';
   const follow = st === 'done' ? '' : `<div class="card"><div class="spread"><h2>Notify me</h2>
       <button class="btn ${following ? 'quiet ' : ''}sm" data-act="feedfollow" data-v="${following ? 0 : 1}">${following ? 'Stop' : 'Turn on'}</button></div>
-    <p class="muted" style="margin:6px 0 0">${closed
+    <p class="muted" style="margin:6px 0 0">${closed && me && (approved(me.uid) || isAdmin(me.uid))
       ? (following ? 'On for this game. Goals, kick-off, half time and full time reach this phone even with Minutes closed, and any other phone you turned notifications on for.'
         : 'Get goals, kick-off, half time and full time on this phone, even with Minutes closed.')
       : following
@@ -7645,6 +7818,10 @@ function watchFeed() {
 // SERVER.md: what the server reads to push a followed game (functions/push.js, onFollowed).
 function followRemote(mid, on) {
   if (!me || !rtdb || !mid || !wsCode()) return;
+  /* A club viewer or a guest is not in access/index, which is what the rule
+     asks: the page still follows the game for her while it is open, and the
+     server is not asked for what it would refuse. */
+  if (!approved(me.uid) && !isAdmin(me.uid)) return;
   const uid = me.uid, p = `follow/${wsCode()}/${mid}/${uid}`;
   (on ? rootPut(p, { at: nowMs() }) : rootDrop(p)).catch(err => {
     if (!on || !me || me.uid !== uid || !pushOn()) return;
@@ -9503,7 +9680,8 @@ function sheetCalItem(kind, tid, id) {
     ${m && edit ? `<button class="btn quiet wide" data-act="caleditgame" data-tid="${esc(tid)}" data-id="${esc(id)}" style="margin-bottom:8px">Edit this game’s details</button>
       <button class="btn quiet wide" data-act="copytext" data-v="${esc(opponentMessage(t, m))}">Copy a message for the other team</button>` : ''}
     ${e && e.kind === 'practice' && canPlan(tid) ? `<button class="btn wide" data-act="pracfromcal" data-tid="${esc(tid)}" data-id="${esc(id)}" style="margin-bottom:8px">${practiceById(tid, id) ? 'Open the plan' : 'Plan this practice'}</button>` : ''}
-    ${e && edit ? `<button class="btn quiet wide" data-act="caledit" data-tid="${esc(tid)}" data-id="${esc(id)}">Edit</button>` : ''}`);
+    ${e && edit ? `<button class="btn quiet wide" data-act="caledit" data-tid="${esc(tid)}" data-id="${esc(id)}">Edit</button>` : ''}
+    ${edit && mayGuest(tid) && fbConfig().apiKey && anyAdmins() ? `<button class="btn quiet wide" data-act="guestopen" data-tid="${esc(tid)}" data-item="${m ? 'g_' : 'e_'}${esc(id)}" style="margin-top:8px">Let a guest see this</button>` : ''}`);
 }
 
 /* The add/edit sheet keeps its fields in calForm and reads them back before
@@ -17263,7 +17441,8 @@ function rolesHeld(uid, scope) {
 function roleTags(uid, scope) {
   const by = {};
   for (const v of rolesHeld(uid, scope)) (by[v.r] = by[v.r] || new Set()).add(v.x.name || 'Team');
-  return ['coach', 'tracker', 'parent', 'player'].filter(r => by[r]).map(r => {
+  return (isViewer(uid) && !isAdmin(uid) ? `<span class="tag">${esc(INVITE_ROLES.viewer)}<i>every team</i></span>` : '')
+    + ['coach', 'tracker', 'parent', 'player'].filter(r => by[r]).map(r => {
     const names = [...by[r]];
     const what = names.length > 2 ? `${names.length} teams` : names.join(', ');
     return `<span class="tag">${esc(ROLE_LABEL[r])}<i>${esc(what)}</i></span>`;
@@ -17308,7 +17487,9 @@ function sheetPersonRoles(uid) {
     <div class="chips" style="margin-bottom:14px">
       <button class="chip" type="button" data-act="setrole" data-uid="${uid}" data-r="admin" aria-pressed="${isAdmin(uid)}">Club admin</button>
       ${isAdmin(uid) && (isClubOwner(uid) || (me && isClubOwner(me.uid))) ? `<button class="chip" type="button" data-act="setowner" data-uid="${uid}" aria-pressed="${isClubOwner(uid)}">Club owner</button>` : ''}
+      ${isAdmin(uid) ? '' : `<button class="chip" type="button" data-act="setviewer" data-uid="${uid}" aria-pressed="${isViewer(uid)}">Club viewer</button>`}
     </div>
+    ${isViewer(uid) && !isAdmin(uid) ? '<p class="muted" style="margin-top:-6px">Reads every team\u2019s calendar and games with names. No emails, no log, no messages, no answering, no changes.</p>' : ''}
     ${isClubOwner(uid) ? `<p class="muted" style="margin-top:-6px">${me && uid === me.uid ? 'You own the club: only an owner takes an admin away. Tap Club owner to step down once someone else owns it too.' : 'Owns the club. Only she can step down as owner.'}</p>`
         : isAdmin(uid) && hasClubOwner() && !(me && isClubOwner(me.uid)) && me && uid !== me.uid ? '<p class="muted" style="margin-top:-6px">Only the club owner can take an admin away.</p>' : ''}` : ''}
     <p class="lbl">${isAdmin(uid) ? 'Admin covers every team. Also' : 'Roles'}</p>
@@ -19215,6 +19396,27 @@ function onAct(e) {
     ui.inv = f; sheetInvite(); return;
   }
   if (a === 'invitemake') { makeInvite(); return; }
+  if (a === 'guestopen') { ui.guest = null; sheetGuest(d.tid, d.item); return; }
+  if (a === 'guestpick') { if (ui.guest) { ui.guest.k = d.v; sheetGuest(ui.guest.tid, ui.guest.item); } return; }
+  if (a === 'guestmake') { makeGuest(d.tid, d.item); return; }
+  if (a === 'guestdrop') {
+    // checked here, not only by who is shown the button
+    const g = guestOf(d.uid);
+    if (!g || !mayGuest(g.team)) { toast('That team\u2019s coaches and club admins only'); return; }
+    forgetInvite(g.inv);
+    drop(`access/guests/${d.uid}`);
+    logAccess('removed guest', d.uid, { team: g.team, teamName: (state.teams[g.team] || {}).name || null });
+    sheetGuest(d.tid, d.item); return;
+  }
+  if (a === 'setviewer') {
+    if (!canAdmin()) { toast('Club admins only'); return; }
+    const on = (acc().viewers || {})[d.uid];
+    logAccess(on ? 'removed viewer' : 'made viewer', d.uid);
+    if (on) { forgetInvite(on); drop(`access/viewers/${d.uid}`); }
+    else commit(`access/viewers/${d.uid}`, true);
+    syncIndex(d.uid);
+    sheetPersonRoles(d.uid); return;
+  }
   if (a === 'inviteopen') { if (!canAdmin()) { toast('Club admins only'); return; } sheetInviteDetail(d.id); return; }
   if (a === 'invitepast') { ui.invPast = !ui.invPast; render(); return; }
   if (a === 'invitedrop') {
@@ -19288,7 +19490,7 @@ function onAct(e) {
   if (a === 'claimno') { declineClaim(d.tid, d.uid); return; }
   if (a === 'claimadmin') {
     if (!me) { toast('Sign in first'); return; }
-    if (anyAdmins()) { toast('Someone already claimed it'); return; }
+    if (anyAdmins() || guestPhone()) { toast('Someone already claimed it'); return; }
     commit(`access/admins/${me.uid}`, true);
     // the first admin of a club nobody ran owns it too, as a founder does
     if (!hasClubOwner()) commit(`access/owners/${me.uid}`, true);

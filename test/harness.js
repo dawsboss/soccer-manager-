@@ -143,6 +143,7 @@ const EXPORTS = `{
   /* roles */
   acc, members, anyAdmins, isAdmin, isCoach, isTracker, isGuardian, roleIn,
   isOwner, canAdmin, clubOwners, isClubOwner, hasClubOwner, mayRemoveAdmin, ownerCard, approved, hasAnyRole, syncIndex, myTeams, myPlayers, rolesHeld, roleTags,
+  isViewer, guestOf, guestLive, guestPhone, inClubOtherwise, sheetGuest, makeGuest, guestItem, guestUntil, guestsAt,
   guardsAnyone, myChildren, isSelfOn, isMine, famThreads, goingQ, canRsvp, syncTeamPlayers, shownName, namesNarrowed, rosterOpen, elsewhereKids, anyPlayers, allKidNames, canEditTeam, readOnlyHere, myRole, restricted, auditLog,
   gated, needsSignIn, cacheMe, cachedMe,
   /* model helpers */

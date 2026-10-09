@@ -60,6 +60,7 @@ const SUITES = [
   ['alerts', 'alerts from every club: messages and calendar changes, over any screen, opening where they happened'],
   ['parents', 'what a parent sees: her own child by name, the rest by number, and her children in every club'],
   ['players', 'a player\'s own sign-in: the coach gives it, she sees what her parents see, and talks to the coaches only where they do'],
+  ['viewers', 'club-wide viewers see every team\'s games with names and nothing else; a guest sees one game or entry, until her time is up'],
   ['mycal', 'my calendar is the person\'s, across clubs, and private unless she shares it'],
   ['safekeep', 'nothing floats away: one count, a full phone, a whole backup'],
   ['library', 'the club\'s drills and a coach\'s own, and who sees which'],
