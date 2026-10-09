@@ -71,6 +71,23 @@ The API key in `firebase-config.js` is not a secret; the rules above are what ga
 
 The badge in the top bar shows `synced`, `offline`, or `this device`, and `3 to send` while changes made on this phone haven't reached the club yet. Nothing lives only on the phone: every change is kept in an outbox on the phone until the database confirms it has it, so a game tracked with no signal reaches the club even if the app is closed and reopened before the signal comes back. Plans, drills and messages do the same. A change the club's database refuses (usually because the rules haven't been pasted yet) is kept, tried again every time the phone connects, and said on every screen, with a list under Settings; it is only dropped if you choose to. A phone used before it joined a club is offered, under Settings, a way for an admin to add those teams to the club. If both devices edit the same game while one is offline, last write wins.
 
+### Sign-in methods
+
+Firebase console → **Authentication** → **Sign-in method**. Email/Password (with **Email link** ticked) and **Google** are what the app has always offered. Leave **User account linking** on *Link accounts that use the same email* (the default): it is what keeps a parent who joined by email link and later taps Apple the same person to the club. The app catches the refusal, asks her to sign in the way she did before, and adds the new way to that account.
+
+To offer more, switch each on in the console, then list it in `firebase-config.js`:
+
+```js
+window.SOCCER_SIGNIN = ['google', 'apple', 'microsoft'];
+```
+
+Only what is listed gets a button (left out, it is Google alone), because a method not switched on fails with *operation-not-allowed*.
+
+- **Apple** needs an Apple Developer account: a Services ID, a key for Sign in with Apple, and the Firebase handler (`https://<project>.firebaseapp.com/__/auth/handler`) as its return URL; the console's Apple panel walks through it. For email links to reach people who hide their address, register the project's sending domain in Apple's *Private email relay* settings. Apple hands over a name only the first time, so someone may need to type hers on the account sheet.
+- **Microsoft** needs an app registration in Azure (*Accounts in any organizational directory and personal Microsoft accounts*) with the same handler as its redirect URI; paste its id and secret into the console's Microsoft panel.
+
+Each person can see and add ways to sign in from **Your account**, and there is a *Forgot your password?* link beside the password box.
+
 ## Joining a club
 
 Joining someone else's club is by invite, and there is no code to type. Starting your own is not: anyone signed in can tap the club button at the top left → **+ Start a new club** and be its admin. The club they were in is untouched and stays in their list; a new club needs a signal, because it is made at the database there and then rather than queued on the phone.
@@ -153,7 +170,7 @@ Each person can also turn off a whole kind (messages, team notices, games and pr
 
 **Calendar changes too** (build 105): a game or practice in the next two weeks called off, back on, moved, or newly added reaches everyone on that team: *Cancelled: U11 Storm: Practice*, *Moved: U11 Storm v Northgate, now Sun 12 Oct 10am*. The same changes the app's own alerts say, and the same ones it doesn't: a new place or title, a deletion, anything further off (the subscribed calendar has those) or already past. A weekly practice added is one notification, not one a week. It says who made the change (*Thu 8 Oct 6pm · Jaz*), and she isn't told about her own. Every calendar change records who made it (rules version 8), and only the team's coaches and the club's admins can make one: the database refuses a tracker moving a game, as it already refused anyone else changing a practice.
 
-**A game you follow too** (build 115): *Notify me* on a game's Live tab sends its goals, kick-off, the start of each later half, half time and full time to every phone you turned notifications on for, with Minutes closed: *Goal — U11 Storm*, *Ella · U11 Storm 2–1 Northgate*. The scorer is named the way the club's setting says (Club settings, names or shirt numbers): coaches, trackers, admins and her own family always see the name, other families only while the club shows names, and `#7` otherwise. A scorer added a moment after the goal updates the same notification rather than sending a second. Nothing is said about a game that ended or was played hours ago (a goal sent late from a phone with no signal, a game reopened). Following is kept at `follow/{code}/{game}/{uid}`, hers alone (rules version 14), only for a game of her club that hasn't ended, and the server clears it at full time.
+**A game you follow too** (build 116): *Notify me* on a game's Live tab sends its goals, kick-off, the start of each later half, half time and full time to every phone you turned notifications on for, with Minutes closed: *Goal — U11 Storm*, *Ella · U11 Storm 2–1 Northgate*. The scorer is named the way the club's setting says (Club settings, names or shirt numbers): coaches, trackers, admins and her own family always see the name, other families only while the club shows names, and `#7` otherwise. A scorer added a moment after the goal updates the same notification rather than sending a second. Nothing is said about a game that ended or was played hours ago (a goal sent late from a phone with no signal, a game reopened). Following is kept at `follow/{code}/{game}/{uid}`, hers alone (rules version 14), only for a game of her club that hasn't ended, and the server clears it at full time.
 
 What it does not do yet: club activity for admins still reaches a phone only while Minutes is open on it.
 

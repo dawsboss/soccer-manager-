@@ -25,12 +25,14 @@ function makeFakebase() {
     removes: [],         // path
     mails: [],           // { email, url } — sign-in links Firebase would have emailed
     tokens: [],          // getToken calls: { vapidKey, reg }
-    tokenDrops: 0        // deleteToken calls
+    tokenDrops: 0,       // deleteToken calls
+    auth: []             // sign-in calls beyond the basics: { fn, ... }
   };
   let nextToken = 'fTok0000000000000000000001:APA91b-first';
 
   let authCb = null;
   let currentUser = null;
+  const authObj = { _fake: true, currentUser: null };   // what getAuth hands the app, currentUser kept on it
 
   /* A one-shot read is spent once it has answered, exactly as onlyOnce:true
      behaves. Without this, wireBase's retry chain would leave several live
@@ -48,7 +50,7 @@ function makeFakebase() {
     },
 
     auth: {
-      getAuth: app => ({ app, _fake: true }),
+      getAuth: app => { authObj.app = app; return authObj; },
       onAuthStateChanged(auth, cb) {
         record.authSubscribers++;
         authCb = cb;
@@ -63,8 +65,32 @@ function makeFakebase() {
       createUserWithEmailAndPassword: () => Promise.resolve({ user: currentUser }),
       signOut: () => Promise.resolve(),
       updateProfile: () => Promise.resolve(),
-      GoogleAuthProvider: function () { },
-      signInWithPopup: () => Promise.resolve({ user: currentUser })
+      updateProfile: (u, p) => { record.auth.push({ fn: 'updateProfile', p }); if (currentUser && p.displayName) currentUser.displayName = p.displayName; return Promise.resolve(); },
+      sendPasswordResetEmail: (auth, email) => { record.auth.push({ fn: 'reset', email }); return Promise.resolve(); },
+      /* Other companies' accounts. `popupFail` makes the next popup fail the
+         way Firebase would (blocked, or an email that already has an account),
+         and the credential it carries is what linking is then handed. */
+      GoogleAuthProvider: Object.assign(function () { this.providerId = 'google.com'; }, { credentialFromError: e => (e && e._cred) || null }),
+      OAuthProvider: Object.assign(function (id) { this.providerId = id; this.scopes = []; this.params = {}; this.addScope = s => this.scopes.push(s); this.setCustomParameters = x => { this.params = x; }; }, { credentialFromError: e => (e && e._cred) || null }),
+      signInWithPopup(auth, p) {
+        record.auth.push({ fn: 'popup', provider: p.providerId, scopes: p.scopes, params: p.params });
+        const f = record.popupFail; record.popupFail = null;
+        return f ? Promise.reject(f) : Promise.resolve({ user: currentUser });
+      },
+      signInWithRedirect(auth, p) { record.auth.push({ fn: 'redirect', provider: p.providerId }); return Promise.resolve(); },
+      getRedirectResult: () => (record.redirectFail ? Promise.reject(record.redirectFail) : Promise.resolve(null)),
+      linkWithPopup(u, p) {
+        record.auth.push({ fn: 'linkPopup', provider: p.providerId, uid: u.uid });
+        const f = record.popupFail; record.popupFail = null;
+        if (f) return Promise.reject(f);
+        u.providerData.push({ providerId: p.providerId });
+        return Promise.resolve({ user: u });
+      },
+      linkWithCredential(u, cred) {
+        record.auth.push({ fn: 'link', cred, uid: u.uid });
+        u.providerData.push({ providerId: cred.providerId });
+        return Promise.resolve({ user: u });
+      }
     },
 
     /* Cloud Messaging on the page: a token per browser until it is deleted,
@@ -131,14 +157,17 @@ function makeFakebase() {
     signIn(uid, extra = {}) {
       currentUser = {
         uid,
-        displayName: extra.name || uid,
+        displayName: extra.name === undefined ? uid : extra.name,   // '' is an account with no name (Apple's, after the first time)
         email: extra.email || uid + '@x.test',
-        photoURL: extra.photo || ''
+        photoURL: extra.photo || '',
+        emailVerified: extra.verified !== false,
+        providerData: (extra.providers || ['password']).map(providerId => ({ providerId }))
       };
+      authObj.currentUser = currentUser;
       if (authCb) authCb(currentUser);
       return this;
     },
-    signOut() { currentUser = null; if (authCb) authCb(null); return this; },
+    signOut() { currentUser = null; authObj.currentUser = null; if (authCb) authCb(null); return this; },
     authFired: () => !!authCb,
 
     /* ---- data, on the test's schedule ---- */

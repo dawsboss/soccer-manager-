@@ -90,7 +90,7 @@ A.state = club(true);
 A.me = null; A.denied = false;
 show('matches');
 check('the club needs a sign-in', A.needsSignIn(), true);
-check('the lock screen is showing', /needs a sign-in/.test(app()), true);
+check('the lock screen is showing', /Sign in to this club/.test(app()), true);
 check('no team is offered', A.myTeams().length, 0);
 check('and none can be edited', A.canEditTeam('t1'), false);
 check("no child's name in the page", app().includes(CHILD), false);

@@ -246,7 +246,7 @@ does the bookkeeping, not that the phone works offline first.
   app closed. The open page still pops it up and counts it on the bell
   (`watchMessages()`), because a phone without notifications turned on, or a
   club without the server, has only that.
-- **Moved, for a followed game (build 115):** the Live tab's *Notify me*
+- **Moved, for a followed game (build 116):** the Live tab's *Notify me*
   is also stored (`follow/{code}/{mid}/{uid}`, `followRemote()`), and
   `onFollowed` in `functions/push.js` sends the goals, each half starting,
   half time and full time to those phones. The open page still watches

@@ -22,6 +22,12 @@ window.SOCCER_FIREBASE_CONFIG = {
 // blank, and the calendar offers a one-off copy instead.
 window.SOCCER_CALENDAR_FEED = 'https://us-central1-soccer-manager-272ff.cloudfunctions.net/calendar';
 
+// Optional: more ways to sign in. Each has to be switched on first in the Firebase
+// console (Authentication > Sign-in method; README, "Sign-in methods"), and only
+// what is listed here gets a button. Known: 'google', 'apple', 'microsoft'.
+// Email, as a link or a password, is always offered. Left out, it is Google alone.
+window.SOCCER_SIGNIN = ['google'];
+
 // Optional: notifications to a closed phone. The public half of the project's web
 // push key pair: Firebase console > Project settings > Cloud Messaging > Web Push
 // certificates > Generate key pair, and copy the key it shows. Not a secret. Set it

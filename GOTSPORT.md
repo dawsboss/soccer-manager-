@@ -198,7 +198,7 @@ held to the writer's own uid), so the coach who called it off is left out
 and named to everyone else; and a game's when and whether became the
 coaches' and admins' at the database, as practices already were.
 
-**A followed game, built 2026-10-09 (build 115):** the Live tab's *Notify
+**A followed game, built 2026-10-09 (build 116):** the Live tab's *Notify
 me* is stored as `follow/{code}/{mid}/{uid}` (rules version 14), and the
 server sends its goals, each half starting, half time and full time to those
 phones, woken by a goal created, a stretch of play created, `currentHalf` and
@@ -377,7 +377,7 @@ hold.
    service worker and manifest, and the push sender. Small, and it fixes the
    biggest everyday gap families have. *Built 2026-10-07 for notices and
    family messages (build 104, Push notifications above), calendar changes
-   (build 105) and a followed game (build 115); club activity and a
+   (build 105) and a followed game (build 116); club activity and a
    session booked are left.*
 3. **Names behind the database, and the child as a club-level person.** One
    design, written into AUTH.md before the code (*Protecting the data* and
