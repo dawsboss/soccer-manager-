@@ -104,7 +104,11 @@ const O = 'orgs/CLUB/';
 
     console.log('\n--- what each part holds ---');
     check('the teams, without their players', move.same(S.at(O + 'teams/t1'), { id: 't1', name: 'Flight', events: was.teams.t1.events, attend: was.teams.t1.attend }), true);
-    deepEq('the squad, whole, where only staff and each child\'s own family read it', S.at(O + 'squad/t1'), was.teams.t1.players);
+    const strip = ps => Object.fromEntries(Object.entries(ps).map(([pid, p]) => [pid, Object.fromEntries(Object.entries(p).filter(([k]) => !['note', 'rating', 'pairs', 'avoid'].includes(k)))]));
+    deepEq('the squad, where only staff and each child\'s own family read it, without the coach\'s notes', S.at(O + 'squad/t1'), strip(was.teams.t1.players));
+    // SECURITY.md, SEC-12: coaches' and admins' only
+    deepEq('the coach\'s notes beside it, where only coaches and admins read them', S.at(O + 'coachNotes/t1'), { p1: { note: 'shy in goal', rating: 4 }, p2: { avoid: { p1: true } } });
+    check('— nothing a coach wrote left on a child\'s record', /shy in goal|"rating"|"avoid"/.test(JSON.stringify(S.at(O + 'squad'))), false);
     deepEq('the roster: numbers and who plays, no names, no notes', S.at(O + 'roster/t1'), { p1: { number: '7', active: true }, p2: { number: 9, active: true }, p3: { number: '', active: false } });
     deepEq('staff names: the admin, the coach, the tracker, and no email', S.at(O + 'names'), { adm: { name: 'Ada' }, coach: { name: 'Jaz' }, trk: { name: 'Tam' } });
     check('— never a family\'s or a player\'s', !!(S.at(O + 'names/mum') || S.at(O + 'names/ella')), false);

@@ -306,7 +306,11 @@ does the bookkeeping, not that the phone works offline first.
 ### Moving old data
 - **Now:** an older practice plan is moved onto its calendar entry by the first
   phone that opens it (`movePlans()`), and every phone carries that code for
-  ever.
+  ever. The same for the coach's notes still on a child's record from before
+  they had their own place (SECURITY.md, SEC-D10): the first phone of that
+  team's coach or an admin moves them (`moveCoachNotes()`), so a team whose
+  coach never opens the app keeps them on the record, where the family reads
+  them, until an admin does.
 - **With a server:** a one-off migration, run once, and the code is deleted.
 
 ### Backups and imports

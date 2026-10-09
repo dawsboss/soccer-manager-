@@ -298,7 +298,12 @@ moved, the old tree comes out and the source is the published file again.
   her own, one at a time. Members' emails are the admins' and coaches', each
   person's own entry hers; the access log is the admins'. A player record
   under a team is refused, so names cannot creep back into the part
-  everyone reads.
+  everyone reads. **The coach's notes** on a child (her note, rating, and
+  who to pair her with or keep her apart from) are not on her record but
+  beside it, at `coachNotes/$tid/$pid`: read by coaches and admins only (not
+  trackers, not her family, not the player), written by that team's coaches
+  and admins, and refused on the record itself (rules version 15; SECURITY.md,
+  SEC-D10).
 - **One tree per club.** Nobody can start `orgs/{code}` while the old tree
   holds that code, nor start the old tree again under a code that has moved
   (`workspaces/{code}/moved`, written by the server alone): every root rule

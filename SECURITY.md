@@ -18,25 +18,7 @@ under **Before families come on** can be done without disturbing anyone.
 
 ## Before families come on
 
-SEC-1 is done (SEC-D9 below).
-
-### SEC-12 · The coach's notes are coaches' and admins' only
-- **Status:** To do · **Kind:** Code (server, app), then rules · **Size:** Medium
-- **Decided 2026-10-09 (the owner):** a coach's `note`, `rating`, `pairs`
-  and `avoid` on a child are read by coaches and admins only. No one else:
-  not trackers, not her family, not the player herself, and not the new
-  roles in AUTH.md, *More kinds of people*.
-- **Why:** on `orgs/` they sit on the child's own record,
-  `squad/{tid}/{pid}`, which her family and the player read. A note like
-  "keep away from #9" or a low rating reaching the family is the kind of
-  thing that ends up in a parents' group chat.
-- **Plan:** AUTH.md, *The coach's notes come off the child's record
-  first*: a `coachNotes/{tid}/{pid}` node with its own readers, moved
-  there by the server, written there by the phone through `clubPath()`,
-  and refused on `squad/` afterwards.
-- **Done when:** `test/rules.js` refuses a family, a player and a tracker
-  the notes on both trees, `test/orgs.js` finds none on a family's phone,
-  and the coach still sees and edits them.
+SEC-1 and SEC-12 are done (SEC-D9 and SEC-D10 below).
 
 ---
 
@@ -306,3 +288,16 @@ log is the admins'. Built in build 110 (`test/rules.js` both passes,
 every club moved by 2026-10-09 (the owner). What is left is tidying, not
 security: a fortnight on (from 2026-10-23), the old tree comes out of the
 rules and the server (AUTH.md, build order step 5).
+
+### SEC-D10 · The coach's notes are coaches' and admins' only
+A coach's note, rating and who to pair a child with or keep her apart from
+sat on the child's own record, which her family and the player read on
+`orgs/`. Decided by the owner (2026-10-09): coaches and admins only. They
+now live beside the record at `coachNotes/{tid}/{pid}`, which only coaches
+and admins read (not trackers, families or the player), and the record
+refuses them (rules version 15). The phone writes them there a field at a
+time, the server's move lays them out there, and notes already on a record
+are moved by that team's coach's or an admin's phone the first time it opens
+the club (`test/rules.js` both passes, `test/orgs.js`, `test/move.js`).
+Build 116. It also clears the way for the new roles in AUTH.md, *More kinds
+of people*, none of which may read them.

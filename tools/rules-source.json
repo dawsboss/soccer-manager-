@@ -312,6 +312,45 @@
                 "$uid": {
                   ".write": "auth != null && $uid === auth.uid && root.child('orgs/' + $code + '/squad/' + $tid + '/' + $pid).exists() && root.child('invites/' + newData.val() + '/used/by').val() === auth.uid && root.child('invites/' + newData.val() + '/expiresAt').val() > now && root.child('invites/' + newData.val() + '/ws').val() === $code && root.child('invites/' + newData.val() + '/team').val() === $tid && root.child('invites/' + newData.val() + '/role').val() === 'player' && root.child('invites/' + newData.val() + '/player').val() === $pid"
                 }
+              },
+              "note": {
+                ".validate": false
+              },
+              "rating": {
+                ".validate": false
+              },
+              "pairs": {
+                ".validate": false
+              },
+              "avoid": {
+                ".validate": false
+              }
+            }
+          }
+        },
+        "coachNotes": {
+          ".read": "auth != null && (root.child('orgs/' + $code + '/access/admins/' + auth.uid).exists() || root.child('orgs/' + $code + '/access/coachIndex/' + auth.uid).exists())",
+          "$tid": {
+            ".write": "auth != null && (root.child('orgs/' + $code + '/access/admins/' + auth.uid).exists() || root.child('orgs/' + $code + '/access/teamIndex/' + $tid + '/' + auth.uid).val() === 'coach' || (!root.child('orgs/' + $code + '/access/teamIndex').exists() && root.child('orgs/' + $code + '/access/index/' + auth.uid).exists()))",
+            "$pid": {
+              "note": {
+                ".validate": "newData.isString() && newData.val().length <= 4000"
+              },
+              "rating": {
+                ".validate": "newData.isNumber()"
+              },
+              "pairs": {
+                "$p": {
+                  ".validate": "newData.val() === true"
+                }
+              },
+              "avoid": {
+                "$p": {
+                  ".validate": "newData.val() === true"
+                }
+              },
+              "$other": {
+                ".validate": false
               }
             }
           }
@@ -399,7 +438,7 @@
     },
     "rulesVersion": {
       ".read": true,
-      ".write": "newData.isNumber() && newData.val() === 14"
+      ".write": "newData.isNumber() && newData.val() === 15"
     },
     "public": {
       "$share": {

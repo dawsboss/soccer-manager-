@@ -2009,6 +2009,35 @@ reads('owners are not world-readable', OUT, 'shareOwners/sh1', false);
   w('nor a tracker', OT, O + 'squad/t1/p4', { id: 'p4', name: 'Nia' }, false);
   w('nor a parent, her own child included', OM, O + 'squad/t1/p1/name', 'Ellie', false);
   w('the admin does', OA, O + 'squad/t2/q2', { id: 'q2', name: 'Kit' }, true);
+
+  /* SECURITY.md, SEC-12 (the owner, 2026-10-09): a coach's note, rating and
+     who to pair or keep apart are coaches' and admins' only. They come off
+     the child's record, which her family and she read, into coachNotes. */
+  console.log('\n--- a club on orgs/: the coach\'s notes ---');
+  ORGC.coachNotes = { t1: { p1: { note: 'shy in goal', rating: 4 }, p2: { avoid: { p1: true } } } };
+  r('the team\'s coach reads them', OC, O + 'coachNotes', true);
+  r('a coach of another team too, as she reads the squad', OC2, O + 'coachNotes', true);
+  r('the admin reads them', OA, O + 'coachNotes', true);
+  r('not the team\'s tracker', OT, O + 'coachNotes/t1', false);
+  r('not a parent, her own child\'s included', OM, O + 'coachNotes/t1/p1', false);
+  r('not the player herself', OSELF, O + 'coachNotes/t1/p3', false);
+  r('not a stranger', RANDO, O + 'coachNotes/t1/p1', false);
+  w('the coach writes a note', OC, O + 'coachNotes/t1/p1/note', 'Quick off the mark', true);
+  w('— a rating', OC, O + 'coachNotes/t1/p1/rating', 5, true);
+  w('— who to keep apart', OC, O + 'coachNotes/t1/p2/avoid', { p1: true }, true);
+  w('— or all of them for a player at once', OC, O + 'coachNotes/t1/p3', { note: 'x', rating: 3, pairs: { p1: true } }, true);
+  w('nothing else is kept there', OC, O + 'coachNotes/t1/p1', { note: 'x', name: 'Ella' }, false);
+  w('a rating is a number', OC, O + 'coachNotes/t1/p1/rating', 'great', false);
+  w('not another team\'s coach', OC2, O + 'coachNotes/t1/p1/note', 'x', false);
+  w('nor a tracker', OT, O + 'coachNotes/t1/p1/note', 'x', false);
+  w('nor a parent', OM, O + 'coachNotes/t1/p1/note', 'x', false);
+  w('the admin does', OA, O + 'coachNotes/t2/q1/note', 'x', true);
+  w('the child\'s record takes no note any more', OC, O + 'squad/t1/p1/note', 'x', false);
+  w('— nor a rating', OC, O + 'squad/t1/p1/rating', 3, false);
+  w('— nor who to pair or keep apart', OC, O + 'squad/t1/p2/avoid', { p1: true }, false);
+  w('— nor a whole record carrying one', OC, O + 'squad/t1/p4', { id: 'p4', name: 'Nia', note: 'x' }, false);
+  w('a note left on a record from before can be taken off it', OC, O + 'squad/t1/p1/note', null, true);
+  delete ORGC.coachNotes;
   w('the roster: a number and whether she plays', OC, O + 'roster/t1/p4', { number: '11', active: true }, true);
   w('— no name while the roster is closed', OC, O + 'roster/t1/p4', { number: '11', name: 'Nia' }, false);
   w('— nor anything else', OC, O + 'roster/t1/p4', { number: '11', note: 'quick' }, false);

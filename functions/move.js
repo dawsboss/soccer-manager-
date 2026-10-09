@@ -66,19 +66,29 @@ function running(m) {
 
 /* The old tree, laid out as the new one. Pure: given the same workspace it
    makes the same tree, which is what the comparison afterwards relies on. */
+/* The coach's own view of a child (SECURITY.md, SEC-12): coaches' and
+   admins' only, so on orgs/ they sit beside her record, which her family and
+   she read, at coachNotes/{tid}/{pid}. Same four fields as app.js's
+   COACH_FIELDS. */
+const COACH_FIELDS = ['note', 'rating', 'pairs', 'avoid'];
 function layout(ws) {
   const { members, org, log, ...rest } = (ws && ws.access) || {};
-  const teams = {}, squad = {}, roster = {};
+  const teams = {}, squad = {}, roster = {}, coachNotes = {};
   const open = !!(org && org.rosterOpen === true);
   for (const [tid, t] of Object.entries((ws && ws.teams) || {})) {
     if (!t || typeof t !== 'object') continue;
     const { players, ...team } = t;
     teams[tid] = team;
     if (players && typeof players === 'object') {
-      squad[tid] = players;
+      squad[tid] = {};
       for (const [pid, p] of Object.entries(players)) {
         const r = rosterEntry(p, open);
         if (r) (roster[tid] = roster[tid] || {})[pid] = r;
+        if (!p || typeof p !== 'object') { squad[tid][pid] = p; continue; }
+        const rec = {}, notes = {};
+        for (const [k, v] of Object.entries(p)) (COACH_FIELDS.includes(k) ? notes : rec)[k] = v;
+        squad[tid][pid] = rec;
+        if (Object.keys(notes).length) (coachNotes[tid] = coachNotes[tid] || {})[pid] = notes;
       }
     }
   }
@@ -115,7 +125,7 @@ function layout(ws) {
   /* Without the parts a club does not have yet (no log, no answers): the
      database's own library refuses a write with an undefined anywhere in it,
      and a club with nothing logged used to fail the whole move that way. */
-  return JSON.parse(JSON.stringify({ ...other, access, org, members, log, names, teams, squad, roster, matches: ws.matches, rsvp: ws.rsvp }));
+  return JSON.parse(JSON.stringify({ ...other, access, org, members, log, names, teams, squad, coachNotes, roster, matches: ws.matches, rsvp: ws.rsvp }));
 }
 
 /* The request at moveRequests/{code}: { by, at }. Resolves to what happened,

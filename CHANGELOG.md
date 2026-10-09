@@ -8,6 +8,35 @@ before this point lives only in the git log.
 
 ---
 
+## The coach's notes are coaches' and admins' only — 2026-10-09 (build 116)
+
+A coach's note on a child ("shy in goal"), her rating, and who to pair her
+with or keep her apart from sat on the child's own record. Since the move to
+`orgs/` that record is read by the child's family and the player herself,
+so a family could read what the coach wrote about her child with a
+browser's developer tools, and every new kind of person in AUTH.md would
+have read it too. The owner decided they are coaches' and admins' only
+(SECURITY.md, SEC-12, now SEC-D10).
+
+- **They have their own place**, `coachNotes/{tid}/{pid}` beside the
+  child's record, which only coaches (any team, as the squad) and admins
+  read; trackers, families and the player do not. The record refuses them
+  (rules version 15).
+- **Nothing changes on a coach's screen.** Her phone reads them and lays
+  them back on the player, and every write sends them there
+  (`clubWrites()`), a field at a time and only the fields it carries, so a
+  whole team saved from a phone that has not read the notes yet never wipes
+  them.
+- **Notes already on a record move by themselves**: the first time a coach
+  of that team or an admin opens the club, her phone writes each one to its
+  new place and only then takes it off the record, never overwriting a newer
+  one, and leaves it where it was if refused, to try again next time.
+- **A family's or tracker's phone drops them** from anything it reads, its
+  own child's record and its copy from before included.
+- The server's `moveClub` lays a club out the same way.
+
+---
+
 ## AUTH.md: more kinds of people, designed before any code — 2026-10-09
 
 The owner expects to let in people who are not coaches, trackers, parents

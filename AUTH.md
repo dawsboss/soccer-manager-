@@ -326,6 +326,7 @@ The screen hides most of it (`shownName()`); developer tools do not. The move gi
 | `access/log` | `log` | admins only |
 | `teams/{tid}` without `players` (name, logo, settings, `events`, `attend`, `share`, `calFeed`, `join`) | `teams/{tid}` | everyone in the club |
 | `teams/{tid}/players/{pid}` (the whole record) | `squad/{tid}/{pid}` | that team's staff, every coach, admins; **and that child's own family, and the player herself** |
+| the coach's `note`, `rating`, `pairs`, `avoid` on that record | `coachNotes/{tid}/{pid}` (since build 116; SECURITY.md, SEC-D10) | every coach and the admins; **not** trackers, the family or the player |
 | — | `roster/{tid}/{pid}`: `{ number, active }`, plus `name` only while `org/rosterOpen` is on, **derived** | everyone in the club |
 | `matches/{mid}` | `matches/{mid}` | everyone in the club (keyed by player id; no names in it today, and `test/stats.js`'s name scan is extended to a game record to keep it so) |
 | `rsvp/{tid}/…` | `rsvp/{tid}/…` | everyone in the club, as today: keyed by player id, and the screen narrows it |
@@ -478,11 +479,13 @@ The care here: three rules today ask only whether a uid is *in* `teamIndex` for 
 
 Decided 2026-10-09: the coach's notes on a child (`note`, `rating`, `pairs`, `avoid`) are **coaches' and admins' only**. Today they sit on the child's record, `squad/{tid}/{pid}`, which her family and the player herself read on `orgs/`, and which every new role above would read through it. So before any of them, those four fields move to a node of their own, `coachNotes/{tid}/{pid}` under the club, read and written by coaches (any team, as the squad is read today) and admins; not trackers, not helpers, not families, not the player. The move is the server's (as `moveClub` was), the phone writes there through `clubPath()`, and `squad/` refuses those fields afterwards so nothing puts them back. It is also SECURITY.md, SEC-12: it closes a read families have today, and families are not on the app yet.
 
+**Built** (build 116, rules version 15), as written above, with two details. The phone sends the notes there a field at a time and only the fields a write carries (`clubWrites()`), so a whole team saved from a phone that has not read the notes yet, or may not, never wipes them; and notes still on a record from before are moved by the first phone of that team's coach or an admin to open the club (`moveCoachNotes()`: written to `coachNotes` first, then taken off the record, never overwriting a newer note), as `movePlans()` moved old plans. A family's or tracker's phone drops anything of the four it finds on a record. `moveClub` lays them out the same way for a club still on the old tree.
+
 ### Order
 
 **Only one thing has to come first: the coach's notes, above.** Every new role reads some part of a child's record or a squad, and none of them may see the notes. After that the four don't depend on each other, so the order is what the club needs first. Recommended:
 
-1. **The coach's notes** (now: it needs no new role and families are not on yet).
+1. **The coach's notes.** *Built (build 116, rules version 15).*
 2. **Supporters**: the most asked for, and they reuse the coach's approval list families already go through.
 3. **Team helpers.**
 4. **Club viewers**: the smallest, any time.
