@@ -80,8 +80,8 @@ const toUid = (S, u) => S.sent().filter(m => m.data.uid === u);
     // a live game is a write a second; none of it should cost a function call
     check('nothing in the club itself wakes the message senders', S.woken('workspaces/CLUB/matches/g1/events/e1').length, 0);
     deepEq('the calendar\'s: one for entries, one per field of a game that says when', Object.keys(S.triggers).filter(n => S.triggers[n].kind === 'written' && /^push/.test(n)).sort(), 
-      // each once per tree while clubs move to orgs/ (functions/index.js, both())
-      ['pushEntry', 'pushEntryOrgs', 'pushGameCalled', 'pushGameCalledOrgs', 'pushGameDate', 'pushGameDateOrgs', 'pushGameKickoff', 'pushGameKickoffOrgs']);
+      // on orgs/, named as they were while clubs moved there (functions/index.js, onClub())
+      ['pushEntryOrgs', 'pushGameCalledOrgs', 'pushGameDateOrgs', 'pushGameKickoffOrgs']);
     const src = fs.readFileSync(path.join(__dirname, '..', 'functions', 'index.js'), 'utf8');
     check('it reads from the database the event came from', /event\.data\.ref\.root/.test(src), true);
     check('and never calls an AI model', /anthropic|openai|gemini|generativ/i.test(src + fs.readFileSync(path.join(__dirname, '..', 'functions', 'push.js'), 'utf8')), false);
@@ -397,7 +397,7 @@ const toUid = (S, u) => S.sent().filter(m => m.data.uid === u);
     await S.fire(W + 'teams/t1/events/e1/called', 'cancelled');
     const after = S.at(W + 'teams/t1/events/e1');
     const ev = { params: { code: 'CLUB', tid: 't1', eid: 'e1' }, data: { before: { val: () => before, ref: S.ref(W + 'teams/t1/events/e1') }, after: { val: () => after, ref: S.ref(W + 'teams/t1/events/e1') } } };
-    await S.triggers.pushEntry.handler(ev);
+    await S.triggers.pushEntryOrgs.handler(ev);
     check('the same change delivered twice is told once', S.sent().filter(m => m.data.uid === 'mum').length, 1);
     check('the server\'s own note of it is where no phone can reach', !!S.at('serverState/calSent/CLUB/e_e1'), true);
   }
@@ -633,7 +633,6 @@ const toUid = (S, u) => S.sent().filter(m => m.data.uid === u);
   }
 
   console.log('\n--- a game she follows: what wakes the server ---');
-  const ORGS_SERVER = process.env.SERVER_TREE === 'orgs';
   function liveServer(follow) {
     const S = server(follow ? { follow: { CLUB: { g1: follow } } } : undefined);
     const t0 = Date.now() - 10 * 60000;
@@ -647,7 +646,7 @@ const toUid = (S, u) => S.sent().filter(m => m.data.uid === u);
   const again = (S, name, prm, val) => {
     const ref = S.ref(W + 'matches/g1');
     // a create trigger's snapshot and a write trigger's before/after, either way
-    return S.triggers[name + (ORGS_SERVER ? 'Orgs' : '')].handler({ params: prm, data: { val: () => val, ref, before: { val: () => val, ref }, after: { val: () => val, ref } } });
+    return S.triggers[name + 'Orgs'].handler({ params: prm, data: { val: () => val, ref, before: { val: () => val, ref }, after: { val: () => val, ref } } });
   };
   {
     const S = liveServer();
@@ -740,7 +739,7 @@ const toUid = (S, u) => S.sent().filter(m => m.data.uid === u);
     check('no name reaches a phone the club keeps names from', /Ella|Rosa|Gia/.test(JSON.stringify(toUid(S, 'dad'))), false);
     check('read without anyone\'s switches: following is the switch', S.reads.some(p => /\/mute\//.test(p)), false);
     const n = S.sent().length;
-    await again(S, 'followGoal', { code: 'CLUB', mid: 'g1', gid: 'x1', tree: ORGS_SERVER ? 'orgs' : 'workspaces' }, null);
+    await again(S, 'followGoal', { code: 'CLUB', mid: 'g1', gid: 'x1' }, null);
     check('the same goal delivered twice is said once', S.sent().length, n);
     S.sends.length = 0;
     await S.fire(W + 'matches/g1/goals/y1', { t: 900, side: 'them' });
@@ -773,7 +772,7 @@ const toUid = (S, u) => S.sent().filter(m => m.data.uid === u);
     check('under the same tag, so it replaces the first', m.data.tag, 'minutes-g1-goal:x1');
     check('a number for a family the club keeps names from', toUid(S, 'dad')[0].data.body, '#7 · Flight 1–0 Northgate');
     S.sends.length = 0;
-    await again(S, 'followScorer', { code: 'CLUB', mid: 'g1', gid: 'x1', tree: ORGS_SERVER ? 'orgs' : 'workspaces' }, null);
+    await again(S, 'followScorer', { code: 'CLUB', mid: 'g1', gid: 'x1' }, null);
     check('said once', S.sent().length, 0);
     await S.fire(W + 'matches/g1/goals/x1/pid', 'p2');
     check('a scorer corrected is said again, with the right child', toUid(S, 'mum')[0] ? toUid(S, 'mum')[0].data.body : '', '#9 · Flight 1–0 Northgate');
@@ -783,7 +782,7 @@ const toUid = (S, u) => S.sent().filter(m => m.data.uid === u);
     check('a scorer on a goal never told says nothing', S.sent().length, 0);
     await S.fire(W + 'matches/g1/goals/x2', { t: 1000, side: 'us', pid: 'p1' });
     const n = S.sent().length;
-    await again(S, 'followScorer', { code: 'CLUB', mid: 'g1', gid: 'x2', tree: ORGS_SERVER ? 'orgs' : 'workspaces' }, null);
+    await again(S, 'followScorer', { code: 'CLUB', mid: 'g1', gid: 'x2' }, null);
     check('a goal told with its scorer is not told again for her', S.sent().length, n);
   }
   {
@@ -873,7 +872,7 @@ const toUid = (S, u) => S.sent().filter(m => m.data.uid === u);
     if (who) fbk.signIn(who, { name: (CLUB.access.members[who] || {}).name || who });
     await A.flush();
     if (opts.online !== false) fbk.deliver('.info/connected', true);
-    fbk.deliver('workspaces/CLUB', JSON.parse(JSON.stringify(CLUB))); await A.flush();
+    await fbk.serveClub('CLUB', JSON.parse(JSON.stringify(CLUB)), A.flush); await A.flush();
     return { A, fbk, b };
   }
   const tokWrites = fbk => fbk.record.writes.filter(w => w.path.startsWith('pushTokens/'));

@@ -39,7 +39,7 @@ async function device(uid) {
   const fbk = makeFakebase();
   const D = H.loadApp({ firebase: fbk, config: CONFIG, storage: { 'sm.workspace': 'CLUB' } });
   await D.flush(); fbk.signIn(uid, { name: club().access.members[uid].name }); await D.flush(); await H.flush(20);
-  fbk.deliver(WS, club({ e1: ev('e1') })); await D.flush();
+  await fbk.serveClub('CLUB', club({ e1: ev('e1') }), D.flush); await D.flush();
   return { D, fbk };
 }
 /* What the club says now, as the phone's copy of it: after the first read the
@@ -122,8 +122,8 @@ const has = (D, re) => titles(D).some(t => re.test(t));
     const D2 = H.loadApp({ firebase: fbk2, config: CONFIG, storage: { ...saved } });
     await D2.flush(); fbk2.signIn('boss', { name: 'Ada' }); await D2.flush();
     await H.flush(20);
-    fbk2.deliver(WS, club({ e1: ev('e1', { start: '18:00' }), ...series, ...both }, { c2: ev('c2', { kind: 'event', title: 'Picture day', club: 'K1' }) },
-      { m1: { id: 'm1', teamId: 't2', opponent: 'Riverside', date: '2026-09-19', kickoff: '10:00', by: 'kim' } })); await D2.flush(); D2.render();
+    await fbk2.serveClub('CLUB', club({ e1: ev('e1', { start: '18:00' }), ...series, ...both }, { c2: ev('c2', { kind: 'event', title: 'Picture day', club: 'K1' }) },
+      { m1: { id: 'm1', teamId: 't2', opponent: 'Riverside', date: '2026-09-19', kickoff: '10:00', by: 'kim' } }), D2.flush); await D2.flush(); D2.render();
     const fresh = D2.newsItems().slice(0, D2.newsItems().length - n2).map(x => x.title);
     check('after a reload, the list is kept', D2.newsItems().length >= n2, true);
     check('and nothing old comes back as news: only the entry the club no longer has', fresh.every(t => t === 'Deleted: G11 Flight: Extra'), true);

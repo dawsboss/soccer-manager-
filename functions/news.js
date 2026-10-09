@@ -74,11 +74,10 @@ const sessWhen = s => whenOf({ date: s.date, start: s.start });
 async function clubFacts(env, code) {
   const L = await where(env.get, code);
   const A = L.access;
-  const [retired, admins, index, members, teams, moving] = await Promise.all([
-    env.get('retired/' + code), env.get(A + '/admins'), env.get(A + '/index'), env.get(L.members), env.get(A + '/teams'),
-    env.get('serverState/moving/' + code)
+  const [retired, admins, index, members, teams] = await Promise.all([
+    env.get('retired/' + code), env.get(A + '/admins'), env.get(A + '/index'), env.get(L.members), env.get(A + '/teams')
   ]);
-  const f = { L, retired: !!retired || !!moving, admins: admins || {}, index: index || {}, members: members || {}, teams: teams || {} };
+  const f = { L, retired: !!retired, admins: admins || {}, index: index || {}, members: members || {}, teams: teams || {} };
   f.inClub = u => has(f.index, u) || has(f.admins, u);
   f.name = u => { const m = f.members[u] || {}; return m.name || (m.email ? String(m.email).split('@')[0] : '') || ''; };
   f.coachesOf = tid => keys((f.teams[tid] || {}).coaches).filter(f.inClub);

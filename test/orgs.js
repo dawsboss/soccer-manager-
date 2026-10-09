@@ -1,28 +1,27 @@
-/* The app on a club that has moved to orgs/{code} (AUTH.md, *The move to
-   `orgs/{orgId}`*; SECURITY.md, SEC-1), against the fake Firebase.
+/* The app on a club on orgs/{code} (AUTH.md, *The move to `orgs/{orgId}`*;
+   SECURITY.md, SEC-1), against the fake Firebase. Every club is there, and
+   the old workspaces/ tree is gone (build order step 5).
 
    What the move is for is what a family's phone receives, so that is what is
    checked first and hardest: the parts it asks for, and what it holds after
    — her own children in full, the rest by shirt number, nobody's email, no
    access log — in memory, on the screen and in the copy it keeps. Then the
    staff, who read the squads; then where every write goes, the outbox made
-   before the phone heard of the move included; the admin's Move button; and
-   another club of hers on orgs/, read for My calendar.
+   on the old tree included; and another club of hers, read for My calendar.
 
-   The club is laid out the way the server moves it (functions/move.js), and
+   The club is laid out the way the server moved it (test/fakebase.js), and
    answered part by part through a stand-in for the rules, so what the phone
    is handed is what the database would hand it. */
 
 const H = require('./harness');
 const { check, deepEq } = H;
 const { makeFakebase } = require('./fakebase');
-const { layout } = require('../functions/move');
+const { orgsLayout: layout } = require('./fakebase');
 
 const CONFIG = { apiKey: 'k', databaseURL: 'https://prod.example', projectId: 'p' };
 const OB = 'orgs/CLUB';
-const WS = 'workspaces/CLUB';
 
-/* The club as the old tree held it, and as the server lays it out on orgs/. */
+/* The club as the app holds it in memory (the old tree's shape), and as orgs/ lays it out. */
 const OLD = () => ({
   access: {
     org: { name: 'Lakeside SC' },
@@ -81,15 +80,14 @@ const under = (fbk, pre) => fbk.readPaths().filter(p => p === pre || p.startsWit
 const wrote = fbk => fbk.record.writes.map(w => w.path);
 
 (async () => {
-  console.log('--- a family\'s phone finds the club has moved ---');
+  console.log('--- a family\'s phone with a copy from the old tree ---');
   {
     // her copy from before the move: the whole squad, everyone's email, the log
     const old = OLD();
     const { A, fbk } = await boot({ 'sm.data.v1:CLUB': JSON.stringify({ ...old, matches: old.matches }) });
     check('the old copy is on the phone', /Rosa Lind/.test(A.storage.getItem('sm.data.v1:CLUB')), true);
     fbk.signIn('mumU', { name: 'Mo' }); await A.flush();
-    fbk.deliver(WS, { moved: { to: 'orgs', at: 1, by: 'adm' } }); await A.flush();
-    check('it remembers the club is on orgs/', A.storage.getItem('sm.tree.v1:CLUB'), 'orgs');
+    check('it remembers its copy is cut down for orgs/', A.storage.getItem('sm.tree.v1:CLUB'), 'orgs');
     const kept = A.storage.getItem('sm.data.v1:CLUB');
     check('before anything is read, other children are gone from her copy', /Rosa|Bea/.test(kept), false);
     check('— hers stay', /Ella Fitz/.test(kept) && /Ida Fitz/.test(kept), true);
@@ -130,7 +128,7 @@ const wrote = fbk => fbk.record.writes.map(w => w.path);
     const B = H.loadApp({ firebase: fb2, config: CONFIG, storage: { ...A.storage._d } });
     await B.flush();
     fb2.signIn('mumU', { name: 'Mo' }); await B.flush();
-    check('straight to orgs/, without the old tree', fb2.readPaths().includes(WS), false);
+    check('nothing is read from the old tree', fb2.readPaths().some(p => p.startsWith('workspaces/')), false);
     const org2 = ORG(); org2.squad.t1.p5 = { id: 'p5', name: 'Nia Cole', number: '11' }; org2.roster.t1.p5 = { number: '11', active: true };
     await fb2.serve(OB, org2, () => B.flush(), rulesFor('mumU', org2));
     const asked2 = under(fb2, OB);
@@ -145,7 +143,7 @@ const wrote = fbk => fbk.record.writes.map(w => w.path);
     const org = ORG();
     const { A, fbk } = await boot({ 'sm.tree.v1:CLUB': 'orgs' });
     fbk.signIn('coachU', { name: 'Jaz' }); await A.flush();
-    check('a phone that knows the club moved goes straight to orgs/', fbk.readPaths().includes(WS), false);
+    check('nothing is read from the old tree', fbk.readPaths().some(p => p.startsWith('workspaces/')), false);
     await fbk.serve(OB, org, () => A.flush(), rulesFor('coachU', org));
     const asked = under(fbk, OB);
     check('a coach reads every team\'s squad', asked.includes(OB + '/squad/t1') && asked.includes(OB + '/squad/t2'), true);
@@ -264,50 +262,21 @@ const wrote = fbk => fbk.record.writes.map(w => w.path);
     check('nothing to the old tree', fbk.record.writes.some(w => w.path.startsWith('workspaces/')), false);
   }
 
-  console.log('\n--- what was owed before the phone heard of the move ---');
+  console.log('\n--- what was owed from the old tree ---');
   {
-    /* A goal tracked with no signal, on a phone that last saw the club on the
-       old tree. Sent there, it would be refused (or worse); it waits until the
-       first read says where the club is, and goes there. */
+    /* A goal tracked with no signal on a phone that last saw the club on the
+       old tree, which is gone. The outbox names paths as the app does, so it
+       waits for the first read of the club and goes to orgs/. */
     const pending = { seq: 1, w: { 'matches/g1/goals/k7': { v: { at: 1, by: 'coachU' }, n: 1 } } };
     const { A, fbk } = await boot({ 'sm.pending.v1:CLUB': JSON.stringify(pending) });
     fbk.signIn('coachU', { name: 'Jaz' }); await A.flush();
     fbk.deliver('.info/connected', true); await A.flush();
     check('nothing is sent before the club is read', fbk.record.writes.filter(w => /goals/.test(w.path)).length, 0);
-    fbk.deliver(WS, { moved: { to: 'orgs', at: 1, by: 'adm' } }); await A.flush();
     const org = ORG();
     await fbk.serve(OB, org, () => A.flush(), rulesFor('coachU', org));
     check('the goal goes to the club where it is now', fbk.writtenTo(OB + '/matches/g1/goals/k7').length, 1);
-    check('never to the old tree', fbk.record.writes.some(w => w.path.startsWith(WS)), false);
+    check('never to the old tree', fbk.record.writes.some(w => w.path.startsWith('workspaces/')), false);
     check('and leaves the outbox once it lands', Object.keys(JSON.parse(A.storage.getItem('sm.pending.v1:CLUB')).w).length, 0);
-  }
-
-  console.log('\n--- the club moves while she has it open ---');
-  {
-    /* The server swaps the old tree for its marker in one write. From an open
-       phone on the old tree that is every team, game and role being deleted,
-       in whatever order the database tells it, with the marker somewhere in
-       the same batch. Nothing may be deleted here, or said to have been. */
-    const { A, fbk } = await boot();
-    fbk.signIn('coachU', { name: 'Jaz' }); await A.flush();
-    fbk.deliver('.info/connected', true);
-    fbk.deliver(WS, OLD()); await A.flush();
-    A.render();
-    const news = () => A.newsItems().map(x => x.title).join(' | ');
-    const was = news();
-    fbk.deliverChild(WS + '/matches', 'g1', null, 'removed');
-    fbk.deliverChild(WS + '/teams', 't1', null, 'removed');
-    fbk.deliver(WS + '/access', null);
-    fbk.deliver(WS + '/moved', { to: 'orgs', at: 1, by: 'adm' });
-    await A.flush();
-    check('nothing was deleted on the phone', !!A.state.matches.g1 && !!A.state.teams.t1, true);
-    check('nor any role lost', !!(A.state.access.admins || {}).adm, true);
-    check('club activity heard of no deletion', news(), was);
-    check('it remembers the move', A.onOrgs(), true);
-    check('and reads the new tree', fbk.watching(OB + '/access'), true);
-    const org = ORG();
-    await fbk.serve(OB, org, () => A.flush(), rulesFor('coachU', org));
-    check('where it finds the same club', A.state.teams.t1.players.p2.name + ' v ' + A.state.matches.g1.opponent, 'Rosa Lind v Northgate');
   }
 
   console.log('\n--- a role changes ---');
@@ -326,64 +295,7 @@ const wrote = fbk => fbk.record.writes.map(w => w.path);
     check('and the squad goes with the role', /Rosa/.test(JSON.stringify(A.state.teams)), false);
   }
 
-  console.log('\n--- the admin moves the club ---');
-  {
-    const { A, fbk } = await boot();
-    fbk.signIn('adm', { name: 'Ada' }); await A.flush();
-    fbk.deliver('.info/connected', true);
-    fbk.deliver(WS, OLD()); await A.flush();
-    check('she is offered the move', /data-act="moveclub"/.test(A.moveCard()), true);
-    /* The rules count deleting nothing as a write, and the move request's
-       rule refuses a delete of a request that is not there: the first build
-       of this button cleared one first, was refused, and never asked. */
-    fbk.refuseWrites((p, v) => p === 'moveRequests/CLUB' && v === null && !fbk.writtenTo('moveRequests/CLUB').length);
-    A.click({ act: 'moveclub' }); await A.flush();
-    check('with no request there, nothing is deleted first', fbk.record.removes.includes('moveRequests/CLUB'), false);
-    fbk.deliver('moveRequests/CLUB', null); await A.flush();
-    const req = (fbk.writtenTo('moveRequests/CLUB')[0] || {}).value || {};
-    check('asked, as herself', req.by, 'adm');
-    check('— and it says it is waiting', /Waiting for the server/.test(A.moveCard()), true);
-    check('nothing moves on the phone until the server answers', A.onOrgs(), false);
-    fbk.deliver('moveRequests/CLUB', { by: 'adm', at: 1, result: { ok: false, why: 'A game is being played. Move the club once it has finished.' } }); await A.flush();
-    check('a refusal says why', /A game is being played/.test(A.moveCard()), true);
-    check('— and offers to try again', /Try again/.test(A.moveCard()), true);
-    check('the club stays where it was', A.onOrgs(), false);
-    A.click({ act: 'moveclub' }); await A.flush();
-    // trying again: the last request is there, so it is cleared before the new one
-    fbk.deliver('moveRequests/CLUB', { by: 'adm', at: 1, result: { ok: false } }); await A.flush();
-    check('trying again clears the last request first', fbk.record.removes.includes('moveRequests/CLUB'), true);
-    check('— and asks again', fbk.writtenTo('moveRequests/CLUB').length, 2);
-    fbk.deliver('moveRequests/CLUB', { by: 'adm', at: 2, result: { ok: true, at: 2 } }); await A.flush();
-    check('moved: the phone reads the new tree', A.onOrgs() && fbk.watching(OB + '/access'), true);
-    check('and the card is gone', A.moveCard(), '');
-  }
-  {
-    /* She asked, and reloaded before the server answered: the card says it is
-       waiting, not offering the button again, and then says what came back. */
-    const { A, fbk } = await boot();
-    fbk.signIn('adm', { name: 'Ada' }); await A.flush();
-    fbk.deliver('.info/connected', true);
-    fbk.deliver(WS, OLD()); await A.flush();
-    A.moveCard();
-    fbk.deliver('moveRequests/CLUB', { by: 'adm', at: A.nowMs() - 20000 }); await A.flush();
-    check('after a reload, a request still waiting is shown as waiting', /Waiting for the server/.test(A.moveCard()) && !/data-act="moveclub"/.test(A.moveCard()), true);
-    fbk.deliver('moveRequests/CLUB', { by: 'adm', at: 1, result: { ok: false, why: 'The server could not move it (busy). Nothing was changed.' } }); await A.flush();
-    check('— and then what the server said', /could not move it \(busy\)/.test(A.moveCard()), true);
-    // a request from before this build that the server never answered
-    fbk.deliver('moveRequests/CLUB', { by: 'adm', at: A.nowMs() - 10 * 60000 }); await A.flush();
-    check('one never answered is not waited on for ever', /No answer came back/.test(A.moveCard()) && /Try again/.test(A.moveCard()), true);
-  }
-  for (const who of ['coachU', 'mumU']) {
-    const { A, fbk } = await boot();
-    fbk.signIn(who); await A.flush();
-    fbk.deliver('.info/connected', true);
-    fbk.deliver(WS, OLD()); await A.flush();
-    check(who + ' is not offered the move', A.moveCard(), '');
-    A.click({ act: 'moveclub' }); await A.flush();
-    check('— and a tap that reaches the handler asks nothing', fbk.writtenTo('moveRequests/CLUB').length, 0);
-  }
-
-  console.log('\n--- another club of hers on orgs/, for My calendar ---');
+  console.log('\n--- another club of hers, for My calendar ---');
   {
     const other = layout({
       access: { org: { name: 'Hillside' }, admins: { a2: true }, index: { a2: true, mumU: true }, members: {}, teams: {} },
@@ -392,7 +304,7 @@ const wrote = fbk => fbk.record.writes.map(w => w.path);
     });
     const { A, fbk } = await boot({ 'sm.tree.v1:OTHER': 'orgs' });
     fbk.signIn('mumU', { name: 'Mo' }); await A.flush();
-    fbk.deliver(WS, OLD()); await A.flush();
+    await fbk.serveClub('CLUB', OLD(), A.flush); await A.flush();
     fbk.deliver('userOrgs/mumU', { CLUB: { name: 'Lakeside SC', at: 1 }, OTHER: { name: 'Hillside', at: 1 } }); await A.flush();
     await fbk.serve('orgs/OTHER', other, () => A.flush(), p => /\/squad\/h1(\/k2)?$/.test(p));
     const asked = under(fbk, 'orgs/OTHER');
@@ -406,5 +318,5 @@ const wrote = fbk => fbk.record.writes.map(w => w.path);
     check('and nobody else\'s', /Lou Hart/.test(copy), false);
   }
 
-  H.summary('the app on a club moved to orgs/');
+  H.summary('the app on a club on orgs/');
 })();

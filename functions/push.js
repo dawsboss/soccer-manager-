@@ -43,8 +43,8 @@ const short = s => {
 };
 
 /* What the club says about one team, read once per event. */
-async function teamFacts(env, code, tid, tree) {
-  const L = await where(env.get, code, tree);
+async function teamFacts(env, code, tid) {
+  const L = await where(env.get, code);
   const A = L.access;
   const [retired, admins, tIndex, tParents, tPlayers, tFans, team, members] = await Promise.all([
     env.get('retired/' + code),
@@ -301,7 +301,7 @@ function teamReaders(f) {
 /* One entry changed. `it` is the entry after, `before` what it was, both in
    the calendar's shape: { kind: 'game'|'practice'|'event', tid, id, date,
    start, called, title, series }. */
-async function calChange(env, code, before, it, tree) {
+async function calChange(env, code, before, it) {
   const none = { to: [], sent: 0, failed: 0, removed: [] };
   const now = env.now ? env.now() : Date.now();
   const x = it || before;
@@ -318,7 +318,7 @@ async function calChange(env, code, before, it, tree) {
     old => (said !== key ? (old && old.at > now - 10 * 60000 ? undefined : { sig, at: now }) : (old && old.sig === sig ? undefined : { sig, at: now })));
   if (!told) return none;
 
-  const f = await teamFacts(env, code, x.tid, tree);
+  const f = await teamFacts(env, code, x.tid);
   if (f.retired || !f.team) return none;
   const tn = f.team.name || 'Your team';
   const words = x.kind === 'game' ? `${tn} v ${x.title || 'TBC'}` : `${tn}: ${x.title || (x.kind === 'practice' ? 'Practice' : 'Team event')}`;
@@ -352,14 +352,14 @@ async function onEntry(env, params, before, after) {
     kind: e.kind === 'practice' ? 'practice' : 'event', tid: params.tid, id: params.eid,
     date: e.date, start: e.start, called: e.called || '', title: e.title || '', series: e.series || '', edit: e.edit || null
   } : null);
-  return calChange(env, params.code, shape(before), shape(after), params.tree);
+  return calChange(env, params.code, shape(before), shape(after));
 }
 
 /* A game, matches/{mid}: woken by one field, `field`, which was `was`. The
    rest is read as it stands now, a field at a time, never the whole game. */
 const GAME_FIELDS = ['teamId', 'date', 'kickoff', 'called', 'opponent', 'edit'];
 async function onGameField(env, params, field, was) {
-  const base = (await where(env.get, params.code, params.tree)).game(params.mid) + '/';
+  const base = (await where(env.get, params.code)).game(params.mid) + '/';
   const vals = await Promise.all(GAME_FIELDS.map(k => env.get(base + k)));
   const g = Object.fromEntries(GAME_FIELDS.map((k, i) => [k, vals[i]]));
   const shape = m => ({ kind: 'game', tid: m.teamId, id: params.mid, date: m.date, start: m.kickoff, called: m.called || '', title: m.opponent || '', edit: m.edit || null });
@@ -372,7 +372,7 @@ async function onGameField(env, params, field, was) {
     const note = await env.get(NOTE);
     if (!note || !note.tid) return { to: [], sent: 0, failed: 0, removed: [] };
     await Promise.resolve(env.remove(NOTE)).catch(() => { });
-    return calChange(env, params.code, shape({ ...note, teamId: note.tid, date: was }), null, params.tree);
+    return calChange(env, params.code, shape({ ...note, teamId: note.tid, date: was }), null);
   }
   /* The note: who, against whom and when, and who last changed it, written
      only when one of those changed, so the game can still be named once it
@@ -385,7 +385,7 @@ async function onGameField(env, params, field, was) {
      dated one, which is not worth a buzz. Either way, not this event's to say. */
   if (field === 'kickoff' && (was === null || was === undefined)) return { to: [], sent: 0, failed: 0, removed: [] };
   const before = field === 'date' && (was === null || was === undefined) ? null : shape({ ...g, [field]: was });
-  return calChange(env, params.code, before, after, params.tree);
+  return calChange(env, params.code, before, after);
 }
 
 /* ---------------- a game she follows ---------------- */
@@ -469,7 +469,7 @@ async function onFollowed(env, params, what, id, was) {
   const follows = await env.get(F);
   if (!keys(follows).length) return none;
   const now = env.now ? env.now() : Date.now();
-  const L = await where(env.get, code, params.tree);
+  const L = await where(env.get, code);
   const base = L.game(mid) + '/';
   const vals = await Promise.all(FOLLOW_FIELDS.map(k => env.get(base + k)));
   const g = Object.fromEntries(FOLLOW_FIELDS.map((k, i) => [k, vals[i]]));

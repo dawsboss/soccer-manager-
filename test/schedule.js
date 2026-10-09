@@ -241,7 +241,7 @@ const fill = vals => { for (const [k, v] of Object.entries(vals)) A.dom.node('#'
   {
     const fbk = makeFakebase();
     const D = H.loadApp({ firebase: fbk, config: CONFIG, storage: { 'sm.workspace': 'CLUB' } });
-    await D.flush(); fbk.signIn('boss', { name: 'Ada' }); await D.flush(); fbk.deliver('workspaces/CLUB', club()); await D.flush();
+    await D.flush(); fbk.signIn('boss', { name: 'Ada' }); await D.flush(); await fbk.serveClub('CLUB', club(), D.flush); await D.flush();
     D.ui.view = 'schedule'; D.render();
     D.click({ act: 'schedaddk', v: 'games', open: '1' });
     D.click({ act: 'schedfor', tid: 't2' });
@@ -250,7 +250,7 @@ const fill = vals => { for (const [k, v] of Object.entries(vals)) A.dom.node('#'
     await D.flush();
     const ws = fbk.record.writes.filter(w => /\/matches\//.test(w.path) && w.value && w.value.teamId === 't2');
     check('three games, three writes', ws.length, 3);
-    check('each at matches/{id}', ws.every(w => /^workspaces\/CLUB\/matches\/[\w-]+$/.test(w.path)), true);
+    check('each at matches/{id}', ws.every(w => /^orgs\/CLUB\/matches\/[\w-]+$/.test(w.path)), true);
     check('never the whole fixture list', fbk.record.writes.some(w => /\/matches$/.test(w.path)), false);
   }
 

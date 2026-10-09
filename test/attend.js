@@ -19,7 +19,7 @@ const H = require('./harness');
 const { check, deepEq } = H;
 const { makeFakebase } = require('./fakebase');
 
-const A = H.loadApp({ firebase: makeFakebase(), config: { apiKey: 'k', databaseURL: 'https://x.test' } });
+const A = H.loadApp({ firebase: makeFakebase(), storage: { 'sm.workspace': 'CLUB' }, config: { apiKey: 'k', databaseURL: 'https://x.test' } });
 const at = (d, hhmm) => { const [y, m, dd] = d.split('-').map(Number); const [h, mi] = hhmm.split(':').map(Number); return new Date(y, m - 1, dd, h, mi).getTime(); };
 
 let sets = [], removes = [];
@@ -65,7 +65,7 @@ function setup() {
   A.ui.teamId = 't1'; A.ui.view = 'calendar'; A.ui.matchId = null; A.ui.calAll = false; A.ui.calPast = true;
   sets = []; removes = []; A.toasts.length = 0;
   A.fb = {
-    db: {}, base: 'workspaces/CLUB', ref: (db, path) => path,
+    db: {}, ref: (db, path) => path,
     set: (path, v) => { sets.push([path, v]); return Promise.resolve(); },
     remove: path => { removes.push(path); return Promise.resolve(); }
   };
@@ -91,7 +91,7 @@ console.log('--- taking the register ---');
   check('nothing is written until it is saved', attWrites().length, 0);
   A.click({ act: 'attsave', tid: 't1' });
   deepEq('saved as one register', ['p1', 'p2', 'p3'].map(k => reg('e1')[k]), [true, false, false]);
-  deepEq('— one write, beside the entry, at a depth the team rule grants', attWrites().map(([p]) => p), ['workspaces/CLUB/teams/t1/attend/e1']);
+  deepEq('— one write, beside the entry, at a depth the team rule grants', attWrites().map(([p]) => p), ['orgs/CLUB/teams/t1/attend/e1']);
   check('and the coach is told', A.lastToast(), 'Saved — 1 of 3 came');
 
   A.click({ act: 'calitem', k: 'practice', tid: 't1', id: 'e1' });
@@ -179,11 +179,11 @@ console.log('--- kept apart from the entry ---');
   A.dom.node('#evVenue').value = ''; A.dom.node('#evNotes').value = '';
   sets = [];
   A.click({ act: 'calsave', tid: 't1' });
-  check('editing the practice writes the entry only', sets.filter(([p]) => p.startsWith('workspaces/')).map(([p]) => p).join(), 'workspaces/CLUB/teams/t1/events/e1');
+  check('editing the practice writes the entry only', sets.filter(([p]) => p.startsWith('orgs/')).map(([p]) => p).join(), 'orgs/CLUB/teams/t1/events/e1');
   check('and the register is untouched', JSON.stringify(reg('e1')), JSON.stringify({ p1: true, p2: false, p3: true }));
   A.click({ act: 'caledit', tid: 't1', id: 'e1' });
   A.click({ act: 'caldel', tid: 't1' });
-  check('deleting the practice takes its register with it', reg('e1') === null && removes.includes('workspaces/CLUB/teams/t1/attend/e1'), true);
+  check('deleting the practice takes its register with it', reg('e1') === null && removes.includes('orgs/CLUB/teams/t1/attend/e1'), true);
   const pub = JSON.stringify([A.publicDoc(t1()), A.calendarDoc(t1())]);
   t1().attend = { e3: { p1: false } };
   check('no register reaches the share link or the feed', /attend|"came"/.test(JSON.stringify([A.publicDoc(t1()), A.calendarDoc(t1())])) || /attend/.test(pub), false);

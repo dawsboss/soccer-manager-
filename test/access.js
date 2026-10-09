@@ -85,8 +85,8 @@ const rest = S => canon({ ...S.at('workspaces/CLUB'), access: { ...S.at(W + 'acc
   {
     const S = server();
     deepEq('one per place a role lives', Object.keys(S.triggers).filter(n => /^access/.test(n)).sort(), 
-      // each once per tree while clubs move to orgs/ (functions/index.js, both()); a club viewer and a player's fans only on orgs/
-      ['accessAdmin', 'accessAdminOrgs', 'accessFansOrgs', 'accessGuardians', 'accessGuardiansOrgs', 'accessSelf', 'accessSelfOrgs', 'accessStaff', 'accessStaffOrgs', 'accessViewer']);
+      // on orgs/, named as they were while clubs moved there (functions/index.js, onClub())
+      ['accessAdminOrgs', 'accessFansOrgs', 'accessGuardiansOrgs', 'accessSelfOrgs', 'accessStaffOrgs', 'accessViewer']);
     // and who runs the club is told (adminwatch.js, test/owners.js)
     deepEq('an admin given', (await S.wouldWake(W + 'access/admins/new', true)).sort(), ['accessAdmin', 'watchAdmin']);
     // the share pages wake on play and on a player (mirror.js, test/mirror.js); what is asked here is the tables
@@ -293,8 +293,7 @@ const rest = S => canon({ ...S.at('workspaces/CLUB'), access: { ...S.at(W + 'acc
     const S = server();
     const ev = { params: { code: 'CLUB', tid: 't1', pid: 'p1' }, data: { before: { val: () => ({ mum: true, twice: true }), ref: S.ref(W + 'teams/t1/players/p1/guardians') }, after: { val: () => ({ twice: true }), ref: S.ref(W + 'teams/t1/players/p1/guardians') } } };
     // the removal's event arrives after mum was linked again: the club, not the event, decides
-    // the trigger on the tree this pass keeps its clubs on
-    const guardians = S.triggers[require('./fakebase').ORGS_MODE ? 'accessGuardiansOrgs' : 'accessGuardians'];
+    const guardians = S.triggers.accessGuardiansOrgs;
     await guardians.handler(ev);
     check('a removal delivered after she was linked again keeps her', A_(S, 'teamParents/t1/mum'), 'p1');
     check('and her place in the club', A_(S, 'index/mum'), 'inv_mum');
@@ -347,9 +346,8 @@ const rest = S => canon({ ...S.at('workspaces/CLUB'), access: { ...S.at(W + 'acc
       userOrgs: { gran: { OC: { name: 'Hillside', at: 1 } }, aunt: { OC: { name: 'Hillside', at: 1 } } }
     });
     S.loadFunctions();
-    // the fake hands a club back the old tree's way in the orgs pass, access and all where it was
-    const ORGS_MODE = require('./fakebase').ORGS_MODE;
-    const raw = p => (ORGS_MODE ? p.replace(/^orgs\//, 'workspaces/') : p).split('/').reduce((c, k) => (c && typeof c === 'object' ? c[k] : undefined), S.tree);
+    // the fake hands a club back in the app's shape, access and all where the app keeps it
+    const raw = p => p.replace(/^orgs\//, 'workspaces/').split('/').reduce((c, k) => (c && typeof c === 'object' ? c[k] : undefined), S.tree);
     const T = p => { const v = raw(OC + 'access/' + p); return v === undefined || (v && typeof v === 'object' && !Object.keys(v).length) ? null : v; };
     // (and the roster, which wakes on any change to a child's record and finds nothing to do)
     check('approving one wakes the fans trigger', (await S.wouldWake(OC + 'squad/t1/p2/fans/gran', true)).some(n => /^accessFans/.test(n)), true);
@@ -401,8 +399,8 @@ const rest = S => canon({ ...S.at('workspaces/CLUB'), access: { ...S.at(W + 'acc
       invites: { inv_dee: { ws: 'VC', role: 'viewer' } }
     });
     S.loadFunctions();
-    // in the orgs pass the fake server reads every club back in the old tree's shape
-    const IX = u => (require('./fakebase').ORGS_MODE ? 'workspaces/VC/' : O) + 'access/index/' + u;
+    // the fake server reads every club back in the app's shape
+    const IX = u => 'workspaces/VC/access/index/' + u;
     await S.fire(O + 'access/viewers/dee', 'inv_dee');
     check('a viewer given: she is indexed', S.at(IX('dee')), true);
     check('— and bookmarked', !!S.at('userOrgs/dee/VC'), true);

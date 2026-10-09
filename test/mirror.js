@@ -108,10 +108,10 @@ const named = o => NAMES.filter(n => new RegExp('\\b' + n + '\\b', 'i').test(JSO
   console.log('--- the triggers that are deployed ---');
   {
     const S = server();
-    const ours = Object.keys(S.triggers).filter(n => /^(mirror|publish)/.test(n) && !/Orgs$/.test(n)).sort();
+    // on orgs/, named as they were while clubs moved there (functions/index.js, onClub())
+    const ours = Object.keys(S.triggers).filter(n => /^(mirror|publish)/.test(n)).map(n => n.replace(/Orgs$/, '')).sort();
     deepEq('the entries, each part of a game, the team\'s own fields, a player and a game\'s answers', ours,
       ['mirrorEvents', 'publishAnswers', 'publishGame', 'publishPlayer', 'publishTeamCalFeed', 'publishTeamCalFeedUntil', 'publishTeamLogo', 'publishTeamName', 'publishTeamPossMin', 'publishTeamShare', 'publishTeamShareUntil']);
-    deepEq('— each once more for a club on orgs/', Object.keys(S.triggers).filter(n => /^(mirror|publish).*Orgs$/.test(n)).map(n => n.replace(/Orgs$/, '')).sort(), ours);
     const wakes = async (p, v) => (await S.wouldWake(W + p, v)).filter(n => /^(mirror|publish)/.test(n));
     deepEq('a goal wakes one run', await wakes('matches/g2/goals/k9', { t: 500, side: 'us' }), ['publishGame']);
     deepEq('a sub, one', await wakes('matches/g2/stints/s9', { pid: 'p4', on: 500 }), ['publishGame']);

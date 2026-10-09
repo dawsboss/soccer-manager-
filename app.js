@@ -2,7 +2,7 @@
    Static app. Data lives in localStorage, and mirrors to Firebase Realtime
    Database when a config + workspace code are present. */
 
-const BUILD = '121';
+const BUILD = '122';
 const BUILT = '2026-10-09';
 /* The version of database.rules.json this app was written against. The rules
    carry the same number in rulesVersion's .write, which accepts that number
@@ -11,7 +11,7 @@ const BUILT = '2026-10-09';
    never pasted look exactly like a coach with no signal: "saved on this phone
    only", one feature at a time. test/rules.js holds the two numbers together
    and fails when the rules change without this going up. */
-const RULES_VERSION = 20;
+const RULES_VERSION = 21;
 /* index.html carries the build it was published with. If this file is newer, the
    browser handed us a cached page — the exact failure that has eaten hours. */
 const pageBuild = () => {
@@ -223,7 +223,7 @@ function cachedMe() {
    A second workspace code gives auth work somewhere safe to click, but it
    cannot rehearse a rules change, and that is the change worth rehearsing.
    Rules belong to a database instance, not to a code: the lockdown block is
-   written against workspaces/$code, so publishing it to try it on a test club
+   written against orgs/$code, so publishing it to try it on a test club
    applies it to the real one in the same instant. Nor can you carve a stricter
    sandbox out of an open wildcard — a rule grants and a child can never take
    that back, so the open rule would still win. A separate database is the only
@@ -287,37 +287,34 @@ function trackersIn(m) {
 }
 const dataKey = () => LS_DATA + ':' + clubKey();
 
-/* ---------------- which tree a club is on ---------------- */
+/* ---------------- where a club lives ---------------- */
 
-/* A club lives at workspaces/{code} until it moves to orgs/{code} (AUTH.md,
-   *The move to `orgs/{orgId}`*; SECURITY.md, SEC-1). On the new tree its
-   parts are split by who may read them: the squad out from under each team,
-   members, the club's settings and the log out of access. The app keeps the
-   old shape in memory and on the phone (a team with its players, access with
-   org and members inside), so nothing that draws a screen had to change;
-   what changes is where each write goes (clubPath(), the one translation)
-   and how the club is read (wireOrgs()).
+/* A club lives at orgs/{code} (AUTH.md, *The move to `orgs/{orgId}`*;
+   SECURITY.md, SEC-1), its parts split by who may read them: the squad out
+   from under each team, members, the club's settings and the log out of
+   access. The app keeps the old shape in memory and on the phone (a team
+   with its players, access with org and members inside), so nothing that
+   draws a screen had to change; what differs is where each write goes
+   (clubPath(), the one translation) and how the club is read (wireOrgs()).
+   The old workspaces/{code} tree is gone (AUTH.md, build order step 5).
 
-   Which tree is remembered per club, so a phone at a field with no signal
-   still sends its outbox to the right place once it has one. It is found out
-   from the old tree, which any signed-in phone may read once a club has
-   moved (it holds nothing but the `moved` marker), and which holds nothing
-   for a club made on the new one. */
+   LS_TREE now only remembers that this phone's copy of a club was made from
+   orgs/: a copy from the old tree held every child on the club, and goes
+   down to what this account may hold before anything else is read
+   (forgetOthersChildren()), once. */
 const LS_TREE = 'sm.tree.v1';
 const treeKey = code => LS_TREE + ':' + envPrefix() + code;
-function clubTree(code = wsCode()) {
-  try { return localStorage.getItem(treeKey(code)) === 'orgs' ? 'orgs' : 'workspaces'; } catch (e) { return 'workspaces'; }
+function copyFromOrgs(code) {
+  try { return localStorage.getItem(treeKey(code)) === 'orgs'; } catch (e) { return true; }
 }
-function setClubTree(code, tree) {
+function markFromOrgs(code) {
   if (!code) return;
-  try { if (tree === 'orgs' || tree === 'workspaces') localStorage.setItem(treeKey(code), tree); else localStorage.removeItem(treeKey(code)); } catch (e) { }
+  try { localStorage.setItem(treeKey(code), 'orgs'); } catch (e) { }
 }
-const onOrgs = (code = wsCode()) => clubTree(code) === 'orgs';
 /* A path inside a club, as the app names it (the old tree's shape), to where
-   it lives on the club's tree. */
-function clubPath(rel, code = wsCode(), tree = clubTree(code)) {
+   it lives on orgs/. */
+function clubPath(rel, code = wsCode()) {
   rel = String(rel || '');
-  if (tree !== 'orgs') return 'workspaces/' + code + (rel ? '/' + rel : '');
   const r = rel.replace(/^teams\/([^/]+)\/players(?=\/|$)/, 'squad/$1').replace(/^access\/(members|org|log)(?=\/|$)/, '$1');
   return 'orgs/' + code + (r ? '/' + r : '');
 }
@@ -329,14 +326,13 @@ function clubPath(rel, code = wsCode(), tree = clubTree(code)) {
    tree had them, so nothing that draws or plans had to change. */
 const COACH_FIELDS = ['note', 'rating', 'pairs', 'avoid'];
 const withoutCoach = rec => (rec && typeof rec === 'object' ? Object.fromEntries(Object.entries(rec).filter(([k]) => !COACH_FIELDS.includes(k))) : rec);
-/* The writes one app write becomes. On the old tree, itself. On the new one,
-   a whole team is its team and its squad, and a player's record is her record
-   and her coach's notes, each at its rule's depth. Notes go one field at a
+/* The writes one app write becomes: a whole team is its team and its squad,
+   and a player's record is her record and her coach's notes, each at its
+   rule's depth. Notes go one field at a
    time and only the fields the write carries: a whole team or squad saved
    from a phone that has not read the notes yet (or may not) must never wipe
    them. */
-function clubWrites(rel, v, code = wsCode(), tree = clubTree(code)) {
-  if (tree !== 'orgs') return [[clubPath(rel, code, tree), v]];
+function clubWrites(rel, v, code = wsCode()) {
   const N = (tid, pid, f) => 'orgs/' + code + '/coachNotes/' + tid + (pid ? '/' + pid : '') + (f ? '/' + f : '');
   const gone = v === null || v === undefined;
   const notesOf = (tid, ps) => Object.entries(ps && typeof ps === 'object' ? ps : {}).flatMap(([pid, rec]) =>
@@ -345,22 +341,22 @@ function clubWrites(rel, v, code = wsCode(), tree = clubTree(code)) {
   let m = /^teams\/([^/]+)\/players\/([^/]+)\/(note|rating|pairs|avoid)(\/.*)?$/.exec(rel);
   if (m) return [[N(m[1], m[2], m[3]) + (m[4] || ''), v]];
   if ((m = /^teams\/([^/]+)\/players\/([^/]+)$/.exec(rel)))
-    return gone ? [[clubPath(rel, code, tree), null], [N(m[1], m[2]), null]]
-      : [[clubPath(rel, code, tree), withoutCoach(v)], ...notesOf(m[1], { [m[2]]: v })];
+    return gone ? [[clubPath(rel, code), null], [N(m[1], m[2]), null]]
+      : [[clubPath(rel, code), withoutCoach(v)], ...notesOf(m[1], { [m[2]]: v })];
   if ((m = /^teams\/([^/]+)\/players$/.exec(rel)))
-    return gone ? [[clubPath(rel, code, tree), null], [N(m[1]), null]]
-      : [[clubPath(rel, code, tree), squadOf(v)], ...notesOf(m[1], v)];
+    return gone ? [[clubPath(rel, code), null], [N(m[1]), null]]
+      : [[clubPath(rel, code), squadOf(v)], ...notesOf(m[1], v)];
   if ((m = /^teams\/([^/]+)$/.exec(rel))) {
-    if (gone) return [[clubPath(rel, code, tree), null], [clubPath(rel + '/players', code, tree), null], [N(m[1]), null]];
+    if (gone) return [[clubPath(rel, code), null], [clubPath(rel + '/players', code), null], [N(m[1]), null]];
     const { players, ...team } = v || {};
-    return [[clubPath(rel, code, tree), team], [clubPath(rel + '/players', code, tree), squadOf(players) || null], ...notesOf(m[1], players)];
+    return [[clubPath(rel, code), team], [clubPath(rel + '/players', code), squadOf(players) || null], ...notesOf(m[1], players)];
   }
-  return [[clubPath(rel, code, tree), v]];
+  return [[clubPath(rel, code), v]];
 }
-/* A family's phone holds her own children and nobody else's on orgs/. The
-   copy kept from before the move had the whole squad, and merge-on-read
-   would keep it, so it goes the moment the move is seen, before anything is
-   read: everyone but her own children (and, for a tracker, her own team). */
+/* A family's phone holds her own children and nobody else's on orgs/. A
+   copy kept from the old tree had the whole squad, and merge-on-read would
+   keep it, so it goes before the club is first read here (copyFromOrgs()):
+   everyone but her own children (and, for a tracker, her own team). */
 function forgetOthersChildren() {
   if (!me) return;
   const u = me.uid;
@@ -381,7 +377,7 @@ function forgetOthersChildren() {
 let namedHere = '';
 // SERVER.md: a staff member's name for families on orgs/; the role triggers and namesMember keep it too.
 function staffName() {
-  if (!fb || !me || !onOrgs() || namedHere === wsCode() + me.uid) return;
+  if (!fb || !me || namedHere === wsCode() + me.uid) return;
   const a = acc(), u = me.uid;
   if (!isAdmin(u) && !(a.coachIndex || {})[u] && !(a.helperIndex || {})[u]) return;
   namedHere = wsCode() + u;
@@ -396,7 +392,7 @@ function staffName() {
 let notesMovedHere = '';
 // SERVER.md: a one-off move of the coach's notes off each child's record, done by a coach's or admin's phone.
 function moveCoachNotes(squads, notes) {
-  if (!fb || !me || !onOrgs() || notesMovedHere === wsCode() + me.uid) return;
+  if (!fb || !me || notesMovedHere === wsCode() + me.uid) return;
   notesMovedHere = wsCode() + me.uid;
   const u = me.uid, code = wsCode();
   for (const [tid, ps] of Object.entries(squads || {})) {
@@ -414,29 +410,6 @@ function moveCoachNotes(squads, notes) {
     }
   }
 }
-/* Which tree a club is on, for a club this phone has not read yet (an
-   invite, a team link, another club she is in). Two small reads, never the
-   club: the old tree's `moved` marker (any signed-in phone may read a moved
-   club's old tree, since it holds nothing else; a phone not in a club still
-   there is refused, which says the same thing), then, if there is no marker,
-   whether the new tree has the club (there, or refused). Remembered either
-   way: a club only ever moves one way, and the open club's read notices that
-   (wireBase()), as does the copy of another club (watchMirror()). */
-function probeTree(code) {
-  if (!rtdb || !code) return Promise.resolve(clubTree(code));
-  let known = null;
-  try { known = localStorage.getItem(treeKey(code)); } catch (e) { }
-  if (known === 'orgs' || known === 'workspaces') return Promise.resolve(known);
-  const { db, mod } = rtdb;
-  const read = p => new Promise(res => mod.onValue(mod.ref(db, p), sn => res({ v: sn.val() }), () => res({ refused: true }), { onlyOnce: true }));
-  const keep = tree => { try { localStorage.setItem(treeKey(code), tree); } catch (e) { } return tree; };
-  return read('workspaces/' + code + '/moved').then(m => {
-    if (m.refused) return keep('workspaces');
-    if (m.v) return keep('orgs');
-    return read('orgs/' + code + '/access/admins').then(o => keep(o.refused || o.v ? 'orgs' : 'workspaces'));
-  });
-}
-
 /* Every store that holds data goes through here, because a phone whose
    storage is full refuses the write, and before this the refusal was
    swallowed: the change looked saved, lived only in the open page, and was
@@ -729,9 +702,8 @@ async function initSync() {
 
     if (!code) { setSync('off', 'no code'); return; }
 
-    // base follows the club's tree (clubTree()), which can change under it the first time a moved club is read
-    // held until the first read says which tree the club is on (sendPending())
-    fb = { db, ref: dbMod.ref, set: dbMod.set, remove: dbMod.remove, held: true, get base() { return clubPath('', code); } };
+    // held until the session's first read of the club (sendPending())
+    fb = { db, ref: dbMod.ref, set: dbMod.set, remove: dbMod.remove, held: true };
     fb.childAdded = dbMod.onChildAdded;
 
     // One full read to get in sync, then child-level listeners so an update to
@@ -772,10 +744,10 @@ async function initSync() {
     for (const c of knownClubs()) watchRetired(c.code);
     watchRetired(code);
 
-    /* The club has been read, on either tree: merged, never replaced, with
-       what this phone owes the club laid back on top and sent again. */
+    /* The club has been read: merged, never replaced, with what this phone
+       owes the club laid back on top and sent again. */
     function connected(v) {
-      fb.held = false;   // the tree is known: what waited in the outbox goes now
+      fb.held = false;   // the club has answered: what waited in the outbox goes now
       if (!v) { pushAll(); flushPending(); }
       else {
         // merged, never replaced: what this phone owes the club goes back on top, and back out
@@ -798,83 +770,12 @@ async function initSync() {
       shareIds();   // a game made elsewhere, or before game links, gets its id here
     }
 
+    /* The club is read from orgs/ (wireOrgs()). A copy on this phone from
+       the old tree, which held every child in the club, is first cut down
+       to what this account may hold, once, before anything is read. */
     function wireBase(attempt) {
-      if (onOrgs(code)) return wireOrgs(attempt);
-      dbMod.onValue(dbMod.ref(db, 'workspaces/' + code), snap => {
-        denied = false;
-        const v = snap.val();
-        /* Moved to orgs/, or never on the old tree at all (a club made on the
-           new one, or a code nobody has written): the new tree from now on. */
-        if (!v || v.moved) {
-          setClubTree(code, 'orgs');
-          forgetOthersChildren();
-          return wireOrgs(0);
-        }
-        connected(v);
-
-        /* The club moving to orgs/ while this phone is reading it looks, from
-           here, like everything in it being deleted: the server replaces the
-           old tree with its `moved` marker in one write. So the marker is
-           watched, and anything that empties the club waits a tick before it
-           is believed. The database raises every event of one write together,
-           so by then the marker has said whether it was a move; if it was,
-           the old tree is let go and the new one read, and nothing was ever
-           deleted here (nor reported as deleted by club activity). */
-        let gone = false;
-        const unlessMoved = fn => Promise.resolve().then(() => { if (!gone) fn(); });
-        dbMod.onValue(dbMod.ref(db, 'workspaces/' + code + '/moved'), ms => {
-          if (!ms.val() || gone) return;
-          gone = true;
-          setClubTree(code, 'orgs');
-          forgetOthersChildren();
-          wireOrgs(0);
-        }, () => { });
-
-        // membership is small and read whole; it does not need child-level listeners
-        dbMod.onValue(dbMod.ref(db, fb.base + '/access'), cs => {
-          if (gone) return;
-          const take = () => {
-            state.access = cs.val() || {};
-            overlayPending(state.access, 'access');
-            saveLocal(); noteMyClub(); render();
-          };
-          if (cs.val()) take(); else unlessMoved(take);
-        });
-
-        // rsvp per team, like teams and matches: one parent's answer never redraws from a whole-club read
-        for (const coll of ['teams', 'matches', 'rsvp']) {
-          if (!state[coll]) state[coll] = {};
-          const r = dbMod.ref(db, fb.base + '/' + coll);
-          const upsert = cs => {
-            if (gone || ui.dragging) return;
-            const inc = cs.val(); if (!inc) return;
-            state[coll][cs.key] = mergeNode(state[coll][cs.key], inc);
-            noteSeen(coll, cs.key);
-            // a change still on its way to the club stays on top of what the club last said
-            const own = { [cs.key]: state[coll][cs.key] };
-            overlayPending(own, coll);
-            if (own[cs.key]) state[coll][cs.key] = own[cs.key]; else delete state[coll][cs.key];
-            saveLocal(); render();
-          };
-          dbMod.onChildAdded(r, upsert);
-          dbMod.onChildChanged(r, upsert);
-          dbMod.onChildRemoved(r, cs => unlessMoved(() => {
-            if (ui.dragging) return;
-            if (pendingList().some(([p, e]) => p.startsWith(coll + '/' + cs.key) && e.v !== null)) return;
-            delete state[coll][cs.key]; saveLocal(); render();
-          }));
-        }
-      }, err => {
-        // A denial in the first second or two after boot is usually the ID
-        // token not having reached the database connection yet, not a real
-        // refusal — this read only ever runs once, so retry with backoff
-        // before showing someone the lock screen for a race, not a rule.
-        if (/permission|denied/i.test((err && err.code) || '') && attempt < 2) {
-          setTimeout(() => wireBase(attempt + 1), (attempt + 1) * 900);
-          return;
-        }
-        onDenied(err);
-      }, { onlyOnce: true });
+      if (!copyFromOrgs(code)) { forgetOthersChildren(); markFromOrgs(code); }
+      return wireOrgs(attempt);
     }
 
     /* ---------------- a club on orgs/ ---------------- */
@@ -1184,25 +1085,29 @@ function settle(path, n, ok, err) {
   else return;          // anything else: still owed, and sent again on the next connect
   savePending(); render();
 }
-/* One app write, sent wherever the club's tree keeps it (clubWrites(): on
-   orgs/ a whole team is its team and its squad), settled once all of it has
-   landed. */
+/* One app write, sent wherever orgs/ keeps it (clubWrites(): a whole team is
+   its team and its squad), settled once all of it has landed. */
 function remoteWrite(path, v, del) {
-  // the old tree: exactly the path it always was (fb.base), the new one through the translation
-  const ws = onOrgs() ? clubWrites(path, del ? null : v) : [[fb.base + '/' + path, del ? null : v]];
+  const ws = clubWrites(path, del ? null : v);
   // a set of null deletes as surely as a remove, and some callers take an answer back that way
   return Promise.all(ws.map(([p, x]) => (del ? fb.remove(fb.ref(fb.db, p)) : fb.set(fb.ref(fb.db, p), x === undefined ? null : x))));
 }
-/* Until this session's first read of the club says which tree it is on, a
-   write waits in the outbox (where it already is) instead of going out: sent
-   to the tree this phone remembers, it would reach the old one for a club
-   that moved while the phone was away, and a club only ever lives on one.
-   The first read sends everything owed (flushPending()), and whoever was
-   waiting on one of these writes hears when that send lands. A stand-in
+/* Until this session's first read of the club has answered, a write waits
+   in the outbox (where it already is) instead of going out. This was how a
+   phone learned which tree a club was on while clubs moved to orgs/; it is
+   kept because it makes a session's sends one ordered pass after the club's
+   copy is merged (connected()), the same on every connect. The first read
+   sends everything owed (flushPending()), and whoever was waiting on one of
+   these writes hears when that send lands. A stand-in
    `fb` with no `held` (the tests' own) is never held. */
 let heldSends = [];
 function sendPending(path, n, v, del) {
-  if (fb && fb.held) return new Promise((res, rej) => heldSends.push({ path, res, rej }));
+  if (fb && fb.held) {
+    const pr = new Promise((res, rej) => heldSends.push({ path, res, rej }));
+    // like a send that went out (settle() hears it below), a caller that ignores the answer leaves no unhandled refusal
+    pr.catch(() => { });
+    return pr;
+  }
   let w;
   try { w = remoteWrite(path, v, del); }
   catch (e) { return Promise.reject(e); }
@@ -1335,7 +1240,7 @@ function mergeNode(local, remote) {
   return out;
 }
 
-/* There is no .write at workspaces/$code — only on its children — so one set()
+/* There is no .write at orgs/$code — only on its children — so one set()
    of the whole node is refused the moment a club is locked down, and that is
    exactly the call that creates a club. Write the children in the order the
    rules can actually grant: admins while it is still empty, then the index
@@ -1398,7 +1303,7 @@ function rosterOf(t) {
 }
 // SERVER.md: the roster families read on orgs/; rosterPlayer keeps it too.
 function rosterAfter(path) {
-  const m = fb && !fb.held && onOrgs() && /^teams\/([^/]+)(\/players(\/|$)|$)/.exec(path);
+  const m = fb && !fb.held && /^teams\/([^/]+)(\/players(\/|$)|$)/.exec(path);
   // the coach's notes are not in the roster, so changing one changes nothing there
   if (!m || !canEditTeam(m[1]) || /^teams\/[^/]+\/players\/[^/]+\/(note|rating|pairs|avoid)(\/|$)/.test(path)) return;
   const t = state.teams[m[1]], r = t ? rosterOf(t) : {};
@@ -1433,7 +1338,7 @@ function remoteSet(path, value) {
   if (!fb) return;
   const v = calStamp(path, value === undefined ? null : value);
   // derived, and rebuilt on every connect: one made before the club has been read is not worth keeping
-  if (DERIVED.test(path)) { if (fb.held) return Promise.resolve(); const w = Promise.resolve(fb.set(fb.ref(fb.db, onOrgs() ? clubPath(path) : fb.base + '/' + path), v)); w.catch(() => { }); return w; }
+  if (DERIVED.test(path)) { if (fb.held) return Promise.resolve(); const w = Promise.resolve(fb.set(fb.ref(fb.db, clubPath(path)), v)); w.catch(() => { }); return w; }
   return sendPending(path, notePending(path, v), v);
 }
 function remoteDel(path, was) {
@@ -1448,7 +1353,7 @@ function remoteDel(path, was) {
     const tid = del[2] || (was && was.teamId) || ((state.matches || {})[del[3]] || {}).teamId;
     if (tid && (isCoach(tid, me.uid) || isHelper(tid, me.uid))) remoteSet(path + '/edit', { by: me.uid, at: nowMs() });
   }
-  if (DERIVED.test(path)) { if (fb.held) return; Promise.resolve(fb.remove(fb.ref(fb.db, onOrgs() ? clubPath(path) : fb.base + '/' + path))).catch(() => { }); return; }
+  if (DERIVED.test(path)) { if (fb.held) return; Promise.resolve(fb.remove(fb.ref(fb.db, clubPath(path)))).catch(() => { }); return; }
   sendPending(path, notePending(path, null, true), null, true).catch(() => { });
 }
 
@@ -1796,7 +1701,7 @@ function fansWanted(tid) {
 }
 // SERVER.md: a lookup table rebuilt by phones on connect; a server trigger would keep it true at once.
 function syncTeamFans(tid) {
-  if (!tid || !me || !state.teams[tid] || !onOrgs()) return;
+  if (!tid || !me || !state.teams[tid]) return;
   if (!isAdmin(me.uid) && !isCoach(tid, me.uid)) return;
   const want = fansWanted(tid), now = (acc().teamFans || {})[tid] || {};
   const team = state.teams[tid];
@@ -1827,77 +1732,6 @@ function ensureFixtureShares(t) {
 /* What has to be true before the tighter rules can be published. Every line is
    a way to lock the club out, and all of them are invisible until you try to
    write something at a game. */
-/* Moving the club to orgs/ (AUTH.md, *The move to `orgs/{orgId}`*;
-   SECURITY.md, SEC-1). The admin asks by writing moveRequests/{code} as
-   herself; the server (functions/move.js) checks her again, moves the club in
-   one write, compares, and writes its answer beside the request. Online
-   only, and nothing waits on it at the sideline: until the answer comes the
-   club is exactly where it was. */
-let moveReq = null;     // { code, sent, result } while this phone is waiting on, or has heard, the server
-let moveWatch = null;
-function moveCard() {
-  if (onOrgs() || !canAdmin()) return '';
-  // a request asked from this phone or another, before a reload or not: what it is waiting on, or what the server said
-  watchMove(wsCode());
-  const r = moveReq && moveReq.code === wsCode() ? moveReq : null;
-  const res = r && r.result;
-  // no answer in two minutes: the server never took it up (it acts only on a new request), so asking again is offered
-  const stale = !!(r && !res && nowMs() - (r.sent || 0) > 120000);
-  const status = !r ? ''
-    : stale ? '<p class="warn">No answer came back from the server. Nothing has changed; ask again.</p>'
-    : res && res.ok ? '<p><b>Moved.</b> Reading the club again…</p>'
-    : res ? `<p class="warn">Not moved: ${esc(res.why || 'the server said no')}</p>`
-    : '<p class="muted">Asked. Waiting for the server: a minute or so. If nothing happens, the club\'s functions may not be deployed yet (README, <b>Deploying the server</b>).</p>';
-  return `<div class="card"><h2 style="margin-bottom:8px">Keep the squad off families' phones</h2>
-      <p class="muted" style="margin-top:0">Today everyone in the club can read all of it at the database, so a family's phone holds every child's name, the coaches' notes and ratings, and everyone's email; the app only hides them. Moving the club splits it so each family receives her own child and the others' shirt numbers, and nothing more. Nothing about how the app looks changes.</p>
-      <p class="muted">It needs a signal, takes a minute, and is refused while a game is being played. A copy of the club as it is now is kept on the server. Try it on a test club first.</p>
-      ${status}
-      ${r && !res && !stale ? '' : `<button class="btn wide" data-act="moveclub">${(res && !res.ok) || stale ? 'Try again' : 'Move ' + esc((acc().org || {}).name || 'this club')}</button>`}</div>`;
-}
-function watchMove(code) {
-  if (!rtdb || moveWatch === code) return;
-  moveWatch = code;
-  const { db, mod } = rtdb;
-  mod.onValue(mod.ref(db, 'moveRequests/' + code), sn => {
-    const req = sn.val();
-    if (!req) return;
-    const res = req.result || null;
-    const had = moveReq && moveReq.code === code && moveReq.result;
-    moveReq = { code, sent: req.at || nowMs(), result: res };
-    if (!res) { render(); return; }
-    if (res.ok && !(had && had.ok)) {
-      setClubTree(code, 'orgs');
-      toast('Moved: each family now receives only her own child');
-      attachWorkspace();
-    }
-    render();
-  }, () => { });
-}
-async function askMove() {
-  const code = wsCode();
-  if (!canAdmin() || !rtdb || !me || !code || onOrgs()) return;
-  if (!online) { toast('Moving the club needs a signal'); return; }
-  const { db, mod } = rtdb;
-  const ref = mod.ref(db, 'moveRequests/' + code);
-  try {
-    /* An earlier request (and its answer) is cleared so this is a new one,
-       but only if there is one: the rules count deleting nothing as a write,
-       and the move request's rule allows a delete only of a request that is
-       there, so clearing an empty one was refused and the move never asked. */
-    const was = await new Promise(res => mod.onValue(ref, sn => res(sn.val()), () => res(null), { onlyOnce: true }));
-    if (was) await mod.remove(ref);
-    moveReq = { code, sent: nowMs(), result: null };
-    render();
-    await mod.set(ref, { by: me.uid, at: nowMs() });
-    moveReq = { code, sent: nowMs(), result: null };   // the old answer, heard while clearing it, is not this one's
-  } catch (e) {
-    moveReq = null;
-    toast(/permission|denied/i.test((e && e.code) || '') ? 'The database refused it — are the rules (version ' + RULES_VERSION + ') published?' : 'Not asked — check the signal');
-    render(); return;
-  }
-  watchMove(code);
-}
-
 function readiness() {
   const a = acc();
   const rows = [];
@@ -1941,11 +1775,6 @@ function readiness() {
           : 'not checked yet — needs a signal'
   });
   rows.push({ ok: Object.keys(appOwners).length > 0, label: 'An app owner exists', detail: Object.keys(appOwners).length ? 'yes' : 'set appOwners in the console' });
-  rows.push({
-    ok: onOrgs(), label: 'Families\' phones hold only their own children',
-    detail: onOrgs() ? 'yes: the club has moved, and the database decides who reads each part'
-      : 'not yet: every family\'s phone holds the whole squad, and the app only hides it (Move the club, below)'
-  });
   return rows;
 }
 
@@ -2373,9 +2202,8 @@ async function redeemInvite() {
   const put = (p, val) => mod.set(mod.ref(db, p), val);
   const soft = pr => Promise.resolve(pr).catch(() => { });
   invite.status = 'working'; render();
-  // the club's own paths, on whichever tree it is on (clubPath(): her member entry and a child's record moved on orgs/)
-  const tree = await probeTree(ws);
-  const W = rel => clubPath(rel, ws, tree);
+  // the club's own paths, where orgs/ keeps them (clubPath(): her member entry and a child's record)
+  const W = rel => clubPath(rel, ws);
   try {
     if (v.seats) await takeSeat(put, 'invites/' + id, v, who, at);
     else if (!v.used) await put('invites/' + id + '/used', { by: who, at });
@@ -2458,9 +2286,7 @@ async function createClub(name) {
   const code = randId('sm-'), who = me.uid, at = nowMs();
   const { db, mod } = rtdb;
   const put = (p, val) => mod.set(mod.ref(db, p), val);
-  /* A new club is made on orgs/ (AUTH.md, *The move to `orgs/{orgId}`*):
-     the old tree only ever shrinks. */
-  const W = rel => clubPath(rel, code, 'orgs');
+  const W = rel => clubPath(rel, code);
   newClubBusy = true;
   try {
     await put(W('access/admins/' + who), true);
@@ -2478,7 +2304,7 @@ async function createClub(name) {
   }
   // the bookmark is what puts it in every one of her devices' club lists
   await Promise.resolve(put('userOrgs/' + who + '/' + code, { name, at })).catch(() => { });
-  setClubTree(code, 'orgs');
+  markFromOrgs(code);
   try { localStorage.setItem(LS_WS, code); } catch (e) { }
   location.reload();
   return true;
@@ -2980,7 +2806,7 @@ async function sendClaim() {
     // a team link for so many people: a seat first, which is what the ask's rule looks for
     if (v.seats) await takeSeat((p, x) => mod.set(mod.ref(db, p), x), 'joinCodes/' + join.code, v, who, at);
     // so a coach or admin sees who is asking, as they would anyone who signed in
-    await mod.set(mod.ref(db, clubPath('access/members/' + who, v.ws, await probeTree(v.ws))), { name: me.name || '', email: me.email || '', at });
+    await mod.set(mod.ref(db, clubPath('access/members/' + who, v.ws)), { name: me.name || '', email: me.email || '', at });
     await mod.set(mod.ref(db, `claims/${v.ws}/${v.team}/${who}`), {
       code: join.code, shirt, ...(child ? { child } : {}), name: me.name || '', email: me.email || '', at
     });
@@ -3209,8 +3035,8 @@ function joinCard(t) {
 /* Talking to the families: team notices from the coaches, and a private
    conversation between each family and their team's coaches.
 
-   Where it lives matters more than how it looks. Not under workspaces/{code}:
-   everyone indexed reads all of that, so a parent's message about her
+   Where it lives matters more than how it looks. Not inside the club: everyone
+   indexed reads its teams and games, so a parent's message about her
    daughter would be readable by every other parent in the club, and the
    connect-time read would drag every conversation onto every phone. So, at the
    root, each with rules of its own (README has them; test/rules.js pins them):
@@ -10331,7 +10157,7 @@ function viewMine() {
           <span class="tag session">Training</span></button>` : '')(!sup && sessAll().find(s => !sessPast(s) && !s.called && (b => b && b.st !== 'out' && b.st !== 'no')(bookOf(s.id, p.id))))}
       </div>
       ${sup ? `<button class="btn quiet wide" data-act="fanleave" data-tid="${t.id}" data-pid="${p.id}" style="margin-top:10px">Stop following ${esc(firstName(p))}</button>` : ''}
-      ${!sup && onOrgs() && fbConfig().apiKey ? `<button class="btn quiet wide" data-act="fansheet" data-tid="${t.id}" data-pid="${p.id}" style="margin-top:10px">${isMe(p) ? 'Your fans' : 'Fans'}${Object.keys(p.fans || {}).length ? ' (' + Object.keys(p.fans).length + ')' : ''}</button>` : ''}</div>`;
+      ${!sup && fbConfig().apiKey ? `<button class="btn quiet wide" data-act="fansheet" data-tid="${t.id}" data-pid="${p.id}" style="margin-top:10px">${isMe(p) ? 'Your fans' : 'Fans'}${Object.keys(p.fans || {}).length ? ' (' + Object.keys(p.fans).length + ')' : ''}</button>` : ''}</div>`;
   }).join('')}
     ${away.map(k => `<div class="card">
       <div class="row"><span class="crest blank">${esc((k.name || '?').slice(0, 1))}</span>
@@ -12615,7 +12441,7 @@ function tickRun() {
      training/{code}/fees/{sid}/{pid}    what was paid for one place
      training/{code}/pay/{uid}           what a coach is paid
      training/{code}/splans/{sid}        the drills
-     workspaces/{code}/access/org/venues the club's fields and their permits
+     orgs/{code}/org/venues             the club's fields and their permits
 
    Outside the workspace for the reasons practice plans are (every phone reads
    the whole workspace, and the connect-time read still replaces it), plus one
@@ -15234,25 +15060,11 @@ function watchMirror() {
       render();
     };
     for (const p of MIRROR_TR) offs.push(mod.onValue(mod.ref(db, `training/${code}/${p}`), take(p, 'tr'), () => { }));
-    if (clubTree(code) === 'orgs') { watchMirrorOrgs(code, offs, take); continue; }
-    /* The old tree until it shows no club there (moved, or made on the new
-       one): then ask which (probeTree()) and read that instead. A club that
-       has not moved costs nothing extra. */
-    for (const p of MIRROR_WS) offs.push(mod.onValue(mod.ref(db, `workspaces/${code}/${p}`), sn => {
-      if (p === 'access' && !sn.val()) {
-        setClubTree(code, null);   // whatever was remembered, the old tree has no club here now
-        probeTree(code).then(tree => {
-          if (tree !== 'orgs' || mirrorWatch.get(code) !== offs) return;
-          unwatchClub(code); watchMirror();
-        });
-        return;
-      }
-      take(p, 'ws')(sn);
-    }, () => { }));
+    watchMirrorOrgs(code, offs, take);
   }
 }
-/* Another club of hers on orgs/: what My calendar needs, part by part, as
-   the old tree's whole read gave it — access with the club's name in it, the
+/* Another club of hers: what My calendar needs, part by part, in the shape
+   the rest of the app knows — access with the club's name in it, the
    games, and the teams with her own children on them (and nobody else's,
    which she could not read there anyway). */
 function watchMirrorOrgs(code, offs, take) {
@@ -15937,7 +15749,6 @@ function viewAdmin() {
         ${code === wsCode() ? '<span class="muted">open now</span>'
       : `<button class="btn quiet sm" data-act="switchclub" data-code="${esc(code)}">Open</button>`}</div>`).join('')}</div></div>` : ''}
 
-${moveCard()}
     <div class="card"><h2 style="margin-bottom:8px">Retire this club</h2>
       <p class="muted" style="margin-top:0">Marks it closed. Every device holding a copy clears it on next connect — except the app owner's, so it can still be opened and exported. <b>Nothing is deleted.</b> The data stays until the app owner removes it in the Firebase console.</p>
       <button class="btn danger wide" data-act="retireclub">Retire ${esc((acc().org || {}).name || 'this club')}</button></div>
@@ -17961,7 +17772,6 @@ const mayFanAsk = (tid, p) => !!p && (mayGrant(tid) || isMine(p));
 async function makeFanLink(tid, pid, lim = {}) {
   const t = state.teams[tid], p = t && (t.players || {})[pid];
   if (!mayFanAsk(tid, p)) { toast('Her family, her coach or an admin asks for a fan'); return false; }
-  if (!onOrgs()) { toast('Fans need the club moved first (Admin → Move)'); return false; }
   if (!fb || !rtdb || !me) { toast(me ? 'Needs a connection to the database' : 'Sign in first'); return false; }
   // both grandparents from one link, if she says so
   const uses = Math.max(1, Math.min(LINK_MAX, lim.uses || 1));
@@ -18103,7 +17913,7 @@ function sheetPlayer(p) {
     </div>
     <p class="muted" style="margin-top:-8px">A guardian can read this team and sees her under My players. Linking someone here is what makes them a parent.</p>
     ${selfCard(t, p)}
-    ${onOrgs() ? fanCard(t, p, 'player') : ''}` : ''}
+    ${fanCard(t, p, 'player')}` : ''}
 
     <p class="lbl">Plays better alongside</p>
     <div class="chips" style="margin-bottom:14px">
@@ -19499,12 +19309,6 @@ function onAct(e) {
   if (a === 'teammenu') { sheetTeams(); return; }
   if (a === 'goview') { ui.view = d.v; closeSheet(); render(); return; }
   if (a === 'accountsheet') { if (me) sheetAccount(); else sheetSignIn(); return; }
-  if (a === 'moveclub') {
-    // the button is drawn for admins only; the handler asks again, as retiring a club does
-    if (!canAdmin()) return;
-    if (!confirm('Move ' + ((acc().org || {}).name || 'this club') + ' so families\' phones hold only their own children? It takes a minute and needs a signal.')) return;
-    askMove(); return;
-  }
   if (a === 'retireclub') {
     if (!canAdmin()) { toast('Club admins and the app owner only'); return; }
     if (hasClubOwner() && !(me && isClubOwner(me.uid))) { toast('Only the club owner can retire it'); return; }

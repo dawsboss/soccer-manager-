@@ -308,12 +308,6 @@ const T = 'training/CLUB/';
     check('delivered twice, the second finds the answer and does nothing', r.why, 'twice');
     deepEq('the first answer stands', S.at('bookAsks/CLUB/mum/dup/answer'), first);
   }
-  {
-    const S = server({}, { serverState: { moving: { CLUB: { at: 1 } } } });
-    const r = await S.fire('bookAsks/CLUB/mum/m1', { op: 'book', block: 'b1', start: '18:00', tid: 't1', pid: 'p1', at: Date.now() });
-    check('while the club is moving, the ask is left for the phone to ask again', r.bookAsk, null);
-    check('and nothing is booked', S.at(T + 'booked'), null);
-  }
 
   H.summary('booking a coach\'s time, as one server call');
 })().catch(e => { console.error(e); process.exit(1); });

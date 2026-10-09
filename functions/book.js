@@ -299,9 +299,7 @@ async function onAsk(env, params, v) {
   if (!(Number(v.at) > now - ASK_TTL)) return say({ ok: false, why: 'late' });
   if (await env.get('retired/' + code)) return say({ ok: false, why: 'club' });
   const L = await where(env.get, code);
-  const [index, moving] = await Promise.all([env.get(L.access + '/index/' + uid), env.get('serverState/moving/' + code)]);
-  if (!index) return say({ ok: false, why: 'club' });
-  if (moving) return say({ ok: false, why: 'moving' });
+  if (!(await env.get(L.access + '/index/' + uid))) return say({ ok: false, why: 'club' });
   const ctx = { code, uid, L, now, say };
   return v.op === 'book' ? book(env, ctx, v) : cancel(env, ctx, v);
 }

@@ -25,7 +25,7 @@ const { makeFakebase } = require('./fakebase');
 
 const CONFIG = { apiKey: 'k', databaseURL: 'https://prod.example', projectId: 'p' };
 const CODE = 'CLUB';
-const WS = 'workspaces/' + CODE;
+const OB = 'orgs/' + CODE;
 const TR = 'training/' + CODE + '/';
 
 const NAMES = ['Ella', 'Rosa', 'Maya', 'Nia', 'Zoe', 'Iris'];
@@ -648,7 +648,7 @@ function newSession(v = {}) {
     const D = H.loadApp({ firebase: fbk, config: CONFIG, storage: { 'sm.workspace': CODE, ...storage } });
     await D.flush();
     fbk.signIn(uid, { name: (club().access.members[uid] || {}).name || uid }); await D.flush();
-    fbk.deliver(WS, club()); await D.flush();
+    await fbk.serveClub(CODE, club(), D.flush); await D.flush();
     D.render();
     return { D, fbk };
   }
@@ -692,13 +692,13 @@ function newSession(v = {}) {
   {
     const { D, fbk } = await device('mum');
     check('no packages read while the club sells none', fbk.readPaths().some(p => p.startsWith(TR + 'pack')), false);
-    fbk.deliver(WS + '/access', { ...club().access, org: { packs: true } }); await D.flush(); D.render();
+    fbk.deliver(OB + '/org', { packs: true }); await D.flush(); D.render();
     check('then a family reads her own child\'s', fbk.watching(TR + 'packs/t1/p1') && fbk.watching(TR + 'packuse/t1/p1'), true);
     check('and nobody else\'s', fbk.watching(TR + 'packs'), false);
   }
   {
     const { D, fbk } = await device('jaz');
-    fbk.deliver(WS + '/access', { ...club().access, org: { packs: true } }); await D.flush(); D.render();
+    fbk.deliver(OB + '/org', { packs: true }); await D.flush(); D.render();
     check('a coach reads them all, to use one on a place', fbk.watching(TR + 'packs') && fbk.watching(TR + 'packuse'), true);
   }
 
@@ -756,7 +756,7 @@ function newSession(v = {}) {
     check('run by the coach the file named', sw[0] && sw[0].value.coach, 'jaz');
     const bw = fbk.record.writes.filter(w => w.path.startsWith(TR + 'booked/'));
     check('its booking one more, at its own', bw.length === 1 && /booked\/[\w-]+\/p1$/.test(bw[0].path), true);
-    check('the field goes to the club settings', fbk.record.writes.some(w => /^workspaces\/CLUB\/access\/org\/venues\/[\w-]+$/.test(w.path)), true);
+    check('the field goes to the club settings', fbk.record.writes.some(w => /^orgs\/CLUB\/org\/venues\/[\w-]+$/.test(w.path)), true);
     check('and every write is acknowledged, so nothing is owed', Object.keys(D.sess.dirty).length, 0);
   }
 
@@ -787,7 +787,7 @@ function newSession(v = {}) {
     const saved = { ...D.storage._d };
     const fbk2 = makeFakebase();
     const D2 = H.loadApp({ firebase: fbk2, config: CONFIG, storage: saved });
-    await D2.flush(); fbk2.signIn('jaz', { name: 'Jaz' }); await D2.flush(); fbk2.deliver(WS, club()); await D2.flush(); D2.render();
+    await D2.flush(); fbk2.signIn('jaz', { name: 'Jaz' }); await D2.flush(); await fbk2.serveClub(CODE, club(), D2.flush); await D2.flush(); D2.render();
     check('after a reload it is still on the phone', !!D2.sessById(mine.id), true);
     check('and is sent on connect, before Training sessions is even opened', !!written(fbk2, TR + 'sessions/' + mine.id), true);
     await D2.flush();
