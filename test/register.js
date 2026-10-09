@@ -297,5 +297,31 @@ function fillProg(A, o) {
     check('the coach\'s list finds her by name', A.playerById('n1') && A.playerById('n1').p.name, 'Nia Cole');
   }
 
+  console.log('\n--- the GotSport export ---');
+  {
+    const org = ORG();
+    org.children.n1 = { id: 'n1', first: 'Nia', last: 'Cole', born: '2016-03-03', gender: 'F', club: true, by: 'x', at: 3, family: { newmum: 'rl1' }, teams: { t1: 'n1' } };
+    org.children.n2 = { id: 'n2', first: '=HYPERLINK("x")', last: 'Doe, Jr', born: '2015-01-01', gender: 'F', club: true, by: 'x', at: 3 };
+    org.children.n3 = { id: 'n3', first: 'Wit', born: '2015-01-01', by: 'x', at: 3 };
+    org.squad.t1.n1 = { id: 'n1', name: 'Nia', number: '14', child: 'n1', guardians: { newmum: true } };
+    org.regs = { f27: {
+      n1: { st: 'placed', team: 't1', by: 'newmum', at: 3, fam: { name: 'Ann Marie Cole', email: 'ann@x.test' } },
+      n2: { st: 'accepted', by: 'adm', at: 3 },
+      n3: { st: 'withdrawn', by: 'x', at: 3 } } };
+    const { A } = await boot('adm', org);
+    const csv = A.gotsportCsv('f27', { n1: { contacts: { 0: { name: 'Ann', phone: '555 0199' } } } });
+    const lines = csv.trim().split('\r\n');
+    check('a header the bulk import reads', lines[0].startsWith('team,birth_year,player_first_name,player_last_name,player_number,player_dob,player_gender,parent1_first_name'), true);
+    check('a placed child: team, number, birth date, family', lines[1], 'Flight,2016,Nia,Cole,14,2016-03-03,Female,Ann Marie,Cole,ann@x.test,555 0199');
+    check('an accepted one, on no team yet', lines[2].startsWith(',2015,'), true);
+    check('— a cell a spreadsheet would run as a formula is made text', /"'=HYPERLINK\(""x""\)"/.test(lines[2]), true);
+    check('— a comma kept in its cell', /"Doe, Jr"/.test(lines[2]), true);
+    check('nobody withdrawn', lines.length, 3);
+    const { A: C, fbk: cf } = await boot('coachU', org);
+    C.click({ act: 'regexport', id: 'f27' }); await C.flush(5);
+    check('a coach exports nothing (checked in the handler)', /admins/.test(C.lastToast() || ''), true);
+    void cf;
+  }
+
   H.summary('registration: programs, the link and form, waivers, accepting');
 })().catch(e => { console.error(e); process.exit(1); });

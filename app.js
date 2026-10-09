@@ -2,7 +2,7 @@
    Static app. Data lives in localStorage, and mirrors to Firebase Realtime
    Database when a config + workspace code are present. */
 
-const BUILD = '125';
+const BUILD = '126';
 const BUILT = '2026-10-09';
 /* The version of database.rules.json this app was written against. The rules
    carry the same number in rulesVersion's .write, which accepts that number
@@ -18342,6 +18342,7 @@ function viewRegList(pr) {
     ${pr.link && !pr.closed ? `<div class="row"><button class="btn" data-act="copylink" data-v="${esc(regLink(pr.link))}">Copy the link</button>
       <button class="btn quiet" data-act="progedit" data-id="${esc(pr.id)}">Edit</button></div>`
       : `<button class="btn quiet" data-act="progedit" data-id="${esc(pr.id)}">Edit</button>`}
+    <button class="btn quiet wide" data-act="regexport" data-id="${esc(pr.id)}">Export for GotSport</button>
     <div class="chips">${chip('all', 'All')}${chip('sent', 'Waiting')}${chip('accepted', 'Accepted')}${chip('waitlist', 'Waiting list')}${chip('draft', 'Family to finish')}${chip('declined', 'Declined')}${chip('withdrawn', 'Withdrawn')}</div>
     <div class="plist">${rows.map(({ cid, r, c }) => `<button class="prow" type="button" data-act="regopenone" data-prog="${esc(pr.id)}" data-id="${esc(cid)}" style="grid-template-columns:1fr auto">
       <span><span class="pname">${esc(kidName(c))}${c.confirmed ? '' : ' <span class="tag wait">unconfirmed</span>'}</span>
@@ -18421,6 +18422,47 @@ function asksFrom(text, was) {
     out[k] = { q, o: i, ...(need ? { need: true } : {}) };
   });
   return out;
+}
+
+/* ---- the GotSport export (AUTH.md, *The GotSport export*) ----
+   One row per child placed or accepted, in the columns the bulk import
+   already reads from a registration system's roster and the ones a state
+   registration needs. Built on the admin's phone from what she reads, never
+   through the server. Matched to GotSport's own import template once the
+   owner has one (GOTSPORT.md, still open). */
+const GOTSPORT_COLS = ['team', 'birth_year', 'player_first_name', 'player_last_name', 'player_number', 'player_dob', 'player_gender',
+  'parent1_first_name', 'parent1_last_name', 'parent1_email', 'parent1_phone'];
+const csvCell = v => { const x = String(v == null ? '' : v); return /[",\n\r]/.test(x) || /^[=+\-@]/.test(x) ? '"' + (/^[=+\-@]/.test(x) ? "'" : '') + x.replace(/"/g, '""') + '"' : x; };
+function gotsportCsv(prog, care = {}) {
+  const rows = [GOTSPORT_COLS.join(',')];
+  for (const [cid, r] of Object.entries(regsOf(prog)).sort()) {
+    if (!r || (r.st !== 'placed' && r.st !== 'accepted')) continue;
+    const c = (state.children || {})[cid] || {};
+    const t = r.team ? state.teams[r.team] : null;
+    const p = t && (c.teams || {})[t.id] ? ((t.players || {})[c.teams[t.id]] || {}) : {};
+    const who = splitName((r.fam || {}).name || '');
+    const phone = (Object.values((care[cid] || {}).contacts || {})[0] || {}).phone || '';
+    rows.push([t ? t.name || '' : '', c.born ? c.born.slice(0, 4) : '', c.first || '', c.last || '', p.number ?? '', c.born || '', { F: 'Female', M: 'Male' }[c.gender] || '',
+      (r.fam || {}).name ? who.first : '', (r.fam || {}).name ? who.last : '', (r.fam || {}).email || '', phone].map(csvCell).join(','));
+  }
+  return rows.join('\r\n') + '\r\n';
+}
+async function exportGotsport(prog) {
+  const pr = (state.programs || {})[prog];
+  if (!pr) return;
+  if (!confirm('This file holds children\'s birth dates and their families\' email addresses and phone numbers. Keep it where you keep the club\'s registration records, and delete it once it is uploaded.')) return;
+  // each family's phone number is in her care details, which an admin reads one child at a time
+  const care = {};
+  if (fb && rtdb) await Promise.all(Object.keys(regsOf(prog)).map(cid => new Promise(res =>
+    rtdb.mod.onValue(rtdb.mod.ref(rtdb.db, clubPath('care/' + cid)), sn => { if (sn.val()) care[cid] = sn.val(); res(); }, () => res(), { onlyOnce: true }))));
+  const blob = new Blob([gotsportCsv(prog, care)], { type: 'text/csv' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url; link.download = `gotsport-${String(pr.name || 'program').replace(/[^\w-]+/g, '-').toLowerCase()}.csv`;
+  if (document.body && document.body.appendChild) document.body.appendChild(link);
+  link.click();
+  if (link.parentNode) link.parentNode.removeChild(link);
+  setTimeout(() => URL.revokeObjectURL(url), 4000);
 }
 
 /* ---- a family registering: the program link, or a draft to finish ---- */
@@ -20422,12 +20464,13 @@ function onAct(e) {
     }, () => toast('Refused: she may have a registration for it already'));
     closeSheet(); return;
   }
-  if (['regprog', 'regfilter', 'regopenone', 'regset', 'regplace', 'progedit', 'progwaiver', 'progsave', 'progclose', 'waiveredit', 'waiversave'].includes(a)) {
+  if (['regprog', 'regfilter', 'regopenone', 'regset', 'regplace', 'regexport', 'progedit', 'progwaiver', 'progsave', 'progclose', 'waiveredit', 'waiversave'].includes(a)) {
     if (!canRegs()) { toast('Registration is the club admins\''); return; }
     const u = ui.regs = ui.regs || {};
     if (a === 'regprog') { u.prog = d.id || null; u.st = 'all'; render(); return; }
     if (a === 'regfilter') { u.st = d.k; render(); return; }
     if (a === 'regopenone') { sheetRegOne(d.prog, d.id); return; }
+    if (a === 'regexport') { exportGotsport(d.id); return; }
     if (a === 'regset') {
       const pr = (state.programs || {})[d.prog], r = regsOf(d.prog)[d.id], c = clubKids()[d.id];
       if (!pr || !r) return;

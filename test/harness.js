@@ -193,7 +193,7 @@ const EXPORTS = `{
   syncCoachIndex, syncAllCoachIndex, coachTeamOf, helperTeamOf, calStamp, postsTo, isStaff, mayGrant, syncTeamIndex, STAFF_KEY, HELPER_GAME_ACTS, isStaffAnywhere, isHelper, canCalTeam, canGameEdit, notKickedOff, parentsWanted, playersWanted, readiness,
   fansWanted, syncTeamFans, myFanOf, iFan, isFanOn, approveFan, makeFanLink, sheetFans, fanCard, forgetInvite, readLimits, limitFields, dropFan,
   /* a child in the club (AUTH.md, *A child in the club*) */
-  clubKids, kidOf, kidFamily, mayEditKid, syncChildren, childCheck, sheetKid, kidCards, childFrom, splitName, careCard, sheetPlayer, myChildren, playerById, looseKids,
+  clubKids, kidOf, kidFamily, mayEditKid, syncChildren, childCheck, sheetKid, kidCards, childFrom, splitName, careCard, sheetPlayer, myChildren, playerById, looseKids, gotsportCsv, csvCell,
   get train() { return train }, set train(v) { train = v }, get trainState() { return trainState },
   /* the club's drills and a coach's own */
   SHELF, SHELVES, LIB_ACTS, TPL_ACTS, tplItems, findTpl, normTemplate, canCurateTpl, normDrill, cardOf, findDrill, drillOrigin, drillPool, shelfItems, canCurate, shareTeam,

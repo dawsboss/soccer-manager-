@@ -8,6 +8,20 @@ before this point lives only in the git log.
 
 ---
 
+## The GotSport export — 2026-10-09 (build 126)
+
+Registration's fifth step (AUTH.md, *The GotSport export*). A program's
+registrations → **Export for GotSport**: a CSV of every child placed or
+accepted, with her team and number, birth date and gender, and the parent
+who registered her (name, email, and the first phone number in her care
+details), in the columns the bulk import already reads from a registration
+system plus those a state registration needs. Admins only, built on the
+phone, a warning before it saves. A cell a spreadsheet would run as a
+formula is written as text. The column names are matched to GotSport's own
+template once the owner has one (GOTSPORT.md, still open).
+
+---
+
 ## Placing on a team, and sessions for a child on no team — 2026-10-09 (build 125, rules version 24)
 
 Registration's fourth step (AUTH.md, *Accepting and placing*, *Sessions for

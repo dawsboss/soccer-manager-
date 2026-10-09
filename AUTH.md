@@ -920,7 +920,10 @@ against.
    books as `club` (`tid: 'club'` on a booking, `packs/club/…`), the rules
    and `functions/book.js` finding her family on her club record; the
    sessions screens draw her as a team of her own, in memory only.*
-5. **The GotSport export.**
+5. **The GotSport export.** *Built (build 126): the columns above, a placed or accepted child a row,
+   the family's phone from her care details (read one child at a time), a
+   cell a spreadsheet would run as a formula made text, and a warning before
+   it saves.*
 6. **Deleting**: a family's registration, an admin's child, and the
    account-delete function.
 
