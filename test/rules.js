@@ -2361,6 +2361,30 @@ reads('nor read', COACH, 'shareOwners/sh1', false);
     DB.regOpen = saved.ro; if (saved.ro === undefined) delete DB.regOpen;
   }
 
+  /* A child in the club on no team books training sessions (AUTH.md,
+     *Sessions for a child on no team*): as `club`, her family found on her
+     club record, once the club has let her in. */
+  console.log('\n--- a club on orgs/: sessions for a child on no team ---');
+  {
+    const savedT = DB.training;
+    DB.training = { ...(DB.training || {}), ORGC: { sessions: { s1: { id: 's1', coach: 'oc', open: true, date: '2026-10-20', start: '17:00' }, s2: { id: 's2', coach: 'oc', open: true, date: '2026-10-21', start: '17:00' } }, booked: { s1: { k5: { tid: 'club', st: 'in', by: 'oc', at: NOW } } }, fees: { s1: { k5: { paid: 10, how: 'cash', at: NOW, by: 'oc' } } } } };
+    ORGC.children = { k5: { id: 'k5', first: 'Mia', club: true, by: 'oa', at: NOW, family: { kmum: 'ik' } }, k6: { id: 'k6', first: 'Zed', by: 'kz', at: NOW, family: { kz: 'rl1' } } };
+    ORGC.access.index.kmum = 'k5'; ORGC.access.index.kz = 'k6';
+    const KM = { uid: 'kmum' }, KZ = { uid: 'kz' };
+    const ask = (tid) => ({ tid, st: 'asked', by: 'kmum', at: NOW });
+    w('her family asks for a place for her, as the club', KM, 'training/ORGC/booked/s2/k5', ask('club'), true);
+    w('— not for a child that is not hers', KM, 'training/ORGC/booked/s2/k6', ask('club'), false);
+    w('— not a place of her own giving', KM, 'training/ORGC/booked/s2/k5', { tid: 'club', st: 'in', by: 'kmum', at: NOW }, false);
+    w('— nor for a child the club has not let in', KZ, 'training/ORGC/booked/s2/k6', { tid: 'club', st: 'asked', by: 'kz', at: NOW }, false);
+    r('she reads what was paid for her child\'s place', KM, 'training/ORGC/fees/s1/k5', true);
+    r('— nobody else\'s family does', KZ, 'training/ORGC/fees/s1/k5', false);
+    r('her packages', KM, 'training/ORGC/packs/club/k5', true);
+    r('— and their places used', KM, 'training/ORGC/packuse/club/k5', true);
+    r('— not another family\'s', KZ, 'training/ORGC/packs/club/k5', false);
+    delete ORGC.children; delete ORGC.access.index.kmum; delete ORGC.access.index.kz;
+    DB.training = savedT; if (savedT === undefined) delete DB.training;
+  }
+
   /* Links with limits (the owner, 2026-10-09): how many people may use one,
      and until when. A rule cannot count, so a link for several carries one
      seat per person, each taken once; a page anyone may open carries an end

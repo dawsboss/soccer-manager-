@@ -158,7 +158,7 @@ async function coachBusy(env, L, code, coach, date, a, b, sid, sessions) {
    another session she is booked into or asking for (kidBusy() in app.js). */
 async function kidBusy(env, L, code, tid, pid, date, a, b, sid, sessions) {
   const over = (x, y) => x < b && a < y;
-  for (const x of await teamDay(env, L, [tid], date)) if (over(x.a, x.b)) return x.what;
+  for (const x of await teamDay(env, L, tid === CLUB_TID ? [] : [tid], date)) if (over(x.a, x.b)) return x.what;
   const others = Object.entries(sessions).filter(([id, s]) => id !== sid && s && s.date === date && !s.called && hm(s.start));
   const books = await Promise.all(others.map(([id]) => env.get('training/' + code + '/booked/' + id + '/' + pid)));
   for (let i = 0; i < others.length; i++) {
@@ -174,9 +174,18 @@ async function kidBusy(env, L, code, tid, pid, date, a, b, sid, sessions) {
    to, and what this holds her to. */
 async function guardianOf(env, L, uid, tid, pid) {
   if (!okId(tid) || !okId(pid)) return false;
+  /* A child in the club on no team (AUTH.md, *Sessions for a child on no
+     team*) books as `club`: her family is named on her club record, which
+     the club has let in. orgs/ only. */
+  if (tid === CLUB_TID) {
+    if (L.tree !== 'orgs') return false;
+    const c = await env.get(L.base + '/children/' + pid);
+    return !!(c && typeof c === 'object' && c.club === true && !c.left && (has(c.family, uid) || has(c.guardians, uid)));
+  }
   const p = await env.get(L.player(tid, pid) + '/guardians');
   return has(p, uid);
 }
+const CLUB_TID = 'club';
 
 const tidy = o => Object.fromEntries(Object.entries(o).filter(([, v]) => v !== undefined && v !== null && v !== ''));
 

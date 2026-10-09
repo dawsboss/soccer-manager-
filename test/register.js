@@ -247,5 +247,55 @@ function fillProg(A, o) {
     check('the waiver, in her own name', (valueAt(fbk, OB + '/agreed/f27/p1/w1_2') || {}).by, 'mumU');
   }
 
+  console.log('\n--- placing her on a team ---');
+  {
+    const org = ORG();
+    org.teams.t2 = { id: 't2', name: 'Storm', birthYear: 2016 };
+    org.access.teams.t2 = {};
+    org.children.n1 = { id: 'n1', first: 'Nia', last: 'Cole', born: '2016-03-03', gender: 'F', club: true, by: 'newmum', at: 3, via: 'rl1', family: { newmum: 'rl1' }, confirmed: { by: 'newmum', at: 3 } };
+    org.regs = { f27: { n1: { st: 'accepted', by: 'newmum', at: 3, sentBy: 'newmum', sentAt: 3 } } };
+    org.access.index.newmum = 'n1';
+    const { A, fbk } = await boot('adm', org);
+    A.click({ act: 'regopenone', prog: 'f27', id: 'n1' });
+    check('an accepted child is offered the teams that fit her age', /data-act="regplace"[^>]*data-tid="t2"/.test(sheet(A)), true);
+    fbk.record.writes.length = 0;
+    A.click({ act: 'regplace', prog: 'f27', id: 'n1', tid: 't2' }); await A.flush(10);
+    const sq = valueAt(fbk, OB + '/squad/t2/n1') || {};
+    deepEq('a squad record pointing at her, her family as its parents, no number yet', [sq.name, sq.child, sq.guardians, sq.number], ['Nia', 'n1', { newmum: true }, '']);
+    check('— then her record names the team', valueAt(fbk, OB + '/children/n1/teams/t2'), 'n1');
+    check('— her family copied, valued with the team', valueAt(fbk, OB + '/children/n1/guardians/newmum'), 't2');
+    check('— the team\'s families table', valueAt(fbk, OB + '/access/teamParents/t2/newmum'), 'n1');
+    check('— and the registration says where', [valueAt(fbk, OB + '/regs/f27/n1/st'), valueAt(fbk, OB + '/regs/f27/n1/team')].join(), 'placed,t2');
+    const ws = fbk.record.writes.map(w => w.path);
+    check('the squad record before the child\'s team, which the rule checks against it', ws.indexOf(OB + '/squad/t2/n1') < ws.indexOf(OB + '/children/n1/teams/t2'), true);
+  }
+  {
+    const org = ORG();
+    org.programs.tr = { id: 'tr', name: 'Training', kind: 'sessions', link: 'rl9', by: 'adm', at: 1 };
+    org.children.n1 = { id: 'n1', first: 'Nia', born: '2016-03-03', club: true, by: 'x', at: 3, family: { newmum: 'rl9' } };
+    org.regs = { tr: { n1: { st: 'accepted', by: 'newmum', at: 3 } } };
+    const { A } = await boot('adm', org);
+    A.click({ act: 'regopenone', prog: 'tr', id: 'n1' });
+    check('a sessions program places on no team', /data-act="regplace"/.test(sheet(A)), false);
+  }
+
+  console.log('\n--- training sessions for a child on no team ---');
+  {
+    const org = ORG();
+    org.children.n1 = { id: 'n1', first: 'Nia', last: 'Cole', born: '2016-03-03', gender: 'F', club: true, by: 'x', at: 3, family: { newmum: 'rl9' }, confirmed: { by: 'newmum', at: 3 } };
+    org.access.index.newmum = 'n1';
+    const { A, fbk } = await boot('newmum', org, { storage: { 'sm.kidask.v1:newmum:CLUB:n1': '1' } });
+    fbk.deliver('families/newmum/CLUB', { n1: true }); await A.flush();
+    await fbk.serve(OB, org, () => A.flush(), rulesFor('newmum', org)); await A.flush(10);
+    const kids = A.myChildren();
+    deepEq('she is her family\'s child for sessions, as the club', kids.map(k => [k.t.id, k.p.id, k.p.name]), [['club', 'n1', 'Nia Cole']]);
+    check('— so her family has Training sessions', A.canSessions(), true);
+    A.sess.sessions = { s1: { id: 's1', kind: 'group', title: 'Finishing', coach: 'coachU', coachName: 'Jaz', date: '2099-01-05', start: '17:00', end: '18:00', cap: 6, open: true, price: 10 } };
+    A.click({ act: 'sessask', id: 's1', pid: 'n1' }); await A.flush(10);
+    const b = valueAt(fbk, 'training/CLUB/booked/s1/n1') || {};
+    deepEq('her family asks for a place, as the club', [b.tid, b.st, b.by], ['club', 'asked', 'newmum']);
+    check('the coach\'s list finds her by name', A.playerById('n1') && A.playerById('n1').p.name, 'Nia Cole');
+  }
+
   H.summary('registration: programs, the link and form, waivers, accepting');
 })().catch(e => { console.error(e); process.exit(1); });

@@ -8,6 +8,29 @@ before this point lives only in the git log.
 
 ---
 
+## Placing on a team, and sessions for a child on no team — 2026-10-09 (build 125, rules version 24)
+
+Registration's fourth step (AUTH.md, *Accepting and placing*, *Sessions for
+a child on no team*).
+
+- **Admins place an accepted child on a team** from her registration: the
+  teams within a year of her age are offered. She joins the squad by her
+  first name with her family as its parents (the coach gives her a number),
+  her club record names the team, the team's families table is brought into
+  line, and the registration says *On a team*. Her care details follow her
+  to that team's coaches by the server.
+- **A child in the club on no team books training sessions**, which is what
+  a family registering only for 1-1s and groups wanted. Her family asks for
+  a place, and books a coach's time, for her as the club; the coach books her
+  from *Add players → No team yet*. The rules (`booked`, `fees`, `packs`,
+  `packuse`) and the booking server find her family on her club record, and
+  only once the club has let her in.
+
+Rules version 24. `test/register.js`, `test/book.js` (on orgs/) and
+`rules.js` pin it.
+
+---
+
 ## Registration: programs, the link, the form and waivers — 2026-10-09 (build 124, rules version 23)
 
 Registration's third step (AUTH.md, *Registration*).

@@ -2,7 +2,7 @@
    Static app. Data lives in localStorage, and mirrors to Firebase Realtime
    Database when a config + workspace code are present. */
 
-const BUILD = '124';
+const BUILD = '125';
 const BUILT = '2026-10-09';
 /* The version of database.rules.json this app was written against. The rules
    carry the same number in rulesVersion's .write, which accepts that number
@@ -11,7 +11,7 @@ const BUILT = '2026-10-09';
    never pasted look exactly like a coach with no signal: "saved on this phone
    only", one feature at a time. test/rules.js holds the two numbers together
    and fails when the rules change without this going up. */
-const RULES_VERSION = 23;
+const RULES_VERSION = 24;
 /* index.html carries the build it was published with. If this file is newer, the
    browser handed us a cached page — the exact failure that has eaten hours. */
 const pageBuild = () => {
@@ -2087,7 +2087,9 @@ function myPlayers() {
 }
 /* Her children and nobody else: booking, places and fees are a parent's to
    handle, never a player's own sign-in (the session rules check guardians). */
-const myChildren = () => !me ? [] : myPlayers().filter(x => (x.p.guardians || {})[me.uid]);
+const myChildren = () => !me ? [] : [...myPlayers().filter(x => (x.p.guardians || {})[me.uid]),
+  // and a child of hers in the club on no team, who books sessions as the club (AUTH.md, *Sessions for a child on no team*)
+  ...looseKids().filter(kidFamily).map(c => looseOne(c))];
 const guardsAnyone = () => myChildren().length > 0;
 /* My players cuts across clubs as well as teams (AUTH.md, "A parent with three
    children in two clubs"): her children in every other club she is in, read
@@ -12807,7 +12809,8 @@ const fitsAges = (s, t) => { const u = teamUAge(t); return !s.ages || u == null 
 
 function playerById(pid) {
   for (const t of teams()) { const p = (t.players || {})[pid]; if (p) return { t, p }; }
-  return null;
+  const c = clubKids()[pid];
+  return c && looseKids().includes(c) ? looseOne(c) : null;
 }
 const bookOf = (sid, pid) => { const b = ((sess.booked || {})[sid] || {})[pid]; return b && BOOK[b.st] ? b : null; };
 const bookingsOf = sid => Object.entries((sess.booked || {})[sid] || {}).filter(([, b]) => b && BOOK[b.st])
@@ -13896,9 +13899,9 @@ let sessPick = null;      // { sid, tid, picked: [pid], scope }
 function sheetSessPick() {
   const pk = sessPick; if (!pk) return;
   const s = sessById(pk.sid); if (!s) { closeSheet(); return; }
-  const list = myTeams();
+  const list = [...myTeams(), ...(looseKids().length ? [looseTeam()] : [])];
   if (!list.some(t => t.id === pk.tid)) pk.tid = (list.find(t => t.id === ui.teamId) || list[0] || {}).id;
-  const t = state.teams[pk.tid];
+  const t = pk.tid === CLUB_TID ? looseTeam() : state.teams[pk.tid];
   const inSeries = s.series && sessSeries(s).filter(x => x.date >= s.date && !x.called).length > 1;
   const left = spotsLeft(s);
   openSheet(`<h3>Add players — ${esc(sessTitle(s))}</h3>
@@ -18057,6 +18060,18 @@ function kidMissing(c) {
 }
 // 'a, b and c'
 const wordsAnd = xs => xs.length < 2 ? xs.join('') : xs.slice(0, -1).join(', ') + ' and ' + xs[xs.length - 1];
+/* A child in the club on no team (AUTH.md, *Sessions for a child on no
+   team*): she books training sessions as the club, `club` where a booking,
+   package or fee names a team. The sessions screens know players by team, so
+   each such child is drawn as a team of her own, held in memory only, with
+   her birth year as its age. */
+const CLUB_TID = 'club';
+const looseKids = () => Object.values(clubKids()).filter(c => c && c.club === true && !c.left && !Object.keys(c.teams || {}).length);
+function looseOne(c) {
+  const p = { id: c.id, name: kidName(c), number: '', active: true, guardians: Object.fromEntries(Object.keys({ ...(c.family || {}), ...(c.guardians || {}) }).map(u => [u, true])) };
+  return { t: { id: CLUB_TID, name: 'No team yet', birthYear: c.born ? Number(c.born.slice(0, 4)) : null, players: { [c.id]: p } }, p };
+}
+const looseTeam = () => ({ id: CLUB_TID, name: 'No team yet', players: Object.fromEntries(looseKids().map(c => [c.id, looseOne(c).p])) });
 const myClubKids = () => Object.values(clubKids()).filter(c => c && kidFamily(c) && !c.left);
 
 /* A write the phone makes again on every connect, from what the squads say:
@@ -18346,6 +18361,11 @@ function sheetRegOne(prog, cid) {
     <p style="margin:0 0 12px"><b>Her details:</b> ${c.confirmed ? 'confirmed by her family' : 'not confirmed by her family yet'}</p>
     ${progAsks(pr).map(([k, q]) => `<p style="margin:0 0 6px"><b>${esc(q.q)}</b><br>${esc(String(((r.answers || {})[k]) ?? '—'))}</p>`).join('')}
     ${want.length ? `<p class="lbl">Waivers</p>${want.map(w => (a => `<p style="margin:0 0 6px">${esc(w.title)}: ${a ? `agreed by ${esc(a.name)}, ${esc(new Date(a.at).toLocaleDateString())}` : '<b>not agreed to this version</b>'}</p>`)(ag[w.id + '_' + w.v])).join('')}` : ''}
+    ${r.st === 'accepted' && pr.kind !== 'sessions' ? (ts => `<p class="lbl">Place her on a team</p>
+      <p class="muted" style="margin-top:0">She joins its squad with her family as its parents; the coach gives her a number.</p>
+      <div class="chips" style="margin-bottom:14px">${ts.map(t => `<button class="chip" type="button" data-act="regplace" data-prog="${esc(prog)}" data-id="${esc(cid)}" data-tid="${esc(t.id)}">${teamLabel(t)}</button>`).join('') || '<span class="muted">No team fits her age.</span>'}</div>`)(
+      teams().filter(t => !(c.teams || {})[t.id] && (!t.birthYear || !c.born || Math.abs(Number(t.birthYear) - Number(c.born.slice(0, 4))) <= 1))) : ''}
+    ${r.st === 'placed' && r.team ? `<p><b>On:</b> ${teamLabel(state.teams[r.team])}</p>` : ''}
     <label class="field"><span>Note (admins only)</span><input type="text" id="regNote" maxlength="500" value="${esc(r.note || '')}"></label>
     <div class="row" style="flex-wrap:wrap;gap:8px">
       ${['accepted', 'waitlist', 'declined'].map(st => `<button class="btn${st === 'accepted' ? '' : ' quiet'}" data-act="regset" data-prog="${esc(prog)}" data-id="${esc(cid)}" data-st="${st}" ${r.st === st ? 'disabled' : ''}>${{ accepted: 'Accept', waitlist: 'Waiting list', declined: 'Decline' }[st]}</button>`).join('')}
@@ -20402,7 +20422,7 @@ function onAct(e) {
     }, () => toast('Refused: she may have a registration for it already'));
     closeSheet(); return;
   }
-  if (['regprog', 'regfilter', 'regopenone', 'regset', 'progedit', 'progwaiver', 'progsave', 'progclose', 'waiveredit', 'waiversave'].includes(a)) {
+  if (['regprog', 'regfilter', 'regopenone', 'regset', 'regplace', 'progedit', 'progwaiver', 'progsave', 'progclose', 'waiveredit', 'waiversave'].includes(a)) {
     if (!canRegs()) { toast('Registration is the club admins\''); return; }
     const u = ui.regs = ui.regs || {};
     if (a === 'regprog') { u.prog = d.id || null; u.st = 'all'; render(); return; }
@@ -20422,6 +20442,26 @@ function onAct(e) {
         saveLocal();
       }
       toast(REG_ST[d.st]); closeSheet(); render(); return;
+    }
+    /* Placing on a team (AUTH.md, *Accepting and placing*): the squad record
+       first, pointing at her, with her family as its parents; then her club
+       record's team, which the rule checks against that pointer; then her
+       family's copies, the team's families table and the registration. Her
+       care details follow her to the team by the server (careCopy). */
+    if (a === 'regplace') {
+      const r = regsOf(d.prog)[d.id], c = clubKids()[d.id], t = state.teams[d.tid];
+      if (!r || !c || !t || r.st !== 'accepted') return;
+      const used = teams().some(x => (x.players || {})[c.id]);
+      const pid = used ? uid() : c.id;
+      const fam = Object.keys({ ...(c.family || {}), ...(c.guardians || {}) });
+      const rec = { id: pid, name: c.first || kidName(c), number: '', active: true, anywhere: true, preferred: '', canPlay: [], rating: 3, child: c.id, ...(fam.length ? { guardians: Object.fromEntries(fam.map(u => [u, true])) } : {}) };
+      commit(`teams/${t.id}/players/${pid}`, rec);
+      commit(`children/${c.id}/teams/${t.id}`, pid);
+      for (const u of fam) kidQuiet(`children/${c.id}/guardians/${u}`, t.id);
+      syncTeamParents(t.id);
+      commit(`regs/${d.prog}/${d.id}/team`, t.id);
+      commit(`regs/${d.prog}/${d.id}/st`, 'placed');
+      toast(`On ${t.name || 'the team'}`); closeSheet(); render(); return;
     }
     if (a === 'progedit') { ui.progEdit = null; sheetProgram(d.id || ''); return; }
     if (a === 'progwaiver') { const e = ui.progEdit; if (e) { if (e.w[d.id]) delete e.w[d.id]; else e.w[d.id] = true; } if (el.setAttribute) el.setAttribute('aria-pressed', String(!!(e && e.w[d.id]))); return; }

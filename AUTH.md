@@ -910,6 +910,16 @@ against.
    check only `closed`. A family in the club sees an open program her child
    fits, and a draft to finish, on My players.*
 4. **Placing on a team**, and **sessions for a child on no team**.
+   *Built (build 125, rules version 24): an accepted child's sheet offers
+   the teams within a year of her birth year; placing writes the squad
+   record (her first name, no number, `child`, her family as its parents),
+   then her record's `teams`, her family's copies, `teamParents` and the
+   registration (`placed`, `team`); her care details follow her to the team
+   through the server (`careCopy` wakes on the child's teams). The player id
+   is her child id unless that is taken. A child in the club on no team
+   books as `club` (`tid: 'club'` on a booking, `packs/club/…`), the rules
+   and `functions/book.js` finding her family on her club record; the
+   sessions screens draw her as a team of her own, in memory only.*
 5. **The GotSport export.**
 6. **Deleting**: a family's registration, an admin's child, and the
    account-delete function.
