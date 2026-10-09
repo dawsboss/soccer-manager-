@@ -204,6 +204,14 @@ both('accessSelf', '{code}/{squad}/{pid}/self', onValueWritten, event => Promise
   access.onSelf(writerOf(event), event.params, event.data.before.val(), event.data.after.val()),
   markRoles(event, [...peopleIn(event.data.before.val()), ...peopleIn(event.data.after.val())])]).then(r => r[0]));
 
+/* A club viewer and a guest (access.js; AUTH.md, *More kinds of people*),
+   on orgs/ only: neither is in a lookup table, so only her bookmark to the
+   club and the invite she came by follow the change. */
+exports.accessViewer = onValueWritten('/orgs/{code}/access/viewers/{uid}', quiet(event =>
+  access.onViewer(writerOf(event), event.params, event.data.before.val(), event.data.after.val())));
+exports.accessGuest = onValueWritten('/orgs/{code}/access/guests/{uid}', quiet(event =>
+  access.onGuest(writerOf(event), event.params, event.data.before.val(), event.data.after.val())));
+
 /* The two parts only orgs/ has (access.js): staff names, so a family can
    see who her coach is without reading anyone's email, and the roster, the
    numbers the whole club reads in place of the squad. A child's record is

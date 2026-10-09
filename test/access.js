@@ -85,8 +85,8 @@ const rest = S => canon({ ...S.at('workspaces/CLUB'), access: { ...S.at(W + 'acc
   {
     const S = server();
     deepEq('one per place a role lives', Object.keys(S.triggers).filter(n => /^access/.test(n)).sort(), 
-      // each once per tree while clubs move to orgs/ (functions/index.js, both())
-      ['accessAdmin', 'accessAdminOrgs', 'accessGuardians', 'accessGuardiansOrgs', 'accessSelf', 'accessSelfOrgs', 'accessStaff', 'accessStaffOrgs']);
+      // each once per tree while clubs move to orgs/ (functions/index.js, both()); a viewer and a guest only on orgs/
+      ['accessAdmin', 'accessAdminOrgs', 'accessGuardians', 'accessGuardiansOrgs', 'accessGuest', 'accessSelf', 'accessSelfOrgs', 'accessStaff', 'accessStaffOrgs', 'accessViewer']);
     // and who runs the club is told (adminwatch.js, test/owners.js)
     deepEq('an admin given', (await S.wouldWake(W + 'access/admins/new', true)).sort(), ['accessAdmin', 'watchAdmin']);
     deepEq('a coach given', await S.wouldWake(W + 'access/teams/t1/coaches/new', true), ['accessStaff']);
@@ -288,6 +288,46 @@ const rest = S => canon({ ...S.at('workspaces/CLUB'), access: { ...S.at(W + 'acc
     await S.fire(W + 'teams/t1/players/p1/guardians/mum', null);
     await S.fire(W + 'teams/t1/players/p2/guardians/mum', null);
     check('an invite another club owns is never deleted on this one\'s say', !!S.at('invites/inv_mum'), true);
+  }
+
+  /* AUTH.md, *More kinds of people*, 3 and 4, on orgs/ only. A viewer and a
+     guest are never indexed (the rules name each directly), so the only
+     table that follows them is her bookmark; and a role elsewhere taken
+     away must not take the bookmark of someone still viewing the club. */
+  console.log('--- a club viewer and a guest (orgs/ only) ---');
+  {
+    const now = Date.now();
+    const O = 'orgs/VC/';
+    const S = makeServer({
+      orgs: { VC: {
+        access: { admins: { adm: true }, index: { adm: true, coach: true }, teams: { t1: { coaches: { coach: true } } }, teamIndex: { t1: { coach: 'coach' } },
+          viewers: { coach: true } },
+        org: { name: 'Viewers FC' }, members: {}, teams: { t1: { id: 't1', name: 'Flight' } }, squad: { t1: {} }
+      } },
+      userOrgs: {},
+      invites: { inv_dee: { ws: 'VC', role: 'viewer' }, inv_ray: { ws: 'VC', role: 'guest' } }
+    });
+    S.loadFunctions();
+    await S.fire(O + 'access/viewers/dee', 'inv_dee');
+    check('a viewer given: her bookmark is written', !!S.at('userOrgs/dee/VC'), true);
+    check('— and she is not indexed', !!S.at(O + 'access/index/dee'), false);
+    await S.fire(O + 'access/guests/ray', { team: 't1', item: 'g_g1', until: now + 864e5, inv: 'inv_ray' });
+    check('a guest let in: her bookmark too', !!S.at('userOrgs/ray/VC'), true);
+    check('— not indexed either', !!S.at(O + 'access/index/ray'), false);
+    // the coach stops coaching but is still a viewer: index goes, bookmark stays
+    S.put('userOrgs/coach/VC', { name: 'Viewers FC', at: 1 });
+    await S.fire(O + 'access/teams/t1/coaches', null);
+    check('a coach who stops coaching leaves the index', !!S.at(O + 'access/index/coach'), false);
+    check('— but keeps her bookmark while she views the club', !!S.at('userOrgs/coach/VC'), true);
+    await S.fire(O + 'access/viewers/dee', null);
+    check('a viewer taken away loses her bookmark', !!S.at('userOrgs/dee/VC'), false);
+    check('— and the invite she came by', !!S.at('invites/inv_dee'), false);
+    await S.fire(O + 'access/guests/ray', null);
+    check('a guest taken out loses hers', !!S.at('userOrgs/ray/VC'), false);
+    check('— and her invite', !!S.at('invites/inv_ray'), false);
+    S.put('userOrgs/old/VC', { name: 'x', at: 1 });
+    await S.fire(O + 'access/guests/old', { team: 't1', item: 'g_g1', until: now - 1 });
+    check('a guest whose time is up keeps no bookmark', !!S.at('userOrgs/old/VC'), false);
   }
 
   console.log('--- the same answer the phones give ---');

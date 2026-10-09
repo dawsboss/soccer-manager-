@@ -88,6 +88,17 @@ function hasRole(f, uid) {
   return false;
 }
 
+/* In the club without being in access/index (AUTH.md, *More kinds of
+   people*, 3 and 4): a club-wide viewer, or a guest whose time is not up.
+   The rules name each on what she reads, so the index never holds her, but
+   her bookmark to the club stays while either is true, as inClubOtherwise()
+   keeps it on the phones. */
+function inClubOtherwise(f, uid, now) {
+  if (has(f.access.viewers, uid)) return true;
+  const g = (f.access.guests || {})[uid];
+  return !!(g && typeof g === 'object' && Number(g.until) > now);
+}
+
 /* What each table should say, as the phones work it out. */
 function teamIndexWanted(f, tid) {
   const ta = teamAcc(f, tid), want = {};
@@ -157,12 +168,20 @@ async function syncIndex(env, f, code, uid, out, now) {
   if (index && has(index, uid)) {
     const v = index[uid];
     await env.remove(`${f.L.access}/index/${uid}`); out.push('del index/' + uid);
-    // forgetInvite(): the invite her entry named, if it was one of this club's
-    if (typeof v === 'string' && okKey(v) && (await env.get(`invites/${v}/ws`)) === code) {
-      await env.remove('invites/' + v); out.push('del invite');
-    }
+    await forgetInvite(env, code, v, out);
   }
-  if (await env.get(`userOrgs/${uid}/${code}`)) { await env.remove(`userOrgs/${uid}/${code}`); out.push('del userOrgs/' + uid); }
+  const mark = await env.get(`userOrgs/${uid}/${code}`);
+  if (inClubOtherwise(f, uid, now)) {
+    if (!mark) { await env.set(`userOrgs/${uid}/${code}`, { name: ((f.access.org || {}).name) || '', at: now }); out.push('set userOrgs/' + uid); }
+    return;
+  }
+  if (mark) { await env.remove(`userOrgs/${uid}/${code}`); out.push('del userOrgs/' + uid); }
+}
+// forgetInvite(): the invite a role named, if it was one of this club's
+async function forgetInvite(env, code, v, out) {
+  if (typeof v === 'string' && okKey(v) && (await env.get(`invites/${v}/ws`)) === code) {
+    await env.remove('invites/' + v); out.push('del invite');
+  }
 }
 
 /* One role source changed. `uids` are the accounts named before or after,
@@ -274,6 +293,20 @@ function onTeamStaff(env, params, before, after, now) {
   const uids = [...both(b.coaches, a.coaches), ...both(b.trackers, a.trackers)];
   return settle(env, params.code, { uids, tids: [params.tid], coaches: true, tree: params.tree }, now);
 }
+/* access/viewers/{uid} and access/guests/{uid} (orgs/ only): no lookup
+   table, the rules read each directly, so only her bookmark follows, and
+   the invite a viewer's or guest's entry named goes when it is taken away. */
+async function onViewer(env, params, before, after, now) {
+  const out = await settle(env, params.code, { uids: [params.uid], tree: 'orgs' }, now);
+  if (!after && okKey(params.code)) await forgetInvite(env, params.code, before, out);
+  return out;
+}
+async function onGuest(env, params, before, after, now) {
+  const out = await settle(env, params.code, { uids: [params.uid], tree: 'orgs' }, now);
+  if (!after && before && typeof before === 'object' && okKey(params.code)) await forgetInvite(env, params.code, before.inv, out);
+  return out;
+}
+
 /* teams/{tid}/players/{pid}/guardians: a player's families. */
 function onGuardians(env, params, before, after, now) {
   return settle(env, params.code, { uids: both(before, after), tids: [params.tid], parents: true, tree: params.tree }, now);
@@ -283,4 +316,4 @@ function onSelf(env, params, before, after, now) {
   return settle(env, params.code, { uids: both(before, after), tids: [params.tid], players: true, tree: params.tree }, now);
 }
 
-module.exports = { settle, onAdmin, onTeamStaff, onGuardians, onSelf, onMember, onSquadPlayer, onRosterOpen, rosterEntry, isStaff, hasRole, teamIndexWanted, linkedWanted, coachTeamOf };
+module.exports = { settle, onAdmin, onTeamStaff, onGuardians, onSelf, onViewer, onGuest, inClubOtherwise, onMember, onSquadPlayer, onRosterOpen, rosterEntry, isStaff, hasRole, teamIndexWanted, linkedWanted, coachTeamOf };

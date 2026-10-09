@@ -481,6 +481,15 @@ Decided 2026-10-09: the coach's notes on a child (`note`, `rating`, `pairs`, `av
 
 **Built** (build 116, rules version 15), as written above, with two details. The phone sends the notes there a field at a time and only the fields a write carries (`clubWrites()`), so a whole team saved from a phone that has not read the notes yet, or may not, never wipes them; and notes still on a record from before are moved by the first phone of that team's coach or an admin to open the club (`moveCoachNotes()`: written to `coachNotes` first, then taken off the record, never overwriting a newer note), as `movePlans()` moved old plans. A family's or tracker's phone drops anything of the four it finds on a record. `moveClub` lays them out the same way for a club still on the old tree.
 
+### Club viewers and guests, as built
+
+**Built** (build 117, rules version 16), on `orgs/` only, as written above, with these details:
+
+- **Neither is in `access/index`.** The index is what the root rules ask for sessions, bookings, answers (`rsvp`), conversations' bridges and following a game, so putting a viewer there would have handed her all of it. Instead the club's parts she reads (`access`, `org`, `names`, `teams`, `matches`, `squad/{tid}`) each name `access/viewers/{uid}` directly, and a guest's (`org/name`, `teams/{tid}/name`, the one `teams/{tid}/events/{eid}` or `matches/{mid}`, `squad/{tid}`) each name `access/guests/{uid}` with its `team`, `item` and `until > now`. The bookmark (`userOrgs`) still counts both, on the phones (`inClubOtherwise()`) and on the server (`accessViewer`, `accessGuest`).
+- **A viewer's names come from the squads**, which she reads whole on every team, with the coach's notes already off them (`coachNotes/`). Her phone never asks for `members`, `log`, `coachNotes` or `rsvp`.
+- **A guest's item is `g_{game}` or `e_{entry}`**, as `rsvp` keys them. Her entry is written only by the club's admins, that team's coaches (who may not move one onto another team), or by her spending an invite whose team, item and end it must match exactly; she may delete her own. An end more than 31 days out is refused. A guest's invite is made by that team's coach or an admin, and expires no later than the guest would.
+- **Not built:** a guest asking and a coach approving (a coach makes the link instead), push for either, and a guest who runs subs for the day (a tracker's role with an end, as above).
+
 ### Order
 
 **Only one thing has to come first: the coach's notes, above.** Every new role reads some part of a child's record or a squad, and none of them may see the notes. After that the four don't depend on each other, so the order is what the club needs first. Recommended:
@@ -488,8 +497,8 @@ Decided 2026-10-09: the coach's notes on a child (`note`, `rating`, `pairs`, `av
 1. **The coach's notes.** *Built (build 116, rules version 15).*
 2. **Supporters**: the most asked for, and they reuse the coach's approval list families already go through.
 3. **Team helpers.**
-4. **Club viewers**: the smallest, any time.
-5. **Guests.**
+4. **Club viewers**: the smallest, any time. *Built (build 117, rules version 16).*
+5. **Guests.** *Built (build 117, rules version 16).*
 
 Each is its own build, rules version, CHANGELOG entry and test pass across every suite that walks every kind of account (`rules.js`, `push.js`, `access.js`, `visibility.js`, `roles.js`, `parents.js`, `orgs.js`). Steps 2 to 5 are written for `orgs/` only, after the old tree comes out (step 5 of the move, from 2026-10-23): writing their rules for `workspaces/` as well would be work for a tree nobody is on. Step 1 can go before that, on both trees.
 
