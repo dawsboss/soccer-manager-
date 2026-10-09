@@ -231,6 +231,12 @@
               }
             }
           },
+          "viewers": {
+            "$uid": {
+              ".write": "auth != null && (root.child('orgs/' + $code + '/access/admins/' + auth.uid).exists() || ($uid === auth.uid && !newData.exists()) || ($uid === auth.uid && root.child('invites/' + newData.val() + '/used/by').val() === auth.uid && root.child('invites/' + newData.val() + '/expiresAt').val() > now && root.child('invites/' + newData.val() + '/ws').val() === $code && root.child('invites/' + newData.val() + '/role').val() === 'viewer'))",
+              ".validate": "newData.isString() || newData.val() === true"
+            }
+          },
           "teams": {
             ".write": "auth != null && root.child('orgs/' + $code + '/access/admins/' + auth.uid).exists()",
             "$tid": {
@@ -314,7 +320,7 @@
         },
         "squad": {
           "$tid": {
-            ".read": "auth != null && (root.child('orgs/' + $code + '/access/admins/' + auth.uid).exists() || root.child('orgs/' + $code + '/access/coachIndex/' + auth.uid).exists() || root.child('orgs/' + $code + '/access/teamIndex/' + $tid + '/' + auth.uid).exists())",
+            ".read": "auth != null && (root.child('orgs/' + $code + '/access/admins/' + auth.uid).exists() || root.child('orgs/' + $code + '/access/coachIndex/' + auth.uid).exists() || root.child('orgs/' + $code + '/access/teamIndex/' + $tid + '/' + auth.uid).exists() || root.child('orgs/' + $code + '/access/viewers/' + auth.uid).exists())",
             ".write": "auth != null && (root.child('orgs/' + $code + '/access/admins/' + auth.uid).exists() || root.child('orgs/' + $code + '/access/teamIndex/' + $tid + '/' + auth.uid).val() === 'coach' || (!root.child('orgs/' + $code + '/access/teamIndex').exists() && root.child('orgs/' + $code + '/access/index/' + auth.uid).exists()))",
             "$pid": {
               ".read": "auth != null && (data.child('guardians/' + auth.uid).exists() || data.child('self/' + auth.uid).exists())",
@@ -514,7 +520,7 @@
       "$id": {
         ".read": "auth != null",
         ".write": "auth != null && ((!data.exists() && newData.child('by').val() === auth.uid && root.child('workspaces/' + newData.child('ws').val() + '/access/admins/' + auth.uid).exists()) || (!data.exists() && newData.child('by').val() === auth.uid && newData.child('role').val() === 'player' && root.child('workspaces/' + newData.child('ws').val() + '/access/teamIndex/' + newData.child('team').val() + '/' + auth.uid).val() === 'coach' && root.child('workspaces/' + newData.child('ws').val() + '/teams/' + newData.child('team').val() + '/players/' + newData.child('player').val()).exists()) || (data.exists() && !newData.exists() && (data.child('used/by').val() === auth.uid || root.child('workspaces/' + data.child('ws').val() + '/access/admins/' + auth.uid).exists() || root.child('workspaces/' + data.child('ws').val() + '/access/teamIndex/' + data.child('team').val() + '/' + auth.uid).val() === 'coach')))",
-        ".validate": "newData.hasChildren(['ws', 'team', 'role', 'by', 'expiresAt']) && (newData.child('role').val() === 'coach' || newData.child('role').val() === 'tracker' || newData.child('role').val() === 'helper' || (newData.child('role').val() === 'parent' && newData.hasChild('player')) || (newData.child('role').val() === 'player' && newData.hasChild('player')))",
+        ".validate": "newData.hasChildren(['ws', 'role', 'by', 'expiresAt']) && (newData.hasChild('team') || newData.child('role').val() === 'viewer') && (newData.child('role').val() === 'coach' || newData.child('role').val() === 'tracker' || newData.child('role').val() === 'helper' || (newData.child('role').val() === 'parent' && newData.hasChild('player')) || (newData.child('role').val() === 'player' && newData.hasChild('player')) || newData.child('role').val() === 'viewer')",
         "used": {
           ".write": "auth != null && !data.exists() && newData.child('by').val() === auth.uid && data.parent().child('expiresAt').val() > now && (!data.parent().child('email').exists() || (auth.token.email_verified === true && auth.token.email.toLowerCase() === data.parent().child('email').val()))"
         }

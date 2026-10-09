@@ -1989,6 +1989,56 @@ reads('owners are not world-readable', OUT, 'shareOwners/sh1', false);
   w('the log is still append-only, in her own name', OC, O + 'log/l2', { at: 2, act: 'x', by: 'oc' }, true);
   w('— never edited', OA, O + 'log/l1', { at: 1, act: 'nothing happened', by: 'oa' }, false);
 
+  /* AUTH.md, *More kinds of people*, 3 (the owner, 2026-10-09). A club-wide
+     viewer (a director) is in the index like everyone else in the club, so
+     she reads what the index reads; beyond it, every team's squad, for the
+     names. No write rule names her, so she changes nothing. */
+  console.log('\n--- a club on orgs/: club-wide viewers ---');
+  ORGC.access.viewers = { ov: 'inv-v' };
+  ORGC.access.index.ov = 'inv-v';
+  ORGC.coachNotes = { t1: { p1: { note: 'shy in goal' } } };
+  const OV = { uid: 'ov' };
+  for (const part of ['teams', 'matches', 'org', 'names', 'access', 'roster'])
+    r('a viewer reads ' + part, OV, O + part, true);
+  r('— every team\'s squad, so every child by name', OV, O + 'squad/t1', true);
+  r('— another team\'s too', OV, O + 'squad/t2', true);
+  r('not the members and their emails', OV, O + 'members', false);
+  r('— but her own entry', OV, O + 'members/ov', true);
+  r('not the access log', OV, O + 'log', false);
+  r('not the coach\'s notes', OV, O + 'coachNotes/t1/p1', false);
+  r('not a family\'s conversation', OV, 'dm/ORGC/t1/om', false);
+  r('not the team\'s notices', OV, 'board/ORGC/t1', false);
+  r('— practice plans', OV, 'training/ORGC/practices/t1', false);
+  r('— the club\'s drills', OV, 'training/ORGC/drills', false);
+  w('she answers for nobody', OV, O + 'rsvp/t1/g_g1/p1', { v: 'no', by: 'ov', at: NOW }, false);
+  w('she changes no game', OV, O + 'matches/g1/opponent', 'Elsewhere', false);
+  w('— adds no goal', OV, O + 'matches/g1/goals/x', { t: 1 }, false);
+  w('— changes no team', OV, O + 'teams/t1/name', 'Viewers FC', false);
+  w('— nor a squad', OV, O + 'squad/t1/p1/name', 'Ellie', false);
+  w('— nor the coach\'s notes', OV, O + 'coachNotes/t1/p1/note', 'x', false);
+  w('— posts no notice', OV, 'board/ORGC/t1/n1', { by: 'ov', at: NOW, text: 'hi' }, false);
+  w('— writes in no family\'s conversation', OV, 'dm/ORGC/t1/om/m/x', { by: 'ov', at: NOW, text: 'hi' }, false);
+  w('— and makes herself nothing more', OV, O + 'access/admins/ov', true, false);
+  w('— nor a coach', OV, O + 'access/teams/t1/coaches/ov', true, false);
+  w('the admin makes someone a viewer', OA, O + 'access/viewers/nv', true, true);
+  w('— and indexes her', OA, O + 'access/index/nv', true, true);
+  w('— and takes it away', OA, O + 'access/viewers/ov', null, true);
+  w('a coach does not', OC, O + 'access/viewers/nv', true, false);
+  w('nor a parent', OM, O + 'access/viewers/om', true, false);
+  w('a stranger cannot make herself one', RANDO, O + 'access/viewers/rando', true, false);
+  w('she steps down herself', OV, O + 'access/viewers/ov', null, true);
+  DB.invites = { 'inv-nv': { ws: 'ORGC', role: 'viewer', by: 'oa', expiresAt: NOW + 1e6, used: { by: 'nv', at: NOW } } };
+  w('an invite to be a viewer, spent by her, makes her one', { uid: 'nv' }, O + 'access/viewers/nv', 'inv-nv', true);
+  w('— and indexes her', { uid: 'nv' }, O + 'access/index/nv', 'inv-nv', true);
+  w('— not anyone else', RANDO, O + 'access/viewers/rando', 'inv-nv', false);
+  DB.invites['inv-nv'].role = 'coach';
+  w('— nor an invite to something else', { uid: 'nv' }, O + 'access/viewers/nv', 'inv-nv', false);
+  delete DB.invites;
+  w('only an admin makes a viewer\'s invite, with no team', OA, 'invites/inv8', { ws: 'ORGC', by: 'oa', role: 'viewer', at: NOW, expiresAt: NOW + 1e9 }, true);
+  w('— not a coach', OC, 'invites/inv8', { ws: 'ORGC', by: 'oc', role: 'viewer', at: NOW, expiresAt: NOW + 1e9 }, false);
+  w('every other role still names its team', OA, 'invites/inv8', { ws: 'ORGC', by: 'oa', role: 'coach', at: NOW, expiresAt: NOW + 1e9 }, false);
+  delete ORGC.access.viewers; delete ORGC.access.index.ov; delete ORGC.coachNotes;
+
   console.log('\n--- a club on orgs/: one tree each ---');
   /* A club is on exactly one tree, which is what lets every root rule ask
      "orgs/{code}/access exists" to know which tree to read. So nobody may

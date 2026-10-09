@@ -85,8 +85,8 @@ const rest = S => canon({ ...S.at('workspaces/CLUB'), access: { ...S.at(W + 'acc
   {
     const S = server();
     deepEq('one per place a role lives', Object.keys(S.triggers).filter(n => /^access/.test(n)).sort(), 
-      // each once per tree while clubs move to orgs/ (functions/index.js, both())
-      ['accessAdmin', 'accessAdminOrgs', 'accessGuardians', 'accessGuardiansOrgs', 'accessSelf', 'accessSelfOrgs', 'accessStaff', 'accessStaffOrgs']);
+      // each once per tree while clubs move to orgs/ (functions/index.js, both()); a club viewer only on orgs/
+      ['accessAdmin', 'accessAdminOrgs', 'accessGuardians', 'accessGuardiansOrgs', 'accessSelf', 'accessSelfOrgs', 'accessStaff', 'accessStaffOrgs', 'accessViewer']);
     // and who runs the club is told (adminwatch.js, test/owners.js)
     deepEq('an admin given', (await S.wouldWake(W + 'access/admins/new', true)).sort(), ['accessAdmin', 'watchAdmin']);
     deepEq('a coach given', await S.wouldWake(W + 'access/teams/t1/coaches/new', true), ['accessStaff']);
@@ -325,6 +325,38 @@ const rest = S => canon({ ...S.at('workspaces/CLUB'), access: { ...S.at(W + 'acc
     await S.fire(W + 'teams/t1/players/p1/guardians/mum', null);
     await S.fire(W + 'teams/t1/players/p2/guardians/mum', null);
     check('an invite another club owns is never deleted on this one\'s say', !!S.at('invites/inv_mum'), true);
+  }
+
+  /* AUTH.md, *More kinds of people*, 3, on orgs/ only. A club viewer is in
+     the index like any role (the owner, 2026-10-09): given, she is indexed
+     and bookmarked; a coach who stops coaching but still views the club
+     stays; taken away, she leaves both and the invite she came by goes. */
+  console.log('--- a club viewer (orgs/ only) ---');
+  {
+    const O = 'orgs/VC/';
+    const S = makeServer({
+      orgs: { VC: {
+        access: { admins: { adm: true }, index: { adm: true, coach: true }, teams: { t1: { coaches: { coach: true } } }, teamIndex: { t1: { coach: 'coach' } },
+          viewers: { coach: true } },
+        org: { name: 'Viewers FC' }, members: {}, teams: { t1: { id: 't1', name: 'Flight' } }, squad: { t1: {} }
+      } },
+      userOrgs: {},
+      invites: { inv_dee: { ws: 'VC', role: 'viewer' } }
+    });
+    S.loadFunctions();
+    // in the orgs pass the fake server reads every club back in the old tree's shape
+    const IX = u => (require('./fakebase').ORGS_MODE ? 'workspaces/VC/' : O) + 'access/index/' + u;
+    await S.fire(O + 'access/viewers/dee', 'inv_dee');
+    check('a viewer given: she is indexed', S.at(IX('dee')), true);
+    check('— and bookmarked', !!S.at('userOrgs/dee/VC'), true);
+    S.put('userOrgs/coach/VC', { name: 'Viewers FC', at: 1 });
+    await S.fire(O + 'access/teams/t1/coaches', null);
+    check('a coach who stops coaching but still views the club stays indexed', !!S.at(IX('coach')), true);
+    check('— and keeps her bookmark', !!S.at('userOrgs/coach/VC'), true);
+    await S.fire(O + 'access/viewers/dee', null);
+    check('a viewer taken away leaves the index', !!S.at(IX('dee')), false);
+    check('— and her bookmark', !!S.at('userOrgs/dee/VC'), false);
+    check('— and the invite she came by goes', !!S.at('invites/inv_dee'), false);
   }
 
   console.log('--- the same answer the phones give ---');

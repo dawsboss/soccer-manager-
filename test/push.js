@@ -684,6 +684,11 @@ const toUid = (S, u) => S.sent().filter(m => m.data.uid === u);
     check('her own child named, then the score', m.data.body, 'Ella · Flight 1–0 Northgate');
     check('another team\'s family, roster closed: a shirt number', toUid(S, 'dad')[0].data.body, '#7 · Flight 1–0 Northgate');
     check('opening the game\'s Live tab', m.data.hash, '#/team/t1/game/g1/live');
+    // a club viewer sees every child by name on screen (AUTH.md, *Club viewers, as built*), so here too
+    const SV = liveServer({ dad: { at: 1 } });
+    SV.put(W + 'access/viewers', { dad: true });
+    await SV.fire(W + 'matches/g1/goals/x1', { t: 600, side: 'us', pid: 'p1', by: 'trk', byName: 'Tia' });
+    check('the same family made a club viewer: the scorer by name', toUid(SV, 'dad')[0].data.body, 'Ella · Flight 1–0 Northgate');
     check('tagged as the open page tags it, so a phone showing both shows one', m.data.tag, 'minutes-g1-goal:x1');
     check('not held on the lock screen until dismissed', m.data.urgent, '');
     check('and kept an hour, not a day', m.webpush.headers.TTL, '3600');
