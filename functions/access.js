@@ -1,9 +1,9 @@
 /* The lookup tables the rules read, kept true the moment a role changes.
 
    SERVER.md, "The lookup tables the rules read". The rules cannot iterate, so
-   six flat tables answer their questions in one hop (CLAUDE.md, "Six flat
-   lookup tables"): access/index, teamIndex, teamParents, teamPlayers,
-   coachIndex and helperIndex. Each is derived from where a uid appears, and
+   seven flat tables answer their questions in one hop (CLAUDE.md, "Six flat
+   lookup tables", and teamFans since build 121): access/index, teamIndex,
+   teamParents, teamPlayers, teamFans, coachIndex and helperIndex. Each is derived from where a uid appears, and
    until now only an admin's or a coach's phone rebuilt them, on connect (syncIndex() and its
    siblings in app.js). Between a change and that phone's next connect the
    table was stale: a parent the coach unlinked kept reading the team's
@@ -24,9 +24,9 @@
      the tables right, and a run for a removal that arrives after the role was
      given back finds the role and keeps the entry.
    - **The same answer the phones give.** The same sources (admins, a team's
-     coaches and trackers, a player's guardians and self) and the same values
-     (`'coach'` wins over `'tracker'`, and both over `'helper'`; a parent's and a player's entry is a
-     player id that really lists her; coachIndex names a team she coaches,
+     coaches and trackers, a player's guardians, self and fans) and the same values
+     (`'coach'` wins over `'tracker'`, and both over `'helper'`; a parent's, a player's and a
+     fan's entry is a player id that really lists her; coachIndex names a team she coaches,
      the first by id, and is left alone while the one it names stays true;
      helperIndex the same for a team she helps).
      So a phone and the server never fight over an entry, and the phones go
@@ -37,7 +37,7 @@
      club with no access/index at all as one still being made. One entry
      written for one team would end that fallback for every other team at
      once, so a table that does not exist yet is left for an admin's phone to
-     build whole. coachIndex, helperIndex and teamPlayers carry no bridge and are written
+     build whole. coachIndex, helperIndex, teamPlayers and teamFans carry no bridge and are written
      whenever they are owed.
    - **An index entry is never rewritten while it is there.** Its value may be
      the invite id that granted it, or the team a coach approved a claim to,
@@ -86,7 +86,7 @@ function hasRole(f, uid) {
     if (has(ta && ta.coaches, uid) || has(ta && ta.trackers, uid) || has(ta && ta.helpers, uid)) return true;
   for (const t of Object.values(f.teams))
     for (const p of Object.values((t && t.players) || {}))
-      if (p && (has(p.guardians, uid) || has(p.self, uid))) return true;
+      if (p && (has(p.guardians, uid) || has(p.self, uid) || has(p.fans, uid))) return true;
   return false;
 }
 
@@ -98,7 +98,7 @@ function teamIndexWanted(f, tid) {
   for (const u of keys(ta.coaches)) if (has(ta.coaches, u)) want[u] = 'coach';   // coach wins
   return want;
 }
-// parentsWanted() and playersWanted(): the first player listing her, in squad order
+// parentsWanted(), playersWanted() and fansWanted(): the first player listing her, in squad order
 function linkedWanted(f, tid, field) {
   const want = {};
   for (const [pid, p] of Object.entries(squad(f, tid)))
@@ -113,7 +113,7 @@ function helperTeamOf(f, uid) {
   return keys(f.access.teams).sort().find(tid => has(teamAcc(f, tid).helpers, uid)) || null;
 }
 
-/* Bring one per-team table (teamParents or teamPlayers) for one team into
+/* Bring one per-team table (teamParents, teamPlayers or teamFans) for one team into
    line, entry by entry. An entry still naming a player who lists her is kept
    even if another would be first, as syncTeamParents() keeps it. */
 async function syncLinked(env, f, code, table, field, tid, out) {
@@ -176,7 +176,8 @@ async function syncIndex(env, f, code, uid, out, now) {
 }
 // forgetInvite(): the invite a role named, if it was one of this club's
 async function forgetInvite(env, code, v, out) {
-  if (typeof v === 'string' && okKey(v) && (await env.get(`invites/${v}/ws`)) === code) {
+  // never a link for several people (seats): the others still to use it would lose it with her
+  if (typeof v === 'string' && okKey(v) && (await env.get(`invites/${v}/ws`)) === code && !(await env.get(`invites/${v}/seats`))) {
     await env.remove('invites/' + v); out.push('del invite');
   }
 }
@@ -185,7 +186,7 @@ async function forgetInvite(env, code, v, out) {
    `tids` the teams whose per-team tables it could have moved, and `coaches`
    whether it was a team's coaches (coachIndex). Resolves to what it did, for
    the tests and the function's log. */
-async function settle(env, code, { uids = [], tids = [], parents = false, players = false, coaches = false, tree }, now = Date.now()) {
+async function settle(env, code, { uids = [], tids = [], parents = false, players = false, fans = false, coaches = false, tree }, now = Date.now()) {
   const out = [];
   if (!okKey(code)) return out;
   const f = await clubFacts(env, code, tree);
@@ -194,6 +195,7 @@ async function settle(env, code, { uids = [], tids = [], parents = false, player
     if (coaches) await syncTeamIndex(env, f, code, tid, out);
     if (parents) await syncLinked(env, f, code, 'teamParents', 'guardians', tid, out);
     if (players) await syncLinked(env, f, code, 'teamPlayers', 'self', tid, out);
+    if (fans) await syncLinked(env, f, code, 'teamFans', 'fans', tid, out);
   }
   for (const uid of [...new Set(uids)].filter(okKey)) {
     if (coaches) await syncCoachIndex(env, f, code, uid, out);
@@ -307,5 +309,10 @@ function onGuardians(env, params, before, after, now) {
 function onSelf(env, params, before, after, now) {
   return settle(env, params.code, { uids: both(before, after), tids: [params.tid], players: true, tree: params.tree }, now);
 }
+/* squad/{tid}/{pid}/fans: a player's fans (AUTH.md, *More kinds
+   of people*, 1). On orgs/ only: the old tree has no rule that writes one. */
+function onFans(env, params, before, after, now) {
+  return settle(env, params.code, { uids: both(before, after), tids: [params.tid], fans: true, tree: params.tree }, now);
+}
 
-module.exports = { settle, onAdmin, onTeamStaff, onGuardians, onSelf, onViewer, onMember, onSquadPlayer, onRosterOpen, rosterEntry, isStaff, hasRole, teamIndexWanted, linkedWanted, coachTeamOf, helperTeamOf };
+module.exports = { settle, onAdmin, onTeamStaff, onGuardians, onSelf, onViewer, onFans, onMember, onSquadPlayer, onRosterOpen, rosterEntry, isStaff, hasRole, teamIndexWanted, linkedWanted, coachTeamOf, helperTeamOf };

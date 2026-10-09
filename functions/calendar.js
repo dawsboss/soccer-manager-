@@ -44,6 +44,10 @@ async function serve(req, env) {
   try { doc = await env.get('public/' + id); } catch (e) { return say(502, 'Could not reach the calendar'); }
   // a link that was replaced, or a game that was deleted, is simply gone
   if (!doc || typeof doc !== 'object' || !doc.team) return say(404, 'No such calendar');
+  /* An address with an end date (`until`) stops at it. The rules already
+     refuse the page to everyone else; this reads with admin credentials, so
+     it says so itself. Gone, not missing: a calendar app can tell the two. */
+  if (typeof doc.until === 'number' && doc.until <= (env.now ? env.now() : Date.now())) return say(410, 'This calendar link has expired');
 
   /* Where each entry links back to. My calendar's feed and the members' feed
      open the app, where signing in decides what anyone sees; a share-link feed

@@ -487,12 +487,15 @@ setInterval(() => {
     dbMod.onValue(dbMod.ref(db, 'public/' + SHARE), s => {
       doc = s.val();
       if (!doc) return fail('That link is no longer active.');
+      // a page with an end date: the rules stop new readers at it, and this stops a page left open
+      if (typeof doc.until === 'number' && doc.until <= Date.now() + skew) return fail('This link has expired. Ask the coach for a new one.');
       if (ONE_GAME && !(doc.games || {})[ONE_GAME]) return fail('That game is not published.');
       render();
     }, err => {
       console.error(err);
+      // refused: never published, or past the end date the coach gave it (the rules cannot say which)
       fail(err && err.code === 'PERMISSION_DENIED'
-        ? 'This scoreboard has not been published yet.'
+        ? 'This link has expired, or the scoreboard has not been published yet. Ask the coach for the latest link.'
         : 'Could not reach the scoreboard.');
     });
   } catch (e) {

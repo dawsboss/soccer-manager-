@@ -2,7 +2,7 @@
    Static app. Data lives in localStorage, and mirrors to Firebase Realtime
    Database when a config + workspace code are present. */
 
-const BUILD = '120';
+const BUILD = '121';
 const BUILT = '2026-10-09';
 /* The version of database.rules.json this app was written against. The rules
    carry the same number in rulesVersion's .write, which accepts that number
@@ -11,7 +11,7 @@ const BUILT = '2026-10-09';
    never pasted look exactly like a coach with no signal: "saved on this phone
    only", one feature at a time. test/rules.js holds the two numbers together
    and fails when the rules change without this going up. */
-const RULES_VERSION = 19;
+const RULES_VERSION = 20;
 /* index.html carries the build it was published with. If this file is newer, the
    browser handed us a cached page — the exact failure that has eaten hours. */
 const pageBuild = () => {
@@ -368,7 +368,7 @@ function forgetOthersChildren() {
   for (const [tid, t] of Object.entries(state.teams || {})) {
     if (!t || typeof t !== 'object') continue;
     // a tracker keeps her own team's squad, but not the coach's notes on it (SEC-12)
-    t.players = Object.fromEntries(Object.entries(t.players || {}).filter(([, p]) => isTracker(tid, u) || isMine(p)).map(([pid, p]) => [pid, withoutCoach(p)]));
+    t.players = Object.fromEntries(Object.entries(t.players || {}).filter(([, p]) => isTracker(tid, u) || isMine(p) || iFan(p)).map(([pid, p]) => [pid, withoutCoach(p)]));
   }
   delete (state.access || {}).log;
   if (state.access && state.access.members) state.access.members = Object.fromEntries(Object.entries(state.access.members).map(([k, m]) => [k, { name: (m && m.name) || '' }]));
@@ -900,7 +900,8 @@ async function initSync() {
       const all = admin || !!(u && (a.coachIndex || {})[u]);
       const staffTeams = u ? Object.keys(a.teamIndex || {}).filter(t => ((a.teamIndex || {})[t] || {})[u]).sort() : [];
       const fam = {};
-      for (const tbl of ['teamParents', 'teamPlayers'])
+      // her own children, herself, or the player she is a fan of: each a record she reads by path
+      for (const tbl of ['teamParents', 'teamPlayers', 'teamFans'])
         for (const [t, row] of Object.entries(a[tbl] || {})) if (u && row && typeof row[u] === 'string') (fam[t] = fam[t] || []).push(row[u]);
       // a club viewer reads every squad, for the names, and none of the coach's notes
       const view = !!(u && (a.viewers || {})[u]);
@@ -1517,6 +1518,21 @@ const famRole = r => r === 'parent' || r === 'player';
    and the screen draws every team read-only. The one read only she has
    beyond the index is every team's squad, for the names. */
 const isViewer = uid => !!(uid && (acc().viewers || {})[uid]);
+/* A player's fans (AUTH.md, *More kinds of people*, 1): a grandparent,
+   an aunt, a family friend. Under the player, not beside her parents:
+   teams/{tid}/players/{pid}/fans/{uid}, on orgs/ only. Kept apart from
+   guardians and self for the same reason self is kept apart from guardians:
+   what a family may do (say who is going, message the coaches, book a
+   session) is decided again for her, never inherited by accident. She reads
+   the team, and her player by name; she answers, messages and books nothing. */
+function isFanOn(tid, uid) {
+  if (!uid) return false;
+  const t = state.teams[tid];
+  return Object.values((t && t.players) || {}).some(p => ((p.fans || {})[uid]));
+}
+const iFan = p => !!(me && p && (p.fans || {})[me.uid]);
+// the roles that read a team without working on it: a family's, and a fan's
+const readerRole = r => famRole(r) || r === 'fan';
 function roleIn(tid, uid) {
   if (!uid) return null;
   if (me && me.uid === uid && isOwner()) return 'owner';
@@ -1527,6 +1543,7 @@ function roleIn(tid, uid) {
   if (isGuardian(tid, uid)) return 'parent';
   if (isSelfOn(tid, uid)) return 'player';
   if (isViewer(uid)) return 'viewer';
+  if (isFanOn(tid, uid)) return 'fan';
   return null;
 }
 /* AUTH.md's "What parents actually see": a parent gets her own child by name
@@ -1544,17 +1561,17 @@ function namesNarrowed(tid) {
   // a club viewer was let in to see the games with names (AUTH.md, the owner's decision 4)
   if (!gated() || !me || canAdmin() || rosterOpen() || isViewer(me.uid)) return false;
   if (teams().some(x => isCoach(x.id, me.uid) || isTracker(x.id, me.uid) || isHelper(x.id, me.uid))) return false;
-  return famRole(roleIn(tid, me.uid));
+  return readerRole(roleIn(tid, me.uid));
 }
 /* A player as this viewer may see her: the name, or "#7" (a player with no
    number is "A teammate"). Unescaped, like p.name; callers escape. */
 function shownName(t, p) {
   if (!p) return 'Unknown';
-  if (!t || !namesNarrowed(t.id) || isMine(p)) return p.name || 'Unknown';
+  if (!t || !namesNarrowed(t.id) || isMine(p) || iFan(p)) return p.name || 'Unknown';
   const n = p.number == null ? '' : String(p.number).trim();
   return n ? '#' + n : 'A teammate';
 }
-const ROLE_LABEL = { owner: 'App owner', admin: 'Org admin', coach: 'Coach', tracker: 'Tracker', helper: 'Team helper', parent: 'Parent', player: 'Player', viewer: 'Viewer' };
+const ROLE_LABEL = { owner: 'App owner', admin: 'Org admin', coach: 'Coach', tracker: 'Tracker', helper: 'Team helper', parent: 'Parent', player: 'Player', fan: 'Fan', viewer: 'Viewer' };
 
 /* Whoever looks after the app itself. Read from the database root, never from
    this file — a personal email committed to a public repo gets scraped, sticks
@@ -1576,7 +1593,7 @@ function hasAnyRole(uid) {
   for (const ta of Object.values(a.teams || {}))
     if ((ta.coaches || {})[uid] || (ta.trackers || {})[uid] || (ta.helpers || {})[uid]) return true;
   for (const t of Object.values(state.teams || {}))
-    if (Object.values(t.players || {}).some(p => (p.guardians || {})[uid] || (p.self || {})[uid])) return true;
+    if (Object.values(t.players || {}).some(p => (p.guardians || {})[uid] || (p.self || {})[uid] || (p.fans || {})[uid])) return true;
   return false;
 }
 function logAccess(act, targetUid, extra) {
@@ -1732,7 +1749,7 @@ function syncTeamParents(tid) {
     if (!want[u]) { delDeep(state, `access/teamParents/${tid}/${u}`); remoteDel(`access/teamParents/${tid}/${u}`); changed = true; }
   if (changed) saveLocal();
 }
-function syncAllTeamParents() { for (const tid of Object.keys(state.teams || {})) { syncTeamParents(tid); syncTeamPlayers(tid); } }
+function syncAllTeamParents() { for (const tid of Object.keys(state.teams || {})) { syncTeamParents(tid); syncTeamPlayers(tid); syncTeamFans(tid); } }
 
 /* The same one-hop answer for a player with her own sign-in:
      access/teamPlayers/{teamId}/{uid} = the player id whose `self` lists her
@@ -1760,6 +1777,35 @@ function syncTeamPlayers(tid) {
     if (!now[u] || !holds(u, now[u])) { quiet(`access/teamPlayers/${tid}/${u}`, pid); changed = true; }
   for (const u of Object.keys(now))
     if (!want[u]) { delDeep(state, `access/teamPlayers/${tid}/${u}`); remoteDel(`access/teamPlayers/${tid}/${u}`); changed = true; }
+  if (changed) saveLocal();
+}
+
+/* The sixth, for a player's fans (AUTH.md, *More kinds of people*, 1):
+     access/teamFans/{teamId}/{uid} = the player id whose `fans` lists her
+   It is what lets her read the team's notices; every other part of the club
+   she reads through the index, and her player's record through the record
+   itself. Like teamPlayers it carries no bridge, so its first entry closes
+   nothing; her own phone writes hers when she lets herself in with a link a
+   coach made, and the coach's when she approves an ask. Rebuilt on an
+   admin's or that team's coach's connect, like the others, and by the server. */
+function fansWanted(tid) {
+  const want = {};
+  for (const p of players(state.teams[tid]))
+    for (const u of Object.keys(p.fans || {})) if (!want[u]) want[u] = p.id;
+  return want;
+}
+// SERVER.md: a lookup table rebuilt by phones on connect; a server trigger would keep it true at once.
+function syncTeamFans(tid) {
+  if (!tid || !me || !state.teams[tid] || !onOrgs()) return;
+  if (!isAdmin(me.uid) && !isCoach(tid, me.uid)) return;
+  const want = fansWanted(tid), now = (acc().teamFans || {})[tid] || {};
+  const team = state.teams[tid];
+  const holds = (u, pid) => !!((((team.players || {})[pid] || {}).fans || {})[u]);
+  let changed = false;
+  for (const [u, pid] of Object.entries(want))
+    if (!now[u] || !holds(u, now[u])) { quiet(`access/teamFans/${tid}/${u}`, pid); changed = true; }
+  for (const u of Object.keys(now))
+    if (!want[u]) { delDeep(state, `access/teamFans/${tid}/${u}`); remoteDel(`access/teamFans/${tid}/${u}`); changed = true; }
   if (changed) saveLocal();
 }
 
@@ -1927,7 +1973,7 @@ function myTeams() {
   if (canAdmin()) return all;
   const coachAnywhere = all.some(t => isCoach(t.id, me.uid));
   if (coachAnywhere || isViewer(me.uid)) return all;
-  const mine = all.filter(t => isTracker(t.id, me.uid) || isHelper(t.id, me.uid) || isGuardian(t.id, me.uid) || isSelfOn(t.id, me.uid));
+  const mine = all.filter(t => isTracker(t.id, me.uid) || isHelper(t.id, me.uid) || isGuardian(t.id, me.uid) || isSelfOn(t.id, me.uid) || isFanOn(t.id, me.uid));
   return mine;
 }
 /* Every player this account is a guardian of, across every team it can see.
@@ -1974,8 +2020,20 @@ function elsewhereKids() {
   kidsCache = { uid: me.uid, ver: mirrorVer, day, at: now, here: wsCode(), list };
   return list;
 }
-const anyPlayers = () => myPlayers().length > 0 || elsewhereKids().length > 0;
-const allKidNames = () => [...myPlayers().map(x => x.p.name), ...elsewhereKids().map(x => x.name)];
+/* The players this account supports here (AUTH.md, *More kinds of people*,
+   1): beside myPlayers(), never in it, because everything that reads
+   myPlayers() (who is going, sessions, a child's own calendar chip) is a
+   family's to do. My players lists both, a fan's lighter. */
+function myFanOf() {
+  if (!me) return [];
+  const out = [];
+  for (const t of teams())
+    for (const p of Object.values(t.players || {}))
+      if (iFan(p) && !isMine(p)) out.push({ t, p });
+  return out.sort((a, b) => (a.p.name || '').localeCompare(b.p.name || ''));
+}
+const anyPlayers = () => myPlayers().length > 0 || elsewhereKids().length > 0 || myFanOf().length > 0;
+const allKidNames = () => [...myPlayers().map(x => x.p.name), ...myFanOf().map(x => x.p.name), ...elsewhereKids().map(x => x.name)];
 
 function canEditTeam(tid) {
   if (!gated()) return true;                  // a fresh club has to be set up somehow
@@ -2012,7 +2070,7 @@ function myRole() {
 const restricted = () => {
   if (isOwner()) return null;
   const r = myRole();
-  if (r === 'tracker' || r === 'helper' || r === 'parent' || r === 'player') return r;
+  if (r === 'tracker' || r === 'helper' || readerRole(r)) return r;
   return me && !canEditTeam(ui.teamId) ? 'viewer' : null;
 };
 
@@ -2104,6 +2162,53 @@ function mayAct(a, m, d) {
    deletes the invite it came from. */
 const LS_INVITE = 'sm.invite';
 const INVITE_DAYS = 14;
+/* Links with limits (the owner, 2026-10-09): whoever makes a link says how
+   many people may use it and for how long. A rule cannot count, so a link for
+   several carries one seat per person (`seats: {s1…sN}`), each taken once by
+   whoever opens it (`seat/{s}`, then `took/{uid}`, which is what every grant
+   rule looks for beside a single-use invite's `used`). A link for several is
+   made with an id that says so ('m…'), so taking one person's role away never
+   deletes it under the others still to use it (forgetInvite()). */
+const USE_CHOICES = [1, 2, 3, 5, 10, 25, 50];
+const DAY_CHOICES = [1, 3, 7, 14, 30, 90];
+const LINK_MAX = 50, JOIN_MAX = 200;
+function limitFields(id, o = {}) {
+  const uses = o.uses ?? 1, days = o.days ?? INVITE_DAYS;
+  const opt = (v, l, cur) => `<option value="${v}"${v === cur ? ' selected' : ''}>${l}</option>`;
+  const useOpts = [...(o.anyUses ? [[0, 'No limit']] : []), ...USE_CHOICES.map(n => [n, n === 1 ? 'One person' : n + ' people'])];
+  const dayOpts = [...(o.anyDays ? [[0, 'Until you replace it']] : []), ...DAY_CHOICES.map(n => [n, n === 1 ? 'A day' : n + ' days'])];
+  return `<div class="grid2">${o.noUses ? '' : `<label class="field"><span>How many people can use it</span><select id="${id}Uses">${useOpts.map(([v, l]) => opt(v, l, uses)).join('')}</select></label>`}
+    <label class="field"><span>Works for</span><select id="${id}Days">${dayOpts.map(([v, l]) => opt(v, l, days)).join('')}</select></label></div>`;
+}
+// what the fields say, or the defaults where the sheet had none (a link made with a tap elsewhere)
+function readLimits(id, o = {}) {
+  const num = (sel, dflt, max) => {
+    const el = $('#' + id + sel), raw = el && el.value != null ? String(el.value).trim() : '';
+    if (raw === '') return dflt;
+    const n = Math.floor(Number(raw));
+    return Number.isFinite(n) && n >= 0 ? Math.min(n, max) : dflt;
+  };
+  return { uses: o.noUses ? 1 : num('Uses', o.uses ?? 1, o.max || LINK_MAX), days: num('Days', o.days ?? INVITE_DAYS, 365) };
+}
+// the seats a link for `n` people carries; nothing for one, which is an ordinary single-use link
+const seatsFor = n => n > 1 ? { max: n, seats: Object.fromEntries(Array.from({ length: n }, (_, i) => ['s' + (i + 1), true])) } : {};
+const usesLine = (uses, until) => `${uses > 1 ? `Up to ${uses} people` : uses === 0 ? 'Anyone with it' : 'One person'}${until ? `, until ${new Date(until).toLocaleDateString()}` : ''}`;
+// the first free seat, from what was read of the link
+const linkSeatFree = v => Object.keys((v && v.seats) || {}).sort((a, b) => Number(a.slice(1)) - Number(b.slice(1))).find(k => !((v.seat || {})[k]));
+/* Takes a seat and says it is hers, trying the next if somebody took that one
+   a moment before her. Rejects when none is left. */
+async function takeSeat(put, base, v, who, at) {
+  if ((v.took || {})[who]) return v.took[who];
+  const tried = new Set();
+  for (;;) {
+    const k = Object.keys(v.seats || {}).sort((a, b) => Number(a.slice(1)) - Number(b.slice(1))).find(x => !((v.seat || {})[x]) && !tried.has(x));
+    if (!k) { const e = new Error('full'); e.code = 'full'; throw e; }
+    tried.add(k);
+    try { await put(base + '/seat/' + k, { by: who, at }); } catch (e) { continue; }
+    await put(base + '/took/' + who, k);
+    return k;
+  }
+}
 const INVITE_ROLES = { coach: 'Coach', tracker: 'Tracker', helper: 'Team helper', parent: 'Parent', viewer: 'Club viewer' };
 // where each staff role is named on a team: access/teams/{tid}/{key}/{uid}
 const STAFF_KEY = { coach: 'coaches', tracker: 'trackers', helper: 'helpers' };
@@ -2190,6 +2295,9 @@ function maybeLoadInvite() {
     const v = s.val();
     invite.doc = v;
     invite.status = !v ? 'gone'
+      // a link for several: hers if she holds a seat, full once every seat is taken
+      : v.seats && (v.took || {})[who] ? 'ready'
+      : v.seats && (v.expiresAt || 0) > nowMs() && !linkSeatFree(v) ? 'full'
       : v.used && v.used.by !== who ? 'taken'
         : v.used ? 'ready'                                 // ours, half finished: carry on
           : (v.expiresAt || 0) <= nowMs() ? 'expired'
@@ -2210,6 +2318,7 @@ function maybeLoadInvite() {
 function inviteWhat(v) {
   const role = INVITE_ROLES[v.role] || v.role;
   if (v.role === 'player') return `a player, #${esc(v.playerNo || '?')} on <b>${esc(v.teamName || 'a team')}</b>, with your own sign-in`;
+  if (v.role === 'fan') return `a fan of ${v.playerNo ? '#' + esc(v.playerNo) : 'a player'} on <b>${esc(v.teamName || 'a team')}</b>: the calendar, the games as they happen and the team's notices${v.approved ? '' : '. A coach of the team says yes before you see anything'}`;
   if (v.role === 'viewer') return 'a club viewer: every team\u2019s games and calendar, to read';
   return v.role === 'parent'
     ? `a parent of ${v.playerNo ? '#' + esc(v.playerNo) : 'a player'} on <b>${esc(v.teamName || 'a team')}</b>`
@@ -2231,6 +2340,8 @@ function inviteScreen() {
   if (s === 'working') return box('Joining…', `Setting you up at ${club}.`, '');
   if (s === 'gone') return box('That invite no longer exists',
     'It has been used, or withdrawn by whoever sent it. Ask them for a new link.', `<button class="btn" data-act="invitedismiss">OK</button>`);
+  if (s === 'full') return box('That link has been used up',
+    `It was for ${v.max || 'a few'} people, and that many have used it. Ask ${esc(v.byName || 'whoever sent it')} for a new one.`, `<button class="btn" data-act="invitedismiss">OK</button>`);
   if (s === 'taken') return box('That invite has already been used',
     'Each invite works once, for one account. Ask for a new link.', `<button class="btn" data-act="invitedismiss">OK</button>`);
   if (s === 'expired') return box('That invite has expired',
@@ -2266,20 +2377,47 @@ async function redeemInvite() {
   const tree = await probeTree(ws);
   const W = rel => clubPath(rel, ws, tree);
   try {
-    if (!v.used) await put('invites/' + id + '/used', { by: who, at });
+    if (v.seats) await takeSeat(put, 'invites/' + id, v, who, at);
+    else if (!v.used) await put('invites/' + id + '/used', { by: who, at });
     await put(W('access/members/' + who), { name: me.name || '', email: me.email || '', at });
-    if (v.role === 'parent') await put(W(`teams/${v.team}/players/${v.player}/guardians/${who}`), id);
-    else if (v.role === 'player') await put(W(`teams/${v.team}/players/${v.player}/self/${who}`), id);
-    else if (v.role === 'viewer') await put(W('access/viewers/' + who), id);
-    else await put(W(`access/teams/${v.team}/${STAFF_KEY[v.role] || 'trackers'}/${who}`), id);
-    await put(W('access/index/' + who), id);
+    /* A fan her family or the player asked for (AUTH.md, *More kinds of
+       people*, 1) is let in by the team's coach, not by the link: the link
+       only lets her ask, on the coach's list beside the families' asks. One a
+       coach or admin made is approved already, and lets her in like any invite. */
+    if (v.role === 'fan' && !v.approved) {
+      await put(`claims/${ws}/${v.team}/${who}`, {
+        invite: id, player: v.player, name: me.name || '', email: me.email || '', at,
+        ...(v.byName ? { askedBy: String(v.byName).slice(0, 80) } : {}), ...(v.playerNo ? { shirt: String(v.playerNo).slice(0, 40) } : {})
+      });
+    } else {
+      if (v.role === 'parent') await put(W(`teams/${v.team}/players/${v.player}/guardians/${who}`), id);
+      else if (v.role === 'player') await put(W(`teams/${v.team}/players/${v.player}/self/${who}`), id);
+      else if (v.role === 'fan') await put(W(`teams/${v.team}/players/${v.player}/fans/${who}`), id);
+      else if (v.role === 'viewer') await put(W('access/viewers/' + who), id);
+      else await put(W(`access/teams/${v.team}/${STAFF_KEY[v.role] || 'trackers'}/${who}`), id);
+      await put(W('access/index/' + who), id);
+    }
   } catch (e) {
+    if (e && e.code === 'full') { invite.status = 'full'; render(); return; }
     invite.status = 'error';
     invite.err = /permission|denied/i.test((e && e.code) || '') ? 'The database refused it — the invite may have expired or been withdrawn'
       : ((e && e.code) || String(e));
     render(); return;
   }
+  if (v.role === 'fan' && !v.approved) {
+    // asked, not in: the link is spent (a link for several stays for the others), and the coach's answer comes to the waiting screen
+    if (!v.seats) await soft(mod.remove(mod.ref(db, 'invites/' + id)));
+    dropInvite();
+    join = { code: 'fan:' + id, status: 'idle', sent: true, err: null, hidden: false,
+      doc: { ws, team: v.team, teamName: v.teamName || '', clubName: v.clubName || '', fan: true } };
+    holdJoin(); maybeLoadJoin(); render(); return;
+  }
   if (v.role === 'player') await soft(put(W(`access/teamPlayers/${v.team}/${who}`), v.player));
+  else if (v.role === 'fan') {
+    // her name where her player's family reads it, then the table
+    await soft(put(W(`teams/${v.team}/players/${v.player}/fanNames/${who}`), String(me.name || me.email || 'A fan').slice(0, 80)));
+    await soft(put(W(`access/teamFans/${v.team}/${who}`), v.player));
+  }
   else if (v.role === 'viewer') { /* club-wide: no per-team table to join */ }
   else if (v.role !== 'parent') {
     await soft(put(W(`access/teamIndex/${v.team}/${who}`), v.role));
@@ -2290,13 +2428,14 @@ async function redeemInvite() {
      back to the club-wide index until an admin's device creates it, and that
      device puts her in it. */
   else await soft(put(W(`access/teamParents/${v.team}/${who}`), v.player));
-  await soft(put('clubInvites/' + ws + '/' + id + '/used', { by: who, at, name: me.name || '' }));
+  await soft(put('clubInvites/' + ws + '/' + id + (v.seats ? '/took/' + who : '/used'), v.seats ? { at, name: me.name || '' } : { by: who, at, name: me.name || '' }));
   await soft(put('userOrgs/' + who + '/' + ws, { name: v.clubName || '', at }));
   await soft(put(W('access/log/' + uid()), {
     at, act: 'joined by invite as', by: who, byName: me.name || null,
     target: who, targetName: INVITE_ROLES[v.role] || ROLE_LABEL[v.role] || v.role, team: v.team || null, teamName: v.teamName || null
   }));
-  await soft(mod.remove(mod.ref(db, 'invites/' + id)));   // spent: nothing left to replay
+  // spent: nothing left to replay. A link for several stays for the rest, until its date.
+  if (!v.seats) await soft(mod.remove(mod.ref(db, 'invites/' + id)));
   dropInvite();
   try { localStorage.setItem(LS_WS, ws); } catch (e) { }
   location.reload();
@@ -2358,7 +2497,8 @@ function sheetNewClub() {
    expired. Usually it is gone already; this is for the redeemer who stopped
    halfway. */
 function forgetInvite(v) {
-  if (fb && typeof v === 'string' && v) Promise.resolve(fb.remove(fb.ref(fb.db, 'invites/' + v))).catch(() => { });
+  // a link for several people ('m…') stays for the others still to use it; it ends at its own date
+  if (fb && typeof v === 'string' && v && v[0] !== 'm') Promise.resolve(fb.remove(fb.ref(fb.db, 'invites/' + v))).catch(() => { });
 }
 
 function watchClubInvites() {
@@ -2416,6 +2556,12 @@ function maybeOpenMyClub() {
 }
 
 function inviteStatus(v) {
+  if (v.max > 1) {
+    const n = Object.keys(v.took || {}).length;
+    if (n >= v.max) return { k: 'used', label: `All ${v.max} used` };
+    if ((v.expiresAt || 0) <= nowMs()) return { k: 'expired', label: `Expired · ${n} of ${v.max} used` };
+    return { k: 'open', label: `${n} of ${v.max} used · until ${new Date(v.expiresAt).toLocaleDateString()}` };
+  }
   if (v.used) return { k: 'used', label: `Joined${v.used.name ? ' — ' + esc(v.used.name) : ''}` };
   if ((v.expiresAt || 0) <= nowMs()) return { k: 'expired', label: 'Expired' };
   return { k: 'open', label: `Waiting · until ${new Date(v.expiresAt).toLocaleDateString()}` };
@@ -2444,7 +2590,7 @@ function invitesCard() {
   };
   return `<div class="card"><div class="spread"><h2 style="margin:0">Invites</h2>
       <button class="btn sm" data-act="invitenew">Invite someone</button></div>
-    <p class="muted">A link that makes one account a coach, tracker or parent on one team. It works once and lasts ${INVITE_DAYS} days. Tap one to copy its link again, see who used it, or revoke it.</p>
+    <p class="muted">A link that makes an account a coach, tracker or parent on one team. You choose how many people can use it and for how long. Tap one to copy its link again, see who used it, or revoke it.</p>
     ${open.length ? open.map(row).join('') : `<p class="muted" style="margin:0">No open invites.</p>`}
     ${past.length ? `<button class="btn quiet sm" data-act="invitepast" style="margin-top:8px">${ui.invPast ? 'Hide' : 'Show'} used and expired (${past.length})</button>
     ${ui.invPast ? `<div style="margin-top:8px">${past.map(row).join('')}</div>` : ''}` : ''}</div>`;
@@ -2469,7 +2615,8 @@ function sheetInviteDetail(id) {
     <p class="muted" style="margin-top:0">${inviteFor(v)}</p>
     <div style="margin-bottom:14px">
       ${line('Status', st.k === 'open' ? '<b>Waiting to be used</b>' : st.k === 'used' ? '<b>Used</b>' : '<b>Expired</b>')}
-      ${line('For', v.email ? esc(v.email) + ' only' : 'Whoever opens it first')}
+      ${line('For', v.email ? esc(v.email) + ' only' : v.max > 1 ? `The first ${v.max} people to open it` : 'Whoever opens it first')}
+      ${v.max > 1 && Object.keys(v.took || {}).length ? line('Used by', Object.entries(v.took).map(([u, x]) => esc((x && x.name) || ((acc().members || {})[u] || {}).name || 'someone')).join(', ')) : ''}
       ${line('Made by', `${esc(v.byName || 'an admin')} · ${when(v.at)}`)}
       ${st.k === 'used'
       ? line('Used by', `<b>${esc(v.used.name || (who && who.name) || 'someone')}</b>${who && who.email ? `<span class="rowsub">${esc(who.email)}</span>` : ''}<span class="rowsub">${when(v.used.at)}</span>`)
@@ -2502,27 +2649,30 @@ function sheetInvite() {
     ${f.role === 'helper' ? `<p class="muted" style="margin-top:-4px">A manager or a volunteer: the team's calendar, register, notices, practice plans and game plans before kick-off, and the drills. Not the squad, the clock or the subs, and no family's conversations.</p>` : ''}
     ${f.role === 'parent' ? `<p class="lbl">Parent of</p>
     ${pickOne('invitepick', 'player', f.player, players.map(p => [p.id, `${p.number ? '#' + esc(p.number) + ' ' : ''}${esc(p.name || '')}`]), 'No players on this team.')}` : ''}
-    <label class="field"><span>Their email — optional</span><input type="email" id="invEmail" placeholder="Leave empty for a link anyone can use once" autocapitalize="off" autocorrect="off"></label>
-    <p class="muted">With an email, only that address can accept it, and you can have the sign-in email sent for you. Without one, whoever opens the link first gets the role — send it somewhere private.</p>
+    <label class="field"><span>Their email — optional</span><input type="email" id="invEmail" placeholder="Leave empty for a link to send yourself" autocapitalize="off" autocorrect="off"></label>
+    ${limitFields('inv')}
+    <p class="muted">With an email, only that address can accept it (one person), and you can have the sign-in email sent for you. Without one, whoever opens the link first gets the role, up to as many people as you chose — send it somewhere private.</p>
     <button class="btn wide" data-act="invitemake">Make the invite</button>`);
 }
 
 /* One invite, written where the rules want it: the invite itself, then the
    admin's list. Throws if either is refused, so a caller making a squad's
    worth stops at the first refusal instead of making fifteen half-invites. */
-async function writeInvite(t, role, p, email) {
-  const id = secretId(), at = nowMs();
+async function writeInvite(t, role, p, email, lim = {}) {
+  // an email-bound link is for that one person, and a player's own is hers alone
+  const uses = email || role === 'player' ? 1 : Math.max(1, Math.min(LINK_MAX, lim.uses || 1));
+  const id = uses > 1 ? randId('m', 18) : secretId(), at = nowMs();
   /* What the invitee sees before joining. Club, team and who sent it — never
      the child's name: the invite is readable by anyone holding the link, and a
      link gets forwarded. The admin's own list can carry it; only admins read that. */
   const doc = {
     ws: wsCode(), ...(t ? { team: t.id, teamName: t.name || '' } : {}), role,
     clubName: (acc().org || {}).name || '', by: me.uid, byName: me.name || '',
-    at, expiresAt: at + INVITE_DAYS * 864e5
+    at, expiresAt: at + (lim.days || INVITE_DAYS) * 864e5, ...seatsFor(uses)
   };
   if (p) { doc.player = p.id; if (p.number) doc.playerNo = String(p.number); }
   if (email) doc.email = email;
-  const listed = { role: doc.role, ...(t ? { team: doc.team, teamName: doc.teamName } : {}), by: doc.by, byName: doc.byName, at, expiresAt: doc.expiresAt };
+  const listed = { role: doc.role, ...(t ? { team: doc.team, teamName: doc.teamName } : {}), by: doc.by, byName: doc.byName, at, expiresAt: doc.expiresAt, ...(uses > 1 ? { max: uses } : {}) };
   if (p) { listed.playerName = p.name || ''; listed.player = p.id; }
   if (email) listed.email = email;
   await fb.set(fb.ref(fb.db, 'invites/' + id), doc);
@@ -2554,8 +2704,8 @@ function sheetSquadInvites(tid) {
         ${canShare ? `<button class="btn quiet sm" data-act="inviteshare" data-v="${esc(link)}">Share</button>` : ''}` : ''}</span></div>`;
   };
   openSheet(`<h3>Invite ${teamLabel(t)}'s parents</h3>
-    ${list.length ? `<p class="muted" style="margin-top:0">One link per family, for the ${list.length} player${list.length === 1 ? '' : 's'} with no parent linked yet. Each works once, for ${INVITE_DAYS} days, and makes whoever opens it that child's parent — so send each one to that family only.</p>
-      ${missing.length ? `<button class="btn wide" data-act="squadinvitego" data-tid="${tid}">Make ${missing.length} link${missing.length === 1 ? '' : 's'}</button>` : ''}
+    ${list.length ? `<p class="muted" style="margin-top:0">One link per family, for the ${list.length} player${list.length === 1 ? '' : 's'} with no parent linked yet. Each makes whoever opens it that child's parent, up to as many people as you choose — so send each one to that family only.</p>
+      ${missing.length ? `${limitFields('sqinv')}<button class="btn wide" data-act="squadinvitego" data-tid="${tid}">Make ${missing.length} link${missing.length === 1 ? '' : 's'}</button>` : ''}
       <div class="plist" style="margin-top:10px">${list.map(row).join('')}</div>`
     : `<p class="muted">Every player on the squad has a parent linked.</p>`}
     <p class="muted">A child can have any number of parents. For a second one (or a grandparent who does the driving), post the team link, or make one more link from People → <i>Invite someone</i>.</p>
@@ -2567,9 +2717,10 @@ async function inviteSquad(tid) {
   if (!t || !canAdmin()) { toast('Club admins only'); return; }
   if (!fb || !rtdb || !me) { toast(me ? 'Needs a connection to the database' : 'Sign in first'); return; }
   const todo = players(t).filter(p => needsParent(t, p) && !openParentInvite(tid, p));
+  const lim = readLimits('sqinv');
   let n = 0;
   for (const p of todo) {
-    try { await writeInvite(t, 'parent', p, ''); n++; } catch (e) {
+    try { await writeInvite(t, 'parent', p, '', lim); n++; } catch (e) {
       toast(/permission|denied/i.test((e && e.code) || '') ? 'The database refused it — are the invite rules from README published?' : 'Stopped — no connection');
       break;
     }
@@ -2591,8 +2742,9 @@ async function makeInvite() {
   const el = $('#invEmail');
   const email = ((el && el.value) || '').trim().toLowerCase();
   if (email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) { toast('That email does not look right'); return; }
+  const lim = readLimits('inv');
   let made;
-  try { made = await writeInvite(t, f.role, p, email); } catch (e) {
+  try { made = await writeInvite(t, f.role, p, email, lim); } catch (e) {
     toast(/permission|denied/i.test((e && e.code) || '') ? 'The database refused it — are the invite rules from README published?' : 'Could not make the invite');
     return;
   }
@@ -2602,7 +2754,7 @@ async function makeInvite() {
   const link = inviteLink(id);
   const canShare = typeof navigator !== 'undefined' && typeof navigator.share === 'function';
   openSheet(`<h3>Invite ready</h3>
-    <p class="muted" style="margin-top:0">${esc(INVITE_ROLES[doc.role])}${doc.teamName ? ` on <b>${esc(doc.teamName)}</b>` : ' for the whole club'}${email ? ` for <b>${esc(email)}</b>` : ''}. Works once, for ${INVITE_DAYS} days.</p>
+    <p class="muted" style="margin-top:0">${esc(INVITE_ROLES[doc.role])}${doc.teamName ? ` on <b>${esc(doc.teamName)}</b>` : ' for the whole club'}${email ? ` for <b>${esc(email)}</b>` : ''}. ${usesLine(doc.max || 1, doc.expiresAt)}.</p>
     <div class="codebox">${esc(link)}</div>
     <div class="row" style="margin-bottom:10px"><button class="btn" data-act="copylink" data-v="${esc(link)}">Copy link</button>
     ${canShare ? `<button class="btn quiet" data-act="inviteshare" data-v="${esc(link)}">Share…</button>` : ''}</div>
@@ -2747,7 +2899,7 @@ function captureJoin() {
       history.replaceState(null, '', location.pathname + (rest ? '?' + rest : '') + (location.hash || ''));
     }
     const held = JSON.parse(localStorage.getItem(LS_JOIN) || 'null');
-    join = held && held.code ? { code: held.code, status: 'idle', doc: held.doc || null, err: null, hidden: !!held.hidden } : null;
+    join = held && held.code ? { code: held.code, status: 'idle', doc: held.doc || null, err: null, hidden: !!held.hidden, sent: !!(held.doc && held.doc.fan) } : null;
   } catch (e) { join = null; }
 }
 function holdJoin() {
@@ -2768,20 +2920,26 @@ function maybeLoadJoin() {
   const code = join.code, who = me.uid;
   join.status = 'loading';
   const { db, mod } = rtdb;
+  const watchClaim = v => mod.onValue(mod.ref(db, `claims/${v.ws}/${v.team}/${who}`), cs => {
+    if (!join || join.code !== code || !me || me.uid !== who) return;
+    const c = cs.val();
+    if (c && c.approved) { joinApproved(v); return; }
+    if (c) { join.status = 'sent'; join.sent = true; }
+    else join.status = join.sent ? 'declined' : 'ready';
+    render();
+  }, () => { join.status = v.fan ? 'sent' : 'ready'; render(); });
+  // a fan's ask has no team link behind it: the spent invite was the link
+  if (join.doc && join.doc.fan) { watchClaim(join.doc); render(); return; }
   mod.onValue(mod.ref(db, 'joinCodes/' + code), s => {
     if (!join || join.code !== code || !me || me.uid !== who) return;
     const v = s.val();
     if (!v) { join.status = join.doc && join.sent ? join.status : 'gone'; render(); return; }
     join.doc = v; holdJoin();
     if (wsCode() === v.ws && isGuardian(v.team, who)) { dropJoin(); toast(`You're already in ${v.teamName || 'that team'}`); render(); return; }
-    mod.onValue(mod.ref(db, `claims/${v.ws}/${v.team}/${who}`), cs => {
-      if (!join || join.code !== code || !me || me.uid !== who) return;
-      const c = cs.val();
-      if (c && c.approved) { joinApproved(v); return; }
-      if (c) { join.status = 'sent'; join.sent = true; }
-      else join.status = join.sent ? 'declined' : 'ready';
-      render();
-    }, () => { join.status = 'ready'; render(); });
+    // a link with an end date, or for so many people: said before she types anything (an ask already sent still waits)
+    if (!join.sent && v.expiresAt && v.expiresAt <= nowMs()) { join.status = 'expired'; render(); return; }
+    if (!join.sent && v.seats && !(v.took || {})[who] && !linkSeatFree(v)) { join.status = 'full'; render(); return; }
+    watchClaim(v);
   }, err => {
     if (!join || join.code !== code) return;
     join.status = 'error'; join.err = (err && err.code) || String(err);
@@ -2819,14 +2977,17 @@ async function sendClaim() {
   const at = nowMs();
   join.status = 'working'; render();
   try {
+    // a team link for so many people: a seat first, which is what the ask's rule looks for
+    if (v.seats) await takeSeat((p, x) => mod.set(mod.ref(db, p), x), 'joinCodes/' + join.code, v, who, at);
     // so a coach or admin sees who is asking, as they would anyone who signed in
     await mod.set(mod.ref(db, clubPath('access/members/' + who, v.ws, await probeTree(v.ws))), { name: me.name || '', email: me.email || '', at });
     await mod.set(mod.ref(db, `claims/${v.ws}/${v.team}/${who}`), {
       code: join.code, shirt, ...(child ? { child } : {}), name: me.name || '', email: me.email || '', at
     });
   } catch (e) {
+    if (e && e.code === 'full') { join.status = 'full'; render(); return; }
     join.status = 'error';
-    join.err = /permission|denied/i.test((e && e.code) || '') ? 'The database refused it — the link may have been replaced. Ask the coach for the new one'
+    join.err = /permission|denied/i.test((e && e.code) || '') ? 'The database refused it — the link may have been replaced or run out. Ask the coach for the new one'
       : ((e && e.code) || String(e));
     render(); return;
   }
@@ -2844,8 +3005,18 @@ function joinScreen() {
   if (!me) return box('Join your child’s team',
     'Sign in first. Use the account you want to keep — it is the one the coaches will know you by.',
     `<button class="btn" data-act="signinsheet">Sign in</button>${later}`);
+  // a fan's ask was just written: waiting is what she is doing, while the watch starts
+  if ((s === 'sent' || ((s === 'idle' || s === 'loading') && join.sent)) && v.fan) return box(`Waiting for a coach of ${tm}`,
+    `You have asked to follow a player at ${club} as a fan. Once one of the team's coaches says yes, this opens the club by itself — you can close it meanwhile.`,
+    `<button class="btn quiet" data-act="joincancel">Cancel the request</button>${later}`);
+  if (s === 'declined' && v.fan) return box('Not approved',
+    `A coach of ${tm} did not approve it. If that is a mistake, ask the family for a new link.`, `<button class="btn quiet" data-act="joindrop">OK</button>`);
   if (s === 'idle' || s === 'loading') return box('Opening the team link…', 'This needs a signal. It will carry on by itself once there is one.', later);
   if (s === 'working') return box('Sending…', `Asking the coaches of ${tm}.`, '');
+  if (s === 'expired') return box('That team link has expired',
+    'The coach gave it an end date, and it has passed. Ask them for the latest link.', `<button class="btn" data-act="joindrop">OK</button>`);
+  if (s === 'full') return box('That team link has been used up',
+    'The coach made it for a set number of families, and that many have used it. Ask them for a new one.', `<button class="btn" data-act="joindrop">OK</button>`);
   if (s === 'gone') return box('That team link no longer works',
     'The coach has made a new one. Ask them for the latest link.', `<button class="btn" data-act="joindrop">OK</button>`);
   if (s === 'error') return box('Something went wrong', `${esc(join.err || '')}. Check the signal and try again.`,
@@ -2867,22 +3038,25 @@ function joinScreen() {
 }
 
 /* ---- the coach's side ---- */
-async function makeJoinCode(tid) {
+async function makeJoinCode(tid, lim = {}) {
   const t = state.teams[tid];
   if (!t || !mayGrant(tid)) { toast('Club admins and that team’s coaches only'); return; }
   if (!fb || !me) { toast(me ? 'Needs a connection to the database' : 'Sign in first'); return; }
   const code = secretId().replace(/^i/, 'j'), at = nowMs(), old = (t.join || {}).code;
+  // no limits is how a team link has always worked: until she makes a new one, for everyone it reaches
+  const uses = Math.max(0, Math.min(JOIN_MAX, lim.uses || 0)), until = lim.days ? at + lim.days * 864e5 : 0;
+  const limits = { ...(until ? { expiresAt: until } : {}), ...(uses ? (uses > 1 ? seatsFor(uses) : { max: 1, seats: { s1: true } }) : {}) };
   try {
     await fb.set(fb.ref(fb.db, 'joinCodes/' + code), {
       ws: wsCode(), team: tid, teamName: t.name || '', clubName: (acc().org || {}).name || '',
-      by: me.uid, byName: me.name || '', at
+      by: me.uid, byName: me.name || '', at, ...limits
     });
   } catch (e) {
     toast(/permission|denied/i.test((e && e.code) || '') ? 'The database refused it — are the team link rules from README published?' : 'Could not make the link');
     return;
   }
   if (old) Promise.resolve(fb.remove(fb.ref(fb.db, 'joinCodes/' + old))).catch(() => { });
-  commit(`teams/${tid}/join`, { code, at, by: me.uid });
+  commit(`teams/${tid}/join`, { code, at, by: me.uid, ...(until ? { until } : {}), ...(uses ? { max: uses } : {}) });
   logAccess(old ? 'replaced the team link' : 'made a team link', null, { team: tid, teamName: t.name || null });
   toast(old ? 'New link made — the old one has stopped working' : 'Team link made');
 }
@@ -2911,6 +3085,8 @@ function watchClaims() {
 }
 const pendingClaims = tid => Object.entries(claimsSeen[tid] || {}).filter(([, c]) => c && !c.approved)
   .map(([u, c]) => ({ uid: u, ...c })).sort((a, b) => (a.at || 0) - (b.at || 0));
+// an ask made with a fan link names its invite; a family's names a shirt number
+const isFanAsk = c => !!(c && c.invite);
 // the shirt numbers a request names, matched to the squad; never a guess beyond that
 function claimMatches(t, c) {
   const nums = String(c.shirt || '').split(/[^0-9A-Za-z]+/).map(x => x.trim().toLowerCase()).filter(Boolean);
@@ -2942,6 +3118,36 @@ async function approveClaim(tid, u, pids) {
   saveLocal(); render();
   toast(`${c.name || c.email || 'They'} can open the team now`);
 }
+/* A fan's ask approved (AUTH.md, *More kinds of people*, 1): the same
+   order as a family's — the approval first, which the index rule looks for —
+   then her place on the child's record, the index entry naming this team,
+   and the team's fans table, which the rule holds to the record. */
+// SERVER.md: approval written before the index entry, for the rules; a server would do it in one call.
+async function approveFan(tid, u) {
+  const t = state.teams[tid];
+  if (!t || !mayGrant(tid)) { toast('Club admins and that team’s coaches only'); return; }
+  const c = (claimsSeen[tid] || {})[u];
+  const p = c && isFanAsk(c) && (t.players || {})[c.player];
+  if (!p) { toast(c ? 'That player is no longer on the squad' : 'That request has gone'); return; }
+  if (!fb || !me) { toast('Needs a connection to the database'); return; }
+  const at = nowMs();
+  try {
+    await fb.set(fb.ref(fb.db, `claims/${wsCode()}/${tid}/${u}/approved`), { by: me.uid, at, fan: p.id });
+  } catch (e) {
+    toast(/permission|denied/i.test((e && e.code) || '') ? 'The database refused it — are the newest rules from README published?' : 'Not approved — no connection');
+    return;
+  }
+  setDeep(claimsSeen, `${tid}/${u}/approved`, { by: me.uid, at });
+  if (!((p.fans || {})[u])) commit(`teams/${tid}/players/${p.id}/fans/${u}`, true);
+  // her name where the child's family reads it (they cannot read the club's members)
+  if (c.name || c.email) quiet(`teams/${tid}/players/${p.id}/fanNames/${u}`, String(c.name || String(c.email).split('@')[0]).slice(0, 80));
+  if (!(acc().index || {})[u]) quiet(`access/index/${u}`, tid);
+  if (!(acc().members || {})[u]) quiet(`access/members/${u}`, { name: c.name || '', email: c.email || '', at: c.at || at });
+  syncTeamFans(tid);
+  logAccess('approved as fan', u, { team: tid, teamName: t.name || null, player: p.name });
+  saveLocal(); render();
+  toast(`${c.name || c.email || 'They'} can follow ${firstName(p)} now`);
+}
 function declineClaim(tid, u) {
   if (!mayGrant(tid)) { toast('Club admins and that team’s coaches only'); return; }
   if (!confirm('Turn this request down? They can ask again.')) return;
@@ -2972,16 +3178,29 @@ function joinCard(t) {
       <div class="row"><button class="btn sm" data-act="claimok" data-tid="${t.id}" data-uid="${esc(c.uid)}"${chosen.length ? '' : ' disabled'}>Let in as parent${chosen.length ? ' of ' + chosen.map(pid => esc(t.players[pid].name || '')).join(' & ') : ''}</button>
         <button class="btn quiet sm" data-act="claimno" data-tid="${t.id}" data-uid="${esc(c.uid)}">Turn down</button></div></div>`;
   };
+  const fanreq = c => {
+    const p = (t.players || {})[c.player];
+    return `<div class="claim">
+      <div><b>${esc(c.name || c.email || 'Someone')}</b>${c.email && c.name ? ` <span class="muted">${esc(c.email)}</span>` : ''}</div>
+      <div class="rowsub">Asks to follow ${p ? esc(p.name || '') : 'a player no longer on the squad'} as a fan${c.askedBy ? ' · asked for by ' + esc(c.askedBy) : ''} · ${esc(whenShort(c.at))}</div>
+      <div class="row" style="margin-top:8px"><button class="btn sm" data-act="fanok" data-tid="${t.id}" data-uid="${esc(c.uid)}"${p ? '' : ' disabled'}>Let in as fan</button>
+        <button class="btn quiet sm" data-act="claimno" data-tid="${t.id}" data-uid="${esc(c.uid)}">Turn down</button></div></div>`;
+  };
+  const fams = reqs.filter(c => !isFanAsk(c)), fanAsks = reqs.filter(isFanAsk);
   const without = players(t).filter(p => needsParent(t, p)).length;
   return `<div class="card">
     <div class="spread"><h2>Parents</h2>${reqs.length ? `<span class="pill asking">${reqs.length} asking</span>` : ''}</div>
-    ${reqs.length ? `<div class="claims">${reqs.map(req).join('')}</div>` : ''}
+    ${fams.length ? `<div class="claims">${fams.map(req).join('')}</div>` : ''}
+    ${fanAsks.length ? `<p class="lbl" style="margin-top:8px">Fans asking</p><div class="claims">${fanAsks.map(fanreq).join('')}</div>
+      <p class="muted" style="margin:0 0 8px">A fan sees the calendar, the games and the team's notices, and that player by name. She doesn't say who is going, message you or book sessions.</p>` : ''}
     <p class="muted" style="margin:8px 0">${link ? 'Post this link in the team chat. Parents sign in, type their child’s shirt number, and wait for you to let them in here.' : 'One link for the whole team: parents sign in, type their child’s shirt number, and you let them in here with a tap.'}</p>
     ${link ? `<div class="codebox">${esc(link)}</div>
+      <p class="muted" style="margin:0 0 8px">${j.until && j.until <= nowMs() ? `<b>Expired ${esc(new Date(j.until).toLocaleDateString())}</b> — make a new one.` : esc(usesLine(j.max || 0, j.until))}</p>
       <div class="row" style="margin-bottom:8px"><button class="btn sm" data-act="copylink" data-v="${esc(link)}">Copy link</button>
-      ${canShare ? `<button class="btn quiet sm" data-act="inviteshare" data-v="${esc(link)}">Share…</button>` : ''}
-      <button class="btn quiet sm" data-act="joinnew" data-tid="${t.id}">New link</button></div>`
-    : `<button class="btn wide" data-act="joinnew" data-tid="${t.id}">Make a team link</button>`}
+      ${canShare ? `<button class="btn quiet sm" data-act="inviteshare" data-v="${esc(link)}">Share…</button>` : ''}</div>
+      ${limitFields('join', { anyUses: true, anyDays: true, uses: 0, days: 0 })}
+      <button class="btn quiet wide" data-act="joinnew" data-tid="${t.id}" style="margin-bottom:8px">New link with these limits</button>`
+    : `${limitFields('join', { anyUses: true, anyDays: true, uses: 0, days: 0 })}<button class="btn wide" data-act="joinnew" data-tid="${t.id}">Make a team link</button>`}
     ${canAdmin() ? `<button class="btn quiet wide" data-act="squadinvites" data-tid="${t.id}">Or a personal link per family${without ? ` (${without} without a parent)` : ''}</button>` : ''}
   </div>`;
 }
@@ -3051,7 +3270,8 @@ const isStaff = tid => !!me && (canAdmin() || isCoach(tid, me.uid));
    and that team's notices are not hers. */
 function msgTeams() {
   if (!me || !fb || !wsCode() || needsSignIn() || !anyAdmins()) return [];
-  return teams().filter(t => isStaff(t.id) || isTracker(t.id, me.uid) || isHelper(t.id, me.uid) || isGuardian(t.id, me.uid) || isSelfOn(t.id, me.uid));
+  // a fan reads her player's team's notices; she has no conversation of her own (famThreads())
+  return teams().filter(t => isStaff(t.id) || isTracker(t.id, me.uid) || isHelper(t.id, me.uid) || isGuardian(t.id, me.uid) || isSelfOn(t.id, me.uid) || isFanOn(t.id, me.uid));
 }
 const staffTeams = () => msgTeams().filter(t => isStaff(t.id));
 /* Who posts a team's notices: its staff, and its helpers (AUTH.md, *Team
@@ -6503,8 +6723,8 @@ function render() {
   if (ui.view === 'sessions' && !shut && (wsRead || !fbConfig().apiKey) && !canSessions()) ui.view = 'club';
   // a parent has no business reading the rest of the squad's names or the team's set-up
   const sb = document.querySelector('#tabs [data-view="roster"]');
-  if (sb) sb.hidden = famRole(lim);
-  if (ui.view === 'roster' && famRole(lim)) ui.view = anyPlayers() ? 'mine' : 'season';
+  if (sb) sb.hidden = readerRole(lim);
+  if (ui.view === 'roster' && readerRole(lim)) ui.view = anyPlayers() ? 'mine' : 'season';
   /* Practice is a coach's and an admin's, on any team: the library isn't
      about one team, and a parent or a tracker never gets the tab at all. */
   const train = canTrain();
@@ -6521,7 +6741,7 @@ function render() {
      tracker is there to log, a coach to make subs. */
   /* A helper prepares a game and follows it: its plan (read-only once it has
      kicked off), never the clock or the subs. */
-  const allowed = lim === 'tracker' ? ['live', 'track', 'stats', 'recap'] : lim === 'helper' ? ['live', 'plan', 'stats', 'recap'] : famRole(lim) || lim === 'viewer' ? ['live', 'stats', 'recap'] : ['live', 'subs', 'track', 'stats', 'recap', 'pitch', 'plan'];
+  const allowed = lim === 'tracker' ? ['live', 'track', 'stats', 'recap'] : lim === 'helper' ? ['live', 'plan', 'stats', 'recap'] : readerRole(lim) || lim === 'viewer' ? ['live', 'stats', 'recap'] : ['live', 'subs', 'track', 'stats', 'recap', 'pitch', 'plan'];
   // the recap is the story of a finished game; before full time there is no story yet
   const recapOk = !!(inGame && match() && gameStatus(match()) === 'done');
   /* Once the coach has pressed End game, the screens for running one (Subs,
@@ -6560,7 +6780,7 @@ function render() {
       : `Viewing <b>${teamLabel(team())}</b> from another team in the club. You can read it, not change it.`}</div>` : '';
   // "you can read, not change" is about the team; on Messages a parent writes, and on the Calendar she answers
   const roleNote = lim && lim !== 'viewer' && v !== 'inbox' && v !== 'thread' && v !== 'notes'
-    ? `<div class="rolebar">Signed in as <b>${esc(ROLE_LABEL[lim])}</b> — ${lim === 'tracker' ? "you can log events and make the coach's planned subs when they are due, but not run the clock or make other subs" : lim === 'parent' && v === 'sessions' ? 'you can ask for a place for your child, and withdraw her' : lim === 'parent' ? 'you can read, and say from the Calendar whether your child is coming' : lim === 'player' ? 'you can read, and say from the Calendar whether you are coming' : 'you can read, not change'}.</div>`
+    ? `<div class="rolebar">Signed in as <b>${esc(ROLE_LABEL[lim])}</b> — ${lim === 'tracker' ? "you can log events and make the coach's planned subs when they are due, but not run the clock or make other subs" : lim === 'parent' && v === 'sessions' ? 'you can ask for a place for your child, and withdraw her' : lim === 'parent' ? 'you can read, and say from the Calendar whether your child is coming' : lim === 'player' ? 'you can read, and say from the Calendar whether you are coming' : lim === 'fan' ? 'you follow the calendar, the games and the notices; the family answers and talks to the coaches' : 'you can read, not change'}.</div>`
     : '';
   /* Never let a rehearsal pass for the real thing. Both facts are worth saying
      out loud: a test club holds invented data and publishes nothing, and a
@@ -8895,7 +9115,7 @@ function calSyncCard(t, all) {
         <a class="btn sm" href="${esc(webcal(u))}">Apple Calendar</a>
         <a class="btn quiet sm" href="${esc(googleSub(u))}" target="_blank" rel="noopener">Google Calendar</a>
         <button class="btn quiet sm" data-act="copytext" data-v="${esc(u)}">Copy the address</button></div>
-      ${canEditTeam(x.id) ? `<button class="textbtn" data-act="calsyncnew" data-tid="${esc(x.id)}" style="margin-top:6px">Replace this address</button>` : ''}</div>`;
+      ${canEditTeam(x.id) ? `<div style="margin-top:8px">${untilChips('feed', x.calFeedUntil, `data-tid="${esc(x.id)}"`)}</div><button class="textbtn" data-act="calsyncnew" data-tid="${esc(x.id)}" style="margin-top:6px">Replace this address</button>` : ''}</div>`;
     return canEditTeam(x.id)
       ? `<button class="btn wide" data-act="calsyncon" data-tid="${esc(x.id)}" style="margin-bottom:8px">Turn on calendar sync${all ? ' for ' + teamLabel(x) : ''}</button>`
       : `<p class="muted">${all ? teamLabel(x) + ': the' : 'The'} coach has not turned calendar sync on yet.</p>`;
@@ -10057,14 +10277,15 @@ function sheetFormations() {
 }
 /* --- my players: the same page whatever else you are here --- */
 function viewMine() {
-  const list = myPlayers(), away = elsewhereKids();
+  // the players she is a fan of come after her own, and their cards say less (fan: true)
+  const list = [...myPlayers(), ...myFanOf().map(x => ({ ...x, sup: true }))], away = elsewhereKids();
   if (!list.length && !away.length) return `<div class="empty"><strong>Nobody linked yet</strong>
     A coach links your account to your player, and she shows up here.</div>`;
 
   const justMe = list.length && list.every(x => isMe(x.p)) && !away.length;
   return `<div class="stack">
     <h2>${justMe ? 'My season' : 'My players'}</h2>
-    ${list.map(({ t, p }) => {
+    ${list.map(({ t, p, sup }) => {
     const ms = teamMatches(t.id);
     const played = ms.reduce((a, m) => a + playedSec(m, p.id), 0);
     const planned = ms.reduce((a, m) => a + plannedSec(m, p.id), 0);
@@ -10083,7 +10304,7 @@ function viewMine() {
         <div class="row">
           ${p.photo ? `<img class="crest" src="${esc(p.photo)}" alt="">` : `<span class="crest blank">${esc(p.number ?? '')}</span>`}
           <span><b style="font-size:18px">${esc(p.name)}</b>
-            <span class="rowsub">${esc(p.number ? '#' + p.number + ' · ' : '')}${teamLabel(t)}</span></span>
+            <span class="rowsub">${esc(p.number ? '#' + p.number + ' · ' : '')}${teamLabel(t)}${sup ? ' · you\u2019re her fan' : ''}</span></span>
         </div>
         <span class="pmins"><span data-live="smins" data-tid="${t.id}" data-pid="${p.id}">${mins(played)}</span><small> min</small>
           <span data-live="sdiff" data-tid="${t.id}" data-pid="${p.id}">${diffTag(played, planned)}</span></span>
@@ -10102,13 +10323,15 @@ function viewMine() {
         ${next ? `<button class="prow" data-act="calitem" data-k="${next.kind}" data-tid="${esc(t.id)}" data-id="${esc(next.id)}" style="grid-template-columns:1fr auto">
           <span><span class="pname">Next — ${esc(next.title)}</span>
             <span class="rowsub">${[relDay(next.date) || dayLabel(next.date), niceTime(next.start), next.venue,
-      rsvpOpen(next) ? (r => r ? RSVP[r.v] : 'Not answered yet')(rsvpOf(t.id, rsvpKey(next), p.id)) : ''].filter(Boolean).map(esc).join(' · ')}</span></span>
+      !sup && rsvpOpen(next) ? (r => r ? RSVP[r.v] : 'Not answered yet')(rsvpOf(t.id, rsvpKey(next), p.id)) : ''].filter(Boolean).map(esc).join(' · ')}</span></span>
           <span class="tag ${next.kind}">${CAL_KIND[next.kind]}</span></button>` : ''}
         ${(ns => ns ? `<button class="prow" data-act="sessopen" data-id="${esc(ns.id)}" style="grid-template-columns:1fr auto">
           <span><span class="pname">Next session — ${esc(sessTitle(ns))}</span>
             <span class="rowsub">${[relDay(ns.date) || dayLabel(ns.date), niceTime(ns.start), sessPlace(ns), 'with ' + ns.coachName, BOOK[bookOf(ns.id, p.id).st]].filter(Boolean).map(esc).join(' · ')}</span></span>
-          <span class="tag session">Training</span></button>` : '')(sessAll().find(s => !sessPast(s) && !s.called && (b => b && b.st !== 'out' && b.st !== 'no')(bookOf(s.id, p.id))))}
-      </div></div>`;
+          <span class="tag session">Training</span></button>` : '')(!sup && sessAll().find(s => !sessPast(s) && !s.called && (b => b && b.st !== 'out' && b.st !== 'no')(bookOf(s.id, p.id))))}
+      </div>
+      ${sup ? `<button class="btn quiet wide" data-act="fanleave" data-tid="${t.id}" data-pid="${p.id}" style="margin-top:10px">Stop following ${esc(firstName(p))}</button>` : ''}
+      ${!sup && onOrgs() && fbConfig().apiKey ? `<button class="btn quiet wide" data-act="fansheet" data-tid="${t.id}" data-pid="${p.id}" style="margin-top:10px">${isMe(p) ? 'Your fans' : 'Fans'}${Object.keys(p.fans || {}).length ? ' (' + Object.keys(p.fans).length + ')' : ''}</button>` : ''}</div>`;
   }).join('')}
     ${away.map(k => `<div class="card">
       <div class="row"><span class="crest blank">${esc((k.name || '?').slice(0, 1))}</span>
@@ -10602,7 +10825,7 @@ function sheetDrillRefused(why) {
   const body = {
     club: `<h3>This drill is for the club's coaches</h3>
       <p>It's on the club's own shelf, which only the club's coaches and admins can open${me ? '' : ', signed in'}. ${!me ? 'If you coach here, sign in with the account the club knows and open the link again.'
-        : famRole(lim) ? `You're signed in as a ${lim}, so it stays closed to you.` : lim === 'tracker' ? "You're signed in as a tracker, so it stays closed to you."
+        : readerRole(lim) ? `You're signed in as a ${lim}, so it stays closed to you.` : lim === 'tracker' ? "You're signed in as a tracker, so it stays closed to you."
         : "Your account isn't a coach or an admin here, so it stays closed to you."} The drills that come with the app open for anyone.</p>`,
     mine: `<h3>That drill is private</h3><p>It's on a coach's own shelf, which only she can open. Ask her to share it with the club and send the club's copy.</p>`,
     gone: `<h3>That drill isn't here</h3><p>It isn't in this club's drills any more. Whoever shared it may have removed it.</p>`,
@@ -14840,7 +15063,7 @@ function myRoleTeams() {
   return out;
 }
 function myCalTeams() {
-  const out = new Set([...myRoleTeams(), ...myPlayers().map(k => k.t.id)]);
+  const out = new Set([...myRoleTeams(), ...myPlayers().map(k => k.t.id), ...myFanOf().map(k => k.t.id)]);
   /* A club before anyone signs in has nobody's calendar yet, so it shows the
      club's. An admin who works no team of her own used to get the club's too,
      which made a personal calendar the club's planning screen; that is All
@@ -14972,8 +15195,9 @@ function mirrorSlim(part, v) {
   const mine = u => me && u === me.uid;
   if (part === 'teams') return Object.fromEntries(Object.entries(v).filter(([, t]) => t && typeof t === 'object').map(([id, t]) => [id, {
     id, name: t.name || '', events: t.events || {},
-    players: Object.fromEntries(Object.entries(t.players || {}).filter(([, p]) => p && ((p.guardians && Object.keys(p.guardians).some(mine)) || (p.self && Object.keys(p.self).some(mine))))
-      .map(([pid, p]) => [pid, { id: pid, name: p.name || '', ...((p.guardians || {})[me.uid] ? { guardians: { [me.uid]: true } } : { self: { [me.uid]: true } }) }]))
+    players: Object.fromEntries(Object.entries(t.players || {}).filter(([, p]) => p && ['guardians', 'self', 'fans'].some(k => p[k] && Object.keys(p[k]).some(mine)))
+      // which of the three she is, and nothing else about who else is
+      .map(([pid, p]) => [pid, { id: pid, name: p.name || '', [['guardians', 'self', 'fans'].find(k => (p[k] || {})[me.uid])]: { [me.uid]: true } }]))
   }]));
   if (part === 'matches') return Object.fromEntries(Object.entries(v).filter(([, m]) => m && typeof m === 'object').map(([id, m]) => [id,
     Object.fromEntries(['id', 'teamId', 'opponent', 'date', 'kickoff', 'venue', 'called', 'home', 'periodCount', 'periodMinutes', 'currentHalf', 'ended', 'periods', 'createdAt']
@@ -15042,7 +15266,7 @@ function watchMirrorOrgs(code, offs, take) {
   };
   const watchKids = () => {
     const u = me && me.uid, a = part.access || {};
-    for (const tbl of ['teamParents', 'teamPlayers']) for (const [tid, row] of Object.entries(a[tbl] || {})) {
+    for (const tbl of ['teamParents', 'teamPlayers', 'teamFans']) for (const [tid, row] of Object.entries(a[tbl] || {})) {
       const pid = row && u && row[u];
       if (typeof pid !== 'string' || watching.has(tid + '/' + pid)) continue;
       watching.add(tid + '/' + pid);
@@ -15156,7 +15380,7 @@ function watchYou() {
     if (!me || me.uid !== who) return;
     const v = snap.val();
     // a phone that changed it offline keeps its own word until it has been sent
-    if (v && typeof v === 'object' && (Number(v.at) || 0) >= (Number((you.set || {}).at) || 0)) { you.set = { share: v.share === true, at: Number(v.at) || 0, ...(typeof v.feed === 'string' ? { feed: v.feed } : {}) }; saveYou(); youPublishSoon(); }
+    if (v && typeof v === 'object' && (Number(v.at) || 0) >= (Number((you.set || {}).at) || 0)) { you.set = { share: v.share === true, at: Number(v.at) || 0, ...(typeof v.feed === 'string' ? { feed: v.feed } : {}), ...(typeof v.feedUntil === 'number' ? { feedUntil: v.feedUntil } : {}) }; saveYou(); youPublishSoon(); }
     if (ui.view === 'mycal') render();
   }, () => { });
 }
@@ -15553,7 +15777,7 @@ function myFeedDoc() {
     const x = feedItem(it, scrub);
     if (x && !items[x[0]]) { items[x[0]] = x[1]; n++; }
   }
-  return { team: { name: 'My calendar' }, mine: true, link: { app: shareBase() + 'index.html' }, items, updated: nowMs() };
+  return { team: { name: 'My calendar' }, mine: true, link: { app: shareBase() + 'index.html' }, items, updated: nowMs(), ...untilOf(me && youHere().set && you.set.feedUntil) };
 }
 /* On, a new address, or off: her setting, and nothing else. The server
    builds the page at the address (functions/mycal.js) and takes a replaced
@@ -15590,6 +15814,7 @@ function myFeedCard() {
       <a class="btn quiet sm" href="${esc(googleSub(u))}" target="_blank" rel="noopener">Google Calendar</a>
       <button class="btn quiet sm" data-act="copytext" data-v="${esc(u)}">Copy the address</button></div>
     <p class="muted">Times, teams and places, never names. Anyone with the address can read it, so keep it to yourself. Outlook: <i>Add calendar → From internet</i>.</p>
+    ${untilChips('mine', you.set && you.set.feedUntil, '')}
     ${isSandbox() ? '<p class="muted">Test club: nothing is published, so a subscription here stays empty.</p>' : ''}
     <div class="row wrap"><button class="textbtn" data-act="myfeed" data-v="new">Replace this address</button>
       <button class="textbtn" data-act="myfeed" data-v="off">Turn it off</button></div></div>`;
@@ -16973,8 +17198,20 @@ function publicDoc(t) {
     // rules are open that id is the password to the whole club. The page only
     // needs somewhere to send a signed-in visitor; the app decides what they see.
     link: { teamId: t.id, app: shareBase() + 'index.html' },
-    games, events: publicEvents(t), record: { w, d, l, gf, ga }, updated: nowMs()
+    games, events: publicEvents(t), record: { w, d, l, gf, ga }, updated: nowMs(), ...untilOf(t.shareUntil)
   };
+}
+/* A share page or feed with an end date (`until`): the read rule refuses it
+   to everyone from then on, and the calendar function says it has gone. Set
+   by the coach on the share sheet (a game's own page takes its own date, or
+   the season's), and by each person for My calendar's address. */
+const untilOf = u => typeof u === 'number' && u > 0 ? { until: u } : {};
+const UNTIL_CHOICES = [[0, 'No end'], [7, 'A week'], [30, 'A month'], [90, 'Three months'], [365, 'A year']];
+function untilChips(kind, cur, attrs) {
+  const past = cur && cur <= nowMs();
+  return `<div class="chips" style="margin-bottom:4px"><span class="muted" style="align-self:center">Stops working:</span>${UNTIL_CHOICES.map(([dd, l]) =>
+    `<button class="chip" type="button" data-act="linkuntil" data-k="${kind}" data-d="${dd}" ${attrs} aria-pressed="${!dd && !cur}">${l}</button>`).join('')}</div>
+    <p class="muted" style="margin:0 0 12px">${!cur ? 'Works until you replace it.' : past ? `<b>Stopped working ${esc(new Date(cur).toLocaleDateString())}.</b> Pick a new end to bring it back.` : `Works until ${esc(new Date(cur).toLocaleDateString())}, then nobody can open it.`}</p>`;
 }
 
 /* Only what a coach marked for the share link, and only the fields a family
@@ -17005,7 +17242,7 @@ function fixtureDoc(t, m) {
   return {
     team: { name: t.name || 'Team', logo: t.logo || null },
     link: { teamId: t.id, app: shareBase() + 'index.html' },
-    fixture: m.id, games: { [m.id]: publicGame(t, m) }, updated: nowMs()
+    fixture: m.id, games: { [m.id]: publicGame(t, m) }, updated: nowMs(), ...untilOf(m.shareUntil || t.shareUntil)
   };
 }
 
@@ -17028,7 +17265,7 @@ function calendarDoc(t) {
   return {
     team: { name: t.name || 'Team', logo: t.logo || null },
     link: { teamId: t.id, app: shareBase() + 'index.html' },
-    calendar: true, games, events: publicEvents(t, true), updated: nowMs()
+    calendar: true, games, events: publicEvents(t, true), updated: nowMs(), ...untilOf(t.calFeedUntil)
   };
 }
 
@@ -17262,6 +17499,8 @@ function rolesHeld(uid, scope) {
       if ((p.guardians || {})[uid]) out.push({ x, r: 'parent', p });
     for (const p of Object.values(x.players || {}))
       if ((p.self || {})[uid]) out.push({ x, r: 'player', p });
+    for (const p of Object.values(x.players || {}))
+      if ((p.fans || {})[uid]) out.push({ x, r: 'fan', p });
   }
   return out;
 }
@@ -17273,7 +17512,7 @@ function roleTags(uid, scope) {
   const by = {};
   for (const v of rolesHeld(uid, scope)) (by[v.r] = by[v.r] || new Set()).add(v.x.name || 'Team');
   return (isViewer(uid) && !isAdmin(uid) ? `<span class="tag">${esc(INVITE_ROLES.viewer)}<i>every team</i></span>` : '')
-    + ['coach', 'tracker', 'helper', 'parent', 'player'].filter(r => by[r]).map(r => {
+    + ['coach', 'tracker', 'helper', 'parent', 'player', 'fan'].filter(r => by[r]).map(r => {
     const names = [...by[r]];
     const what = names.length > 2 ? `${names.length} teams` : names.join(', ');
     return `<span class="tag">${esc(ROLE_LABEL[r])}<i>${esc(what)}</i></span>`;
@@ -17327,8 +17566,8 @@ function sheetPersonRoles(uid) {
     <p class="lbl">${isAdmin(uid) ? 'Admin covers every team. Also' : 'Roles'}</p>
     ${held.length ? held.map(v => `<div class="opt spread">
       <span><b>${esc(ROLE_LABEL[v.r])}</b>${v.p ? ` of ${pname(v.p)}` : ''}<span class="rowsub">${esc(v.x.name || 'Team')}</span></span>
-      ${v.r === 'parent' || v.r === 'player'
-      ? `<button class="btn quiet sm" data-act="${v.r === 'player' ? 'prunself' : 'prunguard'}" data-uid="${uid}" data-tid="${v.x.id}" data-pid="${v.p.id}">Remove</button>`
+      ${v.r === 'parent' || v.r === 'player' || v.r === 'fan'
+      ? `<button class="btn quiet sm" data-act="${{ player: 'prunself', fan: 'prunfan', parent: 'prunguard' }[v.r]}" data-uid="${uid}" data-tid="${v.x.id}" data-pid="${v.p.id}">Remove</button>`
       : `<button class="btn quiet sm" data-act="setrolet" data-uid="${uid}" data-tid="${v.x.id}" data-r="${v.r}">Remove</button>`}</div>`).join('')
       : `<p class="muted" style="margin-top:0">${isAdmin(uid) ? 'Nothing else.' : 'None yet — waiting to be let in. Until they have a role they see nothing of the club.'}</p>`}
 
@@ -17386,12 +17625,14 @@ function sheetShare() {
     ${t.share ? st + `
       <p class="lbl">Follow the season</p>
       <div class="codebox">${esc(teamLink(t))}</div>
-      <div class="row" style="margin-bottom:16px"><button class="btn sm" data-act="copylink" data-v="${esc(teamLink(t))}">Copy season link</button></div>
+      <div class="row" style="margin-bottom:8px"><button class="btn sm" data-act="copylink" data-v="${esc(teamLink(t))}">Copy season link</button></div>
+      ${ro ? '' : untilChips('season', t.shareUntil, `data-tid="${t.id}"`)}
       <p class="muted" style="margin-top:0">Text this once. It always shows whatever game is on, what is coming up — games, and any practice or event marked for the share link — and the season record. Families can add it all to their own calendars from there.</p>
 
       ${m ? `<p class="lbl">This game — ${esc(m.opponent || 'game')}${m.date ? ' · ' + esc(shortDate(m.date)) : ''}</p>
       ${gameLink(t, m) ? `<div class="codebox">${esc(gameLink(t, m))}</div>
-      <div class="row" style="margin-bottom:16px"><button class="btn sm" data-act="copylink" data-v="${esc(gameLink(t, m))}">Copy link to this game</button></div>
+      <div class="row" style="margin-bottom:8px"><button class="btn sm" data-act="copylink" data-v="${esc(gameLink(t, m))}">Copy link to this game</button></div>
+      ${ro ? '' : untilChips('game', m.shareUntil || t.shareUntil, `data-tid="${t.id}" data-mid="${m.id}"`)}
       <p class="muted" style="margin-top:0">Kick-off time, where it is, who is on and the minutes — for this game only. Whoever it reaches cannot get from it to the season page or any other game. Switch games in the bar above to share a different one.</p>`
       : `<p class="muted" style="margin-top:0">${ro ? 'This game\u2019s own link appears once the coach\u2019s phone has published it.' : 'This game\u2019s own link is being made — it appears here in a moment.'}</p>`}` : ''}
 
@@ -17695,8 +17936,116 @@ function selfCard(t, p) {
         ${canShare ? `<button class="btn quiet sm" data-act="inviteshare" data-v="${esc(link)}">Share</button>` : ''}
         <button class="btn quiet sm" data-act="selfinvdrop" data-pid="${p.id}">Withdraw</button>
         <span class="muted">works once, until ${esc(new Date(v.expiresAt).toLocaleDateString())}</span></div>`
-    : `<button class="btn quiet wide" data-act="selfinvite" data-pid="${p.id}" style="margin-bottom:8px">${accounts.length ? 'Another sign-in link for her' : 'Make her a sign-in link'}</button>`}
+    : `${limitFields('selfL', { noUses: true })}<button class="btn quiet wide" data-act="selfinvite" data-pid="${p.id}" style="margin-bottom:8px">${accounts.length ? 'Another sign-in link for her' : 'Make her a sign-in link'}</button>`}
     <p class="muted" style="margin-top:0">Only when she or her family asks. With it she sees what her parents see — her own minutes, the calendar, the games — says whether she is coming, and reads and writes in her family's conversation with the coaches, where her parents see every word. She never has a conversation with a coach on her own.</p>`;
+}
+
+/* A player's fans (AUTH.md, *More kinds of people*, 1). Anyone who can
+   see her may ask for one: her family, she herself, her coach, an admin. The
+   ask is a single-use link, an invite of role `fan`. From her coach or
+   an admin it is approved already; from her family it lets the person who
+   opens it ask, and the coach says yes on Squad. Its id is the secret, so it
+   is never written into the club: this phone keeps the links it made, to show
+   again and to withdraw. */
+const LS_FANINV = 'sm.faninv.v1';
+function fanInvites() {
+  if (!me) return {};
+  try { const v = JSON.parse(localStorage.getItem(LS_FANINV + ':' + clubKey() + ':' + me.uid) || '{}'); return v && typeof v === 'object' ? v : {}; } catch (e) { return {}; }
+}
+function keepFanInvites(v) { if (me) keepStored(LS_FANINV + ':' + clubKey() + ':' + me.uid, JSON.stringify(v)); }
+// the links still open for one player, newest first
+const fanLinks = pid => Object.entries(fanInvites()[pid] || {}).filter(([, v]) => v && (v.expiresAt || 0) > nowMs())
+  .map(([id, v]) => ({ id, ...v })).sort((a, b) => (b.at || 0) - (a.at || 0));
+// who may ask for one: the rules' list, short of the player's own fans
+const mayFanAsk = (tid, p) => !!p && (mayGrant(tid) || isMine(p));
+async function makeFanLink(tid, pid, lim = {}) {
+  const t = state.teams[tid], p = t && (t.players || {})[pid];
+  if (!mayFanAsk(tid, p)) { toast('Her family, her coach or an admin asks for a fan'); return false; }
+  if (!onOrgs()) { toast('Fans need the club moved first (Admin → Move)'); return false; }
+  if (!fb || !rtdb || !me) { toast(me ? 'Needs a connection to the database' : 'Sign in first'); return false; }
+  // both grandparents from one link, if she says so
+  const uses = Math.max(1, Math.min(LINK_MAX, lim.uses || 1));
+  const id = uses > 1 ? randId('m', 18) : secretId(), at = nowMs();
+  // never the child's name: whoever holds the link reads it before anyone has said yes
+  const doc = {
+    ws: wsCode(), team: tid, teamName: t.name || '', role: 'fan', player: pid,
+    clubName: (acc().org || {}).name || '', by: me.uid, byName: me.name || '', at, expiresAt: at + (lim.days || INVITE_DAYS) * 864e5,
+    ...seatsFor(uses),
+    ...(p.number != null && String(p.number).trim() ? { playerNo: String(p.number) } : {}),
+    // a coach or an admin asking is approving (the owner, 2026-10-09)
+    ...(mayGrant(tid) ? { approved: true } : {})
+  };
+  try { await fb.set(fb.ref(fb.db, 'invites/' + id), doc); } catch (e) {
+    toast(/permission|denied/i.test((e && e.code) || '') ? 'The database refused it — are the newest rules from README published?' : 'Could not make the link — no connection');
+    return false;
+  }
+  const all = fanInvites();
+  all[pid] = { ...(all[pid] || {}), [id]: { at, expiresAt: doc.expiresAt, ...(uses > 1 ? { max: uses } : {}) } };
+  keepFanInvites(all);
+  logAccess('made a fan link', null, { team: tid, teamName: t.name || null, player: p.name || null });
+  return true;
+}
+function dropFanLink(pid, id) {
+  const all = fanInvites();
+  if (!(all[pid] || {})[id]) return;
+  // withdrawing is meant for the link itself, several people's included (forgetInvite() keeps those)
+  if (fb) Promise.resolve(fb.remove(fb.ref(fb.db, 'invites/' + id))).catch(() => { });
+  delete all[pid][id];
+  if (!Object.keys(all[pid]).length) delete all[pid];
+  keepFanInvites(all);
+}
+/* Her family sees who follows their child, and decides (the owner,
+   2026-10-09): the names are on the child's record (fanNames), which her
+   family reads where it cannot read the club's members. */
+const mayFanDrop = (tid, p) => !!p && (mayGrant(tid) || isMine(p));
+/* A fan off a player's record, by whoever may: the record and her name
+   first, then the team's table (which the rules let anyone in the club clear
+   once the record no longer names her). Her index entry is the staff's
+   phones' and the server's to take, unless she is leaving herself. */
+function dropFan(tid, pid, u) {
+  const t = state.teams[tid], p = t && (t.players || {})[pid];
+  if (!p) return;
+  const on = (p.fans || {})[u];
+  drop(`teams/${tid}/players/${pid}/fans/${u}`);
+  if ((p.fanNames || {})[u]) drop(`teams/${tid}/players/${pid}/fanNames/${u}`);
+  if (((acc().teamFans || {})[tid] || {})[u] && !fansWanted(tid)[u]) { delDeep(state, `access/teamFans/${tid}/${u}`); remoteDel(`access/teamFans/${tid}/${u}`); }
+  logAccess(me && u === me.uid ? 'stopped being a fan' : 'removed fan', u, { team: tid, teamName: t.name || null, player: p.name });
+  if (me && (u === me.uid || mayGrant(tid))) { if (u !== me.uid) forgetInvite(on); syncIndex(u); }
+  if (mayGrant(tid)) syncTeamFans(tid);
+  saveLocal();
+}
+function fanCard(t, p, from) {
+  const staff = mayGrant(t.id), drop = mayFanDrop(t.id, p);
+  const accounts = Object.keys(p.fans || {});
+  const named = u => { const m = (acc().members || {})[u] || {}; return String((p.fanNames || {})[u] || '') || m.name || m.email || 'A fan'; };
+  const canShare = typeof navigator !== 'undefined' && typeof navigator.share === 'function';
+  const links = fanLinks(p.id);
+  return `<p class="lbl">Fans</p>
+    ${accounts.length ? `<p style="margin:0 0 6px">${accounts.length} ${accounts.length === 1 ? 'fan follows' : 'fans follow'} ${esc(isMe(p) ? 'you' : firstName(p))}.</p>` : ''}
+    ${accounts.map(u => `<div class="prow" style="grid-template-columns:1fr auto"><span><span class="pname">${esc(named(u))}</span>
+      <span class="rowsub">Follows ${esc(isMe(p) ? 'you' : firstName(p))}</span></span>
+      ${drop ? `<button class="btn quiet sm" data-act="fandrop" data-tid="${t.id}" data-pid="${p.id}" data-uid="${esc(u)}" data-from="${from}">Remove</button>` : ''}</div>`).join('')}
+    ${links.map(v => `<div class="codebox">${esc(inviteLink(v.id))}</div>
+      <div class="row" style="margin-bottom:8px"><button class="btn sm" data-act="copylink" data-v="${esc(inviteLink(v.id))}">Copy</button>
+        ${canShare ? `<button class="btn quiet sm" data-act="inviteshare" data-v="${esc(inviteLink(v.id))}">Share</button>` : ''}
+        <button class="btn quiet sm" data-act="faninvdrop" data-tid="${t.id}" data-pid="${p.id}" data-id="${esc(v.id)}" data-from="${from}">Withdraw</button>
+        <span class="muted">${esc(usesLine(v.max || 1, v.expiresAt))}</span></div>`).join('')}
+    ${limitFields('fanL', { uses: 1 })}
+    <button class="btn quiet wide" data-act="faninvite" data-tid="${t.id}" data-pid="${p.id}" data-from="${from}" style="margin-bottom:8px">${links.length ? 'Another fan link' : 'Make a fan link'}</button>
+    <p class="muted" style="margin-top:0">For a grandparent, an aunt, a family friend. A fan sees the calendar, the games as they happen, the scores and the team's notices, and ${esc(firstName(p))} by name; she doesn't say who is going, message the coaches or book sessions. ${staff ? 'You made it, so whoever opens it is let in.' : 'A coach of the team says yes before they see anything.'} ${drop ? 'You can take a fan away here at any time.' : ''}</p>`;
+}
+function sheetFans(tid, pid) {
+  const t = state.teams[tid], p = t && (t.players || {})[pid];
+  if (!mayFanAsk(tid, p)) return;
+  openSheet(`<h3>${esc(isMe(p) ? 'Your fans' : 'Fans of ' + firstName(p))}</h3>
+    ${fanCard(t, p, 'sheet')}
+    <button class="btn wide" data-act="closesheet">Done</button>`);
+}
+// after a change, back to whichever sheet it was made from
+function fanRedraw(tid, pid, from) {
+  const p = ((state.teams[tid] || {}).players || {})[pid];
+  if (!p) { closeSheet(); return; }
+  if (from === 'player') { ui.teamId = tid; sheetPlayer(p); } else sheetFans(tid, pid);
 }
 
 function sheetPlayer(p) {
@@ -17753,7 +18102,8 @@ function sheetPlayer(p) {
       ${members().map(u => `<button class="chip" type="button" data-act="toggleguard" data-pid="${p.id}" data-uid="${u.uid}" aria-pressed="${!!((p.guardians || {})[u.uid])}">${esc(u.name || u.email || 'Unnamed')}</button>`).join('') || '<span class="muted">Nobody has signed in yet.</span>'}
     </div>
     <p class="muted" style="margin-top:-8px">A guardian can read this team and sees her under My players. Linking someone here is what makes them a parent.</p>
-    ${selfCard(t, p)}` : ''}
+    ${selfCard(t, p)}
+    ${onOrgs() ? fanCard(t, p, 'player') : ''}` : ''}
 
     <p class="lbl">Plays better alongside</p>
     <div class="chips" style="margin-bottom:14px">
@@ -19289,7 +19639,7 @@ function onAct(e) {
   if (a === 'joinnew') {
     const t2 = state.teams[d.tid];
     if (t2 && t2.join && !confirm('Make a new link? The current one stops working — anyone still to use it will need the new one.')) return;
-    makeJoinCode(d.tid); return;
+    makeJoinCode(d.tid, readLimits('join', { uses: 0, days: 0, max: JOIN_MAX })); return;
   }
   if (a === 'squadinvites') { if (!canAdmin()) { toast('Club admins only'); return; } sheetSquadInvites(d.tid); return; }
   if (a === 'squadinvitego') { inviteSquad(d.tid); return; }
@@ -19307,6 +19657,60 @@ function onAct(e) {
     approveClaim(d.tid, d.uid, pk); return;
   }
   if (a === 'claimno') { declineClaim(d.tid, d.uid); return; }
+  /* Fans (AUTH.md, *More kinds of people*, 1). Each checked here as
+     well as by what was drawn: who may ask (her family, her coach, an admin)
+     and who may let in or take away (her coach, an admin). */
+  if (a === 'fanok') { approveFan(d.tid, d.uid); return; }
+  if (a === 'fansheet' || a === 'faninvite' || a === 'faninvdrop') {
+    const t2 = state.teams[d.tid], p = t2 && (t2.players || {})[d.pid];
+    if (!mayFanAsk(d.tid, p)) { toast('Her family, her coach or an admin asks for a fan'); return; }
+    if (a === 'fansheet') { sheetFans(d.tid, d.pid); return; }
+    if (a === 'faninvdrop') { dropFanLink(d.pid, d.id); toast('Withdrawn — the link no longer works'); fanRedraw(d.tid, d.pid, d.from); return; }
+    makeFanLink(d.tid, d.pid, readLimits('fanL', { uses: 1 })).then(ok => { if (ok) fanRedraw(d.tid, d.pid, d.from); });
+    return;
+  }
+  if (a === 'fandrop' || a === 'prunfan') {
+    const t2 = state.teams[d.tid], p = t2 && (t2.players || {})[d.pid];
+    if (a === 'prunfan' ? !mayGrant(d.tid) : !mayFanDrop(d.tid, p)) { toast('Her family, her coach or an admin takes a fan away'); return; }
+    const on = p && (p.fans || {})[d.uid];
+    if (!on) return;
+    if (a === 'fandrop' && !confirm(`Stop them following ${isMe(p) ? 'you' : firstName(p)}? ${isMe(p) ? 'Your' : 'Her'} family keeps theirs.`)) return;
+    dropFan(d.tid, d.pid, d.uid);
+    if (a === 'prunfan') sheetPersonRoles(d.uid); else fanRedraw(d.tid, d.pid, d.from);
+    return;
+  }
+  // a fan stops following, from her own phone
+  /* An end date on a share page or feed. The team's are its coaches' and
+     admins'; My calendar's is hers. Written where it is kept, then the page is
+     published again carrying it. */
+  if (a === 'linkuntil') {
+    const days = Number(d.d) || 0, until = days ? nowMs() + days * 864e5 : null;
+    if (d.k === 'mine') {
+      if (!me || !fb || !myFeedId()) return;
+      const set = { ...(you.set || {}), share: sharing(), at: nowMs() };
+      if (until) set.feedUntil = until; else delete set.feedUntil;
+      Promise.resolve(fb.set(fb.ref(fb.db, youPath('set')), set)).then(() => {
+        // the server rebuilds her page when her setting changes (functions/mycal.js), end date and all
+        you.set = set; saveYou(); render();
+      }, () => toast('Not saved: the database refused it. Its rules may need updating.'));
+      return;
+    }
+    const t2 = state.teams[d.tid];
+    if (!t2 || !canEditTeam(t2.id)) { toast('The team\u2019s coaches and club admins only'); return; }
+    if (d.k === 'game') { if (!state.matches[d.mid]) return; commit(`matches/${d.mid}/shareUntil`, until); }
+    else commit(`teams/${t2.id}/${d.k === 'feed' ? 'calFeedUntil' : 'shareUntil'}`, until);
+    // the server puts it on the page when it hears the change (functions/mirror.js): no phone writes public/ (SEC-10)
+    if (d.k === 'feed') render(); else sheetShare();
+    toast(until ? `Stops working on ${new Date(until).toLocaleDateString()}` : 'Works until you replace it');
+    return;
+  }
+  if (a === 'fanleave') {
+    const t2 = state.teams[d.tid], p = t2 && (t2.players || {})[d.pid];
+    if (!me || !p || !iFan(p)) return;
+    if (!confirm(`Stop following ${firstName(p)}? You'll need a new link to follow again.`)) return;
+    dropFan(d.tid, d.pid, me.uid);
+    toast(`You no longer follow ${firstName(p)}`); render(); return;
+  }
   if (a === 'claimadmin') {
     if (!me) { toast('Sign in first'); return; }
     if (anyAdmins()) { toast('Someone already claimed it'); return; }
@@ -19870,7 +20274,7 @@ function onAct(e) {
     }
     if (a === 'selfinvdrop') { toast('Withdrawn — the link no longer works'); sheetPlayer(p); return; }
     if (!fb || !rtdb || !me) { toast(me ? 'Needs a connection to the database' : 'Sign in first'); return; }
-    writeInvite(t, 'player', p, '').then(({ id, doc }) => {
+    writeInvite(t, 'player', p, '', readLimits('selfL', { noUses: true })).then(({ id, doc }) => {
       all[d.pid] = { id, at: doc.at, expiresAt: doc.expiresAt }; keepSelfInvites(all);
       logAccess('made a sign-in link for player', null, { team: t.id, teamName: t.name || null, player: p.name });
       sheetPlayer(state.teams[t.id].players[d.pid]);
@@ -19898,7 +20302,7 @@ function onAct(e) {
   }
   if (a === 'delplayer') {
     if (!confirm('Remove this player from the roster?')) return;
-    drop(`teams/${t.id}/players/${d.pid}`); syncTeamParents(t.id); syncTeamPlayers(t.id); closeSheet(); return;
+    drop(`teams/${t.id}/players/${d.pid}`); syncTeamParents(t.id); syncTeamPlayers(t.id); syncTeamFans(t.id); closeSheet(); return;
   }
 
   if (a === 'newmatch') {

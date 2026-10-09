@@ -246,22 +246,25 @@ const head = t => ({ name: t.name || 'Team', logo: t.logo || null });
    server was deployed with (index.js, SOCCER_SITE). */
 const okApp = a => typeof a === 'string' && /^https:\/\/[^\s"'<>]+$/.test(a);
 const link = (t, app) => ({ teamId: t.id, ...(okApp(app) ? { app } : {}) });
+/* The end date its coach gave a page (the app's untilOf()): the public/ read
+   rule refuses it from then on, and the calendar function says it has gone. */
+const untilOf = u => typeof u === 'number' && u > 0 ? { until: u } : {};
 
 /* publicDoc(t): `games` is every game of the team, `answers` its rsvp/{tid} */
 function publicDoc(t, games, answers, now, app) {
   const out = {};
   for (const m of games) out[m.id] = publicGame(t, m, obj(answers)['g_' + m.id], now);
-  return { team: head(t), link: link(t, app), games: out, events: eventsDoc(t, false), record: record(out), updated: now };
+  return { team: head(t), link: link(t, app), games: out, events: eventsDoc(t, false), record: record(out), updated: now, ...untilOf(t.shareUntil) };
 }
 /* fixtureDoc(t, m) */
 const fixtureDoc = (t, m, answers, now, app) => ({
-  team: head(t), link: link(t, app), fixture: m.id, games: { [m.id]: publicGame(t, m, answers, now) }, updated: now
+  team: head(t), link: link(t, app), fixture: m.id, games: { [m.id]: publicGame(t, m, answers, now) }, updated: now, ...untilOf(m.shareUntil || t.shareUntil)
 });
 /* calendarDoc(t) */
 function calendarDoc(t, games, now, app) {
   const out = {};
   for (const m of games) out[m.id] = feedGame(t, m, now);
-  return { team: head(t), link: link(t, app), calendar: true, games: out, events: eventsDoc(t, true), updated: now };
+  return { team: head(t), link: link(t, app), calendar: true, games: out, events: eventsDoc(t, true), updated: now, ...untilOf(t.calFeedUntil) };
 }
 
 module.exports = {

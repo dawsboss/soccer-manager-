@@ -213,6 +213,14 @@ both('accessGuardians', '{code}/{squad}/{pid}/guardians', onValueWritten, event 
 both('accessSelf', '{code}/{squad}/{pid}/self', onValueWritten, event => Promise.all([
   access.onSelf(writerOf(event), event.params, event.data.before.val(), event.data.after.val()),
   markRoles(event, [...peopleIn(event.data.before.val()), ...peopleIn(event.data.after.val())])]).then(r => r[0]));
+/* A player's fans (AUTH.md, *More kinds of people*, 1), on orgs/ only:
+   the old tree has no rule that writes one, so there is nothing to wake. */
+exports.accessFansOrgs = onValueWritten('/orgs/{code}/squad/{tid}/{pid}/fans', quiet(event => {
+  const e = { ...event, params: { ...event.params, tree: 'orgs' } };
+  return Promise.all([
+    access.onFans(writerOf(e), e.params, event.data.before.val(), event.data.after.val()),
+    markRoles(e, [...peopleIn(event.data.before.val()), ...peopleIn(event.data.after.val())])]).then(r => r[0]);
+}));
 
 /* A club viewer (access.js; AUTH.md, *Club viewers, as built*), on orgs/
    only: in the index like any role, so it is kept like one. */

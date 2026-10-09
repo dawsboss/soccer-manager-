@@ -110,7 +110,7 @@ const named = o => NAMES.filter(n => new RegExp('\\b' + n + '\\b', 'i').test(JSO
     const S = server();
     const ours = Object.keys(S.triggers).filter(n => /^(mirror|publish)/.test(n) && !/Orgs$/.test(n)).sort();
     deepEq('the entries, each part of a game, the team\'s own fields, a player and a game\'s answers', ours,
-      ['mirrorEvents', 'publishAnswers', 'publishGame', 'publishPlayer', 'publishTeamCalFeed', 'publishTeamLogo', 'publishTeamName', 'publishTeamPossMin', 'publishTeamShare']);
+      ['mirrorEvents', 'publishAnswers', 'publishGame', 'publishPlayer', 'publishTeamCalFeed', 'publishTeamCalFeedUntil', 'publishTeamLogo', 'publishTeamName', 'publishTeamPossMin', 'publishTeamShare', 'publishTeamShareUntil']);
     deepEq('— each once more for a club on orgs/', Object.keys(S.triggers).filter(n => /^(mirror|publish).*Orgs$/.test(n)).map(n => n.replace(/Orgs$/, '')).sort(), ours);
     const wakes = async (p, v) => (await S.wouldWake(W + p, v)).filter(n => /^(mirror|publish)/.test(n));
     deepEq('a goal wakes one run', await wakes('matches/g2/goals/k9', { t: 500, side: 'us' }), ['publishGame']);
@@ -244,6 +244,31 @@ const named = o => NAMES.filter(n => new RegExp('\\b' + n + '\\b', 'i').test(JSO
     check('a page of ours deleted by hand is built whole again, not patched into a fragment', !!P(S, 'shareT1bbbbb/team/name') && !!P(S, 'shareT1bbbbb/games/g2'), true);
     await S.fire(W + 'matches/g9/date', '2026-11-01');
     check('a stray field with no game behind it makes nothing', P(S, 'feedT1bbbbb/games/g9'), null);
+  }
+
+  /* Links with limits (build 121): the end date a coach gives the season
+     link, a game's own page or the members' feed is set on the team or the
+     game, and the server carries it to the page as `until`, which the public/
+     read rule and the calendar function stop it at. */
+  console.log('--- an end date, from the team or the game to the page ---');
+  {
+    const S = server();
+    const U = T0 + 30 * 864e5, G7 = T0 + 7 * 864e5, F90 = T0 + 90 * 864e5;
+    await S.fire(W + 'teams/t1/shareUntil', U);
+    check('the season page carries it', P(S, 'shareT1aaaa/until'), U);
+    check('— and a game\'s own page, which has none of its own', P(S, 'gameG2aaaaa/until'), U);
+    check('not the members\' feed, which keeps its own', P(S, 'feedT1aaaaa/until') == null, true);
+    await S.fire(W + 'matches/g2/shareUntil', G7);
+    check('a game\'s page takes its own', P(S, 'gameG2aaaaa/until'), G7);
+    check('— the season\'s keeps the team\'s', P(S, 'shareT1aaaa/until'), U);
+    await S.fire(W + 'teams/t1/calFeedUntil', F90);
+    check('the members\' feed takes its own', P(S, 'feedT1aaaaa/until'), F90);
+    const club = appOn(JSON.parse(JSON.stringify(S.at('workspaces/CLUB'))));
+    const t = club.teams.t1;
+    same('— and every page still what the app builds', [P(S, 'shareT1aaaa'), P(S, 'gameG2aaaaa'), P(S, 'feedT1aaaaa')],
+      [A.publicDoc(t), A.fixtureDoc(t, club.matches.g2), A.calendarDoc(t)]);
+    await S.fire(W + 'teams/t1/shareUntil', null);
+    check('No end takes it off the page', P(S, 'shareT1aaaa/until') == null, true);
   }
 
   console.log('--- a player\'s number or name, every page ---');

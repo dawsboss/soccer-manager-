@@ -320,12 +320,33 @@ const named = doc => NAMES.filter(n => JSON.stringify(doc || {}).includes(n));
     check('a retired club and a test club give nothing', titles(S).length, 0);
   }
 
+  console.log('--- an end date on her address ---');
+  {
+    const until = Date.now() + 30 * 864e5;
+    const S = server(db => { db.people.mum.set.feedUntil = until; });
+    await S.fire('people/mum/set/at', 2);
+    await S.tick('myCalBuild');
+    check('the page carries the end date she gave it', feedOf(S).until, until);
+    S.put('people/mum/set/feedUntil', null);
+    await S.fire('people/mum/set/at', 3);
+    await S.tick('myCalBuild');
+    check('taken off, the page carries none, though nothing else changed', 'until' in feedOf(S), false);
+  }
+  {
+    const A = H.loadApp({ storage: { 'sm.workspace': 'CLUB' } });
+    A.state = CLUB(); A.appOwners = {}; A.me = { uid: 'mum', name: 'mum' };
+    A.myFeedDoc(); A.you.set = { share: false, feed: FEED, feedUntil: 1234 };   // her own copy loaded first, then the setting
+    check('her phone\'s copy carries it the same way', A.myFeedDoc().until, 1234);
+  }
+
   console.log('--- the same entries, under the same ids, as her phone\'s feed ---');
   {
     const A = H.loadApp({ storage: { 'sm.workspace': 'CLUB' } });
     const club = CLUB();
     A.state = club; A.sess = { ...A.sess, ...TRAINING() }; A.appOwners = {};
-    for (const who of ['mum', 'coach']) {
+    // a fan (AUTH.md, *More kinds of people*, 1) of a child booked into a session: the team is hers, the session is not
+    club.teams.t1.players.p2.fans = { gran: true };
+    for (const who of ['mum', 'coach', 'gran']) {
       A.me = { uid: who, name: who };
       const phone = A.myFeedDoc().items;
       const read = p => {
@@ -336,6 +357,7 @@ const named = doc => NAMES.filter(n => JSON.stringify(doc || {}).includes(n));
       };
       const server = Object.fromEntries(await mycal.clubItems(read, who, 'CLUB'));
       deepEq(`${who}: the same item ids`, Object.keys(server).sort(), Object.keys(phone).sort());
+      if (who === 'gran') check('gran: her player\'s team, not his sessions', Object.keys(server).length === 3 && !Object.values(server).some(x => /Rondos/.test(x.title)), true);
       for (const k of Object.keys(phone)) {
         const a = { ...phone[k] }, b = { ...server[k] };
         deepEq(`${who}: ${a.title}`, b, a);

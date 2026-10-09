@@ -71,9 +71,10 @@ const ROUNDS = 40;        // a run gives the queue up after this many, rather th
    wakes a run that does nothing. */
 const GAME_PARTS = new Set(['goals', 'stints', 'periods', 'shots', 'events', 'poss', 'planned', 'out', 'formation',
   'currentHalf', 'ended', 'periodCount', 'periodMinutes', 'opponent', 'date', 'kickoff', 'venue', 'home', 'arrive',
-  'called', 'kit', 'notes', 'teamId', 'share']);
+  'called', 'kit', 'notes', 'teamId', 'share', 'shareUntil']);
 /* A team's own fields a page carries, each with a trigger of its own */
-const TEAM_FIELDS = ['share', 'calFeed', 'name', 'logo', 'possMin'];
+// an end date on the season link and the members' feed (build 121) is one of them: the page carries it as `until`
+const TEAM_FIELDS = ['share', 'calFeed', 'name', 'logo', 'possMin', 'shareUntil', 'calFeedUntil'];
 /* The game fields My calendar's feeds carry too (index.js marks the club for them) */
 const GAME_FIELDS = ['date', 'kickoff', 'called', 'venue', 'opponent'];
 const PLAYER_FIELDS = ['name', 'number', 'active'];
