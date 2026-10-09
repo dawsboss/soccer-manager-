@@ -1432,16 +1432,25 @@ function remoteSet(path, value) {
   if (DERIVED.test(path)) { if (fb.held) return Promise.resolve(); const w = Promise.resolve(fb.set(fb.ref(fb.db, onOrgs() ? clubPath(path) : fb.base + '/' + path), v)); w.catch(() => { }); return w; }
   return sendPending(path, notePending(path, v), v);
 }
-function remoteDel(path) {
+function remoteDel(path, was) {
   noteMine(path);
   if (!fb) return;
+  /* A whole entry or game deleted carries nothing to say who did it, so its
+     stamp is written just before, as calStamp() writes one beside a field:
+     the server reads it from what was there, leaves her out of the
+     admins' "Deleted" and names her (functions/push.js). */
+  const del = me && /^(teams\/([^/]+)\/events\/[^/]+|matches\/([^/]+))$/.exec(path);
+  if (del) {
+    const tid = del[2] || (was && was.teamId) || ((state.matches || {})[del[3]] || {}).teamId;
+    if (tid && (isCoach(tid, me.uid) || isHelper(tid, me.uid))) remoteSet(path + '/edit', { by: me.uid, at: nowMs() });
+  }
   if (DERIVED.test(path)) { if (fb.held) return; Promise.resolve(fb.remove(fb.ref(fb.db, onOrgs() ? clubPath(path) : fb.base + '/' + path))).catch(() => { }); return; }
   sendPending(path, notePending(path, null, true), null, true).catch(() => { });
 }
 
 function quiet(path, value) { setDeep(state, path, value); remoteSet(path, value); }
 function commit(path, value) { setDeep(state, path, value); saveLocal(); remoteSet(path, value); render(); schedulePublish(); }
-function drop(path) { delDeep(state, path); saveLocal(); remoteDel(path); render(); schedulePublish(); }
+function drop(path) { const was = getDeep(state, path); delDeep(state, path); saveLocal(); remoteDel(path, was); render(); schedulePublish(); }
 
 /* ---------------- roles ---------------- */
 /* Roles are derived from where a uid appears, never stored as a string on the

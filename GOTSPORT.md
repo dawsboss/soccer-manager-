@@ -212,7 +212,7 @@ off or call-out (`functions/news.js`), told to whoever the open page tells,
 in its words: a family about her own child's place, a coach about families
 on her sessions, the admins the club's activity, each under her own switch
 ('cal' for her own sessions, 'news' for club activity). The admins also hear
-every team's calendar changes, and a practice or event deleted, from the
+every team's calendar changes, and a game, practice or event deleted, from the
 calendar's triggers. Step 2 is done.
 
 ### 4. Email

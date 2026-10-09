@@ -35,6 +35,13 @@ admin heard the club's activity only when she next opened the app.
 - **A session saved carries who saved it** (`edit`), as calendar entries
   do, so the coach who called it off is left out and the admins are told
   who did.
+- **A deletion says who made it.** The app stamps a whole entry or game
+  with who is deleting it just before it goes (`remoteDel()`), so the
+  admins' *Deleted* for a practice or event leaves her out and names her.
+  A deleted game, gone field and all by the time the server hears, is named
+  from a note the server keeps of each dated game (`serverState/calGame/`,
+  which no phone reads); that note is not woken by the stamp, so an admin
+  who deletes a game still hears about it herself.
 
 ---
 

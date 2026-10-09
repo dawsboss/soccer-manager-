@@ -261,7 +261,9 @@ does the bookkeeping, not that the phone works offline first.
   place and sessions, a coach about families asking, booking, waiting,
   withdrawing and cancelling on hers, and the admins the club's activity
   (and, from `functions/push.js`, every team's calendar changes and a
-  practice or event deleted). The open page still works it out for itself
+  game, practice or event deleted, named from a note the server keeps of
+  each dated game at `serverState/calGame/`, and who deleted an entry from
+  the stamp the app writes just before). The open page still works it out for itself
   while it is open (`clubNews()`, `sessNews()`, `ping()`), for a phone
   without notifications turned on; that is all that is left on the phone.
 

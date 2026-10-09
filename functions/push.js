@@ -326,8 +326,9 @@ async function calChange(env, code, before, it, tree) {
   const hash = x.kind === 'game' ? `#/team/${x.tid}/game/${x.id}/live` : `#/team/${x.tid}/calendar`;
   // a deletion is the admins' news alone, as on the page
   const people = gone ? new Set() : teamReaders(f);
+  // a deletion's stamp is the one the app wrote just before it (remoteDel())
   const ed = x.edit && typeof x.edit === 'object' ? x.edit : null;
-  const by = !gone && ed && ed.by && Math.abs(now - (Number(ed.at) || 0)) < EDIT_FRESH_MS ? String(ed.by) : null;
+  const by = ed && ed.by && Math.abs(now - (Number(ed.at) || 0)) < EDIT_FRESH_MS ? String(ed.by) : null;
   if (by) people.delete(by);
   // the admins not on the team, as club activity: on the team, she hears it as the team does
   const admins = new Set(keys(f.admins).filter(u => !people.has(u) && u !== by));
@@ -355,8 +356,23 @@ async function onGameField(env, params, field, was) {
   const base = (await where(env.get, params.code, params.tree)).game(params.mid) + '/';
   const vals = await Promise.all(GAME_FIELDS.map(k => env.get(base + k)));
   const g = Object.fromEntries(GAME_FIELDS.map((k, i) => [k, vals[i]]));
-  if (!g.teamId) return { to: [], sent: 0, failed: 0, removed: [] };
   const shape = m => ({ kind: 'game', tid: m.teamId, id: params.mid, date: m.date, start: m.kickoff, called: m.called || '', title: m.opponent || '', edit: m.edit || null });
+  /* A game deleted is gone before this runs, field and all, so what it was
+     comes from the server's note of it (below), kept where no phone reaches.
+     Its date going is the one event every deleted dated game wakes. */
+  const NOTE = 'serverState/calGame/' + params.code + '/' + params.mid;
+  if (!g.teamId) {
+    if (field !== 'date' || was === null || was === undefined) return { to: [], sent: 0, failed: 0, removed: [] };
+    const note = await env.get(NOTE);
+    if (!note || !note.tid) return { to: [], sent: 0, failed: 0, removed: [] };
+    await Promise.resolve(env.remove(NOTE)).catch(() => { });
+    return calChange(env, params.code, shape({ ...note, teamId: note.tid, date: was }), null, params.tree);
+  }
+  /* The note: who, against whom and when, and who last changed it, written
+     only when one of those changed, so the game can still be named once it
+     is deleted. */
+  const keep = { tid: g.teamId, opponent: g.opponent || '', date: g.date || '', kickoff: g.kickoff || '', called: g.called || '', ...(g.edit ? { edit: g.edit } : {}) };
+  await env.claim(NOTE, old => (old && JSON.stringify(old) === JSON.stringify(keep) ? undefined : keep));
   const after = shape(g);
   /* A kick-off appearing where there was none is either a new game (its date
      arrives in the same write, and that event tells it) or a time added to a

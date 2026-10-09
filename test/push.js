@@ -424,8 +424,27 @@ const toUid = (S, u) => S.sent().filter(m => m.data.uid === u);
     S.sends.length = 0;
     await S.fire(W + 'matches/g3', { id: 'g3', teamId: 't1', opponent: 'Hill', currentHalf: 1 });
     check('one with no date yet is not', S.sent().length, 0);
+    check('the server keeps a note of the game, where no phone reaches', S.at('serverState/calGame/CLUB/g2').opponent, 'Riverside');
+    await S.fire(W + 'matches/g2/edit', { by: 'coach', at: Date.now() });
     await S.fire(W + 'matches/g2', null);
-    check('nor a game deleted', S.sent().length, 0);
+    deepEq('a game deleted: the admins alone hear, from that note', owners(S), ['adm']);
+    check('named as it was', toUid(S, 'adm')[0].data.title, 'Deleted: Flight v Riverside');
+    check('with when it was', toUid(S, 'adm')[0].data.body.startsWith(require('../functions/push').whenOf({ date: day(5), start: '10:00' })), true);
+    check('and the note goes with it', S.at('serverState/calGame/CLUB/g2'), null);
+    S.sends.length = 0;
+    await S.fire(W + 'matches/g3', null);
+    check('one that never had a date is not news when it goes', S.sent().length, 0);
+  }
+  {
+    // the app stamps a deletion just before it (remoteDel()): the admin who deleted it is not told her own
+    const S = calServer();
+    S.put(W + 'access/admins/boss', true);
+    S.put(W + 'access/index/boss', true);
+    S.put('pushTokens/boss', { [tok('boss')]: { at: 1, ua: 'Mac' } });
+    await S.fire(W + 'teams/t1/events/e1/edit', { by: 'adm', at: Date.now() });
+    await S.fire(W + 'teams/t1/events/e1', null);
+    deepEq('an entry deleted by an admin: the other admins hear', owners(S), ['boss']);
+    check('and who did it', toUid(S, 'boss')[0].data.body.endsWith(' · Ada'), true);
   }
   {
     const S = calServer();
