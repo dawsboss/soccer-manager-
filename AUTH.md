@@ -926,6 +926,17 @@ against.
    it saves.*
 6. **Deleting**: a family's registration, an admin's child, and the
    account-delete function.
+   *Built (build 127, rules version 25), with these differences from the
+   above. The account is forgotten on a request she writes herself,
+   `forgetRequests/{uid}` (only she may), answered by `forgetMe`
+   (`functions/forget.js`), and only then does her phone delete the
+   sign-in: a trigger on Firebase Auth's own delete would need the v1
+   functions API and a sign-in the server can no longer ask about. It is
+   refused while she is a club's only admin. Care details stay with a child
+   left with no family (the contacts are the family's words, and the admins
+   decide about the record as a whole). A family deleting her registration
+   deletes the child only when the club never let her in and she is on no
+   team; one the club let in is the admins' to delete.*
 
 Each is its own build, rules version, CHANGELOG entry and test pass across
 every suite that walks every kind of account. New suites: `children.js` (the

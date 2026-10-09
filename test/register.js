@@ -323,5 +323,62 @@ function fillProg(A, o) {
     void cf;
   }
 
+  console.log('\n--- deleting ---');
+  {
+    const org = ORG();
+    const { A, fbk } = await boot('newmum', null, { club: false, search: '?reg=rl1' });
+    fbk.deliver('regOpen/rl1', OPEN()); await A.flush();
+    fbk.deliver('families/newmum/CLUB', { n1: true }); await A.flush();
+    const B = OB + '/';
+    fbk.deliver(B + 'children/n1', { id: 'n1', first: 'Nia', born: '2016-03-03', by: 'newmum', at: 3, via: 'rl1', family: { newmum: 'rl1' } }); await A.flush();
+    fbk.deliver(B + 'regs/f27/n1', { st: 'sent', by: 'newmum', at: 3 }); fbk.deliver(B + 'care/n1', { by: 'newmum', at: 3, contacts: { 0: { name: 'A', phone: '1' } } });
+    fbk.deliver(B + 'agreed/f27/n1', { w1_2: { by: 'newmum', at: 3, name: 'Ann' } }); await A.flush(10);
+    check('her registration can be deleted from the link', /data-act="regdel" data-id="n1"/.test(A.rendered()), true);
+    A.click({ act: 'regdel', id: 'n1' }); await A.flush(20);
+    deepEq('the registration, then its agreement, then the child she made, her care and her list', fbk.record.removes.filter(p => !/^\.info/.test(p)),
+      [B + 'regs/f27/n1', B + 'agreed/f27/n1/w1_2', B + 'care/n1', B + 'children/n1', 'families/newmum/CLUB/n1']);
+    void org;
+  }
+  {
+    const org = ORG();
+    org.children.k9 = { id: 'k9', first: 'Mia', club: true, by: 'x', at: 3, left: { at: 4 } };
+    org.regs = { f27: { k9: { st: 'accepted', by: 'x', at: 3 } } };
+    org.agreed = { f27: { k9: { w1_2: { by: 'x', at: 3, name: 'X' } } } };
+    const { A, fbk } = await boot('adm', org);
+    A.ui.view = 'regs'; A.ui.regs = {}; A.render();
+    check('a child who left the club is listed for the admins', /Left the club/.test(A.rendered()) && /Mia/.test(A.rendered()), true);
+    A.click({ act: 'kidopen', id: 'k9' });
+    check('an admin may delete her club record', /data-act="kiddel"/.test(sheet(A)), true);
+    A.click({ act: 'kiddel', id: 'k9' }); await A.flush(10);
+    deepEq('her registrations, agreements and care first, then the record', fbk.record.removes.filter(p => /k9/.test(p)),
+      [OB + '/regs/f27/k9', OB + '/agreed/f27/k9/w1_2', OB + '/care/k9', OB + '/children/k9']);
+    A.click({ act: 'kidopen', id: 'p1' });
+    check('not one on a team', /data-act="kiddel"/.test(sheet(A)), false);
+  }
+  {
+    const { A, fbk } = await boot('coachU');
+    A.click({ act: 'kiddel', id: 'p1' }); await A.flush(5);
+    check('a coach deletes no child\'s record (checked in the handler)', fbk.record.removes.some(p => /children/.test(p)), false);
+  }
+
+  console.log('\n--- deleting an account ---');
+  {
+    const { A, fbk } = await boot('mumU');
+    A.click({ act: 'forgetsheet' });
+    check('it says what goes and what stays before she confirms', /cannot be undone/.test(sheet(A)) && /kept for the club’s admins|kept for the club's admins/.test(sheet(A)), true);
+    A.click({ act: 'forgetgo' }); await A.flush(5);
+    check('she asks the club\'s server, as herself', !!valueAt(fbk, 'forgetRequests/mumU'), true);
+    fbk.deliver('forgetRequests/mumU/answer', { ok: false, why: 'lastAdmin', clubs: ['Lakeside SC'] }); await A.flush(5);
+    check('the only admin of a club is told why not', /only admin of Lakeside SC/.test(sheet(A)), true);
+    check('— and stays signed in', !!A.me, true);
+  }
+  {
+    const { A, fbk } = await boot('mumU');
+    A.click({ act: 'forgetsheet' }); A.click({ act: 'forgetgo' }); await A.flush(5);
+    fbk.deliver('forgetRequests/mumU/answer', { ok: true, clubs: 1 }); await A.flush(10);
+    check('once the server has done it, this phone forgets who she was (then signs her out)', A.storage.getItem('sm.me'), null);
+    check('— and told', /deleted/.test(A.lastToast() || ''), true);
+  }
+
   H.summary('registration: programs, the link and form, waivers, accepting');
 })().catch(e => { console.error(e); process.exit(1); });

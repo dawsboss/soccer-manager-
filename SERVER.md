@@ -226,7 +226,10 @@ does the bookkeeping, not that the phone works offline first.
   program's link is the family's own phone writing her child, her list, care,
   the registration and each agreement in that order (`sendReg()`), and an
   admin accepting writes the child's `club` and the family's index entry
-  (the server's `accessChild` does the latter too). Anything half-done after a dropped
+  (the server's `accessChild` does the latter too); a family deleting her
+  registration is her phone deleting it, its agreements, then the child she
+  made (`delReg()`). Forgetting an account is already the server's
+  (`forgetMe`, on her own request). Anything half-done after a dropped
   signal is undone by hand on the phone.
 - **With a server:** each is one call that does all of it or none of it, and a
   new club's code is issued by the server rather than claimed. Invitations go

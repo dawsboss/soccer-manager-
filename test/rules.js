@@ -2331,7 +2331,9 @@ reads('nor read', COACH, 'shareOwners/sh1', false);
     w('staff do not agree for a family', OA, O + 'agreed/f27/n1/w1_2', { by: 'oa', at: NOW, name: 'Ann' }, false);
     ORGC.agreed = { f27: { n1: { w1_2: { by: 'nfam', at: NOW, name: 'Ann Cole' } } } };
     w('an agreement is never changed', NEW, O + 'agreed/f27/n1/w1_2', { by: 'nfam', at: NOW + 1, name: 'A' }, false);
-    w('— nor taken back', NEW, O + 'agreed/f27/n1/w1_2', null, false);
+    ORGC.regs = { f27: { n1: reg } };
+    w('— nor taken back while her registration stands', NEW, O + 'agreed/f27/n1/w1_2', null, false);
+    delete ORGC.regs;
     r('the admin reads every registration of a program', OA, O + 'regs/f27', true);
     r('— and the agreements', OA, O + 'agreed/f27', true);
     r('a coach reads neither', OC, O + 'regs/f27', false);
@@ -2383,6 +2385,40 @@ reads('nor read', COACH, 'shareOwners/sh1', false);
     r('— not another family\'s', KZ, 'training/ORGC/packs/club/k5', false);
     delete ORGC.children; delete ORGC.access.index.kmum; delete ORGC.access.index.kz;
     DB.training = savedT; if (savedT === undefined) delete DB.training;
+  }
+
+  /* Deleting (AUTH.md, *Deleting*): a family deletes her own registration,
+     then its agreements, and a child she made through a link who is in no
+     team and not let into the club; an admin deletes anything; asking for
+     an account to be forgotten is the account's own. */
+  console.log('\n--- a club on orgs/: deleting ---');
+  {
+    ORGC.children = {
+      n1: { id: 'n1', first: 'Nia', by: 'nf', at: NOW, via: 'rl1', family: { nf: 'rl1' } },
+      n2: { id: 'n2', first: 'Kit', by: 'nf', at: NOW, via: 'rl1', family: { nf: 'rl1' }, club: true },
+      p1: { id: 'p1', first: 'Ella', club: true, by: 'oa', at: NOW, teams: { t1: 'p1' }, guardians: { om: 't1' } }
+    };
+    ORGC.regs = { f27: { n1: { st: 'sent', by: 'nf', at: NOW }, p1: { st: 'placed', by: 'om', at: NOW } } };
+    ORGC.agreed = { f27: { n1: { w1_2: { by: 'nf', at: NOW, name: 'N' } } } };
+    const NF = { uid: 'nf' };
+    w('her family deletes her registration', NF, O + 'regs/f27/n1', null, true);
+    w('— not another family\'s', NF, O + 'regs/f27/p1', null, false);
+    w('her agreements stay while the registration is there', NF, O + 'agreed/f27/n1/w1_2', null, false);
+    delete ORGC.regs.f27.n1;
+    w('— and go with it once it is gone', NF, O + 'agreed/f27/n1/w1_2', null, true);
+    w('the admin deletes any', OA, O + 'agreed/f27/n1/w1_2', null, true);
+    w('a coach does not', OC, O + 'agreed/f27/n1/w1_2', null, false);
+    w('a child she made through a link, on no team and not let in, goes too', NF, O + 'children/n1', null, true);
+    w('— not one the club has let in: that is the club\'s to delete', NF, O + 'children/n2', null, false);
+    w('— nor one on a team', OM, O + 'children/p1', null, false);
+    w('the admin deletes a child\'s record', OA, O + 'children/n2', null, true);
+    w('a coach does not', OC, O + 'children/n2', null, false);
+    w('her care details go with her family\'s say', NF, O + 'care/n1', null, true);
+    w('asking for her account to be forgotten is hers', NF, 'forgetRequests/nf', { at: NOW }, true);
+    w('— nobody else\'s', NF, 'forgetRequests/om', { at: NOW }, false);
+    w('— and the answer is the server\'s', NF, 'forgetRequests/nf', { at: NOW, answer: { ok: true } }, false);
+    r('she reads the answer', NF, 'forgetRequests/nf', true);
+    delete ORGC.children; delete ORGC.regs; delete ORGC.agreed;
   }
 
   /* Links with limits (the owner, 2026-10-09): how many people may use one,

@@ -8,6 +8,34 @@ before this point lives only in the git log.
 
 ---
 
+## Deleting: a registration, a child's record, an account — 2026-10-09 (build 127, rules version 25)
+
+Registration's last step (AUTH.md, *Deleting*), as the owner decided it.
+
+- **A family deletes her registration** from the program's link: the
+  registration, then what she agreed to for it (the rules let an agreement
+  go only once its registration has), and, for a child she made through the
+  link who was never let into the club and is on no team, the child, her
+  care details and her place on the family's own list.
+- **An admin deletes a child's record** (one on no team, including a child
+  whose family has left): her registrations, agreements and care details,
+  then the record. Children whose family deleted their account are listed
+  under Registrations → *Left the club* until an admin decides.
+- **Delete my account** (Your account): says what goes and what stays, then
+  asks the club's server to forget her (`forgetMe`, `functions/forget.js`)
+  in every club: every role and table entry, her member entry and staff
+  name, her place on every child's and squad record, her asks, and her own
+  settings, push tokens, drills and lists. Messages and notices she wrote
+  stay. A child left with no family is taken off her team, her games keeping
+  her name and number, and her record is kept, marked as having left, for
+  the admins (the owner's decision). Refused while she is a club's only
+  admin. Then her phone deletes the sign-in.
+
+Rules version 25 (`forgetRequests`, and the deletes above). New suite
+`test/forget.js`; `register.js` and `rules.js` pin the rest.
+
+---
+
 ## The GotSport export — 2026-10-09 (build 126)
 
 Registration's fifth step (AUTH.md, *The GotSport export*). A program's

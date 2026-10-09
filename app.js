@@ -2,7 +2,7 @@
    Static app. Data lives in localStorage, and mirrors to Firebase Realtime
    Database when a config + workspace code are present. */
 
-const BUILD = '126';
+const BUILD = '127';
 const BUILT = '2026-10-09';
 /* The version of database.rules.json this app was written against. The rules
    carry the same number in rulesVersion's .write, which accepts that number
@@ -11,7 +11,7 @@ const BUILT = '2026-10-09';
    never pasted look exactly like a coach with no signal: "saved on this phone
    only", one feature at a time. test/rules.js holds the two numbers together
    and fails when the rules change without this going up. */
-const RULES_VERSION = 24;
+const RULES_VERSION = 25;
 /* index.html carries the build it was published with. If this file is newer, the
    browser handed us a cached page — the exact failure that has eaten hours. */
 const pageBuild = () => {
@@ -7072,7 +7072,49 @@ function sheetAccount() {
     ${anyPlayers() ? `<button class="opt" data-act="goview" data-v="mine"><b>My players</b>
       <span class="rowsub">${allKidNames().map(esc).join(', ')}</span></button>` : ''}
     <button class="btn danger wide" data-act="signout" style="margin-top:8px">Sign out</button>
+    ${fbConfig().apiKey ? '<button class="btn quiet danger wide" data-act="forgetsheet" style="margin-top:8px">Delete my account</button>' : ''}
     <p class="muted">Club settings live under the club itself, since you may belong to more than one.</p>`);
+}
+
+/* Deleting an account (AUTH.md, *Deleting*). The club's server does the
+   forgetting, in every club she is in, from a request only she may write
+   (functions/forget.js); then this phone deletes the sign-in itself, the one
+   thing only it can. Said in full before she confirms. */
+let forgetting = null;   // { status: 'asking' | 'refused' | 'failed', clubs }
+function sheetForget() {
+  const names = Object.values(myClubs || {}).map(c => (c && c.name) || 'A club');
+  const f = forgetting || {};
+  openSheet(`<h3>Delete your account</h3>
+    ${f.status === 'refused' ? `<div class="rolebar warn">You are the only admin of ${esc(wordsAnd(f.clubs || []))}. Make someone else an admin there first, or the club would have nobody to run it.</div>` : ''}
+    ${f.status === 'failed' ? `<div class="rolebar warn">${esc(f.why || 'The club\'s server did not answer. Check the signal and try again.')}</div>` : ''}
+    <p style="margin-top:0">This takes you out of ${names.length ? esc(wordsAnd(names)) : 'every club you are in'}: every role, your place as a parent or fan, your settings, your own drills and your sign-in. It cannot be undone.</p>
+    <p class="muted">What stays with each club: messages and notices you wrote, and your children's records. A child left with no family is taken off her team (her games keep her name and number) and her record, her care details and registrations are kept for the club's admins to delete. Ask them if you want it gone now.</p>
+    <button class="btn danger wide" data-act="forgetgo"${f.status === 'asking' ? ' disabled' : ''}>${f.status === 'asking' ? 'Deleting…' : 'Delete my account'}</button>
+    <button class="btn quiet wide" data-act="closesheet" style="margin-top:8px">Keep it</button>`, true);
+}
+function forgetMe() {
+  if (!me || !rtdb || !fbAuth) return;
+  const { db, mod } = rtdb, who = me.uid;
+  forgetting = { status: 'asking' }; sheetForget();
+  let done = false;
+  const off = mod.onValue(mod.ref(db, `forgetRequests/${who}/answer`), sn => {
+    const a = sn.val();
+    if (!a || done || !me || me.uid !== who) return;
+    done = true; if (typeof off === 'function') off();
+    if (!a.ok) { forgetting = a.why === 'lastAdmin' ? { status: 'refused', clubs: a.clubs || [] } : { status: 'failed' }; sheetForget(); return; }
+    if (pushRec) pushTurnOff();
+    const user = fbAuth.currentUser;
+    authHeld = false; cacheMe(null);
+    Promise.resolve(user && authMod.deleteUser ? authMod.deleteUser(user) : authMod.signOut(fbAuth))
+      .catch(() => authMod.signOut(fbAuth))   // a sign-in too old to delete: everything of hers is gone already
+      .then(() => { forgetting = null; closeSheet(); toast('Your account is deleted'); render(); });
+  }, () => { });
+  Promise.resolve(mod.set(mod.ref(db, 'forgetRequests/' + who), { at: nowMs() })).catch(() => {
+    done = true; if (typeof off === 'function') off();
+    forgetting = { status: 'failed', why: 'Refused by the database: the club may not have updated its rules yet.' }; sheetForget();
+  });
+  // nobody answering is a server not deployed, or no signal
+  setTimeout(() => { if (!done && forgetting && forgetting.status === 'asking') { forgetting = { status: 'failed' }; if (!$('#sheet').hidden) sheetForget(); } }, 20000);
 }
 
 /* The clubs this device keeps a copy of, plus the ones this account belongs to
@@ -18229,6 +18271,7 @@ function sheetKid(cid) {
     ${mayCare(c) ? careForm(careOf(c.id)) : ''}
     ${!fam && mayDraftReg() ? (ps => ps.length ? `<p class="lbl">Register her for</p><p class="muted" style="margin-top:0">Her family is asked to finish it: what is missing, and the waivers, which only they can agree to.</p>
       <div class="chips" style="margin-bottom:14px">${ps.map(pr => `<button class="chip" type="button" data-act="regdraft" data-prog="${esc(pr.id)}" data-id="${esc(c.id)}">${esc(pr.name)}</button>`).join('')}</div>` : '')(programsAll().filter(pr => progOpen(pr) && !regsOf(pr.id)[c.id] && !progFits(pr, c.born, c.gender))) : ''}
+    ${me && isAdmin(me.uid) && !Object.keys(c.teams || {}).length ? `<button class="btn quiet danger wide" data-act="kiddel" data-id="${esc(c.id)}" style="margin-bottom:8px">Delete her club record</button>` : ''}
     ${ask ? `<button class="btn wide" data-act="kidconfirm" data-id="${esc(c.id)}">Confirm</button>`
       : edit ? `<button class="btn wide" data-act="kidsave" data-id="${esc(c.id)}">Save</button>` : ''}
     <button class="btn quiet wide" data-act="closesheet" style="margin-top:8px">${ask ? 'Later' : 'Close'}</button>`, true);
@@ -18544,7 +18587,8 @@ function regScreen() {
     const r = regx.regs[c.id];
     const act = !r || r.st === 'withdrawn' ? 'Register' : r.st === 'draft' ? 'Finish' : r.st === 'sent' ? 'Change' : '';
     return `<div class="card"><b>${esc(kidName(c))}</b><span class="rowsub">${esc(r ? REG_ST[r.st] || r.st : 'Not registered for this')}</span>
-      ${act ? `<button class="btn${r && r.st === 'draft' ? '' : ' quiet'} wide" data-act="regform" data-id="${esc(c.id)}" style="margin-top:10px">${act}</button>` : ''}</div>`;
+      ${act ? `<button class="btn${r && r.st === 'draft' ? '' : ' quiet'} wide" data-act="regform" data-id="${esc(c.id)}" style="margin-top:10px">${act}</button>` : ''}
+      ${r ? `<button class="btn quiet danger wide" data-act="regdel" data-id="${esc(c.id)}" style="margin-top:8px">Delete this registration</button>` : ''}</div>`;
   }).join('')}
     <button class="btn wide" data-act="regform" data-id="new">Register ${kids.length ? 'another' : 'a'} child</button>
     <button class="btn quiet wide" data-act="regdismiss">Close</button>
@@ -18634,6 +18678,32 @@ async function sendReg() {
     render();
   }
 }
+/* A family deletes her registration (AUTH.md, *Deleting*): the
+   registration, then what she agreed to for it, which the rules let go only
+   once it is gone; and a child she made through the link who is on no team
+   and was never let into the club goes with her care details and her place
+   on the family's list. A child the club has let in is the club's to
+   delete. Needs a signal, as sending did. */
+// SERVER.md: several writes in the order the rules need; a server would do it in one call.
+async function delReg(cid) {
+  if (!regx || !rtdb || !me || !(regx.kids || {})[cid]) return;
+  const d = regx.doc, ws = d.ws, B = 'orgs/' + ws + '/', c = regx.kids[cid];
+  const whole = c.via && !Object.keys(c.teams || {}).length && c.club !== true;
+  if (!confirm(`Delete ${c.first || 'her'}’s registration for ${d.name}${whole ? ', and her details, which only it used' : ''}? The club no longer sees it.`)) return;
+  const { db, mod } = rtdb;
+  const del = p => mod.remove(mod.ref(db, p));
+  try {
+    await del(B + `regs/${d.prog}/${cid}`);
+    for (const k of Object.keys((regx.agreed || {})[cid] || {})) await del(B + `agreed/${d.prog}/${cid}/${k}`);
+    if (whole) {
+      if ((regx.care || {})[cid]) await del(B + 'care/' + cid);
+      await del(B + 'children/' + cid);
+      await del(`families/${me.uid}/${ws}/${cid}`);
+    }
+    regx.status = 'idle'; maybeLoadReg(); toast('Deleted');
+  } catch (e) { toast('Not deleted: check the signal and try again'); }
+}
+
 /* What a family in the club sees on My players: a registration the club
    started for her to finish, and each open program a child of hers fits. */
 function regCards() {
@@ -20420,6 +20490,22 @@ function onAct(e) {
      confirms, and her family, an admin or the coach who registered her
      (until her family has confirmed) changes it. Checked here too. */
   if (a === 'kidopen') { sheetKid(d.id); return; }
+  /* An admin deletes a child's record (AUTH.md, *Deleting*): one on no team,
+     a child who left the club among them. Her registrations, what was agreed
+     for them and her care details first, then the record they hang off. */
+  if (a === 'kiddel') {
+    const c = clubKids()[d.id];
+    if (!c || !me || !isAdmin(me.uid)) { toast('Only an admin deletes a child\'s record'); return; }
+    if (Object.keys(c.teams || {}).length) { toast('Take her off her team first'); return; }
+    if (!confirm(`Delete ${kidName(c)}’s club record, her registrations and her care details? This cannot be undone.`)) return;
+    for (const pr of Object.keys(state.programs || {})) {
+      if (regsOf(pr)[c.id]) drop(`regs/${pr}/${c.id}`);
+      for (const k of Object.keys(((state.agreed || {})[pr] || {})[c.id] || {})) drop(`agreed/${pr}/${c.id}/${k}`);
+    }
+    drop(`care/${c.id}`);
+    drop(`children/${c.id}`);
+    closeSheet(); toast('Deleted'); render(); return;
+  }
   if (a === 'kidsave' || a === 'kidconfirm') {
     const c = clubKids()[d.id];
     if (!c || !onOrgs()) return;
@@ -20452,6 +20538,7 @@ function onAct(e) {
   if (a === 'regform') { if (regx) { regx.form = d.id || null; regx.agree = {}; } render(); return; }
   if (a === 'regagree') { if (regx) { const g = regx.agree = regx.agree || {}; g[d.w] = !g[d.w]; } render(); return; }
   if (a === 'regsend') { sendReg(); return; }
+  if (a === 'regdel') { delReg(d.id); return; }
   if (a === 'regdraft') {
     const c = clubKids()[d.id], pr = (state.programs || {})[d.prog];
     if (!mayDraftReg() || !c || !pr) { toast('A coach or an admin starts a registration for a family'); return; }
@@ -20689,6 +20776,8 @@ function onAct(e) {
   }
   if (a === 'setwho') { sheetWho(); return; }
   if (a === 'signinsheet') { sheetSignIn(); return; }
+  if (a === 'forgetsheet') { forgetting = null; sheetForget(); return; }
+  if (a === 'forgetgo') { if (confirm('Delete your account for good?')) forgetMe(); return; }
   if (a === 'signout') {
     const n = mineUnsent();
     if (n && !confirm(`${n} change${n === 1 ? '' : 's'} to your own drills ha${n === 1 ? 's' : 've'}n't reached the database yet, and signing out takes your drills off this phone. Sign out anyway?`)) return;

@@ -36,6 +36,7 @@ const move = require('./move');
 const adminwatch = require('./adminwatch');
 const booking = require('./book');
 const news = require('./news');
+const forget = require('./forget');
 
 initializeApp();
 
@@ -247,6 +248,18 @@ exports.careCopy = onValueWritten('/orgs/{code}/care/{cid}', quiet(event =>
   access.onCare(writerOf(event), event.params)));
 exports.rosterOpen = onValueWritten('/orgs/{code}/org/rosterOpen', quiet(event =>
   access.onRosterOpen(writerOf(event), event.params)));
+
+/* Forgetting an account (forget.js; AUTH.md, *Deleting*), asked for by the
+   person herself just before her phone deletes the sign-in. A create only:
+   the answer is written beside the request. */
+exports.forgetMe = onValueCreated('/forgetRequests/{uid}', event => {
+  const root = event.data.ref.root;
+  return forget.onRequest({
+    get: p => root.child(p).get().then(s => s.val()),
+    set: (p, v) => root.child(p).set(v),
+    remove: p => root.child(p).remove()
+  }, event.params, event.data.val());
+});
 
 /* Moving a club to orgs/ (move.js), when one of its admins asks by writing
    moveRequests/{code}. A create only: the answer is written beside the
