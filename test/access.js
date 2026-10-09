@@ -77,7 +77,9 @@ const club = S => { const t = JSON.parse(JSON.stringify(S.tree)); delete t.serve
 // key order is not the database's business
 const canon = v => JSON.stringify(v, (k, x) => (x && typeof x === 'object' && !Array.isArray(x) ? Object.fromEntries(Object.keys(x).sort().map(n => [n, x[n]])) : x));
 // everything under the club except the tables a change to `who` may move
-const rest = S => canon({ ...S.at('workspaces/CLUB'), access: { ...S.at(W + 'access'), index: null, teamIndex: null, teamParents: null, teamPlayers: null, coachIndex: null, helperIndex: null } });
+// (and the club's record of each child, which the squad's families are copied onto, orgs/ only)
+const noChild = t => Object.fromEntries(Object.entries(t || {}).map(([k, x]) => [k, x && x.players ? { ...x, players: Object.fromEntries(Object.entries(x.players).map(([pid, p]) => { const { child, ...r } = p || {}; return [pid, r]; })) } : x]));
+const rest = S => canon({ ...S.at('workspaces/CLUB'), children: null, teams: noChild(S.at('workspaces/CLUB/teams')), access: { ...S.at(W + 'access'), index: null, teamIndex: null, teamParents: null, teamPlayers: null, coachIndex: null, helperIndex: null } });
 
 (async () => {
 
@@ -85,8 +87,8 @@ const rest = S => canon({ ...S.at('workspaces/CLUB'), access: { ...S.at(W + 'acc
   {
     const S = server();
     deepEq('one per place a role lives', Object.keys(S.triggers).filter(n => /^access/.test(n)).sort(), 
-      // each once per tree while clubs move to orgs/ (functions/index.js, both()); a club viewer and a player's fans only on orgs/
-      ['accessAdmin', 'accessAdminOrgs', 'accessFansOrgs', 'accessGuardians', 'accessGuardiansOrgs', 'accessSelf', 'accessSelfOrgs', 'accessStaff', 'accessStaffOrgs', 'accessViewer']);
+      // each once per tree while clubs move to orgs/ (functions/index.js, both()); a club viewer, a player's fans and a child in the club only on orgs/
+      ['accessAdmin', 'accessAdminOrgs', 'accessChild', 'accessFansOrgs', 'accessGuardians', 'accessGuardiansOrgs', 'accessSelf', 'accessSelfOrgs', 'accessStaff', 'accessStaffOrgs', 'accessViewer']);
     // and who runs the club is told (adminwatch.js, test/owners.js)
     deepEq('an admin given', (await S.wouldWake(W + 'access/admins/new', true)).sort(), ['accessAdmin', 'watchAdmin']);
     // the share pages wake on play and on a player (mirror.js, test/mirror.js); what is asked here is the tables
@@ -374,6 +376,99 @@ const rest = S => canon({ ...S.at('workspaces/CLUB'), access: { ...S.at(W + 'acc
     check('but not this team\'s', T('teamFans/t1/aunt'), null);
   }
 
+  /* AUTH.md, *A child in the club, and registration*: a squad record with
+     no child gets one, made from it; her family on a team is copied onto it
+     as the squad says, and goes when the squad stops saying it; and a family
+     named on a child the club has let in is in the club. orgs/ only. */
+  console.log('--- a child in the club (orgs/) ---');
+  {
+    const OC = 'orgs/KC/';
+    const S = makeServer({
+      orgs: { KC: {
+        access: { admins: { oa: true }, index: { oa: true, om: true }, teams: { t1: { coaches: { oc: true } } },
+          teamIndex: { t1: { oc: 'coach' } }, teamParents: { t1: { om: 'p1' } } },
+        org: { name: 'Kidside' },
+        teams: { t1: { id: 't1', name: 'Hawks' } },
+        squad: { t1: { p1: { id: 'p1', name: 'Ella Mae Fitz', number: '7', guardians: { om: true } } } }
+      } },
+      userOrgs: {}, invites: { ik: { ws: 'KC', role: 'parent', child: 'k2' } }
+    });
+    S.loadFunctions();
+    const ORGS_MODE = require('./fakebase').ORGS_MODE;
+    const raw = p => (ORGS_MODE ? p.replace(/^orgs\//, 'workspaces/').replace(/\/squad\/([^/]+)\//, '/teams/$1/players/') : p).split('/').reduce((c, k) => (c && typeof c === 'object' ? c[k] : undefined), S.tree);
+    if (!ORGS_MODE) check('a child\'s squad record wakes the child\'s keeper', (await S.wouldWake(OC + 'squad/t1/p1/number', '8')).some(n => /^rosterPlayer/.test(n)), true);
+    await S.fire(OC + 'squad/t1/p1/number', '8');
+    const c = raw(OC + 'children/p1') || {};
+    check('a record with no child gets one, under the player\'s own id', c.id, 'p1');
+    check('— named from the squad, the last word as the last name', c.first + ' / ' + c.last, 'Ella Mae / Fitz');
+    check('— in the club, made by the club, unconfirmed', [c.club, c.by, !!c.confirmed].join(), 'true,club,false');
+    deepEq('— pointing at the squad record', c.teams, { t1: 'p1' });
+    check('— and the squad record at her', raw(OC + 'squad/t1/p1/child'), 'p1');
+    deepEq('— with her family on it, as the squad says, valued with the team', c.guardians, { om: 't1' });
+    deepEq('— and nothing of the squad\'s she does not need', Object.keys(c).sort(), ['at', 'by', 'club', 'first', 'guardians', 'id', 'last', 'teams']);
+    const made = JSON.stringify(raw(OC + 'children'));
+    await S.fire(OC + 'squad/t1/p1/number', '9');
+    check('run again: nothing new', JSON.stringify(raw(OC + 'children')), made);
+    await S.fire(OC + 'squad/t1/p1/guardians/dad', true);
+    check('a family added on the team is copied onto the child', raw(OC + 'children/p1/guardians/dad'), 't1');
+    await S.fire(OC + 'squad/t1/p1/guardians/om', null);
+    check('one unlinked goes from the child too', raw(OC + 'children/p1/guardians/om'), undefined);
+    check('— and from the club, her last child gone', raw(OC + 'access/index/om'), undefined);
+    S.put(OC + 'children/p1/guardians/gran', 'other');
+    await S.fire(OC + 'squad/t1/p1/number', '10');
+    check('an entry from somewhere else is not the team\'s to take', raw(OC + 'children/p1/guardians/gran'), 'other');
+    S.put(OC + 'children/p1/guardians/gran', null);
+    await S.fire(OC + 'squad/t1/p1', null);
+    check('her squad record deleted: the child stays, the club\'s record', !!raw(OC + 'children/p1'), true);
+    check('— off that team', raw(OC + 'children/p1/teams/t1'), undefined);
+    check('— and the team\'s family copies gone', Object.keys(raw(OC + 'children/p1/guardians') || {}).length, 0);
+
+    console.log('--- a child on no team lets her family in ---');
+    S.put(OC + 'children/k2', { id: 'k2', first: 'Nia', club: true, by: 'oa', at: 1 });
+    await S.fire(OC + 'children/k2/family/nmum', 'ik');
+    check('a family named on a child in the club is in the club', !!raw(OC + 'access/index/nmum'), true);
+    check('— and bookmarked', !!raw('userOrgs/nmum/KC'), true);
+    check('— not a family of any team', raw(OC + 'access/teamParents/t1/nmum'), undefined);
+    S.put(OC + 'children/k3', { id: 'k3', first: 'Zed', by: 'oa', at: 1 });
+    await S.fire(OC + 'children/k3/family/zmum', true);
+    check('one the club has not let in lets nobody in', raw(OC + 'access/index/zmum'), undefined);
+    await S.fire(OC + 'children/k3/club', true);
+    check('— until it does', !!raw(OC + 'access/index/zmum'), true);
+    await S.fire(OC + 'children/k2/family/nmum', null);
+    check('her family taken off: out of the club', raw(OC + 'access/index/nmum'), undefined);
+  }
+
+  /* Care details: the family's own copied to each team she is on, for its
+     coaches, and taken away when she leaves the team. orgs/ only. */
+  console.log('--- care details for her team\'s coaches (orgs/) ---');
+  {
+    const OC = 'orgs/CC/';
+    const care = { by: 'om', at: 1, contacts: { 0: { name: 'Mo', phone: '555' } }, allergies: 'Peanuts' };
+    const S = makeServer({
+      orgs: { CC: {
+        access: { admins: { oa: true }, index: { oa: true, om: true }, teams: { t1: { coaches: { oc: true } } }, teamIndex: { t1: { oc: 'coach' } } },
+        org: { name: 'Careside' }, teams: { t1: { id: 't1' }, t2: { id: 't2' } },
+        squad: { t1: { p1: { id: 'p1', name: 'Ella', child: 'p1', guardians: { om: true } } } },
+        children: { p1: { id: 'p1', first: 'Ella', club: true, by: 'club', at: 1, teams: { t1: 'p1' }, guardians: { om: 't1' } } }
+      } }
+    });
+    S.loadFunctions();
+    const ORGS_MODE = require('./fakebase').ORGS_MODE;
+    const raw = p => (ORGS_MODE ? p.replace(/^orgs\//, 'workspaces/') : p).split('/').reduce((c, k) => (c && typeof c === 'object' ? c[k] : undefined), S.tree);
+    await S.fire(OC + 'care/p1', care);
+    deepEq('her family\'s care details are copied for her team\'s coaches', raw(OC + 'teamCare/t1/p1'), { ...care, cid: 'p1' });
+    check('— to no other team', raw(OC + 'teamCare/t2'), undefined);
+    await S.fire(OC + 'care/p1/allergies', 'None');
+    check('a change reaches the copy', raw(OC + 'teamCare/t1/p1/allergies'), 'None');
+    await S.fire(OC + 'children/p1/teams/t2', 'p7');
+    check('a second team gets its own copy', raw(OC + 'teamCare/t2/p7/cid'), 'p1');
+    await S.fire(OC + 'children/p1/teams/t1', null);
+    check('off a team: that team\'s copy goes', raw(OC + 'teamCare/t1/p1'), undefined);
+    check('— the other stays', raw(OC + 'teamCare/t2/p7/cid'), 'p1');
+    await S.fire(OC + 'care/p1', null);
+    check('her family deletes them: every copy goes', raw(OC + 'teamCare/t2/p7'), undefined);
+  }
+
   console.log('--- a link for several people outlives one of them ---');
   {
     const S = server(c => { c.access.index.mum = 'mShared0001'; });
@@ -427,8 +522,10 @@ const rest = S => canon({ ...S.at('workspaces/CLUB'), access: { ...S.at(W + 'acc
     // and helpers: one alone, one who also tracks, a coach who also helps
     club.access.teams.t1.helpers = { hlp: true, trk: true };
     club.access.teams.t2.helpers = { coach: true, hlp2: true };
+    // and a child on no team, whose family is named on her club record (AUTH.md, *A child in the club*)
+    club.children = { k1: { id: 'k1', club: true, family: { kmum: 'ik' } }, k2: { id: 'k2', family: { kdad: true } } };
     A.state = club; A.me = { uid: 'adm', name: 'adm' }; A.appOwners = {};
-    const f = { access: club.access, teams: club.teams };
+    const f = { access: club.access, teams: club.teams, children: club.children };
     for (const tid of ['t1', 't2']) {
       deepEq(`teamParents for ${tid}`, access.linkedWanted(f, tid, 'guardians'), A.parentsWanted(tid));
       deepEq(`teamPlayers for ${tid}`, access.linkedWanted(f, tid, 'self'), A.playersWanted(tid));
@@ -439,7 +536,7 @@ const rest = S => canon({ ...S.at('workspaces/CLUB'), access: { ...S.at(W + 'acc
       for (const u of Object.keys(club.access.teams[tid].coaches || {})) want[u] = 'coach';
       deepEq(`teamIndex for ${tid}`, access.teamIndexWanted(f, tid), want);
     }
-    for (const u of ['adm', 'coach', 'coach2', 'trk', 'mum', 'dad', 'twice', 'ella', 'ivy', 'hlp', 'hlp2', 'gran', 'nobody']) {
+    for (const u of ['adm', 'coach', 'coach2', 'trk', 'mum', 'dad', 'twice', 'ella', 'ivy', 'hlp', 'hlp2', 'gran', 'kmum', 'kdad', 'nobody']) {
       check(`whether ${u} has a role`, access.hasRole(f, u), A.hasAnyRole(u));
       check(`which team ${u}'s coachIndex names`, access.coachTeamOf(f, u), A.coachTeamOf(u));
       check(`which team ${u}'s helperIndex names`, access.helperTeamOf(f, u), A.helperTeamOf(u));

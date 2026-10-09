@@ -222,7 +222,14 @@ does the bookkeeping, not that the phone works offline first.
   whose sign-in emails Firebase sends one call at a time from the admin's phone
   (`mailImported()`), stopping at its daily limit; a new club is claimed by
   the first person to write its admin list (`createClub()`), which is
-  trust-on-first-use (rules.js, gap 3). Anything half-done after a dropped
+  trust-on-first-use (rules.js, gap 3). Registering a child through a
+  program's link is the family's own phone writing her child, her list, care,
+  the registration and each agreement in that order (`sendReg()`), and an
+  admin accepting writes the child's `club` and the family's index entry
+  (the server's `accessChild` does the latter too); a family deleting her
+  registration is her phone deleting it, its agreements, then the child she
+  made (`delReg()`). Forgetting an account is already the server's
+  (`forgetMe`, on her own request). Anything half-done after a dropped
   signal is undone by hand on the phone.
 - **With a server:** each is one call that does all of it or none of it, and a
   new club's code is issued by the server rather than claimed. Invitations go
@@ -312,6 +319,18 @@ does the bookkeeping, not that the phone works offline first.
   coach never opens the app keeps them on the record, where the family reads
   them, until an admin does.
 - **With a server:** a one-off migration, run once, and the code is deleted.
+
+### A child's club record
+- **Now:** every child already on a team is given a club record by the first
+  admin's phone to open the club, and the squad's families are copied onto
+  each record by any admin's or coach's phone, and by a family's own phone for
+  herself (`syncChildren()`; AUTH.md, *A child in the club*). The server does
+  both the moment a squad record changes (`rosterPlayer`, `functions/access.js`)
+  and keeps the index for a family named on a child the club let in
+  (`accessChild`), so the phones are the fallback for a club without the
+  functions deployed.
+- **With a server:** already there; the phones' half goes once every club has
+  the functions.
 
 ### Backups and imports
 - **Now:** a backup is an admin tapping *Download a copy* (`backupDoc()`), and

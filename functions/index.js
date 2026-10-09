@@ -36,6 +36,7 @@ const move = require('./move');
 const adminwatch = require('./adminwatch');
 const booking = require('./book');
 const news = require('./news');
+const forget = require('./forget');
 
 initializeApp();
 
@@ -235,9 +236,30 @@ exports.accessViewer = onValueWritten('/orgs/{code}/access/viewers/{uid}', quiet
 exports.namesMember = onValueWritten('/orgs/{code}/members/{uid}', quiet(event =>
   access.onMember(writerOf(event), event.params)));
 exports.rosterPlayer = onValueWritten('/orgs/{code}/squad/{tid}/{pid}', quiet(event =>
-  access.onSquadPlayer(writerOf(event), event.params)));
+  access.onSquadPlayer(writerOf(event), event.params, event.data.before.val())));
+/* A child in the club (access.js; AUTH.md, *A child in the club*): a family
+   named on her, or the club letting her in, is who is in the index. */
+exports.accessChild = onValueWritten('/orgs/{code}/children/{cid}', quiet(event =>
+  access.onChildRecord(writerOf(event), event.params, event.data.before.val(), event.data.after.val())));
+/* Care details (access.js): the family's own, copied to each team she is on
+   for its coaches. The copy is written with admin credentials and holds
+   medical notes, so only this trigger and the child's own teams decide where. */
+exports.careCopy = onValueWritten('/orgs/{code}/care/{cid}', quiet(event =>
+  access.onCare(writerOf(event), event.params)));
 exports.rosterOpen = onValueWritten('/orgs/{code}/org/rosterOpen', quiet(event =>
   access.onRosterOpen(writerOf(event), event.params)));
+
+/* Forgetting an account (forget.js; AUTH.md, *Deleting*), asked for by the
+   person herself just before her phone deletes the sign-in. A create only:
+   the answer is written beside the request. */
+exports.forgetMe = onValueCreated('/forgetRequests/{uid}', event => {
+  const root = event.data.ref.root;
+  return forget.onRequest({
+    get: p => root.child(p).get().then(s => s.val()),
+    set: (p, v) => root.child(p).set(v),
+    remove: p => root.child(p).remove()
+  }, event.params, event.data.val());
+});
 
 /* Moving a club to orgs/ (move.js), when one of its admins asks by writing
    moveRequests/{code}. A create only: the answer is written beside the

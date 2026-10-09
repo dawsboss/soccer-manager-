@@ -518,6 +518,498 @@ Each is its own build, rules version, CHANGELOG entry and test pass across every
 5. **Guests:** signed in and approved, with names. Not signed in (the game link), no names, as today. *Later the same day: guests dropped; the game link is enough. Viewers go in the index.*
 6. **Order:** as above.
 
+## A child in the club, and registration
+
+Written 2026-10-09, before any code, for `GOTSPORT.md`'s build order steps 3
+and 4: *the club-level record of each child*, which the move to `orgs/` left
+for registration, and then registration itself (programs, the link and the
+form, waivers, accepting and placing, care details for coaches, the GotSport
+export, deleting). Payments are step 5 and come after; nothing here takes
+money, and a fee is shown and recorded the way session fees are today.
+
+The owner's ask, 2026-10-09: *Families will need to register a child with
+the club itself, not just as a player on one team, and nothing records that
+today. A parent may want to put their kid in for 1-1 or group sessions.
+Admins, coaches and parents can register a child. If a coach or an admin
+does it, the family confirms it when they join: confirming the information,
+and asked for whatever isn't already provided.*
+
+### What is wrong today
+
+A child exists only as `squad/{tid}/{pid}`, a row in one team. So:
+
+- **A child on no team cannot be in the club.** A family who wants 1-1s or a
+  group session for her daughter, and nothing else, has nowhere to be: a
+  booking is `booked/{sid}/{pid}` carrying `tid`, and the rule finds her
+  family through that team's squad.
+- **Next season starts from nothing.** A child moving from U11 to U12 is a new
+  row typed by a new coach, and everything the family told the club last year
+  (her birth date, who to call, her asthma) is not anywhere to carry over.
+- **Nothing says the family agreed to anything.** A coach types a name and a
+  number; the family never confirms the child is theirs, spelt right, born
+  when the team thinks.
+- **Two teams are two strangers.** A child guesting up a year, or on a futsal
+  team as well, is two unrelated records.
+
+### The child's record
+
+One record per child per club, under the club, beside the squad:
+
+```
+orgs/{code}/children/{cid}: {
+  id, first, last,              // her name as the family gives it
+  born,                         // 'YYYY-MM-DD'
+  gender,                       // 'F' | 'M', as the state's registration asks
+  guardians/{uid}: how,         // her family: an invite id, a program link id, or true
+  self/{uid}: inviteId,         // her own sign-in, as on the squad record
+  teams/{tid}: pid,             // where she plays: the squad records that are her
+  club: true,                   // in the club: accepted by an admin, or made by staff
+  by, at,                       // who made the record, and when
+  confirmed: { by, at },        // her family checked it; only a guardian writes it
+  via                           // the program link it came through, if one did
+}
+```
+
+- **The squad record points back**: `squad/{tid}/{pid}/child: cid`. A squad
+  record keeps its own id and everything it holds today (the team's name for
+  her, her number, positions, games), so nothing that reads `t.players`
+  changes. Player ids stay unique across the club; a child on two teams is two
+  squad records with one `child`. Existing records get a child each (*Every
+  child already here*, below) whose id is the player id, so the common case
+  has one id, but nothing relies on that.
+- **Her family is named on the child, and copied to each team.** The child's
+  `guardians` is where a family is recorded; each squad record's `guardians`
+  is kept in step with it, because every rule that finds a family on a team
+  (`teamParents`, the squad read, `dm`, `rsvp`, bookings) already reads the
+  squad and does so in one hop. The phone writes the child first and the
+  squad copies after, and the server keeps the copies (`functions/access.js`,
+  the same way it keeps the lookup tables: never starting one that is
+  missing, an event late or twice leaving it right). A squad record with no
+  `child` keeps its own `guardians` as the source, as today, until it has
+  one. The same for `self`.
+- **Nothing medical, and no contact details, on the child.** Those are care
+  (below), read by fewer people. The child's record is what a coach needs to
+  know who she is: name, birth date, gender, family, teams.
+- **The coach's notes stay at `coachNotes/{tid}/{pid}`**, per team, as built.
+
+**Who reads it** (`orgs/{code}/children/$cid` has its own `.read`; the list
+has none for a family):
+
+| | Her family | The player herself | Any coach | Admins | Anyone else in the club |
+| --- | --- | --- | --- | --- | --- |
+| `children/{cid}` | Yes, by path | Yes, by path | Yes, the list | Yes, the list | No |
+
+Coaches of any team read every child, as they read every squad (decision 2 of
+the move): a coach running a group session books children from any team and
+from none. Trackers, helpers, viewers and fans get a child's name from the
+squad or the roster as today, and never her birth date.
+
+**Who writes it:**
+
+- **An admin**: any child, any field but `confirmed`.
+- **A coach**: makes a record (`by` her, `club: true`), and changes one
+  that has a squad record on a team she coaches (`teams/{tid}` names it), but
+  not `confirmed`, `guardians` (except through an approval, as the squad
+  today) or `self`.
+- **A family**: makes a record through a program link (below), with herself
+  as its guardian and `club` absent; fills in or corrects her own child's
+  fields at any time; and is the only one who writes `confirmed`.
+- **Nobody** writes `club` but an admin (accepting) or staff making the
+  record. That is what keeps a program link from being a way into the club.
+
+### Finding her children
+
+A family's phone cannot list `children/` and a rule cannot search it, so
+each family keeps her own list, at the root:
+
+```
+families/{uid}/{code}/{cid}: true
+```
+
+Readable and writable by that account alone, and an entry only where
+`orgs/{code}/children/{cid}/guardians/{uid}` names her. It is how her phone
+finds a child in a club she is not in yet (a registration waiting for an
+admin), how a second phone finds it, and how the account-delete function finds
+every child of hers in every club. Inside the club, the existing tables still
+answer the team questions (`teamParents`); the club question ("is this uid a
+family in the club") is answered by the child record itself, below.
+
+### Getting into the club
+
+A family is let into the club (`access/index/{uid}`) only when one of her
+children is in it: the index rule gains a clause for **a value that is a
+child id** whose record names her in `guardians` and has `club: true`. So:
+
+- **A family registering through a program link is not in the club** until an
+  admin accepts a registration of hers. Until then her phone reads the
+  program (from the link), her child's record, her registration and her
+  care details, and nothing else of the club: not the teams, the calendar,
+  the roster or the sessions. A program link may be on the club's website for
+  anyone; a practice's time and place are not.
+- **A family invited by staff** is in as soon as she accepts, as today.
+- **A child on no team** still lets her family in, and that is what lets her
+  book sessions (below).
+
+`hasAnyRole()` and the server's `hasRole()` count a child's `guardians` too,
+so an admin's phone and `functions/access.js` keep her in the index while
+any child of hers is in the club, and take her out when none is.
+
+### Three ways a child is registered
+
+**1. A family, through a program link.** She opens the link, signs in, and
+fills the form for each child (*Registration*, below). Her phone writes, in
+the order the rules need: the child (herself as guardian, `via` the link,
+`confirmed` already, since she typed it), her `families/` entry, the care
+details, then the registration with its waiver agreements. If her account is
+already the guardian of a child in this club, the form starts from that
+child's record ("Mira, born 3 May 2016: still right?") and asks only what the
+program asks that isn't known yet. Next season is one tap and the waivers.
+
+**2. A coach or an admin, for a family.** From Squad (*Add a player*, as
+today) or from Club → Registrations (*Register a child*, for a child on no
+team). Staff type what they know (a name is enough; a number for a team);
+the record is made with `club: true`, `by` the staff member, no guardians and
+no `confirmed`, and a parent invite is offered for it, as the squad's parent
+links are today. The invite names the child (`child: cid`, and `team`/`player`
+when she is on one). The record shows *Waiting for her family* until it is
+confirmed.
+
+**3. Every child already here.** Each squad record with no `child` gets one,
+made from it (the name split into first and last at the last space, the
+team's birth year as nothing more than a hint, its guardians and `self`
+copied), with the player id as the child id, no `confirmed`, and `club: true`.
+Made once, by the server when a club's admin asks (a button beside *Move*,
+as `moveClub` was, so a club of four hundred children is batches and not a
+phone's evening), and by the admin's phone as the fallback where the functions
+are not deployed.
+
+### The family confirms
+
+Whenever a family's phone holds a child of hers with no `confirmed`, the
+first screen it shows (once, then a card on My players until it is done) is
+**Check {name}'s details**:
+
+- what the club already has, each field with *Change*: name, birth date,
+  gender, her team and number (read-only: the coach's);
+- **only what is missing, asked for**: birth date and gender if not known,
+  care details (who to call, and anything a coach must know: "none" is an
+  answer), and the club's waivers she has not agreed to;
+- **Confirm**, which writes the missing fields, the care details, the
+  agreements and then `confirmed: { by: her, at }`.
+
+Confirming is the family's alone: the rule refuses `confirmed` from anyone
+who is not in `guardians`. Staff see who has and who hasn't (a dot on Squad,
+a count on Registrations) and can send the link again; nothing is blocked by
+it. A child is never unconfirmed again once confirmed: a family changing a
+field later is a change, not a new confirmation, and staff changing a field a
+family gave is shown to the family as *changed by the club* on her card.
+
+This is also how a staff-made registration for a program is finished (*Staff
+registering for a family*, below), and it is the answer to "the coach typed
+her name wrong": the family fixes it, and the team's name for her follows if
+the team's is the same as it was.
+
+### Care: what a coach needs at the pitch
+
+```
+orgs/{code}/care/{cid}           the family's, the source
+  { contacts: [ { name, phone, rel } ],   // who to call, her guardians first
+    medical, allergies, meds,             // free text, each up to 500 characters; '' is "none"
+    doctor?, by, at }
+orgs/{code}/teamCare/{tid}/{pid}  a copy, per team she is on, for its coaches
+```
+
+- **Read by:** her family and the player herself (the source); admins (both);
+  **that team's coaches** (the copy). Not other teams' coaches, not
+  trackers, helpers, viewers or fans. A rule on `care/{cid}` cannot ask "a
+  coach of any team she is on" without searching, which is why the coaches'
+  copy is per team, as `GOTSPORT.md` planned.
+- **Written by:** her family (the source) and an admin. The copy is the
+  server's, kept from the source and the child's `teams` (`functions/access.js`),
+  and an admin's phone writes it on placing as the fallback. A coach never
+  writes care: what she learns at the pitch she tells the family or an admin.
+- **Never in a game, a squad, a roster, `public/`, a backup a coach makes, or
+  a push.** `test/` stringifies each with a medical note and a phone number
+  typed into every field.
+
+### Registration
+
+```
+orgs/{code}/programs/{progId}: {
+  id, name, kind,               // 'season' | 'camp' | 'tryout' | 'sessions' | 'other'
+  born: [lo, hi] | null,        // birth years, inclusive
+  gender: 'F' | 'M' | null,
+  opens, closes,                // 'YYYY-MM-DD'; closes may be null
+  cap, fee, feeNote,            // fee is shown, not taken (payments are step 5)
+  asks: { {qid}: { q, kind: 'text' | 'choice' | 'yes', opts?, need, o } },
+  waivers: { {wid}: true },     // the club's waivers this program needs
+  link, by, at, closed?
+}
+orgs/{code}/waivers/{wid}: { id, title, v, text, need: 'club' | 'program', at, by }
+orgs/{code}/waivers/{wid}/old/{v}: { text, at }       // every earlier version, kept
+orgs/{code}/regs/{progId}/{cid}: {
+  st, by, at,                   // st below; by is whoever made it
+  answers: { {qid}: value },
+  team?, note?,                 // where an admin placed her; the admin's note (admins only see it)
+  agreed/{wid}_{v}: { by, at, name }   // append-only: who agreed, when, the name typed
+}
+regOpen/{linkId}: {             // the program link: readable by id, like invites/{id}
+  ws, prog, name, kind, born, gender, opens, closes, fee, feeNote, asks,
+  waivers: { {wid}: { title, v, text } }, club, badge, until
+}
+```
+
+- **One registration per child per program**, keyed by the child, so a family
+  reads her own by path (she knows her children and the program) and an
+  admin reads the program's list. Registering twice is changing one.
+- **How it stands (`st`):** `draft` (staff made it, waiting for the family),
+  `sent` (the family's, waiting for an admin), `accepted`, `waitlist`,
+  `declined`, `placed` (on a team: `team` says which), `withdrawn`. Only an
+  admin moves it past `sent`; a family moves her own from `draft` to `sent`
+  (confirming) and from anything to `withdrawn`.
+- **Waivers are the club's text, versioned, and agreed by a family only.** An
+  agreement is `agreed/{wid}_{v}`, written once by a guardian of that child in
+  her own name and never changed; a new version of the text asks again. A
+  waiver whose `need` is `club` is asked once per child (on confirming and on
+  the first registration) and recorded on her care record's sibling,
+  `orgs/{code}/agreed/{cid}/{wid}_{v}`, in the same shape; a program's are
+  recorded on the registration. Staff cannot agree for a family, which is why
+  a staff-made registration is a `draft`.
+- **The program link** is `regOpen/{linkId}`, written by an admin's phone
+  whenever the program is opened or changed and deleted when it closes. It
+  carries the program as a family who is not in the club yet needs it and
+  nothing else: no team, no child, no name but the club's. Its id is from
+  `randId()`, and `test/ids.js` traces it there. A family's child record names
+  the link in `via`, and the rule on making a child through a link checks that
+  the link is this club's, open, and not past `until`.
+- **Who reads a registration:** her family (by path) and the admins. Not
+  coaches: what a coach needs comes to her as the squad and the care copy once
+  the child is placed (`GOTSPORT.md`, *Who reads what*).
+
+**Staff registering for a family.** A coach or an admin may put a child into a
+program from the child's page (*Register for…*): the registration is a
+`draft` with what staff know, and the family is asked to finish it: the
+missing answers and the program's waivers. On her phone it is the same
+*Check her details* screen, with the program's questions and waivers added,
+and *Send* makes it `sent`. Staff can see a draft and send the family's link
+again; they cannot make it `sent`.
+
+### Accepting and placing
+
+Club → **Registrations** (admins): each program's list, newest first, filtered
+by how they stand, birth year and gender, each with the child's details, the
+answers and the waivers agreed, and a dot where the family has not confirmed.
+
+- **Accept**, **Waiting list**, **Decline** write `st` (and, the first time a
+  child of that family is accepted, `club: true` on the child, and the
+  family's `access/index` entry: the child id). A family is told on her
+  registration, and by push until email is built (`functions/news.js`
+  gains the kind).
+- **Place on a team** (accepted children, a team picker narrowed by the
+  program's birth years): the squad record (a new player id, her name as the
+  child's first name, `child`, the guardians copied, a number left for the
+  coach), the child's `teams/{tid}`, the roster, `teamParents`, the care copy,
+  then `st: 'placed'` and `team`. One child, one team at a time; several
+  ticked are several of those. The coach sees the new player on Squad with a
+  dot until she gives a number.
+- **A sessions program** (kind `sessions`) places on no team: accepting is all
+  it needs, and the child books sessions from then on (below).
+
+### Sessions for a child on no team
+
+A booking for a child on no team is `booked/{sid}/{cid}` with `child: true`
+in place of `tid`; the rule finds her family through
+`children/{cid}/guardians` instead of a squad. Everything else about a
+booking is unchanged (a family writes only `asked` or `out`; the server books
+a coach's time, `functions/book.js`, checking her the same way). Fees,
+packages and the register key by player id today; for a child on no team
+they key by her child id, which for every child already here is the player id
+anyway, and `packs/{tid}/…` and `packuse/{tid}/…` take `club` in place of a
+team id. A child on a team books as her team's player, as today.
+
+### The GotSport export
+
+Club → Registrations → a program → **Export for GotSport**: one row per
+placed (or accepted) child, as a CSV, with the columns the bulk import already
+reads from a registration system's roster (`team`, `birth_year`,
+`player_first_name`, `player_last_name`, `player_number`) and the ones a state
+registration needs (`player_dob`, `player_gender`, `parent1_first_name`,
+`parent1_last_name`, `parent1_email`, `parent1_phone`). Admins only, built on
+the phone from what an admin reads, never through the server, and it says
+before saving that it holds birth dates and contact details. The column names
+are matched to GotSport's own import template when the owner has one
+(`GOTSPORT.md`, still open); until then this is the shape it is checked
+against.
+
+### Deleting
+
+- **A family deletes a registration** (*Delete* on it): the registration and
+  its agreements go. If the child has no other registration, no team and was
+  made through a link, the child's record and care go too, and her
+  `families/` entry. A placed child stays on her team: the team's record of
+  her games is the club's; the family asks the club to take her off.
+- **A family deletes her account** (Your account → *Delete my account*, which
+  says what it takes, every club by name, before she confirms): a function on
+  Firebase Auth's delete (`functions/forget.js`) reads `families/{uid}` and
+  `userOrgs/{uid}` and, in every club: takes her out of every child's and
+  squad record's `guardians` (and `self`, and `fans`), every lookup table, the
+  index, `members`, `names`; and deletes her own `people/{uid}`,
+  `pushTokens/{uid}`, `userLibrary/{uid}`, `families/{uid}`, `userOrgs/{uid}`.
+  A child left with no family is taken off her team (`active: false`, so
+  past games keep her name and number), and her record, care and
+  registrations are **kept for the admins to decide**: marked `left: { at }`
+  and listed on Registrations under *Left the club*, with *Delete* beside
+  each (owner, 2026-10-09: it saves a mistaken delete, and the club may need
+  the information). Her own phone numbers in a care record's contacts go
+  with her. What she wrote to others (messages, notices) stays, as it would in any group chat. The
+  phone deletes the Firebase account itself (the only thing it can), after
+  signing her out of push; the function does the rest from the delete event.
+- **An admin deletes a child** (a child on no team, or one taken off every
+  team): the record, its care, agreements, registrations and her `families/`
+  entries, server-side, by the same function's per-child half.
+
+### What does not change
+
+- **Squads, rosters, `teamParents`, `coachNotes`, games and answers** keep
+  their shape. `t.players` is assembled as today; a squad record gains
+  `child` and nothing else.
+- **The team link and the parent invites** still work; each writes the
+  child's `guardians` beside the squad's.
+- **Nothing here is under `workspaces/`.** Every club is on `orgs/`; the old
+  tree comes out from 2026-10-23. Registration is written for `orgs/` only.
+- **Nothing here reaches `public/`**, not even counts.
+
+### Order
+
+1. **The child's record**: rules (version 21), the squad's `child`,
+   `families/`, the index clause, the server keeping guardians and the
+   lookup tables, *every child already here*, staff making a child with a
+   parent invite that names her, the family's *Check her details*. Usable on
+   its own: every family confirms her child, and next season has something to
+   start from. *Built (build 122): see *Step 1, as built*. The invite naming
+   a child on no team is in the rules; making one from the screen comes with
+   Registrations (step 3).*
+2. **Care details** for coaches (the source, the per-team copy, the server
+   keeping it). *Built (build 123, rules version 22): the family gives up to
+   two people to call and allergies, conditions, medication and a doctor on
+   the same *Check her details* screen (someone to call is insisted on before
+   she confirms); `careCopy` and the child's `teams` keep each team's copy,
+   and her family's phone writes them too; her team's coaches see it on her
+   page in Squad, with a link to ring; an admin's backup leaves it out.*
+3. **Programs, the link, the form and waivers**, and Registrations for
+   admins: accepting, the waiting list, declining.
+   *Built (build 124, rules version 23), with these details: every waiver
+   is a program's for now (the club-wide waiver asked once per child, at
+   `agreed/{cid}`, is not built); agreements live at
+   `agreed/{progId}/{cid}/{wid}_{v}` beside the registrations rather than
+   inside them, so a family rewriting her registration can never remove one;
+   a registration keeps who started it (`by`) and who sent it (`sentBy`);
+   `programs/{id}/closed` and deleting the link close it, and the rules
+   check both; the form needs a signal and writes straight to the club, in
+   the rules' order (`sendReg()`); dates are the app's to hold, the rules
+   check only `closed`. A family in the club sees an open program her child
+   fits, and a draft to finish, on My players.*
+4. **Placing on a team**, and **sessions for a child on no team**.
+   *Built (build 125, rules version 24): an accepted child's sheet offers
+   the teams within a year of her birth year; placing writes the squad
+   record (her first name, no number, `child`, her family as its parents),
+   then her record's `teams`, her family's copies, `teamParents` and the
+   registration (`placed`, `team`); her care details follow her to the team
+   through the server (`careCopy` wakes on the child's teams). The player id
+   is her child id unless that is taken. A child in the club on no team
+   books as `club` (`tid: 'club'` on a booking, `packs/club/…`), the rules
+   and `functions/book.js` finding her family on her club record; the
+   sessions screens draw her as a team of her own, in memory only.*
+5. **The GotSport export.** *Built (build 126): the columns above, a placed or accepted child a row,
+   the family's phone from her care details (read one child at a time), a
+   cell a spreadsheet would run as a formula made text, and a warning before
+   it saves.*
+6. **Deleting**: a family's registration, an admin's child, and the
+   account-delete function.
+   *Built (build 127, rules version 25), with these differences from the
+   above. The account is forgotten on a request she writes herself,
+   `forgetRequests/{uid}` (only she may), answered by `forgetMe`
+   (`functions/forget.js`), and only then does her phone delete the
+   sign-in: a trigger on Firebase Auth's own delete would need the v1
+   functions API and a sign-in the server can no longer ask about. It is
+   refused while she is a club's only admin. Care details stay with a child
+   left with no family (the contacts are the family's words, and the admins
+   decide about the record as a whole). A family deleting her registration
+   deletes the child only when the club never let her in and she is on no
+   team; one the club let in is the admins' to delete.*
+
+Each is its own build, rules version, CHANGELOG entry and test pass across
+every suite that walks every kind of account. New suites: `children.js` (the
+record, confirming, every way in), `care.js`, `register.js` (programs, the
+form, waivers, accepting, placing, the export), `forget.js` (deleting, on the
+fake server).
+
+### Step 1, as built (build 122, rules version 21)
+
+The child's record, with these details where the build differs from the
+above:
+
+- **Her family on a team is a copy, never written by hand.** The child's
+  `guardians` and `self` hold each squad record's, valued with the team id.
+  The rule lets anyone signed in write one only while that team's squad
+  record of this child names her, and take one away only once it doesn't, so
+  a copy can never claim more than the squad says and nobody has to be
+  trusted to keep it. A family named on the child herself is a separate list,
+  `family/{uid}`, written by her with an invite naming the child (`child` on
+  a parent invite, which may then have no team). Placing a child on no team
+  copies `family` into the squad (step 4).
+- **Who keeps the copies:** the server on every squad record change
+  (`rosterPlayer`, now also `syncChild()` in `functions/access.js`), any
+  admin's or coach's phone on connect (`syncChildren()`), and a family's own
+  phone for herself, which is what first lets her read the record.
+- **Every child already here is made by an admin's phone, or the server,
+  without a button.** Each squad record with no `child` gets one: the
+  pointer first (the rule on a child's `teams` checks it), then the record,
+  under the player id, `by: 'club'`, unconfirmed. Both make the same record
+  (`childFrom()`). Written straight to the database, not through the outbox,
+  like the lookup tables: it is made again on every connect, and a club whose
+  rules are older should not be told on every screen.
+- **A coach adding a player registers her**: the squad record with `child`,
+  then the child (`by` the coach), once the squad write has landed.
+- **The index** counts a family named in `family` on a child with `club:
+  true` (`hasAnyRole()`, the server's `hasRole()`, and the index rule's new
+  clause, whose value is the child id). Her squads' copies are counted
+  through the squads, as before.
+- **Her own list** (`families/{uid}/{code}/{cid}`) is written when she
+  confirms, and listened to, not waited on, so a phone finds a child of hers
+  on no team.
+- **Asked for in step 1:** name, birth date and gender. Care details and
+  waivers join the same screen in steps 2 and 3.
+- **The backup** (*Download a copy*, admins) carries the children's records;
+  restoring one does not write them yet.
+
+### Decisions for the owner
+
+Recommended answers in bold; each changes the rules, so they are settled
+before step 1. **All five decided by the owner, 2026-10-09**: 1, 2, 3 and 5
+as recommended, and 4 differently (below the list).
+
+1. **Who reads a child's birth date:** **coaches of any team and admins**, as
+   they read every squad; or admins and her own team's coaches only, which
+   needs the copy-per-team shape care uses.
+2. **Who reads care details:** **that team's coaches and the admins**; or
+   helpers on that team too (a team manager handling a call at the pitch).
+3. **A sessions-only registration:** **an admin accepts it**, as every
+   program; or accepted on arrival by the server, so a family can book the
+   same day.
+4. **A child left with no family when an account is deleted:** **stays on her
+   team by name and number with her games, everything else about her goes**;
+   or taken off the team as well.
+5. **Children already on teams:** **every one gets a record, and every family
+   is asked to confirm** the next time she opens the app; or only children
+   added from now on.
+
+On 4 the owner chose neither: *she is taken off the team, but past games
+keep her name and shirt number, and her information card is put on the
+admins' radar to delete, which saves them from a mistaken delete and keeps
+it if they need it.* So nothing about the child is deleted by the account
+going; *Deleting*, above, says how.
+
 ## What parents actually see
 
 Worth stating so it is deliberate and not an accident of implementation:

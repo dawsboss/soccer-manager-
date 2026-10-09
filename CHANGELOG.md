@@ -8,6 +8,188 @@ before this point lives only in the git log.
 
 ---
 
+## Deleting: a registration, a child's record, an account — 2026-10-09 (build 127, rules version 25)
+
+Registration's last step (AUTH.md, *Deleting*), as the owner decided it.
+
+- **A family deletes her registration** from the program's link: the
+  registration, then what she agreed to for it (the rules let an agreement
+  go only once its registration has), and, for a child she made through the
+  link who was never let into the club and is on no team, the child, her
+  care details and her place on the family's own list.
+- **An admin deletes a child's record** (one on no team, including a child
+  whose family has left): her registrations, agreements and care details,
+  then the record. Children whose family deleted their account are listed
+  under Registrations → *Left the club* until an admin decides.
+- **Delete my account** (Your account): says what goes and what stays, then
+  asks the club's server to forget her (`forgetMe`, `functions/forget.js`)
+  in every club: every role and table entry, her member entry and staff
+  name, her place on every child's and squad record, her asks, and her own
+  settings, push tokens, drills and lists. Messages and notices she wrote
+  stay. A child left with no family is taken off her team, her games keeping
+  her name and number, and her record is kept, marked as having left, for
+  the admins (the owner's decision). Refused while she is a club's only
+  admin. Then her phone deletes the sign-in.
+
+Rules version 25 (`forgetRequests`, and the deletes above). New suite
+`test/forget.js`; `register.js` and `rules.js` pin the rest.
+
+---
+
+## The GotSport export — 2026-10-09 (build 126)
+
+Registration's fifth step (AUTH.md, *The GotSport export*). A program's
+registrations → **Export for GotSport**: a CSV of every child placed or
+accepted, with her team and number, birth date and gender, and the parent
+who registered her (name, email, and the first phone number in her care
+details), in the columns the bulk import already reads from a registration
+system plus those a state registration needs. Admins only, built on the
+phone, a warning before it saves. A cell a spreadsheet would run as a
+formula is written as text. The column names are matched to GotSport's own
+template once the owner has one (GOTSPORT.md, still open).
+
+---
+
+## Placing on a team, and sessions for a child on no team — 2026-10-09 (build 125, rules version 24)
+
+Registration's fourth step (AUTH.md, *Accepting and placing*, *Sessions for
+a child on no team*).
+
+- **Admins place an accepted child on a team** from her registration: the
+  teams within a year of her age are offered. She joins the squad by her
+  first name with her family as its parents (the coach gives her a number),
+  her club record names the team, the team's families table is brought into
+  line, and the registration says *On a team*. Her care details follow her
+  to that team's coaches by the server.
+- **A child in the club on no team books training sessions**, which is what
+  a family registering only for 1-1s and groups wanted. Her family asks for
+  a place, and books a coach's time, for her as the club; the coach books her
+  from *Add players → No team yet*. The rules (`booked`, `fees`, `packs`,
+  `packuse`) and the booking server find her family on her club record, and
+  only once the club has let her in.
+
+Rules version 24. `test/register.js`, `test/book.js` (on orgs/) and
+`rules.js` pin it.
+
+---
+
+## Registration: programs, the link, the form and waivers — 2026-10-09 (build 124, rules version 23)
+
+Registration's third step (AUTH.md, *Registration*).
+
+- **Admins make programs** under Club settings → **Registrations**: a
+  season, a camp, tryouts, training sessions; birth years, girls or boys,
+  opening and closing dates, places, a fee (shown, never taken: families pay
+  the way the club says until payments are built), questions (a star for one
+  that must be answered) and the club's waivers. Each open program has a
+  link, made by the secure generator, to post anywhere.
+- **Waivers are the club's words, versioned.** Changing them makes a new
+  version (the old words kept), and the next registration asks again. Only a
+  family agrees, in her own name with her name typed, once per version; an
+  agreement is never changed or taken back.
+- **A family who is not in the club** opens the link, signs in, and fills one
+  form per child: her name, birth date and gender (held to the program's
+  years and who it is for), someone to call and what a coach must know, the
+  program's questions and its waivers. Her phone writes her child, her own
+  list, care, the registration and each agreement, in that order. She is not
+  in the club, and reads none of it, until the club says yes.
+- **Admins accept**, put on the waiting list or decline, with a note of their
+  own. Accepting lets the child into the club, and her family with her.
+- **A coach or an admin starts one for a family** from the child's record: a
+  draft her family finishes (the coach agrees to nothing), shown to the
+  family on My players beside any open program her child fits.
+
+Rules version 23. New suite `test/register.js`; `rules.js` walks who reads
+and writes each part.
+
+---
+
+## Care details for the coach at the pitch — 2026-10-09 (build 123, rules version 22)
+
+Registration's second step (AUTH.md, *Care: what a coach needs at the
+pitch*): who to call and what a coach must know about a child, given by her
+family.
+
+- **Her family gives it** on *Check her details*: up to two people to call
+  (someone is insisted on before she confirms), allergies, conditions,
+  medication and a doctor, each "none" by being left empty. Stored at
+  `care/{cid}`, read and written by her family and the admins only.
+- **Her team's coaches read a copy**, `teamCare/{tid}/{pid}`, on her page in
+  Squad, with a link to ring each contact. Never another team's coach, a
+  tracker, a helper, a viewer or a fan (the owner's decision). The server
+  keeps each team's copy from her family's and the child's teams
+  (`careCopy`, and `accessChild` when she joins or leaves a team); her
+  family's phone writes them too.
+- **Never anywhere else**: not on the child's record, a squad, a game,
+  `public/`, a push, or an admin's *Download a copy*.
+
+Rules version 22. `test/children.js`, `rules.js` and `access.js` (both
+passes) pin who reads and writes it.
+
+---
+
+## A child in the club — 2026-10-09 (build 122, rules version 21)
+
+Registration's first step (AUTH.md, *A child in the club, and
+registration*, step 1): a child is a person in the club, not only a row in
+one team's squad.
+
+- **One record per child**, `orgs/{code}/children/{cid}`: her name as her
+  family gives it, birth date, gender, the squad records that are her, her
+  family, and whether her family has confirmed it. Each squad record points
+  back (`child`). Coaches and admins read every child, as they read every
+  squad; a family reads her own by path; nobody else reads one.
+- **Every child already on a team gets one** (the owner's decision), made by
+  an admin's phone or the server from the squad, under the player's own id,
+  for her family to confirm.
+- **A coach adding a player registers her** with the club for her family.
+- **Her family confirms**, and only her family: the first time her phone
+  holds an unconfirmed child it asks, once (*Check Ella's details*: what the
+  club has, and only what is missing), then a card on My players until she
+  does. Her family, an admin, or the coach who added her (until the family
+  confirms) changes the record; checked in the click handler and the rules.
+- **Her family on a team is copied onto the child** as the squad says it,
+  by the server, staff phones and the family's own, and the rule lets a copy
+  say no more than the squad does. A family named on the child herself
+  (`family`, for a child on no team) comes from a parent invite that names
+  the child, and lets her into the club once an admin or coach has let the
+  child in (`club: true`).
+- **`families/{uid}`** at the root: each person's own list of her children,
+  so another phone finds a child on no team.
+
+Rules version 21. New suite `test/children.js`; `rules.js` (both passes) and
+`access.js` (both passes) walk the rest. Not yet: care details, programs,
+the link and form, waivers, placing, sessions for a child on no team, the
+GotSport export and deleting (steps 2 to 6).
+
+---
+
+## AUTH.md: a child in the club, and registration, designed before any code — 2026-10-09
+
+A child exists today only as a row in one team's squad, so a family who
+wants 1-1s for a child on no team has nowhere to be, next season starts from
+nothing, and nothing says the family ever agreed to what a coach typed.
+AUTH.md, *A child in the club, and registration*, designs the club-level
+record of each child (`orgs/{code}/children/{cid}`, the squad pointing back
+with `child`), how a family finds hers (`families/{uid}`), how she gets into
+the club (only once a child of hers is in it, so a program link on the club's
+website is not a way to the calendar), three ways a child is registered (a
+family through a program link; a coach or an admin for a family, who
+confirms it when she joins and is asked only for what is missing; every
+child already on a team), care details for coaches (a per-team copy), then
+registration itself as `GOTSPORT.md` step 4 laid it out: programs, the link
+and the form, versioned waivers only a family agrees to, accepting, placing,
+sessions for a child on no team, the GotSport export and deleting. Six build
+steps and five decisions, which the owner made the same day: birth dates
+read by coaches and admins, care by her team's coaches and admins, a
+sessions-only registration accepted by an admin, every child already on a
+team given a record for her family to confirm, and a child whose family
+deletes its account taken off her team (her games keep her name and number)
+with her information kept on the admins' list to delete. No code yet: it is a schema and
+rules change, and this file is where those are settled first.
+
+---
+
 ## Fans, and links with limits — 2026-10-09 (build 121)
 
 The first of AUTH.md's new kinds of people still to build (AUTH.md, *More kinds of people*, 1), as the owner decided it and then renamed it, and links with limits.
