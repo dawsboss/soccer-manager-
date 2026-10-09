@@ -240,6 +240,11 @@ exports.rosterPlayer = onValueWritten('/orgs/{code}/squad/{tid}/{pid}', quiet(ev
    named on her, or the club letting her in, is who is in the index. */
 exports.accessChild = onValueWritten('/orgs/{code}/children/{cid}', quiet(event =>
   access.onChildRecord(writerOf(event), event.params, event.data.before.val(), event.data.after.val())));
+/* Care details (access.js): the family's own, copied to each team she is on
+   for its coaches. The copy is written with admin credentials and holds
+   medical notes, so only this trigger and the child's own teams decide where. */
+exports.careCopy = onValueWritten('/orgs/{code}/care/{cid}', quiet(event =>
+  access.onCare(writerOf(event), event.params)));
 exports.rosterOpen = onValueWritten('/orgs/{code}/org/rosterOpen', quiet(event =>
   access.onRosterOpen(writerOf(event), event.params)));
 

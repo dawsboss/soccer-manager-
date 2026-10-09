@@ -438,6 +438,37 @@ const rest = S => canon({ ...S.at('workspaces/CLUB'), children: null, teams: noC
     check('her family taken off: out of the club', raw(OC + 'access/index/nmum'), undefined);
   }
 
+  /* Care details: the family's own copied to each team she is on, for its
+     coaches, and taken away when she leaves the team. orgs/ only. */
+  console.log('--- care details for her team\'s coaches (orgs/) ---');
+  {
+    const OC = 'orgs/CC/';
+    const care = { by: 'om', at: 1, contacts: { 0: { name: 'Mo', phone: '555' } }, allergies: 'Peanuts' };
+    const S = makeServer({
+      orgs: { CC: {
+        access: { admins: { oa: true }, index: { oa: true, om: true }, teams: { t1: { coaches: { oc: true } } }, teamIndex: { t1: { oc: 'coach' } } },
+        org: { name: 'Careside' }, teams: { t1: { id: 't1' }, t2: { id: 't2' } },
+        squad: { t1: { p1: { id: 'p1', name: 'Ella', child: 'p1', guardians: { om: true } } } },
+        children: { p1: { id: 'p1', first: 'Ella', club: true, by: 'club', at: 1, teams: { t1: 'p1' }, guardians: { om: 't1' } } }
+      } }
+    });
+    S.loadFunctions();
+    const ORGS_MODE = require('./fakebase').ORGS_MODE;
+    const raw = p => (ORGS_MODE ? p.replace(/^orgs\//, 'workspaces/') : p).split('/').reduce((c, k) => (c && typeof c === 'object' ? c[k] : undefined), S.tree);
+    await S.fire(OC + 'care/p1', care);
+    deepEq('her family\'s care details are copied for her team\'s coaches', raw(OC + 'teamCare/t1/p1'), { ...care, cid: 'p1' });
+    check('— to no other team', raw(OC + 'teamCare/t2'), undefined);
+    await S.fire(OC + 'care/p1/allergies', 'None');
+    check('a change reaches the copy', raw(OC + 'teamCare/t1/p1/allergies'), 'None');
+    await S.fire(OC + 'children/p1/teams/t2', 'p7');
+    check('a second team gets its own copy', raw(OC + 'teamCare/t2/p7/cid'), 'p1');
+    await S.fire(OC + 'children/p1/teams/t1', null);
+    check('off a team: that team\'s copy goes', raw(OC + 'teamCare/t1/p1'), undefined);
+    check('— the other stays', raw(OC + 'teamCare/t2/p7/cid'), 'p1');
+    await S.fire(OC + 'care/p1', null);
+    check('her family deletes them: every copy goes', raw(OC + 'teamCare/t2/p7'), undefined);
+  }
+
   console.log('--- a link for several people outlives one of them ---');
   {
     const S = server(c => { c.access.index.mum = 'mShared0001'; });

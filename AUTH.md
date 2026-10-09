@@ -890,7 +890,12 @@ against.
    a child on no team is in the rules; making one from the screen comes with
    Registrations (step 3).*
 2. **Care details** for coaches (the source, the per-team copy, the server
-   keeping it).
+   keeping it). *Built (build 123, rules version 22): the family gives up to
+   two people to call and allergies, conditions, medication and a doctor on
+   the same *Check her details* screen (someone to call is insisted on before
+   she confirms); `careCopy` and the child's `teams` keep each team's copy,
+   and her family's phone writes them too; her team's coaches see it on her
+   page in Squad, with a link to ring; an admin's backup leaves it out.*
 3. **Programs, the link, the form and waivers**, and Registrations for
    admins: accepting, the waiting list, declining.
 4. **Placing on a team**, and **sessions for a child on no team**.

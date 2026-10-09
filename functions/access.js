@@ -339,9 +339,42 @@ async function syncChild(env, code, tid, pid, before, out, now) {
    through the squad already.) */
 async function onChildRecord(env, params, before, after, now) {
   const b = before || {}, a = after || {};
-  if (same(b.family, a.family) && b.club === a.club) return [];
-  const uids = both(b.family, a.family);
-  return settle(env, params.code, { uids, tree: 'orgs' }, now);
+  const out = [];
+  if (!same(b.teams, a.teams) && okKey(params.code) && okKey(params.cid)) await syncCare(env, params.code, params.cid, b.teams, out);
+  if (same(b.family, a.family) && b.club === a.club) return out;
+  return out.concat(await settle(env, params.code, { uids: both(b.family, a.family), tree: 'orgs' }, now));
+}
+
+/* Care details (AUTH.md, *Care: what a coach needs at the pitch*): her
+   family's own at care/{cid}, which only her family and the admins read, and
+   a copy for each team she is on at teamCare/{tid}/{pid}, which that team's
+   coaches read. Kept from the source and the child's teams; a family's phone
+   writes the copies of her own child too, for a club without the functions. */
+async function syncCare(env, code, cid, teamsBefore, out) {
+  const B = `orgs/${code}`;
+  if (await env.get('retired/' + code)) return;
+  const [care, c] = await Promise.all([env.get(`${B}/care/${cid}`), env.get(`${B}/children/${cid}`)]);
+  const teams = (c && c.teams) || {};
+  for (const [tid, pid] of Object.entries(teams)) {
+    if (!okKey(tid) || !okKey(pid)) continue;
+    const want = care && typeof care === 'object' ? { ...care, cid } : null;
+    const there = await env.get(`${B}/teamCare/${tid}/${pid}`);
+    if (same(there, want)) continue;
+    if (want) { await env.set(`${B}/teamCare/${tid}/${pid}`, want); out.push('set teamCare/' + tid + '/' + pid); }
+    else { await env.remove(`${B}/teamCare/${tid}/${pid}`); out.push('del teamCare/' + tid + '/' + pid); }
+  }
+  for (const [tid, pid] of Object.entries(teamsBefore || {})) {
+    if (teams[tid] === pid || !okKey(tid) || !okKey(pid)) continue;
+    const there = await env.get(`${B}/teamCare/${tid}/${pid}`);
+    // only her own: a squad record since given to somebody else keeps theirs
+    if (there && there.cid === cid) { await env.remove(`${B}/teamCare/${tid}/${pid}`); out.push('del teamCare/' + tid + '/' + pid); }
+  }
+}
+async function onCare(env, params) {
+  const out = [];
+  if (!okKey(params.code) || !okKey(params.cid)) return out;
+  await syncCare(env, params.code, params.cid, null, out);
+  return out;
 }
 
 const both = (before, after) => [...new Set([...keys(before), ...keys(after)])];
@@ -379,4 +412,4 @@ function onFans(env, params, before, after, now) {
   return settle(env, params.code, { uids: both(before, after), tids: [params.tid], fans: true, tree: params.tree }, now);
 }
 
-module.exports = { onChildRecord, childFrom, splitName, settle, onAdmin, onTeamStaff, onGuardians, onSelf, onViewer, onFans, onMember, onSquadPlayer, onRosterOpen, rosterEntry, isStaff, hasRole, teamIndexWanted, linkedWanted, coachTeamOf, helperTeamOf };
+module.exports = { onChildRecord, onCare, childFrom, splitName, settle, onAdmin, onTeamStaff, onGuardians, onSelf, onViewer, onFans, onMember, onSquadPlayer, onRosterOpen, rosterEntry, isStaff, hasRole, teamIndexWanted, linkedWanted, coachTeamOf, helperTeamOf };

@@ -97,6 +97,13 @@ function fill(A, o) {
   A.dom.node('#kLast').value = o.last || '';
   A.dom.node('#kBorn').value = o.born || '';
   A.dom.node(GENDER).dataset = o.gender ? { v: o.gender } : {};
+  const cs = o.contacts || [];
+  for (const i of [0, 1]) {
+    A.dom.node('#kC' + i + 'n').value = (cs[i] || {}).name || '';
+    A.dom.node('#kC' + i + 'p').value = (cs[i] || {}).phone || '';
+    A.dom.node('#kC' + i + 'r').value = (cs[i] || {}).rel || '';
+  }
+  for (const k of ['allergies', 'medical', 'meds', 'doctor']) A.dom.node('#kCare_' + k).value = (o.care || {})[k] || '';
 }
 
 (async () => {
@@ -122,7 +129,7 @@ function fill(A, o) {
 
     console.log('\n--- her family confirms ---');
     check('asked once, straight away', sheetOpen(A) && /Check Ella’s details/.test(sheet(A)), true);
-    check('— says what is missing', /add birth date and gender/.test(sheet(A)), true);
+    check('— says what is missing', /add birth date, gender and someone to call/.test(sheet(A)), true);
     check('— shows her team and number', /Flight · #7/.test(sheet(A)), true);
     A.render(); A.ui.view = 'mine'; A.render();
     check('a card on My players until she does', /Check her details/.test(A.rendered()), true);
@@ -132,6 +139,16 @@ function fill(A, o) {
     check('— and says so', /birth date and gender/.test(A.lastToast() || ''), true);
     fill(A, { first: 'Ellie', last: 'Fitz', born: '2016-05-03', gender: 'F' });
     A.click({ act: 'kidconfirm', id: 'p1' }); await A.flush(10);
+    check('not without someone the coach can call', !!valueAt(fbk, OB + '/children/p1/confirmed'), false);
+    fill(A, { first: 'Ellie', last: 'Fitz', born: '2016-05-03', gender: 'F', contacts: [{ name: 'Mo Fitz' }] });
+    A.click({ act: 'kidconfirm', id: 'p1' }); await A.flush(10);
+    check('— nor a contact with no phone number', /name and a phone/.test(A.lastToast() || ''), true);
+    fill(A, { first: 'Ellie', last: 'Fitz', born: '2016-05-03', gender: 'F', contacts: [{ name: 'Mo Fitz', phone: '555 0101', rel: 'Mum' }], care: { allergies: 'Peanuts', meds: 'Inhaler in her bag' } });
+    A.click({ act: 'kidconfirm', id: 'p1' }); await A.flush(10);
+    const cr = valueAt(fbk, OB + '/care/p1') || {};
+    deepEq('her care details are written, in her own name', [cr.by, cr.contacts, cr.allergies, cr.meds, cr.medical], ['mumU', { 0: { name: 'Mo Fitz', phone: '555 0101', rel: 'Mum' } }, 'Peanuts', 'Inhaler in her bag', undefined]);
+    deepEq('— and her team\'s copy, for its coaches', valueAt(fbk, OB + '/teamCare/t1/p1'), { ...cr, cid: 'p1' });
+    check('— nowhere else: not the child\'s record, the squad or a game', fbk.record.writes.filter(w => /Peanuts|555 0101/.test(JSON.stringify(w.value)) && !/\/(care|teamCare)\//.test(w.path)).length, 0);
     check('what she changed is written, a field at a time', [valueAt(fbk, OB + '/children/p1/first'), valueAt(fbk, OB + '/children/p1/born'), valueAt(fbk, OB + '/children/p1/gender')].join(), 'Ellie,2016-05-03,F');
     check('— what she did not change is not', fbk.writtenTo(OB + '/children/p1/last').length, 0);
     check('then confirmed, in her own name', (valueAt(fbk, OB + '/children/p1/confirmed') || {}).by, 'mumU');
@@ -216,6 +233,62 @@ function fill(A, o) {
     check('— never anyone else\'s', fbk.record.writes.filter(w => /\/children\/[^/]+\/(guardians|self)\//.test(w.path) && !/mumU$/.test(w.path)).length, 0);
     check('— and only on her own children', fbk.record.writes.some(w => /children\/(p2|q1)/.test(w.path)), false);
     void A;
+  }
+
+  console.log('\n--- care details at the pitch ---');
+  {
+    const care = { by: 'mumU', at: 2, contacts: { 0: { name: 'Mo Fitz', phone: '555 0101', rel: 'Mum' } }, allergies: 'Peanuts' };
+    const org = ORG(); org.teamCare = { t1: { p1: { ...care, cid: 'p1' } } }; org.care = { p1: care };
+    const rf = (uid, o) => { const base = rulesFor(uid, o), a = o.access; return p => {
+      const rel = p.slice(OB.length + 1);
+      let m = /^teamCare\/([^/]+)$/.exec(rel);
+      if (m) return !(a.admins[uid] || ((a.teamIndex || {})[m[1]] || {})[uid] === 'coach');
+      m = /^care\/([^/]+)$/.exec(rel);
+      if (m) { const c = (o.children || {})[m[1]] || {}; return !(a.admins[uid] || (c.guardians || {})[uid] || (c.family || {})[uid]); }
+      return base(p);
+    }; };
+    const bootC = async who => {
+      const fbk = makeFakebase();
+      const A = H.loadApp({ firebase: fbk, config: CONFIG, storage: { 'sm.workspace': 'CLUB', 'sm.tree.v1:CLUB': 'orgs', ['sm.kidask.v1:' + who + ':CLUB:p1']: '1' } });
+      await A.flush(); A.dom.node('#sheet').hidden = true;
+      fbk.signIn(who, { name: who }); await A.flush();
+      await fbk.serve(OB, org, () => A.flush(), rf(who, org)); await A.flush(10);
+      return { A, fbk };
+    };
+    {
+      const { A, fbk } = await bootC('coachU');
+      check('her team\'s coach reads its copy', under(fbk, OB).includes(OB + '/teamCare/t1'), true);
+      check('— not another team\'s, nor the family\'s own', under(fbk, OB).some(p => /teamCare\/t2|\/care\//.test(p)), false);
+      A.ui.teamId = 't1'; A.sheetPlayer(A.state.teams.t1.players.p1);
+      check('her page in Squad says who to call, with a link to ring', /href="tel:5550101"/.test(sheet(A)) && /Mo Fitz/.test(sheet(A)), true);
+      check('— and what to know', /Peanuts/.test(sheet(A)), true);
+      A.sheetPlayer(A.state.teams.t1.players.p2);
+      check('a child with none says her family hasn\'t given any', /hasn't given who to call/.test(sheet(A)), true);
+      A.click({ act: 'kidopen', id: 'p1' });
+      check('the coach has no care form of her own (her family\'s and the admins\')', /kC0n/.test(sheet(A)), false);
+      const { A: B } = await bootC('other2');
+      B.ui.teamId = 't1'; B.sheetPlayer(B.state.teams.t1.players.p1);
+      check('another team\'s coach sees none of it', /Peanuts|555/.test(sheet(B)), false);
+    }
+    {
+      const { A, fbk } = await bootC('trkU');
+      check('a tracker never asks for it', under(fbk, OB).some(p => /care/i.test(p)), false);
+      check('— and holds none', /Peanuts|555 0101/.test(JSON.stringify(A.state) + A.storage.getItem('sm.data.v1:CLUB')), false);
+    }
+    {
+      const { A } = await bootC('mumU');
+      check('her family reads her own', (A.state.care.p1 || {}).allergies, 'Peanuts');
+      A.click({ act: 'kidopen', id: 'p1' });
+      check('— and can change it', /value="555 0101"/.test(sheet(A)), true);
+    }
+    {
+      const { A, fbk } = await bootC('adm');
+      const pr = A.backupDoc(); await A.flush();
+      // the club answers for its training records, which the backup asks for first
+      await fbk.serve('training/CLUB', {}, () => A.flush()); await fbk.serve('userLibrary', {}, () => A.flush());
+      const doc = (await pr).doc;
+      check('an admin\'s backup carries no care details', /Peanuts|555 0101/.test(JSON.stringify(doc)), false);
+    }
   }
 
   console.log('\n--- a coach adds a player ---');

@@ -2,7 +2,7 @@
    Static app. Data lives in localStorage, and mirrors to Firebase Realtime
    Database when a config + workspace code are present. */
 
-const BUILD = '122';
+const BUILD = '123';
 const BUILT = '2026-10-09';
 /* The version of database.rules.json this app was written against. The rules
    carry the same number in rulesVersion's .write, which accepts that number
@@ -11,7 +11,7 @@ const BUILT = '2026-10-09';
    never pasted look exactly like a coach with no signal: "saved on this phone
    only", one feature at a time. test/rules.js holds the two numbers together
    and fails when the rules change without this going up. */
-const RULES_VERSION = 21;
+const RULES_VERSION = 22;
 /* index.html carries the build it was published with. If this file is newer, the
    browser handed us a cached page — the exact failure that has eaten hours. */
 const pageBuild = () => {
@@ -45,7 +45,7 @@ const SANDBOX_PREFIX = 'test-';
    answer stored inside it would be lost to any edit made while a parent was
    answering; and the rule that lets a parent write here grants this node and
    nothing else, so a parent can never touch the team or the game. */
-let state = { teams: {}, matches: {}, access: {}, rsvp: {}, children: {} };
+let state = { teams: {}, matches: {}, access: {}, rsvp: {}, children: {}, care: {}, teamCare: {} };
 let ui = { view: 'calendar', gameView: 'subs', teamId: null, matchId: null, picked: null, dragging: false, editFid: null, sortBy: 'need', plan: null, snapAt: null, snapSid: null };
 let lastLog = [];
 let lastScreen = null;   // the screen render() last drew, so a redraw of the same one keeps its scroll
@@ -372,6 +372,9 @@ function forgetOthersChildren() {
   }
   // the club's records of children: her own only (AUTH.md, *A child in the club*)
   state.children = Object.fromEntries(Object.entries(state.children || {}).filter(([, c]) => kidIsMine(c)));
+  // care details: her own children's, and no team's copy (that team's coaches' and the admins')
+  state.care = Object.fromEntries(Object.entries(state.care || {}).filter(([cid]) => state.children[cid]));
+  state.teamCare = {};
   delete (state.access || {}).log;
   if (state.access && state.access.members) state.access.members = Object.fromEntries(Object.entries(state.access.members).map(([k, m]) => [k, { name: (m && m.name) || '' }]));
   saveLocal();
@@ -473,7 +476,7 @@ function loadLocal() {
       localStorage.removeItem(LS_DATA);
     }
     const d = JSON.parse(localStorage.getItem(dataKey()) || 'null');
-    if (d) state = { teams: d.teams || {}, matches: d.matches || {}, access: d.access || {}, rsvp: d.rsvp || {}, children: d.children || {} };
+    if (d) state = { teams: d.teams || {}, matches: d.matches || {}, access: d.access || {}, rsvp: d.rsvp || {}, children: d.children || {}, care: d.care || {}, teamCare: d.teamCare || {} };
     const u = JSON.parse(localStorage.getItem(LS_UI) || 'null');
     if (u) Object.assign(ui, u);
     /* Before build 61 'live' was the coach's subs screen. Someone who left a
@@ -910,6 +913,8 @@ async function initSync() {
       const view = !!(u && (a.viewers || {})[u]);
       return { admin, all, staffTeams, fam, view };
     }
+    // the teams whose care copies this account reads: an admin's every team, a coach's own
+    const careTeams = (r, a) => Object.keys((a && a.teams) || {}).filter(t => r.admin || (me && ((((a.teamIndex || {})[t]) || {})[me.uid] === 'coach')));
     const reachKey = r => JSON.stringify([r.admin, r.all, r.staffTeams, Object.keys(r.fam).sort(), !!r.view]);
 
     /* Her own children, team by team. The lookup tables name one child per
@@ -963,7 +968,12 @@ async function initSync() {
         for (const ps of Object.values(squads)) for (const p of Object.values(ps || {})) if (p && typeof p.child === 'string' && ((p.guardians || {})[me.uid] || (p.self || {})[me.uid])) ids.add(p.child);
         await Promise.all([...ids].map(async c => { const v = await once('children/' + c); if (v) children[c] = v; }));
       }
-      return { r, access, org, names, teams, roster, matches, rsvp, members: membersV, mine, log, squads, kids, notes, children };
+      /* Care details (AUTH.md, *Care*): a family her own children's, a coach
+         her own teams' copies, an admin every team's. */
+      const care = {}, teamCare = {};
+      if (!r.all && me) await Promise.all(Object.keys(children).map(async c => { const v = await once('care/' + c); if (v) care[c] = v; }));
+      await Promise.all(careTeams(r, access).map(async t => { const v = await once('teamCare/' + t); if (v !== undefined) teamCare[t] = v || {}; }));
+      return { r, access, org, names, teams, roster, matches, rsvp, members: membersV, mine, log, squads, kids, notes, children, care, teamCare };
     }
 
     const namesAsMembers = n => Object.fromEntries(Object.entries(n || {}).filter(([, x]) => x && typeof x === 'object').map(([u, x]) => [u, { name: String(x.name || '') }]));
@@ -995,7 +1005,7 @@ async function initSync() {
         if (!t || typeof t !== 'object') continue;
         teams[tid] = { ...t, players: tid in x.squads ? squadWith(x.squads[tid], (x.notes || {})[tid], x.r.all) : fromRoster((x.roster || {})[tid], x.kids[tid]) };
       }
-      return { teams, matches: x.matches || {}, access, rsvp: x.rsvp || {}, children: x.children || {} };
+      return { teams, matches: x.matches || {}, access, rsvp: x.rsvp || {}, children: x.children || {}, care: x.care || {}, teamCare: x.teamCare || {} };
     }
 
     /* After the first read, the same parts listened to: a change to one never
@@ -1045,7 +1055,17 @@ async function initSync() {
         if (!live() || r.all || kidsWatched.has(c) || typeof c !== 'string' || !c) return;
         kidsWatched.add(c);
         orgsOffs.push(dbMod.onValue(dbMod.ref(db, OB() + '/children/' + c), cs => { if (live()) setKid(c, cs.val()); }, () => kidsWatched.delete(c)));
+        // and her care details, which only her family (and the admins) read
+        orgsOffs.push(dbMod.onValue(dbMod.ref(db, OB() + '/care/' + c), cs => {
+          if (!live()) return;
+          state.care = state.care || {};
+          const own = { [c]: cs.val() || undefined };
+          overlayPending(own, 'care');
+          if (own[c]) state.care[c] = own[c]; else delete state.care[c];
+          saveLocal(); render();
+        }, () => { }));
       };
+      for (const t of careTeams(r, x.access)) val('teamCare/' + t, v => { state.teamCare = state.teamCare || {}; state.teamCare[t] = v || {}; saveLocal(); render(); });
       if (r.all) val('children', v => {
         state.children = v || {};
         overlayPending(state.children, 'children');
@@ -1274,7 +1294,7 @@ function overlayPending(target, under) {
 function mergeConnect(v) {
   // a copy: what this phone owes is laid over it, and the snapshot it came in is not ours to change
   v = clone(v);
-  const remote = { teams: v.teams || {}, matches: v.matches || {}, access: v.access || {}, rsvp: v.rsvp || {}, children: v.children || {} };
+  const remote = { teams: v.teams || {}, matches: v.matches || {}, access: v.access || {}, rsvp: v.rsvp || {}, children: v.children || {}, care: v.care || {}, teamCare: v.teamCare || {} };
   const owed = [];
   for (const coll of ['teams', 'matches']) {
     for (const [id, x] of Object.entries(state[coll] || {})) {
@@ -1314,6 +1334,7 @@ function pendingLabel(p) {
     return (what ? what : 'the team') + n;
   }
   if (coll === 'rsvp') return 'an answer to who is coming';
+  if (coll === 'care') return 'care details for a child';
   if (coll === 'children') return (c => 'the club\'s record of ' + (c && c.first ? c.first : 'a child'))((state.children || {})[id]);
   if (p.startsWith('access/org/venues')) return 'the club\'s fields';
   if (p === 'access/org/money') return 'the currency fees are shown in';
@@ -4947,7 +4968,9 @@ async function trainingCopy(extra = {}) {
 // SERVER.md: a backup is an admin remembering to tap; a server would take them nightly.
 async function backupDoc() {
   const { T, missed } = await trainingCopy();
-  return { doc: { ...clone(state), training: T, savedAt: nowMs(), build: BUILD }, missed };
+  // never anyone's care details: a backup is a file that goes wherever files go (AUTH.md, *Care*)
+  const { care, teamCare, ...rest } = clone(state);
+  return { doc: { ...rest, training: T, savedAt: nowMs(), build: BUILD }, missed };
 }
 
 /* Restoring it: like teams and games, only what the club is missing, and
@@ -17995,8 +18018,11 @@ function kidMissing(c) {
   const out = [];
   if (!c.born) out.push('birth date');
   if (!c.gender) out.push('gender');
+  if (!careContacts(careOf(c.id)).length) out.push('someone to call');
   return out;
 }
+// 'a, b and c'
+const wordsAnd = xs => xs.length < 2 ? xs.join('') : xs.slice(0, -1).join(', ') + ' and ' + xs[xs.length - 1];
 const myClubKids = () => Object.values(clubKids()).filter(c => c && kidFamily(c) && !c.left);
 
 /* A write the phone makes again on every connect, from what the squads say:
@@ -18070,6 +18096,66 @@ function kidStatus(c) {
   if (c.confirmed) return 'Confirmed by her family' + (c.confirmed.at ? ', ' + new Date(c.confirmed.at).toLocaleDateString([], { day: 'numeric', month: 'short', year: 'numeric' }) : '');
   return 'Waiting for her family to confirm';
 }
+/* Care details (AUTH.md, *Care: what a coach needs at the pitch*): who to
+   call and what a coach must know. Her family's own at care/{cid}, which her
+   family and the admins read and write; a copy for each team she is on at
+   teamCare/{tid}/{pid}, which that team's coaches read, kept by the server
+   and by her family's phone. Never in a game, a squad, a backup or public/. */
+const CARE_FIELDS = [['allergies', 'Allergies'], ['medical', 'Conditions'], ['meds', 'Medication'], ['doctor', 'Doctor']];
+const mayCare = c => !!(me && c && (isAdmin(me.uid) || kidFamily(c)));
+const careOf = cid => (state.care || {})[cid] || null;
+const teamCareOf = (tid, pid) => (((state.teamCare || {})[tid]) || {})[pid] || null;
+const careContacts = r => Object.values((r && r.contacts) || {}).filter(x => x && x.name && x.phone);
+const telOf = ph => 'tel:' + String(ph || '').replace(/[^\d+]/g, '');
+function careForm(r) {
+  const cs = Object.values((r && r.contacts) || {});
+  const row = i => { const x = cs[i] || {}; return `<div class="grid2">
+      <label class="field"><span>${i ? 'Another contact' : 'Who to call'}</span><input type="text" id="kC${i}n" maxlength="80" value="${esc(x.name || '')}" placeholder="${i ? 'Optional' : 'Name'}"></label>
+      <label class="field"><span>Phone</span><input type="tel" id="kC${i}p" maxlength="40" value="${esc(x.phone || '')}"></label>
+    </div>
+    <label class="field"><span>Who they are to her</span><input type="text" id="kC${i}r" maxlength="40" value="${esc(x.rel || '')}" placeholder="Mum, grandad, neighbour"></label>`; };
+  return `<p class="lbl">At the pitch</p>
+    <p class="muted" style="margin-top:0">Only her team's coaches and the club's admins see this, never other families. Leave a box empty for none.</p>
+    ${row(0)}${row(1)}
+    ${CARE_FIELDS.map(([k, l]) => `<label class="field"><span>${l}</span><textarea id="kCare_${k}" rows="1" maxlength="${k === 'doctor' ? 200 : 500}">${esc((r && r[k]) || '')}</textarea></label>`).join('')}`;
+}
+// what the form says, or null with a reason
+function careRead() {
+  const contacts = {};
+  for (const i of [0, 1]) {
+    const name = $('#kC' + i + 'n').value.trim().slice(0, 80), phone = $('#kC' + i + 'p').value.trim().slice(0, 40), rel = $('#kC' + i + 'r').value.trim().slice(0, 40);
+    if (!name && !phone) continue;
+    if (!name || !phone) return { why: 'Each contact needs a name and a phone number' };
+    contacts[Object.keys(contacts).length] = { name, phone, ...(rel ? { rel } : {}) };
+  }
+  const rec = { contacts };
+  for (const [k] of CARE_FIELDS) { const v = $('#kCare_' + k).value.trim().slice(0, k === 'doctor' ? 200 : 500); if (v) rec[k] = v; }
+  if (!Object.keys(contacts).length) delete rec.contacts;
+  return { rec };
+}
+const careSame = (a, b) => { const strip = r => { const { by, at, cid, ...x } = r || {}; return JSON.stringify(x); }; return strip(a) === strip(b); };
+/* Her family's (or an admin's) care details saved: the record, then each of
+   her teams' copies this account may write, which the server keeps too. */
+function saveCare(c, rec) {
+  const full = { ...rec, by: me.uid, at: nowMs() };
+  commit(`care/${c.id}`, full);
+  for (const [tid, pid] of Object.entries(c.teams || {})) {
+    const p = ((state.teams[tid] || {}).players || {})[pid];
+    if (isAdmin(me.uid) || (p && (p.guardians || {})[me.uid])) kidQuiet(`teamCare/${tid}/${pid}`, { ...full, cid: c.id });
+  }
+}
+// what her team's coach sees on her page in Squad
+function careCard(t, p) {
+  if (!me || !onOrgs() || !(isAdmin(me.uid) || (teamAccess(t.id).coaches || {})[me.uid])) return '';
+  const r = teamCareOf(t.id, p.id);
+  if (!r) return `<p class="lbl">At the pitch</p><p class="muted" style="margin-top:0">Her family hasn't given who to call or anything you should know yet.</p>`;
+  const cs = careContacts(r);
+  return `<p class="lbl">At the pitch</p>
+    <div class="plist" style="margin-bottom:8px">${cs.map(x => `<a class="prow" href="${esc(telOf(x.phone))}" style="grid-template-columns:1fr auto">
+      <span><span class="pname">${esc(x.name)}</span><span class="rowsub">${esc([x.rel, x.phone].filter(Boolean).join(' · '))}</span></span><span class="muted">Call</span></a>`).join('') || '<p class="muted" style="margin:0">Nobody to call given.</p>'}</div>
+    ${CARE_FIELDS.filter(([k]) => r[k]).map(([k, l]) => `<p style="margin:0 0 6px"><b>${l}:</b> ${esc(r[k])}</p>`).join('')}
+    <p class="muted" style="margin:0 0 14px">From her family. Only this team's coaches and the club's admins see it.</p>`;
+}
 function sheetKid(cid) {
   const c = clubKids()[cid];
   if (!c) return;
@@ -18077,7 +18163,7 @@ function sheetKid(cid) {
   const miss = kidMissing(c), places = kidPlaces(c);
   const shown = v => (v ? esc(v) : '<span class="muted">Not given yet</span>');
   openSheet(`<h3>${ask ? `Check ${esc(c.first || 'your child')}’s details` : esc(kidName(c))}</h3>
-    ${ask ? `<p class="muted" style="margin-top:0">The club has ${esc(c.first || 'your child')} on its records. Check what it has, change anything that's wrong${miss.length ? `, and add ${miss.join(' and ')}` : ''}, then confirm. Only you can.</p>`
+    ${ask ? `<p class="muted" style="margin-top:0">The club has ${esc(c.first || 'your child')} on its records. Check what it has, change anything that's wrong${miss.length ? `, and add ${wordsAnd(miss)}` : ''}, then confirm. Only you can.</p>`
       : `<p class="muted" style="margin-top:0">${esc(kidStatus(c))}.</p>`}
     <p style="margin:0 0 12px"><b>Plays for:</b> ${places.length ? places.join(', ') : 'no team yet'}</p>
     ${edit ? `<div class="grid2">
@@ -18091,6 +18177,7 @@ function sheetKid(cid) {
     </div>`
       : `<p style="margin:0 0 6px"><b>Born:</b> ${shown(c.born ? dayLabel(c.born) : '')}</p>
     <p style="margin:0 0 12px"><b>Gender:</b> ${shown(KID_GENDER[c.gender] || '')}</p>`}
+    ${mayCare(c) ? careForm(careOf(c.id)) : ''}
     ${ask ? `<button class="btn wide" data-act="kidconfirm" data-id="${esc(c.id)}">Confirm</button>`
       : edit ? `<button class="btn wide" data-act="kidsave" data-id="${esc(c.id)}">Save</button>` : ''}
     <button class="btn quiet wide" data-act="closesheet" style="margin-top:8px">${ask ? 'Later' : 'Close'}</button>`, true);
@@ -18101,7 +18188,7 @@ function kidCards() {
   const todo = myClubKids().filter(c => !c.confirmed);
   const loose = myClubKids().filter(c => c.confirmed && !Object.keys(c.teams || {}).length);
   return todo.map(c => `<div class="card"><b>Check ${esc(c.first || 'your child')}’s details</b>
-      <p class="muted" style="margin:6px 0 10px">The club has her on its records${kidMissing(c).length ? ` and still needs her ${kidMissing(c).join(' and ')}` : ''}. Only you can confirm them.</p>
+      <p class="muted" style="margin:6px 0 10px">The club has her on its records${kidMissing(c).length ? ` and still needs ${wordsAnd(kidMissing(c).map(x => x === 'someone to call' ? x : 'her ' + x))}` : ''}. Only you can confirm them.</p>
       <button class="btn wide" data-act="kidopen" data-id="${esc(c.id)}">Check her details</button></div>`).join('')
     + loose.map(c => `<div class="card"><div class="row"><span class="crest blank">${esc((c.first || '?').slice(0, 1))}</span>
       <span><b style="font-size:18px">${esc(kidName(c))}</b><span class="rowsub">In the club · on no team yet</span></span></div>
@@ -18312,6 +18399,7 @@ function sheetPlayer(p) {
     <p class="muted" style="margin-top:-8px">A guardian can read this team and sees her under My players. Linking someone here is what makes them a parent.</p>
     ${selfCard(t, p)}
     ${onOrgs() ? fanCard(t, p, 'player') : ''}
+    ${careCard(t, p)}
     ${(c => c ? `<p class="lbl">Her club record</p>
     <button class="opt spread" type="button" data-act="kidopen" data-id="${esc(c.id)}" style="margin-bottom:14px">
       <span>${esc(kidName(c))}<span class="rowsub">${esc([c.born ? 'Born ' + dayLabel(c.born) : 'No birth date yet', kidStatus(c)].join(' · '))}</span></span>
@@ -19887,10 +19975,14 @@ function onAct(e) {
     if (!first) { toast('Her first name, please'); return; }
     if (born && !BORN_OK.test(born)) { toast('That birth date doesn\'t look right'); return; }
     if (a === 'kidconfirm' && (!born || !gender)) { toast('The club needs her birth date and gender'); return; }
+    const cr = mayCare(c) ? careRead() : null;
+    if (cr && cr.why) { toast(cr.why); return; }
+    if (a === 'kidconfirm' && !(cr && cr.rec.contacts)) { toast('Someone the coach can call, please'); return; }
     const put = (f, v) => { if ((c[f] || '') === v) return; if (v) commit(`children/${c.id}/${f}`, v); else if (c[f]) drop(`children/${c.id}/${f}`); };
     put('first', first); put('last', last);
     if (born) put('born', born);
     if (gender) put('gender', gender);
+    if (cr && !careSame(cr.rec, careOf(c.id))) saveCare(c, cr.rec);
     if (a === 'kidconfirm') { commit(`children/${c.id}/confirmed`, { by: me.uid, at: nowMs() }); familyList(c.id); toast('Thank you — confirmed'); }
     else toast('Saved');
     closeSheet(); render(); return;

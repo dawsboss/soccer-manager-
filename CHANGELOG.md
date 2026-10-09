@@ -8,6 +8,30 @@ before this point lives only in the git log.
 
 ---
 
+## Care details for the coach at the pitch — 2026-10-09 (build 123, rules version 22)
+
+Registration's second step (AUTH.md, *Care: what a coach needs at the
+pitch*): who to call and what a coach must know about a child, given by her
+family.
+
+- **Her family gives it** on *Check her details*: up to two people to call
+  (someone is insisted on before she confirms), allergies, conditions,
+  medication and a doctor, each "none" by being left empty. Stored at
+  `care/{cid}`, read and written by her family and the admins only.
+- **Her team's coaches read a copy**, `teamCare/{tid}/{pid}`, on her page in
+  Squad, with a link to ring each contact. Never another team's coach, a
+  tracker, a helper, a viewer or a fan (the owner's decision). The server
+  keeps each team's copy from her family's and the child's teams
+  (`careCopy`, and `accessChild` when she joins or leaves a team); her
+  family's phone writes them too.
+- **Never anywhere else**: not on the child's record, a squad, a game,
+  `public/`, a push, or an admin's *Download a copy*.
+
+Rules version 22. `test/children.js`, `rules.js` and `access.js` (both
+passes) pin who reads and writes it.
+
+---
+
 ## A child in the club — 2026-10-09 (build 122, rules version 21)
 
 Registration's first step (AUTH.md, *A child in the club, and

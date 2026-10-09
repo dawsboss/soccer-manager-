@@ -2239,6 +2239,43 @@ reads('nor read', COACH, 'shareOwners/sh1', false);
     DB.invites = saved.inv; if (saved.inv === undefined) delete DB.invites;
   }
 
+  /* Care details (AUTH.md, *Care: what a coach needs at the pitch*; the
+     owner, 2026-10-09): who to call and what a coach must know. The family's
+     own at care/{cid}, read by her family and the admins; a copy per team at
+     teamCare/{tid}/{pid}, read by that team's coaches and the admins. Never
+     a tracker, a helper, another team's coach, a viewer or a fan. */
+  console.log('\n--- a club on orgs/: care details ---');
+  {
+    ORGC.squad.t1.p1.child = 'p1';
+    ORGC.children = { p1: { id: 'p1', first: 'Ella', club: true, by: 'oa', at: NOW, teams: { t1: 'p1' }, guardians: { om: 't1' } } };
+    const rec = { by: 'om', at: NOW, contacts: { 0: { name: 'Mo Fitz', phone: '555 0101', rel: 'Mum' } }, allergies: 'Peanuts', medical: '', meds: 'Inhaler' };
+    ORGC.care = { p1: rec };
+    ORGC.teamCare = { t1: { p1: { ...rec, cid: 'p1' } } };
+    r('her family reads her care details', OM, O + 'care/p1', true);
+    r('the admin does', OA, O + 'care/p1', true);
+    r('her coach does not read the family\'s own copy', OC, O + 'care/p1', false);
+    r('nor the list', OC, O + 'care', false);
+    r('her team\'s coach reads the team\'s copy', OC, O + 'teamCare/t1', true);
+    r('— the admin too', OA, O + 'teamCare/t1', true);
+    r('— not another team\'s coach (decided 2026-10-09)', OC2, O + 'teamCare/t1', false);
+    r('— not the team\'s tracker', OT, O + 'teamCare/t1', false);
+    r('— not another family', OSELF, O + 'teamCare/t1/p1', false);
+    r('— not a stranger', RANDO, O + 'care/p1', false);
+    w('her family writes them, in her own name', OM, O + 'care/p1', { ...rec, at: NOW + 1 }, true);
+    w('— not in someone else\'s', OM, O + 'care/p1', { ...rec, by: 'oa' }, false);
+    w('— nothing they have no field for', OM, O + 'care/p1', { ...rec, nhs: '123' }, false);
+    w('— a phone number that is one', OM, O + 'care/p1', { ...rec, contacts: { 0: { name: 'Mo', phone: '' } } }, false);
+    w('her coach does not', OC, O + 'care/p1', { ...rec, by: 'oc' }, false);
+    w('nor a tracker', OT, O + 'care/p1', { ...rec, by: 'ot' }, false);
+    w('the admin does', OA, O + 'care/p1', { ...rec, by: 'oa' }, true);
+    w('her family writes the team\'s copy of her own child', OM, O + 'teamCare/t1/p1', { ...rec, cid: 'p1' }, true);
+    w('— never one naming another child', OM, O + 'teamCare/t1/p1', { ...rec, cid: 'q1' }, false);
+    w('— nor another child\'s', OM, O + 'teamCare/t1/p2', { ...rec, cid: 'p2' }, false);
+    w('the coach never writes care', OC, O + 'teamCare/t1/p1', { ...rec, cid: 'p1' }, false);
+    w('the admin does', OA, O + 'teamCare/t1/p1', { ...rec, cid: 'p1' }, true);
+    delete ORGC.care; delete ORGC.teamCare; delete ORGC.children; delete ORGC.squad.t1.p1.child;
+  }
+
   /* Links with limits (the owner, 2026-10-09): how many people may use one,
      and until when. A rule cannot count, so a link for several carries one
      seat per person, each taken once; a page anyone may open carries an end

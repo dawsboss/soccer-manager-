@@ -473,6 +473,101 @@
             }
           }
         },
+        "care": {
+          "$cid": {
+            ".read": "auth != null && (root.child('orgs/' + $code + '/access/admins/' + auth.uid).exists() || (root.child('orgs/' + $code + '/children/' + $cid + '/guardians/' + auth.uid).exists() || root.child('orgs/' + $code + '/children/' + $cid + '/family/' + auth.uid).exists()) || root.child('orgs/' + $code + '/children/' + $cid + '/self/' + auth.uid).exists())",
+            ".write": "auth != null && (root.child('orgs/' + $code + '/access/admins/' + auth.uid).exists() || (root.child('orgs/' + $code + '/children/' + $cid + '/guardians/' + auth.uid).exists() || root.child('orgs/' + $code + '/children/' + $cid + '/family/' + auth.uid).exists()))",
+            ".validate": "newData.hasChildren(['by', 'at']) && newData.child('by').val() === auth.uid",
+            "by": {
+              ".validate": "newData.isString()"
+            },
+            "at": {
+              ".validate": "newData.isNumber()"
+            },
+            "contacts": {
+              "$i": {
+                ".validate": "newData.hasChildren(['name', 'phone']) && $i.length <= 2",
+                "name": {
+                  ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 80"
+                },
+                "phone": {
+                  ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 40"
+                },
+                "rel": {
+                  ".validate": "newData.isString() && newData.val().length <= 40"
+                },
+                "$other": {
+                  ".validate": false
+                }
+              }
+            },
+            "medical": {
+              ".validate": "newData.isString() && newData.val().length <= 500"
+            },
+            "allergies": {
+              ".validate": "newData.isString() && newData.val().length <= 500"
+            },
+            "meds": {
+              ".validate": "newData.isString() && newData.val().length <= 500"
+            },
+            "doctor": {
+              ".validate": "newData.isString() && newData.val().length <= 200"
+            },
+            "$other": {
+              ".validate": false
+            }
+          }
+        },
+        "teamCare": {
+          "$tid": {
+            ".read": "auth != null && (root.child('orgs/' + $code + '/access/admins/' + auth.uid).exists() || root.child('orgs/' + $code + '/access/teamIndex/' + $tid + '/' + auth.uid).val() === 'coach')",
+            "$pid": {
+              ".write": "auth != null && (root.child('orgs/' + $code + '/access/admins/' + auth.uid).exists() || root.child('orgs/' + $code + '/squad/' + $tid + '/' + $pid + '/guardians/' + auth.uid).exists())",
+              ".validate": "newData.hasChildren(['by', 'at', 'cid'])",
+              "by": {
+                ".validate": "newData.isString()"
+              },
+              "at": {
+                ".validate": "newData.isNumber()"
+              },
+              "contacts": {
+                "$i": {
+                  ".validate": "newData.hasChildren(['name', 'phone']) && $i.length <= 2",
+                  "name": {
+                    ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 80"
+                  },
+                  "phone": {
+                    ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 40"
+                  },
+                  "rel": {
+                    ".validate": "newData.isString() && newData.val().length <= 40"
+                  },
+                  "$other": {
+                    ".validate": false
+                  }
+                }
+              },
+              "medical": {
+                ".validate": "newData.isString() && newData.val().length <= 500"
+              },
+              "allergies": {
+                ".validate": "newData.isString() && newData.val().length <= 500"
+              },
+              "meds": {
+                ".validate": "newData.isString() && newData.val().length <= 500"
+              },
+              "doctor": {
+                ".validate": "newData.isString() && newData.val().length <= 200"
+              },
+              "cid": {
+                ".validate": "newData.isString() && newData.val() === root.child('orgs/' + $code + '/squad/' + $tid + '/' + $pid + '/child').val()"
+              },
+              "$other": {
+                ".validate": false
+              }
+            }
+          }
+        },
         "roster": {
           ".read": "auth != null && (!root.child('orgs/' + $code + '/access/index').exists() || root.child('orgs/' + $code + '/access/index/' + auth.uid).exists())",
           "$tid": {
@@ -559,7 +654,7 @@
     },
     "rulesVersion": {
       ".read": true,
-      ".write": "newData.isNumber() && newData.val() === 21"
+      ".write": "newData.isNumber() && newData.val() === 22"
     },
     "public": {
       "$share": {
