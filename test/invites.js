@@ -390,6 +390,8 @@ const CLUB = {
     check('at a new code, not this club\'s', !!code && code !== 'CLUB', true);
     check('admin first, as the rules need', ws[0] && ws[0].path, 'orgs/' + code + '/access/admins/coach');
     check('then the index', at('access/index/coach') > at('access/admins/coach'), true);
+    // whoever starts a club owns it (SECURITY.md, SEC-D8); the rule needs her an admin first
+    check('and its owner, after admin and before the index', at('access/owners/coach') > at('access/admins/coach') && at('access/owners/coach') < at('access/index/coach'), true);
     check('she is a member', (valueAt(fbk, 'orgs/' + code + '/members/coach') || {}).name, 'Jaz');
     check('and the club has its name, trimmed', valueAt(fbk, 'orgs/' + code + '/org/name'), 'Hillside FC');
     check('her name, and only that, where families can see it', JSON.stringify(valueAt(fbk, 'orgs/' + code + '/names/coach')), '{"name":"Jaz"}');

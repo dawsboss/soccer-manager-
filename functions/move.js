@@ -84,7 +84,7 @@ function layout(ws) {
   }
   // the facts the lookup tables are worked out from, in the shape access.js reads
   const f = { access: { ...rest, members, org }, teams: (ws && ws.teams) || {} };
-  const access = { admins: rest.admins, teams: rest.teams };
+  const access = { admins: rest.admins, owners: rest.owners, teams: rest.teams };
   const index = { ...(rest.index || {}) };
   const everyone = new Set(keys(rest.admins));
   for (const ta of Object.values(rest.teams || {})) for (const u of [...keys(ta && ta.coaches), ...keys(ta && ta.trackers)]) everyone.add(u);
