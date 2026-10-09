@@ -8,7 +8,7 @@ before this point lives only in the git log.
 
 ---
 
-## Offline is not signed out — 2026-10-08 (build 113)
+## Offline is not signed out — 2026-10-09 (build 114)
 
 With the phone's internet and mobile data off, the app opened on *This club
 needs a sign-in*, while swiping back showed the club for a moment: the copy
@@ -26,6 +26,33 @@ for.
   what the phone draws from its own copy, as the cached identity always has.
 - `test/sync.js` pins all four: offline, back online, Sign out offline, and
   signed out in another tab.
+
+---
+
+## A club owner: admins cannot remove one another — 2026-10-08 (build 113)
+
+Any admin could take every other admin away and have the club to herself,
+or take another admin's index entry and shut her out while leaving her an
+admin on paper. The rules cannot tell a rightful removal from a hostile
+one, so the club now has someone they can tell apart (SECURITY.md, SEC-D8,
+the owner's four decisions).
+
+- **A club owner** (`access/owners`, a list, each an admin too) is the only
+  one who takes an admin away, takes an admin's index entry, makes or ends
+  another owner, or retires the club. Admins still appoint admins and step
+  down themselves. Rules version 13, on both trees, and the move carries
+  owners across.
+- **Whoever starts a club owns it.** A club from before this keeps the old
+  rules until one of its admins taps *Become the club owner* under Club
+  settings → People; *Check readiness* has a cross until somebody does.
+- **Everyone who runs the club is told.** A new server trigger pushes every
+  admin or owner change to every admin and owner, the person it happened to
+  included, and keeps it at `clubAudit/{code}`, which admins read and no
+  phone writes. It cannot be muted.
+- **The log tells the truth.** Making someone an admin was logged as
+  *removed admin* and the other way round, because the log was written
+  after the change; it is now written before, which is also what lets the
+  server name who did it.
 
 ---
 

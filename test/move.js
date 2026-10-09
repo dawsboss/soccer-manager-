@@ -25,6 +25,7 @@ const NOW = Date.UTC(2026, 9, 8, 12);
 const CLUB = () => ({
   access: {
     admins: { adm: true },
+    owners: { adm: true },
     index: { adm: true, coach: 'inv_coach', trk: true, mum: 'inv_mum' },
     members: {
       adm: { name: 'Ada', email: 'ada@example.com', at: 1 },
@@ -110,6 +111,7 @@ const O = 'orgs/CLUB/';
     deepEq('members, with their emails, to staff only', S.at(O + 'members'), was.access.members);
     deepEq('the club\'s settings', S.at(O + 'org'), was.access.org);
     deepEq('the log, to admins only', S.at(O + 'log'), was.access.log);
+    deepEq('the club\'s owners, so no admin can take the club over once it has moved', S.at(O + 'access/owners'), { adm: true });
     deepEq('the games, as they were', S.at(O + 'matches'), was.matches);
     deepEq('the answers, as they were', S.at(O + 'rsvp'), was.rsvp);
     const roster = JSON.stringify([S.at(O + 'roster'), S.at(O + 'names'), S.at(O + 'teams')]);

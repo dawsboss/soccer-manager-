@@ -2,8 +2,8 @@
    Static app. Data lives in localStorage, and mirrors to Firebase Realtime
    Database when a config + workspace code are present. */
 
-const BUILD = '113';
-const BUILT = '2026-10-07';
+const BUILD = '114';
+const BUILT = '2026-10-09';
 /* The version of database.rules.json this app was written against. The rules
    carry the same number in rulesVersion's .write, which accepts that number
    and nothing else, so writing it is a question only the published rules can
@@ -11,7 +11,7 @@ const BUILT = '2026-10-07';
    never pasted look exactly like a coach with no signal: "saved on this phone
    only", one feature at a time. test/rules.js holds the two numbers together
    and fails when the rules change without this going up. */
-const RULES_VERSION = 12;
+const RULES_VERSION = 13;
 /* index.html carries the build it was published with. If this file is newer, the
    browser handed us a cached page — the exact failure that has eaten hours. */
 const pageBuild = () => {
@@ -1267,8 +1267,11 @@ function pushAll() {
      does not grant the parent, so pushing a whole collection is refused even
      where pushing each child is fine — the difference is invisible until a club
      is locked down and then it is total. */
-  if (a.admins) steps.push(['access/admins', a.admins]);
+  /* One admin at a time, and the owners after them: once a club has an owner
+     the rules sit on each entry, not the list (SECURITY.md, SEC-D8). */
+  if (a.admins) for (const u of Object.keys(a.admins)) steps.push(['access/admins/' + u, a.admins[u]]);
   else if (mine) steps.push(['access/admins/' + mine, true]);
+  for (const u of Object.keys(a.owners || {})) steps.push(['access/owners/' + u, a.owners[u]]);
   if (a.index) for (const u of Object.keys(a.index)) steps.push(['access/index/' + u, a.index[u]]);
   else if (mine) steps.push(['access/index/' + mine, true]);
   if (a.teamIndex) steps.push(['access/teamIndex', a.teamIndex]);
@@ -1360,6 +1363,22 @@ const members = () => Object.entries(acc().members || {}).map(([uid, v]) => ({ u
   .sort((a, b) => (a.name || '').localeCompare(b.name || ''));
 const anyAdmins = () => Object.keys(acc().admins || {}).length > 0;
 const isAdmin = uid => !!(uid && (acc().admins || {})[uid]);
+/* The club owner (SECURITY.md, SEC-D8): always an admin too, and the only one
+   who takes an admin away. Not the app owner (`isOwner()`), who has no
+   standing in the rules at all. A club with no owner yet keeps the old rules,
+   where any admin may remove another; the rules carry the same bridge. */
+const clubOwners = () => Object.keys(acc().owners || {});
+const isClubOwner = uid => !!(uid && (acc().owners || {})[uid]);
+const hasClubOwner = () => clubOwners().length > 0;
+/* Whether this phone's account may take `uid`'s admin away, as the rules
+   decide it: herself (unless she owns the club), or anyone but an owner once
+   she owns it, or anyone at all while the club has no owner. */
+function mayRemoveAdmin(uid) {
+  if (!me || !isAdmin(me.uid) || !isAdmin(uid)) return false;
+  if (!hasClubOwner()) return true;
+  if (isClubOwner(uid)) return false;
+  return uid === me.uid || isClubOwner(me.uid);
+}
 const teamAccess = tid => ((acc().teams || {})[tid] || {});
 const isCoach = (tid, uid) => !!(uid && (isAdmin(uid) || (teamAccess(tid).coaches || {})[uid]));
 const isTracker = (tid, uid) => !!(uid && (teamAccess(tid).trackers || {})[uid]);
@@ -1730,6 +1749,8 @@ function readiness() {
   const nAdmins = Object.keys(a.admins || {}).length;
   const nIndex = Object.keys(a.index || {}).length;
   rows.push({ ok: nAdmins > 0, label: 'Someone administers this club', detail: nAdmins + ' admin' + (nAdmins === 1 ? '' : 's') });
+  const nOwners = clubOwners().length;
+  rows.push({ ok: nOwners > 0, label: 'Somebody owns it', detail: nOwners ? nOwners + ' owner' + (nOwners === 1 ? '' : 's') : 'no — any admin can take every other admin away' });
   rows.push({ ok: nIndex > 0, label: 'The read index is not empty', detail: nIndex + ' account' + (nIndex === 1 ? '' : 's') + (nIndex ? '' : ' — every write would be refused') });
   rows.push({ ok: !me || !!(a.index || {})[me.uid], label: 'Your own account is in it', detail: me ? (a.index || {})[me.uid] ? 'yes' : 'no — you would lose access' : 'not signed in' });
   const withRoles = teams().filter(t => Object.keys(teamAccess(t.id).coaches || {}).length || Object.keys(teamAccess(t.id).trackers || {}).length);
@@ -2158,6 +2179,8 @@ async function createClub(name) {
   newClubBusy = true;
   try {
     await put(W('access/admins/' + who), true);
+    // whoever starts a club owns it, so no later admin can take it from her (SECURITY.md, SEC-D8)
+    await put(W('access/owners/' + who), true);
     await put(W('access/index/' + who), true);
     await put(W('access/members/' + who), { name: me.name || '', email: me.email || '', at });
     await put(W('access/org/name'), name);
@@ -15494,6 +15517,17 @@ function viewSetup() {
   </div>`;
 }
 
+/* Who owns the club (SECURITY.md, SEC-D8), on its admins' screen: the owners
+   by name, or, while it has none, the button that makes this admin one. */
+function ownerCard() {
+  const own = clubOwners();
+  const nm = u => { const m = (acc().members || {})[u] || {}; return me && u === me.uid ? 'you' : (m.name || m.email || 'an admin'); };
+  if (own.length) return `<p class="muted">Owned by ${esc(own.map(nm).join(', '))}. Only an owner takes an admin away or retires the club.</p>`;
+  if (!me || !isAdmin(me.uid)) return '<p class="muted">Nobody owns this club yet. One of its admins can claim it here.</p>';
+  return `<div class="warn alert" style="margin:8px 0 10px"><b>Nobody owns this club yet.</b> Until somebody does, any admin can take every other admin away. The first admin to claim it becomes the owner, and every admin is told.</div>
+    <button class="btn wide" data-act="claimowner" style="margin-bottom:8px">Become the club owner</button>`;
+}
+
 /* --- admin: the club, its teams and who may touch them --- */
 function viewAdmin() {
   if (!canAdmin()) return `<div class="empty"><strong>Club admins only</strong>
@@ -15540,6 +15574,7 @@ ${moveCard()}
 
     <div class="card"><h2 style="margin-bottom:8px">People</h2>
       ${nAdmins ? `<p class="muted" style="margin-top:0">${members().length} signed in · ${nAdmins} admin${nAdmins === 1 ? '' : 's'}.</p>
+        ${ownerCard()}
         <button class="btn quiet wide" data-act="people">People and roles</button>`
       : isOwner() ? `<p class="muted" style="margin-top:0">Nobody administers this club yet. As app owner you can take it, or grant it to someone in People.</p>
         <button class="btn wide" data-act="claimadmin">Make me the club admin</button>`
@@ -17086,7 +17121,10 @@ function sheetPersonRoles(uid) {
     ${admin ? `<p class="lbl">Club</p>
     <div class="chips" style="margin-bottom:14px">
       <button class="chip" type="button" data-act="setrole" data-uid="${uid}" data-r="admin" aria-pressed="${isAdmin(uid)}">Club admin</button>
-    </div>` : ''}
+      ${isAdmin(uid) && (isClubOwner(uid) || (me && isClubOwner(me.uid))) ? `<button class="chip" type="button" data-act="setowner" data-uid="${uid}" aria-pressed="${isClubOwner(uid)}">Club owner</button>` : ''}
+    </div>
+    ${isClubOwner(uid) ? `<p class="muted" style="margin-top:-6px">${me && uid === me.uid ? 'You own the club: only an owner takes an admin away. Tap Club owner to step down once someone else owns it too.' : 'Owns the club. Only she can step down as owner.'}</p>`
+        : isAdmin(uid) && hasClubOwner() && !(me && isClubOwner(me.uid)) && me && uid !== me.uid ? '<p class="muted" style="margin-top:-6px">Only the club owner can take an admin away.</p>' : ''}` : ''}
     <p class="lbl">${isAdmin(uid) ? 'Admin covers every team. Also' : 'Roles'}</p>
     ${held.length ? held.map(v => `<div class="opt spread">
       <span><b>${esc(ROLE_LABEL[v.r])}</b>${v.p ? ` of ${pname(v.p)}` : ''}<span class="rowsub">${esc(v.x.name || 'Team')}</span></span>
@@ -18877,6 +18915,7 @@ function onAct(e) {
   }
   if (a === 'retireclub') {
     if (!canAdmin()) { toast('Club admins and the app owner only'); return; }
+    if (hasClubOwner() && !(me && isClubOwner(me.uid))) { toast('Only the club owner can retire it'); return; }
     if (!fb) { toast('Not connected'); return; }
     if (!confirm('Retire this club? Every device holding a copy will clear it. Export a backup first if you want one.')) return;
     fb.set(fb.ref(fb.db, 'retired/' + wsCode()), {
@@ -19021,17 +19060,54 @@ function onAct(e) {
     if (!me) { toast('Sign in first'); return; }
     if (anyAdmins()) { toast('Someone already claimed it'); return; }
     commit(`access/admins/${me.uid}`, true);
+    // the first admin of a club nobody ran owns it too, as a founder does
+    if (!hasClubOwner()) commit(`access/owners/${me.uid}`, true);
     syncIndex(me.uid);
     toast('You are the admin'); return;
+  }
+  /* SECURITY.md, SEC-D8. A club that predates owners gets one by its first
+     admin to claim it; every admin is told by the server, so a grab is seen.
+     Checked here as well as by what is drawn, and by the rules. */
+  if (a === 'claimowner') {
+    if (!me || !isAdmin(me.uid)) { toast('Club admins only'); return; }
+    if (hasClubOwner()) { toast('The club already has an owner'); return; }
+    logAccess('made owner', me.uid);
+    commit(`access/owners/${me.uid}`, true);
+    toast('You own the club now'); return;
+  }
+  if (a === 'setowner') {
+    const uid = d.uid;
+    if (!me || !isClubOwner(me.uid)) { toast('Only a club owner can do that'); return; }
+    if (isClubOwner(uid)) {
+      if (uid !== me.uid) { toast('Only she can step down as owner'); return; }
+      if (clubOwners().length === 1) { toast('Someone has to stay owner. Make another admin an owner first.'); return; }
+      logAccess('removed owner', uid);
+      drop(`access/owners/${uid}`);
+    } else {
+      if (!isAdmin(uid)) { toast('Make them an admin first'); return; }
+      logAccess('made owner', uid);
+      commit(`access/owners/${uid}`, true);
+    }
+    sheetPersonRoles(uid); return;
   }
   if (a === 'setrole') {
     const uid = d.uid, r = d.r, tid = t && t.id;
     if (r === 'admin') {
-      if (isAdmin(uid)) {
+      if (!canAdmin()) { toast('Club admins only'); return; }
+      const was = isAdmin(uid);
+      if (was) {
         if (Object.keys(acc().admins || {}).length === 1) { toast('Someone has to stay admin'); return; }
-        drop(`access/admins/${uid}`);
-      } else commit(`access/admins/${uid}`, true);
-      logAccess(isAdmin(uid) ? 'removed admin' : 'made admin', uid);
+        if (!mayRemoveAdmin(uid)) {
+          toast(isClubOwner(uid) ? 'An owner stays admin until she steps down as owner' : 'Only the club owner can take an admin away');
+          return;
+        }
+      }
+      /* Logged before the change, so the server finds who did it when the
+         change wakes it (adminwatch.js), and worked out before it too: after
+         the change isAdmin() answers the other way. */
+      logAccess(was ? 'removed admin' : 'made admin', uid);
+      if (was) drop(`access/admins/${uid}`);
+      else commit(`access/admins/${uid}`, true);
     } else {
       if (!tid) { toast('Pick a team first'); return; }
       const key = r === 'coach' ? 'coaches' : 'trackers';

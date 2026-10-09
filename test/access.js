@@ -87,7 +87,8 @@ const rest = S => canon({ ...S.at('workspaces/CLUB'), access: { ...S.at(W + 'acc
     deepEq('one per place a role lives', Object.keys(S.triggers).filter(n => /^access/.test(n)).sort(), 
       // each once per tree while clubs move to orgs/ (functions/index.js, both())
       ['accessAdmin', 'accessAdminOrgs', 'accessGuardians', 'accessGuardiansOrgs', 'accessSelf', 'accessSelfOrgs', 'accessStaff', 'accessStaffOrgs']);
-    deepEq('an admin given', await S.wouldWake(W + 'access/admins/new', true), ['accessAdmin']);
+    // and who runs the club is told (adminwatch.js, test/owners.js)
+    deepEq('an admin given', (await S.wouldWake(W + 'access/admins/new', true)).sort(), ['accessAdmin', 'watchAdmin']);
     deepEq('a coach given', await S.wouldWake(W + 'access/teams/t1/coaches/new', true), ['accessStaff']);
     deepEq('a family linked', await S.wouldWake(W + 'teams/t1/players/p2/guardians/new', true), ['accessGuardians']);
     deepEq('a player\'s own sign-in', await S.wouldWake(W + 'teams/t1/players/p2/self/new', true), ['accessSelf']);

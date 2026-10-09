@@ -214,12 +214,12 @@ Retirement needs its own block. It is already part of the ruleset (**The databas
 "retired": {
   "$code": {
     ".read": true,
-    ".write": "auth != null && root.child('workspaces/' + $code + '/access/admins/' + auth.uid).exists()"
+    ".write": "auth != null && root.child('workspaces/' + $code + '/access/admins/' + auth.uid).exists() && (!root.child('workspaces/' + $code + '/access/owners').exists() || root.child('workspaces/' + $code + '/access/owners/' + auth.uid).exists())"
   }
 }
 ```
 
-Readable by anyone, because a device that has just lost access still has to be able to learn that it should let go. Writable only by an admin of that club.
+Readable by anyone, because a device that has just lost access still has to be able to learn that it should let go. Writable only by an admin of that club, and once the club has an owner (**The club owner**, below), only by an owner.
 
 ## Becoming the app owner
 
@@ -239,6 +239,17 @@ The app owner is the one account that can appoint the first club admin. It is st
 ```
 
 Console-only by design. There is no bootstrap race and no button anyone could press to grant themselves ownership — changing it means having Firebase console access, which is the correct bar.
+
+## The club owner
+
+Any admin could once take every other admin away and have the club to herself. A club owner is the one the rules can tell apart (SECURITY.md, SEC-D8):
+
+- **Only an owner takes an admin away**, or retires the club. Admins still appoint admins and can step down themselves.
+- **Owners are admins too**, and there can be several. An owner makes another admin an owner from People (tap the person → *Club owner*), and steps down the same way once someone else owns it; nobody can take an owner's place from her.
+- **Whoever starts a club owns it.** A club from before this has no owner, and works exactly as before until one of its admins taps **Become the club owner** under Club settings → People. Do it the day rules version 13 is published, before anyone else does; every admin is told who claimed it.
+- **Everyone who runs the club hears about every change.** Each admin or owner given or taken away is pushed to every admin and owner (the person it happened to included, and never whoever did it), naming who did it from the club's log, and kept at `clubAudit/{code}`. It cannot be muted. It needs the functions deployed, like every other notification.
+
+What an owner does not stop: an admin can still delete teams and games. The way back from that is the database's daily backups (SECURITY.md, SEC-7).
 
 ## The database rules
 
@@ -322,8 +333,10 @@ What each part is doing:
   stamps; `node test/rules.js` fails until they do.
 - **Reading anything** needs a signed-in account listed in `access/index`. The `!data.child('access/index').exists()` clause is the bootstrap: a brand-new workspace with no index yet stays readable, so it can be set up in the first place. It stops mattering the moment the first role is granted.
 - **`access/members/$uid`** is self-writable. That is how a new coach knocks on the door: they sign in, register themselves, and an admin can then see them to assign a role. It grants no data access on its own. Somebody else's entry is an admin's to change (rules version 11): names on sessions, People and bookable times come from it, so a parent could otherwise rename a coach. A coach of any team (`access/coachIndex`) may only fill in an entry that is not there yet, which is all approving a family through the team link does; while a club has no `coachIndex`, anyone in it may fill in a missing one, and nobody but her or an admin changes one already there.
-- **`admins`** can only be changed by an existing admin — except when there are none, which is the bootstrap for claiming it.
-- **`index`** is the flat lookup the read rule uses. Rules cannot iterate, so it cannot walk every team asking whether you are in it; the app mirrors every role grant into this one node.
+- **`admins`** can only be changed by an existing admin — except when there are none, which is the bootstrap for claiming it. Once the club has an owner (rules version 13, **The club owner** below), the rule sits on each entry instead: an admin may appoint another (`true`) and step down herself, and only an owner takes anyone else's admin away, never another owner's.
+- **`owners`** is who owns the club: always admins. The first owner is claimed by an admin while the club has none; after that only an owner makes another one, and each owner steps down only herself.
+- **`index`** is the flat lookup the read rule uses. Rules cannot iterate, so it cannot walk every team asking whether you are in it; the app mirrors every role grant into this one node. Once the club has an owner, an admin cannot take another admin's entry out (which would shut her out of the club while leaving her an admin on paper); an owner can, except another owner's.
+- **`clubAudit/$code`** is the server's record of every admin and owner given or taken away. Admins of the club read it; no phone writes it.
 - **`access/org`** is the club name and badge, so it follows the admin rule.
 - **`access/log`** is the audit trail. Writes are allowed only where nothing exists yet and the entry stamps the author's own uid, which makes it append-only: nobody can edit or delete a record of what they did, including an admin.
 - **`invites/$id`** is the invite itself. Readable by any signed-in account that knows the id — the id is the secret, and nobody can list the node. Only an admin of the club it names can create one; it cannot be edited, only spent or deleted. **`used`** can be written once, by whoever spends it, before it expires, and only by the address it was sent to if it names one (verified addresses only).
