@@ -195,6 +195,10 @@ Magic link is the one to point parents at. No password to forget, and forgotten 
 
 **Built**: all three, in the app's sign-in sheet. The "one account per email" setting is a Firebase console switch and cannot be checked from the app.
 
+**Built** (build 113): Apple and Microsoft as well, each drawn only once the club lists it in `firebase-config.js` (`SOCCER_SIGNIN`), because a method not switched on in the console fails with a code nobody at a sideline can read. The setting above is what this leans on: a person whose email already has an account is refused the new way, told to sign in the way she did before, and the new way is then linked to that account (same email only), so she stays one person to the club. Her account sheet lists the ways she signs in and adds the others, and takes a name, for Apple, which gives a name only the first time and can hide the email behind a relay address. That relay address never matches an invite sent to her own address, and some Microsoft accounts never confirm their email, which the invite rule requires; the invite screen says which and what to do. Forgotten passwords get a reset link.
+
+Not built: a phone number (SMS). It costs per message on the Blaze plan, needs reCAPTCHA scripts the Content-Security-Policy does not allow, and an account with no email cannot take an email-bound invite or a magic link, so it would be a fourth way in that half the club's flows do not reach. Facebook is a one-line addition to `SIGNIN_PROVIDERS` if a club asks, but needs a Meta app and its review.
+
 ## Data model
 
 ```

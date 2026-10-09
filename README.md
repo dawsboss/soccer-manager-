@@ -71,6 +71,23 @@ The API key in `firebase-config.js` is not a secret; the rules above are what ga
 
 The badge in the top bar shows `synced`, `offline`, or `this device`, and `3 to send` while changes made on this phone haven't reached the club yet. Nothing lives only on the phone: every change is kept in an outbox on the phone until the database confirms it has it, so a game tracked with no signal reaches the club even if the app is closed and reopened before the signal comes back. Plans, drills and messages do the same. A change the club's database refuses (usually because the rules haven't been pasted yet) is kept, tried again every time the phone connects, and said on every screen, with a list under Settings; it is only dropped if you choose to. A phone used before it joined a club is offered, under Settings, a way for an admin to add those teams to the club. If both devices edit the same game while one is offline, last write wins.
 
+### Sign-in methods
+
+Firebase console → **Authentication** → **Sign-in method**. Email/Password (with **Email link** ticked) and **Google** are what the app has always offered. Leave **User account linking** on *Link accounts that use the same email* (the default): it is what keeps a parent who joined by email link and later taps Apple the same person to the club. The app catches the refusal, asks her to sign in the way she did before, and adds the new way to that account.
+
+To offer more, switch each on in the console, then list it in `firebase-config.js`:
+
+```js
+window.SOCCER_SIGNIN = ['google', 'apple', 'microsoft'];
+```
+
+Only what is listed gets a button (left out, it is Google alone), because a method not switched on fails with *operation-not-allowed*.
+
+- **Apple** needs an Apple Developer account: a Services ID, a key for Sign in with Apple, and the Firebase handler (`https://<project>.firebaseapp.com/__/auth/handler`) as its return URL; the console's Apple panel walks through it. For email links to reach people who hide their address, register the project's sending domain in Apple's *Private email relay* settings. Apple hands over a name only the first time, so someone may need to type hers on the account sheet.
+- **Microsoft** needs an app registration in Azure (*Accounts in any organizational directory and personal Microsoft accounts*) with the same handler as its redirect URI; paste its id and secret into the console's Microsoft panel.
+
+Each person can see and add ways to sign in from **Your account**, and there is a *Forgot your password?* link beside the password box.
+
 ## Joining a club
 
 Joining someone else's club is by invite, and there is no code to type. Starting your own is not: anyone signed in can tap the club button at the top left → **+ Start a new club** and be its admin. The club they were in is untouched and stays in their list; a new club needs a signal, because it is made at the database there and then rather than queued on the phone.

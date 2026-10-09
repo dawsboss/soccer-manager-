@@ -32,6 +32,7 @@ const SUITES = [
   ['roles', 'roles derived from where a uid appears'],
   ['visibility', 'which teams each account sees and edits'],
   ['signout', 'a signed-out device draws nothing of a locked club'],
+  ['signin', 'the ways in: Google, Apple, Microsoft, email, and one account per email'],
   ['routing', 'links in, links out'],
   ['sync', 'auth, the workspace read, and its races'],
   ['invites', 'joining a club by invite, on both sides'],

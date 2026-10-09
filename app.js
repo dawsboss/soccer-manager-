@@ -2,7 +2,7 @@
    Static app. Data lives in localStorage, and mirrors to Firebase Realtime
    Database when a config + workspace code are present. */
 
-const BUILD = '112';
+const BUILD = '113';
 const BUILT = '2026-10-07';
 /* The version of database.rules.json this app was written against. The rules
    carry the same number in rulesVersion's .write, which accepts that number
@@ -553,6 +553,16 @@ let attachWorkspace = () => { };   // set by initSync once fb/db exist; re-runna
 
 /* Signing in is optional for now. Nothing gates on it yet — it exists so stamps
    carry a real identity, and so the org model has something to hang off next. */
+// put myself on the roster of people so an admin has someone to assign
+function noteMember() {
+  if (!me || !fb) return;
+  const known = (acc().members || {})[me.uid];
+  if (!known || known.name !== me.name || known.email !== me.email) {
+    quiet(`access/members/${me.uid}`, { name: me.name, email: me.email, at: (known && known.at) || nowMs() });
+    saveLocal();
+  }
+}
+
 async function initAuth() {
   const app = await getApp();
   if (!app) { authReadyResolve(); return; }
@@ -572,9 +582,20 @@ async function initAuth() {
       }
     }
 
+    /* Back from a sign-in that went by redirect (a blocked popup): one that
+       failed says so only here, and an email that already has an account
+       is the one worth catching. Not awaited, so nothing waits on it. */
+    if (authMod.getRedirectResult) authMod.getRedirectResult(fbAuth).catch(err => {
+      const c = (err && err.code) || '';
+      const key = Object.keys(SIGNIN_PROVIDERS).find(k => SIGNIN_PROVIDERS[k].id === ((err.customData || {}).providerId || ''));
+      if (/account-exists-with-different-credential/.test(c) && key) holdLink(err, key);
+      else if (c) toast(authMessage(err));
+    });
+
     let prevUid;
     authMod.onAuthStateChanged(fbAuth, u => {
-      me = u ? { uid: u.uid, name: u.displayName || (u.email || '').split('@')[0] || 'Signed in', email: u.email || '', photo: u.photoURL || '' } : null;
+      // Apple's hidden address is no name; she can type one on her account sheet
+      me = u ? { uid: u.uid, name: u.displayName || (!hiddenEmail(u.email) && (u.email || '').split('@')[0]) || 'Signed in', email: u.email || '', photo: u.photoURL || '', verified: u.emailVerified !== false } : null;
       cacheMe(me);   // signing out clears it, which is what locks the club now
       const uid = me ? me.uid : null;
       // her own drills are hers, not the phone's: gone the moment she is
@@ -591,14 +612,8 @@ async function initAuth() {
         if (join && join.status !== 'working') { join.status = 'idle'; join.sent = false; }
       }
       prevUid = uid;
-      if (me && fb) {
-        // put myself on the roster of people so an admin has someone to assign
-        const known = (acc().members || {})[me.uid];
-        if (!known || known.name !== me.name || known.email !== me.email) {
-          quiet(`access/members/${me.uid}`, { name: me.name, email: me.email, at: (known && known.at) || nowMs() });
-          saveLocal();
-        }
-      }
+      noteMember();
+      if (u && pendingLink) finishLink(u);
       authReadyResolve();
       pushCheck();
       maybeLoadInvite();
@@ -2023,7 +2038,9 @@ function maybeLoadInvite() {
         : v.used ? 'ready'                                 // ours, half finished: carry on
           : (v.expiresAt || 0) <= nowMs() ? 'expired'
             : v.email && v.email !== String(me.email || '').toLowerCase() ? 'wrongemail'
-              : 'ready';
+              // the rule asks for a verified address, which some Microsoft accounts never have
+              : v.email && me.verified === false ? 'unverified'
+                : 'ready';
     render();
   }, err => {
     if (!invite || invite.id !== id) return;
@@ -2062,7 +2079,10 @@ function inviteScreen() {
   if (s === 'expired') return box('That invite has expired',
     `Invites last ${INVITE_DAYS} days. Ask ${esc(v.byName || 'whoever sent it')} for a new one.`, `<button class="btn" data-act="invitedismiss">OK</button>`);
   if (s === 'wrongemail') return box('That invite is for someone else',
-    `It was sent to <b>${esc(v.email)}</b>, and you are signed in as <b>${esc(me.email || me.name)}</b>. Sign in with that address to accept it.`,
+    `It was sent to <b>${esc(v.email)}</b>, and you are signed in as <b>${esc(me.email || me.name)}</b>. Sign in with that address to accept it.${hiddenEmail(me.email) ? ' Apple is hiding your address from the club, so sign in with the email itself: a link to it works.' : ''}`,
+    `<button class="btn" data-act="signout">Switch account</button>${later}`);
+  if (s === 'unverified') return box('Your email needs checking first',
+    `This invite is for <b>${esc(v.email)}</b>, and the way you signed in has not confirmed that address is yours. Sign out and back in with a link sent to it.`,
     `<button class="btn" data-act="signout">Switch account</button>${later}`);
   if (s === 'error') return box('Could not open the invite',
     `${esc(invite.err || 'Something went wrong')}. Check the signal and try again.`,
@@ -16895,8 +16915,75 @@ const teamLink = t => t.share ? `${shareBase()}live.html?t=${t.share}` : '';
 const gameLink = (t, m) => t.share && m.share ? `${shareBase()}game.html?t=${m.share}&g=${m.id}` : '';
 
 /* Firebase error codes are not for humans. */
+/* The buttons for signing in with another company's account. Each has to be
+   switched on in the Firebase console before it works (README, *Sign-in
+   methods*), and one that isn't fails with operation-not-allowed, so a club
+   lists the ones it switched on in firebase-config.js (`SOCCER_SIGNIN`) and
+   the sheet draws only those. Left out, it is Google alone, as before. Email
+   (a link or a password) needs no list: it is always offered. */
+const SIGNIN_PROVIDERS = {
+  google: { id: 'google.com', label: 'Google', make: () => new authMod.GoogleAuthProvider() },
+  // Apple hands over a name and an email only when asked, and the name only the first time
+  apple: { id: 'apple.com', label: 'Apple', make: () => { const p = new authMod.OAuthProvider('apple.com'); p.addScope('email'); p.addScope('name'); return p; } },
+  // work and school accounts as well as personal ones; asks which, so a shared laptop's isn't taken silently
+  microsoft: { id: 'microsoft.com', label: 'Microsoft', make: () => { const p = new authMod.OAuthProvider('microsoft.com'); p.setCustomParameters({ prompt: 'select_account' }); return p; } }
+};
+function signInProviders() {
+  const want = Array.isArray(window.SOCCER_SIGNIN) ? window.SOCCER_SIGNIN : ['google'];
+  return want.map(k => String(k).toLowerCase()).filter((k, i, a) => SIGNIN_PROVIDERS[k] && a.indexOf(k) === i);
+}
+const providerLabel = id => id === 'password' ? 'Email (a link or a password)'
+  : (Object.values(SIGNIN_PROVIDERS).find(x => x.id === id) || {}).label || id;
+// Apple's "Hide my email" gives the app a made-up address that forwards to hers
+const hiddenEmail = mail => /@privaterelay\.appleid\.com$/i.test(String(mail || ''));
+
+/* "One account per email address" (AUTH.md, *Sign-in*) means signing in a new
+   way with an email that already has an account is refused rather than making
+   a second account with no access. The new way is kept here, in memory only
+   (a credential is not something to leave in storage), until she signs in the
+   way she did before, and is then added to that account, so either works from
+   then on. Only to an account with the same email: anything else is a
+   different person, or a mistake. */
+let pendingLink = null;   // { cred, email, label }
+function holdLink(err, key) {
+  const P = key === 'google' ? authMod.GoogleAuthProvider : authMod.OAuthProvider;
+  const cred = P && P.credentialFromError ? P.credentialFromError(err) : null;
+  const email = String(((err && err.customData) || {}).email || '').toLowerCase();
+  pendingLink = cred ? { cred, email, label: SIGNIN_PROVIDERS[key].label } : null;
+  sheetSignIn();
+}
+function finishLink(u) {
+  const pl = pendingLink; pendingLink = null;
+  if (!pl || !u || !authMod.linkWithCredential) return;
+  if (pl.email && String(u.email || '').toLowerCase() !== pl.email) return;
+  authMod.linkWithCredential(u, pl.cred)
+    .then(() => toast(`${pl.label} added — either way signs you in now`))
+    .catch(err => toast(authMessage(err)));
+}
+
+function oauthSignIn(key) {
+  const def = SIGNIN_PROVIDERS[key];
+  if (!def || !signInProviders().includes(key)) return;
+  const p = def.make();
+  authMod.signInWithPopup(fbAuth, p)
+    .then(() => { closeSheet(); toast('Signed in'); })
+    .catch(err => {
+      const c = (err && err.code) || '';
+      // popups get blocked on plenty of mobile browsers; redirect always works
+      if (/popup-blocked|operation-not-supported/i.test(c)) authMod.signInWithRedirect(fbAuth, p);
+      else if (/account-exists-with-different-credential/.test(c)) holdLink(err, key);
+      else if (!/popup-closed|cancelled-popup/.test(c)) toast(authMessage(err));
+    });
+}
+
 function authMessage(err) {
   const c = (err && err.code) || '';
+  if (c.includes('account-exists-with-different-credential')) return 'That email already has an account — sign in the way you did before';
+  if (c.includes('credential-already-in-use')) return 'That account already signs in to a different account here — sign out and in with it instead';
+  if (c.includes('provider-already-linked')) return 'That is already one of your ways in';
+  if (c.includes('requires-recent-login')) return 'Sign out and in again, then try that';
+  if (c.includes('too-many-requests')) return 'Too many tries — wait a few minutes';
+  if (c.includes('user-disabled')) return 'That account has been switched off';
   if (c.includes('unauthorized-domain')) return 'This site is not on the authorised domains list in Firebase';
   if (c.includes('operation-not-allowed')) return 'That sign-in method is not switched on in Firebase';
   if (c.includes('invalid-email')) return 'That email does not look right';
@@ -17156,22 +17243,40 @@ function sheetShare() {
 
 function sheetSignIn() {
   if (!authMod) { toast('Sign-in is not available on this build'); return; }
-  openSheet(`<h3>${me ? 'Your account' : 'Sign in'}</h3>
-    ${me ? `<p class="muted" style="margin-top:0">Signed in as <b>${esc(me.name)}</b>${me.email ? ` · ${esc(me.email)}` : ''}.
+  const u = fbAuth && fbAuth.currentUser;
+  const btns = (act, keys, cls) => keys.map(k => `<button class="btn ${cls} wide" data-act="${act}" data-v="${k}" style="margin-bottom:10px">${act === 'signin-oauth' ? 'Continue with' : 'Add'} ${esc(SIGNIN_PROVIDERS[k].label)}</button>`).join('');
+  if (me) {
+    // what this account can sign in with, and what else the club has switched on
+    const have = u ? (u.providerData || []).map(x => x.providerId) : [];
+    const more = u ? signInProviders().filter(k => !have.includes(SIGNIN_PROVIDERS[k].id)) : [];
+    openSheet(`<h3>Your account</h3>
+      <p class="muted" style="margin-top:0">Signed in as <b>${esc(me.name)}</b>${me.email ? ` · ${esc(me.email)}` : ''}.
       Anything you log is now stamped with this account rather than a typed name.</p>
-      <button class="btn danger wide" data-act="signout">Sign out</button>`
-      : `<p class="muted" style="margin-top:0">Optional for now — everything works signed out. Signing in means the things you log carry a verified name instead of one anybody could type.</p>
-      <button class="btn wide" data-act="signin-google" style="margin-bottom:10px">Continue with Google</button>
+      ${hiddenEmail(me.email) ? `<p class="muted">Apple is hiding your email from the club. An invite sent to your own address will not open on this account: sign in with that address instead (a link, a password or Google), or ask for the invite to be sent to this one.</p>` : ''}
+      <label class="field"><span>Your name, as the club sees it</span><input type="text" id="acctName" value="${esc(me.name)}" autocomplete="name"></label>
+      <button class="btn quiet wide" data-act="savename" style="margin-bottom:16px">Save name</button>
+      ${have.length ? `<p class="lbl">Ways you sign in</p>
+        <ul class="muted" style="margin-top:0">${have.map(id => `<li>${esc(providerLabel(id))}</li>`).join('')}</ul>` : ''}
+      ${more.length ? `${btns('signin-add', more, 'quiet')}
+        <p class="muted" style="margin-top:0">Adding one means you can sign in with either and stay the same person to the club.</p>` : ''}
+      <button class="btn danger wide" data-act="signout">Sign out</button>`);
+    return;
+  }
+  const keys = signInProviders();
+  openSheet(`<h3>Sign in</h3>
+    ${pendingLink ? `<p style="margin-top:0"><b>${esc(pendingLink.email || 'That email')}</b> already has an account here. Sign in the way you did before (often a link to your email), and ${esc(pendingLink.label)} will be added to it, so either works from now on. By a link to your email, it opens a fresh page, so add ${esc(pendingLink.label)} from <b>Your account</b> once you are in.</p>`
+      : `<p class="muted" style="margin-top:0">Optional for now — everything works signed out. Signing in means the things you log carry a verified name instead of one anybody could type.</p>`}
+    ${btns('signin-oauth', keys, '')}
 
-      <p class="lbl">Magic link — no password to forget</p>
-      <label class="field"><input type="email" id="authEmail" placeholder="you@example.com" autocapitalize="off" autocorrect="off"></label>
-      <button class="btn quiet wide" data-act="signin-link" style="margin-bottom:16px">Email me a sign-in link</button>
+    <p class="lbl">Magic link — no password to forget</p>
+    <label class="field"><input type="email" id="authEmail" placeholder="you@example.com" autocapitalize="off" autocorrect="off" autocomplete="email"${pendingLink && pendingLink.email ? ` value="${esc(pendingLink.email)}"` : ''}></label>
+    <button class="btn quiet wide" data-act="signin-link" style="margin-bottom:16px">Email me a sign-in link</button>
 
-      <p class="lbl">Or a password</p>
-      <label class="field"><input type="password" id="authPass" placeholder="Password" autocomplete="current-password"></label>
-      <div class="row"><button class="btn quiet sm" data-act="signin-pass" style="flex:1">Sign in</button>
-      <button class="btn quiet sm" data-act="signup-pass" style="flex:1">Create account</button></div>
-      <p class="muted">Uses the email box above.</p>`}`);
+    <p class="lbl">Or a password</p>
+    <label class="field"><input type="password" id="authPass" placeholder="Password" autocomplete="current-password"></label>
+    <div class="row"><button class="btn quiet sm" data-act="signin-pass" style="flex:1">Sign in</button>
+    <button class="btn quiet sm" data-act="signup-pass" style="flex:1">Create account</button></div>
+    <p class="muted">Uses the email box above. <button class="btn quiet sm" data-act="signin-reset">Forgot your password?</button></p>`);
 }
 
 function sheetWho() {
@@ -19076,15 +19181,32 @@ function onAct(e) {
     return;
   }
   if (a === 'peekgo') { const u = String(($('#peekUid') || {}).value || '').trim(); if (isOwner() && /^[\w-]{6,128}$/.test(u)) peekLibrary(u); else toast('That doesn\'t look like an account id'); return; }
-  if (a === 'signin-google') {
-    const p = new authMod.GoogleAuthProvider();
-    authMod.signInWithPopup(fbAuth, p)
-      .then(() => { closeSheet(); toast('Signed in'); })
-      .catch(err => {
-        // popups get blocked on plenty of mobile browsers; redirect always works
-        if (/popup/i.test(err.code || '')) authMod.signInWithRedirect(fbAuth, p);
-        else toast(authMessage(err));
-      });
+  if (a === 'signin-oauth') { oauthSignIn(d.v); return; }
+  if (a === 'signin-add') {
+    const def = SIGNIN_PROVIDERS[d.v], u = fbAuth && fbAuth.currentUser;
+    if (!def || !u || !signInProviders().includes(d.v)) return;
+    authMod.linkWithPopup(u, def.make())
+      .then(() => { toast(`${def.label} added — either way signs you in now`); sheetSignIn(); })
+      .catch(err => { if (!/popup-closed|cancelled-popup/.test((err && err.code) || '')) toast(authMessage(err)); });
+    return;
+  }
+  if (a === 'signin-reset') {
+    const mail = $('#authEmail').value.trim();
+    if (!mail) { toast('Enter your email first'); return; }
+    // Firebase won't say whether the address has an account, and nor do we
+    authMod.sendPasswordResetEmail(fbAuth, mail)
+      .then(() => toast('If that email has a password here, a link to change it is on its way'))
+      .catch(err => toast(authMessage(err)));
+    return;
+  }
+  if (a === 'savename') {
+    const v = String($('#acctName').value || '').trim().slice(0, 60), u = fbAuth && fbAuth.currentUser;
+    if (!v || !me || !u) { toast('Type a name first'); return; }
+    authMod.updateProfile(u, { displayName: v }).then(() => {
+      // a profile change fires no auth callback, so the club hears it from here
+      me = { ...me, name: v }; cacheMe(me); noteMember(); namedHere = ''; staffName();
+      toast('Saved'); sheetSignIn(); render();
+    }).catch(err => toast(authMessage(err)));
     return;
   }
   if (a === 'signin-link') {
