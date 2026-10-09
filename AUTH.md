@@ -426,6 +426,65 @@ All four decided by the owner on 2026-10-08, as recommended:
 3. **Member emails are readable by all staff.** As built, staff here is admins and coaches: see *As built*, trackers.
 4. **The access log is admins' only.**
 
+## More kinds of people
+
+Written 2026-10-09, before any code. The owner expects four kinds of people who are not a coach, a tracker, a parent or the player herself: **team helpers**, **supporters**, **club-wide viewers** and **outside people**. Every club is on `orgs/` now, so each part of a club already has its own readers, and that is what makes these possible: a new role is a new set of readers, not a new copy of the club.
+
+### What does not change
+
+- **Roles stay fixed and named** (*Should admins configure what each role sees?*, above). Each kind below is a role with a fixed list of what it reads and does. No matrix of switches. The club's one names setting (`org/rosterOpen`) still decides which children a non-staff role sees by name.
+- **A role is where a uid appears**, never a string stored on a person. Each new role is a place in the club (a list under `access/` or on a child's record) and, only if a rule needs one, a derived lookup table kept by the phones and by `functions/access.js` like the five today.
+- **Joining is by invite**, single-use and expiring as today, with the role and its scope inside the invite. Withdrawing a role deletes it, and the server's role triggers take her out of every table at once.
+- **Safeguarding holds**: no new role messages a child one to one, and no new role reads a family's conversation that the family does not know about.
+
+### The four, one at a time
+
+**1. Supporters: a player's people.** Grandparents, an aunt, a family friend, who want the games and the calendar on their own phone. Unlike a guardian, a supporter is *under the player*, invited by that player's family (or her coach or an admin), and does less:
+
+| | A parent (guardian) | A supporter |
+| --- | --- | --- |
+| Calendar, Live, scores, recap, notices | Yes | Yes |
+| Her player by name | Yes | Yes |
+| Teammates' names | By the club's setting | By the club's setting |
+| Says "going" | Yes | No |
+| Messages the coaches | Yes | No |
+| Books and pays for sessions | Yes | No |
+| Push: notices, calendar changes, a followed game | Yes | Yes |
+
+Stored on the child's record, beside `guardians` and `self`: `squad/{tid}/{pid}/supporters/{uid}: inviteId`, with a sixth lookup table, `access/teamSupporters/{tid}/{uid}: pid`, so the notice and calendar rules can find her in one step (the rule checks the record agrees, as `teamParents` does). Her phone reads her player's record by path, as a family's does.
+
+**2. Team helpers: staff who don't coach.** A team manager, a volunteer, a physio. On one team, named on it like coaches and trackers: `access/teams/{tid}/helpers/{uid}`, and `teamIndex/{tid}/{uid}: 'helper'`. She sees what staff see on that team (names, the calendar, the register) and does the team's admin jobs: notices, the calendar, the register. She does not run a game (subs, the plan, the clock) and does not change the squad.
+
+The care here: three rules today ask only whether a uid is *in* `teamIndex` for a team, not which role, and they would let a helper in exactly as they let a tracker in. Each is decided again for her rather than inherited, and `test/rules.js` walks every one of them for a helper.
+
+**3. Club-wide viewers: read everything, change nothing.** A director or a board member. Club-level, like admins: `access/viewers/{uid}`. No lookup table, because a rule can check that one path directly, the way it checks `admins`. She reads every team, every squad, every game, the calendar and the club's activity; she writes nothing in the club (each write rule simply never names her). Not the family conversations, not fees, and not the access log unless the owner decides otherwise.
+
+**4. Outside people: one game or one event, for a while.** A referee, a scout, a guest coach. Today the game link already gives anyone a game's page without signing in, with no names in it; that stays the answer for "just let them watch". This role is for when they need more, signed in: `access/guests/{uid}: { team, item, until }`, made by that team's coach or an admin, which the rules read with `now`, so it **ends by itself** at `until` with no phone or server having to remember. She reads that one game or entry, and the squad's names only if the inviting coach says so. A guest coach who should run subs is a tracker for the day, which needs a tracker's role with the same `until`.
+
+### What each one costs
+
+| | New place | New lookup table | Rules | App | Server |
+| --- | --- | --- | --- | --- | --- |
+| Supporter | `squad/…/supporters` | `teamSupporters` | squad read, notices, calendar, invites made by a family | role, tabs, invite from the family's screen, My calendar | `access.js` table, push readers, My calendar's feed |
+| Team helper | `access/teams/…/helpers` | none (`teamIndex` value) | the three "any role" rules decided again, notices, calendar, register | role, tabs, People | `access.js`, push readers, staff names |
+| Club viewer | `access/viewers` | none | squad and members reads | role, every team read-only, People | `access.js` (index), names |
+| Guest | `access/guests` | none | one game or entry, with `until` | invite with an end time, the guest's one screen | index kept in step with `until` |
+
+### Order
+
+Viewer first (smallest: one list, no table, read-only), then supporters (the most asked for, and the one that touches families), then helpers, then guests. Each is its own build, rules version, CHANGELOG entry and test pass across every suite that walks every kind of account (`rules.js`, `push.js`, `access.js`, `visibility.js`, `roles.js`, `parents.js`, `orgs.js`).
+
+**Build after the old tree comes out** (step 5 of the move, from 2026-10-23): every club is on `orgs/` already, so writing these rules for `workspaces/` as well would be work for a tree nobody is on.
+
+### Decisions for the owner
+
+1. **Who invites a supporter?** Recommended: the player's family, her coach or an admin. The family is who knows the grandparents; a coach or admin can always take one away.
+2. **Does a supporter see the coach's notes on her player?** The player's record today carries the coach's `note`, `rating`, `pairs` and `avoid`, which her family reads. Recommended: no. Move those into a coaches-only part of the record before supporters are built, so neither a supporter, nor the player herself later, reads them by accident. A family keeping them is a separate decision.
+3. **A team helper and family conversations?** Recommended: no. They stay the family's, the team's coaches' and the admins'; a helper posts and reads team notices.
+4. **A club viewer and members' emails, and the access log?** Recommended: names but not emails, and no log.
+5. **A guest and names?** Recommended: shirt numbers unless the inviting coach ticks *show names*, and never longer than seven days.
+6. **The order and timing above.** Recommended as written: one at a time, after 2026-10-23.
+
 ## What parents actually see
 
 Worth stating so it is deliberate and not an accident of implementation:

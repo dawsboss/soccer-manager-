@@ -8,6 +8,19 @@ before this point lives only in the git log.
 
 ---
 
+## AUTH.md: more kinds of people, designed before any code — 2026-10-09
+
+The owner expects to let in people who are not coaches, trackers, parents
+or the player: supporters under a player (grandparents and friends), team
+helpers (a manager, a volunteer), club-wide viewers (a director) and
+outside people (a referee, a scout, a guest coach). AUTH.md, *More kinds of
+people*, says where each would live, what it reads and does, what each
+costs in the rules, the app and the server, the order to build them in,
+and six decisions for the owner. No code yet: a role is a schema and rules
+change, and this file is where those are settled first.
+
+---
+
 ## A game you follow reaches a closed phone — 2026-10-09 (build 115)
 
 The Live tab's *Notify me* only ever worked while the page was open: a
