@@ -932,5 +932,33 @@ const toUid = (S, u) => S.sent().filter(m => m.data.uid === u);
     check('with none open, it opens one there, the club on the address', w.opened[0], 'https://x.test/app/?open=OTHER#/messages/t1/mum');
   }
 
+  /* A team helper (AUTH.md, *Team helpers*): the notices and calendar rules
+     read every teamIndex entry for the team, so she is told of both; a
+     family's conversation is read only by the 'coach' entries, so she never
+     hears one. Nothing in functions/push.js names her. */
+  console.log('\n--- a team helper ---');
+  {
+    const helper = S => {
+      S.put(W + 'access/teams/t1/helpers/hal', true);
+      S.put(W + 'access/teamIndex/t1/hal', 'helper');
+      S.put(W + 'access/index/hal', true);
+      S.put('pushTokens/hal', { [tok('hal')]: { at: 1, ua: 'iPhone' } });
+      return S;
+    };
+    let S = helper(server());
+    let r = await S.fire('board/CLUB/t1/n9', { by: 'coach', byName: 'Jaz', at: 5, text: 'Kit day' });
+    check('she hears her team\'s notices', r.pushNotice.to.includes('hal'), true);
+    S = helper(server());
+    r = await S.fire('board/CLUB/t1/n9', { by: 'hal', byName: 'Hal', at: 5, text: 'Kit day' });
+    check('— not one she posted herself', toUid(S, 'hal').length, 0);
+    check('— which the coach hears', toUid(S, 'coach').length > 0, true);
+    S = helper(server());
+    r = await S.fire('dm/CLUB/t1/mum/m/x9', { by: 'mum', byName: 'Mo', at: 5, text: 'Ella has a cold' });
+    check('never a family\'s conversation', toUid(S, 'hal').length, 0);
+    S = helper(calServer());
+    r = (await S.fire(W + 'teams/t1/events/e1/called', 'cancelled')).pushEntry;
+    check('she hears her team\'s calendar change', r.to.includes('hal'), true);
+  }
+
   H.summary('notifications to a closed phone');
 })().catch(e => { console.error(e); process.exit(1); });

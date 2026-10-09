@@ -8,7 +8,7 @@ before this point lives only in the git log.
 
 ---
 
-## Only the server publishes share pages — 2026-10-09 (build 117)
+## Only the server publishes share pages — 2026-10-09 (build 118)
 
 Any signed-in Google account could claim an id nobody had used under
 `shareOwners`, publish a page at `public/{id}`, and send round a link to it
@@ -44,13 +44,45 @@ had claimed. The owner decided (2026-10-08) that phones stop publishing
 - **The phone makes ids and nothing else.** `schedulePublish()`,
   `publishTeam()`, `claimShare()`, `claimTeamIds()` and *Republish now* are
   gone. The share sheet says when the server last wrote the page.
-- **Rules version 16:** `public/$share` is `.write: false` for every
+- **Rules version 17:** `public/$share` is `.write: false` for every
   account, admins included, and `shareOwners` is gone. An old phone's
   publish is refused, which costs nothing: the server already wrote it.
 - The site's address for calendar entries' links back is `SOCCER_SITE` in
   `functions/.env` (README, *Deploying the server*), or the address a page
   from before already carried. The move copies games twenty at a time
   now, since each part of a game wakes a run.
+
+---
+
+## Team helpers: staff who help the coach prepare — 2026-10-09 (build 117)
+
+The first of AUTH.md's new kinds of people, as the owner decided them: a
+team manager, a volunteer or an assistant who helps the coach get ready and
+doesn't run the game, and reads no family's conversation.
+
+- **A role on one team**, `access/teams/{tid}/helpers/{uid}`, named by an
+  admin (People → *Invite someone* → Team helper, or giving the role to
+  someone already in). A coach can't, as the rules on `access/teams` already
+  had it.
+- **What she does**: the team's calendar (practices, events and games, one
+  entry at a time), the register, notices, practice plans, the drill shelves,
+  and a game's plan, who is out of it and its details **until kick-off**.
+  Never the clock, the subs or logging, never the squad, never the coach's
+  notes or members' emails, and Subs, Track and Pitch are not her tabs.
+- **The three rules that only asked "any role on this team?"** were decided
+  again: the squad and the notices let her read (she is staff); a game no
+  longer did. The match rule now asks for a coach or tracker, and a helper
+  writes a game only while it has no `periods` and no `ended`.
+- **One more lookup table than AUTH.md planned**, `access/helperIndex`,
+  coachIndex's twin, because the club's drill shelves are read whole and a
+  rule cannot ask "a helper of any team?" any other way. Kept by the phones
+  and `functions/access.js` like the others. `teamIndex` gains a `'helper'`
+  value, below tracker and coach.
+- **Push needed no change**: notices and calendar changes reach her as they
+  reach the rest of the team, a family's messages never do (`test/push.js`).
+- Rules version 16, written for `orgs/` (every club). `test/helpers.js` is
+  new; `rules.js`, `access.js` and `push.js` walk a helper through every rule
+  and table.
 
 ---
 

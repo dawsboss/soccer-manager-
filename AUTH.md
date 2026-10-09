@@ -270,7 +270,7 @@ The parent read clause needs work — `players.hasChild(auth.uid)` is wrong as w
 
 **Built, on `workspaces/{code}` rather than `orgs/{orgId}`**: the flat index became four, `access/index`, `access/teamIndex/{tid}` (`coach` or `tracker`), `access/teamParents/{tid}` and `access/coachIndex`, all derived and rebuilt every connect (CLAUDE.md, the invariants). One ruleset, `database.rules.json`, with `node test/rules.js` walking it for every kind of account.
 
-**This closes the public write hole.** `shareOwners/{shareId}/{uid}` is written when a coach creates the share, so only that team's coaches can publish. **Built**, and then **replaced (build 117, SECURITY.md, SEC-10):** an id nobody had claimed was still anyone's to publish under, so phones stopped publishing altogether; `public/` is `.write: false` and only the server writes it, and `shareOwners` is gone. Do not reach for anonymous auth as a shortcut: anonymous uids are per-device, so two coaches would get different ids and only one could publish, and clearing browser storage would lock a coach out of her own share.
+**This closes the public write hole.** `shareOwners/{shareId}/{uid}` is written when a coach creates the share, so only that team's coaches can publish. **Built**, and then **replaced (build 118, SECURITY.md, SEC-10):** an id nobody had claimed was still anyone's to publish under, so phones stopped publishing altogether; `public/` is `.write: false` and only the server writes it, and `shareOwners` is gone. Do not reach for anonymous auth as a shortcut: anonymous uids are per-device, so two coaches would get different ids and only one could publish, and clearing browser storage would lock a coach out of her own share.
 
 ## Migration
 
@@ -462,6 +462,8 @@ Stored on the child's record, beside `guardians` and `self`: `squad/{tid}/{pid}/
 
 The care here: three rules today ask only whether a uid is *in* `teamIndex` for a team, not which role, and they would let a helper in exactly as they let a tracker in. Each is decided again for her rather than inherited, and `test/rules.js` walks every one of them for a helper.
 
+**Built** (build 117, rules version 16), as written above, with these details. She has her own entry in `teamIndex` (`'helper'`, below `'tracker'` and `'coach'`, so someone who also tracks or coaches the team keeps that), which is what lets her read the squad and the notices; what she may change is checked against `access/teams/{tid}/helpers/{uid}` itself, so a helper who also tracks keeps both. The three "any role" rules came out as: **the squad**, yes (staff names); **notices**, yes, and she posts them (the board's write rule gained her); **a game**, narrowed: the match rule now asks for `'coach'` or `'tracker'`, and a helper writes a game of her team only while it has no `periods` and no `ended`, which is "before kick-off" in the only words a rule has (a rule still cannot say "the plan and nothing else", as for trackers). Its when and where (date, kick-off, called off, place, opponent) are hers too, as the rest of the calendar is. The calendar entries and the register each gained a clause on `events/$eid` and `attend/$eid`, one entry at a time, never the team. **One lookup table was added after all**, against the table above: `access/helperIndex/{uid}`, coachIndex's twin, because the club's drill and template shelves are read as a whole with no team in hand, and "a helper of any team" is not a question `teamIndex` can answer in one hop. Kept by the phones and `functions/access.js` exactly as coachIndex is, and never coachIndex itself. Only admins name a helper (the rules on `access/teams` already said so). The push readers needed no change: notices and calendar changes go to every `teamIndex` entry, family messages to `'coach'` entries only. Written for `orgs/` only, as *Order* says: on the old tree her invite cannot be accepted. `test/helpers.js` holds the screens and the click handler to it.
+
 **3. Club-wide viewers: every team's games, with names, and nothing else.** A director or a board member. Club-level, like admins: `access/viewers/{uid}`. No lookup table, because a rule can check that one path directly, the way it checks `admins`. Less than a parent: she reads every team's calendar, games, Live, stats and recaps, with the children's names (the roster's names, whatever the club's setting), and does nothing: no answers, no messages, no bookings, no writes anywhere in the club. Not the coach's notes, not members' emails, not the access log, not fees, not conversations.
 
 **4. Outside people: one game or one event, for a while.** A referee, a scout, a guest coach. Today the game link already gives anyone a game's page without signing in, and it stays that way: **no sign-in, no names**. This role is for when they need more, signed in and approved: `access/guests/{uid}: { team, item, until }`, made or approved by that team's coach or an admin, which the rules read with `now`, so it **ends by itself** at `until` with no phone or server having to remember. She reads that one game or entry, **with names**. A guest coach who should run subs is a tracker for the day, which needs a tracker's role with the same `until`.
@@ -487,7 +489,7 @@ Decided 2026-10-09: the coach's notes on a child (`note`, `rating`, `pairs`, `av
 
 1. **The coach's notes.** *Built (build 116, rules version 15).*
 2. **Supporters**: the most asked for, and they reuse the coach's approval list families already go through.
-3. **Team helpers.**
+3. **Team helpers.** *Built (build 117, rules version 16).*
 4. **Club viewers**: the smallest, any time.
 5. **Guests.**
 
@@ -530,6 +532,6 @@ Where each step stands (2026-10):
 1. **Built.** Google, email and password, and magic link; `needsSignIn()` is the gate.
 2. **Built on `workspaces/{code}`**, with the four lookup tables in place of `teamMembers`.
 3. **Built (build 110), and every club has moved (2026-10-09).** See *The move to `orgs/{orgId}`*: the owner chose the full move (2026-10-08, SECURITY.md SEC-1) to take names out of a parent's reach before registration opens (`GOTSPORT.md`).
-4. **Built.** One ruleset; `shareOwners` closed the public write hole, and since build 117 only the server writes `public/` at all (SECURITY.md, SEC-10).
+4. **Built.** One ruleset; `shareOwners` closed the public write hole, and since build 118 only the server writes `public/` at all (SECURITY.md, SEC-10).
 5. **Built.** Team links and the coach's approval list (`joinCodes`, `claims`), per-person invites, and a squad of parent invites at once.
 6. **Built.** Parents see their own child by name and the rest by number, the club's one preset, and My players across clubs.
