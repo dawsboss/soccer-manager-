@@ -358,4 +358,4 @@ async function onGameField(env, params, field, was) {
   return calChange(env, params.code, before, after, params.tree);
 }
 
-module.exports = { onNotice, onMessage, onStaff, onEntry, onGameField, calNews, calSig, whenOf, teamReaders, noticeReaders, threadReaders, teamFacts, BODY_MAX, BATCH, SOON_DAYS, GAME_FIELDS };
+module.exports = { onNotice, onMessage, onStaff, onEntry, onGameField, messagesFor, deliver, calNews, calSig, whenOf, teamReaders, noticeReaders, threadReaders, teamFacts, BODY_MAX, BATCH, SOON_DAYS, GAME_FIELDS };

@@ -587,6 +587,71 @@ writes('an admin of that club may retire it', ADM, 'retired/CLUB', { at: NOW, by
 writes('a coach of that club may not', COACH, 'retired/CLUB', { at: NOW, by: 'coach' }, false);
 writes('nor may the app owner', OWNER, 'retired/CLUB', { at: NOW, by: 'own' }, false);
 
+/* SECURITY.md, SEC-D8. Any admin could rewrite the whole admin list, and so
+   remove every other admin, or take another admin's index entry and shut her
+   out of reading the club. A club owner is the one the rules can tell apart:
+   always an admin too, the only one who takes an admin away. A club with no
+   owner keeps the old rules (the bridge), so a club that predates this works
+   the moment the rules are pasted. */
+{
+  const A = DB.workspaces.CLUB.access;
+  const keep = JSON.stringify({ admins: A.admins, index: A.index });
+  const ADM2 = { uid: 'adm2' };
+  A.admins = { adm: true, adm2: true, adm3: true };
+  A.index = { ...A.index, adm2: true, adm3: true };
+  const W = 'workspaces/CLUB/access/';
+  console.log('\n--- a club with no owner yet: the old rules, and a claim ---');
+  writes('an admin still removes another', ADM2, W + 'admins/adm3', null, true);
+  writes('an admin claims owner', ADM2, W + 'owners/adm2', true, true);
+  writes('a coach cannot', COACH, W + 'owners/coach', true, false);
+  writes('nor an admin for somebody else', ADM2, W + 'owners/adm', true, false);
+  writes('nor with anything but true', ADM2, W + 'owners/adm2', 'yes', false);
+  writes('nor the app owner, who holds no role here', OWNER, W + 'owners/own', true, false);
+  writes('an admin of the club may retire it', ADM2, 'retired/CLUB', { at: NOW, by: 'adm2' }, true);
+
+  A.owners = { adm: true };
+  console.log('\n--- once it has one: admins cannot remove one another ---');
+  writes('an admin removes another admin', ADM2, W + 'admins/adm3', null, false);
+  writes('nor the owner', ADM2, W + 'admins/adm', null, false);
+  writes('nor rewrites the whole list', ADM2, W + 'admins', { adm2: true }, false);
+  writes('nor changes another\'s entry', ADM2, W + 'admins/adm3', 'x', false);
+  writes('nor takes another admin\'s index entry', ADM2, W + 'index/adm3', null, false);
+  writes('nor the owner\'s', ADM2, W + 'index/adm', null, false);
+  writes('but still takes a coach\'s', ADM2, W + 'index/coach', null, true);
+  writes('and still indexes somebody', ADM2, W + 'index/newbie', true, true);
+  writes('an admin still appoints one', ADM2, W + 'admins/coach', true, true);
+  writes('only as true', ADM2, W + 'admins/coach', 'inv1', false);
+  writes('a coach still cannot', COACH, W + 'admins/coach', true, false);
+  writes('an admin steps down herself', ADM2, W + 'admins/adm2', null, true);
+  writes('nobody claims owner once there is one', ADM2, W + 'owners/adm2', true, false);
+  writes('an admin cannot retire the club', ADM2, 'retired/CLUB', { at: NOW, by: 'adm2' }, false);
+  console.log('\n--- what the owner may do ---');
+  writes('the owner removes an admin', ADM, W + 'admins/adm3', null, true);
+  writes('and takes her index entry', ADM, W + 'index/adm3', null, true);
+  writes('but not her own admin entry while owner', ADM, W + 'admins/adm', null, false);
+  writes('makes another admin an owner', ADM, W + 'owners/adm2', true, true);
+  writes('not someone who is not an admin', ADM, W + 'owners/coach', true, false);
+  writes('the owner retires the club', ADM, 'retired/CLUB', { at: NOW, by: 'adm' }, true);
+  A.owners = { adm: true, adm2: true };
+  writes('two owners: one cannot remove the other', ADM, W + 'owners/adm2', null, false);
+  writes('nor take her admin away', ADM, W + 'admins/adm2', null, false);
+  writes('nor her index entry', ADM, W + 'index/adm2', null, false);
+  writes('an owner steps down herself', ADM2, W + 'owners/adm2', null, true);
+  writes('and a coach cannot touch owners', COACH, W + 'owners/adm2', null, false);
+
+  console.log('\n--- what happened, kept where no phone writes ---');
+  DB.clubAudit = { CLUB: { x1: { at: NOW, act: 'removed admin', target: 'adm3', by: 'adm' } } };
+  reads('an admin reads the club\'s record', ADM, 'clubAudit/CLUB', true);
+  reads('a coach does not', COACH, 'clubAudit/CLUB', false);
+  reads('nor a stranger', RANDO, 'clubAudit/CLUB', false);
+  writes('nobody writes it, an admin included', ADM, 'clubAudit/CLUB/x2', { at: NOW, act: 'x' }, false);
+  writes('nor deletes it', ADM, 'clubAudit/CLUB/x1', null, false);
+  delete DB.clubAudit;
+
+  delete A.owners;
+  Object.assign(A, JSON.parse(keep));
+}
+
 console.log('\n--- appOwners is console-only ---');
 reads('readable once signed in', RANDO, 'appOwners', true);
 reads('not readable signed out', OUT, 'appOwners', false);
@@ -1810,6 +1875,7 @@ reads('owners are not world-readable', OUT, 'shareOwners/sh1', false);
   writes('signed out, nobody can start one', OUT, W + 'access/admins/x', true, false);
   reads('a signed-in founder can read the empty code', FOUNDER, 'workspaces/NEWCLUB', true);
   step('she claims admin of it', FOUNDER, W + 'access/admins/founder', true);
+  step('and owner of it, before anyone else is in it', FOUNDER, W + 'access/owners/founder', true);
   step('puts herself in its index', FOUNDER, W + 'access/index/founder', true);
   step('registers herself', FOUNDER, W + 'access/members/founder', { name: 'Fran', at: NOW });
   step('names the club', FOUNDER, W + 'access/org/name', 'Hillside FC');
