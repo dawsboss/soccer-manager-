@@ -359,6 +359,11 @@ const named = o => NAMES.filter(n => new RegExp('\\b' + n + '\\b', 'i').test(JSO
     check('a feed the server builds new carries it', P(S, 'feedT1aaaaa/link/app'), site);
     const r = await S.request('calendar', '/feedT1aaaaa.ics');
     check('and the calendar feed links each entry back to the app', /URL[:;][^\r\n]*dawsboss\.github\.io\/soccer-manager-\/index\.html#\/team\/t1/.test(r.body.replace(/\r\n /g, '')), true);
+    // the site moves: every page's links follow on its next write, the old address on it notwithstanding
+    process.env.SOCCER_SITE = 'https://club.example/minutes/index.html';
+    await S.fire(W + 'teams/t1/possMin', 7);
+    check('a site that moves takes the feed\'s links with it', P(S, 'feedT1aaaaa/link/app'), 'https://club.example/minutes/index.html');
+    check('and the season link\'s', P(S, 'shareT1aaaa/link/app'), 'https://club.example/minutes/index.html');
     process.env.SOCCER_SITE = SITE;
   }
 

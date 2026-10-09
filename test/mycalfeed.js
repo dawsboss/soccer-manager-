@@ -126,6 +126,15 @@ const named = doc => NAMES.filter(n => JSON.stringify(doc || {}).includes(n));
     check('her feed is written by the server', f.by, 'server');
     check('as a My calendar page', f.mine === true && f.team.name === 'My calendar', true);
     check('keeping the link back to the app her phone gave it', f.link.app, 'https://club.example/index.html');
+    // the site moves: the deployed address wins over the one her phone gave the page
+    process.env.SOCCER_SITE = 'https://moved.example/index.html';
+    await S.fire('people/mum/set/at', 3);
+    await S.tick('myCalBuild');
+    S.put('public/' + FEED + '/by', 'phone');      // so the page is rewritten though nothing in it changed
+    await S.fire('people/mum/set/at', 4);
+    await S.tick('myCalBuild');
+    check('a site that moves takes her feed\'s links with it', feedOf(S).link.app, 'https://moved.example/index.html');
+    delete process.env.SOCCER_SITE;
     deepEq('her child\'s team, her child\'s session, and the team she coaches in another club', titles(S), [
       'Flight v Northgate', 'Flight: Practice: a player in goal', 'Flight: Team photo', 'Hill U12: a player\'s birthday practice', 'Training: 1-1 session'
     ].sort());

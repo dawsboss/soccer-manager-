@@ -244,7 +244,8 @@ async function publish(env, read, uid, now) {
   if (page && (typeof page !== 'object' || page.mine !== true)) return 'not a my calendar page';
   const items = await feedItems(read, uid, now);
   if (items === undefined) return 'unreadable';
-  const app = String((page && page.link && page.link.app) || env.site || '');
+  // the deployed address first, so a site that moves takes her feed's links with it
+  const app = String(env.site || (page && page.link && page.link.app) || '');
   const doc = { team: { name: 'My calendar' }, mine: true, by: 'server', items, updated: now };
   if (/^https:\/\/[^\s"'<>]+$/.test(app)) doc.link = { app };
   // unchanged: leave it, so a calendar that asks sees the same page

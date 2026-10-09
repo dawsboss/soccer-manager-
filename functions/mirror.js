@@ -132,9 +132,13 @@ async function takeDown(env, L, id, want) {
   await env.update({ ['public/' + id]: null, [`${PAGES}/${id}`]: null });
   return true;
 }
+/* The site's address as deployed wins, so a site that moves takes every
+   page's links with it on the next write; a page from before keeps its own
+   only while the server has none to give it. */
 const appOf = async (env, id) => {
+  if (G.okApp(env.site)) return env.site;
   const a = await env.get(`public/${id}/link/app`);
-  return G.okApp(a) ? a : (G.okApp(env.site) ? env.site : '');
+  return G.okApp(a) ? a : '';
 };
 
 /* ---- the work ---- */
