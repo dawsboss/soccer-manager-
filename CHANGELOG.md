@@ -8,6 +8,27 @@ before this point lives only in the git log.
 
 ---
 
+## AUTH.md: a child in the club, and registration, designed before any code — 2026-10-09
+
+A child exists today only as a row in one team's squad, so a family who
+wants 1-1s for a child on no team has nowhere to be, next season starts from
+nothing, and nothing says the family ever agreed to what a coach typed.
+AUTH.md, *A child in the club, and registration*, designs the club-level
+record of each child (`orgs/{code}/children/{cid}`, the squad pointing back
+with `child`), how a family finds hers (`families/{uid}`), how she gets into
+the club (only once a child of hers is in it, so a program link on the club's
+website is not a way to the calendar), three ways a child is registered (a
+family through a program link; a coach or an admin for a family, who
+confirms it when she joins and is asked only for what is missing; every
+child already on a team), care details for coaches (a per-team copy), then
+registration itself as `GOTSPORT.md` step 4 laid it out: programs, the link
+and the form, versioned waivers only a family agrees to, accepting, placing,
+sessions for a child on no team, the GotSport export and deleting. Six build
+steps and five decisions for the owner. No code yet: it is a schema and
+rules change, and this file is where those are settled first.
+
+---
+
 ## Fans, and links with limits — 2026-10-09 (build 121)
 
 The first of AUTH.md's new kinds of people still to build (AUTH.md, *More kinds of people*, 1), as the owner decided it and then renamed it, and links with limits.
