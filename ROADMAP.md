@@ -72,9 +72,9 @@ order*, step 2).
 
 > **Built 2026-10-07 (build 104)** for notices and family messages: all three
 > pieces as above (`sw.js` and `manifest.webmanifest`, tokens at
-> `pushTokens/{uid}/{token}`, and `functions/`). *Notify me* on a game, a
-> calendar change and club activity are not pushed yet; `GOTSPORT.md`, *Push
-> notifications*, has what is left and how.
+> `pushTokens/{uid}/{token}`, and `functions/`). Calendar changes followed
+> (build 105), *Notify me* on a game (build 116), and training sessions and
+> club activity (build 117); `GOTSPORT.md`, *Push notifications*.
 
 ### Messages, next steps
 

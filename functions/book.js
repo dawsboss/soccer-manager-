@@ -39,7 +39,8 @@
 
 const { where } = require('./club');
 
-const ASK_TTL = 2 * 60000;      // an ask older than this is from a phone that has given up waiting
+// a phone's clock can be minutes out, so this is wide; a phone that gave up deletes its ask, which says so better
+const ASK_TTL = 10 * 60000;
 const H = 3600000;
 const WANT_MAX = 280;
 const okId = s => typeof s === 'string' && /^[^.#$\[\]\/]{1,128}$/.test(s);
@@ -270,7 +271,13 @@ async function cancel(env, ctx, v) {
      session the coach has put more on (a plan, a register, a fee) stays. */
   if (!left) {
     const [plan, fees] = await Promise.all([env.get(T + 'splans/' + v.sid), env.get(T + 'fees/' + v.sid)]);
-    if (!plan && !fees) await env.claim(T + 'sessions/' + v.sid, cur => (cur && cur.slot && !cur.called ? null : undefined));
+    if (!plan && !fees) {
+      /* What the slot was, kept where no phone reaches (no rule grants
+         serverState/), for the push that tells the coach a time was given
+         back (news.js): it runs after this, and the session is gone by then. */
+      await env.set('serverState/slotGone/' + code + '/' + v.sid, { ...s, at: now });
+      await env.claim(T + 'sessions/' + v.sid, cur => (cur && cur.slot && !cur.called ? null : undefined));
+    }
   }
   return say({ ok: true, st: 'gone', sid: v.sid });
 }
@@ -285,6 +292,8 @@ async function onAsk(env, params, v) {
   if (!okId(code) || !okId(uid) || !okId(id)) return { ok: false, why: 'bad' };
   const P = 'bookAsks/' + code + '/' + uid + '/' + id + '/answer';
   if (await env.get(P)) return { ok: false, why: 'twice' };
+  // the phone stopped waiting and took its ask back: acting on it now would book a place nobody is told of
+  if (!(await env.get('bookAsks/' + code + '/' + uid + '/' + id))) return { ok: false, why: 'withdrawn' };
   const say = async a => { await env.set(P, { ...a, at: now }); return a; };
   if (!v || typeof v !== 'object' || !okId(v.pid) || (v.op !== 'book' && v.op !== 'cancel')) return say({ ok: false, why: 'bad' });
   if (!(Number(v.at) > now - ASK_TTL)) return say({ ok: false, why: 'late' });

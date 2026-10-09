@@ -12693,6 +12693,10 @@ function sessPut(path, value, undo) {
   noteMine(path);
   const prev = getDeep(sess, path);
   const v = value == null ? null : JSON.parse(JSON.stringify(value));   // the database refuses undefined anywhere in a write
+  /* A whole session carries who last changed it, as a calendar entry does
+     (calStamp()), so the server's push leaves her out of hearing that she
+     called it off (functions/news.js). */
+  if (v && me && /^sessions\/[^/]+$/.test(path)) v.edit = { by: me.uid, at: nowMs() };
   if (v == null) delDeep(sess, path); else setDeep(sess, path, v);
   sess.dirty[path] = nowMs() + '.' + (++sessSeq);
   saveSess();

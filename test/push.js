@@ -324,7 +324,9 @@ const toUid = (S, u) => S.sent().filter(m => m.data.uid === u);
     check('tomorrow\'s practice called off is news', r.news, 'called');
     check('read against each person\'s switch for calendar changes', S.reads.includes('people/mum/mute/cal'), true);
     deepEq('to the whole team: coach, tracker, families, its player', r.to, ['coach', 'ella', 'mum', 'rosamum', 'trk']);
-    check('not the admins, whom club activity tells', toUid(S, 'adm').length, 0);
+    deepEq('the admins too, as club activity', r.admins, ['adm']);
+    check('read against her switch for club activity, not her calendar\'s', S.reads.includes('people/adm/mute/news') && !S.reads.includes('people/adm/mute/cal'), true);
+    check('in the same words', toUid(S, 'adm')[0].data.title, 'Cancelled: Flight: Practice');
     check('nor another team, nor someone with no role on it', toUid(S, 'other').length + toUid(S, 'dad').length + toUid(S, 'newbie').length, 0);
     check('nor a family the squad no longer names', toUid(S, 'stale').length, 0);
     const m = toUid(S, 'mum')[0];
@@ -376,11 +378,15 @@ const toUid = (S, u) => S.sent().filter(m => m.data.uid === u);
     await S.fire(W + 'teams/t1/events/e1/end', '19:30');
     check('a new place, title or end time is not a buzz, as in the app', S.sent().length, 0);
     await S.fire(W + 'teams/t1/events/e1', null);
-    check('nor a deletion, as in the app', S.sent().length, 0);
+    deepEq('a deletion is told to the admins alone, as club activity says it', owners(S), ['adm']);
+    check('as deleted, by its title then', toUid(S, 'adm')[0].data.title, 'Deleted: Flight: Shooting practice');
+    S.sends.length = 0;
     await S.fire(W + 'teams/t1/events/far/called', 'cancelled');
     check('nor anything a month away: the calendar says it', S.sent().length, 0);
     await S.fire(W + 'teams/t1/events/old/called', 'cancelled');
     check('nor anything past', S.sent().length, 0);
+    await S.fire(W + 'teams/t1/events/old', null);
+    check('nor a past entry deleted', S.sent().length, 0);
   }
   {
     const S = calServer();
@@ -441,6 +447,169 @@ const toUid = (S, u) => S.sent().filter(m => m.data.uid === u);
   }
 
   /* ---------------- the page ---------------- */
+
+  console.log('\n--- training sessions and club activity: what wakes the server ---');
+  {
+    const S = server();
+    check('a booking changing', S.woken('training/CLUB/booked/s1/p1').includes('newsBooked'), true);
+    check('a session written', S.woken('training/CLUB/sessions/s1').includes('newsSession'), true);
+    check('a coach\'s time off', S.woken('training/CLUB/away/coach/a1').includes('newsAway'), true);
+    check('none of them by anything a game writes', S.woken(W + 'matches/g1/goals/x').filter(n => /^news/.test(n)).length, 0);
+  }
+
+  console.log('\n--- a booking: who hears what ---');
+  const T = 'training/CLUB/';
+  const slotS = (extra = {}) => ({ id: 'k1', kind: 'one', title: '', coach: 'coach', coachName: 'Jaz', date: day(3), start: '18:00', end: '19:00', cap: 1, slot: 'b1', t0: Date.now() + 3 * 86400000, by: 'mum', ...extra });
+  const groupS = (extra = {}) => ({ id: 's1', kind: 'group', title: 'Finishing', coach: 'coach', coachName: 'Jaz', date: day(3), start: '17:00', end: '18:00', cap: 6, open: true, ...extra });
+  function sessServer(training) {
+    const S = server({ training: { CLUB: { sessions: { k1: slotS(), s1: groupS() }, ...(training || {}) } } });
+    S.put(W + 'access/teams/t1/coaches/co', true);
+    S.put(W + 'access/index/co', true);
+    S.put('pushTokens/co', { [tok('co')]: { at: 1, ua: 'iPhone' } });
+    return S;
+  }
+  const NEVER = ['trk', 'dad', 'newbie', 'stale'];
+  {
+    const S = sessServer();
+    const r = (await S.fire(T + 'booked/k1/p1', { tid: 't1', st: 'in', by: 'mum', at: 5 })).newsBooked;
+    deepEq('a family books a time: her coach and the admins', r.to, ['adm', 'coach']);
+    check('her coach, in her words', toUid(S, 'coach')[0].data.title, 'Booked a time');
+    check('naming the child to her coach', toUid(S, 'coach')[0].data.body.startsWith('Ella · '), true);
+    check('on both her phones', toUid(S, 'coach').length, 2);
+    check('the admins, as club activity', toUid(S, 'adm')[0].data.title, 'Booked by a family: 1-1 session with Jaz');
+    check('each under her own switch', S.reads.includes('people/coach/mute/cal') && S.reads.includes('people/adm/mute/news'), true);
+    check('not the family who booked it', toUid(S, 'mum').length, 0);
+    check('nor another family, a tracker or a stranger', [...NEVER, 'rosamum', 'other'].every(u => !toUid(S, u).length), true);
+    check('opening the session', toUid(S, 'coach')[0].data.hash, '#/training/k1');
+  }
+  {
+    const S = sessServer({ booked: { k1: { p1: { tid: 't1', st: 'wait', by: 'mum', at: 5 } } } });
+    const r = (await S.fire(T + 'booked/k1/p1', { tid: 't1', st: 'in', by: 'server', at: 9 })).newsBooked;
+    check('moved off the waiting list: her family is told', toUid(S, 'mum')[0].data.title, 'Ella: booked');
+    check('with whose time it is', toUid(S, 'mum')[0].data.body.startsWith('1-1 session with Jaz · '), true);
+    check('her coach too', toUid(S, 'coach')[0].data.title, 'Booked a time');
+    check('read against the family\'s switch for her calendar', S.reads.includes('people/mum/mute/cal'), true);
+    deepEq('and nobody else\'s family', r.to.filter(u => !['adm', 'coach', 'mum'].includes(u)), []);
+  }
+  {
+    const S = sessServer({ booked: { k1: { p1: { tid: 't1', st: 'in', by: 'mum', at: 5 } } } });
+    await S.fire(T + 'booked/k1/p1', { tid: 't1', st: 'no', by: 'coach', at: 9 });
+    deepEq('the coach turns a child down: only that child\'s family hears', owners(S), ['mum']);
+    check('in the app\'s words', toUid(S, 'mum')[0].data.title, 'Ella: not this time');
+  }
+  {
+    const S = sessServer();
+    const r = (await S.fire(T + 'booked/s1/p2', { tid: 't1', st: 'asked', by: 'rosamum', at: 5 })).newsBooked;
+    deepEq('a family asks on an open session: its coach and the admins', r.to, ['adm', 'coach']);
+    check('the coach', toUid(S, 'coach')[0].data.title + ' / ' + toUid(S, 'coach')[0].data.body.split(' · ')[0], 'Asked for a spot / Rosa');
+    check('the admins', toUid(S, 'adm')[0].data.title, 'Asked for a place: Rosa');
+    check('not the other coach of the team: it is her session, not the team\'s', toUid(S, 'co').length, 0);
+  }
+  {
+    const S = sessServer({ booked: { k1: { p1: { tid: 't1', st: 'in', by: 'mum', at: 5 } } } });
+    await S.fire(T + 'booked/k1/p1', null);
+    check('a family\'s place given back: the coach', toUid(S, 'coach')[0].data.title, 'Cancelled a time');
+    check('and the admins', toUid(S, 'adm')[0].data.title, 'Cancelled a time: Ella');
+    check('the family who cancelled is not told', toUid(S, 'mum').length, 0);
+  }
+  {
+    // the last place in a slot given back through the server takes the slot with it before this runs
+    const S = sessServer({ booked: { k1: { p1: { tid: 't1', st: 'in', by: 'mum', at: 5 } } } });
+    S.put('serverState/slotGone/CLUB/k1', slotS());
+    S.put(T + 'sessions/k1', null);
+    await S.fire(T + 'booked/k1/p1', null);
+    check('the coach still hears, from the server\'s note of the slot', toUid(S, 'coach')[0].data.title, 'Cancelled a time');
+  }
+  {
+    const S = sessServer({ booked: { s1: { p1: { tid: 't1', st: 'in', by: 'coach', at: 5 } } } });
+    await S.fire(T + 'booked/s1/p1', { tid: 't1', st: 'in', by: 'coach', at: 5, want: 'Crossing' });
+    check('a note changed on a place is not news', S.sent().length, 0);
+    S.put(T + 'sessions/s1/date', day(-5));
+    await S.fire(T + 'booked/s1/p1', { tid: 't1', st: 'out', by: 'mum', at: 9 });
+    check('nor anything about a session already past', S.sent().length, 0);
+    S.put(T + 'sessions/s1', groupS({ called: 'cancelled' }));
+    await S.fire(T + 'booked/s1/p1', { tid: 't1', st: 'in', by: 'coach', at: 9 });
+    check('nor a session called off', S.sent().length, 0);
+  }
+  {
+    const S = sessServer();
+    S.put('retired/CLUB', true);
+    await S.fire(T + 'booked/k1/p1', { tid: 't1', st: 'in', by: 'mum', at: 5 });
+    check('nor anything in a retired club', S.sent().length, 0);
+  }
+
+  console.log('\n--- a session: who hears what ---');
+  {
+    const S = sessServer();
+    const r = (await S.fire(T + 'sessions/s2', groupS({ id: 's2', title: 'Shooting', by: 'coach' }))).newsSession;
+    deepEq('a coach adds a session: the admins hear, as club activity', r.to, ['adm']);
+    check('in the app\'s words', toUid(S, 'adm')[0].data.title, 'New session: Shooting with Jaz');
+    S.sends.length = 0;
+    await S.fire(T + 'sessions/k2', slotS({ id: 'k2', start: '17:00' }));
+    check('a slot a family booked is said from its booking, not here', S.sent().length, 0);
+  }
+  {
+    const S = sessServer({ booked: { s1: { p1: { tid: 't1', st: 'in', by: 'coach', at: 1 }, p2: { tid: 't1', st: 'wait', by: 'coach', at: 2 }, q1: { tid: 't2', st: 'out', by: 'dad', at: 3 } } } });
+    const r = (await S.fire(T + 'sessions/s1', groupS({ called: 'cancelled', edit: { by: 'coach', at: Date.now() } }))).newsSession;
+    deepEq('called off: the families of children going or waiting, and the admins', r.to, ['adm', 'mum', 'rosamum']);
+    check('each family about her own child', toUid(S, 'mum')[0].data.body.startsWith('Ella · '), true);
+    check('never another child\'s name', /Rosa/.test(JSON.stringify(toUid(S, 'mum'))) || /Ella/.test(JSON.stringify(toUid(S, 'rosamum'))), false);
+    check('titled as the app says it', toUid(S, 'mum')[0].data.title, 'Cancelled: Finishing');
+    check('urgent', toUid(S, 'mum')[0].data.urgent, '1');
+    check('not a family whose child withdrew', toUid(S, 'dad').length, 0);
+    check('not the coach who called it off, on either phone', toUid(S, 'coach').length, 0);
+    check('the admins, with whose session it is', toUid(S, 'adm')[0].data.title, 'Cancelled: Finishing with Jaz');
+  }
+  {
+    const S = sessServer({ booked: { s1: { p1: { tid: 't1', st: 'in', by: 'coach', at: 1 } } } });
+    await S.fire(T + 'sessions/s1/start', '18:30');
+    deepEq('moved: the family hears, the admins do not', owners(S), ['mum']);
+    check('when it is now', toUid(S, 'mum')[0].data.title + ' / ' + toUid(S, 'mum')[0].data.body.split(' · ')[1].slice(0, 3), 'Moved: Finishing / now');
+    S.sends.length = 0;
+    await S.fire(T + 'sessions/s1/place', 'Pitch 2');
+    check('a new place is not a buzz', S.sent().length, 0);
+  }
+  {
+    const S = sessServer({ booked: { s1: { p1: { tid: 't1', st: 'in', by: 'coach', at: 1 } } } });
+    S.put(T + 'sessions/s1/date', day(40));
+    await S.fire(T + 'sessions/s1/called', 'cancelled');
+    deepEq('one called off weeks away: the admins, not yet the family', owners(S), ['adm']);
+  }
+
+  console.log('\n--- a coach\'s time off: who hears what ---');
+  {
+    const S = sessServer();
+    const r = (await S.fire(T + 'away/coach/c1', { id: 'c1', kind: 'callout', item: 'e:e1', tid: 't1', date: day(2), start: '18:00', title: 'Practice', by: 'coach', at: 1 })).newsAway;
+    deepEq('a coach calls out: the team\'s other coach and the admins', r.to, ['adm', 'co']);
+    check('in the app\'s words', toUid(S, 'co')[0].data.title, 'Jaz can\'t make Practice');
+    check('opening the team\'s calendar', toUid(S, 'co')[0].data.hash, '#/team/t1/calendar');
+    check('as club activity', S.reads.includes('people/co/mute/news'), true);
+    check('never a family, a tracker or a stranger', ['mum', 'rosamum', 'ella', ...NEVER].every(u => !toUid(S, u).length), true);
+    S.sends.length = 0;
+    const back = (await S.fire(T + 'away/coach/c1', null)).newsAway;
+    deepEq('taken back: the same people', back.to, ['adm', 'co']);
+    check('back on', toUid(S, 'co')[0].data.title, 'Back on: Jaz is back on Practice');
+  }
+  {
+    const S = sessServer();
+    await S.fire(T + 'away/coach/c2', { id: 'c2', kind: 'callout', item: 'e:e1', tid: 't1', date: day(2), title: 'Practice', by: 'adm', at: 1 });
+    check('an admin calls a coach off: she hears it', toUid(S, 'coach')[0].data.title, 'Ada called you off Practice');
+    check('the other coach too', toUid(S, 'co')[0].data.title, 'Ada called Jaz off Practice');
+    check('not the admin who did it', toUid(S, 'adm').length, 0);
+  }
+  {
+    const S = sessServer();
+    const r = (await S.fire(T + 'away/coach/w1', { id: 'w1', kind: 'weekly', days: [2, 4], start: '17:00', end: '19:00', by: 'coach', at: 1 })).newsAway;
+    deepEq('time off: the admins alone', r.to, ['adm']);
+    check('saying when', toUid(S, 'adm')[0].data.title + ' / ' + toUid(S, 'adm')[0].data.body, 'Time off: Jaz / Every Tue, Thu, 17:00–19:00');
+    S.sends.length = 0;
+    await S.fire(T + 'away/coach/w1/note', 'Physio');
+    check('a note added later is not news', S.sent().length, 0);
+    await S.fire(T + 'away/coach/w1', null);
+    check('nor time off taken back', S.sent().length, 0);
+    await S.fire(T + 'away/coach/c9', { id: 'c9', kind: 'callout', item: 'e:old', tid: 't1', date: day(-4), title: 'Practice', by: 'coach', at: 1 });
+    check('nor a call-out from something past', S.sent().length, 0);
+  }
 
   console.log('\n--- a game she follows: what wakes the server ---');
   const ORGS_SERVER = process.env.SERVER_TREE === 'orgs';

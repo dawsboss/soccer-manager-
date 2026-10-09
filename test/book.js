@@ -115,7 +115,7 @@ const T = 'training/CLUB/';
   }
   {
     const S = server();
-    const a = await ask(S, 'mum', { op: 'book', block: 'b1', start: '18:00', tid: 't1', pid: 'p1', at: Date.now() - 5 * 60000 });
+    const a = await ask(S, 'mum', { op: 'book', block: 'b1', start: '18:00', tid: 't1', pid: 'p1', at: Date.now() - 15 * 60000 });
     deepEq('an ask the phone has given up on is not acted on', [a.ok, a.why], [false, 'late']);
     const b = await ask(S, 'mum', { op: 'steal', pid: 'p1' });
     deepEq('nor one that is neither booking nor cancelling', [b.ok, b.why], [false, 'bad']);
@@ -250,6 +250,7 @@ const T = 'training/CLUB/';
     check('she cancels, a day and more ahead', (await cx(S, 'mum')).ok, true);
     check('her place is gone', S.at(T + 'booked/' + SID), null);
     check('and with nobody left, the slot itself, so the time is free', S.at(T + 'sessions/' + SID), null);
+    check('what it was kept where only the server reads, for the coach\'s push', S.at('serverState/slotGone/CLUB/' + SID).coach, 'coach');
   }
   {
     const S = held(Date.now() + 3 * 3600000);
@@ -283,6 +284,17 @@ const T = 'training/CLUB/';
   }
 
   console.log('\n--- an ask is answered once ---');
+  {
+    const S = server();
+    const v = { op: 'book', block: 'b1', start: '18:00', tid: 't1', pid: 'p1', at: Date.now() };
+    const r = await book.onAsk({
+      get: p => S.ref(p).get().then(s => s.val()), set: (p, x) => S.ref(p).set(x), remove: p => S.ref(p).remove(),
+      claim: (p, fn) => S.ref(p).transaction(fn).then(x => !!x.committed),
+      dated: (p, d) => S.ref(p).orderByChild('date').equalTo(d).get().then(s => s.val())
+    }, { code: 'CLUB', uid: 'mum', id: 'gone' }, v);
+    check('an ask the phone has already taken back is not acted on', r.why, 'withdrawn');
+    check('nothing booked, and no answer left behind', S.at(T + 'booked') || S.at('bookAsks'), null);
+  }
   {
     const S = server();
     const at = Date.now();

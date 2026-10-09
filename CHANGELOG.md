@@ -8,6 +8,36 @@ before this point lives only in the git log.
 
 ---
 
+## Training sessions and club activity reach a closed phone — 2026-10-09 (build 117)
+
+The last of the server's notification work (GOTSPORT.md, build order step
+2). A family booking a coach's time, a place confirmed or turned down, a
+session called off, a coach calling out: each was worked out on each phone
+while Minutes was open on it, so a closed phone heard none of it, and an
+admin heard the club's activity only when she next opened the app.
+
+- **Three new triggers** (`functions/news.js`): a booking changing, a
+  session written, a coach's time off. Each tells whoever the open page
+  would tell, in its words, and nobody about what she did herself.
+- **A family** hears about her own child's place (booked, on the waiting
+  list, moved off it, not this time, taken off) and a session she is in
+  being moved or called off in the next two weeks; by first name, never
+  another child.
+- **A coach** hears families asking for, booking, waiting for, withdrawing
+  from and cancelling her sessions and times; her team's other coaches hear
+  when she calls out.
+- **The admins** hear the club's activity: every team's game or practice
+  new, moved, called off, back on or deleted (from the calendar's own
+  triggers, which told only the team before), a session added or called
+  off, a family booking a coach's time, call-outs and time off. Under their
+  own *Club activity* switch, so an admin of many teams can turn it off and
+  keep her own team's.
+- **A session saved carries who saved it** (`edit`), as calendar entries
+  do, so the coach who called it off is left out and the admins are told
+  who did.
+
+---
+
 ## Booking a coach's time is one call to the server, with a waiting list — 2026-10-09 (build 117)
 
 A family booked a coach's slot from her own phone, in three writes the rules

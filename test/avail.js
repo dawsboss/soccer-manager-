@@ -341,6 +341,7 @@ const slotSess = (sid, extra = {}) => ({ id: sid, kind: 'one', cap: 1, coach: 'j
       now: () => D.nowMs()
     };
     const [, code, uid, id] = w.path.split('/');
+    S.put(w.path, w.value);   // the ask as it reached the club
     await book.onAsk(env, { code, uid, id }, w.value);
     for (const k of ['sessions', 'booked']) fbk.deliver(TR + k, S.at(TR + k) || {});
     await D.flush();

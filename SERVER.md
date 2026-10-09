@@ -253,13 +253,17 @@ does the bookkeeping, not that the phone works offline first.
   `onFollowed` in `functions/push.js` sends the goals, each half starting,
   half time and full time to those phones. The open page still watches
   (`watchFeed()`), for a phone without notifications turned on.
-- **Now, for everything else:** every phone works out for itself what is new
-  since it last looked, per source, and shows it while the page is open
-  (`clubNews()`, `sessNews()`, `ping()`). A closed phone hears nothing of
-  club activity or a session booked.
-- **With a server:** the same sender takes each of those on as a trigger of
-  its own, worked out once for everybody instead of on each phone, and the
-  "first look is not news" care goes away.
+- **Moved, for training sessions and club activity (build 117):** a
+  booking changing, a session added, moved or called off, and a coach's
+  time off or call-out each wake a trigger of their own (`functions/news.js`:
+  `newsBooked`, `newsSession`, `newsAway`), which tells whoever the open
+  page would have told, in the same words: a family about her own child's
+  place and sessions, a coach about families asking, booking, waiting,
+  withdrawing and cancelling on hers, and the admins the club's activity
+  (and, from `functions/push.js`, every team's calendar changes and a
+  practice or event deleted). The open page still works it out for itself
+  while it is open (`clubNews()`, `sessNews()`, `ping()`), for a phone
+  without notifications turned on; that is all that is left on the phone.
 
 ### Alerts from every club
 - **Now:** a phone in several clubs listens to every one of them for messages

@@ -35,6 +35,7 @@ const mycal = require('./mycal');
 const move = require('./move');
 const adminwatch = require('./adminwatch');
 const booking = require('./book');
+const news = require('./news');
 
 initializeApp();
 
@@ -265,6 +266,17 @@ exports.bookAsk = onValueCreated('/bookAsks/{code}/{uid}/{id}', quiet(event =>
   booking.onAsk(bookerOf(event), event.params, event.data.val())));
 exports.bookFreed = onValueWritten('/training/{code}/booked/{sid}/{pid}', quiet(event =>
   booking.onBooked(bookerOf(event), event.params, event.data.before.val(), event.data.after.val())));
+
+/* Training sessions and club activity, to a closed phone (news.js; SERVER.md,
+   "Notifications"): a booking changing, a session added, moved or called
+   off, a coach's time off or call-out. Each is one small record written
+   once per change, never anything a game being played writes. */
+exports.newsBooked = onValueWritten('/training/{code}/booked/{sid}/{pid}', quiet(event =>
+  news.onBooked(envOf(event), event.params, event.data.before.val(), event.data.after.val())));
+exports.newsSession = onValueWritten('/training/{code}/sessions/{sid}', quiet(event =>
+  news.onSession(envOf(event), event.params, event.data.before.val(), event.data.after.val())));
+exports.newsAway = onValueWritten('/training/{code}/away/{uid}/{id}', quiet(event =>
+  news.onAway(envOf(event), event.params, event.data.before.val(), event.data.after.val())));
 
 /* My calendar's feeds (mycal.js; SERVER.md, "My calendar's feed"). The
    triggers above mark a club when its entries, games or people change; these

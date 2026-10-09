@@ -141,7 +141,7 @@ withdraws herself, as before. `seats` is gone from the rules and the app.
   family writes `asked` or `out` on an ordinary session only, never on a
   booked slot.
 - `bookAsks/$code/$uid/$id` — read: that account. She makes an ask in her
-  own name in a club she is in, stamped within a minute of now, of the shape
+  own name in a club she is in, stamped within ten minutes of now (a phone's clock can be out), of the shape
   above, and deletes it once answered; she never writes `answer`.
 
 **The bridge fails closed**, as sessions' does: no `coachIndex` yet, only
@@ -175,7 +175,8 @@ Booking is first come, first served. Every other family write here can wait
 in a queue; a booking that waited would be a promise the app can't keep. With
 no signal her phone does not ask; an answer that does not come in thirty
 seconds is said as that, not as a no (if the place was hers it appears
-anyway), and the server ignores an ask more than two minutes old.
+anyway). Her phone takes back an ask it stopped waiting for, and the server
+leaves alone one that has been taken back, or is more than ten minutes old.
 
 ## A calendar of your own
 

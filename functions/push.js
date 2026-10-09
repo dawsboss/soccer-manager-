@@ -221,9 +221,11 @@ async function onStaff(env, params, v) {
 
    Who: everyone on that team, from the same tables as a notice (its coaches
    and trackers, its families, its players who sign in), held to the squad.
-   Not the admins: an admin of twenty teams would hear every change in the
-   club, which club activity already tells her when she opens the app, unless
-   she is on the team herself. Every calendar write carries who made it
+   The admins hear it too, as club activity (`clubNews()` in app.js), under
+   their own switch for it ('news', not 'cal'): an admin of twenty teams
+   hears every change in the club, so she can turn that off without losing
+   her own team's. They alone also hear a practice or event deleted, which
+   the team is not told, as on the page. Every calendar write carries who made it
    (`edit: { by, at }`, stamped by the app in remoteSet() and held by the
    rules to the writer's own uid), so the coach who called it off is left out,
    on every phone of hers, and named to everyone else. A stamp more than a few
@@ -298,37 +300,43 @@ async function calChange(env, code, before, it, tree) {
   const now = env.now ? env.now() : Date.now();
   const x = it || before;
   if (!x || !x.tid || !(soon(it && it.date, now) || soon(before && before.date, now))) return none;
-  const news = calNews(before, it);
+  const gone = !it && !!calSig(before) && soon(before.date, now);
+  const news = gone ? { kind: 'deleted' } : calNews(before, it);
   if (!news) return none;
   /* A weekly series made or changed at once is one piece of news, as in the
      app: told once for the series, then quiet about it for a few minutes. */
-  const key = (it.kind === 'game' ? 'g_' : 'e_') + it.id;
-  const said = news.kind === 'new' && it.series ? 's_' + it.series : key;
-  const sig = calSig(it);
+  const key = (x.kind === 'game' ? 'g_' : 'e_') + x.id;
+  const said = news.kind === 'new' && x.series ? 's_' + x.series : key;
+  const sig = gone ? 'gone' : calSig(it);
   const told = await env.claim('serverState/calSent/' + code + '/' + said,
     old => (said !== key ? (old && old.at > now - 10 * 60000 ? undefined : { sig, at: now }) : (old && old.sig === sig ? undefined : { sig, at: now })));
   if (!told) return none;
 
-  const f = await teamFacts(env, code, it.tid, tree);
+  const f = await teamFacts(env, code, x.tid, tree);
   if (f.retired || !f.team) return none;
   const tn = f.team.name || 'Your team';
-  const words = it.kind === 'game' ? `${tn} v ${it.title || 'TBC'}` : `${tn}: ${it.title || (it.kind === 'practice' ? 'Practice' : 'Team event')}`;
-  const what = it.kind === 'game' ? 'game' : it.kind === 'practice' ? 'practice' : 'event';
-  const title = news.kind === 'called' ? `${CAL_CALLED[it.called] || 'Called off'}: ${words}`
+  const words = x.kind === 'game' ? `${tn} v ${x.title || 'TBC'}` : `${tn}: ${x.title || (x.kind === 'practice' ? 'Practice' : 'Team event')}`;
+  const what = x.kind === 'game' ? 'game' : x.kind === 'practice' ? 'practice' : 'event';
+  const title = news.kind === 'called' ? `${CAL_CALLED[x.called] || 'Called off'}: ${words}`
     : news.kind === 'back' ? `Back on: ${words}`
     : news.kind === 'moved' ? `Moved: ${words}`
+    : news.kind === 'deleted' ? `Deleted: ${words}`
     : `New ${what}${said !== key ? 's' : ''}: ${words}`;
-  const body = news.kind === 'moved' ? `Now ${whenOf(it)}` : news.kind === 'new' && said !== key ? `Weekly, from ${whenOf(it)}` : whenOf(it);
-  const hash = it.kind === 'game' ? `#/team/${it.tid}/game/${it.id}/live` : `#/team/${it.tid}/calendar`;
-  const people = teamReaders(f);
-  const ed = it.edit && typeof it.edit === 'object' ? it.edit : null;
-  const by = ed && ed.by && Math.abs(now - (Number(ed.at) || 0)) < EDIT_FRESH_MS ? String(ed.by) : null;
+  const body = news.kind === 'moved' ? `Now ${whenOf(x)}` : news.kind === 'new' && said !== key ? `Weekly, from ${whenOf(x)}` : whenOf(x);
+  const hash = x.kind === 'game' ? `#/team/${x.tid}/game/${x.id}/live` : `#/team/${x.tid}/calendar`;
+  // a deletion is the admins' news alone, as on the page
+  const people = gone ? new Set() : teamReaders(f);
+  const ed = x.edit && typeof x.edit === 'object' ? x.edit : null;
+  const by = !gone && ed && ed.by && Math.abs(now - (Number(ed.at) || 0)) < EDIT_FRESH_MS ? String(ed.by) : null;
   if (by) people.delete(by);
+  // the admins not on the team, as club activity: on the team, she hears it as the team does
+  const admins = new Set(keys(f.admins).filter(u => !people.has(u) && u !== by));
   const who = by ? memberName(f, by) : '';
-  const list = await messagesFor(env, people, () => ({
+  const words_ = () => ({
     title, body: short(body + (who ? ' · ' + who : '')), tag: 'cal:' + code + ':' + said, code, hash, urgent: news.urgent ? '1' : ''
-  }), 'cal');
-  return { to: [...people].sort(), news: news.kind, by, ...(await deliver(env, list)) };
+  });
+  const list = [...(await messagesFor(env, people, words_, 'cal')), ...(await messagesFor(env, admins, words_, 'news'))];
+  return { to: [...people].sort(), admins: [...admins].sort(), news: news.kind, by, ...(await deliver(env, list)) };
 }
 
 /* A practice or event, teams/{tid}/events/{eid}: the whole entry, before and after. */

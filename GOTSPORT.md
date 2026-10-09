@@ -183,7 +183,7 @@ messages. What it is, so the next jobs are built the same way:
 
 **Calendar changes, built 2026-10-07 (build 105):** a game or practice
 called off, back on, moved or new, within the next two weeks, pushed to
-everyone on that team (not the admins, whom club activity tells). The same
+everyone on that team (the admins as club activity, since build 117). The same
 four things and the same silences as the open app's alerts (`calAlerts()`):
 a new place or title is not news, nor a deletion, nor anything past, and a
 weekly series added is one push. Five more triggers on the same sender:
@@ -206,7 +206,14 @@ phones, woken by a goal created, a stretch of play created, `currentHalf` and
 the screen names her, by the club's setting; nothing said once the game is
 over or hours old; cleared at full time.
 
-**Left of this step:** club activity for admins, and a session booked.
+**Club activity and training sessions, built 2026-10-09 (build 117):** a
+booking changing, a session added, moved or called off, and a coach's time
+off or call-out (`functions/news.js`), told to whoever the open page tells,
+in its words: a family about her own child's place, a coach about families
+on her sessions, the admins the club's activity, each under her own switch
+('cal' for her own sessions, 'news' for club activity). The admins also hear
+every team's calendar changes, and a practice or event deleted, from the
+calendar's triggers. Step 2 is done.
 
 ### 4. Email
 
@@ -377,8 +384,8 @@ hold.
    service worker and manifest, and the push sender. Small, and it fixes the
    biggest everyday gap families have. *Built 2026-10-07 for notices and
    family messages (build 104, Push notifications above), calendar changes
-   (build 105) and a followed game (build 116); club activity and a
-   session booked are left.*
+   (build 105), a followed game (build 116), and club activity and
+   training sessions (build 117). Done.*
 3. **Names behind the database, and the child as a club-level person.** One
    design, written into AUTH.md before the code (*Protecting the data* and
    *Season registration* above). *The names half built 2026-10-08 (build
