@@ -202,8 +202,9 @@ coaches' and admins' at the database, as practices already were.
 me* is stored as `follow/{code}/{mid}/{uid}` (rules version 14), and the
 server sends its goals, each half starting, half time and full time to those
 phones, woken by a goal created, a stretch of play created, `currentHalf` and
-`ended`, never the game. Nobody named; nothing said once the game is over or
-hours old; cleared at full time.
+`ended` (and a goal's scorer added), never the game. The scorer is named as
+the screen names her, by the club's setting; nothing said once the game is
+over or hours old; cleared at full time.
 
 **Left of this step:** club activity for admins, and a session booked.
 

@@ -376,10 +376,17 @@ async function onGameField(env, params, field, was) {
 
    Who: whoever follows it, while she is still in the club (its index or its
    admins: every role reads a game, so that is the rules' own reader), and not
-   whoever logged the goal. Nobody is named: the scorer's name is the one
-   thing on this screen a family on a moved club may not read for another
-   child (`shownName()`), and a lock screen is no place to work that out per
-   reader. The open page names whom she may see; the push says the score.
+   whoever logged the goal.
+
+   The scorer is named the way the screen names her (`shownName()`), worked
+   out for each reader: by name to the admins, the coaches and trackers of
+   any team, her own family and herself, and to everyone once the club has
+   opened the roster (`org/rosterOpen`, the admins' one setting); otherwise
+   by shirt number. That is also what a family's phone on orgs/ may read. A
+   goal is usually tapped first and its scorer added after, so the scorer
+   being added is its own small event ('scorer'): the same notification
+   again, under the same tag, which replaces the first without a second buzz
+   (sw.js sets no renotify), said only for a goal already told.
 
    When: only while the game is being played. A goal the outbox delivers
    hours late, a backup loaded or a game reopened next week is not news, so
@@ -395,8 +402,34 @@ const FOLLOW_FIELDS = ['teamId', 'opponent', 'periodCount', 'currentHalf', 'ende
 const halfName = (pc, n) => (pc === 2 ? (n === 1 ? '1st half' : n === 2 ? '2nd half' : 'Extra ' + (n - 2))
   : pc === 4 ? (['1st quarter', '2nd quarter', '3rd quarter', '4th quarter'][n - 1] || 'Extra ' + (n - 4)) : 'Period ' + n);
 
-/* what: 'goal' (id: the goal's), 'period' (id: the stretch of play's),
-   'half' or 'ended' (was: the field before). */
+/* Who may read which child's name, for one game: a function of the reader. */
+async function namer(env, L, tid, goal) {
+  const pids = [goal.pid, goal.assist].filter(x => typeof x === 'string' && x && !/[.#$\[\]\/]/.test(x));
+  if (!pids.length) return () => '';
+  const A = L.access;
+  const [admins, teamIndex, coachIndex, open, ...kids] = await Promise.all([
+    env.get(A + '/admins'), env.get(A + '/teamIndex'), env.get(A + '/coachIndex'), env.get(L.org + '/rosterOpen'),
+    ...pids.map(pid => env.get(L.player(tid, pid)))
+  ]);
+  const staff = u => has(admins, u) || has(coachIndex, u) || Object.values(teamIndex && typeof teamIndex === 'object' ? teamIndex : {}).some(t => has(t, u));
+  const shown = (p, u) => {
+    if (!p || typeof p !== 'object') return '';
+    if (open === true || staff(u) || has(p.guardians, u) || has(p.self, u)) return String(p.name || '');
+    const n = p.number == null ? '' : String(p.number).trim();
+    return n ? '#' + n : 'A teammate';
+  };
+  const okId = x => pids.includes(x);
+  const scorer = okId(goal.pid) ? kids[pids.indexOf(goal.pid)] : null;
+  const assist = okId(goal.assist) ? kids[pids.indexOf(goal.assist)] : null;
+  return u => {
+    const by = shown(scorer, u), as = shown(assist, u);
+    return by ? by + (as ? ', assist ' + as : '') : '';
+  };
+}
+
+/* what: 'goal' (id: the goal's), 'scorer' (id: the goal's, was: its scorer
+   before), 'period' (id: the stretch of play's), 'half' or 'ended' (was:
+   the field before). */
 async function onFollowed(env, params, what, id, was) {
   const none = { to: [], sent: 0, failed: 0, removed: [] };
   const { code, mid } = params || {};
@@ -418,13 +451,15 @@ async function onFollowed(env, params, what, id, was) {
   // the notes stay: full time said by the last half running out is not said again by End game
   const over = () => Promise.resolve(env.remove(F)).catch(() => { });
 
-  let item = null, by = null;
-  if (what === 'goal') {
-    const goal = g.goals && g.goals[id];
-    if (playing && goal && (goal.side === 'us' || goal.side === 'them')) {
-      item = { key: 'goal:' + id, title: null, side: goal.side, goal: true };
-      by = goal.by ? String(goal.by) : null;
-    }
+  let item = null, by = null, goal = null;
+  if (what === 'goal' || what === 'scorer') {
+    goal = g.goals && g.goals[id];
+    const ok = playing && goal && (goal.side === 'us' || goal.side === 'them');
+    if (ok && what === 'goal') item = { key: 'goal:' + id, side: goal.side, goal: true };
+    // a scorer added to a goal already told: the same notification, now with her
+    else if (ok && what === 'scorer' && goal.side === 'us' && goal.pid && goal.pid !== was && (await env.get('serverState/followSent/' + code + '/' + mid + '/goal:' + id)))
+      item = { key: 'name:' + id + ':' + goal.pid, side: 'us', goal: true, tag: 'goal:' + id };
+    if (item) by = goal.by ? String(goal.by) : null;
   } else if (what === 'period') {
     const p = periods.find(x => String(x.i) === String(id));
     const h = p && (Number(p.half) || 1);
@@ -445,6 +480,9 @@ async function onFollowed(env, params, what, id, was) {
 
   const told = await env.claim('serverState/followSent/' + code + '/' + mid + '/' + item.key, old => (old ? undefined : { at: now }));
   if (!told) { if (item.ft) await over(); return none; }
+  // a goal told with its scorer already on it needs no second telling when the scorer event comes
+  if (what === 'goal' && goal.side === 'us' && goal.pid)
+    await env.claim('serverState/followSent/' + code + '/' + mid + '/name:' + id + ':' + goal.pid, old => (old ? undefined : { at: now }));
 
   const A = L.access;
   const [retired, admins, index, team] = await Promise.all([
@@ -457,11 +495,13 @@ async function onFollowed(env, params, what, id, was) {
   let us = 0, th = 0;
   for (const x of Object.values(g.goals && typeof g.goals === 'object' ? g.goals : {})) if (x && x.side === 'us') us++; else if (x && x.side === 'them') th++;
   const title = item.goal ? `Goal — ${item.side === 'us' ? tn : them}` : item.title;
-  const list = await messagesFor(env, people, () => ({
-    title, body: short(`${tn} ${us}–${th} ${them}`),
-    // the open page's own tag (feedNotify), so a phone showing both shows one
+  const name = goal && goal.side === 'us' ? await namer(env, L, g.teamId, goal) : () => '';
+  const list = await messagesFor(env, people, u => ({
+    // as the open page says it (feedNotify): who scored, then the score
+    title, body: short([name(u), `${tn} ${us}–${th} ${them}`].filter(Boolean).join(' · ')),
+    // the open page's own tag (feedNotify), so a phone showing both shows one;
     // never urgent: that keeps it on the lock screen until dismissed (sw.js), which a goal is not worth
-    tag: 'minutes-' + mid + '-' + item.key, code, hash: `#/team/${g.teamId}/game/${mid}/live`, urgent: ''
+    tag: 'minutes-' + mid + '-' + (item.tag || item.key), code, hash: `#/team/${g.teamId}/game/${mid}/live`, urgent: ''
   }), null, '3600');   // a goal is news for an hour, not a day
   const res = { to: [...people].sort(), item: item.key, ...(await deliver(env, list)) };
   if (item.ft) await over();

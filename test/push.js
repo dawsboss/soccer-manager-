@@ -454,13 +454,18 @@ const toUid = (S, u) => S.sent().filter(m => m.data.uid === u);
     return S;
   }
   // a trigger run a second time with the same event, as Cloud Functions may
-  const again = (S, name, prm, val) => S.triggers[name + (ORGS_SERVER ? 'Orgs' : '')].handler({ params: prm, data: { val: () => val, ref: S.ref(W + 'matches/g1') } });
+  const again = (S, name, prm, val) => {
+    const ref = S.ref(W + 'matches/g1');
+    // a create trigger's snapshot and a write trigger's before/after, either way
+    return S.triggers[name + (ORGS_SERVER ? 'Orgs' : '')].handler({ params: prm, data: { val: () => val, ref, before: { val: () => val, ref }, after: { val: () => val, ref } } });
+  };
   {
     const S = liveServer();
     const wake = async (p, v) => (await S.wouldWake(W + p, v)).filter(n => /^follow/.test(n));
     deepEq('a goal logged wakes the goal sender', await wake('matches/g1/goals/x1', { t: 600, side: 'us' }), ['followGoal']);
     S.put(W + 'matches/g1/goals/x1', { t: 600, side: 'us' });
-    deepEq('a scorer added to it wakes nothing', await wake('matches/g1/goals/x1/pid', 'p1'), []);
+    deepEq('its scorer added wakes the scorer\'s', await wake('matches/g1/goals/x1/pid', 'p1'), ['followScorer']);
+    deepEq('an assist added wakes nothing', await wake('matches/g1/goals/x1/assist', 'p2'), []);
     deepEq('nor a sub', await wake('matches/g1/stints/s2', { pid: 'p2', on: 600 }), []);
     deepEq('nor the clock stopping', await wake('matches/g1/periods/0/end', Date.now()), []);
     deepEq('the clock starting again wakes the stretch-of-play sender', await wake('matches/g1/periods/1', { half: 1, start: Date.now() }), ['followPeriod']);
@@ -488,12 +493,13 @@ const toUid = (S, u) => S.sent().filter(m => m.data.uid === u);
     check('nor anyone who does not follow it', toUid(S, 'coach').length + toUid(S, 'adm').length + toUid(S, 'rosamum').length, 0);
     const m = toUid(S, 'mum')[0];
     check('said the way the open page says it', m.data.title, 'Goal — Flight');
-    check('with the score', m.data.body, 'Flight 1–0 Northgate');
+    check('her own child named, then the score', m.data.body, 'Ella · Flight 1–0 Northgate');
+    check('another team\'s family, roster closed: a shirt number', toUid(S, 'dad')[0].data.body, '#7 · Flight 1–0 Northgate');
     check('opening the game\'s Live tab', m.data.hash, '#/team/t1/game/g1/live');
     check('tagged as the open page tags it, so a phone showing both shows one', m.data.tag, 'minutes-g1-goal:x1');
     check('not held on the lock screen until dismissed', m.data.urgent, '');
     check('and kept an hour, not a day', m.webpush.headers.TTL, '3600');
-    check('no child named, the scorer included', /Ella|Rosa|Gia/.test(JSON.stringify(S.sent())), false);
+    check('no name reaches a phone the club keeps names from', /Ella|Rosa|Gia/.test(JSON.stringify(toUid(S, 'dad'))), false);
     check('read without anyone\'s switches: following is the switch', S.reads.some(p => /\/mute\//.test(p)), false);
     const n = S.sent().length;
     await again(S, 'followGoal', { code: 'CLUB', mid: 'g1', gid: 'x1', tree: ORGS_SERVER ? 'orgs' : 'workspaces' }, null);
@@ -501,6 +507,46 @@ const toUid = (S, u) => S.sent().filter(m => m.data.uid === u);
     S.sends.length = 0;
     await S.fire(W + 'matches/g1/goals/y1', { t: 900, side: 'them' });
     check('theirs too, with the score after it', toUid(S, 'mum')[0].data.title + ' / ' + toUid(S, 'mum')[0].data.body, 'Goal — Northgate / Flight 1–1 Northgate');
+  }
+  {
+    // names follow the club's setting and the reader, as shownName() does on the screen
+    const S = liveServer({ coach: { at: 1 }, rosamum: { at: 1 }, ella: { at: 1 }, dad: { at: 1 }, other: { at: 1 } });
+    await S.fire(W + 'matches/g1/goals/x1', { t: 600, side: 'us', pid: 'p1', assist: 'p2' });
+    const body = u => (toUid(S, u)[0] || { data: {} }).data.body;
+    check('a coach sees names', body('coach'), 'Ella, assist Rosa · Flight 1–0 Northgate');
+    check('so does a coach of another team', body('other'), 'Ella, assist Rosa · Flight 1–0 Northgate');
+    check('the scorer herself sees her own name, and a number for the rest', body('ella'), 'Ella, assist #9 · Flight 1–0 Northgate');
+    check('the assist\'s family sees her child, and a number for the scorer', body('rosamum'), '#7, assist Rosa · Flight 1–0 Northgate');
+    check('another family: numbers', body('dad'), '#7, assist #9 · Flight 1–0 Northgate');
+    S.sends.length = 0;
+    S.put(W + 'access/org/rosterOpen', true);
+    await S.fire(W + 'matches/g1/goals/y1', { t: 700, side: 'us', pid: 'p2' });
+    check('once the club opens the roster, every family sees names', body('dad'), 'Rosa · Flight 2–0 Northgate');
+  }
+  {
+    // at the sideline the goal is tapped first and its scorer added after
+    const S = liveServer({ mum: { at: 1 }, dad: { at: 1 } });
+    await S.fire(W + 'matches/g1/goals/x1', { t: 600, side: 'us' });
+    check('the goal at once, nobody named yet', toUid(S, 'mum')[0].data.body, 'Flight 1–0 Northgate');
+    S.sends.length = 0;
+    await S.fire(W + 'matches/g1/goals/x1/pid', 'p1');
+    const m = toUid(S, 'mum')[0];
+    check('then again with the scorer', m.data.body, 'Ella · Flight 1–0 Northgate');
+    check('under the same tag, so it replaces the first', m.data.tag, 'minutes-g1-goal:x1');
+    check('a number for a family the club keeps names from', toUid(S, 'dad')[0].data.body, '#7 · Flight 1–0 Northgate');
+    S.sends.length = 0;
+    await again(S, 'followScorer', { code: 'CLUB', mid: 'g1', gid: 'x1', tree: ORGS_SERVER ? 'orgs' : 'workspaces' }, null);
+    check('said once', S.sent().length, 0);
+    await S.fire(W + 'matches/g1/goals/x1/pid', 'p2');
+    check('a scorer corrected is said again, with the right child', toUid(S, 'mum')[0] ? toUid(S, 'mum')[0].data.body : '', '#9 · Flight 1–0 Northgate');
+    S.sends.length = 0;
+    S.put(W + 'matches/g1/goals/q1', { t: 900, side: 'us' });   // arrived without the goal trigger telling it
+    await S.fire(W + 'matches/g1/goals/q1/pid', 'p1');
+    check('a scorer on a goal never told says nothing', S.sent().length, 0);
+    await S.fire(W + 'matches/g1/goals/x2', { t: 1000, side: 'us', pid: 'p1' });
+    const n = S.sent().length;
+    await again(S, 'followScorer', { code: 'CLUB', mid: 'g1', gid: 'x2', tree: ORGS_SERVER ? 'orgs' : 'workspaces' }, null);
+    check('a goal told with its scorer is not told again for her', S.sent().length, n);
   }
   {
     const S = liveServer({ mum: { at: 1 } });

@@ -149,13 +149,15 @@ for (const field of ['date', 'kickoff', 'called'])
     push.onGameField(envOf(event), event.params, field, event.data.before.val()));
 
 /* A game somebody follows (push.js, onFollowed): its goals, each stretch of
-   play starting, each half ending and full time. Four small things a game
-   being played writes once each, never the game: a goal is created once
-   under its own id, a stretch of play is a new periods/{i} (its end, written
+   play starting, each half ending and full time. Small things a game being
+   played writes once each, never the game: a goal is created once under its
+   own id (and its scorer added once, a moment later), a stretch of play is a new periods/{i} (its end, written
    when the clock stops, is beneath it and wakes nothing), and currentHalf
    and ended change once a half. */
 both('followGoal', '{code}/matches/{mid}/goals/{gid}', onValueCreated, event =>
   push.onFollowed(envOf(event), event.params, 'goal', event.params.gid));
+both('followScorer', '{code}/matches/{mid}/goals/{gid}/pid', onValueWritten, event =>
+  push.onFollowed(envOf(event), event.params, 'scorer', event.params.gid, event.data.before.val()));
 both('followPeriod', '{code}/matches/{mid}/periods/{i}', onValueCreated, event =>
   push.onFollowed(envOf(event), event.params, 'period', event.params.i));
 both('followHalf', '{code}/matches/{mid}/currentHalf', onValueWritten, event =>

@@ -27,9 +27,14 @@ closed phone (builds 104 and 105); a followed game was the part of
   notifications on for. It wakes on a goal created, a stretch of play
   created, `currentHalf` and `ended`, never on the game, which a live game
   writes every few seconds; a game nobody follows costs one read per goal.
-- **Nobody is named, the scorer included.** On a club on `orgs/` a family
-  may not read another child's name, and a lock screen is no place to work
-  out who may see whom. The Live tab, once opened, names whom she may see.
+- **The scorer is named as the screen names her**, worked out for each
+  person it goes to: by name to admins, coaches and trackers, her own family
+  and herself, and to everyone once the club's admins open the roster
+  (*names or shirt numbers*, Club settings); otherwise `#7`. That is also
+  exactly what a family's phone may read on `orgs/`. A goal is usually
+  tapped first and its scorer added a moment later, so adding the scorer
+  sends the same notification again under the same tag: it replaces the
+  first, without a second buzz.
 - **Nothing late.** A goal sent hours on from a phone that had no signal, a
   backup loaded, or a game reopened next week says nothing; each moment is
   said once (a redelivered event included), and the follows are cleared at
