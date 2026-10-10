@@ -46,14 +46,7 @@ function jsonBlocks() {
    make. Each is a hard failure. */
 function loadRules() {
   const locked = readJson('database.rules.json').rules;
-  /* database.rules.json is built from tools/rules-source.json while clubs move
-     to orgs/ (tools/rules-build.js says why). The built file is what gets
-     published and what this walks; it has to be the build of the source, or
-     an edit made to one is not in the other. README explains the source. */
-  const built = require('../tools/rules-build.js');
-  if (built.build() !== fs.readFileSync(path.join(ROOT, 'database.rules.json'), 'utf8'))
-    throw new Error('database.rules.json is not the build of tools/rules-source.json: edit the source, then run node tools/rules-build.js');
-  const source = readJson('tools/rules-source.json').rules;
+  const source = locked;
   for (const f of fs.readdirSync(ROOT))
     if (/\.rules\b.*\.json$/.test(f) && f !== 'database.rules.json')
       throw new Error(f + ' is a second ruleset. There is one, database.rules.json, for every club: a database can only run one at a time.');
@@ -68,7 +61,7 @@ function loadRules() {
     const isRule = v => v && typeof v === 'object' && Object.keys(v).some(x => x[0] === '.' || x[0] === '$');
     for (const k of ['retired', 'appOwners'])
       if (frag && isRule(frag[k]) && JSON.stringify(frag[k]) !== JSON.stringify(source[k]))
-        throw new Error('README\'s "' + k + '" example no longer matches tools/rules-source.json');
+        throw new Error('README\'s "' + k + '" example no longer matches database.rules.json');
   }
   const firebase = readJson('firebase.json');
   if (((firebase.database || {}).rules) !== 'database.rules.json')
@@ -134,6 +127,8 @@ function withWrite(tree, p, value) {
 /* The rules' string methods that JavaScript spells differently. Only the ones
    database.rules.json uses: a drill's link has to begin with https://. */
 if (!String.prototype.beginsWith) String.prototype.beginsWith = String.prototype.startsWith;
+// and a child's birth date has to be a date (AUTH.md, *A child in the club*)
+if (!String.prototype.matches) String.prototype.matches = function (re) { return re.test(String(this)); };
 
 function evalExpr(expr, ctx) {
   if (typeof expr === 'boolean') return expr;
@@ -210,15 +205,15 @@ function validated(p, value, after, auth = null, base = DB) {
   return true;
 }
 
-/* The whole walk runs twice: once as written, against clubs on
-   workspaces/{code}, and once (`node test/run.js rules-orgs`, RULES_TREE=orgs) against the same clubs
-   moved to orgs/{code} (AUTH.md, *The move to `orgs/{orgId}`*). The checks
-   below say what they always said, in the old tree's paths; in orgs mode
-   each club in the mock is moved the way moveClub moves it before every
-   check, and each path goes where it moved to. So every expectation the
-   rules held a club to before the move holds it after, and the few that
-   are meant to differ say so with orgsOnly(). */
-const ORGS = process.env.RULES_TREE === 'orgs';
+/* Every club is on orgs/{code} (AUTH.md, *The move to `orgs/{orgId}`*), and
+   the old workspaces/ tree is gone from the rules (build order step 5). The
+   checks below are written the way the app names a path in memory, which is
+   the old tree's shape (a team with its players, access with members, org
+   and log inside), because that is what clubPath() translates from on every
+   write the app makes. Before every check the mock is laid out the way
+   orgs/ keeps a club (moved()) and each path goes where clubPath() would
+   send it (orgsPath()), so what is held here is exactly what a phone's write
+   meets. Checks written straight at orgs/ paths are not moved. */
 function moved(tree) {
   const out = JSON.parse(JSON.stringify(tree));
   out.orgs = out.orgs || {};
@@ -244,13 +239,12 @@ function orgsPath(p) {
     .replace(/^access\/(members|org|log)(?=\/|$)/, '$1');
   return 'orgs/' + m[1] + '/' + rest;
 }
-const canRead = (p, auth) => ORGS ? granted('read', orgsPath(p), auth, null, moved(DB)) : granted('read', p, auth);
+const canRead = (p, auth) => granted('read', orgsPath(p), auth, null, moved(DB));
 function canWriteOn(base, p, value, auth) {
   const after = withWrite(base, p, value);
   return granted('write', p, auth, after, base) && validated(p, value, after, auth, base);
 }
 function canWrite(p, value, auth) {
-  if (!ORGS) return canWriteOn(DB, p, value, auth);
   const base = moved(DB), q = orgsPath(p);
   /* A whole team carries its squad today; on orgs/ the app writes the two
      apart (the team, then squad/{tid}), and both have to be allowed. */
@@ -1824,7 +1818,7 @@ reads('nor read', COACH, 'shareOwners/sh1', false);
      What each write may be is the server's to check, against the club. */
   console.log('\n--- asking the server: importAsks ---');
   const I = 'importAsks/CLUB/';
-  const plan = (extra = {}) => ({ at: NOW, tree: 'workspaces', writes: [{ p: 'workspaces/CLUB/teams/t9', v: { id: 't9', name: 'New' } }], ...extra });
+  const plan = (extra = {}) => ({ at: NOW, writes: [{ p: 'orgs/CLUB/teams/t9', v: { id: 't9', name: 'New' } }], ...extra });
   writes('an admin sends an import, in her own name', ADM, I + 'adm/x1', plan(), true);
   writes('not a coach', COACH, I + 'coach/x1', plan(), false);
   writes('not a tracker', TRK, I + 'trk/x1', plan(), false);
@@ -1835,7 +1829,6 @@ reads('nor read', COACH, 'shareOwners/sh1', false);
   writes('not with no writes', ADM, I + 'adm/x1', { at: NOW }, false);
   writes('not with an answer of her own', ADM, I + 'adm/x1', plan({ answer: { ok: true } }), false);
   writes('not stamped an hour ago', ADM, I + 'adm/x1', plan({ at: NOW - H }), false);
-  writes('not on a tree that is neither', ADM, I + 'adm/x1', plan({ tree: 'public' }), false);
   reads('she reads her own asks and their answers', ADM, I + 'adm', true);
   reads('nobody else\'s', COACH, I + 'adm', false);
   DB.importAsks = { CLUB: { adm: { x1: { ...plan(), answer: { ok: true, n: 1, at: NOW } } } } };
@@ -1958,9 +1951,9 @@ reads('nor read', COACH, 'shareOwners/sh1', false);
   DB.orgs.ORGC = ORGC;
   const O = 'orgs/ORGC/';
   const OA = { uid: 'oa' }, OC = { uid: 'oc' }, OC2 = { uid: 'oc2' }, OT = { uid: 'ot' }, OM = { uid: 'om' }, OSELF = { uid: 'oself' };
-  // straight at orgs/: these paths are not the old tree's, so neither pass moves them
-  const r = (label, who, p, want) => check(label, granted('read', p, who, null, ORGS ? moved(DB) : DB), want);
-  const w = (label, who, p, v, want) => check(label, canWriteOn(ORGS ? moved(DB) : DB, p, v, who), want);
+  // straight at orgs/ paths, which orgsPath() leaves as they are
+  const r = (label, who, p, want) => check(label, granted('read', p, who, null, moved(DB)), want);
+  const w = (label, who, p, v, want) => check(label, canWriteOn(moved(DB), p, v, who), want);
 
   console.log('\n--- a club on orgs/: who reads what ---');
   r('nobody reads the club whole, not even its admin', OA, 'orgs/ORGC', false);
@@ -2188,6 +2181,286 @@ reads('nor read', COACH, 'shareOwners/sh1', false);
     DB.invites = saved.inv; if (saved.inv === undefined) delete DB.invites;
   }
 
+  /* AUTH.md, *A child in the club, and registration* (the owner, 2026-10-09):
+     one record per child per club, under the club, beside the squad. Her
+     family reads her by path; coaches and admins read every child; nobody
+     else does. Her family on a team is a copy of the squad's (anyone may
+     write it, and it can never claim more than the squad says); a family
+     named on the child herself comes from an invite that names her. Only her
+     family confirms her details. */
+  console.log('\n--- a club on orgs/: a child in the club ---');
+  {
+    const saved = { inv: DB.invites, fam: DB.families };
+    ORGC.squad.t1.p1.child = 'p1';
+    ORGC.children = {
+      p1: { id: 'p1', first: 'Ella', last: 'Fitz', club: true, by: 'oa', at: NOW, teams: { t1: 'p1' }, guardians: { om: 't1' } },
+      k2: { id: 'k2', first: 'Nia', club: true, by: 'oc', at: NOW },
+      k3: { id: 'k3', first: 'Zed', by: 'oa', at: NOW }
+    };
+    const NEWMUM = { uid: 'nmum' };
+    r('her family reads her record', OM, O + 'children/p1', true);
+    r('— not another child\'s', OM, O + 'children/k2', false);
+    r('— nor the list', OM, O + 'children', false);
+    r('a coach of any team reads every child (decided 2026-10-09)', OC2, O + 'children', true);
+    r('the admin does', OA, O + 'children', true);
+    r('not a tracker', OT, O + 'children/p1', false);
+    r('not the player herself, unless the record names her', OSELF, O + 'children/p1', false);
+    r('not a stranger', RANDO, O + 'children/p1', false);
+
+    w('a coach registers a child for a family: in the club, in her own name', OC, O + 'children/k9', { id: 'k9', first: 'Mia', club: true, by: 'oc', at: NOW }, true);
+    w('— not in someone else\'s name', OC, O + 'children/k9', { id: 'k9', first: 'Mia', club: true, by: 'oa', at: NOW }, false);
+    w('— not naming a family on it', OC, O + 'children/k9', { id: 'k9', first: 'Mia', club: true, by: 'oc', at: NOW, family: { om: true } }, false);
+    w('— nor confirmed for them', OC, O + 'children/k9', { id: 'k9', first: 'Mia', club: true, by: 'oc', at: NOW, confirmed: { by: 'oc', at: NOW } }, false);
+    w('— not over a child already there', OC, O + 'children/k2', { id: 'k2', first: 'Mia', club: true, by: 'oc', at: NOW }, false);
+    w('— nothing she has no field for', OC, O + 'children/k9', { id: 'k9', first: 'Mia', club: true, by: 'oc', at: NOW, nhs: '123' }, false);
+    w('a tracker registers nobody', OT, O + 'children/k9', { id: 'k9', first: 'Mia', club: true, by: 'ot', at: NOW }, false);
+    w('nor a parent, into the club', OM, O + 'children/k9', { id: 'k9', first: 'Mia', club: true, by: 'om', at: NOW }, false);
+    w('the coach who made it fixes it while the family has not confirmed', OC, O + 'children/k2/first', 'Nina', true);
+    w('— a birth date', OC, O + 'children/k2/born', '2016-05-03', true);
+    w('— that is a date', OC, O + 'children/k2/born', 'May 3rd', false);
+    w('another coach does not', OC2, O + 'children/k2/first', 'Nina', false);
+    w('the coach places her on her own team, once the squad points at her', OC, O + 'children/p1/teams/t1', 'p1', true);
+    w('— not on a squad record that is somebody else', OC, O + 'children/k2/teams/t1', 'p2', false);
+    w('— not on another team', OC2, O + 'children/p1/teams/t1', 'p1', false);
+    w('the squad takes the pointer', OC, O + 'squad/t1/p2/child', 'k2', true);
+
+    w('her family fills in what is missing', OM, O + 'children/p1/born', '2016-05-03', true);
+    w('— and is the one who confirms', OM, O + 'children/p1/confirmed', { by: 'om', at: NOW }, true);
+    w('— in her own name only', OM, O + 'children/p1/confirmed', { by: 'oa', at: NOW }, false);
+    w('the admin cannot confirm for her', OA, O + 'children/p1/confirmed', { by: 'oa', at: NOW }, false);
+    w('— nor rewrite the record with a confirmation in it', OA, O + 'children/p1', { ...ORGC.children.p1, confirmed: { by: 'oa', at: NOW } }, false);
+    ORGC.children.p1.confirmed = { by: 'om', at: NOW };
+    w('— but rewrites the record leaving hers as it was', OA, O + 'children/p1', { ...ORGC.children.p1, last: 'Fitz-Lee' }, true);
+    w('once confirmed, the coach no longer changes it', OC, O + 'children/k2/first', 'Nina', true);
+    ORGC.children.k2.confirmed = { by: 'om', at: NOW };
+    w('— the family\'s word stands', OC, O + 'children/k2/first', 'Nina', false);
+    delete ORGC.children.k2.confirmed;
+    w('a tracker changes nothing', OT, O + 'children/p1/first', 'X', false);
+    w('another family changes nothing', OSELF, O + 'children/p1/first', 'X', false);
+    w('nobody but staff puts her in the club', OM, O + 'children/p1/club', true, false);
+
+    console.log('\n--- a club on orgs/: her family, as the squad says ---');
+    ORGC.squad.t1.p1.guardians.nmum = 'i1';
+    w('a family the squad names writes herself onto the child', NEWMUM, O + 'children/p1/guardians/nmum', 't1', true);
+    w('— and anyone may write that copy for her', OC, O + 'children/p1/guardians/nmum', 't1', true);
+    w('— but not on a child the squad record is not', NEWMUM, O + 'children/k2/guardians/nmum', 't1', false);
+    w('nobody the squad does not name', RANDO, O + 'children/p1/guardians/rando', 't1', false);
+    w('— nor while the squad still names her, taken off', OC, O + 'children/p1/guardians/nmum', null, true);
+    ORGC.children.p1.guardians.nmum = 't1';
+    w('— a copy the squad still backs stays', OT, O + 'children/p1/guardians/nmum', null, false);
+    delete ORGC.squad.t1.p1.guardians.nmum;
+    w('— and goes once it does not, whoever notices', OT, O + 'children/p1/guardians/nmum', null, true);
+    delete ORGC.children.p1.guardians.nmum;
+
+    console.log('\n--- a club on orgs/: a child on no team, and her family let in ---');
+    DB.invites = { ...(DB.invites || {}), ic: { ws: 'ORGC', role: 'parent', child: 'k2', by: 'oa', at: NOW, expiresAt: NOW + 864e5, used: { by: 'nmum', at: NOW } },
+      icx: { ws: 'ORGC', role: 'parent', child: 'k2', by: 'oa', at: NOW, expiresAt: NOW - 1, used: { by: 'nmum', at: NOW } } };
+    w('an admin makes a parent invite naming a child on no team', OA, 'invites/inew', { ws: 'ORGC', role: 'parent', child: 'k2', by: 'oa', at: NOW, expiresAt: NOW + 864e5 }, true);
+    w('— a coach does not', OC, 'invites/inew', { ws: 'ORGC', role: 'parent', child: 'k2', by: 'oc', at: NOW, expiresAt: NOW + 864e5 }, false);
+    w('a parent invite still names somebody', OA, 'invites/inew', { ws: 'ORGC', role: 'parent', by: 'oa', at: NOW, expiresAt: NOW + 864e5 }, false);
+    w('she names herself on the child with it', NEWMUM, O + 'children/k2/family/nmum', 'ic', true);
+    w('— not on another child', NEWMUM, O + 'children/p1/family/nmum', 'ic', false);
+    w('— not with an expired one', NEWMUM, O + 'children/k2/family/nmum', 'icx', false);
+    w('— not with somebody else\'s', RANDO, O + 'children/k2/family/rando', 'ic', false);
+    ORGC.children.k2.family = { nmum: 'ic' };
+    w('she is let into the club for her child', NEWMUM, O + 'access/index/nmum', 'k2', true);
+    r('— reads her', NEWMUM, O + 'children/k2', true);
+    w('— and confirms her', NEWMUM, O + 'children/k2/confirmed', { by: 'nmum', at: NOW }, true);
+    w('— keeps her own list of her children', NEWMUM, 'families/nmum/ORGC/k2', true, true);
+    r('— which only she reads', NEWMUM, 'families/nmum', true);
+    r('— nobody else', OA, 'families/nmum', false);
+    w('— and lists no child that is not hers', NEWMUM, 'families/nmum/ORGC/p1', true, false);
+    w('— nor writes anyone else\'s', OA, 'families/nmum/ORGC/k2', true, false);
+    w('she takes herself off', NEWMUM, O + 'children/k2/family/nmum', null, true);
+    ORGC.children.k3.family = { rando: true };
+    w('a child the club has not let in lets nobody in', RANDO, O + 'access/index/rando', 'k3', false);
+    w('nor does a child that is not hers', RANDO, O + 'access/index/rando', 'k2', false);
+    delete ORGC.squad.t1.p1.child; delete ORGC.children;
+    DB.invites = saved.inv; if (saved.inv === undefined) delete DB.invites;
+  }
+
+  /* Care details (AUTH.md, *Care: what a coach needs at the pitch*; the
+     owner, 2026-10-09): who to call and what a coach must know. The family's
+     own at care/{cid}, read by her family and the admins; a copy per team at
+     teamCare/{tid}/{pid}, read by that team's coaches and the admins. Never
+     a tracker, a helper, another team's coach, a viewer or a fan. */
+  console.log('\n--- a club on orgs/: care details ---');
+  {
+    ORGC.squad.t1.p1.child = 'p1';
+    ORGC.children = { p1: { id: 'p1', first: 'Ella', club: true, by: 'oa', at: NOW, teams: { t1: 'p1' }, guardians: { om: 't1' } } };
+    const rec = { by: 'om', at: NOW, contacts: { 0: { name: 'Mo Fitz', phone: '555 0101', rel: 'Mum' } }, allergies: 'Peanuts', medical: '', meds: 'Inhaler' };
+    ORGC.care = { p1: rec };
+    ORGC.teamCare = { t1: { p1: { ...rec, cid: 'p1' } } };
+    r('her family reads her care details', OM, O + 'care/p1', true);
+    r('the admin does', OA, O + 'care/p1', true);
+    r('her coach does not read the family\'s own copy', OC, O + 'care/p1', false);
+    r('nor the list', OC, O + 'care', false);
+    r('her team\'s coach reads the team\'s copy', OC, O + 'teamCare/t1', true);
+    r('— the admin too', OA, O + 'teamCare/t1', true);
+    r('— not another team\'s coach (decided 2026-10-09)', OC2, O + 'teamCare/t1', false);
+    r('— not the team\'s tracker', OT, O + 'teamCare/t1', false);
+    r('— not another family', OSELF, O + 'teamCare/t1/p1', false);
+    r('— not a stranger', RANDO, O + 'care/p1', false);
+    w('her family writes them, in her own name', OM, O + 'care/p1', { ...rec, at: NOW + 1 }, true);
+    w('— not in someone else\'s', OM, O + 'care/p1', { ...rec, by: 'oa' }, false);
+    w('— nothing they have no field for', OM, O + 'care/p1', { ...rec, nhs: '123' }, false);
+    w('— a phone number that is one', OM, O + 'care/p1', { ...rec, contacts: { 0: { name: 'Mo', phone: '' } } }, false);
+    w('her coach does not', OC, O + 'care/p1', { ...rec, by: 'oc' }, false);
+    w('nor a tracker', OT, O + 'care/p1', { ...rec, by: 'ot' }, false);
+    w('the admin does', OA, O + 'care/p1', { ...rec, by: 'oa' }, true);
+    w('her family writes the team\'s copy of her own child', OM, O + 'teamCare/t1/p1', { ...rec, cid: 'p1' }, true);
+    w('— never one naming another child', OM, O + 'teamCare/t1/p1', { ...rec, cid: 'q1' }, false);
+    w('— nor another child\'s', OM, O + 'teamCare/t1/p2', { ...rec, cid: 'p2' }, false);
+    w('the coach never writes care', OC, O + 'teamCare/t1/p1', { ...rec, cid: 'p1' }, false);
+    w('the admin does', OA, O + 'teamCare/t1/p1', { ...rec, cid: 'p1' }, true);
+    delete ORGC.care; delete ORGC.teamCare; delete ORGC.children; delete ORGC.squad.t1.p1.child;
+  }
+
+  /* Registration (AUTH.md, *Registration*): programs and waivers the club
+     reads and admins write; a program link anyone signed in reads by id; a
+     family who is not in the club makes her child through it, and her
+     registration, and agrees to waivers in her own name, once; only an admin
+     moves a registration past sent. */
+  console.log('\n--- a club on orgs/: registration ---');
+  {
+    const saved = { ro: DB.regOpen };
+    const prog = { id: 'f27', name: 'Fall 2027', kind: 'season', born: { lo: 2014, hi: 2019 }, waivers: { w1: true }, link: 'rl1', by: 'oa', at: NOW };
+    ORGC.programs = { f27: prog, old: { ...prog, id: 'old', closed: true } };
+    ORGC.waivers = { w1: { id: 'w1', title: 'Photos', v: 2, text: 'We may take photos.', by: 'oa', at: NOW } };
+    ORGC.children = { p1: { id: 'p1', first: 'Ella', club: true, by: 'oa', at: NOW, teams: { t1: 'p1' }, guardians: { om: 't1' } } };
+    DB.regOpen = { rl1: { ws: 'ORGC', prog: 'f27', name: 'Fall 2027', kind: 'season', by: 'oa', at: NOW }, rlx: { ws: 'ORGC', prog: 'old', name: 'Old', kind: 'season', by: 'oa', at: NOW, closed: true } };
+    const NEW = { uid: 'nfam' };
+    r('everyone in the club reads the programs', OM, O + 'programs', true);
+    r('— and the waivers', OT, O + 'waivers', true);
+    r('a stranger reads neither', NEW, O + 'programs', false);
+    r('— but reads a program link, by id', NEW, 'regOpen/rl1', true);
+    r('— not signed out', OUT, 'regOpen/rl1', false);
+    w('an admin makes a program', OA, O + 'programs/s28', { ...prog, id: 's28' }, true);
+    w('— with nothing it has no field for', OA, O + 'programs/s28', { ...prog, id: 's28', secret: 1 }, false);
+    w('a coach does not', OC, O + 'programs/s28', { ...prog, id: 's28', by: 'oc' }, false);
+    w('an admin publishes its link', OA, 'regOpen/rl2', { ws: 'ORGC', prog: 's28', name: 'Spring', kind: 'season', by: 'oa', at: NOW }, true);
+    w('— for her own club only', OC2, 'regOpen/rl2', { ws: 'ORGC', prog: 's28', name: 'Spring', kind: 'season', by: 'oc2', at: NOW }, false);
+    w('— and takes it down', OA, 'regOpen/rl1', null, true);
+    w('nobody else takes it down', OM, 'regOpen/rl1', null, false);
+    w('an admin writes a waiver', OA, O + 'waivers/w2', { id: 'w2', title: 'Kit', v: 1, text: 'Wear shin pads.', by: 'oa', at: NOW }, true);
+    w('a coach does not', OC, O + 'waivers/w2', { id: 'w2', title: 'Kit', v: 1, text: 'x', by: 'oc', at: NOW }, false);
+
+    console.log('\n--- a family who is not in the club yet ---');
+    const kid = { id: 'n1', first: 'Nia', last: 'Cole', born: '2016-03-03', gender: 'F', by: 'nfam', at: NOW, via: 'rl1', family: { nfam: 'rl1' }, confirmed: { by: 'nfam', at: NOW } };
+    w('makes her child through the link, as her family', NEW, O + 'children/n1', kid, true);
+    w('— not into the club', NEW, O + 'children/n1', { ...kid, club: true }, false);
+    w('— not onto a team', NEW, O + 'children/n1', { ...kid, teams: { t1: 'p9' } }, false);
+    w('— not through a closed link', NEW, O + 'children/n1', { ...kid, via: 'rlx', family: { nfam: 'rlx' } }, false);
+    w('— not through a link of another club', NEW, O + 'children/n1', { ...kid, via: 'nope', family: { nfam: 'nope' } }, false);
+    w('— not naming somebody else as the family', NEW, O + 'children/n1', { ...kid, family: { other: 'rl1' } }, false);
+    w('— not over a child already there', NEW, O + 'children/p1', { ...kid, id: 'p1' }, false);
+    ORGC.children.n1 = kid;
+    r('she reads the child she made', NEW, O + 'children/n1', true);
+    w('— and is not in the club for it', NEW, O + 'access/index/nfam', 'n1', false);
+    w('writes her care details', NEW, O + 'care/n1', { by: 'nfam', at: NOW, contacts: { 0: { name: 'Ann', phone: '555' } } }, true);
+    const reg = { st: 'sent', by: 'nfam', at: NOW, sentBy: 'nfam', sentAt: NOW, answers: { q1: 'Yes' }, fam: { name: 'Ann', email: 'ann@x.test' } };
+    w('sends the registration', NEW, O + 'regs/f27/n1', reg, true);
+    w('— not accepted by herself', NEW, O + 'regs/f27/n1', { ...reg, st: 'accepted' }, false);
+    w('— not for a closed program', NEW, O + 'regs/old/n1', reg, false);
+    w('— not for a program that is not there', NEW, O + 'regs/nope/n1', reg, false);
+    w('— not for somebody else\'s child', NEW, O + 'regs/f27/p1', reg, false);
+    w('— not placing her on a team', NEW, O + 'regs/f27/n1', { ...reg, team: 't1' }, false);
+    w('agrees to a waiver, in her own name', NEW, O + 'agreed/f27/n1/w1_2', { by: 'nfam', at: NOW, name: 'Ann Cole' }, true);
+    w('— not in somebody else\'s', NEW, O + 'agreed/f27/n1/w1_2', { by: 'om', at: NOW, name: 'Mo' }, false);
+    w('— not for another family\'s child', NEW, O + 'agreed/f27/p1/w1_2', { by: 'nfam', at: NOW, name: 'Ann' }, false);
+    w('staff do not agree for a family', OA, O + 'agreed/f27/n1/w1_2', { by: 'oa', at: NOW, name: 'Ann' }, false);
+    ORGC.agreed = { f27: { n1: { w1_2: { by: 'nfam', at: NOW, name: 'Ann Cole' } } } };
+    w('an agreement is never changed', NEW, O + 'agreed/f27/n1/w1_2', { by: 'nfam', at: NOW + 1, name: 'A' }, false);
+    ORGC.regs = { f27: { n1: reg } };
+    w('— nor taken back while her registration stands', NEW, O + 'agreed/f27/n1/w1_2', null, false);
+    delete ORGC.regs;
+    r('the admin reads every registration of a program', OA, O + 'regs/f27', true);
+    r('— and the agreements', OA, O + 'agreed/f27', true);
+    r('a coach reads neither', OC, O + 'regs/f27', false);
+    r('her family reads her own', NEW, O + 'regs/f27/n1', true);
+    r('— not the list', NEW, O + 'regs/f27', false);
+    ORGC.regs = { f27: { n1: reg } };
+    w('she withdraws it', NEW, O + 'regs/f27/n1', { ...reg, st: 'withdrawn' }, true);
+    w('the admin accepts it', OA, O + 'regs/f27/n1/st', 'accepted', true);
+    w('— with a note of her own', OA, O + 'regs/f27/n1/note', 'Sibling on U12', true);
+    w('— lets the child into the club', OA, O + 'children/n1/club', true, true);
+    ORGC.regs.f27.n1.st = 'accepted'; ORGC.regs.f27.n1.note = 'Sibling on U12'; ORGC.children.n1.club = true;
+    w('— and so the family', NEW, O + 'access/index/nfam', 'n1', true);
+    w('once accepted, the family does not send it back to waiting', NEW, O + 'regs/f27/n1', { ...reg, note: 'Sibling on U12' }, false);
+    w('— nor rewrite the admin\'s note', NEW, O + 'regs/f27/n1', { ...reg, st: 'withdrawn', note: 'nothing' }, false);
+    w('— but may withdraw', NEW, O + 'regs/f27/n1', { ...reg, st: 'withdrawn', note: 'Sibling on U12' }, true);
+
+    console.log('\n--- staff register a child for her family ---');
+    w('a coach puts a child into a program for her family, as a draft', OC, O + 'regs/f27/p1', { st: 'draft', by: 'oc', at: NOW }, true);
+    w('— never sent', OC, O + 'regs/f27/p1', { st: 'sent', by: 'oc', at: NOW, sentBy: 'oc' }, false);
+    w('— not over one that is there', OC, O + 'regs/f27/n1', { st: 'draft', by: 'oc', at: NOW }, false);
+    w('— not for a child that is not in the club', OC, O + 'regs/f27/zz', { st: 'draft', by: 'oc', at: NOW }, false);
+    w('a tracker does not', OT, O + 'regs/f27/p1', { st: 'draft', by: 'ot', at: NOW }, false);
+    ORGC.regs.f27.p1 = { st: 'draft', by: 'oc', at: NOW };
+    w('her family finishes it, keeping who started it', OM, O + 'regs/f27/p1', { st: 'sent', by: 'oc', at: NOW, sentBy: 'om', sentAt: NOW }, true);
+    w('— not claiming she started it', OM, O + 'regs/f27/p1', { st: 'sent', by: 'om', at: NOW, sentBy: 'om', sentAt: NOW }, false);
+    delete ORGC.programs; delete ORGC.waivers; delete ORGC.children; delete ORGC.regs; delete ORGC.agreed;
+    DB.regOpen = saved.ro; if (saved.ro === undefined) delete DB.regOpen;
+  }
+
+  /* A child in the club on no team books training sessions (AUTH.md,
+     *Sessions for a child on no team*): as `club`, her family found on her
+     club record, once the club has let her in. */
+  console.log('\n--- a club on orgs/: sessions for a child on no team ---');
+  {
+    const savedT = DB.training;
+    DB.training = { ...(DB.training || {}), ORGC: { sessions: { s1: { id: 's1', coach: 'oc', open: true, date: '2026-10-20', start: '17:00' }, s2: { id: 's2', coach: 'oc', open: true, date: '2026-10-21', start: '17:00' } }, booked: { s1: { k5: { tid: 'club', st: 'in', by: 'oc', at: NOW } } }, fees: { s1: { k5: { paid: 10, how: 'cash', at: NOW, by: 'oc' } } } } };
+    ORGC.children = { k5: { id: 'k5', first: 'Mia', club: true, by: 'oa', at: NOW, family: { kmum: 'ik' } }, k6: { id: 'k6', first: 'Zed', by: 'kz', at: NOW, family: { kz: 'rl1' } } };
+    ORGC.access.index.kmum = 'k5'; ORGC.access.index.kz = 'k6';
+    const KM = { uid: 'kmum' }, KZ = { uid: 'kz' };
+    const ask = (tid) => ({ tid, st: 'asked', by: 'kmum', at: NOW });
+    w('her family asks for a place for her, as the club', KM, 'training/ORGC/booked/s2/k5', ask('club'), true);
+    w('— not for a child that is not hers', KM, 'training/ORGC/booked/s2/k6', ask('club'), false);
+    w('— not a place of her own giving', KM, 'training/ORGC/booked/s2/k5', { tid: 'club', st: 'in', by: 'kmum', at: NOW }, false);
+    w('— nor for a child the club has not let in', KZ, 'training/ORGC/booked/s2/k6', { tid: 'club', st: 'asked', by: 'kz', at: NOW }, false);
+    r('she reads what was paid for her child\'s place', KM, 'training/ORGC/fees/s1/k5', true);
+    r('— nobody else\'s family does', KZ, 'training/ORGC/fees/s1/k5', false);
+    r('her packages', KM, 'training/ORGC/packs/club/k5', true);
+    r('— and their places used', KM, 'training/ORGC/packuse/club/k5', true);
+    r('— not another family\'s', KZ, 'training/ORGC/packs/club/k5', false);
+    delete ORGC.children; delete ORGC.access.index.kmum; delete ORGC.access.index.kz;
+    DB.training = savedT; if (savedT === undefined) delete DB.training;
+  }
+
+  /* Deleting (AUTH.md, *Deleting*): a family deletes her own registration,
+     then its agreements, and a child she made through a link who is in no
+     team and not let into the club; an admin deletes anything; asking for
+     an account to be forgotten is the account's own. */
+  console.log('\n--- a club on orgs/: deleting ---');
+  {
+    ORGC.children = {
+      n1: { id: 'n1', first: 'Nia', by: 'nf', at: NOW, via: 'rl1', family: { nf: 'rl1' } },
+      n2: { id: 'n2', first: 'Kit', by: 'nf', at: NOW, via: 'rl1', family: { nf: 'rl1' }, club: true },
+      p1: { id: 'p1', first: 'Ella', club: true, by: 'oa', at: NOW, teams: { t1: 'p1' }, guardians: { om: 't1' } }
+    };
+    ORGC.regs = { f27: { n1: { st: 'sent', by: 'nf', at: NOW }, p1: { st: 'placed', by: 'om', at: NOW } } };
+    ORGC.agreed = { f27: { n1: { w1_2: { by: 'nf', at: NOW, name: 'N' } } } };
+    const NF = { uid: 'nf' };
+    w('her family deletes her registration', NF, O + 'regs/f27/n1', null, true);
+    w('— not another family\'s', NF, O + 'regs/f27/p1', null, false);
+    w('her agreements stay while the registration is there', NF, O + 'agreed/f27/n1/w1_2', null, false);
+    delete ORGC.regs.f27.n1;
+    w('— and go with it once it is gone', NF, O + 'agreed/f27/n1/w1_2', null, true);
+    w('the admin deletes any', OA, O + 'agreed/f27/n1/w1_2', null, true);
+    w('a coach does not', OC, O + 'agreed/f27/n1/w1_2', null, false);
+    w('a child she made through a link, on no team and not let in, goes too', NF, O + 'children/n1', null, true);
+    w('— not one the club has let in: that is the club\'s to delete', NF, O + 'children/n2', null, false);
+    w('— nor one on a team', OM, O + 'children/p1', null, false);
+    w('the admin deletes a child\'s record', OA, O + 'children/n2', null, true);
+    w('a coach does not', OC, O + 'children/n2', null, false);
+    w('her care details go with her family\'s say', NF, O + 'care/n1', null, true);
+    w('asking for her account to be forgotten is hers', NF, 'forgetRequests/nf', { at: NOW }, true);
+    w('— nobody else\'s', NF, 'forgetRequests/om', { at: NOW }, false);
+    w('— and the answer is the server\'s', NF, 'forgetRequests/nf', { at: NOW, answer: { ok: true } }, false);
+    r('she reads the answer', NF, 'forgetRequests/nf', true);
+    delete ORGC.children; delete ORGC.regs; delete ORGC.agreed;
+  }
+
   /* Links with limits (the owner, 2026-10-09): how many people may use one,
      and until when. A rule cannot count, so a link for several carries one
      seat per person, each taken once; a page anyone may open carries an end
@@ -2312,49 +2585,22 @@ reads('nor read', COACH, 'shareOwners/sh1', false);
   w('every other role still names its team', OA, 'invites/inv8', { ws: 'ORGC', by: 'oa', role: 'coach', at: NOW, expiresAt: NOW + 1e9 }, false);
   delete ORGC.access.viewers; delete ORGC.access.index.ov; delete ORGC.coachNotes;
 
-  console.log('\n--- a club on orgs/: one tree each ---');
-  /* A club is on exactly one tree, which is what lets every root rule ask
-     "orgs/{code}/access exists" to know which tree to read. So nobody may
-     start orgs/{code} under a code the old tree still holds (it would turn
-     every training, message and invite rule for that club over to her), nor
-     start the old tree again under a code that has moved. */
-  DB.workspaces.OLDC = { access: { admins: { oldadm: true }, index: { oldadm: true } }, teams: { t1: { id: 't1', name: 'Old' } } };
-  DB.workspaces.GONE = { moved: { to: 'orgs', at: 1, by: 'ga' } };
-  const keepOld = ORGS ? (() => { const v = moved(DB); v.workspaces.OLDC = DB.workspaces.OLDC; delete v.orgs.OLDC; return v; })() : DB;
-  const wk = (label, who, p, v, want) => check(label, canWriteOn(keepOld, p, v, who), want);
-  wk('nobody starts orgs/ under a code the old tree holds', RANDO, 'orgs/OLDC/access/admins/rando', true, false);
-  wk('— nor its index', RANDO, 'orgs/OLDC/access/index/rando', true, false);
-  wk('nobody starts the old tree again under a moved code', RANDO, 'workspaces/GONE/access/admins/rando', true, false);
-  wk('— nor its index', RANDO, 'workspaces/GONE/access/index/rando', true, false);
-  wk('nor under a code orgs/ holds', RANDO, 'workspaces/ORGC/access/admins/rando', true, false);
-  wk('nobody writes the moved marker but the server', OA, 'workspaces/GONE/moved', null, false);
-  /* Not even her own entry: the old tree's one write a stranger could make.
-     A phone that has not heard of the move writes it on signing in, and it
-     would put access back under the old tree, which is how every phone tells
-     a club still there from one that has moved. */
-  wk('nobody writes her own name on the old tree of a moved club', RANDO, 'workspaces/GONE/access/members/rando', { name: 'R' }, false);
-  wk('— nor of a club on orgs/', OM, 'workspaces/ORGC/access/members/om', { name: 'Mo' }, false);
-  wk('a brand-new code starts on orgs/', RANDO, 'orgs/BRANDNEW/access/admins/rando', true, true);
-  delete DB.workspaces.OLDC; delete DB.workspaces.GONE;
-
-  console.log('\n--- asking for a club to be moved ---');
-  /* moveRequests/{code}: an admin of the club asks, as herself; the server
-     (functions/move.js) checks her again before it moves anything. */
-  writes('its admin asks', ADM, 'moveRequests/CLUB', { by: 'adm', at: NOW }, true);
-  writes('not in someone else\'s name', ADM, 'moveRequests/CLUB', { by: 'coach', at: NOW }, false);
-  writes('a coach does not', COACH, 'moveRequests/CLUB', { by: 'coach', at: NOW }, false);
-  writes('nor a parent', MUM, 'moveRequests/CLUB', { by: 'mum', at: NOW }, false);
-  writes('nor a stranger', RANDO, 'moveRequests/CLUB', { by: 'rando', at: NOW }, false);
-  writes('nor an answer written by a phone', ADM, 'moveRequests/CLUB', { by: 'adm', at: NOW, result: { ok: true } }, false);
-  // why the app looks before it clears: deleting a request that is not there is a write the rule refuses
-  writes('clearing one that is not there is refused', ADM, 'moveRequests/CLUB', null, false);
-  DB.moveRequests = { CLUB: { by: 'adm', at: 1, result: { ok: false, why: 'A game is being played.' } } };
-  reads('she reads the answer', ADM, 'moveRequests/CLUB', true);
-  reads('a coach does not', COACH, 'moveRequests/CLUB', false);
-  writes('she clears it to ask again', ADM, 'moveRequests/CLUB', null, true);
-  writes('a coach cannot', COACH, 'moveRequests/CLUB', null, false);
-  writes('nor ask over the top of one', ADM, 'moveRequests/CLUB', { by: 'adm', at: 2 }, false);
-  delete DB.moveRequests;
+  console.log('\n--- the old tree is closed ---');
+  /* workspaces/ came out of the rules a fortnight after every club moved
+     (AUTH.md, build order step 5). What is left there (each moved club's
+     `moved` marker) is nobody's to read or write, and no code can be started
+     there again: a club is made on orgs/ or not at all. */
+  {
+    const old = { ...moved(DB), workspaces: { GONE: { moved: { to: 'orgs', at: 1, by: 'ga' } } } };
+    const wk = (label, who, p, v, want) => check(label, canWriteOn(old, p, v, who), want);
+    check('nobody reads a moved club\'s marker', granted('read', 'workspaces/GONE', RANDO, null, old), false);
+    check('— not even its admin', granted('read', 'workspaces/GONE', OA, null, old), false);
+    wk('nobody starts the old tree again under a moved code', RANDO, 'workspaces/GONE/access/admins/rando', true, false);
+    wk('— nor under a brand-new one', RANDO, 'workspaces/BRANDNEW/access/admins/rando', true, false);
+    wk('— nor writes her own name there', OM, 'workspaces/ORGC/access/members/om', { name: 'Mo' }, false);
+    wk('nobody asks for a club to be moved any more', OA, 'moveRequests/ORGC', { by: 'oa', at: NOW }, false);
+    wk('a brand-new code starts on orgs/', RANDO, 'orgs/BRANDNEW/access/admins/rando', true, true);
+  }
 
   console.log('\n--- a club on orgs/: the root rules follow it there ---');
   w('its coach plans a practice', OC, 'training/ORGC/practices/t1/pr9', { id: 'pr9', teamId: 't1', date: '2026-10-12' }, true);

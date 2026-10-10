@@ -12,7 +12,7 @@
 
 const H = require('./harness');
 const { check, deepEq } = H;
-const { makeServer, ORGS_MODE } = require('./fakebase');
+const { makeServer } = require('./fakebase');
 const migrate = require('../functions/migrate');
 
 const NOW = Date.UTC(2026, 9, 10, 12);
@@ -175,11 +175,5 @@ const env = S => ({
     check('nothing of hers left on the record', 'note' in (await raw(S, 'orgs/NOTES/squad/n1/q2')), false);
     check('a record with no notes is not written', S.reads.length > 0 && (await raw(S, 'orgs/NOTES/coachNotes/n1/q3')), null);
   }
-  if (!ORGS_MODE) {
-    const S = server(db => { db.workspaces.CLUB.teams.t1.players.p1.note = 'keep me'; });
-    await migrate.run(env(S), NOW);
-    check('a note on a club still on the old tree is left where its rules read it', S.at(W + 'teams/t1/players/p1/note'), 'keep me');
-  }
-
   H.summary('old data moved once, by the server');
 })().catch(e => { console.error(e); process.exit(1); });

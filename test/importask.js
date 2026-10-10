@@ -17,7 +17,7 @@
 
 const H = require('./harness');
 const { check, deepEq } = H;
-const { makeServer, ORGS_MODE } = require('./fakebase');
+const { makeServer, makeFakebase, orgsLayout } = require('./fakebase');
 const imports = require('../functions/imports');
 
 const CLUB = () => ({
@@ -38,12 +38,11 @@ function server(edit) {
   S.loadFunctions();
   return S;
 }
-// the club's own base on this pass's tree, as the phone lays a path out
-const B = ORGS_MODE ? 'orgs/CLUB' : 'workspaces/CLUB';
-const TREE = ORGS_MODE ? 'orgs' : 'workspaces';
-const sq = (tid, pid) => (ORGS_MODE ? `${B}/squad/${tid}/${pid}` : `${B}/teams/${tid}/players/${pid}`);
+// the club's own base, as the phone lays a path out
+const B = 'orgs/CLUB';
+const sq = (tid, pid) => `${B}/squad/${tid}/${pid}`;
 let n = 0;
-const ask = (S, uid, writes, extra = {}) => S.fire(`importAsks/CLUB/${uid}/x${++n}`, { at: Date.now(), tree: TREE, writes, ...extra }).then(r => r.importAsk);
+const ask = (S, uid, writes, extra = {}) => S.fire(`importAsks/CLUB/${uid}/x${++n}`, { at: Date.now(), writes, ...extra }).then(r => r.importAsk);
 const W = 'workspaces/CLUB/';
 
 (async () => {
@@ -102,7 +101,7 @@ const W = 'workspaces/CLUB/';
     await no('an admin of another club is refused here', 'o', [team], 'admin');
     await no('a role, slipped into an import: the whole import refused', 'adm', [team, { p: `${B}/access/admins/rando`, v: true }], 'outside');
     await no('a lookup table', 'adm', [team, { p: `${B}/access/index/rando`, v: true }], 'outside');
-    await no('another club', 'adm', [team, { p: (ORGS_MODE ? 'orgs' : 'workspaces') + '/OTHER/teams/t1', v: { name: 'Mine now' } }], 'outside');
+    await no('another club', 'adm', [team, { p: 'orgs/OTHER/teams/t1', v: { name: 'Mine now' } }], 'outside');
     await no('the root', 'adm', [team, { p: 'userOrgs/rando/CLUB', v: { name: 'x' } }], 'outside');
     await no('a share page', 'adm', [team, { p: 'public/abc', v: { team: {} } }], 'outside');
     await no('another club\'s training', 'adm', [team, { p: 'training/OTHER/sessions/s1', v: { id: 's1' } }], 'outside');
@@ -112,9 +111,8 @@ const W = 'workspaces/CLUB/';
     await no('nothing to write', 'adm', [], 'bad');
     await no('a retired club', 'adm', [team], 'retired', db => { db.retired = { CLUB: true }; });
     await no('a club being moved', 'adm', [team], 'moving', db => { db.serverState = { moving: { CLUB: { by: 'adm', at: 1 } } }; });
-    await no('laid out for the other tree', 'adm', [team], 'tree', null, { tree: ORGS_MODE ? 'workspaces' : 'orgs' });
     const S = server();
-    const a = await S.fire('importAsks/CLUB/adm/old', { at: Date.now() - 3600000, tree: TREE, writes: [team] });
+    const a = await S.fire('importAsks/CLUB/adm/old', { at: Date.now() - 3600000, writes: [team] });
     check('an ask an hour old is not acted on', [a.importAsk.why, S.at(W + 'teams/t9')].join(), 'stale,');
   }
 
@@ -141,7 +139,7 @@ const W = 'workspaces/CLUB/';
     };
     const writes = [];
     for (let i = 0; i < 150; i++) writes.push({ p: `${B}/teams/t1/events/e${i}`, v: { id: 'e' + i, kind: 'practice', date: '2026-11-01' } });
-    const a = await imports.onAsk(env, { code: 'CLUB', uid: 'adm', id: 'f1' }, { at: Date.now(), tree: TREE, writes });
+    const a = await imports.onAsk(env, { code: 'CLUB', uid: 'adm', id: 'f1' }, { at: Date.now(), writes });
     deepEq('a failure part way is said, with how far it got', [a.ok, a.why, a.done, a.of], [false, 'failed', 100, 150]);
     const b = await ask(S, 'adm', writes);
     check('asking again finishes it', [b.ok, Object.keys(S.at(W + 'teams/t1/events')).length].join(), 'true,150');
@@ -150,7 +148,7 @@ const W = 'workspaces/CLUB/';
 
   console.log('\n--- the phone: what it sends is what it would have written ---');
   {
-    const A = H.loadApp({ storage: { 'sm.workspace': 'CLUB', ...(ORGS_MODE ? { 'sm.tree.v1:CLUB': 'orgs' } : {}) } });
+    const A = H.loadApp({ storage: { 'sm.workspace': 'CLUB' } });
     await A.flush();
     A.state = CLUB(); A.appOwners = {}; A.me = { uid: 'adm', name: 'Ada' };
     const plan = A.importPlan({
@@ -164,11 +162,9 @@ const W = 'workspaces/CLUB/';
     const sent = A.importWrites(plan);
     const paths = sent.map(x => x.p);
     check('every one laid out for the club\'s tree', paths.every(p => p.startsWith(B + '/') || p.startsWith('training/CLUB/')), true);
-    check('and every one the server takes', paths.every(p => imports.allowed(p, { base: B, tree: TREE, access: B + '/access' }, 'CLUB')), true);
-    if (ORGS_MODE) {
-      check('a coach\'s note goes where only coaches and admins read it', paths.some(p => /\/coachNotes\/[^/]+\/[^/]+\/note$/.test(p)), true);
-      check('and never onto the record her family reads', sent.some(x => /\/squad\//.test(x.p) && JSON.stringify(x.v || {}).includes('quick')), false);
-    }
+    check('and every one the server takes', paths.every(p => imports.allowed(p, { base: B, access: B + '/access' }, 'CLUB')), true);
+    check('a coach\'s note goes where only coaches and admins read it', paths.some(p => /\/coachNotes\/[^/]+\/[^/]+\/note$/.test(p)), true);
+    check('and never onto the record her family reads', sent.some(x => /\/squad\//.test(x.p) && JSON.stringify(x.v || {}).includes('quick')), false);
     const game = sent.find(x => /\/matches\/[^/]+$/.test(x.p));
     check('a new game stamped with who made it', game && game.v.edit && game.v.edit.by, 'adm');
     const entry = sent.find(x => /\/events\/[^/]+$/.test(x.p));
@@ -197,7 +193,6 @@ const W = 'workspaces/CLUB/';
   }
   {
     // asking from the page, with the server deployed
-    const { makeFakebase } = require('./fakebase');
     const CONFIG = { apiKey: 'k', databaseURL: 'https://x', projectId: 'p' };
     const go = async (answer, refuse) => {
       const fbk = makeFakebase();
@@ -205,29 +200,33 @@ const W = 'workspaces/CLUB/';
       const A = H.loadApp({ firebase: fbk, config: CONFIG, window: { SOCCER_SERVER: true }, storage: { 'sm.workspace': 'CLUB' } });
       await A.flush(); fbk.signIn('adm', { name: 'Ada' }); await A.flush();
       fbk.deliver('.info/connected', true);
-      fbk.deliver('workspaces/CLUB', CLUB()); await A.flush();
+      await fbk.serve('orgs/CLUB', orgsLayout(CLUB()), () => A.flush()); await A.flush(10);
       const plan = A.importPlan({ teams: [{ name: 'Storm', players: [{ name: 'Gia', number: 3 }] }] }, A.state);
+      // the connect's own writes (the roster, a child's record) are not the import's
+      const n0 = fbk.record.writes.length;
       const done = A.importVia(plan);
       await A.flush();
       const ask = fbk.record.writes.find(w => /^importAsks\/CLUB\/adm\//.test(w.path));
       if (answer !== undefined && ask) { fbk.deliver(ask.path + '/answer', answer); }
       else if (!refuse) A.timers.run();
       const how = await done; await A.flush();
-      return { A, fbk, ask, how };
+      // what the import itself wrote to the club
+      const wrote = fbk.record.writes.slice(n0).some(w => /^orgs\/CLUB\/(teams|squad)\//.test(w.path));
+      return { A, fbk, ask, how, wrote };
     };
     const ok = await go({ ok: true, n: 3, at: 1 });
-    check('the plan goes to the server in one ask', !!ok.ask && Array.isArray(ok.ask.value.writes) && ok.ask.value.tree === 'workspaces', true);
-    check('and nothing to the club from the phone', ok.fbk.record.writes.some(w => /^workspaces\/CLUB\/teams/.test(w.path)), false);
-    check('applied there: kept here, owing nothing', [ok.how, Object.values(ok.A.state.teams).some(t => t.name === 'Storm'), ok.A.pendingCount()].join(), 'server,true,0');
+    check('the plan goes to the server in one ask', !!ok.ask && Array.isArray(ok.ask.value.writes) && !('tree' in ok.ask.value), true);
+    check('and nothing to the club from the phone', ok.wrote, false);
+    check('applied there: kept here, owing nothing', [ok.how, Object.values(ok.A.state.teams).some(t => t.name === 'Storm'), ok.wrote].join(), 'server,true,false');
     check('the ask is cleared away', ok.fbk.record.removes.includes(ok.ask.path), true);
     const no = await go({ ok: false, why: 'admin', at: 1 });
-    check('the server\'s no is said, and the phone does not write it either', [no.how, no.A.lastToast(), no.fbk.record.writes.some(w => /^workspaces\/CLUB\/teams/.test(w.path))].join(), 'refused,Only club admins can import,false');
+    check('the server\'s no is said, and the phone does not write it either', [no.how, no.A.lastToast(), no.wrote].join(), 'refused,Only club admins can import,false');
     const half = await go({ ok: false, why: 'failed', done: 1, of: 3, at: 1 });
-    check('a failure part way: the phone finishes it, as it always could', [half.how, half.fbk.record.writes.some(w => /^workspaces\/CLUB\/teams\//.test(w.path))].join(), 'phone,true');
+    check('a failure part way: the phone finishes it, as it always could', [half.how, half.wrote].join(), 'phone,true');
     const quiet = await go(undefined);
-    check('no answer: the phone writes it itself', [quiet.how, quiet.fbk.record.writes.some(w => /^workspaces\/CLUB\/teams\//.test(w.path))].join(), 'phone,true');
+    check('no answer: the phone writes it itself', [quiet.how, quiet.wrote].join(), 'phone,true');
     const old = await go(undefined, true);
-    check('rules too old for the ask: the phone writes it itself', [old.how, old.fbk.record.writes.some(w => /^workspaces\/CLUB\/teams\//.test(w.path))].join(), 'phone,true');
+    check('rules too old for the ask: the phone writes it itself', [old.how, old.wrote].join(), 'phone,true');
   }
 
   H.summary('a bulk import applied by the server');

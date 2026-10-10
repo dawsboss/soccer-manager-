@@ -54,7 +54,7 @@ async function boot(who, extra = {}) {
   await D.flush(); fbk.signIn(who, { name: who }); await D.flush();
   const ws = club();
   if (extra.practiceOn) ws.teams.t1.events.e1 = { id: 'e1', kind: 'practice', title: 'Practice', date: extra.practiceOn, start: '17:00', end: '18:00', venue: 'Lakeside Park' };
-  fbk.deliver('workspaces/CLUB', ws); await D.flush();
+  await fbk.serveClub('CLUB', ws, D.flush); await D.flush();
   fbk.deliver('userOrgs/' + who, { CLUB: { name: 'Lakeside SC', at: 1 }, HILL: { name: 'Hillside', at: 2 } }); await D.flush();
   return { D, fbk };
 }
@@ -74,9 +74,7 @@ const nameIn = v => names.some(n => JSON.stringify(v).includes(n));
   const hillAccess = { org: { name: 'Hillside FC' }, teams: { h1: { coaches: { jaz: true } } }, index: { jaz: true }, members: { someone: { name: 'Zed', email: 'z@x.test' } } };
   const hillSess = { s1: { id: 's1', kind: 'one', cap: 1, coach: 'jaz', coachName: 'Jaz', title: 'Finishing', date: day(3), start: '09:00', end: '10:00' } };
   const deliverHill = async (D, fbk, pday) => {
-    fbk.deliver('workspaces/HILL/teams', hillTeams(pday));
-    fbk.deliver('workspaces/HILL/matches', hillMatches);
-    fbk.deliver('workspaces/HILL/access', hillAccess);
+    await fbk.serveClub('HILL', { access: hillAccess, teams: hillTeams(pday), matches: hillMatches }, D.flush);
     fbk.deliver('training/HILL/sessions', hillSess);
     fbk.deliver('training/HILL/booked', {});
     fbk.deliver('training/HILL/avail', {});
@@ -113,7 +111,7 @@ const nameIn = v => names.some(n => JSON.stringify(v).includes(n));
   console.log('\n--- every club she is in, on this phone ---');
   {
     const { D, fbk } = await boot('jaz', { practiceOn: day(3) });
-    check('the other club\'s teams and games are listened to', fbk.watching('workspaces/HILL/teams') && fbk.watching('workspaces/HILL/matches') && fbk.watching('workspaces/HILL/access'), true);
+    check('the other club\'s teams and games are listened to', fbk.watching('orgs/HILL/teams') && fbk.watching('orgs/HILL/matches') && fbk.watching('orgs/HILL/access'), true);
     check('and its sessions and bookable times', fbk.watching('training/HILL/sessions') && fbk.watching('training/HILL/booked') && fbk.watching('training/HILL/avail'), true);
     await deliverHill(D, fbk);
     const keys = D.myCalItems('all').map(x => x.key);
@@ -142,12 +140,12 @@ const nameIn = v => names.some(n => JSON.stringify(v).includes(n));
     check('no game\'s stints or goals, no members', /stints|goals|z@x\.test/.test(kept), false);
 
     console.log('\n--- live as it changes ---');
-    fbk.deliver('workspaces/HILL/teams', hillTeams(4)); await D.flush();
+    fbk.deliver('orgs/HILL/teams', hillTeams(4)); await D.flush();
     const hk = D.youCalItems('HILL').filter(x => x.kind === 'practice');
     check('a practice moved there is moved here', hk.map(x => x.date).join(), day(4));
 
     console.log('\n--- busy at another club, for herself ---');
-    fbk.deliver('workspaces/HILL/teams', hillTeams(1)); await D.flush();
+    fbk.deliver('orgs/HILL/teams', hillTeams(1)); await D.flush();
     const st = D.coachStatus('jaz', day(1), 18 * 60, 19 * 60);
     check('she is busy then', st.state, 'busy');
     check('and it says where', /Hillside FC: Practice/.test(st.why), true);
@@ -197,7 +195,7 @@ const nameIn = v => names.some(n => JSON.stringify(v).includes(n));
       const fb2 = makeFakebase();
       const E = H.loadApp({ firebase: fb2, config: CONFIG, storage: { 'sm.workspace': 'CLUB', 'sm.mirror.v1:jaz': keptCopy } });
       await E.flush(); fb2.signIn('jaz', { name: 'jaz' }); await E.flush();
-      fb2.deliver('workspaces/CLUB', club()); await E.flush();
+      await fb2.serveClub('CLUB', club(), E.flush); await E.flush();
       fb2.deliver('userOrgs/jaz', { CLUB: { name: 'Lakeside SC', at: 1 }, HILL: { name: 'Hillside', at: 2 } }); await E.flush();
       check('the other club is there before it answers', E.myCalItems('all').some(x => x.key === 'y:HILL:e:e9'), true);
       E.ui.view = 'mycal'; E.render();
@@ -241,9 +239,7 @@ const nameIn = v => names.some(n => JSON.stringify(v).includes(n));
     const mumHill = hillTeams(3);
     mumHill.h1.players.k.guardians = { mum: true };
     const deliverMum = async teamsV => {
-      fbk.deliver('workspaces/HILL/teams', teamsV);
-      fbk.deliver('workspaces/HILL/matches', hillMatches);
-      fbk.deliver('workspaces/HILL/access', { ...hillAccess, index: { jaz: true, mum: true } });
+      await fbk.serveClub('HILL', { access: { ...hillAccess, index: { jaz: true, mum: true } }, teams: teamsV, matches: hillMatches }, D.flush);
       for (const p of ['sessions', 'booked', 'avail']) fbk.deliver('training/HILL/' + p, {});
       await D.flush();
     };

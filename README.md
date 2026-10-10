@@ -63,7 +63,7 @@ Why the pages are safe to be world-readable:
 - The real record lives in the club and is never read by the public page.
 - Share ids are long and random, so the node is not discoverable without the link.
 
-The API key in `firebase-config.js` is not a secret; the rules above are what gate access. A club's id (the `{code}` in `workspaces/{code}`) is plumbing, not a password: nobody types it or sees it, and knowing it gets you nothing without a role the rules can find.
+The API key in `firebase-config.js` is not a secret; the rules above are what gate access. A club's id (the `{code}` in `orgs/{code}`) is plumbing, not a password: nobody types it or sees it, and knowing it gets you nothing without a role the rules can find.
 
 The badge in the top bar shows `synced`, `offline`, or `this device`, and `3 to send` while changes made on this phone haven't reached the club yet. Nothing lives only on the phone: every change is kept in an outbox on the phone until the database confirms it has it, so a game tracked with no signal reaches the club even if the app is closed and reopened before the signal comes back. Plans, drills and messages do the same. A change the club's database refuses (usually because the rules haven't been pasted yet) is kept, tried again every time the phone connects, and said on every screen, with a list under Settings; it is only dropped if you choose to. A phone used before it joined a club is offered, under Settings, a way for an admin to add those teams to the club. If both devices edit the same game while one is offline, last write wins.
 
@@ -120,11 +120,12 @@ Two limits worth knowing:
 
 - **Her own children by name, the rest of the squad by shirt number.** On Stats, Season, Live, the match log and the recap, a parent's child is named and every other child is `#8` (or *A teammate*, with no number). Squad, with the team's set-up under it, stays closed to her, as before. Only someone who is nothing but a parent in the club is narrowed: an admin, a coach (of any team, with a child on another or not) and a tracker see names.
 - **Or the whole roster, if the club says so.** Club admin → **What parents see** has the two choices AUTH.md allows: *Shirt numbers only* (the default) and *The whole roster by name*. Only an admin changes it (`access/org/rosterOpen`, under the rule the club's details already use).
-- **On a club that has moved, it is the database too.** A club on the old tree (`workspaces/{code}`) is read whole by everyone in it, so a parent's phone holds the names and the app chooses not to draw them. Once the club has moved to `orgs/{code}` (below), her phone is sent her own children's records, the others' shirt numbers and the staff's names, and nothing else: no other child's name, note or rating, nobody's email, no access log.
+- **It is the database too.** Every club is on `orgs/{code}` (AUTH.md, *The move to `orgs/{orgId}`*), so her phone is sent her own children's records, the others' shirt numbers and the staff's names, and nothing else: no other child's name, note or rating, nobody's email, no access log.
 
-### Moving a club so families' phones hold only their own
+### The move to orgs/, and the old tree gone
 
-Club settings → **Keep the squad off families' phones** → *Move* (admins only). The phone asks the server (`moveRequests/{code}`), which checks she is an admin, refuses while a game is being played, copies the club to `orgs/{code}` in batches, reads it back and compares, switches it over in one small write, keeps a copy of the old tree on the server (`serverState/moved/`), and answers. Every phone notices on its next read and carries on, its outbox included; nothing about the screens changes. It needs the functions deployed and rules version 12 published (both happen on a merge to main, **Deploying the server**). Turn on daily backups first, and move a test club made before build 110 first (one made since already starts on the new tree). New clubs start on `orgs/`. **Every club has moved** (2026-10-09), so the button only matters for a club made before build 110 that turns up later. AUTH.md, *The move to `orgs/{orgId}`*, has the design; SECURITY.md, SEC-D9, what it closed.
+Every club moved to `orgs/{code}` by 2026-10-09 (the admin's *Move* button and the server's `moveClub`, build 110). Build 128 took the old `workspaces/{code}` tree out of the rules, the server and the app (AUTH.md, build order step 5): the button, `moveRequests/` and `moveClub` are gone, nothing reads or writes `workspaces/` any more, and a club is made on `orgs/` or not at all. A phone that last held a club's copy from the old tree cuts it down to what its account may hold before it reads the club. What is left in the database (each moved club's `workspaces/{code}/moved` marker, the server's copies at `serverState/moved/`, any old `moveRequests/`) is nobody's to read and is deleted by hand once the owner is happy: Firebase console → Realtime Database → Data, or `npx firebase-tools database:remove /serverState/moved` (and `/workspaces`, `/moveRequests`).
+
 - **My players spans clubs.** Her children in every other club she's in are listed under this club's own, named with their team and club, with the next thing to get them to and *Open that club for her minutes*. It comes from the cut-down copy My calendar already keeps (her own children, no stints), so there are no minutes for another club until it's opened.
 
 ## A team helper
@@ -161,6 +162,23 @@ A grandparent, an aunt, a family friend who wants the games and the calendar on 
 - **A fan can leave.** Her card under *My players* has *Stop following*, which takes her off the record and, if it was her only role, out of the club.
 
 Needs rules version 20 (`fans` and `fanNames` on the child's record, `access/teamFans`, and the fan clauses in `invites`, `claims` and `board`), on `orgs/` only. Until it's pasted, making the link is refused and says so.
+
+## A child in the club
+
+The first step of registration (AUTH.md, *A child in the club, and registration*). Every child has one record in the club, not only a row in her team's squad, so she can be in the club on no team (for training sessions, once that is built) and next season starts from what her family already told the club. On `orgs/` (every club now).
+
+- **Every child already on a team has one**, made from the squad by the first admin's phone to open the club (or the server), for her family to confirm. **A coach adding a player** makes one too: she registers the child for her family.
+- **Her family confirms it, and nobody else can.** The first time a family's phone holds a child the club registered, it asks once: *Check Ella's details*, with what the club has (name, team and number) and only what is missing (birth date, gender). Then a card on *My players* until she does.
+- **Who changes it:** her family, an admin, or the coach who added her until her family has confirmed it. The team's own name for her (on Squad) stays the coach's. Staff see a child's record, and whether her family has confirmed it, under *Her club record* on her page in Squad.
+- **Who reads it:** coaches and admins (as they read every squad), and her own family. Never a tracker, a helper, a viewer or a fan; never `public/`.
+- **Getting families to finish** (build 129): while a child's details are unfinished (her family hasn't confirmed them, or something the club requires is missing), her family sees a strip on every screen with *Finish now* and the check pops up once a day. Admins choose what is required (birth date, gender, someone to call, a doctor) and can set a **deadline** under Club settings → Registrations → *Children's details*, which also lists who is still to finish. After the deadline a family with a child still to finish sees only her calendar, messages, notifications, My players and settings until it's done. Staff are never kept out.
+- **Care details for the pitch** (build 123): her family adds up to two people to call and anything a coach must know (allergies, conditions, medication, a doctor) on the same screen. Her **team's coaches** see it on her page in Squad, under *At the pitch*, with a link to ring; so do the admins. Nobody else: not another team's coach, a tracker, a helper, a viewer or a fan. It is never in a game, the share pages, a notification or *Download a copy*. Needs rules version 22 (`care`, `teamCare`).
+- **Registering** (build 124, admins): Club settings → **Registrations** makes a *program* (a season, a camp, tryouts, training sessions) with its birth years, who it is for, dates, places, a fee and how to pay it (shown, never taken), questions, and the club's **waivers** (the words are the club's; changing them makes a new version and families are asked again). **Copy the link** and post it anywhere: a family who is not in the club opens it, signs in, and registers each child: details, someone to call, the questions, and each waiver agreed in her own name. She sees nothing of the club until an admin **accepts** (or puts her on the waiting list, or declines). A family already in the club sees open programs her child fits on *My players*. A coach or an admin can start a registration for a family from the child's record; the family finishes it. Needs rules version 23 (`programs`, `waivers`, `regs`, `agreed` under the club, and `regOpen` at the root).
+- **Placing and sessions** (build 125): an accepted child's registration offers the teams that fit her age; **Place on** a team puts her in its squad with her family as its parents (her coach gives her a number) and her care details reach that team's coaches. A child registered for *training sessions* stays on no team and her family books 1-1s and groups for her like any other (the coach finds her under *No team yet* when adding players). Needs rules version 24.
+- **Export for GotSport** (build 126, admins): on a program's list, a CSV of every child placed or accepted (team, number, birth date, gender, and the parent who registered her with email and phone) to upload to the state's system. It warns before saving: it holds birth dates and contact details.
+- **Deleting** (build 127): a family deletes a registration from its link (and a child she registered who was never let in goes with it). An admin deletes a child's record from it (one on no team). **Your account → Delete my account** asks the club's server to forget you in every club you are in (roles, your place on your children's records, your settings, push, your own drills); what you wrote to others stays, and a child of yours left with no family is taken off her team and kept for the admins under *Left the club*. Refused while you are a club's only admin. Needs rules version 25 and the functions deployed.
+
+Needs rules version 21 (`children` under the club, the index clause for a child's family, `families` at the root, and a parent invite that names a child). Until it's pasted, the records are not made, and a family's confirmation waits on her phone and is said on every screen.
 
 ## Links with limits
 
@@ -236,7 +254,7 @@ If a deploy fails on permissions, the message names what is missing; add the rol
 
 **The site's address, for calendar links.** An entry in a subscribed calendar links back into the app (a game to its page, a practice to the team's calendar, My calendar's entries to My calendar), and the server cannot know where the site is, so `functions/.env` says: `SOCCER_SITE=https://dawsboss.github.io/soccer-manager-/index.html`. It is committed (it is not a secret) and loaded on every deploy. If the site moves (a custom domain), change it there; `test/mirror.js` holds it to an `https` address ending `index.html`.
 
-**Tell the site the server is there.** `firebase-config.js` sets `window.SOCCER_SERVER = true` once the functions are deployed. With it, joining by invite, starting a club and a bulk import each ask the server (rules version 21 lets them ask); without it, or where the rules are older and refuse the ask, the phone does them itself as before. Starting a club never falls back on a server that is just slow, so a club is never made twice.
+**Tell the site the server is there.** `firebase-config.js` sets `window.SOCCER_SERVER = true` once the functions are deployed. With it, joining by invite, starting a club and a bulk import each ask the server (rules version 27 lets them ask); without it, or where the rules are older and refuse the ask, the phone does them itself as before. Starting a club never falls back on a server that is just slow, so a club is never made twice.
 
 **Share pages need the functions.** Since build 120 phones never write `public/` and the rules refuse it (version 19): a club whose functions are not deployed has share links that never fill in.
 
@@ -260,8 +278,8 @@ There is no in-app delete for a whole club, deliberately — it would be one mis
 
 0. **Retire it.** Club settings → *Retire this club*. Do this **first**: it writes the marker that tells other devices to let go. Nothing is deleted — the app owner sees retired clubs listed under Club settings and can still open and export any of them, indefinitely. Steps 2 and 3 only happen when the app owner decides.
 1. **Export first.** Open the club, Settings → *Download a copy*. Do this even for a club you are sure is empty.
-2. **Delete the data.** Firebase console → Realtime Database → Data → expand `workspaces` → hover the code → the **×** deletes that node and every team, game and minute under it.
-3. **Delete its published mirror.** Under `public`, find the share id that club was using and delete that node too. **This is the one people forget.** Removing `workspaces/<code>` does not touch `public/<share>`, and the mirror is the world-readable half — an orphaned one keeps serving an old scoreboard to anyone holding the link. If you no longer know which share id belonged to which club, the mirror carries the team name, so open the nodes and read it.
+2. **Delete the data.** Firebase console → Realtime Database → Data → expand `orgs` → hover the code → the **×** deletes that node and every team, game and minute under it. Its `training/<code>`, `board/<code>`, `dm/<code>` and `staffdm` conversations sit at the root and are deleted the same way.
+3. **Delete its published mirror.** Under `public`, find the share id that club was using and delete that node too. **This is the one people forget.** Removing `orgs/<code>` does not touch `public/<share>`, and the mirror is the world-readable half — an orphaned one keeps serving an old scoreboard to anyone holding the link. If you no longer know which share id belonged to which club, the mirror carries the team name, so open the nodes and read it.
 4. **Forget it on each device.** Club crumb → *Forget*. That clears this browser's local copy so it stops appearing in the switcher. It is per-device, so do it on each phone.
 
 Steps 2 and 3 are permanent and there is no undo, which is why step 1 comes first.
@@ -272,7 +290,7 @@ Retirement needs its own block. It is already part of the ruleset (**The databas
 "retired": {
   "$code": {
     ".read": true,
-    ".write": "auth != null && root.child('workspaces/' + $code + '/access/admins/' + auth.uid).exists() && (!root.child('workspaces/' + $code + '/access/owners').exists() || root.child('workspaces/' + $code + '/access/owners/' + auth.uid).exists())"
+    ".write": "auth != null && root.child('orgs/' + $code + '/access/admins/' + auth.uid).exists() && (!root.child('orgs/' + $code + '/access/owners').exists() || root.child('orgs/' + $code + '/access/owners/' + auth.uid).exists())"
   }
 }
 ```
@@ -284,7 +302,7 @@ Readable by anyone, because a device that has just lost access still has to be a
 The app owner is the one account that can appoint the first club admin. It is stored in the database, **not** in this repository — a personal email committed to a public repo gets scraped, stays in the history forever, and needs a deploy to change.
 
 1. Sign in to the app. Settings → Account shows **Your account id** with a copy button.
-2. Firebase console → Realtime Database → Data. At the **root** (not inside `workspaces`), add:
+2. Firebase console → Realtime Database → Data. At the **root** (not inside `orgs`), add:
 
 ```json
 "appOwners": { "<paste your account id>": true }
@@ -317,16 +335,11 @@ the `retired` and `appOwners` blocks shown earlier in this file; those appear
 there to explain what they are for, not to be pasted on their own. Publishing
 a partial ruleset is how a club ends up half protected.
 
-**It is built, not typed.** While clubs move from `workspaces/{code}` to
-`orgs/{code}` (AUTH.md, *The move to `orgs/{orgId}`*), every rule that looks
-into a club has to ask whichever tree that club is on, about two hundred
-lookups. So the rules you edit are **`tools/rules-source.json`**, written
-against `workspaces/` as they always were, with the new `orgs/$code` tree
-beside it; `node tools/rules-build.js` writes `database.rules.json` from it,
-turning each lookup into "the old tree while the club is there, the new one
-once it has moved". `node test/rules.js` fails if the two disagree, and
-walks every check twice, once with the club on each tree. Once every club has
-moved, the old tree comes out and the source is the published file again.
+**It is edited as it is published.** While clubs moved to `orgs/{code}` the
+rules were built from a source by a script, so every lookup into a club could
+ask whichever tree the club was on. The old tree came out in build 128, rules
+version 26 (AUTH.md, build order step 5), and with it the build: edit
+`database.rules.json` itself, and `node test/rules.js` walks it.
 
 - **`orgs/$code`** has no read of its own: each part says who reads it. The
   teams, games, answers, the roster (shirt numbers, and names only while the
@@ -343,11 +356,8 @@ moved, the old tree comes out and the source is the published file again.
   trackers, not her family, not the player), written by that team's coaches
   and admins, and refused on the record itself (rules version 15; SECURITY.md,
   SEC-D10).
-- **One tree per club.** Nobody can start `orgs/{code}` while the old tree
-  holds that code, nor start the old tree again under a code that has moved
-  (`workspaces/{code}/moved`, written by the server alone): every root rule
-  decides which tree to read by whether `orgs/{code}/access` exists, so
-  making it exist would be taking the club over.
+- **The old tree is closed.** `workspaces/` has no rule, so nothing there is
+  anyone's to read or write, and no club can be started there again.
 
 **There is no second, open set.** Rules belong to the database, not to a club,
 so whatever is published applies to every club in it at once, and this site
@@ -393,8 +403,7 @@ What each part is doing:
   not, but only the one number these rules are, so the write is a question
   only the published rules can answer, and the only write that can succeed
   changes nothing. Whoever changes the rules raises it (in
-  `tools/rules-source.json`, and `RULES_VERSION` in `app.js`), builds, and
-  stamps; `node test/rules.js` fails until they do.
+  `database.rules.json`, and `RULES_VERSION` in `app.js`) and stamps; `node test/rules.js` fails until they do.
 - **Reading anything** needs a signed-in account listed in `access/index`. The `!data.child('access/index').exists()` clause is the bootstrap: a brand-new workspace with no index yet stays readable, so it can be set up in the first place. It stops mattering the moment the first role is granted.
 - **`access/members/$uid`** is self-writable. That is how a new coach knocks on the door: they sign in, register themselves, and an admin can then see them to assign a role. It grants no data access on its own. Somebody else's entry is an admin's to change (rules version 11): names on sessions, People and bookable times come from it, so a parent could otherwise rename a coach. A coach of any team (`access/coachIndex`) may only fill in an entry that is not there yet, which is all approving a family through the team link does; while a club has no `coachIndex`, anyone in it may fill in a missing one, and nobody but her or an admin changes one already there.
 - **`admins`** can only be changed by an existing admin — except when there are none, which is the bootstrap for claiming it. Once the club has an owner (rules version 13, **The club owner** below), the rule sits on each entry instead: an admin may appoint another (`true`) and step down herself, and only an owner takes anyone else's admin away, never another owner's.
@@ -502,7 +511,7 @@ a `public/` node that real families are reading. It lives in whichever database 
 code beginning `test-`; delete the node in the console when you are done.
 
 What it does **not** cover is a rules change. Rules belong to a database, not to
-a club: the locked-down block is written against `workspaces/$code`, so
+a club: the rules are written against `orgs/$code`, so
 publishing it to try it on a test club applies it to the real club at the same
 instant. Nor can you carve a stricter sandbox out of an open wildcard — a rule
 grants, and nothing below it can take that back.
@@ -652,7 +661,7 @@ Push the folder to a repo, then Settings → Pages → deploy from branch, root.
 
 ## Data model
 
-A club on the old tree, below. On `orgs/{code}` (AUTH.md, *The move to `orgs/{orgId}`*) the same records are split by who reads them: `teams/{teamId}` without `players`, which are `squad/{teamId}/{playerId}`; `access/members` and `access/org` and `access/log` are `members`, `org` and `log`; and two parts are derived for families, `roster/{teamId}/{playerId}` (`{ number, active, name? }`, the name only while the roster is open) and `names/{uid}` (`{ name }`, staff only). The app keeps the old shape in memory and translates every path (`clubPath()`).
+A club as the app holds it in memory, below. On `orgs/{code}` (AUTH.md, *The move to `orgs/{orgId}`*), where every club lives, the same records are split by who reads them: `teams/{teamId}` without `players`, which are `squad/{teamId}/{playerId}`; `access/members` and `access/org` and `access/log` are `members`, `org` and `log`; and two parts are derived for families, `roster/{teamId}/{playerId}` (`{ number, active, name? }`, the name only while the roster is open) and `names/{uid}` (`{ name }`, staff only). The app keeps the old shape in memory and translates every path (`clubPath()`).
 
 ```
 rsvp/{teamId}/{g_matchId | e_eventId}/{playerId}   { v: 'yes' | 'no' | 'maybe', by, at, note }
@@ -703,10 +712,10 @@ training/{code}/sessions/k_{coach}_{date}_{HHMM}
                                     a slot a family booked: a session, plus { slot, t0, notice, pid, tid, by }
 bookAsks/{code}/{uid}/{id}          { op: 'book' | 'cancel', block, start, sid, tid, pid, want, wait, at,
                                       answer: { ok, st, sid, why, at } }   // the answer is the server's
-workspaces/{code}/access/org/venues/{fieldId}
+orgs/{code}/org/venues/{fieldId}
                                     { id, name, address, pitches, surface, lights, notes, parts,
                                       permits: { id: { id, days: [0..6], start, end, from, until, ref, note } } }
-workspaces/{code}/access/org/money  the currency sign, '$' by default
+orgs/{code}/org/money               the currency sign, '$' by default
 ```
 
 Stints are append-only events rather than running totals, which is what makes the Veo step realistic later: a timestamped sub log lines up directly with a recording's timeline, and positions over time are already the skeleton of a birds-eye reconstruction.

@@ -67,19 +67,19 @@ const CLUB = {
     check('crumbs stay empty until joined', A.rendered('#crumbs'), '');
 
     // which tree: the old one refuses a phone not in the club yet, as it does while the club is there
-    A.click({ act: 'inviteaccept' }); await A.flush(); fbk.refuse('workspaces/CLUB/moved'); await A.flush(20);
+    A.click({ act: 'inviteaccept' }); await A.flush(); await A.flush(20);
     const p = paths(fbk);
     const at = x => p.indexOf(x);
     check('spends the invite, as Sam', JSON.stringify((valueAt(fbk, 'invites/' + ID + '/used') || {}).by), '"sam"');
-    check('registers as a member', !!valueAt(fbk, 'workspaces/CLUB/access/members/sam'), true);
-    check('coach on that team, carrying the invite id', valueAt(fbk, 'workspaces/CLUB/access/teams/t1/coaches/sam'), ID);
-    check('indexed, carrying the invite id', valueAt(fbk, 'workspaces/CLUB/access/index/sam'), ID);
-    check('mirrored into the team index', valueAt(fbk, 'workspaces/CLUB/access/teamIndex/t1/sam'), 'coach');
-    check('spent before the role is written', at('invites/' + ID + '/used') < at('workspaces/CLUB/access/teams/t1/coaches/sam'), true);
-    check('role before the index', at('workspaces/CLUB/access/teams/t1/coaches/sam') < at('workspaces/CLUB/access/index/sam'), true);
+    check('registers as a member', !!valueAt(fbk, 'orgs/CLUB/members/sam'), true);
+    check('coach on that team, carrying the invite id', valueAt(fbk, 'orgs/CLUB/access/teams/t1/coaches/sam'), ID);
+    check('indexed, carrying the invite id', valueAt(fbk, 'orgs/CLUB/access/index/sam'), ID);
+    check('mirrored into the team index', valueAt(fbk, 'orgs/CLUB/access/teamIndex/t1/sam'), 'coach');
+    check('spent before the role is written', at('invites/' + ID + '/used') < at('orgs/CLUB/access/teams/t1/coaches/sam'), true);
+    check('role before the index', at('orgs/CLUB/access/teams/t1/coaches/sam') < at('orgs/CLUB/access/index/sam'), true);
     check('the admin\'s list is marked used', (valueAt(fbk, 'clubInvites/CLUB/' + ID + '/used') || {}).by, 'sam');
     check('the club goes on Sam\'s own list', (valueAt(fbk, 'userOrgs/sam/CLUB') || {}).name, 'Lakeside SC');
-    check('and the join is in the audit log', p.some(x => x.startsWith('workspaces/CLUB/access/log/')), true);
+    check('and the join is in the audit log', p.some(x => x.startsWith('orgs/CLUB/log/')), true);
     check('then the spent invite is deleted', fbk.record.removes.includes('invites/' + ID), true);
     check('no admin grant was asked for', p.some(x => x.includes('/access/admins/')), false);
     check('the device now opens the club', A.storage.getItem('sm.workspace'), 'CLUB');
@@ -94,13 +94,13 @@ const CLUB = {
     fbk.deliver('invites/' + ID, inviteDoc(A, { role: 'parent', player: 'p1', playerNo: '7' })); await A.flush();
     check('it names the shirt, not the child', /parent of #7 on <b>Flight/.test(A.rendered()), true);
     // which tree: the old one refuses a phone not in the club yet, as it does while the club is there
-    A.click({ act: 'inviteaccept' }); await A.flush(); fbk.refuse('workspaces/CLUB/moved'); await A.flush(20);
-    check('guardian of that one player', valueAt(fbk, 'workspaces/CLUB/teams/t1/players/p1/guardians/mum'), ID);
+    A.click({ act: 'inviteaccept' }); await A.flush(); await A.flush(20);
+    check('guardian of that one player', valueAt(fbk, 'orgs/CLUB/squad/t1/p1/guardians/mum'), ID);
     check('not a coach or tracker', paths(fbk).some(x => x.includes('/access/teams/')), false);
     check('and not in the team index', paths(fbk).some(x => x.includes('/teamIndex/')), false);
-    check('indexed, so she can read the club', valueAt(fbk, 'workspaces/CLUB/access/index/mum'), ID);
-    check('on her team\'s parent list, naming her child', valueAt(fbk, 'workspaces/CLUB/access/teamParents/t1/mum'), 'p1');
-    check('written after the guardian entry the rule checks', paths(fbk).indexOf('workspaces/CLUB/teams/t1/players/p1/guardians/mum') < paths(fbk).indexOf('workspaces/CLUB/access/teamParents/t1/mum'), true);
+    check('indexed, so she can read the club', valueAt(fbk, 'orgs/CLUB/access/index/mum'), ID);
+    check('on her team\'s parent list, naming her child', valueAt(fbk, 'orgs/CLUB/access/teamParents/t1/mum'), 'p1');
+    check('written after the guardian entry the rule checks', paths(fbk).indexOf('orgs/CLUB/squad/t1/p1/guardians/mum') < paths(fbk).indexOf('orgs/CLUB/access/teamParents/t1/mum'), true);
   }
 
   console.log('\n--- the database says no ---');
@@ -110,7 +110,7 @@ const CLUB = {
     fbk.deliver('invites/' + ID, inviteDoc(A)); await A.flush();
     fbk.refuseWrites(p => p.includes('/access/teams/'));
     // which tree: the old one refuses a phone not in the club yet, as it does while the club is there
-    A.click({ act: 'inviteaccept' }); await A.flush(); fbk.refuse('workspaces/CLUB/moved'); await A.flush(20);
+    A.click({ act: 'inviteaccept' }); await A.flush(); await A.flush(20);
     check('it says so', /Could not open the invite/.test(A.rendered()) && /refused/.test(A.rendered()), true);
     check('the index is never attempted', paths(fbk).some(x => x.endsWith('/access/index/sam')), false);
     check('the device is not pointed at the club', A.storage.getItem('sm.workspace'), null);
@@ -145,16 +145,16 @@ const CLUB = {
     fbk.deliver('invites/' + ID, inviteDoc(A, { used: { by: 'sam', at: 1 } })); await A.flush();
     check('spent by me already: can still finish', /data-act="inviteaccept"/.test(A.rendered()), true);
     // which tree: the old one refuses a phone not in the club yet, as it does while the club is there
-    A.click({ act: 'inviteaccept' }); await A.flush(); fbk.refuse('workspaces/CLUB/moved'); await A.flush(20);
+    A.click({ act: 'inviteaccept' }); await A.flush(); await A.flush(20);
     check('without spending it twice', fbk.writtenTo('invites/' + ID + '/used').length, 0);
-    check('and the role is written', valueAt(fbk, 'workspaces/CLUB/access/teams/t1/coaches/sam'), ID);
+    check('and the role is written', valueAt(fbk, 'orgs/CLUB/access/teams/t1/coaches/sam'), ID);
   }
 
   console.log('\n--- an invite on a device already in another club ---');
   {
     const { A, fbk } = await boot({ search: '?invite=' + ID, storage: { 'sm.workspace': 'OTHER' } });
     fbk.signIn('sam'); await A.flush();
-    fbk.deliver('workspaces/OTHER', CLUB); await A.flush();
+    await fbk.serveClub('OTHER', CLUB, A.flush); await A.flush();
     check('the invite screen wins', /Opening your invite|Join/.test(A.rendered()), true);
     check('the open club\'s names are not drawn behind it', /Flight|Ella/.test(A.rendered('#crumbs')), false);
     check('the device stays where it was until accepted', A.storage.getItem('sm.workspace'), 'OTHER');
@@ -181,7 +181,7 @@ const CLUB = {
   {
     const { A, fbk } = await boot({ storage: { 'sm.workspace': 'CLUB' } });
     fbk.signIn('adm', { name: 'Ada' }); await A.flush();
-    fbk.deliver('workspaces/CLUB', CLUB); await A.flush();
+    await fbk.serveClub('CLUB', CLUB, A.flush); await A.flush();
     A.ui.view = 'people'; A.render();
     check('People offers invites to an admin', /data-act="invitenew"/.test(A.rendered()), true);
     check('and reads the club\'s list', fbk.watching('clubInvites/CLUB'), true);
@@ -205,7 +205,7 @@ const CLUB = {
     check('listed for the admin, name included', listed && listed.playerName, 'Ella');
     check('the link carries only the id', A.inviteLink(id), 'https://x.test/?invite=' + id);
     check('and is shown to copy', A.rendered('#sheet').includes(A.inviteLink(id)), true);
-    check('the log says who was invited', paths(fbk).some(x => x.startsWith('workspaces/CLUB/access/log/')), true);
+    check('the log says who was invited', paths(fbk).some(x => x.startsWith('orgs/CLUB/log/')), true);
 
     A.click({ act: 'invitedrop', id });
     check('withdrawing deletes the invite', fbk.record.removes.includes('invites/' + id), true);
@@ -216,7 +216,7 @@ const CLUB = {
   {
     const { A, fbk } = await boot({ storage: { 'sm.workspace': 'CLUB' } });
     fbk.signIn('adm', { name: 'Ada' }); await A.flush();
-    fbk.deliver('workspaces/CLUB', CLUB); await A.flush();
+    await fbk.serveClub('CLUB', CLUB, A.flush); await A.flush();
     A.ui.view = 'people'; A.render();
     const at = A.nowMs();
     fbk.deliver('clubInvites/CLUB', {
@@ -248,7 +248,7 @@ const CLUB = {
     for (let i = 2; i <= 12; i++) club.teams['t' + i] = { id: 't' + i, name: 'Team ' + i, players: {} };
     const { A, fbk } = await boot({ storage: { 'sm.workspace': 'CLUB' } });
     fbk.signIn('adm', { name: 'Ada' }); await A.flush();
-    fbk.deliver('workspaces/CLUB', club); await A.flush();
+    await fbk.serveClub('CLUB', club, A.flush); await A.flush();
     A.ui.view = 'people'; A.render();
     check('People says someone is waiting', /1 waiting to be let in/.test(A.rendered()), true);
     check('with a Let in button on their row', /data-act="personedit" data-uid="newbie">Let in/.test(A.rendered()), true);
@@ -278,7 +278,7 @@ const CLUB = {
     club.teams.t2 = { id: 't2', name: 'Other', players: { p2: { id: 'p2', name: 'Zoe', active: true } } };
     const { A, fbk } = await boot({ storage: { 'sm.workspace': 'CLUB' } });
     fbk.signIn('coach', { name: 'Jaz' }); await A.flush();
-    fbk.deliver('workspaces/CLUB', club); await A.flush();
+    await fbk.serveClub('CLUB', club, A.flush); await A.flush();
     A.ui.pr = { uid: 'newbie', role: 'coach', team: 't2', player: null };
     A.click({ act: 'praddrole', uid: 'newbie' });
     check('a coach cannot hand out roles on another team', A.isCoach('t2', 'newbie'), false);
@@ -293,7 +293,7 @@ const CLUB = {
   {
     const { A, fbk } = await boot({ storage: { 'sm.workspace': 'CLUB' } });
     fbk.signIn('coach', { name: 'Jaz' }); await A.flush();
-    fbk.deliver('workspaces/CLUB', CLUB); await A.flush();
+    await fbk.serveClub('CLUB', CLUB, A.flush); await A.flush();
     A.ui.view = 'people'; A.render();
     check('a coach is not offered it', /data-act="invitenew"/.test(A.rendered()), false);
     check('nor reads the list', fbk.watching('clubInvites/CLUB'), false);
@@ -311,12 +311,12 @@ const CLUB = {
     club.access.members.sam = { name: 'Sam' };
     const { A, fbk } = await boot({ storage: { 'sm.workspace': 'CLUB' } });
     fbk.signIn('adm'); await A.flush();
-    fbk.deliver('workspaces/CLUB', club); await A.flush();
+    await fbk.serveClub('CLUB', club, A.flush); await A.flush();
     check('Sam reads as a coach', A.isCoach('t1', 'sam'), true);
     A.click({ act: 'setrolet', uid: 'sam', tid: 't1', r: 'coach' });
     check('the role goes', A.isCoach('t1', 'sam'), false);
     check('and the invite it came from, so it cannot be replayed', fbk.record.removes.includes('invites/' + ID), true);
-    check('Sam leaves the index', fbk.record.removes.includes('workspaces/CLUB/access/index/sam'), true);
+    check('Sam leaves the index', fbk.record.removes.includes('orgs/CLUB/access/index/sam'), true);
     check('and loses the bookmark to this club', fbk.record.removes.includes('userOrgs/sam/CLUB'), true);
   }
   {
@@ -330,9 +330,9 @@ const CLUB = {
     club.access.members.sam = { name: 'Sam' };
     const { A, fbk } = await boot({ storage: { 'sm.workspace': 'CLUB' } });
     fbk.signIn('adm'); await A.flush();
-    fbk.deliver('workspaces/CLUB', club); await A.flush();
+    await fbk.serveClub('CLUB', club, A.flush); await A.flush();
     A.click({ act: 'setrolet', uid: 'sam', tid: 't1', r: 'coach' });
-    check('still a tracker, so still indexed', fbk.record.removes.includes('workspaces/CLUB/access/index/sam'), false);
+    check('still a tracker, so still indexed', fbk.record.removes.includes('orgs/CLUB/access/index/sam'), false);
     check('but the coach invite is deleted all the same', fbk.record.removes.includes('invites/' + ID), true);
     A.click({ act: 'setrolet', uid: 'sam', tid: 't1', r: 'tracker' });
     check('a role an admin granted by hand names no invite', fbk.record.removes.filter(x => x.startsWith('invites/')).length, 1);
@@ -358,14 +358,14 @@ const CLUB = {
     const { A, fbk } = await boot({ storage: { 'sm.workspace': 'CLUB' } });
     fbk.signIn('coach'); await A.flush();
     fbk.deliver('userOrgs/coach', {}); await A.flush();
-    fbk.deliver('workspaces/CLUB', CLUB); await A.flush();
+    await fbk.serveClub('CLUB', CLUB, A.flush); await A.flush();
     check('a member who predates it gets the bookmark', (valueAt(fbk, 'userOrgs/coach/CLUB') || {}).name, 'Lakeside SC');
   }
   {
     const { A, fbk } = await boot({ storage: { 'sm.workspace': 'CLUB' } });
     fbk.signIn('rando'); await A.flush();
     fbk.deliver('userOrgs/rando', {}); await A.flush();
-    fbk.deliver('workspaces/CLUB', CLUB); await A.flush();
+    await fbk.serveClub('CLUB', CLUB, A.flush); await A.flush();
     check('an account with no role does not', fbk.writtenTo('userOrgs/rando/CLUB').length, 0);
   }
 
@@ -374,7 +374,7 @@ const CLUB = {
     const { A, fbk } = await boot({ storage: { 'sm.workspace': 'CLUB' } });
     fbk.signIn('coach', { name: 'Jaz', email: 'jaz@x.test' }); await A.flush();
     fbk.deliver('.info/connected', true);
-    fbk.deliver('workspaces/CLUB', CLUB); await A.flush();
+    await fbk.serveClub('CLUB', CLUB, A.flush); await A.flush();
     A.click({ act: 'clubswitch' });
     check('the club switcher offers a new club', /data-act="newclub"/.test(A.rendered('#sheet')), true);
     A.click({ act: 'newclub' });
@@ -397,7 +397,7 @@ const CLUB = {
     check('and the club has its name, trimmed', valueAt(fbk, 'orgs/' + code + '/org/name'), 'Hillside FC');
     check('her name, and only that, where families can see it', JSON.stringify(valueAt(fbk, 'orgs/' + code + '/names/coach')), '{"name":"Jaz"}');
     check('nothing of the old club goes with it', ws.some(w => /\/teams|\/matches/.test(w.path)), false);
-    check('the old club is not written to', fbk.record.writes.some(w => w.path.startsWith('workspaces/CLUB/access/admins')), false);
+    check('the old club is not written to', fbk.record.writes.some(w => w.path.startsWith('orgs/CLUB/access/admins')), false);
     check('it goes on her list of clubs', (valueAt(fbk, 'userOrgs/coach/' + code) || {}).name, 'Hillside FC');
     check('and the phone opens it', A.storage.getItem('sm.workspace'), code);
     check('by reloading into it', A.dom.reloads, 1);
@@ -414,7 +414,7 @@ const CLUB = {
     const { A, fbk } = await boot({ storage: { 'sm.workspace': 'CLUB' } });
     fbk.signIn('adm', { name: 'Ada' }); await A.flush();
     fbk.deliver('.info/connected', true);
-    fbk.deliver('workspaces/CLUB', club); await A.flush();
+    await fbk.serveClub('CLUB', club, A.flush); await A.flush();
     A.render(); A.render();
     A.click({ act: 'newclub' });
     A.dom.node('#newClubName').value = 'Hillside FC';
@@ -443,7 +443,7 @@ const CLUB = {
     const { A, fbk } = await boot({ storage: { 'sm.workspace': 'CLUB' } });
     fbk.signIn('coach'); await A.flush();
     fbk.deliver('.info/connected', true);
-    fbk.deliver('workspaces/CLUB', CLUB); await A.flush();
+    await fbk.serveClub('CLUB', CLUB, A.flush); await A.flush();
     fbk.refuseWrites(p => /^(workspaces|orgs)\/sm-/.test(p));
     A.click({ act: 'newclub' });
     A.dom.node('#newClubName').value = 'Hillside FC';
@@ -455,7 +455,7 @@ const CLUB = {
     const { A, fbk } = await boot({ storage: { 'sm.workspace': 'CLUB' } });
     fbk.signIn('coach'); await A.flush();
     fbk.deliver('.info/connected', false);
-    fbk.deliver('workspaces/CLUB', CLUB); await A.flush();
+    await fbk.serveClub('CLUB', CLUB, A.flush); await A.flush();
     A.click({ act: 'newclub' });
     A.dom.node('#newClubName').value = 'Hillside FC';
     A.click({ act: 'newclubgo' }); await A.flush(20);
@@ -486,7 +486,7 @@ const CLUB = {
       await P.flush();
       fbk.signIn('adm', { name: 'Ada' }); await P.flush();
       fbk.deliver('.info/connected', true);
-      fbk.deliver('workspaces/' + code, doc); await P.flush();
+      await fbk.serveClub(code, doc, P.flush); await P.flush();
       P.render(); P.render();
       return { P, fbk };
     };
@@ -511,7 +511,7 @@ const CLUB = {
     club.teams.t1.players.p1.guardians = { mum: true };
     const { A, fbk } = await boot({ storage: { 'sm.workspace': 'CLUB' } });
     fbk.signIn('adm', { name: 'Ada' }); await A.flush();
-    fbk.deliver('workspaces/CLUB', club); await A.flush();
+    await fbk.serveClub('CLUB', club, A.flush); await A.flush();
     const tsv = [
       ['team', 'player_first_name', 'player_last_name', 'player_number', 'coach_email', 'parent1_email', 'parent2_email', 'parent1_mobile_number'],
       ['Flight', 'Ella', 'Moss', '7', 'jaz@x.test', 'MUM@x.test', 'dad@x.test', '555-0101'],
@@ -553,7 +553,7 @@ const CLUB = {
   {
     const { A, fbk } = await boot({ storage: { 'sm.workspace': 'CLUB' } });
     fbk.signIn('coach', { name: 'Jaz' }); await A.flush();
-    fbk.deliver('workspaces/CLUB', JSON.parse(JSON.stringify(CLUB))); await A.flush();
+    await fbk.serveClub('CLUB', JSON.parse(JSON.stringify(CLUB)), A.flush); await A.flush();
     A.click({ act: 'importinvitego' }); await A.flush(20);
     check('nobody else gets the invites made', fbk.record.writes.some(w => w.path.startsWith('invites/')), false);
   }
@@ -601,12 +601,12 @@ const CLUB = {
     check('and the phone does not go ahead on its own', clubWrites(fbk).join(), '');
   }
   {
-    // rules from before version 21 refuse the ask: the phone's own writes, as before
+    // rules from before version 27 refuse the ask: the phone's own writes, as before
     const { A, fbk } = await boot({ search: '?invite=' + ID, server: true, refuse: p => /^joinAsks\//.test(p) });
     fbk.signIn('sam', { name: 'Sam', email: 'sam@x.test' }); await A.flush();
     fbk.deliver('invites/' + ID, inviteDoc(A)); await A.flush();
-    A.click({ act: 'inviteaccept' }); await A.flush(); fbk.refuse('workspaces/CLUB/moved'); await A.flush(20);
-    check('the ask refused: the phone joins as it always did', [valueAt(fbk, 'workspaces/CLUB/access/teams/t1/coaches/sam'), A.storage.getItem('sm.workspace')].join(), ID + ',CLUB');
+    A.click({ act: 'inviteaccept' }); await A.flush(); await A.flush(20);
+    check('the ask refused: the phone joins as it always did', [valueAt(fbk, 'orgs/CLUB/access/teams/t1/coaches/sam'), A.storage.getItem('sm.workspace')].join(), ID + ',CLUB');
   }
   {
     const { A, fbk } = await boot({ storage: { 'sm.workspace': 'CLUB' }, server: true });

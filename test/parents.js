@@ -142,18 +142,20 @@ const MIN = 60000;
     const fbk = makeFakebase();
     const D = H.loadApp({ firebase: fbk, config: CFG, storage: { 'sm.workspace': 'CLUB' } });
     await D.flush(); fbk.signIn('mum', { name: 'Mo' }); await D.flush();
-    fbk.deliver('workspaces/CLUB', {
+    await fbk.serveClub('CLUB', {
       teams: { t1: { id: 't1', name: 'G11 Flight', events: {}, players: { p1: { id: 'p1', name: 'Rosa Smith', number: '2', guardians: { mum: true } } } } },
       matches: {},
       access: { org: { name: 'Lakeside SC' }, admins: { boss: true }, index: { boss: true, mum: true }, teams: {} }
-    });
+    }, D.flush);
     await D.flush();
     fbk.deliver('userOrgs/mum', { CLUB: { name: 'Lakeside SC', at: 1 }, HILL: { name: 'Hillside', at: 2 } }); await D.flush();
     const day = n => D.addDays(D.todayStr(), n);
-    fbk.deliver('workspaces/HILL/teams', { h1: { id: 'h1', name: 'Hill U9', events: { e9: { id: 'e9', kind: 'practice', title: 'Practice', date: day(2), start: '18:00', end: '19:00', venue: 'Hill Park' } },
-      players: { k: { id: 'k', name: 'Iris Smith', guardians: { mum: true } }, z: { id: 'z', name: 'Zoe Other', guardians: { someone: true } } } } });
-    fbk.deliver('workspaces/HILL/matches', { g1: { id: 'g1', teamId: 'h1', opponent: 'Storm', date: day(9), kickoff: '10:00', stints: { s: { pid: 'k', on: 0 } } } });
-    fbk.deliver('workspaces/HILL/access', { org: { name: 'Hillside FC' }, admins: { a: true }, index: { mum: true } });
+    await fbk.serveClub('HILL', {
+      access: { org: { name: 'Hillside FC' }, admins: { a: true }, index: { mum: true } },
+      teams: { h1: { id: 'h1', name: 'Hill U9', events: { e9: { id: 'e9', kind: 'practice', title: 'Practice', date: day(2), start: '18:00', end: '19:00', venue: 'Hill Park' } },
+      players: { k: { id: 'k', name: 'Iris Smith', guardians: { mum: true } }, z: { id: 'z', name: 'Zoe Other', guardians: { someone: true } } } } },
+      matches: { g1: { id: 'g1', teamId: 'h1', opponent: 'Storm', date: day(9), kickoff: '10:00', stints: { s: { pid: 'k', on: 0 } } } }
+    }, D.flush);
     for (const p of ['sessions', 'booked', 'avail']) fbk.deliver('training/HILL/' + p, {});
     await D.flush();
 

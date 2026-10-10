@@ -65,15 +65,16 @@ const okKey = k => typeof k === 'string' && k.length > 0 && !/[.#$\[\]\/]/.test(
 /* Everything this needs about one club, read once per event. Teams are read
    whole because a uid's roles can be on any team's squad; role changes are
    rare (an invite, a coach changing a parent), never the game-day writes. */
-async function clubFacts(env, code, tree) {
-  const L = await where(env.get, code, tree);
-  const [retired, access, teams, names] = await Promise.all([
+async function clubFacts(env, code) {
+  const L = await where(env.get, code);
+  const [retired, access, teams, names, children] = await Promise.all([
     env.get('retired/' + code),
     readAccess(env.get, L),
     readTeams(env.get, L),
-    L.names ? env.get(L.names) : null
+    L.names ? env.get(L.names) : null,
+    env.get(`${L.base}/children`)
   ]);
-  return { L, retired: !!retired, access: access || {}, teams: teams || {}, names: names || {} };
+  return { L, retired: !!retired, access: access || {}, teams: teams || {}, names: names || {}, children: children || {} };
 }
 const squad = (f, tid) => ((f.teams[tid] || {}).players) || {};
 const teamAcc = (f, tid) => ((f.access.teams || {})[tid]) || {};
@@ -87,6 +88,11 @@ function hasRole(f, uid) {
   for (const t of Object.values(f.teams))
     for (const p of Object.values((t && t.players) || {}))
       if (p && (has(p.guardians, uid) || has(p.self, uid) || has(p.fans, uid))) return true;
+  /* a family named on a child the club has let in (AUTH.md, *A child in the
+     club*): a child on no team, say. Her `guardians` are copies of the
+     squads', which are counted above already. */
+  for (const c of Object.values(f.children || {}))
+    if (c && c.club === true && has(c.family, uid)) return true;
   return false;
 }
 
@@ -186,10 +192,10 @@ async function forgetInvite(env, code, v, out) {
    `tids` the teams whose per-team tables it could have moved, and `coaches`
    whether it was a team's coaches (coachIndex). Resolves to what it did, for
    the tests and the function's log. */
-async function settle(env, code, { uids = [], tids = [], parents = false, players = false, fans = false, coaches = false, tree }, now = Date.now()) {
+async function settle(env, code, { uids = [], tids = [], parents = false, players = false, fans = false, coaches = false }, now = Date.now()) {
   const out = [];
   if (!okKey(code)) return out;
-  const f = await clubFacts(env, code, tree);
+  const f = await clubFacts(env, code);
   if (f.retired) return out;
   for (const tid of tids.filter(okKey)) {
     if (coaches) await syncTeamIndex(env, f, code, tid, out);
@@ -259,12 +265,14 @@ async function syncRoster(env, code, tid, pid, out) {
   if (want) { await env.set(`${B}/roster/${tid}/${pid}`, want); out.push('set roster/' + tid + '/' + pid); }
   else { await env.remove(`${B}/roster/${tid}/${pid}`); out.push('del roster/' + tid + '/' + pid); }
 }
-/* squad/{tid}/{pid}: one child's record, any depth. */
-async function onSquadPlayer(env, params) {
+/* squad/{tid}/{pid}: one child's record, any depth: the roster, and the
+   club's record of the child (below). */
+async function onSquadPlayer(env, params, before, now = Date.now()) {
   const out = [];
   const { code, tid, pid } = params || {};
   if (!okKey(code) || !okKey(tid) || !okKey(pid) || (await env.get('retired/' + code))) return out;
   await syncRoster(env, code, tid, pid, out);
+  await syncChild(env, code, tid, pid, before, out, now);
   return out;
 }
 /* org/rosterOpen: names in or out of every team's roster at once. */
@@ -280,39 +288,128 @@ async function onRosterOpen(env, params) {
   return out;
 }
 
+/* ---------------- a child in the club (orgs/ only) ---------------- */
+
+/* AUTH.md, *A child in the club, and registration*. Each squad record points
+   at the club's record of the child (`child`), and the child lists the squad
+   records that are her (`teams/{tid}: pid`). Her family on a team is the
+   squad's: the child's `guardians` (and `self`) hold a copy of each squad
+   record's, valued with the team, which the rules let anyone write and never
+   let claim more than the squad says. This keeps those copies, and gives a
+   squad record that has no child yet one of its own, made from it: the
+   phones do the same (syncChildren() in app.js), for a club whose functions
+   are not deployed, and both make the same record with the same id. */
+function splitName(name) {
+  const n = String(name || '').trim().replace(/\s+/g, ' ').slice(0, 120);
+  const k = n.lastIndexOf(' ');
+  return k > 0 ? { first: n.slice(0, k).slice(0, 60), last: n.slice(k + 1).slice(0, 60) } : { first: (n || 'Player').slice(0, 60), last: '' };
+}
+// childFrom() in app.js: the record a squad record that has none gets
+function childFrom(rec, tid, pid, at) {
+  return { id: pid, ...splitName(rec.name), club: true, by: 'club', at, teams: { [tid]: pid } };
+}
+async function syncChild(env, code, tid, pid, before, out, now) {
+  const B = `orgs/${code}`;
+  const rec = await env.get(`${B}/squad/${tid}/${pid}`);
+  let cid = rec && typeof rec.child === 'string' && okKey(rec.child) ? rec.child : null;
+  if (!rec) cid = before && typeof before.child === 'string' && okKey(before.child) ? before.child : null;
+  if (!cid && rec && typeof rec === 'object') {
+    // the first record of hers to be seen; the player id is the child id, as the phones make it
+    const there = await env.get(`${B}/children/${pid}`);
+    if (there && (there.teams || {})[tid] !== pid) return;   // somebody else's id: left for an admin
+    await env.set(`${B}/squad/${tid}/${pid}/child`, pid); out.push('set squad/' + tid + '/' + pid + '/child');
+    if (!there) { await env.set(`${B}/children/${pid}`, childFrom(rec, tid, pid, now)); out.push('set children/' + pid); }
+    cid = pid;
+  }
+  if (!cid) return;
+  const c = await env.get(`${B}/children/${cid}`);
+  if (!c || typeof c !== 'object') return;   // never start a child from a pointer alone
+  const teams = c.teams || {};
+  if (rec && teams[tid] !== pid) { await env.set(`${B}/children/${cid}/teams/${tid}`, pid); out.push('set children/' + cid + '/teams/' + tid); }
+  if (!rec && teams[tid] === pid) { await env.remove(`${B}/children/${cid}/teams/${tid}`); out.push('del children/' + cid + '/teams/' + tid); }
+  for (const field of ['guardians', 'self']) {
+    const want = rec ? keys(rec[field]).filter(u => has(rec[field], u) && okKey(u)) : [];
+    const now2 = c[field] || {};
+    for (const u of want) if (!has(now2, u)) { await env.set(`${B}/children/${cid}/${field}/${u}`, tid); out.push('set children/' + cid + '/' + field + '/' + u); }
+    for (const u of keys(now2)) if (now2[u] === tid && !want.includes(u)) { await env.remove(`${B}/children/${cid}/${field}/${u}`); out.push('del children/' + cid + '/' + field + '/' + u); }
+  }
+}
+/* children/{cid}: a family named on the child herself, or the club letting
+   her in, moves who is in the club's index. (Her family on a team is in it
+   through the squad already.) */
+async function onChildRecord(env, params, before, after, now) {
+  const b = before || {}, a = after || {};
+  const out = [];
+  if (!same(b.teams, a.teams) && okKey(params.code) && okKey(params.cid)) await syncCare(env, params.code, params.cid, b.teams, out);
+  if (same(b.family, a.family) && b.club === a.club) return out;
+  return out.concat(await settle(env, params.code, { uids: both(b.family, a.family) }, now));
+}
+
+/* Care details (AUTH.md, *Care: what a coach needs at the pitch*): her
+   family's own at care/{cid}, which only her family and the admins read, and
+   a copy for each team she is on at teamCare/{tid}/{pid}, which that team's
+   coaches read. Kept from the source and the child's teams; a family's phone
+   writes the copies of her own child too, for a club without the functions. */
+async function syncCare(env, code, cid, teamsBefore, out) {
+  const B = `orgs/${code}`;
+  if (await env.get('retired/' + code)) return;
+  const [care, c] = await Promise.all([env.get(`${B}/care/${cid}`), env.get(`${B}/children/${cid}`)]);
+  const teams = (c && c.teams) || {};
+  for (const [tid, pid] of Object.entries(teams)) {
+    if (!okKey(tid) || !okKey(pid)) continue;
+    const want = care && typeof care === 'object' ? { ...care, cid } : null;
+    const there = await env.get(`${B}/teamCare/${tid}/${pid}`);
+    if (same(there, want)) continue;
+    if (want) { await env.set(`${B}/teamCare/${tid}/${pid}`, want); out.push('set teamCare/' + tid + '/' + pid); }
+    else { await env.remove(`${B}/teamCare/${tid}/${pid}`); out.push('del teamCare/' + tid + '/' + pid); }
+  }
+  for (const [tid, pid] of Object.entries(teamsBefore || {})) {
+    if (teams[tid] === pid || !okKey(tid) || !okKey(pid)) continue;
+    const there = await env.get(`${B}/teamCare/${tid}/${pid}`);
+    // only her own: a squad record since given to somebody else keeps theirs
+    if (there && there.cid === cid) { await env.remove(`${B}/teamCare/${tid}/${pid}`); out.push('del teamCare/' + tid + '/' + pid); }
+  }
+}
+async function onCare(env, params) {
+  const out = [];
+  if (!okKey(params.code) || !okKey(params.cid)) return out;
+  await syncCare(env, params.code, params.cid, null, out);
+  return out;
+}
+
 const both = (before, after) => [...new Set([...keys(before), ...keys(after)])];
 
 /* access/admins/{uid}: one admin given or taken away. */
 function onAdmin(env, params, now) {
-  return settle(env, params.code, { uids: [params.uid], tree: params.tree }, now);
+  return settle(env, params.code, { uids: [params.uid] }, now);
 }
 /* access/teams/{tid}: a team's coaches, trackers and helpers. */
 function onTeamStaff(env, params, before, after, now) {
   const b = before || {}, a = after || {};
   const uids = [...both(b.coaches, a.coaches), ...both(b.trackers, a.trackers), ...both(b.helpers, a.helpers)];
-  return settle(env, params.code, { uids, tids: [params.tid], coaches: true, tree: params.tree }, now);
+  return settle(env, params.code, { uids, tids: [params.tid], coaches: true }, now);
 }
-/* access/viewers/{uid} (orgs/ only): a club viewer given or taken away.
+/* access/viewers/{uid}: a club viewer given or taken away.
    She is in the index like any role, so this is the same settle, plus the
    invite her viewer entry named once it is gone. */
 async function onViewer(env, params, before, after, now) {
-  const out = await settle(env, params.code, { uids: [params.uid], tree: 'orgs' }, now);
+  const out = await settle(env, params.code, { uids: [params.uid] }, now);
   if (!after && okKey(params.code)) await forgetInvite(env, params.code, before, out);
   return out;
 }
 
-/* teams/{tid}/players/{pid}/guardians: a player's families. */
+/* squad/{tid}/{pid}/guardians: a player's families. */
 function onGuardians(env, params, before, after, now) {
-  return settle(env, params.code, { uids: both(before, after), tids: [params.tid], parents: true, tree: params.tree }, now);
+  return settle(env, params.code, { uids: both(before, after), tids: [params.tid], parents: true }, now);
 }
-/* teams/{tid}/players/{pid}/self: a player's own sign-in. */
+/* squad/{tid}/{pid}/self: a player's own sign-in. */
 function onSelf(env, params, before, after, now) {
-  return settle(env, params.code, { uids: both(before, after), tids: [params.tid], players: true, tree: params.tree }, now);
+  return settle(env, params.code, { uids: both(before, after), tids: [params.tid], players: true }, now);
 }
 /* squad/{tid}/{pid}/fans: a player's fans (AUTH.md, *More kinds
-   of people*, 1). On orgs/ only: the old tree has no rule that writes one. */
+   of people*, 1). */
 function onFans(env, params, before, after, now) {
-  return settle(env, params.code, { uids: both(before, after), tids: [params.tid], fans: true, tree: params.tree }, now);
+  return settle(env, params.code, { uids: both(before, after), tids: [params.tid], fans: true }, now);
 }
 
-module.exports = { settle, onAdmin, onTeamStaff, onGuardians, onSelf, onViewer, onFans, onMember, onSquadPlayer, onRosterOpen, rosterEntry, isStaff, hasRole, teamIndexWanted, linkedWanted, coachTeamOf, helperTeamOf };
+module.exports = { onChildRecord, onCare, childFrom, splitName, settle, onAdmin, onTeamStaff, onGuardians, onSelf, onViewer, onFans, onMember, onSquadPlayer, onRosterOpen, rosterEntry, isStaff, hasRole, teamIndexWanted, linkedWanted, coachTeamOf, helperTeamOf };

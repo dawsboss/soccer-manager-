@@ -28,7 +28,7 @@
      asking again finishes it: every write in a plan sets a value, so doing
      one twice changes nothing.
 
-   The paths come from the phone already laid out for the club's tree
+   The paths come from the phone already laid out for the club
    (clubWrites()), and calendar writes already stamped with who made them
    (calStamp()), because those are the app's and a second copy here would
    be the one that drifts. What the server adds is the check, the order and
@@ -51,10 +51,7 @@ const has = (o, k) => !!(o && typeof o === 'object' && o[k] !== undefined && o[k
 
 /* What an import may write, below the club's own base and below
    training/{code}: the first part, and how many parts it needs at least. */
-const CLUB_PARTS = {
-  orgs: { teams: 2, squad: 2, coachNotes: 2, roster: 2, matches: 2, 'org/venues': 3 },
-  workspaces: { teams: 2, matches: 2, 'access/org/venues': 4 }
-};
+const CLUB_PARTS = { teams: 2, squad: 2, coachNotes: 2, roster: 2, matches: 2, 'org/venues': 3 };
 const TRAINING_PARTS = ['sessions', 'booked', 'came', 'packs', 'packuse', 'fees', 'pay', 'splans', 'avail', 'away', 'practices', 'drills', 'templates'];
 
 function allowed(p, L, code) {
@@ -64,7 +61,7 @@ function allowed(p, L, code) {
   if (p.startsWith(`training/${code}/`)) return parts.length >= 4 && TRAINING_PARTS.includes(parts[2]);
   if (!p.startsWith(L.base + '/')) return false;
   const rel = p.slice(L.base.length + 1);
-  return Object.entries(CLUB_PARTS[L.tree]).some(([head, min]) => (rel === head || rel.startsWith(head + '/')) && rel.split('/').length >= min);
+  return Object.entries(CLUB_PARTS).some(([head, min]) => (rel === head || rel.startsWith(head + '/')) && rel.split('/').length >= min);
 }
 
 /* A multi-path write, halved and tried again while the database says it
@@ -98,8 +95,6 @@ async function apply(env, code, uid, ask, now) {
   if (moving) return { ok: false, why: 'moving' };
   const L = await where(env.get, code);
   if (!has(await env.get(`${L.access}/admins`), uid)) return { ok: false, why: 'admin' };
-  // the phone laid the paths out for the tree it knew; a club that has moved since is planned again there
-  if (ask.tree && ask.tree !== L.tree) return { ok: false, why: 'tree' };
   const list = listOf(ask.writes);
   if (!list || !list.length || list.length > MAX_WRITES) return { ok: false, why: 'bad' };
   const bad = list.find(([p]) => !allowed(p, L, code));
@@ -136,7 +131,7 @@ async function apply(env, code, uid, ask, now) {
   return { ok: true, n: list.length };
 }
 
-/* importAsks/{code}/{uid}/{id}: { at, tree, writes: [{ p, v }] }. Resolves
+/* importAsks/{code}/{uid}/{id}: { at, writes: [{ p, v }] }. Resolves
    to the answer, also written at its `answer`, with the plan taken off. */
 async function onAsk(env, params, ask, now = Date.now()) {
   const { code, uid, id } = params || {};

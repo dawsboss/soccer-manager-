@@ -27,7 +27,7 @@
      then brought into line by access.js's own settle(), the same answer the
      role triggers give.
    - `{ op: 'club', name }`: a new club on orgs/ at a code the server makes
-     (crypto, 16 bytes, never one that is taken on either tree), with her as
+     (crypto, 16 bytes, never one that is taken), with her as
      its admin and owner, in one write. The bootstrap clauses stay in the
      rules for now, as a bridge for a database without the functions; once
      this is live everywhere they can go, and with them rules.js's gap.
@@ -95,11 +95,10 @@ async function redeem(env, uid, ask, now) {
   const L = await where(env.get, ws);
   const acc = await readAccess(env.get, L);
   if (!acc || typeof acc !== 'object' || !acc.admins) return { ok: false, why: 'gone' };
-  // the rules ask for the team and the child to be there; a viewer is club-wide, and only on orgs/
+  // the rules ask for the team and the child to be there; a viewer is club-wide
   const team = TEAM_ROLES.includes(role) ? await readTeam(env.get, L, v0.team) : null;
   if (TEAM_ROLES.includes(role) && !team) return { ok: false, why: 'gone' };
   if (v0.player && !(team.players || {})[v0.player]) return { ok: false, why: 'gone' };
-  if ((role === 'viewer' || role === 'fan') && L.tree !== 'orgs') return { ok: false, why: 'gone' };
 
   /* The spend, inside one transaction on the invite: whichever of two
      people asking at once commits first has it, and the other is told the
@@ -147,7 +146,7 @@ async function redeem(env, uid, ask, now) {
     // an entry already there keeps its value: the rule checked it when it was written
     if (!has(acc.index, uid)) patch[`${A}/index/${uid}`] = id;
     patch[`userOrgs/${uid}/${ws}`] = { name: clip((acc.org || {}).name || v.clubName || '', 80), at: now };
-    patch[`${L.base}/${L.tree === 'orgs' ? 'log' : 'access/log'}/${newId()}`] = {
+    patch[`${L.base}/log/${newId()}`] = {
       at: now, act: 'joined by invite as', by: uid, byName: name || null, target: uid,
       targetName: ROLE_NAME[role] || role, team: v.team || null, teamName: v.teamName || null
     };
@@ -166,10 +165,10 @@ async function redeem(env, uid, ask, now) {
      rather than a moment after her phone reloads. Never a table that is
      not there: that would close a bridge for every other team. */
   if (!asks) await access.settle(env, ws, {
-    uids: [uid], tids: v.team ? [v.team] : [], tree: L.tree,
+    uids: [uid], tids: v.team ? [v.team] : [],
     coaches: !!STAFF_KEY[role], parents: role === 'parent', players: role === 'player', fans: role === 'fan'
   }, now);
-  return { ok: true, ws, tree: L.tree, role, ...(asks ? { asked: true, team: v.team } : {}) };
+  return { ok: true, ws, role, ...(asks ? { asked: true, team: v.team } : {}) };
 }
 
 /* A new club, at a code the server makes. */
@@ -180,8 +179,7 @@ async function startClub(env, uid, ask, now) {
   let code = null;
   for (let i = 0; i < 3 && !code; i++) {
     const c = (env.newCode || newCode)();
-    const [w, o] = await Promise.all([env.get(`workspaces/${c}`), env.get(`orgs/${c}`)]);
-    if (w == null && o == null) code = c;
+    if ((await env.get(`orgs/${c}`)) == null) code = c;
   }
   if (!code) return { ok: false, why: 'busy' };
   const name = clip(typeof ask.you === 'string' && ask.you.trim() ? ask.you.trim() : (me && me.displayName) || '', 80);
@@ -197,7 +195,7 @@ async function startClub(env, uid, ask, now) {
     // the bookmark is what puts it in every one of her devices' club lists
     [`userOrgs/${uid}/${code}`]: { name: club, at: now }
   });
-  return { ok: true, ws: code, tree: 'orgs' };
+  return { ok: true, ws: code };
 }
 
 /* joinAsks/{uid}/{id}. Resolves to the answer, also written at its `answer`. */

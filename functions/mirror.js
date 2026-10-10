@@ -85,7 +85,7 @@ const time = () => Date.now();
 async function clubOf(env, params) {
   const code = params && params.code;
   if (!okKey(code)) return null;
-  const L = await where(env.get, code, params.tree);
+  const L = await where(env.get, code);
   if (String(code).startsWith(SANDBOX_PREFIX)) return null;
   const [retired, sandbox] = await Promise.all([env.get('retired/' + code), env.get(`${L.org}/sandbox`)]);
   return retired || sandbox ? null : L;

@@ -201,6 +201,10 @@ function makeFakebase() {
         await flush();
       }
     },
+    /* A club the test wrote in the app's shape, served from orgs/{code} the
+       way the database keeps it (orgsLayout()), part by part as the app
+       asks. */
+    serveClub(code, club, flush, deny) { return this.serve('orgs/' + code, club ? asWritten(club) : null, flush, deny); },
     /* Refuse every write whose path the predicate picks, the way a rule would. */
     refuseWrites(pred) { record.refuse = pred; return this; },
     /* Take every write the predicate picks and never answer it: no signal. */
@@ -212,6 +216,99 @@ function makeFakebase() {
       return hit.length;
     }
   };
+}
+
+
+/* ---------------- a test club, as orgs/ keeps it ---------------- */
+
+/* The app's suites write their clubs the way the app holds one in memory (a
+   team with its players, access with members, org and log inside), which is
+   the shape every one of them was written in. The database keeps a club on
+   orgs/{code}, split by who reads each part (AUTH.md, *The move to
+   `orgs/{orgId}`*), with the lookup tables, the roster and staff names
+   derived. This lays a test club out that way, as the server's moveClub
+   did for every real club, so `serveClub()` can hand the app what the
+   database would. */
+const { hasRole, isStaff, teamIndexWanted, linkedWanted, coachTeamOf, rosterEntry } = require('../functions/access');
+const keys = o => Object.keys(o && typeof o === 'object' ? o : {});
+const has = (o, k) => !!(o && typeof o === 'object' && o[k] !== undefined && o[k] !== null && o[k] !== false);
+const okKey = k => typeof k === 'string' && k.length > 0 && !/[.#$\[\]\/]/.test(k);
+const COACH_FIELDS = ['note', 'rating', 'pairs', 'avoid'];
+// the database has no empty nodes: {} is not there
+function prune(v) {
+  if (!v || typeof v !== 'object') return v;
+  const out = {};
+  for (const [k, x] of Object.entries(v)) { const y = prune(x); if (y !== undefined && y !== null && !(typeof y === 'object' && !Object.keys(y).length)) out[k] = y; }
+  return Object.keys(out).length ? out : undefined;
+}
+/* What serveClub() hands the app: the club laid out, its lookup tables, the
+   roster and staff names derived as the server keeps them. A table the test
+   wrote itself is served as written, and one written as {} is not there:
+   what a phone does about a missing or stale table is sometimes what a
+   suite is checking. */
+const TABLES = ['index', 'teamIndex', 'teamParents', 'teamPlayers', 'teamFans', 'coachIndex', 'helperIndex'];
+function asWritten(club) {
+  club = JSON.parse(JSON.stringify(club));
+  const o = orgsLayout(club), given = (club && club.access) || {};
+  o.access = o.access || {};
+  for (const k of TABLES) if (given[k] !== undefined) o.access[k] = given[k];
+  return prune(o);
+}
+function orgsLayout(ws) {
+  const { members, org, log, ...rest } = (ws && ws.access) || {};
+  const teams = {}, squad = {}, roster = {}, coachNotes = {};
+  const open = !!(org && org.rosterOpen === true);
+  for (const [tid, t] of Object.entries((ws && ws.teams) || {})) {
+    if (!t || typeof t !== 'object') continue;
+    const { players, ...team } = t;
+    teams[tid] = team;
+    if (players && typeof players === 'object') {
+      squad[tid] = {};
+      for (const [pid, p] of Object.entries(players)) {
+        const r = rosterEntry(p, open);
+        if (r) (roster[tid] = roster[tid] || {})[pid] = r;
+        if (!p || typeof p !== 'object') { squad[tid][pid] = p; continue; }
+        const rec = {}, notes = {};
+        for (const [k, v] of Object.entries(p)) (COACH_FIELDS.includes(k) ? notes : rec)[k] = v;
+        squad[tid][pid] = rec;
+        if (Object.keys(notes).length) (coachNotes[tid] = coachNotes[tid] || {})[pid] = notes;
+      }
+    }
+  }
+  // the facts the lookup tables are worked out from, in the shape access.js reads
+  const f = { access: { ...rest, members, org }, teams: (ws && ws.teams) || {} };
+  const access = { admins: rest.admins, owners: rest.owners, teams: rest.teams };
+  const index = { ...(rest.index || {}) };
+  const everyone = new Set(keys(rest.admins));
+  for (const ta of Object.values(rest.teams || {})) for (const u of [...keys(ta && ta.coaches), ...keys(ta && ta.trackers)]) everyone.add(u);
+  for (const t of Object.values(f.teams)) for (const p of Object.values((t && t.players) || {}))
+    for (const u of [...keys(p && p.guardians), ...keys(p && p.self)]) everyone.add(u);
+  for (const u of everyone) if (okKey(u) && hasRole(f, u) && !has(index, u)) index[u] = true;
+  access.index = index;
+  const teamIndex = {}, teamParents = {}, teamPlayers = {}, coachIndex = {};
+  for (const tid of keys(rest.teams)) { const w = teamIndexWanted(f, tid); if (keys(w).length) teamIndex[tid] = w; }
+  for (const tid of keys(f.teams)) {
+    const gp = linkedWanted(f, tid, 'guardians'); if (keys(gp).length) teamParents[tid] = gp;
+    const sp = linkedWanted(f, tid, 'self'); if (keys(sp).length) teamPlayers[tid] = sp;
+  }
+  for (const u of everyone) {
+    const keep = (rest.coachIndex || {})[u];
+    const ok = keep && has((((rest.teams || {})[keep]) || {}).coaches, u);
+    const t = ok ? keep : coachTeamOf(f, u);
+    if (t) coachIndex[u] = t;
+  }
+  Object.assign(access, { teamIndex, teamParents, teamPlayers, coachIndex });
+  const names = {};
+  for (const u of everyone) {
+    const n = members && members[u] && typeof members[u].name === 'string' ? members[u].name.slice(0, 80) : '';
+    if (n && isStaff(f, u)) names[u] = { name: n };
+  }
+  // anything else a club holds at its top comes along as it is
+  const other = Object.fromEntries(Object.entries(ws || {}).filter(([k]) => !['access', 'teams', 'matches', 'rsvp'].includes(k)));
+  /* Without the parts a club does not have yet (no log, no answers): the
+     database's own library refuses a write with an undefined anywhere in it,
+     and a club with nothing logged used to fail the whole move that way. */
+  return JSON.parse(JSON.stringify({ ...other, access, org, members, log, names, teams, squad, coachNotes, roster, matches: ws.matches, rsvp: ws.rsvp }));
 }
 
 /* ---------------- the server's side ---------------- */
@@ -226,18 +323,17 @@ function makeFakebase() {
    file, its trigger paths included, not a copy of its wiring. `fire()` hands
    a trigger a write the way Cloud Functions would: the path's {params}, and a
    snapshot whose ref reaches back to this tree. */
-/* The server suites run twice: as written, against clubs on workspaces/{code},
-   and once more (SERVER_TREE=orgs, test/run.js's *-orgs entries) with every
-   club in the seed moved to orgs/{code} the way moveClub lays it out (AUTH.md,
-   *The move to `orgs/{orgId}`*). The suites keep saying what they always said
-   in the old tree's paths: in orgs mode this server keeps its clubs in the new
-   layout, and every path a test hands it (a write, a read back, a ref) is the
-   old tree's view of that club, translated on the way in and out. The
-   functions themselves see the real new layout and real paths, so each
-   expectation the server was held to on the old tree holds on the new one.
-   Trigger names come back without their Orgs ending, so "this woke
-   accessGuardians" means the same thing in both passes. */
-const ORGS_MODE = process.env.SERVER_TREE === 'orgs';
+/* The server suites are written the way they always were, in the app's
+   names for a club's parts (a team with its players, access with members,
+   org and log inside), which are the old workspaces/{code} tree's paths.
+   That tree is gone (AUTH.md, *The move to `orgs/{orgId}`*, build order step
+   5), so this server keeps every club laid out as orgs/{code} keeps it, the
+   way moveClub laid out every real club, and every path a test hands it (a
+   seed, a write, a read back, a ref) is translated on the way in and out.
+   The functions themselves see the real layout and real paths. Trigger
+   names come back without their Orgs ending, so "this woke accessGuardians"
+   reads as it always did. */
+const ORGS_MODE = true;
 // a club as the old tree held it -> the new layout (no derived parts: the functions make those)
 function clubToOrgs(w, keep = {}) {
   if (!w || typeof w !== 'object') return w;
@@ -587,4 +683,4 @@ function makeServer(seed = {}) {
   };
 }
 
-module.exports = { makeFakebase, makeServer, snap, ORGS_MODE, toOrgsPath, fromOrgsPath, clubToOrgs, clubFromOrgs };
+module.exports = { makeFakebase, makeServer, snap, orgsLayout, ORGS_MODE, toOrgsPath, fromOrgsPath, clubToOrgs, clubFromOrgs };

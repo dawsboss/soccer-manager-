@@ -2,7 +2,7 @@
    Static app. Data lives in localStorage, and mirrors to Firebase Realtime
    Database when a config + workspace code are present. */
 
-const BUILD = '122';
+const BUILD = '130';
 const BUILT = '2026-10-09';
 /* The version of database.rules.json this app was written against. The rules
    carry the same number in rulesVersion's .write, which accepts that number
@@ -11,7 +11,7 @@ const BUILT = '2026-10-09';
    never pasted look exactly like a coach with no signal: "saved on this phone
    only", one feature at a time. test/rules.js holds the two numbers together
    and fails when the rules change without this going up. */
-const RULES_VERSION = 21;
+const RULES_VERSION = 27;
 /* index.html carries the build it was published with. If this file is newer, the
    browser handed us a cached page — the exact failure that has eaten hours. */
 const pageBuild = () => {
@@ -45,7 +45,7 @@ const SANDBOX_PREFIX = 'test-';
    answer stored inside it would be lost to any edit made while a parent was
    answering; and the rule that lets a parent write here grants this node and
    nothing else, so a parent can never touch the team or the game. */
-let state = { teams: {}, matches: {}, access: {}, rsvp: {} };
+let state = { teams: {}, matches: {}, access: {}, rsvp: {}, children: {}, care: {}, teamCare: {}, programs: {}, waivers: {}, regs: {}, agreed: {} };
 let ui = { view: 'calendar', gameView: 'subs', teamId: null, matchId: null, picked: null, dragging: false, editFid: null, sortBy: 'need', plan: null, snapAt: null, snapSid: null };
 let lastLog = [];
 let lastScreen = null;   // the screen render() last drew, so a redraw of the same one keeps its scroll
@@ -223,7 +223,7 @@ function cachedMe() {
    A second workspace code gives auth work somewhere safe to click, but it
    cannot rehearse a rules change, and that is the change worth rehearsing.
    Rules belong to a database instance, not to a code: the lockdown block is
-   written against workspaces/$code, so publishing it to try it on a test club
+   written against orgs/$code, so publishing it to try it on a test club
    applies it to the real one in the same instant. Nor can you carve a stricter
    sandbox out of an open wildcard — a rule grants and a child can never take
    that back, so the open rule would still win. A separate database is the only
@@ -287,37 +287,34 @@ function trackersIn(m) {
 }
 const dataKey = () => LS_DATA + ':' + clubKey();
 
-/* ---------------- which tree a club is on ---------------- */
+/* ---------------- where a club lives ---------------- */
 
-/* A club lives at workspaces/{code} until it moves to orgs/{code} (AUTH.md,
-   *The move to `orgs/{orgId}`*; SECURITY.md, SEC-1). On the new tree its
-   parts are split by who may read them: the squad out from under each team,
-   members, the club's settings and the log out of access. The app keeps the
-   old shape in memory and on the phone (a team with its players, access with
-   org and members inside), so nothing that draws a screen had to change;
-   what changes is where each write goes (clubPath(), the one translation)
-   and how the club is read (wireOrgs()).
+/* A club lives at orgs/{code} (AUTH.md, *The move to `orgs/{orgId}`*;
+   SECURITY.md, SEC-1), its parts split by who may read them: the squad out
+   from under each team, members, the club's settings and the log out of
+   access. The app keeps the old shape in memory and on the phone (a team
+   with its players, access with org and members inside), so nothing that
+   draws a screen had to change; what differs is where each write goes
+   (clubPath(), the one translation) and how the club is read (wireOrgs()).
+   The old workspaces/{code} tree is gone (AUTH.md, build order step 5).
 
-   Which tree is remembered per club, so a phone at a field with no signal
-   still sends its outbox to the right place once it has one. It is found out
-   from the old tree, which any signed-in phone may read once a club has
-   moved (it holds nothing but the `moved` marker), and which holds nothing
-   for a club made on the new one. */
+   LS_TREE now only remembers that this phone's copy of a club was made from
+   orgs/: a copy from the old tree held every child on the club, and goes
+   down to what this account may hold before anything else is read
+   (forgetOthersChildren()), once. */
 const LS_TREE = 'sm.tree.v1';
 const treeKey = code => LS_TREE + ':' + envPrefix() + code;
-function clubTree(code = wsCode()) {
-  try { return localStorage.getItem(treeKey(code)) === 'orgs' ? 'orgs' : 'workspaces'; } catch (e) { return 'workspaces'; }
+function copyFromOrgs(code) {
+  try { return localStorage.getItem(treeKey(code)) === 'orgs'; } catch (e) { return true; }
 }
-function setClubTree(code, tree) {
+function markFromOrgs(code) {
   if (!code) return;
-  try { if (tree === 'orgs' || tree === 'workspaces') localStorage.setItem(treeKey(code), tree); else localStorage.removeItem(treeKey(code)); } catch (e) { }
+  try { localStorage.setItem(treeKey(code), 'orgs'); } catch (e) { }
 }
-const onOrgs = (code = wsCode()) => clubTree(code) === 'orgs';
 /* A path inside a club, as the app names it (the old tree's shape), to where
-   it lives on the club's tree. */
-function clubPath(rel, code = wsCode(), tree = clubTree(code)) {
+   it lives on orgs/. */
+function clubPath(rel, code = wsCode()) {
   rel = String(rel || '');
-  if (tree !== 'orgs') return 'workspaces/' + code + (rel ? '/' + rel : '');
   const r = rel.replace(/^teams\/([^/]+)\/players(?=\/|$)/, 'squad/$1').replace(/^access\/(members|org|log)(?=\/|$)/, '$1');
   return 'orgs/' + code + (r ? '/' + r : '');
 }
@@ -329,14 +326,13 @@ function clubPath(rel, code = wsCode(), tree = clubTree(code)) {
    tree had them, so nothing that draws or plans had to change. */
 const COACH_FIELDS = ['note', 'rating', 'pairs', 'avoid'];
 const withoutCoach = rec => (rec && typeof rec === 'object' ? Object.fromEntries(Object.entries(rec).filter(([k]) => !COACH_FIELDS.includes(k))) : rec);
-/* The writes one app write becomes. On the old tree, itself. On the new one,
-   a whole team is its team and its squad, and a player's record is her record
-   and her coach's notes, each at its rule's depth. Notes go one field at a
+/* The writes one app write becomes: a whole team is its team and its squad,
+   and a player's record is her record and her coach's notes, each at its
+   rule's depth. Notes go one field at a
    time and only the fields the write carries: a whole team or squad saved
    from a phone that has not read the notes yet (or may not) must never wipe
    them. */
-function clubWrites(rel, v, code = wsCode(), tree = clubTree(code)) {
-  if (tree !== 'orgs') return [[clubPath(rel, code, tree), v]];
+function clubWrites(rel, v, code = wsCode()) {
   const N = (tid, pid, f) => 'orgs/' + code + '/coachNotes/' + tid + (pid ? '/' + pid : '') + (f ? '/' + f : '');
   const gone = v === null || v === undefined;
   const notesOf = (tid, ps) => Object.entries(ps && typeof ps === 'object' ? ps : {}).flatMap(([pid, rec]) =>
@@ -345,22 +341,22 @@ function clubWrites(rel, v, code = wsCode(), tree = clubTree(code)) {
   let m = /^teams\/([^/]+)\/players\/([^/]+)\/(note|rating|pairs|avoid)(\/.*)?$/.exec(rel);
   if (m) return [[N(m[1], m[2], m[3]) + (m[4] || ''), v]];
   if ((m = /^teams\/([^/]+)\/players\/([^/]+)$/.exec(rel)))
-    return gone ? [[clubPath(rel, code, tree), null], [N(m[1], m[2]), null]]
-      : [[clubPath(rel, code, tree), withoutCoach(v)], ...notesOf(m[1], { [m[2]]: v })];
+    return gone ? [[clubPath(rel, code), null], [N(m[1], m[2]), null]]
+      : [[clubPath(rel, code), withoutCoach(v)], ...notesOf(m[1], { [m[2]]: v })];
   if ((m = /^teams\/([^/]+)\/players$/.exec(rel)))
-    return gone ? [[clubPath(rel, code, tree), null], [N(m[1]), null]]
-      : [[clubPath(rel, code, tree), squadOf(v)], ...notesOf(m[1], v)];
+    return gone ? [[clubPath(rel, code), null], [N(m[1]), null]]
+      : [[clubPath(rel, code), squadOf(v)], ...notesOf(m[1], v)];
   if ((m = /^teams\/([^/]+)$/.exec(rel))) {
-    if (gone) return [[clubPath(rel, code, tree), null], [clubPath(rel + '/players', code, tree), null], [N(m[1]), null]];
+    if (gone) return [[clubPath(rel, code), null], [clubPath(rel + '/players', code), null], [N(m[1]), null]];
     const { players, ...team } = v || {};
-    return [[clubPath(rel, code, tree), team], [clubPath(rel + '/players', code, tree), squadOf(players) || null], ...notesOf(m[1], players)];
+    return [[clubPath(rel, code), team], [clubPath(rel + '/players', code), squadOf(players) || null], ...notesOf(m[1], players)];
   }
-  return [[clubPath(rel, code, tree), v]];
+  return [[clubPath(rel, code), v]];
 }
-/* A family's phone holds her own children and nobody else's on orgs/. The
-   copy kept from before the move had the whole squad, and merge-on-read
-   would keep it, so it goes the moment the move is seen, before anything is
-   read: everyone but her own children (and, for a tracker, her own team). */
+/* A family's phone holds her own children and nobody else's on orgs/. A
+   copy kept from the old tree had the whole squad, and merge-on-read would
+   keep it, so it goes before the club is first read here (copyFromOrgs()):
+   everyone but her own children (and, for a tracker, her own team). */
 function forgetOthersChildren() {
   if (!me) return;
   const u = me.uid;
@@ -370,6 +366,14 @@ function forgetOthersChildren() {
     // a tracker keeps her own team's squad, but not the coach's notes on it (SEC-12)
     t.players = Object.fromEntries(Object.entries(t.players || {}).filter(([, p]) => isTracker(tid, u) || isMine(p) || iFan(p)).map(([pid, p]) => [pid, withoutCoach(p)]));
   }
+  // the club's records of children: her own only (AUTH.md, *A child in the club*)
+  state.children = Object.fromEntries(Object.entries(state.children || {}).filter(([, c]) => kidIsMine(c)));
+  // care details: her own children's, and no team's copy (that team's coaches' and the admins')
+  state.care = Object.fromEntries(Object.entries(state.care || {}).filter(([cid]) => state.children[cid]));
+  state.teamCare = {};
+  // registrations: her own children's, and nobody's agreements but through her own form
+  state.regs = Object.fromEntries(Object.entries(state.regs || {}).map(([p, rs]) => [p, Object.fromEntries(Object.entries(rs || {}).filter(([cid]) => state.children[cid]))]));
+  state.agreed = {};
   delete (state.access || {}).log;
   if (state.access && state.access.members) state.access.members = Object.fromEntries(Object.entries(state.access.members).map(([k, m]) => [k, { name: (m && m.name) || '' }]));
   saveLocal();
@@ -381,7 +385,7 @@ function forgetOthersChildren() {
 let namedHere = '';
 // SERVER.md: a staff member's name for families on orgs/; the role triggers and namesMember keep it too.
 function staffName() {
-  if (!fb || !me || !onOrgs() || namedHere === wsCode() + me.uid) return;
+  if (!fb || !me || namedHere === wsCode() + me.uid) return;
   const a = acc(), u = me.uid;
   if (!isAdmin(u) && !(a.coachIndex || {})[u] && !(a.helperIndex || {})[u]) return;
   namedHere = wsCode() + u;
@@ -396,7 +400,7 @@ function staffName() {
 let notesMovedHere = '';
 // SERVER.md: a one-off move of the coach's notes off each child's record, done by a coach's or admin's phone.
 function moveCoachNotes(squads, notes) {
-  if (!fb || !me || !onOrgs() || notesMovedHere === wsCode() + me.uid) return;
+  if (!fb || !me || notesMovedHere === wsCode() + me.uid) return;
   notesMovedHere = wsCode() + me.uid;
   const u = me.uid, code = wsCode();
   for (const [tid, ps] of Object.entries(squads || {})) {
@@ -414,29 +418,6 @@ function moveCoachNotes(squads, notes) {
     }
   }
 }
-/* Which tree a club is on, for a club this phone has not read yet (an
-   invite, a team link, another club she is in). Two small reads, never the
-   club: the old tree's `moved` marker (any signed-in phone may read a moved
-   club's old tree, since it holds nothing else; a phone not in a club still
-   there is refused, which says the same thing), then, if there is no marker,
-   whether the new tree has the club (there, or refused). Remembered either
-   way: a club only ever moves one way, and the open club's read notices that
-   (wireBase()), as does the copy of another club (watchMirror()). */
-function probeTree(code) {
-  if (!rtdb || !code) return Promise.resolve(clubTree(code));
-  let known = null;
-  try { known = localStorage.getItem(treeKey(code)); } catch (e) { }
-  if (known === 'orgs' || known === 'workspaces') return Promise.resolve(known);
-  const { db, mod } = rtdb;
-  const read = p => new Promise(res => mod.onValue(mod.ref(db, p), sn => res({ v: sn.val() }), () => res({ refused: true }), { onlyOnce: true }));
-  const keep = tree => { try { localStorage.setItem(treeKey(code), tree); } catch (e) { } return tree; };
-  return read('workspaces/' + code + '/moved').then(m => {
-    if (m.refused) return keep('workspaces');
-    if (m.v) return keep('orgs');
-    return read('orgs/' + code + '/access/admins').then(o => keep(o.refused || o.v ? 'orgs' : 'workspaces'));
-  });
-}
-
 /* Every store that holds data goes through here, because a phone whose
    storage is full refuses the write, and before this the refusal was
    swallowed: the change looked saved, lived only in the open page, and was
@@ -471,7 +452,7 @@ function loadLocal() {
       localStorage.removeItem(LS_DATA);
     }
     const d = JSON.parse(localStorage.getItem(dataKey()) || 'null');
-    if (d) state = { teams: d.teams || {}, matches: d.matches || {}, access: d.access || {}, rsvp: d.rsvp || {} };
+    if (d) state = { teams: d.teams || {}, matches: d.matches || {}, access: d.access || {}, rsvp: d.rsvp || {}, children: d.children || {}, care: d.care || {}, teamCare: d.teamCare || {}, programs: d.programs || {}, waivers: d.waivers || {}, regs: d.regs || {}, agreed: d.agreed || {} };
     const u = JSON.parse(localStorage.getItem(LS_UI) || 'null');
     if (u) Object.assign(ui, u);
     /* Before build 61 'live' was the coach's subs screen. Someone who left a
@@ -606,6 +587,7 @@ async function getApp() {
 let authReadyResolve;
 const authReady = new Promise(res => { authReadyResolve = res; });
 let attachWorkspace = () => { };   // set by initSync once fb/db exist; re-runnable
+let watchKid = () => { };          // set by listenOrgs: listen to one more child's record (a family's own)
 
 /* Signing in is optional for now. Nothing gates on it yet — it exists so stamps
    carry a real identity, and so the org model has something to hang off next. */
@@ -685,6 +667,7 @@ async function initAuth() {
       pushCheck();
       maybeLoadInvite();
       maybeLoadJoin();
+      if (regx && regx.status !== 'working') { regx.status = 'idle'; maybeLoadReg(); }
       watchMyClubs();
       render();
     };
@@ -709,7 +692,7 @@ async function initSync() {
     rtdb = { db, mod: dbMod };
     // an invite and the list of my clubs are both read before any workspace,
     // because a device with neither code nor role is exactly who needs them
-    authReady.then(() => { maybeLoadInvite(); maybeLoadJoin(); watchMyClubs(); pushCheck(); });
+    authReady.then(() => { maybeLoadInvite(); maybeLoadJoin(); maybeLoadReg(); watchMyClubs(); pushCheck(); });
 
     // appOwners is root-level and has nothing to do with any one workspace —
     // read it before a code even exists. A device with no workspace still
@@ -729,9 +712,8 @@ async function initSync() {
 
     if (!code) { setSync('off', 'no code'); return; }
 
-    // base follows the club's tree (clubTree()), which can change under it the first time a moved club is read
-    // held until the first read says which tree the club is on (sendPending())
-    fb = { db, ref: dbMod.ref, set: dbMod.set, remove: dbMod.remove, held: true, get base() { return clubPath('', code); } };
+    // held until the session's first read of the club (sendPending())
+    fb = { db, ref: dbMod.ref, set: dbMod.set, remove: dbMod.remove, held: true };
     fb.childAdded = dbMod.onChildAdded;
 
     // One full read to get in sync, then child-level listeners so an update to
@@ -772,10 +754,10 @@ async function initSync() {
     for (const c of knownClubs()) watchRetired(c.code);
     watchRetired(code);
 
-    /* The club has been read, on either tree: merged, never replaced, with
-       what this phone owes the club laid back on top and sent again. */
+    /* The club has been read: merged, never replaced, with what this phone
+       owes the club laid back on top and sent again. */
     function connected(v) {
-      fb.held = false;   // the tree is known: what waited in the outbox goes now
+      fb.held = false;   // the club has answered: what waited in the outbox goes now
       if (!v) { pushAll(); flushPending(); }
       else {
         // merged, never replaced: what this phone owes the club goes back on top, and back out
@@ -798,83 +780,12 @@ async function initSync() {
       shareIds();   // a game made elsewhere, or before game links, gets its id here
     }
 
+    /* The club is read from orgs/ (wireOrgs()). A copy on this phone from
+       the old tree, which held every child in the club, is first cut down
+       to what this account may hold, once, before anything is read. */
     function wireBase(attempt) {
-      if (onOrgs(code)) return wireOrgs(attempt);
-      dbMod.onValue(dbMod.ref(db, 'workspaces/' + code), snap => {
-        denied = false;
-        const v = snap.val();
-        /* Moved to orgs/, or never on the old tree at all (a club made on the
-           new one, or a code nobody has written): the new tree from now on. */
-        if (!v || v.moved) {
-          setClubTree(code, 'orgs');
-          forgetOthersChildren();
-          return wireOrgs(0);
-        }
-        connected(v);
-
-        /* The club moving to orgs/ while this phone is reading it looks, from
-           here, like everything in it being deleted: the server replaces the
-           old tree with its `moved` marker in one write. So the marker is
-           watched, and anything that empties the club waits a tick before it
-           is believed. The database raises every event of one write together,
-           so by then the marker has said whether it was a move; if it was,
-           the old tree is let go and the new one read, and nothing was ever
-           deleted here (nor reported as deleted by club activity). */
-        let gone = false;
-        const unlessMoved = fn => Promise.resolve().then(() => { if (!gone) fn(); });
-        dbMod.onValue(dbMod.ref(db, 'workspaces/' + code + '/moved'), ms => {
-          if (!ms.val() || gone) return;
-          gone = true;
-          setClubTree(code, 'orgs');
-          forgetOthersChildren();
-          wireOrgs(0);
-        }, () => { });
-
-        // membership is small and read whole; it does not need child-level listeners
-        dbMod.onValue(dbMod.ref(db, fb.base + '/access'), cs => {
-          if (gone) return;
-          const take = () => {
-            state.access = cs.val() || {};
-            overlayPending(state.access, 'access');
-            saveLocal(); noteMyClub(); render();
-          };
-          if (cs.val()) take(); else unlessMoved(take);
-        });
-
-        // rsvp per team, like teams and matches: one parent's answer never redraws from a whole-club read
-        for (const coll of ['teams', 'matches', 'rsvp']) {
-          if (!state[coll]) state[coll] = {};
-          const r = dbMod.ref(db, fb.base + '/' + coll);
-          const upsert = cs => {
-            if (gone || ui.dragging) return;
-            const inc = cs.val(); if (!inc) return;
-            state[coll][cs.key] = mergeNode(state[coll][cs.key], inc);
-            noteSeen(coll, cs.key);
-            // a change still on its way to the club stays on top of what the club last said
-            const own = { [cs.key]: state[coll][cs.key] };
-            overlayPending(own, coll);
-            if (own[cs.key]) state[coll][cs.key] = own[cs.key]; else delete state[coll][cs.key];
-            saveLocal(); render();
-          };
-          dbMod.onChildAdded(r, upsert);
-          dbMod.onChildChanged(r, upsert);
-          dbMod.onChildRemoved(r, cs => unlessMoved(() => {
-            if (ui.dragging) return;
-            if (pendingList().some(([p, e]) => p.startsWith(coll + '/' + cs.key) && e.v !== null)) return;
-            delete state[coll][cs.key]; saveLocal(); render();
-          }));
-        }
-      }, err => {
-        // A denial in the first second or two after boot is usually the ID
-        // token not having reached the database connection yet, not a real
-        // refusal — this read only ever runs once, so retry with backoff
-        // before showing someone the lock screen for a race, not a rule.
-        if (/permission|denied/i.test((err && err.code) || '') && attempt < 2) {
-          setTimeout(() => wireBase(attempt + 1), (attempt + 1) * 900);
-          return;
-        }
-        onDenied(err);
-      }, { onlyOnce: true });
+      if (!copyFromOrgs(code)) { forgetOthersChildren(); markFromOrgs(code); }
+      return wireOrgs(attempt);
     }
 
     /* ---------------- a club on orgs/ ---------------- */
@@ -907,6 +818,8 @@ async function initSync() {
       const view = !!(u && (a.viewers || {})[u]);
       return { admin, all, staffTeams, fam, view };
     }
+    // the teams whose care copies this account reads: an admin's every team, a coach's own
+    const careTeams = (r, a) => Object.keys((a && a.teams) || {}).filter(t => r.admin || (me && ((((a.teamIndex || {})[t]) || {})[me.uid] === 'coach')));
     const reachKey = r => JSON.stringify([r.admin, r.all, r.staffTeams, Object.keys(r.fam).sort(), !!r.view]);
 
     /* Her own children, team by team. The lookup tables name one child per
@@ -948,7 +861,35 @@ async function initSync() {
       const kids = await findKids(r, roster, squads);
       // the coach's notes (SEC-12), for the coaches and admins who may read them
       const notes = r.all ? (await once('coachNotes')) || {} : {};
-      return { r, access, org, names, teams, roster, matches, rsvp, members: membersV, mine, log, squads, kids, notes };
+      /* The club's records of children (AUTH.md, *A child in the club*):
+         every one for coaches and admins; for a family, her own, by path,
+         from her children's squad records (and, once listening, her own
+         list of them at families/{uid}, for a child on no team). */
+      let children = {};
+      if (r.all) children = (await once('children')) || {};
+      else if (me) {
+        const ids = new Set();
+        for (const ps of Object.values(kids)) for (const p of Object.values(ps || {})) if (p && typeof p.child === 'string') ids.add(p.child);
+        for (const ps of Object.values(squads)) for (const p of Object.values(ps || {})) if (p && typeof p.child === 'string' && ((p.guardians || {})[me.uid] || (p.self || {})[me.uid])) ids.add(p.child);
+        await Promise.all([...ids].map(async c => { const v = await once('children/' + c); if (v) children[c] = v; }));
+      }
+      /* Care details (AUTH.md, *Care*): a family her own children's, a coach
+         her own teams' copies, an admin every team's. */
+      const care = {}, teamCare = {};
+      if (!r.all && me) await Promise.all(Object.keys(children).map(async c => { const v = await once('care/' + c); if (v !== undefined) careHeard.add(c); if (v) care[c] = v; }));
+      await Promise.all(careTeams(r, access).map(async t => { const v = await once('teamCare/' + t); if (v !== undefined) teamCare[t] = v || {}; }));
+      /* Registration (AUTH.md, *Registration*): the programs and waivers
+         everyone in the club reads; every registration and agreement for an
+         admin, a program at a time; her own children's for a family. */
+      const [programs, waivers] = await Promise.all([once('programs'), once('waivers')]);
+      const regs = {}, agreed = {};
+      await Promise.all(Object.keys(programs || {}).map(async pg => {
+        if (r.admin) {
+          const [rv, av] = await Promise.all([once('regs/' + pg), once('agreed/' + pg)]);
+          regs[pg] = rv || {}; agreed[pg] = av || {};
+        } else if (me) await Promise.all(Object.keys(children).filter(c => kidIsMine(children[c])).map(async c => { const v = await once('regs/' + pg + '/' + c); if (v) (regs[pg] = regs[pg] || {})[c] = v; }));
+      }));
+      return { r, access, org, names, teams, roster, matches, rsvp, members: membersV, mine, log, squads, kids, notes, children, care, teamCare, programs: programs || {}, waivers: waivers || {}, regs, agreed };
     }
 
     const namesAsMembers = n => Object.fromEntries(Object.entries(n || {}).filter(([, x]) => x && typeof x === 'object').map(([u, x]) => [u, { name: String(x.name || '') }]));
@@ -980,7 +921,7 @@ async function initSync() {
         if (!t || typeof t !== 'object') continue;
         teams[tid] = { ...t, players: tid in x.squads ? squadWith(x.squads[tid], (x.notes || {})[tid], x.r.all) : fromRoster((x.roster || {})[tid], x.kids[tid]) };
       }
-      return { teams, matches: x.matches || {}, access, rsvp: x.rsvp || {} };
+      return { teams, matches: x.matches || {}, access, rsvp: x.rsvp || {}, children: x.children || {}, care: x.care || {}, teamCare: x.teamCare || {}, programs: x.programs || {}, waivers: x.waivers || {}, regs: x.regs || {}, agreed: x.agreed || {} };
     }
 
     /* After the first read, the same parts listened to: a change to one never
@@ -1014,6 +955,59 @@ async function initSync() {
         if (me) val('members/' + me.uid, v => { own.mine = v; put(); });
       }
       if (r.admin) val('log', v => setAcc('log', v));
+
+      /* The children's records: the list for staff, each of hers by path for a
+         family, and one she becomes the family of later (watchKid). */
+      const setKid = (c, v) => {
+        state.children = state.children || {};
+        if (v && typeof v === 'object') state.children[c] = v; else delete state.children[c];
+        const own = { [c]: state.children[c] };
+        overlayPending(own, 'children');
+        if (own[c]) state.children[c] = own[c]; else delete state.children[c];
+        saveLocal(); render(); childCheck();
+      };
+      const kidsWatched = new Set();
+      watchKid = c => {
+        if (!live() || r.all || kidsWatched.has(c) || typeof c !== 'string' || !c) return;
+        kidsWatched.add(c);
+        orgsOffs.push(dbMod.onValue(dbMod.ref(db, OB() + '/children/' + c), cs => { if (live()) setKid(c, cs.val()); }, () => kidsWatched.delete(c)));
+        // and her care details, which only her family (and the admins) read
+        orgsOffs.push(dbMod.onValue(dbMod.ref(db, OB() + '/care/' + c), cs => {
+          if (!live()) return;
+          careHeard.add(c);
+          state.care = state.care || {};
+          const own = { [c]: cs.val() || undefined };
+          overlayPending(own, 'care');
+          if (own[c]) state.care[c] = own[c]; else delete state.care[c];
+          saveLocal(); render();
+        }, () => { }));
+      };
+      const setPart = (k, v) => { state[k] = v || {}; overlayPending(state[k], k); saveLocal(); render(); };
+      val('programs', v => {
+        setPart('programs', v);
+        // an admin listens to each program's registrations and agreements as it appears
+        if (r.admin) for (const pg of Object.keys(v || {})) watchRegs(pg);
+      });
+      val('waivers', v => setPart('waivers', v));
+      const regsWatched = new Set();
+      const watchRegs = pg => {
+        if (regsWatched.has(pg)) return;
+        regsWatched.add(pg);
+        val('regs/' + pg, v => { state.regs = state.regs || {}; state.regs[pg] = v || {}; saveLocal(); render(); });
+        val('agreed/' + pg, v => { state.agreed = state.agreed || {}; state.agreed[pg] = v || {}; saveLocal(); render(); });
+      };
+      if (r.admin) for (const pg of Object.keys(x.programs || {})) watchRegs(pg);
+      for (const t of careTeams(r, x.access)) val('teamCare/' + t, v => { state.teamCare = state.teamCare || {}; state.teamCare[t] = v || {}; saveLocal(); render(); });
+      if (r.all) val('children', v => {
+        state.children = v || {};
+        overlayPending(state.children, 'children');
+        saveLocal(); render();
+      });
+      else {
+        for (const c of Object.keys(x.children || {})) watchKid(c);
+        // a child of hers on no team is found from her own list, at the root
+        if (me) orgsOffs.push(dbMod.onValue(dbMod.ref(db, 'families/' + me.uid + '/' + code), cs => { if (live()) for (const c of Object.keys(cs.val() || {})) watchKid(c); }, () => { }));
+      }
 
       const squadOf = {}, roster = { now: x.roster || {} }, kids = x.kids, notes = { now: x.notes || {} };
       const putPlayers = tid => {
@@ -1076,6 +1070,8 @@ async function initSync() {
         staffName();
         if (x.r.all) moveCoachNotes(x.squads, x.notes);
         listenOrgs(x);
+        syncChildren();
+        childCheck();
       }, err => {
         if (gen !== orgsGen) return;
         if (/permission|denied/i.test((err && err.code) || '') && attempt < 2) {
@@ -1184,25 +1180,29 @@ function settle(path, n, ok, err) {
   else return;          // anything else: still owed, and sent again on the next connect
   savePending(); render();
 }
-/* One app write, sent wherever the club's tree keeps it (clubWrites(): on
-   orgs/ a whole team is its team and its squad), settled once all of it has
-   landed. */
+/* One app write, sent wherever orgs/ keeps it (clubWrites(): a whole team is
+   its team and its squad), settled once all of it has landed. */
 function remoteWrite(path, v, del) {
-  // the old tree: exactly the path it always was (fb.base), the new one through the translation
-  const ws = onOrgs() ? clubWrites(path, del ? null : v) : [[fb.base + '/' + path, del ? null : v]];
+  const ws = clubWrites(path, del ? null : v);
   // a set of null deletes as surely as a remove, and some callers take an answer back that way
   return Promise.all(ws.map(([p, x]) => (del ? fb.remove(fb.ref(fb.db, p)) : fb.set(fb.ref(fb.db, p), x === undefined ? null : x))));
 }
-/* Until this session's first read of the club says which tree it is on, a
-   write waits in the outbox (where it already is) instead of going out: sent
-   to the tree this phone remembers, it would reach the old one for a club
-   that moved while the phone was away, and a club only ever lives on one.
-   The first read sends everything owed (flushPending()), and whoever was
-   waiting on one of these writes hears when that send lands. A stand-in
+/* Until this session's first read of the club has answered, a write waits
+   in the outbox (where it already is) instead of going out. This was how a
+   phone learned which tree a club was on while clubs moved to orgs/; it is
+   kept because it makes a session's sends one ordered pass after the club's
+   copy is merged (connected()), the same on every connect. The first read
+   sends everything owed (flushPending()), and whoever was waiting on one of
+   these writes hears when that send lands. A stand-in
    `fb` with no `held` (the tests' own) is never held. */
 let heldSends = [];
 function sendPending(path, n, v, del) {
-  if (fb && fb.held) return new Promise((res, rej) => heldSends.push({ path, res, rej }));
+  if (fb && fb.held) {
+    const pr = new Promise((res, rej) => heldSends.push({ path, res, rej }));
+    // like a send that went out (settle() hears it below), a caller that ignores the answer leaves no unhandled refusal
+    pr.catch(() => { });
+    return pr;
+  }
   let w;
   try { w = remoteWrite(path, v, del); }
   catch (e) { return Promise.reject(e); }
@@ -1230,7 +1230,7 @@ function overlayPending(target, under) {
 function mergeConnect(v) {
   // a copy: what this phone owes is laid over it, and the snapshot it came in is not ours to change
   v = clone(v);
-  const remote = { teams: v.teams || {}, matches: v.matches || {}, access: v.access || {}, rsvp: v.rsvp || {} };
+  const remote = { teams: v.teams || {}, matches: v.matches || {}, access: v.access || {}, rsvp: v.rsvp || {}, children: v.children || {}, care: v.care || {}, teamCare: v.teamCare || {}, programs: v.programs || {}, waivers: v.waivers || {}, regs: v.regs || {}, agreed: v.agreed || {} };
   const owed = [];
   for (const coll of ['teams', 'matches']) {
     for (const [id, x] of Object.entries(state[coll] || {})) {
@@ -1270,6 +1270,8 @@ function pendingLabel(p) {
     return (what ? what : 'the team') + n;
   }
   if (coll === 'rsvp') return 'an answer to who is coming';
+  if (coll === 'care') return 'care details for a child';
+  if (coll === 'children') return (c => 'the club\'s record of ' + (c && c.first ? c.first : 'a child'))((state.children || {})[id]);
   if (p.startsWith('access/org/venues')) return 'the club\'s fields';
   if (p === 'access/org/money') return 'the currency fees are shown in';
   if (coll === 'access') return 'who has which role';
@@ -1335,7 +1337,7 @@ function mergeNode(local, remote) {
   return out;
 }
 
-/* There is no .write at workspaces/$code — only on its children — so one set()
+/* There is no .write at orgs/$code — only on its children — so one set()
    of the whole node is refused the moment a club is locked down, and that is
    exactly the call that creates a club. Write the children in the order the
    rules can actually grant: admins while it is still empty, then the index
@@ -1398,7 +1400,7 @@ function rosterOf(t) {
 }
 // SERVER.md: the roster families read on orgs/; rosterPlayer keeps it too.
 function rosterAfter(path) {
-  const m = fb && !fb.held && onOrgs() && /^teams\/([^/]+)(\/players(\/|$)|$)/.exec(path);
+  const m = fb && !fb.held && /^teams\/([^/]+)(\/players(\/|$)|$)/.exec(path);
   // the coach's notes are not in the roster, so changing one changes nothing there
   if (!m || !canEditTeam(m[1]) || /^teams\/[^/]+\/players\/[^/]+\/(note|rating|pairs|avoid)(\/|$)/.test(path)) return;
   const t = state.teams[m[1]], r = t ? rosterOf(t) : {};
@@ -1440,7 +1442,7 @@ function remoteSet(path, value) {
   if (!fb) return;
   const v = calStamp(path, value === undefined ? null : value);
   // derived, and rebuilt on every connect: one made before the club has been read is not worth keeping
-  if (DERIVED.test(path)) { if (fb.held) return Promise.resolve(); const w = Promise.resolve(fb.set(fb.ref(fb.db, onOrgs() ? clubPath(path) : fb.base + '/' + path), v)); w.catch(() => { }); return w; }
+  if (DERIVED.test(path)) { if (fb.held) return Promise.resolve(); const w = Promise.resolve(fb.set(fb.ref(fb.db, clubPath(path)), v)); w.catch(() => { }); return w; }
   return sendPending(path, notePending(path, v), v);
 }
 function remoteDel(path, was) {
@@ -1455,7 +1457,7 @@ function remoteDel(path, was) {
     const tid = del[2] || (was && was.teamId) || ((state.matches || {})[del[3]] || {}).teamId;
     if (tid && (isCoach(tid, me.uid) || isHelper(tid, me.uid))) remoteSet(path + '/edit', { by: me.uid, at: nowMs() });
   }
-  if (DERIVED.test(path)) { if (fb.held) return; Promise.resolve(fb.remove(fb.ref(fb.db, onOrgs() ? clubPath(path) : fb.base + '/' + path))).catch(() => { }); return; }
+  if (DERIVED.test(path)) { if (fb.held) return; Promise.resolve(fb.remove(fb.ref(fb.db, clubPath(path)))).catch(() => { }); return; }
   sendPending(path, notePending(path, null, true), null, true).catch(() => { });
 }
 
@@ -1601,6 +1603,8 @@ function hasAnyRole(uid) {
     if ((ta.coaches || {})[uid] || (ta.trackers || {})[uid] || (ta.helpers || {})[uid]) return true;
   for (const t of Object.values(state.teams || {}))
     if (Object.values(t.players || {}).some(p => (p.guardians || {})[uid] || (p.self || {})[uid] || (p.fans || {})[uid])) return true;
+  // a family named on a child the club has let in (AUTH.md, *A child in the club*); her squads' copies are counted above
+  for (const c of Object.values(state.children || {})) if (c && c.club === true && (c.family || {})[uid]) return true;
   return false;
 }
 function logAccess(act, targetUid, extra) {
@@ -1803,7 +1807,7 @@ function fansWanted(tid) {
 }
 // SERVER.md: a lookup table rebuilt by phones on connect; a server trigger would keep it true at once.
 function syncTeamFans(tid) {
-  if (!tid || !me || !state.teams[tid] || !onOrgs()) return;
+  if (!tid || !me || !state.teams[tid]) return;
   if (!isAdmin(me.uid) && !isCoach(tid, me.uid)) return;
   const want = fansWanted(tid), now = (acc().teamFans || {})[tid] || {};
   const team = state.teams[tid];
@@ -1834,77 +1838,6 @@ function ensureFixtureShares(t) {
 /* What has to be true before the tighter rules can be published. Every line is
    a way to lock the club out, and all of them are invisible until you try to
    write something at a game. */
-/* Moving the club to orgs/ (AUTH.md, *The move to `orgs/{orgId}`*;
-   SECURITY.md, SEC-1). The admin asks by writing moveRequests/{code} as
-   herself; the server (functions/move.js) checks her again, moves the club in
-   one write, compares, and writes its answer beside the request. Online
-   only, and nothing waits on it at the sideline: until the answer comes the
-   club is exactly where it was. */
-let moveReq = null;     // { code, sent, result } while this phone is waiting on, or has heard, the server
-let moveWatch = null;
-function moveCard() {
-  if (onOrgs() || !canAdmin()) return '';
-  // a request asked from this phone or another, before a reload or not: what it is waiting on, or what the server said
-  watchMove(wsCode());
-  const r = moveReq && moveReq.code === wsCode() ? moveReq : null;
-  const res = r && r.result;
-  // no answer in two minutes: the server never took it up (it acts only on a new request), so asking again is offered
-  const stale = !!(r && !res && nowMs() - (r.sent || 0) > 120000);
-  const status = !r ? ''
-    : stale ? '<p class="warn">No answer came back from the server. Nothing has changed; ask again.</p>'
-    : res && res.ok ? '<p><b>Moved.</b> Reading the club again…</p>'
-    : res ? `<p class="warn">Not moved: ${esc(res.why || 'the server said no')}</p>`
-    : '<p class="muted">Asked. Waiting for the server: a minute or so. If nothing happens, the club\'s functions may not be deployed yet (README, <b>Deploying the server</b>).</p>';
-  return `<div class="card"><h2 style="margin-bottom:8px">Keep the squad off families' phones</h2>
-      <p class="muted" style="margin-top:0">Today everyone in the club can read all of it at the database, so a family's phone holds every child's name, the coaches' notes and ratings, and everyone's email; the app only hides them. Moving the club splits it so each family receives her own child and the others' shirt numbers, and nothing more. Nothing about how the app looks changes.</p>
-      <p class="muted">It needs a signal, takes a minute, and is refused while a game is being played. A copy of the club as it is now is kept on the server. Try it on a test club first.</p>
-      ${status}
-      ${r && !res && !stale ? '' : `<button class="btn wide" data-act="moveclub">${(res && !res.ok) || stale ? 'Try again' : 'Move ' + esc((acc().org || {}).name || 'this club')}</button>`}</div>`;
-}
-function watchMove(code) {
-  if (!rtdb || moveWatch === code) return;
-  moveWatch = code;
-  const { db, mod } = rtdb;
-  mod.onValue(mod.ref(db, 'moveRequests/' + code), sn => {
-    const req = sn.val();
-    if (!req) return;
-    const res = req.result || null;
-    const had = moveReq && moveReq.code === code && moveReq.result;
-    moveReq = { code, sent: req.at || nowMs(), result: res };
-    if (!res) { render(); return; }
-    if (res.ok && !(had && had.ok)) {
-      setClubTree(code, 'orgs');
-      toast('Moved: each family now receives only her own child');
-      attachWorkspace();
-    }
-    render();
-  }, () => { });
-}
-async function askMove() {
-  const code = wsCode();
-  if (!canAdmin() || !rtdb || !me || !code || onOrgs()) return;
-  if (!online) { toast('Moving the club needs a signal'); return; }
-  const { db, mod } = rtdb;
-  const ref = mod.ref(db, 'moveRequests/' + code);
-  try {
-    /* An earlier request (and its answer) is cleared so this is a new one,
-       but only if there is one: the rules count deleting nothing as a write,
-       and the move request's rule allows a delete only of a request that is
-       there, so clearing an empty one was refused and the move never asked. */
-    const was = await new Promise(res => mod.onValue(ref, sn => res(sn.val()), () => res(null), { onlyOnce: true }));
-    if (was) await mod.remove(ref);
-    moveReq = { code, sent: nowMs(), result: null };
-    render();
-    await mod.set(ref, { by: me.uid, at: nowMs() });
-    moveReq = { code, sent: nowMs(), result: null };   // the old answer, heard while clearing it, is not this one's
-  } catch (e) {
-    moveReq = null;
-    toast(/permission|denied/i.test((e && e.code) || '') ? 'The database refused it — are the rules (version ' + RULES_VERSION + ') published?' : 'Not asked — check the signal');
-    render(); return;
-  }
-  watchMove(code);
-}
-
 function readiness() {
   const a = acc();
   const rows = [];
@@ -1948,11 +1881,6 @@ function readiness() {
           : 'not checked yet — needs a signal'
   });
   rows.push({ ok: Object.keys(appOwners).length > 0, label: 'An app owner exists', detail: Object.keys(appOwners).length ? 'yes' : 'set appOwners in the console' });
-  rows.push({
-    ok: onOrgs(), label: 'Families\' phones hold only their own children',
-    detail: onOrgs() ? 'yes: the club has moved, and the database decides who reads each part'
-      : 'not yet: every family\'s phone holds the whole squad, and the app only hides it (Move the club, below)'
-  });
   return rows;
 }
 
@@ -1996,7 +1924,9 @@ function myPlayers() {
 }
 /* Her children and nobody else: booking, places and fees are a parent's to
    handle, never a player's own sign-in (the session rules check guardians). */
-const myChildren = () => !me ? [] : myPlayers().filter(x => (x.p.guardians || {})[me.uid]);
+const myChildren = () => !me ? [] : [...myPlayers().filter(x => (x.p.guardians || {})[me.uid]),
+  // and a child of hers in the club on no team, who books sessions as the club (AUTH.md, *Sessions for a child on no team*)
+  ...looseKids().filter(kidFamily).map(c => looseOne(c))];
 const guardsAnyone = () => myChildren().length > 0;
 /* My players cuts across clubs as well as teams (AUTH.md, "A parent with three
    children in two clubs"): her children in every other club she is in, read
@@ -2039,7 +1969,7 @@ function myFanOf() {
       if (iFan(p) && !isMine(p)) out.push({ t, p });
   return out.sort((a, b) => (a.p.name || '').localeCompare(b.p.name || ''));
 }
-const anyPlayers = () => myPlayers().length > 0 || elsewhereKids().length > 0 || myFanOf().length > 0;
+const anyPlayers = () => myPlayers().length > 0 || elsewhereKids().length > 0 || myFanOf().length > 0 || myClubKids().length > 0;
 const allKidNames = () => [...myPlayers().map(x => x.p.name), ...myFanOf().map(x => x.p.name), ...elsewhereKids().map(x => x.name)];
 
 function canEditTeam(tid) {
@@ -2412,7 +2342,7 @@ function joined(ans, v) {
       doc: { ws: ans.ws, team: v.team, teamName: v.teamName || '', clubName: v.clubName || '', fan: true } };
     holdJoin(); maybeLoadJoin(); render(); return;
   }
-  if (ans.tree) setClubTree(ans.ws, ans.tree);
+  markFromOrgs(ans.ws);
   dropInvite();
   try { localStorage.setItem(LS_WS, ans.ws); } catch (e) { }
   location.reload();
@@ -2431,9 +2361,8 @@ async function redeemHere() {
   const put = (p, val) => mod.set(mod.ref(db, p), val);
   const soft = pr => Promise.resolve(pr).catch(() => { });
   invite.status = 'working'; render();
-  // the club's own paths, on whichever tree it is on (clubPath(): her member entry and a child's record moved on orgs/)
-  const tree = await probeTree(ws);
-  const W = rel => clubPath(rel, ws, tree);
+  // the club's own paths, where orgs/ keeps them (clubPath(): her member entry and a child's record)
+  const W = rel => clubPath(rel, ws);
   try {
     if (v.seats) await takeSeat(put, 'invites/' + id, v, who, at);
     else if (!v.used) await put('invites/' + id + '/used', { by: who, at });
@@ -2515,7 +2444,7 @@ let newClubBusy = false;
    and owner, and her bookmark in one go, at a code it has checked is free
    on both trees. A club is never made twice for one ask: with no answer she
    is told so, and her list of clubs shows it the moment it is there. Only an
-   ask the rules refuse (version 21 not published yet) falls back to the
+   ask the rules refuse (version 27 not published yet) falls back to the
    phone's own claim below. */
 // SERVER.md: asks the server (joinAsk) for a new club's code where it is deployed.
 async function createClub(name) {
@@ -2524,7 +2453,7 @@ async function createClub(name) {
   newClubBusy = true;
   const ans = await askServer(`joinAsks/${me.uid}/${uid()}`, { op: 'club', name, ...(me.name ? { you: String(me.name).slice(0, 80) } : {}) }, JOIN_WAIT);
   if (ans && ans.ok && ans.ws) {
-    setClubTree(ans.ws, 'orgs');
+    markFromOrgs(ans.ws);
     try { localStorage.setItem(LS_WS, ans.ws); } catch (e) { }
     location.reload();
     return true;
@@ -2541,9 +2470,7 @@ async function createHere(name) {
   const code = randId('sm-'), who = me.uid, at = nowMs();
   const { db, mod } = rtdb;
   const put = (p, val) => mod.set(mod.ref(db, p), val);
-  /* A new club is made on orgs/ (AUTH.md, *The move to `orgs/{orgId}`*):
-     the old tree only ever shrinks. */
-  const W = rel => clubPath(rel, code, 'orgs');
+  const W = rel => clubPath(rel, code);
   newClubBusy = true;
   try {
     await put(W('access/admins/' + who), true);
@@ -2561,7 +2488,7 @@ async function createHere(name) {
   }
   // the bookmark is what puts it in every one of her devices' club lists
   await Promise.resolve(put('userOrgs/' + who + '/' + code, { name, at })).catch(() => { });
-  setClubTree(code, 'orgs');
+  markFromOrgs(code);
   try { localStorage.setItem(LS_WS, code); } catch (e) { }
   location.reload();
   return true;
@@ -3063,7 +2990,7 @@ async function sendClaim() {
     // a team link for so many people: a seat first, which is what the ask's rule looks for
     if (v.seats) await takeSeat((p, x) => mod.set(mod.ref(db, p), x), 'joinCodes/' + join.code, v, who, at);
     // so a coach or admin sees who is asking, as they would anyone who signed in
-    await mod.set(mod.ref(db, clubPath('access/members/' + who, v.ws, await probeTree(v.ws))), { name: me.name || '', email: me.email || '', at });
+    await mod.set(mod.ref(db, clubPath('access/members/' + who, v.ws)), { name: me.name || '', email: me.email || '', at });
     await mod.set(mod.ref(db, `claims/${v.ws}/${v.team}/${who}`), {
       code: join.code, shirt, ...(child ? { child } : {}), name: me.name || '', email: me.email || '', at
     });
@@ -3292,8 +3219,8 @@ function joinCard(t) {
 /* Talking to the families: team notices from the coaches, and a private
    conversation between each family and their team's coaches.
 
-   Where it lives matters more than how it looks. Not under workspaces/{code}:
-   everyone indexed reads all of that, so a parent's message about her
+   Where it lives matters more than how it looks. Not inside the club: everyone
+   indexed reads its teams and games, so a parent's message about her
    daughter would be readable by every other parent in the club, and the
    connect-time read would drag every conversation onto every phone. So, at the
    root, each with rules of its own (README has them; test/rules.js pins them):
@@ -4983,7 +4910,9 @@ async function trainingCopy(extra = {}) {
 // SERVER.md: a backup is an admin remembering to tap; a server would take them nightly.
 async function backupDoc() {
   const { T, missed } = await trainingCopy();
-  return { doc: { ...clone(state), training: T, savedAt: nowMs(), build: BUILD }, missed };
+  // never anyone's care details: a backup is a file that goes wherever files go (AUTH.md, *Care*)
+  const { care, teamCare, ...rest } = clone(state);
+  return { doc: { ...rest, training: T, savedAt: nowMs(), build: BUILD }, missed };
 }
 
 /* Restoring it: like teams and games, only what the club is missing, and
@@ -5602,7 +5531,7 @@ const IMPORT_NO = {
 async function importVia(plan) {
   if (!serverOn() || !rtdb || !me || !wsCode() || !online) { applyImport(plan); return 'phone'; }
   toast('Importing…');
-  const ans = await askServer(`importAsks/${wsCode()}/${me.uid}/${uid()}`, { tree: clubTree(), writes: importWrites(plan) }, IMPORT_WAIT);
+  const ans = await askServer(`importAsks/${wsCode()}/${me.uid}/${uid()}`, { writes: importWrites(plan) }, IMPORT_WAIT);
   if (ans && ans.ok) { landImport(plan); return 'server'; }
   if (ans && IMPORT_NO[ans.why]) { toast(IMPORT_NO[ans.why]); return 'refused'; }
   applyImport(plan);
@@ -6859,7 +6788,7 @@ function render() {
   let inGame = ui.view === 'game';
   // a game screen with no game is just four buttons that do nothing
   if (inGame && !match() && !teamMatches(ui.teamId).length) { ui.view = 'season'; inGame = false; }
-  if ((ui.view === 'admin' || ui.view === 'planner') && !canAdmin()) ui.view = 'club';
+  if ((ui.view === 'admin' || ui.view === 'planner' || ui.view === 'regs') && !canAdmin()) ui.view = 'club';
   if (ui.view === 'mine' && !anyPlayers()) ui.view = 'calendar';
   /* Not before the club has been read: a link to #/messages opened cold on a
      new phone renders before it knows anybody's role, and sending it to the
@@ -6878,6 +6807,8 @@ function render() {
   const pb = document.querySelector('#tabs [data-view="practice"]');
   if (pb) pb.hidden = !train;
   if (ui.view === 'practice' && !train) ui.view = 'season';
+  // a family past the club's deadline for her child's details: her calendar and messages, until it is done
+  if (!shut && detailsBlocked() && !DETAILS_OPEN.has(ui.view)) { ui.view = 'mine'; inGame = false; }
   // club admin, account settings and the person's calendar are not team-level, so the tab row steps aside
   const teamLevel = ['season', 'roster', 'practice'].includes(ui.view);
   if (ui.view === 'people' && !canAdmin() && !teams().some(x => isCoach(x.id, me && me.uid))) ui.view = 'club';
@@ -6918,6 +6849,7 @@ function render() {
   const v = ui.view;
   paintBell(shut);
   if (inviting) { app.innerHTML = inviteScreen(); saveUi(); watchMessages(); return; }
+  if (regx) { app.innerHTML = regScreen(); saveUi(); watchMessages(); return; }
   if (joining) { app.innerHTML = joinScreen(); saveUi(); watchMessages(); return; }
   if (purged) { app.innerHTML = purgedScreen(); saveUi(); watchMessages(); return; }
   if (denied || needsSignIn()) { app.innerHTML = lockScreen(); saveUi(); watchMessages(); return; }
@@ -6965,13 +6897,13 @@ function render() {
   lastScreen = here;
   placeMemo = new Map();
   try {
-    app.innerHTML = envNote + saveNote + (shut ? '' : alertBar()) + joinNote + roleNote + roNote + (
+    app.innerHTML = envNote + saveNote + (shut ? '' : alertBar() + detailsNote()) + joinNote + roleNote + roNote + (
       v === 'game' ? (g === 'track' ? viewTrack() : g === 'stats' ? viewStats() : g === 'recap' ? viewRecap() : g === 'pitch' ? viewMatch() : g === 'plan' ? viewPlan() : g === 'subs' ? viewSubs() : viewFeed()) :
         v === 'roster' ? viewRoster() :
           v === 'season' ? viewSeason() :
             v === 'formation' ? viewFormation() : v === 'club' ? viewClub() : v === 'people' ? viewPeople() : v === 'admin' ? viewAdmin()
               : v === 'mine' ? viewMine() : v === 'practice' ? viewPractice()
-                : v === 'inbox' ? viewInbox() : v === 'notes' ? viewNotes() : v === 'thread' ? viewThread() : v === 'sessions' ? viewSessions() : v === 'planner' ? viewPlanner()
+                : v === 'inbox' ? viewInbox() : v === 'notes' ? viewNotes() : v === 'thread' ? viewThread() : v === 'sessions' ? viewSessions() : v === 'planner' ? viewPlanner() : v === 'regs' ? viewRegs()
                 : v === 'setup' ? viewSetup() : viewCalendar());
   } finally { placeMemo = null; }
   syncHash();
@@ -7116,7 +7048,49 @@ function sheetAccount() {
     ${anyPlayers() ? `<button class="opt" data-act="goview" data-v="mine"><b>My players</b>
       <span class="rowsub">${allKidNames().map(esc).join(', ')}</span></button>` : ''}
     <button class="btn danger wide" data-act="signout" style="margin-top:8px">Sign out</button>
+    ${fbConfig().apiKey ? '<button class="btn quiet danger wide" data-act="forgetsheet" style="margin-top:8px">Delete my account</button>' : ''}
     <p class="muted">Club settings live under the club itself, since you may belong to more than one.</p>`);
+}
+
+/* Deleting an account (AUTH.md, *Deleting*). The club's server does the
+   forgetting, in every club she is in, from a request only she may write
+   (functions/forget.js); then this phone deletes the sign-in itself, the one
+   thing only it can. Said in full before she confirms. */
+let forgetting = null;   // { status: 'asking' | 'refused' | 'failed', clubs }
+function sheetForget() {
+  const names = Object.values(myClubs || {}).map(c => (c && c.name) || 'A club');
+  const f = forgetting || {};
+  openSheet(`<h3>Delete your account</h3>
+    ${f.status === 'refused' ? `<div class="rolebar warn">You are the only admin of ${esc(wordsAnd(f.clubs || []))}. Make someone else an admin there first, or the club would have nobody to run it.</div>` : ''}
+    ${f.status === 'failed' ? `<div class="rolebar warn">${esc(f.why || 'The club\'s server did not answer. Check the signal and try again.')}</div>` : ''}
+    <p style="margin-top:0">This takes you out of ${names.length ? esc(wordsAnd(names)) : 'every club you are in'}: every role, your place as a parent or fan, your settings, your own drills and your sign-in. It cannot be undone.</p>
+    <p class="muted">What stays with each club: messages and notices you wrote, and your children's records. A child left with no family is taken off her team (her games keep her name and number) and her record, her care details and registrations are kept for the club's admins to delete. Ask them if you want it gone now.</p>
+    <button class="btn danger wide" data-act="forgetgo"${f.status === 'asking' ? ' disabled' : ''}>${f.status === 'asking' ? 'Deleting…' : 'Delete my account'}</button>
+    <button class="btn quiet wide" data-act="closesheet" style="margin-top:8px">Keep it</button>`, true);
+}
+function forgetMe() {
+  if (!me || !rtdb || !fbAuth) return;
+  const { db, mod } = rtdb, who = me.uid;
+  forgetting = { status: 'asking' }; sheetForget();
+  let done = false;
+  const off = mod.onValue(mod.ref(db, `forgetRequests/${who}/answer`), sn => {
+    const a = sn.val();
+    if (!a || done || !me || me.uid !== who) return;
+    done = true; if (typeof off === 'function') off();
+    if (!a.ok) { forgetting = a.why === 'lastAdmin' ? { status: 'refused', clubs: a.clubs || [] } : { status: 'failed' }; sheetForget(); return; }
+    if (pushRec) pushTurnOff();
+    const user = fbAuth.currentUser;
+    authHeld = false; cacheMe(null);
+    Promise.resolve(user && authMod.deleteUser ? authMod.deleteUser(user) : authMod.signOut(fbAuth))
+      .catch(() => authMod.signOut(fbAuth))   // a sign-in too old to delete: everything of hers is gone already
+      .then(() => { forgetting = null; closeSheet(); toast('Your account is deleted'); render(); });
+  }, () => { });
+  Promise.resolve(mod.set(mod.ref(db, 'forgetRequests/' + who), { at: nowMs() })).catch(() => {
+    done = true; if (typeof off === 'function') off();
+    forgetting = { status: 'failed', why: 'Refused by the database: the club may not have updated its rules yet.' }; sheetForget();
+  });
+  // nobody answering is a server not deployed, or no signal
+  setTimeout(() => { if (!done && forgetting && forgetting.status === 'asking') { forgetting = { status: 'failed' }; if (!$('#sheet').hidden) sheetForget(); } }, 20000);
 }
 
 /* The clubs this device keeps a copy of, plus the ones this account belongs to
@@ -10425,13 +10399,14 @@ function sheetFormations() {
 /* --- my players: the same page whatever else you are here --- */
 function viewMine() {
   // the players she is a fan of come after her own, and their cards say less (fan: true)
-  const list = [...myPlayers(), ...myFanOf().map(x => ({ ...x, sup: true }))], away = elsewhereKids();
-  if (!list.length && !away.length) return `<div class="empty"><strong>Nobody linked yet</strong>
+  const list = [...myPlayers(), ...myFanOf().map(x => ({ ...x, sup: true }))], away = elsewhereKids(), recs = kidCards();
+  if (!list.length && !away.length && !recs) return `<div class="empty"><strong>Nobody linked yet</strong>
     A coach links your account to your player, and she shows up here.</div>`;
 
   const justMe = list.length && list.every(x => isMe(x.p)) && !away.length;
   return `<div class="stack">
     <h2>${justMe ? 'My season' : 'My players'}</h2>
+    ${recs}${regCards()}
     ${list.map(({ t, p, sup }) => {
     const ms = teamMatches(t.id);
     const played = ms.reduce((a, m) => a + playedSec(m, p.id), 0);
@@ -10478,7 +10453,7 @@ function viewMine() {
           <span class="tag session">Training</span></button>` : '')(!sup && sessAll().find(s => !sessPast(s) && !s.called && (b => b && b.st !== 'out' && b.st !== 'no')(bookOf(s.id, p.id))))}
       </div>
       ${sup ? `<button class="btn quiet wide" data-act="fanleave" data-tid="${t.id}" data-pid="${p.id}" style="margin-top:10px">Stop following ${esc(firstName(p))}</button>` : ''}
-      ${!sup && onOrgs() && fbConfig().apiKey ? `<button class="btn quiet wide" data-act="fansheet" data-tid="${t.id}" data-pid="${p.id}" style="margin-top:10px">${isMe(p) ? 'Your fans' : 'Fans'}${Object.keys(p.fans || {}).length ? ' (' + Object.keys(p.fans).length + ')' : ''}</button>` : ''}</div>`;
+      ${!sup && fbConfig().apiKey ? `<button class="btn quiet wide" data-act="fansheet" data-tid="${t.id}" data-pid="${p.id}" style="margin-top:10px">${isMe(p) ? 'Your fans' : 'Fans'}${Object.keys(p.fans || {}).length ? ' (' + Object.keys(p.fans).length + ')' : ''}</button>` : ''}</div>`;
   }).join('')}
     ${away.map(k => `<div class="card">
       <div class="row"><span class="crest blank">${esc((k.name || '?').slice(0, 1))}</span>
@@ -12762,7 +12737,7 @@ function tickRun() {
      training/{code}/fees/{sid}/{pid}    what was paid for one place
      training/{code}/pay/{uid}           what a coach is paid
      training/{code}/splans/{sid}        the drills
-     workspaces/{code}/access/org/venues the club's fields and their permits
+     orgs/{code}/org/venues             the club's fields and their permits
 
    Outside the workspace for the reasons practice plans are (every phone reads
    the whole workspace, and the connect-time read still replaces it), plus one
@@ -12852,7 +12827,8 @@ const fitsAges = (s, t) => { const u = teamUAge(t); return !s.ages || u == null 
 
 function playerById(pid) {
   for (const t of teams()) { const p = (t.players || {})[pid]; if (p) return { t, p }; }
-  return null;
+  const c = clubKids()[pid];
+  return c && looseKids().includes(c) ? looseOne(c) : null;
 }
 const bookOf = (sid, pid) => { const b = ((sess.booked || {})[sid] || {})[pid]; return b && BOOK[b.st] ? b : null; };
 const bookingsOf = sid => Object.entries((sess.booked || {})[sid] || {}).filter(([, b]) => b && BOOK[b.st])
@@ -13941,9 +13917,9 @@ let sessPick = null;      // { sid, tid, picked: [pid], scope }
 function sheetSessPick() {
   const pk = sessPick; if (!pk) return;
   const s = sessById(pk.sid); if (!s) { closeSheet(); return; }
-  const list = myTeams();
+  const list = [...myTeams(), ...(looseKids().length ? [looseTeam()] : [])];
   if (!list.some(t => t.id === pk.tid)) pk.tid = (list.find(t => t.id === ui.teamId) || list[0] || {}).id;
-  const t = state.teams[pk.tid];
+  const t = pk.tid === CLUB_TID ? looseTeam() : state.teams[pk.tid];
   const inSeries = s.series && sessSeries(s).filter(x => x.date >= s.date && !x.called).length > 1;
   const left = spotsLeft(s);
   openSheet(`<h3>Add players — ${esc(sessTitle(s))}</h3>
@@ -15388,25 +15364,11 @@ function watchMirror() {
       render();
     };
     for (const p of MIRROR_TR) offs.push(mod.onValue(mod.ref(db, `training/${code}/${p}`), take(p, 'tr'), () => { }));
-    if (clubTree(code) === 'orgs') { watchMirrorOrgs(code, offs, take); continue; }
-    /* The old tree until it shows no club there (moved, or made on the new
-       one): then ask which (probeTree()) and read that instead. A club that
-       has not moved costs nothing extra. */
-    for (const p of MIRROR_WS) offs.push(mod.onValue(mod.ref(db, `workspaces/${code}/${p}`), sn => {
-      if (p === 'access' && !sn.val()) {
-        setClubTree(code, null);   // whatever was remembered, the old tree has no club here now
-        probeTree(code).then(tree => {
-          if (tree !== 'orgs' || mirrorWatch.get(code) !== offs) return;
-          unwatchClub(code); watchMirror();
-        });
-        return;
-      }
-      take(p, 'ws')(sn);
-    }, () => { }));
+    watchMirrorOrgs(code, offs, take);
   }
 }
-/* Another club of hers on orgs/: what My calendar needs, part by part, as
-   the old tree's whole read gave it — access with the club's name in it, the
+/* Another club of hers: what My calendar needs, part by part, in the shape
+   the rest of the app knows — access with the club's name in it, the
    games, and the teams with her own children on them (and nobody else's,
    which she could not read there anyway). */
 function watchMirrorOrgs(code, offs, take) {
@@ -16091,7 +16053,6 @@ function viewAdmin() {
         ${code === wsCode() ? '<span class="muted">open now</span>'
       : `<button class="btn quiet sm" data-act="switchclub" data-code="${esc(code)}">Open</button>`}</div>`).join('')}</div></div>` : ''}
 
-${moveCard()}
     <div class="card"><h2 style="margin-bottom:8px">Retire this club</h2>
       <p class="muted" style="margin-top:0">Marks it closed. Every device holding a copy clears it on next connect — except the app owner's, so it can still be opened and exported. <b>Nothing is deleted.</b> The data stays until the app owner removes it in the Firebase console.</p>
       <button class="btn danger wide" data-act="retireclub">Retire ${esc((acc().org || {}).name || 'this club')}</button></div>
@@ -16126,6 +16087,9 @@ ${moveCard()}
       <button class="btn wide" data-act="schedule">Calendar: all teams</button>
       <button class="btn quiet wide" data-act="planner" style="margin-top:8px">Clashes, find a time, picture day</button></div>
 
+    <div class="card"><h2 style="margin-bottom:8px">Registrations</h2>
+      <p class="muted" style="margin-top:0">${(n => n ? `${n} program${n === 1 ? '' : 's'}.` : 'None yet.')(programsAll().length)} What families register their children for, with its link, waivers, and who has registered.</p>
+      <button class="btn quiet wide" data-act="goview" data-v="regs">Registrations</button></div>
     <div class="card"><h2 style="margin-bottom:8px">Fields and permits</h2>
       <p class="muted" style="margin-top:0">${fieldList().length ? `${fieldList().length} field${fieldList().length === 1 ? '' : 's'}.` : 'None yet.'} The places the club trains, the permits you hold for each and when, and what is booked on them.</p>
       <button class="btn quiet wide" data-act="sesstab" data-k="fields">Fields</button></div>
@@ -18059,6 +18023,761 @@ function sheetPlanned() {
     <button class="btn wide" data-act="saveplan" style="margin-top:6px">Save planned minutes</button>`);
 }
 
+/* ---------------- a child in the club ---------------- */
+/* AUTH.md, *A child in the club, and registration*. One record per child per
+   club, at children/{cid} beside the squad (orgs/ only): her name as her
+   family gives it, her birth date and gender, the squad records that are her
+   (`teams/{tid}: pid`, each squad record pointing back with `child`), her
+   family, and whether her family has confirmed it. Coaches and admins read
+   every child, as they read every squad; a family reads her own, by path.
+
+   Her family on a team is the squad's: the child's `guardians` (and `self`)
+   are copies of each squad record's, valued with the team, which anyone may
+   write and the rules never let claim more than the squad says. A family
+   named on the child herself (`family`, a child on no team, say) comes from
+   an invite that names the child. Only her family writes `confirmed`. */
+const clubKids = () => state.children || {};
+const kidOf = p => (p && typeof p.child === 'string' ? clubKids()[p.child] || null : null);
+const kidFamily = c => !!(me && c && ((c.family || {})[me.uid] || (c.guardians || {})[me.uid]));
+const kidIsMine = c => !!(me && c && (kidFamily(c) || (c.self || {})[me.uid]));
+const kidName = c => [c && c.first, c && c.last].filter(Boolean).join(' ') || 'Your child';
+const KID_GENDER = { F: 'Girl', M: 'Boy' };
+const BORN_OK = /^(19|20)\d\d-[01]\d-[0-3]\d$/;
+// splitName() and childFrom() in functions/access.js: the same record, the same id
+function splitName(name) {
+  const n = String(name || '').trim().replace(/\s+/g, ' ').slice(0, 120);
+  const k = n.lastIndexOf(' ');
+  return k > 0 ? { first: n.slice(0, k).slice(0, 60), last: n.slice(k + 1).slice(0, 60) } : { first: (n || 'Player').slice(0, 60), last: '' };
+}
+function childFrom(rec, tid, pid, at) {
+  return { id: pid, ...splitName(rec.name), club: true, by: 'club', at, teams: { [tid]: pid } };
+}
+/* Who may change the club's record of a child, as the rules say it: an
+   admin, her family, or the coach who registered her until her family has
+   confirmed it (after that, the family's word stands). */
+function mayEditKid(c) {
+  if (!me || !c) return false;
+  if (isAdmin(me.uid) || kidFamily(c)) return true;
+  return c.by === me.uid && !c.confirmed && !!(acc().coachIndex || {})[me.uid];
+}
+/* What the club requires of a child's details (AUTH.md, *Getting families
+   to finish their children's details*): the admins choose from these, at
+   org/details/need; birth date, gender and someone to call until they say
+   otherwise. And a deadline, org/details/by, after which a family with a
+   child still to finish sees her calendar and messages only. */
+const DETAILS_NEED = { born: 'birth date', gender: 'gender', contact: 'someone to call', doctor: 'a doctor' };
+const DETAILS_DEFAULT = { born: true, gender: true, contact: true };
+function detailsSet() {
+  const d = (acc().org || {}).details || {};
+  const need = d.need && typeof d.need === 'object' ? Object.fromEntries(Object.keys(DETAILS_NEED).map(k => [k, d.need[k] === true])) : { ...DETAILS_DEFAULT };
+  return { need, by: typeof d.by === 'string' && /^\d{4}-\d\d-\d\d$/.test(d.by) ? d.by : null };
+}
+/* Her care details as this phone holds them: her family's own record, or
+   (for staff) her team's copy. Whether they are known at all matters: a
+   phone that has not heard yet must not tell her family, or block her, that
+   nobody is down to call. */
+let careHeard = new Set();
+function careFor(c) {
+  const own = (state.care || {})[c.id];
+  if (own) return own;
+  for (const [tid, pid] of Object.entries(c.teams || {})) { const x = teamCareOf(tid, pid); if (x) return x; }
+  return null;
+}
+const careKnown = c => !!((state.care || {})[c.id] || careHeard.has(c.id) || Object.keys(c.teams || {}).some(tid => (state.teamCare || {})[tid]));
+// what the club still has to ask her family for, of what it requires
+function kidMissing(c) {
+  const { need } = detailsSet(), out = [], care = careFor(c), known = careKnown(c);
+  if (need.born && !c.born) out.push(DETAILS_NEED.born);
+  if (need.gender && !c.gender) out.push(DETAILS_NEED.gender);
+  if (need.contact && known && !careContacts(care).length) out.push(DETAILS_NEED.contact);
+  if (need.doctor && known && !(care && care.doctor)) out.push(DETAILS_NEED.doctor);
+  return out;
+}
+// finished: confirmed by her family, with everything the club requires
+const kidUnfinished = c => !!c && !c.left && (!c.confirmed || kidMissing(c).length > 0);
+const myKidsTodo = () => myClubKids().filter(kidUnfinished);
+/* Past the deadline, a family with a child still to finish sees the screens
+   that tell her where to be and let her ask (the calendar, messages, the
+   bell) and the ones where she finishes (My players, her settings), and the
+   rest once it is done. Never anyone with a staff role: a coach whose own
+   child's form is late still runs her game. The app's, not the database's
+   (AUTH.md says why). */
+const DETAILS_OPEN = new Set(['calendar', 'inbox', 'thread', 'notes', 'mine', 'setup']);
+function detailsBlocked() {
+  if (!me) return false;
+  const { by } = detailsSet();
+  if (!by || todayStr() <= by || isStaffAnywhere(me.uid)) return false;
+  return myKidsTodo().length > 0;
+}
+function detailsNote() {
+  if (!me) return '';
+  const todo = myKidsTodo();
+  if (!todo.length) return '';
+  const { by } = detailsSet(), shutNow = detailsBlocked();
+  const who = wordsAnd(todo.map(c => (c.first || 'Your child') + '\u2019s'));
+  return `<div class="rolebar warn">${esc(who)} details ${todo.length === 1 ? 'aren\u2019t' : 'aren\u2019t'} finished${by && !shutNow ? `: the club needs them by ${esc(dayLabel(by))}` : ''}.${shutNow ? ' Until they are, the app shows your calendar and messages only.' : ''} <button class="linkbtn dark" data-act="kidopen" data-id="${esc(todo[0].id)}">Finish now</button></div>`;
+}
+// 'a, b and c'
+const wordsAnd = xs => xs.length < 2 ? xs.join('') : xs.slice(0, -1).join(', ') + ' and ' + xs[xs.length - 1];
+/* A child in the club on no team (AUTH.md, *Sessions for a child on no
+   team*): she books training sessions as the club, `club` where a booking,
+   package or fee names a team. The sessions screens know players by team, so
+   each such child is drawn as a team of her own, held in memory only, with
+   her birth year as its age. */
+const CLUB_TID = 'club';
+const looseKids = () => Object.values(clubKids()).filter(c => c && c.club === true && !c.left && !Object.keys(c.teams || {}).length);
+function looseOne(c) {
+  const p = { id: c.id, name: kidName(c), number: '', active: true, guardians: Object.fromEntries(Object.keys({ ...(c.family || {}), ...(c.guardians || {}) }).map(u => [u, true])) };
+  return { t: { id: CLUB_TID, name: 'No team yet', birthYear: c.born ? Number(c.born.slice(0, 4)) : null, players: { [c.id]: p } }, p };
+}
+const looseTeam = () => ({ id: CLUB_TID, name: 'No team yet', players: Object.fromEntries(looseKids().map(c => [c.id, looseOne(c).p])) });
+const myClubKids = () => Object.values(clubKids()).filter(c => c && kidFamily(c) && !c.left);
+
+/* A write the phone makes again on every connect, from what the squads say:
+   sent at once and not kept in the outbox, as the lookup tables are, so a
+   club whose rules are older is not told about it on every screen. */
+function kidQuiet(path, v) {
+  if (v === null) delDeep(state, path); else setDeep(state, path, v);
+  saveLocal();
+  if (!fb || fb.held) return Promise.resolve(false);
+  return Promise.resolve(v === null ? fb.remove(fb.ref(fb.db, clubPath(path))) : fb.set(fb.ref(fb.db, clubPath(path)), v)).then(() => true, () => false);
+}
+/* Each squad record gets a child, made from it, the first time an admin's
+   phone sees it with none (every child already on a team, the owner,
+   2026-10-09); the squad's families are copied onto the child by any staff
+   phone; a family's own phone writes her own copy, which is what lets her
+   read her child's record at all. */
+// SERVER.md: a child's club record for each squad record, and her family copied onto it; rosterPlayer and accessChild do the same.
+function syncChildren() {
+  if (!fb || !me) return;
+  const u = me.uid, admin = isAdmin(u), staff = admin || !!(acc().coachIndex || {})[u];
+  if (staff) {
+    for (const t of Object.values(state.teams || {})) {
+      if (!t || !t.id) continue;
+      for (const p of Object.values(t.players || {})) {
+        if (!p || !p.id) continue;
+        if (!p.child) {
+          if (!admin) continue;
+          const there = clubKids()[p.id];
+          if (there && (there.teams || {})[t.id] !== p.id) continue;   // somebody else's id: left for an admin to sort out
+          // the squad points at her first: the rule on the child's `teams` checks it
+          kidQuiet(`teams/${t.id}/players/${p.id}/child`, p.id).then(ok => { if (ok && !there) kidQuiet(`children/${p.id}`, childFrom(p, t.id, p.id, nowMs())); });
+          continue;
+        }
+        const c = kidOf(p);
+        if (!c) continue;
+        if ((c.teams || {})[t.id] !== p.id && isCoach(t.id, u)) kidQuiet(`children/${c.id}/teams/${t.id}`, p.id);
+        for (const f of ['guardians', 'self']) {
+          const want = Object.keys(p[f] || {}), now = c[f] || {};
+          for (const g of want) if (!now[g]) kidQuiet(`children/${c.id}/${f}/${g}`, t.id);
+          for (const g of Object.keys(now)) if (now[g] === t.id && !want.includes(g)) kidQuiet(`children/${c.id}/${f}/${g}`, null);
+        }
+      }
+    }
+  }
+  for (const { t, p } of myPlayers()) {
+    if (!p.child || clubKids()[p.child]) continue;
+    const f = (p.guardians || {})[u] ? 'guardians' : 'self';
+    Promise.resolve(fb.set(fb.ref(fb.db, clubPath(`children/${p.child}/${f}/${u}`)), t.id)).then(() => watchKid(p.child), () => { });
+  }
+}
+/* A family's phone asks her about a child still to finish once a day it is
+   opened, until she does (the owner, 2026-10-10: close to keeping her out,
+   not quite); the strip on every screen says it the rest of the time. */
+const LS_KIDASK = 'sm.kidask.v1';
+function childCheck() {
+  if (!me || needsSignIn()) return;
+  const c = myKidsTodo()[0];
+  if (!c) return;
+  const key = LS_KIDASK + ':' + me.uid + ':' + wsCode() + ':' + c.id, day = todayStr();
+  try { if (localStorage.getItem(key) === day) return; localStorage.setItem(key, day); } catch (e) { return; }
+  if (!$('#sheet').hidden) return;
+  sheetKid(c.id);
+}
+function kidPlaces(c) {
+  return Object.entries(c.teams || {}).map(([tid, pid]) => {
+    const t = state.teams[tid], p = t && (t.players || {})[pid];
+    return t ? teamLabel(t) + (p && p.number ? ' · #' + esc(String(p.number)) : '') : null;
+  }).filter(Boolean);
+}
+function kidStatus(c) {
+  if (c.confirmed) return 'Confirmed by her family' + (c.confirmed.at ? ', ' + new Date(c.confirmed.at).toLocaleDateString([], { day: 'numeric', month: 'short', year: 'numeric' }) : '');
+  return 'Waiting for her family to confirm';
+}
+/* Care details (AUTH.md, *Care: what a coach needs at the pitch*): who to
+   call and what a coach must know. Her family's own at care/{cid}, which her
+   family and the admins read and write; a copy for each team she is on at
+   teamCare/{tid}/{pid}, which that team's coaches read, kept by the server
+   and by her family's phone. Never in a game, a squad, a backup or public/. */
+const CARE_FIELDS = [['allergies', 'Allergies'], ['medical', 'Conditions'], ['meds', 'Medication'], ['doctor', 'Doctor']];
+const mayCare = c => !!(me && c && (isAdmin(me.uid) || kidFamily(c)));
+const careOf = cid => (state.care || {})[cid] || null;
+const teamCareOf = (tid, pid) => (((state.teamCare || {})[tid]) || {})[pid] || null;
+const careContacts = r => Object.values((r && r.contacts) || {}).filter(x => x && x.name && x.phone);
+const telOf = ph => 'tel:' + String(ph || '').replace(/[^\d+]/g, '');
+function careForm(r) {
+  const cs = Object.values((r && r.contacts) || {});
+  const row = i => { const x = cs[i] || {}; return `<div class="grid2">
+      <label class="field"><span>${i ? 'Another contact' : 'Who to call'}</span><input type="text" id="kC${i}n" maxlength="80" value="${esc(x.name || '')}" placeholder="${i ? 'Optional' : 'Name'}"></label>
+      <label class="field"><span>Phone</span><input type="tel" id="kC${i}p" maxlength="40" value="${esc(x.phone || '')}"></label>
+    </div>
+    <label class="field"><span>Who they are to her</span><input type="text" id="kC${i}r" maxlength="40" value="${esc(x.rel || '')}" placeholder="Mum, grandad, neighbour"></label>`; };
+  return `<p class="lbl">At the pitch</p>
+    <p class="muted" style="margin-top:0">Only her team's coaches and the club's admins see this, never other families. Leave a box empty for none.</p>
+    ${row(0)}${row(1)}
+    ${CARE_FIELDS.map(([k, l]) => `<label class="field"><span>${l}</span><textarea id="kCare_${k}" rows="1" maxlength="${k === 'doctor' ? 200 : 500}">${esc((r && r[k]) || '')}</textarea></label>`).join('')}`;
+}
+// what the form says, or null with a reason
+function careRead() {
+  const contacts = {};
+  for (const i of [0, 1]) {
+    const name = $('#kC' + i + 'n').value.trim().slice(0, 80), phone = $('#kC' + i + 'p').value.trim().slice(0, 40), rel = $('#kC' + i + 'r').value.trim().slice(0, 40);
+    if (!name && !phone) continue;
+    if (!name || !phone) return { why: 'Each contact needs a name and a phone number' };
+    contacts[Object.keys(contacts).length] = { name, phone, ...(rel ? { rel } : {}) };
+  }
+  const rec = { contacts };
+  for (const [k] of CARE_FIELDS) { const v = $('#kCare_' + k).value.trim().slice(0, k === 'doctor' ? 200 : 500); if (v) rec[k] = v; }
+  if (!Object.keys(contacts).length) delete rec.contacts;
+  return { rec };
+}
+const careSame = (a, b) => { const strip = r => { const { by, at, cid, ...x } = r || {}; return JSON.stringify(x); }; return strip(a) === strip(b); };
+/* Her family's (or an admin's) care details saved: the record, then each of
+   her teams' copies this account may write, which the server keeps too. */
+function saveCare(c, rec) {
+  const full = { ...rec, by: me.uid, at: nowMs() };
+  commit(`care/${c.id}`, full);
+  for (const [tid, pid] of Object.entries(c.teams || {})) {
+    const p = ((state.teams[tid] || {}).players || {})[pid];
+    if (isAdmin(me.uid) || (p && (p.guardians || {})[me.uid])) kidQuiet(`teamCare/${tid}/${pid}`, { ...full, cid: c.id });
+  }
+}
+// what her team's coach sees on her page in Squad
+function careCard(t, p) {
+  if (!me || !(isAdmin(me.uid) || (teamAccess(t.id).coaches || {})[me.uid])) return '';
+  const r = teamCareOf(t.id, p.id);
+  if (!r) return `<p class="lbl">At the pitch</p><p class="muted" style="margin-top:0">Her family hasn't given who to call or anything you should know yet.</p>`;
+  const cs = careContacts(r);
+  return `<p class="lbl">At the pitch</p>
+    <div class="plist" style="margin-bottom:8px">${cs.map(x => `<a class="prow" href="${esc(telOf(x.phone))}" style="grid-template-columns:1fr auto">
+      <span><span class="pname">${esc(x.name)}</span><span class="rowsub">${esc([x.rel, x.phone].filter(Boolean).join(' · '))}</span></span><span class="muted">Call</span></a>`).join('') || '<p class="muted" style="margin:0">Nobody to call given.</p>'}</div>
+    ${CARE_FIELDS.filter(([k]) => r[k]).map(([k, l]) => `<p style="margin:0 0 6px"><b>${l}:</b> ${esc(r[k])}</p>`).join('')}
+    <p class="muted" style="margin:0 0 14px">From her family. Only this team's coaches and the club's admins see it.</p>`;
+}
+function sheetKid(cid) {
+  const c = clubKids()[cid];
+  if (!c) return;
+  const fam = kidFamily(c), edit = mayEditKid(c), ask = fam && kidUnfinished(c);
+  const miss = kidMissing(c), places = kidPlaces(c);
+  const shown = v => (v ? esc(v) : '<span class="muted">Not given yet</span>');
+  openSheet(`<h3>${ask ? `Check ${esc(c.first || 'your child')}’s details` : esc(kidName(c))}</h3>
+    ${ask ? `<p class="muted" style="margin-top:0">The club has ${esc(c.first || 'your child')} on its records. Check what it has, change anything that's wrong${miss.length ? `, and add ${wordsAnd(miss)}` : ''}, then confirm. Only you can.</p>`
+      : `<p class="muted" style="margin-top:0">${esc(kidStatus(c))}.</p>`}
+    <p style="margin:0 0 12px"><b>Plays for:</b> ${places.length ? places.join(', ') : 'no team yet'}</p>
+    ${edit ? `<div class="grid2">
+      <label class="field"><span>First name</span><input type="text" id="kFirst" maxlength="60" value="${esc(c.first || '')}"></label>
+      <label class="field"><span>Last name</span><input type="text" id="kLast" maxlength="60" value="${esc(c.last || '')}"></label>
+    </div>
+    <label class="field"><span>Birth date</span><input type="date" id="kBorn" value="${esc(c.born || '')}"></label>
+    <p class="lbl">Gender, as the state's registration asks</p>
+    <div class="chips" style="margin-bottom:14px">
+      ${Object.entries(KID_GENDER).map(([k, l]) => `<button class="chip" type="button" data-act="pickone" data-grp="kgender" data-v="${k}" aria-pressed="${c.gender === k}">${l}</button>`).join('')}
+    </div>`
+      : `<p style="margin:0 0 6px"><b>Born:</b> ${shown(c.born ? dayLabel(c.born) : '')}</p>
+    <p style="margin:0 0 12px"><b>Gender:</b> ${shown(KID_GENDER[c.gender] || '')}</p>`}
+    ${mayCare(c) ? careForm(careOf(c.id)) : ''}
+    ${!fam && mayDraftReg() ? (ps => ps.length ? `<p class="lbl">Register her for</p><p class="muted" style="margin-top:0">Her family is asked to finish it: what is missing, and the waivers, which only they can agree to.</p>
+      <div class="chips" style="margin-bottom:14px">${ps.map(pr => `<button class="chip" type="button" data-act="regdraft" data-prog="${esc(pr.id)}" data-id="${esc(c.id)}">${esc(pr.name)}</button>`).join('')}</div>` : '')(programsAll().filter(pr => progOpen(pr) && !regsOf(pr.id)[c.id] && !progFits(pr, c.born, c.gender))) : ''}
+    ${me && isAdmin(me.uid) && !Object.keys(c.teams || {}).length ? `<button class="btn quiet danger wide" data-act="kiddel" data-id="${esc(c.id)}" style="margin-bottom:8px">Delete her club record</button>` : ''}
+    ${ask ? `<button class="btn wide" data-act="kidconfirm" data-id="${esc(c.id)}">Confirm</button>`
+      : edit ? `<button class="btn wide" data-act="kidsave" data-id="${esc(c.id)}">Save</button>` : ''}
+    <button class="btn quiet wide" data-act="closesheet" style="margin-top:8px">${ask ? 'Later' : 'Close'}</button>`, true);
+}
+/* What My players shows about the club's records: a card for each child of
+   hers still to confirm, and one for a child in the club on no team. */
+function kidCards() {
+  const todo = myKidsTodo();
+  const loose = myClubKids().filter(c => !kidUnfinished(c) && !Object.keys(c.teams || {}).length);
+  return todo.map(c => `<div class="card"><b>Check ${esc(c.first || 'your child')}’s details</b>
+      <p class="muted" style="margin:6px 0 10px">The club has her on its records${kidMissing(c).length ? ` and still needs ${wordsAnd(kidMissing(c).map(x => x === 'someone to call' ? x : 'her ' + x))}` : ''}. Only you can confirm them.</p>
+      <button class="btn wide" data-act="kidopen" data-id="${esc(c.id)}">Check her details</button></div>`).join('')
+    + loose.map(c => `<div class="card"><div class="row"><span class="crest blank">${esc((c.first || '?').slice(0, 1))}</span>
+      <span><b style="font-size:18px">${esc(kidName(c))}</b><span class="rowsub">In the club · on no team yet</span></span></div>
+      <button class="btn quiet wide" data-act="kidopen" data-id="${esc(c.id)}" style="margin-top:10px">Her details</button></div>`).join('');
+}
+// her own list of her children, at the root, so another phone of hers (and the account-delete function) finds them
+function familyList(cid) {
+  if (!fb || !me || !wsCode()) return;
+  Promise.resolve(fb.set(fb.ref(fb.db, `families/${me.uid}/${wsCode()}/${cid}`), true)).catch(() => { });
+}
+
+/* ---------------- registration ---------------- */
+/* AUTH.md, *Registration* (step 3). A program is one thing to register for
+   (a season, a camp, tryouts, training sessions), with its birth years,
+   dates, fee (shown, never taken: payments are GOTSPORT.md step 5), its
+   questions and its waivers. Admins make them under Club → Registrations; a
+   program that is open has a link (regOpen/{id}, readable by anyone signed
+   in who has the id) which carries what a family who is not in the club yet
+   needs to fill the form, and nothing else. The family's child, care
+   details, registration and agreements are written by her own phone, in her
+   own name; only an admin moves a registration past sent, and accepting
+   lets the child, and so her family, into the club. A coach or an admin may
+   start one for a family (a draft) that her family finishes. */
+const REG_KIND = { season: 'Season', camp: 'Camp', tryout: 'Tryouts', sessions: 'Training sessions', other: 'Other' };
+const REG_ST = { draft: 'Waiting for the family', sent: 'Waiting for the club', accepted: 'Accepted', waitlist: 'On the waiting list', declined: 'Not this time', placed: 'On a team', withdrawn: 'Withdrawn' };
+const programsAll = () => Object.values(state.programs || {}).filter(p => p && p.id).sort((a, b) => (b.at || 0) - (a.at || 0));
+const waiversAll = () => Object.values(state.waivers || {}).filter(w => w && w.id).sort((a, b) => String(a.title).localeCompare(String(b.title)));
+const regsOf = prog => (state.regs || {})[prog] || {};
+const progOpen = (pr, day = todayStr()) => !!pr && !pr.closed && (!pr.opens || pr.opens <= day) && (!pr.closes || pr.closes >= day);
+const regLink = id => location.origin + location.pathname + '?reg=' + encodeURIComponent(id);
+const canRegs = () => !!(me && canAdmin());
+const mayDraftReg = () => !!(me && (isAdmin(me.uid) || (acc().coachIndex || {})[me.uid]));
+// why this child cannot be in this program, or ''
+function progFits(pr, born, gender) {
+  const y = born ? Number(String(born).slice(0, 4)) : null;
+  if (pr.born && y && (y < pr.born.lo || y > pr.born.hi)) return `${pr.name} is for children born ${pr.born.lo}${pr.born.hi !== pr.born.lo ? '–' + pr.born.hi : ''}`;
+  if (pr.gender && gender && gender !== pr.gender) return `${pr.name} is for ${pr.gender === 'F' ? 'girls' : 'boys'}`;
+  return '';
+}
+const progAsks = pr => Object.entries(pr.asks || {}).filter(([, q]) => q && q.q).sort((a, b) => (a[1].o || 0) - (b[1].o || 0));
+const progLine = pr => [REG_KIND[pr.kind] || '', pr.born ? `born ${pr.born.lo}${pr.born.hi !== pr.born.lo ? '–' + pr.born.hi : ''}` : '', pr.gender ? (pr.gender === 'F' ? 'girls' : 'boys') : '',
+  pr.closes ? 'closes ' + dayLabel(pr.closes) : '', pr.fee ? fmtMoney(pr.fee) : ''].filter(Boolean).join(' · ');
+
+/* The program link: what a family who is not in the club reads. Its own
+   copy of the program and of each waiver's text, so she needs nothing else
+   of the club's. Written by the admin's phone whenever the program or a
+   waiver it asks for changes, and taken down when it closes. */
+function regOpenDoc(pr) {
+  const org = acc().org || {};
+  const waivers = {};
+  for (const w of Object.keys(pr.waivers || {})) { const x = (state.waivers || {})[w]; if (x) waivers[w] = { title: x.title, v: x.v, text: x.text }; }
+  const asks = {};
+  for (const [k, q] of progAsks(pr)) asks[k] = { q: q.q, ...(q.need ? { need: true } : {}), o: q.o || 0 };
+  const out = { ws: wsCode(), prog: pr.id, name: pr.name, kind: pr.kind, club: String(org.name || '').slice(0, 120), money: String(org.money || '$').slice(0, 8), asks, waivers, by: me.uid, at: nowMs() };
+  for (const k of ['born', 'gender', 'opens', 'closes', 'fee', 'feeNote', 'about']) if (pr[k] !== undefined && pr[k] !== null && pr[k] !== '') out[k] = pr[k];
+  return out;
+}
+function publishProgram(pr) {
+  if (!fb || !pr || !pr.link) return Promise.resolve(false);
+  const ref = fb.ref(fb.db, 'regOpen/' + pr.link);
+  return Promise.resolve(pr.closed ? fb.remove(ref) : fb.set(ref, regOpenDoc(pr))).then(() => true, () => false);
+}
+
+/* ---- admins: children's details still to finish (AUTH.md, *Getting
+   families to finish their children's details*) ---- */
+// a child on no team has no team's copy of her care details: an admin reads hers, one child at a time
+const careAsked = new Set();
+function staffCareFetch() {
+  if (!fb || !rtdb || !me || !isAdmin(me.uid)) return;
+  for (const c of looseKids()) {
+    if (careHeard.has(c.id) || careAsked.has(c.id)) continue;
+    careAsked.add(c.id);
+    rtdb.mod.onValue(rtdb.mod.ref(rtdb.db, clubPath('care/' + c.id)), sn => {
+      careHeard.add(c.id);
+      if (sn.val()) { state.care = state.care || {}; state.care[c.id] = sn.val(); }
+      render();
+    }, () => { }, { onlyOnce: true });
+  }
+}
+function detailsCard() {
+  const { need, by } = detailsSet();
+  const todo = Object.values(state.children || {}).filter(kidUnfinished).sort((a, b) => kidName(a).localeCompare(kidName(b)));
+  const why = c => [c.confirmed ? '' : 'not confirmed by her family', ...kidMissing(c).map(x => 'no ' + x)].filter(Boolean).join(', ');
+  const where = c => kidPlaces(c).join(', ') || 'no team';
+  return `<div class="card"><h2 style="margin-bottom:8px">Children's details</h2>
+    <p class="muted" style="margin-top:0">${todo.length ? `${todo.length} child${todo.length === 1 ? ' has' : 'ren have'} details still to finish. Their families see a reminder on every screen and are asked once a day.` : 'Every child\u2019s details are finished.'}</p>
+    ${todo.length ? `<div class="plist" style="margin-bottom:10px">${todo.slice(0, 40).map(c => `<button class="prow" type="button" data-act="kidopen" data-id="${esc(c.id)}" style="grid-template-columns:1fr">
+      <span><span class="pname">${esc(kidName(c))}</span><span class="rowsub">${where(c)} · ${esc(why(c))}</span></span></button>`).join('')}</div>
+      ${todo.length > 40 ? `<p class="muted">…and ${todo.length - 40} more.</p>` : ''}` : ''}
+    <p class="lbl">What the club requires</p>
+    <div class="chips" style="margin-bottom:10px">${Object.entries(DETAILS_NEED).map(([k, l]) => `<button class="chip" type="button" data-act="detneed" data-k="${k}" aria-pressed="${!!need[k]}">${esc(l[0].toUpperCase() + l.slice(1))}</button>`).join('')}</div>
+    <p class="lbl">Deadline</p>
+    <p class="muted" style="margin-top:0">${by ? `After ${esc(dayLabel(by))}, a family with a child still to finish sees only her calendar and messages until she does.` : 'None: families are reminded, never kept out.'} Staff are never kept out.</p>
+    <div class="row"><input type="date" id="detBy" value="${esc(by || '')}">
+      <button class="btn quiet sm" data-act="detby">Set</button>${by ? '<button class="btn quiet sm" data-act="detbyclear">No deadline</button>' : ''}</div></div>`;
+}
+
+/* ---- admins: programs, waivers and who has registered ---- */
+function viewRegs() {
+  if (!canRegs()) return `<div class="empty"><strong>Club admins only</strong>Registration is the club's admins'.</div>`;
+  const u = ui.regs = ui.regs || {};
+  const pr = u.prog && (state.programs || {})[u.prog];
+  if (pr) return viewRegList(pr);
+  const left = Object.values(state.children || {}).filter(c => c && c.left);
+  staffCareFetch();
+  return `<div class="stack">
+    <div class="spread"><h2>Registrations</h2><button class="btn quiet sm" data-act="goview" data-v="admin">Back</button></div>
+    ${detailsCard()}
+    <p class="muted" style="margin-top:0">What families register their children for: a season, a camp, tryouts, training sessions. Each open program has a link to post wherever families will see it. Fees are shown, not taken; families pay the way you tell them.</p>
+    ${programsAll().map(p => {
+    const rs = Object.values(regsOf(p.id)), waiting = rs.filter(r => r && r.st === 'sent').length;
+    return `<button class="card" data-act="regprog" data-id="${esc(p.id)}" style="text-align:left;width:100%">
+      <b>${esc(p.name)}</b><span class="rowsub">${esc([p.closed ? 'Closed' : progOpen(p) ? 'Open' : 'Not open yet', progLine(p)].filter(Boolean).join(' · '))}</span>
+      <span class="rowsub">${rs.length} registered${waiting ? ` · ${waiting} waiting for you` : ''}</span></button>`;
+  }).join('') || '<div class="empty"><strong>No programs yet</strong>Make one, add its waivers, and post its link.</div>'}
+    <button class="btn wide" data-act="progedit">New program</button>
+    <div class="card"><h2 style="margin-bottom:8px">Waivers</h2>
+      <p class="muted" style="margin-top:0">The club's own words. A family agrees in her own name; change the words and the next registration asks again.</p>
+      <div class="plist">${waiversAll().map(w => `<button class="prow" type="button" data-act="waiveredit" data-id="${esc(w.id)}" style="grid-template-columns:1fr auto">
+        <span><span class="pname">${esc(w.title)}</span><span class="rowsub">Version ${w.v}</span></span><span class="muted">Edit</span></button>`).join('') || '<p class="muted" style="margin:0">None yet.</p>'}</div>
+      <button class="btn quiet wide" data-act="waiveredit" style="margin-top:10px">New waiver</button></div>
+    ${left.length ? `<div class="card"><h2 style="margin-bottom:8px">Left the club</h2>
+      <p class="muted" style="margin-top:0">Children whose family has deleted its account. Kept until you decide.</p>
+      <div class="plist">${left.map(c => `<button class="prow" type="button" data-act="kidopen" data-id="${esc(c.id)}" style="grid-template-columns:1fr"><span class="pname">${esc(kidName(c))}</span></button>`).join('')}</div></div>` : ''}
+  </div>`;
+}
+function viewRegList(pr) {
+  const u = ui.regs, f = u.st || 'all';
+  const rows = Object.entries(regsOf(pr.id)).filter(([, r]) => r && (f === 'all' || r.st === f))
+    .map(([cid, r]) => ({ cid, r, c: (state.children || {})[cid] || {} }))
+    .sort((a, b) => (b.r.sentAt || b.r.at || 0) - (a.r.sentAt || a.r.at || 0));
+  const chip = (k, l) => `<button class="chip" type="button" data-act="regfilter" data-k="${k}" aria-pressed="${f === k}">${l}</button>`;
+  return `<div class="stack">
+    <div class="spread"><h2>${esc(pr.name)}</h2><button class="btn quiet sm" data-act="regprog" data-id="">Back</button></div>
+    <p class="muted" style="margin-top:0">${esc([pr.closed ? 'Closed' : progOpen(pr) ? 'Open' : 'Not open yet', progLine(pr)].filter(Boolean).join(' · '))}</p>
+    ${pr.link && !pr.closed ? `<div class="row"><button class="btn" data-act="copylink" data-v="${esc(regLink(pr.link))}">Copy the link</button>
+      <button class="btn quiet" data-act="progedit" data-id="${esc(pr.id)}">Edit</button></div>`
+      : `<button class="btn quiet" data-act="progedit" data-id="${esc(pr.id)}">Edit</button>`}
+    <button class="btn quiet wide" data-act="regexport" data-id="${esc(pr.id)}">Export for GotSport</button>
+    <div class="chips">${chip('all', 'All')}${chip('sent', 'Waiting')}${chip('accepted', 'Accepted')}${chip('waitlist', 'Waiting list')}${chip('draft', 'Family to finish')}${chip('declined', 'Declined')}${chip('withdrawn', 'Withdrawn')}</div>
+    <div class="plist">${rows.map(({ cid, r, c }) => `<button class="prow" type="button" data-act="regopenone" data-prog="${esc(pr.id)}" data-id="${esc(cid)}" style="grid-template-columns:1fr auto">
+      <span><span class="pname">${esc(kidName(c))}${c.confirmed ? '' : ' <span class="tag wait">unconfirmed</span>'}</span>
+        <span class="rowsub">${esc([c.born ? 'born ' + dayLabel(c.born) : '', KID_GENDER[c.gender] || '', (r.fam || {}).name || ''].filter(Boolean).join(' · '))}</span></span>
+      <span class="tag">${esc(REG_ST[r.st] || r.st)}</span></button>`).join('') || '<p class="muted">Nobody here yet.</p>'}</div>
+  </div>`;
+}
+function sheetRegOne(prog, cid) {
+  const pr = (state.programs || {})[prog], r = regsOf(prog)[cid], c = (state.children || {})[cid] || {};
+  if (!pr || !r) return;
+  const ag = ((state.agreed || {})[prog] || {})[cid] || {};
+  const want = Object.keys(pr.waivers || {}).map(w => (state.waivers || {})[w]).filter(Boolean);
+  openSheet(`<h3>${esc(kidName(c))}</h3>
+    <p class="muted" style="margin-top:0">${esc(pr.name)} · ${esc(REG_ST[r.st] || r.st)}</p>
+    <p style="margin:0 0 6px"><b>Born:</b> ${c.born ? esc(dayLabel(c.born)) : 'not given'} · <b>Gender:</b> ${esc(KID_GENDER[c.gender] || 'not given')}</p>
+    <p style="margin:0 0 6px"><b>Registered by:</b> ${esc([(r.fam || {}).name, (r.fam || {}).email].filter(Boolean).join(' · ') || (r.by === 'club' ? 'the club' : 'staff, for her family'))}</p>
+    <p style="margin:0 0 12px"><b>Her details:</b> ${c.confirmed ? 'confirmed by her family' : 'not confirmed by her family yet'}</p>
+    ${progAsks(pr).map(([k, q]) => `<p style="margin:0 0 6px"><b>${esc(q.q)}</b><br>${esc(String(((r.answers || {})[k]) ?? '—'))}</p>`).join('')}
+    ${want.length ? `<p class="lbl">Waivers</p>${want.map(w => (a => `<p style="margin:0 0 6px">${esc(w.title)}: ${a ? `agreed by ${esc(a.name)}, ${esc(new Date(a.at).toLocaleDateString())}` : '<b>not agreed to this version</b>'}</p>`)(ag[w.id + '_' + w.v])).join('')}` : ''}
+    ${r.st === 'accepted' && pr.kind !== 'sessions' ? (ts => `<p class="lbl">Place her on a team</p>
+      <p class="muted" style="margin-top:0">She joins its squad with her family as its parents; the coach gives her a number.</p>
+      <div class="chips" style="margin-bottom:14px">${ts.map(t => `<button class="chip" type="button" data-act="regplace" data-prog="${esc(prog)}" data-id="${esc(cid)}" data-tid="${esc(t.id)}">${teamLabel(t)}</button>`).join('') || '<span class="muted">No team fits her age.</span>'}</div>`)(
+      teams().filter(t => !(c.teams || {})[t.id] && (!t.birthYear || !c.born || Math.abs(Number(t.birthYear) - Number(c.born.slice(0, 4))) <= 1))) : ''}
+    ${r.st === 'placed' && r.team ? `<p><b>On:</b> ${teamLabel(state.teams[r.team])}</p>` : ''}
+    <label class="field"><span>Note (admins only)</span><input type="text" id="regNote" maxlength="500" value="${esc(r.note || '')}"></label>
+    <div class="row" style="flex-wrap:wrap;gap:8px">
+      ${['accepted', 'waitlist', 'declined'].map(st => `<button class="btn${st === 'accepted' ? '' : ' quiet'}" data-act="regset" data-prog="${esc(prog)}" data-id="${esc(cid)}" data-st="${st}" ${r.st === st ? 'disabled' : ''}>${{ accepted: 'Accept', waitlist: 'Waiting list', declined: 'Decline' }[st]}</button>`).join('')}
+    </div>
+    <button class="btn quiet wide" data-act="closesheet" style="margin-top:8px">Close</button>`, true);
+}
+function sheetProgram(id) {
+  const pr = id ? (state.programs || {})[id] : null;
+  const e = ui.progEdit = ui.progEdit && ui.progEdit.id === (id || '') ? ui.progEdit : { id: id || '', w: { ...((pr || {}).waivers || {}) } };
+  const v = pr || {};
+  openSheet(`<h3>${pr ? 'Edit ' + esc(pr.name) : 'New program'}</h3>
+    <label class="field"><span>Name</span><input type="text" id="pName" maxlength="80" value="${esc(v.name || '')}" placeholder="Fall 2027"></label>
+    <label class="field"><span>Kind</span><select id="pKind">${Object.entries(REG_KIND).map(([k, l]) => `<option value="${k}"${(v.kind || 'season') === k ? ' selected' : ''}>${l}</option>`).join('')}</select></label>
+    <div class="grid2">
+      <label class="field"><span>Born from</span><input type="number" inputmode="numeric" id="pLo" value="${esc(v.born ? String(v.born.lo) : '')}" placeholder="any"></label>
+      <label class="field"><span>Born up to</span><input type="number" inputmode="numeric" id="pHi" value="${esc(v.born ? String(v.born.hi) : '')}" placeholder="any"></label>
+    </div>
+    <label class="field"><span>For</span><select id="pGender"><option value="">Everyone</option><option value="F"${v.gender === 'F' ? ' selected' : ''}>Girls</option><option value="M"${v.gender === 'M' ? ' selected' : ''}>Boys</option></select></label>
+    <div class="grid2">
+      <label class="field"><span>Opens</span><input type="date" id="pOpens" value="${esc(v.opens || '')}"></label>
+      <label class="field"><span>Closes</span><input type="date" id="pCloses" value="${esc(v.closes || '')}"></label>
+    </div>
+    <div class="grid2">
+      <label class="field"><span>Places</span><input type="number" inputmode="numeric" id="pCap" value="${esc(v.cap != null ? String(v.cap) : '')}" placeholder="no limit"></label>
+      <label class="field"><span>Fee</span><input type="number" inputmode="decimal" id="pFee" value="${esc(v.fee != null ? String(v.fee) : '')}" placeholder="none"></label>
+    </div>
+    <label class="field"><span>How to pay</span><input type="text" id="pFeeNote" maxlength="200" value="${esc(v.feeNote || '')}" placeholder="Bank transfer to the club, reference her name"></label>
+    <label class="field"><span>About it</span><textarea id="pAbout" rows="2" maxlength="2000">${esc(v.about || '')}</textarea></label>
+    <label class="field"><span>Questions, one a line (start with * if it must be answered)</span><textarea id="pAsks" rows="3">${esc(progAsks(v).map(([, q]) => (q.need ? '*' : '') + q.q).join('\n'))}</textarea></label>
+    <p class="lbl">Waivers it asks for</p>
+    <div class="chips" style="margin-bottom:14px">${waiversAll().map(w => `<button class="chip" type="button" data-act="progwaiver" data-id="${esc(w.id)}" aria-pressed="${!!e.w[w.id]}">${esc(w.title)}</button>`).join('') || '<span class="muted">No waivers yet: add them under Registrations.</span>'}</div>
+    <button class="btn wide" data-act="progsave" data-id="${esc(id || '')}">Save</button>
+    ${pr ? `<button class="btn quiet wide" data-act="progclose" data-id="${esc(id)}" style="margin-top:8px">${pr.closed ? 'Open it again' : 'Close it: the link stops working'}</button>` : ''}
+    <button class="btn quiet wide" data-act="closesheet" style="margin-top:8px">Cancel</button>`, true);
+}
+function sheetWaiver(id) {
+  const w = id ? (state.waivers || {})[id] : null;
+  openSheet(`<h3>${w ? esc(w.title) : 'New waiver'}</h3>
+    <label class="field"><span>Title</span><input type="text" id="wTitle" maxlength="120" value="${esc((w || {}).title || '')}" placeholder="Photos and video"></label>
+    <label class="field"><span>The words a family agrees to</span><textarea id="wText" rows="8" maxlength="20000">${esc((w || {}).text || '')}</textarea></label>
+    ${w ? `<p class="muted">Version ${w.v}. Changing the words makes a new version, and families are asked again the next time they register.</p>` : ''}
+    <button class="btn wide" data-act="waiversave" data-id="${esc(id || '')}">Save</button>
+    <button class="btn quiet wide" data-act="closesheet" style="margin-top:8px">Cancel</button>`, true);
+}
+// the questions as an admin typed them, one a line, back into the program's shape
+function asksFrom(text, was) {
+  const out = {}, by = {};
+  for (const [k, q] of Object.entries(was || {})) by[q.q] = k;
+  String(text || '').split('\n').map(x => x.trim()).filter(Boolean).slice(0, 20).forEach((line, i) => {
+    const need = line.startsWith('*'), q = line.replace(/^\*\s*/, '').slice(0, 200);
+    if (!q) return;
+    const k = by[q] || ('q' + uid().slice(0, 8));
+    out[k] = { q, o: i, ...(need ? { need: true } : {}) };
+  });
+  return out;
+}
+
+/* ---- the GotSport export (AUTH.md, *The GotSport export*) ----
+   One row per child placed or accepted, in the columns the bulk import
+   already reads from a registration system's roster and the ones a state
+   registration needs. Built on the admin's phone from what she reads, never
+   through the server. Matched to GotSport's own import template once the
+   owner has one (GOTSPORT.md, still open). */
+const GOTSPORT_COLS = ['team', 'birth_year', 'player_first_name', 'player_last_name', 'player_number', 'player_dob', 'player_gender',
+  'parent1_first_name', 'parent1_last_name', 'parent1_email', 'parent1_phone'];
+const csvCell = v => { const x = String(v == null ? '' : v); return /[",\n\r]/.test(x) || /^[=+\-@]/.test(x) ? '"' + (/^[=+\-@]/.test(x) ? "'" : '') + x.replace(/"/g, '""') + '"' : x; };
+function gotsportCsv(prog, care = {}) {
+  const rows = [GOTSPORT_COLS.join(',')];
+  for (const [cid, r] of Object.entries(regsOf(prog)).sort()) {
+    if (!r || (r.st !== 'placed' && r.st !== 'accepted')) continue;
+    const c = (state.children || {})[cid] || {};
+    const t = r.team ? state.teams[r.team] : null;
+    const p = t && (c.teams || {})[t.id] ? ((t.players || {})[c.teams[t.id]] || {}) : {};
+    const who = splitName((r.fam || {}).name || '');
+    const phone = (Object.values((care[cid] || {}).contacts || {})[0] || {}).phone || '';
+    rows.push([t ? t.name || '' : '', c.born ? c.born.slice(0, 4) : '', c.first || '', c.last || '', p.number ?? '', c.born || '', { F: 'Female', M: 'Male' }[c.gender] || '',
+      (r.fam || {}).name ? who.first : '', (r.fam || {}).name ? who.last : '', (r.fam || {}).email || '', phone].map(csvCell).join(','));
+  }
+  return rows.join('\r\n') + '\r\n';
+}
+async function exportGotsport(prog) {
+  const pr = (state.programs || {})[prog];
+  if (!pr) return;
+  if (!confirm('This file holds children\'s birth dates and their families\' email addresses and phone numbers. Keep it where you keep the club\'s registration records, and delete it once it is uploaded.')) return;
+  // each family's phone number is in her care details, which an admin reads one child at a time
+  const care = {};
+  if (fb && rtdb) await Promise.all(Object.keys(regsOf(prog)).map(cid => new Promise(res =>
+    rtdb.mod.onValue(rtdb.mod.ref(rtdb.db, clubPath('care/' + cid)), sn => { if (sn.val()) care[cid] = sn.val(); res(); }, () => res(), { onlyOnce: true }))));
+  const blob = new Blob([gotsportCsv(prog, care)], { type: 'text/csv' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url; link.download = `gotsport-${String(pr.name || 'program').replace(/[^\w-]+/g, '-').toLowerCase()}.csv`;
+  if (document.body && document.body.appendChild) document.body.appendChild(link);
+  link.click();
+  if (link.parentNode) link.parentNode.removeChild(link);
+  setTimeout(() => URL.revokeObjectURL(url), 4000);
+}
+
+/* ---- a family registering: the program link, or a draft to finish ---- */
+const LS_REG = 'sm.reg';
+let regx = null;
+// Taken off the address bar at load and kept, like an invite: signing in can lose the page.
+function captureReg() {
+  try {
+    const q = new URLSearchParams(location.search || '');
+    const id = (q.get('reg') || '').trim();
+    if (id) {
+      localStorage.setItem(LS_REG, id);
+      q.delete('reg');
+      const rest = q.toString();
+      history.replaceState(null, '', location.pathname + (rest ? '?' + rest : '') + (location.hash || ''));
+    }
+    const held = (localStorage.getItem(LS_REG) || '').trim();
+    regx = held ? { id: held, status: 'idle' } : null;
+  } catch (e) { regx = null; }
+}
+function openReg(id) {
+  try { localStorage.setItem(LS_REG, id); } catch (e) { }
+  regx = { id, status: 'idle' };
+  maybeLoadReg(); render();
+}
+function dropReg() { try { localStorage.removeItem(LS_REG); } catch (e) { } regx = null; }
+/* The link, then her children in that club (her own list, and the ones this
+   phone holds when it is the open club), each child's registration for it,
+   her care details and what she has agreed to. Each read is one she may make
+   whether or not she is in the club yet. */
+function maybeLoadReg() {
+  if (!regx || !rtdb || !me || regx.status !== 'idle') return;
+  regx.status = 'loading';
+  const { db, mod } = rtdb, id = regx.id, who = me.uid;
+  const once = p => new Promise(res => mod.onValue(mod.ref(db, p), s => res(s.val()), () => res(undefined), { onlyOnce: true }));
+  const mine = () => regx && regx.id === id && me && me.uid === who;
+  (async () => {
+    const doc = await once('regOpen/' + id);
+    if (!mine()) return;
+    if (doc === undefined) { regx.status = 'error'; render(); return; }
+    if (!doc || doc.closed) { regx.status = 'gone'; render(); return; }
+    const ws = doc.ws, B = 'orgs/' + ws + '/';
+    const listed = Object.keys((await once(`families/${who}/${ws}`)) || {});
+    const here = ws === wsCode() ? myClubKids().map(c => c.id) : [];
+    const kids = {}, regs = {}, care = {}, agreed = {};
+    await Promise.all([...new Set([...listed, ...here])].map(async c => {
+      const v = await once(B + 'children/' + c);
+      if (!v || typeof v !== 'object') return;
+      kids[c] = v;
+      const [r, cr, ag] = await Promise.all([once(B + 'regs/' + doc.prog + '/' + c), once(B + 'care/' + c), once(B + 'agreed/' + doc.prog + '/' + c)]);
+      regs[c] = r || null; care[c] = cr || null; agreed[c] = ag || {};
+    }));
+    if (!mine()) return;
+    Object.assign(regx, { doc, kids, regs, care, agreed, status: 'ready' });
+    render();
+  })();
+}
+function regScreen() {
+  const box = (title, body, btns) => `<div class="stack"><div class="empty"><strong>${title}</strong>${body}
+    <div class="row" style="margin-top:14px;justify-content:center">${btns}</div></div></div>`;
+  const later = `<button class="btn quiet" data-act="regdismiss">Not now</button>`;
+  const s = regx.status, d = regx.doc || {};
+  if (!fbConfig().apiKey) return box('Registration', 'This copy of the app is not connected to a database.', later);
+  if (!me) return box('Register a child with the club', 'Sign in first, with the account you want to keep: it is how the club will know you.', `<button class="btn" data-act="signinsheet">Sign in</button>${later}`);
+  if (s === 'idle' || s === 'loading') return box('Opening…', 'This needs a signal.', later);
+  if (s === 'gone') return box('Registration has closed', 'That link no longer works. Ask the club whether it is taking registrations.', `<button class="btn" data-act="regdismiss">OK</button>`);
+  if (s === 'error') return box('Could not open it', 'Check the signal and try again.', `<button class="btn" data-act="regretry">Try again</button>${later}`);
+  if (s === 'working') return box('Sending…', 'Keep this page open.', '');
+  if (regx.form) return regForm();
+  const kids = Object.values(regx.kids || {});
+  const fee = d.fee ? `${esc(d.money || '$')}${esc(String(d.fee))}` : '';
+  return `<div class="stack">
+    <h2>${esc(d.name || 'Registration')}</h2>
+    <p class="muted" style="margin-top:0">${esc(d.club || 'The club')} · ${esc([REG_KIND[d.kind] || '', d.born ? `for children born ${d.born.lo}${d.born.hi !== d.born.lo ? '–' + d.born.hi : ''}` : '', d.gender ? (d.gender === 'F' ? 'girls' : 'boys') : '', d.closes ? 'closes ' + dayLabel(d.closes) : ''].filter(Boolean).join(' · '))}</p>
+    ${d.about ? `<p>${esc(d.about)}</p>` : ''}
+    ${fee ? `<p><b>Fee:</b> ${fee}${d.feeNote ? ' · ' + esc(d.feeNote) : ''}. Paid to the club the way it says; nothing is taken here.</p>` : ''}
+    ${regx.sent ? `<div class="rolebar">Sent. The club will look at it and you'll see here how it stands.</div>` : ''}
+    ${kids.map(c => {
+    const r = regx.regs[c.id];
+    const act = !r || r.st === 'withdrawn' ? 'Register' : r.st === 'draft' ? 'Finish' : r.st === 'sent' ? 'Change' : '';
+    return `<div class="card"><b>${esc(kidName(c))}</b><span class="rowsub">${esc(r ? REG_ST[r.st] || r.st : 'Not registered for this')}</span>
+      ${act ? `<button class="btn${r && r.st === 'draft' ? '' : ' quiet'} wide" data-act="regform" data-id="${esc(c.id)}" style="margin-top:10px">${act}</button>` : ''}
+      ${r ? `<button class="btn quiet danger wide" data-act="regdel" data-id="${esc(c.id)}" style="margin-top:8px">Delete this registration</button>` : ''}</div>`;
+  }).join('')}
+    <button class="btn wide" data-act="regform" data-id="new">Register ${kids.length ? 'another' : 'a'} child</button>
+    <button class="btn quiet wide" data-act="regdismiss">Close</button>
+  </div>`;
+}
+function regForm() {
+  const d = regx.doc, cid = regx.form, c = cid === 'new' ? {} : regx.kids[cid] || {};
+  const r = cid === 'new' ? null : regx.regs[cid], ag = cid === 'new' ? {} : regx.agreed[cid] || {};
+  const pick = regx.agree = regx.agree || {};
+  const asks = Object.entries(d.asks || {}).sort((a, b) => (a[1].o || 0) - (b[1].o || 0));
+  const ws = Object.entries(d.waivers || {});
+  return `<div class="stack">
+    <h2>${esc(d.name)}</h2>
+    ${r && r.st === 'draft' ? `<p class="muted" style="margin-top:0">The club started this for you. Check it, fill in what is missing and send it.</p>` : ''}
+    <div class="grid2">
+      <label class="field"><span>Her first name</span><input type="text" id="kFirst" maxlength="60" value="${esc(c.first || '')}"></label>
+      <label class="field"><span>Last name</span><input type="text" id="kLast" maxlength="60" value="${esc(c.last || '')}"></label>
+    </div>
+    <label class="field"><span>Birth date</span><input type="date" id="kBorn" value="${esc(c.born || '')}"></label>
+    <p class="lbl">Gender, as the state's registration asks</p>
+    <div class="chips" style="margin-bottom:14px">${Object.entries(KID_GENDER).map(([k, l]) => `<button class="chip" type="button" data-act="pickone" data-grp="kgender" data-v="${k}" aria-pressed="${c.gender === k}">${l}</button>`).join('')}</div>
+    ${careForm(cid === 'new' ? null : regx.care[cid])}
+    ${asks.map(([k, q]) => `<label class="field"><span>${esc(q.q)}${q.need ? ' *' : ''}</span><textarea id="ra_${esc(k)}" rows="1" maxlength="500">${esc(String(((r || {}).answers || {})[k] ?? ''))}</textarea></label>`).join('')}
+    ${ws.length ? `<p class="lbl">Waivers</p>${ws.map(([w, x]) => ag[w + '_' + x.v] ? `<p class="muted">${esc(x.title)}: agreed already.</p>`
+      : `<div class="card"><b>${esc(x.title)}</b><p style="white-space:pre-wrap;margin:6px 0">${esc(x.text)}</p>
+        <button class="chip" type="button" data-act="regagree" data-w="${esc(w)}" aria-pressed="${!!pick[w]}">I agree</button></div>`).join('')}
+      <label class="field"><span>Your full name, as your signature</span><input type="text" id="rwName" maxlength="80" value="${esc(me.name || '')}"></label>` : ''}
+    <button class="btn wide" data-act="regsend">Send</button>
+    <button class="btn quiet wide" data-act="regform" data-id="">Back</button>
+  </div>`;
+}
+/* Sending: each write awaited, in the order the rules read them (the child,
+   her own list, care, the registration, then each agreement), straight to
+   the club's tree: it needs a signal, as booking a coach's time does, and
+   says so rather than leaving half a registration on the phone. */
+// SERVER.md: several writes in the order the rules need; a server would do it in one call.
+async function sendReg() {
+  if (!regx || regx.status !== 'ready' || !regx.form || !rtdb || !me) return;
+  const d = regx.doc, ws = d.ws, B = 'orgs/' + ws + '/', who = me.uid, at = nowMs();
+  const fresh = regx.form === 'new', cid = fresh ? uid() : regx.form, c = fresh ? {} : regx.kids[cid] || {};
+  const first = $('#kFirst').value.trim().slice(0, 60), last = $('#kLast').value.trim().slice(0, 60), born = $('#kBorn').value;
+  const gEl = document.querySelector('[data-act="pickone"][data-grp="kgender"][aria-pressed="true"]');
+  const gender = gEl && KID_GENDER[gEl.dataset.v] ? gEl.dataset.v : (c.gender || '');
+  if (!first) { toast('Her first name, please'); return; }
+  if (!born || !BORN_OK.test(born) || !gender) { toast('Her birth date and gender, please: the club needs both'); return; }
+  const why = progFits(d, born, gender);
+  if (why) { toast(why); return; }
+  const cr = careRead();
+  if (cr.why) { toast(cr.why); return; }
+  if (!cr.rec.contacts) { toast('Someone the coach can call, please'); return; }
+  const answers = {};
+  for (const [k, q] of Object.entries(d.asks || {})) {
+    const v = ($('#ra_' + k).value || '').trim().slice(0, 500);
+    if (q.need && !v) { toast(`Please answer: ${q.q}`); return; }
+    if (v) answers[k] = v;
+  }
+  const ag = fresh ? {} : regx.agreed[cid] || {};
+  const owed = Object.entries(d.waivers || {}).filter(([w, x]) => !ag[w + '_' + x.v]);
+  if (owed.some(([w]) => !(regx.agree || {})[w])) { toast('Each waiver needs your agreement'); return; }
+  const sig = owed.length ? ($('#rwName').value || '').trim().slice(0, 80) : '';
+  if (owed.length && !sig) { toast('Type your full name to sign'); return; }
+  const { db, mod } = rtdb;
+  const put = (p, v) => mod.set(mod.ref(db, p), v);
+  regx.status = 'working'; render();
+  try {
+    if (fresh) await put(B + 'children/' + cid, { id: cid, first, ...(last ? { last } : {}), born, gender, by: who, at, via: regx.id, family: { [who]: regx.id }, confirmed: { by: who, at } });
+    else {
+      for (const [f, v] of [['first', first], ['last', last], ['born', born], ['gender', gender]]) if (v && c[f] !== v) await put(B + `children/${cid}/${f}`, v);
+      if (!c.confirmed) await put(B + `children/${cid}/confirmed`, { by: who, at });
+    }
+    await put(`families/${who}/${ws}/${cid}`, true);
+    const was = fresh ? null : regx.care[cid];
+    if (!careSame(cr.rec, was)) await put(B + 'care/' + cid, { ...cr.rec, by: who, at });
+    const r0 = fresh ? null : regx.regs[cid];
+    await put(B + `regs/${d.prog}/${cid}`, {
+      st: 'sent', by: r0 && r0.by ? r0.by : who, at: r0 && r0.at ? r0.at : at, sentBy: who, sentAt: at, answers,
+      fam: { name: String(me.name || '').slice(0, 80), email: String(me.email || '').slice(0, 120) }
+    });
+    for (const [w, x] of owed) await put(B + `agreed/${d.prog}/${cid}/${w}_${x.v}`, { by: who, at, name: sig });
+    if (ws === wsCode()) noteMine('children/' + cid);
+    Object.assign(regx, { status: 'idle', form: null, agree: {}, sent: true });
+    maybeLoadReg();
+    toast('Sent');
+  } catch (e) {
+    regx.status = 'ready';
+    toast(/permission|denied/i.test(String((e && e.code) || e)) ? 'The club\'s database refused it. Registration may have closed, or the club has not updated its rules yet.' : 'Not sent: check the signal and try again.');
+    render();
+  }
+}
+/* A family deletes her registration (AUTH.md, *Deleting*): the
+   registration, then what she agreed to for it, which the rules let go only
+   once it is gone; and a child she made through the link who is on no team
+   and was never let into the club goes with her care details and her place
+   on the family's list. A child the club has let in is the club's to
+   delete. Needs a signal, as sending did. */
+// SERVER.md: several writes in the order the rules need; a server would do it in one call.
+async function delReg(cid) {
+  if (!regx || !rtdb || !me || !(regx.kids || {})[cid]) return;
+  const d = regx.doc, ws = d.ws, B = 'orgs/' + ws + '/', c = regx.kids[cid];
+  const whole = c.via && !Object.keys(c.teams || {}).length && c.club !== true;
+  if (!confirm(`Delete ${c.first || 'her'}’s registration for ${d.name}${whole ? ', and her details, which only it used' : ''}? The club no longer sees it.`)) return;
+  const { db, mod } = rtdb;
+  const del = p => mod.remove(mod.ref(db, p));
+  try {
+    await del(B + `regs/${d.prog}/${cid}`);
+    for (const k of Object.keys((regx.agreed || {})[cid] || {})) await del(B + `agreed/${d.prog}/${cid}/${k}`);
+    if (whole) {
+      if ((regx.care || {})[cid]) await del(B + 'care/' + cid);
+      await del(B + 'children/' + cid);
+      await del(`families/${me.uid}/${ws}/${cid}`);
+    }
+    regx.status = 'idle'; maybeLoadReg(); toast('Deleted');
+  } catch (e) { toast('Not deleted: check the signal and try again'); }
+}
+
+/* What a family in the club sees on My players: a registration the club
+   started for her to finish, and each open program a child of hers fits. */
+function regCards() {
+  if (!me) return '';
+  const out = [];
+  for (const pr of programsAll()) {
+    if (!progOpen(pr) || !pr.link) continue;
+    for (const c of myClubKids()) {
+      const r = regsOf(pr.id)[c.id];
+      if (r && r.st === 'draft') out.push(`<div class="card"><b>Finish ${esc(c.first || 'her')}’s registration for ${esc(pr.name)}</b>
+        <p class="muted" style="margin:6px 0 10px">The club started it; it needs you to check it and agree to its waivers.</p>
+        <button class="btn wide" data-act="regopen" data-id="${esc(pr.link)}">Finish it</button></div>`);
+      else if (!r && !progFits(pr, c.born, c.gender) && c.born) out.push(`<div class="card"><b>${esc(pr.name)} is open</b>
+        <p class="muted" style="margin:6px 0 10px">${esc(progLine(pr))}</p>
+        <button class="btn quiet wide" data-act="regopen" data-id="${esc(pr.link)}">Register ${esc(c.first || 'her')}</button></div>`);
+      else if (r && r.st !== 'withdrawn') out.push(`<p class="muted">${esc(c.first || 'Your child')} · ${esc(pr.name)}: ${esc(REG_ST[r.st] || r.st)}</p>`);
+    }
+  }
+  return out.join('');
+}
+
 /* A player's own sign-in, the coach's to give (AUTH.md, "A player with her
    own account"). Off unless she or her family asks; no age rule, because that
    is the coach's and the club's call. The link is an ordinary single-use
@@ -18115,7 +18834,6 @@ const mayFanAsk = (tid, p) => !!p && (mayGrant(tid) || isMine(p));
 async function makeFanLink(tid, pid, lim = {}) {
   const t = state.teams[tid], p = t && (t.players || {})[pid];
   if (!mayFanAsk(tid, p)) { toast('Her family, her coach or an admin asks for a fan'); return false; }
-  if (!onOrgs()) { toast('Fans need the club moved first (Admin → Move)'); return false; }
   if (!fb || !rtdb || !me) { toast(me ? 'Needs a connection to the database' : 'Sign in first'); return false; }
   // both grandparents from one link, if she says so
   const uses = Math.max(1, Math.min(LINK_MAX, lim.uses || 1));
@@ -18257,7 +18975,12 @@ function sheetPlayer(p) {
     </div>
     <p class="muted" style="margin-top:-8px">A guardian can read this team and sees her under My players. Linking someone here is what makes them a parent.</p>
     ${selfCard(t, p)}
-    ${onOrgs() ? fanCard(t, p, 'player') : ''}` : ''}
+    ${fanCard(t, p, 'player')}
+    ${careCard(t, p)}
+    ${(c => c ? `<p class="lbl">Her club record</p>
+    <button class="opt spread" type="button" data-act="kidopen" data-id="${esc(c.id)}" style="margin-bottom:14px">
+      <span>${esc(kidName(c))}<span class="rowsub">${esc([c.born ? 'Born ' + dayLabel(c.born) : 'No birth date yet', kidStatus(c)].join(' · '))}</span></span>
+      <span class="muted">${mayEditKid(c) ? 'Edit' : 'See'}</span></button>` : '')(kidOf(p))}` : ''}
 
     <p class="lbl">Plays better alongside</p>
     <div class="chips" style="margin-bottom:14px">
@@ -19653,12 +20376,6 @@ function onAct(e) {
   if (a === 'teammenu') { sheetTeams(); return; }
   if (a === 'goview') { ui.view = d.v; closeSheet(); render(); return; }
   if (a === 'accountsheet') { if (me) sheetAccount(); else sheetSignIn(); return; }
-  if (a === 'moveclub') {
-    // the button is drawn for admins only; the handler asks again, as retiring a club does
-    if (!canAdmin()) return;
-    if (!confirm('Move ' + ((acc().org || {}).name || 'this club') + ' so families\' phones hold only their own children? It takes a minute and needs a signal.')) return;
-    askMove(); return;
-  }
   if (a === 'retireclub') {
     if (!canAdmin()) { toast('Club admins and the app owner only'); return; }
     if (hasClubOwner() && !(me && isClubOwner(me.uid))) { toast('Only the club owner can retire it'); return; }
@@ -19815,6 +20532,185 @@ function onAct(e) {
      well as by what was drawn: who may ask (her family, her coach, an admin)
      and who may let in or take away (her coach, an admin). */
   if (a === 'fanok') { approveFan(d.tid, d.uid); return; }
+  /* A child's club record (AUTH.md, *A child in the club*): her family
+     confirms, and her family, an admin or the coach who registered her
+     (until her family has confirmed) changes it. Checked here too. */
+  if (a === 'kidopen') { sheetKid(d.id); return; }
+  /* An admin deletes a child's record (AUTH.md, *Deleting*): one on no team,
+     a child who left the club among them. Her registrations, what was agreed
+     for them and her care details first, then the record they hang off. */
+  if (a === 'kiddel') {
+    const c = clubKids()[d.id];
+    if (!c || !me || !isAdmin(me.uid)) { toast('Only an admin deletes a child\'s record'); return; }
+    if (Object.keys(c.teams || {}).length) { toast('Take her off her team first'); return; }
+    if (!confirm(`Delete ${kidName(c)}’s club record, her registrations and her care details? This cannot be undone.`)) return;
+    for (const pr of Object.keys(state.programs || {})) {
+      if (regsOf(pr)[c.id]) drop(`regs/${pr}/${c.id}`);
+      for (const k of Object.keys(((state.agreed || {})[pr] || {})[c.id] || {})) drop(`agreed/${pr}/${c.id}/${k}`);
+    }
+    drop(`care/${c.id}`);
+    drop(`children/${c.id}`);
+    closeSheet(); toast('Deleted'); render(); return;
+  }
+  if (a === 'kidsave' || a === 'kidconfirm') {
+    const c = clubKids()[d.id];
+    if (!c) return;
+    if (a === 'kidconfirm' ? !kidFamily(c) : !mayEditKid(c)) { toast('Only her family confirms her details; her family, an admin or the coach who added her changes them'); return; }
+    const first = $('#kFirst').value.trim().slice(0, 60), last = $('#kLast').value.trim().slice(0, 60), born = $('#kBorn').value;
+    const gEl = document.querySelector('[data-act="pickone"][data-grp="kgender"][aria-pressed="true"]');
+    const gender = gEl && KID_GENDER[gEl.dataset.v] ? gEl.dataset.v : (c.gender || '');
+    if (!first) { toast('Her first name, please'); return; }
+    if (born && !BORN_OK.test(born)) { toast('That birth date doesn\'t look right'); return; }
+    const cr = mayCare(c) ? careRead() : null;
+    if (cr && cr.why) { toast(cr.why); return; }
+    // what the club requires (org/details/need), asked for when her family confirms
+    if (a === 'kidconfirm') {
+      const { need } = detailsSet();
+      const lack = [need.born && !born && DETAILS_NEED.born, need.gender && !gender && DETAILS_NEED.gender,
+        need.contact && !(cr && cr.rec.contacts) && DETAILS_NEED.contact, need.doctor && !(cr && cr.rec.doctor) && DETAILS_NEED.doctor].filter(Boolean);
+      if (lack.length) { toast(`The club needs her ${wordsAnd(lack)}`); return; }
+    }
+    const put = (f, v) => { if ((c[f] || '') === v) return; if (v) commit(`children/${c.id}/${f}`, v); else if (c[f]) drop(`children/${c.id}/${f}`); };
+    put('first', first); put('last', last);
+    if (born) put('born', born);
+    if (gender) put('gender', gender);
+    if (cr && !careSame(cr.rec, careOf(c.id))) saveCare(c, cr.rec);
+    if (a === 'kidconfirm') { if (!c.confirmed) commit(`children/${c.id}/confirmed`, { by: me.uid, at: nowMs() }); familyList(c.id); toast('Thank you — confirmed'); }
+    else toast('Saved');
+    closeSheet(); render(); return;
+  }
+  /* Registration (AUTH.md, *Registration*). The family's form needs nobody's
+     role (she may not be in the club yet: the rules hold her to her own
+     child); everything an admin does is checked here as well as drawn only
+     for her; a draft for a family is staff's. */
+  if (a === 'regopen') { closeSheet(); openReg(d.id); return; }
+  if (a === 'regdismiss') { dropReg(); render(); return; }
+  if (a === 'regretry') { if (regx) { regx.status = 'idle'; maybeLoadReg(); } render(); return; }
+  if (a === 'regform') { if (regx) { regx.form = d.id || null; regx.agree = {}; } render(); return; }
+  if (a === 'regagree') { if (regx) { const g = regx.agree = regx.agree || {}; g[d.w] = !g[d.w]; } render(); return; }
+  if (a === 'regsend') { sendReg(); return; }
+  if (a === 'regdel') { delReg(d.id); return; }
+  if (a === 'regdraft') {
+    const c = clubKids()[d.id], pr = (state.programs || {})[d.prog];
+    if (!mayDraftReg() || !c || !pr) { toast('A coach or an admin starts a registration for a family'); return; }
+    if (!progOpen(pr)) { toast(`${pr.name} is not open`); return; }
+    if (regsOf(pr.id)[c.id]) { toast(`${c.first || 'She'} is registered for it already`); return; }
+    const rec = { st: 'draft', by: me.uid, at: nowMs() };
+    Promise.resolve(fb && fb.set(fb.ref(fb.db, clubPath(`regs/${pr.id}/${c.id}`)), rec)).then(() => {
+      setDeep(state, `regs/${pr.id}/${c.id}`, rec); saveLocal(); noteMine(`regs/${pr.id}/${c.id}`);
+      toast(`Started: her family is asked to finish it`); render();
+    }, () => toast('Refused: she may have a registration for it already'));
+    closeSheet(); return;
+  }
+  /* What the club requires of a child's details, and the deadline: admins
+     only, checked here as well as drawn only for them. */
+  if (a === 'detneed' || a === 'detby' || a === 'detbyclear') {
+    if (!canRegs()) { toast('The club\'s admins set this'); return; }
+    if (a === 'detneed') {
+      const need = { ...detailsSet().need };
+      need[d.k] = !need[d.k];
+      commit('access/org/details/need', Object.fromEntries(Object.keys(DETAILS_NEED).map(k => [k, !!need[k]])));
+    } else if (a === 'detbyclear') drop('access/org/details/by');
+    else {
+      const v = $('#detBy').value;
+      if (!/^\d{4}-\d\d-\d\d$/.test(v || '')) { toast('Pick a date'); return; }
+      commit('access/org/details/by', v);
+      toast(`Set: after ${dayLabel(v)}, families with details to finish see their calendar and messages only`);
+    }
+    render(); return;
+  }
+  if (['regprog', 'regfilter', 'regopenone', 'regset', 'regplace', 'regexport', 'progedit', 'progwaiver', 'progsave', 'progclose', 'waiveredit', 'waiversave'].includes(a)) {
+    if (!canRegs()) { toast('Registration is the club admins\''); return; }
+    const u = ui.regs = ui.regs || {};
+    if (a === 'regprog') { u.prog = d.id || null; u.st = 'all'; render(); return; }
+    if (a === 'regfilter') { u.st = d.k; render(); return; }
+    if (a === 'regopenone') { sheetRegOne(d.prog, d.id); return; }
+    if (a === 'regexport') { exportGotsport(d.id); return; }
+    if (a === 'regset') {
+      const pr = (state.programs || {})[d.prog], r = regsOf(d.prog)[d.id], c = clubKids()[d.id];
+      if (!pr || !r) return;
+      const note = ($('#regNote').value || '').trim().slice(0, 500);
+      if (note !== (r.note || '')) { if (note) commit(`regs/${d.prog}/${d.id}/note`, note); else drop(`regs/${d.prog}/${d.id}/note`); }
+      commit(`regs/${d.prog}/${d.id}/st`, d.st);
+      /* Accepting lets the child into the club, and so her family: the
+         index rule lets them in through her, and the server does it too. */
+      if (d.st === 'accepted' && c) {
+        if (c.club !== true) commit(`children/${c.id}/club`, true);
+        for (const fu of Object.keys(c.family || {})) if (!(acc().index || {})[fu]) quiet(`access/index/${fu}`, c.id);
+        saveLocal();
+      }
+      toast(REG_ST[d.st]); closeSheet(); render(); return;
+    }
+    /* Placing on a team (AUTH.md, *Accepting and placing*): the squad record
+       first, pointing at her, with her family as its parents; then her club
+       record's team, which the rule checks against that pointer; then her
+       family's copies, the team's families table and the registration. Her
+       care details follow her to the team by the server (careCopy). */
+    if (a === 'regplace') {
+      const r = regsOf(d.prog)[d.id], c = clubKids()[d.id], t = state.teams[d.tid];
+      if (!r || !c || !t || r.st !== 'accepted') return;
+      const used = teams().some(x => (x.players || {})[c.id]);
+      const pid = used ? uid() : c.id;
+      const fam = Object.keys({ ...(c.family || {}), ...(c.guardians || {}) });
+      const rec = { id: pid, name: c.first || kidName(c), number: '', active: true, anywhere: true, preferred: '', canPlay: [], rating: 3, child: c.id, ...(fam.length ? { guardians: Object.fromEntries(fam.map(u => [u, true])) } : {}) };
+      commit(`teams/${t.id}/players/${pid}`, rec);
+      commit(`children/${c.id}/teams/${t.id}`, pid);
+      for (const u of fam) kidQuiet(`children/${c.id}/guardians/${u}`, t.id);
+      syncTeamParents(t.id);
+      commit(`regs/${d.prog}/${d.id}/team`, t.id);
+      commit(`regs/${d.prog}/${d.id}/st`, 'placed');
+      toast(`On ${t.name || 'the team'}`); closeSheet(); render(); return;
+    }
+    if (a === 'progedit') { ui.progEdit = null; sheetProgram(d.id || ''); return; }
+    if (a === 'progwaiver') { const e = ui.progEdit; if (e) { if (e.w[d.id]) delete e.w[d.id]; else e.w[d.id] = true; } if (el.setAttribute) el.setAttribute('aria-pressed', String(!!(e && e.w[d.id]))); return; }
+    if (a === 'progsave') {
+      const was = d.id ? (state.programs || {})[d.id] : null;
+      const name = $('#pName').value.trim().slice(0, 80);
+      if (!name) { toast('Give it a name'); return; }
+      const lo = Number($('#pLo').value) || null, hi = Number($('#pHi').value) || null;
+      if ((lo || hi) && (!lo || !hi || lo > hi || lo < 1990 || hi > 2100)) { toast('Both birth years, the earlier first'); return; }
+      const opens = $('#pOpens').value, closes = $('#pCloses').value;
+      if (opens && closes && closes < opens) { toast('It closes before it opens'); return; }
+      const num = id => { const v = $(id).value.trim(); return v === '' ? null : Number(v); };
+      const cap = num('#pCap'), fee = num('#pFee');
+      if ((cap !== null && !(cap >= 1)) || (fee !== null && !(fee >= 0))) { toast('Places and fee are numbers'); return; }
+      const id = was ? was.id : uid();
+      const rec = {
+        id, name, kind: REG_KIND[$('#pKind').value] ? $('#pKind').value : 'season', by: me.uid, at: nowMs(),
+        link: was && was.link ? was.link : randId('r', 12), asks: asksFrom($('#pAsks').value, (was || {}).asks),
+        waivers: { ...((ui.progEdit || {}).w || {}) },
+        ...(lo ? { born: { lo, hi } } : {}), ...($('#pGender').value === 'F' || $('#pGender').value === 'M' ? { gender: $('#pGender').value } : {}),
+        ...(opens ? { opens } : {}), ...(closes ? { closes } : {}), ...(cap !== null ? { cap } : {}), ...(fee !== null ? { fee } : {}),
+        ...($('#pFeeNote').value.trim() ? { feeNote: $('#pFeeNote').value.trim().slice(0, 200) } : {}),
+        ...($('#pAbout').value.trim() ? { about: $('#pAbout').value.trim().slice(0, 2000) } : {}),
+        ...(was && was.closed ? { closed: true } : {})
+      };
+      commit(`programs/${id}`, rec); publishProgram(rec);
+      ui.progEdit = null; closeSheet(); u.prog = id; render(); toast('Saved'); return;
+    }
+    if (a === 'progclose') {
+      const pr = (state.programs || {})[d.id];
+      if (!pr) return;
+      const rec = { ...pr, at: nowMs() };
+      if (pr.closed) delete rec.closed; else rec.closed = true;
+      commit(`programs/${pr.id}`, rec); publishProgram(rec);
+      closeSheet(); render(); toast(rec.closed ? 'Closed: the link no longer works' : 'Open again'); return;
+    }
+    if (a === 'waiveredit') { sheetWaiver(d.id || ''); return; }
+    if (a === 'waiversave') {
+      const was = d.id ? (state.waivers || {})[d.id] : null;
+      const title = $('#wTitle').value.trim().slice(0, 120), text = $('#wText').value.trim().slice(0, 20000);
+      if (!title || !text) { toast('A title and the words, please'); return; }
+      const id = was ? was.id : uid();
+      const changed = was && was.text !== text;
+      const rec = { id, title, text, v: was ? (changed ? was.v + 1 : was.v) : 1, by: me.uid, at: nowMs(), ...(was && was.old ? { old: was.old } : {}) };
+      // the words a family agreed to are kept: an agreement names its version
+      if (changed) rec.old = { ...(rec.old || {}), [was.v]: { text: was.text, at: was.at || nowMs() } };
+      commit(`waivers/${id}`, rec);
+      for (const pr of programsAll()) if ((pr.waivers || {})[id] && !pr.closed) publishProgram(pr);
+      closeSheet(); render(); toast(changed ? `Saved as version ${rec.v}: families are asked again` : 'Saved'); return;
+    }
+  }
   if (a === 'fansheet' || a === 'faninvite' || a === 'faninvdrop') {
     const t2 = state.teams[d.tid], p = t2 && (t2.players || {})[d.pid];
     if (!mayFanAsk(d.tid, p)) { toast('Her family, her coach or an admin asks for a fan'); return; }
@@ -19948,6 +20844,8 @@ function onAct(e) {
   }
   if (a === 'setwho') { sheetWho(); return; }
   if (a === 'signinsheet') { sheetSignIn(); return; }
+  if (a === 'forgetsheet') { forgetting = null; sheetForget(); return; }
+  if (a === 'forgetgo') { if (confirm('Delete your account for good?')) forgetMe(); return; }
   if (a === 'signout') {
     const n = mineUnsent();
     if (n && !confirm(`${n} change${n === 1 ? '' : 's'} to your own drills ha${n === 1 ? 's' : 've'}n't reached the database yet, and signing out takes your drills off this phone. Sign out anyway?`)) return;
@@ -20126,7 +21024,16 @@ function onAct(e) {
     const name = $('#newName').value.trim(); const num = $('#newNum').value.trim();
     if (!name) { toast('Add a name first'); return; }
     const id = uid();
-    commit(`teams/${t.id}/players/${id}`, { id, name, number: num, active: true, anywhere: true, preferred: '', canPlay: [], rating: 3 });
+    /* On orgs/ she is a child in the club as well (AUTH.md, *A child in the
+       club*): the coach registers her for her family, who confirm her
+       details when they join. The squad points at her first, because the
+       rule on the child's `teams` checks it; the child is made once the
+       squad has it, and an admin's phone makes it later if this one can't. */
+    const rec = { id, name, number: num, active: true, anywhere: true, preferred: '', canPlay: [], rating: 3, child: id };
+    setDeep(state, `teams/${t.id}/players/${id}`, rec); saveLocal();
+    const w = remoteSet(`teams/${t.id}/players/${id}`, rec);
+    render(); shareIds();
+    if (me) Promise.resolve(w).then(() => kidQuiet(`children/${id}`, { id, ...splitName(name), club: true, by: me.uid, at: nowMs(), teams: { [t.id]: id } }), () => { });
     $('#newName').value = ''; $('#newNum').value = '';
     return;
   }
@@ -21010,6 +21917,7 @@ function uiToHash() {
   if (ui.view === 'club') return '#/club';
   if (ui.view === 'admin') return '#/club/settings';
   if (ui.view === 'planner') return '#/club/planner';
+  if (ui.view === 'regs') return '#/club/registrations';
   if (ui.view === 'mine') return '#/my-players';
   if (ui.view === 'inbox') return '#/messages';
   if (ui.view === 'notes') return '#/notifications';
@@ -21027,7 +21935,7 @@ function hashToUi() {
      address (build 102): All teams on the Calendar. #/my-calendar is what My
      calendar's feed links back to. */
   if (p[0] === 'club' && (p[1] === 'calendar' || p[1] === 'schedule')) { ui.view = 'calendar'; ui.calSel = 'club'; return true; }
-  if (p[0] === 'club') { ui.view = p[1] === 'settings' ? 'admin' : p[1] === 'people' ? 'people' : p[1] === 'planner' ? 'planner' : 'club'; return true; }
+  if (p[0] === 'club') { ui.view = p[1] === 'settings' ? 'admin' : p[1] === 'people' ? 'people' : p[1] === 'planner' ? 'planner' : p[1] === 'registrations' ? 'regs' : 'club'; return true; }
   if (p[0] === 'my-players') { ui.view = 'mine'; return true; }
   if (p[0] === 'my-calendar') { ui.view = 'calendar'; ui.calSel = 'mine'; return true; }
   if (p[0] === 'calendar') { ui.view = 'calendar'; ui.calSel = p[1] === 'all' ? 'club' : 'mine'; return true; }
@@ -21121,6 +22029,7 @@ if (typeof window !== 'undefined' && window.addEventListener) {
 /* ---------------- boot ---------------- */
 captureInvite();
 captureJoin();
+captureReg();
 captureOpen();
 pushLoad();
 loadLocal();

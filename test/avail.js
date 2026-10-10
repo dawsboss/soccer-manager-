@@ -314,7 +314,7 @@ const slotSess = (sid, extra = {}) => ({ id: sid, kind: 'one', cap: 1, coach: 'j
     await D.flush();
     fbk.signIn(uid, { name: (club().access.members[uid] || {}).name || uid }); await D.flush();
     fbk.deliver('.info/connected', extra.online !== false);
-    fbk.deliver(WS, club()); await D.flush();
+    await fbk.serveClub(CODE, club(), D.flush); await D.flush();
     D.render();
     return { D, fbk };
   }

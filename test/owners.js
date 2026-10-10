@@ -21,9 +21,10 @@
 
 const H = require('./harness');
 const { check, deepEq } = H;
-const { makeServer, makeFakebase, ORGS_MODE } = require('./fakebase');
+const { makeServer, makeFakebase } = require('./fakebase');
 
-const W = 'workspaces/CLUB/';
+// the server half names paths as the app does (test/fakebase.js lays them out on orgs/); the app half reads its writes where they land
+const W = 'workspaces/CLUB/', OW = 'orgs/CLUB/';
 const NOW = Date.now();
 
 const CLUB = (owners) => ({
@@ -61,8 +62,8 @@ const logged = (S, id, e) => S.put(W + 'access/log/' + id, { at: NOW - 1000, ...
   console.log('--- the triggers that are deployed ---');
   {
     const S = server();
-    deepEq('one on admins and one on owners, each once per tree', Object.keys(S.triggers).filter(n => /^watch/.test(n)).sort(),
-      ['watchAdmin', 'watchAdminOrgs', 'watchOwner', 'watchOwnerOrgs']);
+    deepEq('one on admins and one on owners', Object.keys(S.triggers).filter(n => /^watch/.test(n)).sort(),
+      ['watchAdminOrgs', 'watchOwnerOrgs']);
     check('a goal wakes neither', (await S.wouldWake(W + 'matches/g1/events/x', { type: 'goal' })).filter(n => /^watch/.test(n)).length, 0);
     check('nor a coach given', (await S.wouldWake(W + 'access/teams/t1/coaches/newbie', true)).filter(n => /^watch/.test(n)).length, 0);
   }
@@ -145,7 +146,7 @@ const logged = (S, id, e) => S.put(W + 'access/log/' + id, { at: NOW - 1000, ...
   }
   {
     const S = server({ adm: true });
-    const name = ORGS_MODE ? 'watchAdminOrgs' : 'watchAdmin';
+    const name = 'watchAdminOrgs';
     const p = W + 'access/admins/adm3';
     S.put(p, null);
     const event = { id: 'ev1', params: { code: 'CLUB', uid: 'adm3' }, data: { before: { val: () => true, ref: S.ref(p) }, after: { val: () => null, ref: S.ref(p) } } };
@@ -162,7 +163,6 @@ const logged = (S, id, e) => S.put(W + 'access/log/' + id, { at: NOW - 1000, ...
     check('nothing of a child, a family or an email in what is sent', /Ella|Mo\b|@/.test(JSON.stringify(S.sent())), false);
   }
 
-  if (ORGS_MODE) { H.summary('who runs the club, with every club on orgs/'); return; }
 
   /* ---------------- the app ---------------- */
 
@@ -174,13 +174,13 @@ const logged = (S, id, e) => S.put(W + 'access/log/' + id, { at: NOW - 1000, ...
     const D = H.loadApp({ firebase: fbk, config: CONFIG, storage: { 'sm.workspace': 'CLUB' }, ...opts });
     await D.flush();
     fbk.signIn(uid, { name: (CLUB().access.members[uid] || {}).name }); await D.flush();
-    fbk.deliver('workspaces/CLUB', CLUB(owners)); await D.flush();
+    await fbk.serveClub('CLUB', CLUB(owners), D.flush); await D.flush();
     fbk.deliver('.info/connected', true); await D.flush();
     D.render(); await D.flush();
     order.length = 0;
     const admin = () => { D.ui.view = 'admin'; D.render(); return String(D.dom.node('#app').innerHTML || ''); };
-    const removed = p => order.includes(W + p + ' x');
-    const wrote = p => order.includes(W + p);
+    const removed = p => order.includes(OW + p + ' x');
+    const wrote = p => order.includes(OW + p);
     return { D, fbk, order, admin, removed, wrote };
   }
   const logActs = D => Object.values(D.acc().log || {}).map(e => e.act + ' ' + e.target).sort();
@@ -197,7 +197,7 @@ const logged = (S, id, e) => S.put(W + 'access/log/' + id, { at: NOW - 1000, ...
     const { D, order, wrote } = await device('adm2');
     D.click({ act: 'claimowner' }); await D.flush();
     check('the claim is one write, at her own entry', wrote('access/owners/adm2'), true);
-    const li = order.findIndex(p => /access\/log\//.test(p)), oi = order.indexOf(W + 'access/owners/adm2');
+    const li = order.findIndex(p => /^orgs\/CLUB\/log\//.test(p)), oi = order.indexOf(OW + 'access/owners/adm2');
     check('logged first, so the server can name her', li > -1 && li < oi, true);
     check('as what it is', logActs(D).includes('made owner adm2'), true);
     check('then she owns it', D.isClubOwner('adm2'), true);
@@ -224,7 +224,7 @@ const logged = (S, id, e) => S.put(W + 'access/log/' + id, { at: NOW - 1000, ...
     check('nor the owner', removed('access/admins/adm'), false);
     check('nothing at all was written', order.length, 0);
     D.click({ act: 'setrole', uid: 'coach', r: 'admin' }); await D.flush();
-    check('she still makes an admin', order.includes(W + 'access/admins/coach'), true);
+    check('she still makes an admin', order.includes(OW + 'access/admins/coach'), true);
     check('logged as made, not removed', logActs(D).includes('made admin coach'), true);
     D.click({ act: 'setrole', uid: 'adm2', r: 'admin' }); await D.flush();
     check('and steps down herself', removed('access/admins/adm2'), true);
@@ -233,7 +233,7 @@ const logged = (S, id, e) => S.put(W + 'access/log/' + id, { at: NOW - 1000, ...
     const { D, order, removed } = await device('adm', { adm: true });
     D.click({ act: 'setrole', uid: 'adm3', r: 'admin' }); await D.flush();
     check('the owner removes an admin', removed('access/admins/adm3'), true);
-    const li = order.findIndex(p => /access\/log\//.test(p)), ri = order.indexOf(W + 'access/admins/adm3 x');
+    const li = order.findIndex(p => /^orgs\/CLUB\/log\//.test(p)), ri = order.indexOf(OW + 'access/admins/adm3 x');
     check('logged before the change', li > -1 && li < ri, true);
     check('as removed, which it was', logActs(D).includes('removed admin adm3'), true);
     D.click({ act: 'setrole', uid: 'adm', r: 'admin' }); await D.flush();
@@ -283,9 +283,9 @@ const logged = (S, id, e) => S.put(W + 'access/log/' + id, { at: NOW - 1000, ...
   {
     const { D, order } = await device('adm', { adm: true });
     D.pushAll(); await D.flush();
-    check('pushAll() never writes the admin list whole', order.includes(W + 'access/admins'), false);
-    check('one admin at a time', ['adm', 'adm2', 'adm3'].every(u => order.includes(W + 'access/admins/' + u)), true);
-    check('and the owner after them', order.indexOf(W + 'access/owners/adm') > order.indexOf(W + 'access/admins/adm3'), true);
+    check('pushAll() never writes the admin list whole', order.includes(OW + 'access/admins'), false);
+    check('one admin at a time', ['adm', 'adm2', 'adm3'].every(u => order.includes(OW + 'access/admins/' + u)), true);
+    check('and the owner after them', order.indexOf(OW + 'access/owners/adm') > order.indexOf(OW + 'access/admins/adm3'), true);
   }
 
   console.log('\n--- a club nobody ran, taken by the app owner ---');
@@ -298,12 +298,12 @@ const logged = (S, id, e) => S.put(W + 'access/log/' + id, { at: NOW - 1000, ...
     fbk.signIn('own', { name: 'Owner' }); await D.flush();
     fbk.deliver('appOwners', { own: true });
     const c = CLUB(); c.access.admins = {}; c.access.index = {};
-    fbk.deliver('workspaces/CLUB', c); await D.flush();
+    await fbk.serveClub('CLUB', c, D.flush); await D.flush();
     fbk.deliver('.info/connected', true); await D.flush();
     order.length = 0;
     D.click({ act: 'claimadmin' }); await D.flush();
-    check('she becomes its admin', order.includes(W + 'access/admins/own'), true);
-    check('and its owner, as a founder does', order.indexOf(W + 'access/owners/own') > order.indexOf(W + 'access/admins/own'), true);
+    check('she becomes its admin', order.includes(OW + 'access/admins/own'), true);
+    check('and its owner, as a founder does', order.indexOf(OW + 'access/owners/own') > order.indexOf(OW + 'access/admins/own'), true);
   }
 
   H.summary('who runs the club: the owner, and every admin told');

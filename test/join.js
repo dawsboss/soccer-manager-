@@ -45,7 +45,7 @@ async function boot(who, opts = {}) {
   const A = H.loadApp({ firebase: fbk, config: CONFIG, storage, search: opts.search });
   await A.flush();
   if (who) { fbk.signIn(who, { name: opts.name || who, email: who + '@x.test' }); await A.flush(); }
-  if (storage['sm.workspace']) { fbk.deliver('workspaces/CLUB', JSON.parse(JSON.stringify(CLUB))); await A.flush(); }
+  if (storage['sm.workspace']) { await fbk.serveClub('CLUB', JSON.parse(JSON.stringify(CLUB)), A.flush); await A.flush(); }
   return { A, fbk };
 }
 const paths = fbk => fbk.record.writes.map(w => w.path);
@@ -83,7 +83,7 @@ const valueAt = (fbk, p) => { const w = fbk.writtenTo(p); return w.length ? w[w.
     const fbk = makeFakebase();
     const A = H.loadApp({ firebase: fbk, config: CONFIG, storage: { 'sm.workspace': 'CLUB' } });
     await A.flush(); fbk.signIn('coach', { name: 'Jaz' }); await A.flush();
-    fbk.deliver('workspaces/CLUB', club); await A.flush();
+    await fbk.serveClub('CLUB', club, A.flush); await A.flush();
     A.ui.teamId = 't1'; A.ui.view = 'roster'; A.render();
     check('Squad offers a team link', /Make a team link/.test(A.rendered()), true);
     A.click({ act: 'joinnew', tid: 't1' }); await A.flush();
@@ -92,7 +92,7 @@ const valueAt = (fbk, p) => { const w = fbk.writtenTo(p); return w.length ? w[w.
     check('stamped as her', jw && jw.value.by, 'coach');
     check('carries no child\'s name', /Ella|Bea|Cleo/.test(JSON.stringify(jw && jw.value)), false);
     const code = jw.path.split('/')[1];
-    check('the team remembers it', (valueAt(fbk, 'workspaces/CLUB/teams/t1/join') || {}).code, code);
+    check('the team remembers it', (valueAt(fbk, 'orgs/CLUB/teams/t1/join') || {}).code, code);
     A.click({ act: 'joinnew', tid: 't1' }); await A.flush();
     check('a new link retires the old one', fbk.record.removes.includes('joinCodes/' + code), true);
   }
@@ -122,12 +122,12 @@ const valueAt = (fbk, p) => { const w = fbk.writtenTo(p); return w.length ? w[w.
 
     A.dom.node('#joinShirt').value = ' 9 ';
     A.dom.node('#joinChild').value = 'Bea';
-    A.click({ act: 'joinsend' }); await A.flush(); fbk.refuse('workspaces/CLUB/moved'); await A.flush(20);   // the old tree refuses a phone not in the club yet
+    A.click({ act: 'joinsend' }); await A.flush(); await A.flush(20);   // the old tree refuses a phone not in the club yet
     const c = valueAt(fbk, 'claims/CLUB/t1/sam');
     check('the request carries the link and the number', c && c.code + '#' + c.shirt, CODE + '#9');
     check('and the name she typed for her own child', c && c.child, 'Bea');
     check('and never an approval', !!(c && c.approved), false);
-    check('she registers as a member first', paths(fbk).indexOf('workspaces/CLUB/access/members/sam') < paths(fbk).indexOf('claims/CLUB/t1/sam'), true);
+    check('she registers as a member first', paths(fbk).indexOf('orgs/CLUB/members/sam') < paths(fbk).indexOf('claims/CLUB/t1/sam'), true);
     check('nothing is granted from her side', paths(fbk).some(p => /guardians|access\/index|teamParents/.test(p)), false);
     check('then she waits', /Waiting for a coach of Flight/.test(A.rendered()), true);
     check('the device is not pointed at the club yet', A.storage.getItem('sm.workspace'), null);
@@ -178,11 +178,11 @@ const valueAt = (fbk, p) => { const w = fbk.writtenTo(p); return w.length ? w[w.
     A.click({ act: 'claimok', tid: 't1', uid: 'sam' }); await A.flush(20);
     const p = paths(fbk);
     check('the approval is written', (valueAt(fbk, 'claims/CLUB/t1/sam/approved') || {}).by, 'coach');
-    check('she becomes that player\'s parent', valueAt(fbk, 'workspaces/CLUB/teams/t1/players/p2/guardians/sam'), true);
-    check('indexed with the team id the rule checks', valueAt(fbk, 'workspaces/CLUB/access/index/sam'), 't1');
-    check('approval before the index write that needs it', p.indexOf('claims/CLUB/t1/sam/approved') < p.indexOf('workspaces/CLUB/access/index/sam'), true);
-    check('and on the team\'s parent list', valueAt(fbk, 'workspaces/CLUB/access/teamParents/t1/sam'), 'p2');
-    check('written to the audit log', p.some(x => x.startsWith('workspaces/CLUB/access/log/')), true);
+    check('she becomes that player\'s parent', valueAt(fbk, 'orgs/CLUB/squad/t1/p2/guardians/sam'), true);
+    check('indexed with the team id the rule checks', valueAt(fbk, 'orgs/CLUB/access/index/sam'), 't1');
+    check('approval before the index write that needs it', p.indexOf('claims/CLUB/t1/sam/approved') < p.indexOf('orgs/CLUB/access/index/sam'), true);
+    check('and on the team\'s parent list', valueAt(fbk, 'orgs/CLUB/access/teamParents/t1/sam'), 'p2');
+    check('written to the audit log', p.some(x => x.startsWith('orgs/CLUB/log/')), true);
     check('the request leaves the list', A.pendingClaims('t1').length, 0);
   }
   {

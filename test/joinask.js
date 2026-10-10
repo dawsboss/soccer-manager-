@@ -14,7 +14,7 @@
 
 const H = require('./harness');
 const { check, deepEq } = H;
-const { makeServer, ORGS_MODE } = require('./fakebase');
+const { makeServer } = require('./fakebase');
 const join = require('../functions/join');
 
 const LATER = Date.now() + 7 * 864e5;
@@ -85,7 +85,7 @@ const raw = (S, p) => S.ref(p).get().then(s => s.val());
     check('the admin\'s list says who used it', S.at('clubInvites/CLUB/iP/used/by'), 'nia');
     check('and the invite is spent and gone', S.at('invites/iP'), null);
     check('nothing about anybody else changed', [S.at(W + 'access/index/mum'), S.at(W + 'access/teamParents/t1/mum'), S.at(W + 'teams/t1/players/p1/guardians/mum')].join(), 'true,p1,true');
-    deepEq('the answer says no more than where she landed', Object.keys(a).sort(), ['ok', 'role', 'tree', 'ws']);
+    deepEq('the answer says no more than where she landed', Object.keys(a).sort(), ['ok', 'role', 'ws']);
   }
   {
     const S = server();
@@ -101,10 +101,10 @@ const raw = (S, p) => S.ref(p).get().then(s => s.val());
   {
     const no = async (label, edit, uid, why, invite = 'iP') => {
       const S = server(edit);
-      const before = JSON.stringify(S.tree.workspaces || S.tree);
+      const before = JSON.stringify(S.tree.workspaces);
       const a = await ask(S, uid, { op: 'invite', invite });
       check(label, a.why, why);
-      check('— and nothing of the club changed', JSON.stringify(S.tree.workspaces || S.tree), before);
+      check('— and nothing of the club changed', JSON.stringify(S.tree.workspaces), before);
     };
     await no('an invite that is not there', null, 'nia', 'gone', 'iNope');
     await no('an invite spent by somebody else', db => { db.invites.iP.used = { by: 'mum', at: 1 }; }, 'nia', 'taken');
@@ -115,7 +115,6 @@ const raw = (S, p) => S.ref(p).get().then(s => s.val());
     await no('a club that has been retired', db => { db.retired = { CLUB: true }; }, 'nia', 'gone');
     await no('a club being moved: later', db => { db.serverState = { moving: { CLUB: { by: 'adm', at: 1 } } }; }, 'nia', 'moving');
     await no('a role no invite gives', db => { db.invites.iP.role = 'admin'; }, 'nia', 'gone');
-    if (!ORGS_MODE) await no('a club viewer on a club still on the old tree', db => { db.invites.iP = inv({ role: 'viewer', team: null, player: null }); delete db.invites.iP.team; delete db.invites.iP.player; }, 'nia', 'gone');
     const S = server();
     const a = await S.fire('joinAsks/nia/old', { op: 'invite', invite: 'iP', at: Date.now() - 3600000 });
     check('an ask an hour old is not acted on', [a.joinAsk.why, S.at('invites/iP/used')].join(), 'stale,');
@@ -160,8 +159,8 @@ const raw = (S, p) => S.ref(p).get().then(s => s.val());
     check('one who already holds a seat asking again keeps it', [d.ok, S.at('invites/mLink/took/nia'), Object.keys(S.at('invites/mLink/seat')).length].join(), 'true,s1,2');
   }
 
-  if (ORGS_MODE) {
-    console.log('\n--- a fan, and a club viewer (orgs/ only) ---');
+  {
+    console.log('\n--- a fan, and a club viewer ---');
     const S = server(db => {
       db.invites.iF = inv({ role: 'fan' });
       db.invites.iFa = inv({ role: 'fan', approved: true });
@@ -192,7 +191,6 @@ const raw = (S, p) => S.ref(p).get().then(s => s.val());
     deepEq('a member, with her account\'s email', [mem.name, mem.email], ['Nia M', 'nia@x.com']);
     deepEq('named', [name, names && names.name], ['Hillside FC', 'Nia M']);
     check('in her list of clubs', S.at(`userOrgs/nia/${a.ws}/name`), 'Hillside FC');
-    if (!ORGS_MODE) check('nothing on the old tree', await raw(S, 'workspaces/' + a.ws), null);
     const b = await ask(S, 'nia', { op: 'club', name: 'Hillside FC' });
     check('another club is another code', b.ws !== a.ws && b.ok, true);
     check('a club with no name is not made', (await ask(S, 'nia', { op: 'club', name: '  ' })).why, 'name');
@@ -202,10 +200,10 @@ const raw = (S, p) => S.ref(p).get().then(s => s.val());
       update: patch => S.ref('').update(patch), claim: (p, fn) => S.ref(p).transaction(fn).then(r => !!r.committed),
       user: uid => Promise.resolve(S.users[uid] || null)
     };
-    const codes = ['CLUB', a.ws, 'sm-fresh'];
+    const codes = [a.ws, 'sm-fresh'];
     const c = await join.onAsk({ ...env, newCode: () => codes.shift() }, { uid: 'raj', id: 'c1' }, { op: 'club', name: 'Mine', at: Date.now() });
-    check('a code already taken, on either tree, is passed over', c.ws, 'sm-fresh');
-    check('and the club there untouched', [S.at(W + 'access/admins/raj'), await raw(S, `orgs/${a.ws}/access/admins/raj`)].join(), ',');
+    check('a code already taken is passed over', c.ws, 'sm-fresh');
+    check('and the club there untouched', await raw(S, `orgs/${a.ws}/access/admins/raj`), null);
   }
 
   H.summary('joining and starting a club, as one call to the server');

@@ -99,10 +99,8 @@ async function planGroups(env, code, L, now) {
   return out;
 }
 
-/* The coach's notes still on a child's record, on orgs/ only (the old tree
-   keeps them on the record: it has no other place). One group per child. */
+/* The coach's notes still on a child's record. One group per child. */
 async function noteGroups(env, L) {
-  if (L.tree !== 'orgs') return [];
   const [squad, notes] = await Promise.all([env.get(`${L.base}/squad`), env.get(`${L.base}/coachNotes`)]);
   const out = [];
   for (const [tid, ps] of Object.entries(squad && typeof squad === 'object' ? squad : {})) {

@@ -308,11 +308,24 @@ const T = 'training/CLUB/';
     check('delivered twice, the second finds the answer and does nothing', r.why, 'twice');
     deepEq('the first answer stands', S.at('bookAsks/CLUB/mum/dup/answer'), first);
   }
+
+  /* A child in the club on no team (AUTH.md, *Sessions for a child on no
+     team*) books as `club`, her family found on her club record. On orgs/
+     only: the old tree has no club records. */
+  console.log('\n--- a child in the club on no team ---');
   {
-    const S = server({}, { serverState: { moving: { CLUB: { at: 1 } } } });
-    const r = await S.fire('bookAsks/CLUB/mum/m1', { op: 'book', block: 'b1', start: '18:00', tid: 't1', pid: 'p1', at: Date.now() });
-    check('while the club is moving, the ask is left for the phone to ask again', r.bookAsk, null);
-    check('and nothing is booked', S.at(T + 'booked'), null);
+    const ORGS = require('./fakebase').ORGS_MODE;
+    const S = server();
+    S.put('workspaces/CLUB/children/k5', { id: 'k5', first: 'Mia', club: true, by: 'adm', at: 1, family: { kmum: 'ik' } });
+    S.put('workspaces/CLUB/children/k6', { id: 'k6', first: 'Zed', by: 'kz', at: 1, family: { kz: 'rl' } });
+    S.put('workspaces/CLUB/access/index/kmum', 'k5'); S.put('workspaces/CLUB/access/index/kz', true);
+    const a = await bk(S, 'kmum', { tid: 'club', pid: 'k5' });
+    check(ORGS ? 'her family books her, as the club' : 'on the old tree there is no such child', a.ok, ORGS);
+    if (ORGS) check('— the booking says so', S.at(T + 'booked/' + SID + '/k5').tid, 'club');
+    const b = await bk(S, 'kmum', { tid: 'club', pid: 'k6', start: '17:00' });
+    deepEq('a child not hers is refused', [b.ok, b.why], [false, 'family']);
+    const c = await bk(S, 'kz', { tid: 'club', pid: 'k6', start: '17:00' });
+    deepEq('— and one the club has not let in', [c.ok, c.why], [false, 'family']);
   }
 
   H.summary('booking a coach\'s time, as one server call');

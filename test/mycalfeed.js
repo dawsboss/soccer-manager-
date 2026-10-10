@@ -23,7 +23,7 @@
 
 const H = require('./harness');
 const { check, deepEq } = H;
-const { makeServer } = require('./fakebase');
+const { makeServer, orgsLayout } = require('./fakebase');
 const mycal = require('../functions/mycal');
 
 const FEED = 'mFeedMum0001', CFEED = 'mFeedCoach01';
@@ -351,7 +351,7 @@ const named = doc => NAMES.filter(n => JSON.stringify(doc || {}).includes(n));
       const phone = A.myFeedDoc().items;
       const read = p => {
         const segs = p.split('/');
-        let cur = { workspaces: { CLUB: club }, training: { CLUB: TRAINING() } };
+        let cur = { orgs: { CLUB: orgsLayout(club) }, training: { CLUB: TRAINING() } };
         for (const k of segs) cur = cur == null ? undefined : cur[k];
         return Promise.resolve(cur === undefined ? null : cur);
       };
@@ -450,7 +450,7 @@ const named = doc => NAMES.filter(n => JSON.stringify(doc || {}).includes(n));
     const club = CLUB();
     A.state = club; A.sess = { ...A.sess, ...TRAINING() }; A.appOwners = {};
     const read = p => {
-      let cur = { workspaces: { CLUB: club }, training: { CLUB: TRAINING() } };
+      let cur = { orgs: { CLUB: orgsLayout(club) }, training: { CLUB: TRAINING() } };
       for (const k of p.split('/')) cur = cur == null ? undefined : cur[k];
       return Promise.resolve(cur === undefined ? null : cur);
     };

@@ -37,29 +37,18 @@ const SUITES = [
   ['sync', 'auth, the workspace read, and its races'],
   ['invites', 'joining a club by invite, on both sides'],
   ['joinask', 'joining by invite and starting a club: one call to the server, all of it or none'],
-  ['joinask-orgs', 'joining and starting a club, with every club on orgs/'],
   ['join', 'a squad of invites at once, and the team link a coach approves'],
   ['messages', 'notices and family conversations, read and written by whom'],
   ['push', 'notifications to a closed phone: who the server tells, and the phone that asked'],
   ['access', 'the lookup tables the rules read, kept true by the server the moment a role changes'],
   ['mirror', 'the share pages\' calendar, kept in step by the server whoever changed it'],
   ['mycalfeed', 'my calendar\'s feed, built by the server from her roles in every club'],
-  // the server again, every club moved to orgs/: each expectation above holds there too
-  ['access-orgs', 'the lookup tables, with every club on orgs/'],
-  ['push-orgs', 'notifications, with every club on orgs/'],
-  ['mirror-orgs', 'the share pages\' calendar, with every club on orgs/'],
-  ['mycalfeed-orgs', 'my calendar\'s feed, with every club on orgs/'],
   ['book', 'booking a coach\'s time: one server call, counted, with a waiting list'],
-  ['book-orgs', 'booking a coach\'s time, with every club on orgs/'],
   ['migrate', 'old practice plans and coach\'s notes moved once, by the server'],
-  ['migrate-orgs', 'old data moved once, with every club on orgs/'],
   ['owners', 'who runs the club: only an owner takes an admin away, and every admin is told'],
-  ['owners-orgs', 'who runs the club, with every club on orgs/'],
-  ['move', 'moving a club to orgs/: only its admin, all or nothing, and the roster and staff names after'],
-  ['orgs', 'the app on a moved club: a family\'s phone holds her own children and numbers, staff read the squads, every write lands there'],
+  ['orgs', 'the app on orgs/: a family\'s phone holds her own children and numbers, staff read the squads, every write lands there'],
   ['import', 'bulk import merges, and never replaces'],
   ['importask', 'a bulk import applied by the server: only an admin, only the club, in order and whole'],
-  ['importask-orgs', 'a bulk import applied by the server, with every club on orgs/'],
   ['drills', 'the built-in drill library holds together'],
   ['practice', 'the Practice tab, and who gets it'],
   ['plans', 'practice plans, and how they reach the club'],
@@ -71,6 +60,10 @@ const SUITES = [
   ['players', 'a player\'s own sign-in: the coach gives it, she sees what her parents see, and talks to the coaches only where they do'],
   ['viewers', 'club-wide viewers see every team\'s games with names and nothing else, and are in the index like everyone else'],
   ['fans', 'a player\'s fans: anyone who can see her asks, her coach approves, and they read less than a parent'],
+  ['children', 'a child in the club: her record, read by staff and her own family, made for every child on a team, confirmed by her family alone'],
+  ['register', 'registration: programs and waivers for admins, the link and form a family fills (in her own name, in the rules\' order), accepting, and a draft a coach starts for a family'],
+  ['details', 'getting families to finish their children\'s details: reminded on every screen and once a day, kept to the calendar and messages after the club\'s deadline, never staff; what is required and the deadline the admins\''],
+  ['forget', 'forgetting an account: every role, table and place on a child in every club, her own nodes, a child with no family left kept for the admins, never the last admin'],
   ['links', 'links with limits: how many people may use one, and until when, for every kind of link'],
   ['mycal', 'my calendar is the person\'s, across clubs, and private unless she shares it'],
   ['safekeep', 'nothing floats away: one count, a full phone, a whole backup'],
@@ -82,8 +75,7 @@ const SUITES = [
   ['smoke', 'every view renders without throwing'],
   ['sandbox', 'the test club, and database isolation'],
   ['rulesver', 'an admin is told when the published rules are behind'],
-  ['rules', 'the database rules, as database.rules.json has them'],
-  ['rules-orgs', 'the same rules with every club moved to orgs/, and who reads each part there']
+  ['rules', 'the database rules, as database.rules.json has them']
 ];
 
 const verbose = process.argv.includes('--verbose') || process.argv.includes('-v');
@@ -95,13 +87,8 @@ let allGaps = [];
 
 for (const [name, what] of list) {
   const started = Date.now();
-  /* A name ending -orgs is its suite run again with every club moved to
-     orgs/{code} (AUTH.md, *The move to `orgs/{orgId}`*): the same file, told
-     which tree to keep its clubs on. */
-  const orgs = /-orgs$/.test(name);
-  const r = spawnSync(process.execPath, [path.join(__dirname, name.replace(/-orgs$/, '') + '.js')], {
-    encoding: 'utf8', cwd: path.join(__dirname, '..'),
-    env: orgs ? { ...process.env, RULES_TREE: 'orgs', SERVER_TREE: 'orgs', APP_TREE: 'orgs' } : process.env
+  const r = spawnSync(process.execPath, [path.join(__dirname, name + '.js')], {
+    encoding: 'utf8', cwd: path.join(__dirname, '..'), env: process.env
   });
   const ms = Date.now() - started;
   const out = (r.stdout || '') + (r.stderr || '');

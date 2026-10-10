@@ -32,7 +32,7 @@ does the bookkeeping, not that the phone works offline first.
 ## People and their calendars
 
 ### Busy at another club
-- **Moved to the server too (build 122):** `myCalBuild` (`functions/mycal.js`,
+- **Moved to the server too (build 130):** `myCalBuild` (`functions/mycal.js`,
   `publishBusy`) writes each sharing person's busy times from the clubs
   themselves, on the same marks and the same five-minute runs as her feed,
   in exactly the shape her phone writes (`people/{uid}/busy/{clubTag}`: a
@@ -137,9 +137,10 @@ does the bookkeeping, not that the phone works offline first.
 - **Moving a club to orgs/ builds them whole** (`functions/move.js`, the
   `moveClub` trigger): every table from where each uid appears, so a moved
   club carries no bridge. That was the one-off run above, one club at a time,
-  and every club has moved (2026-10-09). What is left is deleting: the
-  bridges, the phones' rebuilds and the old tree's triggers come out with the
-  old tree (AUTH.md, build order step 5, from 2026-10-23).
+  and every club has moved (2026-10-09). The old tree's triggers and
+  `moveClub` came out in build 128 (AUTH.md, build order step 5). What is
+  left is deleting the bridges and the phones' rebuilds, now that every
+  club's tables were built whole.
 
 ### What families read on orgs/
 - **On the server (2026-10-08):** on a club that has moved to `orgs/{code}`
@@ -224,15 +225,15 @@ does the bookkeeping, not that the phone works offline first.
 
 ## Joining and starting clubs
 
-- **Moved (build 122): joining by invite and starting a club are one call.**
-  The phone asks at `joinAsks/{uid}/{id}` (hers alone, rules version 21) and
+- **Moved (build 130): joining by invite and starting a club are one call.**
+  The phone asks at `joinAsks/{uid}/{id}` (hers alone, rules version 27) and
   `functions/join.js` (`joinAsk`) answers beside it. An invite is checked as
   the rules checked it (spent, expired, full, another email, an unconfirmed
   address, a child or team gone, a retired club), spent inside one
   transaction, and the grant, her member entry, her bookmark, the admin's
   list and the log written in one multi-path write, then the lookup tables
   by access.js's `settle`. A new club is made at a code the server makes
-  (crypto, checked free on both trees), with her as admin and owner, in one
+  (crypto, checked free), with her as admin and owner, in one
   write; a club is never made twice for one ask. The phone does them itself
   (`redeemHere()`, `createHere()`) only where `SOCCER_SERVER` is not set or
   the rules refuse the ask. `test/joinask.js`, and the page in
@@ -253,7 +254,14 @@ does the bookkeeping, not that the phone works offline first.
   whose sign-in emails Firebase sends one call at a time from the admin's phone
   (`mailImported()`), stopping at its daily limit; a new club is claimed by
   the first person to write its admin list (`createClub()`), which is
-  trust-on-first-use (rules.js, gap 3). Anything half-done after a dropped
+  trust-on-first-use (rules.js, gap 3). Registering a child through a
+  program's link is the family's own phone writing her child, her list, care,
+  the registration and each agreement in that order (`sendReg()`), and an
+  admin accepting writes the child's `club` and the family's index entry
+  (the server's `accessChild` does the latter too); a family deleting her
+  registration is her phone deleting it, its agreements, then the child she
+  made (`delReg()`). Forgetting an account is already the server's
+  (`forgetMe`, on her own request). Anything half-done after a dropped
   signal is undone by hand on the phone.
 - **With a server:** each is one call that does all of it or none of it, and a
   new club's code is issued by the server rather than claimed. Invitations go
@@ -335,7 +343,7 @@ does the bookkeeping, not that the phone works offline first.
   refused, or warned about, at the moment of saving.
 
 ### Moving old data
-- **On the server (build 122):** `migrateOld` (`functions/migrate.js`), daily
+- **On the server (build 130):** `migrateOld` (`functions/migrate.js`), daily
   until a run gets every club through, then never again (it reads one
   marker and stops, `serverState/migrated/v1/done`). Each old plan gets its
   practice entry under its own id and its `eid`, exactly as `movePlans()`
@@ -354,11 +362,23 @@ does the bookkeeping, not that the phone works offline first.
   them, until an admin does.
 - **With a server:** a one-off migration, run once, and the code is deleted.
 
+### A child's club record
+- **Now:** every child already on a team is given a club record by the first
+  admin's phone to open the club, and the squad's families are copied onto
+  each record by any admin's or coach's phone, and by a family's own phone for
+  herself (`syncChildren()`; AUTH.md, *A child in the club*). The server does
+  both the moment a squad record changes (`rosterPlayer`, `functions/access.js`)
+  and keeps the index for a family named on a child the club let in
+  (`accessChild`), so the phones are the fallback for a club without the
+  functions deployed.
+- **With a server:** already there; the phones' half goes once every club has
+  the functions.
+
 ### Backups and imports
-- **Moved (build 122): a bulk import is applied by the server.** The phone
+- **Moved (build 130): a bulk import is applied by the server.** The phone
   plans it as before and sends the planned writes in one ask
-  (`importAsks/{code}/{uid}/{id}`, admins only, rules version 21; laid out
-  for the club's tree and stamped by `importWrites()`). `functions/imports.js`
+  (`importAsks/{code}/{uid}/{id}`, admins only, rules version 27; laid out
+  for the club and stamped by `importWrites()`). `functions/imports.js`
   (`importAsk`) checks she is an admin now, that every write is inside the
   club and in a part an import writes (never a role, a lookup table, another
   club or the root, or nothing is written), and applies them in order in

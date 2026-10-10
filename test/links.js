@@ -43,7 +43,7 @@ async function boot(who, extra = {}) {
   const A = H.loadApp({ firebase: fbk, config: CONFIG, storage: { 'sm.workspace': 'CLUB', ...(extra.storage || {}) }, search: extra.search });
   await A.flush();
   if (who) { fbk.signIn(who, { name: extra.name || who, email: who + '@x.test' }); await A.flush(); }
-  if (!extra.search) { fbk.deliver('workspaces/CLUB', CLUB()); await A.flush(); }
+  if (!extra.search) { await fbk.serveClub('CLUB', CLUB(), A.flush); await A.flush(); }
   return { A, fbk };
 }
 const wrote = fbk => fbk.record.writes.map(w => w.path);
@@ -101,8 +101,8 @@ const sheet = A => String(A.dom.node('#sheet').innerHTML);
     check('she takes the seat still free', valueAt(fbk, `invites/${ID}/seat/s2`) && valueAt(fbk, `invites/${ID}/seat/s2`).by, 'dad');
     check('then says it is hers', valueAt(fbk, `invites/${ID}/took/dad`), 's2');
     check('never the single-use way', p.includes(`invites/${ID}/used`), false);
-    check('then the role it grants, carrying the link\'s id', valueAt(fbk, 'workspaces/CLUB/teams/t1/players/p2/guardians/dad'), ID);
-    check('seat, then hers, then the role', at(`invites/${ID}/seat/s2`) < at(`invites/${ID}/took/dad`) && at(`invites/${ID}/took/dad`) < at('workspaces/CLUB/teams/t1/players/p2/guardians/dad'), true);
+    check('then the role it grants, carrying the link\'s id', valueAt(fbk, 'orgs/CLUB/squad/t1/p2/guardians/dad'), ID);
+    check('seat, then hers, then the role', at(`invites/${ID}/seat/s2`) < at(`invites/${ID}/took/dad`) && at(`invites/${ID}/took/dad`) < at('orgs/CLUB/squad/t1/p2/guardians/dad'), true);
     check('ticked off on the admins\' list', !!valueAt(fbk, `clubInvites/CLUB/${ID}/took/dad`), true);
     check('the link stays for anyone still to use it', fbk.record.removes.includes('invites/' + ID), false);
   }
@@ -173,14 +173,14 @@ const sheet = A => String(A.dom.node('#sheet').innerHTML);
     A.click({ act: 'linkuntil', k: 'season', d: '30', tid: 't1' }); await A.flush(20);
     const u = A.state.teams.t1.shareUntil;
     check('the team keeps the date', Math.round((u - A.nowMs()) / 864e5), 30);
-    check('— written to the club, for the server to put on the page', valueAt(fbk, 'workspaces/CLUB/teams/t1/shareUntil'), u);
+    check('— written to the club, for the server to put on the page', valueAt(fbk, 'orgs/CLUB/teams/t1/shareUntil'), u);
     check('the phone writes no page itself (SEC-10)', wrote(fbk).some(p => p.startsWith('public/')), false);
     A.click({ act: 'linkuntil', k: 'game', d: '7', tid: 't1', mid: 'g1' }); await A.flush(20);
-    check('a game\'s page takes its own', Math.round((valueAt(fbk, 'workspaces/CLUB/matches/g1/shareUntil') - A.nowMs()) / 864e5), 7);
+    check('a game\'s page takes its own', Math.round((valueAt(fbk, 'orgs/CLUB/matches/g1/shareUntil') - A.nowMs()) / 864e5), 7);
     A.click({ act: 'linkuntil', k: 'feed', d: '90', tid: 't1' }); await A.flush(20);
-    check('the team\'s calendar feed takes one too', Math.round((valueAt(fbk, 'workspaces/CLUB/teams/t1/calFeedUntil') - A.nowMs()) / 864e5), 90);
+    check('the team\'s calendar feed takes one too', Math.round((valueAt(fbk, 'orgs/CLUB/teams/t1/calFeedUntil') - A.nowMs()) / 864e5), 90);
     A.click({ act: 'linkuntil', k: 'season', d: '0', tid: 't1' }); await A.flush(20);
-    check('No end takes it off', A.state.teams.t1.shareUntil == null && valueAt(fbk, 'workspaces/CLUB/teams/t1/shareUntil') == null, true);
+    check('No end takes it off', A.state.teams.t1.shareUntil == null && valueAt(fbk, 'orgs/CLUB/teams/t1/shareUntil') == null, true);
   }
   {
     const { A, fbk } = await boot('mum');

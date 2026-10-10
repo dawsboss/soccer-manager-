@@ -51,14 +51,12 @@ async function boot(who, orgs, ws = club()) {
   const fbk = makeFakebase();
   const D = H.loadApp({ firebase: fbk, config: CONFIG, storage: { 'sm.workspace': 'CLUB' } });
   await D.flush(); fbk.signIn(who, { name: who }); await D.flush();
-  fbk.deliver('workspaces/CLUB', ws); await D.flush();
+  await fbk.serveClub('CLUB', ws, D.flush); await D.flush();
   fbk.deliver('userOrgs/' + who, orgs); await D.flush();
   return { D, fbk };
 }
 async function hillAnswers(D, fbk, { matches = {}, events = {} } = {}) {
-  fbk.deliver('workspaces/HILL/teams', hill.teams({ events }));
-  fbk.deliver('workspaces/HILL/matches', matches);
-  fbk.deliver('workspaces/HILL/access', hill.access);
+  await fbk.serveClub('HILL', { access: hill.access, teams: hill.teams({ events }), matches }, D.flush);
   for (const p of ['sessions', 'booked', 'avail']) fbk.deliver('training/HILL/' + p, {});
   await D.flush(); D.render(); await D.flush();
 }
@@ -122,19 +120,19 @@ const ORGS = { CLUB: { name: 'Lakeside SC', at: 1 }, HILL: { name: 'Hillside', a
     await hillAnswers(D, fbk, { matches: game() });
     check('the first look at each club is not news', D.alertsList().length, 0);
     D.ui.view = 'game'; D.render();
-    fbk.deliver('workspaces/HILL/matches', game({ called: 'cancelled' })); await D.flush(); D.render();
+    fbk.deliver('orgs/HILL/matches', game({ called: 'cancelled' })); await D.flush(); D.render();
     const a = D.alertsList()[0];
     check('a game called off in the other club is', a && a.title, 'Cancelled: v Storm (Hill U12)');
     check('urgent, over the game she is looking at', a.urgent && /Cancelled: v Storm/.test(bar(D)), true);
     check('on the bell', D.unreadCount() >= 1, true);
     check('once', (D.render(), D.alertsList().length), 1);
-    fbk.deliver('workspaces/HILL/matches', game()); await D.flush(); D.render();
+    fbk.deliver('orgs/HILL/matches', game()); await D.flush(); D.render();
     check('back on', D.alertsList()[0].title, 'Back on: v Storm (Hill U12)');
-    fbk.deliver('workspaces/HILL/matches', game({ date: day(4) })); await D.flush(); D.render();
+    fbk.deliver('orgs/HILL/matches', game({ date: day(4) })); await D.flush(); D.render();
     check('moved', D.alertsList()[0].title + ' ' + D.alertsList()[0].body.startsWith('Now '), 'Moved: v Storm (Hill U12) true');
     const wk = {};
     for (const n of [5, 12, 19]) wk['w' + n] = { id: 'w' + n, kind: 'practice', title: 'Practice', date: day(n), start: '18:00', series: 'S1' };
-    fbk.deliver('workspaces/HILL/teams', hill.teams({ events: wk })); await D.flush(); D.render();
+    fbk.deliver('orgs/HILL/teams', hill.teams({ events: wk })); await D.flush(); D.render();
     check('a weekly practice is one alert', D.alertsList()[0].title + ' · ' + D.alertsList()[0].body.split(',')[0], 'New practices: Practice (Hill U12) · 3 of them');
     const g = D.alertsList().find(x => x.title.startsWith('Moved'));
     D.click({ act: 'alertgo', id: g.id });
