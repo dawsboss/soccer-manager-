@@ -2,7 +2,7 @@
    Static app. Data lives in localStorage, and mirrors to Firebase Realtime
    Database when a config + workspace code are present. */
 
-const BUILD = '130';
+const BUILD = '131';
 const BUILT = '2026-10-09';
 /* The version of database.rules.json this app was written against. The rules
    carry the same number in rulesVersion's .write, which accepts that number
@@ -1484,6 +1484,18 @@ const acc = () => state.access || {};
 const members = () => Object.entries(acc().members || {}).map(([uid, v]) => ({ uid, ...v }))
   .sort((a, b) => (a.name || '').localeCompare(b.name || ''));
 const anyAdmins = () => Object.keys(acc().admins || {}).length > 0;
+/* The club's name for the crumbs, headings and menus. Before the club has been
+   read on this phone (a new address, a first sign-in) its own record isn't here
+   yet, so use the name her account's list of clubs holds for it; failing that,
+   say it is on its way rather than naming it the generic "Club". */
+function clubName() {
+  const n = (acc().org || {}).name;
+  if (n) return n;
+  const c = typeof wsCode === 'function' ? wsCode() : '';
+  const bm = c && myClubs && myClubs[c] && myClubs[c].name;
+  if (bm) return bm;
+  return fbConfig().apiKey && c && !wsRead ? 'Your club' : 'Club';
+}
 const isAdmin = uid => !!(uid && (acc().admins || {})[uid]);
 /* The club owner (SECURITY.md, SEC-D8): always an admin too, and the only one
    who takes an admin away. Not the app owner (`isOwner()`), who has no
@@ -1907,6 +1919,12 @@ function readiness() {
    list end up disagreeing about whether the club is protected. */
 const gated = () => anyAdmins() && !!fbConfig().apiKey;
 const needsSignIn = () => !me && gated();
+/* A phone that has never held this club (a new address, cleared storage) has
+   no admins to be gated by, so nothing says "sign in" and the app draws an empty
+   club that looks as if it is still loading. With a database to ask, nobody
+   signed in and nothing held, the only way forward is to sign in, so say so.
+   A device with teams of its own on it is somebody using the app alone: left open. */
+const awaitingSignIn = () => !me && !!fbConfig().apiKey && !wsRead && !anyAdmins() && !Object.keys(state.teams || {}).length;
 
 /* Who may see and change which team.
    Admin: everything. Coach: edits her own team, reads the rest of the club —
@@ -6665,7 +6683,7 @@ function render() {
      screen with the crumbs still drawn has leaked most of what there was. */
   const inviting = !!invite;
   const joining = !inviting && !!join && !join.hidden;
-  const shut = inviting || joining || !!purged || denied || unconfirmed || needsSignIn();
+  const shut = inviting || joining || !!purged || denied || unconfirmed || needsSignIn() || awaitingSignIn();
   const t = team();
   if (!t && teams().length) { ui.teamId = teams()[0].id; }
   const vis = myTeams();
@@ -6751,6 +6769,7 @@ function render() {
   if (joining) { app.innerHTML = joinScreen(); saveUi(); watchMessages(); return; }
   if (purged) { app.innerHTML = purgedScreen(); saveUi(); watchMessages(); return; }
   if (denied || needsSignIn()) { app.innerHTML = lockScreen(); saveUi(); watchMessages(); return; }
+  if (awaitingSignIn()) { app.innerHTML = welcomeScreen(); saveUi(); return; }
   if (unconfirmed) { app.innerHTML = unconfirmedScreen(); saveUi(); return; }
   const roNote = lim === 'viewer' && team()
     ? `<div class="rolebar">${me && isViewer(me.uid) && !teams().some(x => isCoach(x.id, me.uid)) ? `Viewing <b>${teamLabel(team())}</b> as a club viewer. You can read it, not change it.`
@@ -6845,6 +6864,17 @@ function unconfirmedScreen() {
       <button class="btn quiet" data-act="clubswitch">Other clubs</button></div></div></div>`;
 }
 
+function welcomeScreen() {
+  return `<div class="stack"><div class="auth-card">
+    ${authHero('Sign in to open your club', wsCode()
+      ? 'This phone has not opened the club yet. Sign in with the account the club knows, and it will load.'
+      : 'Sign in with the account your club knows, and your teams and calendar will load. If you were sent an invite link, open it again after signing in.')}
+    <div class="auth-card-body">
+      <button class="btn wide auth-go" data-act="signinsheet">Sign in</button>
+      <p class="auth-fine">Read-only score pages need none of this — they keep working from their own link.</p>
+    </div></div></div>`;
+}
+
 function lockScreen() {
   return `<div class="stack"><div class="auth-card">
     ${authHero(me ? 'Waiting for access' : 'Sign in to this club', me
@@ -6883,7 +6913,7 @@ function crumbs() {
     ? `${sep}<span class="crumb" aria-current="page"><span class="crumb-k">${viewScope() === 'me' ? 'Yours' : 'Screen'}</span>${esc(VIEW_CRUMB[ui.view])}</span>` : '';
   if (viewScope() === 'me' && me)
     return `<button class="crumb" data-act="accountsheet"><span class="crumb-k">You</span>${esc(me.name || me.email || 'Your account')}</button>${here}`;
-  const org = (acc().org || {}).name || 'Club';
+  const org = clubName();
   const t = viewScope() === 'team' ? team() : null;
   const m = ui.view === 'game' ? match() : null;
   const out = [`<button class="crumb crumb-club" data-act="goview" data-v="club">${clubCrest('xs')}<span><span class="crumb-k">Club</span>${esc(org)}</span></button>`];
@@ -6896,7 +6926,7 @@ function crumbs() {
 }
 
 function viewClub() {
-  const org = (acc().org || {}).name || 'Club';
+  const org = clubName();
   const list = myTeams();
   const now = nowMs();
   return `<div class="stack">
@@ -6939,7 +6969,7 @@ function sheetAccount() {
     <p class="muted" style="margin-top:0">${esc(me.email || '')}${r ? ` · ${esc(ROLE_LABEL[r])}` : ''}</p>
     <button class="opt" data-act="goview" data-v="mycal"><b>My calendar</b>
       <span class="rowsub">Everything of yours, from every club you're in</span></button>
-    ${wsCode() || teams().length ? `<button class="opt" data-act="goview" data-v="club"><b>${esc((acc().org || {}).name || 'Club home')}</b>
+    ${wsCode() || teams().length ? `<button class="opt" data-act="goview" data-v="club"><b>${esc(clubName() === 'Club' ? 'Club home' : clubName())}</b>
       <span class="rowsub">Club home: its teams, and everything else in it</span></button>` : ''}
     <button class="opt" data-act="goview" data-v="setup"><b>Settings</b>
       <span class="rowsub">Account, club, sharing, backup, version</span></button>
@@ -7040,7 +7070,7 @@ function sheetClubSwitch() {
 }
 
 function sheetClubMenu() {
-  const org = (acc().org || {}).name || 'Club';
+  const org = clubName();
   openSheet(`<h3>${esc(org)}</h3>
     ${canAdmin() ? `<button class="opt" data-act="schedule"><b>Calendar: all teams</b>
       <span class="rowsub">Every team's games and practices, and adding to any of them</span></button>

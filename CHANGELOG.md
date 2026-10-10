@@ -8,6 +8,15 @@ before this point lives only in the git log.
 
 ---
 
+## A new address says "sign in" — 2026-10-10 (build 131)
+
+Opening an old link on the new domain showed an empty club that looked as if it was still loading, with no way to sign in: a phone that has never held a club has no admins to be locked by, so nothing asked for a sign-in. Now a device with a database, nobody signed in and nothing held shows **Sign in to open your club** with the button.
+
+- **The club's name no longer reads "Club" while it loads.** `clubName()` falls back to the name in her account's list of clubs, then to "Your club" until the club has been read, so the crumbs and Club home are right the moment she signs in rather than after a forced refresh.
+- A device with teams of its own on it, and a device with no database, are left open as before.
+
+---
+
 ## The site moves to teamplayhq.com — 2026-10-10
 
 The site is served at its own domain now (GitHub Pages, custom domain `teamplayhq.com`) instead of `dawsboss.github.io/soccer-manager-/`. The app builds every link it hands out (invites, team links, share pages, registration) from the address it is open on, so those follow by themselves; the one place that cannot is the server, which has no page to look at.
