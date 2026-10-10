@@ -390,12 +390,25 @@ hold.
    design, written into AUTH.md before the code (*Protecting the data* and
    *Season registration* above). *The names half built 2026-10-08 (build
    110): the move to `orgs/{orgId}` (AUTH.md), and every club has moved
-   (2026-10-09). The club-level record of each child is left, for
-   registration.*
+   (2026-10-09). The club-level record of each child is designed in
+   AUTH.md, *A child in the club, and registration* (2026-10-09), with
+   registration itself, before any code.*
 4. **Registration, without payment.** Programs, the link, the form, waivers,
    accepting and placing, care details for coaches, the GotSport export,
    a family's *Delete*, and the account-delete function. Families can pay
    the old way meanwhile, recorded as now.
+   *Designed 2026-10-09 in AUTH.md, *A child in the club, and registration*,
+   in six steps of its own. Two things moved from what this document says
+   above: everything lives under `orgs/{code}/` (`children`, `care`,
+   `teamCare`, `programs`, `waivers`, `regs`) rather than a `reg/{code}` root,
+   because on `orgs/` each part already has its own readers; and only the
+   program link is at the root (`regOpen/{linkId}`), with each family's list
+   of her children (`families/{uid}`). A child can be in the club on no team,
+   for training sessions, and a coach or an admin can register a child for a
+   family, who confirms it when she joins. Built 2026-10-09, all six
+   steps: the child's record (build 122), care details (123), programs,
+   the link, the form and waivers (124), placing and sessions for a child on
+   no team (125), the GotSport export (126) and deleting (127).*
 5. **Payments.** Stripe Connect, Checkout, the webhook (payments and the
    club's refunds), plans, discounts, the treasurer's view; session fees and packages onto the same
    till.

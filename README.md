@@ -124,7 +124,7 @@ Two limits worth knowing:
 
 ### The move to orgs/, and the old tree gone
 
-Every club moved to `orgs/{code}` by 2026-10-09 (the admin's *Move* button and the server's `moveClub`, build 110). A fortnight on, build 122 took the old `workspaces/{code}` tree out of the rules, the server and the app (AUTH.md, build order step 5): the button, `moveRequests/` and `moveClub` are gone, nothing reads or writes `workspaces/` any more, and a club is made on `orgs/` or not at all. A phone that last held a club's copy from the old tree cuts it down to what its account may hold before it reads the club. What is left in the database (each moved club's `workspaces/{code}/moved` marker, the server's copies at `serverState/moved/`, any old `moveRequests/`) is nobody's to read and is deleted by hand once the owner is happy: Firebase console → Realtime Database → Data, or `npx firebase-tools database:remove /serverState/moved` (and `/workspaces`, `/moveRequests`).
+Every club moved to `orgs/{code}` by 2026-10-09 (the admin's *Move* button and the server's `moveClub`, build 110). Build 128 took the old `workspaces/{code}` tree out of the rules, the server and the app (AUTH.md, build order step 5): the button, `moveRequests/` and `moveClub` are gone, nothing reads or writes `workspaces/` any more, and a club is made on `orgs/` or not at all. A phone that last held a club's copy from the old tree cuts it down to what its account may hold before it reads the club. What is left in the database (each moved club's `workspaces/{code}/moved` marker, the server's copies at `serverState/moved/`, any old `moveRequests/`) is nobody's to read and is deleted by hand once the owner is happy: Firebase console → Realtime Database → Data, or `npx firebase-tools database:remove /serverState/moved` (and `/workspaces`, `/moveRequests`).
 
 - **My players spans clubs.** Her children in every other club she's in are listed under this club's own, named with their team and club, with the next thing to get them to and *Open that club for her minutes*. It comes from the cut-down copy My calendar already keeps (her own children, no stints), so there are no minutes for another club until it's opened.
 
@@ -162,6 +162,22 @@ A grandparent, an aunt, a family friend who wants the games and the calendar on 
 - **A fan can leave.** Her card under *My players* has *Stop following*, which takes her off the record and, if it was her only role, out of the club.
 
 Needs rules version 20 (`fans` and `fanNames` on the child's record, `access/teamFans`, and the fan clauses in `invites`, `claims` and `board`), on `orgs/` only. Until it's pasted, making the link is refused and says so.
+
+## A child in the club
+
+The first step of registration (AUTH.md, *A child in the club, and registration*). Every child has one record in the club, not only a row in her team's squad, so she can be in the club on no team (for training sessions, once that is built) and next season starts from what her family already told the club. On `orgs/` (every club now).
+
+- **Every child already on a team has one**, made from the squad by the first admin's phone to open the club (or the server), for her family to confirm. **A coach adding a player** makes one too: she registers the child for her family.
+- **Her family confirms it, and nobody else can.** The first time a family's phone holds a child the club registered, it asks once: *Check Ella's details*, with what the club has (name, team and number) and only what is missing (birth date, gender). Then a card on *My players* until she does.
+- **Who changes it:** her family, an admin, or the coach who added her until her family has confirmed it. The team's own name for her (on Squad) stays the coach's. Staff see a child's record, and whether her family has confirmed it, under *Her club record* on her page in Squad.
+- **Who reads it:** coaches and admins (as they read every squad), and her own family. Never a tracker, a helper, a viewer or a fan; never `public/`.
+- **Care details for the pitch** (build 123): her family adds up to two people to call and anything a coach must know (allergies, conditions, medication, a doctor) on the same screen. Her **team's coaches** see it on her page in Squad, under *At the pitch*, with a link to ring; so do the admins. Nobody else: not another team's coach, a tracker, a helper, a viewer or a fan. It is never in a game, the share pages, a notification or *Download a copy*. Needs rules version 22 (`care`, `teamCare`).
+- **Registering** (build 124, admins): Club settings → **Registrations** makes a *program* (a season, a camp, tryouts, training sessions) with its birth years, who it is for, dates, places, a fee and how to pay it (shown, never taken), questions, and the club's **waivers** (the words are the club's; changing them makes a new version and families are asked again). **Copy the link** and post it anywhere: a family who is not in the club opens it, signs in, and registers each child: details, someone to call, the questions, and each waiver agreed in her own name. She sees nothing of the club until an admin **accepts** (or puts her on the waiting list, or declines). A family already in the club sees open programs her child fits on *My players*. A coach or an admin can start a registration for a family from the child's record; the family finishes it. Needs rules version 23 (`programs`, `waivers`, `regs`, `agreed` under the club, and `regOpen` at the root).
+- **Placing and sessions** (build 125): an accepted child's registration offers the teams that fit her age; **Place on** a team puts her in its squad with her family as its parents (her coach gives her a number) and her care details reach that team's coaches. A child registered for *training sessions* stays on no team and her family books 1-1s and groups for her like any other (the coach finds her under *No team yet* when adding players). Needs rules version 24.
+- **Export for GotSport** (build 126, admins): on a program's list, a CSV of every child placed or accepted (team, number, birth date, gender, and the parent who registered her with email and phone) to upload to the state's system. It warns before saving: it holds birth dates and contact details.
+- **Deleting** (build 127): a family deletes a registration from its link (and a child she registered who was never let in goes with it). An admin deletes a child's record from it (one on no team). **Your account → Delete my account** asks the club's server to forget you in every club you are in (roles, your place on your children's records, your settings, push, your own drills); what you wrote to others stays, and a child of yours left with no family is taken off her team and kept for the admins under *Left the club*. Refused while you are a club's only admin. Needs rules version 25 and the functions deployed.
+
+Needs rules version 21 (`children` under the club, the index clause for a child's family, `families` at the root, and a parent invite that names a child). Until it's pasted, the records are not made, and a family's confirmation waits on her phone and is said on every screen.
 
 ## Links with limits
 
@@ -318,8 +334,8 @@ a partial ruleset is how a club ends up half protected.
 
 **It is edited as it is published.** While clubs moved to `orgs/{code}` the
 rules were built from a source by a script, so every lookup into a club could
-ask whichever tree the club was on. The old tree came out in build 122, rules
-version 21 (AUTH.md, build order step 5), and with it the build: edit
+ask whichever tree the club was on. The old tree came out in build 128, rules
+version 26 (AUTH.md, build order step 5), and with it the build: edit
 `database.rules.json` itself, and `node test/rules.js` walks it.
 
 - **`orgs/$code`** has no read of its own: each part says who reads it. The
