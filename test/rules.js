@@ -2133,6 +2133,26 @@ reads('nor read', COACH, 'shareOwners/sh1', false);
     DB.invites = saved.inv; if (saved.inv === undefined) delete DB.invites;
   }
 
+  /* A parent's name on her child's record (build 130): the player with her
+     own sign-in reads her record, never members (it has everyone's email),
+     so her family is named to her from here. */
+  console.log('\n--- a club on orgs/: a family named on her child ---');
+  {
+    w('a parent writes her own name beside her', OM, O + 'squad/t1/p1/familyNames/om', 'Mo', true);
+    w('— and takes it off', OM, O + 'squad/t1/p1/familyNames/om', null, true);
+    w('— nobody else\'s', OM, O + 'squad/t1/p1/familyNames/oc', 'Cal', false);
+    w('— not on a child who is not hers', OM, O + 'squad/t1/p2/familyNames/om', 'Mo', false);
+    w('— a name, not a story', OM, O + 'squad/t1/p1/familyNames/om', 'x'.repeat(81), false);
+    w('the player does not name her parents herself', OSELF, O + 'squad/t1/p3/familyNames/om', 'Mo', false);
+    w('a stranger does not', RANDO, O + 'squad/t1/p1/familyNames/rando', 'R', false);
+    w('the team\'s coach writes it, as she writes the record', OC, O + 'squad/t1/p1/familyNames/om', 'Mo', true);
+    w('— a tracker does not', OT, O + 'squad/t1/p1/familyNames/om', 'Mo', false);
+    ORGC.squad.t1.p3.familyNames = { om: 'Mo' };
+    r('the player reads it on her own record', OSELF, O + 'squad/t1/p3/familyNames', true);
+    r('— another family does not', OM, O + 'squad/t1/p2/familyNames', false);
+    delete ORGC.squad.t1.p3.familyNames;
+  }
+
   /* AUTH.md, *A child in the club, and registration* (the owner, 2026-10-09):
      one record per child per club, under the club, beside the squad. Her
      family reads her by path; coaches and admins read every child; nobody

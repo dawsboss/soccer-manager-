@@ -182,6 +182,12 @@
                   ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 80"
                 }
               },
+              "familyNames": {
+                "$uid": {
+                  ".write": "auth != null && $uid === auth.uid && (!newData.exists() || root.child('orgs/' + $code + '/squad/' + $tid + '/' + $pid + '/guardians/' + $uid).exists())",
+                  ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 80"
+                }
+              },
               "note": {
                 ".validate": false
               },
@@ -682,7 +688,7 @@
     },
     "rulesVersion": {
       ".read": true,
-      ".write": "newData.isNumber() && newData.val() === 26"
+      ".write": "newData.isNumber() && newData.val() === 27"
     },
     "public": {
       "$share": {

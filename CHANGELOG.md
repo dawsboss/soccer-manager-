@@ -8,6 +8,17 @@ before this point lives only in the git log.
 
 ---
 
+## A player's parents, named to her — 2026-10-10 (build 130, rules version 27)
+
+Running the app's suites on `orgs/` (build 128) showed a player with her own sign-in seeing her parents as *A parent* on her family's conversations and their lock. On `orgs/` she reads her own member entry and staff names, never the members, which carry everyone's email, so her parents' names had nowhere she could read them.
+
+- **Each parent's name is kept on the child's own record**, `squad/{tid}/{pid}/familyNames/{uid}`, as a fan's already was (`fanNames`). Only that child's family, the player herself and her fans read that record.
+- **Written** by the parent's own phone once a session (`ownFamilyName()`, straight to the club like `staffName()`), on accepting a parent invite, and by a coach or admin linking her; **taken off** on unlinking and by `forgetMe`.
+- **Rules version 27**: a parent writes or clears her own entry only, and only on a child whose record names her; the team's coaches and admins write it as they write the record.
+- The two known gaps pinned in `test/players.js` are ordinary checks now; `rules.js`, `players.js` and `forget.js` pin the rest.
+
+---
+
 ## Families are asked until their children's details are finished — 2026-10-10 (build 129)
 
 A family used to be asked about her child's details once per phone, then only

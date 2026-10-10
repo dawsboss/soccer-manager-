@@ -17,7 +17,7 @@
      the coach can take her sign-in away. */
 
 const H = require('./harness');
-const { check, knownGap } = H;
+const { check } = H;
 const { makeFakebase } = require('./fakebase');
 
 const CONFIG = { apiKey: 'k', databaseURL: 'https://prod.example', projectId: 'p' };
@@ -149,7 +149,9 @@ async function boot(who, ws = club(), extra = {}) {
 
   console.log('\n--- her family\'s conversations ---');
   {
-    const { A, fbk } = await boot('ella');
+    // her parents' names on her record, as their own phones keep them there (ownFamilyName(), below)
+    const ws = club(); ws.teams.t1.players.p1.familyNames = { mum: 'Mo', dad: 'Dev' };
+    const { A, fbk } = await boot('ella', ws);
     A.render(); await A.flush();
     check('she listens to her mum\'s conversation with the coaches', fbk.watching('dm/CLUB/t1/mum'), true);
     check('and her dad\'s', fbk.watching('dm/CLUB/t1/dad'), true);
@@ -159,17 +161,14 @@ async function boot(who, ws = club(), extra = {}) {
     check('and her team\'s notices', fbk.watching('board/CLUB/t1'), true);
     check('the threads are hers to write in', A.famThreads().map(x => x.fam).sort().join(), 'dad,mum');
     A.ui.view = 'inbox'; A.render();
-    /* On orgs/ a player reads her own member entry and staff names, never her
-       parents' (members/ is staff's: it has everyone's email), so her mum is
-       "A parent" to her. The old tree gave her every member's name; this
-       suite ran only there until the old tree came out. Naming her own
-       family to her needs her parents' names somewhere she may read them. */
-    knownGap('named for whose conversation it is', /A parent and the coaches of/.test(A.rendered()), true,
-      'a player sees her parents as "A parent" on orgs/: she cannot read their member entries');
+    /* She reads her own member entry and staff names, never her parents'
+       (members/ is staff's: it has everyone's email), so their names come
+       from her own record, where each of them keeps hers. */
+    check('she never holds her parents\' member entries', ['mum', 'dad'].some(u => (A.state.access.members || {})[u]), false);
+    check('named for whose conversation it is', /Mo and the coaches of/.test(A.rendered()), true);
     A.ui.view = 'thread'; A.ui.thread = { tid: 't1', fam: 'mum' }; A.render();
     check('the conversation opens', /data-act="msgsend" data-tid="t1" data-fam="mum"/.test(A.rendered()), true);
-    knownGap('and says her mum reads it too', /and so can A parent/.test(A.rendered()), true,
-      'the lock names her mum as "A parent" on a player\'s phone, for the same reason');
+    check('and says her mum reads it too', /and so can Mo/.test(A.rendered()), true);
     A.dom.node('#msgText').value = 'I have a cold, missing Thursday';
     A.click({ act: 'msgsend', tid: 't1', fam: 'mum' }); await A.flush(10);
     const sent = fbk.record.writes.find(w => w.path.startsWith('dm/CLUB/t1/mum/m/'));
@@ -181,6 +180,32 @@ async function boot(who, ws = club(), extra = {}) {
     A.dom.node('#msgText').value = 'just me';
     A.click({ act: 'msgsend', tid: 't1', fam: 'ella' }); await A.flush(10);
     check('nor can one be written', fbk.record.writes.slice(before).some(w => w.path.startsWith('dm/')), false);
+  }
+
+  console.log('\n--- her parents\' names on her record ---');
+  {
+    // a family linked before names were kept: her own phone writes hers, once, beside her on each child
+    const { A, fbk } = await boot('mum');
+    const n = fbk.writtenTo('orgs/CLUB/squad/t1/p1/familyNames/mum');
+    check('a parent\'s phone writes her own name on her child\'s record', n.map(w => w.value).join(), 'mum');
+    check('— never another parent\'s', fbk.record.writes.some(w => /familyNames\/(?!mum$)/.test(w.path)), false);
+    check('— nor on a child who is not hers', fbk.record.writes.some(w => /squad\/t1\/p2\/familyNames/.test(w.path)), false);
+    check('— straight to the club, not the outbox', Object.keys(A.pending.w).some(k => /familyNames/.test(k)), false);
+  }
+  {
+    const ws = club(); ws.teams.t1.players.p1.familyNames = { mum: 'mum' };
+    const { fbk } = await boot('mum', ws);
+    check('already there: nothing written', fbk.record.writes.some(w => /familyNames/.test(w.path)), false);
+  }
+  {
+    const ws = club(); delete ws.teams.t1.players.p2.guardians;
+    ws.access.members.newmum = { name: 'Nia', email: 'nia@x.test' };
+    const { A, fbk } = await boot('coach', ws);
+    A.ui.teamId = 't1';
+    A.click({ act: 'toggleguard', pid: 'p2', uid: 'newmum' }); await A.flush();
+    check('a coach linking a parent puts her name beside her', valueAt(fbk, 'orgs/CLUB/squad/t1/p2/familyNames/newmum'), 'Nia');
+    A.click({ act: 'toggleguard', pid: 'p2', uid: 'newmum' }); await A.flush();
+    check('— and unlinking takes it off', fbk.record.removes.includes('orgs/CLUB/squad/t1/p2/familyNames/newmum'), true);
   }
 
   console.log('\n--- kept true by an admin\'s phone ---');

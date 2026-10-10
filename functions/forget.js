@@ -47,7 +47,7 @@ async function forgetIn(env, code, uid, now, out) {
   for (const [tid, ps] of Object.entries(squad)) for (const [pid, p] of Object.entries(ps || {})) {
     if (!p || typeof p !== 'object') continue;
     const fam = has(p.guardians, uid) || has(p.self, uid);
-    for (const f of ['guardians', 'self', 'fans', 'fanNames']) if (has(p[f], uid)) await gone(`${B}/squad/${tid}/${pid}/${f}/${uid}`);
+    for (const f of ['guardians', 'self', 'fans', 'fanNames', 'familyNames']) if (has(p[f], uid)) await gone(`${B}/squad/${tid}/${pid}/${f}/${uid}`);
     // the last of her family gone from a record with no club record to say so
     if (fam && !p.child && !keys(p.guardians).some(u => u !== uid) && !keys(p.self).some(u => u !== uid)) left.add(tid + '/' + pid);
   }
