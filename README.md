@@ -84,6 +84,20 @@ Only what is listed gets a button (left out, it is Google alone), because a meth
 
 Each person can see and add ways to sign in from **Your account**, and there is a *Forgot your password?* link beside the password box.
 
+### Sign-in emails from teamplayhq.com
+
+Firebase sends the email-link, verification and password-reset emails itself, from `noreply@<project>.firebaseapp.com` unless the domain is set up to send them. A parent is far likelier to open a link from the address she typed into her browser, so the club's domain sends them. Nothing in the repo changes for this; it is DNS and the console.
+
+1. **DNS** (Squarespace → the domain → *Custom records*):
+   - **Edit the existing SPF record, never add a second one.** A domain with two `v=spf1` TXT records fails SPF for both, so the mail that already goes out from the domain would start landing in spam as well. Its data becomes:
+     `v=spf1 include:_spf.google.com include:_spf.firebasemail.com ~all`
+   - TXT, name `@`: `firebase=soccer-manager-272ff`
+   - CNAME, name `firebase1._domainkey`: `mail-teamplayhq-com.dkim1._domainkey.firebasemail.com`
+   - CNAME, name `firebase2._domainkey`: `mail-teamplayhq-com.dkim2._domainkey.firebasemail.com`
+2. **Firebase console → Authentication → Templates → Customize domain → Verify.** It can take a few hours to pass; until it does, the emails keep coming from the firebaseapp.com address and nothing breaks.
+3. Once verified, open each template with its ✏️ button and set **From** to `noreply@teamplayhq.com` and **Sender name** to *TeamPlay HQ*.
+4. **Project settings → General → Public-facing name**: *TeamPlay HQ*. That is the `%APP_NAME%` the templates print inside the email, and what Google's sign-in screen shows.
+
 ## Joining a club
 
 Joining someone else's club is by invite, and there is no code to type. Starting your own is not: anyone signed in can tap the club button at the top left → **+ Start a new club** and be its admin. The club they were in is untouched and stays in their list; a new club needs a signal, because it is made at the database there and then rather than queued on the phone.

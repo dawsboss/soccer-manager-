@@ -8,6 +8,12 @@ before this point lives only in the git log.
 
 ---
 
+## Sign-in emails from teamplayhq.com, written down — 2026-10-10
+
+README, *Sign-in emails from teamplayhq.com*: the DNS records (the one SPF record edited, never a second), the console's domain check, each template's From and sender name, and the project's public-facing name, so the sign-in and reset emails come from the address families already know. Docs only: no build, no code, no rules.
+
+---
+
 ## The app is TeamPlayHQ — 2026-10-10 (build 132)
 
 The site has its own domain, so the app takes the name that goes with it. *Minutes* was what it was called while it was a sub tracker; it is a club's calendar, messages, training and registration now, and the name on the screen, the Home Screen icon, every notification and every page that says "open it in…" should be the one on the address.
