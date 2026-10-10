@@ -1171,6 +1171,8 @@ label.field .auth-inline span{display:inline}
 .auth-link{border:0;background:none;padding:4px 0;color:var(--focus);font-weight:600;font-size:14px}
 .auth-fine{margin:18px 0 0;padding-top:14px;border-top:1px solid var(--line);
   font-size:12.5px;color:var(--ink-soft);text-align:center}
+.auth-fine.legal{margin-top:6px;padding-top:0;border-top:0}
+.auth-fine.legal a{color:var(--ink-soft)}
 .auth-note{background:var(--owed-wash);border:1px solid var(--owed);border-radius:var(--r);
   padding:10px 13px;font-size:14px;color:#6C4406;margin-bottom:14px}
 

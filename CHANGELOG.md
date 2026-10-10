@@ -8,6 +8,17 @@ before this point lives only in the git log.
 
 ---
 
+## A privacy policy and terms of service — 2026-10-10 (build 133)
+
+Google's sign-in consent screen asks for a home page, a privacy policy and terms before it will show the app's own name and logo, and a family handing over a child's birth date and medical details should be able to read what happens to them first. TeamPlayHQ had neither page.
+
+- **`privacy.html`** says what the app holds (an account's name and email, a child's details and care, games and attendance, messages, registrations), who in a club sees each part, that public pages carry shirt numbers and never names, that nothing is sold, advertised to or sent to an AI, what *Delete my account* takes and what it leaves with the club, and how children's information is handled.
+- **`terms.html`**: free for now, clubs responsible for what they enter and for families' permission, acceptable use, no warranty, and the app is no tool for emergencies.
+- Both are linked on every sign-in screen and in the account menu. They carry the same Content-Security-Policy as every page and load nothing but fonts.
+- Written from what the code does today; not reviewed by a lawyer.
+
+---
+
 ## The app is TeamPlayHQ — 2026-10-10 (build 132)
 
 The site has its own domain, so the app takes the name that goes with it. *Minutes* was what it was called while it was a sub tracker; it is a club's calendar, messages, training and registration now, and the name on the screen, the Home Screen icon, every notification and every page that says "open it in…" should be the one on the address.
