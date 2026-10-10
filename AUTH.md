@@ -1010,6 +1010,70 @@ admins' radar to delete, which saves them from a mistaken delete and keeps
 it if they need it.* So nothing about the child is deleted by the account
 going; *Deleting*, above, says how.
 
+### Getting families to finish their children's details
+
+Written 2026-10-10, before the code. The owner: *a parent with a child whose
+details aren't filled in should be told, close to gatekeeping the app but not
+quite: a pop-up asking for it. Admins should later be able to block, to
+really get them to fill it all out.* Until now a family was asked once per
+phone, then only by a card on My players, so one tap of *Later* was the end
+of it.
+
+**What "finished" means.** Her family has confirmed her record, and it has
+every detail the club requires. The club chooses which, from a short list:
+birth date, gender, someone to call, a doctor (the owner: admins choose).
+Birth date, gender and someone to call are ticked until an admin says
+otherwise, which is what confirming has always asked. One parent finishing
+it finishes it for every parent of that child.
+
+**Who is asked.** Only her family (`guardians` or `family` on her record),
+because only her family may confirm. Never a fan, the player's own sign-in,
+or staff about children who are not theirs.
+
+**Two settings, the admins'**, at `org/details` (which admins already write
+and the club reads: no new rule):
+
+```
+org/details: { need: { born, gender, contact, doctor }, by: 'YYYY-MM-DD' | null }
+```
+
+- **Remind**, the default (no `by`): a strip on every screen, *Ella's details
+  aren't finished — Finish now*, and the pop-up again once a day the app is
+  opened, until it is done. *Later* puts it away for the day. Nothing is
+  closed.
+- **A deadline** (`by`): the same, saying the date, until then. After it, a
+  family with a child still to finish sees her calendar, her messages and
+  the details screen (My players, Notifications, her settings), and the rest
+  of the club only once it is done. The owner: calendar and messages stay
+  open, so she still knows where practice is and can ask the coach.
+
+**Never blocked:** anyone with a staff role in the club (an admin, or a
+coach, tracker or helper of any team). A coach whose own child's form is
+late still runs her game.
+
+**The block is the app's, not the database's.** A rule that shut a family
+out of the club would also shut out a phone with no signal, and what she had
+typed, and it could not tell a child from a parent who left. Someone who
+edits the app's own code in her browser could get past it; no family will.
+
+**Admins** see, on Registrations, how many children have details still to
+finish and which (her team, what is missing), and set what is required and
+the deadline. A child on no team's *someone to call* is read from her care
+details one child at a time, as the GotSport export reads it.
+
+Not in this step: a *Remind* button that notifies a family (needs a server
+trigger), and a program's waivers counting towards "finished" (a draft
+registration already has its own card on My players).
+
+**Built** (build 129), as written: the strip (`detailsNote()`), the pop-up
+once a day (`childCheck()`, the day kept per child at `sm.kidask.v1`), the
+screens kept open past the deadline (`detailsBlocked()`, `DETAILS_OPEN`), and
+the admins' card at the top of Registrations (`detailsCard()`). Confirming
+asks for exactly what the club requires; a child her family confirmed before
+the club required a doctor is asked again for that alone. Care details a
+phone has not heard yet are never counted as missing (`careKnown()`), so a
+slow signal does not shut a family out. `test/details.js`.
+
 ## What parents actually see
 
 Worth stating so it is deliberate and not an accident of implementation:
