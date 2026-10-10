@@ -2,7 +2,7 @@
    *Push notifications*, the last of build order step 2; SERVER.md,
    *Notifications*).
 
-   Until this, both were worked out on each phone while Minutes was open
+   Until this, both were worked out on each phone while TeamPlayHQ was open
    (`clubNews()` and `sessNews()` in app.js): what changed since that phone
    last looked, per source, said once. A closed phone heard nothing of a
    family booking a coach's time, a place confirmed or turned down, a session

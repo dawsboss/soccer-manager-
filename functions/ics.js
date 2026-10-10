@@ -100,7 +100,7 @@
      own schedule whatever this says. */
   function calendar(name, items, now, opts) {
     const at = now || Date.now();
-    const lines = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Minutes//Team calendar//EN', 'CALSCALE:GREGORIAN', 'METHOD:PUBLISH'];
+    const lines = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//TeamPlayHQ//Team calendar//EN', 'CALSCALE:GREGORIAN', 'METHOD:PUBLISH'];
     if (name) lines.push('X-WR-CALNAME:' + text(name));
     const every = Math.round(Number(opts && opts.refresh) || 0);
     if (every > 0) lines.push('REFRESH-INTERVAL;VALUE=DURATION:PT' + every + 'M', 'X-PUBLISHED-TTL:PT' + every + 'M');

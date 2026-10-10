@@ -3,7 +3,7 @@
 Written before the code, like `AUTH.md`, `TRAINING.md` and `SESSIONS.md`, and
 for the same reason: most of what follows is new data about children and
 money, and the data model and the rules have to be right first. This document
-says what a club would need from Minutes to stop using GotSport for everything
+says what a club would need from TeamPlayHQ to stop using GotSport for everything
 the state does not require, in what order to build it, and what stays open.
 
 The owner's ask, 2026-10-06: *I kind of want to try and replace GotSport
@@ -21,7 +21,7 @@ honestly.* Asked three questions, the owner decided:
    *Migration* describes (*Protecting the data*, below).
 3. **GotSport stays the state's system for now.** The club's state association
    registers players, issues player cards and checks background checks through
-   GotSport, and a club cannot opt out of that on its own. Minutes runs
+   GotSport, and a club cannot opt out of that on its own. TeamPlayHQ runs
    alongside it, takes over everything the club does day to day, and makes
    moving the state's part easier later (*Living alongside GotSport*, below).
    Changing the association's mind is a later conversation, and this document
@@ -34,7 +34,7 @@ honestly.* Asked three questions, the owner decided:
 A comparison made the same day (summarised; the sources were GotSport's own
 pages, state associations' onboarding pages and public reviews):
 
-| | Minutes today | GotSport |
+| | TeamPlayHQ today | GotSport |
 | --- | --- | --- |
 | Match day: minutes, subs, plans, live feed, stats, recap | Deep, offline-first | Not offered |
 | Practice: drills, plans, templates, what needs work | Deep | "Create practices" |
@@ -50,7 +50,7 @@ pages, state associations' onboarding pages and public reviews):
 | Leagues and tournaments | **No** | Yes |
 | Native app | Web app | iOS and Android |
 
-Ease of use is where Minutes can win: GotSport's main platform is reviewed as
+Ease of use is where TeamPlayHQ can win: GotSport's main platform is reviewed as
 confusing, parents most of all. That only holds if everything below stays as
 plain as what is already here. Each new area gets its own screen for the
 person it is for, and nobody sees a setting that is not theirs to change.
@@ -111,7 +111,7 @@ Needs the server. The club is paid, not the app.
 
 - **Stripe, through Stripe Connect.** Each club connects its own Stripe
   account (Standard), so the money goes straight to the club, the club sees
-  it in its own Stripe dashboard, and Minutes never holds money or card
+  it in its own Stripe dashboard, and TeamPlayHQ never holds money or card
   numbers. Cards are typed into Stripe's own page (Checkout), never into
   Minutes, which keeps the app out of PCI scope.
 - **The amount never comes from a phone.** A family taps *Pay*; a callable
@@ -127,7 +127,7 @@ Needs the server. The club is paid, not the app.
   them up.
 - **Refunds are the club's.** The club takes the money, so its refund policy
   and the refund itself are the club's, done in its own Stripe dashboard.
-  Minutes points families at the club and shows a refund once Stripe reports
+  TeamPlayHQ points families at the club and shows a refund once Stripe reports
   it (the same webhook); it has no refund screen and no refund rules of its
   own (owner, 2026-10-06).
 - **What already exists moves onto it.** Training session fees and packages
@@ -138,13 +138,13 @@ Needs the server. The club is paid, not the app.
   for the accounts.
 
 **Decided 2026-10-06:** each club connects its own Stripe account, and
-Minutes takes no fee on payments.
+TeamPlayHQ takes no fee on payments.
 
 ### 3. Push notifications
 
 Needs the server, and is the smallest piece that does, so it goes first and
 proves the pipeline. ROADMAP, *Notifications with the page closed*, has the
-whole shape: a service worker and manifest so Minutes installs to the home
+whole shape: a service worker and manifest so TeamPlayHQ installs to the home
 screen, Firebase Cloud Messaging tokens at `pushTokens/{uid}/{token}`, and a
 function that sends when a notice, a family message, a calendar change or a
 followed game's goal is written, to whoever the rules already say may read
@@ -178,7 +178,7 @@ messages. What it is, so the next jobs are built the same way:
 - **The service worker** (`sw.js`) shows a push and opens the place it is
   about, switching club the way an alert's *Open* does. No fetch handler: it
   does not serve the app from a cache (its comment says why). With
-  `manifest.webmanifest` and the icons, Minutes installs to the Home Screen,
+  `manifest.webmanifest` and the icons, TeamPlayHQ installs to the Home Screen,
   which is also what an iPhone needs before it delivers any push (8, below).
 
 **Calendar changes, built 2026-10-07 (build 105):** a game or practice
@@ -242,7 +242,7 @@ Youth Soccer Association (MSYSA), which per its own pages (msysa.org, checked
 2026-10-06) asks of every team and club official, through GotSport: the full
 SafeSport course on first registration and the refresher every year after,
 concussion training, and a background check every year, which MSYSA starts
-only once SafeSport and concussion training are done. So the records Minutes
+only once SafeSport and concussion training are done. So the records TeamPlayHQ
 keeps are those, in that order. Each coach's SafeSport, background check,
 concussion course and coaching licence, with the date done and the date it
 lapses, at `staff/{code}/{uid}`, admins only (and the coach reads her own).
@@ -267,7 +267,7 @@ No server needed, and it is what lets a club start without a cut-over day.
 
 ### 8. Installing it like an app
 
-The service worker and manifest from push (3) make Minutes installable from
+The service worker and manifest from push (3) make TeamPlayHQ installable from
 the browser on both iPhone and Android, with its icon and no address bar. A
 store listing (a thin wrapper such as Capacitor) is only worth it if clubs ask
 for it; it does nothing the installed web app cannot.
@@ -286,7 +286,7 @@ Not planned until someone needs them, because each is a product of its own:
   screening vendor it contracts with, SafeSport records it can audit, its
   own admins across every club, exports for US Youth Soccer or US Club
   Soccer, and someone to call when it breaks. That is a conversation to have
-  once a few clubs run everything else on Minutes.
+  once a few clubs run everything else on TeamPlayHQ.
 
 ---
 
@@ -367,7 +367,7 @@ Not planned until someone needs them, because each is a product of its own:
   Deleting an account is a function (an Auth delete trigger), because it
   reaches into clubs the phone is not open on. What a delete takes with it
   is the club's copy of that family's waiver agreement and payment history
-  in Minutes; Stripe keeps its own record of the payment in the club's
+  in TeamPlayHQ; Stripe keeps its own record of the payment in the club's
   account. The screen says so before the family confirms.
 
 ---
@@ -422,7 +422,7 @@ Later, and only on demand: leagues, tournaments, the state's part.
 
 ## The owner's answers (2026-10-06, second round)
 
-- **Stripe:** each club connects its own account; Minutes takes no fee.
+- **Stripe:** each club connects its own account; TeamPlayHQ takes no fee.
 - **Registrar role:** none. Registration is admins'.
 - **Keeping data:** for good, until the family deletes it or the account is
   deleted (*Protecting the data*).
