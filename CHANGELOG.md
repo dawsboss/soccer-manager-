@@ -16,6 +16,7 @@ Google's sign-in consent screen asks for a home page, a privacy policy and terms
 - **`terms.html`**: free for now, clubs responsible for what they enter and for families' permission, acceptable use, no warranty, and the app is no tool for emergencies.
 - Both are linked on every sign-in screen and in the account menu. They carry the same Content-Security-Policy as every page and load nothing but fonts.
 - Written from what the code does today; not reviewed by a lawyer.
+- **The security policy allows `auth.teamplayhq.com`** (frames and connections, on every page), ready for sign-in to move there from `soccer-manager-272ff.firebaseapp.com` so Google's account chooser names the app's own address. `authDomain` itself is not switched yet: it waits until Firebase Hosting has the subdomain's certificate, or sign-in would break for everyone.
 
 ---
 
