@@ -8,6 +8,15 @@ before this point lives only in the git log.
 
 ---
 
+## The site moves to teamplayhq.com — 2026-10-10
+
+The site is served at its own domain now (GitHub Pages, custom domain `teamplayhq.com`) instead of `dawsboss.github.io/soccer-manager-/`. The app builds every link it hands out (invites, team links, share pages, registration) from the address it is open on, so those follow by themselves; the one place that cannot is the server, which has no page to look at.
+
+- **`SOCCER_SITE` in `functions/.env` names the new address**, so calendar feed entries and share pages link back to `teamplayhq.com` from the next functions deploy.
+- A phone keeps its local copy, outbox, push token and home-screen install per address, so each coach's phone starts fresh on the new one: everything owed should be sent from the old address before switching.
+
+---
+
 ## A player's parents, named to her — 2026-10-10 (build 130, rules version 27)
 
 Running the app's suites on `orgs/` (build 128) showed a player with her own sign-in seeing her parents as *A parent* on her family's conversations and their lock. On `orgs/` she reads her own member entry and staff names, never the members, which carry everyone's email, so her parents' names had nowhere she could read them.
