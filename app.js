@@ -6886,7 +6886,7 @@ function unconfirmedScreen() {
    in the account menu: Google's consent screen links to them, and a family
    should be able to read them before handing over a child's details. Plain
    links to static pages, so they open with no signal-dependent code. */
-const LEGAL_LINKS = '<p class="auth-fine legal"><a href="privacy.html">Privacy Policy</a> · <a href="terms.html">Terms of Service</a></p>';
+const LEGAL_LINKS = '<p class="auth-fine legal"><a href="privacy">Privacy Policy</a> · <a href="terms">Terms of Service</a></p>';
 
 function welcomeScreen() {
   return `<div class="stack"><div class="auth-card">
@@ -7004,7 +7004,7 @@ function sheetAccount() {
     <button class="btn danger wide" data-act="signout" style="margin-top:8px">Sign out</button>
     ${fbConfig().apiKey ? '<button class="btn quiet danger wide" data-act="forgetsheet" style="margin-top:8px">Delete my account</button>' : ''}
     <p class="muted">Club settings live under the club itself, since you may belong to more than one.</p>
-    <p class="muted"><a href="privacy.html">Privacy Policy</a> · <a href="terms.html">Terms of Service</a></p>`);
+    <p class="muted"><a href="privacy">Privacy Policy</a> · <a href="terms">Terms of Service</a></p>`);
 }
 
 /* Deleting an account (AUTH.md, *Deleting*). The club's server does the
