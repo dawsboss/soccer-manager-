@@ -35,7 +35,7 @@ async function device(uid, published) {
   const D = H.loadApp({ firebase: fbk, config: CONFIG, storage: { 'sm.workspace': CODE } });
   await D.flush();
   fbk.signIn(uid, { name: (club().access.members[uid] || {}).name }); await D.flush();
-  fbk.deliver(WS, club()); await D.flush();
+  await fbk.serveClub(CODE, club(), D.flush); await D.flush();
   fbk.deliver('.info/connected', true); await D.flush();
   D.render(); await D.flush();
   return { D, fbk, app: () => String(D.dom.node('#app').innerHTML || '') };
@@ -86,7 +86,7 @@ async function device(uid, published) {
     const D = H.loadApp({ firebase: fbk, config: CONFIG, storage: { 'sm.workspace': CODE } });
     await D.flush();
     fbk.signIn('boss', { name: 'Ada' }); await D.flush();
-    fbk.deliver(WS, club()); await D.flush();
+    await fbk.serveClub(CODE, club(), D.flush); await D.flush();
     D.render(); await D.flush();
     check('an admin with no signal does not ask yet', fbk.writtenTo('rulesVersion').length, 0);
   }

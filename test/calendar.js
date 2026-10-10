@@ -31,7 +31,7 @@ const { check, deepEq } = H;
 /* With a Firebase config, as visibility.js boots: gated() is anyAdmins() &&
    fbConfig().apiKey, and without one nothing is gated and every "may not"
    below would pass by default. */
-const A = H.loadApp({ config: { apiKey: 'k', databaseURL: 'https://x.test' } });
+const A = H.loadApp({ storage: { 'sm.workspace': 'CLUB' }, config: { apiKey: 'k', databaseURL: 'https://x.test' } });
 const I = require('../ics.js');
 global.window.MinutesIcs = I;     // index.html loads ics.js ahead of app.js; the harness has no page
 
@@ -77,7 +77,7 @@ function setup() {
   A.ui.calView = null; A.ui.calDay = null; A.ui.calOff = {}; A.ui.calKOff = {}; A.ui.calN = {}; A.ui.calTree = false;
   sets = []; removes = [];
   A.fb = {
-    db: {}, base: 'workspaces/CLUB', ref: (db, path) => path,
+    db: {}, ref: (db, path) => path,
     set: (path, v) => { sets.push([path, v]); return Promise.resolve(); },
     remove: path => { removes.push(path); return Promise.resolve(); }
   };
@@ -222,7 +222,7 @@ console.log('--- a practice every week ---');
   const made = Object.values(A.state.teams.t1.events).filter(e => e.notes === 'Bring water');
   check('eight entries, one per session', made.length, 8);
   check('sharing one series', new Set(made.map(e => e.series)).size, 1);
-  check('each written at teams/{tid}/events/{eid}, the depth the rule grants', eventWrites().every(p => /^workspaces\/CLUB\/teams\/t1\/events\/[\w]+$/.test(p)), true);
+  check('each written at teams/{tid}/events/{eid}, the depth the rule grants', eventWrites().every(p => /^orgs\/CLUB\/teams\/t1\/events\/[\w]+$/.test(p)), true);
   check('one write per entry, nothing at the collection', eventWrites().length, 8);
   check('kept to the team unless the coach says otherwise', made.every(e => !e.public), true);
   check('a blank title reads Practice', made.every(e => e.title === 'Practice'), true);
@@ -257,7 +257,7 @@ console.log('--- a practice every week ---');
   sets = [];
   A.click({ act: 'calcall', tid: 't1' });
   check('called off, not deleted', A.state.teams.t1.events[second.id].called, 'cancelled');
-  check('— two small writes below the entry: who did it, then what', eventWrites().join(), `workspaces/CLUB/teams/t1/events/${second.id}/edit,workspaces/CLUB/teams/t1/events/${second.id}/called`);
+  check('— two small writes below the entry: who did it, then what', eventWrites().join(), `orgs/CLUB/teams/t1/events/${second.id}/edit,orgs/CLUB/teams/t1/events/${second.id}/called`);
   {
     const st = (sets.find(([p]) => p.endsWith('/edit')) || [])[1] || {};
     check('— the stamp is hers, and now', st.by + ' ' + (st.at === A.nowMs()), A.me.uid + ' true');

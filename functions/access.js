@@ -65,14 +65,14 @@ const okKey = k => typeof k === 'string' && k.length > 0 && !/[.#$\[\]\/]/.test(
 /* Everything this needs about one club, read once per event. Teams are read
    whole because a uid's roles can be on any team's squad; role changes are
    rare (an invite, a coach changing a parent), never the game-day writes. */
-async function clubFacts(env, code, tree) {
-  const L = await where(env.get, code, tree);
+async function clubFacts(env, code) {
+  const L = await where(env.get, code);
   const [retired, access, teams, names, children] = await Promise.all([
     env.get('retired/' + code),
     readAccess(env.get, L),
     readTeams(env.get, L),
     L.names ? env.get(L.names) : null,
-    L.tree === 'orgs' ? env.get(`${L.base}/children`) : null
+    env.get(`${L.base}/children`)
   ]);
   return { L, retired: !!retired, access: access || {}, teams: teams || {}, names: names || {}, children: children || {} };
 }
@@ -192,10 +192,10 @@ async function forgetInvite(env, code, v, out) {
    `tids` the teams whose per-team tables it could have moved, and `coaches`
    whether it was a team's coaches (coachIndex). Resolves to what it did, for
    the tests and the function's log. */
-async function settle(env, code, { uids = [], tids = [], parents = false, players = false, fans = false, coaches = false, tree }, now = Date.now()) {
+async function settle(env, code, { uids = [], tids = [], parents = false, players = false, fans = false, coaches = false }, now = Date.now()) {
   const out = [];
   if (!okKey(code)) return out;
-  const f = await clubFacts(env, code, tree);
+  const f = await clubFacts(env, code);
   if (f.retired) return out;
   for (const tid of tids.filter(okKey)) {
     if (coaches) await syncTeamIndex(env, f, code, tid, out);
@@ -342,7 +342,7 @@ async function onChildRecord(env, params, before, after, now) {
   const out = [];
   if (!same(b.teams, a.teams) && okKey(params.code) && okKey(params.cid)) await syncCare(env, params.code, params.cid, b.teams, out);
   if (same(b.family, a.family) && b.club === a.club) return out;
-  return out.concat(await settle(env, params.code, { uids: both(b.family, a.family), tree: 'orgs' }, now));
+  return out.concat(await settle(env, params.code, { uids: both(b.family, a.family) }, now));
 }
 
 /* Care details (AUTH.md, *Care: what a coach needs at the pitch*): her
@@ -381,35 +381,35 @@ const both = (before, after) => [...new Set([...keys(before), ...keys(after)])];
 
 /* access/admins/{uid}: one admin given or taken away. */
 function onAdmin(env, params, now) {
-  return settle(env, params.code, { uids: [params.uid], tree: params.tree }, now);
+  return settle(env, params.code, { uids: [params.uid] }, now);
 }
 /* access/teams/{tid}: a team's coaches, trackers and helpers. */
 function onTeamStaff(env, params, before, after, now) {
   const b = before || {}, a = after || {};
   const uids = [...both(b.coaches, a.coaches), ...both(b.trackers, a.trackers), ...both(b.helpers, a.helpers)];
-  return settle(env, params.code, { uids, tids: [params.tid], coaches: true, tree: params.tree }, now);
+  return settle(env, params.code, { uids, tids: [params.tid], coaches: true }, now);
 }
-/* access/viewers/{uid} (orgs/ only): a club viewer given or taken away.
+/* access/viewers/{uid}: a club viewer given or taken away.
    She is in the index like any role, so this is the same settle, plus the
    invite her viewer entry named once it is gone. */
 async function onViewer(env, params, before, after, now) {
-  const out = await settle(env, params.code, { uids: [params.uid], tree: 'orgs' }, now);
+  const out = await settle(env, params.code, { uids: [params.uid] }, now);
   if (!after && okKey(params.code)) await forgetInvite(env, params.code, before, out);
   return out;
 }
 
-/* teams/{tid}/players/{pid}/guardians: a player's families. */
+/* squad/{tid}/{pid}/guardians: a player's families. */
 function onGuardians(env, params, before, after, now) {
-  return settle(env, params.code, { uids: both(before, after), tids: [params.tid], parents: true, tree: params.tree }, now);
+  return settle(env, params.code, { uids: both(before, after), tids: [params.tid], parents: true }, now);
 }
-/* teams/{tid}/players/{pid}/self: a player's own sign-in. */
+/* squad/{tid}/{pid}/self: a player's own sign-in. */
 function onSelf(env, params, before, after, now) {
-  return settle(env, params.code, { uids: both(before, after), tids: [params.tid], players: true, tree: params.tree }, now);
+  return settle(env, params.code, { uids: both(before, after), tids: [params.tid], players: true }, now);
 }
 /* squad/{tid}/{pid}/fans: a player's fans (AUTH.md, *More kinds
-   of people*, 1). On orgs/ only: the old tree has no rule that writes one. */
+   of people*, 1). */
 function onFans(env, params, before, after, now) {
-  return settle(env, params.code, { uids: both(before, after), tids: [params.tid], fans: true, tree: params.tree }, now);
+  return settle(env, params.code, { uids: both(before, after), tids: [params.tid], fans: true }, now);
 }
 
 module.exports = { onChildRecord, onCare, childFrom, splitName, settle, onAdmin, onTeamStaff, onGuardians, onSelf, onViewer, onFans, onMember, onSquadPlayer, onRosterOpen, rosterEntry, isStaff, hasRole, teamIndexWanted, linkedWanted, coachTeamOf, helperTeamOf };

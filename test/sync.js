@@ -23,8 +23,8 @@ const { makeFakebase } = require('./fakebase');
 
 const CONFIG = { apiKey: 'k', databaseURL: 'https://prod.example', projectId: 'p' };
 const CODE = 'FLIGHT';
-const WS = 'workspaces/' + CODE;
-const OB = 'orgs/' + CODE;   // the same club on the new tree (AUTH.md, The move to orgs/{orgId})
+const OB = 'orgs/' + CODE;
+const READ = OB + '/access';   // the first read of a club: what this account may read of it
 
 /* A fresh app each time: module state is global to one load, and these tests
    are about what happens during boot. */
@@ -51,23 +51,23 @@ async function boot(opts = {}) {
     check('the connection was made', fbk.record.initCalls, 1);
     check('and auth was subscribed to', fbk.record.authSubscribers, 1);
     check('appOwners is read without a workspace', fbk.watching('appOwners'), true);
-    check('the workspace has NOT been read yet', fbk.watching(WS), false);
-    check('nor has anything under it', fbk.readPaths().some(p => p.startsWith(WS + '/')), false);
+    check('the workspace has NOT been read yet', fbk.watching(READ), false);
+    check('nor has anything under it', fbk.readPaths().some(p => p.startsWith(OB + '/')), false);
 
     fbk.signIn('coachU', { name: 'Jaz' });
     await A.flush();
-    check('once auth answers, the workspace is read', fbk.watching(WS), true);
-    check('exactly once', fbk.totalReads(WS), 1);
+    check('once auth answers, the workspace is read', fbk.watching(READ), true);
+    check('exactly once', fbk.totalReads(READ), 1);
     check('and we know who we are', A.me.uid, 'coachU');
   }
 
   console.log('\n--- signed out still counts as an answer ---');
   {
     const { A, fbk } = await boot();
-    check('nothing read before the callback', fbk.watching(WS), false);
+    check('nothing read before the callback', fbk.watching(READ), false);
     fbk.signOut();
     await A.flush();
-    check('a signed-out answer still releases the read', fbk.watching(WS), true);
+    check('a signed-out answer still releases the read', fbk.watching(READ), true);
     check('with nobody signed in', A.me, null);
   }
 
@@ -79,23 +79,23 @@ async function boot(opts = {}) {
     const { A, fbk } = await boot();
     fbk.signOut();
     await A.flush();
-    check('read once while signed out', fbk.totalReads(WS), 1);
-    fbk.refuse(WS);
+    check('read once while signed out', fbk.totalReads(READ), 1);
+    fbk.refuse(READ);
     await A.flush();
     A.timers.run(); A.timers.run();          // let the backoff retries spend themselves
-    fbk.refuse(WS); A.timers.run(); fbk.refuse(WS);
+    fbk.refuse(READ); await A.flush(); A.timers.run(); fbk.refuse(READ); await A.flush();
     check('after three refusals we are locked out', A.denied, true);
 
-    const before = fbk.totalReads(WS);
+    const before = fbk.totalReads(READ);
     fbk.signIn('coachU', { name: 'Jaz' });
     await A.flush();
-    check('signing in went back for another read', fbk.totalReads(WS) > before, true);
+    check('signing in went back for another read', fbk.totalReads(READ) > before, true);
     check('and cleared the refusal', A.denied, false);
 
-    const after = fbk.totalReads(WS);
+    const after = fbk.totalReads(READ);
     fbk.signIn('coachU', { name: 'Jaz Renamed' });
     await A.flush();
-    check('the same uid again does not re-read', fbk.totalReads(WS), after);
+    check('the same uid again does not re-read', fbk.totalReads(READ), after);
   }
 
   console.log('\n--- a denial in the first second is a race, not a rule ---');
@@ -103,16 +103,16 @@ async function boot(opts = {}) {
     const { A, fbk } = await boot();
     fbk.signIn('coachU');
     await A.flush();
-    fbk.refuse(WS);
+    fbk.refuse(READ); await A.flush();
     check('the first refusal does not show the lock screen', A.denied, false);
     check('it schedules a retry instead', A.timers.pending.size > 0, true);
     A.timers.run();
-    check('which is a second read', fbk.totalReads(WS), 2);
-    fbk.refuse(WS);
+    check('which is a second read', fbk.totalReads(READ), 2);
+    fbk.refuse(READ); await A.flush();
     check('the second refusal still waits', A.denied, false);
     A.timers.run();
-    check('and a third read', fbk.totalReads(WS), 3);
-    fbk.refuse(WS);
+    check('and a third read', fbk.totalReads(READ), 3);
+    fbk.refuse(READ); await A.flush();
     check('the third refusal is taken at its word', A.denied, true);
     check('and the device remembers when it started', A.storage.getItem('sm.denied:' + CODE) !== null, true);
   }
@@ -148,18 +148,18 @@ async function boot(opts = {}) {
     const { A, fbk } = await boot();
     fbk.signIn('coachU');
     await A.flush();
-    fbk.deliver(WS, {
+    await fbk.serveClub(CODE, {
       teams: { t1: { id: 't1', name: 'G14 Flight', players: {} } },
       matches: { g1: { id: 'g1', teamId: 't1', opponent: 'Riverside' } },
       access: { admins: { bossU: true } }
-    });
+    }, A.flush);
     check('the club arrived', A.state.teams.t1.name, 'G14 Flight');
     check('with its games', A.state.matches.g1.opponent, 'Riverside');
     check('and its membership', A.state.access.admins.bossU, true);
     check('it was saved locally', A.storage.getItem('sm.data.v1:' + CODE) !== null, true);
     check('the refusal flag is clear', A.denied, false);
-    check('and child listeners were wired', fbk.watching(WS + '/teams'), true);
-    check('including membership', fbk.watching(WS + '/access'), true);
+    check('and child listeners were wired', fbk.watching(OB + '/teams'), true);
+    check('including membership', fbk.watching(OB + '/access'), true);
   }
 
   console.log('\n--- an empty workspace gets this device\'s copy pushed up ---');
@@ -176,20 +176,14 @@ async function boot(opts = {}) {
     check('the local copy loaded at boot', A.state.matches.gLocal.opponent, 'Tracked offline');
     fbk.signIn('coachU');
     await A.flush();
-    fbk.deliver(WS, null);                   // nothing there yet
-    /* Nothing on the old tree is a club made on the new one, or a code nobody
-       has written: either way it lives on orgs/ from now on (AUTH.md, *The
-       move to `orgs/{orgId}`*), and the new tree is asked. */
-    check('nothing on the old tree: the new one is read', fbk.watching(OB + '/access'), true);
-    fbk.deliver(OB + '/access', null);       // nor there
-    await A.flush();
+    await fbk.serveClub(CODE, null, A.flush);                   // nothing there yet
     /* Not one set() of the whole node any more. The rules grant .write only on
        the children of the club, so seeding a club has to walk them in an order
        each rule can allow — admins while it is empty, then the index every
        other rule consults, then the data those two authorise. A single set()
        at the base is refused outright once a club is locked down, which is
        precisely the call that creates one. */
-    check('nothing is written to the old tree at all', fbk.record.writes.filter(w => w.path.startsWith(WS)).map(w => w.path).join(), '');
+    check('nothing is written to the old tree at all', fbk.record.writes.filter(w => w.path.startsWith('workspaces/')).map(w => w.path).join(), '');
     const base = fbk.writtenTo(OB);
     check('nothing is written to the club\'s node itself', base.length, 0);
     const paths = fbk.record.writes.filter(w => w.path.startsWith(OB + '/')).map(w => w.path.slice(OB.length + 1));
@@ -219,20 +213,20 @@ async function boot(opts = {}) {
     const { A, fbk } = await boot();
     fbk.signIn('bossU');
     await A.flush();
-    fbk.deliver(WS, {
-      teams: { t1: { id: 't1', name: 'Flight', players: {} } },
-      matches: {},
+    // laid out by hand, without the team index serveClub() would derive: that is the bridge
+    await fbk.serve(OB, {
+      teams: { t1: { id: 't1', name: 'Flight' } },
       access: { admins: { bossU: true }, index: { bossU: true, jazU: true, trkU: true },
                 teams: { t1: { coaches: { jazU: true }, trackers: { trkU: true } } } }
-    });
-    const w = fbk.record.writes.find(x => x.path === WS + '/access/teamIndex/t1');
+    }, A.flush);
+    const w = fbk.record.writes.find(x => x.path === OB + '/access/teamIndex/t1');
     check('the team index was written', !!w, true);
     check('the coach is a coach', w && w.value.jazU, 'coach');
     check('the tracker is a tracker', w && w.value.trkU, 'tracker');
     check('admins are not mirrored into it', w && w.value.bossU === undefined, true);
 
     const before = fbk.record.writes.length;
-    fbk.deliver(WS + '/access', {
+    fbk.deliver(OB + '/access', {
       admins: { bossU: true }, index: { bossU: true, jazU: true, trkU: true },
       teams: { t1: { coaches: { jazU: true }, trackers: { trkU: true } } },
       teamIndex: { t1: { jazU: 'coach', trkU: 'tracker' } }
@@ -245,12 +239,11 @@ async function boot(opts = {}) {
     const { A, fbk } = await boot();
     fbk.signIn('jazU');
     await A.flush();
-    fbk.deliver(WS, {
-      teams: { t1: { id: 't1', name: 'Flight', players: {} } },
-      matches: {},
+    await fbk.serve(OB, {
+      teams: { t1: { id: 't1', name: 'Flight' } },
       access: { admins: { bossU: true }, index: { bossU: true, jazU: true },
                 teams: { t1: { coaches: { jazU: true } } } }
-    });
+    }, A.flush);
     check('only an admin may write the team index', fbk.record.writes.some(x => x.path.includes('teamIndex')), false);
   }
 
@@ -285,18 +278,18 @@ async function boot(opts = {}) {
     const { A, fbk } = await boot();
     fbk.signIn('coachU');
     await A.flush();
-    fbk.deliver(WS, {
+    await fbk.serveClub(CODE, {
       teams: { t1: { id: 't1', name: 'G14 Flight', players: {} } },
       matches: { g1: { id: 'g1', teamId: 't1', opponent: 'Riverside', periodMinutes: 40 } },
-      access: {}
-    });
+      access: { index: { coachU: true } }
+    }, A.flush);
     // a write that got half-rejected: the goal landed, the identity fields did not
-    fbk.deliverChild(WS + '/matches', 'g1', { id: 'g1', goals: { x: { t: 60, side: 'us' } } }, 'changed');
+    fbk.deliverChild(OB + '/matches', 'g1', { id: 'g1', goals: { x: { t: 60, side: 'us' } } }, 'changed');
     check('the opponent was not lost', A.state.matches.g1.opponent, 'Riverside');
     check('nor the period length', A.state.matches.g1.periodMinutes, 40);
     check('and the goal arrived', !!A.state.matches.g1.goals.x, true);
 
-    fbk.deliverChild(WS + '/matches', 'g1', null, 'removed');
+    fbk.deliverChild(OB + '/matches', 'g1', null, 'removed');
     // a tick later: long enough to hear whether the whole club moved instead (wireBase())
     await A.flush();
     check('a removal does remove it', A.state.matches.g1, undefined);
@@ -310,10 +303,10 @@ async function boot(opts = {}) {
     const { A, fbk } = await boot();
     fbk.signIn('trackerU', { name: 'Trk' });
     await A.flush();
-    fbk.deliver(WS, {
+    await fbk.serveClub(CODE, {
       teams: { t1: { id: 't1', name: 'G14 Flight', players: {} } }, matches: {},
       access: { admins: { bossU: true }, teams: { t1: { trackers: { trackerU: true } } } }
-    });
+    }, A.flush);
     A.appOwners = {};
     check('a tracker is not an admin', A.canAdmin(), false);
 
@@ -332,7 +325,7 @@ async function boot(opts = {}) {
     two.fbk.signIn('ownU');
     await two.A.flush();
     two.fbk.deliver('appOwners', { ownU: true });
-    two.fbk.deliver(WS, { teams: {}, matches: {}, access: { admins: { bossU: true } } });
+    await two.fbk.serveClub(CODE, { teams: {}, matches: {}, access: { admins: { bossU: true } } }, two.A.flush);
     check('the app owner is not a club admin', two.A.isAdmin('ownU'), false);
     check('but canAdmin lets him through', two.A.canAdmin(), true);
     two.A.click({ act: 'retireclub' });
@@ -344,7 +337,7 @@ async function boot(opts = {}) {
     const { A, fbk } = await boot();
     fbk.signIn('coachU');
     await A.flush();
-    fbk.deliver(WS, { teams: { t1: { id: 't1', name: 'G14 Flight', players: {} } }, matches: {}, access: {} });
+    await fbk.serveClub(CODE, { teams: { t1: { id: 't1', name: 'G14 Flight', players: {} } }, matches: {}, access: { index: { coachU: true } } }, A.flush);
     check('the club is here', !!A.state.teams.t1, true);
     fbk.deliver('retired/' + CODE, { at: Date.now(), by: 'bossU' });
     check('the local copy was cleared', Object.keys(A.state.teams).length, 0);
@@ -416,16 +409,16 @@ async function boot(opts = {}) {
     fbk.signIn('coachU');
     await A.flush();
     // the server has never heard of gOffline
-    fbk.deliver(WS, {
+    await fbk.serveClub(CODE, {
       teams: { t1: { id: 't1', name: 'G14 Flight', players: { p1: { id: 'p1', name: 'Ella' } } } },
       matches: { gSynced: { id: 'gSynced', teamId: 't1', opponent: 'Riverside' } },
-      access: {}
-    });
+      access: { index: { coachU: true } }
+    }, A.flush);
     check('the synced game is still here', !!A.state.matches.gSynced, true);
     check('the offline game survives the connect-time read', !!A.state.matches.gOffline, true);
     check('and is kept on disk', !!JSON.parse(A.storage.getItem('sm.data.v1:' + CODE)).matches.gOffline, true);
-    check('and sent to the club, the one place it was missing from', !!fbk.writtenTo(WS + '/matches/gOffline').length, true);
-    check('the synced game is not sent back', fbk.writtenTo(WS + '/matches/gSynced').length, 0);
+    check('and sent to the club, the one place it was missing from', !!fbk.writtenTo(OB + '/matches/gOffline').length, true);
+    check('the synced game is not sent back', fbk.writtenTo(OB + '/matches/gSynced').length, 0);
   }
 
   /* The outbox. Firebase holds a write it couldn't send in memory only, so a
@@ -446,9 +439,9 @@ async function boot(opts = {}) {
   console.log('\n--- what is made with no signal reaches the club, even after a reload ---');
   {
     const { A, fbk } = await online();
-    fbk.deliver(WS, CLUB()); await A.flush();
+    await fbk.serveClub(CODE, CLUB(), A.flush); await A.flush();
     check('a game this phone has read is remembered as the club\'s', /g1/.test(A.storage.getItem('sm.seen.v1:' + CODE) || ''), true);
-    fbk.holdWrites(p => p.startsWith(WS + '/'));                  // the signal goes
+    fbk.holdWrites(p => p.startsWith(OB + '/'));                  // the signal goes
     A.commit('matches/g1/goals/x1', { t: 600, side: 'us' });
     A.commit('matches/gNew', { id: 'gNew', teamId: 't1', opponent: 'Made at the field' });
     A.drop('matches/g2');
@@ -464,37 +457,37 @@ async function boot(opts = {}) {
     const saved = { ...A.storage._d };
     const B = await online(saved);
     check('after a reload the changes are still on screen', !!B.A.state.matches.g1.goals && !!B.A.state.matches.gNew && !B.A.state.matches.g2, true);
-    B.fbk.deliver(WS, CLUB()); await B.A.flush();
+    await B.fbk.serveClub(CODE, CLUB(), B.A.flush); await B.A.flush();
     check('the club\'s answer does not take the goal away', !!(B.A.state.matches.g1.goals || {}).x1, true);
     check('nor the new game', !!B.A.state.matches.gNew, true);
     check('nor put back the game deleted here', B.A.state.matches.g2, undefined);
-    check('the goal is sent again', B.fbk.writtenTo(WS + '/matches/g1/goals/x1').length, 1);
-    check('the game too', B.fbk.writtenTo(WS + '/matches/gNew').length, 1);
-    check('and the delete', B.fbk.record.removes.includes(WS + '/matches/g2'), true);
+    check('the goal is sent again', B.fbk.writtenTo(OB + '/matches/g1/goals/x1').length, 1);
+    check('the game too', B.fbk.writtenTo(OB + '/matches/gNew').length, 1);
+    check('and the delete', B.fbk.record.removes.includes(OB + '/matches/g2'), true);
     check('in the order they were made', B.fbk.record.writes.findIndex(w => w.path.endsWith('/goals/x1')) < B.fbk.record.writes.findIndex(w => w.path.endsWith('/gNew')), true);
     await B.A.flush();
     check('acknowledged, the outbox is empty', Object.keys(JSON.parse(B.A.storage.getItem('sm.pending.v1:' + CODE)).w).length, 0);
     check('and the badge stops counting', /to send|not saved/.test(B.A.dom.node('#syncBadge').textContent), false);
-    B.fbk.deliverChild(WS + '/matches', 'g1', { id: 'g1', teamId: 't1', opponent: 'Riverside', goals: { x1: { t: 600, side: 'us' } } }, 'changed'); await B.A.flush();
+    B.fbk.deliverChild(OB + '/matches', 'g1', { id: 'g1', teamId: 't1', opponent: 'Riverside', goals: { x1: { t: 600, side: 'us' } } }, 'changed'); await B.A.flush();
     check('later answers from the club are taken as they are', B.A.state.matches.g1.goals.x1.t, 600);
   }
 
   console.log('\n--- deleted somewhere else is deleted here ---');
   {
     const { A, fbk } = await online();
-    fbk.deliver(WS, CLUB()); await A.flush();
+    await fbk.serveClub(CODE, CLUB(), A.flush); await A.flush();
     const saved = { ...A.storage._d };
     const B = await online(saved);
     const c = CLUB(); delete c.matches.g2;
-    B.fbk.deliver(WS, c); await B.A.flush();
+    await B.fbk.serveClub(CODE, c, B.A.flush); await B.A.flush();
     check('a game this phone had from the club, gone from the club, goes', B.A.state.matches.g2, undefined);
-    check('and is not sent back', B.fbk.writtenTo(WS + '/matches/g2').length, 0);
+    check('and is not sent back', B.fbk.writtenTo(OB + '/matches/g2').length, 0);
   }
 
   console.log('\n--- a write the club refuses is kept, said, and tried again ---');
   {
     const { A, fbk } = await online();
-    fbk.deliver(WS, CLUB()); await A.flush();
+    await fbk.serveClub(CODE, CLUB(), A.flush); await A.flush();
     fbk.refuseWrites(p => p.includes('/goals/'));
     A.commit('matches/g1/goals/x2', { t: 900, side: 'us' }); await A.flush();
     check('the refused goal stays on this phone', !!A.state.matches.g1.goals.x2, true);
@@ -506,28 +499,28 @@ async function boot(opts = {}) {
     check('the list says what it is, in words', /a goal in the game against Riverside/.test(String(A.dom.node('#sheet').innerHTML)), true);
 
     const B = await online({ ...A.storage._d });
-    B.fbk.deliver(WS, CLUB()); await B.A.flush();
+    await B.fbk.serveClub(CODE, CLUB(), B.A.flush); await B.A.flush();
     check('a reload keeps it, on top of the club\'s copy', !!B.A.state.matches.g1.goals && !!B.A.state.matches.g1.goals.x2, true);
-    check('and tries it again (the rules may have been pasted since)', B.fbk.writtenTo(WS + '/matches/g1/goals/x2').length, 1);
+    check('and tries it again (the rules may have been pasted since)', B.fbk.writtenTo(OB + '/matches/g1/goals/x2').length, 1);
     check('accepted this time, it leaves the outbox', Object.keys(JSON.parse(B.A.storage.getItem('sm.pending.v1:' + CODE)).w).length, 0);
 
     const C = await online({ ...A.storage._d });
     C.fbk.refuseWrites(() => true);
-    C.fbk.deliver(WS, CLUB()); await C.A.flush();
+    await C.fbk.serveClub(CODE, CLUB(), C.A.flush); await C.A.flush();
     check('the lookup tables, rebuilt on every connect, never wait in the outbox', Object.keys(C.A.pending.w).some(k => /^access\/(index|teamIndex|coachIndex|teamParents)/.test(k)), false);
     let asked = null;
     global.confirm = m => { asked = m; return true; };
     C.A.click({ act: 'pendingdrop' });
     check('dropping it asks first, saying it is gone for good', /gone for good/.test(asked || ''), true);
     check('then it leaves the outbox', Object.keys(JSON.parse(C.A.storage.getItem('sm.pending.v1:' + CODE)).w).filter(k => k.includes('goals')).length, 0);
-    check('and the club is read again', C.fbk.totalReads(WS) >= 2, true);
+    check('and the club is read again', C.fbk.totalReads(READ) >= 2, true);
     global.confirm = () => true;
   }
 
   console.log('\n--- an answer taken back off the screen leaves the outbox too ---');
   {
     const { A, fbk } = await online();
-    fbk.deliver(WS, CLUB()); await A.flush();
+    await fbk.serveClub(CODE, CLUB(), A.flush); await A.flush();
     fbk.refuseWrites(p => p.includes('/rsvp/'));
     A.remoteSet('rsvp/t1/g_g1/p1', { v: 'yes', by: 'coachU', at: 1 }).catch(() => { });
     await A.flush();
@@ -538,7 +531,7 @@ async function boot(opts = {}) {
   {
     const local = { teams: { tL: { id: 'tL', name: 'Before the club', players: { a: { id: 'a', name: 'Ada' } } } }, matches: {}, access: {} };
     const { A, fbk } = await online({ 'sm.data.v1:local': JSON.stringify(local) });
-    fbk.deliver(WS, CLUB()); await A.flush();
+    await fbk.serveClub(CODE, CLUB(), A.flush); await A.flush();
     A.ui.view = 'setup'; A.render();
     check('Settings says this phone has teams no club has', /On this phone only/.test(A.rendered()), true);
     check('and offers an admin to add them', /data-act="adoptlocal"/.test(A.rendered()), true);
@@ -570,7 +563,7 @@ async function boot(opts = {}) {
       check('the copy is still on the phone, in case the refusal was a mistake', A.storage.getItem('sm.data.v1:FLIGHT') !== null, true);
       fbk.signIn('mumU');
       await A.flush();
-      fbk.deliver(WS, club);
+      await fbk.serveClub(CODE, club, A.flush);
       await A.flush();
       check('and a good read brings it all back', A.denied, false);
       check('drawn again', drawn(A).includes('G14 Flight'), true);
@@ -600,7 +593,7 @@ async function boot(opts = {}) {
       check('and nothing is thrown away: an unsent game may be in it', A.storage.getItem('sm.data.v1:FLIGHT') !== null, true);
       fbk.signIn('coachU');
       await A.flush();
-      fbk.deliver(WS, club);
+      await fbk.serveClub(CODE, club, A.flush);
       await A.flush();
       check('the club answers: drawn again', A.unconfirmed, false);
       check('her team is back', drawn(A).includes('G14 Flight'), true);

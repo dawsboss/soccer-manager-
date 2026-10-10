@@ -30,7 +30,7 @@ const okKey = k => typeof k === 'string' && k.length > 0 && !/[.#$\[\]\/]/.test(
 async function forgetIn(env, code, uid, now, out) {
   const L = await where(env.get, code);
   // every club is on orgs/ (AUTH.md); a club still on the old tree is left to its admins
-  if (L.tree !== 'orgs' || (await env.get('retired/' + code))) return;
+  if (await env.get('retired/' + code)) return;
   const B = 'orgs/' + code;
   const gone = async p => { if ((await env.get(p)) !== null && (await env.get(p)) !== undefined) { await env.remove(p); out.push('del ' + p.slice(B.length + 1)); } };
   const access = (await env.get(B + '/access')) || {};

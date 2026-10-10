@@ -125,9 +125,10 @@ does the bookkeeping, not that the phone works offline first.
 - **Moving a club to orgs/ builds them whole** (`functions/move.js`, the
   `moveClub` trigger): every table from where each uid appears, so a moved
   club carries no bridge. That was the one-off run above, one club at a time,
-  and every club has moved (2026-10-09). What is left is deleting: the
-  bridges, the phones' rebuilds and the old tree's triggers come out with the
-  old tree (AUTH.md, build order step 5, from 2026-10-23).
+  and every club has moved (2026-10-09). The old tree's triggers and
+  `moveClub` came out in build 128 (AUTH.md, build order step 5). What is
+  left is deleting the bridges and the phones' rebuilds, now that every
+  club's tables were built whole.
 
 ### What families read on orgs/
 - **On the server (2026-10-08):** on a club that has moved to `orgs/{code}`

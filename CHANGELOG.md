@@ -8,6 +8,18 @@ before this point lives only in the git log.
 
 ---
 
+## The old tree comes out — 2026-10-10 (build 128, rules version 26)
+
+AUTH.md's build order step 5. Every club has been on `orgs/{code}` since 2026-10-09, and every rule and server job was still written twice to cover `workspaces/{code}`, which nobody is on. The design waited a fortnight (to 2026-10-23) in case an old phone was still on the old tree or the copy needed undoing; the owner cut it short, since the only two clubs are both the owner's and both moved. Merging publishes the rules and deploys the functions at once.
+
+- **Rules (version 26).** `database.rules.json` is edited as it is published again: every lookup into a club asks `orgs/` directly (about 240 of them were "the old tree while the club is there, the new one once it has moved"), the `workspaces` and `moveRequests` blocks are gone, and so are `tools/rules-build.js` and `tools/rules-source.json`. With no rule, nothing left under `workspaces/` is anyone's to read or write, and no club can be started there. `test/rules.js` walks the one tree and checks the old one is closed; its second pass, `rules-orgs`, is gone.
+- **Server.** Each club trigger is registered once, on `orgs/`, under the name it already had there (`…Orgs`), so the deploy deletes the old tree's triggers and leaves every live one in place, with no moment when a club has none. `moveClub` and `functions/move.js` are gone, and so is every check for a club being moved (`serverState/moving`). `functions/club.js` knows one layout.
+- **App.** Reads and writes `orgs/` only (`clubPath()`, `clubWrites()`, `wireOrgs()`); no tree to probe for an invite, a team link, another club or a new one; no Move card or readiness row; fans no longer wait on a moved club. A phone holding a club's copy from the old tree (the whole squad, everyone's email) still cuts it down to what its account may hold, once, before it reads the club. A write made before the session's first read still waits for it (`fb.held`), and no longer leaves an unhandled refusal when its caller ignores the answer.
+- **Tests.** The app's suites ran only on the old tree; they now serve their clubs from `orgs/` (`fbk.serveClub()`, laid out by `orgsLayout()` in `test/fakebase.js`, which replaces move.js's `layout()`), the server suites keep every club on `orgs/` (the `-orgs` passes and `test/move.js` are gone), and `test/orgs.js` loses the move's own checks. Running the app suites on `orgs/` found one thing the old tree hid: a player with her own sign-in sees her parents as *A parent*, because she may not read their member entries there. Pinned as a known gap in `test/players.js`; naming her family to her needs their names somewhere she may read them.
+- **Left for the owner, by hand:** the `moved` markers under `workspaces/`, the server's copies at `serverState/moved/`, and any old `moveRequests/` (README, *The move to orgs/, and the old tree gone*).
+
+---
+
 ## Deleting: a registration, a child's record, an account — 2026-10-09 (build 127, rules version 25)
 
 Registration's last step (AUTH.md, *Deleting*), as the owner decided it.

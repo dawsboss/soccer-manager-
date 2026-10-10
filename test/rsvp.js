@@ -23,7 +23,7 @@ const { check, deepEq } = H;
    Firebase so the app's own start-up waits quietly for a sign-in that never
    comes, while the writes below go to a recorder the test can refuse. */
 const { makeFakebase } = require('./fakebase');
-const A = H.loadApp({ firebase: makeFakebase(), config: { apiKey: 'k', databaseURL: 'https://x.test' } });
+const A = H.loadApp({ firebase: makeFakebase(), storage: { 'sm.workspace': 'CLUB' }, config: { apiKey: 'k', databaseURL: 'https://x.test' } });
 const at = (d, hhmm) => { const [y, m, dd] = d.split('-').map(Number); const [h, mi] = hhmm.split(':').map(Number); return new Date(y, m - 1, dd, h, mi).getTime(); };
 
 let sets = [], refuse = false;
@@ -60,7 +60,7 @@ function setup() {
   A.ui.teamId = 't1'; A.ui.view = 'calendar'; A.ui.matchId = null; A.ui.calAll = false;
   sets = []; refuse = false; A.toasts.length = 0;
   A.fb = {
-    db: {}, base: 'workspaces/CLUB', ref: (db, path) => path,
+    db: {}, ref: (db, path) => path,
     set: (path, v) => { sets.push([path, v]); return refuse ? Promise.reject({ code: 'PERMISSION_DENIED' }) : Promise.resolve(); },
     remove: () => Promise.resolve()
   };
@@ -70,7 +70,7 @@ const html = () => { A.render(); return A.rendered(); };
 const sheet = () => String(A.dom.node('#sheet').innerHTML || '');
 const answer = (pid, v, item = 'e_e1', extra = {}) => A.click({ act: 'rsvp', tid: 't1', k: item, pid, v, kind: item[0] === 'g' ? 'game' : 'practice', id: item.slice(2), ...extra });
 const rsvpWrites = () => sets.filter(([p]) => /\/rsvp\//.test(p));
-const otherWrites = () => sets.filter(([p]) => p.startsWith('workspaces/') && !/\/rsvp\//.test(p));
+const otherWrites = () => sets.filter(([p]) => p.startsWith('orgs/') && !/\/rsvp\//.test(p));
 const ans = (pid, item = 'e_e1') => ((((A.state.rsvp || {}).t1 || {})[item] || {})[pid]) || null;
 
 console.log('--- a parent, for her own child ---');
@@ -84,7 +84,7 @@ console.log('--- a parent, for her own child ---');
   answer('p1', 'yes');
   check('her answer is kept', ans('p1') && ans('p1').v, 'yes');
   check('stamped as her', ans('p1').by, 'mumU');
-  deepEq('written once, at rsvp/{tid}/{item}/{pid}', rsvpWrites().map(([p]) => p), ['workspaces/CLUB/rsvp/t1/e_e1/p1']);
+  deepEq('written once, at rsvp/{tid}/{item}/{pid}', rsvpWrites().map(([p]) => p), ['orgs/CLUB/rsvp/t1/e_e1/p1']);
   check('and nothing else in the club is written', otherWrites().length, 0);
   check('the row says so now', /Ella: going/.test(html()), true);
 

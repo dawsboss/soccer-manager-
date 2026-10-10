@@ -229,7 +229,7 @@ function as(uid, c = club()) {
   {
     const fbk = makeFakebase();
     const D = H.loadApp({ firebase: fbk, config: CONFIG, storage: { 'sm.workspace': 'CLUB' } });
-    await D.flush(); fbk.signIn('boss', { name: 'Ada' }); await D.flush(); fbk.deliver('workspaces/CLUB', club()); await D.flush();
+    await D.flush(); fbk.signIn('boss', { name: 'Ada' }); await D.flush(); await fbk.serveClub('CLUB', club(), D.flush); await D.flush();
     D.ui.view = 'planner'; D.ui.planner = { tab: 'find', find: { tids: [], len: 60, from: TUE, days: 1, h0: '19:00', h1: '20:00', ran: true } };
     D.render();
     for (const [k, v] of Object.entries({ plFrom: TUE, plH0: '19:00', plH1: '20:00', plLen: '60', plDays: '7', plField: '' })) D.dom.node('#' + k).value = v;
@@ -239,7 +239,7 @@ function as(uid, c = club()) {
     await D.flush();
     const ws = fbk.record.writes.filter(w => /\/teams\/t\d\/events\//.test(w.path) && w.value && w.value.title === 'End-of-season party');
     check('the whole club: one write for each team', ws.length, 3);
-    check('each at teams/{tid}/events/{eid}', ws.every(w => /^workspaces\/CLUB\/teams\/t\d\/events\/[\w-]+$/.test(w.path)), true);
+    check('each at teams/{tid}/events/{eid}', ws.every(w => /^orgs\/CLUB\/teams\/t\d\/events\/[\w-]+$/.test(w.path)), true);
     check('never a team\'s whole calendar, or a whole team', fbk.record.writes.some(w => /\/teams\/t\d(\/events)?$/.test(w.path)), false);
   }
 

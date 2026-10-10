@@ -32,7 +32,6 @@ const feed = require('./calendar');
 const access = require('./access');
 const mirror = require('./mirror');
 const mycal = require('./mycal');
-const move = require('./move');
 const adminwatch = require('./adminwatch');
 const booking = require('./book');
 const news = require('./news');
@@ -117,38 +116,20 @@ exports.pushStaffMessage = onValueCreated('/staffdm/{code}/{cid}/m/{id}', event 
    after. Entries are small and nothing writes them during a game (the
    register sits beside them, at teams/{tid}/attend), so the whole entry is
    the right thing to watch. */
-/* Every trigger on a club is registered twice, once per tree, while clubs
-   move from workspaces/{code} to orgs/{code} (AUTH.md, *The move to
-   `orgs/{orgId}`*): `both()` makes the pair, the second named with Orgs on
-   the end, and tells each handler which tree it woke on (params.tree), so
-   nothing has to ask. Where the new tree puts a part elsewhere (the squad out
-   from under its team), the pattern says so with {squad}, written as the old
-   tree's teams/{tid}/players or the new one's squad/{tid}. */
-const TREE_PATHS = {
-  workspaces: p => '/workspaces/' + p.replace('{squad}', 'teams/{tid}/players'),
-  orgs: p => '/orgs/' + p.replace('{squad}', 'squad/{tid}')
-};
-function both(name, pattern, make, handler) {
-  for (const tree of ['workspaces', 'orgs'])
-    exports[name + (tree === 'orgs' ? 'Orgs' : '')] = make(TREE_PATHS[tree](pattern),
-      quiet(event => handler({ ...event, params: { ...event.params, tree } })));
-}
-/* While a club is moving (move.js; serverState/moving/{code}) every function
-   that keeps a club in step leaves it alone: the move writes the new tree a
-   batch at a time and takes the old one away the same way, and a function
-   acting on half of it would put in step what is about to be replaced, or
-   read the old tree emptying as everybody leaving the club (and take their
-   bookmarks with them). The move writes everything they would have. */
-function quiet(handler) {
-  return async event => {
-    const root = (event.data.after || event.data).ref.root;
-    const code = event.params && event.params.code;
-    if (code && (await root.child('serverState/moving/' + code).get()).val()) return null;
-    return handler(event);
-  };
+/* Every trigger on a club is on orgs/{code} (AUTH.md, *The move to
+   `orgs/{orgId}`*). Each was registered twice while clubs moved there, once
+   per tree, the second named with Orgs on the end; the old tree's came out a
+   fortnight after the last club moved (build order step 5), and the new
+   tree's keep their names, so a deploy removes the old ones and leaves every
+   live one where it is, with no moment when a club has no trigger. Where
+   orgs/ puts a part elsewhere (the squad out from under its team), the
+   pattern says so with {squad}. */
+const clubPathOf = p => '/orgs/' + p.replace('{squad}', 'squad/{tid}');
+function onClub(name, pattern, make, handler) {
+  exports[name + 'Orgs'] = make(clubPathOf(pattern), handler);
 }
 
-both('pushEntry', '{code}/teams/{tid}/events/{eid}', onValueWritten, event =>
+onClub('pushEntry', '{code}/teams/{tid}/events/{eid}', onValueWritten, event =>
   push.onEntry(envOf(event), event.params, event.data.before.val(), event.data.after.val()));
 
 /* A game's when and whether, one field each and never the game itself: a
@@ -156,7 +137,7 @@ both('pushEntry', '{code}/teams/{tid}/events/{eid}', onValueWritten, event =>
    and none of that may wake the server. Its date, kick-off and called-off
    fields change only when somebody reschedules it. */
 for (const field of ['date', 'kickoff', 'called'])
-  both('pushGame' + field[0].toUpperCase() + field.slice(1), `{code}/matches/{mid}/${field}`, onValueWritten, event =>
+  onClub('pushGame' + field[0].toUpperCase() + field.slice(1), `{code}/matches/{mid}/${field}`, onValueWritten, event =>
     push.onGameField(envOf(event), event.params, field, event.data.before.val()));
 
 /* A game somebody follows (push.js, onFollowed): its goals, each stretch of
@@ -165,15 +146,15 @@ for (const field of ['date', 'kickoff', 'called'])
    own id (and its scorer added once, a moment later), a stretch of play is a new periods/{i} (its end, written
    when the clock stops, is beneath it and wakes nothing), and currentHalf
    and ended change once a half. */
-both('followGoal', '{code}/matches/{mid}/goals/{gid}', onValueCreated, event =>
+onClub('followGoal', '{code}/matches/{mid}/goals/{gid}', onValueCreated, event =>
   push.onFollowed(envOf(event), event.params, 'goal', event.params.gid));
-both('followScorer', '{code}/matches/{mid}/goals/{gid}/pid', onValueWritten, event =>
+onClub('followScorer', '{code}/matches/{mid}/goals/{gid}/pid', onValueWritten, event =>
   push.onFollowed(envOf(event), event.params, 'scorer', event.params.gid, event.data.before.val()));
-both('followPeriod', '{code}/matches/{mid}/periods/{i}', onValueCreated, event =>
+onClub('followPeriod', '{code}/matches/{mid}/periods/{i}', onValueCreated, event =>
   push.onFollowed(envOf(event), event.params, 'period', event.params.i));
-both('followHalf', '{code}/matches/{mid}/currentHalf', onValueWritten, event =>
+onClub('followHalf', '{code}/matches/{mid}/currentHalf', onValueWritten, event =>
   push.onFollowed(envOf(event), event.params, 'half', null, event.data.before.val()));
-both('followEnded', '{code}/matches/{mid}/ended', onValueWritten, event =>
+onClub('followEnded', '{code}/matches/{mid}/ended', onValueWritten, event =>
   push.onFollowed(envOf(event), event.params, 'ended', null, event.data.before.val()));
 
 /* The lookup tables the rules read (access.js; SERVER.md, "The lookup tables
@@ -182,7 +163,7 @@ both('followEnded', '{code}/matches/{mid}/ended', onValueWritten, event =>
    each as deep as the role itself: a coach saving the whole team writes
    teams/{tid} every time, and only a change to a player's guardians or self
    may wake these. */
-both('accessAdmin', '{code}/access/admins/{uid}', onValueWritten, event =>
+onClub('accessAdmin', '{code}/access/admins/{uid}', onValueWritten, event =>
   access.onAdmin(writerOf(event), event.params));
 /* Who runs the club (adminwatch.js; SECURITY.md, SEC-D8): an admin or owner
    given or taken away tells every admin and owner, the person it happened to
@@ -201,53 +182,49 @@ function watchOf(event) {
   };
 }
 for (const [kind, part] of [['admin', 'admins'], ['owner', 'owners']])
-  both('watch' + kind[0].toUpperCase() + kind.slice(1), `{code}/access/${part}/{uid}`, onValueWritten, event =>
+  onClub('watch' + kind[0].toUpperCase() + kind.slice(1), `{code}/access/${part}/{uid}`, onValueWritten, event =>
     adminwatch.onChange(watchOf(event), { ...event.params, eid: event.id }, kind, event.data.before.val(), event.data.after.val()));
 /* The three on a team's people also mark the club for My calendar's feeds
    (mycal.js, below): who is on a team is what decides whose calendar it is in. */
-both('accessStaff', '{code}/access/teams/{tid}', onValueWritten, event => Promise.all([
+onClub('accessStaff', '{code}/access/teams/{tid}', onValueWritten, event => Promise.all([
   access.onTeamStaff(writerOf(event), event.params, event.data.before.val(), event.data.after.val()),
   markRoles(event, [...staffIn(event.data.before.val()), ...staffIn(event.data.after.val())])]).then(r => r[0]));
-both('accessGuardians', '{code}/{squad}/{pid}/guardians', onValueWritten, event => Promise.all([
+onClub('accessGuardians', '{code}/{squad}/{pid}/guardians', onValueWritten, event => Promise.all([
   access.onGuardians(writerOf(event), event.params, event.data.before.val(), event.data.after.val()),
   markRoles(event, [...peopleIn(event.data.before.val()), ...peopleIn(event.data.after.val())])]).then(r => r[0]));
-both('accessSelf', '{code}/{squad}/{pid}/self', onValueWritten, event => Promise.all([
+onClub('accessSelf', '{code}/{squad}/{pid}/self', onValueWritten, event => Promise.all([
   access.onSelf(writerOf(event), event.params, event.data.before.val(), event.data.after.val()),
   markRoles(event, [...peopleIn(event.data.before.val()), ...peopleIn(event.data.after.val())])]).then(r => r[0]));
-/* A player's fans (AUTH.md, *More kinds of people*, 1), on orgs/ only:
-   the old tree has no rule that writes one, so there is nothing to wake. */
-exports.accessFansOrgs = onValueWritten('/orgs/{code}/squad/{tid}/{pid}/fans', quiet(event => {
-  const e = { ...event, params: { ...event.params, tree: 'orgs' } };
-  return Promise.all([
-    access.onFans(writerOf(e), e.params, event.data.before.val(), event.data.after.val()),
-    markRoles(e, [...peopleIn(event.data.before.val()), ...peopleIn(event.data.after.val())])]).then(r => r[0]);
-}));
+/* A player's fans (AUTH.md, *More kinds of people*, 1). */
+onClub('accessFans', '{code}/{squad}/{pid}/fans', onValueWritten, event => Promise.all([
+  access.onFans(writerOf(event), event.params, event.data.before.val(), event.data.after.val()),
+  markRoles(event, [...peopleIn(event.data.before.val()), ...peopleIn(event.data.after.val())])]).then(r => r[0]));
 
-/* A club viewer (access.js; AUTH.md, *Club viewers, as built*), on orgs/
-   only: in the index like any role, so it is kept like one. */
-exports.accessViewer = onValueWritten('/orgs/{code}/access/viewers/{uid}', quiet(event =>
-  access.onViewer(writerOf(event), event.params, event.data.before.val(), event.data.after.val())));
+/* A club viewer (access.js; AUTH.md, *Club viewers, as built*): in the
+   index like any role, so it is kept like one. */
+exports.accessViewer = onValueWritten('/orgs/{code}/access/viewers/{uid}', event =>
+  access.onViewer(writerOf(event), event.params, event.data.before.val(), event.data.after.val()));
 
-/* The two parts only orgs/ has (access.js): staff names, so a family can
+/* Two derived parts (access.js): staff names, so a family can
    see who her coach is without reading anyone's email, and the roster, the
    numbers the whole club reads in place of the squad. A child's record is
    watched one child at a time, so saving the whole squad wakes only the
    children that changed. */
-exports.namesMember = onValueWritten('/orgs/{code}/members/{uid}', quiet(event =>
-  access.onMember(writerOf(event), event.params)));
-exports.rosterPlayer = onValueWritten('/orgs/{code}/squad/{tid}/{pid}', quiet(event =>
-  access.onSquadPlayer(writerOf(event), event.params, event.data.before.val())));
+exports.namesMember = onValueWritten('/orgs/{code}/members/{uid}', event =>
+  access.onMember(writerOf(event), event.params));
+exports.rosterPlayer = onValueWritten('/orgs/{code}/squad/{tid}/{pid}', event =>
+  access.onSquadPlayer(writerOf(event), event.params, event.data.before.val()));
 /* A child in the club (access.js; AUTH.md, *A child in the club*): a family
    named on her, or the club letting her in, is who is in the index. */
-exports.accessChild = onValueWritten('/orgs/{code}/children/{cid}', quiet(event =>
-  access.onChildRecord(writerOf(event), event.params, event.data.before.val(), event.data.after.val())));
+exports.accessChild = onValueWritten('/orgs/{code}/children/{cid}', event =>
+  access.onChildRecord(writerOf(event), event.params, event.data.before.val(), event.data.after.val()));
 /* Care details (access.js): the family's own, copied to each team she is on
    for its coaches. The copy is written with admin credentials and holds
    medical notes, so only this trigger and the child's own teams decide where. */
-exports.careCopy = onValueWritten('/orgs/{code}/care/{cid}', quiet(event =>
-  access.onCare(writerOf(event), event.params)));
-exports.rosterOpen = onValueWritten('/orgs/{code}/org/rosterOpen', quiet(event =>
-  access.onRosterOpen(writerOf(event), event.params)));
+exports.careCopy = onValueWritten('/orgs/{code}/care/{cid}', event =>
+  access.onCare(writerOf(event), event.params));
+exports.rosterOpen = onValueWritten('/orgs/{code}/org/rosterOpen', event =>
+  access.onRosterOpen(writerOf(event), event.params));
 
 /* Forgetting an account (forget.js; AUTH.md, *Deleting*), asked for by the
    person herself just before her phone deletes the sign-in. A create only:
@@ -261,21 +238,6 @@ exports.forgetMe = onValueCreated('/forgetRequests/{uid}', event => {
   }, event.params, event.data.val());
 });
 
-/* Moving a club to orgs/ (move.js), when one of its admins asks by writing
-   moveRequests/{code}. A create only: the answer is written beside the
-   request, and the admin deletes it to ask again. One multi-path update, so
-   it gets `update` on the event's own database as well as get and set. */
-exports.moveClub = onValueCreated('/moveRequests/{code}', event => {
-  const root = event.data.ref.root;
-  return move.onRequest({
-    get: p => root.child(p).get().then(s => s.val()),
-    set: (p, v) => root.child(p).set(v),
-    update: patch => root.update(patch),
-    // the club's people and calendar changed under My calendar's feeds, which slept through the move
-    touched: code => mycal.touchClub(markerOf(event), code)
-  }, event.params, event.data.val());
-});
-
 /* The share pages (mirror.js; SERVER.md, "The share pages"): the only
    writer of public/ for a team. A team's entries are watched whole, as
    pushEntry watches each one; a game never whole, because a game being
@@ -286,17 +248,17 @@ exports.moveClub = onValueCreated('/moveRequests/{code}', event => {
 /* The entries and a game's when and where also mark the club for My
    calendar's feeds, which carry the same entries and games; play marks
    nothing. */
-both('mirrorEvents', '{code}/teams/{tid}/events', onValueWritten, event => Promise.all([
+onClub('mirrorEvents', '{code}/teams/{tid}/events', onValueWritten, event => Promise.all([
   mirror.onEvents(mirrorOf(event), event.params), markClub(event)]).then(r => r[0]));
-both('publishGame', '{code}/matches/{mid}/{part}', onValueWritten, event => Promise.all([
+onClub('publishGame', '{code}/matches/{mid}/{part}', onValueWritten, event => Promise.all([
   mirror.onGamePart(mirrorOf(event), event.params, event.data.before.val(), event.data.after.val()),
   mirror.GAME_FIELDS.includes(event.params.part) ? markClub(event) : null]).then(r => r[0]));
 for (const field of mirror.TEAM_FIELDS)
-  both('publishTeam' + field[0].toUpperCase() + field.slice(1), `{code}/teams/{tid}/${field}`, onValueWritten, event =>
+  onClub('publishTeam' + field[0].toUpperCase() + field.slice(1), `{code}/teams/{tid}/${field}`, onValueWritten, event =>
     mirror.onTeamField(mirrorOf(event), event.params, field, event.data.before.val(), event.data.after.val()));
-both('publishPlayer', '{code}/{squad}/{pid}', onValueWritten, event =>
+onClub('publishPlayer', '{code}/{squad}/{pid}', onValueWritten, event =>
   mirror.onPlayer(mirrorOf(event), event.params, event.data.before.val(), event.data.after.val()));
-both('publishAnswers', '{code}/rsvp/{tid}/{item}', onValueWritten, event =>
+onClub('publishAnswers', '{code}/rsvp/{tid}/{item}', onValueWritten, event =>
   mirror.onAnswers(mirrorOf(event), event.params));
 
 /* Booking a coach's time (book.js; SERVER.md, "Bookable times and training
@@ -315,21 +277,21 @@ function bookerOf(event) {
     dated: (p, date) => root.child(p).orderByChild('date').equalTo(date).get().then(s => s.val())
   };
 }
-exports.bookAsk = onValueCreated('/bookAsks/{code}/{uid}/{id}', quiet(event =>
-  booking.onAsk(bookerOf(event), event.params, event.data.val())));
-exports.bookFreed = onValueWritten('/training/{code}/booked/{sid}/{pid}', quiet(event =>
-  booking.onBooked(bookerOf(event), event.params, event.data.before.val(), event.data.after.val())));
+exports.bookAsk = onValueCreated('/bookAsks/{code}/{uid}/{id}', event =>
+  booking.onAsk(bookerOf(event), event.params, event.data.val()));
+exports.bookFreed = onValueWritten('/training/{code}/booked/{sid}/{pid}', event =>
+  booking.onBooked(bookerOf(event), event.params, event.data.before.val(), event.data.after.val()));
 
 /* Training sessions and club activity, to a closed phone (news.js; SERVER.md,
    "Notifications"): a booking changing, a session added, moved or called
    off, a coach's time off or call-out. Each is one small record written
    once per change, never anything a game being played writes. */
-exports.newsBooked = onValueWritten('/training/{code}/booked/{sid}/{pid}', quiet(event =>
-  news.onBooked(envOf(event), event.params, event.data.before.val(), event.data.after.val())));
-exports.newsSession = onValueWritten('/training/{code}/sessions/{sid}', quiet(event =>
-  news.onSession(envOf(event), event.params, event.data.before.val(), event.data.after.val())));
-exports.newsAway = onValueWritten('/training/{code}/away/{uid}/{id}', quiet(event =>
-  news.onAway(envOf(event), event.params, event.data.before.val(), event.data.after.val())));
+exports.newsBooked = onValueWritten('/training/{code}/booked/{sid}/{pid}', event =>
+  news.onBooked(envOf(event), event.params, event.data.before.val(), event.data.after.val()));
+exports.newsSession = onValueWritten('/training/{code}/sessions/{sid}', event =>
+  news.onSession(envOf(event), event.params, event.data.before.val(), event.data.after.val()));
+exports.newsAway = onValueWritten('/training/{code}/away/{uid}/{id}', event =>
+  news.onAway(envOf(event), event.params, event.data.before.val(), event.data.after.val()));
 
 /* My calendar's feeds (mycal.js; SERVER.md, "My calendar's feed"). The
    triggers above mark a club when its entries, games or people change; these

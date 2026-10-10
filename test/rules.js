@@ -46,14 +46,7 @@ function jsonBlocks() {
    make. Each is a hard failure. */
 function loadRules() {
   const locked = readJson('database.rules.json').rules;
-  /* database.rules.json is built from tools/rules-source.json while clubs move
-     to orgs/ (tools/rules-build.js says why). The built file is what gets
-     published and what this walks; it has to be the build of the source, or
-     an edit made to one is not in the other. README explains the source. */
-  const built = require('../tools/rules-build.js');
-  if (built.build() !== fs.readFileSync(path.join(ROOT, 'database.rules.json'), 'utf8'))
-    throw new Error('database.rules.json is not the build of tools/rules-source.json: edit the source, then run node tools/rules-build.js');
-  const source = readJson('tools/rules-source.json').rules;
+  const source = locked;
   for (const f of fs.readdirSync(ROOT))
     if (/\.rules\b.*\.json$/.test(f) && f !== 'database.rules.json')
       throw new Error(f + ' is a second ruleset. There is one, database.rules.json, for every club: a database can only run one at a time.');
@@ -68,7 +61,7 @@ function loadRules() {
     const isRule = v => v && typeof v === 'object' && Object.keys(v).some(x => x[0] === '.' || x[0] === '$');
     for (const k of ['retired', 'appOwners'])
       if (frag && isRule(frag[k]) && JSON.stringify(frag[k]) !== JSON.stringify(source[k]))
-        throw new Error('README\'s "' + k + '" example no longer matches tools/rules-source.json');
+        throw new Error('README\'s "' + k + '" example no longer matches database.rules.json');
   }
   const firebase = readJson('firebase.json');
   if (((firebase.database || {}).rules) !== 'database.rules.json')
@@ -212,15 +205,15 @@ function validated(p, value, after, auth = null, base = DB) {
   return true;
 }
 
-/* The whole walk runs twice: once as written, against clubs on
-   workspaces/{code}, and once (`node test/run.js rules-orgs`, RULES_TREE=orgs) against the same clubs
-   moved to orgs/{code} (AUTH.md, *The move to `orgs/{orgId}`*). The checks
-   below say what they always said, in the old tree's paths; in orgs mode
-   each club in the mock is moved the way moveClub moves it before every
-   check, and each path goes where it moved to. So every expectation the
-   rules held a club to before the move holds it after, and the few that
-   are meant to differ say so with orgsOnly(). */
-const ORGS = process.env.RULES_TREE === 'orgs';
+/* Every club is on orgs/{code} (AUTH.md, *The move to `orgs/{orgId}`*), and
+   the old workspaces/ tree is gone from the rules (build order step 5). The
+   checks below are written the way the app names a path in memory, which is
+   the old tree's shape (a team with its players, access with members, org
+   and log inside), because that is what clubPath() translates from on every
+   write the app makes. Before every check the mock is laid out the way
+   orgs/ keeps a club (moved()) and each path goes where clubPath() would
+   send it (orgsPath()), so what is held here is exactly what a phone's write
+   meets. Checks written straight at orgs/ paths are not moved. */
 function moved(tree) {
   const out = JSON.parse(JSON.stringify(tree));
   out.orgs = out.orgs || {};
@@ -246,13 +239,12 @@ function orgsPath(p) {
     .replace(/^access\/(members|org|log)(?=\/|$)/, '$1');
   return 'orgs/' + m[1] + '/' + rest;
 }
-const canRead = (p, auth) => ORGS ? granted('read', orgsPath(p), auth, null, moved(DB)) : granted('read', p, auth);
+const canRead = (p, auth) => granted('read', orgsPath(p), auth, null, moved(DB));
 function canWriteOn(base, p, value, auth) {
   const after = withWrite(base, p, value);
   return granted('write', p, auth, after, base) && validated(p, value, after, auth, base);
 }
 function canWrite(p, value, auth) {
-  if (!ORGS) return canWriteOn(DB, p, value, auth);
   const base = moved(DB), q = orgsPath(p);
   /* A whole team carries its squad today; on orgs/ the app writes the two
      apart (the team, then squad/{tid}), and both have to be allowed. */
@@ -1911,9 +1903,9 @@ reads('nor read', COACH, 'shareOwners/sh1', false);
   DB.orgs.ORGC = ORGC;
   const O = 'orgs/ORGC/';
   const OA = { uid: 'oa' }, OC = { uid: 'oc' }, OC2 = { uid: 'oc2' }, OT = { uid: 'ot' }, OM = { uid: 'om' }, OSELF = { uid: 'oself' };
-  // straight at orgs/: these paths are not the old tree's, so neither pass moves them
-  const r = (label, who, p, want) => check(label, granted('read', p, who, null, ORGS ? moved(DB) : DB), want);
-  const w = (label, who, p, v, want) => check(label, canWriteOn(ORGS ? moved(DB) : DB, p, v, who), want);
+  // straight at orgs/ paths, which orgsPath() leaves as they are
+  const r = (label, who, p, want) => check(label, granted('read', p, who, null, moved(DB)), want);
+  const w = (label, who, p, v, want) => check(label, canWriteOn(moved(DB), p, v, who), want);
 
   console.log('\n--- a club on orgs/: who reads what ---');
   r('nobody reads the club whole, not even its admin', OA, 'orgs/ORGC', false);
@@ -2545,49 +2537,22 @@ reads('nor read', COACH, 'shareOwners/sh1', false);
   w('every other role still names its team', OA, 'invites/inv8', { ws: 'ORGC', by: 'oa', role: 'coach', at: NOW, expiresAt: NOW + 1e9 }, false);
   delete ORGC.access.viewers; delete ORGC.access.index.ov; delete ORGC.coachNotes;
 
-  console.log('\n--- a club on orgs/: one tree each ---');
-  /* A club is on exactly one tree, which is what lets every root rule ask
-     "orgs/{code}/access exists" to know which tree to read. So nobody may
-     start orgs/{code} under a code the old tree still holds (it would turn
-     every training, message and invite rule for that club over to her), nor
-     start the old tree again under a code that has moved. */
-  DB.workspaces.OLDC = { access: { admins: { oldadm: true }, index: { oldadm: true } }, teams: { t1: { id: 't1', name: 'Old' } } };
-  DB.workspaces.GONE = { moved: { to: 'orgs', at: 1, by: 'ga' } };
-  const keepOld = ORGS ? (() => { const v = moved(DB); v.workspaces.OLDC = DB.workspaces.OLDC; delete v.orgs.OLDC; return v; })() : DB;
-  const wk = (label, who, p, v, want) => check(label, canWriteOn(keepOld, p, v, who), want);
-  wk('nobody starts orgs/ under a code the old tree holds', RANDO, 'orgs/OLDC/access/admins/rando', true, false);
-  wk('— nor its index', RANDO, 'orgs/OLDC/access/index/rando', true, false);
-  wk('nobody starts the old tree again under a moved code', RANDO, 'workspaces/GONE/access/admins/rando', true, false);
-  wk('— nor its index', RANDO, 'workspaces/GONE/access/index/rando', true, false);
-  wk('nor under a code orgs/ holds', RANDO, 'workspaces/ORGC/access/admins/rando', true, false);
-  wk('nobody writes the moved marker but the server', OA, 'workspaces/GONE/moved', null, false);
-  /* Not even her own entry: the old tree's one write a stranger could make.
-     A phone that has not heard of the move writes it on signing in, and it
-     would put access back under the old tree, which is how every phone tells
-     a club still there from one that has moved. */
-  wk('nobody writes her own name on the old tree of a moved club', RANDO, 'workspaces/GONE/access/members/rando', { name: 'R' }, false);
-  wk('— nor of a club on orgs/', OM, 'workspaces/ORGC/access/members/om', { name: 'Mo' }, false);
-  wk('a brand-new code starts on orgs/', RANDO, 'orgs/BRANDNEW/access/admins/rando', true, true);
-  delete DB.workspaces.OLDC; delete DB.workspaces.GONE;
-
-  console.log('\n--- asking for a club to be moved ---');
-  /* moveRequests/{code}: an admin of the club asks, as herself; the server
-     (functions/move.js) checks her again before it moves anything. */
-  writes('its admin asks', ADM, 'moveRequests/CLUB', { by: 'adm', at: NOW }, true);
-  writes('not in someone else\'s name', ADM, 'moveRequests/CLUB', { by: 'coach', at: NOW }, false);
-  writes('a coach does not', COACH, 'moveRequests/CLUB', { by: 'coach', at: NOW }, false);
-  writes('nor a parent', MUM, 'moveRequests/CLUB', { by: 'mum', at: NOW }, false);
-  writes('nor a stranger', RANDO, 'moveRequests/CLUB', { by: 'rando', at: NOW }, false);
-  writes('nor an answer written by a phone', ADM, 'moveRequests/CLUB', { by: 'adm', at: NOW, result: { ok: true } }, false);
-  // why the app looks before it clears: deleting a request that is not there is a write the rule refuses
-  writes('clearing one that is not there is refused', ADM, 'moveRequests/CLUB', null, false);
-  DB.moveRequests = { CLUB: { by: 'adm', at: 1, result: { ok: false, why: 'A game is being played.' } } };
-  reads('she reads the answer', ADM, 'moveRequests/CLUB', true);
-  reads('a coach does not', COACH, 'moveRequests/CLUB', false);
-  writes('she clears it to ask again', ADM, 'moveRequests/CLUB', null, true);
-  writes('a coach cannot', COACH, 'moveRequests/CLUB', null, false);
-  writes('nor ask over the top of one', ADM, 'moveRequests/CLUB', { by: 'adm', at: 2 }, false);
-  delete DB.moveRequests;
+  console.log('\n--- the old tree is closed ---');
+  /* workspaces/ came out of the rules a fortnight after every club moved
+     (AUTH.md, build order step 5). What is left there (each moved club's
+     `moved` marker) is nobody's to read or write, and no code can be started
+     there again: a club is made on orgs/ or not at all. */
+  {
+    const old = { ...moved(DB), workspaces: { GONE: { moved: { to: 'orgs', at: 1, by: 'ga' } } } };
+    const wk = (label, who, p, v, want) => check(label, canWriteOn(old, p, v, who), want);
+    check('nobody reads a moved club\'s marker', granted('read', 'workspaces/GONE', RANDO, null, old), false);
+    check('— not even its admin', granted('read', 'workspaces/GONE', OA, null, old), false);
+    wk('nobody starts the old tree again under a moved code', RANDO, 'workspaces/GONE/access/admins/rando', true, false);
+    wk('— nor under a brand-new one', RANDO, 'workspaces/BRANDNEW/access/admins/rando', true, false);
+    wk('— nor writes her own name there', OM, 'workspaces/ORGC/access/members/om', { name: 'Mo' }, false);
+    wk('nobody asks for a club to be moved any more', OA, 'moveRequests/ORGC', { by: 'oa', at: NOW }, false);
+    wk('a brand-new code starts on orgs/', RANDO, 'orgs/BRANDNEW/access/admins/rando', true, true);
+  }
 
   console.log('\n--- a club on orgs/: the root rules follow it there ---');
   w('its coach plans a practice', OC, 'training/ORGC/practices/t1/pr9', { id: 'pr9', teamId: 't1', date: '2026-10-12' }, true);

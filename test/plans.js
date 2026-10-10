@@ -26,7 +26,7 @@ const L = require('../drills.js');
 
 const CONFIG = { apiKey: 'k', databaseURL: 'https://prod.example', projectId: 'p' };
 const CODE = 'CLUB';
-const WS = 'workspaces/' + CODE;
+const OB = 'orgs/' + CODE;
 const TR = 'training/' + CODE + '/';
 
 /* Twelve players, one marked as a keeper, born 2016: U11 on the harness clock
@@ -576,7 +576,9 @@ function plan(extra = {}, X = A) {
     const D = H.loadApp({ firebase: fbk, config: CONFIG, storage: { 'sm.workspace': CODE, ...storage } });
     await D.flush();
     fbk.signIn(uid, { name: uid }); await D.flush();
-    fbk.deliver(WS, club()); await D.flush();
+    // without the coach index, which the coaches' and admins' phones are checked writing below
+    const c = club(); c.access.coachIndex = {};
+    await fbk.serveClub(CODE, c, D.flush); await D.flush();
     return { D, fbk };
   }
   const written = (fbk, p) => { const w = fbk.writtenTo(p); return w.length ? w[w.length - 1].value : undefined; };
@@ -584,13 +586,13 @@ function plan(extra = {}, X = A) {
   console.log('\n--- the coach index ---');
   {
     const { fbk } = await device('boss');
-    check('an admin\'s device writes each coach\'s entry', written(fbk, WS + '/access/coachIndex/jaz'), 't1');
-    check('every coach\'s', written(fbk, WS + '/access/coachIndex/other'), 't2');
+    check('an admin\'s device writes each coach\'s entry', written(fbk, OB + '/access/coachIndex/jaz'), 't1');
+    check('every coach\'s', written(fbk, OB + '/access/coachIndex/other'), 't2');
     check('and nobody else\'s', fbk.record.writes.some(w => /coachIndex\/(trk|mum|boss)$/.test(w.path)), false);
   }
   {
     const { fbk } = await device('jaz');
-    check('a coach\'s own device writes her own', written(fbk, WS + '/access/coachIndex/jaz'), 't1');
+    check('a coach\'s own device writes her own', written(fbk, OB + '/access/coachIndex/jaz'), 't1');
     check('and nobody else\'s', fbk.record.writes.some(w => /coachIndex\/(?!jaz$)/.test(w.path)), false);
   }
   {
@@ -601,11 +603,11 @@ function plan(extra = {}, X = A) {
     const c = club(); c.access.coachIndex = { jaz: 't1', other: 't2' };
     const fbk = makeFakebase();
     const D = H.loadApp({ firebase: fbk, config: CONFIG, storage: { 'sm.workspace': CODE } });
-    await D.flush(); fbk.signIn('boss'); await D.flush(); fbk.deliver(WS, c); await D.flush();
+    await D.flush(); fbk.signIn('boss'); await D.flush(); await fbk.serveClub(CODE, c, D.flush); await D.flush();
     check('nothing is rewritten when it already agrees', fbk.record.writes.some(w => w.path.includes('coachIndex')), false);
     D.state.access.teams.t1.coaches = {};
     D.syncCoachIndex('jaz');
-    check('a coach removed from her only team is taken out', fbk.record.removes.includes(WS + '/access/coachIndex/jaz'), true);
+    check('a coach removed from her only team is taken out', fbk.record.removes.includes(OB + '/access/coachIndex/jaz'), true);
     const rows = D.readiness().find(r => /coach index/.test(r.label));
     check('readiness reports it', !!rows, true);
   }
@@ -631,7 +633,7 @@ function plan(extra = {}, X = A) {
     const pw = written(fbk, TR + 'practices/t1/' + id);
     check('a new plan is written, one plan at that depth', pw && pw.id, id);
     check('and the team\'s collection never whole', fbk.record.writes.some(w => w.path === TR + 'practices/t1'), false);
-    check('its practice is written to the calendar, one entry', (written(fbk, WS + '/teams/t1/events/' + id) || {}).date, '2026-09-19');
+    check('its practice is written to the calendar, one entry', (written(fbk, OB + '/teams/t1/events/' + id) || {}).date, '2026-09-19');
     check('and nothing goes to the old schedule', fbk.record.writes.some(w => w.path.includes('/schedule/')), false);
     check('acknowledged, it is no longer pending', D.train.dirty['t1/' + id], undefined);
 
@@ -656,7 +658,7 @@ function plan(extra = {}, X = A) {
     const saved = D.storage._d;
     const fbk2 = makeFakebase();
     const D2 = H.loadApp({ firebase: fbk2, config: CONFIG, storage: { ...saved } });
-    await D2.flush(); fbk2.signIn('jaz'); await D2.flush(); fbk2.deliver(WS, club()); await D2.flush();
+    await D2.flush(); fbk2.signIn('jaz'); await D2.flush(); await fbk2.serveClub(CODE, club(), D2.flush); await D2.flush();
     check('after a reload the pending plan is still here', !!D2.practiceById('t1', off), true);
     D2.ui.view = 'practice'; D2.ui.practice = { tab: 'plans' }; D2.render();
     fbk2.deliver(TR + 'practices/t1', { [id]: pw }); await D2.flush();
@@ -695,14 +697,14 @@ function plan(extra = {}, X = A) {
     const saved = D.storage._d;
     const fbk2 = makeFakebase();
     const D2 = H.loadApp({ firebase: fbk2, config: CONFIG, storage: { ...saved } });
-    await D2.flush(); fbk2.signIn('jaz'); await D2.flush(); fbk2.deliver(WS, club()); await D2.flush();
-    check('after a reload the entry is still owed and sent', (written(fbk2, WS + '/teams/t1/events/o1') || {}).date, '2026-09-24');
+    await D2.flush(); fbk2.signIn('jaz'); await D2.flush(); await fbk2.serveClub(CODE, club(), D2.flush); await D2.flush();
+    check('after a reload the entry is still owed and sent', (written(fbk2, OB + '/teams/t1/events/o1') || {}).date, '2026-09-24');
     D2.ui.view = 'practice'; D2.ui.practice = { tab: 'plans' }; D2.render();
     fbk2.deliver(TR + 'practices/t1', old); await D2.flush();
     check('and the plan, marked, is sent again', (written(fbk2, TR + 'practices/t1/o1') || {}).eid, 'o1');
-    const entryWrites = fbk2.record.writes.filter(w => w.path === WS + '/teams/t1/events/o1').length;
+    const entryWrites = fbk2.record.writes.filter(w => w.path === OB + '/teams/t1/events/o1').length;
     fbk2.deliver(TR + 'practices/t1', { ...old, o1: { ...old.o1, eid: 'o1' }, o2: { ...old.o2, eid: 'o2' } }); await D2.flush();
-    check('once marked, it is never moved again', fbk2.record.writes.filter(w => w.path === WS + '/teams/t1/events/o1').length, entryWrites);
+    check('once marked, it is never moved again', fbk2.record.writes.filter(w => w.path === OB + '/teams/t1/events/o1').length, entryWrites);
     check('the moved plan reads from its entry', D2.practiceById('t1', 'o1').onCal, true);
     check('nothing is deleted on the way', fbk2.record.removes.some(p => p.includes('/practices/')), false);
 
@@ -744,7 +746,7 @@ function plan(extra = {}, X = A) {
     const c = club(); c.teams.t1.events = { e1: { id: 'e1', kind: 'practice', date: '2026-09-14', start: '17:30', end: '18:30', venue: 'Lakeside Park' } };
     const fbk = makeFakebase();
     const D = H.loadApp({ firebase: fbk, config: CONFIG, storage: { 'sm.workspace': CODE } });
-    await D.flush(); fbk.signIn('mum'); await D.flush(); fbk.deliver(WS, c); await D.flush();
+    await D.flush(); fbk.signIn('mum'); await D.flush(); await fbk.serveClub(CODE, c, D.flush); await D.flush();
     D.ui.view = 'calendar'; D.render();
     check('the next practice comes from the calendar', /Next practice/.test(D.rendered()) && /Lakeside Park/.test(D.rendered()), true);
     check('with no plan or schedule read at all', fbk.readPaths().some(p => /^training\/[^/]+\/(practices|schedule)/.test(p)), false);

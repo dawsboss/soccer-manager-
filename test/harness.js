@@ -138,7 +138,7 @@ const EXPORTS = `{
   stampOf, stampKey, stampLabel, trackersIn, typedName, stampedBy,
   /* sync */
   getApp, initAuth, initSync, mergeNode, IDENTITY, pushAll, remoteSet, remoteDel,
-  clubTree, setClubTree, onOrgs, clubPath, clubWrites, probeTree, moveCard, rosterOf, get moveReq() { return moveReq },
+  copyFromOrgs, markFromOrgs, clubPath, clubWrites, rosterOf,
   quiet, commit, drop, nowMs,
   /* roles */
   acc, members, anyAdmins, isAdmin, isCoach, isTracker, isGuardian, roleIn,

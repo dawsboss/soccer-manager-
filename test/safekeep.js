@@ -46,7 +46,7 @@ async function device(uid, storage = {}) {
   const D = H.loadApp({ firebase: fbk, config: CONFIG, storage: { 'sm.workspace': CODE, ...storage } });
   await D.flush();
   fbk.signIn(uid, { name: (club().access.members[uid] || {}).name || uid }); await D.flush();
-  fbk.deliver(WS, club()); await D.flush();
+  await fbk.serveClub(CODE, club(), D.flush); await D.flush();
   D.render();
   return { D, fbk };
 }

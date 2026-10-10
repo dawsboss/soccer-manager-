@@ -45,7 +45,7 @@ async function boot(who, opts = {}) {
   await A.flush();
   fbk.signIn(who, { name: (CLUB.access.members[who] || {}).name || who, email: who + '@x.test' }); await A.flush();
   // a copy each time: the app writes into what it was handed, and one test's sync must not seed the next
-  fbk.deliver('workspaces/CLUB', JSON.parse(JSON.stringify(opts.club || CLUB))); await A.flush();
+  await fbk.serveClub('CLUB', JSON.parse(JSON.stringify(opts.club || CLUB)), A.flush); await A.flush();
   return { A, fbk };
 }
 const writes = (fbk, prefix) => fbk.record.writes.filter(w => w.path.startsWith(prefix));
@@ -488,11 +488,11 @@ const NOTE = (A, by, text, extra) => ({ by, byName: CLUB.access.members[by].name
 
   console.log('\n--- the parent list the rules narrow notices with ---');
   {
-    // a club from before the list: an admin's connect creates it, team by team, uid by uid
-    const { A, fbk } = await boot('adm');
+    // a club without the list: an admin's connect creates it, team by team, uid by uid
+    const { A, fbk } = await boot('adm', { club: { ...CLUB, access: { ...CLUB.access, teamParents: {} } } });
     const tp = fbk.record.writes.filter(w => w.path.includes('/access/teamParents/'));
     check('an admin\'s connect writes every parent', tp.map(w => w.path + '=' + w.value).sort().join(' '),
-      'workspaces/CLUB/access/teamParents/t1/dad=p2 workspaces/CLUB/access/teamParents/t1/mum=p1');
+      'orgs/CLUB/access/teamParents/t1/dad=p2 orgs/CLUB/access/teamParents/t1/mum=p1');
     check('one entry at a time, never a whole team', tp.every(w => w.path.split('/').length === 6), true);
   }
   {
@@ -507,9 +507,9 @@ const NOTE = (A, by, text, extra) => ({ by, byName: CLUB.access.members[by].name
     check('nothing to write when it is already right', fbk.record.writes.some(w => w.path.includes('/teamParents/')), false);
     A.ui.teamId = 't1';
     A.click({ act: 'toggleguard', pid: 'p3', uid: 'trk' }); await A.flush();
-    check('linking a parent puts her on it', fbk.writtenTo('workspaces/CLUB/access/teamParents/t1/trk').map(w => w.value).join(), 'p3');
+    check('linking a parent puts her on it', fbk.writtenTo('orgs/CLUB/access/teamParents/t1/trk').map(w => w.value).join(), 'p3');
     A.click({ act: 'toggleguard', pid: 'p1', uid: 'mum' }); await A.flush();
-    check('unlinking her last child takes her off', fbk.record.removes.includes('workspaces/CLUB/access/teamParents/t1/mum'), true);
+    check('unlinking her last child takes her off', fbk.record.removes.includes('orgs/CLUB/access/teamParents/t1/mum'), true);
     check('and the list no longer names her', !!(((A.state.access.teamParents || {}).t1 || {}).mum), false);
   }
   {

@@ -24,7 +24,7 @@ const L = require('../drills.js');
 
 const CONFIG = { apiKey: 'k', databaseURL: 'https://prod.example', projectId: 'p' };
 const CODE = 'CLUB';
-const WS = 'workspaces/' + CODE;
+const OB = 'orgs/' + CODE;
 const CLUBD = 'training/' + CODE + '/drills';
 const LIB = uid => 'userLibrary/' + uid + '/drills';
 
@@ -69,7 +69,7 @@ async function device(uid, opts = {}) {
   const D = H.loadApp({ firebase: fbk, config: CONFIG, storage: { 'sm.workspace': CODE, ...(opts.storage || {}) } });
   await D.flush();
   fbk.signIn(uid, { name: uid }); await D.flush();
-  fbk.deliver(WS, opts.club || club()); await D.flush();
+  await fbk.serveClub(CODE, opts.club || club(), D.flush); await D.flush();
   if (opts.owner) { fbk.deliver('appOwners', { [uid]: true }); await D.flush(); }
   return { D, fbk };
 }
@@ -340,7 +340,7 @@ function writeOne(D, extra = {}) {
     const saved = { ...D.storage._d };
     const fbk2 = makeFakebase();
     const D2 = H.loadApp({ firebase: fbk2, config: CONFIG, storage: saved });
-    await D2.flush(); fbk2.signIn('jaz'); await D2.flush(); fbk2.deliver(WS, club()); await D2.flush();
+    await D2.flush(); fbk2.signIn('jaz'); await D2.flush(); await fbk2.serveClub(CODE, club(), D2.flush); await D2.flush();
     check('after a reload it is still here', !!D2.findDrill('mine:' + off.id), true);
     /* Sent on connect, not only when the Drills screen opens: a drill made
        offline reaches the club even if she never opens Drills again. */

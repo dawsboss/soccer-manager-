@@ -230,7 +230,7 @@ const blank = { awFrom: '', awTo: '', awStart: '', awEnd: '', awNote: '' };
     for (const [who, wants] of [['mum', false], ['jaz', true], ['boss', true]]) {
       const fbk = makeFakebase();
       const D = H.loadApp({ firebase: fbk, config: CONFIG, storage: { 'sm.workspace': 'CLUB' } });
-      await D.flush(); fbk.signIn(who, { name: who }); await D.flush(); fbk.deliver('workspaces/CLUB', club()); await D.flush();
+      await D.flush(); fbk.signIn(who, { name: who }); await D.flush(); await fbk.serveClub('CLUB', club(), D.flush); await D.flush();
       D.ui.view = 'mycal'; D.render(); await D.flush();
       check(who + (wants ? ': reads the coaches\' time off' : ': never asks for it'), fbk.readPaths().includes('training/CLUB/away'), wants);
       if (who !== 'jaz') continue;

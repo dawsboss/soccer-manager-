@@ -231,9 +231,9 @@ own children's records, the others' shirt numbers (`roster/`) and the
 staff's names (`names/`), never anyone's notes, ratings or email; the access
 log is the admins'. Built in build 110 (`test/rules.js` both passes,
 `test/orgs.js`, `test/move.js`; AUTH.md, *The move to `orgs/{orgId}`*), and
-every club moved by 2026-10-09 (the owner). What is left is tidying, not
-security: a fortnight on (from 2026-10-23), the old tree comes out of the
-rules and the server (AUTH.md, build order step 5).
+every club moved by 2026-10-09 (the owner). The old tree came out of the
+rules, the server and the app in build 128 (AUTH.md, build order step 5):
+`workspaces/` has no rule, so nothing left there is anyone's to read.
 
 ### SEC-D10 · The coach's notes are coaches' and admins' only
 A coach's note, rating and who to pair a child with or keep her apart from

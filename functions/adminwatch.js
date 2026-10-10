@@ -57,9 +57,9 @@ async function onChange(env, params, kind, before, after, now = Date.now()) {
   if (await env.get('retired/' + code)) return NONE;
   // a redelivered event says nothing twice
   if (params.eid && !(await env.claim(`serverState/roleSent/${code}/${String(params.eid).replace(/[.#$\[\]\/]/g, '_')}`, cur => (cur ? undefined : now)))) return NONE;
-  const L = await where(env.get, code, params.tree);
+  const L = await where(env.get, code);
   const access = (await readAccess(env.get, L)) || {};
-  const log = L.tree === 'orgs' ? await env.get(L.base + '/log') : access.log;
+  const log = await env.get(L.base + '/log');
   const name = u => {
     const m = (access.members || {})[u];
     return (m && typeof m === 'object' && typeof m.name === 'string' && m.name.slice(0, 80)) || '';
@@ -71,7 +71,7 @@ async function onChange(env, params, kind, before, after, now = Date.now()) {
   const targetName = name(uid) || 'Someone';
   const club = ((access.org || {}).name && String(access.org.name).slice(0, 80)) || 'your club';
 
-  const audit = { at: now, act, target: uid, targetName, by, byName, tree: L.tree };
+  const audit = { at: now, act, target: uid, targetName, by, byName };
   const key = `${now}_${kind}_${uid}`.replace(/[.#$\[\]\/]/g, '_');
   await env.set(`clubAudit/${code}/${key}`, JSON.parse(JSON.stringify(audit)));
 
