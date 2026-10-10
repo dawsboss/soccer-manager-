@@ -1539,6 +1539,63 @@
         }
       }
     },
+    "staffAsks": {
+      "$code": {
+        "$uid": {
+          ".read": "auth != null && auth.uid === $uid",
+          "$id": {
+            ".write": "auth != null && auth.uid === $uid && ((!data.exists() && newData.exists() && (root.child('orgs/' + $code + '/access/admins/' + auth.uid).exists() || root.child('orgs/' + $code + '/access/coachIndex/' + auth.uid).exists())) || (data.exists() && !newData.exists()))",
+            ".validate": "newData.hasChildren(['op', 'at']) && (newData.child('op').val() === 'approve' || newData.child('op').val() === 'fan' || newData.child('op').val() === 'squad' || newData.child('op').val() === 'invites') && newData.child('at').val() <= now + 600000 && newData.child('at').val() >= now - 600000",
+            "op": {
+              ".validate": "newData.isString()"
+            },
+            "tid": {
+              ".validate": "newData.isString() && newData.val().length <= 128"
+            },
+            "uid": {
+              ".validate": "newData.isString() && newData.val().length <= 128"
+            },
+            "pids": {
+              "$i": {
+                ".validate": "newData.isString() && newData.val().length <= 128 && $i.length <= 3"
+              }
+            },
+            "uses": {
+              ".validate": "newData.isNumber()"
+            },
+            "days": {
+              ".validate": "newData.isNumber()"
+            },
+            "list": {
+              "$i": {
+                ".validate": "newData.hasChildren(['team', 'role', 'email']) && $i.length <= 3",
+                "team": {
+                  ".validate": "newData.isString() && newData.val().length <= 128"
+                },
+                "role": {
+                  ".validate": "newData.val() === 'coach' || newData.val() === 'parent'"
+                },
+                "player": {
+                  ".validate": "newData.isString() && newData.val().length <= 128"
+                },
+                "email": {
+                  ".validate": "newData.isString() && newData.val().length <= 254"
+                },
+                "$other": {
+                  ".validate": false
+                }
+              }
+            },
+            "at": {
+              ".validate": "newData.isNumber()"
+            },
+            "$other": {
+              ".validate": false
+            }
+          }
+        }
+      }
+    },
     "mailAsks": {
       "$code": {
         "$uid": {

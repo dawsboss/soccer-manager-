@@ -647,5 +647,23 @@ const CLUB = {
     check('rules too old for the ask: the phone makes it as before', fbk.record.writes.some(w => /^orgs\/sm-[0-9a-f]+\/access\/admins\/coach$/.test(w.path)), true);
   }
 
+  {
+    // with the server: the imported roster's invites are one ask (functions/staff.js, test/staffask.js)
+    const club = JSON.parse(JSON.stringify(CLUB));
+    club.teams.t1.players.p1.name = 'Ella Moss';
+    const { A, fbk } = await boot({ storage: { 'sm.workspace': 'CLUB' }, server: true });
+    fbk.signIn('adm', { name: 'Ada' }); await A.flush();
+    fbk.deliver('.info/connected', true);
+    await fbk.serveClub('CLUB', club, A.flush); await A.flush();
+    A.importContacts = { list: [{ role: 'parent', team: 'Flight', player: 'Ella Moss', email: 'dad@x.test' }, { role: 'coach', team: 'Flight', email: 'new.coach@x.test' }], made: {}, sent: {} };
+    const rows = A.importInviteRows();
+    A.inviteImported(); await A.flush();
+    const ask = fbk.record.writes.find(w => /^staffAsks\/CLUB\/adm\//.test(w.path));
+    deepEq('asked of the server as a list, by team and child id, never a name', [ask && ask.value.op, JSON.stringify(ask && ask.value.list)], ['invites', '[{"team":"t1","role":"parent","player":"p1","email":"dad@x.test"},{"team":"t1","role":"coach","email":"new.coach@x.test"}]']);
+    check('nothing written from the phone', fbk.record.writes.some(w => /^(invites|clubInvites)\//.test(w.path)), false);
+    fbk.deliver(ask.path + '/answer', { ok: true, made: { 0: 'iDad', 1: 'iCoach' }, at: 1 }); await A.flush(10);
+    deepEq('each row knows its invite', [A.importContacts.made[rows[0].key], A.importContacts.made[rows[1].key]], ['iDad', 'iCoach']);
+  }
+
   H.summary('invites');
 })();

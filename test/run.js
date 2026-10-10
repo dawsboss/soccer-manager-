@@ -36,6 +36,7 @@ const SUITES = [
   ['routing', 'links in, links out'],
   ['sync', 'auth, the workspace read, and its races'],
   ['invites', 'joining a club by invite, on both sides'],
+  ['staffask', 'letting people in as one server call: a request or a fan approved, a squad\'s links, an imported roster\'s invites'],
   ['joinask', 'joining by invite and starting a club: one call to the server, all of it or none'],
   ['join', 'a squad of invites at once, and the team link a coach approves'],
   ['messages', 'notices and family conversations, read and written by whom'],

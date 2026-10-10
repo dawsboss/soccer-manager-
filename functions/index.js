@@ -43,6 +43,7 @@ const join = require('./join');
 const imports = require('./imports');
 const backup = require('./backup');
 const mail = require('./mail');
+const staff = require('./staff');
 const forget = require('./forget');
 
 initializeApp();
@@ -375,6 +376,21 @@ exports.migrateOld = onSchedule({ schedule: 'every 24 hours', maxInstances: 1 },
     set: (p, v) => root.child(p).set(v),
     update: patch => root.update(patch)
   });
+});
+
+/* A coach's or an admin's letting-in (staff.js; SERVER.md, *Joining and
+   starting clubs*): a team-link request or a fan's ask approved, a squad's
+   parent links, an imported roster's invites, each one write, asked at
+   staffAsks/{code}/{uid}/{id}. It writes roles, so it gets what access.js
+   gets, for the tables that follow. */
+exports.staffAsk = onValueCreated('/staffAsks/{code}/{uid}/{id}', event => {
+  const root = event.data.ref.root;
+  return staff.onAsk({
+    get: p => root.child(p).get().then(s => s.val()),
+    set: (p, v) => root.child(p).set(v),
+    remove: p => root.child(p).remove(),
+    update: patch => root.update(patch)
+  }, event.params, event.data.val());
 });
 
 /* Nightly backups (backup.js; SERVER.md, *Backups and imports*): every club

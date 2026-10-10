@@ -1833,6 +1833,29 @@ reads('nor read', COACH, 'shareOwners/sh1', false);
      What each write may be is the server's to check, against the club. */
   /* Email from the club (functions/mail.js): an admin or a coach asks, in
      her own name; who gets what is the server's to check against the club. */
+  /* Letting people in from the server (functions/staff.js): an admin or a
+     coach asks in her own name; the team and the children are the server's
+     to check. */
+  console.log('\n--- asking the server: staffAsks ---');
+  const SA = 'staffAsks/CLUB/';
+  writes('a coach asks for a request to be approved', COACH, SA + 'coach/s1', { op: 'approve', tid: 't1', uid: 'sam', pids: ['p2'], at: NOW }, true);
+  writes('or a fan let in', COACH, SA + 'coach/s1', { op: 'fan', tid: 't1', uid: 'aunt', at: NOW }, true);
+  writes('an admin for a squad\'s links', ADM, SA + 'adm/s1', { op: 'squad', tid: 't1', uses: 2, days: 30, at: NOW }, true);
+  writes('or an imported roster\'s invites', ADM, SA + 'adm/s1', { op: 'invites', list: [{ team: 't1', role: 'parent', player: 'p2', email: 'x@y.z' }], at: NOW }, true);
+  writes('not a tracker', TRK, SA + 'trk/s1', { op: 'approve', tid: 't1', uid: 'sam', pids: ['p2'], at: NOW }, false);
+  writes('not a family', MUM, SA + 'mum/s1', { op: 'approve', tid: 't1', uid: 'sam', pids: ['p2'], at: NOW }, false);
+  writes('not a stranger', RANDO, SA + 'rando/s1', { op: 'squad', tid: 't1', at: NOW }, false);
+  writes('not in another\'s name', COACH, SA + 'adm/s1', { op: 'squad', tid: 't1', at: NOW }, false);
+  writes('not something else', ADM, SA + 'adm/s1', { op: 'admin', at: NOW }, false);
+  writes('not a role the roster\'s invites do not make', ADM, SA + 'adm/s1', { op: 'invites', list: [{ team: 't1', role: 'admin', email: 'x@y.z' }], at: NOW }, false);
+  writes('not stamped an hour ago', ADM, SA + 'adm/s1', { op: 'squad', tid: 't1', at: NOW - H }, false);
+  reads('she reads her own asks and their answers', COACH, SA + 'coach', true);
+  reads('nobody else\'s', ADM, SA + 'coach', false);
+  DB.staffAsks = { CLUB: { coach: { s1: { op: 'fan', tid: 't1', uid: 'aunt', at: NOW, answer: { ok: true, at: NOW } } } } };
+  writes('the answer is never hers to write', COACH, SA + 'coach/s1/answer', { ok: true }, false);
+  writes('she clears it away', COACH, SA + 'coach/s1', null, true);
+  delete DB.staffAsks;
+
   console.log('\n--- asking the server: mailAsks ---');
   const M = 'mailAsks/CLUB/';
   writes('an admin asks for invitations to be sent', ADM, M + 'adm/m1', { op: 'invites', ids: ['iAbc', 'iDef'], at: NOW }, true);

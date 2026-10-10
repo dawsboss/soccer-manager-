@@ -62,6 +62,11 @@ And the rest of SERVER.md's list, the same day:
   claimed only when it starts `test-` (the app owner's test clubs); a real
   club is made by the server or not at all. `rules.js`'s gaps 3 and 10 are
   closed.
+- **Letting people in is one call too.** A team-link request or a fan's
+  ask approved, a squad's parent links and an imported roster's invites each
+  go to the server as one ask (`functions/staff.js`), written whole, with
+  the lookup tables following; the phone's own writes stay as the fallback
+  for rules too old to take the ask.
 - **Two small fixes:** a plan the migration moves onto the calendar is noted
   as already said, so nobody is told of a "new" practice they planned months
   ago; an import too big for one trigger event goes the phone's way.
@@ -69,7 +74,7 @@ And the rest of SERVER.md's list, the same day:
 Each asks the server only where `firebase-config.js` sets the new
 `SOCCER_SERVER`; joining, importing and emailing fall back to the phone's
 own writes where the rules are too old to take the ask, or the club has no
-mailer. New suites `joinask`, `importask`, `migrate`, `backup` and `mail`,
+mailer. New suites `joinask`, `staffask`, `importask`, `migrate`, `backup` and `mail`,
 and more in `mycalfeed`, `mycal`, `invites`, `rules` and `ids`.
 ## Families are asked until their children's details are finished — 2026-10-10 (build 129)
 

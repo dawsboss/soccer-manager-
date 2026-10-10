@@ -100,11 +100,13 @@ does the bookkeeping, not that the phone works offline first.
   last (`functions/access.js`, with the lookup tables below). A club-wide
   viewer counts as a role (build 118): `accessViewer` (orgs/ only) keeps her
   index entry and bookmark, and takes away the invite she came by.
-- **Still:** any phone that reads a club it holds a role in writes the bookmark
-  `userOrgs/{uid}/{code}` (`noteMyClub()`), and admins tidy it when a role is
-  withdrawn.
-- **With a server:** written when the role is granted and removed when it is
-  taken away, in the same step.
+- **Moved (build 130):** joining by invite, starting a club and being let
+  in (`functions/join.js`, `functions/staff.js`) write the bookmark in the
+  same write as the role, and the access triggers take it away with her
+  last role, so it is written when the role is granted and removed when it
+  is taken away, as *With a server* asked.
+- **Still, and agreeing:** any phone that reads a club it holds a role in
+  writes the same bookmark (`noteMyClub()`), for an account from before.
 
 ---
 
@@ -253,10 +255,21 @@ does the bookkeeping, not that the phone works offline first.
   `mailAsk`; *Email* below): `mailImported()` asks the club to send each
   invite it made as a real invitation in the club's name, and sends
   Firebase's sign-in links only where the club has no mailer.
-- **What is left:** approving a team-link request (`approveClaim()`), a
-  fan's ask (`approveFan()`), a squad of links (`inviteSquad()`) and the
-  imported roster's invites (`inviteImported()`) are still the phone's
-  writes; the access triggers keep the tables behind them.
+- **Moved (build 130) too: letting people in** (`functions/staff.js`,
+  `staffAsk`, `staffAsks/{code}/{uid}/{id}`): a team-link request approved
+  (`approveClaim()`: the approval, the family on each child's record, her
+  index entry, her member entry and the log in one write, the tables by
+  `settle`), a fan's ask (`approveFan()`, with her name for the family and
+  the fans table), a squad's parent links (`inviteSquad()`: one per child
+  with no parent and no open invite, with the limits she chose, ids from the
+  server's generator) and an imported roster's invites (`inviteImported()`:
+  one email-bound each, nobody who has the role or an open invite). Each is
+  checked against the club as the rules checked the phone (an admin, or the
+  team's coach for a request or a fan; admins alone for links), and the
+  phone's own writes are the fallback for rules too old to take the ask.
+  `test/staffask.js`, and the page in `test/join.js` and `test/invites.js`.
+- **What is left here:** nothing a phone does for somebody else. A single
+  invite from People is its maker's own two writes, as before.
 - **Before the server, and still the fallback:** joining by invite is several writes from the invitee's own phone in
   the order the rules need (spend the invite, take the role, add herself to the
   index) (`redeemInvite()`); approving a team-link request is the coach writing

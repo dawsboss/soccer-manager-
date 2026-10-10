@@ -2721,13 +2721,19 @@ function sheetSquadInvites(tid) {
     <p class="muted">A child can have any number of parents. For a second one (or a grandparent who does the driving), post the team link, or make one more link from People → <i>Invite someone</i>.</p>
     <button class="btn quiet wide" data-act="closesheet">Done</button>`);
 }
-// SERVER.md: one invite at a time from the admin's phone; a server would make the squad's in one call.
+// SERVER.md: a squad's links asked of the server (staffAsk) where it is deployed; one invite at a time from the phone otherwise.
 async function inviteSquad(tid) {
   const t = state.teams[tid];
   if (!t || !canAdmin()) { toast('Club admins only'); return; }
   if (!fb || !rtdb || !me) { toast(me ? 'Needs a connection to the database' : 'Sign in first'); return; }
   const todo = players(t).filter(p => needsParent(t, p) && !openParentInvite(tid, p));
   const lim = readLimits('sqinv');
+  // the whole squad's links in one write, where the server is deployed (functions/staff.js)
+  const ans = todo.length ? await staffAsk({ op: 'squad', tid, uses: lim.uses, days: lim.days }) : null;
+  if (ans) {
+    if (!ans.ok) { toast(STAFF_NO[ans.why] || 'Not made — check the signal and try again'); return; }
+    sheetSquadInvites(tid); return;
+  }
   let n = 0;
   for (const p of todo) {
     try { await writeInvite(t, 'parent', p, '', lim); n++; } catch (e) {
@@ -2834,14 +2840,23 @@ function sheetImportInvites() {
     <p class="muted">Firebase sends it, worded as a sign-in link rather than an invitation, so a message to the team saying it's coming helps. Every link is also under People → Invites to copy or send again.</p>` : ''}
     <button class="btn quiet wide" data-act="importinviteskip">${todo || unsent.length ? 'Not now' : 'Done'}</button>`);
 }
-// SERVER.md: one invite at a time from the admin's phone; a server would make the roster's in one call.
+// SERVER.md: an imported roster's invites asked of the server (staffAsk) where it is deployed; one at a time from the phone otherwise.
 async function inviteImported() {
   if (!importContacts) return;
   if (!canAdmin()) { toast('Club admins only'); return; }
   if (!fb || !rtdb || !me) { toast(me ? 'Needs a connection to the database' : 'Sign in first'); return; }
   const ic = importContacts;
+  const todo = importInviteRows(ic).filter(x => x.st === 'todo');
+  // all of them in one write, where the server is deployed (functions/staff.js)
+  const ans = todo.length ? await staffAsk({ op: 'invites', list: todo.map(r => ({ team: r.t.id, role: r.role, ...(r.p ? { player: r.p.id } : {}), email: r.email })) }) : null;
+  if (importContacts !== ic) return;
+  if (ans) {
+    if (!ans.ok) { toast(STAFF_NO[ans.why] || 'Not made — check the signal and try again'); return; }
+    for (const [i, id] of Object.entries(ans.made || {})) if (todo[Number(i)]) ic.made[todo[Number(i)].key] = id;
+    sheetImportInvites(); return;
+  }
   let n = 0;
-  for (const r of importInviteRows(ic).filter(x => x.st === 'todo')) {
+  for (const r of todo) {
     try { ic.made[r.key] = (await writeInvite(r.t, r.role, r.role === 'parent' ? r.p : null, r.email)).id; n++; } catch (e) {
       toast(/permission|denied/i.test((e && e.code) || '') ? 'The database refused it — are the invite rules from README published?' : 'Stopped — no connection');
       break;
@@ -3130,6 +3145,22 @@ function claimMatches(t, c) {
 }
 
 // SERVER.md: approval written before the index entry, for the rules; a server would do it in one call.
+/* Letting people in is one call to the server where it is deployed
+   (functions/staff.js, staffAsk): the approval, the family on each child's
+   record, her index entry, her member entry and the log in one write, then
+   the tables. The phone's own writes below are for a project without the
+   server, or rules too old to take the ask; the server could not finish is
+   said, never done again by hand. */
+const STAFF_WAIT = 30000;
+let staffFallback = false;
+async function staffAsk(v) {
+  if (!serverOn() || staffFallback || !rtdb || !me || !wsCode() || !online) return null;
+  const ans = await askServer(`staffAsks/${wsCode()}/${me.uid}/${uid()}`, v, STAFF_WAIT);
+  if (ans && ans.why === 'rules') { staffFallback = true; return null; }
+  return ans;
+}
+const STAFF_NO = { notyours: 'Club admins and that team’s coaches only', gone: 'That request has gone', approved: 'Already approved', player: 'That player is no longer on the squad', retired: 'This club has been retired' };
+// SERVER.md: approving a request asks the server (staffAsk) where it is deployed; the phone's own writes are the fallback.
 async function approveClaim(tid, u, pids) {
   const t = state.teams[tid];
   if (!t || !mayGrant(tid)) { toast('Club admins and that team’s coaches only'); return; }
@@ -3137,6 +3168,17 @@ async function approveClaim(tid, u, pids) {
   const picked = pids.filter(pid => (t.players || {})[pid]);
   if (!c || !picked.length) { toast('Pick their child'); return; }
   const at = nowMs();
+  const ans = await staffAsk({ op: 'approve', tid, uid: u, pids: picked });
+  if (ans) {
+    if (!ans.ok) { toast(STAFF_NO[ans.why] || 'Not approved — check the signal and try again'); return; }
+    // the club has it all; the phone keeps what the listeners will bring in a moment
+    setDeep(claimsSeen, `${tid}/${u}/approved`, { by: me.uid, at });
+    for (const pid of picked) setDeep(state, `teams/${tid}/players/${pid}/guardians/${u}`, true);
+    if (!(acc().index || {})[u]) setDeep(state, `access/index/${u}`, tid);
+    saveLocal(); render();
+    toast(`${c.name || c.email || 'They'} can open the team now`);
+    return;
+  }
   try {
     // first, because the index rule looks for it
     await fb.set(fb.ref(fb.db, `claims/${wsCode()}/${tid}/${u}/approved`), { by: me.uid, at, players: Object.fromEntries(picked.map(x => [x, true])) });
@@ -3158,7 +3200,7 @@ async function approveClaim(tid, u, pids) {
    order as a family's — the approval first, which the index rule looks for —
    then her place on the child's record, the index entry naming this team,
    and the team's fans table, which the rule holds to the record. */
-// SERVER.md: approval written before the index entry, for the rules; a server would do it in one call.
+// SERVER.md: a fan's ask approved by the server (staffAsk) where it is deployed; the phone's writes in the rules' order otherwise.
 async function approveFan(tid, u) {
   const t = state.teams[tid];
   if (!t || !mayGrant(tid)) { toast('Club admins and that team’s coaches only'); return; }
@@ -3167,6 +3209,16 @@ async function approveFan(tid, u) {
   if (!p) { toast(c ? 'That player is no longer on the squad' : 'That request has gone'); return; }
   if (!fb || !me) { toast('Needs a connection to the database'); return; }
   const at = nowMs();
+  const ans = await staffAsk({ op: 'fan', tid, uid: u });
+  if (ans) {
+    if (!ans.ok) { toast(STAFF_NO[ans.why] || 'Not approved — check the signal and try again'); return; }
+    setDeep(claimsSeen, `${tid}/${u}/approved`, { by: me.uid, at });
+    setDeep(state, `teams/${tid}/players/${p.id}/fans/${u}`, true);
+    if (!(acc().index || {})[u]) setDeep(state, `access/index/${u}`, tid);
+    saveLocal(); render();
+    toast(`${c.name || c.email || 'They'} can follow ${firstName(p)} now`);
+    return;
+  }
   try {
     await fb.set(fb.ref(fb.db, `claims/${wsCode()}/${tid}/${u}/approved`), { by: me.uid, at, fan: p.id });
   } catch (e) {

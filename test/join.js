@@ -10,7 +10,7 @@
    before she is let in. */
 
 const H = require('./harness');
-const { check } = H;
+const { check, deepEq } = H;
 const { makeFakebase } = require('./fakebase');
 
 const CONFIG = { apiKey: 'k', databaseURL: 'https://prod.example', projectId: 'p' };
@@ -41,8 +41,9 @@ const JOINDOC = { ws: 'CLUB', team: 't1', teamName: 'Flight', clubName: 'Lakesid
 
 async function boot(who, opts = {}) {
   const fbk = makeFakebase();
+  if (opts.refuse) fbk.refuseWrites(p => /^staffAsks\//.test(p));
   const storage = opts.storage || { 'sm.workspace': 'CLUB' };
-  const A = H.loadApp({ firebase: fbk, config: CONFIG, storage, search: opts.search });
+  const A = H.loadApp({ firebase: fbk, config: CONFIG, storage, search: opts.search, ...(opts.server ? { window: { SOCCER_SERVER: true } } : {}) });
   await A.flush();
   if (who) { fbk.signIn(who, { name: opts.name || who, email: who + '@x.test' }); await A.flush(); }
   if (storage['sm.workspace']) { await fbk.serveClub('CLUB', JSON.parse(JSON.stringify(CLUB)), A.flush); await A.flush(); }
@@ -209,5 +210,61 @@ const valueAt = (fbk, p) => { const w = fbk.writtenTo(p); return w.length ? w[w.
     check('and is not listening for requests', fbk.watching('claims/CLUB/t1'), false);
   }
 
+  /* With the server deployed (functions/staff.js, pinned in test/staffask.js),
+     each of these is one ask: nothing of the club is written from the phone,
+     and the phone's own writes are only for rules too old to take the ask. */
+  console.log('\n--- with the server: one ask each ---');
+  const asks = fbk => fbk.record.writes.filter(w => /^staffAsks\//.test(w.path));
+  // what the approval itself would have written: the connect's own writes (her name, the tables) are not it
+  const clubWrites = (fbk, from = 0) => paths(fbk).slice(from).filter(x => /^(orgs\/CLUB\/(squad|access\/index|members\/sam|log)|claims|invites|clubInvites)/.test(x));
+  {
+    const { A, fbk } = await boot('coach', { server: true });
+    fbk.deliver('.info/connected', true);
+    fbk.deliver('claims/CLUB/t1', { sam: { code: CODE, shirt: '9', name: 'Sam', email: 'sam@x.test', at: 1 } }); await A.flush();
+    A.ui.teamId = 't1'; A.ui.view = 'roster'; A.render();
+    const n0 = fbk.record.writes.length;
+    A.click({ act: 'claimok', tid: 't1', uid: 'sam' }); await A.flush();
+    const ask = asks(fbk)[0];
+    deepEq('approving asks the server, in her own name, naming the children picked', [ask && ask.path.startsWith('staffAsks/CLUB/coach/'), ask && ask.value.op, ask && ask.value.uid, JSON.stringify(ask && ask.value.pids)], [true, 'approve', 'sam', '["p2"]']);
+    check('and writes nothing of it from the phone', clubWrites(fbk, n0).join(), '');
+    fbk.deliver(ask.path + '/answer', { ok: true, pids: ['p2'], at: 1 }); await A.flush(10);
+    check('approved: the request leaves the list, the child has her parent on this phone', [A.pendingClaims('t1').length, A.state.teams.t1.players.p2.guardians.sam].join(), '0,true');
+    check('still nothing written from the phone', clubWrites(fbk, n0).join(), '');
+    check('said', /can open the team now/.test(A.lastToast()), true);
+  }
+  {
+    const { A, fbk } = await boot('coach', { server: true });
+    fbk.deliver('.info/connected', true);
+    fbk.deliver('claims/CLUB/t1', { sam: { code: CODE, shirt: '9', name: 'Sam', at: 1 } }); await A.flush();
+    const n0 = fbk.record.writes.length;
+    A.click({ act: 'claimok', tid: 't1', uid: 'sam' }); await A.flush();
+    fbk.deliver(asks(fbk)[0].path + '/answer', { ok: false, why: 'notyours', at: 1 }); await A.flush(10);
+    check('the server\'s no is said, and the phone does not do it itself', [/coaches only/.test(A.lastToast()), clubWrites(fbk, n0).length].join(), 'true,0');
+  }
+  {
+    const { A, fbk } = await boot('coach', { server: true, refuse: true });
+    fbk.deliver('.info/connected', true);
+    fbk.deliver('claims/CLUB/t1', { sam: { code: CODE, shirt: '9', name: 'Sam', at: 1 } }); await A.flush();
+    A.click({ act: 'claimok', tid: 't1', uid: 'sam' }); await A.flush(20);
+    check('rules too old for the ask: the phone approves as it always did', (valueAt(fbk, 'claims/CLUB/t1/sam/approved') || {}).by, 'coach');
+  }
+  {
+    const { A, fbk } = await boot('adm', { server: true });
+    fbk.deliver('.info/connected', true);
+    fbk.deliver('clubInvites/CLUB', {}); await A.flush();
+    A.click({ act: 'squadinvites', tid: 't1' });
+    A.click({ act: 'squadinvitego', tid: 't1' }); await A.flush();
+    const ask = asks(fbk)[0];
+    deepEq('a squad\'s links are one ask, with the limits', [ask && ask.value.op, ask && ask.value.tid, ask && ask.value.uses, ask && ask.value.days], ['squad', 't1', 1, 14]);
+    check('no invite written from the phone', fbk.record.writes.some(w => /^invites\//.test(w.path)), false);
+    fbk.deliver(ask.path + '/answer', { ok: true, made: { p2: 'iA', p3: 'iB' }, at: 1 }); await A.flush(10);
+    check('made: the sheet is drawn again, from the admin\'s list the club keeps', /Invite Flight/.test(String(A.dom.node('#sheet').innerHTML)), true);
+  }
+  {
+    const { A, fbk } = await boot('coach', { server: true });
+    fbk.deliver('.info/connected', true);
+    A.click({ act: 'squadinvitego', tid: 't1' }); await A.flush();
+    check('a coach is refused in the handler before any ask', asks(fbk).length, 0);
+  }
   H.summary('team links and squad invites');
 })();
