@@ -2,7 +2,7 @@
    Static app. Data lives in localStorage, and mirrors to Firebase Realtime
    Database when a config + workspace code are present. */
 
-const BUILD = '129';
+const BUILD = '130';
 const BUILT = '2026-10-09';
 /* The version of database.rules.json this app was written against. The rules
    carry the same number in rulesVersion's .write, which accepts that number
@@ -893,7 +893,7 @@ async function initSync() {
       /* Care details (AUTH.md, *Care*): a family her own children's, a coach
          her own teams' copies, an admin every team's. */
       const care = {}, teamCare = {};
-      if (!r.all && me) await Promise.all(Object.keys(children).map(async c => { const v = await once('care/' + c); if (v) care[c] = v; }));
+      if (!r.all && me) await Promise.all(Object.keys(children).map(async c => { const v = await once('care/' + c); if (v !== undefined) careHeard.add(c); if (v) care[c] = v; }));
       await Promise.all(careTeams(r, access).map(async t => { const v = await once('teamCare/' + t); if (v !== undefined) teamCare[t] = v || {}; }));
       /* Registration (AUTH.md, *Registration*): the programs and waivers
          everyone in the club reads; every registration and agreement for an
@@ -991,6 +991,7 @@ async function initSync() {
         // and her care details, which only her family (and the admins) read
         orgsOffs.push(dbMod.onValue(dbMod.ref(db, OB() + '/care/' + c), cs => {
           if (!live()) return;
+          careHeard.add(c);
           state.care = state.care || {};
           const own = { [c]: cs.val() || undefined };
           overlayPending(own, 'care');
@@ -6704,6 +6705,8 @@ function render() {
   const pb = document.querySelector('#tabs [data-view="practice"]');
   if (pb) pb.hidden = !train;
   if (ui.view === 'practice' && !train) ui.view = 'season';
+  // a family past the club's deadline for her child's details: her calendar and messages, until it is done
+  if (!shut && detailsBlocked() && !DETAILS_OPEN.has(ui.view)) { ui.view = 'mine'; inGame = false; }
   // club admin, account settings and the person's calendar are not team-level, so the tab row steps aside
   const teamLevel = ['season', 'roster', 'practice'].includes(ui.view);
   if (ui.view === 'people' && !canAdmin() && !teams().some(x => isCoach(x.id, me && me.uid))) ui.view = 'club';
@@ -6792,7 +6795,7 @@ function render() {
   lastScreen = here;
   placeMemo = new Map();
   try {
-    app.innerHTML = envNote + saveNote + (shut ? '' : alertBar()) + joinNote + roleNote + roNote + (
+    app.innerHTML = envNote + saveNote + (shut ? '' : alertBar() + detailsNote()) + joinNote + roleNote + roNote + (
       v === 'game' ? (g === 'track' ? viewTrack() : g === 'stats' ? viewStats() : g === 'recap' ? viewRecap() : g === 'pitch' ? viewMatch() : g === 'plan' ? viewPlan() : g === 'subs' ? viewSubs() : viewFeed()) :
         v === 'roster' ? viewRoster() :
           v === 'season' ? viewSeason() :
@@ -17948,13 +17951,62 @@ function mayEditKid(c) {
   if (isAdmin(me.uid) || kidFamily(c)) return true;
   return c.by === me.uid && !c.confirmed && !!(acc().coachIndex || {})[me.uid];
 }
-// what the club still has to ask her family for
+/* What the club requires of a child's details (AUTH.md, *Getting families
+   to finish their children's details*): the admins choose from these, at
+   org/details/need; birth date, gender and someone to call until they say
+   otherwise. And a deadline, org/details/by, after which a family with a
+   child still to finish sees her calendar and messages only. */
+const DETAILS_NEED = { born: 'birth date', gender: 'gender', contact: 'someone to call', doctor: 'a doctor' };
+const DETAILS_DEFAULT = { born: true, gender: true, contact: true };
+function detailsSet() {
+  const d = (acc().org || {}).details || {};
+  const need = d.need && typeof d.need === 'object' ? Object.fromEntries(Object.keys(DETAILS_NEED).map(k => [k, d.need[k] === true])) : { ...DETAILS_DEFAULT };
+  return { need, by: typeof d.by === 'string' && /^\d{4}-\d\d-\d\d$/.test(d.by) ? d.by : null };
+}
+/* Her care details as this phone holds them: her family's own record, or
+   (for staff) her team's copy. Whether they are known at all matters: a
+   phone that has not heard yet must not tell her family, or block her, that
+   nobody is down to call. */
+let careHeard = new Set();
+function careFor(c) {
+  const own = (state.care || {})[c.id];
+  if (own) return own;
+  for (const [tid, pid] of Object.entries(c.teams || {})) { const x = teamCareOf(tid, pid); if (x) return x; }
+  return null;
+}
+const careKnown = c => !!((state.care || {})[c.id] || careHeard.has(c.id) || Object.keys(c.teams || {}).some(tid => (state.teamCare || {})[tid]));
+// what the club still has to ask her family for, of what it requires
 function kidMissing(c) {
-  const out = [];
-  if (!c.born) out.push('birth date');
-  if (!c.gender) out.push('gender');
-  if (!careContacts(careOf(c.id)).length) out.push('someone to call');
+  const { need } = detailsSet(), out = [], care = careFor(c), known = careKnown(c);
+  if (need.born && !c.born) out.push(DETAILS_NEED.born);
+  if (need.gender && !c.gender) out.push(DETAILS_NEED.gender);
+  if (need.contact && known && !careContacts(care).length) out.push(DETAILS_NEED.contact);
+  if (need.doctor && known && !(care && care.doctor)) out.push(DETAILS_NEED.doctor);
   return out;
+}
+// finished: confirmed by her family, with everything the club requires
+const kidUnfinished = c => !!c && !c.left && (!c.confirmed || kidMissing(c).length > 0);
+const myKidsTodo = () => myClubKids().filter(kidUnfinished);
+/* Past the deadline, a family with a child still to finish sees the screens
+   that tell her where to be and let her ask (the calendar, messages, the
+   bell) and the ones where she finishes (My players, her settings), and the
+   rest once it is done. Never anyone with a staff role: a coach whose own
+   child's form is late still runs her game. The app's, not the database's
+   (AUTH.md says why). */
+const DETAILS_OPEN = new Set(['calendar', 'inbox', 'thread', 'notes', 'mine', 'setup']);
+function detailsBlocked() {
+  if (!me) return false;
+  const { by } = detailsSet();
+  if (!by || todayStr() <= by || isStaffAnywhere(me.uid)) return false;
+  return myKidsTodo().length > 0;
+}
+function detailsNote() {
+  if (!me) return '';
+  const todo = myKidsTodo();
+  if (!todo.length) return '';
+  const { by } = detailsSet(), shutNow = detailsBlocked();
+  const who = wordsAnd(todo.map(c => (c.first || 'Your child') + '\u2019s'));
+  return `<div class="rolebar warn">${esc(who)} details ${todo.length === 1 ? 'aren\u2019t' : 'aren\u2019t'} finished${by && !shutNow ? `: the club needs them by ${esc(dayLabel(by))}` : ''}.${shutNow ? ' Until they are, the app shows your calendar and messages only.' : ''} <button class="linkbtn dark" data-act="kidopen" data-id="${esc(todo[0].id)}">Finish now</button></div>`;
 }
 // 'a, b and c'
 const wordsAnd = xs => xs.length < 2 ? xs.join('') : xs.slice(0, -1).join(', ') + ' and ' + xs[xs.length - 1];
@@ -18020,16 +18072,16 @@ function syncChildren() {
     Promise.resolve(fb.set(fb.ref(fb.db, clubPath(`children/${p.child}/${f}/${u}`)), t.id)).then(() => watchKid(p.child), () => { });
   }
 }
-/* The first time a family's phone holds a child of hers the club registered
-   and she has not confirmed, it asks her, once; then a card on My players
-   until she does. */
+/* A family's phone asks her about a child still to finish once a day it is
+   opened, until she does (the owner, 2026-10-10: close to keeping her out,
+   not quite); the strip on every screen says it the rest of the time. */
 const LS_KIDASK = 'sm.kidask.v1';
 function childCheck() {
   if (!me || needsSignIn()) return;
-  const c = myClubKids().find(k => !k.confirmed);
+  const c = myKidsTodo()[0];
   if (!c) return;
-  const key = LS_KIDASK + ':' + me.uid + ':' + wsCode() + ':' + c.id;
-  try { if (localStorage.getItem(key)) return; localStorage.setItem(key, '1'); } catch (e) { return; }
+  const key = LS_KIDASK + ':' + me.uid + ':' + wsCode() + ':' + c.id, day = todayStr();
+  try { if (localStorage.getItem(key) === day) return; localStorage.setItem(key, day); } catch (e) { return; }
   if (!$('#sheet').hidden) return;
   sheetKid(c.id);
 }
@@ -18106,7 +18158,7 @@ function careCard(t, p) {
 function sheetKid(cid) {
   const c = clubKids()[cid];
   if (!c) return;
-  const fam = kidFamily(c), edit = mayEditKid(c), ask = fam && !c.confirmed;
+  const fam = kidFamily(c), edit = mayEditKid(c), ask = fam && kidUnfinished(c);
   const miss = kidMissing(c), places = kidPlaces(c);
   const shown = v => (v ? esc(v) : '<span class="muted">Not given yet</span>');
   openSheet(`<h3>${ask ? `Check ${esc(c.first || 'your child')}’s details` : esc(kidName(c))}</h3>
@@ -18135,8 +18187,8 @@ function sheetKid(cid) {
 /* What My players shows about the club's records: a card for each child of
    hers still to confirm, and one for a child in the club on no team. */
 function kidCards() {
-  const todo = myClubKids().filter(c => !c.confirmed);
-  const loose = myClubKids().filter(c => c.confirmed && !Object.keys(c.teams || {}).length);
+  const todo = myKidsTodo();
+  const loose = myClubKids().filter(c => !kidUnfinished(c) && !Object.keys(c.teams || {}).length);
   return todo.map(c => `<div class="card"><b>Check ${esc(c.first || 'your child')}’s details</b>
       <p class="muted" style="margin:6px 0 10px">The club has her on its records${kidMissing(c).length ? ` and still needs ${wordsAnd(kidMissing(c).map(x => x === 'someone to call' ? x : 'her ' + x))}` : ''}. Only you can confirm them.</p>
       <button class="btn wide" data-act="kidopen" data-id="${esc(c.id)}">Check her details</button></div>`).join('')
@@ -18202,6 +18254,40 @@ function publishProgram(pr) {
   return Promise.resolve(pr.closed ? fb.remove(ref) : fb.set(ref, regOpenDoc(pr))).then(() => true, () => false);
 }
 
+/* ---- admins: children's details still to finish (AUTH.md, *Getting
+   families to finish their children's details*) ---- */
+// a child on no team has no team's copy of her care details: an admin reads hers, one child at a time
+const careAsked = new Set();
+function staffCareFetch() {
+  if (!fb || !rtdb || !me || !isAdmin(me.uid)) return;
+  for (const c of looseKids()) {
+    if (careHeard.has(c.id) || careAsked.has(c.id)) continue;
+    careAsked.add(c.id);
+    rtdb.mod.onValue(rtdb.mod.ref(rtdb.db, clubPath('care/' + c.id)), sn => {
+      careHeard.add(c.id);
+      if (sn.val()) { state.care = state.care || {}; state.care[c.id] = sn.val(); }
+      render();
+    }, () => { }, { onlyOnce: true });
+  }
+}
+function detailsCard() {
+  const { need, by } = detailsSet();
+  const todo = Object.values(state.children || {}).filter(kidUnfinished).sort((a, b) => kidName(a).localeCompare(kidName(b)));
+  const why = c => [c.confirmed ? '' : 'not confirmed by her family', ...kidMissing(c).map(x => 'no ' + x)].filter(Boolean).join(', ');
+  const where = c => kidPlaces(c).join(', ') || 'no team';
+  return `<div class="card"><h2 style="margin-bottom:8px">Children's details</h2>
+    <p class="muted" style="margin-top:0">${todo.length ? `${todo.length} child${todo.length === 1 ? ' has' : 'ren have'} details still to finish. Their families see a reminder on every screen and are asked once a day.` : 'Every child\u2019s details are finished.'}</p>
+    ${todo.length ? `<div class="plist" style="margin-bottom:10px">${todo.slice(0, 40).map(c => `<button class="prow" type="button" data-act="kidopen" data-id="${esc(c.id)}" style="grid-template-columns:1fr">
+      <span><span class="pname">${esc(kidName(c))}</span><span class="rowsub">${where(c)} · ${esc(why(c))}</span></span></button>`).join('')}</div>
+      ${todo.length > 40 ? `<p class="muted">…and ${todo.length - 40} more.</p>` : ''}` : ''}
+    <p class="lbl">What the club requires</p>
+    <div class="chips" style="margin-bottom:10px">${Object.entries(DETAILS_NEED).map(([k, l]) => `<button class="chip" type="button" data-act="detneed" data-k="${k}" aria-pressed="${!!need[k]}">${esc(l[0].toUpperCase() + l.slice(1))}</button>`).join('')}</div>
+    <p class="lbl">Deadline</p>
+    <p class="muted" style="margin-top:0">${by ? `After ${esc(dayLabel(by))}, a family with a child still to finish sees only her calendar and messages until she does.` : 'None: families are reminded, never kept out.'} Staff are never kept out.</p>
+    <div class="row"><input type="date" id="detBy" value="${esc(by || '')}">
+      <button class="btn quiet sm" data-act="detby">Set</button>${by ? '<button class="btn quiet sm" data-act="detbyclear">No deadline</button>' : ''}</div></div>`;
+}
+
 /* ---- admins: programs, waivers and who has registered ---- */
 function viewRegs() {
   if (!canRegs()) return `<div class="empty"><strong>Club admins only</strong>Registration is the club's admins'.</div>`;
@@ -18209,8 +18295,10 @@ function viewRegs() {
   const pr = u.prog && (state.programs || {})[u.prog];
   if (pr) return viewRegList(pr);
   const left = Object.values(state.children || {}).filter(c => c && c.left);
+  staffCareFetch();
   return `<div class="stack">
     <div class="spread"><h2>Registrations</h2><button class="btn quiet sm" data-act="goview" data-v="admin">Back</button></div>
+    ${detailsCard()}
     <p class="muted" style="margin-top:0">What families register their children for: a season, a camp, tryouts, training sessions. Each open program has a link to post wherever families will see it. Fees are shown, not taken; families pay the way you tell them.</p>
     ${programsAll().map(p => {
     const rs = Object.values(regsOf(p.id)), waiting = rs.filter(r => r && r.st === 'sent').length;
@@ -20366,16 +20454,21 @@ function onAct(e) {
     const gender = gEl && KID_GENDER[gEl.dataset.v] ? gEl.dataset.v : (c.gender || '');
     if (!first) { toast('Her first name, please'); return; }
     if (born && !BORN_OK.test(born)) { toast('That birth date doesn\'t look right'); return; }
-    if (a === 'kidconfirm' && (!born || !gender)) { toast('The club needs her birth date and gender'); return; }
     const cr = mayCare(c) ? careRead() : null;
     if (cr && cr.why) { toast(cr.why); return; }
-    if (a === 'kidconfirm' && !(cr && cr.rec.contacts)) { toast('Someone the coach can call, please'); return; }
+    // what the club requires (org/details/need), asked for when her family confirms
+    if (a === 'kidconfirm') {
+      const { need } = detailsSet();
+      const lack = [need.born && !born && DETAILS_NEED.born, need.gender && !gender && DETAILS_NEED.gender,
+        need.contact && !(cr && cr.rec.contacts) && DETAILS_NEED.contact, need.doctor && !(cr && cr.rec.doctor) && DETAILS_NEED.doctor].filter(Boolean);
+      if (lack.length) { toast(`The club needs her ${wordsAnd(lack)}`); return; }
+    }
     const put = (f, v) => { if ((c[f] || '') === v) return; if (v) commit(`children/${c.id}/${f}`, v); else if (c[f]) drop(`children/${c.id}/${f}`); };
     put('first', first); put('last', last);
     if (born) put('born', born);
     if (gender) put('gender', gender);
     if (cr && !careSame(cr.rec, careOf(c.id))) saveCare(c, cr.rec);
-    if (a === 'kidconfirm') { commit(`children/${c.id}/confirmed`, { by: me.uid, at: nowMs() }); familyList(c.id); toast('Thank you — confirmed'); }
+    if (a === 'kidconfirm') { if (!c.confirmed) commit(`children/${c.id}/confirmed`, { by: me.uid, at: nowMs() }); familyList(c.id); toast('Thank you — confirmed'); }
     else toast('Saved');
     closeSheet(); render(); return;
   }
@@ -20401,6 +20494,23 @@ function onAct(e) {
       toast(`Started: her family is asked to finish it`); render();
     }, () => toast('Refused: she may have a registration for it already'));
     closeSheet(); return;
+  }
+  /* What the club requires of a child's details, and the deadline: admins
+     only, checked here as well as drawn only for them. */
+  if (a === 'detneed' || a === 'detby' || a === 'detbyclear') {
+    if (!canRegs()) { toast('The club\'s admins set this'); return; }
+    if (a === 'detneed') {
+      const need = { ...detailsSet().need };
+      need[d.k] = !need[d.k];
+      commit('access/org/details/need', Object.fromEntries(Object.keys(DETAILS_NEED).map(k => [k, !!need[k]])));
+    } else if (a === 'detbyclear') drop('access/org/details/by');
+    else {
+      const v = $('#detBy').value;
+      if (!/^\d{4}-\d\d-\d\d$/.test(v || '')) { toast('Pick a date'); return; }
+      commit('access/org/details/by', v);
+      toast(`Set: after ${dayLabel(v)}, families with details to finish see their calendar and messages only`);
+    }
+    render(); return;
   }
   if (['regprog', 'regfilter', 'regopenone', 'regset', 'regplace', 'regexport', 'progedit', 'progwaiver', 'progsave', 'progclose', 'waiveredit', 'waiversave'].includes(a)) {
     if (!canRegs()) { toast('Registration is the club admins\''); return; }

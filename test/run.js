@@ -59,6 +59,7 @@ const SUITES = [
   ['fans', 'a player\'s fans: anyone who can see her asks, her coach approves, and they read less than a parent'],
   ['children', 'a child in the club: her record, read by staff and her own family, made for every child on a team, confirmed by her family alone'],
   ['register', 'registration: programs and waivers for admins, the link and form a family fills (in her own name, in the rules\' order), accepting, and a draft a coach starts for a family'],
+  ['details', 'getting families to finish their children\'s details: reminded on every screen and once a day, kept to the calendar and messages after the club\'s deadline, never staff; what is required and the deadline the admins\''],
   ['forget', 'forgetting an account: every role, table and place on a child in every club, her own nodes, a child with no family left kept for the admins, never the last admin'],
   ['links', 'links with limits: how many people may use one, and until when, for every kind of link'],
   ['mycal', 'my calendar is the person\'s, across clubs, and private unless she shares it'],

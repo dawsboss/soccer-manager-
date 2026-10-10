@@ -8,7 +8,7 @@ before this point lives only in the git log.
 
 ---
 
-## A player's parents, named to her — 2026-10-10 (build 129, rules version 27)
+## A player's parents, named to her — 2026-10-10 (build 130, rules version 27)
 
 Running the app's suites on `orgs/` (build 128) showed a player with her own sign-in seeing her parents as *A parent* on her family's conversations and their lock. On `orgs/` she reads her own member entry and staff names, never the members, which carry everyone's email, so her parents' names had nowhere she could read them.
 
@@ -16,6 +16,31 @@ Running the app's suites on `orgs/` (build 128) showed a player with her own sig
 - **Written** by the parent's own phone once a session (`ownFamilyName()`, straight to the club like `staffName()`), on accepting a parent invite, and by a coach or admin linking her; **taken off** on unlinking and by `forgetMe`.
 - **Rules version 27**: a parent writes or clears her own entry only, and only on a child whose record names her; the team's coaches and admins write it as they write the record.
 - The two known gaps pinned in `test/players.js` are ordinary checks now; `rules.js`, `players.js` and `forget.js` pin the rest.
+
+---
+
+## Families are asked until their children's details are finished — 2026-10-10 (build 129)
+
+A family used to be asked about her child's details once per phone, then only
+by a card on My players, so one *Later* was the end of it (the owner: close to
+keeping her out, but not quite; admins able to insist). AUTH.md, *Getting
+families to finish their children's details*.
+
+- **Every screen says so**, while a child of hers is still to finish (not
+  confirmed by her family, or missing something the club requires), with
+  *Finish now*; and the pop-up comes back once a day the app is opened.
+- **Admins choose what is required** (birth date, gender, someone to call, a
+  doctor; the first three until they say otherwise) and **can set a deadline**
+  on Registrations, which also lists who is still to finish and what each is
+  missing.
+- **After the deadline** a family with a child still to finish sees her
+  calendar, her messages, the bell, My players and her settings, and the rest
+  once it is done (the owner: calendar and messages stay open). Staff are
+  never kept out. It is the app that keeps her out, not the database, which
+  would also shut out a phone with no signal.
+
+No rules change: the setting lives in the club's `org`, which admins already
+write. New suite `test/details.js`.
 
 ---
 

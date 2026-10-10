@@ -2133,7 +2133,7 @@ reads('nor read', COACH, 'shareOwners/sh1', false);
     DB.invites = saved.inv; if (saved.inv === undefined) delete DB.invites;
   }
 
-  /* A parent's name on her child's record (build 129): the player with her
+  /* A parent's name on her child's record (build 130): the player with her
      own sign-in reads her record, never members (it has everyone's email),
      so her family is named to her from here. */
   console.log('\n--- a club on orgs/: a family named on her child ---');
