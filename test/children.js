@@ -136,7 +136,7 @@ function fill(A, o) {
     fill(A, { first: 'Ella', last: 'Fitz' });
     A.click({ act: 'kidconfirm', id: 'p1' }); await A.flush(10);
     check('not without her birth date and gender', !!valueAt(fbk, OB + '/children/p1/confirmed'), false);
-    check('— and says so', /birth date and gender/.test(A.lastToast() || ''), true);
+    check('— and says so', /birth date, gender/.test(A.lastToast() || ''), true);
     fill(A, { first: 'Ellie', last: 'Fitz', born: '2016-05-03', gender: 'F' });
     A.click({ act: 'kidconfirm', id: 'p1' }); await A.flush(10);
     check('not without someone the coach can call', !!valueAt(fbk, OB + '/children/p1/confirmed'), false);
@@ -158,13 +158,19 @@ function fill(A, o) {
     check('the card is gone', /Check her details/.test(A.rendered()), false);
 
     console.log('\n--- her next phone ---');
-    const org = ORG(); org.children.p1.confirmed = { by: 'mumU', at: 2 };
+    const org = ORG(); org.children.p1 = { ...org.children.p1, born: '2016-05-03', gender: 'F', confirmed: { by: 'mumU', at: 2 } };
+    org.care = { p1: { by: 'mumU', at: 2, contacts: { 0: { name: 'Mo', phone: '555' } } } };
     const B = await boot('mumU', org);
     check('a confirmed child asks nothing', sheetOpen(B.A), false);
   }
   {
-    const { A } = await boot('mumU', ORG(), { 'sm.kidask.v1:mumU:CLUB:p1': '1' });
-    check('asked once only: not again on the next open', sheetOpen(A), false);
+    const { A } = await boot('mumU', ORG());
+    const day = A.storage.getItem('sm.kidask.v1:mumU:CLUB:p1');
+    check('the day she was asked is kept', /^\d{4}-\d\d-\d\d$/.test(day || ''), true);
+    const { A: B } = await boot('mumU', ORG(), { 'sm.kidask.v1:mumU:CLUB:p1': day });
+    check('asked once a day: not again on another open the same day', sheetOpen(B), false);
+    const { A: C } = await boot('mumU', ORG(), { 'sm.kidask.v1:mumU:CLUB:p1': '2000-01-01' });
+    check('— but again the next day, while it is still unfinished', sheetOpen(C) && /Check Ella/.test(sheet(C)), true);
   }
 
   console.log('\n--- who changes a child\'s record ---');
@@ -310,6 +316,7 @@ function fill(A, o) {
   {
     const org = ORG();
     org.children.k9 = { id: 'k9', first: 'Mia', last: 'Snow', born: '2015-01-01', gender: 'F', club: true, by: 'adm', at: 1, family: { mumU: 'ik' }, confirmed: { by: 'mumU', at: 2 } };
+    org.care = { ...(org.care || {}), k9: { by: 'mumU', at: 2, contacts: { 0: { name: 'Mo', phone: '555' } } } };
     const { A, fbk } = await boot('mumU', org, { 'sm.kidask.v1:mumU:CLUB:p1': '1' });
     fbk.deliver('families/mumU/CLUB', { k9: true }); await A.flush();
     await fbk.serve(OB, org, () => A.flush(), rulesFor('mumU', org)); await A.flush(10);

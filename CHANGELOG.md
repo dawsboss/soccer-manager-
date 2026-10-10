@@ -8,6 +8,31 @@ before this point lives only in the git log.
 
 ---
 
+## Families are asked until their children's details are finished — 2026-10-10 (build 129)
+
+A family used to be asked about her child's details once per phone, then only
+by a card on My players, so one *Later* was the end of it (the owner: close to
+keeping her out, but not quite; admins able to insist). AUTH.md, *Getting
+families to finish their children's details*.
+
+- **Every screen says so**, while a child of hers is still to finish (not
+  confirmed by her family, or missing something the club requires), with
+  *Finish now*; and the pop-up comes back once a day the app is opened.
+- **Admins choose what is required** (birth date, gender, someone to call, a
+  doctor; the first three until they say otherwise) and **can set a deadline**
+  on Registrations, which also lists who is still to finish and what each is
+  missing.
+- **After the deadline** a family with a child still to finish sees her
+  calendar, her messages, the bell, My players and her settings, and the rest
+  once it is done (the owner: calendar and messages stay open). Staff are
+  never kept out. It is the app that keeps her out, not the database, which
+  would also shut out a phone with no signal.
+
+No rules change: the setting lives in the club's `org`, which admins already
+write. New suite `test/details.js`.
+
+---
+
 ## The old tree comes out — 2026-10-10 (build 128, rules version 26)
 
 AUTH.md's build order step 5. Every club has been on `orgs/{code}` since 2026-10-09, and every rule and server job was still written twice to cover `workspaces/{code}`, which nobody is on. The design waited a fortnight (to 2026-10-23) in case an old phone was still on the old tree or the copy needed undoing; the owner cut it short, since the only two clubs are both the owner's and both moved. Merging publishes the rules and deploys the functions at once.
