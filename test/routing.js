@@ -146,4 +146,64 @@ console.log('\n--- a link survives the round trip it came from ---');
   check('and it produces the same link again', A.uiToHash(), link);
 }
 
+/* Back has to walk back through the screens she visited and no further, in a
+   real browser's history: a fake one here, with entries, pushState,
+   replaceState and a back() that fires popstate the way Chromium does. */
+console.log('\n--- the back button walks back through the app ---');
+{
+  const pops = [];
+  const B = H.loadApp({ hash: '#/calendar', window: { addEventListener(type, fn) { if (type === 'popstate') pops.push(fn); } } });
+  B.state = A.state;
+  const hist = {
+    entries: [{ url: '/#/calendar', state: null }], i: 0, pushes: 0,
+    get state() { return this.entries[this.i].state; },
+    pushState(st, t, url) { this.entries.splice(this.i + 1); this.entries.push({ url, state: st }); this.i++; this.pushes++; global.location.hash = url.replace(/^[^#]*/, ''); },
+    replaceState(st, t, url) { this.entries[this.i] = { url, state: st }; global.location.hash = url.replace(/^[^#]*/, ''); },
+    back() { if (!this.i) return; this.i--; global.location.hash = this.entries[this.i].url.replace(/^[^#]*/, ''); for (const f of pops) f({ type: 'popstate' }); }
+  };
+  global.history = hist;
+  const sheet = () => !global.document.querySelector('#sheet').hidden;
+  Object.assign(B.ui, { view: 'calendar', teamId: 't7' }); B.render(); B.timers.run();
+  check('opened on the address it already had: nothing added', hist.entries.length, 1);
+
+  // a tap is a move: it gets its own entry, the first one after a load included
+  B.click({ act: 'pickteam', id: 't8' }); B.timers.run();
+  check('the first tap after opening a link adds an entry (it used to replace it)', hist.entries.length + ' ' + global.location.hash, '2 #/team/t8/season');
+
+  // the app moving her by itself replaces, so Back never lands on it to be moved again
+  B.ui.view = 'roster'; B.render(); B.timers.run();
+  check('a screen the app changed without a tap replaces', hist.entries.length + ' ' + global.location.hash, '2 #/team/t8/squad');
+  B.ui.view = 'season'; B.render(); B.timers.run();
+
+  hist.back(); B.timers.run();
+  check('Back goes to the screen before', B.ui.view + ' ' + global.location.hash, 'calendar #/calendar');
+  check('and adds nothing on the way', hist.entries.length, 2);
+
+  // a sheet: Back closes it and leaves the screen where it is
+  B.openSheet('<p>a sheet</p>');
+  check('a sheet gets an entry of its own, at the same address', hist.entries.length + ' ' + JSON.stringify(hist.state) + ' ' + global.location.hash, '2 {"sheet":1} #/calendar');
+  hist.back(); B.timers.run();
+  check('Back closes the sheet', sheet(), false);
+  check('and the screen behind stays put', B.ui.view + ' ' + global.location.hash + ' ' + hist.i, 'calendar #/calendar 0');
+
+  // closed any other way, its entry is taken off, and that Back is not a move
+  B.openSheet('<p>a sheet</p>'); B.closeSheet(); B.timers.run();
+  check('a sheet closed by a tap takes its entry back off', hist.i + ' ' + B.ui.view, '0 calendar');
+  B.openSheet('<p>a sheet</p>');
+  check('one reopened gets a fresh entry', hist.i + ' ' + JSON.stringify(hist.state), '1 {"sheet":1}');
+
+  // closed by a tap that goes on to another screen: that screen takes the sheet's entry, so it is one Back
+  B.click({ act: 'pickteam', id: 't7' }); B.timers.run();
+  check('a sheet left for another screen: the screen takes its entry', hist.i + ' ' + global.location.hash + ' ' + hist.state, '1 #/team/t7/season null');
+  hist.back(); B.timers.run();
+  check('and one Back from there is the screen the sheet was opened on', B.ui.view + ' ' + global.location.hash + ' ' + sheet(), 'calendar #/calendar false');
+
+  // one sheet closed for the next is still the one entry
+  B.openSheet('<p>one</p>'); const at = hist.entries.length;
+  B.closeSheet(); B.openSheet('<p>two</p>'); B.timers.run();
+  check('a sheet swapped for another keeps the one entry', hist.entries.length + ' ' + hist.i + ' ' + sheet(), at + ' 1 true');
+  hist.back(); B.timers.run();
+  check('and one Back closes it', sheet() + ' ' + hist.i, 'false 0');
+}
+
 H.summary('routing');

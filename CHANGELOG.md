@@ -8,6 +8,17 @@ before this point lives only in the git log.
 
 ---
 
+## Back goes back a screen, and closes a sheet — 2026-10-10 (build 131)
+
+The browser's Back button (and a phone's back gesture) is meant to step back through the screens she visited before it leaves the site. Each screen already had its own address, but two things broke it:
+
+- **The first move after opening the site replaced the page instead of adding one.** Whether a screen got a new history entry hung on a flag set only when the address changed, so a page opened on an address it kept (a reload, a link, the home-screen icon, which now reopens on the same address at teamplayhq.com) swallowed her first move, and Back left the site a page early. Now a screen gets an entry when a tap drew it (`tapped`, marked ahead of every click handler), and a screen the app moves her to by itself (the club read arriving, a tab her role doesn't get, a game whose Subs were put away) replaces instead, so Back never lands on an address that bounces her forward again.
+- **A sheet open over a screen had no entry**, so Back moved the screen behind it and left the sheet open on top. A sheet now has an entry of its own at the same address: Back closes it and the screen stays put. Closed any other way (the scrim, Escape, a button) the entry is taken back off, so there is no dead Back press, and a button in a sheet that goes to another screen takes over the sheet's entry, so that is one Back too.
+- Addresses stay hash routes (`#/team/…`): GitHub Pages still has no rewrites on a custom domain, so a path like `/team/…` would 404 on a reload or a shared link.
+- `test/routing.js` drives a fake browser history for all of it.
+
+---
+
 ## The site moves to teamplayhq.com — 2026-10-10
 
 The site is served at its own domain now (GitHub Pages, custom domain `teamplayhq.com`) instead of `dawsboss.github.io/soccer-manager-/`. The app builds every link it hands out (invites, team links, share pages, registration) from the address it is open on, so those follow by themselves; the one place that cannot is the server, which has no page to look at.
