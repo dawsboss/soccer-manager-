@@ -44,7 +44,8 @@ button{cursor:pointer}
 }
 .topbar-main{display:flex;align-items:center;gap:10px;padding:2px 4px 8px}
 .brand{
-  flex:1;font-family:"Barlow Condensed",sans-serif;font-weight:700;
+  flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+  font-family:"Barlow Condensed",sans-serif;font-weight:700;
   font-size:24px;letter-spacing:.02em;
 }
 .switchrow{display:flex;gap:6px;margin:0 4px 10px;min-width:0}

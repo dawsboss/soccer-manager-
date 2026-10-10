@@ -8,6 +8,17 @@ before this point lives only in the git log.
 
 ---
 
+## The app is TeamPlayHQ — 2026-10-10 (build 131)
+
+The site has its own domain, so the app takes the name that goes with it. *Minutes* was what it was called while it was a sub tracker; it is a club's calendar, messages, training and registration now, and the name on the screen, the Home Screen icon, every notification and every page that says "open it in…" should be the one on the address.
+
+- **TeamPlayHQ** everywhere the app names itself: the top bar and the browser tab, the manifest (so a phone installs it as TeamPlayHQ), the service worker's fallback title on a push, the share pages' *Open TeamPlayHQ* link and *Open it in TeamPlayHQ* row, the notification and messages copy, the drill shelf's *TeamPlayHQ (built-in)*, and the calendar feed's `PRODID` (`ics.js`, carried into `functions/ics.js` by `make.js`).
+- **`CNAME`** carries `teamplayhq.com`, so the Pages deploy keeps the custom domain whatever the repo's settings do.
+- The brand in the top bar never wraps or pushes the buttons off a narrow phone (`.brand` clips with an ellipsis).
+- Nothing in the data, the paths or the rules changes; *Minutes* survives only where it means minutes played, and in the history here.
+
+---
+
 ## The site moves to teamplayhq.com — 2026-10-10
 
 The site is served at its own domain now (GitHub Pages, custom domain `teamplayhq.com`) instead of `dawsboss.github.io/soccer-manager-/`. The app builds every link it hands out (invites, team links, share pages, registration) from the address it is open on, so those follow by themselves; the one place that cannot is the server, which has no page to look at.

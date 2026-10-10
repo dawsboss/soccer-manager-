@@ -1,9 +1,9 @@
-/* Minutes — soccer sub & minutes tracker.
+/* TeamPlayHQ (teamplayhq.com) — a soccer club on a phone: subs and minutes, the calendar, messages.
    Static app. Data lives in localStorage, and mirrors to Firebase Realtime
    Database when a config + workspace code are present. */
 
-const BUILD = '130';
-const BUILT = '2026-10-09';
+const BUILD = '131';
+const BUILT = '2026-10-10';
 /* The version of database.rules.json this app was written against. The rules
    carry the same number in rulesVersion's .write, which accepts that number
    and nothing else, so writing it is a question only the published rules can
@@ -3198,7 +3198,7 @@ function joinCard(t) {
    without a parent lookup table, and AUTH.md's teamMembers index is that table.
 
    Notifications are honest about the platform, as the Live tab's are: with no
-   server there is nothing to push from, so a message pops up while Minutes is
+   server there is nothing to push from, so a message pops up while TeamPlayHQ is
    open, in any tab, and is waiting with a badge the next time it is opened.
    Reaching a phone that has closed it means Email the parents, which needs
    nothing but the addresses the club already has, or a push service — ROADMAP
@@ -3576,7 +3576,7 @@ function queueMsg(kind, tid, fam, text, extra) {
    functions/push.js sends each new notice and family message to the tokens of
    whoever the rules let read it. Everything above this still runs: the open
    page pops up and counts on the bell as it always has, and a push is the
-   same news reaching a phone that has Minutes closed.
+   same news reaching a phone that has TeamPlayHQ closed.
 
    A token is the address of one person's phone, so it belongs to whoever is
    signed in, and is given up the moment she isn't: on signing out (taken down
@@ -3719,7 +3719,7 @@ function pushCheck() {
     }).catch(() => { pushChecked = null; });
 }
 
-/* A notification tapped while Minutes is open: the service worker says where. */
+/* A notification tapped while TeamPlayHQ is open: the service worker says where. */
 function pushListen() {
   try {
     if (typeof navigator === 'undefined' || !navigator.serviceWorker || !navigator.serviceWorker.addEventListener) return;
@@ -3832,11 +3832,11 @@ function pushCard(where) {
   const on = pushOn();
   if (where === 'inbox' && (on || sup === 'no' || sup === 'blocked')) return '';
   const say = pushBusy ? 'Turning on…'
-    : sup === 'install' ? 'On an iPhone or iPad, Minutes can notify you once it is on your Home Screen: tap <b>Share</b>, then <b>Add to Home Screen</b>, open Minutes from there, and turn them on.'
-    : sup === 'no' ? 'This browser can\'t get notifications from a website. Minutes still pops up while it is open.'
-    : sup === 'blocked' ? 'Notifications are blocked for Minutes in this browser\'s settings. Allow them there, then come back here.'
-    : on ? 'On. Team notices, messages, changes to your games and practices, and games you follow reach this phone even with Minutes closed.'
-    : 'Team notices, messages, changes to your games and practices, and games you follow reach this phone even with Minutes closed.';
+    : sup === 'install' ? 'On an iPhone or iPad, TeamPlayHQ can notify you once it is on your Home Screen: tap <b>Share</b>, then <b>Add to Home Screen</b>, open TeamPlayHQ from there, and turn them on.'
+    : sup === 'no' ? 'This browser can\'t get notifications from a website. TeamPlayHQ still pops up while it is open.'
+    : sup === 'blocked' ? 'Notifications are blocked for TeamPlayHQ in this browser\'s settings. Allow them there, then come back here.'
+    : on ? 'On. Team notices, messages, changes to your games and practices, and games you follow reach this phone even with TeamPlayHQ closed.'
+    : 'Team notices, messages, changes to your games and practices, and games you follow reach this phone even with TeamPlayHQ closed.';
   const btn = pushBusy || sup !== 'ok' ? ''
     : on ? '<button class="btn quiet sm" data-act="pushoff">Turn off</button>'
     : '<button class="btn sm" data-act="pushon">Turn on</button>';
@@ -3868,7 +3868,7 @@ function colleagueLabel(u) {
   return [isAdmin(u) ? 'Admin' : 'Coach', ts.join(', ')].filter(Boolean).join(' · ');
 }
 function viewInboxMsgs() {
-  if (!msgOn() && !wsRead && fbConfig().apiKey) return `<div class="empty"><strong>Connecting…</strong>Messages appear once Minutes has reached the club.</div>`;
+  if (!msgOn() && !wsRead && fbConfig().apiKey) return `<div class="empty"><strong>Connecting…</strong>Messages appear once TeamPlayHQ has reached the club.</div>`;
   if (!msgOn()) return `<div class="empty"><strong>No messages here</strong>
     ${!anyAdmins() ? 'Messages start once the club has an admin.' : 'Messages are for the teams you coach, track or have a child in.'}</div>`;
   const mine = msgTeams(), staff = staffTeams(), fams = famThreads();
@@ -3880,7 +3880,7 @@ function viewInboxMsgs() {
   // where the club offers push, that card is the one to show; it asks for the same permission
   const alerts = pushSupport() !== 'unset' ? pushCard('inbox') : canPop && Notification.permission === 'default' ? `<div class="card"><div class="spread"><b>Pop-ups on this device</b>
       <button class="btn sm" data-act="msgalerts">Turn on</button></div>
-    <p class="muted" style="margin:6px 0 0">A message pops up while Minutes is open, even in another tab.</p></div>` : '';
+    <p class="muted" style="margin:6px 0 0">A message pops up while TeamPlayHQ is open, even in another tab.</p></div>` : '';
 
   const notice = x => {
     const t = state.teams[x.tid] || {};
@@ -3936,7 +3936,7 @@ function viewInboxMsgs() {
       ${noticeTeams().length ? `<button class="btn quiet sm" data-act="postnew">Post a notice</button>` : ''}</div>
       <div style="margin-top:8px">${shown.length ? shown.map(notice).join('') : `<p class="muted" style="margin:0">${staff.length ? 'Nothing posted yet. A notice goes to every family on the team.' : 'Nothing from the coaches yet.'}</p>`}</div>
       ${all.length > shown.length ? `<button class="btn quiet wide" data-act="msgall">Show ${all.length - shown.length} older</button>` : ''}</div>
-    <p class="muted">Messages pop up while Minutes is open on a phone, and wait here with a count until then.${staff.length ? ' To reach everyone right now, use <b>Email or share</b> on a notice.' : ''}</p>
+    <p class="muted">Messages pop up while TeamPlayHQ is open on a phone, and wait here with a count until then.${staff.length ? ' To reach everyone right now, use <b>Email or share</b> on a notice.' : ''}</p>
   </div>`;
 }
 
@@ -4032,8 +4032,8 @@ function sheetMsgInfo(id) {
     <p class="muted" style="margin-top:0">“${esc(String(x.text || '').slice(0, 120))}${String(x.text || '').length > 120 ? '…' : ''}”</p>
     <div class="plist">
       ${step(true, 'Written on this phone', esc(whenLong(at)))}
-      ${step(saved, saved ? 'Sent — the club’s server has it' : 'Not sent yet', saved ? '' : online ? 'Sending now' : 'Waiting for a signal. It goes by itself, even if Minutes is closed and opened again.')}
-      ${step(gotAll.size > 0, gotAll.size ? 'Delivered' : 'Not delivered yet', gotAll.size ? names([...gotAll]) : 'Nobody else’s phone has had it yet. It arrives when they next open Minutes, or as a notification if they turned those on.')}
+      ${step(saved, saved ? 'Sent — the club’s server has it' : 'Not sent yet', saved ? '' : online ? 'Sending now' : 'Waiting for a signal. It goes by itself, even if TeamPlayHQ is closed and opened again.')}
+      ${step(gotAll.size > 0, gotAll.size ? 'Delivered' : 'Not delivered yet', gotAll.size ? names([...gotAll]) : 'Nobody else’s phone has had it yet. It arrives when they next open TeamPlayHQ, or as a notification if they turned those on.')}
       ${step(read.length > 0, read.length ? 'Read' : 'Not read yet', read.length ? names(read) : '')}
     </div>
     <button class="btn quiet wide" data-act="closesheet" style="margin-top:12px">Done</button>`);
@@ -4210,7 +4210,7 @@ function sheetPostShare(tid, id) {
   const body = String(x.text || '').slice(0, 1500);
   const href = `mailto:?bcc=${encodeURIComponent(mails.join(','))}&subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
   openSheet(`<h3>Reach everyone now</h3>
-    <p class="muted" style="margin-top:0">Families with Minutes open have it already; everyone else sees it with a badge next time they open it. To get it to their phones now:</p>
+    <p class="muted" style="margin-top:0">Families with TeamPlayHQ open have it already; everyone else sees it with a badge next time they open it. To get it to their phones now:</p>
     ${mails.length ? `<a class="btn wide" href="${esc(href)}" data-act="closesheet">Email the parents (${mails.length})</a>
       <p class="muted">Opens your email app with them in Bcc, so nobody sees anyone else's address.</p>`
       : `<p class="muted">No parent on this team has an account with an email address yet.</p>`}
@@ -4258,7 +4258,7 @@ function paintBell(shut) {
   };
   badge('#msgBtn', '#msgN', !shut && msgsOn(), m);
   badge('#bellBtn', '#bellN', !shut && notesOn(), b);
-  if (typeof document !== 'undefined') document.title = (n ? `(${n}) ` : '') + 'Minutes — soccer sub tracker';
+  if (typeof document !== 'undefined') document.title = (n ? `(${n}) ` : '') + 'TeamPlayHQ — soccer team manager';
 }
 
 /* ---------------- the test club ---------------- */
@@ -7896,18 +7896,18 @@ function viewFeed() {
       : `<p class="muted" style="margin:0">${st === 'upcoming' ? 'Nothing yet — this fills in from kick-off.' : 'Nothing logged yet.'}</p>`}</div>`;
 
   /* Honest about where they arrive: on a phone with notifications turned on
-     (pushOn()) the server sends them with Minutes closed; anywhere else they
+     (pushOn()) the server sends them with TeamPlayHQ closed; anywhere else they
      come from this page while it is open, a background tab or a phone with
      the page left up. */
   const following = ui.follow === m.id;
   const canNotify = typeof Notification !== 'undefined';
   const closed = pushOn();
-  const offerPush = !closed && me && pushSupport() === 'ok' ? ' Turn notifications on for this phone, under the bell, to get them with Minutes closed too.' : '';
+  const offerPush = !closed && me && pushSupport() === 'ok' ? ' Turn notifications on for this phone, under the bell, to get them with TeamPlayHQ closed too.' : '';
   const follow = st === 'done' ? '' : `<div class="card"><div class="spread"><h2>Notify me</h2>
       <button class="btn ${following ? 'quiet ' : ''}sm" data-act="feedfollow" data-v="${following ? 0 : 1}">${following ? 'Stop' : 'Turn on'}</button></div>
     <p class="muted" style="margin:6px 0 0">${closed
-      ? (following ? 'On for this game. Goals, kick-off, half time and full time reach this phone even with Minutes closed, and any other phone you turned notifications on for.'
-        : 'Get goals, kick-off, half time and full time on this phone, even with Minutes closed.')
+      ? (following ? 'On for this game. Goals, kick-off, half time and full time reach this phone even with TeamPlayHQ closed, and any other phone you turned notifications on for.'
+        : 'Get goals, kick-off, half time and full time on this phone, even with TeamPlayHQ closed.')
       : following
         ? `On for this game. Goals, kick-off, half time and full time ${canNotify && Notification.permission === 'granted' ? 'pop up on this device' : 'buzz and show here'} while this page is open.${offerPush}`
         : 'Get goals, kick-off, half time and full time on this device while this page is open, even in another tab.'}</p></div>`;
@@ -7935,7 +7935,7 @@ function watchFeed() {
   return fresh;
 }
 /* Following is also left where the server can find it, so the same moments
-   reach her phones with Minutes closed (functions/push.js, onFollowed):
+   reach her phones with TeamPlayHQ closed (functions/push.js, onFollowed):
    follow/{code}/{mid}/{uid}, hers alone in the rules and only for a game of
    her club that has not ended. It is per account, as a push token's phone
    is, and the server clears it at full time. The page's own watch above
@@ -10523,10 +10523,10 @@ function drillMatches(d, f, age, L) {
     && (!q.length || q.every(w => drillText(d, L).includes(w)));
 }
 /* Who made a drill: the app itself for the built-in library (it ships as
-   Minutes), you for your own and what you shared, or the coach a club drill
+   TeamPlayHQ), you for your own and what you shared, or the coach a club drill
    names. A club drill keeps its author's name after she leaves, because it
    was copied onto the drill when she shared it, not looked up. */
-const APP_NAME = 'Minutes';
+const APP_NAME = 'TeamPlayHQ';
 function madeBy(d, by) {
   if (!by) return true;
   const shelf = d.shelf || 'builtin';
@@ -16235,7 +16235,7 @@ function onAwayAct(a, d) {
    not news), a source that hasn't loaded yet is left alone rather than read
    as everything gone, and nothing this phone did itself is news to it
    (noteMine(), from every write path). Nothing is sent anywhere: like
-   messages, it is heard while Minutes is open, and kept to read later. */
+   messages, it is heard while TeamPlayHQ is open, and kept to read later. */
 const LS_NEWS = 'sm.clubNews', LS_NEWS_SEEN = 'sm.clubSeen', LS_NEWS_READ = 'sm.clubRead';
 const NEWS_KEEP = 60;
 const mineTouched = new Set();

@@ -1,7 +1,7 @@
 /* Who hears a new notice or family message, and what their phone says.
 
    The first job the server does (GOTSPORT.md, Build order, step 2). Until it,
-   a message reached a phone only while Minutes was open on it; now a trigger
+   a message reached a phone only while TeamPlayHQ was open on it; now a trigger
    on each new notice and message works out who may read it and sends to every
    phone they turned notifications on for.
 
@@ -392,7 +392,7 @@ async function onGameField(env, params, field, was) {
 
 /* The Live tab's *Notify me* (`feedNotify()` in app.js): goals, kick-off,
    the start of each later half, half time and full time, the same items the
-   open page pops up, now reaching a phone with Minutes closed. Following was
+   open page pops up, now reaching a phone with TeamPlayHQ closed. Following was
    only ever per page; the phone now also leaves `follow/{code}/{mid}/{uid}`
    (hers alone in the rules, and only for a game of a club she is in that has
    not ended), and this reads it.
