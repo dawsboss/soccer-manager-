@@ -104,13 +104,22 @@ async function apply(env, code, uid, ask, now) {
   if (!list || !list.length || list.length > MAX_WRITES) return { ok: false, why: 'bad' };
   const bad = list.find(([p]) => !allowed(p, L, code));
   if (bad) return { ok: false, why: 'outside', path: String(bad[0]).slice(0, 200) };
+  /* Who made each calendar change is the asker, whatever the ask says: the
+     rules refuse a stamp in anyone's name but the writer's, and this writes
+     past the rules, so it holds the ask to the same. The push that names
+     who moved a practice must never name somebody else. */
+  const stamped = list.map(([p, v]) => {
+    if (/\/edit$/.test(p) && v && typeof v === 'object') return [p, { ...v, by: uid }];
+    if (v && typeof v === 'object' && v.edit && typeof v.edit === 'object') return [p, { ...v, edit: { ...v.edit, by: uid } }];
+    return [p, v];
+  });
   /* Batches of a hundred, and a new one wherever a path is beneath (or
      above) one already in the batch: the database refuses an update that
      names both, and the later of the two must land after the earlier. */
   const parts = [];
   let cur = [];
   const near = (a, b) => a === b || a.startsWith(b + '/') || b.startsWith(a + '/');
-  for (const w of list) {
+  for (const w of stamped) {
     if (cur.length >= BATCH || cur.some(([q]) => near(q, w[0]))) { parts.push(cur); cur = []; }
     cur.push(w);
   }

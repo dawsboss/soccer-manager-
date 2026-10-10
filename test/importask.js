@@ -81,6 +81,8 @@ const W = 'workspaces/CLUB/';
     // a path and one beneath it, which one database update may not name together: in order, in two
     const b = await ask(S, 'adm', [{ p: `${B}/matches/m2`, v: { id: 'm2', teamId: 't1', date: '2026-10-19' } }, { p: `${B}/matches/m2/kickoff`, v: '09:00' }, { p: `${B}/matches/m2`, v: { id: 'm2', teamId: 't1', date: '2026-10-20' } }]);
     check('a path and one beneath it go in order', [b.ok, S.at(W + 'matches/m2/date'), S.at(W + 'matches/m2/kickoff')].join(), 'true,2026-10-20,');
+    const c = await ask(S, 'adm', [{ p: `${B}/matches/m3`, v: { id: 'm3', teamId: 't1', date: '2026-10-19', edit: { by: 'coach', at: 1 } } }, { p: `${B}/matches/m3/edit`, v: { by: 'coach', at: 2 } }]);
+    check('a stamp in somebody else\'s name is made the asker\'s', [c.ok, S.at(W + 'matches/m3/edit/by')].join(), 'true,adm');
     const again = await ask(S, 'adm', writes);
     check('the same file twice changes nothing more', [again.ok, S.at(W + 'teams/t2/name'), Object.keys(S.at(W + 'teams/t2/players')).length].join(), 'true,Storm,1');
   }
