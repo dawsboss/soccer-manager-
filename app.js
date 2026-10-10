@@ -2850,12 +2850,38 @@ async function inviteImported() {
   if (n) logAccess('invited', null, { targetName: n + ' from an imported roster' });
   if (importContacts === ic) sheetImportInvites();
 }
-// SERVER.md: the sign-in emails go one at a time from the admin's phone; a server would send them.
+/* The invitations go from the club (functions/mail.js) where the server is
+   deployed with a mailer: real invitations in the club's name, not sign-in
+   links, with no daily limit on the admin's account. A server without a
+   mailer, or rules too old to take the ask, is told once and the sign-in
+   links go as they did. */
+const MAIL_WAIT = 60000;
+let mailFallback = false;
+async function mailViaClub(ids) {
+  if (!serverOn() || mailFallback || !rtdb || !me || !wsCode() || !online) return null;
+  const ans = await askServer(`mailAsks/${wsCode()}/${me.uid}/${uid()}`, { op: 'invites', ids }, MAIL_WAIT);
+  if (ans && (ans.why === 'nomail' || ans.why === 'rules')) { mailFallback = true; return null; }
+  return ans;
+}
+// SERVER.md: the sign-in emails go one at a time from the admin's phone where the club has no mailer (mailAsk sends real invitations).
 async function mailImported() {
   if (!importContacts) return;
   if (!canAdmin()) { toast('Club admins only'); return; }
-  if (!authMod || !fbAuth) { toast('Sign-in is not available on this build'); return; }
   const ic = importContacts;
+  const rows = importInviteRows(ic).filter(x => (x.st === 'made' || x.st === 'open') && !ic.sent[x.key]);
+  if (rows.length) {
+    const ans = await mailViaClub(rows.map(r => r.id));
+    if (importContacts !== ic) return;
+    if (ans && ans.ok) {
+      const sent = new Set(Array.isArray(ans.sent) ? ans.sent : Object.values(ans.sent || {}));
+      let n = 0;
+      for (const r of rows) if (sent.has(r.id)) { ic.sent[r.key] = true; n++; }
+      toast(`The club emailed ${n} invitation${n === 1 ? '' : 's'}${n < rows.length ? `; ${rows.length - n} could not be sent` : ''}`);
+      sheetImportInvites(); return;
+    }
+    if (ans) { toast('The club could not send them — check the signal and try again'); return; }
+  }
+  if (!authMod || !fbAuth) { toast('Sign-in is not available on this build'); return; }
   let n = 0;
   for (const r of importInviteRows(ic).filter(x => (x.st === 'made' || x.st === 'open') && !ic.sent[x.key])) {
     try { await authMod.sendSignInLinkToEmail(fbAuth, r.email, { url: inviteLink(r.id), handleCodeInApp: true }); ic.sent[r.key] = true; n++; } catch (err) {
@@ -4247,15 +4273,35 @@ function sheetPostShare(tid, id) {
   const subject = `${t.name || 'Team'}${x.urgent ? ' — urgent' : ''}: message from ${x.byName || 'the coach'}`;
   const body = String(x.text || '').slice(0, 1500);
   const href = `mailto:?bcc=${encodeURIComponent(mails.join(','))}&subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+  // from the club itself, one message per family, where the server has a mailer (functions/mail.js)
+  const viaClub = serverOn() && !mailFallback && !!rtdb && online;
   openSheet(`<h3>Reach everyone now</h3>
     <p class="muted" style="margin-top:0">Families with Minutes open have it already; everyone else sees it with a badge next time they open it. To get it to their phones now:</p>
-    ${mails.length ? `<a class="btn wide" href="${esc(href)}" data-act="closesheet">Email the parents (${mails.length})</a>
+    ${mails.length ? `${viaClub ? `<button class="btn wide" data-act="postmail" data-tid="${tid}" data-id="${id}">Email the parents from the club (${mails.length})</button>
+      <p class="muted">One email to each family, in the club's name.</p>` : ''}
+      <a class="btn ${viaClub ? 'quiet ' : ''}wide" href="${esc(href)}" data-act="closesheet">Email the parents (${mails.length})</a>
       <p class="muted">Opens your email app with them in Bcc, so nobody sees anyone else's address.</p>`
       : `<p class="muted">No parent on this team has an account with an email address yet.</p>`}
     <button class="btn quiet wide" data-act="postsharetext" data-tid="${tid}" data-id="${id}">Share or copy the text</button>
     <button class="btn quiet wide" data-act="closesheet">Done</button>`);
 }
 
+/* The notice, emailed by the club to the team's families (functions/mail.js).
+   Checked here, as the post was: only who may post to the team. The server
+   finds the families itself; the ask carries the words and nothing else. */
+// SERVER.md: a notice emailed by the club to the team's families (mailAsk).
+async function mailNotice(tid, id) {
+  if (!postsTo(tid)) { toast('Only the team\'s coaches post to it'); return; }
+  const x = notices(tid).find(n => n.id === id); if (!x) return;
+  if (!serverOn() || !rtdb || !me || !online) { toast('Needs a signal'); return; }
+  const t = state.teams[tid] || {};
+  const subject = `${t.name || 'Team'}${x.urgent ? ' — urgent' : ''}: message from ${x.byName || 'the coach'}`;
+  closeSheet(); toast('Sending…');
+  const ans = await askServer(`mailAsks/${wsCode()}/${me.uid}/${uid()}`, { op: 'team', tid, subject, text: String(x.text || '').slice(0, 4000) }, MAIL_WAIT);
+  if (ans && ans.ok) { toast(`The club emailed ${ans.sent} famil${ans.sent === 1 ? 'y' : 'ies'}${ans.failed ? `; ${ans.failed} could not be sent` : ''}`); return; }
+  if (ans && (ans.why === 'nomail' || ans.why === 'rules')) { mailFallback = true; toast('The club has no mailer set up — use your own email app instead'); sheetPostShare(tid, id); return; }
+  toast(ans && ans.why === 'notyours' ? 'Only the team\'s coaches and the admins email its families' : 'Not sent — check the signal and try again');
+}
 function sheetPostSeen(tid, id) {
   const x = notices(tid).find(n => n.id === id); if (!x) return;
   const fam = families(tid);
@@ -5528,10 +5574,16 @@ const IMPORT_NO = {
 /* Ask the server; where it cannot be asked, or did not finish, the phone
    writes it as it always has. Doing it twice changes nothing (every write
    sets a value), so the phone finishing what the server began is safe. */
+/* A database trigger is handed what was written, and an event has a size it
+   may be; a plan past this goes the phone's own way, which has no limit but
+   a signal. Far more than any club's season (a few hundred KB at most). */
+const IMPORT_MAX_BYTES = 400000;
 async function importVia(plan) {
   if (!serverOn() || !rtdb || !me || !wsCode() || !online) { applyImport(plan); return 'phone'; }
+  const writes = importWrites(plan);
+  if (JSON.stringify(writes).length > IMPORT_MAX_BYTES) { applyImport(plan); return 'phone'; }
   toast('Importing…');
-  const ans = await askServer(`importAsks/${wsCode()}/${me.uid}/${uid()}`, { writes: importWrites(plan) }, IMPORT_WAIT);
+  const ans = await askServer(`importAsks/${wsCode()}/${me.uid}/${uid()}`, { writes }, IMPORT_WAIT);
   if (ans && ans.ok) { landImport(plan); return 'server'; }
   if (ans && IMPORT_NO[ans.why]) { toast(IMPORT_NO[ans.why]); return 'refused'; }
   applyImport(plan);
@@ -14198,6 +14250,7 @@ function sessMessage(s) {
     s.price && !s.called ? `${fmtMoney(s.price)} a place.` : ''
   ].filter(Boolean).join('\n');
 }
+// SERVER.md: a session's families reached from the coach's own mail app; a server could send it as a notice's is.
 function sheetReach() {
   const r = reach; if (!r) return;
   const href = `mailto:?bcc=${encodeURIComponent(r.emails.join(','))}&subject=${encodeURIComponent(r.title)}&body=${encodeURIComponent(r.text.slice(0, 1500))}`;
@@ -15445,7 +15498,8 @@ function youBusy(items) {
   const out = {};
   let n = 0;
   for (const x of items) {
-    if (!x || !okDay(x.date) || !x.start || x.called || x.kind === 'avail' || (x.kind === 'session' && !x.firm) || x.date < todayStr() || n >= 300) continue;
+    // from yesterday: the server writes the same list (functions/mycal.js) and cannot know a phone's time zone, so both keep the day before
+    if (!x || !okDay(x.date) || !x.start || x.called || x.kind === 'avail' || (x.kind === 'session' && !x.firm) || x.date < addDays(todayStr(), -1) || n >= 300) continue;
     let e = x.end;
     if (!e) e = minHm(Math.min(minOf(x.start) + (Number(x.mins) || 60), 23 * 60 + 59));
     out['b' + (++n)] = { d: x.date, s: x.start, e };
@@ -15501,22 +15555,27 @@ function watchYou() {
   }, () => { });
 }
 /* Others' shared busy times, for the coaches of this club, read on the phones
-   that ask who is free: coaches' and admins'. A private calendar has nothing
-   there, so the listener just answers empty. */
-// SERVER.md: listening for others' busy times; a server would answer who is free.
+   that ask who is free: coaches' and admins'. Since build 130 the server
+   keeps the club its own copy, training/{code}/elsewhere/{uid}: each
+   sharing person's times at her other clubs, which only this club's coaches
+   and admins read (functions/mycal.js), so nobody's times are readable by
+   anyone who knows her uid any more. One listener for the club. A private
+   calendar has nothing there, so it just answers empty. */
+// SERVER.md: the club's copy of others' busy times, kept by the server; the phone only listens.
 function watchBusy() {
-  if (!rtdb || !me || !awayOn()) return;
+  const code = wsCode();
+  if (!rtdb || !me || !code || !awayOn() || busyWatch.has(code)) return;
   const { db, mod } = rtdb;
-  for (const u of coachUids()) {
-    if (u === me.uid || busyWatch.has(u)) continue;
-    busyWatch.set(u, null);
-    const off = mod.onValue(mod.ref(db, `people/${u}/busy`), snap => {
-      const v = snap.val() || {};
-      if (canon(v) === canon(busyOf[u] || {})) return;
-      busyOf[u] = v; render();
-    }, () => { });
-    busyWatch.set(u, off);
-  }
+  busyWatch.set(code, null);
+  const off = mod.onValue(mod.ref(db, `training/${code}/elsewhere`), snap => {
+    if (wsCode() !== code) return;
+    const v = snap.val() || {};
+    if (canon(v) === canon(busyOf)) return;
+    for (const k of Object.keys(busyOf)) delete busyOf[k];
+    Object.assign(busyOf, v);
+    render();
+  }, () => { });
+  busyWatch.set(code, off);
 }
 /* Busy at another club, as busyItems() has it: hers from her other clubs,
    everyone else's from what they share, leaving out the club open here (its
@@ -20262,6 +20321,7 @@ function onAct(e) {
     sheetPostShare(tid, id); render(); return;
   }
   if (a === 'postshare') { if (postsTo(d.tid)) sheetPostShare(d.tid, d.id); return; }
+  if (a === 'postmail') { mailNotice(d.tid, d.id); return; }
   if (a === 'postsharetext') {
     const x = notices(d.tid).find(n => n.id === d.id); if (!x) return;
     const text = `${(state.teams[d.tid] || {}).name || 'Team'} — ${x.byName || 'coach'}:\n${x.text}`;

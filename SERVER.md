@@ -40,10 +40,16 @@ does the bookkeeping, not that the phone works offline first.
   minutes whether or not a phone of hers is open. Only while she shares;
   turning it off on any phone takes them all down on the next run, and a
   club she has left loses its entry. `test/mycalfeed.js` holds it to the
-  phone's `youBusy`, time for time.
-- **Still on the phone, and agreeing:** her own phones still write them (the
-  same values), and the clubs' phones still read them as below. What is left
-  for a server is the rest of *With a server*: answering "is she free" itself.
+  phone's `youBusy`, time for time. **And each club gets its own copy** at
+  `training/{code}/elsewhere/{uid}` (her other clubs' times only), which
+  that club's coaches and admins read (`watchBusy()`, one listener per
+  club) and nobody else may: `people/{uid}/busy` is hers alone to read
+  since rules version 27 (rules.js's gap 10 closed). A club she leaves is
+  pruned on that club's next run.
+- **Still on the phone, and agreeing:** her own phones still write
+  `people/{uid}/busy` (the same values; hers alone now). What is left for a
+  server is the rest of *With a server*: answering "is she free" itself,
+  and the phone keeping no copy at all.
 - **Before the server:** a coach's own phone works out when she is busy in every club she is
   in and, if she shares, writes the times to `people/{uid}/busy/{tag}`
   (`youPublish()`). Other clubs' coaches' and admins' phones listen to those
@@ -238,12 +244,19 @@ does the bookkeeping, not that the phone works offline first.
   (`redeemHere()`, `createHere()`) only where `SOCCER_SERVER` is not set or
   the rules refuse the ask. `test/joinask.js`, and the page in
   `test/invites.js`.
-- **What is left:** the bootstrap clauses (and so rules.js's gap 3) stay
-  until the server path has been live everywhere, as the bridge for a
-  database without the functions; approving a team-link request
-  (`approveClaim()`), a fan's ask (`approveFan()`), a squad of links
-  (`inviteSquad()`) and the imported roster's invites (`inviteImported()`,
-  `mailImported()`) are still the phone's; and real invitation emails.
+- **Closed with it (rules version 27):** the bootstrap clauses now let a
+  code be claimed only when it starts `test-` (the app owner's test clubs,
+  seeded on a phone, never published), so rules.js's gap 3 is closed: a real
+  club is made by the server or not at all. `createHere()` is the fallback
+  for rules too old to take the ask, and the test club's.
+- **Moved (build 130): invitation emails from the club** (`functions/mail.js`,
+  `mailAsk`; *Email* below): `mailImported()` asks the club to send each
+  invite it made as a real invitation in the club's name, and sends
+  Firebase's sign-in links only where the club has no mailer.
+- **What is left:** approving a team-link request (`approveClaim()`), a
+  fan's ask (`approveFan()`), a squad of links (`inviteSquad()`) and the
+  imported roster's invites (`inviteImported()`) are still the phone's
+  writes; the access triggers keep the tables behind them.
 - **Before the server, and still the fallback:** joining by invite is several writes from the invitee's own phone in
   the order the rules need (spend the invite, take the role, add herself to the
   index) (`redeemInvite()`); approving a team-link request is the coach writing
@@ -315,10 +328,20 @@ does the bookkeeping, not that the phone works offline first.
   phone, for a phone without notifications turned on.
 
 ### Email
-- **Now:** *Email or share* opens the person's own mail app with everybody in
-  bcc (`mailto:`), and the coach presses send.
-- **With a server:** the app sends it, to the families on that team, and can
-  say who has read it.
+- **Moved (build 130):** the club sends its own email (`functions/mail.js`,
+  `mailAsk`, from an SMTP secret the project holds: README, *Email from the
+  club*): an invitation (who invited her, to what, the link), asked for by
+  an admin or by whoever made the invite, to the address the invite names;
+  and a team notice to the team's families (`mailNotice()`), asked for by an
+  admin, a coach or a helper of the team, one message per family found by
+  the server from the squad, never from the ask. Without a mailer set up
+  every ask is answered `nomail` and the phone does what it did before.
+  `test/mail.js`.
+- **Still on the phone:** *Email the parents* in her own mail app with
+  everybody in bcc (`mailto:`), beside the club's; the sign-in links where
+  the club has no mailer (`mailImported()`); *Email or share* for a training
+  session (`sheetReach()`).
+- **With a server:** saying who has read it.
 
 ---
 
@@ -386,7 +409,13 @@ does the bookkeeping, not that the phone works offline first.
   Once the ask lands a dropped signal loses nothing. Without an answer, or
   with one that did not finish, the phone writes it itself (`applyImport()`),
   which changes nothing twice. `test/importask.js`.
-- **Still:** a backup is an admin tapping *Download a copy* (`backupDoc()`).
-- **With a server:** nightly backups without anybody remembering, and an import
-  that is checked and applied in one go, so a dropped signal half-way through
-  can't leave half a season.
+- **Moved (build 130): nightly backups** (`functions/backup.js`,
+  `backupNightly`): every club, whole (the club, its training records, its
+  messages, the admin's invites, care details included: this is the club's
+  own copy, not a file on a phone), to the project's private bucket at
+  `backups/{code}/{date}.json` once a night, the last thirty kept. A
+  retired club and a test club are left out; a club that cannot be read
+  whole gets no half file. `test/backup.js`.
+- **Still:** *Download a copy* (`backupDoc()`) for a file in hand, and
+  *Load from a file* to restore one; a server backup is restored from the
+  bucket by hand (README, *Backup*).

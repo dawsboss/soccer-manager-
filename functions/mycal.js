@@ -236,7 +236,16 @@ async function feedItems(read, uid, now) {
    insist on for her phone's writes too): private is the default, and the
    moment she turns it off the next build takes every one of them down,
    whichever phone she did it on. A club she is no longer in loses its
-   entry; a club that cannot be read keeps the one it had. */
+   entry; a club that cannot be read keeps the one it had.
+
+   **And each club gets its own copy, of her other clubs only**, at
+   training/{code}/elsewhere/{uid}: the same shape, every tag but that club's
+   own. That is what the club's coaches' and admins' phones read to ask who
+   is free (watchBusy(), elsewhereOn()), so people/{uid}/busy can be hers
+   alone to read (rules version 27; rules.js's gap 10 closed): before, it was
+   readable by anyone signed in who knew her uid. A club she leaves is pruned
+   on that club's next run (pruneElsewhere()), since her list of clubs no
+   longer names it. */
 const BUSY_MAX = 300;
 const clock = m => pad2(Math.floor(m / 60) % 24) + ':' + pad2(m % 60);
 function busyTimes(xs, from) {
@@ -252,13 +261,14 @@ function busyTimes(xs, from) {
 async function publishBusy(env, read, uid, now) {
   if (!okKey(uid)) return 'bad uid';
   const [share, had] = await Promise.all([read(`people/${uid}/set/share`), read(`people/${uid}/busy`)]);
+  const clubs = keys(await read('userOrgs/' + uid)).filter(okKey).sort();
   if (share !== true) {
+    for (const code of clubs) if (await read(`training/${code}/elsewhere/${uid}`)) await env.set(`training/${code}/elsewhere/${uid}`, null);
     if (had == null) return 'private';
     await env.set(`people/${uid}/busy`, null);
     return 'taken down';
   }
   const old = had && typeof had === 'object' ? had : {};
-  const clubs = keys(await read('userOrgs/' + uid)).filter(okKey).sort();
   // from yesterday, in the server's day: a phone in any time zone may still be on it, and a time gone by is harmless
   const from = dayStr(now - 864e5);
   const next = {};
@@ -271,9 +281,24 @@ async function publishBusy(env, read, uid, now) {
     // unchanged keeps its stamp, so nothing is rewritten for nothing
     next[tag] = old[tag] && JSON.stringify(old[tag].b || {}) === JSON.stringify(b) ? old[tag] : { at: now, b };
   }
+  // each club's copy: every other club's times, nothing of its own (elsewhereOn() skips its own tag anyway)
+  for (const code of clubs) {
+    const tag = clubTag(code);
+    const theirs = Object.fromEntries(Object.entries(next).filter(([t]) => t !== tag));
+    const there = await read(`training/${code}/elsewhere/${uid}`);
+    if (JSON.stringify(theirs) !== JSON.stringify(there && typeof there === 'object' ? there : {}))
+      await env.set(`training/${code}/elsewhere/${uid}`, keys(theirs).length ? theirs : null);
+  }
   if (JSON.stringify(next) === JSON.stringify(old)) return unreadable ? 'unreadable' : 'same';
   await env.set(`people/${uid}/busy`, keys(next).length ? next : null);
   return unreadable ? 'unreadable' : 'written';
+}
+/* A club's copies of people no longer in it: a role taken away takes her
+   bookmark with it (access.js), so her own run cannot find the club to
+   clear; the club's run does. */
+async function pruneElsewhere(env, read, code) {
+  const [there, index] = await Promise.all([read(`training/${code}/elsewhere`), read(`${(await where(read, code)).access}/index`)]);
+  for (const uid of keys(there)) if (!has(index, uid)) await env.set(`training/${code}/elsewhere/${uid}`, null);
 }
 
 /* Is `id` her page? The server keeps who each public page belongs to at
@@ -351,6 +376,7 @@ async function run(env, now = Date.now()) {
   // everyone in a club that changed: the club's own index says who is in it
   for (const code of keys(clubs).filter(okKey)) for (const u of keys(await read(`${(await where(read, code)).access}/index`))) if (okKey(u)) who.add(u);
   const out = {}, busy = {};
+  for (const code of keys(clubs).filter(okKey)) { try { await pruneElsewhere(env, read, code); } catch (e) { /* a club that cannot be read keeps its copies */ } }
   for (const uid of [...who].sort()) {
     try { out[uid] = await publish(env, read, uid, now); } catch (e) { out[uid] = 'failed'; }
     try { busy[uid] = await publishBusy(env, read, uid, now); } catch (e) { busy[uid] = 'failed'; }
@@ -367,4 +393,4 @@ async function run(env, now = Date.now()) {
   return out;
 }
 
-module.exports = { run, publish, publishBusy, busyTimes, onSetting, feedItems, clubItems, touchClub, touchPerson, clubTag, MARKS, FEED_BACK_DAYS, FEED_MAX };
+module.exports = { run, publish, publishBusy, pruneElsewhere, busyTimes, onSetting, feedItems, clubItems, touchClub, touchPerson, clubTag, MARKS, FEED_BACK_DAYS, FEED_MAX };

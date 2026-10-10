@@ -27,6 +27,8 @@ const { onSchedule } = require('firebase-functions/v2/scheduler');
 const { getDatabase } = require('firebase-admin/database');
 const { initializeApp } = require('firebase-admin/app');
 const { getMessaging } = require('firebase-admin/messaging');
+const { getStorage } = require('firebase-admin/storage');
+const { defineSecret } = require('firebase-functions/params');
 const { getAuth } = require('firebase-admin/auth');
 const push = require('./push');
 const feed = require('./calendar');
@@ -39,6 +41,8 @@ const news = require('./news');
 const migrate = require('./migrate');
 const join = require('./join');
 const imports = require('./imports');
+const backup = require('./backup');
+const mail = require('./mail');
 const forget = require('./forget');
 
 initializeApp();
@@ -371,6 +375,47 @@ exports.migrateOld = onSchedule({ schedule: 'every 24 hours', maxInstances: 1 },
     set: (p, v) => root.child(p).set(v),
     update: patch => root.update(patch)
   });
+});
+
+/* Nightly backups (backup.js; SERVER.md, *Backups and imports*): every club
+   to the project's own bucket, backups/{code}/{date}.json, the last thirty
+   kept. The default database only, like myCalBuild; three in the morning
+   UTC, when no game is being played anywhere a club is likely to be. */
+exports.backupNightly = onSchedule({ schedule: 'every day 03:00', timeZone: 'Etc/UTC', maxInstances: 1 }, () => {
+  const root = getDatabase().ref();
+  const bucket = getStorage().bucket();
+  return backup.run({
+    get: p => root.child(p).get().then(s => s.val()),
+    set: (p, v) => root.child(p).set(v),
+    save: (path, text) => bucket.file(path).save(text, { contentType: 'application/json', resumable: false }),
+    list: prefix => bucket.getFiles({ prefix }).then(r => (r[0] || []).map(f => f.name)),
+    remove: path => bucket.file(path).delete()
+  });
+});
+
+/* Email from the club (mail.js; SERVER.md, *Email*): an invitation, or a
+   team notice to its families, asked at mailAsks/{code}/{uid}/{id}. The
+   mailer is SMTP, from a secret the project holds (SOCCER_SMTP_URL: README,
+   *Email from the club*; smtps://user:password@host:465) and the address it
+   sends as (SOCCER_MAIL_FROM, functions/.env). With no secret set there is
+   no mailer and every ask is answered `nomail`, so the phone does what it
+   did before. nodemailer is loaded only here, only when there is a URL. */
+const SMTP_URL = defineSecret('SOCCER_SMTP_URL');
+function mailer() {
+  const url = String(SMTP_URL.value() || '').trim(), from = String(process.env.SOCCER_MAIL_FROM || '').trim();
+  if (!url || !from) return null;
+  const transport = require('nodemailer').createTransport(url);
+  return ({ to, subject, text }) => transport.sendMail({ from, to, subject, text });
+}
+exports.mailAsk = onValueCreated({ ref: '/mailAsks/{code}/{uid}/{id}', secrets: [SMTP_URL] }, event => {
+  const root = event.data.ref.root;
+  const send = mailer();
+  return mail.onAsk({
+    get: p => root.child(p).get().then(s => s.val()),
+    set: (p, v) => root.child(p).set(v),
+    ...(send ? { mail: send } : {}),
+    site: process.env.SOCCER_SITE || ''
+  }, event.params, event.data.val());
 });
 
 /* The calendar feed (calendar.js): https://{region}-{project}.cloudfunctions.net/calendar/{id}.ics,

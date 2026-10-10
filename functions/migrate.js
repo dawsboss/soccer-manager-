@@ -87,6 +87,12 @@ async function planGroups(env, code, L, now) {
         // normPractice(): what the phone would have read off the plan
         const start = /^\d{2}:\d{2}$/.test(String(raw.start || '')) ? String(raw.start) : '';
         const mins = Number(raw.minutes) > 0 ? Math.min(Number(raw.minutes), 600) : 60;
+        /* The entry is a practice the team has had on its plans all along,
+           not news: the push sender keeps the last thing it said of each entry
+           at serverState/calSent (push.js, calSig()), so this is written as
+           already said, in the same write, and nobody is told of a "new"
+           practice they planned months ago. */
+        g[`serverState/calSent/${code}/e_${pid}`] = { sig: [String(raw.date), start, ''].join('|'), at: now };
         g[`${L.team(tid)}/events/${pid}`] = {
           id: pid, kind: 'practice', title: 'Practice', date: String(raw.date), start, end: start ? addMins(start, mins) : '',
           venue: String(raw.place == null ? '' : raw.place), notes: '', public: false, createdAt: Number(raw.made) || now,

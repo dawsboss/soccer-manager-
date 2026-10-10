@@ -41,11 +41,36 @@ or something that stayed true only while some phone was open.
   writes (or writes nothing), and applies it in order in batches the
   database takes. A phone switched off after the ask lands loses nothing.
 
+And the rest of SERVER.md's list, the same day:
+
+- **Nightly backups.** Every club, whole, to the project's own bucket once a
+  night, the last thirty kept (`functions/backup.js`). Nothing to set up
+  beyond deploying.
+- **Email from the club.** Invitations go as real invitations in the club's
+  name (who invited her, to what, the link), and a coach can email a notice
+  to every family on her team from the club, one message each, with the
+  families found by the server from the squad (`functions/mail.js`). Needs
+  an SMTP secret (README, *Email from the club*; it must exist, with any
+  value, before the next functions deploy); without a real one the app does
+  what it did before.
+- **Busy times are each club's own.** Her shared times are copied by the
+  server into every club she is in (`training/{code}/elsewhere/{uid}`, her
+  other clubs' only), which that club's coaches and admins read; nobody can
+  read anyone's times by uid any more. One listener per club instead of one
+  per coach.
+- **No more claiming a club code.** The bootstrap clauses let a code be
+  claimed only when it starts `test-` (the app owner's test clubs); a real
+  club is made by the server or not at all. `rules.js`'s gaps 3 and 10 are
+  closed.
+- **Two small fixes:** a plan the migration moves onto the calendar is noted
+  as already said, so nobody is told of a "new" practice they planned months
+  ago; an import too big for one trigger event goes the phone's way.
+
 Each asks the server only where `firebase-config.js` sets the new
-`SOCCER_SERVER`; joining and importing fall back to the phone's own writes
-where the rules are too old to take the ask. New suites `joinask`,
-`importask` and `migrate`, and more in `mycalfeed`,
-`invites`, `rules` and `ids`.
+`SOCCER_SERVER`; joining, importing and emailing fall back to the phone's
+own writes where the rules are too old to take the ask, or the club has no
+mailer. New suites `joinask`, `importask`, `migrate`, `backup` and `mail`,
+and more in `mycalfeed`, `mycal`, `invites`, `rules` and `ids`.
 ## Families are asked until their children's details are finished — 2026-10-10 (build 129)
 
 A family used to be asked about her child's details once per phone, then only

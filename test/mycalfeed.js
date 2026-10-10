@@ -429,6 +429,32 @@ const named = doc => NAMES.filter(n => JSON.stringify(doc || {}).includes(n));
     check('private is the default: nothing written for somebody who never said yes', SN.at('people/mum/busy'), null);
   }
   {
+    // each club's own copy, of her other clubs only, for its coaches and admins to read (rules.js's gap 10 closed)
+    const NOW = Date.UTC(2026, 9, 10, 12);
+    const TAG = mycal.clubTag('CLUB'), TAG_O = mycal.clubTag('OTHER');
+    const env = S => ({ get: p => S.ref(p).get().then(s => s.val()), set: (p, v) => S.ref(p).set(v), claim: (p, fn) => S.ref(p).transaction(fn).then(r => !!r.committed) });
+    const S = server(db => { db.people.mum.set.share = true; });
+    S.put('serverState/myCal/people/mum', 1);
+    await mycal.run(env(S), NOW);
+    deepEq('this club holds her times at the other club, under its tag, and none of its own', Object.keys(S.at('training/CLUB/elsewhere/mum') || {}), [TAG_O]);
+    deepEq('and the other club hers here', Object.keys(S.at('training/OTHER/elsewhere/mum') || {}), [TAG]);
+    check('a club she is not in gets nothing', S.at('training/ELSE/elsewhere'), null);
+    const r = await (async () => { S.put('serverState/myCal/people/mum', 2); return mycal.run(env(S), NOW + 60000); })();
+    check('unchanged: not rewritten', r.busy.mum, 'same');
+    await S.fire('people/mum/set/share', false);
+    await mycal.run(env(S), NOW + 120000);
+    check('sharing turned off: every club\'s copy goes', [S.at('training/CLUB/elsewhere/mum'), S.at('training/OTHER/elsewhere/mum')].join(), ',');
+    // a role taken away: her bookmark goes with it (access.js), so the club's own run prunes her
+    const S2 = server(db => { db.people.mum.set.share = true; });
+    S2.put('serverState/myCal/people/mum', 1);
+    await mycal.run(env(S2), NOW);
+    S2.put('workspaces/OTHER/access/index/mum', null); S2.put('workspaces/OTHER/access/teams/o1/coaches/mum', null); S2.put('userOrgs/mum/OTHER', null);
+    S2.put('serverState/myCal/clubs/OTHER', 5);
+    await mycal.run(env(S2), NOW + 60000);
+    check('out of a club: that club\'s copy of her goes on its next run', S2.at('training/OTHER/elsewhere/mum'), null);
+    check('the club she is still in keeps its copy', !!S2.at('training/CLUB/elsewhere/mum'), true);
+  }
+  {
     // a club that cannot be read keeps what it had, and she is tried again
     const NOW = Date.UTC(2026, 9, 10, 12);
     const S = server(db => { db.people.mum.set.share = true; db.people.mum.busy = { [mycal.clubTag('OTHER')]: { at: 5, b: { b1: { d: '2026-10-17', s: '10:00', e: '11:00' } } } }; });
@@ -457,7 +483,7 @@ const named = doc => NAMES.filter(n => JSON.stringify(doc || {}).includes(n));
     for (const who of ['mum', 'coach']) {
       A.me = { uid: who, name: who };
       const phone = A.youBusy(A.myCalItems('all', true));
-      const server = mycal.busyTimes(await mycal.clubItems(read, who, 'CLUB'), '2026-10-10');
+      const server = mycal.busyTimes(await mycal.clubItems(read, who, 'CLUB'), '2026-10-09');
       deepEq(`${who}: the same busy times as her phone writes`, server, phone);
     }
   }

@@ -44,6 +44,8 @@ const SUITES = [
   ['mirror', 'the share pages\' calendar, kept in step by the server whoever changed it'],
   ['mycalfeed', 'my calendar\'s feed, built by the server from her roles in every club'],
   ['book', 'booking a coach\'s time: one server call, counted, with a waiting list'],
+  ['backup', 'nightly backups: every club whole, in the project\'s bucket, the last thirty kept'],
+  ['mail', 'email from the club: invitations and a team\'s notice, to the rules\' readers, from the club\'s address'],
   ['migrate', 'old practice plans and coach\'s notes moved once, by the server'],
   ['owners', 'who runs the club: only an owner takes an admin away, and every admin is told'],
   ['orgs', 'the app on orgs/: a family\'s phone holds her own children and numbers, staff read the squads, every write lands there'],

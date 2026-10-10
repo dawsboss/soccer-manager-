@@ -351,16 +351,19 @@ reads('signed in, registered, no role yet', NEWB, 'workspaces/CLUB', false);
 reads('signed in, unknown to this club', RANDO, 'workspaces/CLUB', false);
 reads('app owner holding no role here', OWNER, 'workspaces/CLUB', false);
 
-console.log('\n--- a club with nobody in its index (the bootstrap) ---');
-reads('any signed-in account can read it', RANDO, 'workspaces/FRESH', true);
-reads('signed out still cannot', OUT, 'workspaces/FRESH', false);
-writes('but NOBODY can write to it', RANDO, 'workspaces/FRESH/teams/t9/name', 'Renamed', false);
-writes('not even an admin of another club', ADM, 'workspaces/FRESH/teams/t9/name', 'Renamed', false);
-console.log('  ^ the read-only trap: a club whose data went in under the old open rules,');
-console.log('    before anyone held a role, opens fine and refuses every change until');
-console.log('    somebody claims admin. A club made under these rules claims admin first');
-console.log('    (see "a brand-new club" below), so only a database moving off the open');
-console.log('    rules can be caught by it.');
+console.log('\n--- a club with nobody in its index (the bootstrap, test clubs only since version 27) ---');
+reads('a real code with nobody in it is nobody\'s to read', RANDO, 'workspaces/FRESH', false);
+writes('nor to write', RANDO, 'workspaces/FRESH/teams/t9/name', 'Renamed', false);
+writes('nor to claim', RANDO, 'workspaces/FRESH/access/admins/rando', true, false);
+DB.workspaces['test-fresh'] = { teams: { t9: { id: 't9', name: 'New team' } } };
+reads('a test club (the app owner\'s rehearsal) still opens to any signed-in account', RANDO, 'workspaces/test-fresh', true);
+reads('signed out still cannot', OUT, 'workspaces/test-fresh', false);
+writes('but NOBODY can write to it', RANDO, 'workspaces/test-fresh/teams/t9/name', 'Renamed', false);
+writes('not even an admin of another club', ADM, 'workspaces/test-fresh/teams/t9/name', 'Renamed', false);
+console.log('  ^ the read-only trap: a club whose data went in before anyone held a role');
+console.log('    opens fine and refuses every change until somebody claims admin. A real');
+console.log('    club is made by the server, admin and index in one write (joinAsk), so');
+console.log('    only a test club seeded on a phone can be caught by it.');
 
 console.log('\n--- the squad: coaches of that team, and admins ---');
 writes('admin edits any team', ADM, 'workspaces/CLUB/teams/t1/name', 'Flight B', true);
@@ -554,7 +557,9 @@ writes('admin assigns a team role', ADM, 'workspaces/CLUB/access/teams/t1/coache
 writes('coach assigns a team role', COACH, 'workspaces/CLUB/access/teams/t1/coaches/newbie', true, false);
 writes('admin renames the club', ADM, 'workspaces/CLUB/access/org/name', 'Lakeside', true);
 writes('coach renames the club', COACH, 'workspaces/CLUB/access/org/name', 'Lakeside', false);
-writes('anyone claims a club that has no admin', RANDO, 'workspaces/FRESH/access/admins/rando', true, true);
+writes('nobody claims a real club that has no admin: the server makes clubs', RANDO, 'workspaces/FRESH/access/admins/rando', true, false);
+writes('a test club, anyone still may', RANDO, 'workspaces/test-fresh/access/admins/rando', true, true);
+delete DB.workspaces['test-fresh'];
 
 console.log('\n--- the index, which is what the read rule checks ---');
 writes('admin indexes somebody', ADM, 'workspaces/CLUB/access/index/newbie', true, true);
@@ -862,8 +867,18 @@ reads('nor read', COACH, 'shareOwners/sh1', false);
   writes('and no place, or which club', COACH, P + 'busy/abc123', { at: NOW, club: 'CLUB', b: busy.b }, false);
   writes('not in somebody else\'s name', ADM, P + 'busy/abc123', busy, false);
   DB.people.coach.busy = { abc123: busy };
-  reads('anyone signed in reads them', RANDO, P + 'busy', true);
+  reads('she reads her own', COACH, P + 'busy', true);
+  reads('nobody else does: the server tells each club she is in (training/{code}/elsewhere)', RANDO, P + 'busy', false);
+  reads('not an admin of her club either', ADM, P + 'busy', false);
   reads('not signed out', null, P + 'busy', false);
+  DB.training.CLUB.elsewhere = { coach: { abc123: busy } };
+  reads('the club\'s copy of her times elsewhere: its admins read it', ADM, 'training/CLUB/elsewhere', true);
+  reads('and its coaches', OTHER, 'training/CLUB/elsewhere', true);
+  reads('never a family', MUM, 'training/CLUB/elsewhere', false);
+  reads('nor a tracker', TRK, 'training/CLUB/elsewhere', false);
+  writes('and nobody writes it, not even an admin: it is the server\'s', ADM, 'training/CLUB/elsewhere/coach/abc123', busy, false);
+  writes('nor she herself', COACH, 'training/CLUB/elsewhere/coach/abc123', busy, false);
+  delete DB.training.CLUB.elsewhere;
   DB.people.coach.set = { share: false, at: NOW };
   writes('turned private, nothing more goes up', COACH, P + 'busy/abc123', busy, false);
   writes('and what was there comes down', COACH, P + 'busy', null, true);
@@ -1816,6 +1831,28 @@ reads('nor read', COACH, 'shareOwners/sh1', false);
   /* A bulk import applied by the server (functions/imports.js): the
      admin's plan, in one ask, and only an admin of that club may send one.
      What each write may be is the server's to check, against the club. */
+  /* Email from the club (functions/mail.js): an admin or a coach asks, in
+     her own name; who gets what is the server's to check against the club. */
+  console.log('\n--- asking the server: mailAsks ---');
+  const M = 'mailAsks/CLUB/';
+  writes('an admin asks for invitations to be sent', ADM, M + 'adm/m1', { op: 'invites', ids: ['iAbc', 'iDef'], at: NOW }, true);
+  writes('a coach too', COACH, M + 'coach/m1', { op: 'invites', ids: ['iAbc'], at: NOW }, true);
+  writes('or a notice to her team\'s families', COACH, M + 'coach/m1', { op: 'team', tid: 't1', subject: 'Flight', text: 'Practice moved', at: NOW }, true);
+  writes('not a tracker', TRK, M + 'trk/m1', { op: 'team', tid: 't1', text: 'Hi', at: NOW }, false);
+  writes('not a family', MUM, M + 'mum/m1', { op: 'team', tid: 't1', text: 'Hi', at: NOW }, false);
+  writes('not a stranger', RANDO, M + 'rando/m1', { op: 'invites', ids: ['iAbc'], at: NOW }, false);
+  writes('not in another\'s name', COACH, M + 'adm/m1', { op: 'invites', ids: ['iAbc'], at: NOW }, false);
+  writes('not with addresses of its own: the server finds them', COACH, M + 'coach/m1', { op: 'team', tid: 't1', text: 'Hi', to: 'x@y.z', at: NOW }, false);
+  writes('not something else', ADM, M + 'adm/m1', { op: 'everyone', at: NOW }, false);
+  writes('not stamped an hour ago', ADM, M + 'adm/m1', { op: 'invites', ids: ['iAbc'], at: NOW - H }, false);
+  writes('not a novel', COACH, M + 'coach/m1', { op: 'team', tid: 't1', text: 'x'.repeat(4001), at: NOW }, false);
+  reads('she reads her own asks and their answers', ADM, M + 'adm', true);
+  reads('nobody else\'s', COACH, M + 'adm', false);
+  DB.mailAsks = { CLUB: { adm: { m1: { op: 'invites', ids: ['iAbc'], at: NOW, answer: { ok: true, at: NOW } } } } };
+  writes('the answer is never hers to write', ADM, M + 'adm/m1/answer', { ok: true }, false);
+  writes('she clears it away', ADM, M + 'adm/m1', null, true);
+  delete DB.mailAsks;
+
   console.log('\n--- asking the server: importAsks ---');
   const I = 'importAsks/CLUB/';
   const plan = (extra = {}) => ({ at: NOW, writes: [{ p: 'orgs/CLUB/teams/t9', v: { id: 't9', name: 'New' } }], ...extra });
@@ -1874,9 +1911,13 @@ reads('nor read', COACH, 'shareOwners/sh1', false);
 
 /* Clubs arrive whenever they like, into the database every other club is
    already in, so making one has to work under the rules the established clubs
-   run on. These are the writes pushAll() makes for a club nobody has written
-   yet, in its order, each applied before the next is tried — exactly as the
-   database applies one client's writes in sequence. */
+   run on. Since version 27 the server makes a club (functions/join.js,
+   joinAsk): admin, owner, index, member and name in one write, at a code it
+   issues, past the rules. What the rules have to allow is everything the
+   founder does from then on, from her first phone, under the same rules as
+   every other club; and a test club, seeded on the app owner's phone, still
+   claims itself the old way. These are those writes in order, each applied
+   before the next is tried, as the database applies one client's writes. */
 {
   const put = (p, v) => {
     const segs = p.split('/');
@@ -1889,12 +1930,14 @@ reads('nor read', COACH, 'shareOwners/sh1', false);
   const W = 'workspaces/NEWCLUB/';
   console.log('\n--- a brand-new club, made today alongside the others ---');
   writes('signed out, nobody can start one', OUT, W + 'access/admins/x', true, false);
-  reads('a signed-in founder can read the empty code', FOUNDER, 'workspaces/NEWCLUB', true);
-  step('she claims admin of it', FOUNDER, W + 'access/admins/founder', true);
-  step('and owner of it, before anyone else is in it', FOUNDER, W + 'access/owners/founder', true);
-  step('puts herself in its index', FOUNDER, W + 'access/index/founder', true);
-  step('registers herself', FOUNDER, W + 'access/members/founder', { name: 'Fran', at: NOW });
-  step('names the club', FOUNDER, W + 'access/org/name', 'Hillside FC');
+  reads('nor can a signed-in founder read an empty real code', FOUNDER, 'workspaces/NEWCLUB', false);
+  writes('nor claim it: the server issues the code and writes the club', FOUNDER, W + 'access/admins/founder', true, false);
+  // what joinAsk writes, in one go, as the server (past the rules)
+  put(W + 'access/admins/founder', true); put(W + 'access/owners/founder', true); put(W + 'access/index/founder', true);
+  put(W + 'access/members/founder', { name: 'Fran', email: 'fran@example.com', at: NOW }); put(W + 'access/org/name', 'Hillside FC');
+  reads('made by the server, its founder reads it', FOUNDER, 'workspaces/NEWCLUB', true);
+  step('and changes its name', FOUNDER, W + 'access/org/name', 'Hillside Football Club');
+  step('and her own entry', FOUNDER, W + 'access/members/founder', { name: 'Fran B', email: 'fran@example.com', at: NOW });
   step('adds a team', FOUNDER, W + 'teams/tA', { id: 'tA', name: 'U9 Hawks', players: { a1: { id: 'a1', name: 'Ada' } } });
   step('and a game', FOUNDER, W + 'matches/gA', { id: 'gA', teamId: 'tA', opponent: 'Riverside' });
   step('and plans a practice', FOUNDER, 'training/NEWCLUB/practices/tA/pA', { id: 'pA', teamId: 'tA', date: '2026-10-06' });
@@ -1912,6 +1955,16 @@ reads('nor read', COACH, 'shareOwners/sh1', false);
   reads('and its founder still cannot read anyone else\'s club', FOUNDER, 'workspaces/CLUB', false);
   writes('nor write to one', FOUNDER, 'workspaces/CLUB/teams/t1/name', 'Mine now', false);
   delete DB.workspaces.NEWCLUB; delete DB.training.NEWCLUB;
+
+  // a test club, seeded on the app owner's phone, still claims itself: it is never published and grants nothing real
+  const TW = 'workspaces/test-abc/';
+  reads('a test club\'s empty code opens to a signed-in phone', FOUNDER, 'workspaces/test-abc', true);
+  step('which claims admin of it', FOUNDER, TW + 'access/admins/founder', true);
+  step('and owner', FOUNDER, TW + 'access/owners/founder', true);
+  step('and its index', FOUNDER, TW + 'access/index/founder', true);
+  step('and a team', FOUNDER, TW + 'teams/sbA', { id: 'sbA', name: 'Test Squad A' });
+  reads('from then on a stranger cannot read it', RANDO, 'workspaces/test-abc', false);
+  delete DB.workspaces['test-abc'];
 }
 
 /* ---------------- a club on orgs/ ---------------- */
@@ -2599,7 +2652,8 @@ reads('nor read', COACH, 'shareOwners/sh1', false);
     wk('— nor under a brand-new one', RANDO, 'workspaces/BRANDNEW/access/admins/rando', true, false);
     wk('— nor writes her own name there', OM, 'workspaces/ORGC/access/members/om', { name: 'Mo' }, false);
     wk('nobody asks for a club to be moved any more', OA, 'moveRequests/ORGC', { by: 'oa', at: NOW }, false);
-    wk('a brand-new code starts on orgs/', RANDO, 'orgs/BRANDNEW/access/admins/rando', true, true);
+    wk('a brand-new real code is nobody\'s to claim (the server issues them)', RANDO, 'orgs/BRANDNEW/access/admins/rando', true, false);
+    wk('a brand-new test code starts on orgs/', RANDO, 'orgs/test-brandnew/access/admins/rando', true, true);
   }
 
   console.log('\n--- a club on orgs/: the root rules follow it there ---');
@@ -2795,10 +2849,11 @@ console.log(`
      either the rules learn about appOwners, or the interface stops promising
      it. Nothing here depends on the answer.
 
-  3. Creating a club is still a bootstrap. access/admins may be written while
-     it is empty, so the first person to reach a brand-new workspace code
-     becomes its admin. Codes are long and random, and this is what lets a club
-     exist at all, but it is a trust-on-first-use and worth knowing about.
+  3. Closed (version 27): a real club is made by the server at a code it
+     issues (functions/join.js), admin, owner and index in one write, so no
+     code can be claimed by whoever reaches it first. The bootstrap clauses
+     survive for codes starting "test-" alone: the app owner's test clubs,
+     seeded on a phone, which are never published and grant nothing real.
 
   4. An invite with no email on it is a bearer token until it is spent: whoever
      opens the link first gets the role. Single use and a two-week expiry bound
@@ -2835,10 +2890,11 @@ console.log(`
      (functions/book.js, test/book.js). Where the functions are not
      deployed, nobody answers, and a family cannot book a time.
 
- 10. Somebody's shared busy times are readable by anyone signed in who knows
-     her uid. A uid is only shown inside a club she is in, and the times
-     carry nothing but a date and two times; private is the default, and the
-     rules refuse any busy time while she has not said to share.`);
+ 10. Closed (version 27): her shared busy times at people/{uid}/busy are hers
+     alone to read; the server copies them into each club she is in, at
+     training/{code}/elsewhere/{uid}, which that club's coaches and admins
+     read (functions/mycal.js). Private is the default, and the rules refuse
+     any busy time while she has not said to share.`);
 
 console.log(`\n${failures ? failures + ' EXPECTATION(S) FAILED' : 'all expectations hold'}`);
 process.exit(failures ? 1 : 0);
