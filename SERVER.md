@@ -146,6 +146,13 @@ does the bookkeeping, not that the phone works offline first.
   wait for the server.
 - **What goes away:** both phone halves, once every club has the functions
   deployed.
+- **A parent's name on her child's record** (`familyNames/{uid}` on the
+  squad record, build 129), for a player with her own sign-in and the
+  player's fans, who read that record and never members: written by her own
+  phone once a session (`ownFamilyName()`), on accepting a parent invite,
+  and by a coach or admin linking her; taken off on unlinking and by
+  `forgetMe`. **With a server:** written from members by the role triggers
+  the moment she is linked or renames herself.
 
 ---
 

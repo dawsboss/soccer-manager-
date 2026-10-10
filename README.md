@@ -145,7 +145,7 @@ For an older player who asks. On her page in Squad, her coach (or an admin) taps
 
 - **She sees what her parents see**: her own minutes under *My season*, the team's calendar, Live, Stats and the recap, teammates by shirt number unless the club shows the whole roster, and the team's notices.
 - **She says whether she's coming** ("Are you going?"), for herself only. Her parents can still change it, and the coach's word wins as always.
-- **She reads and writes in her family's conversation with the coaches**, one per parent account, where her parents see every word. She never has one of her own, so no coach talks to her where her parents can't see. The rules refuse that conversation too.
+- **She reads and writes in her family's conversation with the coaches**, one per parent account, where her parents see every word, each named. She can't read the club's members (they carry everyone's email), so each parent's name is kept on her own record (`familyNames`, build 129): her parent's phone writes it, and so does a coach linking a parent. She never has one of her own, so no coach talks to her where her parents can't see. The rules refuse that conversation too.
 - **She doesn't book or pay for sessions**; that stays with her parents.
 - **Taking it away** is *Remove* beside her account on the same page, or on People. Her parents keep theirs. *Withdraw* kills a link nobody has used yet.
 

@@ -2,7 +2,7 @@
    Static app. Data lives in localStorage, and mirrors to Firebase Realtime
    Database when a config + workspace code are present. */
 
-const BUILD = '128';
+const BUILD = '129';
 const BUILT = '2026-10-09';
 /* The version of database.rules.json this app was written against. The rules
    carry the same number in rulesVersion's .write, which accepts that number
@@ -11,7 +11,7 @@ const BUILT = '2026-10-09';
    never pasted look exactly like a coach with no signal: "saved on this phone
    only", one feature at a time. test/rules.js holds the two numbers together
    and fails when the rules change without this going up. */
-const RULES_VERSION = 26;
+const RULES_VERSION = 27;
 /* index.html carries the build it was published with. If this file is newer, the
    browser handed us a cached page — the exact failure that has eaten hours. */
 const pageBuild = () => {
@@ -390,6 +390,23 @@ function staffName() {
   if (!isAdmin(u) && !(a.coachIndex || {})[u] && !(a.helperIndex || {})[u]) return;
   namedHere = wsCode() + u;
   Promise.resolve(fb.set(fb.ref(fb.db, clubPath('names/' + u)), { name: String(me.name || '').slice(0, 80) })).catch(() => { });
+}
+/* A parent's own phone keeps her name on each of her children's records
+   (familyNames), once a session, so a family linked before names were kept,
+   or one who has renamed herself, is named to her child and her fans. Derived
+   like staffName(), so straight to the database, never through the outbox. */
+let familyNamedHere = '';
+// SERVER.md: a parent's name on her child's record; a server would write it when she is linked or renames herself.
+function ownFamilyName() {
+  if (!fb || !me || familyNamedHere === wsCode() + me.uid) return;
+  const u = me.uid, n = String(me.name || '').slice(0, 80);
+  if (!n) return;
+  familyNamedHere = wsCode() + u;
+  for (const [tid, t] of Object.entries(state.teams || {})) for (const [pid, p] of Object.entries((t && t.players) || {})) {
+    if (!p || !(p.guardians || {})[u] || (p.familyNames || {})[u] === n) continue;
+    setDeep(state, `teams/${tid}/players/${pid}/familyNames/${u}`, n);
+    Promise.resolve(fb.set(fb.ref(fb.db, clubPath(`teams/${tid}/players/${pid}/familyNames/${u}`)), n)).catch(() => { });
+  }
 }
 /* The coach's notes still on a child's record from before they had their own
    place (SEC-12) are moved there by the first phone that may: a coach of
@@ -1067,6 +1084,7 @@ async function initSync() {
         if (!x) { connected(null); return; }
         connected(orgsClub(x));
         staffName();
+        ownFamilyName();
         if (x.r.all) moveCoachNotes(x.squads, x.notes);
         listenOrgs(x);
         syncChildren();
@@ -2318,7 +2336,11 @@ async function redeemInvite() {
         ...(v.byName ? { askedBy: String(v.byName).slice(0, 80) } : {}), ...(v.playerNo ? { shirt: String(v.playerNo).slice(0, 40) } : {})
       });
     } else {
-      if (v.role === 'parent') await put(W(`teams/${v.team}/players/${v.player}/guardians/${who}`), id);
+      if (v.role === 'parent') {
+        await put(W(`teams/${v.team}/players/${v.player}/guardians/${who}`), id);
+        // her name beside her, where her child (if she signs in herself) and her fans can read it
+        if (me.name) await soft(put(W(`teams/${v.team}/players/${v.player}/familyNames/${who}`), String(me.name).slice(0, 80)));
+      }
       else if (v.role === 'player') await put(W(`teams/${v.team}/players/${v.player}/self/${who}`), id);
       else if (v.role === 'fan') await put(W(`teams/${v.team}/players/${v.player}/fans/${who}`), id);
       else if (v.role === 'viewer') await put(W('access/viewers/' + who), id);
@@ -3035,7 +3057,7 @@ async function approveClaim(tid, u, pids) {
     return;
   }
   setDeep(claimsSeen, `${tid}/${u}/approved`, { by: me.uid, at });
-  for (const pid of picked) if (!(((t.players[pid] || {}).guardians) || {})[u]) commit(`teams/${tid}/players/${pid}/guardians/${u}`, true);
+  for (const pid of picked) if (!(((t.players[pid] || {}).guardians) || {})[u]) { commit(`teams/${tid}/players/${pid}/guardians/${u}`, true); nameOnRecord(tid, pid, u, c && c.name); }
   // the team id, not `true`: that is what the rule checks a coach's write against
   if (!(acc().index || {})[u]) quiet(`access/index/${u}`, tid);
   if (!(acc().members || {})[u]) quiet(`access/members/${u}`, { name: c.name || '', email: c.email || '', at: c.at || at });
@@ -3421,7 +3443,30 @@ function families(tid) {
 }
 function familyName(u) {
   const x = (acc().members || {})[u] || {};
-  return x.name || (x.email ? x.email.split('@')[0] : '') || 'A parent';
+  return x.name || (x.email ? x.email.split('@')[0] : '') || recordName(u) || 'A parent';
+}
+/* A parent's name as it is kept on her child's own record (familyNames), for
+   the phones that may read that record and not members, which has everyone's
+   email: the player herself, her family and her fans. */
+function recordName(u) {
+  for (const t of Object.values(state.teams || {})) for (const p of Object.values((t && t.players) || {})) {
+    const n = p && (p.familyNames || {})[u];
+    if (typeof n === 'string' && n) return n;
+  }
+  return '';
+}
+/* Linking a family writes her name onto the child's record beside her, and
+   unlinking takes it off, so whoever reads the record sees who she is. Staff
+   write it from the club's members (the team rule lets them); her own phone
+   writes it too (ownFamilyName()). */
+function nameOnRecord(tid, pid, u, fallback) {
+  const m = (acc().members || {})[u] || {};
+  const n = String(m.name || fallback || '').slice(0, 80);
+  if (n) quiet(`teams/${tid}/players/${pid}/familyNames/${u}`, n);
+}
+function nameOffRecord(tid, pid, u) {
+  const p = ((state.teams[tid] || {}).players || {})[pid];
+  if (p && (p.familyNames || {})[u]) drop(`teams/${tid}/players/${pid}/familyNames/${u}`);
 }
 // the coach sees whose parent this is; nobody else is ever shown this
 function childrenOf(tid, u) {
@@ -20090,6 +20135,7 @@ function onAct(e) {
       if (!p) { toast('Pick the player'); return; }
       if (!(p.guardians || {})[uid]) {
         commit(`teams/${tid}/players/${p.id}/guardians/${uid}`, true);
+        nameOnRecord(tid, p.id, uid);
         logAccess('linked guardian', uid, { team: tid, teamName: x.name || null, player: p.name });
       }
       syncTeamParents(tid);
@@ -20126,6 +20172,7 @@ function onAct(e) {
     if (on) {
       forgetInvite(on);
       drop(`teams/${d.tid}/players/${d.pid}/guardians/${d.uid}`);
+      nameOffRecord(d.tid, d.pid, d.uid);
       logAccess('unlinked guardian', d.uid, { team: d.tid, teamName: x.name || null, player: p.name });
       syncIndex(d.uid); syncTeamParents(d.tid);
     }
@@ -21091,8 +21138,8 @@ function onAct(e) {
   if (a === 'toggleguard') {
     const p = t.players[d.pid];
     const on = ((p.guardians || {})[d.uid]);
-    if (on) { forgetInvite(on); drop(`teams/${t.id}/players/${d.pid}/guardians/${d.uid}`); }
-    else commit(`teams/${t.id}/players/${d.pid}/guardians/${d.uid}`, true);
+    if (on) { forgetInvite(on); drop(`teams/${t.id}/players/${d.pid}/guardians/${d.uid}`); nameOffRecord(t.id, d.pid, d.uid); }
+    else { commit(`teams/${t.id}/players/${d.pid}/guardians/${d.uid}`, true); nameOnRecord(t.id, d.pid, d.uid); }
     logAccess(on ? 'unlinked guardian' : 'linked guardian', d.uid, { team: t.id, teamName: t.name || null, player: p.name });
     syncIndex(d.uid); syncTeamParents(t.id);
     sheetPlayer(state.teams[t.id].players[d.pid]); return;
