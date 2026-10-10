@@ -8,7 +8,7 @@ before this point lives only in the git log.
 
 ---
 
-## The app is TeamPlayHQ — 2026-10-10 (build 131)
+## The app is TeamPlayHQ — 2026-10-10 (build 132)
 
 The site has its own domain, so the app takes the name that goes with it. *Minutes* was what it was called while it was a sub tracker; it is a club's calendar, messages, training and registration now, and the name on the screen, the Home Screen icon, every notification and every page that says "open it in…" should be the one on the address.
 
@@ -16,6 +16,21 @@ The site has its own domain, so the app takes the name that goes with it. *Minut
 - **`CNAME`** carries `teamplayhq.com`, so the Pages deploy keeps the custom domain whatever the repo's settings do.
 - The brand in the top bar never wraps or pushes the buttons off a narrow phone (`.brand` clips with an ellipsis).
 - Nothing in the data, the paths or the rules changes; *Minutes* survives only where it means minutes played, and in the history here.
+
+---
+
+## A new address says "sign in" — 2026-10-10 (build 131)
+
+Opening an old link on the new domain showed an empty club that looked as if it was still loading, with no way to sign in: a phone that has never held a club has no admins to be locked by, so nothing asked for a sign-in. Now a device with a database, nobody signed in and nothing held shows **Sign in to open your club** with the button.
+
+- **The club's name no longer reads "Club" while it loads.** `clubName()` falls back to the name in her account's list of clubs, then to "Your club" until the club has been read, so the crumbs and Club home are right the moment she signs in rather than after a forced refresh.
+- A device with teams of its own on it, and a device with no database, are left open as before.
+
+---
+
+## Back swipe closes a pop-up — 2026-10-10
+
+On a phone, the back swipe with a sheet open went to the screen behind it and left the sheet up. A sheet now takes a history entry of its own when it opens, so back closes it and nothing else; closing it any other way gives the entry back, and moving to another screen from it uses the entry up rather than adding a second.
 
 ---
 
