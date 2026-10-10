@@ -252,7 +252,7 @@ If a deploy fails on permissions, the message names what is missing; add the rol
 - *The permission cloudfunctions.functions.setIamPolicy is required to deploy … calendar*: **Cloud Functions Admin**.
 - *Permission denied while using the Eventarc Service Agent … Retry the deployment in a few minutes*: nothing missing; the very first deploy of database-triggered functions waits on Google. Run it again after five minutes.
 
-**The site's address, for calendar links.** An entry in a subscribed calendar links back into the app (a game to its page, a practice to the team's calendar, My calendar's entries to My calendar), and the server cannot know where the site is, so `functions/.env` says: `SOCCER_SITE=https://dawsboss.github.io/soccer-manager-/index.html`. It is committed (it is not a secret) and loaded on every deploy. If the site moves (a custom domain), change it there; `test/mirror.js` holds it to an `https` address ending `index.html`.
+**The site's address, for calendar links.** An entry in a subscribed calendar links back into the app (a game to its page, a practice to the team's calendar, My calendar's entries to My calendar), and the server cannot know where the site is, so `functions/.env` says: `SOCCER_SITE=https://teamplayhq.com/index.html`. It is committed (it is not a secret) and loaded on every deploy. If the site moves again, change it there; `test/mirror.js` holds it to an `https` address ending `index.html`.
 
 **Share pages need the functions.** Since build 120 phones never write `public/` and the rules refuse it (version 19): a club whose functions are not deployed has share links that never fill in.
 
