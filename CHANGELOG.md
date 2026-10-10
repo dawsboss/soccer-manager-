@@ -17,6 +17,12 @@ Opening an old link on the new domain showed an empty club that looked as if it 
 
 ---
 
+## Back swipe closes a pop-up — 2026-10-10
+
+On a phone, the back swipe with a sheet open went to the screen behind it and left the sheet up. A sheet now takes a history entry of its own when it opens, so back closes it and nothing else; closing it any other way gives the entry back, and moving to another screen from it uses the entry up rather than adding a second.
+
+---
+
 ## The site moves to teamplayhq.com — 2026-10-10
 
 The site is served at its own domain now (GitHub Pages, custom domain `teamplayhq.com`) instead of `dawsboss.github.io/soccer-manager-/`. The app builds every link it hands out (invites, team links, share pages, registration) from the address it is open on, so those follow by themselves; the one place that cannot is the server, which has no page to look at.

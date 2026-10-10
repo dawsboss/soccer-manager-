@@ -6652,8 +6652,26 @@ function openSheet(html, top) {
   s.hidden = false;
   if (fresh) s.scrollTop = 0;
   $('#scrim').hidden = false;
+  if (fresh) sheetEntry();
 }
-function closeSheet() { $('#sheet').hidden = true; $('#scrim').hidden = true; }
+/* A sheet gets a history entry of its own (same address) so the phone's back
+   swipe closes the sheet instead of going to the screen behind it. Closing it
+   any other way gives the entry back, unless a move to another screen has
+   already used it up (syncHash replaces it rather than pushing). */
+let sheetPushed = false, sheetIgnorePop = false;
+function sheetEntry() {
+  if (sheetPushed || typeof history === 'undefined' || !history.pushState || !booted) return;
+  try { history.pushState({ sheet: 1 }, '', location.href); sheetPushed = true; } catch (e) { }
+}
+function closeSheet() {
+  const was = !$('#sheet').hidden;
+  $('#sheet').hidden = true; $('#scrim').hidden = true;
+  if (was && sheetPushed) setTimeout(() => {
+    if (!sheetPushed || !$('#sheet').hidden) return;
+    sheetPushed = false; sheetIgnorePop = true;
+    try { history.back(); } catch (e) { sheetIgnorePop = false; }
+  }, 0);
+}
 let toastT;
 function toast(msg) {
   const t = $('#toast'); t.textContent = msg; t.hidden = false;
@@ -21915,7 +21933,8 @@ function syncHash() {
   if (location.hash === want) return;
   routing = true;
   const url = location.pathname + location.search + want;
-  if (booted) history.pushState(null, '', url); else history.replaceState(null, '', url);
+  if (booted && !sheetPushed) history.pushState(null, '', url); else history.replaceState(null, '', url);
+  sheetPushed = false;
   booted = true;
   setTimeout(() => { routing = false; }, 0);
 }
@@ -21935,6 +21954,10 @@ if (typeof document !== 'undefined' && document.addEventListener)
 
 if (typeof window !== 'undefined' && window.addEventListener) {
   const backOrForward = () => {
+    if (sheetIgnorePop) { sheetIgnorePop = false; return; }
+    // back with a sheet open closes the sheet, nothing else
+    if (sheetPushed && !$('#sheet').hidden) { sheetPushed = false; $('#sheet').hidden = true; $('#scrim').hidden = true; return; }
+    sheetPushed = false;
     if (routing) return;
     const want = uiToHash();
     if (location.hash === want) return;
