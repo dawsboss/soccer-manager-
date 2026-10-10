@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<!-- SECURITY.md, SEC-3: the same policy as every other page (test/version.js holds them to one).
+     This page loads nothing but its fonts and its own styles. -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://www.gstatic.com https://apis.google.com https://*.firebaseio.com https://*.firebasedatabase.app; connect-src 'self' https://*.googleapis.com https://*.firebaseio.com wss://*.firebaseio.com https://*.firebasedatabase.app wss://*.firebasedatabase.app https://*.cloudfunctions.net https://www.gstatic.com https://auth.teamplayhq.com; frame-src https://auth.teamplayhq.com https://*.firebaseapp.com https://*.web.app https://accounts.google.com https://apis.google.com https://*.firebaseio.com https://*.firebasedatabase.app; img-src 'self' data: blob: https:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; manifest-src 'self'; worker-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#17603C">
+<title>Privacy Policy · TeamPlayHQ</title>
+<link rel="icon" href="icon-192.png" type="image/png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600&family=Barlow+Condensed:wght@600;700&display=swap" rel="stylesheet">
+<!-- Inline styles rather than styles.css: the deploy stamps ?v= only on the app's own pages,
+     and a legal page should never wait on the app's stylesheet. -->
+<style>
+  :root{--field:#17603C;--ink:#1c2420;--ink-soft:#56615b;--line:#dfe5e1;--bg:#f6f8f7;--card:#fff}
+  @media (prefers-color-scheme: dark){:root{--field:#7FD6A6;--ink:#e8eeea;--ink-soft:#a7b3ac;--line:#2c3631;--bg:#121715;--card:#1a211e}}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.6 Barlow,system-ui,sans-serif}
+  header{background:#17603C;color:#fff;padding:calc(18px + env(safe-area-inset-top)) 16px 20px}
+  header a{color:#fff;font-size:14px;opacity:.85}
+  h1,h2{font-family:"Barlow Condensed",sans-serif;letter-spacing:.01em;line-height:1.15}
+  h1{font-size:32px;margin:10px 0 4px}
+  header p{margin:0;font-size:14px;opacity:.8}
+  main{max-width:720px;margin:0 auto;padding:8px 16px 48px}
+  h2{font-size:23px;margin:32px 0 6px;color:var(--field)}
+  ul{padding-left:22px}li{margin:4px 0}
+  a{color:var(--field)}
+  .box{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:14px 16px;margin:18px 0}
+  footer{text-align:center;color:var(--ink-soft);font-size:14px;padding:0 16px 40px}
+</style>
+</head>
+<body>
+<header>
+  <a href="index.html">← Back to TeamPlayHQ</a>
+  <h1>Privacy Policy</h1>
+  <p>Effective October 10, 2026</p>
+</header>
+<main>
+
+<div class="box"><b>The short version.</b> TeamPlayHQ is a tool soccer clubs use for their teams, calendars, messages and registration. We keep what a club and its families put into it, show each part only to the people in the club who need it, never sell it, never show ads, and never use it to train AI. Public score pages show shirt numbers, not names. You can delete your account from the app at any time.</div>
+
+<h2>Who we are</h2>
+<p>TeamPlayHQ (“we”, “us”) is an app at <a href="https://teamplayhq.com">teamplayhq.com</a>, run by an individual developer in the United States. Questions about this policy or your data: <a href="mailto:dawson@teamplayhq.com">dawson@teamplayhq.com</a>.</p>
+
+<h2>Clubs and us</h2>
+<p>Each club decides who joins it and what it records. A club’s admins, coaches and families put information in; we store it and run the app on the club’s behalf. If you have a question about what your club records about you or your child, ask the club first; we will help either of you.</p>
+
+<h2>What we collect</h2>
+<p><b>About you, when you sign in</b></p>
+<ul>
+  <li>Your name, email address and profile picture link, from the sign-in provider you choose (such as Google). We never see your password for that provider.</li>
+  <li>The clubs and teams you belong to and your role in each (for example admin, coach, parent or player).</li>
+  <li>Your settings: which notifications you want, whether your calendar busy times are shared, your calendar feed address.</li>
+  <li>A notification token for each device where you turn on notifications.</li>
+</ul>
+<p><b>About players, entered by the club or the family</b></p>
+<ul>
+  <li>Name, shirt number, photo if one is added, birth date and gender, and which family members are linked to them.</li>
+  <li>Care details a family chooses to give: emergency contacts and their phone numbers, allergies, conditions, medication and doctor.</li>
+  <li>Game and training records: minutes played, goals and other stats, attendance, whether they are coming to a game or practice, training session bookings.</li>
+  <li>Coaches’ notes, ratings and pairings.</li>
+  <li>Registration answers, and agreements to a club’s waivers (the name typed and when).</li>
+</ul>
+<p><b>What you write</b></p>
+<ul>
+  <li>Messages, team notices, calendar entries, practice plans and drills.</li>
+  <li>Session fees a club records as paid or owed. TeamPlayHQ does not process payments and never sees card or bank details.</li>
+</ul>
+<p>We do not use analytics or advertising trackers, and we do not use cookies of our own. Sign-in uses your browser’s storage to keep you signed in.</p>
+
+<h2>How we use it</h2>
+<ul>
+  <li>To run the app for your club: show the right people the squads, calendars, games, messages and registrations they are allowed to see.</li>
+  <li>To send the notifications you turn on, and to keep your calendar feed up to date.</li>
+  <li>To keep the app secure and to fix problems.</li>
+</ul>
+<p>We do not sell personal information, share it for advertising, or use it to train AI models. The app never sends anything to an AI service. Its <i>Ask an AI</i> feature only copies a prompt for you to paste yourself, with players replaced by shirt numbers.</p>
+
+<h2>Who can see what</h2>
+<ul>
+  <li><b>Club admins</b> see the club’s records, including registrations and care details.</li>
+  <li><b>Coaches</b> see their club’s teams and their own players’ care details, but not registrations.</li>
+  <li><b>Parents and players</b> see their own child (or themselves) by name. Teammates appear by shirt number unless the club chooses to show names.</li>
+  <li><b>Messages</b> between a family and a team can be read by that family, the team’s coaches and the club’s admins. Messages are protected in transit and by access rules, but are not end-to-end encrypted.</li>
+  <li><b>Public pages.</b> A coach can share a link to a team’s season, a game or its calendar. Those pages show scores, schedules and shirt numbers, never players’ names, care details or registrations. Anyone with the link can view the page until it is replaced or expires.</li>
+</ul>
+
+<h2>Services we use</h2>
+<p>TeamPlayHQ is hosted on <b>GitHub Pages</b> and runs on <b>Google Firebase</b> (Google Cloud) in the United States: sign-in, the database, server functions and push notifications. Fonts come from <b>Google Fonts</b>. These providers process data only to provide their services to us. If you sign in with Apple or Microsoft, that company handles the sign-in.</p>
+
+<h2>Children</h2>
+<p>TeamPlayHQ is used by youth clubs, so it holds information about children. That information is entered by a parent or guardian, or by the club with the family’s knowledge, and is used only to run the club’s teams. A player may have their own sign-in only when their coach or club creates it; for a child under 13 that requires a parent or guardian’s consent, and the player’s messages with coaches are always visible to their parents. A parent or guardian can review, correct or delete their child’s information in the app or by emailing us. If you believe a child’s information was given to us without consent, contact us and we will remove it.</p>
+
+<h2>On your device</h2>
+<p>So that coaches can use the app at a field with no signal, a copy of what your account can see is kept in your browser’s storage on that device. Signing out stops the app showing it; clearing the site’s data in your browser removes it.</p>
+
+<h2>Keeping and deleting</h2>
+<ul>
+  <li>We keep data while the club uses TeamPlayHQ, or until it is deleted.</li>
+  <li><b>Delete my account</b> (in your account menu) removes your account, your roles in every club, your settings and notification tokens. Messages you sent stay in the conversations they were part of. Your child’s records stay with the club for its admins, who can delete them, or you can ask us to.</li>
+  <li>A club admin can delete players, records and the whole club.</li>
+</ul>
+
+<h2>Your choices and rights</h2>
+<p>You can see and correct most of your information in the app, turn notifications off, and delete your account; a club’s admins can download a copy of the club’s data from Settings. For anything else (access, correction or deletion of information about you or your child) email <a href="mailto:dawson@teamplayhq.com">dawson@teamplayhq.com</a>. Depending on where you live, including California, you may have further rights under local law; we will honour them, and we will not treat you differently for using them.</p>
+
+<h2>Security</h2>
+<p>Data is sent encrypted (HTTPS) and protected by access rules that decide, for each part of a club, who may read or change it. No system is perfectly secure; if a breach affects your information we will tell you as the law requires.</p>
+
+<h2>Changes</h2>
+<p>If we change this policy we will update the date at the top, and tell clubs in the app about anything significant before it takes effect.</p>
+
+</main>
+<footer><a href="terms">Terms of Service</a> · <a href="index.html">Open TeamPlayHQ</a></footer>
+</body>
+</html>

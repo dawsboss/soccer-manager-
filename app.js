@@ -2,7 +2,7 @@
    Static app. Data lives in localStorage, and mirrors to Firebase Realtime
    Database when a config + workspace code are present. */
 
-const BUILD = '132';
+const BUILD = '133';
 const BUILT = '2026-10-10';
 /* The version of database.rules.json this app was written against. The rules
    carry the same number in rulesVersion's .write, which accepts that number
@@ -6882,6 +6882,12 @@ function unconfirmedScreen() {
       <button class="btn quiet" data-act="clubswitch">Other clubs</button></div></div></div>`;
 }
 
+/* The privacy policy and terms, on every screen that asks someone to sign in and
+   in the account menu: Google's consent screen links to them, and a family
+   should be able to read them before handing over a child's details. Plain
+   links to static pages, so they open with no signal-dependent code. */
+const LEGAL_LINKS = '<p class="auth-fine legal"><a href="privacy">Privacy Policy</a> · <a href="terms">Terms of Service</a></p>';
+
 function welcomeScreen() {
   return `<div class="stack"><div class="auth-card">
     ${authHero('Sign in to open your club', wsCode()
@@ -6890,6 +6896,7 @@ function welcomeScreen() {
     <div class="auth-card-body">
       <button class="btn wide auth-go" data-act="signinsheet">Sign in</button>
       <p class="auth-fine">Read-only score pages need none of this — they keep working from their own link.</p>
+      ${LEGAL_LINKS}
     </div></div></div>`;
 }
 
@@ -6902,6 +6909,7 @@ function lockScreen() {
       ${me ? `<button class="btn quiet wide" data-act="signout">Sign out</button>` : `<button class="btn wide auth-go" data-act="signinsheet">Sign in</button>`}
       ${me && Object.keys(myClubs || {}).some(c => c !== wsCode()) ? `<button class="btn quiet wide" data-act="clubswitch" style="margin-top:8px">Your other clubs</button>` : ''}
       <p class="auth-fine">Read-only score pages need none of this — they keep working from their own link.</p>
+      ${LEGAL_LINKS}
     </div></div></div>`;
 }
 
@@ -6995,7 +7003,8 @@ function sheetAccount() {
       <span class="rowsub">${allKidNames().map(esc).join(', ')}</span></button>` : ''}
     <button class="btn danger wide" data-act="signout" style="margin-top:8px">Sign out</button>
     ${fbConfig().apiKey ? '<button class="btn quiet danger wide" data-act="forgetsheet" style="margin-top:8px">Delete my account</button>' : ''}
-    <p class="muted">Club settings live under the club itself, since you may belong to more than one.</p>`);
+    <p class="muted">Club settings live under the club itself, since you may belong to more than one.</p>
+    <p class="muted"><a href="privacy">Privacy Policy</a> · <a href="terms">Terms of Service</a></p>`);
 }
 
 /* Deleting an account (AUTH.md, *Deleting*). The club's server does the
