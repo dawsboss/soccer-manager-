@@ -241,6 +241,12 @@ The club's server is Cloud Functions on the same Firebase project, in `functions
    gcloud projects add-iam-policy-binding PROJECT_ID --member=serviceAccount:PROJECT_NUMBER-compute@developer.gserviceaccount.com --role=roles/eventarc.eventReceiver
    ```
    Or IAM → **Grant access** for each, with the same accounts and roles (Service Account Token Creator, Cloud Run Invoker, Eventarc Event Receiver). Never give the deploy key the power to grant roles itself: a leaked key could then grant itself anything.
+
+   And one more, the first time a function that reads a secret is deployed (the mailer's `SOCCER_SMTP_URL`, build 135): the functions' own account has to be allowed to read it, and the CLI tries to grant that itself, which a deploy key with the roles above rightly cannot (*Permission 'secretmanager.secrets.setIamPolicy' denied*). After the workflow has made the secret (it does, with a placeholder, before deploying), grant it once by hand:
+   ```
+   gcloud secrets add-iam-policy-binding SOCCER_SMTP_URL --project=PROJECT_ID --member=serviceAccount:PROJECT_NUMBER-compute@developer.gserviceaccount.com --role=roles/secretmanager.secretAccessor
+   ```
+   then run the workflow again; it finds the grant there and moves on. The same line, with its name, for every secret added later (payments will add Stripe's). The alternative is one more role on `github-deployer`, **Secret Manager Admin**, which lets the deploy do this itself for every secret from then on.
 4. **Merge to main**, or **Actions → Deploy the server → Run workflow**. The first deploy takes several minutes while Google switches on what functions need; if it fails at that stage, run it once more.
 
 If a deploy fails on permissions, the message names what is missing; add the role to `github-deployer` (IAM & Admin → IAM → its pencil → Add another role) and run it again:
@@ -250,6 +256,7 @@ If a deploy fails on permissions, the message names what is missing; add the rol
 - *We failed to modify the IAM policy for the project*: step 3 above has not been done.
 - *The permission cloudfunctions.functions.setIamPolicy is required to deploy … calendar*: **Cloud Functions Admin**.
 - *Permission denied while using the Eventarc Service Agent … Retry the deployment in a few minutes*: nothing missing; the very first deploy of database-triggered functions waits on Google. Run it again after five minutes.
+- *Permission 'secretmanager.secrets.setIamPolicy' denied for resource … secrets/SOCCER_SMTP_URL*: the functions' account cannot read the mail secret yet. The one-line grant at the end of step 3, or **Secret Manager Admin** on `github-deployer`.
 
 **The site's address, for calendar links.** An entry in a subscribed calendar links back into the app (a game to its page, a practice to the team's calendar, My calendar's entries to My calendar), and the server cannot know where the site is, so `functions/.env` says: `SOCCER_SITE=https://teamplayhq.com/index.html`. It is committed (it is not a secret) and loaded on every deploy. If the site moves again, change it there; `test/mirror.js` holds it to an `https` address ending `index.html`.
 
