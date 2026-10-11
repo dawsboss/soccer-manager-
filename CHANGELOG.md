@@ -8,6 +8,24 @@ before this point lives only in the git log.
 
 ---
 
+## A to-do list for what GitHub Pages can't do — 2026-10-11
+
+`HOSTING.md` lists what Pages can't do (rewrites, headers, server code, a link preview per address), the plan for moving the site to Firebase Hosting on the same project, its downsides and the limits measured against today's site. The move is on hold (the owner): Pages does the job now, and the file keeps every request that needs the move (real addresses instead of `#/`, security headers, a preview per game link, cache control) until it happens. `CLAUDE.md` points at it so the next request that can't be done on Pages lands there too.
+
+---
+
+## Back goes back a screen, and closes a sheet — 2026-10-11 (build 134)
+
+The browser's Back button (and a phone's back gesture) is meant to step back through the screens she visited before it leaves the site. Each screen already had its own address, but two things broke it:
+
+- **The first move after opening the site replaced the page instead of adding one.** Whether a screen got a new history entry hung on a flag set only when the address changed, so a page opened on an address it kept (a reload, a link, the home-screen icon, which now reopens on the same address at teamplayhq.com) swallowed her first move, and Back left the site a page early. Now a screen gets an entry when a tap drew it (`tapped`, marked ahead of every click handler), and a screen the app moves her to by itself (the club read arriving, a tab her role doesn't get, a game whose Subs were put away) replaces instead, so Back never lands on an address that bounces her forward again.
+- **A sheet open over a screen had no entry**, so Back moved the screen behind it and left the sheet open on top. A sheet now has an entry of its own at the same address: Back closes it and the screen stays put. Closed any other way (the scrim, Escape, a button) the entry is taken back off, so there is no dead Back press, and a button in a sheet that goes to another screen takes over the sheet's entry, so that is one Back too.
+- Addresses stay hash routes (`#/team/…`): GitHub Pages still has no rewrites on a custom domain, so a path like `/team/…` would 404 on a reload or a shared link.
+- This takes over from *Back swipe closes a pop-up* below, which was made in parallel and did the sheet half but kept the first-move bug; its code is replaced by this one.
+- `test/routing.js` drives a fake browser history for all of it.
+
+---
+
 ## A privacy policy and terms of service — 2026-10-10 (build 133)
 
 Google's sign-in consent screen asks for a home page, a privacy policy and terms before it will show the app's own name and logo, and a family handing over a child's birth date and medical details should be able to read what happens to them first. TeamPlayHQ had neither page.

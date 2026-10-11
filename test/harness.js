@@ -202,7 +202,7 @@ const EXPORTS = `{
   get mine() { return mine }, get mineUid() { return mineUid }, get shelfState() { return shelfState },
   get drillDraft() { return drillDraft },
   /* rendering + routing */
-  render, uiToHash, hashToUi, clubTag,
+  render, uiToHash, hashToUi, syncHash, openSheet, closeSheet, clubTag,
   clubClashesOn, coachStatus, freeCoaches, clubNews, newsFor, newsItems, newsUnread, fieldShut, fieldHours, fieldClosures, awayAll, awaySpans, calledOut, findTimes, picOrder, picLayout, plannerClashes, PLANNER_ACTS,
   /* the club's week, adding to any team, and fields shared */
   schedWeek, schedTodo, schedLine, gameDefaults, fieldMates, fieldMatesLine, placeClash, myCalOwn, SCHED_ACTS, get gamesForm() { return gamesForm },

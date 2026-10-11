@@ -2,8 +2,8 @@
    Static app. Data lives in localStorage, and mirrors to Firebase Realtime
    Database when a config + workspace code are present. */
 
-const BUILD = '133';
-const BUILT = '2026-10-10';
+const BUILD = '134';
+const BUILT = '2026-10-11';
 /* The version of database.rules.json this app was written against. The rules
    carry the same number in rulesVersion's .write, which accepts that number
    and nothing else, so writing it is a question only the published rules can
@@ -6652,25 +6652,12 @@ function openSheet(html, top) {
   s.hidden = false;
   if (fresh) s.scrollTop = 0;
   $('#scrim').hidden = false;
-  if (fresh) sheetEntry();
-}
-/* A sheet gets a history entry of its own (same address) so the phone's back
-   swipe closes the sheet instead of going to the screen behind it. Closing it
-   any other way gives the entry back, unless a move to another screen has
-   already used it up (syncHash replaces it rather than pushing). */
-let sheetPushed = false, sheetIgnorePop = false;
-function sheetEntry() {
-  if (sheetPushed || typeof history === 'undefined' || !history.pushState || !booted) return;
-  try { history.pushState({ sheet: 1 }, '', location.href); sheetPushed = true; } catch (e) { }
+  if (fresh) sheetEntered();
 }
 function closeSheet() {
   const was = !$('#sheet').hidden;
   $('#sheet').hidden = true; $('#scrim').hidden = true;
-  if (was && sheetPushed) setTimeout(() => {
-    if (!sheetPushed || !$('#sheet').hidden) return;
-    sheetPushed = false; sheetIgnorePop = true;
-    try { history.back(); } catch (e) { sheetIgnorePop = false; }
-  }, 0);
+  if (was) sheetLeft();
 }
 let toastT;
 function toast(msg) {
@@ -21759,6 +21746,15 @@ function onAct(e) {
   if (a === 'importinviteskip') { importContacts = null; closeSheet(); return;
   }
 }
+/* Whether a tap drew this screen, for syncHash (see routing). Registered
+   before onAct, and in the capture phase, so it is marked before any
+   handler that draws the next screen runs. */
+let tapped = false;
+{
+  const mark = () => { tapped = true; setTimeout(() => { tapped = false; }, 0); };
+  document.addEventListener('click', mark, true);
+  document.addEventListener('change', mark, true);
+}
 document.addEventListener('click', onAct);
 /* A <select> from pickOne() stands in for a row of chips, so it goes through
    the same action a chip would have, carrying what was chosen as data-v. */
@@ -21933,18 +21929,51 @@ function hashToUi() {
   return false;
 }
 
-let routing = false, booted = false;
+let routing = false;
 /* pushState, not replaceState: every move needs its own history entry or the
-   phone's back gesture walks straight out of the app instead of up a level. */
+   phone's back gesture walks straight out of the app instead of up a level.
+   But only a move she made gets one. Whether the address changed because she
+   tapped something is the test, not whether the app has booted: it used to
+   be a `booted` flag set only when the address changed, so a page opened on
+   an address it kept (a reload, a link, the home-screen icon) replaced her
+   first move instead of adding it, and Back left the site a page early. And
+   a screen the app moves her off by itself (a tab her role doesn't get, a
+   game whose Subs were put away, the club read arriving) replaces, or Back
+   lands on the old address, is moved off it again and pushes it back: a loop
+   she can't Back out of. `tapped` is set up beside onAct, ahead of every
+   click handler. */
+/* A sheet has a history entry of its own, at the same address, so Back closes
+   it rather than moving the screen behind it while it stays open on top.
+   Closed any other way (the scrim, Escape, a button), the entry is taken back
+   off with history.back(), a tick later: if the same tap goes on to another
+   screen, that screen takes over the sheet's entry instead (syncHash), so
+   closing a sheet and moving on is one Back, not two. */
+let sheetEntry = false, sheetBack = false, ignorePops = 0;
+function sheetEntered() {
+  if (sheetBack) { sheetBack = false; return; }   // one sheet closed for the next: same entry
+  if (sheetEntry || typeof history === 'undefined' || !history.pushState) return;
+  try { history.pushState({ sheet: 1 }, '', location.pathname + location.search + location.hash); sheetEntry = true; } catch (e) { }
+}
+function sheetLeft() {
+  if (!sheetEntry || sheetBack) return;
+  sheetBack = true;
+  setTimeout(() => {
+    if (!sheetBack) return;
+    sheetBack = false; sheetEntry = false; ignorePops++;
+    try { history.back(); } catch (e) { ignorePops--; }
+  }, 0);
+}
 function syncHash() {
   if (typeof history === 'undefined' || !history.pushState) return;
   const want = uiToHash();
   if (location.hash === want) return;
   routing = true;
   const url = location.pathname + location.search + want;
-  if (booted && !sheetPushed) history.pushState(null, '', url); else history.replaceState(null, '', url);
-  sheetPushed = false;
-  booted = true;
+  if (sheetBack) { sheetBack = false; sheetEntry = false; history.replaceState(null, '', url); }
+  else if (tapped && !sheetEntry) history.pushState(null, '', url);
+  // the app moving her by itself, or the screen behind an open sheet: the entry stays whose it was
+  else history.replaceState(history.state, '', url);
+  tapped = false;
   setTimeout(() => { routing = false; }, 0);
 }
 const avEl = $('#avatar');
@@ -21962,11 +21991,15 @@ if (typeof document !== 'undefined' && document.addEventListener)
   document.addEventListener('visibilitychange', () => { if (!document.hidden && (ui.view === 'inbox' || ui.view === 'thread')) render(); });
 
 if (typeof window !== 'undefined' && window.addEventListener) {
-  const backOrForward = () => {
-    if (sheetIgnorePop) { sheetIgnorePop = false; return; }
-    // back with a sheet open closes the sheet, nothing else
-    if (sheetPushed && !$('#sheet').hidden) { sheetPushed = false; $('#sheet').hidden = true; $('#scrim').hidden = true; return; }
-    sheetPushed = false;
+  const backOrForward = e => {
+    if (e && e.type === 'popstate') {
+      if (ignorePops) { ignorePops--; return; }   // a closed sheet's entry, taken off
+      /* Back with a sheet open closes it. Its entry is gone now, so a sheet
+         reopened gets a fresh one; and the screen only moves if the entry
+         Back landed on was another screen's. */
+      sheetEntry = false; sheetBack = false;
+      if (!$('#sheet').hidden) { $('#sheet').hidden = true; $('#scrim').hidden = true; }
+    }
     if (routing) return;
     const want = uiToHash();
     if (location.hash === want) return;
