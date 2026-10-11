@@ -1,0 +1,59 @@
+name: Clear what the move left behind
+
+# Every club moved to orgs/{code} (AUTH.md, *The move to `orgs/{orgId}`*), and
+# build 128 took the old tree out of the rules, the server and the app. Three
+# things stayed in the database that nothing reads any more, and no rule lets
+# a phone reach:
+#   - serverState/moved/   the server's copy of each club as the old tree held it
+#   - workspaces/          each moved club's `moved` marker
+#   - moveRequests/        the admins' requests to move, with their answers
+# Deleting them is permanent: serverState/moved/ was the only way back. So this
+# runs only by hand ("Run workflow"), only with "delete" typed, and lists what
+# is there before it removes anything. It uses the deploy account
+# (FIREBASE_SERVICE_ACCOUNT, README, "Deploying the server").
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'Type delete to remove serverState/moved, workspaces and moveRequests for good'
+        required: true
+        default: ''
+
+permissions:
+  contents: read
+
+concurrency:
+  group: firebase
+  cancel-in-progress: false
+
+jobs:
+  clear:
+    runs-on: ubuntu-latest
+    if: inputs.confirm == 'delete'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+      - name: What is there
+        run: |
+          for p in /serverState/moved /workspaces /moveRequests; do
+            echo "== $p"
+            npx --yes firebase-tools@15 database:get "$p" --shallow --non-interactive || true
+          done
+      - name: Delete it
+        run: |
+          for p in /serverState/moved /workspaces /moveRequests; do
+            npx --yes firebase-tools@15 database:remove "$p" --force --non-interactive
+          done
+      - name: Gone
+        run: |
+          for p in /serverState/moved /workspaces /moveRequests; do
+            v=$(npx --yes firebase-tools@15 database:get "$p" --non-interactive)
+            echo "$p: $v"
+            [ "$v" = "null" ] || exit 1
+          done

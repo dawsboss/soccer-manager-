@@ -438,8 +438,8 @@ function accessBlock() {
       <span><b>Signed out</b><span class="rowsub">Numbers only. Sign in if a coach has given your account access.</span></span>
       <button class="btn sm" data-signin>Sign in</button></div></div>`;
   return `<div class="card"><div class="spread">
-      <span><b>${esc(viewer.name)}</b><span class="rowsub">Open it in Minutes to see names, if your account has been given access.</span></span>
-      ${deep ? `<a class="btn sm" href="${esc(deep)}">Open in Minutes</a>` : ''}</div>
+      <span><b>${esc(viewer.name)}</b><span class="rowsub">Open it in TeamPlayHQ to see names, if your account has been given access.</span></span>
+      ${deep ? `<a class="btn sm" href="${esc(deep)}">Open in TeamPlayHQ</a>` : ''}</div>
       <button class="backlink" data-signout style="margin-top:8px">Sign out</button></div>`;
 }
 

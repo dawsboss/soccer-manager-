@@ -19,7 +19,7 @@ const club = () => ({
   names: { mum: { name: 'Mo' } },
   teams: { t1: { id: 't1', name: 'Flight' } },
   squad: { t1: {
-    p1: { id: 'p1', name: 'Ella', number: '7', child: 'p1', guardians: { mum: true, dad: true }, fans: { gran: true } },
+    p1: { id: 'p1', name: 'Ella', number: '7', child: 'p1', guardians: { mum: true, dad: true }, familyNames: { mum: 'Mo', dad: 'Dev' }, fans: { gran: true } },
     p2: { id: 'p2', name: 'Rosa', number: '9', child: 'p2', guardians: { solo: true } }
   } },
   children: {
@@ -78,6 +78,7 @@ const at = (S, p) => {
     check('— and every table\'s entry for her', ['index/mum', 'teamIndex/t1/mum', 'coachIndex/mum', 'teamParents/t1/mum'].some(p => at(S, 'orgs/CLUB/access/' + p) != null), false);
     check('— her member entry and staff name', !!(at(S, 'orgs/CLUB/members/mum') || at(S, 'orgs/CLUB/names/mum')), false);
     check('her place as her child\'s family, on the squad and on the child', !!(at(S, 'orgs/CLUB/squad/t1/p1/guardians/mum') || at(S, 'orgs/CLUB/children/p1/guardians/mum')), false);
+    check('her name off her child\'s record, her other parent\'s kept', [at(S, 'orgs/CLUB/squad/t1/p1/familyNames/mum'), at(S, 'orgs/CLUB/squad/t1/p1/familyNames/dad')].join(), ',Dev');
     check('her child keeps her other parent, and her team', !!at(S, 'orgs/CLUB/squad/t1/p1/guardians/dad') && at(S, 'orgs/CLUB/squad/t1/p1/active') !== false, true);
     check('— and is not marked as having left', at(S, 'orgs/CLUB/children/p1/left') == null, true);
     check('her ask on a team link', S.at('claims/CLUB/t1/mum'), null);

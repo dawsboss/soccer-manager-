@@ -601,7 +601,7 @@ const CLUB = {
     check('and the phone does not go ahead on its own', clubWrites(fbk).join(), '');
   }
   {
-    // rules from before version 27 refuse the ask: the phone's own writes, as before
+    // rules from before version 28 refuse the ask: the phone's own writes, as before
     const { A, fbk } = await boot({ search: '?invite=' + ID, server: true, refuse: p => /^joinAsks\//.test(p) });
     fbk.signIn('sam', { name: 'Sam', email: 'sam@x.test' }); await A.flush();
     fbk.deliver('invites/' + ID, inviteDoc(A)); await A.flush();

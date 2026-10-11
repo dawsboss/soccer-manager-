@@ -1,7 +1,7 @@
 {
-  "name": "Minutes",
-  "short_name": "Minutes",
-  "description": "Minutes, subs, the calendar and messages for a soccer club.",
+  "name": "TeamPlayHQ",
+  "short_name": "TeamPlayHQ",
+  "description": "Subs, minutes, the calendar and messages for a soccer club.",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",

@@ -112,7 +112,7 @@ const ask = (S, uid, v) => S.fire(`mailAsks/CLUB/${uid}/m${++n}`, { at: Date.now
     const a = await ask(S, 'coach', { op: 'team', tid: 't1', subject: 'Flight: message from Jaz', text: 'Practice moved to 6.\nBring water.' });
     deepEq('one message per family on the squad, nobody else', [a.ok, a.sent, a.of, S.mails.map(m => m.to).sort()], [true, 1, 1, ['mo@x.com']]);
     const m = S.mails[0];
-    check('her words, with the club\'s name after', [m.subject, /Practice moved to 6\.\nBring water\.\n\n— sent by Lakeside SC through Minutes/.test(m.text)].join(), 'Flight: message from Jaz,true');
+    check('her words, with the club\'s name after', [m.subject, /Practice moved to 6\.\nBring water\.\n\n— sent by Lakeside SC through TeamPlayHQ/.test(m.text)].join(), 'Flight: message from Jaz,true');
     check('no address in anyone else\'s mail', 'bcc' in m || 'cc' in m, false);
     check('a family in the table but off the squad is not written to', S.mails.some(x => x.to === 'dev@x.com'), false);
     check('a family with no address is counted out', a.failed, 0);

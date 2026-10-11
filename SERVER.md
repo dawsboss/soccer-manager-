@@ -32,7 +32,7 @@ does the bookkeeping, not that the phone works offline first.
 ## People and their calendars
 
 ### Busy at another club
-- **Moved to the server too (build 130):** `myCalBuild` (`functions/mycal.js`,
+- **Moved to the server too (build 135):** `myCalBuild` (`functions/mycal.js`,
   `publishBusy`) writes each sharing person's busy times from the clubs
   themselves, on the same marks and the same five-minute runs as her feed,
   in exactly the shape her phone writes (`people/{uid}/busy/{clubTag}`: a
@@ -44,7 +44,7 @@ does the bookkeeping, not that the phone works offline first.
   `training/{code}/elsewhere/{uid}` (her other clubs' times only), which
   that club's coaches and admins read (`watchBusy()`, one listener per
   club) and nobody else may: `people/{uid}/busy` is hers alone to read
-  since rules version 27 (rules.js's gap 10 closed). A club she leaves is
+  since rules version 28 (rules.js's gap 10 closed). A club she leaves is
   pruned on that club's next run.
 - **Still on the phone, and agreeing:** her own phones still write
   `people/{uid}/busy` (the same values; hers alone now). What is left for a
@@ -100,7 +100,7 @@ does the bookkeeping, not that the phone works offline first.
   last (`functions/access.js`, with the lookup tables below). A club-wide
   viewer counts as a role (build 118): `accessViewer` (orgs/ only) keeps her
   index entry and bookmark, and takes away the invite she came by.
-- **Moved (build 130):** joining by invite, starting a club and being let
+- **Moved (build 135):** joining by invite, starting a club and being let
   in (`functions/join.js`, `functions/staff.js`) write the bookmark in the
   same write as the role, and the access triggers take it away with her
   last role, so it is written when the role is granted and removed when it
@@ -166,6 +166,13 @@ does the bookkeeping, not that the phone works offline first.
   wait for the server.
 - **What goes away:** both phone halves, once every club has the functions
   deployed.
+- **A parent's name on her child's record** (`familyNames/{uid}` on the
+  squad record, build 135), for a player with her own sign-in and the
+  player's fans, who read that record and never members: written by her own
+  phone once a session (`ownFamilyName()`), on accepting a parent invite,
+  and by a coach or admin linking her; taken off on unlinking and by
+  `forgetMe`. **With a server:** written from members by the role triggers
+  the moment she is linked or renames herself.
 
 ---
 
@@ -233,8 +240,8 @@ does the bookkeeping, not that the phone works offline first.
 
 ## Joining and starting clubs
 
-- **Moved (build 130): joining by invite and starting a club are one call.**
-  The phone asks at `joinAsks/{uid}/{id}` (hers alone, rules version 27) and
+- **Moved (build 135): joining by invite and starting a club are one call.**
+  The phone asks at `joinAsks/{uid}/{id}` (hers alone, rules version 28) and
   `functions/join.js` (`joinAsk`) answers beside it. An invite is checked as
   the rules checked it (spent, expired, full, another email, an unconfirmed
   address, a child or team gone, a retired club), spent inside one
@@ -246,16 +253,16 @@ does the bookkeeping, not that the phone works offline first.
   (`redeemHere()`, `createHere()`) only where `SOCCER_SERVER` is not set or
   the rules refuse the ask. `test/joinask.js`, and the page in
   `test/invites.js`.
-- **Closed with it (rules version 27):** the bootstrap clauses now let a
+- **Closed with it (rules version 28):** the bootstrap clauses now let a
   code be claimed only when it starts `test-` (the app owner's test clubs,
   seeded on a phone, never published), so rules.js's gap 3 is closed: a real
   club is made by the server or not at all. `createHere()` is the fallback
   for rules too old to take the ask, and the test club's.
-- **Moved (build 130): invitation emails from the club** (`functions/mail.js`,
+- **Moved (build 135): invitation emails from the club** (`functions/mail.js`,
   `mailAsk`; *Email* below): `mailImported()` asks the club to send each
   invite it made as a real invitation in the club's name, and sends
   Firebase's sign-in links only where the club has no mailer.
-- **Moved (build 130) too: letting people in** (`functions/staff.js`,
+- **Moved (build 135) too: letting people in** (`functions/staff.js`,
   `staffAsk`, `staffAsks/{code}/{uid}/{id}`): a team-link request approved
   (`approveClaim()`: the approval, the family on each child's record, her
   index entry, her member entry and the log in one write, the tables by
@@ -341,7 +348,7 @@ does the bookkeeping, not that the phone works offline first.
   phone, for a phone without notifications turned on.
 
 ### Email
-- **Moved (build 130):** the club sends its own email (`functions/mail.js`,
+- **Moved (build 135):** the club sends its own email (`functions/mail.js`,
   `mailAsk`, from an SMTP secret the project holds: README, *Email from the
   club*): an invitation (who invited her, to what, the link), asked for by
   an admin or by whoever made the invite, to the address the invite names;
@@ -379,7 +386,7 @@ does the bookkeeping, not that the phone works offline first.
   refused, or warned about, at the moment of saving.
 
 ### Moving old data
-- **On the server (build 130):** `migrateOld` (`functions/migrate.js`), daily
+- **On the server (build 135):** `migrateOld` (`functions/migrate.js`), daily
   until a run gets every club through, then never again (it reads one
   marker and stops, `serverState/migrated/v1/done`). Each old plan gets its
   practice entry under its own id and its `eid`, exactly as `movePlans()`
@@ -411,9 +418,9 @@ does the bookkeeping, not that the phone works offline first.
   the functions.
 
 ### Backups and imports
-- **Moved (build 130): a bulk import is applied by the server.** The phone
+- **Moved (build 135): a bulk import is applied by the server.** The phone
   plans it as before and sends the planned writes in one ask
-  (`importAsks/{code}/{uid}/{id}`, admins only, rules version 27; laid out
+  (`importAsks/{code}/{uid}/{id}`, admins only, rules version 28; laid out
   for the club and stamped by `importWrites()`). `functions/imports.js`
   (`importAsk`) checks she is an admin now, that every write is inside the
   club and in a part an import writes (never a role, a lookup table, another
@@ -422,7 +429,7 @@ does the bookkeeping, not that the phone works offline first.
   Once the ask lands a dropped signal loses nothing. Without an answer, or
   with one that did not finish, the phone writes it itself (`applyImport()`),
   which changes nothing twice. `test/importask.js`.
-- **Moved (build 130): nightly backups** (`functions/backup.js`,
+- **Moved (build 135): nightly backups** (`functions/backup.js`,
   `backupNightly`): every club, whole (the club, its training records, its
   messages, the admin's invites, care details included: this is the club's
   own copy, not a file on a phone), to the project's private bucket at

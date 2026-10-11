@@ -351,7 +351,7 @@ reads('signed in, registered, no role yet', NEWB, 'workspaces/CLUB', false);
 reads('signed in, unknown to this club', RANDO, 'workspaces/CLUB', false);
 reads('app owner holding no role here', OWNER, 'workspaces/CLUB', false);
 
-console.log('\n--- a club with nobody in its index (the bootstrap, test clubs only since version 27) ---');
+console.log('\n--- a club with nobody in its index (the bootstrap, test clubs only since version 28) ---');
 reads('a real code with nobody in it is nobody\'s to read', RANDO, 'workspaces/FRESH', false);
 writes('nor to write', RANDO, 'workspaces/FRESH/teams/t9/name', 'Renamed', false);
 writes('nor to claim', RANDO, 'workspaces/FRESH/access/admins/rando', true, false);
@@ -938,7 +938,7 @@ reads('nor read', COACH, 'shareOwners/sh1', false);
 /* ---------------- following a game ---------------- */
 
 /* The Live tab's *Notify me*, kept where the server can find it, so a goal
-   reaches a phone with Minutes closed (functions/push.js, onFollowed). Every
+   reaches a phone with TeamPlayHQ closed (functions/push.js, onFollowed). Every
    role may follow a game, because every role reads it; what is stored is
    that she follows it and when, under her own uid, and the server is the
    only other thing that reads or clears it. */
@@ -1934,7 +1934,7 @@ reads('nor read', COACH, 'shareOwners/sh1', false);
 
 /* Clubs arrive whenever they like, into the database every other club is
    already in, so making one has to work under the rules the established clubs
-   run on. Since version 27 the server makes a club (functions/join.js,
+   run on. Since version 28 the server makes a club (functions/join.js,
    joinAsk): admin, owner, index, member and name in one write, at a code it
    issues, past the rules. What the rules have to allow is everything the
    founder does from then on, from her first phone, under the same rules as
@@ -2255,6 +2255,26 @@ reads('nor read', COACH, 'shareOwners/sh1', false);
     w('— and the club', OFAN, O + 'access/index/ofan', null, true);
     delete ORGC.squad.t1.p1.fans; delete ORGC.squad.t1.p1.fanNames; delete ORGC.access.teamFans; delete ORGC.access.index.ofan;
     DB.invites = saved.inv; if (saved.inv === undefined) delete DB.invites;
+  }
+
+  /* A parent's name on her child's record (build 130): the player with her
+     own sign-in reads her record, never members (it has everyone's email),
+     so her family is named to her from here. */
+  console.log('\n--- a club on orgs/: a family named on her child ---');
+  {
+    w('a parent writes her own name beside her', OM, O + 'squad/t1/p1/familyNames/om', 'Mo', true);
+    w('— and takes it off', OM, O + 'squad/t1/p1/familyNames/om', null, true);
+    w('— nobody else\'s', OM, O + 'squad/t1/p1/familyNames/oc', 'Cal', false);
+    w('— not on a child who is not hers', OM, O + 'squad/t1/p2/familyNames/om', 'Mo', false);
+    w('— a name, not a story', OM, O + 'squad/t1/p1/familyNames/om', 'x'.repeat(81), false);
+    w('the player does not name her parents herself', OSELF, O + 'squad/t1/p3/familyNames/om', 'Mo', false);
+    w('a stranger does not', RANDO, O + 'squad/t1/p1/familyNames/rando', 'R', false);
+    w('the team\'s coach writes it, as she writes the record', OC, O + 'squad/t1/p1/familyNames/om', 'Mo', true);
+    w('— a tracker does not', OT, O + 'squad/t1/p1/familyNames/om', 'Mo', false);
+    ORGC.squad.t1.p3.familyNames = { om: 'Mo' };
+    r('the player reads it on her own record', OSELF, O + 'squad/t1/p3/familyNames', true);
+    r('— another family does not', OM, O + 'squad/t1/p2/familyNames', false);
+    delete ORGC.squad.t1.p3.familyNames;
   }
 
   /* AUTH.md, *A child in the club, and registration* (the owner, 2026-10-09):
@@ -2872,7 +2892,7 @@ console.log(`
      either the rules learn about appOwners, or the interface stops promising
      it. Nothing here depends on the answer.
 
-  3. Closed (version 27): a real club is made by the server at a code it
+  3. Closed (version 28): a real club is made by the server at a code it
      issues (functions/join.js), admin, owner and index in one write, so no
      code can be claimed by whoever reaches it first. The bootstrap clauses
      survive for codes starting "test-" alone: the app owner's test clubs,
@@ -2913,7 +2933,7 @@ console.log(`
      (functions/book.js, test/book.js). Where the functions are not
      deployed, nobody answers, and a family cannot book a time.
 
- 10. Closed (version 27): her shared busy times at people/{uid}/busy are hers
+ 10. Closed (version 28): her shared busy times at people/{uid}/busy are hers
      alone to read; the server copies them into each club she is in, at
      training/{code}/elsewhere/{uid}, which that club's coaches and admins
      read (functions/mycal.js). Private is the default, and the rules refuse

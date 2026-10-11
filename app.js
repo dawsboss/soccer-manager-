@@ -1,9 +1,9 @@
-/* Minutes — soccer sub & minutes tracker.
+/* TeamPlayHQ (teamplayhq.com) — a soccer club on a phone: subs and minutes, the calendar, messages.
    Static app. Data lives in localStorage, and mirrors to Firebase Realtime
    Database when a config + workspace code are present. */
 
-const BUILD = '130';
-const BUILT = '2026-10-09';
+const BUILD = '135';
+const BUILT = '2026-10-11';
 /* The version of database.rules.json this app was written against. The rules
    carry the same number in rulesVersion's .write, which accepts that number
    and nothing else, so writing it is a question only the published rules can
@@ -11,7 +11,7 @@ const BUILT = '2026-10-09';
    never pasted look exactly like a coach with no signal: "saved on this phone
    only", one feature at a time. test/rules.js holds the two numbers together
    and fails when the rules change without this going up. */
-const RULES_VERSION = 27;
+const RULES_VERSION = 28;
 /* index.html carries the build it was published with. If this file is newer, the
    browser handed us a cached page — the exact failure that has eaten hours. */
 const pageBuild = () => {
@@ -390,6 +390,23 @@ function staffName() {
   if (!isAdmin(u) && !(a.coachIndex || {})[u] && !(a.helperIndex || {})[u]) return;
   namedHere = wsCode() + u;
   Promise.resolve(fb.set(fb.ref(fb.db, clubPath('names/' + u)), { name: String(me.name || '').slice(0, 80) })).catch(() => { });
+}
+/* A parent's own phone keeps her name on each of her children's records
+   (familyNames), once a session, so a family linked before names were kept,
+   or one who has renamed herself, is named to her child and her fans. Derived
+   like staffName(), so straight to the database, never through the outbox. */
+let familyNamedHere = '';
+// SERVER.md: a parent's name on her child's record; a server would write it when she is linked or renames herself.
+function ownFamilyName() {
+  if (!fb || !me || familyNamedHere === wsCode() + me.uid) return;
+  const u = me.uid, n = String(me.name || '').slice(0, 80);
+  if (!n) return;
+  familyNamedHere = wsCode() + u;
+  for (const [tid, t] of Object.entries(state.teams || {})) for (const [pid, p] of Object.entries((t && t.players) || {})) {
+    if (!p || !(p.guardians || {})[u] || (p.familyNames || {})[u] === n) continue;
+    setDeep(state, `teams/${tid}/players/${pid}/familyNames/${u}`, n);
+    Promise.resolve(fb.set(fb.ref(fb.db, clubPath(`teams/${tid}/players/${pid}/familyNames/${u}`)), n)).catch(() => { });
+  }
 }
 /* The coach's notes still on a child's record from before they had their own
    place (SEC-12) are moved there by the first phone that may: a coach of
@@ -1068,6 +1085,7 @@ async function initSync() {
         if (!x) { connected(null); return; }
         connected(orgsClub(x));
         staffName();
+        ownFamilyName();
         if (x.r.all) moveCoachNotes(x.squads, x.notes);
         listenOrgs(x);
         syncChildren();
@@ -1473,6 +1491,18 @@ const acc = () => state.access || {};
 const members = () => Object.entries(acc().members || {}).map(([uid, v]) => ({ uid, ...v }))
   .sort((a, b) => (a.name || '').localeCompare(b.name || ''));
 const anyAdmins = () => Object.keys(acc().admins || {}).length > 0;
+/* The club's name for the crumbs, headings and menus. Before the club has been
+   read on this phone (a new address, a first sign-in) its own record isn't here
+   yet, so use the name her account's list of clubs holds for it; failing that,
+   say it is on its way rather than naming it the generic "Club". */
+function clubName() {
+  const n = (acc().org || {}).name;
+  if (n) return n;
+  const c = typeof wsCode === 'function' ? wsCode() : '';
+  const bm = c && myClubs && myClubs[c] && myClubs[c].name;
+  if (bm) return bm;
+  return fbConfig().apiKey && c && !wsRead ? 'Your club' : 'Club';
+}
 const isAdmin = uid => !!(uid && (acc().admins || {})[uid]);
 /* The club owner (SECURITY.md, SEC-D8): always an admin too, and the only one
    who takes an admin away. Not the app owner (`isOwner()`), who has no
@@ -1896,6 +1926,12 @@ function readiness() {
    list end up disagreeing about whether the club is protected. */
 const gated = () => anyAdmins() && !!fbConfig().apiKey;
 const needsSignIn = () => !me && gated();
+/* A phone that has never held this club (a new address, cleared storage) has
+   no admins to be gated by, so nothing says "sign in" and the app draws an empty
+   club that looks as if it is still loading. With a database to ask, nobody
+   signed in and nothing held, the only way forward is to sign in, so say so.
+   A device with teams of its own on it is somebody using the app alone: left open. */
+const awaitingSignIn = () => !me && !!fbConfig().apiKey && !wsRead && !anyAdmins() && !Object.keys(state.teams || {}).length;
 
 /* Who may see and change which team.
    Admin: everything. Coach: edits her own team, reads the rest of the club —
@@ -2377,7 +2413,11 @@ async function redeemHere() {
         ...(v.byName ? { askedBy: String(v.byName).slice(0, 80) } : {}), ...(v.playerNo ? { shirt: String(v.playerNo).slice(0, 40) } : {})
       });
     } else {
-      if (v.role === 'parent') await put(W(`teams/${v.team}/players/${v.player}/guardians/${who}`), id);
+      if (v.role === 'parent') {
+        await put(W(`teams/${v.team}/players/${v.player}/guardians/${who}`), id);
+        // her name beside her, where her child (if she signs in herself) and her fans can read it
+        if (me.name) await soft(put(W(`teams/${v.team}/players/${v.player}/familyNames/${who}`), String(me.name).slice(0, 80)));
+      }
       else if (v.role === 'player') await put(W(`teams/${v.team}/players/${v.player}/self/${who}`), id);
       else if (v.role === 'fan') await put(W(`teams/${v.team}/players/${v.player}/fans/${who}`), id);
       else if (v.role === 'viewer') await put(W('access/viewers/' + who), id);
@@ -2444,7 +2484,7 @@ let newClubBusy = false;
    and owner, and her bookmark in one go, at a code it has checked is free
    on both trees. A club is never made twice for one ask: with no answer she
    is told so, and her list of clubs shows it the moment it is there. Only an
-   ask the rules refuse (version 27 not published yet) falls back to the
+   ask the rules refuse (version 28 not published yet) falls back to the
    phone's own claim below. */
 // SERVER.md: asks the server (joinAsk) for a new club's code where it is deployed.
 async function createClub(name) {
@@ -3187,7 +3227,7 @@ async function approveClaim(tid, u, pids) {
     return;
   }
   setDeep(claimsSeen, `${tid}/${u}/approved`, { by: me.uid, at });
-  for (const pid of picked) if (!(((t.players[pid] || {}).guardians) || {})[u]) commit(`teams/${tid}/players/${pid}/guardians/${u}`, true);
+  for (const pid of picked) if (!(((t.players[pid] || {}).guardians) || {})[u]) { commit(`teams/${tid}/players/${pid}/guardians/${u}`, true); nameOnRecord(tid, pid, u, c && c.name); }
   // the team id, not `true`: that is what the rule checks a coach's write against
   if (!(acc().index || {})[u]) quiet(`access/index/${u}`, tid);
   if (!(acc().members || {})[u]) quiet(`access/members/${u}`, { name: c.name || '', email: c.email || '', at: c.at || at });
@@ -3337,7 +3377,7 @@ function joinCard(t) {
    without a parent lookup table, and AUTH.md's teamMembers index is that table.
 
    Notifications are honest about the platform, as the Live tab's are: with no
-   server there is nothing to push from, so a message pops up while Minutes is
+   server there is nothing to push from, so a message pops up while TeamPlayHQ is
    open, in any tab, and is waiting with a badge the next time it is opened.
    Reaching a phone that has closed it means Email the parents, which needs
    nothing but the addresses the club already has, or a push service — ROADMAP
@@ -3583,7 +3623,30 @@ function families(tid) {
 }
 function familyName(u) {
   const x = (acc().members || {})[u] || {};
-  return x.name || (x.email ? x.email.split('@')[0] : '') || 'A parent';
+  return x.name || (x.email ? x.email.split('@')[0] : '') || recordName(u) || 'A parent';
+}
+/* A parent's name as it is kept on her child's own record (familyNames), for
+   the phones that may read that record and not members, which has everyone's
+   email: the player herself, her family and her fans. */
+function recordName(u) {
+  for (const t of Object.values(state.teams || {})) for (const p of Object.values((t && t.players) || {})) {
+    const n = p && (p.familyNames || {})[u];
+    if (typeof n === 'string' && n) return n;
+  }
+  return '';
+}
+/* Linking a family writes her name onto the child's record beside her, and
+   unlinking takes it off, so whoever reads the record sees who she is. Staff
+   write it from the club's members (the team rule lets them); her own phone
+   writes it too (ownFamilyName()). */
+function nameOnRecord(tid, pid, u, fallback) {
+  const m = (acc().members || {})[u] || {};
+  const n = String(m.name || fallback || '').slice(0, 80);
+  if (n) quiet(`teams/${tid}/players/${pid}/familyNames/${u}`, n);
+}
+function nameOffRecord(tid, pid, u) {
+  const p = ((state.teams[tid] || {}).players || {})[pid];
+  if (p && (p.familyNames || {})[u]) drop(`teams/${tid}/players/${pid}/familyNames/${u}`);
 }
 // the coach sees whose parent this is; nobody else is ever shown this
 function childrenOf(tid, u) {
@@ -3692,7 +3755,7 @@ function queueMsg(kind, tid, fam, text, extra) {
    functions/push.js sends each new notice and family message to the tokens of
    whoever the rules let read it. Everything above this still runs: the open
    page pops up and counts on the bell as it always has, and a push is the
-   same news reaching a phone that has Minutes closed.
+   same news reaching a phone that has TeamPlayHQ closed.
 
    A token is the address of one person's phone, so it belongs to whoever is
    signed in, and is given up the moment she isn't: on signing out (taken down
@@ -3835,7 +3898,7 @@ function pushCheck() {
     }).catch(() => { pushChecked = null; });
 }
 
-/* A notification tapped while Minutes is open: the service worker says where. */
+/* A notification tapped while TeamPlayHQ is open: the service worker says where. */
 function pushListen() {
   try {
     if (typeof navigator === 'undefined' || !navigator.serviceWorker || !navigator.serviceWorker.addEventListener) return;
@@ -3948,11 +4011,11 @@ function pushCard(where) {
   const on = pushOn();
   if (where === 'inbox' && (on || sup === 'no' || sup === 'blocked')) return '';
   const say = pushBusy ? 'Turning on…'
-    : sup === 'install' ? 'On an iPhone or iPad, Minutes can notify you once it is on your Home Screen: tap <b>Share</b>, then <b>Add to Home Screen</b>, open Minutes from there, and turn them on.'
-    : sup === 'no' ? 'This browser can\'t get notifications from a website. Minutes still pops up while it is open.'
-    : sup === 'blocked' ? 'Notifications are blocked for Minutes in this browser\'s settings. Allow them there, then come back here.'
-    : on ? 'On. Team notices, messages, changes to your games and practices, and games you follow reach this phone even with Minutes closed.'
-    : 'Team notices, messages, changes to your games and practices, and games you follow reach this phone even with Minutes closed.';
+    : sup === 'install' ? 'On an iPhone or iPad, TeamPlayHQ can notify you once it is on your Home Screen: tap <b>Share</b>, then <b>Add to Home Screen</b>, open TeamPlayHQ from there, and turn them on.'
+    : sup === 'no' ? 'This browser can\'t get notifications from a website. TeamPlayHQ still pops up while it is open.'
+    : sup === 'blocked' ? 'Notifications are blocked for TeamPlayHQ in this browser\'s settings. Allow them there, then come back here.'
+    : on ? 'On. Team notices, messages, changes to your games and practices, and games you follow reach this phone even with TeamPlayHQ closed.'
+    : 'Team notices, messages, changes to your games and practices, and games you follow reach this phone even with TeamPlayHQ closed.';
   const btn = pushBusy || sup !== 'ok' ? ''
     : on ? '<button class="btn quiet sm" data-act="pushoff">Turn off</button>'
     : '<button class="btn sm" data-act="pushon">Turn on</button>';
@@ -3984,7 +4047,7 @@ function colleagueLabel(u) {
   return [isAdmin(u) ? 'Admin' : 'Coach', ts.join(', ')].filter(Boolean).join(' · ');
 }
 function viewInboxMsgs() {
-  if (!msgOn() && !wsRead && fbConfig().apiKey) return `<div class="empty"><strong>Connecting…</strong>Messages appear once Minutes has reached the club.</div>`;
+  if (!msgOn() && !wsRead && fbConfig().apiKey) return `<div class="empty"><strong>Connecting…</strong>Messages appear once TeamPlayHQ has reached the club.</div>`;
   if (!msgOn()) return `<div class="empty"><strong>No messages here</strong>
     ${!anyAdmins() ? 'Messages start once the club has an admin.' : 'Messages are for the teams you coach, track or have a child in.'}</div>`;
   const mine = msgTeams(), staff = staffTeams(), fams = famThreads();
@@ -3996,7 +4059,7 @@ function viewInboxMsgs() {
   // where the club offers push, that card is the one to show; it asks for the same permission
   const alerts = pushSupport() !== 'unset' ? pushCard('inbox') : canPop && Notification.permission === 'default' ? `<div class="card"><div class="spread"><b>Pop-ups on this device</b>
       <button class="btn sm" data-act="msgalerts">Turn on</button></div>
-    <p class="muted" style="margin:6px 0 0">A message pops up while Minutes is open, even in another tab.</p></div>` : '';
+    <p class="muted" style="margin:6px 0 0">A message pops up while TeamPlayHQ is open, even in another tab.</p></div>` : '';
 
   const notice = x => {
     const t = state.teams[x.tid] || {};
@@ -4052,7 +4115,7 @@ function viewInboxMsgs() {
       ${noticeTeams().length ? `<button class="btn quiet sm" data-act="postnew">Post a notice</button>` : ''}</div>
       <div style="margin-top:8px">${shown.length ? shown.map(notice).join('') : `<p class="muted" style="margin:0">${staff.length ? 'Nothing posted yet. A notice goes to every family on the team.' : 'Nothing from the coaches yet.'}</p>`}</div>
       ${all.length > shown.length ? `<button class="btn quiet wide" data-act="msgall">Show ${all.length - shown.length} older</button>` : ''}</div>
-    <p class="muted">Messages pop up while Minutes is open on a phone, and wait here with a count until then.${staff.length ? ' To reach everyone right now, use <b>Email or share</b> on a notice.' : ''}</p>
+    <p class="muted">Messages pop up while TeamPlayHQ is open on a phone, and wait here with a count until then.${staff.length ? ' To reach everyone right now, use <b>Email or share</b> on a notice.' : ''}</p>
   </div>`;
 }
 
@@ -4148,8 +4211,8 @@ function sheetMsgInfo(id) {
     <p class="muted" style="margin-top:0">“${esc(String(x.text || '').slice(0, 120))}${String(x.text || '').length > 120 ? '…' : ''}”</p>
     <div class="plist">
       ${step(true, 'Written on this phone', esc(whenLong(at)))}
-      ${step(saved, saved ? 'Sent — the club’s server has it' : 'Not sent yet', saved ? '' : online ? 'Sending now' : 'Waiting for a signal. It goes by itself, even if Minutes is closed and opened again.')}
-      ${step(gotAll.size > 0, gotAll.size ? 'Delivered' : 'Not delivered yet', gotAll.size ? names([...gotAll]) : 'Nobody else’s phone has had it yet. It arrives when they next open Minutes, or as a notification if they turned those on.')}
+      ${step(saved, saved ? 'Sent — the club’s server has it' : 'Not sent yet', saved ? '' : online ? 'Sending now' : 'Waiting for a signal. It goes by itself, even if TeamPlayHQ is closed and opened again.')}
+      ${step(gotAll.size > 0, gotAll.size ? 'Delivered' : 'Not delivered yet', gotAll.size ? names([...gotAll]) : 'Nobody else’s phone has had it yet. It arrives when they next open TeamPlayHQ, or as a notification if they turned those on.')}
       ${step(read.length > 0, read.length ? 'Read' : 'Not read yet', read.length ? names(read) : '')}
     </div>
     <button class="btn quiet wide" data-act="closesheet" style="margin-top:12px">Done</button>`);
@@ -4328,7 +4391,7 @@ function sheetPostShare(tid, id) {
   // from the club itself, one message per family, where the server has a mailer (functions/mail.js)
   const viaClub = serverOn() && !mailFallback && !!rtdb && online;
   openSheet(`<h3>Reach everyone now</h3>
-    <p class="muted" style="margin-top:0">Families with Minutes open have it already; everyone else sees it with a badge next time they open it. To get it to their phones now:</p>
+    <p class="muted" style="margin-top:0">Families with TeamPlayHQ open have it already; everyone else sees it with a badge next time they open it. To get it to their phones now:</p>
     ${mails.length ? `${viaClub ? `<button class="btn wide" data-act="postmail" data-tid="${tid}" data-id="${id}">Email the parents from the club (${mails.length})</button>
       <p class="muted">One email to each family, in the club's name.</p>` : ''}
       <a class="btn ${viaClub ? 'quiet ' : ''}wide" href="${esc(href)}" data-act="closesheet">Email the parents (${mails.length})</a>
@@ -4394,7 +4457,7 @@ function paintBell(shut) {
   };
   badge('#msgBtn', '#msgN', !shut && msgsOn(), m);
   badge('#bellBtn', '#bellN', !shut && notesOn(), b);
-  if (typeof document !== 'undefined') document.title = (n ? `(${n}) ` : '') + 'Minutes — soccer sub tracker';
+  if (typeof document !== 'undefined') document.title = (n ? `(${n}) ` : '') + 'TeamPlayHQ — soccer team manager';
 }
 
 /* ---------------- the test club ---------------- */
@@ -6840,8 +6903,13 @@ function openSheet(html, top) {
   s.hidden = false;
   if (fresh) s.scrollTop = 0;
   $('#scrim').hidden = false;
+  if (fresh) sheetEntered();
 }
-function closeSheet() { $('#sheet').hidden = true; $('#scrim').hidden = true; }
+function closeSheet() {
+  const was = !$('#sheet').hidden;
+  $('#sheet').hidden = true; $('#scrim').hidden = true;
+  if (was) sheetLeft();
+}
 let toastT;
 function toast(msg) {
   const t = $('#toast'); t.textContent = msg; t.hidden = false;
@@ -6871,7 +6939,7 @@ function render() {
      screen with the crumbs still drawn has leaked most of what there was. */
   const inviting = !!invite;
   const joining = !inviting && !!join && !join.hidden;
-  const shut = inviting || joining || !!purged || denied || unconfirmed || needsSignIn();
+  const shut = inviting || joining || !!purged || denied || unconfirmed || needsSignIn() || awaitingSignIn();
   const t = team();
   if (!t && teams().length) { ui.teamId = teams()[0].id; }
   const vis = myTeams();
@@ -6957,6 +7025,7 @@ function render() {
   if (joining) { app.innerHTML = joinScreen(); saveUi(); watchMessages(); return; }
   if (purged) { app.innerHTML = purgedScreen(); saveUi(); watchMessages(); return; }
   if (denied || needsSignIn()) { app.innerHTML = lockScreen(); saveUi(); watchMessages(); return; }
+  if (awaitingSignIn()) { app.innerHTML = welcomeScreen(); saveUi(); return; }
   if (unconfirmed) { app.innerHTML = unconfirmedScreen(); saveUi(); return; }
   const roNote = lim === 'viewer' && team()
     ? `<div class="rolebar">${me && isViewer(me.uid) && !teams().some(x => isCoach(x.id, me.uid)) ? `Viewing <b>${teamLabel(team())}</b> as a club viewer. You can read it, not change it.`
@@ -7051,6 +7120,24 @@ function unconfirmedScreen() {
       <button class="btn quiet" data-act="clubswitch">Other clubs</button></div></div></div>`;
 }
 
+/* The privacy policy and terms, on every screen that asks someone to sign in and
+   in the account menu: Google's consent screen links to them, and a family
+   should be able to read them before handing over a child's details. Plain
+   links to static pages, so they open with no signal-dependent code. */
+const LEGAL_LINKS = '<p class="auth-fine legal"><a href="privacy">Privacy Policy</a> · <a href="terms">Terms of Service</a></p>';
+
+function welcomeScreen() {
+  return `<div class="stack"><div class="auth-card">
+    ${authHero('Sign in to open your club', wsCode()
+      ? 'This phone has not opened the club yet. Sign in with the account the club knows, and it will load.'
+      : 'Sign in with the account your club knows, and your teams and calendar will load. If you were sent an invite link, open it again after signing in.')}
+    <div class="auth-card-body">
+      <button class="btn wide auth-go" data-act="signinsheet">Sign in</button>
+      <p class="auth-fine">Read-only score pages need none of this — they keep working from their own link.</p>
+      ${LEGAL_LINKS}
+    </div></div></div>`;
+}
+
 function lockScreen() {
   return `<div class="stack"><div class="auth-card">
     ${authHero(me ? 'Waiting for access' : 'Sign in to this club', me
@@ -7060,6 +7147,7 @@ function lockScreen() {
       ${me ? `<button class="btn quiet wide" data-act="signout">Sign out</button>` : `<button class="btn wide auth-go" data-act="signinsheet">Sign in</button>`}
       ${me && Object.keys(myClubs || {}).some(c => c !== wsCode()) ? `<button class="btn quiet wide" data-act="clubswitch" style="margin-top:8px">Your other clubs</button>` : ''}
       <p class="auth-fine">Read-only score pages need none of this — they keep working from their own link.</p>
+      ${LEGAL_LINKS}
     </div></div></div>`;
 }
 
@@ -7089,7 +7177,7 @@ function crumbs() {
     ? `${sep}<span class="crumb" aria-current="page"><span class="crumb-k">${viewScope() === 'me' ? 'Yours' : 'Screen'}</span>${esc(VIEW_CRUMB[ui.view])}</span>` : '';
   if (viewScope() === 'me' && me)
     return `<button class="crumb" data-act="accountsheet"><span class="crumb-k">You</span>${esc(me.name || me.email || 'Your account')}</button>${here}`;
-  const org = (acc().org || {}).name || 'Club';
+  const org = clubName();
   const t = viewScope() === 'team' ? team() : null;
   const m = ui.view === 'game' ? match() : null;
   const out = [`<button class="crumb crumb-club" data-act="goview" data-v="club">${clubCrest('xs')}<span><span class="crumb-k">Club</span>${esc(org)}</span></button>`];
@@ -7102,7 +7190,7 @@ function crumbs() {
 }
 
 function viewClub() {
-  const org = (acc().org || {}).name || 'Club';
+  const org = clubName();
   const list = myTeams();
   const now = nowMs();
   return `<div class="stack">
@@ -7145,7 +7233,7 @@ function sheetAccount() {
     <p class="muted" style="margin-top:0">${esc(me.email || '')}${r ? ` · ${esc(ROLE_LABEL[r])}` : ''}</p>
     <button class="opt" data-act="goview" data-v="mycal"><b>My calendar</b>
       <span class="rowsub">Everything of yours, from every club you're in</span></button>
-    ${wsCode() || teams().length ? `<button class="opt" data-act="goview" data-v="club"><b>${esc((acc().org || {}).name || 'Club home')}</b>
+    ${wsCode() || teams().length ? `<button class="opt" data-act="goview" data-v="club"><b>${esc(clubName() === 'Club' ? 'Club home' : clubName())}</b>
       <span class="rowsub">Club home: its teams, and everything else in it</span></button>` : ''}
     <button class="opt" data-act="goview" data-v="setup"><b>Settings</b>
       <span class="rowsub">Account, club, sharing, backup, version</span></button>
@@ -7153,7 +7241,8 @@ function sheetAccount() {
       <span class="rowsub">${allKidNames().map(esc).join(', ')}</span></button>` : ''}
     <button class="btn danger wide" data-act="signout" style="margin-top:8px">Sign out</button>
     ${fbConfig().apiKey ? '<button class="btn quiet danger wide" data-act="forgetsheet" style="margin-top:8px">Delete my account</button>' : ''}
-    <p class="muted">Club settings live under the club itself, since you may belong to more than one.</p>`);
+    <p class="muted">Club settings live under the club itself, since you may belong to more than one.</p>
+    <p class="muted"><a href="privacy">Privacy Policy</a> · <a href="terms">Terms of Service</a></p>`);
 }
 
 /* Deleting an account (AUTH.md, *Deleting*). The club's server does the
@@ -7246,7 +7335,7 @@ function sheetClubSwitch() {
 }
 
 function sheetClubMenu() {
-  const org = (acc().org || {}).name || 'Club';
+  const org = clubName();
   openSheet(`<h3>${esc(org)}</h3>
     ${canAdmin() ? `<button class="opt" data-act="schedule"><b>Calendar: all teams</b>
       <span class="rowsub">Every team's games and practices, and adding to any of them</span></button>
@@ -8102,18 +8191,18 @@ function viewFeed() {
       : `<p class="muted" style="margin:0">${st === 'upcoming' ? 'Nothing yet — this fills in from kick-off.' : 'Nothing logged yet.'}</p>`}</div>`;
 
   /* Honest about where they arrive: on a phone with notifications turned on
-     (pushOn()) the server sends them with Minutes closed; anywhere else they
+     (pushOn()) the server sends them with TeamPlayHQ closed; anywhere else they
      come from this page while it is open, a background tab or a phone with
      the page left up. */
   const following = ui.follow === m.id;
   const canNotify = typeof Notification !== 'undefined';
   const closed = pushOn();
-  const offerPush = !closed && me && pushSupport() === 'ok' ? ' Turn notifications on for this phone, under the bell, to get them with Minutes closed too.' : '';
+  const offerPush = !closed && me && pushSupport() === 'ok' ? ' Turn notifications on for this phone, under the bell, to get them with TeamPlayHQ closed too.' : '';
   const follow = st === 'done' ? '' : `<div class="card"><div class="spread"><h2>Notify me</h2>
       <button class="btn ${following ? 'quiet ' : ''}sm" data-act="feedfollow" data-v="${following ? 0 : 1}">${following ? 'Stop' : 'Turn on'}</button></div>
     <p class="muted" style="margin:6px 0 0">${closed
-      ? (following ? 'On for this game. Goals, kick-off, half time and full time reach this phone even with Minutes closed, and any other phone you turned notifications on for.'
-        : 'Get goals, kick-off, half time and full time on this phone, even with Minutes closed.')
+      ? (following ? 'On for this game. Goals, kick-off, half time and full time reach this phone even with TeamPlayHQ closed, and any other phone you turned notifications on for.'
+        : 'Get goals, kick-off, half time and full time on this phone, even with TeamPlayHQ closed.')
       : following
         ? `On for this game. Goals, kick-off, half time and full time ${canNotify && Notification.permission === 'granted' ? 'pop up on this device' : 'buzz and show here'} while this page is open.${offerPush}`
         : 'Get goals, kick-off, half time and full time on this device while this page is open, even in another tab.'}</p></div>`;
@@ -8141,7 +8230,7 @@ function watchFeed() {
   return fresh;
 }
 /* Following is also left where the server can find it, so the same moments
-   reach her phones with Minutes closed (functions/push.js, onFollowed):
+   reach her phones with TeamPlayHQ closed (functions/push.js, onFollowed):
    follow/{code}/{mid}/{uid}, hers alone in the rules and only for a game of
    her club that has not ended. It is per account, as a push token's phone
    is, and the server clears it at full time. The page's own watch above
@@ -10729,10 +10818,10 @@ function drillMatches(d, f, age, L) {
     && (!q.length || q.every(w => drillText(d, L).includes(w)));
 }
 /* Who made a drill: the app itself for the built-in library (it ships as
-   Minutes), you for your own and what you shared, or the coach a club drill
+   TeamPlayHQ), you for your own and what you shared, or the coach a club drill
    names. A club drill keeps its author's name after she leaves, because it
    was copied onto the drill when she shared it, not looked up. */
-const APP_NAME = 'Minutes';
+const APP_NAME = 'TeamPlayHQ';
 function madeBy(d, by) {
   if (!by) return true;
   const shelf = d.shelf || 'builtin';
@@ -16455,7 +16544,7 @@ function onAwayAct(a, d) {
    not news), a source that hasn't loaded yet is left alone rather than read
    as everything gone, and nothing this phone did itself is news to it
    (noteMine(), from every write path). Nothing is sent anywhere: like
-   messages, it is heard while Minutes is open, and kept to read later. */
+   messages, it is heard while TeamPlayHQ is open, and kept to read later. */
 const LS_NEWS = 'sm.clubNews', LS_NEWS_SEEN = 'sm.clubSeen', LS_NEWS_READ = 'sm.clubRead';
 const NEWS_KEEP = 60;
 const mineTouched = new Set();
@@ -20444,6 +20533,7 @@ function onAct(e) {
       if (!p) { toast('Pick the player'); return; }
       if (!(p.guardians || {})[uid]) {
         commit(`teams/${tid}/players/${p.id}/guardians/${uid}`, true);
+        nameOnRecord(tid, p.id, uid);
         logAccess('linked guardian', uid, { team: tid, teamName: x.name || null, player: p.name });
       }
       syncTeamParents(tid);
@@ -20480,6 +20570,7 @@ function onAct(e) {
     if (on) {
       forgetInvite(on);
       drop(`teams/${d.tid}/players/${d.pid}/guardians/${d.uid}`);
+      nameOffRecord(d.tid, d.pid, d.uid);
       logAccess('unlinked guardian', d.uid, { team: d.tid, teamName: x.name || null, player: p.name });
       syncIndex(d.uid); syncTeamParents(d.tid);
     }
@@ -21467,8 +21558,8 @@ function onAct(e) {
   if (a === 'toggleguard') {
     const p = t.players[d.pid];
     const on = ((p.guardians || {})[d.uid]);
-    if (on) { forgetInvite(on); drop(`teams/${t.id}/players/${d.pid}/guardians/${d.uid}`); }
-    else commit(`teams/${t.id}/players/${d.pid}/guardians/${d.uid}`, true);
+    if (on) { forgetInvite(on); drop(`teams/${t.id}/players/${d.pid}/guardians/${d.uid}`); nameOffRecord(t.id, d.pid, d.uid); }
+    else { commit(`teams/${t.id}/players/${d.pid}/guardians/${d.uid}`, true); nameOnRecord(t.id, d.pid, d.uid); }
     logAccess(on ? 'unlinked guardian' : 'linked guardian', d.uid, { team: t.id, teamName: t.name || null, player: p.name });
     syncIndex(d.uid); syncTeamParents(t.id);
     sheetPlayer(state.teams[t.id].players[d.pid]); return;
@@ -21926,6 +22017,15 @@ function onAct(e) {
   if (a === 'importinviteskip') { importContacts = null; closeSheet(); return;
   }
 }
+/* Whether a tap drew this screen, for syncHash (see routing). Registered
+   before onAct, and in the capture phase, so it is marked before any
+   handler that draws the next screen runs. */
+let tapped = false;
+{
+  const mark = () => { tapped = true; setTimeout(() => { tapped = false; }, 0); };
+  document.addEventListener('click', mark, true);
+  document.addEventListener('change', mark, true);
+}
 document.addEventListener('click', onAct);
 /* A <select> from pickOne() stands in for a row of chips, so it goes through
    the same action a chip would have, carrying what was chosen as data-v. */
@@ -22100,17 +22200,51 @@ function hashToUi() {
   return false;
 }
 
-let routing = false, booted = false;
+let routing = false;
 /* pushState, not replaceState: every move needs its own history entry or the
-   phone's back gesture walks straight out of the app instead of up a level. */
+   phone's back gesture walks straight out of the app instead of up a level.
+   But only a move she made gets one. Whether the address changed because she
+   tapped something is the test, not whether the app has booted: it used to
+   be a `booted` flag set only when the address changed, so a page opened on
+   an address it kept (a reload, a link, the home-screen icon) replaced her
+   first move instead of adding it, and Back left the site a page early. And
+   a screen the app moves her off by itself (a tab her role doesn't get, a
+   game whose Subs were put away, the club read arriving) replaces, or Back
+   lands on the old address, is moved off it again and pushes it back: a loop
+   she can't Back out of. `tapped` is set up beside onAct, ahead of every
+   click handler. */
+/* A sheet has a history entry of its own, at the same address, so Back closes
+   it rather than moving the screen behind it while it stays open on top.
+   Closed any other way (the scrim, Escape, a button), the entry is taken back
+   off with history.back(), a tick later: if the same tap goes on to another
+   screen, that screen takes over the sheet's entry instead (syncHash), so
+   closing a sheet and moving on is one Back, not two. */
+let sheetEntry = false, sheetBack = false, ignorePops = 0;
+function sheetEntered() {
+  if (sheetBack) { sheetBack = false; return; }   // one sheet closed for the next: same entry
+  if (sheetEntry || typeof history === 'undefined' || !history.pushState) return;
+  try { history.pushState({ sheet: 1 }, '', location.pathname + location.search + location.hash); sheetEntry = true; } catch (e) { }
+}
+function sheetLeft() {
+  if (!sheetEntry || sheetBack) return;
+  sheetBack = true;
+  setTimeout(() => {
+    if (!sheetBack) return;
+    sheetBack = false; sheetEntry = false; ignorePops++;
+    try { history.back(); } catch (e) { ignorePops--; }
+  }, 0);
+}
 function syncHash() {
   if (typeof history === 'undefined' || !history.pushState) return;
   const want = uiToHash();
   if (location.hash === want) return;
   routing = true;
   const url = location.pathname + location.search + want;
-  if (booted) history.pushState(null, '', url); else history.replaceState(null, '', url);
-  booted = true;
+  if (sheetBack) { sheetBack = false; sheetEntry = false; history.replaceState(null, '', url); }
+  else if (tapped && !sheetEntry) history.pushState(null, '', url);
+  // the app moving her by itself, or the screen behind an open sheet: the entry stays whose it was
+  else history.replaceState(history.state, '', url);
+  tapped = false;
   setTimeout(() => { routing = false; }, 0);
 }
 const avEl = $('#avatar');
@@ -22128,7 +22262,15 @@ if (typeof document !== 'undefined' && document.addEventListener)
   document.addEventListener('visibilitychange', () => { if (!document.hidden && (ui.view === 'inbox' || ui.view === 'thread')) render(); });
 
 if (typeof window !== 'undefined' && window.addEventListener) {
-  const backOrForward = () => {
+  const backOrForward = e => {
+    if (e && e.type === 'popstate') {
+      if (ignorePops) { ignorePops--; return; }   // a closed sheet's entry, taken off
+      /* Back with a sheet open closes it. Its entry is gone now, so a sheet
+         reopened gets a fresh one; and the screen only moves if the entry
+         Back landed on was another screen's. */
+      sheetEntry = false; sheetBack = false;
+      if (!$('#sheet').hidden) { $('#sheet').hidden = true; $('#scrim').hidden = true; }
+    }
     if (routing) return;
     const want = uiToHash();
     if (location.hash === want) return;

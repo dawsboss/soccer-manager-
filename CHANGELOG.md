@@ -8,7 +8,7 @@ before this point lives only in the git log.
 
 ---
 
-## Four jobs move to the server — 2026-10-10 (build 130, rules version 27)
+## Four jobs move to the server — 2026-10-11 (build 135, rules version 28)
 
 SERVER.md's smaller jobs: each was a phone doing something for somebody else,
 or something that stayed true only while some phone was open.
@@ -76,6 +76,82 @@ Each asks the server only where `firebase-config.js` sets the new
 own writes where the rules are too old to take the ask, or the club has no
 mailer. New suites `joinask`, `staffask`, `importask`, `migrate`, `backup` and `mail`,
 and more in `mycalfeed`, `mycal`, `invites`, `rules` and `ids`.
+## A to-do list for what GitHub Pages can't do — 2026-10-11
+
+`HOSTING.md` lists what Pages can't do (rewrites, headers, server code, a link preview per address), the plan for moving the site to Firebase Hosting on the same project, its downsides and the limits measured against today's site. The move is on hold (the owner): Pages does the job now, and the file keeps every request that needs the move (real addresses instead of `#/`, security headers, a preview per game link, cache control) until it happens. `CLAUDE.md` points at it so the next request that can't be done on Pages lands there too.
+
+---
+
+## Back goes back a screen, and closes a sheet — 2026-10-11 (build 134)
+
+The browser's Back button (and a phone's back gesture) is meant to step back through the screens she visited before it leaves the site. Each screen already had its own address, but two things broke it:
+
+- **The first move after opening the site replaced the page instead of adding one.** Whether a screen got a new history entry hung on a flag set only when the address changed, so a page opened on an address it kept (a reload, a link, the home-screen icon, which now reopens on the same address at teamplayhq.com) swallowed her first move, and Back left the site a page early. Now a screen gets an entry when a tap drew it (`tapped`, marked ahead of every click handler), and a screen the app moves her to by itself (the club read arriving, a tab her role doesn't get, a game whose Subs were put away) replaces instead, so Back never lands on an address that bounces her forward again.
+- **A sheet open over a screen had no entry**, so Back moved the screen behind it and left the sheet open on top. A sheet now has an entry of its own at the same address: Back closes it and the screen stays put. Closed any other way (the scrim, Escape, a button) the entry is taken back off, so there is no dead Back press, and a button in a sheet that goes to another screen takes over the sheet's entry, so that is one Back too.
+- Addresses stay hash routes (`#/team/…`): GitHub Pages still has no rewrites on a custom domain, so a path like `/team/…` would 404 on a reload or a shared link.
+- This takes over from *Back swipe closes a pop-up* below, which was made in parallel and did the sheet half but kept the first-move bug; its code is replaced by this one.
+- `test/routing.js` drives a fake browser history for all of it.
+
+---
+
+## A privacy policy and terms of service — 2026-10-10 (build 133)
+
+Google's sign-in consent screen asks for a home page, a privacy policy and terms before it will show the app's own name and logo, and a family handing over a child's birth date and medical details should be able to read what happens to them first. TeamPlayHQ had neither page.
+
+- **`privacy.html`** says what the app holds (an account's name and email, a child's details and care, games and attendance, messages, registrations), who in a club sees each part, that public pages carry shirt numbers and never names, that nothing is sold, advertised to or sent to an AI, what *Delete my account* takes and what it leaves with the club, and how children's information is handled.
+- **`terms.html`**: free for now, clubs responsible for what they enter and for families' permission, acceptable use, no warranty, and the app is no tool for emergencies.
+- Both are linked on every sign-in screen and in the account menu. They carry the same Content-Security-Policy as every page and load nothing but fonts.
+- Written from what the code does today; not reviewed by a lawyer.
+- **Sign-in runs on `auth.teamplayhq.com`** (`authDomain` in `firebase-config.js`, and allowed in every page's security policy), so Google's account chooser says *continue to auth.teamplayhq.com* instead of `soccer-manager-272ff.firebaseapp.com`. Firebase Hosting serves its sign-in handler there (a CNAME to `soccer-manager-272ff.web.app`); the Google client lists `https://auth.teamplayhq.com/__/auth/handler` as a redirect. It is the same site as the app, so a redirect sign-in survives Safari's limits on third-party storage.
+
+---
+
+## The app is TeamPlayHQ — 2026-10-10 (build 132)
+
+The site has its own domain, so the app takes the name that goes with it. *Minutes* was what it was called while it was a sub tracker; it is a club's calendar, messages, training and registration now, and the name on the screen, the Home Screen icon, every notification and every page that says "open it in…" should be the one on the address.
+
+- **TeamPlayHQ** everywhere the app names itself: the top bar and the browser tab, the manifest (so a phone installs it as TeamPlayHQ), the service worker's fallback title on a push, the share pages' *Open TeamPlayHQ* link and *Open it in TeamPlayHQ* row, the notification and messages copy, the drill shelf's *TeamPlayHQ (built-in)*, and the calendar feed's `PRODID` (`ics.js`, carried into `functions/ics.js` by `make.js`).
+- **`CNAME`** carries `teamplayhq.com`, so the Pages deploy keeps the custom domain whatever the repo's settings do.
+- The brand in the top bar never wraps or pushes the buttons off a narrow phone (`.brand` clips with an ellipsis).
+- Nothing in the data, the paths or the rules changes; *Minutes* survives only where it means minutes played, and in the history here.
+
+---
+
+## A new address says "sign in" — 2026-10-10 (build 131)
+
+Opening an old link on the new domain showed an empty club that looked as if it was still loading, with no way to sign in: a phone that has never held a club has no admins to be locked by, so nothing asked for a sign-in. Now a device with a database, nobody signed in and nothing held shows **Sign in to open your club** with the button.
+
+- **The club's name no longer reads "Club" while it loads.** `clubName()` falls back to the name in her account's list of clubs, then to "Your club" until the club has been read, so the crumbs and Club home are right the moment she signs in rather than after a forced refresh.
+- A device with teams of its own on it, and a device with no database, are left open as before.
+
+---
+
+## Back swipe closes a pop-up — 2026-10-10
+
+On a phone, the back swipe with a sheet open went to the screen behind it and left the sheet up. A sheet now takes a history entry of its own when it opens, so back closes it and nothing else; closing it any other way gives the entry back, and moving to another screen from it uses the entry up rather than adding a second.
+
+---
+
+## The site moves to teamplayhq.com — 2026-10-10
+
+The site is served at its own domain now (GitHub Pages, custom domain `teamplayhq.com`) instead of `dawsboss.github.io/soccer-manager-/`. The app builds every link it hands out (invites, team links, share pages, registration) from the address it is open on, so those follow by themselves; the one place that cannot is the server, which has no page to look at.
+
+- **`SOCCER_SITE` in `functions/.env` names the new address**, so calendar feed entries and share pages link back to `teamplayhq.com` from the next functions deploy.
+- A phone keeps its local copy, outbox, push token and home-screen install per address, so each coach's phone starts fresh on the new one: everything owed should be sent from the old address before switching.
+
+---
+
+## A player's parents, named to her — 2026-10-10 (build 130, rules version 27)
+
+Running the app's suites on `orgs/` (build 128) showed a player with her own sign-in seeing her parents as *A parent* on her family's conversations and their lock. On `orgs/` she reads her own member entry and staff names, never the members, which carry everyone's email, so her parents' names had nowhere she could read them.
+
+- **Each parent's name is kept on the child's own record**, `squad/{tid}/{pid}/familyNames/{uid}`, as a fan's already was (`fanNames`). Only that child's family, the player herself and her fans read that record.
+- **Written** by the parent's own phone once a session (`ownFamilyName()`, straight to the club like `staffName()`), on accepting a parent invite, and by a coach or admin linking her; **taken off** on unlinking and by `forgetMe`.
+- **Rules version 27**: a parent writes or clears her own entry only, and only on a child whose record names her; the team's coaches and admins write it as they write the record.
+- The two known gaps pinned in `test/players.js` are ordinary checks now; `rules.js`, `players.js` and `forget.js` pin the rest.
+
+---
+
 ## Families are asked until their children's details are finished — 2026-10-10 (build 129)
 
 A family used to be asked about her child's details once per phone, then only

@@ -291,7 +291,7 @@ console.log('--- the share page never takes the app\'s address from what it is s
 {
   /* public/{id} is writable by any signed-in account while nobody has claimed
      the id, so whatever a page says about where the app is came from its
-     writer. A javascript: address in "Open in Minutes" would run on this site,
+     writer. A javascript: address in "Open in TeamPlayHQ" would run on this site,
      where a coach is signed in. live.js builds the address from its own. */
   const live = require('fs').readFileSync(require('path').join(__dirname, '..', 'live.js'), 'utf8');
   check('live.js never reads link.app', /link\s*\.\s*app|\[['"]app['"]\]/.test(live), false);

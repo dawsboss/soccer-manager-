@@ -60,7 +60,7 @@ function inviteMail(v, club, site, now) {
   return {
     subject: `${who} has invited you to ${club}`,
     text: [
-      `${who} has invited you to join ${club} in Minutes as ${what}.`,
+      `${who} has invited you to join ${club} in TeamPlayHQ as ${what}.`,
       '', `Open this link on your phone and sign in with this email address to accept it:`, link, '',
       `The link works once, for this address only, and for ${days} day${days === 1 ? '' : 's'}. If you were not expecting it, ignore it: nothing happens until you accept.`
     ].join('\n')
@@ -109,7 +109,7 @@ async function sendTeam(env, code, uid, ask, now) {
     if (okMail(em)) to.add(String(em).toLowerCase());
   }
   const club = clip(org && org.name, 80) || 'the club';
-  const footer = `\n\n— sent by ${club} through Minutes${env.site ? `, ${env.site}` : ''}`;
+  const footer = `\n\n— sent by ${club} through TeamPlayHQ${env.site ? `, ${env.site}` : ''}`;
   let sent = 0, failed = 0;
   for (const em of [...to].sort()) {
     try { await env.mail({ to: em, subject, text: text + footer }); sent++; } catch (e) { failed++; }

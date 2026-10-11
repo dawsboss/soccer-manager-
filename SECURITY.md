@@ -175,7 +175,7 @@ team when they are taken off it (`functions/mycal.js`, `test/mycalfeed.js`,
 `test/calendar.js`). Commit `cd4dd9d`.
 
 ### SEC-D4 · Two links that could run someone else's code
-The share page's *Open in Minutes* took the app's address from the page,
+The share page's *Open in TeamPlayHQ* took the app's address from the page,
 which anyone signed in can write under an unclaimed id; it now builds it from
 its own location. A game's Veo link is `https` or nothing, typed, imported
 and drawn (`test/stats.js`, `test/import.js`). Commit `b0aabd5`.
