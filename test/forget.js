@@ -30,7 +30,8 @@ const club = () => ({
   care: { p2: { by: 'solo', at: 1, contacts: { 0: { name: 'Solo', phone: '555' } } } },
   regs: { f27: { k9: { st: 'accepted', by: 'solo', at: 1 } } },
   programs: { tr: { id: 'tr', name: 'Tryouts', kind: 'tryout', by: 'adm', at: 1, evaluators: { mum: true, coachU: true } } },
-  evals: { tr: { mum: { 3: { s: { ball: 4 }, at: 1 } } } }
+  evals: { tr: { mum: { 3: { s: { ball: 4 }, at: 1 } } } },
+  comply: { mum: { safe: { done: '2026-01-01' }, by: 'adm', at: 1 }, coachU: { safe: { done: '2026-01-01' }, by: 'adm', at: 1 } }
 });
 function server() {
   const S = makeServer({
@@ -92,6 +93,7 @@ const at = (S, p) => {
     check('a fan of her child is untouched', !!at(S, 'orgs/CLUB/squad/t1/p1/fans/gran'), true);
     check('she is off the tryout\'s evaluators, the other kept', [!!at(S, 'orgs/CLUB/programs/tr/evaluators/mum'), !!at(S, 'orgs/CLUB/programs/tr/evaluators/coachU')].join(), 'false,true');
     check('— her scores are the club\'s and stay', !!at(S, 'orgs/CLUB/evals/tr/mum/3'), true);
+    check('her coaching records go, another coach\'s stay', [!!at(S, 'orgs/CLUB/comply/mum'), !!at(S, 'orgs/CLUB/comply/coachU')].join(), 'false,true');
   }
 
   console.log('\n--- the only family of two children ---');

@@ -510,7 +510,8 @@ hold.
 6. **Email.**
 7. **Tryouts and evaluations.** *Built 2026-10-11 (build 136, rules version
    29), as designed under *Tryouts and evaluations* above.*
-8. **Coach compliance records.**
+8. **Coach compliance records.** *Built 2026-10-11 (build 137, rules
+   version 30), as designed under *Coach and volunteer compliance* above.*
 9. **GotSport import of rosters and schedules,** whenever the owner has real
    export files to map; it can move earlier if a club needs it to start.
 

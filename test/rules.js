@@ -2564,6 +2564,33 @@ reads('nor read', COACH, 'shareOwners/sh1', false);
     delete ORGC.programs; delete ORGC.children; delete ORGC.regs; delete ORGC.tryBibs; delete ORGC.evals;
   }
 
+  /* Coaching records (GOTSPORT.md, *Coach and volunteer compliance*; rules
+     version 30): admins keep them, one person at a time, in their own name;
+     each person reads her own and nobody else's. */
+  console.log('\n--- a club on orgs/: coaching records ---');
+  {
+    const rec = { safe: { done: '2026-01-10', lapses: '2027-01-10' }, bg: { done: '2026-02-01' }, lic: { name: 'USSF D', done: '2025-06-01' }, note: 'Refresher booked', by: 'oa', at: NOW };
+    w('an admin keeps a coach\'s record', OA, O + 'comply/oc', rec, true);
+    w('— in her own name only', OA, O + 'comply/oc', { ...rec, by: 'oc' }, false);
+    w('— dates that are dates', OA, O + 'comply/oc', { ...rec, safe: { done: 'last May' } }, false);
+    w('— only the four things there are', OA, O + 'comply/oc', { ...rec, dbs: { done: '2026-01-01' } }, false);
+    w('— nothing a check has no field for', OA, O + 'comply/oc', { ...rec, safe: { done: '2026-01-10', result: 'clear' } }, false);
+    w('— never the whole list at once', OA, O + 'comply', { oc: rec }, false);
+    w('a coach does not write her own', OC, O + 'comply/oc', { ...rec, by: 'oc' }, false);
+    w('— nor anyone else\'s', OC, O + 'comply/oc2', { ...rec, by: 'oc' }, false);
+    ORGC.comply = { oc: rec, oc2: { bg: { done: '2025-01-01', lapses: '2026-01-01' }, by: 'oa', at: NOW } };
+    r('the admin reads every record', OA, O + 'comply', true);
+    r('a coach reads her own', OC, O + 'comply/oc', true);
+    r('— not another coach\'s', OC, O + 'comply/oc2', false);
+    r('— nor the list', OC, O + 'comply', false);
+    r('a tracker reads no one\'s', OT, O + 'comply/oc', false);
+    r('a family reads no one\'s', OM, O + 'comply/oc', false);
+    r('a stranger reads no one\'s', RANDO, O + 'comply/oc', false);
+    w('the admin deletes one', OA, O + 'comply/oc2', null, true);
+    w('a coach does not', OC, O + 'comply/oc', null, false);
+    delete ORGC.comply;
+  }
+
   /* A child in the club on no team books training sessions (AUTH.md,
      *Sessions for a child on no team*): as `club`, her family found on her
      club record, once the club has let her in. */

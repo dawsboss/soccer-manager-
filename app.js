@@ -2,7 +2,7 @@
    Static app. Data lives in localStorage, and mirrors to Firebase Realtime
    Database when a config + workspace code are present. */
 
-const BUILD = '136';
+const BUILD = '137';
 const BUILT = '2026-10-11';
 /* The version of database.rules.json this app was written against. The rules
    carry the same number in rulesVersion's .write, which accepts that number
@@ -11,7 +11,7 @@ const BUILT = '2026-10-11';
    never pasted look exactly like a coach with no signal: "saved on this phone
    only", one feature at a time. test/rules.js holds the two numbers together
    and fails when the rules change without this going up. */
-const RULES_VERSION = 29;
+const RULES_VERSION = 30;
 /* index.html carries the build it was published with. If this file is newer, the
    browser handed us a cached page — the exact failure that has eaten hours. */
 const pageBuild = () => {
@@ -376,6 +376,8 @@ function forgetOthersChildren() {
   state.agreed = {};
   // tryouts: bibs and scores are the admins' and the evaluators' (who are staff, and never come here)
   state.tryBibs = {}; state.evals = {};
+  // coaching records: the admins' list, and each person's own
+  state.comply = Object.fromEntries(Object.entries(state.comply || {}).filter(([u]) => u === me.uid));
   delete (state.access || {}).log;
   if (state.access && state.access.members) state.access.members = Object.fromEntries(Object.entries(state.access.members).map(([k, m]) => [k, { name: (m && m.name) || '' }]));
   saveLocal();
@@ -901,7 +903,14 @@ async function initSync() {
       /* Registration (AUTH.md, *Registration*): the programs and waivers
          everyone in the club reads; every registration and agreement for an
          admin, a program at a time; her own children's for a family. */
-      const [programs, waivers] = await Promise.all([once('programs'), once('waivers')]);
+      /* Coaching records (GOTSPORT.md, *Coach and volunteer compliance*):
+         every one for an admin, her own for anyone else on the staff, read
+         beside the programs. */
+      // a coach or a team helper (an official, in MSYSA's words); never a tracker
+      const ownComply = !r.admin && me && (r.all || ((access || {}).helperIndex || {})[me.uid]);
+      const [programs, waivers, complyV] = await Promise.all([once('programs'), once('waivers'),
+        r.admin ? once('comply') : ownComply ? once('comply/' + me.uid) : null]);
+      const comply = r.admin ? complyV || {} : complyV ? { [me.uid]: complyV } : {};
       const regs = {}, agreed = {};
       /* Tryouts (GOTSPORT.md, *Tryouts and evaluations*): the bibs and every
          evaluator's scores for an admin; the bibs and her own scores for an
@@ -920,7 +929,7 @@ async function initSync() {
           regs[pg] = rv || {}; agreed[pg] = av || {};
         } else if (me) await Promise.all(Object.keys(children).filter(c => kidIsMine(children[c])).map(async c => { const v = await once('regs/' + pg + '/' + c); if (v) (regs[pg] = regs[pg] || {})[c] = v; }));
       })));
-      return { r, access, org, names, teams, roster, matches, rsvp, members: membersV, mine, log, squads, kids, notes, children, care, teamCare, programs: programs || {}, waivers: waivers || {}, regs, agreed, tryBibs, evals };
+      return { r, access, org, names, teams, roster, matches, rsvp, members: membersV, mine, log, squads, kids, notes, children, care, teamCare, programs: programs || {}, waivers: waivers || {}, regs, agreed, tryBibs, evals, comply };
     }
 
     const namesAsMembers = n => Object.fromEntries(Object.entries(n || {}).filter(([, x]) => x && typeof x === 'object').map(([u, x]) => [u, { name: String(x.name || '') }]));
@@ -952,7 +961,7 @@ async function initSync() {
         if (!t || typeof t !== 'object') continue;
         teams[tid] = { ...t, players: tid in x.squads ? squadWith(x.squads[tid], (x.notes || {})[tid], x.r.all) : fromRoster((x.roster || {})[tid], x.kids[tid]) };
       }
-      return { teams, matches: x.matches || {}, access, rsvp: x.rsvp || {}, children: x.children || {}, care: x.care || {}, teamCare: x.teamCare || {}, programs: x.programs || {}, waivers: x.waivers || {}, regs: x.regs || {}, agreed: x.agreed || {}, tryBibs: x.tryBibs || {}, evals: x.evals || {} };
+      return { teams, matches: x.matches || {}, access, rsvp: x.rsvp || {}, children: x.children || {}, care: x.care || {}, teamCare: x.teamCare || {}, programs: x.programs || {}, waivers: x.waivers || {}, regs: x.regs || {}, agreed: x.agreed || {}, tryBibs: x.tryBibs || {}, evals: x.evals || {}, comply: x.comply || {} };
     }
 
     /* After the first read, the same parts listened to: a change to one never
@@ -1050,6 +1059,9 @@ async function initSync() {
         }
       };
       watchTry(x.programs);
+      // coaching records: the list for an admin, her own for the rest of the staff
+      if (r.admin) val('comply', v => { state.comply = v || {}; overlayPending(state.comply, 'comply'); complyHeard = true; saveLocal(); render(); });
+      else if (me && (r.all || ((x.access || {}).helperIndex || {})[me.uid])) val('comply/' + me.uid, v => { state.comply = v ? { [me.uid]: v } : {}; complyHeard = true; saveLocal(); render(); });
       /* A family listens to her own children's registrations, so an offer
          after tryouts (or anything else the club does to one) reaches her
          screen without a reload. One path per child per program: she may
@@ -1304,7 +1316,7 @@ function overlayPending(target, under) {
 function mergeConnect(v) {
   // a copy: what this phone owes is laid over it, and the snapshot it came in is not ours to change
   v = clone(v);
-  const remote = { teams: v.teams || {}, matches: v.matches || {}, access: v.access || {}, rsvp: v.rsvp || {}, children: v.children || {}, care: v.care || {}, teamCare: v.teamCare || {}, programs: v.programs || {}, waivers: v.waivers || {}, regs: v.regs || {}, agreed: v.agreed || {}, tryBibs: v.tryBibs || {}, evals: v.evals || {} };
+  const remote = { teams: v.teams || {}, matches: v.matches || {}, access: v.access || {}, rsvp: v.rsvp || {}, children: v.children || {}, care: v.care || {}, teamCare: v.teamCare || {}, programs: v.programs || {}, waivers: v.waivers || {}, regs: v.regs || {}, agreed: v.agreed || {}, tryBibs: v.tryBibs || {}, evals: v.evals || {}, comply: v.comply || {} };
   const owed = [];
   for (const coll of ['teams', 'matches']) {
     for (const [id, x] of Object.entries(state[coll] || {})) {
@@ -1346,6 +1358,7 @@ function pendingLabel(p) {
   if (coll === 'rsvp') return 'an answer to who is coming';
   if (coll === 'care') return 'care details for a child';
   if (coll === 'evals') return 'a tryout score';
+  if (coll === 'comply') return (u => 'the coaching records of ' + (personName(u) || 'a coach'))(id);
   if (coll === 'tryBibs') return 'a tryout bib';
   if (coll === 'children') return (c => 'the club\'s record of ' + (c && c.first ? c.first : 'a child'))((state.children || {})[id]);
   if (p.startsWith('access/org/venues')) return 'the club\'s fields';
@@ -7018,7 +7031,7 @@ function render() {
   let inGame = ui.view === 'game';
   // a game screen with no game is just four buttons that do nothing
   if (inGame && !match() && !teamMatches(ui.teamId).length) { ui.view = 'season'; inGame = false; }
-  if ((ui.view === 'admin' || ui.view === 'planner' || ui.view === 'regs') && !canAdmin()) ui.view = 'club';
+  if ((ui.view === 'admin' || ui.view === 'planner' || ui.view === 'regs' || ui.view === 'comply') && !canAdmin()) ui.view = 'club';
   if (ui.view === 'mine' && !anyPlayers()) ui.view = 'calendar';
   /* Not before the club has been read: a link to #/messages opened cold on a
      new phone renders before it knows anybody's role, and sending it to the
@@ -7136,7 +7149,7 @@ function render() {
           v === 'season' ? viewSeason() :
             v === 'formation' ? viewFormation() : v === 'club' ? viewClub() : v === 'people' ? viewPeople() : v === 'admin' ? viewAdmin()
               : v === 'mine' ? viewMine() : v === 'practice' ? viewPractice()
-                : v === 'inbox' ? viewInbox() : v === 'notes' ? viewNotes() : v === 'thread' ? viewThread() : v === 'sessions' ? viewSessions() : v === 'planner' ? viewPlanner() : v === 'regs' ? viewRegs() : v === 'tryout' ? viewTryout()
+                : v === 'inbox' ? viewInbox() : v === 'notes' ? viewNotes() : v === 'thread' ? viewThread() : v === 'sessions' ? viewSessions() : v === 'planner' ? viewPlanner() : v === 'regs' ? viewRegs() : v === 'tryout' ? viewTryout() : v === 'comply' ? viewComply()
                 : v === 'setup' ? viewSetup() : viewCalendar());
   } finally { placeMemo = null; }
   syncHash();
@@ -7265,6 +7278,7 @@ function viewClub() {
       <b>My players</b><span class="rowsub">${allKidNames().map(esc).join(', ')}</span></button>` : ''}
     ${canSessions() ? `<button class="card" data-act="goview" data-v="sessions" style="text-align:left;width:100%">
       <b>Training sessions</b><span class="rowsub">${esc(sessClubLine())}</span></button>` : ''}
+    ${complyCards()}
     ${myTryouts().length ? `<button class="card" data-act="goview" data-v="tryout" style="text-align:left;width:100%">
       <b>Tryouts to score</b><span class="rowsub">${esc(myTryouts().map(p => p.name).join(', '))} · by bib</span></button>` : ''}
     ${list.length ? list.map(t => {
@@ -16352,6 +16366,9 @@ function viewAdmin() {
     <div class="card"><h2 style="margin-bottom:8px">Registrations</h2>
       <p class="muted" style="margin-top:0">${(n => n ? `${n} program${n === 1 ? '' : 's'}.` : 'None yet.')(programsAll().length)} What families register their children for, with its link, waivers, and who has registered.</p>
       <button class="btn quiet wide" data-act="goview" data-v="regs">Registrations</button></div>
+    <div class="card"><h2 style="margin-bottom:8px">Coach compliance</h2>
+      <p class="muted" style="margin-top:0">${(t => t.length ? esc(t.map(([st, n]) => `${n} ${COMPLY_TALLY[st]}`).join(' · ')) + '.' : 'Everyone is up to date.')(complyTally(complyRows()))} Each coach's SafeSport, concussion training, background check and licence, with when each lapses.</p>
+      <button class="btn quiet wide" data-act="goview" data-v="comply">Coach compliance</button></div>
     <div class="card"><h2 style="margin-bottom:8px">Fields and permits</h2>
       <p class="muted" style="margin-top:0">${fieldList().length ? `${fieldList().length} field${fieldList().length === 1 ? '' : 's'}.` : 'None yet.'} The places the club trains, the permits you hold for each and when, and what is booked on them.</p>
       <button class="btn quiet wide" data-act="sesstab" data-k="fields">Fields</button></div>
@@ -18978,6 +18995,104 @@ function viewTryScores(pr) {
     </tbody></table></div>`;
 }
 
+/* ---------------- coach compliance (GOTSPORT.md, *Coach and volunteer compliance*) ----------------
+   What MSYSA asks of every team and club official, in its order: SafeSport,
+   concussion training, then a background check, each with the date it was
+   done and the date it lapses; and a coaching licence, which nobody is
+   flagged for. The records are the admins' to keep (orgs/{code}/comply/{uid},
+   one person at a time, written whole), and each person reads her own. A
+   lapsed, soon-to-lapse or missing record is flagged to the admins and to
+   her, and nothing else: like time off, it is read and never obeyed, so she
+   is never taken off a team, a sideline or a session because of it. */
+const COMPLY = [['safe', 'SafeSport', true, 1], ['conc', 'Concussion training', true, 0], ['bg', 'Background check', true, 1], ['lic', 'Coaching licence', false, 0]];
+const COMPLY_SOON = 30;
+const addYears = (s, n) => { const d = dateOf(s); d.setFullYear(d.getFullYear() + n); return dayStr(d); };
+const COMPLY_WORDS = { lapsed: 'lapsed', soon: 'lapses soon', none: 'not recorded', ok: 'up to date', blank: '' };
+// counted across people: "2 lapsed · 1 lapsing soon · 3 with something not recorded"
+const COMPLY_TALLY = { lapsed: 'lapsed', soon: 'lapsing soon', none: 'with something not recorded' };
+let complyHeard = false;
+// where one item stands today: lapsed, lapsing within COMPLY_SOON days, not recorded (a required one), or fine
+function complyState(item, req, today = todayStr()) {
+  if (!item || (!item.done && !item.lapses)) return req ? 'none' : 'blank';
+  if (item.lapses && item.lapses < today) return 'lapsed';
+  if (item.lapses && item.lapses <= addDays(today, COMPLY_SOON)) return 'soon';
+  return 'ok';
+}
+// what needs doing on one person's record, in MSYSA's order
+function complyFlags(rec, today = todayStr()) {
+  return COMPLY.map(([k, label, req]) => ({ k, label, st: complyState((rec || {})[k], req, today), lapses: ((rec || {})[k] || {}).lapses || '' }))
+    .filter(x => x.st === 'lapsed' || x.st === 'soon' || x.st === 'none');
+}
+const COMPLY_RANK = { lapsed: 0, none: 1, soon: 2 };
+// everyone the club should hold a record for, the most urgent first
+function complyRows(today = todayStr()) {
+  return clubStaff().map(x => {
+    const rec = (state.comply || {})[x.uid] || null, flags = complyFlags(rec, today);
+    const worst = flags.reduce((m, f) => Math.min(m, COMPLY_RANK[f.st]), 3);
+    const next = COMPLY.map(([k]) => ((rec || {})[k] || {}).lapses).filter(Boolean).sort()[0] || '9999';
+    return { ...x, rec, flags, worst, next };
+  }).sort((a, b) => a.worst - b.worst || a.next.localeCompare(b.next) || a.name.localeCompare(b.name));
+}
+const complyTally = rows => ['lapsed', 'soon', 'none'].map(st => [st, rows.filter(r => r.flags.some(f => f.st === st)).length]).filter(([, n]) => n);
+const complyLine = f => `${f.label} ${COMPLY_WORDS[f.st]}${f.lapses && f.st !== 'none' ? ' (' + dayLabel(f.lapses) + ')' : ''}`;
+const iAmStaff = () => !!(me && clubStaff().some(x => x.uid === me.uid));
+// the cards on Club home: the admins' tally, and her own record's to-dos
+function complyCards() {
+  if (!me || !complyHeard) return '';
+  let out = '';
+  if (isAdmin(me.uid)) {
+    const t = complyTally(complyRows());
+    if (t.length) out += `<button class="card" data-act="goview" data-v="comply" style="text-align:left;width:100%">
+      <b>Coach compliance</b><span class="rowsub">${esc(t.map(([st, n]) => `${n} ${COMPLY_TALLY[st]}`).join(' · '))}</span></button>`;
+  }
+  if (iAmStaff()) {
+    const f = complyFlags((state.comply || {})[me.uid]);
+    if (f.length) out += `<div class="card"><b>Your coaching records</b>
+      <p class="muted" style="margin:6px 0 0">${esc(f.map(complyLine).join('; '))}. The club's admins keep these from GotSport; tell them once it's done. Nothing about your teams changes.</p></div>`;
+  }
+  return out;
+}
+function viewComply() {
+  if (!me || !isAdmin(me.uid)) return `<div class="empty"><strong>Club admins only</strong>Coaching records are the club's admins'.</div>`;
+  const rows = complyRows(), t = complyTally(rows);
+  const teamsOf = u => Object.entries(acc().teams || {}).filter(([, ta]) => ((ta || {}).coaches || {})[u] || ((ta || {}).helpers || {})[u]).map(([tid]) => (state.teams[tid] || {}).name).filter(Boolean);
+  return `<div class="stack">
+    <div class="spread"><h2>Coach compliance</h2><button class="btn quiet sm" data-act="goview" data-v="admin">Back</button></div>
+    <p class="muted" style="margin-top:0">What MSYSA asks of every coach, helper and admin, in its order: SafeSport, concussion training, then the background check. The checks are done through GotSport; this is the club's record of them. ${t.length ? esc(t.map(([st, n]) => `${n} ${COMPLY_TALLY[st]}`).join(' · ')) + '.' : 'Everyone is up to date.'} Flagged here and to the person, and nothing else changes.</p>
+    <div class="plist">${rows.map(r => `<button class="prow" type="button" data-act="complyopen" data-uid="${esc(r.uid)}" style="grid-template-columns:1fr auto">
+      <span><span class="pname">${esc(r.name)}</span><span class="rowsub">${esc([teamsOf(r.uid).join(', ') || (isAdmin(r.uid) ? 'Admin' : ''), r.flags.map(complyLine).join('; ')].filter(Boolean).join(' · '))}</span></span>
+      <span class="tag${r.worst < 3 ? ' wait' : ''}">${r.worst < 3 ? COMPLY_WORDS[r.flags.find(f => COMPLY_RANK[f.st] === r.worst).st] : 'up to date'}</span></button>`).join('') || '<p class="muted">No coaches yet.</p>'}</div>
+  </div>`;
+}
+function sheetComply(u) {
+  const rec = (state.comply || {})[u] || {};
+  openSheet(`<h3>${esc(personName(u) || 'A coach')}</h3>
+    <p class="muted" style="margin-top:0">The date each was done and the date it lapses. A SafeSport course or background check with no lapse date lapses a year after it was done.</p>
+    ${COMPLY.map(([k, label]) => `<p class="lbl">${label}</p>
+      ${k === 'lic' ? `<label class="field"><span>Which licence</span><input type="text" id="cm_lic_name" maxlength="60" value="${esc((rec.lic || {}).name || '')}" placeholder="USSF D"></label>` : ''}
+      <div class="grid2"><label class="field"><span>Done</span><input type="date" id="cm_${k}_done" value="${esc((rec[k] || {}).done || '')}"></label>
+        <label class="field"><span>Lapses</span><input type="date" id="cm_${k}_lapses" value="${esc((rec[k] || {}).lapses || '')}"></label></div>`).join('')}
+    <label class="field"><span>Note (admins and her)</span><input type="text" id="cm_note" maxlength="300" value="${esc(rec.note || '')}"></label>
+    <button class="btn wide" data-act="complysave" data-uid="${esc(u)}">Save</button>
+    <button class="btn quiet wide" data-act="closesheet" style="margin-top:8px">Cancel</button>`, true);
+}
+// the sheet's dates back into a record, or why not
+function complyRead(read) {
+  const ok = v => /^(19|20)\d\d-[01]\d-[0-3]\d$/.test(v);
+  const rec = {};
+  for (const [k, label, , years] of COMPLY) {
+    const done = read(`cm_${k}_done`), lapses0 = read(`cm_${k}_lapses`);
+    if ((done && !ok(done)) || (lapses0 && !ok(lapses0))) return { why: `${label}: that date doesn't look right` };
+    if (done && lapses0 && lapses0 < done) return { why: `${label} lapses before it was done` };
+    const lapses = lapses0 || (done && years ? addYears(done, years) : '');
+    const name = k === 'lic' ? read('cm_lic_name').slice(0, 60) : '';
+    if (done || lapses || name) rec[k] = { ...(done ? { done } : {}), ...(lapses ? { lapses } : {}), ...(name ? { name } : {}) };
+  }
+  const note = read('cm_note').slice(0, 300);
+  if (note) rec.note = note;
+  return { rec };
+}
+
 /* ---- a family registering: the program link, or a draft to finish ---- */
 const LS_REG = 'sm.reg';
 let regx = null;
@@ -21059,6 +21174,18 @@ function onAct(e) {
       return;
     }
   }
+  /* Coaching records (GOTSPORT.md, *Coach and volunteer compliance*): the
+     admins' to keep, checked here as well as drawn only for them; one
+     person's record written whole, in the admin's name. */
+  if (a === 'complyopen' || a === 'complysave') {
+    if (!me || !isAdmin(me.uid)) { toast('The club\'s admins keep coaching records'); return; }
+    if (!clubStaff().some(x => x.uid === d.uid)) return;
+    if (a === 'complyopen') { sheetComply(d.uid); return; }
+    const r = complyRead(id => String(($('#' + id) || {}).value || '').trim());
+    if (r.why) { toast(r.why); return; }
+    commit(`comply/${d.uid}`, { ...r.rec, by: me.uid, at: nowMs() });
+    closeSheet(); toast('Saved'); render(); return;
+  }
   /* Her family answers an offer, in her own name, only while it stands. */
   if (a === 'tryans') {
     const pr = (state.programs || {})[d.prog], r = regsOf(d.prog)[d.id], c = clubKids()[d.id];
@@ -22448,6 +22575,7 @@ function uiToHash() {
   if (ui.view === 'planner') return '#/club/planner';
   if (ui.view === 'regs') return '#/club/registrations';
   if (ui.view === 'tryout') return '#/club/tryouts';
+  if (ui.view === 'comply') return '#/club/compliance';
   if (ui.view === 'mine') return '#/my-players';
   if (ui.view === 'inbox') return '#/messages';
   if (ui.view === 'notes') return '#/notifications';
@@ -22465,7 +22593,7 @@ function hashToUi() {
      address (build 102): All teams on the Calendar. #/my-calendar is what My
      calendar's feed links back to. */
   if (p[0] === 'club' && (p[1] === 'calendar' || p[1] === 'schedule')) { ui.view = 'calendar'; ui.calSel = 'club'; return true; }
-  if (p[0] === 'club') { ui.view = p[1] === 'settings' ? 'admin' : p[1] === 'people' ? 'people' : p[1] === 'planner' ? 'planner' : p[1] === 'registrations' ? 'regs' : p[1] === 'tryouts' ? 'tryout' : 'club'; return true; }
+  if (p[0] === 'club') { ui.view = p[1] === 'settings' ? 'admin' : p[1] === 'people' ? 'people' : p[1] === 'planner' ? 'planner' : p[1] === 'registrations' ? 'regs' : p[1] === 'tryouts' ? 'tryout' : p[1] === 'compliance' ? 'comply' : 'club'; return true; }
   if (p[0] === 'my-players') { ui.view = 'mine'; return true; }
   if (p[0] === 'my-calendar') { ui.view = 'calendar'; ui.calSel = 'mine'; return true; }
   if (p[0] === 'calendar') { ui.view = 'calendar'; ui.calSel = p[1] === 'all' ? 'club' : 'mine'; return true; }

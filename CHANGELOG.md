@@ -8,6 +8,29 @@ before this point lives only in the git log.
 
 ---
 
+## Coach compliance — 2026-10-11 (build 137, rules version 30)
+
+GOTSPORT.md's step 8, designed there first: the club's record of what MSYSA
+asks of every official, in its order (SafeSport, concussion training, then
+the background check), and each coach's licence.
+
+- **The admins keep the records,** one person at a time
+  (`orgs/{code}/comply/{uid}`), from what GotSport says; each coach reads her
+  own and nobody else's, and a tracker or a family reads none.
+- **Lapsed, lapsing within thirty days, or not recorded** is flagged: a
+  card on the admins' Club home and the list under Club settings, worst
+  first, and a card on the coach's own Club home naming only her own.
+  A SafeSport course or background check typed with no lapse date lapses a
+  year on, as MSYSA asks every year.
+- **Flagged, and nothing more** (the owner, 2026-10-06): nobody is taken off
+  a team, a sideline or a session, the way time off is read and never
+  obeyed.
+- **An account deleted takes its record with it** (`functions/forget.js`).
+
+New suite `comply`, and more in `rules`, `forget` and `smoke`.
+
+---
+
 ## Tryouts and evaluations — 2026-10-11 (build 136, rules version 29)
 
 GOTSPORT.md's step 7: the last thing a club ran tryouts in GotSport for.

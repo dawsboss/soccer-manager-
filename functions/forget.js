@@ -6,11 +6,11 @@
    What goes, in every club she is in (her bookmarks, `userOrgs/{uid}`, and
    her own list of her children, `families/{uid}`): every role (admin, owner,
    viewer, a team's coach, tracker or helper), every lookup table's entry for
-   her, her member entry and staff name, her place on any child's record and
-   squad record (family, her own sign-in, fan), her asks on team links and
-   for bookings, her name on a tryout's evaluators; and at the root her
-   settings and busy times, her phones' push tokens, her own drills, and
-   both lists. What stays is the club's:
+   her, her member entry, staff name and coaching records, her place on
+   any child's record and squad record (family, her own sign-in, fan), her
+   asks on team links and for bookings, her name on a tryout's evaluators;
+   and at the root her settings and busy times, her phones' push tokens,
+   her own drills, and both lists. What stays is the club's:
    the messages and notices she wrote, as in any group chat, and a child's
    record. A child left with no family is taken off her team (her games keep
    her name and number) and her record is kept, marked `left`, for the
@@ -41,6 +41,8 @@ async function forgetIn(env, code, uid, now, out) {
   for (const t of ['teamIndex', 'teamParents', 'teamPlayers', 'teamFans'])
     for (const [tid, row] of Object.entries(access[t] || {})) if (has(row, uid)) await gone(`${B}/access/${t}/${tid}/${uid}`);
   await gone(`${B}/members/${uid}`);
+  // her coaching records (GOTSPORT.md, *Coach and volunteer compliance*) are about her
+  await gone(`${B}/comply/${uid}`);
   await gone(`${B}/names/${uid}`);
 
   const left = new Set();
