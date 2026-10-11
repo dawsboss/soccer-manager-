@@ -7,7 +7,10 @@
 
 window.SOCCER_FIREBASE_CONFIG = {
   apiKey: "AIzaSyCMrbnc2CykdkUKWtdhYb3POemqYeq1_pw",
-  authDomain: "soccer-manager-272ff.firebaseapp.com",
+  // The app's own subdomain, served by Firebase Hosting, so Google's account chooser
+  // names it. Its redirect (https://auth.teamplayhq.com/__/auth/handler) is listed on the
+  // Google client, and every page's security policy allows it.
+  authDomain: "auth.teamplayhq.com",
   databaseURL: "https://soccer-manager-272ff-default-rtdb.firebaseio.com",
   projectId: "soccer-manager-272ff",
   storageBucket: "soccer-manager-272ff.firebasestorage.app",
