@@ -174,7 +174,7 @@ const EXPORTS = `{
   /* test club */
   seedSandbox,
   /* bulk import */
-  importPlan, applyImport, importSummary, sheetImport, IMPORT_EXAMPLE, csvImport, parseCsv, csvDate, CSV_TEMPLATES,
+  importPlan, applyImport, importWrites, landImport, importVia, askServer, serverOn, redeemHere, createHere, importSummary, sheetImport, IMPORT_EXAMPLE, csvImport, parseCsv, csvDate, CSV_TEMPLATES,
   /* the calendar */
   calItems, calPast, calNext, calTeams, calGroups, teamHue, seriesDates, seriesOf, icsItem, opponentMessage,
   viewCalendar, sheetCalItem, sheetCalEvent, calFormNew, publicEvents, pubText, mayAct,
@@ -220,7 +220,7 @@ const EXPORTS = `{
   /* invites */
   get invite() { return invite }, get clubInv() { return clubInv }, get myClubs() { return myClubs },
   secretId, randId, inviteLink, redeemInvite, makeInvite, inviteScreen,
-  get importContacts() { return importContacts }, importInviteRows, inviteImported, mailImported,
+  get importContacts() { return importContacts }, set importContacts(v) { importContacts = v }, importInviteRows, inviteImported, mailImported,
   fit, assignSlots, footFit, FOOT, sheetPlayer,
   /* messages */
   msgTeams, staffTeams, famTeams, msgOn, unreadCount, notices, threadMsgs, threadUnread,

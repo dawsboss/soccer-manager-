@@ -111,7 +111,8 @@ console.log('--- a team\'s calendar feed ---');
   check('replaced', c2 !== c && madeHere(c2, 'c', k) && reads(c2), true);
 }
 
-/* setMyFeed() and createClub() write straight to the database rather than the
+/* setMyFeed() and createHere() (a new club where the server cannot be asked)
+   write straight to the database rather than the
    workspace, so they are read in the source: each makes its id with randId and
    nothing else, and nowhere in the app is a share, feed or club id made of
    uid(). */
@@ -120,7 +121,10 @@ console.log('--- my calendar\'s address and a new club\'s code ---');
   const src = H.appSource();
   const body = name => { const i = src.indexOf('function ' + name + '('); return src.slice(i, src.indexOf('\n}\n', i)); };
   check('My calendar\'s address: randId', /const id = how === 'off' \? '' : randId\('m'\);/.test(body('setMyFeed')), true);
-  check('a new club\'s code: randId', /const code = randId\('sm-'\)/.test(body('createClub')), true);
+  check('a new club\'s code, made on the phone: randId', /const code = randId\('sm-'\)/.test(body('createHere')), true);
+  check('and asked of the server, never named by the phone', /op: 'club', name/.test(body('createClub')) && !/randId|uid\(\)\s*[,}]/.test(body('createClub').replace(/joinAsks\/\$\{me\.uid\}\/\$\{uid\(\)\}/g, '')), true);
+  const js = require('fs').readFileSync(require('path').join(__dirname, '..', 'functions', 'join.js'), 'utf8');
+  check('the server makes it from its own secure generator', /'sm-' \+ crypto\.randomBytes\(16\)\.toString\('hex'\)/.test(js), true);
   const A = club();
   const m = A.randId('m'), code = A.randId('sm-');
   check('the address passes the feed and the rule', reads(m) && m.length >= lo && m.length <= hi, true);

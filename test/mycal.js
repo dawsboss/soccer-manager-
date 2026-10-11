@@ -207,13 +207,14 @@ const nameIn = v => names.some(n => JSON.stringify(v).includes(n));
   console.log('\n--- what the club sees of her ---');
   {
     const { D, fbk } = await boot('boss');
-    check('an admin\'s phone listens for the coaches\' shared times', fbk.watching('people/jaz/busy'), true);
-    check('nobody else\'s', fbk.watching('people/mum/busy'), false);
+    // the club's own copy of everyone's times elsewhere, kept by the server (functions/mycal.js): one listener, never people/{uid}/busy
+    check('an admin\'s phone listens for the club\'s copy of the coaches\' shared times', fbk.watching('training/CLUB/elsewhere'), true);
+    check('and for nobody\'s own', fbk.readPaths().some(p => /^people\/(?!boss\/)/.test(p)), false);
     check('a private coach: free at any time', D.coachStatus('jaz', day(1), 18 * 60, 19 * 60).state, 'free');
-    fbk.deliver('people/jaz/busy', {
+    fbk.deliver('training/CLUB/elsewhere', { jaz: {
       [TAG_HILL]: { at: 1, b: { b1: { d: day(1), s: '18:00', e: '19:30' } } },
       [TAG_CLUB]: { at: 1, b: { b1: { d: day(1), s: '12:00', e: '13:00' } } }
-    }); await D.flush();
+    } }); await D.flush();
     const st = D.coachStatus('jaz', day(1), 18 * 60, 19 * 60);
     check('sharing: busy then', st.state, 'busy');
     check('at another club, and nothing more', st.why, 'another club at 6pm');

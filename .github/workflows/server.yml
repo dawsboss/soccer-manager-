@@ -115,6 +115,22 @@ jobs:
         if: env.HAS_KEY == 'true' && steps.what.outputs.functions == 'true'
         run: npm ci --prefix functions
 
+      # The mailer's secret (functions/mail.js; README, "Email from the club")
+      # has to exist before a deploy that declares it, or the deploy fails.
+      # Made here with a placeholder the first time, so nobody has to; a real
+      # SMTP address is set in the console or with the CLI and never read back
+      # here. gcloud is on every GitHub runner, signed in by the auth step above.
+      - name: Make sure the mail secret exists
+        if: env.HAS_KEY == 'true' && steps.what.outputs.functions == 'true'
+        run: |
+          set -euo pipefail
+          PROJECT=$(node -e "console.log(require('./.firebaserc').projects.default)")
+          gcloud services enable secretmanager.googleapis.com --project "$PROJECT" --quiet
+          if ! gcloud secrets describe SOCCER_SMTP_URL --project "$PROJECT" >/dev/null 2>&1; then
+            printf 'none' | gcloud secrets create SOCCER_SMTP_URL --project "$PROJECT" --data-file=- --replication-policy=automatic
+            echo "::notice::SOCCER_SMTP_URL made with a placeholder: the club sends no email until a real SMTP address is set (README, Email from the club)."
+          fi
+
       # --force: allow the CLI to set up what a first deploy needs (it otherwise
       # stops to ask about cleaning up old builds, and nobody is there to answer).
       - name: Deploy the functions

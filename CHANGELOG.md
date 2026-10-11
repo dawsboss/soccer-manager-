@@ -8,6 +8,74 @@ before this point lives only in the git log.
 
 ---
 
+## Four jobs move to the server — 2026-10-11 (build 135, rules version 28)
+
+SERVER.md's smaller jobs: each was a phone doing something for somebody else,
+or something that stayed true only while some phone was open.
+
+- **Joining by invite is one step.** Her phone asks (`joinAsks/{uid}/{id}`)
+  and `functions/join.js` checks the invite as the rules did, spends it in one
+  transaction (one invite is never two people's, one seat never two), and
+  writes the grant, her member entry, her bookmark, the admin's list and the
+  log in one write, then the lookup tables as the role triggers make them. A
+  dropped signal can no longer leave a spent invite and no role.
+- **A new club's code is the server's.** Starting a club asks the same way;
+  the server makes the code, checks it is free and writes the
+  club with her as admin and owner in one go. With no answer the phone says
+  so and makes nothing, so a slow server never means two clubs. The
+  bootstrap clauses stay for now as the bridge; once this is live they can
+  go, and with them rules.js's trust-on-first-use gap.
+- **Busy at another club stays current with no phone open.** The five-minute
+  My calendar build now also writes each sharing person's busy times from the
+  clubs themselves, in the shape her phone writes, so a practice added at one
+  club reaches the others within minutes. Private stays the default, and
+  turning sharing off on any phone takes every one down on the next run.
+- **Old practice plans and coach's notes are moved once, on the server.**
+  `migrateOld`, daily until every club has gone through and then never again:
+  each plan from before the calendar gets its entry, each note still on a
+  child's record goes to `coachNotes` in the same write it comes off the
+  record. The phones' halves go once the live run says done.
+- **A bulk import is applied by the server.** The admin's phone plans it as
+  before and sends the whole plan in one ask; the server checks she is an
+  admin and that every write is inside the club and in a part an import
+  writes (or writes nothing), and applies it in order in batches the
+  database takes. A phone switched off after the ask lands loses nothing.
+
+And the rest of SERVER.md's list, the same day:
+
+- **Nightly backups.** Every club, whole, to the project's own bucket once a
+  night, the last thirty kept (`functions/backup.js`). Nothing to set up
+  beyond deploying.
+- **Email from the club.** Invitations go as real invitations in the club's
+  name (who invited her, to what, the link), and a coach can email a notice
+  to every family on her team from the club, one message each, with the
+  families found by the server from the squad (`functions/mail.js`). Needs
+  an SMTP secret (README, *Email from the club*; it must exist, with any
+  value, before the next functions deploy); without a real one the app does
+  what it did before.
+- **Busy times are each club's own.** Her shared times are copied by the
+  server into every club she is in (`training/{code}/elsewhere/{uid}`, her
+  other clubs' only), which that club's coaches and admins read; nobody can
+  read anyone's times by uid any more. One listener per club instead of one
+  per coach.
+- **No more claiming a club code.** The bootstrap clauses let a code be
+  claimed only when it starts `test-` (the app owner's test clubs); a real
+  club is made by the server or not at all. `rules.js`'s gaps 3 and 10 are
+  closed.
+- **Letting people in is one call too.** A team-link request or a fan's
+  ask approved, a squad's parent links and an imported roster's invites each
+  go to the server as one ask (`functions/staff.js`), written whole, with
+  the lookup tables following; the phone's own writes stay as the fallback
+  for rules too old to take the ask.
+- **Two small fixes:** a plan the migration moves onto the calendar is noted
+  as already said, so nobody is told of a "new" practice they planned months
+  ago; an import too big for one trigger event goes the phone's way.
+
+Each asks the server only where `firebase-config.js` sets the new
+`SOCCER_SERVER`; joining, importing and emailing fall back to the phone's
+own writes where the rules are too old to take the ask, or the club has no
+mailer. New suites `joinask`, `staffask`, `importask`, `migrate`, `backup` and `mail`,
+and more in `mycalfeed`, `mycal`, `invites`, `rules` and `ids`.
 ## A to-do list for what GitHub Pages can't do — 2026-10-11
 
 `HOSTING.md` lists what Pages can't do (rewrites, headers, server code, a link preview per address), the plan for moving the site to Firebase Hosting on the same project, its downsides and the limits measured against today's site. The move is on hold (the owner): Pages does the job now, and the file keeps every request that needs the move (real addresses instead of `#/`, security headers, a preview per game link, cache control) until it happens. `CLAUDE.md` points at it so the next request that can't be done on Pages lands there too.

@@ -2,7 +2,7 @@
    Static app. Data lives in localStorage, and mirrors to Firebase Realtime
    Database when a config + workspace code are present. */
 
-const BUILD = '134';
+const BUILD = '135';
 const BUILT = '2026-10-11';
 /* The version of database.rules.json this app was written against. The rules
    carry the same number in rulesVersion's .write, which accepts that number
@@ -11,7 +11,7 @@ const BUILT = '2026-10-11';
    never pasted look exactly like a coach with no signal: "saved on this phone
    only", one feature at a time. test/rules.js holds the two numbers together
    and fails when the rules change without this going up. */
-const RULES_VERSION = 27;
+const RULES_VERSION = 28;
 /* index.html carries the build it was published with. If this file is newer, the
    browser handed us a cached page — the exact failure that has eaten hours. */
 const pageBuild = () => {
@@ -1435,18 +1435,25 @@ function rosterAfter(path) {
    anyone's name but the writer's. A delete carries none: there is nothing
    left to stamp. */
 const CAL_PATH = /^(teams\/[^/]+\/events\/[^/]+|matches\/[^/]+)(\/(date|start|end|kickoff|called|venue|title|opponent|kind|series))?$/;
-function calStamp(path, v) {
+/* The stamp a write carries, worked out without writing anything: the value
+   (a whole entry or game with its stamp inside), and the stamp to write
+   beside a field written on its own. A bulk import sent to the server
+   (importWrites()) is stamped the same way. */
+function calStampOf(path, v) {
   const m = me && CAL_PATH.exec(path);
-  if (!m || v === null) return v;
+  if (!m || v === null) return { v, beside: null };
   // only who may change the calendar stamps it: a tracker saving the game she is tracking has changed nothing in it
   const p = m[1].split('/');
   const tid = p[0] === 'teams' ? p[1] : ((v && typeof v === 'object' && !m[2] && v.teamId) || ((state.matches || {})[p[1]] || {}).teamId);
-  if (!tid || !(isCoach(tid, me.uid) || isHelper(tid, me.uid))) return v;
+  if (!tid || !(isCoach(tid, me.uid) || isHelper(tid, me.uid))) return { v, beside: null };
   const stamp = { by: me.uid, at: nowMs() };
-  if (!m[2]) return v && typeof v === 'object' ? { ...v, edit: stamp } : v;
-  setDeep(state, m[1] + '/edit', stamp);
-  remoteSet(m[1] + '/edit', stamp);
-  return v;
+  if (!m[2]) return { v: v && typeof v === 'object' ? { ...v, edit: stamp } : v, beside: null };
+  return { v, beside: [m[1] + '/edit', stamp] };
+}
+function calStamp(path, v) {
+  const r = calStampOf(path, v);
+  if (r.beside) { setDeep(state, r.beside[0], r.beside[1]); remoteSet(r.beside[0], r.beside[1]); }
+  return r.v;
 }
 function remoteSet(path, value) {
   noteMine(path);
@@ -2326,13 +2333,64 @@ function inviteScreen() {
     `<button class="btn" data-act="inviteaccept">Accept</button>${later}`);
 }
 
+/* Whether this project's server (functions/) is deployed: firebase-config.js
+   sets SOCCER_SERVER once it is (README, *Deploying the server*), as it sets
+   the push key. Joining, starting a club and a bulk import then ask it
+   first, and do it on the phone, as before, only where it cannot be asked. */
+const serverOn = () => typeof window !== 'undefined' && window.SOCCER_SERVER === true;
+const JOIN_WAIT = 30000;
+// what the server's no means on the invite screen, which has words for each
+const JOIN_NO = { gone: 1, taken: 1, expired: 1, full: 1, wrongemail: 1, unverified: 1 };
+
+/* Joining by invite is one call to the server (functions/join.js; SERVER.md,
+   *Joining and starting clubs*): it checks the invite against the club as it
+   is now, spends it in one transaction, and writes the grant, her member
+   entry, the lookup tables, her bookmark and the log in one go, so a dropped
+   signal can never leave half of it. The phone's own writes below are for a
+   project without the server, or rules too old to take the ask. */
+// SERVER.md: asks the server (joinAsk) where it is deployed; the phone's own writes are the fallback.
+async function redeemInvite() {
+  if (!invite || invite.status !== 'ready' || !rtdb || !me) return;
+  if (!serverOn()) return redeemHere();
+  const id = invite.id, v = invite.doc, who = me.uid;
+  invite.status = 'working'; render();
+  const ans = await askServer(`joinAsks/${who}/${uid()}`, { op: 'invite', invite: id, ...(me.name ? { name: String(me.name).slice(0, 80) } : {}) }, JOIN_WAIT);
+  if (!invite || invite.id !== id || !me || me.uid !== who) return;
+  // asked twice, the first already in: the invite is gone because it is spent on her
+  if (ans && (ans.ok || (ans.why === 'gone' && myClubs && myClubs[v.ws]))) return joined(ans.ok ? ans : { ws: v.ws }, v);
+  if (ans && JOIN_NO[ans.why]) { invite.status = ans.why; render(); return; }
+  if (!ans || ans.why === 'moving') {
+    invite.status = 'error';
+    invite.err = ans ? 'The club is being moved to its new home right now. Try again in a few minutes'
+      : 'No answer from the club yet. If you are in, the club opens by itself in a moment; if not, try again';
+    render(); return;
+  }
+  // the rules refused the ask, or the server could not finish: the phone does it, and finishes what the server began
+  invite.status = 'ready';
+  return redeemHere();
+}
+/* In: open the club, or, for a fan who only asked, wait for the coach. */
+function joined(ans, v) {
+  if (ans.asked) {
+    const id = invite ? invite.id : '';
+    dropInvite();
+    join = { code: 'fan:' + id, status: 'idle', sent: true, err: null, hidden: false,
+      doc: { ws: ans.ws, team: v.team, teamName: v.teamName || '', clubName: v.clubName || '', fan: true } };
+    holdJoin(); maybeLoadJoin(); render(); return;
+  }
+  markFromOrgs(ans.ws);
+  dropInvite();
+  try { localStorage.setItem(LS_WS, ans.ws); } catch (e) { }
+  location.reload();
+}
+
 /* Order matters and each step is awaited: every rule after the first checks
    that the invite has been spent by this account, and the database evaluates
    a write against what is there when it arrives. The first four writes are
    the grant; the rest is bookkeeping, and a refusal there leaves the grant
    standing — an admin's device rebuilds the team index on its next connect. */
-// SERVER.md: several writes in the order the rules need; a server would do it in one call.
-async function redeemInvite() {
+// SERVER.md: several writes in the order the rules need, where the server cannot be asked (joinAsk does it in one call).
+async function redeemHere() {
   if (!invite || invite.status !== 'ready' || !rtdb || !me) return;
   const id = invite.id, v = invite.doc, who = me.uid, ws = v.ws, at = nowMs();
   const { db, mod } = rtdb;
@@ -2421,8 +2479,33 @@ async function redeemInvite() {
    half-made one is not cheap to explain. The code is long and random, so the
    trust-on-first-use window rules.js prints is a code nobody else knows. */
 let newClubBusy = false;
-// SERVER.md: a new club claimed by the first writer (trust-on-first-use); a server would issue it.
+/* With the server deployed, a new club's code is the server's to make
+   (functions/join.js): she asks, and it writes the club, her as its admin
+   and owner, and her bookmark in one go, at a code it has checked is free
+   on both trees. A club is never made twice for one ask: with no answer she
+   is told so, and her list of clubs shows it the moment it is there. Only an
+   ask the rules refuse (version 28 not published yet) falls back to the
+   phone's own claim below. */
+// SERVER.md: asks the server (joinAsk) for a new club's code where it is deployed.
 async function createClub(name) {
+  if (!rtdb || !me || newClubBusy) return false;
+  if (!serverOn()) return createHere(name);
+  newClubBusy = true;
+  const ans = await askServer(`joinAsks/${me.uid}/${uid()}`, { op: 'club', name, ...(me.name ? { you: String(me.name).slice(0, 80) } : {}) }, JOIN_WAIT);
+  if (ans && ans.ok && ans.ws) {
+    markFromOrgs(ans.ws);
+    try { localStorage.setItem(LS_WS, ans.ws); } catch (e) { }
+    location.reload();
+    return true;
+  }
+  newClubBusy = false;
+  if (ans && (ans.why === 'rules' || ans.why === 'failed')) return createHere(name);
+  toast(!ans ? 'No answer yet. If the club was made it will be in your list of clubs in a moment; if not, try again'
+    : ans.why === 'name' ? 'Give the club a name' : 'Could not make the club — check the signal and try again');
+  return false;
+}
+// SERVER.md: a new club claimed by the first writer (trust-on-first-use), where the server cannot be asked (joinAsk issues the code).
+async function createHere(name) {
   if (!rtdb || !me || newClubBusy) return false;
   const code = randId('sm-'), who = me.uid, at = nowMs();
   const { db, mod } = rtdb;
@@ -2678,13 +2761,19 @@ function sheetSquadInvites(tid) {
     <p class="muted">A child can have any number of parents. For a second one (or a grandparent who does the driving), post the team link, or make one more link from People → <i>Invite someone</i>.</p>
     <button class="btn quiet wide" data-act="closesheet">Done</button>`);
 }
-// SERVER.md: one invite at a time from the admin's phone; a server would make the squad's in one call.
+// SERVER.md: a squad's links asked of the server (staffAsk) where it is deployed; one invite at a time from the phone otherwise.
 async function inviteSquad(tid) {
   const t = state.teams[tid];
   if (!t || !canAdmin()) { toast('Club admins only'); return; }
   if (!fb || !rtdb || !me) { toast(me ? 'Needs a connection to the database' : 'Sign in first'); return; }
   const todo = players(t).filter(p => needsParent(t, p) && !openParentInvite(tid, p));
   const lim = readLimits('sqinv');
+  // the whole squad's links in one write, where the server is deployed (functions/staff.js)
+  const ans = todo.length ? await staffAsk({ op: 'squad', tid, uses: lim.uses, days: lim.days }) : null;
+  if (ans) {
+    if (!ans.ok) { toast(STAFF_NO[ans.why] || 'Not made — check the signal and try again'); return; }
+    sheetSquadInvites(tid); return;
+  }
   let n = 0;
   for (const p of todo) {
     try { await writeInvite(t, 'parent', p, '', lim); n++; } catch (e) {
@@ -2791,14 +2880,23 @@ function sheetImportInvites() {
     <p class="muted">Firebase sends it, worded as a sign-in link rather than an invitation, so a message to the team saying it's coming helps. Every link is also under People → Invites to copy or send again.</p>` : ''}
     <button class="btn quiet wide" data-act="importinviteskip">${todo || unsent.length ? 'Not now' : 'Done'}</button>`);
 }
-// SERVER.md: one invite at a time from the admin's phone; a server would make the roster's in one call.
+// SERVER.md: an imported roster's invites asked of the server (staffAsk) where it is deployed; one at a time from the phone otherwise.
 async function inviteImported() {
   if (!importContacts) return;
   if (!canAdmin()) { toast('Club admins only'); return; }
   if (!fb || !rtdb || !me) { toast(me ? 'Needs a connection to the database' : 'Sign in first'); return; }
   const ic = importContacts;
+  const todo = importInviteRows(ic).filter(x => x.st === 'todo');
+  // all of them in one write, where the server is deployed (functions/staff.js)
+  const ans = todo.length ? await staffAsk({ op: 'invites', list: todo.map(r => ({ team: r.t.id, role: r.role, ...(r.p ? { player: r.p.id } : {}), email: r.email })) }) : null;
+  if (importContacts !== ic) return;
+  if (ans) {
+    if (!ans.ok) { toast(STAFF_NO[ans.why] || 'Not made — check the signal and try again'); return; }
+    for (const [i, id] of Object.entries(ans.made || {})) if (todo[Number(i)]) ic.made[todo[Number(i)].key] = id;
+    sheetImportInvites(); return;
+  }
   let n = 0;
-  for (const r of importInviteRows(ic).filter(x => x.st === 'todo')) {
+  for (const r of todo) {
     try { ic.made[r.key] = (await writeInvite(r.t, r.role, r.role === 'parent' ? r.p : null, r.email)).id; n++; } catch (e) {
       toast(/permission|denied/i.test((e && e.code) || '') ? 'The database refused it — are the invite rules from README published?' : 'Stopped — no connection');
       break;
@@ -2807,12 +2905,38 @@ async function inviteImported() {
   if (n) logAccess('invited', null, { targetName: n + ' from an imported roster' });
   if (importContacts === ic) sheetImportInvites();
 }
-// SERVER.md: the sign-in emails go one at a time from the admin's phone; a server would send them.
+/* The invitations go from the club (functions/mail.js) where the server is
+   deployed with a mailer: real invitations in the club's name, not sign-in
+   links, with no daily limit on the admin's account. A server without a
+   mailer, or rules too old to take the ask, is told once and the sign-in
+   links go as they did. */
+const MAIL_WAIT = 60000;
+let mailFallback = false;
+async function mailViaClub(ids) {
+  if (!serverOn() || mailFallback || !rtdb || !me || !wsCode() || !online) return null;
+  const ans = await askServer(`mailAsks/${wsCode()}/${me.uid}/${uid()}`, { op: 'invites', ids }, MAIL_WAIT);
+  if (ans && (ans.why === 'nomail' || ans.why === 'rules')) { mailFallback = true; return null; }
+  return ans;
+}
+// SERVER.md: the sign-in emails go one at a time from the admin's phone where the club has no mailer (mailAsk sends real invitations).
 async function mailImported() {
   if (!importContacts) return;
   if (!canAdmin()) { toast('Club admins only'); return; }
-  if (!authMod || !fbAuth) { toast('Sign-in is not available on this build'); return; }
   const ic = importContacts;
+  const rows = importInviteRows(ic).filter(x => (x.st === 'made' || x.st === 'open') && !ic.sent[x.key]);
+  if (rows.length) {
+    const ans = await mailViaClub(rows.map(r => r.id));
+    if (importContacts !== ic) return;
+    if (ans && ans.ok) {
+      const sent = new Set(Array.isArray(ans.sent) ? ans.sent : Object.values(ans.sent || {}));
+      let n = 0;
+      for (const r of rows) if (sent.has(r.id)) { ic.sent[r.key] = true; n++; }
+      toast(`The club emailed ${n} invitation${n === 1 ? '' : 's'}${n < rows.length ? `; ${rows.length - n} could not be sent` : ''}`);
+      sheetImportInvites(); return;
+    }
+    if (ans) { toast('The club could not send them — check the signal and try again'); return; }
+  }
+  if (!authMod || !fbAuth) { toast('Sign-in is not available on this build'); return; }
   let n = 0;
   for (const r of importInviteRows(ic).filter(x => (x.st === 'made' || x.st === 'open') && !ic.sent[x.key])) {
     try { await authMod.sendSignInLinkToEmail(fbAuth, r.email, { url: inviteLink(r.id), handleCodeInApp: true }); ic.sent[r.key] = true; n++; } catch (err) {
@@ -3061,6 +3185,22 @@ function claimMatches(t, c) {
 }
 
 // SERVER.md: approval written before the index entry, for the rules; a server would do it in one call.
+/* Letting people in is one call to the server where it is deployed
+   (functions/staff.js, staffAsk): the approval, the family on each child's
+   record, her index entry, her member entry and the log in one write, then
+   the tables. The phone's own writes below are for a project without the
+   server, or rules too old to take the ask; the server could not finish is
+   said, never done again by hand. */
+const STAFF_WAIT = 30000;
+let staffFallback = false;
+async function staffAsk(v) {
+  if (!serverOn() || staffFallback || !rtdb || !me || !wsCode() || !online) return null;
+  const ans = await askServer(`staffAsks/${wsCode()}/${me.uid}/${uid()}`, v, STAFF_WAIT);
+  if (ans && ans.why === 'rules') { staffFallback = true; return null; }
+  return ans;
+}
+const STAFF_NO = { notyours: 'Club admins and that team’s coaches only', gone: 'That request has gone', approved: 'Already approved', player: 'That player is no longer on the squad', retired: 'This club has been retired' };
+// SERVER.md: approving a request asks the server (staffAsk) where it is deployed; the phone's own writes are the fallback.
 async function approveClaim(tid, u, pids) {
   const t = state.teams[tid];
   if (!t || !mayGrant(tid)) { toast('Club admins and that team’s coaches only'); return; }
@@ -3068,6 +3208,17 @@ async function approveClaim(tid, u, pids) {
   const picked = pids.filter(pid => (t.players || {})[pid]);
   if (!c || !picked.length) { toast('Pick their child'); return; }
   const at = nowMs();
+  const ans = await staffAsk({ op: 'approve', tid, uid: u, pids: picked });
+  if (ans) {
+    if (!ans.ok) { toast(STAFF_NO[ans.why] || 'Not approved — check the signal and try again'); return; }
+    // the club has it all; the phone keeps what the listeners will bring in a moment
+    setDeep(claimsSeen, `${tid}/${u}/approved`, { by: me.uid, at });
+    for (const pid of picked) setDeep(state, `teams/${tid}/players/${pid}/guardians/${u}`, true);
+    if (!(acc().index || {})[u]) setDeep(state, `access/index/${u}`, tid);
+    saveLocal(); render();
+    toast(`${c.name || c.email || 'They'} can open the team now`);
+    return;
+  }
   try {
     // first, because the index rule looks for it
     await fb.set(fb.ref(fb.db, `claims/${wsCode()}/${tid}/${u}/approved`), { by: me.uid, at, players: Object.fromEntries(picked.map(x => [x, true])) });
@@ -3089,7 +3240,7 @@ async function approveClaim(tid, u, pids) {
    order as a family's — the approval first, which the index rule looks for —
    then her place on the child's record, the index entry naming this team,
    and the team's fans table, which the rule holds to the record. */
-// SERVER.md: approval written before the index entry, for the rules; a server would do it in one call.
+// SERVER.md: a fan's ask approved by the server (staffAsk) where it is deployed; the phone's writes in the rules' order otherwise.
 async function approveFan(tid, u) {
   const t = state.teams[tid];
   if (!t || !mayGrant(tid)) { toast('Club admins and that team’s coaches only'); return; }
@@ -3098,6 +3249,16 @@ async function approveFan(tid, u) {
   if (!p) { toast(c ? 'That player is no longer on the squad' : 'That request has gone'); return; }
   if (!fb || !me) { toast('Needs a connection to the database'); return; }
   const at = nowMs();
+  const ans = await staffAsk({ op: 'fan', tid, uid: u });
+  if (ans) {
+    if (!ans.ok) { toast(STAFF_NO[ans.why] || 'Not approved — check the signal and try again'); return; }
+    setDeep(claimsSeen, `${tid}/${u}/approved`, { by: me.uid, at });
+    setDeep(state, `teams/${tid}/players/${p.id}/fans/${u}`, true);
+    if (!(acc().index || {})[u]) setDeep(state, `access/index/${u}`, tid);
+    saveLocal(); render();
+    toast(`${c.name || c.email || 'They'} can follow ${firstName(p)} now`);
+    return;
+  }
   try {
     await fb.set(fb.ref(fb.db, `claims/${wsCode()}/${tid}/${u}/approved`), { by: me.uid, at, fan: p.id });
   } catch (e) {
@@ -4227,15 +4388,35 @@ function sheetPostShare(tid, id) {
   const subject = `${t.name || 'Team'}${x.urgent ? ' — urgent' : ''}: message from ${x.byName || 'the coach'}`;
   const body = String(x.text || '').slice(0, 1500);
   const href = `mailto:?bcc=${encodeURIComponent(mails.join(','))}&subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+  // from the club itself, one message per family, where the server has a mailer (functions/mail.js)
+  const viaClub = serverOn() && !mailFallback && !!rtdb && online;
   openSheet(`<h3>Reach everyone now</h3>
     <p class="muted" style="margin-top:0">Families with TeamPlayHQ open have it already; everyone else sees it with a badge next time they open it. To get it to their phones now:</p>
-    ${mails.length ? `<a class="btn wide" href="${esc(href)}" data-act="closesheet">Email the parents (${mails.length})</a>
+    ${mails.length ? `${viaClub ? `<button class="btn wide" data-act="postmail" data-tid="${tid}" data-id="${id}">Email the parents from the club (${mails.length})</button>
+      <p class="muted">One email to each family, in the club's name.</p>` : ''}
+      <a class="btn ${viaClub ? 'quiet ' : ''}wide" href="${esc(href)}" data-act="closesheet">Email the parents (${mails.length})</a>
       <p class="muted">Opens your email app with them in Bcc, so nobody sees anyone else's address.</p>`
       : `<p class="muted">No parent on this team has an account with an email address yet.</p>`}
     <button class="btn quiet wide" data-act="postsharetext" data-tid="${tid}" data-id="${id}">Share or copy the text</button>
     <button class="btn quiet wide" data-act="closesheet">Done</button>`);
 }
 
+/* The notice, emailed by the club to the team's families (functions/mail.js).
+   Checked here, as the post was: only who may post to the team. The server
+   finds the families itself; the ask carries the words and nothing else. */
+// SERVER.md: a notice emailed by the club to the team's families (mailAsk).
+async function mailNotice(tid, id) {
+  if (!postsTo(tid)) { toast('Only the team\'s coaches post to it'); return; }
+  const x = notices(tid).find(n => n.id === id); if (!x) return;
+  if (!serverOn() || !rtdb || !me || !online) { toast('Needs a signal'); return; }
+  const t = state.teams[tid] || {};
+  const subject = `${t.name || 'Team'}${x.urgent ? ' — urgent' : ''}: message from ${x.byName || 'the coach'}`;
+  closeSheet(); toast('Sending…');
+  const ans = await askServer(`mailAsks/${wsCode()}/${me.uid}/${uid()}`, { op: 'team', tid, subject, text: String(x.text || '').slice(0, 4000) }, MAIL_WAIT);
+  if (ans && ans.ok) { toast(`The club emailed ${ans.sent} famil${ans.sent === 1 ? 'y' : 'ies'}${ans.failed ? `; ${ans.failed} could not be sent` : ''}`); return; }
+  if (ans && (ans.why === 'nomail' || ans.why === 'rules')) { mailFallback = true; toast('The club has no mailer set up — use your own email app instead'); sheetPostShare(tid, id); return; }
+  toast(ans && ans.why === 'notyours' ? 'Only the team\'s coaches and the admins email its families' : 'Not sent — check the signal and try again');
+}
 function sheetPostSeen(tid, id) {
   const x = notices(tid).find(n => n.id === id); if (!x) return;
   const fam = families(tid);
@@ -5454,10 +5635,80 @@ function importSummary(c) {
   return bits.length ? bits.join(' · ') : 'nothing new — everything in it is already here';
 }
 
+/* With the server deployed, the whole plan goes to it in one ask
+   (functions/imports.js; SERVER.md, *Backups and imports*), which checks it
+   against the club and applies it in order: once the ask has landed, a
+   phone switched off or out of signal loses nothing of it. These are the
+   very writes applyImport() would send, laid out for the club's tree
+   (clubWrites()) and stamped as calStamp() and sessPut() stamp them, so the
+   two ways in leave the same club. */
+// SERVER.md: the import as one ask of the server (importAsk), which applies it whole.
+function importWrites(plan) {
+  const code = wsCode(), out = [];
+  const add = (p, v) => out.push(v === null || v === undefined ? { p } : { p, v: clone(v) });
+  for (const [path, value] of plan.writes) {
+    const st = calStampOf(path, value === undefined ? null : value);
+    for (const [p, v] of clubWrites(path, st.v)) add(p, v);
+    if (st.beside) for (const [p, v] of clubWrites(st.beside[0], st.beside[1])) add(p, v);
+  }
+  for (const [path, value] of plan.sessWrites || []) {
+    const v = value == null ? null : clone(value);
+    if (v && me && /^sessions\/[^/]+$/.test(path)) v.edit = { by: me.uid, at: nowMs() };
+    add(`training/${code}/${path}`, v);
+  }
+  for (const [what, value] of plan.trainWrites || []) {
+    const v = { ...clone(value), at: nowMs() };
+    if (what === 'practice') add(`training/${code}/practices/${v.teamId}/${v.id}`, v);
+    else add(`training/${code}/${what === 'drill' ? 'drills' : 'templates'}/${v.id}`, v);
+  }
+  return out;
+}
+/* What the phone keeps of an import the server applied: the club's copy in
+   memory and on the phone, owing nothing, since the club already has it
+   (the listeners bring the server's copy over this one in a moment). */
+function landImport(plan) {
+  for (const [path, value] of plan.writes) { noteMine(path); if (value == null) delDeep(state, path); else setDeep(state, path, clone(value)); }
+  saveLocal();
+  for (const [path, value] of plan.sessWrites || []) { noteMine(path); if (value == null) delDeep(sess, path); else setDeep(sess, path, clone(value)); }
+  saveSess();
+  for (const [what, value] of plan.trainWrites || []) {
+    const v = clone(value);
+    if (what === 'practice') (train.practices[v.teamId] = train.practices[v.teamId] || {})[v.id] = v;
+    else SHELF[what === 'drill' ? 'club' : 'clubTpl'].store().items[v.id] = v;
+  }
+  saveTrain();
+  render(); shareIds();
+}
+const IMPORT_WAIT = 60000;
+// the server's no that the phone's own writes would meet too, in words
+const IMPORT_NO = {
+  admin: 'Only club admins can import', retired: 'This club has been retired',
+  moving: 'The club is being moved to its new home right now. Try again in a few minutes',
+  outside: 'The server refused it: something in it is not the club\'s to import'
+};
+/* Ask the server; where it cannot be asked, or did not finish, the phone
+   writes it as it always has. Doing it twice changes nothing (every write
+   sets a value), so the phone finishing what the server began is safe. */
+/* A database trigger is handed what was written, and an event has a size it
+   may be; a plan past this goes the phone's own way, which has no limit but
+   a signal. Far more than any club's season (a few hundred KB at most). */
+const IMPORT_MAX_BYTES = 400000;
+async function importVia(plan) {
+  if (!serverOn() || !rtdb || !me || !wsCode() || !online) { applyImport(plan); return 'phone'; }
+  const writes = importWrites(plan);
+  if (JSON.stringify(writes).length > IMPORT_MAX_BYTES) { applyImport(plan); return 'phone'; }
+  toast('Importing…');
+  const ans = await askServer(`importAsks/${wsCode()}/${me.uid}/${uid()}`, { writes }, IMPORT_WAIT);
+  if (ans && ans.ok) { landImport(plan); return 'server'; }
+  if (ans && IMPORT_NO[ans.why]) { toast(IMPORT_NO[ans.why]); return 'refused'; }
+  applyImport(plan);
+  return 'phone';
+}
+
 /* Writes at the depth the rules sit at: a whole team or game only when it is
    new, a single field of one that already exists. The same order a
    hand-entered team and its games would go out in. */
-// SERVER.md: one write at a time from the admin's phone; a server would apply the whole file or none.
+// SERVER.md: one write at a time from the admin's phone, where the server cannot be asked (importAsk applies the whole file).
 function applyImport(plan) {
   for (const [path, value] of plan.writes) { setDeep(state, path, value); remoteSet(path, value); }
   saveLocal();
@@ -14140,6 +14391,7 @@ function sessMessage(s) {
     s.price && !s.called ? `${fmtMoney(s.price)} a place.` : ''
   ].filter(Boolean).join('\n');
 }
+// SERVER.md: a session's families reached from the coach's own mail app; a server could send it as a notice's is.
 function sheetReach() {
   const r = reach; if (!r) return;
   const href = `mailto:?bcc=${encodeURIComponent(r.emails.join(','))}&subject=${encodeURIComponent(r.title)}&body=${encodeURIComponent(r.text.slice(0, 1500))}`;
@@ -14811,8 +15063,15 @@ function sheetSlotBook(bid, start, wait) {
 const BOOK_WAIT = 30000;
 const noBlanks = o => Object.fromEntries(Object.entries(o).filter(([, v]) => v !== null && v !== undefined && v !== ''));
 function askBooking(v) {
+  return askServer(`bookAsks/${wsCode()}/${me.uid}/${uid()}`, v, BOOK_WAIT);
+}
+/* One ask of the server (functions/): written at `path`, the asker's alone
+   in the rules, and answered at `path/answer`. Resolves to the answer; to
+   null when none came in `wait`; to { ok: false, why: 'rules' } when the
+   database refused the ask itself (the rules for it not published), or
+   'signal'. Never queued, and the ask is cleared away either way. */
+function askServer(path, v, wait) {
   const { db, mod } = rtdb;
-  const path = `bookAsks/${wsCode()}/${me.uid}/${uid()}`;
   return new Promise(resolve => {
     let off = null, done = false, timer = null;
     const finish = ans => {
@@ -14823,7 +15082,7 @@ function askBooking(v) {
       Promise.resolve().then(() => mod.remove(mod.ref(db, path))).catch(() => { });
       resolve(ans);
     };
-    timer = setTimeout(() => finish(null), BOOK_WAIT);
+    timer = setTimeout(() => finish(null), wait);
     Promise.resolve().then(() => mod.set(mod.ref(db, path), { ...v, at: nowMs() })).then(() => {
       if (done) return;
       off = mod.onValue(mod.ref(db, path + '/answer'), sn => { const ans = sn.val(); if (ans) finish(ans); }, () => finish(null));
@@ -15380,7 +15639,8 @@ function youBusy(items) {
   const out = {};
   let n = 0;
   for (const x of items) {
-    if (!x || !okDay(x.date) || !x.start || x.called || x.kind === 'avail' || (x.kind === 'session' && !x.firm) || x.date < todayStr() || n >= 300) continue;
+    // from yesterday: the server writes the same list (functions/mycal.js) and cannot know a phone's time zone, so both keep the day before
+    if (!x || !okDay(x.date) || !x.start || x.called || x.kind === 'avail' || (x.kind === 'session' && !x.firm) || x.date < addDays(todayStr(), -1) || n >= 300) continue;
     let e = x.end;
     if (!e) e = minHm(Math.min(minOf(x.start) + (Number(x.mins) || 60), 23 * 60 + 59));
     out['b' + (++n)] = { d: x.date, s: x.start, e };
@@ -15436,22 +15696,27 @@ function watchYou() {
   }, () => { });
 }
 /* Others' shared busy times, for the coaches of this club, read on the phones
-   that ask who is free: coaches' and admins'. A private calendar has nothing
-   there, so the listener just answers empty. */
-// SERVER.md: listening for others' busy times; a server would answer who is free.
+   that ask who is free: coaches' and admins'. Since build 130 the server
+   keeps the club its own copy, training/{code}/elsewhere/{uid}: each
+   sharing person's times at her other clubs, which only this club's coaches
+   and admins read (functions/mycal.js), so nobody's times are readable by
+   anyone who knows her uid any more. One listener for the club. A private
+   calendar has nothing there, so it just answers empty. */
+// SERVER.md: the club's copy of others' busy times, kept by the server; the phone only listens.
 function watchBusy() {
-  if (!rtdb || !me || !awayOn()) return;
+  const code = wsCode();
+  if (!rtdb || !me || !code || !awayOn() || busyWatch.has(code)) return;
   const { db, mod } = rtdb;
-  for (const u of coachUids()) {
-    if (u === me.uid || busyWatch.has(u)) continue;
-    busyWatch.set(u, null);
-    const off = mod.onValue(mod.ref(db, `people/${u}/busy`), snap => {
-      const v = snap.val() || {};
-      if (canon(v) === canon(busyOf[u] || {})) return;
-      busyOf[u] = v; render();
-    }, () => { });
-    busyWatch.set(u, off);
-  }
+  busyWatch.set(code, null);
+  const off = mod.onValue(mod.ref(db, `training/${code}/elsewhere`), snap => {
+    if (wsCode() !== code) return;
+    const v = snap.val() || {};
+    if (canon(v) === canon(busyOf)) return;
+    for (const k of Object.keys(busyOf)) delete busyOf[k];
+    Object.assign(busyOf, v);
+    render();
+  }, () => { });
+  busyWatch.set(code, off);
 }
 /* Busy at another club, as busyItems() has it: hers from her other clubs,
    everyone else's from what they share, leaving out the club open here (its
@@ -20197,6 +20462,7 @@ function onAct(e) {
     sheetPostShare(tid, id); render(); return;
   }
   if (a === 'postshare') { if (postsTo(d.tid)) sheetPostShare(d.tid, d.id); return; }
+  if (a === 'postmail') { mailNotice(d.tid, d.id); return; }
   if (a === 'postsharetext') {
     const x = notices(d.tid).find(n => n.id === d.id); if (!x) return;
     const text = `${(state.teams[d.tid] || {}).name || 'Team'} — ${x.byName || 'coach'}:\n${x.text}`;
@@ -21735,10 +22001,15 @@ function onAct(e) {
     }
     if (plan.errors.length || !(plan.writes.length + plan.sessWrites.length + plan.trainWrites.length)) { sheetImport(txt, team); return; }
     if (!confirm(`Import into ${(acc().org || {}).name || 'this club'}? It ${importSummary(plan.counts)}.`)) return;
-    applyImport(plan); pendingImport = null;
-    toast('Imported: ' + importSummary(plan.counts));
-    if (read.csv && read.csv.contacts && read.csv.contacts.length) { importContacts = { list: read.csv.contacts, made: {}, sent: {} }; sheetImportInvites(); }
-    else closeSheet();
+    const done = how => {
+      if (how === 'refused') return;
+      pendingImport = null;
+      toast('Imported: ' + importSummary(plan.counts));
+      if (read.csv && read.csv.contacts && read.csv.contacts.length) { importContacts = { list: read.csv.contacts, made: {}, sent: {} }; sheetImportInvites(); }
+      else closeSheet();
+    };
+    if (!serverOn()) { applyImport(plan); done('phone'); return; }
+    importVia(plan).then(done);
     return;
   }
   if (a === 'importinvitego') { inviteImported(); return; }
