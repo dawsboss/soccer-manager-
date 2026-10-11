@@ -8,6 +8,12 @@ before this point lives only in the git log.
 
 ---
 
+## A to-do list for what GitHub Pages can't do — 2026-10-11
+
+`HOSTING.md` lists what Pages can't do (rewrites, headers, server code, a link preview per address), the plan for moving the site to Firebase Hosting on the same project, its downsides and the limits measured against today's site. The move is on hold (the owner): Pages does the job now, and the file keeps every request that needs the move (real addresses instead of `#/`, security headers, a preview per game link, cache control) until it happens. `CLAUDE.md` points at it so the next request that can't be done on Pages lands there too.
+
+---
+
 ## Back goes back a screen, and closes a sheet — 2026-10-11 (build 134)
 
 The browser's Back button (and a phone's back gesture) is meant to step back through the screens she visited before it leaves the site. Each screen already had its own address, but two things broke it:
