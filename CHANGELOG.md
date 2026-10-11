@@ -8,6 +8,38 @@ before this point lives only in the git log.
 
 ---
 
+## GOTSPORT.md: payments, designed before any code — 2026-10-11
+
+Build order step 5, now that registration is built: money is new data about
+children and families, and a mistake costs a family twice or a club its
+income, so the shape and the rules are settled before the code, as
+registration's were in AUTH.md. GOTSPORT.md, *Payments, designed before any
+code*: Stripe Connect with each club a Standard account and every charge made
+on the club's own account (the club's dashboard, refunds, disputes and
+Stripe's fee; no platform fee); one ask node (`payAsks`) for connecting,
+Checkout, recording cash and aid, answered by the server, which works out
+every amount from the database; bills and payments per child under the club,
+written by the server alone and read by her family and the admins; the
+webhook (signature, the event id recorded before the effect, one update per
+club) for payments, instalments, refunds, disputes and the club's account;
+payment plans charged to a saved card on the club's account; sibling,
+early-bird, code and aid discounts as lines on the bill; session fees and
+packages paid the same way while the coach's book stays; Club → Money for
+admins with a CSV; test mode for `test-` clubs; and what the owner sets up in
+Stripe first. Six build steps; the owner decided its nine questions the
+same day: each program, session or package its own bill, each program
+choosing whether it is paid on registering or once accepted, and a *Club
+covers the cost* button; paying another way allowed; Stripe's fee the
+club's (and why Stripe rather than another processor, our own, or the app
+stores' payments); any admin connects Stripe, every admin told; admins are
+the treasurers; a card on file and paying new bills with it the family's
+choice; payments one record that is both the family's receipt and the
+club's, kept after an account is deleted; packages paid by the family; and
+which programs count together for a sibling discount the admins'. No code
+yet.
+
+---
+
 ## Four jobs move to the server — 2026-10-11 (build 135, rules version 28)
 
 SERVER.md's smaller jobs: each was a phone doing something for somebody else,
