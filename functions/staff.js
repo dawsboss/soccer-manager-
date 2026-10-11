@@ -51,6 +51,9 @@ const inviteId = uses => (uses > 1 ? 'm' : 'i') + crypto.randomBytes(18).toStrin
 const logId = () => 'l' + Date.now().toString(36) + crypto.randomBytes(6).toString('hex');
 const seatsFor = n => (n > 1 ? { max: n, seats: Object.fromEntries(Array.from({ length: n }, (_, i) => ['s' + (i + 1), true])) } : {});
 const clampInt = (v, lo, hi, dflt) => { const n = Math.floor(Number(v)); return Number.isFinite(n) ? Math.max(lo, Math.min(hi, n)) : dflt; };
+const BORN_OK = /^(19|20)\d\d-[01]\d-[0-3]\d$/;
+// uid() in app.js, on the server's generator: a squad record's id, which is the child's too
+const playerId = () => 'p' + crypto.randomBytes(9).toString('hex');
 
 /* The club as this needs it: who may let people in to which team. */
 async function facts(env, code, uid) {
@@ -67,11 +70,19 @@ const logEntry = (f, uid, act, target, extra) => ({
   target, targetName: clip(((f.members[target] || {}).name) || ((f.members[target] || {}).email), 80) || null, ...extra
 });
 
-/* A family's request through the team link, approved for the children picked. */
+/* A family's request through the team link, approved for the children
+   picked — or, for a child the family filled in because she is not on the
+   squad yet (the owner, 2026-10-11), added first: the squad record Add a
+   player would make, her record in the club (`children/{pid}`, as the
+   coach's phone makes it) and her roster entry, in the same write as the
+   approval, so a dropped signal never leaves a child on the squad with
+   nobody let in. Only when the coach says so (`add`), and only from an ask
+   that carries a child (`claim.add`): the squad is the coach's. */
 async function approve(env, code, uid, ask, now) {
   const { tid, uid: who } = ask;
   const pids = list(ask.pids).filter(okKey);
-  if (!okKey(tid) || !okKey(who) || !pids.length) return { ok: false, why: 'bad' };
+  const adding = ask.add === true && !pids.length;
+  if (!okKey(tid) || !okKey(who) || (!pids.length && !adding)) return { ok: false, why: 'bad' };
   const f = await facts(env, code, uid);
   if (!f.coachOf(tid)) return { ok: false, why: 'notyours' };
   const [team, claim] = await Promise.all([readTeam(env.get, f.L, tid), env.get(`claims/${code}/${tid}/${who}`)]);
@@ -79,17 +90,33 @@ async function approve(env, code, uid, ask, now) {
   if (!claim || typeof claim !== 'object' || claim.invite) return { ok: false, why: 'gone' };
   if (claim.approved) return { ok: false, why: 'approved' };
   const squad = team.players || {};
-  const picked = pids.filter(pid => squad[pid] && typeof squad[pid] === 'object');
+  let picked = pids.filter(pid => squad[pid] && typeof squad[pid] === 'object');
+  const patch = {};
+  let added = null;
+  if (adding) {
+    if (claim.add !== true || !clip(String(claim.child || '').trim(), 120)) return { ok: false, why: 'bad' };
+    const pid = playerId(), name = clip(String(claim.child).trim(), 120);
+    // her family on the record from the start: a record and a field under it cannot share one multi-path write;
+    // no rating: that is the coach's note (coachNotes), which the phone splits off a squad write and the server never guesses
+    const rec = { id: pid, name, number: clip(String(claim.shirt || '').trim(), 40), active: true, anywhere: true, preferred: '', child: pid, guardians: { [who]: true } };
+    const kid = { id: pid, ...access.splitName(name), club: true, by: uid, at: now, teams: { [tid]: pid }, guardians: { [who]: tid } };
+    if (BORN_OK.test(claim.born)) kid.born = claim.born;
+    if (claim.gender === 'F' || claim.gender === 'M') kid.gender = claim.gender;
+    patch[f.L.player(tid, pid)] = rec;
+    patch[`${f.L.base}/children/${pid}`] = kid;
+    patch[`${f.L.roster}/${tid}/${pid}`] = access.rosterEntry(rec, f.org.rosterOpen === true);
+    squad[pid] = rec; picked = [pid]; added = pid;
+  }
   if (!picked.length) return { ok: false, why: 'bad' };
-  const patch = { [`claims/${code}/${tid}/${who}/approved`]: { by: uid, at: now, players: Object.fromEntries(picked.map(p => [p, true])) } };
-  for (const pid of picked) if (!has(squad[pid].guardians, who)) patch[`${f.L.player(tid, pid)}/guardians/${who}`] = true;
+  patch[`claims/${code}/${tid}/${who}/approved`] = { by: uid, at: now, players: Object.fromEntries(picked.map(p => [p, true])) };
+  for (const pid of picked) if (pid !== added && !has(squad[pid].guardians, who)) patch[`${f.L.player(tid, pid)}/guardians/${who}`] = true;
   // the team id, not true: that is what the rule checks a coach's write against
   if (!has(f.index, who)) patch[`${f.L.access}/index/${who}`] = tid;
   if (!has(f.members, who)) patch[`${f.L.members}/${who}`] = { name: clip(claim.name, 80), email: clip(claim.email, 254), at: Number(claim.at) || now };
   patch[`${f.L.base}/log/${logId()}`] = logEntry(f, uid, 'approved as parent', who, { at: now, team: tid, teamName: clip(team.name, 80) || null, player: picked.map(p => clip(squad[p].name, 80)).join(', ') });
   await env.update(patch);
   await access.settle(env, code, { uids: [who], tids: [tid], parents: true }, now);
-  return { ok: true, pids: picked };
+  return { ok: true, pids: picked, ...(added ? { added } : {}) };
 }
 
 /* A fan's ask (AUTH.md, *More kinds of people*, 1), approved. */
@@ -203,7 +230,7 @@ async function importInvites(env, code, uid, ask, now) {
   return { ok: true, made, ...(keys(skipped).length ? { skipped } : {}) };
 }
 
-/* staffAsks/{code}/{uid}/{id}: { op: 'approve', tid, uid, pids } |
+/* staffAsks/{code}/{uid}/{id}: { op: 'approve', tid, uid, pids, add? } |
    { op: 'fan', tid, uid } | { op: 'squad', tid, uses, days } |
    { op: 'invites', list: [{ team, role, player, email }], days }. */
 async function onAsk(env, params, ask, now = Date.now()) {

@@ -542,11 +542,13 @@ const CLUB = {
     const before = fbk.record.writes.length;
     A.click({ act: 'importinvitego' }); await A.flush(20);
     check('asking again makes nothing new', fbk.record.writes.slice(before).some(w => w.path.startsWith('invites/')), false);
-    A.click({ act: 'importinvitemail' }); await A.flush(20);
-    deepEq('the emails go to those three, each with its own link', fbk.record.mails.map(m => m.email + ' ' + (m.url || '').includes('invite=')).sort(),
-      ['bea.mum@x.test true', 'dad@x.test true', 'new.coach@x.test true']);
-    A.click({ act: 'importinvitemail' }); await A.flush(20);
-    check('and are not sent twice', fbk.record.mails.length, 3);
+    // sending is the club's (test/mail.js); without a mailer each row offers Email it from her own mail app, to its own address with its own link
+    const want = fbk.record.writes.filter(w => /^invites\/[^/]+$/.test(w.path)).map(w => w.value.email + ' ' + w.path.slice(8)).sort();
+    const rows = (A.rendered('#sheet').match(/href="mailto:[^"]+"/g) || []).map(decodeURIComponent)
+      .map(h => (h.match(/^href="mailto:([^?]+)\?[\s\S]*invite=([^"\s]+)"$/) || []).slice(1).join(' ')).sort();
+    deepEq('each has Email it, to its own address, with its own link', rows, want);
+    check('and no sign-in email goes from her phone', fbk.record.mails.length, 0);
+    check('nor a bulk send from the club, which has no mailer here', /importinvitemail/.test(A.rendered('#sheet')), false);
     A.click({ act: 'importinviteskip' });
     check('closing forgets the emails', A.importContacts, null);
   }

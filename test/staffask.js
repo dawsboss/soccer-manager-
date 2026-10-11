@@ -89,6 +89,35 @@ const NAMES = ['Ella', 'Bea', 'Cleo', 'Dot', 'Gia'];
     check('answered beside the ask', S.at(`staffAsks/CLUB/coach/s${n}/answer/ok`), true);
     check('an admin may too', (await ask(S, 'adm', { op: 'approve', tid: 't1', uid: 'sam', pids: ['p3'] })).why, 'approved');
   }
+  console.log('\n--- a child filled in through the link, added and let in ---');
+  {
+    const S = server(db => { db.claims.CLUB.t1.new = { code: 'jcode', add: true, child: 'Rosa Moss', born: '2015-04-02', gender: 'F', shirt: '14', name: 'Nia', email: 'nia@x.com', at: 1 }; });
+    const a = await ask(S, 'coach', { op: 'approve', tid: 't1', uid: 'new', pids: [], add: true });
+    const pid = a.added;
+    deepEq('the coach adds her: answered with the new record\'s id', [a.ok, !!pid, a.pids], [true, true, [pid]]);
+    const rec = S.at(W + 'teams/t1/players/' + pid) || {};
+    deepEq('a squad record as Add a player makes one, with her family on it', [rec.id, rec.name, rec.number, rec.active, rec.child, rec.guardians], [pid, 'Rosa Moss', '14', true, pid, { new: true }]);
+    const kid = S.at(W + 'children/' + pid) || {};
+    deepEq('and her record in the club, from what the family typed, by the coach', [kid.first, kid.last, kid.born, kid.gender, kid.club, kid.by, kid.teams, kid.guardians], ['Rosa', 'Moss', '2015-04-02', 'F', true, 'coach', { t1: pid }, { new: 't1' }]);
+    check('her family does not confirm her by filling the form in', 'confirmed' in kid, false);
+    // the roster is orgs/' own (the workspaces/ view has no place for it), so it is read as the server reads
+    deepEq('her roster entry, with no name while the club keeps the roster closed', (await S.ref('orgs/CLUB/roster/t1/' + pid).get()).val(), { number: '14', active: true });
+    deepEq('the approval names her', Object.keys(S.at('claims/CLUB/t1/new/approved/players')), [pid]);
+    deepEq('indexed, a member, on the team\'s parent list', [S.at(W + 'access/index/new'), S.at(W + 'access/members/new/name'), S.at(W + 'access/teamParents/t1/new')], ['t1', 'Nia', pid]);
+    const log = Object.values(S.at(W + 'access/log') || {});
+    deepEq('logged, naming the child', log.map(x => [x.act, x.target, x.player]), [['approved as parent', 'new', 'Rosa Moss']]);
+    const S2 = server(db => { db.claims.CLUB.t1.new = { code: 'jcode', add: true, child: 'Rosa Moss', at: 1 }; });
+    const b = await ask(S2, 'coach', { op: 'approve', tid: 't1', uid: 'new', pids: ['p2'], add: true });
+    check('a child the coach matched to a record already here is not added twice', [b.ok, b.pids.join(), 'added' in b, Object.keys(S2.at(W + 'teams/t1/players')).length].join(), 'true,p2,false,4');
+    const S3 = server();
+    const c = await ask(S3, 'coach', { op: 'approve', tid: 't1', uid: 'sam', pids: [], add: true });
+    check('an ask that filled no child in adds nobody', [c.why, Object.keys(S3.at(W + 'teams/t1/players')).length].join(), 'bad,4');
+    const S4 = server(db => { db.claims.CLUB.t1.new = { code: 'jcode', add: true, child: 'Rosa Moss', at: 1 }; });
+    const d = await ask(S4, 'coach', { op: 'approve', tid: 't1', uid: 'new', pids: [] });
+    check('and the coach has to say so: an approval with nobody picked adds nobody', [d.why, Object.keys(S4.at(W + 'teams/t1/players')).length].join(), 'bad,4');
+    const S5 = server(db => { db.claims.CLUB.t1.new = { code: 'jcode', add: true, child: 'Rosa Moss', at: 1 }; });
+    check('another team\'s coach cannot', (await ask(S5, 'other', { op: 'approve', tid: 't1', uid: 'new', pids: [], add: true })).why, 'notyours');
+  }
   {
     const no = async (label, uid, v, why) => {
       const S = server();

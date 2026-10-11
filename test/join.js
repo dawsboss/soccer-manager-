@@ -164,6 +164,63 @@ const valueAt = (fbk, p) => { const w = fbk.writtenTo(p); return w.length ? w[w.
     check('a request turned down says so', /Not approved/.test(A.rendered()), true);
   }
 
+  console.log('\n--- a child not on the squad yet, filled in through the link ---');
+  {
+    const { A, fbk } = await boot(null, { storage: {}, search: '?join=' + CODE });
+    fbk.signIn('nia', { name: 'Nia', email: 'nia@x.test' }); await A.flush();
+    fbk.deliver('joinCodes/' + CODE, JOINDOC); await A.flush();
+    fbk.deliver('claims/CLUB/t1/nia', null); await A.flush();
+    check('the form offers it', /She isn't on it yet/.test(A.rendered()), true);
+    A.click({ act: 'joinkid', v: '1' }); await A.flush();
+    const html = A.rendered();
+    check('and asks for her name, birth date and number, no first-name box', [/id="joinKidName"/.test(html), /id="joinKidBorn"/.test(html), /id="joinShirt"/.test(html), /id="joinChild"/.test(html)].join(), 'true,true,true,false');
+    A.click({ act: 'joinsend' }); await A.flush();
+    check('her name is needed', fbk.record.writes.some(w => w.path.startsWith('claims/')), false);
+    A.click({ act: 'joingender', v: 'F' }); await A.flush();
+    A.dom.node('#joinKidName').value = ' Rosa  Moss ';
+    A.dom.node('#joinKidBorn').value = '2015-04-02';
+    A.click({ act: 'joinsend' }); await A.flush(); await A.flush(20);
+    const c = valueAt(fbk, 'claims/CLUB/t1/nia');
+    deepEq('the ask carries her details, no number needed, and no approval', [c.add, c.child, c.born, c.gender, 'shirt' in c, 'approved' in c, c.name], [true, 'Rosa Moss', '2015-04-02', 'F', false, false, 'Nia']);
+    check('and she waits for the coach', /Waiting for a coach/.test(A.rendered()), true);
+  }
+  {
+    const { A, fbk } = await boot('coach', { name: 'Jaz' });
+    fbk.deliver('claims/CLUB/t1', { nia: { code: CODE, add: true, child: 'Rosa Moss', born: '2015-04-02', gender: 'F', name: 'Nia', email: 'nia@x.test', at: 1 } }); await A.flush();
+    A.ui.teamId = 't1'; A.ui.view = 'roster'; A.render();
+    const html = A.rendered();
+    check('Squad shows what they asked', /Asks to add <b>Rosa Moss<\/b> to the squad · born 2015-04-02 · girl/.test(html), true);
+    check('with nobody picked and the button to add her', /data-add="1"[^>]*>Add Rosa and let in/.test(html), true);
+    const n0 = fbk.record.writes.length;
+    A.click({ act: 'claimok', tid: 't1', uid: 'nia', add: '1' }); await A.flush(20);
+    const p = paths(fbk).slice(n0);
+    const sq = p.find(x => /^orgs\/CLUB\/squad\/t1\/[^/]+$/.test(x));
+    const pid = sq && sq.split('/').pop();
+    const rec = valueAt(fbk, sq) || {};
+    deepEq('a squad record as Add a player makes one (her rating is the coach\'s note, kept apart)', [rec.name, rec.active, rec.child === pid, 'rating' in rec], ['Rosa Moss', true, true, false]);
+    const kid = valueAt(fbk, 'orgs/CLUB/children/' + pid) || {};
+    deepEq('her record in the club, from what they typed', [kid.first, kid.last, kid.born, kid.gender, kid.club, kid.by, 'confirmed' in kid], ['Rosa', 'Moss', '2015-04-02', 'F', true, 'coach', false]);
+    deepEq('the approval names her', Object.keys((valueAt(fbk, 'claims/CLUB/t1/nia/approved') || {}).players || {}), [pid]);
+    check('the squad record before the approval that names her, before the index', p.indexOf(sq) < p.indexOf('claims/CLUB/t1/nia/approved') && p.indexOf('claims/CLUB/t1/nia/approved') < p.indexOf('orgs/CLUB/access/index/nia'), true);
+    check('she is that child\'s parent, on the list', [valueAt(fbk, `orgs/CLUB/squad/t1/${pid}/guardians/nia`), valueAt(fbk, 'orgs/CLUB/access/teamParents/t1/nia')].join(), 'true,' + pid);
+    check('on this phone too', A.state.teams.t1.players[pid].guardians.nia, true);
+  }
+  {
+    const { A, fbk } = await boot('coach', { name: 'Jaz' });
+    fbk.deliver('claims/CLUB/t1', { nia: { code: CODE, add: true, child: 'Bea', shirt: '9', name: 'Nia', at: 1 } }); await A.flush();
+    A.ui.teamId = 't1'; A.ui.view = 'roster'; A.render();
+    check('a number that matches a player already here picks her, so nobody is added twice', /data-pid="p2" aria-pressed="true"/.test(A.rendered()) && !/data-add="1"/.test(A.rendered()), true);
+    A.click({ act: 'claimok', tid: 't1', uid: 'nia' }); await A.flush(20);
+    check('let in as her parent, the squad unchanged', [valueAt(fbk, 'orgs/CLUB/squad/t1/p2/guardians/nia'), paths(fbk).some(x => /^orgs\/CLUB\/squad\/t1\/(?!p[1-4]\b)[^/]+$/.test(x))].join(), 'true,false');
+  }
+  {
+    const { A, fbk } = await boot('coach', { name: 'Jaz' });
+    fbk.deliver('claims/CLUB/t1', { sam: { code: CODE, shirt: '77', name: 'Sam', at: 1 } }); await A.flush();
+    A.ui.teamId = 't1'; A.ui.view = 'roster'; A.render();
+    A.click({ act: 'claimok', tid: 't1', uid: 'sam', add: '1' }); await A.flush(20);
+    check('an ask that filled no child in adds nobody, whatever the tap says', fbk.record.writes.some(w => /^orgs\/CLUB\/squad\//.test(w.path) || w.path.includes('/approved')), false);
+  }
+
   console.log('\n--- the coach lets her in ---');
   {
     const { A, fbk } = await boot('coach', { name: 'Jaz' });
@@ -231,6 +288,20 @@ const valueAt = (fbk, p) => { const w = fbk.writtenTo(p); return w.length ? w[w.
     check('approved: the request leaves the list, the child has her parent on this phone', [A.pendingClaims('t1').length, A.state.teams.t1.players.p2.guardians.sam].join(), '0,true');
     check('still nothing written from the phone', clubWrites(fbk, n0).join(), '');
     check('said', /can open the team now/.test(A.lastToast()), true);
+  }
+  {
+    const { A, fbk } = await boot('coach', { server: true });
+    fbk.deliver('.info/connected', true);
+    fbk.deliver('claims/CLUB/t1', { nia: { code: CODE, add: true, child: 'Rosa Moss', name: 'Nia', at: 1 } }); await A.flush();
+    A.ui.teamId = 't1'; A.ui.view = 'roster'; A.render();
+    const n0 = fbk.record.writes.length;
+    A.click({ act: 'claimok', tid: 't1', uid: 'nia', add: '1' }); await A.flush();
+    const ask = asks(fbk)[0];
+    deepEq('adding her asks the server, saying so, with nobody picked', [ask && ask.value.op, ask && ask.value.add, JSON.stringify(ask && ask.value.pids)], ['approve', true, '[]']);
+    check('and writes nothing of it from the phone', clubWrites(fbk, n0).join(), '');
+    fbk.deliver(ask.path + '/answer', { ok: true, pids: ['pNew'], added: 'pNew', at: 1 }); await A.flush(10);
+    check('the server\'s record is on this phone with her parent, until the listeners bring it', [A.state.teams.t1.players.pNew.name, A.state.teams.t1.players.pNew.guardians.nia, A.pendingClaims('t1').length].join(), 'Rosa Moss,true,0');
+    check('still nothing written from the phone', clubWrites(fbk, n0).join(), '');
   }
   {
     const { A, fbk } = await boot('coach', { server: true });
