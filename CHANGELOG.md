@@ -8,6 +8,14 @@ before this point lives only in the git log.
 
 ---
 
+## The sign-in address reaches phones at once — 2026-10-11 (build 134)
+
+After sign-in moved to `auth.teamplayhq.com`, a phone that had loaded the app in the last few minutes still went through the old Firebase address: `firebase-config.js` was the one script loaded without a `?v=`, so GitHub Pages' ten-minute cache kept the old `authDomain` while the page itself was new.
+
+- `firebase-config.js` carries `?v=` on `index.html`, `live.html` and `game.html`, stamped by the deploy like every other script, so a change to the config arrives with the build that made it.
+
+---
+
 ## A privacy policy and terms of service — 2026-10-10 (build 133)
 
 Google's sign-in consent screen asks for a home page, a privacy policy and terms before it will show the app's own name and logo, and a family handing over a child's birth date and medical details should be able to read what happens to them first. TeamPlayHQ had neither page.
