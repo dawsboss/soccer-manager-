@@ -412,7 +412,12 @@ hold.
 5. **Payments.** Stripe Connect, Checkout, the webhook (payments and the
    club's refunds), plans, discounts, the treasurer's view; session fees and packages onto the same
    till.
-6. **Email.**
+6. **Email.** *Built in builds 135 and 136: invitations and team notices
+   (`functions/mail.js`), a training session's families, a registration's
+   news to its family, receipts for payments the club records, and the
+   sessions still to pay (`functions/mailnews.js`). Left for payments: a
+   card payment's receipt, from the Stripe webhook. Not built, because
+   nothing lapses: a waiver about to lapse.*
 7. **Tryouts and evaluations.**
 8. **Coach compliance records.**
 9. **GotSport import of rosters and schedules,** whenever the owner has real

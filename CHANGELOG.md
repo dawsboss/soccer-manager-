@@ -8,6 +8,43 @@ before this point lives only in the git log.
 
 ---
 
+## The club emails families by itself — 2026-10-11 (build 136, rules version 29)
+
+Build 135 gave the club its own mailer for invitations and team notices.
+GOTSPORT.md's step 6 asked for the emails a club sends without anyone
+pressing a button, so they now follow from what admins and coaches already
+do in the app (`functions/mailnews.js`):
+
+- **Registration news, to the child's family.** A draft a coach or admin
+  started ("please finish it"), received (with the program's fee),
+  accepted, waiting list, not this time, and *Ella is on U11 Storm* with the
+  coach's name. Before this a family heard nothing until she opened the app.
+  The family comes from the child's record, never from the address her
+  form carried; one who came in through the link and has no member entry is
+  written to at her account's address only once it is confirmed, because
+  these emails name her child.
+- **Receipts for what the club records.** A session's fee marked paid, or a
+  package sold, sends the family a receipt that says plainly it is the
+  club's own record (there are no card payments yet). Waived fees and
+  package places send nothing. A card receipt will come from the Stripe
+  webhook once payments are built.
+- **Sessions still to pay.** Once a day, each booked place with a price, no
+  fee marked and a session three to fourteen days past is mentioned to its
+  family once, all of hers in one email. Three days gives the coach time to
+  mark the cash she took; fourteen stops it chasing a season's history the
+  day it is switched on. On unless an admin turns it off on Fees.
+- **A session's families from the club.** *Email or share* on a training
+  session and *Remind the family* on Fees can be sent by the club (a new
+  `session` ask, the session's coach or an admin, families found from the
+  places), so no family's address is in anyone else's mail. That ask is the
+  rules change; with older rules the phone opens the coach's mail app as
+  before.
+
+Each email is said once (noted at `serverState/` before sending), sends
+nothing for a retired club or without a mailer, and names only the child
+it is about. A waiver "about to lapse" is not built: waivers here never
+lapse. New suite `mailnews`; `rules` covers the new ask.
+
 ## Four jobs move to the server — 2026-10-11 (build 135, rules version 28)
 
 SERVER.md's smaller jobs: each was a phone doing something for somebody else,

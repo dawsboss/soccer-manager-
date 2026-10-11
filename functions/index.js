@@ -43,6 +43,7 @@ const join = require('./join');
 const imports = require('./imports');
 const backup = require('./backup');
 const mail = require('./mail');
+const mailnews = require('./mailnews');
 const staff = require('./staff');
 const forget = require('./forget');
 
@@ -423,16 +424,32 @@ function mailer() {
   const transport = require('nodemailer').createTransport(url);
   return ({ to, subject, text }) => transport.sendMail({ from, to, subject, text });
 }
-exports.mailAsk = onValueCreated({ ref: '/mailAsks/{code}/{uid}/{id}', secrets: [SMTP_URL] }, event => {
-  const root = event.data.ref.root;
+function mailEnv(root) {
   const send = mailer();
-  return mail.onAsk({
+  return {
     get: p => root.child(p).get().then(s => s.val()),
     set: (p, v) => root.child(p).set(v),
+    // a family the club let in through registration may have no member entry: her account's confirmed address
+    user: uid => getAuth().getUser(uid).catch(() => null),
     ...(send ? { mail: send } : {}),
     site: process.env.SOCCER_SITE || ''
-  }, event.params, event.data.val());
-});
+  };
+}
+exports.mailAsk = onValueCreated({ ref: '/mailAsks/{code}/{uid}/{id}', secrets: [SMTP_URL] }, event =>
+  mail.onAsk(mailEnv(event.data.ref.root), event.params, event.data.val()));
+
+/* What the club emails by itself (mailnews.js; SERVER.md, *Email*): a
+   registration's news to its family, a receipt for a payment the club
+   recorded, and once a day the training sessions still to pay. Each wakes on
+   one small record, never on anything a game writes. */
+exports.mailReg = onValueWritten({ ref: '/orgs/{code}/regs/{progId}/{cid}', secrets: [SMTP_URL] }, event =>
+  mailnews.onReg(mailEnv(event.data.after.ref.root), event.params, event.data.before.val(), event.data.after.val()));
+exports.mailFee = onValueWritten({ ref: '/training/{code}/fees/{sid}/{pid}', secrets: [SMTP_URL] }, event =>
+  mailnews.onFee(mailEnv(event.data.after.ref.root), event.params, event.data.before.val(), event.data.after.val()));
+exports.mailPack = onValueWritten({ ref: '/training/{code}/packs/{tid}/{pid}/{id}', secrets: [SMTP_URL] }, event =>
+  mailnews.onPack(mailEnv(event.data.after.ref.root), event.params, event.data.before.val(), event.data.after.val()));
+exports.mailFeesDue = onSchedule({ schedule: 'every day 15:00', timeZone: 'Etc/UTC', maxInstances: 1, secrets: [SMTP_URL] }, () =>
+  mailnews.feesDue(mailEnv(getDatabase().ref())));
 
 /* The calendar feed (calendar.js): https://{region}-{project}.cloudfunctions.net/calendar/{id}.ics,
    which is what firebase-config.js names as SOCCER_CALENDAR_FEED. Anyone may

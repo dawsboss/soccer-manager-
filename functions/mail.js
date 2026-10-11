@@ -28,6 +28,12 @@
      addresses are the team's families' (teamParents, held to the squad, as
      every reader list on this server is), from members/, never from the ask;
      the words are hers, cut to a size.
+   - `session` (build 136): the families of one or more training sessions'
+     places (*Email or share* on a session, *Remind the family* on Fees),
+     asked for by an admin or the coach each session names (still a coach);
+     the families found from each place as the rules find them (a squad
+     record's guardians, or a child on no team's own record), never from the
+     ask; `pid` narrows it to one child's places.
 
    How it sends: index.js hands it `mail({ to, subject, text })`, built from
    the project's SMTP secret (SOCCER_SMTP_URL in Secret Manager, README,
@@ -40,6 +46,7 @@ const { where, readTeam } = require('./club');
 
 const ASK_TTL = 10 * 60000;
 const MAX_IDS = 200;
+const MAX_SIDS = 50;
 const TEXT_MAX = 4000;
 const okKey = k => typeof k === 'string' && k.length > 0 && k.length <= 128 && !/[.#$\[\]\/]/.test(k);
 const has = (o, k) => !!(o && typeof o === 'object' && o[k] !== undefined && o[k] !== null && o[k] !== false);
@@ -49,6 +56,37 @@ const clip = (s, n) => String(s == null ? '' : s).replace(/[\r\n]+/g, ' ').trim(
 // the words of a notice keep their lines
 const body = (s, n) => String(s == null ? '' : s).replace(/\r\n?/g, '\n').trim().slice(0, n);
 const ROLE_WORDS = { coach: 'a coach', tracker: 'a tracker', helper: 'a team helper', parent: 'a parent', player: 'a player, with your own sign-in', viewer: 'a club viewer', fan: 'a fan' };
+
+/* Where a family's email is: her member entry, or, for a family the club
+   let in through registration who has none, her account's address, and only
+   once it is confirmed (an unconfirmed address could be anybody's, and these
+   emails name her child). */
+async function addressOf(env, members, u) {
+  const em = members && members[u] && members[u].email;
+  if (okMail(em)) return String(em).toLowerCase();
+  if (typeof env.user !== 'function') return null;
+  const a = await env.user(u).catch(() => null);
+  return a && a.emailVerified === true && okMail(a.email) ? String(a.email).toLowerCase() : null;
+}
+
+/* A booked place's child and family, found as the rules find them: a squad
+   record's guardians for a child on a team (`tid`), the child's own record
+   for one on no team (`child: true`, or a package's `club`). */
+async function placeOf(env, L, pid, tid) {
+  if (!okKey(pid)) return null;
+  if (tid === 'club') {
+    const c = await env.get(`${L.base}/children/${pid}`);
+    return c && typeof c === 'object' ? { first: firstOf(c.first), fam: keys({ ...(c.family || {}), ...(c.guardians || {}) }) } : null;
+  }
+  if (!okKey(tid)) return null;
+  const p = await env.get(L.player(tid, pid));
+  return p && typeof p === 'object' ? { first: firstOf(p.name), fam: keys(p.guardians) } : null;
+}
+const placeTid = b => (b && b.child ? 'club' : b && b.tid);
+const firstOf = s => clip(s, 80).split(' ')[0] || 'your child';
+const money = (sign, n) => { n = Math.round((Number(n) || 0) * 100) / 100; return clip(sign, 3) + (Number.isInteger(n) ? String(n) : n.toFixed(2)); };
+const dayWords = d => /^\d{4}-\d\d-\d\d$/.test(String(d || '')) ? new Date(d + 'T12:00:00Z').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', timeZone: 'UTC' }) : '';
+const footerOf = (club, site) => `\n\n— sent by ${club} through TeamPlayHQ${site ? `, ${site}` : ''}`;
 
 /* The invitation, in plain words: who, to what, the link, how long it lasts. */
 function inviteMail(v, club, site, now) {
@@ -109,7 +147,7 @@ async function sendTeam(env, code, uid, ask, now) {
     if (okMail(em)) to.add(String(em).toLowerCase());
   }
   const club = clip(org && org.name, 80) || 'the club';
-  const footer = `\n\n— sent by ${club} through TeamPlayHQ${env.site ? `, ${env.site}` : ''}`;
+  const footer = footerOf(club, env.site);
   let sent = 0, failed = 0;
   for (const em of [...to].sort()) {
     try { await env.mail({ to: em, subject, text: text + footer }); sent++; } catch (e) { failed++; }
@@ -117,8 +155,46 @@ async function sendTeam(env, code, uid, ask, now) {
   return { ok: true, sent, failed, of: to.size };
 }
 
-/* mailAsks/{code}/{uid}/{id}: { op: 'invites', ids } or { op: 'team', tid,
-   subject, text }. Answered once at its `answer`. */
+/* A training session's families: every place booked, waiting or asked for on
+   each session named (one child's, with `pid`), from the club. */
+async function sendSession(env, code, uid, ask) {
+  const sids = Array.isArray(ask.sids) ? ask.sids : keys(ask.sids).sort((a, b) => Number(a) - Number(b)).map(k => ask.sids[k]);
+  const pid = ask.pid == null ? null : ask.pid;
+  if (!sids.length || sids.length > MAX_SIDS || !sids.every(okKey) || (pid !== null && !okKey(pid))) return { ok: false, why: 'bad' };
+  const text = body(ask.text, TEXT_MAX);
+  if (!text) return { ok: false, why: 'bad' };
+  const L = await where(env.get, code), T = `training/${code}`;
+  const [admins, coach, members, org] = await Promise.all([
+    env.get(`${L.access}/admins`), env.get(`${L.access}/coachIndex/${uid}`), env.get(L.members), env.get(L.org)
+  ]);
+  const admin = has(admins, uid);
+  // coachIndex's value is a team she coaches: there at all is what counts
+  if (!admin && (coach == null || coach === false)) return { ok: false, why: 'notyours' };
+  const fams = new Set();
+  for (const sid of sids) {
+    const [s, booked] = await Promise.all([env.get(`${T}/sessions/${sid}`), env.get(`${T}/booked/${sid}`)]);
+    if (!s || typeof s !== 'object') return { ok: false, why: 'gone' };
+    if (!admin && s.coach !== uid) return { ok: false, why: 'notyours' };
+    for (const [p, b] of Object.entries(booked && typeof booked === 'object' ? booked : {})) {
+      if ((pid !== null && p !== pid) || !b || !['in', 'wait', 'asked'].includes(b.st)) continue;
+      const w = await placeOf(env, L, p, placeTid(b));
+      for (const u of (w && w.fam) || []) if (u !== uid) fams.add(u);
+    }
+  }
+  const club = clip(org && org.name, 80) || 'the club';
+  const subject = clip(ask.subject, 160) || `${club}: a training session`;
+  const to = new Set();
+  for (const u of fams) { const em = await addressOf(env, members, u); if (em) to.add(em); }
+  let sent = 0, failed = 0;
+  for (const em of [...to].sort()) {
+    try { await env.mail({ to: em, subject, text: text + footerOf(club, env.site) }); sent++; } catch (e) { failed++; }
+  }
+  return { ok: true, sent, failed, of: to.size };
+}
+
+/* mailAsks/{code}/{uid}/{id}: { op: 'invites', ids }, { op: 'team', tid,
+   subject, text } or { op: 'session', sids, pid?, subject, text }. Answered
+   once at its `answer`. */
 async function onAsk(env, params, ask, now = Date.now()) {
   const { code, uid, id } = params || {};
   if (!okKey(code) || !okKey(uid) || !okKey(id)) return { ok: false, why: 'bad' };
@@ -131,10 +207,11 @@ async function onAsk(env, params, ask, now = Date.now()) {
   try {
     if (ask.op === 'invites') return say(await sendInvites(env, code, uid, ask, now));
     if (ask.op === 'team') return say(await sendTeam(env, code, uid, ask, now));
+    if (ask.op === 'session') return say(await sendSession(env, code, uid, ask));
     return say({ ok: false, why: 'bad' });
   } catch (e) {
     return say({ ok: false, why: 'failed' });
   }
 }
 
-module.exports = { onAsk, inviteMail, ASK_TTL };
+module.exports = { onAsk, inviteMail, ASK_TTL, okKey, okMail, has, keys, clip, addressOf, placeOf, placeTid, firstOf, money, dayWords, footerOf };
