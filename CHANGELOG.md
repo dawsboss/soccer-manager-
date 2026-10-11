@@ -8,6 +8,36 @@ before this point lives only in the git log.
 
 ---
 
+## Tryouts and evaluations — 2026-10-11 (build 136, rules version 29)
+
+GOTSPORT.md's step 7: the last thing a club ran tryouts in GotSport for.
+Designed first, in GOTSPORT.md (*Tryouts and evaluations*), as registration
+was in AUTH.md.
+
+- **Evaluators score by bib, and the database keeps it that way.** An admin
+  names a tryout's evaluators and gives out bibs; each bib is published with
+  a birth year and gender and nothing else (`tryBibs`), while what ties it
+  to a child stays on the registration, which only admins and her family
+  read. So an evaluator's phone cannot put a name to a bib, and her screen
+  never draws one.
+- **At the pitch, with no signal.** Each evaluator writes only her own
+  scores (`evals/{prog}/{uid}/{bib}`), four things 1–5 and a note, through
+  the outbox like a goal: two evaluators scoring the same child never meet,
+  and a dead field loses nothing.
+- **Side by side, then an offer.** Admins see every bib's averages,
+  highest first, and each evaluator's own on the child's sheet, then offer
+  her a place on a team. Her family accepts or declines on My players, in
+  her own name; an accepted offer is placed on that team as any accepted
+  child is.
+- **Nothing left tied to nobody.** A registration deleted takes its bib; the
+  next admin's phone to open the program takes that bib's scores too (a
+  server job for later, SERVER.md). An account deleted comes off every
+  evaluator list; her scores are the club's.
+
+New suite `tryouts`, and more in `rules` and `forget`.
+
+---
+
 ## Four jobs move to the server — 2026-10-11 (build 135, rules version 28)
 
 SERVER.md's smaller jobs: each was a phone doing something for somebody else,

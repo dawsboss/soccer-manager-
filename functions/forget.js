@@ -8,8 +8,9 @@
    viewer, a team's coach, tracker or helper), every lookup table's entry for
    her, her member entry and staff name, her place on any child's record and
    squad record (family, her own sign-in, fan), her asks on team links and
-   for bookings; and at the root her settings and busy times, her phones'
-   push tokens, her own drills, and both lists. What stays is the club's:
+   for bookings, her name on a tryout's evaluators; and at the root her
+   settings and busy times, her phones' push tokens, her own drills, and
+   both lists. What stays is the club's:
    the messages and notices she wrote, as in any group chat, and a child's
    record. A child left with no family is taken off her team (her games keep
    her name and number) and her record is kept, marked `left`, for the
@@ -67,6 +68,9 @@ async function forgetIn(env, code, uid, now, out) {
     const [tid, pid] = tp.split('/');
     if (squad[tid] && squad[tid][pid] && squad[tid][pid].active !== false) { await env.set(`${B}/squad/${tid}/${pid}/active`, false); out.push('set squad/' + tp + '/active'); }
   }
+  // a tryout's evaluators (GOTSPORT.md, *Tryouts and evaluations*): her scores are the club's and stay
+  const programs = (await env.get(B + '/programs')) || {};
+  for (const [pg, p] of Object.entries(programs)) if (okKey(pg) && p && has(p.evaluators, uid)) await gone(`${B}/programs/${pg}/evaluators/${uid}`);
   const claims = (await env.get('claims/' + code)) || {};
   for (const tid of keys(claims)) if (has(claims[tid], uid)) { await env.remove(`claims/${code}/${tid}/${uid}`); out.push('del claim/' + tid); }
   if (await env.get(`bookAsks/${code}/${uid}`)) { await env.remove(`bookAsks/${code}/${uid}`); out.push('del bookAsks'); }

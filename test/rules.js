@@ -2499,6 +2499,71 @@ reads('nor read', COACH, 'shareOwners/sh1', false);
     DB.regOpen = saved.ro; if (saved.ro === undefined) delete DB.regOpen;
   }
 
+  /* Tryouts (GOTSPORT.md, *Tryouts and evaluations*; rules version 29):
+     admins give bibs and name evaluators; an evaluator reads the bibs and
+     her own scores, writes only her own, only of a published bib, and
+     never reads a registration; her family answers an offer while it
+     stands. */
+  console.log('\n--- a club on orgs/: tryouts ---');
+  {
+    const prog = { id: 'tr', name: 'U11 tryouts', kind: 'tryout', evaluators: { oc: true }, by: 'oa', at: NOW };
+    ORGC.programs = { tr: prog, f27: { id: 'f27', name: 'Fall', kind: 'season', evaluators: { oc: true }, by: 'oa', at: NOW } };
+    ORGC.children = { p1: { id: 'p1', first: 'Ella', club: true, by: 'oa', at: NOW, teams: { t1: 'p1' }, guardians: { om: 't1' } } };
+    ORGC.regs = { tr: { p1: { st: 'sent', by: 'om', at: NOW, sentBy: 'om', sentAt: NOW } } };
+    w('an admin names the evaluators', OA, O + 'programs/tr', prog, true);
+    w('— only as true', OA, O + 'programs/tr', { ...prog, evaluators: { oc: 'yes' } }, false);
+    w('an admin gives a bib', OA, O + 'regs/tr/p1/bib', 14, true);
+    w('— a number from 1 to 999', OA, O + 'regs/tr/p1/bib', 1000, false);
+    w('her family does not give one', OM, O + 'regs/tr/p1', { ...ORGC.regs.tr.p1, st: 'withdrawn', bib: 3 }, false);
+    w('the admin publishes the bib, with a birth year and gender', OA, O + 'tryBibs/tr/14', { at: NOW, y: 2016, g: 'F' }, true);
+    w('— never a name', OA, O + 'tryBibs/tr/14', { at: NOW, name: 'Ella' }, false);
+    w('— never a child id', OA, O + 'tryBibs/tr/14', { at: NOW, cid: 'p1' }, false);
+    w('— under a number', OA, O + 'tryBibs/tr/x1', { at: NOW }, false);
+    w('a coach does not', OC, O + 'tryBibs/tr/15', { at: NOW }, false);
+    ORGC.regs.tr.p1.bib = 14;
+    ORGC.tryBibs = { tr: { 14: { at: NOW, y: 2016, g: 'F' } } };
+    r('an evaluator reads the bibs', OC, O + 'tryBibs/tr', true);
+    r('— not the registrations, which say whose bib is whose', OC, O + 'regs/tr', false);
+    r('— nor one registration', OC, O + 'regs/tr/p1', false);
+    r('a coach who is not an evaluator reads no bibs', OC2, O + 'tryBibs/tr', false);
+    r('— nor does a family', OM, O + 'tryBibs/tr', false);
+    r('her family reads her bib on her registration', OM, O + 'regs/tr/p1', true);
+    const sc = { s: { ball: 4, game: 3 }, note: 'Strong left foot', at: NOW };
+    w('an evaluator scores a bib, in her own record', OC, O + 'evals/tr/oc/14', sc, true);
+    w('— and changes her score', OC, O + 'evals/tr/oc/14', { ...sc, s: { ball: 5 } }, true);
+    w('— from 1 to 5', OC, O + 'evals/tr/oc/14', { ...sc, s: { ball: 6 } }, false);
+    w('— only the criteria there are', OC, O + 'evals/tr/oc/14', { ...sc, s: { height: 4 } }, false);
+    w('— not a bib that is not given', OC, O + 'evals/tr/oc/15', sc, false);
+    w('— not in another evaluator\'s record', OC, O + 'evals/tr/oa/14', sc, false);
+    w('— not for a program that is not a tryout', OC, O + 'evals/f27/oc/14', sc, false);
+    w('a coach it does not name does not score', OC2, O + 'evals/tr/oc2/14', sc, false);
+    w('nor does a family', OM, O + 'evals/tr/om/14', sc, false);
+    w('nor the admin, who is not named', OA, O + 'evals/tr/oa/14', sc, false);
+    ORGC.evals = { tr: { oc: { 14: sc } } };
+    r('the evaluator reads her own scores', OC, O + 'evals/tr/oc', true);
+    r('— not the program\'s', OC, O + 'evals/tr', false);
+    r('the admin reads every score', OA, O + 'evals/tr', true);
+    r('a family reads none', OM, O + 'evals/tr', false);
+    w('the admin does not change a score', OA, O + 'evals/tr/oc/14', { ...sc, s: { ball: 1 } }, false);
+    w('— but deletes one tied to nobody', OA, O + 'evals/tr/oc/14', null, true);
+    w('— and the bib', OA, O + 'tryBibs/tr/14', null, true);
+    w('the admin offers a place', OA, O + 'regs/tr/p1', { ...ORGC.regs.tr.p1, st: 'offered', offer: { team: 't1', by: 'oa', at: NOW } }, true);
+    w('her family answers only while there is an offer', OM, O + 'regs/tr/p1/ans', { v: 'yes', by: 'om', at: NOW }, false);
+    ORGC.regs.tr.p1 = { ...ORGC.regs.tr.p1, st: 'offered', offer: { team: 't1', by: 'oa', at: NOW } };
+    w('her family accepts it, in her own name', OM, O + 'regs/tr/p1/ans', { v: 'yes', by: 'om', at: NOW }, true);
+    w('— or declines it', OM, O + 'regs/tr/p1/ans', { v: 'no', by: 'om', at: NOW }, true);
+    w('— not in somebody else\'s name', OM, O + 'regs/tr/p1/ans', { v: 'yes', by: 'oa', at: NOW }, false);
+    w('— not with anything but yes or no', OM, O + 'regs/tr/p1/ans', { v: 'maybe', by: 'om', at: NOW }, false);
+    w('— not for another family\'s child', OSELF, O + 'regs/tr/p1/ans', { v: 'yes', by: 'oself', at: NOW }, false);
+    w('— never changing the offer', OM, O + 'regs/tr/p1', { ...ORGC.regs.tr.p1, st: 'withdrawn', offer: { team: 't2', by: 'oa', at: NOW } }, false);
+    w('— nor the bib', OM, O + 'regs/tr/p1', { ...ORGC.regs.tr.p1, st: 'withdrawn', bib: 2 }, false);
+    w('— nor drop it', OM, O + 'regs/tr/p1', (({ bib, ...rest }) => ({ ...rest, st: 'withdrawn' }))(ORGC.regs.tr.p1), false);
+    w('— but may withdraw, keeping both', OM, O + 'regs/tr/p1', { ...ORGC.regs.tr.p1, st: 'withdrawn' }, true);
+    w('a coach does not make the offer', OC, O + 'regs/tr/p1/offer', { team: 't1', by: 'oc', at: NOW }, false);
+    w('nor answer it', OC, O + 'regs/tr/p1/ans', { v: 'yes', by: 'oc', at: NOW }, false);
+    delete ORGC.programs; delete ORGC.children; delete ORGC.regs; delete ORGC.tryBibs; delete ORGC.evals;
+  }
+
   /* A child in the club on no team books training sessions (AUTH.md,
      *Sessions for a child on no team*): as `club`, her family found on her
      club record, once the club has let her in. */

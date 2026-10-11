@@ -2,7 +2,7 @@
    Static app. Data lives in localStorage, and mirrors to Firebase Realtime
    Database when a config + workspace code are present. */
 
-const BUILD = '135';
+const BUILD = '136';
 const BUILT = '2026-10-11';
 /* The version of database.rules.json this app was written against. The rules
    carry the same number in rulesVersion's .write, which accepts that number
@@ -11,7 +11,7 @@ const BUILT = '2026-10-11';
    never pasted look exactly like a coach with no signal: "saved on this phone
    only", one feature at a time. test/rules.js holds the two numbers together
    and fails when the rules change without this going up. */
-const RULES_VERSION = 28;
+const RULES_VERSION = 29;
 /* index.html carries the build it was published with. If this file is newer, the
    browser handed us a cached page — the exact failure that has eaten hours. */
 const pageBuild = () => {
@@ -374,6 +374,8 @@ function forgetOthersChildren() {
   // registrations: her own children's, and nobody's agreements but through her own form
   state.regs = Object.fromEntries(Object.entries(state.regs || {}).map(([p, rs]) => [p, Object.fromEntries(Object.entries(rs || {}).filter(([cid]) => state.children[cid]))]));
   state.agreed = {};
+  // tryouts: bibs and scores are the admins' and the evaluators' (who are staff, and never come here)
+  state.tryBibs = {}; state.evals = {};
   delete (state.access || {}).log;
   if (state.access && state.access.members) state.access.members = Object.fromEntries(Object.entries(state.access.members).map(([k, m]) => [k, { name: (m && m.name) || '' }]));
   saveLocal();
@@ -605,6 +607,7 @@ let authReadyResolve;
 const authReady = new Promise(res => { authReadyResolve = res; });
 let attachWorkspace = () => { };   // set by initSync once fb/db exist; re-runnable
 let watchKid = () => { };          // set by listenOrgs: listen to one more child's record (a family's own)
+let watchMyRegs = () => { };       // set by listenOrgs: listen to a family's own children's registrations
 
 /* Signing in is optional for now. Nothing gates on it yet — it exists so stamps
    carry a real identity, and so the org model has something to hang off next. */
@@ -900,13 +903,24 @@ async function initSync() {
          admin, a program at a time; her own children's for a family. */
       const [programs, waivers] = await Promise.all([once('programs'), once('waivers')]);
       const regs = {}, agreed = {};
-      await Promise.all(Object.keys(programs || {}).map(async pg => {
+      /* Tryouts (GOTSPORT.md, *Tryouts and evaluations*): the bibs and every
+         evaluator's scores for an admin; the bibs and her own scores for an
+         evaluator the program names, and never a registration. Read beside
+         the registrations, not after them. */
+      const tryBibs = {}, evals = {};
+      await Promise.all(Object.values(programs || {}).filter(p => p && p.kind === 'tryout' && p.id).map(async p => {
+        const ev = me && (p.evaluators || {})[me.uid];
+        if (!r.admin && !ev) return;
+        const [b, e] = await Promise.all([once('tryBibs/' + p.id), once(r.admin ? 'evals/' + p.id : 'evals/' + p.id + '/' + me.uid)]);
+        tryBibs[p.id] = b || {};
+        evals[p.id] = r.admin ? e || {} : { [me.uid]: e || {} };
+      }).concat(Object.keys(programs || {}).map(async pg => {
         if (r.admin) {
           const [rv, av] = await Promise.all([once('regs/' + pg), once('agreed/' + pg)]);
           regs[pg] = rv || {}; agreed[pg] = av || {};
         } else if (me) await Promise.all(Object.keys(children).filter(c => kidIsMine(children[c])).map(async c => { const v = await once('regs/' + pg + '/' + c); if (v) (regs[pg] = regs[pg] || {})[c] = v; }));
-      }));
-      return { r, access, org, names, teams, roster, matches, rsvp, members: membersV, mine, log, squads, kids, notes, children, care, teamCare, programs: programs || {}, waivers: waivers || {}, regs, agreed };
+      })));
+      return { r, access, org, names, teams, roster, matches, rsvp, members: membersV, mine, log, squads, kids, notes, children, care, teamCare, programs: programs || {}, waivers: waivers || {}, regs, agreed, tryBibs, evals };
     }
 
     const namesAsMembers = n => Object.fromEntries(Object.entries(n || {}).filter(([, x]) => x && typeof x === 'object').map(([u, x]) => [u, { name: String(x.name || '') }]));
@@ -938,7 +952,7 @@ async function initSync() {
         if (!t || typeof t !== 'object') continue;
         teams[tid] = { ...t, players: tid in x.squads ? squadWith(x.squads[tid], (x.notes || {})[tid], x.r.all) : fromRoster((x.roster || {})[tid], x.kids[tid]) };
       }
-      return { teams, matches: x.matches || {}, access, rsvp: x.rsvp || {}, children: x.children || {}, care: x.care || {}, teamCare: x.teamCare || {}, programs: x.programs || {}, waivers: x.waivers || {}, regs: x.regs || {}, agreed: x.agreed || {} };
+      return { teams, matches: x.matches || {}, access, rsvp: x.rsvp || {}, children: x.children || {}, care: x.care || {}, teamCare: x.teamCare || {}, programs: x.programs || {}, waivers: x.waivers || {}, regs: x.regs || {}, agreed: x.agreed || {}, tryBibs: x.tryBibs || {}, evals: x.evals || {} };
     }
 
     /* After the first read, the same parts listened to: a change to one never
@@ -981,7 +995,7 @@ async function initSync() {
         const own = { [c]: state.children[c] };
         overlayPending(own, 'children');
         if (own[c]) state.children[c] = own[c]; else delete state.children[c];
-        saveLocal(); render(); childCheck();
+        saveLocal(); render(); childCheck(); watchMyRegs();
       };
       const kidsWatched = new Set();
       watchKid = c => {
@@ -1004,16 +1018,58 @@ async function initSync() {
         setPart('programs', v);
         // an admin listens to each program's registrations and agreements as it appears
         if (r.admin) for (const pg of Object.keys(v || {})) watchRegs(pg);
+        watchTry(v); watchMyRegs();
       });
       val('waivers', v => setPart('waivers', v));
       const regsWatched = new Set();
       const watchRegs = pg => {
         if (regsWatched.has(pg)) return;
         regsWatched.add(pg);
-        val('regs/' + pg, v => { state.regs = state.regs || {}; state.regs[pg] = v || {}; saveLocal(); render(); });
+        val('regs/' + pg, v => { state.regs = state.regs || {}; state.regs[pg] = v || {}; regsHeard.add(pg); saveLocal(); render(); });
         val('agreed/' + pg, v => { state.agreed = state.agreed || {}; state.agreed[pg] = v || {}; saveLocal(); render(); });
       };
       if (r.admin) for (const pg of Object.keys(x.programs || {})) watchRegs(pg);
+      /* Tryouts: the bibs and the scores, for an admin all of them, for an
+         evaluator the program names her own (GOTSPORT.md, *Tryouts and
+         evaluations*), with what this phone still owes laid on top so a
+         score made with no signal stays on her screen. */
+      const tryWatched = new Set();
+      const watchTry = progs => {
+        for (const p of Object.values(progs || {})) {
+          if (!p || p.kind !== 'tryout' || !p.id || tryWatched.has(p.id)) continue;
+          const mineOnly = !r.admin;
+          if (mineOnly && !(me && (p.evaluators || {})[me.uid])) continue;
+          tryWatched.add(p.id);
+          val('tryBibs/' + p.id, v => { state.tryBibs = state.tryBibs || {}; state.tryBibs[p.id] = v || {}; overlayPending(state.tryBibs, 'tryBibs'); bibsHeard.add(p.id); saveLocal(); render(); });
+          val(mineOnly ? 'evals/' + p.id + '/' + me.uid : 'evals/' + p.id, v => {
+            state.evals = state.evals || {};
+            state.evals[p.id] = mineOnly ? { [me.uid]: v || {} } : v || {};
+            overlayPending(state.evals, 'evals');
+            saveLocal(); render();
+          });
+        }
+      };
+      watchTry(x.programs);
+      /* A family listens to her own children's registrations, so an offer
+         after tryouts (or anything else the club does to one) reaches her
+         screen without a reload. One path per child per program: she may
+         read nothing wider. */
+      const myRegsWatched = new Set();
+      watchMyRegs = () => {
+        if (!live() || r.admin || !me) return;
+        for (const pg of Object.keys(state.programs || {})) for (const c of Object.values(state.children || {})) {
+          if (!c || !c.id || !kidIsMine(c) || myRegsWatched.has(pg + '/' + c.id)) continue;
+          myRegsWatched.add(pg + '/' + c.id);
+          val('regs/' + pg + '/' + c.id, v => {
+            state.regs = state.regs || {};
+            const rs = state.regs[pg] = state.regs[pg] || {};
+            if (v) rs[c.id] = v; else delete rs[c.id];
+            overlayPending(state.regs, 'regs');
+            saveLocal(); render();
+          });
+        }
+      };
+      watchMyRegs();
       for (const t of careTeams(r, x.access)) val('teamCare/' + t, v => { state.teamCare = state.teamCare || {}; state.teamCare[t] = v || {}; saveLocal(); render(); });
       if (r.all) val('children', v => {
         state.children = v || {};
@@ -1248,7 +1304,7 @@ function overlayPending(target, under) {
 function mergeConnect(v) {
   // a copy: what this phone owes is laid over it, and the snapshot it came in is not ours to change
   v = clone(v);
-  const remote = { teams: v.teams || {}, matches: v.matches || {}, access: v.access || {}, rsvp: v.rsvp || {}, children: v.children || {}, care: v.care || {}, teamCare: v.teamCare || {}, programs: v.programs || {}, waivers: v.waivers || {}, regs: v.regs || {}, agreed: v.agreed || {} };
+  const remote = { teams: v.teams || {}, matches: v.matches || {}, access: v.access || {}, rsvp: v.rsvp || {}, children: v.children || {}, care: v.care || {}, teamCare: v.teamCare || {}, programs: v.programs || {}, waivers: v.waivers || {}, regs: v.regs || {}, agreed: v.agreed || {}, tryBibs: v.tryBibs || {}, evals: v.evals || {} };
   const owed = [];
   for (const coll of ['teams', 'matches']) {
     for (const [id, x] of Object.entries(state[coll] || {})) {
@@ -1289,6 +1345,8 @@ function pendingLabel(p) {
   }
   if (coll === 'rsvp') return 'an answer to who is coming';
   if (coll === 'care') return 'care details for a child';
+  if (coll === 'evals') return 'a tryout score';
+  if (coll === 'tryBibs') return 'a tryout bib';
   if (coll === 'children') return (c => 'the club\'s record of ' + (c && c.first ? c.first : 'a child'))((state.children || {})[id]);
   if (p.startsWith('access/org/venues')) return 'the club\'s fields';
   if (p === 'access/org/money') return 'the currency fees are shown in';
@@ -6969,6 +7027,8 @@ function render() {
   if (ui.view === 'notes' && !shut && !me) ui.view = 'club';
   // the same wait, for the same reason: a family's link to a session opened cold
   if (ui.view === 'sessions' && !shut && (wsRead || !fbConfig().apiKey) && !canSessions()) ui.view = 'club';
+  // an evaluator's scoring screen, for the evaluators a tryout names and nobody else
+  if (ui.view === 'tryout' && !shut && (wsRead || !fbConfig().apiKey) && !myTryouts().length) ui.view = 'club';
   // a parent has no business reading the rest of the squad's names or the team's set-up
   const sb = document.querySelector('#tabs [data-view="roster"]');
   if (sb) sb.hidden = readerRole(lim);
@@ -7076,7 +7136,7 @@ function render() {
           v === 'season' ? viewSeason() :
             v === 'formation' ? viewFormation() : v === 'club' ? viewClub() : v === 'people' ? viewPeople() : v === 'admin' ? viewAdmin()
               : v === 'mine' ? viewMine() : v === 'practice' ? viewPractice()
-                : v === 'inbox' ? viewInbox() : v === 'notes' ? viewNotes() : v === 'thread' ? viewThread() : v === 'sessions' ? viewSessions() : v === 'planner' ? viewPlanner() : v === 'regs' ? viewRegs()
+                : v === 'inbox' ? viewInbox() : v === 'notes' ? viewNotes() : v === 'thread' ? viewThread() : v === 'sessions' ? viewSessions() : v === 'planner' ? viewPlanner() : v === 'regs' ? viewRegs() : v === 'tryout' ? viewTryout()
                 : v === 'setup' ? viewSetup() : viewCalendar());
   } finally { placeMemo = null; }
   syncHash();
@@ -7205,6 +7265,8 @@ function viewClub() {
       <b>My players</b><span class="rowsub">${allKidNames().map(esc).join(', ')}</span></button>` : ''}
     ${canSessions() ? `<button class="card" data-act="goview" data-v="sessions" style="text-align:left;width:100%">
       <b>Training sessions</b><span class="rowsub">${esc(sessClubLine())}</span></button>` : ''}
+    ${myTryouts().length ? `<button class="card" data-act="goview" data-v="tryout" style="text-align:left;width:100%">
+      <b>Tryouts to score</b><span class="rowsub">${esc(myTryouts().map(p => p.name).join(', '))} · by bib</span></button>` : ''}
     ${list.length ? list.map(t => {
     const ms = teamMatches(t.id);
     const live = ms.find(x => gameStatus(x) === 'live');
@@ -18524,7 +18586,7 @@ function familyList(cid) {
    lets the child, and so her family, into the club. A coach or an admin may
    start one for a family (a draft) that her family finishes. */
 const REG_KIND = { season: 'Season', camp: 'Camp', tryout: 'Tryouts', sessions: 'Training sessions', other: 'Other' };
-const REG_ST = { draft: 'Waiting for the family', sent: 'Waiting for the club', accepted: 'Accepted', waitlist: 'On the waiting list', declined: 'Not this time', placed: 'On a team', withdrawn: 'Withdrawn' };
+const REG_ST = { draft: 'Waiting for the family', sent: 'Waiting for the club', accepted: 'Accepted', waitlist: 'On the waiting list', declined: 'Not this time', placed: 'On a team', withdrawn: 'Withdrawn', offered: 'Offered a place' };
 const programsAll = () => Object.values(state.programs || {}).filter(p => p && p.id).sort((a, b) => (b.at || 0) - (a.at || 0));
 const waiversAll = () => Object.values(state.waivers || {}).filter(w => w && w.id).sort((a, b) => String(a.title).localeCompare(String(b.title)));
 const regsOf = prog => (state.regs || {})[prog] || {};
@@ -18639,12 +18701,32 @@ function viewRegList(pr) {
       <button class="btn quiet" data-act="progedit" data-id="${esc(pr.id)}">Edit</button></div>`
       : `<button class="btn quiet" data-act="progedit" data-id="${esc(pr.id)}">Edit</button>`}
     <button class="btn quiet wide" data-act="regexport" data-id="${esc(pr.id)}">Export for GotSport</button>
-    <div class="chips">${chip('all', 'All')}${chip('sent', 'Waiting')}${chip('accepted', 'Accepted')}${chip('waitlist', 'Waiting list')}${chip('draft', 'Family to finish')}${chip('declined', 'Declined')}${chip('withdrawn', 'Withdrawn')}</div>
+    ${isTryout(pr) ? (n => `<div class="card"><h2 style="margin-bottom:8px">Tryouts</h2>
+      <p class="muted" style="margin-top:0">${Object.keys(tryBibsOf(pr.id)).length} bibs given${n ? `, ${n} still to give` : ''}. Evaluators score by bib on their own phones and never see a name; you see the scores side by side.</p>
+      <div class="row">${n ? `<button class="btn" data-act="trybibs" data-id="${esc(pr.id)}">Give ${n} bib${n === 1 ? '' : 's'}</button>` : ''}
+        <button class="btn quiet" data-act="trytab" data-k="${u.tab === 'scores' ? 'list' : 'scores'}">${u.tab === 'scores' ? 'Registrations' : 'Scores'}</button></div></div>`)(bibsToGive(regsHeld(pr.id), tryBibsOf(pr.id)).length) : ''}
+    ${isTryout(pr) && u.tab === 'scores' ? viewTryScores(pr) : `<div class="chips">${chip('all', 'All')}${chip('sent', 'Waiting')}${chip('accepted', 'Accepted')}${isTryout(pr) ? chip('offered', 'Offered') : ''}${chip('waitlist', 'Waiting list')}${chip('draft', 'Family to finish')}${chip('declined', 'Declined')}${chip('withdrawn', 'Withdrawn')}</div>
     <div class="plist">${rows.map(({ cid, r, c }) => `<button class="prow" type="button" data-act="regopenone" data-prog="${esc(pr.id)}" data-id="${esc(cid)}" style="grid-template-columns:1fr auto">
       <span><span class="pname">${esc(kidName(c))}${c.confirmed ? '' : ' <span class="tag wait">unconfirmed</span>'}</span>
         <span class="rowsub">${esc([c.born ? 'born ' + dayLabel(c.born) : '', KID_GENDER[c.gender] || '', (r.fam || {}).name || ''].filter(Boolean).join(' · '))}</span></span>
-      <span class="tag">${esc(REG_ST[r.st] || r.st)}</span></button>`).join('') || '<p class="muted">Nobody here yet.</p>'}</div>
+      <span class="tag">${r.bib ? 'Bib ' + r.bib + ' · ' : ''}${esc(REG_ST[r.st] || r.st)}</span></button>`).join('') || '<p class="muted">Nobody here yet.</p>'}</div>`}
   </div>`;
+}
+// the teams a child may be placed on or offered: within a year of her birth year, and not one she is on
+const teamsFor = c => teams().filter(t => !(c.teams || {})[t.id] && (!t.birthYear || !c.born || Math.abs(Number(t.birthYear) - Number(c.born.slice(0, 4))) <= 1));
+/* A tryout registration on the admin's sheet: her bib, each evaluator's
+   scores of it by name, and the offer: made, answered, then placed. */
+function tryRegBlock(pr, cid, r, c) {
+  const sc = r.bib ? bibScores(evalsOf(pr.id))[r.bib] : null;
+  const off = r.offer && state.teams[r.offer.team], ans = (r.ans || {}).v;
+  const canOffer = !['withdrawn', 'placed', 'draft'].includes(r.st);
+  return `<p class="lbl">Tryout</p>
+    <p style="margin:0 0 6px"><b>Bib:</b> ${r.bib ? r.bib : 'none yet'}${sc ? ` · <b>${fmtScore(sc.all)}</b> overall from ${sc.n} evaluator${sc.n === 1 ? '' : 's'}` : ''}</p>
+    ${sc ? Object.entries(sc.by).map(([u, e]) => `<p style="margin:0 0 6px">${esc(personName(u) || 'An evaluator')}: ${TRY_CRIT.map(([k, , l]) => `${l} ${e.s[k] || '–'}`).join(' · ')}${e.note ? `<br><span class="muted">${esc(e.note)}</span>` : ''}</p>`).join('') : ''}
+    ${r.st === 'offered' && r.offer ? `<p style="margin:0 0 6px"><b>Offered:</b> ${off ? teamLabel(off) : 'a team no longer here'} · ${ans === 'yes' ? '<b>her family accepted</b>' : ans === 'no' ? '<b>her family declined</b>' : 'waiting for her family'}</p>
+      ${ans === 'yes' && off ? `<button class="btn wide" data-act="regplace" data-prog="${esc(pr.id)}" data-id="${esc(cid)}" data-tid="${esc(off.id)}" style="margin-bottom:10px">Place her on ${esc(off.name || 'the team')}</button>` : ''}` : ''}
+    ${canOffer && ans !== 'yes' ? (ts => `<p class="muted" style="margin:0 0 6px">${r.st === 'offered' ? 'Offer another team instead:' : 'Offer her a place; her family accepts or declines on My players.'}</p>
+      <div class="chips" style="margin-bottom:14px">${ts.map(t => `<button class="chip" type="button" data-act="tryoffer" data-prog="${esc(pr.id)}" data-id="${esc(cid)}" data-tid="${esc(t.id)}" aria-pressed="${!!(r.offer && r.offer.team === t.id)}">${teamLabel(t)}</button>`).join('') || '<span class="muted">No team fits her age.</span>'}</div>`)(teamsFor(c)) : ''}`;
 }
 function sheetRegOne(prog, cid) {
   const pr = (state.programs || {})[prog], r = regsOf(prog)[cid], c = (state.children || {})[cid] || {};
@@ -18658,10 +18740,11 @@ function sheetRegOne(prog, cid) {
     <p style="margin:0 0 12px"><b>Her details:</b> ${c.confirmed ? 'confirmed by her family' : 'not confirmed by her family yet'}</p>
     ${progAsks(pr).map(([k, q]) => `<p style="margin:0 0 6px"><b>${esc(q.q)}</b><br>${esc(String(((r.answers || {})[k]) ?? '—'))}</p>`).join('')}
     ${want.length ? `<p class="lbl">Waivers</p>${want.map(w => (a => `<p style="margin:0 0 6px">${esc(w.title)}: ${a ? `agreed by ${esc(a.name)}, ${esc(new Date(a.at).toLocaleDateString())}` : '<b>not agreed to this version</b>'}</p>`)(ag[w.id + '_' + w.v])).join('')}` : ''}
+    ${isTryout(pr) ? tryRegBlock(pr, cid, r, c) : ''}
     ${r.st === 'accepted' && pr.kind !== 'sessions' ? (ts => `<p class="lbl">Place her on a team</p>
       <p class="muted" style="margin-top:0">She joins its squad with her family as its parents; the coach gives her a number.</p>
       <div class="chips" style="margin-bottom:14px">${ts.map(t => `<button class="chip" type="button" data-act="regplace" data-prog="${esc(prog)}" data-id="${esc(cid)}" data-tid="${esc(t.id)}">${teamLabel(t)}</button>`).join('') || '<span class="muted">No team fits her age.</span>'}</div>`)(
-      teams().filter(t => !(c.teams || {})[t.id] && (!t.birthYear || !c.born || Math.abs(Number(t.birthYear) - Number(c.born.slice(0, 4))) <= 1))) : ''}
+      teamsFor(c)) : ''}
     ${r.st === 'placed' && r.team ? `<p><b>On:</b> ${teamLabel(state.teams[r.team])}</p>` : ''}
     <label class="field"><span>Note (admins only)</span><input type="text" id="regNote" maxlength="500" value="${esc(r.note || '')}"></label>
     <div class="row" style="flex-wrap:wrap;gap:8px">
@@ -18671,7 +18754,7 @@ function sheetRegOne(prog, cid) {
 }
 function sheetProgram(id) {
   const pr = id ? (state.programs || {})[id] : null;
-  const e = ui.progEdit = ui.progEdit && ui.progEdit.id === (id || '') ? ui.progEdit : { id: id || '', w: { ...((pr || {}).waivers || {}) } };
+  const e = ui.progEdit = ui.progEdit && ui.progEdit.id === (id || '') ? ui.progEdit : { id: id || '', w: { ...((pr || {}).waivers || {}) }, ev: { ...((pr || {}).evaluators || {}) } };
   const v = pr || {};
   openSheet(`<h3>${pr ? 'Edit ' + esc(pr.name) : 'New program'}</h3>
     <label class="field"><span>Name</span><input type="text" id="pName" maxlength="80" value="${esc(v.name || '')}" placeholder="Fall 2027"></label>
@@ -18694,6 +18777,9 @@ function sheetProgram(id) {
     <label class="field"><span>Questions, one a line (start with * if it must be answered)</span><textarea id="pAsks" rows="3">${esc(progAsks(v).map(([, q]) => (q.need ? '*' : '') + q.q).join('\n'))}</textarea></label>
     <p class="lbl">Waivers it asks for</p>
     <div class="chips" style="margin-bottom:14px">${waiversAll().map(w => `<button class="chip" type="button" data-act="progwaiver" data-id="${esc(w.id)}" aria-pressed="${!!e.w[w.id]}">${esc(w.title)}</button>`).join('') || '<span class="muted">No waivers yet: add them under Registrations.</span>'}</div>
+    <p class="lbl">Evaluators, for tryouts</p>
+    <p class="muted" style="margin-top:0">Who scores the children, by bib, on their own phones. They see bibs and their own scores, never a name or a registration.</p>
+    <div class="chips" style="margin-bottom:14px">${clubStaff().map(x => `<button class="chip" type="button" data-act="progeval" data-id="${esc(x.uid)}" aria-pressed="${!!e.ev[x.uid]}">${esc(x.name)}</button>`).join('') || '<span class="muted">No coaches yet.</span>'}</div>
     <button class="btn wide" data-act="progsave" data-id="${esc(id || '')}">Save</button>
     ${pr ? `<button class="btn quiet wide" data-act="progclose" data-id="${esc(id)}" style="margin-top:8px">${pr.closed ? 'Open it again' : 'Close it: the link stops working'}</button>` : ''}
     <button class="btn quiet wide" data-act="closesheet" style="margin-top:8px">Cancel</button>`, true);
@@ -18759,6 +18845,137 @@ async function exportGotsport(prog) {
   link.click();
   if (link.parentNode) link.parentNode.removeChild(link);
   setTimeout(() => URL.revokeObjectURL(url), 4000);
+}
+
+/* ---------------- tryouts (GOTSPORT.md, *Tryouts and evaluations*) ----------------
+   A tryout is a program of kind `tryout`. Admins give each child registered
+   for it a bib (on her registration, which only admins and her family read)
+   and publish the bibs with nothing but a birth year and gender
+   (tryBibs/{prog}/{bib}); the evaluators the program names score bibs, each
+   only her own record (evals/{prog}/{uid}/{bib}), through the outbox like a
+   goal, so a field with no signal loses nothing and two evaluators never
+   meet. The bib is the wall: an evaluator's screen never draws a name, and
+   her phone never reads what would tie a bib to a child. Admins see the
+   scores side by side and offer places; a family answers on My players; an
+   accepted offer is placed as any accepted child is. */
+const TRY_CRIT = [['ball', 'On the ball', 'Ball'], ['game', 'Reads the game', 'Game'], ['move', 'Speed and movement', 'Pace'], ['att', 'Effort and attitude', 'Effort']];
+const isTryout = pr => !!pr && pr.kind === 'tryout';
+const tryBibsOf = prog => (state.tryBibs || {})[prog] || {};
+const evalsOf = prog => (state.evals || {})[prog] || {};
+const iEvaluate = pr => !!(me && isTryout(pr) && (pr.evaluators || {})[me.uid]);
+const myTryouts = () => programsAll().filter(iEvaluate);
+// who an admin may name as an evaluator: the club's admins, coaches and team helpers
+function clubStaff() {
+  const out = new Set(Object.keys(acc().admins || {}));
+  for (const ta of Object.values(acc().teams || {})) for (const k of ['coaches', 'helpers']) for (const u of Object.keys((ta || {})[k] || {})) out.add(u);
+  return [...out].map(u => ({ uid: u, name: personName(u) || 'A coach' })).sort((a, b) => a.name.localeCompare(b.name));
+}
+const mean = xs => (xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : null);
+/* Each bib's scores side by side: how many evaluators scored it, the mean
+   of each criterion over those who scored that criterion, and the mean of
+   every score given it. */
+function bibScores(evals) {
+  const out = {};
+  for (const [u, bs] of Object.entries(evals || {})) for (const [bib, e] of Object.entries(bs || {})) {
+    if (!e || !e.s || typeof e.s !== 'object') continue;
+    (out[bib] = out[bib] || { by: {} }).by[u] = e;
+  }
+  for (const o of Object.values(out)) {
+    const recs = Object.values(o.by);
+    o.n = recs.length; o.avg = {};
+    const all = [];
+    for (const [k] of TRY_CRIT) {
+      const xs = recs.map(r => r.s[k]).filter(x => typeof x === 'number' && x >= 1 && x <= 5);
+      if (xs.length) o.avg[k] = mean(xs);
+      all.push(...xs);
+    }
+    o.all = mean(all);
+  }
+  return out;
+}
+const fmtScore = x => (typeof x === 'number' ? x.toFixed(1) : '–');
+/* A registration as an admin's phone holds it with what it still owes laid
+   on top: a bib given with no signal is still this child's. */
+function regsHeld(prog) { const rs = clone(regsOf(prog)); overlayPending(rs, 'regs/' + prog); return rs; }
+// the bib each registration holds, and the next free numbers for those without one
+function bibsToGive(regs, published) {
+  const used = new Set([...Object.keys(published || {}).map(Number), ...Object.values(regs || {}).map(r => r && r.bib).filter(Boolean)]);
+  const want = Object.entries(regs || {}).filter(([, r]) => r && !r.bib && !['withdrawn', 'declined'].includes(r.st))
+    .sort((a, b) => ((a[1].sentAt || a[1].at || 0) - (b[1].sentAt || b[1].at || 0)) || a[0].localeCompare(b[0]));
+  const out = [];
+  let n = 1;
+  for (const [cid] of want) { while (used.has(n)) n++; if (n > 999) break; used.add(n); out.push([cid, n]); }
+  return out;
+}
+/* A bib no registration holds any more (her family deleted it, or an admin
+   the child) leaves scores tied to nobody: they go, and its entry with them.
+   Only once this session has heard the club's registrations and bibs for
+   the program, so a phone reloaded from an old copy never takes a bib that
+   is somebody's. */
+const regsHeard = new Set(), bibsHeard = new Set();
+// SERVER.md: tidying a tryout's bibs that no registration holds, on an admin's phone when she opens the program.
+function tidyBibs(prog) {
+  if (!me || !isAdmin(me.uid) || !regsHeard.has(prog) || !bibsHeard.has(prog)) return 0;
+  const held = new Set(Object.values(regsHeld(prog)).map(r => r && r.bib).filter(Boolean).map(String));
+  let n = 0;
+  for (const bib of Object.keys(tryBibsOf(prog))) {
+    if (held.has(String(bib))) continue;
+    for (const [u, bs] of Object.entries(evalsOf(prog))) if ((bs || {})[bib]) { delDeep(state, `evals/${prog}/${u}/${bib}`); remoteDel(`evals/${prog}/${u}/${bib}`); }
+    delDeep(state, `tryBibs/${prog}/${bib}`); remoteDel(`tryBibs/${prog}/${bib}`);
+    n++;
+  }
+  if (n) saveLocal();
+  return n;
+}
+const bibLine = x => [x && x.y ? 'born ' + x.y : '', x && x.g ? (x.g === 'F' ? 'girl' : 'boy') : ''].filter(Boolean).join(' · ');
+
+/* ---- an evaluator, at the pitch: bibs and scores, never a name ---- */
+function viewTryout() {
+  const list = myTryouts();
+  const u = ui.tryout = ui.tryout || {};
+  if (!list.length) return `<div class="empty"><strong>Nothing to score</strong>The club's admins name the evaluators on each tryout.</div>`;
+  const pr = list.find(p => p.id === u.prog) || (list.length === 1 ? list[0] : null);
+  if (!pr) return `<div class="stack"><div class="spread"><h2>Tryouts</h2><button class="btn quiet sm" data-act="goview" data-v="club">Back</button></div>
+    ${list.map(p => `<button class="card" data-act="tryprog" data-id="${esc(p.id)}" style="text-align:left;width:100%"><b>${esc(p.name)}</b>
+      <span class="rowsub">${Object.keys(tryBibsOf(p.id)).length} bibs · ${Object.keys(((evalsOf(p.id))[me.uid]) || {}).length} scored by you</span></button>`).join('')}</div>`;
+  const all = Object.entries(tryBibsOf(pr.id)).map(([b, x]) => ({ bib: Number(b), ...(x || {}) })).filter(x => x.bib).sort((a, b) => a.bib - b.bib);
+  const years = [...new Set(all.map(x => x.y).filter(Boolean))].sort();
+  const bibs = all.filter(x => !u.y || x.y === u.y);
+  const mine = (evalsOf(pr.id))[me.uid] || {};
+  const cur = u.bib && all.find(x => x.bib === u.bib);
+  const rec = cur ? mine[cur.bib] || {} : {};
+  const chip = (k, n) => `<button class="chip" type="button" data-act="tryscore" data-k="${k}" data-n="${n}" aria-pressed="${(rec.s || {})[k] === n}">${n}</button>`;
+  return `<div class="stack">
+    <div class="spread"><h2>${esc(pr.name)}</h2><button class="btn quiet sm" data-act="${list.length > 1 ? 'tryprog' : 'goview'}" data-v="club" data-id="">Back</button></div>
+    <p class="muted" style="margin-top:0">Score by bib: 1 is a long way to go, 5 is ready now. Only you and the club's admins see your scores, and nobody's name is on this screen. Saved on this phone at once and sent when there's a signal.</p>
+    ${years.length > 1 ? `<div class="chips">${[['', 'All'], ...years.map(y => [y, 'Born ' + y])].map(([y, l]) => `<button class="chip" type="button" data-act="tryyear" data-y="${y}" aria-pressed="${(u.y || '') === y}">${l}</button>`).join('')}</div>` : ''}
+    ${cur ? `<div class="card"><div class="spread"><h2 style="margin:0">Bib ${cur.bib}</h2><span class="muted">${esc(bibLine(cur))}</span></div>
+      ${TRY_CRIT.map(([k, l]) => `<p class="lbl">${l}</p><div class="chips">${[1, 2, 3, 4, 5].map(n => chip(k, n)).join('')}</div>`).join('')}
+      <label class="field" style="margin-top:10px"><span>Note (for the admins; no names)</span><input type="text" id="tryNote" maxlength="500" value="${esc(rec.note || '')}"></label>
+      <div class="row"><button class="btn quiet" data-act="trynote">Save the note</button>
+        <button class="btn" data-act="trynext">Next bib</button></div></div>` : ''}
+    ${bibs.length ? `<div class="chips">${bibs.map(x => `<button class="chip" type="button" data-act="tryopen" data-bib="${x.bib}" aria-pressed="${!!cur && cur.bib === x.bib}">${x.bib}${mine[x.bib] ? ' ✓' : ''}</button>`).join('')}</div>`
+      : '<div class="empty"><strong>No bibs yet</strong>The club\'s admins give them out before the tryout.</div>'}
+    <p class="muted">${Object.keys(mine).length} of ${all.length} scored by you.</p>
+  </div>`;
+}
+
+/* ---- admins: the scores side by side ---- */
+function viewTryScores(pr) {
+  const u = ui.regs;
+  const sc = bibScores(evalsOf(pr.id));
+  const rows = Object.entries(regsOf(pr.id)).filter(([, r]) => r && r.bib && r.st !== 'withdrawn')
+    .map(([cid, r]) => ({ cid, r, c: (state.children || {})[cid] || {}, s: sc[r.bib] || { n: 0, avg: {}, all: null } }))
+    .filter(x => !u.y || (x.c.born || '').slice(0, 4) === u.y)
+    .sort((a, b) => (b.s.all ?? -1) - (a.s.all ?? -1) || a.r.bib - b.r.bib);
+  const years = [...new Set(Object.keys(regsOf(pr.id)).map(cid => ((state.children || {})[cid] || {}).born).filter(Boolean).map(b => b.slice(0, 4)))].sort();
+  const nEval = Object.keys(pr.evaluators || {}).length;
+  return `${years.length > 1 ? `<div class="chips">${[['', 'All'], ...years.map(y => [y, 'Born ' + y])].map(([y, l]) => `<button class="chip" type="button" data-act="tryyear" data-y="${y}" aria-pressed="${(u.y || '') === y}">${l}</button>`).join('')}</div>` : ''}
+    <p class="muted" style="margin:0">${nEval ? `${nEval} evaluator${nEval === 1 ? '' : 's'}.` : 'No evaluators yet: name them on the program (Edit).'} Each score is 1–5; highest overall first.</p>
+    <div class="tablewrap"><table class="grid"><thead><tr><th>Bib</th><th>Child</th>${TRY_CRIT.map(([, , l]) => `<th>${esc(l)}</th>`).join('')}<th>All</th><th>By</th></tr></thead><tbody>
+    ${rows.map(x => `<tr data-act="regopenone" data-prog="${esc(pr.id)}" data-id="${esc(x.cid)}"><td>${x.r.bib}</td><td>${esc(kidName(x.c))}</td>${TRY_CRIT.map(([k]) => `<td>${fmtScore(x.s.avg[k])}</td>`).join('')}<td><b>${fmtScore(x.s.all)}</b></td><td>${x.s.n}</td></tr>`).join('')
+      || `<tr><td colspan="${TRY_CRIT.length + 4}" class="muted">No bibs given yet.</td></tr>`}
+    </tbody></table></div>`;
 }
 
 /* ---- a family registering: the program link, or a draft to finish ---- */
@@ -18918,6 +19135,8 @@ async function sendReg() {
     const r0 = fresh ? null : regx.regs[cid];
     await put(B + `regs/${d.prog}/${cid}`, {
       st: 'sent', by: r0 && r0.by ? r0.by : who, at: r0 && r0.at ? r0.at : at, sentBy: who, sentAt: at, answers,
+      // a tryout's bib is the club's, and stays hers when she changes her answers
+      ...(r0 && r0.bib ? { bib: r0.bib } : {}),
       fam: { name: String(me.name || '').slice(0, 80), email: String(me.email || '').slice(0, 120) }
     });
     for (const [w, x] of owed) await put(B + `agreed/${d.prog}/${cid}/${w}_${x.v}`, { by: who, at, name: sig });
@@ -18962,6 +19181,16 @@ async function delReg(cid) {
 function regCards() {
   if (!me) return '';
   const out = [];
+  // an offer after tryouts, whether or not the program is still open
+  for (const pr of programsAll()) for (const c of myClubKids()) {
+    const r = regsOf(pr.id)[c.id];
+    if (!r || r.st !== 'offered' || !r.offer) continue;
+    const t = state.teams[r.offer.team], ans = (r.ans || {}).v;
+    out.push(`<div class="card"><b>${esc(pr.name)}: a place for ${esc(c.first || 'her')}</b>
+      <p class="muted" style="margin:6px 0 10px">The club offers ${esc(c.first || 'her')} a place on ${t ? teamLabel(t) : 'a team'}.${ans === 'yes' ? ' You accepted: the club puts her on the team.' : ans === 'no' ? ' You declined.' : ''}</p>
+      ${ans ? '' : `<div class="row"><button class="btn" data-act="tryans" data-prog="${esc(pr.id)}" data-id="${esc(c.id)}" data-v="yes">Accept</button>
+        <button class="btn quiet" data-act="tryans" data-prog="${esc(pr.id)}" data-id="${esc(c.id)}" data-v="no">Decline</button></div>`}</div>`);
+  }
   for (const pr of programsAll()) {
     if (!progOpen(pr) || !pr.link) continue;
     for (const c of myClubKids()) {
@@ -18972,7 +19201,7 @@ function regCards() {
       else if (!r && !progFits(pr, c.born, c.gender) && c.born) out.push(`<div class="card"><b>${esc(pr.name)} is open</b>
         <p class="muted" style="margin:6px 0 10px">${esc(progLine(pr))}</p>
         <button class="btn quiet wide" data-act="regopen" data-id="${esc(pr.link)}">Register ${esc(c.first || 'her')}</button></div>`);
-      else if (r && r.st !== 'withdrawn') out.push(`<p class="muted">${esc(c.first || 'Your child')} · ${esc(pr.name)}: ${esc(REG_ST[r.st] || r.st)}</p>`);
+      else if (r && r.st !== 'withdrawn' && r.st !== 'offered') out.push(`<p class="muted">${esc(c.first || 'Your child')} · ${esc(pr.name)}: ${esc(REG_ST[r.st] || r.st)}${r.bib && r.st !== 'placed' ? ` · bib ${r.bib}` : ''}</p>`);
     }
   }
   return out.join('');
@@ -20786,6 +21015,59 @@ function onAct(e) {
      role (she may not be in the club yet: the rules hold her to her own
      child); everything an admin does is checked here as well as drawn only
      for her; a draft for a family is staff's. */
+  /* Tryouts (GOTSPORT.md, *Tryouts and evaluations*). An evaluator scores
+     only a program that names her, only a bib it has published, and only in
+     her own record: checked here as well as by the rules. */
+  // an admin's birth years are the children's (text), an evaluator's the published bibs' (numbers)
+  if (a === 'tryyear') { if (ui.view === 'regs') (ui.regs = ui.regs || {}).y = d.y || ''; else (ui.tryout = ui.tryout || {}).y = d.y ? Number(d.y) : ''; render(); return; }
+  if (['tryprog', 'tryopen', 'tryscore', 'trynote', 'trynext'].includes(a)) {
+    const u = ui.tryout = ui.tryout || {};
+    if (a === 'tryprog') { u.prog = d.id || null; u.bib = null; u.y = ''; render(); return; }
+    const pr = myTryouts().find(p => p.id === u.prog) || (myTryouts().length === 1 ? myTryouts()[0] : null);
+    if (!pr || !iEvaluate(pr)) { toast('Only the evaluators the club names score a tryout'); return; }
+    u.prog = pr.id;
+    const bibs = tryBibsOf(pr.id);
+    const path = b => `evals/${pr.id}/${me.uid}/${b}`;
+    const cur = b => getDeep(state, path(b)) || {};
+    const saveNote = () => {
+      const n = document.querySelector('#tryNote');
+      if (!n || !u.bib) return true;
+      const note = String(n.value || '').trim().slice(0, 500), was = cur(u.bib);
+      if (note === (was.note || '')) return true;
+      if (!was.s || !Object.keys(was.s).length) { toast('Give a score first'); return false; }
+      const rec = { ...was, at: nowMs() };
+      if (note) rec.note = note; else delete rec.note;
+      commit(path(u.bib), rec);
+      return true;
+    };
+    if (a === 'tryopen') { if (!bibs[d.bib]) return; if (!saveNote()) return; u.bib = Number(d.bib); render(); return; }
+    if (a === 'trynote') { if (saveNote()) toast('Saved'); return; }
+    if (a === 'trynext') {
+      if (!saveNote()) return;
+      const order = Object.entries(bibs).filter(([, x]) => !u.y || (x || {}).y === u.y).map(([b]) => Number(b)).sort((x, y) => x - y);
+      const nx = order.find(b => b > (u.bib || 0));
+      u.bib = nx || null; render(); if (!nx) toast('That was the last bib'); return;
+    }
+    if (a === 'tryscore') {
+      const b = u.bib, k = d.k, n = Number(d.n);
+      if (!b || !bibs[b] || !TRY_CRIT.some(([x]) => x === k) || !(n >= 1 && n <= 5)) return;
+      const was = cur(b), s2 = { ...(was.s || {}) };
+      // the same score again takes it back
+      if (s2[k] === n) delete s2[k]; else s2[k] = n;
+      if (!Object.keys(s2).length) { drop(path(b)); return; }
+      commit(path(b), { ...was, s: s2, at: nowMs() });
+      return;
+    }
+  }
+  /* Her family answers an offer, in her own name, only while it stands. */
+  if (a === 'tryans') {
+    const pr = (state.programs || {})[d.prog], r = regsOf(d.prog)[d.id], c = clubKids()[d.id];
+    if (!pr || !r || !c || !kidFamily(c)) { toast('Only her family answers'); return; }
+    if (r.st !== 'offered' || !r.offer) { toast('That offer is no longer open'); return; }
+    if (d.v === 'no' && !confirm(`Decline the place for ${c.first || 'her'}? The club is told.`)) return;
+    commit(`regs/${pr.id}/${c.id}/ans`, { v: d.v === 'yes' ? 'yes' : 'no', by: me.uid, at: nowMs() });
+    toast(d.v === 'yes' ? 'Accepted: the club puts her on the team' : 'Declined'); return;
+  }
   if (a === 'regopen') { closeSheet(); openReg(d.id); return; }
   if (a === 'regdismiss') { dropReg(); render(); return; }
   if (a === 'regretry') { if (regx) { regx.status = 'idle'; maybeLoadReg(); } render(); return; }
@@ -20822,10 +21104,41 @@ function onAct(e) {
     }
     render(); return;
   }
-  if (['regprog', 'regfilter', 'regopenone', 'regset', 'regplace', 'regexport', 'progedit', 'progwaiver', 'progsave', 'progclose', 'waiveredit', 'waiversave'].includes(a)) {
+  if (['regprog', 'regfilter', 'regopenone', 'regset', 'regplace', 'regexport', 'progedit', 'progwaiver', 'progeval', 'trybibs', 'trytab', 'tryoffer', 'progsave', 'progclose', 'waiveredit', 'waiversave'].includes(a)) {
     if (!canRegs()) { toast('Registration is the club admins\''); return; }
     const u = ui.regs = ui.regs || {};
-    if (a === 'regprog') { u.prog = d.id || null; u.st = 'all'; render(); return; }
+    if (a === 'regprog') { u.prog = d.id || null; u.st = 'all'; u.tab = 'list'; u.y = ''; if (u.prog && isTryout((state.programs || {})[u.prog])) tidyBibs(u.prog); render(); return; }
+    if (a === 'trytab') { u.tab = d.k === 'scores' ? 'scores' : 'list'; if (u.prog) tidyBibs(u.prog); render(); return; }
+    /* Bibs (GOTSPORT.md, *Tryouts and evaluations*): the next free number to
+       everyone registered who has none, withdrawn and declined left out. The
+       published bib first, since an evaluator's score is checked against it,
+       with nothing on it but her birth year and gender. */
+    if (a === 'trybibs') {
+      const pr = (state.programs || {})[d.id];
+      if (!isTryout(pr)) return;
+      const give = bibsToGive(regsHeld(pr.id), tryBibsOf(pr.id));
+      for (const [cid, n] of give) {
+        const c = (state.children || {})[cid] || {};
+        const y = c.born ? Number(c.born.slice(0, 4)) : 0;
+        quiet(`tryBibs/${pr.id}/${n}`, { at: nowMs(), ...(y ? { y } : {}), ...(KID_GENDER[c.gender] ? { g: c.gender } : {}) });
+        quiet(`regs/${pr.id}/${cid}/bib`, n);
+      }
+      saveLocal(); render(); toast(give.length ? `${give.length} bib${give.length === 1 ? '' : 's'} given` : 'Everyone has a bib'); return;
+    }
+    /* An offer: a team on her registration, then `offered`, and, as accepting
+       does, the child and her family into the club, so her family sees it on
+       My players. A new offer takes back her family's answer to the old one. */
+    if (a === 'tryoffer') {
+      const pr = (state.programs || {})[d.prog], r = regsOf(d.prog)[d.id], c = clubKids()[d.id], t = state.teams[d.tid];
+      if (!isTryout(pr) || !r || !c || !t || ['withdrawn', 'placed', 'draft'].includes(r.st)) return;
+      if ((r.ans || {}).v === 'yes') { toast('Her family has accepted: place her, or decline first'); return; }
+      quiet(`regs/${pr.id}/${c.id}/offer`, { team: t.id, by: me.uid, at: nowMs() });
+      if (r.ans) { delDeep(state, `regs/${pr.id}/${c.id}/ans`); remoteDel(`regs/${pr.id}/${c.id}/ans`); }
+      quiet(`regs/${pr.id}/${c.id}/st`, 'offered');
+      if (c.club !== true) quiet(`children/${c.id}/club`, true);
+      for (const fu of Object.keys(c.family || {})) if (!(acc().index || {})[fu]) quiet(`access/index/${fu}`, c.id);
+      saveLocal(); toast(`Offered a place on ${t.name || 'the team'}`); sheetRegOne(pr.id, c.id); render(); return;
+    }
     if (a === 'regfilter') { u.st = d.k; render(); return; }
     if (a === 'regopenone') { sheetRegOne(d.prog, d.id); return; }
     if (a === 'regexport') { exportGotsport(d.id); return; }
@@ -20851,7 +21164,8 @@ function onAct(e) {
        care details follow her to the team by the server (careCopy). */
     if (a === 'regplace') {
       const r = regsOf(d.prog)[d.id], c = clubKids()[d.id], t = state.teams[d.tid];
-      if (!r || !c || !t || r.st !== 'accepted') return;
+      // accepted, or her family has accepted the team she was offered (a tryout)
+      if (!r || !c || !t || !(r.st === 'accepted' || (r.st === 'offered' && (r.ans || {}).v === 'yes' && (r.offer || {}).team === t.id))) return;
       const used = teams().some(x => (x.players || {})[c.id]);
       const pid = used ? uid() : c.id;
       const fam = Object.keys({ ...(c.family || {}), ...(c.guardians || {}) });
@@ -20865,6 +21179,7 @@ function onAct(e) {
       toast(`On ${t.name || 'the team'}`); closeSheet(); render(); return;
     }
     if (a === 'progedit') { ui.progEdit = null; sheetProgram(d.id || ''); return; }
+    if (a === 'progeval') { const e = ui.progEdit; if (e) { e.ev = e.ev || {}; if (e.ev[d.id]) delete e.ev[d.id]; else e.ev[d.id] = true; } if (el.setAttribute) el.setAttribute('aria-pressed', String(!!(e && e.ev && e.ev[d.id]))); return; }
     if (a === 'progwaiver') { const e = ui.progEdit; if (e) { if (e.w[d.id]) delete e.w[d.id]; else e.w[d.id] = true; } if (el.setAttribute) el.setAttribute('aria-pressed', String(!!(e && e.w[d.id]))); return; }
     if (a === 'progsave') {
       const was = d.id ? (state.programs || {})[d.id] : null;
@@ -20882,6 +21197,8 @@ function onAct(e) {
         id, name, kind: REG_KIND[$('#pKind').value] ? $('#pKind').value : 'season', by: me.uid, at: nowMs(),
         link: was && was.link ? was.link : randId('r', 12), asks: asksFrom($('#pAsks').value, (was || {}).asks),
         waivers: { ...((ui.progEdit || {}).w || {}) },
+        // evaluators only on a tryout: nobody scores a season's registrations
+        ...($('#pKind').value === 'tryout' && Object.keys((ui.progEdit || {}).ev || {}).length ? { evaluators: { ...ui.progEdit.ev } } : {}),
         ...(lo ? { born: { lo, hi } } : {}), ...($('#pGender').value === 'F' || $('#pGender').value === 'M' ? { gender: $('#pGender').value } : {}),
         ...(opens ? { opens } : {}), ...(closes ? { closes } : {}), ...(cap !== null ? { cap } : {}), ...(fee !== null ? { fee } : {}),
         ...($('#pFeeNote').value.trim() ? { feeNote: $('#pFeeNote').value.trim().slice(0, 200) } : {}),
@@ -22130,6 +22447,7 @@ function uiToHash() {
   if (ui.view === 'admin') return '#/club/settings';
   if (ui.view === 'planner') return '#/club/planner';
   if (ui.view === 'regs') return '#/club/registrations';
+  if (ui.view === 'tryout') return '#/club/tryouts';
   if (ui.view === 'mine') return '#/my-players';
   if (ui.view === 'inbox') return '#/messages';
   if (ui.view === 'notes') return '#/notifications';
@@ -22147,7 +22465,7 @@ function hashToUi() {
      address (build 102): All teams on the Calendar. #/my-calendar is what My
      calendar's feed links back to. */
   if (p[0] === 'club' && (p[1] === 'calendar' || p[1] === 'schedule')) { ui.view = 'calendar'; ui.calSel = 'club'; return true; }
-  if (p[0] === 'club') { ui.view = p[1] === 'settings' ? 'admin' : p[1] === 'people' ? 'people' : p[1] === 'planner' ? 'planner' : p[1] === 'registrations' ? 'regs' : 'club'; return true; }
+  if (p[0] === 'club') { ui.view = p[1] === 'settings' ? 'admin' : p[1] === 'people' ? 'people' : p[1] === 'planner' ? 'planner' : p[1] === 'registrations' ? 'regs' : p[1] === 'tryouts' ? 'tryout' : 'club'; return true; }
   if (p[0] === 'my-players') { ui.view = 'mine'; return true; }
   if (p[0] === 'my-calendar') { ui.view = 'calendar'; ui.calSel = 'mine'; return true; }
   if (p[0] === 'calendar') { ui.view = 'calendar'; ui.calSel = p[1] === 'all' ? 'club' : 'mine'; return true; }

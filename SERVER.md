@@ -417,6 +417,17 @@ does the bookkeeping, not that the phone works offline first.
 - **With a server:** already there; the phones' half goes once every club has
   the functions.
 
+### A tryout's bibs that nobody holds
+- **Now:** when a family deletes her registration for a tryout, or an admin
+  deletes the child, the bib goes with the registration, and the bib's
+  published entry and every evaluator's scores of it are left tied to
+  nobody. The next admin's phone to open that program takes them away
+  (`tidyBibs()`; GOTSPORT.md, *Tryouts and evaluations*), and only once it
+  has heard the club's registrations and bibs that session, so a phone
+  reloaded from an old copy never takes a bib that is somebody's.
+- **With a server:** a trigger on a registration deleted takes its bib's
+  entry and scores at once, with no admin's phone needed.
+
 ### Backups and imports
 - **Moved (build 135): a bulk import is applied by the server.** The phone
   plans it as before and sends the planned writes in one ask

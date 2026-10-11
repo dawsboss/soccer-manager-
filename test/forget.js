@@ -28,7 +28,9 @@ const club = () => ({
     k9: { id: 'k9', first: 'Mia', club: true, by: 'solo', at: 1, family: { solo: 'rl' } }
   },
   care: { p2: { by: 'solo', at: 1, contacts: { 0: { name: 'Solo', phone: '555' } } } },
-  regs: { f27: { k9: { st: 'accepted', by: 'solo', at: 1 } } }
+  regs: { f27: { k9: { st: 'accepted', by: 'solo', at: 1 } } },
+  programs: { tr: { id: 'tr', name: 'Tryouts', kind: 'tryout', by: 'adm', at: 1, evaluators: { mum: true, coachU: true } } },
+  evals: { tr: { mum: { 3: { s: { ball: 4 }, at: 1 } } } }
 });
 function server() {
   const S = makeServer({
@@ -88,6 +90,8 @@ const at = (S, p) => {
     check('the notice she wrote stays, as in any group chat', !!S.at('board/CLUB/t1/n1'), true);
     check('nobody else\'s bookmark is touched', !!S.at('userOrgs/adm/CLUB') && !!S.at('userOrgs/solo/CLUB'), true);
     check('a fan of her child is untouched', !!at(S, 'orgs/CLUB/squad/t1/p1/fans/gran'), true);
+    check('she is off the tryout\'s evaluators, the other kept', [!!at(S, 'orgs/CLUB/programs/tr/evaluators/mum'), !!at(S, 'orgs/CLUB/programs/tr/evaluators/coachU')].join(), 'false,true');
+    check('— her scores are the club\'s and stay', !!at(S, 'orgs/CLUB/evals/tr/mum/3'), true);
   }
 
   console.log('\n--- the only family of two children ---');

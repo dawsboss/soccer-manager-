@@ -764,7 +764,11 @@ regOpen/{linkId}: {             // the program link: readable by id, like invite
   admin reads the program's list. Registering twice is changing one.
 - **How it stands (`st`):** `draft` (staff made it, waiting for the family),
   `sent` (the family's, waiting for an admin), `accepted`, `waitlist`,
-  `declined`, `placed` (on a team: `team` says which), `withdrawn`. Only an
+  `declined`, `offered` (a tryout's place on a team, `offer`, which her
+  family answers in `ans`; GOTSPORT.md, *Tryouts and evaluations*, build
+  136), `placed` (on a team: `team` says which), `withdrawn`. A tryout's
+  registration also carries the child's `bib`, an admin's to give and
+  never changed or dropped by her family. Only an
   admin moves it past `sent`; a family moves her own from `draft` to `sent`
   (confirming) and from anything to `withdrawn`.
 - **Waivers are the club's text, versioned, and agreed by a family only.** An
