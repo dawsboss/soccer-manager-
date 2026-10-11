@@ -28,7 +28,7 @@
      addresses are the team's families' (teamParents, held to the squad, as
      every reader list on this server is), from members/, never from the ask;
      the words are hers, cut to a size.
-   - `session` (build 136): the families of one or more training sessions'
+   - `session` (build 137): the families of one or more training sessions'
      places (*Email or share* on a session, *Remind the family* on Fees),
      asked for by an admin or the coach each session names (still a coach);
      the families found from each place as the rules find them (a squad

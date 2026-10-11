@@ -739,7 +739,7 @@ Club → **Money**, admins only; there is no treasurer role (owner,
 
 ### What the family is emailed
 
-Email was built before payments (builds 135 and 136, `functions/mail.js`
+Email was built before payments (builds 135 and 137, `functions/mail.js`
 and `functions/mailnews.js`), so each payment step adds its own emails to
 `mailnews.js` as it is built, from the club's address, to the family of
 the one child the bill is for (the bill's family, never an address a phone
@@ -754,7 +754,7 @@ is what reaches a family with no app open.
   discount, instead of the program's.
 - **Payment received:** not ours. Stripe emails its own receipt from the
   club's account at Checkout (above), so the webhook sends none, and the
-  build-136 receipt for a fee the club marks paid by hand (`onFee`) must
+  build-137 receipt for a fee the club marks paid by hand (`onFee`) must
   skip a fee the webhook wrote, or she gets two.
 - **A refund** (step 2): the amount and what it was for, when the webhook
   writes it; Stripe's own refund email may also come, from the club.
@@ -943,7 +943,7 @@ hold.
    *Designed 2026-10-11 in *Payments, designed before any code*, above,
    in six steps of its own; the owner decided its nine questions the same
    day. Needs the platform's Stripe account first.*
-6. **Email.** *Built in builds 135 and 136: invitations and team notices
+6. **Email.** *Built in builds 135 and 137: invitations and team notices
    (`functions/mail.js`), a training session's families, a registration's
    news to its family, receipts for payments the club records, and the
    sessions still to pay (`functions/mailnews.js`). The payment emails are

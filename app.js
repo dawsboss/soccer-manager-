@@ -2,7 +2,7 @@
    Static app. Data lives in localStorage, and mirrors to Firebase Realtime
    Database when a config + workspace code are present. */
 
-const BUILD = '136';
+const BUILD = '137';
 const BUILT = '2026-10-11';
 /* The version of database.rules.json this app was written against. The rules
    carry the same number in rulesVersion's .write, which accepts that number
@@ -2231,6 +2231,45 @@ function secretId() { return randId('i', 18); }
 
 const inviteLink = id => location.origin + location.pathname + '?invite=' + encodeURIComponent(id);
 
+/* Every link the app makes is offered the same two ways, and only these two
+   (the owner, 2026-10-11): email it, or copy it. Before this each sheet drew
+   its own row — Copy here, Share… there, a Firebase sign-in email for an
+   invite with an address and nothing for a team, fan or season link — and
+   the one someone needed was never on the sheet in front of her. Email it
+   opens her own mail app with the words and the link written (a mailto:
+   needs no server and no rules), the address filled in where the link names
+   one; an invite with an address goes from the club itself where the club
+   has a mailer (functions/mail.js, a real invitation in the club's name),
+   and from her mail app otherwise. The link rides on its own line at the
+   end of the body, so whatever she adds above it, the link survives. */
+const mailtoLink = (to, subject, body) => `mailto:${encodeURIComponent(String(to || ''))}?subject=${encodeURIComponent(String(subject || ''))}&body=${encodeURIComponent(String(body || ''))}`;
+// SERVER.md: every link's Email it from her own mail app (mailto:), where the club has no mailer or the link names no address; the club's mailer for an invite with one.
+function linkButtons(url, o = {}) {
+  const sm = o.small ? ' sm' : '';
+  const body = `${o.body ? String(o.body).trim() + '\n\n' : ''}${url}`;
+  const href = mailtoLink(o.to, o.subject || `A link from ${(acc().org || {}).name || APP_NAME}`, body);
+  // the club's own mailer, for an invite that names an address; her mail app is the fallback in the handler
+  const viaClub = !!(o.invite && o.to && serverOn() && !mailFallback && rtdb && online);
+  const mail = viaClub ? `<button class="btn${sm}" data-act="invitemail" data-id="${esc(o.invite)}" data-href="${esc(href)}" data-email="${esc(o.to)}">Email it</button>`
+    : `<a class="btn${sm}" href="${esc(href)}">Email it</a>`;
+  return `${mail} <button class="btn quiet${sm}" data-act="copylink" data-v="${esc(url)}">Copy the link</button>`;
+}
+/* The words for an invite's email: who, the club, the role — a child by her
+   shirt number, never her name, since an email gets forwarded like a link. */
+function inviteWords(v) {
+  const club = v.clubName || (acc().org || {}).name || 'the club';
+  const who = v.byName || (me && me.name) || 'An admin';
+  const no = v.playerNo || (v.player && ((((state.teams || {})[v.team] || {}).players || {})[v.player] || {}).number) || '';
+  const what = v.role === 'parent' ? `the parent of ${no ? '#' + no : 'a player'} on ${v.teamName || 'a team'}`
+    : v.role === 'player' ? `a player on ${v.teamName || 'a team'}, with your own sign-in`
+    : v.role === 'fan' ? `a fan of ${no ? '#' + no : 'a player'} on ${v.teamName || 'a team'}`
+    : v.teamName ? `${String(INVITE_ROLES[v.role] || v.role).toLowerCase()} of ${v.teamName}` : String(INVITE_ROLES[v.role] || v.role).toLowerCase();
+  return {
+    subject: `${who} has invited you to ${club}`,
+    body: `${who} has invited you to join ${club} in ${APP_NAME} as ${what}.\n\nOpen this link on your phone and sign in to accept it:`
+  };
+}
+
 /* Taken off the address bar at load, before initAuth() reads it for a magic
    link, and kept in localStorage: signing in by popup, redirect or email can
    each lose the page, and the invite has to survive that. Only the invite
@@ -2635,12 +2674,12 @@ function invitesCard() {
     return `<div class="opt spread invrow" data-k="${st.k}">
       <button type="button" class="linkish" data-act="inviteopen" data-id="${esc(v.id)}"><b>${esc(v.email || 'Anyone with the link')}</b>
         <span class="rowsub">${inviteFor(v)} · ${st.label}</span></button>
-      <span class="row">${st.k === 'open' ? `<button class="btn quiet sm" data-act="copylink" data-v="${esc(inviteLink(v.id))}">Copy link</button>` : ''}
+      <span class="row wrap">${st.k === 'open' ? linkButtons(inviteLink(v.id), { ...inviteWords(v), to: v.email, invite: v.id, small: true }) : ''}
         <button class="btn quiet sm" data-act="inviteopen" data-id="${esc(v.id)}">Details</button></span></div>`;
   };
   return `<div class="card"><div class="spread"><h2 style="margin:0">Invites</h2>
       <button class="btn sm" data-act="invitenew">Invite someone</button></div>
-    <p class="muted">A link that makes an account a coach, tracker or parent on one team. You choose how many people can use it and for how long. Tap one to copy its link again, see who used it, or revoke it.</p>
+    <p class="muted">A link that makes an account a coach, tracker, team helper or parent on one team, or a club viewer. You choose how many people can use it and for how long. Each can be emailed or copied; tap one to see who used it, or revoke it.</p>
     ${open.length ? open.map(row).join('') : `<p class="muted" style="margin:0">No open invites.</p>`}
     ${past.length ? `<button class="btn quiet sm" data-act="invitepast" style="margin-top:8px">${ui.invPast ? 'Hide' : 'Show'} used and expired (${past.length})</button>
     ${ui.invPast ? `<div style="margin-top:8px">${past.map(row).join('')}</div>` : ''}` : ''}</div>`;
@@ -2659,7 +2698,6 @@ function sheetInviteDetail(id) {
   const stillHas = v.used && (v.role === 'viewer' ? isViewer(v.used.by) : v.role === 'parent'
     ? !!(((((state.teams[v.team] || {}).players || {})[v.player] || {}).guardians || {})[v.used.by])
     : v.role === 'coach' ? isCoach(v.team, v.used.by) : isTracker(v.team, v.used.by));
-  const canShare = typeof navigator !== 'undefined' && typeof navigator.share === 'function';
   const line = (k, val) => `<div class="spread" style="padding:6px 0;border-top:1px solid var(--line)"><span class="muted">${k}</span><span style="text-align:right">${val}</span></div>`;
   openSheet(`<h3>${esc(v.email || 'Invite link')}</h3>
     <p class="muted" style="margin-top:0">${inviteFor(v)}</p>
@@ -2675,9 +2713,7 @@ function sheetInviteDetail(id) {
     </div>
     ${st.k === 'open' ? `<p class="lbl">The link</p>
     <div class="codebox">${esc(link)}</div>
-    <div class="row" style="margin-bottom:12px"><button class="btn" data-act="copylink" data-v="${esc(link)}">Copy link</button>
-      ${canShare ? `<button class="btn quiet" data-act="inviteshare" data-v="${esc(link)}">Share…</button>` : ''}</div>
-    ${v.email ? `<button class="btn quiet wide" data-act="invitemail" data-v="${esc(link)}" data-email="${esc(v.email)}" style="margin-bottom:12px">Send them the sign-in email again</button>` : ''}
+    <div class="row" style="margin-bottom:12px">${linkButtons(link, { ...inviteWords(v), to: v.email, invite: id })}</div>
     <button class="btn danger wide" data-act="invitedrop" data-id="${esc(id)}">Revoke — the link stops working</button>`
       : `<p class="muted">${st.k === 'used' ? 'This link has been used and no longer works. To take the role away, remove it from their roles.' : 'This link no longer works. Make a new one if they still need to join.'}</p>
     ${st.k === 'used' && who ? `<button class="btn quiet wide" data-act="personedit" data-uid="${esc(v.used.by)}" style="margin-bottom:8px">Their roles</button>` : ''}
@@ -2744,17 +2780,15 @@ function sheetSquadInvites(tid) {
   const t = state.teams[tid]; if (!t) return;
   const list = players(t).filter(p => needsParent(t, p));
   const missing = list.filter(p => !openParentInvite(tid, p));
-  const canShare = typeof navigator !== 'undefined' && typeof navigator.share === 'function';
   const row = p => {
     const v = openParentInvite(tid, p), link = v ? inviteLink(v.id) : '';
     return `<div class="prow" style="grid-template-columns:auto 1fr auto">
       <span class="pnum">${esc(p.number ?? '')}</span><span><span class="pname">${esc(p.name || '')}</span>
         <span class="rowsub">${v ? `Link ready · until ${esc(new Date(v.expiresAt).toLocaleDateString())}` : 'No link yet'}</span></span>
-      <span class="row">${v ? `<button class="btn sm" data-act="copylink" data-v="${esc(link)}">Copy</button>
-        ${canShare ? `<button class="btn quiet sm" data-act="inviteshare" data-v="${esc(link)}">Share</button>` : ''}` : ''}</span></div>`;
+      <span class="row wrap">${v ? linkButtons(link, { ...inviteWords({ ...v, teamName: t.name || '', playerNo: p.number }), small: true }) : ''}</span></div>`;
   };
   openSheet(`<h3>Invite ${teamLabel(t)}'s parents</h3>
-    ${list.length ? `<p class="muted" style="margin-top:0">One link per family, for the ${list.length} player${list.length === 1 ? '' : 's'} with no parent linked yet. Each makes whoever opens it that child's parent, up to as many people as you choose — so send each one to that family only.</p>
+    ${list.length ? `<p class="muted" style="margin-top:0">One link per family, for the ${list.length} player${list.length === 1 ? '' : 's'} with no parent linked yet. Each makes whoever opens it that child's parent, up to as many people as you choose — so email or send each one to that family only.</p>
       ${missing.length ? `${limitFields('sqinv')}<button class="btn wide" data-act="squadinvitego" data-tid="${tid}">Make ${missing.length} link${missing.length === 1 ? '' : 's'}</button>` : ''}
       <div class="plist" style="margin-top:10px">${list.map(row).join('')}</div>`
     : `<p class="muted">Every player on the squad has a parent linked.</p>`}
@@ -2808,14 +2842,11 @@ async function makeInvite() {
   logAccess('invited', null, { targetName: (email || 'someone') + ' as ' + f.role, team: t ? t.id : null, teamName: t ? t.name || null : null });
   ui.inv = null;
   const link = inviteLink(id);
-  const canShare = typeof navigator !== 'undefined' && typeof navigator.share === 'function';
   openSheet(`<h3>Invite ready</h3>
     <p class="muted" style="margin-top:0">${esc(INVITE_ROLES[doc.role])}${doc.teamName ? ` on <b>${esc(doc.teamName)}</b>` : ' for the whole club'}${email ? ` for <b>${esc(email)}</b>` : ''}. ${usesLine(doc.max || 1, doc.expiresAt)}.</p>
     <div class="codebox">${esc(link)}</div>
-    <div class="row" style="margin-bottom:10px"><button class="btn" data-act="copylink" data-v="${esc(link)}">Copy link</button>
-    ${canShare ? `<button class="btn quiet" data-act="inviteshare" data-v="${esc(link)}">Share…</button>` : ''}</div>
-    ${email ? `<button class="btn quiet wide" data-act="invitemail" data-v="${esc(link)}" data-email="${esc(email)}">Send them the sign-in email</button>
-    <p class="muted">Firebase sends it, worded as a sign-in link rather than an invitation — worth a text to say it is coming.</p>` : ''}
+    <div class="row" style="margin-bottom:10px">${linkButtons(link, { ...inviteWords(doc), to: email, invite: id })}</div>
+    <p class="muted">${email ? 'Email it sends the invitation to that address' + (serverOn() && !mailFallback ? ', from the club' : ', from your own mail app') + '; only that address can accept it.' : 'Email it opens your mail app with the invitation written; Copy the link is for a text or the team chat.'} It is under People → Invites to send again.</p>
     <button class="btn quiet wide" data-act="closesheet">Done</button>`);
   render();
 }
@@ -2866,7 +2897,8 @@ function sheetImportInvites() {
   const n = st => rows.filter(r => r.st === st).length;
   const todo = n('todo'), linked = rows.filter(r => r.st === 'made' || r.st === 'open');
   const unsent = linked.filter(r => !importContacts.sent[r.key]);
-  const canMail = !!(authMod && fbAuth);
+  // the club's own mailer; without one each row's Email it opens her mail app
+  const canMail = serverOn() && !mailFallback && !!rtdb && online;
   const what = r => r.role === 'coach' ? `Coach · ${esc(r.team)}` : `Parent of ${esc(r.player)} · ${esc(r.team)}`;
   const state_ = r => r.st === 'has' ? 'Already has it' : r.st === 'missing' ? 'Not found here' : r.st === 'todo' ? 'No invite yet'
     : importContacts.sent[r.key] ? 'Invite made · email sent' : r.st === 'open' ? 'Has an open invite' : 'Invite made';
@@ -2874,10 +2906,10 @@ function sheetImportInvites() {
     <p class="muted" style="margin-top:0">The file had ${esc(contactCount(importContacts.list))}. Each invite works once, for ${INVITE_DAYS} days, and only for the email it names — so a forwarded link is no use to anyone else. Anyone who already has that role here is skipped.</p>
     <div class="plist" style="margin-bottom:12px">${rows.map(r => `<div class="prow" style="grid-template-columns:1fr auto">
       <span><span class="pname">${esc(r.email)}</span><span class="rowsub">${what(r)}</span></span>
-      <span class="rowsub" style="text-align:right">${state_(r)}${r.id && r.st !== 'has' ? `<br><button class="btn quiet sm" data-act="copylink" data-v="${esc(inviteLink(r.id))}">Copy link</button>` : ''}</span></div>`).join('')}</div>
+      <span class="rowsub" style="text-align:right">${state_(r)}${r.id && r.st !== 'has' ? `<br><span class="row wrap" style="justify-content:flex-end;margin-top:4px">${linkButtons(inviteLink(r.id), { ...inviteWords({ ...(clubInv[r.id] || {}), role: r.role, teamName: r.t ? r.t.name || '' : '', playerNo: r.p ? r.p.number : '' }), to: r.email, small: true })}</span>` : ''}</span></div>`).join('')}</div>
     ${todo ? `<button class="btn wide" data-act="importinvitego" style="margin-bottom:8px">Make ${todo} invite${todo === 1 ? '' : 's'}</button>` : ''}
-    ${unsent.length && canMail ? `<button class="btn ${todo ? 'quiet ' : ''}wide" data-act="importinvitemail" style="margin-bottom:8px">Email ${unsent.length} of them the link</button>
-    <p class="muted">Firebase sends it, worded as a sign-in link rather than an invitation, so a message to the team saying it's coming helps. Every link is also under People → Invites to copy or send again.</p>` : ''}
+    ${unsent.length && canMail ? `<button class="btn ${todo ? 'quiet ' : ''}wide" data-act="importinvitemail" style="margin-bottom:8px">Email ${unsent.length} of them from the club</button>
+    <p class="muted">One invitation each, in the club's name. Every link is also under People → Invites to email or copy again.</p>` : ''}
     <button class="btn quiet wide" data-act="importinviteskip">${todo || unsent.length ? 'Not now' : 'Done'}</button>`);
 }
 // SERVER.md: an imported roster's invites asked of the server (staffAsk) where it is deployed; one at a time from the phone otherwise.
@@ -2918,35 +2950,22 @@ async function mailViaClub(ids) {
   if (ans && (ans.why === 'nomail' || ans.why === 'rules')) { mailFallback = true; return null; }
   return ans;
 }
-// SERVER.md: the sign-in emails go one at a time from the admin's phone where the club has no mailer (mailAsk sends real invitations).
+// SERVER.md: an imported roster's invitations emailed by the club (mailAsk); with no mailer each row's Email it opens the admin's own mail app.
 async function mailImported() {
   if (!importContacts) return;
   if (!canAdmin()) { toast('Club admins only'); return; }
   const ic = importContacts;
   const rows = importInviteRows(ic).filter(x => (x.st === 'made' || x.st === 'open') && !ic.sent[x.key]);
-  if (rows.length) {
-    const ans = await mailViaClub(rows.map(r => r.id));
-    if (importContacts !== ic) return;
-    if (ans && ans.ok) {
-      const sent = new Set(Array.isArray(ans.sent) ? ans.sent : Object.values(ans.sent || {}));
-      let n = 0;
-      for (const r of rows) if (sent.has(r.id)) { ic.sent[r.key] = true; n++; }
-      toast(`The club emailed ${n} invitation${n === 1 ? '' : 's'}${n < rows.length ? `; ${rows.length - n} could not be sent` : ''}`);
-      sheetImportInvites(); return;
-    }
-    if (ans) { toast('The club could not send them — check the signal and try again'); return; }
-  }
-  if (!authMod || !fbAuth) { toast('Sign-in is not available on this build'); return; }
-  let n = 0;
-  for (const r of importInviteRows(ic).filter(x => (x.st === 'made' || x.st === 'open') && !ic.sent[x.key])) {
-    try { await authMod.sendSignInLinkToEmail(fbAuth, r.email, { url: inviteLink(r.id), handleCodeInApp: true }); ic.sent[r.key] = true; n++; } catch (err) {
-      toast(`Sent ${n}, then: ${authMessage(err)}`);
-      if (importContacts === ic) sheetImportInvites();
-      return;
-    }
-  }
-  toast(`Sent ${n} email${n === 1 ? '' : 's'}`);
-  if (importContacts === ic) sheetImportInvites();
+  if (!rows.length) return;
+  const ans = await mailViaClub(rows.map(r => r.id));
+  if (importContacts !== ic) return;
+  if (ans && ans.ok) {
+    const sent = new Set(Array.isArray(ans.sent) ? ans.sent : Object.values(ans.sent || {}));
+    let n = 0;
+    for (const r of rows) if (sent.has(r.id)) { ic.sent[r.key] = true; n++; }
+    toast(`The club emailed ${n} invitation${n === 1 ? '' : 's'}${n < rows.length ? `; ${rows.length - n} could not be sent` : ''}`);
+  } else toast(ans ? 'The club could not send them — check the signal and try again' : 'The club has no mailer set up — Email it beside each one opens your mail app');
+  sheetImportInvites();
 }
 
 /* ---------------- team links: parents ask, coaches approve ---------------- */
@@ -3062,8 +3081,21 @@ async function sendClaim() {
   const v = join.doc, who = me.uid;
   const sEl = $('#joinShirt'), cEl = $('#joinChild');
   const shirt = String((sEl && sEl.value) || '').trim().slice(0, 40);
-  const child = String((cEl && cEl.value) || '').trim().slice(0, 40);
-  if (!shirt) { toast('Type the shirt number'); return; }
+  /* A child not on the squad yet (the owner, 2026-10-11: adding a child to a
+     squad is the coach's, but a family can fill her in through the link).
+     The ask carries her details for the coach to add her with; the rules
+     let a family write only her own ask, and only the coach adds. */
+  let kid = null;
+  if (join.kid) {
+    const nEl = $('#joinKidName'), bEl = $('#joinKidBorn');
+    const name = String((nEl && nEl.value) || '').trim().replace(/\s+/g, ' ').slice(0, 120);
+    const born = String((bEl && bEl.value) || '').trim();
+    if (!name) { toast("Type your child's name"); return; }
+    if (born && !BORN_OK.test(born)) { toast('That birth date does not look right'); return; }
+    kid = { add: true, child: name, ...(born ? { born } : {}), ...(join.gender ? { gender: join.gender } : {}) };
+  }
+  const child = kid ? '' : String((cEl && cEl.value) || '').trim().slice(0, 40);
+  if (!shirt && !kid) { toast('Type the shirt number'); return; }
   const { db, mod } = rtdb;
   const at = nowMs();
   join.status = 'working'; render();
@@ -3073,7 +3105,7 @@ async function sendClaim() {
     // so a coach or admin sees who is asking, as they would anyone who signed in
     await mod.set(mod.ref(db, clubPath('access/members/' + who, v.ws)), { name: me.name || '', email: me.email || '', at });
     await mod.set(mod.ref(db, `claims/${v.ws}/${v.team}/${who}`), {
-      code: join.code, shirt, ...(child ? { child } : {}), name: me.name || '', email: me.email || '', at
+      code: join.code, ...(shirt ? { shirt } : {}), ...(child ? { child } : {}), ...(kid || {}), name: me.name || '', email: me.email || '', at
     });
   } catch (e) {
     if (e && e.code === 'full') { join.status = 'full'; render(); return; }
@@ -3118,12 +3150,20 @@ function joinScreen() {
   if (s === 'declined') return box('Not approved',
     `A coach of ${tm} did not approve the request. If that is a mistake, check the shirt number with them and ask again.`,
     `<button class="btn" data-act="joinagain">Ask again</button><button class="btn quiet" data-act="joindrop">OK</button>`);
+  const kid = !!join.kid;
   return `<div class="stack"><div class="card">
     <h2>Join ${tm}</h2>
     <p class="muted" style="margin-top:4px">${club} · as a parent. You are signed in as <b>${esc(me.email || me.name)}</b>.</p>
-    <label class="field"><span>Your child's shirt number</span><input type="text" inputmode="numeric" id="joinShirt" maxlength="40" placeholder="7 — or 7, 12 for two"></label>
+    <div class="chips" style="margin-bottom:12px"><button class="chip" type="button" data-act="joinkid" data-v="" aria-pressed="${!kid}">She's on the squad</button>
+      <button class="chip" type="button" data-act="joinkid" data-v="1" aria-pressed="${kid}">She isn't on it yet</button></div>
+    ${kid ? `<label class="field"><span>Your child's name</span><input type="text" id="joinKidName" maxlength="120" autocomplete="off" placeholder="First and last"></label>
+    <label class="field"><span>Her birth date — optional</span><input type="date" id="joinKidBorn"></label>
+    <div class="chips" style="margin-bottom:12px">${Object.entries(KID_GENDER).map(([k, l]) => `<button class="chip" type="button" data-act="joingender" data-v="${k}" aria-pressed="${join.gender === k}">${l}</button>`).join('')}</div>
+    <label class="field"><span>Her shirt number — if she has one</span><input type="text" inputmode="numeric" id="joinShirt" maxlength="40"></label>
+    <p class="muted">A coach of the team adds her to the squad and lets you in. You see nothing of the team until then.</p>`
+    : `<label class="field"><span>Your child's shirt number</span><input type="text" inputmode="numeric" id="joinShirt" maxlength="40" placeholder="7 — or 7, 12 for two"></label>
     <label class="field"><span>Their first name — optional, helps the coach</span><input type="text" id="joinChild" maxlength="40" autocomplete="off"></label>
-    <p class="muted">A coach of the team checks this and lets you in. You see nothing of the team until then.</p>
+    <p class="muted">A coach of the team checks this and lets you in. You see nothing of the team until then.</p>`}
     <div class="row"><button class="btn" data-act="joinsend">Send to the coaches</button>${later}</div>
   </div></div>`;
 }
@@ -3200,24 +3240,37 @@ async function staffAsk(v) {
   return ans;
 }
 const STAFF_NO = { notyours: 'Club admins and that team’s coaches only', gone: 'That request has gone', approved: 'Already approved', player: 'That player is no longer on the squad', retired: 'This club has been retired' };
+// a squad record as Add a player makes one, from a team-link ask that fills a child in (the same shape on the server, functions/staff.js)
+const newPlayerFrom = c => ({ name: String(c.child || '').trim().slice(0, 120) || 'Player', number: String(c.shirt || '').trim().slice(0, 40), active: true, anywhere: true, preferred: '', canPlay: [], rating: 3 });
 // SERVER.md: approving a request asks the server (staffAsk) where it is deployed; the phone's own writes are the fallback.
-async function approveClaim(tid, u, pids) {
+async function approveClaim(tid, u, pids, add = false) {
   const t = state.teams[tid];
   if (!t || !mayGrant(tid)) { toast('Club admins and that team’s coaches only'); return; }
   const c = (claimsSeen[tid] || {})[u];
-  const picked = pids.filter(pid => (t.players || {})[pid]);
-  if (!c || !picked.length) { toast('Pick their child'); return; }
+  let picked = pids.filter(pid => (t.players || {})[pid]);
+  // a child the family filled in through the link: only a coach adds her (the squad is hers), from the ask's words
+  const kid = add && c && c.add && !picked.length ? newPlayerFrom(c) : null;
+  if (!c || (!picked.length && !kid)) { toast('Pick their child'); return; }
   const at = nowMs();
-  const ans = await staffAsk({ op: 'approve', tid, uid: u, pids: picked });
+  const ans = await staffAsk({ op: 'approve', tid, uid: u, pids: picked, ...(kid ? { add: true } : {}) });
   if (ans) {
     if (!ans.ok) { toast(STAFF_NO[ans.why] || 'Not approved — check the signal and try again'); return; }
     // the club has it all; the phone keeps what the listeners will bring in a moment
     setDeep(claimsSeen, `${tid}/${u}/approved`, { by: me.uid, at });
+    if (kid && ans.added) { picked = [ans.added]; setDeep(state, `teams/${tid}/players/${ans.added}`, { ...kid, id: ans.added, child: ans.added }); }
     for (const pid of picked) setDeep(state, `teams/${tid}/players/${pid}/guardians/${u}`, true);
     if (!(acc().index || {})[u]) setDeep(state, `access/index/${u}`, tid);
     saveLocal(); render();
     toast(`${c.name || c.email || 'They'} can open the team now`);
     return;
+  }
+  if (kid) {
+    // the squad record first, as Add a player writes it, so the approval can name her; the club's record of her follows it
+    const id = uid();
+    picked = [id];
+    const rec = { ...kid, id, child: id };
+    commit(`teams/${tid}/players/${id}`, rec);
+    if (me) kidQuiet(`children/${id}`, { id, ...splitName(rec.name), club: true, by: me.uid, at, teams: { [tid]: id }, ...(c.born ? { born: c.born } : {}), ...(KID_GENDER[c.gender] ? { gender: c.gender } : {}) });
   }
   try {
     // first, because the index rule looks for it
@@ -3289,21 +3342,23 @@ function declineClaim(tid, u) {
 function joinCard(t) {
   if (!mayGrant(t.id) || !fbConfig().apiKey || !anyAdmins()) return '';
   const j = t.join, link = j && j.code ? joinLink(j.code) : '';
-  const canShare = typeof navigator !== 'undefined' && typeof navigator.share === 'function';
   const reqs = pendingClaims(t.id);
   const pick = ui.claimPick || {};
   const req = c => {
     const m = claimMatches(t, c);
     const chosen = (pick[c.uid] || m.map(p => p.id)).filter(pid => (t.players || {})[pid]);
+    // a child the family says is not on the squad yet: added from what they typed, unless the coach matches her to a record already here
+    const adding = !!c.add && !chosen.length;
     return `<div class="claim">
       <div><b>${esc(c.name || c.email || 'Someone')}</b>${c.email && c.name ? ` <span class="muted">${esc(c.email)}</span>` : ''}</div>
-      <div class="rowsub">Says: #${esc(c.shirt)}${c.child ? ' · ' + esc(c.child) : ''} · ${esc(whenShort(c.at))}</div>
+      <div class="rowsub">${c.add ? `Asks to add <b>${esc(c.child || 'a child')}</b> to the squad${c.born ? ' · born ' + esc(c.born) : ''}${KID_GENDER[c.gender] ? ' · ' + esc(KID_GENDER[c.gender].toLowerCase()) : ''}${c.shirt ? ' · #' + esc(c.shirt) : ''}` : `Says: #${esc(c.shirt)}${c.child ? ' · ' + esc(c.child) : ''}`} · ${esc(whenShort(c.at))}</div>
       <div class="chips" style="margin:8px 0">${players(t).filter(p => p.active !== false).map(p =>
       chosen.includes(p.id) || m.some(x => x.id === p.id) || pick['all:' + c.uid]
         ? `<button class="chip" type="button" data-act="claimpick" data-uid="${esc(c.uid)}" data-pid="${p.id}" aria-pressed="${chosen.includes(p.id)}">${chipName(p)}</button>` : '').join('')}
         <button class="chip" type="button" data-act="claimall" data-uid="${esc(c.uid)}">${pick['all:' + c.uid] ? 'Fewer' : m.length ? 'Someone else' : 'Pick from the squad'}</button></div>
-      ${!m.length ? '<p class="muted" style="margin:0 0 8px">No player on the squad has that number — check with them before letting them in.</p>' : ''}
-      <div class="row"><button class="btn sm" data-act="claimok" data-tid="${t.id}" data-uid="${esc(c.uid)}"${chosen.length ? '' : ' disabled'}>Let in as parent${chosen.length ? ' of ' + chosen.map(pid => esc(t.players[pid].name || '')).join(' & ') : ''}</button>
+      ${!m.length && !c.add ? '<p class="muted" style="margin:0 0 8px">No player on the squad has that number — check with them before letting them in.</p>' : ''}
+      ${c.add ? `<p class="muted" style="margin:0 0 8px">${chosen.length ? 'If she is already on the squad under that name, let them in as her parent; otherwise unpick her to add a new player.' : 'Adds her to the squad with what they typed, as a player you added would be, and lets them in as her parent.'}</p>` : ''}
+      <div class="row"><button class="btn sm" data-act="claimok" data-tid="${t.id}" data-uid="${esc(c.uid)}"${adding ? ' data-add="1"' : ''}${chosen.length || adding ? '' : ' disabled'}>${adding ? `Add ${esc(firstName({ name: c.child || '' }) || 'her')} and let in` : `Let in as parent${chosen.length ? ' of ' + chosen.map(pid => esc(t.players[pid].name || '')).join(' & ') : ''}`}</button>
         <button class="btn quiet sm" data-act="claimno" data-tid="${t.id}" data-uid="${esc(c.uid)}">Turn down</button></div></div>`;
   };
   const fanreq = c => {
@@ -3324,8 +3379,7 @@ function joinCard(t) {
     <p class="muted" style="margin:8px 0">${link ? 'Post this link in the team chat. Parents sign in, type their child’s shirt number, and wait for you to let them in here.' : 'One link for the whole team: parents sign in, type their child’s shirt number, and you let them in here with a tap.'}</p>
     ${link ? `<div class="codebox">${esc(link)}</div>
       <p class="muted" style="margin:0 0 8px">${j.until && j.until <= nowMs() ? `<b>Expired ${esc(new Date(j.until).toLocaleDateString())}</b> — make a new one.` : esc(usesLine(j.max || 0, j.until))}</p>
-      <div class="row" style="margin-bottom:8px"><button class="btn sm" data-act="copylink" data-v="${esc(link)}">Copy link</button>
-      ${canShare ? `<button class="btn quiet sm" data-act="inviteshare" data-v="${esc(link)}">Share…</button>` : ''}</div>
+      <div class="row wrap" style="margin-bottom:8px">${linkButtons(link, { subject: `Join ${teamLabel(t)} at ${(acc().org || {}).name || 'the club'}`, body: `${me && me.name ? me.name : 'The coach'} invites you to join ${teamLabel(t)} at ${(acc().org || {}).name || 'the club'} in ${APP_NAME}. Open this link on your phone, sign in, and give your child's shirt number — or her details, if she isn't on the squad yet — and a coach will let you in:`, small: true })}</div>
       ${limitFields('join', { anyUses: true, anyDays: true, uses: 0, days: 0 })}
       <button class="btn quiet wide" data-act="joinnew" data-tid="${t.id}" style="margin-bottom:8px">New link with these limits</button>`
     : `${limitFields('join', { anyUses: true, anyDays: true, uses: 0, days: 0 })}<button class="btn wide" data-act="joinnew" data-tid="${t.id}">Make a team link</button>`}
@@ -9428,7 +9482,7 @@ function calSyncCard(t, all) {
       <div class="row wrap">
         <a class="btn sm" href="${esc(webcal(u))}">Apple Calendar</a>
         <a class="btn quiet sm" href="${esc(googleSub(u))}" target="_blank" rel="noopener">Google Calendar</a>
-        <button class="btn quiet sm" data-act="copytext" data-v="${esc(u)}">Copy the address</button></div>
+        ${linkButtons(u, { subject: `${teamLabel(x)}'s calendar`, body: `${teamLabel(x)}'s calendar at ${(acc().org || {}).name || 'the club'}, to subscribe to in your own calendar app (Apple and Outlook: add it as a subscribed calendar; Google: Other calendars → From URL):`, small: true })}</div>
       ${canEditTeam(x.id) ? `<div style="margin-top:8px">${untilChips('feed', x.calFeedUntil, `data-tid="${esc(x.id)}"`)}</div><button class="textbtn" data-act="calsyncnew" data-tid="${esc(x.id)}" style="margin-top:6px">Replace this address</button>` : ''}</div>`;
     return canEditTeam(x.id)
       ? `<button class="btn wide" data-act="calsyncon" data-tid="${esc(x.id)}" style="margin-bottom:8px">Turn on calendar sync${all ? ' for ' + teamLabel(x) : ''}</button>`
@@ -10720,7 +10774,7 @@ const LIB_ACTS = new Set(['shelf', 'drillmine', 'drilledit', 'drillnew', 'drills
   'dbopen', 'dbtap', 'dbtool', 'dbverb', 'dbarea', 'dbstep', 'dbaddstep', 'dbundo', 'dbdelstep', 'dbuse', 'dbback']);
 /* Templates: a plan with no calendar entry, on her own shelf or the club's. */
 const TPL_ACTS = new Set(['tpllist', 'tplopen', 'tplsave', 'tplsavego', 'tplpick', 'tpluse', 'tplplan', 'tplplango', 'tplcopy', 'tplshare', 'tpldel']);
-const PRACTICE_ACTS = new Set(['practab', 'nwdrills', ...TPL_ACTS, 'drill', 'drillpic', 'drillsend', 'drillsendshare', 'roleguide', 'rolepic', 'drillfilters', 'dfchip', 'dfpick', 'dfclear', 'drillmore', ...PLAN_ACTS, ...LIB_ACTS]);
+const PRACTICE_ACTS = new Set(['practab', 'nwdrills', ...TPL_ACTS, 'drill', 'drillpic', 'drillsend', 'roleguide', 'rolepic', 'drillfilters', 'dfchip', 'dfpick', 'dfclear', 'drillmore', ...PLAN_ACTS, ...LIB_ACTS]);
 
 /* A team's age is stored as the year its players were born, because that
    rolls over by itself: the same team is U10 this season and U11 the next
@@ -11077,15 +11131,14 @@ function sheetSendDrill(key) {
   }
   if (shelf !== 'builtin' && shelf !== 'club') return;
   const url = drillLinkUrl(d.key || d.id);
-  const canShare = typeof navigator !== 'undefined' && typeof navigator.share === 'function';
+  // a club drill's name stays out of the email: the link can be forwarded past the coaches
+  const words = { subject: shelf === 'club' ? "A drill from the club's library" : `A drill: ${d.name}`, body: shelf === 'club' ? 'A drill from the club\'s library, for the club\'s coaches:' : `A drill from ${APP_NAME}:` };
   openSheet(`<h3>Send “${esc(d.name)}” to a coach</h3>
     <p class="muted">${shelf === 'builtin'
       ? `It comes with the app, so the link opens for anyone you send it to, parents included.`
       : `It's the club's, so the link opens only for the club's coaches and admins, signed in. Anyone else it reaches, a parent included, is told it isn't for them and sees nothing of it.`}</p>
     <input type="text" readonly value="${esc(url)}" aria-label="Link to this drill">
-    <div class="row" style="gap:8px;margin-top:10px">
-      ${canShare ? `<button class="btn" style="flex:1" data-act="drillsendshare" data-id="${esc(d.key || d.id)}">Share</button>` : ''}
-      <button class="btn ${canShare ? 'quiet ' : ''}" style="flex:1" data-act="copylink" data-v="${esc(url)}">Copy link</button></div>
+    <div class="row" style="gap:8px;margin-top:10px">${linkButtons(url, words)}</div>
     <button class="btn quiet wide" data-act="drill" data-id="${esc(d.key || d.id)}" style="margin-top:8px">Back to the drill</button>`, true);
 }
 
@@ -16162,7 +16215,7 @@ function myFeedCard() {
     <div class="row wrap">
       <a class="btn sm" href="${esc(webcal(u))}">Apple Calendar</a>
       <a class="btn quiet sm" href="${esc(googleSub(u))}" target="_blank" rel="noopener">Google Calendar</a>
-      <button class="btn quiet sm" data-act="copytext" data-v="${esc(u)}">Copy the address</button></div>
+      ${linkButtons(u, { subject: 'My calendar', body: `My ${APP_NAME} calendar, to subscribe to in a calendar app (Apple and Outlook: add it as a subscribed calendar; Google: Other calendars → From URL). It is mine alone: anyone with the address can read it.`, small: true })}</div>
     <p class="muted">Times, teams and places, never names. Anyone with the address can read it, so keep it to yourself. Outlook: <i>Add calendar → From internet</i>.</p>
     ${untilChips('mine', you.set && you.set.feedUntil, '')}
     ${isSandbox() ? '<p class="muted">Test club: nothing is published, so a subscription here stays empty.</p>' : ''}
@@ -17977,13 +18030,13 @@ function sheetShare() {
     ${t.share ? st + `
       <p class="lbl">Follow the season</p>
       <div class="codebox">${esc(teamLink(t))}</div>
-      <div class="row" style="margin-bottom:8px"><button class="btn sm" data-act="copylink" data-v="${esc(teamLink(t))}">Copy season link</button></div>
+      <div class="row wrap" style="margin-bottom:8px">${linkButtons(teamLink(t), { subject: `${teamLabel(t)}: follow the season`, body: `${teamLabel(t)}'s season in ${APP_NAME}: whatever game is on, what is coming up, and the season record. Open it on your phone:`, small: true })}</div>
       ${ro ? '' : untilChips('season', t.shareUntil, `data-tid="${t.id}"`)}
       <p class="muted" style="margin-top:0">Text this once. It always shows whatever game is on, what is coming up — games, and any practice or event marked for the share link — and the season record. Families can add it all to their own calendars from there.</p>
 
       ${m ? `<p class="lbl">This game — ${esc(m.opponent || 'game')}${m.date ? ' · ' + esc(shortDate(m.date)) : ''}</p>
       ${gameLink(t, m) ? `<div class="codebox">${esc(gameLink(t, m))}</div>
-      <div class="row" style="margin-bottom:8px"><button class="btn sm" data-act="copylink" data-v="${esc(gameLink(t, m))}">Copy link to this game</button></div>
+      <div class="row wrap" style="margin-bottom:8px">${linkButtons(gameLink(t, m), { subject: `${teamLabel(t)} v ${m.opponent || 'game'}${m.date ? ' · ' + shortDate(m.date) : ''}`, body: `${teamLabel(t)}'s game${m.opponent ? ' against ' + m.opponent : ''}${m.date ? ' on ' + shortDate(m.date) : ''}: kick-off, where it is and the live score. Open it on your phone:`, small: true })}</div>
       ${ro ? '' : untilChips('game', m.shareUntil || t.shareUntil, `data-tid="${t.id}" data-mid="${m.id}"`)}
       <p class="muted" style="margin-top:0">Kick-off time, where it is, who is on and the minutes — for this game only. Whoever it reaches cannot get from it to the season page or any other game. Switch games in the bar above to share a different one.</p>`
       : `<p class="muted" style="margin-top:0">${ro ? 'This game\u2019s own link appears once the coach\u2019s phone has published it.' : 'This game\u2019s own link is being made — it appears here in a moment.'}</p>`}` : ''}
@@ -18669,7 +18722,7 @@ function viewRegList(pr) {
   return `<div class="stack">
     <div class="spread"><h2>${esc(pr.name)}</h2><button class="btn quiet sm" data-act="regprog" data-id="">Back</button></div>
     <p class="muted" style="margin-top:0">${esc([pr.closed ? 'Closed' : progOpen(pr) ? 'Open' : 'Not open yet', progLine(pr)].filter(Boolean).join(' · '))}</p>
-    ${pr.link && !pr.closed ? `<div class="row"><button class="btn" data-act="copylink" data-v="${esc(regLink(pr.link))}">Copy the link</button>
+    ${pr.link && !pr.closed ? `<div class="row wrap">${linkButtons(regLink(pr.link), { subject: `Register for ${pr.name || 'the season'} at ${(acc().org || {}).name || 'the club'}`, body: `${(acc().org || {}).name || 'The club'} is taking registrations for ${pr.name || 'the season'} in ${APP_NAME}. Open this link on your phone and sign in to register your child:` })}
       <button class="btn quiet" data-act="progedit" data-id="${esc(pr.id)}">Edit</button></div>`
       : `<button class="btn quiet" data-act="progedit" data-id="${esc(pr.id)}">Edit</button>`}
     <button class="btn quiet wide" data-act="regexport" data-id="${esc(pr.id)}">Export for GotSport</button>
@@ -19033,14 +19086,12 @@ function selfCard(t, p) {
   const accounts = Object.keys(p.self || {});
   const named = u => { const m = (acc().members || {})[u] || {}; return m.name || m.email || 'Her account'; };
   const v = selfInviteFor(p.id), link = v ? inviteLink(v.id) : '';
-  const canShare = typeof navigator !== 'undefined' && typeof navigator.share === 'function';
   return `<p class="lbl">Her own sign-in</p>
     ${accounts.map(u => `<div class="prow" style="grid-template-columns:1fr auto"><span><span class="pname">${esc(named(u))}</span>
       <span class="rowsub">Signs in as ${esc(firstName(p))}</span></span>
       <button class="btn quiet sm" data-act="selfdrop" data-pid="${p.id}" data-uid="${esc(u)}">Remove</button></div>`).join('')}
     ${v ? `<div class="codebox">${esc(link)}</div>
-      <div class="row" style="margin-bottom:8px"><button class="btn sm" data-act="copylink" data-v="${esc(link)}">Copy</button>
-        ${canShare ? `<button class="btn quiet sm" data-act="inviteshare" data-v="${esc(link)}">Share</button>` : ''}
+      <div class="row wrap" style="margin-bottom:8px">${linkButtons(link, { ...inviteWords({ role: 'player', teamName: t.name || '', playerNo: p.number }), small: true })}
         <button class="btn quiet sm" data-act="selfinvdrop" data-pid="${p.id}">Withdraw</button>
         <span class="muted">works once, until ${esc(new Date(v.expiresAt).toLocaleDateString())}</span></div>`
     : `${limitFields('selfL', { noUses: true })}<button class="btn quiet wide" data-act="selfinvite" data-pid="${p.id}" style="margin-bottom:8px">${accounts.length ? 'Another sign-in link for her' : 'Make her a sign-in link'}</button>`}
@@ -19124,7 +19175,6 @@ function fanCard(t, p, from) {
   const staff = mayGrant(t.id), drop = mayFanDrop(t.id, p);
   const accounts = Object.keys(p.fans || {});
   const named = u => { const m = (acc().members || {})[u] || {}; return String((p.fanNames || {})[u] || '') || m.name || m.email || 'A fan'; };
-  const canShare = typeof navigator !== 'undefined' && typeof navigator.share === 'function';
   const links = fanLinks(p.id);
   return `<p class="lbl">Fans</p>
     ${accounts.length ? `<p style="margin:0 0 6px">${accounts.length} ${accounts.length === 1 ? 'fan follows' : 'fans follow'} ${esc(isMe(p) ? 'you' : firstName(p))}.</p>` : ''}
@@ -19132,8 +19182,7 @@ function fanCard(t, p, from) {
       <span class="rowsub">Follows ${esc(isMe(p) ? 'you' : firstName(p))}</span></span>
       ${drop ? `<button class="btn quiet sm" data-act="fandrop" data-tid="${t.id}" data-pid="${p.id}" data-uid="${esc(u)}" data-from="${from}">Remove</button>` : ''}</div>`).join('')}
     ${links.map(v => `<div class="codebox">${esc(inviteLink(v.id))}</div>
-      <div class="row" style="margin-bottom:8px"><button class="btn sm" data-act="copylink" data-v="${esc(inviteLink(v.id))}">Copy</button>
-        ${canShare ? `<button class="btn quiet sm" data-act="inviteshare" data-v="${esc(inviteLink(v.id))}">Share</button>` : ''}
+      <div class="row wrap" style="margin-bottom:8px">${linkButtons(inviteLink(v.id), { ...inviteWords({ role: 'fan', teamName: t.name || '', playerNo: p.number }), small: true })}
         <button class="btn quiet sm" data-act="faninvdrop" data-tid="${t.id}" data-pid="${p.id}" data-id="${esc(v.id)}" data-from="${from}">Withdraw</button>
         <span class="muted">${esc(usesLine(v.max || 1, v.expiresAt))}</span></div>`).join('')}
     ${limitFields('fanL', { uses: 1 })}
@@ -20001,13 +20050,6 @@ function onAct(e) {
   }
   if (a === 'drillpic') { sheetDrill(d.id, d.k === 'move'); return; }
   if (a === 'drillsend') { sheetSendDrill(d.id); return; }
-  if (a === 'drillsendshare') {
-    const x = findDrill(d.id); if (!x || (x.shelf && x.shelf !== 'club')) return;
-    // a club drill's name stays off the preview: the link can be forwarded past the coaches
-    const title = x.shelf === 'club' ? "A drill from the club's library" : x.name;
-    navigator.share({ title, text: title, url: drillLinkUrl(x.key || x.id) }).catch(() => { });
-    return;
-  }
   if (a === 'roleguide') { sheetRole(d.id, undefined, true); return; }
   if (a === 'rolepic') { sheetRole(d.id, d.k === 'move'); return; }
   if (a === 'drillfilters') { sheetDrillFilters(); return; }
@@ -20708,15 +20750,19 @@ function onAct(e) {
     if (live) logAccess('revoked an invite for', null, { targetName: (v.email || 'anyone') + ' as ' + v.role, team: v.team, teamName: v.teamName || null });
     closeSheet(); render(); if (live) toast('Revoked'); return;
   }
-  if (a === 'inviteshare') {
-    navigator.share({ title: 'Join ' + ((acc().org || {}).name || 'the club'), url: d.v }).catch(() => { });
-    return;
-  }
+  /* An invite with an address, emailed from the club where it has a mailer
+     (functions/mail.js); where it answers that it has none, or cannot, her
+     own mail app opens with the same words instead, as it would have
+     without a server. */
   if (a === 'invitemail') {
-    if (!authMod || !fbAuth) { toast('Sign-in is not available on this build'); return; }
-    authMod.sendSignInLinkToEmail(fbAuth, d.email, { url: d.v, handleCodeInApp: true })
-      .then(() => toast('Sent to ' + d.email))
-      .catch(err => toast(authMessage(err)));
+    if (!canAdmin() && (clubInv[d.id] || {}).by !== (me && me.uid)) { toast('Club admins only'); return; }
+    toast('Sending…');
+    mailViaClub([d.id]).then(ans => {
+      const sent = ans && ans.ok && (Array.isArray(ans.sent) ? ans.sent : Object.values(ans.sent || {})).includes(d.id);
+      if (sent) { toast('The club emailed ' + (d.email || 'them')); return; }
+      if (d.href) location.href = d.href;
+      toast(ans && ans.ok ? 'The club could not send it — your own mail app instead' : 'From your own mail app');
+    });
     return;
   }
   if (a === 'inviteaccept') { redeemInvite(); return; }
@@ -20735,6 +20781,8 @@ function onAct(e) {
   if (a === 'joinsend') { sendClaim(); return; }
   if (a === 'joinhide') { if (join) { join.hidden = true; holdJoin(); } if (join && !join.sent) dropJoin(); render(); return; }
   if (a === 'joinshow') { if (join) { join.hidden = false; holdJoin(); } render(); return; }
+  if (a === 'joinkid') { if (join) join.kid = !!d.v; render(); return; }
+  if (a === 'joingender') { if (join) join.gender = join.gender === d.v ? null : d.v; render(); return; }
   if (a === 'joindrop') { dropJoin(); render(); return; }
   if (a === 'joinretry' || a === 'joinagain') { if (join) { join.status = 'idle'; join.sent = false; join.err = null; maybeLoadJoin(); } return; }
   if (a === 'joincancel') {
@@ -20762,7 +20810,7 @@ function onAct(e) {
   if (a === 'claimok') {
     const t2 = state.teams[d.tid]; const c = t2 && (claimsSeen[d.tid] || {})[d.uid]; if (!c) return;
     const pk = (ui.claimPick || {})[d.uid] || claimMatches(t2, c).map(p => p.id);
-    approveClaim(d.tid, d.uid, pk); return;
+    approveClaim(d.tid, d.uid, pk, !!d.add && !!c.add); return;
   }
   if (a === 'claimno') { declineClaim(d.tid, d.uid); return; }
   /* Fans (AUTH.md, *More kinds of people*, 1). Each checked here as

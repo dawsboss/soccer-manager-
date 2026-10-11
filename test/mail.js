@@ -171,7 +171,10 @@ const ask = (S, uid, v) => S.fire(`mailAsks/CLUB/${uid}/m${++n}`, { at: Date.now
       A.importContacts.made[ids[0]] = 'iA';
       const p = A.mailImported(); await A.flush();
       fbk.deliver(asks(fbk)[0].path + '/answer', { ok: false, why: 'nomail', at: 1 }); await p; await A.flush();
-      check('no mailer at the club: the sign-in link goes from her phone, as before', fbk.record.mails.map(m => m.email).join(), 'new@x.com');
+      check('no mailer at the club: nothing goes from her phone, and she is told', [fbk.record.mails.length, /no mailer/.test(A.lastToast())].join(), '0,true');
+      const sheet = String(A.dom.node('#sheet').innerHTML);
+      check('the row offers Email it from her own mail app, to that address, with the link', /href="mailto:new%40x\.com\?subject=[^"]*body=[^"]*invite%3DiA/.test(sheet), true);
+      check('and no bulk send from the club any more', /importinvitemail/.test(sheet), false);
       A.importContacts.sent = {};
       await A.mailImported(); await A.flush();
       check('and the club is not asked again this session', asks(fbk).length, 1);
@@ -181,7 +184,7 @@ const ask = (S, uid, v) => S.fire(`mailAsks/CLUB/${uid}/m${++n}`, { at: Date.now
       A.importContacts = { list: [{ role: 'parent', team: 'Flight', player: 'Rosa', email: 'new@x.com' }], made: {}, sent: {} };
       A.importContacts.made[A.importInviteRows()[0].key] = 'iA';
       await A.mailImported(); await A.flush(20);
-      check('rules too old for the ask: the sign-in link, as before', fbk.record.mails.map(m => m.email).join(), 'new@x.com');
+      check('rules too old for the ask: nothing goes from her phone either', fbk.record.mails.length, 0);
     }
     {
       const { A, fbk } = await boot('coach');

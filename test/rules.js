@@ -1455,6 +1455,9 @@ reads('nor read', COACH, 'shareOwners/sh1', false);
   writes('not approved by herself', RANDO, 'claims/CLUB/t1/rando', ask('jc1', { approved: { by: 'rando' } }), false);
   writes('nor approve an existing one', ASKER, 'claims/CLUB/t1/asker/approved', { by: 'asker', at: NOW }, false);
   writes('a shirt number is needed', RANDO, 'claims/CLUB/t1/rando', ask('jc1', { shirt: '' }), false);
+  // a child not on the squad yet, filled in through the link (build 136): her details instead of a number, which only the coach adds from
+  { const v = ask('jc1', { add: true, child: 'Rosa Moss', born: '2015-04-02', gender: 'F' }); delete v.shirt;
+    writes('or a child filled in instead, with no number', RANDO, 'claims/CLUB/t1/rando', v, true); }
   writes('she withdraws her own', ASKER, 'claims/CLUB/t1/asker', null, true);
   writes('and tidies it away once approved', OK, 'claims/CLUB/t1/ok', null, true);
   writes('but cannot rewrite it once approved', OK, 'claims/CLUB/t1/ok/shirt', '12', false);
