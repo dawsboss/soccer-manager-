@@ -137,6 +137,18 @@ check('teams are visible', A.myTeams().length, 1);
 check('and editable, so it can be set up', A.canEditTeam('t1'), true);
 console.log('  ^ this is what stops a fresh club locking itself out');
 
+/* ---------------- a new address: nothing held, nobody signed in ---------------- */
+
+console.log('\n--- a phone that has never held the club ---');
+A.state = { teams: {}, matches: {}, access: {} };
+A.me = null; A.denied = false;
+show('club');
+check('it is asked to sign in, not left looking empty', /Sign in to open your club/.test(app()), true);
+check('with the sign-in button', /data-act="signinsheet"/.test(app()), true);
+A.state = club(false);
+show('club');
+check('a device with teams of its own stays open', /Sign in to open your club/.test(app()), false);
+
 /* ---------------- no backend at all ---------------- */
 
 console.log('\n--- a device with no Firebase config ---');

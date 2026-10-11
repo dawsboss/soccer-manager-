@@ -1,7 +1,7 @@
-/* Minutes' service worker. Two jobs, and only two.
+/* TeamPlayHQ' service worker. Two jobs, and only two.
 
    1. Show what the server pushes (functions/push.js): a team notice or a
-      family message, with the phone's screen off and Minutes closed.
+      family message, with the phone's screen off and TeamPlayHQ closed.
    2. Open the right place when the notification is tapped: the
       conversation, in the right club.
 
@@ -21,7 +21,7 @@ const ME_KEY = 'me';   // who is signed in on this phone, as the page last said
    in whenever that changes (signing out says nobody). A push for anybody else
    is shown without its words: a phone handed to somebody else, or signed out
    with no signal so its address could not be taken down, says only that
-   there is something in Minutes, never what. Unknown (a worker installed
+   there is something in TeamPlayHQ, never what. Unknown (a worker installed
    before the page ever said) shows it: the token was only ever left by the
    account that was signed in. */
 async function whoIsHere() {
@@ -36,7 +36,7 @@ async function setHere(uid) {
 }
 
 /* Safari takes away push from a site that gets one and shows nothing, so on
-   an Apple device a notification is always shown, even with Minutes open in
+   an Apple device a notification is always shown, even with TeamPlayHQ open in
    front of her. Elsewhere, a page she is looking at already shows its own
    pop-up and alert bar, and a system notification on top would be the same
    news twice. */
@@ -52,7 +52,7 @@ function payload(e) {
   const d = (p && p.data) || p || {};
   const n = (p && p.notification) || {};
   return {
-    title: String(d.title || n.title || 'Minutes'),
+    title: String(d.title || n.title || 'TeamPlayHQ'),
     body: String(d.body || n.body || ''),
     tag: String(d.tag || ''),
     code: String(d.code || ''),
@@ -69,7 +69,7 @@ async function onPush(e) {
   if (looking && !apple()) return;
   const here = await whoIsHere();
   const theirs = here !== null && d.uid && here !== d.uid;
-  return self.registration.showNotification(theirs ? 'Minutes' : d.title, {
+  return self.registration.showNotification(theirs ? 'TeamPlayHQ' : d.title, {
     body: theirs ? 'Something new for an account that was signed in on this phone.' : d.body,
     tag: d.tag || undefined,
     icon: 'icon-192.png',
@@ -80,7 +80,7 @@ async function onPush(e) {
   });
 }
 
-/* A tap: an open Minutes is brought forward and told where to go (it switches
+/* A tap: an open TeamPlayHQ is brought forward and told where to go (it switches
    club itself if it has to, as an alert's Open does); with none open, a new
    one opens there, with the club on the address for the page to switch to
    once it has checked she is still in it. */

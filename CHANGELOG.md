@@ -8,14 +8,53 @@ before this point lives only in the git log.
 
 ---
 
-## Back goes back a screen, and closes a sheet — 2026-10-10 (build 131)
+## Back goes back a screen, and closes a sheet — 2026-10-11 (build 134)
 
 The browser's Back button (and a phone's back gesture) is meant to step back through the screens she visited before it leaves the site. Each screen already had its own address, but two things broke it:
 
 - **The first move after opening the site replaced the page instead of adding one.** Whether a screen got a new history entry hung on a flag set only when the address changed, so a page opened on an address it kept (a reload, a link, the home-screen icon, which now reopens on the same address at teamplayhq.com) swallowed her first move, and Back left the site a page early. Now a screen gets an entry when a tap drew it (`tapped`, marked ahead of every click handler), and a screen the app moves her to by itself (the club read arriving, a tab her role doesn't get, a game whose Subs were put away) replaces instead, so Back never lands on an address that bounces her forward again.
 - **A sheet open over a screen had no entry**, so Back moved the screen behind it and left the sheet open on top. A sheet now has an entry of its own at the same address: Back closes it and the screen stays put. Closed any other way (the scrim, Escape, a button) the entry is taken back off, so there is no dead Back press, and a button in a sheet that goes to another screen takes over the sheet's entry, so that is one Back too.
 - Addresses stay hash routes (`#/team/…`): GitHub Pages still has no rewrites on a custom domain, so a path like `/team/…` would 404 on a reload or a shared link.
+- This takes over from *Back swipe closes a pop-up* below, which was made in parallel and did the sheet half but kept the first-move bug; its code is replaced by this one.
 - `test/routing.js` drives a fake browser history for all of it.
+
+---
+
+## A privacy policy and terms of service — 2026-10-10 (build 133)
+
+Google's sign-in consent screen asks for a home page, a privacy policy and terms before it will show the app's own name and logo, and a family handing over a child's birth date and medical details should be able to read what happens to them first. TeamPlayHQ had neither page.
+
+- **`privacy.html`** says what the app holds (an account's name and email, a child's details and care, games and attendance, messages, registrations), who in a club sees each part, that public pages carry shirt numbers and never names, that nothing is sold, advertised to or sent to an AI, what *Delete my account* takes and what it leaves with the club, and how children's information is handled.
+- **`terms.html`**: free for now, clubs responsible for what they enter and for families' permission, acceptable use, no warranty, and the app is no tool for emergencies.
+- Both are linked on every sign-in screen and in the account menu. They carry the same Content-Security-Policy as every page and load nothing but fonts.
+- Written from what the code does today; not reviewed by a lawyer.
+- **The security policy allows `auth.teamplayhq.com`** (frames and connections, on every page), ready for sign-in to move there from `soccer-manager-272ff.firebaseapp.com` so Google's account chooser names the app's own address. `authDomain` itself is not switched yet: it waits until Firebase Hosting has the subdomain's certificate, or sign-in would break for everyone.
+
+---
+
+## The app is TeamPlayHQ — 2026-10-10 (build 132)
+
+The site has its own domain, so the app takes the name that goes with it. *Minutes* was what it was called while it was a sub tracker; it is a club's calendar, messages, training and registration now, and the name on the screen, the Home Screen icon, every notification and every page that says "open it in…" should be the one on the address.
+
+- **TeamPlayHQ** everywhere the app names itself: the top bar and the browser tab, the manifest (so a phone installs it as TeamPlayHQ), the service worker's fallback title on a push, the share pages' *Open TeamPlayHQ* link and *Open it in TeamPlayHQ* row, the notification and messages copy, the drill shelf's *TeamPlayHQ (built-in)*, and the calendar feed's `PRODID` (`ics.js`, carried into `functions/ics.js` by `make.js`).
+- **`CNAME`** carries `teamplayhq.com`, so the Pages deploy keeps the custom domain whatever the repo's settings do.
+- The brand in the top bar never wraps or pushes the buttons off a narrow phone (`.brand` clips with an ellipsis).
+- Nothing in the data, the paths or the rules changes; *Minutes* survives only where it means minutes played, and in the history here.
+
+---
+
+## A new address says "sign in" — 2026-10-10 (build 131)
+
+Opening an old link on the new domain showed an empty club that looked as if it was still loading, with no way to sign in: a phone that has never held a club has no admins to be locked by, so nothing asked for a sign-in. Now a device with a database, nobody signed in and nothing held shows **Sign in to open your club** with the button.
+
+- **The club's name no longer reads "Club" while it loads.** `clubName()` falls back to the name in her account's list of clubs, then to "Your club" until the club has been read, so the crumbs and Club home are right the moment she signs in rather than after a forced refresh.
+- A device with teams of its own on it, and a device with no database, are left open as before.
+
+---
+
+## Back swipe closes a pop-up — 2026-10-10
+
+On a phone, the back swipe with a sheet open went to the screen behind it and left the sheet up. A sheet now takes a history entry of its own when it opens, so back closes it and nothing else; closing it any other way gives the entry back, and moving to another screen from it uses the entry up rather than adding a second.
 
 ---
 

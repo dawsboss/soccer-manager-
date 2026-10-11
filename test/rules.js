@@ -923,7 +923,7 @@ reads('nor read', COACH, 'shareOwners/sh1', false);
 /* ---------------- following a game ---------------- */
 
 /* The Live tab's *Notify me*, kept where the server can find it, so a goal
-   reaches a phone with Minutes closed (functions/push.js, onFollowed). Every
+   reaches a phone with TeamPlayHQ closed (functions/push.js, onFollowed). Every
    role may follow a game, because every role reads it; what is stored is
    that she follows it and when, under her own uid, and the server is the
    only other thing that reads or clears it. */

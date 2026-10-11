@@ -917,7 +917,7 @@ const toUid = (S, u) => S.sent().filter(m => m.data.uid === u);
     A.click({ act: 'pushon' }); await A.flush();
     check('the browser is asked, from the tap', b.asked, 1);
     check('the token is asked for with the club\'s key', fbk.record.tokens.map(t => t.vapidKey).join(), KEY);
-    check('and for Minutes\' own worker', fbk.record.tokens[0].reg, b.reg);
+    check('and for TeamPlayHQ\' own worker', fbk.record.tokens[0].reg, b.reg);
     const w = tokWrites(fbk);
     check('one write, at her own address', w.map(x => x.path).join(), 'pushTokens/mum/' + fbk.token);
     deepEq('holding when, and what kind of phone', Object.keys(w[0].value).sort(), ['at', 'ua']);
@@ -1010,7 +1010,7 @@ const toUid = (S, u) => S.sent().filter(m => m.data.uid === u);
 
   console.log('\n--- following a game, on the phone ---');
   /* The Live tab's Notify me is also left where the server finds it
-     (onFollowed, above), so the same moments reach her phones with Minutes
+     (onFollowed, above), so the same moments reach her phones with TeamPlayHQ
      closed. */
   const follows = fbk => fbk.record.writes.filter(w => w.path.startsWith('follow/'));
   {
@@ -1045,7 +1045,7 @@ const toUid = (S, u) => S.sent().filter(m => m.data.uid === u);
     check('with them on, a refusal is said: the closed phone would not hear', /page only.*version/.test(A.lastToast() || ''), true);
     A.state.matches.g1 = { id: 'g1', teamId: 't1', opponent: 'Northgate', date: '2026-10-09', currentHalf: 1, periods: {} };
     A.ui.teamId = 't1'; A.ui.view = 'game'; A.ui.gameView = 'live'; A.render();
-    check('the Live tab says they reach the phone closed, not only this page', /even with Minutes closed/.test(A.rendered()) && !/while this page is open/.test(A.rendered()), true);
+    check('the Live tab says they reach the phone closed, not only this page', /even with TeamPlayHQ closed/.test(A.rendered()) && !/while this page is open/.test(A.rendered()), true);
   }
   {
     const { A, fbk } = await boot(null);
@@ -1141,7 +1141,7 @@ const toUid = (S, u) => S.sent().filter(m => m.data.uid === u);
     const looking = [{ visibilityState: 'visible', focused: true, focus() { }, postMessage() { } }];
     const w = worker({ wins: looking });
     await w.push(DATA);
-    check('Minutes open in front of her: the page says it, not the system', w.shown.length, 0);
+    check('TeamPlayHQ open in front of her: the page says it, not the system', w.shown.length, 0);
     const iw = worker({ wins: looking, ua: 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) Safari/604.1' });
     await iw.push(DATA);
     check('except on an iPhone, which takes push away from a site that shows nothing', iw.shown.length, 1);
@@ -1156,7 +1156,7 @@ const toUid = (S, u) => S.sent().filter(m => m.data.uid === u);
     const win = { visibilityState: 'hidden', focused: false, focus() { told.push('focus'); return Promise.resolve(); }, postMessage: m => told.push(m) };
     const w = worker({ wins: [win] });
     await w.fire('notificationclick', { notification: { close() { told.push('closed'); }, data: { code: 'OTHER', hash: '#/messages/t1/mum' } } });
-    check('a tap closes it, brings Minutes forward, and says where', JSON.stringify(told), JSON.stringify(['closed', 'focus', { type: 'open', code: 'OTHER', hash: '#/messages/t1/mum' }]));
+    check('a tap closes it, brings TeamPlayHQ forward, and says where', JSON.stringify(told), JSON.stringify(['closed', 'focus', { type: 'open', code: 'OTHER', hash: '#/messages/t1/mum' }]));
     check('without opening a second one', w.opened.length, 0);
   }
   {

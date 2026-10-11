@@ -48,7 +48,7 @@ Open questions before building it:
 ### Notifications with the page closed
 
 *Notify me* on the Live tab, and Messages (team notices and family
-conversations, shipped 2026-10), only reach a phone while Minutes is open on
+conversations, shipped 2026-10), only reach a phone while TeamPlayHQ is open on
 it. A closed phone hears nothing until the coach taps *Email or share*. Real
 push needs three things, and only the last is server-side:
 

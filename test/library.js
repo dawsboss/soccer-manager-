@@ -426,7 +426,7 @@ function writeOne(D, extra = {}) {
     toDrills(D);
     fbk.deliver(CLUBD, shelf); await D.flush();
     D.click({ act: 'drill', id: L.DRILLS[0].id });
-    check('a built-in drill is credited to the app', /From the Minutes library/.test(sheet(D)), true);
+    check('a built-in drill is credited to the app', /From the TeamPlayHQ library/.test(sheet(D)), true);
     D.click({ act: 'drill', id: 'club:d1' });
     check('a club drill to the coach who shared it', /Shared with the club by Kim\./.test(sheet(D)), true);
     D.click({ act: 'drill', id: 'club:d3' });
@@ -436,7 +436,7 @@ function writeOne(D, extra = {}) {
 
     D.click({ act: 'drillfilters' });
     check('Filters has a Made by', /data-k="by"/.test(sheet(D)), true);
-    check('offering the app', /value="app"[^>]*>Minutes \(built-in\)/.test(sheet(D)), true);
+    check('offering the app', /value="app"[^>]*>TeamPlayHQ \(built-in\)/.test(sheet(D)), true);
     check('you', /value="me"[^>]*>You/.test(sheet(D)), true);
     check('each coach who shared one, by name', /value="u:kim"[^>]*>Kim</.test(sheet(D)), true);
     check('saying who has left', /value="u:lou"[^>]*>Lou \(left\)/.test(sheet(D)), true);
