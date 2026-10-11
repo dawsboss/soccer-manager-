@@ -370,9 +370,11 @@ does the bookkeeping, not that the phone works offline first.
   everybody in bcc (`mailto:`), beside the club's; the sign-in links and a
   session's families from her own mail app where the club has no mailer
   (`mailImported()`, `sheetReach()`).
-- **Not built:** a receipt for a card payment (there are none until
-  payments, GOTSPORT.md step 5; the Stripe webhook will send it), and a
-  waiver about to lapse (waivers never lapse here).
+- **With payments:** each payment step adds its emails to `mailnews.js`
+  as it is built (a bill made, a refund, a card charged, a plan's part due
+  or failed: GOTSPORT.md, *What the family is emailed*); a card payment's
+  receipt is Stripe's own, from the club's account.
+- **Not built:** a waiver about to lapse (waivers never lapse here).
 - **With a server:** saying who has read it.
 
 ---
