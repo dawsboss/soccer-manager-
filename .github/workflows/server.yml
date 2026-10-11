@@ -124,7 +124,7 @@ jobs:
         if: env.HAS_KEY == 'true' && steps.what.outputs.functions == 'true'
         run: |
           set -euo pipefail
-          PROJECT=$(node -e "console.log(require('./.firebaserc').projects.default)")
+          PROJECT=$(node -e "console.log(JSON.parse(require('fs').readFileSync('.firebaserc','utf8')).projects.default)")
           gcloud services enable secretmanager.googleapis.com --project "$PROJECT" --quiet
           if ! gcloud secrets describe SOCCER_SMTP_URL --project "$PROJECT" >/dev/null 2>&1; then
             printf 'none' | gcloud secrets create SOCCER_SMTP_URL --project "$PROJECT" --data-file=- --replication-policy=automatic
