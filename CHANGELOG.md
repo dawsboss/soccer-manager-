@@ -26,7 +26,17 @@ payment plans charged to a saved card on the club's account; sibling,
 early-bird, code and aid discounts as lines on the bill; session fees and
 packages paid the same way while the coach's book stays; Club → Money for
 admins with a CSV; test mode for `test-` clubs; and what the owner sets up in
-Stripe first. Six build steps and nine decisions for the owner. No code yet.
+Stripe first. Six build steps; the owner decided its nine questions the
+same day: each program, session or package its own bill, each program
+choosing whether it is paid on registering or once accepted, and a *Club
+covers the cost* button; paying another way allowed; Stripe's fee the
+club's (and why Stripe rather than another processor, our own, or the app
+stores' payments); any admin connects Stripe, every admin told; admins are
+the treasurers; a card on file and paying new bills with it the family's
+choice; payments one record that is both the family's receipt and the
+club's, kept after an account is deleted; packages paid by the family; and
+which programs count together for a sibling discount the admins'. No code
+yet.
 
 ---
 
