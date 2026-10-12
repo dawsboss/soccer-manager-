@@ -17,6 +17,8 @@ secretary already has.
 |---|---|---|
 | The bar at the bottom | **Team** · **Calendar** · **Game** · **Messages** · **More** (staff); **Home** · **Calendar** · **Messages** · **More** (a family) | Club, Season, Live |
 | A team's own tabs | **Season** · **Players** · **Training** | Squad, Roster, Practice (the tab) |
+| Season's own screens (build 146) | **Stats** · **Minutes** · **Attendance** | Players (the minutes table; Players is the tab), Register |
+| A game's lineup card | **Lineup** | Snapshots (a snapshot is one picture of it, in prose only) |
 | A game's screens | **Live** · **Subs** · **Track** · **Stats** · **Lineup** (**Recap** once it is over; the pitch is a look at Subs) | Plan (the game's), Pitch (as a tab) |
 | The people on a team | **players** | squad, roster |
 | A family's own screen | **My players** | Home (in prose), My kids |

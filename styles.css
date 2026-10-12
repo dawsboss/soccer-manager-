@@ -1,4 +1,4 @@
-/* The visual system (UX-REVIEW.md, 4; build 146), in three decisions that
+/* The visual system (UX-REVIEW.md, 4; build 147), in three decisions that
    test/visual.js holds the file to:
 
    Type. Body text is 16px and nothing a person reads is under 14px: the
@@ -378,7 +378,7 @@ label.field span{display:block;font-size:14px;color:var(--ink-soft);margin-botto
 .diff{display:block;font-size:12px;font-weight:600}
 /* short or over is a fact about the plan, not an alarm: the review found orange "owed" on
    all eleven rows reading as eleven warnings */
-.diff.owed,.diff.over{color:var(--ink-soft)}
+.diff.owed,.diff.over,.diff.even{color:var(--ink-soft)}
 .pickbar{
   position:sticky;top:96px;z-index:30;
   display:flex;align-items:center;justify-content:space-between;gap:10px;
@@ -408,7 +408,7 @@ label.field span{display:block;font-size:14px;color:var(--ink-soft);margin-botto
   background:#fff;border:1px solid var(--line);border-radius:10px;
   font-family:"Barlow Condensed",sans-serif;font-weight:700;font-size:16px;line-height:1;
 }
-.lrspot-hint{font-family:"Barlow",sans-serif;font-size:11px;font-weight:500;color:var(--ink-soft)}
+.lrspot span{font-size:15px}
 
 /* ---------- tallies ---------- */
 .tallygrid{display:grid;grid-template-columns:auto 1fr 1fr;gap:8px;align-items:center}
@@ -596,7 +596,8 @@ body[data-mode="game"] .titlebar{padding-top:4px;padding-bottom:8px}
   display:flex;align-items:center;justify-content:center;font-weight:600;font-size:14px}
 .avatar img{width:100%;height:100%;object-fit:cover}
 .avatar[data-on="0"]{opacity:.65}
-.teamcard{display:flex;align-items:center;gap:12px;text-align:left;width:100%}
+.teamcard,.tapcard{display:flex;align-items:center;gap:12px;text-align:left;width:100%}
+.tapcard .tc-main b{font-size:16px}
 .tc-main{flex:1;min-width:0}
 .tc-main b{display:block;font-size:17px}
 
@@ -1033,8 +1034,9 @@ button.nextprac{cursor:pointer}
 .calsels .chip{display:inline-flex;align-items:center;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .calsels .chip .dot{display:inline-block;flex:none;width:9px;height:9px;border-radius:50%;margin-right:6px}
 .calsels .chip[aria-pressed="true"] .dot{box-shadow:0 0 0 1.5px #fff}
-.calmenu{flex:none;width:36px;height:36px;display:flex;align-items:center;justify-content:center;position:relative;
-  background:#fff;border:1px solid var(--line);border-radius:10px;color:var(--field-deep);padding:0}
+.calmenu{flex:none;height:36px;display:flex;align-items:center;justify-content:center;gap:4px;position:relative;
+  background:#fff;border:1px solid var(--line);border-radius:10px;color:var(--field-deep);padding:0 10px;font-size:14px;font-weight:600}
+.calmenu span{font-size:12px}
 .calmenu[aria-expanded="true"]{background:var(--field-deep);border-color:var(--field-deep);color:#fff}
 /* something is left out: said by a dot on the ☰, and in words inside */
 .calmenu[data-on="1"]::after{content:"";position:absolute;top:-3px;right:-3px;width:10px;height:10px;border-radius:50%;
@@ -1156,9 +1158,13 @@ button.ev:active{filter:brightness(.92)}
   .mg-x{display:inline}
 }
 
-/* The +, on the bar beside Today: green, the one action on the row. It was a button fixed in
-   the corner until build 146, and sat over whichever row the page put under it. */
-.calfab{flex:none;width:36px;height:36px;border-radius:10px;border:0;background:var(--field-deep);color:#fff;
+/* The + sits at the end of the views row, in the flow, so it covers no row (build 146): green,
+   the one action on the row. Fixed in the corner until then, it sat over whichever row the page
+   put under it. */
+.calviewrow{display:flex;align-items:stretch;gap:8px}
+.calviewrow .seg{flex:1;min-width:0}
+.calviewrow .seg button{padding-left:4px;padding-right:4px}
+.calfab{flex:none;width:44px;border-radius:10px;border:0;background:var(--field-deep);color:#fff;
   display:flex;align-items:center;justify-content:center;padding:0}
 .calfab:active{transform:translateY(1px)}
 
@@ -1283,3 +1289,20 @@ label.field .auth-inline span{display:inline}
   border-radius:50%;border:1.5px solid var(--ink-soft);background:none;color:var(--ink-soft);
   font:600 11px/1 Georgia,serif;font-style:italic;vertical-align:middle;cursor:pointer;padding:0}
 .infobtn:hover{border-color:var(--field);color:var(--field)}
+
+/* People on a phone: a card per person, the table on anything wider (UX-REVIEW.md, 3, *People*).
+   The same rows and buttons; only how they are laid out. */
+@media (max-width:640px){
+  .tablewrap.people{overflow-x:visible;background:none;border:0}
+  .tablewrap.people table,.tablewrap.people tbody{display:block}
+  .tablewrap.people thead{display:none}
+  .tablewrap.people tr{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:2px 10px;align-items:center;
+    background:#fff;border:1px solid var(--line);border-radius:var(--r);padding:10px 12px;margin-bottom:8px}
+  .tablewrap.people td{display:block;padding:0;border:0;white-space:normal;overflow-wrap:anywhere}
+  .tablewrap.people td:nth-child(1){grid-column:1;grid-row:1;font-size:16px}
+  .tablewrap.people td:nth-child(2){grid-column:1;grid-row:2}
+  .tablewrap.people td:nth-child(3){grid-column:1;grid-row:3;margin-top:4px}
+  .tablewrap.people td:nth-child(4){grid-column:2;grid-row:1;text-align:right;font-size:14px;color:var(--ink-soft)}
+  .tablewrap.people td:nth-child(5){grid-column:2;grid-row:2 / span 2;text-align:right}
+  .tablewrap.people td[colspan]{grid-column:1 / -1}
+}

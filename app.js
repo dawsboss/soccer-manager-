@@ -2,7 +2,7 @@
    Static app. Data lives in localStorage, and mirrors to Firebase Realtime
    Database when a config + workspace code are present. */
 
-const BUILD = '146';
+const BUILD = '147';
 const BUILT = '2026-10-12';
 /* The version of database.rules.json this app was written against. The rules
    carry the same number in rulesVersion's .write, which accepts that number
@@ -1702,7 +1702,9 @@ function shownName(t, p) {
 const INFO = {
   calcopy: ['A copy, not a subscription', 'Everything still to come, as a file your phone\u2019s calendar opens. It is a copy: if a time changes later, add it again. Each entry replaces its earlier self in calendars that allow it.'],
   calfeed: ['A calendar that follows every change', 'A calendar app can follow this club by itself, with no copy to add again, once the club\u2019s calendar feed is set up. That is done once, by whoever set the club up.'],
-  rosteropen: ['What a parent\u2019s phone sees', 'Shirt numbers or names is for the screen only: a parent\u2019s phone still holds the players it reads, as it always has. Coaches, trackers and admins always see names.']
+  rosteropen: ['What a parent\u2019s phone sees', 'Shirt numbers or names is for the screen only: a parent\u2019s phone still holds the players it reads, as it always has. Coaches, trackers and admins always see names.'],
+  rating: ['The dots beside each player', 'The coach\u2019s own rating of a player, 1 to 5, set on her card. It only ever decides how a drafted lineup spreads the stronger players across the game; nobody but the team\u2019s coaches and the club\u2019s admins sees it.'],
+  snapshots: ['How a lineup is planned', 'A plan is a few pictures of the pitch: who plays where at kick-off, then who is where after each change. Start with kick-off, then add one for every time you mean to make subs: half-time, every ten minutes, whatever suits. With no shape there are no positions to plan around, so a shape comes first.']
 };
 const infoBtn = k => INFO[k] ? ` <button class="infobtn" type="button" data-act="info" data-k="${k}" aria-label="More about this" title="More about this">i</button>` : '';
 function sheetInfo(k) {
@@ -7163,6 +7165,8 @@ function render() {
   const sb = document.querySelector('#tabs [data-view="roster"]');
   if (sb) sb.hidden = readerRole(lim);
   if (ui.view === 'roster' && readerRole(lim)) ui.view = anyPlayers() ? 'mine' : 'season';
+  // Season's own screens are the coach's view of the team: a family has her own Season, and the register is only those who take it
+  if (SEASON_VIEWS.includes(ui.view) && (navKind() === 'family' || (ui.view === 'attend' && !canCalTeam(ui.teamId)))) ui.view = 'season';
   /* Practice is a coach's and an admin's, on any team: the library isn't
      about one team, and a parent or a tracker never gets the tab at all. */
   const train = canTrain();
@@ -7263,7 +7267,7 @@ function render() {
     app.innerHTML = envNote + saveNote + (shut ? '' : alertBar() + detailsNote()) + joinNote + roleNote + (
       v === 'game' ? (g === 'track' ? viewTrack() : g === 'stats' ? viewStats() : g === 'recap' ? viewRecap() : g === 'pitch' ? viewMatch() : g === 'plan' ? viewPlan() : g === 'subs' ? viewSubs() : viewFeed()) :
         v === 'roster' ? viewRoster() :
-          v === 'season' ? viewSeason() :
+          v === 'season' ? viewSeason() : v === 'teamstats' ? viewTeamStats() : v === 'minutes' ? viewMinutes() : v === 'attend' ? viewAttend() :
             v === 'formation' ? viewFormation() : v === 'club' ? viewClub() : v === 'people' ? viewPeople() : v === 'admin' ? viewAdmin()
               : v === 'mine' ? viewMine() : v === 'practice' ? viewPractice()
                 : v === 'inbox' ? viewInbox() : v === 'notes' ? viewNotes() : v === 'thread' ? viewThread() : v === 'sessions' ? viewSessions() : v === 'planner' ? viewPlanner() : v === 'regs' ? viewRegs() : v === 'tryout' ? viewTryout() : v === 'comply' ? viewComply()
@@ -7318,9 +7322,9 @@ const LEGAL_LINKS = '<p class="auth-fine legal"><a href="privacy">Privacy Policy
 
 function welcomeScreen() {
   return `<div class="stack"><div class="auth-card">
-    ${authHero('Sign in to open your club', wsCode()
-      ? 'This phone has not opened the club yet. Sign in with the account the club knows, and it will load.'
-      : 'Sign in with the account your club knows, and your teams and calendar will load. If you were sent an invite link, open it again after signing in.')}
+    ${authHero('Sign in to see your team', wsCode()
+      ? 'This phone has not opened the club yet. Sign in with the account your coach or club knows, and your team and calendar will load.'
+      : 'Sign in with the account your coach or club knows, and your team and calendar will load. If you were sent an invite link, open it again after signing in.')}
     <div class="auth-card-body">
       <button class="btn wide auth-go" data-act="signinsheet">Sign in</button>
       <p class="auth-fine">Read-only score pages need none of this — they keep working from their own link.</p>
@@ -7330,9 +7334,9 @@ function welcomeScreen() {
 
 function lockScreen() {
   return `<div class="stack"><div class="auth-card">
-    ${authHero(me ? 'Waiting for access' : 'Sign in to this club', me
-      ? `You are signed in as <b>${esc(me.name)}</b>, but no role has been granted to this account yet. Ask the club admin for an invite link.`
-      : 'The data here is protected. Sign in with the account a coach has given access to.')}
+    ${authHero(me ? 'Nobody has added you to a team yet' : 'Sign in to see this club', me
+      ? `You are signed in as <b>${esc(me.name)}</b>. Ask your coach for the team link, or open the invite you were sent, and your team will be here.`
+      : 'What is here is private to the club. Sign in with the account your coach or club knows.')}
     <div class="auth-card-body">
       ${me ? `<button class="btn quiet wide" data-act="signout">Sign out</button>` : `<button class="btn wide auth-go" data-act="signinsheet">Sign in</button>`}
       ${me && Object.keys(myClubs || {}).some(c => c !== wsCode()) ? `<button class="btn quiet wide" data-act="clubswitch" style="margin-top:8px">Your other clubs</button>` : ''}
@@ -7350,7 +7354,9 @@ function lockScreen() {
    "these are the team's settings". The owner, on the Calendar as a team's
    tab (build 102): "the calendar is in a weird spot. The calendar is
    versatile and not tied to one team, not even one club, it is per person." */
-const TEAM_VIEWS = ['season', 'roster', 'practice', 'game'];
+const TEAM_VIEWS = ['season', 'roster', 'practice', 'game', 'teamstats', 'minutes', 'attend'];
+// Season's own screens (build 146): Stats, Minutes and Attendance, each a row on it, Back going to it
+const SEASON_VIEWS = ['teamstats', 'minutes', 'attend'];
 const viewScope = (v = ui.view) => v === 'calendar' || v === 'mine' ? (me ? 'me' : 'club')
   : TEAM_VIEWS.includes(v) || (v === 'formation' && ui.editFid === GAME_SHAPE) ? 'team' : 'club';
 /* The screens that are not a team's, by name, for the title row. */
@@ -7424,6 +7430,7 @@ function upView(v = ui.view) {
   if (v === 'game') return ui.gameFrom === 'calendar' ? 'calendar' : 'season';
   if (v === 'formation') return ui.editFid === GAME_SHAPE ? 'game' : 'setup';
   if (v === 'thread') return 'inbox';
+  if (SEASON_VIEWS.includes(v)) return 'season';
   // the club's settings screens are Settings' Club section since build 143; the rest hang off Club home
   if (['people', 'admin', 'planner', 'regs', 'comply'].includes(v)) return 'setup';
   if (['tryout', 'sessions'].includes(v)) return 'club';
@@ -7509,21 +7516,21 @@ function viewClub() {
   const fam = navKind() === 'family';
   const list = fam ? myTeams().filter(t => players(t).some(p => isMine(p) || iFan(p))) : myTeams();
   const now = nowMs();
+  /* The club's name is on the title row above (it is the club switcher), so
+     it is not said again as a heading; the crest row is the one place it is
+     drawn large (UX-REVIEW.md, 3, *Club home*: it was there three times).
+     The rows that open something are buttons with a chevron, and the one
+     that doesn't (the crest and the count) is plain, so a tap is never a
+     guess. */
   return `<div class="stack">
-    <h2>${esc(org)}</h2>
     <div class="clubhead">${clubCrest('lg')}<div><b>${esc(org)}</b>
       <span class="rowsub">${fam ? (list.length === 1 ? 'Your team' : `Your ${list.length} teams`) : `${list.length} team${list.length === 1 ? '' : 's'} you can reach`}</span></div></div>
-    ${canAdmin() && list.length ? `<button class="card go" data-act="schedule" style="text-align:left;width:100%">
-      <b>Calendar</b><span class="rowsub">Every team · ${esc(schedLine())}</span></button>`
-    : (me || !gated()) && myCalOwn() ? `<button class="card go" data-act="goview" data-v="mycal" style="text-align:left;width:100%">
-      <b>Calendar</b><span class="rowsub">${esc(myCalLine())}</span></button>` : ''}
-    ${anyPlayers() ? `<button class="card go" data-act="goview" data-v="mine" style="text-align:left;width:100%">
-      <b>My players</b><span class="rowsub">${allKidNames().map(esc).join(', ')}</span></button>` : ''}
-    ${canSessions() ? `<button class="card go" data-act="goview" data-v="sessions" style="text-align:left;width:100%">
-      <b>Sessions</b><span class="rowsub">${esc(sessClubLine())}</span></button>` : ''}
+    ${canAdmin() && list.length ? goCard('schedule', '', 'Calendar', `Every team · ${esc(schedLine())}`)
+    : (me || !gated()) && myCalOwn() ? goCard('goview', ' data-v="mycal"', 'Calendar', esc(myCalLine())) : ''}
+    ${anyPlayers() ? goCard('goview', ' data-v="mine"', 'My players', allKidNames().map(esc).join(', ')) : ''}
+    ${canSessions() ? goCard('goview', ' data-v="sessions"', 'Sessions', esc(sessClubLine())) : ''}
     ${complyCards()}
-    ${myTryouts().length ? `<button class="card go" data-act="goview" data-v="tryout" style="text-align:left;width:100%">
-      <b>Tryouts to score</b><span class="rowsub">${esc(myTryouts().map(p => p.name).join(', '))} · by bib</span></button>` : ''}
+    ${myTryouts().length ? goCard('goview', ' data-v="tryout"', 'Tryouts to score', `${esc(myTryouts().map(p => p.name).join(', '))} · by bib`) : ''}
     ${list.length ? list.map(t => {
     const ms = teamMatches(t.id);
     const live = ms.find(x => gameStatus(x) === 'live');
@@ -8661,10 +8668,10 @@ function viewSubs() {
         <span><span class="pname">${esc(p.name)}</span>
           <span class="psub" data-spell="${p.id}">${tag}</span></span>
         <span class="livemins"><span data-mins="${p.id}">${mins(pl)}<small> min</small></span>
-          ${pd > 0 ? `<span class="diff ${diff < 0 ? 'owed' : 'over'}">${diff < 0 ? -diff + ' short' : diff > 0 ? diff + ' over' : 'on plan'}</span>` : ''}</span>
+          ${pd > 0 ? `<span class="diff ${diffClass(m, pl, pd, el)}">${diff < 0 ? -diff + ' short' : diff > 0 ? diff + ' over' : 'on plan'}</span>` : ''}</span>
       </button>
-      ${isOn ? `<button class="lrspot" type="button" data-act="switchpos" data-pid="${p.id}">
-        <span>${esc(spot || 'Spot')}</span><span class="lrspot-hint">${spot ? 'move' : 'set'}</span></button>` : ''}
+      ${isOn ? `<button class="lrspot" type="button" data-act="switchpos" data-pid="${p.id}" aria-label="${spot ? `${esc(spot)}: move` : 'Set her spot'}">
+        <span>${esc(spot || 'Spot')}</span></button>` : ''}
     </div>`;
   };
 
@@ -9117,15 +9124,19 @@ function viewPlan() {
     }
   }
 
+  /* The lineup leads (UX-REVIEW.md, 3, *Plan*): the pitch with who is where,
+     and when there is no shape yet, one line and the button that gets one,
+     not a paragraph about snapshots. The details card and the lock come
+     after it. */
   let snaps;
   if (!shape.length) {
-    snaps = `<div class="card"><h2 style="margin-bottom:6px">Snapshots</h2>
-      <p class="muted" style="margin-top:0">This game has no shape, so there are no positions to plan around. Pick one — 4-3-3, 2-3-1, or a shape you saved — and each snapshot becomes a pitch you fill in.</p>
+    snaps = `<div class="card"><h2 style="margin-bottom:6px">Lineup</h2>
+      <p class="muted" style="margin-top:0">Pick a shape (4-3-3, 2-3-1, or one you saved) and the lineup is a pitch to fill in.${infoBtn('snapshots')}</p>
       <button class="btn wide" data-act="editmatch" data-id="${m.id}">Pick a shape</button>
       ${blocks.length ? `<div style="margin-top:14px">${planDetail(t, m)}</div>` : ''}</div>`;
   } else if (!blocks.length) {
-    snaps = `<div class="card"><h2 style="margin-bottom:6px">Snapshots</h2>
-      <p class="muted" style="margin-top:0">A plan is a few pictures of the pitch: who plays where at kick-off, then who is where after each change. Start with kick-off, then add one for every time you mean to make subs — half-time, every ten minutes, whatever suits.</p>
+    snaps = `<div class="card"><h2 style="margin-bottom:6px">Lineup</h2>
+      <p class="muted" style="margin-top:0">Who starts where, then who is where after each change.${infoBtn('snapshots')}</p>
       <button class="btn wide" data-act="snapstart">Plan kick-off</button>
       <p class="muted" style="margin:12px 0 0">Or let the app draft one from your target minutes, or paste back an answer from <b>Ask an AI</b>, and change what you like.</p></div>`;
   } else {
@@ -9211,7 +9222,7 @@ function viewPlan() {
       <h3 style="margin:14px 0 6px">On the pitch</h3>
       <div class="plist">${on.map(prow).join('') || '<p class="muted" style="margin:2px 0">Nobody yet.</p>'}</div>`;
 
-    snaps = `<div class="card"><div class="spread" style="margin-bottom:10px"><h2>Snapshots</h2>
+    snaps = `<div class="card"><div class="spread" style="margin-bottom:10px"><h2>Lineup</h2>
         <span class="muted">${esc(m.formation.name || '')}${locked ? '' : ' <button class="btn quiet sm" data-act="snapwipe">Clear plan</button>'}</span></div>
       ${strip}${when}${pitch}${hint}${diff}
       <div class="row" style="margin-top:10px">${locked ? '' : `<button class="btn quiet sm" data-act="snapadd">Add the next change</button>
@@ -9234,10 +9245,10 @@ function viewPlan() {
   return `<div class="stack">
     <div class="split">
       <div class="stack">
-        ${gameDetailsCard(m)}
         ${next}
-        ${lockCard}
         ${snaps}
+        ${lockCard}
+        ${gameDetailsCard(m)}
       </div>
       <div class="stack">
         <div class="card"><div class="spread" style="margin-bottom:10px">
@@ -10265,34 +10276,32 @@ function calTitle(v, d) {
   }
   return `${MONTHS_LONG[mo - 1]} ${y}`;
 }
-function calBar(v, items, multi, sel, offer, ed) {
+function calBar(v, items, multi, sel, offer, ed = []) {
   const d = calDay(), today = todayStr();
   const a = addDays(d, -weekdayOf(d));
   const here = v === 'schedule' || (v === 'day' ? d === today : v === 'week' ? a <= today && today <= addDays(a, 6) : d.slice(0, 7) === today.slice(0, 7));
   const step = { day: 'day', week: 'week', month: 'month' }[v];
   const out = calLeftOut(sel);
   return `<div class="caltop">
-      <button type="button" class="calmenu" data-act="caltree" aria-expanded="${!!ui.calTree}" aria-label="Calendars: ${esc(out || 'showing everything')}" title="Calendars"${out ? ' data-on="1"' : ''}>
-        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button>
+      <button type="button" class="calmenu" data-act="caltree" aria-expanded="${!!ui.calTree}" aria-label="Calendars: ${esc(out || 'showing everything')}" title="Calendars"${out ? ' data-on="1"' : ''}>Calendars <span aria-hidden="true">${ui.calTree ? '▴' : '▾'}</span></button>
       <button type="button" class="caltitle" data-act="calmini" aria-expanded="${!!ui.calMini}">${esc(calTitle(v, v === 'schedule' ? today : d))} <span aria-hidden="true">${ui.calMini ? '▴' : '▾'}</span></button>
       ${step ? `<span class="calnavs">
         <button type="button" class="stepbtn" data-act="calstep" data-v="-1" aria-label="Previous ${step}">‹</button>
         <button type="button" class="caltoday" data-act="calstep" data-v="0" aria-label="Today" title="Today"${here ? ' aria-current="date"' : ''}><i>${dateOf(today).getDate()}</i></button>
         <button type="button" class="stepbtn" data-act="calstep" data-v="1" aria-label="Next ${step}">›</button></span>` : ''}
-      ${calFab(ed, v)}
     </div>
     ${ui.calTree ? calPanel(sel, offer) : ''}
     ${ui.calMini ? calMonth(items, 'calpick', { sel: v === 'schedule' ? '' : d, hue: multi ? x => evHue(x, true) : null }) : ''}
-    <div class="seg calviews" role="tablist" aria-label="How to look">${CAL_VIEWS.map(([k, l]) =>
-    `<button type="button" role="tab" data-act="calview" data-v="${k}" aria-pressed="${v === k}">${l}</button>`).join('')}</div>`;
+    <div class="calviewrow"><div class="seg calviews" role="tablist" aria-label="How to look">${CAL_VIEWS.map(([k, l]) =>
+    `<button type="button" role="tab" data-act="calview" data-v="${k}" aria-pressed="${v === k}">${l}</button>`).join('')}</div>${calFab(ed, v)}</div>`;
 }
 
-/* The +, on the bar beside Today. It was fixed in the corner until build 146,
-   as a calendar app has it, and sat over whichever row the page put under it
-   (UX-REVIEW.md, 3 and 5.4): with the live card and the bar above the list, that
-   was the first row's score, and no padding moves a row that is mid-page. One
-   team she can add to opens that team's sheet at the day being looked at;
-   several ask which. */
+/* The +, at the end of the views row since build 146. It floated over the
+   list's corner until then, and on a phone that corner is the end of a row:
+   the first row's score on a short list, whatever row is there on a long
+   one (UX-REVIEW.md, 3, *Calendar*). Up here it covers nothing. One team she
+   can add to opens that team's sheet at the day being looked at; several
+   ask which. */
 function calFab(ed, v) {
   if (!ed.length) return '';
   const d = v === 'schedule' ? '' : calDay();
@@ -10371,7 +10380,7 @@ function viewCalendar() {
     // a session she has only asked for is not somewhere to drive to yet
     const next = calNext(items.filter(x => !x.club && x.kind !== 'avail' && (x.kind !== 'session' || x.firm) && !(x.kind === 'game' && x.status === 'live')));
     body = `${next ? calNextCard(next, multi) : ''}
-    ${past.length ? `<button class="textbtn calearlier" data-act="calpast">${ui.calPast ? 'Hide' : 'Show'} what has already happened (${past.length})</button>` : ''}
+    ${past.length ? `<button class="textbtn calearlier" data-act="calpast">${ui.calPast ? 'Hide earlier' : 'Earlier'} (${past.length})</button>` : ''}
     ${pastShown.length ? calMoreBtn('past', past.length - pastShown.length, 'earlier') : ''}
     ${list.length ? calAgenda(list, multi, { today: true }) : ''}
     ${ahead.length ? calMoreBtn('ahead', ahead.length - aheadShown.length, 'more')
@@ -10584,8 +10593,8 @@ function viewRoster() {
     // read-only, the row is not a button: editplayer opens the edit sheet
     return `<${ro ? 'div' : 'button type="button" data-act="editplayer"'} class="prow" data-pid="${p.id}">
       ${p.photo ? `<img class="crest sm" src="${esc(p.photo)}" alt="">` : `<span class="pnum">${esc(p.number ?? '')}</span>`}
-      <span><span class="pname">${esc(p.name)}</span><span class="psub">${esc(bits.join(' · ') || 'no profile yet')}</span></span>
-      <span class="stars" aria-label="rated ${rating(p)} of 5">${'●'.repeat(rating(p))}<span class="dim">${'●'.repeat(5 - rating(p))}</span></span></${ro ? 'div' : 'button'}>`;
+      <span><span class="pname">${esc(p.name)}</span>${bits.length ? `<span class="psub">${esc(bits.join(' · '))}</span>` : ''}</span>
+      <span class="stars" aria-label="rated ${rating(p)} of 5" title="Rating ${rating(p)} of 5">${'●'.repeat(rating(p))}<span class="dim">${'●'.repeat(5 - rating(p))}</span></span></${ro ? 'div' : 'button'}>`;
   }).join('') ||
     `<div class="empty"><strong>No players yet</strong>${ro ? "The team's coach adds the squad." : 'Add the squad once; every game reuses it.'}</div>`;
   // a tracker logs games for the squad; the team's set-up is the coaches', on Settings since build 143
@@ -10603,6 +10612,7 @@ function viewRoster() {
       <div style="flex:1"><label class="field"><span>Name</span><input type="text" id="newName" placeholder="Ella Moreno"></label></div>
       <button class="btn" data-act="addplayer" style="margin-bottom:10px">Add</button>
     </div></div>`}
+    ${list.length ? `<div class="spread"><h2>Players</h2><span class="muted">dots: the coach’s rating${infoBtn('rating')}</span></div>` : ''}
     <div class="plist">${rows}</div>
     ${setUp}</div>`;
 }
@@ -10647,25 +10657,13 @@ function playedLine(ms, pid) {
    another team keeps the coach's Season everywhere. */
 function viewFamSeason(t) {
   const ms = teamMatches(t.id);
-  const done = ms.filter(m => gameStatus(m) === 'done');
   const its = calItems([t.id]);
   const live = calLiveCards(its.filter(x => x.kind === 'game' && x.status === 'live'), false);
   const up = its.filter(x => !(x.kind === 'game' && x.status === 'live'));
   const nextUp = calNext(up);
   const nextGame = nextUp && nextUp.kind === 'game' ? null : calNext(up.filter(x => x.kind === 'game'));
-  const last = done[0];
-  let w = 0, d = 0, l = 0;
-  for (const m of done) { const r = resultOf(m); if (r === 'W') w++; else if (r === 'D') d++; else l++; }
   const kids = players(t).filter(p => isMine(p) || iFan(p));
-  const lastCard = last ? (() => {
-    const sc = score(last), r = resultOf(last);
-    return `<button class="card go" type="button" data-act="gotoplayer" data-tid="${esc(t.id)}" data-id="${esc(last.id)}" style="text-align:left;width:100%">
-      <span class="muted">Last game</span>
-      <div class="spread" style="margin-top:4px"><span class="row"><span class="resbadge" data-r="${r}">${r}</span><b style="font-size:19px">${esc(last.opponent || 'TBC')}</b></span>
-        <span class="pmins">${sc.us}<small>–${sc.them}</small></span></div>
-      <p class="muted" style="margin:4px 0 0">${esc([shortDate(last.date), ...kids.map(p => `${shownName(t, p)} ${mins(playedSec(last, p.id))} min`)].filter(Boolean).join(' · '))}</p>
-      <p class="muted" style="margin:2px 0 0">Season so far: ${w}W ${d}D ${l}L</p></button>`;
-  })() : '';
+  const lastCard = lastGameCard(t, ms, kids);
   const kidCard = kids.length ? `<div class="card"><h2 style="margin-bottom:10px">${kids.length === 1 && isMe(kids[0]) ? 'Your season' : kids.length === 1 ? esc(firstName(kids[0])) + '’s season' : 'Their season'}</h2>
     <div class="plist">${kids.map(p => `<div class="prow" style="grid-template-columns:1fr auto">
       <span><span class="pname">${esc(shownName(t, p))}</span><span class="psub">${esc(playedLine(ms, p.id))}</span>
@@ -10678,18 +10676,13 @@ function viewFamSeason(t) {
   </div>`;
 }
 
-function viewSeason() {
-  const t = team(); if (!t) return needTeam();
-  if (navKind() === 'family') return viewFamSeason(t);
-  const ms = teamMatches(t.id);
-  const done = ms.filter(m => gameStatus(m) === 'done');
+/* What the season adds up to. Early games predate shot and possession
+   tracking. Averaging over every game would quietly understate both, so
+   each family counts only the games that actually carry it. */
+function seasonSums(t, ms) {
   const now = nowMs();
-
   let w = 0, d = 0, l = 0, gf = 0, ga = 0;
   let sOn = 0, sOff = 0, sOnA = 0, sOffA = 0, pu = 0, pt = 0, pc = 0;
-  // Early games predate shot and possession tracking. Averaging over every game
-  // would quietly understate both, so each family counts only the games that
-  // actually carry it.
   let shotGames = 0, possGames = 0, evGames = 0;
   const evTot = {};
   for (const m of ms) {
@@ -10710,7 +10703,21 @@ function viewSeason() {
     }
   }
   const settled = pu + pt, ptot = settled + pc;
-  const shotsFor = sOn + sOff, shotsAg = sOnA + sOffA;
+  return { w, d, l, gf, ga, sOn, sOff, sOnA, sOffA, pu, pt, pc, shotGames, possGames, evGames, evTot, evKeys: Object.keys(evTot),
+    settled, ptot, shotsFor: sOn + sOff, shotsAg: sOnA + sOffA };
+}
+
+/* The coach's Season, short (UX-REVIEW.md, 3, *Season*; build 146): what is
+   happening now, the next game and practice, the last result, the record,
+   the games, and a row each into Stats, Minutes and Attendance. Until then
+   it was thirteen sections on one scroll: a dashboard, a stats page, a games
+   list, a players table and a register. */
+function viewSeason() {
+  const t = team(); if (!t) return needTeam();
+  if (navKind() === 'family') return viewFamSeason(t);
+  const ms = teamMatches(t.id);
+  const done = ms.filter(m => gameStatus(m) === 'done');
+  const { w, d, l, gf, ga, shotsFor, shotsAg, ptot, evKeys } = seasonSums(t, ms);
 
   const stat = (label, a, b) => `<span class="tallylbl">${label}</span><b>${a}</b><b>${b}</b>`;
 
@@ -10723,34 +10730,72 @@ function viewSeason() {
       ${done.length ? stat('Per game', (gf / done.length).toFixed(1), (ga / done.length).toFixed(1)) : ''}
     </div></div>`;
 
-  const shotsCard = (shotsFor + shotsAg) ? `<div class="card"><h2 style="margin-bottom:10px">Shooting</h2>
-    <div class="statgrid" style="grid-template-columns:1fr 60px 60px">
-      <span></span><span class="tallyhead">For</span><span class="tallyhead">Against</span>
-      ${stat('Shots', shotsFor, shotsAg)}
-      ${stat('On target', sOn, sOnA)}
-      ${stat('Accuracy', shotsFor ? Math.round(sOn / shotsFor * 100) + '%' : '—', shotsAg ? Math.round(sOnA / shotsAg * 100) + '%' : '—')}
-      ${stat('Scored from', shotsFor ? Math.round(gf / shotsFor * 100) + '%' : '—', shotsAg ? Math.round(ga / shotsAg * 100) + '%' : '—')}
-      ${shotGames ? stat('Per game', (shotsFor / shotGames).toFixed(1), (shotsAg / shotGames).toFixed(1)) : ''}
-    </div>
-    ${shotGames < ms.length ? `<p class="muted" style="margin-bottom:0">From ${shotGames} of ${ms.length} games. The rest were played before shots were counted, so they are left out rather than dragging the average down.</p>` : ''}</div>` : '';
-
-  const evKeys = Object.keys(evTot);
-  const evCard = evKeys.length ? `<div class="card"><h2 style="margin-bottom:10px">Set pieces and fouls</h2>
-    <div class="statgrid" style="grid-template-columns:1fr 60px 60px">
-      <span></span><span class="tallyhead">Us</span><span class="tallyhead">Them</span>
-      ${evKeys.map(k => stat(evLabel(k), evTot[k].us, evTot[k].them)).join('')}
-    </div>
-    <p class="muted" style="margin-bottom:0">From ${evGames} of ${ms.length} game${ms.length === 1 ? '' : 's'}${evGames < ms.length ? ', the rest predating these counters' : ''}.</p></div>` : '';
-
-  const possCard = ptot ? `<div class="card"><h2 style="margin-bottom:10px">Possession</h2>
-    <div class="possbar"><i style="width:${Math.round(pu / ptot * 100)}%"></i><u style="width:${Math.round(pc / ptot * 100)}%"></u></div>
-    <div class="spread" style="margin-top:6px"><span>${settled ? Math.round(pu / settled * 100) : 50}% ours</span>
-      <span class="muted">${Math.round(pc / ptot * 100)}% neither side</span></div>
-    <p class="muted" style="margin-bottom:0">Settled play across ${possGames} of ${ms.length} game${ms.length === 1 ? '' : 's'}${possGames < ms.length ? ', ignoring those with too little recorded to judge' : ''}.</p></div>` : '';
-
   const results = seasonGames(t, ms);
 
-  const rows = players(t).map(p => {
+  /* The team's page opens here, so what is happening now leads it: a game
+     being played, one tap from the game, then the next game (with who is
+     coming, for a family) and the next practice. The team's calendar is the
+     person's Calendar with only this team on it. */
+  const its = calItems([t.id]);
+  const live = calLiveCards(its.filter(x => x.kind === 'game' && x.status === 'live'), false);
+  const nextGame = calNext(its.filter(x => x.kind === 'game' && x.status !== 'live'));
+  /* Stats (shooting, possession, set pieces, game by game, what needs work),
+     Minutes (every player against her plan) and Attendance are screens of
+     their own since build 146 (UX-REVIEW.md, 3, *Season*: thirteen sections
+     on one scroll). Each is a row here, with one line saying what it holds. */
+  const stats = `<div class="card setcard"><div class="plist">
+    ${setRow('goview', 'Stats', esc(seasonStatsLine(t, ms, { shotsFor, shotsAg, ptot, evKeys })), ' data-v="teamstats"')}
+    ${players(t).length ? setRow('goview', 'Minutes', esc(minutesLine(t, ms)), ' data-v="minutes"') : ''}
+    ${canCalTeam(t.id) ? setRow('goview', 'Attendance', esc(attendLineTeam(t)), ' data-v="attend"') : ''}
+  </div></div>`;
+  return `<div class="stack">
+    ${live}${nextGame ? calNextCard(nextGame, false, 'Next game') : ''}${nextPracticeCard(t)}
+    <button class="textbtn" data-act="teamcal" data-tid="${esc(t.id)}" style="align-self:flex-start">${teamLabel(t)} on the calendar</button>
+    ${lastGameCard(t, ms, [])}${record}${results}${stats}${calSyncCard(t, false)}
+  </div>`;
+}
+/* One line under each of Season's rows: enough to know whether to open it. */
+function seasonStatsLine(t, ms, x) {
+  const done = ms.filter(m => gameStatus(m) === 'done').length;
+  const bits = [];
+  if (x.shotsFor + x.shotsAg) bits.push(`${x.shotsFor} shots for, ${x.shotsAg} against`);
+  if (x.ptot) bits.push('possession');
+  if (x.evKeys.length) bits.push('set pieces');
+  if (done >= TRENDS_MIN) bits.push('game by game');
+  return bits.length ? bits.join(' · ') : done ? 'Goals so far; shots, possession and set pieces once they are counted' : 'Nothing counted yet';
+}
+function minutesLine(t, ms) {
+  const rows = minutesRows(t, ms);
+  const planned = rows.filter(r => r.pd > 0);
+  if (!planned.length) return `${rows.length} player${rows.length === 1 ? '' : 's'} · no plan set yet`;
+  const short = planned.filter(r => r.diff < -60).length, over = planned.filter(r => r.diff > 60).length;
+  return [short ? `${short} short` : '', over ? `${over} over` : '', `${planned.length - short - over} on plan`].filter(Boolean).join(' · ');
+}
+function attendLineTeam(t) {
+  const untaken = attendUntaken(t).length;
+  const rows = players(t).filter(p => p.active !== false).map(p => attendance(t, p.id));
+  const of = rows.reduce((a, r) => a + r.practice.of, 0), came = rows.reduce((a, r) => a + r.practice.came, 0);
+  return [of ? `Practices: ${came} of ${of} came` : 'No register taken yet', untaken ? `${untaken} still to take` : ''].filter(Boolean).join(' · ');
+}
+/* The last game played, with its result and who played how long. The family's
+   Season names her own children in it; the coach's names nobody, the minutes
+   are on Minutes. */
+function lastGameCard(t, ms, kids) {
+  const done = ms.filter(m => gameStatus(m) === 'done');
+  const last = done[0]; if (!last) return '';
+  let w = 0, d = 0, l = 0;
+  for (const m of done) { const r = resultOf(m); if (r === 'W') w++; else if (r === 'D') d++; else l++; }
+  const sc = score(last), r = resultOf(last);
+  return `<button class="card go" type="button" data-act="gotoplayer" data-tid="${esc(t.id)}" data-id="${esc(last.id)}" style="text-align:left;width:100%">
+      <span class="muted">Last game</span>
+      <div class="spread" style="margin-top:4px"><span class="row"><span class="resbadge" data-r="${r}">${r}</span><b style="font-size:19px">${esc(last.opponent || 'TBC')}</b></span>
+        <span class="pmins">${sc.us}<small>–${sc.them}</small></span></div>
+      <p class="muted" style="margin:4px 0 0">${esc([shortDate(last.date), ...kids.map(p => `${shownName(t, p)} ${mins(playedSec(last, p.id))} min`)].filter(Boolean).join(' · '))}</p>
+      <p class="muted" style="margin:2px 0 0">Season so far: ${w}W ${d}D ${l}L</p></button>`;
+}
+/* Every player's minutes against her plan, the furthest behind first. */
+function minutesRows(t, ms) {
+  return players(t).map(p => {
     let pl = 0, pd = 0, g = 0, a = 0, sh = 0;
     const roles = {};
     for (const m of ms) {
@@ -10765,9 +10810,16 @@ function viewSeason() {
       .map(([k, v]) => `${mins(v)} at ${k}`).join(' · ');
     return { p, pl, pd, diff: pl - pd, g, a, sh, rs };
   }).sort((x, y) => x.diff - y.diff);
-
-  const playersCard = rows.length ? `<div class="card"><div class="spread" style="margin-bottom:10px">
-      <h2>Players</h2><span class="muted">furthest behind first</span></div>
+}
+/* Minutes: the players' table that was the bottom of Season. A family never
+   gets here (render() sends her to her own Season); a tracker or a viewer
+   does, and sees the squad as her role does on every screen (shownName). */
+function viewMinutes() {
+  const t = team(); if (!t) return needTeam();
+  const ms = teamMatches(t.id);
+  const rows = minutesRows(t, ms);
+  const list = rows.length ? `<div class="card"><div class="spread" style="margin-bottom:10px">
+      <h2>Minutes</h2><span class="muted">furthest behind first</span></div>
     <div class="plist">${rows.map(r => {
     const pct = r.pd > 0 ? clamp(r.pl / r.pd * 100, 0, 100) : 0;
     const owed = r.pd > 0 && r.diff < -60 ? 1 : 0, over = r.pd > 0 && r.diff > 60 ? 1 : 0;
@@ -10779,21 +10831,60 @@ function viewSeason() {
         <span class="psub">${r.pd > 0 ? `${mins(r.pd)} planned · ${r.diff < 0 ? mins(-r.diff) + ' short' : mins(r.diff) + ' over'}` : 'no plan set'}${bits ? ' · ' + bits : ''}</span>
         ${r.rs ? `<span class="psub">${esc(r.rs)}</span>` : ''}</span>
       <span class="pmins">${mins(r.pl)}<small> min</small></span></div>`;
-  }).join('')}</div></div>` : '<div class="empty"><strong>No players yet</strong>Add the squad first.</div>';
-
-  /* The team's page opens here, so what is happening now leads it: a game
-     being played, one tap from the game, then the next game (with who is
-     coming, for a family) and the next practice. The team's calendar is the
-     person's Calendar with only this team on it. */
-  const its = calItems([t.id]);
-  const live = calLiveCards(its.filter(x => x.kind === 'game' && x.status === 'live'), false);
-  const nextGame = calNext(its.filter(x => x.kind === 'game' && x.status !== 'live'));
+  }).join('')}</div>
+    <p class="muted" style="margin-bottom:0">Across every game this season, against what each game's lineup planned for her.</p></div>` : '<div class="empty"><strong>No players yet</strong>Add the players first.</div>';
+  return `<div class="stack">${list}</div>`;
+}
+/* Stats: everything counted across the season. The charts wait for five
+   finished games: two points joined by a line is not a trend (UX-REVIEW.md, 3). */
+const TRENDS_MIN = 5;
+function viewTeamStats() {
+  const t = team(); if (!t) return needTeam();
+  const ms = teamMatches(t.id);
+  const s = seasonSums(t, ms);
+  const done = ms.filter(m => gameStatus(m) === 'done');
+  const stat = (label, a, b) => `<span class="tallylbl">${label}</span><b>${a}</b><b>${b}</b>`;
+  const shotsCard = (s.shotsFor + s.shotsAg) ? `<div class="card"><h2 style="margin-bottom:10px">Shooting</h2>
+    <div class="statgrid" style="grid-template-columns:1fr 60px 60px">
+      <span></span><span class="tallyhead">For</span><span class="tallyhead">Against</span>
+      ${stat('Shots', s.shotsFor, s.shotsAg)}
+      ${stat('On target', s.sOn, s.sOnA)}
+      ${stat('Accuracy', s.shotsFor ? Math.round(s.sOn / s.shotsFor * 100) + '%' : '—', s.shotsAg ? Math.round(s.sOnA / s.shotsAg * 100) + '%' : '—')}
+      ${stat('Scored from', s.shotsFor ? Math.round(s.gf / s.shotsFor * 100) + '%' : '—', s.shotsAg ? Math.round(s.ga / s.shotsAg * 100) + '%' : '—')}
+      ${s.shotGames ? stat('Per game', (s.shotsFor / s.shotGames).toFixed(1), (s.shotsAg / s.shotGames).toFixed(1)) : ''}
+    </div>
+    ${s.shotGames < ms.length ? `<p class="muted" style="margin-bottom:0">From ${s.shotGames} of ${ms.length} games. The rest were played before shots were counted, so they are left out rather than dragging the average down.</p>` : ''}</div>` : '';
+  const evCard = s.evKeys.length ? `<div class="card"><h2 style="margin-bottom:10px">Set pieces and fouls</h2>
+    <div class="statgrid" style="grid-template-columns:1fr 60px 60px">
+      <span></span><span class="tallyhead">Us</span><span class="tallyhead">Them</span>
+      ${s.evKeys.map(k => stat(evLabel(k), s.evTot[k].us, s.evTot[k].them)).join('')}
+    </div>
+    <p class="muted" style="margin-bottom:0">From ${s.evGames} of ${ms.length} game${ms.length === 1 ? '' : 's'}${s.evGames < ms.length ? ', the rest predating these counters' : ''}.</p></div>` : '';
+  const possCard = s.ptot ? `<div class="card"><h2 style="margin-bottom:10px">Possession</h2>
+    <div class="possbar"><i style="width:${Math.round(s.pu / s.ptot * 100)}%"></i><u style="width:${Math.round(s.pc / s.ptot * 100)}%"></u></div>
+    <div class="spread" style="margin-top:6px"><span>${s.settled ? Math.round(s.pu / s.settled * 100) : 50}% ours</span>
+      <span class="muted">${Math.round(s.pc / s.ptot * 100)}% neither side</span></div>
+    <p class="muted" style="margin-bottom:0">Settled play across ${s.possGames} of ${ms.length} game${ms.length === 1 ? '' : 's'}${s.possGames < ms.length ? ', ignoring those with too little recorded to judge' : ''}.</p></div>` : '';
+  const trends = done.length >= TRENDS_MIN ? seasonTrendsCard(t)
+    : done.length >= 2 ? `<div class="card"><h2 style="margin-bottom:4px">Game by game</h2><p class="muted" style="margin:0">Charts of each game once ${TRENDS_MIN} have been played. ${done.length} so far.</p></div>` : '';
+  const record = `<div class="card">
+    <div class="spread"><h2>${s.w}W ${s.d}D ${s.l}L</h2>
+      <span class="muted">${done.length} played${ms.length > done.length ? ` · ${ms.length - done.length} to come` : ''}</span></div>
+    <div class="statgrid" style="grid-template-columns:1fr 60px 60px;margin-top:10px">
+      <span></span><span class="tallyhead">For</span><span class="tallyhead">Against</span>
+      ${stat('Goals', s.gf, s.ga)}
+      ${done.length ? stat('Per game', (s.gf / done.length).toFixed(1), (s.ga / done.length).toFixed(1)) : ''}
+    </div></div>`;
   return `<div class="stack">
-    ${live}${nextGame ? calNextCard(nextGame, false, 'Next game') : ''}${nextPracticeCard(t)}
-    <button class="textbtn" data-act="teamcal" data-tid="${esc(t.id)}" style="align-self:flex-start">${teamLabel(t)} on the calendar</button>
-    ${record}${seasonTrendsCard(t)}${needsWorkCard(t)}${shotsCard}${possCard}${evCard}${results}${calSyncCard(t, false)}${playersCard}${attendanceCard(t)}
+    <h2>Stats</h2>
+    ${record}${shotsCard}${possCard}${evCard}${trends}${needsWorkCard(t)}
     ${restricted() ? '' : aiButton('team')}
   </div>`;
+}
+/* Attendance: the register, as a screen. Only those who take it get here. */
+function viewAttend() {
+  const t = team(); if (!t) return needTeam();
+  return `<div class="stack">${attendanceCard(t) || '<div class="empty"><strong>Nothing recorded yet</strong>Take the register from a practice on the Calendar, and it is counted here.</div>'}</div>`;
 }
 
 /* --- what needs work --- */
@@ -14224,18 +14315,24 @@ function familySessions(staff) {
   const done = all.filter(s => sessPast(s) && kids.some(({ p }) => (bookOf(s.id, p.id) || {}).st === 'in')).reverse();
   const open = all.filter(s => s.open && !s.called && !sessPast(s) && kids.some(({ t, p }) => fitsAges(s, t) && (!bookOf(s.id, p.id) || bookOf(s.id, p.id).st === 'out')));
   const owed = familyOwed();
-  return `${staff ? '<h2>Your children</h2>' : ''}
-    ${owed.rows.length ? `<div class="card"><div class="spread"><h2 style="margin:0">To pay</h2><b>${esc(fmtMoney(owed.total))}</b></div>
+  const avail = familyAvail();
+  /* A family's screen is what she can book and what she has booked
+     (UX-REVIEW.md, 3, *Training sessions*): the free times and the open
+     sessions first, under one heading, then her children's places, what she
+     owes, and what has been. With nothing to book and nothing booked it is
+     one line, not five empty cards. */
+  const toPay = owed.rows.length ? `<div class="card"><div class="spread"><h2 style="margin:0">To pay</h2><b>${esc(fmtMoney(owed.total))}</b></div>
       <div class="plist">${owed.rows.map(r => `<button class="prow go" type="button" data-act="sessopen" data-id="${esc(r.s.id)}" style="grid-template-columns:1fr auto">
         <span><span class="pname">${esc(firstName(r.p))} · ${esc(sessTitle(r.s))}</span><span class="psub">${esc(dayLabel(r.s.date))} · with ${esc(r.s.coachName)}</span></span>
         <span class="pmins">${esc(fmtMoney(r.s.price))}</span></button>`).join('')}</div>
-      <p class="muted" style="margin-bottom:0">Pay the coach or the club the way you usually do; they mark it paid here.</p></div>` : ''}
-    ${familyPacks()}
-    <div class="card"><h2 style="margin-bottom:0">Booked and asked for</h2>
-      ${ahead.length ? sessDays(ahead, true) : '<p class="muted" style="margin-bottom:0">Nothing yet. Ask for a spot in an open session below, or a coach books one for you.</p>'}</div>
-    ${familyAvail()}
-    <div class="card"><h2 style="margin-bottom:0">Open to ask for</h2>
-      ${open.length ? sessDays(open, true) : `<p class="muted" style="margin-bottom:0">No open sessions for ${kids.length > 1 ? 'your children’s ages' : esc(firstName(kids[0].p)) + '’s age'} right now.</p>`}</div>
+      <p class="muted" style="margin-bottom:0">Pay the coach or the club the way you usually do; they mark it paid here.</p></div>` : '';
+  const book = avail || open.length ? `<h2 class="sechead">Book a session</h2>${avail}
+    ${open.length ? `<div class="card"><h2 style="margin-bottom:0">Open to ask for</h2>${sessDays(open, true)}</div>` : ''}` : '';
+  const booked = ahead.length ? `<div class="card"><h2 style="margin-bottom:0">Booked and asked for</h2>${sessDays(ahead, true)}</div>` : '';
+  if (!book && !booked && !toPay && !done.length) return `${staff ? '<h2>Your children</h2>' : ''}${familyPacks()}
+    <div class="empty"><strong>Nothing to book right now</strong>When a coach opens a session for ${kids.length > 1 ? 'your children’s ages' : esc(firstName(kids[0].p)) + '’s age'}, or offers times, it is here. A coach can also book one for you.</div>`;
+  return `${staff ? '<h2>Your children</h2>' : ''}
+    ${booked}${book}${toPay}${familyPacks()}
     ${done.length ? `<div class="card"><h2 style="margin-bottom:0">Earlier</h2>${sessDays(done.slice(0, 30), true)}</div>` : ''}`;
 }
 
@@ -16589,6 +16686,10 @@ function sheetPersonCal(u) {
 const setRow = (act, title, sub, data = '') => `<button class="prow go setrow" type="button" data-act="${act}"${data}>
   <span style="min-width:0"><span class="pname">${title}</span>${sub ? `<span class="psub">${sub}</span>` : ''}</span></button>`;
 const setInfo = (title, sub, right = '') => `<div class="prow setrow"><span style="min-width:0"><span class="pname">${title}</span>${sub ? `<span class="psub">${sub}</span>` : ''}</span>${right || '<span></span>'}</div>`;
+/* A card that opens something: a button, with a chevron (.go) so it can be told
+   from a card that only says something (UX-REVIEW.md, 3, *Club home*; 4). */
+const goCard = (act, data, title, sub) => `<button class="card go tapcard" type="button" data-act="${act}"${data}>
+  <span class="tc-main"><b>${title}</b>${sub ? `<span class="rowsub">${sub}</span>` : ''}</span></button>`;
 const setSection = (head, rows, after = '') => {
   const xs = rows.filter(Boolean);
   return xs.length || after ? `<h2 class="sechead">${head}</h2>${xs.length ? `<div class="card setcard"><div class="plist">${xs.join('')}</div></div>` : ''}${after}` : '';
@@ -16875,10 +16976,10 @@ function sheetAway() {
 }
 function sheetCallOut(key, tid, date, who) {
   const other = who && who !== me.uid;
-  openSheet(`<h3>${other ? `Call ${esc(coachName(who))} off?` : "Can't make it?"}</h3>
+  openSheet(`<h3>${other ? `Call ${esc(coachSaid(who))} off?` : "Can't make it?"}</h3>
     <p class="muted" style="margin-top:0">${tid ? `The team's other coaches and the club's admins see that you can't. Nothing is called off, and families aren't told.` : `The club's admins see that you can't. The session isn't called off, and families aren't told: call it off or hand it over from the session itself.`}</p>
     <label class="field"><span>Note (optional)</span><input type="text" id="coNote" maxlength="${AWAY_NOTE}" placeholder="Work, ill"></label>
-    <button class="btn wide" data-act="awayoutgo" data-k="${esc(key)}" data-tid="${esc(tid || '')}" data-d="${esc(date || '')}"${other ? ` data-u="${esc(who)}"` : ''}>${other ? `Call ${esc(coachName(who))} off` : "I can't make it"}</button>
+    <button class="btn wide" data-act="awayoutgo" data-k="${esc(key)}" data-tid="${esc(tid || '')}" data-d="${esc(date || '')}"${other ? ` data-u="${esc(who)}"` : ''}>${other ? `Call ${esc(coachSaid(who))} off` : "I can't make it"}</button>
     <button class="btn quiet wide" data-act="closesheet" style="margin-top:8px">Cancel</button>`, true);
 }
 /* For an entry's sheet: who has called out, to those running the team, and
@@ -16904,7 +17005,7 @@ function callOutBlock(key, tid, date, run) {
     const cs = (tid ? coachesOf(tid) : s0 ? [s0.coach] : []).filter(u => u !== me.uid);
     adm = cs.map(u => { const r = outs.find(x => x.uid === u); return r
       ? `<button class="btn quiet sm" data-act="awayback" data-u="${esc(u)}" data-id="${esc(r.id)}">Put ${esc(coachName(u))} back on</button>`
-      : `<button class="btn quiet sm" data-act="awayout" data-u="${esc(u)}" data-k="${esc(key)}" data-tid="${esc(tid || '')}" data-d="${esc(date || '')}">Call ${esc(coachName(u))} off</button>`; }).join('');
+      : `<button class="btn quiet sm" data-act="awayout" data-u="${esc(u)}" data-k="${esc(key)}" data-tid="${esc(tid || '')}" data-d="${esc(date || '')}">Call ${esc(coachSaid(u))} off</button>`; }).join('');
     if (adm) adm = `<div class="row wrap" style="margin-bottom:10px">${adm}</div>`;
   }
   return list + btn + adm;
@@ -17185,6 +17286,8 @@ function itemFams(x, cache) {
   return out;
 }
 const coachName = u => ((acc().members || {})[u] || {}).name || (me && u === me.uid ? whoAmI() : '') || 'A coach';
+// the same, mid-sentence: "Call the coach off", never "Call A coach off" (UX-REVIEW.md, 3)
+const coachSaid = u => ((acc().members || {})[u] || {}).name || (me && u === me.uid ? whoAmI() : '') || 'the coach';
 const shortTeam = tid => (state.teams[tid] || {}).name || 'a team';
 
 /* What collides on one day, in words. Each pair is said once. */
@@ -17722,6 +17825,17 @@ function diffTag(pl, pd) {
   const diff = Math.round((pl - pd) / 60);
   return `<span class="diff ${diff < 0 ? 'owed' : 'over'}">${diff < 0 ? -diff + ' short' : diff > 0 ? diff + ' over' : 'on plan'}</span>`;
 }
+/* On Subs, orange only for a player behind the pace of the game: her minutes
+   against what the plan would have given her by now, five minutes or more
+   short. Before kick-off everyone is "80 short" and nothing is wrong, and at
+   half time most are "40 short" the same way; eleven orange rows said
+   nothing (UX-REVIEW.md, 3, *Subs*). Over, or on pace, is plain. */
+function diffClass(m, pl, pd, el) {
+  if (!(pd > 0) || !(el > 0)) return 'even';
+  const len = matchMinutes(m) * 60 || 1;
+  const pace = pd * Math.min(el / len, 1);
+  return pl - pace <= -300 ? 'owed' : pl - pd > 60 ? 'over' : 'even';
+}
 function tickLive(now = nowMs()) {
   for (const el of document.querySelectorAll('[data-live]')) {
     const v = liveReading(el.dataset.live, el.dataset, now);
@@ -18205,7 +18319,7 @@ function viewPeople() {
       .map(([k, l]) => `<button class="chip" type="button" data-act="peoplefilter" data-v="${k}" aria-pressed="${F === k}">${l} ${counts[k] || 0}</button>`).join('')}
     </div>
 
-    <div class="tablewrap"><table class="grid">
+    <div class="tablewrap people"><table class="grid">
       <thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Joined</th><th></th></tr></thead>
       <tbody>${shown.map(({ u, rs, none }) => `<tr data-act="personrow" data-uid="${u.uid}">
         <td><b>${esc(u.name || 'Unnamed')}</b>${me && me.uid === u.uid ? ' <span class="muted">you</span>' : ''}</td>
@@ -19391,8 +19505,7 @@ function complyCards() {
   let out = '';
   if (isAdmin(me.uid)) {
     const t = complyTally(complyRows());
-    if (t.length) out += `<button class="card go" data-act="goview" data-v="comply" style="text-align:left;width:100%">
-      <b>Coach compliance</b><span class="rowsub">${esc(t.map(([st, n]) => `${n} ${COMPLY_TALLY[st]}`).join(' · '))}</span></button>`;
+    if (t.length) out += goCard('goview', ' data-v="comply"', 'Coach compliance', esc(t.map(([st, n]) => `${n} ${COMPLY_TALLY[st]}`).join(' · ')));
   }
   if (iAmStaff()) {
     const f = complyFlags((state.comply || {})[me.uid]);
@@ -22949,8 +23062,8 @@ function uiToHash() {
      and no club, and says which calendars it shows, so a link, a reload and
      the back button bring back the same ones. */
   if (ui.view === 'calendar') return calSel() === 'club' && calSels().includes('mine') ? '#/calendar/all' : '#/calendar';
-  if (['practice', 'roster', 'season'].includes(ui.view) && t) {
-    const seg = { practice: 'practice', roster: 'squad', season: 'season' }[ui.view];
+  if (['practice', 'roster', 'season', ...SEASON_VIEWS].includes(ui.view) && t) {
+    const seg = { practice: 'practice', roster: 'squad', season: 'season', teamstats: 'stats', minutes: 'minutes', attend: 'attendance' }[ui.view];
     return `#/team/${t}/${seg}`;
   }
   if (ui.view === 'people') return '#/club/people';
@@ -23023,7 +23136,7 @@ function hashToUi() {
        and calendar files link here); its games were a tab of their own, and
        are its Season now, and its settings ("planning") are on Squad. */
     if (p[2] === 'calendar') { calShowTeam(p[1]); return true; }
-    const back = { games: 'season', practice: 'practice', squad: 'roster', season: 'season', planning: 'roster' }[p[2]];
+    const back = { games: 'season', practice: 'practice', squad: 'roster', season: 'season', planning: 'roster', stats: 'teamstats', minutes: 'minutes', attendance: 'attend' }[p[2]];
     ui.view = back || 'season';
     return true;
   }

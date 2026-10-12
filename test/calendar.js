@@ -470,7 +470,7 @@ console.log('--- a club\'s whole season: views, the tree of calendars, and pagin
   check('the Schedule is the view nobody has chosen one', A.calView() + ' ' + /class="agenda"/.test(h), 'schedule true');
   const days = [...h.matchAll(/<div class="agdate" aria-label="([^"]+)"/g)].map(x => x[1]);
   check('each day once, the date down the left', days.length > 5 && new Set(days).size === days.length, true);
-  check('what has happened says how much there is', /already happened \(61\)/.test(h), true);
+  check('what has happened says how much there is', /Hide earlier \(61\)/.test(h), true);
   check('but draws one page of it, not all of it', /data-id="old24"/.test(h) && !/data-id="old25"/.test(h), true);
   check('in the order it happened, up to now', h.indexOf('data-id="old2"') < h.indexOf('data-id="old1"') && h.indexOf('data-id="g1"') < h.indexOf('class="agline"') && h.indexOf('class="agline"') < h.lastIndexOf('data-id="e3"'), true);
   check('with a button for the rest', /data-act="calmore" data-k="past"/.test(h), true);

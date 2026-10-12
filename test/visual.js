@@ -1,4 +1,4 @@
-/* The visual system (UX-REVIEW.md, 4; build 146), held in place.
+/* The visual system (UX-REVIEW.md, 4; build 147), held in place.
 
    The review's complaints were about the stylesheet, not the data: type too
    small for a sideline and grey on grey, every block a white bordered card
@@ -17,7 +17,7 @@
      something carries .go (the chevron) and a press state;
    - a thing called off is grey, a player short of minutes is grey, a count
      is green: orange and red are kept for what wants the coach;
-   - the calendar's + is on the bar, never fixed over the list.
+   - the calendar's + is in the flow, at the end of the views row, never fixed over the list.
 
    It parses styles.css itself rather than rendering it: there is no layout
    engine in the rig, and these are decisions about numbers, which a parse
@@ -64,7 +64,7 @@ const LABELS = new Set([
   '.msgdot', '.bubble .bwhen', '.pill.asking', '.drilltype', '.need', '.hint', '.sheet h4',
   '.drillname .tag', '.runmode h4', '.wkick', '.wstars .lbl', '.spell .sl', '.wpair .lbl',
   '.tlogrow .t small', '.calleaf small', '.calrow.tc .tag:not(.called)', '.agdate small', '.ev-tag',
-  '.tg-ev', '.tg-more', '.mg-n', '.mono'
+  '.tg-ev', '.tg-more', '.mg-n', '.mono', '.calmenu span'
 ]);
 /* Smaller than a label only where the layout is the message and the words
    ride along: a 54px pitch token, a month cell a seventh of a phone wide, the
@@ -74,7 +74,6 @@ const GRAPHICS = {
   '.stars': 11,            // five dots, a rating
   '.token .role': 10,      // the spot's name over a pitch token
   '.slotok .rl': 10,       // the same on a formation spot
-  '.lrspot-hint': 11,      // "tap" under a 66px spot chip
   '.spell .gdot': 9,       // a goal dot on the recap's spells
   '.lc-ax': 9,             // a chart axis, in SVG units, scaled on screen
   '.calday small': 11,     // the day's note in a 44px cell
@@ -162,7 +161,7 @@ check('and from app.js', /setgo/.test(app), false);
 
 /* ---------------- colour ---------------- */
 console.log('\n--- orange and red for what wants the coach; a fact is grey ---');
-check('a player short of minutes is grey, not orange', /color:var\(--ink-soft\)/.test(bodyOf('.diff.owed,.diff.over')), true);
+check('a player short of minutes is grey, not orange', /color:var\(--ink-soft\)/.test(bodyOf('.diff.owed,.diff.over,.diff.even')), true);
 check('called off is a grey tag', /var\(--paper\)/.test(bodyOf('.tag.called')) && !/--over|#FBE7E3|#6E2317/.test(bodyOf('.tag.called')), true);
 check('on a calendar entry too', /var\(--paper\)/.test(bodyOf('.ev[data-called="1"] .ev-tag')), true);
 check('app.js draws a called-off game with it', /class="tag called">\$\{CALLED\[/.test(app), true);
@@ -174,18 +173,18 @@ check('and a sub due soon still orange', /var\(--owed\)/.test(bodyOf('.subscard[
 check('Delete is still red', /var\(--over\)/.test(bodyOf('.btn.danger')), true);
 
 /* ---------------- the calendar's + ---------------- */
-console.log('\n--- the + is on the bar, over no row ---');
+console.log('\n--- the + is in the flow, over no row ---');
 {
   /* It was fixed in the corner, and with the live card and the bar above the
      list the first row's score sat under it (UX-REVIEW.md, 3). A row mid-page
-     cannot be padded out from under a fixed button, so it is a button on the
-     bar beside Today now, 36px like the others there. */
+     cannot be padded out from under a fixed button, so it sits at the end of
+     the views row (build 146), a flex item like the segment beside it. */
   const fab = bodyOf('.calfab');
   check('the + is not fixed over the page', /position:fixed/.test(fab), false);
-  check('it is a bar button', /width:36px/.test(fab) && /height:36px/.test(fab), true);
+  check('it is a flex item beside the views', /flex:none/.test(fab) && /display:flex/.test(bodyOf('.calviewrow')), true);
   check('green, the action on the row', /background:var\(--field-deep\)/.test(fab), true);
-  const bar = app.slice(app.indexOf('<div class="caltop">'), app.indexOf('<div class="seg calviews"'));
-  check('app.js draws it inside the bar', /\$\{calFab\(ed, v\)\}/.test(bar), true);
+  const row = app.slice(app.indexOf('<div class="calviewrow">'), app.indexOf('function calFab('));
+  check('app.js draws it at the end of the views row', /\$\{calFab\(ed, v\)\}<\/div>/.test(row), true);
   check('and nowhere else', app.split('${calFab(ed, v)}').length - 1, 1);
   check('nothing pads the list for it any more', rules.some(r => r.sel === '.stack.calendar'), false);
 }

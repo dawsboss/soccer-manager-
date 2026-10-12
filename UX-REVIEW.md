@@ -210,21 +210,38 @@ never a fixture.
 
 ## 3. Individual screens
 
-**Club home.** The club name appears three times (crumb, h2, header row). The
+**Shipped in build 146** (*Each screen on its own*; pinned by `test/screens.js`), screen by
+screen below. Your settings, Track, Live / Recap and Practice needed nothing beyond what builds
+141–145 had already done.
+
+**Club home.** *Build 146:* the club's name is on the crest row alone (the title row above carries
+it as the switcher, and the `<h2>` is gone); every card that opens something is a button with a
+chevron (`goCard()`, and the team cards), and the crest-and-count row is plain. As written:
+ The club name appears three times (crumb, h2, header row). The
 "Sandbox FC · 2 teams you can reach" row is not tappable but looks like the cards
 that are. Tappable cards need an affordance (chevron, or a button style).
 
-**Season.** Thirteen stacked sections; it is a dashboard, a stats page, a games
+**Season.** *Build 146:* the coach's Season is what is on, the last result, the record, the games,
+and a row each into **Stats** (shooting, possession, set pieces, game by game, what needs work, the
+AI prompt), **Minutes** (every player against her plan; the Players tab keeps its name, so the table
+is called what it is) and **Attendance**, each a screen of its own with Back going to Season and an
+address (`#/team/{id}/stats`, `/minutes`, `/attendance`). The game-by-game charts wait for five
+finished games. As written: thirteen stacked sections; it is a dashboard, a stats page, a games
 list, a players table and an attendance table on one scroll. Split it: a short
 Season (next up, last result, record, games) with **Stats**, **Players** and
 **Attendance** as their own screens. Charts with two data points ("Game by game")
 should wait until there are five games.
 
-**Squad.** Good: the add row is right there. Bad: the five-dot strength rating is
+**Squad.** *Build 146:* the dots are explained by an ⓘ beside the list's heading (`INFO.rating`), and
+a row with nothing to say says nothing (no *no profile yet*). Team set-up moved in build 143. As
+written: good: the add row is right there. Bad: the five-dot strength rating is
 unexplained, "no profile yet" on every row, and the whole Team set-up block lives
 under the player list where a coach won't scroll.
 
-**Calendar.** The header stacks a live card, a ≡ button (calendars picker — not a
+**Calendar.** *Build 146:* the picker is a button that says **Calendars ▾** beside the month title's
+own ▾, the text link is **Earlier (n)** / **Hide earlier**, and the list is padded under the + (and
+a short list is kept clear of it) so it covers no row. The live card, the next card and the view
+control stay: each is something a person tapped for. As written: the header stacks a live card, a ≡ button (calendars picker — not a
 recognised icon for that), a month title that is also a dropdown (mini month),
 four view tabs, a "next practice" card, a text link, then the list. The **+** FAB
 sits over the first row's score badge (visible in the screenshot: it covers "1–1").
@@ -232,9 +249,14 @@ Suggest: one row `[Calendars ▾] [October 2026 ▾]`, one segmented control, li
 Pad the list bottom so the FAB never covers content.
 
 **Calendar item sheet.** Clear and good. "Call A coach off" has a capital A that
-reads like a name fallback bug.
+reads like a name fallback bug. *Build 146:* a coach with no name on record is "the coach"
+mid-sentence (`coachSaid()`).
 
-**Subs.** Every row shows an orange "9 owed" — orange reads as a warning, and it's
+**Subs.** *Build 146:* orange only for a player behind the pace of the game, five minutes or more
+short of what the plan would have given her by now (`diffClass()`); before kick-off and on pace it
+is plain. The spot button says the spot alone (no *set / move* under it). *By need* and *Batch* were
+renamed in build 145; the clock card stays on Subs and Track, which are where the clock is run and
+where a tracker is told it is not hers. As written: every row shows an orange "9 owed" — orange reads as a warning, and it's
 on all eleven players. "set / move" are two stacked words in a button; "By need"
 and "Batch" are modes with no explanation. The clock card is repeated identically
 on Subs, Track and Pitch.
@@ -245,14 +267,19 @@ screen in the app for its job.
 **Live / Recap.** Good for parents. Recap's hero ("A win for Test Squad A against
 Riverside, over 60 minutes") is the right tone for the whole app.
 
-**Plan (upcoming game).** "Snapshots" and "Pick a shape" first, with "This game has
+**Plan (upcoming game).** *Build 146:* the card is **Lineup** and leads the screen, ahead of the
+game's details; with no shape it is one line and **Pick a shape**, the detail behind an ⓘ
+(`INFO.snapshots`). As written: "Snapshots" and "Pick a shape" first, with "This game has
 no shape…" prose. Lead with the lineup and offer the shape when needed.
 
 **Practice.** Three chips (Plans / Drills · 141 / Positions), then "Templates ·
 Mine · Club", then a list of dates with "Plan it". Fine for a coach; a parent
 should never see this tab (she doesn't in a real club).
 
-**Training sessions.** Five tabs (Sessions, Bookable times, Fields, Fees, Hours)
+**Training sessions.** *Build 146:* a family's screen is **Book a session** first (the coaches'
+free times and the open sessions, under one heading), then her children's places and what she
+owes, and one line when there is nothing to book and nothing booked. The tabs were already staff's
+alone. As written: five tabs (Sessions, Bookable times, Fields, Fees, Hours)
 plus Mine / Everyone's plus New session, then empty states. For a family, this
 whole screen should be "Book a session" with the available slots, or nothing.
 
@@ -260,9 +287,13 @@ whole screen should be "Book a session" with the available slots, or nothing.
 most-visited settings screen. Notifications (the thing people come for) are second.
 
 **People.** Good: the "3 waiting to be let in" alert, filters, table. The table
-overflows on a phone (Joined column clipped). Make rows cards on narrow screens.
+overflows on a phone (Joined column clipped). Make rows cards on narrow screens. *Build 146:* on a
+phone each row is a card (name, email, role, joined and the buttons laid out, `.tablewrap.people` in
+`styles.css`); the table stays on anything wider.
 
-**Welcome / lock.** "Sign in to open your club" assumes she knows she has one.
+**Welcome / lock.** *Build 146:* **Sign in to see your team**, and for an account with no role
+**Nobody has added you to a team yet** — "Ask your coach for the team link, or open the invite you
+were sent." As written: "Sign in to open your club" assumes she knows she has one.
 After sign-in with no role: "Waiting for access — no role has been granted to this
 account yet. Ask the club admin for an invite link." A dead end in jargon. Say:
 "You're signed in, but nobody has added you to a team yet. Ask your coach for the
@@ -272,7 +303,7 @@ team link, or open the invite you were sent."
 
 ## 4. Visual system
 
-*Done, build 146: the three decisions are set out at the top of `styles.css` and
+*Done, build 147: the three decisions are set out at the top of `styles.css` and
 `test/visual.js` holds the file to them.*
 
 - Type runs small for a sideline: ~100 declarations at 10–13 px, secondary text in
@@ -305,14 +336,13 @@ team link, or open the invite you were sent."
 3. Move developer text (account id, Firebase, rules, readiness, version) under an
    *Advanced* section; reword the refusal toasts. *Done, build 143 and 145.*
 4. Fix the FAB overlapping the calendar list; pad the list. *Done, build 146, but not by
-   padding: the list's end already cleared the +, and the screenshot's overlap was the first
-   row landing mid-page under it, which no padding moves. The + is a button on the calendar's
-   bar beside Today now, fixed over nothing; `test/visual.js` holds it there.*
+   padding: the overlap was a row landing under a fixed button, which no padding moves. The +
+   sits at the end of the views row, fixed over nothing; `test/visual.js` holds it there.*
 5. Rename: Org admin → Club admin; "this device" → "Not synced"; Squad → Players. *Done, build 145.*
 6. Parents' club home shows only their teams. *Done, build 142.*
 
 **Medium (a week each):**
-7. Split Season into Season / Stats / Players / Attendance.
+7. Split Season into Season / Stats / Players / Attendance. *Done, build 146 (Season / Stats / Minutes / Attendance).*
 8. One Settings screen with sections; delete the duplicates. *Done, build 143.*
 9. Copy pass: labels not paragraphs, one word per concept (a glossary file in the
    repo so tests can hold the UI to it). *Done, build 145: `GLOSSARY.md` and `test/copy.js`.*
