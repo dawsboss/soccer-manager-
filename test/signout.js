@@ -92,7 +92,7 @@ A.state = club(true);
 A.me = null; A.denied = false;
 show('matches');
 check('the club needs a sign-in', A.needsSignIn(), true);
-check('the lock screen is showing', /Sign in to this club/.test(app()), true);
+check('the lock screen is showing', /Sign in to see this club/.test(app()), true);
 check('no team is offered', A.myTeams().length, 0);
 check('and none can be edited', A.canEditTeam('t1'), false);
 check("no child's name in the page", app().includes(CHILD), false);
@@ -148,11 +148,11 @@ console.log('\n--- a phone that has never held the club ---');
 A.state = { teams: {}, matches: {}, access: {} };
 A.me = null; A.denied = false;
 show('club');
-check('it is asked to sign in, not left looking empty', /Sign in to open your club/.test(app()), true);
+check('it is asked to sign in, not left looking empty', /Sign in to see your team/.test(app()), true);
 check('with the sign-in button', /data-act="signinsheet"/.test(app()), true);
 A.state = club(false);
 show('club');
-check('a device with teams of its own stays open', /Sign in to open your club/.test(app()), false);
+check('a device with teams of its own stays open', /Sign in to see your team/.test(app()), false);
 
 /* ---------------- no backend at all ---------------- */
 

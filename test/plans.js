@@ -527,7 +527,7 @@ function plan(extra = {}, X = A) {
 
     with_([game(), game()]);
     check('two games are too few to say anything', A.needsWork(A.state.teams.t1).sigs.length, 0);
-    A.ui.view = 'season'; A.render();
+    A.ui.view = 'teamstats'; A.render();
     check('and the card says so', /After 3 finished games/.test(A.rendered()), true);
 
     // losing heavily, conceding late, one scorer; no shots tapped at all
@@ -540,7 +540,7 @@ function plan(extra = {}, X = A) {
     check('no shots tapped is not "we never shoot"', s1.includes('few-shots') || s1.includes('shots-against'), false);
     check('it is said to be unknown instead', A.needsWork(A.state.teams.t1).unknown.includes('shots'), true);
     check('no assists ever tapped is not "we never pass"', s1.includes('solo-goals'), false);
-    A.ui.view = 'season'; A.render();
+    A.ui.view = 'teamstats'; A.render();
     const html = A.rendered();
     check('the card shows the numbers behind each', /12 against and 6 for in the last 5 games/.test(html), true);
     check('and drills that answer it, for the team\'s age', /data-act="drill" data-id="/.test(html), true);
@@ -564,7 +564,7 @@ function plan(extra = {}, X = A) {
     check('All → opens the library on that signal', [A.ui.view, A.ui.practice.tab, A.ui.practice.f.sig].join(' '), 'practice drills few-shots');
 
     for (const who of ['mum', 'trk']) {
-      const ms = A.state.matches; as(who); A.state.matches = ms; A.ui.view = 'season'; A.render();
+      const ms = A.state.matches; as(who); A.state.matches = ms; A.ui.view = 'teamstats'; A.render();
       check(who + ': no What needs work card', /What needs work/.test(A.rendered()), false);
     }
   }

@@ -344,7 +344,7 @@ label.field span{display:block;font-size:13px;color:var(--ink-soft);margin-botto
 .livemins small{font-weight:500;font-size:12px;color:var(--ink-soft)}
 .diff{display:block;font-size:12px;font-weight:600}
 .diff.owed{color:var(--owed)}
-.diff.over{color:var(--ink-soft)}
+.diff.over,.diff.even{color:var(--ink-soft)}
 .pickbar{
   position:sticky;top:96px;z-index:30;
   display:flex;align-items:center;justify-content:space-between;gap:10px;
@@ -374,7 +374,7 @@ label.field span{display:block;font-size:13px;color:var(--ink-soft);margin-botto
   background:#fff;border:1px solid var(--line);border-radius:10px;
   font-family:"Barlow Condensed",sans-serif;font-weight:700;font-size:16px;line-height:1;
 }
-.lrspot-hint{font-family:"Barlow",sans-serif;font-size:10px;font-weight:500;color:var(--ink-soft)}
+.lrspot span{font-size:15px}
 
 /* ---------- tallies ---------- */
 .tallygrid{display:grid;grid-template-columns:auto 1fr 1fr;gap:8px;align-items:center}
@@ -561,7 +561,9 @@ body[data-mode="game"] .titlebar{padding-top:4px;padding-bottom:8px}
   display:flex;align-items:center;justify-content:center;font-weight:600;font-size:14px}
 .avatar img{width:100%;height:100%;object-fit:cover}
 .avatar[data-on="0"]{opacity:.65}
-.teamcard{display:flex;align-items:center;gap:12px;text-align:left;width:100%}
+.teamcard,.tapcard{display:flex;align-items:center;gap:12px;text-align:left;width:100%}
+.tapcard .tc-main b{font-size:16px}
+.tapcard:active,.teamcard:active,.setrow:active,button.card:active{background:var(--paper)}
 .tc-main{flex:1;min-width:0}
 .tc-main b{display:block;font-size:17px}
 
@@ -995,8 +997,9 @@ button.nextprac{cursor:pointer}
 .calsels .chip{display:inline-flex;align-items:center;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .calsels .chip .dot{display:inline-block;flex:none;width:9px;height:9px;border-radius:50%;margin-right:6px}
 .calsels .chip[aria-pressed="true"] .dot{box-shadow:0 0 0 1.5px #fff}
-.calmenu{flex:none;width:36px;height:36px;display:flex;align-items:center;justify-content:center;position:relative;
-  background:#fff;border:1px solid var(--line);border-radius:10px;color:var(--field-deep);padding:0}
+.calmenu{flex:none;height:36px;display:flex;align-items:center;justify-content:center;gap:4px;position:relative;
+  background:#fff;border:1px solid var(--line);border-radius:10px;color:var(--field-deep);padding:0 10px;font-size:14px;font-weight:600}
+.calmenu span{font-size:11px}
 .calmenu[aria-expanded="true"]{background:var(--field-deep);border-color:var(--field-deep);color:#fff}
 /* something is left out: said by a dot on the ☰, and in words inside */
 .calmenu[data-on="1"]::after{content:"";position:absolute;top:-3px;right:-3px;width:10px;height:10px;border-radius:50%;
@@ -1119,11 +1122,13 @@ button.ev:active{filter:brightness(.92)}
 }
 
 /* the + in the corner */
-.calfab{position:fixed;right:max(16px,calc((100vw - 900px) / 2 + 16px));bottom:calc(74px + env(safe-area-inset-bottom));z-index:45;
-  width:56px;height:56px;border-radius:16px;border:0;background:var(--field-deep);color:#fff;
-  display:flex;align-items:center;justify-content:center;box-shadow:0 4px 12px rgba(0,0,0,.28),0 1px 3px rgba(0,0,0,.2)}
+/* the + sits at the end of the views row, in the flow, so it covers no row (build 146) */
+.calviewrow{display:flex;align-items:stretch;gap:8px}
+.calviewrow .seg{flex:1;min-width:0}
+.calviewrow .seg button{padding-left:4px;padding-right:4px}
+.calfab{flex:none;width:44px;border-radius:10px;border:0;background:var(--field-deep);color:#fff;
+  display:flex;align-items:center;justify-content:center;padding:0}
 .calfab:active{transform:translateY(1px)}
-.stack.calendar{padding-bottom:64px}
 
 /* on top: a game being played, and what's next */
 .callive{display:flex;align-items:center;gap:10px;width:100%;text-align:left;font:inherit;color:inherit;border-left:4px solid #C5221F}
@@ -1247,3 +1252,20 @@ label.field .auth-inline span{display:inline}
   border-radius:50%;border:1.5px solid var(--ink-soft);background:none;color:var(--ink-soft);
   font:600 11px/1 Georgia,serif;font-style:italic;vertical-align:middle;cursor:pointer;padding:0}
 .infobtn:hover{border-color:var(--field);color:var(--field)}
+
+/* People on a phone: a card per person, the table on anything wider (UX-REVIEW.md, 3, *People*).
+   The same rows and buttons; only how they are laid out. */
+@media (max-width:640px){
+  .tablewrap.people{overflow-x:visible;background:none;border:0}
+  .tablewrap.people table,.tablewrap.people tbody{display:block}
+  .tablewrap.people thead{display:none}
+  .tablewrap.people tr{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:2px 10px;align-items:center;
+    background:#fff;border:1px solid var(--line);border-radius:var(--r);padding:10px 12px;margin-bottom:8px}
+  .tablewrap.people td{display:block;padding:0;border:0;white-space:normal;overflow-wrap:anywhere}
+  .tablewrap.people td:nth-child(1){grid-column:1;grid-row:1;font-size:16px}
+  .tablewrap.people td:nth-child(2){grid-column:1;grid-row:2}
+  .tablewrap.people td:nth-child(3){grid-column:1;grid-row:3;margin-top:4px}
+  .tablewrap.people td:nth-child(4){grid-column:2;grid-row:1;text-align:right;font-size:12px}
+  .tablewrap.people td:nth-child(5){grid-column:2;grid-row:2 / span 2;text-align:right}
+  .tablewrap.people td[colspan]{grid-column:1 / -1}
+}

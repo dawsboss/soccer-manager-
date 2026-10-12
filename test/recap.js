@@ -249,7 +249,13 @@ console.log('--- the season, game by game ---');
   check('the one that did is there', shots.vals[1].us, 9);
   check('goals are there for both', s.charts.find(c => c.label === 'Goals').vals.map(v => v.us).join(','), '0,3');
   A.ui.view = 'season'; A.render();
-  check('Season draws it', /Game by game/.test(A.rendered()), true);
+  check('Season leads into Stats, and draws no chart itself (build 146)', /data-v="teamstats"/.test(A.rendered()) && !/Game by game/.test(A.rendered()), true);
+  A.ui.view = 'teamstats'; A.render();
+  check('Stats waits for five finished games before charting', /Charts of each game once 5 have been played. 2 so far/.test(A.rendered()) && !/class="lcbox"/.test(A.rendered()), true);
+  for (let i = 3; i <= 5; i++) A.state.matches['g' + i] = { id: 'g' + i, teamId: 't1', opponent: 'Side ' + i, date: '2026-08-0' + i, createdAt: 1, ended: true, periods: {} };
+  A.render();
+  check('— and draws them at five', /Game by game/.test(A.rendered()) && /class="lcbox"/.test(A.rendered()), true);
+  for (let i = 3; i <= 5; i++) delete A.state.matches['g' + i];
   const all = JSON.stringify(s.charts.map(c => c.svg));
   check('no child is named in the charts', ['Ella', 'Mia', 'Rosa', 'Nakamura'].some(x => all.includes(x)), false);
 }
