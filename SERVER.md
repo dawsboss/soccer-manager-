@@ -262,12 +262,12 @@ does the bookkeeping, not that the phone works offline first.
   `mailAsk`; *Email* below): `mailImported()` asks the club to send each
   invite it made as a real invitation in the club's name; where the club
   has no mailer, each row's *Email it* opens the admin's own mail app (build
-  136: Firebase's sign-in links are gone).
+  140: Firebase's sign-in links are gone).
 - **Moved (build 135) too: letting people in** (`functions/staff.js`,
   `staffAsk`, `staffAsks/{code}/{uid}/{id}`): a team-link request approved
   (`approveClaim()`: the approval, the family on each child's record, her
   index entry, her member entry and the log in one write, the tables by
-  `settle`; since build 136 also a child the family filled in through the
+  `settle`; since build 140 also a child the family filled in through the
   link, added to the squad with her record in the club and her roster entry
   in the same write, when the coach says so), a fan's ask (`approveFan()`, with her name for the family and
   the fans table), a squad's parent links (`inviteSquad()`: one per child
