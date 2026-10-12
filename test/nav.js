@@ -225,7 +225,7 @@ console.log('\n--- More, by role ---');
 {
   const has = (re, s) => re.test(s);
   as('boss'); let m = more();
-  check('an admin: Notifications, the club, Training sessions, Settings, Sign out',
+  check('an admin: What\'s new, the club, Training sessions, Settings, Sign out',
     ['data-v="notes"', 'data-v="club"', 'data-v="sessions"', 'data-v="setup"', 'data-act="signout"'].every(x => m.includes(x)), true);
   check('— one Settings, never People or Club details beside it (build 143)', /data-v="people"|data-v="admin"/.test(m) + ' ' + (m.match(/data-v="setup"/g) || []).length, 'false 1');
   check('— which says it has the club in it', /<b>Settings<\/b>[\s\S]*?the club: people, registrations, fields/.test(m), true);
