@@ -911,8 +911,13 @@ const toUid = (S, u) => S.sent().filter(m => m.data.uid === u);
     const { A, fbk, b } = await boot('mum');
     check('a parent may turn it on: it is her own phone', A.pushSupport(), 'ok');
     check('the worker is registered at load, ready for a tap', b.registered.join(), 'sw.js');
+    // UX-REVIEW-2.md, 6.2: in Settings and nowhere else
     A.ui.view = 'inbox'; A.render();
-    check('Messages offers it', A.rendered().includes('data-act="pushon"'), true);
+    check('Messages offers nothing', /data-act="pushon"|Pop-ups on this device|What notifies you/.test(A.rendered()), false);
+    A.ui.view = 'notes'; A.render();
+    check('nor does What\'s new', /data-act="pushon"|What notifies you/.test(A.rendered()), false);
+    A.ui.view = 'setup'; A.render();
+    check('Settings offers it', A.rendered().includes('data-act="pushon"'), true);
     check('instead of the open-page pop-ups', A.rendered().includes('Pop-ups on this device'), false);
     A.click({ act: 'pushon' }); await A.flush();
     check('the browser is asked, from the tap', b.asked, 1);

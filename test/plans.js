@@ -494,7 +494,7 @@ function plan(extra = {}, X = A) {
     A.click({ act: 'pracsuggest', id: pr.id });
     A.ui.view = 'calendar'; A.render();
     /* The Calendar lists it; the card saying it again over the list went in
-       build 148 (UX-REVIEW-2.md, 7.2), so "next" is Season's. */
+       build 151 (UX-REVIEW-2.md, 7.2), so "next" is Season's. */
     check('the coach sees the practice on the Calendar', /class="ev-title">Practice<[\s\S]{0,80}5:30–6:30pm · Lakeside Park/.test(A.rendered()), true);
     check('with no card over the list saying it again', /class="card calnext"/.test(A.rendered()), false);
     A.click({ act: 'calitem', k: 'practice', tid: 't1', id: pr.id });

@@ -78,7 +78,7 @@ console.log('--- a parent, for her own child ---');
   setup(); as('mumU');
   let h = html();
   check('the calendar row says she has not answered', /Ella: not answered/.test(h), true);
-  // the card over the list went in build 148 (UX-REVIEW-2.md, 7.2); she is asked on the entry and on Home
+  // the card over the list went in build 151 (UX-REVIEW-2.md, 7.2); she is asked on the entry and on Home
   check('no card over the list asks her', /Is Ella going\?|class="card calnext"/.test(h), false);
   A.click({ act: 'calitem', k: 'practice', tid: 't1', id: 'e1' });
   check('the entry asks her', /Is Ella going\?/.test(sheet()), true);
@@ -163,7 +163,7 @@ function rest() {
     check('the sheet names everyone', /Ella Fitzgerald/.test(s) && /Rosa Delgado/.test(s) && /Jo Nakamura/.test(s), true);
     check('who has not answered comes first — the one to chase', s.indexOf('Jo Nakamura') < s.indexOf('Rosa Delgado') && s.indexOf('Rosa Delgado') < s.indexOf('Ella Fitzgerald'), true);
     check('with who said it, and the note', /Not going · said by Rosa&#39;s dad · Away at Gran/.test(s), true);
-    /* Build 148 (UX-REVIEW-2.md, 7.2): the counts and a list, not three chips a
+    /* Build 151 (UX-REVIEW-2.md, 7.2): the counts and a list, not three chips a
        child; a name opens the chips for that child alone. */
     check('the three counts, and who is still to answer', /class="rsvpcounts"><span><b>1<\/b>going<\/span><span><b>1<\/b>not going<\/span><span><b>0<\/b>maybe<\/span><span><b>1<\/b>to answer<\/span><\/div>/.test(s), true);
     check('and no chips until she taps a name', /rsvpchips|data-act="rsvp"/.test(s), false);

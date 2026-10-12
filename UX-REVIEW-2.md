@@ -20,6 +20,14 @@ still confusing, the owner's three first.
 ## 6. The tab bar, specifically
 
 ### 6.1 Game: which team, which date, which game?
+*Done in build 150, all four bullets: `gameTitle()` and `gameWhen()` in the header
+(`G14 Flight v Northgate` over `Sat 19 Sep · 9:30am`; the score between the teams
+once it has kicked off), Club home's team rows read the same way, `navGames()` and
+`sheetNavGames()` make the tab a picker when more than one of the teams she works on
+(`navTeams()`: coached, tracked or helped; every team for an admin or a viewer, since a
+coach reads the whole club) has a game on or coming, and the dot is live on any of
+them. Pinned in `test/nav.js`.*
+
 `navGame()` picks the game for *the team on screen*: live, else the next on the
 calendar, else the last played. Nothing on the tab or in the game header says which
 team that is. The header reads `Hill End 1–1 · 38:11`: opponent, score, clock. An
@@ -41,6 +49,10 @@ Fix, in order of cost:
   header) should name the team it belongs to.
 
 ### 6.2 Notifications are in three places, and the word means two things
+*Done in build 148: the switches are in Settings → Notifications alone, the page is
+What's new (at `#/whats-new`, the old address landing there) with a gear to them,
+and Messages carries none of it.*
+
 - "What notifies you" (the on/off switches) is drawn on **Settings**, on the
   **Notifications** page, and as the push card on **Messages** (`muteCard()` and
   `pushCard()` at three call sites). Keep the switches in Settings → Notifications
@@ -56,6 +68,12 @@ Fix, in order of cost:
   reads better: What's new · Sandbox FC · Sessions · Settings.
 
 ### 6.3 Team opens "the last team you looked at"
+*Done in build 150: `homeView()` is Club home when `navTeams().length > 1`, the Team
+tab opens it, a team's Season, Players and Training carry a back arrow up to it, Club
+home has none of its own and is not offered again under More. The list is Club home as
+it was (its order kept: an admin's Calendar card first, `test/schedule.js`), so "2 teams
+you can reach" (7.3) is still to do. Pinned in `test/nav.js`.*
+
 The Team tab shows whichever team `ui.teamId` was left on. For a coach of one team
 that is right. For an admin, or a coach of two teams, it feels random: the only
 clue is a small chevron after the team name in the title, and nothing says "you
@@ -72,6 +90,14 @@ team, which is the wrong direction).
 ## 7. Things I noticed this round
 
 ### 7.1 Bugs
+*Done in build 149.* The You row is the email, role and team alone (the sentence
+stays on the Got it card and in the account sheet); no score is drawn before
+kick-off (game header, its ⋯ menu, Which game, the Live card), a 0–0 once it has;
+and the call-off button was never a family's: the run that showed it was the app
+owner, a family on the team in a club with no admin, whom `canAdmin()` lets in on
+purpose. `test/away.js` now pins it for a family and a tracker, with an admin and
+without.
+
 - **Settings → You row runs two strings together:** "pat@x.test · Parent · Test
   Squad AYou are a parent here: you see your own child by name…". The role hint
   is appended with no separator, and it should not be in that row at all now that
@@ -83,7 +109,7 @@ team, which is the wrong direction).
   was drawn for the parent.
 
 ### 7.2 Still too much on one screen
-*All five done in build 148: the coach's Who is coming is the counts and a list, a name
+*All five done in build 151: the coach's Who is coming is the counts and a list, a name
 opening the chips for that child; no card over the calendar's list; Subs colours the three
 furthest behind the pace; Lineup mid-game with no shape leads with the pitch as it stands;
 over her target is a full bar, not a red one.*
@@ -135,14 +161,15 @@ over her target is a full bar, not a red one.*
 
 ## 8. Order of work for round 2
 
-1. Game header: team name, no score before kick-off, us–them order (6.1, first
-   two bullets). Half a day.
-2. Settings "You" row bug; blank score before kick-off on cards (7.1). An hour.
+1. ~~Game header: team name, no score before kick-off, us–them order (6.1, first
+   two bullets). Half a day.~~ Build 150.
+2. ~~Settings "You" row bug; blank score before kick-off on cards (7.1). An hour.~~ Done, build 149.
 3. Notification switches in one place; rename the page What's new (6.2). A day.
-4. Team tab → My teams when there is more than one (6.3). A day.
-5. Game tab picker when more than one team has a game (6.1, third bullet). A day.
-6. Coach's Who-is-coming as a list with override, not chips (7.2). Half a day.
-   *Done, build 148, with the rest of 7.2.*
+4. ~~Team tab → My teams when there is more than one (6.3). A day.~~ Build 150.
+5. ~~Game tab picker when more than one team has a game (6.1, third bullet). A day.~~
+   Build 150.
+6. ~~Coach's Who-is-coming as a list with override, not chips (7.2). Half a day.~~
+   Build 151, with the rest of 7.2.
 7. Drop the Next-practice card from the calendar; Sessions page's config chips
-   to Settings (7.2, 7.3). Half a day. *The card is gone (build 148); the Sessions
-   chips are still to do.*
+   to Settings (7.2, 7.3). Half a day. The card is gone (build 151); the Sessions
+   chips (7.3) are still to do.

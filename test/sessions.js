@@ -583,7 +583,7 @@ function newSession(v = {}) {
     check('the season page and the calendar feed carry no session', /Secret 1-1|Another 1-1|Hill End/.test(pub), false);
     check('and no session reached public/ through calItems', A.calItems(['t1']).some(x => x.kind === 'session'), false);
     A.ui.view = 'calendar'; A.render();
-    // no card over the list since build 148 (UX-REVIEW-2.md, 7.2): the row says where she stands
+    // no card over the list since build 151 (UX-REVIEW-2.md, 7.2): the row says where she stands
     check('one she is booked into is listed as hers', /Secret 1-1 with Jaz[\s\S]{0,200}<span class="ev-sub">Rosa<\/span>/.test(A.rendered()), true);
     A.sess.booked.c1.p1.st = 'asked'; A.render();
     check('one she has only asked for says so', /<span class="ev-sub">Rosa \(asked\)<\/span>/.test(A.rendered()), true);

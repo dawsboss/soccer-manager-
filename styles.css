@@ -556,19 +556,20 @@ body[data-role="viewer"] .scoreside .btn{display:none}
 
 /* ---------- game mode ---------- */
 /* A game is its own mode (UX-REVIEW.md, 1.3; build 144): the brand row steps
-   aside, and the title row becomes the game header: Back, the opponent and
-   score (the game picker), the clock, the sync badge while it has something
-   to say, and the ⋯ menu. Pinned, with the segmented control under it. */
+   aside, and the title row becomes the game header: Back, the two teams and
+   the score with the date under them (the game picker), the clock, the sync
+   badge while it has something to say, and the ⋯ menu. Pinned, with the
+   segmented control under it. */
 body[data-mode="game"] .topbar-main{display:none}
 body[data-mode="game"] .titlebar{padding-top:4px;padding-bottom:8px}
-.ghmain{flex:1;min-width:0;display:flex;align-items:baseline;gap:8px;background:none;border:0;padding:0;color:#fff;text-align:left}
-.ghname{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
-  font-family:"Barlow Condensed",sans-serif;font-weight:700;font-size:22px;line-height:1.15}
-.ghscore{flex:none;font-family:"Barlow Condensed",sans-serif;font-weight:700;font-size:22px;font-variant-numeric:tabular-nums}
+.ghmain{flex:1;min-width:0;display:flex;flex-direction:column;align-items:flex-start;gap:1px;background:none;border:0;padding:0;color:#fff;text-align:left}
+.ghname{max-width:100%;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+  font-family:"Barlow Condensed",sans-serif;font-weight:700;font-size:21px;line-height:1.15;font-variant-numeric:tabular-nums}
+/* the date and kick-off under the two teams: which game this is, before the clock says how far it has got */
+.ghwhen{max-width:100%;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:rgba(255,255,255,.78);font-size:14px;font-weight:500}
 .ghclock{flex:none;font-family:"Barlow Condensed",sans-serif;font-weight:700;font-size:20px;line-height:1.2;
   font-variant-numeric:tabular-nums;color:#fff;background:rgba(255,255,255,.14);border:1px solid rgba(255,255,255,.22);
   border-radius:9px;padding:3px 9px;max-width:38vw;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.ghclock.ghkick{font-family:"Barlow",sans-serif;font-weight:600;font-size:14px;padding:4px 9px}
 .ghsync{font-size:12px;padding:2px 7px}
 /* the two looks folded into one screen: List / Pitch on Subs, Stats / Live feed on Stats */
 .chips.looks{flex-wrap:nowrap}

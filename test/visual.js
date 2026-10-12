@@ -162,8 +162,8 @@ check('and from app.js', /setgo/.test(app), false);
 /* ---------------- colour ---------------- */
 console.log('\n--- orange and red for what wants the coach; a fact is grey ---');
 check('a player short of minutes is grey, not orange', /color:var\(--ink-soft\)/.test(bodyOf('.diff.owed,.diff.over,.diff.even')), true);
-check('— except the furthest behind on Subs, which is what the coach scans for (build 148)', /color:var\(--owed\)/.test(bodyOf('.liverow .diff.owed')), true);
-check('a player over her target is not red: the bar is just full (build 148)', bodyOf('.bar i[data-over="1"]'), '');
+check('— except the furthest behind on Subs, which is what the coach scans for (build 151)', /color:var\(--owed\)/.test(bodyOf('.liverow .diff.owed')), true);
+check('a player over her target is not red: the bar is just full (build 151)', bodyOf('.bar i[data-over="1"]'), '');
 check('— and app.js no longer marks one', /data-over=/.test(app), false);
 check('called off is a grey tag', /var\(--paper\)/.test(bodyOf('.tag.called')) && !/--over|#FBE7E3|#6E2317/.test(bodyOf('.tag.called')), true);
 check('on a calendar entry too', /var\(--paper\)/.test(bodyOf('.ev[data-called="1"] .ev-tag')), true);

@@ -170,7 +170,7 @@ const club = () => ({
     A.click({ act: 'calpast' });
     check('— then Hide earlier', /data-act="calpast">Hide earlier \(\d+\)<\/button>/.test(A.rendered()), true);
     check('the + is there for a coach', /class="calfab"/.test(h), true);
-    check('no card over the list saying the first row again (build 148)', /class="card calnext"/.test(h), false);
+    check('no card over the list saying the first row again (build 151)', /class="card calnext"/.test(h), false);
   }
 
   console.log('\n--- a coach with no name is "the coach", mid-sentence ---');
@@ -194,7 +194,7 @@ const club = () => ({
     h = as('jaz', 'game', club(), () => { A.ui.matchId = 'g2'; A.ui.gameView = 'subs'; });
     check('before kick-off nobody is orange', /diff owed/.test(h), false);
     check('— though everyone is short of a plan not started', count(h, /diff even">40 short/g), 3);
-    /* Build 148 (UX-REVIEW-2.md, 7.2): orange for the three furthest behind
+    /* Build 151 (UX-REVIEW-2.md, 7.2): orange for the three furthest behind
        and only them, so a bench of five behind the pace is not five warnings. */
     const five = () => { const s = live(); s.matches.g2.stints = { a: { pid: 'p1', on: 0 } };
       for (const [id, n] of [['p4', '2'], ['p5', '3'], ['p6', '5']]) s.teams.t1.players[id] = { id, name: 'Player ' + n, number: n };
@@ -213,7 +213,7 @@ const club = () => ({
     check('— the detail behind an info button, not a paragraph', /data-act="info" data-k="snapshots"/.test(h) && !/This game has no shape/.test(h), true);
     check('— ahead of the game\'s details', h.indexOf('>Lineup<') < h.indexOf('<h2>Northgate</h2>'), true);
     check('Snapshots is not a heading any more', /<h2[^>]*>Snapshots<\/h2>/.test(h), false);
-    /* Build 148 (UX-REVIEW-2.md, 7.2): mid-game the lineup is the pitch as it
+    /* Build 151 (UX-REVIEW-2.md, 7.2): mid-game the lineup is the pitch as it
        stands, and Pick a shape is a button beside the heading. */
     const mid = () => { const s = club(); s.matches.g2.periods = { 0: { half: 1, start: NOW - 20 * 60000 } }; s.matches.g2.stints = { a: { pid: 'p1', on: 0 }, b: { pid: 'p2', on: 0 } }; return s; };
     const g = as('jaz', 'game', mid(), () => { A.ui.matchId = 'g2'; A.ui.gameView = 'plan'; });
