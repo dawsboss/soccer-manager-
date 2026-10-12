@@ -2,7 +2,7 @@
    Static app. Data lives in localStorage, and mirrors to Firebase Realtime
    Database when a config + workspace code are present. */
 
-const BUILD = '147';
+const BUILD = '148';
 const BUILT = '2026-10-12';
 /* The version of database.rules.json this app was written against. The rules
    carry the same number in rulesVersion's .write, which accepts that number
@@ -7092,7 +7092,8 @@ function normView() {
    reads twice. Now it is a card the first time she opens the club on this
    phone, put away with Got it and remembered per account, club and role
    (so a parent made a coach is told again), and a line in the account sheet
-   and under Settings → You for whenever she wants it back. The test-club
+   for whenever she wants it back. Not in Settings → You's row: run on after
+   the email and role it read as one string (UX-REVIEW-2.md, 7.1). The test-club
    bar and the sync warnings are not role banners and stay. */
 const LS_ROLECARD = 'sm.role.v1';
 const roleCardKey = lim => `${envPrefix()}${wsCode() || 'local'}:${lim}`;
@@ -7679,7 +7680,7 @@ function shortDate(d) {
    screen, so the clock card is the first thing under the header. */
 const DOTS_SVG = '<svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="2.2"/><circle cx="12" cy="12" r="2.2"/><circle cx="19" cy="12" r="2.2"/></svg>';
 function gameHeader(t, m) {
-  const sc = score(m), st = gameStatus(m);
+  const sc = shownScore(m), st = gameStatus(m);
   const upLabel = ui.gameFrom === 'calendar' ? 'Back to the calendar' : 'Back to the team';
   // the clock while it is being played; before, when it is; after, full time
   const when = st === 'live' ? `<span class="ghclock" data-live="clock" data-mid="${m.id}">${mmss(elapsedSec(m))}</span>`
@@ -7687,7 +7688,7 @@ function gameHeader(t, m) {
       : `<span class="ghclock ghkick">${esc([m.date ? shortDate(m.date) : '', m.kickoff ? niceTime(m.kickoff) : ''].filter(Boolean).join(' · ') || 'Not played yet')}</span>`;
   return `<button class="tbback" data-act="backgames" aria-label="${upLabel}" title="${upLabel}">${BACK_SVG}</button>
     <button class="ghmain" data-act="pickgame" aria-label="Which game" title="Which game">
-      <span class="ghname">${esc(m.opponent || 'Game')}</span><span class="ghscore">${sc.us}–${sc.them}</span></button>
+      <span class="ghname">${esc(m.opponent || 'Game')}</span>${sc ? `<span class="ghscore">${sc.us}–${sc.them}</span>` : ''}</button>
     ${when}
     <span class="sync ghsync" id="gsync" hidden></span>
     <button class="tbback ghmore" data-act="gamemenu" aria-label="More for this game" title="More for this game">${DOTS_SVG}</button>`;
@@ -7699,11 +7700,11 @@ function gameMenu(t, m) {
   const list = teamMatches(t.id), n = list.length;
   const i = list.findIndex(x => x.id === m.id);
   const older = i > -1 ? list[i + 1] : null, newer = i > 0 ? list[i - 1] : null;
-  const sc = score(m);
+  const sc = shownScore(m);
   const row = (g, k) => g ? `<button class="opt spread" data-act="pickgame2" data-id="${g.id}"><span><b>${k}</b>
       <span class="rowsub">${esc(g.opponent || 'Unnamed')}${g.date ? ' · ' + shortDate(g.date) : ''}</span></span>
-      <span class="pmins">${score(g).us}<small>–${score(g).them}</small></span></button>` : '';
-  return `<h3>${esc(m.opponent || 'Game')} <span class="muted">${sc.us}–${sc.them}</span></h3>
+      <span class="pmins">${scoreCell(g)}</span></button>` : '';
+  return `<h3>${esc(m.opponent || 'Game')}${sc ? ` <span class="muted">${sc.us}–${sc.them}</span>` : ''}</h3>
     <p class="muted" style="margin-top:0">${[m.date ? shortDate(m.date) : '', n > 1 && i > -1 ? `game <span class="gb-hint">${n - i}/${n}</span> of the season` : ''].filter(Boolean).join(' · ') || 'No date yet'}</p>
     ${row(older, 'Older game')}${row(newer, 'Newer game')}
     ${n > 1 ? `<button class="opt" data-act="pickgame"><b>All games</b><span class="rowsub">${n} this season</span></button>` : ''}
@@ -7735,10 +7736,9 @@ function sheetPickGame() {
   const list = teamMatches(t.id);
   openSheet(`<h3>Which game?</h3>
     ${list.map(g => {
-    const sc = score(g);
     return `<button class="opt spread" type="button" data-act="pickgame2" data-id="${g.id}" aria-current="${g.id === cur}">
       <span>${esc(g.opponent || 'Unnamed')}<span class="rowsub">${esc(g.date || '')} · <span data-live="gmins" data-mid="${g.id}">${mins(elapsedSec(g))}</span> min played${running(g) ? ' · running' : ''}</span></span>
-      <span class="pmins">${sc.us}<small>–${sc.them}</small></span></button>
+      <span class="pmins">${scoreCell(g)}</span></button>
 `;
   }).join('') || '<p class="muted">No games yet.</p>'}
     ${cur && state.matches[cur] && !readOnlyHere() ? `<button class="btn quiet wide" data-act="editmatch" data-id="${cur}" style="margin-bottom:8px">Edit this game's details</button>` : ''}
@@ -8501,14 +8501,14 @@ function viewFeed() {
   if (!m || m.teamId !== t.id) { const l = teamMatches(t.id); m = l[0] || null; ui.matchId = m ? m.id : null; }
   if (!m) return `<div class="empty"><strong>No game yet</strong>Nothing to follow until a game is set up.</div>`;
 
-  const now = nowMs(), sc = score(m), st = gameStatus(m);
+  const now = nowMs(), sc = shownScore(m), st = gameStatus(m);
   const us = teamLabel(t), them = esc(m.opponent || 'Them');
   const status = st === 'done' ? 'Full time'
     : st === 'live' ? `${running(m) ? 'Live' : 'Paused'} · ${esc(halfName(m, m.currentHalf || 1))}`
       : `Not started${m.date ? ' · ' + esc(shortDate(m.date)) : ''}`;
   const head = `<div class="card feedhead" data-st="${st}">
     <div class="feedstatus">${st === 'live' && running(m) ? '<i class="livedot"></i>' : ''}${status}${st === 'upcoming' ? '' : ` · <span data-live="clock" data-mid="${m.id}">${mmss(elapsedSec(m, now))}</span>`}</div>
-    <div class="feedscore"><span class="fs-side">${us}</span><span class="fs-num">${sc.us}–${sc.them}</span><span class="fs-side">${them}</span></div></div>`;
+    <div class="feedscore"><span class="fs-side">${us}</span><span class="fs-num">${sc ? `${sc.us}–${sc.them}` : 'v'}</span><span class="fs-side">${them}</span></div></div>`;
 
   const all = feedItems(t, m);
   const everything = !!ui.feedAll;
@@ -16712,7 +16712,7 @@ function viewSetup() {
       : '<p class="muted" style="margin-bottom:0">A club admin can add them to the club, signed in on this phone.</p>'}</div>` : '';
 
   const you = setSection('You', [
-    me ? setRow('signinsheet', esc(me.name || me.email || 'You'), esc([me.email, r ? ROLE_LABEL[r] + (r !== 'owner' && r !== 'admin' && team() ? ' · ' + team().name : '') : 'No role here yet'].filter(Boolean).join(' · ')) + (restricted() ? `<span class="rolewords">${roleWords(restricted())}</span>` : ''))
+    me ? setRow('signinsheet', esc(me.name || me.email || 'You'), esc([me.email, r ? ROLE_LABEL[r] + (r !== 'owner' && r !== 'admin' && team() ? ' · ' + team().name : '') : 'No role here yet'].filter(Boolean).join(' · ')))
       : setRow('signinsheet', 'Sign in', 'Signed out, everything stays on this device. Sign in to share it with your club.'),
     canTrain() ? setRow('mydrills', 'My drills', 'Your own drills and templates, on every phone you sign in on') : ''
   ], pushCard('settings') + muteCard());
@@ -18012,6 +18012,11 @@ const shirtOf = p => String((p && p.number) ?? '').trim() || '–';
 const gameStatus = m => m.ended ? 'done'
   : (m.currentHalf || 1) > (m.periodCount || 2) ? 'done'
   : (elapsedSec(m) > 0 || running(m)) ? 'live' : 'upcoming';
+/* The score to draw, or null before kick-off: a 0–0 on a game not played yet
+   reads as a result (UX-REVIEW-2.md, 7.1). A goal on a game with no clock, an
+   imported result, still shows. */
+const shownScore = m => { const sc = score(m); return gameStatus(m) === 'upcoming' && !sc.us && !sc.them ? null : sc; };
+const scoreCell = m => (sc => sc ? `${sc.us}<small>–${sc.them}</small>` : '<small>upcoming</small>')(shownScore(m));
 
 function publicGame(t, m) {
   const roster = squad(t, m);
