@@ -166,7 +166,9 @@ console.log('\n--- what her role lets her do: a card, once, and a line in the ac
   check('— in her own words, not "Signed in as"', /You are a parent here: you see your own child by name, say whether she is coming/.test(h) && !/Signed in as/.test(h), true);
   check('— with Got it', /data-act="roleok" data-v="parent">Got it</.test(h), true);
   A.ui.view = 'calendar'; A.render();
-  check('it stays until she taps, on every screen', /rolecard/.test(screen()), true);
+  check('on Home alone (UX-REVIEW-2.md, 7.3): not over the Calendar', /rolecard/.test(screen()), false);
+  A.ui.view = 'mine'; A.render();
+  check('— and still on Home until she taps', /rolecard/.test(screen()), true);
   A.click({ act: 'roleok', v: 'parent' });
   check('Got it puts it away', /rolecard|Signed in as/.test(screen()), false);
   for (const v of ['mine', 'season', 'calendar', 'setup', 'club']) { A.ui.view = v; A.render(); if (/rolecard/.test(screen())) check(`— gone on ${v}`, false, true); }
@@ -182,10 +184,11 @@ console.log('\n--- what her role lets her do: a card, once, and a line in the ac
   check('— which it says as a line of its own', /data-act="signinsheet"[\s\S]*?<span class="psub">[^<]*Parent · G14 Flight<\/span><\/span><\/button>/.test(h), true);
 
   A.storage.removeItem('sm.role.v1:trk');
-  h = as('trk', 'game', 't1', 'track', 'g1');
-  check('a tracker is told once what she may do, on Track', /rolecard" data-role="tracker"[\s\S]*?You track this team: you log what happens/.test(h), true);
-  A.click({ act: 'roleok', v: 'tracker' });
-  check('— and no more', /rolecard/.test(as('trk', 'game', 't1', 'track', 'g1')), false);
+  h = as('trk', 'season');
+  check('a tracker is told once what she may do, on her team\'s Season', /rolecard" data-role="tracker"[\s\S]*?You track this team: you log what happens/.test(h), true);
+  check('— never over the game', /rolecard/.test(as('trk', 'game', 't1', 'track', 'g1')), false);
+  as('trk', 'season'); A.click({ act: 'roleok', v: 'tracker' });
+  check('— and no more', /rolecard/.test(as('trk', 'season')), false);
   check('another account on this phone gets her own', /rolecard/.test((A.storage.removeItem('sm.role.v1:mum'), as('mum', 'mine'))), true);
 
   h = as('jaz');

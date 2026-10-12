@@ -1160,15 +1160,20 @@ button.ev:active{filter:brightness(.92)}
 .mg-cell[data-sel="1"]{background:var(--field-wash)}
 .mg-cell[data-sel="1"][data-today="0"] .mg-n{box-shadow:inset 0 0 0 2px var(--field-deep)}
 .mg-ev{display:block;background:var(--ev);color:#fff;border-radius:4px;padding:1px 3px;font-size:11px;line-height:1.35;
-  white-space:nowrap;overflow:hidden;text-overflow:clip}
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .mg-ev[data-called="1"]{background:#fff;color:var(--ink-soft);box-shadow:inset 0 0 0 1px var(--ev);text-decoration:line-through}
 .mg-ev[data-past="1"]{opacity:.6}
 .mg-more{font-size:11px;font-weight:700;color:var(--ink-soft);padding:0 3px}
 .mg-x{display:none}
+/* a phone's cell is too narrow for a name: the short form ("v LAK") there, the whole title wherever there is room */
+.mg-f{display:none}
+.tg:not(.tg-week) .mg-f{display:inline}
+.tg:not(.tg-week) .mg-s{display:none}
 @media (min-width:760px){
   .mg-cell{min-height:96px;padding:4px}
   .mg-ev{font-size:12px;padding:1px 5px}
-  .mg-x{display:inline}
+  .mg-x,.mg-f{display:inline}
+  .mg-s{display:none}
 }
 
 /* The + sits at the end of the views row, in the flow, so it covers no row (build 146): green,
@@ -1185,6 +1190,10 @@ button.ev:active{filter:brightness(.92)}
 .callive{display:flex;align-items:center;gap:10px;width:100%;text-align:left;font:inherit;color:inherit;border-left:4px solid #C5221F}
 .callive-t{flex:1;min-width:0;display:flex;flex-direction:column}
 .callive .ev-live{background:#C5221F;color:#fff}
+/* on Month, one line over the grid */
+.callive[data-one="1"]{padding:8px 12px}
+.callive[data-one="1"] .callive-t b{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.callive[data-one="1"] .muted{flex:none}
 .calnext{border-left:4px solid var(--ev,var(--field))}
 .calstrip{background:#fff;border:1px solid var(--line);border-radius:var(--r);padding:6px}
 

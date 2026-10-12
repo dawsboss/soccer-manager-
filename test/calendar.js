@@ -485,7 +485,8 @@ console.log('--- a club\'s whole season: views, the tree of calendars, and pagin
   h = html();
   check('the day view is today', /data-id="e3"/.test(h) && !/data-id="e1"/.test(h), true);
   check('drawn on the hours, where it falls', /class="tg"[^>]*--cols:1/.test(h) && /data-act="calitem" data-k="practice" data-tid="t1" data-id="e3" class="tg-ev"[^>]*top:calc\(var\(--hr\) \* 11\.000\)/.test(h), true);
-  check('the bar says which day', /Sat 12 Sep · Today/.test(h), true);
+  check('the bar says which day, and not "Today" twice', /class="caltitle"[^>]*>Sat 12 Sep <span/.test(h) && !/Sat 12 Sep · Today/.test(h), true);
+  check('— the Today button already says it is today', /class="caltoday"[^>]*aria-current="date"/.test(h), true);
   A.click({ act: 'calstep', v: 1 });
   check('forward a day is Sunday, her other child\'s game', /data-id="g5"/.test(html()), true);
   A.click({ act: 'calpick', v: '2026-09-16' });
@@ -513,7 +514,8 @@ console.log('--- a club\'s whole season: views, the tree of calendars, and pagin
   h = html();
   check('the month is the grid', /class="mg-grid"/.test(h) && /data-act="calpick"/.test(h), true);
   check('six weeks or fewer, whole weeks', (h.match(/class="mg-cell"/g) || []).length % 7, 0);
-  check('what is on is in the day, by name', /class="mg-ev"[^>]*>(<span class="mg-x">[^<]*<\/span>)*v Northgate</.test(h), true);
+  check('what is on is in the day, by name', /class="mg-ev"[^>]*>(<span class="mg-x">[^<]*<\/span>)*<span class="mg-f">v Northgate</.test(h), true);
+  check('— and as "v NOR" for a cell too narrow for the name', /<span class="mg-s">v NOR<\/span>/.test(h), true);
   check('under it, the day being looked at', /data-v="2026-09-15"[^>]*data-sel="1"/.test(h) && /data-id="e1"/.test(h) && !/data-id="g2"/.test(h), true);
   A.click({ act: 'calpick', v: '2026-09-19' });
   h = html();
@@ -671,6 +673,10 @@ console.log('--- the games are on the calendar, and on the team\'s Season ---');
   check('— and the game being played marks the Game tab', /data-tab="game"[^>]*>[\s\S]*?class="tablive"/.test(A.rendered('#tabbar')), true);
   check('a game being played is on top', /class="card go callive"[^>]*data-act="calgame" data-tid="t1" data-id="g2" data-g="subs"/.test(h), true);
   check('— with its score and minutes', /data-live="gmins" data-mid="g2"/.test(h), true);
+  check('— the whole card on the Schedule', /data-one="1"/.test(h), false);
+  A.ui.calView = 'month';
+  check('— one line on Month, over the grid', /class="card go callive"[^>]*data-id="g2"[^>]* data-one="1"/.test(html()) && /data-live="gmins" data-mid="g2"/.test(A.rendered()), true);
+  A.ui.calView = 'schedule'; h = html();
   A.click({ act: 'calgame', tid: 't1', id: 'g2', g: 'subs' });
   check('one tap and the coach is on Subs', A.ui.view + ' ' + A.ui.gameView + ' ' + A.ui.matchId, 'game subs g2');
   // the back arrow is on the title row (build 141), and says where it goes

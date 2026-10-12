@@ -264,6 +264,12 @@ console.log('\n--- the title row ---');
   check('— and back from there is the team', A.ui.view, 'season');
   for (const v of ['admin', 'planner', 'regs', 'comply']) { as('boss', v); A.click({ act: 'navback' }); check(`${v}: back is Settings`, A.ui.view, 'setup'); }
   as('boss', 'sessions'); A.click({ act: 'navback' }); check('sessions: back is Club home, where its card is', A.ui.view, 'club');
+  // fields, fees and hours are Settings' screens since build 148 (UX-REVIEW-2.md, 7.3)
+  for (const [k, name] of [['fields', 'Fields'], ['fees', 'Session fees'], ['hours', 'Coach hours']]) {
+    as('boss', 'setup'); A.click({ act: 'sesstab', k });
+    check(`${k}: a screen titled ${name}, from Settings`, A.ui.view + ' ' + titled(name) + ' ' + /data-act="navback"/.test(title()), 'sessions true true');
+    A.click({ act: 'navback' }); check(`— and back is Settings`, A.ui.view, 'setup');
+  }
   as('jaz', 'club');
   check('Club home: titled with the club alone, as the switcher', /class="tbtitle pick" data-act="clubswitch"/.test(title()) && titled('Club home'), true);
   as('jaz'); A.ui.view = 'thread'; A.ui.thread = { tid: 't1', fam: 'mum' }; A.render();
@@ -283,7 +289,8 @@ console.log('\n--- the title row ---');
   A.ui.gameFrom = 'calendar'; A.render();
   check('— opened from the calendar: Back to the calendar', /aria-label="Back to the calendar"/.test(title()), true);
   as('jaz', 'calendar');
-  check('the Calendar: hers, over her own name, no club', titled('Calendar') && titled('jaz') && !/Lakeside SC|G14 Flight/.test(title()), true);
+  // her own name under it said nothing to her (UX-REVIEW-2.md, 7.3): the club switcher, saying which calendar, since build 148
+  check('the Calendar: hers, saying My calendar over the club as the switcher', titled('Calendar') && /data-act="clubswitch"[^>]*>[\s\S]*?<span>My calendar · Lakeside SC<\/span>/.test(title()) && !/G14 Flight|<span>jaz<\/span>/.test(title()), true);
   as('boss', 'calendar'); A.ui.calSel = 'club'; A.render();
   check('— All teams (an admin with no team of her own): the club, as the switcher', /data-act="clubswitch"[^>]*>[\s\S]*?<span>All teams · Lakeside SC<\/span>/.test(title()), true);
 }
@@ -358,7 +365,8 @@ console.log('\n--- game mode (UX-REVIEW.md, 1.3) ---');
   // the ⋯ menu: what the game bar held, by role
   as('jaz', 'game'); A.ui.matchId = 'g2'; A.render();
   A.click({ act: 'gamemenu' });
-  check('the menu: the games either side, all games, Edit and Share', /Older game[\s\S]*Riverside/.test(sheet()) && /data-act="pickgame"/.test(sheet()) && /data-act="editmatch" data-id="g2"/.test(sheet()) && /data-act="sharesheet"/.test(sheet()), true);
+  check('the menu: the games either side, Edit and Share', /Older game[\s\S]*Riverside/.test(sheet()) && /data-act="editmatch" data-id="g2"/.test(sheet()) && /data-act="sharesheet"/.test(sheet()), true);
+  check('— and no second picker: the title is Which game (UX-REVIEW-2.md, 7.3)', /data-act="pickgame"/.test(sheet()) + ' ' + /data-act="pickgame" aria-label="Which game"/.test(title()), 'false true');
   check('— and the game\'s number in the season (the called-off one counts)', /gb-hint">2\/3</.test(sheet()), true);
   A.closeSheet();
   as('trk', 'game'); A.ui.matchId = 'g2'; A.render(); A.click({ act: 'gamemenu' });

@@ -107,7 +107,12 @@ function newSession(v = {}) {
     as('mum'); A.ui.view = 'club'; A.render();
     check('a family has the card', /<b>Sessions<\/b>/.test(A.rendered()), true);
     as('jaz'); A.render();
-    check('a coach has the five tabs', ['Sessions', 'Bookable times', 'Fields', 'Fees', 'Hours'].every(t => A.rendered().includes(`>${t}</button>`)), true);
+    // fields, fees and hours are Settings' screens since build 148 (UX-REVIEW-2.md, 7.3): two chips here
+    check('a coach has two chips, Sessions and Bookable times', ['Sessions', 'Bookable times'].every(t => A.rendered().includes(`>${t}</button>`)) && !['Fields', 'Fees', 'Hours'].some(t => A.rendered().includes(`>${t}</button>`)), true);
+    A.click({ act: 'sesstab', k: 'fees' });
+    check('fees are a screen of their own, with no chips', /<h2>Session fees<\/h2>/.test(A.rendered()) && !/data-act="sesstab"/.test(A.rendered()), true);
+    A.click({ act: 'goview', v: 'sessions' });
+    check('— and Sessions opened again is the sessions', /<h2>Sessions<\/h2>/.test(A.rendered()) + ' ' + A.ui.sess.tab, 'true list');
     check('and a way to offer one', /data-act="sessnew"/.test(A.rendered()), true);
     check('every session action is behind the handler\'s own check', [...A.SESS_ACTS].every(a => a.startsWith('sess') || a.startsWith('field') || a.startsWith('reach') || a.startsWith('avail') || a.startsWith('slot')), true);
   }

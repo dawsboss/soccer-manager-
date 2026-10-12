@@ -2,7 +2,7 @@
    Static app. Data lives in localStorage, and mirrors to Firebase Realtime
    Database when a config + workspace code are present. */
 
-const BUILD = '151';
+const BUILD = '152';
 const BUILT = '2026-10-12';
 /* The version of database.rules.json this app was written against. The rules
    carry the same number in rulesVersion's .write, which accepts that number
@@ -7100,7 +7100,8 @@ function normView() {
    phone, put away with Got it and remembered per account, club and role
    (so a parent made a coach is told again), and a line in the account sheet
    for whenever she wants it back. Not in Settings → You's row: run on after
-   the email and role it read as one string (UX-REVIEW-2.md, 7.1). The test-club
+   the email and role it read as one string (UX-REVIEW-2.md, 7.1). Since
+   build 148 it is drawn on Home alone (render() says why). The test-club
    bar and the sync warnings are not role banners and stay. */
 const LS_ROLECARD = 'sm.role.v1';
 const roleCardKey = lim => `${envPrefix()}${wsCode() || 'local'}:${lim}`;
@@ -7234,8 +7235,12 @@ function render() {
   if (denied || needsSignIn()) { app.innerHTML = lockScreen(); saveUi(); watchMessages(); return; }
   if (awaitingSignIn()) { app.innerHTML = welcomeScreen(); saveUi(); return; }
   if (unconfirmed) { app.innerHTML = unconfirmedScreen(); saveUi(); return; }
-  // what her role lets her do, said once per account, club and role, never over every screen (roleCard() says why)
-  const roleNote = v !== 'inbox' && v !== 'thread' && v !== 'notes' ? roleCard(lim) : '';
+  /* What her role lets her do, said once per account, club and role, and on
+     Home alone (UX-REVIEW-2.md, 7.3; a family's My players, staff's Season
+     or My teams, as homeView() says): whoever has tapped through to the
+     calendar or a game has found her way, and the card sat over the game
+     screens until build 148. roleCard() says why it is a card at all. */
+  const roleNote = v === homeView() ? roleCard(lim) : '';
   /* Never let a rehearsal pass for the real thing. Both facts are worth saying
      out loud: a test club holds invented data and publishes nothing, and a
      non-production environment is a different database with its own rules. */
@@ -7373,6 +7378,8 @@ const VIEW_TITLE = {
   planner: 'Planner', inbox: 'Messages', thread: 'Messages', notes: 'What\'s new', mine: 'My players', formation: 'Shapes',
   regs: 'Registration', tryout: 'Tryouts', comply: 'Coach compliance', club: 'Club home'
 };
+// the Sessions view draws three of Settings' screens too, each under its own name
+const screenTitle = v => v === 'sessions' && sessSetTab() ? SESS_SET[sessSetTab()] : VIEW_TITLE[v];
 
 /* The way around (UX-REVIEW.md, 1.1; build 141). A phone app is learned
    through its tab bar, and this one had none: the crumbs (Club › Team › Game)
@@ -7476,7 +7483,9 @@ function upView(v = ui.view) {
   if (SEASON_VIEWS.includes(v)) return 'season';
   // the club's settings screens are Settings' Club section since build 143; the rest hang off Club home
   if (['people', 'admin', 'planner', 'regs', 'comply'].includes(v)) return 'setup';
-  if (['tryout', 'sessions'].includes(v)) return 'club';
+  // fields, fees and hours are Settings' screens (UX-REVIEW-2.md, 7.3); Sessions itself hangs off Club home
+  if (v === 'sessions') return sessSetTab() ? 'setup' : 'club';
+  if (v === 'tryout') return 'club';
   if (v === 'setup' || v === 'notes') return homeView();
   if (v === 'mine' && navKind() !== 'family') return homeView();
   // Club home is up from nowhere once it is the Team tab's own screen; a family's goes back to My players
@@ -7492,8 +7501,8 @@ const BACK_SVG = '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" st
 /* The title row: whose screen this is, and which. On a team's screens the
    team (a switcher when she can see more than one) over the club; on the
    club's screens the screen's name over the club; on hers (the Calendar, My
-   players) the screen over her own name, because they are nobody else's. The
-   club's name is always the club switcher. */
+   players) the screen over the club too, the Calendar saying which calendar
+   is open. The club's name is always the club switcher. */
 function titleBar() {
   const v = ui.view, scope = viewScope();
   if (v === 'game' && team() && match()) return gameHeader(team(), match());
@@ -7514,11 +7523,13 @@ function titleBar() {
   } else if (v === 'club') {
     main = clubBtn('tbtitle pick') + plain('Club home', 'tbsub');
   } else if (scope === 'me') {
-    // hers, across every club: her own name says whose, never a club's or a team's
-    const sub = v === 'calendar' && calSel() === 'club' ? clubBtn('tbsub', 'All teams · ') : plain(esc(me.name || me.email || 'You'), 'tbsub');
-    main = plain(esc(VIEW_TITLE[v] || '')) + sub;
+    /* Hers, across every club. Her own name under the title (builds 103 to
+       147) told her nothing she did not know (UX-REVIEW-2.md, 7.3), so the
+       club switcher sits there as on every other screen, and the Calendar
+       says which calendar is open, as the admin's All teams always did. */
+    main = plain(esc(screenTitle(v) || '')) + clubBtn('tbsub', v === 'calendar' ? (calSel() === 'club' ? 'All teams · ' : 'My calendar · ') : '');
   } else {
-    main = plain(esc(VIEW_TITLE[v] || (TEAM_VIEWS.includes(v) ? 'Team' : org))) + clubBtn('tbsub');
+    main = plain(esc(screenTitle(v) || (TEAM_VIEWS.includes(v) ? 'Team' : org))) + clubBtn('tbsub');
   }
   return `${back}<div class="tbmain">${main}</div>`;
 }
@@ -7571,7 +7582,7 @@ function viewClub() {
      guess. */
   return `<div class="stack">
     <div class="clubhead">${clubCrest('lg')}<div><b>${esc(org)}</b>
-      <span class="rowsub">${fam ? (list.length === 1 ? 'Your team' : `Your ${list.length} teams`) : `${list.length} team${list.length === 1 ? '' : 's'} you can reach`}</span></div></div>
+      <span class="rowsub">${fam ? (list.length === 1 ? 'Your team' : `Your ${list.length} teams`) : `${list.length} team${list.length === 1 ? '' : 's'}`}</span></div></div>
     ${canAdmin() && list.length ? goCard('schedule', '', 'Calendar', `Every team · ${esc(schedLine())}`)
     : (me || !gated()) && myCalOwn() ? goCard('goview', ' data-v="mycal"', 'Calendar', esc(myCalLine())) : ''}
     ${anyPlayers() ? goCard('goview', ' data-v="mine"', 'My players', allKidNames().map(esc).join(', ')) : ''}
@@ -7763,7 +7774,9 @@ function gameHeader(t, m) {
 }
 /* The ⋯ menu: the game's place in the season (the first game played is 1, so
    the latest is n of n and a game's number never changes as more are added),
-   the games either side, Edit for the team's coaches and admins, and Share. */
+   the games either side, Edit for the team's coaches and admins, and Share.
+   The whole season is the title's picker (Which game), never a second one
+   here (UX-REVIEW-2.md, 7.3). */
 function gameMenu(t, m) {
   const list = teamMatches(t.id), n = list.length;
   const i = list.findIndex(x => x.id === m.id);
@@ -7775,7 +7788,6 @@ function gameMenu(t, m) {
   return `<h3>${esc(m.opponent || 'Game')}${sc ? ` <span class="muted">${sc.us}–${sc.them}</span>` : ''}</h3>
     <p class="muted" style="margin-top:0">${[m.date ? shortDate(m.date) : '', n > 1 && i > -1 ? `game <span class="gb-hint">${n - i}/${n}</span> of the season` : ''].filter(Boolean).join(' · ') || 'No date yet'}</p>
     ${row(older, 'Older game')}${row(newer, 'Newer game')}
-    ${n > 1 ? `<button class="opt" data-act="pickgame"><b>All games</b><span class="rowsub">${n} this season</span></button>` : ''}
     ${canEditTeam(t.id) ? `<button class="opt" data-act="editmatch" data-id="${m.id}"><b>Edit this game</b><span class="rowsub">Opponent, date, kick-off, where, kit</span></button>` : ''}
     <button class="opt" data-act="sharesheet"><b>Share</b><span class="rowsub">The read-only page for families: shirt numbers, never names</span></button>`;
 }
@@ -9925,8 +9937,8 @@ function coachOutLine(it) {
    calendar is in a weird spot. The calendar is versatile and not tied to one
    team, not even one club, it is per person." So it is the person's (build
    103): a tab of its own on the bar at the bottom (build 141; a button up
-   top from 103 to 140), titled Calendar over her own name, and two calendars
-   to tick:
+   top from 103 to 140), titled Calendar over the club (over her own name
+   until build 148), and two calendars to tick:
 
    - My calendar: everything of hers. The teams she coaches, tracks or has a
      child on, the sessions she runs and her children's (and, for a coach,
@@ -10094,12 +10106,23 @@ function evBlock(it, multi, geo, short) {
   const act = evAct(it), tag = act ? `button type="button" ${act}` : 'div';
   const title = it.kind === 'avail' ? (b => b ? blockLabel(b) : 'Bookable')(blockById(it.id)) : it.title;
   const m = it.kind === 'game' && it.status !== 'upcoming' ? state.matches[it.id] : null;
+  // the title leads and the team is the colour and the second line: a week's column had room for "Test …" and nothing else (UX-REVIEW-2.md, 7.3)
   return `<${tag} class="tg-ev" data-called="${it.called ? 1 : 0}" data-past="${calPast(it) ? 1 : 0}"${short ? ' data-short="1"' : ''} style="--ev:${evHue(it, multi)};${geo}">
-    <b>${multi && it.tid ? esc(shortTeam(it.tid)) + ' · ' : ''}${esc(title)}${m ? ` ${score(m).us}–${score(m).them}` : ''}</b><span>${esc([evWhen(it), it.venue].filter(Boolean).join(' · '))}</span></${act ? 'button' : 'div'}>`;
+    <b>${esc(title)}${m ? ` ${score(m).us}–${score(m).them}` : ''}</b><span>${esc([multi && it.tid ? shortTeam(it.tid) : '', evWhen(it), it.venue].filter(Boolean).join(' · '))}</span></${act ? 'button' : 'div'}>`;
 }
 /* A chip in a month's day: on a phone there is room for the title and the
    colour says whose; wider, the time and the team come back. */
-const evChip = (it, multi) => `<span class="mg-ev" data-called="${it.called ? 1 : 0}" data-past="${calPast(it) ? 1 : 0}" style="--ev:${evHue(it, multi)}">${it.start ? `<span class="mg-x">${esc(niceTime(it.start).replace(/:00/, ''))} </span>` : ''}${multi && it.tid ? `<span class="mg-x">${esc(shortTeam(it.tid))} </span>` : ''}${esc(it.kind === 'avail' ? 'Bookable' : it.title)}</span>`;
+const evChip = (it, multi) => `<span class="mg-ev" data-called="${it.called ? 1 : 0}" data-past="${calPast(it) ? 1 : 0}" style="--ev:${evHue(it, multi)}">${it.start ? `<span class="mg-x">${esc(niceTime(it.start).replace(/:00/, ''))} </span>` : ''}${multi && it.tid ? `<span class="mg-x">${esc(shortTeam(it.tid))} </span>` : ''}<span class="mg-f">${esc(it.kind === 'avail' ? 'Bookable' : it.title)}</span><span class="mg-s">${esc(evShort(it))}</span></span>`;
+/* A phone's month cell holds six or seven letters, so "v Lakeside" was
+   "v Lakesi" (UX-REVIEW-2.md, 7.3). On a cell that narrow a game is said as
+   a fixture list says it, "v LAK", and anything else keeps its title, cut
+   with an ellipsis; the day's list under the grid has the whole of it. */
+const evShort = it => it.kind === 'game' ? 'v ' + abbrName(it.title.replace(/^v /, '')) : it.kind === 'avail' ? 'Bookable' : it.title;
+function abbrName(s) {
+  const words = String(s || '').replace(/[^\p{L}\p{N} ]/gu, ' ').trim().split(/\s+/).filter(Boolean);
+  if (!words.length) return 'TBC';
+  return (words.length > 1 ? words.slice(0, 3).map(w => w[0]).join('') : words[0].slice(0, 3)).toUpperCase();
+}
 
 /* ---- the Schedule: every day with something on, in order ---- */
 /* The owner: "when clicking in a day like in the monthly view, I want a red
@@ -10266,14 +10289,17 @@ function calMonth(items, dayAct = 'calpick', opt = {}) {
 }
 
 /* ---- on top: what's being played, and what's next ---- */
-function calLiveCards(items, multi) {
+/* `one` is the Month view's: over the grid the card was a third of the
+   screen, so there it is one line (UX-REVIEW-2.md, 7.3). */
+function calLiveCards(items, multi, one) {
   return items.filter(x => x.kind === 'game' && x.status === 'live' && state.matches[x.id]).map(it => {
     const m = state.matches[it.id], sc = score(m);
     const go = canEditTeam(it.tid) ? 'subs' : me && isTracker(it.tid, me.uid) ? 'track' : 'live';
-    return `<button class="card go callive" type="button" data-act="calgame" data-tid="${esc(it.tid)}" data-id="${esc(it.id)}" data-g="${go}">
+    const played = `<span data-live="gmins" data-mid="${esc(m.id)}">${mins(elapsedSec(m))}</span> min`;
+    return `<button class="card go callive" type="button" data-act="calgame" data-tid="${esc(it.tid)}" data-id="${esc(it.id)}" data-g="${go}"${one ? ' data-one="1"' : ''}>
       <span class="ev-live">Live</span>
-      <span class="callive-t"><b>${multi ? esc(shortTeam(it.tid)) + ' ' : ''}${esc(it.title)}</b><span class="muted"><span data-live="gmins" data-mid="${esc(m.id)}">${mins(elapsedSec(m))}</span> min played · tap to open the game</span></span>
-      <span class="pmins">${sc.us}<small>–${sc.them}</small></span></button>`;
+      <span class="callive-t"><b>${multi ? esc(shortTeam(it.tid)) + ' ' : ''}${esc(it.title)}</b>${one ? '' : `<span class="muted">${played} played · tap to open the game</span>`}</span>
+      ${one ? `<span class="muted">${played}</span>` : ''}<span class="pmins">${sc.us}<small>–${sc.them}</small></span></button>`;
   }).join('');
 }
 /* The thing a parent opened the app for, with the buttons that follow from
@@ -10375,7 +10401,8 @@ function calPanel(sel, offer) {
 /* ---- the bar: where you are, back, today, forward, and how to look ---- */
 function calTitle(v, d) {
   const [y, mo] = d.split('-').map(Number);
-  if (v === 'day') return dayLabel(d) + (relDay(d) ? ' · ' + relDay(d) : '');
+  // the day alone: the ring on the Today button already says when it is today, and "Mon 12 Oct · To…" said less (UX-REVIEW-2.md, 7.3)
+  if (v === 'day') return dayLabel(d);
   // "5–11 Oct", or "28 Sep – 4 Oct" across a month: short enough for a phone's bar
   if (v === 'week') {
     const a = dateOf(addDays(d, -weekdayOf(d))), b = dateOf(addDays(d, 6 - weekdayOf(d)));
@@ -10496,7 +10523,7 @@ function viewCalendar() {
   }
   const canBook = sel !== 'club' && guardsAnyone() && blockAll().some(b => b.date >= todayStr() && !b.off && blockKids(b).length && blockSlots(b).some(x => x.free));
   return `<div class="stack calendar">
-    ${calLiveCards(items, multi)}
+    ${calLiveCards(items, multi, v === 'month')}
     ${calChooser(sel, offer)}
     ${calBar(v, dated, multi, sel, offer, ed)}
     ${canBook ? `<button class="btn wide" data-act="sesstab" data-k="list">Book a 1-1 with a coach</button>` : ''}
@@ -14315,11 +14342,18 @@ function sessIcs(s) {
 }
 
 /* ---- screens ---- */
-const SESS_TABS = { list: 'Sessions', avail: 'Bookable times', fields: 'Fields', fees: 'Fees', hours: 'Hours' };
+const SESS_TABS = { list: 'Sessions', avail: 'Bookable times' };
+/* Fields, fees and hours are the club's set-up, not the day's sessions: as
+   three more chips they made a third row of controls on a screen that is
+   usually empty (UX-REVIEW-2.md, 7.3). Each is a screen of its own since
+   build 148, opened from Settings → Club, drawn by the Sessions view under
+   its own name, with Back going to Settings. */
+const SESS_SET = { fields: 'Fields', fees: 'Session fees', hours: 'Coach hours' };
+const sessSetTab = () => ui.view === 'sessions' && ui.sess && SESS_SET[ui.sess.tab] ? ui.sess.tab : '';
 function sessUi() {
   if (!ui.sess || typeof ui.sess !== 'object') ui.sess = {};
   const u = ui.sess;
-  if (!SESS_TABS[u.tab]) u.tab = 'list';
+  if (!SESS_TABS[u.tab] && !SESS_SET[u.tab]) u.tab = 'list';
   if (!['mine', 'all'].includes(u.scope)) u.scope = canAdmin() ? 'all' : 'mine';
   if (!/^\d{4}-\d{2}$/.test(u.month || '')) u.month = todayStr().slice(0, 7);
   return u;
@@ -14353,10 +14387,12 @@ function viewSessions() {
   const u = sessUi(), staff = canOffer();
   if (!staff) u.tab = 'list';
   if (u.go) { const id = u.go; u.go = null; setTimeout(() => { if (sessById(id)) sheetSess(id); }, 0); }
-  const tabs = staff ? `<div class="chips">${Object.entries(SESS_TABS).map(([k, l]) =>
+  // a Settings screen (fields, fees, hours) is drawn alone, under its own name; the chips are Sessions and Bookable times
+  const set = SESS_SET[u.tab] ? u.tab : '';
+  const tabs = staff && !set ? `<div class="chips">${Object.entries(SESS_TABS).map(([k, l]) =>
     `<button class="chip" type="button" data-act="sesstab" data-k="${k}" aria-pressed="${u.tab === k}">${l}</button>`).join('')}</div>` : '';
-  const body = u.tab === 'avail' ? availView() : u.tab === 'fields' ? sessFieldsView() : u.tab === 'fees' ? sessFeesView() : u.tab === 'hours' ? sessHoursView() : sessListView();
-  return `<div class="stack"><h2>Sessions</h2>${sessNote()}${tabs}${body}</div>`;
+  const body = u.tab === 'avail' ? availView() : set === 'fields' ? sessFieldsView() : set === 'fees' ? sessFeesView() : set === 'hours' ? sessHoursView() : sessListView();
+  return `<div class="stack"><h2>${set ? SESS_SET[set] : 'Sessions'}</h2>${sessNote()}${tabs}${body}</div>`;
 }
 
 /* One session in a list. A family's row says how her own children stand; the
@@ -15057,7 +15093,7 @@ function onSessAct(a, d) {
   const by = () => (me && me.uid) || 'device';
   if (AVAIL_ACTS.has(a)) { onAvailAct(a, d); return; }
 
-  if (a === 'sesstab') { ui.view = 'sessions'; u.tab = SESS_TABS[d.k] ? d.k : 'list'; closeSheet(); render(); toTop(); return; }
+  if (a === 'sesstab') { ui.view = 'sessions'; u.tab = SESS_TABS[d.k] || SESS_SET[d.k] ? d.k : 'list'; closeSheet(); render(); toTop(); return; }
   if (a === 'sessscope') { u.scope = d.v === 'all' ? 'all' : 'mine'; render(); return; }
   if (a === 'sesspast') { u.past = !u.past; render(); return; }
   if (a === 'sessopen') { sheetSess(d.id); return; }
@@ -16838,7 +16874,10 @@ function viewSetup() {
     adm ? setRow('goview', 'Registrations', (k => k ? `${k} program${k === 1 ? '' : 's'}, their links, waivers and who has registered` : 'Programs families register for, with their links and waivers')(programsAll().length), ' data-v="regs"') : '',
     adm ? setRow('goview', 'Coach compliance', (x => x.length ? esc(x.map(([st, k]) => `${k} ${COMPLY_TALLY[st]}`).join(' · ')) : 'Everyone is up to date')(complyTally(complyRows())), ' data-v="comply"') : '',
     adm ? setRow('planner', 'Planner', 'Clashes across the teams, find a time, picture day') : '',
-    adm ? setRow('sesstab', 'Fields and permits', fieldList().length ? `${fieldList().length} field${fieldList().length === 1 ? '' : 's'}, their permits and hours` : 'Where the club trains, and the permits for each', ' data-k="fields"') : '',
+    // the sessions' set-up, off the Sessions screen since build 148 (UX-REVIEW-2.md, 7.3): a coach reads fields, and her own fees and hours
+    adm || coachAny ? setRow('sesstab', 'Fields and permits', fieldList().length ? `${fieldList().length} field${fieldList().length === 1 ? '' : 's'}, their permits and hours` : adm ? 'Where the club trains, and the permits for each' : 'Where the club trains', ' data-k="fields"') : '',
+    adm || coachAny ? setRow('sesstab', 'Session fees', adm ? 'What each family owes for 1-1s and groups, and what is paid' : 'What families owe for your sessions, and what is paid', ' data-k="fees"') : '',
+    adm || coachAny ? setRow('sesstab', 'Coach hours', adm ? 'Sessions run by each coach this month, and pay' : 'Sessions you ran this month, and pay', ' data-k="hours"') : '',
     adm ? setRow('clubdrills', "Club drills", (k => k ? `${k} drill${k === 1 ? '' : 's'} the club's coaches have shared` : 'What coaches share with the club, to tidy or remove')(shelfItems('club').length)) : '',
     adm ? setRow('tpllist', "Club templates", (k => k ? `${k} session template${k === 1 ? '' : 's'}` : 'Practice plans the club keeps to start from')(tplItems('clubTpl').length), ' data-k="clubTpl"') : '',
     adm ? setRow('bulkimport', 'Bulk import', 'Rosters, games, practices, fields and sessions from a spreadsheet or file') : '',
@@ -21509,7 +21548,11 @@ function onAct(e) {
     sheetPersonRoles(d.uid); return;
   }
   if (a === 'teammenu') { sheetTeams(); return; }
-  if (a === 'goview') { ui.view = d.v; closeSheet(); render(); return; }
+  if (a === 'goview') {
+    // Sessions opened from More or Club home is the sessions, not the Settings screen a last visit left it on
+    if (d.v === 'sessions' && ui.sess && SESS_SET[ui.sess.tab]) ui.sess.tab = 'list';
+    ui.view = d.v; closeSheet(); render(); return;
+  }
   /* The tab bar (UX-REVIEW.md, 1.1). A tab is a place: tapping the one she
      is on goes to its first screen and the top. Team is her team, or the
      list of them when she works on several (UX-REVIEW-2.md, 6.3). Game
@@ -23227,7 +23270,7 @@ function uiToHash() {
   if (ui.view === 'thread' && ui.thread && ui.thread.cid) return `#/messages/with/${sdOther(ui.thread.cid)}`;
   if (ui.view === 'thread' && ui.thread) return `#/messages/${ui.thread.tid}/${ui.thread.fam}`;
   if (ui.view === 'setup') return '#/settings';
-  if (ui.view === 'sessions') { const tb = (ui.sess || {}).tab; return '#/training' + (tb && tb !== 'list' && SESS_TABS[tb] ? '/' + tb : ''); }
+  if (ui.view === 'sessions') { const tb = (ui.sess || {}).tab; return '#/training' + (tb && tb !== 'list' && (SESS_TABS[tb] || SESS_SET[tb]) ? '/' + tb : ''); }
   return '#/';
 }
 
@@ -23266,7 +23309,7 @@ function hashToUi() {
   if (p[0] === 'training') {
     ui.view = 'sessions';
     const u = sessUi();
-    if (p[1] && SESS_TABS[p[1]]) u.tab = p[1];
+    if (p[1] && (SESS_TABS[p[1]] || SESS_SET[p[1]])) u.tab = p[1];
     else { u.tab = 'list'; if (p[1]) u.go = p[1]; }
     return true;
   }
