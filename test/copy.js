@@ -178,7 +178,8 @@ console.log('\n--- what her role lets her do: a card, once, and a line in the ac
   A.sheetAccount();
   check('the account sheet keeps the sentence', /class="muted rolewords"[^>]*>You are a parent here/.test(sheet()), true);
   h = as('mum', 'setup');
-  check('— and so does Settings → You', /data-act="signinsheet"[\s\S]*?class="rolewords">You are a parent here/.test(h), true);
+  check('— Settings → You does not run it on after her email and role (UX-REVIEW-2.md, 7.1)', /rolewords|You are a parent here/.test(h), false);
+  check('— which it says as a line of its own', /data-act="signinsheet"[\s\S]*?<span class="psub">[^<]*Parent · G14 Flight<\/span><\/span><\/button>/.test(h), true);
 
   A.storage.removeItem('sm.role.v1:trk');
   h = as('trk', 'game', 't1', 'track', 'g1');
