@@ -6,7 +6,7 @@ or the data model; `AUTH.md` is the design those rules come from, and
 `node test/rules.js` prints what the database rules knowingly leave open.
 
 **How to use it.** Each task stands on its own: take one, do it on its own
-branch with its tests, add a `CHANGELOG.md` entry, then move it to **Done**
+branch with its tests, then move it to **Done**
 below with the commit. A task marked *Decision* waits on the owner before any
 code; one marked *Owner* is a setting in Google, Firebase or GitHub that only
 the owner's account can change, and needs no code.

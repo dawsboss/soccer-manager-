@@ -145,7 +145,7 @@ Two steps further, in increasing cost:
 > shared `club` id, and picture day. Not built from *What is missing* below:
 > nothing: per-field opening hours and closures, and coaches' own time off
 > (weekly, dates away, calling out of one entry), were built the same day,
-> the time off at `training/{code}/away` rather than `access/members` (CHANGELOG
+> the time off at `training/{code}/away` rather than `access/members` (build history
 > says why). Games are said, never offered to move.
 
 The next piece of work, and the reason the calendar, answers and attendance

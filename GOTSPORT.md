@@ -916,7 +916,7 @@ The owner does these once, in test mode first:
 
 ### Order
 
-Each its own build, rules version, CHANGELOG entry and test pass. New
+Each its own build, rules version and test pass. New
 suites: `test/pay.js` (the server on a fake Stripe: every ask for every kind
 of account, the webhook's signature, a repeated event, each event's effect,
 `payDue`), and `test/till.js` (the phone: Pay drawn only where the club takes
