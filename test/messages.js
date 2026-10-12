@@ -392,9 +392,14 @@ const NOTE = (A, by, text, extra) => ({ by, byName: CLUB.access.members[by].name
   {
     const { A } = await boot('coach');
     A.click({ act: 'notes' }); await A.flush();
-    check('the bell opens Notifications', A.ui.view === 'notes' && /Notifications/.test(A.rendered()), true);
+    check('the bell opens What\'s new', A.ui.view === 'notes' && /<h2>What's new<\/h2>/.test(A.rendered()), true);
     check('with no messages on it', /<h2[^>]*>Conversations|data-act="msgnew"|data-act="postnew"/.test(A.rendered()), false);
-    check('at its own address', A.uiToHash(), '#/notifications');
+    check('at its own address', A.uiToHash(), '#/whats-new');
+    // UX-REVIEW-2.md, 6.2: the switches are in Settings alone, the page has a gear to them
+    check('no switches on it, a gear to them instead', /What notifies you|data-act="muteset"/.test(A.rendered()) + ' ' + /data-act="notifyset"/.test(A.rendered()), 'false true');
+    A.click({ act: 'notifyset' }); await A.flush();
+    check('the gear opens Settings at Notifications', A.ui.view + ' ' + /id="setNotify">Notifications<\/h2>[\s\S]*What notifies you/.test(A.rendered()), 'setup true');
+    A.click({ act: 'notes' }); await A.flush();
     A.click({ act: 'msgprivacy' });
     const p = String(A.dom.node('#sheet').innerHTML);
     check('privacy is said plainly, never claiming end-to-end', /Not end-to-end encrypted/.test(p) && /HTTPS/.test(p), true);
@@ -405,8 +410,8 @@ const NOTE = (A, by, text, extra) => ({ by, byName: CLUB.access.members[by].name
     const { A, fbk } = await boot('mum');
     fbk.deliver('board/CLUB/t1', {}); fbk.deliver('dm/CLUB/t1/mum', null); await A.flush();
     check('her own switches are read, from her own place', fbk.watching('people/mum/mute'), true);
-    A.click({ act: 'notes' }); await A.flush();
-    check('offered on Notifications', /What notifies you/.test(A.rendered()) && /data-act="muteset" data-k="notice"/.test(A.rendered()), true);
+    A.click({ act: 'goview', v: 'setup' }); await A.flush();
+    check('offered on Settings, under Notifications', /What notifies you/.test(A.rendered()) && /data-act="muteset" data-k="notice"/.test(A.rendered()), true);
     check('a parent has no Club activity switch, hearing none', /data-k="news"/.test(A.rendered()), false);
     A.click({ act: 'muteset', k: 'notice', v: '1' }); await A.flush();
     check('one write, hers, at that kind', fbk.writtenTo('people/mum/mute/notice').map(w => w.value).join(), 'true');
@@ -435,7 +440,7 @@ const NOTE = (A, by, text, extra) => ({ by, byName: CLUB.access.members[by].name
     const fbk = makeFakebase().refuseWrites(p => p.startsWith('people/'));
     const { A } = await boot('mum', { fbk });
     A.click({ act: 'muteset', k: 'msg', v: '1' }); await A.flush();
-    check('refused by older rules: taken back and said', /set-up is out of date/.test(A.lastToast() || '') && /aria-pressed="true">On/.test((A.click({ act: 'notes' }), A.rendered())), true);
+    check('refused by older rules: taken back and said', /set-up is out of date/.test(A.lastToast() || '') && /aria-pressed="true">On/.test((A.click({ act: 'goview', v: 'setup' }), A.rendered())), true);
   }
 
   console.log('\n--- no signal, and refusals ---');
