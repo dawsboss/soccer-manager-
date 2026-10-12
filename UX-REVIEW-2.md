@@ -173,3 +173,138 @@ over her target is a full bar, not a red one.*
 7. Drop the Next-practice card from the calendar; Sessions page's config chips
    to Settings (7.2, 7.3). Half a day. The card is gone (build 151); the Sessions
    chips (7.3) are still to do.
+
+---
+
+# Round 3 — the same app for everyone (build 149)
+
+The test this round: a parent asks the coach "how do I…?" and the coach answers
+from her own phone. Does the answer work on the parent's? Every screen was
+captured on build 149 as a parent, a coach, an admin and a tracker, with the club
+gated as a real one is (so the parent's phone is the real parent's phone), and the
+titles, tabs, bar, headings and buttons compared screen by screen.
+
+The rule to aim for: **one frame, three depths.** Everyone gets the same tabs, the
+same screen names, the same cards in the same order with the same buttons; a role
+*adds* rows and tabs to that frame, it never renames, reorders or replaces them.
+Today the frame is the same for staff and admins (an admin is a coach plus rows,
+which is right) and different for families.
+
+## 9. Where the parent's app is a different app
+
+### 9.1 The tab bar is two bars
+| | Parent | Coach / admin / tracker |
+|---|---|---|
+| Bar | Home · Calendar · Messages · More | Team · Calendar · Game · Messages · More |
+| First tab opens | My players | the team's Season |
+| The game | a card on Home, or the Calendar | the Game tab |
+
+So: "How do I see the score?" — "Tap Game." The parent has no Game. "Where's the
+next game?" — "Team, then Season." The parent has Home, and under it My players,
+and under *that* the team's Season.
+
+**Fix: one bar for everyone, Home · Calendar · Game · Messages · More.**
+- *Home* is the team screen for everyone: the coach's Season, and for a family
+  the same Season of her child's team with her child's card at the top (what My
+  players shows today). Several children on several teams: the same team
+  chevron in the title the coach uses to switch teams.
+- *Game* for everyone: the team's live game, else the next, else the last; a
+  reader lands on Live, a coach on Subs, a tracker on Track (as now). Then "tap
+  Game" is true on every phone.
+- My players stops being a screen of its own: it is the top of a family's Home.
+  Today a parent has *two* team screens (My players and Season) that both carry
+  the live card, the next practice with RSVP chips and the next game, while the
+  coach has one.
+
+### 9.2 Season is a different screen, not a shorter one
+Order of cards, top to bottom:
+
+| Parent | Coach |
+|---|---|
+| Live game | Live game |
+| **Next up: Practice** — Directions · Add to my calendar · *Is Cleo going?* chips | **Next game** — Open the game · Directions · Add to my calendar |
+| **Next game** — Open the game · Directions · Add to my calendar | **Next practice** — no buttons at all |
+| Cleo's season | Test Squad A on the calendar |
+| Games | Last game |
+| | Games |
+| | Stats · Minutes · Attendance rows |
+| | In your own calendar |
+
+The parent's next practice comes before the next game; the coach's after. The
+coach's next-practice card has no buttons on Season but three on the Calendar
+(Plan · Directions · Add to my calendar): the same card, for the same person,
+differs by screen. A parent told "tap Directions on the next practice" finds it;
+the coach, on Season, does not.
+
+**Fix: one "next up" block, one card component.** Next thing first (game or
+practice), then the next of the other kind, the same card everywhere it appears
+(Home, Season, Calendar): title, when, where, then the buttons in a fixed order
+(Open the game / Plan · Directions · Add to my calendar), then the answer row
+(a family's own child's chips; for staff a one-line "Who is coming: 0 of 14",
+tap for the list). The parent's Season is then the coach's with Stats, Minutes,
+Attendance and Last game taken out and her child's card put in, nothing moved.
+
+### 9.3 The game has two vocabularies
+| | Parent | Coach | Tracker |
+|---|---|---|---|
+| Live game | **Live** · Stats | Subs · Track · **Stats** · Lineup, with a *Stats / Live feed* toggle inside Stats | Track · Stats (same toggle) |
+| Finished game | **Log** · Stats · Recap | Stats · Recap, with a *Match log* button on Recap | Stats · Recap |
+
+The play-by-play is a tab called Live for the parent and a toggle called Live
+feed for the coach; the log is a tab for the parent and a button for the coach.
+"Tap Live" means nothing on the coach's phone and "Stats, then Live feed" means
+nothing on the parent's.
+
+**Fix: the shared pair stays in the same place with the same word for everyone.**
+Live · Stats (and Recap once over) are everyone's; Subs · Track · Lineup are
+added before them for staff: *Subs · Track · Lineup · Stats · Live*. Five short
+words fit at 390px. If five is too many, keep the toggle but call it **Live**,
+and give the coach the **Log** tab the parent has rather than a button.
+
+### 9.4 Small splits in the shared frame
+- **More → Clubs · "Start a new club"** is on a parent's More. Staff and owners
+  start clubs; a family sees Clubs only when she is in more than one.
+- **The account sheet** says *Settings — You, this team and the club* for
+  everyone, including a parent and a tracker who have no team or club rows; the
+  More sheet says *Settings — You* for them. Two entrances, two descriptions.
+  Use the More sheet's line in both.
+- **Club home** for a parent carries a *My players* card (her Home tab again)
+  and says *Your team*; for a coach *2 teams you can reach*. Once Home is the
+  team screen, Club home is the same list for everyone: the club's teams, hers
+  first, the rest *view only*.
+- **The role card** ("You are a parent here…") is still drawn on every screen
+  until Got it (Club home, Season, Calendar, the game, Settings, Sessions). Home
+  only.
+- **The calendar item sheet** is already the same sheet for everyone, which is
+  how the rest should feel: the parent's "Is Cleo going?" is the coach's "Who is
+  coming" row with one child. The coach's 42 chips (round 2, 7.2) are the one
+  thing left that makes hers a different sheet.
+
+### 9.5 What already passes the test
+Calendar (views, the Calendars and month pickers, the + for whoever may add),
+the calendar item sheet, Messages, What's new with its Notifications gear,
+Settings (You · Notifications · This team · Club · Advanced, each role a subset
+from the top), More, the game header, the Recap screen, and the "Add to my
+calendar" / Google / Apple buttons. Say it the coach's way on any of these and it
+works on the parent's phone.
+
+### 9.6 Make it a test
+`test/copy.js` holds the words; nothing holds the *paths*. A short suite,
+`test/same.js`, that lists the ten things a parent asks about, each as the
+coach's tap sequence in the coach's words (`Game → Stats`, `Calendar → the
+practice → Not going`, `More → Settings → Notifications`, `Home → next game →
+Directions`), and walks it on every role that may do it, through the captured
+click handler. A path that exists for the coach and not for the parent fails. It
+is what keeps 9.1 to 9.3 from drifting back as screens are added.
+
+## 10. Order of work, round 3
+1. Rename the coach's *Live feed* toggle to *Live*, and the account sheet's
+   Settings line (9.3, 9.4). An hour.
+2. The one "next up" card component, same buttons everywhere, Season's next
+   practice included (9.2). A day.
+3. One tab bar: Home · Calendar · Game · Messages · More for everyone, Home as
+   the team screen with a family's child on top, My players folded in (9.1).
+   Two days; `test/nav.js` and `test/home.js` change with it.
+4. The game's segmented control shared from the right: … · Stats · Live, Log as
+   a tab for staff too (9.3). A day.
+5. `test/same.js` (9.6). Half a day, then it guards the rest.
