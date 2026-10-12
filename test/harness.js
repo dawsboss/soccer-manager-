@@ -222,7 +222,7 @@ const EXPORTS = `{
   /* invites */
   get invite() { return invite }, get clubInv() { return clubInv }, get myClubs() { return myClubs },
   secretId, randId, inviteLink, redeemInvite, makeInvite, inviteScreen,
-  get importContacts() { return importContacts }, set importContacts(v) { importContacts = v }, importInviteRows, inviteImported, mailImported,
+  get importContacts() { return importContacts }, set importContacts(v) { importContacts = v }, importInviteRows, inviteImported, mailImported, linkButtons,
   fit, assignSlots, footFit, FOOT, sheetPlayer,
   /* messages */
   msgTeams, staffTeams, famTeams, msgOn, unreadCount, notices, threadMsgs, threadUnread,
@@ -230,7 +230,7 @@ const EXPORTS = `{
   get msgs() { return msgs }, get msgFor() { return msgFor },
   msgUnread, notesUnread, colleagues, sdId, convMsgs, msgState, viewNotes, msgPeople, pickMatches, pickListHtml, get online() { return online },
   /* team links and squad invites */
-  get join() { return join }, joinLink, claimMatches, pendingClaims, inviteSquad, sheetSquadInvites, joinCard,
+  get join() { return join }, joinLink, claimMatches, pendingClaims, joinCard,
   /* training sessions */
   get sess() { return sess }, set sess(v) { sess = v }, get sessLoaded() { return sessLoaded }, get sessState() { return sessState },
   get reach() { return reach }, get sessForm() { return sessForm },

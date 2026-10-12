@@ -54,28 +54,30 @@ const valueAt = (fbk, p) => { const w = fbk.writtenTo(p); return w.length ? w[w.
 
 (async () => {
 
-  console.log('--- a whole squad\'s parents, one link each ---');
+  console.log('--- a family\'s invite, built by hand from Squad ---');
   {
     const { A, fbk } = await boot('adm');
-    A.ui.teamId = 't1';
-    A.click({ act: 'squadinvites', tid: 't1' });
-    check('offers links for the two with no parent', /Make 2 links/.test(String(A.dom.node('#sheet').innerHTML)), true);
-    A.click({ act: 'squadinvitego', tid: 't1' }); await A.flush(20);
-    const made = fbk.record.writes.filter(w => /^invites\/[^/]+$/.test(w.path)).map(w => w.value);
-    check('one parent invite per player without a parent', made.map(v => v.player).sort().join(), 'p2,p3');
-    check('none for a player who has one, or is off the roster', made.some(v => v.player === 'p1' || v.player === 'p4'), false);
-    check('each names the shirt, never the child', made.every(v => v.playerNo && !JSON.stringify(v).includes('Bea') && !JSON.stringify(v).includes('Cleo')), true);
-    check('each on the admin\'s list', fbk.record.writes.filter(w => /^clubInvites\/CLUB\/[^/]+$/.test(w.path)).length, 2);
+    A.ui.teamId = 't1'; A.ui.view = 'roster'; A.render();
+    check('Squad offers the invite builder, not a link per child', /data-act="inviteparent"/.test(A.rendered()) && !/data-act="squadinvites"/.test(A.rendered()), true);
+    check('saying how many have no parent', /Invite a parent \(2 without a parent\)/.test(A.rendered()), true);
+    A.click({ act: 'inviteparent', tid: 't1' });
     const sheet = String(A.dom.node('#sheet').innerHTML);
-    check('the sheet now has a link to copy for each', (sheet.match(/data-act="copylink"/g) || []).length, 2);
-    const before = fbk.record.writes.length;
-    A.click({ act: 'squadinvitego', tid: 't1' }); await A.flush(20);
-    check('running it again makes nothing new', fbk.record.writes.filter((w, i) => i >= before && w.path.startsWith('invites/')).length, 0);
+    check('it opens the builder', /<h3>Invite someone<\/h3>/.test(sheet), true);
+    deepEq('with the team, Parent and the first child with no parent, by shirt number, picked', [A.ui.inv.role, A.ui.inv.team, A.ui.inv.player], ['parent', 't1', 'p3']);
+    check('the children with no parent say so', /Bea · no parent yet/.test(sheet) && !/Ella · no parent yet/.test(sheet), true);
+    check('nothing is made by opening it', fbk.record.writes.some(w => w.path.startsWith('invites/')), false);
+    A.click({ act: 'invitemake' }); await A.flush(20);
+    const made = fbk.record.writes.filter(w => /^invites\/[^/]+$/.test(w.path)).map(w => w.value);
+    deepEq('Make the invite makes one, for that child', made.map(v => v.role + ':' + v.player), ['parent:p3']);
+    check('naming the shirt, never the child', !!made[0].playerNo && !JSON.stringify(made[0]).includes('Cleo'), true);
   }
   {
     const { A, fbk } = await boot('coach');
-    A.click({ act: 'squadinvitego', tid: 't1' }); await A.flush(20);
-    check('a coach cannot make personal invites', fbk.record.writes.some(w => w.path.startsWith('invites/')), false);
+    A.ui.teamId = 't1'; A.ui.view = 'roster'; A.render();
+    check('a coach is not offered it', /data-act="inviteparent"/.test(A.rendered()), false);
+    A.click({ act: 'inviteparent', tid: 't1' });
+    check('and is refused in the handler', /Invite someone/.test(String(A.dom.node('#sheet').innerHTML)), false);
+    check('with nothing written', fbk.record.writes.some(w => w.path.startsWith('invites/')), false);
   }
 
   console.log('\n--- the team link, made by its coach ---');
@@ -319,23 +321,5 @@ const valueAt = (fbk, p) => { const w = fbk.writtenTo(p); return w.length ? w[w.
     A.click({ act: 'claimok', tid: 't1', uid: 'sam' }); await A.flush(20);
     check('rules too old for the ask: the phone approves as it always did', (valueAt(fbk, 'claims/CLUB/t1/sam/approved') || {}).by, 'coach');
   }
-  {
-    const { A, fbk } = await boot('adm', { server: true });
-    fbk.deliver('.info/connected', true);
-    fbk.deliver('clubInvites/CLUB', {}); await A.flush();
-    A.click({ act: 'squadinvites', tid: 't1' });
-    A.click({ act: 'squadinvitego', tid: 't1' }); await A.flush();
-    const ask = asks(fbk)[0];
-    deepEq('a squad\'s links are one ask, with the limits', [ask && ask.value.op, ask && ask.value.tid, ask && ask.value.uses, ask && ask.value.days], ['squad', 't1', 1, 14]);
-    check('no invite written from the phone', fbk.record.writes.some(w => /^invites\//.test(w.path)), false);
-    fbk.deliver(ask.path + '/answer', { ok: true, made: { p2: 'iA', p3: 'iB' }, at: 1 }); await A.flush(10);
-    check('made: the sheet is drawn again, from the admin\'s list the club keeps', /Invite Flight/.test(String(A.dom.node('#sheet').innerHTML)), true);
-  }
-  {
-    const { A, fbk } = await boot('coach', { server: true });
-    fbk.deliver('.info/connected', true);
-    A.click({ act: 'squadinvitego', tid: 't1' }); await A.flush();
-    check('a coach is refused in the handler before any ask', asks(fbk).length, 0);
-  }
-  H.summary('team links and squad invites');
+  H.summary('team links and a family\'s invite');
 })();

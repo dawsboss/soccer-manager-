@@ -270,9 +270,9 @@ does the bookkeeping, not that the phone works offline first.
   `settle`; since build 136 also a child the family filled in through the
   link, added to the squad with her record in the club and her roster entry
   in the same write, when the coach says so), a fan's ask (`approveFan()`, with her name for the family and
-  the fans table), a squad's parent links (`inviteSquad()`: one per child
-  with no parent and no open invite, with the limits she chose, ids from the
-  server's generator) and an imported roster's invites (`inviteImported()`:
+  the fans table), a squad's parent links (the `squad` op, one per child
+  with no parent and no open invite; no page asks for it since build 140,
+  when the invite builder replaced the per-child sheet) and an imported roster's invites (`inviteImported()`:
   one email-bound each, nobody who has the role or an open invite). Each is
   checked against the club as the rules checked the phone (an admin, or the
   team's coach for a request or a fan; admins alone for links), and the
@@ -284,9 +284,8 @@ does the bookkeeping, not that the phone works offline first.
   the order the rules need (spend the invite, take the role, add herself to the
   index) (`redeemInvite()`); approving a team-link request is the coach writing
   the approval before the index entry (`approveClaim()`), and a fan's
-  ask the same way (`approveFan()`, build 121); a squad of parent
-  links is made one invite at a time (`inviteSquad()`), and so are the
-  invites for the emails an imported roster carries (`inviteImported()`),
+  ask the same way (`approveFan()`, build 121); the
+  invites for the emails an imported roster carries are made one at a time (`inviteImported()`),
   whose invitations go from the admin's own mail app one at a time where
   the club has no mailer; a new club is claimed by
   the first person to write its admin list (`createClub()`), which is
@@ -369,10 +368,18 @@ does the bookkeeping, not that the phone works offline first.
   receipt whenever a fee is marked paid or a package sold, and once a day
   each family's sessions still to pay (`org/feeMail` false turns that off).
   `test/mailnews.js`.
+- **Moved (build 140): a link to the address she types** (`emailLink()`):
+  every link's *Email it* asks for an address, and the club sends an
+  invite made for whoever opens it (`invites` with `to`; an invite made for
+  one address still goes to that address alone), a team's link or a
+  registration link (`link`, `join` or `reg`), in the club's words, the
+  link built from the club's own records. `test/mail.js`.
 - **Still on the phone:** *Email the parents* in her own mail app with
   everybody in bcc (`mailto:`), beside the club's; every link's *Email it*
-  from her own mail app where the club has no mailer, or the link names no
-  address (`linkButtons()`); a session's families from her own mail app
+  from her own mail app, addressed to whoever she typed, where the club has
+  no mailer, the rules are too old, or the club does not send that link (a
+  season or game page, a calendar feed, a family's fan link)
+  (`linkButtons()`); a session's families from her own mail app
   where the club has no mailer (`sheetReach()`).
 - **With payments:** each payment step adds its emails to `mailnews.js`
   as it is built (a bill made, a refund, a card charged, a plan's part due

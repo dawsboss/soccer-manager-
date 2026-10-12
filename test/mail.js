@@ -106,6 +106,52 @@ const ask = (S, uid, v) => S.fire(`mailAsks/CLUB/${uid}/m${++n}`, { at: Date.now
     S.unload();
   }
 
+  console.log('\n--- to the address she typed into Email it ---');
+  {
+    const S = server(db => {
+      db.workspaces.CLUB.teams.t1.join = { code: 'jT1', at: 1, by: 'coach' };
+      db.workspaces.CLUB.teams.t2.join = { code: 'jOld', at: 1, by: 'other' };
+      db.workspaces.CLUB.programs = { pr1: { id: 'pr1', name: 'Fall 2026', link: 'rOpen' }, pr2: { id: 'pr2', name: 'Shut', link: 'rShut', closed: true } };
+      db.joinCodes = { jT1: { ws: 'CLUB', team: 't1', teamName: 'Flight', by: 'coach', at: 1 }, jOld: { ws: 'CLUB', team: 't2', by: 'other', at: 1, expiresAt: Date.now() - 1 } };
+      db.regOpen = { rOpen: { ws: 'CLUB', prog: 'pr1', name: 'Fall 2026' } };
+    });
+    const a = await ask(S, 'adm', { op: 'invites', ids: ['iNo'], to: 'Gran@X.com' });
+    deepEq('an invite made for whoever opens it goes to the address she typed', [a.sent, S.mails.map(m => m.to)], [['iNo'], ['gran@x.com']]);
+    const m = S.mails[0];
+    check('in the club\'s words, with the link', [m.subject, m.text.includes('https://club.example/index.html?invite=iNo')].join(), 'Ada has invited you to Lakeside SC,true');
+    check('never claiming it is for that address only', /for this address only/.test(m.text) || /sign in with this email/.test(m.text), false);
+    check('and saying the first to open it takes it', /for the first person to open it/.test(m.text), true);
+    S.mails.length = 0;
+    const b = await ask(S, 'adm', { op: 'invites', ids: ['iA'], to: 'gran@x.com' });
+    deepEq('an invite made for one address goes to that address or nowhere', [b.sent, b.skipped, S.mails.length], [[], { iA: 'other' }, 0]);
+    check('the same address is fine', (await ask(S, 'adm', { op: 'invites', ids: ['iA'], to: 'NEW@x.com' })).sent.join(), 'iA');
+    check('not an address that is not one', (await ask(S, 'adm', { op: 'invites', ids: ['iNo'], to: 'nope' })).why, 'bad');
+    check('a coach, not for an invite she did not make', JSON.stringify((await ask(S, 'coach', { op: 'invites', ids: ['iNo'], to: 'g@x.com' })).skipped), '{"iNo":"notyours"}');
+    S.mails.length = 0;
+
+    const j = await ask(S, 'coach', { op: 'link', kind: 'join', tid: 't1', to: 'gran@x.com' });
+    deepEq('a team\'s coach: its team link, to the address', [j.ok, j.sent, S.mails.map(x => x.to)], [true, 1, ['gran@x.com']]);
+    const jm = S.mails[0];
+    check('the link built from the team\'s own, in the club\'s words', [jm.subject, jm.text.includes('https://club.example/index.html?join=jT1'), /Jaz invites you to join Flight at Lakeside SC/.test(jm.text)].join(), 'Join Flight at Lakeside SC,true,true');
+    check('naming no child', /Ella|Rosa/.test(jm.text), false);
+    S.mails.length = 0;
+    check('an admin may', (await ask(S, 'adm', { op: 'link', kind: 'join', tid: 't1', to: 'g@x.com' })).sent, 1);
+    for (const [who, label] of [['trk', 'a tracker'], ['helper', 'a helper'], ['other', 'another team\'s coach'], ['mum', 'a family']]) {
+      const before = S.mails.length;
+      const r = await ask(S, who, { op: 'link', kind: 'join', tid: 't1', to: 'g@x.com' });
+      check(`${label} is refused`, [r.why, S.mails.length - before].join(), 'notyours,0');
+    }
+    check('a team link past its date is not sent', (await ask(S, 'other', { op: 'link', kind: 'join', tid: 't2', to: 'g@x.com' })).why, 'expired');
+    S.mails.length = 0;
+    const r = await ask(S, 'adm', { op: 'link', kind: 'reg', prog: 'pr1', to: 'fam@x.com' });
+    check('an admin: a program\'s registration link', [r.sent, S.mails[0].to, S.mails[0].subject, S.mails[0].text.includes('https://club.example/index.html?reg=rOpen')].join(), '1,fam@x.com,Register for Fall 2026 at Lakeside SC,true');
+    check('not a closed one', (await ask(S, 'adm', { op: 'link', kind: 'reg', prog: 'pr2', to: 'fam@x.com' })).why, 'gone');
+    check('not a coach', (await ask(S, 'coach', { op: 'link', kind: 'reg', prog: 'pr1', to: 'fam@x.com' })).why, 'notyours');
+    check('no link with no address', (await ask(S, 'adm', { op: 'link', kind: 'reg', prog: 'pr1' })).why, 'bad');
+    check('nor a kind the club does not send', (await ask(S, 'adm', { op: 'link', kind: 'season', tid: 't1', to: 'g@x.com' })).why, 'bad');
+    S.unload();
+  }
+
   console.log('\n--- a notice to the team\'s families ---');
   {
     const S = server();
@@ -185,6 +231,58 @@ const ask = (S, uid, v) => S.fire(`mailAsks/CLUB/${uid}/m${++n}`, { at: Date.now
       A.importContacts.made[A.importInviteRows()[0].key] = 'iA';
       await A.mailImported(); await A.flush(20);
       check('rules too old for the ask: nothing goes from her phone either', fbk.record.mails.length, 0);
+    }
+    {
+      const { A, fbk } = await boot('adm');
+      A.html = A.linkButtons('https://club.example/?invite=iNo', { subject: 'S', body: 'B', invite: 'iNo' });
+      const n = (A.html.match(/id="lb(\d+)"/) || [])[1];
+      check('Email it opens a box for the address, hidden until tapped', !!n && new RegExp(`id="lbf${n}" hidden`).test(A.html) && /data-act="emailit"/.test(A.html), true);
+      check('no mail app link drawn, only the box', /<a [^>]*href="mailto:/.test(A.html), false);
+      A.dom.node('#lbf' + n).hidden = true;
+      A.click({ act: 'emailit', n });
+      check('tapping Email it shows the box', A.dom.node('#lbf' + n).hidden, false);
+      const href = (A.html.match(/data-href="([^"]+)"/) || [])[1].replace(/&amp;/g, '&');
+      A.dom.node('#lb' + n).value = 'not an address';
+      A.click({ act: 'emailsend', n, href, invite: 'iNo' }); await A.flush();
+      check('an address that is not one is said, nothing asked', [asks(fbk).length, /does not look right/.test(A.lastToast())].join(), '0,true');
+      A.dom.node('#lb' + n).value = 'Gran@X.com';
+      A.click({ act: 'emailsend', n, href, invite: 'iNo' }); await A.flush();
+      const ask = asks(fbk)[0];
+      deepEq('Send asks the club, with the invite and the address she typed', [ask.value.op, JSON.stringify(ask.value.ids), ask.value.to], ['invites', '["iNo"]', 'gran@x.com']);
+      fbk.deliver(ask.path + '/answer', { ok: true, sent: ['iNo'], at: 1 }); await A.flush(10);
+      check('sent: said, and her mail app not opened', [/The club emailed gran@x\.com/.test(A.lastToast()), /^mailto:/.test(global.location.href || '')].join(), 'true,false');
+    }
+    {
+      const { A, fbk } = await boot('coach');
+      A.html = A.linkButtons('https://club.example/?join=jT1', { subject: 'Join', body: 'B', send: { kind: 'join', tid: 't1' } });
+      const n = (A.html.match(/id="lb(\d+)"/) || [])[1];
+      const href = (A.html.match(/data-href="([^"]+)"/) || [])[1].replace(/&amp;/g, '&');
+      check('a team link\'s Send carries the team, never the link', /data-kind="join"/.test(A.html) && /data-tid="t1"/.test(A.html), true);
+      A.dom.node('#lb' + n).value = 'gran@x.com';
+      A.click({ act: 'emailsend', n, href, kind: 'join', tid: 't1' }); await A.flush();
+      const ask = asks(fbk)[0];
+      deepEq('asked of the club as a link to that address', [ask.value.op, ask.value.kind, ask.value.tid, ask.value.to], ['link', 'join', 't1', 'gran@x.com']);
+      fbk.deliver(ask.path + '/answer', { ok: false, why: 'nomail', at: 1 }); await A.flush(10);
+      check('no mailer: her own mail app, addressed to whoever she typed', /^mailto:gran%40x\.com\?subject=Join/.test(global.location.href || ''), true);
+      const before = asks(fbk).length;
+      A.click({ act: 'emailsend', n, href, kind: 'join', tid: 't2' }); await A.flush();
+      check('the club is not asked again once it has said it has no mailer', asks(fbk).length - before, 0);
+    }
+    {
+      const { A, fbk } = await boot('coach');
+      A.html = A.linkButtons('https://club.example/?join=jT2', { subject: 'Join', body: 'B', send: { kind: 'join', tid: 't2' } });
+      const n = (A.html.match(/id="lb(\d+)"/) || [])[1];
+      A.dom.node('#lb' + n).value = 'gran@x.com';
+      A.click({ act: 'emailsend', n, href: 'mailto:?subject=Join', kind: 'join', tid: 't2' }); await A.flush();
+      check('another team\'s link is refused in the handler, nothing asked', [asks(fbk).length, /coaches only/.test(A.lastToast())].join(), '0,true');
+    }
+    {
+      const { A, fbk } = await boot('mum');
+      A.html = A.linkButtons('https://club.example/live.html?t=s1', { subject: 'Season', body: 'B' });
+      const n = (A.html.match(/id="lb(\d+)"/) || [])[1];
+      A.dom.node('#lb' + n).value = 'gran@x.com';
+      A.click({ act: 'emailsend', n, href: 'mailto:?subject=Season' }); await A.flush();
+      check('a link the club does not send: her own mail app, addressed, nothing asked', [asks(fbk).length, global.location.href].join(), '0,mailto:gran%40x.com?subject=Season');
     }
     {
       const { A, fbk } = await boot('coach');

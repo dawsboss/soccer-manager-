@@ -21,8 +21,17 @@
 
    - `invites`: each id must be an invite of this club with an email on it,
      not yet spent and not expired, and the asker an admin of the club or the
-     one who made that invite (a coach's invite for her own player). The
-     address comes from the invite, never from the ask.
+     one who made that invite (a coach's invite for her own player). An
+     invite made for an address goes to that address and no other; one made
+     for whoever opens it goes to the address she typed into Email it
+     (`to`, build 140): the words are the club's, never hers, so it is no
+     more than making an invite for that address would have been.
+   - `link` (build 140): the club's other ways in, to the address she typed
+     (`to`), in the club's words: `join`, a team's link (teams/{tid}/join,
+     the joinCodes entry still this club's team and in date), for an admin
+     or that team's coach; `reg`, a program's registration link (its
+     regOpen entry this club's and open), for an admin. The link is built
+     here from what the club holds, never taken from the ask.
    - `team`: the asker an admin, or a coach or helper of the team
      (postsTo() on the phone: teamIndex names her as coach or helper); the
      addresses are the team's families' (teamParents, held to the squad, as
@@ -88,8 +97,11 @@ const money = (sign, n) => { n = Math.round((Number(n) || 0) * 100) / 100; retur
 const dayWords = d => /^\d{4}-\d\d-\d\d$/.test(String(d || '')) ? new Date(d + 'T12:00:00Z').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', timeZone: 'UTC' }) : '';
 const footerOf = (club, site) => `\n\n— sent by ${club} through TeamPlayHQ${site ? `, ${site}` : ''}`;
 
-/* The invitation, in plain words: who, to what, the link, how long it lasts. */
+/* The invitation, in plain words: who, to what, the link, how long it lasts.
+   An invite made for whoever opens it says so, rather than "this address
+   only", which would not be true. */
 function inviteMail(v, club, site, now) {
+  const bound = okMail(v.email), seats = Number(v.max) > 1 || !!(v.seats && keys(v.seats).length > 1);
   const who = clip(v.byName, 80) || 'An admin';
   const what = v.role === 'parent' && v.playerNo ? `the parent of #${clip(v.playerNo, 20)} on ${clip(v.teamName, 80) || 'a team'}`
     : v.team ? `${ROLE_WORDS[v.role] || v.role} of ${clip(v.teamName, 80) || 'a team'}` : ROLE_WORDS[v.role] || v.role;
@@ -99,8 +111,9 @@ function inviteMail(v, club, site, now) {
     subject: `${who} has invited you to ${club}`,
     text: [
       `${who} has invited you to join ${club} in TeamPlayHQ as ${what}.`,
-      '', `Open this link on your phone and sign in with this email address to accept it:`, link, '',
-      `The link works once, for this address only, and for ${days} day${days === 1 ? '' : 's'}. If you were not expecting it, ignore it: nothing happens until you accept.`
+      '', bound ? `Open this link on your phone and sign in with this email address to accept it:` : `Open this link on your phone and sign in to accept it:`, link, '',
+      bound ? `The link works once, for this address only, and for ${days} day${days === 1 ? '' : 's'}. If you were not expecting it, ignore it: nothing happens until you accept.`
+        : `The link works for ${days} day${days === 1 ? '' : 's'}${seats ? '' : ', for the first person to open it, so keep it to yourself'}. If you were not expecting it, ignore it: nothing happens until you accept.`
     ].join('\n')
   };
 }
@@ -112,15 +125,20 @@ async function sendInvites(env, code, uid, ask, now) {
   const club = clip(org && org.name, 80) || 'a club';
   const ids = Array.isArray(ask.ids) ? ask.ids : keys(ask.ids).sort((a, b) => Number(a) - Number(b)).map(k => ask.ids[k]);
   if (!ids.length || ids.length > MAX_IDS) return { ok: false, why: 'bad' };
+  // an address she typed, for an invite made for whoever opens it
+  const typed = ask.to == null ? null : String(ask.to).trim().toLowerCase();
+  if (typed !== null && !okMail(typed)) return { ok: false, why: 'bad' };
   const sent = [], skipped = {};
   for (const id of ids) {
     if (!okKey(id)) { skipped[String(id).slice(0, 40)] = 'bad'; continue; }
     const v = await env.get('invites/' + id);
-    const why = !v || typeof v !== 'object' ? 'gone' : v.ws !== code ? 'gone' : !okMail(v.email) ? 'noemail'
+    const bound = v && typeof v === 'object' && okMail(v.email) ? String(v.email).toLowerCase() : null;
+    const why = !v || typeof v !== 'object' ? 'gone' : v.ws !== code ? 'gone' : !bound && !typed ? 'noemail'
+      : bound && typed && typed !== bound ? 'other'
       : v.used ? 'used' : !(Number(v.expiresAt) > now) ? 'expired' : !(admin || v.by === uid) ? 'notyours' : null;
     if (why) { skipped[id] = why; continue; }
     const m = inviteMail({ ...v, id }, club, env.site, now);
-    try { await env.mail({ to: String(v.email).toLowerCase(), subject: m.subject, text: m.text }); sent.push(id); } catch (e) { skipped[id] = 'failed'; }
+    try { await env.mail({ to: bound || typed, subject: m.subject, text: m.text }); sent.push(id); } catch (e) { skipped[id] = 'failed'; }
   }
   return { ok: true, sent, ...(keys(skipped).length ? { skipped } : {}) };
 }
@@ -153,6 +171,54 @@ async function sendTeam(env, code, uid, ask, now) {
     try { await env.mail({ to: em, subject, text: text + footer }); sent++; } catch (e) { failed++; }
   }
   return { ok: true, sent, failed, of: to.size };
+}
+
+/* A team's link or a program's registration link, to the one address she
+   typed. The words are the club's; the link is built from the club's own
+   records, so nothing in the ask but an id and an address reaches the mail. */
+async function sendLink(env, code, uid, ask, now) {
+  const to = String(ask.to == null ? '' : ask.to).trim().toLowerCase();
+  if (!okMail(to)) return { ok: false, why: 'bad' };
+  const L = await where(env.get, code);
+  const [admins, org, members] = await Promise.all([env.get(`${L.access}/admins`), env.get(L.org), env.get(L.members)]);
+  const admin = has(admins, uid);
+  const club = clip(org && org.name, 80) || 'the club';
+  const who = clip(members && members[uid] && members[uid].name, 80);
+  let m;
+  if (ask.kind === 'join') {
+    const tid = ask.tid;
+    if (!okKey(tid)) return { ok: false, why: 'bad' };
+    const [team, role] = await Promise.all([env.get(L.team(tid)), env.get(`${L.access}/teamIndex/${tid}/${uid}`)]);
+    if (!team || typeof team !== 'object') return { ok: false, why: 'gone' };
+    if (!(admin || role === 'coach')) return { ok: false, why: 'notyours' };
+    const jc = team.join && team.join.code;
+    const j = okKey(jc) ? await env.get('joinCodes/' + jc) : null;
+    if (!j || typeof j !== 'object' || j.ws !== code || j.team !== tid) return { ok: false, why: 'gone' };
+    if (j.expiresAt && !(Number(j.expiresAt) > now)) return { ok: false, why: 'expired' };
+    const tn = clip(team.name, 80) || 'the team';
+    m = {
+      subject: `Join ${tn} at ${club}`,
+      text: [`${who || 'The coach'} invites you to join ${tn} at ${club} in TeamPlayHQ.`, '',
+        `Open this link on your phone, sign in, and give your child's shirt number (or her details, if she isn't on the squad yet), and a coach will let you in:`,
+        `${env.site}?join=${encodeURIComponent(jc)}`].join('\n')
+    };
+  } else if (ask.kind === 'reg') {
+    const prog = ask.prog;
+    if (!okKey(prog)) return { ok: false, why: 'bad' };
+    if (!admin) return { ok: false, why: 'notyours' };
+    const pr = await env.get(`${L.base}/programs/${prog}`);
+    const link = pr && typeof pr === 'object' ? pr.link : null;
+    const open = okKey(link) ? await env.get('regOpen/' + link) : null;
+    if (!open || typeof open !== 'object' || open.ws !== code || open.closed === true || pr.closed) return { ok: false, why: 'gone' };
+    const name = clip(pr.name || open.name, 80) || 'the season';
+    m = {
+      subject: `Register for ${name} at ${club}`,
+      text: [`${club} is taking registrations for ${name} in TeamPlayHQ.`, '',
+        `Open this link on your phone and sign in to register your child:`, `${env.site}?reg=${encodeURIComponent(link)}`].join('\n')
+    };
+  } else return { ok: false, why: 'bad' };
+  try { await env.mail({ to, subject: m.subject, text: m.text + footerOf(club, env.site) }); } catch (e) { return { ok: true, sent: 0, failed: 1 }; }
+  return { ok: true, sent: 1, failed: 0 };
 }
 
 /* A training session's families: every place booked, waiting or asked for on
@@ -192,7 +258,8 @@ async function sendSession(env, code, uid, ask) {
   return { ok: true, sent, failed, of: to.size };
 }
 
-/* mailAsks/{code}/{uid}/{id}: { op: 'invites', ids }, { op: 'team', tid,
+/* mailAsks/{code}/{uid}/{id}: { op: 'invites', ids, to? }, { op: 'link',
+   kind, tid | prog, to }, { op: 'team', tid,
    subject, text } or { op: 'session', sids, pid?, subject, text }. Answered
    once at its `answer`. */
 async function onAsk(env, params, ask, now = Date.now()) {
@@ -206,6 +273,7 @@ async function onAsk(env, params, ask, now = Date.now()) {
   if (await env.get('retired/' + code)) return say({ ok: false, why: 'retired' });
   try {
     if (ask.op === 'invites') return say(await sendInvites(env, code, uid, ask, now));
+    if (ask.op === 'link') return say(await sendLink(env, code, uid, ask, now));
     if (ask.op === 'team') return say(await sendTeam(env, code, uid, ask, now));
     if (ask.op === 'session') return say(await sendSession(env, code, uid, ask));
     return say({ ok: false, why: 'bad' });
