@@ -76,7 +76,7 @@ team, which is the wrong direction).
 ## 7. Things I noticed this round
 
 ### 7.1 Bugs
-*Done in build 148.* The You row is the email, role and team alone (the sentence
+*Done in build 149.* The You row is the email, role and team alone (the sentence
 stays on the Got it card and in the account sheet); no score is drawn before
 kick-off (game header, its ⋯ menu, Which game, the Live card), a 0–0 once it has;
 and the call-off button was never a family's: the run that showed it was the app
@@ -144,7 +144,7 @@ without.
 
 1. Game header: team name, no score before kick-off, us–them order (6.1, first
    two bullets). Half a day.
-2. ~~Settings "You" row bug; blank score before kick-off on cards (7.1). An hour.~~ Done, build 148.
+2. ~~Settings "You" row bug; blank score before kick-off on cards (7.1). An hour.~~ Done, build 149.
 3. Notification switches in one place; rename the page What's new (6.2). A day.
 4. Team tab → My teams when there is more than one (6.3). A day.
 5. Game tab picker when more than one team has a game (6.1, third bullet). A day.
