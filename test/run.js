@@ -65,6 +65,8 @@ const SUITES = [
   ['viewers', 'club-wide viewers see every team\'s games with names and nothing else, and are in the index like everyone else'],
   ['fans', 'a player\'s fans: anyone who can see her asks, her coach approves, and they read less than a parent'],
   ['children', 'a child in the club: her record, read by staff and her own family, made for every child on a team, confirmed by her family alone'],
+  ['tryouts', 'tryouts: bibs, evaluators scoring by bib and never by name, offers'],
+  ['comply', 'coach compliance: admins keep the records, each coach reads her own, flagged and nothing more'],
   ['register', 'registration: programs and waivers for admins, the link and form a family fills (in her own name, in the rules\' order), accepting, and a draft a coach starts for a family'],
   ['details', 'getting families to finish their children\'s details: reminded on every screen and once a day, kept to the calendar and messages after the club\'s deadline, never staff; what is required and the deadline the admins\''],
   ['forget', 'forgetting an account: every role, table and place on a child in every club, her own nodes, a child with no family left kept for the admins, never the last admin'],

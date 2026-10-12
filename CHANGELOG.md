@@ -8,6 +8,59 @@ before this point lives only in the git log.
 
 ---
 
+## Coach compliance — 2026-10-12 (build 139, rules version 31)
+
+GOTSPORT.md's step 8, designed there first: the club's record of what MSYSA
+asks of every official, in its order (SafeSport, concussion training, then
+the background check), and each coach's licence.
+
+- **The admins keep the records,** one person at a time
+  (`orgs/{code}/comply/{uid}`), from what GotSport says; each coach reads her
+  own and nobody else's, and a tracker or a family reads none.
+- **Lapsed, lapsing within thirty days, or not recorded** is flagged: a
+  card on the admins' Club home and the list under Club settings, worst
+  first, and a card on the coach's own Club home naming only her own.
+  A SafeSport course or background check typed with no lapse date lapses a
+  year on, as MSYSA asks every year.
+- **Flagged, and nothing more** (the owner, 2026-10-06): nobody is taken off
+  a team, a sideline or a session, the way time off is read and never
+  obeyed.
+- **An account deleted takes its record with it** (`functions/forget.js`).
+
+New suite `comply`, and more in `rules`, `forget` and `smoke`.
+
+---
+
+## Tryouts and evaluations — 2026-10-12 (build 138, rules version 30)
+
+GOTSPORT.md's step 7: the last thing a club ran tryouts in GotSport for.
+Designed first, in GOTSPORT.md (*Tryouts and evaluations*), as registration
+was in AUTH.md.
+
+- **Evaluators score by bib, and the database keeps it that way.** An admin
+  names a tryout's evaluators and gives out bibs; each bib is published with
+  a birth year and gender and nothing else (`tryBibs`), while what ties it
+  to a child stays on the registration, which only admins and her family
+  read. So an evaluator's phone cannot put a name to a bib, and her screen
+  never draws one.
+- **At the pitch, with no signal.** Each evaluator writes only her own
+  scores (`evals/{prog}/{uid}/{bib}`), four things 1–5 and a note, through
+  the outbox like a goal: two evaluators scoring the same child never meet,
+  and a dead field loses nothing.
+- **Side by side, then an offer.** Admins see every bib's averages,
+  highest first, and each evaluator's own on the child's sheet, then offer
+  her a place on a team. Her family accepts or declines on My players, in
+  her own name; an accepted offer is placed on that team as any accepted
+  child is.
+- **Nothing left tied to nobody.** A registration deleted takes its bib; the
+  next admin's phone to open the program takes that bib's scores too (a
+  server job for later, SERVER.md). An account deleted comes off every
+  evaluator list; her scores are the club's.
+
+New suite `tryouts`, and more in `rules` and `forget`.
+
+---
+
 ## The club emails families by itself — 2026-10-11 (build 137, rules version 29)
 
 Build 135 gave the club its own mailer for invitations and team notices.

@@ -161,6 +161,16 @@ try {
     appOwners={own:true}; state.access.index={own:true};
     ui.view='admin'; render(); console.log('  readiness renders when everything passes too');
     ['clash','find','pic'].forEach(k=>{ui.view='planner'; ui.planner={tab:k,find:{ran:true}}; render();}); console.log('  rendered the planner: clashes, find a time, picture day');
+    state.access.teams={t1:{coaches:{own:true}}};
+    state.programs={tr:{id:'tr',name:'Tryouts',kind:'tryout',evaluators:{own:true},by:'own',at:1}};
+    state.tryBibs={tr:{1:{at:1,y:2016,g:'F'},2:{at:1}}}; state.evals={tr:{own:{1:{s:{ball:4},note:'Fast',at:1}}}};
+    state.regs={tr:{c1:{st:'offered',bib:1,offer:{team:'t1',by:'own',at:1},by:'x',at:1}}};
+    state.comply={own:{safe:{done:'2020-01-01',lapses:'2021-01-01'},by:'own',at:1}};
+    ui.view='tryout'; ui.tryout={prog:'tr',bib:1}; render(); console.log('  rendered an evaluator scoring a bib');
+    ui.view='regs'; ui.regs={prog:'tr',tab:'scores'}; render(); ui.regs={prog:'tr',tab:'list'}; render(); ui.regs={};
+    console.log('  rendered the scores and list of a tryout');
+    ui.view='comply'; render(); ui.view='club'; render(); console.log('  rendered coach compliance, and its cards on Club home');
+    state.programs={}; state.tryBibs={}; state.evals={}; state.regs={}; state.comply={}; state.access.teams={};
     ui.view='schedule'; ui.sched={}; render(); console.log('  rendered the club schedule (the calendar, every team)');
     ['all','pending','coach','tracker','parent'].forEach(f=>{ui.peopleFilter=f; render();});
     console.log('  all five people filters rendered');
