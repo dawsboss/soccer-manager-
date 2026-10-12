@@ -17,6 +17,11 @@ frame as the coach.
 ## 1. The big problems (structure)
 
 ### 1.1 There is no primary navigation
+**Shipped in build 141** (`CHANGELOG.md`, *A tab bar, and a title instead of crumbs*; pinned by
+`test/nav.js`): the bar below, by role, with Club under More; crumbs → a title with a back
+arrow; the club switcher is the club's name on the title; the top bar keeps the brand, the sync
+badge and the avatar. What follows is the finding as written.
+
 A phone app is learned through its tab bar. This one has none. The way around is:
 
 - the crumbs (`Club › Team › Game`), which are a *model* of the data, not a map of
@@ -242,7 +247,7 @@ team link, or open the invite you were sent."
    repo so tests can hold the UI to it).
 
 **Large (the structural change everything else hangs off):**
-10. Role-based bottom tab bar, and crumbs → title + back.
+10. Role-based bottom tab bar, and crumbs → title + back. *Done, build 141.*
 11. Game mode: one header, pinned clock, four screens.
 12. A parent's own Home and Season.
 

@@ -7,8 +7,9 @@
    person to pick up this phone cannot read a list of children's names — before
    the database has been asked, not three seconds later when it answers.
 
-   The chrome counts. Crumbs carry the club and the team name, so a lock screen
-   with the crumbs still drawn has leaked most of what there was to leak.
+   The chrome counts. The title row carries the club and the team name, so a
+   lock screen with it still drawn has leaked most of what there was to leak;
+   the tab bar is the way around a club, and a locked device gets none of it.
 
    Exits non-zero on a failed expectation. */
 
@@ -63,7 +64,8 @@ function check(label, got, want) {
   console.log(`  ${ok ? 'ok  ' : 'FAIL'} ${label.padEnd(50)} ${JSON.stringify(got)}${ok ? '' : ' — expected ' + JSON.stringify(want)}`);
 }
 const app = () => String(nodes['#app'].innerHTML || '');
-const crumbs = () => String(nodes['#crumbs'].innerHTML || '');
+const crumbs = () => String((nodes['#titlebar'] || {}).innerHTML || '');
+const tabbar = () => String((nodes['#tabbar'] || {}).innerHTML || '');
 const CHILD = 'Immie Farrow';           // a name that must never survive a lock
 
 const club = admins => ({
@@ -94,8 +96,9 @@ check('the lock screen is showing', /Sign in to this club/.test(app()), true);
 check('no team is offered', A.myTeams().length, 0);
 check('and none can be edited', A.canEditTeam('t1'), false);
 check("no child's name in the page", app().includes(CHILD), false);
-check('no club name in the crumbs', crumbs().includes('Soccer by Rachel'), false);
-check('no team name in the crumbs', crumbs().includes('Testing'), false);
+check('no club name in the title row', crumbs().includes('Soccer by Rachel'), false);
+check('no team name in the title row', crumbs().includes('Testing'), false);
+check('and no tab bar', tabbar(), '');
 console.log('  ^ and none of this waited on the database: denied is still false');
 check('denied was never set', /denied/.test('') || A.needsSignIn(), true);
 
@@ -117,14 +120,16 @@ check('and editable', A.canEditTeam('t1'), true);
 check('the squad renders', app().includes(CHILD) || A.ui.view !== 'roster', true);
 show('roster');
 check('the roster shows the players', app().includes(CHILD), true);
-check('the crumbs are back', crumbs().includes('Soccer by Rachel'), true);
+check('the title row is back', crumbs().includes('Soccer by Rachel'), true);
+check('and so is the tab bar', /data-tab="team"/.test(tabbar()), true);
 
 console.log('\n--- and signs out ---');
 A.me = null;
 show('roster');
 check('locked immediately', A.needsSignIn(), true);
 check('the roster is gone', app().includes(CHILD), false);
-check('the crumbs are gone', crumbs().includes('Soccer by Rachel'), false);
+check('the title row is gone', crumbs().includes('Soccer by Rachel'), false);
+check('and the tab bar with it', tabbar(), '');
 
 /* ---------------- the bootstrap must still work ---------------- */
 

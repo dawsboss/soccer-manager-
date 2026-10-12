@@ -61,7 +61,7 @@ const NOTE = (A, by, text, extra) => ({ by, byName: CLUB.access.members[by].name
     check('never to every family\'s', fbk.watching('dm/CLUB/t1'), false);
     check('nor another family\'s', fbk.watching('dm/CLUB/t1/dad'), false);
     check('nor a team she has no child on', fbk.watching('board/CLUB/t2'), false);
-    check('Messages is drawn', A.dom.node('#msgBtn').hidden, false);
+    check('Messages is a tab on the bar', /data-tab="messages"/.test(A.rendered('#tabbar')), true);
   }
   {
     const { fbk } = await boot('coach');
@@ -84,7 +84,7 @@ const NOTE = (A, by, text, extra) => ({ by, byName: CLUB.access.members[by].name
     const club = JSON.parse(JSON.stringify(CLUB)); club.access.admins = {};
     const { A, fbk } = await boot('coach', { club });
     check('no admin yet: no messages at all', fbk.readPaths().some(p => /^(board|dm)\//.test(p)), false);
-    check('and no Messages', A.dom.node('#msgBtn').hidden, true);
+    check('and no Messages tab', /data-tab="messages"/.test(A.rendered('#tabbar')), false);
   }
 
   console.log('\n--- what arrives, and what is news ---');
@@ -93,8 +93,8 @@ const NOTE = (A, by, text, extra) => ({ by, byName: CLUB.access.members[by].name
     fbk.deliver('board/CLUB/t1', { n1: NOTE(A, 'coach', 'Old news') }); await A.flush();
     check('the first read notifies nothing', A.toasts.length, 0);
     check('but it counts as unread', A.unreadCount(), 1);
-    check('and Messages says so', A.dom.node('#msgN').textContent, '1');
-    check('not the bell: a notice is a message, not a notification', A.dom.node('#bellN').textContent, '');
+    check('and the Messages tab says so', A.dom.node('#tabMsgN').textContent, '1');
+    check('not More: a notice is a message, not a notification', A.dom.node('#tabMoreN').textContent, '');
     fbk.deliver('board/CLUB/t1', { n1: NOTE(A, 'coach', 'Old news'), n2: NOTE(A, 'coach', 'Training moved to 6pm', { urgent: true }) }); await A.flush();
     check('a new notice pops up', /Urgent · Flight · Jaz · Training moved to 6pm/.test(A.lastToast() || ''), true);
     const before = A.toasts.length;
@@ -529,7 +529,7 @@ const NOTE = (A, by, text, extra) => ({ by, byName: CLUB.access.members[by].name
     A.click({ act: 'thread', tid: 't1', fam: 'mum' }); await A.flush();
     fbk.signOut(); await A.flush();
     check('signed out, nothing of it is drawn', /Private reply/.test(A.rendered()), false);
-    check('Messages goes', A.dom.node('#msgBtn').hidden, true);
+    check('Messages goes, with the whole bar', A.rendered('#tabbar'), '');
     check('and this device forgets it', A.storage.getItem('sm.msgs:CLUB:mum'), null);
   }
 

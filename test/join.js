@@ -121,7 +121,7 @@ const valueAt = (fbk, p) => { const w = fbk.writtenTo(p); return w.length ? w[w.
     check('it says which team and club', /Join Flight/.test(html) && /Lakeside SC/.test(html), true);
     check('and asks for the shirt number', /id="joinShirt"/.test(html), true);
     check('no child\'s name before she is let in', /Ella|Bea|Cleo/.test(html), false);
-    check('crumbs stay empty', A.rendered('#crumbs'), '');
+    check('the title row stays empty', A.rendered('#titlebar'), '');
 
     A.dom.node('#joinShirt').value = ' 9 ';
     A.dom.node('#joinChild').value = 'Bea';

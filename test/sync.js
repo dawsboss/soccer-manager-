@@ -553,7 +553,7 @@ async function boot(opts = {}) {
       ...extra
     });
     // the squad, where every name is: the calendar it opens on names no team
-    const drawn = A => { A.ui.view = 'roster'; A.ui.teamId = 't1'; A.render(); return String(A.dom.node('#app').innerHTML) + String(A.dom.node('#crumbs').innerHTML); };
+    const drawn = A => { A.ui.view = 'roster'; A.ui.teamId = 't1'; A.render(); return String(A.dom.node('#app').innerHTML) + String(A.dom.node('#titlebar').innerHTML); };
     // no signIn(): auth never answers, which is a phone with no signal
     {
       const { A, fbk } = await boot({ storage: seed({ 'sm.denied:FLIGHT': String(now - 2 * 3600e3), 'sm.synced:FLIGHT': String(now - 3 * 3600e3) }) });
@@ -583,7 +583,7 @@ async function boot(opts = {}) {
     const now = H.clock.t;
     const club = { teams: { t1: { id: 't1', name: 'G14 Flight', players: { p1: { id: 'p1', name: 'Ella Stone' } } } }, matches: {}, access: { admins: { bossU: true }, index: { bossU: true, coachU: true }, teams: { t1: { coaches: { coachU: true } } } } };
     // the squad, where every name is: the calendar it opens on names no team
-    const drawn = A => { A.ui.view = 'roster'; A.ui.teamId = 't1'; A.render(); return String(A.dom.node('#app').innerHTML) + String(A.dom.node('#crumbs').innerHTML); };
+    const drawn = A => { A.ui.view = 'roster'; A.ui.teamId = 't1'; A.render(); return String(A.dom.node('#app').innerHTML) + String(A.dom.node('#titlebar').innerHTML); };
     const base = { 'sm.data.v1:FLIGHT': JSON.stringify(club), 'sm.me': JSON.stringify({ uid: 'coachU', name: 'Jaz' }) };
     {
       const { A, fbk } = await boot({ storage: { ...base, 'sm.synced:FLIGHT': String(now - 31 * 864e5) } });

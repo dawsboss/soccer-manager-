@@ -242,7 +242,9 @@ const EXPORTS = `{
   blockAll, blockById, blockSlots, normBlock, slotSid, canEditBlock, kidBusy, blockKids, availView, familyAvail, sheetBlock,
   AVAIL_ACTS, myCalItems, myCalTeams, myCalTids, myCalFilters, myCalLine, createClub, blockValue, placesTaken, slotAt, askBooking, bookWhy,
   /* my calendar, across clubs */
-  get you() { return you }, busyOf, myFeedDoc, myFeedId, feedItem, youCalItems, youBusy, youClubs, elsewhereOn, sharing, sheetPersonCal, viewScope, crumbs, watchMirror, mirrorSlim,
+  get you() { return you }, busyOf, myFeedDoc, myFeedId, feedItem, youCalItems, youBusy, youClubs, elsewhereOn, sharing, sheetPersonCal, viewScope, watchMirror, mirrorSlim,
+  /* where you are, and the way around (build 141) */
+  titleBar, tabBar, navTabs, navKind, navGame, tabFor, upView, homeView, sheetMore, sheetAccount, VIEW_TITLE,
   alertsList: () => alertsHere().list, alertBar, calAlerts, elseUnread, openAlert, noteMine,
   /* safekeeping: what is owed, a full phone, and the backup */
   otherOwed, pendingCount, refusedCount, backupDoc, trainingCopy, isBackupData, keepStored,
