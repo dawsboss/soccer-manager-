@@ -128,6 +128,14 @@ team, which is the wrong direction).
   sure "Which game" (tap on the title) and "…" do not both open pickers; one
   should.
 
+Done in build 148: "2 teams"; Fields, Session fees and Coach hours are Settings →
+Club screens and the Sessions page keeps Sessions and Bookable times; a family's
+Settings is pinned to no My drills (`test/settings.js`); the role card is Home's
+alone; the Day title drops "Today", Week and Day blocks lead with the title (the
+team is the colour and the second line) and a phone's Month cell says "v LAK";
+the live card is one line on Month; a parent's Calendar is "My calendar · Club";
+and the "…" menu keeps the games either side while the title is the one picker.
+
 ## 8. Order of work for round 2
 
 1. Game header: team name, no score before kick-off, us–them order (6.1, first

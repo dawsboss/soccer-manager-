@@ -493,7 +493,10 @@ function sideline() {
     const g = setup();
     let h = html();
     check('the Track tab shows the card', /id="subsdue"/.test(h), true);
-    check('the tracker\'s role bar mentions the planned subs', /planned subs/.test(h), true);
+    // the role card is Home's alone since build 148 (UX-REVIEW-2.md, 7.3): a tracker's Home is her team's Season
+    A.ui.view = 'season';
+    check('the tracker\'s role card, on Season, mentions the planned subs', /planned subs/.test(html()), true);
+    check('— and is not over Track', (A.ui.view = 'game', /planned subs/.test(html())), false);
     as('jaz'); A.ui.gameView = 'subs';
     h = html();
     check('the Subs tab shows it to the coach', /id="subsdue"/.test(h) && /Sam/.test(h), true);

@@ -62,7 +62,7 @@ console.log('--- the sections, by whose they are ---');
   check('an admin: You, This team, Club, Advanced', heads(h), 'You · This team · Club · Advanced');
   check('— titled Settings', A.rendered('#titlebar').includes('<span>Settings</span>'), true);
   const a = acts(h);
-  for (const x of ['signinsheet', 'goview:admin', 'goview:people', 'goview:regs', 'goview:comply', 'planner', 'sesstab:fields', 'clubdrills', 'tpllist:clubTpl', 'bulkimport', 'backupsheet', 'readysheet', 'hardreload', 'editteam:t1', 'formations', 'trackcfg', 'sharesheet'])
+  for (const x of ['signinsheet', 'goview:admin', 'goview:people', 'goview:regs', 'goview:comply', 'planner', 'sesstab:fields', 'sesstab:fees', 'sesstab:hours', 'clubdrills', 'tpllist:clubTpl', 'bulkimport', 'backupsheet', 'readysheet', 'hardreload', 'editteam:t1', 'formations', 'trackcfg', 'sharesheet'])
     check(`— ${x}`, a.has(x), true);
   check('— no club calendar here: Club home and the Calendar have it', a.has('schedule'), false);
   check('— the links for families once', (h.match(/data-act="sharesheet"/g) || []).length, 1);
@@ -73,6 +73,7 @@ console.log('--- the sections, by whose they are ---');
   check('— her team\'s set-up, to change', ['editteam:t1', 'formations', 'trackcfg'].every(x => acts(h).has(x)), true);
   check('— no backup or readiness', /backupsheet|readysheet/.test(h), false);
   check('— My drills, since she plans', acts(h).has('mydrills'), true);
+  check('— fields, her sessions\' fees and her hours, off the Sessions screen (UX-REVIEW-2.md, 7.3)', ['sesstab:fields', 'sesstab:fees', 'sesstab:hours'].every(x => acts(h).has(x)), true);
 
   h = as('jaz', 'setup', 't2');
   check('a coach on another team: its set-up to read, nothing to change', /This team/.test(h) && /Shapes/.test(h) && !/data-act="(editteam|formations|trackcfg)"/.test(h), true);
@@ -80,11 +81,13 @@ console.log('--- the sections, by whose they are ---');
   h = as('trk');
   check('a tracker: You and Advanced, no team set-up, no club', heads(h), 'You · Advanced');
   check('— and no drills of her own', acts(h).has('mydrills'), false);
+  check('— nor fields, fees or hours', /data-act="sesstab"/.test(h), false);
 
   h = as('mum', 'setup');
   check('a parent: You and Advanced', heads(h), 'You · Advanced');
   check('— no team, no club, no links to manage', /data-act="(sharesheet|editteam|formations|trackcfg|planner|bulkimport)"|data-v="(admin|people|regs|comply)"/.test(h), false);
   check('— and no child\'s name', /Rosa|Mia/.test(h), false);
+  check('— and no drills of her own in a real club (UX-REVIEW-2.md, 7.3)', acts(h).has('mydrills') || /data-act="sesstab"/.test(h), false);
 
   h = as(null);
   const s = club(); s.access.admins = {}; s.access.index = {}; A.state = s; A.render(); h = A.rendered();

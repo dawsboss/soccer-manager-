@@ -4,7 +4,8 @@
 
    - The title row says whose a screen is and which one: a team's screens
      the team over the club, club screens the screen over the club, and hers
-     (the Calendar, My players) the screen over her own name. My calendar is
+     (the Calendar, My players) the screen over the club switcher (over her own
+     name until build 148, UX-REVIEW-2.md, 7.3). My calendar is
      a choice on the one Calendar (build 102), a tab of its own on the bar at
      the bottom (build 141).
    - Every other club the account is in is listened to as well as the open
@@ -98,11 +99,11 @@ const nameIn = v => names.some(n => JSON.stringify(v).includes(n));
     D.ui.view = 'club';
     check('club home: the club alone, and it is the switcher', /class="tbtitle pick" data-act="clubswitch"/.test(T()) && titled('Club home') && !/G11 Flight/.test(T()), true);
     D.ui.view = 'mine';
-    check('My players: hers, over her own name', titled('My players') && titled('jaz') && !/Lakeside SC|G11 Flight/.test(T()), true);
+    check('My players: hers, over the club as the switcher, never her own name', titled('My players') && clubOn() && !/G11 Flight|<span>jaz<\/span>/.test(T()), true);
     D.ui.view = 'mycal'; D.render();
     // the Calendar is the person's, even with one team and nothing else of hers yet
     check('My calendar is the Calendar', D.ui.view + ' ' + D.calSel(), 'calendar mine');
-    check('— hers, not a club\'s or a team\'s: Calendar over her name', titled('Calendar') && titled('jaz') && !/Lakeside SC|G11 Flight/.test(T()), true);
+    check('— hers, not a team\'s: Calendar, saying My calendar over the club', titled('Calendar') && /data-act="clubswitch"[^>]*>[\s\S]*?<span>My calendar · Lakeside SC<\/span>/.test(T()) && !/G11 Flight|<span>jaz<\/span>/.test(T()), true);
     check('— and the Calendar tab on the bar is lit', /data-tab="calendar" aria-current="true"/.test(D.rendered('#tabbar')), true);
     D.ui.view = 'season'; D.render();
     check('— and not when it isn\'t', /data-tab="calendar" aria-current="true"/.test(D.rendered('#tabbar')), false);
