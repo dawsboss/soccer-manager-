@@ -614,12 +614,12 @@ ways, her choice when she picks the plan:
   the club's account, one charge per part, with an idempotency key per
   part, so a run that dies half-way never charges twice.
 - **Reminded each time:** no card kept; a few days before each date she is
-  told (push, and email once step 6 is built) and pays the part with **Pay**,
+  told (push and email, *What the family is emailed*) and pays the part with **Pay**,
   Checkout as for anything else. A part past its date unpaid is `failed`, as
   below.
 
 - **A part that fails** (a declined card, a card that needs her there) is
-  `failed`; the family is told (push, and email once step 6 is built) with
+  `failed`; the family is told (push and email, *What the family is emailed*) with
   **Pay now** on the bill, which is Checkout for that part; the server tries
   the saved card once more three days later; the admins see it on Money.
 - **Paying the rest early** is **Pay what's left** on the bill: the later
@@ -737,6 +737,40 @@ Club → **Money**, admins only; there is no treasurer role (owner,
 | Card on file (brand, last four) | Her own | No | No | Yes | Yes |
 | Connect or disconnect | No | No | No | Yes | Yes |
 
+### What the family is emailed
+
+Email was built before payments (builds 135 and 137, `functions/mail.js`
+and `functions/mailnews.js`), so each payment step adds its own emails to
+`mailnews.js` as it is built, from the club's address, to the family of
+the one child the bill is for (the bill's family, never an address a phone
+wrote), each said once (noted at `serverState/` before sending, a webhook
+event delivered twice included), and tested in `test/mailnews.js` with the
+step's own suite. Push says the same things where she turned it on; email
+is what reaches a family with no app open.
+
+- **A bill made** (step 2): what for, how much and **Pay**, linking to the
+  bill on My players. A registration's *accepted* email (built) says the
+  fee already; once bills exist it says the bill's amount, after any
+  discount, instead of the program's.
+- **Payment received:** not ours. Stripe emails its own receipt from the
+  club's account at Checkout (above), so the webhook sends none, and the
+  build-137 receipt for a fee the club marks paid by hand (`onFee`) must
+  skip a fee the webhook wrote, or she gets two.
+- **A refund** (step 2): the amount and what it was for, when the webhook
+  writes it; Stripe's own refund email may also come, from the club.
+- **A bill charged to the card on file** (step 4, *Pay new bills with this
+  card*): what, how much and the card's last four, at the charge.
+- **A plan's part due soon** (step 4, *reminded each time*): a few days
+  before its date, the amount and **Pay**, once per part.
+- **A part that failed** (step 4): what and **Pay now**, at the failure and
+  again at the retry three days later if that fails too; never the card's
+  decline reason.
+- **The year's statement** (step 5): on her asking, from My players, the
+  same records she sees; never sent unasked.
+- **Session fees and packages on the till** (step 6): the daily *sessions
+  to pay* email (built) becomes the bill's **Pay** link, and stops for a
+  place on a plan or a card that pays it by itself.
+
 ### Receipts, and deleting
 
 **One record, read by both** (owner, 2026-10-11). A payment is written once,
@@ -793,6 +827,8 @@ of account, the webhook's signature, a repeated event, each event's effect,
 `payDue`), and `test/till.js` (the phone: Pay drawn only where the club takes
 cards and only for her own, no amount in any ask, the return trip, Money for
 admins only, the CSV).
+
+Each step builds its own emails with it (*What the family is emailed*).
 
 1. **The till:** `functions/stripe.js`, connecting (`connect`, `dash`),
    `stripeHook` with `account.*` only, `till` and `stripe`, test mode for
@@ -907,7 +943,13 @@ hold.
    *Designed 2026-10-11 in *Payments, designed before any code*, above,
    in six steps of its own; the owner decided its nine questions the same
    day. Needs the platform's Stripe account first.*
-6. **Email.**
+6. **Email.** *Built in builds 135 and 137: invitations and team notices
+   (`functions/mail.js`), a training session's families, a registration's
+   news to its family, receipts for payments the club records, and the
+   sessions still to pay (`functions/mailnews.js`). The payment emails are
+   built with the payment steps that make their data (*Payments*, *What the
+   family is emailed*): a card payment's receipt is Stripe's own. Not
+   built, because nothing lapses: a waiver about to lapse.*
 7. **Tryouts and evaluations.**
 8. **Coach compliance records.**
 9. **GotSport import of rosters and schedules,** whenever the owner has real

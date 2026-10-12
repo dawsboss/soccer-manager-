@@ -360,11 +360,25 @@ does the bookkeeping, not that the phone works offline first.
   the server from the squad, never from the ask. Without a mailer set up
   every ask is answered `nomail` and the phone does what it did before.
   `test/mail.js`.
+- **Moved (build 137):** *Email or share* on a training session and *Remind
+  the family* on Fees (`sheetReach()`, `mailReach()`) ask the club to send
+  (`mailAsk`, `session`: the session's coach or an admin, the families found
+  from the places). And what the club emails by itself, with no phone asking
+  (`functions/mailnews.js`): a registration's news to its family (a draft to
+  finish, received, accepted, waiting, not this time, placed on a team), a
+  receipt whenever a fee is marked paid or a package sold, and once a day
+  each family's sessions still to pay (`org/feeMail` false turns that off).
+  `test/mailnews.js`.
 - **Still on the phone:** *Email the parents* in her own mail app with
   everybody in bcc (`mailto:`), beside the club's; every link's *Email it*
   from her own mail app where the club has no mailer, or the link names no
-  address (`linkButtons()`); *Email or share* for a training session
-  (`sheetReach()`).
+  address (`linkButtons()`); a session's families from her own mail app
+  where the club has no mailer (`sheetReach()`).
+- **With payments:** each payment step adds its emails to `mailnews.js`
+  as it is built (a bill made, a refund, a card charged, a plan's part due
+  or failed: GOTSPORT.md, *What the family is emailed*); a card payment's
+  receipt is Stripe's own, from the club's account.
+- **Not built:** a waiver about to lapse (waivers never lapse here).
 - **With a server:** saying who has read it.
 
 ---

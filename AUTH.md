@@ -803,8 +803,8 @@ answers and the waivers agreed, and a dot where the family has not confirmed.
 - **Accept**, **Waiting list**, **Decline** write `st` (and, the first time a
   child of that family is accepted, `club: true` on the child, and the
   family's `access/index` entry: the child id). A family is told on her
-  registration, and by push until email is built (`functions/news.js`
-  gains the kind).
+  registration, and by email (`functions/mailnews.js`, build 137; there
+  is no push for it).
 - **Place on a team** (accepted children, a team picker narrowed by the
   program's birth years): the squad record (a new player id, her name as the
   child's first name, `child`, the guardians copied, a number left for the

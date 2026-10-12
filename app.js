@@ -2,7 +2,7 @@
    Static app. Data lives in localStorage, and mirrors to Firebase Realtime
    Database when a config + workspace code are present. */
 
-const BUILD = '136';
+const BUILD = '137';
 const BUILT = '2026-10-11';
 /* The version of database.rules.json this app was written against. The rules
    carry the same number in rulesVersion's .write, which accepts that number
@@ -11,7 +11,7 @@ const BUILT = '2026-10-11';
    never pasted look exactly like a coach with no signal: "saved on this phone
    only", one feature at a time. test/rules.js holds the two numbers together
    and fails when the rules change without this going up. */
-const RULES_VERSION = 28;
+const RULES_VERSION = 29;
 /* index.html carries the build it was published with. If this file is newer, the
    browser handed us a cached page — the exact failure that has eaten hours. */
 const pageBuild = () => {
@@ -14235,7 +14235,11 @@ function sessFeesView() {
     ${packsCard()}
     ${canAdmin() ? `<div class="card"><h2 style="margin-bottom:8px">Currency</h2>
       <div class="row" style="gap:8px"><input type="text" id="sessMoney" maxlength="3" value="${esc(moneySign())}" style="width:5em"><button class="btn quiet sm" data-act="sessmoney">Save</button></div>
-      <p class="muted" style="margin-bottom:0">The sign fees are shown with: $, £, €.</p></div>` : ''}`;
+      <p class="muted" style="margin-bottom:0">The sign fees are shown with: $, £, €.</p></div>
+    <div class="card"><h2 style="margin-bottom:8px">Emails to families</h2>
+      <div class="chips"><button class="chip" type="button" data-act="sessfeemail" data-v="0" aria-pressed="${!feeMailOn()}">Off</button>
+        <button class="chip" type="button" data-act="sessfeemail" data-v="1" aria-pressed="${feeMailOn()}">Remind about sessions to pay</button></div>
+      <p class="muted" style="margin-bottom:0">Where the club has a mailer, a family is emailed once about a booked place with no fee marked, three days after the session. A receipt goes whenever a fee is marked paid or a package is sold, and a waived fee sends nothing.</p></div>` : ''}`;
 }
 
 /* ---- hours ---- */
@@ -14419,7 +14423,7 @@ function sheetFieldForm() {
    without a server: email in Bcc, a copy to paste anywhere, and a post in the
    family's conversation on any team where the sender is staff. Messages are
    not push, so email is what reaches a closed phone. */
-let reach = null;         // { title, text, dms: [{tid, fam}], emails: [] }
+let reach = null;         // { title, text, dms: [{tid, fam}], emails: [], sids: [the sessions it is about], pid? }
 function reachFor(pids) {
   const dms = [], emails = new Set(), seen = new Set();
   let away = 0;
@@ -14444,15 +14448,38 @@ function sessMessage(s) {
     s.price && !s.called ? `${fmtMoney(s.price)} a place.` : ''
   ].filter(Boolean).join('\n');
 }
-// SERVER.md: a session's families reached from the coach's own mail app; a server could send it as a notice's is.
+const feeMailOn = () => (acc().org || {}).feeMail !== false;
+// the sessions she runs (or any, as an admin): checked here, and again by the server
+// SERVER.md: a session's families emailed by the club (mailAsk, `session`).
+async function mailReach() {
+  const r = reach; if (!r) return;
+  const sids = (r.sids || []).filter(sid => canRun(sessById(sid)));
+  if (!sids.length) { toast('Only the coach running it, or an admin, can do that'); return; }
+  if (!serverOn() || !rtdb || !me || !online) { toast('Needs a signal'); return; }
+  const el = $('#reachText');
+  const text = String((el && typeof el.value === 'string' && el.value.trim()) ? el.value : r.text).trim().slice(0, 4000);
+  closeSheet(); toast('Sending…');
+  const ans = await askServer(`mailAsks/${wsCode()}/${me.uid}/${uid()}`, { op: 'session', sids: sids.slice(0, 50), ...(r.pid ? { pid: r.pid } : {}), subject: String(r.title).slice(0, 160), text }, MAIL_WAIT);
+  if (ans && ans.ok) { reach = null; toast(`The club emailed ${ans.sent} famil${ans.sent === 1 ? 'y' : 'ies'}${ans.failed ? `; ${ans.failed} could not be sent` : ''}`); return; }
+  if (ans && (ans.why === 'nomail' || ans.why === 'rules')) { mailFallback = true; toast('The club has no mailer set up — use your own email app instead'); sheetReach(); return; }
+  toast(ans && ans.why === 'notyours' ? 'Only the coach running it, or an admin, emails its families' : 'Not sent — check the signal and try again');
+}
+/* The club emails the families itself where it has a mailer (functions/mail.js,
+   `session`): the ask names the sessions (and the child, for a reminder) and
+   carries the words; the server finds the families from the places. Her own
+   mail app stays beside it, and is all there is with no mailer. */
+// SERVER.md: a session's families emailed by the club (mailAsk); her own mail app where it has no mailer.
 function sheetReach() {
   const r = reach; if (!r) return;
   const href = `mailto:?bcc=${encodeURIComponent(r.emails.join(','))}&subject=${encodeURIComponent(r.title)}&body=${encodeURIComponent(r.text.slice(0, 1500))}`;
+  const viaClub = serverOn() && !mailFallback && !!rtdb && online && !!(r.sids || []).length;
   openSheet(`<h3>${esc(r.title)}</h3>
     <textarea id="reachText" rows="7" maxlength="${MSG_MAX}">${esc(r.text)}</textarea>
+    ${viaClub ? `<button class="btn wide" data-act="reachmail" style="margin-top:10px">Email the families from the club</button>
+      <p class="muted">One email to each family, from the club's address; nobody sees anyone else's.</p>` : ''}
     ${r.dms.length ? `<button class="btn wide" data-act="reachdm" style="margin-top:10px">Send in the app (${r.dms.length} famil${r.dms.length === 1 ? 'y' : 'ies'})</button>
       <p class="muted">Into each family's conversation with their team's coaches.${r.away ? ` ${r.away} other famil${r.away === 1 ? 'y is' : 'ies are'} on a team you don't coach, so email reaches them.` : ''}</p>` : ''}
-    ${r.emails.length ? `<a class="btn ${r.dms.length ? 'quiet ' : ''}wide" href="${esc(href)}" data-act="closesheet" style="margin-top:10px">Email them (${r.emails.length})</a>
+    ${r.emails.length ? `<a class="btn ${r.dms.length || viaClub ? 'quiet ' : ''}wide" href="${esc(href)}" data-act="closesheet" style="margin-top:10px">Email them (${r.emails.length})</a>
       <p class="muted">Opens your email app with them in Bcc, so nobody sees anyone else's address.</p>`
       : `<p class="muted">Nobody here has an account with an email address yet.</p>`}
     <button class="btn quiet wide" data-act="reachcopy">Copy the text</button>`);
@@ -14465,7 +14492,7 @@ const SESS_ACTS = new Set(['sesstab', 'sessscope', 'sesspast', 'sessopen', 'sess
   'sesswd', 'sessscopeed', 'sesscheck', 'sesssave', 'sesscall', 'sessdel', 'sessbook', 'sesspick', 'sesspickteam', 'sesspicktoggle',
   'sesspickscope', 'sesspicksave', 'sessask', 'sesswithdraw', 'sessregister', 'sesscame', 'sessfee', 'sessfeehow', 'sessfeesave',
   'sessfeeclear', 'sessremind', 'sessmoney', 'sessmonth', 'sesshourscoach', 'sesspay', 'sesspayper', 'sesspaysave', 'sesspayclear',
-  'sessdrills', 'sessdrilladd', 'sessdrillrm', 'sessdrillmin', 'sessdrillq', 'sesstell', 'sessics', 'reachdm', 'reachcopy',
+  'sessdrills', 'sessdrilladd', 'sessdrillrm', 'sessdrillmin', 'sessdrillq', 'sesstell', 'sessics', 'reachdm', 'reachcopy', 'reachmail', 'sessfeemail',
   'fieldopen', 'fieldnew', 'fieldedit', 'fieldsave', 'fielddel', 'fieldpermit', 'fieldpermitrm', 'fieldday', 'fieldsurface',
   'fieldlights', 'fieldfromtext', 'fieldshut', 'fieldclose', 'fieldcloserm', 'fieldpt', 'fieldptrm', 'fieldptsurface', 'fieldptlights',
   'sesspacks', 'sesspknew', 'sesspkopen', 'sesspkkind', 'sesspkhow', 'sesspksave', 'sesspkdel', 'sesspkback']);
@@ -14686,8 +14713,14 @@ function onSessAct(a, d) {
     const text = [`A reminder from ${(acc().org || {}).name || 'the club'}: ${firstName(w.p)}'s training sessions still to pay —`,
       ...rows.map(r => `• ${dayLabel(r.s.date)}, ${sessTitle(r.s)} with ${r.s.coachName}: ${fmtMoney(r.s.price)}`),
       `${fmtMoney(total)} in all. Thank you!`].join('\n');
-    reach = { title: `Training sessions to pay: ${firstName(w.p)}`, text, ...reachFor([d.pid]) };
+    reach = { title: `Training sessions to pay: ${firstName(w.p)}`, text, ...reachFor([d.pid]), sids: [...new Set(rows.map(r => r.s.id))].filter(sid => canRun(sessById(sid))), pid: d.pid };
     sheetReach(); return;
+  }
+  if (a === 'sessfeemail') {
+    if (!canAdmin()) { toast('Club admins decide what the club emails'); return; }
+    const on = d.v === '1';
+    if (on) { delDeep(state, 'access/org/feeMail'); remoteDel('access/org/feeMail'); } else quiet('access/org/feeMail', false);
+    saveLocal(); render(); toast(on ? 'Families are emailed about sessions still to pay' : 'The club no longer emails about sessions to pay'); return;
   }
   if (a === 'sessmoney') {
     if (!canAdmin()) { toast('Club admins set the currency'); return; }
@@ -14731,6 +14764,7 @@ function onSessAct(a, d) {
 
   /* -- telling families -- */
   if (a === 'sesstell') { openReach(s); return; }
+  if (a === 'reachmail') { mailReach(); return; }
   if (a === 'reachcopy' || a === 'reachdm') {
     if (!reach) return;
     const el = $('#reachText');
@@ -14825,7 +14859,7 @@ function onSessAct(a, d) {
 
 function openReach(s) {
   const pids = bookingsOf(s.id).filter(x => x.st === 'in' || x.st === 'wait' || x.st === 'asked').map(x => x.pid);
-  reach = { title: `${s.called ? CALLED[s.called] + ': ' : ''}${sessTitle(s)}, ${dayLabel(s.date)}`, text: sessMessage(s), ...reachFor(pids) };
+  reach = { title: `${s.called ? CALLED[s.called] + ': ' : ''}${sessTitle(s)}, ${dayLabel(s.date)}`, text: sessMessage(s), ...reachFor(pids), sids: [s.id] };
   sheetReach();
 }
 
