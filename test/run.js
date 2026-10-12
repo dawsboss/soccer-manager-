@@ -35,6 +35,7 @@ const SUITES = [
   ['signin', 'the ways in: Google, Apple, Microsoft, email, and one account per email'],
   ['routing', 'links in, links out'],
   ['nav', 'the way around: a tab bar by role, a title row with Back, More, and nothing of it on a locked device'],
+  ['home', 'a family\'s own Home and Season: Going on the next thing, her child\'s minutes, and landing there'],
   ['sync', 'auth, the workspace read, and its races'],
   ['invites', 'joining a club by invite, on both sides'],
   ['staffask', 'letting people in as one server call: a request or a fan approved, a squad\'s links, an imported roster\'s invites'],

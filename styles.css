@@ -1221,3 +1221,5 @@ label.field .auth-inline span{display:inline}
 .auth-ways svg{width:18px;height:18px;flex:none;color:var(--ink)}
 .auth-ways span:nth-of-type(1){flex:1}
 .auth-tick{color:var(--field);font-weight:700}
+/* Going / Not going under My players' next row (build 142) */
+.minersvp{padding:2px 2px 4px}
