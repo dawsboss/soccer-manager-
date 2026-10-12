@@ -347,7 +347,7 @@ function plan(extra = {}, X = A) {
     A.click({ act: 'caledit', tid: 't1', id: pr.id }); A.click({ act: 'calcall', tid: 't1' });
     A.ui.practice.open = null; A.render();
     check('called off on the calendar, the plan is still listed', new RegExp('data-act="pracopen" data-id="' + pr.id + '"').test(A.rendered()), true);
-    check('struck through and saying so', /<s>Wed 16 Sep[^<]*<\/s>/.test(A.rendered()) && /tag off">Cancelled/.test(A.rendered()), true);
+    check('struck through and saying so', /<s>Wed 16 Sep[^<]*<\/s>/.test(A.rendered()) && /tag called">Cancelled/.test(A.rendered()), true);
     A.click({ act: 'caledit', tid: 't1', id: pr.id }); A.click({ act: 'calcall', tid: 't1' });
 
     global.confirm = () => true;

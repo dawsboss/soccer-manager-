@@ -272,16 +272,28 @@ team link, or open the invite you were sent."
 
 ## 4. Visual system
 
+*Done, build 146: the three decisions are set out at the top of `styles.css` and
+`test/visual.js` holds the file to them.*
+
 - Type runs small for a sideline: ~100 declarations at 10–13 px, secondary text in
   muted grey on the grey page. Bump the floor to 14 px and check contrast of
-  `.muted` on `--paper`.
+  `.muted` on `--paper`. *Done: 14 px is the floor for anything read, 12 px for
+  labels, badges and kickers, smaller only in the month and hour grids, on a pitch
+  token and on a chart's axis, each named in the suite with its own floor;
+  `--ink-soft` went from 4.7:1 to 5.7:1 on the page.*
 - Everything is a white bordered card on light grey. Informational cards,
   tappable cards and forms look the same. Give tappable rows a chevron and a press
-  state; drop borders from informational blocks.
+  state; drop borders from informational blocks. *Done: a static card is flat; a
+  row or card a tap opens keeps its border, presses green and carries `.go`, the
+  chevron, drawn in its padding; a form's fields carry their own borders.*
 - The green is strong and the condensed headline face is distinctive; keep both.
   Use green for *actions and now* only; the orange "owed" and red "Cancelled" are
-  doing too much work as alarms.
-- Bottom sheets are good and consistent. Keep them.
+  doing too much work as alarms. *Done: a game called off is a grey tag beside a
+  struck-through title (`.tag.called`), a player short of minutes is grey like one
+  over, a count on the tab bar is green; orange stays for a heads-up (a sub due
+  soon, someone waiting to be let in) and red for what needs the coach now (a sub
+  due, a refusal) and for Delete.*
+- Bottom sheets are good and consistent. Keep them. *Kept.*
 
 ---
 
@@ -292,7 +304,10 @@ team link, or open the invite you were sent."
 2. RSVP chips on My players and on the Season next-up card. *Done, build 142.*
 3. Move developer text (account id, Firebase, rules, readiness, version) under an
    *Advanced* section; reword the refusal toasts. *Done, build 143 and 145.*
-4. Fix the FAB overlapping the calendar list; pad the list.
+4. Fix the FAB overlapping the calendar list; pad the list. *Done, build 146, but not by
+   padding: the list's end already cleared the +, and the screenshot's overlap was the first
+   row landing mid-page under it, which no padding moves. The + is a button on the calendar's
+   bar beside Today now, fixed over nothing; `test/visual.js` holds it there.*
 5. Rename: Org admin → Club admin; "this device" → "Not synced"; Squad → Players. *Done, build 145.*
 6. Parents' club home shows only their teams. *Done, build 142.*
 

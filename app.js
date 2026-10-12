@@ -2,7 +2,7 @@
    Static app. Data lives in localStorage, and mirrors to Firebase Realtime
    Database when a config + workspace code are present. */
 
-const BUILD = '145';
+const BUILD = '146';
 const BUILT = '2026-10-12';
 /* The version of database.rules.json this app was written against. The rules
    carry the same number in rulesVersion's .write, which accepts that number
@@ -4233,7 +4233,7 @@ function viewInboxMsgs() {
   const convRow = (c, label, sub) => {
     const l = convMsgs(c), last = l[l.length - 1], n = convUnread(c);
     const at = c.cid ? `data-act="sdopen" data-u="${esc(sdOther(c.cid))}"` : `data-act="thread" data-tid="${c.tid}" data-fam="${esc(c.fam)}"`;
-    return { last: last ? last.at || 0 : 0, n, html: `<button class="prow convrow${n ? ' unread' : ''}" ${at}>
+    return { last: last ? last.at || 0 : 0, n, html: `<button class="prow go convrow${n ? ' unread' : ''}" ${at}>
       <span><span class="pname">${label}</span>
         <span class="rowsub">${last ? `${last.by === me.uid ? 'You: ' : ''}${esc(String(last.text || '').slice(0, 80))}` : esc(sub)}</span></span>
       <span class="msgwhen">${n ? `<span class="msgdot">${n}</span>` : last ? esc(whenShort(last.at)) : ''}</span></button>` };
@@ -7513,16 +7513,16 @@ function viewClub() {
     <h2>${esc(org)}</h2>
     <div class="clubhead">${clubCrest('lg')}<div><b>${esc(org)}</b>
       <span class="rowsub">${fam ? (list.length === 1 ? 'Your team' : `Your ${list.length} teams`) : `${list.length} team${list.length === 1 ? '' : 's'} you can reach`}</span></div></div>
-    ${canAdmin() && list.length ? `<button class="card" data-act="schedule" style="text-align:left;width:100%">
+    ${canAdmin() && list.length ? `<button class="card go" data-act="schedule" style="text-align:left;width:100%">
       <b>Calendar</b><span class="rowsub">Every team · ${esc(schedLine())}</span></button>`
-    : (me || !gated()) && myCalOwn() ? `<button class="card" data-act="goview" data-v="mycal" style="text-align:left;width:100%">
+    : (me || !gated()) && myCalOwn() ? `<button class="card go" data-act="goview" data-v="mycal" style="text-align:left;width:100%">
       <b>Calendar</b><span class="rowsub">${esc(myCalLine())}</span></button>` : ''}
-    ${anyPlayers() ? `<button class="card" data-act="goview" data-v="mine" style="text-align:left;width:100%">
+    ${anyPlayers() ? `<button class="card go" data-act="goview" data-v="mine" style="text-align:left;width:100%">
       <b>My players</b><span class="rowsub">${allKidNames().map(esc).join(', ')}</span></button>` : ''}
-    ${canSessions() ? `<button class="card" data-act="goview" data-v="sessions" style="text-align:left;width:100%">
+    ${canSessions() ? `<button class="card go" data-act="goview" data-v="sessions" style="text-align:left;width:100%">
       <b>Sessions</b><span class="rowsub">${esc(sessClubLine())}</span></button>` : ''}
     ${complyCards()}
-    ${myTryouts().length ? `<button class="card" data-act="goview" data-v="tryout" style="text-align:left;width:100%">
+    ${myTryouts().length ? `<button class="card go" data-act="goview" data-v="tryout" style="text-align:left;width:100%">
       <b>Tryouts to score</b><span class="rowsub">${esc(myTryouts().map(p => p.name).join(', '))} · by bib</span></button>` : ''}
     ${list.length ? list.map(t => {
     const ms = teamMatches(t.id);
@@ -7532,7 +7532,7 @@ function viewClub() {
     const sub = live ? `Playing now — ${esc(live.opponent || 'TBC')} ${score(live).us}–${score(live).them}`
       : next ? `Next: ${esc(next.opponent || 'TBC')}${next.date ? ' · ' + shortDate(next.date) : ''}`
         : last ? `Last: ${esc(last.opponent || 'TBC')} ${score(last).us}–${score(last).them}` : 'No games yet';
-    return `<button class="card teamcard" data-act="goteam" data-id="${t.id}">
+    return `<button class="card go teamcard" data-act="goteam" data-id="${t.id}">
       ${teamCrest(t)}
       <span class="tc-main"><b>${teamLabel(t)}</b>
         <span class="rowsub">${sub}</span>
@@ -10152,7 +10152,7 @@ function calLiveCards(items, multi) {
   return items.filter(x => x.kind === 'game' && x.status === 'live' && state.matches[x.id]).map(it => {
     const m = state.matches[it.id], sc = score(m);
     const go = canEditTeam(it.tid) ? 'subs' : me && isTracker(it.tid, me.uid) ? 'track' : 'live';
-    return `<button class="card callive" type="button" data-act="calgame" data-tid="${esc(it.tid)}" data-id="${esc(it.id)}" data-g="${go}">
+    return `<button class="card go callive" type="button" data-act="calgame" data-tid="${esc(it.tid)}" data-id="${esc(it.id)}" data-g="${go}">
       <span class="ev-live">Live</span>
       <span class="callive-t"><b>${multi ? esc(shortTeam(it.tid)) + ' ' : ''}${esc(it.title)}</b><span class="muted"><span data-live="gmins" data-mid="${esc(m.id)}">${mins(elapsedSec(m))}</span> min played · tap to open the game</span></span>
       <span class="pmins">${sc.us}<small>–${sc.them}</small></span></button>`;
@@ -10265,7 +10265,7 @@ function calTitle(v, d) {
   }
   return `${MONTHS_LONG[mo - 1]} ${y}`;
 }
-function calBar(v, items, multi, sel, offer) {
+function calBar(v, items, multi, sel, offer, ed) {
   const d = calDay(), today = todayStr();
   const a = addDays(d, -weekdayOf(d));
   const here = v === 'schedule' || (v === 'day' ? d === today : v === 'week' ? a <= today && today <= addDays(a, 6) : d.slice(0, 7) === today.slice(0, 7));
@@ -10279,6 +10279,7 @@ function calBar(v, items, multi, sel, offer) {
         <button type="button" class="stepbtn" data-act="calstep" data-v="-1" aria-label="Previous ${step}">‹</button>
         <button type="button" class="caltoday" data-act="calstep" data-v="0" aria-label="Today" title="Today"${here ? ' aria-current="date"' : ''}><i>${dateOf(today).getDate()}</i></button>
         <button type="button" class="stepbtn" data-act="calstep" data-v="1" aria-label="Next ${step}">›</button></span>` : ''}
+      ${calFab(ed, v)}
     </div>
     ${ui.calTree ? calPanel(sel, offer) : ''}
     ${ui.calMini ? calMonth(items, 'calpick', { sel: v === 'schedule' ? '' : d, hue: multi ? x => evHue(x, true) : null }) : ''}
@@ -10286,14 +10287,18 @@ function calBar(v, items, multi, sel, offer) {
     `<button type="button" role="tab" data-act="calview" data-v="${k}" aria-pressed="${v === k}">${l}</button>`).join('')}</div>`;
 }
 
-/* The + in the corner, as a calendar app has it. One team she can add to
-   opens that team's sheet at the day being looked at; several ask which. */
+/* The +, on the bar beside Today. It was fixed in the corner until build 146,
+   as a calendar app has it, and sat over whichever row the page put under it
+   (UX-REVIEW.md, 3 and 5.4): with the live card and the bar above the list, that
+   was the first row's score, and no padding moves a row that is mid-page. One
+   team she can add to opens that team's sheet at the day being looked at;
+   several ask which. */
 function calFab(ed, v) {
   if (!ed.length) return '';
   const d = v === 'schedule' ? '' : calDay();
   const act = ed.length === 1 ? `data-act="calnew" data-tid="${esc(ed[0])}"` : 'data-act="schedadd"';
   return `<button type="button" class="calfab" ${act}${d ? ` data-v="${d}"` : ''} aria-label="Add to the calendar" title="Add to the calendar">
-    <svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg></button>`;
+    <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg></button>`;
 }
 
 /* ---- the club's week, for its admins on All teams ---- */
@@ -10377,13 +10382,12 @@ function viewCalendar() {
   return `<div class="stack calendar">
     ${calLiveCards(items, multi)}
     ${calChooser(sel, offer)}
-    ${calBar(v, dated, multi, sel, offer)}
+    ${calBar(v, dated, multi, sel, offer, ed)}
     ${canBook ? `<button class="btn wide" data-act="sesstab" data-k="list">Book a 1-1 with a coach</button>` : ''}
     ${sel === 'mine' ? youNote() : ''}
     ${body}
     ${sel === 'club' && canAdmin() ? clubWeekCard() : ''}
     ${sel === 'mine' ? awayCard() + myFeedCard() + youShareCard() : (t => t ? calSyncCard(t, calTeams().length > 1) : '')(state.teams[calTeams()[0]] || team())}
-    ${calFab(ed, v)}
   </div>`;
 }
 
@@ -10612,11 +10616,11 @@ function seasonGames(t, ms) {
     ${ms.length ? '' : '<p class="muted" style="margin:0">No games yet. Add one, or a season of them from the + on the Calendar.</p>'}
     <div class="plist">${ms.map(m => {
     const sc = score(m), st = gameStatus(m), r = resultOf(m);
-    return `<button class="prow" type="button" data-act="openmatch" data-id="${m.id}" style="grid-template-columns:26px 1fr auto">
+    return `<button class="prow go" type="button" data-act="openmatch" data-id="${m.id}" style="grid-template-columns:26px 1fr auto">
       <span class="resbadge" data-r="${r}">${r || '·'}</span>
       <span><span class="pname">${esc(m.opponent || 'TBC')}</span>
         <span class="psub">${[shortDate(m.date), m.venue].filter(Boolean).map(esc).join(' · ') || 'no date'}</span></span>
-      <span class="pmins">${CALLED[m.called] && st === 'upcoming' ? `<span class="tag off">${CALLED[m.called]}</span>` : st === 'upcoming' ? '<small>upcoming</small>' : `${sc.us}<small>–${sc.them}</small>`}</span></button>`;
+      <span class="pmins">${CALLED[m.called] && st === 'upcoming' ? `<span class="tag called">${CALLED[m.called]}</span>` : st === 'upcoming' ? '<small>upcoming</small>' : `${sc.us}<small>–${sc.them}</small>`}</span></button>`;
   }).join('')}</div></div>`;
 }
 /* "Played in 2 games · 1 goal", beside her minutes: a child's season said the way a parent says
@@ -10655,7 +10659,7 @@ function viewFamSeason(t) {
   const kids = players(t).filter(p => isMine(p) || iFan(p));
   const lastCard = last ? (() => {
     const sc = score(last), r = resultOf(last);
-    return `<button class="card" type="button" data-act="gotoplayer" data-tid="${esc(t.id)}" data-id="${esc(last.id)}" style="text-align:left;width:100%">
+    return `<button class="card go" type="button" data-act="gotoplayer" data-tid="${esc(t.id)}" data-id="${esc(last.id)}" style="text-align:left;width:100%">
       <span class="muted">Last game</span>
       <div class="spread" style="margin-top:4px"><span class="row"><span class="resbadge" data-r="${r}">${r}</span><b style="font-size:19px">${esc(last.opponent || 'TBC')}</b></span>
         <span class="pmins">${sc.us}<small>–${sc.them}</small></span></div>
@@ -11003,7 +11007,7 @@ function viewMine() {
        (canRsvp(), checked again in the handler); a fan answers nothing. */
     const nextGame = next && next.kind !== 'game' ? calNext(up.filter(x => x.kind === 'game')) : null;
     const asks = it => !sup && it && rsvpOpen(it) && canRsvp(t.id, p.id);
-    const nextRow = (it, word) => `<button class="prow" data-act="calitem" data-k="${it.kind}" data-tid="${esc(t.id)}" data-id="${esc(it.id)}" style="grid-template-columns:1fr auto">
+    const nextRow = (it, word) => `<button class="prow go" data-act="calitem" data-k="${it.kind}" data-tid="${esc(t.id)}" data-id="${esc(it.id)}" style="grid-template-columns:1fr auto">
           <span><span class="pname">${word} — ${esc(it.title)}</span>
             <span class="rowsub">${[relDay(it.date) || dayLabel(it.date), niceTime(it.start), it.venue].filter(Boolean).map(esc).join(' · ')}</span></span>
           <span class="tag ${it.kind}">${CAL_KIND[it.kind]}</span></button>${asks(it) ? `<div class="minersvp">${rsvpChips(it, p, 'mine')}</div>` : ''}`;
@@ -11025,16 +11029,16 @@ function viewMine() {
       <p class="muted" style="margin:10px 0 0">${esc([playedLine(ms, p.id), rs].filter(Boolean).join(' · '))}</p>
       ${(l => l ? `<p class="muted" style="margin:6px 0 0">${esc(l)}</p>` : '')(attendLine(attendance(t, p.id)))}
       <div class="plist" style="margin-top:10px">
-        ${live ? `<button class="prow" data-act="gotoplayer" data-tid="${t.id}" data-id="${live.id}" style="grid-template-columns:1fr auto">
+        ${live ? `<button class="prow go" data-act="gotoplayer" data-tid="${t.id}" data-id="${live.id}" style="grid-template-columns:1fr auto">
           <span><span class="pname">Playing now — ${esc(live.opponent || 'TBC')}</span>
             <span class="rowsub"><span data-live="pmins" data-mid="${live.id}" data-pid="${p.id}">${mins(playedSec(live, p.id))}</span> min so far</span></span>
           <span class="pmins">${score(live).us}<small>–${score(live).them}</small></span></button>` : ''}
-        ${last && !live ? `<button class="prow" data-act="gotoplayer" data-tid="${t.id}" data-id="${last.id}" style="grid-template-columns:1fr auto">
+        ${last && !live ? `<button class="prow go" data-act="gotoplayer" data-tid="${t.id}" data-id="${last.id}" style="grid-template-columns:1fr auto">
           <span><span class="pname">Last game — ${esc(last.opponent || 'TBC')}</span>
             <span class="rowsub">${esc(shortDate(last.date))} · ${mins(playedSec(last, p.id))} min played</span></span>
           <span class="pmins">${score(last).us}<small>–${score(last).them}</small></span></button>` : ''}
         ${next ? nextRow(next, 'Next') : ''}${nextGame ? nextRow(nextGame, 'Next game') : ''}
-        ${(ns => ns ? `<button class="prow" data-act="sessopen" data-id="${esc(ns.id)}" style="grid-template-columns:1fr auto">
+        ${(ns => ns ? `<button class="prow go" data-act="sessopen" data-id="${esc(ns.id)}" style="grid-template-columns:1fr auto">
           <span><span class="pname">Next session — ${esc(sessTitle(ns))}</span>
             <span class="rowsub">${[relDay(ns.date) || dayLabel(ns.date), niceTime(ns.start), sessPlace(ns), 'with ' + ns.coachName, BOOK[bookOf(ns.id, p.id).st]].filter(Boolean).map(esc).join(' · ')}</span></span>
           <span class="tag session">Session</span></button>` : '')(!sup && sessAll().find(s => !sessPast(s) && !s.called && (b => b && b.st !== 'out' && b.st !== 'no')(bookOf(s.id, p.id))))}
@@ -11884,7 +11888,7 @@ function nextPracticeCard(t) {
   const when = [relDay(nx.date) || dayLabel(nx.date), hm(nx.start) ? evWhen({ start: nx.start, end }) : ''].filter(Boolean).join(' · ');
   const body = `<span class="lbl" style="margin:0">Next practice</span>
     <b>${esc(when)}</b>${nx.place ? `<span class="muted">${esc(nx.place)}</span>` : ''}`;
-  return open ? `<button type="button" class="card nextprac" data-act="pracopen" data-id="${esc(nx.id)}">${body}</button>` : `<div class="card nextprac">${body}</div>`;
+  return open ? `<button type="button" class="card go nextprac" data-act="pracopen" data-id="${esc(nx.id)}">${body}</button>` : `<div class="card nextprac">${body}</div>`;
 }
 
 /* Saved here only, and why, in as few words as will do. */
@@ -12687,11 +12691,11 @@ function sheetDrawAi() {
     <p class="muted" style="margin-top:0">Say what happens, in your own words. You copy a prompt into your own ChatGPT, Claude or Gemini, and paste its answer back here; the app doesn't send anything anywhere itself.</p>
     <label class="field"><span>What happens, step by step</span><textarea id="daIdea" rows="4" placeholder="Four on the outside of a 10 yard square, one defender in the middle. They pass round him; when he wins it, the passer goes in.">${esc(ai.idea)}</textarea></label>
     <p class="muted" style="margin-top:-6px">The drill's setup and steps go in too. Any player's name is swapped out before it's copied.</p>
-    <textarea id="daPrompt" rows="3" readonly style="font-size:12px" aria-label="The prompt">${esc(prompt)}</textarea>
+    <textarea id="daPrompt" rows="3" readonly style="font-size:14px" aria-label="The prompt">${esc(prompt)}</textarea>
     <button class="btn wide" data-act="dedaicopy">Copy the prompt</button>
     <div class="row" style="gap:6px;margin-top:8px">${Object.entries(AI_SITES).map(([k, [label]]) =>
       `<button class="btn quiet sm" style="flex:1" data-act="dedaiopen" data-k="${k}">${label}</button>`).join('')}</div>
-    <label class="field" style="margin-top:12px"><span>Paste the AI's answer</span><textarea id="daReply" rows="5" style="font-size:12px" placeholder='{"area": [20, 20], ...}'>${esc(ai.reply)}</textarea></label>
+    <label class="field" style="margin-top:12px"><span>Paste the AI's answer</span><textarea id="daReply" rows="5" style="font-size:14px" placeholder='{"area": [20, 20], ...}'>${esc(ai.reply)}</textarea></label>
     ${ai.problems.length ? `<div class="card planwarn"><p><b>Not quite. The drawing has ${ai.problems.length === 1 ? 'a problem' : 'some problems'}:</b></p>${ai.problems.map(x => `<p>${esc(x)}</p>`).join('')}
       <button class="btn quiet sm" data-act="dedaifix" style="margin-top:6px">Copy these to send back to the AI</button></div>` : ''}
     <button class="btn wide" data-act="dedaiuse">Use this drawing</button>
@@ -12932,7 +12936,7 @@ function sheetPracAi(L, t, pr, keepAnswer) {
       <button class="chip" type="button" data-act="pracaiown" data-id="${esc(pr.id)}" data-v="1" aria-pressed="${own}">Include our own drills</button></div>
       <p class="muted" style="margin-top:0">Our own go in by name and what each trains, never the whole card, and pasting them into a chatbot is sharing them.</p>` : ''}
     <label class="field"><span>Prompt — edit or add to it before copying</span>
-      <textarea id="aiPrompt" rows="12" style="font-size:13px">${esc(pracAiPrompt(L, t, pr, own))}</textarea></label>
+      <textarea id="aiPrompt" rows="12" style="font-size:14px">${esc(pracAiPrompt(L, t, pr, own))}</textarea></label>
     <button class="btn wide" data-act="aicopy">Copy prompt</button>
     <div class="muted" style="margin:10px 0 4px">Or copy it and open</div>
     <div class="row" style="gap:6px">${Object.entries(AI_SITES).map(([k, [label]]) =>
@@ -12940,7 +12944,7 @@ function sheetPracAi(L, t, pr, keepAnswer) {
     <p class="muted">No player's name goes in it: any name typed into the prompt is swapped for a shirt number when you copy.</p>
     <h3 style="margin:18px 0 6px">Bring the answer back</h3>
     <p class="muted" style="margin-top:0">Paste the AI's whole reply. The app reads the lines under <b>SESSION</b> and turns them into this plan's drills, which you can change after.</p>
-    <label class="field"><span>The AI's answer</span><textarea id="pracAiAnswer" rows="6" style="font-size:13px" placeholder="SESSION&#10;[ball-mastery-box] 10&#10;…">${esc(keepAnswer || '')}</textarea></label>
+    <label class="field"><span>The AI's answer</span><textarea id="pracAiAnswer" rows="6" style="font-size:14px" placeholder="SESSION&#10;[ball-mastery-box] 10&#10;…">${esc(keepAnswer || '')}</textarea></label>
     <div id="pracAiMsg"></div>
     <button class="btn wide" data-act="pracaiuse" data-id="${esc(pr.id)}">Use this session</button>`);
 }
@@ -12974,7 +12978,7 @@ function practicePlansView(L) {
 
 function calPracRow(it) {
   const sub = [it.venue, 'no plan yet'].filter(Boolean).join(' · ');
-  return `<button class="prow" type="button" data-act="pracfromcal" data-id="${esc(it.id)}" style="grid-template-columns:1fr auto">
+  return `<button class="prow go" type="button" data-act="pracfromcal" data-id="${esc(it.id)}" style="grid-template-columns:1fr auto">
     <span><span class="pname">${esc(pracDay(it.date))}${it.start ? ' · ' + esc(it.start) + (it.end ? '–' + esc(it.end) : '') : ''}</span><span class="psub">${esc(sub)}</span></span><span class="tag wait">Plan it</span></button>`;
 }
 /* A plan for a calendar practice is keyed by the entry's id and starts from
@@ -12995,12 +12999,12 @@ function pracRow(L, pr, today) {
   /* Called off is said and struck through, as the calendar does it; the plan
      stays, because the practice may well be put back on. */
   const tag = pr.orphan ? '<span class="tag off">Not on the calendar</span>'
-    : pr.called ? `<span class="tag off">${CALLED[pr.called]}</span>`
+    : pr.called ? `<span class="tag called">${CALLED[pr.called]}</span>`
       : pr.status === 'done' ? `<span class="tag">${pr.review && pr.review.rating ? '★ ' + pr.review.rating : 'Done'}</span>`
         : pr.date < today ? '<span class="tag wait">How did it go?</span>' : '<span class="tag">Planned</span>';
   const sub = [pr.place, n ? `${n} drill${n === 1 ? '' : 's'} · ${blockTotal(pr)} min` : 'no drills yet', s ? s.label : ''].filter(Boolean).join(' · ');
   const day = `${esc(pracDay(pr.date))}${pr.start ? ' · ' + esc(pracTimes(pr)) : ''}`;
-  return `<button class="prow" type="button" data-act="pracopen" data-id="${esc(pr.id)}" style="grid-template-columns:1fr auto">
+  return `<button class="prow go" type="button" data-act="pracopen" data-id="${esc(pr.id)}" style="grid-template-columns:1fr auto">
     <span><span class="pname">${pr.called ? `<s>${day}</s>` : day}</span><span class="psub">${esc(sub)}</span></span>${tag}</button>`;
 }
 
@@ -13156,7 +13160,7 @@ function tplNote(shelf) {
 function tplRow(t, act, extra = '') {
   const n = t.blocks.length;
   const sub = [`${n} drill${n === 1 ? '' : 's'} · ${t.minutes} min`, t.shelf === 'clubTpl' && t.byName ? 'by ' + t.byName : ''].filter(Boolean).join(' · ');
-  return `<button class="prow" type="button" data-act="${act}" data-v="${esc(t.key)}"${extra} style="grid-template-columns:1fr auto">
+  return `<button class="prow go" type="button" data-act="${act}" data-v="${esc(t.key)}"${extra} style="grid-template-columns:1fr auto">
     <span><span class="pname">${esc(t.name)}</span><span class="psub">${esc(sub)}</span></span><span class="tag">${TPL_SHELVES[t.shelf]}</span></button>`;
 }
 function sheetTplList(shelf) {
@@ -13212,7 +13216,7 @@ function sheetTplPlan(t) {
   const tm = team(); if (!tm || !t) return;
   const free = calItems([tm.id]).filter(x => x.kind === 'practice' && x.date >= todayIso() && !x.called && !practiceById(tm.id, x.id)).slice(0, 12);
   openSheet(`<h3>Plan a practice from ${esc(t.name)}</h3>
-    ${free.length ? `<div class="plist">${free.map(x => `<button class="prow" type="button" data-act="tplplango" data-v="${esc(t.key)}" data-id="${esc(x.id)}" style="grid-template-columns:1fr auto">
+    ${free.length ? `<div class="plist">${free.map(x => `<button class="prow go" type="button" data-act="tplplango" data-v="${esc(t.key)}" data-id="${esc(x.id)}" style="grid-template-columns:1fr auto">
       <span><span class="pname">${esc(pracDay(x.date))}${x.start ? ' · ' + esc(x.start) + (x.end ? '–' + esc(x.end) : '') : ''}</span><span class="psub">${esc(x.venue || '')}</span></span><span class="tag wait">Use</span></button>`).join('')}</div>`
       : `<div class="empty"><strong>No coming practice without a plan</strong>Add a practice to ${esc(tm.name || 'the team')}'s calendar, or open a plan and use Swap in a template.</div>`}
     <button class="btn quiet wide" data-act="pracnew" data-tid="${esc(tm.id)}" style="margin-top:8px">Add a practice</button>
@@ -13227,7 +13231,7 @@ function sheetUseFor(pr) {
   const free = calItems([t.id]).filter(x => x.kind === 'practice' && x.date >= today && !x.called && x.id !== pr.id && !practiceById(t.id, x.id)).slice(0, 12);
   openSheet(`<h3>Use this plan for…</h3>
     <p class="muted" style="margin-top:0">The drills and what it's for are copied; this plan stays as it is.</p>
-    ${free.length ? `<div class="plist">${free.map(x => `<button class="prow" type="button" data-act="pracusefor" data-id="${esc(pr.id)}" data-v="${esc(x.id)}" style="grid-template-columns:1fr auto">
+    ${free.length ? `<div class="plist">${free.map(x => `<button class="prow go" type="button" data-act="pracusefor" data-id="${esc(pr.id)}" data-v="${esc(x.id)}" style="grid-template-columns:1fr auto">
       <span><span class="pname">${esc(pracDay(x.date))}${x.start ? ' · ' + esc(x.start) + (x.end ? '–' + esc(x.end) : '') : ''}</span><span class="psub">${esc(x.venue || '')}</span></span><span class="tag wait">Use</span></button>`).join('')}</div>`
       : `<div class="empty"><strong>Every coming practice has a plan</strong>Add a practice to the calendar first, and this plan can be used for it.</div>`}
     <button class="btn quiet wide" data-act="pracnew" data-tid="${esc(t.id)}" style="margin-top:8px">Add a practice</button>
@@ -13659,7 +13663,7 @@ function packsCard() {
       <button class="chip" type="button" data-act="sesspacks" data-v="1" aria-pressed="${on}">Sell packages</button></div>` : ''}
     ${!on ? '<p class="muted" style="margin:0">Sell a number of sessions for a set price, for one player — say ten for the price of eight. The coach marks each place off it instead of collecting for it.</p>' : `
     ${stale.length ? `<div class="rolebar warn">${stale.map(x => `${esc(x.who ? x.who.p.name : 'A player')}, ${esc(dayLabel(x.s.date))}: no longer due (${x.s.called ? 'called off' : 'not booked'}) <button class="textbtn" data-act="sesspkback" data-k="${esc(x.s.id + '/' + x.pid)}">Give the place back</button>`).join('<br>')}</div>` : ''}
-    ${list.length ? `<div class="plist">${list.map(k => { const w = playerById(k.pid); return `<button class="prow" type="button" data-act="sesspkopen" data-k="${esc(k.tid + '/' + k.pid + '/' + k.id)}" style="grid-template-columns:1fr auto">
+    ${list.length ? `<div class="plist">${list.map(k => { const w = playerById(k.pid); return `<button class="prow go" type="button" data-act="sesspkopen" data-k="${esc(k.tid + '/' + k.pid + '/' + k.id)}" style="grid-template-columns:1fr auto">
       <span><span class="pname">${esc(w ? w.p.name : 'A player who has left')}</span><span class="psub">${esc(PACK_KIND[k.kind])} · ${esc(packLine(k))}${k.until && k.until < todayStr() && k.left ? ' · ended with places unused' : ''}${k.note ? ' · ' + esc(k.note) : ''}</span></span>
       <span class="pmins">${esc(fmtMoney(k.price))}</span></button>`; }).join('')}</div>` : '<p class="muted" style="margin:0 0 8px">None sold yet.</p>'}
     ${admin ? '<button class="btn quiet wide" data-act="sesspknew" style="margin-top:8px">Sell a package</button>' : ''}`}</div>`;
@@ -14169,8 +14173,8 @@ function sessRow(s, fam) {
     if (asks) sub.push(`${asks} asking`);
   }
   if (s.price) sub.push(fmtMoney(s.price));
-  const right = s.called ? `<span class="tag off">${CALLED[s.called]}</span>` : `<span class="tag session">${SESS_KIND[s.kind]}</span>`;
-  return `<button class="prow calrow" type="button" data-act="sessopen" data-id="${esc(s.id)}" data-called="${s.called ? 1 : 0}">
+  const right = s.called ? `<span class="tag called">${CALLED[s.called]}</span>` : `<span class="tag session">${SESS_KIND[s.kind]}</span>`;
+  return `<button class="prow go calrow" type="button" data-act="sessopen" data-id="${esc(s.id)}" data-called="${s.called ? 1 : 0}">
     <span class="caltime">${s.start ? niceTime(s.start) : 'TBC'}</span>
     <span style="min-width:0"><span class="pname">${esc(sessTitle(s))}</span><span class="psub">${esc(sub.filter(Boolean).join(' · '))}</span></span>
     ${right}</button>`;
@@ -14197,7 +14201,7 @@ function sessListView() {
         <button class="chip" type="button" data-act="sessscope" data-v="all" aria-pressed="${u.scope === 'all'}">Everyone's</button></div>
       <button class="btn sm" data-act="sessnew">New session</button></div>
     ${asks.length ? `<div class="card"><h2 style="margin-bottom:0">Asking for a spot</h2><div class="plist">${asks.map(({ s, x }) =>
-      `<button class="prow" type="button" data-act="sessopen" data-id="${esc(s.id)}" style="grid-template-columns:1fr auto">
+      `<button class="prow go" type="button" data-act="sessopen" data-id="${esc(s.id)}" style="grid-template-columns:1fr auto">
         <span><span class="pname">${esc(whoName(x))}${x.who ? ` <span class="muted">${teamLabel(x.who.t)}</span>` : ''}</span>
           <span class="psub">${esc([sessTitle(s), dayLabel(s.date) + (s.start ? ' ' + niceTime(s.start) : ''), x.want ? 'wants: ' + x.want : ''].filter(Boolean).join(' · '))}</span></span>
         <span class="tag wait">Answer</span></button>`).join('')}</div></div>` : ''}
@@ -14222,7 +14226,7 @@ function familySessions(staff) {
   const owed = familyOwed();
   return `${staff ? '<h2>Your children</h2>' : ''}
     ${owed.rows.length ? `<div class="card"><div class="spread"><h2 style="margin:0">To pay</h2><b>${esc(fmtMoney(owed.total))}</b></div>
-      <div class="plist">${owed.rows.map(r => `<button class="prow" type="button" data-act="sessopen" data-id="${esc(r.s.id)}" style="grid-template-columns:1fr auto">
+      <div class="plist">${owed.rows.map(r => `<button class="prow go" type="button" data-act="sessopen" data-id="${esc(r.s.id)}" style="grid-template-columns:1fr auto">
         <span><span class="pname">${esc(firstName(r.p))} · ${esc(sessTitle(r.s))}</span><span class="psub">${esc(dayLabel(r.s.date))} · with ${esc(r.s.coachName)}</span></span>
         <span class="pmins">${esc(fmtMoney(r.s.price))}</span></button>`).join('')}</div>
       <p class="muted" style="margin-bottom:0">Pay the coach or the club the way you usually do; they mark it paid here.</p></div>` : ''}
@@ -14356,7 +14360,7 @@ function sessDrillsBlock(s) {
   return `<div class="rsvpbox"><div class="spread"><p class="lbl" style="margin:0">Drills${blocks.length ? ` — ${total} of ${sessMinutes(s)} min` : ''}</p>
       ${L ? `<button class="btn quiet sm" data-act="sessdrills" data-id="${esc(s.id)}">${blocks.length ? 'Change' : 'Plan it'}</button>` : ''}</div>
     ${wants.length ? `<p class="muted" style="margin:6px 0 0"><b>Asked for:</b> ${wants.map(x => esc((x.who ? firstName(x.who.p) + ': ' : '') + x.want)).join(' · ')}</p>` : ''}
-    ${blocks.length ? `<div class="plist">${blocks.map((b, i) => `<button class="prow" type="button" data-act="drill" data-id="${esc(b.drill.id)}" style="grid-template-columns:1fr auto">
+    ${blocks.length ? `<div class="plist">${blocks.map((b, i) => `<button class="prow go" type="button" data-act="drill" data-id="${esc(b.drill.id)}" style="grid-template-columns:1fr auto">
       <span class="pname">${i + 1}. ${esc(b.name || 'A drill')}</span><span class="muted">${Number(b.minutes) || 0}′</span></button>`).join('')}</div>`
       : `<p class="muted" style="margin:6px 0 0">No drills yet.${wants.length ? ' Plan it around what they asked for.' : ''}</p>`}</div>`;
 }
@@ -14555,14 +14559,14 @@ function sessFeesView() {
     <p class="muted" style="margin-bottom:0">${canAdmin() ? 'Every session in the club.' : 'The sessions you run.'} A place owes its price once it is booked; a withdrawal owes nothing.</p></div>
     ${groups.length ? groups.map(g => `<div class="card">
       <div class="spread"><span><b>${esc(whoName(g.x))}</b>${g.x.who ? ` <span class="muted">${teamLabel(g.x.who.t)}</span>` : ''}</span><b>${esc(fmtMoney(g.rows.reduce((n, r) => n + r.s.price, 0)))}</b></div>
-      <div class="plist">${g.rows.map(r => `<button class="prow" type="button" data-act="sessfee" data-k="${esc(r.s.id + '/' + r.x.pid)}" style="grid-template-columns:1fr auto">
+      <div class="plist">${g.rows.map(r => `<button class="prow go" type="button" data-act="sessfee" data-k="${esc(r.s.id + '/' + r.x.pid)}" style="grid-template-columns:1fr auto">
         <span><span class="pname">${esc(sessTitle(r.s))}</span><span class="psub">${esc(dayLabel(r.s.date))}${r.s.date > today ? ' · still to come' : ''} · ${esc(r.s.coachName)}${packFor(r.s, r.x.pid) ? ' · on a package: ' + esc(packLine(packFor(r.s, r.x.pid))) : ''}</span></span>
         <span class="pmins">${esc(fmtMoney(r.s.price))}</span></button>`).join('')}</div>
       <div class="row" style="gap:8px;margin-top:8px">
         <button class="btn quiet sm" style="flex:1" data-act="sessfee" data-k="${esc(g.rows.map(r => r.s.id + '/' + r.x.pid).join(','))}">All paid</button>
         <button class="btn quiet sm" style="flex:1" data-act="sessremind" data-pid="${esc(g.x.pid)}">Remind the family</button></div></div>`).join('')
       : `<div class="empty"><strong>Nothing to pay</strong>Every booked place with a price is marked paid or waived.</div>`}
-    ${paid.length ? `<div class="card"><h2 style="margin-bottom:0">Paid</h2><div class="plist">${paid.slice(0, 20).map(r => `<button class="prow" type="button" data-act="sessfee" data-k="${esc(r.s.id + '/' + r.x.pid)}" style="grid-template-columns:1fr auto">
+    ${paid.length ? `<div class="card"><h2 style="margin-bottom:0">Paid</h2><div class="plist">${paid.slice(0, 20).map(r => `<button class="prow go" type="button" data-act="sessfee" data-k="${esc(r.s.id + '/' + r.x.pid)}" style="grid-template-columns:1fr auto">
       <span><span class="pname">${esc(whoName(r.x))}</span><span class="psub">${esc(sessTitle(r.s))} · ${esc(dayLabel(r.s.date))} · ${esc(PAY_LABEL[r.fee.how] || r.fee.how || '')}${r.fee.at ? ' · ' + esc(dayLabel(isoDay(r.fee.at))) : ''}</span></span>
       <span class="pmins">${esc(fmtMoney(r.fee.paid))}</span></button>`).join('')}</div></div>` : ''}
     ${packsCard()}
@@ -14590,7 +14594,7 @@ function sessHoursView() {
       <button class="stepbtn" data-act="sessmonth" data-v="1" aria-label="Next month">›</button></div></div>
     ${rows.length ? `<div class="card"><div class="plist">${rows.map(h => {
     const pay = payFor(h), r = payOf(h.uid);
-    return `<button class="prow" type="button" data-act="sesshourscoach" data-v="${esc(h.uid)}" style="grid-template-columns:1fr auto">
+    return `<button class="prow go" type="button" data-act="sesshourscoach" data-v="${esc(h.uid)}" style="grid-template-columns:1fr auto">
       <span><span class="pname">${esc(h.name)}</span>
         <span class="psub">${h.n} session${h.n === 1 ? '' : 's'} · ${hoursWords(h.mins)} · ${h.players.size} player${h.players.size === 1 ? '' : 's'} · ${h.one} 1-1${h.one === 1 ? '' : 's'}, ${h.group} group${h.group === 1 ? '' : 's'}${r ? ` · ${esc(fmtMoney(r.rate))} per ${r.per}` : ''}</span></span>
       <span class="pmins">${pay == null ? hoursWords(h.mins) : esc(fmtMoney(pay))}</span></button>`;
@@ -14600,7 +14604,7 @@ function sessHoursView() {
       : `<div class="empty"><strong>No sessions run in ${esc(monthLabel(u.month))}</strong>Hours count once a session is over.</div>`}
     ${coaches.length ? `<div class="card"><h2 style="margin-bottom:0">Pay rates</h2><div class="plist">${coaches.map(([uid, name]) => {
     const r = payOf(uid);
-    return `<button class="prow" type="button" data-act="sesspay" data-v="${esc(uid)}" style="grid-template-columns:1fr auto">
+    return `<button class="prow go" type="button" data-act="sesspay" data-v="${esc(uid)}" style="grid-template-columns:1fr auto">
         <span class="pname">${esc(name)}</span><span class="muted">${r ? `${esc(fmtMoney(r.rate))} per ${r.per}` : 'Set'}</span></button>`;
   }).join('')}</div><p class="muted" style="margin-bottom:0">Only admins see these, and each coach her own.</p></div>` : ''}`;
 }
@@ -14610,7 +14614,7 @@ function sheetHoursCoach(uid) {
   const r = payOf(uid), pay = payFor(h);
   openSheet(`<h3>${esc(h.name)} — ${esc(monthLabel(u.month))}</h3>
     <p class="muted" style="margin-top:0">${h.n} session${h.n === 1 ? '' : 's'} · ${hoursWords(h.mins)}${pay == null ? '' : ` · ${esc(fmtMoney(pay))} at ${esc(fmtMoney(r.rate))} per ${r.per}`}</p>
-    <div class="plist">${h.list.map(s => `<button class="prow" type="button" data-act="sessopen" data-id="${esc(s.id)}" style="grid-template-columns:1fr auto">
+    <div class="plist">${h.list.map(s => `<button class="prow go" type="button" data-act="sessopen" data-id="${esc(s.id)}" style="grid-template-columns:1fr auto">
       <span><span class="pname">${esc(dayLabel(s.date))} · ${esc(niceTime(s.start))}–${esc(niceTime(s.end))}</span><span class="psub">${esc(sessTitle(s))} · ${nIn(s.id)} booked</span></span>
       <span class="muted">${sessMinutes(s)}′</span></button>`).join('')}</div>
     ${canAdmin() ? `<button class="btn quiet wide" data-act="sesspay" data-v="${esc(uid)}" style="margin-top:10px">${r ? 'Change the rate' : 'Set a rate'}</button>` : ''}`);
@@ -14637,7 +14641,7 @@ function sessFieldsView() {
     ${list.length ? list.map(f => {
     const pm = permitsOf(f), days = fieldDays(f, today, 7);
     const bad = days.filter(d => d.flags.length).length;
-    return `<button class="card" type="button" data-act="fieldopen" data-id="${esc(f.id)}" style="text-align:left;width:100%">
+    return `<button class="card go" type="button" data-act="fieldopen" data-id="${esc(f.id)}" style="text-align:left;width:100%">
       <div class="spread"><b>${esc(f.name)}</b>${bad ? `<span class="tag off">${bad} to look at</span>` : ''}</div>
       ${f.address ? `<span class="rowsub">${esc(f.address)}</span>` : ''}
       <span class="rowsub">${esc([`${pitchCount(f)} pitch${pitchCount(f) > 1 ? 'es' : ''}`, f.surface, f.lights ? 'lights' : ''].filter(Boolean).join(' · '))}</span>
@@ -15348,11 +15352,11 @@ function availRow(b, fam, who) {
   const sub = [who ? b.coachName : '', blockPlace(b),
     fam ? (b.off ? '' : `${free} free`) : (sl.length ? `${booked} of ${sl.length} slots booked` : 'too short for a slot'),
     `${b.len} min`, b.price ? fmtMoney(b.price) : ''];
-  return `<button class="prow calrow" type="button" data-act="availopen" data-id="${esc(b.id)}" data-called="${b.off ? 1 : 0}">
+  return `<button class="prow go calrow" type="button" data-act="availopen" data-id="${esc(b.id)}" data-called="${b.off ? 1 : 0}">
     <span class="caltime">${niceTime(b.start)}</span>
     <span style="min-width:0"><span class="pname">${fam ? `${esc(blockLabel(b))} with ${esc(b.coachName)}` : `${esc(blockLabel(b))} until ${esc(niceTime(b.end))}`}</span>
       <span class="psub">${esc(sub.filter(Boolean).join(' · '))}</span></span>
-    ${b.off ? '<span class="tag off">Off</span>' : `<span class="tag avail">${fam ? 'Book' : 'Open'}</span>`}</button>`;
+    ${b.off ? '<span class="tag called">Off</span>' : `<span class="tag avail">${fam ? 'Book' : 'Open'}</span>`}</button>`;
 }
 function availDays(list, fam, who) {
   let out = '', last = null;
@@ -16428,7 +16432,7 @@ function alertsCard(where) {
   return `<div class="card"><h2 style="margin-bottom:6px">${msgsHere ? 'From your other clubs' : 'From all your clubs'}</h2>
     ${clubs.map(([code, name, n]) => `<div class="spread" style="padding:6px 0"><span><b>${esc(name)}</b> · ${n} unread</span>
       <button class="btn quiet sm" data-act="switchclubto" data-code="${esc(code)}" data-hash="#/messages">Open</button></div>`).join('')}
-    ${list.length ? `<div class="plist">${list.map(a => `<button class="prow" type="button" data-act="alertgo" data-id="${esc(a.id)}" style="grid-template-columns:1fr auto">
+    ${list.length ? `<div class="plist">${list.map(a => `<button class="prow go" type="button" data-act="alertgo" data-id="${esc(a.id)}" style="grid-template-columns:1fr auto">
       <span style="min-width:0"><span class="pname">${a.read ? '' : '• '}${esc(a.title)}</span><span class="psub">${esc([clubNameOf(a.code), a.body, whenShort(a.at)].filter(Boolean).join(' · '))}</span></span>
       <span class="muted">Open</span></button>`).join('')}</div>` : ''}</div>`;
 }
@@ -16582,8 +16586,8 @@ function sheetPersonCal(u) {
    open of the club's: People for coaches, the rest for admins) and Advanced
    (backup, readiness, version, ids: what nobody needs at a game). Each item
    is one line she taps into; the screens behind them are unchanged. */
-const setRow = (act, title, sub, data = '') => `<button class="prow setrow" type="button" data-act="${act}"${data}>
-  <span style="min-width:0"><span class="pname">${title}</span>${sub ? `<span class="psub">${sub}</span>` : ''}</span><span class="setgo" aria-hidden="true">›</span></button>`;
+const setRow = (act, title, sub, data = '') => `<button class="prow go setrow" type="button" data-act="${act}"${data}>
+  <span style="min-width:0"><span class="pname">${title}</span>${sub ? `<span class="psub">${sub}</span>` : ''}</span></button>`;
 const setInfo = (title, sub, right = '') => `<div class="prow setrow"><span style="min-width:0"><span class="pname">${title}</span>${sub ? `<span class="psub">${sub}</span>` : ''}</span>${right || '<span></span>'}</div>`;
 const setSection = (head, rows, after = '') => {
   const xs = rows.filter(Boolean);
@@ -16720,7 +16724,7 @@ function viewAdmin() {
       <p class="muted" style="margin-bottom:0">Parents are not assigned here — they become one by being linked to a player.</p></div>
 
     <div class="card"><h2 style="margin-bottom:8px">Teams</h2>
-      <div class="plist">${teams().map(t => `<button class="prow" type="button" data-act="editteam" data-id="${t.id}" style="grid-template-columns:auto 1fr auto">
+      <div class="plist">${teams().map(t => `<button class="prow go" type="button" data-act="editteam" data-id="${t.id}" style="grid-template-columns:auto 1fr auto">
         ${t.logo ? `<img class="crest sm" src="${esc(t.logo)}" alt="">` : '<span class="pnum">—</span>'}
         <span><span class="pname">${teamLabel(t)}</span><span class="rowsub">${teamStats(t)}</span></span>
         <span class="muted">Edit</span></button>`).join('') || '<p class="muted" style="margin:0">No teams yet.</p>'}</div>
@@ -17105,7 +17109,7 @@ function newsCard() {
   const read = Number(newsGet(LS_NEWS_READ, 0)) || 0;
   const shown = ui.newsAll ? items : items.slice(0, 8);
   const html = `<div class="card"><div class="spread"><h2 style="margin:0">Club activity</h2><span class="muted">${canAdmin() ? 'the whole club' : 'your teams'}</span></div>
-    <div class="plist" style="margin-top:8px">${shown.map(x => `<button class="prow${x.at > read ? ' unread' : ''}" type="button" data-act="newsopen" data-k="${esc(x.go || '')}" style="grid-template-columns:minmax(0,1fr) auto">
+    <div class="plist" style="margin-top:8px">${shown.map(x => `<button class="prow go${x.at > read ? ' unread' : ''}" type="button" data-act="newsopen" data-k="${esc(x.go || '')}" style="grid-template-columns:minmax(0,1fr) auto">
       <span style="min-width:0"><span class="pname" style="white-space:normal">${esc(x.title)}</span>${x.body ? `<span class="psub">${esc(x.body)}</span>` : ''}</span><span class="msgwhen">${esc(whenShort(Math.floor(x.at)))}</span></button>`).join('')}</div>
     ${items.length > 8 && !ui.newsAll ? `<button class="btn quiet wide" data-act="newsall" style="margin-top:8px">Show all ${items.length}</button>` : ''}</div>`;
   try { localStorage.setItem(newsKey(LS_NEWS_READ), JSON.stringify(nowMs() + 1)); } catch (e) { }
@@ -17420,7 +17424,7 @@ function plannerFind(p) {
       <label class="field"><span>Done by</span><input type="time" id="plH1" value="${esc(f.h1)}"></label>
     </div>
     <button class="btn wide" data-act="plfind">Find times</button></div>
-    ${f.ran ? (res.length ? `<div class="plist">${res.map(r => `<button class="prow" type="button" data-act="plbook" data-d="${esc(r.date)}" data-a="${r.a}" style="grid-template-columns:1fr auto">
+    ${f.ran ? (res.length ? `<div class="plist">${res.map(r => `<button class="prow go" type="button" data-act="plbook" data-d="${esc(r.date)}" data-a="${r.a}" style="grid-template-columns:1fr auto">
       <span><span class="pname">${esc(dayLabel(r.date))} · ${esc(niceTime(minHm(r.a)))}–${esc(niceTime(minHm(r.b)))}</span>
         <span class="psub">${r.why.length ? esc(r.why.join('; ')) : 'Nobody involved is busy'}${r.shared ? ' · ' + esc(r.shared) : ''}${r.usual ? ' · their usual slot' : ''}</span></span>
       <span class="tag${r.cost >= 500 ? ' off' : r.why.length ? ' wait' : ''}">${r.cost >= 500 ? 'Clash' : r.why.length ? 'Close' : 'Free'}</span></button>`).join('')}</div>
@@ -19010,7 +19014,7 @@ function detailsCard() {
   const where = c => kidPlaces(c).join(', ') || 'no team';
   return `<div class="card"><h2 style="margin-bottom:8px">Children's details</h2>
     <p class="muted" style="margin-top:0">${todo.length ? `${todo.length} child${todo.length === 1 ? ' has' : 'ren have'} details still to finish. Their families see a reminder on every screen and are asked once a day.` : 'Every child\u2019s details are finished.'}</p>
-    ${todo.length ? `<div class="plist" style="margin-bottom:10px">${todo.slice(0, 40).map(c => `<button class="prow" type="button" data-act="kidopen" data-id="${esc(c.id)}" style="grid-template-columns:1fr">
+    ${todo.length ? `<div class="plist" style="margin-bottom:10px">${todo.slice(0, 40).map(c => `<button class="prow go" type="button" data-act="kidopen" data-id="${esc(c.id)}" style="grid-template-columns:1fr">
       <span><span class="pname">${esc(kidName(c))}</span><span class="rowsub">${where(c)} · ${esc(why(c))}</span></span></button>`).join('')}</div>
       ${todo.length > 40 ? `<p class="muted">…and ${todo.length - 40} more.</p>` : ''}` : ''}
     <p class="lbl">What the club requires</p>
@@ -19035,19 +19039,19 @@ function viewRegs() {
     <p class="muted" style="margin-top:0">What families register their children for: a season, a camp, tryouts, training sessions. Each open program has a link to post wherever families will see it. Fees are shown, not taken; families pay the way you tell them.</p>
     ${programsAll().map(p => {
     const rs = Object.values(regsOf(p.id)), waiting = rs.filter(r => r && r.st === 'sent').length;
-    return `<button class="card" data-act="regprog" data-id="${esc(p.id)}" style="text-align:left;width:100%">
+    return `<button class="card go" data-act="regprog" data-id="${esc(p.id)}" style="text-align:left;width:100%">
       <b>${esc(p.name)}</b><span class="rowsub">${esc([p.closed ? 'Closed' : progOpen(p) ? 'Open' : 'Not open yet', progLine(p)].filter(Boolean).join(' · '))}</span>
       <span class="rowsub">${rs.length} registered${waiting ? ` · ${waiting} waiting for you` : ''}</span></button>`;
   }).join('') || '<div class="empty"><strong>No programs yet</strong>Make one, add its waivers, and post its link.</div>'}
     <button class="btn wide" data-act="progedit">New program</button>
     <div class="card"><h2 style="margin-bottom:8px">Waivers</h2>
       <p class="muted" style="margin-top:0">The club's own words. A family agrees in her own name; change the words and the next registration asks again.</p>
-      <div class="plist">${waiversAll().map(w => `<button class="prow" type="button" data-act="waiveredit" data-id="${esc(w.id)}" style="grid-template-columns:1fr auto">
+      <div class="plist">${waiversAll().map(w => `<button class="prow go" type="button" data-act="waiveredit" data-id="${esc(w.id)}" style="grid-template-columns:1fr auto">
         <span><span class="pname">${esc(w.title)}</span><span class="rowsub">Version ${w.v}</span></span><span class="muted">Edit</span></button>`).join('') || '<p class="muted" style="margin:0">None yet.</p>'}</div>
       <button class="btn quiet wide" data-act="waiveredit" style="margin-top:10px">New waiver</button></div>
     ${left.length ? `<div class="card"><h2 style="margin-bottom:8px">Left the club</h2>
       <p class="muted" style="margin-top:0">Children whose family has deleted its account. Kept until you decide.</p>
-      <div class="plist">${left.map(c => `<button class="prow" type="button" data-act="kidopen" data-id="${esc(c.id)}" style="grid-template-columns:1fr"><span class="pname">${esc(kidName(c))}</span></button>`).join('')}</div></div>` : ''}
+      <div class="plist">${left.map(c => `<button class="prow go" type="button" data-act="kidopen" data-id="${esc(c.id)}" style="grid-template-columns:1fr"><span class="pname">${esc(kidName(c))}</span></button>`).join('')}</div></div>` : ''}
   </div>`;
 }
 function viewRegList(pr) {
@@ -19068,7 +19072,7 @@ function viewRegList(pr) {
       <div class="row">${n ? `<button class="btn" data-act="trybibs" data-id="${esc(pr.id)}">Give ${n} bib${n === 1 ? '' : 's'}</button>` : ''}
         <button class="btn quiet" data-act="trytab" data-k="${u.tab === 'scores' ? 'list' : 'scores'}">${u.tab === 'scores' ? 'Registrations' : 'Scores'}</button></div></div>`)(bibsToGive(regsHeld(pr.id), tryBibsOf(pr.id)).length) : ''}
     ${isTryout(pr) && u.tab === 'scores' ? viewTryScores(pr) : `<div class="chips">${chip('all', 'All')}${chip('sent', 'Waiting')}${chip('accepted', 'Accepted')}${isTryout(pr) ? chip('offered', 'Offered') : ''}${chip('waitlist', 'Waiting list')}${chip('draft', 'Family to finish')}${chip('declined', 'Declined')}${chip('withdrawn', 'Withdrawn')}</div>
-    <div class="plist">${rows.map(({ cid, r, c }) => `<button class="prow" type="button" data-act="regopenone" data-prog="${esc(pr.id)}" data-id="${esc(cid)}" style="grid-template-columns:1fr auto">
+    <div class="plist">${rows.map(({ cid, r, c }) => `<button class="prow go" type="button" data-act="regopenone" data-prog="${esc(pr.id)}" data-id="${esc(cid)}" style="grid-template-columns:1fr auto">
       <span><span class="pname">${esc(kidName(c))}${c.confirmed ? '' : ' <span class="tag wait">unconfirmed</span>'}</span>
         <span class="rowsub">${esc([c.born ? 'born ' + dayLabel(c.born) : '', KID_GENDER[c.gender] || '', (r.fam || {}).name || ''].filter(Boolean).join(' · '))}</span></span>
       <span class="tag">${r.bib ? 'Bib ' + r.bib + ' · ' : ''}${esc(REG_ST[r.st] || r.st)}</span></button>`).join('') || '<p class="muted">Nobody here yet.</p>'}</div>`}
@@ -19298,7 +19302,7 @@ function viewTryout() {
   if (!list.length) return `<div class="empty"><strong>Nothing to score</strong>The club's admins name the evaluators on each tryout.</div>`;
   const pr = list.find(p => p.id === u.prog) || (list.length === 1 ? list[0] : null);
   if (!pr) return `<div class="stack"><div class="spread"><h2>Tryouts</h2><button class="btn quiet sm" data-act="goview" data-v="club">Back</button></div>
-    ${list.map(p => `<button class="card" data-act="tryprog" data-id="${esc(p.id)}" style="text-align:left;width:100%"><b>${esc(p.name)}</b>
+    ${list.map(p => `<button class="card go" data-act="tryprog" data-id="${esc(p.id)}" style="text-align:left;width:100%"><b>${esc(p.name)}</b>
       <span class="rowsub">${Object.keys(tryBibsOf(p.id)).length} bibs · ${Object.keys(((evalsOf(p.id))[me.uid]) || {}).length} scored by you</span></button>`).join('')}</div>`;
   const all = Object.entries(tryBibsOf(pr.id)).map(([b, x]) => ({ bib: Number(b), ...(x || {}) })).filter(x => x.bib).sort((a, b) => a.bib - b.bib);
   const years = [...new Set(all.map(x => x.y).filter(Boolean))].sort();
@@ -19387,7 +19391,7 @@ function complyCards() {
   let out = '';
   if (isAdmin(me.uid)) {
     const t = complyTally(complyRows());
-    if (t.length) out += `<button class="card" data-act="goview" data-v="comply" style="text-align:left;width:100%">
+    if (t.length) out += `<button class="card go" data-act="goview" data-v="comply" style="text-align:left;width:100%">
       <b>Coach compliance</b><span class="rowsub">${esc(t.map(([st, n]) => `${n} ${COMPLY_TALLY[st]}`).join(' · '))}</span></button>`;
   }
   if (iAmStaff()) {
@@ -19404,7 +19408,7 @@ function viewComply() {
   return `<div class="stack">
     <div class="spread"><h2>Coach compliance</h2><button class="btn quiet sm" data-act="goview" data-v="admin">Back</button></div>
     <p class="muted" style="margin-top:0">What MSYSA asks of every coach, helper and admin, in its order: SafeSport, concussion training, then the background check. The checks are done through GotSport; this is the club's record of them. ${t.length ? esc(t.map(([st, n]) => `${n} ${COMPLY_TALLY[st]}`).join(' · ')) + '.' : 'Everyone is up to date.'} Flagged here and to the person, and nothing else changes.</p>
-    <div class="plist">${rows.map(r => `<button class="prow" type="button" data-act="complyopen" data-uid="${esc(r.uid)}" style="grid-template-columns:1fr auto">
+    <div class="plist">${rows.map(r => `<button class="prow go" type="button" data-act="complyopen" data-uid="${esc(r.uid)}" style="grid-template-columns:1fr auto">
       <span><span class="pname">${esc(r.name)}</span><span class="rowsub">${esc([teamsOf(r.uid).join(', ') || (isAdmin(r.uid) ? 'Admin' : ''), r.flags.map(complyLine).join('; ')].filter(Boolean).join(' · '))}</span></span>
       <span class="tag${r.worst < 3 ? ' wait' : ''}">${r.worst < 3 ? COMPLY_WORDS[r.flags.find(f => COMPLY_RANK[f.st] === r.worst).st] : 'up to date'}</span></button>`).join('') || '<p class="muted">No coaches yet.</p>'}</div>
   </div>`;
@@ -20534,7 +20538,7 @@ function sheetAi(scope, topic) {
       <textarea id="aiIdeas" rows="4" placeholder="#7 and #9 split up top. #4 plays the whole first half at CB. Keep #10 fresh for the last 15.">${esc(ideas)}</textarea></label>
       <p class="muted" style="margin-top:-6px">Names are fine here: they are swapped for shirt numbers before anything is copied. Your snapshots and targets from the Lineup tab are already in the prompt.</p>` : ''}
     <label class="field"><span>Prompt — edit or add to it before copying</span>
-      <textarea id="aiPrompt" rows="12" style="font-size:13px">${esc(aiPrompt(scope, tp, ideas))}</textarea></label>
+      <textarea id="aiPrompt" rows="12" style="font-size:14px">${esc(aiPrompt(scope, tp, ideas))}</textarea></label>
     <button class="btn wide" data-act="aicopy">Copy prompt</button>
     <div class="muted" style="margin:10px 0 4px">Or copy it and open</div>
     <div class="row" style="gap:6px">${Object.entries(AI_SITES).map(([k, [label]]) =>
@@ -20542,7 +20546,7 @@ function sheetAi(scope, topic) {
     <p class="muted" style="margin-bottom:0">Players appear as shirt numbers. No names, notes or photos are included, and any name you type is swapped for a number when you copy.</p>
     ${tp === 'plan' && scope === 'game' && match() && ((match().formation || {}).slots || []).length ? `<h3 style="margin:18px 0 6px">Bring the answer back</h3>
       <p class="muted" style="margin-top:0">Paste the AI's whole reply. The app reads the lines under <b>PLAN</b> and turns them into snapshots you can change before locking in.</p>
-      <label class="field"><span>The AI's answer</span><textarea id="aiAnswer" rows="6" style="font-size:13px" placeholder="PLAN&#10;0:00 GK=#1 LB=#4 …"></textarea></label>
+      <label class="field"><span>The AI's answer</span><textarea id="aiAnswer" rows="6" style="font-size:14px" placeholder="PLAN&#10;0:00 GK=#1 LB=#4 …"></textarea></label>
       <div id="aiImportMsg"></div>
       <button class="btn wide" data-act="aiimport">Use this plan</button>` : ''}`);
 }
