@@ -21,13 +21,13 @@
      with no games lands on Season, where Add a game is. When two or more of
      her teams have a game on or coming it is a picker naming each team, the
      live one first, and the red dot means being played on any team of hers
-     (UX-REVIEW-2.md, 6.1; build 148). Hers are the teams she coaches, tracks
+     (UX-REVIEW-2.md, 6.1; build 150). Hers are the teams she coaches, tracks
      or helps, every team for an admin or a club viewer: a coach reads the
      whole club, and hers is still one team.
    - The Team tab is her team, or, when she works on several, the list of
      them (Club home), each team one level down with a back arrow up to the
      list; Club home then has no back arrow of its own, and is not offered
-     again under More (UX-REVIEW-2.md, 6.3; build 148).
+     again under More (UX-REVIEW-2.md, 6.3; build 150).
    - The title row says whose a screen is, with a back arrow where there is
      somewhere up to go (a tab's own screen has none); the club's name on it
      is the club switcher; the team's name is the team switcher when she can
@@ -292,7 +292,7 @@ console.log('\n--- More, by role ---');
 {
   const has = (re, s) => re.test(s);
   as('boss'); let m = more();
-  check('an admin: Notifications, Training sessions, Settings, Sign out',
+  check('an admin: What\'s new, Training sessions, Settings, Sign out',
     ['data-v="notes"', 'data-v="sessions"', 'data-v="setup"', 'data-act="signout"'].every(x => m.includes(x)), true);
   check('— and not Club home, which is her Team tab', has(/data-v="club"/, m), false);
   check('— one Settings, never People or Club details beside it (build 143)', /data-v="people"|data-v="admin"/.test(m) + ' ' + (m.match(/data-v="setup"/g) || []).length, 'false 1');
@@ -333,13 +333,19 @@ console.log('\n--- game mode (UX-REVIEW.md, 1.3) ---');
   as('jaz', 'game'); A.ui.matchId = 'g2'; A.render();
   check('a game is its own mode: the brand row steps aside', mode(), 'game');
   check('one slim header: back, the two teams, ours first, and the date under them', /data-act="backgames" aria-label="Back to the team"/.test(title()) && /class="ghname">G14 Flight v Northgate<\/span><span class="ghwhen">Sat 19 Sep · 9:30am<\/span>/.test(title()), true);
-  check('— no score before kick-off, and no clock', /0–0|ghclock/.test(title()), false);
+  check('— no 0–0 before kick-off, which reads as a result (UX-REVIEW-2.md, 7.1), and no clock', /0–0|ghclock/.test(title()), false);
+  A.sheetGameMenu();
+  const menu = String(A.dom.node('#sheet').innerHTML);
+  check('— nor in its ⋯ menu', /<h3>Northgate<\/h3>/.test(menu), true);
+  check('— where a game played 0–0 keeps its score, and one not played yet says so', /Riverside[\s\S]*?0<small>–0<\/small>/.test(menu) && /Hill End[\s\S]*?<small>upcoming<\/small>/.test(menu), true);
+  A.closeSheet();
   check('— and the ⋯ menu', /data-act="gamemenu"/.test(title()), true);
   check('no game bar on the screen any more', /barrow|data-act="sharesheet"|data-act="editmatch"/.test(A.rendered()), false);
   A.state.matches.g2.periods = { 0: { half: 1, start: H.clock.t - 5 * MIN } }; A.render();
   check('being played: the clock, ticking in place', /class="ghclock" data-live="clock" data-mid="g2">5:00</.test(title()), true);
+  check('— and the score between the teams, 0–0 included, once it has kicked off', /class="ghname">G14 Flight 0–0 Northgate</.test(title()), true);
   A.state.matches.g2.goals = { a: { t: 60, side: 'them' } }; A.render();
-  check('— and the score between the teams, us–them', /class="ghname">G14 Flight 0–1 Northgate</.test(title()), true);
+  check('— us–them, ours first', /class="ghname">G14 Flight 0–1 Northgate</.test(title()), true);
   A.state.matches.g2.ended = H.clock.t; A.state.matches.g2.currentHalf = 3; A.render();
   check('over: full time, the score kept', /class="ghclock ghft"/.test(title()) && /G14 Flight 0–1 Northgate/.test(title()), true);
   A.state.matches.g2.date = '2026-09-12'; A.render();

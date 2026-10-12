@@ -38,6 +38,8 @@ secretary already has.
 | The sort on Subs | **By minutes** / **By number** | By need |
 | Staging several changes on Subs | **Several at once** | Batch |
 | The sync badge | **Synced** · **Offline** · **Not synced** · **Sign in** | local, this device, no code, sync failed |
+| What changed: games and practices moved, club activity (More's first row) | **What's new** | Notifications (the page), Activity |
+| Whether her phone pops up or buzzes (Settings → Notifications) | **Notifications** | alerts, the bell |
 | A change the club turned down | *That didn't save* | refused by the database, permission denied |
 
 ## Never on screen

@@ -2,7 +2,7 @@
    Static app. Data lives in localStorage, and mirrors to Firebase Realtime
    Database when a config + workspace code are present. */
 
-const BUILD = '148';
+const BUILD = '150';
 const BUILT = '2026-10-12';
 /* The version of database.rules.json this app was written against. The rules
    carry the same number in rulesVersion's .write, which accepts that number
@@ -4151,7 +4151,7 @@ function muteCard() {
   if (!me) return '';
   const kinds = MUTE_KINDS.filter(([k]) => k === 'news' ? newsFor() : true);
   return `<div class="card"><h2 style="margin-bottom:4px">What notifies you</h2>
-    <p class="muted" style="margin:0 0 8px">Off means no pop-up, no buzz and no notification on a locked phone, on every phone you use. It still waits for you${kinds.some(([k]) => k === 'msg' || k === 'notice') ? ' on Messages or' : ''} under the bell.</p>
+    <p class="muted" style="margin:0 0 8px">Off means no pop-up, no buzz and no notification on a locked phone, on every phone you use. It still waits for you${kinds.some(([k]) => k === 'msg' || k === 'notice') ? ' on Messages or' : ''} on What's new.</p>
     <div class="plist">${kinds.map(([k, name, sub]) => {
       const off = muted(k);
       return `<div class="prow" style="grid-template-columns:minmax(0,1fr) auto"><span style="min-width:0"><span class="pname">${name}</span><span class="psub">${sub}</span></span>
@@ -4159,12 +4159,11 @@ function muteCard() {
     }).join('')}</div></div>`;
 }
 
-function pushCard(where) {
+function pushCard() {
   if (!me) return '';
   const sup = pushSupport();
   if (sup === 'unset') return '';
   const on = pushOn();
-  if (where === 'inbox' && (on || sup === 'no' || sup === 'blocked')) return '';
   const say = pushBusy ? 'Turning on…'
     : sup === 'install' ? 'On an iPhone or iPad, TeamPlayHQ can notify you once it is on your Home Screen: tap <b>Share</b>, then <b>Add to Home Screen</b>, open TeamPlayHQ from there, and turn them on.'
     : sup === 'no' ? 'This browser can\'t get notifications from a website. TeamPlayHQ still pops up while it is open.'
@@ -4179,17 +4178,32 @@ function pushCard(where) {
 }
 
 /* ---- screens ---- */
-/* Notifications: what is new. Changes to her calendar in any club, and club
-   activity. Never somebody's message: those are on Messages, with a count of
-   their own (build 106). */
+/* What's new: changes to her calendar in any club, and club activity. Never
+   somebody's message: those are on Messages, with a count of their own
+   (build 106). Called Notifications until build 148 (UX-REVIEW-2.md, 6.2),
+   when the word was left to the switches: Messages is people writing to
+   her, What's new is the app telling her, Notifications is whether her phone
+   buzzes. The switches are in Settings alone, and this page has a gear to
+   them. */
 function viewNotes() {
   // opening it reads the calendar alerts, as it reads club activity
   if (me && alertsHere().list.some(x => x.kind === 'cal' && !x.read)) { for (const x of alerts.list) if (x.kind === 'cal') x.read = true; saveAlerts(); }
   const cards = (me ? alertsCard('notes') : '') + (newsFor() ? newsCard() : '');
-  return `<div class="stack"><h2>Notifications</h2>
-    ${cards || `<div class="empty"><strong>Nothing new</strong>Changes to your games and practices, in any of your clubs${newsFor() ? ', and club activity' : ''}, show up here.</div>`}
-    ${pushCard('notes')}${muteCard()}</div>`;
+  return `<div class="stack"><div class="spread"><h2>What's new</h2>${me ? `<button class="btn quiet sm" type="button" data-act="notifyset">${GEAR_SVG} Notifications</button>` : ''}</div>
+    ${cards || `<div class="empty"><strong>Nothing new</strong>Changes to your games and practices, in any of your clubs${newsFor() ? ', and club activity' : ''}, show up here.</div>`}</div>`;
 }
+/* Settings → Notifications: the one place the switches are (UX-REVIEW-2.md,
+   6.2). Push where the club offers it, else the open-page pop-ups, which ask
+   the browser for the same permission; then what notifies her. */
+function notifyCards() {
+  if (!me) return '';
+  const canPop = typeof Notification !== 'undefined';
+  const pops = pushSupport() === 'unset' && canPop && Notification.permission === 'default' ? `<div class="card"><div class="spread"><b>Pop-ups on this device</b>
+      <button class="btn sm" data-act="msgalerts">Turn on</button></div>
+    <p class="muted" style="margin:6px 0 0">A message or a change to your games pops up while TeamPlayHQ is open, even in another tab.</p></div>` : '';
+  return pushCard() + pops + muteCard();
+}
+const GEAR_SVG = '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:-2px"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>';
 function viewInbox() {
   const other = me ? alertsCard('msgs') : '';
   if (!msgOn()) return other ? `<div class="stack"><h2>Messages</h2>${other}</div>` : viewInboxMsgs();
@@ -4209,12 +4223,6 @@ function viewInboxMsgs() {
   const many = mine.length > 1;
   const all = mine.flatMap(t => notices(t.id)).sort((a, b) => (b.at || 0) - (a.at || 0));
   const shown = ui.msgAll ? all : all.slice(0, MSG_SHOW);
-
-  const canPop = typeof Notification !== 'undefined';
-  // where the club offers push, that card is the one to show; it asks for the same permission
-  const alerts = pushSupport() !== 'unset' ? pushCard('inbox') : canPop && Notification.permission === 'default' ? `<div class="card"><div class="spread"><b>Pop-ups on this device</b>
-      <button class="btn sm" data-act="msgalerts">Turn on</button></div>
-    <p class="muted" style="margin:6px 0 0">A message pops up while TeamPlayHQ is open, even in another tab.</p></div>` : '';
 
   const notice = x => {
     const t = state.teams[x.tid] || {};
@@ -4261,7 +4269,6 @@ function viewInboxMsgs() {
   return `<div class="stack">
     <div class="spread"><h2>Messages</h2>
       ${canStart ? `<button class="btn sm" data-act="msgnew">New message</button>` : ''}</div>
-    ${alerts}
     <!--others-->
     <div class="card"><h2 style="margin-bottom:8px">Conversations</h2>
       ${list ? `<div class="plist">${list}</div>` : `<p class="muted" style="margin:0">Nothing yet. Tap <b>New message</b> to write to ${staff.length ? 'a family on your team' : ''}${staff.length && colleagues().length ? ', or ' : ''}${colleagues().length ? 'another coach or an admin' : ''}.</p>`}
@@ -4604,7 +4611,7 @@ function msgPaint() {
    wrote, the bell for what is new. */
 const msgsOn = () => !!me && (msgOn() || alertsHere().list.some(x => x.kind === 'msg') || elseUnread() > 0);
 /* The counts on the tab bar: unread messages on Messages, what is new on
-   More (Notifications live under it). Repainted in place when something
+   More (What's new lives under it). Repainted in place when something
    arrives between draws; render() draws them fresh. */
 function paintBell(shut) {
   const m = shut ? 0 : msgUnread(), b = shut ? 0 : notesUnread(), n = m + b;
@@ -7092,7 +7099,8 @@ function normView() {
    reads twice. Now it is a card the first time she opens the club on this
    phone, put away with Got it and remembered per account, club and role
    (so a parent made a coach is told again), and a line in the account sheet
-   and under Settings → You for whenever she wants it back. The test-club
+   for whenever she wants it back. Not in Settings → You's row: run on after
+   the email and role it read as one string (UX-REVIEW-2.md, 7.1). The test-club
    bar and the sync warnings are not role banners and stay. */
 const LS_ROLECARD = 'sm.role.v1';
 const roleCardKey = lim => `${envPrefix()}${wsCode() || 'local'}:${lim}`;
@@ -7362,7 +7370,7 @@ const viewScope = (v = ui.view) => v === 'calendar' || v === 'mine' ? (me ? 'me'
 /* The screens that are not a team's, by name, for the title row. */
 const VIEW_TITLE = {
   calendar: 'Calendar', setup: 'Settings', people: 'People', admin: 'Club details', sessions: 'Sessions',
-  planner: 'Planner', inbox: 'Messages', thread: 'Messages', notes: 'Notifications', mine: 'My players', formation: 'Shapes',
+  planner: 'Planner', inbox: 'Messages', thread: 'Messages', notes: 'What\'s new', mine: 'My players', formation: 'Shapes',
   regs: 'Registration', tryout: 'Tryouts', comply: 'Coach compliance', club: 'Club home'
 };
 
@@ -7529,8 +7537,8 @@ function sheetMore() {
   const coachAny = !!me && teams().some(t => isCoach(t.id, me.uid));   // People, on Settings
   const clubs = knownClubs();
   openSheet(`<h3>More</h3>
-    ${me ? `<button class="opt spread" data-act="goview" data-v="notes"><span><b>Notifications</b>
-      <span class="rowsub">What is new: your games and practices${newsFor() ? ', and club activity' : ''}</span></span>${b ? `<span class="pill asking">${b > 9 ? '9+' : b}</span>` : ''}</button>` : ''}
+    ${me ? `<button class="opt spread" data-act="goview" data-v="notes"><span><b>What's new</b>
+      <span class="rowsub">Changes to your games and practices${newsFor() ? ', and club activity' : ''}</span></span>${b ? `<span class="pill asking">${b > 9 ? '9+' : b}</span>` : ''}</button>` : ''}
     ${(wsCode() || teams().length) && homeView() !== 'club' ? `<button class="opt" data-act="goview" data-v="club"><b>${esc(org)}</b>
       <span class="rowsub">Club home: its teams, and everything else in it</span></button>` : ''}
     ${anyPlayers() && navKind() !== 'family' ? `<button class="opt" data-act="goview" data-v="mine"><b>My players</b>
@@ -7713,7 +7721,7 @@ function shortDate(d) {
 /* Game mode (UX-REVIEW.md, 1.3; build 144). A game is its own mode: the brand
    row steps aside and one slim header, pinned with the rest of the header,
    carries Back, the two teams and the score with the date under them (since
-   build 148, UX-REVIEW-2.md, 6.1: which team, which date, and no score
+   build 150, UX-REVIEW-2.md, 6.1: which team, which date, and no score
    before kick-off), the clock (ticking, through
    data-live), the sync badge while it has something to say, and a ⋯ menu for
    what the game bar used to hold: the games either side, Edit and Share, none
@@ -7722,11 +7730,11 @@ function shortDate(d) {
 const DOTS_SVG = '<svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="2.2"/><circle cx="12" cy="12" r="2.2"/><circle cx="19" cy="12" r="2.2"/></svg>';
 /* A game named as a scoreboard reads it (UX-REVIEW-2.md, 6.1): our team
    first, then the score, then the opponent, so "1–1" is never read as the
-   other side's; and no score at all before kick-off, where 0–0 reads as a
-   result. HTML: the team's label is one already. */
+   other side's; and no score before kick-off, where 0–0 reads as a result
+   (shownScore(), 7.1, decides). HTML: the team's label is one already. */
 function gameTitle(t, m) {
-  const sc = score(m), mid = gameStatus(m) === 'upcoming' ? 'v' : `${sc.us}–${sc.them}`;
-  return `${teamLabel(t)} ${mid} ${esc(m.opponent || 'TBC')}`;
+  const sc = shownScore(m);
+  return `${teamLabel(t)} ${sc ? `${sc.us}–${sc.them}` : 'v'} ${esc(m.opponent || 'TBC')}`;
 }
 /* When a game is, as the Next up card says it: Today, Tomorrow, or the day. */
 function gameWhen(m) {
@@ -7760,11 +7768,11 @@ function gameMenu(t, m) {
   const list = teamMatches(t.id), n = list.length;
   const i = list.findIndex(x => x.id === m.id);
   const older = i > -1 ? list[i + 1] : null, newer = i > 0 ? list[i - 1] : null;
-  const sc = score(m);
+  const sc = shownScore(m);
   const row = (g, k) => g ? `<button class="opt spread" data-act="pickgame2" data-id="${g.id}"><span><b>${k}</b>
       <span class="rowsub">${esc(g.opponent || 'Unnamed')}${g.date ? ' · ' + shortDate(g.date) : ''}</span></span>
-      <span class="pmins">${score(g).us}<small>–${score(g).them}</small></span></button>` : '';
-  return `<h3>${esc(m.opponent || 'Game')} <span class="muted">${sc.us}–${sc.them}</span></h3>
+      <span class="pmins">${scoreCell(g)}</span></button>` : '';
+  return `<h3>${esc(m.opponent || 'Game')}${sc ? ` <span class="muted">${sc.us}–${sc.them}</span>` : ''}</h3>
     <p class="muted" style="margin-top:0">${[m.date ? shortDate(m.date) : '', n > 1 && i > -1 ? `game <span class="gb-hint">${n - i}/${n}</span> of the season` : ''].filter(Boolean).join(' · ') || 'No date yet'}</p>
     ${row(older, 'Older game')}${row(newer, 'Newer game')}
     ${n > 1 ? `<button class="opt" data-act="pickgame"><b>All games</b><span class="rowsub">${n} this season</span></button>` : ''}
@@ -7796,10 +7804,9 @@ function sheetPickGame() {
   const list = teamMatches(t.id);
   openSheet(`<h3>Which game?</h3>
     ${list.map(g => {
-    const sc = score(g);
     return `<button class="opt spread" type="button" data-act="pickgame2" data-id="${g.id}" aria-current="${g.id === cur}">
       <span>${esc(g.opponent || 'Unnamed')}<span class="rowsub">${esc(g.date || '')} · <span data-live="gmins" data-mid="${g.id}">${mins(elapsedSec(g))}</span> min played${running(g) ? ' · running' : ''}</span></span>
-      <span class="pmins">${sc.us}<small>–${sc.them}</small></span></button>
+      <span class="pmins">${scoreCell(g)}</span></button>
 `;
   }).join('') || '<p class="muted">No games yet.</p>'}
     ${cur && state.matches[cur] && !readOnlyHere() ? `<button class="btn quiet wide" data-act="editmatch" data-id="${cur}" style="margin-bottom:8px">Edit this game's details</button>` : ''}
@@ -8562,14 +8569,14 @@ function viewFeed() {
   if (!m || m.teamId !== t.id) { const l = teamMatches(t.id); m = l[0] || null; ui.matchId = m ? m.id : null; }
   if (!m) return `<div class="empty"><strong>No game yet</strong>Nothing to follow until a game is set up.</div>`;
 
-  const now = nowMs(), sc = score(m), st = gameStatus(m);
+  const now = nowMs(), sc = shownScore(m), st = gameStatus(m);
   const us = teamLabel(t), them = esc(m.opponent || 'Them');
   const status = st === 'done' ? 'Full time'
     : st === 'live' ? `${running(m) ? 'Live' : 'Paused'} · ${esc(halfName(m, m.currentHalf || 1))}`
       : `Not started${m.date ? ' · ' + esc(shortDate(m.date)) : ''}`;
   const head = `<div class="card feedhead" data-st="${st}">
     <div class="feedstatus">${st === 'live' && running(m) ? '<i class="livedot"></i>' : ''}${status}${st === 'upcoming' ? '' : ` · <span data-live="clock" data-mid="${m.id}">${mmss(elapsedSec(m, now))}</span>`}</div>
-    <div class="feedscore"><span class="fs-side">${us}</span><span class="fs-num">${sc.us}–${sc.them}</span><span class="fs-side">${them}</span></div></div>`;
+    <div class="feedscore"><span class="fs-side">${us}</span><span class="fs-num">${sc ? `${sc.us}–${sc.them}` : 'v'}</span><span class="fs-side">${them}</span></div></div>`;
 
   const all = feedItems(t, m);
   const everything = !!ui.feedAll;
@@ -8593,7 +8600,7 @@ function viewFeed() {
   const following = ui.follow === m.id;
   const canNotify = typeof Notification !== 'undefined';
   const closed = pushOn();
-  const offerPush = !closed && me && pushSupport() === 'ok' ? ' Turn notifications on for this phone, under the bell, to get them with TeamPlayHQ closed too.' : '';
+  const offerPush = !closed && me && pushSupport() === 'ok' ? ' Turn notifications on for this phone, in Settings, to get them with TeamPlayHQ closed too.' : '';
   const follow = st === 'done' ? '' : `<div class="card"><div class="spread"><h2>Notify me</h2>
       <button class="btn ${following ? 'quiet ' : ''}sm" data-act="feedfollow" data-v="${following ? 0 : 1}">${following ? 'Stop' : 'Turn on'}</button></div>
     <p class="muted" style="margin:6px 0 0">${closed
@@ -16773,10 +16780,12 @@ function viewSetup() {
       : '<p class="muted" style="margin-bottom:0">A club admin can add them to the club, signed in on this phone.</p>'}</div>` : '';
 
   const you = setSection('You', [
-    me ? setRow('signinsheet', esc(me.name || me.email || 'You'), esc([me.email, r ? ROLE_LABEL[r] + (r !== 'owner' && r !== 'admin' && team() ? ' · ' + team().name : '') : 'No role here yet'].filter(Boolean).join(' · ')) + (restricted() ? `<span class="rolewords">${roleWords(restricted())}</span>` : ''))
+    me ? setRow('signinsheet', esc(me.name || me.email || 'You'), esc([me.email, r ? ROLE_LABEL[r] + (r !== 'owner' && r !== 'admin' && team() ? ' · ' + team().name : '') : 'No role here yet'].filter(Boolean).join(' · ')))
       : setRow('signinsheet', 'Sign in', 'Signed out, everything stays on this device. Sign in to share it with your club.'),
     canTrain() ? setRow('mydrills', 'My drills', 'Your own drills and templates, on every phone you sign in on') : ''
-  ], pushCard('settings') + muteCard());
+  ]);
+  // the switches, here and nowhere else (UX-REVIEW-2.md, 6.2); What's new has a gear to them
+  const notify = me ? `<h2 class="sechead" id="setNotify">Notifications</h2>${notifyCards()}` : '';
 
   // the team on screen, for whoever could read its set-up on Squad before: never a tracker or a family
   const t = team(), lim = restricted();
@@ -16812,7 +16821,7 @@ function viewSetup() {
     isOwner() ? setRow('peeklib', "Look at someone's drills", 'For support; nothing is kept') : ''
   ]);
 
-  return `<div class="stack">${pend}${old}${you}${team_}${club}${adv}</div>`;
+  return `<div class="stack">${pend}${old}${you}${notify}${team_}${club}${adv}</div>`;
 }
 /* Check readiness and the backup, from Settings → Advanced: an admin's, and
    what they were on Club settings, in a sheet. */
@@ -18073,6 +18082,11 @@ const shirtOf = p => String((p && p.number) ?? '').trim() || '–';
 const gameStatus = m => m.ended ? 'done'
   : (m.currentHalf || 1) > (m.periodCount || 2) ? 'done'
   : (elapsedSec(m) > 0 || running(m)) ? 'live' : 'upcoming';
+/* The score to draw, or null before kick-off: a 0–0 on a game not played yet
+   reads as a result (UX-REVIEW-2.md, 7.1). A goal on a game with no clock, an
+   imported result, still shows. */
+const shownScore = m => { const sc = score(m); return gameStatus(m) === 'upcoming' && !sc.us && !sc.them ? null : sc; };
+const scoreCell = m => (sc => sc ? `${sc.us}<small>–${sc.them}</small>` : '<small>upcoming</small>')(shownScore(m));
 
 function publicGame(t, m) {
   const roster = squad(t, m);
@@ -21259,6 +21273,12 @@ function onAct(e) {
   }
   if (a === 'thread') { closeSheet(); ui.view = 'thread'; ui.thread = { tid: d.tid, fam: d.fam }; render(); return; }
   if (a === 'notes') { ui.view = 'notes'; ui.thread = null; closeSheet(); render(); return; }
+  // What's new's gear: Settings, at its Notifications section
+  if (a === 'notifyset') {
+    ui.view = 'setup'; ui.thread = null; closeSheet(); render();
+    try { const el = document.getElementById('setNotify'); if (el && el.scrollIntoView) el.scrollIntoView({ block: 'start' }); } catch (e) { }
+    return;
+  }
   if (a === 'msgnew') { sheetNewMsg(); return; }
   if (a === 'msgpick') {
     const u = pickUi();
@@ -22672,7 +22692,7 @@ function onAct(e) {
   if (a === 'calmore') { ui.calN = { ...(ui.calN || {}), [d.k]: calN(d.k) + CAL_PAGE }; render(); return; }
   if (a === 'alertgo') { openAlert(d.id); return; }
   if (a === 'alertx') { const x = alertsHere().list.find(y => y.id === d.id); if (x) { x.shut = true; saveAlerts(); } render(); return; }
-  // the rest of what is waiting: messages are on Messages, everything else under the bell
+  // the rest of what is waiting: messages are on Messages, everything else on What's new
   if (a === 'alertall') { ui.view = alertsHere().list.some(x => !x.read && !x.shut && x.kind !== 'msg') ? 'notes' : 'inbox'; ui.thread = null; closeSheet(); render(); return; }
   if (a === 'switchclubto') {
     if (!myClubs || !myClubs[d.code]) return;
@@ -23143,7 +23163,7 @@ function uiToHash() {
   if (ui.view === 'comply') return '#/club/compliance';
   if (ui.view === 'mine') return '#/my-players';
   if (ui.view === 'inbox') return '#/messages';
-  if (ui.view === 'notes') return '#/notifications';
+  if (ui.view === 'notes') return '#/whats-new';
   if (ui.view === 'thread' && ui.thread && ui.thread.cid) return `#/messages/with/${sdOther(ui.thread.cid)}`;
   if (ui.view === 'thread' && ui.thread) return `#/messages/${ui.thread.tid}/${ui.thread.fam}`;
   if (ui.view === 'setup') return '#/settings';
@@ -23168,7 +23188,8 @@ function hashToUi() {
     if (p[1] && p[2] && state.teams[p[1]]) { ui.view = 'thread'; ui.thread = { tid: p[1], fam: p[2] }; return true; }
     ui.view = 'inbox'; return true;
   }
-  if (p[0] === 'notifications') { ui.view = 'notes'; return true; }
+  // #/notifications is its address from before build 148
+  if (p[0] === 'whats-new' || p[0] === 'notifications') { ui.view = 'notes'; return true; }
   if (p[0] === 'settings') { ui.view = 'setup'; return true; }
   /* #/drill/{key} is a drill a coach sent. The screen stays where it was and
      the drill opens over it, once: the hash goes straight back to the screen's
