@@ -757,7 +757,8 @@ console.log('--- calendar sync ---');
   global.window.SOCCER_CALENDAR_FEED = 'https://feed.example.workers.dev';
   check('with one, the coach can turn it on', /Turn on calendar sync/.test(html()), true);
   A.me = { uid: 'mumU' };
-  check('a parent is not offered the team\'s address: hers is on My calendar', /Your own calendar link is on My calendar/.test(html()) && !/coach has not turned calendar sync on yet/.test(html()), true);
+  // a family's Season has no sync card at all (UX-REVIEW.md, 1.2): hers is My calendar's, on her Calendar tab
+  check('a parent is not offered the team\'s address: hers is on My calendar', /In your own calendar|Turn on calendar sync|coach has not turned calendar sync on yet/.test(html()), false);
   A.click({ act: 'calsyncon', tid: 't1' });
   check('and cannot turn it on herself', A.state.teams.t1.calFeed, undefined);
   A.me = { uid: 'coachU' };
@@ -773,7 +774,7 @@ console.log('--- calendar sync ---');
      family taken off the team would go on receiving it; hers is My calendar's,
      which the server builds from her roles and which leaves the team with her. */
   check('a parent is never shown the team\'s address', h.includes(feed), false);
-  check('she is pointed at her own, on My calendar', /Your own calendar link is on My calendar/.test(h), true);
+  check('her Season leads her to her own calendar instead', /data-act="teamcal"/.test(h), true);
   check('a parent cannot replace the address', /calsyncnew/.test(h), false);
   const doc = A.calendarDoc(A.state.teams.t1);
   check('the feed carries team-only practices', 'e1' in doc.events && 'e3' in doc.events, true);

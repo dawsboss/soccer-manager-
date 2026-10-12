@@ -122,7 +122,7 @@ console.log('\n--- only a coach or admin adds players and games ---');
   deepEq('a tracker, none', offers('trk', 't1'), none);
 
   /* The Team tab was Squad's foot from build 102, and is Settings' This team
-     since build 142 (UX-REVIEW.md, 1.4), Squad keeping one line to it: the
+     since build 143 (UX-REVIEW.md, 1.4), Squad keeping one line to it: the
      set-up is the team's coaches' to change, readable by a coach of another
      age group, and a tracker, who logs games for the squad, doesn't get it. */
   const setUp = (who, tid) => { as(club(), who, tid); return html('setup'); };

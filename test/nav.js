@@ -23,7 +23,7 @@
      is the club switcher; the team's name is the team switcher when she can
      see more than one team.
    - More holds what is not a tab, by role: one Settings for everyone (People
-     and the club's screens are in it since build 142, test/settings.js), My
+     and the club's screens are in it since build 143, test/settings.js), My
      players for staff with a child, Training sessions for whoever may book
      or run one.
    - The avatar's sheet is the account alone. A locked device draws no title
@@ -191,7 +191,7 @@ console.log('\n--- the title row ---');
   as('jaz', 'people');
   check('People: the screen, over the club, with a back arrow', titled('People') && /Lakeside SC/.test(title()) && /data-act="navback" aria-label="Back"/.test(title()), true);
   A.click({ act: 'navback' });
-  check('— back is Settings, whose Club section it is (build 142)', A.ui.view, 'setup');
+  check('— back is Settings, whose Club section it is (build 143)', A.ui.view, 'setup');
   check('— titled Settings, over the club', titled('Settings') && /data-act="clubswitch"/.test(title()), true);
   A.click({ act: 'navback' });
   check('— and back from there is the team', A.ui.view, 'season');
@@ -227,7 +227,7 @@ console.log('\n--- More, by role ---');
   as('boss'); let m = more();
   check('an admin: Notifications, the club, Training sessions, Settings, Sign out',
     ['data-v="notes"', 'data-v="club"', 'data-v="sessions"', 'data-v="setup"', 'data-act="signout"'].every(x => m.includes(x)), true);
-  check('— one Settings, never People or Club details beside it (build 142)', /data-v="people"|data-v="admin"/.test(m) + ' ' + (m.match(/data-v="setup"/g) || []).length, 'false 1');
+  check('— one Settings, never People or Club details beside it (build 143)', /data-v="people"|data-v="admin"/.test(m) + ' ' + (m.match(/data-v="setup"/g) || []).length, 'false 1');
   check('— which says it has the club in it', /<b>Settings<\/b>[\s\S]*?the club: people, registrations, fields/.test(m), true);
   check('— no My players: she has nobody', has(/data-v="mine"/, m), false);
   as('jaz'); m = more();

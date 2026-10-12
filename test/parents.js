@@ -2,8 +2,8 @@
 
    - "What parents actually see": her own child by name, the rest of the squad
      by shirt number (a player with none is "A teammate"), on every screen a
-     parent opens that lists players: Stats, Season, Live, the match log and
-     the recap. Only someone who is nothing but a parent in the club is
+     parent opens that lists players: Stats, Live, the match log and the
+     recap. Her Season lists her own child alone (UX-REVIEW.md, 1.2). Only someone who is nothing but a parent in the club is
      narrowed: an admin, a coach (of this team or another, child or not) and a
      tracker see names, and so does everybody before the club has an admin.
    - The club's one setting ("Should admins configure what each role sees?":
@@ -81,7 +81,8 @@ const MIN = 60000;
     check('stats: a teammate by shirt number', /#8/.test(s.stats), true);
     check('a teammate with no number is "A teammate"', /A teammate/.test(s.stats), true);
     check('the goal list says who scored, by number', /#8/.test(s.stats) && /assist Ella Fitzgerald/.test(s.stats), true);
-    check('season: her child by name, the rest by number', /Ella Fitzgerald/.test(s.season) && /#8/.test(s.season), true);
+    // her own Season (UX-REVIEW.md, 1.2) is her child's season: the squad's minutes are the coach's
+    check('season: her child by name, and no other child, by name or number', /Ella Fitzgerald/.test(s.season) && !/#8|A teammate/.test(s.season), true);
     check('live: the feed by number', /#8/.test(s.feed) && /Ella Fitzgerald/.test(s.feed), true);
     check('the helper', [A.shownName(A.state.teams.t1, A.state.teams.t1.players.p1), A.shownName(A.state.teams.t1, A.state.teams.t1.players.p2)].join(), 'Ella Fitzgerald,#8');
   }
@@ -117,7 +118,7 @@ const MIN = 60000;
   {
     setup('mum', { org: { rosterOpen: true } });
     const s = screens();
-    check('"the whole roster by name": a parent sees names', /Mia Kowalski/.test(s.stats) && /Rosa Delgado/.test(s.season), true);
+    check('"the whole roster by name": a parent sees names', /Mia Kowalski/.test(s.stats) && /Rosa Delgado/.test(s.stats), true);
     setup('mum', { org: { rosterOpen: 'yes' } });
     check('anything but true is shirt numbers', others.test(screens().stats), false);
 

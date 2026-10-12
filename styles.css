@@ -1127,7 +1127,7 @@ button.ev:active{filter:brightness(.92)}
 .sheet h3.evhead{display:flex;align-items:center;gap:10px}
 .evhead i{flex:none;width:14px;height:14px;border-radius:4px;background:var(--ev)}
 
-/* Settings: four sections, one line per item, tap in (build 142) */
+/* Settings: four sections, one line per item, tap in (build 143) */
 .sechead{margin:10px 0 -4px}
 .setrow{grid-template-columns:minmax(0,1fr) auto;width:100%;text-align:left}
 .setrow .psub{overflow-wrap:anywhere}
@@ -1225,3 +1225,5 @@ label.field .auth-inline span{display:inline}
 .auth-ways svg{width:18px;height:18px;flex:none;color:var(--ink)}
 .auth-ways span:nth-of-type(1){flex:1}
 .auth-tick{color:var(--field);font-weight:700}
+/* Going / Not going under My players' next row (build 142) */
+.minersvp{padding:2px 2px 4px}

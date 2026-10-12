@@ -50,6 +50,16 @@ Crumbs become a plain title with a back arrow. The club switcher moves into the
 title (tap the club name) or into More. The topbar keeps the avatar only.
 
 ### 1.2 Parents land in the coach's app
+**Shipped in build 142** (*A family's own Home and Season*; pinned by `test/home.js`): My
+players is her Home, and the app opened with no address of its own lands her there; its next
+thing carries Going / Not going / Maybe, and so does the next game when the next thing is a
+practice; a family's Season is next up (answered there), the next game, the last result with her
+child's minutes, her child's season ("Played in 2 games") and the games, with no charts, no squad
+table, no "owed" and no other child; Club home lists her children's teams alone. Other teams of
+the club are not offered at all: in a club with an admin she never could see them (`myTeams()`),
+and a line in More would only lead to a team she may not open. What follows is the finding as
+written.
+
 A parent opens the app to do three things: see when the next game/practice is,
 say whether her child is coming, and see the score / how much her child played.
 
@@ -89,7 +99,7 @@ move Live (the parents' feed) under Stats for staff, or out to the share page.
 Four screens, not six.
 
 ### 1.4 Settings are in five places
-**Shipped in build 142** (*One Settings screen*; pinned by `test/settings.js`): More and the
+**Shipped in build 143** (*One Settings screen*; pinned by `test/settings.js`): More and the
 avatar open one **Settings**, sectioned *You* · *This team* · *Club* · *Advanced*, each item one
 line that taps in. Squad's Team set-up moved to *This team* (Squad keeps one line to it); People,
 Registrations, Compliance, Planner, Fields, Club drills and Bulk import are rows under *Club*;
@@ -242,23 +252,23 @@ team link, or open the invite you were sent."
 
 **Quick wins (a day or two each, no data-model change):**
 1. Remove the permanent role banner; show it once, keep it in the account sheet.
-2. RSVP chips on My players and on the Season next-up card.
+2. RSVP chips on My players and on the Season next-up card. *Done, build 142.*
 3. Move developer text (account id, Firebase, rules, readiness, version) under an
    *Advanced* section; reword the refusal toasts.
 4. Fix the FAB overlapping the calendar list; pad the list.
 5. Rename: Org admin → Club admin; "this device" → "Not synced"; Squad → Players.
-6. Parents' club home shows only their teams.
+6. Parents' club home shows only their teams. *Done, build 142.*
 
 **Medium (a week each):**
 7. Split Season into Season / Stats / Players / Attendance.
-8. One Settings screen with sections; delete the duplicates. *Done, build 142.*
+8. One Settings screen with sections; delete the duplicates. *Done, build 143.*
 9. Copy pass: labels not paragraphs, one word per concept (a glossary file in the
    repo so tests can hold the UI to it).
 
 **Large (the structural change everything else hangs off):**
 10. Role-based bottom tab bar, and crumbs → title + back. *Done, build 141.*
 11. Game mode: one header, pinned clock, four screens.
-12. A parent's own Home and Season.
+12. A parent's own Home and Season. *Done, build 142.*
 
 Items 10–12 are where "new people and parents get lost" is actually fixed; 1–9
 make it noticeably better while that is built.
