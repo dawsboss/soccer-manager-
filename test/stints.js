@@ -336,9 +336,11 @@ console.log('\n--- game details live on Plan, not under the pitch ---');
 {
   setup();
   A.ui.view = 'game'; A.ui.gameView = 'pitch'; A.render();
-  // the one way in from the pitch is the game bar's Edit button, the same on every game tab
-  check('the Pitch tab no longer carries them', (A.rendered().match(/data-act="editmatch"/g) || []).length, 1);
-  check('beyond the Edit button in the game bar', /class="sharebtn editbtn" data-act="editmatch"/.test(A.rendered()), true);
+  // the one way in from the pitch is the game's ⋯ menu, the same on every game screen (build 144)
+  check('the Pitch look no longer carries them', (A.rendered().match(/data-act="editmatch"/g) || []).length, 0);
+  A.click({ act: 'gamemenu' });
+  check('beyond Edit on the game\'s menu', /data-act="editmatch" data-id="g1"/.test(A.rendered('#sheet')), true);
+  A.closeSheet();
   A.ui.gameView = 'plan'; A.render();
   check('Plan opens with them', /Edit game<\/button>/.test(A.rendered()), true);
   A.click({ act: 'pickgame' });
