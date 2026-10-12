@@ -230,7 +230,7 @@ label.field span{display:block;font-size:14px;color:var(--ink-soft);margin-botto
 .bar{position:relative;height:6px;background:var(--paper);border-radius:3px;margin-top:5px;overflow:visible}
 .bar i{position:absolute;left:0;top:0;bottom:0;border-radius:3px;background:var(--field)}
 .bar i[data-owed="1"]{background:var(--owed)}
-.bar i[data-over="1"]{background:var(--over)}
+/* over her target is not bad: the bar is just full, in the field's green (UX-REVIEW-2.md, 7.2) */
 .bar u{position:absolute;top:-3px;bottom:-3px;width:2px;background:var(--ink);opacity:.55}
 
 /* ---------- sub log ---------- */
@@ -379,6 +379,9 @@ label.field span{display:block;font-size:14px;color:var(--ink-soft);margin-botto
 /* short or over is a fact about the plan, not an alarm: the review found orange "owed" on
    all eleven rows reading as eleven warnings */
 .diff.owed,.diff.over,.diff.even{color:var(--ink-soft)}
+/* Subs alone colours the three furthest behind the pace of the game: orange has to mean
+   "look here" (UX-REVIEW-2.md, 7.2) */
+.liverow .diff.owed{color:var(--owed)}
 .pickbar{
   position:sticky;top:96px;z-index:30;
   display:flex;align-items:center;justify-content:space-between;gap:10px;
@@ -761,6 +764,15 @@ a.btn{display:inline-block;text-decoration:none}
 .rsvprow:first-of-type{border-top:0}
 .rsvpchips{flex:none}
 .rsvprow .chip{padding:4px 9px;font-size:14px}
+/* the coach's list: the counts, then a name per row that opens the chips for that child */
+.rsvpcounts{display:flex;flex-wrap:wrap;gap:4px 16px;margin:0 0 6px}
+.rsvpcounts span{display:flex;align-items:baseline;gap:5px;font-size:14px;color:var(--ink-soft)}
+.rsvpcounts b{font-family:"Barlow Condensed",sans-serif;font-weight:700;font-size:20px;color:var(--ink)}
+button.rsvprow{width:100%;background:none;border:0;border-top:1px solid var(--paper);font:inherit;color:inherit;text-align:left;cursor:pointer}
+button.rsvprow:first-of-type{border-top:0}
+button.rsvprow[aria-expanded="true"]{color:var(--field)}
+.rsvpgo{color:var(--ink-soft);font-size:20px;line-height:1}
+.rsvpfor{padding:2px 0 8px}
 /* a quiet action on a light card (.linkbtn is for the dark clock band) */
 .textbtn{background:none;border:0;padding:4px 0;color:var(--field-deep);font-size:14px;text-decoration:underline;text-underline-offset:3px}
 /* ---------- messages ---------- */
