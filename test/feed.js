@@ -53,9 +53,11 @@ console.log('--- the periods ---');
   const m = setup();
   check('nothing before kick-off', items().length, 0);
   check('the empty feed says it fills from kick-off', /fills in from kick-off/.test(html()), true);
+  check('and no 0–0 on the card before kick-off, which reads as a result (UX-REVIEW-2.md, 7.1)', /class="fs-num">v</.test(html()) && !/0–0/.test(A.rendered()), true);
 
   m.periods[0] = { half: 1, start: T0 - 10 * MIN };
   deepEq('kick-off once the clock has run', titles(), ['Kick-off']);
+  check('— and from then the score, 0–0 included', /class="fs-num">0–0</.test(html()), true);
   check('at the first minute', A.feedMin(items()[0].t), '1′');
 
   m.periods[0].end = T0 - 5 * MIN;

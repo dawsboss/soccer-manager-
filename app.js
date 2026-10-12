@@ -2,7 +2,7 @@
    Static app. Data lives in localStorage, and mirrors to Firebase Realtime
    Database when a config + workspace code are present. */
 
-const BUILD = '148';
+const BUILD = '152';
 const BUILT = '2026-10-12';
 /* The version of database.rules.json this app was written against. The rules
    carry the same number in rulesVersion's .write, which accepts that number
@@ -4151,7 +4151,7 @@ function muteCard() {
   if (!me) return '';
   const kinds = MUTE_KINDS.filter(([k]) => k === 'news' ? newsFor() : true);
   return `<div class="card"><h2 style="margin-bottom:4px">What notifies you</h2>
-    <p class="muted" style="margin:0 0 8px">Off means no pop-up, no buzz and no notification on a locked phone, on every phone you use. It still waits for you${kinds.some(([k]) => k === 'msg' || k === 'notice') ? ' on Messages or' : ''} under the bell.</p>
+    <p class="muted" style="margin:0 0 8px">Off means no pop-up, no buzz and no notification on a locked phone, on every phone you use. It still waits for you${kinds.some(([k]) => k === 'msg' || k === 'notice') ? ' on Messages or' : ''} on What's new.</p>
     <div class="plist">${kinds.map(([k, name, sub]) => {
       const off = muted(k);
       return `<div class="prow" style="grid-template-columns:minmax(0,1fr) auto"><span style="min-width:0"><span class="pname">${name}</span><span class="psub">${sub}</span></span>
@@ -4159,12 +4159,11 @@ function muteCard() {
     }).join('')}</div></div>`;
 }
 
-function pushCard(where) {
+function pushCard() {
   if (!me) return '';
   const sup = pushSupport();
   if (sup === 'unset') return '';
   const on = pushOn();
-  if (where === 'inbox' && (on || sup === 'no' || sup === 'blocked')) return '';
   const say = pushBusy ? 'Turning on…'
     : sup === 'install' ? 'On an iPhone or iPad, TeamPlayHQ can notify you once it is on your Home Screen: tap <b>Share</b>, then <b>Add to Home Screen</b>, open TeamPlayHQ from there, and turn them on.'
     : sup === 'no' ? 'This browser can\'t get notifications from a website. TeamPlayHQ still pops up while it is open.'
@@ -4179,17 +4178,32 @@ function pushCard(where) {
 }
 
 /* ---- screens ---- */
-/* Notifications: what is new. Changes to her calendar in any club, and club
-   activity. Never somebody's message: those are on Messages, with a count of
-   their own (build 106). */
+/* What's new: changes to her calendar in any club, and club activity. Never
+   somebody's message: those are on Messages, with a count of their own
+   (build 106). Called Notifications until build 148 (UX-REVIEW-2.md, 6.2),
+   when the word was left to the switches: Messages is people writing to
+   her, What's new is the app telling her, Notifications is whether her phone
+   buzzes. The switches are in Settings alone, and this page has a gear to
+   them. */
 function viewNotes() {
   // opening it reads the calendar alerts, as it reads club activity
   if (me && alertsHere().list.some(x => x.kind === 'cal' && !x.read)) { for (const x of alerts.list) if (x.kind === 'cal') x.read = true; saveAlerts(); }
   const cards = (me ? alertsCard('notes') : '') + (newsFor() ? newsCard() : '');
-  return `<div class="stack"><h2>Notifications</h2>
-    ${cards || `<div class="empty"><strong>Nothing new</strong>Changes to your games and practices, in any of your clubs${newsFor() ? ', and club activity' : ''}, show up here.</div>`}
-    ${pushCard('notes')}${muteCard()}</div>`;
+  return `<div class="stack"><div class="spread"><h2>What's new</h2>${me ? `<button class="btn quiet sm" type="button" data-act="notifyset">${GEAR_SVG} Notifications</button>` : ''}</div>
+    ${cards || `<div class="empty"><strong>Nothing new</strong>Changes to your games and practices, in any of your clubs${newsFor() ? ', and club activity' : ''}, show up here.</div>`}</div>`;
 }
+/* Settings → Notifications: the one place the switches are (UX-REVIEW-2.md,
+   6.2). Push where the club offers it, else the open-page pop-ups, which ask
+   the browser for the same permission; then what notifies her. */
+function notifyCards() {
+  if (!me) return '';
+  const canPop = typeof Notification !== 'undefined';
+  const pops = pushSupport() === 'unset' && canPop && Notification.permission === 'default' ? `<div class="card"><div class="spread"><b>Pop-ups on this device</b>
+      <button class="btn sm" data-act="msgalerts">Turn on</button></div>
+    <p class="muted" style="margin:6px 0 0">A message or a change to your games pops up while TeamPlayHQ is open, even in another tab.</p></div>` : '';
+  return pushCard() + pops + muteCard();
+}
+const GEAR_SVG = '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:-2px"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>';
 function viewInbox() {
   const other = me ? alertsCard('msgs') : '';
   if (!msgOn()) return other ? `<div class="stack"><h2>Messages</h2>${other}</div>` : viewInboxMsgs();
@@ -4209,12 +4223,6 @@ function viewInboxMsgs() {
   const many = mine.length > 1;
   const all = mine.flatMap(t => notices(t.id)).sort((a, b) => (b.at || 0) - (a.at || 0));
   const shown = ui.msgAll ? all : all.slice(0, MSG_SHOW);
-
-  const canPop = typeof Notification !== 'undefined';
-  // where the club offers push, that card is the one to show; it asks for the same permission
-  const alerts = pushSupport() !== 'unset' ? pushCard('inbox') : canPop && Notification.permission === 'default' ? `<div class="card"><div class="spread"><b>Pop-ups on this device</b>
-      <button class="btn sm" data-act="msgalerts">Turn on</button></div>
-    <p class="muted" style="margin:6px 0 0">A message pops up while TeamPlayHQ is open, even in another tab.</p></div>` : '';
 
   const notice = x => {
     const t = state.teams[x.tid] || {};
@@ -4261,7 +4269,6 @@ function viewInboxMsgs() {
   return `<div class="stack">
     <div class="spread"><h2>Messages</h2>
       ${canStart ? `<button class="btn sm" data-act="msgnew">New message</button>` : ''}</div>
-    ${alerts}
     <!--others-->
     <div class="card"><h2 style="margin-bottom:8px">Conversations</h2>
       ${list ? `<div class="plist">${list}</div>` : `<p class="muted" style="margin:0">Nothing yet. Tap <b>New message</b> to write to ${staff.length ? 'a family on your team' : ''}${staff.length && colleagues().length ? ', or ' : ''}${colleagues().length ? 'another coach or an admin' : ''}.</p>`}
@@ -4604,7 +4611,7 @@ function msgPaint() {
    wrote, the bell for what is new. */
 const msgsOn = () => !!me && (msgOn() || alertsHere().list.some(x => x.kind === 'msg') || elseUnread() > 0);
 /* The counts on the tab bar: unread messages on Messages, what is new on
-   More (Notifications live under it). Repainted in place when something
+   More (What's new lives under it). Repainted in place when something
    arrives between draws; render() draws them fresh. */
 function paintBell(shut) {
   const m = shut ? 0 : msgUnread(), b = shut ? 0 : notesUnread(), n = m + b;
@@ -7092,9 +7099,10 @@ function normView() {
    reads twice. Now it is a card the first time she opens the club on this
    phone, put away with Got it and remembered per account, club and role
    (so a parent made a coach is told again), and a line in the account sheet
-   and under Settings → You for whenever she wants it back. Since build 148
-   it is drawn on Home alone (render() says why). The test-club bar and the
-   sync warnings are not role banners and stay. */
+   for whenever she wants it back. Not in Settings → You's row: run on after
+   the email and role it read as one string (UX-REVIEW-2.md, 7.1). Since
+   build 148 it is drawn on Home alone (render() says why). The test-club
+   bar and the sync warnings are not role banners and stay. */
 const LS_ROLECARD = 'sm.role.v1';
 const roleCardKey = lim => `${envPrefix()}${wsCode() || 'local'}:${lim}`;
 const roleCardsSeen = () => { try { return JSON.parse(localStorage.getItem(LS_ROLECARD + ':' + (me ? me.uid : 'anon')) || '{}') || {}; } catch (e) { return {}; } };
@@ -7228,7 +7236,8 @@ function render() {
   if (awaitingSignIn()) { app.innerHTML = welcomeScreen(); saveUi(); return; }
   if (unconfirmed) { app.innerHTML = unconfirmedScreen(); saveUi(); return; }
   /* What her role lets her do, said once per account, club and role, and on
-     Home alone (UX-REVIEW-2.md, 7.3): whoever has tapped through to the
+     Home alone (UX-REVIEW-2.md, 7.3; a family's My players, staff's Season
+     or My teams, as homeView() says): whoever has tapped through to the
      calendar or a game has found her way, and the card sat over the game
      screens until build 148. roleCard() says why it is a card at all. */
   const roleNote = v === homeView() ? roleCard(lim) : '';
@@ -7366,7 +7375,7 @@ const viewScope = (v = ui.view) => v === 'calendar' || v === 'mine' ? (me ? 'me'
 /* The screens that are not a team's, by name, for the title row. */
 const VIEW_TITLE = {
   calendar: 'Calendar', setup: 'Settings', people: 'People', admin: 'Club details', sessions: 'Sessions',
-  planner: 'Planner', inbox: 'Messages', thread: 'Messages', notes: 'Notifications', mine: 'My players', formation: 'Shapes',
+  planner: 'Planner', inbox: 'Messages', thread: 'Messages', notes: 'What\'s new', mine: 'My players', formation: 'Shapes',
   regs: 'Registration', tryout: 'Tryouts', comply: 'Coach compliance', club: 'Club home'
 };
 // the Sessions view draws three of Settings' screens too, each under its own name
@@ -7391,14 +7400,44 @@ function navKind() {
   if (teams().some(t => isCoach(t.id, me.uid) || isTracker(t.id, me.uid) || isHelper(t.id, me.uid))) return 'staff';
   return anyPlayers() ? 'family' : 'staff';
 }
-/* The Game tab's game, on the team on screen: the one being played, else the
-   next on the calendar, else the last one played. */
+/* The teams the Team and Game tabs are about (UX-REVIEW-2.md, 6.1 and 6.3):
+   the ones she works on (coach, tracker or helper), and every team for an
+   admin or a club viewer, who have no team of their own. Not myTeams(): a
+   coach reads every team in the club, and hers is still one team, so her
+   Team tab is her team and her Game tab her game. */
+function navTeams() {
+  const all = myTeams();
+  if (!me || !gated() || canAdmin() || isViewer(me.uid)) return all;
+  const own = all.filter(t => isCoach(t.id, me.uid) || isTracker(t.id, me.uid) || isHelper(t.id, me.uid));
+  return own.length ? own : all;
+}
+/* A team's game on or coming: the one being played, else the next on the
+   calendar, never one called off. */
+const teamGame = t => {
+  const ms = teamMatches(t.id);
+  return ms.find(m => gameStatus(m) === 'live') || ms.filter(m => gameStatus(m) === 'upcoming' && !CALLED[m.called]).slice(-1)[0] || null;
+};
+/* The Game tab's games, one per team she works on, the ones being played
+   first and then by date. Two or more and the tab is a picker naming each
+   team, because the tab alone cannot say whose game it would open. */
+function navGames() {
+  const live = m => gameStatus(m) === 'live' ? 0 : 1;
+  return navTeams().map(teamGame).filter(Boolean)
+    .sort((a, b) => live(a) - live(b) || (a.date || '9').localeCompare(b.date || '9') || hm(a.kickoff).localeCompare(hm(b.kickoff)));
+}
+/* The team on screen's game, when no team of hers has one on or coming: the
+   last one played, so the tab still opens something. */
 function navGame() {
   const t = team(); if (!t) return null;
   const ms = teamMatches(t.id);
-  return ms.find(m => gameStatus(m) === 'live')
-    || ms.filter(m => gameStatus(m) === 'upcoming' && !CALLED[m.called]).slice(-1)[0]
-    || ms.find(m => gameStatus(m) === 'done') || ms[0] || null;
+  return teamGame(t) || ms.find(m => gameStatus(m) === 'done') || ms[0] || null;
+}
+/* A game opened from the tab or its picker, on its own team, where each role
+   works (the calendar's live card sends her the same way; render() puts a
+   finished game on its recap). */
+function openNavGame(g) {
+  ui.teamId = g.teamId; ui.matchId = g.id; ui.view = 'game'; ui.gameFrom = null; ui.picked = null;
+  ui.gameView = canEditTeam(g.teamId) ? 'subs' : me && isTracker(g.teamId, me.uid) ? 'track' : 'live';
 }
 const NAV_ICON = {
   home: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3.5 11.5 12 4l8.5 7.5"/><path d="M5.5 10v10h13V10"/><path d="M10 20v-6h4v6"/></svg>',
@@ -7411,7 +7450,8 @@ const NAV_ICON = {
 function navTabs() {
   const fam = navKind() === 'family';
   const out = [fam ? { id: 'home', label: 'Home' } : { id: 'team', label: 'Team' }, { id: 'calendar', label: 'Calendar' }];
-  if (!fam) { const g = navGame(); out.push({ id: 'game', label: 'Game', live: !!(g && gameStatus(g) === 'live') }); }
+  // the dot means being played, on any team of hers; the picker or the header names which
+  if (!fam) out.push({ id: 'game', label: 'Game', live: navGames().some(g => gameStatus(g) === 'live') });
   // Messages once the club has them (an admin, and a team of hers); the tab is not drawn dead
   if (msgsOn()) out.push({ id: 'messages', label: 'Messages', count: 'tabMsgN' });
   out.push({ id: 'more', label: 'More', count: 'tabMoreN' });
@@ -7426,9 +7466,13 @@ function tabFor(v = ui.view) {
   if (v === 'mine') return fam ? 'home' : 'more';
   if (v === 'game' || (v === 'formation' && ui.editFid === GAME_SHAPE)) return fam ? (ui.gameFrom === 'calendar' ? 'calendar' : 'home') : 'game';
   if (TEAM_VIEWS.includes(v)) return fam ? 'home' : 'team';
+  if (v === 'club' && !fam && navTeams().length > 1) return 'team';
   return 'more';
 }
-const homeView = () => navKind() === 'family' ? 'mine' : 'season';
+/* The tab bar's first screen: a family's My players; for staff, her team's
+   Season, or the list of teams (Club home) when she has several to work on
+   (UX-REVIEW-2.md, 6.3), with each team one level down from it. */
+const homeView = () => navKind() === 'family' ? 'mine' : navTeams().length > 1 ? 'club' : 'season';
 /* Where the back arrow goes: up one level, the same wherever the screen was
    opened from, so it can be predicted (the phone's own Back walks the real
    history). A tab's own screen has no up. */
@@ -7442,10 +7486,14 @@ function upView(v = ui.view) {
   // fields, fees and hours are Settings' screens (UX-REVIEW-2.md, 7.3); Sessions itself hangs off Club home
   if (v === 'sessions') return sessSetTab() ? 'setup' : 'club';
   if (v === 'tryout') return 'club';
-  if (v === 'club' || v === 'setup' || v === 'notes') return homeView();
+  if (v === 'setup' || v === 'notes') return homeView();
   if (v === 'mine' && navKind() !== 'family') return homeView();
+  // Club home is up from nowhere once it is the Team tab's own screen; a family's goes back to My players
+  if (v === 'club') return homeView() === 'club' ? null : homeView();
   // a family opening a team's season from My players
   if (TEAM_VIEWS.includes(v) && navKind() === 'family') return 'mine';
+  // a team's own tabs, for staff with several teams: up is the list of them
+  if (['season', 'roster', 'practice'].includes(v) && homeView() === 'club') return 'club';
   return null;
 }
 const CHEV_SVG = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>';
@@ -7500,9 +7548,9 @@ function sheetMore() {
   const coachAny = !!me && teams().some(t => isCoach(t.id, me.uid));   // People, on Settings
   const clubs = knownClubs();
   openSheet(`<h3>More</h3>
-    ${me ? `<button class="opt spread" data-act="goview" data-v="notes"><span><b>Notifications</b>
-      <span class="rowsub">What is new: your games and practices${newsFor() ? ', and club activity' : ''}</span></span>${b ? `<span class="pill asking">${b > 9 ? '9+' : b}</span>` : ''}</button>` : ''}
-    ${wsCode() || teams().length ? `<button class="opt" data-act="goview" data-v="club"><b>${esc(org)}</b>
+    ${me ? `<button class="opt spread" data-act="goview" data-v="notes"><span><b>What's new</b>
+      <span class="rowsub">Changes to your games and practices${newsFor() ? ', and club activity' : ''}</span></span>${b ? `<span class="pill asking">${b > 9 ? '9+' : b}</span>` : ''}</button>` : ''}
+    ${(wsCode() || teams().length) && homeView() !== 'club' ? `<button class="opt" data-act="goview" data-v="club"><b>${esc(org)}</b>
       <span class="rowsub">Club home: its teams, and everything else in it</span></button>` : ''}
     ${anyPlayers() && navKind() !== 'family' ? `<button class="opt" data-act="goview" data-v="mine"><b>My players</b>
       <span class="rowsub">${allKidNames().map(esc).join(', ')}</span></button>` : ''}
@@ -7546,9 +7594,10 @@ function viewClub() {
     const live = ms.find(x => gameStatus(x) === 'live');
     const next = ms.filter(x => gameStatus(x) === 'upcoming' && !CALLED[x.called]).slice(-1)[0];
     const last = ms.find(x => gameStatus(x) === 'done');
-    const sub = live ? `Playing now — ${esc(live.opponent || 'TBC')} ${score(live).us}–${score(live).them}`
-      : next ? `Next: ${esc(next.opponent || 'TBC')}${next.date ? ' · ' + shortDate(next.date) : ''}`
-        : last ? `Last: ${esc(last.opponent || 'TBC')} ${score(last).us}–${score(last).them}` : 'No games yet';
+    // us–them, our side first, as the game header reads (UX-REVIEW-2.md, 6.1)
+    const sub = live ? `Playing now · ${score(live).us}–${score(live).them} v ${esc(live.opponent || 'TBC')}`
+      : next ? `Next: v ${esc(next.opponent || 'TBC')}${next.date ? ' · ' + shortDate(next.date) : ''}`
+        : last ? `Last: ${score(last).us}–${score(last).them} v ${esc(last.opponent || 'TBC')}` : 'No games yet';
     return `<button class="card go teamcard" data-act="goteam" data-id="${t.id}">
       ${teamCrest(t)}
       <span class="tc-main"><b>${teamLabel(t)}</b>
@@ -7682,22 +7731,43 @@ function shortDate(d) {
 
 /* Game mode (UX-REVIEW.md, 1.3; build 144). A game is its own mode: the brand
    row steps aside and one slim header, pinned with the rest of the header,
-   carries Back, the opponent and the score, the clock (ticking, through
+   carries Back, the two teams and the score with the date under them (since
+   build 150, UX-REVIEW-2.md, 6.1: which team, which date, and no score
+   before kick-off), the clock (ticking, through
    data-live), the sync badge while it has something to say, and a ⋯ menu for
    what the game bar used to hold: the games either side, Edit and Share, none
    of which is a sideline action. The game bar itself is gone from every game
    screen, so the clock card is the first thing under the header. */
 const DOTS_SVG = '<svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="2.2"/><circle cx="12" cy="12" r="2.2"/><circle cx="19" cy="12" r="2.2"/></svg>';
+/* A game named as a scoreboard reads it (UX-REVIEW-2.md, 6.1): our team
+   first, then the score, then the opponent, so "1–1" is never read as the
+   other side's; and no score before kick-off, where 0–0 reads as a result
+   (shownScore(), 7.1, decides). HTML: the team's label is one already. */
+function gameTitle(t, m) {
+  const sc = shownScore(m);
+  return `${teamLabel(t)} ${sc ? `${sc.us}–${sc.them}` : 'v'} ${esc(m.opponent || 'TBC')}`;
+}
+/* When a game is, as the Next up card says it: Today, Tomorrow, or the day. */
+function gameWhen(m) {
+  return [m.date ? relDay(m.date) || dayLabel(m.date) : '', m.kickoff ? niceTime(m.kickoff) : ''].filter(Boolean).join(' · ') || 'Date to be confirmed';
+}
+/* The Game tab with more than one team's game on or coming: a short list
+   naming each team, the one being played first (UX-REVIEW-2.md, 6.1). */
+function sheetNavGames(gs) {
+  openSheet(`<h3>Which game?</h3>
+    ${gs.map(g => `<button class="opt spread" type="button" data-act="navgame" data-id="${g.id}" aria-current="${ui.view === 'game' && g.id === ui.matchId}">
+      <span><b>${gameTitle(state.teams[g.teamId] || {}, g)}</b><span class="rowsub">${esc(gameWhen(g))}</span></span>
+      ${gameStatus(g) === 'live' ? '<span class="pill live">live</span>' : ''}</button>`).join('')}`);
+}
 function gameHeader(t, m) {
-  const sc = score(m), st = gameStatus(m);
+  const st = gameStatus(m);
   const upLabel = ui.gameFrom === 'calendar' ? 'Back to the calendar' : 'Back to the team';
-  // the clock while it is being played; before, when it is; after, full time
+  // the clock while it is being played, full time after; before, nothing: the date under the names says when
   const when = st === 'live' ? `<span class="ghclock" data-live="clock" data-mid="${m.id}">${mmss(elapsedSec(m))}</span>`
-    : st === 'done' ? '<span class="ghclock ghft" title="Full time">FT</span>'
-      : `<span class="ghclock ghkick">${esc([m.date ? shortDate(m.date) : '', m.kickoff ? niceTime(m.kickoff) : ''].filter(Boolean).join(' · ') || 'Not played yet')}</span>`;
+    : st === 'done' ? '<span class="ghclock ghft" title="Full time">FT</span>' : '';
   return `<button class="tbback" data-act="backgames" aria-label="${upLabel}" title="${upLabel}">${BACK_SVG}</button>
     <button class="ghmain" data-act="pickgame" aria-label="Which game" title="Which game">
-      <span class="ghname">${esc(m.opponent || 'Game')}</span><span class="ghscore">${sc.us}–${sc.them}</span></button>
+      <span class="ghname">${gameTitle(t, m)}</span><span class="ghwhen">${esc(gameWhen(m))}</span></button>
     ${when}
     <span class="sync ghsync" id="gsync" hidden></span>
     <button class="tbback ghmore" data-act="gamemenu" aria-label="More for this game" title="More for this game">${DOTS_SVG}</button>`;
@@ -7711,11 +7781,11 @@ function gameMenu(t, m) {
   const list = teamMatches(t.id), n = list.length;
   const i = list.findIndex(x => x.id === m.id);
   const older = i > -1 ? list[i + 1] : null, newer = i > 0 ? list[i - 1] : null;
-  const sc = score(m);
+  const sc = shownScore(m);
   const row = (g, k) => g ? `<button class="opt spread" data-act="pickgame2" data-id="${g.id}"><span><b>${k}</b>
       <span class="rowsub">${esc(g.opponent || 'Unnamed')}${g.date ? ' · ' + shortDate(g.date) : ''}</span></span>
-      <span class="pmins">${score(g).us}<small>–${score(g).them}</small></span></button>` : '';
-  return `<h3>${esc(m.opponent || 'Game')} <span class="muted">${sc.us}–${sc.them}</span></h3>
+      <span class="pmins">${scoreCell(g)}</span></button>` : '';
+  return `<h3>${esc(m.opponent || 'Game')}${sc ? ` <span class="muted">${sc.us}–${sc.them}</span>` : ''}</h3>
     <p class="muted" style="margin-top:0">${[m.date ? shortDate(m.date) : '', n > 1 && i > -1 ? `game <span class="gb-hint">${n - i}/${n}</span> of the season` : ''].filter(Boolean).join(' · ') || 'No date yet'}</p>
     ${row(older, 'Older game')}${row(newer, 'Newer game')}
     ${canEditTeam(t.id) ? `<button class="opt" data-act="editmatch" data-id="${m.id}"><b>Edit this game</b><span class="rowsub">Opponent, date, kick-off, where, kit</span></button>` : ''}
@@ -7746,10 +7816,9 @@ function sheetPickGame() {
   const list = teamMatches(t.id);
   openSheet(`<h3>Which game?</h3>
     ${list.map(g => {
-    const sc = score(g);
     return `<button class="opt spread" type="button" data-act="pickgame2" data-id="${g.id}" aria-current="${g.id === cur}">
       <span>${esc(g.opponent || 'Unnamed')}<span class="rowsub">${esc(g.date || '')} · <span data-live="gmins" data-mid="${g.id}">${mins(elapsedSec(g))}</span> min played${running(g) ? ' · running' : ''}</span></span>
-      <span class="pmins">${sc.us}<small>–${sc.them}</small></span></button>
+      <span class="pmins">${scoreCell(g)}</span></button>
 `;
   }).join('') || '<p class="muted">No games yet.</p>'}
     ${cur && state.matches[cur] && !readOnlyHere() ? `<button class="btn quiet wide" data-act="editmatch" data-id="${cur}" style="margin-bottom:8px">Edit this game's details</button>` : ''}
@@ -8512,14 +8581,14 @@ function viewFeed() {
   if (!m || m.teamId !== t.id) { const l = teamMatches(t.id); m = l[0] || null; ui.matchId = m ? m.id : null; }
   if (!m) return `<div class="empty"><strong>No game yet</strong>Nothing to follow until a game is set up.</div>`;
 
-  const now = nowMs(), sc = score(m), st = gameStatus(m);
+  const now = nowMs(), sc = shownScore(m), st = gameStatus(m);
   const us = teamLabel(t), them = esc(m.opponent || 'Them');
   const status = st === 'done' ? 'Full time'
     : st === 'live' ? `${running(m) ? 'Live' : 'Paused'} · ${esc(halfName(m, m.currentHalf || 1))}`
       : `Not started${m.date ? ' · ' + esc(shortDate(m.date)) : ''}`;
   const head = `<div class="card feedhead" data-st="${st}">
     <div class="feedstatus">${st === 'live' && running(m) ? '<i class="livedot"></i>' : ''}${status}${st === 'upcoming' ? '' : ` · <span data-live="clock" data-mid="${m.id}">${mmss(elapsedSec(m, now))}</span>`}</div>
-    <div class="feedscore"><span class="fs-side">${us}</span><span class="fs-num">${sc.us}–${sc.them}</span><span class="fs-side">${them}</span></div></div>`;
+    <div class="feedscore"><span class="fs-side">${us}</span><span class="fs-num">${sc ? `${sc.us}–${sc.them}` : 'v'}</span><span class="fs-side">${them}</span></div></div>`;
 
   const all = feedItems(t, m);
   const everything = !!ui.feedAll;
@@ -8543,7 +8612,7 @@ function viewFeed() {
   const following = ui.follow === m.id;
   const canNotify = typeof Notification !== 'undefined';
   const closed = pushOn();
-  const offerPush = !closed && me && pushSupport() === 'ok' ? ' Turn notifications on for this phone, under the bell, to get them with TeamPlayHQ closed too.' : '';
+  const offerPush = !closed && me && pushSupport() === 'ok' ? ' Turn notifications on for this phone, in Settings, to get them with TeamPlayHQ closed too.' : '';
   const follow = st === 'done' ? '' : `<div class="card"><div class="spread"><h2>Notify me</h2>
       <button class="btn ${following ? 'quiet ' : ''}sm" data-act="feedfollow" data-v="${following ? 0 : 1}">${following ? 'Stop' : 'Turn on'}</button></div>
     <p class="muted" style="margin:6px 0 0">${closed
@@ -8642,6 +8711,11 @@ function viewSubs() {
     .sort(byNumber ? num : (a, b) => (plannedSec(m, b.id) - playedSec(m, b.id, now)) - (plannedSec(m, a.id) - playedSec(m, a.id, now)));
 
   const clock = clockCard(m, now, true);
+  /* Orange for the three furthest behind the pace of the game and only them,
+     since that is who the coach is scanning for; every other row's number is
+     plain (UX-REVIEW-2.md, 7.2: "9 short" in orange on eleven rows read as
+     eleven warnings). */
+  const behind = mostBehind(m, roster, el, now);
 
   const planning = !!ui.plan;
   const items = staged();
@@ -8679,7 +8753,7 @@ function viewSubs() {
         <span><span class="pname">${esc(p.name)}</span>
           <span class="psub" data-spell="${p.id}">${tag}</span></span>
         <span class="livemins"><span data-mins="${p.id}">${mins(pl)}<small> min</small></span>
-          ${pd > 0 ? `<span class="diff ${diffClass(m, pl, pd, el)}">${diff < 0 ? -diff + ' short' : diff > 0 ? diff + ' over' : 'on plan'}</span>` : ''}</span>
+          ${pd > 0 ? `<span class="diff ${behind.has(p.id) ? 'owed' : diffClass(m, pl, pd, el) === 'over' ? 'over' : 'even'}">${diff < 0 ? -diff + ' short' : diff > 0 ? diff + ' over' : 'on plan'}</span>` : ''}</span>
       </button>
       ${isOn ? `<button class="lrspot" type="button" data-act="switchpos" data-pid="${p.id}" aria-label="${spot ? `${esc(spot)}: move` : 'Set her spot'}">
         <span>${esc(spot || 'Spot')}</span></button>` : ''}
@@ -9140,7 +9214,16 @@ function viewPlan() {
      not a paragraph about snapshots. The details card and the lock come
      after it. */
   let snaps;
-  if (!shape.length) {
+  if (!shape.length && el > 0 && !m.ended) {
+    /* Mid-game the lineup is the pitch as it stands, and the shape picker is
+       a button beside the heading, not the first thing on the screen
+       (UX-REVIEW-2.md, 7.2). */
+    snaps = `<div class="card"><div class="spread" style="margin-bottom:10px"><h2>Lineup</h2>
+        <button class="btn quiet sm" data-act="editmatch" data-id="${m.id}">Pick a shape</button></div>
+      ${pitchPicture(t, m, nowMs())}
+      <p class="muted" style="margin:8px 0 0">Who is where now. A shape names each spot and lets you plan the changes ahead.${infoBtn('snapshots')}</p>
+      ${blocks.length ? `<div style="margin-top:14px">${planDetail(t, m)}</div>` : ''}</div>`;
+  } else if (!shape.length) {
     snaps = `<div class="card"><h2 style="margin-bottom:6px">Lineup</h2>
       <p class="muted" style="margin-top:0">Pick a shape (4-3-3, 2-3-1, or one you saved) and the lineup is a pitch to fill in.${infoBtn('snapshots')}</p>
       <button class="btn wide" data-act="editmatch" data-id="${m.id}">Pick a shape</button>
@@ -9275,6 +9358,25 @@ function viewPlan() {
     </div></div>`;
 }
 
+/* The pitch as it stands, to look at: who is on, where, with her minutes.
+   Subs' Pitch look is where she drags; this is the picture alone, for a
+   screen that wants it without the handles (Lineup mid-game with no shape). */
+function pitchPicture(t, m, now) {
+  const tokens = squad(t, m).filter(p => onField(m, p.id)).map(p => {
+    const pos = posOf(m, p.id), sl = slotOf(m, p.id);
+    return `<div class="token" data-pid="${p.id}" style="left:${pos.x}%;top:${pos.y}%">
+      ${sl ? `<span class="role">${esc(sl.label)}</span>` : ''}<span class="num">${esc(p.number ?? '')}</span>
+      <span class="mins">${mins(playedSec(m, p.id, now))}′</span><span class="nm">${esc(p.name.split(' ')[0])}</span></div>`;
+  }).join('');
+  return `<div class="pitch pitchnow">
+    <svg class="lines" viewBox="0 0 68 100" preserveAspectRatio="none" aria-hidden="true">
+      <g fill="none" stroke="rgba(255,255,255,.45)" stroke-width=".5">
+        <rect x="2" y="2" width="64" height="96"/><line x1="2" y1="50" x2="66" y2="50"/><circle cx="34" cy="50" r="9"/>
+        <rect x="16" y="2" width="36" height="15"/><rect x="16" y="83" width="36" height="15"/>
+        <rect x="26" y="2" width="16" height="6"/><rect x="26" y="92" width="16" height="6"/>
+      </g></svg>${tokens || '<div class="pitchhint">Nobody on yet. Put the starters on from Subs.</div>'}</div>`;
+}
+
 /* Who to plan for, on the tab where the plan is made. The families' answers
    are already applied — the plan, the targets and the even split work from the
    players who are coming — so this says who is out and why, and who has not
@@ -9320,8 +9422,7 @@ function playerRow(m, p, now, isOn) {
   const pl = playedSec(m, p.id, now), pd = plannedSec(m, p.id);
   const pct = pd > 0 ? clamp(pl / pd * 100, 0, 100) : 0;
   const owed = pd > 0 && pl < pd - 60 ? 1 : 0;
-  const over = pd > 0 && pl > pd + 60 ? 1 : 0;
-  const bar = pd > 0 ? `<div class="bar"><i style="width:${pct}%" data-bar="${p.id}" data-owed="${owed}" data-over="${over}"></i><u style="left:100%"></u></div>` : '';
+  const bar = pd > 0 ? `<div class="bar"><i style="width:${pct}%" data-bar="${p.id}" data-owed="${owed}"></i><u style="left:100%"></u></div>` : '';
   return `<button class="prow" type="button" data-act="tap" data-pid="${p.id}" data-on="${isOn ? 1 : 0}" data-picked="${ui.picked === p.id ? 1 : 0}">
     <span class="pnum">${esc(p.number ?? '')}</span>
     <span><span class="pname">${esc(p.name)}</span>${bar}<span class="psub">${sl ? esc(sl.label) + ' · ' : ''}${pd > 0 ? mins(pd) + ' min planned' : 'no plan set'}</span></span>
@@ -9610,11 +9711,18 @@ function rsvpBlock(it) {
       .sort((a, b) => order[a.r ? a.r.v : 'none'] - order[b.r ? b.r.v : 'none'] || (Number(a.p.number) || 999) - (Number(b.p.number) || 999));
     if (!rows.length) return '';
     const who = r => r && r.by && r.by !== (me && me.uid) ? ((acc().members || {})[r.by] || {}).name || '' : '';
-    return `<div class="rsvpbox"><p class="lbl">Who is coming — ${esc(countLine(c))}</p>
-      ${rows.map(({ p, r }) => `<div class="rsvprow">
+    /* The counts, then every child with her answer, and the chips for one
+       child only once the coach taps her name (UX-REVIEW-2.md, 7.2: three
+       chips a child was forty-two buttons for answers the families give
+       themselves). canRsvp() is checked again when she answers. */
+    const picked = pid => open && ui.rsvpPick === it.tid + '/' + key + '/' + pid;
+    const counts = `<div class="rsvpcounts"><span><b>${c.yes}</b>going</span><span><b>${c.no}</b>not going</span><span><b>${c.maybe}</b>maybe</span>${c.none ? `<span><b>${c.none}</b>to answer</span>` : ''}</div>`;
+    return `<div class="rsvpbox"><p class="lbl">Who is coming</p>${counts}
+      ${rows.map(({ p, r }) => `<${open ? 'button' : 'div'} class="rsvprow${open ? ' rsvpwho' : ''}"${open ? ` type="button" data-act="rsvpwho" data-tid="${esc(it.tid)}" data-k="${esc(key)}" data-pid="${esc(p.id)}" data-kind="${it.kind}" data-id="${esc(it.id)}" aria-expanded="${picked(p.id)}"` : ''}>
         <span><b>${esc(shirtOf(p))}</b> ${esc(p.name)}${r ? `<span class="rowsub">${esc(RSVP[r.v])}${who(r) ? ' · said by ' + esc(who(r)) : ''}${r.note ? ' · ' + esc(r.note) : ''}</span>` : '<span class="rowsub">Not answered</span>'}</span>
-        ${open ? rsvpChips(it, p, 'sheet') : ''}</div>`).join('')}
-      <p class="muted" style="margin-bottom:0">${open ? 'Parents answer for their own child from this calendar. Tap an answer to give one for a family who told you another way.' : 'Answers are closed once it is over or called off.'}</p></div>`;
+        ${open ? '<span class="rsvpgo" aria-hidden="true">›</span>' : ''}</${open ? 'button' : 'div'}>
+        ${picked(p.id) ? `<div class="rsvpfor"><span class="lbl" style="margin:0 0 4px">${esc(goingQ(p))}</span>${rsvpChips(it, p, 'sheet')}</div>` : ''}`).join('')}
+      <p class="muted" style="margin-bottom:0">${open ? 'Families answer from the calendar. Tap a name to give an answer for a family who told you another way.' : 'Answers are closed once it is over or called off.'}</p></div>`;
   }
   const kids = myKids(it.tid);
   if (kids.length) return `<div class="rsvpbox">${kids.map(p => {
@@ -10403,10 +10511,10 @@ function viewCalendar() {
     const aheadShown = calCut(ahead, calN('ahead')), pastShown = ui.calPast ? calCutBack(past, calN('past')) : [];
     // one list, so a day with a game this morning and practice tonight is one day
     const list = [...pastShown, ...aheadShown];
-    // a session she has only asked for is not somewhere to drive to yet
-    const next = calNext(items.filter(x => !x.club && x.kind !== 'avail' && (x.kind !== 'session' || x.firm) && !(x.kind === 'game' && x.status === 'live')));
-    body = `${next ? calNextCard(next, multi) : ''}
-    ${past.length ? `<button class="textbtn calearlier" data-act="calpast">${ui.calPast ? 'Hide earlier' : 'Earlier'} (${past.length})</button>` : ''}
+    /* No "next" card over the list since build 151: it said again what the
+       first rows under it say, and was the fifth thing before the first
+       entry (UX-REVIEW-2.md, 7.2). Home and Season lead with what is next. */
+    body = `${past.length ? `<button class="textbtn calearlier" data-act="calpast">${ui.calPast ? 'Hide earlier' : 'Earlier'} (${past.length})</button>` : ''}
     ${pastShown.length ? calMoreBtn('past', past.length - pastShown.length, 'earlier') : ''}
     ${list.length ? calAgenda(list, multi, { today: true }) : ''}
     ${ahead.length ? calMoreBtn('ahead', ahead.length - aheadShown.length, 'more')
@@ -10848,12 +10956,13 @@ function viewMinutes() {
       <h2>Minutes</h2><span class="muted">furthest behind first</span></div>
     <div class="plist">${rows.map(r => {
     const pct = r.pd > 0 ? clamp(r.pl / r.pd * 100, 0, 100) : 0;
-    const owed = r.pd > 0 && r.diff < -60 ? 1 : 0, over = r.pd > 0 && r.diff > 60 ? 1 : 0;
+    // short is coloured; over is not bad, so the bar is just full (UX-REVIEW-2.md, 7.2)
+    const owed = r.pd > 0 && r.diff < -60 ? 1 : 0;
     const bits = [r.g ? `${r.g} goal${r.g === 1 ? '' : 's'}` : '', r.a ? `${r.a} assist${r.a === 1 ? '' : 's'}` : '', r.sh ? `${r.sh} shot${r.sh === 1 ? '' : 's'}` : ''].filter(Boolean).join(' · ');
     return `<div class="prow">
       <span class="pnum">${esc(r.p.number ?? '')}</span>
       <span><span class="pname">${esc(shownName(t, r.p))}</span>
-        ${r.pd > 0 ? `<div class="bar"><i style="width:${pct}%" data-owed="${owed}" data-over="${over}"></i><u style="left:100%"></u></div>` : ''}
+        ${r.pd > 0 ? `<div class="bar"><i style="width:${pct}%" data-owed="${owed}"></i><u style="left:100%"></u></div>` : ''}
         <span class="psub">${r.pd > 0 ? `${mins(r.pd)} planned · ${r.diff < 0 ? mins(-r.diff) + ' short' : mins(r.diff) + ' over'}` : 'no plan set'}${bits ? ' · ' + bits : ''}</span>
         ${r.rs ? `<span class="psub">${esc(r.rs)}</span>` : ''}</span>
       <span class="pmins">${mins(r.pl)}<small> min</small></span></div>`;
@@ -16747,10 +16856,12 @@ function viewSetup() {
       : '<p class="muted" style="margin-bottom:0">A club admin can add them to the club, signed in on this phone.</p>'}</div>` : '';
 
   const you = setSection('You', [
-    me ? setRow('signinsheet', esc(me.name || me.email || 'You'), esc([me.email, r ? ROLE_LABEL[r] + (r !== 'owner' && r !== 'admin' && team() ? ' · ' + team().name : '') : 'No role here yet'].filter(Boolean).join(' · ')) + (restricted() ? `<span class="rolewords">${roleWords(restricted())}</span>` : ''))
+    me ? setRow('signinsheet', esc(me.name || me.email || 'You'), esc([me.email, r ? ROLE_LABEL[r] + (r !== 'owner' && r !== 'admin' && team() ? ' · ' + team().name : '') : 'No role here yet'].filter(Boolean).join(' · ')))
       : setRow('signinsheet', 'Sign in', 'Signed out, everything stays on this device. Sign in to share it with your club.'),
     canTrain() ? setRow('mydrills', 'My drills', 'Your own drills and templates, on every phone you sign in on') : ''
-  ], pushCard('settings') + muteCard());
+  ]);
+  // the switches, here and nowhere else (UX-REVIEW-2.md, 6.2); What's new has a gear to them
+  const notify = me ? `<h2 class="sechead" id="setNotify">Notifications</h2>${notifyCards()}` : '';
 
   // the team on screen, for whoever could read its set-up on Squad before: never a tracker or a family
   const t = team(), lim = restricted();
@@ -16789,7 +16900,7 @@ function viewSetup() {
     isOwner() ? setRow('peeklib', "Look at someone's drills", 'For support; nothing is kept') : ''
   ]);
 
-  return `<div class="stack">${pend}${old}${you}${team_}${club}${adv}</div>`;
+  return `<div class="stack">${pend}${old}${you}${notify}${team_}${club}${adv}</div>`;
 }
 /* Check readiness and the backup, from Settings → Advanced: an admin's, and
    what they were on Club settings, in a sheet. */
@@ -17863,16 +17974,27 @@ function diffTag(pl, pd) {
   const diff = Math.round((pl - pd) / 60);
   return `<span class="diff ${diff < 0 ? 'owed' : 'over'}">${diff < 0 ? -diff + ' short' : diff > 0 ? diff + ' over' : 'on plan'}</span>`;
 }
-/* On Subs, orange only for a player behind the pace of the game: her minutes
-   against what the plan would have given her by now, five minutes or more
-   short. Before kick-off everyone is "80 short" and nothing is wrong, and at
-   half time most are "40 short" the same way; eleven orange rows said
-   nothing (UX-REVIEW.md, 3, *Subs*). Over, or on pace, is plain. */
+/* Behind the pace of the game: her minutes against what the plan would have
+   given her by now, five minutes or more short. Before kick-off everyone is
+   "80 short" and nothing is wrong, and at half time most are "40 short" the
+   same way; eleven orange rows said nothing (UX-REVIEW.md, 3, *Subs*).
+   Over, or on pace, is plain. */
+function paceGap(m, pl, pd, el) {
+  const len = matchMinutes(m) * 60 || 1;
+  return pl - pd * Math.min(el / len, 1);
+}
 function diffClass(m, pl, pd, el) {
   if (!(pd > 0) || !(el > 0)) return 'even';
-  const len = matchMinutes(m) * 60 || 1;
-  const pace = pd * Math.min(el / len, 1);
-  return pl - pace <= -300 ? 'owed' : pl - pd > 60 ? 'over' : 'even';
+  return paceGap(m, pl, pd, el) <= -300 ? 'owed' : pl - pd > 60 ? 'over' : 'even';
+}
+/* And of those, the three furthest behind: the rows Subs colours. A fourth
+   is still short, and still sorted to the top of the bench; she is just not
+   orange, because orange has to mean "look here" (UX-REVIEW-2.md, 7.2). */
+function mostBehind(m, roster, el, now, n = 3) {
+  return new Set(roster.map(p => ({ id: p.id, pl: playedSec(m, p.id, now), pd: plannedSec(m, p.id) }))
+    .filter(x => diffClass(m, x.pl, x.pd, el) === 'owed')
+    .sort((a, b) => paceGap(m, a.pl, a.pd, el) - paceGap(m, b.pl, b.pd, el))
+    .slice(0, n).map(x => x.id));
 }
 function tickLive(now = nowMs()) {
   for (const el of document.querySelectorAll('[data-live]')) {
@@ -18050,6 +18172,11 @@ const shirtOf = p => String((p && p.number) ?? '').trim() || '–';
 const gameStatus = m => m.ended ? 'done'
   : (m.currentHalf || 1) > (m.periodCount || 2) ? 'done'
   : (elapsedSec(m) > 0 || running(m)) ? 'live' : 'upcoming';
+/* The score to draw, or null before kick-off: a 0–0 on a game not played yet
+   reads as a result (UX-REVIEW-2.md, 7.1). A goal on a game with no clock, an
+   imported result, still shows. */
+const shownScore = m => { const sc = score(m); return gameStatus(m) === 'upcoming' && !sc.us && !sc.them ? null : sc; };
+const scoreCell = m => (sc => sc ? `${sc.us}<small>–${sc.them}</small>` : '<small>upcoming</small>')(shownScore(m));
 
 function publicGame(t, m) {
   const roster = squad(t, m);
@@ -21236,6 +21363,12 @@ function onAct(e) {
   }
   if (a === 'thread') { closeSheet(); ui.view = 'thread'; ui.thread = { tid: d.tid, fam: d.fam }; render(); return; }
   if (a === 'notes') { ui.view = 'notes'; ui.thread = null; closeSheet(); render(); return; }
+  // What's new's gear: Settings, at its Notifications section
+  if (a === 'notifyset') {
+    ui.view = 'setup'; ui.thread = null; closeSheet(); render();
+    try { const el = document.getElementById('setNotify'); if (el && el.scrollIntoView) el.scrollIntoView({ block: 'start' }); } catch (e) { }
+    return;
+  }
   if (a === 'msgnew') { sheetNewMsg(); return; }
   if (a === 'msgpick') {
     const u = pickUi();
@@ -21421,9 +21554,11 @@ function onAct(e) {
     ui.view = d.v; closeSheet(); render(); return;
   }
   /* The tab bar (UX-REVIEW.md, 1.1). A tab is a place: tapping the one she
-     is on goes to its first screen and the top. Game opens the team's game
-     being played, else the next, else the last; with none, the team's
-     Season, where Add a game is. */
+     is on goes to its first screen and the top. Team is her team, or the
+     list of them when she works on several (UX-REVIEW-2.md, 6.3). Game
+     opens the game being played, else the next, on the one team of hers
+     that has one; with several, it asks which (6.1); with none, the team on
+     screen's last game, else its Season, where Add a game is. */
   if (a === 'tab') {
     closeSheet();
     const k = d.tab || d.v;
@@ -21431,15 +21566,20 @@ function onAct(e) {
     if (k === 'home') ui.view = 'mine';
     else if (k === 'calendar') { ui.view = 'calendar'; ui.picked = null; }
     else if (k === 'messages') { ui.view = 'inbox'; ui.thread = null; }
-    else if (k === 'team') { if (tabFor() !== 'team' || ui.view === 'game') ui.view = 'season'; }
+    else if (k === 'team') {
+      if (homeView() === 'club') ui.view = 'club';
+      else if (tabFor() !== 'team' || ui.view === 'game') ui.view = 'season';
+    }
     else if (k === 'game') {
-      const g = navGame();
-      // where each role works, as the calendar's live card sends her (render() puts a finished game on its recap)
-      if (g) { ui.matchId = g.id; ui.view = 'game'; ui.gameFrom = null; ui.picked = null; ui.gameView = canEditTeam(g.teamId) ? 'subs' : me && isTracker(g.teamId, me.uid) ? 'track' : 'live'; }
+      const gs = navGames();
+      if (gs.length > 1) { sheetNavGames(gs); return; }
+      const g = gs[0] || navGame();
+      if (g) openNavGame(g);
       else { ui.view = 'season'; toast('No games yet. Add one from Season.'); }
     }
     render(); toTop(); return;
   }
+  if (a === 'navgame') { const g = state.matches[d.id]; if (!g) return; openNavGame(g); closeSheet(); render(); toTop(); return; }
   // the title row's back arrow: up one level (a game's and a shape's have their own, backgames and backsetup)
   if (a === 'navback') { const up = upView(); if (up) { ui.view = up; ui.picked = null; if (up === 'inbox') ui.thread = null; } closeSheet(); render(); toTop(); return; }
   if (a === 'accountsheet') { if (me) sheetAccount(); else sheetSignIn(); return; }
@@ -22646,7 +22786,7 @@ function onAct(e) {
   if (a === 'calmore') { ui.calN = { ...(ui.calN || {}), [d.k]: calN(d.k) + CAL_PAGE }; render(); return; }
   if (a === 'alertgo') { openAlert(d.id); return; }
   if (a === 'alertx') { const x = alertsHere().list.find(y => y.id === d.id); if (x) { x.shut = true; saveAlerts(); } render(); return; }
-  // the rest of what is waiting: messages are on Messages, everything else under the bell
+  // the rest of what is waiting: messages are on Messages, everything else on What's new
   if (a === 'alertall') { ui.view = alertsHere().list.some(x => !x.read && !x.shut && x.kind !== 'msg') ? 'notes' : 'inbox'; ui.thread = null; closeSheet(); render(); return; }
   if (a === 'switchclubto') {
     if (!myClubs || !myClubs[d.code]) return;
@@ -22753,9 +22893,18 @@ function onAct(e) {
     } else {
       // the same answer again takes it back; a new answer keeps the note
       setRsvp(d.tid, d.k, d.pid, cur && cur.v === d.v ? null : d.v, cur && cur.v !== d.v ? cur.note : null);
+      ui.rsvpPick = null;   // the coach's chips for one child go once she has answered
     }
     if (d.from === 'sheet' || a === 'rsvpnote') sheetCalItem(d.kind, d.tid, d.id);
     render(); return;
+  }
+  /* The coach's list on an entry's sheet: a name opens the chips for that
+     child alone, the same name again closes them (UX-REVIEW-2.md, 7.2). */
+  if (a === 'rsvpwho') {
+    if (!canEditTeam(d.tid)) return;
+    const k = d.tid + '/' + d.k + '/' + d.pid;
+    ui.rsvpPick = ui.rsvpPick === k ? null : k;
+    sheetCalItem(d.kind, d.tid, d.id); return;
   }
 
   if (a === 'calsyncon' || a === 'calsyncnew') {
@@ -23117,7 +23266,7 @@ function uiToHash() {
   if (ui.view === 'comply') return '#/club/compliance';
   if (ui.view === 'mine') return '#/my-players';
   if (ui.view === 'inbox') return '#/messages';
-  if (ui.view === 'notes') return '#/notifications';
+  if (ui.view === 'notes') return '#/whats-new';
   if (ui.view === 'thread' && ui.thread && ui.thread.cid) return `#/messages/with/${sdOther(ui.thread.cid)}`;
   if (ui.view === 'thread' && ui.thread) return `#/messages/${ui.thread.tid}/${ui.thread.fam}`;
   if (ui.view === 'setup') return '#/settings';
@@ -23142,7 +23291,8 @@ function hashToUi() {
     if (p[1] && p[2] && state.teams[p[1]]) { ui.view = 'thread'; ui.thread = { tid: p[1], fam: p[2] }; return true; }
     ui.view = 'inbox'; return true;
   }
-  if (p[0] === 'notifications') { ui.view = 'notes'; return true; }
+  // #/notifications is its address from before build 148
+  if (p[0] === 'whats-new' || p[0] === 'notifications') { ui.view = 'notes'; return true; }
   if (p[0] === 'settings') { ui.view = 'setup'; return true; }
   /* #/drill/{key} is a drill a coach sent. The screen stays where it was and
      the drill opens over it, once: the hash goes straight back to the screen's

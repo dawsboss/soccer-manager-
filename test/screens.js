@@ -171,6 +171,7 @@ const club = () => ({
     A.click({ act: 'calpast' });
     check('— then Hide earlier', /data-act="calpast">Hide earlier \(\d+\)<\/button>/.test(A.rendered()), true);
     check('the + is there for a coach', /class="calfab"/.test(h), true);
+    check('no card over the list saying the first row again (build 151)', /class="card calnext"/.test(h), false);
   }
 
   console.log('\n--- a coach with no name is "the coach", mid-sentence ---');
@@ -194,6 +195,16 @@ const club = () => ({
     h = as('jaz', 'game', club(), () => { A.ui.matchId = 'g2'; A.ui.gameView = 'subs'; });
     check('before kick-off nobody is orange', /diff owed/.test(h), false);
     check('— though everyone is short of a plan not started', count(h, /diff even">40 short/g), 3);
+    /* Build 151 (UX-REVIEW-2.md, 7.2): orange for the three furthest behind
+       and only them, so a bench of five behind the pace is not five warnings. */
+    const five = () => { const s = live(); s.matches.g2.stints = { a: { pid: 'p1', on: 0 } };
+      for (const [id, n] of [['p4', '2'], ['p5', '3'], ['p6', '5']]) s.teams.t1.players[id] = { id, name: 'Player ' + n, number: n };
+      s.matches.g2.planned = { p1: 40, p2: 40, p3: 40, p4: 40, p5: 30, p6: 20 }; return s; };
+    h = as('jaz', 'game', five(), () => { A.ui.matchId = 'g2'; A.ui.gameView = 'subs'; });
+    check('five behind the pace: three orange', count(h, /diff owed"/g), 3);
+    check('— the three furthest behind', ['p2', 'p3', 'p4'].every(id => new RegExp(`data-pid="${id}"[\\s\\S]*?<span class="diff owed">40 short`).test(h)), true);
+    check('— the other two say how short, in plain', /data-pid="p5"[\s\S]*?<span class="diff even">30 short/.test(h) && /data-pid="p6"[\s\S]*?<span class="diff even">20 short/.test(h), true);
+    check('and only Subs colours it', /\.liverow \.diff\.owed\{color:var\(--owed\)\}/.test(require('fs').readFileSync(require('path').join(__dirname, '..', 'styles.css'), 'utf8')), true);
   }
 
   console.log('\n--- Lineup: the lineup leads ---');
@@ -203,6 +214,15 @@ const club = () => ({
     check('— the detail behind an info button, not a paragraph', /data-act="info" data-k="snapshots"/.test(h) && !/This game has no shape/.test(h), true);
     check('— ahead of the game\'s details', h.indexOf('>Lineup<') < h.indexOf('<h2>Northgate</h2>'), true);
     check('Snapshots is not a heading any more', /<h2[^>]*>Snapshots<\/h2>/.test(h), false);
+    /* Build 151 (UX-REVIEW-2.md, 7.2): mid-game the lineup is the pitch as it
+       stands, and Pick a shape is a button beside the heading. */
+    const mid = () => { const s = club(); s.matches.g2.periods = { 0: { half: 1, start: NOW - 20 * 60000 } }; s.matches.g2.stints = { a: { pid: 'p1', on: 0 }, b: { pid: 'p2', on: 0 } }; return s; };
+    const g = as('jaz', 'game', mid(), () => { A.ui.matchId = 'g2'; A.ui.gameView = 'plan'; });
+    check('mid-game: the pitch leads, the picker a button beside the heading', /<h2>Lineup<\/h2>\s*<button class="btn quiet sm" data-act="editmatch" data-id="g2">Pick a shape<\/button><\/div>\s*<div class="pitch pitchnow">/.test(g), true);
+    check('— with who is on, where, and her minutes', count(g, /class="token" data-pid="p[12]"/g) === 2 && /data-pid="p1"[\s\S]*?<span class="mins">20′<\/span>/.test(g), true);
+    check('— and not the paragraph about shapes first', /<p class="muted"[^>]*>Pick a shape \(4-3-3/.test(g), false);
+    check('— nothing to drag: no pitch id for the handlers', /id="pitch"/.test(g), false);
+    h = as('jaz', 'game', club(), () => { A.ui.matchId = 'g2'; A.ui.gameView = 'plan'; });
     A.click({ act: 'info', k: 'snapshots' });
     check('the info sheet explains a plan', /How a lineup is planned/.test(sheet()), true);
   }

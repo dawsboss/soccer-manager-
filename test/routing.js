@@ -35,9 +35,9 @@ const cases = [
   [{ view: 'mine' }, '#/my-players'],
   [{ view: 'setup' }, '#/settings'],
   [{ view: 'sessions' }, '#/training'],
-  // build 106: messages and notifications are two screens
+  // build 106: messages and notifications are two screens; build 148, What's new
   [{ view: 'inbox' }, '#/messages'],
-  [{ view: 'notes' }, '#/notifications']
+  [{ view: 'notes' }, '#/whats-new']
 ];
 
 console.log('--- the screen turns into a readable path ---');
@@ -97,6 +97,7 @@ console.log('\n--- the screens that moved still answer their old addresses ---')
   check('#/club/calendar is All teams', lands('#/club/calendar'), 'calendar club');
   check('#/club/schedule is All teams', lands('#/club/schedule'), 'calendar club');
   check('#/my-calendar is My calendar', lands('#/my-calendar'), 'calendar mine');
+  check('#/notifications is What\'s new (build 148)', lands('#/notifications'), 'notes');
   for (const [old, now] of [['matches', 'season'], ['teamset', 'roster'], ['schedule', 'calendar'], ['mycal', 'calendar']]) {
     reset(); A.ui.view = old; A.normView();
     check(`a screen saved as ${old} opens ${now}`, A.ui.view, now);

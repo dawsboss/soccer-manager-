@@ -578,7 +578,7 @@ function newSession(v = {}) {
     // her Calendar is hers: what she runs, and her players' sessions with somebody else, saying who
     check('the team\'s coach sees the sessions she runs', /Secret 1-1/.test(A.rendered()), true);
     check('and her players\' sessions with another coach', /Another 1-1 with Olu/.test(A.rendered()), true);
-    check('tagged as training', /tag session/.test(A.rendered()), true);
+    check('opened as a session', /data-act="sessopen" data-id="c1"/.test(A.rendered()), true);
     A.me = { uid: 'mum', name: 'Mo' };
     A.render();
     check('a family sees her own child\'s', /Secret 1-1/.test(A.rendered()), true);
@@ -588,9 +588,10 @@ function newSession(v = {}) {
     check('the season page and the calendar feed carry no session', /Secret 1-1|Another 1-1|Hill End/.test(pub), false);
     check('and no session reached public/ through calItems', A.calItems(['t1']).some(x => x.kind === 'session'), false);
     A.ui.view = 'calendar'; A.render();
-    check('one she is booked into is "next up"', /Next up[\s\S]{0,400}Secret 1-1/.test(A.rendered()), true);
+    // no card over the list since build 151 (UX-REVIEW-2.md, 7.2): the row says where she stands
+    check('one she is booked into is listed as hers', /Secret 1-1 with Jaz[\s\S]{0,200}<span class="ev-sub">Rosa<\/span>/.test(A.rendered()), true);
     A.sess.booked.c1.p1.st = 'asked'; A.render();
-    check('one she has only asked for is not "next up"', /Next up[\s\S]{0,400}Secret 1-1/.test(A.rendered()), false);
+    check('one she has only asked for says so', /<span class="ev-sub">Rosa \(asked\)<\/span>/.test(A.rendered()), true);
     A.sess.booked.c1.p1.st = 'in';
     A.state.access.org = { venues: { v1: { id: 'v1', name: 'Hill End', pitches: 1 } } };
     A.click({ act: 'fieldopen', id: 'v1' });

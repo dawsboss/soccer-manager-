@@ -493,16 +493,22 @@ function plan(extra = {}, X = A) {
     const pr = plan({ prDate: '2026-09-14', prPlace: 'Lakeside Park' });
     A.click({ act: 'pracsuggest', id: pr.id });
     A.ui.view = 'calendar'; A.render();
-    // the Games tab this card was on is the Calendar now, where it is the next thing on
-    check('the coach sees the next practice on the Calendar', /Next practice/.test(A.rendered()) && /In 2 days · 5:30pm/.test(A.rendered()), true);
-    check('and can open its plan from there', /data-act="pracfromcal" data-tid="t1" data-id="[^"]+">Open plan/.test(A.rendered()), true);
+    /* The Calendar lists it; the card saying it again over the list went in
+       build 151 (UX-REVIEW-2.md, 7.2), so "next" is Season's. */
+    check('the coach sees the practice on the Calendar', /class="ev-title">Practice<[\s\S]{0,80}5:30–6:30pm · Lakeside Park/.test(A.rendered()), true);
+    check('with no card over the list saying it again', /class="card calnext"/.test(A.rendered()), false);
+    A.click({ act: 'calitem', k: 'practice', tid: 't1', id: pr.id });
+    check('and can open its plan from the entry', /data-act="pracfromcal" data-tid="t1" data-id="[^"]+"[^>]*>Open plan/.test(String(A.dom.node('#sheet').innerHTML || '')), true);
+    A.ui.view = 'season'; A.render();
+    check('Season leads with it as the next practice', /Next practice<\/span>\s*<b>In 2 days · 5:30–6:30pm<\/b>/.test(A.rendered()), true);
 
     const evs = A.state.teams.t1.events;
     as('mum');
     A.state.teams.t1.events = evs;
     A.ui.view = 'calendar'; A.render();
-    check('a parent sees the time and place, from the calendar', /Next practice/.test(A.rendered()) && /Lakeside Park/.test(A.rendered()), true);
+    check('a parent sees the time and place, from the calendar', /class="ev-title">Practice<[\s\S]{0,80}5:30–6:30pm · Lakeside Park/.test(A.rendered()), true);
     check('but nothing to open', /data-act="prac(open|fromcal)"/.test(A.rendered()), false);
+    as('jaz'); A.state.teams.t1.events = evs; A.ui.view = 'season';
     evs[pr.id].called = 'cancelled'; A.render();
     check('one called off is not "next"', /Next practice/.test(A.rendered()), false);
     evs[pr.id].called = null; evs[pr.id].date = '2026-09-01'; A.render();
@@ -748,7 +754,7 @@ function plan(extra = {}, X = A) {
     const D = H.loadApp({ firebase: fbk, config: CONFIG, storage: { 'sm.workspace': CODE } });
     await D.flush(); fbk.signIn('mum'); await D.flush(); await fbk.serveClub(CODE, c, D.flush); await D.flush();
     D.ui.view = 'calendar'; D.render();
-    check('the next practice comes from the calendar', /Next practice/.test(D.rendered()) && /Lakeside Park/.test(D.rendered()), true);
+    check('the practice comes from the calendar', /class="ev-title">Practice<[\s\S]{0,80}5:30–6:30pm · Lakeside Park/.test(D.rendered()), true);
     check('with no plan or schedule read at all', fbk.readPaths().some(p => /^training\/[^/]+\/(practices|schedule)/.test(p)), false);
     D.ui.view = 'practice'; D.render();
     check('and never the plans', fbk.readPaths().some(p => p.includes('/practices')), false);

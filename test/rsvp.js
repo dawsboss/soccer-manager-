@@ -78,8 +78,14 @@ console.log('--- a parent, for her own child ---');
   setup(); as('mumU');
   let h = html();
   check('the calendar row says she has not answered', /Ella: not answered/.test(h), true);
-  check('Next up asks her', /Is Ella going\?/.test(h), true);
-  check('and never names another child', /Rosa|Jo Nakamura/.test(h), false);
+  // the card over the list went in build 151 (UX-REVIEW-2.md, 7.2); she is asked on the entry and on Home
+  check('no card over the list asks her', /Is Ella going\?|class="card calnext"/.test(h), false);
+  A.click({ act: 'calitem', k: 'practice', tid: 't1', id: 'e1' });
+  check('the entry asks her', /Is Ella going\?/.test(sheet()), true);
+  check('and never names another child', /Rosa|Jo Nakamura/.test(h + sheet()), false);
+  A.ui.view = 'mine'; h = html();
+  check('so does Home', /data-act="rsvp"[^>]*data-k="e_e1"[^>]*data-pid="p1"/.test(h), true);
+  A.ui.view = 'calendar'; h = html();
 
   answer('p1', 'yes');
   check('her answer is kept', ans('p1') && ans('p1').v, 'yes');
@@ -111,6 +117,12 @@ console.log('--- a parent, for her own child ---');
   check('no longer than a text', ans('p1').note.length, 140);
   answer('p1', 'yes');
   check('changing the answer keeps the note', /Arriving late/.test(ans('p1').note), true);
+
+  A.click({ act: 'calitem', k: 'practice', tid: 't1', id: 'e1' });
+  A.ui.rsvpPick = null;
+  A.click({ act: 'rsvpwho', tid: 't1', k: 'e_e1', pid: 'p2', kind: 'practice', id: 'e1' });
+  check('the coach\'s list is not hers to open', A.ui.rsvpPick, null);
+  check('— her sheet still asks about her own child only', /Is Ella going\?/.test(sheet()) && !/data-act="rsvp"[^>]*data-pid="p[23]"/.test(sheet()), true);
 
   A.click({ act: 'calitem', k: 'practice', tid: 't1', id: 'e0' });
   check('something already over is not asked about', /rsvpchips/.test(sheet()), false);
@@ -151,8 +163,21 @@ function rest() {
     check('the sheet names everyone', /Ella Fitzgerald/.test(s) && /Rosa Delgado/.test(s) && /Jo Nakamura/.test(s), true);
     check('who has not answered comes first — the one to chase', s.indexOf('Jo Nakamura') < s.indexOf('Rosa Delgado') && s.indexOf('Rosa Delgado') < s.indexOf('Ella Fitzgerald'), true);
     check('with who said it, and the note', /Not going · said by Rosa&#39;s dad · Away at Gran/.test(s), true);
+    /* Build 151 (UX-REVIEW-2.md, 7.2): the counts and a list, not three chips a
+       child; a name opens the chips for that child alone. */
+    check('the three counts, and who is still to answer', /class="rsvpcounts"><span><b>1<\/b>going<\/span><span><b>1<\/b>not going<\/span><span><b>0<\/b>maybe<\/span><span><b>1<\/b>to answer<\/span><\/div>/.test(s), true);
+    check('and no chips until she taps a name', /rsvpchips|data-act="rsvp"/.test(s), false);
+    check('every name is a button', (s.match(/<button class="rsvprow rsvpwho" type="button" data-act="rsvpwho"/g) || []).length, 3);
+    A.click({ act: 'rsvpwho', tid: 't1', k: 'g_g1', pid: 'p3', kind: 'game', id: 'g1' });
+    check('a name opens the chips for that child alone', (sheet().match(/data-act="rsvp" data-tid="t1" data-k="g_g1" data-pid="p3"/g) || []).length, 3);
+    check('— and nobody else\'s', /data-act="rsvp"[^>]*data-pid="p[12]"/.test(sheet()), false);
+    check('— asking about her by name', /Is Jo going\?/.test(sheet()), true);
+    A.click({ act: 'rsvpwho', tid: 't1', k: 'g_g1', pid: 'p3', kind: 'game', id: 'g1' });
+    check('the same name again closes them', /data-act="rsvp"/.test(sheet()), false);
+    A.click({ act: 'rsvpwho', tid: 't1', k: 'g_g1', pid: 'p3', kind: 'game', id: 'g1' });
     sets = [];
     answer('p3', 'yes', 'g_g1', { from: 'sheet' });
+    check('an answer given closes them too', /data-act="rsvp"/.test(sheet()), false);
     check('she answers for a family that told her another way', ans('p3', 'g_g1').v + ' by ' + ans('p3', 'g_g1').by, 'yes by coachU');
     check('— redrawing the sheet with it', /Jo Nakamura<span class="rowsub">Going/.test(sheet()), true);
 

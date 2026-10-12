@@ -148,6 +148,16 @@ const blank = { awFrom: '', awTo: '', awStart: '', awEnd: '', awNote: '' };
     A.click({ act: 'calitem', k: 'practice', tid: 't1', id: 'e1' });
     check('nor the entry', /can't make/.test(sheet(A)), false);
 
+    /* UX-REVIEW-2.md, 7.1: "Call the coach off" was seen first on a parent's
+       practice sheet. It was the app owner, a family on the team in a club
+       with no admin, whom canAdmin() lets in on purpose (rules.js gap 2). A
+       family or a tracker never gets it, with an admin in the club or not. */
+    for (const who of ['mum', 'trk']) for (const admins of [true, false]) {
+      as(who); if (!admins) A.state.access.admins = {};
+      A.click({ act: 'calitem', k: 'practice', tid: 't1', id: 'e1' });
+      check(`${who}${admins ? '' : ', in a club with no admin yet'}: no button to call the coach off, nor to say she can't make it`, !/Lakeside/.test(sheet(A)) || /data-act="away(out|back)"|Call \w+ off|can't make this/.test(sheet(A)), false);
+    }
+
     as('boss'); A.sess.away = sv;
     check('the planner calls it a practice with no coach', A.clubClashesOn(MON).some(c => c.kind === 'nocoach' && /Jaz called out/.test(c.text)), true);
     A.sess.away = { jaz: { c: { id: 'c', kind: 'callout', item: 'e:e3', tid: 't2', date: TUE, by: 'jaz', at: 1 } } };
