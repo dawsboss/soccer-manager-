@@ -99,6 +99,15 @@ move Live (the parents' feed) under Stats for staff, or out to the share page.
 Four screens, not six.
 
 ### 1.4 Settings are in five places
+**Shipped in build 143** (*One Settings screen*; pinned by `test/settings.js`): More and the
+avatar open one **Settings**, sectioned *You* · *This team* · *Club* · *Advanced*, each item one
+line that taps in. Squad's Team set-up moved to *This team* (Squad keeps one line to it); People,
+Registrations, Compliance, Planner, Fields, Club drills and Bulk import are rows under *Club*;
+Club settings became **Club details** (name and badge, what parents see, who runs it, teams,
+retire) with nothing a row already opens; backup, Check readiness, version, database and the
+account id are under *Advanced*. The links for families are in one place, and the club's calendar
+is on Club home and the Calendar only. What follows is the finding as written.
+
 - **Your settings** (avatar → Settings): account, notifications, "Club" (with a
   Firebase paragraph), Share with parents, Version, Backup.
 - **Club settings / Club admin**: details, What parents see, Retire, Check
@@ -252,7 +261,7 @@ team link, or open the invite you were sent."
 
 **Medium (a week each):**
 7. Split Season into Season / Stats / Players / Attendance.
-8. One Settings screen with sections; delete the duplicates.
+8. One Settings screen with sections; delete the duplicates. *Done, build 143.*
 9. Copy pass: labels not paragraphs, one word per concept (a glossary file in the
    repo so tests can hold the UI to it).
 

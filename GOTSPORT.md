@@ -339,7 +339,7 @@ orgs/{code}/comply/{uid}: {
   something to flag for SafeSport, concussion and the background check (a
   licence is not required, so it is never flagged).
 - **Flagged, nothing more:** the admins see a card on Club home while
-  anyone has an item lapsed, lapsing soon or not recorded, and Club settings
+  anyone has an item lapsed, lapsing soon or not recorded, and Settings
   → *Coach compliance* lists everyone, the worst first. The person herself
   sees a card on Club home naming her own items that need doing. No push,
   no email, and nothing about her teams, her sideline or her sessions

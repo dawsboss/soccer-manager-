@@ -121,16 +121,18 @@ console.log('\n--- only a coach or admin adds players and games ---');
   deepEq('a coach on another team, none', offers('jaz', 't2'), none);
   deepEq('a tracker, none', offers('trk', 't1'), none);
 
-  /* The Team tab is Squad's foot since build 102: the set-up is the team's
-     coaches' to change, readable by a coach of another age group, and a
-     tracker, who logs games for the squad, doesn't get it. */
-  const setUp = (who, tid) => { as(club(), who, tid); return html('roster'); };
+  /* The Team tab was Squad's foot from build 102, and is Settings' This team
+     since build 143 (UX-REVIEW.md, 1.4), Squad keeping one line to it: the
+     set-up is the team's coaches' to change, readable by a coach of another
+     age group, and a tracker, who logs games for the squad, doesn't get it. */
+  const setUp = (who, tid) => { as(club(), who, tid); return html('setup'); };
   let h = setUp('jaz', 't1');
-  check('a coach has the team\'s set-up under her squad', /Team set-up/.test(h) && /data-act="formations"/.test(h) && /data-act="trackcfg"/.test(h) && /data-act="editteam"/.test(h), true);
+  check('a coach has the team\'s set-up on Settings', /This team/.test(h) && /data-act="formations"/.test(h) && /data-act="trackcfg"/.test(h) && /data-act="editteam"/.test(h), true);
+  check('— and Squad has one line to it', /data-act="goview" data-v="setup"/.test(html('roster')) && !/data-act="formations"|data-act="trackcfg"/.test(html('roster')), true);
   h = setUp('jaz', 't2');
-  check('another team\'s coach reads it and changes nothing', /Team set-up/.test(h) && !/data-act="formations"|data-act="trackcfg"|data-act="editteam"/.test(h), true);
+  check('another team\'s coach reads it and changes nothing', /This team/.test(h) && /Shapes/.test(h) && !/data-act="formations"|data-act="trackcfg"|data-act="editteam"/.test(h), true);
   h = setUp('trk', 't1');
-  check('a tracker has the squad and not the set-up', /class="plist"/.test(h) && !/Team set-up/.test(h), true);
+  check('a tracker has the squad and not the set-up', /class="plist"/.test(html('roster')) && !/This team/.test(h) && !/data-v="setup"/.test(html('roster')), true);
   as(club(), 'boss'); A.ui.view = 'teamset'; A.render();
   check('a link to the old Team tab opens Squad', A.ui.view, 'roster');
 

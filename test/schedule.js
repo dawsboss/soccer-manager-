@@ -94,7 +94,7 @@ const fill = vals => { for (const [k, v] of Object.entries(vals)) A.dom.node('#'
     global.location.hash = '#/club/schedule';
     check('and the old address opens it', A.hashToUi() && A.ui.view + ' ' + A.ui.calSel, 'calendar club');
     A.ui.view = 'admin'; A.render();
-    check('Club settings has it too', /data-act="schedule"/.test(A.rendered()), true);
+    check('Club details does not carry it a third time (build 143)', /data-act="schedule"/.test(A.rendered()), false);
     A.ui.view = 'calendar'; A.click({ act: 'caltog', tid: 't1' });
     A.ui.view = 'club'; A.click({ act: 'schedule' });
     check('"Every team" means every team, whatever was unticked before', A.calTeams().length, 3);

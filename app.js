@@ -2,7 +2,7 @@
    Static app. Data lives in localStorage, and mirrors to Firebase Realtime
    Database when a config + workspace code are present. */
 
-const BUILD = '142';
+const BUILD = '143';
 const BUILT = '2026-10-12';
 /* The version of database.rules.json this app was written against. The rules
    carry the same number in rulesVersion's .write, which accepts that number
@@ -750,7 +750,7 @@ async function initSync() {
     // a retired club tells every device still holding a copy to let it go —
     // the app owner's device included. The workspace data is never deleted by
     // this; retiring only writes the retired/{code} marker. An owner who needs
-    // to see a retired club again can still open it from Club settings ›
+    // to see a retired club again can still open it from Settings › Club details ›
     // Retired clubs, which reads it straight from the database.
     dbMod.onValue(dbMod.ref(db, 'retired/' + code), rs => {
       if (rs.val()) purgeClub(code, 'retired');
@@ -7289,7 +7289,7 @@ const viewScope = (v = ui.view) => v === 'calendar' || v === 'mine' ? (me ? 'me'
   : TEAM_VIEWS.includes(v) || (v === 'formation' && ui.editFid === GAME_SHAPE) ? 'team' : 'club';
 /* The screens that are not a team's, by name, for the title row. */
 const VIEW_TITLE = {
-  calendar: 'Calendar', setup: 'Your settings', people: 'People', admin: 'Club settings', sessions: 'Training sessions',
+  calendar: 'Calendar', setup: 'Settings', people: 'People', admin: 'Club details', sessions: 'Training sessions',
   planner: 'Planner', inbox: 'Messages', thread: 'Messages', notes: 'Notifications', mine: 'My players', formation: 'Shapes',
   regs: 'Registration', tryout: 'Tryouts', comply: 'Coach compliance', club: 'Club home'
 };
@@ -7356,9 +7356,11 @@ const homeView = () => navKind() === 'family' ? 'mine' : 'season';
    history). A tab's own screen has no up. */
 function upView(v = ui.view) {
   if (v === 'game') return ui.gameFrom === 'calendar' ? 'calendar' : 'season';
-  if (v === 'formation') return ui.editFid === GAME_SHAPE ? 'game' : 'admin';
+  if (v === 'formation') return ui.editFid === GAME_SHAPE ? 'game' : 'setup';
   if (v === 'thread') return 'inbox';
-  if (['people', 'admin', 'planner', 'regs', 'tryout', 'comply', 'sessions'].includes(v)) return 'club';
+  // the club's settings screens are Settings' Club section since build 143; the rest hang off Club home
+  if (['people', 'admin', 'planner', 'regs', 'comply'].includes(v)) return 'setup';
+  if (['tryout', 'sessions'].includes(v)) return 'club';
   if (v === 'club' || v === 'setup' || v === 'notes') return homeView();
   if (v === 'mine' && navKind() !== 'family') return homeView();
   // a family opening a team's season from My players
@@ -7411,7 +7413,7 @@ function tabBar() {
 function sheetMore() {
   const org = clubName();
   const b = me ? notesUnread() : 0;
-  const coachAny = !!me && teams().some(t => isCoach(t.id, me.uid));
+  const coachAny = !!me && teams().some(t => isCoach(t.id, me.uid));   // People, on Settings
   const clubs = knownClubs();
   openSheet(`<h3>More</h3>
     ${me ? `<button class="opt spread" data-act="goview" data-v="notes"><span><b>Notifications</b>
@@ -7422,12 +7424,8 @@ function sheetMore() {
       <span class="rowsub">${allKidNames().map(esc).join(', ')}</span></button>` : ''}
     ${canSessions() ? `<button class="opt" data-act="goview" data-v="sessions"><b>Training sessions</b>
       <span class="rowsub">${esc(sessClubLine())}</span></button>` : ''}
-    ${canAdmin() || coachAny ? `<button class="opt" data-act="goview" data-v="people"><b>People</b>
-      <span class="rowsub">Who is in the club, roles and invites</span></button>` : ''}
-    ${canAdmin() ? `<button class="opt" data-act="goview" data-v="admin"><b>Club settings</b>
-      <span class="rowsub">Details, what parents see, programs, compliance</span></button>` : ''}
-    <button class="opt" data-act="goview" data-v="setup"><b>Your settings</b>
-      <span class="rowsub">Account, notifications, sharing, backup, version</span></button>
+    <button class="opt" data-act="goview" data-v="setup"><b>Settings</b>
+      <span class="rowsub">${esc(['You', team() && restricted() !== 'tracker' && !readerRole(restricted()) ? 'this team' : '', canAdmin() ? 'the club: people, registrations, fields' : coachAny ? 'people' : ''].filter(Boolean).join(', '))}</span></button>
     ${clubs.length > 1 || canNewClub() ? `<button class="opt" data-act="clubswitch"><b>Clubs</b>
       <span class="rowsub">${clubs.length > 1 ? 'Switch to another club you are in' : 'Start a new club'}</span></button>` : ''}
     ${me ? `<button class="opt" data-act="signout"><b>Sign out</b>
@@ -7475,9 +7473,9 @@ function viewClub() {
       ${live ? '<span class="pill live">live</span>' : ''}
     </button>`;
   }).join('')
-      : `<div class="empty"><strong>No teams yet</strong>${canAdmin() ? 'Add one from Club settings.' : 'Nothing has been shared with your account.'}</div>`}
+      : `<div class="empty"><strong>No teams yet</strong>${canAdmin() ? 'Add the first one below.' : 'Nothing has been shared with your account.'}</div>`}
     ${canAdmin() ? `<button class="btn quiet wide" data-act="newteam">Add a team</button>
-    <button class="btn quiet wide" data-act="goview" data-v="admin">Club settings</button>` : ''}
+    <button class="btn quiet wide" data-act="goview" data-v="setup">Settings</button>` : ''}
   </div>`;
 }
 
@@ -7488,10 +7486,10 @@ function sheetAccount() {
   openSheet(`<h3>${esc(me.name)}</h3>
     <p class="muted" style="margin-top:0">${esc(me.email || '')}${r ? ` · ${esc(ROLE_LABEL[r])}` : ''}</p>
     <button class="opt" data-act="goview" data-v="setup"><b>Settings</b>
-      <span class="rowsub">Account, ways to sign in, notifications, backup, version</span></button>
+      <span class="rowsub">You, this team and the club, in one place</span></button>
     <button class="btn danger wide" data-act="signout" style="margin-top:8px">Sign out</button>
     ${fbConfig().apiKey ? '<button class="btn quiet danger wide" data-act="forgetsheet" style="margin-top:8px">Delete my account</button>' : ''}
-    <p class="muted">Your calendar, your players and the club are on the bar at the bottom. Club settings live under the club itself, since you may belong to more than one.</p>
+    <p class="muted">Your calendar, your players and the club are on the bar at the bottom. Settings has your own, this team's and the club's in one place.</p>
     <p class="muted"><a href="privacy">Privacy Policy</a> · <a href="terms">Terms of Service</a></p>`);
 }
 
@@ -10489,15 +10487,15 @@ function viewRoster() {
       <span class="stars" aria-label="rated ${rating(p)} of 5">${'●'.repeat(rating(p))}<span class="dim">${'●'.repeat(5 - rating(p))}</span></span></${ro ? 'div' : 'button'}>`;
   }).join('') ||
     `<div class="empty"><strong>No players yet</strong>${ro ? "The team's coach adds the squad." : 'Add the squad once; every game reuses it.'}</div>`;
-  // a tracker logs games for the squad; the team's set-up is the coaches'
-  const setUp = restricted() === 'tracker' ? '' : teamSetUp(t, ro);
+  // a tracker logs games for the squad; the team's set-up is the coaches', on Settings since build 143
+  const setUp = restricted() === 'tracker' ? '' : `<div class="card setcard"><div class="plist">${setRow('goview', 'Team settings', ro ? 'Shapes, what to count and links for families: read only' : 'Name and crest, shapes, what to count, links for families', ' data-v="setup"')}</div></div>`;
   return `<div class="stack">
     <div class="card teamhead"><div class="row">
       ${teamCrest(t)}
       <span style="flex:1;min-width:0"><b style="font-size:18px">${teamLabel(t)}</b>
         <span class="rowsub">${teamStats(t)}</span>
         <span class="rowsub">${[teamUAge(t) != null ? `${uLabel(teamUAge(t))} this season · born ${esc(String(t.birthYear))}` : 'No age group set', t.logo ? 'Own crest' : 'Using the club badge'].join(' · ')}</span></span>
-      ${ro ? '' : `<button class="btn quiet sm" data-act="editteam" data-id="${t.id}">Name and crest</button>`}</div></div>
+</div></div>
     ${ro ? '' : joinCard(t)}
     ${ro ? '' : `<div class="card"><div class="row" style="align-items:flex-end">
       <div style="width:76px"><label class="field"><span>Number</span><input type="number" inputmode="numeric" id="newNum" placeholder="7"></label></div>
@@ -10961,30 +10959,24 @@ function viewMine() {
   </div>`;
 }
 
-/* --- the team's set-up, under its squad ---
+/* --- the team's set-up, on Settings ---
    The owner: "too many tabs under the teams pages". This was a Team tab of
-   its own beside Squad; it is Squad's now, the name and crest at the top and
-   the shapes, the counters and the parent links under the players they are
-   for. Readable by whoever can see the squad but a tracker, changeable by its
-   coaches. */
+   its own beside Squad, then Squad's foot (build 102); since build 143 it is
+   Settings' This team section (UX-REVIEW.md, 1.4), because the links for
+   families were on Your settings as well and nobody could say which was the
+   real one. Readable by whoever can see the squad but a tracker, changeable
+   by its coaches; read-only, a row says what is set and opens nothing. */
 function teamSetUp(t, ro) {
   const fs = Object.values(t.formations || {});
-  return `<h2 class="sechead">Team set-up</h2>
-    <div class="card"><h2 style="margin-bottom:8px">Shapes</h2>
-      <p class="muted" style="margin-top:0">Default lineups per side size. A new game copies the default; games already played keep what they were played with.</p>
-      <div class="plist">${fs.map(f => `<button class="prow" type="button" data-act="editformation" data-id="${f.id}" style="grid-template-columns:1fr auto">
-        <span><span class="pname">${esc(f.name)}</span><span class="psub">${f.size}v${f.size}${(t.defaults || {})[f.size] === f.id ? ' · default' : ''}</span></span>
-        <span class="muted">Edit</span></button>`).join('') || '<p class="muted" style="margin:0">None saved — presets are used instead.</p>'}</div>
-      ${ro ? '' : `<div style="margin-top:10px"><button class="btn quiet wide" data-act="formations">Manage shapes</button></div>`}</div>
-
-    <div class="card"><h2 style="margin-bottom:8px">What to count</h2>
-      <p class="muted" style="margin-top:0">Which counters appear on the Track tab during a game.</p>
-      <div class="chips">${tracked(t).map(e => `<span class="chip" aria-pressed="true">${e.label}</span>`).join('') || '<span class="muted">Nothing switched on.</span>'}</div>
-      ${ro ? '' : `<div style="margin-top:10px"><button class="btn quiet wide" data-act="trackcfg">Choose what to count</button></div>`}</div>
-
-    <div class="card"><h2 style="margin-bottom:8px">Parent links</h2>
-      <p class="muted" style="margin-top:0">Read-only pages showing shirt numbers, never names.</p>
-      <button class="btn quiet wide" data-act="sharesheet">${t.share ? (ro ? 'See the links' : 'Manage links') : ro ? 'Sharing' : 'Set up sharing'}</button></div>`;
+  const shapes = fs.length ? esc(fs.map(f => `${f.name}${(t.defaults || {})[f.size] === f.id ? ' (default)' : ''}`).join(', ')) : 'None saved — presets are used instead';
+  const counts = esc(tracked(t).map(e => e.label).join(', ')) || 'Nothing switched on';
+  const age = teamUAge(t) != null ? `${uLabel(teamUAge(t))} this season · born ${esc(String(t.birthYear))}` : 'No age group set';
+  return [
+    ro ? setInfo('Name and crest', `${age} · ${t.logo ? 'own crest' : 'the club badge'}`) : setRow('editteam', 'Name and crest', `${age} · ${t.logo ? 'own crest' : 'the club badge'}`, ` data-id="${t.id}"`),
+    ro ? setInfo('Shapes', shapes) : setRow('formations', 'Shapes', shapes),
+    ro ? setInfo('What to count', counts) : setRow('trackcfg', 'What to count', counts),
+    setRow('sharesheet', 'Links for families', `Read-only pages showing shirt numbers, never names${t.share ? '' : ' · not set up'}`)
+  ];
 }
 
 /* ---------------- practice ---------------- */
@@ -16485,62 +16477,98 @@ function sheetPersonCal(u) {
       : `Only what is in this club. Anything ${esc(name)} does at another club is private unless shared from My calendar.`}</p>`);
 }
 
+/* One Settings screen (UX-REVIEW.md, 1.4; build 143). Settings used to be in
+   five places: Your settings, Club settings, People, Squad's Team set-up and
+   the training sessions' tabs, with sharing on two of them and the club's
+   calendar on three. Now it is this screen, in four sections by whose they
+   are: You (the account, notifications, her drills), This team (the team on
+   screen, for whoever could read its set-up), Club (what each person may
+   open of the club's: People for coaches, the rest for admins) and Advanced
+   (backup, readiness, version, ids: what nobody needs at a game). Each item
+   is one line she taps into; the screens behind them are unchanged. */
+const setRow = (act, title, sub, data = '') => `<button class="prow setrow" type="button" data-act="${act}"${data}>
+  <span style="min-width:0"><span class="pname">${title}</span>${sub ? `<span class="psub">${sub}</span>` : ''}</span><span class="setgo" aria-hidden="true">›</span></button>`;
+const setInfo = (title, sub, right = '') => `<div class="prow setrow"><span style="min-width:0"><span class="pname">${title}</span>${sub ? `<span class="psub">${sub}</span>` : ''}</span>${right || '<span></span>'}</div>`;
+const setSection = (head, rows, after = '') => {
+  const xs = rows.filter(Boolean);
+  return xs.length || after ? `<h2 class="sechead">${head}</h2>${xs.length ? `<div class="card setcard"><div class="plist">${xs.join('')}</div></div>` : ''}${after}` : '';
+};
+
 function viewSetup() {
   const code = wsCode();
   const cfgOk = !!fbConfig().apiKey;
   const r = myRole();
-  return `<div class="stack">
-    <div class="card"><h2 style="margin-bottom:8px">Account</h2>
-      <div class="spread"><span>${me ? `<b>${esc(me.name)}</b><span class="rowsub">${esc(me.email || '')}</span>` : 'Not signed in'}</span>
-      <button class="btn quiet sm" data-act="signinsheet">${me ? 'Manage' : 'Sign in'}</button></div>
-      ${me ? `<p class="muted">You are <b>${esc(ROLE_LABEL[r] || 'not assigned a role')}</b>${r && r !== 'owner' && r !== 'admin' ? ` for ${teamLabel(team() || {})}` : ''}.</p>
-      <p class="lbl">Your account id</p>
-      <div class="codebox">${esc(me.uid)}</div>
-      <button class="btn quiet sm" data-act="copylink" data-v="${esc(me.uid)}">Copy id</button>
-      <p class="muted"${canTrain() || isOwner() ? '' : ' style="margin-bottom:0"'}>Needed once, to be made app owner in the Firebase console.</p>
-      ${canTrain() ? `<button class="btn quiet wide" data-act="mydrills">My drills</button>` : ''}
-      ${isOwner() ? `<button class="btn quiet wide" data-act="peeklib" style="margin-top:8px">Look at someone's drills, for support</button>` : ''}`
-      : '<p class="muted" style="margin-bottom:0">Signed out, everything stays on this device. Sign in to share it with your club.</p>'}</div>
+  const adm = canAdmin();
+  const coachAny = !!me && teams().some(t => isCoach(t.id, me.uid));
+  const n = fb ? pendingCount() : 0, lo = localOnlyData();
+  // what is still only on this phone is not a setting, it is news: first, and only when there is some
+  const pend = n ? `<div class="card"><h2 style="margin-bottom:8px">Waiting to reach the club</h2>
+    <p class="muted" style="margin-top:0">${n} change${n === 1 ? '' : 's'} made on this phone ${n === 1 ? "hasn't" : "haven't"} reached the club yet. ${n === 1 ? 'It goes' : 'They go'} the moment there's a signal, even if the app is closed and opened again in between.</p>
+    <button class="btn quiet wide" data-act="pendingsheet">See what's waiting</button></div>` : '';
+  const old = lo ? `<div class="card"><h2 style="margin-bottom:8px">On this phone only</h2>
+    <p class="muted" style="margin-top:0">This phone has ${esc(importSummary(lo.plan.counts).replace(/^adds /, ''))} from before it joined this club, kept on this phone and nowhere else.</p>
+    ${adm ? `<button class="btn quiet wide" data-act="adoptlocal">Add them to the club</button>`
+      : '<p class="muted" style="margin-bottom:0">A club admin can add them to the club, signed in on this phone.</p>'}</div>` : '';
 
-    ${pushCard('settings')}
-    ${muteCard()}
+  const you = setSection('You', [
+    me ? setRow('signinsheet', esc(me.name || me.email || 'You'), esc([me.email, r ? ROLE_LABEL[r] + (r !== 'owner' && r !== 'admin' && team() ? ' · ' + team().name : '') : 'No role here yet'].filter(Boolean).join(' · ')))
+      : setRow('signinsheet', 'Sign in', 'Signed out, everything stays on this device. Sign in to share it with your club.'),
+    canTrain() ? setRow('mydrills', 'My drills', 'Your own drills and templates, on every phone you sign in on') : ''
+  ], pushCard('settings') + muteCard());
 
-    <div class="card"><h2 style="margin-bottom:8px">Club</h2>
-      <p class="muted" style="margin-top:0">Firebase config is ${cfgOk ? 'in place' : 'not filled in — see README.md'}.</p>
-      <p class="muted"${isOwner() ? '' : ' style="margin-bottom:0"'}>${code ? `Connected to <b>${esc((acc().org || {}).name || 'your club')}</b>. People join a club by the invite link an admin sends them.` : 'Not in a club on this phone yet. Open the invite link a club admin sent you, or start one.'}</p>
-      ${!code && Object.keys(myClubs || {}).length ? `<button class="btn wide" data-act="clubswitch" style="margin-bottom:10px">Your clubs</button>` : ''}
-      ${!code && canNewClub() ? `<button class="btn quiet wide" data-act="newclub" style="margin-bottom:10px">Start a new club</button>` : ''}
-      ${isOwner() ? `<div class="row"><button class="btn quiet" data-act="envsheet">Database: ${esc(envName() || 'production')}</button>
-      <button class="btn quiet" data-act="maketestclub">Make a test club</button></div>
-      <p class="muted" style="margin-bottom:0">A test club is invented data with publishing switched off — safe to grant roles in, take apart and retire. Rules belong to a database rather than to a club, though, so a rules change has to be rehearsed in another database, not just another club.</p>` : ''}</div>
+  // the team on screen, for whoever could read its set-up on Squad before: never a tracker or a family
+  const t = team(), lim = restricted();
+  const teamRows = t && lim !== 'tracker' && !readerRole(lim) ? teamSetUp(t, !canEditTeam(t.id)) : [];
+  const team_ = teamRows.length ? setSection(`This team · ${teamLabel(t)}`, teamRows) : '';
 
-    ${(() => {
-      const n = fb ? pendingCount() : 0, lo = localOnlyData();
-      const pend = n ? `<div class="card"><h2 style="margin-bottom:8px">Waiting to reach the club</h2>
-        <p class="muted" style="margin-top:0">${n} change${n === 1 ? '' : 's'} made on this phone ${n === 1 ? "hasn't" : "haven't"} reached the club yet. ${n === 1 ? 'It goes' : 'They go'} the moment there's a signal, even if the app is closed and opened again in between.</p>
-        <button class="btn quiet wide" data-act="pendingsheet">See what's waiting</button></div>` : '';
-      const old = lo ? `<div class="card"><h2 style="margin-bottom:8px">On this phone only</h2>
-        <p class="muted" style="margin-top:0">This phone has ${esc(importSummary(lo.plan.counts).replace(/^adds /, ''))} from before it joined this club, kept on this phone and nowhere else.</p>
-        ${canAdmin() ? `<button class="btn quiet wide" data-act="adoptlocal">Add them to the club</button>`
-          : '<p class="muted" style="margin-bottom:0">A club admin can add them to the club, signed in on this phone.</p>'}</div>` : '';
-      return pend + old;
-    })()}
+  const club = setSection('Club', [
+    adm ? setRow('goview', 'Club details', 'Name and badge, what parents see, teams, who owns it', ' data-v="admin"') : '',
+    adm || coachAny ? setRow('goview', 'People', adm ? `${members().length} signed in · roles and invites` : 'Who is in the club, roles and invites', ' data-v="people"') : '',
+    adm ? setRow('goview', 'Registrations', (k => k ? `${k} program${k === 1 ? '' : 's'}, their links, waivers and who has registered` : 'Programs families register for, with their links and waivers')(programsAll().length), ' data-v="regs"') : '',
+    adm ? setRow('goview', 'Coach compliance', (x => x.length ? esc(x.map(([st, k]) => `${k} ${COMPLY_TALLY[st]}`).join(' · ')) : 'Everyone is up to date')(complyTally(complyRows())), ' data-v="comply"') : '',
+    adm ? setRow('planner', 'Planner', 'Clashes across the teams, find a time, picture day') : '',
+    adm ? setRow('sesstab', 'Fields and permits', fieldList().length ? `${fieldList().length} field${fieldList().length === 1 ? '' : 's'}, their permits and hours` : 'Where the club trains, and the permits for each', ' data-k="fields"') : '',
+    adm ? setRow('clubdrills', "Club drills", (k => k ? `${k} drill${k === 1 ? '' : 's'} the club's coaches have shared` : 'What coaches share with the club, to tidy or remove')(shelfItems('club').length)) : '',
+    adm ? setRow('tpllist', "Club templates", (k => k ? `${k} session template${k === 1 ? '' : 's'}` : 'Practice plans the club keeps to start from')(tplItems('clubTpl').length), ' data-k="clubTpl"') : '',
+    adm ? setRow('bulkimport', 'Bulk import', 'Rosters, games, practices, fields and sessions from a spreadsheet or file') : '',
+    !code && Object.keys(myClubs || {}).length ? setRow('clubswitch', 'Your clubs', 'Open a club you are in') : '',
+    !code && canNewClub() ? setRow('newclub', 'Start a new club', 'You become its admin') : '',
+    code ? '' : setInfo('Not in a club on this phone yet', 'Open the invite link a club admin sent you, or start one.')
+  ]);
 
-    <div class="card"><h2 style="margin-bottom:8px">Share with parents</h2>
-      <p class="muted" style="margin-top:0">Read-only pages showing shirt numbers, never names.</p>
-      <button class="btn quiet wide" data-act="sharesheet">${team() && team().share ? 'Manage links' : 'Set up sharing'}</button></div>
+  const crosses = adm ? readiness().filter(x => !x.ok).length : 0;
+  const adv = setSection('Advanced', [
+    adm ? setRow('backupsheet', 'Backup', "Download a copy of the club, or load one from a file") : '',
+    adm ? setRow('readysheet', 'Check readiness', crosses ? `${crosses} thing${crosses === 1 ? '' : 's'} to fix` : 'Everything the rules need is in place') : '',
+    setInfo(`Version v${BUILD}`, stale() ? `This page is cached at v${esc(pageBuild())}. Force refresh to catch up.` : `${BUILT} · page and code agree`,
+      '<button class="btn quiet sm" data-act="hardreload">Force refresh</button>'),
+    setInfo('Database', `${cfgOk ? 'Connected' : 'Firebase config not filled in — see README.md'}${code && cfgOk ? ' · ' + esc((acc().org || {}).name || 'your club') : ''}${envName() ? ' · ' + esc(envName()) : ''}`),
+    me ? setInfo('Account id', `<span class="mono">${esc(me.uid)}</span> · needed once, to be made app owner`,
+      `<button class="btn quiet sm" data-act="copylink" data-v="${esc(me.uid)}">Copy</button>`) : '',
+    isOwner() ? setRow('envsheet', 'Database to use', esc(envName() || 'production')) : '',
+    isOwner() ? setRow('maketestclub', 'Make a test club', 'Invented data, publishing off: safe to take apart. A rules change is rehearsed in another database, not another club.') : '',
+    isOwner() ? setRow('peeklib', "Look at someone's drills", 'For support; nothing is kept') : ''
+  ]);
 
-    <div class="card"><h2 style="margin-bottom:8px">Version</h2>
-      <div class="spread"><span>Build <b>v${BUILD}</b> <span class="muted">· ${BUILT}</span></span>
-        <button class="btn quiet sm" data-act="hardreload">Force refresh</button></div>
-      ${stale() ? `<div class="warn alert" style="margin-top:10px">This page is cached at v${esc(pageBuild())} but the code is v${BUILD}. Force refresh to catch up.</div>`
-      : '<p class="muted" style="margin-bottom:0">Page and code agree, so you are on the latest push.</p>'}</div>
-
-    ${canAdmin() ? `<div class="card"><h2 style="margin-bottom:8px">Backup</h2>
-      <div class="row"><button class="btn quiet" data-act="export">Download a copy</button>
-      <button class="btn quiet" data-act="import">Load from a file</button></div>
-      <p class="muted" style="margin-bottom:0">Every team, game and sub as a JSON file. Admins only — it contains every child's name, so it is not something to hand out. Loading one adds whatever this club is missing and keeps everything already here.</p></div>` : ''}
-  </div>`;
+  return `<div class="stack">${pend}${old}${you}${team_}${club}${adv}</div>`;
+}
+/* Check readiness and the backup, from Settings → Advanced: an admin's, and
+   what they were on Club settings, in a sheet. */
+function sheetReadiness() {
+  openSheet(`<h3>Check readiness</h3>
+    <p class="muted" style="margin-top:0">What the club needs for the rules to work as designed. A cross is a lookup table the app hasn't written yet, or a way to be locked out of your own club, and none of them show up until somebody tries to change something at a game.</p>
+    <div class="plist">${readiness().map(r => `<div class="prow" style="grid-template-columns:auto 1fr auto">
+      <span class="pnum">${r.ok ? '✓' : '✗'}</span>
+      <span><span class="pname">${esc(r.label)}</span><span class="psub">${esc(r.detail)}</span></span>
+      <span class="muted">${r.ok ? '' : 'fix'}</span></div>`).join('')}</div>
+    <div style="margin-top:10px"><button class="btn quiet wide" data-act="preplockdown">Build the lookup tables</button></div>
+    <p class="muted" style="margin-bottom:0">Writes <code>access/teamIndex</code> for every team that has a coach or tracker, and an owner list for every published share. The tighter rules read both, so this has to run — and sync — <b>before</b> you paste them.</p>`);
+}
+function sheetBackup() {
+  openSheet(`<h3>Backup</h3>
+    <div class="row"><button class="btn quiet" data-act="export">Download a copy</button>
+    <button class="btn quiet" data-act="import">Load from a file</button></div>
+    <p class="muted" style="margin-bottom:0">Every team, game and sub as a JSON file. Admins only — it contains every child's name, so it is not something to hand out. Loading one adds whatever this club is missing and keeps everything already here.</p>`);
 }
 
 /* Who owns the club (SECURITY.md, SEC-D8), on its admins' screen: the owners
@@ -16561,7 +16589,6 @@ function viewAdmin() {
   const org = (acc().org || {});
   const nAdmins = Object.keys(acc().admins || {}).length;
   return `<div class="stack">
-    <h2>Club admin</h2>
     <div class="card"><h2 style="margin-bottom:8px">Details</h2>
       <div class="row" style="margin-bottom:10px">
         ${clubCrest()}
@@ -16588,19 +16615,9 @@ function viewAdmin() {
       <p class="muted" style="margin-top:0">Marks it closed. Every device holding a copy clears it on next connect — except the app owner's, so it can still be opened and exported. <b>Nothing is deleted.</b> The data stays until the app owner removes it in the Firebase console.</p>
       <button class="btn danger wide" data-act="retireclub">Retire ${esc((acc().org || {}).name || 'this club')}</button></div>
 
-    <div class="card"><h2 style="margin-bottom:8px">Check readiness</h2>
-      <p class="muted" style="margin-top:0">What the club needs for the rules to work as designed. A cross is a lookup table the app hasn't written yet, or a way to be locked out of your own club, and none of them show up until somebody tries to change something at a game.</p>
-      <div class="plist">${readiness().map(r => `<div class="prow" style="grid-template-columns:auto 1fr auto">
-        <span class="pnum">${r.ok ? '\u2713' : '\u2717'}</span>
-        <span><span class="pname">${esc(r.label)}</span><span class="psub">${esc(r.detail)}</span></span>
-        <span class="muted">${r.ok ? '' : 'fix'}</span></div>`).join('')}</div>
-      <div style="margin-top:10px"><button class="btn quiet wide" data-act="preplockdown">Build the lookup tables</button></div>
-      <p class="muted" style="margin-bottom:0">Writes <code>access/teamIndex</code> for every team that has a coach or tracker, and an owner list for every published share. The tighter rules read both, so this has to run — and sync — <b>before</b> you paste them.</p></div>
-
-    <div class="card"><h2 style="margin-bottom:8px">People</h2>
-      ${nAdmins ? `<p class="muted" style="margin-top:0">${members().length} signed in · ${nAdmins} admin${nAdmins === 1 ? '' : 's'}.</p>
-        ${ownerCard()}
-        <button class="btn quiet wide" data-act="people">People and roles</button>`
+    <div class="card"><h2 style="margin-bottom:8px">Who runs it</h2>
+      ${nAdmins ? `<p class="muted" style="margin-top:0">${members().length} signed in · ${nAdmins} admin${nAdmins === 1 ? '' : 's'}. Roles and invites are on Settings → People.</p>
+        ${ownerCard()}`
       : isOwner() ? `<p class="muted" style="margin-top:0">Nobody administers this club yet. As app owner you can take it, or grant it to someone in People.</p>
         <button class="btn wide" data-act="claimadmin">Make me the club admin</button>`
       : `<p class="muted" style="margin-top:0">Nobody administers this club yet. Ask the app owner to set the first admin.</p>`}
@@ -16612,29 +16629,6 @@ function viewAdmin() {
         <span><span class="pname">${teamLabel(t)}</span><span class="rowsub">${teamStats(t)}</span></span>
         <span class="muted">Edit</span></button>`).join('') || '<p class="muted" style="margin:0">No teams yet.</p>'}</div>
       <div style="margin-top:10px"><button class="btn quiet wide" data-act="newteam">Add a team</button></div></div>
-
-    <div class="card"><h2 style="margin-bottom:8px">Planning for the club</h2>
-      <p class="muted" style="margin-top:0">Every team on the one Calendar, with games, a run of fixtures or practices added to any team from it. Then what collides across the teams, when everyone involved is free, and picture day laid out around what each team already has on.</p>
-      <button class="btn wide" data-act="schedule">Calendar: all teams</button>
-      <button class="btn quiet wide" data-act="planner" style="margin-top:8px">Clashes, find a time, picture day</button></div>
-
-    <div class="card"><h2 style="margin-bottom:8px">Registrations</h2>
-      <p class="muted" style="margin-top:0">${(n => n ? `${n} program${n === 1 ? '' : 's'}.` : 'None yet.')(programsAll().length)} What families register their children for, with its link, waivers, and who has registered.</p>
-      <button class="btn quiet wide" data-act="goview" data-v="regs">Registrations</button></div>
-    <div class="card"><h2 style="margin-bottom:8px">Coach compliance</h2>
-      <p class="muted" style="margin-top:0">${(t => t.length ? esc(t.map(([st, n]) => `${n} ${COMPLY_TALLY[st]}`).join(' · ')) + '.' : 'Everyone is up to date.')(complyTally(complyRows()))} Each coach's SafeSport, concussion training, background check and licence, with when each lapses.</p>
-      <button class="btn quiet wide" data-act="goview" data-v="comply">Coach compliance</button></div>
-    <div class="card"><h2 style="margin-bottom:8px">Fields and permits</h2>
-      <p class="muted" style="margin-top:0">${fieldList().length ? `${fieldList().length} field${fieldList().length === 1 ? '' : 's'}.` : 'None yet.'} The places the club trains, the permits you hold for each and when, and what is booked on them.</p>
-      <button class="btn quiet wide" data-act="sesstab" data-k="fields">Fields</button></div>
-    <div class="card"><h2 style="margin-bottom:8px">Club drills</h2>
-      <p class="muted" style="margin-top:0">${(() => { const n = shelfItems('club').length; return n ? `${n} drill${n === 1 ? '' : 's'} the club's coaches have shared.` : 'None yet. Coaches share their own drills into it, and you can tidy or remove any of them.'; })()} Coaches, team helpers and admins see them; trackers and parents never do.</p>
-      <button class="btn quiet wide" data-act="clubdrills">Look after the club's drills</button>
-      <button class="btn quiet wide" data-act="tpllist" data-k="clubTpl" style="margin-top:8px">The club's templates${(() => { const n = tplItems('clubTpl').length; return n ? ' · ' + n : ''; })()}</button></div>
-
-    <div class="card"><h2 style="margin-bottom:8px">Bulk import</h2>
-      <p class="muted" style="margin-top:0">Moving from another app or a spreadsheet? A whole season at once — rosters, games, practices, the club's fields and permits, and training sessions — from CSV files or one JSON file. It adds and updates, and never removes anything.</p>
-      <button class="btn quiet wide" data-act="bulkimport">Import from a spreadsheet or file</button></div>
 
     ${aiButton('club')}
   </div>`;
@@ -21094,6 +21088,9 @@ function onAct(e) {
     return;
   }
   if (a === 'people') { ui.view = 'people'; closeSheet(); render(); return; }
+  // Settings → Advanced, an admin's; the button is not drawn for anyone else and the tap is refused the same
+  if (a === 'readysheet') { if (!canAdmin()) { toast('Club admins only'); return; } sheetReadiness(); return; }
+  if (a === 'backupsheet') { if (!canAdmin()) { toast('Club admins only'); return; } sheetBackup(); return; }
   if (a === 'peoplefilter') { ui.peopleFilter = d.v; render(); return; }
   if (a === 'personedit') { sheetPersonRoles(d.uid); return; }
   if (a === 'peoplesort') { ui.peopleSort = ui.peopleSort === 'joined' ? 'name' : 'joined'; render(); return; }
@@ -22198,7 +22195,7 @@ function onAct(e) {
   if (a === 'editformation') { ui.editFid = d.id; ui.view = 'formation'; closeSheet(); render(); return; }
   if (a === 'backsetup') {
     if (ui.editFid === GAME_SHAPE) { ui.view = 'game'; ui.gameView = 'pitch'; }
-    else ui.view = 'admin';
+    else ui.view = 'setup';
     ui.editFid = null; render(); return;
   }
   /* A game's own shape is part of running the game, so it takes the same

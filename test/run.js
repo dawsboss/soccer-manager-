@@ -35,6 +35,7 @@ const SUITES = [
   ['signin', 'the ways in: Google, Apple, Microsoft, email, and one account per email'],
   ['routing', 'links in, links out'],
   ['nav', 'the way around: a tab bar by role, a title row with Back, More, and nothing of it on a locked device'],
+  ['settings', 'one Settings screen: you, this team, the club and advanced, by role, and nothing in two places'],
   ['home', 'a family\'s own Home and Season: Going on the next thing, her child\'s minutes, and landing there'],
   ['sync', 'auth, the workspace read, and its races'],
   ['invites', 'joining a club by invite, on both sides'],
