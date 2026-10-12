@@ -37,6 +37,7 @@ const SUITES = [
   ['nav', 'the way around: a tab bar by role, a title row with Back, More, and nothing of it on a locked device'],
   ['settings', 'one Settings screen: you, this team, the club and advanced, by role, and nothing in two places'],
   ['copy', 'copy and vocabulary: every screen held to GLOSSARY.md, the role card once, refusals in one sentence, labels not paragraphs'],
+  ['visual', 'the visual system: type no smaller than its floor, grey text readable, a chevron on what a tap opens, called off in grey, the + clear of the list'],
   ['home', 'a family\'s own Home and Season: Going on the next thing, her child\'s minutes, and landing there'],
   ['screens', 'each screen on its own (UX-REVIEW.md, 3): a short Season with Stats, Minutes and Attendance behind it, and the fixes to Club home, Players, the Calendar, Subs, Lineup, Sessions, People and the lock screen'],
   ['sync', 'auth, the workspace read, and its races'],

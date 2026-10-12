@@ -99,9 +99,10 @@ const club = () => ({
     check('— the title row carries it, as the switcher', /data-act="clubswitch"[^>]*>[\s\S]*?Lakeside SC/.test(title()), true);
     check('no heading repeating it', /<h2>Lakeside SC<\/h2>/.test(h), false);
     check('the crest row is not a button', /<button[^>]*class="clubhead"/.test(h), false);
-    check('every card that opens something has a chevron', count(h, /<button class="card (tapcard|teamcard)"/g), count(h, /class="setgo"/g));
-    check('— the Calendar card among them', /<button class="card tapcard" type="button" data-act="schedule">[\s\S]*?<b>Calendar<\/b>[\s\S]*?class="setgo"/.test(h), true);
-    check('— and each team\'s', /<button class="card teamcard" data-act="goteam" data-id="t1">[\s\S]*?class="setgo"/.test(h), true);
+    // the chevron is .go, drawn by the stylesheet (UX-REVIEW.md, 4; test/visual.js holds every door to it)
+    check('every card that opens something has a chevron', count(h, /<button class="card /g), count(h, /<button class="card go /g));
+    check('— the Calendar card among them', /<button class="card go tapcard" type="button" data-act="schedule">[\s\S]*?<b>Calendar<\/b>/.test(h), true);
+    check('— and each team\'s', /<button class="card go teamcard" data-act="goteam" data-id="t1">/.test(h), true);
   }
 
   console.log('\n--- Season: short, with Stats, Minutes and Attendance behind it ---');
@@ -113,7 +114,7 @@ const club = () => ({
     check('— naming no child', /Rosa|Mia|Ella/.test(h.slice(h.indexOf('Last game'), h.indexOf('Season so far'))), false);
     check('the record', /<h2>0W 1D 0L<\/h2>/.test(h), true);
     check('the games', /<h2>Games<\/h2>/.test(h) && /data-act="openmatch" data-id="g2"/.test(h), true);
-    check('one row each into Stats, Minutes and Attendance', ['teamstats', 'minutes', 'attend'].every(v => new RegExp(`class="prow setrow" type="button" data-act="goview" data-v="${v}"`).test(h)), true);
+    check('one row each into Stats, Minutes and Attendance', ['teamstats', 'minutes', 'attend'].every(v => new RegExp(`class="prow go setrow" type="button" data-act="goview" data-v="${v}"`).test(h)), true);
     check('— the Minutes row says who is short, over and on plan', /data-v="minutes">[\s\S]*?<span class="psub">[^<]*short/.test(h), true);
     check('— the Attendance row what the register says', /data-v="attend">[\s\S]*?<span class="psub">(Practices: \d+ of \d+ came|No register taken yet)/.test(h), true);
     check('the calendar card stays, once', count(h, /In your own calendar/g), 1);

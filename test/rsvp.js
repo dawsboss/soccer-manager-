@@ -208,7 +208,7 @@ function rest() {
     as('mumU'); A.ui.view = 'calendar';
     // the game being played is on top, live; "next" is whatever comes after it, and that may still ask
     check('and her parent is not asked any more', /data-act="rsvp"[^>]*data-k="g_g1"/.test(html()), false);
-    check('— it is on top, being played', /class="card callive"[^>]*data-id="g1"/.test(html()), true);
+    check('— it is on top, being played', /class="card go callive"[^>]*data-id="g1"/.test(html()), true);
   }
 
   console.log('--- a tracker ---');

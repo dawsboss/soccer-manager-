@@ -1,9 +1,32 @@
+/* The visual system (UX-REVIEW.md, 4; build 147), in three decisions that
+   test/visual.js holds the file to:
+
+   Type. Body text is 16px and nothing a person reads is under 14px: the
+   sideline is bright, the phone is at arm's length, and 12px grey on grey was
+   the review's first complaint. 12px is for labels alone: an uppercase kicker,
+   a count in a badge, a tag, a column heading, the tab bar's words. Smaller
+   only where the layout is the message, not the words: the month and hour
+   grids, a pitch token, a chart's axis, the dots under a day.
+
+   Colour. Green is for actions and now: buttons, the open tab, today, a
+   game being played. Orange (--owed) is a heads-up that wants a look: a sub
+   due soon, someone waiting to be let in, a plan with a gap. Red (--over) is
+   for what needs the coach this minute or cannot be undone: a sub due, a
+   refusal, Delete. A fact is grey: a game called off (struck through), a
+   player short of minutes, a game over. The review found orange and red on
+   every row doing the work of alarms, so neither is used for a state.
+
+   Surfaces. A card that only says something is flat white on the grey page,
+   with no border. A row or card a tap opens keeps its border, presses green,
+   and carries a chevron (.go). A form's fields carry their own borders. The
+   three used to look the same. */
 :root{
   --field:#1E7A4C;
   --field-deep:#17603C;
   --field-wash:#E3EEE7;
   --ink:#16242C;
-  --ink-soft:#5A6B75;
+  /* 5.7:1 on --paper and 6.7:1 on white; the old #5A6B75 was 4.7:1 on the page, a hair over AA */
+  --ink-soft:#4E5E68;
   --paper:#E9EEF0;
   --card:#FFFFFF;
   --line:#CBD7DC;
@@ -57,7 +80,7 @@ button{cursor:pointer}
 }
 .ts-label{font-size:12px;opacity:.72;font-weight:500;flex:none}
 .team-switch.ws{flex:0 1 auto;max-width:52%}
-.team-switch.ws .team-switch-name{font-family:ui-monospace,Menlo,monospace;font-size:13px}
+.team-switch.ws .team-switch-name{font-family:ui-monospace,Menlo,monospace;font-size:14px}
 .team-switch svg{opacity:.7;flex:none}
 .team-switch-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .sync{
@@ -71,7 +94,7 @@ button{cursor:pointer}
 .tabs::-webkit-scrollbar{display:none}
 .tabs button{
   flex:1 1 0;min-width:0;background:none;border:0;color:rgba(255,255,255,.72);
-  font-size:13px;font-weight:500;padding:9px 4px 11px;
+  font-size:14px;font-weight:500;padding:9px 4px 11px;
   border-bottom:3px solid transparent;white-space:nowrap;
 }
 .tabs button[aria-current="true"]{color:#fff;border-bottom-color:#fff}
@@ -85,8 +108,18 @@ h2{font-family:"Barlow Condensed",sans-serif;font-weight:600;font-size:22px;marg
 .row{display:flex;align-items:center;gap:10px}
 .spread{display:flex;align-items:center;justify-content:space-between;gap:10px}
 
-.card{background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:var(--pad)}
+.card{background:var(--card);border:0;border-radius:var(--r);padding:var(--pad)}
 .card+.card{margin-top:0}
+/* a card a tap opens: bordered, pressed green, chevroned (every one carries .go, test/visual.js) */
+button.card{border:1px solid var(--line);width:100%;text-align:left;font:inherit;color:inherit;cursor:pointer}
+button.card:active,button.prow:active,.sheet .opt:active,.calleaf:active{background:var(--field-wash)}
+/* The chevron on a row or card that opens something, drawn in the padding so a grid row needs no
+   column for it; Settings' rows had one of their own (build 143), now this. */
+.go{position:relative;padding-right:32px}
+.go::after{content:"";position:absolute;right:14px;top:50%;width:9px;height:9px;margin-top:-6px;
+  border-right:2px solid var(--ink-soft);border-bottom:2px solid var(--ink-soft);transform:rotate(-45deg);opacity:.8}
+.prow.go{padding-right:30px}
+.prow.go::after{right:12px}
 
 .btn{
   border:1px solid var(--field-deep);background:var(--field-deep);color:#fff;
@@ -104,10 +137,10 @@ input[type=text],input[type=number],input[type=date],input[type=time],input[type
   border-radius:8px;background:#fff;
 }
 label.field{display:block;margin-bottom:10px}
-label.field span{display:block;font-size:13px;color:var(--ink-soft);margin-bottom:4px}
+label.field span{display:block;font-size:14px;color:var(--ink-soft);margin-bottom:4px}
 .grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
 .fhrow{display:grid;grid-template-columns:36px 1fr 1fr auto;gap:6px;align-items:center;margin-bottom:6px}
-.fhrow input{min-width:0;width:100%;padding:8px 2px;font-size:13px}
+.fhrow input{min-width:0;width:100%;padding:8px 2px;font-size:14px}
 .fhrow .chip{padding-left:10px;padding-right:10px}
 .grid2>*{min-width:0}
 .grid2 input{min-width:0;width:100%}
@@ -158,7 +191,7 @@ label.field span{display:block;font-size:13px;color:var(--ink-soft);margin-botto
 .token .mins{font-size:12px;font-weight:600;color:var(--ink-soft);font-variant-numeric:tabular-nums}
 .token .nm{
   position:absolute;top:calc(100% + 2px);font-family:"Barlow",sans-serif;
-  font-size:11px;font-weight:600;color:#fff;white-space:nowrap;
+  font-size:12px;font-weight:600;color:#fff;white-space:nowrap;
   text-shadow:0 1px 2px rgba(0,0,0,.5);
 }
 .token[data-owed="1"]{border-color:var(--owed);background:var(--owed-wash)}
@@ -166,7 +199,7 @@ label.field span{display:block;font-size:13px;color:var(--ink-soft);margin-botto
 .token.dragging{z-index:5;box-shadow:0 6px 14px rgba(0,0,0,.35)}
 .pitchhint{
   position:absolute;left:0;right:0;bottom:8px;text-align:center;
-  color:rgba(255,255,255,.85);font-size:12.5px;pointer-events:none;
+  color:rgba(255,255,255,.85);font-size:14px;pointer-events:none;
 }
 
 /* ---------- player rows ---------- */
@@ -183,12 +216,12 @@ label.field span{display:block;font-size:13px;color:var(--ink-soft);margin-botto
   color:var(--ink-soft);font-variant-numeric:tabular-nums;text-align:center;
 }
 .pname{display:block;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.psub{display:block;font-size:12.5px;color:var(--ink-soft);margin-top:1px}
+.psub{display:block;font-size:14px;color:var(--ink-soft);margin-top:1px}
 .pmins{
   font-family:"Barlow Condensed",sans-serif;font-weight:700;font-size:21px;
   font-variant-numeric:tabular-nums;text-align:right;min-width:58px;
 }
-.pmins small{font-weight:500;font-size:13px;color:var(--ink-soft)}
+.pmins small{font-weight:500;font-size:14px;color:var(--ink-soft)}
 /* Plan tab, after kick-off: minutes by this change on top, the whole game under it */
 .snapmins{display:flex;flex-direction:column;align-items:flex-end;line-height:1.05}
 .snapmins .pmtot{font-family:"Barlow",sans-serif;font-weight:500;font-size:12px;color:var(--ink-soft);white-space:nowrap;margin-top:2px}
@@ -237,13 +270,13 @@ label.field span{display:block;font-size:13px;color:var(--ink-soft);margin-botto
 /* ---------- new bits ---------- */
 .linkbtn{
   background:none;border:0;padding:8px 0 0;color:rgba(255,255,255,.8);
-  font-size:13px;text-decoration:underline;text-underline-offset:3px;
+  font-size:14px;text-decoration:underline;text-underline-offset:3px;
 }
 .warn{
   background:var(--owed-wash);border:1px solid var(--owed);border-radius:var(--r);
   padding:10px 13px;font-size:14.5px;color:#6C4406;
 }
-.lbl{font-size:13px;color:var(--ink-soft);margin:0 0 6px}
+.lbl{font-size:14px;color:var(--ink-soft);margin:0 0 6px}
 .warn-chip[aria-pressed="true"]{background:var(--over);border-color:var(--over)}
 .planblock{border-top:1px solid var(--line);padding:10px 0;font-size:14.5px}
 .planblock:first-of-type{border-top:0}
@@ -319,8 +352,8 @@ label.field span{display:block;font-size:13px;color:var(--ink-soft);margin-botto
 .slotok .rl{font-family:"Barlow",sans-serif;font-size:10px;color:var(--ink-soft)}
 .slotok.dragging{z-index:5;box-shadow:0 6px 14px rgba(0,0,0,.35)}
 
-.rowsub{font-size:12.5px;color:var(--ink-soft);display:block}
-.untitled{color:var(--over);font-style:italic}
+.rowsub{font-size:14px;color:var(--ink-soft);display:block}
+.untitled{color:var(--ink-soft);font-style:italic}
 .codebox{
   font-family:ui-monospace,Menlo,monospace;font-size:16px;
   background:var(--paper);border:1px solid var(--line);border-radius:8px;
@@ -343,8 +376,9 @@ label.field span{display:block;font-size:13px;color:var(--ink-soft);margin-botto
 }
 .livemins small{font-weight:500;font-size:12px;color:var(--ink-soft)}
 .diff{display:block;font-size:12px;font-weight:600}
-.diff.owed{color:var(--owed)}
-.diff.over,.diff.even{color:var(--ink-soft)}
+/* short or over is a fact about the plan, not an alarm: the review found orange "owed" on
+   all eleven rows reading as eleven warnings */
+.diff.owed,.diff.over,.diff.even{color:var(--ink-soft)}
 .pickbar{
   position:sticky;top:96px;z-index:30;
   display:flex;align-items:center;justify-content:space-between;gap:10px;
@@ -355,7 +389,7 @@ label.field span{display:block;font-size:13px;color:var(--ink-soft);margin-botto
 /* ---------- score ---------- */
 .scorecard{display:flex;align-items:stretch;gap:10px;padding:12px}
 .scoreside{flex:1;display:flex;flex-direction:column;align-items:center;gap:4px;min-width:0}
-.scorelbl{font-size:13px;color:var(--ink-soft);max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.scorelbl{font-size:14px;color:var(--ink-soft);max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .scorenum{font-family:"Barlow Condensed",sans-serif;font-weight:700;font-size:42px;line-height:1;font-variant-numeric:tabular-nums}
 .scoresep{width:1px;background:var(--line)}
 .scoreside .btn{width:100%}
@@ -378,7 +412,7 @@ label.field span{display:block;font-size:13px;color:var(--ink-soft);margin-botto
 
 /* ---------- tallies ---------- */
 .tallygrid{display:grid;grid-template-columns:auto 1fr 1fr;gap:8px;align-items:center}
-.tallyhead{font-size:13px;color:var(--ink-soft);text-align:center;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tallyhead{font-size:14px;color:var(--ink-soft);text-align:center;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .tallylbl{font-size:14px;color:var(--ink-soft)}
 .tallybtn{
   display:flex;flex-direction:column;align-items:center;gap:1px;
@@ -386,14 +420,14 @@ label.field span{display:block;font-size:13px;color:var(--ink-soft);margin-botto
   justify-content:center;
 }
 .tallybtn b{font-family:"Barlow Condensed",sans-serif;font-size:24px;line-height:1;font-variant-numeric:tabular-nums}
-.tallybtn span{font-size:10px;color:var(--ink-soft);letter-spacing:.04em}
+.tallybtn span{font-size:12px;color:var(--ink-soft);letter-spacing:.04em}
 .tallybtn:active{background:var(--field-wash)}
 .possbar{height:12px;border-radius:6px;background:var(--bench);overflow:hidden}
 .possbar i{display:block;height:100%;background:var(--field)}
 .linkbtn.dark{color:var(--ink-soft);display:block;padding:10px 0 0}
 
-.clocknote{margin:10px 0 0;font-size:13px;color:rgba(255,255,255,.75)}
-.tabs button{font-size:12.5px;padding-left:3px;padding-right:3px}
+.clocknote{margin:10px 0 0;font-size:14px;color:rgba(255,255,255,.75)}
+.tabs button{padding-left:3px;padding-right:3px}
 
 /* ---------- which game ---------- */
 .gamebar{
@@ -431,7 +465,7 @@ label.field span{display:block;font-size:13px;color:var(--ink-soft);margin-botto
 .crest.lg{width:56px;height:56px;border-radius:12px;margin-bottom:8px;display:block}
 .crest.blank{display:flex;align-items:center;justify-content:center;border:1px dashed var(--line);color:var(--ink-soft)}
 
-.ver{font-family:"Barlow",sans-serif;font-size:11px;font-weight:500;opacity:.55;margin-left:6px;vertical-align:2px}
+.ver{font-family:"Barlow",sans-serif;font-size:12px;font-weight:500;opacity:.55;margin-left:6px;vertical-align:2px}
 .ver[data-stale="1"]{opacity:1;color:#FFD9A0}
 .ver[data-stale="1"]::after{content:" cached"}
 
@@ -447,7 +481,7 @@ label.field span{display:block;font-size:13px;color:var(--ink-soft);margin-botto
 .minipitch .dot[data-side="them"]{border-color:var(--owed)}
 .minipitch .dot[data-side="them"][data-on="1"]{background:var(--owed)}
 
-.tallylbl .conv{display:block;font-size:11px;opacity:.7;margin-top:1px}
+.tallylbl .conv{display:block;font-size:12px;opacity:.7;margin-top:1px}
 .possbar{display:flex}
 .possbar i{background:var(--field)}
 .possbar u{display:block;height:100%;background:repeating-linear-gradient(45deg,var(--line),var(--line) 3px,#fff 3px,#fff 6px)}
@@ -455,7 +489,7 @@ label.field span{display:block;font-size:13px;color:var(--ink-soft);margin-botto
 /* A game's screens as a segmented control (build 144): one rounded strip, the
    open screen lit white, under the game header and pinned with it. */
 .subtabs{background:rgba(0,0,0,.2);margin:0 0 9px;padding:3px;border-radius:11px;gap:3px}
-.subtabs button{font-size:13.5px;font-weight:600;padding:7px 4px;border:0;border-radius:8px;color:rgba(255,255,255,.78)}
+.subtabs button{font-size:14px;font-weight:600;padding:7px 4px;border:0;border-radius:8px;color:rgba(255,255,255,.78)}
 .subtabs button[aria-current="true"]{background:#fff;color:var(--field-deep)}
 .statgrid{display:grid;gap:8px;align-items:center}
 .statgrid b{font-family:"Barlow Condensed",sans-serif;font-size:21px;text-align:center;font-variant-numeric:tabular-nums}
@@ -470,7 +504,7 @@ label.field span{display:block;font-size:13px;color:var(--ink-soft);margin-botto
 @media (prefers-reduced-motion:reduce){[data-bump="1"]{animation:none}}
 
 .rolebar{background:var(--field-wash);border:1px solid var(--field);border-radius:var(--r);
-  padding:9px 12px;font-size:13.5px;margin-bottom:12px;color:#11402A}
+  padding:9px 12px;font-size:14px;margin-bottom:12px;color:#11402A}
 /* A rehearsal has to be unmistakable at a glance, so the test bar is warm
    rather than the app's green — it should read as "not the real club". */
 .rolebar.test{background:#FFF4E0;border-color:#E0A33C;color:#6A4310}
@@ -512,7 +546,7 @@ body[data-role="viewer"] .scoreside .btn{display:none}
 .tbtitle.pick{background:none;border:0;padding:0;text-align:left}
 .tbtitle svg,.tbsub svg{flex:none;opacity:.7}
 .tbsub{display:flex;align-items:center;gap:5px;max-width:100%;min-width:0;background:none;border:0;padding:0;
-  color:rgba(255,255,255,.78);font-size:12.5px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-align:left}
+  color:rgba(255,255,255,.78);font-size:14px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-align:left}
 .tbsub>span{min-width:0;overflow:hidden;text-overflow:ellipsis}
 .tbsub .crest.xs{width:16px;height:16px;border-radius:4px}
 .tbtitle .crest.xs{width:22px;height:22px;border-radius:6px}
@@ -531,8 +565,8 @@ body[data-mode="game"] .titlebar{padding-top:4px;padding-bottom:8px}
 .ghclock{flex:none;font-family:"Barlow Condensed",sans-serif;font-weight:700;font-size:20px;line-height:1.2;
   font-variant-numeric:tabular-nums;color:#fff;background:rgba(255,255,255,.14);border:1px solid rgba(255,255,255,.22);
   border-radius:9px;padding:3px 9px;max-width:38vw;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.ghclock.ghkick{font-family:"Barlow",sans-serif;font-weight:600;font-size:12.5px;padding:5px 9px}
-.ghsync{font-size:11px;padding:2px 7px}
+.ghclock.ghkick{font-family:"Barlow",sans-serif;font-weight:600;font-size:14px;padding:4px 9px}
+.ghsync{font-size:12px;padding:2px 7px}
 /* the two looks folded into one screen: List / Pitch on Subs, Stats / Live feed on Stats */
 .chips.looks{flex-wrap:nowrap}
 .looks .chip{flex:1;text-align:center;padding:7px 8px}
@@ -545,13 +579,14 @@ body[data-mode="game"] .titlebar{padding-top:4px;padding-bottom:8px}
   background:var(--card);border-top:1px solid var(--line);padding:0 0 env(safe-area-inset-bottom)}
 .tab{flex:1 1 0;max-width:180px;min-width:0;position:relative;background:none;border:0;
   display:flex;flex-direction:column;align-items:center;gap:2px;padding:7px 2px 7px;
-  color:var(--ink-soft);font-size:11px;font-weight:500;line-height:1.2}
+  color:var(--ink-soft);font-size:12px;font-weight:500;line-height:1.2}
 .tab svg{width:24px;height:24px;flex:none}
 .tab span.tabl{max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .tab[aria-current="true"]{color:var(--field-deep);font-weight:600}
 .tab:active{background:var(--field-wash)}
-.tabn{position:absolute;top:3px;left:calc(50% + 5px);min-width:17px;height:17px;padding:0 4px;border-radius:999px;
-  background:var(--owed);color:#fff;font-size:11px;font-weight:700;line-height:17px;text-align:center}
+/* a count, not a warning: green like the count on a conversation */
+.tabn{position:absolute;top:3px;left:calc(50% + 5px);min-width:18px;height:18px;padding:0 5px;border-radius:999px;
+  background:var(--field-deep);color:#fff;font-size:12px;font-weight:700;line-height:18px;text-align:center}
 .tabn:empty{display:none}
 /* a game being played: the dot a live tab carries, in the colour the score uses for the other side */
 .tablive{position:absolute;top:6px;left:calc(50% + 8px);width:9px;height:9px;border-radius:50%;background:var(--over);border:2px solid var(--card)}
@@ -563,7 +598,6 @@ body[data-mode="game"] .titlebar{padding-top:4px;padding-bottom:8px}
 .avatar[data-on="0"]{opacity:.65}
 .teamcard,.tapcard{display:flex;align-items:center;gap:12px;text-align:left;width:100%}
 .tapcard .tc-main b{font-size:16px}
-.tapcard:active,.teamcard:active,.setrow:active,button.card:active{background:var(--paper)}
 .tc-main{flex:1;min-width:0}
 .tc-main b{display:block;font-size:17px}
 
@@ -582,7 +616,7 @@ body[data-mode="game"] .titlebar{padding-top:4px;padding-bottom:8px}
 /* ---------- dense tables ---------- */
 .tablewrap{overflow-x:auto;background:#fff;border:1px solid var(--line);border-radius:var(--r)}
 table.grid{border-collapse:collapse;width:100%;font-size:14px}
-table.grid th{text-align:left;font-size:11px;font-weight:600;color:var(--ink-soft);
+table.grid th{text-align:left;font-size:12px;font-weight:600;color:var(--ink-soft);
   letter-spacing:.04em;padding:8px 10px;border-bottom:1px solid var(--line);
   position:sticky;top:0;background:#fff;white-space:nowrap}
 table.grid td{padding:9px 10px;border-bottom:1px solid var(--paper);vertical-align:top;white-space:nowrap}
@@ -612,7 +646,7 @@ table.grid td.right{text-align:right}
 .snapwhen{display:flex;align-items:center;justify-content:center;gap:6px;margin-bottom:10px}
 .snapwhen .btn.sm{padding:7px 9px}
 .snapwhen b{font-family:"Barlow Condensed",sans-serif;font-size:22px;line-height:1.05;min-width:6ch;text-align:center;font-variant-numeric:tabular-nums}
-.snapwhen b small{display:block;font-family:"Barlow",sans-serif;font-size:11.5px;font-weight:500;color:var(--ink-soft)}
+.snapwhen b small{display:block;font-family:"Barlow",sans-serif;font-size:12px;font-weight:500;color:var(--ink-soft)}
 .snapwhen .muted{font-size:14px}
 .snapwhen .snapx{margin-left:6px}
 .pitch button.token{padding:0;color:var(--ink);cursor:pointer;font:inherit;font-family:"Barlow Condensed",sans-serif}
@@ -627,7 +661,7 @@ table.grid td.right{text-align:right}
   padding:12px 14px;font-size:14.5px;color:var(--field-deep);
 }
 .lockbar b{font-size:17px}
-.lockbar .lockwhen{font-size:13px;color:var(--ink-soft)}
+.lockbar .lockwhen{font-size:14px;color:var(--ink-soft)}
 .lockbar .lockmsg{margin:6px 0 0;color:var(--ink)}
 .lockbar .row{margin-top:10px}
 .lockbar[data-state="sending"]{background:var(--owed-wash);border-color:var(--owed);color:#6C4406}
@@ -639,6 +673,8 @@ table.grid td.right{text-align:right}
 }
 .subsline{margin:6px 0 0;font-size:15px}
 .subsnames{margin-top:6px;font-size:14.5px;line-height:1.5}
+/* the sideline card keeps a border: its colour is the state (soon, due) */
+.subscard{border:1px solid var(--line)}
 .subscard .subsgo{margin-top:12px;font-size:18px;padding:15px 16px}
 .subscard[data-state="soon"]{border-color:var(--owed);box-shadow:inset 4px 0 0 var(--owed)}
 .subscard[data-state="soon"] .subsclock{color:var(--owed)}
@@ -677,7 +713,7 @@ table.grid td.right{text-align:right}
    the key — so a glance at the month says "two games and a practice" before
    anything is read. */
 .calgrid{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:2px;text-align:center}
-.calgrid .wd{font-size:11px;color:var(--ink-soft);padding:2px 0 4px;text-transform:uppercase;letter-spacing:.04em}
+.calgrid .wd{font-size:12px;color:var(--ink-soft);padding:2px 0 4px;text-transform:uppercase;letter-spacing:.04em}
 .calday{background:none;border:0;border-radius:8px;padding:6px 0 4px;min-height:44px;
   display:flex;flex-direction:column;align-items:center;gap:4px;font-size:14px;font-variant-numeric:tabular-nums}
 button.calday{font-weight:600}
@@ -706,8 +742,10 @@ button.calday:active{background:var(--field-wash)}
 .tag.event{background:var(--owed-wash);color:#6C4406}
 .tag.session{background:#EEE6F7;color:#4B2A73}
 .tag.off{background:#FBE7E3;color:#6E2317}
+/* called off, postponed, a day off: a fact, in grey; the title beside it is struck through */
+.tag.called{background:var(--paper);color:var(--ink-soft)}
 .facts{display:grid;grid-template-columns:auto 1fr;gap:6px 14px;margin:0 0 14px;font-size:15px}
-.facts dt{color:var(--ink-soft);font-size:13px;padding-top:2px}
+.facts dt{color:var(--ink-soft);font-size:14px;padding-top:2px}
 .facts dd{margin:0}
 .row.wrap{flex-wrap:wrap}
 /* Email it's address box: its own line under the buttons, wherever the row is */
@@ -722,7 +760,7 @@ a.btn{display:inline-block;text-decoration:none}
 .rsvprow{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:6px 0;border-top:1px solid var(--paper)}
 .rsvprow:first-of-type{border-top:0}
 .rsvpchips{flex:none}
-.rsvprow .chip{padding:4px 9px;font-size:13px}
+.rsvprow .chip{padding:4px 9px;font-size:14px}
 /* a quiet action on a light card (.linkbtn is for the dark clock band) */
 .textbtn{background:none;border:0;padding:4px 0;color:var(--field-deep);font-size:14px;text-decoration:underline;text-underline-offset:3px}
 /* ---------- messages ---------- */
@@ -731,12 +769,12 @@ a.btn{display:inline-block;text-decoration:none}
 .msgcard.unread .msgbody{font-weight:600}
 .msgcard.urgent{border-left:4px solid var(--over);padding-left:10px}
 .msghead{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-bottom:4px}
-.msgwhen{margin-left:auto;font-size:12.5px;color:var(--ink-soft);white-space:nowrap}
+.msgwhen{margin-left:auto;font-size:14px;color:var(--ink-soft);white-space:nowrap}
 .msgbody{overflow-wrap:anywhere}
-.msgfoot{display:flex;flex-wrap:wrap;gap:4px 14px;margin-top:6px;font-size:13.5px;color:var(--ink-soft)}
+.msgfoot{display:flex;flex-wrap:wrap;gap:4px 14px;margin-top:6px;font-size:14px;color:var(--ink-soft)}
 .msgfoot.bad{color:var(--over)}
 .msgfoot .linkbtn,.bubble .linkbtn{padding:0;color:var(--field-deep);font-size:inherit}
-.msghead .pill,.convrow .pill{display:inline-block;padding:0 7px;border-radius:999px;font-size:11.5px;font-weight:600;
+.msghead .pill,.convrow .pill{display:inline-block;padding:0 7px;border-radius:999px;font-size:12px;font-weight:600;
   background:var(--field-wash);color:var(--field-deep);border:1px solid var(--line)}
 .msghead .pill.urgent{background:#FBE3DD;color:var(--over);border:1px solid var(--over)}
 .convrow{grid-template-columns:1fr auto;text-align:left;width:100%}
@@ -748,9 +786,9 @@ a.btn{display:inline-block;text-decoration:none}
 .thread{display:flex;flex-direction:column;gap:8px;margin-bottom:12px;max-height:60vh;overflow-y:auto}
 .bubble{max-width:85%;align-self:flex-start;background:var(--paper);border-radius:14px 14px 14px 4px;padding:8px 12px}
 .bubble.me{align-self:flex-end;background:var(--field-wash);border-radius:14px 14px 4px 14px}
-.bubble .bwho{display:block;font-size:12.5px;font-weight:600;color:var(--field-deep)}
+.bubble .bwho{display:block;font-size:14px;font-weight:600;color:var(--field-deep)}
 .bubble .btext{display:block;overflow-wrap:anywhere}
-.bubble .bwhen{display:block;font-size:11.5px;color:var(--ink-soft);margin-top:2px}
+.bubble .bwhen{display:block;font-size:12px;color:var(--ink-soft);margin-top:2px}
 #msgText,#postText{width:100%}
 /* where her message has got to: ◷ waiting, ✓ sent, ✓✓ delivered, ✓✓ read (blue, as phones draw it) */
 .bubble.me[data-act]{cursor:pointer}
@@ -758,7 +796,7 @@ a.btn{display:inline-block;text-decoration:none}
 .tick{font-weight:700;letter-spacing:-2px;margin-right:2px}
 .tick.wait{letter-spacing:0}
 .tick.read{color:#1F6FD1}
-.lockline{color:var(--ink-soft);font-size:12.5px;text-align:left;padding:0}
+.lockline{color:var(--ink-soft);font-size:14px;text-align:left;padding:0}
 .lockline .linkbtn,.linkbtn.lockline{color:var(--ink-soft);padding:0;font-size:inherit}
 .lock{vertical-align:-1px;margin-right:2px}
 
@@ -789,22 +827,22 @@ a.btn{display:inline-block;text-decoration:none}
 .drillrow:active{transform:translateY(1px)}
 .drillmain{display:flex;flex-direction:column;gap:3px;min-width:0}
 .drillname{font-family:"Barlow Condensed",sans-serif;font-weight:700;font-size:19px;line-height:1.1}
-.drilltype{font-size:11.5px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--field-deep)}
+.drilltype{font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--field-deep)}
 .drillsum{font-size:14.5px}
-.drillfacts{font-size:12.5px;color:var(--ink-soft)}
+.drillfacts{font-size:14px;color:var(--ink-soft)}
 .drillfacts b{color:var(--ink);font-weight:600}
 .drillthumb{border-radius:6px;overflow:hidden;line-height:0}
 .drillthumb svg,.drillpic svg{width:100%;height:auto;display:block}
 .drillpic{border-radius:8px;overflow:hidden;line-height:0;background:#2F8A55;margin-bottom:6px}
 .sheet .edstep{font-size:15px;font-weight:700;color:var(--ink);margin:18px 0 8px;padding-top:12px;border-top:1px solid var(--line)}
-.need{font-weight:600;font-size:11px;color:var(--ink-soft);text-transform:uppercase;letter-spacing:.04em;margin-left:4px}
+.need{font-weight:600;font-size:12px;color:var(--ink-soft);text-transform:uppercase;letter-spacing:.04em;margin-left:4px}
 .hint{font-style:normal;font-weight:400;font-size:12px;color:var(--ink-soft);margin-left:4px}
 .drillpic.board{touch-action:manipulation;-webkit-user-select:none;user-select:none}
-.drillpicbar{font-size:12.5px;margin-bottom:6px;flex-wrap:wrap}
+.drillpicbar{font-size:14px;margin-bottom:6px;flex-wrap:wrap}
 .drillkey{display:flex;flex-wrap:wrap;gap:4px 10px;color:var(--ink-soft)}
 .drillkey i{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:4px;vertical-align:-1px;border:1px solid rgba(0,0,0,.2)}
 .drillsteps{margin:0 0 10px;padding-left:20px;font-size:14px;color:var(--ink-soft)}
-.drillmeta{display:flex;flex-wrap:wrap;gap:4px 12px;font-size:13px;color:var(--ink-soft);margin-bottom:6px}
+.drillmeta{display:flex;flex-wrap:wrap;gap:4px 12px;font-size:14px;color:var(--ink-soft);margin-bottom:6px}
 .drillmeta b{color:var(--ink);font-weight:600}
 .sheet h4{font-size:12.5px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--ink-soft);margin:14px 0 4px}
 .drillul{margin:0;padding-left:20px}
@@ -815,12 +853,12 @@ a.btn{display:inline-block;text-decoration:none}
 .drillwhy p,.drillsafety p{margin:0}
 @media (max-width:420px){.drillrow{grid-template-columns:1fr 82px}}
 .drillthumb.nopic{aspect-ratio:4/3;background:var(--field-wash);color:var(--field-deep);display:flex;align-items:center;justify-content:center;font-size:22px;line-height:1}
-.drillname .tag{font-family:inherit;font-size:11px;vertical-align:3px}
+.drillname .tag{font-family:inherit;font-size:12px;vertical-align:3px}
 .drillmedia{margin:0 0 8px}
 .drillmedia img{width:100%;height:auto;display:block;border-radius:8px}
-.drillmedia figcaption{font-size:13px;color:var(--ink-soft);margin-top:4px}
+.drillmedia figcaption{font-size:14px;color:var(--ink-soft);margin-top:4px}
 .drilllinkcard{display:flex;flex-direction:column;gap:2px;text-decoration:none;color:inherit;margin-bottom:8px;border-left:4px solid var(--field)}
-.drilllinkcard .muted{font-size:13px;overflow-wrap:anywhere}
+.drilllinkcard .muted{font-size:14px;overflow-wrap:anywhere}
 .sheet .chips + .lbl,.sheet .chips + .grid2{margin-top:12px}
 
 /* --- practice plans --- */
@@ -837,7 +875,7 @@ button.nextprac{cursor:pointer}
 .planmins .chip{min-width:36px;padding:4px 0;justify-content:center}
 .plannote{margin:6px 0 0;padding:6px 8px;background:var(--paper);border-radius:6px;font-size:14px}
 .planctl{display:flex;gap:6px;margin-top:8px;flex-wrap:wrap}
-.planctl button{font:inherit;font-size:13px;background:none;border:1px solid var(--line);border-radius:6px;padding:4px 10px;color:var(--ink-soft);cursor:pointer}
+.planctl button{font:inherit;font-size:14px;background:none;border:1px solid var(--line);border-radius:6px;padding:4px 10px;color:var(--ink-soft);cursor:pointer}
 .planctl button:disabled{opacity:.35;cursor:default}
 .planwarn{background:var(--owed-wash);border-color:var(--owed)}
 .planwarn p{margin:0 0 4px;color:#6C4406;font-size:14px}
@@ -871,11 +909,11 @@ button.nextprac{cursor:pointer}
 .wtiles{display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:14px;margin-top:12px}
 .wtile b{display:block;font-family:"Barlow Condensed",sans-serif;font-size:40px;line-height:1;font-variant-numeric:tabular-nums}
 .wtile b small,.wstars b small{font-size:16px;font-weight:500;opacity:.8}
-.wtile span{display:block;font-size:13px;opacity:.85;margin-top:2px}
+.wtile span{display:block;font-size:14px;opacity:.85;margin-top:2px}
 .wstars{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:14px;margin-top:12px}
 .wstars .lbl{display:block;font-size:12px;color:inherit;opacity:.8;margin-bottom:2px}
 .wstars b{display:block;font-family:"Barlow Condensed",sans-serif;font-size:21px;line-height:1.15}
-.wlegend{display:flex;gap:14px;font-size:13px;color:var(--ink-soft);margin-bottom:8px;flex-wrap:wrap}
+.wlegend{display:flex;gap:14px;font-size:14px;color:var(--ink-soft);margin-bottom:8px;flex-wrap:wrap}
 .wlegend .k{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:5px;vertical-align:-1px}
 .wlegend .k.us{background:var(--field)}
 .wlegend .k.them{background:var(--bench)}
@@ -889,19 +927,19 @@ button.nextprac{cursor:pointer}
 .spell .up i{background:var(--field);border-radius:4px 4px 0 0}
 .spell .dn i{background:var(--bench);border-radius:0 0 4px 4px}
 .spell .gdot{font-size:9px;line-height:1.2;color:var(--ink);letter-spacing:-1px}
-.spell .sl{font-size:11px;color:var(--ink-soft);text-align:center;margin-top:3px}
+.spell .sl{font-size:12px;color:var(--ink-soft);text-align:center;margin-top:3px}
 .wpair{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:12px}
 .wpair .lbl{display:block;font-size:12px;color:var(--ink-soft)}
 .wpair b{display:block;font-family:"Barlow Condensed",sans-serif;font-size:22px}
-.wpair .muted{font-size:13px}
-.wtable{margin-top:10px;font-size:13px}
+.wpair .muted{font-size:14px}
+.wtable{margin-top:10px;font-size:14px}
 .wtable summary{color:var(--focus);cursor:pointer}
 .wtable .statgrid{margin-top:8px;gap:4px 8px}
 .wnotes h2{margin-bottom:8px}
 .wnotes ul{margin:0;padding-left:20px}
 .wnotes li{margin:4px 0}
 .wnotes.good{border-left:4px solid var(--field)}
-.wnotes.work{border-left:4px solid var(--owed)}
+.wnotes.work{border-left:4px solid var(--bench)}
 /* Six things share the game bar's row on a phone; the name needs the room
    more than the buttons need their padding. */
 
@@ -925,11 +963,11 @@ button.nextprac{cursor:pointer}
 .lc-goal.them{fill:var(--ink)}
 .wlegend .k.dash{background:repeating-linear-gradient(90deg,var(--bench),var(--bench) 4px,transparent 4px,transparent 6px);height:3px;vertical-align:3px}
 .lctable{overflow-x:auto;margin-top:8px}
-.lctable table{border-collapse:collapse;font-size:13px;white-space:nowrap}
+.lctable table{border-collapse:collapse;font-size:14px;white-space:nowrap}
 .lctable th,.lctable td{padding:3px 8px;border-bottom:1px solid var(--line);text-align:center}
 .lctable th:first-child,.lctable td:first-child{text-align:left}
 .tlogrow .t{display:flex;flex-direction:column;line-height:1.15}
-.tlogrow .t small{font-size:11px;color:var(--ink-soft);font-weight:500}
+.tlogrow .t small{font-size:12px;color:var(--ink-soft);font-weight:500}
 .chip small{opacity:.65;margin-left:2px}
 
 /* ---------- the calendar's views and its list of calendars ---------- */
@@ -938,18 +976,17 @@ button.nextprac{cursor:pointer}
 .calrow.tc{border-left:4px solid var(--tc);padding-left:8px}
 .calday[data-sel="1"]{background:var(--field-deep);color:#fff}
 .calday[data-sel="1"] .dot{box-shadow:0 0 0 1px #fff}
-.calday small{font-size:10px;font-weight:500;line-height:1;color:inherit;opacity:.8}
+.calday small{font-size:11px;font-weight:500;line-height:1;color:inherit;opacity:.8}
 .dots small{font-size:9px;line-height:6px}
 .calviews{justify-content:center}
 .calviews .chip{flex:1;justify-content:center}
 .calnav{align-items:center}
 .calhead.now{color:var(--field-deep)}
-.calnone{margin:2px 0 0;font-size:13px}
+.calnone{margin:2px 0 0;font-size:14px}
 .calcals .plainbtn{background:none;border:0;padding:0;font:inherit;color:inherit;cursor:pointer;text-align:left}
 .caltree{margin-top:10px;display:flex;flex-direction:column;gap:2px}
 .calleaf{display:flex;align-items:center;gap:10px;width:100%;background:none;border:0;border-radius:8px;
   padding:8px 6px;font:inherit;color:inherit;text-align:left;cursor:pointer;min-height:40px}
-.calleaf:active{background:var(--field-wash)}
 .calleaf small{margin-left:auto;color:var(--ink-soft);font-size:12px}
 .calleaf.grp{font-weight:600}
 .calkids{padding-left:22px;border-left:1px solid var(--line);margin-left:15px}
@@ -964,7 +1001,7 @@ button.nextprac{cursor:pointer}
 .calcals .chip .dot.event{background:var(--owed)}
 .calcals .chip .dot.session{background:#6B3FA0}
 .calrow.tc{padding-top:6px;padding-bottom:6px}
-.calrow.tc .tag:not(.off){font-size:11px;padding:2px 6px}
+.calrow.tc .tag:not(.called){font-size:12px;padding:2px 6px}
 .calrow .tname{color:var(--tc);font-weight:700}
 .calrow.tc .psub{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .calcals .chip[aria-pressed="true"] .dot{box-shadow:0 0 0 1.5px #fff}
@@ -982,7 +1019,7 @@ button.nextprac{cursor:pointer}
 .caltop{display:flex;align-items:center;gap:8px;min-height:40px}
 .caltitle{flex:1;min-width:0;background:none;border:0;padding:2px 0;text-align:left;color:var(--ink);
   font-family:"Barlow Condensed",sans-serif;font-weight:600;font-size:23px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.caltitle span{font-size:13px;color:var(--ink-soft);vertical-align:3px}
+.caltitle span{font-size:14px;color:var(--ink-soft);vertical-align:3px}
 .calnavs{display:flex;align-items:center;gap:6px;flex:none}
 .calnavs .stepbtn{height:34px}
 /* Today, as a calendar app draws it: a little calendar with today's date on it */
@@ -999,7 +1036,7 @@ button.nextprac{cursor:pointer}
 .calsels .chip[aria-pressed="true"] .dot{box-shadow:0 0 0 1.5px #fff}
 .calmenu{flex:none;height:36px;display:flex;align-items:center;justify-content:center;gap:4px;position:relative;
   background:#fff;border:1px solid var(--line);border-radius:10px;color:var(--field-deep);padding:0 10px;font-size:14px;font-weight:600}
-.calmenu span{font-size:11px}
+.calmenu span{font-size:12px}
 .calmenu[aria-expanded="true"]{background:var(--field-deep);border-color:var(--field-deep);color:#fff}
 /* something is left out: said by a dot on the ☰, and in words inside */
 .calmenu[data-on="1"]::after{content:"";position:absolute;top:-3px;right:-3px;width:10px;height:10px;border-radius:50%;
@@ -1013,7 +1050,7 @@ button.nextprac{cursor:pointer}
 .agenda > .agmonth:first-child{margin-top:0}
 .agday{display:grid;grid-template-columns:46px minmax(0,1fr);gap:8px;padding:5px 0}
 .agdate{display:flex;flex-direction:column;align-items:center;padding-top:2px;line-height:1.05}
-.agdate small{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--ink-soft)}
+.agdate small{font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--ink-soft)}
 .agdate b{font-family:"Barlow Condensed",sans-serif;font-size:23px;font-weight:600;width:36px;height:36px;
   display:flex;align-items:center;justify-content:center;border-radius:50%}
 .agday[data-today="1"] .agdate small{color:var(--field-deep)}
@@ -1032,16 +1069,16 @@ button.ev:active{filter:brightness(.92)}
 .ev-top{display:flex;align-items:baseline;gap:8px;min-width:0}
 .ev-title{flex:1;min-width:0;font-weight:600;font-size:15.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .ev-team{font-weight:700}
-.ev-sub{display:block;font-size:13px;opacity:.93;overflow-wrap:anywhere}
+.ev-sub{display:block;font-size:14px;opacity:.93;overflow-wrap:anywhere}
 .ev-score{flex:none;font-family:"Barlow Condensed",sans-serif;font-weight:700;font-size:17px;font-variant-numeric:tabular-nums}
-.ev-live{flex:none;align-self:center;font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;
+.ev-live{flex:none;align-self:center;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;
   background:#fff;color:#C5221F;border-radius:4px;padding:1px 5px}
-.ev-tag{flex:none;align-self:center;font-size:11.5px;font-weight:600;background:rgba(255,255,255,.22);border-radius:4px;padding:1px 6px}
+.ev-tag{flex:none;align-self:center;font-size:12px;font-weight:600;background:rgba(255,255,255,.22);border-radius:4px;padding:1px 6px}
 .ev[data-past="1"]{opacity:.6}
 /* called off: still there, so nobody turns up, but plainly not on */
 .ev[data-called="1"]{background:#fff;color:var(--ink-soft);box-shadow:inset 0 0 0 1.5px var(--ev,var(--line))}
 .ev[data-called="1"] .ev-title{text-decoration:line-through}
-.ev[data-called="1"] .ev-tag{background:#FBE7E3;color:#6E2317}
+.ev[data-called="1"] .ev-tag{background:var(--paper);color:var(--ink-soft)}
 
 /* Day and Week: the hours down the left, entries where they fall */
 .tg{--hr:50px;--gut:44px;background:#fff;border:1px solid var(--line);border-radius:var(--r);overflow:hidden}
@@ -1050,7 +1087,7 @@ button.ev:active{filter:brightness(.92)}
 .tg-head{border-bottom:1px solid var(--line)}
 .tg-day{background:none;border:0;padding:6px 0 5px;display:flex;flex-direction:column;align-items:center;gap:1px;
   line-height:1.05;color:var(--ink);font:inherit;min-width:0}
-.tg-day small{font-size:10.5px;font-weight:600;text-transform:uppercase;letter-spacing:.03em;color:var(--ink-soft)}
+.tg-day small{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.03em;color:var(--ink-soft)}
 .tg-day b{font-family:"Barlow Condensed",sans-serif;font-size:19px;font-weight:600;width:30px;height:30px;
   display:flex;align-items:center;justify-content:center;border-radius:50%}
 .tg-day[data-today="1"] small{color:var(--field-deep)}
@@ -1058,11 +1095,11 @@ button.ev:active{filter:brightness(.92)}
 .tg-day[data-past="1"]{opacity:.6}
 .tg-allday{border-bottom:1px solid var(--line);align-items:start}
 .tg-allday > div{display:flex;flex-direction:column;gap:2px;padding:3px 2px;border-left:1px solid var(--line);min-width:0}
-.tg-gl{font-size:10px;color:var(--ink-soft);text-align:right;padding:5px 5px 0 0;line-height:1.1}
+.tg-gl{font-size:11px;color:var(--ink-soft);text-align:right;padding:5px 5px 0 0;line-height:1.1}
 .tg-adwrap{display:block;min-width:0;cursor:pointer}
 .tg-body{position:relative;height:calc(var(--hr) * var(--rows))}
 .tg-gutter{position:relative}
-.tg-gutter span{position:absolute;right:5px;transform:translateY(-50%);font-size:10.5px;color:var(--ink-soft);white-space:nowrap}
+.tg-gutter span{position:absolute;right:5px;transform:translateY(-50%);font-size:11px;color:var(--ink-soft);white-space:nowrap}
 .tg-gutter .tg-first{top:3px;transform:none}
 .tg-col{position:relative;border-left:1px solid var(--line);min-width:0;
   background-image:repeating-linear-gradient(to bottom,#E1E8EB 0 1px,transparent 1px var(--hr))}
@@ -1096,7 +1133,7 @@ button.ev:active{filter:brightness(.92)}
 /* Month: the grid, with what's on in each day */
 .mg{background:#fff;border:1px solid var(--line);border-radius:var(--r);overflow:hidden}
 .mg-wd{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));border-bottom:1px solid var(--line)}
-.mg-wd span{font-size:10.5px;font-weight:600;text-transform:uppercase;letter-spacing:.04em;color:var(--ink-soft);text-align:center;padding:5px 0}
+.mg-wd span{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.04em;color:var(--ink-soft);text-align:center;padding:5px 0}
 .mg-grid{display:grid;grid-template-columns:repeat(7,minmax(0,1fr))}
 .mg-cell{min-height:76px;min-width:0;display:flex;flex-direction:column;align-items:stretch;gap:2px;padding:3px 2px 4px;
   background:none;border:0;border-top:1px solid var(--line);border-left:1px solid var(--line);font:inherit;color:inherit;text-align:left}
@@ -1109,20 +1146,21 @@ button.ev:active{filter:brightness(.92)}
 .mg-cell[data-today="1"] .mg-n{background:var(--field-deep);color:#fff}
 .mg-cell[data-sel="1"]{background:var(--field-wash)}
 .mg-cell[data-sel="1"][data-today="0"] .mg-n{box-shadow:inset 0 0 0 2px var(--field-deep)}
-.mg-ev{display:block;background:var(--ev);color:#fff;border-radius:4px;padding:1px 3px;font-size:10.5px;line-height:1.35;
+.mg-ev{display:block;background:var(--ev);color:#fff;border-radius:4px;padding:1px 3px;font-size:11px;line-height:1.35;
   white-space:nowrap;overflow:hidden;text-overflow:clip}
 .mg-ev[data-called="1"]{background:#fff;color:var(--ink-soft);box-shadow:inset 0 0 0 1px var(--ev);text-decoration:line-through}
 .mg-ev[data-past="1"]{opacity:.6}
-.mg-more{font-size:10.5px;font-weight:700;color:var(--ink-soft);padding:0 3px}
+.mg-more{font-size:11px;font-weight:700;color:var(--ink-soft);padding:0 3px}
 .mg-x{display:none}
 @media (min-width:760px){
   .mg-cell{min-height:96px;padding:4px}
-  .mg-ev{font-size:11.5px;padding:1px 5px}
+  .mg-ev{font-size:12px;padding:1px 5px}
   .mg-x{display:inline}
 }
 
-/* the + in the corner */
-/* the + sits at the end of the views row, in the flow, so it covers no row (build 146) */
+/* The + sits at the end of the views row, in the flow, so it covers no row (build 146): green,
+   the one action on the row. Fixed in the corner until then, it sat over whichever row the page
+   put under it. */
 .calviewrow{display:flex;align-items:stretch;gap:8px}
 .calviewrow .seg{flex:1;min-width:0}
 .calviewrow .seg button{padding-left:4px;padding-right:4px}
@@ -1143,16 +1181,15 @@ button.ev:active{filter:brightness(.92)}
 
 /* Settings: four sections, one line per item, tap in (build 143) */
 .sechead{margin:10px 0 -4px}
-.setrow{grid-template-columns:minmax(0,1fr) auto;width:100%;text-align:left}
+.setrow{grid-template-columns:minmax(0,1fr);width:100%;text-align:left}
 .setrow .psub{overflow-wrap:anywhere}
-.setgo{color:var(--ink-soft);font-size:20px;line-height:1}
 .mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px}
 
 /* New message: a searchable list, tap to choose one or several (build 107) */
 .pickrow{grid-template-columns:minmax(0,1fr) auto;padding:7px 11px}
 .pickrow + .pickrow{margin-top:-2px}
 #msgFind{width:100%;font:inherit;font-size:16px;padding:10px 12px;border:1px solid var(--line);border-radius:9px;background:#fff;margin-bottom:10px}
-.pickbox{width:22px;height:22px;border:2px solid var(--line);border-radius:6px;display:inline-flex;align-items:center;justify-content:center;font-weight:700;font-size:13px;color:#fff}
+.pickbox{width:22px;height:22px;border:2px solid var(--line);border-radius:6px;display:inline-flex;align-items:center;justify-content:center;font-weight:700;font-size:14px;color:#fff}
 .pickrow[aria-pressed="true"]{border-color:var(--field-deep);background:var(--field-wash)}
 .pickrow[aria-pressed="true"] .pickbox{background:var(--field-deep);border-color:var(--field-deep)}
 .pickfoot{position:sticky;bottom:calc(-20px - env(safe-area-inset-bottom));background:var(--card);padding:10px 0 4px;margin-top:6px;border-top:1px solid var(--line)}
@@ -1196,7 +1233,7 @@ input[type=email],input[type=password]{
 .auth-apple{background:#000;border-color:#000;color:#fff}
 .auth-apple svg{width:17px;height:20px;margin-top:-2px}
 
-.auth-or{display:flex;align-items:center;gap:12px;margin:16px 0 14px;color:var(--ink-soft);font-size:13px}
+.auth-or{display:flex;align-items:center;gap:12px;margin:16px 0 14px;color:var(--ink-soft);font-size:14px}
 .auth-or::before,.auth-or::after{content:"";flex:1;border-top:1px solid var(--line)}
 
 .auth-seg{display:grid;grid-template-columns:1fr 1fr;gap:4px;padding:4px;margin-bottom:14px;
@@ -1214,7 +1251,7 @@ label.field .auth-inline span{display:inline}
 .auth-links{display:flex;justify-content:space-between;gap:10px;margin-top:12px;flex-wrap:wrap}
 .auth-link{border:0;background:none;padding:4px 0;color:var(--focus);font-weight:600;font-size:14px}
 .auth-fine{margin:18px 0 0;padding-top:14px;border-top:1px solid var(--line);
-  font-size:12.5px;color:var(--ink-soft);text-align:center}
+  font-size:14px;color:var(--ink-soft);text-align:center}
 .auth-fine.legal{margin-top:6px;padding-top:0;border-top:0}
 .auth-fine.legal a{color:var(--ink-soft)}
 .auth-note{background:var(--owed-wash);border:1px solid var(--owed);border-radius:var(--r);
@@ -1265,7 +1302,7 @@ label.field .auth-inline span{display:inline}
   .tablewrap.people td:nth-child(1){grid-column:1;grid-row:1;font-size:16px}
   .tablewrap.people td:nth-child(2){grid-column:1;grid-row:2}
   .tablewrap.people td:nth-child(3){grid-column:1;grid-row:3;margin-top:4px}
-  .tablewrap.people td:nth-child(4){grid-column:2;grid-row:1;text-align:right;font-size:12px}
+  .tablewrap.people td:nth-child(4){grid-column:2;grid-row:1;text-align:right;font-size:14px;color:var(--ink-soft)}
   .tablewrap.people td:nth-child(5){grid-column:2;grid-row:2 / span 2;text-align:right}
   .tablewrap.people td[colspan]{grid-column:1 / -1}
 }
