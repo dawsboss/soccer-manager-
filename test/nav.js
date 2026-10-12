@@ -15,13 +15,25 @@
    - Which tab is lit for each screen, and where the screens that are not a
      tab's own go: under More, or (a family's team screens) under where she
      opened them from.
-   - The Game tab opens the team's game being played, else the next, else the
-     last, and each role lands where it works (a tracker on Track); a team
-     with no games lands on Season, where Add a game is.
+   - The Game tab opens the game being played, else the next, on the one team
+     she works on that has one, and each role lands where it works (a tracker
+     on Track); with none anywhere, the team on screen's last game; a team
+     with no games lands on Season, where Add a game is. When two or more of
+     her teams have a game on or coming it is a picker naming each team, the
+     live one first, and the red dot means being played on any team of hers
+     (UX-REVIEW-2.md, 6.1; build 150). Hers are the teams she coaches, tracks
+     or helps, every team for an admin or a club viewer: a coach reads the
+     whole club, and hers is still one team.
+   - The Team tab is her team, or, when she works on several, the list of
+     them (Club home), each team one level down with a back arrow up to the
+     list; Club home then has no back arrow of its own, and is not offered
+     again under More (UX-REVIEW-2.md, 6.3; build 150).
    - The title row says whose a screen is, with a back arrow where there is
      somewhere up to go (a tab's own screen has none); the club's name on it
      is the club switcher; the team's name is the team switcher when she can
      see more than one team.
+   - The game header names both teams, ours first, with the date and kick-off
+     under them, and no score before kick-off (UX-REVIEW-2.md, 6.1).
    - More holds what is not a tab, by role: one Settings for everyone (People
      and the club's screens are in it since build 143, test/settings.js), My
      players for staff with a child, Training sessions for whoever may book
@@ -128,6 +140,9 @@ console.log('\n--- which tab is lit ---');
     check(`a parent on ${v}: ${want}`, litOn('mum', v), want);
   check('a parent on a game opened from the calendar: Calendar', litOn('mum', 'game', () => { A.ui.matchId = 'g2'; A.ui.gameFrom = 'calendar'; }), 'calendar');
   check('— opened from My players: Home', litOn('mum', 'game', () => { A.ui.matchId = 'g2'; }), 'home');
+  check('an admin on Club home: Team, since it is her list of teams', litOn('boss', 'club'), 'team');
+  check('— a coach of one team reads the club, and her Club home is under More', litOn('jaz', 'club'), 'more');
+  check('— a parent\'s too', litOn('mum', 'club'), 'more');
 }
 
 console.log('\n--- the tabs are places ---');
@@ -149,6 +164,24 @@ console.log('\n--- the tabs are places ---');
   as('mum', 'calendar');
   A.click({ act: 'tab', tab: 'home' });
   check('a parent\'s Home is My players', A.ui.view, 'mine');
+  // several teams to work on: Team is the list of them, and a team is one level down
+  as('boss', 'people');
+  A.click({ act: 'tab', tab: 'team' });
+  check('an admin\'s Team is Club home, the list of teams', A.ui.view, 'club');
+  A.click({ act: 'goteam', id: 't2' });
+  check('— a team opens from it', A.ui.view + ' ' + A.ui.teamId, 'season t2');
+  A.ui.view = 'roster'; A.render();
+  A.click({ act: 'tab', tab: 'team' });
+  check('— and Team from inside a team goes back up to the list', A.ui.view, 'club');
+  check('— which is up from Season, Players and Training', ['season', 'roster', 'practice'].map(v => A.upView(v)).join(' '), 'club club club');
+  check('— and from nowhere itself', A.upView('club'), null);
+  as('vee', 'season');
+  A.click({ act: 'tab', tab: 'team' });
+  check('a club viewer has no team of her own: the list', A.ui.view, 'club');
+  as('other', 'season', 't1');
+  A.click({ act: 'tab', tab: 'team' });
+  check('a coach of one team, reading another: her Team tab is the team on screen, as before', A.ui.view + ' ' + A.ui.teamId, 'season t1');
+  check('— and her list is one team', A.navTeams().map(t => t.id).join(' '), 't2');
 }
 
 console.log('\n--- the Game tab ---');
@@ -175,6 +208,35 @@ console.log('\n--- the Game tab ---');
   check('a team with no games: Season, and told', A.ui.view + ' | ' + A.lastToast(), 'season | No games yet. Add one from Season.');
   as('mum', 'mine');
   check('a parent has no Game tab', /data-tab="game"/.test(bar()), false);
+
+  // two teams with a game on or coming: the tab asks which (UX-REVIEW-2.md, 6.1)
+  const g4 = { id: 'g4', teamId: 't2', opponent: 'Lakeside', date: '2026-09-13', kickoff: '11:00', periodCount: 2, periodMinutes: 30, currentHalf: 1, periods: {}, stints: {} };
+  as('boss'); A.state.matches.g4 = { ...g4 }; A.render();
+  check('an admin with two teams\' games coming: both, by date', A.navGames().map(g => g.id).join(' '), 'g4 g2');
+  A.click({ act: 'tab', tab: 'game' });
+  check('— the tab is a picker, and she stays where she was', /<h3>Which game\?<\/h3>/.test(sheet()) && A.ui.view, 'season');
+  check('— naming each team, ours first, with no score before kick-off', /<b>G12 Storm v Lakeside<\/b>/.test(sheet()) && /<b>G14 Flight v Northgate<\/b>/.test(sheet()), true);
+  check('— and when', /Tomorrow · 11am/.test(sheet()) && /Sat 19 Sep · 9:30am/.test(sheet()), true);
+  check('— no dot: nothing is being played', /tablive/.test(bar()), false);
+  A.click({ act: 'navgame', id: 'g4' });
+  check('a row opens that game, on its team', [A.ui.view, A.ui.teamId, A.ui.matchId, A.ui.gameView].join(' '), 'game t2 g4 subs');
+  A.state.matches.g2.periods = { 0: { half: 1, start: H.clock.t - 5 * MIN } }; A.render();
+  check('the other team kicks off: it goes first, and the dot is on while she is on this one', A.navGames()[0].id + ' ' + /tablive/.test(bar()), 'g2 true');
+  A.click({ act: 'tab', tab: 'game' });
+  check('— the picker says which is live, with the score', /<b>G14 Flight 0–0 Northgate<\/b>[\s\S]*?<span class="pill live">live<\/span>/.test(sheet()), true);
+  A.closeSheet();
+  as('jaz'); A.state.matches.g4 = { ...g4 }; A.render();
+  check('a coach of one team reads the other, and is not asked: hers', A.navGames().map(g => g.id).join(' '), 'g2');
+  A.click({ act: 'tab', tab: 'game' });
+  check('— opens straight away', A.ui.view + ' ' + A.ui.matchId, 'game g2');
+  A.state.matches.g4.periods = { 0: { half: 1, start: H.clock.t - 5 * MIN } }; A.render();
+  check('— and the other team being played is no dot of hers', /tablive/.test(bar()), false);
+  as('other', 'season', 't1'); A.state.matches.g4 = { ...g4 }; A.render();
+  A.click({ act: 'tab', tab: 'game' });
+  check('a coach reading another team: Game is her own team\'s game, and switches to it', [A.ui.view, A.ui.teamId, A.ui.matchId].join(' '), 'game t2 g4');
+  as('boss'); A.state.matches.g2.ended = H.clock.t; A.state.matches.g2.currentHalf = 3; A.render();
+  A.click({ act: 'tab', tab: 'game' });
+  check('one team with a game coming, the other\'s over: that one, no picker', A.ui.view + ' ' + A.ui.matchId + ' ' + A.dom.node('#sheet').hidden, 'game g2 true');
 }
 
 console.log('\n--- the title row ---');
@@ -186,6 +248,11 @@ console.log('\n--- the title row ---');
   check('— and the club is the club switcher', (A.click({ act: 'clubswitch' }), /<h3>Clubs<\/h3>/.test(sheet())), true);
   A.closeSheet();
   check('— no back arrow: Team is a tab\'s own screen', /tbback/.test(title()), false);
+  as('boss');
+  check('an admin\'s Season: a back arrow, up to the list of teams', /data-act="navback"/.test(title()) && (A.click({ act: 'navback' }), A.ui.view), 'club');
+  check('— and Club home, the Team tab\'s own screen, has none', /tbback/.test(title()), false);
+  as('boss', 'setup'); A.click({ act: 'navback' });
+  check('— Settings\' back is the list too', A.ui.view, 'club');
   as('trk');
   check('one team to see: the team\'s name, not a switcher', /class="tbtitle"><span>G14 Flight<\/span>/.test(title()) && !/teammenu/.test(title()), true);
   as('jaz', 'people');
@@ -225,13 +292,15 @@ console.log('\n--- More, by role ---');
 {
   const has = (re, s) => re.test(s);
   as('boss'); let m = more();
-  check('an admin: What\'s new, the club, Training sessions, Settings, Sign out',
-    ['data-v="notes"', 'data-v="club"', 'data-v="sessions"', 'data-v="setup"', 'data-act="signout"'].every(x => m.includes(x)), true);
+  check('an admin: What\'s new, Training sessions, Settings, Sign out',
+    ['data-v="notes"', 'data-v="sessions"', 'data-v="setup"', 'data-act="signout"'].every(x => m.includes(x)), true);
+  check('— and not Club home, which is her Team tab', has(/data-v="club"/, m), false);
   check('— one Settings, never People or Club details beside it (build 143)', /data-v="people"|data-v="admin"/.test(m) + ' ' + (m.match(/data-v="setup"/g) || []).length, 'false 1');
   check('— which says it has the club in it', /<b>Settings<\/b>[\s\S]*?the club: people, registrations, fields/.test(m), true);
   check('— no My players: she has nobody', has(/data-v="mine"/, m), false);
   as('jaz'); m = more();
   check('a coach: Settings, which names People, and no Club details', has(/data-v="setup"/, m) + ' ' + has(/<b>Settings<\/b>[\s\S]*?people/, m) + ' ' + has(/data-v="admin"/, m), 'true true false');
+  check('— and the club, since her Team tab is her team', has(/data-v="club"/, m), true);
   as('trk'); m = more();
   check('a tracker: neither, nor sessions', /data-v="people"|data-v="admin"|data-v="sessions"|data-v="mine"/.test(m), false);
   check('— the club, settings and sign out', ['data-v="club"', 'data-v="setup"', 'data-act="signout"'].every(x => m.includes(x)), true);
@@ -263,9 +332,8 @@ console.log('\n--- game mode (UX-REVIEW.md, 1.3) ---');
   const segs = (uid, extra) => { as(uid, 'game'); A.ui.matchId = 'g2'; if (extra) extra(); A.render(); return [A.ui.gameView, A.gameSegOf(A.ui.gameView)]; };
   as('jaz', 'game'); A.ui.matchId = 'g2'; A.render();
   check('a game is its own mode: the brand row steps aside', mode(), 'game');
-  check('one slim header: back and the opponent', /data-act="backgames" aria-label="Back to the team"/.test(title()) && /class="ghname">Northgate<\/span><\/button>/.test(title()), true);
-  check('— no 0–0 before kick-off, which reads as a result (UX-REVIEW-2.md, 7.1)', /ghscore|0–0/.test(title()), false);
-  check('— before kick-off, when it is', /class="ghclock ghkick">19 Sep · 9:30am</.test(title()), true);
+  check('one slim header: back, the two teams, ours first, and the date under them', /data-act="backgames" aria-label="Back to the team"/.test(title()) && /class="ghname">G14 Flight v Northgate<\/span><span class="ghwhen">Sat 19 Sep · 9:30am<\/span>/.test(title()), true);
+  check('— no 0–0 before kick-off, which reads as a result (UX-REVIEW-2.md, 7.1), and no clock', /0–0|ghclock/.test(title()), false);
   A.sheetGameMenu();
   const menu = String(A.dom.node('#sheet').innerHTML);
   check('— nor in its ⋯ menu', /<h3>Northgate<\/h3>/.test(menu), true);
@@ -275,9 +343,13 @@ console.log('\n--- game mode (UX-REVIEW.md, 1.3) ---');
   check('no game bar on the screen any more', /barrow|data-act="sharesheet"|data-act="editmatch"/.test(A.rendered()), false);
   A.state.matches.g2.periods = { 0: { half: 1, start: H.clock.t - 5 * MIN } }; A.render();
   check('being played: the clock, ticking in place', /class="ghclock" data-live="clock" data-mid="g2">5:00</.test(title()), true);
-  check('— and the score, 0–0 included, once it has kicked off', /class="ghscore">0–0</.test(title()), true);
+  check('— and the score between the teams, 0–0 included, once it has kicked off', /class="ghname">G14 Flight 0–0 Northgate</.test(title()), true);
+  A.state.matches.g2.goals = { a: { t: 60, side: 'them' } }; A.render();
+  check('— us–them, ours first', /class="ghname">G14 Flight 0–1 Northgate</.test(title()), true);
   A.state.matches.g2.ended = H.clock.t; A.state.matches.g2.currentHalf = 3; A.render();
-  check('over: full time', /class="ghclock ghft"/.test(title()), true);
+  check('over: full time, the score kept', /class="ghclock ghft"/.test(title()) && /G14 Flight 0–1 Northgate/.test(title()), true);
+  A.state.matches.g2.date = '2026-09-12'; A.render();
+  check('a game today says so', /class="ghwhen">Today · 9:30am</.test(title()), true);
   as('jaz', 'season');
   check('off the game, the brand row is back', mode(), '');
   as(null, 'game'); A.ui.matchId = 'g2'; A.render();
