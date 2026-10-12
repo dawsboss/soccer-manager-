@@ -59,7 +59,7 @@ An invite carries what it grants, so redeeming it is one step instead of a reque
 
 **Built** (2026-09): per-person invites, as `invites/{id}` with the club it belongs to as `ws` (the org id is still the workspace code), an admin's list at `clubInvites/{code}`, and `userOrgs/{uid}`. Admins make them; README's **Joining a club** and the rules there are the reference. The role entries an invite writes hold its id rather than `true`, because a rule has to look the invite up from the value being written.
 
-**Built** (2026-10): the bulk path below, as `joinCodes/{code}` (the team link) and `claims/{ws}/{team}/{uid}` (a parent's request), approved from the team's Squad tab. The team's current link sits at `teams/{tid}/join`. Approval writes the guardian and lets the parent into `access/index` with the team id as its value — the one place a coach writes the index, and only for a request to her own team she approved. Admins can also make a squad's worth of personal parent invites in one go.
+**Built** (2026-10): the bulk path below, as `joinCodes/{code}` (the team link) and `claims/{ws}/{team}/{uid}` (a parent's request), approved from the team's Squad tab. The team's current link sits at `teams/{tid}/join`. Approval writes the guardian and lets the parent into `access/index` with the team id as its value — the one place a coach writes the index, and only for a request to her own team she approved. Admins can also make a squad's worth of personal parent invites in one go. Since build 136 a family can fill a child in through the team link when she is not on the squad yet (her name, birth date and gender on the request, no number needed); the coach's approval adds her as *Add a player* would, with her record in the club, and lets the family in, as one server call where the server is deployed. Adding a child to a squad stays the coach's.
 
 Keep the parent claim flow described below as the bulk path: one team code, parent picks a shirt number, coach approves. Per-person invites are for coaches and for the one parent who cannot make the bulk flow work.
 
@@ -766,7 +766,7 @@ regOpen/{linkId}: {             // the program link: readable by id, like invite
   `sent` (the family's, waiting for an admin), `accepted`, `waitlist`,
   `declined`, `offered` (a tryout's place on a team, `offer`, which her
   family answers in `ans`; GOTSPORT.md, *Tryouts and evaluations*, build
-  136), `placed` (on a team: `team` says which), `withdrawn`. A tryout's
+  138), `placed` (on a team: `team` says which), `withdrawn`. A tryout's
   registration also carries the child's `bib`, an admin's to give and
   never changed or dropped by her family. Only an
   admin moves it past `sent`; a family moves her own from `draft` to `sent`
@@ -807,8 +807,8 @@ answers and the waivers agreed, and a dot where the family has not confirmed.
 - **Accept**, **Waiting list**, **Decline** write `st` (and, the first time a
   child of that family is accepted, `club: true` on the child, and the
   family's `access/index` entry: the child id). A family is told on her
-  registration, and by push until email is built (`functions/news.js`
-  gains the kind).
+  registration, and by email (`functions/mailnews.js`, build 137; there
+  is no push for it).
 - **Place on a team** (accepted children, a team picker narrowed by the
   program's birth years): the squad record (a new player id, her name as the
   child's first name, `child`, the guardians copied, a number left for the

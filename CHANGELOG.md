@@ -8,7 +8,7 @@ before this point lives only in the git log.
 
 ---
 
-## Coach compliance — 2026-10-11 (build 137, rules version 30)
+## Coach compliance — 2026-10-12 (build 139, rules version 31)
 
 GOTSPORT.md's step 8, designed there first: the club's record of what MSYSA
 asks of every official, in its order (SafeSport, concussion training, then
@@ -31,7 +31,7 @@ New suite `comply`, and more in `rules`, `forget` and `smoke`.
 
 ---
 
-## Tryouts and evaluations — 2026-10-11 (build 136, rules version 29)
+## Tryouts and evaluations — 2026-10-12 (build 138, rules version 30)
 
 GOTSPORT.md's step 7: the last thing a club ran tryouts in GotSport for.
 Designed first, in GOTSPORT.md (*Tryouts and evaluations*), as registration
@@ -58,6 +58,122 @@ was in AUTH.md.
   evaluator list; her scores are the club's.
 
 New suite `tryouts`, and more in `rules` and `forget`.
+
+---
+
+## The club emails families by itself — 2026-10-11 (build 137, rules version 29)
+
+Build 135 gave the club its own mailer for invitations and team notices.
+GOTSPORT.md's step 6 asked for the emails a club sends without anyone
+pressing a button, so they now follow from what admins and coaches already
+do in the app (`functions/mailnews.js`):
+
+- **Registration news, to the child's family.** A draft a coach or admin
+  started ("please finish it"), received (with the program's fee),
+  accepted, waiting list, not this time, and *Ella is on U11 Storm* with the
+  coach's name. Before this a family heard nothing until she opened the app.
+  The family comes from the child's record, never from the address her
+  form carried; one who came in through the link and has no member entry is
+  written to at her account's address only once it is confirmed, because
+  these emails name her child.
+- **Receipts for what the club records.** A session's fee marked paid, or a
+  package sold, sends the family a receipt that says plainly it is the
+  club's own record (there are no card payments yet). Waived fees and
+  package places send nothing. A card receipt will come from the Stripe
+  webhook once payments are built.
+- **Sessions still to pay.** Once a day, each booked place with a price, no
+  fee marked and a session three to fourteen days past is mentioned to its
+  family once, all of hers in one email. Three days gives the coach time to
+  mark the cash she took; fourteen stops it chasing a season's history the
+  day it is switched on. On unless an admin turns it off on Fees.
+- **A session's families from the club.** *Email or share* on a training
+  session and *Remind the family* on Fees can be sent by the club (a new
+  `session` ask, the session's coach or an admin, families found from the
+  places), so no family's address is in anyone else's mail. That ask is the
+  rules change; with older rules the phone opens the coach's mail app as
+  before.
+
+Each email is said once (noted at `serverState/` before sending), sends
+nothing for a retired club or without a mailer, and names only the child
+it is about. A waiver "about to lapse" is not built: waivers here never
+lapse. New suite `mailnews`; `rules` covers the new ask.
+
+The payments design (merged the same day, no code yet) now lists the
+emails each payment step adds as it is built (GOTSPORT.md, *What the family
+is emailed*): a bill made, a refund, a card charged, a plan's part due or
+failed, and the sessions-to-pay email turning into the bill's Pay link. A
+card payment's receipt stays Stripe's own, and the hand-marked receipt
+built here must skip a fee the webhook wrote, so nobody gets two.
+
+---
+
+## Every link, two ways; a child filled in through the team link — 2026-10-11 (build 136)
+
+The owner's notes: there were a lot of ways to invite by link, some invited
+by email, some had people add themselves, and he wants them all to be an
+invite, except adding a child to a squad — and even that should be possible
+through a link the family fills out. And when someone shares a link there
+should be two options: email it, or copy the link.
+
+- **Every link has the same two buttons: Email it, Copy the link.** One
+  helper (`linkButtons()`) draws them for an invite, a squad's parent links,
+  the team link, a player's sign-in link, a fan link, the registration link,
+  the season and game pages, a team's calendar feed, My calendar's address
+  and a drill. *Email it* opens her own mail app with the words and the link
+  written (the address filled in where the link names one); an invite with
+  an address goes from the club itself where the club has a mailer, and
+  from her mail app otherwise. The Share… button and Firebase's sign-in
+  emails (worded as "sign in to…", limited per day, and the one way that
+  was different from the rest) are gone; an invite with an address still
+  accepts only that address.
+- **A child not on the squad yet, through the team link.** The family taps
+  *She isn't on it yet* and types her name, birth date and a number if she
+  has one; the coach sees *Asks to add Rosa Moss to the squad* and **Add
+  Rosa and let in** puts her on the squad as *Add a player* would (her
+  record in the club made with it, for her family to confirm) and lets them
+  in as her parent — one server call where the server is deployed
+  (`functions/staff.js`, `add`), the squad record before the approval that
+  names her on a phone without it. A number that matches a player already
+  here picks her instead, so nobody is added twice. Adding a child stays the
+  coach's: the link only lets a family fill her in.
+- What stays as it was: the rules (an ask may carry the child's details,
+  and only the coach adds from them), who may approve, and the squad's
+  *Add a player*.
+
+`test/join.js`, `test/staffask.js`, `test/rules.js`, `test/invites.js` and
+`test/mail.js` carry the new checks.
+
+---
+
+## GOTSPORT.md: payments, designed before any code — 2026-10-11
+
+Build order step 5, now that registration is built: money is new data about
+children and families, and a mistake costs a family twice or a club its
+income, so the shape and the rules are settled before the code, as
+registration's were in AUTH.md. GOTSPORT.md, *Payments, designed before any
+code*: Stripe Connect with each club a Standard account and every charge made
+on the club's own account (the club's dashboard, refunds, disputes and
+Stripe's fee; no platform fee); one ask node (`payAsks`) for connecting,
+Checkout, recording cash and aid, answered by the server, which works out
+every amount from the database; bills and payments per child under the club,
+written by the server alone and read by her family and the admins; the
+webhook (signature, the event id recorded before the effect, one update per
+club) for payments, instalments, refunds, disputes and the club's account;
+payment plans charged to a saved card on the club's account; sibling,
+early-bird, code and aid discounts as lines on the bill; session fees and
+packages paid the same way while the coach's book stays; Club → Money for
+admins with a CSV; test mode for `test-` clubs; and what the owner sets up in
+Stripe first. Six build steps; the owner decided its nine questions the
+same day: each program, session or package its own bill, each program
+choosing whether it is paid on registering or once accepted, and a *Club
+covers the cost* button; paying another way allowed; Stripe's fee the
+club's (and why Stripe rather than another processor, our own, or the app
+stores' payments); any admin connects Stripe, every admin told; admins are
+the treasurers; a card on file and paying new bills with it the family's
+choice; payments one record that is both the family's receipt and the
+club's, kept after an account is deleted; packages paid by the family; and
+which programs count together for a sibling discount the admins'. No code
+yet.
 
 ---
 

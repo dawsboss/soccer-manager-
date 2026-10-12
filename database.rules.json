@@ -853,7 +853,7 @@
     },
     "rulesVersion": {
       ".read": true,
-      ".write": "newData.isNumber() && newData.val() === 30"
+      ".write": "newData.isNumber() && newData.val() === 31"
     },
     "public": {
       "$share": {
@@ -1773,7 +1773,7 @@
           ".read": "auth != null && auth.uid === $uid",
           "$id": {
             ".write": "auth != null && auth.uid === $uid && ((!data.exists() && newData.exists() && (root.child('orgs/' + $code + '/access/admins/' + auth.uid).exists() || root.child('orgs/' + $code + '/access/coachIndex/' + auth.uid).exists())) || (data.exists() && !newData.exists()))",
-            ".validate": "newData.hasChildren(['op', 'at']) && (newData.child('op').val() === 'invites' || newData.child('op').val() === 'team') && newData.child('at').val() <= now + 600000 && newData.child('at').val() >= now - 600000",
+            ".validate": "newData.hasChildren(['op', 'at']) && (newData.child('op').val() === 'invites' || newData.child('op').val() === 'team' || newData.child('op').val() === 'session') && newData.child('at').val() <= now + 600000 && newData.child('at').val() >= now - 600000",
             "op": {
               ".validate": "newData.isString()"
             },
@@ -1783,6 +1783,14 @@
               }
             },
             "tid": {
+              ".validate": "newData.isString() && newData.val().length <= 128"
+            },
+            "sids": {
+              "$i": {
+                ".validate": "newData.isString() && newData.val().length <= 128 && $i.length <= 2"
+              }
+            },
+            "pid": {
               ".validate": "newData.isString() && newData.val().length <= 128"
             },
             "subject": {

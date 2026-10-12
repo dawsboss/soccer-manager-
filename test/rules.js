@@ -1455,6 +1455,9 @@ reads('nor read', COACH, 'shareOwners/sh1', false);
   writes('not approved by herself', RANDO, 'claims/CLUB/t1/rando', ask('jc1', { approved: { by: 'rando' } }), false);
   writes('nor approve an existing one', ASKER, 'claims/CLUB/t1/asker/approved', { by: 'asker', at: NOW }, false);
   writes('a shirt number is needed', RANDO, 'claims/CLUB/t1/rando', ask('jc1', { shirt: '' }), false);
+  // a child not on the squad yet, filled in through the link (build 136): her details instead of a number, which only the coach adds from
+  { const v = ask('jc1', { add: true, child: 'Rosa Moss', born: '2015-04-02', gender: 'F' }); delete v.shirt;
+    writes('or a child filled in instead, with no number', RANDO, 'claims/CLUB/t1/rando', v, true); }
   writes('she withdraws her own', ASKER, 'claims/CLUB/t1/asker', null, true);
   writes('and tidies it away once approved', OK, 'claims/CLUB/t1/ok', null, true);
   writes('but cannot rewrite it once approved', OK, 'claims/CLUB/t1/ok/shirt', '12', false);
@@ -1861,6 +1864,9 @@ reads('nor read', COACH, 'shareOwners/sh1', false);
   writes('an admin asks for invitations to be sent', ADM, M + 'adm/m1', { op: 'invites', ids: ['iAbc', 'iDef'], at: NOW }, true);
   writes('a coach too', COACH, M + 'coach/m1', { op: 'invites', ids: ['iAbc'], at: NOW }, true);
   writes('or a notice to her team\'s families', COACH, M + 'coach/m1', { op: 'team', tid: 't1', subject: 'Flight', text: 'Practice moved', at: NOW }, true);
+  writes('or a training session\'s families', COACH, M + 'coach/m1', { op: 'session', sids: ['s1', 's2'], subject: 'Finishing', text: 'Bring water', at: NOW }, true);
+  writes('narrowed to one child', COACH, M + 'coach/m1', { op: 'session', sids: ['s1'], pid: 'p1', text: 'To pay', at: NOW }, true);
+  writes('not more than a hundred sessions in one ask (the server takes fifty)', COACH, M + 'coach/m1', { op: 'session', sids: Object.fromEntries([...Array(101)].map((_, i) => [i, 's' + i])), text: 'Hi', at: NOW }, false);
   writes('not a tracker', TRK, M + 'trk/m1', { op: 'team', tid: 't1', text: 'Hi', at: NOW }, false);
   writes('not a family', MUM, M + 'mum/m1', { op: 'team', tid: 't1', text: 'Hi', at: NOW }, false);
   writes('not a stranger', RANDO, M + 'rando/m1', { op: 'invites', ids: ['iAbc'], at: NOW }, false);
@@ -2499,7 +2505,7 @@ reads('nor read', COACH, 'shareOwners/sh1', false);
     DB.regOpen = saved.ro; if (saved.ro === undefined) delete DB.regOpen;
   }
 
-  /* Tryouts (GOTSPORT.md, *Tryouts and evaluations*; rules version 29):
+  /* Tryouts (GOTSPORT.md, *Tryouts and evaluations*; rules version 30):
      admins give bibs and name evaluators; an evaluator reads the bibs and
      her own scores, writes only her own, only of a published bib, and
      never reads a registration; her family answers an offer while it
@@ -2565,7 +2571,7 @@ reads('nor read', COACH, 'shareOwners/sh1', false);
   }
 
   /* Coaching records (GOTSPORT.md, *Coach and volunteer compliance*; rules
-     version 30): admins keep them, one person at a time, in their own name;
+     version 31): admins keep them, one person at a time, in their own name;
      each person reads her own and nobody else's. */
   console.log('\n--- a club on orgs/: coaching records ---');
   {

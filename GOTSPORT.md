@@ -113,15 +113,16 @@ Needs the server. The club is paid, not the app.
   account (Standard), so the money goes straight to the club, the club sees
   it in its own Stripe dashboard, and TeamPlayHQ never holds money or card
   numbers. Cards are typed into Stripe's own page (Checkout), never into
-  Minutes, which keeps the app out of PCI scope.
+  TeamPlayHQ, which keeps the app out of PCI scope.
 - **The amount never comes from a phone.** A family taps *Pay*; a callable
   function reads the program's fee (and any discount the admin set) from the
   database and makes the Checkout session. A phone that sends a price is
   ignored.
 - **Paid means Stripe said so.** Stripe calls a webhook function, which checks
   Stripe's signature, records the event id so a repeat is a no-op, and writes
-  the payment. Only the server writes `reg/{code}/paid/...`; the rules refuse
-  everyone else. The registration shows *Paid* only then.
+  the payment. Only the server writes payments (`orgs/{code}/payments`,
+  *Payments, designed before any code*, below); the rules refuse everyone
+  else. The registration shows *Paid* only then.
 - **Payment plans** (deposit then instalments), **discounts** (siblings, early
   bird) and **financial aid** (an admin waives some or all), as the club sets
   them up.
@@ -236,7 +237,7 @@ No server needed.
 - Admins see the scores side by side, make offers, and a family accepts or
   declines in the app. An accepted offer is a placement (above).
 
-**As designed, 2026-10-11, before the code** (build 136). Registration moved
+**As designed, 2026-10-11, before the code** (build 138). Registration moved
 under `orgs/{code}` (AUTH.md, *Registration*), so tryouts do too: on `orgs/`
 each part already has its own readers, and a `reg/{code}` root would be a
 second way in.
@@ -311,7 +312,7 @@ record is flagged to the admins and to that coach, and nothing else** (owner,
 2026-10-06): she is not taken off a team or a sideline, the way time off is
 read and never obeyed.
 
-**As designed, 2026-10-11, before the code** (build 137). Under the club,
+**As designed, 2026-10-11, before the code** (build 139). Under the club,
 like registration, rather than a `staff/{code}` root:
 
 ```
@@ -464,6 +465,533 @@ Not planned until someone needs them, because each is a product of its own:
   is the club's copy of that family's waiver agreement and payment history
   in TeamPlayHQ; Stripe keeps its own record of the payment in the club's
   account. The screen says so before the family confirms.
+  *Payments since: kept as the club's records after an account is deleted
+  (owner, 2026-10-11; *Payments, designed before any code*, Receipts, and
+  deleting).*
+
+---
+
+## Payments, designed before any code
+
+Written 2026-10-11, before any code, for build order step 5, the way
+registration was designed in AUTH.md before step 4: this is new data about
+money, the rules have to be right first, and a mistake here costs a family
+twice or a club its income. Section 2 above says what was already decided;
+this says how.
+
+The owner's ask, 2026-10-11: *Payments, the next phase now that registration
+is done. Stripe Connect, with each club connecting its own Stripe account,
+and TeamPlayHQ takes no fee; checkout on the registration form; the webhook
+that records payments and refunds; payment plans and discounts; a
+treasurer's view; session fees and packages moved onto the same till.*
+
+### What does not change
+
+- **TeamPlayHQ never holds money or card numbers.** A card is typed into
+  Stripe's own page (Checkout), on the club's own Stripe account, so the app
+  stays out of PCI scope and the money never passes through anyone but the
+  club.
+- **The amount never comes from a phone.** A family's phone says *what* she
+  is paying for (this registration, this session, this package, and which
+  payment plan or discount code she chose); the server works out the price
+  from the program, the session or the package and the club's discounts.
+  An admin's phone sets prices, as it sets a program's fee today, and the
+  server reads them from the database, never from the ask.
+- **Paid means Stripe said so.** Only the webhook, after checking Stripe's
+  signature, writes a card payment. The phone coming back from Checkout
+  says *Waiting for the club's confirmation* until it has.
+- **Nothing at the sideline waits on it.** Paying needs a signal and says
+  so; nothing about a game, a practice or the register depends on whether
+  anyone has paid. A child who owes is never taken off a team or a session
+  by the app (as with lapsed compliance: read, never obeyed).
+- **Refunds and disputes are the club's,** done in its own Stripe dashboard
+  (owner, 2026-10-06). The app records them from the webhook and shows them;
+  it has no refund button.
+- **Cash, cheque, transfer and waived stay.** Cards are one more way to pay,
+  never the only one, and a club that never connects Stripe keeps today's
+  book of who paid, unchanged.
+- **The server keeps its secrets in Secret Manager** and takes no fee: no
+  `application_fee_amount` on any charge.
+
+### Stripe, as the platform sees it
+
+- **One platform account, TeamPlayHQ's,** with Connect turned on. Each club
+  is a **Standard** connected account: the club signs in to Stripe itself,
+  owns its dashboard, its payouts, its refunds and its disputes, and pays
+  Stripe's processing fee out of each payment. A club that already uses
+  Stripe signs in with its existing login.
+- **Direct charges.** Every Checkout session and every instalment is made
+  *on the club's account* (Stripe's `Stripe-Account` header), so the
+  payment, the customer and the saved card are the club's, the receipt comes
+  from the club, and a negative balance or a lost dispute is the club's,
+  never the platform's.
+- **Connecting** is Stripe's own onboarding (an Account Link): an admin
+  (the owner is one) taps *Connect Stripe* on Club → Money; the server makes the club's
+  Standard account the first time and an onboarding link each time; Stripe
+  sends her back to `teamplayhq.com/?till=…`, read the way `?invite=` is.
+  Whether the club can take cards is Stripe's `account.updated` event
+  (`charges_enabled`), never the return trip. A club that disconnects in its
+  own Stripe dashboard (`account.application.deauthorized`) stops taking
+  cards at once; what it was paid stays recorded. Connecting, a change of
+  account and disconnecting are told to every admin and owner and written
+  to `clubAudit/{code}`, the way `functions/adminwatch.js` tells them of an
+  admin given or taken away, because it decides where the club's money
+  goes.
+- **Test mode for test clubs.** A club whose code starts `test-` uses the
+  platform's test keys and test connected accounts, so the sandbox can be
+  paid with Stripe's test cards end to end; every other club uses live keys.
+  The webhook carries `livemode`, and an event whose mode is not its club's
+  is refused.
+- **No Stripe library.** `functions/stripe.js` is a small client over
+  Stripe's HTTP API (form-encoded requests, the signature check done with
+  Node's `crypto`), handed to the money code the way `mail.js` is handed its
+  mailer, so `test/pay.js` runs on a fake Stripe and the suites still never
+  need `npm install`. Every request that makes something carries an
+  idempotency key made from the ask's id, so an ask answered twice makes
+  one Checkout session, one customer, one charge.
+
+### The data
+
+Amounts are whole cents (an integer, never a float) in the club's Stripe
+currency. A program's `fee` and a session's `price` stay as they are (the
+admin types dollars); the server turns them into cents when it makes a bill.
+
+```
+orgs/{code}/till: { on, cur }            // server only; everyone in the club reads it:
+                                         // whether to draw Pay, and in what currency
+orgs/{code}/stripe: {                    // server only; admins read it
+  acct, live, ready, due: [..],          // Stripe's account id; what Stripe still needs from the club
+  name, at
+}
+orgs/{code}/bills/{cid}/{bid}: {         // server only; her family and the admins read it
+  id, kind: 'reg' | 'session' | 'pack' | 'other',
+  prog? | sid? | pack?, tid?,            // what it is for
+  name,                                  // in words: 'Fall 2027', '1-1 with Sam, 14 Oct'
+  price,                                 // what the program, session or package cost when billed
+  less: { {did}: { why: 'sibling' | 'early' | 'code' | 'aid' | 'club', amount, words } },
+  total,                                 // price less every `less`
+  plan?: { id, parts: { {n}: { amount, on, st: 'due' | 'paid' | 'failed' | 'off' } } },
+  paid, refunded, owed,                  // kept by the server from payments, never added up on a phone
+  st: 'open' | 'part' | 'paid' | 'over' | 'off',   // over: paid more than owed; off: no longer owed
+  fam, at, by                            // the family it was made for
+}
+orgs/{code}/payments/{cid}/{payId}: {    // server only; her family and the admins read it
+  bill, part?, amount, how: 'card' | 'cash' | 'cheque' | 'transfer' | 'other',
+  at, by,                                // `by` is 'stripe' for a card
+  stripe?: { pi, ch, cs?, fee? },        // ids in the club's own account; Stripe's fee once known
+  refunds?: { {reid}: { amount, at } },
+  disputed?: { at, st }
+}
+orgs/{code}/discounts/{progId}: {        // admins only: a code typed by a family is checked by the server
+  codes: { {CODE}: { amount | pct, until?, uses?, used } }
+}
+payAsks/{code}/{uid}/{id}: { op, ..., at }   // hers to create and delete, as mailAsks; answered beside
+serverState/stripe/acct/{acct}: code         // which club an event is about
+serverState/stripe/events/{evt}: at          // recorded before the effect
+serverState/stripe/cus/{code}/{uid}: cus     // her customer on the club's account (a saved card)
+orgs/{code}/cards/{uid}: {                   // server only; she and the admins read it
+  brand, last4, exp, auto, at                // a card she chose to keep on file, never its number
+}
+```
+
+- **A bill is what one child's family owes for one thing**, keyed by the
+  child, so a family reads her own by path (she knows her children) and an
+  admin reads them all; coaches read none (*Who reads what*, above). It is
+  the server's alone to write, which is what lets `paid`, `refunded` and
+  `owed` be trusted: one writer, from the payments.
+- **A payment is money that arrived**, by card from the webhook or recorded
+  by an admin as cash, cheque or transfer. Never changed, except that
+  refunds and a dispute are added to it.
+- **Under the club, not at the root.** On `orgs/` each part has its own
+  readers already, as registration found (`regs`, `care`), so bills and
+  payments sit beside them with narrow reads. Nothing about money reaches
+  `public/`, a squad, a game, a push's words or a coach's screen.
+- **The program grows** (admins write it, as now): `pay: 'form' | 'accepted'`
+  (when it is paid, *Paying a registration*), `other: true` (families may
+  pay the club another way, on unless the admin turns it off),
+  `plans: { {id}: { name, parts: [ { pct, on } ] } }`,
+  `sibling: { 2: amount, 3: amount, with: { {progId}: true } }`,
+  `early: { until, amount }`. The
+  link (`regOpen/{id}`) carries the same in words, plus `till.on`, so a
+  family not yet in the club sees the price, the plans and the discounts
+  before she starts. Codes never go in the link or the program: anyone in
+  the club reads a program.
+
+### Asking the server: `payAsks`
+
+The phone asks and the server answers beside the ask, as `mailAsks` and
+`bookAsks` do. The rule lets a signed-in uid create her own ask and delete
+it, nothing more; everything else is checked by the server, because a family
+registering through a link is not in the club's index yet.
+
+| `op` | Who may | What it does |
+| --- | --- | --- |
+| `connect` | Admins | Makes the club's Stripe account if it has none; answers with an onboarding link |
+| `dash` | Admins | Answers with a sign-in link to the club's Stripe dashboard |
+| `checkout` | A family of each child named | For one or more bills (or a registration, session or package that has none yet: the server makes the bill first), with her plan and code; answers with a Checkout link |
+| `card` | A family | A Checkout link to save a card or change it (setup mode), or, with `off`, to forget it; `auto` turns paying new bills with it on or off |
+| `record` | Admins | Records cash, cheque, transfer or other against a bill (the amount is the admin's, as a fee is) |
+| `aid` | Admins | Takes an amount off a bill, with a note only admins see |
+| `cover` | Admins | The club covers a bill: all of what is still owed, as its own line (`club`) |
+| `cancel` | Admins | Marks a bill no longer owed (`off`), stopping any plan |
+
+Each answer is `{ url }`, `{ ok }` or `{ no: why }` in words the screen
+shows. An ask older than ten minutes is not acted on, as every ask.
+
+### Paying a registration
+
+**Each thing is its own bill** (owner, 2026-10-11). A family pays for what
+her child takes part in, program by program, session by session, package by
+package; a family whose child is in two programs and paid for one has one
+bill paid and one owing, and the screens say which. Nothing bundles a
+family's bills into one account balance.
+
+**When it is paid is each program's** (owner, 2026-10-11): the admin picks
+*when registering* (the default) or *once accepted* (tryouts, or a program
+that will have a waiting list, where taking money and refunding it costs the
+club Stripe's fee). The link says which before she starts.
+
+**Where.** On the form (`#/reg/{link}`), after the waivers, a family whose
+club takes cards sees what she owes for each child: the fee, each discount
+in words, the total, the plans if the program has them, a box for a code,
+and **Pay now** (or **Pay the first part**). If the program allows paying
+the club another way, **Pay the club another way** sends the registration
+with the bill open. A program set to *once accepted* shows the price on the
+form and **Pay** once an admin accepts her. The same bill is on My players afterwards, with **Pay**,
+until it is paid.
+
+**When the bill is made.** When the registration becomes `sent` (or
+`accepted`, if the program says so), the server makes the bill from the program as it
+stands then: price, sibling and early-bird discounts (early by the server's
+clock at `sent`), and nothing a phone said about money. The family's code is
+applied when she pays and checked against `discounts/{progId}` then. A
+program whose fee changes later does not change a bill already made; an
+admin cancels it and the server makes another, or takes something off.
+
+**Checkout.** The server makes a Checkout session on the club's account:
+one line per bill, the club's name and the child's first name in the
+description and nothing else about her, `metadata: { code, cid, bill, part }`,
+a receipt to the family's email from the club's account (Stripe sends it,
+so this needs no email step), back to `teamplayhq.com/?paid={session}` or
+`?unpaid=…`. An earlier open session for the same bill is expired first, so
+two tabs never take the same fee twice; a family who pays twice anyway
+leaves the bill `over`, which the admins are told to refund.
+
+**What she sees after.** *Payment received* only once the webhook has
+written the payment; until then *Waiting for the club's confirmation*, then
+*Paid* on the registration and the bill. Admins see paid, part-paid and owed
+on each row of Registrations.
+
+**A registration withdrawn or declined** with money paid: the bill becomes
+`off`, any plan's later parts `off` (never charged), and the admins see
+*Paid $X, refund it in Stripe* until the refund comes back through the
+webhook. The app never refunds by itself.
+
+### A card on file, and payment plans
+
+**Keeping a card is the family's choice** (owner, 2026-10-11). Checkout
+offers *Keep this card on file with {club}*; ticked, Stripe saves it on the
+club's account (never TeamPlayHQ's, never its number on ours), and the
+server writes what the screen needs to name it (`cards/{uid}`: brand, last
+four, expiry). On My players she sees it, changes it or forgets it (the
+`card` ask), and turns on **Pay new bills with this card**: a session place,
+a package or a registration billed later is then charged straight away,
+with a notice saying what and how much, and a receipt from the club. Off,
+every bill waits for her to tap **Pay**, as without a card.
+
+**A program offers plans** as dates and shares, *50% now, 25% on 1
+September, 25% on 1 October*, and a plan's later parts are paid one of two
+ways, her choice when she picks the plan:
+
+- **With the card on file:** Checkout keeps the card (with the plan's dates
+  and amounts on the page, as her agreement to them), and on each date
+  `payDue` (daily, a schedule like `myCalBuild`) charges it off-session on
+  the club's account, one charge per part, with an idempotency key per
+  part, so a run that dies half-way never charges twice.
+- **Reminded each time:** no card kept; a few days before each date she is
+  told (push and email, *What the family is emailed*) and pays the part with **Pay**,
+  Checkout as for anything else. A part past its date unpaid is `failed`, as
+  below.
+
+- **A part that fails** (a declined card, a card that needs her there) is
+  `failed`; the family is told (push and email, *What the family is emailed*) with
+  **Pay now** on the bill, which is Checkout for that part; the server tries
+  the saved card once more three days later; the admins see it on Money.
+- **Paying the rest early** is **Pay what's left** on the bill: the later
+  parts become one Checkout and are marked paid.
+- **Changing the card** is the `card` ask, Stripe's own page again;
+  forgetting it moves every later part to *reminded each time*.
+- **Cancelled, withdrawn or declined** stops every later part.
+
+### Discounts and financial aid
+
+- **Sibling:** the second and third child of the same family, by amount,
+  applied when the later child's bill is made. Which programs count
+  together is the admin's choice (owner, 2026-10-11): this program alone by
+  default, or ticked others (*Fall 2027* and *Fall 2027 futsal*), so a
+  sibling in either counts.
+- **Early bird:** an amount off a registration sent before a date.
+- **Codes:** typed by the family on the form, checked by the server against
+  `discounts/{progId}` (admins only), each with an amount or a percentage,
+  an end date and a number of uses the server counts in a transaction.
+- **The club covers it** (owner, 2026-10-11): **Club covers the cost** on
+  any bill, for an admin, takes off everything still owed as one line,
+  *Covered by the club*, which a family sees and the treasurer's view counts
+  apart from aid and discounts (a coach's own child, a scholarship place, a
+  team the club sponsors). Several bills ticked are covered together.
+- **Financial aid** is an admin's `aid` on a bill, any amount up to what is
+  owed, with a note families never see. A program can ask *Would you like
+  to talk to the club about financial aid?* with the questions it already
+  has, and a yes lets her send the registration with the bill open.
+
+Every discount is a line on the bill in words, so a family sees exactly why
+she owes what she owes.
+
+### Session fees and packages on the same till
+
+- **A session place** owes its price once it is `in` (SESSIONS.md, *Fees
+  and hours*), worked out on the phone as now. **Pay** beside each owed
+  place on her child's sessions, or **Pay all** for every one, is a
+  `checkout` naming the sessions; the server checks each place is `in`,
+  not called off and not paid, makes a bill per place and one Checkout for
+  all of them. The webhook writes the payment and the place's fee record
+  (`training/{code}/fees/{sid}/{pid}`, `how: 'card'`, `pay` naming the
+  payment), so the coach's screens and hours are unchanged.
+- **A package** an admin makes for a player can be left unpaid with **Ask
+  the family to pay**: the family sees it on My players with **Pay**, and the
+  webhook writes the package's `paid` and `how: 'card'`. Families buying a
+  package from a list themselves is not built (owner, 2026-10-11).
+- **The book stays.** A coach marking a place paid in cash, offline, writes
+  the fee record as today; the treasurer's view reads that book beside the
+  till.
+
+### The webhook
+
+`stripeHook`, an HTTPS function like `calendar`, is the one endpoint Stripe
+calls, for the platform's Connect events from every club:
+
+1. Check the `Stripe-Signature` header against the raw body with the
+   webhook secret (test or live), within five minutes; anything else is a
+   400 and nothing is read.
+2. Find the club from the event's `account` (`serverState/stripe/acct`); an
+   account no club has, or a mode that is not the club's, is a 200 and
+   nothing done.
+3. Record the event id at `serverState/stripe/events/{id}` in a transaction;
+   if it was there, a 200 and nothing done. Only then the effect, and if
+   the effect fails the record is taken off so Stripe's retry does it.
+4. The effect, written in one update per club:
+
+| Event | What is written |
+| --- | --- |
+| `checkout.session.completed` (paid) | A payment per bill, the bills' totals, a plan's first part, the card kept on file if she chose to |
+| `checkout.session.completed` (setup) | The card on file, changed (`cards/{uid}`) |
+| `payment_intent.succeeded` (an instalment) | The payment and the part `paid` |
+| `payment_intent.payment_failed` | The part `failed`; the family and the admins told |
+| `charge.refunded`, `refund.updated` | The refund on its payment, the bill's `refunded` and `owed` |
+| `charge.dispute.created`, `.closed` | `disputed` on the payment; the admins told to answer in Stripe |
+| `account.updated` | `stripe/ready`, `due`, and `till/on` |
+| `account.application.deauthorized` | `till/on` off; the account forgotten; payments kept |
+
+The metadata on a Checkout session or instalment is the server's own, and is
+checked against the club the account belongs to before it is believed.
+A payment for a bill that has gone (a registration deleted meanwhile) is
+still recorded, against the child, for the admins to refund.
+
+### The treasurer's view
+
+Club → **Money**, admins only; there is no treasurer role (owner,
+2026-10-11), as there is no registrar:
+
+- **Stripe:** connected or not, what Stripe still needs, test or live,
+  *Open Stripe* (the `dash` ask) for payouts, refunds and disputes.
+- **By program and by month:** billed, discounts and aid, paid by card,
+  paid another way, refunded, still owed; session fees and packages beside
+  registrations, from the till and the book.
+- **Who owes:** each family's open bills, oldest first, the next part due,
+  failed parts first; **Record a payment**, **Take something off**,
+  **Cancel** on each.
+- **To do:** paid on a withdrawn or declined registration (refund in
+  Stripe), paid twice, disputes open.
+- **Receipts for the year:** every payment and refund of a year, as one
+  file the club keeps for its taxes, from the same records the families
+  read (below).
+- **Download for the accounts:** a CSV, one row per payment or refund:
+  date, child, family, what for, how, amount, Stripe's fee where known,
+  Stripe's id; a cell a spreadsheet would run as a formula made text, as
+  the GotSport export does. Payouts and bank reconciliation stay in Stripe.
+
+### Who reads what
+
+| | Family | Team's coaches | Session's coach | Admins | Club owner |
+| --- | --- | --- | --- | --- | --- |
+| `till` (on, currency) | Yes | Yes | Yes | Yes | Yes |
+| `stripe` (account) | No | No | No | Yes | Yes |
+| Bills, payments | Her own children's | No | No | Yes | Yes |
+| Session fee records | Her own (as now) | No | Her sessions' (as now) | Yes | Yes |
+| Discount codes | No | No | No | Yes | Yes |
+| Card on file (brand, last four) | Her own | No | No | Yes | Yes |
+| Connect or disconnect | No | No | No | Yes | Yes |
+
+### What the family is emailed
+
+Email was built before payments (builds 135 and 137, `functions/mail.js`
+and `functions/mailnews.js`), so each payment step adds its own emails to
+`mailnews.js` as it is built, from the club's address, to the family of
+the one child the bill is for (the bill's family, never an address a phone
+wrote), each said once (noted at `serverState/` before sending, a webhook
+event delivered twice included), and tested in `test/mailnews.js` with the
+step's own suite. Push says the same things where she turned it on; email
+is what reaches a family with no app open.
+
+- **A bill made** (step 2): what for, how much and **Pay**, linking to the
+  bill on My players. A registration's *accepted* email (built) says the
+  fee already; once bills exist it says the bill's amount, after any
+  discount, instead of the program's.
+- **Payment received:** not ours. Stripe emails its own receipt from the
+  club's account at Checkout (above), so the webhook sends none, and the
+  build-137 receipt for a fee the club marks paid by hand (`onFee`) must
+  skip a fee the webhook wrote, or she gets two.
+- **A refund** (step 2): the amount and what it was for, when the webhook
+  writes it; Stripe's own refund email may also come, from the club.
+- **A bill charged to the card on file** (step 4, *Pay new bills with this
+  card*): what, how much and the card's last four, at the charge.
+- **A plan's part due soon** (step 4, *reminded each time*): a few days
+  before its date, the amount and **Pay**, once per part.
+- **A part that failed** (step 4): what and **Pay now**, at the failure and
+  again at the retry three days later if that fails too; never the card's
+  decline reason.
+- **The year's statement** (step 5): on her asking, from My players, the
+  same records she sees; never sent unasked.
+- **Session fees and packages on the till** (step 6): the daily *sessions
+  to pay* email (built) becomes the bill's **Pay** link, and stops for a
+  place on a plan or a card that pays it by itself.
+
+### Receipts, and deleting
+
+**One record, read by both** (owner, 2026-10-11). A payment is written once,
+under the club, and is both the family's receipt and the club's: on My
+players she opens any payment as a receipt (the club, the child, what for,
+how, the amount, the date, Stripe's reference) and downloads a year's
+statement; the admins download the same records as the year's receipts
+for the club's taxes. Stripe also emails her its own receipt from the
+club's account.
+
+**Payments are kept, because they are the club's financial records.** This
+changes what *Protecting the data* decided on 2026-10-06, before there were
+payments to account for:
+
+- A family deleting a registration takes its bill with it only while
+  nothing was paid; a bill with a payment stays, with the registration
+  gone, for the admins.
+- Deleting an account (`forgetMe`) forgets her card on file (on the club's
+  Stripe account too) and her link to every bill, but every payment and
+  refund stays with the amount, the date, what it was for, and the payer's
+  name and child's name as they stood when it was paid, so the club's
+  receipts for that year are still whole. The *Delete my account* screen
+  says so before she confirms, and the privacy policy says why.
+
+### Before any of this is built: the platform's Stripe account
+
+The owner does these once, in test mode first:
+
+1. **Make TeamPlayHQ's Stripe account** (stripe.com), as the business that
+   runs TeamPlayHQ, and verify it. It takes no money, but Stripe still has
+   to know who runs the platform before live clubs can connect.
+2. **Turn on Connect**, as a platform, with **Standard** accounts. Fill in
+   the platform profile (what TeamPlayHQ does, that clubs are paid
+   directly, no platform fee) and the branding clubs see when they
+   connect: the name, the icon, the colour.
+3. **The keys and the webhook,** test and live: the secret key (a
+   restricted key with Connect, Checkout, Customers, Payment Intents and
+   Account Links is better than the full one) and a Connect webhook
+   endpoint at the `stripeHook` function's address, for the events above,
+   whose signing secret is the other half. All four go into Secret Manager
+   (`STRIPE_KEY`, `STRIPE_HOOK`, `STRIPE_TEST_KEY`, `STRIPE_TEST_HOOK`;
+   README will say how), never into the repo.
+4. **Privacy policy and terms** (`privacy.html`, `terms.html`) both say
+   today that TeamPlayHQ takes no payments. They change with step 1 below:
+   Stripe processes cards for the club, on the club's account, and payment
+   records are kept as the club's financial records after an account is
+   deleted.
+
+### Order
+
+Each its own build, rules version, CHANGELOG entry and test pass. New
+suites: `test/pay.js` (the server on a fake Stripe: every ask for every kind
+of account, the webhook's signature, a repeated event, each event's effect,
+`payDue`), and `test/till.js` (the phone: Pay drawn only where the club takes
+cards and only for her own, no amount in any ask, the return trip, Money for
+admins only, the CSV).
+
+Each step builds its own emails with it (*What the family is emailed*).
+
+1. **The till:** `functions/stripe.js`, connecting (`connect`, `dash`),
+   `stripeHook` with `account.*` only, `till` and `stripe`, test mode for
+   `test-` clubs, Club → Money showing the connection, `payAsks` and its
+   rules, the privacy policy and terms.
+2. **A registration paid in full:** bills made by the server, Checkout on
+   the form and on My players, the webhook writing payments and refunds,
+   `record` and `cancel`, *Paid* on Registrations.
+3. **Discounts, aid and the club covering it.**
+4. **A card on file and payment plans:** saving, changing and forgetting a
+   card, paying new bills with it, `payDue`, reminders, failed parts.
+5. **The treasurer's view**, its CSV, and receipts for families and the
+   club.
+6. **Session fees and packages** on the till.
+
+### Why Stripe, and not another processor or our own
+
+Asked by the owner, 2026-10-11, with Stripe's fee being the club's:
+
+- **Building our own processor is not a real option.** Taking cards
+  directly means becoming a payment facilitator: a sponsoring bank,
+  registration with the card networks, the top level of PCI DSS with a
+  yearly outside audit, checking every club's identity and bank account,
+  carrying their chargebacks, and money-transmitter licensing state by
+  state. That is years and a compliance team, and processing would still
+  cost about what Stripe charges, because most of the fee is the card
+  networks' and the issuing banks', not Stripe's.
+- **Other processors that do what Connect does** (each club paid directly,
+  in its own account): Square (its OAuth for apps), PayPal's partner
+  platform, Adyen for platforms (built for much larger volumes), and older
+  gateways such as Authorize.net that need each club to have a merchant
+  account. Card fees are in the same range everywhere for a small club;
+  Stripe has the clearest Connect model, the hosted Checkout that keeps
+  card numbers off TeamPlayHQ, and the test mode the sandbox needs. A
+  second processor could be added later behind the same bills and
+  payments, which do not depend on Stripe beyond the ids they carry.
+- **Apple Pay and Google Pay come with Checkout.** Stripe's own page
+  offers them on a phone that has them once the club turns them on in its
+  Stripe settings, so a family pays with Face ID today, as a web app.
+- **An app in the stores would not use the stores' payments.** Apple's and
+  Google's in-app purchase (and their cut) is for digital goods used in the
+  app; a club's fees pay for something in the real world, which both
+  stores' rules send through an ordinary processor. A wrapped app (section
+  8) would show the same Checkout, Apple Pay and Google Pay included.
+
+Fees change; check Stripe's current pricing before telling a club a number.
+
+### Decided by the owner (2026-10-11)
+
+1. **Each thing is its own bill**, a program, a session or a package, and
+   **when a registration is paid is each program's choice** (when
+   registering, or once accepted). And **Club covers the cost**, for any
+   bill (*Discounts and financial aid*).
+2. **Families may pay the club another way** unless a program turns it off.
+3. **Stripe's processing fee is the club's**, out of each payment; Stripe
+   stays (*Why Stripe*, above).
+4. **Any admin connects or disconnects Stripe** (the owner is one), and every
+   admin and owner is told when it happens.
+5. **Admins are the treasurers;** no treasurer role.
+6. **A card on file is the family's choice**, and with it she may have new
+   bills paid with it; a plan's later parts are charged to it, or she is
+   reminded to pay each one (*A card on file, and payment plans*).
+7. **Payments are kept as both the family's receipts and the club's**, one
+   record each, and stay when an account is deleted (*Receipts, and
+   deleting*).
+8. **An admin makes a package and the family pays it;** no buying from a list.
+9. **Which programs count together for a sibling discount is the admins'
+   choice**, per program.
 
 ---
 
@@ -507,11 +1035,20 @@ hold.
 5. **Payments.** Stripe Connect, Checkout, the webhook (payments and the
    club's refunds), plans, discounts, the treasurer's view; session fees and packages onto the same
    till.
-6. **Email.**
-7. **Tryouts and evaluations.** *Built 2026-10-11 (build 136, rules version
-   29), as designed under *Tryouts and evaluations* above.*
-8. **Coach compliance records.** *Built 2026-10-11 (build 137, rules
-   version 30), as designed under *Coach and volunteer compliance* above.*
+   *Designed 2026-10-11 in *Payments, designed before any code*, above,
+   in six steps of its own; the owner decided its nine questions the same
+   day. Needs the platform's Stripe account first.*
+6. **Email.** *Built in builds 135 and 137: invitations and team notices
+   (`functions/mail.js`), a training session's families, a registration's
+   news to its family, receipts for payments the club records, and the
+   sessions still to pay (`functions/mailnews.js`). The payment emails are
+   built with the payment steps that make their data (*Payments*, *What the
+   family is emailed*): a card payment's receipt is Stripe's own. Not
+   built, because nothing lapses: a waiver about to lapse.*
+7. **Tryouts and evaluations.** *Built 2026-10-12 (build 138, rules version
+   30), as designed under *Tryouts and evaluations* above.*
+8. **Coach compliance records.** *Built 2026-10-12 (build 139, rules
+   version 31), as designed under *Coach and volunteer compliance* above.*
 9. **GotSport import of rosters and schedules,** whenever the owner has real
    export files to map; it can move earlier if a club needs it to start.
 

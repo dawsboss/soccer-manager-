@@ -1,5 +1,5 @@
 /* Tryouts and evaluations (GOTSPORT.md, *Tryouts and evaluations*; build
-   136, rules version 29), against the fake Firebase on a club on orgs/.
+   138, rules version 30), against the fake Firebase on a club on orgs/.
    What is pinned:
 
    - Admins name a tryout's evaluators (never on another kind of program)

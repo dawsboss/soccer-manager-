@@ -1,5 +1,5 @@
 /* Coach compliance (GOTSPORT.md, *Coach and volunteer compliance*; build
-   137, rules version 30), against the fake Firebase on a club on orgs/.
+   139, rules version 31), against the fake Firebase on a club on orgs/.
    What is pinned:
 
    - Where an item stands: lapsed, lapsing within thirty days, not recorded

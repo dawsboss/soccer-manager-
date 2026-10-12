@@ -260,13 +260,16 @@ does the bookkeeping, not that the phone works offline first.
   for rules too old to take the ask, and the test club's.
 - **Moved (build 135): invitation emails from the club** (`functions/mail.js`,
   `mailAsk`; *Email* below): `mailImported()` asks the club to send each
-  invite it made as a real invitation in the club's name, and sends
-  Firebase's sign-in links only where the club has no mailer.
+  invite it made as a real invitation in the club's name; where the club
+  has no mailer, each row's *Email it* opens the admin's own mail app (build
+  136: Firebase's sign-in links are gone).
 - **Moved (build 135) too: letting people in** (`functions/staff.js`,
   `staffAsk`, `staffAsks/{code}/{uid}/{id}`): a team-link request approved
   (`approveClaim()`: the approval, the family on each child's record, her
   index entry, her member entry and the log in one write, the tables by
-  `settle`), a fan's ask (`approveFan()`, with her name for the family and
+  `settle`; since build 136 also a child the family filled in through the
+  link, added to the squad with her record in the club and her roster entry
+  in the same write, when the coach says so), a fan's ask (`approveFan()`, with her name for the family and
   the fans table), a squad's parent links (`inviteSquad()`: one per child
   with no parent and no open invite, with the limits she chose, ids from the
   server's generator) and an imported roster's invites (`inviteImported()`:
@@ -284,8 +287,8 @@ does the bookkeeping, not that the phone works offline first.
   ask the same way (`approveFan()`, build 121); a squad of parent
   links is made one invite at a time (`inviteSquad()`), and so are the
   invites for the emails an imported roster carries (`inviteImported()`),
-  whose sign-in emails Firebase sends one call at a time from the admin's phone
-  (`mailImported()`), stopping at its daily limit; a new club is claimed by
+  whose invitations go from the admin's own mail app one at a time where
+  the club has no mailer; a new club is claimed by
   the first person to write its admin list (`createClub()`), which is
   trust-on-first-use (rules.js, gap 3). Registering a child through a
   program's link is the family's own phone writing her child, her list, care,
@@ -357,10 +360,25 @@ does the bookkeeping, not that the phone works offline first.
   the server from the squad, never from the ask. Without a mailer set up
   every ask is answered `nomail` and the phone does what it did before.
   `test/mail.js`.
+- **Moved (build 137):** *Email or share* on a training session and *Remind
+  the family* on Fees (`sheetReach()`, `mailReach()`) ask the club to send
+  (`mailAsk`, `session`: the session's coach or an admin, the families found
+  from the places). And what the club emails by itself, with no phone asking
+  (`functions/mailnews.js`): a registration's news to its family (a draft to
+  finish, received, accepted, waiting, not this time, placed on a team), a
+  receipt whenever a fee is marked paid or a package sold, and once a day
+  each family's sessions still to pay (`org/feeMail` false turns that off).
+  `test/mailnews.js`.
 - **Still on the phone:** *Email the parents* in her own mail app with
-  everybody in bcc (`mailto:`), beside the club's; the sign-in links where
-  the club has no mailer (`mailImported()`); *Email or share* for a training
-  session (`sheetReach()`).
+  everybody in bcc (`mailto:`), beside the club's; every link's *Email it*
+  from her own mail app where the club has no mailer, or the link names no
+  address (`linkButtons()`); a session's families from her own mail app
+  where the club has no mailer (`sheetReach()`).
+- **With payments:** each payment step adds its emails to `mailnews.js`
+  as it is built (a bill made, a refund, a card charged, a plan's part due
+  or failed: GOTSPORT.md, *What the family is emailed*); a card payment's
+  receipt is Stripe's own, from the club's account.
+- **Not built:** a waiver about to lapse (waivers never lapse here).
 - **With a server:** saying who has read it.
 
 ---
