@@ -89,7 +89,7 @@ const offending = html => banned.filter(w => wordRe(w).test(text(html)));
 
 console.log('--- no word from the code, the database or the docs on any screen ---');
 {
-  const views = ['season', 'roster', 'practice', 'calendar', 'club', 'setup', 'people', 'admin', 'mine', 'sessions', 'inbox', 'notes', 'planner', 'regs', 'comply'];
+  const views = ['season', 'teamstats', 'minutes', 'attend', 'roster', 'practice', 'calendar', 'club', 'setup', 'people', 'admin', 'mine', 'sessions', 'inbox', 'notes', 'planner', 'regs', 'comply'];
   const gviews = ['live', 'subs', 'track', 'stats', 'plan'];
   const bad = [];
   let drawn = 0;
@@ -246,7 +246,7 @@ console.log('\n--- buttons that are verbs ---');
   check('Subs sorts By minutes or By number', /data-act="togglesort">By (?:minutes|number)</.test(h), true);
   check('— stages Several at once, not a Batch', /data-act="startplan">Several at once</.test(h) && !/>Batch</.test(h), true);
   check('— says short, over or on plan, never owed', /class="diff (?:owed|over)">\d+ (?:short|over)<|>on plan</.test(h) && !/\d+ owed/.test(h), true);
-  check('— a spot with nothing in it reads Spot · set', /<span>Spot<\/span><span class="lrspot-hint">set</.test(h), true);
+  check('— a spot with nothing in it reads Spot, and one word (build 146: no set/move stacked under it)', /aria-label="Set her spot">\s*<span>Spot<\/span><\/button>/.test(h) && !/lrspot-hint/.test(h), true);
 }
 
 H.summary('copy and vocabulary: every screen held to GLOSSARY.md');

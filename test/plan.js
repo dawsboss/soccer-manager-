@@ -64,7 +64,7 @@ console.log('--- an empty plan says how to start ---');
 {
   setup();
   const h = html();
-  check('the tab explains snapshots', /Snapshots/.test(h) && /Plan kick-off/.test(h), true);
+  check('the tab leads with the lineup and offers kick-off (build 146: Lineup, not Snapshots)', /<h2[^>]*>Lineup<\/h2>/.test(h) && /Plan kick-off/.test(h) && h.indexOf('>Lineup<') < h.indexOf('data-act="planall"'), true);
   check('and still offers the draft', /Draft a plan/.test(h), true);
 }
 
@@ -72,7 +72,7 @@ console.log('\n--- a game with no shape has no positions to plan ---');
 {
   setup({ formation: null });
   const h = html();
-  check('it asks for a shape', /Pick a shape/.test(h), true);
+  check('it asks for a shape, in a line, with the detail behind an info button', /Pick a shape/.test(h) && /data-act="info" data-k="snapshots"/.test(h) && !/no shape, so there are no positions/.test(h), true);
   check('rather than offering an empty pitch', /Plan kick-off/.test(h), false);
 }
 
@@ -202,7 +202,7 @@ console.log('\n--- blocks as the database hands them back ---');
   check('the current block is found', A.planBlockAt(g(), 900).start, 0);
   check('the next one too', A.nextPlanBlock(g(), 900).start, 1200);
   check('a block with no ids is not a crash', A.planSeconds(g()).p1, 1200);
-  check('and the tab draws', /Snapshots/.test(html()), true);
+  check('and the tab draws', /<h2>Lineup<\/h2>/.test(html()), true);
 }
 
 console.log('\n--- a snapshot puts the right players on ---');

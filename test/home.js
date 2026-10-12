@@ -142,6 +142,7 @@ const club = () => ({
     check('the games, played and to come', /data-act="openmatch" data-id="g2"/.test(h) && /data-act="openmatch" data-id="g3"/.test(h), true);
     for (const [what, re] of [['charts', /Game by game/], ['shooting', /<h2[^>]*>Shooting/], ['possession', /Possession|scrappy/], ['set pieces', /Set pieces and fouls/],
       ['what needs work', /What needs work/], ['the squad table', /<h2>Players<\/h2>/], ['"owed"', /owed|planned/], ['the register', /<h2>Attendance<\/h2>/],
+      ['the rows into Stats, Minutes and Attendance', /data-v="teamstats"|data-v="minutes"|data-v="attend"/],
       ['the calendar-sync card', /In your own calendar/], ['the AI button', /data-act="ai"/], ['Add a game', /data-act="newmatch"/]])
       check(`no ${what}`, re.test(h), false);
     check('no other child, by name or number', /Ella|Fitzgerald|Mia|Kowalski|#9|#4|A teammate/.test(h), false);
@@ -155,12 +156,16 @@ const club = () => ({
     const k = as('kid', 'season');
     check('a player\'s own: "Your season"', /Your season/.test(k), true);
 
+    // the coach's Season is short since build 146: the record, the games and rows into Stats, Minutes and Attendance
+    const coachy = h => /data-v="teamstats"/.test(h) && /data-v="minutes"/.test(h);
     const c = as('jaz', 'season');
-    check('the coach keeps the coach\'s Season', /<h2>Players<\/h2>/.test(c) && /owed/.test(c), true);
+    check('the coach keeps the coach\'s Season', coachy(c) && !/’s season/.test(c), true);
     const d = as('jaz', 'season', 't2');
-    check('— on her daughter\'s team too: she is staff, not a family', /<h2>Players<\/h2>/.test(d), true);
-    check('an admin: the coach\'s Season', /<h2>Players<\/h2>/.test(as('boss', 'season')), true);
-    check('a tracker: the coach\'s Season', /<h2>Players<\/h2>/.test(as('trk', 'season')), true);
+    check('— on her daughter\'s team too: she is staff, not a family', coachy(d), true);
+    check('an admin: the coach\'s Season', coachy(as('boss', 'season')), true);
+    check('a tracker: the coach\'s Season', coachy(as('trk', 'season')), true);
+    check('— the Minutes screen, for the coach', /<h2>Minutes<\/h2>/.test(as('jaz', 'minutes')) && /Ella Fitzgerald/.test(A.rendered()), true);
+    check('— and a family sent to it lands on her own Season', (as('mum', 'minutes'), A.ui.view) + ' ' + /Rosa’s season/.test(A.rendered()), 'season true');
   }
 
   console.log('\n--- Club home: her teams ---');

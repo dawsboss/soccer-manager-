@@ -154,15 +154,19 @@ console.log('--- the season, counted ---');
   check('what has no register yet is said, not hidden', A.attendUntaken(t1()).map(x => x.id).join(), 'ev');
 
   A.ui.view = 'season';
+  check('the coach\'s Season has a row into Attendance (build 146: a screen of its own)', /data-v="attend"[^>]*>[\s\S]*?<span class="psub">[^<]*(came|still to take)/.test(html()), true);
+  A.ui.view = 'attend';
   const h = html();
-  check('the coach\'s Season tab has attendance', /<h2>Attendance<\/h2>/.test(h), true);
+  check('the coach\'s Attendance screen has the register', /<h2>Attendance<\/h2>/.test(h), true);
   check('most missed first', h.indexOf('Rosa Delgado', h.indexOf('<h2>Attendance')) < h.indexOf('Ella Fitzgerald', h.indexOf('<h2>Attendance')), true);
   check('and says what is still to record', /1 past practice or event with no register yet/.test(h), true);
   A.click({ act: 'editplayer', pid: 'p3' });
   check('her sheet carries her record', /This season:<\/b> Practices 0 of 1 · missed 1 \(1 without saying\)/.test(sheet()), true);
 
   as('mumU');
-  check('a parent\'s Season tab has no register', /<h2>Attendance<\/h2>/.test(html()), false);
+  check('a parent\'s Season tab has no register', /<h2>Attendance<\/h2>|data-v="attend"/.test(html()), false);
+  A.ui.view = 'attend';
+  check('— nor a way to it', A.ui.view + ' ' + (html(), A.ui.view) + ' ' + /<h2>Attendance<\/h2>/.test(html()), 'attend season false');
   A.ui.view = 'mine';
   const m = html();
   check('My players: her own child\'s record', /Practices 1 of 1 · Games 1 of 1/.test(m), true);
