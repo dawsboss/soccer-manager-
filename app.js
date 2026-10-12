@@ -2,7 +2,7 @@
    Static app. Data lives in localStorage, and mirrors to Firebase Realtime
    Database when a config + workspace code are present. */
 
-const BUILD = '147';
+const BUILD = '148';
 const BUILT = '2026-10-12';
 /* The version of database.rules.json this app was written against. The rules
    carry the same number in rulesVersion's .write, which accepts that number
@@ -7385,14 +7385,44 @@ function navKind() {
   if (teams().some(t => isCoach(t.id, me.uid) || isTracker(t.id, me.uid) || isHelper(t.id, me.uid))) return 'staff';
   return anyPlayers() ? 'family' : 'staff';
 }
-/* The Game tab's game, on the team on screen: the one being played, else the
-   next on the calendar, else the last one played. */
+/* The teams the Team and Game tabs are about (UX-REVIEW-2.md, 6.1 and 6.3):
+   the ones she works on (coach, tracker or helper), and every team for an
+   admin or a club viewer, who have no team of their own. Not myTeams(): a
+   coach reads every team in the club, and hers is still one team, so her
+   Team tab is her team and her Game tab her game. */
+function navTeams() {
+  const all = myTeams();
+  if (!me || !gated() || canAdmin() || isViewer(me.uid)) return all;
+  const own = all.filter(t => isCoach(t.id, me.uid) || isTracker(t.id, me.uid) || isHelper(t.id, me.uid));
+  return own.length ? own : all;
+}
+/* A team's game on or coming: the one being played, else the next on the
+   calendar, never one called off. */
+const teamGame = t => {
+  const ms = teamMatches(t.id);
+  return ms.find(m => gameStatus(m) === 'live') || ms.filter(m => gameStatus(m) === 'upcoming' && !CALLED[m.called]).slice(-1)[0] || null;
+};
+/* The Game tab's games, one per team she works on, the ones being played
+   first and then by date. Two or more and the tab is a picker naming each
+   team, because the tab alone cannot say whose game it would open. */
+function navGames() {
+  const live = m => gameStatus(m) === 'live' ? 0 : 1;
+  return navTeams().map(teamGame).filter(Boolean)
+    .sort((a, b) => live(a) - live(b) || (a.date || '9').localeCompare(b.date || '9') || hm(a.kickoff).localeCompare(hm(b.kickoff)));
+}
+/* The team on screen's game, when no team of hers has one on or coming: the
+   last one played, so the tab still opens something. */
 function navGame() {
   const t = team(); if (!t) return null;
   const ms = teamMatches(t.id);
-  return ms.find(m => gameStatus(m) === 'live')
-    || ms.filter(m => gameStatus(m) === 'upcoming' && !CALLED[m.called]).slice(-1)[0]
-    || ms.find(m => gameStatus(m) === 'done') || ms[0] || null;
+  return teamGame(t) || ms.find(m => gameStatus(m) === 'done') || ms[0] || null;
+}
+/* A game opened from the tab or its picker, on its own team, where each role
+   works (the calendar's live card sends her the same way; render() puts a
+   finished game on its recap). */
+function openNavGame(g) {
+  ui.teamId = g.teamId; ui.matchId = g.id; ui.view = 'game'; ui.gameFrom = null; ui.picked = null;
+  ui.gameView = canEditTeam(g.teamId) ? 'subs' : me && isTracker(g.teamId, me.uid) ? 'track' : 'live';
 }
 const NAV_ICON = {
   home: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3.5 11.5 12 4l8.5 7.5"/><path d="M5.5 10v10h13V10"/><path d="M10 20v-6h4v6"/></svg>',
@@ -7405,7 +7435,8 @@ const NAV_ICON = {
 function navTabs() {
   const fam = navKind() === 'family';
   const out = [fam ? { id: 'home', label: 'Home' } : { id: 'team', label: 'Team' }, { id: 'calendar', label: 'Calendar' }];
-  if (!fam) { const g = navGame(); out.push({ id: 'game', label: 'Game', live: !!(g && gameStatus(g) === 'live') }); }
+  // the dot means being played, on any team of hers; the picker or the header names which
+  if (!fam) out.push({ id: 'game', label: 'Game', live: navGames().some(g => gameStatus(g) === 'live') });
   // Messages once the club has them (an admin, and a team of hers); the tab is not drawn dead
   if (msgsOn()) out.push({ id: 'messages', label: 'Messages', count: 'tabMsgN' });
   out.push({ id: 'more', label: 'More', count: 'tabMoreN' });
@@ -7420,9 +7451,13 @@ function tabFor(v = ui.view) {
   if (v === 'mine') return fam ? 'home' : 'more';
   if (v === 'game' || (v === 'formation' && ui.editFid === GAME_SHAPE)) return fam ? (ui.gameFrom === 'calendar' ? 'calendar' : 'home') : 'game';
   if (TEAM_VIEWS.includes(v)) return fam ? 'home' : 'team';
+  if (v === 'club' && !fam && navTeams().length > 1) return 'team';
   return 'more';
 }
-const homeView = () => navKind() === 'family' ? 'mine' : 'season';
+/* The tab bar's first screen: a family's My players; for staff, her team's
+   Season, or the list of teams (Club home) when she has several to work on
+   (UX-REVIEW-2.md, 6.3), with each team one level down from it. */
+const homeView = () => navKind() === 'family' ? 'mine' : navTeams().length > 1 ? 'club' : 'season';
 /* Where the back arrow goes: up one level, the same wherever the screen was
    opened from, so it can be predicted (the phone's own Back walks the real
    history). A tab's own screen has no up. */
@@ -7434,10 +7469,14 @@ function upView(v = ui.view) {
   // the club's settings screens are Settings' Club section since build 143; the rest hang off Club home
   if (['people', 'admin', 'planner', 'regs', 'comply'].includes(v)) return 'setup';
   if (['tryout', 'sessions'].includes(v)) return 'club';
-  if (v === 'club' || v === 'setup' || v === 'notes') return homeView();
+  if (v === 'setup' || v === 'notes') return homeView();
   if (v === 'mine' && navKind() !== 'family') return homeView();
+  // Club home is up from nowhere once it is the Team tab's own screen; a family's goes back to My players
+  if (v === 'club') return homeView() === 'club' ? null : homeView();
   // a family opening a team's season from My players
   if (TEAM_VIEWS.includes(v) && navKind() === 'family') return 'mine';
+  // a team's own tabs, for staff with several teams: up is the list of them
+  if (['season', 'roster', 'practice'].includes(v) && homeView() === 'club') return 'club';
   return null;
 }
 const CHEV_SVG = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>';
@@ -7492,7 +7531,7 @@ function sheetMore() {
   openSheet(`<h3>More</h3>
     ${me ? `<button class="opt spread" data-act="goview" data-v="notes"><span><b>Notifications</b>
       <span class="rowsub">What is new: your games and practices${newsFor() ? ', and club activity' : ''}</span></span>${b ? `<span class="pill asking">${b > 9 ? '9+' : b}</span>` : ''}</button>` : ''}
-    ${wsCode() || teams().length ? `<button class="opt" data-act="goview" data-v="club"><b>${esc(org)}</b>
+    ${(wsCode() || teams().length) && homeView() !== 'club' ? `<button class="opt" data-act="goview" data-v="club"><b>${esc(org)}</b>
       <span class="rowsub">Club home: its teams, and everything else in it</span></button>` : ''}
     ${anyPlayers() && navKind() !== 'family' ? `<button class="opt" data-act="goview" data-v="mine"><b>My players</b>
       <span class="rowsub">${allKidNames().map(esc).join(', ')}</span></button>` : ''}
@@ -7536,9 +7575,10 @@ function viewClub() {
     const live = ms.find(x => gameStatus(x) === 'live');
     const next = ms.filter(x => gameStatus(x) === 'upcoming' && !CALLED[x.called]).slice(-1)[0];
     const last = ms.find(x => gameStatus(x) === 'done');
-    const sub = live ? `Playing now — ${esc(live.opponent || 'TBC')} ${score(live).us}–${score(live).them}`
-      : next ? `Next: ${esc(next.opponent || 'TBC')}${next.date ? ' · ' + shortDate(next.date) : ''}`
-        : last ? `Last: ${esc(last.opponent || 'TBC')} ${score(last).us}–${score(last).them}` : 'No games yet';
+    // us–them, our side first, as the game header reads (UX-REVIEW-2.md, 6.1)
+    const sub = live ? `Playing now · ${score(live).us}–${score(live).them} v ${esc(live.opponent || 'TBC')}`
+      : next ? `Next: v ${esc(next.opponent || 'TBC')}${next.date ? ' · ' + shortDate(next.date) : ''}`
+        : last ? `Last: ${score(last).us}–${score(last).them} v ${esc(last.opponent || 'TBC')}` : 'No games yet';
     return `<button class="card go teamcard" data-act="goteam" data-id="${t.id}">
       ${teamCrest(t)}
       <span class="tc-main"><b>${teamLabel(t)}</b>
@@ -7672,22 +7712,43 @@ function shortDate(d) {
 
 /* Game mode (UX-REVIEW.md, 1.3; build 144). A game is its own mode: the brand
    row steps aside and one slim header, pinned with the rest of the header,
-   carries Back, the opponent and the score, the clock (ticking, through
+   carries Back, the two teams and the score with the date under them (since
+   build 148, UX-REVIEW-2.md, 6.1: which team, which date, and no score
+   before kick-off), the clock (ticking, through
    data-live), the sync badge while it has something to say, and a ⋯ menu for
    what the game bar used to hold: the games either side, Edit and Share, none
    of which is a sideline action. The game bar itself is gone from every game
    screen, so the clock card is the first thing under the header. */
 const DOTS_SVG = '<svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="2.2"/><circle cx="12" cy="12" r="2.2"/><circle cx="19" cy="12" r="2.2"/></svg>';
+/* A game named as a scoreboard reads it (UX-REVIEW-2.md, 6.1): our team
+   first, then the score, then the opponent, so "1–1" is never read as the
+   other side's; and no score at all before kick-off, where 0–0 reads as a
+   result. HTML: the team's label is one already. */
+function gameTitle(t, m) {
+  const sc = score(m), mid = gameStatus(m) === 'upcoming' ? 'v' : `${sc.us}–${sc.them}`;
+  return `${teamLabel(t)} ${mid} ${esc(m.opponent || 'TBC')}`;
+}
+/* When a game is, as the Next up card says it: Today, Tomorrow, or the day. */
+function gameWhen(m) {
+  return [m.date ? relDay(m.date) || dayLabel(m.date) : '', m.kickoff ? niceTime(m.kickoff) : ''].filter(Boolean).join(' · ') || 'Date to be confirmed';
+}
+/* The Game tab with more than one team's game on or coming: a short list
+   naming each team, the one being played first (UX-REVIEW-2.md, 6.1). */
+function sheetNavGames(gs) {
+  openSheet(`<h3>Which game?</h3>
+    ${gs.map(g => `<button class="opt spread" type="button" data-act="navgame" data-id="${g.id}" aria-current="${ui.view === 'game' && g.id === ui.matchId}">
+      <span><b>${gameTitle(state.teams[g.teamId] || {}, g)}</b><span class="rowsub">${esc(gameWhen(g))}</span></span>
+      ${gameStatus(g) === 'live' ? '<span class="pill live">live</span>' : ''}</button>`).join('')}`);
+}
 function gameHeader(t, m) {
-  const sc = score(m), st = gameStatus(m);
+  const st = gameStatus(m);
   const upLabel = ui.gameFrom === 'calendar' ? 'Back to the calendar' : 'Back to the team';
-  // the clock while it is being played; before, when it is; after, full time
+  // the clock while it is being played, full time after; before, nothing: the date under the names says when
   const when = st === 'live' ? `<span class="ghclock" data-live="clock" data-mid="${m.id}">${mmss(elapsedSec(m))}</span>`
-    : st === 'done' ? '<span class="ghclock ghft" title="Full time">FT</span>'
-      : `<span class="ghclock ghkick">${esc([m.date ? shortDate(m.date) : '', m.kickoff ? niceTime(m.kickoff) : ''].filter(Boolean).join(' · ') || 'Not played yet')}</span>`;
+    : st === 'done' ? '<span class="ghclock ghft" title="Full time">FT</span>' : '';
   return `<button class="tbback" data-act="backgames" aria-label="${upLabel}" title="${upLabel}">${BACK_SVG}</button>
     <button class="ghmain" data-act="pickgame" aria-label="Which game" title="Which game">
-      <span class="ghname">${esc(m.opponent || 'Game')}</span><span class="ghscore">${sc.us}–${sc.them}</span></button>
+      <span class="ghname">${gameTitle(t, m)}</span><span class="ghwhen">${esc(gameWhen(m))}</span></button>
     ${when}
     <span class="sync ghsync" id="gsync" hidden></span>
     <button class="tbback ghmore" data-act="gamemenu" aria-label="More for this game" title="More for this game">${DOTS_SVG}</button>`;
@@ -21379,9 +21440,11 @@ function onAct(e) {
   if (a === 'teammenu') { sheetTeams(); return; }
   if (a === 'goview') { ui.view = d.v; closeSheet(); render(); return; }
   /* The tab bar (UX-REVIEW.md, 1.1). A tab is a place: tapping the one she
-     is on goes to its first screen and the top. Game opens the team's game
-     being played, else the next, else the last; with none, the team's
-     Season, where Add a game is. */
+     is on goes to its first screen and the top. Team is her team, or the
+     list of them when she works on several (UX-REVIEW-2.md, 6.3). Game
+     opens the game being played, else the next, on the one team of hers
+     that has one; with several, it asks which (6.1); with none, the team on
+     screen's last game, else its Season, where Add a game is. */
   if (a === 'tab') {
     closeSheet();
     const k = d.tab || d.v;
@@ -21389,15 +21452,20 @@ function onAct(e) {
     if (k === 'home') ui.view = 'mine';
     else if (k === 'calendar') { ui.view = 'calendar'; ui.picked = null; }
     else if (k === 'messages') { ui.view = 'inbox'; ui.thread = null; }
-    else if (k === 'team') { if (tabFor() !== 'team' || ui.view === 'game') ui.view = 'season'; }
+    else if (k === 'team') {
+      if (homeView() === 'club') ui.view = 'club';
+      else if (tabFor() !== 'team' || ui.view === 'game') ui.view = 'season';
+    }
     else if (k === 'game') {
-      const g = navGame();
-      // where each role works, as the calendar's live card sends her (render() puts a finished game on its recap)
-      if (g) { ui.matchId = g.id; ui.view = 'game'; ui.gameFrom = null; ui.picked = null; ui.gameView = canEditTeam(g.teamId) ? 'subs' : me && isTracker(g.teamId, me.uid) ? 'track' : 'live'; }
+      const gs = navGames();
+      if (gs.length > 1) { sheetNavGames(gs); return; }
+      const g = gs[0] || navGame();
+      if (g) openNavGame(g);
       else { ui.view = 'season'; toast('No games yet. Add one from Season.'); }
     }
     render(); toTop(); return;
   }
+  if (a === 'navgame') { const g = state.matches[d.id]; if (!g) return; openNavGame(g); closeSheet(); render(); toTop(); return; }
   // the title row's back arrow: up one level (a game's and a shape's have their own, backgames and backsetup)
   if (a === 'navback') { const up = upView(); if (up) { ui.view = up; ui.picked = null; if (up === 'inbox') ui.thread = null; } closeSheet(); render(); toTop(); return; }
   if (a === 'accountsheet') { if (me) sheetAccount(); else sheetSignIn(); return; }

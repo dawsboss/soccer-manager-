@@ -20,6 +20,14 @@ still confusing, the owner's three first.
 ## 6. The tab bar, specifically
 
 ### 6.1 Game: which team, which date, which game?
+*Done in build 148, all four bullets: `gameTitle()` and `gameWhen()` in the header
+(`G14 Flight v Northgate` over `Sat 19 Sep · 9:30am`; the score between the teams
+once it has kicked off), Club home's team rows read the same way, `navGames()` and
+`sheetNavGames()` make the tab a picker when more than one of the teams she works on
+(`navTeams()`: coached, tracked or helped; every team for an admin or a viewer, since a
+coach reads the whole club) has a game on or coming, and the dot is live on any of
+them. Pinned in `test/nav.js`.*
+
 `navGame()` picks the game for *the team on screen*: live, else the next on the
 calendar, else the last played. Nothing on the tab or in the game header says which
 team that is. The header reads `Hill End 1–1 · 38:11`: opponent, score, clock. An
@@ -56,6 +64,12 @@ Fix, in order of cost:
   reads better: What's new · Sandbox FC · Sessions · Settings.
 
 ### 6.3 Team opens "the last team you looked at"
+*Done in build 148: `homeView()` is Club home when `navTeams().length > 1`, the Team
+tab opens it, a team's Season, Players and Training carry a back arrow up to it, Club
+home has none of its own and is not offered again under More. The list is Club home as
+it was (its order kept: an admin's Calendar card first, `test/schedule.js`), so "2 teams
+you can reach" (7.3) is still to do. Pinned in `test/nav.js`.*
+
 The Team tab shows whichever team `ui.teamId` was left on. For a coach of one team
 that is right. For an admin, or a coach of two teams, it feels random: the only
 clue is a small chevron after the team name in the title, and nothing says "you
@@ -78,6 +92,7 @@ team, which is the wrong direction).
   the "Got it" card exists. (`viewSetup()`, the account row.)
 - **A game not played yet shows 0–0** in the game header and on the parent's
   "Not started · 17 Oct · Test Squad A 0–0 Eastfield" card. Blank until kick-off.
+  (The header since build 148, with 6.1; the card still to do.)
 - **"Call the coach off"** on the practice sheet is the first button a parent sees
   on a practice. In a real club it is staff-only, but check: in my ungated run it
   was drawn for the parent.
@@ -130,12 +145,13 @@ team, which is the wrong direction).
 
 ## 8. Order of work for round 2
 
-1. Game header: team name, no score before kick-off, us–them order (6.1, first
-   two bullets). Half a day.
+1. ~~Game header: team name, no score before kick-off, us–them order (6.1, first
+   two bullets). Half a day.~~ Build 148.
 2. Settings "You" row bug; blank score before kick-off on cards (7.1). An hour.
 3. Notification switches in one place; rename the page What's new (6.2). A day.
-4. Team tab → My teams when there is more than one (6.3). A day.
-5. Game tab picker when more than one team has a game (6.1, third bullet). A day.
+4. ~~Team tab → My teams when there is more than one (6.3). A day.~~ Build 148.
+5. ~~Game tab picker when more than one team has a game (6.1, third bullet). A day.~~
+   Build 148.
 6. Coach's Who-is-coming as a list with override, not chips (7.2). Half a day.
 7. Drop the Next-practice card from the calendar; Sessions page's config chips
    to Settings (7.2, 7.3). Half a day.
