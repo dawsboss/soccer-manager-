@@ -2,7 +2,7 @@
    Static app. Data lives in localStorage, and mirrors to Firebase Realtime
    Database when a config + workspace code are present. */
 
-const BUILD = '139';
+const BUILD = '140';
 const BUILT = '2026-10-11';
 /* The version of database.rules.json this app was written against. The rules
    carry the same number in rulesVersion's .write, which accepts that number
@@ -11,7 +11,7 @@ const BUILT = '2026-10-11';
    never pasted look exactly like a coach with no signal: "saved on this phone
    only", one feature at a time. test/rules.js holds the two numbers together
    and fails when the rules change without this going up. */
-const RULES_VERSION = 31;
+const RULES_VERSION = 32;
 /* index.html carries the build it was published with. If this file is newer, the
    browser handed us a cached page — the exact failure that has eaten hours. */
 const pageBuild = () => {
@@ -2306,24 +2306,66 @@ const inviteLink = id => location.origin + location.pathname + '?invite=' + enco
    (the owner, 2026-10-11): email it, or copy it. Before this each sheet drew
    its own row — Copy here, Share… there, a Firebase sign-in email for an
    invite with an address and nothing for a team, fan or season link — and
-   the one someone needed was never on the sheet in front of her. Email it
-   opens her own mail app with the words and the link written (a mailto:
-   needs no server and no rules), the address filled in where the link names
-   one; an invite with an address goes from the club itself where the club
-   has a mailer (functions/mail.js, a real invitation in the club's name),
-   and from her mail app otherwise. The link rides on its own line at the
-   end of the body, so whatever she adds above it, the link survives. */
+   the one someone needed was never on the sheet in front of her.
+
+   Email it asks for an address and TeamPlayHQ sends it (the owner,
+   2026-10-12: "not draft me an email"): an invite, a team's link or a
+   registration link goes from the club (functions/mail.js, `invites` with
+   `to`, or `link`), in the club's words, the link built by the server from
+   the club's own records. An invite made for one address goes straight to
+   it, no box. Where the club cannot send (no mailer, rules too old, no
+   signal, a family's fan link, a season page or a calendar feed, which the
+   server does not send) Send opens her own mail app addressed to whoever
+   she typed, the words and the link written. The link rides on its own
+   line at the end of the body, so whatever she adds above it survives. */
 const mailtoLink = (to, subject, body) => `mailto:${encodeURIComponent(String(to || ''))}?subject=${encodeURIComponent(String(subject || ''))}&body=${encodeURIComponent(String(body || ''))}`;
-// SERVER.md: every link's Email it from her own mail app (mailto:), where the club has no mailer or the link names no address; the club's mailer for an invite with one.
+let lbSeq = 0;   // each Email it's own address box, so a card and a sheet showing one link never share one
+// SERVER.md: every link's Email it from her own mail app (mailto:), where the club cannot send it; the club's mailer for an invite, a team link or a registration link.
 function linkButtons(url, o = {}) {
   const sm = o.small ? ' sm' : '';
   const body = `${o.body ? String(o.body).trim() + '\n\n' : ''}${url}`;
   const href = mailtoLink(o.to, o.subject || `A link from ${(acc().org || {}).name || APP_NAME}`, body);
-  // the club's own mailer, for an invite that names an address; her mail app is the fallback in the handler
-  const viaClub = !!(o.invite && o.to && serverOn() && !mailFallback && rtdb && online);
-  const mail = viaClub ? `<button class="btn${sm}" data-act="invitemail" data-id="${esc(o.invite)}" data-href="${esc(href)}" data-email="${esc(o.to)}">Email it</button>`
-    : `<a class="btn${sm}" href="${esc(href)}">Email it</a>`;
-  return `${mail} <button class="btn quiet${sm}" data-act="copylink" data-v="${esc(url)}">Copy the link</button>`;
+  const copy = `<button class="btn quiet${sm}" data-act="copylink" data-v="${esc(url)}">Copy the link</button>`;
+  // an invite made for one address: to that address and nobody else, from the club where it can
+  if (o.to) {
+    const mail = o.invite && clubMails() ? `<button class="btn${sm}" data-act="invitemail" data-id="${esc(o.invite)}" data-href="${esc(href)}" data-email="${esc(o.to)}">Email it</button>`
+      : `<a class="btn${sm}" href="${esc(href)}">Email it</a>`;
+    return `${mail} ${copy}`;
+  }
+  // anything else: Email it opens a box for the address, and Send sends it
+  const n = ++lbSeq;
+  const what = o.invite ? ` data-invite="${esc(o.invite)}"` : o.send ? Object.entries(o.send).map(([k, v]) => ` data-${k}="${esc(v)}"`).join('') : '';
+  return `<button class="btn${sm}" data-act="emailit" data-n="${n}">Email it</button> ${copy}
+    <span class="row mailbox" id="lbf${n}" hidden><input type="email" id="lb${n}" placeholder="Their email address" autocapitalize="off" autocorrect="off">
+      <button class="btn${sm}" data-act="emailsend" data-n="${n}" data-href="${esc(href)}"${what}>Send</button></span>`;
+}
+// the club's own mailer, as far as this phone can tell before asking it
+const clubMails = () => !!(serverOn() && !mailFallback && rtdb && online && me && wsCode());
+// whether the rules let her ask the club to mail at all: an admin, or a coach of some team
+const mayAskMail = () => !!(me && (isAdmin(me.uid) || (acc().coachIndex || {})[me.uid]));
+const mailtoTo = (href, to) => String(href).replace(/^mailto:[^?]*/, 'mailto:' + encodeURIComponent(to));
+/* Send for a link with no address of its own: the club sends what it can
+   (an invite, a team link, a registration link), and her own mail app,
+   addressed to whoever she typed, does the rest. A refusal or no answer is
+   never a lost email: it falls back to her mail app the same way. */
+// SERVER.md: a link emailed by the club to the address she typed (mailAsk, `invites` with `to`, `link`); her own mail app where the club cannot.
+async function emailLink(d) {
+  const el = $('#lb' + d.n);
+  const to = String((el && el.value) || '').trim().toLowerCase();
+  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(to)) { toast('That email does not look right'); return; }
+  const ownApp = why => { location.href = mailtoTo(d.href, to); if (why) toast(why); };
+  const ask = d.invite ? { op: 'invites', ids: [d.invite], to }
+    : d.kind === 'join' && d.tid ? { op: 'link', kind: 'join', tid: d.tid, to }
+    : d.kind === 'reg' && d.prog ? { op: 'link', kind: 'reg', prog: d.prog, to } : null;
+  if (!ask || !clubMails() || !mayAskMail()) { ownApp(''); return; }
+  if (ask.kind === 'join' && !mayGrant(d.tid)) { toast('Club admins and that team’s coaches only'); return; }
+  if (ask.kind === 'reg' && !canAdmin()) { toast('Club admins only'); return; }
+  toast('Sending…');
+  const ans = await askServer(`mailAsks/${wsCode()}/${me.uid}/${uid()}`, ask, MAIL_WAIT);
+  if (ans && ans.why === 'nomail') mailFallback = true;
+  const sent = ans && ans.ok && (ask.op === 'link' ? ans.sent === 1 : (Array.isArray(ans.sent) ? ans.sent : Object.values(ans.sent || {})).includes(d.invite));
+  if (sent) { toast('The club emailed ' + to); if (el) el.value = ''; const f = $('#lbf' + d.n); if (f) f.hidden = true; return; }
+  ownApp(ans && (ans.why === 'nomail' || ans.why === 'rules') ? 'The club has no mailer set up — your own mail app instead' : 'The club could not send it — your own mail app instead');
 }
 /* The words for an invite's email: who, the club, the role — a child by her
    shirt number, never her name, since an email gets forwarded like a link. */
@@ -2805,7 +2847,7 @@ function sheetInvite() {
     ${pickOne('invitepick', 'team', f.team, teams().map(x => [x.id, esc(x.name || 'Team')]), 'Add a team first.')}`}
     ${f.role === 'helper' ? `<p class="muted" style="margin-top:-4px">A manager or a volunteer: the team's calendar, register, notices, practice plans and game plans before kick-off, and the drills. Not the squad, the clock or the subs, and no family's conversations.</p>` : ''}
     ${f.role === 'parent' ? `<p class="lbl">Parent of</p>
-    ${pickOne('invitepick', 'player', f.player, players.map(p => [p.id, `${p.number ? '#' + esc(p.number) + ' ' : ''}${esc(p.name || '')}`]), 'No players on this team.')}` : ''}
+    ${pickOne('invitepick', 'player', f.player, players.map(p => [p.id, `${p.number ? '#' + esc(p.number) + ' ' : ''}${esc(p.name || '')}${needsParent(t, p) ? ' · no parent yet' : ''}`]), 'No players on this team.')}` : ''}
     <label class="field"><span>Their email — optional</span><input type="email" id="invEmail" placeholder="Leave empty for a link to send yourself" autocapitalize="off" autocorrect="off"></label>
     ${limitFields('inv')}
     <p class="muted">With an email, only that address can accept it (one person), and you can have the sign-in email sent for you. Without one, whoever opens the link first gets the role, up to as many people as you chose — send it somewhere private.</p>
@@ -2838,57 +2880,13 @@ async function writeInvite(t, role, p, email, lim = {}) {
   return { id, doc, listed };
 }
 
-/* A squad's parents, one link per family, in one go. Every player with no
-   parent linked yet and no open invite gets one; a player who already has an
-   open invite keeps it, so running this twice makes nothing new and the list
-   is also where an admin finds a link to send again. Personal links rather
-   than one team link: each works once and needs no approving — the team link
-   below is the other way in, for when typing fifteen texts is the problem. */
-const openParentInvite = (tid, p) => inviteList().find(v => v.role === 'parent' && v.team === tid && !v.used
-  && (v.expiresAt || 0) > nowMs() && (v.player ? v.player === p.id : v.playerName === p.name));
+/* A squad's parents are invited from the invite builder (People → Invite
+   someone, or *Invite a parent* on Squad, which opens it with the team and
+   Parent picked): one invite, built by hand, for the child and as many
+   people and days as the admin chooses (the owner, 2026-10-12). The sheet
+   that made a link for every child at once is gone; the server's `squad`
+   op (functions/staff.js) stays for any older phone still asking. */
 const needsParent = (t, p) => p.active !== false && !Object.keys(p.guardians || {}).length;
-function sheetSquadInvites(tid) {
-  const t = state.teams[tid]; if (!t) return;
-  const list = players(t).filter(p => needsParent(t, p));
-  const missing = list.filter(p => !openParentInvite(tid, p));
-  const row = p => {
-    const v = openParentInvite(tid, p), link = v ? inviteLink(v.id) : '';
-    return `<div class="prow" style="grid-template-columns:auto 1fr auto">
-      <span class="pnum">${esc(p.number ?? '')}</span><span><span class="pname">${esc(p.name || '')}</span>
-        <span class="rowsub">${v ? `Link ready · until ${esc(new Date(v.expiresAt).toLocaleDateString())}` : 'No link yet'}</span></span>
-      <span class="row wrap">${v ? linkButtons(link, { ...inviteWords({ ...v, teamName: t.name || '', playerNo: p.number }), small: true }) : ''}</span></div>`;
-  };
-  openSheet(`<h3>Invite ${teamLabel(t)}'s parents</h3>
-    ${list.length ? `<p class="muted" style="margin-top:0">One link per family, for the ${list.length} player${list.length === 1 ? '' : 's'} with no parent linked yet. Each makes whoever opens it that child's parent, up to as many people as you choose — so email or send each one to that family only.</p>
-      ${missing.length ? `${limitFields('sqinv')}<button class="btn wide" data-act="squadinvitego" data-tid="${tid}">Make ${missing.length} link${missing.length === 1 ? '' : 's'}</button>` : ''}
-      <div class="plist" style="margin-top:10px">${list.map(row).join('')}</div>`
-    : `<p class="muted">Every player on the squad has a parent linked.</p>`}
-    <p class="muted">A child can have any number of parents. For a second one (or a grandparent who does the driving), post the team link, or make one more link from People → <i>Invite someone</i>.</p>
-    <button class="btn quiet wide" data-act="closesheet">Done</button>`);
-}
-// SERVER.md: a squad's links asked of the server (staffAsk) where it is deployed; one invite at a time from the phone otherwise.
-async function inviteSquad(tid) {
-  const t = state.teams[tid];
-  if (!t || !canAdmin()) { toast('Club admins only'); return; }
-  if (!fb || !rtdb || !me) { toast(me ? 'Needs a connection to the database' : 'Sign in first'); return; }
-  const todo = players(t).filter(p => needsParent(t, p) && !openParentInvite(tid, p));
-  const lim = readLimits('sqinv');
-  // the whole squad's links in one write, where the server is deployed (functions/staff.js)
-  const ans = todo.length ? await staffAsk({ op: 'squad', tid, uses: lim.uses, days: lim.days }) : null;
-  if (ans) {
-    if (!ans.ok) { toast(STAFF_NO[ans.why] || 'Not made — check the signal and try again'); return; }
-    sheetSquadInvites(tid); return;
-  }
-  let n = 0;
-  for (const p of todo) {
-    try { await writeInvite(t, 'parent', p, '', lim); n++; } catch (e) {
-      toast(/permission|denied/i.test((e && e.code) || '') ? 'The database refused it — are the invite rules from README published?' : 'Stopped — no connection');
-      break;
-    }
-  }
-  if (n) logAccess('invited', null, { targetName: n + ' parent' + (n === 1 ? '' : 's') + ' by link', team: t.id, teamName: t.name || null });
-  sheetSquadInvites(tid);
-}
 
 async function makeInvite() {
   if (!canAdmin()) { toast('Club admins only'); return; }
@@ -2917,7 +2915,7 @@ async function makeInvite() {
     <p class="muted" style="margin-top:0">${esc(INVITE_ROLES[doc.role])}${doc.teamName ? ` on <b>${esc(doc.teamName)}</b>` : ' for the whole club'}${email ? ` for <b>${esc(email)}</b>` : ''}. ${usesLine(doc.max || 1, doc.expiresAt)}.</p>
     <div class="codebox">${esc(link)}</div>
     <div class="row" style="margin-bottom:10px">${linkButtons(link, { ...inviteWords(doc), to: email, invite: id })}</div>
-    <p class="muted">${email ? 'Email it sends the invitation to that address' + (serverOn() && !mailFallback ? ', from the club' : ', from your own mail app') + '; only that address can accept it.' : 'Email it opens your mail app with the invitation written; Copy the link is for a text or the team chat.'} It is under People → Invites to send again.</p>
+    <p class="muted">${email ? 'Email it sends the invitation to that address' + (serverOn() && !mailFallback ? ', from the club' : ', from your own mail app') + '; only that address can accept it.' : 'Email it asks for their address and ' + (serverOn() && !mailFallback ? 'the club sends the invitation' : 'opens your mail app with the invitation written') + '; Copy the link is for a text or the team chat.'} It is under People → Invites to send again.</p>
     <button class="btn quiet wide" data-act="closesheet">Done</button>`);
   render();
 }
@@ -2977,7 +2975,7 @@ function sheetImportInvites() {
     <p class="muted" style="margin-top:0">The file had ${esc(contactCount(importContacts.list))}. Each invite works once, for ${INVITE_DAYS} days, and only for the email it names — so a forwarded link is no use to anyone else. Anyone who already has that role here is skipped.</p>
     <div class="plist" style="margin-bottom:12px">${rows.map(r => `<div class="prow" style="grid-template-columns:1fr auto">
       <span><span class="pname">${esc(r.email)}</span><span class="rowsub">${what(r)}</span></span>
-      <span class="rowsub" style="text-align:right">${state_(r)}${r.id && r.st !== 'has' ? `<br><span class="row wrap" style="justify-content:flex-end;margin-top:4px">${linkButtons(inviteLink(r.id), { ...inviteWords({ ...(clubInv[r.id] || {}), role: r.role, teamName: r.t ? r.t.name || '' : '', playerNo: r.p ? r.p.number : '' }), to: r.email, small: true })}</span>` : ''}</span></div>`).join('')}</div>
+      <span class="rowsub" style="text-align:right">${state_(r)}${r.id && r.st !== 'has' ? `<br><span class="row wrap" style="justify-content:flex-end;margin-top:4px">${linkButtons(inviteLink(r.id), { ...inviteWords({ ...(clubInv[r.id] || {}), role: r.role, teamName: r.t ? r.t.name || '' : '', playerNo: r.p ? r.p.number : '' }), to: r.email, invite: r.id, small: true })}</span>` : ''}</span></div>`).join('')}</div>
     ${todo ? `<button class="btn wide" data-act="importinvitego" style="margin-bottom:8px">Make ${todo} invite${todo === 1 ? '' : 's'}</button>` : ''}
     ${unsent.length && canMail ? `<button class="btn ${todo ? 'quiet ' : ''}wide" data-act="importinvitemail" style="margin-bottom:8px">Email ${unsent.length} of them from the club</button>
     <p class="muted">One invitation each, in the club's name. Every link is also under People → Invites to email or copy again.</p>` : ''}
@@ -3409,7 +3407,7 @@ function declineClaim(tid, u) {
 }
 
 /* On Squad, for whoever can let people in: the team link, the requests that
-   came through it, and — admins — a personal link per family. */
+   came through it, and — admins — the invite builder for one family. */
 function joinCard(t) {
   if (!mayGrant(t.id) || !fbConfig().apiKey || !anyAdmins()) return '';
   const j = t.join, link = j && j.code ? joinLink(j.code) : '';
@@ -3450,11 +3448,11 @@ function joinCard(t) {
     <p class="muted" style="margin:8px 0">${link ? 'Post this link in the team chat. Parents sign in, type their child’s shirt number, and wait for you to let them in here.' : 'One link for the whole team: parents sign in, type their child’s shirt number, and you let them in here with a tap.'}</p>
     ${link ? `<div class="codebox">${esc(link)}</div>
       <p class="muted" style="margin:0 0 8px">${j.until && j.until <= nowMs() ? `<b>Expired ${esc(new Date(j.until).toLocaleDateString())}</b> — make a new one.` : esc(usesLine(j.max || 0, j.until))}</p>
-      <div class="row wrap" style="margin-bottom:8px">${linkButtons(link, { subject: `Join ${teamLabel(t)} at ${(acc().org || {}).name || 'the club'}`, body: `${me && me.name ? me.name : 'The coach'} invites you to join ${teamLabel(t)} at ${(acc().org || {}).name || 'the club'} in ${APP_NAME}. Open this link on your phone, sign in, and give your child's shirt number — or her details, if she isn't on the squad yet — and a coach will let you in:`, small: true })}</div>
+      <div class="row wrap" style="margin-bottom:8px">${linkButtons(link, { subject: `Join ${teamLabel(t)} at ${(acc().org || {}).name || 'the club'}`, body: `${me && me.name ? me.name : 'The coach'} invites you to join ${teamLabel(t)} at ${(acc().org || {}).name || 'the club'} in ${APP_NAME}. Open this link on your phone, sign in, and give your child's shirt number — or her details, if she isn't on the squad yet — and a coach will let you in:`, send: { kind: 'join', tid: t.id }, small: true })}</div>
       ${limitFields('join', { anyUses: true, anyDays: true, uses: 0, days: 0 })}
       <button class="btn quiet wide" data-act="joinnew" data-tid="${t.id}" style="margin-bottom:8px">New link with these limits</button>`
     : `${limitFields('join', { anyUses: true, anyDays: true, uses: 0, days: 0 })}<button class="btn wide" data-act="joinnew" data-tid="${t.id}">Make a team link</button>`}
-    ${canAdmin() ? `<button class="btn quiet wide" data-act="squadinvites" data-tid="${t.id}">Or a personal link per family${without ? ` (${without} without a parent)` : ''}</button>` : ''}
+    ${canAdmin() ? `<button class="btn quiet wide" data-act="inviteparent" data-tid="${t.id}">Invite a parent${without ? ` (${without} without a parent)` : ''}</button>` : ''}
   </div>`;
 }
 
@@ -18801,7 +18799,7 @@ function viewRegList(pr) {
   return `<div class="stack">
     <div class="spread"><h2>${esc(pr.name)}</h2><button class="btn quiet sm" data-act="regprog" data-id="">Back</button></div>
     <p class="muted" style="margin-top:0">${esc([pr.closed ? 'Closed' : progOpen(pr) ? 'Open' : 'Not open yet', progLine(pr)].filter(Boolean).join(' · '))}</p>
-    ${pr.link && !pr.closed ? `<div class="row wrap">${linkButtons(regLink(pr.link), { subject: `Register for ${pr.name || 'the season'} at ${(acc().org || {}).name || 'the club'}`, body: `${(acc().org || {}).name || 'The club'} is taking registrations for ${pr.name || 'the season'} in ${APP_NAME}. Open this link on your phone and sign in to register your child:` })}
+    ${pr.link && !pr.closed ? `<div class="row wrap">${linkButtons(regLink(pr.link), { subject: `Register for ${pr.name || 'the season'} at ${(acc().org || {}).name || 'the club'}`, body: `${(acc().org || {}).name || 'The club'} is taking registrations for ${pr.name || 'the season'} in ${APP_NAME}. Open this link on your phone and sign in to register your child:`, send: { kind: 'reg', prog: pr.id } })}
       <button class="btn quiet" data-act="progedit" data-id="${esc(pr.id)}">Edit</button></div>`
       : `<button class="btn quiet" data-act="progedit" data-id="${esc(pr.id)}">Edit</button>`}
     <button class="btn quiet wide" data-act="regexport" data-id="${esc(pr.id)}">Export for GotSport</button>
@@ -19435,7 +19433,7 @@ function selfCard(t, p) {
       <span class="rowsub">Signs in as ${esc(firstName(p))}</span></span>
       <button class="btn quiet sm" data-act="selfdrop" data-pid="${p.id}" data-uid="${esc(u)}">Remove</button></div>`).join('')}
     ${v ? `<div class="codebox">${esc(link)}</div>
-      <div class="row wrap" style="margin-bottom:8px">${linkButtons(link, { ...inviteWords({ role: 'player', teamName: t.name || '', playerNo: p.number }), small: true })}
+      <div class="row wrap" style="margin-bottom:8px">${linkButtons(link, { ...inviteWords({ role: 'player', teamName: t.name || '', playerNo: p.number }), invite: v.id, small: true })}
         <button class="btn quiet sm" data-act="selfinvdrop" data-pid="${p.id}">Withdraw</button>
         <span class="muted">works once, until ${esc(new Date(v.expiresAt).toLocaleDateString())}</span></div>`
     : `${limitFields('selfL', { noUses: true })}<button class="btn quiet wide" data-act="selfinvite" data-pid="${p.id}" style="margin-bottom:8px">${accounts.length ? 'Another sign-in link for her' : 'Make her a sign-in link'}</button>`}
@@ -19526,7 +19524,7 @@ function fanCard(t, p, from) {
       <span class="rowsub">Follows ${esc(isMe(p) ? 'you' : firstName(p))}</span></span>
       ${drop ? `<button class="btn quiet sm" data-act="fandrop" data-tid="${t.id}" data-pid="${p.id}" data-uid="${esc(u)}" data-from="${from}">Remove</button>` : ''}</div>`).join('')}
     ${links.map(v => `<div class="codebox">${esc(inviteLink(v.id))}</div>
-      <div class="row wrap" style="margin-bottom:8px">${linkButtons(inviteLink(v.id), { ...inviteWords({ role: 'fan', teamName: t.name || '', playerNo: p.number }), small: true })}
+      <div class="row wrap" style="margin-bottom:8px">${linkButtons(inviteLink(v.id), { ...inviteWords({ role: 'fan', teamName: t.name || '', playerNo: p.number }), invite: v.id, small: true })}
         <button class="btn quiet sm" data-act="faninvdrop" data-tid="${t.id}" data-pid="${p.id}" data-id="${esc(v.id)}" data-from="${from}">Withdraw</button>
         <span class="muted">${esc(usesLine(v.max || 1, v.expiresAt))}</span></div>`).join('')}
     ${limitFields('fanL', { uses: 1 })}
@@ -21098,6 +21096,12 @@ function onAct(e) {
      (functions/mail.js); where it answers that it has none, or cannot, her
      own mail app opens with the same words instead, as it would have
      without a server. */
+  if (a === 'emailit') {
+    const f = $('#lbf' + d.n);
+    if (f) { f.hidden = false; const el = $('#lb' + d.n); if (el && el.focus) el.focus(); }
+    return;
+  }
+  if (a === 'emailsend') { emailLink(d); return; }
   if (a === 'invitemail') {
     if (!canAdmin() && (clubInv[d.id] || {}).by !== (me && me.uid)) { toast('Club admins only'); return; }
     toast('Sending…');
@@ -21141,8 +21145,13 @@ function onAct(e) {
     if (t2 && t2.join && !confirm('Make a new link? The current one stops working — anyone still to use it will need the new one.')) return;
     makeJoinCode(d.tid, readLimits('join', { uses: 0, days: 0, max: JOIN_MAX })); return;
   }
-  if (a === 'squadinvites') { if (!canAdmin()) { toast('Club admins only'); return; } sheetSquadInvites(d.tid); return; }
-  if (a === 'squadinvitego') { inviteSquad(d.tid); return; }
+  if (a === 'inviteparent') {
+    if (!canAdmin()) { toast('Club admins only'); return; }
+    if (!state.teams[d.tid]) return;
+    // the builder, with the team and Parent picked; the first child with no parent yet, to start
+    const t = state.teams[d.tid], first = players(t).find(p => needsParent(t, p));
+    ui.inv = { role: 'parent', team: d.tid, player: first ? first.id : null }; sheetInvite(); return;
+  }
   if (a === 'claimpick') {
     const t2 = team(); const c = t2 && (claimsSeen[t2.id] || {})[d.uid]; if (!c) return;
     const pk = ui.claimPick = ui.claimPick || {};

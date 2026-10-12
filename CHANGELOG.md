@@ -8,6 +8,32 @@ before this point lives only in the git log.
 
 ---
 
+## Invites built by hand, and Email it sends — 2026-10-12 (build 140, rules version 32)
+
+The owner, 2026-10-12: invites to the club come from a builder, not a link
+per child, and *Email it* should take an address and have TeamPlayHQ send
+it rather than draft an email in her own mail app.
+
+- **Squad's *Invite a parent*** (admins) opens the invite builder, People →
+  *Invite someone*, with the team and *Parent* picked and the first child
+  with no parent chosen; the children with no parent yet say so in the
+  picker. One invite, for the child, the people and the days she chooses.
+  The sheet that made a link for every child at once is gone (the server's
+  `squad` op stays, unasked, for an older phone).
+- **Email it asks for an address,** and the club sends: an invite made for
+  whoever opens it (`mailAsk`, `invites` with `to`), a team's link or a
+  registration link (`mailAsk`, `link`, `join` or `reg`), in the club's
+  words, the link built by the server from the club's own records, never
+  taken from the ask. An invite made for one address still goes to that
+  address and no other, straight from Email it, with no box.
+- **Where the club cannot send** (no mailer, rules older than 32, no
+  signal, a family's fan link, a season or game page, a calendar feed),
+  Send opens her own mail app addressed to whoever she typed.
+- **Rules version 32:** `mailAsks` takes `to` on `invites` and `link`
+  asks only, `kind` (`join` or `reg`) and `prog`.
+
+More in `mail`, `join` and `rules`.
+
 ## Coach compliance — 2026-10-12 (build 139, rules version 31)
 
 GOTSPORT.md's step 8, designed there first: the club's record of what MSYSA

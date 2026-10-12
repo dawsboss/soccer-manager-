@@ -667,6 +667,10 @@ button.calday:active{background:var(--field-wash)}
 .facts dt{color:var(--ink-soft);font-size:13px;padding-top:2px}
 .facts dd{margin:0}
 .row.wrap{flex-wrap:wrap}
+/* Email it's address box: its own line under the buttons, wherever the row is */
+.row:has(> .mailbox){flex-wrap:wrap}
+.mailbox{flex-basis:100%;gap:6px;margin-top:2px}
+.mailbox input{flex:1;min-width:0}
 a.btn{display:inline-block;text-decoration:none}
 .syncrow{padding:4px 0 6px}
 .syncrow+.syncrow{border-top:1px solid var(--line);padding-top:10px}
