@@ -86,6 +86,11 @@ her.
   ("Other teams at Sandbox FC"), not cards on her home.
 
 ### 1.3 The game is buried under four rows of chrome
+**Shipped in build 144** (*A game is its own mode*; pinned by `test/nav.js`): one
+slim header with the score, the clock and a ⋯ menu; the game bar gone; four screens as a
+segmented control, Pitch under Subs and Live under Stats for staff. What follows is the finding
+as written.
+
 On the Subs, Track and Pitch screens the clock starts ~230 px down: top bar, crumbs
 (Club › Team › Game), six sub-tabs (Live, Subs, Track, Stats, Pitch, Plan), then a
 game bar with six controls (‹‹, ‹, title, ›, Edit, Share). That's a quarter of the
@@ -267,7 +272,7 @@ team link, or open the invite you were sent."
 
 **Large (the structural change everything else hangs off):**
 10. Role-based bottom tab bar, and crumbs → title + back. *Done, build 141.*
-11. Game mode: one header, pinned clock, four screens.
+11. Game mode: one header, pinned clock, four screens. *Done, build 144.*
 12. A parent's own Home and Season. *Done, build 142.*
 
 Items 10–12 are where "new people and parents get lost" is actually fixed; 1–9
