@@ -953,7 +953,7 @@ const toUid = (S, u) => S.sent().filter(m => m.data.uid === u);
     const fbk = makeFakebase().refuseWrites(p => p.startsWith('pushTokens/'));
     const { A } = await boot('mum', { fbk });
     A.click({ act: 'pushon' }); await A.flush();
-    check('rules not published: said, by version', new RegExp('refused.*version ' + A.RULES_VERSION).test(A.lastToast()), true);
+    check('rules not published: said, in plain words', /Notifications did not turn on\. The club.s set-up is out of date/.test(A.lastToast()), true);
     check('and not claimed to be on', A.pushRec, null);
   }
 
@@ -1042,7 +1042,7 @@ const toUid = (S, u) => S.sent().filter(m => m.data.uid === u);
     check('(notifications on for this phone)', A.pushOn(), true);
     A.ui.matchId = 'g1';
     A.click({ act: 'feedfollow', v: '1' }); await A.flush();
-    check('with them on, a refusal is said: the closed phone would not hear', /page only.*version/.test(A.lastToast() || ''), true);
+    check('with them on, a refusal is said: the closed phone would not hear', /page only\. The club.s set-up is out of date/.test(A.lastToast() || ''), true);
     A.state.matches.g1 = { id: 'g1', teamId: 't1', opponent: 'Northgate', date: '2026-10-09', currentHalf: 1, periods: {} };
     A.ui.teamId = 't1'; A.ui.view = 'game'; A.ui.gameView = 'live'; A.render();
     check('the Live tab says they reach the phone closed, not only this page', /even with TeamPlayHQ closed/.test(A.rendered()) && !/while this page is open/.test(A.rendered()), true);

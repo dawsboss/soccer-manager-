@@ -753,7 +753,7 @@ console.log('--- calendar sync ---');
   global.window.SOCCER_CALENDAR_FEED = '';
   A.click({ act: 'calsyncon', tid: 't1' });
   check('no feed set up for the site: nothing to turn on', A.state.teams.t1.calFeed, undefined);
-  check('— and the calendar offers a copy instead', /Add what is coming up/.test(html()) && !/Turn on calendar sync/.test(html()), true);
+  check('— and the calendar offers a copy instead', /Add to calendar/.test(html()) && !/Turn on calendar sync/.test(html()), true);
   global.window.SOCCER_CALENDAR_FEED = 'https://feed.example.workers.dev';
   check('with one, the coach can turn it on', /Turn on calendar sync/.test(html()), true);
   A.me = { uid: 'mumU' };

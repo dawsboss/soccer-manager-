@@ -2,7 +2,7 @@
    Static app. Data lives in localStorage, and mirrors to Firebase Realtime
    Database when a config + workspace code are present. */
 
-const BUILD = '143';
+const BUILD = '144';
 const BUILT = '2026-10-12';
 /* The version of database.rules.json this app was written against. The rules
    carry the same number in rulesVersion's .write, which accepts that number
@@ -150,7 +150,7 @@ function byRole(m, pid, now = nowMs()) {
   return out;
 }
 const roleSummary = (m, pid, now) => Object.entries(byRole(m, pid, now))
-  .filter(([, v]) => v >= 30).sort((a, b) => b[1] - a[1])
+  .filter(([k, v]) => v >= 30 && k !== 'Unassigned').sort((a, b) => b[1] - a[1])
   .map(([k, v]) => `${mins(v)} at ${k}`).join(' · ');
 const slotOf = (m, pid) => slotById(m, slotIdOf(m, pid));
 const slotTaken = (m, sid) => fieldIds(m).some(pid => slotIdOf(m, pid) === sid);
@@ -706,7 +706,7 @@ async function initAuth() {
 async function initSync() {
   const cfg = fbConfig();
   const code = wsCode();
-  if (!cfg || !cfg.apiKey || !cfg.databaseURL) { setSync('off', 'this device'); return; }
+  if (!cfg || !cfg.apiKey || !cfg.databaseURL) { setSync('off', 'Not synced'); return; }
   try {
     const app = await getApp();
     const dbMod = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js');
@@ -729,10 +729,10 @@ async function initSync() {
 
     dbMod.onValue(dbMod.ref(db, '.info/connected'), s => {
       online = !!s.val();
-      setSync(s.val() ? 'live' : 'off', s.val() ? 'synced' : 'offline');
+      setSync(s.val() ? 'live' : 'off', s.val() ? 'Synced' : 'Offline');
     });
 
-    if (!code) { setSync('off', 'no code'); return; }
+    if (!code) { setSync('off', 'Not synced'); return; }
 
     // held until the session's first read of the club (sendPending())
     fb = { db, ref: dbMod.ref, set: dbMod.set, remove: dbMod.remove, held: true };
@@ -742,7 +742,7 @@ async function initSync() {
     // one match can never touch another, or the teams tree.
     const onDenied = err => {
       if (!/permission|denied/i.test((err && err.code) || '')) return;
-      denied = true; setSync('off', 'sign in');
+      denied = true; setSync('off', 'Sign in');
       noteDenied();
       render();
     };
@@ -1174,7 +1174,7 @@ async function initSync() {
     attachWorkspace();
   } catch (e) {
     console.error(e);
-    setSync('off', 'sync failed');
+    setSync('off', 'Not synced');
   }
 }
 
@@ -1372,7 +1372,7 @@ function sheetPending() {
   const r = list.filter(([, refused]) => refused);
   openSheet(`<h3>Not saved to the club yet</h3>
     <p class="muted" style="margin-top:0">${list.length} change${list.length === 1 ? ' is' : 's are'} on this phone and nowhere else${r.length ? `, ${r.length} of them refused by the club's database` : ''}. They stay here, and are sent again every time this phone connects. Nothing is dropped unless you drop it.</p>
-    ${r.length ? `<p class="muted">A refusal usually means the club's database rules haven't been updated yet (an admin pastes them from README), or this account isn't a coach of that team any more.</p>` : ''}
+    ${r.length ? `<p class="muted">A refusal usually means the club's set-up is out of date (${canAdmin() ? 'Check readiness, under Settings → Advanced, says what to do' : 'the club admin can bring it up to date'}), or this account is no longer a coach of that team.</p>` : ''}
     <div class="plist">${list.slice(0, 40).map(([label, refused]) => `<div class="prow" style="grid-template-columns:1fr auto"><span class="pname">${esc(label)}</span>${refused ? '<span class="tag wait">refused</span>' : '<span class="tag">waiting</span>'}</div>`).join('')}</div>
     ${list.length > 40 ? `<p class="muted">…and ${list.length - 40} more.</p>` : ''}
     <button class="btn wide" data-act="pendingretry" style="margin-top:12px">Try again now</button>
@@ -1682,7 +1682,31 @@ function shownName(t, p) {
   const n = p.number == null ? '' : String(p.number).trim();
   return n ? '#' + n : 'A teammate';
 }
-const ROLE_LABEL = { owner: 'App owner', admin: 'Org admin', coach: 'Coach', tracker: 'Tracker', helper: 'Team helper', parent: 'Parent', player: 'Player', fan: 'Fan', viewer: 'Viewer' };
+/* A change the club turned down, in one plain sentence (UX-REVIEW.md, 2.1;
+   build 144). Every refusal used to name the mechanism ("the club's database
+   rules need the rsvp block from README"), which means nothing to a parent
+   and little to a club secretary. What she needs: that it did not save,
+   whether it is still on this phone, and who can fix it. An admin is sent
+   to Check readiness, which names the fix (the rules file) in the one place
+   that may; everyone else is told to tell the admin. */
+/* Labels, not paragraphs (UX-REVIEW.md, 2.2; build 144). Nearly every card
+   carried a sentence or three of rationale, in the voice of the code comments.
+   Where the detail matters it is behind an \u24d8 that opens a sheet, and the
+   card keeps its label and its button. The words live here, by key, so a
+   test can hold the sheet to them and a button carries a key, never text. */
+const INFO = {
+  calcopy: ['A copy, not a subscription', 'Everything still to come, as a file your phone\u2019s calendar opens. It is a copy: if a time changes later, add it again. Each entry replaces its earlier self in calendars that allow it.'],
+  calfeed: ['A calendar that follows every change', 'A calendar app can follow this club by itself, with no copy to add again, once the club\u2019s calendar feed is set up. That is done once, by whoever set the club up.'],
+  rosteropen: ['What a parent\u2019s phone sees', 'Shirt numbers or names is for the screen only: a parent\u2019s phone still holds the players it reads, as it always has. Coaches, trackers and admins always see names.']
+};
+const infoBtn = k => INFO[k] ? ` <button class="infobtn" type="button" data-act="info" data-k="${k}" aria-label="More about this" title="More about this">i</button>` : '';
+function sheetInfo(k) {
+  const x = INFO[k]; if (!x) return;
+  openSheet(`<h3>${esc(x[0])}</h3><p class="muted" style="margin-top:0">${esc(x[1])}</p>`);
+}
+const refusedWhy = () => `The club\u2019s set-up is out of date: ${canAdmin() ? 'Check readiness, under Settings \u2192 Advanced, says what to do' : 'tell the club admin'}.`;
+const refusedMsg = (kept, lead = 'That didn\u2019t save.') => `${lead} ${kept ? 'It is kept on this phone. ' : ''}${refusedWhy()}`;
+const ROLE_LABEL = { owner: 'App owner', admin: 'Club admin', coach: 'Coach', tracker: 'Tracker', helper: 'Team helper', parent: 'Parent', player: 'Player', fan: 'Fan', viewer: 'Viewer' };
 
 /* Whoever looks after the app itself. Read from the database root, never from
    this file — a personal email committed to a public repo gets scraped, sticks
@@ -2580,7 +2604,7 @@ async function redeemHere() {
   } catch (e) {
     if (e && e.code === 'full') { invite.status = 'full'; render(); return; }
     invite.status = 'error';
-    invite.err = /permission|denied/i.test((e && e.code) || '') ? 'The database refused it — the invite may have expired or been withdrawn'
+    invite.err = /permission|denied/i.test((e && e.code) || '') ? 'That invite may have expired or been withdrawn'
       : ((e && e.code) || String(e));
     render(); return;
   }
@@ -2675,7 +2699,7 @@ async function createHere(name) {
     await Promise.resolve(put(W('names/' + who), { name: String(me.name || '').slice(0, 80) })).catch(() => { });
   } catch (e) {
     newClubBusy = false;
-    toast(/permission|denied/i.test((e && e.code) || '') ? 'The database refused it — the rules may not be published yet'
+    toast(/permission|denied/i.test((e && e.code) || '') ? refusedMsg()
       : 'Could not make the club — check the signal and try again');
     return false;
   }
@@ -2905,7 +2929,7 @@ async function makeInvite() {
   const lim = readLimits('inv');
   let made;
   try { made = await writeInvite(t, f.role, p, email, lim); } catch (e) {
-    toast(/permission|denied/i.test((e && e.code) || '') ? 'The database refused it — are the invite rules from README published?' : 'Could not make the invite');
+    toast(/permission|denied/i.test((e && e.code) || '') ? refusedMsg() : 'Could not make the invite');
     return;
   }
   const { id, doc } = made;
@@ -3000,7 +3024,7 @@ async function inviteImported() {
   let n = 0;
   for (const r of todo) {
     try { ic.made[r.key] = (await writeInvite(r.t, r.role, r.role === 'parent' ? r.p : null, r.email)).id; n++; } catch (e) {
-      toast(/permission|denied/i.test((e && e.code) || '') ? 'The database refused it — are the invite rules from README published?' : 'Stopped — no connection');
+      toast(/permission|denied/i.test((e && e.code) || '') ? refusedMsg() : 'Stopped — no connection');
       break;
     }
   }
@@ -3180,7 +3204,7 @@ async function sendClaim() {
   } catch (e) {
     if (e && e.code === 'full') { join.status = 'full'; render(); return; }
     join.status = 'error';
-    join.err = /permission|denied/i.test((e && e.code) || '') ? 'The database refused it — the link may have been replaced or run out. Ask the coach for the new one'
+    join.err = /permission|denied/i.test((e && e.code) || '') ? 'That link may have been replaced or run out. Ask the coach for the new one'
       : ((e && e.code) || String(e));
     render(); return;
   }
@@ -3253,7 +3277,7 @@ async function makeJoinCode(tid, lim = {}) {
       by: me.uid, byName: me.name || '', at, ...limits
     });
   } catch (e) {
-    toast(/permission|denied/i.test((e && e.code) || '') ? 'The database refused it — are the team link rules from README published?' : 'Could not make the link');
+    toast(/permission|denied/i.test((e && e.code) || '') ? refusedMsg() : 'Could not make the link');
     return;
   }
   if (old) Promise.resolve(fb.remove(fb.ref(fb.db, 'joinCodes/' + old))).catch(() => { });
@@ -3346,7 +3370,7 @@ async function approveClaim(tid, u, pids, add = false) {
     // first, because the index rule looks for it
     await fb.set(fb.ref(fb.db, `claims/${wsCode()}/${tid}/${u}/approved`), { by: me.uid, at, players: Object.fromEntries(picked.map(x => [x, true])) });
   } catch (e) {
-    toast(/permission|denied/i.test((e && e.code) || '') ? 'The database refused it — are the team link rules from README published?' : 'Not approved — no connection');
+    toast(/permission|denied/i.test((e && e.code) || '') ? refusedMsg() : 'Not approved — no connection');
     return;
   }
   setDeep(claimsSeen, `${tid}/${u}/approved`, { by: me.uid, at });
@@ -3385,7 +3409,7 @@ async function approveFan(tid, u) {
   try {
     await fb.set(fb.ref(fb.db, `claims/${wsCode()}/${tid}/${u}/approved`), { by: me.uid, at, fan: p.id });
   } catch (e) {
-    toast(/permission|denied/i.test((e && e.code) || '') ? 'The database refused it — are the newest rules from README published?' : 'Not approved — no connection');
+    toast(/permission|denied/i.test((e && e.code) || '') ? refusedMsg() : 'Not approved — no connection');
     return;
   }
   setDeep(claimsSeen, `${tid}/${u}/approved`, { by: me.uid, at });
@@ -3856,7 +3880,7 @@ function sendOut(id) {
     if (!msgs.outbox[id]) return;
     msgs.outbox[id].status = 'refused'; saveMsgs(); render();
     toast(/permission|denied/i.test((err && (err.code || err.message)) || '')
-      ? 'Not sent — the database refused it. Are the messaging rules published?' : 'Not sent');
+      ? refusedMsg(false, 'Not sent.') : 'Not sent');
   });
 }
 /* The outbox is what lets a coach at a pitch with no signal post "we are
@@ -3977,7 +4001,7 @@ async function pushTurnOn() {
     toast('Notifications are on for this phone');
   } catch (e) {
     toast(/permission|denied/i.test((e && (e.code || e.message)) || '')
-      ? 'Not turned on: the database refused it. Are the rules (version ' + RULES_VERSION + ') published?' : 'Could not turn notifications on');
+      ? refusedMsg(false, 'Notifications did not turn on.') : 'Could not turn notifications on');
   } finally { pushBusy = false; render(); }
 }
 
@@ -4111,7 +4135,7 @@ function setMute(k, off) {
     try { localStorage.setItem(LS_MUTE + ':' + uid, JSON.stringify(mute.v)); } catch (e) { }
     render();
     toast(/permission|denied/i.test((err && (err.code || err.message)) || '')
-      ? 'Not saved: the database refused it. Are the rules (version ' + RULES_VERSION + ') published?' : 'Not saved');
+      ? refusedMsg() : 'Not saved');
   });
 }
 /* The kinds that can reach her at all: no Club activity switch for a parent,
@@ -4351,7 +4375,7 @@ function sheetPrivacy() {
     ${c ? `<p><b>Who can read this one:</b> ${convReaders(c)}. The club's database refuses everybody else.</p>` : ''}
     <p><b>Kept to the people in it.</b> A family's conversation is readable by that family, the team's coaches and the club's admins — never one coach alone, and never another family. A conversation between two coaches or admins is readable by those two only. Trackers, other parents and anyone outside the club cannot open any of it.</p>
     <p><b>Encrypted on the way and where it is kept.</b> Messages travel over an encrypted connection (HTTPS) and are stored encrypted by Google, which hosts the club's database.</p>
-    <p><b>Not end-to-end encrypted.</b> Whoever runs the club's Firebase project can open the database and read it, as with email or most club apps. Don't send card numbers or passwords here.</p>
+    <p><b>Not end-to-end encrypted.</b> Whoever runs the club's database (the app's owner) can open it and read it, as with email or most club apps. Don't send card numbers or passwords here.</p>
     <p><b>On phones.</b> A copy stays on each phone that opens the conversation, so it works with no signal, and is wiped when that person signs out.</p>
     <p><b>Permanent.</b> Nobody can edit or delete a message once it is sent, admins included.</p>
     <button class="btn quiet wide" data-act="closesheet">Done</button>`);
@@ -4429,7 +4453,7 @@ function pickListHtml() {
   const away = pickUnreachable();
   const awayHtml = away.length ? `<p class="lbl" style="margin:12px 0 4px">No parent signed in yet</p>
     <p class="muted" style="margin:0 0 6px">${esc(away.slice(0, 12).join(', '))}${away.length > 12 ? ` and ${away.length - 12} more` : ''}.
-    Their parents appear here once they have joined: invite them from <b>Squad → Parents</b>, or share the team link.</p>` : '';
+    Their parents appear here once they have joined: invite them from <b>Players → Parents</b>, or share the team link.</p>` : '';
   if (!all.length) {
     const team = staffTeams().concat(famThreads().map(x => state.teams[x.tid]).filter(Boolean))
       .find(t => pickWords().length && pickWords().every(w => String(t.name || '').toLowerCase().includes(w)));
@@ -6157,7 +6181,7 @@ function sheetImport(text, team) {
     </div>
     <p class="muted" style="margin:0 0 6px">Spreadsheet templates, with the headings it reads:</p>
     <div class="row" style="margin-bottom:10px">
-      <button class="btn quiet sm" data-act="importtpl" data-v="roster">Roster</button>
+      <button class="btn quiet sm" data-act="importtpl" data-v="roster">Players</button>
       <button class="btn quiet sm" data-act="importtpl" data-v="schedule">Games and practices</button>
       <button class="btn quiet sm" data-act="importtpl" data-v="fields">Fields</button>
       <button class="btn quiet sm" data-act="importtpl" data-v="drills">Drills</button>
@@ -6182,7 +6206,7 @@ const teams = () => Object.values(state.teams).sort((a, b) => (a.name || '').loc
 const teamLabel = t => t && t.name ? esc(t.name) : '<span class="untitled">Untitled team</span>';
 const teamStats = t => {
   const n = Object.keys((t && t.players) || {}).length, g = teamMatches(t.id).length;
-  return `${n} player${n === 1 ? '' : 's'} · ${g} game${g === 1 ? '' : 's'} · id ${t.id.slice(0, 4)}`;
+  return `${n} player${n === 1 ? '' : 's'} · ${g} game${g === 1 ? '' : 's'}`;
 };
 const team = () => state.teams[ui.teamId] || null;
 const players = t => Object.values((t && t.players) || {}).sort((a, b) => (Number(a.number) || 999) - (Number(b.number) || 999) || (a.name || '').localeCompare(b.name || ''));
@@ -7054,6 +7078,43 @@ function normView() {
   if (was === 'mycal') ui.calSel = 'mine';
   if (was === 'schedule') ui.calSel = 'club';
 }
+/* What a role lets her do (UX-REVIEW.md, 2.4; build 144). Until build 143
+   every restricted role carried a banner over every screen ("Signed in as
+   Parent — you can read, and say whether your child is coming"), stacked
+   with the test-club bar and whatever the sync had to say: a fixture nobody
+   reads twice. Now it is a card the first time she opens the club on this
+   phone, put away with Got it and remembered per account, club and role
+   (so a parent made a coach is told again), and a line in the account sheet
+   and under Settings → You for whenever she wants it back. The test-club
+   bar and the sync warnings are not role banners and stay. */
+const LS_ROLECARD = 'sm.role.v1';
+const roleCardKey = lim => `${envPrefix()}${wsCode() || 'local'}:${lim}`;
+const roleCardsSeen = () => { try { return JSON.parse(localStorage.getItem(LS_ROLECARD + ':' + (me ? me.uid : 'anon')) || '{}') || {}; } catch (e) { return {}; } };
+function roleCardSeen(lim) { return !!roleCardsSeen()[roleCardKey(lim)]; }
+function roleCardDone(lim) {
+  const seen = roleCardsSeen(); seen[roleCardKey(lim)] = nowMs();
+  try { localStorage.setItem(LS_ROLECARD + ':' + (me ? me.uid : 'anon'), JSON.stringify(seen)); } catch (e) { }
+}
+/* One sentence per role, the same on the card and in the account sheet. */
+function roleWords(lim) {
+  if (!lim) return '';
+  if (lim === 'tracker') return 'You track this team: you log what happens and make the coach\u2019s planned subs when they are due. The clock and other subs are the coach\u2019s.';
+  if (lim === 'helper') return 'You help this team: the calendar, the register, the lineup before kick-off and notices. The clock and the subs are the coach\u2019s.';
+  if (lim === 'parent') return 'You are a parent here: you see your own child by name, say whether she is coming, and message the coaches.';
+  if (lim === 'player') return 'You are signed in as a player: you see your team, and say whether you are coming.';
+  if (lim === 'fan') return 'You follow the calendar, the games and the notices. The family answers and talks to the coaches.';
+  if (lim === 'viewer') {
+    const t = team();
+    const asViewer = me && isViewer(me.uid) && !teams().some(x => isCoach(x.id, me.uid));
+    return t ? `You can read ${t.name ? esc(t.name) : 'this team'}, not change it: ${asViewer ? 'you are a club viewer' : 'it is another team\u2019s'}.` : 'You can read this club, not change it.';
+  }
+  return 'You can read, not change.';
+}
+function roleCard(lim) {
+  if (!lim || roleCardSeen(lim)) return '';
+  return `<div class="rolebar rolecard" data-role="${esc(lim)}"><span>${roleWords(lim)}</span> <button class="linkbtn dark" data-act="roleok" data-v="${esc(lim)}">Got it</button></div>`;
+}
+
 function render() {
   normView();
   /* Settle whether this device may see the club before drawing a single thing.
@@ -7151,13 +7212,8 @@ function render() {
   if (denied || needsSignIn()) { app.innerHTML = lockScreen(); saveUi(); watchMessages(); return; }
   if (awaitingSignIn()) { app.innerHTML = welcomeScreen(); saveUi(); return; }
   if (unconfirmed) { app.innerHTML = unconfirmedScreen(); saveUi(); return; }
-  const roNote = lim === 'viewer' && team()
-    ? `<div class="rolebar">${me && isViewer(me.uid) && !teams().some(x => isCoach(x.id, me.uid)) ? `Viewing <b>${teamLabel(team())}</b> as a club viewer. You can read it, not change it.`
-      : `Viewing <b>${teamLabel(team())}</b> from another team in the club. You can read it, not change it.`}</div>` : '';
-  // "you can read, not change" is about the team; on Messages a parent writes, and on the Calendar she answers
-  const roleNote = lim && lim !== 'viewer' && v !== 'inbox' && v !== 'thread' && v !== 'notes'
-    ? `<div class="rolebar">Signed in as <b>${esc(ROLE_LABEL[lim])}</b> — ${lim === 'tracker' ? "you can log events and make the coach's planned subs when they are due, but not run the clock or make other subs" : lim === 'parent' && v === 'sessions' ? 'you can ask for a place for your child, and withdraw her' : lim === 'parent' ? 'you can read, and say whether your child is coming' : lim === 'player' ? 'you can read, and say whether you are coming' : lim === 'fan' ? 'you follow the calendar, the games and the notices; the family answers and talks to the coaches' : 'you can read, not change'}.</div>`
-    : '';
+  // what her role lets her do, said once per account, club and role, never over every screen (roleCard() says why)
+  const roleNote = v !== 'inbox' && v !== 'thread' && v !== 'notes' ? roleCard(lim) : '';
   /* Never let a rehearsal pass for the real thing. Both facts are worth saying
      out loud: a test club holds invented data and publishes nothing, and a
      non-production environment is a different database with its own rules. */
@@ -7181,8 +7237,8 @@ function render() {
      lack fails quietly on its own screen, and she is the one who can fix it. */
   if (online && fb && !rulesCheck && canAdmin()) checkRules();
   const rulesNote = !canAdmin() ? ''
-    : rulesCheck === 'old' ? `<div class="rolebar warn"><b>The club's database rules are out of date.</b> This app needs version ${RULES_VERSION}; until the latest <code>database.rules.json</code> is pasted into Firebase (README, <b>The database rules</b>), some changes will stay on this phone.</div>`
-      : rulesCheck === 'app' ? `<div class="rolebar warn"><b>This copy of the app is older than the club's database rules.</b> Reload the page to get the latest.</div>` : '';
+    : rulesCheck === 'old' ? `<div class="rolebar warn"><b>The club's set-up is out of date, so some changes will stay on this phone.</b> Check readiness, under Settings \u2192 Advanced, says what to paste where. <button class="linkbtn dark" data-act="readysheet">Open it</button></div>`
+      : rulesCheck === 'app' ? `<div class="rolebar warn"><b>This copy of the app is older than the club's set-up.</b> Reload the page to get the latest.</div>` : '';
   const saveNote = rulesNote + fullNote + (nRef ? `<div class="rolebar warn">${nRef} change${nRef === 1 ? '' : 's'} on this phone ha${nRef === 1 ? 's' : 've'}n't been accepted by the club's database. ${nRef === 1 ? 'It is' : 'They are'} kept here and tried again each time you connect. <button class="linkbtn dark" data-act="pendingsheet">See ${nRef === 1 ? 'it' : 'them'}</button></div>` : '');
   /* Redrawing is how every tap shows its result, and replacing the whole page
      can leave the window somewhere else: on the Plan tab, picking the 60:00
@@ -7194,7 +7250,7 @@ function render() {
   lastScreen = here;
   placeMemo = new Map();
   try {
-    app.innerHTML = envNote + saveNote + (shut ? '' : alertBar() + detailsNote()) + joinNote + roleNote + roNote + (
+    app.innerHTML = envNote + saveNote + (shut ? '' : alertBar() + detailsNote()) + joinNote + roleNote + (
       v === 'game' ? (g === 'track' ? viewTrack() : g === 'stats' ? viewStats() : g === 'recap' ? viewRecap() : g === 'pitch' ? viewMatch() : g === 'plan' ? viewPlan() : g === 'subs' ? viewSubs() : viewFeed()) :
         v === 'roster' ? viewRoster() :
           v === 'season' ? viewSeason() :
@@ -7289,7 +7345,7 @@ const viewScope = (v = ui.view) => v === 'calendar' || v === 'mine' ? (me ? 'me'
   : TEAM_VIEWS.includes(v) || (v === 'formation' && ui.editFid === GAME_SHAPE) ? 'team' : 'club';
 /* The screens that are not a team's, by name, for the title row. */
 const VIEW_TITLE = {
-  calendar: 'Calendar', setup: 'Settings', people: 'People', admin: 'Club details', sessions: 'Training sessions',
+  calendar: 'Calendar', setup: 'Settings', people: 'People', admin: 'Club details', sessions: 'Sessions',
   planner: 'Planner', inbox: 'Messages', thread: 'Messages', notes: 'Notifications', mine: 'My players', formation: 'Shapes',
   regs: 'Registration', tryout: 'Tryouts', comply: 'Coach compliance', club: 'Club home'
 };
@@ -7422,7 +7478,7 @@ function sheetMore() {
       <span class="rowsub">Club home: its teams, and everything else in it</span></button>` : ''}
     ${anyPlayers() && navKind() !== 'family' ? `<button class="opt" data-act="goview" data-v="mine"><b>My players</b>
       <span class="rowsub">${allKidNames().map(esc).join(', ')}</span></button>` : ''}
-    ${canSessions() ? `<button class="opt" data-act="goview" data-v="sessions"><b>Training sessions</b>
+    ${canSessions() ? `<button class="opt" data-act="goview" data-v="sessions"><b>Sessions</b>
       <span class="rowsub">${esc(sessClubLine())}</span></button>` : ''}
     <button class="opt" data-act="goview" data-v="setup"><b>Settings</b>
       <span class="rowsub">${esc(['You', team() && restricted() !== 'tracker' && !readerRole(restricted()) ? 'this team' : '', canAdmin() ? 'the club: people, registrations, fields' : coachAny ? 'people' : ''].filter(Boolean).join(', '))}</span></button>
@@ -7453,7 +7509,7 @@ function viewClub() {
     ${anyPlayers() ? `<button class="card" data-act="goview" data-v="mine" style="text-align:left;width:100%">
       <b>My players</b><span class="rowsub">${allKidNames().map(esc).join(', ')}</span></button>` : ''}
     ${canSessions() ? `<button class="card" data-act="goview" data-v="sessions" style="text-align:left;width:100%">
-      <b>Training sessions</b><span class="rowsub">${esc(sessClubLine())}</span></button>` : ''}
+      <b>Sessions</b><span class="rowsub">${esc(sessClubLine())}</span></button>` : ''}
     ${complyCards()}
     ${myTryouts().length ? `<button class="card" data-act="goview" data-v="tryout" style="text-align:left;width:100%">
       <b>Tryouts to score</b><span class="rowsub">${esc(myTryouts().map(p => p.name).join(', '))} · by bib</span></button>` : ''}
@@ -7485,6 +7541,7 @@ function sheetAccount() {
   const r = myRole();
   openSheet(`<h3>${esc(me.name)}</h3>
     <p class="muted" style="margin-top:0">${esc(me.email || '')}${r ? ` · ${esc(ROLE_LABEL[r])}` : ''}</p>
+    ${restricted() ? `<p class="muted rolewords" style="margin-top:0">${roleWords(restricted())}</p>` : ''}
     <button class="opt" data-act="goview" data-v="setup"><b>Settings</b>
       <span class="rowsub">You, this team and the club, in one place</span></button>
     <button class="btn danger wide" data-act="signout" style="margin-top:8px">Sign out</button>
@@ -7574,7 +7631,7 @@ function sheetClubSwitch() {
         <b>${esc(c.name)}</b><span class="rowsub">${c.code === here ? 'open now' : 'tap to open'}</span></button>
       ${c.code === here ? '<span class="muted">here</span>'
       : `<button class="btn quiet sm" data-act="forgetclub" data-code="${esc(c.code)}">Forget</button>`}</div>`).join('')}
-    <p class="muted">Forget removes this device's copy only. Deleting a club for everyone is a Firebase console job — see below.</p>
+    <p class="muted">Forget removes this device's copy only. Deleting a club for everyone is done outside the app, by its owner — see below.</p>
     <button class="opt" data-act="goview" data-v="club"><b>Club home</b>
       <span class="rowsub">Teams, stats and settings for ${esc((acc().org || {}).name || 'this club')}</span></button>
     ${canNewClub() ? `<button class="opt" data-act="newclub"><b>+ Start a new club</b>
@@ -7867,7 +7924,7 @@ function viewStats() {
       <h2>Possession</h2><span class="muted">${po.changes} markers</span></div>
     <div class="possbar"><i style="width:${Math.round(po.us / po.total * 100)}%"></i><u style="width:${cpct}%"></u></div>
     <div class="spread" style="margin:6px 0 4px"><span>${pct}% ${us}</span><span class="muted">${100 - pct}% ${them}</span></div>
-    <p class="muted" style="margin:0">Of settled play. ${cpct}% was scrappy — held under ${po.min}s, counted for neither side. Built from ${po.tapped} tap${po.tapped === 1 ? '' : 's'} plus every set piece, foul and kick-off.</p></div>` : '';
+    <p class="muted" style="margin:0">Of settled play. ${cpct}% was with neither side — spells held under ${po.min}s. Built from ${po.tapped} tap${po.tapped === 1 ? '' : 's'} plus every set piece, foul and kick-off.</p></div>` : '';
 
   const mapCard = located.length ? `<div class="card"><div class="spread" style="margin-bottom:10px">
       <h2>Shot map</h2><span class="muted">${located.length} of ${shotList(m).length} placed</span></div>
@@ -8474,7 +8531,7 @@ function followRemote(mid, on) {
   (on ? rootPut(p, { at: nowMs() }) : rootDrop(p)).catch(err => {
     if (!on || !me || me.uid !== uid || !pushOn()) return;
     toast(/permission|denied/i.test((err && (err.code || err.message)) || '')
-      ? 'This game notifies this page only: the database refused it. Are the rules (version ' + RULES_VERSION + ') published?'
+      ? refusedMsg(false, 'This game notifies this page only.')
       : 'This game notifies this page only, for now');
   });
 }
@@ -8561,10 +8618,10 @@ function viewSubs() {
         <span><span class="pname">${esc(p.name)}</span>
           <span class="psub" data-spell="${p.id}">${tag}</span></span>
         <span class="livemins"><span data-mins="${p.id}">${mins(pl)}<small> min</small></span>
-          ${pd > 0 ? `<span class="diff ${diff < 0 ? 'owed' : 'over'}">${diff < 0 ? -diff + ' owed' : diff > 0 ? diff + ' over' : 'on plan'}</span>` : ''}</span>
+          ${pd > 0 ? `<span class="diff ${diff < 0 ? 'owed' : 'over'}">${diff < 0 ? -diff + ' short' : diff > 0 ? diff + ' over' : 'on plan'}</span>` : ''}</span>
       </button>
       ${isOn ? `<button class="lrspot" type="button" data-act="switchpos" data-pid="${p.id}">
-        <span>${esc(spot || 'set')}</span><span class="lrspot-hint">move</span></button>` : ''}
+        <span>${esc(spot || 'Spot')}</span><span class="lrspot-hint">${spot ? 'move' : 'set'}</span></button>` : ''}
     </div>`;
   };
 
@@ -8599,13 +8656,13 @@ function viewSubs() {
     ${warn}
     <div class="card"><div class="spread" style="margin-bottom:8px">
       <h2>On the pitch</h2>
-      <span class="row"><button class="btn quiet sm" data-act="togglesort">${byNumber ? 'By number' : 'By need'}</button>
-      ${planning ? '' : '<button class="btn quiet sm" data-act="startplan">Batch</button>'}</span></div>
+      <span class="row"><button class="btn quiet sm" data-act="togglesort">${byNumber ? 'By number' : 'By minutes'}</button>
+      ${planning ? '' : '<button class="btn quiet sm" data-act="startplan">Several at once</button>'}</span></div>
       <p class="muted" style="margin:0 0 10px">${on.length} of ${m.onFieldCount || 11} on${byNumber ? ', in shirt-number order' : ', longest spell first'}</p>
       ${startHint}
       <div class="plist">${on.map(p => row(p, true)).join('') || ''}</div></div>
     <div class="card"><div class="spread" style="margin-bottom:8px">
-      <h2>Bench</h2><span class="muted">${byNumber ? 'by number' : 'most owed first'}</span></div>
+      <h2>Bench</h2><span class="muted">${byNumber ? 'by number' : 'furthest short first'}</span></div>
       <div class="plist">${bench.map(p => row(p, false)).join('') || '<p class="muted" style="margin:0">Everyone is on.</p>'}</div></div>
     <div class="card"><div class="spread" style="margin-bottom:10px"><h2>Subs and switches</h2>
       <div class="row"><button class="btn quiet sm" data-act="addsub">Add</button>
@@ -9233,7 +9290,7 @@ function playerRow(m, p, now, isOn) {
    link already. Practices and the rest default to the team only, because a
    share link gets forwarded, and a practice is a predictable time and place
    where children are without the crowd a match brings. */
-const CAL_KIND = { game: 'Game', practice: 'Practice', event: 'Event', session: 'Training' };
+const CAL_KIND = { game: 'Game', practice: 'Practice', event: 'Event', session: 'Session' };
 const CALLED = { cancelled: 'Cancelled', postponed: 'Postponed' };
 const HOME_AWAY = { home: 'Home', away: 'Away', neutral: 'Neutral ground' };
 const WEEKDAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
@@ -9456,7 +9513,7 @@ function setRsvp(tid, key, pid, v, note) {
     if (prev) setDeep(state, path, prev); else delDeep(state, path);
     saveLocal(); render();
     toast(/permission|denied/i.test((e && e.code) || (e && e.message) || '')
-      ? 'Not saved — the club\u2019s database rules need the rsvp block from README'
+      ? refusedMsg()
       : 'Not saved — try again when there is signal');
   });
 }
@@ -9605,7 +9662,7 @@ function attendanceCard(t) {
       <span class="pnum">${esc(x.p.number ?? '')}</span>
       <span><span class="pname">${esc(x.p.name)}</span><span class="psub">${esc(attendLine(x.r) || 'Nothing recorded yet')}</span></span>
       <span class="pmins">${x.r.practice.of ? `${x.r.practice.came}<small>/${x.r.practice.of}</small>` : '<small>–</small>'}</span></div>`).join('')}</div>
-    <p class="muted" style="margin-bottom:0">Practices and events count once the register is taken; a game counts from the minutes and who was available; extra sessions are 1-1s and groups from Training sessions.</p></div>`;
+    <p class="muted" style="margin-bottom:0">Practices and events count once the register is taken; a game counts from the minutes and who was available; extra sessions are 1-1s and groups, from Sessions.</p></div>`;
 }
 
 /* Calendar sync. A calendar app subscribes to an address and comes back to it
@@ -9634,12 +9691,10 @@ function calSyncCard(t, all) {
   // the one most people want: every team and club of theirs, in one subscription, from My calendar
   const mine = me && calSels().includes('mine') ? `<button class="btn wide" data-act="calscope" data-v="mine" style="margin-bottom:10px">Everything of yours, in one calendar: My calendar</button>` : '';
   const list = all ? calTeams().map(id => state.teams[id]).filter(Boolean) : [t];
-  const copyNote = `Everything still to come${all ? ' for these teams' : ''}, as a file your phone\u2019s calendar opens. It is a copy: if a time changes later, add it again — each entry replaces its earlier self in calendars that allow it.`;
-  if (!base) return `<div class="card"><h2 style="margin-bottom:8px">In your own calendar</h2>
+  if (!base) return `<div class="card"><h2 style="margin-bottom:8px">In your own calendar${infoBtn('calcopy')}</h2>
     ${mine}
-    <p class="muted" style="margin-top:0">${copyNote}</p>
-    <button class="btn quiet wide" data-act="calicsall"${all ? '' : ` data-tid="${esc(t.id)}"`}>Add what is coming up</button>
-    ${canAdmin() ? '<p class="muted" style="margin-bottom:0">A calendar that follows every change by itself needs the calendar feed set up once for the club — README, <b>Calendar sync</b>.</p>' : ''}
+    <button class="btn quiet wide" data-act="calicsall"${all ? '' : ` data-tid="${esc(t.id)}"`}>Add to calendar</button>
+    ${canAdmin() ? `<p class="muted" style="margin-bottom:0">A calendar that follows every change by itself needs the feed set up once for the club.${infoBtn('calfeed')}</p>` : ''}
     ${!all && t.share ? `<p class="muted" style="margin-bottom:0">Grandparents and friends without an account: the season link shows the games, and anything marked for the share link, with no names.</p>` : ''}</div>`;
   /* A team's address is one for everybody on it, so it cannot be taken back
      from one family without stopping it for all of them: a family taken off
@@ -9731,7 +9786,7 @@ function coachOutLine(it) {
    the game, as it does on its team's Season. */
 const CAL_VIEWS = [['schedule', 'Schedule'], ['day', 'Day'], ['week', 'Week'], ['month', 'Month']];
 const CAL_PAGE = 25;
-const CAL_KINDS = [['game', 'Games'], ['practice', 'Practices'], ['event', 'Other'], ['session', 'Training'], ['avail', 'Bookable']];
+const CAL_KINDS = [['game', 'Games'], ['practice', 'Practices'], ['event', 'Other'], ['session', 'Sessions'], ['avail', 'Bookable']];
 /* A colour per team, the same wherever it appears, picked by the team's place
    in the club's list so every phone in the club agrees on it. Each is dark
    enough to carry white text, because a calendar's entries are filled with
@@ -10068,7 +10123,7 @@ function calNextCard(it, multi, label) {
   if (it.kind === 'session') {
     return `<div class="card calnext" style="--ev:${evHue(it, multi)}"><span class="muted">Next up${multi && it.tid ? ' · ' + teamLabel(t) : ''}</span>
       <button class="plainbtn" data-act="sessopen" data-id="${esc(it.id)}" style="display:block;width:100%;text-align:left">
-        <div class="spread" style="margin-top:4px"><b style="font-size:19px">${esc(it.title)}</b><span class="tag session">Training</span></div>
+        <div class="spread" style="margin-top:4px"><b style="font-size:19px">${esc(it.title)}</b><span class="tag session">Session</span></div>
         <p style="margin:4px 0 0"><b>${esc([relDay(it.date) || dayLabel(it.date), it.start ? niceTime(it.start) : 'time to be confirmed'].join(' · '))}</b></p>
         ${it.venue ? `<p class="muted" style="margin:2px 0 0">${esc(it.venue)}</p>` : ''}</button></div>`;
   }
@@ -10088,7 +10143,7 @@ function calNextCard(it, multi, label) {
     </button>
     <div class="row wrap" style="margin-top:10px">
       ${m ? `<button class="btn sm" data-act="calgame" data-tid="${esc(it.tid)}" data-id="${esc(it.id)}"${go}>Open the game</button>` : ''}
-      ${plan ? `<button class="btn sm" data-act="pracfromcal" data-tid="${esc(it.tid)}" data-id="${esc(it.id)}">${practiceById(it.tid, it.id) ? 'Open the plan' : 'Plan this practice'}</button>` : ''}
+      ${plan ? `<button class="btn sm" data-act="pracfromcal" data-tid="${esc(it.tid)}" data-id="${esc(it.id)}">${practiceById(it.tid, it.id) ? 'Open plan' : 'Plan'}</button>` : ''}
       ${it.venue && I ? `<a class="btn quiet sm" href="${esc(I.mapLink(venueAddress(it.venue)))}" target="_blank" rel="noopener">Directions</a>` : ''}
       <button class="btn quiet sm" data-act="calitem" data-k="${it.kind}" data-tid="${esc(it.tid)}" data-id="${esc(it.id)}">Add to my calendar</button></div>
     ${rsvpOpen(it) && !canEditTeam(it.tid) ? myKids(it.tid).map(p => `<p class="lbl" style="margin-top:12px">${esc(goingQ(p))}</p>${rsvpChips(it, p, 'next')}`).join('')
@@ -10329,7 +10384,7 @@ function sheetCalItem(kind, tid, id) {
     ${m ? `<button class="btn wide" data-act="calgame" data-tid="${esc(tid)}" data-id="${esc(id)}" style="margin-bottom:8px">Open the game</button>` : ''}
     ${m && edit ? `<button class="btn quiet wide" data-act="caleditgame" data-tid="${esc(tid)}" data-id="${esc(id)}" style="margin-bottom:8px">Edit this game’s details</button>
       <button class="btn quiet wide" data-act="copytext" data-v="${esc(opponentMessage(t, m))}">Copy a message for the other team</button>` : ''}
-    ${e && e.kind === 'practice' && canPlan(tid) ? `<button class="btn wide" data-act="pracfromcal" data-tid="${esc(tid)}" data-id="${esc(id)}" style="margin-bottom:8px">${practiceById(tid, id) ? 'Open the plan' : 'Plan this practice'}</button>` : ''}
+    ${e && e.kind === 'practice' && canPlan(tid) ? `<button class="btn wide" data-act="pracfromcal" data-tid="${esc(tid)}" data-id="${esc(id)}" style="margin-bottom:8px">${practiceById(tid, id) ? 'Open plan' : 'Plan'}</button>` : ''}
     ${e && edit ? `<button class="btn quiet wide" data-act="caledit" data-tid="${esc(tid)}" data-id="${esc(id)}">Edit</button>` : ''}`);
 }
 
@@ -10644,7 +10699,7 @@ function viewSeason() {
   const possCard = ptot ? `<div class="card"><h2 style="margin-bottom:10px">Possession</h2>
     <div class="possbar"><i style="width:${Math.round(pu / ptot * 100)}%"></i><u style="width:${Math.round(pc / ptot * 100)}%"></u></div>
     <div class="spread" style="margin-top:6px"><span>${settled ? Math.round(pu / settled * 100) : 50}% ours</span>
-      <span class="muted">${Math.round(pc / ptot * 100)}% scrappy</span></div>
+      <span class="muted">${Math.round(pc / ptot * 100)}% neither side</span></div>
     <p class="muted" style="margin-bottom:0">Settled play across ${possGames} of ${ms.length} game${ms.length === 1 ? '' : 's'}${possGames < ms.length ? ', ignoring those with too little recorded to judge' : ''}.</p></div>` : '';
 
   const results = seasonGames(t, ms);
@@ -10659,7 +10714,8 @@ function viewSeason() {
       sh += shotList(m).filter(x => x.pid === p.id).length;
       for (const [k, v] of Object.entries(byRole(m, p.id))) roles[k] = (roles[k] || 0) + v;
     }
-    const rs = Object.entries(roles).filter(([, v]) => v >= 60).sort((x, y) => y[1] - x[1])
+    // "40 at Unassigned" is the coach's bookkeeping (a spot with no position named), not a position she played
+    const rs = Object.entries(roles).filter(([k, v]) => v >= 60 && k !== 'Unassigned').sort((x, y) => y[1] - x[1])
       .map(([k, v]) => `${mins(v)} at ${k}`).join(' · ');
     return { p, pl, pd, diff: pl - pd, g, a, sh, rs };
   }).sort((x, y) => x.diff - y.diff);
@@ -10674,7 +10730,7 @@ function viewSeason() {
       <span class="pnum">${esc(r.p.number ?? '')}</span>
       <span><span class="pname">${esc(shownName(t, r.p))}</span>
         ${r.pd > 0 ? `<div class="bar"><i style="width:${pct}%" data-owed="${owed}" data-over="${over}"></i><u style="left:100%"></u></div>` : ''}
-        <span class="psub">${r.pd > 0 ? `${mins(r.pd)} planned · ${r.diff < 0 ? mins(-r.diff) + ' owed' : mins(r.diff) + ' over'}` : 'no plan set'}${bits ? ' · ' + bits : ''}</span>
+        <span class="psub">${r.pd > 0 ? `${mins(r.pd)} planned · ${r.diff < 0 ? mins(-r.diff) + ' short' : mins(r.diff) + ' over'}` : 'no plan set'}${bits ? ' · ' + bits : ''}</span>
         ${r.rs ? `<span class="psub">${esc(r.rs)}</span>` : ''}</span>
       <span class="pmins">${mins(r.pl)}<small> min</small></span></div>`;
   }).join('')}</div></div>` : '<div class="empty"><strong>No players yet</strong>Add the squad first.</div>';
@@ -10939,7 +10995,7 @@ function viewMine() {
         ${(ns => ns ? `<button class="prow" data-act="sessopen" data-id="${esc(ns.id)}" style="grid-template-columns:1fr auto">
           <span><span class="pname">Next session — ${esc(sessTitle(ns))}</span>
             <span class="rowsub">${[relDay(ns.date) || dayLabel(ns.date), niceTime(ns.start), sessPlace(ns), 'with ' + ns.coachName, BOOK[bookOf(ns.id, p.id).st]].filter(Boolean).map(esc).join(' · ')}</span></span>
-          <span class="tag session">Training</span></button>` : '')(!sup && sessAll().find(s => !sessPast(s) && !s.called && (b => b && b.st !== 'out' && b.st !== 'no')(bookOf(s.id, p.id))))}
+          <span class="tag session">Session</span></button>` : '')(!sup && sessAll().find(s => !sessPast(s) && !s.called && (b => b && b.st !== 'out' && b.st !== 'no')(bookOf(s.id, p.id))))}
       </div>
       ${sup ? `<button class="btn quiet wide" data-act="fanleave" data-tid="${t.id}" data-pid="${p.id}" style="margin-top:10px">Stop following ${esc(firstName(p))}</button>` : ''}
       ${!sup && fbConfig().apiKey ? `<button class="btn quiet wide" data-act="fansheet" data-tid="${t.id}" data-pid="${p.id}" style="margin-top:10px">${isMe(p) ? 'Your fans' : 'Fans'}${Object.keys(p.fans || {}).length ? ' (' + Object.keys(p.fans).length + ')' : ''}</button>` : ''}</div>`;
@@ -10955,7 +11011,6 @@ function viewMine() {
       </div>
       <button class="btn quiet wide" data-act="switchclub" data-code="${esc(k.code)}" style="margin-top:10px">Open ${esc(k.club)} for her minutes</button>
       ${k.at ? `<p class="muted" style="margin:6px 0 0">No signal from ${esc(k.club)} yet — as of ${esc(new Date(k.at).toLocaleString([], { weekday: 'short', hour: 'numeric', minute: '2-digit' }))}</p>` : ''}</div>`).join('')}
-    ${list.length ? '<p class="muted">Minutes are across every game this season. Tap a game for the full picture.</p>' : ''}
   </div>`;
 }
 
@@ -11206,7 +11261,7 @@ function practiceDrillsView(L) {
         <select data-pick="dfpick" data-k="sort" aria-label="Sort">${Object.entries(PRACTICE_SORTS).map(([k, [l]]) => opt(f.sort, [k, l])).join('')}</select>
         <button class="btn ${n ? '' : 'quiet '}sm" data-act="drillfilters">${n ? 'Filters · ' + n : 'Filters'}</button>
       </div>
-      ${u == null && f.age === 'team' && canEditTeam(ui.teamId) ? `<p class="muted" style="margin:8px 0 0">Give the team a birth year (Squad → Name and crest) and the list starts at the right age.</p>` : ''}
+      ${u == null && f.age === 'team' && canEditTeam(ui.teamId) ? `<p class="muted" style="margin:8px 0 0">Give the team a birth year (Settings → This team → Name and crest) and the list starts at the right age.</p>` : ''}
       ${s ? `<div class="drillsignal"><b>${esc(s.label)}</b><span>${esc(s.means)}</span></div>` : ''}
       ${shapes.length ? `<div class="chips" style="margin-top:8px">${shapes.map(k =>
         `<button class="chip" type="button" data-act="dfpick" data-k="shape" data-v="${esc(f.shape === k ? '' : k)}" aria-pressed="${f.shape === k}">${esc(k)} drills</button>`).join('')}</div>` : ''}
@@ -11434,7 +11489,7 @@ function sheetDrillRefused(why) {
     mine: `<h3>That drill is private</h3><p>It's on a coach's own shelf, which only she can open. Ask her to share it with the club and send the club's copy.</p>`,
     gone: `<h3>That drill isn't here</h3><p>It isn't in this club's drills any more. Whoever shared it may have removed it.</p>`,
     otherclub: `<h3>That drill is from another club</h3><p>It's on the shelf of a club this phone isn't in, so it opens only for that club's coaches and admins. ${me ? 'If you coach there, open the invite the club sent you first, then this link again.' : 'If you coach there, sign in, then open this link again.'}</p>`,
-    refused: `<h3>The club's drills didn't load</h3><p>The database refused them: the club's rules may not include drills yet. Ask an admin.</p>`,
+    refused: `<h3>The club's drills didn't load</h3><p>${refusedWhy()}</p>`,
     noload: `<h3>The drill library didn't load</h3><p>It comes with the app as a file of its own, and this page opened without it. Reload when you have a signal.</p>`,
     bad: `<h3>That link isn't to a drill</h3><p>It may have been cut short when it was copied. Ask for it again.</p>`
   }[why] || '';
@@ -11793,7 +11848,7 @@ function nextPracticeCard(t) {
 /* Saved here only, and why, in as few words as will do. */
 function trainNote(tid) {
   if (!fbConfig().apiKey) return '';
-  if (trainState[tid] === 'refused') return `<div class="rolebar warn">Saved on this phone only. The database refused it: the club's rules may not include practices yet, or it doesn't list you as this team's coach yet.</div>`;
+  if (trainState[tid] === 'refused') return `<div class="rolebar warn">${refusedMsg(true)} Or the club does not list you as this team's coach yet.</div>`;
   if (!me) return `<div class="rolebar">Sign in and your plans are kept with the club, not just on this phone.</div>`;
   const pending = Object.keys(train.dirty).some(k => k.startsWith(tid + '/'));
   if (pending && !online) return `<div class="rolebar">Offline. Changes are on this phone and go to the club when the signal's back.</div>`;
@@ -12099,7 +12154,7 @@ function peekLibrary(u) {
     openSheet(`<h3>Their drills</h3><p class="muted" style="margin-top:0">Read once, for support, and not kept on this phone. You can't change them.</p>
       ${ds.length ? `<div class="plist">${ds.map(d => `<div class="prow" style="grid-template-columns:1fr"><span><span class="pname">${esc(d.name)}</span><span class="psub">${esc(d.summary)}</span></span></div>`).join('')}</div>` : '<p class="muted">None.</p>'}
       <button class="btn quiet wide" data-act="closesheet" style="margin-top:12px">Done</button>`, true);
-  }, () => { toast('The database refused that'); }, { onlyOnce: true });
+  }, () => { toast(refusedMsg()); }, { onlyOnce: true });
 }
 
 /* Saved here only, and why, for the shelf the coach is looking at. */
@@ -12107,7 +12162,7 @@ function shelfNote(shelf) {
   if (!fbConfig().apiKey) return '';
   if (!me) return `<div class="rolebar">Sign in to see the club's drills and keep your own.</div>`;
   const which = shelf === 'all' ? ['club', 'mine'] : shelf === 'builtin' ? [] : [shelf];
-  if (which.some(s => shelfState[s] === 'refused')) return `<div class="rolebar warn">Saved on this phone only. The database refused it: the club's rules may not include drills yet.</div>`;
+  if (which.some(s => shelfState[s] === 'refused')) return `<div class="rolebar warn">${refusedMsg(true)}</div>`;
   if (which.some(s => Object.keys(SHELF[s].store().dirty).length) && !online) return `<div class="rolebar">Offline. Your changes are on this phone and go up when the signal's back.</div>`;
   return '';
 }
@@ -13052,7 +13107,7 @@ function tplStrip(L, t) {
 }
 function tplNote(shelf) {
   if (!fbConfig().apiKey) return '';
-  if (shelfState[shelf] === 'refused') return `<p class="rolebar warn">Saved on this phone only. The database refused it: the club's rules may not include templates yet.</p>`;
+  if (shelfState[shelf] === 'refused') return `<p class="rolebar warn">${refusedMsg(true)}</p>`;
   if (!me) return `<p class="rolebar">Sign in and your templates are kept with your account, not just on this phone.</p>`;
   return '';
 }
@@ -13561,7 +13616,7 @@ function packsCard() {
       <button class="chip" type="button" data-act="sesspacks" data-v="0" aria-pressed="${!on}">Off</button>
       <button class="chip" type="button" data-act="sesspacks" data-v="1" aria-pressed="${on}">Sell packages</button></div>` : ''}
     ${!on ? '<p class="muted" style="margin:0">Sell a number of sessions for a set price, for one player — say ten for the price of eight. The coach marks each place off it instead of collecting for it.</p>' : `
-    ${stale.length ? `<div class="rolebar warn">${stale.map(x => `${esc(x.who ? x.who.p.name : 'A player')}, ${esc(dayLabel(x.s.date))}: no longer owed (${x.s.called ? 'called off' : 'not booked'}) <button class="textbtn" data-act="sesspkback" data-k="${esc(x.s.id + '/' + x.pid)}">Give the place back</button>`).join('<br>')}</div>` : ''}
+    ${stale.length ? `<div class="rolebar warn">${stale.map(x => `${esc(x.who ? x.who.p.name : 'A player')}, ${esc(dayLabel(x.s.date))}: no longer due (${x.s.called ? 'called off' : 'not booked'}) <button class="textbtn" data-act="sesspkback" data-k="${esc(x.s.id + '/' + x.pid)}">Give the place back</button>`).join('<br>')}</div>` : ''}
     ${list.length ? `<div class="plist">${list.map(k => { const w = playerById(k.pid); return `<button class="prow" type="button" data-act="sesspkopen" data-k="${esc(k.tid + '/' + k.pid + '/' + k.id)}" style="grid-template-columns:1fr auto">
       <span><span class="pname">${esc(w ? w.p.name : 'A player who has left')}</span><span class="psub">${esc(PACK_KIND[k.kind])} · ${esc(packLine(k))}${k.until && k.until < todayStr() && k.left ? ' · ended with places unused' : ''}${k.note ? ' · ' + esc(k.note) : ''}</span></span>
       <span class="pmins">${esc(fmtMoney(k.price))}</span></button>`; }).join('')}</div>` : '<p class="muted" style="margin:0 0 8px">None sold yet.</p>'}
@@ -13771,7 +13826,7 @@ function sessNews() {
   try { localStorage.setItem(lsk, JSON.stringify(now)); } catch (e) { }
   if (muted('cal')) return;
   for (const [title, body] of news.slice(0, 3)) ping(title, body, 'minutes-sess-' + title + body);
-  if (news.length > 3) ping('Training sessions', `${news.length - 3} more changes`, 'minutes-sess-more');
+  if (news.length > 3) ping('Sessions', `${news.length - 3} more changes`, 'minutes-sess-more');
 }
 
 /* ---- clashes ---- */
@@ -14028,7 +14083,7 @@ function sessUi() {
 /* Saved here only, and why, in as few words as will do. */
 function sessNote() {
   if (!fbConfig().apiKey) return '';
-  if (Object.values(sessState).includes('refused')) return `<div class="rolebar warn">Some of this is on this phone only. The database refused it: the club's rules may not include training sessions yet (README, <b>The database rules</b>).</div>`;
+  if (Object.values(sessState).includes('refused')) return `<div class="rolebar warn">${refusedMsg(true)}</div>`;
   if (!me) return `<div class="rolebar">Sign in and sessions are kept with the club, not just on this phone.</div>`;
   if (Object.keys(sess.dirty).length && !online) return `<div class="rolebar">Offline. Changes are on this phone and go to the club when the signal's back.</div>`;
   return '';
@@ -14049,14 +14104,14 @@ function sessClubLine() {
 }
 
 function viewSessions() {
-  if (!canSessions()) return `<div class="empty"><strong>Training sessions are for coaches, admins and families</strong>Your account has none of those in this club yet.</div>`;
+  if (!canSessions()) return `<div class="empty"><strong>Sessions are for coaches, admins and families</strong>Your account has none of those in this club yet.</div>`;
   const u = sessUi(), staff = canOffer();
   if (!staff) u.tab = 'list';
   if (u.go) { const id = u.go; u.go = null; setTimeout(() => { if (sessById(id)) sheetSess(id); }, 0); }
   const tabs = staff ? `<div class="chips">${Object.entries(SESS_TABS).map(([k, l]) =>
     `<button class="chip" type="button" data-act="sesstab" data-k="${k}" aria-pressed="${u.tab === k}">${l}</button>`).join('')}</div>` : '';
   const body = u.tab === 'avail' ? availView() : u.tab === 'fields' ? sessFieldsView() : u.tab === 'fees' ? sessFeesView() : u.tab === 'hours' ? sessHoursView() : sessListView();
-  return `<div class="stack"><h2>Training sessions</h2>${sessNote()}${tabs}${body}</div>`;
+  return `<div class="stack"><h2>Sessions</h2>${sessNote()}${tabs}${body}</div>`;
 }
 
 /* One session in a list. A family's row says how her own children stand; the
@@ -14464,7 +14519,7 @@ function sessFeesView() {
       <div class="row" style="gap:8px;margin-top:8px">
         <button class="btn quiet sm" style="flex:1" data-act="sessfee" data-k="${esc(g.rows.map(r => r.s.id + '/' + r.x.pid).join(','))}">All paid</button>
         <button class="btn quiet sm" style="flex:1" data-act="sessremind" data-pid="${esc(g.x.pid)}">Remind the family</button></div></div>`).join('')
-      : `<div class="empty"><strong>Nothing owed</strong>Every booked place with a price is marked paid or waived.</div>`}
+      : `<div class="empty"><strong>Nothing to pay</strong>Every booked place with a price is marked paid or waived.</div>`}
     ${paid.length ? `<div class="card"><h2 style="margin-bottom:0">Paid</h2><div class="plist">${paid.slice(0, 20).map(r => `<button class="prow" type="button" data-act="sessfee" data-k="${esc(r.s.id + '/' + r.x.pid)}" style="grid-template-columns:1fr auto">
       <span><span class="pname">${esc(whoName(r.x))}</span><span class="psub">${esc(sessTitle(r.s))} · ${esc(dayLabel(r.s.date))} · ${esc(PAY_LABEL[r.fee.how] || r.fee.how || '')}${r.fee.at ? ' · ' + esc(dayLabel(isoDay(r.fee.at))) : ''}</span></span>
       <span class="pmins">${esc(fmtMoney(r.fee.paid))}</span></button>`).join('')}</div></div>` : ''}
@@ -14740,7 +14795,7 @@ const RUN_ACTS = new Set(['sessedit', 'sesscall', 'sessdel', 'sessbook', 'sesspi
 
 function onSessAct(a, d) {
   const u = sessUi();
-  if (!canSessions()) { closeSheet(); toast('Training sessions are for coaches, admins and families'); render(); return; }
+  if (!canSessions()) { closeSheet(); toast('Sessions are for coaches, admins and families'); render(); return; }
   if (FIELD_EDIT.has(a) && !canAdmin()) { closeSheet(); toast('Club admins look after the fields'); render(); return; }
   if (PACK_ADMIN.has(a) && !canAdmin()) { closeSheet(); toast('Club admins look after packages'); render(); return; }
   const s = d.id ? sessById(d.id) : null;
@@ -14832,7 +14887,7 @@ function onSessAct(a, d) {
     const kid = myChildren().find(x => x.p.id === d.pid);
     if (!s || !kid) { closeSheet(); toast('You can only ask for your own child'); render(); return; }
     const b = bookOf(s.id, d.pid);
-    const undo = 'Not saved — the club’s database rules need the training sessions block from README';
+    const undo = refusedMsg();
     if (a === 'sessask') {
       if (!s.open || s.called || sessPast(s)) { toast('That session is not taking asks'); return; }
       if (b && b.st !== 'out') { toast('Already ' + BOOK[b.st].toLowerCase()); return; }
@@ -14949,7 +15004,7 @@ function onSessAct(a, d) {
     const text = [`A reminder from ${(acc().org || {}).name || 'the club'}: ${firstName(w.p)}'s training sessions still to pay —`,
       ...rows.map(r => `• ${dayLabel(r.s.date)}, ${sessTitle(r.s)} with ${r.s.coachName}: ${fmtMoney(r.s.price)}`),
       `${fmtMoney(total)} in all. Thank you!`].join('\n');
-    reach = { title: `Training sessions to pay: ${firstName(w.p)}`, text, ...reachFor([d.pid]), sids: [...new Set(rows.map(r => r.s.id))].filter(sid => canRun(sessById(sid))), pid: d.pid };
+    reach = { title: `Sessions to pay: ${firstName(w.p)}`, text, ...reachFor([d.pid]), sids: [...new Set(rows.map(r => r.s.id))].filter(sid => canRun(sessById(sid))), pid: d.pid };
     sheetReach(); return;
   }
   if (a === 'sessfeemail') {
@@ -15428,7 +15483,7 @@ function bookWhy(ans, kid) {
     family: 'You can only book for your own child',
     notice: `Less than ${ans.notice || 'the coach’s notice in'} hours to go — message the coach to cancel`,
     paid: 'It has been paid for or marked — ask the coach',
-    rules: `The club’s database refused it — are the rules (version ${RULES_VERSION}) published?`
+    rules: refusedMsg(false, 'That didn\u2019t go through.')
   })[ans.why] || 'Not done — check the signal and try again';
 }
 /* A club with no database (on this phone only) has nobody to race: the slot
@@ -16075,7 +16130,7 @@ async function setSharing(on) {
   if (!rtdb) return;
   // the setting first: the rules refuse a busy time while it is not a yes
   const ok = await youWrite(youPath('set'), you.set);
-  if (!ok) { toast('Not saved: the database refused it. Its rules may need updating.'); return; }
+  if (!ok) { toast(refusedMsg()); return; }
   youSent = {};
   if (on) { youPublish(); toast('Your busy times are shared'); }
   else { await youWrite(youPath('busy'), null); toast('Your calendar is private'); }
@@ -16344,7 +16399,7 @@ function youShareCard() {
       <button class="chip" type="button" data-act="youshare" data-v="0" aria-pressed="${!on}">Private</button>
       <button class="chip" type="button" data-act="youshare" data-v="1" aria-pressed="${on}">Share when I'm busy</button></div>
     <p class="muted" style="margin:0">${on
-      ? 'Coaches and admins in your clubs see the times you are busy at another club, so they don\'t book you then: the times only, never what, where or which club. Families never see them. Anyone signed in who has your account id could read them too.'
+      ? 'Coaches and admins in your clubs see the times you are busy at another club, so they don\'t book you then: the times only, never what, where or which club. Families never see them, and nobody else can read them.'
       : 'Only you see this calendar. Each club sees what you do in that club, as it always has, and nothing of your other clubs.'}</p></div>`;
 }
 /* ---------------- my calendar, in her own calendar app ---------------- */
@@ -16429,7 +16484,7 @@ async function setMyFeed(how) {
   const set = { share: sharing(), at: nowMs() };
   if (id) set.feed = id;
   const ok = await Promise.resolve(fb.set(fb.ref(fb.db, youPath('set')), set)).then(() => true, () => false);
-  if (!ok) { toast('Not saved: the database refused it. Its rules may need updating.'); return; }
+  if (!ok) { toast(refusedMsg()); return; }
   you.set = set; saveYou();
   render();
   toast(how === 'off' ? 'Calendar sync is off — the address has stopped working' : old ? 'New address made — the old one has stopped working' : 'Calendar sync is on');
@@ -16437,11 +16492,10 @@ async function setMyFeed(how) {
 function myFeedCard() {
   if (!me || !fbConfig().apiKey) return '';
   const base = feedBase(), id = myFeedId(), u = id ? feedUrl(id) : '';
-  const copy = '<button class="btn quiet wide" data-act="myfeedics">Add a one-off copy</button>';
-  if (!base) return `<div class="card"><h2 style="margin-bottom:8px">In your own calendar</h2>
-    <p class="muted" style="margin-top:0">Everything here still to come, as a file your phone’s calendar opens. It is a copy: if a time changes, add it again.</p>
+  const copy = '<button class="btn quiet wide" data-act="myfeedics">Add to calendar</button>';
+  if (!base) return `<div class="card"><h2 style="margin-bottom:8px">In your own calendar${infoBtn('calcopy')}</h2>
     ${copy}
-    ${canAdmin() ? '<p class="muted" style="margin-bottom:0">A calendar that follows every change by itself needs the calendar feed set up once for the club — README, <b>Calendar sync</b>.</p>' : ''}</div>`;
+    ${canAdmin() ? `<p class="muted" style="margin-bottom:0">A calendar that follows every change by itself needs the feed set up once for the club.${infoBtn('calfeed')}</p>` : ''}</div>`;
   if (!u) return `<div class="card"><h2 style="margin-bottom:8px">In your own calendar</h2>
     <p class="muted" style="margin-top:0">One address for everything on this page — every team, every club, your training sessions — that your phone’s calendar follows by itself. Nobody is named in it, not even your children.</p>
     <button class="btn wide" data-act="myfeed" data-v="on">Turn on calendar sync</button>
@@ -16511,7 +16565,7 @@ function viewSetup() {
       : '<p class="muted" style="margin-bottom:0">A club admin can add them to the club, signed in on this phone.</p>'}</div>` : '';
 
   const you = setSection('You', [
-    me ? setRow('signinsheet', esc(me.name || me.email || 'You'), esc([me.email, r ? ROLE_LABEL[r] + (r !== 'owner' && r !== 'admin' && team() ? ' · ' + team().name : '') : 'No role here yet'].filter(Boolean).join(' · ')))
+    me ? setRow('signinsheet', esc(me.name || me.email || 'You'), esc([me.email, r ? ROLE_LABEL[r] + (r !== 'owner' && r !== 'admin' && team() ? ' · ' + team().name : '') : 'No role here yet'].filter(Boolean).join(' · ')) + (restricted() ? `<span class="rolewords">${roleWords(restricted())}</span>` : ''))
       : setRow('signinsheet', 'Sign in', 'Signed out, everything stays on this device. Sign in to share it with your club.'),
     canTrain() ? setRow('mydrills', 'My drills', 'Your own drills and templates, on every phone you sign in on') : ''
   ], pushCard('settings') + muteCard());
@@ -16540,10 +16594,10 @@ function viewSetup() {
   const adv = setSection('Advanced', [
     adm ? setRow('backupsheet', 'Backup', "Download a copy of the club, or load one from a file") : '',
     adm ? setRow('readysheet', 'Check readiness', crosses ? `${crosses} thing${crosses === 1 ? '' : 's'} to fix` : 'Everything the rules need is in place') : '',
-    setInfo(`Version v${BUILD}`, stale() ? `This page is cached at v${esc(pageBuild())}. Force refresh to catch up.` : `${BUILT} · page and code agree`,
-      '<button class="btn quiet sm" data-act="hardreload">Force refresh</button>'),
-    setInfo('Database', `${cfgOk ? 'Connected' : 'Firebase config not filled in — see README.md'}${code && cfgOk ? ' · ' + esc((acc().org || {}).name || 'your club') : ''}${envName() ? ' · ' + esc(envName()) : ''}`),
-    me ? setInfo('Account id', `<span class="mono">${esc(me.uid)}</span> · needed once, to be made app owner`,
+    setInfo(`Version v${BUILD}`, stale() ? `This page is cached at v${esc(pageBuild())}. Reload to catch up.` : `${BUILT} · page and code agree`,
+      '<button class="btn quiet sm" data-act="hardreload">Reload</button>'),
+    setInfo('Database', `${cfgOk ? 'Connected' : 'Not connected: this copy of the app has no database set up'}${code && cfgOk ? ' · ' + esc((acc().org || {}).name || 'your club') : ''}${envName() ? ' · ' + esc(envName()) : ''}`),
+    me ? setInfo('Account id', `<span class="mono">${esc(me.uid)}</span> · for support, if you are ever asked for it`,
       `<button class="btn quiet sm" data-act="copylink" data-v="${esc(me.uid)}">Copy</button>`) : '',
     isOwner() ? setRow('envsheet', 'Database to use', esc(envName() || 'production')) : '',
     isOwner() ? setRow('maketestclub', 'Make a test club', 'Invented data, publishing off: safe to take apart. A rules change is rehearsed in another database, not another club.') : '',
@@ -16556,13 +16610,13 @@ function viewSetup() {
    what they were on Club settings, in a sheet. */
 function sheetReadiness() {
   openSheet(`<h3>Check readiness</h3>
-    <p class="muted" style="margin-top:0">What the club needs for the rules to work as designed. A cross is a lookup table the app hasn't written yet, or a way to be locked out of your own club, and none of them show up until somebody tries to change something at a game.</p>
+    <p class="muted" style="margin-top:0">What the club needs so that every change saves. A cross is something still to set up, or a way to be locked out of your own club; none of them show until somebody tries to change something at a game.</p>
     <div class="plist">${readiness().map(r => `<div class="prow" style="grid-template-columns:auto 1fr auto">
       <span class="pnum">${r.ok ? '✓' : '✗'}</span>
       <span><span class="pname">${esc(r.label)}</span><span class="psub">${esc(r.detail)}</span></span>
       <span class="muted">${r.ok ? '' : 'fix'}</span></div>`).join('')}</div>
-    <div style="margin-top:10px"><button class="btn quiet wide" data-act="preplockdown">Build the lookup tables</button></div>
-    <p class="muted" style="margin-bottom:0">Writes <code>access/teamIndex</code> for every team that has a coach or tracker, and an owner list for every published share. The tighter rules read both, so this has to run — and sync — <b>before</b> you paste them.</p>`);
+    <div style="margin-top:10px"><button class="btn quiet wide" data-act="preplockdown">Set up what is missing</button></div>
+    <p class="muted" style="margin-bottom:0">Writes what the rules read for every team that has a coach or tracker, and for every published share. The rules check it, so this has to run, and reach the club, <b>before</b> you paste them.</p>`);
 }
 function sheetBackup() {
   openSheet(`<h3>Backup</h3>
@@ -16598,13 +16652,13 @@ function viewAdmin() {
       <button class="btn quiet wide" data-act="saveorg">Save</button></div>
 
     <div class="card"><h2 style="margin-bottom:8px">What parents see</h2>
-      <p class="muted" style="margin-top:0">A parent always sees her own child by name. The rest of the squad, on Stats, Season, Live and the recap:</p>
-      <div class="chips">${[[false, 'Shirt numbers only'], [true, 'The whole roster by name']].map(([v, l]) =>
+      <p class="muted" style="margin-top:0">A parent always sees her own child by name. The rest of the team:${infoBtn('rosteropen')}</p>
+      <div class="chips">${[[false, 'Shirt numbers only'], [true, 'Everyone by name']].map(([v, l]) =>
       `<button class="chip" type="button" data-act="rosteropen" data-v="${v ? 1 : 0}" aria-pressed="${rosterOpen() === v}">${l}</button>`).join('')}</div>
-      <p class="muted" style="margin-bottom:0">For the screen only: a parent's phone still holds the squad it reads, as it always has. Coaches, trackers and admins always see names.</p></div>
+</div>
 
     ${isOwner() && Object.keys(retiredClubs).length ? `<div class="card"><h2 style="margin-bottom:8px">Retired clubs</h2>
-      <p class="muted" style="margin-top:0">Closed but not deleted. Everyone else's devices have let go of these; yours has not, so you can still open one and export it. Removing the data is a Firebase console job, whenever you decide.</p>
+      <p class="muted" style="margin-top:0">Closed but not deleted. Everyone else's devices have let go of these; yours has not, so you can still open one and export it. Removing the data for good is done outside the app, whenever you decide.</p>
       <div class="plist">${Object.entries(retiredClubs).map(([code, r]) => `<div class="prow" style="grid-template-columns:1fr auto">
         <span><span class="pname">${esc((r && r.name) || code)}</span>
           <span class="psub">Retired ${r && r.at ? new Date(r.at).toLocaleDateString() : 'unknown'}${r && r.byName ? ' by ' + esc(r.byName) : ''}</span></span>
@@ -16612,7 +16666,7 @@ function viewAdmin() {
       : `<button class="btn quiet sm" data-act="switchclub" data-code="${esc(code)}">Open</button>`}</div>`).join('')}</div></div>` : ''}
 
     <div class="card"><h2 style="margin-bottom:8px">Retire this club</h2>
-      <p class="muted" style="margin-top:0">Marks it closed. Every device holding a copy clears it on next connect — except the app owner's, so it can still be opened and exported. <b>Nothing is deleted.</b> The data stays until the app owner removes it in the Firebase console.</p>
+      <p class="muted" style="margin-top:0">Marks it closed. Every device holding a copy clears it on next connect — except the app owner's, so it can still be opened and exported. <b>Nothing is deleted.</b> The data stays until the app owner removes it for good, outside the app.</p>
       <button class="btn danger wide" data-act="retireclub">Retire ${esc((acc().org || {}).name || 'this club')}</button></div>
 
     <div class="card"><h2 style="margin-bottom:8px">Who runs it</h2>
@@ -17620,7 +17674,7 @@ function liveReading(kind, d, now = nowMs()) {
 function diffTag(pl, pd) {
   if (!(pd > 0)) return '';
   const diff = Math.round((pl - pd) / 60);
-  return `<span class="diff ${diff < 0 ? 'owed' : 'over'}">${diff < 0 ? -diff + ' owed' : diff > 0 ? diff + ' over' : 'on plan'}</span>`;
+  return `<span class="diff ${diff < 0 ? 'owed' : 'over'}">${diff < 0 ? -diff + ' short' : diff > 0 ? diff + ' over' : 'on plan'}</span>`;
 }
 function tickLive(now = nowMs()) {
   for (const el of document.querySelectorAll('[data-live]')) {
@@ -18025,8 +18079,8 @@ function authMessage(err) {
   if (c.includes('requires-recent-login')) return 'Sign out and in again, then try that';
   if (c.includes('too-many-requests')) return 'Too many tries — wait a few minutes';
   if (c.includes('user-disabled')) return 'That account has been switched off';
-  if (c.includes('unauthorized-domain')) return 'This site is not on the authorised domains list in Firebase';
-  if (c.includes('operation-not-allowed')) return 'That sign-in method is not switched on in Firebase';
+  if (c.includes('unauthorized-domain')) return 'This site is not allowed to sign people in yet — the app owner can fix that';
+  if (c.includes('operation-not-allowed')) return 'That way of signing in is not switched on for this app yet';
   if (c.includes('invalid-email')) return 'That email does not look right';
   if (c.includes('weak-password')) return 'Password needs to be at least six characters';
   if (c.includes('email-already-in-use')) return 'That email already has an account — sign in instead';
@@ -18851,7 +18905,7 @@ function familyList(cid) {
    own name; only an admin moves a registration past sent, and accepting
    lets the child, and so her family, into the club. A coach or an admin may
    start one for a family (a draft) that her family finishes. */
-const REG_KIND = { season: 'Season', camp: 'Camp', tryout: 'Tryouts', sessions: 'Training sessions', other: 'Other' };
+const REG_KIND = { season: 'Season', camp: 'Camp', tryout: 'Tryouts', sessions: 'Sessions', other: 'Other' };
 const REG_ST = { draft: 'Waiting for the family', sent: 'Waiting for the club', accepted: 'Accepted', waitlist: 'On the waiting list', declined: 'Not this time', placed: 'On a team', withdrawn: 'Withdrawn', offered: 'Offered a place' };
 const programsAll = () => Object.values(state.programs || {}).filter(p => p && p.id).sort((a, b) => (b.at || 0) - (a.at || 0));
 const waiversAll = () => Object.values(state.waivers || {}).filter(w => w && w.id).sort((a, b) => String(a.title).localeCompare(String(b.title)));
@@ -19510,7 +19564,7 @@ async function sendReg() {
     toast('Sent');
   } catch (e) {
     regx.status = 'ready';
-    toast(/permission|denied/i.test(String((e && e.code) || e)) ? 'The club\'s database refused it. Registration may have closed, or the club has not updated its rules yet.' : 'Not sent: check the signal and try again.');
+    toast(/permission|denied/i.test(String((e && e.code) || e)) ? 'That didn\u2019t send: registration may have closed, or the club\u2019s set-up is out of date.' : 'Not sent: check the signal and try again.');
     render();
   }
 }
@@ -19639,7 +19693,7 @@ async function makeFanLink(tid, pid, lim = {}) {
     ...(mayGrant(tid) ? { approved: true } : {})
   };
   try { await fb.set(fb.ref(fb.db, 'invites/' + id), doc); } catch (e) {
-    toast(/permission|denied/i.test((e && e.code) || '') ? 'The database refused it — are the newest rules from README published?' : 'Could not make the link — no connection');
+    toast(/permission|denied/i.test((e && e.code) || '') ? refusedMsg() : 'Could not make the link — no connection');
     return false;
   }
   const all = fanInvites();
@@ -20436,7 +20490,7 @@ function sheetAi(scope, topic) {
     `<button class="opt" type="button" style="width:auto" data-act="aitopic" data-k="${k}" aria-current="${k === tp}">${esc(label)}</button>`).join('')}</div>
     ${tp === 'plan' ? `<label class="field"><span>Your ideas — minutes, positions, who plays when</span>
       <textarea id="aiIdeas" rows="4" placeholder="#7 and #9 split up top. #4 plays the whole first half at CB. Keep #10 fresh for the last 15.">${esc(ideas)}</textarea></label>
-      <p class="muted" style="margin-top:-6px">Names are fine here: they are swapped for shirt numbers before anything is copied. Your snapshots and targets from the Plan tab are already in the prompt.</p>` : ''}
+      <p class="muted" style="margin-top:-6px">Names are fine here: they are swapped for shirt numbers before anything is copied. Your snapshots and targets from the Lineup tab are already in the prompt.</p>` : ''}
     <label class="field"><span>Prompt — edit or add to it before copying</span>
       <textarea id="aiPrompt" rows="12" style="font-size:13px">${esc(aiPrompt(scope, tp, ideas))}</textarea></label>
     <button class="btn wide" data-act="aicopy">Copy prompt</button>
@@ -21058,7 +21112,7 @@ function onAct(e) {
     if (!x || !msgFor || !postsTo(d.tid) || (x.by !== me.uid && !canAdmin())) { toast('Only whoever posted it, or an admin, can delete it'); return; }
     if (!confirm('Delete this notice for everyone?')) return;
     delete (msgs.board[d.tid] || {})[d.id]; saveMsgs();
-    Promise.resolve(fb.remove(fb.ref(fb.db, `board/${msgFor.code}/${d.tid}/${d.id}`))).catch(() => toast('Not deleted — the database refused it'));
+    Promise.resolve(fb.remove(fb.ref(fb.db, `board/${msgFor.code}/${d.tid}/${d.id}`))).catch(() => toast(refusedMsg(false, 'Not deleted.')));
     render(); return;
   }
   if (a === 'msgsend') {
@@ -21083,6 +21137,8 @@ function onAct(e) {
   if (a === 'msgretry') { if (msgs.outbox[d.id]) sendOut(d.id); render(); return; }
   if (a === 'msgdiscard') { delete msgs.outbox[d.id]; saveMsgs(); render(); return; }
   if (a === 'trackcfg') { sheetTrackCfg(); return; }
+  if (a === 'info') { sheetInfo(d.k); return; }
+  if (a === 'roleok') { roleCardDone(d.v || restricted() || ''); render(); return; }
   if (a === 'hardreload') {
     location.replace(location.pathname + '?r=' + Date.now());
     return;
@@ -21669,7 +21725,7 @@ function onAct(e) {
       Promise.resolve(fb.set(fb.ref(fb.db, youPath('set')), set)).then(() => {
         // the server rebuilds her page when her setting changes (functions/mycal.js), end date and all
         you.set = set; saveYou(); render();
-      }, () => toast('Not saved: the database refused it. Its rules may need updating.'));
+      }, () => toast(refusedMsg()));
       return;
     }
     const t2 = state.teams[d.tid];
@@ -22266,7 +22322,7 @@ function onAct(e) {
       all[d.pid] = { id, at: doc.at, expiresAt: doc.expiresAt }; keepSelfInvites(all);
       logAccess('made a sign-in link for player', null, { team: t.id, teamName: t.name || null, player: p.name });
       sheetPlayer(state.teams[t.id].players[d.pid]);
-    }, e => toast(/permission|denied/i.test((e && e.code) || '') ? 'The database refused it — are the newest rules from README published?' : 'Could not make the link — no connection'));
+    }, e => toast(/permission|denied/i.test((e && e.code) || '') ? refusedMsg() : 'Could not make the link — no connection'));
     return;
   }
   if (a === 'selfdrop') {

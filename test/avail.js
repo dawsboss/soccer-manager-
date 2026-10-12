@@ -135,7 +135,7 @@ const slotSess = (sid, extra = {}) => ({ id: sid, kind: 'one', cap: 1, coach: 'j
     check('a family cannot offer times', A.lastToast(), 'That is for coaches and admins');
     as('trk');
     A.click({ act: 'availnew' });
-    check('nor a tracker, who has no training sessions at all', A.lastToast(), 'Training sessions are for coaches, admins and families');
+    check('nor a tracker, who has no training sessions at all', A.lastToast(), 'Sessions are for coaches, admins and families');
     as('other'); putBlock('b1');
     A.click({ act: 'availedit', id: 'b1' });
     check('another coach cannot change hers', /Only that coach, or an admin/.test(A.lastToast()), true);
@@ -430,7 +430,7 @@ const slotSess = (sid, extra = {}) => ({ id: sid, kind: 'one', cap: 1, coach: 'j
     fbk.record.refuse = p => /^bookAsks\//.test(p);
     D.click({ act: 'slotbook', id: 'b1', v: '18:00', pid: 'p1' });
     await D.flush();
-    check('a refused ask says the rules may be behind', new RegExp('version ' + D.RULES_VERSION).test(D.lastToast()), true);
+    check('a refused ask says the set-up is out of date', /set-up is out of date/.test(D.lastToast()), true);
     check('and nothing is written to the club', ownWrites(fbk).length, 0);
     check('no answer at all is said as that, not as a no', /No answer from the club yet/.test(D.bookWhy(null)), true);
   }

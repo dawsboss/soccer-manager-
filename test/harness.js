@@ -245,6 +245,8 @@ const EXPORTS = `{
   get you() { return you }, busyOf, myFeedDoc, myFeedId, feedItem, youCalItems, youBusy, youClubs, elsewhereOn, sharing, sheetPersonCal, viewScope, watchMirror, mirrorSlim,
   /* where you are, and the way around (build 141) */
   titleBar, tabBar, navTabs, navKind, navGame, tabFor, upView, homeView, sheetMore, sheetAccount, VIEW_TITLE,
+  /* copy and vocabulary (UX-REVIEW.md, 2; build 144) */
+  ROLE_LABEL, refusedMsg, roleWords, roleCard, roleCardSeen, INFO, infoBtn, sheetInfo, CAL_KIND,
   /* a family's own Home and Season (build 142) */
   playedLine, landNow, get landHome() { return landHome }, set landHome(v) { landHome = v },
   alertsList: () => alertsHere().list, alertBar, calAlerts, elseUnread, openAlert, noteMine,

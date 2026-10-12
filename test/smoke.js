@@ -104,13 +104,12 @@ try {
     for (const row of [['coach','u2','subs'],['tracker','u3','track'],['parent','u4','stats'],['parent','u4','live'],['tracker','u3','live']]) {
       const who=row[0], want=row[2];
       me={uid:row[1]}; ui.view='game'; ui.gameView=want; render();
-      const html=rendered(), onGame=/class="barrow"/.test(html), banner=/class="rolebar"/.test(html);
-      const wantBanner = who!=='coach';   // a coach of this team is unrestricted here
-      if (!onGame || banner!==wantBanner) roleFail++;
+      // the role card itself (shown once, put away with Got it) is pinned in test/copy.js
+      const html=rendered(), onGame=/class="barrow"/.test(html);
+      if (!onGame) roleFail++;
       console.log('  ' + who.padEnd(7) + ' opens a game -> '
         + (onGame ? 'the game screen' : 'THE GAMES LIST')
-        + ', ' + want + ' tab kept: ' + (ui.gameView===want)
-        + ', banner: ' + (banner?'shown':'none') + (banner===wantBanner?'':' (WRONG)'));
+        + ', ' + want + ' tab kept: ' + (ui.gameView===want));
     }
     console.log('  every role reached the game screen:', roleFail?'NO - '+roleFail+' wrong':'yes');
     global.roleFail = roleFail;

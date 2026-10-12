@@ -327,7 +327,7 @@ const NOTE = (A, by, text, extra) => ({ by, byName: CLUB.access.members[by].name
     check('a chip narrows the list to it', A.pickMatches().map(p => p.key).sort().join(' '), 'c:adm c:other');
     A.click({ act: 'msgpickgroup', k: 't1' });
     check('her team: its families', A.pickMatches().map(p => p.key).sort().join(' '), 'f:t1:dad f:t1:mum');
-    check('and the child with no parent signed in yet, said as such', /No parent signed in yet[\s\S]*Cleo\.[\s\S]*Squad → Parents/.test(A.pickListHtml()), true);
+    check('and the child with no parent signed in yet, said as such', /No parent signed in yet[\s\S]*Cleo\.[\s\S]*Players → Parents/.test(A.pickListHtml()), true);
     A.click({ act: 'msgpickgroup', k: 't1' });
     A.ui.msgPick.q = 'cleo';
     check('a search for that child says why she is not there', /No parent signed in yet[\s\S]*Cleo/.test(A.pickListHtml()), true);
@@ -435,7 +435,7 @@ const NOTE = (A, by, text, extra) => ({ by, byName: CLUB.access.members[by].name
     const fbk = makeFakebase().refuseWrites(p => p.startsWith('people/'));
     const { A } = await boot('mum', { fbk });
     A.click({ act: 'muteset', k: 'msg', v: '1' }); await A.flush();
-    check('refused by older rules: taken back and said', /version/.test(A.lastToast() || '') && /aria-pressed="true">On/.test((A.click({ act: 'notes' }), A.rendered())), true);
+    check('refused by older rules: taken back and said', /set-up is out of date/.test(A.lastToast() || '') && /aria-pressed="true">On/.test((A.click({ act: 'notes' }), A.rendered())), true);
   }
 
   console.log('\n--- no signal, and refusals ---');
