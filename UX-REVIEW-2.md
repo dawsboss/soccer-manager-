@@ -1,8 +1,9 @@
 # TeamPlayHQ — UX review, round 2 (build 147)
 
-The first review (`UX-REVIEW.md`, build 139) is done in full and stands as the
-record of that work; nothing in it needs redoing. This is what is still confusing on
-build 147.
+The first review (`UX-REVIEW.md`, build 139) was done in full by build 147 and was
+removed; comments in the code and tests that cite it by section (`UX-REVIEW.md, 1.2`)
+refer to its last version, at commit `e5979f4`. This is what is still confusing on
+build 147; its sections carry on the numbering.
 
 Same method as round 1 (local copy, seeded club, every screen at 390×844 as admin,
 coach, parent and tracker, then tapped through: the tab bar, More, the title row,
