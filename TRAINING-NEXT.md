@@ -1,7 +1,7 @@
 # Next in training: plans on the calendar, then templates
 
 > **Built, 2026-10-04.** Steps 1 and 2 below, and step 3's *what needs work*,
-> shipped (`CHANGELOG.md` has the entries). Two things are left from this
+> shipped (the git history has the entries). Two things are left from this
 > brief: **remove the `schedule` rule** from `database.rules.json` once no
 > app older than build 82 is in use (and its `rules.js` cases with it), and
 > the screen for *drills a player has done*, which is now one lookup (a
@@ -9,13 +9,13 @@
 > Since then (2026-10-05) `TRAINING.md`'s steps 8 and 9, the AI steps and
 > drills in the bulk import, are built too.
 > One deviation: old plans move onto an entry under their *own* id rather
-> than a new one, so there is no old copy to delete (CHANGELOG says why).
+> than a new one, so there is no old copy to delete (the commit says why).
 > The rest of this file is the brief as it was written.
 
 A brief for a fresh chat, written 2026-10-03 at the end of the branch
 `ccr-d5818ea9-kls3o6`. If that branch is merged and nothing below has shipped
 since, this is current. If something has shipped differently, trust the code
-and `CHANGELOG.md` over this note.
+and the git history over this note.
 
 `TRAINING.md` is the design and has the reasons. This file is the brief: what
 to build next, in what order, and what not to break.
@@ -111,7 +111,7 @@ Built, and on this branch:
 drills leave the phone (README → *The database rules*). Until then the
 Drills screen says *Saved on this phone only*.
 
-**Done on `main` (2026-10-03, CHANGELOG *One Add for a practice*).** The
+**Done on `main` (2026-10-03, *One Add for a practice*).** The
 Practice tab's Add and the Calendar's Add are one button and one sheet; a
 practice added from either goes on the calendar; a plan made for it is keyed
 by the entry's id and starts from its day, time and place; Plans lists the
@@ -187,7 +187,7 @@ A template is a plan with no calendar entry.
 ### 3. Then, as TRAINING.md has it
 
 - **Step 6, pictures, is done**: the AI route and drawing tap by tap on a
-  board in the editor (CHANGELOG *Writing a drill*), both through
+  board in the editor (*Writing a drill*), both through
   `cleanDrawing()`.
 - **Step 7, what needs work**: the signals card on Season.
 
@@ -234,7 +234,7 @@ an id that isn't its own).
 
 - Bump `BUILD` in `app.js`, the meta tag and every `?v=` in `index.html`
   together (74 on this branch). `test/version.js` checks them.
-- A `CHANGELOG.md` entry, README's feature bullets and rules list, and mark
+- README's feature bullets and rules list, and mark
   the steps built in `TRAINING.md` → *Build order*.
 - Look at every new screen at phone width (390px). This branch did it by
   copying the site to a scratch folder with a blank `firebase-config.js`,

@@ -507,7 +507,7 @@ Decided 2026-10-09: the coach's notes on a child (`note`, `rating`, `pairs`, `av
 4. **Club viewers**: the smallest, any time. *Built (build 118, rules version 17).*
 5. **Guests.** *Dropped by the owner (2026-10-09): the game link covers a referee or a scout.*
 
-Each is its own build, rules version, CHANGELOG entry and test pass across every suite that walks every kind of account (`rules.js`, `push.js`, `access.js`, `visibility.js`, `roles.js`, `parents.js`, `orgs.js`). Steps 2 to 5 are written for `orgs/` only, after the old tree comes out (step 5 of the move, from 2026-10-23): writing their rules for `workspaces/` as well would be work for a tree nobody is on. Step 1 can go before that, on both trees.
+Each is its own build, rules version and test pass across every suite that walks every kind of account (`rules.js`, `push.js`, `access.js`, `visibility.js`, `roles.js`, `parents.js`, `orgs.js`). Steps 2 to 5 are written for `orgs/` only, after the old tree comes out (step 5 of the move, from 2026-10-23): writing their rules for `workspaces/` as well would be work for a tree nobody is on. Step 1 can go before that, on both trees.
 
 ### Decided by the owner (2026-10-09)
 
@@ -942,7 +942,7 @@ against.
    deletes the child only when the club never let her in and she is on no
    team; one the club let in is the admins' to delete.*
 
-Each is its own build, rules version, CHANGELOG entry and test pass across
+Each is its own build, rules version and test pass across
 every suite that walks every kind of account. New suites: `children.js` (the
 record, confirming, every way in), `care.js`, `register.js` (programs, the
 form, waivers, accepting, placing, the export), `forget.js` (deleting, on the
