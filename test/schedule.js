@@ -103,8 +103,7 @@ const fill = vals => { for (const [k, v] of Object.entries(vals)) A.dom.node('#'
     const c = club(); c.access.teams.t3 = { coaches: { boss: true } };
     as('boss', c); A.ui.view = 'club'; A.render();
     check('an admin who coaches has the club\'s Calendar on Club home', /data-act="schedule"/.test(A.rendered()), true);
-    A.click({ act: 'accountsheet' });
-    check('and My calendar from her account', /data-v="mycal"/.test(sheet(A)), true);
+    check('and her own Calendar a tab on the bar', /data-tab="calendar"/.test(A.rendered('#tabbar')), true);
     A.ui.view = 'calendar'; A.ui.calSel = null; A.render();
     check('the Calendar is hers first, with All teams beside it', A.calSel() + ' ' + /data-act="calscope" data-v="club"/.test(A.rendered()), 'mine true');
     A.ui.view = 'club'; A.click({ act: 'schedule' });

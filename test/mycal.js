@@ -2,9 +2,11 @@
    account is in. AVAILABILITY.md, "My calendar is yours, not a club's", is the
    design. What is easy to get quietly wrong, and so is pinned here:
 
-   - The top row says whose a screen is and which one: a team's tabs carry
-     Club › Team, club screens Club › the screen. My calendar is a choice on
-     the one Calendar (build 102), which is a team's tab like the others.
+   - The title row says whose a screen is and which one: a team's screens
+     the team over the club, club screens the screen over the club, and hers
+     (the Calendar, My players) the screen over her own name. My calendar is
+     a choice on the one Calendar (build 102), a tab of its own on the bar at
+     the bottom (build 141).
    - Every other club the account is in is listened to as well as the open
      one, read-only, for its teams, games, sessions and bookable times, and
      kept on the phone cut down to what My calendar needs: her own children,
@@ -84,27 +86,34 @@ const nameIn = v => names.some(n => JSON.stringify(v).includes(n));
   console.log('--- whose screen it is, and which ---');
   {
     const { D } = await boot('jaz');
+    const T = () => D.titleBar();
+    const titled = name => T().includes(`<span>${name}</span>`);
+    const clubOn = () => /data-act="clubswitch"[^>]*>[\s\S]*?<span>(All teams · )?Lakeside SC<\/span>/.test(T());
     D.ui.view = 'season'; D.render();
-    check('a team\'s tab carries the club and the team', /Club<\/span>/.test(D.crumbs()) && /Team<\/span>/.test(D.crumbs()), true);
-    for (const [v, name] of [['setup', 'Your settings'], ['people', 'People'], ['sessions', 'Training sessions'], ['inbox', 'Messages'], ['admin', 'Club settings'], ['planner', 'Planner'], ['mine', 'My players']]) {
+    check('a team\'s screen is titled with the team, over the club', /class="tbtitle"><span>G11 Flight<\/span>/.test(T()) && clubOn(), true);
+    for (const [v, name] of [['setup', 'Your settings'], ['people', 'People'], ['sessions', 'Training sessions'], ['inbox', 'Messages'], ['admin', 'Club settings'], ['planner', 'Planner']]) {
       D.ui.view = v;
-      check(`${v}: Club › ${name}, no team`, /Club<\/span>/.test(D.crumbs()) && D.crumbs().includes(name + '</span>') && !/Team<\/span>/.test(D.crumbs()), true);
+      check(`${v}: ${name} over the club, no team`, titled(name) && clubOn() && !/G11 Flight/.test(T()), true);
     }
     D.ui.view = 'club';
-    check('club home: the club alone', /Club<\/span>/.test(D.crumbs()) && !/Screen<\/span>|Team<\/span>/.test(D.crumbs()), true);
+    check('club home: the club alone, and it is the switcher', /class="tbtitle pick" data-act="clubswitch"/.test(T()) && titled('Club home') && !/G11 Flight/.test(T()), true);
+    D.ui.view = 'mine';
+    check('My players: hers, over her own name', titled('My players') && titled('jaz') && !/Lakeside SC|G11 Flight/.test(T()), true);
     D.ui.view = 'mycal'; D.render();
     // the Calendar is the person's, even with one team and nothing else of hers yet
     check('My calendar is the Calendar', D.ui.view + ' ' + D.calSel(), 'calendar mine');
-    check('— hers, not a club\'s or a team\'s: You › Calendar', /You<\/span>/.test(D.crumbs()) && D.crumbs().includes('Calendar</span>') && !/Club<\/span>|Team<\/span>/.test(D.crumbs()), true);
-    check('— and the button up top says it is open', D.dom.node('#calBtn').getAttribute('aria-current'), 'true');
+    check('— hers, not a club\'s or a team\'s: Calendar over her name', titled('Calendar') && titled('jaz') && !/Lakeside SC|G11 Flight/.test(T()), true);
+    check('— and the Calendar tab on the bar is lit', /data-tab="calendar" aria-current="true"/.test(D.rendered('#tabbar')), true);
     D.ui.view = 'season'; D.render();
-    check('— and not when it isn\'t', D.dom.node('#calBtn').getAttribute('aria-current'), 'false');
+    check('— and not when it isn\'t', /data-tab="calendar" aria-current="true"/.test(D.rendered('#tabbar')), false);
+    check('— the team\'s is', /data-tab="team" aria-current="true"/.test(D.rendered('#tabbar')), true);
     D.ui.view = 'formation'; D.ui.editFid = '@game';
     check('the game\'s shape is the team\'s', D.viewScope(), 'team');
     D.ui.view = 'formation'; D.ui.editFid = 'f1';
-    check('the club\'s shapes are the club\'s', D.viewScope() + ' ' + D.crumbs().includes('Shapes</span>'), 'club true');
+    check('the club\'s shapes are the club\'s', D.viewScope() + ' ' + titled('Shapes'), 'club true');
     D.click({ act: 'accountsheet' });
-    check('the You crumb opens her account, with My calendar on it', /data-v="mycal"/.test(String(D.dom.node('#sheet').innerHTML)), true);
+    const acct = String(D.dom.node('#sheet').innerHTML);
+    check('the avatar opens her account: settings and sign out, and nothing that is a tab', /data-v="setup"/.test(acct) && /data-act="signout"/.test(acct) && !/data-v="mycal"|data-v="club"|data-v="mine"/.test(acct), true);
   }
 
   let keptCopy = null;

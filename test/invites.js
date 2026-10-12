@@ -64,7 +64,7 @@ const CLUB = {
     fbk.deliver('invites/' + ID, inviteDoc(A)); await A.flush();
     check('it says which club and what role', /Join Lakeside SC/.test(A.rendered()) && /coach of <b>Flight/.test(A.rendered()), true);
     check('and offers to accept', /data-act="inviteaccept"/.test(A.rendered()), true);
-    check('crumbs stay empty until joined', A.rendered('#crumbs'), '');
+    check('the title row stays empty until joined', A.rendered('#titlebar'), '');
 
     // which tree: the old one refuses a phone not in the club yet, as it does while the club is there
     A.click({ act: 'inviteaccept' }); await A.flush(); await A.flush(20);
@@ -156,13 +156,13 @@ const CLUB = {
     fbk.signIn('sam'); await A.flush();
     await fbk.serveClub('OTHER', CLUB, A.flush); await A.flush();
     check('the invite screen wins', /Opening your invite|Join/.test(A.rendered()), true);
-    check('the open club\'s names are not drawn behind it', /Flight|Ella/.test(A.rendered('#crumbs')), false);
+    check('the open club\'s names are not drawn behind it', /Flight|Ella/.test(A.rendered('#titlebar') + A.rendered('#tabbar')), false);
     check('the device stays where it was until accepted', A.storage.getItem('sm.workspace'), 'OTHER');
     A.click({ act: 'invitedismiss' });
     check('not now: the invite is dropped', A.storage.getItem('sm.invite'), null);
     // the Calendar she lands on is hers and names no club, so ask the club's own screen
     A.ui.view = 'club'; A.render();
-    check('and the club is back', /Lakeside SC/.test(A.rendered('#crumbs')), true);
+    check('and the club is back', /Lakeside SC/.test(A.rendered('#titlebar')), true);
   }
 
   console.log('\n--- switching account re-reads the invite ---');

@@ -2,8 +2,8 @@
    Static app. Data lives in localStorage, and mirrors to Firebase Realtime
    Database when a config + workspace code are present. */
 
-const BUILD = '140';
-const BUILT = '2026-10-11';
+const BUILD = '141';
+const BUILT = '2026-10-12';
 /* The version of database.rules.json this app was written against. The rules
    carry the same number in rulesVersion's .write, which accepts that number
    and nothing else, so writing it is a question only the published rules can
@@ -1562,7 +1562,7 @@ const acc = () => state.access || {};
 const members = () => Object.entries(acc().members || {}).map(([uid, v]) => ({ uid, ...v }))
   .sort((a, b) => (a.name || '').localeCompare(b.name || ''));
 const anyAdmins = () => Object.keys(acc().admins || {}).length > 0;
-/* The club's name for the crumbs, headings and menus. Before the club has been
+/* The club's name for the title row, headings and menus. Before the club has been
    read on this phone (a new address, a first sign-in) its own record isn't here
    yet, so use the name her account's list of clubs holds for it; failing that,
    say it is on its way rather than naming it the generic "Club". */
@@ -4570,16 +4570,14 @@ function msgPaint() {
 }
 /* The two buttons up top, each with its own count: Messages for what people
    wrote, the bell for what is new. */
-const notesOn = () => !!me && ((newsFor() && newsItems().length > 0) || alertsHere().list.some(x => x.kind !== 'msg') || youClubs().length > 0);
 const msgsOn = () => !!me && (msgOn() || alertsHere().list.some(x => x.kind === 'msg') || elseUnread() > 0);
+/* The counts on the tab bar: unread messages on Messages, what is new on
+   More (Notifications live under it). Repainted in place when something
+   arrives between draws; render() draws them fresh. */
 function paintBell(shut) {
   const m = shut ? 0 : msgUnread(), b = shut ? 0 : notesUnread(), n = m + b;
-  const badge = (btn, num, on, k) => {
-    const el = $(btn); if (el) { el.hidden = !!shut || !on; el.dataset.n = k ? String(k) : ''; }
-    const c = $(num); if (c) c.textContent = k ? (k > 9 ? '9+' : String(k)) : '';
-  };
-  badge('#msgBtn', '#msgN', !shut && msgsOn(), m);
-  badge('#bellBtn', '#bellN', !shut && notesOn(), b);
+  const put = (sel, k) => { const c = $(sel); if (c) c.textContent = k ? (k > 9 ? '9+' : String(k)) : ''; };
+  put('#tabMsgN', m); put('#tabMoreN', b);
   if (typeof document !== 'undefined') document.title = (n ? `(${n}) ` : '') + 'TeamPlayHQ — soccer team manager';
 }
 
@@ -7058,8 +7056,9 @@ function normView() {
 function render() {
   normView();
   /* Settle whether this device may see the club before drawing a single thing.
-     The crumbs are chrome, but they carry the club and the team name, so a lock
-     screen with the crumbs still drawn has leaked most of what there was. */
+     The title row and the tab bar are chrome, but the title carries the club
+     and the team name, so a lock screen with it still drawn has leaked most of
+     what there was. Both are drawn once the screen is settled, below. */
   const inviting = !!invite;
   const joining = !inviting && !!join && !join.hidden;
   const shut = inviting || joining || !!purged || denied || unconfirmed || needsSignIn() || awaitingSignIn();
@@ -7067,7 +7066,6 @@ function render() {
   if (!t && teams().length) { ui.teamId = teams()[0].id; }
   const vis = myTeams();
   if (vis.length && !vis.some(x => x.id === ui.teamId)) ui.teamId = vis[0].id;
-  const cb = $('#crumbs'); if (cb) cb.innerHTML = shut ? '' : crumbs();
   const av = $('#avatar');
   if (av) {
     const ph = me && me.photo;
@@ -7138,10 +7136,10 @@ function render() {
   // two stacked rows of tabs read as a mistake; show whichever one applies, and one tab alone (a parent's Season) is no row at all
   const tabsOn = [...document.querySelectorAll('#tabs button')].filter(b => !b.hidden).length;
   const tb = $('#tabs'); if (tb) tb.hidden = shut || !!(inGame && openM) || !teamLevel || !team() || tabsOn < 2;
-  // the Calendar's own button, up top: today's date on it, and pressed while it is open
-  const cbn = $('#calBtn');
-  if (cbn) { cbn.hidden = shut; cbn.setAttribute('aria-current', String(ui.view === 'calendar')); }
-  const cbd = $('#calBtnDay'); if (cbd) cbd.textContent = String(dateOf(todayStr()).getDate());
+  /* Where she is, and the way around, once the screen is settled (a view her
+     role is sent off has been), and nothing of either on a shut device. */
+  const tbl = $('#titlebar'); if (tbl) tbl.innerHTML = shut ? '' : titleBar();
+  const nbr = $('#tabbar'); if (nbr) { nbr.innerHTML = shut ? '' : tabBar(); nbr.hidden = shut; }
   const app = $('#app');
   const v = ui.view;
   paintBell(shut);
@@ -7276,42 +7274,165 @@ function lockScreen() {
     </div></div></div>`;
 }
 
-/* Club › Team › Game. Each segment is its own switcher, so the structure of the
-   app is the navigation rather than something you have to learn. */
+/* ---------------- where you are, and the way around ---------------- */
 /* Which of the three a screen belongs to. A team's tabs (and its games, and
-   its game shape) are the team's; the Calendar is the person's, across every
-   team and club she is in, whichever calendars are ticked on it; everything
-   else (club home, settings, people, sessions, messages) is the club's. The
-   crumbs say exactly that much and no more: a team left in them on Settings
-   reads as "these are the team's settings". The owner, on the Calendar as a
-   team's tab (build 102): "the calendar is in a weird spot. The calendar is
+   its game shape) are the team's; the Calendar and My players are the
+   person's, across every team and club she is in; everything else (club
+   home, settings, people, sessions, messages) is the club's. The title row
+   says exactly that much and no more: a team left on it on Settings reads as
+   "these are the team's settings". The owner, on the Calendar as a team's
+   tab (build 102): "the calendar is in a weird spot. The calendar is
    versatile and not tied to one team, not even one club, it is per person." */
 const TEAM_VIEWS = ['season', 'roster', 'practice', 'game'];
-const viewScope = (v = ui.view) => v === 'calendar' ? (me ? 'me' : 'club')
+const viewScope = (v = ui.view) => v === 'calendar' || v === 'mine' ? (me ? 'me' : 'club')
   : TEAM_VIEWS.includes(v) || (v === 'formation' && ui.editFid === GAME_SHAPE) ? 'team' : 'club';
-/* The screen itself, for the screens that are not a team's: the row ends in
-   where you are, so Club › People reads as the club's people and never as a
-   team's. Club home is the club alone. */
-const VIEW_CRUMB = {
+/* The screens that are not a team's, by name, for the title row. */
+const VIEW_TITLE = {
   calendar: 'Calendar', setup: 'Your settings', people: 'People', admin: 'Club settings', sessions: 'Training sessions',
-  planner: 'Planner', inbox: 'Messages', thread: 'Messages', notes: 'Notifications', mine: 'My players', formation: 'Shapes'
+  planner: 'Planner', inbox: 'Messages', thread: 'Messages', notes: 'Notifications', mine: 'My players', formation: 'Shapes',
+  regs: 'Registration', tryout: 'Tryouts', comply: 'Coach compliance', club: 'Club home'
 };
-function crumbs() {
-  const sep = '<span class="crumb-sep">\u203a</span>';
-  const here = VIEW_CRUMB[ui.view] && viewScope() !== 'team'
-    ? `${sep}<span class="crumb" aria-current="page"><span class="crumb-k">${viewScope() === 'me' ? 'Yours' : 'Screen'}</span>${esc(VIEW_CRUMB[ui.view])}</span>` : '';
-  if (viewScope() === 'me' && me)
-    return `<button class="crumb" data-act="accountsheet"><span class="crumb-k">You</span>${esc(me.name || me.email || 'Your account')}</button>${here}`;
+
+/* The way around (UX-REVIEW.md, 1.1; build 141). A phone app is learned
+   through its tab bar, and this one had none: the crumbs (Club › Team › Game)
+   were a model of the data, and the rest was three overlapping menus and four
+   unlabelled icons up top. So: a bar at the bottom, chosen by what the person
+   is here as. Staff (an admin, a coach, a tracker, a helper, a club viewer,
+   and anyone before the club is somebody's) work on a team and get
+   Team · Calendar · Game · Messages · More; a family (a parent, a player with
+   her own sign-in, a fan) is here for her children and gets
+   Home · Calendar · Messages · More. Decided for the person, not per team: a
+   coach whose daughter plays in another age group is staff, and finds My
+   players under More. The title row above says where she is, with a back
+   arrow where there is somewhere up to go; the club's name on it is the
+   club switcher; the top bar keeps the account alone. */
+function navKind() {
+  if (!me) return 'staff';
+  if (canAdmin() || isViewer(me.uid)) return 'staff';
+  if (teams().some(t => isCoach(t.id, me.uid) || isTracker(t.id, me.uid) || isHelper(t.id, me.uid))) return 'staff';
+  return anyPlayers() ? 'family' : 'staff';
+}
+/* The Game tab's game, on the team on screen: the one being played, else the
+   next on the calendar, else the last one played. */
+function navGame() {
+  const t = team(); if (!t) return null;
+  const ms = teamMatches(t.id);
+  return ms.find(m => gameStatus(m) === 'live')
+    || ms.filter(m => gameStatus(m) === 'upcoming' && !CALLED[m.called]).slice(-1)[0]
+    || ms.find(m => gameStatus(m) === 'done') || ms[0] || null;
+}
+const NAV_ICON = {
+  home: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3.5 11.5 12 4l8.5 7.5"/><path d="M5.5 10v10h13V10"/><path d="M10 20v-6h4v6"/></svg>',
+  team: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l7 3v5.5c0 4.3-3 7.9-7 9.5-4-1.6-7-5.2-7-9.5V6z"/><path d="M12 8v4m-2-2h4"/></svg>',
+  calendar: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3.5" y="5" width="17" height="15.5" rx="2.5"/><path d="M3.5 10h17M8.5 3v4M15.5 3v4"/></svg>',
+  game: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5l3.2 2.3-1.2 3.8H10l-1.2-3.8z"/><path d="M12 7.5V4M15.2 9.8l3.3-1.1M14 13.6l2 3M10 13.6l-2 3M8.8 9.8 5.5 8.7"/></svg>',
+  messages: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a8 8 0 0 1-11.6 7.1L4 20.5l1.4-4.9A8 8 0 1 1 21 12z"/></svg>',
+  more: '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="2.2"/><circle cx="12" cy="12" r="2.2"/><circle cx="19" cy="12" r="2.2"/></svg>'
+};
+function navTabs() {
+  const fam = navKind() === 'family';
+  const out = [fam ? { id: 'home', label: 'Home' } : { id: 'team', label: 'Team' }, { id: 'calendar', label: 'Calendar' }];
+  if (!fam) { const g = navGame(); out.push({ id: 'game', label: 'Game', live: !!(g && gameStatus(g) === 'live') }); }
+  // Messages once the club has them (an admin, and a team of hers); the tab is not drawn dead
+  if (msgsOn()) out.push({ id: 'messages', label: 'Messages', count: 'tabMsgN' });
+  out.push({ id: 'more', label: 'More', count: 'tabMoreN' });
+  return out;
+}
+/* Which tab is lit for a screen. The screens under More light More; a
+   family's team screens and games light where she opened them from. */
+function tabFor(v = ui.view) {
+  const fam = navKind() === 'family';
+  if (v === 'calendar') return 'calendar';
+  if (v === 'inbox' || v === 'thread') return 'messages';
+  if (v === 'mine') return fam ? 'home' : 'more';
+  if (v === 'game' || (v === 'formation' && ui.editFid === GAME_SHAPE)) return fam ? (ui.gameFrom === 'calendar' ? 'calendar' : 'home') : 'game';
+  if (TEAM_VIEWS.includes(v)) return fam ? 'home' : 'team';
+  return 'more';
+}
+const homeView = () => navKind() === 'family' ? 'mine' : 'season';
+/* Where the back arrow goes: up one level, the same wherever the screen was
+   opened from, so it can be predicted (the phone's own Back walks the real
+   history). A tab's own screen has no up. */
+function upView(v = ui.view) {
+  if (v === 'game') return ui.gameFrom === 'calendar' ? 'calendar' : 'season';
+  if (v === 'formation') return ui.editFid === GAME_SHAPE ? 'game' : 'admin';
+  if (v === 'thread') return 'inbox';
+  if (['people', 'admin', 'planner', 'regs', 'tryout', 'comply', 'sessions'].includes(v)) return 'club';
+  if (v === 'club' || v === 'setup' || v === 'notes') return homeView();
+  if (v === 'mine' && navKind() !== 'family') return homeView();
+  // a family opening a team's season from My players
+  if (TEAM_VIEWS.includes(v) && navKind() === 'family') return 'mine';
+  return null;
+}
+const CHEV_SVG = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>';
+const BACK_SVG = '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg>';
+/* The title row: whose screen this is, and which. On a team's screens the
+   team (a switcher when she can see more than one) over the club; on the
+   club's screens the screen's name over the club; on hers (the Calendar, My
+   players) the screen over her own name, because they are nobody else's. The
+   club's name is always the club switcher. */
+function titleBar() {
+  const v = ui.view, scope = viewScope();
+  const upAct = v === 'game' ? 'backgames' : v === 'formation' ? 'backsetup' : upView() ? 'navback' : null;
+  const upLabel = v === 'game' ? (ui.gameFrom === 'calendar' ? 'Back to the calendar' : 'Back to the team')
+    : v === 'formation' && ui.editFid === GAME_SHAPE ? 'Back to the game' : 'Back';
+  const back = upAct ? `<button class="tbback" data-act="${upAct}" aria-label="${upLabel}" title="${upLabel}">${BACK_SVG}</button>` : '';
   const org = clubName();
-  const t = viewScope() === 'team' ? team() : null;
-  const m = ui.view === 'game' ? match() : null;
-  const out = [`<button class="crumb crumb-club" data-act="goview" data-v="club">${clubCrest('xs')}<span><span class="crumb-k">Club</span>${esc(org)}</span></button>`];
-  if (here) out.push(here);
-  if (t) out.push(`<span class="crumb-sep">\u203a</span>
-    <button class="crumb" data-act="goteam" data-id="${t.id}"><span class="crumb-k">Team</span>${teamLabel(t)}</button>`);
-  if (m) out.push(`<span class="crumb-sep">\u203a</span>
-    <button class="crumb" data-act="pickgame"><span class="crumb-k">Game</span>${esc(m.opponent || 'Game')}</button>`);
-  return out.join('');
+  const clubBtn = (cls, pre = '') => `<button class="${cls}" data-act="clubswitch" aria-label="Switch club" title="Switch club">${clubCrest('xs')}<span>${pre}${esc(org)}</span>${CHEV_SVG}</button>`;
+  const plain = (text, cls = 'tbtitle') => `<span class="${cls}"><span>${text}</span></span>`;
+  let main;
+  if (scope === 'team' && team()) {
+    const t = team();
+    const name = myTeams().length > 1
+      ? `<button class="tbtitle pick" data-act="teammenu" aria-label="Switch team" title="Switch team"><span>${teamLabel(t)}</span>${CHEV_SVG}</button>`
+      : plain(teamLabel(t));
+    main = name + clubBtn('tbsub');
+  } else if (v === 'club') {
+    main = clubBtn('tbtitle pick') + plain('Club home', 'tbsub');
+  } else if (scope === 'me') {
+    // hers, across every club: her own name says whose, never a club's or a team's
+    const sub = v === 'calendar' && calSel() === 'club' ? clubBtn('tbsub', 'All teams · ') : plain(esc(me.name || me.email || 'You'), 'tbsub');
+    main = plain(esc(VIEW_TITLE[v] || '')) + sub;
+  } else {
+    main = plain(esc(VIEW_TITLE[v] || (TEAM_VIEWS.includes(v) ? 'Team' : org))) + clubBtn('tbsub');
+  }
+  return `${back}<div class="tbmain">${main}</div>`;
+}
+function tabBar() {
+  const cur = tabFor();
+  const m = msgUnread(), b = notesUnread();
+  const n = k => k ? (k > 9 ? '9+' : String(k)) : '';
+  return navTabs().map(t => `<button type="button" class="tab" data-act="tab" data-tab="${t.id}" aria-current="${t.id === cur}">${NAV_ICON[t.id]}<span class="tabl">${t.label}</span>${t.count ? `<span class="tabn" id="${t.count}">${t.count === 'tabMsgN' ? n(m) : n(b)}</span>` : ''}${t.live ? '<span class="tablive" title="Being played now"></span>' : ''}</button>`).join('');
+}
+/* The More tab: everything that is not a tab, by what she is here as. The
+   club's own screens are offered to whoever may open them, and render()
+   checks again. */
+function sheetMore() {
+  const org = clubName();
+  const b = me ? notesUnread() : 0;
+  const coachAny = !!me && teams().some(t => isCoach(t.id, me.uid));
+  const clubs = knownClubs();
+  openSheet(`<h3>More</h3>
+    ${me ? `<button class="opt spread" data-act="goview" data-v="notes"><span><b>Notifications</b>
+      <span class="rowsub">What is new: your games and practices${newsFor() ? ', and club activity' : ''}</span></span>${b ? `<span class="pill asking">${b > 9 ? '9+' : b}</span>` : ''}</button>` : ''}
+    ${wsCode() || teams().length ? `<button class="opt" data-act="goview" data-v="club"><b>${esc(org)}</b>
+      <span class="rowsub">Club home: its teams, and everything else in it</span></button>` : ''}
+    ${anyPlayers() && navKind() !== 'family' ? `<button class="opt" data-act="goview" data-v="mine"><b>My players</b>
+      <span class="rowsub">${allKidNames().map(esc).join(', ')}</span></button>` : ''}
+    ${canSessions() ? `<button class="opt" data-act="goview" data-v="sessions"><b>Training sessions</b>
+      <span class="rowsub">${esc(sessClubLine())}</span></button>` : ''}
+    ${canAdmin() || coachAny ? `<button class="opt" data-act="goview" data-v="people"><b>People</b>
+      <span class="rowsub">Who is in the club, roles and invites</span></button>` : ''}
+    ${canAdmin() ? `<button class="opt" data-act="goview" data-v="admin"><b>Club settings</b>
+      <span class="rowsub">Details, what parents see, programs, compliance</span></button>` : ''}
+    <button class="opt" data-act="goview" data-v="setup"><b>Your settings</b>
+      <span class="rowsub">Account, notifications, sharing, backup, version</span></button>
+    ${clubs.length > 1 || canNewClub() ? `<button class="opt" data-act="clubswitch"><b>Clubs</b>
+      <span class="rowsub">${clubs.length > 1 ? 'Switch to another club you are in' : 'Start a new club'}</span></button>` : ''}
+    ${me ? `<button class="opt" data-act="signout"><b>Sign out</b>
+      <span class="rowsub">${esc(me.email || me.name || '')}</span></button>`
+      : `<button class="opt" data-act="signinsheet"><b>Sign in</b></button>`}
+    ${LEGAL_LINKS}`);
 }
 
 function viewClub() {
@@ -7355,21 +7476,17 @@ function viewClub() {
   </div>`;
 }
 
+/* The avatar's sheet is the account and nothing else since build 141: the
+   calendar, her players and the club are tabs, and the rest is under More. */
 function sheetAccount() {
   const r = myRole();
   openSheet(`<h3>${esc(me.name)}</h3>
     <p class="muted" style="margin-top:0">${esc(me.email || '')}${r ? ` · ${esc(ROLE_LABEL[r])}` : ''}</p>
-    <button class="opt" data-act="goview" data-v="mycal"><b>My calendar</b>
-      <span class="rowsub">Everything of yours, from every club you're in</span></button>
-    ${wsCode() || teams().length ? `<button class="opt" data-act="goview" data-v="club"><b>${esc(clubName() === 'Club' ? 'Club home' : clubName())}</b>
-      <span class="rowsub">Club home: its teams, and everything else in it</span></button>` : ''}
     <button class="opt" data-act="goview" data-v="setup"><b>Settings</b>
-      <span class="rowsub">Account, club, sharing, backup, version</span></button>
-    ${anyPlayers() ? `<button class="opt" data-act="goview" data-v="mine"><b>My players</b>
-      <span class="rowsub">${allKidNames().map(esc).join(', ')}</span></button>` : ''}
+      <span class="rowsub">Account, ways to sign in, notifications, backup, version</span></button>
     <button class="btn danger wide" data-act="signout" style="margin-top:8px">Sign out</button>
     ${fbConfig().apiKey ? '<button class="btn quiet danger wide" data-act="forgetsheet" style="margin-top:8px">Delete my account</button>' : ''}
-    <p class="muted">Club settings live under the club itself, since you may belong to more than one.</p>
+    <p class="muted">Your calendar, your players and the club are on the bar at the bottom. Club settings live under the club itself, since you may belong to more than one.</p>
     <p class="muted"><a href="privacy">Privacy Policy</a> · <a href="terms">Terms of Service</a></p>`);
 }
 
@@ -7462,24 +7579,6 @@ function sheetClubSwitch() {
     <p class="muted">To join someone else's club, ask its admin for an invite link.</p>`);
 }
 
-function sheetClubMenu() {
-  const org = clubName();
-  openSheet(`<h3>${esc(org)}</h3>
-    ${canAdmin() ? `<button class="opt" data-act="schedule"><b>Calendar: all teams</b>
-      <span class="rowsub">Every team's games and practices, and adding to any of them</span></button>
-    <button class="opt" data-act="goview" data-v="admin"><b>Club admin</b>
-      <span class="rowsub">Teams, people and roles, club details</span></button>` : ''}
-    ${anyPlayers() ? `<button class="opt" data-act="goview" data-v="mine"><b>My players</b>
-      <span class="rowsub">${allKidNames().length} linked to your account</span></button>` : ''}
-    ${me && myCalOwn() ? `<button class="opt" data-act="goview" data-v="mycal"><b>My calendar</b>
-      <span class="rowsub">Every team of yours, your children and your sessions</span></button>` : ''}
-    <button class="opt" data-act="goview" data-v="setup"><b>Your settings</b>
-      <span class="rowsub">Account, club, sharing, backup</span></button>
-    ${me ? `<button class="opt" data-act="signout"><b>Sign out</b>
-      <span class="rowsub">${esc(me.email || me.name)}</span></button>`
-      : `<button class="opt" data-act="signinsheet"><b>Sign in</b></button>`}`);
-}
-
 function needTeam() {
   const c = wsCode();
   return `<div class="empty"><strong>No teams here</strong>${c ? `Nothing is stored under <code>${esc(c)}</code>. If you expected teams, check the code character by character — it is case sensitive and order matters.` : 'Add a team, then its players. Everything else hangs off that.'}
@@ -7503,10 +7602,8 @@ function gameBar(t, m) {
      carries never changes as more are added. */
   const older = i > -1 ? list[i + 1] : null;
   const newer = i > 0 ? list[i - 1] : null;
-  const back = ui.gameFrom === 'calendar' ? 'Back to the calendar' : 'Back to the team';
-  return `<button class="backbtn" data-act="backgames" aria-label="${back}" title="${back}">
-    <svg viewBox="0 0 12 12" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7.5 2L3.5 6l4 4"/></svg></button>
-  ${older ? `<button class="stepbtn" data-act="pickgame2" data-id="${older.id}" aria-label="Older game" title="${esc(older.opponent || '')}">‹</button>` : ''}
+  // Back is on the title row, above (build 141)
+  return `${older ? `<button class="stepbtn" data-act="pickgame2" data-id="${older.id}" aria-label="Older game" title="${esc(older.opponent || '')}">‹</button>` : ''}
   <button class="gamebar" data-act="pickgame">
     <span class="gb-name">${esc(m.opponent || 'Unnamed')}<small>${[m.date ? shortDate(m.date) : '', n > 1 && i > -1 ? `<span class="gb-hint">${n - i}/${n}</span>` : ''].filter(Boolean).join(' · ')}</small></span>
     <span class="gb-score">${sc.us}–${sc.them}</span>
@@ -9609,8 +9706,9 @@ function coachOutLine(it) {
    It was the first tab of every team (build 102) until the owner said "the
    calendar is in a weird spot. The calendar is versatile and not tied to one
    team, not even one club, it is per person." So it is the person's (build
-   103): a button of its own up top, beside Messages and the account, with
-   You › Calendar for its crumbs, and two calendars to tick:
+   103): a tab of its own on the bar at the bottom (build 141; a button up
+   top from 103 to 140), titled Calendar over her own name, and two calendars
+   to tick:
 
    - My calendar: everything of hers. The teams she coaches, tracks or has a
      child on, the sessions she runs and her children's (and, for a coach,
@@ -20996,6 +21094,28 @@ function onAct(e) {
   }
   if (a === 'teammenu') { sheetTeams(); return; }
   if (a === 'goview') { ui.view = d.v; closeSheet(); render(); return; }
+  /* The tab bar (UX-REVIEW.md, 1.1). A tab is a place: tapping the one she
+     is on goes to its first screen and the top. Game opens the team's game
+     being played, else the next, else the last; with none, the team's
+     Season, where Add a game is. */
+  if (a === 'tab') {
+    closeSheet();
+    const k = d.tab || d.v;
+    if (k === 'more') { sheetMore(); return; }
+    if (k === 'home') ui.view = 'mine';
+    else if (k === 'calendar') { ui.view = 'calendar'; ui.picked = null; }
+    else if (k === 'messages') { ui.view = 'inbox'; ui.thread = null; }
+    else if (k === 'team') { if (tabFor() !== 'team' || ui.view === 'game') ui.view = 'season'; }
+    else if (k === 'game') {
+      const g = navGame();
+      // where each role works, as the calendar's live card sends her (render() puts a finished game on its recap)
+      if (g) { ui.matchId = g.id; ui.view = 'game'; ui.gameFrom = null; ui.picked = null; ui.gameView = canEditTeam(g.teamId) ? 'subs' : me && isTracker(g.teamId, me.uid) ? 'track' : 'live'; }
+      else { ui.view = 'season'; toast('No games yet. Add one from Season.'); }
+    }
+    render(); toTop(); return;
+  }
+  // the title row's back arrow: up one level (a game's and a shape's have their own, backgames and backsetup)
+  if (a === 'navback') { const up = upView(); if (up) { ui.view = up; ui.picked = null; if (up === 'inbox') ui.thread = null; } closeSheet(); render(); toTop(); return; }
   if (a === 'accountsheet') { if (me) sheetAccount(); else sheetSignIn(); return; }
   if (a === 'retireclub') {
     if (!canAdmin()) { toast('Club admins and the app owner only'); return; }
@@ -22786,14 +22906,6 @@ function syncHash() {
 }
 const avEl = $('#avatar');
 if (avEl) avEl.addEventListener('click', () => (me ? sheetAccount() : sheetSignIn()));
-const csEl = $('#clubSwitch');
-if (csEl) csEl.addEventListener('click', sheetClubSwitch);
-const ibEl = $('#msgBtn');
-if (ibEl) ibEl.addEventListener('click', () => { ui.view = 'inbox'; ui.thread = null; closeSheet(); render(); });
-const blEl = $('#bellBtn');
-if (blEl) blEl.addEventListener('click', () => { ui.view = 'notes'; ui.thread = null; closeSheet(); render(); });
-const cbEl = $('#calBtn');
-if (cbEl) cbEl.addEventListener('click', () => { ui.view = 'calendar'; ui.picked = null; closeSheet(); render(); toTop(); });
 // a tab brought back to the front has now read what arrived while it was behind
 if (typeof document !== 'undefined' && document.addEventListener)
   document.addEventListener('visibilitychange', () => { if (!document.hidden && (ui.view === 'inbox' || ui.view === 'thread')) render(); });

@@ -8,6 +8,45 @@ before this point lives only in the git log.
 
 ---
 
+## A tab bar, and a title instead of crumbs — 2026-10-12 (build 141)
+
+UX-REVIEW.md's first finding (1.1): a phone app is learned through its tab
+bar, and this one had none. The way around was the crumbs (Club › Team ›
+Game), which are a model of the data rather than of what a person does,
+three overlapping menus (the avatar's, the club switcher's and the club's)
+and four unlabelled icon buttons up top. Nobody new could predict where
+Messages was.
+
+- **A bar at the bottom, chosen by what the person is here as.** Staff (an
+  admin, a coach, a tracker, a helper, a club viewer) get **Team · Calendar ·
+  Game · Messages · More**; a family (a parent, a player with her own sign-in,
+  a fan) gets **Home** (My players) **· Calendar · Messages · More**. Decided
+  for the person, never per team: a coach whose daughter plays in another age
+  group is staff, and finds My players under More. Messages is drawn once the
+  club has it, with its count; More carries the count of what is new.
+- **Game** opens the team's game being played (marked with a dot), else the
+  next, else the last, landing each role where it works: a coach on Subs, a
+  tracker on Track, everyone else on Live. A team with no games lands on
+  Season, where *Add a game* is.
+- **The crumbs are a title row.** The team (a switcher when she can see more
+  than one) or the screen's name, over the club, whose name is now the club
+  switcher; the Calendar and My players are hers, over her own name. A back
+  arrow where there is somewhere up to go: a game's back is the team or the
+  calendar it was opened from (the game bar's own went), the club's screens
+  go up to Club home, and Club home to her Team or Home. A tab's own screen
+  has none.
+- **More** is a sheet: Notifications, Club home, My players (staff with a
+  child), Training sessions, People (coaches and admins), Club settings
+  (admins), Your settings, Clubs, Sign out. The club menu sheet, which
+  nothing opened any more, is gone, and the avatar's sheet is the account
+  alone: Settings, Sign out, Delete my account.
+- **The top bar keeps the brand, the sync badge and the account.** The
+  Calendar, Messages and bell buttons and the club-switch arrows went into
+  the bar and the title row. A locked device draws no title and no bar.
+
+New suite `nav`; `mycal`, `signout`, `calendar`, `messages`, `schedule`,
+`invites`, `join` and `sync` read the title row and the bar now.
+
 ## Invites built by hand, and Email it sends — 2026-10-12 (build 140, rules version 32)
 
 The owner, 2026-10-12: invites to the club come from a builder, not a link
