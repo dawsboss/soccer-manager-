@@ -41,6 +41,10 @@ Fix, in order of cost:
   header) should name the team it belongs to.
 
 ### 6.2 Notifications are in three places, and the word means two things
+*Done in build 148: the switches are in Settings → Notifications alone, the page is
+What's new (at `#/whats-new`, the old address landing there) with a gear to them,
+and Messages carries none of it.*
+
 - "What notifies you" (the on/off switches) is drawn on **Settings**, on the
   **Notifications** page, and as the push card on **Messages** (`muteCard()` and
   `pushCard()` at three call sites). Keep the switches in Settings → Notifications
