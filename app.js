@@ -2,7 +2,7 @@
    Static app. Data lives in localStorage, and mirrors to Firebase Realtime
    Database when a config + workspace code are present. */
 
-const BUILD = '150';
+const BUILD = '151';
 const BUILT = '2026-10-12';
 /* The version of database.rules.json this app was written against. The rules
    carry the same number in rulesVersion's .write, which accepts that number
@@ -8699,6 +8699,11 @@ function viewSubs() {
     .sort(byNumber ? num : (a, b) => (plannedSec(m, b.id) - playedSec(m, b.id, now)) - (plannedSec(m, a.id) - playedSec(m, a.id, now)));
 
   const clock = clockCard(m, now, true);
+  /* Orange for the three furthest behind the pace of the game and only them,
+     since that is who the coach is scanning for; every other row's number is
+     plain (UX-REVIEW-2.md, 7.2: "9 short" in orange on eleven rows read as
+     eleven warnings). */
+  const behind = mostBehind(m, roster, el, now);
 
   const planning = !!ui.plan;
   const items = staged();
@@ -8736,7 +8741,7 @@ function viewSubs() {
         <span><span class="pname">${esc(p.name)}</span>
           <span class="psub" data-spell="${p.id}">${tag}</span></span>
         <span class="livemins"><span data-mins="${p.id}">${mins(pl)}<small> min</small></span>
-          ${pd > 0 ? `<span class="diff ${diffClass(m, pl, pd, el)}">${diff < 0 ? -diff + ' short' : diff > 0 ? diff + ' over' : 'on plan'}</span>` : ''}</span>
+          ${pd > 0 ? `<span class="diff ${behind.has(p.id) ? 'owed' : diffClass(m, pl, pd, el) === 'over' ? 'over' : 'even'}">${diff < 0 ? -diff + ' short' : diff > 0 ? diff + ' over' : 'on plan'}</span>` : ''}</span>
       </button>
       ${isOn ? `<button class="lrspot" type="button" data-act="switchpos" data-pid="${p.id}" aria-label="${spot ? `${esc(spot)}: move` : 'Set her spot'}">
         <span>${esc(spot || 'Spot')}</span></button>` : ''}
@@ -9197,7 +9202,16 @@ function viewPlan() {
      not a paragraph about snapshots. The details card and the lock come
      after it. */
   let snaps;
-  if (!shape.length) {
+  if (!shape.length && el > 0 && !m.ended) {
+    /* Mid-game the lineup is the pitch as it stands, and the shape picker is
+       a button beside the heading, not the first thing on the screen
+       (UX-REVIEW-2.md, 7.2). */
+    snaps = `<div class="card"><div class="spread" style="margin-bottom:10px"><h2>Lineup</h2>
+        <button class="btn quiet sm" data-act="editmatch" data-id="${m.id}">Pick a shape</button></div>
+      ${pitchPicture(t, m, nowMs())}
+      <p class="muted" style="margin:8px 0 0">Who is where now. A shape names each spot and lets you plan the changes ahead.${infoBtn('snapshots')}</p>
+      ${blocks.length ? `<div style="margin-top:14px">${planDetail(t, m)}</div>` : ''}</div>`;
+  } else if (!shape.length) {
     snaps = `<div class="card"><h2 style="margin-bottom:6px">Lineup</h2>
       <p class="muted" style="margin-top:0">Pick a shape (4-3-3, 2-3-1, or one you saved) and the lineup is a pitch to fill in.${infoBtn('snapshots')}</p>
       <button class="btn wide" data-act="editmatch" data-id="${m.id}">Pick a shape</button>
@@ -9332,6 +9346,25 @@ function viewPlan() {
     </div></div>`;
 }
 
+/* The pitch as it stands, to look at: who is on, where, with her minutes.
+   Subs' Pitch look is where she drags; this is the picture alone, for a
+   screen that wants it without the handles (Lineup mid-game with no shape). */
+function pitchPicture(t, m, now) {
+  const tokens = squad(t, m).filter(p => onField(m, p.id)).map(p => {
+    const pos = posOf(m, p.id), sl = slotOf(m, p.id);
+    return `<div class="token" data-pid="${p.id}" style="left:${pos.x}%;top:${pos.y}%">
+      ${sl ? `<span class="role">${esc(sl.label)}</span>` : ''}<span class="num">${esc(p.number ?? '')}</span>
+      <span class="mins">${mins(playedSec(m, p.id, now))}′</span><span class="nm">${esc(p.name.split(' ')[0])}</span></div>`;
+  }).join('');
+  return `<div class="pitch pitchnow">
+    <svg class="lines" viewBox="0 0 68 100" preserveAspectRatio="none" aria-hidden="true">
+      <g fill="none" stroke="rgba(255,255,255,.45)" stroke-width=".5">
+        <rect x="2" y="2" width="64" height="96"/><line x1="2" y1="50" x2="66" y2="50"/><circle cx="34" cy="50" r="9"/>
+        <rect x="16" y="2" width="36" height="15"/><rect x="16" y="83" width="36" height="15"/>
+        <rect x="26" y="2" width="16" height="6"/><rect x="26" y="92" width="16" height="6"/>
+      </g></svg>${tokens || '<div class="pitchhint">Nobody on yet. Put the starters on from Subs.</div>'}</div>`;
+}
+
 /* Who to plan for, on the tab where the plan is made. The families' answers
    are already applied — the plan, the targets and the even split work from the
    players who are coming — so this says who is out and why, and who has not
@@ -9377,8 +9410,7 @@ function playerRow(m, p, now, isOn) {
   const pl = playedSec(m, p.id, now), pd = plannedSec(m, p.id);
   const pct = pd > 0 ? clamp(pl / pd * 100, 0, 100) : 0;
   const owed = pd > 0 && pl < pd - 60 ? 1 : 0;
-  const over = pd > 0 && pl > pd + 60 ? 1 : 0;
-  const bar = pd > 0 ? `<div class="bar"><i style="width:${pct}%" data-bar="${p.id}" data-owed="${owed}" data-over="${over}"></i><u style="left:100%"></u></div>` : '';
+  const bar = pd > 0 ? `<div class="bar"><i style="width:${pct}%" data-bar="${p.id}" data-owed="${owed}"></i><u style="left:100%"></u></div>` : '';
   return `<button class="prow" type="button" data-act="tap" data-pid="${p.id}" data-on="${isOn ? 1 : 0}" data-picked="${ui.picked === p.id ? 1 : 0}">
     <span class="pnum">${esc(p.number ?? '')}</span>
     <span><span class="pname">${esc(p.name)}</span>${bar}<span class="psub">${sl ? esc(sl.label) + ' · ' : ''}${pd > 0 ? mins(pd) + ' min planned' : 'no plan set'}</span></span>
@@ -9667,11 +9699,18 @@ function rsvpBlock(it) {
       .sort((a, b) => order[a.r ? a.r.v : 'none'] - order[b.r ? b.r.v : 'none'] || (Number(a.p.number) || 999) - (Number(b.p.number) || 999));
     if (!rows.length) return '';
     const who = r => r && r.by && r.by !== (me && me.uid) ? ((acc().members || {})[r.by] || {}).name || '' : '';
-    return `<div class="rsvpbox"><p class="lbl">Who is coming — ${esc(countLine(c))}</p>
-      ${rows.map(({ p, r }) => `<div class="rsvprow">
+    /* The counts, then every child with her answer, and the chips for one
+       child only once the coach taps her name (UX-REVIEW-2.md, 7.2: three
+       chips a child was forty-two buttons for answers the families give
+       themselves). canRsvp() is checked again when she answers. */
+    const picked = pid => open && ui.rsvpPick === it.tid + '/' + key + '/' + pid;
+    const counts = `<div class="rsvpcounts"><span><b>${c.yes}</b>going</span><span><b>${c.no}</b>not going</span><span><b>${c.maybe}</b>maybe</span>${c.none ? `<span><b>${c.none}</b>to answer</span>` : ''}</div>`;
+    return `<div class="rsvpbox"><p class="lbl">Who is coming</p>${counts}
+      ${rows.map(({ p, r }) => `<${open ? 'button' : 'div'} class="rsvprow${open ? ' rsvpwho' : ''}"${open ? ` type="button" data-act="rsvpwho" data-tid="${esc(it.tid)}" data-k="${esc(key)}" data-pid="${esc(p.id)}" data-kind="${it.kind}" data-id="${esc(it.id)}" aria-expanded="${picked(p.id)}"` : ''}>
         <span><b>${esc(shirtOf(p))}</b> ${esc(p.name)}${r ? `<span class="rowsub">${esc(RSVP[r.v])}${who(r) ? ' · said by ' + esc(who(r)) : ''}${r.note ? ' · ' + esc(r.note) : ''}</span>` : '<span class="rowsub">Not answered</span>'}</span>
-        ${open ? rsvpChips(it, p, 'sheet') : ''}</div>`).join('')}
-      <p class="muted" style="margin-bottom:0">${open ? 'Parents answer for their own child from this calendar. Tap an answer to give one for a family who told you another way.' : 'Answers are closed once it is over or called off.'}</p></div>`;
+        ${open ? '<span class="rsvpgo" aria-hidden="true">›</span>' : ''}</${open ? 'button' : 'div'}>
+        ${picked(p.id) ? `<div class="rsvpfor"><span class="lbl" style="margin:0 0 4px">${esc(goingQ(p))}</span>${rsvpChips(it, p, 'sheet')}</div>` : ''}`).join('')}
+      <p class="muted" style="margin-bottom:0">${open ? 'Families answer from the calendar. Tap a name to give an answer for a family who told you another way.' : 'Answers are closed once it is over or called off.'}</p></div>`;
   }
   const kids = myKids(it.tid);
   if (kids.length) return `<div class="rsvpbox">${kids.map(p => {
@@ -10445,10 +10484,10 @@ function viewCalendar() {
     const aheadShown = calCut(ahead, calN('ahead')), pastShown = ui.calPast ? calCutBack(past, calN('past')) : [];
     // one list, so a day with a game this morning and practice tonight is one day
     const list = [...pastShown, ...aheadShown];
-    // a session she has only asked for is not somewhere to drive to yet
-    const next = calNext(items.filter(x => !x.club && x.kind !== 'avail' && (x.kind !== 'session' || x.firm) && !(x.kind === 'game' && x.status === 'live')));
-    body = `${next ? calNextCard(next, multi) : ''}
-    ${past.length ? `<button class="textbtn calearlier" data-act="calpast">${ui.calPast ? 'Hide earlier' : 'Earlier'} (${past.length})</button>` : ''}
+    /* No "next" card over the list since build 151: it said again what the
+       first rows under it say, and was the fifth thing before the first
+       entry (UX-REVIEW-2.md, 7.2). Home and Season lead with what is next. */
+    body = `${past.length ? `<button class="textbtn calearlier" data-act="calpast">${ui.calPast ? 'Hide earlier' : 'Earlier'} (${past.length})</button>` : ''}
     ${pastShown.length ? calMoreBtn('past', past.length - pastShown.length, 'earlier') : ''}
     ${list.length ? calAgenda(list, multi, { today: true }) : ''}
     ${ahead.length ? calMoreBtn('ahead', ahead.length - aheadShown.length, 'more')
@@ -10890,12 +10929,13 @@ function viewMinutes() {
       <h2>Minutes</h2><span class="muted">furthest behind first</span></div>
     <div class="plist">${rows.map(r => {
     const pct = r.pd > 0 ? clamp(r.pl / r.pd * 100, 0, 100) : 0;
-    const owed = r.pd > 0 && r.diff < -60 ? 1 : 0, over = r.pd > 0 && r.diff > 60 ? 1 : 0;
+    // short is coloured; over is not bad, so the bar is just full (UX-REVIEW-2.md, 7.2)
+    const owed = r.pd > 0 && r.diff < -60 ? 1 : 0;
     const bits = [r.g ? `${r.g} goal${r.g === 1 ? '' : 's'}` : '', r.a ? `${r.a} assist${r.a === 1 ? '' : 's'}` : '', r.sh ? `${r.sh} shot${r.sh === 1 ? '' : 's'}` : ''].filter(Boolean).join(' · ');
     return `<div class="prow">
       <span class="pnum">${esc(r.p.number ?? '')}</span>
       <span><span class="pname">${esc(shownName(t, r.p))}</span>
-        ${r.pd > 0 ? `<div class="bar"><i style="width:${pct}%" data-owed="${owed}" data-over="${over}"></i><u style="left:100%"></u></div>` : ''}
+        ${r.pd > 0 ? `<div class="bar"><i style="width:${pct}%" data-owed="${owed}"></i><u style="left:100%"></u></div>` : ''}
         <span class="psub">${r.pd > 0 ? `${mins(r.pd)} planned · ${r.diff < 0 ? mins(-r.diff) + ' short' : mins(r.diff) + ' over'}` : 'no plan set'}${bits ? ' · ' + bits : ''}</span>
         ${r.rs ? `<span class="psub">${esc(r.rs)}</span>` : ''}</span>
       <span class="pmins">${mins(r.pl)}<small> min</small></span></div>`;
@@ -17895,16 +17935,27 @@ function diffTag(pl, pd) {
   const diff = Math.round((pl - pd) / 60);
   return `<span class="diff ${diff < 0 ? 'owed' : 'over'}">${diff < 0 ? -diff + ' short' : diff > 0 ? diff + ' over' : 'on plan'}</span>`;
 }
-/* On Subs, orange only for a player behind the pace of the game: her minutes
-   against what the plan would have given her by now, five minutes or more
-   short. Before kick-off everyone is "80 short" and nothing is wrong, and at
-   half time most are "40 short" the same way; eleven orange rows said
-   nothing (UX-REVIEW.md, 3, *Subs*). Over, or on pace, is plain. */
+/* Behind the pace of the game: her minutes against what the plan would have
+   given her by now, five minutes or more short. Before kick-off everyone is
+   "80 short" and nothing is wrong, and at half time most are "40 short" the
+   same way; eleven orange rows said nothing (UX-REVIEW.md, 3, *Subs*).
+   Over, or on pace, is plain. */
+function paceGap(m, pl, pd, el) {
+  const len = matchMinutes(m) * 60 || 1;
+  return pl - pd * Math.min(el / len, 1);
+}
 function diffClass(m, pl, pd, el) {
   if (!(pd > 0) || !(el > 0)) return 'even';
-  const len = matchMinutes(m) * 60 || 1;
-  const pace = pd * Math.min(el / len, 1);
-  return pl - pace <= -300 ? 'owed' : pl - pd > 60 ? 'over' : 'even';
+  return paceGap(m, pl, pd, el) <= -300 ? 'owed' : pl - pd > 60 ? 'over' : 'even';
+}
+/* And of those, the three furthest behind: the rows Subs colours. A fourth
+   is still short, and still sorted to the top of the bench; she is just not
+   orange, because orange has to mean "look here" (UX-REVIEW-2.md, 7.2). */
+function mostBehind(m, roster, el, now, n = 3) {
+  return new Set(roster.map(p => ({ id: p.id, pl: playedSec(m, p.id, now), pd: plannedSec(m, p.id) }))
+    .filter(x => diffClass(m, x.pl, x.pd, el) === 'owed')
+    .sort((a, b) => paceGap(m, a.pl, a.pd, el) - paceGap(m, b.pl, b.pd, el))
+    .slice(0, n).map(x => x.id));
 }
 function tickLive(now = nowMs()) {
   for (const el of document.querySelectorAll('[data-live]')) {
@@ -22799,9 +22850,18 @@ function onAct(e) {
     } else {
       // the same answer again takes it back; a new answer keeps the note
       setRsvp(d.tid, d.k, d.pid, cur && cur.v === d.v ? null : d.v, cur && cur.v !== d.v ? cur.note : null);
+      ui.rsvpPick = null;   // the coach's chips for one child go once she has answered
     }
     if (d.from === 'sheet' || a === 'rsvpnote') sheetCalItem(d.kind, d.tid, d.id);
     render(); return;
+  }
+  /* The coach's list on an entry's sheet: a name opens the chips for that
+     child alone, the same name again closes them (UX-REVIEW-2.md, 7.2). */
+  if (a === 'rsvpwho') {
+    if (!canEditTeam(d.tid)) return;
+    const k = d.tid + '/' + d.k + '/' + d.pid;
+    ui.rsvpPick = ui.rsvpPick === k ? null : k;
+    sheetCalItem(d.kind, d.tid, d.id); return;
   }
 
   if (a === 'calsyncon' || a === 'calsyncnew') {

@@ -109,6 +109,11 @@ without.
   was drawn for the parent.
 
 ### 7.2 Still too much on one screen
+*All five done in build 151: the coach's Who is coming is the counts and a list, a name
+opening the chips for that child; no card over the calendar's list; Subs colours the three
+furthest behind the pace; Lineup mid-game with no shape leads with the pitch as it stands;
+over her target is a full bar, not a red one.*
+
 - **Calendar item sheet, for staff:** "Who is coming — 0 going · 14 to answer"
   draws three chips per child (42 buttons) for the coach to answer *for* each
   family, though the text says families answer from the calendar. For the coach,
@@ -163,9 +168,11 @@ without.
 4. ~~Team tab → My teams when there is more than one (6.3). A day.~~ Build 150.
 5. ~~Game tab picker when more than one team has a game (6.1, third bullet). A day.~~
    Build 150.
-6. Coach's Who-is-coming as a list with override, not chips (7.2). Half a day.
+6. ~~Coach's Who-is-coming as a list with override, not chips (7.2). Half a day.~~
+   Build 151, with the rest of 7.2.
 7. Drop the Next-practice card from the calendar; Sessions page's config chips
-   to Settings (7.2, 7.3). Half a day.
+   to Settings (7.2, 7.3). Half a day. The card is gone (build 151); the Sessions
+   chips (7.3) are still to do.
 
 ---
 
