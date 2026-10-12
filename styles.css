@@ -1127,8 +1127,12 @@ button.ev:active{filter:brightness(.92)}
 .sheet h3.evhead{display:flex;align-items:center;gap:10px}
 .evhead i{flex:none;width:14px;height:14px;border-radius:4px;background:var(--ev)}
 
-/* Squad: the team's set-up under the players */
+/* Settings: four sections, one line per item, tap in (build 142) */
 .sechead{margin:10px 0 -4px}
+.setrow{grid-template-columns:minmax(0,1fr) auto;width:100%;text-align:left}
+.setrow .psub{overflow-wrap:anywhere}
+.setgo{color:var(--ink-soft);font-size:20px;line-height:1}
+.mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px}
 
 /* New message: a searchable list, tap to choose one or several (build 107) */
 .pickrow{grid-template-columns:minmax(0,1fr) auto;padding:7px 11px}

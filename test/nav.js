@@ -22,9 +22,10 @@
      somewhere up to go (a tab's own screen has none); the club's name on it
      is the club switcher; the team's name is the team switcher when she can
      see more than one team.
-   - More holds what is not a tab, by role: People for coaches and admins,
-     Club settings for admins alone, My players for staff with a child,
-     Training sessions for whoever may book or run one.
+   - More holds what is not a tab, by role: one Settings for everyone (People
+     and the club's screens are in it since build 142, test/settings.js), My
+     players for staff with a child, Training sessions for whoever may book
+     or run one.
    - The avatar's sheet is the account alone. A locked device draws no title
      and no bar, and no child's name is ever in either. */
 
@@ -190,17 +191,20 @@ console.log('\n--- the title row ---');
   as('jaz', 'people');
   check('People: the screen, over the club, with a back arrow', titled('People') && /Lakeside SC/.test(title()) && /data-act="navback" aria-label="Back"/.test(title()), true);
   A.click({ act: 'navback' });
-  check('— back is Club home', A.ui.view, 'club');
-  check('— titled with the club alone, as the switcher', /class="tbtitle pick" data-act="clubswitch"/.test(title()) && titled('Club home'), true);
+  check('— back is Settings, whose Club section it is (build 142)', A.ui.view, 'setup');
+  check('— titled Settings, over the club', titled('Settings') && /data-act="clubswitch"/.test(title()), true);
   A.click({ act: 'navback' });
   check('— and back from there is the team', A.ui.view, 'season');
-  for (const v of ['admin', 'planner', 'sessions', 'regs', 'comply']) { as('boss', v); A.click({ act: 'navback' }); check(`${v}: back is Club home`, A.ui.view, 'club'); }
+  for (const v of ['admin', 'planner', 'regs', 'comply']) { as('boss', v); A.click({ act: 'navback' }); check(`${v}: back is Settings`, A.ui.view, 'setup'); }
+  as('boss', 'sessions'); A.click({ act: 'navback' }); check('sessions: back is Club home, where its card is', A.ui.view, 'club');
+  as('jaz', 'club');
+  check('Club home: titled with the club alone, as the switcher', /class="tbtitle pick" data-act="clubswitch"/.test(title()) && titled('Club home'), true);
   as('jaz'); A.ui.view = 'thread'; A.ui.thread = { tid: 't1', fam: 'mum' }; A.render();
   check('a conversation is titled Messages, with a back arrow', titled('Messages') && /data-act="navback"/.test(title()), true);
   A.click({ act: 'navback' });
   check('a conversation: back is Messages', A.ui.view + ' ' + A.ui.thread, 'inbox null');
   as('jaz', 'setup'); A.click({ act: 'navback' });
-  check('Your settings: back is the team', A.ui.view, 'season');
+  check('Settings: back is the team', A.ui.view, 'season');
   as('mum', 'club'); A.click({ act: 'navback' });
   check('a parent\'s Club home: back is My players', A.ui.view, 'mine');
   as('mum', 'season'); 
@@ -221,11 +225,13 @@ console.log('\n--- More, by role ---');
 {
   const has = (re, s) => re.test(s);
   as('boss'); let m = more();
-  check('an admin: Notifications, the club, Training sessions, People, Club settings, Your settings, Sign out',
-    ['data-v="notes"', 'data-v="club"', 'data-v="sessions"', 'data-v="people"', 'data-v="admin"', 'data-v="setup"', 'data-act="signout"'].every(x => m.includes(x)), true);
+  check('an admin: Notifications, the club, Training sessions, Settings, Sign out',
+    ['data-v="notes"', 'data-v="club"', 'data-v="sessions"', 'data-v="setup"', 'data-act="signout"'].every(x => m.includes(x)), true);
+  check('— one Settings, never People or Club details beside it (build 142)', /data-v="people"|data-v="admin"/.test(m) + ' ' + (m.match(/data-v="setup"/g) || []).length, 'false 1');
+  check('— which says it has the club in it', /<b>Settings<\/b>[\s\S]*?the club: people, registrations, fields/.test(m), true);
   check('— no My players: she has nobody', has(/data-v="mine"/, m), false);
   as('jaz'); m = more();
-  check('a coach: People, not Club settings', has(/data-v="people"/, m) + ' ' + has(/data-v="admin"/, m), 'true false');
+  check('a coach: Settings, which names People, and no Club details', has(/data-v="setup"/, m) + ' ' + has(/<b>Settings<\/b>[\s\S]*?people/, m) + ' ' + has(/data-v="admin"/, m), 'true true false');
   as('trk'); m = more();
   check('a tracker: neither, nor sessions', /data-v="people"|data-v="admin"|data-v="sessions"|data-v="mine"/.test(m), false);
   check('— the club, settings and sign out', ['data-v="club"', 'data-v="setup"', 'data-act="signout"'].every(x => m.includes(x)), true);

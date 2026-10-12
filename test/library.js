@@ -274,8 +274,8 @@ function writeOne(D, extra = {}) {
     check('and remove it', a.D.findDrill('club:d2'), null);
     await a.D.flush();
     check('one drill deleted at that depth', a.fbk.record.writes.some(w => w.path === CLUBD + '/d2' && w.value === null), true);
-    a.D.ui.view = 'admin'; a.D.render();
-    check('Admin has a way into the club\'s drills', /data-act="clubdrills"/.test(a.D.rendered()), true);
+    a.D.ui.view = 'setup'; a.D.render();
+    check('Admin has a way into the club\'s drills, on Settings', /data-act="clubdrills"/.test(a.D.rendered()), true);
   }
 
   await H.flush(20);

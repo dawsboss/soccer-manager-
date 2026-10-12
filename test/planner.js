@@ -61,8 +61,8 @@ function as(uid, c = club()) {
       check(who + ': a booking that gets through is refused', A.lastToast(), 'Planning is for club admins');
       check(who + ': and nothing is written', JSON.stringify(A.state), before);
     }
-    as('boss'); A.ui.view = 'admin'; A.render();
-    check('an admin has it under club settings', /data-act="planner"/.test(A.rendered()), true);
+    as('boss'); A.ui.view = 'setup'; A.render();
+    check('an admin has it on Settings, in the Club section', /data-act="planner"/.test(A.rendered()), true);
     A.click({ act: 'planner' });
     check('and it opens', A.ui.view, 'planner');
     check('at its own address', A.uiToHash(), '#/club/planner');

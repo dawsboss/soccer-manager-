@@ -57,8 +57,10 @@ async function device(uid, published) {
     fbk.deliver('rulesVersion', VERSION - 1); await D.flush();
     check('the admin is told on every screen', /database rules are out of date/.test(app()), true);
     check('with the version this app needs', new RegExp('needs version ' + VERSION).test(app()), true);
-    D.ui.view = 'admin'; D.render(); await D.flush();
-    check('Check readiness has a cross for it', /older than version \d+ — paste database\.rules\.json/.test(app()), true);
+    D.ui.view = 'setup'; D.render(); await D.flush();
+    check('Settings says Check readiness has something to fix', /data-act="readysheet"[\s\S]*?\d+ things? to fix/.test(app()), true);
+    D.click({ act: 'readysheet' });
+    check('Check readiness has a cross for it', /older than version \d+ — paste database\.rules\.json/.test(String(D.dom.node('#sheet').innerHTML)), true);
   }
   {
     // rules that predate the check: no write, and no read either
