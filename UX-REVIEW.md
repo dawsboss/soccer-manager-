@@ -86,6 +86,11 @@ her.
   ("Other teams at Sandbox FC"), not cards on her home.
 
 ### 1.3 The game is buried under four rows of chrome
+**Shipped in build 144** (*A game is its own mode*; pinned by `test/nav.js`): one
+slim header with the score, the clock and a ⋯ menu; the game bar gone; four screens as a
+segmented control, Pitch under Subs and Live under Stats for staff. What follows is the finding
+as written.
+
 On the Subs, Track and Pitch screens the clock starts ~230 px down: top bar, crumbs
 (Club › Team › Game), six sub-tabs (Live, Subs, Track, Stats, Pitch, Plan), then a
 game bar with six controls (‹‹, ‹, title, ›, Edit, Share). That's a quarter of the
@@ -129,7 +134,7 @@ share links) · *Club* (admins: details, people, programs, compliance, planner) 
 ## 2. Copy and vocabulary
 
 ### 2.1 Infrastructure leaks onto user screens
-**Shipped in build 144** (*Copy and vocabulary*; pinned by `test/copy.js`, which renders every
+**Shipped in build 145** (*Copy and vocabulary*; pinned by `test/copy.js`, which renders every
 screen as four kinds of account and fails on any word under *Never on screen* in `GLOSSARY.md`):
 Org admin → Club admin; the team id off the team rows; every refusal one sentence (*That didn't
 save.* then whether it is kept on this phone, and for an admin where to look, Check readiness, for
@@ -147,7 +152,7 @@ secretary. Put it under *Advanced*, and turn failures into a plain sentence
 ("That didn't save. It's kept on this phone and the club admin has been told.").
 
 ### 2.2 Paragraphs where labels belong
-**Shipped in build 144**: the detail behind a label is an ⓘ that opens a sheet (`INFO` in
+**Shipped in build 145**: the detail behind a label is an ⓘ that opens a sheet (`INFO` in
 `app.js`, by key, so a button carries a key and never text), on the calendar copy card, the
 admin's calendar-sync note and *What parents see*; the minutes line under My players is gone;
 *Add what is coming up* and *Add a one-off copy* → **Add to calendar**, *Plan this practice* →
@@ -167,7 +172,7 @@ are sentences ("Show what has already happened (9)", "Add what is coming up",
 "Plan this practice") should be verbs ("Past", "Subscribe", "Plan").
 
 ### 2.3 One word per concept
-**Shipped in build 144** (`GLOSSARY.md` picks the words; `test/copy.js` holds the screens to
+**Shipped in build 145** (`GLOSSARY.md` picks the words; `test/copy.js` holds the screens to
 it): the team's tabs are **Season · Players · Training** (Squad and Practice until then); a game's
 Plan tab is **Lineup**; 1-1s are **Sessions** everywhere (the screen, More, Club home, the
 calendar's tag and filter, the registration kind); **Club admin**; the sync badge says Synced,
@@ -190,7 +195,7 @@ library, **Plans** for plans, **Sessions** for 1‑1s. "Played 95 min in 2 games
 "95 min · 46 owed · 95 at Unassigned".
 
 ### 2.4 Banners
-**Shipped in build 144**: the role banner is a card the first time she opens the club on a
+**Shipped in build 145**: the role banner is a card the first time she opens the club on a
 phone, one per account, club and role, put away with *Got it* (`roleCard()`, `sm.role.v1`), and
 the same sentence in the account sheet and under Settings → You. The test-club bar and the sync
 and refusal warnings are not role banners and stay. What follows is the finding as written.
@@ -283,23 +288,23 @@ team link, or open the invite you were sent."
 ## 5. Suggested order of work
 
 **Quick wins (a day or two each, no data-model change):**
-1. Remove the permanent role banner; show it once, keep it in the account sheet. *Done, build 144.*
+1. Remove the permanent role banner; show it once, keep it in the account sheet. *Done, build 145.*
 2. RSVP chips on My players and on the Season next-up card. *Done, build 142.*
 3. Move developer text (account id, Firebase, rules, readiness, version) under an
-   *Advanced* section; reword the refusal toasts. *Done, build 143 and 144.*
+   *Advanced* section; reword the refusal toasts. *Done, build 143 and 145.*
 4. Fix the FAB overlapping the calendar list; pad the list.
-5. Rename: Org admin → Club admin; "this device" → "Not synced"; Squad → Players. *Done, build 144.*
+5. Rename: Org admin → Club admin; "this device" → "Not synced"; Squad → Players. *Done, build 145.*
 6. Parents' club home shows only their teams. *Done, build 142.*
 
 **Medium (a week each):**
 7. Split Season into Season / Stats / Players / Attendance.
 8. One Settings screen with sections; delete the duplicates. *Done, build 143.*
 9. Copy pass: labels not paragraphs, one word per concept (a glossary file in the
-   repo so tests can hold the UI to it). *Done, build 144: `GLOSSARY.md` and `test/copy.js`.*
+   repo so tests can hold the UI to it). *Done, build 145: `GLOSSARY.md` and `test/copy.js`.*
 
 **Large (the structural change everything else hangs off):**
 10. Role-based bottom tab bar, and crumbs → title + back. *Done, build 141.*
-11. Game mode: one header, pinned clock, four screens.
+11. Game mode: one header, pinned clock, four screens. *Done, build 144.*
 12. A parent's own Home and Season. *Done, build 142.*
 
 Items 10–12 are where "new people and parents get lost" is actually fixed; 1–9

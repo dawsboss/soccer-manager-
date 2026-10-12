@@ -1,4 +1,4 @@
-/* Copy and vocabulary (UX-REVIEW.md, 2; build 144).
+/* Copy and vocabulary (UX-REVIEW.md, 2; build 145).
 
    Four findings, one suite. 2.1: infrastructure leaked onto user screens
    ("Org admin", "Firebase config is not filled in — see README.md", "a lookup
@@ -90,7 +90,7 @@ const offending = html => banned.filter(w => wordRe(w).test(text(html)));
 console.log('--- no word from the code, the database or the docs on any screen ---');
 {
   const views = ['season', 'roster', 'practice', 'calendar', 'club', 'setup', 'people', 'admin', 'mine', 'sessions', 'inbox', 'notes', 'planner', 'regs', 'comply'];
-  const gviews = ['live', 'subs', 'track', 'stats', 'pitch', 'plan'];
+  const gviews = ['live', 'subs', 'track', 'stats', 'plan'];
   const bad = [];
   let drawn = 0;
   for (const uid of ['boss', 'jaz', 'trk', 'mum']) {
@@ -130,7 +130,7 @@ console.log('\n--- the labels, as GLOSSARY.md names them ---');
   const tab = v => (idx.match(new RegExp(`data-view="${v}"[^>]*>([^<]+)<`)) || [])[1];
   check('a team\'s tabs are Season · Players · Training', [tab('season'), tab('roster'), tab('practice')].join(' · '), 'Season · Players · Training');
   const gtab = v => (idx.match(new RegExp(`data-gview="${v}"[^>]*>([^<]+)<`)) || [])[1];
-  check('a game\'s screens end in Lineup, never Plan', [gtab('live'), gtab('subs'), gtab('track'), gtab('stats'), gtab('pitch'), gtab('plan')].join(' · '), 'Live · Subs · Track · Stats · Pitch · Lineup');
+  check('a game\'s screens end in Lineup, never Plan', [gtab('live'), gtab('subs'), gtab('track'), gtab('stats'), gtab('plan')].join(' · '), 'Live · Subs · Track · Stats · Lineup');
   as('jaz');
   check('the bar: Team · Calendar · Game · Messages · More for staff', A.navTabs().map(t => t.label).join(' · '), 'Team · Calendar · Game · Messages · More');
   as('mum', 'mine');

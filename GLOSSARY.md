@@ -1,6 +1,6 @@
 # Glossary — one word per concept
 
-The words the screens use, picked once (UX-REVIEW.md, 2.3; build 144). `test/copy.js`
+The words the screens use, picked once (UX-REVIEW.md, 2.3; build 145). `test/copy.js`
 reads this file: it renders every screen as an admin, a coach, a tracker and a parent and
 fails if any word under **Never on screen** appears in what a person sees, or if a label
 under **On screen** is drawn as anything else. Change a word here and in `app.js` together;
@@ -17,7 +17,7 @@ secretary already has.
 |---|---|---|
 | The bar at the bottom | **Team** · **Calendar** · **Game** · **Messages** · **More** (staff); **Home** · **Calendar** · **Messages** · **More** (a family) | Club, Season, Live |
 | A team's own tabs | **Season** · **Players** · **Training** | Squad, Roster, Practice (the tab) |
-| A game's screens | **Live** · **Subs** · **Track** · **Stats** · **Recap** · **Pitch** · **Lineup** | Plan (the game's) |
+| A game's screens | **Live** · **Subs** · **Track** · **Stats** · **Lineup** (**Recap** once it is over; the pitch is a look at Subs) | Plan (the game's), Pitch (as a tab) |
 | The people on a team | **players** | squad, roster |
 | A family's own screen | **My players** | Home (in prose), My kids |
 | Everything with a date | **Calendar** | Schedule, Club schedule, Club calendar |

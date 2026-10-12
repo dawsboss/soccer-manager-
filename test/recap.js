@@ -74,22 +74,23 @@ console.log('--- the count runs the way a season does ---');
 {
   setup();
   const t = A.state.teams.t1, ms = A.state.matches;
-  check('the latest game is 3 of 3', /gb-hint">3\/3</.test(A.gameBar(t, ms.g2)), true);
-  check('the one before it is 2 of 3', /gb-hint">2\/3</.test(A.gameBar(t, ms.g1)), true);
-  check('the first game played is 1 of 3', /gb-hint">1\/3</.test(A.gameBar(t, ms.g0)), true);
+  // on the game's ⋯ menu, where the game bar's count went (build 144)
+  check('the latest game is 3 of 3', /gb-hint">3\/3</.test(A.gameMenu(t, ms.g2)), true);
+  check('the one before it is 2 of 3', /gb-hint">2\/3</.test(A.gameMenu(t, ms.g1)), true);
+  check('the first game played is 1 of 3', /gb-hint">1\/3</.test(A.gameMenu(t, ms.g0)), true);
 }
 
 console.log('--- an Edit button, for whoever may edit ---');
 {
   setup({}, 'boss');
   const t = A.state.teams.t1;
-  check('an admin gets it on the game bar', /data-act="editmatch" data-id="g1"/.test(A.gameBar(t, A.state.matches.g1)), true);
+  check('an admin gets it on the game\'s menu', /data-act="editmatch" data-id="g1"/.test(A.gameMenu(t, A.state.matches.g1)), true);
   setup({}, 'jaz');
-  check('so does the team\'s coach', /data-act="editmatch"/.test(A.gameBar(t, A.state.matches.g1)), true);
+  check('so does the team\'s coach', /data-act="editmatch"/.test(A.gameMenu(t, A.state.matches.g1)), true);
   A.click({ act: 'editmatch', id: 'g1' });
   check('and it opens the game\'s details', /data-act="savematch"/.test(A.rendered('#sheet')), true);
   setup({}, 'mum');
-  check('a parent does not', /data-act="editmatch"/.test(A.gameBar(t, A.state.matches.g1)), false);
+  check('a parent does not', /data-act="editmatch"/.test(A.gameMenu(t, A.state.matches.g1)), false);
   const before = A.toasts.length;
   A.dom.sheetHtml = '';
   A.click({ act: 'editmatch', id: 'g1' });

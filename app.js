@@ -2,7 +2,7 @@
    Static app. Data lives in localStorage, and mirrors to Firebase Realtime
    Database when a config + workspace code are present. */
 
-const BUILD = '144';
+const BUILD = '145';
 const BUILT = '2026-10-12';
 /* The version of database.rules.json this app was written against. The rules
    carry the same number in rulesVersion's .write, which accepts that number
@@ -462,7 +462,7 @@ function keepStored(key, text) {
 }
 function saveLocal() { keepStored(dataKey(), JSON.stringify(state)); }
 function saveUi() {
-  try { localStorage.setItem(LS_UI, JSON.stringify({ view: ui.view, teamId: ui.teamId, matchId: ui.matchId, sortBy: ui.sortBy, plan: ui.plan, gameView: ui.gameView, follow: ui.follow || null, feedAll: !!ui.feedAll, practice: ui.practice || null, sess: ui.sess ? { tab: ui.sess.tab, scope: ui.sess.scope, month: ui.sess.month } : null, calView: ui.calView || null, calSel: ui.calSel || null, myCal: ui.myCal || null, calOff: ui.calOff || {}, calKOff: ui.calKOff || {}, calTree: !!ui.calTree, tabs: 2 })); } catch (e) { }
+  try { localStorage.setItem(LS_UI, JSON.stringify({ view: ui.view, teamId: ui.teamId, matchId: ui.matchId, sortBy: ui.sortBy, plan: ui.plan, gameView: ui.gameView, follow: ui.follow || null, feedAll: !!ui.feedAll, practice: ui.practice || null, sess: ui.sess ? { tab: ui.sess.tab, scope: ui.sess.scope, month: ui.sess.month } : null, calView: ui.calView || null, calSel: ui.calSel || null, myCal: ui.myCal || null, calOff: ui.calOff || {}, calKOff: ui.calKOff || {}, calTree: !!ui.calTree, subsLook: ui.subsLook || null, tabs: 2 })); } catch (e) { }
 }
 function loadLocal() {
   try {
@@ -1402,6 +1402,11 @@ function paintSync() {
   if (fb && r) { b.dataset.state = 'off'; b.textContent = `${r} not saved`; }
   else if (fb && n) { b.dataset.state = 'off'; b.textContent = `${n} to send`; }
   else { b.dataset.state = syncBase[0]; b.textContent = syncBase[1]; }
+  /* Its twin on the game header (build 144), where the brand row has stepped
+     aside: drawn only while there is something to say at the sideline (owed,
+     refused, or not connected), never "synced". */
+  const g = $('#gsync');
+  if (g) { g.hidden = !fb || (!r && !n && syncBase[0] === 'live'); g.dataset.state = b.dataset.state; g.textContent = b.textContent; }
 }
 /* Everything else this phone keeps until the club has it: plans, drills, her
    own library, training sessions. Each re-sends its own pending list when its screen opens;
@@ -1683,13 +1688,13 @@ function shownName(t, p) {
   return n ? '#' + n : 'A teammate';
 }
 /* A change the club turned down, in one plain sentence (UX-REVIEW.md, 2.1;
-   build 144). Every refusal used to name the mechanism ("the club's database
+   build 145). Every refusal used to name the mechanism ("the club's database
    rules need the rsvp block from README"), which means nothing to a parent
    and little to a club secretary. What she needs: that it did not save,
    whether it is still on this phone, and who can fix it. An admin is sent
    to Check readiness, which names the fix (the rules file) in the one place
    that may; everyone else is told to tell the admin. */
-/* Labels, not paragraphs (UX-REVIEW.md, 2.2; build 144). Nearly every card
+/* Labels, not paragraphs (UX-REVIEW.md, 2.2; build 145). Nearly every card
    carried a sentence or three of rationale, in the voice of the code comments.
    Where the detail matters it is behind an \u24d8 that opens a sheet, and the
    card keeps its label and its button. The words live here, by key, so a
@@ -7078,7 +7083,7 @@ function normView() {
   if (was === 'mycal') ui.calSel = 'mine';
   if (was === 'schedule') ui.calSel = 'club';
 }
-/* What a role lets her do (UX-REVIEW.md, 2.4; build 144). Until build 143
+/* What a role lets her do (UX-REVIEW.md, 2.4; build 145). Until build 143
    every restricted role carried a banner over every screen ("Signed in as
    Parent — you can read, and say whether your child is coming"), stacked
    with the test-club bar and whatever the sync had to say: a fixture nobody
@@ -7188,13 +7193,18 @@ function render() {
   if (closed) for (const v of ['subs', 'track', 'plan', 'pitch']) if (allowed.includes(v)) allowed.splice(allowed.indexOf(v), 1);
   if (!allowed.includes(ui.gameView)) ui.gameView = closed ? 'recap' : lim === 'tracker' ? 'track' : lim ? 'live' : 'subs';
   if (ui.gameView === 'recap' && inGame && match() && !recapOk) ui.gameView = 'stats';
+  /* The segmented control draws the screens, not the looks: Pitch lights Subs,
+     and Live lights Stats for whoever works the game (gameSegments). */
+  const segs = gameSegments(allowed, lim), seg = gameSegOf(ui.gameView, lim);
   for (const b of document.querySelectorAll('#subtabs button')) {
-    b.hidden = !allowed.includes(b.dataset.gview) || (b.dataset.gview === 'recap' && !recapOk);
+    b.hidden = !segs.includes(b.dataset.gview) || (b.dataset.gview === 'recap' && !recapOk);
     if (b.dataset.gview === 'live') b.textContent = closed ? 'Log' : 'Live';
-    b.setAttribute('aria-current', String(b.dataset.gview === ui.gameView));
+    b.setAttribute('aria-current', String(b.dataset.gview === seg));
   }
   const openM = inGame ? match() : null;
   const st = $('#subtabs'); if (st) st.hidden = shut || !(inGame && openM);
+  // game mode: the brand row steps aside for the game header (titleBar draws it)
+  if (document.body && document.body.dataset) document.body.dataset.mode = !shut && inGame && openM ? 'game' : '';
   // two stacked rows of tabs read as a mistake; show whichever one applies, and one tab alone (a parent's Season) is no row at all
   const tabsOn = [...document.querySelectorAll('#tabs button')].filter(b => !b.hidden).length;
   const tb = $('#tabs'); if (tb) tb.hidden = shut || !!(inGame && openM) || !teamLevel || !team() || tabsOn < 2;
@@ -7432,6 +7442,7 @@ const BACK_SVG = '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" st
    club's name is always the club switcher. */
 function titleBar() {
   const v = ui.view, scope = viewScope();
+  if (v === 'game' && team() && match()) return gameHeader(team(), match());
   const upAct = v === 'game' ? 'backgames' : v === 'formation' ? 'backsetup' : upView() ? 'navback' : null;
   const upLabel = v === 'game' ? (ui.gameFrom === 'calendar' ? 'Back to the calendar' : 'Back to the team')
     : v === 'formation' && ui.editFid === GAME_SHAPE ? 'Back to the game' : 'Back';
@@ -7652,31 +7663,65 @@ function shortDate(d) {
   return da + ' ' + ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][mo - 1];
 }
 
-function gameBar(t, m) {
-  const sc = score(m);
-  const n = teamMatches(t.id).length;
-  const list = teamMatches(t.id);
-  const i = list.findIndex(x => x.id === m.id);
-  /* The list runs newest first, but the count runs the way a season does: the
-     first game played is 1, so the latest is n of n and the number a game
-     carries never changes as more are added. */
-  const older = i > -1 ? list[i + 1] : null;
-  const newer = i > 0 ? list[i - 1] : null;
-  // Back is on the title row, above (build 141)
-  return `${older ? `<button class="stepbtn" data-act="pickgame2" data-id="${older.id}" aria-label="Older game" title="${esc(older.opponent || '')}">‹</button>` : ''}
-  <button class="gamebar" data-act="pickgame">
-    <span class="gb-name">${esc(m.opponent || 'Unnamed')}<small>${[m.date ? shortDate(m.date) : '', n > 1 && i > -1 ? `<span class="gb-hint">${n - i}/${n}</span>` : ''].filter(Boolean).join(' · ')}</small></span>
-    <span class="gb-score">${sc.us}–${sc.them}</span>
-  </button>
-  ${newer ? `<button class="stepbtn" data-act="pickgame2" data-id="${newer.id}" aria-label="Newer game" title="${esc(newer.opponent || '')}">›</button>` : ''}
-  ${canEditTeam(t.id) ? `<button class="sharebtn editbtn" data-act="editmatch" data-id="${m.id}" aria-label="Edit this game" title="Edit this game">
-    <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-      <path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg><span>Edit</span></button>` : ''}
-  <button class="sharebtn" data-act="sharesheet" aria-label="Share">
-    <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-      <circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/>
-      <path d="M8.6 13.5l6.8 4M15.4 6.5l-6.8 4"/></svg></button>`;
+/* Game mode (UX-REVIEW.md, 1.3; build 144). A game is its own mode: the brand
+   row steps aside and one slim header, pinned with the rest of the header,
+   carries Back, the opponent and the score, the clock (ticking, through
+   data-live), the sync badge while it has something to say, and a ⋯ menu for
+   what the game bar used to hold: the games either side, Edit and Share, none
+   of which is a sideline action. The game bar itself is gone from every game
+   screen, so the clock card is the first thing under the header. */
+const DOTS_SVG = '<svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="2.2"/><circle cx="12" cy="12" r="2.2"/><circle cx="19" cy="12" r="2.2"/></svg>';
+function gameHeader(t, m) {
+  const sc = score(m), st = gameStatus(m);
+  const upLabel = ui.gameFrom === 'calendar' ? 'Back to the calendar' : 'Back to the team';
+  // the clock while it is being played; before, when it is; after, full time
+  const when = st === 'live' ? `<span class="ghclock" data-live="clock" data-mid="${m.id}">${mmss(elapsedSec(m))}</span>`
+    : st === 'done' ? '<span class="ghclock ghft" title="Full time">FT</span>'
+      : `<span class="ghclock ghkick">${esc([m.date ? shortDate(m.date) : '', m.kickoff ? niceTime(m.kickoff) : ''].filter(Boolean).join(' · ') || 'Not played yet')}</span>`;
+  return `<button class="tbback" data-act="backgames" aria-label="${upLabel}" title="${upLabel}">${BACK_SVG}</button>
+    <button class="ghmain" data-act="pickgame" aria-label="Which game" title="Which game">
+      <span class="ghname">${esc(m.opponent || 'Game')}</span><span class="ghscore">${sc.us}–${sc.them}</span></button>
+    ${when}
+    <span class="sync ghsync" id="gsync" hidden></span>
+    <button class="tbback ghmore" data-act="gamemenu" aria-label="More for this game" title="More for this game">${DOTS_SVG}</button>`;
 }
+/* The ⋯ menu: the game's place in the season (the first game played is 1, so
+   the latest is n of n and a game's number never changes as more are added),
+   the games either side, Edit for the team's coaches and admins, and Share. */
+function gameMenu(t, m) {
+  const list = teamMatches(t.id), n = list.length;
+  const i = list.findIndex(x => x.id === m.id);
+  const older = i > -1 ? list[i + 1] : null, newer = i > 0 ? list[i - 1] : null;
+  const sc = score(m);
+  const row = (g, k) => g ? `<button class="opt spread" data-act="pickgame2" data-id="${g.id}"><span><b>${k}</b>
+      <span class="rowsub">${esc(g.opponent || 'Unnamed')}${g.date ? ' · ' + shortDate(g.date) : ''}</span></span>
+      <span class="pmins">${score(g).us}<small>–${score(g).them}</small></span></button>` : '';
+  return `<h3>${esc(m.opponent || 'Game')} <span class="muted">${sc.us}–${sc.them}</span></h3>
+    <p class="muted" style="margin-top:0">${[m.date ? shortDate(m.date) : '', n > 1 && i > -1 ? `game <span class="gb-hint">${n - i}/${n}</span> of the season` : ''].filter(Boolean).join(' · ') || 'No date yet'}</p>
+    ${row(older, 'Older game')}${row(newer, 'Newer game')}
+    ${n > 1 ? `<button class="opt" data-act="pickgame"><b>All games</b><span class="rowsub">${n} this season</span></button>` : ''}
+    ${canEditTeam(t.id) ? `<button class="opt" data-act="editmatch" data-id="${m.id}"><b>Edit this game</b><span class="rowsub">Opponent, date, kick-off, where, kit</span></button>` : ''}
+    <button class="opt" data-act="sharesheet"><b>Share</b><span class="rowsub">The read-only page for families: shirt numbers, never names</span></button>`;
+}
+function sheetGameMenu() { const t = team(), m = match(); if (!t || !m) return; openSheet(gameMenu(t, m)); }
+
+/* Four screens, not six (UX-REVIEW.md, 1.3): the pitch is a look at Subs, and
+   the play-by-play is a look at Stats for whoever works the game. A reader (a
+   family, a fan, a viewer) keeps Live as a screen of her own: it is what she
+   opens the game for. */
+const GAME_SEG_ORDER = ['live', 'subs', 'track', 'stats', 'plan', 'recap'];
+const gameReader = lim => readerRole(lim) || lim === 'viewer';
+const gameSegOf = (gv, lim = restricted()) => gv === 'pitch' ? 'subs' : gv === 'live' && !gameReader(lim) ? 'stats' : gv;
+const gameSegments = (allowed, lim = restricted()) => GAME_SEG_ORDER.filter(k => allowed.some(gv => gameSegOf(gv, lim) === k));
+/* A segment tapped: Subs opens whichever look she used last, the list or the pitch. */
+function openGameScreen(k) {
+  ui.gameView = k === 'subs' && ui.subsLook === 'pitch' ? 'pitch' : k;
+  ui.picked = null;
+}
+/* The two looks folded into one screen each, as a chip pair at the top. */
+const lookChips = (pairs, cur) => `<div class="chips looks">${pairs.map(([v, l]) => `<button class="chip" type="button" data-act="opengview" data-v="${v}" aria-pressed="${cur === v}">${l}</button>`).join('')}</div>`;
+const subsLooks = () => lookChips([['subs', 'List'], ['pitch', 'Pitch']], ui.gameView);
+const statsLooks = m => gameReader(restricted()) ? '' : lookChips([['stats', 'Stats'], ['live', m && m.ended ? 'Log' : 'Live feed']], ui.gameView);
 
 function sheetPickGame() {
   const t = team(), cur = ui.matchId;
@@ -7856,7 +7901,6 @@ function viewTrack() {
       <button class="btn quiet wide" data-act="trackerclean">Review by tracker</button></div>` : '';
 
   return `<div class="stack">
-    <div class="barrow">${gameBar(t, m)}</div>
     ${clockCard(m, now, !restricted())}
     ${subsCard(t, m, now)}
     ${scoreCard(t, m)}
@@ -7959,7 +8003,7 @@ function viewStats() {
 
   const recapLink = gameStatus(m) === 'done' ? `<button class="btn wide" data-act="opengview" data-v="recap">See the game recap — when, how often, what went well</button>` : '';
   return `<div class="stack">
-    <div class="barrow">${gameBar(t, m)}</div>
+    ${statsLooks(m)}
     ${headline}${recapLink}${halfTable}${shotsCard}${mapCard}${possCard}${evCard}${goalsCard}${minutesCard}
     ${restricted() ? '' : aiButton('game')}
   </div>`;
@@ -8119,8 +8163,7 @@ function viewRecap() {
   let m = match();
   if (!m || m.teamId !== t.id) { const l = teamMatches(t.id); m = l[0] || null; ui.matchId = m ? m.id : null; }
   if (!m) return `<div class="empty"><strong>No game yet</strong>Create a game first.</div>`;
-  const bar = `<div class="barrow">${gameBar(t, m)}</div>`;
-  if (gameStatus(m) !== 'done') return `<div class="stack">${bar}<div class="empty"><strong>The recap comes at full time</strong>Once the game is over, this tells it back: when it went well, how often things happened, and what to work on.</div></div>`;
+  if (gameStatus(m) !== 'done') return `<div class="stack"><div class="empty"><strong>The recap comes at full time</strong>Once the game is over, this tells it back: when it went well, how often things happened, and what to work on.</div></div>`;
 
   const r = recap(t, m), notes = recapNotes(t, m, r);
   const us = teamLabel(t), them = esc(m.opponent || 'Them');
@@ -8194,7 +8237,7 @@ function viewRecap() {
      is the way back to them when it was ended by mistake or a sub needs its
      time fixing. Coaches and admins only, as reopengame always was. */
   const reopen = m.ended && canEditTeam(t.id) && !restricted() ? `<p class="muted" style="text-align:center;margin:4px 0 0">Ended by mistake, or something to correct? <button class="linkbtn dark" data-act="reopengame">Reopen the game</button></p>` : '';
-  return `<div class="stack recap">${bar}${hero}${spells}${recapLinesCard(t, m, r)}${often}${notesCards}${halfCard}${stars}${season}${more}${reopen}</div>`;
+  return `<div class="stack recap">${hero}${spells}${recapLinesCard(t, m, r)}${often}${notesCards}${halfCard}${stars}${season}${more}${reopen}</div>`;
 }
 
 /* --- line charts: the recap's "how it built up" and the season's trends ---
@@ -8494,7 +8537,7 @@ function viewFeed() {
 
   // once the coach has ended it, following is over and the feed becomes the record
   return `<div class="stack">
-    <div class="barrow">${gameBar(t, m)}</div>
+    ${statsLooks(m)}
     ${head}${m.ended ? logCard(t, m) : follow + feed}
   </div>`;
 }
@@ -8647,8 +8690,8 @@ function viewSubs() {
     ${planBlocks(m).length ? `<button class="btn quiet wide" data-act="applyblock" data-start="${(planBlockAt(m, el) || planBlocks(m)[0]).start}" style="margin-bottom:10px">Use the planned lineup</button>` : ''}` : '';
 
   return `<div class="stack">
-    <div class="barrow">${gameBar(t, m)}</div>
     ${clock}
+    ${subsLooks()}
     ${subsCard(t, m, now)}
     ${scCard}
     ${planBar}
@@ -8780,8 +8823,8 @@ function viewMatch() {
   const outCount = outIds(t, m).length;
 
   return `<div class="stack">
-    <div class="barrow">${gameBar(t, m)}</div>
     ${clock}
+    ${subsLooks()}
     ${warn}
     <div class="split">
       <div class="stack">
@@ -9189,7 +9232,6 @@ function viewPlan() {
   }).join('') || '<p class="muted" style="margin:0">No players in the squad for this game yet.</p>';
 
   return `<div class="stack">
-    <div class="barrow">${gameBar(t, m)}</div>
     <div class="split">
       <div class="stack">
         ${gameDetailsCard(m)}
@@ -22216,7 +22258,8 @@ function onAct(e) {
     toast('Plan locked in');
     return;
   }
-  if (a === 'opengview') { ui.gameView = d.v; ui.picked = null; render(); return; }
+  if (a === 'opengview') { ui.gameView = d.v; ui.picked = null; if (d.v === 'subs' || d.v === 'pitch') ui.subsLook = d.v; render(); return; }
+  if (a === 'gamemenu') { sheetGameMenu(); return; }
   /* What to tell the bench names every player in the plan, so it is the coach's
      like the Plan tab is — checked here, not only by the button's absence. */
   if (a === 'bench' || a === 'benchall') {
@@ -22849,7 +22892,7 @@ $('#tabs').addEventListener('click', e => {
 });
 $('#subtabs').addEventListener('click', e => {
   const b = e.target.closest('button'); if (!b) return;
-  ui.gameView = b.dataset.gview; ui.picked = null; render();
+  openGameScreen(b.dataset.gview); render();
 });
 document.addEventListener('keydown', e => { if (e.key === 'Escape') closeSheet(); });
 /* Time boxes (m:ss) keep their colon. On a phone's number pad there is no colon

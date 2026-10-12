@@ -257,6 +257,59 @@ console.log('\n--- the account sheet, and the old menus ---');
   check('the title row is in the header, the bar after the page', page.indexOf('id="titlebar"') < page.indexOf('<main') && page.indexOf('id="tabbar"') > page.indexOf('</main>'), true);
 }
 
+console.log('\n--- game mode (UX-REVIEW.md, 1.3) ---');
+{
+  const mode = () => String((global.document.body.dataset || {}).mode || '');
+  const segs = (uid, extra) => { as(uid, 'game'); A.ui.matchId = 'g2'; if (extra) extra(); A.render(); return [A.ui.gameView, A.gameSegOf(A.ui.gameView)]; };
+  as('jaz', 'game'); A.ui.matchId = 'g2'; A.render();
+  check('a game is its own mode: the brand row steps aside', mode(), 'game');
+  check('one slim header: back, the opponent and the score', /data-act="backgames" aria-label="Back to the team"/.test(title()) && /class="ghname">Northgate<\/span><span class="ghscore">0–0</.test(title()), true);
+  check('— before kick-off, when it is', /class="ghclock ghkick">19 Sep · 9:30am</.test(title()), true);
+  check('— and the ⋯ menu', /data-act="gamemenu"/.test(title()), true);
+  check('no game bar on the screen any more', /barrow|data-act="sharesheet"|data-act="editmatch"/.test(A.rendered()), false);
+  A.state.matches.g2.periods = { 0: { half: 1, start: H.clock.t - 5 * MIN } }; A.render();
+  check('being played: the clock, ticking in place', /class="ghclock" data-live="clock" data-mid="g2">5:00</.test(title()), true);
+  A.state.matches.g2.ended = H.clock.t; A.state.matches.g2.currentHalf = 3; A.render();
+  check('over: full time', /class="ghclock ghft"/.test(title()), true);
+  as('jaz', 'season');
+  check('off the game, the brand row is back', mode(), '');
+  as(null, 'game'); A.ui.matchId = 'g2'; A.render();
+  check('a locked device is not in game mode', mode() + title(), '');
+
+  // the ⋯ menu: what the game bar held, by role
+  as('jaz', 'game'); A.ui.matchId = 'g2'; A.render();
+  A.click({ act: 'gamemenu' });
+  check('the menu: the games either side, all games, Edit and Share', /Older game[\s\S]*Riverside/.test(sheet()) && /data-act="pickgame"/.test(sheet()) && /data-act="editmatch" data-id="g2"/.test(sheet()) && /data-act="sharesheet"/.test(sheet()), true);
+  check('— and the game\'s number in the season (the called-off one counts)', /gb-hint">2\/3</.test(sheet()), true);
+  A.closeSheet();
+  as('trk', 'game'); A.ui.matchId = 'g2'; A.render(); A.click({ act: 'gamemenu' });
+  check('a tracker gets no Edit', /data-act="editmatch"/.test(sheet()) + ' ' + /data-act="sharesheet"/.test(sheet()), 'false true');
+  A.closeSheet();
+
+  // four screens, not six
+  const allowed = (uid) => { as(uid, 'game'); A.ui.matchId = 'g2'; A.render(); return A.gameSegments(['live', 'subs', 'track', 'stats', 'recap', 'pitch', 'plan'].filter(v => { A.ui.gameView = v; A.render(); return A.ui.gameView === v; })).join(' '); };
+  check('a coach: Subs · Track · Stats · Plan', allowed('jaz'), 'subs track stats plan');
+  check('a tracker: Track · Stats', allowed('trk'), 'track stats');
+  check('a helper: Stats · Plan', allowed('hel'), 'stats plan');
+  check('a parent: Live · Stats', allowed('mum'), 'live stats');
+  check('a club viewer: Live · Stats', allowed('vee'), 'live stats');
+  check('the pitch is a look at Subs', segs('jaz', () => { A.ui.gameView = 'pitch'; }).join(' '), 'pitch subs');
+  check('the play-by-play is a look at Stats for a coach', segs('jaz', () => { A.ui.gameView = 'live'; }).join(' '), 'live stats');
+  check('— and Live itself for a parent', segs('mum', () => { A.ui.gameView = 'live'; }).join(' '), 'live live');
+  as('jaz', 'game'); A.ui.matchId = 'g2'; A.ui.gameView = 'subs'; A.render();
+  check('Subs offers the list and the pitch', /data-act="opengview" data-v="subs" aria-pressed="true"/.test(A.rendered()) && /data-act="opengview" data-v="pitch" aria-pressed="false"/.test(A.rendered()), true);
+  A.click({ act: 'opengview', v: 'pitch' });
+  check('— the pitch, pressed', A.ui.gameView + ' ' + /data-v="pitch" aria-pressed="true"/.test(A.rendered()), 'pitch true');
+  A.ui.gameView = 'track'; A.render(); A.openGameScreen('subs'); A.render();
+  check('— and Subs remembers the look she used last', A.ui.gameView, 'pitch');
+  A.ui.gameView = 'stats'; A.render();
+  check('Stats offers the numbers and the feed', /data-v="stats" aria-pressed="true"/.test(A.rendered()) && /data-v="live" aria-pressed="false">Live feed</.test(A.rendered()), true);
+  A.state.matches.g2.ended = H.clock.t; A.state.matches.g2.currentHalf = 3; A.render();
+  check('— the log, once it is over', /data-v="live" aria-pressed="false">Log</.test(A.rendered()), true);
+  as('mum', 'game'); A.ui.matchId = 'g2'; A.ui.gameView = 'stats'; A.render();
+  check('a parent has Live as a screen, so no pair on Stats', /class="chips looks"/.test(A.rendered()), false);
+}
+
 console.log('\n--- no child\'s name in the chrome ---');
 {
   const names = new RegExp([ROSA, ELLA, MIA].join('|'));

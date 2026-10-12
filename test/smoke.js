@@ -105,7 +105,7 @@ try {
       const who=row[0], want=row[2];
       me={uid:row[1]}; ui.view='game'; ui.gameView=want; render();
       // the role card itself (shown once, put away with Got it) is pinned in test/copy.js
-      const html=rendered(), onGame=/class="barrow"/.test(html);
+      const html=rendered(), onGame=ui.view==='game';
       if (!onGame) roleFail++;
       console.log('  ' + who.padEnd(7) + ' opens a game -> '
         + (onGame ? 'the game screen' : 'THE GAMES LIST')
