@@ -231,10 +231,69 @@ No server needed.
 - A tryout is a program (above) with the kind `tryout`, and its sessions are
   club-wide calendar entries, as the planner already books.
 - Evaluators score by bib number, never by name, on a phone at the pitch,
-  offline like everything else: one record per evaluator per player at
-  `reg/{code}/evals/{progId}/{regId}/{uid}`, append-only like a goal.
+  offline like everything else: one record per evaluator per player,
+  each evaluator writing only her own, so two evaluators scoring the same
+  child at once never meet.
 - Admins see the scores side by side, make offers, and a family accepts or
   declines in the app. An accepted offer is a placement (above).
+
+**As designed, 2026-10-11, before the code** (build 138). Registration moved
+under `orgs/{code}` (AUTH.md, *Registration*), so tryouts do too: on `orgs/`
+each part already has its own readers, and a `reg/{code}` root would be a
+second way in.
+
+```
+orgs/{code}/programs/{progId}/evaluators/{uid}: true   // admins pick them from the club's staff
+orgs/{code}/regs/{progId}/{cid}/bib: 14                // admins give bibs; her family reads hers
+orgs/{code}/regs/{progId}/{cid}/offer: { team, by, at } // admins; st becomes 'offered'
+orgs/{code}/regs/{progId}/{cid}/ans: { v: 'yes' | 'no', by, at }   // her family, while offered
+orgs/{code}/tryBibs/{progId}/{bib}: { at, y?, g? }     // the bibs, with birth year and gender: no child
+orgs/{code}/evals/{progId}/{uid}/{bib}: {               // one evaluator's scores of one bib
+  s: { ball, game, move, att },                         // 1–5 each: on the ball, reads the game,
+                                                        // speed and movement, effort and attitude
+  note?, at
+}
+```
+
+- **The bib is the wall, and the database holds it.** An evaluator reads the
+  bibs (`tryBibs`) and her own scores, and never the registrations, which
+  only admins and the child's family read; so nothing on her phone ties a
+  bib to a child. A coach reads every child's record already (AUTH.md,
+  decision 1), so an evaluator who is a coach could know a name only by
+  being told which bib is whose. `tryBibs` carries birth year and gender so
+  she can score one age group at a time, and nothing else.
+- **Evaluations are keyed evaluator first** (`evals/{progId}/{uid}/{bib}`,
+  not `{regId}/{uid}` as first sketched): an evaluator's own scores are one
+  read, and the rule on her branch is one rule. She writes only under her
+  own uid, only while the program names her and only a bib that is in
+  `tryBibs`. She may change her own score while the tryout runs, as a coach
+  changes a plan; nobody else may, admins included, who may only delete.
+  Her phone sends them through the outbox, so a field with no signal loses
+  nothing.
+- **The criteria are fixed** for now (the four above, 1–5). A club asking
+  for its own is a later change to the program, not to the record.
+- **Admins** give bibs from the program's list (*Give bibs*: the next free
+  number to everyone registered who has none, withdrawn and declined left
+  out), pick the evaluators on the program, and see the scores side by side
+  (*Scores*: each bib's average per criterion and overall, how many scored
+  it, by birth year, highest first; tap for each evaluator's own scores and
+  notes).
+- **An offer** is an admin's: a team (the same age filter as placing) on the
+  registration, `st: 'offered'`, and, as accepting does, the child and her
+  family into the club so her family sees it on My players. Her family
+  answers *Accept* or *Decline* (`ans`, her own name, only while it is
+  `offered`). An accepted offer shows the admin *Place her on {team}*, the
+  placing above; a declined one is the admin's to decline or offer again.
+  Not by push or email yet: the family sees it on My players, as she sees
+  her registration's other changes.
+- **Deleting:** a family's *Delete* on her registration takes its bib with
+  it, which leaves its scores tied to nobody; an admin's phone opening the
+  program tidies a bib no registration holds (its `tryBibs` entry and every
+  evaluator's scores of it; SERVER.md). An account deleted takes her off
+  every program's evaluators (`functions/forget.js`); her scores are the
+  club's and stay.
+- **Nothing here reaches `public/`,** and an evaluator's screen never draws
+  a name, from the scores or from anywhere else.
 
 ### 6. Coach and volunteer compliance
 
@@ -252,6 +311,42 @@ checks: MSYSA does, through GotSport, for now. **A lapsed or soon-to-lapse
 record is flagged to the admins and to that coach, and nothing else** (owner,
 2026-10-06): she is not taken off a team or a sideline, the way time off is
 read and never obeyed.
+
+**As designed, 2026-10-11, before the code** (build 139). Under the club,
+like registration, rather than a `staff/{code}` root:
+
+```
+orgs/{code}/comply/{uid}: {
+  safe: { done, lapses },      // SafeSport: 'YYYY-MM-DD' each, either may be missing
+  conc: { done, lapses },      // concussion training
+  bg:   { done, lapses },      // background check
+  lic:  { done, lapses, name },// coaching licence, its name ("USSF D")
+  note?, by, at                // by: the admin who wrote it last
+}
+```
+
+- **Who reads:** admins the list; each person her own record by path.
+  Nobody else, a fellow coach included. **Who writes:** admins only; a
+  coach tells the club and an admin types it, as the club checks it in
+  GotSport. A record is written whole, one person at a time.
+- **Who is listed:** every coach, team helper and admin of the club (a
+  team's officials, in MSYSA's words). Trackers are not: they are parents
+  with a stopwatch, not officials.
+- **Lapsing:** an item lapses on its `lapses` date; *soon* is within 30 days.
+  A blank `lapses` never lapses; when an admin types a SafeSport or
+  background check date and no lapse, the lapse is a year on, as MSYSA asks
+  every year. Nothing recorded at all is *not recorded*, which counts as
+  something to flag for SafeSport, concussion and the background check (a
+  licence is not required, so it is never flagged).
+- **Flagged, nothing more:** the admins see a card on Club home while
+  anyone has an item lapsed, lapsing soon or not recorded, and Club settings
+  → *Coach compliance* lists everyone, the worst first. The person herself
+  sees a card on Club home naming her own items that need doing. No push,
+  no email, and nothing about her teams, her sideline or her sessions
+  changes.
+- **Deleting:** an account deleted takes her record with it
+  (`functions/forget.js`).
+- **Nothing here reaches `public/`,** a backup on a phone, or another coach.
 
 ### 7. Living alongside GotSport
 
@@ -614,12 +709,12 @@ ways, her choice when she picks the plan:
   the club's account, one charge per part, with an idempotency key per
   part, so a run that dies half-way never charges twice.
 - **Reminded each time:** no card kept; a few days before each date she is
-  told (push, and email once step 6 is built) and pays the part with **Pay**,
+  told (push and email, *What the family is emailed*) and pays the part with **Pay**,
   Checkout as for anything else. A part past its date unpaid is `failed`, as
   below.
 
 - **A part that fails** (a declined card, a card that needs her there) is
-  `failed`; the family is told (push, and email once step 6 is built) with
+  `failed`; the family is told (push and email, *What the family is emailed*) with
   **Pay now** on the bill, which is Checkout for that part; the server tries
   the saved card once more three days later; the admins see it on Money.
 - **Paying the rest early** is **Pay what's left** on the bill: the later
@@ -737,6 +832,40 @@ Club → **Money**, admins only; there is no treasurer role (owner,
 | Card on file (brand, last four) | Her own | No | No | Yes | Yes |
 | Connect or disconnect | No | No | No | Yes | Yes |
 
+### What the family is emailed
+
+Email was built before payments (builds 135 and 137, `functions/mail.js`
+and `functions/mailnews.js`), so each payment step adds its own emails to
+`mailnews.js` as it is built, from the club's address, to the family of
+the one child the bill is for (the bill's family, never an address a phone
+wrote), each said once (noted at `serverState/` before sending, a webhook
+event delivered twice included), and tested in `test/mailnews.js` with the
+step's own suite. Push says the same things where she turned it on; email
+is what reaches a family with no app open.
+
+- **A bill made** (step 2): what for, how much and **Pay**, linking to the
+  bill on My players. A registration's *accepted* email (built) says the
+  fee already; once bills exist it says the bill's amount, after any
+  discount, instead of the program's.
+- **Payment received:** not ours. Stripe emails its own receipt from the
+  club's account at Checkout (above), so the webhook sends none, and the
+  build-137 receipt for a fee the club marks paid by hand (`onFee`) must
+  skip a fee the webhook wrote, or she gets two.
+- **A refund** (step 2): the amount and what it was for, when the webhook
+  writes it; Stripe's own refund email may also come, from the club.
+- **A bill charged to the card on file** (step 4, *Pay new bills with this
+  card*): what, how much and the card's last four, at the charge.
+- **A plan's part due soon** (step 4, *reminded each time*): a few days
+  before its date, the amount and **Pay**, once per part.
+- **A part that failed** (step 4): what and **Pay now**, at the failure and
+  again at the retry three days later if that fails too; never the card's
+  decline reason.
+- **The year's statement** (step 5): on her asking, from My players, the
+  same records she sees; never sent unasked.
+- **Session fees and packages on the till** (step 6): the daily *sessions
+  to pay* email (built) becomes the bill's **Pay** link, and stops for a
+  place on a plan or a card that pays it by itself.
+
 ### Receipts, and deleting
 
 **One record, read by both** (owner, 2026-10-11). A payment is written once,
@@ -793,6 +922,8 @@ of account, the webhook's signature, a repeated event, each event's effect,
 `payDue`), and `test/till.js` (the phone: Pay drawn only where the club takes
 cards and only for her own, no amount in any ask, the return trip, Money for
 admins only, the CSV).
+
+Each step builds its own emails with it (*What the family is emailed*).
 
 1. **The till:** `functions/stripe.js`, connecting (`connect`, `dash`),
    `stripeHook` with `account.*` only, `till` and `stripe`, test mode for
@@ -907,9 +1038,17 @@ hold.
    *Designed 2026-10-11 in *Payments, designed before any code*, above,
    in six steps of its own; the owner decided its nine questions the same
    day. Needs the platform's Stripe account first.*
-6. **Email.**
-7. **Tryouts and evaluations.**
-8. **Coach compliance records.**
+6. **Email.** *Built in builds 135 and 137: invitations and team notices
+   (`functions/mail.js`), a training session's families, a registration's
+   news to its family, receipts for payments the club records, and the
+   sessions still to pay (`functions/mailnews.js`). The payment emails are
+   built with the payment steps that make their data (*Payments*, *What the
+   family is emailed*): a card payment's receipt is Stripe's own. Not
+   built, because nothing lapses: a waiver about to lapse.*
+7. **Tryouts and evaluations.** *Built 2026-10-12 (build 138, rules version
+   30), as designed under *Tryouts and evaluations* above.*
+8. **Coach compliance records.** *Built 2026-10-12 (build 139, rules
+   version 31), as designed under *Coach and volunteer compliance* above.*
 9. **GotSport import of rosters and schedules,** whenever the owner has real
    export files to map; it can move earlier if a club needs it to start.
 

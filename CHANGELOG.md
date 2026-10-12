@@ -8,6 +8,105 @@ before this point lives only in the git log.
 
 ---
 
+## Coach compliance — 2026-10-12 (build 139, rules version 31)
+
+GOTSPORT.md's step 8, designed there first: the club's record of what MSYSA
+asks of every official, in its order (SafeSport, concussion training, then
+the background check), and each coach's licence.
+
+- **The admins keep the records,** one person at a time
+  (`orgs/{code}/comply/{uid}`), from what GotSport says; each coach reads her
+  own and nobody else's, and a tracker or a family reads none.
+- **Lapsed, lapsing within thirty days, or not recorded** is flagged: a
+  card on the admins' Club home and the list under Club settings, worst
+  first, and a card on the coach's own Club home naming only her own.
+  A SafeSport course or background check typed with no lapse date lapses a
+  year on, as MSYSA asks every year.
+- **Flagged, and nothing more** (the owner, 2026-10-06): nobody is taken off
+  a team, a sideline or a session, the way time off is read and never
+  obeyed.
+- **An account deleted takes its record with it** (`functions/forget.js`).
+
+New suite `comply`, and more in `rules`, `forget` and `smoke`.
+
+---
+
+## Tryouts and evaluations — 2026-10-12 (build 138, rules version 30)
+
+GOTSPORT.md's step 7: the last thing a club ran tryouts in GotSport for.
+Designed first, in GOTSPORT.md (*Tryouts and evaluations*), as registration
+was in AUTH.md.
+
+- **Evaluators score by bib, and the database keeps it that way.** An admin
+  names a tryout's evaluators and gives out bibs; each bib is published with
+  a birth year and gender and nothing else (`tryBibs`), while what ties it
+  to a child stays on the registration, which only admins and her family
+  read. So an evaluator's phone cannot put a name to a bib, and her screen
+  never draws one.
+- **At the pitch, with no signal.** Each evaluator writes only her own
+  scores (`evals/{prog}/{uid}/{bib}`), four things 1–5 and a note, through
+  the outbox like a goal: two evaluators scoring the same child never meet,
+  and a dead field loses nothing.
+- **Side by side, then an offer.** Admins see every bib's averages,
+  highest first, and each evaluator's own on the child's sheet, then offer
+  her a place on a team. Her family accepts or declines on My players, in
+  her own name; an accepted offer is placed on that team as any accepted
+  child is.
+- **Nothing left tied to nobody.** A registration deleted takes its bib; the
+  next admin's phone to open the program takes that bib's scores too (a
+  server job for later, SERVER.md). An account deleted comes off every
+  evaluator list; her scores are the club's.
+
+New suite `tryouts`, and more in `rules` and `forget`.
+
+---
+
+## The club emails families by itself — 2026-10-11 (build 137, rules version 29)
+
+Build 135 gave the club its own mailer for invitations and team notices.
+GOTSPORT.md's step 6 asked for the emails a club sends without anyone
+pressing a button, so they now follow from what admins and coaches already
+do in the app (`functions/mailnews.js`):
+
+- **Registration news, to the child's family.** A draft a coach or admin
+  started ("please finish it"), received (with the program's fee),
+  accepted, waiting list, not this time, and *Ella is on U11 Storm* with the
+  coach's name. Before this a family heard nothing until she opened the app.
+  The family comes from the child's record, never from the address her
+  form carried; one who came in through the link and has no member entry is
+  written to at her account's address only once it is confirmed, because
+  these emails name her child.
+- **Receipts for what the club records.** A session's fee marked paid, or a
+  package sold, sends the family a receipt that says plainly it is the
+  club's own record (there are no card payments yet). Waived fees and
+  package places send nothing. A card receipt will come from the Stripe
+  webhook once payments are built.
+- **Sessions still to pay.** Once a day, each booked place with a price, no
+  fee marked and a session three to fourteen days past is mentioned to its
+  family once, all of hers in one email. Three days gives the coach time to
+  mark the cash she took; fourteen stops it chasing a season's history the
+  day it is switched on. On unless an admin turns it off on Fees.
+- **A session's families from the club.** *Email or share* on a training
+  session and *Remind the family* on Fees can be sent by the club (a new
+  `session` ask, the session's coach or an admin, families found from the
+  places), so no family's address is in anyone else's mail. That ask is the
+  rules change; with older rules the phone opens the coach's mail app as
+  before.
+
+Each email is said once (noted at `serverState/` before sending), sends
+nothing for a retired club or without a mailer, and names only the child
+it is about. A waiver "about to lapse" is not built: waivers here never
+lapse. New suite `mailnews`; `rules` covers the new ask.
+
+The payments design (merged the same day, no code yet) now lists the
+emails each payment step adds as it is built (GOTSPORT.md, *What the family
+is emailed*): a bill made, a refund, a card charged, a plan's part due or
+failed, and the sessions-to-pay email turning into the bill's Pay link. A
+card payment's receipt stays Stripe's own, and the hand-marked receipt
+built here must skip a fee the webhook wrote, so nobody gets two.
+
+---
+
 ## Every link, two ways; a child filled in through the team link — 2026-10-11 (build 136)
 
 The owner's notes: there were a lot of ways to invite by link, some invited

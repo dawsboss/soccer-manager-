@@ -360,11 +360,25 @@ does the bookkeeping, not that the phone works offline first.
   the server from the squad, never from the ask. Without a mailer set up
   every ask is answered `nomail` and the phone does what it did before.
   `test/mail.js`.
+- **Moved (build 137):** *Email or share* on a training session and *Remind
+  the family* on Fees (`sheetReach()`, `mailReach()`) ask the club to send
+  (`mailAsk`, `session`: the session's coach or an admin, the families found
+  from the places). And what the club emails by itself, with no phone asking
+  (`functions/mailnews.js`): a registration's news to its family (a draft to
+  finish, received, accepted, waiting, not this time, placed on a team), a
+  receipt whenever a fee is marked paid or a package sold, and once a day
+  each family's sessions still to pay (`org/feeMail` false turns that off).
+  `test/mailnews.js`.
 - **Still on the phone:** *Email the parents* in her own mail app with
   everybody in bcc (`mailto:`), beside the club's; every link's *Email it*
   from her own mail app where the club has no mailer, or the link names no
-  address (`linkButtons()`); *Email or share* for a training session
-  (`sheetReach()`).
+  address (`linkButtons()`); a session's families from her own mail app
+  where the club has no mailer (`sheetReach()`).
+- **With payments:** each payment step adds its emails to `mailnews.js`
+  as it is built (a bill made, a refund, a card charged, a plan's part due
+  or failed: GOTSPORT.md, *What the family is emailed*); a card payment's
+  receipt is Stripe's own, from the club's account.
+- **Not built:** a waiver about to lapse (waivers never lapse here).
 - **With a server:** saying who has read it.
 
 ---
@@ -420,6 +434,17 @@ does the bookkeeping, not that the phone works offline first.
   functions deployed.
 - **With a server:** already there; the phones' half goes once every club has
   the functions.
+
+### A tryout's bibs that nobody holds
+- **Now:** when a family deletes her registration for a tryout, or an admin
+  deletes the child, the bib goes with the registration, and the bib's
+  published entry and every evaluator's scores of it are left tied to
+  nobody. The next admin's phone to open that program takes them away
+  (`tidyBibs()`; GOTSPORT.md, *Tryouts and evaluations*), and only once it
+  has heard the club's registrations and bibs that session, so a phone
+  reloaded from an old copy never takes a bib that is somebody's.
+- **With a server:** a trigger on a registration deleted takes its bib's
+  entry and scores at once, with no admin's phone needed.
 
 ### Backups and imports
 - **Moved (build 135): a bulk import is applied by the server.** The phone

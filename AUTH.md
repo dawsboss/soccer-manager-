@@ -764,7 +764,11 @@ regOpen/{linkId}: {             // the program link: readable by id, like invite
   admin reads the program's list. Registering twice is changing one.
 - **How it stands (`st`):** `draft` (staff made it, waiting for the family),
   `sent` (the family's, waiting for an admin), `accepted`, `waitlist`,
-  `declined`, `placed` (on a team: `team` says which), `withdrawn`. Only an
+  `declined`, `offered` (a tryout's place on a team, `offer`, which her
+  family answers in `ans`; GOTSPORT.md, *Tryouts and evaluations*, build
+  138), `placed` (on a team: `team` says which), `withdrawn`. A tryout's
+  registration also carries the child's `bib`, an admin's to give and
+  never changed or dropped by her family. Only an
   admin moves it past `sent`; a family moves her own from `draft` to `sent`
   (confirming) and from anything to `withdrawn`.
 - **Waivers are the club's text, versioned, and agreed by a family only.** An
@@ -803,8 +807,8 @@ answers and the waivers agreed, and a dot where the family has not confirmed.
 - **Accept**, **Waiting list**, **Decline** write `st` (and, the first time a
   child of that family is accepted, `club: true` on the child, and the
   family's `access/index` entry: the child id). A family is told on her
-  registration, and by push until email is built (`functions/news.js`
-  gains the kind).
+  registration, and by email (`functions/mailnews.js`, build 137; there
+  is no push for it).
 - **Place on a team** (accepted children, a team picker narrowed by the
   program's birth years): the squad record (a new player id, her name as the
   child's first name, `child`, the guardians copied, a number left for the
