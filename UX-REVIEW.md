@@ -134,6 +134,15 @@ share links) · *Club* (admins: details, people, programs, compliance, planner) 
 ## 2. Copy and vocabulary
 
 ### 2.1 Infrastructure leaks onto user screens
+**Shipped in build 145** (*Copy and vocabulary*; pinned by `test/copy.js`, which renders every
+screen as four kinds of account and fails on any word under *Never on screen* in `GLOSSARY.md`):
+Org admin → Club admin; the team id off the team rows; every refusal one sentence (*That didn't
+save.* then whether it is kept on this phone, and for an admin where to look, Check readiness, for
+anyone else *tell the club admin*; `refusedMsg()` in `app.js`); the rules banner leads with the
+consequence and opens Check readiness, which is the one sheet that names the file to paste; Force
+refresh → Reload; the account id *for support*; the database row says *Not connected* with no
+product named; the sign-in errors name none either. What follows is the finding as written.
+
 Seen as an ordinary admin: "Your account id … Needed once, to be made app owner in
 the Firebase console", "Firebase config is not filled in — see README.md",
 "Check readiness … a lookup table the app hasn't written yet", "the club's
@@ -143,6 +152,14 @@ secretary. Put it under *Advanced*, and turn failures into a plain sentence
 ("That didn't save. It's kept on this phone and the club admin has been told.").
 
 ### 2.2 Paragraphs where labels belong
+**Shipped in build 145**: the detail behind a label is an ⓘ that opens a sheet (`INFO` in
+`app.js`, by key, so a button carries a key and never text), on the calendar copy card, the
+admin's calendar-sync note and *What parents see*; the minutes line under My players is gone;
+*Add what is coming up* and *Add a one-off copy* → **Add to calendar**, *Plan this practice* →
+**Plan**, *Open the plan* → **Open plan**, *Force refresh* → **Reload**, *Build the lookup
+tables* → **Set up what is missing**. The rest of the app's paragraphs are untouched: the suite
+holds the words, not the length. What follows is the finding as written.
+
 Nearly every card carries one to three sentences of rationale, the same voice as the
 code comments. Examples a parent sees: *"Everything still to come, as a file your
 phone's calendar opens. It is a copy: if a time changes later, add it again — each
@@ -155,6 +172,16 @@ are sentences ("Show what has already happened (9)", "Add what is coming up",
 "Plan this practice") should be verbs ("Past", "Subscribe", "Plan").
 
 ### 2.3 One word per concept
+**Shipped in build 145** (`GLOSSARY.md` picks the words; `test/copy.js` holds the screens to
+it): the team's tabs are **Season · Players · Training** (Squad and Practice until then); a game's
+Plan tab is **Lineup**; 1-1s are **Sessions** everywhere (the screen, More, Club home, the
+calendar's tag and filter, the registration kind); **Club admin**; the sync badge says Synced,
+Offline, Not synced or Sign in (never *local* or *this device*); on the coach's screens minutes
+are **short**, **over** or **on plan** (never *owed*), possession with **neither side** (never
+*scrappy*), the sort is **By minutes**, staging is **Several at once**, an empty spot reads
+*Spot · set*, and *at Unassigned* is bookkeeping nobody sees. What follows is the finding as
+written.
+
 Today: Squad / Players / Roster / My players. Practice (a tab of drills and plans) /
 practice (a calendar entry) / Training sessions (1‑1s) / Plan (a game plan) /
 Planner (the club planner) / plans. Org admin / Club admin / Club settings / Your
@@ -168,6 +195,11 @@ library, **Plans** for plans, **Sessions** for 1‑1s. "Played 95 min in 2 games
 "95 min · 46 owed · 95 at Unassigned".
 
 ### 2.4 Banners
+**Shipped in build 145**: the role banner is a card the first time she opens the club on a
+phone, one per account, club and role, put away with *Got it* (`roleCard()`, `sm.role.v1`), and
+the same sentence in the account sheet and under Settings → You. The test-club bar and the sync
+and refusal warnings are not role banners and stay. What follows is the finding as written.
+
 A parent sees up to three stacked banners above every screen: the test-club banner
 (fine, test only), *"Signed in as Parent — you can read, and say from the
 Calendar…"* (permanent), plus the rules / offline / refused-write banners when they
@@ -256,19 +288,19 @@ team link, or open the invite you were sent."
 ## 5. Suggested order of work
 
 **Quick wins (a day or two each, no data-model change):**
-1. Remove the permanent role banner; show it once, keep it in the account sheet.
+1. Remove the permanent role banner; show it once, keep it in the account sheet. *Done, build 145.*
 2. RSVP chips on My players and on the Season next-up card. *Done, build 142.*
 3. Move developer text (account id, Firebase, rules, readiness, version) under an
-   *Advanced* section; reword the refusal toasts.
+   *Advanced* section; reword the refusal toasts. *Done, build 143 and 145.*
 4. Fix the FAB overlapping the calendar list; pad the list.
-5. Rename: Org admin → Club admin; "this device" → "Not synced"; Squad → Players.
+5. Rename: Org admin → Club admin; "this device" → "Not synced"; Squad → Players. *Done, build 145.*
 6. Parents' club home shows only their teams. *Done, build 142.*
 
 **Medium (a week each):**
 7. Split Season into Season / Stats / Players / Attendance.
 8. One Settings screen with sections; delete the duplicates. *Done, build 143.*
 9. Copy pass: labels not paragraphs, one word per concept (a glossary file in the
-   repo so tests can hold the UI to it).
+   repo so tests can hold the UI to it). *Done, build 145: `GLOSSARY.md` and `test/copy.js`.*
 
 **Large (the structural change everything else hangs off):**
 10. Role-based bottom tab bar, and crumbs → title + back. *Done, build 141.*

@@ -111,7 +111,7 @@ const CLUB = {
     fbk.refuseWrites(p => p.includes('/access/teams/'));
     // which tree: the old one refuses a phone not in the club yet, as it does while the club is there
     A.click({ act: 'inviteaccept' }); await A.flush(); await A.flush(20);
-    check('it says so', /Could not open the invite/.test(A.rendered()) && /refused/.test(A.rendered()), true);
+    check('it says so', /Could not open the invite/.test(A.rendered()) && /expired or been withdrawn/.test(A.rendered()), true);
     check('the index is never attempted', paths(fbk).some(x => x.endsWith('/access/index/sam')), false);
     check('the device is not pointed at the club', A.storage.getItem('sm.workspace'), null);
     check('the invite is kept to try again', A.storage.getItem('sm.invite'), ID);

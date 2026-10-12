@@ -330,7 +330,7 @@ function writeOne(D, extra = {}) {
     check('a refused write stays on the phone', !!off, true);
     check('still pending', D.mine.dirty[off.id] !== undefined, true);
     D.ui.practice.shelf = 'mine'; D.render();
-    check('and the screen says why', /Saved on this phone only/.test(D.rendered()), true);
+    check('and the screen says why', /kept on this phone/.test(D.rendered()), true);
     fbk.deliver(LIB('jaz'), { r1: { id: 'r1', name: 'From another phone', at: 1, v: 1 } }); await D.flush();
     check('the database\'s answer does not wipe it', !!D.findDrill('mine:' + off.id), true);
     fbk.deliver(LIB('jaz'), {}); await D.flush();

@@ -100,7 +100,9 @@ const clubWrites = (fbk, from = 0) => fbk.record.writes.slice(from).map(w => w.p
     check('— with names, whatever the club\'s setting', A.namesNarrowed('t1') + ' ' + A.shownName(t, t.players.p2), 'false Rosa Lind');
     A.ui.view = 'game'; A.ui.matchId = 'g1'; A.ui.gameView = 'stats'; A.render();
     check('the game, with the scorer named', /Rosa Lind/.test(A.rendered()), true);
-    check('— and says she is a club viewer who reads, not changes', /as a club viewer/.test(A.rendered()), true);
+    check('— and says, once, that she is a club viewer who reads, not changes', /class="rolebar rolecard"[^>]*>[^<]*<span>You can read [^<]*: you are a club viewer\./.test(A.rendered()), true);
+    A.click({ act: 'roleok', v: 'viewer' });
+    check('— Got it puts the card away', /rolecard/.test(A.rendered()), false);
     for (const gv of ['live', 'recap']) { A.ui.gameView = gv; A.render(); }
     check('the game\'s own screens are Live, Stats and Recap', ['subs', 'track', 'plan', 'pitch'].includes(A.ui.gameView), false);
     A.ui.view = 'calendar'; A.render();

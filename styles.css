@@ -1236,3 +1236,14 @@ label.field .auth-inline span{display:inline}
 .auth-tick{color:var(--field);font-weight:700}
 /* Going / Not going under My players' next row (build 142) */
 .minersvp{padding:2px 2px 4px}
+
+/* What her role lets her do, once (UX-REVIEW.md, 2.4; build 145): the same green bar the
+   role banner used, with Got it on its own line, so it reads as a card to put away. */
+.rolecard{display:flex;flex-direction:column;gap:2px}
+.rolecard .linkbtn.dark{padding-top:6px;align-self:flex-start}
+/* The detail behind a label (UX-REVIEW.md, 2.2): a small circled i beside the label that opens a
+   sheet, in place of the paragraph that used to sit under it. */
+.infobtn{display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;margin-left:4px;
+  border-radius:50%;border:1.5px solid var(--ink-soft);background:none;color:var(--ink-soft);
+  font:600 11px/1 Georgia,serif;font-style:italic;vertical-align:middle;cursor:pointer;padding:0}
+.infobtn:hover{border-color:var(--field);color:var(--field)}

@@ -99,13 +99,13 @@ function newSession(v = {}) {
     check('a tap that reaches New session is refused', A.lastToast(), 'That is for coaches and admins');
     check('and no form opens', /New session/.test(sheet(A)), false);
     as('trk'); A.render();
-    check('a tracker is told it is not hers', /Training sessions are for coaches, admins and families/.test(A.rendered()), true);
+    check('a tracker is told it is not hers', /Sessions are for coaches, admins and families/.test(A.rendered()), true);
     A.click({ act: 'sessopen', id: 'x' });
-    check('and is refused at the handler', A.lastToast(), 'Training sessions are for coaches, admins and families');
+    check('and is refused at the handler', A.lastToast(), 'Sessions are for coaches, admins and families');
     as('trk'); A.ui.view = 'club'; A.render();
-    check('no card for it on the club page', /Training sessions/.test(A.rendered()), false);
+    check('no card for it on the club page', /<b>Sessions<\/b>/.test(A.rendered()), false);
     as('mum'); A.ui.view = 'club'; A.render();
-    check('a family has the card', /<b>Training sessions<\/b>/.test(A.rendered()), true);
+    check('a family has the card', /<b>Sessions<\/b>/.test(A.rendered()), true);
     as('jaz'); A.render();
     check('a coach has the five tabs', ['Sessions', 'Bookable times', 'Fields', 'Fees', 'Hours'].every(t => A.rendered().includes(`>${t}</button>`)), true);
     check('and a way to offer one', /data-act="sessnew"/.test(A.rendered()), true);
@@ -737,7 +737,7 @@ function newSession(v = {}) {
     D.click({ act: 'sessask', id: 's1', pid: 'p1' });
     await D.flush();
     check('an ask the database refuses is taken back off the screen', D.bookOf('s1', 'p1'), null);
-    check('and she is told why', /Not saved/.test(D.lastToast()), true);
+    check('and she is told why', /That didn.t save\. The club.s set-up is out of date/.test(D.lastToast()), true);
     check('nothing is left owed', Object.keys(D.sess.dirty).length, 0);
   }
 

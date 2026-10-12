@@ -168,7 +168,7 @@ function plan(extra = {}, X = A) {
 
     A.ui.view = 'calendar'; A.ui.teamId = 't2';
     A.click({ act: 'calitem', k: 'practice', tid: 't1', id: e.id });
-    check('the calendar entry opens its plan', /data-act="pracfromcal" data-tid="t1"[^>]*>Open the plan</.test(sheet(A)), true);
+    check('the calendar entry opens its plan', /data-act="pracfromcal" data-tid="t1"[^>]*>Open plan</.test(sheet(A)), true);
     A.click({ act: 'pracfromcal', tid: 't1', id: e.id });
     check('straight to it, on its own team', [A.ui.view, A.ui.teamId, A.ui.practice.open].join(' '), 'practice t1 ' + e.id);
 
@@ -495,7 +495,7 @@ function plan(extra = {}, X = A) {
     A.ui.view = 'calendar'; A.render();
     // the Games tab this card was on is the Calendar now, where it is the next thing on
     check('the coach sees the next practice on the Calendar', /Next practice/.test(A.rendered()) && /In 2 days · 5:30pm/.test(A.rendered()), true);
-    check('and can open its plan from there', /data-act="pracfromcal" data-tid="t1" data-id="[^"]+">Open the plan/.test(A.rendered()), true);
+    check('and can open its plan from there', /data-act="pracfromcal" data-tid="t1" data-id="[^"]+">Open plan/.test(A.rendered()), true);
 
     const evs = A.state.teams.t1.events;
     as('mum');
@@ -646,7 +646,7 @@ function plan(extra = {}, X = A) {
     await D.flush();
     check('a refused write leaves it on the phone', !!D.practiceById('t1', off), true);
     check('still pending', D.train.dirty['t1/' + off] !== undefined, true);
-    check('and the screen says why', /Saved on this phone only/.test(D.rendered()), true);
+    check('and the screen says why', /kept on this phone/.test(D.rendered()), true);
     fbk.deliver(TR + 'practices/t1', { ...remote, [id]: pw }); await D.flush();
     check('the club\'s answer does not wipe a pending plan', !!D.practiceById('t1', off), true);
     check('and keeps the ones it knows', !!D.practiceById('t1', id) && !!D.practiceById('t1', 'r1'), true);
@@ -763,7 +763,7 @@ function plan(extra = {}, X = A) {
     D.timers.run(); await D.flush();
     check('read again', fbk.totalReads(TR + 'practices/t1'), 2);
     fbk.refuse(TR + 'practices/t1'); await D.flush(); D.render();
-    check('a second refusal is the rules, and is said', /Saved on this phone only/.test(D.rendered()), true);
+    check('a second refusal is the rules, and is said', /kept on this phone/.test(D.rendered()), true);
     D.render(); D.render(); D.render();
     check('and redrawing does not ask again', fbk.totalReads(TR + 'practices/t1'), 2);
     fbk.signIn('boss'); await D.flush(); D.render();

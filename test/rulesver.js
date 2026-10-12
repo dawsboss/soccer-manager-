@@ -55,8 +55,8 @@ async function device(uid, published) {
   {
     const { D, fbk, app } = await device('boss', VERSION - 1);
     fbk.deliver('rulesVersion', VERSION - 1); await D.flush();
-    check('the admin is told on every screen', /database rules are out of date/.test(app()), true);
-    check('with the version this app needs', new RegExp('needs version ' + VERSION).test(app()), true);
+    check('the admin is told on every screen, in plain words', /set-up is out of date, so some changes will stay on this phone/.test(app()) && !/database rules|Firebase/.test(app()), true);
+    check('with Check readiness one tap away', /rolebar warn[\s\S]*?data-act="readysheet"/.test(app()), true);
     D.ui.view = 'setup'; D.render(); await D.flush();
     check('Settings says Check readiness has something to fix', /data-act="readysheet"[\s\S]*?\d+ things? to fix/.test(app()), true);
     D.click({ act: 'readysheet' });
@@ -66,14 +66,14 @@ async function device(uid, published) {
     // rules that predate the check: no write, and no read either
     const { D, fbk, app } = await device('boss', 0);
     fbk.refuse('rulesVersion'); await D.flush();
-    check('rules from before the check count as older', /database rules are out of date/.test(app()), true);
+    check('rules from before the check count as older', /set-up is out of date/.test(app()), true);
   }
 
   console.log('\n--- the app is older than the rules ---');
   {
     const { D, fbk, app } = await device('boss', VERSION + 1);
     fbk.deliver('rulesVersion', VERSION + 1); await D.flush();
-    check('the admin is told to reload instead', /older than the club's database rules/.test(app()), true);
+    check('the admin is told to reload instead', /older than the club's set-up/.test(app()), true);
     check('and not to paste anything', /database rules are out of date/.test(app()), false);
   }
 

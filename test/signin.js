@@ -85,7 +85,7 @@ const exists = (provider, email) => ({ code: 'auth/account-exists-with-different
     check('closing the popup is not an error to her', A.toasts.length, before);
     fbk.record.popupFail = { code: 'auth/operation-not-allowed' };
     A.click({ act: 'signin-oauth', v: 'microsoft' }); await A.flush();
-    check('a method not switched on in Firebase says so', /not switched on in Firebase/.test(A.lastToast()), true);
+    check('a method not switched on says so, naming no product', /not switched on for this app/.test(A.lastToast()) && !/Firebase/.test(A.lastToast()), true);
   }
 
   console.log('\n--- an email that already has an account ---');

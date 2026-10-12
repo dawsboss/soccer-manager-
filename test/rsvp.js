@@ -129,7 +129,7 @@ console.log('--- a refused write does not stick ---');
   check('shown at once', ans('p1') && ans('p1').v, 'yes');
   return H.flush().then(() => {
     check('taken back when the database says no', ans('p1'), null);
-    check('and she is told why', /rules need the rsvp block/.test(A.lastToast()), true);
+    check('and she is told why, in plain words', /That didn.t save\. The club.s set-up is out of date: tell the club admin\./.test(A.lastToast()), true);
     // taken back off the screen, it must not come back from the outbox on the next connect
     check('and out of the outbox, so it does not come back', Object.keys(A.pending.w).some(p => p.startsWith('rsvp/')), false);
     rest();
