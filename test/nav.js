@@ -5,41 +5,53 @@
    overlapping menus and four unlabelled icons up top. What replaced them, and
    what is easy to get quietly wrong, is pinned here:
 
-   - A bar at the bottom, chosen by what the person is here as. Staff (an
-     admin, a coach, a tracker, a helper, a club viewer, and anybody before
-     the club is somebody's) get Team · Calendar · Game · Messages · More; a
-     family (a parent, a player with her own sign-in, a fan) gets Home (My
-     players) · Calendar · Messages · More. Decided for the person, never per
-     team: a coach whose daughter plays in another age group is staff, and
-     finds My players under More. Messages is drawn only once the club has it.
-   - Which tab is lit for each screen, and where the screens that are not a
-     tab's own go: under More, or (a family's team screens) under where she
-     opened them from.
+   - One bar at the bottom for everyone (UX-REVIEW-2.md, 9.1; build 153):
+     Home · Calendar · Game · Messages · More, Messages drawn only once the
+     club has it. Until build 153 staff (an admin, a coach, a tracker, a
+     helper, a club viewer, and anybody before the club is somebody's) had
+     Team · Calendar · Game · Messages · More and a family (a parent, a
+     player with her own sign-in, a fan) Home (My players) · Calendar ·
+     Messages · More, so "tap Game" said by the coach meant nothing on a
+     parent's phone. What the person is here as still decides what Home
+     holds, never per team: a coach whose daughter plays in another age
+     group is staff, and finds My players under More; a parent's Home is her
+     child's team (test/home.js), and My players is no screen of hers.
+   - Which tab is lit for each screen: a team's screens Home, a game Game
+     wherever it was opened from, and the screens that are not a tab's own
+     More.
    - The Game tab opens the game being played, else the next, on the one team
-     she works on that has one, and each role lands where it works (a tracker
-     on Track); with none anywhere, the team on screen's last game; a team
-     with no games lands on Season, where Add a game is. When two or more of
-     her teams have a game on or coming it is a picker naming each team, the
-     live one first, and the red dot means being played on any team of hers
-     (UX-REVIEW-2.md, 6.1; build 150). Hers are the teams she coaches, tracks
-     or helps, every team for an admin or a club viewer: a coach reads the
-     whole club, and hers is still one team.
-   - The Team tab is her team, or, when she works on several, the list of
+     of hers that has one, and each role lands where it works (a coach on
+     Subs, a tracker on Track, a family on Live); with none anywhere, the
+     team on screen's last game; a team with no games lands on Season, where
+     Add a game is for whoever may. When two or more of her teams have a
+     game on or coming it is a picker naming each team, the live one first,
+     and the red dot means being played on any team of hers (UX-REVIEW-2.md,
+     6.1; build 150). Hers are the teams she coaches, tracks or helps, every
+     team for an admin or a club viewer, her children's for a family: a
+     coach reads the whole club, and hers is still one team.
+   - The Home tab is her team, or, when she works on several, the list of
      them (Club home), each team one level down with a back arrow up to the
      list; Club home then has no back arrow of its own, and is not offered
-     again under More (UX-REVIEW-2.md, 6.3; build 150).
+     again under More (UX-REVIEW-2.md, 6.3; build 150). A family with
+     children on several teams switches from the title, as a coach does.
    - The title row says whose a screen is, with a back arrow where there is
      somewhere up to go (a tab's own screen has none); the club's name on it
      is the club switcher; the team's name is the team switcher when she can
      see more than one team.
    - The game header names both teams, ours first, with the date and kick-off
-     under them, and no score before kick-off (UX-REVIEW-2.md, 6.1).
+     under them, and no score before kick-off (UX-REVIEW-2.md, 6.1). Its
+     screens are shared from the right (9.3; build 153): Stats and Live (Log
+     once it is over, Recap beside it) in the same place with the same word
+     for every role, Subs, Track and Lineup added before them for whoever
+     works the game; no Stats / Live feed toggle for anyone.
    - More holds what is not a tab, by role: one Settings for everyone (People
      and the club's screens are in it since build 143, test/settings.js), My
      players for staff with a child, Training sessions for whoever may book
-     or run one.
-   - The avatar's sheet is the account alone. A locked device draws no title
-     and no bar, and no child's name is ever in either. */
+     or run one, Clubs for whoever is in more than one and for staff, who may
+     start one (9.4; a family in one club is not offered Start a new club).
+   - The avatar's sheet is the account alone, and its Settings line is the
+     More sheet's (9.4). A locked device draws no title and no bar, and no
+     child's name is ever in either. */
 
 const fs = require('fs');
 const path = require('path');
@@ -98,49 +110,48 @@ const title = () => A.rendered('#titlebar');
 const titled = name => title().includes(`<span>${name}</span>`);
 const sheet = () => String(A.dom.node('#sheet').innerHTML || '');
 const more = () => { A.click({ act: 'tab', tab: 'more' }); return sheet(); };
-const STAFF = 'team calendar game messages more', FAMILY = 'home calendar messages more';
+const BAR = 'home calendar game messages more';
 
-console.log('--- the bar, by what she is here as ---');
+console.log('--- one bar, for everyone ---');
 {
-  for (const [who, uid] of [['an admin', 'boss'], ['a coach', 'jaz'], ['a tracker', 'trk'], ['a helper', 'hel'], ['a coach of another team, reading this one', 'other']]) {
+  for (const [who, uid] of [['an admin', 'boss'], ['a coach', 'jaz'], ['a tracker', 'trk'], ['a helper', 'hel'], ['a coach of another team, reading this one', 'other'], ['a parent', 'mum'], ['a fan', 'nan'], ['a player with her own sign-in', 'kid']]) {
     as(uid);
-    check(`${who}: ${STAFF}`, tabs(), STAFF);
+    check(`${who}: ${BAR}`, tabs(), BAR);
   }
   as('vee');
-  check('a club viewer: the staff bar, less Messages, which she has none of', tabs(), 'team calendar game more');
-  for (const [who, uid] of [['a parent', 'mum'], ['a fan', 'nan'], ['a player with her own sign-in', 'kid']]) {
-    as(uid, 'mine');
-    check(`${who}: ${FAMILY}`, tabs(), FAMILY);
-  }
+  check('a club viewer: the same bar, less Messages, which she has none of', tabs(), 'home calendar game more');
+  check('— the same ids, so one tap sequence is true on every phone', A.navTabs().map(t => t.id + ':' + t.label).join(' '), 'home:Home calendar:Calendar game:Game more:More');
   as('jaz');
-  check('a coach with a daughter in another age group is staff', tabs(), STAFF);
-  check('— and finds My players under More', /data-v="mine"/.test(more()), true);
+  check('a coach with a daughter in another age group is staff: My players under More', /data-v="mine"/.test(more()), true);
   A.closeSheet();
   as('mum', 'mine');
-  check('a parent is not offered My players twice', /data-v="mine"/.test(more()), false);
+  check('a parent is not offered My players: it is her Home', /data-v="mine"/.test(more()) + ' ' + A.ui.view, 'false season');
   A.closeSheet();
+  as('mum', 'season');
+  check('— and the Home tab is lit on it', lit(), 'home');
 
   as(null);
   check('signed out of a club with an admin: no bar at all', bar(), '');
   check('— and no title', title(), '');
   const s = club(); s.access.admins = {}; s.access.index = {};
   A.state = s; A.me = null; A.render();
-  check('a club nobody owns yet, nobody signed in: the staff bar, and no Messages to tap', tabs(), 'team calendar game more');
+  check('a club nobody owns yet, nobody signed in: the same bar, and no Messages to tap', tabs(), 'home calendar game more');
 }
 
 console.log('\n--- which tab is lit ---');
 {
   const litOn = (uid, view, extra) => { as(uid, view); if (extra) extra(); A.render(); return lit(); };
-  for (const [v, want] of [['season', 'team'], ['roster', 'team'], ['practice', 'team'], ['calendar', 'calendar'], ['inbox', 'messages'], ['club', 'more'], ['people', 'more'], ['setup', 'more'], ['notes', 'more'], ['mine', 'more'], ['sessions', 'more']])
+  for (const [v, want] of [['season', 'home'], ['roster', 'home'], ['practice', 'home'], ['calendar', 'calendar'], ['inbox', 'messages'], ['club', 'more'], ['people', 'more'], ['setup', 'more'], ['notes', 'more'], ['mine', 'more'], ['sessions', 'more']])
     check(`a coach on ${v}: ${want}`, litOn('jaz', v), want);
   check('a coach on a game: Game', litOn('jaz', 'game', () => { A.ui.matchId = 'g2'; }), 'game');
   check("a coach on a game's shape: Game", litOn('jaz', 'formation', () => { A.ui.matchId = 'g2'; A.ui.editFid = '@game'; }), 'game');
   check('a tracker on Track: Game', litOn('trk', 'game', () => { A.ui.matchId = 'g2'; A.ui.gameView = 'track'; }), 'game');
   for (const [v, want] of [['mine', 'home'], ['calendar', 'calendar'], ['inbox', 'messages'], ['club', 'more'], ['sessions', 'more'], ['setup', 'more'], ['season', 'home']])
     check(`a parent on ${v}: ${want}`, litOn('mum', v), want);
-  check('a parent on a game opened from the calendar: Calendar', litOn('mum', 'game', () => { A.ui.matchId = 'g2'; A.ui.gameFrom = 'calendar'; }), 'calendar');
-  check('— opened from My players: Home', litOn('mum', 'game', () => { A.ui.matchId = 'g2'; }), 'home');
-  check('an admin on Club home: Team, since it is her list of teams', litOn('boss', 'club'), 'team');
+  // a game lights Game for everyone, wherever it was opened from (until build 153 a family's lit where she came from)
+  check('a parent on a game opened from the calendar: Game', litOn('mum', 'game', () => { A.ui.matchId = 'g2'; A.ui.gameFrom = 'calendar'; }), 'game');
+  check('— opened from Home: Game', litOn('mum', 'game', () => { A.ui.matchId = 'g2'; }), 'game');
+  check('an admin on Club home: Home, since it is her list of teams', litOn('boss', 'club'), 'home');
   check('— a coach of one team reads the club, and her Club home is under More', litOn('jaz', 'club'), 'more');
   check('— a parent\'s too', litOn('mum', 'club'), 'more');
 }
@@ -148,10 +159,10 @@ console.log('\n--- which tab is lit ---');
 console.log('\n--- the tabs are places ---');
 {
   as('jaz', 'people');
-  A.click({ act: 'tab', tab: 'team' });
-  check('Team opens the team\'s Season', A.ui.view, 'season');
+  A.click({ act: 'tab', tab: 'home' });
+  check('Home opens the team\'s Season', A.ui.view, 'season');
   A.ui.view = 'roster'; A.render();
-  A.click({ act: 'tab', tab: 'team' });
+  A.click({ act: 'tab', tab: 'home' });
   check('— and leaves her on Squad when she is already on the team', A.ui.view, 'roster');
   A.click({ act: 'tab', tab: 'calendar' });
   check('Calendar', A.ui.view, 'calendar');
@@ -163,24 +174,29 @@ console.log('\n--- the tabs are places ---');
   check('— and an item on it goes there and closes it', A.ui.view + ' ' + A.dom.node('#sheet').hidden, 'setup true');
   as('mum', 'calendar');
   A.click({ act: 'tab', tab: 'home' });
-  check('a parent\'s Home is My players', A.ui.view, 'mine');
-  // several teams to work on: Team is the list of them, and a team is one level down
+  check('a parent\'s Home is her child\'s team', A.ui.view + ' ' + A.ui.teamId, 'season t1');
+  as('mum', 'club');
+  A.click({ act: 'tab', tab: 'home' });
+  check('— from Club home too', A.ui.view, 'season');
+  as('jaz', 'season', 't2');
+  check('a coach with a daughter on another team keeps the coach\'s Season there, and the team switcher', /data-v="teamstats"/.test(A.rendered()) && /data-act="teammenu"/.test(title()), true);
+  // several teams to work on: Home is the list of them, and a team is one level down
   as('boss', 'people');
-  A.click({ act: 'tab', tab: 'team' });
-  check('an admin\'s Team is Club home, the list of teams', A.ui.view, 'club');
+  A.click({ act: 'tab', tab: 'home' });
+  check('an admin\'s Home is Club home, the list of teams', A.ui.view, 'club');
   A.click({ act: 'goteam', id: 't2' });
   check('— a team opens from it', A.ui.view + ' ' + A.ui.teamId, 'season t2');
   A.ui.view = 'roster'; A.render();
-  A.click({ act: 'tab', tab: 'team' });
-  check('— and Team from inside a team goes back up to the list', A.ui.view, 'club');
+  A.click({ act: 'tab', tab: 'home' });
+  check('— and Home from inside a team goes back up to the list', A.ui.view, 'club');
   check('— which is up from Season, Players and Training', ['season', 'roster', 'practice'].map(v => A.upView(v)).join(' '), 'club club club');
   check('— and from nowhere itself', A.upView('club'), null);
   as('vee', 'season');
-  A.click({ act: 'tab', tab: 'team' });
+  A.click({ act: 'tab', tab: 'home' });
   check('a club viewer has no team of her own: the list', A.ui.view, 'club');
   as('other', 'season', 't1');
-  A.click({ act: 'tab', tab: 'team' });
-  check('a coach of one team, reading another: her Team tab is the team on screen, as before', A.ui.view + ' ' + A.ui.teamId, 'season t1');
+  A.click({ act: 'tab', tab: 'home' });
+  check('a coach of one team, reading another: her Home tab is the team on screen, as before', A.ui.view + ' ' + A.ui.teamId, 'season t1');
   check('— and her list is one team', A.navTeams().map(t => t.id).join(' '), 't2');
 }
 
@@ -206,8 +222,23 @@ console.log('\n--- the Game tab ---');
   as('other', 'season', 't2');
   A.click({ act: 'tab', tab: 'game' });
   check('a team with no games: Season, and told', A.ui.view + ' | ' + A.lastToast(), 'season | No games yet. Add one from Season.');
-  as('mum', 'mine');
-  check('a parent has no Game tab', /data-tab="game"/.test(bar()), false);
+  // Game for everyone (UX-REVIEW-2.md, 9.1; build 153): a family's is her child's team's game, and she lands on Live
+  as('mum', 'season'); A.click({ act: 'tab', tab: 'game' });
+  check('a parent\'s Game tab opens her child\'s team\'s next game, on Live', [A.ui.view, A.ui.teamId, A.ui.matchId, A.ui.gameView].join(' '), 'game t1 g2 live');
+  check('— and her list of teams is her child\'s', A.navTeams().map(t => t.id).join(' '), 't1');
+  as('nan', 'season'); A.click({ act: 'tab', tab: 'game' });
+  check('a fan the same', [A.ui.view, A.ui.matchId, A.ui.gameView].join(' '), 'game g2 live');
+  as('kid', 'season'); A.click({ act: 'tab', tab: 'game' });
+  check('a player with her own sign-in the same', [A.ui.view, A.ui.matchId, A.ui.gameView].join(' '), 'game g2 live');
+  as('mum', 'season'); A.state.matches.g2.periods = { 0: { half: 1, start: H.clock.t - 5 * MIN } }; A.render();
+  check('— the dot while it is being played', /data-tab="game"[^>]*>[\s\S]*?class="tablive"/.test(bar()), true);
+  as('mum', 'season'); A.state.teams.t2.players.k1.guardians = { mum: true };
+  A.state.matches.g4 = { id: 'g4', teamId: 't2', opponent: 'Lakeside', date: '2026-09-13', kickoff: '11:00', periodCount: 2, periodMinutes: 30, currentHalf: 1, periods: {}, stints: {} }; A.render();
+  A.click({ act: 'tab', tab: 'game' });
+  check('a parent with children on two teams is asked which, like a coach of two', /<h3>Which game\?<\/h3>/.test(sheet()) && A.navGames().map(g => g.id).join(' '), 'g4 g2');
+  A.closeSheet();
+  as('mum', 'season'); A.state.matches = {}; A.render(); A.click({ act: 'tab', tab: 'game' });
+  check('no games at all: Home, and told without Add, which is not hers', A.ui.view + ' | ' + A.lastToast(), 'season | No games yet.');
 
   // two teams with a game on or coming: the tab asks which (UX-REVIEW-2.md, 6.1)
   const g4 = { id: 'g4', teamId: 't2', opponent: 'Lakeside', date: '2026-09-13', kickoff: '11:00', periodCount: 2, periodMinutes: 30, currentHalf: 1, periods: {}, stints: {} };
@@ -279,10 +310,14 @@ console.log('\n--- the title row ---');
   as('jaz', 'setup'); A.click({ act: 'navback' });
   check('Settings: back is the team', A.ui.view, 'season');
   as('mum', 'club'); A.click({ act: 'navback' });
-  check('a parent\'s Club home: back is My players', A.ui.view, 'mine');
-  as('mum', 'season'); 
-  check('— and so is a team\'s Season she opened', /data-act="navback"/.test(title()) && (A.click({ act: 'navback' }), A.ui.view), 'mine');
-  for (const [uid, v] of [['jaz', 'calendar'], ['jaz', 'inbox'], ['mum', 'mine'], ['mum', 'calendar']]) { as(uid, v); check(`${uid} on ${v}: no back arrow`, /tbback/.test(title()), false); }
+  check('a parent\'s Club home: back is Home, her child\'s team', A.ui.view, 'season');
+  as('mum', 'season');
+  check('— which is the tab\'s own screen: the team over the club, no back arrow', /class="tbtitle"><span>G14 Flight<\/span>/.test(title()) && !/tbback/.test(title()), true);
+  as('mum', 'season'); A.state.teams.t2.players.k1.guardians = { mum: true }; A.render();
+  check('— a parent with children on two teams gets the team switcher a coach of two gets', /class="tbtitle pick" data-act="teammenu"/.test(title()), true);
+  as('mum', 'season'); A.state.teams = {}; A.state.matches = {}; A.render();
+  check('— and with no team here yet, Home', titled('Home'), true);
+  for (const [uid, v] of [['jaz', 'calendar'], ['jaz', 'inbox'], ['mum', 'season'], ['mum', 'calendar']]) { as(uid, v); check(`${uid} on ${v}: no back arrow`, /tbback/.test(title()), false); }
   as('jaz', 'game'); A.ui.matchId = 'g2'; A.render();
   check('a game: Back to the team', /data-act="backgames" aria-label="Back to the team"/.test(title()), true);
   check('— and the game bar no longer carries one', /data-act="backgames"/.test(A.rendered()), false);
@@ -314,6 +349,16 @@ console.log('\n--- More, by role ---');
   as('mum', 'mine'); m = more();
   check('a parent: no People, no Club settings', /data-v="people"|data-v="admin"/.test(m), false);
   check('— the club, Training sessions, settings, sign out', ['data-v="club"', 'data-v="sessions"', 'data-v="setup"', 'data-act="signout"'].every(x => m.includes(x)), true);
+  // staff and owners start clubs (UX-REVIEW-2.md, 9.4); a family sees Clubs only when she is in more than one
+  check('— and no Clubs row in her one club: a family does not start clubs', /<b>Clubs<\/b>/.test(m), false);
+  A.click({ act: 'clubswitch' });
+  check('— nor Start a new club in the switcher', /data-act="newclub"/.test(sheet()), false);
+  A.closeSheet();
+  as('jaz'); m = more();
+  check('a coach is offered Clubs, to start one', /<b>Clubs<\/b>[\s\S]*?Start a new club/.test(m), true);
+  A.click({ act: 'clubswitch' });
+  check('— and Start a new club in the switcher', /data-act="newclub"/.test(sheet()), true);
+  A.closeSheet();
   as('nan', 'mine'); m = more();
   check('a fan books no sessions', has(/data-v="sessions"/, m), false);
   as(null); const s = club(); s.access.admins = {}; s.access.index = {}; A.state = s; A.render(); m = more();
@@ -327,6 +372,19 @@ console.log('\n--- the account sheet, and the old menus ---');
   A.click({ act: 'accountsheet' });
   check('the avatar: settings, sign out, delete', /data-v="setup"/.test(sheet()) && /data-act="signout"/.test(sheet()) && /forgetsheet/.test(sheet()), true);
   check('— and nothing that is a tab or under More', /data-v="mycal"|data-v="club"|data-v="mine"/.test(sheet()), false);
+  A.closeSheet();
+  // the Settings line is the More sheet's, for everyone (UX-REVIEW-2.md, 9.4): it said "You, this team and the club" to a parent with no team or club rows
+  const setLine = h => (h.match(/data-v="setup"><b>Settings<\/b>\s*<span class="rowsub">([^<]*)<\/span>/) || [])[1];
+  for (const [who, uid] of [['a parent', 'mum'], ['a tracker', 'trk'], ['a coach', 'jaz'], ['an admin', 'boss']]) {
+    as(uid, 'season'); const fromMore = setLine(more()); A.closeSheet();
+    A.click({ act: 'accountsheet' }); const fromAcct = setLine(sheet()); A.closeSheet();
+    check(`${who}: the account sheet's Settings line is the More sheet's`, fromAcct + ' = ' + fromMore, fromMore + ' = ' + fromMore);
+  }
+  as('mum', 'season'); A.click({ act: 'accountsheet' });
+  check('— a parent\'s says You, nothing about a team or the club', setLine(sheet()), 'You');
+  A.closeSheet();
+  as('trk', 'season'); A.click({ act: 'accountsheet' });
+  check('— a tracker\'s too', setLine(sheet()), 'You');
   A.closeSheet();
   const page = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
   check('the top bar keeps the brand, the badge and the account', /id="syncBadge"/.test(page) && /id="avatar"/.test(page) && !/id="calBtn"|id="msgBtn"|id="bellBtn"|id="clubSwitch"|id="crumbs"/.test(page), true);
@@ -373,16 +431,21 @@ console.log('\n--- game mode (UX-REVIEW.md, 1.3) ---');
   check('a tracker gets no Edit', /data-act="editmatch"/.test(sheet()) + ' ' + /data-act="sharesheet"/.test(sheet()), 'false true');
   A.closeSheet();
 
-  // four screens, not six
+  // the screens, shared from the right (UX-REVIEW-2.md, 9.3; build 153): … · Stats · Live for everyone, Recap once it is over
   const allowed = (uid) => { as(uid, 'game'); A.ui.matchId = 'g2'; A.render(); return A.gameSegments(['live', 'subs', 'track', 'stats', 'recap', 'pitch', 'plan'].filter(v => { A.ui.gameView = v; A.render(); return A.ui.gameView === v; })).join(' '); };
-  check('a coach: Subs · Track · Stats · Plan', allowed('jaz'), 'subs track stats plan');
-  check('a tracker: Track · Stats', allowed('trk'), 'track stats');
-  check('a helper: Stats · Plan', allowed('hel'), 'stats plan');
-  check('a parent: Live · Stats', allowed('mum'), 'live stats');
-  check('a club viewer: Live · Stats', allowed('vee'), 'live stats');
+  check('a coach: Subs · Track · Lineup · Stats · Live', allowed('jaz'), 'subs track plan stats live');
+  check('a tracker: Track · Stats · Live', allowed('trk'), 'track stats live');
+  check('a helper: Lineup · Stats · Live', allowed('hel'), 'plan stats live');
+  check('a parent: Stats · Live', allowed('mum'), 'stats live');
+  check('a club viewer: Stats · Live', allowed('vee'), 'stats live');
   check('the pitch is a look at Subs', segs('jaz', () => { A.ui.gameView = 'pitch'; }).join(' '), 'pitch subs');
-  check('the play-by-play is a look at Stats for a coach', segs('jaz', () => { A.ui.gameView = 'live'; }).join(' '), 'live stats');
-  check('— and Live itself for a parent', segs('mum', () => { A.ui.gameView = 'live'; }).join(' '), 'live live');
+  check('Live is a screen of its own for a coach, as for a parent', segs('jaz', () => { A.ui.gameView = 'live'; }).join(' ') + ' | ' + segs('mum', () => { A.ui.gameView = 'live'; }).join(' '), 'live live | live live');
+  const page = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
+  check('— in that order on the page', [...page.matchAll(/data-gview="(\w+)"/g)].map(m => m[1]).join(' '), 'subs track plan stats live recap');
+  as('jaz', 'game'); A.ui.matchId = 'g2'; A.ui.gameView = 'subs'; A.state.matches.g2.ended = H.clock.t; A.state.matches.g2.currentHalf = 3; A.render();
+  check('over: Stats · Log · Recap for a coach', A.gameSegments(['live', 'stats', 'recap']).join(' ') + ' ' + A.ui.gameView, 'stats live recap recap');
+  as('mum', 'game'); A.ui.matchId = 'g2'; A.ui.gameView = 'stats'; A.state.matches.g2.ended = H.clock.t; A.state.matches.g2.currentHalf = 3; A.render();
+  check('— and for a parent', A.gameSegments(['live', 'stats', 'recap']).join(' '), 'stats live recap');
   as('jaz', 'game'); A.ui.matchId = 'g2'; A.ui.gameView = 'subs'; A.render();
   check('Subs offers the list and the pitch', /data-act="opengview" data-v="subs" aria-pressed="true"/.test(A.rendered()) && /data-act="opengview" data-v="pitch" aria-pressed="false"/.test(A.rendered()), true);
   A.click({ act: 'opengview', v: 'pitch' });
@@ -390,11 +453,13 @@ console.log('\n--- game mode (UX-REVIEW.md, 1.3) ---');
   A.ui.gameView = 'track'; A.render(); A.openGameScreen('subs'); A.render();
   check('— and Subs remembers the look she used last', A.ui.gameView, 'pitch');
   A.ui.gameView = 'stats'; A.render();
-  check('Stats offers the numbers and the feed', /data-v="stats" aria-pressed="true"/.test(A.rendered()) && /data-v="live" aria-pressed="false">Live feed</.test(A.rendered()), true);
+  check('Stats offers no Stats / Live feed pair any more: Live is a screen', /class="chips looks"|Live feed/.test(A.rendered()), false);
+  A.ui.gameView = 'live'; A.render();
+  check('— the play-by-play on Live, for a coach', /What's happened/.test(A.rendered()), true);
   A.state.matches.g2.ended = H.clock.t; A.state.matches.g2.currentHalf = 3; A.render();
-  check('— the log, once it is over', /data-v="live" aria-pressed="false">Log</.test(A.rendered()), true);
+  check('— the log, once it is over', /<h2[^>]*>Match log<\/h2>/.test(A.rendered()), true);
   as('mum', 'game'); A.ui.matchId = 'g2'; A.ui.gameView = 'stats'; A.render();
-  check('a parent has Live as a screen, so no pair on Stats', /class="chips looks"/.test(A.rendered()), false);
+  check('a parent: no pair on Stats either', /class="chips looks"/.test(A.rendered()), false);
 }
 
 console.log('\n--- no child\'s name in the chrome ---');

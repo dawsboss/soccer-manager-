@@ -39,6 +39,7 @@ const SUITES = [
   ['copy', 'copy and vocabulary: every screen held to GLOSSARY.md, the role card once, refusals in one sentence, labels not paragraphs'],
   ['visual', 'the visual system: type no smaller than its floor, grey text readable, a chevron on what a tap opens, called off in grey, the + clear of the list'],
   ['home', 'a family\'s own Home and Season: Going on the next thing, her child\'s minutes, and landing there'],
+  ['same', 'the same app for everyone (UX-REVIEW-2.md, 9): the coach\'s tap sequence walked on every role, one bar, one next-up card, the game\'s screens shared from the right'],
   ['screens', 'each screen on its own (UX-REVIEW.md, 3): a short Season with Stats, Minutes and Attendance behind it, and the fixes to Club home, Players, the Calendar, Subs, Lineup, Sessions, People and the lock screen'],
   ['sync', 'auth, the workspace read, and its races'],
   ['invites', 'joining a club by invite, on both sides'],

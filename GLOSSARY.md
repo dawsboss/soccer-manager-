@@ -15,13 +15,13 @@ secretary already has.
 
 | Concept | Word | Not |
 |---|---|---|
-| The bar at the bottom | **Team** · **Calendar** · **Game** · **Messages** · **More** (staff); **Home** · **Calendar** · **Messages** · **More** (a family) | Club, Season, Live |
+| The bar at the bottom (one for everyone since build 153) | **Home** · **Calendar** · **Game** · **Messages** · **More** | Team (the tab), Club, Season, Live |
 | A team's own tabs | **Season** · **Players** · **Training** | Squad, Roster, Practice (the tab) |
 | Season's own screens (build 146) | **Stats** · **Minutes** · **Attendance** | Players (the minutes table; Players is the tab), Register |
 | A game's lineup card | **Lineup** | Snapshots (a snapshot is one picture of it, in prose only) |
-| A game's screens | **Live** · **Subs** · **Track** · **Stats** · **Lineup** (**Recap** once it is over; the pitch is a look at Subs) | Plan (the game's), Pitch (as a tab) |
+| A game's screens | **Subs** · **Track** · **Lineup** · **Stats** · **Live**, in that order, shared from the right (**Log** is Live once the game is over, **Recap** beside it; the pitch is a look at Subs) | Plan (the game's), Pitch (as a tab), Live feed, Match log (as a tab) |
 | The people on a team | **players** | squad, roster |
-| A family's own screen | **My players** | Home (in prose), My kids |
+| A family's own screen | **Home** (her child's team, her child on top; since build 153) | My players (a family's; it is staff's, under More), My kids |
 | Everything with a date | **Calendar** | Schedule, Club schedule, Club calendar |
 | A team's training on the calendar | **practice** | session, training |
 | A 1-1 or small group that belongs to no team | **session** (**Sessions**, the screen) | Training sessions, 1-1s (alone) |

@@ -130,7 +130,7 @@ console.log('--- a parent, for her own child ---');
   check('nor something called off', /rsvpchips/.test(sheet()), false);
 
   A.ui.view = 'mine';
-  check('My players: the answer beside what is next', /Next — Practice[\s\S]*?Going/.test(html()), true);
+  check('Home: the answer beside what is next', /Next up<\/span>[\s\S]*?<span class="tag practice">[\s\S]*?>Going</.test(html()), true);
 }
 
 console.log('--- a refused write does not stick ---');

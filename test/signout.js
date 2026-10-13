@@ -121,7 +121,7 @@ check('the squad renders', app().includes(CHILD) || A.ui.view !== 'roster', true
 show('roster');
 check('the roster shows the players', app().includes(CHILD), true);
 check('the title row is back', crumbs().includes('Soccer by Rachel'), true);
-check('and so is the tab bar', /data-tab="team"/.test(tabbar()), true);
+check('and so is the tab bar', /data-tab="home"/.test(tabbar()), true);
 
 console.log('\n--- and signs out ---');
 A.me = null;

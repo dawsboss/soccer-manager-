@@ -500,7 +500,7 @@ function plan(extra = {}, X = A) {
     A.click({ act: 'calitem', k: 'practice', tid: 't1', id: pr.id });
     check('and can open its plan from the entry', /data-act="pracfromcal" data-tid="t1" data-id="[^"]+"[^>]*>Open plan/.test(String(A.dom.node('#sheet').innerHTML || '')), true);
     A.ui.view = 'season'; A.render();
-    check('Season leads with it as the next practice', /Next practice<\/span>\s*<b>In 2 days · 5:30–6:30pm<\/b>/.test(A.rendered()), true);
+    check('Season leads with it as the next practice', /Next up<\/span>[\s\S]*?<p style="margin:4px 0 0"><b>In 2 days · 5:30pm<\/b>/.test(A.rendered()), true);
 
     const evs = A.state.teams.t1.events;
     as('mum');
@@ -510,9 +510,9 @@ function plan(extra = {}, X = A) {
     check('but nothing to open', /data-act="prac(open|fromcal)"/.test(A.rendered()), false);
     as('jaz'); A.state.teams.t1.events = evs; A.ui.view = 'season';
     evs[pr.id].called = 'cancelled'; A.render();
-    check('one called off is not "next"', /Next practice/.test(A.rendered()), false);
+    check('one called off is not "next"', /Next up|Next practice/.test(A.rendered()), false);
     evs[pr.id].called = null; evs[pr.id].date = '2026-09-01'; A.render();
-    check('nor one already past', /Next practice/.test(A.rendered()), false);
+    check('nor one already past', /Next up|Next practice/.test(A.rendered()), false);
   }
 
   console.log('\n--- what needs work ---');

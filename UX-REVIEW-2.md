@@ -306,13 +306,29 @@ click handler. A path that exists for the coach and not for the parent fails. It
 is what keeps 9.1 to 9.3 from drifting back as screens are added.
 
 ## 10. Order of work, round 3
-1. Rename the coach's *Live feed* toggle to *Live*, and the account sheet's
-   Settings line (9.3, 9.4). An hour.
-2. The one "next up" card component, same buttons everywhere, Season's next
-   practice included (9.2). A day.
-3. One tab bar: Home · Calendar · Game · Messages · More for everyone, Home as
+1. ~~Rename the coach's *Live feed* toggle to *Live*, and the account sheet's
+   Settings line (9.3, 9.4). An hour.~~ Build 153: the toggle went altogether
+   (step 4), and the account sheet's line is the More sheet's (`settingsLine()`).
+2. ~~The one "next up" card component, same buttons everywhere, Season's next
+   practice included (9.2). A day.~~ Build 153, `nextUpBlock()` and
+   `nextAnswer()`: a family's chips, staff's *Who is coming: 3 of 14* into the
+   list; the coach's Plan is the one button a role adds.
+3. ~~One tab bar: Home · Calendar · Game · Messages · More for everyone, Home as
    the team screen with a family's child on top, My players folded in (9.1).
-   Two days; `test/nav.js` and `test/home.js` change with it.
-4. The game's segmented control shared from the right: … · Stats · Live, Log as
-   a tab for staff too (9.3). A day.
-5. `test/same.js` (9.6). Half a day, then it guards the rest.
+   Two days; `test/nav.js` and `test/home.js` change with it.~~ Build 153.
+   `#/my-players` lands a family on Home; staff with a child keep My players
+   under More. A family with no team here yet (a child registered, or hers in
+   another club) gets the cards that were My players' alone. Club home is one
+   list for everyone, hers first, the rest *view only* (9.4); a family in one
+   club is not offered Clubs or *Start a new club*.
+4. ~~The game's segmented control shared from the right: … · Stats · Live, Log as
+   a tab for staff too (9.3). A day.~~ Build 153: Subs · Track · Lineup · Stats ·
+   Live, Live becoming Log and Recap joining once it is over, for every role.
+5. ~~`test/same.js` (9.6). Half a day, then it guards the rest.~~ Build 153:
+   twelve paths, each walked on every role that may do it, and the frame
+   (tab ids, the next-up card's buttons in one order, the game's screens
+   ending in Stats · Live, the title, Club home, the Settings line).
+
+One departure from 9.2 as written: the parent's Home keeps her child's last
+game, with her minutes, as a row on her child's card, which is where My
+players had it; the coach's *Last game* card is what comes out.

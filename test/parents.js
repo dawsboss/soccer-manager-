@@ -176,7 +176,7 @@ const MIN = 60000;
     console.log('\n--- only in another club ---');
     delete D.state.teams.t1.players.p1.guardians.mum;
     D.ui.view = 'mine'; D.render();
-    check('no child here: My players still opens for the other club', D.ui.view + ' ' + /Iris Smith/.test(D.rendered()), 'mine true');
+    check('no child here: Home still opens for the other club', D.ui.view + ' ' + /Iris Smith/.test(D.rendered()), 'season true');
     check('and sessions here are not hers to book', D.guardsAnyone(), false);
   }
 
