@@ -166,7 +166,8 @@ console.log('--- the screen, for each role ---');
 
   A.ui.view = 'mine';
   h = html();
-  check('My players: "next" is tonight\'s practice, not only games', /Next — Practice/.test(h), true);
+  // a family's Home is the team's Season with her child on top since build 153 (UX-REVIEW-2.md, 9.1)
+  check('Home: "next" is tonight\'s practice, not only games', A.ui.view + ' ' + /Next up<\/span>[\s\S]*?<span class="tag practice">/.test(h), 'season true');
 
   A.me = { uid: 'trackU', name: 'Tracker' };
   A.ui.view = 'calendar';
@@ -668,7 +669,7 @@ console.log('--- the games are on the calendar, and on the team\'s Season ---');
   let h = html();
   // the Calendar is a tab on the bar at the bottom (build 141), after the team's and before the game's
   const bar = () => [...A.rendered('#tabbar').matchAll(/data-tab="(\w+)"/g)].map(x => x[1]).join(' ');
-  check('the Calendar is a tab on the bar, after Team and before Game and Messages', bar(), 'team calendar game messages more');
+  check('the Calendar is a tab on the bar, after Home and before Game and Messages', bar(), 'home calendar game messages more');
   check('— lit while it is open', /data-tab="calendar" aria-current="true"/.test(A.rendered('#tabbar')), true);
   check('— and the game being played marks the Game tab', /data-tab="game"[^>]*>[\s\S]*?class="tablive"/.test(A.rendered('#tabbar')), true);
   check('a game being played is on top', /class="card go callive"[^>]*data-act="calgame" data-tid="t1" data-id="g2" data-g="subs"/.test(h), true);
@@ -736,9 +737,14 @@ console.log('--- the games are on the calendar, and on the team\'s Season ---');
   A.me = { uid: 'coachU', name: 'Jaz' };
   A.ui.view = 'season';
   h = html();
-  check('it leads with the next game', /Next game[\s\S]*?v Northgate/.test(h) && h.indexOf('Next game') < h.indexOf('class="statgrid"'), true);
+  /* The one next-up block (UX-REVIEW-2.md, 9.2; build 153): the next thing
+     first, tonight's practice, then the next game, each the same card with
+     the same buttons. The next practice was a card with no buttons under
+     the next game until then. */
+  check('it leads with tonight\'s practice, said as the calendar says it', /Next up<\/span>[\s\S]*?<p style="margin:4px 0 0"><b>Today · 6pm<\/b>/.test(h) && h.indexOf('Next up') < h.indexOf('Next game'), true);
+  check('— with Directions and Add to my calendar on it', /Next up<\/span>[\s\S]*?>Add to my calendar<[\s\S]*?Next game</.test(h), true);
+  check('then the next game', /Next game[\s\S]*?v Northgate/.test(h) && h.indexOf('Next game') < h.indexOf('class="statgrid"'), true);
   check('— which opens the game', /data-act="calgame" data-tid="t1" data-id="g2"/.test(h), true);
-  check('then the next practice, said as the calendar says it', /Next practice<\/span>\s*<b>Today · 6–7:15pm<\/b>/.test(h), true);
   check('a link to the team on the Calendar', /data-act="teamcal" data-tid="t1"/.test(h), true);
   check('every game listed, with Add', /<h2>Games<\/h2>/.test(h) && /data-act="newmatch"/.test(h) && /data-act="openmatch" data-id="g4"/.test(h), true);
   check('one called off says so', /data-act="openmatch" data-id="g3"[\s\S]*?<span class="tag called">Cancelled<\/span>/.test(h), true);

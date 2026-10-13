@@ -141,7 +141,7 @@ const club = () => ({
     check('— at its own address', A.uiToHash(), '#/team/t1/attendance');
     check('a tracker reads Stats and Minutes', (as('trk', 'teamstats'), A.ui.view) + ' ' + (as('trk', 'minutes'), A.ui.view), 'teamstats minutes');
     check('— never the register, which she does not take', (as('trk', 'attend'), A.ui.view), 'season');
-    check('a family sent to Minutes lands on her own Season', (as('mum', 'minutes'), A.ui.view) + ' ' + /Rosa’s season/.test(A.rendered()), 'season true');
+    check('a family sent to Minutes lands on her own Season', (as('mum', 'minutes'), A.ui.view) + ' ' + /<b style="font-size:18px">Rosa Delgado<\/b>/.test(A.rendered()), 'season true');
     check('— and has no row into any of them', /data-v="teamstats"|data-v="minutes"|data-v="attend"/.test(as('mum', 'season')), false);
     for (const [hash, view] of [['#/team/t1/stats', 'teamstats'], ['#/team/t1/minutes', 'minutes'], ['#/team/t1/attendance', 'attend']]) {
       as('jaz', 'season'); global.location.hash = hash;

@@ -1,25 +1,32 @@
-/* A family's own Home and Season (UX-REVIEW.md, 1.2; build 142).
+/* A family's own Home (UX-REVIEW.md, 1.2, build 142; one team screen for
+   everyone since UX-REVIEW-2.md, 9.1 and 9.2, build 153).
 
    A parent opens the app for three things: when the next game or practice
    is, whether her child is going, and how the last game went and how much
    her child played. She used to land on the coach's app: Club home with
    every team on it, then the coach's Season (charts, possession, "what needs
    work", a squad table of minutes owed against a plan), and to say "going"
-   she went Calendar → the entry → its sheet. What is pinned here:
+   she went Calendar → the entry → its sheet. Then, from build 142, she had
+   two team screens, My players and Season, both carrying the live card, the
+   next practice with its chips and the next game, while the coach had one.
+   What is pinned here:
 
-   - My players is her Home: the next thing has Going / Not going / Maybe on
-     it, and so does the next game when the next thing is a practice; her own
+   - Her Home is her child's team's Season with her child's card on top: who
+     she is, her minutes and her season said as "Played in 1 game" (never
+     "owed"; "at Unassigned", a spot with no position, is not a position),
+     the last game with her minutes, her fans. Under it the one next-up
+     block everyone gets: the next thing with Going / Not going / Maybe on
+     it, and the next game too when the next thing is a practice; her own
      child or herself only, checked again in the handler; a fan answers
-     nothing. Her child's season is said as "Played in 1 game", never "owed",
-     and "at Unassigned" (a spot with no position) is not a position.
-   - A family's Season: next up (with the answer), the next game, the last
-     result with her child's minutes, her child's season, the games. No
-     charts, no squad table, no "owed", no register, no calendar-sync card,
-     and no other child at all, by name or number. Decided for the person, as
-     the tab bar is: a coach whose daughter plays elsewhere keeps the coach's
-     Season on her daughter's team too.
-   - Club home, for a family, lists her children's teams alone, even before
-     the club has an admin (when nothing is gated).
+     nothing. Then the team on the calendar and the games. No charts, no
+     squad table, no "owed", no register, no calendar-sync card, no last-game
+     card saying it again, and no other child at all, by name or number.
+     My players is no screen of hers (#/my-players lands on Home); staff
+     with a child keep it under More. Decided for the person, as the tab bar
+     is: a coach whose daughter plays elsewhere keeps the coach's Season on
+     her daughter's team too.
+   - Club home lists her children's teams alone, even before the club has an
+     admin (when nothing is gated), counted plain as for everyone.
    - The app opened with no address of its own lands a family on Home: at
      once from the phone's copy, or once the club has been read on a new
      phone, unless she tapped somewhere first. A link or a reload keeps its
@@ -89,13 +96,16 @@ const club = () => ({
   const chipsFor = (h, k, pid) => new RegExp(`data-act="rsvp"[^>]*data-k="${k}" data-pid="${pid}"`).test(h);
   const anyChips = h => /data-act="rsvp"/.test(h);
 
-  console.log('--- My players: her Home, with the answer on it ---');
+  console.log('--- Home: her child on top, with the answer on it ---');
   {
     let h = as('mum', 'mine');
-    check('the next thing is the practice', /Next — Practice/.test(h), true);
+    check('My players is her Home, her child\'s team', A.ui.view + ' ' + A.ui.teamId, 'season t1');
+    check('her child\'s card first', h.indexOf('<b style="font-size:18px">Rosa Delgado</b>') < h.indexOf('Next up'), true);
+    check('the next thing is the practice', /Next up<\/span>[\s\S]*?<span class="tag practice">/.test(h), true);
     check('Going / Not going / Maybe on it, for her child', chipsFor(h, 'e_e1', 'p1'), true);
-    check('the next game too, the next thing being a practice', /Next game — /.test(h) && /Northgate/.test(h), true);
+    check('the next game too, the next thing being a practice', /Next game<\/span>[\s\S]*?v Northgate/.test(h), true);
     check('— with its own answer', chipsFor(h, 'g_g2', 'p1'), true);
+    check('— once each: no second next-practice row on her card', (h.match(/data-k="e_e1" data-pid="p1" data-v="yes"/g) || []).length, 1);
     check('never for anybody else\'s child', /data-act="rsvp"[^>]*data-pid="p[23]"/.test(h), false);
     check('no "Not answered yet" in words: the chips say it', /Not answered yet/.test(h), false);
     check('her season said as a parent says it', /Played in 1 game · 1 goal/.test(h), true);
@@ -104,11 +114,11 @@ const club = () => ({
     check('the position she did play is', /20 at Midfield/.test(h), true);
     check('no other child on her Home', /Ella|Mia|Kowalski/.test(h), false);
 
-    A.click({ act: 'rsvp', tid: 't1', k: 'e_e1', pid: 'p1', v: 'yes', from: 'mine', kind: 'practice', id: 'e1' });
+    A.click({ act: 'rsvp', tid: 't1', k: 'e_e1', pid: 'p1', v: 'yes', from: 'next', kind: 'practice', id: 'e1' });
     check('one tap answers: one write where the rule sits', writes.join(), 'orgs/CLUB/rsvp/t1/e_e1/p1');
     check('— in her name', A.state.rsvp.t1.e_e1.p1.v + ' ' + A.state.rsvp.t1.e_e1.p1.by, 'yes mum');
-    check('— and it shows, on the screen she is on', A.ui.view === 'mine' && /data-k="e_e1" data-pid="p1" data-v="yes" data-from="mine" data-kind="practice" data-id="e1" aria-pressed="true"/.test(A.rendered()), true);
-    A.click({ act: 'rsvp', tid: 't1', k: 'e_e1', pid: 'p1', v: 'yes', from: 'mine', kind: 'practice', id: 'e1' });
+    check('— and it shows, on the screen she is on', A.ui.view === 'season' && /data-k="e_e1" data-pid="p1" data-v="yes" data-from="next" data-kind="practice" data-id="e1" aria-pressed="true"/.test(A.rendered()), true);
+    A.click({ act: 'rsvp', tid: 't1', k: 'e_e1', pid: 'p1', v: 'yes', from: 'next', kind: 'practice', id: 'e1' });
     check('the same answer again takes it back', A.state.rsvp.t1.e_e1.p1, undefined);
 
     as('mum', 'mine');
@@ -119,42 +129,62 @@ const club = () => ({
 
     const s = club(); s.events = null; s.teams.t1.events.e1.called = 'cancelled';
     h = as('mum', 'mine', 't1', s);
-    check('a practice called off is not next: the game is, answered on its row', /Next — v Northgate|Next — Northgate/.test(h) && chipsFor(h, 'g_g2', 'p1'), true);
-    check('— and is not offered twice', /Next game — /.test(h), false);
+    check('a practice called off is not next: the game is, answered on its card', /Next up<\/span>[\s\S]*?v Northgate/.test(h) && chipsFor(h, 'g_g2', 'p1'), true);
+    check('— and is not offered twice', /Next game<\/span>/.test(h), false);
 
     h = as('kid', 'mine');
     check('a player with her own sign-in answers for herself', chipsFor(h, 'e_e1', 'p2'), true);
+    check('— her card says Your fans', />Your fans/.test(h), true);
     h = as('nan', 'mine');
-    check('a fan sees her player\'s next thing', /Next — Practice/.test(h), true);
+    check('a fan sees her player\'s next thing', /Next up<\/span>[\s\S]*?<span class="tag practice">/.test(h), true);
     check('— and answers nothing', anyChips(h), false);
+    check('— her player by name, as her fan', /Ella Fitzgerald/.test(h) && /you’re her fan/.test(h) && /Stop following Ella/.test(h), true);
   }
 
-  console.log('\n--- a family\'s Season ---');
+  console.log('\n--- a family\'s Season: the coach\'s frame, her child put in ---');
   {
     const h = as('mum', 'season');
-    check('it leads with the next thing', /Next up/.test(h) && h.indexOf('Next up') < h.indexOf('Last game'), true);
+    check('it is the same screen as Home', h, as('mum', 'mine'));
+    check('her child on top, then the next thing', h.indexOf('Rosa Delgado') < h.indexOf('Next up') && h.indexOf('Next up') < h.indexOf('<h2>Games</h2>'), true);
     check('with the answer on it', chipsFor(h, 'e_e1', 'p1'), true);
-    check('and the next game, with its own', /Next game/.test(h) && chipsFor(h, 'g_g2', 'p1'), true);
-    check('the last result', /Last game/.test(h) && /Riverside/.test(h) && /1<small>–1/.test(h), true);
-    check('— with her child\'s minutes in it', /Rosa Delgado 40 min/.test(h), true);
-    check('— and the season\'s record', /Season so far: 0W 1D 0L/.test(h), true);
-    check('her child\'s season', /Rosa’s season/.test(h) && /Played in 1 game · 1 goal/.test(h), true);
+    check('and the next game, with its own', /Next game<\/span>/.test(h) && chipsFor(h, 'g_g2', 'p1'), true);
+    check('the last result, on her child\'s card', /Last game — Riverside/.test(h) && /1<small>–1/.test(h), true);
+    check('— with her child\'s minutes in it', /5 Sep · 40 min played/.test(h), true);
+    check('— and only there: no last-game card saying it again', /Season so far|<span class="muted">Last game<\/span>/.test(h), false);
+    check('her child\'s season', /<b style="font-size:18px">Rosa Delgado<\/b>/.test(h) && /Played in 1 game · 1 goal/.test(h), true);
+    check('the team on the calendar, as on the coach\'s', /data-act="teamcal" data-tid="t1"/.test(h), true);
     check('the games, played and to come', /data-act="openmatch" data-id="g2"/.test(h) && /data-act="openmatch" data-id="g3"/.test(h), true);
     for (const [what, re] of [['charts', /Game by game/], ['shooting', /<h2[^>]*>Shooting/], ['possession', /Possession|scrappy/], ['set pieces', /Set pieces and fouls/],
       ['what needs work', /What needs work/], ['the squad table', /<h2>Players<\/h2>/], ['"owed"', /owed|planned/], ['the register', /<h2>Attendance<\/h2>/],
       ['the rows into Stats, Minutes and Attendance', /data-v="teamstats"|data-v="minutes"|data-v="attend"/],
-      ['the calendar-sync card', /In your own calendar/], ['the AI button', /data-act="ai"/], ['Add a game', /data-act="newmatch"/]])
+      ['the calendar-sync card', /In your own calendar/], ['the AI button', /data-act="ai"/], ['Add a game', /data-act="newmatch"/], ['a Who is coming line', /Who is coming/]])
       check(`no ${what}`, re.test(h), false);
     check('no other child, by name or number', /Ella|Fitzgerald|Mia|Kowalski|#9|#4|A teammate/.test(h), false);
     A.click({ act: 'gotoplayer', tid: 't1', id: 'g1' });
     check('the last result opens that game\'s numbers', A.ui.view + ' ' + A.ui.matchId + ' ' + A.ui.gameView, 'game g1 stats');
 
+    // the same card for the coach, with the same buttons, and her Who is coming where the chips are (UX-REVIEW-2.md, 9.2)
+    const c0 = as('jaz', 'season');
+    const card = x => (x.match(/<div class="card calnext"[\s\S]*?<div class="row wrap"[\s\S]*?<\/div>/) || [''])[0];
+    // Plan is the coach's addition to the frame (a role adds buttons, never renames or reorders them)
+    const plan = /<button class="btn sm" data-act="pracfromcal"[^>]*>[^<]*<\/button>\s*/;
+    const norm = x => x.replace(/\s+/g, ' ');
+    check('the coach\'s next-up card is the parent\'s, button for button, plus Plan', norm(card(c0).replace(plan, '')) === norm(card(h)) && /Next up<\/span>[\s\S]*?>Plan<[\s\S]*?>Add to my calendar</.test(card(c0)), true);
+    check('— with Who is coming under it, into the list', /Next up<\/span>[\s\S]*?data-act="calitem"[^>]*>Who is coming: 0 of 3</.test(c0), true);
+    A.click({ act: 'rsvp', tid: 't1', k: 'e_e1', pid: 'p1', v: 'yes', from: 'sheet', kind: 'practice', id: 'e1' });
+    check('— counting the answers', /Who is coming: 1 of 3</.test(A.rendered()), true);
+    A.click({ act: 'rsvp', tid: 't1', k: 'e_e1', pid: 'p3', v: 'no', from: 'sheet', kind: 'practice', id: 'e1' });
+    check('— and who is not', /Who is coming: 1 of 3 · 1 not going</.test(A.rendered()), true);
+    const own = as('jaz', 'season', 't2');
+    check('a coach whose daughter is on her own team gets her chips and the line', chipsFor(own, 'g_g1', 'k1') || /Who is coming/.test(own) || !/calnext/.test(own), true);
+    check('a tracker gets the line, never a chip', /Who is coming: 0 of 3</.test(as('trk', 'season')) && !anyChips(A.rendered()), true);
+
     const f = as('nan', 'season');
-    check('a fan\'s Season: her player\'s season, by name', /Ella’s season/.test(f) && /Ella Fitzgerald/.test(f), true);
+    check('a fan\'s Season: her player on top, by name', /<b style="font-size:18px">Ella Fitzgerald<\/b>/.test(f) && /you’re her fan/.test(f), true);
     check('— no answers', anyChips(f), false);
     check('— and nobody else', /Rosa|Mia/.test(f), false);
     const k = as('kid', 'season');
-    check('a player\'s own: "Your season"', /Your season/.test(k), true);
+    check('a player\'s own: her card, with Your fans', /<b style="font-size:18px">Ella Fitzgerald<\/b>/.test(k) && />Your fans/.test(k), true);
 
     // the coach's Season is short since build 146: the record, the games and rows into Stats, Minutes and Attendance
     const coachy = h => /data-v="teamstats"/.test(h) && /data-v="minutes"/.test(h);
@@ -165,7 +195,7 @@ const club = () => ({
     check('an admin: the coach\'s Season', coachy(as('boss', 'season')), true);
     check('a tracker: the coach\'s Season', coachy(as('trk', 'season')), true);
     check('— the Minutes screen, for the coach', /<h2>Minutes<\/h2>/.test(as('jaz', 'minutes')) && /Ella Fitzgerald/.test(A.rendered()), true);
-    check('— and a family sent to it lands on her own Season', (as('mum', 'minutes'), A.ui.view) + ' ' + /Rosa’s season/.test(A.rendered()), 'season true');
+    check('— and a family sent to it lands on her own Season', (as('mum', 'minutes'), A.ui.view) + ' ' + /<b style="font-size:18px">Rosa Delgado<\/b>/.test(A.rendered()), 'season true');
   }
 
   console.log('\n--- Club home: her teams ---');
@@ -174,7 +204,8 @@ const club = () => ({
     let h = as('mum', 'club', 't1', open);
     check('before the club has an admin, a family still sees her child\'s team', /data-act="goteam" data-id="t1"/.test(h), true);
     check('— and not the rest of the club\'s', /data-act="goteam" data-id="t2"/.test(h), false);
-    check('— said as hers', /Your team/.test(h), true);
+    check('— counted plain, as for everyone (UX-REVIEW-2.md, 9.4)', /<span class="rowsub">1 team<\/span>/.test(h) && !/Your team/.test(h), true);
+    check('— and no My players card: Home is her team', /data-v="mine"/.test(h), false);
     h = as('jaz', 'club', 't1', club());
     check('staff see every team they can reach', /data-id="t1"/.test(h) && /data-id="t2"/.test(h), true);
     h = as('mum', 'club');
@@ -192,10 +223,12 @@ const club = () => ({
       }
     });
     let B = cached('mum');
-    check('a family opening the app lands on Home', B.ui.view, 'mine');
+    check('a family opening the app lands on Home, her child\'s team', B.ui.view + ' ' + B.ui.teamId, 'season t1');
     check('— the Home tab lit', /data-tab="home" aria-current="true"/.test(B.rendered('#tabbar')), true);
     B = cached('mum', { view: 'inbox' });
-    check('— whatever was open last', B.ui.view, 'mine');
+    check('— whatever was open last', B.ui.view, 'season');
+    B = cached('mum', { hash: '#/my-players' });
+    check('— and the old My players address lands there too', B.ui.view, 'season');
     B = cached('mum', { hash: '#/calendar' });
     check('a link (or a reload) keeps the screen it names', B.ui.view, 'calendar');
     B = cached('jaz', { view: 'roster' });
@@ -212,8 +245,8 @@ const club = () => ({
       return { before, after: D.ui.view };
     };
     let r = await fresh(false);
-    check('a new phone waits for the club', r.before === 'mine', false);
-    check('— then lands her on Home', r.after, 'mine');
+    check('a new phone waits for the club', r.before === 'season', false);
+    check('— then lands her on Home', r.after, 'season');
     r = await fresh(true);
     check('a tap before the club answers is her choice, and kept', r.after, 'calendar');
   }

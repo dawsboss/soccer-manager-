@@ -127,14 +127,16 @@ console.log('--- no word from the code, the database or the docs on any screen -
 console.log('\n--- the labels, as GLOSSARY.md names them ---');
 {
   const idx = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
+  const src0 = fs.readFileSync(H.APP_PATH, 'utf8');
   const tab = v => (idx.match(new RegExp(`data-view="${v}"[^>]*>([^<]+)<`)) || [])[1];
   check('a team\'s tabs are Season · Players · Training', [tab('season'), tab('roster'), tab('practice')].join(' · '), 'Season · Players · Training');
   const gtab = v => (idx.match(new RegExp(`data-gview="${v}"[^>]*>([^<]+)<`)) || [])[1];
-  check('a game\'s screens end in Lineup, never Plan', [gtab('live'), gtab('subs'), gtab('track'), gtab('stats'), gtab('plan')].join(' · '), 'Live · Subs · Track · Stats · Lineup');
+  check('a game\'s screens are Subs · Track · Lineup · Stats · Live, in that order, never Plan', [...idx.matchAll(/data-gview="(\w+)"[^>]*>([^<]+)</g)].map(m => m[2]).join(' · '), 'Subs · Track · Lineup · Stats · Live · Recap');
   as('jaz');
-  check('the bar: Team · Calendar · Game · Messages · More for staff', A.navTabs().map(t => t.label).join(' · '), 'Team · Calendar · Game · Messages · More');
+  check('the bar: Home · Calendar · Game · Messages · More for staff', A.navTabs().map(t => t.label).join(' · '), 'Home · Calendar · Game · Messages · More');
   as('mum', 'mine');
-  check('— Home · Calendar · Messages · More for a family', A.navTabs().map(t => t.label).join(' · '), 'Home · Calendar · Messages · More');
+  check('— and the same for a family (UX-REVIEW-2.md, 9.1)', A.navTabs().map(t => t.label).join(' · '), 'Home · Calendar · Game · Messages · More');
+  check('— Live feed is gone: the play-by-play is Live for everyone', /'Live feed'|>Live feed</.test(src0), false);
   check('who runs the club is a Club admin', A.ROLE_LABEL.admin, 'Club admin');
   check('a 1-1 on the calendar is a Session', A.CAL_KIND.session, 'Session');
   check('— and the screen is Sessions', A.VIEW_TITLE.sessions, 'Sessions');

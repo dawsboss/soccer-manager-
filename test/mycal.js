@@ -107,7 +107,7 @@ const nameIn = v => names.some(n => JSON.stringify(v).includes(n));
     check('— and the Calendar tab on the bar is lit', /data-tab="calendar" aria-current="true"/.test(D.rendered('#tabbar')), true);
     D.ui.view = 'season'; D.render();
     check('— and not when it isn\'t', /data-tab="calendar" aria-current="true"/.test(D.rendered('#tabbar')), false);
-    check('— the team\'s is', /data-tab="team" aria-current="true"/.test(D.rendered('#tabbar')), true);
+    check('— the team\'s is', /data-tab="home" aria-current="true"/.test(D.rendered('#tabbar')), true);
     D.ui.view = 'formation'; D.ui.editFid = '@game';
     check('the game\'s shape is the team\'s', D.viewScope(), 'team');
     D.ui.view = 'formation'; D.ui.editFid = 'f1';

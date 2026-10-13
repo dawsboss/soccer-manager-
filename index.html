@@ -10,7 +10,7 @@
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://www.gstatic.com https://apis.google.com https://*.firebaseio.com https://*.firebasedatabase.app; connect-src 'self' https://*.googleapis.com https://*.firebaseio.com wss://*.firebaseio.com https://*.firebasedatabase.app wss://*.firebasedatabase.app https://*.cloudfunctions.net https://www.gstatic.com https://auth.teamplayhq.com; frame-src https://auth.teamplayhq.com https://*.firebaseapp.com https://*.web.app https://accounts.google.com https://apis.google.com https://*.firebaseio.com https://*.firebasedatabase.app; img-src 'self' data: blob: https:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; manifest-src 'self'; worker-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#17603C">
-<meta name="build" content="152">
+<meta name="build" content="153">
 <!-- Installable: added to the Home Screen it opens full-screen with its own icon, and on an
      iPhone that is the only way a site can get notifications at all (iOS 16.4+). -->
 <link rel="manifest" href="manifest.webmanifest">
@@ -23,7 +23,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600&family=Barlow+Condensed:wght@500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="styles.css?v=152">
+<link rel="stylesheet" href="styles.css?v=153">
 </head>
 <body>
 
@@ -45,24 +45,27 @@
     <button type="button" data-view="roster">Players</button>
     <button type="button" data-view="practice" hidden>Training</button>
   </nav>
-  <!-- A game's screens, as a segmented control under the game header (build 144): four for
-       whoever works the game (the pitch is a look at Subs, the play-by-play a look at Stats),
-       Live and Stats for a reader, Recap once it is over. Which are drawn is render()'s. -->
+  <!-- A game's screens, as a segmented control under the game header (build 144), shared from
+       the right (build 153; UX-REVIEW-2.md, 9.3): Stats and Live (Log once it is over, Recap
+       beside it then) are everyone's, in the same place with the same word on every phone; Subs,
+       Track and Lineup are added before them for whoever works the game (the pitch is a look at
+       Subs). Which are drawn is render()'s. -->
   <nav class="tabs subtabs" id="subtabs" hidden>
-    <button type="button" data-gview="live">Live</button>
     <button type="button" data-gview="subs">Subs</button>
     <button type="button" data-gview="track">Track</button>
-    <button type="button" data-gview="stats">Stats</button>
     <button type="button" data-gview="plan">Lineup</button>
+    <button type="button" data-gview="stats">Stats</button>
+    <button type="button" data-gview="live">Live</button>
     <button type="button" data-gview="recap" hidden>Recap</button>
   </nav>
 </header>
 
 <main id="app"></main>
 
-<!-- The way around, learned once: four or five tabs chosen by what the person is here as
-     (a family's Home, Calendar, Messages and More; a coach's Team, Calendar, Game, Messages and
-     More), drawn by render() so a locked device shows none of it (UX-REVIEW.md, 1.1; build 141). -->
+<!-- The way around, learned once: one bar for everyone, Home · Calendar · Game · Messages · More
+     (build 153, UX-REVIEW-2.md, 9.1; a family had Home · Calendar · Messages · More and staff
+     Team · Calendar · Game · Messages · More from build 141), Messages once the club has it, drawn
+     by render() so a locked device shows none of it (UX-REVIEW.md, 1.1). -->
 <nav class="tabbar" id="tabbar" aria-label="Main" hidden></nav>
 
 <div class="sheet-scrim" id="scrim" hidden></div>
@@ -70,12 +73,12 @@
 <div class="toast" id="toast" hidden></div>
 
 <script src="firebase-config.js"></script>
-<script src="ics.js?v=152"></script>
+<script src="ics.js?v=153"></script>
 <!-- Content, not code: the drill library and the diagrams that draw it. Plain
      scripts before the module, so they are on window when app.js runs, and
      cache-busted with the same build number so a cached copy can't disagree. -->
-<script src="drills.js?v=152"></script>
-<script src="drill-diagram.js?v=152"></script>
-<script type="module" src="app.js?v=152"></script>
+<script src="drills.js?v=153"></script>
+<script src="drill-diagram.js?v=153"></script>
+<script type="module" src="app.js?v=153"></script>
 </body>
 </html>
