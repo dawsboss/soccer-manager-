@@ -4316,7 +4316,8 @@ function threadScreen(c, head, foot) {
     <div class="row"><button class="btn quiet sm" data-act="inbox">‹ Messages</button></div>
     <div class="card">${head}
       <button class="linkbtn lockline" type="button" data-act="msgprivacy" style="display:block;margin-top:6px">${LOCK_SVG} Private · only ${convReaders(c)} can read this</button></div>
-    <div class="card"><div class="thread" id="thread">${threadHtml(c)}</div>
+    <div class="card"><div class="thread" id="thread">${threadHtml(c)}</div></div>
+    <div class="card composer">
       <textarea id="msgText" rows="3" maxlength="${MSG_MAX}" placeholder="Write a message" data-draft="${esc(draftKey)}">${esc((ui.msgDraft || {})[draftKey] || '')}</textarea>
       <div class="row" style="margin-top:8px;justify-content:flex-end"><button class="btn" data-act="msgsend" ${to}>Send</button></div></div>
     <p class="muted">${foot}</p>

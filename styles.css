@@ -796,7 +796,11 @@ button.rsvprow[aria-expanded="true"]{color:var(--field)}
 .prow.unread{border-left:3px solid var(--field)}
 .msgdot{display:inline-block;min-width:20px;height:20px;padding:0 6px;border-radius:999px;background:var(--field-deep);
   color:#fff;font-size:12px;font-weight:700;line-height:20px;text-align:center}
-.thread{display:flex;flex-direction:column;gap:8px;margin-bottom:12px;max-height:60vh;overflow-y:auto}
+/* One scroll, the page's: the messages used to sit in a box of their own inside
+   the scrolling page, so a thumb dragging the conversation moved one or the
+   other unpredictably. The reply box stays above the tab bar instead. */
+.thread{display:flex;flex-direction:column;gap:8px;margin-bottom:12px}
+.card.composer{position:sticky;bottom:calc(70px + env(safe-area-inset-bottom));z-index:5;box-shadow:0 -6px 12px -8px rgba(0,0,0,.18)}
 .bubble{max-width:85%;align-self:flex-start;background:var(--paper);border-radius:14px 14px 14px 4px;padding:8px 12px}
 .bubble.me{align-self:flex-end;background:var(--field-wash);border-radius:14px 14px 4px 14px}
 .bubble .bwho{display:block;font-size:14px;font-weight:600;color:var(--field-deep)}
