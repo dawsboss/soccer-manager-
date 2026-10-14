@@ -332,7 +332,7 @@ it; the others named below). As built, where it differs from what is written und
   time and place struck through under it, grey, and a tap into the entry; the next thing under
   it as before. `test/same.js` has it as a thirteenth question a parent asks.
 - **14.4** Settings' Database row reads *Connected* or *Offline* from the same `online` the badge
-  does (`test/settings.js`). The rest of 18.4 (one word for the outbox everywhere) is not built.
+  does (`test/settings.js`). The rest of 18.4 (one word for the outbox everywhere) is build 161, and the row is in About.
 - **14.5** On Home the LIVE card is the one door into the game, and her card says *Rosa: on the
   pitch · 38 min* (or *off the pitch*, or *You: …* for the player herself) as a line. My players
   (staff with a child) has no LIVE card, so its *Playing now* row stays a door.
@@ -609,6 +609,16 @@ what was asked and this as what was built:
   cached conversations (`msgsKey`) before the club answers. **An hour.**
 
 ## 18. Settings and the edges
+
+**Built in build 161**, but for 18.7. 18.1: Settings ends in *About · TeamPlayHQ · v161* for
+everyone, a sheet with the version and Reload, the connection and the account id; Advanced is
+an admin's (and the app owner's) alone. 18.2 came with 12.4 in build 156: the avatar and
+Settings → You open one sheet (`sheetAccount()`), *Delete my account…* a line at its foot.
+18.3: Club home says *Rosa's team* (`whoseTeam()`), no Calendar card for a family, More's line
+*The club: its teams and sessions*. 18.4: *Waiting to send · n* and *Not saved · n* on the badge
+and Settings (`syncWords()`), the connection read from `online` (14.4 had the Database row do
+that, and the badge opening what is waiting). 18.5: no version in the brand, an *Update* pill
+while `stale()`. 18.6: the share page's line about numbers at the foot.
 
 - **18.1 A parent's Settings carries a developer's Advanced section.** *Version v153 ·
   2026-10-12 · page and code agree · [Reload]*, *Database · Connected · Lakeside SC* (the badge

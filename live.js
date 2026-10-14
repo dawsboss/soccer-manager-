@@ -298,6 +298,7 @@ function render() {
         </div>`).join('')}</div></div>` : ''}
 
       ${statsBlock(g, name)}
+      ${signedOutNote()}
     </div>`;
     return;
   }
@@ -337,6 +338,7 @@ function render() {
           <span class="rowsub">${[niceDate(x.date), niceTime(x.kickoff), esc(x.venue)].filter(Boolean).join(' · ')}</span></span>
         <span class="pmins">${x.score.us}<small>–${x.score.them}</small></span>
       </button>`).join('') || '<p class="muted" style="margin:0">No games played yet.</p>'}</div></div>
+    ${signedOutNote(false)}
   </div>`;
 
   function nextCard(it) {
@@ -433,14 +435,20 @@ function accessBlock() {
   const deep = tid
     ? `${appUrl}#/team/${tid}${openGame ? '/game/' + encodeURIComponent(openGame) + '/stats' : '/season'}`
     : appUrl;
-  if (!authMod) return '';
-  if (!viewer) return `<div class="card"><div class="spread">
-      <span><b>Signed out</b><span class="rowsub">Numbers only. Sign in if a coach has given your account access.</span></span>
-      <button class="btn sm" data-signin>Sign in</button></div></div>`;
+  if (!authMod || !viewer) return '';
   return `<div class="card"><div class="spread">
       <span><b>${esc(viewer.name)}</b><span class="rowsub">Open it in TeamPlayHQ to see names, if your account has been given access.</span></span>
       ${deep ? `<a class="btn sm" href="${esc(deep)}">Open in TeamPlayHQ</a>` : ''}</div>
       <button class="backlink" data-signout style="margin-top:8px">Sign out</button></div>`;
+}
+
+/* Most who open a link a coach texted out never sign in, so being signed out
+   is not news to put above the score (UX-REVIEW-3.md, 18.6): it is a line at
+   the foot saying why the players are numbers, and the way to names. */
+function signedOutNote(numbers = true) {
+  if (!authMod || viewer) return '';
+  return `<p class="muted" style="margin:4px 0 0">${numbers ? 'Players are shown by shirt number. ' : ''}A family signed in to TeamPlayHQ sees their own child by name.
+    <button class="backlink" data-signin style="display:inline;margin:0">Sign in</button></p>`;
 }
 
 // tick the clocks and the minutes locally between pushes so it feels live

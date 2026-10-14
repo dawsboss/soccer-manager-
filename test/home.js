@@ -317,6 +317,11 @@ const club = () => ({
     check('staff see every team they can reach', /data-id="t1"/.test(h) && /data-id="t2"/.test(h), true);
     h = as('mum', 'club');
     check('in a club with an admin, only hers, as before', /data-id="t1"/.test(h) && !/data-id="t2"/.test(h), true);
+    // UX-REVIEW-3.md, 18.3: her child's team is her child's, and the Calendar is its tab
+    check('— said as Rosa\'s team, never view only', /Rosa(&#39;|')s team/.test(h) && !/view only/.test(h), true);
+    check('— with no Calendar card', /<b>Calendar<\/b>/.test(h), false);
+    h = as('jaz', 'club', 't1', club());
+    check('a coach with a child on another team: that team is her child\'s', /data-id="t2"[\s\S]*?Bea(&#39;|')s team/.test(h), true);
   }
 
   console.log('\n--- where the app opens ---');

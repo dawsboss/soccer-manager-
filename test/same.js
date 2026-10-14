@@ -240,10 +240,11 @@ console.log('\n--- one frame ---');
 
 console.log('\n--- the same screen names ---');
 {
-  // Club home: one list of the club's teams for everyone, counted plain, hers first and the rest view only
+  // Club home: one list of the club's teams for everyone, counted plain, hers first and the rest view only;
+  // a family's own child's team is her child's, never "view only" (UX-REVIEW-3.md, 18.3)
   const lists = {};
   for (const uid of EVERYONE) { as(uid); A.ui.view = 'club'; A.render(); lists[uid] = [...page().matchAll(/data-act="goteam" data-id="(\w+)"[\s\S]*?(view only)?<\/span><\/span>/g)].map(m => m[1] + (m[2] ? '*' : '')).join(' '); }
-  check('Club home lists the teams for everyone, the ones she can change first (then by name) and the rest view only', EVERYONE.map(u => u + ':' + lists[u]).join(' '), 'boss:t2 t1 jaz:t1 t2* trk:t1* hel:t1* vee:t2* t1* mum:t1* nan:t1* kid:t1*');
+  check('Club home lists the teams for everyone, the ones she can change first (then by name) and the rest view only', EVERYONE.map(u => u + ':' + lists[u]).join(' '), 'boss:t2 t1 jaz:t1 t2* trk:t1* hel:t1* vee:t2* t1* mum:t1 nan:t1 kid:t1');
   check('— counted plain, never "Your team" or "you can reach"', EVERYONE.some(u => { as(u); A.ui.view = 'club'; A.render(); return /Your team|you can reach/.test(page()); }), false);
   check('— and no My players card for a family: Home is her team', FAMILY.some(u => { as(u); A.ui.view = 'club'; A.render(); return /data-v="mine"/.test(page()); }), false);
   check('— while staff with a child find it there and under More', (as('jaz'), A.state.teams.t2.players.k1.guardians = { jaz: true }, A.ui.view = 'club', A.render(), /data-v="mine"/.test(page())) && (tab('more'), /data-v="mine"/.test(sheet())), true);

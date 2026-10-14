@@ -297,6 +297,9 @@ console.log('--- the share page never takes the app\'s address from what it is s
   check('live.js never reads link.app', /link\s*\.\s*app|\[['"]app['"]\]/.test(live), false);
   check('it builds the app\'s address beside itself', /pageBase\(\) \+ 'index\.html'/.test(live), true);
   check('and encodes the team and game it links to', /encodeURIComponent\(link\.teamId\)/.test(live) && /encodeURIComponent\(openGame\)/.test(live), true);
+  // most who open a texted link never sign in: no "Signed out" card over the score (UX-REVIEW-3.md, 18.6)
+  check('no Signed out card, and no "Numbers only"', /<b>Signed out<\/b>|Numbers only/.test(live), false);
+  check('the line saying why players are numbers comes after the game, at the foot', live.indexOf('${statsBlock(g, name)}') > 0 && live.indexOf('${signedOutNote()}') > live.indexOf('${statsBlock(g, name)}'), true);
 }
 
 console.log('--- the phone never writes public/: the server does (SECURITY.md, SEC-10) ---');
