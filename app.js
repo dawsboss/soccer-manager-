@@ -7412,7 +7412,7 @@ function lockScreen() {
     <div class="auth-card-body">
       ${me ? `<button class="btn quiet wide" data-act="signout">Sign out</button>` : `<button class="btn wide auth-go" data-act="signinsheet">Sign in</button>`}
       ${me && Object.keys(myClubs || {}).some(c => c !== wsCode()) ? `<button class="btn quiet wide" data-act="clubswitch" style="margin-top:8px">Your other clubs</button>` : ''}
-      ${noClub() && canNewClub() ? `<p class="auth-fine">Setting up a club of your own as its coach or admin? <button class="linkbtn" data-act="newclub">+ Start a new club</button></p>` : ''}
+      ${noClub() && canNewClub() ? `<p class="auth-fine">Or start a club of your own: <button class="linkbtn" data-act="newclub">+ Start a new club</button></p>` : ''}
       <p class="auth-fine">Read-only score pages need none of this — they keep working from their own link.</p>
       ${LEGAL_LINKS}
     </div></div></div>`;
@@ -7606,9 +7606,6 @@ function settingsLine() {
   const coachAny = !!me && teams().some(t => isCoach(t.id, me.uid));   // People, on Settings
   return ['You', team() && restricted() !== 'tracker' && !readerRole(restricted()) ? 'this team' : '', canAdmin() ? 'the club: people, registrations, fields' : coachAny ? 'people' : ''].filter(Boolean).join(', ');
 }
-/* Staff and owners start clubs (UX-REVIEW-2.md, 9.4); a family sees Clubs
-   only when she is in more than one. */
-const canStartClub = () => canNewClub() && navKind() !== 'family';
 function sheetMore() {
   const org = clubName();
   const b = me ? notesUnread() : 0;
@@ -7624,7 +7621,7 @@ function sheetMore() {
       <span class="rowsub">${esc(sessClubLine())}</span></button>` : ''}
     <button class="opt" data-act="goview" data-v="setup"><b>Settings</b>
       <span class="rowsub">${esc(settingsLine())}</span></button>
-    ${clubs.length > 1 || canStartClub() ? `<button class="opt" data-act="clubswitch"><b>Clubs</b>
+    ${clubs.length > 1 || canNewClub() ? `<button class="opt" data-act="clubswitch"><b>Clubs</b>
       <span class="rowsub">${clubs.length > 1 ? 'Switch to another club you are in' : 'Start a new club'}</span></button>` : ''}
     ${me ? `<button class="opt" data-act="signout"><b>Sign out</b>
       <span class="rowsub">${esc(me.email || me.name || '')}</span></button>`
@@ -7763,7 +7760,9 @@ function knownClubs() {
   return out.sort((a, b) => a.name.localeCompare(b.name));
 }
 
-/* Anyone signed in, with a database to make it in. Signed out there is no
+/* Anyone signed in, with a database to make it in, whatever she is in the
+   club she is in now: a parent may start one too (the owner, 2026-10-14,
+   overruling UX-REVIEW-2.md, 9.4, which kept it from families). Signed out there is no
    uid for the rules to make an admin of; with no Firebase config a "club" is
    just this phone, which is what it already is. */
 const canNewClub = () => !!(me && fbConfig().apiKey);
@@ -7780,7 +7779,7 @@ function sheetClubSwitch() {
     <p class="muted">Forget removes this device's copy only. Deleting a club for everyone is done outside the app, by its owner — see below.</p>
     <button class="opt" data-act="goview" data-v="club"><b>Club home</b>
       <span class="rowsub">Teams, stats and settings for ${esc((acc().org || {}).name || 'this club')}</span></button>
-    ${canStartClub() ? `<button class="opt" data-act="newclub"><b>+ Start a new club</b>
+    ${canNewClub() ? `<button class="opt" data-act="newclub"><b>+ Start a new club</b>
       <span class="rowsub">You become its admin</span></button>` : ''}
     <p class="muted">To join someone else's club, ask its admin for an invite link.</p>`);
 }
