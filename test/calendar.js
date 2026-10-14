@@ -857,7 +857,7 @@ console.log('--- the calendar a parent answers from (UX-REVIEW-3.md, 15) ---');
   A.click({ act: 'caladd', k: 'practice', tid: 't1', id: 'e3' });
   sh = sheet();
   check('— Google Calendar, then Apple, Outlook or another', /<h3>Add to your calendar<\/h3>[\s\S]*?class="btn wide"[^>]*>Google Calendar<\/a>[\s\S]*?data-act="calics"[^>]*>Apple, Outlook or another</.test(sh), true);
-  check('— and nothing else of the entry', /class="facts"|rsvpchips/.test(sh), false);
+  check('— and nothing else of the entry', /class="facts"|rsvpseg/.test(sh), false);
   A.you.set = { feed: 'mFEED', share: false };
   A.click({ act: 'caladd', k: 'practice', tid: 't1', id: 'e3' });
   check('— no offer once she has My calendar\'s address', /Keep my calendar up to date/.test(sheet()), false);

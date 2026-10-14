@@ -111,7 +111,7 @@ const club = () => ({
     let h = as('jaz', 'season');
     const sections = ['Shooting', 'Possession', 'Set pieces and fouls', 'What needs work', 'Game by game', '<h2>Minutes</h2>', '<h2>Attendance</h2>', 'Ask an AI'];
     check('none of the stats sections are on it', sections.filter(x => h.includes(x)).join(), '');
-    check('the last result is', /Last game[\s\S]*?Riverside[\s\S]*?1<small>–1/.test(h), true);
+    check('the last result is', /Last game[\s\S]*?Riverside[\s\S]*?class="score">1<i>–<\/i>1/.test(h), true);
     check('— naming no child', /Rosa|Mia|Ella/.test(h.slice(h.indexOf('Last game'), h.indexOf('Season so far'))), false);
     check('the record', /<h2>0W 1D 0L<\/h2>/.test(h), true);
     check('the games', /<h2>Games<\/h2>/.test(h) && /data-act="openmatch" data-id="g2"/.test(h), true);

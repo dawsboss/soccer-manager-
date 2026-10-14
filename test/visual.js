@@ -175,6 +175,20 @@ check('a sub due is still red', /var\(--over\)/.test(bodyOf('.subscard[data-stat
 check('and a sub due soon still orange', /var\(--owed\)/.test(bodyOf('.subscard[data-state="soon"]')), true);
 check('Delete is still red', /var\(--over\)/.test(bodyOf('.btn.danger')), true);
 
+/* ---------------- a score ---------------- */
+console.log('\n--- a score is one style: both digits one size (UX-REVIEW-3.md, 14.6) ---');
+{
+  /* .pmins is a value and its unit ("180 min": a big number, a small word); a
+     score borrowed it and read as 1 with a footnote, the half a parent wants
+     most the quietest on the row. */
+  const sc = bodyOf('.score'), dash = bodyOf('.score i');
+  check('both digits in ink at the row\'s number size, tabular', /font-size:21px/.test(sc) && /tabular-nums/.test(sc) && /color:var\(--ink\)/.test(sc), true);
+  check('only the dash is soft, and it keeps its size', /color:var\(--ink-soft\)/.test(dash) && !/font-size/.test(dash), true);
+  check('no score in app.js is drawn as a big digit and a small one', /\.us\}<small>–\$\{/.test(app), false);
+  check('every score on a row goes through scoreSpan()', (app.match(/scoreSpan\(/g) || []).length >= 8, true);
+  check('the live card\'s score never gives way to its title (it clipped to "1" on Month)', /flex:none/.test(bodyOf('.callive .pmins')), true);
+}
+
 /* ---------------- the calendar's + ---------------- */
 console.log('\n--- the + is in the flow, over no row ---');
 {
@@ -209,6 +223,46 @@ console.log('\n--- a past entry fades its block, not its words ---');
   console.log(`  ${hues.length} colours; the worst, --ink on its wash: ${worst.toFixed(2)}:1`);
   check('— which clears AA on every colour an entry can have', hues.length > 10 && worst >= 4.5, true);
   check('every entry colour still carries white text, where an entry is not over (4.5:1)', hues.every(h => ratio('#FFFFFF', h) >= 4.5), true);
+}
+
+/* ---------------- what a parent taps (UX-REVIEW-3.md, 12; build 156) ---------------- */
+console.log('\n--- the controls a parent taps: her answer its own, nothing under 40px, red for what cannot wait ---');
+{
+  const px = (body, prop) => { const m = body.match(new RegExp('(?:^|;|\\s)' + prop + ':\\s*([\\d.]+)px')); return m ? parseFloat(m[1]) : 0; };
+  // the vertical padding a rule sets, from the shorthand
+  const padY = body => { const m = body.match(/(?:^|;|\s)padding:\s*([^;]+)/); if (!m) return 0; const v = m[1].trim().split(/\s+/).map(parseFloat); return v[0] + (v.length >= 3 ? v[2] : v[0]); };
+  check('a chip is 40px tall at least', px(bodyOf('.chip'), 'min-height'), 40);
+  check('— with 8px between chips', /gap:8px/.test(bodyOf('.chips')), true);
+  check('a small button is 40px tall at least', px(bodyOf('.btn.sm'), 'min-height'), 40);
+  check('the steppers too', px(bodyOf('.stepbtn'), 'min-height') >= 40 && px(bodyOf('.calnavs .stepbtn'), 'height') >= 40, true);
+  check('the avatar is 36px', px(bodyOf('.avatar'), 'width') + ' ' + px(bodyOf('.avatar'), 'height'), '36 36');
+  /* 20px of words (14px at 1.45) and padding to 40, given back by a negative
+     margin so nothing moves */
+  for (const sel of ['.textbtn', '.linkbtn', '.linkbtn.dark', '.tbsub', '.legal a'])
+    check(`${sel}: 40px to tap, the space given back`, padY(bodyOf(sel)) + 20 >= 40 && /margin:-/.test(bodyOf(sel)), true);
+  check('the sync badge, a button now, reaches 40px past its pill', /inset:-9px/.test(bodyOf('.sync::before')) && /border:0/.test(bodyOf('.sync')), true);
+  const page = fs.readFileSync(root('index.html'), 'utf8');
+  check('— and is a button that opens what is waiting', /<button class="sync" id="syncBadge" type="button" data-act="pendingsheet"/.test(page), true);
+
+  // her answer: one control, its own class, 44px, pressed in what she said
+  check('her answer is 44px tall', px(bodyOf('.rsvpseg button'), 'min-height'), 44);
+  check('— Going pressed green', /background:var\(--field-deep\)/.test(bodyOf('.rsvpseg button[aria-pressed="true"][data-v="yes"]')), true);
+  check('— Not going grey', /background:var\(--ink-soft\)/.test(bodyOf('.rsvpseg button[aria-pressed="true"][data-v="no"]')), true);
+  check('— Maybe orange', /var\(--owed\)/.test(bodyOf('.rsvpseg button[aria-pressed="true"][data-v="maybe"]')), true);
+  check('— and what became of the tap a bar on it, not a sentence (12.2)', /animation:rsvpsend/.test(bodyOf('.rsvpseg button[aria-busy="true"]::after')) && /animation:none/.test(bodyOf('.rsvpseg button[aria-busy="true"][data-off="1"]::after')), true);
+  const ctl = app.slice(app.indexOf('function rsvpChips('), app.indexOf('function rsvpBusy('));
+  check('app.js draws it in one place, rsvpChips()', (app.match(/class="[^"]*\brsvpseg\b/g) || []).length + ' ' + /class="seg rsvpseg"/.test(ctl), '1 true');
+  check('— and no chip answers for anyone', /class="chip"[^>]*data-act="rsvp"/.test(app), false);
+
+  // red is for what needs her now or cannot be undone, and there is one red
+  check('a lost game is not red: a result is a fact', /--over/.test(bodyOf('.resbadge[data-r="L"]')), false);
+  check('the now line is the calendar\'s green, not a second red', /var\(--field-deep\)/.test(bodyOf('.tg-now')) && /var\(--field-deep\)/.test(bodyOf('.agline')), true);
+  check('one red in the file', /#C5221F/i.test(raw), false);
+  const acct = app.slice(app.indexOf('function sheetAccount('), app.indexOf('function sheetForget('));
+  check('the account sheet: Sign out quiet, Delete my account a line, no two reds', /class="btn quiet wide" data-act="signout"/.test(acct) && /class="textbtn dangerlink" data-act="forgetsheet"/.test(acct) && !/class="btn[^"]*danger/.test(acct), true);
+
+  // the clock and FT in the game header are words, not buttons
+  check('the header\'s clock has no border, a pill unlike the buttons beside it', /border:0/.test(bodyOf('.ghclock')) && /border-radius:999px/.test(bodyOf('.ghclock')), true);
 }
 
 H.summary('the visual system');

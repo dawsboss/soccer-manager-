@@ -220,7 +220,7 @@ const EXPORTS = `{
   get unconfirmed() { return unconfirmed }, set unconfirmed(v) { unconfirmed = v },
   get retiredClubs() { return retiredClubs },
   /* invites */
-  get invite() { return invite }, get clubInv() { return clubInv }, get myClubs() { return myClubs },
+  get invite() { return invite }, set invite(v) { invite = v }, get regx() { return regx }, set regx(v) { regx = v }, regScreen, get clubInv() { return clubInv }, get myClubs() { return myClubs },
   secretId, randId, inviteLink, redeemInvite, makeInvite, inviteScreen,
   get importContacts() { return importContacts }, set importContacts(v) { importContacts = v }, importInviteRows, inviteImported, mailImported, linkButtons,
   fit, assignSlots, footFit, FOOT, sheetPlayer,
@@ -228,9 +228,9 @@ const EXPORTS = `{
   msgTeams, staffTeams, famTeams, msgOn, unreadCount, notices, threadMsgs, threadUnread,
   families, guardianEmails, childrenOf, viewInbox, viewThread, watchMessages, sheetPostShare,
   get msgs() { return msgs }, get msgFor() { return msgFor },
-  msgUnread, notesUnread, colleagues, sdId, convMsgs, msgState, viewNotes, msgPeople, pickMatches, pickListHtml, get online() { return online },
+  msgUnread, notesUnread, colleagues, sdId, convMsgs, msgState, viewNotes, msgPeople, pickMatches, pickListHtml, get online() { return online }, set online(v) { online = v },
   /* team links and squad invites */
-  get join() { return join }, joinLink, claimMatches, pendingClaims, joinCard,
+  get join() { return join }, set join(v) { join = v }, joinScreen, joinLink, claimMatches, pendingClaims, joinCard,
   /* training sessions */
   get sess() { return sess }, set sess(v) { sess = v }, get sessLoaded() { return sessLoaded }, get sessState() { return sessState },
   get reach() { return reach }, get sessForm() { return sessForm },
@@ -248,7 +248,7 @@ const EXPORTS = `{
   /* copy and vocabulary (UX-REVIEW.md, 2; build 144) */
   ROLE_LABEL, refusedMsg, roleWords, roleCard, roleCardSeen, INFO, infoBtn, sheetInfo, CAL_KIND,
   /* a family's own Home and Season (build 142) */
-  playedLine, landNow, get landHome() { return landHome }, set landHome(v) { landHome = v },
+  kidSeasonLine, kidPositions, cameWords, sheetChild, scoreSpan, landNow, get landHome() { return landHome }, set landHome(v) { landHome = v },
   alertsList: () => alertsHere().list, alertBar, calAlerts, elseUnread, openAlert, noteMine,
   /* safekeeping: what is owed, a full phone, and the backup */
   otherOwed, pendingCount, refusedCount, backupDoc, trainingCopy, isBackupData, keepStored,
