@@ -701,7 +701,7 @@ console.log('--- the games are on the calendar, and on the team\'s Season ---');
   check('a game next week opens on its plan', open('g2'), 'plan');
   g2.date = '2026-09-12';
   check('one today opens on Subs, where the clock starts', open('g2'), 'subs');
-  check('a game played opens on its log', open('g1'), 'live');
+  check('a game played opens on its recap (UX-REVIEW-3.md, 16.9)', open('g1'), 'recap');
   A.me = { uid: 'mumU' };
   check('a parent opens it Live', open('g2'), 'live');
   g2.date = '2026-09-19';

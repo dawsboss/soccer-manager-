@@ -331,6 +331,8 @@ console.log('\n--- the Game tab ---');
   check('a postponed game says Postponed, and the next one to be played follows it', rows('Coming up') + ' ' + /G14 Flight v Northgate<\/span><\/span><span class="pmins"><span class="tag called">Postponed<\/span>/.test(page()), 'g2 g5 true');
   A.click({ act: 'navgame', id: 'g2' }); A.click({ act: 'pickgame' });
   check('— and the game\'s own picker says Postponed, never upcoming', /data-id="g2"[\s\S]*?<span class="tag called">Postponed<\/span>/.test(sheet()), true);
+  // its rows say the day, and before it is played the kick-off and the ground; never a raw date or minutes played (UX-REVIEW-3.md, 16.7)
+  check('— every row the day, never a raw date, "min played" or "upcoming"', /class="rowsub">Sat 3 Oct · 10am</.test(sheet()) + ' ' + /\d{4}-\d\d-\d\d|min played|upcoming/.test(sheet()), 'true false');
   A.closeSheet();
   // a family's later games: the calendar row opens her own calendar
   as('jaz'); A.state.matches.g5 = { id: 'g5', teamId: 't1', opponent: 'Eastfield', date: '2026-10-03', kickoff: '10:00', periodCount: 2, periodMinutes: 40, currentHalf: 1, periods: {}, stints: {} };

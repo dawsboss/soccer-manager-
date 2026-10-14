@@ -157,7 +157,8 @@ console.log('--- only once the game is over ---');
   const html = A.rendered();
   check('a finished game draws its recap', /When it happened/.test(html) && /What went well/.test(html) && /What to work on/.test(html), true);
   check('with the spells as a table too', /As a table/.test(html), true);
-  check('and Stats points at it', (() => { A.ui.gameView = 'stats'; A.render(); return /data-v="recap"/.test(A.rendered()); })(), true);
+  // Recap is the segment beside Stats; no button on Stats repeats it (UX-REVIEW-3.md, 16.9)
+  check('and Stats carries no button repeating the Recap segment', (() => { A.ui.gameView = 'stats'; A.render(); return /data-act="opengview" data-v="recap"/.test(A.rendered()); })(), false);
 
   const live = setup({ ended: false, currentHalf: 2, periods: { 0: { half: 1, start: T0 - 50 * MIN, end: T0 - 10 * MIN }, 1: { half: 2, start: T0 - 5 * MIN } } });
   check('a game still going is live', A.gameStatus(live), 'live');

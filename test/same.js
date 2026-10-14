@@ -96,7 +96,7 @@ const home = () => { tab('home'); if (A.ui.view === 'club') A.click({ act: 'gote
 const cardFor = (h, label) => h.split('<div class="card').find(x => x.startsWith(` calnext"`) && x.includes(`<span class="muted">${label}</span>`)) || '';
 const buttonsOf = card => [...card.matchAll(/<(?:button|a) class="btn [^"]*"[^>]*>([^<]*)</g)].map(m => m[1]);
 
-/* ---------------- the ten things a parent asks about ---------------- */
+/* ---------------- the things a parent asks about ---------------- */
 
 const PATHS = [
   { ask: 'How do I see the score?', say: 'Game → the next game → Stats', who: EVERYONE,
@@ -139,6 +139,9 @@ const PATHS = [
   { ask: 'Where is the whole season?', say: 'Home → "G14 Flight on the calendar"', who: EVERYONE,
     walk() { home(); if (!/data-act="teamcal" data-tid="t1"/.test(page())) throw new Error('no link to the calendar'); A.click({ act: 'teamcal', tid: 't1' }); },
     got: () => A.ui.view, want: 'calendar' },
+  { ask: 'Where do I go Saturday?', say: 'Game → the next game → Live → Match day', who: EVERYONE,
+    walk() { game(); A.click({ act: 'opengview', v: 'live' }); },
+    got: () => /<h2[^>]*>Match day<\/h2>[\s\S]*<dt>Where<\/dt>/.test(page()), want: true },
   // UX-REVIEW-3.md, 14.3: calNext() skips what is called off, so a practice cancelled that morning used to vanish from Home
   { ask: 'Is practice on tonight?', say: 'Home → the first card says so when it is cancelled', who: EVERYONE,
     walk() { Object.assign(A.state.teams.t1.events.e1, { date: '2026-09-12', called: 'cancelled' }); home(); },
@@ -161,7 +164,7 @@ console.log('--- the coach\'s answer, walked on every phone ---');
     }
     check(`"${p.ask}" — ${p.say}`, bad.join('; ') || 'works for ' + p.who.length, 'works for ' + p.who.length);
   }
-  check('thirteen paths, and every one walked by a parent', PATHS.length + ' ' + PATHS.filter(p => p.who.includes('mum')).length, '13 13');
+  check('fourteen paths, and every one walked by a parent', PATHS.length + ' ' + PATHS.filter(p => p.who.includes('mum')).length, '14 14');
 }
 
 console.log('\n--- who may answer is the app\'s to say, and pinned ---');

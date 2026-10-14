@@ -472,6 +472,21 @@ kind from the calendar and left the form as it was; the form's is `calfkind` now
 
 ## 16. Game day
 
+**Built in build 159**, all ten, as the fixes below say (16.4 and 16.6 had already come with section 12 in build 156). Before kick-off Live leads with a
+*Match day* card (`matchDayCard()`: when, where, the ground, arrive by, kit, notes,
+Directions and her answer) and Stats is one line; once it is on, her child's line sits under
+the Live score (`myGameLine()`, hers alone, kept by the ticker) and the head says *2nd half ·
+8:00 of 30:00*; Stats' Minutes marks who is on and, for a family, a fan or a club viewer,
+shows minutes alone with her own child first (the plan sentences are off her Recap too); goal
+rows and shot dots are plain for whoever may not change them, and `fixgoal`/`fixshot` are in
+`LOG_ACTS`; *Share* is on the game menu only when there is a link (`shareable()`); the picker
+and the menu say *Sat 17 Oct · 10am · Away*, *Postponed*, or the score with *FT*
+(`pickWhen()`, `pickCell()`), and the header says *Postponed*; the follow card is *Goals and the final whistle · Buzz me*
+(build 156); a finished game opens on its Recap from every door and Stats
+has no button repeating it; and *Full time* is the word (`GLOSSARY.md` bans *Final*).
+`test/feed.js`, `test/parents.js`, `test/nav.js` and `test/same.js` (*Where do I go
+Saturday?*) hold it.
+
 - **16.1 Her child's part in the game is on no game screen.** Live: *Live · 2nd half · 38:00 ·
   G12 Flight 1–1 Hill End*, *Notify me*, *What's happened* (`mum-live 02-game-live`). Nothing
   says whether Rosa is on the pitch. Home's *Playing now* row lands on Stats, where she is the

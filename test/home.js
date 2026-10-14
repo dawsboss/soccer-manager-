@@ -170,7 +170,7 @@ const club = () => ({
       check(`no ${what}`, re.test(h), false);
     check('no other child, by name or number', /Ella|Fitzgerald|Mia|Kowalski|#9|#4|A teammate/.test(h), false);
     A.click({ act: 'gotoplayer', tid: 't1', id: 'g1' });
-    check('the last result opens that game\'s numbers', A.ui.view + ' ' + A.ui.matchId + ' ' + A.ui.gameView, 'game g1 stats');
+    check('the last result opens that game\'s recap, where every finished game lands (UX-REVIEW-3.md, 16.9)', A.ui.view + ' ' + A.ui.matchId + ' ' + A.ui.gameView, 'game g1 recap');
 
     // the same card for the coach, with the same buttons, and her Who is coming where the chips are (UX-REVIEW-2.md, 9.2)
     const c0 = as('jaz', 'season');

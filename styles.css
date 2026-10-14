@@ -265,6 +265,8 @@ label.field span{display:block;font-size:14px;color:var(--ink-soft);margin-botto
 .fs-side{font-weight:600;overflow-wrap:anywhere}
 .fs-side:first-child{text-align:right}
 .fs-side:last-child{text-align:left}
+.feedmine{margin:10px 0 0;font-size:15px}
+.feedmine+.feedmine{margin-top:4px}
 .fs-num{font-family:"Barlow Condensed",sans-serif;font-weight:700;font-size:44px;line-height:1;font-variant-numeric:tabular-nums}
 .feed{display:flex;flex-direction:column}
 .feedrow{display:grid;grid-template-columns:40px 1fr auto;gap:10px;align-items:baseline;padding:9px 0;border-top:1px solid var(--line)}
