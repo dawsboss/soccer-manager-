@@ -26,7 +26,7 @@ const { makeFakebase } = require('./fakebase');
 const A = H.loadApp({ firebase: makeFakebase(), storage: { 'sm.workspace': 'CLUB' }, config: { apiKey: 'k', databaseURL: 'https://x.test' } });
 const at = (d, hhmm) => { const [y, m, dd] = d.split('-').map(Number); const [h, mi] = hhmm.split(':').map(Number); return new Date(y, m - 1, dd, h, mi).getTime(); };
 
-let sets = [], refuse = false;
+let sets = [], refuse = false, hold = false;
 function setup() {
   H.clock.set(at('2026-09-12', '10:00'));
   A.state = {
@@ -57,11 +57,12 @@ function setup() {
     },
     rsvp: {}
   };
-  A.ui.teamId = 't1'; A.ui.view = 'calendar'; A.ui.matchId = null; A.ui.calAll = false;
-  sets = []; refuse = false; A.toasts.length = 0;
+  A.ui.teamId = 't1'; A.ui.view = 'calendar'; A.ui.matchId = null; A.ui.calAll = false; A.ui.rsvpSaid = null;
+  sets = []; refuse = false; hold = false; A.toasts.length = 0;
   A.fb = {
     db: {}, ref: (db, path) => path,
-    set: (path, v) => { sets.push([path, v]); return refuse ? Promise.reject({ code: 'PERMISSION_DENIED' }) : Promise.resolve(); },
+    // `hold` is a phone with no signal: the write never comes back
+    set: (path, v) => { sets.push([path, v]); return hold ? new Promise(() => { }) : refuse ? Promise.reject({ code: 'PERMISSION_DENIED' }) : Promise.resolve(); },
     remove: () => Promise.resolve()
   };
 }
@@ -96,8 +97,15 @@ console.log('--- a parent, for her own child ---');
 
   answer('p1', 'no');
   check('a new answer replaces it', ans('p1').v, 'no');
+  /* 12.2: a second tap on the same answer used to clear it with nothing
+     said; now she is asked, and No leaves it as it was. */
+  const keep = global.confirm, n0 = rsvpWrites().length;
+  global.confirm = () => false;
   answer('p1', 'no');
-  check('the same answer again takes it back', ans('p1'), null);
+  global.confirm = keep;
+  check('the same answer again asks first, and No keeps it', ans('p1') && ans('p1').v + ' ' + (rsvpWrites().length - n0), 'no 0');
+  answer('p1', 'no');
+  check('— Yes takes it back', ans('p1'), null);
   check('— as a delete, not an empty answer', rsvpWrites().pop()[1], null);
 
   sets = []; A.toasts.length = 0;
@@ -125,14 +133,44 @@ console.log('--- a parent, for her own child ---');
   check('— her sheet still asks about her own child only', /Is Ella going\?/.test(sheet()) && !/data-act="rsvp"[^>]*data-pid="p[23]"/.test(sheet()), true);
 
   A.click({ act: 'calitem', k: 'practice', tid: 't1', id: 'e0' });
-  check('something already over is not asked about', /rsvpchips/.test(sheet()), false);
+  check('something already over is not asked about', /rsvpseg/.test(sheet()), false);
   A.click({ act: 'calitem', k: 'event', tid: 't1', id: 'ex' });
-  check('nor something called off', /rsvpchips/.test(sheet()), false);
+  check('nor something called off', /rsvpseg/.test(sheet()), false);
 
   A.ui.view = 'mine';
   check('Home: the answer beside what is next', /Next up<\/span>[\s\S]*?<span class="tag practice">[\s\S]*?>Going</.test(html()), true);
 }
 
+console.log('--- her answer: its own control, and what became of the tap (UX-REVIEW-3.md, 12.1, 12.2) ---');
+{
+  setup(); as('mumU'); A.ui.view = 'mine';
+  let h = html();
+  const seg = (h.match(/<div class="seg rsvpseg"[^>]*>[\s\S]*?<\/div>/) || [''])[0];
+  check('one segment for her child: Going, Not going and Maybe, each with its mark', (seg.match(/data-act="rsvp"/g) || []).length + ' ' + /✓<\/span>Going<[\s\S]*✕<\/span>Not going<[\s\S]*\?<\/span>Maybe</.test(seg), '3 true');
+  check('— named for the question it answers', /aria-label="Is Ella going\?"/.test(seg), true);
+  check('— and never the pill a filter is', /<button class="chip"[^>]*data-act="rsvp"/.test(h), false);
+  check('nothing said before she taps', /rsvpsaid/.test(h), false);
+
+  hold = true; A.online = false;
+  answer('p1', 'no', 'e_e1', { from: 'next' });
+  h = html();
+  check('pressed, with no signal: she is told it is on her phone', /class="rsvpsaid" role="status">Saved on your phone, sent when there is signal</.test(h), true);
+  check('— the one she pressed, and only it', (h.match(/aria-pressed="true"/g) || []).length + ' ' + /data-v="no"[^>]*aria-pressed="true"/.test(h), '1 true');
+  H.clock.set(at('2026-09-12', '10:05'));
+  check('— and still told, minutes on, while it has not gone', /Saved on your phone/.test(html()), true);
+
+  setup(); as('mumU'); A.ui.view = 'mine'; A.online = true;
+  answer('p1', 'no', 'e_e1', { from: 'next' });
+  check('with signal: Told the coach', /class="rsvpsaid" role="status">Told the coach: not going</.test(html()), true);
+  return H.flush().then(() => {
+    H.clock.set(at('2026-09-12', '10:01'));
+    check('— for a moment, not for ever', /rsvpsaid/.test(html()), false);
+    A.online = false;
+    refused();
+  });
+}
+
+function refused() {
 console.log('--- a refused write does not stick ---');
 {
   setup(); as('mumU');
@@ -142,10 +180,13 @@ console.log('--- a refused write does not stick ---');
   return H.flush().then(() => {
     check('taken back when the database says no', ans('p1'), null);
     check('and she is told why, in plain words', /That didn.t save\. The club.s set-up is out of date: tell the club admin\./.test(A.lastToast()), true);
+    A.ui.view = 'mine';
+    check('— and nothing under the answer says it was told (12.2)', /rsvpsaid|Told the coach/.test(html()), false);
     // taken back off the screen, it must not come back from the outbox on the next connect
     check('and out of the outbox, so it does not come back', Object.keys(A.pending.w).some(p => p.startsWith('rsvp/')), false);
     rest();
   });
+}
 }
 
 function rest() {
@@ -166,7 +207,7 @@ function rest() {
     /* Build 151 (UX-REVIEW-2.md, 7.2): the counts and a list, not three chips a
        child; a name opens the chips for that child alone. */
     check('the three counts, and who is still to answer', /class="rsvpcounts"><span><b>1<\/b>going<\/span><span><b>1<\/b>not going<\/span><span><b>0<\/b>maybe<\/span><span><b>1<\/b>to answer<\/span><\/div>/.test(s), true);
-    check('and no chips until she taps a name', /rsvpchips|data-act="rsvp"/.test(s), false);
+    check('and no chips until she taps a name', /rsvpseg|data-act="rsvp"/.test(s), false);
     check('every name is a button', (s.match(/<button class="rsvprow rsvpwho" type="button" data-act="rsvpwho"/g) || []).length, 3);
     A.click({ act: 'rsvpwho', tid: 't1', k: 'g_g1', pid: 'p3', kind: 'game', id: 'g1' });
     check('a name opens the chips for that child alone', (sheet().match(/data-act="rsvp" data-tid="t1" data-k="g_g1" data-pid="p3"/g) || []).length, 3);

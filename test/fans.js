@@ -98,8 +98,13 @@ const invitesMade = (fbk, from = 0) => fbk.record.writes.slice(from).filter(w =>
   {
     const { A, fbk } = await boot('mumU');
     A.ui.view = 'mine'; A.render();
-    check('My players offers her child\'s fans', /data-act="fansheet" data-tid="t1" data-pid="p1"/.test(A.rendered()), true);
+    // her child's name opens her own sheet, and her fans are a row there (UX-REVIEW-3.md, 14.1), not a button on the card
+    check('My players offers her child\'s own sheet', /data-act="kidsheet" data-tid="t1" data-pid="p1"/.test(A.rendered()) && !/data-act="fansheet"/.test(A.rendered()), true);
+    A.click({ act: 'kidsheet', tid: 't1', pid: 'p1' });
+    check('— whose row is her fans', /data-act="fansheet" data-tid="t1" data-pid="p1"[\s\S]*?Family and friends who follow Ella/.test(sheet(A)), true);
     A.click({ act: 'fansheet', tid: 't1', pid: 'p1' });
+    check('— the sheet says what a fan is before anything to tap', sheet(A).indexOf('For a grandparent') < sheet(A).indexOf('data-act="faninvite"'), true);
+    check('— with one button to ask someone', />Invite a grandparent or friend</.test(sheet(A)), true);
     check('the sheet says what a fan gets, and does not', /doesn't say who is going, message the coaches or book sessions/.test(sheet(A)), true);
     check('and that a coach says yes first', /A coach of the team says yes before they see anything/.test(sheet(A)), true);
     A.click({ act: 'faninvite', tid: 't1', pid: 'p1', from: 'sheet' }); await A.flush(10);
@@ -293,7 +298,7 @@ const invitesMade = (fbk, from = 0) => fbk.record.writes.slice(from).filter(w =>
     org.access.teamFans.t1.aunt = 'p1'; org.access.teamFans.t1.uncle = 'p1';
     const { A, fbk } = await boot('mumU', org);
     A.click({ act: 'fansheet', tid: 't1', pid: 'p1' });
-    check('her child\'s fans, by name', /Aunt Jo/.test(sheet(A)) && /Uncle Sid/.test(sheet(A)) && /2 fans follow Ella/.test(sheet(A)), true);
+    check('her child\'s fans, by name', /Aunt Jo/.test(sheet(A)) && /Uncle Sid/.test(sheet(A)) && /who follow Ella · 2</.test(sheet(A)), true);
     check('with Remove beside each', (sheet(A).match(/data-act="fandrop"/g) || []).length, 2);
     check('the sheet offers how many people and for how long', /id="fanLUses"/.test(sheet(A)) && /id="fanLDays"/.test(sheet(A)), true);
     A.dom.confirm = () => true;

@@ -124,6 +124,27 @@ title-row checks and `test/same.js`'s "a team's title the team over the club".
 
 ## 12. Buttons
 
+**Built in build 155**, all seven: her answer is its own control (`rsvpChips()`, a `.seg
+rsvpseg` 44px tall with ✓ ✕ ? and pressed green, grey or orange) on the next-up card, the
+entry's sheet and her child's card; under it after a tap, *Told the coach: not going* or, while it
+is still on the phone with no signal, *Saved on your phone, sent when there is signal*; the same
+answer again asks *Take back your answer?* (12.1, 12.2). Chips, small buttons and steppers 40px,
+the text buttons, the club line and the legal links a 40px hit area that moves nothing, the
+avatar 36px (12.3). From 12.4: *Add to my calendar* opens the two choices alone (`sheetCalAdd()`,
+*Google Calendar* / *Apple, Outlook or another*, the same pair under *Add to your calendar* in the
+entry's sheet); *Fans* is off the card, her name opening her own sheet (`sheetChild()`) with
+*Family and friends who follow Rosa*, the paragraph first and *Invite a grandparent or friend*;
+Settings → You and the avatar open one account sheet; *Share* is drawn only where there is a link
+or she may make one; *Notify me · Turn on* is *Goals and the final whistle · Buzz me* with the
+catch as one line; the sync badge is a button opening what is waiting. Sign out is quiet and
+*Delete my account…* a red line at the account sheet's foot; a lost game is grey, the now line
+the calendar's green, and there is one red (12.5). *Open the game* is quiet on a card that asks
+her answer, until the day (12.6). The clock and *FT* in the game header are a borderless pill
+(12.7). `test/rsvp.js`, `test/visual.js`, `test/home.js`, `test/nav.js`, `test/same.js`,
+`test/fans.js` and `test/feed.js` hold it. What 12.4 names that is still open in its own section:
+the subscription offered at the top of the calendar choices (15.3), the outbox line for the Database
+row (14.4, 18.4).
+
 The audit (`tools/screens`: every tappable thing on the parent's 181 screens, 4,433 of them,
 by class, label, action and size) says this about the controls a parent meets:
 

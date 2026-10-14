@@ -192,4 +192,43 @@ console.log('\n--- the + is in the flow, over no row ---');
   check('nothing pads the list for it any more', rules.some(r => r.sel === '.stack.calendar'), false);
 }
 
+/* ---------------- what a parent taps (UX-REVIEW-3.md, 12; build 155) ---------------- */
+console.log('\n--- the controls a parent taps: her answer its own, nothing under 40px, red for what cannot wait ---');
+{
+  const px = (body, prop) => { const m = body.match(new RegExp('(?:^|;|\\s)' + prop + ':\\s*([\\d.]+)px')); return m ? parseFloat(m[1]) : 0; };
+  // the vertical padding a rule sets, from the shorthand
+  const padY = body => { const m = body.match(/(?:^|;|\s)padding:\s*([^;]+)/); if (!m) return 0; const v = m[1].trim().split(/\s+/).map(parseFloat); return v[0] + (v.length >= 3 ? v[2] : v[0]); };
+  check('a chip is 40px tall at least', px(bodyOf('.chip'), 'min-height'), 40);
+  check('— with 8px between chips', /gap:8px/.test(bodyOf('.chips')), true);
+  check('a small button is 40px tall at least', px(bodyOf('.btn.sm'), 'min-height'), 40);
+  check('the steppers too', px(bodyOf('.stepbtn'), 'min-height') >= 40 && px(bodyOf('.calnavs .stepbtn'), 'height') >= 40, true);
+  check('the avatar is 36px', px(bodyOf('.avatar'), 'width') + ' ' + px(bodyOf('.avatar'), 'height'), '36 36');
+  /* 20px of words (14px at 1.45) and padding to 40, given back by a negative
+     margin so nothing moves */
+  for (const sel of ['.textbtn', '.linkbtn', '.linkbtn.dark', '.tbsub', '.legal a'])
+    check(`${sel}: 40px to tap, the space given back`, padY(bodyOf(sel)) + 20 >= 40 && /margin:-/.test(bodyOf(sel)), true);
+  check('the sync badge, a button now, reaches 40px past its pill', /inset:-9px/.test(bodyOf('.sync::before')) && /border:0/.test(bodyOf('.sync')), true);
+  const page = fs.readFileSync(root('index.html'), 'utf8');
+  check('— and is a button that opens what is waiting', /<button class="sync" id="syncBadge" type="button" data-act="pendingsheet"/.test(page), true);
+
+  // her answer: one control, its own class, 44px, pressed in what she said
+  check('her answer is 44px tall', px(bodyOf('.rsvpseg button'), 'min-height'), 44);
+  check('— Going pressed green', /background:var\(--field-deep\)/.test(bodyOf('.rsvpseg button[aria-pressed="true"][data-v="yes"]')), true);
+  check('— Not going grey', /background:var\(--ink-soft\)/.test(bodyOf('.rsvpseg button[aria-pressed="true"][data-v="no"]')), true);
+  check('— Maybe orange', /var\(--owed\)/.test(bodyOf('.rsvpseg button[aria-pressed="true"][data-v="maybe"]')), true);
+  const ctl = app.slice(app.indexOf('function rsvpChips('), app.indexOf('function rsvpSaid('));
+  check('app.js draws it in one place, rsvpChips()', (app.match(/class="[^"]*\brsvpseg\b/g) || []).length + ' ' + /class="seg rsvpseg"/.test(ctl), '1 true');
+  check('— and no chip answers for anyone', /class="chip"[^>]*data-act="rsvp"/.test(app), false);
+
+  // red is for what needs her now or cannot be undone, and there is one red
+  check('a lost game is not red: a result is a fact', /--over/.test(bodyOf('.resbadge[data-r="L"]')), false);
+  check('the now line is the calendar\'s green, not a second red', /var\(--field-deep\)/.test(bodyOf('.tg-now')) && /var\(--field-deep\)/.test(bodyOf('.agline')), true);
+  check('one red in the file', /#C5221F/i.test(raw), false);
+  const acct = app.slice(app.indexOf('function sheetAccount('), app.indexOf('function sheetForget('));
+  check('the account sheet: Sign out quiet, Delete my account a line, no two reds', /class="btn quiet wide" data-act="signout"/.test(acct) && /class="textbtn dangerlink" data-act="forgetsheet"/.test(acct) && !/class="btn[^"]*danger/.test(acct), true);
+
+  // the clock and FT in the game header are words, not buttons
+  check('the header\'s clock has no border, a pill unlike the buttons beside it', /border:0/.test(bodyOf('.ghclock')) && /border-radius:999px/.test(bodyOf('.ghclock')), true);
+}
+
 H.summary('the visual system');

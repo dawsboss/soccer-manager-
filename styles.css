@@ -86,7 +86,11 @@ button{cursor:pointer}
 .sync{
   flex:none;font-size:12px;letter-spacing:.02em;
   background:rgba(255,255,255,.16);border-radius:999px;padding:3px 9px;
+  border:0;color:inherit;position:relative;
 }
+/* a button since build 155 (UX-REVIEW-3.md, 14.4), opening what is waiting: its
+   hit area reaches 40px tall without the pill growing (12.3) */
+.sync::before{content:"";position:absolute;inset:-9px -4px}
 .sync[data-state="live"]{background:#7FD6A6;color:#0E3B25;font-weight:600}
 .sync[data-state="off"]{background:rgba(255,255,255,.16)}
 
@@ -129,7 +133,7 @@ button.card:active,button.prow:active,.sheet .opt:active,.calleaf:active{backgro
 .btn.quiet{background:#fff;color:var(--ink);border-color:var(--line)}
 .btn.danger{background:#fff;color:var(--over);border-color:var(--over)}
 .btn.wide{width:100%}
-.btn.sm{padding:7px 11px;font-size:14px;border-radius:7px}
+.btn.sm{padding:9px 12px;font-size:14px;border-radius:7px;min-height:40px}
 .btn[disabled]{opacity:.5;pointer-events:none}
 
 input[type=text],input[type=number],input[type=date],input[type=time],input[type=url],select,textarea{
@@ -268,8 +272,11 @@ label.field span{display:block;font-size:14px;color:var(--ink-soft);margin-botto
 .on{color:var(--field-deep)}
 
 /* ---------- new bits ---------- */
+/* A text button is 20px of words in a 40px hit area (UX-REVIEW-3.md, 12.3):
+   the padding makes the area and a negative margin gives the space back, so
+   nothing around it moves. */
 .linkbtn{
-  background:none;border:0;padding:8px 0 0;color:rgba(255,255,255,.8);
+  background:none;border:0;padding:10px 0;margin:-2px 0 -10px;color:rgba(255,255,255,.8);
   font-size:14px;text-decoration:underline;text-underline-offset:3px;
 }
 .warn{
@@ -309,10 +316,10 @@ label.field span{display:block;font-size:14px;color:var(--ink-soft);margin-botto
   max-width:90vw;
 }
 
-.chips{display:flex;flex-wrap:wrap;gap:6px}
+.chips{display:flex;flex-wrap:wrap;gap:8px}
 .chip{
   background:#fff;border:1px solid var(--line);border-radius:999px;
-  padding:6px 12px;font-size:14px;
+  padding:8px 14px;font-size:14px;min-height:40px;
 }
 .chip[aria-pressed="true"]{background:var(--field-deep);color:#fff;border-color:var(--field-deep)}
 
@@ -427,7 +434,7 @@ label.field span{display:block;font-size:14px;color:var(--ink-soft);margin-botto
 .tallybtn:active{background:var(--field-wash)}
 .possbar{height:12px;border-radius:6px;background:var(--bench);overflow:hidden}
 .possbar i{display:block;height:100%;background:var(--field)}
-.linkbtn.dark{color:var(--ink-soft);display:block;padding:10px 0 0}
+.linkbtn.dark{color:var(--ink-soft);display:block;padding:12px 0 10px;margin:-2px 0 -10px}
 
 .clocknote{margin:10px 0 0;font-size:14px;color:rgba(255,255,255,.75)}
 .tabs button{padding-left:3px;padding-right:3px}
@@ -518,7 +525,7 @@ body[data-role="viewer"] .tallybtn,
 body[data-role="viewer"] .lrspot,
 body[data-role="viewer"] .scoreside .btn{display:none}
 
-.stepbtn{flex:none;width:34px;display:flex;align-items:center;justify-content:center;
+.stepbtn{flex:none;width:36px;min-height:40px;display:flex;align-items:center;justify-content:center;
   background:#fff;border:1px solid var(--line);border-radius:10px;
   color:var(--field-deep);font-size:22px;line-height:1;padding:0 0 3px}
 .gb-score{font-family:"Barlow Condensed",sans-serif;font-weight:700;font-size:18px;
@@ -529,7 +536,8 @@ body[data-role="viewer"] .scoreside .btn{display:none}
   background:var(--paper);color:var(--ink-soft)}
 .resbadge[data-r="W"]{background:var(--field);color:#fff}
 .resbadge[data-r="D"]{background:var(--line);color:var(--ink)}
-.resbadge[data-r="L"]{background:var(--over);color:#fff}
+/* a result is a fact, in the pitch's colours: red is for what needs her now (UX-REVIEW-3.md, 12.5) */
+.resbadge[data-r="L"]{background:var(--ink-soft);color:#fff}
 /* The Game tab's list (UX-REVIEW-3.md, 11.1): a heading per day, and when (or the clock) leading each row */
 .gday{margin:16px 0 6px;font-weight:600}
 .card h2 + .gday,.gfirst{margin-top:10px}
@@ -553,7 +561,8 @@ body[data-role="viewer"] .scoreside .btn{display:none}
 .tbtitle>span{min-width:0;overflow:hidden;text-overflow:ellipsis}
 .tbtitle.pick{background:none;border:0;padding:0;text-align:left}
 .tbtitle svg,.tbsub svg{flex:none;opacity:.7}
-.tbsub{display:flex;align-items:center;gap:5px;max-width:100%;min-width:0;background:none;border:0;padding:0;
+/* 20px of words, 40px to tap (UX-REVIEW-3.md, 12.3), reaching mostly down so the title over it keeps its own */
+.tbsub{display:flex;align-items:center;gap:5px;max-width:100%;min-width:0;background:none;border:0;padding:6px 0 14px;margin:-6px 0 -14px;
   color:rgba(255,255,255,.78);font-size:14px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-align:left}
 .tbsub>span{min-width:0;overflow:hidden;text-overflow:ellipsis}
 .tbsub .crest.xs{width:16px;height:16px;border-radius:4px}
@@ -573,8 +582,8 @@ body[data-mode="game"] .titlebar{padding-top:4px;padding-bottom:8px}
 /* the date and kick-off under the two teams: which game this is, before the clock says how far it has got */
 .ghwhen{max-width:100%;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:rgba(255,255,255,.78);font-size:14px;font-weight:500}
 .ghclock{flex:none;font-family:"Barlow Condensed",sans-serif;font-weight:700;font-size:20px;line-height:1.2;
-  font-variant-numeric:tabular-nums;color:#fff;background:rgba(255,255,255,.14);border:1px solid rgba(255,255,255,.22);
-  border-radius:9px;padding:3px 9px;max-width:38vw;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  font-variant-numeric:tabular-nums;color:#fff;background:rgba(0,0,0,.2);border:0;
+  border-radius:999px;padding:3px 11px;max-width:38vw;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .ghsync{font-size:12px;padding:2px 7px}
 /* the two looks folded into one screen: List / Pitch on Subs, Stats / Live feed on Stats */
 .chips.looks{flex-wrap:nowrap}
@@ -600,7 +609,7 @@ body[data-mode="game"] .titlebar{padding-top:4px;padding-bottom:8px}
 /* a game being played: the dot a live tab carries, in the colour the score uses for the other side */
 .tablive{position:absolute;top:6px;left:calc(50% + 8px);width:9px;height:9px;border-radius:50%;background:var(--over);border:2px solid var(--card)}
 
-.avatar{flex:none;width:32px;height:32px;border-radius:50%;padding:0;overflow:hidden;
+.avatar{flex:none;width:36px;height:36px;border-radius:50%;padding:0;overflow:hidden;
   background:rgba(255,255,255,.18);border:1px solid rgba(255,255,255,.35);color:#fff;
   display:flex;align-items:center;justify-content:center;font-weight:600;font-size:14px}
 .avatar img{width:100%;height:100%;object-fit:cover}
@@ -768,8 +777,6 @@ a.btn{display:inline-block;text-decoration:none}
 .rsvpbox{border-top:1px solid var(--line);margin:4px 0 12px;padding-top:10px}
 .rsvprow{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:6px 0;border-top:1px solid var(--paper)}
 .rsvprow:first-of-type{border-top:0}
-.rsvpchips{flex:none}
-.rsvprow .chip{padding:4px 9px;font-size:14px}
 /* the coach's list: the counts, then a name per row that opens the chips for that child */
 .rsvpcounts{display:flex;flex-wrap:wrap;gap:4px 16px;margin:0 0 6px}
 .rsvpcounts span{display:flex;align-items:baseline;gap:5px;font-size:14px;color:var(--ink-soft)}
@@ -779,8 +786,28 @@ button.rsvprow:first-of-type{border-top:0}
 button.rsvprow[aria-expanded="true"]{color:var(--field)}
 .rsvpgo{color:var(--ink-soft);font-size:20px;line-height:1}
 .rsvpfor{padding:2px 0 8px}
+/* Her answer (UX-REVIEW-3.md, 12.1; build 155): a segment, as the calendar's
+   views are, not the pill a filter is; 44px tall with a mark per answer,
+   and pressed in what she said, green, grey or orange. */
+.rsvpseg{margin-top:6px}
+.rsvpseg button{min-height:44px;display:flex;align-items:center;justify-content:center;gap:5px;color:var(--ink);font-size:15px}
+.rsvpmark{font-weight:700}
+.rsvpseg button[aria-pressed="true"][data-v="yes"]{background:var(--field-deep);color:#fff}
+.rsvpseg button[aria-pressed="true"][data-v="no"]{background:var(--ink-soft);color:#fff}
+.rsvpseg button[aria-pressed="true"][data-v="maybe"]{background:var(--owed-wash);color:#6C4406;box-shadow:inset 0 0 0 2px var(--owed)}
+/* what became of the tap (12.2) */
+.rsvpsaid{margin:6px 0 0;font-size:14px;font-weight:500;color:var(--field-deep)}
+/* her child's name, the door to her own sheet (14.1) */
+.kidhead{display:flex;align-items:center;gap:10px;min-width:0;text-align:left}
+/* .plainbtn comes later and zeroes the padding the chevron sits in */
+.kidhead.go{padding-right:28px}
+.kidhead.go::after{right:6px}
 /* a quiet action on a light card (.linkbtn is for the dark clock band) */
-.textbtn{background:none;border:0;padding:4px 0;color:var(--field-deep);font-size:14px;text-decoration:underline;text-underline-offset:3px}
+.textbtn{background:none;border:0;padding:10px 0;margin:-6px 0;color:var(--field-deep);font-size:14px;text-decoration:underline;text-underline-offset:3px}
+/* Delete my account: a line, red because it cannot be undone (UX-REVIEW-3.md, 12.5) */
+.textbtn.dangerlink{color:var(--over)}
+/* the legal links, 40px to tap the same way */
+.legal a{display:inline-block;padding:11px 0;margin:-11px 0}
 /* ---------- messages ---------- */
 .msgcard{padding:12px 0;border-top:1px solid var(--line)}
 .msgcard:first-of-type{border-top:0;padding-top:4px}
@@ -1040,9 +1067,9 @@ button.rsvprow[aria-expanded="true"]{color:var(--field)}
   font-family:"Barlow Condensed",sans-serif;font-weight:600;font-size:23px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .caltitle span{font-size:14px;color:var(--ink-soft);vertical-align:3px}
 .calnavs{display:flex;align-items:center;gap:6px;flex:none}
-.calnavs .stepbtn{height:34px}
+.calnavs .stepbtn{height:40px}
 /* Today, as a calendar app draws it: a little calendar with today's date on it */
-.caltoday{flex:none;width:36px;height:34px;display:flex;align-items:center;justify-content:center;
+.caltoday{flex:none;width:40px;height:40px;display:flex;align-items:center;justify-content:center;
   background:#fff;border:1px solid var(--line);border-radius:10px;color:var(--field-deep);padding:0}
 .caltoday i{display:block;width:21px;height:21px;border:2px solid currentColor;border-top-width:5px;border-radius:4px;
   font-style:normal;font-size:11px;font-weight:700;line-height:13px;text-align:center;font-variant-numeric:tabular-nums}
@@ -1077,8 +1104,9 @@ button.rsvprow[aria-expanded="true"]{color:var(--field)}
 .agday[data-past="1"] .agdate{opacity:.6}
 .agevs{display:flex;flex-direction:column;gap:6px;min-width:0}
 /* where what has happened ends and what is to come begins */
-.agline{display:block;position:relative;height:2px;background:#C5221F;margin:3px 0 3px 6px;border-radius:1px}
-.agline::before{content:"";position:absolute;left:-6px;top:-4px;width:10px;height:10px;border-radius:50%;background:#C5221F}
+/* now, in the calendar's own colour for today (UX-REVIEW-3.md, 12.5: it was a second red) */
+.agline{display:block;position:relative;height:2px;background:var(--field-deep);margin:3px 0 3px 6px;border-radius:1px}
+.agline::before{content:"";position:absolute;left:-6px;top:-4px;width:10px;height:10px;border-radius:50%;background:var(--field-deep)}
 .calearlier{align-self:center}
 
 /* an entry, filled with its calendar's colour */
@@ -1091,7 +1119,7 @@ button.ev:active{filter:brightness(.92)}
 .ev-sub{display:block;font-size:14px;opacity:.93;overflow-wrap:anywhere}
 .ev-score{flex:none;font-family:"Barlow Condensed",sans-serif;font-weight:700;font-size:17px;font-variant-numeric:tabular-nums}
 .ev-live{flex:none;align-self:center;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;
-  background:#fff;color:#C5221F;border-radius:4px;padding:1px 5px}
+  background:#fff;color:var(--over);border-radius:4px;padding:1px 5px}
 .ev-tag{flex:none;align-self:center;font-size:12px;font-weight:600;background:rgba(255,255,255,.22);border-radius:4px;padding:1px 6px}
 .ev[data-past="1"]{opacity:.6}
 /* called off: still there, so nobody turns up, but plainly not on */
@@ -1140,8 +1168,8 @@ button.ev:active{filter:brightness(.92)}
 .tg-week .tg-ev span{display:none}
 .tg-more{position:absolute;z-index:1;margin-left:1px;border:0;border-radius:6px;background:var(--ink-soft);color:#fff;
   font-size:12px;font-weight:700;padding:0;box-shadow:0 0 0 1px #fff}
-.tg-now{position:absolute;left:-1px;right:0;height:2px;background:#C5221F;z-index:2;pointer-events:none}
-.tg-now::before{content:"";position:absolute;left:-4px;top:-4px;width:10px;height:10px;border-radius:50%;background:#C5221F}
+.tg-now{position:absolute;left:-1px;right:0;height:2px;background:var(--field-deep);z-index:2;pointer-events:none}
+.tg-now::before{content:"";position:absolute;left:-4px;top:-4px;width:10px;height:10px;border-radius:50%;background:var(--field-deep)}
 .tg-allday .mg-ev{font-size:11px}
 @media (min-width:760px){
   .tg-week .tg-ev span{display:block}
@@ -1193,9 +1221,9 @@ button.ev:active{filter:brightness(.92)}
 .calfab:active{transform:translateY(1px)}
 
 /* on top: a game being played, and what's next */
-.callive{display:flex;align-items:center;gap:10px;width:100%;text-align:left;font:inherit;color:inherit;border-left:4px solid #C5221F}
+.callive{display:flex;align-items:center;gap:10px;width:100%;text-align:left;font:inherit;color:inherit;border-left:4px solid var(--over)}
 .callive-t{flex:1;min-width:0;display:flex;flex-direction:column}
-.callive .ev-live{background:#C5221F;color:#fff}
+.callive .ev-live{background:var(--over);color:#fff}
 /* on Month, one line over the grid */
 .callive[data-one="1"]{padding:8px 12px}
 .callive[data-one="1"] .callive-t b{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
