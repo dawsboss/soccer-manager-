@@ -96,7 +96,7 @@ const home = () => { tab('home'); if (A.ui.view === 'club') A.click({ act: 'gote
 const cardFor = (h, label) => h.split('<div class="card').find(x => x.startsWith(` calnext"`) && x.includes(`<span class="muted">${label}</span>`)) || '';
 const buttonsOf = card => [...card.matchAll(/<(?:button|a) class="btn [^"]*"[^>]*>([^<]*)</g)].map(m => m[1]);
 
-/* ---------------- the ten things a parent asks about ---------------- */
+/* ---------------- the things a parent asks about ---------------- */
 
 const PATHS = [
   { ask: 'How do I see the score?', say: 'Game → the next game → Stats', who: EVERYONE,
@@ -117,9 +117,10 @@ const PATHS = [
   { ask: 'How do I get to practice?', say: 'Home → Next up → Directions', who: EVERYONE,
     walk() { home(); },
     got: () => /<a class="btn quiet sm" href="[^"]*Lakeside[^"]*"[^>]*>Directions<\/a>/.test(cardFor(page(), 'Next up')), want: true },
-  { ask: 'Can I put it in my own calendar?', say: 'Home → Next up → Add to my calendar → Apple or Outlook', who: EVERYONE,
-    walk() { home(); if (!/>Add to my calendar</.test(cardFor(page(), 'Next up'))) throw new Error('no Add to my calendar'); A.click({ act: 'calitem', k: 'practice', tid: 't1', id: 'e1' }); if (!/>Google Calendar</.test(sheet())) throw new Error('no Google Calendar'); A.click({ act: 'calics', k: 'practice', tid: 't1', id: 'e1' }); },
-    got: () => /data-act="calics"[^>]*>Apple or Outlook</.test(sheet()) && !A.lastToast(), want: true },
+  // the button opens the two choices, not the whole entry (UX-REVIEW-3.md, 15.3)
+  { ask: 'Can I put it in my own calendar?', say: 'Home → Next up → Add to my calendar → Apple, Outlook or another', who: EVERYONE,
+    walk() { home(); if (!/data-act="caladd"[^>]*>Add to my calendar</.test(cardFor(page(), 'Next up'))) throw new Error('no Add to my calendar'); A.click({ act: 'caladd', k: 'practice', tid: 't1', id: 'e1' }); if (!/<h3>Add to your calendar<\/h3>/.test(sheet()) || !/>Google Calendar</.test(sheet())) throw new Error('no Google Calendar'); A.click({ act: 'calics', k: 'practice', tid: 't1', id: 'e1' }); },
+    got: () => /data-act="calics"[^>]*>Apple, Outlook or another</.test(sheet()) && !A.lastToast(), want: true },
   { ask: 'How do I say she is not coming?', say: 'Calendar → the practice → Not going', who: ['boss', 'jaz', 'mum', 'kid'],
     walk(uid) {
       tab('calendar'); A.click({ act: 'calitem', k: 'practice', tid: 't1', id: 'e1' });
@@ -132,14 +133,34 @@ const PATHS = [
   { ask: 'How do I stop the buzzing?', say: 'More → Settings → Notifications', who: EVERYONE,
     walk() { tab('more'); A.click({ act: 'goview', v: 'setup' }); },
     got: () => A.ui.view + ' ' + /id="setNotify"/.test(page()), want: 'setup true' },
-  { ask: 'What changed?', say: "More → What's new", who: EVERYONE,
-    walk() { tab('more'); A.click({ act: 'goview', v: 'notes' }); },
-    got: () => A.ui.view, want: 'notes' },
+  /* One inbox for a family (UX-REVIEW-3.md, 17.1): what moved is a card at the
+     top of Messages, where people write to her, and What's new is not on her
+     More sheet. Staff keep What's new, which also carries club activity, so
+     this is the one question whose answer is two paths: the coach's, and the
+     parent's, which the coach gives as "it's on Messages". */
+  { ask: 'What changed?', say: "More → What's new (a family: Messages → Changes)", who: EVERYONE,
+    walk(uid) {
+      if (FAMILY.includes(uid)) {
+        A.pushAlert({ id: 'c:CLUB:e1:moved', code: 'CLUB', kind: 'cal', hash: '#/team/t1/calendar', title: 'Moved: Practice (G14 Flight)', body: 'Now Tue 6pm' });
+        tab('messages'); return;
+      }
+      tab('more'); A.click({ act: 'goview', v: 'notes' });
+    },
+    got: uid => A.ui.view + (FAMILY.includes(uid) ? ' ' + /<h2[^>]*>Changes<\/h2>[\s\S]*Moved: Practice \(G14 Flight\)/.test(page()) : ''),
+    want: uid => FAMILY.includes(uid) ? 'inbox true' : 'notes' },
   { ask: 'Where is the whole season?', say: 'Home → "G14 Flight on the calendar"', who: EVERYONE,
     walk() { home(); if (!/data-act="teamcal" data-tid="t1"/.test(page())) throw new Error('no link to the calendar'); A.click({ act: 'teamcal', tid: 't1' }); },
     got: () => A.ui.view, want: 'calendar' },
+  { ask: 'Where do I go Saturday?', say: 'Game → the next game → Live → Match day', who: EVERYONE,
+    walk() { game(); A.click({ act: 'opengview', v: 'live' }); },
+    got: () => /<h2[^>]*>Match day<\/h2>[\s\S]*<dt>Where<\/dt>/.test(page()), want: true },
+  // UX-REVIEW-3.md, 14.3: calNext() skips what is called off, so a practice cancelled that morning used to vanish from Home
+  { ask: 'Is practice on tonight?', say: 'Home → the first card says so when it is cancelled', who: EVERYONE,
+    walk() { Object.assign(A.state.teams.t1.events.e1, { date: '2026-09-12', called: 'cancelled' }); home(); },
+    got: () => { const h = page(); return h.replace(/<[^>]+>/g, '').includes('Tonight’s practice is cancelled') && h.indexOf('callednow') < h.indexOf('Next up') && h.indexOf('callednow') > -1; }, want: true },
+  // once there is a link to share: before the coach makes one, Share is hers alone (UX-REVIEW-3.md, 16.6)
   { ask: 'How do I share the game?', say: 'Game → the next game → ⋯ → Share', who: EVERYONE,
-    walk() { game(); A.click({ act: 'gamemenu' }); },
+    walk() { A.state.teams.t1.share = 'season1'; game(); A.click({ act: 'gamemenu' }); },
     got: () => /data-act="sharesheet"/.test(sheet()), want: true }
 ];
 
@@ -151,11 +172,11 @@ console.log('--- the coach\'s answer, walked on every phone ---');
       as(uid);
       let got;
       try { p.walk(uid); got = p.got(uid); } catch (e) { got = 'threw: ' + e.message; }
-      if (got !== p.want) bad.push(`${ROLES[uid]}: ${JSON.stringify(got)}`);
+      if (got !== (typeof p.want === 'function' ? p.want(uid) : p.want)) bad.push(`${ROLES[uid]}: ${JSON.stringify(got)}`);
     }
     check(`"${p.ask}" — ${p.say}`, bad.join('; ') || 'works for ' + p.who.length, 'works for ' + p.who.length);
   }
-  check('twelve paths, and every one walked by a parent', PATHS.length + ' ' + PATHS.filter(p => p.who.includes('mum')).length, '12 12');
+  check('fourteen paths, and every one walked by a parent', PATHS.length + ' ' + PATHS.filter(p => p.who.includes('mum')).length, '14 14');
 }
 
 console.log('\n--- who may answer is the app\'s to say, and pinned ---');

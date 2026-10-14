@@ -124,6 +124,45 @@ console.log('--- no word from the code, the database or the docs on any screen -
   if (bad.length) console.log('     ' + bad.join('\n     '));
 }
 
+/* ---------------- the doors, before she is in ---------------- */
+
+/* UX-REVIEW-3.md, 13.6: the team-link form said "She's on the squad" to every
+   parent, because this suite drew no screen before she was in the club. The
+   invite, the team link and the registration link, in every state, held to
+   the glossary and to no pronoun for a child who may be a boy. */
+console.log('\n--- the invite, team-link and registration screens ---');
+{
+  const pron = /(^|[^\w])(she|her|hers|She|Her)(?![\w-])/;
+  const bad = [];
+  const look = (name, html) => {
+    for (const w of offending(html)) bad.push(`${name}: "${w}"`);
+    if (pron.test(text(html))) bad.push(`${name}: "${(text(html).match(new RegExp('.{0,30}' + pron.source + '.{0,30}')) || [''])[0].trim()}"`);
+  };
+  const saved = A.me;
+  for (const signed of [null, { uid: 'newbie', name: 'Mo', email: 'mo@x.test' }]) {
+    A.me = signed;
+    const inv = { clubName: 'Lakeside SC', teamName: 'G14 Flight', byName: 'Ada', role: 'parent', playerNo: '7', email: 'mo@x.test', max: 3 };
+    for (const status of ['idle', 'working', 'gone', 'full', 'taken', 'expired', 'wrongemail', 'unverified', 'error', 'ready'])
+      for (const role of ['parent', 'fan', 'player', 'coach']) { A.invite = { id: 'i1', status, doc: { ...inv, role } }; look(`invite ${role}/${status}${signed ? '' : ' signed out'}`, A.inviteScreen()); }
+    A.invite = null;
+    for (const status of ['idle', 'working', 'expired', 'full', 'gone', 'error', 'sent', 'declined', 'ready'])
+      for (const kid of [false, true]) for (const fan of [false, true]) {
+        A.join = { code: 'j1', status, kid, doc: { clubName: 'Lakeside SC', teamName: 'G14 Flight', fan } };
+        look(`team link ${status}${kid ? ' new child' : ''}${fan ? ' fan' : ''}${signed ? '' : ' signed out'}`, A.joinScreen());
+      }
+    A.join = null;
+    const doc = { name: 'Fall 2027', club: 'Lakeside SC', kind: 'season', born: { lo: 2014, hi: 2019 }, fee: 120, asks: { q1: { q: 'Anything the coach should know?', o: 1 } }, waivers: { w1: { title: 'Photos', text: 'We may take photos at games.', v: 1 } } };
+    for (const status of ['idle', 'gone', 'error', 'working', 'ready']) {
+      A.regx = { id: 'rl1', status, doc, kids: {}, regs: {}, agreed: {}, care: {} };
+      look(`registration ${status}${signed ? '' : ' signed out'}`, A.regScreen());
+      if (signed && status === 'ready') { A.regx.form = 'new'; look('registration form', A.regScreen()); }
+    }
+    A.regx = null;
+  }
+  A.me = saved;
+  check('no banned word and no "she" on a door into the club', bad.join('; ') || 'none', 'none');
+}
+
 console.log('\n--- the labels, as GLOSSARY.md names them ---');
 {
   const idx = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
@@ -165,23 +204,12 @@ console.log('\n--- what her role lets her do: a card, once, and a line in the ac
 {
   A.storage.removeItem('sm.role.v1:mum');
   let h = as('mum', 'mine');
-  check('a parent\'s first screen carries the card', /class="rolebar rolecard" data-role="parent"/.test(h), true);
-  check('— in her own words, not "Signed in as"', /You are a parent here: you see your own child by name, say whether she is coming/.test(h) && !/Signed in as/.test(h), true);
-  check('— with Got it', /data-act="roleok" data-v="parent">Got it</.test(h), true);
-  A.ui.view = 'calendar'; A.render();
-  check('on Home alone (UX-REVIEW-2.md, 7.3): not over the Calendar', /rolecard/.test(screen()), false);
-  A.ui.view = 'mine'; A.render();
-  check('— and still on Home until she taps', /rolecard/.test(screen()), true);
-  A.click({ act: 'roleok', v: 'parent' });
-  check('Got it puts it away', /rolecard|Signed in as/.test(screen()), false);
-  for (const v of ['mine', 'season', 'calendar', 'setup', 'club']) { A.ui.view = v; A.render(); if (/rolecard/.test(screen())) check(`— gone on ${v}`, false, true); }
-  A.ui.view = 'game'; A.ui.matchId = 'g1'; A.ui.gameView = 'live'; A.render();
-  check('— and on a game', /rolecard/.test(screen()), false);
-  check('remembered on this phone, for her account', !!A.storage.getItem('sm.role.v1:mum') && A.roleCardSeen('parent'), true);
-  h = as('mum', 'mine');
-  check('a reload does not bring it back', /rolecard/.test(h), false);
+  // UX-REVIEW-3.md, 13.8: a family's Home leads with her child, and the card sat over him
+  check('a parent\'s Home carries no role card over her child', /rolecard|Signed in as/.test(h), false);
+  for (const v of ['mine', 'season', 'calendar', 'setup', 'club']) { A.ui.view = v; A.render(); if (/rolecard/.test(screen())) check(`— none on ${v}`, false, true); }
   A.sheetAccount();
-  check('the account sheet keeps the sentence', /class="muted rolewords"[^>]*>You are a parent here/.test(sheet()), true);
+  check('the account sheet keeps the sentence, in her own words', /class="muted rolewords"[^>]*>You are a parent here: you see your own child by name, say whether your child is coming/.test(sheet()) && !/Signed in as/.test(sheet()), true);
+  check('— never "she" for a child who may be a boy', /whether she is coming/.test(sheet()), false);
   h = as('mum', 'setup');
   check('— Settings → You does not run it on after her email and role (UX-REVIEW-2.md, 7.1)', /rolewords|You are a parent here/.test(h), false);
   check('— which it says as a line of its own', /data-act="signinsheet"[\s\S]*?<span class="psub">[^<]*Parent · G14 Flight<\/span><\/span><\/button>/.test(h), true);
@@ -190,9 +218,10 @@ console.log('\n--- what her role lets her do: a card, once, and a line in the ac
   h = as('trk', 'season');
   check('a tracker is told once what she may do, on her team\'s Season', /rolecard" data-role="tracker"[\s\S]*?You track this team: you log what happens/.test(h), true);
   check('— never over the game', /rolecard/.test(as('trk', 'game', 't1', 'track', 'g1')), false);
+  check('on Home alone (UX-REVIEW-2.md, 7.3): not over the Calendar', /rolecard/.test(as('trk', 'calendar')), false);
   as('trk', 'season'); A.click({ act: 'roleok', v: 'tracker' });
   check('— and no more', /rolecard/.test(as('trk', 'season')), false);
-  check('another account on this phone gets her own', /rolecard/.test((A.storage.removeItem('sm.role.v1:mum'), as('mum', 'mine'))), true);
+  check('remembered on this phone, for her account', !!A.storage.getItem('sm.role.v1:trk') && A.roleCardSeen('tracker'), true);
 
   h = as('jaz');
   check('a coach of the team gets none', /rolecard|Signed in as/.test(h), false);
