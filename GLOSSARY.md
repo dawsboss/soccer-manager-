@@ -39,9 +39,10 @@ secretary already has.
 | Staging several changes on Subs | **Several at once** | Batch |
 | The sync badge | **Synced** · **Offline** · **Not synced** · **Sign in** | local, this device, no code, sync failed |
 | What changed: games and practices moved, club activity (More's first row, for staff) | **What's new** | Notifications (the page), Activity |
-| What changed, for a family: the card at the top of Messages (build 155; she has no What's new) | **Changes** | What's new, Notifications, Alerts |
+| What changed, for a family: the card at the top of Messages (build 160; she has no What's new) | **Changes** | What's new, Notifications, Alerts |
 | Whether her phone pops up or buzzes (Settings → Notifications) | **Notifications** | alerts, the bell |
 | A change the club turned down | *That didn't save* | refused by the database, permission denied |
+| The end of a game | **Full time** (*FT* only where there is no room: the game header, a list's score cell, the feed's time column; UX-REVIEW-3.md, 16.10) | Final |
 
 ## Never on screen
 
@@ -70,6 +71,7 @@ which the suite reads separately and allows.
 - `Force refresh`
 - `workspace`
 - `permission denied`
+- `Final`
 
 ## Said once, not on every screen
 

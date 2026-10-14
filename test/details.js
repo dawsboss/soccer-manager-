@@ -87,7 +87,8 @@ const asked = { 'sm.kidask.v1:mumU:CLUB:p1': '2000-01-01' };
     check('asked straight away', /Check Ella/.test(sheet(A)), true);
     A.dom.node('#sheet').hidden = true;
     check('her team\'s Season is open to her', go(A, 'season'), 'season');
-    check('— with a strip saying her child\'s details aren\'t finished', /Ella’s details aren’t finished/.test(A.rendered()), true);
+    // UX-REVIEW-3.md, 13.8: once, in the card under her child, not a strip over him as well
+    check('— with a card saying her child\'s details are to check, and no strip too', /Check Ella’s details/.test(A.rendered()) && !/details aren’t finished/.test(A.rendered()), true);
     check('— and a way to finish them', /data-act="kidopen" data-id="p1"/.test(A.rendered()), true);
     check('— saying nothing will close', /calendar and messages only/.test(A.rendered()), false);
     check('the strip is on the calendar too', go(A, 'calendar') === 'calendar' && /details aren’t finished/.test(A.rendered()), true);
@@ -104,13 +105,13 @@ const asked = { 'sm.kidask.v1:mumU:CLUB:p1': '2000-01-01' };
     const org = ORG({ by: '2000-01-01' });
     const { A } = await boot('mumU', org, { storage: asked });
     // Home is the team's Season since build 153, and while she is blocked it draws the cards to finish and nothing of the team
-    check('her team\'s Season is closed: the cards to finish instead', go(A, 'season') + ' ' + /Check her details/.test(A.rendered()) + ' ' + /class="card calnext"|<h2>Games<\/h2>|on the calendar/.test(A.rendered()), 'season true false');
+    check('her team\'s Season is closed: the cards to finish instead', go(A, 'season') + ' ' + /Check the details/.test(A.rendered()) + ' ' + /class="card calnext"|<h2>Games<\/h2>|on the calendar/.test(A.rendered()), 'season true false');
     check('— a game too', (A.ui.gameView = 'live', go(A, 'game')), 'season');
     check('— and club home', go(A, 'club'), 'season');
-    // a family's What's new is the top of Messages since build 155 (UX-REVIEW-3.md, 17.1), which is open too
+    // a family's What's new is the top of Messages since build 160 (UX-REVIEW-3.md, 17.1), which is open too
     for (const v of ['calendar', 'inbox', 'notes', 'setup']) check(`${v} stays open`, go(A, v), v === 'notes' ? 'inbox' : v);
     check('the strip says why', /calendar and messages only/.test(A.rendered()), true);
-    check('Home has the card to finish it', go(A, 'mine') === 'season' && /Check her details/.test(A.rendered()), true);
+    check('Home has the card to finish it', go(A, 'mine') === 'season' && /Check the details/.test(A.rendered()), true);
   }
   {
     const org = ORG({ by: '2000-01-01' });

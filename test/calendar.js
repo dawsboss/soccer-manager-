@@ -572,7 +572,7 @@ console.log('--- a club\'s whole season: views, the tree of calendars, and pagin
     check('at six, a six o\'clock start has started', x.indexOf('data-id="a"') < x.indexOf('agline') && x.indexOf('agline') < x.indexOf('data-id="b"'), true);
     H.clock.set(new Date(2026, 8, 12, 10, 0).getTime());
     x = A.calAgenda([at('2026-09-13', '18:00', 'a')], false, { today: true });
-    check('on the Schedule, today with nothing left in it is still there, with the line', /data-today="1"/.test(x) && lines(x) === 1 && x.indexOf('agline') < x.indexOf('data-id="a"') && /Nothing else on today/.test(x), true);
+    check('on the Schedule, today with nothing left in it is still there, with the line', /data-today="1"/.test(x) && lines(x) === 1 && x.indexOf('agline') < x.indexOf('data-id="a"') && /Nothing on today\./.test(x) && !/Nothing else/.test(x), true);
     check('— but not past the end of the list, where nothing is to come', /data-today="1"/.test(A.calAgenda([at('2026-09-11', '18:00', 'a')], false, { today: true })), false);
     A.ui.calView = 'month'; A.ui.calDay = null;
     const h2 = html();
@@ -701,7 +701,7 @@ console.log('--- the games are on the calendar, and on the team\'s Season ---');
   check('a game next week opens on its plan', open('g2'), 'plan');
   g2.date = '2026-09-12';
   check('one today opens on Subs, where the clock starts', open('g2'), 'subs');
-  check('a game played opens on its log', open('g1'), 'live');
+  check('a game played opens on its recap (UX-REVIEW-3.md, 16.9)', open('g1'), 'recap');
   A.me = { uid: 'mumU' };
   check('a parent opens it Live', open('g2'), 'live');
   g2.date = '2026-09-19';
@@ -801,6 +801,73 @@ console.log('--- calendar sync ---');
   A.click({ act: 'calscope', v: 'mine' });
   check('and My calendar, everything of hers in one, is a tap away', A.ui.view + ' ' + A.calSel(), 'calendar mine');
   global.window.SOCCER_CALENDAR_FEED = '';
+}
+
+console.log('--- the calendar a parent answers from (UX-REVIEW-3.md, 15) ---');
+{
+  console.log('  (colour: the kind on one phone, the team on another, 15.2)');
+  check('no team colour is a kind\'s colour', A.TEAM_HUES.filter(x => Object.values(A.KIND_HUE).includes(x) || x === A.OTHER_CLUB_HUE).length, 0);
+  setup();
+  A.me = { uid: 'mumU', name: 'Mum' };
+  let h = html();
+  check('two children on two teams: a key under the views, each team named with its child', /<p class="calkey"[^>]*><span><i class="dot" style="background:[^"]+"><\/i>G12 Storm \(Mia\)<\/span><span><i class="dot" style="background:[^"]+"><\/i>G14 Flight \(Rosa\)<\/span><\/p>/.test(h), true);
+  check('— in the colours the entries have', h.includes('background:' + A.teamHue('t1') + '"></i>G14 Flight') && h.includes('--ev:' + A.teamHue('t1')), true);
+  A.click({ act: 'caltree' });
+  h = html();
+  check('— and the Show chips carry no kind dots, which would be a wrong key', /data-act="calkind"[^>]*><i class="dot/.test(h), false);
+  check('— the Whose chips carry her children\'s teams\' colours', /data-act="mycalf" data-v="p:p2"[^>]*><i class="dot" style="background:([^"]+)"/.exec(h)?.[1], A.teamHue('t1'));
+  A.click({ act: 'mycalf', v: 'p:p2' });
+  h = html();
+  check('one team showing: no key, and the kinds\' colours are back on the chips', !/class="calkey"/.test(h) && /data-act="calkind"[^>]*><i class="dot practice" style="background:#0E5FA8"/.test(h), true);
+  A.ui.calTree = false; A.ui.myCal = null;
+
+  console.log('  (Calendars, only when there is something to pick, 15.4)');
+  setup(); delete A.state.teams.t2; delete A.state.matches.g5;
+  A.me = { uid: 'mumU', name: 'Mum' };
+  h = html();
+  check('one child, one team: no Calendars, the month picker stays', !/data-act="caltree"/.test(h) && /data-act="calmini"/.test(h), true);
+  A.ui.calKOff = { practice: true };
+  check('— unless something is left out, so it can be put back', /data-act="caltree"/.test(html()), true);
+  A.ui.calKOff = {};
+
+  console.log('  (Day opens on what is on, 15.5)');
+  A.click({ act: 'calview', v: 'day' });
+  h = html();
+  check('the first thing still to come on the hours is what the screen comes round to, not this morning\'s game', /data-id="e3" class="tg-ev" id="calFirst"/.test(h), true);
+  A.click({ act: 'calpick', v: '2026-09-13' });
+  h = html();
+  check('a day with nothing on says what is next, a tap away', /Nothing on\. <button class="textbtn" data-act="calpick" data-v="2026-09-15">Next: Practice Tue 15 Sep 6pm<\/button>/.test(h), true);
+  check('today with nothing left: Nothing on today, and tomorrow said so', A.calNothing([{ date: '2026-09-13', start: '18:00', title: 'Practice', kind: 'practice' }], '2026-09-12'),
+    'Nothing on today. <button class="textbtn" data-act="calpick" data-v="2026-09-13">Next: Practice tomorrow 6pm</button>');
+  check('— something called off is never next', /Next/.test(A.calNothing([{ date: '2026-09-13', start: '18:00', title: 'Practice', kind: 'practice', called: 'cancelled' }], '2026-09-12')), false);
+  A.click({ act: 'calview', v: 'schedule' }); A.ui.calDay = null;
+
+  console.log('  (the entry\'s sheet, 15.3 and 15.7)');
+  global.window.SOCCER_CALENDAR_FEED = 'https://feed.example.workers.dev';
+  lockDown();
+  A.click({ act: 'calitem', k: 'practice', tid: 't1', id: 'e1' });
+  let sh = sheet();
+  check('a family\'s sheet names the team without a link away from it', /data-act="goteam"/.test(sh) + ' ' + /G14 Flight · Practice/.test(sh), 'false true');
+  check('— her answer first, above when and where', sh.indexOf('Is Rosa going?') > 0 && sh.indexOf('Is Rosa going?') < sh.indexOf('class="facts"'), true);
+  check('Google and the file under one label, Directions on its own', /<p class="lbl">Add to your calendar<\/p>[\s\S]*?>Google Calendar<[\s\S]*?data-act="calics"[^>]*>Apple, Outlook or another</.test(sh) && sh.indexOf('>Directions<') < sh.indexOf('Add to your calendar'), true);
+  check('— with the subscription offered once, for whoever has none', (sh.match(/>Keep my calendar up to date</g) || []).length, 1);
+  A.closeSheet();
+  A.ui.view = 'season'; h = html();
+  check('Add to my calendar on a card opens the two choices, not the entry', /data-act="caladd" data-k="practice" data-tid="t1" data-id="e3">Add to my calendar</.test(h), true);
+  A.click({ act: 'caladd', k: 'practice', tid: 't1', id: 'e3' });
+  sh = sheet();
+  check('— Google Calendar, then Apple, Outlook or another', /<h3>Add to your calendar<\/h3>[\s\S]*?class="btn wide"[^>]*>Google Calendar<\/a>[\s\S]*?data-act="calics"[^>]*>Apple, Outlook or another</.test(sh), true);
+  check('— and nothing else of the entry', /class="facts"|rsvpseg/.test(sh), false);
+  A.you.set = { feed: 'mFEED', share: false };
+  A.click({ act: 'caladd', k: 'practice', tid: 't1', id: 'e3' });
+  check('— no offer once she has My calendar\'s address', /Keep my calendar up to date/.test(sheet()), false);
+  A.you.set = {};
+  global.window.SOCCER_CALENDAR_FEED = '';
+  A.ui.view = 'calendar';
+  A.me = { uid: 'coachU', name: 'Jaz' };
+  A.click({ act: 'calitem', k: 'practice', tid: 't1', id: 'e1' });
+  check('the coach keeps the team\'s name as a way to the team', /data-act="goteam" data-id="t1"/.test(sheet()), true);
+  A.closeSheet();
 }
 
 H.summary('the calendar');

@@ -47,8 +47,8 @@
    - More holds what is not a tab, by role: one Settings for everyone (People
      and the club's screens are in it since build 143, test/settings.js), My
      players for staff with a child, Training sessions for whoever may book
-     or run one, Clubs for whoever is in more than one and for staff, who may
-     start one (9.4; a family in one club is not offered Start a new club).
+     or run one, Clubs for everyone signed in, who may all start one (the
+     owner, 2026-10-14, overruling 9.4, which kept it from families).
    - The avatar's sheet is the account alone, and its Settings line is the
      More sheet's (9.4). A locked device draws no title and no bar, and no
      child's name is ever in either. */
@@ -248,7 +248,7 @@ console.log('\n--- the Game tab ---');
   check('— titled Games, over the club, with no back arrow: it is the tab\'s own screen', titled('Games') && !/data-act="navback"/.test(title()), true);
   check('— Coming up: her team\'s next game, a week off, never one called off', rows('Coming up'), 'g2');
   check('— under its day, one line: the kick-off, then the teams', days('Coming up') + ' | ' + /<span class="gtime">9:30am<\/span><span><span class="pname">G14 Flight v Northgate<\/span><\/span>/.test(page()), 'Sat 19 Sep | true');
-  check('— Results: her team\'s last game, though it is more than a week ago, with its score', rows('Results') + ' ' + /data-r="W"[\s\S]*?0<small>–0<\/small>|data-r="D"[\s\S]*?0<small>–0<\/small>/.test(cardOf('Results')), 'g1 true');
+  check('— Results: her team\'s last game, though it is more than a week ago, with its score', rows('Results') + ' ' + /data-r="W"[\s\S]*?class="score">0<i>–<\/i>0|data-r="D"[\s\S]*?class="score">0<i>–<\/i>0/.test(cardOf('Results')), 'g1 true');
   check('— nothing being played, so no card for it', /<h2>Being played<\/h2>/.test(page()), false);
   check('— nothing more on the calendar, so no row to it', /data-act="gameslater"/.test(page()), false);
   check('— and no sheet asking which', A.dom.node('#sheet').hidden, true);
@@ -340,7 +340,7 @@ console.log('\n--- the Game tab ---');
   check('— one game being played: the tab opens it, on its own team', [A.ui.view, A.ui.teamId, A.ui.matchId].join(' '), 'game t1 g2');
   A.state.matches.g4.periods = { 0: { half: 1, start: H.clock.t - 5 * MIN } }; A.render();
   A.click({ act: 'tab', tab: 'game' });
-  check('two being played: the list, both in Being played, with the score', [A.ui.view, rows('Being played')].join(' ') + ' ' + /G14 Flight v Northgate<\/span><\/span><span class="pmins">0<small>–0<\/small> <span class="pill live">live<\/span>/.test(page()), 'games g4 g2 true');
+  check('two being played: the list, both in Being played, with the score', [A.ui.view, rows('Being played')].join(' ') + ' ' + /G14 Flight v Northgate<\/span><\/span><span class="pmins"><span class="score">0<i>–<\/i>0<\/span> <span class="pill live">live<\/span>/.test(page()), 'games g4 g2 true');
 
   // whose games: a coach's own team's, wherever she is reading
   as('jaz'); A.state.matches.g4 = { ...g4, periods: { 0: { half: 1, start: H.clock.t - 5 * MIN } } }; A.render();
@@ -358,6 +358,8 @@ console.log('\n--- the Game tab ---');
   check('a postponed game says Postponed, and the next one to be played follows it', rows('Coming up') + ' ' + /G14 Flight v Northgate<\/span><\/span><span class="pmins"><span class="tag called">Postponed<\/span>/.test(page()), 'g2 g5 true');
   A.click({ act: 'navgame', id: 'g2' }); A.click({ act: 'pickgame' });
   check('— and the game\'s own picker says Postponed, never upcoming', /data-id="g2"[\s\S]*?<span class="tag called">Postponed<\/span>/.test(sheet()), true);
+  // its rows say the day, and before it is played the kick-off and the ground; never a raw date or minutes played (UX-REVIEW-3.md, 16.7)
+  check('— every row the day, never a raw date, "min played" or "upcoming"', /class="rowsub">Sat 3 Oct · 10am</.test(sheet()) + ' ' + /\d{4}-\d\d-\d\d|min played|upcoming/.test(sheet()), 'true false');
   A.closeSheet();
   // a family's later games: the calendar row opens her own calendar
   as('jaz'); A.state.matches.g5 = { id: 'g5', teamId: 't1', opponent: 'Eastfield', date: '2026-10-03', kickoff: '10:00', periodCount: 2, periodMinutes: 40, currentHalf: 1, periods: {}, stints: {} };
@@ -459,10 +461,10 @@ console.log('\n--- More, by role ---');
   as('mum', 'mine'); m = more();
   check('a parent: no People, no Club settings', /data-v="people"|data-v="admin"/.test(m), false);
   check('— the club, Training sessions, settings, sign out', ['data-v="club"', 'data-v="sessions"', 'data-v="setup"', 'data-act="signout"'].every(x => m.includes(x)), true);
-  // staff and owners start clubs (UX-REVIEW-2.md, 9.4); a family sees Clubs only when she is in more than one
-  check('— and no Clubs row in her one club: a family does not start clubs', /<b>Clubs<\/b>/.test(m), false);
+  // anyone may start a club, a family included (the owner, 2026-10-14, overruling UX-REVIEW-2.md, 9.4)
+  check('— and Clubs, to start one, in her one club', /<b>Clubs<\/b>[\s\S]*?Start a new club/.test(m), true);
   A.click({ act: 'clubswitch' });
-  check('— nor Start a new club in the switcher', /data-act="newclub"/.test(sheet()), false);
+  check('— and Start a new club in the switcher', /data-act="newclub"/.test(sheet()), true);
   A.closeSheet();
   as('jaz'); m = more();
   check('a coach is offered Clubs, to start one', /<b>Clubs<\/b>[\s\S]*?Start a new club/.test(m), true);
@@ -496,7 +498,22 @@ console.log('\n--- the account sheet, and the old menus ---');
   as('trk', 'season'); A.click({ act: 'accountsheet' });
   check('— a tracker\'s too', setLine(sheet()), 'You');
   A.closeSheet();
+  /* One account sheet from both doors (UX-REVIEW-3.md, 12.4 and 18.2): Settings
+     → You opened the name box and Sign out, the avatar Settings, Sign out and
+     Delete my account. */
+  as('mum', 'setup'); A.click({ act: 'signinsheet' }); const fromYou = sheet(); A.closeSheet();
+  A.click({ act: 'accountsheet' }); const fromAvatar = sheet(); A.closeSheet();
+  check('Settings → You and the avatar open the one sheet', fromYou === fromAvatar && /id="acctName"/.test(fromYou) && /data-act="signout"/.test(fromYou) && /data-act="forgetsheet"/.test(fromYou), true);
+  check('— with no line back to the Settings she is on', /data-v="setup"/.test(fromYou), false);
+  check('— Sign out quiet, Delete my account a line at the foot (12.5)', /class="btn quiet wide" data-act="signout"/.test(fromYou) && /class="textbtn dangerlink" data-act="forgetsheet"/.test(fromYou) && !/class="btn[^"]*danger/.test(fromYou), true);
+  A.click({ act: 'forgetsheet' });
+  check('— whose sheet names the club it takes her out of', /Delete your account[\s\S]*?This takes you out of/.test(sheet()), true);
+  A.closeSheet();
   const page = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
+  // the badge was a span that looked like a button (UX-REVIEW-3.md, 12.4 and 14.4)
+  as('mum', 'season'); A.click({ act: 'pendingsheet' });
+  check('the badge opens what is waiting, and says so when nothing is', /<h3>(Nothing waiting to send|Everything has reached the club)<\/h3>/.test(sheet()), true);
+  A.closeSheet();
   check('the top bar keeps the brand, the badge and the account', /id="syncBadge"/.test(page) && /id="avatar"/.test(page) && !/id="calBtn"|id="msgBtn"|id="bellBtn"|id="clubSwitch"|id="crumbs"/.test(page), true);
   check('the title row is in the header, the bar after the page', page.indexOf('id="titlebar"') < page.indexOf('<main') && page.indexOf('id="tabbar"') > page.indexOf('</main>'), true);
 }
@@ -512,7 +529,7 @@ console.log('\n--- game mode (UX-REVIEW.md, 1.3) ---');
   A.sheetGameMenu();
   const menu = String(A.dom.node('#sheet').innerHTML);
   check('— nor in its ⋯ menu', /<h3>Northgate<\/h3>/.test(menu), true);
-  check('— where a game played 0–0 keeps its score, and one called off says so, never upcoming (UX-REVIEW-3.md, 11.1)', /Riverside[\s\S]*?0<small>–0<\/small>/.test(menu) && /Hill End[\s\S]*?<span class="tag called">Cancelled<\/span>/.test(menu), true);
+  check('— where a game played 0–0 keeps its score, and one called off says so, never upcoming (UX-REVIEW-3.md, 11.1)', /Riverside[\s\S]*?class="score">0<i>–<\/i>0/.test(menu) && /Hill End[\s\S]*?<span class="tag called">Cancelled<\/span>/.test(menu), true);
   A.closeSheet();
   check('— and the ⋯ menu', /data-act="gamemenu"/.test(title()), true);
   check('no game bar on the screen any more', /barrow|data-act="sharesheet"|data-act="editmatch"/.test(A.rendered()), false);
@@ -538,7 +555,13 @@ console.log('\n--- game mode (UX-REVIEW.md, 1.3) ---');
   check('— and the game\'s number in the season (the called-off one counts)', /gb-hint">2\/3</.test(sheet()), true);
   A.closeSheet();
   as('trk', 'game'); A.ui.matchId = 'g2'; A.render(); A.click({ act: 'gamemenu' });
-  check('a tracker gets no Edit', /data-act="editmatch"/.test(sheet()) + ' ' + /data-act="sharesheet"/.test(sheet()), 'false true');
+  check('a tracker gets no Edit, and no Share before there is a link (UX-REVIEW-3.md, 16.6)', /data-act="editmatch"/.test(sheet()) + ' ' + /data-act="sharesheet"/.test(sheet()), 'false false');
+  A.closeSheet();
+  A.state.teams.t1.share = 'season1'; A.render(); A.click({ act: 'gamemenu' });
+  check('— and Share once there is one', /data-act="sharesheet"/.test(sheet()), true);
+  A.closeSheet(); delete A.state.teams.t1.share;
+  as('mum', 'game'); A.ui.matchId = 'g2'; A.render(); A.click({ act: 'gamemenu' });
+  check('a parent is not sent to a sheet saying the coach has not set links up', /data-act="sharesheet"|has not set up/.test(sheet()), false);
   A.closeSheet();
 
   // the screens, shared from the right (UX-REVIEW-2.md, 9.3; build 153): … · Stats · Live for everyone, Recap once it is over
