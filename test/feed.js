@@ -151,6 +151,11 @@ console.log('\n--- notifications ---');
 {
   const m = setup({ periods: { 0: { half: 1, start: T0 - 10 * MIN } }, goals: { a: { t: 60, side: 'us' } } });
   check('not following, nothing is watched', A.watchFeed().length, 0);
+  /* The promise and one line of the catch (UX-REVIEW-3.md, 12.4 and 16.4):
+     it was "Notify me · Turn on" over how the page being open worked. */
+  A.me = { uid: 'mum' }; A.render();
+  check('the card says what she gets, and the button what it does', /<h2>Goals and the final whistle<\/h2>[\s\S]*?data-act="feedfollow" data-v="1">Buzz me</.test(A.rendered()), true);
+  check('— and the catch, in one line', /Works while TeamPlayHQ is open on this phone\./.test(A.rendered()) && !/even in another tab|Notify me|>Turn on</.test(A.rendered()), true);
   A.click({ act: 'feedfollow', v: '1' });
   check('following is this game', A.ui.follow, 'g1');
   check('turning it on says so', A.lastToast(), 'Following this game');
@@ -171,6 +176,72 @@ console.log('\n--- notifications ---');
   A.click({ act: 'feedfollow', v: '0' });
   m.goals.c = { t: 700, side: 'us' };
   check('stopped means stopped', A.watchFeed().length, 0);
+}
+
+console.log('\n--- game day, on a parent\'s phone (UX-REVIEW-3.md, 16) ---');
+{
+  const roles = () => {
+    A.state.access = {
+      admins: { boss: true },
+      teams: { t1: { coaches: { jaz: true }, trackers: { trk: true } } },
+      index: { boss: true, jaz: true, trk: true, mum: true }
+    };
+    A.state.teams.t1.players.p1.guardians = { mum: true };
+  };
+  // before kick-off: where to be and when, on the screen named for the game (16.2)
+  const m = setup({ kickoff: '10:00', venue: 'Eastfield Rec', home: 'away', arrive: '09:30', kit: 'Red shirts', notes: 'Park on the road', date: '2026-09-19', planned: { p1: 40, p2: 40, p3: 40, p4: 40 } });
+  roles(); A.me = { uid: 'mum' }; A.ui.gameView = 'live';
+  let h = html();
+  check('before kick-off Live leads with the match day', /<h2[^>]*>Match day<\/h2>/.test(h) && h.indexOf('Match day') < h.indexOf("What's happened"), true);
+  check('— its rows: when, where, the ground, arrive by, the kit and the notes',
+    ['Sat 19 Sep · 10am', 'Eastfield Rec', '<dt>Ground</dt><dd>Away', '<dt>Arrive by</dt><dd>9:30am', 'Red shirts', 'Park on the road'].every(x => h.includes(x)), true);
+  check('— with her answer for her own child, and nobody else\'s', /data-act="rsvp"[^>]*data-pid="p1"/.test(h) + ' ' + /data-act="rsvp"[^>]*data-pid="p[234]"/.test(h), 'true false');
+  check('— and no line about her child before there is a game to be in', /class="feedmine"/.test(h), false);
+  // Notify me says the promise, then where it reaches her (16.4)
+  check('the follow card says what it buzzes for', /Goals and the final whistle<\/h2>/.test(h) && />Buzz me</.test(h) && /Works while TeamPlayHQ is open on this phone/.test(h), true);
+  check('— not the mechanism', /even in another tab|while this page is open/.test(h), false);
+  A.ui.gameView = 'stats'; h = html();
+  check('Stats waits for kick-off, in one line', /Stats appear once the game kicks off/.test(h), true);
+  check('— no 0 — 0, no plan and no row of 0 min', /0 — 0|no plan set|planned|data-live="pmins"/.test(h), false);
+  m.called = 'postponed'; A.ui.gameView = 'live'; h = html();
+  check('a postponed game says so on Live, and in its header (16.7)', /Postponed · 19 Sep/.test(h) && /class="ghwhen">Postponed · /.test(A.rendered('#titlebar')), true);
+  delete m.called;
+
+  // being played: her child's line, and how long is left of the half (16.1, 16.8)
+  m.periods = { 0: { half: 1, start: T0 - 50 * MIN, end: T0 - 10 * MIN }, 1: { half: 2, start: T0 - 8 * MIN } };
+  m.currentHalf = 2;
+  m.stints = { a: { pid: 'p1', on: 0 }, b: { pid: 'p2', on: 0 }, c: { pid: 'p3', on: 0 } };
+  m.goals = { g: { t: 600, side: 'us', pid: 'p1', assist: 'p2' }, h: { t: 900, side: 'them' } };
+  A.ui.gameView = 'live'; h = html();
+  check('the head says the half and how much of it has gone', /2nd half · <span data-live="half" data-mid="g1">8:00<\/span> of 40:00/.test(h), true);
+  check('— and the ticker keeps it', A.liveReading('half', { mid: 'g1' }), '8:00');
+  check('her child, under the score: on the pitch, her minutes, her goal', /class="feedmine"[^>]*><b>Ella<\/b> · on the pitch · 48 min · 1 goal</.test(h), true);
+  check('— hers alone', (h.match(/class="feedmine"/g) || []).length, 1);
+  check('— and no match-day card once it has kicked off', /Match day/.test(h), false);
+  m.stints.a.off = 2400;
+  check('taken off, she is on the bench since then', A.liveReading('mine', { mid: 'g1', pid: 'p1' }), '<b>Ella</b> · on the bench since 41′ · 40 min · 1 goal');
+  m.stints.a.off = null;
+  A.me = { uid: 'jaz' }; h = html();
+  check('the coach sees nothing extra on Live', /class="feedmine"/.test(h), false);
+
+  // Stats on a parent's phone: minutes alone, her own first, on the pitch marked, goals plain (16.3, 16.5)
+  A.me = { uid: 'mum' }; A.ui.gameView = 'stats'; h = html();
+  const mins = (h.match(/<h2[^>]*>Minutes<\/h2>[\s\S]*$/) || [''])[0];
+  check('her own child first in Minutes', (mins.match(/class="pname">([^<]*)</) || [])[1], 'Ella Fitzgerald');
+  check('— no plan and no short or over', /planned|no plan set|short|over|data-live="diff"/.test(mins), false);
+  check('— who is on the pitch marked, as Subs marks it', (mins.match(/class="prow" data-on="1"/g) || []).length, 3);
+  // the goals plain for her, and the handler's refusal, need a club that is locked down: test/parents.js
+  A.me = { uid: 'jaz' }; h = html();
+  check('the coach keeps the plan and the editor', /planned/.test(h) + ' ' + /data-act="fixgoal" data-id="g"/.test(h), 'true true');
+  A.me = { uid: 'trk' }; h = html();
+  check('— and so does the tracker, who logs them', /data-act="fixgoal" data-id="g"/.test(h), true);
+
+  // a finished game: one word for it, and no button repeating the Recap segment (16.9, 16.10)
+  m.periods[1].end = T0; m.ended = T0; A.me = { uid: 'mum' }; A.ui.gameView = 'stats'; h = html();
+  check('Stats says Full time, never Final', /Full time/.test(h) + ' ' + /Final/.test(h), 'true false');
+  check('— and no "See the game recap" button', /See the game recap/.test(h), false);
+  A.ui.gameView = 'live'; h = html();
+  check('her child\'s line once it is over', /<b>Ella<\/b> · played 48 min · 1 goal/.test(h), true);
 }
 
 console.log('\n--- the old Live, remembered ---');

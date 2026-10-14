@@ -132,7 +132,7 @@ async function boot(who, ws = club(), extra = {}) {
     check('her season, under My players', A.myPlayers().map(x => x.p.id).join(), 'p1');
     A.ui.view = 'mine'; A.render();
     // her Home is the team's Season with her own card on top since build 153 (UX-REVIEW-2.md, 9.1)
-    check('which reads as hers', A.ui.view + ' ' + /<b style="font-size:18px">Ella Fitzgerald<\/b>/.test(A.rendered()) + ' ' + />Your fans</.test(A.rendered()), 'season true true');
+    check('which reads as hers', A.ui.view + ' ' + /<b style="font-size:18px">Ella Fitzgerald<\/b>/.test(A.rendered()) + ' ' + /data-act="kidsheet"/.test(A.rendered()), 'season true true');
     A.state.access.org.rosterOpen = true;
     A.ui.view = 'game'; A.ui.gameView = 'stats'; A.render();
     check('the club\'s setting opens names to her too', /Mia Kowalski/.test(A.rendered()), true);

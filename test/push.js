@@ -898,7 +898,24 @@ const toUid = (S, u) => S.sent().filter(m => m.data.uid === u);
   }
   {
     const { A } = await boot('mum', { perm: 'denied' });
-    check('blocked in the browser\'s settings is said', A.pushSupport(), 'blocked');
+    check('blocked in the phone\'s settings is said', A.pushSupport(), 'blocked');
+  }
+  /* UX-REVIEW-3.md, 17.4: "blocked in this browser's settings. Allow them there"
+     sent a parent to look for something without saying where. The steps are the
+     phone's own, and what she gets comes after. */
+  console.log('\n--- a block is undone in the phone\'s settings, and she is told where ---');
+  for (const [name, ua, where, notWhere] of [
+    ['an iPhone', 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) Safari/604.1', /<b>Settings<\/b>, tap <b>Notifications<\/b>, then <b>TeamPlayHQ<\/b>/, /lock icon/],
+    ['an Android phone', 'Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 Chrome/124.0 Mobile Safari/537.36', /lock icon in the address bar, then <b>Permissions<\/b>/, /Home Screen|<b>Settings<\/b>/],
+    ['a computer', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/124.0 Safari/537.36', /lock icon beside the address/, /Home Screen|<b>Permissions<\/b>/]
+  ]) {
+    const { A } = await boot('mum', { perm: 'denied', ua });
+    A.ui.view = 'setup'; A.render();
+    const html = A.rendered(), card = html.slice(html.indexOf('Notifications on this phone'), html.indexOf('What notifies you'));
+    check(`${name}: blocked, and the steps are its own`, A.pushSupport() + ' ' + where.test(card) + ' ' + notWhere.test(card), 'blocked true false');
+    check(`${name}: and what she gets once they are on`, /team notices, messages and changes to your games and practices will reach you even when TeamPlayHQ is closed/.test(card), true);
+    check(`${name}: nothing to tap that cannot work`, /data-act="pushon"/.test(card), false);
+    check(`${name}: nothing sends her to "this browser"`, /this browser/i.test(card), false);
   }
   {
     const { A, fbk, b } = await boot(null);
