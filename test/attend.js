@@ -150,7 +150,7 @@ console.log('--- the season, counted ---');
   check('the game: out — the family said not going', A.cameToGame(A.state.matches.g0, 'p2'), false);
   deepEq('games come from the minutes, with no register', [r('p1').game, r('p2').game], [{ came: 1, of: 1 }, { came: 0, of: 1 }]);
   check('a game still to come is not counted', r('p1').game.of, 1);
-  check('said in words', A.attendLine(r('p3')), 'Practices 0 of 1 · missed 1 (1 without saying) · Games 1 of 1');
+  check('said in words', A.attendLine(r('p3')), 'Practices 0 of 1 · missed 1 (1 without saying) · 1 of 1 games');
   check('what has no register yet is said, not hidden', A.attendUntaken(t1()).map(x => x.id).join(), 'ev');
 
   A.ui.view = 'season';

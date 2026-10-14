@@ -3870,11 +3870,14 @@ const guardianEmails = tid => [...new Set(families(tid).map(u => ((acc().members
 function whenShort(ms) {
   if (!ms) return '';
   const d = new Date(ms), now = new Date(nowMs());
-  const time = d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  /* One format for every date a parent reads: 6pm, 9:10pm, Yesterday · 9:10pm,
+     8 Oct · 6:10pm, and the weekday too for what is still to come. */
+  const time = d.toLocaleTimeString('en-GB', { hour: 'numeric', minute: '2-digit', hour12: true }).replace(/:00(?=\s*[ap]m)/i, '').replace(/\s+/g, '').toLowerCase();
   if (d.toDateString() === now.toDateString()) return time;
   const y = new Date(now); y.setDate(y.getDate() - 1);
-  if (d.toDateString() === y.toDateString()) return 'Yesterday ' + time;
-  return d.toLocaleDateString([], { day: 'numeric', month: 'short' }) + ' ' + time;
+  if (d.toDateString() === y.toDateString()) return 'Yesterday \u00b7 ' + time;
+  const day = d.toLocaleDateString('en-GB', d > now ? { weekday: 'short', day: 'numeric', month: 'short' } : { day: 'numeric', month: 'short' }).replace(',', '');
+  return day + ' \u00b7 ' + time;
 }
 const msgText = s => esc(s).replace(/\n/g, '<br>');
 
@@ -4265,7 +4268,7 @@ function notifyCards() {
   const canPop = typeof Notification !== 'undefined';
   const pops = pushSupport() === 'unset' && canPop && Notification.permission === 'default' ? `<div class="card"><div class="spread"><b>Pop-ups on this device</b>
       <button class="btn sm" data-act="msgalerts">Turn on</button></div>
-    <p class="muted" style="margin:6px 0 0">A message or a change to your games pops up while TeamPlayHQ is open, even in another tab.</p></div>` : '';
+    <p class="muted" style="margin:6px 0 0">A message or a change to your games pops up while TeamPlayHQ is open.</p></div>` : '';
   return pushCard() + pops + muteCard();
 }
 const GEAR_SVG = '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:-2px"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>';
@@ -7913,7 +7916,7 @@ function sheetClubSwitch() {
         <b>${esc(c.name)}</b><span class="rowsub">${c.code === here ? 'open now' : 'tap to open'}</span></button>
       ${c.code === here ? '<span class="muted">here</span>'
       : `<button class="btn quiet sm" data-act="forgetclub" data-code="${esc(c.code)}">Forget</button>`}</div>`).join('')}
-    <p class="muted">Forget removes this device's copy only. Deleting a club for everyone is done outside the app, by its owner — see below.</p>
+    <p class="muted">Forget takes this club off this device only.</p>
     <button class="opt" data-act="goview" data-v="club"><b>Club home</b>
       <span class="rowsub">Teams, stats and settings for ${esc((acc().org || {}).name || 'this club')}</span></button>
     ${canNewClub() ? `<button class="opt" data-act="newclub"><b>+ Start a new club</b>
@@ -10229,7 +10232,7 @@ function attendLine(r) {
   const miss = b => b.of - b.came;
   return [
     r.practice.of ? `Practices ${r.practice.came} of ${r.practice.of}${miss(r.practice) ? ` · missed ${miss(r.practice)}${r.practice.silent ? ` (${r.practice.silent} without saying)` : ''}` : ''}` : '',
-    r.game.of ? `Games ${r.game.came} of ${r.game.of}` : '',
+    r.game.of ? `${r.game.came} of ${r.game.of} games` : '',
     r.event.of ? `Other ${r.event.came} of ${r.event.of}` : '',
     r.session && r.session.of ? `Extra sessions ${r.session.came} of ${r.session.of}` : ''
   ].filter(Boolean).join(' · ');
