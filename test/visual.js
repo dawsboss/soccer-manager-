@@ -216,7 +216,8 @@ console.log('\n--- the controls a parent taps: her answer its own, nothing under
   check('— Going pressed green', /background:var\(--field-deep\)/.test(bodyOf('.rsvpseg button[aria-pressed="true"][data-v="yes"]')), true);
   check('— Not going grey', /background:var\(--ink-soft\)/.test(bodyOf('.rsvpseg button[aria-pressed="true"][data-v="no"]')), true);
   check('— Maybe orange', /var\(--owed\)/.test(bodyOf('.rsvpseg button[aria-pressed="true"][data-v="maybe"]')), true);
-  const ctl = app.slice(app.indexOf('function rsvpChips('), app.indexOf('function rsvpSaid('));
+  check('— and what became of the tap a bar on it, not a sentence (12.2)', /animation:rsvpsend/.test(bodyOf('.rsvpseg button[aria-busy="true"]::after')) && /animation:none/.test(bodyOf('.rsvpseg button[aria-busy="true"][data-off="1"]::after')), true);
+  const ctl = app.slice(app.indexOf('function rsvpChips('), app.indexOf('function rsvpBusy('));
   check('app.js draws it in one place, rsvpChips()', (app.match(/class="[^"]*\brsvpseg\b/g) || []).length + ' ' + /class="seg rsvpseg"/.test(ctl), '1 true');
   check('— and no chip answers for anyone', /class="chip"[^>]*data-act="rsvp"/.test(app), false);
 

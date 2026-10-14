@@ -1418,6 +1418,7 @@ function paintSync() {
      refused, or not connected), never "synced". */
   const g = $('#gsync');
   if (g) { g.hidden = !fb || (!r && !n && syncBase[0] === 'live'); g.dataset.state = b.dataset.state; g.textContent = b.textContent; }
+  rsvpBusy();
 }
 /* Everything else this phone keeps until the club has it: plans, drills, her
    own library, training sessions. Each re-sends its own pending list when its screen opens;
@@ -9824,7 +9825,6 @@ function setRsvp(tid, key, pid, v, note) {
   if (w && w.catch) w.catch(e => {
     forgetPending(path);
     if (prev) setDeep(state, path, prev); else delDeep(state, path);
-    if (ui.rsvpSaid && ui.rsvpSaid.path === path) ui.rsvpSaid = null;   // the toast says it instead
     saveLocal(); render();
     toast(/permission|denied/i.test((e && e.code) || (e && e.message) || '')
       ? refusedMsg()
@@ -9839,29 +9839,30 @@ function setRsvp(tid, key, pid, v, note) {
    was looking at. A segment, as the calendar's views are (which already
    means "pick one"), 44px tall with a mark per answer, and pressed green for
    Going, grey for Not going and orange for Maybe, so a glance says what she
-   said. `rsvpseg` is this control's class and nothing else's. Under it, what
-   became of the last tap (12.2): told the coach, or kept on this phone. */
+   said. `rsvpseg` is this control's class and nothing else's.
+   What became of the tap (12.2) is said without words: the pressed answer
+   carries a thin bar while it is still on her phone (aria-busy), moving
+   while it is on its way and held still with no signal, and the bar goes
+   the moment the club has it (rsvpBusy(), from paintSync()). */
 const RSVP_MARK = { yes: '✓', no: '✕', maybe: '?' };
 function rsvpChips(it, p, from) {
   const key = rsvpKey(it), r = rsvpOf(it.tid, key, p.id);
-  return `<div class="seg rsvpseg" role="group" aria-label="${esc(goingQ(p))}">${Object.entries(RSVP).map(([v, label]) =>
-    `<button type="button" data-act="rsvp" data-tid="${esc(it.tid)}" data-k="${esc(key)}" data-pid="${esc(p.id)}" data-v="${v}" data-from="${from}" data-kind="${it.kind}" data-id="${esc(it.id)}" aria-pressed="${!!(r && r.v === v)}"><span class="rsvpmark" aria-hidden="true">${RSVP_MARK[v]}</span>${label}</button>`).join('')}</div>${rsvpSaid(it.tid, key, p)}`;
+  const busy = !!pending.w[`rsvp/${it.tid}/${key}/${p.id}`];
+  return `<div class="seg rsvpseg" role="group" aria-label="${esc(goingQ(p))}">${Object.entries(RSVP).map(([v, label]) => {
+    const on = !!(r && r.v === v);
+    return `<button type="button" data-act="rsvp" data-tid="${esc(it.tid)}" data-k="${esc(key)}" data-pid="${esc(p.id)}" data-v="${v}" data-from="${from}" data-kind="${it.kind}" data-id="${esc(it.id)}" aria-pressed="${on}"${on && busy ? ` aria-busy="true" data-off="${online ? 0 : 1}"` : ''}><span class="rsvpmark" aria-hidden="true">${RSVP_MARK[v]}</span>${label}</button>`;
+  }).join('')}</div>`;
 }
-/* The line under the control after a tap (12.2). A tap used to change the
-   chip and nothing else, and with no signal the only sign the answer had
-   not gone was a badge in the corner. Said for as long as it is still on
-   the phone, else for a few seconds after the tap; always what is true now,
-   so a line left on screen never says "told" of an answer still waiting. */
-const RSVP_SAID_MS = 8000;
-function rsvpSaid(tid, key, p) {
-  const s = ui.rsvpSaid;
-  if (!s || s.at === undefined || s.path !== `rsvp/${tid}/${key}/${p.id}`) return '';
-  const owed = !!pending.w[s.path], fresh = nowMs() - s.at < RSVP_SAID_MS;
-  if (!owed && !fresh) return '';
-  const r = rsvpOf(tid, key, p.id);
-  const who = canEditTeam(tid) && !isMine(p) ? firstName(p) + ' ' : '';
-  const said = !r ? 'Answer taken back' : canEditTeam(tid) && !isMine(p) ? `Saved: ${who}${RSVP_SHORT[r.v]}` : `Told the coach: ${RSVP_SHORT[r.v]}`;
-  return `<p class="rsvpsaid" role="status">${owed && !online ? (r ? 'Saved on your phone, sent when there is signal' : 'Taken back on your phone, sent when there is signal') : esc(said)}</p>`;
+/* The bars on screen kept true without a redraw, which would close nothing
+   but would lose a note half typed: gone once the club has the answer,
+   moving or still as the signal comes and goes. */
+function rsvpBusy() {
+  if (typeof document === 'undefined' || !document.querySelectorAll) return;
+  for (const el of document.querySelectorAll('.rsvpseg [aria-busy="true"]')) {
+    const d = el.dataset || {};
+    if (!pending.w[`rsvp/${d.tid}/${d.k}/${d.pid}`]) { el.removeAttribute('aria-busy'); el.removeAttribute('data-off'); }
+    else el.setAttribute('data-off', online ? '0' : '1');
+  }
 }
 
 /* What the calendar row says about answers: her own children for a parent,
@@ -23140,14 +23141,8 @@ function onAct(e) {
       setRsvp(d.tid, d.k, d.pid, cur.v, el && typeof el.value === 'string' ? el.value.trim() : cur.note);
       toast('Note saved');
     } else {
-      /* The same answer again takes it back, but only once she says so
-         (UX-REVIEW-3.md, 12.2): a second tap used to clear it silently, and
-         a thumb that landed twice told the coach nothing at all. The other
-         two are the way to change it. A new answer keeps the note. */
-      const back = cur && cur.v === d.v;
-      if (back && !confirm('Take back your answer? The coach will see it as not answered.')) return;
-      setRsvp(d.tid, d.k, d.pid, back ? null : d.v, cur && !back ? cur.note : null);
-      ui.rsvpSaid = { path: `rsvp/${d.tid}/${d.k}/${d.pid}`, at: nowMs() };
+      // the same answer again takes it back; a new answer keeps the note
+      setRsvp(d.tid, d.k, d.pid, cur && cur.v === d.v ? null : d.v, cur && cur.v !== d.v ? cur.note : null);
       ui.rsvpPick = null;   // the coach's chips for one child go once she has answered
     }
     if (d.from === 'sheet' || a === 'rsvpnote') sheetCalItem(d.kind, d.tid, d.id);

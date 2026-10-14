@@ -795,8 +795,16 @@ button.rsvprow[aria-expanded="true"]{color:var(--field)}
 .rsvpseg button[aria-pressed="true"][data-v="yes"]{background:var(--field-deep);color:#fff}
 .rsvpseg button[aria-pressed="true"][data-v="no"]{background:var(--ink-soft);color:#fff}
 .rsvpseg button[aria-pressed="true"][data-v="maybe"]{background:var(--owed-wash);color:#6C4406;box-shadow:inset 0 0 0 2px var(--owed)}
-/* what became of the tap (12.2) */
-.rsvpsaid{margin:6px 0 0;font-size:14px;font-weight:500;color:var(--field-deep)}
+/* What became of the tap (12.2), with no words: a bar along the pressed answer
+   while it is still on her phone, sweeping while it goes and dotted with no
+   signal; gone once the club has it. */
+.rsvpseg button{position:relative;overflow:hidden}
+.rsvpseg button[aria-busy="true"]::after{content:"";position:absolute;bottom:0;left:-40%;width:40%;height:3px;border-radius:2px;
+  background:currentColor;opacity:.8;animation:rsvpsend 1.1s ease-in-out infinite}
+.rsvpseg button[aria-busy="true"][data-off="1"]::after{left:8px;right:8px;width:auto;animation:none;
+  background:repeating-linear-gradient(90deg,currentColor 0 4px,transparent 4px 8px)}
+@keyframes rsvpsend{to{left:100%}}
+@media (prefers-reduced-motion:reduce){.rsvpseg button[aria-busy="true"]::after{animation:none;left:8px;right:8px;width:auto}}
 /* her child's name, the door to her own sheet (14.1) */
 .kidhead{display:flex;align-items:center;gap:10px;min-width:0;text-align:left}
 /* .plainbtn comes later and zeroes the padding the chevron sits in */

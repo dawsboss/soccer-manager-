@@ -126,9 +126,10 @@ title-row checks and `test/same.js`'s "a team's title the team over the club".
 
 **Built in build 155**, all seven: her answer is its own control (`rsvpChips()`, a `.seg
 rsvpseg` 44px tall with ✓ ✕ ? and pressed green, grey or orange) on the next-up card, the
-entry's sheet and her child's card; under it after a tap, *Told the coach: not going* or, while it
-is still on the phone with no signal, *Saved on your phone, sent when there is signal*; the same
-answer again asks *Take back your answer?* (12.1, 12.2). Chips, small buttons and steppers 40px,
+entry's sheet and her child's card. What became of the tap is said without words (the owner,
+2026-10-14: a sentence was too much): the pressed answer carries a thin bar while it is still on
+her phone, sweeping while it goes and dotted with no signal, gone once the club has it; the same
+answer again still takes it back, the button visibly letting go (12.1, 12.2). Chips, small buttons and steppers 40px,
 the text buttons, the club line and the legal links a 40px hit area that moves nothing, the
 avatar 36px (12.3). From 12.4: *Add to my calendar* opens the two choices alone (`sheetCalAdd()`,
 *Google Calendar* / *Apple, Outlook or another*, the same pair under *Add to your calendar* in the
