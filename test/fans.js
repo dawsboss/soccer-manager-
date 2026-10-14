@@ -98,8 +98,14 @@ const invitesMade = (fbk, from = 0) => fbk.record.writes.slice(from).filter(w =>
   {
     const { A, fbk } = await boot('mumU');
     A.ui.view = 'mine'; A.render();
-    check('My players offers her child\'s fans', /data-act="fansheet" data-tid="t1" data-pid="p1"/.test(A.rendered()), true);
+    // not a button on her child's card since build 155 (UX-REVIEW-3.md, 14.1): her name opens her sheet, and the fans are one row in it
+    check('her child\'s card has no Fans button', /data-act="fansheet"/.test(A.rendered()), false);
+    A.click({ act: 'kidsheet', tid: 't1', pid: 'p1' });
+    check('behind her name, a row into the family and friends who follow her', /data-act="fansheet" data-tid="t1" data-pid="p1"/.test(sheet(A)) && /Family and friends who follow Ella/.test(sheet(A)), true);
     A.click({ act: 'fansheet', tid: 't1', pid: 'p1' });
+    check('the sheet is titled for them', /<h3>Family and friends who follow Ella<\/h3>/.test(sheet(A)), true);
+    check('says what a fan is before the one button', sheet(A).indexOf('For a grandparent') > -1 && sheet(A).indexOf('For a grandparent') < sheet(A).indexOf('data-act="faninvite"') && />Invite a grandparent or friend</.test(sheet(A)), true);
+    check('with one person for 14 days as the default, the choice behind a line', /<details class="wtable"[^>]*><summary>One person, for 14 days: change that<\/summary>/.test(sheet(A)) && /id="fanLUses"/.test(sheet(A)), true);
     check('the sheet says what a fan gets, and does not', /doesn't say who is going, message the coaches or book sessions/.test(sheet(A)), true);
     check('and that a coach says yes first', /A coach of the team says yes before they see anything/.test(sheet(A)), true);
     A.click({ act: 'faninvite', tid: 't1', pid: 'p1', from: 'sheet' }); await A.flush(10);
@@ -108,6 +114,7 @@ const invitesMade = (fbk, from = 0) => fbk.record.writes.slice(from).filter(w =>
     check('for her child, on that team, in this club', inv && [inv.value.player, inv.value.team, inv.value.ws].join(), 'p1,t1,CLUB');
     check('in her name', inv && inv.value.by, 'mumU');
     check('not approved: the coach decides', inv && inv.value.approved, undefined);
+    check('one tap, no choices opened: one person, fourteen days (UX-REVIEW-3.md, 14.1)', inv && (inv.value.seats ? 'seats' : 'single') + ' ' + Math.round((inv.value.expiresAt - inv.value.at) / 864e5), 'single 14');
     check('naming the child by shirt number, never by name', inv && inv.value.playerNo + ' ' + /Ella|Fitz/.test(JSON.stringify(inv.value)), '7 false');
     check('never on the admins\' list, nor anywhere in the club', wrote(fbk).some(p => p.startsWith('clubInvites/') || (p.startsWith(OB) && JSON.stringify(valueAt(fbk, p) || '').includes(inv.path.split('/')[1]))), false);
     check('the link is on the sheet to send', /\?invite=/.test(sheet(A)) && /data-act="faninvdrop"/.test(sheet(A)), true);

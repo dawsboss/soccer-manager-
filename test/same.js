@@ -138,6 +138,10 @@ const PATHS = [
   { ask: 'Where is the whole season?', say: 'Home → "G14 Flight on the calendar"', who: EVERYONE,
     walk() { home(); if (!/data-act="teamcal" data-tid="t1"/.test(page())) throw new Error('no link to the calendar'); A.click({ act: 'teamcal', tid: 't1' }); },
     got: () => A.ui.view, want: 'calendar' },
+  // UX-REVIEW-3.md, 14.3: calNext() skips what is called off, so a practice cancelled that morning used to vanish from Home
+  { ask: 'Is practice on tonight?', say: 'Home → the first card says so when it is cancelled', who: EVERYONE,
+    walk() { Object.assign(A.state.teams.t1.events.e1, { date: '2026-09-12', called: 'cancelled' }); home(); },
+    got: () => { const h = page(); return h.replace(/<[^>]+>/g, '').includes('Tonight’s practice is cancelled') && h.indexOf('callednow') < h.indexOf('Next up') && h.indexOf('callednow') > -1; }, want: true },
   { ask: 'How do I share the game?', say: 'Game → the next game → ⋯ → Share', who: EVERYONE,
     walk() { game(); A.click({ act: 'gamemenu' }); },
     got: () => /data-act="sharesheet"/.test(sheet()), want: true }
@@ -155,7 +159,7 @@ console.log('--- the coach\'s answer, walked on every phone ---');
     }
     check(`"${p.ask}" — ${p.say}`, bad.join('; ') || 'works for ' + p.who.length, 'works for ' + p.who.length);
   }
-  check('twelve paths, and every one walked by a parent', PATHS.length + ' ' + PATHS.filter(p => p.who.includes('mum')).length, '12 12');
+  check('thirteen paths, and every one walked by a parent', PATHS.length + ' ' + PATHS.filter(p => p.who.includes('mum')).length, '13 13');
 }
 
 console.log('\n--- who may answer is the app\'s to say, and pinned ---');

@@ -221,7 +221,7 @@ console.log('\n--- the Game tab ---');
   check('— titled Games, over the club, with no back arrow: it is the tab\'s own screen', titled('Games') && !/data-act="navback"/.test(title()), true);
   check('— Coming up: her team\'s next game, a week off, never one called off', rows('Coming up'), 'g2');
   check('— under its day, one line: the kick-off, then the teams', days('Coming up') + ' | ' + /<span class="gtime">9:30am<\/span><span><span class="pname">G14 Flight v Northgate<\/span><\/span>/.test(page()), 'Sat 19 Sep | true');
-  check('— Results: her team\'s last game, though it is more than a week ago, with its score', rows('Results') + ' ' + /data-r="W"[\s\S]*?0<small>–0<\/small>|data-r="D"[\s\S]*?0<small>–0<\/small>/.test(cardOf('Results')), 'g1 true');
+  check('— Results: her team\'s last game, though it is more than a week ago, with its score', rows('Results') + ' ' + /data-r="W"[\s\S]*?class="score">0<i>–<\/i>0|data-r="D"[\s\S]*?class="score">0<i>–<\/i>0/.test(cardOf('Results')), 'g1 true');
   check('— nothing being played, so no card for it', /<h2>Being played<\/h2>/.test(page()), false);
   check('— nothing more on the calendar, so no row to it', /data-act="gameslater"/.test(page()), false);
   check('— and no sheet asking which', A.dom.node('#sheet').hidden, true);
@@ -313,7 +313,7 @@ console.log('\n--- the Game tab ---');
   check('— one game being played: the tab opens it, on its own team', [A.ui.view, A.ui.teamId, A.ui.matchId].join(' '), 'game t1 g2');
   A.state.matches.g4.periods = { 0: { half: 1, start: H.clock.t - 5 * MIN } }; A.render();
   A.click({ act: 'tab', tab: 'game' });
-  check('two being played: the list, both in Being played, with the score', [A.ui.view, rows('Being played')].join(' ') + ' ' + /G14 Flight v Northgate<\/span><\/span><span class="pmins">0<small>–0<\/small> <span class="pill live">live<\/span>/.test(page()), 'games g4 g2 true');
+  check('two being played: the list, both in Being played, with the score', [A.ui.view, rows('Being played')].join(' ') + ' ' + /G14 Flight v Northgate<\/span><\/span><span class="pmins"><span class="score">0<i>–<\/i>0<\/span> <span class="pill live">live<\/span>/.test(page()), 'games g4 g2 true');
 
   // whose games: a coach's own team's, wherever she is reading
   as('jaz'); A.state.matches.g4 = { ...g4, periods: { 0: { half: 1, start: H.clock.t - 5 * MIN } } }; A.render();
@@ -485,7 +485,7 @@ console.log('\n--- game mode (UX-REVIEW.md, 1.3) ---');
   A.sheetGameMenu();
   const menu = String(A.dom.node('#sheet').innerHTML);
   check('— nor in its ⋯ menu', /<h3>Northgate<\/h3>/.test(menu), true);
-  check('— where a game played 0–0 keeps its score, and one called off says so, never upcoming (UX-REVIEW-3.md, 11.1)', /Riverside[\s\S]*?0<small>–0<\/small>/.test(menu) && /Hill End[\s\S]*?<span class="tag called">Cancelled<\/span>/.test(menu), true);
+  check('— where a game played 0–0 keeps its score, and one called off says so, never upcoming (UX-REVIEW-3.md, 11.1)', /Riverside[\s\S]*?class="score">0<i>–<\/i>0/.test(menu) && /Hill End[\s\S]*?<span class="tag called">Cancelled<\/span>/.test(menu), true);
   A.closeSheet();
   check('— and the ⋯ menu', /data-act="gamemenu"/.test(title()), true);
   check('no game bar on the screen any more', /barrow|data-act="sharesheet"|data-act="editmatch"/.test(A.rendered()), false);

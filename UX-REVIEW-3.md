@@ -276,6 +276,46 @@ The fixes, in the order they pay:
 
 ## 14. Home and her child's card
 
+**Built in build 155**, all seven (`test/home.js` walks them; the others named below). As built,
+where it differs from what is written under each:
+
+- **14.1** Her name on the card is a button with a chevron (`kidsheet`, `sheetChild()`), and the
+  *Fans (1)* button is gone. Behind it: where she has played, one row *Family and friends who
+  follow Rosa · 1* (`fansheet`), and *Her details* for a child with a record in the club that her
+  family may edit. The fan sheet leads with the paragraph, then who follows her with *Remove*, then
+  one button, *Invite a grandparent or friend*; the owner's choice of how many people and how long
+  (2026-10-09, `test/links.js`) stays, behind *One person, for 14 days: change that*, so the one
+  tap makes a link for one person for fourteen days. The coach's and admin's fan card on a
+  player's page keeps its two choices in view. A fan's *Stop following* stays on her card (19.2).
+  `test/fans.js`, `test/players.js`.
+- **14.2** *3 games · 180 minutes · 1 goal · came to all 5 practices*, one line, the minutes
+  ticking in a live game (`data-live="smint"`). The games count is the attendance for games, so
+  *Games 3 of 3* is gone from her card (the coach's views keep `attendLine()`); what she was
+  asked to come to, practices, team events and extra sessions, is *came to 4 of 5 practices*, or
+  *came to the practice* for one. *60 at Midfield* is on her sheet (*Where Rosa has played*)
+  rather than behind a separate ⓘ: one door, not two. `test/attend.js`.
+- **14.3** `calledSoon()` and `calledCard()` in `nextUpBlock()`, so the coach's Season says it
+  too (one frame). A cancelled or postponed practice, game or event that is today (and not over)
+  or tomorrow: *Tonight's practice is cancelled* (*Today's* before five, *Tomorrow's*), with its
+  time and place struck through under it, grey, and a tap into the entry; the next thing under
+  it as before. `test/same.js` has it as a thirteenth question a parent asks.
+- **14.4** The badge is a button (`pendingsheet`) while something is owed or refused and a
+  plain label when not, the game header's twin the same (`paintSync()`); under the answer
+  control, while its write is unacknowledged, *Saved on your phone, sent when there is signal*
+  (`rsvpChips()`, so the next-up card, the sheet and My players all have it); and Settings'
+  Database row reads *Connected* or *Offline* from the same `online` the badge does. The rest of
+  18.4 (one word for the outbox everywhere) is not built. `test/safekeep.js`, `test/settings.js`.
+- **14.5** On Home the LIVE card is the one door into the game, and her card says *Rosa: on the
+  pitch · 38 min* (or *off the pitch*, or *You: …* for the player herself) as a line. My players
+  (staff with a child) has no LIVE card, so its *Playing now* row stays a door.
+- **14.6** `scoreSpan()` and `.score` (both digits 21px ink, the dash soft), in the Games list,
+  the game picker, the live card, her card and the season's game list; the live card's score no
+  longer gives way to the title on Month. The recap's big score and the scores inside a sentence
+  are unchanged. `test/visual.js`.
+- **14.7** An entry with no title of its own (*Practice*, *Event*) is titled with the team on the
+  next-up card, the tag saying what it is; a titled one keeps its title. My players' *Next —
+  Practice* row drops the repeat the same way.
+
 - **14.1 "Fans (1)" is the biggest control on her child's card.** A full-width outlined button
   (334×46) under *Last game — Hill End*, above the next practice, for a feature used once a
   season, whose sheet is *Fans of Rosa · 1 fan follows Rosa · A fan · Follows Rosa · Remove ·
