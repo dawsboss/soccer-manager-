@@ -37,7 +37,7 @@ const ROSA = 'Rosa Delgado', ELLA = 'Ella Fitzgerald', MIA = 'Mia Kowalski';
 const club = () => ({
   teams: {
     t1: {
-      id: 't1', name: 'G14 Flight',
+      id: 't1', name: 'G14 Flight', share: 'shareT1',
       players: {
         p1: { id: 'p1', name: ROSA, number: '7', guardians: { mum: true } },
         p2: { id: 'p2', name: ELLA, number: '9', fans: { nan: true }, self: { kid: true } },
@@ -96,7 +96,7 @@ const home = () => { tab('home'); if (A.ui.view === 'club') A.click({ act: 'gote
 const cardFor = (h, label) => h.split('<div class="card').find(x => x.startsWith(` calnext"`) && x.includes(`<span class="muted">${label}</span>`)) || '';
 const buttonsOf = card => [...card.matchAll(/<(?:button|a) class="btn [^"]*"[^>]*>([^<]*)</g)].map(m => m[1]);
 
-/* ---------------- the ten things a parent asks about ---------------- */
+/* ---------------- the things a parent asks about ---------------- */
 
 const PATHS = [
   { ask: 'How do I see the score?', say: 'Game → the next game → Stats', who: EVERYONE,
@@ -138,6 +138,10 @@ const PATHS = [
   { ask: 'Where is the whole season?', say: 'Home → "G14 Flight on the calendar"', who: EVERYONE,
     walk() { home(); if (!/data-act="teamcal" data-tid="t1"/.test(page())) throw new Error('no link to the calendar'); A.click({ act: 'teamcal', tid: 't1' }); },
     got: () => A.ui.view, want: 'calendar' },
+  { ask: 'Where do I go Saturday?', say: 'Game → the next game → Live → Match day', who: EVERYONE,
+    walk() { game(); A.click({ act: 'opengview', v: 'live' }); },
+    got: () => /<h2[^>]*>Match day<\/h2>[\s\S]*<dt>Where<\/dt>/.test(page()), want: true },
+  // Share is drawn only once the team has a link (UX-REVIEW-3.md, 16.6), so this club has one
   { ask: 'How do I share the game?', say: 'Game → the next game → ⋯ → Share', who: EVERYONE,
     walk() { game(); A.click({ act: 'gamemenu' }); },
     got: () => /data-act="sharesheet"/.test(sheet()), want: true }
@@ -155,7 +159,7 @@ console.log('--- the coach\'s answer, walked on every phone ---');
     }
     check(`"${p.ask}" — ${p.say}`, bad.join('; ') || 'works for ' + p.who.length, 'works for ' + p.who.length);
   }
-  check('twelve paths, and every one walked by a parent', PATHS.length + ' ' + PATHS.filter(p => p.who.includes('mum')).length, '12 12');
+  check('thirteen paths, and every one walked by a parent', PATHS.length + ' ' + PATHS.filter(p => p.who.includes('mum')).length, '13 13');
 }
 
 console.log('\n--- who may answer is the app\'s to say, and pinned ---');

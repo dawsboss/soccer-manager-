@@ -331,6 +331,8 @@ console.log('\n--- the Game tab ---');
   check('a postponed game says Postponed, and the next one to be played follows it', rows('Coming up') + ' ' + /G14 Flight v Northgate<\/span><\/span><span class="pmins"><span class="tag called">Postponed<\/span>/.test(page()), 'g2 g5 true');
   A.click({ act: 'navgame', id: 'g2' }); A.click({ act: 'pickgame' });
   check('— and the game\'s own picker says Postponed, never upcoming', /data-id="g2"[\s\S]*?<span class="tag called">Postponed<\/span>/.test(sheet()), true);
+  // its rows say the day, and before it is played the kick-off and the ground; never a raw date or minutes played (UX-REVIEW-3.md, 16.7)
+  check('— every row the day, never a raw date, "min played" or "upcoming"', /class="rowsub">Sat 3 Oct · 10am</.test(sheet()) + ' ' + /\d{4}-\d\d-\d\d|min played|upcoming/.test(sheet()), 'true false');
   A.closeSheet();
   // a family's later games: the calendar row opens her own calendar
   as('jaz'); A.state.matches.g5 = { id: 'g5', teamId: 't1', opponent: 'Eastfield', date: '2026-10-03', kickoff: '10:00', periodCount: 2, periodMinutes: 40, currentHalf: 1, periods: {}, stints: {} };
@@ -511,8 +513,12 @@ console.log('\n--- game mode (UX-REVIEW.md, 1.3) ---');
   check('— and the game\'s number in the season (the called-off one counts)', /gb-hint">2\/3</.test(sheet()), true);
   A.closeSheet();
   as('trk', 'game'); A.ui.matchId = 'g2'; A.render(); A.click({ act: 'gamemenu' });
-  check('a tracker gets no Edit', /data-act="editmatch"/.test(sheet()) + ' ' + /data-act="sharesheet"/.test(sheet()), 'false true');
+  // Share only where there is a link to share (UX-REVIEW-3.md, 16.6): the coach makes it, so anyone else waits for one
+  check('a tracker gets no Edit, and no Share while the team has no link', /data-act="editmatch"/.test(sheet()) + ' ' + /data-act="sharesheet"/.test(sheet()), 'false false');
   A.closeSheet();
+  A.state.teams.t1.share = 'shareT1'; A.render(); A.click({ act: 'gamemenu' });
+  check('— Share once it has one', /data-act="sharesheet"/.test(sheet()), true);
+  A.closeSheet(); delete A.state.teams.t1.share;
 
   // the screens, shared from the right (UX-REVIEW-2.md, 9.3; build 153): … · Stats · Live for everyone, Recap once it is over
   const allowed = (uid) => { as(uid, 'game'); A.ui.matchId = 'g2'; A.render(); return A.gameSegments(['live', 'subs', 'track', 'stats', 'recap', 'pitch', 'plan'].filter(v => { A.ui.gameView = v; A.render(); return A.ui.gameView === v; })).join(' '); };

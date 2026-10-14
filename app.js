@@ -2,7 +2,7 @@
    Static app. Data lives in localStorage, and mirrors to Firebase Realtime
    Database when a config + workspace code are present. */
 
-const BUILD = '154';
+const BUILD = '155';
 const BUILT = '2026-10-12';
 /* The version of database.rules.json this app was written against. The rules
    carry the same number in rulesVersion's .write, which accepts that number
@@ -2188,7 +2188,10 @@ const HELPER_GAME_ACTS = new Set(['newmatch', 'editmatch', 'savematch', 'delmatc
   'snapstart', 'snapadd', 'snapdel', 'snaptime', 'snapslot', 'snapclear', 'snapplayer', 'snapwipe', 'snapfill']);
 const LOG_ACTS = new Set([
   'goal', 'savegoal', 'delgoal', 'shot', 'saveshot', 'delshot', 'ev', 'saveev', 'delev',
-  'poss', 'saveposs', 'delposs', 'undoposs', 'trackerclean', 'dropby'
+  'poss', 'saveposs', 'delposs', 'undoposs', 'trackerclean', 'dropby',
+  /* opening a goal's or a shot's editor: Save and Delete were refused, but a
+     parent could open a working-looking editor from Stats first (UX-REVIEW-3.md, 16.5) */
+  'fixgoal', 'fixshot'
 ]);
 function mayAct(a, m, d) {
   const coach = COACH_ACTS.has(a), log = LOG_ACTS.has(a);
@@ -7432,11 +7435,11 @@ function navGames() {
     .sort((a, b) => live(a) - live(b) || (a.date || '9').localeCompare(b.date || '9') || hm(a.kickoff).localeCompare(hm(b.kickoff)));
 }
 /* A game opened from the Game tab or its list, on its own team, where each
-   role works (render() puts a finished game on its recap). Its back arrow
-   goes up to the list, wherever the tab took her. */
+   role works, and a finished one on its recap. Its back arrow goes up to the
+   list, wherever the tab took her. */
 function openNavGame(g) {
   ui.teamId = g.teamId; ui.matchId = g.id; ui.view = 'game'; ui.gameFrom = 'games'; ui.picked = null;
-  ui.gameView = canEditTeam(g.teamId) ? 'subs' : me && isTracker(g.teamId, me.uid) ? 'track' : 'live';
+  ui.gameView = gameStatus(g) === 'done' ? 'recap' : canEditTeam(g.teamId) ? 'subs' : me && isTracker(g.teamId, me.uid) ? 'track' : 'live';
 }
 const NAV_ICON = {
   home: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3.5 11.5 12 4l8.5 7.5"/><path d="M5.5 10v10h13V10"/><path d="M10 20v-6h4v6"/></svg>',
@@ -7876,7 +7879,7 @@ function gameHeader(t, m) {
     : st === 'done' ? '<span class="ghclock ghft" title="Full time">FT</span>' : '';
   return `<button class="tbback" data-act="backgames" aria-label="${upLabel}" title="${upLabel}">${BACK_SVG}</button>
     <button class="ghmain" data-act="pickgame" aria-label="Which game" title="Which game">
-      <span class="ghname">${gameTitle(t, m)}</span><span class="ghwhen">${esc(gameWhen(m))}</span></button>
+      <span class="ghname">${gameTitle(t, m)}</span><span class="ghwhen">${esc((st === 'upcoming' && CALLED[m.called] ? CALLED[m.called] + ' · ' : '') + gameWhen(m))}</span></button>
     ${when}
     <span class="sync ghsync" id="gsync" hidden></span>
     <button class="tbback ghmore" data-act="gamemenu" aria-label="More for this game" title="More for this game">${DOTS_SVG}</button>`;
@@ -7892,13 +7895,34 @@ function gameMenu(t, m) {
   const older = i > -1 ? list[i + 1] : null, newer = i > 0 ? list[i - 1] : null;
   const sc = shownScore(m);
   const row = (g, k) => g ? `<button class="opt spread" data-act="pickgame2" data-id="${g.id}"><span><b>${k}</b>
-      <span class="rowsub">${esc(g.opponent || 'Unnamed')}${g.date ? ' · ' + shortDate(g.date) : ''}</span></span>
-      <span class="pmins">${scoreCell(g)}</span></button>` : '';
+      <span class="rowsub">${esc(g.opponent || 'Unnamed')} · ${pickWhen(g)}</span></span>
+      <span class="pmins">${pickCell(g)}</span></button>` : '';
   return `<h3>${esc(m.opponent || 'Game')}${sc ? ` <span class="muted">${sc.us}–${sc.them}</span>` : ''}</h3>
     <p class="muted" style="margin-top:0">${[m.date ? shortDate(m.date) : '', n > 1 && i > -1 ? `game <span class="gb-hint">${n - i}/${n}</span> of the season` : ''].filter(Boolean).join(' · ') || 'No date yet'}</p>
     ${row(older, 'Older game')}${row(newer, 'Newer game')}
     ${canEditTeam(t.id) ? `<button class="opt" data-act="editmatch" data-id="${m.id}"><b>Edit this game</b><span class="rowsub">Opponent, date, kick-off, where, kit</span></button>` : ''}
-    <button class="opt" data-act="sharesheet"><b>Share</b><span class="rowsub">The read-only page for families: shirt numbers, never names</span></button>`;
+    ${shareable(t) ? `<button class="opt" data-act="sharesheet"><b>Share</b><span class="rowsub">${canEditTeam(t.id) ? 'The read-only page for families: shirt numbers, never names' : 'A page for family and friends: the score, shirt numbers only'}</span></button>` : ''}`;
+}
+/* Share is offered only where there is something to share (UX-REVIEW-3.md,
+   16.6; build 155): the coach makes the links, so she always has it; anyone
+   else only once the team has a link. A family used to tap Share and read
+   that the coach had not set up parent links, which she cannot do. */
+const shareable = t => canEditTeam(t.id) || !!t.share;
+/* A game in a list of them (the picker, the menu): the day, and before it is
+   played the kick-off and the ground, or Postponed; never a raw date or
+   "0 min played" for a game nobody has played (UX-REVIEW-3.md, 16.7). */
+function pickWhen(g) {
+  const st = gameStatus(g), ahead = st === 'upcoming' && !CALLED[g.called];
+  return [g.date ? dayLabel(g.date) : 'Date to be confirmed',
+    st === 'live' ? `<span data-live="clock" data-mid="${g.id}">${mmss(elapsedSec(g))}</span>` : '',
+    ahead && g.kickoff ? esc(niceTime(g.kickoff)) : '', ahead ? esc(HOME_AWAY[g.home] || '') : ''].filter(Boolean).join(' · ');
+}
+// its score with Full time once played, live while it is, Postponed or Cancelled when called off
+function pickCell(g) {
+  const st = gameStatus(g), sc = shownScore(g);
+  if (st === 'live') return `${sc ? `${sc.us}<small>–${sc.them}</small> ` : ''}<span class="pill live">live</span>`;
+  if (st === 'done' && sc) return `${sc.us}<small>–${sc.them}</small> <small>FT</small>`;
+  return CALLED[g.called] ? `<span class="tag called">${CALLED[g.called]}</span>` : '';
 }
 function sheetGameMenu() { const t = team(), m = match(); if (!t || !m) return; openSheet(gameMenu(t, m)); }
 
@@ -7932,8 +7956,8 @@ function sheetPickGame() {
   openSheet(`<h3>Which game?</h3>
     ${list.map(g => {
     return `<button class="opt spread" type="button" data-act="pickgame2" data-id="${g.id}" aria-current="${g.id === cur}">
-      <span>${esc(g.opponent || 'Unnamed')}<span class="rowsub">${esc(g.date || '')} · <span data-live="gmins" data-mid="${g.id}">${mins(elapsedSec(g))}</span> min played${running(g) ? ' · running' : ''}</span></span>
-      <span class="pmins">${scoreCell(g)}</span></button>
+      <span>${esc(g.opponent || 'Unnamed')}<span class="rowsub">${pickWhen(g)}</span></span>
+      <span class="pmins">${pickCell(g)}</span></button>
 `;
   }).join('') || '<p class="muted">No games yet.</p>'}
     ${cur && state.matches[cur] && !readOnlyHere() ? `<button class="btn quiet wide" data-act="editmatch" data-id="${cur}" style="margin-bottom:8px">Edit this game's details</button>` : ''}
@@ -8126,7 +8150,9 @@ function viewStats() {
   const now = nowMs();
   const us = teamLabel(t), them = esc(m.opponent || 'Them');
   const nm = id => esc(shownName(t, (t.players || {})[id]));
-  const sc = score(m), sh = shotTally(m);
+  const sc = score(m), sh = shotTally(m), st = gameStatus(m);
+  // not kicked off, and no result typed in either (an imported game has goals and no clock)
+  const before = !shownScore(m);
   const halves = [...new Set(segments(m).map(x => x.half || 1))].sort();
   const byHalf = (list, pick) => halves.map(h => list.filter(x => halfOfSec(m, x.t) === h).filter(pick).length);
 
@@ -8138,8 +8164,20 @@ function viewStats() {
   const shotsAll = sh.usOn + sh.usOff, shotsThemAll = sh.themOn + sh.themOff;
 
   const headline = `<div class="card">
-    <h2>${us} ${sc.us} — ${sc.them} ${them}</h2>
-    <div class="muted">${gameStatus(m) === 'done' ? (m.ended ? 'Final' : 'Full time') : gameStatus(m) === 'live' ? 'In progress' : 'Not started'} · <span data-live="clock" data-mid="${m.id}">${mmss(elapsedSec(m, now))}</span> played${m.date ? ' · ' + esc(shortDate(m.date)) : ''}</div></div>`;
+    <h2>${us} ${before ? 'v' : `${sc.us} — ${sc.them}`} ${them}</h2>
+    <div class="muted">${st === 'done' ? 'Full time' : st === 'live' ? 'In progress' : CALLED[m.called] || 'Not started'}${st === 'upcoming' ? '' : ` · <span data-live="clock" data-mid="${m.id}">${mmss(elapsedSec(m, now))}</span> played`}${m.date ? ' · ' + esc(shortDate(m.date)) : ''}</div></div>`;
+  /* Before kick-off there is nothing to count, and fourteen rows of "0 min"
+     and the coach's plan said so at length (UX-REVIEW-3.md, 16.2): one line,
+     and Live has where to be and when. */
+  if (before) return `<div class="stack">${headline}<div class="empty"><strong>Stats appear once the game kicks off</strong>Live has when and where, and fills in from the first whistle.</div></div>`;
+  /* Whoever may not change a goal or a shot sees them plain: a tap that
+     opened an editor whose Save was then refused is no tap at all (16.5). */
+  const fixGoal = mayAct('savegoal', m), fixShot = mayAct('saveshot', m);
+  /* The minutes against the coach's plan are the coach's bookkeeping. A
+     family, a fan or a club viewer gets minutes alone, her own child first
+     (UX-REVIEW-3.md, 16.3): "39 short" beside a number reads as a verdict on
+     somebody's child. */
+  const reader = gameReader(restricted());
 
   const halfTable = halves.length > 1 ? `<div class="card"><h2 style="margin-bottom:10px">By half</h2>
     <div class="statgrid" style="grid-template-columns:1fr ${halves.map(() => '48px').join(' ')}">
@@ -8180,32 +8218,34 @@ function viewStats() {
           <rect x="2" y="2" width="64" height="96"/><line x1="2" y1="50" x2="66" y2="50"/>
           <circle cx="34" cy="50" r="9"/><rect x="16" y="2" width="36" height="15"/>
           <rect x="26" y="2" width="16" height="6"/></g></svg>
-      ${located.map(x => `<button class="dot" data-act="fixshot" data-id="${x.id}" data-side="${x.side}" data-on="${x.onTarget ? 1 : 0}"
-        style="left:${clamp(x.xy.x, 2, 98)}%;top:${clamp(x.xy.y, 2, 98)}%" title="${mmss(x.t)}"></button>`).join('')}
+      ${located.map(x => `<${fixShot ? 'button' : 'span'} class="dot"${fixShot ? ` data-act="fixshot" data-id="${x.id}"` : ''} data-side="${x.side}" data-on="${x.onTarget ? 1 : 0}"
+        style="left:${clamp(x.xy.x, 2, 98)}%;top:${clamp(x.xy.y, 2, 98)}%" title="${mmss(x.t)}"></${fixShot ? 'button' : 'span'}>`).join('')}
     </div>
     <p class="muted" style="margin-bottom:0">Both teams attacking upward. Filled means on target.</p></div>` : '';
 
   const goals = goalList(m).slice().reverse();
   const goalsCard = goals.length ? `<div class="card"><h2 style="margin-bottom:10px">Goals</h2>
-    <div class="log">${goals.map(g => `<button type="button" data-act="fixgoal" data-id="${g.id}">
+    <div class="log">${goals.map(g => `<${fixGoal ? `button type="button" data-act="fixgoal" data-id="${g.id}"` : 'div class="logrow"'}>
       <span class="t">${mmss(g.t)}</span>
       <span>${g.side === 'us' ? `<span class="on">${us}</span>` : `<span class="off">${them}</span>`}${g.pid ? ' — ' + nm(g.pid) : ''}${g.assist ? ` <span class="muted">(assist ${nm(g.assist)})</span>` : ''}</span>
-      <span class="muted">edit</span></button>`).join('')}</div></div>` : '';
+      ${fixGoal ? '<span class="muted">edit</span></button>' : '<span></span></div>'}`).join('')}</div></div>` : '';
 
+  // her own first, then by number; on the pitch marked while it is being played, as Subs marks it
+  const rows = reader ? [...roster.filter(p => isMine(p) || iFan(p)), ...roster.filter(p => !isMine(p) && !iFan(p))] : roster;
   const minutesCard = `<div class="card"><h2 style="margin-bottom:10px">Minutes</h2>
-    <div class="plist">${roster.map(p => {
-    const pl = playedSec(m, p.id, now), pd = plannedSec(m, p.id);
-    const rs = roleSummary(m, p.id, now);
-    return `<div class="prow">
+    <div class="plist">${rows.map(p => {
+    const pl = playedSec(m, p.id, now), pd = reader ? 0 : plannedSec(m, p.id);
+    const rs = roleSummary(m, p.id, now), sub = rs || (reader ? '' : pd > 0 ? mins(pd) + ' min planned' : 'no plan set');
+    return `<div class="prow" data-on="${st === 'live' && onField(m, p.id) ? 1 : 0}">
       <span class="pnum">${esc(p.number ?? '')}</span>
-      <span><span class="pname">${esc(shownName(t, p))}</span><span class="psub">${esc(rs) || (pd > 0 ? mins(pd) + ' min planned' : 'no plan set')}</span></span>
-      <span class="pmins"><span data-live="pmins" data-mid="${m.id}" data-pid="${p.id}">${mins(pl)}</span><small> min</small><span data-live="diff" data-mid="${m.id}" data-pid="${p.id}">${diffTag(pl, pd)}</span></span>
+      <span><span class="pname">${esc(shownName(t, p))}</span>${sub ? `<span class="psub">${esc(sub)}</span>` : ''}</span>
+      <span class="pmins"><span data-live="pmins" data-mid="${m.id}" data-pid="${p.id}">${mins(pl)}</span><small> min</small>${reader ? '' : `<span data-live="diff" data-mid="${m.id}" data-pid="${p.id}">${diffTag(pl, pd)}</span>`}</span>
     </div>`;
   }).join('')}</div></div>`;
 
-  const recapLink = gameStatus(m) === 'done' ? `<button class="btn wide" data-act="opengview" data-v="recap">See the game recap — when, how often, what went well</button>` : '';
+  // the recap is its own screen beside this one (Recap, in the row above), never a button repeating it (16.9)
   return `<div class="stack">
-    ${headline}${recapLink}${halfTable}${shotsCard}${mapCard}${possCard}${evCard}${goalsCard}${minutesCard}
+    ${headline}${halfTable}${shotsCard}${mapCard}${possCard}${evCard}${goalsCard}${minutesCard}
     ${restricted() ? '' : aiButton('game')}
   </div>`;
 }
@@ -8352,8 +8392,11 @@ function recapNotes(t, m, r) {
     if (pct <= 45) work.push(`Chased the ball: ${pct}% of settled play.`);
   }
   if (r.scorers.length >= 3) good.push(`Goals shared around — ${r.scorers.length} different scorers.`);
-  if (r.short.length) work.push(`${pl(r.short.length, 'player')} got five or more minutes less than planned.`);
-  else if (r.played.length && r.played.some(x => x.plan > 0)) good.push('Everyone got the minutes they were planned for.');
+  // the plan is the coach's bookkeeping: a family reads the game, not the coach's sums (UX-REVIEW-3.md, 16.3)
+  if (!gameReader(restricted())) {
+    if (r.short.length) work.push(`${pl(r.short.length, 'player')} got five or more minutes less than planned.`);
+    else if (r.played.length && r.played.some(x => x.plan > 0)) good.push('Everyone got the minutes they were planned for.');
+  }
   if (r.season.avgShots != null && shotsUs >= r.season.avgShots + 3) good.push(`${shotsUs} shots — more than the ${r.season.avgShots.toFixed(1)} a game so far.`);
   if (r.season.avgShots != null && r.season.shotGames >= 2 && shotsUs <= r.season.avgShots - 3) work.push(`${shotsUs} shots — fewer than the ${r.season.avgShots.toFixed(1)} a game so far.`);
   return { good, work };
@@ -8697,12 +8740,17 @@ function viewFeed() {
 
   const now = nowMs(), sc = shownScore(m), st = gameStatus(m);
   const us = teamLabel(t), them = esc(m.opponent || 'Them');
-  const status = st === 'done' ? 'Full time'
-    : st === 'live' ? `${running(m) ? 'Live' : 'Paused'} · ${esc(halfName(m, m.currentHalf || 1))}`
-      : `Not started${m.date ? ' · ' + esc(shortDate(m.date)) : ''}`;
+  /* While it is being played, how long is left of this half, as the coach's
+     Subs and the share page say it (UX-REVIEW-3.md, 16.8): "38:00" alone
+     answered nothing a parent asks. */
+  const status = st === 'done' ? `Full time · <span data-live="clock" data-mid="${m.id}">${mmss(elapsedSec(m, now))}</span>`
+    : st === 'live' ? `${running(m) ? 'Live' : 'Paused'} · ${esc(halfName(m, m.currentHalf || 1))} · <span data-live="half" data-mid="${m.id}">${mmss(halfSec(m, now))}</span> of ${m.periodMinutes || 40}:00`
+      : `${CALLED[m.called] || 'Not started'}${m.date ? ' · ' + esc(shortDate(m.date)) : ''}`;
+  const mine = st === 'upcoming' ? [] : players(t).filter(p => p.active !== false && (isMine(p) || iFan(p)));
   const head = `<div class="card feedhead" data-st="${st}">
-    <div class="feedstatus">${st === 'live' && running(m) ? '<i class="livedot"></i>' : ''}${status}${st === 'upcoming' ? '' : ` · <span data-live="clock" data-mid="${m.id}">${mmss(elapsedSec(m, now))}</span>`}</div>
-    <div class="feedscore"><span class="fs-side">${us}</span><span class="fs-num">${sc ? `${sc.us}–${sc.them}` : 'v'}</span><span class="fs-side">${them}</span></div></div>`;
+    <div class="feedstatus">${st === 'live' && running(m) ? '<i class="livedot"></i>' : ''}<span>${status}</span></div>
+    <div class="feedscore"><span class="fs-side">${us}</span><span class="fs-num">${sc ? `${sc.us}–${sc.them}` : 'v'}</span><span class="fs-side">${them}</span></div>
+    ${mine.map(p => `<p class="feedmine" data-live="mine" data-mid="${m.id}" data-pid="${esc(p.id)}">${myGameLine(t, m, p, now)}</p>`).join('')}</div>`;
 
   const all = feedItems(t, m);
   const everything = !!ui.feedAll;
@@ -8727,19 +8775,67 @@ function viewFeed() {
   const canNotify = typeof Notification !== 'undefined';
   const closed = pushOn();
   const offerPush = !closed && me && pushSupport() === 'ok' ? ' Turn notifications on for this phone, in Settings, to get them with TeamPlayHQ closed too.' : '';
-  const follow = st === 'done' ? '' : `<div class="card"><div class="spread"><h2>Notify me</h2>
+  /* The promise first and the mechanism after (UX-REVIEW-3.md, 16.4): what
+     she gets, then one line on where it reaches her. */
+  const follow = st === 'done' ? '' : `<div class="card"><div class="spread"><h2>Buzz me for goals and the final whistle</h2>
       <button class="btn ${following ? 'quiet ' : ''}sm" data-act="feedfollow" data-v="${following ? 0 : 1}">${following ? 'Stop' : 'Turn on'}</button></div>
     <p class="muted" style="margin:6px 0 0">${closed
-      ? (following ? 'On for this game. Goals, kick-off, half time and full time reach this phone even with TeamPlayHQ closed, and any other phone you turned notifications on for.'
-        : 'Get goals, kick-off, half time and full time on this phone, even with TeamPlayHQ closed.')
+      ? (following ? `On for this game, kick-off and half time too, even with ${APP_NAME} closed.`
+        : `Kick-off and half time too, even with ${APP_NAME} closed.`)
       : following
-        ? `On for this game. Goals, kick-off, half time and full time ${canNotify && Notification.permission === 'granted' ? 'pop up on this device' : 'buzz and show here'} while this page is open.${offerPush}`
-        : 'Get goals, kick-off, half time and full time on this device while this page is open, even in another tab.'}</p></div>`;
+        ? `On for this game, kick-off and half time too, while ${APP_NAME} is open on this phone.${offerPush}`
+        : `Works while ${APP_NAME} is open on this phone.${offerPush ? ' For a closed phone, turn on notifications in Settings.' : ''}`}</p></div>`;
 
   // once the coach has ended it, following is over and the feed becomes the record
   return `<div class="stack">
-    ${head}${m.ended ? logCard(t, m) : follow + feed}
+    ${head}${st === 'upcoming' ? matchDayCard(t, m) : ''}${m.ended ? logCard(t, m) : follow + feed}
   </div>`;
+}
+/* Her own child in the game, one line under the score (UX-REVIEW-3.md, 16.1;
+   build 155): on the pitch or on the bench since when, her minutes, her
+   goals. The share page a stranger opens says who is on; the signed-in
+   parent saw less about her own child than the group chat did. Drawn only
+   for her own children (and a fan's player), so staff see nothing extra,
+   and kept up to date by the ticker (liveReading, 'mine'). HTML. */
+function myGameLine(t, m, p, now = nowMs()) {
+  const st = gameStatus(m), bits = [];
+  if (isOut(m, p.id)) bits.push('not playing today');
+  else {
+    const pl = mins(playedSec(m, p.id, now));
+    if (st === 'live') {
+      const offs = stintsOf(m, p.id).filter(([, x]) => x.off != null).map(([, x]) => x.off);
+      bits.push(onField(m, p.id) ? 'on the pitch' : offs.length ? `on the bench since ${feedMin(Math.max(...offs))}` : 'on the bench', `${pl} min`);
+    } else bits.push(`played ${pl} min`);
+    const goals = goalList(m).filter(g => g.side === 'us' && g.pid === p.id).length;
+    const assists = goalList(m).filter(g => g.side === 'us' && g.assist === p.id).length;
+    if (goals) bits.push(goals === 1 ? '1 goal' : `${goals} goals`);
+    if (assists) bits.push(assists === 1 ? '1 assist' : `${assists} assists`);
+  }
+  return `<b>${esc(firstName(p))}</b> · ${esc(bits.join(' · '))}`;
+}
+/* Before kick-off Live is where to be and when (UX-REVIEW-3.md, 16.2): the
+   calendar sheet's rows, Directions, and her answer, for everyone, so the
+   screen named for the game is not an empty feed while the kit and the
+   parking note sit one screen away. */
+function matchDayCard(t, m) {
+  const it = calItems([t.id]).find(x => x.kind === 'game' && x.id === m.id);
+  if (!it) return '';
+  const I = ICS();
+  const row = (k, v) => v ? `<dt>${k}</dt><dd>${v}</dd>` : '';
+  const pitch = (fv => fv ? pitchOfText(fv, it.venue) : null)(fieldOfText(it.venue));
+  return `<div class="card"><h2 style="margin-bottom:8px">Match day</h2>
+    ${it.called ? `<div class="warn alert" style="margin-bottom:10px"><b>${CALLED[it.called]}.</b>${it.called === 'postponed' ? ' A new date will be set.' : ''}</div>` : ''}
+    <dl class="facts">
+      ${row('When', esc(dayLabel(it.date)) + (it.date && it.start ? ' · ' + esc(niceTime(it.start)) : ''))}
+      ${row('Where', esc(it.venue))}
+      ${pitch ? row(esc(pitch.name), esc(pitchText(fieldOfText(it.venue), pitch))) : ''}
+      ${row('Ground', esc(HOME_AWAY[m.home] || ''))}
+      ${row('Arrive by', esc(niceTime(m.arrive)))}
+      ${row('Kit', esc(m.kit || ''))}
+      ${row('Notes', esc(m.notes || '').replace(/\n/g, '<br>'))}
+    </dl>
+    ${it.venue && I ? `<div class="row wrap"><a class="btn quiet sm" href="${esc(I.mapLink(venueAddress(it.venue)))}" target="_blank" rel="noopener">Directions</a></div>` : ''}
+    ${nextAnswer(it)}</div>`;
 }
 
 /* Run from the once-a-second ticker, so it sees changes from any phone the
@@ -18106,6 +18202,8 @@ function liveReading(kind, d, now = nowMs()) {
   const ms = d.tid ? teamMatches(d.tid) : [];
   const season = f => ms.reduce((a, x) => a + f(x), 0);
   if (kind === 'clock') return m ? mmss(elapsedSec(m, now)) : null;
+  if (kind === 'half') return m ? mmss(halfSec(m, now)) : null;
+  if (kind === 'mine') { const t = m && state.teams[m.teamId], p = t && (t.players || {})[d.pid]; return p ? myGameLine(t, m, p, now) : null; }
   if (kind === 'gmins') return m ? String(mins(elapsedSec(m, now))) : null;
   if (kind === 'pmins') return m ? String(mins(playedSec(m, d.pid, now))) : null;
   if (kind === 'smins') return d.tid ? String(mins(season(x => playedSec(x, d.pid, now)))) : null;
@@ -18325,7 +18423,6 @@ const gameStatus = m => m.ended ? 'done'
    imported result, still shows. */
 const shownScore = m => { const sc = score(m); return gameStatus(m) === 'upcoming' && !sc.us && !sc.them ? null : sc; };
 // a game called off says so where it would say upcoming (UX-REVIEW-3.md, 11.1: a postponed game read as the next one)
-const scoreCell = m => (sc => sc ? `${sc.us}<small>–${sc.them}</small>` : CALLED[m.called] ? `<span class="tag called">${CALLED[m.called]}</span>` : '<small>upcoming</small>')(shownScore(m));
 
 function publicGame(t, m) {
   const roster = squad(t, m);
@@ -18808,11 +18905,11 @@ function sheetShare() {
       <div class="row wrap" style="margin-bottom:8px">${linkButtons(gameLink(t, m), { subject: `${teamLabel(t)} v ${m.opponent || 'game'}${m.date ? ' · ' + shortDate(m.date) : ''}`, body: `${teamLabel(t)}'s game${m.opponent ? ' against ' + m.opponent : ''}${m.date ? ' on ' + shortDate(m.date) : ''}: kick-off, where it is and the live score. Open it on your phone:`, small: true })}</div>
       ${ro ? '' : untilChips('game', m.shareUntil || t.shareUntil, `data-tid="${t.id}" data-mid="${m.id}"`)}
       <p class="muted" style="margin-top:0">Kick-off time, where it is, who is on and the minutes — for this game only. Whoever it reaches cannot get from it to the season page or any other game. Switch games in the bar above to share a different one.</p>`
-      : `<p class="muted" style="margin-top:0">${ro ? 'This game\u2019s own link appears once the coach\u2019s phone has published it.' : 'This game\u2019s own link is being made — it appears here in a moment.'}</p>`}` : ''}
+      : ro ? '' : `<p class="muted" style="margin-top:0">This game\u2019s own link is being made — it appears here in a moment.</p>`}` : ''}
 
       <p class="muted">Anyone with a link can read it. Nobody can change anything, and no child's name is published — only shirt numbers.</p>
       ${ro ? '' : `<button class="btn danger wide" data-act="rotateshare">Make a new link and kill the old one</button>`}`
-      : ro ? `<p class="muted" style="margin-top:0">This team's coach has not set up parent links yet.</p>`
+      : ro ? `<p class="muted" style="margin-top:0">There is no link to share for this team yet.</p>`
       : `<p class="muted" style="margin-top:0">Creates a long random address. Only people you send it to can find it.</p>
       <button class="btn wide" data-act="makeshare">Create the share links</button>`}
     ${m && !ro ? `<p class="lbl" style="margin-top:16px">For the other team</p>
@@ -21429,7 +21526,8 @@ function onAct(e) {
   if (a === 'switchpos') { sheetSwitch(d.pid); return; }
   if (a === 'togglesort') { ui.sortBy = ui.sortBy === 'number' ? 'need' : 'number'; render(); return; }
   if (a === 'pickgame') { sheetPickGame(); return; }
-  if (a === 'pickgame2') { ui.matchId = d.id; ui.picked = null; ui.view = 'game'; ui.gameView = 'subs'; closeSheet(); render(); return; }
+  // a finished game lands on its recap wherever it is opened from (UX-REVIEW-3.md, 16.9)
+  if (a === 'pickgame2') { const g = state.matches[d.id]; ui.matchId = d.id; ui.picked = null; ui.view = 'game'; ui.gameView = g && gameStatus(g) === 'done' ? 'recap' : 'subs'; closeSheet(); render(); return; }
   if (a === 'doswitch') {
     if (ui.plan) {
       const sl = d.sid ? slotById(m, d.sid) : null;
@@ -21771,7 +21869,12 @@ function onAct(e) {
   // a team opened is its Season, which leads with the game on now, the next one and the next practice
   if (a === 'goteam') { ui.teamId = d.id; ui.view = 'season'; ui.gameView = 'subs'; closeSheet(); render(); return; }
   if (a === 'gotoplayer') {
-    ui.teamId = d.tid; ui.matchId = d.id; ui.view = 'game'; ui.gameView = 'stats'; render(); return;   // deliberate: a parent wants the numbers
+    /* Her child's card: a finished game is told on its Recap, one being played
+       or still to come is Live, where her child's line and the match day are
+       (UX-REVIEW-3.md, 16.1, 16.9). One landing for a finished game, wherever
+       it was opened from. */
+    const g = state.matches[d.id];
+    ui.teamId = d.tid; ui.matchId = d.id; ui.view = 'game'; ui.gameView = g && gameStatus(g) === 'done' ? 'recap' : 'live'; render(); return;
   }
   if (a === 'sharesheet') {
     // a game made before game links existed gets its own id now, so the sheet has one to show
@@ -22981,7 +23084,8 @@ function onAct(e) {
        the game. A card that knows which (the live one, Next up) says so. */
     const st = gameStatus(g), coach = canEditTeam(d.tid);
     ui.gameView = GAME_VIEWS.includes(d.g) ? d.g
-      : coach ? (st === 'upcoming' && g.date !== todayStr() ? 'plan' : st === 'done' ? 'live' : 'subs')
+      : st === 'done' ? 'recap'
+      : coach ? (st === 'upcoming' && g.date !== todayStr() ? 'plan' : 'subs')
       : canGameEdit(g) ? 'plan' : 'live';
     closeSheet(); render(); return;
   }
@@ -23118,7 +23222,7 @@ function onAct(e) {
     sheetMatch(g); return;
   }
   if (a === 'backgames') { ui.view = upView('game'); ui.gameFrom = null; ui.picked = null; render(); return; }
-  if (a === 'openmatch') { ui.matchId = d.id; ui.view = 'game'; ui.gameView = 'subs'; ui.gameFrom = null; render(); return; }
+  if (a === 'openmatch') { const g = state.matches[d.id]; ui.matchId = d.id; ui.view = 'game'; ui.gameView = g && gameStatus(g) === 'done' ? 'recap' : 'subs'; ui.gameFrom = null; render(); return; }
   if (a === 'savematch') {
     const side = Number($('#mSide').value);
     const base = {

@@ -41,6 +41,7 @@ secretary already has.
 | What changed: games and practices moved, club activity (More's first row) | **What's new** | Notifications (the page), Activity |
 | Whether her phone pops up or buzzes (Settings → Notifications) | **Notifications** | alerts, the bell |
 | A change the club turned down | *That didn't save* | refused by the database, permission denied |
+| The end of a game | **Full time** (*FT* only where there is no room: the game header, a list's score cell, the feed's time column; UX-REVIEW-3.md, 16.10) | Final |
 
 ## Never on screen
 
@@ -69,6 +70,7 @@ which the suite reads separately and allows.
 - `Force refresh`
 - `workspace`
 - `permission denied`
+- `Final`
 
 ## Said once, not on every screen
 
