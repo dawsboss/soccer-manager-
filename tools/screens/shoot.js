@@ -52,6 +52,10 @@ const SNAP = () => {
   const ctx = await b.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true, locale: 'en-US', timezoneId: 'UTC' });
   // the club's database and Google's auth servers out of reach; the SDK itself and the fonts load
   await ctx.route(/firebaseio\.com|firebasedatabase\.app|googleapis\.com\/(identitytoolkit|securetoken)|cloudfunctions\.net|fcmregistrations/, r => r.abort());
+  /* route() never sees a WebSocket, and the database SDK talks over one: when the network let it
+     through, the real club refused the invented account and every screen after the first was the
+     lock screen. Close it too (Playwright 1.48 and later). */
+  if (ctx.routeWebSocket) await ctx.routeWebSocket(/firebaseio\.com|firebasedatabase\.app/, ws => ws.close());
   await ctx.addInitScript(({ seed }) => {
     if (!localStorage.getItem('__seeded')) { for (const [k, v] of Object.entries(seed)) localStorage.setItem(k, v); localStorage.setItem('__seeded', '1'); }
     Object.defineProperty(navigator, 'onLine', { get: () => false });

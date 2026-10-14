@@ -202,23 +202,28 @@ console.log('\n--- the tabs are places ---');
 }
 
 console.log('\n--- the Game tab ---');
-/* Game is a screen, not a guess (UX-REVIEW-3.md, 11.1; build 154): the list
-   of her games, the same for everyone, and the game itself only when exactly
-   one of hers is being played. */
+/* Game is a screen, not a guess (UX-REVIEW-3.md, 11.1; build 154): her
+   games by day, the same for everyone, and the game itself only when exactly
+   one of hers is being played. The club's week for an admin, never a row per
+   team (the owner, 2026-10-14: twelve teams was too many). Today is Saturday
+   12 September; g2 is a week off, g4 tomorrow. */
 {
   const page = () => A.rendered();
   // the rows of one card on the Games screen, by game id, in order
-  const rows = h => { const c = page().split('<div class="card">').find(x => x.startsWith(`<h2 style="margin-bottom:10px">${h}</h2>`)) || ''; return [...c.matchAll(/data-act="navgame" data-id="(\w+)"/g)].map(m => m[1]).join(' '); };
+  const cardOf = h => page().split('<div class="card">').find(x => x.startsWith(`<h2>${h}</h2>`)) || '';
+  const rows = h => [...cardOf(h).matchAll(/data-act="navgame" data-id="(\w+)"/g)].map(m => m[1]).join(' ');
+  const days = h => [...cardOf(h).matchAll(/<p class="lbl gday">([^<]*)<\/p>/g)].map(m => m[1]).join(' | ');
   as('jaz');
   check('the next game, with none being played', A.navGames().map(g => g.id).join(' '), 'g2');
   check('— and no live dot', /tablive/.test(bar()), false);
   A.click({ act: 'tab', tab: 'game' });
   check('a coach on a quiet week lands on Games, not on Subs of Saturday\'s game', [A.ui.view, lit()].join(' '), 'games game');
   check('— titled Games, over the club, with no back arrow: it is the tab\'s own screen', titled('Games') && !/data-act="navback"/.test(title()), true);
-  check('— Next: her team\'s next game, never one called off', rows('Next'), 'g2');
-  check('— each row naming the team, and when and where', /<span class="pname">G14 Flight v Northgate<\/span><span class="psub">Sat 19 Sep · 9:30am/.test(page()), true);
-  check('— Results: the last game, with its score', rows('Results'), 'g1');
-  check('— nothing being played, so no card for it', /<h2[^>]*>Being played<\/h2>/.test(page()), false);
+  check('— Coming up: her team\'s next game, a week off, never one called off', rows('Coming up'), 'g2');
+  check('— under its day, one line: the kick-off, then the teams', days('Coming up') + ' | ' + /<span class="gtime">9:30am<\/span><span><span class="pname">G14 Flight v Northgate<\/span><\/span>/.test(page()), 'Sat 19 Sep | true');
+  check('— Results: her team\'s last game, though it is more than a week ago, with its score', rows('Results') + ' ' + /data-r="W"[\s\S]*?0<small>–0<\/small>|data-r="D"[\s\S]*?0<small>–0<\/small>/.test(cardOf('Results')), 'g1 true');
+  check('— nothing being played, so no card for it', /<h2>Being played<\/h2>/.test(page()), false);
+  check('— nothing more on the calendar, so no row to it', /data-act="gameslater"/.test(page()), false);
   check('— and no sheet asking which', A.dom.node('#sheet').hidden, true);
   A.click({ act: 'navgame', id: 'g2' });
   check('a row opens that game where she works, on Subs', [A.ui.view, A.ui.matchId, A.ui.gameView, lit()].join(' '), 'game g2 subs game');
@@ -227,7 +232,7 @@ console.log('\n--- the Game tab ---');
   check('— and does', A.ui.view, 'games');
   A.state.matches.g2.periods = { 0: { half: 1, start: H.clock.t - 5 * MIN } }; A.render();
   check('being played: the dot on the tab', /data-tab="game"[^>]*>[\s\S]*?class="tablive"/.test(bar()), true);
-  check('— and a card of its own at the top of Games', rows('Being played') + ' | ' + rows('Next') + ' | ' + /<h2[^>]*>Being played<\/h2>[\s\S]*<h2[^>]*>Next<\/h2>/.test(page()), 'g2 |  | true');
+  check('— and a card of its own at the top of Games, the clock leading the row', rows('Being played') + ' | ' + rows('Coming up') + ' | ' + /<h2>Being played<\/h2>[\s\S]*<h2>Coming up<\/h2>/.test(page()) + ' ' + /<span class="gtime" data-live="clock" data-mid="g2">[\d:]+<\/span>/.test(page()), 'g2 |  | true true');
   as('jaz'); A.state.matches.g2.periods = { 0: { half: 1, start: H.clock.t - 5 * MIN } }; A.render();
   A.click({ act: 'tab', tab: 'game' });
   check('one game of hers being played: the tab opens it, as the dot promises', [A.ui.view, A.ui.matchId, A.ui.gameView].join(' '), 'game g2 subs');
@@ -241,7 +246,8 @@ console.log('\n--- the Game tab ---');
   as('jaz');
   A.state.matches.g2.ended = H.clock.t; A.state.matches.g2.currentHalf = 3; A.render();
   A.click({ act: 'tab', tab: 'game' });
-  check('nothing to come: the list, with nothing next and both results, newest first', [A.ui.view, rows('Next') || '-', rows('Results')].join(' | '), 'games | - | g2 g1');
+  check('nothing to come: the list, with nothing coming up and her team\'s last result', [A.ui.view, rows('Coming up') || '-', rows('Results')].join(' | '), 'games | - | g2');
+  check('— the one before it more than a week ago, behind Earlier', /data-act="gamesearlier">Earlier \(1\)</.test(page()), true);
   check('— said in words', /Nothing on the calendar yet\./.test(page()), true);
   as('other', 'season', 't2');
   A.click({ act: 'tab', tab: 'game' });
@@ -249,69 +255,101 @@ console.log('\n--- the Game tab ---');
 
   // the same list for a family: her child's team's games, and she lands on Live from it
   as('mum', 'season'); A.click({ act: 'tab', tab: 'game' });
-  check('a parent\'s Game tab is the same list: her child\'s team', [A.ui.view, rows('Next'), rows('Results')].join(' | '), 'games | g2 | g1');
+  check('a parent\'s Game tab is the same list: her child\'s team', [A.ui.view, rows('Coming up'), rows('Results')].join(' | '), 'games | g2 | g1');
   check('— and her list of teams is her child\'s', A.navTeams().map(t => t.id).join(' '), 't1');
+  check('— her rows never say Your team: they all are', /Your team/.test(page()), false);
   A.click({ act: 'navgame', id: 'g2' });
   check('— a row opens it on Live', [A.ui.view, A.ui.teamId, A.ui.matchId, A.ui.gameView].join(' '), 'game t1 g2 live');
   for (const uid of ['nan', 'kid']) {
     as(uid, 'season'); A.click({ act: 'tab', tab: 'game' });
-    check(`${uid === 'nan' ? 'a fan' : 'a player with her own sign-in'} the same`, A.ui.view + ' ' + rows('Next'), 'games g2');
+    check(`${uid === 'nan' ? 'a fan' : 'a player with her own sign-in'} the same`, A.ui.view + ' ' + rows('Coming up'), 'games g2');
   }
   as('mum', 'season'); A.state.matches.g2.periods = { 0: { half: 1, start: H.clock.t - 5 * MIN } }; A.render();
   check('— the dot while it is being played', /data-tab="game"[^>]*>[\s\S]*?class="tablive"/.test(bar()), true);
   A.click({ act: 'tab', tab: 'game' });
   check('— and Game opens it, on Live', [A.ui.view, A.ui.matchId, A.ui.gameView].join(' '), 'game g2 live');
-  const g4 = { id: 'g4', teamId: 't2', opponent: 'Lakeside', date: '2026-09-13', kickoff: '11:00', periodCount: 2, periodMinutes: 30, currentHalf: 1, periods: {}, stints: {} };
+  const g4 = { id: 'g4', teamId: 't2', opponent: 'Lakeside', date: '2026-09-13', kickoff: '11:00', venue: 'Lakeside Park', periodCount: 2, periodMinutes: 30, currentHalf: 1, periods: {}, stints: {} };
   as('mum', 'season'); A.state.teams.t2.players.k1.guardians = { mum: true }; A.state.matches.g4 = { ...g4 }; A.render();
   A.click({ act: 'tab', tab: 'game' });
-  check('a parent with children on two teams: both next games, by date, and no sheet', [A.ui.view, rows('Next'), A.dom.node('#sheet').hidden].join(' '), 'games g4 g2 true');
+  check('a parent with children on two teams: both next games, by day, and no sheet', [A.ui.view, rows('Coming up'), days('Coming up'), A.dom.node('#sheet').hidden].join(' | '), 'games | g4 g2 | Tomorrow · Sun 13 Sep | Sat 19 Sep | true');
+  check('— her own teams\' rows say where', /G12 Storm v Lakeside<\/span><span class="psub">Lakeside Park<\/span>/.test(page()), true);
   as('mum', 'season'); A.state.matches = {}; A.render(); A.click({ act: 'tab', tab: 'game' });
   check('no games at all: told, without Add, which is not hers', A.ui.view + ' ' + /They show up here once the coach adds them\./.test(page()) + ' ' + /data-act="newmatch"/.test(page()), 'games true false');
 
-  // an admin: every team, each row naming it
+  // an admin: the club's week, one line a game, and the rest on the calendar
   as('boss'); A.state.matches.g4 = { ...g4 }; A.render();
   check('an admin with two teams\' games coming: both, by date', A.navGames().map(g => g.id).join(' '), 'g4 g2');
   A.click({ act: 'tab', tab: 'game' });
-  check('— the list, not a sheet over where she was', A.ui.view + ' ' + A.dom.node('#sheet').hidden + ' ' + rows('Next'), 'games true g4 g2');
-  check('— naming each team, ours first, with no score before kick-off', /<span class="pname">G12 Storm v Lakeside<\/span>/.test(page()) && /<span class="pname">G14 Flight v Northgate<\/span>/.test(page()), true);
-  check('— and when', /Tomorrow · 11am/.test(page()) && /Sat 19 Sep · 9:30am/.test(page()), true);
+  check('— the list, not a sheet over where she was', A.ui.view + ' ' + A.dom.node('#sheet').hidden, 'games true');
+  check('— the club\'s coming week: tomorrow\'s game, and a team\'s game a week off left to the calendar', rows('Coming up') + ' | ' + days('Coming up'), 'g4 | Tomorrow · Sun 13 Sep');
+  check('— one line a game, no venue: not her team', /<span class="gtime">11am<\/span><span><span class="pname">G12 Storm v Lakeside<\/span><\/span>/.test(page()), true);
+  check('— and a row saying how many more, into the calendar', /data-act="gameslater"[^>]*><span><span class="pname">1 more game after this week<\/span><span class="psub">On the calendar<\/span>/.test(page()), true);
+  check('— results: the last week\'s, which is none, so Earlier', rows('Results') + '|' + /data-act="gamesearlier">Earlier \(1\)</.test(page()), '|true');
+  A.click({ act: 'gameslater' });
+  check('the row opens All teams on the Calendar, every team ticked', [A.ui.view, A.calSel(), Object.keys(A.ui.calOff || {}).length].join(' '), 'calendar club 0');
+  as('boss'); A.state.matches.g4 = { ...g4 }; A.render(); A.click({ act: 'tab', tab: 'game' });
   A.click({ act: 'navgame', id: 'g4' });
   check('a row opens that game, on its team', [A.ui.view, A.ui.teamId, A.ui.matchId, A.ui.gameView].join(' '), 'game t2 g4 subs');
+  // twelve teams: the week is what she sees, never a row per team
+  as('boss');
+  for (let i = 0; i < 12; i++) {
+    A.state.teams['x' + i] = { id: 'x' + i, name: 'Team ' + i, players: {} };
+    A.state.matches['n' + i] = { id: 'n' + i, teamId: 'x' + i, opponent: 'Far ' + i, date: '2026-10-03', kickoff: '10:00', periodCount: 2, periodMinutes: 30, currentHalf: 1, periods: {}, stints: {} };
+    A.state.matches['w' + i] = { id: 'w' + i, teamId: 'x' + i, opponent: 'Near ' + i, date: i % 2 ? '2026-09-13' : '2026-09-12', kickoff: String(9 + (i % 4)).padStart(2, '0') + ':00', periodCount: 2, periodMinutes: 30, currentHalf: 1, periods: {}, stints: {} };
+  }
+  A.render(); A.click({ act: 'tab', tab: 'game' });
+  check('twelve teams: this weekend\'s twelve games under two days, the next round left to the calendar', [rows('Coming up').split(' ').filter(Boolean).length, days('Coming up'), /<span class="pname">13 more games after this week</.test(page())].join(' | '), '12 | Today · Sat 12 Sep | Tomorrow · Sun 13 Sep | true');
+  check('— in kick-off order within a day, the teams in their order at one time', rows('Coming up').split(' ').slice(0, 6).join(' '), 'w0 w4 w8 w10 w2 w6');
+  // an admin who coaches one team: hers always shows, and says so
+  as('boss'); A.state.access.teams.t1.coaches.boss = true; A.state.matches.g4 = { ...g4 }; A.render();
+  A.click({ act: 'tab', tab: 'game' });
+  check('an admin who coaches a team: its next game shows however far off, with the club\'s week', rows('Coming up'), 'g4 g2');
+  check('— marked as hers among the club\'s', /G14 Flight v Northgate<\/span><span class="psub">Your team<\/span>/.test(page()) && !/G12 Storm v Lakeside<\/span><span class="psub">/.test(page()), true);
+  check('— and its last result, with no Earlier left', rows('Results') + ' ' + /data-act="gamesearlier"/.test(page()), 'g1 false');
+  as('boss'); A.state.matches.g4 = { ...g4 }; A.render(); A.click({ act: 'tab', tab: 'game' });
   A.state.matches.g2.periods = { 0: { half: 1, start: H.clock.t - 5 * MIN } }; A.render();
-  check('the other team kicks off: it goes first, and the dot is on while she is on this one', A.navGames()[0].id + ' ' + /tablive/.test(bar()), 'g2 true');
+  check('the other team kicks off: it goes first, and the dot is on', A.navGames()[0].id + ' ' + /tablive/.test(bar()), 'g2 true');
   A.click({ act: 'tab', tab: 'game' });
   check('— one game being played: the tab opens it, on its own team', [A.ui.view, A.ui.teamId, A.ui.matchId].join(' '), 'game t1 g2');
   A.state.matches.g4.periods = { 0: { half: 1, start: H.clock.t - 5 * MIN } }; A.render();
   A.click({ act: 'tab', tab: 'game' });
-  check('two being played: the list, both in Being played, with the score', [A.ui.view, rows('Being played')].join(' ') + ' ' + /G14 Flight v Northgate<\/span>[\s\S]*?0<small>–0<\/small> <span class="pill live">live<\/span>/.test(page()), 'games g4 g2 true');
+  check('two being played: the list, both in Being played, with the score', [A.ui.view, rows('Being played')].join(' ') + ' ' + /G14 Flight v Northgate<\/span><\/span><span class="pmins">0<small>–0<\/small> <span class="pill live">live<\/span>/.test(page()), 'games g4 g2 true');
 
   // whose games: a coach's own team's, wherever she is reading
   as('jaz'); A.state.matches.g4 = { ...g4, periods: { 0: { half: 1, start: H.clock.t - 5 * MIN } } }; A.render();
   check('a coach of one team reads the other: its game being played is no dot of hers', A.navGames().map(g => g.id).join(' ') + ' ' + /tablive/.test(bar()), 'g2 false');
   A.click({ act: 'tab', tab: 'game' });
-  check('— and not on her list', A.ui.view + ' ' + rows('Being played') + '|' + rows('Next'), 'games |g2');
+  check('— and not on her list', A.ui.view + ' ' + rows('Being played') + '|' + rows('Coming up'), 'games |g2');
   as('other', 'season', 't1'); A.state.matches.g4 = { ...g4 }; A.render();
   A.click({ act: 'tab', tab: 'game' });
-  check('a coach reading another team: Games is her own team\'s', rows('Next'), 'g4');
+  check('a coach reading another team: Games is her own team\'s', rows('Coming up'), 'g4');
 
   // postponed: still on the list, said so, with the game after it
   as('jaz'); A.state.matches.g2.called = 'postponed';
   A.state.matches.g5 = { id: 'g5', teamId: 't1', opponent: 'Eastfield', date: '2026-10-03', kickoff: '10:00', periodCount: 2, periodMinutes: 40, currentHalf: 1, periods: {}, stints: {} };
   A.render(); A.click({ act: 'tab', tab: 'game' });
-  check('a postponed game says Postponed, and the next one to be played follows it', rows('Next') + ' ' + /G14 Flight v Northgate<\/span>[\s\S]*?<span class="tag called">Postponed<\/span>/.test(page()), 'g2 g5 true');
+  check('a postponed game says Postponed, and the next one to be played follows it', rows('Coming up') + ' ' + /G14 Flight v Northgate<\/span><\/span><span class="pmins"><span class="tag called">Postponed<\/span>/.test(page()), 'g2 g5 true');
   A.click({ act: 'navgame', id: 'g2' }); A.click({ act: 'pickgame' });
   check('— and the game\'s own picker says Postponed, never upcoming', /data-id="g2"[\s\S]*?<span class="tag called">Postponed<\/span>/.test(sheet()), true);
   A.closeSheet();
+  // a family's later games: the calendar row opens her own calendar
+  as('jaz'); A.state.matches.g5 = { id: 'g5', teamId: 't1', opponent: 'Eastfield', date: '2026-10-03', kickoff: '10:00', periodCount: 2, periodMinutes: 40, currentHalf: 1, periods: {}, stints: {} };
+  A.render(); A.click({ act: 'tab', tab: 'game' });
+  check('her team\'s game after its next: not listed, a row to the calendar', rows('Coming up') + ' ' + /1 more game after this week/.test(page()), 'g2 true');
+  A.click({ act: 'gameslater' });
+  check('— which opens her own calendar, not the club\'s', A.ui.view + ' ' + A.calSel(), 'calendar mine');
 
-  // a season of results: the latest six, Earlier for the rest
+  // a season of results: Earlier goes back a week at a time, from the newest left out
   as('jaz');
   for (let i = 0; i < 8; i++) A.state.matches['r' + i] = { id: 'r' + i, teamId: 't1', opponent: 'Old ' + i, date: `2026-08-${String(10 + i).padStart(2, '0')}`, kickoff: '09:00', periodCount: 2, periodMinutes: 40, currentHalf: 3, ended: H.clock.t - DAY, periods: {}, stints: {} };
   A.render(); A.click({ act: 'tab', tab: 'game' });
-  check('a season of results: the latest six', rows('Results'), 'g1 r7 r6 r5 r4 r3');
-  check('— and Earlier for the rest', /data-act="gamesall">Earlier \(3\)</.test(page()), true);
-  A.click({ act: 'gamesall' });
-  check('— which shows them', rows('Results').split(' ').length + ' ' + /data-act="gamesall"/.test(page()), '9 false');
-  A.ui.gamesAll = false;
+  check('a season of results: her team\'s last, the rest behind Earlier', rows('Results') + ' ' + /data-act="gamesearlier">Earlier \(8\)</.test(page()), 'g1 true');
+  A.click({ act: 'gamesearlier' });
+  check('— Earlier: the week of the newest left out, though three weeks with none come between', rows('Results') + ' ' + /Earlier \(1\)/.test(page()), 'g1 r7 r6 r5 r4 r3 r2 r1 true');
+  A.click({ act: 'gamesearlier' });
+  check('— and again, to the last of them', rows('Results').split(' ').length + ' ' + /data-act="gamesearlier"/.test(page()), '9 false');
+  A.click({ act: 'tab', tab: 'calendar' }); A.click({ act: 'tab', tab: 'game' });
+  check('— back from another tab, the week again', rows('Results'), 'g1');
   check('Games has an address of its own', A.uiToHash(), '#/games');
 }
 

@@ -53,7 +53,8 @@ const club = () => ({
       periods: { 0: { half: 1, start: at('2026-09-05', '09:00'), end: at('2026-09-05', '09:40') }, 1: { half: 2, start: at('2026-09-05', '09:50'), end: at('2026-09-05', '10:30') } },
       stints: { s1: { pid: 'p1', on: 0, off: 2400 }, s2: { pid: 'p3', on: 0, off: 4800 } }, goals: { a: { t: 300, side: 'us', pid: 'p1' }, b: { t: 900, side: 'them' } }
     },
-    g2: { id: 'g2', teamId: 't1', opponent: 'Northgate', date: '2026-09-19', kickoff: '09:30', venue: 'Northgate Rec', periodCount: 2, periodMinutes: 40, currentHalf: 1, periods: {}, stints: {} }
+    // inside the coming week, so an admin's and a viewer's Games (the club's week, build 154) carries it as a family's does
+    g2: { id: 'g2', teamId: 't1', opponent: 'Northgate', date: '2026-09-17', kickoff: '09:30', venue: 'Northgate Rec', periodCount: 2, periodMinutes: 40, currentHalf: 1, periods: {}, stints: {} }
   },
   access: {
     org: { name: 'Lakeside SC' },

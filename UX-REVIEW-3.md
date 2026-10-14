@@ -45,10 +45,13 @@ the Got it, the one next-up card and the shared Stats · Live pair from round 3 
 
 ### 11.1 Game takes you somewhere random
 
-**Built in build 154**, as the fix below says: Game opens **Games** (`viewGames()`, `#/games`),
-the same list for everyone, and the game itself only when exactly one of hers is being played;
-a postponed game says *Postponed* on the list and in the game's own picker, with the next game
-to be played after it. `test/nav.js` and `test/same.js` walk it.
+**Built in build 154**: Game opens **Games** (`viewGames()`, `#/games`), the same list for
+everyone, and the game itself only when exactly one of hers is being played; a postponed game
+says *Postponed* on the list and in the game's own picker, with the next game to be played
+after it. Sorted by day rather than a *Next* row per team as below (the owner, 2026-10-14: a row
+per team is too many for an admin of twelve): the coming week one line a game, her own teams'
+next game however far off, the rest one row into the calendar, and the last week's results the
+same way. `test/nav.js` and `test/same.js` walk it.
 
 What Game does today (`navGame()`, `navGames()`, `sheetNavGames()`): for *the team you last
 looked at*, the game being played, else the next on the calendar, else the last played; and

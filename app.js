@@ -7768,53 +7768,104 @@ function gameWhen(m) {
    rule had fired. A coach on a Wednesday landed on Subs of Saturday's game
    (a 0:00 clock and Start clock), a parent the day the fixtures ran out on
    last week's Recap, an admin on a sheet over whatever she was reading. Now
-   it is a list, the same for everyone: what is being played, then each of
-   her teams' next game (a postponed one said so, and the one after it too,
-   since that is the one that will be played), then the results, every row
-   naming its team. The one guess kept is the live one: when exactly one of
-   her games is being played the tab opens it, which is what the dot on the
-   tab promises, so "tap Game" at the pitch still lands on the game. */
-const GAMES_RESULTS = 6;
-function gamesRow(m) {
-  const t = state.teams[m.teamId] || {}, st = gameStatus(m), sc = shownScore(m), r = resultOf(m);
-  const when = st === 'done' ? [shortDate(m.date), m.venue].filter(Boolean).map(esc).join(' \u00b7 ') || 'no date'
-    : [esc(gameWhen(m)), m.venue ? esc(m.venue) : ''].filter(Boolean).join(' \u00b7 ');
-  const right = st === 'live' ? `${sc ? `${sc.us}<small>\u2013${sc.them}</small> ` : ''}<span class="pill live">live</span>`
-    : CALLED[m.called] && st === 'upcoming' ? `<span class="tag called">${CALLED[m.called]}</span>`
-      : st === 'done' && sc ? `${sc.us}<small>\u2013${sc.them}</small>` : '';
-  return `<button class="prow go" type="button" data-act="navgame" data-id="${m.id}" style="grid-template-columns:26px 1fr auto">
-      <span class="resbadge" data-r="${r}">${r || '\u00b7'}</span>
-      <span><span class="pname">${teamLabel(t)} v ${esc(m.opponent || 'TBC')}</span><span class="psub">${when}</span></span>
-      <span class="pmins">${right}</span></button>`;
+   it is a list, the same for everyone, and sorted by day, not by team (the
+   owner, 2026-10-14): one row per team was the right length for a family or
+   a coach and two and a half screens for an admin of twelve teams, saying
+   again what her Club home's team cards already say. So: what is being
+   played, then the coming week day by day, one line a game, then the last
+   week's results the same way. Her own teams (the ones she coaches, tracks
+   or helps on, her children's) always show their next game and their last
+   result however far off, and carry the venue; the rest of the club is one
+   line a game and only this week's, with the remainder a row into the
+   calendar. The one guess kept is the live one: when exactly one of her
+   games is being played the tab opens it, which is what the dot on the tab
+   promises, so "tap Game" at the pitch still lands on the game. */
+const GAMES_DAYS = 7;
+/* Of the teams the Game tab is about, the ones that are hers. For everyone
+   but an admin or a club viewer that is all of them (navTeams() is already
+   hers); theirs is every team, and hers the few she works on or has a child
+   or a player she follows on. */
+function ownGameTeams() {
+  const ts = navTeams();
+  if (!me || !(canAdmin() || isViewer(me.uid))) return new Set(ts.map(t => t.id));
+  const roles = myRoleTeams();
+  return new Set(ts.filter(t => roles.has(t.id) || isHelper(t.id, me.uid) || players(t).some(p => isMine(p) || iFan(p))).map(t => t.id));
 }
-/* Each team's next game: the soonest not called off, with any postponed one
-   before it (it is still on the list, and a parent asks about it). */
-function nextGames(ts) {
-  const out = [];
-  for (const t of ts) {
-    const up = teamMatches(t.id).filter(m => gameStatus(m) === 'upcoming' && m.called !== 'cancelled').reverse();
-    for (const m of up) { out.push(m); if (!CALLED[m.called]) break; }
+// soonest first, a game with no date yet last: "date to be confirmed" is the end of a list
+const byWhen = (a, b) => (okDay(a.date) ? a.date : '9').localeCompare(okDay(b.date) ? b.date : '9') || hm(a.kickoff).localeCompare(hm(b.kickoff));
+/* A team's next game: the soonest not called off and not already gone by,
+   with any postponed one before it (it is still on the list, and a parent
+   asks about it). */
+function nextGames(tid) {
+  const t0 = todayStr(), out = [];
+  const up = teamMatches(tid).filter(m => gameStatus(m) === 'upcoming' && m.called !== 'cancelled' && (!okDay(m.date) || m.date >= t0)).sort(byWhen);
+  for (const m of up) { out.push(m); if (!CALLED[m.called]) break; }
+  return out;
+}
+/* One game, one line: when (the clock while it is being played, the result
+   once it is over), the two teams ours first, and the score or Postponed.
+   Her own teams' rows say where, and say they are hers when the list mixes
+   hers with the club's. */
+function gamesRow(m, own, mixed) {
+  const t = state.teams[m.teamId] || {}, st = gameStatus(m), sc = shownScore(m), r = resultOf(m);
+  const left = st === 'live' ? `<span class="gtime" data-live="clock" data-mid="${m.id}">${mmss(elapsedSec(m))}</span>`
+    : st === 'done' ? `<span class="resbadge" data-r="${r}">${r || '·'}</span>`
+      : `<span class="gtime">${esc(niceTime(m.kickoff)) || 'TBC'}</span>`;
+  const right = st === 'live' ? `${sc ? `${sc.us}<small>–${sc.them}</small> ` : ''}<span class="pill live">live</span>`
+    : CALLED[m.called] && st === 'upcoming' ? `<span class="tag called">${CALLED[m.called]}</span>`
+      : st === 'done' && sc ? `${sc.us}<small>–${sc.them}</small>` : '';
+  const sub = own ? [mixed ? 'Your team' : '', st === 'upcoming' ? m.venue : ''].filter(Boolean).map(esc).join(' · ') : '';
+  return `<button class="prow go" type="button" data-act="navgame" data-id="${m.id}" style="grid-template-columns:${st === 'done' ? '26px' : '58px'} minmax(0,1fr)${right ? ' auto' : ''}">
+      ${left}<span><span class="pname">${teamLabel(t)} v ${esc(m.opponent || 'TBC')}</span>${sub ? `<span class="psub">${sub}</span>` : ''}</span>${right ? `<span class="pmins">${right}</span>` : ''}</button>`;
+}
+// games under a heading per day, in the order given
+function gamesByDay(ms, own, mixed) {
+  const t0 = todayStr(), days = [];
+  for (const m of ms) {
+    const k = okDay(m.date) ? m.date : '';
+    if (!days.length || days[days.length - 1].k !== k) days.push({ k, ms: [] });
+    days[days.length - 1].ms.push(m);
   }
-  return out.sort((a, b) => (a.date || '9').localeCompare(b.date || '9') || hm(a.kickoff).localeCompare(hm(b.kickoff)));
+  const head = k => !k ? 'Date to be confirmed' : k === t0 ? `Today · ${dayLabel(k)}` : k === addDays(t0, 1) ? `Tomorrow · ${dayLabel(k)}` : dayLabel(k);
+  return days.map(d => `<p class="lbl gday">${esc(head(d.k))}</p>
+    <div class="plist">${d.ms.map(m => gamesRow(m, own.has(m.teamId), mixed)).join('')}</div>`).join('');
+}
+/* What Games shows, worked out once for the screen and for its Earlier
+   button, so the button goes back from what is actually left out. */
+function gamesPlan() {
+  const ts = navTeams(), own = ownGameTeams();
+  const all = ts.flatMap(t => teamMatches(t.id));
+  const t0 = todayStr(), weekEnd = addDays(t0, GAMES_DAYS - 1);
+  const live = all.filter(m => gameStatus(m) === 'live').sort(byWhen);
+  // coming up: the week, every team's; past it, her own teams' next game alone
+  const upAll = all.filter(m => gameStatus(m) === 'upcoming' && m.called !== 'cancelled' && (!okDay(m.date) || m.date >= t0));
+  const up = new Set(upAll.filter(m => okDay(m.date) && m.date <= weekEnd));
+  for (const tid of own) for (const m of nextGames(tid)) up.add(m);
+  // results: the last week's, every team's, and her own teams' last
+  const from = ui.gamesFrom || addDays(t0, -(GAMES_DAYS - 1));
+  const doneAll = all.filter(m => gameStatus(m) === 'done').sort((x, y) => byWhen(y, x));
+  const done = new Set(doneAll.filter(m => okDay(m.date) && m.date >= from));
+  for (const tid of own) { const m = doneAll.find(x => x.teamId === tid); if (m) done.add(m); }
+  return {
+    ts, own, all, live, mixed: own.size > 0 && ts.some(t => !own.has(t.id)),
+    up: [...up].sort(byWhen), later: upAll.length - up.size,
+    done: doneAll.filter(m => done.has(m)), hidden: doneAll.filter(m => !done.has(m))
+  };
 }
 function viewGames() {
-  const ts = navTeams();
-  const all = ts.flatMap(t => teamMatches(t.id));
-  if (!all.length) {
-    const add = ui.teamId && ts.some(t => t.id === ui.teamId) ? addGameBtn('btn wide') : '';
+  const g = gamesPlan();
+  if (!g.all.length) {
+    const add = ui.teamId && g.ts.some(t => t.id === ui.teamId) ? addGameBtn('btn wide') : '';
     return `<div class="stack"><div class="empty"><strong>No games yet</strong>${add ? 'Add one here, or a season of them from the + on the Calendar.' : 'They show up here once the coach adds them.'}</div>${add}</div>`;
   }
-  const byDate = (a, b) => (a.date || '9').localeCompare(b.date || '9') || hm(a.kickoff).localeCompare(hm(b.kickoff));
-  const live = all.filter(m => gameStatus(m) === 'live').sort(byDate);
-  const next = nextGames(ts);
-  const done = all.filter(m => gameStatus(m) === 'done')
-    .sort((a, b) => (b.date || '').localeCompare(a.date || '') || hm(b.kickoff).localeCompare(hm(a.kickoff)));
-  const shown = ui.gamesAll ? done : done.slice(0, GAMES_RESULTS);
-  const card = (h, rows, none) => `<div class="card"><h2 style="margin-bottom:10px">${h}</h2>${rows.length ? `<div class="plist">${rows.map(gamesRow).join('')}</div>` : `<p class="muted" style="margin:0">${none}</p>`}</div>`;
   return `<div class="stack">
-    ${live.length ? card('Being played', live, '') : ''}
-    ${card('Next', next, 'Nothing on the calendar yet.')}
-    ${done.length ? `${card('Results', shown, '')}${done.length > shown.length ? `<button class="btn quiet wide" data-act="gamesall">Earlier (${done.length - shown.length})</button>` : ''}` : ''}
+    ${g.live.length ? `<div class="card"><h2>Being played</h2><div class="plist gfirst">${g.live.map(m => gamesRow(m, g.own.has(m.teamId), g.mixed)).join('')}</div></div>` : ''}
+    <div class="card"><h2>Coming up</h2>
+      ${g.up.length ? gamesByDay(g.up, g.own, g.mixed) : `<p class="muted gfirst" style="margin-bottom:0">${g.later ? 'Nothing this week.' : 'Nothing on the calendar yet.'}</p>`}
+      ${g.later ? `<button class="prow go glater" type="button" data-act="gameslater" style="grid-template-columns:minmax(0,1fr)"><span><span class="pname">${g.later} more game${g.later === 1 ? '' : 's'} after this week</span><span class="psub">On the calendar</span></span></button>` : ''}
+    </div>
+    ${g.done.length ? `<div class="card"><h2>Results</h2>${gamesByDay(g.done, g.own, g.mixed)}</div>` : ''}
+    ${g.hidden.length ? `<button class="btn quiet wide" data-act="gamesearlier">Earlier (${g.hidden.length})</button>` : ''}
   </div>`;
 }
 function gameHeader(t, m) {
@@ -21670,11 +21721,25 @@ function onAct(e) {
     else if (k === 'game') {
       const live = navGames().filter(g => gameStatus(g) === 'live');
       if (live.length === 1 && !(ui.view === 'game' && ui.matchId === live[0].id)) openNavGame(live[0]);
-      else { ui.view = 'games'; ui.picked = null; }
+      else { if (ui.view !== 'games') ui.gamesFrom = null; ui.view = 'games'; ui.picked = null; }
     }
     render(); toTop(); return;
   }
-  if (a === 'gamesall') { ui.gamesAll = !ui.gamesAll; render(); return; }
+  /* Games' Earlier: back to the week of the newest result left out, so a
+     gap of weeks with nothing played never makes a tap that shows nothing. */
+  if (a === 'gamesearlier') {
+    const left = gamesPlan().hidden;
+    if (left.length) ui.gamesFrom = okDay(left[0].date) ? addDays(left[0].date, -(GAMES_DAYS - 1)) : '0000-00-00';
+    render(); return;
+  }
+  // the games past this week are the calendar's: the club's for whoever the list is the club for, else hers
+  if (a === 'gameslater') {
+    const own = ownGameTeams(), offer = calSels();
+    ui.view = 'calendar'; ui.picked = null;
+    if (offer.includes('club') && navTeams().some(t => !own.has(t.id))) { ui.calSel = 'club'; ui.calOff = {}; }
+    else ui.calSel = offer[0] || 'club';
+    saveUi(); render(); toTop(); return;
+  }
   if (a === 'navgame') { const g = state.matches[d.id]; if (!g) return; openNavGame(g); closeSheet(); render(); toTop(); return; }
   // the title row's back arrow: up one level (a game's and a shape's have their own, backgames and backsetup)
   if (a === 'navback') { const up = upView(); if (up) { ui.view = up; ui.picked = null; if (up === 'inbox') ui.thread = null; } closeSheet(); render(); toTop(); return; }
