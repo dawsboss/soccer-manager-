@@ -117,8 +117,9 @@ const PATHS = [
   { ask: 'How do I get to practice?', say: 'Home → Next up → Directions', who: EVERYONE,
     walk() { home(); },
     got: () => /<a class="btn quiet sm" href="[^"]*Lakeside[^"]*"[^>]*>Directions<\/a>/.test(cardFor(page(), 'Next up')), want: true },
+  // the button opens the two choices, not the whole entry (UX-REVIEW-3.md, 15.3)
   { ask: 'Can I put it in my own calendar?', say: 'Home → Next up → Add to my calendar → Apple, Outlook or another', who: EVERYONE,
-    walk() { home(); if (!/data-act="caladd"[^>]*>Add to my calendar</.test(cardFor(page(), 'Next up'))) throw new Error('no Add to my calendar'); A.click({ act: 'caladd', k: 'practice', tid: 't1', id: 'e1' }); if (!/>Google Calendar</.test(sheet())) throw new Error('no Google Calendar'); A.click({ act: 'calics', k: 'practice', tid: 't1', id: 'e1' }); },
+    walk() { home(); if (!/data-act="caladd"[^>]*>Add to my calendar</.test(cardFor(page(), 'Next up'))) throw new Error('no Add to my calendar'); A.click({ act: 'caladd', k: 'practice', tid: 't1', id: 'e1' }); if (!/<h3>Add to your calendar<\/h3>/.test(sheet()) || !/>Google Calendar</.test(sheet())) throw new Error('no Google Calendar'); A.click({ act: 'calics', k: 'practice', tid: 't1', id: 'e1' }); },
     got: () => /data-act="calics"[^>]*>Apple, Outlook or another</.test(sheet()) && !A.lastToast(), want: true },
   { ask: 'How do I say she is not coming?', say: 'Calendar → the practice → Not going', who: ['boss', 'jaz', 'mum', 'kid'],
     walk(uid) {

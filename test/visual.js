@@ -206,6 +206,25 @@ console.log('\n--- the + is in the flow, over no row ---');
   check('nothing pads the list for it any more', rules.some(r => r.sel === '.stack.calendar'), false);
 }
 
+/* ---------------- what has happened, still legible ---------------- */
+console.log('\n--- a past entry fades its block, not its words ---');
+{
+  /* Earlier rows were white text on a block faded with opacity, 2.5 to 2.7:1
+     (UX-REVIEW-3.md, 15.9). Now the block is a wash of its colour and the
+     words are --ink, worked out here for every colour an entry can have. */
+  for (const sel of ['.ev[data-past="1"]', '.tg-ev[data-past="1"]', '.mg-ev[data-past="1"]']) {
+    const b = bodyOf(sel);
+    check(sel + ': no opacity, the words in --ink on a wash of the colour', !/opacity/.test(b) && /color:var\(--ink\)/.test(b) && /color-mix\(in srgb,var\(--ev(,var\(--field\))?\) 14%,#fff\)/.test(b), true);
+  }
+  const hues = [...new Set([...(app.match(/const TEAM_HUES = \[([^\]]+)\]/) || ['', ''])[1].matchAll(/#[0-9A-Fa-f]{6}/g),
+    ...(app.match(/const KIND_HUE = \{([^}]+)\}/) || ['', ''])[1].matchAll(/#[0-9A-Fa-f]{6}/g)].map(m => m[0]))];
+  const wash = h => '#' + [1, 3, 5].map(i => Math.round(parseInt(h.slice(i, i + 2), 16) * 0.14 + 255 * 0.86).toString(16).padStart(2, '0')).join('');
+  const worst = Math.min(...hues.map(h => ratio(vars.ink, wash(h))));
+  console.log(`  ${hues.length} colours; the worst, --ink on its wash: ${worst.toFixed(2)}:1`);
+  check('— which clears AA on every colour an entry can have', hues.length > 10 && worst >= 4.5, true);
+  check('every entry colour still carries white text, where an entry is not over (4.5:1)', hues.every(h => ratio('#FFFFFF', h) >= 4.5), true);
+}
+
 /* ---------------- what a parent taps (UX-REVIEW-3.md, 12; build 156) ---------------- */
 console.log('\n--- the controls a parent taps: her answer its own, nothing under 40px, red for what cannot wait ---');
 {

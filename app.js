@@ -2,7 +2,7 @@
    Static app. Data lives in localStorage, and mirrors to Firebase Realtime
    Database when a config + workspace code are present. */
 
-const BUILD = '157';
+const BUILD = '158';
 const BUILT = '2026-10-14';
 /* The version of database.rules.json this app was written against. The rules
    carry the same number in rulesVersion's .write, which accepts that number
@@ -7329,6 +7329,7 @@ function render() {
   if (keepY && (window.scrollY || 0) !== keepY) { try { window.scrollTo(0, keepY); } catch (e) { } }
   if (v === 'game' && g === 'pitch') wireDrag();
   if (v === 'formation') wireFormationDrag();
+  if (v === 'calendar') calScroll(); else calScrolled = '';
   saveUi();
   markSeen();
   paintBell();
@@ -9723,12 +9724,20 @@ function calItems(tids) {
         key: 'e:' + id, kind, tid, id, date: okDay(e.date) ? e.date : '',
         start: hm(e.start), end: hm(e.end), mins: 0,
         title: e.title || CAL_KIND[kind], venue: e.venue || '',
-        called: CALLED[e.called] ? e.called : '', public: !!e.public, series: e.series || null
+        called: CALLED[e.called] ? e.called : '', public: !!e.public, series: e.series || null,
+        // whether families are asked who is coming: a practice is, a team photo is not, unless the coach said (UX-REVIEW-3.md, 15.6)
+        ask: askOf(e, kind)
       });
     }
   }
   return out.sort(calOrder);
 }
+/* Games and practices ask families whether they are coming; anything else
+   (the team photo, the end-of-season party) does not, unless its coach turns
+   it on. A team photo asking "Is Rosa going?" like a practice was a question
+   nobody needed answered (UX-REVIEW-3.md, 15.6). An entry saved before this
+   carries no word and gets its kind's. */
+const askOf = (e, kind) => typeof (e || {}).ask === 'boolean' ? e.ask : kind === 'practice';
 const calOrder = (a, b) => (a.date || '9999').localeCompare(b.date || '9999')
   || (a.start || '').localeCompare(b.start || '')
   || (a.kind === b.kind ? 0 : a.kind === 'game' ? -1 : b.kind === 'game' ? 1 : 0);
@@ -9860,7 +9869,7 @@ const myKids = tid => !me ? [] : rsvpSquad(tid).filter(isMine);
 const goingQ = p => isMe(p) ? 'Are you going?' : `Is ${firstName(p)} going?`;
 const canRsvp = (tid, pid) => canEditTeam(tid) || myKids(tid).some(p => p.id === pid);
 // a past or called-off entry is read, not answered
-const rsvpOpen = it => !!it.date && !it.called && !calPast(it) && !(it.kind === 'game' && it.status !== 'upcoming');
+const rsvpOpen = it => !!it.date && !it.called && !calPast(it) && it.ask !== false && !(it.kind === 'game' && it.status !== 'upcoming');
 function rsvpCounts(tid, key) {
   const c = { yes: 0, no: 0, maybe: 0, none: 0 };
   for (const p of rsvpSquad(tid)) { const r = rsvpOf(tid, key, p.id); c[r && RSVP[r.v] ? r.v : 'none']++; }
@@ -9922,17 +9931,29 @@ function rsvpBusy() {
   }
 }
 
-/* What the calendar row says about answers: her own children for a parent,
-   the count for the coach, nothing for anyone else or for something over. */
+/* What the calendar row says about answers: the count, for the coach.
+   A parent's own children are answered on the row itself (rowAnswer()),
+   not told "Rosa: not answered" in words she could not tap. */
 function rsvpLine(it) {
-  if (!rsvpOpen(it)) return '';
-  const key = rsvpKey(it);
-  if (canCalTeam(it.tid)) { const c = rsvpCounts(it.tid, key); return c.yes + c.no + c.maybe ? countLine(c) : ''; }
-  return myKids(it.tid).map(p => { const r = rsvpOf(it.tid, key, p.id); return `${firstName(p)}: ${r ? RSVP_SHORT[r.v] : 'not answered'}`; }).join(' · ');
+  if (!rsvpOpen(it) || !canCalTeam(it.tid)) return '';
+  const c = rsvpCounts(it.tid, rsvpKey(it));
+  return c.yes + c.no + c.maybe ? countLine(c) : '';
+}
+/* Her answer on the calendar row, for each of her own children on the team
+   (or herself): every app she knows answers on the row, and "Rosa: not
+   answered" read as a status, not a prompt (UX-REVIEW-3.md, 15.1). Under
+   the entry rather than inside it, because the entry is itself a button. A
+   coach whose daughter is on her team gets these and keeps her count line. */
+function rowAnswer(it) {
+  if (it.club || !rsvpOpen(it)) return '';
+  const kids = myKids(it.tid);
+  if (!kids.length) return '';
+  return `<div class="ev-ans">${kids.map(p => `<div class="ev-for"><span class="ev-who">${esc(isMe(p) ? 'You' : firstName(p))}</span>${rsvpChips(it, p, 'row')}</div>`).join('')}</div>`;
 }
 
 /* The "who is coming" part of an entry's sheet. */
 function rsvpBlock(it) {
+  if (it.ask === false) return '';
   const key = rsvpKey(it), open = rsvpOpen(it);
   const c = rsvpCounts(it.tid, key);
   if (canEditTeam(it.tid)) {
@@ -9955,14 +9976,19 @@ function rsvpBlock(it) {
         ${picked(p.id) ? `<div class="rsvpfor"><span class="lbl" style="margin:0 0 4px">${esc(goingQ(p))}</span>${rsvpChips(it, p, 'sheet')}</div>` : ''}`).join('')}
       <p class="muted" style="margin-bottom:0">${open ? 'Families answer from the calendar. Tap a name to give an answer for a family who told you another way.' : 'Answers are closed once it is over or called off.'}</p></div>`;
   }
+  /* A family's answer leads her sheet, above when and where (UX-REVIEW-3.md,
+     15.1), and the note box is there from the start (15.10): it said "the
+     coach sees your answer and any note" before there was anywhere to type
+     one. A note typed before she answers goes with the answer. An entry
+     that asks nothing (a team photo, 15.6) draws nothing here. */
   const kids = myKids(it.tid);
-  if (kids.length) return `<div class="rsvpbox">${kids.map(p => {
+  if (kids.length) return `<div class="rsvpbox top">${kids.map(p => {
     const r = rsvpOf(it.tid, key, p.id);
     return `<p class="lbl">${open ? esc(goingQ(p)) : esc(firstName(p))}</p>
       ${open ? rsvpChips(it, p, 'sheet') : `<p style="margin:0 0 8px">${r ? esc(RSVP[r.v]) : 'Not answered'}</p>`}
-      ${open && r ? `<div class="row" style="margin:8px 0 4px"><input type="text" id="rsvpNote_${esc(p.id)}" maxlength="${RSVP_NOTE_MAX}" value="${esc(r.note || '')}" placeholder="Anything the coach should know?" style="flex:1">
+      ${open ? `<div class="row" style="margin:8px 0 4px"><input type="text" id="rsvpNote_${esc(p.id)}" maxlength="${RSVP_NOTE_MAX}" value="${esc((r && r.note) || '')}" placeholder="Anything the coach should know?" style="flex:1">
         <button class="btn quiet sm" data-act="rsvpnote" data-tid="${esc(it.tid)}" data-k="${esc(key)}" data-pid="${esc(p.id)}" data-kind="${it.kind}" data-id="${esc(it.id)}">Save</button></div>` : ''}`;
-  }).join('')}<p class="muted" style="margin-bottom:0">${c.yes} going so far. The coach sees your answer and any note.</p></div>`;
+  }).join('')}${open ? `<p class="muted" style="margin-bottom:0">${c.yes} going so far. The coach sees your answer and any note.</p>` : ''}</div>`;
   return c.yes + c.no + c.maybe ? `<p class="muted">${esc(countLine(c))}</p>` : '';
 }
 
@@ -10193,9 +10219,12 @@ const CAL_KINDS = [['game', 'Games'], ['practice', 'Practices'], ['event', 'Othe
 /* A colour per team, the same wherever it appears, picked by the team's place
    in the club's list so every phone in the club agrees on it. Each is dark
    enough to carry white text, because a calendar's entries are filled with
-   their calendar's colour. */
-const TEAM_HUES = ['#1E7A4C', '#0E5FA8', '#A85F00', '#6B3FA0', '#B3261E', '#13756C', '#7A5000', '#AD1457',
-  '#3F51B5', '#3D6E1F', '#5D4037', '#00707A', '#7B1FA2', '#B23C00', '#455A64', '#62590F'];
+   their calendar's colour. None is a kind's colour (KIND_HUE) or near one:
+   the first two used to be exactly the game's green and the practice's
+   blue, so with two teams showing a green entry was a game on one phone and
+   a team on the next (UX-REVIEW-3.md, 15.2). Sessions with no team and
+   bookable times keep their kind's colour whatever is showing. */
+const TEAM_HUES = ['#3F51B5', '#AD1457', '#6D4C41', '#62590F', '#A1352B', '#1A237E', '#880E4F', '#4E5B31', '#8E3B8E', '#7A3E00'];
 function teamHue(tid) {
   const i = teams().findIndex(t => t.id === tid);
   return TEAM_HUES[(i < 0 ? 0 : i) % TEAM_HUES.length];
@@ -10328,17 +10357,19 @@ function evRow(it, multi) {
     return wrap(`${multi && it.tid ? evTeam(it.tid) : ''}${esc(it.title)}`, off, [[evWhen(it), it.venue].filter(Boolean).join(' · '), who], it.called);
   }
   const notes = evNotes(it), mates = calPast(it) ? '' : fieldMatesLine(it);
-  return wrap(`${multi ? evTeam(it.tid) : ''}${esc(it.title)}`, it.called ? off : evScore(it),
+  const row = wrap(`${multi ? evTeam(it.tid) : ''}${esc(it.title)}`, it.called ? off : evScore(it),
     [[evWhen(it), it.venue, it.home && HOME_AWAY[it.home]].filter(Boolean).join(' · '), notes.join(' · '), mates], it.called);
+  const ans = rowAnswer(it);
+  return ans ? `<div class="evans" style="--ev:${hue}">${row}${ans}</div>` : row;
 }
 /* The same entry as a block on the hours, or a chip in a month: the title
    and, where there's room, when and where. */
-function evBlock(it, multi, geo, short) {
+function evBlock(it, multi, geo, short, first) {
   const act = evAct(it), tag = act ? `button type="button" ${act}` : 'div';
   const title = it.kind === 'avail' ? (b => b ? blockLabel(b) : 'Bookable')(blockById(it.id)) : it.title;
   const m = it.kind === 'game' && it.status !== 'upcoming' ? state.matches[it.id] : null;
   // the title leads and the team is the colour and the second line: a week's column had room for "Test …" and nothing else (UX-REVIEW-2.md, 7.3)
-  return `<${tag} class="tg-ev" data-called="${it.called ? 1 : 0}" data-past="${calPast(it) ? 1 : 0}"${short ? ' data-short="1"' : ''} style="--ev:${evHue(it, multi)};${geo}">
+  return `<${tag} class="tg-ev"${first ? ' id="calFirst"' : ''} data-called="${it.called ? 1 : 0}" data-past="${calPast(it) ? 1 : 0}"${short ? ' data-short="1"' : ''} style="--ev:${evHue(it, multi)};${geo}">
     <b>${esc(title)}${m ? ` ${score(m).us}–${score(m).them}` : ''}</b><span>${esc([multi && it.tid ? shortTeam(it.tid) : '', evWhen(it), it.venue].filter(Boolean).join(' · '))}</span></${act ? 'button' : 'div'}>`;
 }
 /* A chip in a month's day: on a phone there is room for the title and the
@@ -10391,7 +10422,7 @@ function calAgenda(items, multi, opt = {}) {
     const rel = relDay(d);
     out += `<div class="agday" data-today="${d === today ? 1 : 0}" data-past="${d < today ? 1 : 0}">
       <div class="agdate" aria-label="${esc(dayLabel(d))}${rel ? ', ' + rel : ''}"><small>${WEEKDAYS[weekdayOf(d)]}</small><b>${dateOf(d).getDate()}</b></div>
-      <div class="agevs">${list.length ? dayRows(list, multi, d) : NOW_LINE + '<p class="muted calnone">Nothing else on today</p>'}</div></div>`;
+      <div class="agevs">${list.length ? dayRows(list, multi, d) : NOW_LINE + '<p class="muted calnone">Nothing on today.</p>'}</div></div>`;
   }
   return `<div class="agenda">${out}</div>`;
 }
@@ -10400,7 +10431,16 @@ function calAgenda(items, multi, opt = {}) {
 function calDayList(items, d, multi, add) {
   const list = items.filter(x => x.date === d);
   return list.length ? `<div class="agevs">${dayRows(list, multi, d)}</div>`
-    : `${d === todayStr() ? `<div class="agevs">${NOW_LINE}</div>` : ''}<p class="muted calnone">Nothing on.${add ? ` <button class="textbtn" ${add} data-v="${d}">Add something</button>` : ''}</p>`;
+    : `${d === todayStr() ? `<div class="agevs">${NOW_LINE}</div>` : ''}<p class="muted calnone">${d === todayStr() ? 'Nothing on today.' : 'Nothing on.'}${add ? ` <button class="textbtn" ${add} data-v="${d}">Add something</button>` : ''}</p>`;
+}
+
+/* A day with nothing on, and what is next after it, one tap away: Day
+   opened on an empty 7am–9pm grid with "Nothing on." over it, and for a
+   family with a practice a week that was most days (UX-REVIEW-3.md, 15.5). */
+function calNothing(items, d) {
+  const next = items.find(x => x.date > d && !x.called);
+  const when = next ? [next.date === addDays(d, 1) ? (d === todayStr() ? 'tomorrow' : 'the next day') : dayLabel(next.date), next.start ? niceTime(next.start) : ''].filter(Boolean).join(' ') : '';
+  return `${d === todayStr() ? 'Nothing on today.' : 'Nothing on.'}${next ? ` <button class="textbtn" data-act="calpick" data-v="${next.date}">Next: ${esc(next.kind === 'avail' ? 'Bookable times' : next.title)} ${esc(when)}</button>` : ''}`;
 }
 
 /* ---- Day and Week: the hours, and what's on in them ---- */
@@ -10452,6 +10492,9 @@ function calGrid(days, items, multi, opt = {}) {
   const today = todayStr(), on = d => items.filter(x => x.date === d);
   const timed = items.filter(x => x.start && days.includes(x.date));
   const [h0, h1] = gridHours(timed);
+  // what the screen is brought round to (calScroll()): the first thing still to come, else the first thing
+  const byTime = timed.slice().sort((a, b) => a.date.localeCompare(b.date) || minOf(a.start) - minOf(b.start));
+  const first = byTime.find(x => !calPast(x)) || byTime[0];
   const at = m => `calc(var(--hr) * ${((m - h0 * 60) / 60).toFixed(3)})`;
   const allDay = days.map(d => on(d).filter(x => !x.start));
   const cols = days.map(d => {
@@ -10461,7 +10504,7 @@ function calGrid(days, items, multi, opt = {}) {
     for (const e of layDay(on(d).filter(x => x.start), opt.cap || 3)) {
       const a = Math.max(e.a, h0 * 60), b = Math.min(e.b, h1 * 60);
       const geo = `top:${at(a)};height:calc(var(--hr) * ${((b - a) / 60).toFixed(3)} - 2px);left:calc(${e.col} * 100% / ${e.n});width:calc(100% / ${e.n} - 3px)`;
-      html += e.more ? `<button class="tg-more" type="button" data-act="calgoday" data-v="${d}" style="${geo}" aria-label="${e.more} more on ${esc(dayLabel(d))}">+${e.more}</button>` : evBlock(e.it, multi, geo, b - a < 40);
+      html += e.more ? `<button class="tg-more" type="button" data-act="calgoday" data-v="${d}" style="${geo}" aria-label="${e.more} more on ${esc(dayLabel(d))}">+${e.more}</button>` : evBlock(e.it, multi, geo, b - a < 40, e.it === first);
     }
     if (d === today) {
       const n = new Date(nowMs()), m = n.getHours() * 60 + n.getMinutes();
@@ -10476,6 +10519,22 @@ function calGrid(days, items, multi, opt = {}) {
     ${allDay.some(l => l.length) ? `<div class="tg-row tg-allday"><span class="tg-gl">All day</span>${allDay.map(l => `<div>${l.map(it => `<span class="tg-adwrap" ${evAct(it)}>${evChip(it, multi)}</span>`).join('')}</div>`).join('')}</div>` : ''}
     <div class="tg-row tg-body"><div class="tg-gutter"><span class="tg-first">${hourLabel(h0)}</span>${gutter.join('')}</div>${cols.join('')}</div>
   </div>`;
+}
+
+/* Day and Week open on what is on, not on 7am: a family's practice at six
+   was below the fold of an empty morning (UX-REVIEW-3.md, 15.5). Once per
+   day or week looked at, so a redraw while she scrolls leaves her be. */
+let calScrolled = '';
+function calScroll() {
+  const v = calView();
+  if (v !== 'day' && v !== 'week') { calScrolled = ''; return; }
+  const key = v + '|' + (v === 'week' ? addDays(calDay(), -weekdayOf(calDay())) : calDay());
+  if (key === calScrolled) return;
+  calScrolled = key;
+  try {
+    const el = typeof document !== 'undefined' && document.getElementById ? document.getElementById('calFirst') : null;
+    if (el && typeof el.scrollIntoView === 'function') el.scrollIntoView({ block: 'nearest' });
+  } catch (e) { }
 }
 
 /* ---- Month: the grid, with what's on in each day ---- */
@@ -10656,7 +10715,7 @@ function calLeftOut(sel) {
 /* Behind the ☰, as a calendar app keeps its list of calendars: the teams in
    the tree, her children and clubs on My calendar, and the kinds of thing,
    each kind's chip in the colour it has when one team is showing. */
-function calPanel(sel, offer) {
+function calPanel(sel, offer, multi) {
   const mine = myTeams(), on = new Set(calTeams());
   const kinds = CAL_KINDS.filter(([k]) => (k !== 'session' || ui.calHasSess) && (k !== 'avail' || ui.calHasAvail));
   const filt = sel === 'mine' ? myCalFilters() : [];
@@ -10675,13 +10734,15 @@ function calPanel(sel, offer) {
         <div class="calkids">${g.teams.map(leaf).join('')}</div></div>` : `<div class="calkids">${g.teams.map(leaf).join('')}</div>`).join('')}
     </div>`;
   }
+  // a child's chip carries her team's colour, when the colour is the team's
+  const kidHue = k => { const kid = multi && k.startsWith('p:') ? myPlayers().find(x => x.p.id === k.slice(2)) : null; return kid ? teamHue(kid.t.id) : ''; };
   const people = filt.length > 1 ? `<p class="lbl" style="margin:0 0 6px">Whose</p><div class="chips">${filt.map(([k, l]) =>
-    `<button class="chip" type="button" data-act="mycalf" data-v="${esc(k)}" aria-pressed="${(ui.myCal || 'all') === k}">${l}</button>`).join('')}</div>` : '';
+    `<button class="chip" type="button" data-act="mycalf" data-v="${esc(k)}" aria-pressed="${(ui.myCal || 'all') === k}">${kidHue(k) ? `<i class="dot" style="background:${kidHue(k)}"></i>` : ''}${l}</button>`).join('')}</div>` : '';
   return `<div class="calcals">
     <div class="spread"><b>Calendars</b><span class="muted">${esc(calLeftOut(sel) || 'Showing everything')}</span></div>
     ${tree}${people}
     <p class="lbl" style="margin:4px 0 0">Show</p>
-    <div class="chips">${kinds.map(([k, l]) => `<button class="chip" type="button" data-act="calkind" data-v="${k}" aria-pressed="${calKindOn(k)}"><i class="dot ${k}" style="background:${KIND_HUE[k]}"></i>${l}</button>`).join('')}</div>
+    <div class="chips">${kinds.map(([k, l]) => `<button class="chip" type="button" data-act="calkind" data-v="${k}" aria-pressed="${calKindOn(k)}">${multi ? '' : `<i class="dot ${k}" style="background:${KIND_HUE[k]}"></i>`}${l}</button>`).join('')}</div>
   </div>`;
 }
 
@@ -10703,18 +10764,44 @@ function calBar(v, items, multi, sel, offer, ed = []) {
   const here = v === 'schedule' || (v === 'day' ? d === today : v === 'week' ? a <= today && today <= addDays(a, 6) : d.slice(0, 7) === today.slice(0, 7));
   const step = { day: 'day', week: 'week', month: 'month' }[v];
   const out = calLeftOut(sel);
+  /* Calendars only when there is something to choose: one team and nothing
+     but its games, practices and the odd event was a third dropdown-looking
+     control over a parent's calendar, a tree of one (UX-REVIEW-3.md, 15.4).
+     Anything already left out keeps it, so it can be put back. */
+  const cals = (sel === 'club' ? myTeams().length : myCalTeams().length) > 1 || (sel === 'mine' && myCalFilters().length > 1)
+    || ui.calHasSess || ui.calHasAvail || !!out;
   return `<div class="caltop">
-      <button type="button" class="calmenu" data-act="caltree" aria-expanded="${!!ui.calTree}" aria-label="Calendars: ${esc(out || 'showing everything')}" title="Calendars"${out ? ' data-on="1"' : ''}>Calendars <span aria-hidden="true">${ui.calTree ? '▴' : '▾'}</span></button>
+      ${cals ? `<button type="button" class="calmenu" data-act="caltree" aria-expanded="${!!ui.calTree}" aria-label="Calendars: ${esc(out || 'showing everything')}" title="Calendars"${out ? ' data-on="1"' : ''}>Calendars <span aria-hidden="true">${ui.calTree ? '▴' : '▾'}</span></button>` : ''}
       <button type="button" class="caltitle" data-act="calmini" aria-expanded="${!!ui.calMini}">${esc(calTitle(v, v === 'schedule' ? today : d))} <span aria-hidden="true">${ui.calMini ? '▴' : '▾'}</span></button>
       ${step ? `<span class="calnavs">
         <button type="button" class="stepbtn" data-act="calstep" data-v="-1" aria-label="Previous ${step}">‹</button>
         <button type="button" class="caltoday" data-act="calstep" data-v="0" aria-label="Today" title="Today"${here ? ' aria-current="date"' : ''}><i>${dateOf(today).getDate()}</i></button>
         <button type="button" class="stepbtn" data-act="calstep" data-v="1" aria-label="Next ${step}">›</button></span>` : ''}
     </div>
-    ${ui.calTree ? calPanel(sel, offer) : ''}
+    ${ui.calTree && cals ? calPanel(sel, offer, multi) : ''}
     ${ui.calMini ? calMonth(items, 'calpick', { sel: v === 'schedule' ? '' : d, hue: multi ? x => evHue(x, true) : null }) : ''}
     <div class="calviewrow"><div class="seg calviews" role="tablist" aria-label="How to look">${CAL_VIEWS.map(([k, l]) =>
-    `<button type="button" role="tab" data-act="calview" data-v="${k}" aria-pressed="${v === k}">${l}</button>`).join('')}</div>${calFab(ed, v)}</div>`;
+    `<button type="button" role="tab" data-act="calview" data-v="${k}" aria-pressed="${v === k}">${l}</button>`).join('')}</div>${calFab(ed, v)}</div>
+    ${multi ? calKey(items) : ''}`;
+}
+/* Which colour is whose, when the colour is the team's: one line under the
+   views. With two teams showing nothing said which was green, and the Show
+   chips still carried the kinds' dots as a key that was now wrong
+   (UX-REVIEW-3.md, 15.2). A family's team names her child on it. Past
+   eight it says nothing: the Calendars list has every team's colour. */
+function calKey(items) {
+  const order = new Map(teams().map((t, i) => [t.id, i]));
+  const tids = [...new Set(items.filter(x => x.tid && !x.club && x.kind !== 'avail').map(x => x.tid))]
+    .sort((a, b) => (order.get(a) ?? 999) - (order.get(b) ?? 999));
+  const out = tids.map(tid => {
+    const kids = myKids(tid).filter(p => !isMe(p)).map(firstName);
+    return [teamHue(tid), shortTeam(tid) + (kids.length ? ` (${kids.join(', ')})` : '')];
+  });
+  if (items.some(x => x.club)) out.push([OTHER_CLUB_HUE, 'Other clubs']);
+  if (items.some(x => x.kind === 'session' && !x.tid && !x.club)) out.push([KIND_HUE.session, 'Sessions']);
+  if (items.some(x => x.kind === 'avail' && !x.club)) out.push([KIND_HUE.avail, 'Bookable']);
+  if (out.length < 2 || out.length > 8) return '';
+  return `<p class="calkey" aria-label="What the colours are">${out.map(([h, l]) => `<span><i class="dot" style="background:${h}"></i>${esc(l)}</span>`).join('')}</p>`;
 }
 
 /* The +, at the end of the views row since build 146. It floated over the
@@ -10781,7 +10868,7 @@ function viewCalendar() {
     }).join('');
     const onDay = dated.filter(x => x.date === d);
     body = `<div class="calstrip calgrid">${strip}</div>
-      ${onDay.length ? '' : `<p class="muted calnone">Nothing on.${add ? ' Tap an hour to add something then.' : ''}</p>`}
+      ${onDay.length ? '' : `<p class="muted calnone">${calNothing(dated, d)}${add ? ' Tap an hour to add something then.' : ''}</p>`}
       ${calGrid([d], dated, multi, { cap: 4, add })}`;
   } else if (v === 'week') {
     const a = addDays(d, -weekdayOf(d)), days = [0, 1, 2, 3, 4, 5, 6].map(i => addDays(a, i)), today = todayStr();
@@ -10835,10 +10922,19 @@ function sheetCalItem(kind, tid, id) {
   const span = it.start ? niceTime(it.start) + (it.end ? '–' + niceTime(it.end) : '') : 'All day';
   const row = (k, v) => v ? `<dt>${k}</dt><dd>${v}</dd>` : '';
   const left = e && e.series ? seriesOf(t, e.series).filter(x => (x.date || '') > (e.date || '')).length : 0;
+  /* A family's answer comes first, above the facts (UX-REVIEW-3.md, 15.1);
+     the coach's list of who is coming stays under them, where it was. */
+  const famFirst = !canEditTeam(tid) && myKids(tid).length > 0;
+  const answers = rsvpBlock(it);
+  /* The team's name was a green link that closed the sheet for the team's
+     page, the first thing a family could tap (15.7). Staff switch teams
+     from it; for anyone else it is the team's name. */
+  const teamLink = canCalTeam(tid) || canAdmin() || (!!me && (isTracker(tid, me.uid) || isCoachAny(me.uid)));
   // the same colour it has on the calendar behind it
   openSheet(`<h3 class="evhead" style="--ev:${evHue(it, calTeams().length > 1)}"><i aria-hidden="true"></i>${esc(it.title)}</h3>
     ${it.called ? `<div class="warn alert" style="margin-bottom:10px"><b>${CALLED[it.called]}.</b>${m && it.called === 'postponed' ? ' A new date will be set.' : ''}</div>` : ''}
-    <p class="muted" style="margin-top:0"><button class="textbtn" data-act="goteam" data-id="${esc(tid)}">${teamLabel(t)}</button> · ${CAL_KIND[kind]}${e && edit ? (e.public ? ' · on the share link' : ' · team only') : ''}</p>
+    <p class="muted" style="margin-top:0">${teamLink ? `<button class="textbtn" data-act="goteam" data-id="${esc(tid)}">${teamLabel(t)}</button>` : teamLabel(t)} · ${CAL_KIND[kind]}${e && edit ? (e.public ? ' · on the share link' : ' · team only') : ''}</p>
+    ${famFirst ? answers : ''}
     <dl class="facts">
       ${row('When', esc(dayLabel(it.date)) + (it.date ? ' · ' + esc(span) : ''))}
       ${row('Where', esc(it.venue))}
@@ -10851,10 +10947,10 @@ function sheetCalItem(kind, tid, id) {
       ${left ? row('Repeats', `Weekly · ${left} more after this`) : ''}
     </dl>
     ${callOutBlock(it.key, tid, it.date)}
-    ${rsvpBlock(it)}
+    ${famFirst ? '' : answers}
     ${attendBlock(it)}
-    ${it.venue && I ? `<div class="row wrap" style="margin-bottom:10px"><a class="btn quiet sm" href="${esc(I.mapLink(venueAddress(it.venue)))}" target="_blank" rel="noopener">Directions</a></div>` : ''}
-    ${it.date ? calAddPair(it) : ''}
+    ${it.date && it.venue && I ? `<div class="row wrap" style="margin-bottom:10px"><a class="btn quiet sm" href="${esc(I.mapLink(venueAddress(it.venue)))}" target="_blank" rel="noopener">Directions</a></div>` : ''}
+    ${calAddGroup(it, 'item')}
     ${m ? `<button class="btn wide" data-act="calgame" data-tid="${esc(tid)}" data-id="${esc(id)}" style="margin-bottom:8px">Open the game</button>` : ''}
     ${m && edit ? `<button class="btn quiet wide" data-act="caleditgame" data-tid="${esc(tid)}" data-id="${esc(id)}" style="margin-bottom:8px">Edit this game’s details</button>
       <button class="btn quiet wide" data-act="copytext" data-v="${esc(opponentMessage(t, m))}">Copy a message for the other team</button>` : ''}
@@ -10862,25 +10958,43 @@ function sheetCalItem(kind, tid, id) {
     ${e && edit ? `<button class="btn quiet wide" data-act="caledit" data-tid="${esc(tid)}" data-id="${esc(id)}">Edit</button>` : ''}`);
 }
 
-/* Putting one entry in her own calendar, said once (UX-REVIEW-3.md, 12.4
-   and 15.3): Add to my calendar used to open the entry's whole sheet, where
-   Google Calendar and Apple or Outlook were two of three equal buttons
-   beside Directions. Now the card's button opens these two choices alone,
-   and the sheet groups the same pair under the same words. */
-function calAddPair(it, wide) {
-  const I = ICS(), cls = wide ? 'btn quiet wide' : 'btn quiet sm';
-  return `<p class="lbl" style="margin:4px 0 6px">Add to your calendar</p>
-    <div class="${wide ? 'stack' : 'row wrap'}" style="margin-bottom:10px">
-      ${I ? `<a class="${cls}" href="${esc(I.googleLink(icsItem(it)))}" target="_blank" rel="noopener">Google Calendar</a>` : ''}
-      <button class="${cls}" data-act="calics" data-k="${it.kind}" data-tid="${esc(it.tid)}" data-id="${esc(it.id)}">Apple, Outlook or another</button></div>`;
+/* Putting one entry in her own calendar (UX-REVIEW-3.md, 15.3). Add to my
+   calendar on a card opened the whole entry, where Google Calendar and
+   Apple or Outlook were two of three equal buttons, and the thing that would
+   keep her calendar up to date was a card at the foot of the Calendar: four
+   labels on three screens for one job. Now the card opens these two
+   choices, the entry's sheet groups the same two under the same words, and
+   above them, for whoever has no My calendar address yet, the subscription,
+   once. `from` says which sheet to draw again when she turns it on. */
+let calKeptId = '';      // the address turned on from here this session, so its subscribe buttons follow at once
+function calKeepOffer(from, it) {
+  if (!me || !fbConfig().apiKey || !feedBase() || !myCalOwn()) return '';
+  const id = myFeedId();
+  if (id && id === calKeptId) {
+    const u = feedUrl(id);
+    return `<div class="calkeep"><p style="margin:0 0 6px"><b>Calendar sync is on.</b> Subscribe once and your calendar follows every change:</p>
+      <div class="row wrap"><a class="btn sm" href="${esc(webcal(u))}">Apple Calendar</a>
+      <a class="btn quiet sm" href="${esc(googleSub(u))}" target="_blank" rel="noopener">Google Calendar</a></div></div>`;
+  }
+  if (id) return '';
+  return `<div class="calkeep"><button class="btn quiet wide" data-act="calkeep" data-from="${from}" data-k="${it.kind}" data-tid="${esc(it.tid)}" data-id="${esc(it.id)}">Keep my calendar up to date</button>
+    <p class="muted" style="margin:6px 0 0">Everything on My calendar, in your phone’s calendar, following every change by itself. Nobody is named in it.</p></div>`;
+}
+function calAddGroup(it, from) {
+  if (!it.date) return '';
+  const I = ICS(), sheet = from === 'add';
+  return `<div class="caladd">${sheet ? '' : '<p class="lbl">Add to your calendar</p>'}
+    ${calKeepOffer(from, it)}
+    <div class="${sheet ? 'stackbtns' : 'row wrap'}">
+      ${I ? `<a class="btn ${sheet ? 'wide' : 'quiet sm'}" href="${esc(I.googleLink(icsItem(it)))}" target="_blank" rel="noopener">Google Calendar</a>` : ''}
+      <button class="btn quiet ${sheet ? 'wide' : 'sm'}" data-act="calics" data-k="${it.kind}" data-tid="${esc(it.tid)}" data-id="${esc(it.id)}">Apple, Outlook or another</button></div></div>`;
 }
 function sheetCalAdd(kind, tid, id) {
   const it = calItems([tid]).find(x => x.kind === kind && x.id === id);
   if (!it || !it.date) { closeSheet(); return; }
-  openSheet(`<h3>${esc(it.title)}</h3>
-    <p class="muted" style="margin-top:0">${esc([dayLabel(it.date), it.start ? niceTime(it.start) : 'All day'].join(' · '))}</p>
-    ${calAddPair(it, true)}
-    <p class="muted" style="margin-top:0">A copy of this one entry. To have every change reach your calendar by itself, use <b>In your own calendar</b>, at the foot of the Calendar.</p>`);
+  openSheet(`<h3>Add to your calendar</h3>
+    <p class="muted" style="margin-top:0">${esc(it.title)} · ${esc([relDay(it.date) || dayLabel(it.date), it.start ? niceTime(it.start) : 'all day'].join(' · '))}</p>
+    ${calAddGroup(it, 'add')}`);
 }
 
 /* The add/edit sheet keeps its fields in calForm and reads them back before
@@ -10910,15 +11024,17 @@ function calFormNew(tid, date, time) {
   }
   return {
     tid, id: null, kind: 'practice', title: '', date: d, start, end,
-    venue: last.venue || '', notes: '', public: false, repeat: false, days: [weekdayOf(d)],
+    venue: last.venue || '', notes: '', public: false, ask: null, repeat: false, days: [weekdayOf(d)],
     until: addDays(d, 7 * 10), scope: 'one'
   };
 }
+// what the form will save: what the coach picked, else the kind's own default
+const calFormAsk = f => typeof f.ask === 'boolean' ? f.ask : f.kind === 'practice';
 function calFormEdit(tid, e) {
   return {
     tid, id: e.id, kind: e.kind === 'practice' ? 'practice' : 'event', title: e.title || '', date: e.date || '',
     start: e.start || '', end: e.end || '', venue: e.venue || '', notes: e.notes || '', public: !!e.public,
-    repeat: false, days: [], until: '', scope: 'one'
+    ask: typeof e.ask === 'boolean' ? e.ask : null, repeat: false, days: [], until: '', scope: 'one'
   };
 }
 function sheetCalEvent() {
@@ -10936,8 +11052,8 @@ function sheetCalEvent() {
      coach finding "a player" on the season page and not knowing why. */
   openSheet(`<h3>${isNew ? 'Add to the calendar' : 'Edit ' + word}</h3>
     ${isNew ? `<div class="chips" style="margin-bottom:12px">
-      ${chip('calkind', 'practice', f.kind === 'practice', 'Practice')}
-      ${chip('calkind', 'event', f.kind === 'event', 'Something else')}
+      ${chip('calfkind', 'practice', f.kind === 'practice', 'Practice')}
+      ${chip('calfkind', 'event', f.kind === 'event', 'Something else')}
       <button class="chip" type="button" data-act="newmatch" data-from="cal">A game →</button>
       <button class="chip" type="button" data-act="calgames" data-tid="${esc(f.tid)}">A run of games →</button></div>` : ''}
     <label class="field"><span>What</span><input type="text" id="evTitle" value="${esc(f.title)}" placeholder="${f.kind === 'practice' ? 'Practice' : 'Team photo, tournament, end-of-season party'}"></label>
@@ -10956,6 +11072,9 @@ function sheetCalEvent() {
     <p class="lbl">Who sees it</p>
     <div class="chips" style="margin-bottom:6px">${chip('calpub', '0', !f.public, 'The team')}${chip('calpub', '1', f.public, 'The team and the share link')}</div>
     <p class="muted" style="margin-top:0">The team is everyone signed in with a role on it: coaches, trackers and parents. The share link is the season page you text to families, and anyone it is forwarded to can read it — names typed here are taken out of that copy.</p>
+    <p class="lbl">Ask families whether they are coming</p>
+    <div class="chips" style="margin-bottom:6px">${chip('calask', '1', calFormAsk(f), 'Ask')}${chip('calask', '0', !calFormAsk(f), 'Don\u2019t ask')}</div>
+    <p class="muted" style="margin-top:0">${calFormAsk(f) ? 'Families answer Going, Not going or Maybe on the calendar, and you see who is coming.' : 'No answer asked for: families see it on the calendar and nothing more.'}</p>
     ${inSeries ? `<p class="lbl">Change</p>
       <div class="chips" style="margin-bottom:10px">${chip('calscopeed', 'one', f.scope !== 'later', 'Just this one')}${chip('calscopeed', 'later', f.scope === 'later', 'This and every later one')}</div>` : ''}
     <button class="btn wide" data-act="calsave" data-tid="${esc(f.tid)}" style="margin-bottom:8px">${isNew ? (n > 1 ? `Add ${n} ${word}s` : 'Add it') : 'Save'}</button>
@@ -10982,7 +11101,7 @@ function saveCalEvent() {
   const t = state.teams[f.tid]; if (!t) return;
   if (!okDay(f.date)) { toast('Pick a date'); return; }
   const kind = f.kind === 'practice' ? 'practice' : 'event';
-  const fields = { kind, title: (f.title || '').trim() || CAL_KIND[kind], start: hm(f.start), end: hm(f.end), venue: (f.venue || '').trim(), notes: (f.notes || '').trim(), public: !!f.public };
+  const fields = { kind, title: (f.title || '').trim() || CAL_KIND[kind], start: hm(f.start), end: hm(f.end), venue: (f.venue || '').trim(), notes: (f.notes || '').trim(), public: !!f.public, ask: calFormAsk({ ...f, kind }) };
   const scrubbed = fields.public && ['title', 'venue', 'notes'].some(k => pubText(t, fields[k]) !== fields[k]);
   const why = scrubbed ? ' · a name in it is left off the share link' : '';
   if (f.id) {
@@ -14846,10 +14965,10 @@ function sheetSess(id) {
     ${callOutBlock('s:' + s.id, '', s.date, !!me && s.coach === me.uid)}
     ${sessFamilyBlock(s)}
     ${run ? sessPlayersBlock(s) + sessRegisterBlock(s) + sessFeesBlock(s) + sessDrillsBlock(s) : ''}
-    ${s.date ? `<div class="row wrap" style="margin-bottom:10px">
-      ${sessAddress(s) && I ? `<a class="btn quiet sm" href="${esc(I.mapLink(sessAddress(s)))}" target="_blank" rel="noopener">Directions</a>` : ''}
+    ${s.date && sessAddress(s) && I ? `<div class="row wrap" style="margin-bottom:10px"><a class="btn quiet sm" href="${esc(I.mapLink(sessAddress(s)))}" target="_blank" rel="noopener">Directions</a></div>` : ''}
+    ${s.date ? `<div class="caladd"><p class="lbl">Add to your calendar</p><div class="row wrap">
       ${I ? `<a class="btn quiet sm" href="${esc(I.googleLink(sessIcs(s)))}" target="_blank" rel="noopener">Google Calendar</a>` : ''}
-      <button class="btn quiet sm" data-act="sessics" data-id="${esc(s.id)}">Apple, Outlook or another</button></div>` : ''}
+      <button class="btn quiet sm" data-act="sessics" data-id="${esc(s.id)}">Apple, Outlook or another</button></div></div>` : ''}
     ${run ? `<button class="btn quiet wide" data-act="sesstell" data-id="${esc(s.id)}" style="margin-bottom:8px">Tell the families</button>
       <button class="btn quiet wide" data-act="sessedit" data-id="${esc(s.id)}" style="margin-bottom:8px">Edit</button>
       <button class="btn quiet wide" data-act="sesscall" data-id="${esc(s.id)}" style="margin-bottom:8px">${s.called ? 'It is back on' : 'Call it off'}</button>
@@ -17013,9 +17132,19 @@ function alertsCard(where) {
       <span class="muted">Open</span></button>`).join('')}</div>` : ''}</div>`;
 }
 
+/* Sharing busy times is for whoever a club books: its coaches and admins,
+   in this club or another of hers. A family was shown it at the foot of
+   every calendar, where it did nothing for her (UX-REVIEW-3.md, 15.11).
+   Whoever is sharing keeps it, to stop. */
+function youStaff() {
+  if (!me) return false;
+  if (canAdmin() || isCoachAny(me.uid) || sessAll().some(s => s.coach === me.uid) || blockAll().some(b => b.coach === me.uid)) return true;
+  return youClubs().some(([, c]) => { const a = ((c.ws || {}).access) || {}; return !!((a.admins || {})[me.uid] || (a.coachIndex || {})[me.uid]); });
+}
 function youShareCard() {
   if (!me || !fbConfig().apiKey) return '';
   const on = sharing();
+  if (!on && !youStaff()) return '';
   return `<div class="card"><h2 style="margin-bottom:6px">Who sees your calendar</h2>
     <div class="chips" style="margin-bottom:8px">
       <button class="chip" type="button" data-act="youshare" data-v="0" aria-pressed="${!on}">Private</button>
@@ -23213,6 +23342,16 @@ function onAct(e) {
   if (a === 'mycalf') { ui.myCal = String(d.v || 'all'); ui.calN = {}; saveUi(); render(); return; }
   if (a === 'calitem') { sheetCalItem(d.k, d.tid, d.id); return; }
   if (a === 'caladd') { sheetCalAdd(d.k, d.tid, d.id); return; }
+  if (a === 'calkeep') {
+    if (!me || !feedBase()) return;
+    (async () => {
+      await setMyFeed('on');
+      calKeptId = myFeedId();
+      if (!calKeptId) return;
+      if (d.from === 'add') sheetCalAdd(d.k, d.tid, d.id); else sheetCalItem(d.k, d.tid, d.id);
+    })();
+    return;
+  }
   if (a === 'calgame') {
     const g = state.matches[d.id]; if (!g) return;
     // back goes where she came from: the Calendar, or the team's Season and its cards
@@ -23250,15 +23389,19 @@ function onAct(e) {
     ui.teamId = d.tid;
     calForm = calFormEdit(d.tid, e); sheetCalEvent(); return;
   }
-  if (a === 'calkind' || a === 'calrepeat' || a === 'calwd' || a === 'calpub' || a === 'calscopeed') {
+  /* The form's own kind is calfkind: as calkind it was the Calendars panel's
+     Show filter, whose handler comes first, so tapping Practice in the form
+     hid practices from the calendar and left the form as it was. */
+  if (a === 'calfkind' || a === 'calrepeat' || a === 'calwd' || a === 'calpub' || a === 'calask' || a === 'calscopeed') {
     if (!calForm) return;
     calFormRead();
     const f = calForm;
-    if (a === 'calkind') f.kind = d.v === 'practice' ? 'practice' : 'event';
+    if (a === 'calfkind') f.kind = d.v === 'practice' ? 'practice' : 'event';
     // turning it on is when the days get chosen, so start from the date as typed by then
     if (a === 'calrepeat') { f.repeat = d.v === '1'; if (f.repeat && okDay(f.date)) f.days = [weekdayOf(f.date)]; }
     if (a === 'calwd') { const i = Number(d.v); f.days = f.days.includes(i) ? f.days.filter(x => x !== i) : [...f.days, i].sort(); }
     if (a === 'calpub') f.public = d.v === '1';
+    if (a === 'calask') f.ask = d.v === '1';
     if (a === 'calscopeed') f.scope = d.v === 'later' ? 'later' : 'one';
     sheetCalEvent(); return;
   }
@@ -23288,14 +23431,18 @@ function onAct(e) {
   if (a === 'rsvp' || a === 'rsvpnote') {
     if (!canRsvp(d.tid, d.pid)) { toast('Only that player\u2019s family or coach can answer for her'); return; }
     const cur = rsvpOf(d.tid, d.k, d.pid);
+    // what is typed in the sheet's note box: it is there before she answers, so a note can come first
+    const el = d.from === 'sheet' || a === 'rsvpnote' ? $('#rsvpNote_' + d.pid) : null;
+    const typed = el && typeof el.value === 'string' ? el.value.trim() : null;
     if (a === 'rsvpnote') {
-      if (!cur) return;
-      const el = $('#rsvpNote_' + d.pid);
-      setRsvp(d.tid, d.k, d.pid, cur.v, el && typeof el.value === 'string' ? el.value.trim() : cur.note);
+      // a note is part of an answer; with none yet it waits in the box for one
+      if (!cur) { toast('Tap Going, Not going or Maybe and the note goes with it'); return; }
+      setRsvp(d.tid, d.k, d.pid, cur.v, typed !== null ? typed : cur.note);
       toast('Note saved');
     } else {
-      // the same answer again takes it back; a new answer keeps the note
-      setRsvp(d.tid, d.k, d.pid, cur && cur.v === d.v ? null : d.v, cur && cur.v !== d.v ? cur.note : null);
+      // the same answer again takes it back; a new answer keeps the note, or takes the one typed
+      const back = cur && cur.v === d.v;
+      setRsvp(d.tid, d.k, d.pid, back ? null : d.v, back ? null : typed !== null ? typed : cur ? cur.note : null);
       ui.rsvpPick = null;   // the coach's chips for one child go once she has answered
     }
     if (d.from === 'sheet' || a === 'rsvpnote') sheetCalItem(d.kind, d.tid, d.id);

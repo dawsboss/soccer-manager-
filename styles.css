@@ -754,9 +754,9 @@ button.calday:active{background:var(--field-wash)}
 :is(.dots,.calkey) .dot.event{background:var(--owed)}
 :is(.dots,.calkey) .dot.session{background:#6B3FA0}
 :is(.dots,.calkey) .dot.off{opacity:.3}
-.calkey{font-size:12px;color:var(--ink-soft);display:flex;align-items:center;gap:5px;flex-wrap:wrap}
-.calkey .dot{margin-left:6px}
-.calkey .dot:first-child{margin-left:0}
+.calkey{font-size:12px;color:var(--ink-soft);display:flex;align-items:center;gap:4px 12px;flex-wrap:wrap;margin:0}
+.calkey span{display:inline-flex;align-items:center;gap:5px}
+.calkey .dot{width:9px;height:9px}
 .calhead{font-size:12.5px;font-weight:600;color:var(--ink-soft);margin:12px 0 2px;text-transform:uppercase;letter-spacing:.05em}
 .calhead span{text-transform:none;letter-spacing:0;color:var(--field-deep)}
 .calrow{grid-template-columns:58px minmax(0,1fr) auto}
@@ -785,6 +785,13 @@ a.btn{display:inline-block;text-decoration:none}
 .rsvpbox{border-top:1px solid var(--line);margin:4px 0 12px;padding-top:10px}
 .rsvprow{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:6px 0;border-top:1px solid var(--paper)}
 .rsvprow:first-of-type{border-top:0}
+/* a family's answer, first in her sheet: the line under it, not over it */
+.rsvpbox.top{border-top:0;border-bottom:1px solid var(--line);margin:0 0 12px;padding:0 0 12px}
+/* Add to your calendar: the subscription offered once over the two one-off choices */
+.caladd{margin:0 0 12px}
+.caladd .lbl{margin-top:0}
+.calkeep{background:var(--paper);border-radius:10px;padding:10px;margin:0 0 10px}
+.stackbtns{display:flex;flex-direction:column;gap:8px}
 /* the coach's list: the counts, then a name per row that opens the chips for that child */
 .rsvpcounts{display:flex;flex-wrap:wrap;gap:4px 16px;margin:0 0 6px}
 .rsvpcounts span{display:flex;align-items:baseline;gap:5px;font-size:14px;color:var(--ink-soft)}
@@ -1139,7 +1146,18 @@ button.ev:active{filter:brightness(.92)}
 .ev-live{flex:none;align-self:center;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;
   background:#fff;color:var(--over);border-radius:4px;padding:1px 5px}
 .ev-tag{flex:none;align-self:center;font-size:12px;font-weight:600;background:rgba(255,255,255,.22);border-radius:4px;padding:1px 6px}
-.ev[data-past="1"]{opacity:.6}
+/* over: the block fades and the words do not (UX-REVIEW-3.md, 15.9). White on a
+   block faded by opacity was 2.5:1; ink on a wash of its colour, with a bar of
+   the colour itself, still says whose it was and reads at AA. */
+.ev[data-past="1"]{background:color-mix(in srgb,var(--ev,var(--field)) 14%,#fff);color:var(--ink);box-shadow:inset 4px 0 0 var(--ev,var(--field))}
+.ev[data-past="1"] .ev-tag{background:rgba(0,0,0,.07)}
+/* an entry that asks her: the answer under it, on white, inside the entry's colour */
+.evans{display:flex;flex-direction:column;border-radius:9px;background:#fff;box-shadow:inset 0 0 0 1.5px var(--ev,var(--field))}
+.evans>.ev{border-radius:9px 9px 0 0}
+.ev-ans{display:flex;flex-direction:column;gap:6px;padding:7px 10px 9px}
+.ev-for{display:flex;align-items:center;flex-wrap:wrap;gap:6px 10px}
+.ev-who{font-size:14px;font-weight:600;min-width:0}
+.ev-for .rsvpseg{flex:1;min-width:0;margin-top:0}
 /* called off: still there, so nobody turns up, but plainly not on */
 .ev[data-called="1"]{background:#fff;color:var(--ink-soft);box-shadow:inset 0 0 0 1.5px var(--ev,var(--line))}
 .ev[data-called="1"] .ev-title{text-decoration:line-through}
@@ -1177,7 +1195,7 @@ button.ev:active{filter:brightness(.92)}
   box-shadow:0 0 0 1px #fff}
 .tg-ev b{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .tg-ev span{opacity:.92;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11px}
-.tg-ev[data-past="1"]{opacity:.6}
+.tg-ev[data-past="1"]{background:color-mix(in srgb,var(--ev) 14%,#fff);color:var(--ink);box-shadow:inset 3px 0 0 var(--ev),0 0 0 1px #fff}
 .tg-ev[data-called="1"]{background:#fff;color:var(--ink-soft);box-shadow:inset 0 0 0 1.5px var(--ev),0 0 0 1px #fff}
 .tg-ev[data-called="1"] b{text-decoration:line-through}
 .tg-ev[data-short="1"] span{display:none}
@@ -1214,7 +1232,7 @@ button.ev:active{filter:brightness(.92)}
 .mg-ev{display:block;background:var(--ev);color:#fff;border-radius:4px;padding:1px 3px;font-size:11px;line-height:1.35;
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .mg-ev[data-called="1"]{background:#fff;color:var(--ink-soft);box-shadow:inset 0 0 0 1px var(--ev);text-decoration:line-through}
-.mg-ev[data-past="1"]{opacity:.6}
+.mg-ev[data-past="1"]{background:color-mix(in srgb,var(--ev) 14%,#fff);color:var(--ink);box-shadow:inset 2px 0 0 var(--ev)}
 .mg-more{font-size:11px;font-weight:700;color:var(--ink-soft);padding:0 3px}
 .mg-x{display:none}
 /* a phone's cell is too narrow for a name: the short form ("v LAK") there, the whole title wherever there is room */

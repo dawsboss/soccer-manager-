@@ -78,9 +78,13 @@ console.log('--- a parent, for her own child ---');
 {
   setup(); as('mumU');
   let h = html();
-  check('the calendar row says she has not answered', /Ella: not answered/.test(h), true);
+  // answered on the row itself, not told "Ella: not answered" in words she cannot tap (UX-REVIEW-3.md, 15.1)
+  check('the calendar row asks her, with Ella\'s answer on it', /class="evans"[\s\S]*?<span class="ev-who">Ella<\/span><div class="seg rsvpseg" role="group" aria-label="Is Ella going\?"><button type="button" data-act="rsvp" data-tid="t1" data-k="e_e1" data-pid="p1" data-v="yes" data-from="row"/.test(h), true);
+  check('— and no "not answered" in words', /not answered/.test(h), false);
+  check('— the answer under the entry, never inside its button', /<button type="button" data-act="calitem"[^>]*class="ev"[\s\S]*?<\/button><div class="ev-ans">/.test(h) || /<button type="button" data-act="calitem"[^>]*>[\s\S]*?<\/button><div class="ev-ans">/.test(h), true);
   // the card over the list went in build 151 (UX-REVIEW-2.md, 7.2); she is asked on the entry and on Home
-  check('no card over the list asks her', /Is Ella going\?|class="card calnext"/.test(h), false);
+  // the row's own control is named for the question (aria-label); no card over the list says it in words
+  check('no card over the list asks her', />Is Ella going\?<|class="card calnext"/.test(h), false);
   A.click({ act: 'calitem', k: 'practice', tid: 't1', id: 'e1' });
   check('the entry asks her', /Is Ella going\?/.test(sheet()), true);
   check('and never names another child', /Rosa|Jo Nakamura/.test(h + sheet()), false);
@@ -93,7 +97,7 @@ console.log('--- a parent, for her own child ---');
   check('stamped as her', ans('p1').by, 'mumU');
   deepEq('written once, at rsvp/{tid}/{item}/{pid}', rsvpWrites().map(([p]) => p), ['orgs/CLUB/rsvp/t1/e_e1/p1']);
   check('and nothing else in the club is written', otherWrites().length, 0);
-  check('the row says so now', /Ella: going/.test(html()), true);
+  check('the row says so now: Going pressed', /data-pid="p1" data-v="yes" data-from="row"[^>]*aria-pressed="true"/.test(html()), true);
 
   answer('p1', 'no');
   check('a new answer replaces it', ans('p1').v, 'no');
@@ -110,7 +114,9 @@ console.log('--- a parent, for her own child ---');
   answer('p1', 'maybe');
   A.click({ act: 'calitem', k: 'practice', tid: 't1', id: 'e1' });
   check('her sheet asks about her child', /Is Ella going\?/.test(sheet()), true);
-  check('and has room for a note once she has answered', /id="rsvpNote_p1"/.test(sheet()), true);
+  check('and has room for a note', /id="rsvpNote_p1"/.test(sheet()), true);
+  check('— her answer above when and where (UX-REVIEW-3.md, 15.1)', sheet().indexOf('Is Ella going?') < sheet().indexOf('class="facts"'), true);
+  check('— and the team\'s name plain, no link away from the sheet (15.7)', /data-act="goteam"/.test(sheet()), false);
   check('it shows how many are going, not who', /going so far/.test(sheet()) && !/Rosa|Nakamura/.test(sheet()), true);
   A.dom.node('#rsvpNote_p1').value = '  Arriving late, after school pickup ' + 'x'.repeat(200);
   A.click({ act: 'rsvpnote', tid: 't1', k: 'e_e1', pid: 'p1', kind: 'practice', id: 'e1' });
@@ -132,6 +138,51 @@ console.log('--- a parent, for her own child ---');
 
   A.ui.view = 'mine';
   check('Home: the answer beside what is next', /Next up<\/span>[\s\S]*?<span class="tag practice">[\s\S]*?>Going</.test(html()), true);
+}
+
+console.log('--- a note before an answer, and entries that ask nothing (UX-REVIEW-3.md, 15.6, 15.10) ---');
+{
+  setup(); as('mumU');
+  A.click({ act: 'calitem', k: 'practice', tid: 't1', id: 'e1' });
+  check('the note box is there before she answers', /id="rsvpNote_p1"/.test(sheet()), true);
+  A.dom.node('#rsvpNote_p1').value = 'Back from holiday that morning';
+  A.click({ act: 'rsvpnote', tid: 't1', k: 'e_e1', pid: 'p1', kind: 'practice', id: 'e1' });
+  check('Save with no answer writes nothing', rsvpWrites().length, 0);
+  check('— and says how the note goes', A.lastToast(), 'Tap Going, Not going or Maybe and the note goes with it');
+  answer('p1', 'maybe', 'e_e1', { from: 'sheet' });
+  check('the note typed first goes with the answer', ans('p1') && ans('p1').v + ' / ' + ans('p1').note, 'maybe / Back from holiday that morning');
+  check('— in the one write', rsvpWrites().length, 1);
+
+  // a team photo, as it was saved before 15.6: no word, so its kind's: an event does not ask
+  A.state.teams.t1.events.ph = { id: 'ph', kind: 'event', title: 'Team photo', date: '2026-09-17', start: '17:00' };
+  A.state.teams.t1.events.pa = { id: 'pa', kind: 'event', title: 'Tournament', date: '2026-09-18', start: '09:00', ask: true };
+  A.state.teams.t1.events.pn = { id: 'pn', kind: 'practice', title: 'Practice', date: '2026-09-20', start: '18:00', ask: false };
+  const it = id => A.calItems(['t1']).find(x => x.id === id);
+  check('an event asks nothing by default, a practice and a game do', [it('ph'), it('e1'), it('g1')].map(A.rsvpOpen).join(' '), 'false true true');
+  check('— unless its coach said so, either way', [it('pa'), it('pn')].map(A.rsvpOpen).join(' '), 'true false');
+  const h = html();
+  check('the team photo\'s row carries no answer', /data-k="e_ph"/.test(h), false);
+  check('— the tournament\'s does', /data-act="rsvp"[^>]*data-k="e_pa"/.test(h), true);
+  A.click({ act: 'calitem', k: 'event', tid: 't1', id: 'ph' });
+  check('— nor its sheet', /rsvpseg|going so far|rsvpNote/.test(sheet()), false);
+
+  // the coach's form: the word, defaulted by kind, saved on the entry
+  as('coachU');
+  A.click({ act: 'calnew', tid: 't1', v: '2026-09-22' });
+  check('the coach is asked whether to ask families', /Ask families whether they are coming/.test(sheet()) && /data-act="calask" data-v="1" aria-pressed="true"/.test(sheet()), true);
+  A.click({ act: 'calfkind', v: 'event' });
+  check('— off for something else', /data-act="calask" data-v="0" aria-pressed="true"/.test(sheet()), true);
+  check('— the form\'s Something else switches the form, and hides nothing on the calendar', /data-act="calfkind" data-v="event" aria-pressed="true"/.test(sheet()) + ' ' + Object.keys(A.ui.calKOff || {}).length, 'true 0');
+  A.click({ act: 'calask', v: '1' });
+  A.dom.node('#evTitle').value = 'Tournament'; A.dom.node('#evDate').value = '2026-09-22';
+  sets = [];
+  A.click({ act: 'calsave', tid: 't1' });
+  const saved = sets.find(([p]) => /\/events\//.test(p));
+  check('— and what she picked is saved on the entry', saved && saved[1].kind + ' ' + saved[1].ask, 'event true');
+  setup(); as('coachU');
+  A.state.rsvp = { t1: { e_e1: { p1: { v: 'yes', by: 'mumU', at: 1 } } } };
+  const ch = html();
+  check('the coach\'s row keeps its count, and no chips (no child of hers)', /1 going · 2 to answer/.test(ch) && !/class="ev-ans"/.test(ch), true);
 }
 
 console.log('--- her answer: its own control, and what became of the tap (UX-REVIEW-3.md, 12.1, 12.2) ---');

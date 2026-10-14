@@ -390,6 +390,30 @@ it; the others named below). As built, where it differs from what is written und
 
 ## 15. The calendar and answering
 
+**Built in build 158**, all eleven. The answer is on the row for each of her own children or
+herself (`rowAnswer()`, under the entry since the entry is itself a button; staff keep their
+count line, and a coach whose daughter is on her team gets both), and leads a family's sheet,
+above the facts, with the note box always under it (a note typed first goes with the answer;
+Save with no answer says so and writes nothing). The row draws 12.1's control (`rsvpChips()`), the same
+one as the next-up card and the sheet. An entry carries `ask` (the coach's *Ask
+families whether they are coming*: on by default for a practice, off for anything else; a game
+always asks), and one that does not ask has no answer on its row or sheet. With several teams
+showing, team colours share nothing with the kinds' (`TEAM_HUES`), a key sits under the views
+(`calKey()`, a family's teams named with her children, nothing past eight), the *Whose* chips
+carry the colours and the *Show* chips do not. *Add to my calendar* opens *Add to your
+calendar* (`sheetCalAdd()`, the sheet 12.4 started, with the subscription added): Google Calendar, then *Apple, Outlook or another*, the same pair
+under the same label in the entry's and the session's sheets, and *Keep my calendar up to date*
+above them for whoever has no My calendar address (turning it on there shows the subscribe
+buttons in place). *Calendars* is drawn only with more than one team, a *Whose* choice,
+sessions or bookable times, or something left out. Day and Week come round to the first thing
+still to come (`calScroll()`, once per day or week looked at), and an empty day says *Nothing
+on today.* with *Next: Practice tomorrow 6pm* a tap away. The team's name in a sheet is plain for
+a family. Past rows are ink on a wash of their colour (12:1 at worst; `test/visual.js` works it
+out for every colour). *Who sees your calendar* is drawn for coaches and admins, here or in
+another club, and for whoever is already sharing. Found on the way: the add/edit sheet's
+*Practice* and *Something else* used the Calendars panel's own action, so tapping one hid that
+kind from the calendar and left the form as it was; the form's is `calfkind` now.
+
 - **15.1 The row says "Rosa: not answered" and does not let her answer.** Every practice block
   for ten weeks: *Practice · 6–7:15pm · Lakeside Park, field 2 · Rosa: not answered*
   (`17-calendar`); the chips are in the sheet, under When, Where, Notes and *Repeats · Weekly ·
@@ -646,7 +670,7 @@ Cheapest high-impact first; one line is about one day's work, with the suites th
    button (14.4, 18.4), one live card (14.5), one score style (14.6), the tag (14.7), the role
    card and the details card folded (13.8), a fan's card (19.2). `test/home.js`,
    `test/fans.js`, `test/safekeep.js`, `test/sync.js`. **A day.**
-6. The calendar: the answer on the row and above the facts in the sheet (15.1), the colour
+6. **Built in build 158.** The calendar: the answer on the row and above the facts in the sheet (15.1), the colour
    key when several teams show (15.2), *Add to my calendar* as an action sheet and the
    subscription offered once (15.3), *Calendars* hidden for one team (15.4), Day opening on the
    first entry (15.5), events that do not ask (15.6), the sheet's link plain for a family
