@@ -117,9 +117,9 @@ const PATHS = [
   { ask: 'How do I get to practice?', say: 'Home → Next up → Directions', who: EVERYONE,
     walk() { home(); },
     got: () => /<a class="btn quiet sm" href="[^"]*Lakeside[^"]*"[^>]*>Directions<\/a>/.test(cardFor(page(), 'Next up')), want: true },
-  { ask: 'Can I put it in my own calendar?', say: 'Home → Next up → Add to my calendar → Apple or Outlook', who: EVERYONE,
-    walk() { home(); if (!/>Add to my calendar</.test(cardFor(page(), 'Next up'))) throw new Error('no Add to my calendar'); A.click({ act: 'calitem', k: 'practice', tid: 't1', id: 'e1' }); if (!/>Google Calendar</.test(sheet())) throw new Error('no Google Calendar'); A.click({ act: 'calics', k: 'practice', tid: 't1', id: 'e1' }); },
-    got: () => /data-act="calics"[^>]*>Apple or Outlook</.test(sheet()) && !A.lastToast(), want: true },
+  { ask: 'Can I put it in my own calendar?', say: 'Home → Next up → Add to my calendar → Apple, Outlook or another', who: EVERYONE,
+    walk() { home(); if (!/data-act="caladd"[^>]*>Add to my calendar</.test(cardFor(page(), 'Next up'))) throw new Error('no Add to my calendar'); A.click({ act: 'caladd', k: 'practice', tid: 't1', id: 'e1' }); if (!/>Google Calendar</.test(sheet())) throw new Error('no Google Calendar'); A.click({ act: 'calics', k: 'practice', tid: 't1', id: 'e1' }); },
+    got: () => /data-act="calics"[^>]*>Apple, Outlook or another</.test(sheet()) && !A.lastToast(), want: true },
   { ask: 'How do I say she is not coming?', say: 'Calendar → the practice → Not going', who: ['boss', 'jaz', 'mum', 'kid'],
     walk(uid) {
       tab('calendar'); A.click({ act: 'calitem', k: 'practice', tid: 't1', id: 'e1' });
@@ -142,8 +142,9 @@ const PATHS = [
   { ask: 'Is practice on tonight?', say: 'Home → the first card says so when it is cancelled', who: EVERYONE,
     walk() { Object.assign(A.state.teams.t1.events.e1, { date: '2026-09-12', called: 'cancelled' }); home(); },
     got: () => { const h = page(); return h.replace(/<[^>]+>/g, '').includes('Tonight’s practice is cancelled') && h.indexOf('callednow') < h.indexOf('Next up') && h.indexOf('callednow') > -1; }, want: true },
+  // once there is a link to share: before the coach makes one, Share is hers alone (UX-REVIEW-3.md, 16.6)
   { ask: 'How do I share the game?', say: 'Game → the next game → ⋯ → Share', who: EVERYONE,
-    walk() { game(); A.click({ act: 'gamemenu' }); },
+    walk() { A.state.teams.t1.share = 'season1'; game(); A.click({ act: 'gamemenu' }); },
     got: () => /data-act="sharesheet"/.test(sheet()), want: true }
 ];
 

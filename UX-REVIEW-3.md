@@ -124,6 +124,28 @@ title-row checks and `test/same.js`'s "a team's title the team over the club".
 
 ## 12. Buttons
 
+**Built in build 156**, all seven: her answer is its own control (`rsvpChips()`, a `.seg
+rsvpseg` 44px tall with ✓ ✕ ? and pressed green, grey or orange) on the next-up card, the
+entry's sheet and her child's card. What became of the tap is said without words (the owner,
+2026-10-14: a sentence was too much): the pressed answer carries a thin bar while it is still on
+her phone, sweeping while it goes and dotted with no signal, gone once the club has it; the same
+answer again still takes it back, the button visibly letting go (12.1, 12.2). Chips, small buttons and steppers 40px,
+the text buttons, the club line and the legal links a 40px hit area that moves nothing, the
+avatar 36px (12.3). From 12.4: *Add to my calendar* opens the two choices alone (`sheetCalAdd()`,
+*Google Calendar* / *Apple, Outlook or another*, the same pair under *Add to your calendar* in the
+entry's sheet); *Fans* is off the card, her name opening her own sheet (`sheetChild()`) with
+*Family and friends who follow Rosa*, the paragraph first and *Invite a grandparent or friend*;
+Settings → You and the avatar open one account sheet; *Share* is drawn only where there is a link
+or she may make one; *Notify me · Turn on* is *Goals and the final whistle · Buzz me* with the
+catch as one line; the sync badge is a button opening what is waiting. Sign out is quiet and
+*Delete my account…* a red line at the account sheet's foot; a lost game is grey, the now line
+the calendar's green, and there is one red (12.5). *Open the game* is quiet on a card that asks
+her answer, until the day (12.6). The clock and *FT* in the game header are a borderless pill
+(12.7). `test/rsvp.js`, `test/visual.js`, `test/home.js`, `test/nav.js`, `test/same.js`,
+`test/fans.js` and `test/feed.js` hold it. What 12.4 names that is still open in its own section:
+the subscription offered at the top of the calendar choices (15.3), the outbox line for the Database
+row (14.4, 18.4).
+
 The audit (`tools/screens`: every tappable thing on the parent's 181 screens, 4,433 of them,
 by class, label, action and size) says this about the controls a parent meets:
 
@@ -203,6 +225,18 @@ The fixes, in the order they pay:
 
 ## 13. The first five minutes
 
+*Built in build 155, all nine: a signed-in phone with no club gets the lock card (with a
+waiting team-link request said over it, and *+ Start a new club* a quiet link under it), never
+*Add a team* (a phone with teams of its own on it is still left open, as `awaitingSignIn()`
+leaves it); the registration link is shut like an invite; the sign-in sheet's *Optional* line
+only on a club nobody has locked, and no second hero over the welcome or lock card; the
+sent-link state, with *Send it again* and *Use another email*; on the Home Screen the sheet
+opens on a password and a link says where it opens, and a link opened where its address was
+not kept asks in the sheet, never `prompt()`; the team-link and registration forms with no
+*squad* and no *she*, held there by `test/copy.js`, which now draws every door; the invite's
+shirt said in words with what to do if it is wrong; no role card for a family and the details
+strip folded into the card under her child; the welcome card naming the two ways in.*
+
 - **13.1 Signed in with no club yet, a parent is told to add a team.** The welcome card says
   *If you were sent an invite link, open it again after signing in*; a parent who signs in
   first (the card tells her to) lands on *Calendar / All teams · Club ▾*, a bar Home · Calendar
@@ -276,18 +310,16 @@ The fixes, in the order they pay:
 
 ## 14. Home and her child's card
 
-**Built in build 155**, all seven (`test/home.js` walks them; the others named below). As built,
-where it differs from what is written under each:
+**Built in builds 156 and 157**, all seven. Section 12 (build 156) built the part of 14.1 and
+14.4 that was also in 12.4: *Fans* is off the card, her name opening her own sheet
+(`sheetChild()`) with *Family and friends who follow Rosa*, the paragraph first and *Invite a
+grandparent or friend*, and the sync badge is a button opening what is waiting (with *Everything
+has reached the club* when nothing is). What it says about her answer is a bar on the pressed
+answer, not a sentence (the owner, 2026-10-14: a sentence was too much), so 14.4's *Saved on your
+phone, sent when there is signal* line is not built. Build 157 did the rest (`test/home.js` walks
+it; the others named below). As built, where it differs from what is written under each:
 
-- **14.1** Her name on the card is a button with a chevron (`kidsheet`, `sheetChild()`), and the
-  *Fans (1)* button is gone. Behind it: where she has played, one row *Family and friends who
-  follow Rosa · 1* (`fansheet`), and *Her details* for a child with a record in the club that her
-  family may edit. The fan sheet leads with the paragraph, then who follows her with *Remove*, then
-  one button, *Invite a grandparent or friend*; the owner's choice of how many people and how long
-  (2026-10-09, `test/links.js`) stays, behind *One person, for 14 days: change that*, so the one
-  tap makes a link for one person for fourteen days. The coach's and admin's fan card on a
-  player's page keeps its two choices in view. A fan's *Stop following* stays on her card (19.2).
-  `test/fans.js`, `test/players.js`.
+- **14.1** Her sheet also says *Where Rosa has played*, which 14.2 took off the card.
 - **14.2** *3 games · 180 minutes · 1 goal · came to all 5 practices*, one line, the minutes
   ticking in a live game (`data-live="smint"`). The games count is the attendance for games, so
   *Games 3 of 3* is gone from her card (the coach's views keep `attendLine()`); what she was
@@ -299,12 +331,8 @@ where it differs from what is written under each:
   or tomorrow: *Tonight's practice is cancelled* (*Today's* before five, *Tomorrow's*), with its
   time and place struck through under it, grey, and a tap into the entry; the next thing under
   it as before. `test/same.js` has it as a thirteenth question a parent asks.
-- **14.4** The badge is a button (`pendingsheet`) while something is owed or refused and a
-  plain label when not, the game header's twin the same (`paintSync()`); under the answer
-  control, while its write is unacknowledged, *Saved on your phone, sent when there is signal*
-  (`rsvpChips()`, so the next-up card, the sheet and My players all have it); and Settings'
-  Database row reads *Connected* or *Offline* from the same `online` the badge does. The rest of
-  18.4 (one word for the outbox everywhere) is not built. `test/safekeep.js`, `test/settings.js`.
+- **14.4** Settings' Database row reads *Connected* or *Offline* from the same `online` the badge
+  does (`test/settings.js`). The rest of 18.4 (one word for the outbox everywhere) is not built.
 - **14.5** On Home the LIVE card is the one door into the game, and her card says *Rosa: on the
   pitch · 38 min* (or *off the pitch*, or *You: …* for the player herself) as a line. My players
   (staff with a child) has no LIVE card, so its *Playing now* row stays a door.

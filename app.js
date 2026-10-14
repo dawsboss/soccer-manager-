@@ -2,7 +2,7 @@
    Static app. Data lives in localStorage, and mirrors to Firebase Realtime
    Database when a config + workspace code are present. */
 
-const BUILD = '155';
+const BUILD = '157';
 const BUILT = '2026-10-14';
 /* The version of database.rules.json this app was written against. The rules
    carry the same number in rulesVersion's .write, which accepts that number
@@ -632,7 +632,11 @@ async function initAuth() {
 
     // arriving back from a magic link
     if (authMod.isSignInWithEmailLink(fbAuth, location.href)) {
-      const mail = localStorage.getItem('sm.emailForLink') || prompt('Confirm your email to finish signing in');
+      /* Opened on a phone that did not send it (a Home Screen app has storage of
+         its own, so the browser this opens in never saw the address): asked in
+         the sign-in sheet's own field, never a bare browser prompt() (UX-REVIEW-3.md, 13.4). */
+      const mail = localStorage.getItem('sm.emailForLink');
+      if (!mail) { linkBack = location.href; sheetSignIn(); }
       if (mail) {
         try {
           await authMod.signInWithEmailLink(fbAuth, mail, location.href);
@@ -668,6 +672,8 @@ async function initAuth() {
       // Apple's hidden address is no name; she can type one on her account sheet
       if (!held) me = u ? { uid: u.uid, name: u.displayName || (!hiddenEmail(u.email) && (u.email || '').split('@')[0]) || 'Signed in', email: u.email || '', photo: u.photoURL || '', verified: u.emailVerified !== false } : null;
       cacheMe(me);   // signing out clears it, which is what locks the club now
+      // in by any way at all: a link still marked as on its way is not, or the next sign-out says "Check your email"
+      if (u) try { localStorage.removeItem('sm.emailForLink'); } catch (e) { }
       const uid = me ? me.uid : null;
       // her own drills are hers, not the phone's: gone the moment she is
       if (mineUid && mineUid !== uid) forgetMine();
@@ -1370,6 +1376,17 @@ function pendingLabel(p) {
 function sheetPending() {
   const list = [...pendingList().map(([p, e]) => [pendingLabel(p), e.refused]), ...otherOwed().map(x => [x.label, x.refused])];
   const r = list.filter(([, refused]) => refused);
+  /* The badge in the corner opens this too (UX-REVIEW-3.md, 12.4 and 14.4;
+     build 156): it was a span that looked like a button and did nothing. With
+     nothing owed it says what the badge means. */
+  if (!list.length) {
+    openSheet(`<h3>${fb && online ? 'Everything has reached the club' : 'Nothing waiting to send'}</h3>
+      <p class="muted" style="margin-top:0">${!fb ? 'This phone is not connected to a club, so what you do stays on it.'
+        : online ? 'Every change made on this phone is saved to the club.'
+          : 'No signal right now. Anything you change is kept on this phone and sent when there is signal.'}</p>
+      <button class="btn quiet wide" data-act="closesheet">Done</button>`, true);
+    return;
+  }
   openSheet(`<h3>Not saved to the club yet</h3>
     <p class="muted" style="margin-top:0">${list.length} change${list.length === 1 ? ' is' : 's are'} on this phone and nowhere else${r.length ? `, ${r.length} of them refused by the club's database` : ''}. They stay here, and are sent again every time this phone connects. Nothing is dropped unless you drop it.</p>
     ${r.length ? `<p class="muted">A refusal usually means the club's set-up is out of date (${canAdmin() ? 'Check readiness, under Settings → Advanced, says what to do' : 'the club admin can bring it up to date'}), or this account is no longer a coach of that team.</p>` : ''}
@@ -1402,22 +1419,12 @@ function paintSync() {
   if (fb && r) { b.dataset.state = 'off'; b.textContent = `${r} not saved`; }
   else if (fb && n) { b.dataset.state = 'off'; b.textContent = `${n} to send`; }
   else { b.dataset.state = syncBase[0]; b.textContent = syncBase[1]; }
-  /* It is a button while it has something to open, the sheet of what is still
-     only on this phone, and a plain label when it has not (UX-REVIEW-3.md,
-     14.4: a pill that looked like a button and did nothing). */
-  const owed = !!fb && (r > 0 || n > 0);
-  b.disabled = !owed;
-  if (owed) { b.dataset.act = 'pendingsheet'; b.title = 'See what is waiting'; }
-  else { delete b.dataset.act; b.title = 'Sync status'; }
   /* Its twin on the game header (build 144), where the brand row has stepped
      aside: drawn only while there is something to say at the sideline (owed,
      refused, or not connected), never "synced". */
   const g = $('#gsync');
-  if (g) {
-    g.hidden = !fb || (!r && !n && syncBase[0] === 'live'); g.dataset.state = b.dataset.state; g.textContent = b.textContent;
-    g.disabled = !owed;
-    if (owed) g.dataset.act = 'pendingsheet'; else delete g.dataset.act;
-  }
+  if (g) { g.hidden = !fb || (!r && !n && syncBase[0] === 'live'); g.dataset.state = b.dataset.state; g.textContent = b.textContent; }
+  rsvpBusy();
 }
 /* Everything else this phone keeps until the club has it: plans, drills, her
    own library, training sessions. Each re-sends its own pending list when its screen opens;
@@ -2046,6 +2053,14 @@ const needsSignIn = () => !me && gated();
    signed in and nothing held, the only way forward is to sign in, so say so.
    A device with teams of its own on it is somebody using the app alone: left open. */
 const awaitingSignIn = () => !me && !!fbConfig().apiKey && !wsRead && !anyAdmins() && !Object.keys(state.teams || {}).length;
+/* Signed in, with a database, and no club on this phone at all: a parent who
+   signed in before opening her invite, or whose team link is still waiting.
+   She has nothing to see until a club lets her in, and *Add a team* here made
+   a team in no club and from then on drew her as its coach (UX-REVIEW-3.md,
+   13.1). The lock card says what to do instead; starting a club is a link
+   under it for a coach who means to. A phone with teams of its own on it is
+   somebody using the app alone, left open as awaitingSignIn() leaves it. */
+const noClub = () => !!me && !!fbConfig().apiKey && !wsCode() && !Object.keys(state.teams || {}).length;
 
 /* Who may see and change which team.
    Admin: everything. Coach: edits her own team, reads the rest of the club —
@@ -2489,7 +2504,7 @@ function inviteWhat(v) {
   if (v.role === 'fan') return `a fan of ${v.playerNo ? '#' + esc(v.playerNo) : 'a player'} on <b>${esc(v.teamName || 'a team')}</b>: the calendar, the games as they happen and the team's notices${v.approved ? '' : '. A coach of the team says yes before you see anything'}`;
   if (v.role === 'viewer') return 'a club viewer: every team\u2019s games and calendar, to read';
   return v.role === 'parent'
-    ? `a parent of ${v.playerNo ? '#' + esc(v.playerNo) : 'a player'} on <b>${esc(v.teamName || 'a team')}</b>`
+    ? `a parent of ${v.playerNo ? 'the player wearing shirt ' + esc(v.playerNo) : 'a player'} on <b>${esc(v.teamName || 'a team')}</b>`
     : `${role.toLowerCase()} of <b>${esc(v.teamName || 'a team')}</b>`;
 }
 
@@ -2524,7 +2539,7 @@ function inviteScreen() {
     `${esc(invite.err || 'Something went wrong')}. Check the signal and try again.`,
     `<button class="btn" data-act="inviteretry">Try again</button>${later}`);
   return box(`Join ${club}`,
-    `${esc(v.byName || 'An admin')} has invited you as ${inviteWhat(v)}. You are signed in as <b>${esc(me.email || me.name)}</b>.`,
+    `${esc(v.byName || 'An admin')} has invited you as ${inviteWhat(v)}. You are signed in as <b>${esc(me.email || me.name)}</b>.${v.role === 'parent' && v.playerNo ? `<br>Not your child’s number? Ask ${esc(v.byName || 'whoever sent this')} for a new link.` : ''}`,
     `<button class="btn" data-act="inviteaccept">Accept</button>${later}`);
 }
 
@@ -3266,15 +3281,15 @@ function joinScreen() {
   return `<div class="stack"><div class="card">
     <h2>Join ${tm}</h2>
     <p class="muted" style="margin-top:4px">${club} · as a parent. You are signed in as <b>${esc(me.email || me.name)}</b>.</p>
-    <div class="chips" style="margin-bottom:12px"><button class="chip" type="button" data-act="joinkid" data-v="" aria-pressed="${!kid}">She's on the squad</button>
-      <button class="chip" type="button" data-act="joinkid" data-v="1" aria-pressed="${kid}">She isn't on it yet</button></div>
+    <div class="chips" style="margin-bottom:12px"><button class="chip" type="button" data-act="joinkid" data-v="" aria-pressed="${!kid}">On the team</button>
+      <button class="chip" type="button" data-act="joinkid" data-v="1" aria-pressed="${kid}">Not on it yet</button></div>
     ${kid ? `<label class="field"><span>Your child's name</span><input type="text" id="joinKidName" maxlength="120" autocomplete="off" placeholder="First and last"></label>
-    <label class="field"><span>Her birth date — optional</span><input type="date" id="joinKidBorn"></label>
+    <label class="field"><span>Birth date — optional</span><input type="date" id="joinKidBorn"></label>
     <div class="chips" style="margin-bottom:12px">${Object.entries(KID_GENDER).map(([k, l]) => `<button class="chip" type="button" data-act="joingender" data-v="${k}" aria-pressed="${join.gender === k}">${l}</button>`).join('')}</div>
-    <label class="field"><span>Her shirt number — if she has one</span><input type="text" inputmode="numeric" id="joinShirt" maxlength="40"></label>
-    <p class="muted">A coach of the team adds her to the squad and lets you in. You see nothing of the team until then.</p>`
+    <label class="field"><span>Shirt number — if your child has one</span><input type="text" inputmode="numeric" id="joinShirt" maxlength="40"></label>
+    <p class="muted">A coach of the team adds your child and lets you in. You see nothing of the team until then.</p>`
     : `<label class="field"><span>Your child's shirt number</span><input type="text" inputmode="numeric" id="joinShirt" maxlength="40" placeholder="7 — or 7, 12 for two"></label>
-    <label class="field"><span>Their first name — optional, helps the coach</span><input type="text" id="joinChild" maxlength="40" autocomplete="off"></label>
+    <label class="field"><span>Your child's first name — optional, helps the coach</span><input type="text" id="joinChild" maxlength="40" autocomplete="off"></label>
     <p class="muted">A coach of the team checks this and lets you in. You see nothing of the team until then.</p>`}
     <div class="row"><button class="btn" data-act="joinsend">Send to the coaches</button>${later}</div>
   </div></div>`;
@@ -7128,7 +7143,7 @@ function roleWords(lim) {
   if (!lim) return '';
   if (lim === 'tracker') return 'You track this team: you log what happens and make the coach\u2019s planned subs when they are due. The clock and other subs are the coach\u2019s.';
   if (lim === 'helper') return 'You help this team: the calendar, the register, the lineup before kick-off and notices. The clock and the subs are the coach\u2019s.';
-  if (lim === 'parent') return 'You are a parent here: you see your own child by name, say whether she is coming, and message the coaches.';
+  if (lim === 'parent') return 'You are a parent here: you see your own child by name, say whether your child is coming, and message the coaches.';
   if (lim === 'player') return 'You are signed in as a player: you see your team, and say whether you are coming.';
   if (lim === 'fan') return 'You follow the calendar, the games and the notices. The family answers and talks to the coaches.';
   if (lim === 'viewer') {
@@ -7151,7 +7166,12 @@ function render() {
      what there was. Both are drawn once the screen is settled, below. */
   const inviting = !!invite;
   const joining = !inviting && !!join && !join.hidden;
-  const shut = inviting || joining || !!purged || denied || unconfirmed || needsSignIn() || awaitingSignIn();
+  /* A registration link is a door into the club like an invite: the
+     Calendar's title and the tab bar round it were a club she is not in yet
+     (UX-REVIEW-3.md, 13.5). So is a signed-in phone with no club at all
+     (13.1), which drew *Add a team* and the bar of a club that is not there. */
+  const clubless = noClub() && !inviting && !joining && !regx;
+  const shut = inviting || joining || !!regx || !!purged || denied || unconfirmed || needsSignIn() || awaitingSignIn() || clubless;
   const t = team();
   if (!t && teams().length) { ui.teamId = teams()[0].id; }
   const vis = myTeams();
@@ -7245,7 +7265,7 @@ function render() {
   if (regx) { app.innerHTML = regScreen(); saveUi(); watchMessages(); return; }
   if (joining) { app.innerHTML = joinScreen(); saveUi(); watchMessages(); return; }
   if (purged) { app.innerHTML = purgedScreen(); saveUi(); watchMessages(); return; }
-  if (denied || needsSignIn()) { app.innerHTML = lockScreen(); saveUi(); watchMessages(); return; }
+  if (denied || needsSignIn() || clubless) { app.innerHTML = lockScreen(); saveUi(); watchMessages(); return; }
   if (awaitingSignIn()) { app.innerHTML = welcomeScreen(); saveUi(); return; }
   if (unconfirmed) { app.innerHTML = unconfirmedScreen(); saveUi(); return; }
   /* What her role lets her do, said once per account, club and role, and on
@@ -7253,7 +7273,12 @@ function render() {
      or My teams, as homeView() says): whoever has tapped through to the
      calendar or a game has found her way, and the card sat over the game
      screens until build 148. roleCard() says why it is a card at all. */
-  const roleNote = v === homeView() ? roleCard(lim) : '';
+  /* Not for a family (UX-REVIEW-3.md, 13.8): her Home leads with her child,
+     and the sentence sat over him; it stays in the account sheet. */
+  const fam = navKind() === 'family';
+  const roleNote = v === homeView() && !fam ? roleCard(lim) : '';
+  // the details strip, except where the cards to finish are on screen themselves (kidCards says the same)
+  const kidsHere = v === 'mine' || (fam && v === 'season');
   /* Never let a rehearsal pass for the real thing. Both facts are worth saying
      out loud: a test club holds invented data and publishes nothing, and a
      non-production environment is a different database with its own rules. */
@@ -7290,7 +7315,7 @@ function render() {
   lastScreen = here;
   placeMemo = new Map();
   try {
-    app.innerHTML = envNote + saveNote + (shut ? '' : alertBar() + detailsNote()) + joinNote + roleNote + (
+    app.innerHTML = envNote + saveNote + (shut ? '' : alertBar() + (kidsHere ? '' : detailsNote())) + joinNote + roleNote + (
       v === 'game' ? (g === 'track' ? viewTrack() : g === 'stats' ? viewStats() : g === 'recap' ? viewRecap() : g === 'pitch' ? viewMatch() : g === 'plan' ? viewPlan() : g === 'subs' ? viewSubs() : viewFeed()) :
         v === 'roster' ? viewRoster() :
           v === 'season' ? viewSeason() : v === 'teamstats' ? viewTeamStats() : v === 'minutes' ? viewMinutes() : v === 'attend' ? viewAttend() :
@@ -7346,11 +7371,39 @@ function unconfirmedScreen() {
    links to static pages, so they open with no signal-dependent code. */
 const LEGAL_LINKS = '<p class="auth-fine legal"><a href="privacy">Privacy Policy</a> · <a href="terms">Terms of Service</a></p>';
 
+/* The two ways into a club, in the words the coach used when she sent one
+   (UX-REVIEW-3.md, 13.9): "the account your coach or club knows" named an
+   account she did not have yet. */
+const WAYS_IN = 'open the invite link or the team link your coach sent you';
+/* A sign-in link is on its way (sm.emailForLink is set when it goes, and
+   cleared when it is used): the card she is looking at says so, rather than
+   drawing the screen she started on again after a two-second toast, which
+   read as nothing having happened and sent a second link (13.3). */
+const linkSentTo = () => { if (me) return ''; try { return localStorage.getItem('sm.emailForLink') || ''; } catch (e) { return ''; } };
+/* A Home Screen app has storage of its own, so the emailed link opens in the
+   browser, signs in there and leaves the icon on her Home Screen signed out
+   (13.4). Said wherever a link is offered or has gone. */
+const linkElsewhere = () => standalone()
+  ? `The link opens in ${iosDevice() ? 'Safari' : 'your browser'}, not here: sign in there, then open the app from your Home Screen again.` : '';
+function linkSentCard(mail) {
+  const away = linkElsewhere();
+  return `<div class="stack"><div class="auth-card">
+    ${authHero('Check your email', `We sent a sign-in link to <b>${esc(mail)}</b>. Open it on this phone and you’re in.`)}
+    <div class="auth-card-body">
+      ${away ? `<p class="auth-fine">${away}</p>` : ''}
+      <button class="btn wide" data-act="signin-resend">Send it again</button>
+      <button class="btn quiet wide" data-act="signin-other" style="margin-top:8px">Use another email</button>
+      ${LEGAL_LINKS}
+    </div></div></div>`;
+}
+
 function welcomeScreen() {
+  const sent = linkSentTo();
+  if (sent) return linkSentCard(sent);
   return `<div class="stack"><div class="auth-card">
     ${authHero('Sign in to see your team', wsCode()
-      ? 'This phone has not opened the club yet. Sign in with the account your coach or club knows, and your team and calendar will load.'
-      : 'Sign in with the account your coach or club knows, and your team and calendar will load. If you were sent an invite link, open it again after signing in.')}
+      ? 'This phone has not opened the club yet. Sign in, and your team and calendar will load.'
+      : `Sign in, then ${WAYS_IN}, and your team and calendar will be here.`)}
     <div class="auth-card-body">
       <button class="btn wide auth-go" data-act="signinsheet">Sign in</button>
       <p class="auth-fine">Read-only score pages need none of this — they keep working from their own link.</p>
@@ -7359,13 +7412,19 @@ function welcomeScreen() {
 }
 
 function lockScreen() {
-  return `<div class="stack"><div class="auth-card">
+  const sent = linkSentTo();
+  if (sent) return linkSentCard(sent);
+  // signed in with no club: a team-link request put aside with Not now is still waiting, and says so here
+  const waiting = noClub() && join && join.hidden && join.status === 'sent'
+    ? `<div class="rolebar">Waiting for a coach of <b>${esc((join.doc || {}).teamName || 'a team')}</b> to let you in. <button class="linkbtn dark" data-act="joinshow">Open</button></div>` : '';
+  return `<div class="stack">${waiting}<div class="auth-card">
     ${authHero(me ? 'Nobody has added you to a team yet' : 'Sign in to see this club', me
       ? `You are signed in as <b>${esc(me.name)}</b>. Ask your coach for the team link, or open the invite you were sent, and your team will be here.`
-      : 'What is here is private to the club. Sign in with the account your coach or club knows.')}
+      : `What is here is private to the club. Sign in, then ${WAYS_IN}.`)}
     <div class="auth-card-body">
       ${me ? `<button class="btn quiet wide" data-act="signout">Sign out</button>` : `<button class="btn wide auth-go" data-act="signinsheet">Sign in</button>`}
       ${me && Object.keys(myClubs || {}).some(c => c !== wsCode()) ? `<button class="btn quiet wide" data-act="clubswitch" style="margin-top:8px">Your other clubs</button>` : ''}
+      ${noClub() && canNewClub() ? `<p class="auth-fine">Or start a club of your own: <button class="linkbtn" data-act="newclub">+ Start a new club</button></p>` : ''}
       <p class="auth-fine">Read-only score pages need none of this — they keep working from their own link.</p>
       ${LEGAL_LINKS}
     </div></div></div>`;
@@ -7559,9 +7618,6 @@ function settingsLine() {
   const coachAny = !!me && teams().some(t => isCoach(t.id, me.uid));   // People, on Settings
   return ['You', team() && restricted() !== 'tracker' && !readerRole(restricted()) ? 'this team' : '', canAdmin() ? 'the club: people, registrations, fields' : coachAny ? 'people' : ''].filter(Boolean).join(', ');
 }
-/* Staff and owners start clubs (UX-REVIEW-2.md, 9.4); a family sees Clubs
-   only when she is in more than one. */
-const canStartClub = () => canNewClub() && navKind() !== 'family';
 function sheetMore() {
   const org = clubName();
   const b = me ? notesUnread() : 0;
@@ -7577,7 +7633,7 @@ function sheetMore() {
       <span class="rowsub">${esc(sessClubLine())}</span></button>` : ''}
     <button class="opt" data-act="goview" data-v="setup"><b>Settings</b>
       <span class="rowsub">${esc(settingsLine())}</span></button>
-    ${clubs.length > 1 || canStartClub() ? `<button class="opt" data-act="clubswitch"><b>Clubs</b>
+    ${clubs.length > 1 || canNewClub() ? `<button class="opt" data-act="clubswitch"><b>Clubs</b>
       <span class="rowsub">${clubs.length > 1 ? 'Switch to another club you are in' : 'Start a new club'}</span></button>` : ''}
     ${me ? `<button class="opt" data-act="signout"><b>Sign out</b>
       <span class="rowsub">${esc(me.email || me.name || '')}</span></button>`
@@ -7634,19 +7690,42 @@ function viewClub() {
   </div>`;
 }
 
-/* The avatar's sheet is the account and nothing else since build 141: the
-   calendar, her players and the club are tabs, and the rest is under More. */
+/* The account, one sheet from both doors (UX-REVIEW-3.md, 12.4 and 18.2;
+   build 156): the avatar and Settings → You used to open two different
+   sheets, one with the name box and Sign out, the other with Settings, Sign
+   out and Delete my account. Now both open this: who she is, her role, her
+   name as the club sees it, the ways she signs in, Settings (unless she is
+   on it), and Sign out. Since build 141 it is the account and nothing else:
+   the calendar, her players and the club are tabs, the rest under More.
+   Two reds stacked 8px apart (12.5) were Sign out and Delete my account,
+   identical; Sign out is a quiet button and Delete my account a line at the
+   foot, whose own sheet names every club it takes her out of. */
 function sheetAccount() {
-  const r = myRole();
-  openSheet(`<h3>${esc(me.name)}</h3>
-    <p class="muted" style="margin-top:0">${esc(me.email || '')}${r ? ` · ${esc(ROLE_LABEL[r])}` : ''}</p>
+  if (!me) { sheetSignIn(); return; }
+  const r = myRole(), u = fbAuth && fbAuth.currentUser;
+  const btn = k => `<button class="auth-btn auth-${k}" data-act="signin-add" data-v="${k}">${AUTH_LOGO[k]}<span>Add ${esc(SIGNIN_PROVIDERS[k].label)}</span></button>`;
+  // what this account can sign in with, and what else the club has switched on
+  const have = u ? (u.providerData || []).map(x => x.providerId) : [];
+  const more = u ? signInProviders().filter(k => !have.includes(SIGNIN_PROVIDERS[k].id)) : [];
+  const mail = me.email && !hiddenEmail(me.email) ? me.email : '';
+  openSheet(`<div class="auth-me">
+      ${me.photo ? `<img class="auth-avatar" src="${esc(me.photo)}" alt="" referrerpolicy="no-referrer">` : `<span class="auth-avatar">${esc(initials(me.name))}</span>`}
+      <div><h3>${esc(me.name)}</h3><div class="auth-who">${[mail, r ? ROLE_LABEL[r] : ''].filter(Boolean).map(x => `<span>${esc(x)}</span>`).join('')}</div></div>
+    </div>
     ${restricted() ? `<p class="muted rolewords" style="margin-top:0">${roleWords(restricted())}</p>` : ''}
-    <button class="opt" data-act="goview" data-v="setup"><b>Settings</b>
-      <span class="rowsub">${esc(settingsLine())}</span></button>
-    <button class="btn danger wide" data-act="signout" style="margin-top:8px">Sign out</button>
-    ${fbConfig().apiKey ? '<button class="btn quiet danger wide" data-act="forgetsheet" style="margin-top:8px">Delete my account</button>' : ''}
-    <p class="muted">Your team, the calendar, the game and the club are on the bar at the bottom.</p>
-    <p class="muted"><a href="privacy">Privacy Policy</a> · <a href="terms">Terms of Service</a></p>`);
+    ${hiddenEmail(me.email) ? `<div class="auth-note">Apple is hiding your email from the club. An invite sent to your own address will not open on this account: sign in with that address instead (a link, a password or Google), or ask for the invite to be sent to this one.</div>` : ''}
+    <label class="field"><span>Your name, as the club sees it</span>
+      <div class="auth-inline"><input type="text" id="acctName" value="${esc(me.name)}" autocomplete="name"><button class="btn quiet" data-act="savename">Save</button></div></label>
+    <p class="muted" style="margin-top:0">Anything you log is stamped with this account rather than a typed name.</p>
+    ${have.length ? `<p class="lbl" style="margin-top:16px">Ways you sign in</p>
+      <ul class="auth-ways">${have.map(id => `<li>${AUTH_LOGO[providerKey(id)] || ''}<span>${esc(providerLabel(id))}</span><span class="auth-tick" aria-label="on">✓</span></li>`).join('')}</ul>` : ''}
+    ${more.length ? `<div class="auth-btns">${more.map(btn).join('')}</div>
+      <p class="muted" style="margin-top:0">Adding one means you can sign in with either and stay the same person to the club.</p>` : ''}
+    ${ui.view === 'setup' ? '' : `<button class="opt" data-act="goview" data-v="setup"><b>Settings</b>
+      <span class="rowsub">${esc(settingsLine())}</span></button>`}
+    <button class="btn quiet wide" data-act="signout" style="margin-top:8px">Sign out</button>
+    ${fbConfig().apiKey ? '<p style="margin:14px 0 0"><button class="textbtn dangerlink" data-act="forgetsheet">Delete my account…</button></p>' : ''}
+    <p class="muted legal"><a href="privacy">Privacy Policy</a> · <a href="terms">Terms of Service</a></p>`);
 }
 
 /* Deleting an account (AUTH.md, *Deleting*). The club's server does the
@@ -7716,7 +7795,9 @@ function knownClubs() {
   return out.sort((a, b) => a.name.localeCompare(b.name));
 }
 
-/* Anyone signed in, with a database to make it in. Signed out there is no
+/* Anyone signed in, with a database to make it in, whatever she is in the
+   club she is in now: a parent may start one too (the owner, 2026-10-14,
+   overruling UX-REVIEW-2.md, 9.4, which kept it from families). Signed out there is no
    uid for the rules to make an admin of; with no Firebase config a "club" is
    just this phone, which is what it already is. */
 const canNewClub = () => !!(me && fbConfig().apiKey);
@@ -7733,7 +7814,7 @@ function sheetClubSwitch() {
     <p class="muted">Forget removes this device's copy only. Deleting a club for everyone is done outside the app, by its owner — see below.</p>
     <button class="opt" data-act="goview" data-v="club"><b>Club home</b>
       <span class="rowsub">Teams, stats and settings for ${esc((acc().org || {}).name || 'this club')}</span></button>
-    ${canStartClub() ? `<button class="opt" data-act="newclub"><b>+ Start a new club</b>
+    ${canNewClub() ? `<button class="opt" data-act="newclub"><b>+ Start a new club</b>
       <span class="rowsub">You become its admin</span></button>` : ''}
     <p class="muted">To join someone else's club, ask its admin for an invite link.</p>`);
 }
@@ -7889,12 +7970,14 @@ function gameHeader(t, m) {
     <button class="ghmain" data-act="pickgame" aria-label="Which game" title="Which game">
       <span class="ghname">${gameTitle(t, m)}</span><span class="ghwhen">${esc(gameWhen(m))}</span></button>
     ${when}
-    <button type="button" class="sync ghsync" id="gsync" hidden></button>
+    <button class="sync ghsync" id="gsync" type="button" data-act="pendingsheet" hidden></button>
     <button class="tbback ghmore" data-act="gamemenu" aria-label="More for this game" title="More for this game">${DOTS_SVG}</button>`;
 }
 /* The ⋯ menu: the game's place in the season (the first game played is 1, so
    the latest is n of n and a game's number never changes as more are added),
-   the games either side, Edit for the team's coaches and admins, and Share.
+   the games either side, Edit for the team's coaches and admins, and Share
+   where there is a link to share or she may make one (UX-REVIEW-3.md, 16.6:
+   a parent's Share opened a sheet saying the coach had not set links up).
    The whole season is the title's picker (Which game), never a second one
    here (UX-REVIEW-2.md, 7.3). */
 function gameMenu(t, m) {
@@ -7909,7 +7992,7 @@ function gameMenu(t, m) {
     <p class="muted" style="margin-top:0">${[m.date ? shortDate(m.date) : '', n > 1 && i > -1 ? `game <span class="gb-hint">${n - i}/${n}</span> of the season` : ''].filter(Boolean).join(' · ') || 'No date yet'}</p>
     ${row(older, 'Older game')}${row(newer, 'Newer game')}
     ${canEditTeam(t.id) ? `<button class="opt" data-act="editmatch" data-id="${m.id}"><b>Edit this game</b><span class="rowsub">Opponent, date, kick-off, where, kit</span></button>` : ''}
-    <button class="opt" data-act="sharesheet"><b>Share</b><span class="rowsub">The read-only page for families: shirt numbers, never names</span></button>`;
+    ${canEditTeam(t.id) || t.share ? `<button class="opt" data-act="sharesheet"><b>Share</b><span class="rowsub">The read-only page for families: shirt numbers, never names</span></button>` : ''}`;
 }
 function sheetGameMenu() { const t = team(), m = match(); if (!t || !m) return; openSheet(gameMenu(t, m)); }
 
@@ -8735,17 +8818,16 @@ function viewFeed() {
      come from this page while it is open, a background tab or a phone with
      the page left up. */
   const following = ui.follow === m.id;
-  const canNotify = typeof Notification !== 'undefined';
   const closed = pushOn();
-  const offerPush = !closed && me && pushSupport() === 'ok' ? ' Turn notifications on for this phone, in Settings, to get them with TeamPlayHQ closed too.' : '';
-  const follow = st === 'done' ? '' : `<div class="card"><div class="spread"><h2>Notify me</h2>
-      <button class="btn ${following ? 'quiet ' : ''}sm" data-act="feedfollow" data-v="${following ? 0 : 1}">${following ? 'Stop' : 'Turn on'}</button></div>
+  const offerPush = !closed && me && pushSupport() === 'ok' ? ' For a closed phone, turn on notifications in Settings.' : '';
+  /* The promise, then one line of the catch (UX-REVIEW-3.md, 12.4 and 16.4;
+     build 156): it was "Notify me · Turn on" over a sentence about the page
+     being open in another tab, the mechanism and not what she gets. */
+  const follow = st === 'done' ? '' : `<div class="card"><div class="spread"><h2>Goals and the final whistle</h2>
+      <button class="btn ${following ? 'quiet ' : ''}sm" data-act="feedfollow" data-v="${following ? 0 : 1}">${following ? 'Stop' : 'Buzz me'}</button></div>
     <p class="muted" style="margin:6px 0 0">${closed
-      ? (following ? 'On for this game. Goals, kick-off, half time and full time reach this phone even with TeamPlayHQ closed, and any other phone you turned notifications on for.'
-        : 'Get goals, kick-off, half time and full time on this phone, even with TeamPlayHQ closed.')
-      : following
-        ? `On for this game. Goals, kick-off, half time and full time ${canNotify && Notification.permission === 'granted' ? 'pop up on this device' : 'buzz and show here'} while this page is open.${offerPush}`
-        : 'Get goals, kick-off, half time and full time on this device while this page is open, even in another tab.'}</p></div>`;
+      ? (following ? `On for this game: kick-off, goals, half time and full time, even with ${APP_NAME} closed.` : `Kick-off, goals, half time and full time, even with ${APP_NAME} closed.`)
+      : (following ? `On for this game, while ${APP_NAME} is open on this phone.` : `Works while ${APP_NAME} is open on this phone.`) + offerPush}</p></div>`;
 
   // once the coach has ended it, following is over and the feed becomes the record
   return `<div class="stack">
@@ -9807,16 +9889,37 @@ function setRsvp(tid, key, pid, v, note) {
   });
 }
 
-/* The chips for one child, in the sheet and on Next up. Tapping the answer
-   already given takes it back. */
+/* Her answer, for one child, in the sheet, on Next up and on her card
+   (UX-REVIEW-3.md, 12.1; build 156). Its own control, not the pill five
+   filters and a form also use: a parent could not tell from the look of a
+   chip whether tapping it told the coach something or only changed what she
+   was looking at. A segment, as the calendar's views are (which already
+   means "pick one"), 44px tall with a mark per answer, and pressed green for
+   Going, grey for Not going and orange for Maybe, so a glance says what she
+   said. `rsvpseg` is this control's class and nothing else's.
+   What became of the tap (12.2) is said without words: the pressed answer
+   carries a thin bar while it is still on her phone (aria-busy), moving
+   while it is on its way and held still with no signal, and the bar goes
+   the moment the club has it (rsvpBusy(), from paintSync()). */
+const RSVP_MARK = { yes: '✓', no: '✕', maybe: '?' };
 function rsvpChips(it, p, from) {
-  const r = rsvpOf(it.tid, rsvpKey(it), p.id);
-  /* An answer given with no signal is kept on the phone and goes when there is
-     one; the only sign used to be a badge in the corner that said "1 to send".
-     Said here, under the answer it is about (UX-REVIEW-3.md, 14.4). */
-  const w = pending.w[`rsvp/${it.tid}/${rsvpKey(it)}/${p.id}`], held = !!w && !w.refused;
-  return `<div class="chips rsvpchips">${Object.entries(RSVP).map(([v, label]) =>
-    `<button class="chip" type="button" data-act="rsvp" data-tid="${esc(it.tid)}" data-k="${esc(rsvpKey(it))}" data-pid="${esc(p.id)}" data-v="${v}" data-from="${from}" data-kind="${it.kind}" data-id="${esc(it.id)}" aria-pressed="${!!(r && r.v === v)}">${label}</button>`).join('')}</div>${held ? '<p class="muted rsvpheld">Saved on your phone, sent when there is signal</p>' : ''}`;
+  const key = rsvpKey(it), r = rsvpOf(it.tid, key, p.id);
+  const busy = !!pending.w[`rsvp/${it.tid}/${key}/${p.id}`];
+  return `<div class="seg rsvpseg" role="group" aria-label="${esc(goingQ(p))}">${Object.entries(RSVP).map(([v, label]) => {
+    const on = !!(r && r.v === v);
+    return `<button type="button" data-act="rsvp" data-tid="${esc(it.tid)}" data-k="${esc(key)}" data-pid="${esc(p.id)}" data-v="${v}" data-from="${from}" data-kind="${it.kind}" data-id="${esc(it.id)}" aria-pressed="${on}"${on && busy ? ` aria-busy="true" data-off="${online ? 0 : 1}"` : ''}><span class="rsvpmark" aria-hidden="true">${RSVP_MARK[v]}</span>${label}</button>`;
+  }).join('')}</div>`;
+}
+/* The bars on screen kept true without a redraw, which would close nothing
+   but would lose a note half typed: gone once the club has the answer,
+   moving or still as the signal comes and goes. */
+function rsvpBusy() {
+  if (typeof document === 'undefined' || !document.querySelectorAll) return;
+  for (const el of document.querySelectorAll('.rsvpseg [aria-busy="true"]')) {
+    const d = el.dataset || {};
+    if (!pending.w[`rsvp/${d.tid}/${d.k}/${d.pid}`]) { el.removeAttribute('aria-busy'); el.removeAttribute('data-off'); }
+    else el.setAttribute('data-off', online ? '0' : '1');
+  }
 }
 
 /* What the calendar row says about answers: her own children for a parent,
@@ -10470,6 +10573,10 @@ function calNextCard(it, multi, label) {
   const head = plainTitle(it) && t.name ? t.name : it.title;
   // a practice next is the next practice, with its plan a tap away for whoever plans it
   const plan = it.kind === 'practice' && canPlan(it.tid);
+  /* One filled button a card (UX-REVIEW-3.md, 12.6): where she is asked
+     whether her child is going, the answer is the thing to do, and Open the
+     game waits quietly beside Directions until the day itself. */
+  const asked = rsvpOpen(it) && myKids(it.tid).length && it.date !== todayStr();
   return `<div class="card calnext" style="--ev:${evHue(it, multi)}">
     <span class="muted">${label || (it.kind === 'practice' ? 'Next practice' : 'Next up')}${multi ? ' · ' + teamLabel(t) : ''}</span>
     <button class="plainbtn" data-act="calitem" data-k="${it.kind}" data-tid="${esc(it.tid)}" data-id="${esc(it.id)}" style="display:block;width:100%;text-align:left">
@@ -10478,10 +10585,10 @@ function calNextCard(it, multi, label) {
       ${bits.length ? `<p class="muted" style="margin:2px 0 0">${esc(bits.join(' · '))}</p>` : ''}
     </button>
     <div class="row wrap" style="margin-top:10px">
-      ${m ? `<button class="btn sm" data-act="calgame" data-tid="${esc(it.tid)}" data-id="${esc(it.id)}"${go}>Open the game</button>` : ''}
+      ${m ? `<button class="btn ${asked ? 'quiet ' : ''}sm" data-act="calgame" data-tid="${esc(it.tid)}" data-id="${esc(it.id)}"${go}>Open the game</button>` : ''}
       ${plan ? `<button class="btn sm" data-act="pracfromcal" data-tid="${esc(it.tid)}" data-id="${esc(it.id)}">${practiceById(it.tid, it.id) ? 'Open plan' : 'Plan'}</button>` : ''}
       ${it.venue && I ? `<a class="btn quiet sm" href="${esc(I.mapLink(venueAddress(it.venue)))}" target="_blank" rel="noopener">Directions</a>` : ''}
-      <button class="btn quiet sm" data-act="calitem" data-k="${it.kind}" data-tid="${esc(it.tid)}" data-id="${esc(it.id)}">Add to my calendar</button></div>
+      <button class="btn quiet sm" data-act="caladd" data-k="${it.kind}" data-tid="${esc(it.tid)}" data-id="${esc(it.id)}">Add to my calendar</button></div>
     ${nextAnswer(it)}
   </div>`;
 }
@@ -10746,15 +10853,34 @@ function sheetCalItem(kind, tid, id) {
     ${callOutBlock(it.key, tid, it.date)}
     ${rsvpBlock(it)}
     ${attendBlock(it)}
-    ${it.date ? `<div class="row wrap" style="margin-bottom:10px">
-      ${it.venue && I ? `<a class="btn quiet sm" href="${esc(I.mapLink(venueAddress(it.venue)))}" target="_blank" rel="noopener">Directions</a>` : ''}
-      ${I ? `<a class="btn quiet sm" href="${esc(I.googleLink(icsItem(it)))}" target="_blank" rel="noopener">Google Calendar</a>` : ''}
-      <button class="btn quiet sm" data-act="calics" data-k="${kind}" data-tid="${esc(tid)}" data-id="${esc(id)}">Apple or Outlook</button></div>` : ''}
+    ${it.venue && I ? `<div class="row wrap" style="margin-bottom:10px"><a class="btn quiet sm" href="${esc(I.mapLink(venueAddress(it.venue)))}" target="_blank" rel="noopener">Directions</a></div>` : ''}
+    ${it.date ? calAddPair(it) : ''}
     ${m ? `<button class="btn wide" data-act="calgame" data-tid="${esc(tid)}" data-id="${esc(id)}" style="margin-bottom:8px">Open the game</button>` : ''}
     ${m && edit ? `<button class="btn quiet wide" data-act="caleditgame" data-tid="${esc(tid)}" data-id="${esc(id)}" style="margin-bottom:8px">Edit this game’s details</button>
       <button class="btn quiet wide" data-act="copytext" data-v="${esc(opponentMessage(t, m))}">Copy a message for the other team</button>` : ''}
     ${e && e.kind === 'practice' && canPlan(tid) ? `<button class="btn wide" data-act="pracfromcal" data-tid="${esc(tid)}" data-id="${esc(id)}" style="margin-bottom:8px">${practiceById(tid, id) ? 'Open plan' : 'Plan'}</button>` : ''}
     ${e && edit ? `<button class="btn quiet wide" data-act="caledit" data-tid="${esc(tid)}" data-id="${esc(id)}">Edit</button>` : ''}`);
+}
+
+/* Putting one entry in her own calendar, said once (UX-REVIEW-3.md, 12.4
+   and 15.3): Add to my calendar used to open the entry's whole sheet, where
+   Google Calendar and Apple or Outlook were two of three equal buttons
+   beside Directions. Now the card's button opens these two choices alone,
+   and the sheet groups the same pair under the same words. */
+function calAddPair(it, wide) {
+  const I = ICS(), cls = wide ? 'btn quiet wide' : 'btn quiet sm';
+  return `<p class="lbl" style="margin:4px 0 6px">Add to your calendar</p>
+    <div class="${wide ? 'stack' : 'row wrap'}" style="margin-bottom:10px">
+      ${I ? `<a class="${cls}" href="${esc(I.googleLink(icsItem(it)))}" target="_blank" rel="noopener">Google Calendar</a>` : ''}
+      <button class="${cls}" data-act="calics" data-k="${it.kind}" data-tid="${esc(it.tid)}" data-id="${esc(it.id)}">Apple, Outlook or another</button></div>`;
+}
+function sheetCalAdd(kind, tid, id) {
+  const it = calItems([tid]).find(x => x.kind === kind && x.id === id);
+  if (!it || !it.date) { closeSheet(); return; }
+  openSheet(`<h3>${esc(it.title)}</h3>
+    <p class="muted" style="margin-top:0">${esc([dayLabel(it.date), it.start ? niceTime(it.start) : 'All day'].join(' · '))}</p>
+    ${calAddPair(it, true)}
+    <p class="muted" style="margin-top:0">A copy of this one entry. To have every change reach your calendar by itself, use <b>In your own calendar</b>, at the foot of the Calendar.</p>`);
 }
 
 /* The add/edit sheet keeps its fields in calForm and reads them back before
@@ -11002,7 +11128,7 @@ function viewFamSeason(t) {
   if (detailsBlocked()) return `<div class="stack">${todo}</div>`;
   const kids = [...players(t).filter(isMine).map(p => ({ p })), ...players(t).filter(p => iFan(p) && !isMine(p)).map(p => ({ p, sup: true }))];
   return `<div class="stack">
-    ${todo}${kids.map(({ p, sup }) => kidSeasonCard(t, p, sup, false)).join('')}
+    ${kids.map(({ p, sup }) => kidSeasonCard(t, p, sup, false)).join('')}${todo}
     ${nextUpBlock(t)}
     <button class="textbtn" data-act="teamcal" data-tid="${esc(t.id)}" style="align-self:flex-start">${teamLabel(t)} on the calendar</button>
     ${seasonGames(t, ms)}${elsewhereCards()}
@@ -11456,9 +11582,12 @@ function kidSeasonCard(t, p, sup, withNext) {
           <span class="rowsub">${[relDay(it.date) || dayLabel(it.date), niceTime(it.start), it.venue].filter(Boolean).map(esc).join(' · ')}</span></span>
         <span class="tag ${it.kind}">${CAL_KIND[it.kind]}</span></button>${asks(it) ? `<div class="minersvp">${rsvpChips(it, p, 'mine')}</div>` : ''}`;
   const ns = sup ? null : sessAll().find(s => !sessPast(s) && !s.called && (b => b && b.st !== 'out' && b.st !== 'no')(bookOf(s.id, p.id)));
-  /* The sheet behind her name is for her family (and herself): a fan has nothing
-     there to do but stop following, which stays on the card. */
-  const door = !sup && kidSheetHas(t, p, ms);
+  /* Her name opens her own sheet (UX-REVIEW-3.md, 12.4 and 14.1; build 156): "Fans
+     (1)" was the biggest button on the card, for something done once a season.
+     The sheet is for her family (and herself): a fan has nothing there to do but
+     stop following, which stays on the card. It holds the family and friends who
+     follow her, her details, and where she has played (14.2). */
+  const door = !sup && (fbConfig().apiKey && mayFanAsk(t.id, p) || kidPositions(ms, p.id).length > 0);
   const who = `${p.photo ? `<img class="crest" src="${esc(p.photo)}" alt="">` : `<span class="crest blank">${esc(p.number ?? '')}</span>`}
         <span><b style="font-size:18px">${esc(p.name)}</b>
           <span class="rowsub">${esc(p.number ? '#' + p.number + ' · ' : '')}${teamLabel(t)}${sup ? ' · you’re her fan' : ''}</span></span>`;
@@ -11480,34 +11609,11 @@ function kidSeasonCard(t, p, sup, withNext) {
           <span class="rowsub">${[relDay(ns.date) || dayLabel(ns.date), niceTime(ns.start), sessPlace(ns), 'with ' + ns.coachName, BOOK[bookOf(ns.id, p.id).st]].filter(Boolean).map(esc).join(' · ')}</span></span>
         <span class="tag session">Session</span></button>` : ''}`.trim();
   return `<div class="card">
-    ${door ? `<button class="kidhead go" type="button" data-act="kidsheet" data-tid="${esc(t.id)}" data-pid="${esc(p.id)}">${who}</button>` : `<div class="row">${who}</div>`}
+    ${door ? `<button class="plainbtn go kidhead" type="button" data-act="kidsheet" data-tid="${esc(t.id)}" data-pid="${esc(p.id)}">${who}</button>` : `<div class="row">${who}</div>`}
     <p class="muted" style="margin:10px 0 0">${kidSeasonLine(t, p, ms)}</p>
     ${now}
     ${rows ? `<div class="plist" style="margin-top:10px">${rows}</div>` : ''}
     ${sup ? `<button class="btn quiet wide" data-act="fanleave" data-tid="${t.id}" data-pid="${p.id}" style="margin-top:10px">Stop following ${esc(firstName(p))}</button>` : ''}</div>`;
-}
-/* What is behind her name on the card (UX-REVIEW-3.md, 14.1): where she has
-   played, the family and friends who follow her, her details. Her family's, or
-   her own for a player with her own sign-in; a coach or admin who is neither
-   has Players. */
-const fansOn = (tid, p) => !!fbConfig().apiKey && mayFanAsk(tid, p);
-const kidDetails = p => { const c = kidOf(p); return c && mayEditKid(c) ? c : null; };
-const kidSheetHas = (t, p, ms) => fansOn(t.id, p) || !!kidDetails(p) || kidPositions(ms, p.id).length > 0;
-function sheetChild(tid, pid) {
-  const t = state.teams[tid], p = t && (t.players || {})[pid];
-  if (!p || !isMine(p)) return;
-  const you = isMe(p), who = you ? 'you' : esc(firstName(p));
-  const nf = Object.keys(p.fans || {}).length, c = kidDetails(p), pos = kidPositions(teamMatches(tid), pid);
-  const door = (act, label, extra = '', n = '') => `<button class="prow go" type="button" data-act="${act}" ${extra} style="grid-template-columns:1fr auto">
-      <span>${label}</span><span class="muted">${n}</span></button>`;
-  openSheet(`<h3>${esc(p.name)}</h3>
-    <p class="muted" style="margin-top:0">${esc(p.number ? '#' + p.number + ' · ' : '')}${teamLabel(t)}</p>
-    ${pos.length ? `<p class="lbl">Where ${you ? 'you have' : who + ' has'} played</p><p style="margin:0 0 14px">${pos.map(esc).join(' · ')}</p>` : ''}
-    <div class="plist">
-      ${fansOn(tid, p) ? door('fansheet', `Family and friends who follow ${who}`, `data-tid="${esc(tid)}" data-pid="${esc(pid)}"`, nf || '') : ''}
-      ${c ? door('kidopen', `${you ? 'Your' : 'Her'} details`, `data-id="${esc(c.id)}"`) : ''}
-    </div>
-    <button class="btn quiet wide" data-act="closesheet" style="margin-top:12px">Close</button>`);
 }
 /* Her children in her other clubs, from each club's cut-down copy
    (elsewhereKids(): no minutes until that club is opened). On a family's
@@ -14743,7 +14849,7 @@ function sheetSess(id) {
     ${s.date ? `<div class="row wrap" style="margin-bottom:10px">
       ${sessAddress(s) && I ? `<a class="btn quiet sm" href="${esc(I.mapLink(sessAddress(s)))}" target="_blank" rel="noopener">Directions</a>` : ''}
       ${I ? `<a class="btn quiet sm" href="${esc(I.googleLink(sessIcs(s)))}" target="_blank" rel="noopener">Google Calendar</a>` : ''}
-      <button class="btn quiet sm" data-act="sessics" data-id="${esc(s.id)}">Apple or Outlook</button></div>` : ''}
+      <button class="btn quiet sm" data-act="sessics" data-id="${esc(s.id)}">Apple, Outlook or another</button></div>` : ''}
     ${run ? `<button class="btn quiet wide" data-act="sesstell" data-id="${esc(s.id)}" style="margin-bottom:8px">Tell the families</button>
       <button class="btn quiet wide" data-act="sessedit" data-id="${esc(s.id)}" style="margin-bottom:8px">Edit</button>
       <button class="btn quiet wide" data-act="sesscall" data-id="${esc(s.id)}" style="margin-bottom:8px">${s.called ? 'It is back on' : 'Call it off'}</button>
@@ -18901,7 +19007,7 @@ function sheetShare() {
 
       <p class="muted">Anyone with a link can read it. Nobody can change anything, and no child's name is published — only shirt numbers.</p>
       ${ro ? '' : `<button class="btn danger wide" data-act="rotateshare">Make a new link and kill the old one</button>`}`
-      : ro ? `<p class="muted" style="margin-top:0">This team's coach has not set up parent links yet.</p>`
+      : ro ? `<p class="muted" style="margin-top:0">There is no link to share for this team yet.</p>`
       : `<p class="muted" style="margin-top:0">Creates a long random address. Only people you send it to can find it.</p>
       <button class="btn wide" data-act="makeshare">Create the share links</button>`}
     ${m && !ro ? `<p class="lbl" style="margin-top:16px">For the other team</p>
@@ -18926,36 +19032,35 @@ const authHero = (title, sub) => `<div class="auth-hero"><div class="auth-pitch"
   <img class="auth-crest" src="icon-192.png" alt="" width="56" height="56">
   <h3>${title}</h3>${sub ? `<p>${sub}</p>` : ''}</div>`;
 
-// which email way the sheet shows; a link is what parents should be pointed at (AUTH.md, Sign-in)
-let signinMode = 'link';
+/* Which email way the sheet shows; a link is what parents should be pointed
+   at (AUTH.md, Sign-in), except in a Home Screen app, where the link opens in
+   the browser and signs her in there instead (UX-REVIEW-3.md, 13.4): there it
+   leads with the companies and a password. Null until she picks. */
+let signinMode = null;
+const signinWay = () => signinMode || (standalone() ? 'pass' : 'link');
+// a sign-in link opened where its address was not kept: the sheet asks for it
+let linkBack = '';
 
 function sheetSignIn() {
+  // signed in, the same door is her account (UX-REVIEW-3.md, 18.2)
+  if (me) { sheetAccount(); return; }
   if (!authMod) { toast('Sign-in is not available on this build'); return; }
-  const u = fbAuth && fbAuth.currentUser;
-  const btn = (act, k) => `<button class="auth-btn auth-${k}" data-act="${act}" data-v="${k}">${AUTH_LOGO[k]}<span>${act === 'signin-oauth' ? 'Continue with' : 'Add'} ${esc(SIGNIN_PROVIDERS[k].label)}</span></button>`;
-  if (me) {
-    // what this account can sign in with, and what else the club has switched on
-    const have = u ? (u.providerData || []).map(x => x.providerId) : [];
-    const more = u ? signInProviders().filter(k => !have.includes(SIGNIN_PROVIDERS[k].id)) : [];
-    openSheet(`<div class="auth-me">
-        ${me.photo ? `<img class="auth-avatar" src="${esc(me.photo)}" alt="" referrerpolicy="no-referrer">` : `<span class="auth-avatar">${esc(initials(me.name))}</span>`}
-        <div><h3>Your account</h3><div class="auth-who"><b>${esc(me.name)}</b>${me.email && !hiddenEmail(me.email) ? `<span>${esc(me.email)}</span>` : ''}</div></div>
-      </div>
-      <p class="muted" style="margin-top:0">Anything you log is stamped with this account rather than a typed name.</p>
-      ${hiddenEmail(me.email) ? `<div class="auth-note">Apple is hiding your email from the club. An invite sent to your own address will not open on this account: sign in with that address instead (a link, a password or Google), or ask for the invite to be sent to this one.</div>` : ''}
-      <label class="field"><span>Your name, as the club sees it</span>
-        <div class="auth-inline"><input type="text" id="acctName" value="${esc(me.name)}" autocomplete="name"><button class="btn quiet" data-act="savename">Save</button></div></label>
-      ${have.length ? `<p class="lbl" style="margin-top:16px">Ways you sign in</p>
-        <ul class="auth-ways">${have.map(id => `<li>${AUTH_LOGO[providerKey(id)] || ''}<span>${esc(providerLabel(id))}</span><span class="auth-tick" aria-label="on">✓</span></li>`).join('')}</ul>` : ''}
-      ${more.length ? `<div class="auth-btns">${more.map(k => btn('signin-add', k)).join('')}</div>
-        <p class="muted" style="margin-top:0">Adding one means you can sign in with either and stay the same person to the club.</p>` : ''}
-      <button class="btn danger wide" data-act="signout" style="margin-top:8px">Sign out</button>`);
+  if (linkBack) {
+    openSheet(`<h3>Finish signing in</h3>
+      <p class="muted" style="margin-top:0">Type the email the link was sent to.</p>
+      <label class="field"><span>Email</span><input type="email" id="authEmail" placeholder="you@example.com" autocapitalize="off" autocorrect="off" autocomplete="email" value=""></label>
+      <button class="btn wide auth-go" data-act="signin-finish">Sign in</button>`);
     return;
   }
+  const btn = (act, k) => `<button class="auth-btn auth-${k}" data-act="${act}" data-v="${k}">${AUTH_LOGO[k]}<span>${act === 'signin-oauth' ? 'Continue with' : 'Add'} ${esc(SIGNIN_PROVIDERS[k].label)}</span></button>`;
   const keys = signInProviders();
   const mail = pendingLink && pendingLink.email ? pendingLink.email : String(($('#authEmail') || {}).value || '');
-  const pass = signinMode === 'pass';
-  openSheet(`${authHero(pendingLink ? 'Nearly there' : 'Welcome to the touchline', pendingLink ? '' : 'Sign in to see your club, your teams and your calendar.')}
+  const pass = signinWay() === 'pass';
+  /* The welcome and lock cards are a pitch-green hero already; a second one
+     over the first read as two screens (UX-REVIEW-3.md, 13.2). */
+  const heroBelow = awaitingSignIn() || needsSignIn() || denied;
+  const away = linkElsewhere();
+  openSheet(`${pendingLink ? authHero('Nearly there', '') : heroBelow ? '<h3>Sign in</h3>' : authHero('Welcome to the touchline', 'Sign in to see your club, your teams and your calendar.')}
     ${pendingLink ? `<div class="auth-note"><b>${esc(pendingLink.email || 'That email')}</b> already has an account here. Sign in the way you did before, and ${esc(pendingLink.label)} will be added to it, so either works from now on. By a link to your email, it opens a fresh page, so add ${esc(pendingLink.label)} from <b>Your account</b> once you are in.</div>` : ''}
     ${keys.length ? `<div class="auth-btns">${keys.map(k => btn('signin-oauth', k)).join('')}</div>
     <div class="auth-or"><span>or use your email</span></div>` : ''}
@@ -18968,8 +19073,10 @@ function sheetSignIn() {
       <button class="btn wide auth-go" data-act="signin-pass">Sign in</button>
       <div class="auth-links"><button class="auth-link" data-act="signup-pass">Create an account</button><button class="auth-link" data-act="signin-reset">Forgot your password?</button></div>`
     : `<button class="btn wide auth-go" data-act="signin-link">Send me a sign-in link</button>
-      <p class="muted auth-hint">No password to forget: tap the link in the email and you are in.</p>`}
-    <p class="auth-fine">Optional for now — everything works signed out. Signing in means what you log carries a verified name instead of one anybody could type.</p>`);
+      <p class="muted auth-hint">${away || 'No password to forget: tap the link in the email and you are in.'}</p>`}
+    ${/* optional only where it is: a lone coach's own phone, whose club nobody has locked (13.2) */ ''}
+    <p class="auth-fine">${!gated() && wsCode() ? 'Optional for now — everything works signed out. Signing in means what you log carries a verified name instead of one anybody could type.'
+      : `If your invitation came by email, use that address; otherwise ${keys.includes('google') ? 'any Google account or email' : 'any email'} works.`}</p>`);
 }
 
 function sheetWho() {
@@ -19366,9 +19473,9 @@ function careForm(r) {
       <label class="field"><span>${i ? 'Another contact' : 'Who to call'}</span><input type="text" id="kC${i}n" maxlength="80" value="${esc(x.name || '')}" placeholder="${i ? 'Optional' : 'Name'}"></label>
       <label class="field"><span>Phone</span><input type="tel" id="kC${i}p" maxlength="40" value="${esc(x.phone || '')}"></label>
     </div>
-    <label class="field"><span>Who they are to her</span><input type="text" id="kC${i}r" maxlength="40" value="${esc(x.rel || '')}" placeholder="Mum, grandad, neighbour"></label>`; };
+    <label class="field"><span>Who they are to your child</span><input type="text" id="kC${i}r" maxlength="40" value="${esc(x.rel || '')}" placeholder="Mum, grandad, neighbour"></label>`; };
   return `<p class="lbl">At the pitch</p>
-    <p class="muted" style="margin-top:0">Only her team's coaches and the club's admins see this, never other families. Leave a box empty for none.</p>
+    <p class="muted" style="margin-top:0">Only your child's coaches and the club's admins see this, never other families. Leave a box empty for none.</p>
     ${row(0)}${row(1)}
     ${CARE_FIELDS.map(([k, l]) => `<label class="field"><span>${l}</span><textarea id="kCare_${k}" rows="1" maxlength="${k === 'doctor' ? 200 : 500}">${esc((r && r[k]) || '')}</textarea></label>`).join('')}`;
 }
@@ -19443,9 +19550,15 @@ function sheetKid(cid) {
 function kidCards() {
   const todo = myKidsTodo();
   const loose = myClubKids().filter(c => !kidUnfinished(c) && !Object.keys(c.teams || {}).length);
+  /* One card per child, carrying what the strip over every other screen
+     says (the deadline, and what is shut past it): on the screens that draw
+     these the strip is left off, so she is asked once, not in three voices
+     (UX-REVIEW-3.md, 13.8). */
+  const { by } = detailsSet(), shutNow = detailsBlocked();
+  const when = by && !shutNow ? ` The club needs them by ${esc(dayLabel(by))}.` : shutNow ? ' Until they are finished, the app shows your calendar and messages only.' : '';
   return todo.map(c => `<div class="card"><b>Check ${esc(c.first || 'your child')}’s details</b>
-      <p class="muted" style="margin:6px 0 10px">The club has her on its records${kidMissing(c).length ? ` and still needs ${wordsAnd(kidMissing(c).map(x => x === 'someone to call' ? x : 'her ' + x))}` : ''}. Only you can confirm them.</p>
-      <button class="btn wide" data-act="kidopen" data-id="${esc(c.id)}">Check her details</button></div>`).join('')
+      <p class="muted" style="margin:6px 0 10px">The club has ${esc(c.first || 'your child')} on its records${kidMissing(c).length ? ` and still needs ${wordsAnd(kidMissing(c).map(x => x === 'someone to call' ? x : 'their ' + x))}` : ''}. Only you can confirm them.${when}</p>
+      <button class="btn wide" data-act="kidopen" data-id="${esc(c.id)}">Check the details</button></div>`).join('')
     + loose.map(c => `<div class="card"><div class="row"><span class="crest blank">${esc((c.first || '?').slice(0, 1))}</span>
       <span><b style="font-size:18px">${esc(kidName(c))}</b><span class="rowsub">In the club · on no team yet</span></span></div>
       <button class="btn quiet wide" data-act="kidopen" data-id="${esc(c.id)}" style="margin-top:10px">Her details</button></div>`).join('');
@@ -20054,7 +20167,7 @@ function regForm() {
     <h2>${esc(d.name)}</h2>
     ${r && r.st === 'draft' ? `<p class="muted" style="margin-top:0">The club started this for you. Check it, fill in what is missing and send it.</p>` : ''}
     <div class="grid2">
-      <label class="field"><span>Her first name</span><input type="text" id="kFirst" maxlength="60" value="${esc(c.first || '')}"></label>
+      <label class="field"><span>First name</span><input type="text" id="kFirst" maxlength="60" value="${esc(c.first || '')}"></label>
       <label class="field"><span>Last name</span><input type="text" id="kLast" maxlength="60" value="${esc(c.last || '')}"></label>
     </div>
     <label class="field"><span>Birth date</span><input type="date" id="kBorn" value="${esc(c.born || '')}"></label>
@@ -20082,7 +20195,7 @@ async function sendReg() {
   const first = $('#kFirst').value.trim().slice(0, 60), last = $('#kLast').value.trim().slice(0, 60), born = $('#kBorn').value;
   const gEl = document.querySelector('[data-act="pickone"][data-grp="kgender"][aria-pressed="true"]');
   const gender = gEl && KID_GENDER[gEl.dataset.v] ? gEl.dataset.v : (c.gender || '');
-  if (!first) { toast('Her first name, please'); return; }
+  if (!first) { toast('A first name, please'); return; }
   if (!born || !BORN_OK.test(born) || !gender) { toast('Her birth date and gender, please: the club needs both'); return; }
   const why = progFits(d, born, gender);
   if (why) { toast(why); return; }
@@ -20293,41 +20406,50 @@ function dropFan(tid, pid, u) {
   if (mayGrant(tid)) syncTeamFans(tid);
   saveLocal();
 }
-/* A fan link, from either of two sheets. Her family's (from 'sheet', behind
-   her name on the card) says what a fan is first, lists who follows her and
-   makes the link with one button, one person for two weeks unless she opens
-   the choice (UX-REVIEW-3.md, 14.1: two dropdowns before the one thing she
-   came to do). Her coach's, on the player's sheet (from 'player'), keeps the
-   choices in view. */
 function fanCard(t, p, from) {
-  const staff = mayGrant(t.id), drop = mayFanDrop(t.id, p), simple = from === 'sheet';
+  const staff = mayGrant(t.id), drop = mayFanDrop(t.id, p);
   const accounts = Object.keys(p.fans || {});
   const named = u => { const m = (acc().members || {})[u] || {}; return String((p.fanNames || {})[u] || '') || m.name || m.email || 'A fan'; };
   const links = fanLinks(p.id);
-  const whom = esc(isMe(p) ? 'you' : firstName(p));
-  const about = `For a grandparent, an aunt, a family friend. A fan sees the calendar, the games as they happen, the scores and the team's notices, and ${esc(firstName(p))} by name; she doesn't say who is going, message the coaches or book sessions. ${staff ? 'You made it, so whoever opens it is let in.' : 'A coach of the team says yes before they see anything.'} ${drop ? 'You can take a fan away here at any time.' : ''}`;
-  const people = `${accounts.length ? `<p style="margin:0 0 6px">${accounts.length} ${accounts.length === 1 ? 'fan follows' : 'fans follow'} ${whom}.</p>` : ''}
+  // what a fan is first, then who already follows her, then the one button, its two choices at their defaults under it (UX-REVIEW-3.md, 14.1)
+  return `<p class="muted" style="margin-top:0">For a grandparent, an aunt, a family friend. A fan sees the calendar, the games as they happen, the scores and the team's notices, and ${esc(isMe(p) ? 'you' : firstName(p))} by name; she doesn't say who is going, message the coaches or book sessions. ${staff ? 'You made it, so whoever opens it is let in.' : 'A coach of the team says yes before they see anything.'} ${drop ? 'You can take a fan away here at any time.' : ''}</p>
+    <p class="lbl">Family and friends who follow ${esc(isMe(p) ? 'you' : firstName(p))}${accounts.length ? ' · ' + accounts.length : ''}</p>
+    ${accounts.length ? '' : '<p style="margin:0 0 8px">Nobody yet.</p>'}
     ${accounts.map(u => `<div class="prow" style="grid-template-columns:1fr auto"><span><span class="pname">${esc(named(u))}</span>
-      <span class="rowsub">Follows ${whom}</span></span>
+      <span class="rowsub">Follows ${esc(isMe(p) ? 'you' : firstName(p))}</span></span>
       ${drop ? `<button class="btn quiet sm" data-act="fandrop" data-tid="${t.id}" data-pid="${p.id}" data-uid="${esc(u)}" data-from="${from}">Remove</button>` : ''}</div>`).join('')}
     ${links.map(v => `<div class="codebox">${esc(inviteLink(v.id))}</div>
       <div class="row wrap" style="margin-bottom:8px">${linkButtons(inviteLink(v.id), { ...inviteWords({ role: 'fan', teamName: t.name || '', playerNo: p.number }), invite: v.id, small: true })}
         <button class="btn quiet sm" data-act="faninvdrop" data-tid="${t.id}" data-pid="${p.id}" data-id="${esc(v.id)}" data-from="${from}">Withdraw</button>
-        <span class="muted">${esc(usesLine(v.max || 1, v.expiresAt))}</span></div>`).join('')}`;
-  if (simple) return `<p class="muted" style="margin-top:0">${about}</p>
-    ${people}
-    <button class="btn wide" data-act="faninvite" data-tid="${t.id}" data-pid="${p.id}" data-from="${from}" style="margin:8px 0">${links.length ? 'Invite another grandparent or friend' : 'Invite a grandparent or friend'}</button>
-    <details class="wtable" style="margin-bottom:12px"><summary>One person, for ${INVITE_DAYS} days: change that</summary>${limitFields('fanL', { uses: 1 })}</details>`;
-  return `<p class="lbl">Fans</p>
-    ${people}
-    ${limitFields('fanL', { uses: 1 })}
-    <button class="btn quiet wide" data-act="faninvite" data-tid="${t.id}" data-pid="${p.id}" data-from="${from}" style="margin-bottom:8px">${links.length ? 'Another fan link' : 'Make a fan link'}</button>
-    <p class="muted" style="margin-top:0">${about}</p>`;
+        <span class="muted">${esc(usesLine(v.max || 1, v.expiresAt))}</span></div>`).join('')}
+    <button class="btn quiet wide" data-act="faninvite" data-tid="${t.id}" data-pid="${p.id}" data-from="${from}" style="margin:8px 0">${links.length ? 'Invite someone else' : 'Invite a grandparent or friend'}</button>
+    ${limitFields('fanL', { uses: 1 })}`;
+}
+/* One child's own sheet, from her name on her card: who follows her, and
+   the link to ask someone else to (UX-REVIEW-3.md, 14.1), and her details in
+   the club's records where her family may open them (sheetKid()). */
+function sheetChild(tid, pid) {
+  const t = state.teams[tid], p = t && (t.players || {})[pid];
+  if (!mayFanAsk(tid, p)) return;
+  const n = Object.keys(p.fans || {}).length, who = isMe(p) ? 'you' : firstName(p);
+  const c = p.child ? clubKids()[p.child] : null;
+  // where she has played is here, not on the card (14.2): "60 at Midfield" was a second count nobody asked for
+  const pos = kidPositions(teamMatches(tid), pid);
+  openSheet(`<h3>${esc(p.name)}</h3>
+    <p class="muted" style="margin-top:0">${esc(p.number ? '#' + p.number + ' · ' : '')}${teamLabel(t)}</p>
+    ${pos.length ? `<p class="lbl">Where ${esc(isMe(p) ? 'you have' : who + ' has')} played</p><p style="margin:0 0 14px">${pos.map(esc).join(' · ')}</p>` : ''}
+    <div class="plist"><button class="prow go" type="button" data-act="fansheet" data-tid="${t.id}" data-pid="${p.id}" style="grid-template-columns:1fr auto">
+      <span><span class="pname">Family and friends who follow ${esc(who)}</span>
+        <span class="rowsub">${n ? `${n} ${n === 1 ? 'follows' : 'follow'} ${esc(who)}` : 'Invite a grandparent or friend'}</span></span>
+      <span class="pmins">${n}</span></button>
+    ${c && !isMe(p) && kidFamily(c) ? `<button class="prow go" type="button" data-act="kidopen" data-id="${esc(c.id)}" style="grid-template-columns:1fr">
+      <span><span class="pname">${esc(firstName(p))}’s details</span><span class="rowsub">${esc(kidStatus(c))}</span></span></button>` : ''}</div>
+    <button class="btn quiet wide" data-act="closesheet" style="margin-top:12px">Done</button>`);
 }
 function sheetFans(tid, pid) {
   const t = state.teams[tid], p = t && (t.players || {})[pid];
   if (!mayFanAsk(tid, p)) return;
-  openSheet(`<h3>Family and friends who follow ${esc(isMe(p) ? 'you' : firstName(p))}</h3>
+  openSheet(`<h3>${esc(isMe(p) ? 'Your fans' : 'Fans of ' + firstName(p))}</h3>
     ${fanCard(t, p, 'sheet')}
     <button class="btn quiet wide" data-act="closesheet">Done</button>`);
 }
@@ -22298,15 +22420,11 @@ function onAct(e) {
       closeSheet(); render(); toast(changed ? `Saved as version ${rec.v}: families are asked again` : 'Saved'); return;
     }
   }
-  if (a === 'kidsheet') {
-    const t2 = state.teams[d.tid], p = t2 && (t2.players || {})[d.pid];
-    if (!p || !isMine(p)) { toast('Her family only'); return; }
-    sheetChild(d.tid, d.pid); return;
-  }
-  if (a === 'fansheet' || a === 'faninvite' || a === 'faninvdrop') {
+  if (a === 'fansheet' || a === 'kidsheet' || a === 'faninvite' || a === 'faninvdrop') {
     const t2 = state.teams[d.tid], p = t2 && (t2.players || {})[d.pid];
     if (!mayFanAsk(d.tid, p)) { toast('Her family, her coach or an admin asks for a fan'); return; }
     if (a === 'fansheet') { sheetFans(d.tid, d.pid); return; }
+    if (a === 'kidsheet') { sheetChild(d.tid, d.pid); return; }
     if (a === 'faninvdrop') { dropFanLink(d.pid, d.id); toast('Withdrawn — the link no longer works'); fanRedraw(d.tid, d.pid, d.from); return; }
     makeFanLink(d.tid, d.pid, readLimits('fanL', { uses: 1 })).then(ok => { if (ok) fanRedraw(d.tid, d.pid, d.from); });
     return;
@@ -22489,14 +22607,30 @@ function onAct(e) {
     }).catch(err => toast(authMessage(err)));
     return;
   }
-  if (a === 'signin-link') {
-    const mail = $('#authEmail').value.trim();
-    if (!mail) { toast('Enter your email first'); return; }
+  if (a === 'signin-link' || a === 'signin-resend') {
+    const mail = a === 'signin-resend' ? linkSentTo() : $('#authEmail').value.trim();
+    if (!mail) { if (a === 'signin-resend') sheetSignIn(); else toast('Enter your email first'); return; }
+    if (!authMod) { toast('Sign-in is not available on this build'); return; }
     // an invite rides along, so the link still works if it is opened on another device
     const back = invite ? inviteLink(invite.id) : location.origin + location.pathname;
+    // the card under the sheet becomes the sent state (linkSentCard), so the toast is only a nod
     authMod.sendSignInLinkToEmail(fbAuth, mail, { url: back, handleCodeInApp: true })
-      .then(() => { localStorage.setItem('sm.emailForLink', mail); closeSheet(); toast('Check your email'); })
+      .then(() => { localStorage.setItem('sm.emailForLink', mail); closeSheet(); toast(a === 'signin-resend' ? 'Sent again' : 'Check your email'); render(); })
       .catch(err => toast(authMessage(err)));
+    return;
+  }
+  if (a === 'signin-other') {
+    try { localStorage.removeItem('sm.emailForLink'); } catch (e) { }
+    signinMode = 'link'; render(); sheetSignIn(); return;
+  }
+  // back from a link on a phone that did not send it (a Home Screen app's own storage): her address, typed into the sheet
+  if (a === 'signin-finish') {
+    const mail = String(($('#authEmail') || {}).value || '').trim();
+    if (!mail) { toast('Enter your email first'); return; }
+    if (!authMod || !linkBack) return;
+    authMod.signInWithEmailLink(fbAuth, mail, linkBack)
+      .then(() => { linkBack = ''; try { localStorage.removeItem('sm.emailForLink'); history.replaceState(null, '', location.pathname); } catch (e) { } closeSheet(); toast('Signed in'); })
+      .catch(err => toast(/invalid-email|user-mismatch/.test((err && err.code) || '') ? 'That is not the address the link was sent to' : 'That sign-in link did not work'));
     return;
   }
   if (a === 'signin-pass' || a === 'signup-pass') {
@@ -23078,6 +23212,7 @@ function onAct(e) {
   if (a === 'personcal') { if (!awayOn() || !d.uid) return; sheetPersonCal(d.uid); return; }
   if (a === 'mycalf') { ui.myCal = String(d.v || 'all'); ui.calN = {}; saveUi(); render(); return; }
   if (a === 'calitem') { sheetCalItem(d.k, d.tid, d.id); return; }
+  if (a === 'caladd') { sheetCalAdd(d.k, d.tid, d.id); return; }
   if (a === 'calgame') {
     const g = state.matches[d.id]; if (!g) return;
     // back goes where she came from: the Calendar, or the team's Season and its cards
@@ -23333,7 +23468,8 @@ function onAct(e) {
      it writes whole teams and games. A backup used to replace local state
      wholesale — access included — and now goes through the same merge as the
      bulk import, which only ever adds what is missing. */
-  if (a === 'pendingsheet') { sheetPending(); return; }
+  // the badge is on a locked phone too, and the list names what was changed
+  if (a === 'pendingsheet') { if (!needsSignIn()) sheetPending(); return; }
   if (a === 'pendingretry') {
     for (const e of Object.values(pending.w)) delete e.refused;
     sess.refused = {}; saveSess();

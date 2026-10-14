@@ -136,7 +136,10 @@ const club = () => ({
 
     h = as('kid', 'mine');
     check('a player with her own sign-in answers for herself', chipsFor(h, 'e_e1', 'p2'), true);
-    check('— her card has her name as a door; the fans are behind it, not a button (14.1)', /data-act="kidsheet" data-tid="t1" data-pid="p2"/.test(h) && !/>Your fans|data-act="fansheet"/.test(h), true);
+    check('— her name opens her own sheet, her fans a row in it (UX-REVIEW-3.md, 14.1)', /data-act="kidsheet" data-tid="t1" data-pid="p2"/.test(h) && !/data-act="fansheet"/.test(h), true);
+    A.click({ act: 'kidsheet', tid: 't1', pid: 'p2' });
+    check('— which reads as hers', />Family and friends who follow you</.test(String(A.dom.node('#sheet').innerHTML || '')), true);
+    A.closeSheet();
     h = as('nan', 'mine');
     check('a fan sees her player\'s next thing', /Next up<\/span>[\s\S]*?<span class="tag practice">/.test(h), true);
     check('— and answers nothing', anyChips(h), false);
@@ -150,6 +153,10 @@ const club = () => ({
     check('her child on top, then the next thing', h.indexOf('Rosa Delgado') < h.indexOf('Next up') && h.indexOf('Next up') < h.indexOf('<h2>Games</h2>'), true);
     check('with the answer on it', chipsFor(h, 'e_e1', 'p1'), true);
     check('and the next game, with its own', /Next game<\/span>/.test(h) && chipsFor(h, 'g_g2', 'p1'), true);
+    // one filled button a card (UX-REVIEW-3.md, 12.6): where she is asked, her answer is the thing to do
+    const gameCard = x => (x.match(/Next game<\/span>[\s\S]*?<\/div>\s*<\/div>/) || [''])[0];
+    check('— so Open the game waits quietly beside it', /<button class="btn quiet sm" data-act="calgame"/.test(gameCard(h)), true);
+    check('— while the coach, asked nothing, keeps it filled', /<button class="btn sm" data-act="calgame"/.test(gameCard(as('jaz', 'season'))), true);
     check('the last result, on her child\'s card', /Last game — Riverside/.test(h) && /class="score">1<i>–<\/i>1<\/span>/.test(h), true);
     check('— with her child\'s minutes in it', /5 Sep · 40 min played/.test(h), true);
     check('— and only there: no last-game card saying it again', /Season so far|<span class="muted">Last game<\/span>/.test(h), false);
@@ -186,9 +193,7 @@ const club = () => ({
     check('— no answers', anyChips(f), false);
     check('— and nobody else', /Rosa|Mia/.test(f), false);
     const k = as('kid', 'season');
-    check('a player\'s own: her card, her name the door to Your fans', /<b style="font-size:18px">Ella Fitzgerald<\/b>/.test(k) && /data-act="kidsheet" data-tid="t1" data-pid="p2"/.test(k), true);
-    A.click({ act: 'kidsheet', tid: 't1', pid: 'p2' });
-    check('— and behind it, the family and friends who follow her', /Family and friends who follow you/.test(String(A.dom.node('#sheet').innerHTML)), true);
+    check('a player\'s own: her card, her name the door to her fans', /data-act="kidsheet"[^>]*>[\s\S]*?<b style="font-size:18px">Ella Fitzgerald<\/b>/.test(k), true);
 
     // the coach's Season is short since build 146: the record, the games and rows into Stats, Minutes and Attendance
     const coachy = h => /data-v="teamstats"/.test(h) && /data-v="minutes"/.test(h);
@@ -206,7 +211,7 @@ const club = () => ({
   {
     let h = as('mum', 'mine');
     check('no Fans button on the card: it was the biggest control on it (14.1)', />Fans( \(\d+\))?<|data-act="fansheet"|Your fans/.test(h), false);
-    check('her name is the door to what is behind it, with its chevron', /<button class="kidhead go" type="button" data-act="kidsheet" data-tid="t1" data-pid="p1">/.test(h), true);
+    check('her name is the door to what is behind it, with its chevron', /<button class="plainbtn go kidhead" type="button" data-act="kidsheet" data-tid="t1" data-pid="p1">/.test(h), true);
     check('the minutes are not a big number top right: one line says it (14.2)', /class="pmins"><span data-live="smins"/.test(h) && !/data-live="smins"/.test(h), false);
     check('— games, minutes, goals; no position, no second "Games 1 of 1" count', txt(h).includes('1 game · 40 minutes · 1 goal') && !/Midfield|Games 1 of/.test(h), true);
     check('the minutes tick in a live game, and say "minutes" with them', /<span data-live="smint" data-tid="t1" data-pid="p1">40 minutes<\/span>/.test(h), true);
@@ -237,21 +242,16 @@ const club = () => ({
     A.click({ act: 'fansheet', tid: 't1', pid: 'p1' });
     sh = sheetHtml();
     check('— which says what a fan is first, then the one button', sh.indexOf("For a grandparent") > -1 && sh.indexOf("For a grandparent") < sh.indexOf('data-act="faninvite"') && />Invite a grandparent or friend</.test(sh), true);
-    check('— the two choices are defaults, kept behind a line saying so', /<details class="wtable"[^>]*><summary>One person, for 14 days: change that<\/summary>[\s\S]*?id="fanLUses"/.test(sh), true);
-    check('— no "Make a fan link" with two dropdowns open over it', /Make a fan link/.test(sh), false);
     const withFan = club(); withFan.teams.t1.players.p1.fans = { gran: true }; withFan.teams.t1.players.p1.fanNames = { gran: 'Gran' };
     as('mum', 'mine', 't1', withFan);
     A.click({ act: 'kidsheet', tid: 't1', pid: 'p1' });
-    check('the row counts them', /Family and friends who follow Rosa<\/span><span class="muted">1<\/span>/.test(sheetHtml().replace(/\s+/g, ' ').replace(/> </g, '><')), true);
+    check('the row counts them', /Family and friends who follow Rosa<\/span>\s*<span class="rowsub">1 follows Rosa/.test(sheetHtml()), true);
     as('mum', 'mine');
     A.click({ act: 'kidsheet', tid: 't1', pid: 'p3' });
-    check('another child\'s sheet is refused in the handler', A.dom.node('#sheet').hidden + ' ' + /Her family only/.test(A.lastToast() || ''), 'true true');
+    check('another child\'s sheet is refused in the handler', A.dom.node('#sheet').hidden + ' ' + /Her family, her coach or an admin/.test(A.lastToast() || ''), 'true true');
     as('nan', 'mine');
     A.click({ act: 'kidsheet', tid: 't1', pid: 'p2' });
     check('— and a fan has none: Stop following stays on her card', A.dom.node('#sheet').hidden + ' ' + /Stop following Ella/.test(A.rendered()), 'true true');
-    as('jaz', 'season');
-    A.click({ act: 'kidsheet', tid: 't1', pid: 'p1' });
-    check('— nor a coach for a child that is not hers', A.dom.node('#sheet').hidden, true);
 
     // a game being played: one LIVE card for everyone, her child's line a line
     const liveClub = off => {
@@ -303,17 +303,6 @@ const club = () => ({
     h = as('mum', 'mine', 't1', c);
     check('one with a title keeps it', /<b style="font-size:19px">Skills night<\/b><span class="tag practice">Practice<\/span>/.test(h), true);
     check('a game is still the opponent', /<b style="font-size:19px">v Northgate<\/b><span class="tag game">/.test(h), true);
-  }
-
-  console.log('\n--- an answer kept on the phone says so under itself (14.4) ---');
-  {
-    await A.flush(10);
-    as('mum', 'mine');
-    check('nothing waiting: nothing said', /rsvpheld/.test(A.rendered()), false);
-    A.click({ act: 'rsvp', tid: 't1', k: 'e_e1', pid: 'p1', v: 'no', from: 'next', kind: 'practice', id: 'e1' });
-    check('a tap with no acknowledgement yet: saved on the phone, sent when there is signal', (A.rendered().match(/<p class="muted rsvpheld">Saved on your phone, sent when there is signal<\/p>/g) || []).length, 1);
-    A.fb.held = false; A.flushPending(); await A.flush(10); A.render();   // the club has answered: what waited goes, and is acknowledged
-    check('once the club has it, the line goes', /rsvpheld/.test(A.rendered()), false);
   }
 
   console.log('\n--- Club home: her teams ---');

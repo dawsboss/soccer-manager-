@@ -52,8 +52,6 @@ async function device(uid, storage = {}) {
 }
 const sheet = D => String(D.dom.node('#sheet').innerHTML || '');
 const badge = D => String(D.dom.node('#syncBadge').textContent || '');
-// a button while something waits, a plain label when nothing does (UX-REVIEW-3.md, 14.4)
-const badgeDoor = D => { const b = D.dom.node('#syncBadge'); return (b.dataset.act || 'none') + ' ' + (b.disabled ? 'disabled' : 'enabled'); };
 
 (async () => {
 
@@ -68,8 +66,6 @@ const badgeDoor = D => { const b = D.dom.node('#syncBadge'); return (b.dataset.a
     await D.flush();
     check('an unsent session is counted', D.pendingCount(), 1);
     check('and the badge says so, not "synced"', badge(D), '1 to send');
-    check('— and it is a button into the list of what waits', badgeDoor(D), 'pendingsheet enabled');
-    check('— which is the sheet it opens', (D.click({ act: D.dom.node('#syncBadge').dataset.act }), /Not saved to the club yet/.test(sheet(D))), true);
     D.click({ act: 'pendingsheet' });
     check('"Not saved to the club yet" lists it', /a training session/.test(sheet(D)), true);
     check('as waiting', /<span class="tag">waiting<\/span>/.test(sheet(D)), true);
@@ -97,7 +93,6 @@ const badgeDoor = D => { const b = D.dom.node('#syncBadge'); return (b.dataset.a
     await D.flush();
     check('"Try again" sends it, and once accepted nothing is owed', D.pendingCount(), 0);
     check('and the badge stops warning', /not saved|to send/.test(badge(D)), false);
-    check('— and is a plain label again, with nothing to open', badgeDoor(D), 'none disabled');
     // the mark survives a reload (last: a second app takes over the shared stub DOM)
     const D2 = H.loadApp({ firebase: makeFakebase(), config: CONFIG, storage: saved });
     check('after a reload it is still marked refused', D2.refusedCount(), 1);

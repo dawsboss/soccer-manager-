@@ -153,6 +153,62 @@ const exists = (provider, email) => ({ code: 'auth/account-exists-with-different
     check('and she is told what hiding it means for an invite', /Apple is hiding your email/.test(sheet(A)), true);
   }
 
+  console.log('\n--- the first five minutes (UX-REVIEW-3.md, 13.2 to 13.4) ---');
+  {
+    const { A, fbk } = await boot();
+    fbk.signOut(); await A.flush();
+    check('signed out with no club: the welcome card names the two ways in', /invite link or the team link/.test(A.rendered()) && !/account your coach or club knows/.test(A.rendered()), true);
+    A.click({ act: 'signinsheet' });
+    check('the sheet opened over it is not a second hero', /auth-hero/.test(sheet(A)), false);
+    check('— and never says signing in is optional where it is not', /Optional for now|everything works signed out/.test(sheet(A)), false);
+    check('— it says which address to use instead', /If your invitation came by email, use that address/.test(sheet(A)), true);
+    A.dom.node('#authEmail').value = 'mo@x.test';
+    A.click({ act: 'signin-link' }); await A.flush();
+    check('a link sent', fbk.record.mails.map(m => m.email).join(), 'mo@x.test');
+    check('the card becomes the sent state, not the screen she started on', /Check your email/.test(A.rendered()) && /We sent a sign-in link to <b>mo@x\.test<\/b>/.test(A.rendered()) && !/Sign in to see your team/.test(A.rendered()), true);
+    check('— with Send it again and Use another email', /data-act="signin-resend"/.test(A.rendered()) && /data-act="signin-other"/.test(A.rendered()), true);
+    A.click({ act: 'signin-resend' }); await A.flush();
+    check('Send it again sends to the same address', fbk.record.mails.map(m => m.email).join(), 'mo@x.test,mo@x.test');
+    A.click({ act: 'signin-other' }); await A.flush();
+    check('Use another email: the address forgotten and the sheet open', A.storage.getItem('sm.emailForLink') + ' ' + /data-act="signin-link"/.test(sheet(A)) + ' ' + /Check your email/.test(A.rendered()), 'null true false');
+    fbk.signIn('mo', { name: 'Mo', email: 'mo@x.test' }); await A.flush();
+    check('signed in, the sent state is gone', /Check your email/.test(A.rendered()), false);
+  }
+  {
+    // a lone coach's own phone, whose club nobody has locked: signing in is optional there, and says so
+    const { A, fbk } = await boot({ storage: { 'sm.workspace': 'SOLO', 'sm.data.v1:SOLO': JSON.stringify({ teams: { t1: { id: 't1', name: 'Mine', players: {} } }, matches: {}, access: {} }) } });
+    fbk.signOut(); await A.flush();
+    A.click({ act: 'signinsheet' });
+    check('a club with no admin yet keeps the Optional line', /Optional for now/.test(sheet(A)), true);
+    check('— under the one hero, there being none on the screen below', (sheet(A).match(/auth-hero/g) || []).length, 1);
+  }
+  {
+    // a Home Screen app: the link opens in Safari and signs her in there, so the sheet leads with the rest
+    const fbk = makeFakebase();
+    const A = H.loadApp({ firebase: fbk, config: CONFIG, storage: {}, navigator: { standalone: true, userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X)' } });
+    await A.flush();
+    fbk.signOut(); await A.flush();
+    A.click({ act: 'signinsheet' });
+    check('on the Home Screen the sheet opens on a password', /data-act="signin-pass"/.test(sheet(A)) && !/data-act="signin-link"/.test(sheet(A)), true);
+    A.click({ act: 'signin-mode', v: 'link' });
+    check('— and a link says it opens in Safari', /The link opens in Safari, not here: sign in there, then open the app from your Home Screen again/.test(sheet(A)), true);
+  }
+  {
+    // the link opened where its address was not kept: asked in the sheet, never a bare prompt()
+    const fbk = makeFakebase();
+    fbk.record.emailLink = true;
+    let prompted = 0;
+    const A = H.loadApp({ firebase: fbk, config: CONFIG, storage: {} });
+    global.prompt = () => { prompted++; return 'mo@x.test'; };
+    await A.flush(); await A.flush(5);
+    check('no browser prompt', prompted, 0);
+    check('the sheet asks for the address the link went to', /Finish signing in/.test(sheet(A)) && /data-act="signin-finish"/.test(sheet(A)), true);
+    A.dom.node('#authEmail').value = 'mo@x.test';
+    A.click({ act: 'signin-finish' }); await A.flush();
+    const done = calls(fbk, 'emailLink')[0] || {};
+    check('and finishes with what she typed', done.email, 'mo@x.test');
+  }
+
   console.log('\n--- a forgotten password ---');
   {
     const { A, fbk } = await boot();
