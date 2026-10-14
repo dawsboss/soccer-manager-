@@ -113,6 +113,7 @@ const invitesMade = (fbk, from = 0) => fbk.record.writes.slice(from).filter(w =>
     check('for her child, on that team, in this club', inv && [inv.value.player, inv.value.team, inv.value.ws].join(), 'p1,t1,CLUB');
     check('in her name', inv && inv.value.by, 'mumU');
     check('not approved: the coach decides', inv && inv.value.approved, undefined);
+    check('one tap, no choices opened: one person, fourteen days (UX-REVIEW-3.md, 14.1)', inv && (inv.value.seats ? 'seats' : 'single') + ' ' + Math.round((inv.value.expiresAt - inv.value.at) / 864e5), 'single 14');
     check('naming the child by shirt number, never by name', inv && inv.value.playerNo + ' ' + /Ella|Fitz/.test(JSON.stringify(inv.value)), '7 false');
     check('never on the admins\' list, nor anywhere in the club', wrote(fbk).some(p => p.startsWith('clubInvites/') || (p.startsWith(OB) && JSON.stringify(valueAt(fbk, p) || '').includes(inv.path.split('/')[1]))), false);
     check('the link is on the sheet to send', /\?invite=/.test(sheet(A)) && /data-act="faninvdrop"/.test(sheet(A)), true);

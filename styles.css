@@ -226,6 +226,14 @@ label.field span{display:block;font-size:14px;color:var(--ink-soft);margin-botto
   font-variant-numeric:tabular-nums;text-align:right;min-width:58px;
 }
 .pmins small{font-weight:500;font-size:14px;color:var(--ink-soft)}
+/* A score (UX-REVIEW-3.md, 14.6): both digits one size and ink, the dash soft, ours then theirs.
+   .pmins is a value and its unit (180 min); a score is two values, so it is not set in it. */
+.score{font-family:"Barlow Condensed",sans-serif;font-weight:700;font-size:21px;font-variant-numeric:tabular-nums;color:var(--ink);white-space:nowrap}
+.score i{font-style:normal;font-weight:500;color:var(--ink-soft);padding:0 1px}
+.kidnow{margin:8px 0 0}
+/* something called off today or tomorrow, above what is next (UX-REVIEW-3.md, 14.3): grey, as a thing called off always is */
+.callednow{display:block;border-left:4px solid var(--ink-soft)}
+.callednow s{color:var(--ink-soft)}
 /* Plan tab, after kick-off: minutes by this change on top, the whole game under it */
 .snapmins{display:flex;flex-direction:column;align-items:flex-end;line-height:1.05}
 .snapmins .pmtot{font-family:"Barlow",sans-serif;font-weight:500;font-size:12px;color:var(--ink-soft);white-space:nowrap;margin-top:2px}
@@ -807,6 +815,8 @@ button.rsvprow[aria-expanded="true"]{color:var(--field)}
 @media (prefers-reduced-motion:reduce){.rsvpseg button[aria-busy="true"]::after{animation:none;left:8px;right:8px;width:auto}}
 /* her child's name, the door to her own sheet (14.1) */
 .kidhead{display:flex;align-items:center;gap:10px;min-width:0;text-align:left}
+/* the whole width of her card since 14.2 took the minutes out of its corner, and a finger's height */
+.kidhead{width:100%;min-height:44px}
 /* .plainbtn comes later and zeroes the padding the chevron sits in */
 .kidhead.go{padding-right:28px}
 .kidhead.go::after{right:6px}
@@ -1236,6 +1246,8 @@ button.ev:active{filter:brightness(.92)}
 .callive[data-one="1"]{padding:8px 12px}
 .callive[data-one="1"] .callive-t b{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .callive[data-one="1"] .muted{flex:none}
+/* the score is the half of the row she wants most: it never gives way to the title (it clipped to "1" on Month, UX-REVIEW-3.md, 14.6) */
+.callive .pmins{flex:none}
 .calnext{border-left:4px solid var(--ev,var(--field))}
 .calstrip{background:#fff;border:1px solid var(--line);border-radius:var(--r);padding:6px}
 

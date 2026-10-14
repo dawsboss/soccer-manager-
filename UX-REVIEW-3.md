@@ -310,6 +310,40 @@ strip folded into the card under her child; the welcome card naming the two ways
 
 ## 14. Home and her child's card
 
+**Built in builds 156 and 157**, all seven. Section 12 (build 156) built the part of 14.1 and
+14.4 that was also in 12.4: *Fans* is off the card, her name opening her own sheet
+(`sheetChild()`) with *Family and friends who follow Rosa*, the paragraph first and *Invite a
+grandparent or friend*, and the sync badge is a button opening what is waiting (with *Everything
+has reached the club* when nothing is). What it says about her answer is a bar on the pressed
+answer, not a sentence (the owner, 2026-10-14: a sentence was too much), so 14.4's *Saved on your
+phone, sent when there is signal* line is not built. Build 157 did the rest (`test/home.js` walks
+it; the others named below). As built, where it differs from what is written under each:
+
+- **14.1** Her sheet also says *Where Rosa has played*, which 14.2 took off the card.
+- **14.2** *3 games · 180 minutes · 1 goal · came to all 5 practices*, one line, the minutes
+  ticking in a live game (`data-live="smint"`). The games count is the attendance for games, so
+  *Games 3 of 3* is gone from her card (the coach's views keep `attendLine()`); what she was
+  asked to come to, practices, team events and extra sessions, is *came to 4 of 5 practices*, or
+  *came to the practice* for one. *60 at Midfield* is on her sheet (*Where Rosa has played*)
+  rather than behind a separate ⓘ: one door, not two. `test/attend.js`.
+- **14.3** `calledSoon()` and `calledCard()` in `nextUpBlock()`, so the coach's Season says it
+  too (one frame). A cancelled or postponed practice, game or event that is today (and not over)
+  or tomorrow: *Tonight's practice is cancelled* (*Today's* before five, *Tomorrow's*), with its
+  time and place struck through under it, grey, and a tap into the entry; the next thing under
+  it as before. `test/same.js` has it as a thirteenth question a parent asks.
+- **14.4** Settings' Database row reads *Connected* or *Offline* from the same `online` the badge
+  does (`test/settings.js`). The rest of 18.4 (one word for the outbox everywhere) is not built.
+- **14.5** On Home the LIVE card is the one door into the game, and her card says *Rosa: on the
+  pitch · 38 min* (or *off the pitch*, or *You: …* for the player herself) as a line. My players
+  (staff with a child) has no LIVE card, so its *Playing now* row stays a door.
+- **14.6** `scoreSpan()` and `.score` (both digits 21px ink, the dash soft), in the Games list,
+  the game picker, the live card, her card and the season's game list; the live card's score no
+  longer gives way to the title on Month. The recap's big score and the scores inside a sentence
+  are unchanged. `test/visual.js`.
+- **14.7** An entry with no title of its own (*Practice*, *Event*) is titled with the team on the
+  next-up card, the tag saying what it is; a titled one keeps its title. My players' *Next —
+  Practice* row drops the repeat the same way.
+
 - **14.1 "Fans (1)" is the biggest control on her child's card.** A full-width outlined button
   (334×46) under *Last game — Hill End*, above the next practice, for a feature used once a
   season, whose sheet is *Fans of Rosa · 1 fan follows Rosa · A fan · Follows Rosa · Remove ·

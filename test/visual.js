@@ -175,6 +175,20 @@ check('a sub due is still red', /var\(--over\)/.test(bodyOf('.subscard[data-stat
 check('and a sub due soon still orange', /var\(--owed\)/.test(bodyOf('.subscard[data-state="soon"]')), true);
 check('Delete is still red', /var\(--over\)/.test(bodyOf('.btn.danger')), true);
 
+/* ---------------- a score ---------------- */
+console.log('\n--- a score is one style: both digits one size (UX-REVIEW-3.md, 14.6) ---');
+{
+  /* .pmins is a value and its unit ("180 min": a big number, a small word); a
+     score borrowed it and read as 1 with a footnote, the half a parent wants
+     most the quietest on the row. */
+  const sc = bodyOf('.score'), dash = bodyOf('.score i');
+  check('both digits in ink at the row\'s number size, tabular', /font-size:21px/.test(sc) && /tabular-nums/.test(sc) && /color:var\(--ink\)/.test(sc), true);
+  check('only the dash is soft, and it keeps its size', /color:var\(--ink-soft\)/.test(dash) && !/font-size/.test(dash), true);
+  check('no score in app.js is drawn as a big digit and a small one', /\.us\}<small>–\$\{/.test(app), false);
+  check('every score on a row goes through scoreSpan()', (app.match(/scoreSpan\(/g) || []).length >= 8, true);
+  check('the live card\'s score never gives way to its title (it clipped to "1" on Month)', /flex:none/.test(bodyOf('.callive .pmins')), true);
+}
+
 /* ---------------- the calendar's + ---------------- */
 console.log('\n--- the + is in the flow, over no row ---');
 {

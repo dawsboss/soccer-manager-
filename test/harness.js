@@ -248,7 +248,7 @@ const EXPORTS = `{
   /* copy and vocabulary (UX-REVIEW.md, 2; build 144) */
   ROLE_LABEL, refusedMsg, roleWords, roleCard, roleCardSeen, INFO, infoBtn, sheetInfo, CAL_KIND,
   /* a family's own Home and Season (build 142) */
-  playedLine, landNow, get landHome() { return landHome }, set landHome(v) { landHome = v },
+  kidSeasonLine, kidPositions, cameWords, sheetChild, scoreSpan, landNow, get landHome() { return landHome }, set landHome(v) { landHome = v },
   alertsList: () => alertsHere().list, alertBar, calAlerts, elseUnread, openAlert, noteMine,
   /* safekeeping: what is owed, a full phone, and the backup */
   otherOwed, pendingCount, refusedCount, backupDoc, trainingCopy, isBackupData, keepStored,
