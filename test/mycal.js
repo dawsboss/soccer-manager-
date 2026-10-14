@@ -166,6 +166,8 @@ const nameIn = v => names.some(n => JSON.stringify(v).includes(n));
     delete D.sess.avail.b1;
 
     console.log('\n--- sharing, and taking it back ---');
+    D.ui.view = 'calendar'; D.ui.calSel = 'mine'; D.render();
+    check('a coach is offered it on My calendar', /Who sees your calendar/.test(D.rendered()) && /data-act="youshare"/.test(D.rendered()), true);
     D.click({ act: 'youshare', v: '1' }); await D.flush();
     const order = fbk.record.writes.map(x => x.path).filter(p => /^people\/jaz\/(set|busy)/.test(p));
     check('the setting goes first, since the rules read it', order[0], 'people/jaz/set');
@@ -242,6 +244,9 @@ const nameIn = v => names.some(n => JSON.stringify(v).includes(n));
     D.dom.node('#sheet').innerHTML = '';
     D.click({ act: 'personcal', uid: 'jaz' });
     check('and is refused a coach\'s calendar', String(D.dom.node('#sheet').innerHTML), '');
+    // the coaches' busy-time setting did nothing for her, at the foot of every calendar (UX-REVIEW-3.md, 15.11)
+    D.ui.view = 'calendar'; D.ui.calSel = 'mine'; D.render();
+    check('— and is not offered the coaches\' busy-time setting', /Who sees your calendar|data-act="youshare"/.test(D.rendered()), false);
   }
 
   console.log('\n--- a parent: her children in every club ---');

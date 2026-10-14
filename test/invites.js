@@ -92,7 +92,8 @@ const CLUB = {
     const { A, fbk } = await boot({ search: '?invite=' + ID });
     fbk.signIn('mum', { name: 'Mum', email: 'mum@x.test' }); await A.flush();
     fbk.deliver('invites/' + ID, inviteDoc(A, { role: 'parent', player: 'p1', playerNo: '7' })); await A.flush();
-    check('it names the shirt, not the child', /parent of #7 on <b>Flight/.test(A.rendered()), true);
+    check('it names the shirt, not the child', /parent of the player wearing shirt 7 on <b>Flight/.test(A.rendered()), true);
+    check('and what to do if it is the wrong number', /Not your child.s number\? Ask/.test(A.rendered()), true);
     // which tree: the old one refuses a phone not in the club yet, as it does while the club is there
     A.click({ act: 'inviteaccept' }); await A.flush(); await A.flush(20);
     check('guardian of that one player', valueAt(fbk, 'orgs/CLUB/squad/t1/p1/guardians/mum'), ID);

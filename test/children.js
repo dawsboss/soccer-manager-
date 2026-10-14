@@ -132,7 +132,7 @@ function fill(A, o) {
     check('— says what is missing', /add birth date, gender and someone to call/.test(sheet(A)), true);
     check('— shows her team and number', /Flight · #7/.test(sheet(A)), true);
     A.render(); A.ui.view = 'mine'; A.render();
-    check('a card on My players until she does', /Check her details/.test(A.rendered()), true);
+    check('a card on My players until she does', /Check the details/.test(A.rendered()), true);
     fill(A, { first: 'Ella', last: 'Fitz' });
     A.click({ act: 'kidconfirm', id: 'p1' }); await A.flush(10);
     check('not without her birth date and gender', !!valueAt(fbk, OB + '/children/p1/confirmed'), false);
@@ -155,7 +155,7 @@ function fill(A, o) {
     check('— and put on her own list of her children', valueAt(fbk, 'families/mumU/CLUB/p1'), true);
     check('the team\'s name for her is the coach\'s, untouched', fbk.writtenTo(OB + '/squad/t1/p1').length + fbk.writtenTo(OB + '/squad/t1/p1/name').length, 0);
     A.render();
-    check('the card is gone', /Check her details/.test(A.rendered()), false);
+    check('the card is gone', /Check the details/.test(A.rendered()), false);
 
     console.log('\n--- her next phone ---');
     const org = ORG(); org.children.p1 = { ...org.children.p1, born: '2016-05-03', gender: 'F', confirmed: { by: 'mumU', at: 2 } };

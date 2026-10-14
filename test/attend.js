@@ -169,7 +169,8 @@ console.log('--- the season, counted ---');
   check('— nor a way to it', A.ui.view + ' ' + (html(), A.ui.view) + ' ' + /<h2>Attendance<\/h2>/.test(html()), 'attend season false');
   A.ui.view = 'mine';
   const m = html();
-  check('My players: her own child\'s record', /Practices 1 of 1 · 1 of 1 games/.test(m), true);
+  // said in a parent's words since build 155 (UX-REVIEW-3.md, 14.2): a game is in "N games" already, the practice is what she came to
+  check('Home: her own child\'s record, in her words', /came to the practice/.test(m) && !/Practices 1 of 1|Games 1 of 1/.test(m), true);
   check('and nobody else\'s', /Rosa|Nakamura/.test(m), false);
 }
 

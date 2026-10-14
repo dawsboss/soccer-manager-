@@ -113,7 +113,7 @@ function plan(extra = {}, X = A) {
     const fromPlans = sheet(A);
     A.click({ act: 'calnew', tid: 't1' });
     check('and opens the very same sheet', fromPlans, sheet(A));
-    check('set to a practice', /data-act="calkind" data-v="practice" aria-pressed="true"/.test(fromPlans), true);
+    check('set to a practice', /data-act="calfkind" data-v="practice" aria-pressed="true"/.test(fromPlans), true);
     fill(A, { evTitle: '', evDate: 'next tuesday', evStart: '', evEnd: '', evVenue: '', evNotes: '' });
     A.click({ act: 'calsave', tid: 't1' });
     check('a date that is not a date is refused', A.lastToast(), 'Pick a date');

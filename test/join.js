@@ -134,6 +134,12 @@ const valueAt = (fbk, p) => { const w = fbk.writtenTo(p); return w.length ? w[w.
     check('nothing is granted from her side', paths(fbk).some(p => /guardians|access\/index|teamParents/.test(p)), false);
     check('then she waits', /Waiting for a coach of Flight/.test(A.rendered()), true);
     check('the device is not pointed at the club yet', A.storage.getItem('sm.workspace'), null);
+    // UX-REVIEW-3.md, 13.1: put aside with Not now, a phone with no club is the lock card under the waiting bar, never Add a team
+    A.click({ act: 'joinhide' }); await A.flush();
+    check('Not now: still waiting, said over the lock card', /Waiting for a coach of <b>Flight/.test(A.rendered()) && /Nobody has added you to a team yet/.test(A.rendered()), true);
+    check('— with no Add a team, title row or tab bar', /Add a team|data-act="newteam"/.test(A.rendered()) + ' ' + A.rendered('#titlebar') + A.rendered('#tabbar'), 'false ');
+    A.click({ act: 'joinshow' }); await A.flush();
+    check('— and Open brings the request back', /Waiting for a coach of Flight/.test(A.rendered()) && !/Nobody has added you/.test(A.rendered()), true);
 
     fbk.deliver('claims/CLUB/t1/sam', { ...c, approved: { by: 'coach', at: 2 } }); await A.flush(20);
     check('once approved, the club goes on her list', (valueAt(fbk, 'userOrgs/sam/CLUB') || {}).name, 'Lakeside SC');
@@ -172,7 +178,7 @@ const valueAt = (fbk, p) => { const w = fbk.writtenTo(p); return w.length ? w[w.
     fbk.signIn('nia', { name: 'Nia', email: 'nia@x.test' }); await A.flush();
     fbk.deliver('joinCodes/' + CODE, JOINDOC); await A.flush();
     fbk.deliver('claims/CLUB/t1/nia', null); await A.flush();
-    check('the form offers it', /She isn't on it yet/.test(A.rendered()), true);
+    check('the form offers it', /Not on it yet/.test(A.rendered()) && !/[Ss]quad/.test(A.rendered()), true);
     A.click({ act: 'joinkid', v: '1' }); await A.flush();
     const html = A.rendered();
     check('and asks for her name, birth date and number, no first-name box', [/id="joinKidName"/.test(html), /id="joinKidBorn"/.test(html), /id="joinShirt"/.test(html), /id="joinChild"/.test(html)].join(), 'true,true,true,false');

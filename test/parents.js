@@ -85,6 +85,17 @@ const MIN = 60000;
     check('season: her child by name, and no other child, by name or number', /Ella Fitzgerald/.test(s.season) && !/#8|A teammate/.test(s.season), true);
     check('live: the feed by number', /#8/.test(s.feed) && /Ella Fitzgerald/.test(s.feed), true);
     check('the helper', [A.shownName(A.state.teams.t1, A.state.teams.t1.players.p1), A.shownName(A.state.teams.t1, A.state.teams.t1.players.p2)].join(), 'Ella Fitzgerald,#8');
+    // the goals and the shots she may not change are rows, not a way into an editor (UX-REVIEW-3.md, 16.5)
+    check('stats: the goals plain, no edit', /data-act="fixgoal"|>edit</.test(s.stats), false);
+    A.ui.view = 'game'; A.ui.gameView = 'stats'; A.render();
+    A.click({ act: 'fixgoal', id: 'a' });
+    check('— and a tap that reaches the handler opens nothing', A.lastToast() + ' ' + /Goal at/.test(String(A.dom.node('#sheet').innerHTML || '')), "Only this team's coaches can change that false");
+    A.click({ act: 'fixshot', id: 'x' });
+    check('— a shot the same', A.lastToast(), "Only this team's coaches can change that");
+    // the coach's plan is not on her phone: minutes alone (16.3)
+    check('stats: minutes with no plan, no short or over', /planned|no plan set|short|over/.test((s.stats.match(/<h2[^>]*>Minutes<\/h2>[\s\S]*$/) || [''])[0]), false);
+    setup('trk'); A.ui.gameView = 'stats'; A.render();
+    check('a tracker, who logs them, still opens a goal', /data-act="fixgoal" data-id="a"/.test(A.rendered()), true);
   }
 
   console.log('\n--- a child with more than one parent, a parent with more than one child ---');

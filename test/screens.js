@@ -111,7 +111,7 @@ const club = () => ({
     let h = as('jaz', 'season');
     const sections = ['Shooting', 'Possession', 'Set pieces and fouls', 'What needs work', 'Game by game', '<h2>Minutes</h2>', '<h2>Attendance</h2>', 'Ask an AI'];
     check('none of the stats sections are on it', sections.filter(x => h.includes(x)).join(), '');
-    check('the last result is', /Last game[\s\S]*?Riverside[\s\S]*?1<small>–1/.test(h), true);
+    check('the last result is', /Last game[\s\S]*?Riverside[\s\S]*?class="score">1<i>–<\/i>1/.test(h), true);
     check('— naming no child', /Rosa|Mia|Ella/.test(h.slice(h.indexOf('Last game'), h.indexOf('Season so far'))), false);
     check('the record', /<h2>0W 1D 0L<\/h2>/.test(h), true);
     check('the games', /<h2>Games<\/h2>/.test(h) && /data-act="openmatch" data-id="g2"/.test(h), true);
@@ -165,8 +165,14 @@ const club = () => ({
   console.log('\n--- Calendar: a labelled picker, and "Earlier" ---');
   {
     const h = as('jaz', 'calendar', club(), () => { A.state.teams.t1.events.old = { id: 'old', kind: 'practice', title: 'Practice', date: '2026-09-08', start: '18:00', end: '19:00' }; });
-    check('the calendars picker says Calendars', /<button type="button" class="calmenu" data-act="caltree"[^>]*>Calendars <span aria-hidden="true">▾<\/span><\/button>/.test(h), true);
-    check('— no bare icon', /calmenu"[^>]*>\s*<svg/.test(h), false);
+    // one team and nothing but its games and practices: nothing to pick (UX-REVIEW-3.md, 15.4)
+    check('one team, no Calendars picker', /data-act="caltree"/.test(h), false);
+    const two = as('jaz', 'calendar', club(), () => {
+      A.state.teams.t2 = { id: 't2', name: 'B12 Storm', players: {}, events: { e9: { id: 'e9', kind: 'practice', title: 'Practice', date: '2026-09-16', start: '18:00', end: '19:00' } } };
+      A.state.access.teams.t2 = { coaches: { jaz: true } };
+    });
+    check('two teams: the calendars picker says Calendars', /<button type="button" class="calmenu" data-act="caltree"[^>]*>Calendars <span aria-hidden="true">▾<\/span><\/button>/.test(two), true);
+    check('— no bare icon', /calmenu"[^>]*>\s*<svg/.test(two), false);
     check('what has happened is Earlier (n)', /data-act="calpast">Earlier \(\d+\)<\/button>/.test(h), true);
     A.click({ act: 'calpast' });
     check('— then Hide earlier', /data-act="calpast">Hide earlier \(\d+\)<\/button>/.test(A.rendered()), true);

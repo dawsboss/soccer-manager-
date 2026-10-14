@@ -15,7 +15,11 @@
      Squad keeps one line to it.
    - Club: People for coaches and admins, the club's screens for admins alone.
    - Advanced: backup and Check readiness for admins (and refused in the
-     handler for anyone else), the version, the database and the account id.
+     handler for anyone else), and nobody else gets the section.
+   - About: one row for everyone, opening a sheet with the version, the
+     connection (in the badge's words) and the account id (UX-REVIEW-3.md,
+     18.1, 18.4). Delete my account is a row under You, not on the account
+     sheet (18.2).
    - Club details holds the club's own settings and nothing a Settings row
      already opens; More has Settings once, and nothing beside it. */
 
@@ -56,19 +60,29 @@ const sheet = () => String(A.dom.node('#sheet').innerHTML || '');
 const heads = h => [...h.matchAll(/<h2 class="sechead">([^<·]+)/g)].map(m => m[1].trim()).join(' · ');
 const acts = h => new Set([...h.matchAll(/data-act="(\w+)"(?: data-(?:v|k|id)="([^"]*)")?/g)].map(m => m[2] ? m[1] + ':' + m[2] : m[1]));
 
+console.log('--- the connection says what the badge says (UX-REVIEW-3.md, 14.4; in About since 18.1) ---');
+{
+  const row = () => { as('boss'); A.click({ act: 'aboutsheet' }); const h = sheet(); A.closeSheet(); return (h.match(/Connection[\s\S]{0,300}/) || [''])[0].replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' '); };
+  A.online = true;
+  check('connected: Synced, with the club', /Connection Synced with Lakeside SC/.test((A.setSync('live', 'Synced'), row())), true);
+  A.online = false;
+  check('with no signal: Offline, not "Connected"', /Connection Offline/.test((A.setSync('off', 'Offline'), row())) && !/Connected/.test(row()), true);
+  A.online = true;
+}
+
 console.log('--- the sections, by whose they are ---');
 {
   let h = as('boss');
-  check('an admin: You, This team, Club, Advanced', heads(h), 'You · This team · Club · Advanced');
+  check('an admin: You, This team, Club, Advanced, About', heads(h), 'You · This team · Club · Advanced · About');
   check('— titled Settings', A.rendered('#titlebar').includes('<span>Settings</span>'), true);
   const a = acts(h);
-  for (const x of ['signinsheet', 'goview:admin', 'goview:people', 'goview:regs', 'goview:comply', 'planner', 'sesstab:fields', 'sesstab:fees', 'sesstab:hours', 'clubdrills', 'tpllist:clubTpl', 'bulkimport', 'backupsheet', 'readysheet', 'hardreload', 'editteam:t1', 'formations', 'trackcfg', 'sharesheet'])
+  for (const x of ['signinsheet', 'goview:admin', 'goview:people', 'goview:regs', 'goview:comply', 'planner', 'sesstab:fields', 'sesstab:fees', 'sesstab:hours', 'clubdrills', 'tpllist:clubTpl', 'bulkimport', 'backupsheet', 'readysheet', 'aboutsheet', 'editteam:t1', 'formations', 'trackcfg', 'sharesheet'])
     check(`— ${x}`, a.has(x), true);
   check('— no club calendar here: Club home and the Calendar have it', a.has('schedule'), false);
   check('— the links for families once', (h.match(/data-act="sharesheet"/g) || []).length, 1);
 
   h = as('jaz');
-  check('a coach: You, This team, Club (People), Advanced', heads(h), 'You · This team · Club · Advanced');
+  check('a coach: You, This team, Club (People), About', heads(h), 'You · This team · Club · About');
   check('— People and nothing else of the club\'s', [...acts(h)].filter(x => /^goview:(admin|people|regs|comply)$|^planner$|^bulkimport$|^clubdrills$/.test(x)).join(), 'goview:people');
   check('— her team\'s set-up, to change', ['editteam:t1', 'formations', 'trackcfg'].every(x => acts(h).has(x)), true);
   check('— no backup or readiness', /backupsheet|readysheet/.test(h), false);
@@ -79,12 +93,13 @@ console.log('--- the sections, by whose they are ---');
   check('a coach on another team: its set-up to read, nothing to change', /This team/.test(h) && /Shapes/.test(h) && !/data-act="(editteam|formations|trackcfg)"/.test(h), true);
 
   h = as('trk');
-  check('a tracker: You and Advanced, no team set-up, no club', heads(h), 'You · Advanced');
+  check('a tracker: You and About, no team set-up, no club', heads(h), 'You · About');
   check('— and no drills of her own', acts(h).has('mydrills'), false);
   check('— nor fields, fees or hours', /data-act="sesstab"/.test(h), false);
 
   h = as('mum', 'setup');
-  check('a parent: You and Advanced', heads(h), 'You · Advanced');
+  check('a parent: You and About (UX-REVIEW-3.md, 18.1)', heads(h), 'You · About');
+  check('— one quiet row: no version line, database or account id on the page', /page and code agree|Database|Account id|data-act="hardreload"/.test(h), false);
   check('— no team, no club, no links to manage', /data-act="(sharesheet|editteam|formations|trackcfg|planner|bulkimport)"|data-v="(admin|people|regs|comply)"/.test(h), false);
   check('— and no child\'s name', /Rosa|Mia/.test(h), false);
   check('— and no drills of her own in a real club (UX-REVIEW-2.md, 7.3)', acts(h).has('mydrills') || /data-act="sesstab"/.test(h), false);
@@ -98,8 +113,21 @@ console.log('\n--- each item one line ---');
 {
   const h = as('boss');
   check('no paragraph of Firebase on the screen', /Firebase config is/.test(h), false);
-  check('the account id one line, with Copy', /Account ID[\s\S]*?class="mono">boss<[\s\S]*?data-act="copylink" data-v="boss"/.test(h), true);
-  check('the version one line, with Force refresh', /Version v\d+[\s\S]*?data-act="hardreload"/.test(h), true);
+  check('About one line, with the version', new RegExp(`data-act="aboutsheet"[\\s\\S]*?TeamPlayHQ · v${A.BUILD}`).test(h), true);
+  A.click({ act: 'aboutsheet' });
+  check('— its sheet: the account id, with Copy', /Account id[\s\S]*?class="mono">boss<[\s\S]*?data-act="copylink" data-v="boss"/.test(sheet()), true);
+  check('— the version, with Reload', /Version v\d+[\s\S]*?data-act="hardreload"/.test(sheet()), true);
+  check('— and the connection in the badge\'s words, never "Connected" beside Offline (18.4)', /Connection[\s\S]*?Offline/.test(sheet()) && !/Connected/.test(sheet()), true);
+  A.closeSheet();
+}
+
+console.log('\n--- the outbox, one word on the badge and Settings (UX-REVIEW-3.md, 18.4) ---');
+{
+  as('mum', 'season');
+  A.pending.w['teams/t1/x'] = { v: 1, at: 1 }; A.paintSync();
+  check('something waiting: the badge says so in the outbox\'s one word', A.dom.node('#syncBadge').textContent, 'Waiting to send · 1');
+  check('— Settings says the same words', (A.ui.view = 'setup', A.render(), /Waiting to send · 1/.test(A.rendered())), true);
+  delete A.pending.w['teams/t1/x']; A.paintSync();
 }
 
 console.log('\n--- Advanced: an admin\'s, in a sheet ---');
