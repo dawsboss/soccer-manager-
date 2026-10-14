@@ -25,6 +25,13 @@
      with a child keep it under More. Decided for the person, as the tab bar
      is: a coach whose daughter plays elsewhere keeps the coach's Season on
      her daughter's team too.
+   - Children on two teams are both on the one Home (UX-REVIEW-3.md, 19.1;
+     build 155): each child's card and then her team's next-up block, named
+     for the team, child after child, then each team's calendar link and
+     games; the title says Home over the club with no team switcher, and it
+     is the same Home whichever team was last open. A fan's card (19.2) says
+     in one line what she gets, where the role card sat, and Stop following
+     is a text link at its foot.
    - Club home lists her children's teams alone, even before the club has an
      admin (when nothing is gated), counted plain as for everyone.
    - The app opened with no address of its own lands a family on Home: at
@@ -139,6 +146,46 @@ const club = () => ({
     check('a fan sees her player\'s next thing', /Next up<\/span>[\s\S]*?<span class="tag practice">/.test(h), true);
     check('— and answers nothing', anyChips(h), false);
     check('— her player by name, as her fan', /Ella Fitzgerald/.test(h) && /you’re her fan/.test(h) && /Stop following Ella/.test(h), true);
+    // a fan's card (UX-REVIEW-3.md, 19.2): what she gets said once on the card, where the role card sat, and leaving a text link at its foot
+    check('— what she gets, in one line on the card, and no role card over it', /class="muted fanline"[^>]*>You see Ella’s games and the team’s notices\./.test(h) && !/rolecard/.test(h), true);
+    check('— Stop following a text link at the foot, not her biggest button', /<button class="textbtn" data-act="fanleave" data-tid="t1" data-pid="p2"[^>]*>Stop following Ella</.test(h) && !/class="btn[^"]*" data-act="fanleave"/.test(h), true);
+    check('— a parent\'s card has no such line', /fanline/.test(as('mum', 'mine')), false);
+  }
+
+  console.log('\n--- two children on two teams: one Home, nothing to switch (UX-REVIEW-3.md, 19.1) ---');
+  {
+    // Rosa on G14 Flight and Bea on G12 Storm, both hers; Storm with a practice and a game of its own
+    const two = () => {
+      const s = club();
+      s.teams.t2.players.k1.guardians = { mum: true };
+      s.teams.t2.events = { e2: { id: 'e2', kind: 'practice', title: 'Practice', date: '2026-09-14', start: '17:00', end: '18:00' } };
+      s.matches.g4 = { id: 'g4', teamId: 't2', opponent: 'Westbrook', date: '2026-09-20', kickoff: '11:00', periodCount: 2, periodMinutes: 30, currentHalf: 1, periods: {}, stints: {} };
+      return s;
+    };
+    const title = () => A.rendered('#titlebar');
+    let h = as('mum', 'season', 't1', two());
+    const at = re => { const m = re.exec(h); return m ? m.index : -1; };
+    check('both children on one Home', /<b style="font-size:18px">Rosa Delgado<\/b>/.test(h) && /<b style="font-size:18px">Bea Quill<\/b>/.test(h), true);
+    check('— in the club\'s order, by team: Bea (G12 Storm), then Rosa (G14 Flight)', at(/Bea Quill/) < at(/Rosa Delgado/), true);
+    check('each child, then her team\'s next thing, named for the team', at(/Bea Quill/) < at(/Next up · G12 Storm<\/span>/) && at(/Next up · G12 Storm/) < at(/Rosa Delgado/) && at(/Rosa Delgado/) < at(/Next up · G14 Flight<\/span>/), true);
+    check('with the answer for the right child on each', chipsFor(h, 'e_e2', 'k1') && chipsFor(h, 'e_e1', 'p1'), true);
+    check('— and never a child on the other team\'s card', chipsFor(h, 'e_e2', 'p1') || chipsFor(h, 'e_e1', 'k1'), false);
+    check('the next game of each too, with its answer', /Next game · G12 Storm<\/span>[\s\S]*?v Westbrook/.test(h) && chipsFor(h, 'g_g4', 'k1') && /Next game · G14 Flight<\/span>[\s\S]*?v Northgate/.test(h) && chipsFor(h, 'g_g2', 'p1'), true);
+    check('both teams on the calendar, after the children', /data-act="teamcal" data-tid="t1"/.test(h) && /data-act="teamcal" data-tid="t2"/.test(h) && at(/data-act="teamcal"/) > at(/Next up · G14 Flight/), true);
+    check('each team\'s games, named for the team', /<h2>Games · G12 Storm<\/h2>/.test(h) && /<h2>Games · G14 Flight<\/h2>/.test(h), true);
+    check('the title says Home, over the club: no team to switch to, no favourite to pick', /class="tbtitle"><span>Home<\/span>/.test(title()) && /data-act="clubswitch"/.test(title()) && !/teammenu/.test(title()), true);
+    check('no other child on it', /Ella|Mia|Kowalski/.test(h), false);
+    check('the same Home whichever team was last open', as('mum', 'season', 't2', two()) === h, true);
+    A.ui.view = 'club'; A.render(); A.click({ act: 'goteam', id: 't2' });
+    check('— and from Club home\'s row for either team', A.ui.view + ' ' + (A.rendered() === h), 'season true');
+    A.click({ act: 'rsvp', tid: 't2', k: 'e_e2', pid: 'k1', v: 'yes', from: 'next', kind: 'practice', id: 'e2' });
+    check('an answer for the second child is one write at her own entry', writes.join(), 'orgs/CLUB/rsvp/t2/e_e2/k1');
+    check('— and shows on the same Home', /data-k="e_e2" data-pid="k1" data-v="yes"[^>]*aria-pressed="true"/.test(A.rendered()), true);
+    h = as('mum', 'season');
+    check('one child: the screen it was, Games unnamed and the team on the title', /<h2>Games<\/h2>/.test(h) && !/Games · /.test(h) && !/Next up · /.test(h) && /class="tbtitle"><span>G14 Flight<\/span>/.test(title()), true);
+    const k = two(); k.teams.t2.players.k1.guardians = {}; k.teams.t2.players.k1.fans = { mum: true };
+    h = as('mum', 'season', 't1', k);
+    check('her own child here and a player she follows on another team: both, the fan\'s card lighter', /Rosa Delgado/.test(h) && /Bea Quill/.test(h) && /you’re her fan/.test(h) && chipsFor(h, 'e_e1', 'p1') && !chipsFor(h, 'e_e2', 'k1'), true);
   }
 
   console.log('\n--- a family\'s Season: the coach\'s frame, her child put in ---');

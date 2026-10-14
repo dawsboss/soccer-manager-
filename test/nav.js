@@ -397,7 +397,7 @@ console.log('\n--- the title row ---');
   as('mum', 'season');
   check('— which is the tab\'s own screen: the team over the club, no back arrow', /class="tbtitle"><span>G14 Flight<\/span>/.test(title()) && !/tbback/.test(title()), true);
   as('mum', 'season'); A.state.teams.t2.players.k1.guardians = { mum: true }; A.render();
-  check('— a parent with children on two teams gets the team switcher a coach of two gets', /class="tbtitle pick" data-act="teammenu"/.test(title()), true);
+  check('— a parent with children on two teams has both on her Home: titled Home, over the club, with no team switcher (UX-REVIEW-3.md, 19.1)', /class="tbtitle"><span>Home<\/span>/.test(title()) && /data-act="clubswitch"/.test(title()) && !/teammenu/.test(title()), true);
   as('mum', 'season'); A.state.teams = {}; A.state.matches = {}; A.render();
   check('— and with no team here yet, Home', titled('Home'), true);
   for (const [uid, v] of [['jaz', 'calendar'], ['jaz', 'inbox'], ['mum', 'season'], ['mum', 'calendar']]) { as(uid, v); check(`${uid} on ${v}: no back arrow`, /tbback/.test(title()), false); }

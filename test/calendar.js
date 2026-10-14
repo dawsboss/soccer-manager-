@@ -166,8 +166,9 @@ console.log('--- the screen, for each role ---');
 
   A.ui.view = 'mine';
   h = html();
-  // a family's Home is the team's Season with her child on top since build 153 (UX-REVIEW-2.md, 9.1)
-  check('Home: "next" is tonight\'s practice, not only games', A.ui.view + ' ' + /Next up<\/span>[\s\S]*?<span class="tag practice">/.test(h), 'season true');
+  // a family's Home is the team's Season with her child on top since build 153 (UX-REVIEW-2.md, 9.1);
+  // with children on two teams, both teams are on it and each card says whose (UX-REVIEW-3.md, 19.1)
+  check('Home: "next" is tonight\'s practice, not only games, named for its team', A.ui.view + ' ' + /Next up · G14 Flight<\/span>[\s\S]*?<span class="tag practice">/.test(h), 'season true');
 
   A.me = { uid: 'trackU', name: 'Tracker' };
   A.ui.view = 'calendar';
