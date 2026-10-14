@@ -200,7 +200,7 @@ const EXPORTS = `{
   /* the club's drills and a coach's own */
   SHELF, SHELVES, LIB_ACTS, TPL_ACTS, tplItems, findTpl, normTemplate, canCurateTpl, normDrill, cardOf, findDrill, drillOrigin, drillPool, shelfItems, canCurate, shareTeam,
   putDrill, dropDrill, mergeShelf, watchShelf, peekLibrary, blockDrill, drillBlock, draftProblem, mineUnsent, cleanDrawing,
-  get pending() { return pending }, pendingCount, refusedCount, pendingLabel, localOnlyData, flushPending,
+  get pending() { return pending }, pendingCount, refusedCount, pendingLabel, localOnlyData, flushPending, paintSync, syncWords, sheetAbout, whoseTeam, BUILD,
   get mine() { return mine }, get mineUid() { return mineUid }, get shelfState() { return shelfState },
   get drillDraft() { return drillDraft },
   /* rendering + routing */

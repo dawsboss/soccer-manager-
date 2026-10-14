@@ -2,8 +2,8 @@
    Static app. Data lives in localStorage, and mirrors to Firebase Realtime
    Database when a config + workspace code are present. */
 
-const BUILD = '154';
-const BUILT = '2026-10-12';
+const BUILD = '155';
+const BUILT = '2026-10-14';
 /* The version of database.rules.json this app was written against. The rules
    carry the same number in rulesVersion's .write, which accepts that number
    and nothing else, so writing it is a question only the published rules can
@@ -1395,13 +1395,19 @@ function localOnlyData() {
 
 /* The badge in the corner says what the club has, not what this phone has:
    "synced" while something is still owed would be the lie that loses a game. */
-let syncBase = ['off', 'this device'];
+let syncBase = ['off', 'Offline'];   // until the database says otherwise; never "this device" (GLOSSARY.md)
+/* What the badge says, in one place, so Settings → About says the same thing
+   (UX-REVIEW-3.md, 18.4: the badge said "1 to send", Settings "Waiting to
+   reach the club" and "Database · Connected", three sayings of one state and
+   one of them false). The outbox is "Waiting to send" everywhere. */
+function syncWords() {
+  const n = fb ? pendingCount() : 0, r = fb ? refusedCount() : 0;
+  return r ? ['off', `Not saved · ${r}`] : n ? ['off', `Waiting to send · ${n}`] : syncBase;
+}
 function paintSync() {
   const b = $('#syncBadge'); if (!b) return;
-  const n = pendingCount(), r = refusedCount();
-  if (fb && r) { b.dataset.state = 'off'; b.textContent = `${r} not saved`; }
-  else if (fb && n) { b.dataset.state = 'off'; b.textContent = `${n} to send`; }
-  else { b.dataset.state = syncBase[0]; b.textContent = syncBase[1]; }
+  [b.dataset.state, b.textContent] = syncWords();
+  const n = fb ? pendingCount() : 0, r = fb ? refusedCount() : 0;
   /* Its twin on the game header (build 144), where the brand row has stepped
      aside: drawn only while there is something to say at the sideline (owed,
      refused, or not connected), never "synced". */
@@ -7153,7 +7159,8 @@ function render() {
     av.dataset.on = me ? '1' : '0';
   }
   const vr = $('#ver');
-  if (vr) { vr.textContent = 'v' + BUILD; vr.dataset.stale = stale() ? '1' : '0'; }
+  // no build number by the name (UX-REVIEW-3.md, 18.5); an Update pill while the page is behind its code
+  if (vr) { vr.hidden = !stale(); vr.textContent = 'Update'; vr.dataset.act = 'hardreload'; }
 
   const lim = restricted();
   document.body.dataset.role = lim || '';
@@ -7559,7 +7566,7 @@ function sheetMore() {
     ${me ? `<button class="opt spread" data-act="goview" data-v="notes"><span><b>What's new</b>
       <span class="rowsub">Changes to your games and practices${newsFor() ? ', and club activity' : ''}</span></span>${b ? `<span class="pill asking">${b > 9 ? '9+' : b}</span>` : ''}</button>` : ''}
     ${(wsCode() || teams().length) && homeView() !== 'club' ? `<button class="opt" data-act="goview" data-v="club"><b>${esc(org)}</b>
-      <span class="rowsub">Club home: its teams, and everything else in it</span></button>` : ''}
+      <span class="rowsub">The club: its teams and sessions</span></button>` : ''}
     ${anyPlayers() && navKind() !== 'family' ? `<button class="opt" data-act="goview" data-v="mine"><b>My players</b>
       <span class="rowsub">${allKidNames().map(esc).join(', ')}</span></button>` : ''}
     ${canSessions() ? `<button class="opt" data-act="goview" data-v="sessions"><b>Sessions</b>
@@ -7574,6 +7581,15 @@ function sheetMore() {
     ${LEGAL_LINKS}`);
 }
 
+/* What a team she cannot change is to her, on Club home (UX-REVIEW-3.md,
+   18.3): her child's team said as her child's, never "view only", which
+   told a parent her own daughter's team was somebody else's. */
+function whoseTeam(t) {
+  const ps = players(t);
+  if (ps.some(p => me && (p.self || {})[me.uid])) return 'You play here';
+  const kids = ps.filter(p => isMine(p) || iFan(p)).map(firstName);
+  return kids.length ? `${wordsAnd(kids)}'s team` : 'view only';
+}
 function viewClub() {
   const org = clubName();
   /* A family's teams are her children's (UX-REVIEW.md, 1.2). In a club with
@@ -7595,7 +7611,7 @@ function viewClub() {
     <div class="clubhead">${clubCrest('lg')}<div><b>${esc(org)}</b>
       <span class="rowsub">${list.length} team${list.length === 1 ? '' : 's'}</span></div></div>
     ${canAdmin() && list.length ? goCard('schedule', '', 'Calendar', `Every team · ${esc(schedLine())}`)
-    : (me || !gated()) && myCalOwn() ? goCard('goview', ' data-v="mycal"', 'Calendar', esc(myCalLine())) : ''}
+    : (me || !gated()) && myCalOwn() && !fam ? goCard('goview', ' data-v="mycal"', 'Calendar', esc(myCalLine())) : ''}
     ${anyPlayers() && !fam ? goCard('goview', ' data-v="mine"', 'My players', allKidNames().map(esc).join(', ')) : ''}
     ${canSessions() ? goCard('goview', ' data-v="sessions"', 'Sessions', esc(sessClubLine())) : ''}
     ${complyCards()}
@@ -7613,7 +7629,7 @@ function viewClub() {
       ${teamCrest(t)}
       <span class="tc-main"><b>${teamLabel(t)}</b>
         <span class="rowsub">${sub}</span>
-        <span class="rowsub">${Object.keys(t.players || {}).length} players · ${ms.length} game${ms.length === 1 ? '' : 's'}${canEditTeam(t.id) ? '' : ' · view only'}</span></span>
+        <span class="rowsub">${Object.keys(t.players || {}).length} players · ${ms.length} game${ms.length === 1 ? '' : 's'}${canEditTeam(t.id) ? '' : ' · ' + esc(whoseTeam(t))}</span></span>
       ${live ? '<span class="pill live">live</span>' : ''}
     </button>`;
   }).join('')
@@ -7623,19 +7639,35 @@ function viewClub() {
   </div>`;
 }
 
-/* The avatar's sheet is the account and nothing else since build 141: the
-   calendar, her players and the club are tabs, and the rest is under More. */
+/* The account, one sheet from both doors (UX-REVIEW-3.md, 18.2): the avatar
+   and Settings → You opened two different sheets, one with the name box and
+   the ways in, the other with the role and Delete my account. Now both open
+   this: who she is (name, email, role and what it lets her do), her name as
+   the club sees it, the ways she signs in, and Sign out. Settings is a line
+   here unless she is on it; Delete my account is a row on Settings → You. */
 function sheetAccount() {
+  if (!me) { sheetSignIn(); return; }
   const r = myRole();
-  openSheet(`<h3>${esc(me.name)}</h3>
-    <p class="muted" style="margin-top:0">${esc(me.email || '')}${r ? ` · ${esc(ROLE_LABEL[r])}` : ''}</p>
+  const u = fbAuth && fbAuth.currentUser;
+  const have = u ? (u.providerData || []).map(x => x.providerId) : [];
+  const more = u && authMod ? signInProviders().filter(k => !have.includes(SIGNIN_PROVIDERS[k].id)) : [];
+  const mail = me.email && !hiddenEmail(me.email) ? me.email : '';
+  openSheet(`<div class="auth-me">
+      ${me.photo ? `<img class="auth-avatar" src="${esc(me.photo)}" alt="" referrerpolicy="no-referrer">` : `<span class="auth-avatar">${esc(initials(me.name))}</span>`}
+      <div><h3>Your account</h3><div class="auth-who"><b>${esc(me.name)}</b>${mail ? `<span>${esc(mail)}</span>` : ''}<span>${r ? esc(ROLE_LABEL[r]) : 'No role here yet'}</span></div></div>
+    </div>
     ${restricted() ? `<p class="muted rolewords" style="margin-top:0">${roleWords(restricted())}</p>` : ''}
-    <button class="opt" data-act="goview" data-v="setup"><b>Settings</b>
-      <span class="rowsub">${esc(settingsLine())}</span></button>
+    ${ui.view !== 'setup' ? `<button class="opt" data-act="goview" data-v="setup"><b>Settings</b>
+      <span class="rowsub">${esc(settingsLine())}</span></button>` : ''}
+    ${hiddenEmail(me.email) ? `<div class="auth-note">Apple is hiding your email from the club. An invite sent to your own address will not open on this account: sign in with that address instead (a link, a password or Google), or ask for the invite to be sent to this one.</div>` : ''}
+    <label class="field"><span>Your name, as the club sees it</span>
+      <div class="auth-inline"><input type="text" id="acctName" value="${esc(me.name)}" autocomplete="name"><button class="btn quiet" data-act="savename">Save</button></div></label>
+    ${have.length ? `<p class="lbl" style="margin-top:16px">Ways you sign in</p>
+      <ul class="auth-ways">${have.map(id => `<li>${AUTH_LOGO[providerKey(id)] || ''}<span>${esc(providerLabel(id))}</span><span class="auth-tick" aria-label="on">✓</span></li>`).join('')}</ul>` : ''}
+    ${more.length ? `<div class="auth-btns">${more.map(k => `<button class="auth-btn auth-${k}" data-act="signin-add" data-v="${k}">${AUTH_LOGO[k]}<span>Add ${esc(SIGNIN_PROVIDERS[k].label)}</span></button>`).join('')}</div>
+      <p class="muted" style="margin-top:0">Adding one means you can sign in with either and stay the same person to the club.</p>` : ''}
     <button class="btn danger wide" data-act="signout" style="margin-top:8px">Sign out</button>
-    ${fbConfig().apiKey ? '<button class="btn quiet danger wide" data-act="forgetsheet" style="margin-top:8px">Delete my account</button>' : ''}
-    <p class="muted">Your team, the calendar, the game and the club are on the bar at the bottom.</p>
-    <p class="muted"><a href="privacy">Privacy Policy</a> · <a href="terms">Terms of Service</a></p>`);
+    ${LEGAL_LINKS}`);
 }
 
 /* Deleting an account (AUTH.md, *Deleting*). The club's server does the
@@ -16972,9 +17004,10 @@ function sheetPersonCal(u) {
    calendar on three. Now it is this screen, in four sections by whose they
    are: You (the account, notifications, her drills), This team (the team on
    screen, for whoever could read its set-up), Club (what each person may
-   open of the club's: People for coaches, the rest for admins) and Advanced
-   (backup, readiness, version, ids: what nobody needs at a game). Each item
-   is one line she taps into; the screens behind them are unchanged. */
+   open of the club's: People for coaches, the rest for admins), Advanced
+   (backup and readiness: an admin's) and About (the version, connection and
+   account id behind one row, since build 155). Each item is one line she
+   taps into; the screens behind them are unchanged. */
 const setRow = (act, title, sub, data = '') => `<button class="prow go setrow" type="button" data-act="${act}"${data}>
   <span style="min-width:0"><span class="pname">${title}</span>${sub ? `<span class="psub">${sub}</span>` : ''}</span></button>`;
 const setInfo = (title, sub, right = '') => `<div class="prow setrow"><span style="min-width:0"><span class="pname">${title}</span>${sub ? `<span class="psub">${sub}</span>` : ''}</span>${right || '<span></span>'}</div>`;
@@ -16995,7 +17028,7 @@ function viewSetup() {
   const coachAny = !!me && teams().some(t => isCoach(t.id, me.uid));
   const n = fb ? pendingCount() : 0, lo = localOnlyData();
   // what is still only on this phone is not a setting, it is news: first, and only when there is some
-  const pend = n ? `<div class="card"><h2 style="margin-bottom:8px">Waiting to reach the club</h2>
+  const pend = n ? `<div class="card"><h2 style="margin-bottom:8px">Waiting to send · ${n}</h2>
     <p class="muted" style="margin-top:0">${n} change${n === 1 ? '' : 's'} made on this phone ${n === 1 ? "hasn't" : "haven't"} reached the club yet. ${n === 1 ? 'It goes' : 'They go'} the moment there's a signal, even if the app is closed and opened again in between.</p>
     <button class="btn quiet wide" data-act="pendingsheet">See what's waiting</button></div>` : '';
   const old = lo ? `<div class="card"><h2 style="margin-bottom:8px">On this phone only</h2>
@@ -17006,7 +17039,9 @@ function viewSetup() {
   const you = setSection('You', [
     me ? setRow('signinsheet', esc(me.name || me.email || 'You'), esc([me.email, r ? ROLE_LABEL[r] + (r !== 'owner' && r !== 'admin' && team() ? ' · ' + team().name : '') : 'No role here yet'].filter(Boolean).join(' · ')))
       : setRow('signinsheet', 'Sign in', 'Signed out, everything stays on this device. Sign in to share it with your club.'),
-    canTrain() ? setRow('mydrills', 'My drills', 'Your own drills and templates, on every phone you sign in on') : ''
+    canTrain() ? setRow('mydrills', 'My drills', 'Your own drills and templates, on every phone you sign in on') : '',
+    // here, not on the account sheet (UX-REVIEW-3.md, 18.2): the sheet is who she is, this is a decision
+    me && cfgOk ? setRow('forgetsheet', 'Delete my account', 'Takes you out of every club you are in, for good') : ''
   ]);
   // the switches, here and nowhere else (UX-REVIEW-2.md, 6.2); What's new has a gear to them
   const notify = me ? `<h2 class="sechead" id="setNotify">Notifications</h2>${notifyCards()}` : '';
@@ -17035,20 +17070,46 @@ function viewSetup() {
   ]);
 
   const crosses = adm ? readiness().filter(x => !x.ok).length : 0;
+  // what nobody needs at a game, and only the people who use it see it
   const adv = setSection('Advanced', [
     adm ? setRow('backupsheet', 'Backup', "Download a copy of the club, or load one from a file") : '',
     adm ? setRow('readysheet', 'Check readiness', crosses ? `${crosses} thing${crosses === 1 ? '' : 's'} to fix` : 'Everything the rules need is in place') : '',
-    setInfo(`Version v${BUILD}`, stale() ? `This page is cached at v${esc(pageBuild())}. Reload to catch up.` : `${BUILT} · page and code agree`,
-      '<button class="btn quiet sm" data-act="hardreload">Reload</button>'),
-    setInfo('Database', `${cfgOk ? 'Connected' : 'Not connected: this copy of the app has no database set up'}${code && cfgOk ? ' · ' + esc((acc().org || {}).name || 'your club') : ''}${envName() ? ' · ' + esc(envName()) : ''}`),
-    me ? setInfo('Account id', `<span class="mono">${esc(me.uid)}</span> · for support, if you are ever asked for it`,
-      `<button class="btn quiet sm" data-act="copylink" data-v="${esc(me.uid)}">Copy</button>`) : '',
     isOwner() ? setRow('envsheet', 'Database to use', esc(envName() || 'production')) : '',
     isOwner() ? setRow('maketestclub', 'Make a test club', 'Invented data, publishing off: safe to take apart. A rules change is rehearsed in another database, not another club.') : '',
     isOwner() ? setRow('peeklib', "Look at someone's drills", 'For support; nothing is kept') : ''
   ]);
+  /* The version, the connection and the account id were three rows of a
+     developer's Advanced section on every phone, a parent's included
+     (UX-REVIEW-3.md, 18.1). Now one quiet row, and a sheet behind it. */
+  const about = setSection('About', [
+    setRow('aboutsheet', `${APP_NAME} · v${BUILD}`, stale() ? 'An older copy of this page: open it to reload' : 'Version, connection, and your account id for support')
+  ]);
 
-  return `<div class="stack">${pend}${old}${you}${notify}${team_}${club}${adv}</div>`;
+  return `<div class="stack">${pend}${old}${you}${notify}${team_}${club}${adv}${about}</div>`;
+}
+/* Settings → About, and the badge when nothing is waiting: the version, what
+   the badge says and why, and the account id. The connection reads `online`,
+   as the badge does, never only whether a database is configured: it said
+   "Connected" beside a badge that said Offline (UX-REVIEW-3.md, 18.1, 18.4). */
+function sheetAbout() {
+  const cfgOk = !!fbConfig().apiKey, code = wsCode();
+  const [, said] = syncWords();
+  const n = fb ? pendingCount() : 0, r = fb ? refusedCount() : 0;
+  const conn = !cfgOk ? 'Not set up: this copy of the app keeps everything on this phone'
+    : r ? `${said}: the club turned ${r === 1 ? 'a change' : r + ' changes'} down`
+      : n ? `${said}: ${n === 1 ? 'a change goes' : 'changes go'} to the club the moment there is a signal`
+        : online ? `${said}${code ? ' with ' + esc((acc().org || {}).name || 'your club') : ''}`
+          : `${said}: changes wait on this phone and go when there is a signal`;
+  openSheet(`<h3>About this app</h3>
+    <div class="plist">
+      ${setInfo(`Version v${BUILD}`, stale() ? `This page is an older copy, v${esc(pageBuild())}. Reload to catch up.` : esc(BUILT),
+        '<button class="btn quiet sm" data-act="hardreload">Reload</button>')}
+      ${setInfo('Connection', conn + (envName() ? ' · ' + esc(envName()) : ''),
+        n || r || otherOwed().length ? '<button class="btn quiet sm" data-act="pendingsheet">See it</button>' : '')}
+      ${me ? setInfo('Account id', `<span class="mono">${esc(me.uid)}</span> · for support, if you are ever asked for it`,
+        `<button class="btn quiet sm" data-act="copylink" data-v="${esc(me.uid)}">Copy</button>`) : ''}
+    </div>
+    ${LEGAL_LINKS}`);
 }
 /* Check readiness and the backup, from Settings → Advanced: an admin's, and
    what they were on Club settings, in a sheet. */
@@ -18841,33 +18902,14 @@ const authHero = (title, sub) => `<div class="auth-hero"><div class="auth-pitch"
 let signinMode = 'link';
 
 function sheetSignIn() {
+  if (me) { sheetAccount(); return; }
   if (!authMod) { toast('Sign-in is not available on this build'); return; }
-  const u = fbAuth && fbAuth.currentUser;
   const btn = (act, k) => `<button class="auth-btn auth-${k}" data-act="${act}" data-v="${k}">${AUTH_LOGO[k]}<span>${act === 'signin-oauth' ? 'Continue with' : 'Add'} ${esc(SIGNIN_PROVIDERS[k].label)}</span></button>`;
-  if (me) {
-    // what this account can sign in with, and what else the club has switched on
-    const have = u ? (u.providerData || []).map(x => x.providerId) : [];
-    const more = u ? signInProviders().filter(k => !have.includes(SIGNIN_PROVIDERS[k].id)) : [];
-    openSheet(`<div class="auth-me">
-        ${me.photo ? `<img class="auth-avatar" src="${esc(me.photo)}" alt="" referrerpolicy="no-referrer">` : `<span class="auth-avatar">${esc(initials(me.name))}</span>`}
-        <div><h3>Your account</h3><div class="auth-who"><b>${esc(me.name)}</b>${me.email && !hiddenEmail(me.email) ? `<span>${esc(me.email)}</span>` : ''}</div></div>
-      </div>
-      <p class="muted" style="margin-top:0">Anything you log is stamped with this account rather than a typed name.</p>
-      ${hiddenEmail(me.email) ? `<div class="auth-note">Apple is hiding your email from the club. An invite sent to your own address will not open on this account: sign in with that address instead (a link, a password or Google), or ask for the invite to be sent to this one.</div>` : ''}
-      <label class="field"><span>Your name, as the club sees it</span>
-        <div class="auth-inline"><input type="text" id="acctName" value="${esc(me.name)}" autocomplete="name"><button class="btn quiet" data-act="savename">Save</button></div></label>
-      ${have.length ? `<p class="lbl" style="margin-top:16px">Ways you sign in</p>
-        <ul class="auth-ways">${have.map(id => `<li>${AUTH_LOGO[providerKey(id)] || ''}<span>${esc(providerLabel(id))}</span><span class="auth-tick" aria-label="on">✓</span></li>`).join('')}</ul>` : ''}
-      ${more.length ? `<div class="auth-btns">${more.map(k => btn('signin-add', k)).join('')}</div>
-        <p class="muted" style="margin-top:0">Adding one means you can sign in with either and stay the same person to the club.</p>` : ''}
-      <button class="btn danger wide" data-act="signout" style="margin-top:8px">Sign out</button>`);
-    return;
-  }
   const keys = signInProviders();
   const mail = pendingLink && pendingLink.email ? pendingLink.email : String(($('#authEmail') || {}).value || '');
   const pass = signinMode === 'pass';
   openSheet(`${authHero(pendingLink ? 'Nearly there' : 'Welcome to the touchline', pendingLink ? '' : 'Sign in to see your club, your teams and your calendar.')}
-    ${pendingLink ? `<div class="auth-note"><b>${esc(pendingLink.email || 'That email')}</b> already has an account here. Sign in the way you did before, and ${esc(pendingLink.label)} will be added to it, so either works from now on. By a link to your email, it opens a fresh page, so add ${esc(pendingLink.label)} from <b>Your account</b> once you are in.</div>` : ''}
+    ${pendingLink ? `<div class="auth-note"><b>${esc(pendingLink.email || 'That email')}</b> already has an account here. Sign in the way you did before, and ${esc(pendingLink.label)} will be added to it, so either works from now on. By a link to your email, it opens a fresh page, so add ${esc(pendingLink.label)} from <b>Settings → You</b> once you are in.</div>` : ''}
     ${keys.length ? `<div class="auth-btns">${keys.map(k => btn('signin-oauth', k)).join('')}</div>
     <div class="auth-or"><span>or use your email</span></div>` : ''}
     <div class="auth-seg" role="tablist">
@@ -23227,6 +23269,9 @@ function onAct(e) {
      wholesale — access included — and now goes through the same merge as the
      bulk import, which only ever adds what is missing. */
   if (a === 'pendingsheet') { sheetPending(); return; }
+  // the badge is a button (UX-REVIEW-3.md, 14.4, 18.4): what is waiting when something is, else what it means
+  if (a === 'syncsheet') { if (fb && (pendingCount() || refusedCount() || otherOwed().length)) sheetPending(); else sheetAbout(); return; }
+  if (a === 'aboutsheet') { sheetAbout(); return; }
   if (a === 'pendingretry') {
     for (const e of Object.values(pending.w)) delete e.refused;
     sess.refused = {}; saveSess();

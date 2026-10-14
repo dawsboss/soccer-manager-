@@ -472,6 +472,16 @@ The fixes, in the order they pay:
 
 ## 18. Settings and the edges
 
+**Built in build 155**, but for 18.7. 18.1: Settings ends in *About · TeamPlayHQ · v155* for
+everyone, a sheet with the version and Reload, the connection and the account id; Advanced is
+an admin's (and the app owner's) alone. 18.2: the avatar and Settings → You open one sheet
+(`sheetAccount()`); Delete my account is a row under You. 18.3: Club home says *Rosa's team*
+(`whoseTeam()`), no Calendar card for a family, More's line *The club: its teams and sessions*.
+18.4: *Waiting to send · n* and *Not saved · n* on the badge and Settings (`syncWords()`), the
+connection read from `online`, and the badge a button (the pending sheet, or About); the
+toast under the answer from 14.4 is not built. 18.5: no version in the brand, an *Update* pill
+while `stale()`. 18.6: the share page's line about numbers at the foot.
+
 - **18.1 A parent's Settings carries a developer's Advanced section.** *Version v153 ·
   2026-10-12 · page and code agree · [Reload]*, *Database · Connected · Lakeside SC* (the badge
   says Offline), *Account id · mum · for support, if you are ever asked for it · [Copy]*

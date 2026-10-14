@@ -261,8 +261,8 @@ const slotSess = (sid, extra = {}) => ({ id: sid, kind: 'one', cap: 1, coach: 'j
     // one child on one team: My calendar is her team's calendar, so there is one calendar and no choice to make
     check('it draws, on the one calendar', A.ui.view + ' ' + /1-1 session with Jaz/.test(A.rendered()), 'calendar true');
     check('with no other child\'s name', /Ella|Another 1-1/.test(A.rendered()), false);
-    check('the club page has the card', (A.ui.view = 'club', A.render(), /<b>Calendar<\/b>/.test(A.rendered())), true);
-    check('and it says what is next', /Next: Practice/.test(A.rendered()), true);
+    // a family's Club home has no Calendar card: the tab is one tap away (UX-REVIEW-3.md, 18.3)
+    check('the club page leaves the calendar to its tab', (A.ui.view = 'club', A.render(), /<b>Calendar<\/b>/.test(A.rendered())), false);
   }
   {
     as('jaz'); putBlock('b1');

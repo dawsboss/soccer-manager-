@@ -450,7 +450,7 @@ async function boot(opts = {}) {
     check('each change is in the outbox on disk', Object.keys(owed.w).sort().join(), 'matches/g1/goals/x1,matches/g2,matches/gNew');
     check('the badge says so, rather than "synced"', /to send/.test(A.dom.node('#syncBadge').textContent), true);
     A.render();
-    check('and so does Settings', (A.ui.view = 'setup', A.render(), /Waiting to reach the club/.test(A.rendered())), true);
+    check('and so does Settings', (A.ui.view = 'setup', A.render(), /Waiting to send · 3/.test(A.rendered())), true);
 
     /* The page is closed and opened again, still offline, and then the signal
        comes back with the club exactly as it was. */
@@ -494,7 +494,7 @@ async function boot(opts = {}) {
     check('marked refused in the outbox', JSON.parse(A.storage.getItem('sm.pending.v1:' + CODE)).w['matches/g1/goals/x2'].refused, true);
     A.ui.view = 'matches'; A.render();
     check('every screen says a change was not accepted', /hasn't been accepted by the club/.test(A.rendered()), true);
-    check('the badge too', /1 not saved/.test(A.dom.node('#syncBadge').textContent), true);
+    check('the badge too', /Not saved · 1/.test(A.dom.node('#syncBadge').textContent), true);
     A.click({ act: 'pendingsheet' });
     check('the list says what it is, in words', /a goal in the game against Riverside/.test(String(A.dom.node('#sheet').innerHTML)), true);
 

@@ -84,7 +84,7 @@ button{cursor:pointer}
 .team-switch svg{opacity:.7;flex:none}
 .team-switch-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .sync{
-  flex:none;font-size:12px;letter-spacing:.02em;
+  flex:none;font:inherit;font-size:12px;letter-spacing:.02em;color:inherit;border:0;cursor:pointer;
   background:rgba(255,255,255,.16);border-radius:999px;padding:3px 9px;
 }
 .sync[data-state="live"]{background:#7FD6A6;color:#0E3B25;font-weight:600}
@@ -468,9 +468,12 @@ label.field span{display:block;font-size:14px;color:var(--ink-soft);margin-botto
 .crest.lg{width:56px;height:56px;border-radius:12px;margin-bottom:8px;display:block}
 .crest.blank{display:flex;align-items:center;justify-content:center;border:1px dashed var(--line);color:var(--ink-soft)}
 
-.ver{font-family:"Barlow",sans-serif;font-size:12px;font-weight:500;opacity:.55;margin-left:6px;vertical-align:2px}
-.ver[data-stale="1"]{opacity:1;color:#FFD9A0}
-.ver[data-stale="1"]::after{content:" cached"}
+/* The brand carries no build number (UX-REVIEW-3.md, 18.5: that is the
+   developer's, and lives in Settings → About); only an Update pill while this
+   page is older than its code. */
+.ver{font-family:"Barlow",sans-serif;font-size:12px;font-weight:600;margin-left:8px;vertical-align:2px;
+  background:#FFD9A0;color:#4A2A00;border:0;border-radius:999px;padding:2px 9px;cursor:pointer}
+.ver[hidden]{display:none}
 
 /* ---------- shot map ---------- */
 .minipitch{position:relative;width:100%;aspect-ratio:68/100;max-width:320px;margin:0 auto;

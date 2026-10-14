@@ -453,7 +453,14 @@ console.log('\n--- the account sheet, and the old menus ---');
 {
   as('jaz');
   A.click({ act: 'accountsheet' });
-  check('the avatar: settings, sign out, delete', /data-v="setup"/.test(sheet()) && /data-act="signout"/.test(sheet()) && /forgetsheet/.test(sheet()), true);
+  check('the avatar: settings, her name to change, sign out', /data-v="setup"/.test(sheet()) && /id="acctName"/.test(sheet()) && /data-act="signout"/.test(sheet()), true);
+  check('— Delete my account is on Settings → You, not here (UX-REVIEW-3.md, 18.2)', /forgetsheet/.test(sheet()), false);
+  A.closeSheet();
+  const bare = h => h.replace(/<button class="opt" data-act="goview" data-v="setup">[\s\S]*?<\/button>/, '').replace(/\s+/g, ' ');
+  A.click({ act: 'accountsheet' }); const fromAvatar = bare(sheet()); A.closeSheet();
+  as('jaz', 'setup'); A.click({ act: 'signinsheet' });
+  check('— Settings → You opens the same sheet, less the line to Settings', bare(sheet()), fromAvatar);
+  check('— which it does not draw there', /data-v="setup"/.test(sheet()), false);
   check('— and nothing that is a tab or under More', /data-v="mycal"|data-v="club"|data-v="mine"/.test(sheet()), false);
   A.closeSheet();
   // the Settings line is the More sheet's, for everyone (UX-REVIEW-2.md, 9.4): it said "You, this team and the club" to a parent with no team or club rows
@@ -470,6 +477,12 @@ console.log('\n--- the account sheet, and the old menus ---');
   check('— a tracker\'s too', setLine(sheet()), 'You');
   A.closeSheet();
   const page = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
+  // UX-REVIEW-3.md, 18.5: no build number by the name; an Update pill only while the page is behind its code
+  A.dom.node('meta[name="build"]').content = A.BUILD; as('mum', 'season');
+  check('the brand carries no version', A.dom.node('#ver').hidden + ' ' + /v\d/.test(A.dom.node('#ver').textContent || ''), 'true false');
+  A.dom.node('meta[name="build"]').content = '1'; as('mum', 'season');
+  check('— an Update pill while the page is older than its code', A.dom.node('#ver').hidden + ' ' + A.dom.node('#ver').textContent + ' ' + A.dom.node('#ver').dataset.act, 'false Update hardreload');
+  delete A.dom.node('meta[name="build"]').content;
   check('the top bar keeps the brand, the badge and the account', /id="syncBadge"/.test(page) && /id="avatar"/.test(page) && !/id="calBtn"|id="msgBtn"|id="bellBtn"|id="clubSwitch"|id="crumbs"/.test(page), true);
   check('the title row is in the header, the bar after the page', page.indexOf('id="titlebar"') < page.indexOf('<main') && page.indexOf('id="tabbar"') > page.indexOf('</main>'), true);
 }
