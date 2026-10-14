@@ -3255,13 +3255,13 @@ function joinScreen() {
   return `<div class="stack"><div class="card">
     <h2>Join ${tm}</h2>
     <p class="muted" style="margin-top:4px">${club} · as a parent. You are signed in as <b>${esc(me.email || me.name)}</b>.</p>
-    <div class="chips" style="margin-bottom:12px"><button class="chip" type="button" data-act="joinkid" data-v="" aria-pressed="${!kid}">She's on the squad</button>
+    <div class="chips" style="margin-bottom:12px"><button class="chip" type="button" data-act="joinkid" data-v="" aria-pressed="${!kid}">She's on the team list</button>
       <button class="chip" type="button" data-act="joinkid" data-v="1" aria-pressed="${kid}">She isn't on it yet</button></div>
     ${kid ? `<label class="field"><span>Your child's name</span><input type="text" id="joinKidName" maxlength="120" autocomplete="off" placeholder="First and last"></label>
     <label class="field"><span>Her birth date — optional</span><input type="date" id="joinKidBorn"></label>
     <div class="chips" style="margin-bottom:12px">${Object.entries(KID_GENDER).map(([k, l]) => `<button class="chip" type="button" data-act="joingender" data-v="${k}" aria-pressed="${join.gender === k}">${l}</button>`).join('')}</div>
     <label class="field"><span>Her shirt number — if she has one</span><input type="text" inputmode="numeric" id="joinShirt" maxlength="40"></label>
-    <p class="muted">A coach of the team adds her to the squad and lets you in. You see nothing of the team until then.</p>`
+    <p class="muted">A coach of the team adds her and lets you in. You see nothing of the team until then.</p>`
     : `<label class="field"><span>Your child's shirt number</span><input type="text" inputmode="numeric" id="joinShirt" maxlength="40" placeholder="7 — or 7, 12 for two"></label>
     <label class="field"><span>Their first name — optional, helps the coach</span><input type="text" id="joinChild" maxlength="40" autocomplete="off"></label>
     <p class="muted">A coach of the team checks this and lets you in. You see nothing of the team until then.</p>`}
@@ -3817,11 +3817,14 @@ const guardianEmails = tid => [...new Set(families(tid).map(u => ((acc().members
 function whenShort(ms) {
   if (!ms) return '';
   const d = new Date(ms), now = new Date(nowMs());
-  const time = d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  /* One format for every date a parent reads: 6pm, 9:10pm, Yesterday · 9:10pm,
+     8 Oct · 6:10pm, and the weekday too for what is still to come. */
+  const time = d.toLocaleTimeString('en-GB', { hour: 'numeric', minute: '2-digit', hour12: true }).replace(/:00(?=\s*[ap]m)/i, '').replace(/\s+/g, '').toLowerCase();
   if (d.toDateString() === now.toDateString()) return time;
   const y = new Date(now); y.setDate(y.getDate() - 1);
-  if (d.toDateString() === y.toDateString()) return 'Yesterday ' + time;
-  return d.toLocaleDateString([], { day: 'numeric', month: 'short' }) + ' ' + time;
+  if (d.toDateString() === y.toDateString()) return 'Yesterday \u00b7 ' + time;
+  const day = d.toLocaleDateString('en-GB', d > now ? { weekday: 'short', day: 'numeric', month: 'short' } : { day: 'numeric', month: 'short' }).replace(',', '');
+  return day + ' \u00b7 ' + time;
 }
 const msgText = s => esc(s).replace(/\n/g, '<br>');
 
@@ -4200,7 +4203,7 @@ function notifyCards() {
   const canPop = typeof Notification !== 'undefined';
   const pops = pushSupport() === 'unset' && canPop && Notification.permission === 'default' ? `<div class="card"><div class="spread"><b>Pop-ups on this device</b>
       <button class="btn sm" data-act="msgalerts">Turn on</button></div>
-    <p class="muted" style="margin:6px 0 0">A message or a change to your games pops up while TeamPlayHQ is open, even in another tab.</p></div>` : '';
+    <p class="muted" style="margin:6px 0 0">A message or a change to your games pops up while TeamPlayHQ is open.</p></div>` : '';
   return pushCard() + pops + muteCard();
 }
 const GEAR_SVG = '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:-2px"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>';
@@ -4277,7 +4280,7 @@ function viewInboxMsgs() {
       ${noticeTeams().length ? `<button class="btn quiet sm" data-act="postnew">Post a notice</button>` : ''}</div>
       <div style="margin-top:8px">${shown.length ? shown.map(notice).join('') : `<p class="muted" style="margin:0">${staff.length ? 'Nothing posted yet. A notice goes to every family on the team.' : 'Nothing from the coaches yet.'}</p>`}</div>
       ${all.length > shown.length ? `<button class="btn quiet wide" data-act="msgall">Show ${all.length - shown.length} older</button>` : ''}</div>
-    <p class="muted">Messages pop up while TeamPlayHQ is open on a phone, and wait here with a count until then.${staff.length ? ' To reach everyone right now, use <b>Email or share</b> on a notice.' : ''}</p>
+    <p class="muted">Messages wait here until you open the app.${staff.length ? ' To reach everyone right now, use <b>Email or share</b> on a notice.' : ''}</p>
   </div>`;
 }
 
@@ -7719,7 +7722,7 @@ function sheetClubSwitch() {
         <b>${esc(c.name)}</b><span class="rowsub">${c.code === here ? 'open now' : 'tap to open'}</span></button>
       ${c.code === here ? '<span class="muted">here</span>'
       : `<button class="btn quiet sm" data-act="forgetclub" data-code="${esc(c.code)}">Forget</button>`}</div>`).join('')}
-    <p class="muted">Forget removes this device's copy only. Deleting a club for everyone is done outside the app, by its owner — see below.</p>
+    <p class="muted">Forget takes this club off this device only.</p>
     <button class="opt" data-act="goview" data-v="club"><b>Club home</b>
       <span class="rowsub">Teams, stats and settings for ${esc((acc().org || {}).name || 'this club')}</span></button>
     ${canStartClub() ? `<button class="opt" data-act="newclub"><b>+ Start a new club</b>
@@ -8139,7 +8142,7 @@ function viewStats() {
 
   const headline = `<div class="card">
     <h2>${us} ${sc.us} — ${sc.them} ${them}</h2>
-    <div class="muted">${gameStatus(m) === 'done' ? (m.ended ? 'Final' : 'Full time') : gameStatus(m) === 'live' ? 'In progress' : 'Not started'} · <span data-live="clock" data-mid="${m.id}">${mmss(elapsedSec(m, now))}</span> played${m.date ? ' · ' + esc(shortDate(m.date)) : ''}</div></div>`;
+    <div class="muted">${gameStatus(m) === 'done' ? 'Full time' : gameStatus(m) === 'live' ? 'In progress' : 'Not started'} · <span data-live="clock" data-mid="${m.id}">${mmss(elapsedSec(m, now))}</span> played${m.date ? ' · ' + esc(shortDate(m.date)) : ''}</div></div>`;
 
   const halfTable = halves.length > 1 ? `<div class="card"><h2 style="margin-bottom:10px">By half</h2>
     <div class="statgrid" style="grid-template-columns:1fr ${halves.map(() => '48px').join(' ')}">
@@ -8734,7 +8737,7 @@ function viewFeed() {
         : 'Get goals, kick-off, half time and full time on this phone, even with TeamPlayHQ closed.')
       : following
         ? `On for this game. Goals, kick-off, half time and full time ${canNotify && Notification.permission === 'granted' ? 'pop up on this device' : 'buzz and show here'} while this page is open.${offerPush}`
-        : 'Get goals, kick-off, half time and full time on this device while this page is open, even in another tab.'}</p></div>`;
+        : 'Get goals, kick-off, half time and full time here while this page is open.'}</p></div>`;
 
   // once the coach has ended it, following is over and the feed becomes the record
   return `<div class="stack">
@@ -9893,7 +9896,7 @@ function attendLine(r) {
   const miss = b => b.of - b.came;
   return [
     r.practice.of ? `Practices ${r.practice.came} of ${r.practice.of}${miss(r.practice) ? ` · missed ${miss(r.practice)}${r.practice.silent ? ` (${r.practice.silent} without saying)` : ''}` : ''}` : '',
-    r.game.of ? `Games ${r.game.came} of ${r.game.of}` : '',
+    r.game.of ? `${r.game.came} of ${r.game.of} games` : '',
     r.event.of ? `Other ${r.event.came} of ${r.event.of}` : '',
     r.session && r.session.of ? `Extra sessions ${r.session.came} of ${r.session.of}` : ''
   ].filter(Boolean).join(' · ');
@@ -10273,7 +10276,7 @@ function calAgenda(items, multi, opt = {}) {
     const rel = relDay(d);
     out += `<div class="agday" data-today="${d === today ? 1 : 0}" data-past="${d < today ? 1 : 0}">
       <div class="agdate" aria-label="${esc(dayLabel(d))}${rel ? ', ' + rel : ''}"><small>${WEEKDAYS[weekdayOf(d)]}</small><b>${dateOf(d).getDate()}</b></div>
-      <div class="agevs">${list.length ? dayRows(list, multi, d) : NOW_LINE + '<p class="muted calnone">Nothing else on today</p>'}</div></div>`;
+      <div class="agevs">${list.length ? dayRows(list, multi, d) : NOW_LINE + '<p class="muted calnone">Nothing on today</p>'}</div></div>`;
   }
   return `<div class="agenda">${out}</div>`;
 }
@@ -17038,10 +17041,10 @@ function viewSetup() {
   const adv = setSection('Advanced', [
     adm ? setRow('backupsheet', 'Backup', "Download a copy of the club, or load one from a file") : '',
     adm ? setRow('readysheet', 'Check readiness', crosses ? `${crosses} thing${crosses === 1 ? '' : 's'} to fix` : 'Everything the rules need is in place') : '',
-    setInfo(`Version v${BUILD}`, stale() ? `This page is cached at v${esc(pageBuild())}. Reload to catch up.` : `${BUILT} · page and code agree`,
+    setInfo(`Version v${BUILD}`, stale() ? `This page is cached at v${esc(pageBuild())}. Reload to catch up.` : `${BUILT} · up to date`,
       '<button class="btn quiet sm" data-act="hardreload">Reload</button>'),
-    setInfo('Database', `${cfgOk ? 'Connected' : 'Not connected: this copy of the app has no database set up'}${code && cfgOk ? ' · ' + esc((acc().org || {}).name || 'your club') : ''}${envName() ? ' · ' + esc(envName()) : ''}`),
-    me ? setInfo('Account id', `<span class="mono">${esc(me.uid)}</span> · for support, if you are ever asked for it`,
+    setInfo('Connection', `${cfgOk ? 'Connected' : 'Not connected: this copy of the app is not set up'}${code && cfgOk ? ' · ' + esc((acc().org || {}).name || 'your club') : ''}${envName() ? ' · ' + esc(envName()) : ''}`),
+    me ? setInfo('Account ID', `<span class="mono">${esc(me.uid)}</span> · only if support asks`,
       `<button class="btn quiet sm" data-act="copylink" data-v="${esc(me.uid)}">Copy</button>`) : '',
     isOwner() ? setRow('envsheet', 'Database to use', esc(envName() || 'production')) : '',
     isOwner() ? setRow('maketestclub', 'Make a test club', 'Invented data, publishing off: safe to take apart. A rules change is rehearsed in another database, not another club.') : '',
@@ -18880,7 +18883,7 @@ function sheetSignIn() {
       <div class="auth-links"><button class="auth-link" data-act="signup-pass">Create an account</button><button class="auth-link" data-act="signin-reset">Forgot your password?</button></div>`
     : `<button class="btn wide auth-go" data-act="signin-link">Send me a sign-in link</button>
       <p class="muted auth-hint">No password to forget: tap the link in the email and you are in.</p>`}
-    <p class="auth-fine">Optional for now — everything works signed out. Signing in means what you log carries a verified name instead of one anybody could type.</p>`);
+    <p class="auth-fine">Signing in puts your name on what you log, instead of one anybody could type.</p>`);
 }
 
 function sheetWho() {

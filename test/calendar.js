@@ -572,7 +572,7 @@ console.log('--- a club\'s whole season: views, the tree of calendars, and pagin
     check('at six, a six o\'clock start has started', x.indexOf('data-id="a"') < x.indexOf('agline') && x.indexOf('agline') < x.indexOf('data-id="b"'), true);
     H.clock.set(new Date(2026, 8, 12, 10, 0).getTime());
     x = A.calAgenda([at('2026-09-13', '18:00', 'a')], false, { today: true });
-    check('on the Schedule, today with nothing left in it is still there, with the line', /data-today="1"/.test(x) && lines(x) === 1 && x.indexOf('agline') < x.indexOf('data-id="a"') && /Nothing else on today/.test(x), true);
+    check('on the Schedule, today with nothing left in it is still there, with the line', /data-today="1"/.test(x) && lines(x) === 1 && x.indexOf('agline') < x.indexOf('data-id="a"') && /Nothing on today/.test(x), true);
     check('— but not past the end of the list, where nothing is to come', /data-today="1"/.test(A.calAgenda([at('2026-09-11', '18:00', 'a')], false, { today: true })), false);
     A.ui.calView = 'month'; A.ui.calDay = null;
     const h2 = html();

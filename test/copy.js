@@ -152,7 +152,7 @@ console.log('\n--- the labels, as GLOSSARY.md names them ---');
   const h = as('boss', 'setup');
   check('a team row carries no id', /· id [a-z0-9]{4}/i.test(h), false);
   check('the version row says Reload', /data-act="hardreload">Reload</.test(h), true);
-  check('the account id is for support, not the console', /Account id[\s\S]*?for support/.test(h) && !/app owner/.test(text(h.split('Account id')[1] || '')), true);
+  check('the account id is for support, not the console', /Account ID[\s\S]*?support/.test(h) && !/app owner/.test(text(h.split('Account ID')[1] || '')), true);
   A.click({ act: 'readysheet' });
   check('Check readiness explains itself without a lookup table', /every change saves/.test(sheet()) && !/lookup table/.test(sheet()), true);
   check('— and is the one place the rules are named', /The published rules match this app/.test(sheet()), true);

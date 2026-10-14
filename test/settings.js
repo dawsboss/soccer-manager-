@@ -98,7 +98,7 @@ console.log('\n--- each item one line ---');
 {
   const h = as('boss');
   check('no paragraph of Firebase on the screen', /Firebase config is/.test(h), false);
-  check('the account id one line, with Copy', /Account id[\s\S]*?class="mono">boss<[\s\S]*?data-act="copylink" data-v="boss"/.test(h), true);
+  check('the account id one line, with Copy', /Account ID[\s\S]*?class="mono">boss<[\s\S]*?data-act="copylink" data-v="boss"/.test(h), true);
   check('the version one line, with Force refresh', /Version v\d+[\s\S]*?data-act="hardreload"/.test(h), true);
 }
 
