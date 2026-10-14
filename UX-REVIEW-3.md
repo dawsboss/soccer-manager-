@@ -45,6 +45,11 @@ the Got it, the one next-up card and the shared Stats · Live pair from round 3 
 
 ### 11.1 Game takes you somewhere random
 
+**Built in build 154**, as the fix below says: Game opens **Games** (`viewGames()`, `#/games`),
+the same list for everyone, and the game itself only when exactly one of hers is being played;
+a postponed game says *Postponed* on the list and in the game's own picker, with the next game
+to be played after it. `test/nav.js` and `test/same.js` walk it.
+
 What Game does today (`navGame()`, `navGames()`, `sheetNavGames()`): for *the team you last
 looked at*, the game being played, else the next on the calendar, else the last played; and
 when more than one of your teams has a game on or coming, a sheet, *Which game?*. Nothing on the
@@ -79,6 +84,11 @@ If the list is not wanted: at least say why she is here. One line under the game
 (`gameTitle()` already does). **An hour.**
 
 ### 11.2 The team button
+
+**Set aside (the owner, 2026-10-13).** The team button the owner meant was the **Team** tab in
+the bottom bar (builds 141 to 152), odd in an app that is the club's, and build 153 already
+replaced it with Home for everyone. The title-row changes below are not what was asked for and
+are not to be built unless the owner asks again.
 
 The title row has two things that look like buttons and are sometimes buttons:
 

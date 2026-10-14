@@ -2,7 +2,7 @@
    Static app. Data lives in localStorage, and mirrors to Firebase Realtime
    Database when a config + workspace code are present. */
 
-const BUILD = '153';
+const BUILD = '154';
 const BUILT = '2026-10-12';
 /* The version of database.rules.json this app was written against. The rules
    carry the same number in rulesVersion's .write, which accepts that number
@@ -7283,7 +7283,7 @@ function render() {
       v === 'game' ? (g === 'track' ? viewTrack() : g === 'stats' ? viewStats() : g === 'recap' ? viewRecap() : g === 'pitch' ? viewMatch() : g === 'plan' ? viewPlan() : g === 'subs' ? viewSubs() : viewFeed()) :
         v === 'roster' ? viewRoster() :
           v === 'season' ? viewSeason() : v === 'teamstats' ? viewTeamStats() : v === 'minutes' ? viewMinutes() : v === 'attend' ? viewAttend() :
-            v === 'formation' ? viewFormation() : v === 'club' ? viewClub() : v === 'people' ? viewPeople() : v === 'admin' ? viewAdmin()
+            v === 'formation' ? viewFormation() : v === 'games' ? viewGames() : v === 'club' ? viewClub() : v === 'people' ? viewPeople() : v === 'admin' ? viewAdmin()
               : v === 'mine' ? viewMine() : v === 'practice' ? viewPractice()
                 : v === 'inbox' ? viewInbox() : v === 'notes' ? viewNotes() : v === 'thread' ? viewThread() : v === 'sessions' ? viewSessions() : v === 'planner' ? viewPlanner() : v === 'regs' ? viewRegs() : v === 'tryout' ? viewTryout() : v === 'comply' ? viewComply()
                 : v === 'setup' ? viewSetup() : viewCalendar());
@@ -7378,7 +7378,7 @@ const viewScope = (v = ui.view) => v === 'calendar' || v === 'mine' ? (me ? 'me'
 const VIEW_TITLE = {
   calendar: 'Calendar', setup: 'Settings', people: 'People', admin: 'Club details', sessions: 'Sessions',
   planner: 'Planner', inbox: 'Messages', thread: 'Messages', notes: 'What\'s new', mine: 'My players', formation: 'Shapes',
-  regs: 'Registration', tryout: 'Tryouts', comply: 'Coach compliance', club: 'Club home'
+  games: 'Games', regs: 'Registration', tryout: 'Tryouts', comply: 'Coach compliance', club: 'Club home'
 };
 // the Sessions view draws three of Settings' screens too, each under its own name
 const screenTitle = v => v === 'sessions' && sessSetTab() ? SESS_SET[sessSetTab()] : VIEW_TITLE[v];
@@ -7388,8 +7388,9 @@ const screenTitle = v => v === 'sessions' && sessSetTab() ? SESS_SET[sessSetTab(
    were a model of the data, and the rest was three overlapping menus and four
    unlabelled icons up top. So: a bar at the bottom, one for everyone since
    build 153 (UX-REVIEW-2.md, 9.1): Home · Calendar · Game · Messages · More.
-   Home is the team screen for everyone, Game the team's game for everyone,
-   so "tap Game" said by the coach is true on a parent's phone. What the
+   Home is the team screen for everyone, Game the list of her games for
+   everyone (UX-REVIEW-3.md, 11.1), so "tap Game" said by the coach is true
+   on a parent's phone. What the
    person is here as still decides what the screens hold: staff (an admin, a
    coach, a tracker, a helper, a club viewer, and anyone before the club is
    somebody's) work on a team and get the coach's Season; a family (a
@@ -7422,26 +7423,19 @@ const teamGame = t => {
   const ms = teamMatches(t.id);
   return ms.find(m => gameStatus(m) === 'live') || ms.filter(m => gameStatus(m) === 'upcoming' && !CALLED[m.called]).slice(-1)[0] || null;
 };
-/* The Game tab's games, one per team she works on, the ones being played
-   first and then by date. Two or more and the tab is a picker naming each
-   team, because the tab alone cannot say whose game it would open. */
+/* Each team she works on's game on or coming, the ones being played first
+   and then by date: what the dot on the Game tab reads, and which game the
+   tab opens directly when exactly one is being played. */
 function navGames() {
   const live = m => gameStatus(m) === 'live' ? 0 : 1;
   return navTeams().map(teamGame).filter(Boolean)
     .sort((a, b) => live(a) - live(b) || (a.date || '9').localeCompare(b.date || '9') || hm(a.kickoff).localeCompare(hm(b.kickoff)));
 }
-/* The team on screen's game, when no team of hers has one on or coming: the
-   last one played, so the tab still opens something. */
-function navGame() {
-  const t = team(); if (!t) return null;
-  const ms = teamMatches(t.id);
-  return teamGame(t) || ms.find(m => gameStatus(m) === 'done') || ms[0] || null;
-}
-/* A game opened from the tab or its picker, on its own team, where each role
-   works (the calendar's live card sends her the same way; render() puts a
-   finished game on its recap). */
+/* A game opened from the Game tab or its list, on its own team, where each
+   role works (render() puts a finished game on its recap). Its back arrow
+   goes up to the list, wherever the tab took her. */
 function openNavGame(g) {
-  ui.teamId = g.teamId; ui.matchId = g.id; ui.view = 'game'; ui.gameFrom = null; ui.picked = null;
+  ui.teamId = g.teamId; ui.matchId = g.id; ui.view = 'game'; ui.gameFrom = 'games'; ui.picked = null;
   ui.gameView = canEditTeam(g.teamId) ? 'subs' : me && isTracker(g.teamId, me.uid) ? 'track' : 'live';
 }
 const NAV_ICON = {
@@ -7465,7 +7459,7 @@ function navTabs() {
 function tabFor(v = ui.view) {
   if (v === 'calendar') return 'calendar';
   if (v === 'inbox' || v === 'thread') return 'messages';
-  if (v === 'game' || (v === 'formation' && ui.editFid === GAME_SHAPE)) return 'game';
+  if (v === 'game' || v === 'games' || (v === 'formation' && ui.editFid === GAME_SHAPE)) return 'game';
   if (TEAM_VIEWS.includes(v)) return 'home';
   if (v === 'club' && homeView() === 'club') return 'home';
   return 'more';
@@ -7480,7 +7474,7 @@ const homeView = () => navKind() === 'family' ? 'season' : navTeams().length > 1
    opened from, so it can be predicted (the phone's own Back walks the real
    history). A tab's own screen has no up. */
 function upView(v = ui.view) {
-  if (v === 'game') return ui.gameFrom === 'calendar' ? 'calendar' : 'season';
+  if (v === 'game') return ui.gameFrom === 'calendar' ? 'calendar' : ui.gameFrom === 'games' ? 'games' : 'season';
   if (v === 'formation') return ui.editFid === GAME_SHAPE ? 'game' : 'setup';
   if (v === 'thread') return 'inbox';
   if (SEASON_VIEWS.includes(v)) return 'season';
@@ -7498,6 +7492,8 @@ function upView(v = ui.view) {
   if (['season', 'roster', 'practice'].includes(v) && homeView() === 'club') return 'club';
   return null;
 }
+// a game's back arrow says where it goes: the screen it was opened from
+const gameBackLabel = () => ui.gameFrom === 'calendar' ? 'Back to the calendar' : ui.gameFrom === 'games' ? 'Back to the games' : 'Back to the team';
 const CHEV_SVG = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>';
 const BACK_SVG = '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg>';
 /* The title row: whose screen this is, and which. On a team's screens the
@@ -7509,7 +7505,7 @@ function titleBar() {
   const v = ui.view, scope = viewScope();
   if (v === 'game' && team() && match()) return gameHeader(team(), match());
   const upAct = v === 'game' ? 'backgames' : v === 'formation' ? 'backsetup' : upView() ? 'navback' : null;
-  const upLabel = v === 'game' ? (ui.gameFrom === 'calendar' ? 'Back to the calendar' : 'Back to the team')
+  const upLabel = v === 'game' ? gameBackLabel()
     : v === 'formation' && ui.editFid === GAME_SHAPE ? 'Back to the game' : 'Back';
   const back = upAct ? `<button class="tbback" data-act="${upAct}" aria-label="${upLabel}" title="${upLabel}">${BACK_SVG}</button>` : '';
   const org = clubName();
@@ -7766,17 +7762,64 @@ function gameTitle(t, m) {
 function gameWhen(m) {
   return [m.date ? relDay(m.date) || dayLabel(m.date) : '', m.kickoff ? niceTime(m.kickoff) : ''].filter(Boolean).join(' · ') || 'Date to be confirmed';
 }
-/* The Game tab with more than one team's game on or coming: a short list
-   naming each team, the one being played first (UX-REVIEW-2.md, 6.1). */
-function sheetNavGames(gs) {
-  openSheet(`<h3>Which game?</h3>
-    ${gs.map(g => `<button class="opt spread" type="button" data-act="navgame" data-id="${g.id}" aria-current="${ui.view === 'game' && g.id === ui.matchId}">
-      <span><b>${gameTitle(state.teams[g.teamId] || {}, g)}</b><span class="rowsub">${esc(gameWhen(g))}</span></span>
-      ${gameStatus(g) === 'live' ? '<span class="pill live">live</span>' : ''}</button>`).join('')}`);
+/* The Game tab's own screen (UX-REVIEW-3.md, 11.1; build 154). Until then
+   the tab guessed: the game being played on the team last looked at, else
+   the next, else the last, else a sheet asking which, and nothing said which
+   rule had fired. A coach on a Wednesday landed on Subs of Saturday's game
+   (a 0:00 clock and Start clock), a parent the day the fixtures ran out on
+   last week's Recap, an admin on a sheet over whatever she was reading. Now
+   it is a list, the same for everyone: what is being played, then each of
+   her teams' next game (a postponed one said so, and the one after it too,
+   since that is the one that will be played), then the results, every row
+   naming its team. The one guess kept is the live one: when exactly one of
+   her games is being played the tab opens it, which is what the dot on the
+   tab promises, so "tap Game" at the pitch still lands on the game. */
+const GAMES_RESULTS = 6;
+function gamesRow(m) {
+  const t = state.teams[m.teamId] || {}, st = gameStatus(m), sc = shownScore(m), r = resultOf(m);
+  const when = st === 'done' ? [shortDate(m.date), m.venue].filter(Boolean).map(esc).join(' \u00b7 ') || 'no date'
+    : [esc(gameWhen(m)), m.venue ? esc(m.venue) : ''].filter(Boolean).join(' \u00b7 ');
+  const right = st === 'live' ? `${sc ? `${sc.us}<small>\u2013${sc.them}</small> ` : ''}<span class="pill live">live</span>`
+    : CALLED[m.called] && st === 'upcoming' ? `<span class="tag called">${CALLED[m.called]}</span>`
+      : st === 'done' && sc ? `${sc.us}<small>\u2013${sc.them}</small>` : '';
+  return `<button class="prow go" type="button" data-act="navgame" data-id="${m.id}" style="grid-template-columns:26px 1fr auto">
+      <span class="resbadge" data-r="${r}">${r || '\u00b7'}</span>
+      <span><span class="pname">${teamLabel(t)} v ${esc(m.opponent || 'TBC')}</span><span class="psub">${when}</span></span>
+      <span class="pmins">${right}</span></button>`;
+}
+/* Each team's next game: the soonest not called off, with any postponed one
+   before it (it is still on the list, and a parent asks about it). */
+function nextGames(ts) {
+  const out = [];
+  for (const t of ts) {
+    const up = teamMatches(t.id).filter(m => gameStatus(m) === 'upcoming' && m.called !== 'cancelled').reverse();
+    for (const m of up) { out.push(m); if (!CALLED[m.called]) break; }
+  }
+  return out.sort((a, b) => (a.date || '9').localeCompare(b.date || '9') || hm(a.kickoff).localeCompare(hm(b.kickoff)));
+}
+function viewGames() {
+  const ts = navTeams();
+  const all = ts.flatMap(t => teamMatches(t.id));
+  if (!all.length) {
+    const add = ui.teamId && ts.some(t => t.id === ui.teamId) ? addGameBtn('btn wide') : '';
+    return `<div class="stack"><div class="empty"><strong>No games yet</strong>${add ? 'Add one here, or a season of them from the + on the Calendar.' : 'They show up here once the coach adds them.'}</div>${add}</div>`;
+  }
+  const byDate = (a, b) => (a.date || '9').localeCompare(b.date || '9') || hm(a.kickoff).localeCompare(hm(b.kickoff));
+  const live = all.filter(m => gameStatus(m) === 'live').sort(byDate);
+  const next = nextGames(ts);
+  const done = all.filter(m => gameStatus(m) === 'done')
+    .sort((a, b) => (b.date || '').localeCompare(a.date || '') || hm(b.kickoff).localeCompare(hm(a.kickoff)));
+  const shown = ui.gamesAll ? done : done.slice(0, GAMES_RESULTS);
+  const card = (h, rows, none) => `<div class="card"><h2 style="margin-bottom:10px">${h}</h2>${rows.length ? `<div class="plist">${rows.map(gamesRow).join('')}</div>` : `<p class="muted" style="margin:0">${none}</p>`}</div>`;
+  return `<div class="stack">
+    ${live.length ? card('Being played', live, '') : ''}
+    ${card('Next', next, 'Nothing on the calendar yet.')}
+    ${done.length ? `${card('Results', shown, '')}${done.length > shown.length ? `<button class="btn quiet wide" data-act="gamesall">Earlier (${done.length - shown.length})</button>` : ''}` : ''}
+  </div>`;
 }
 function gameHeader(t, m) {
   const st = gameStatus(m);
-  const upLabel = ui.gameFrom === 'calendar' ? 'Back to the calendar' : 'Back to the team';
+  const upLabel = gameBackLabel();
   // the clock while it is being played, full time after; before, nothing: the date under the names says when
   const when = st === 'live' ? `<span class="ghclock" data-live="clock" data-mid="${m.id}">${mmss(elapsedSec(m))}</span>`
     : st === 'done' ? '<span class="ghclock ghft" title="Full time">FT</span>' : '';
@@ -18230,7 +18273,8 @@ const gameStatus = m => m.ended ? 'done'
    reads as a result (UX-REVIEW-2.md, 7.1). A goal on a game with no clock, an
    imported result, still shows. */
 const shownScore = m => { const sc = score(m); return gameStatus(m) === 'upcoming' && !sc.us && !sc.them ? null : sc; };
-const scoreCell = m => (sc => sc ? `${sc.us}<small>–${sc.them}</small>` : '<small>upcoming</small>')(shownScore(m));
+// a game called off says so where it would say upcoming (UX-REVIEW-3.md, 11.1: a postponed game read as the next one)
+const scoreCell = m => (sc => sc ? `${sc.us}<small>–${sc.them}</small>` : CALLED[m.called] ? `<span class="tag called">${CALLED[m.called]}</span>` : '<small>upcoming</small>')(shownScore(m));
 
 function publicGame(t, m) {
   const roster = squad(t, m);
@@ -21610,10 +21654,9 @@ function onAct(e) {
   /* The tab bar (UX-REVIEW.md, 1.1). A tab is a place: tapping the one she
      is on goes to its first screen and the top. Home is her team (a
      family's with her child on top), or the list of them when she works on
-     several (UX-REVIEW-2.md, 6.3). Game opens the game being played, else
-     the next, on the one team of hers that has one; with several, it asks
-     which (6.1); with none, the team on screen's last game, else its
-     Season, where Add a game is for whoever may. */
+     several (UX-REVIEW-2.md, 6.3). Game is the list of her games
+     (viewGames, UX-REVIEW-3.md, 11.1), or the game itself when exactly one
+     of hers is being played and she is not already on it. */
   if (a === 'tab') {
     closeSheet();
     const k = d.tab || d.v;
@@ -21625,14 +21668,13 @@ function onAct(e) {
       else if (tabFor() !== 'home' || ui.view === 'game') ui.view = 'season';
     }
     else if (k === 'game') {
-      const gs = navGames();
-      if (gs.length > 1) { sheetNavGames(gs); return; }
-      const g = gs[0] || navGame();
-      if (g) openNavGame(g);
-      else { ui.view = 'season'; toast(team() && canEditTeam(team().id) ? 'No games yet. Add one from Season.' : 'No games yet.'); }
+      const live = navGames().filter(g => gameStatus(g) === 'live');
+      if (live.length === 1 && !(ui.view === 'game' && ui.matchId === live[0].id)) openNavGame(live[0]);
+      else { ui.view = 'games'; ui.picked = null; }
     }
     render(); toTop(); return;
   }
+  if (a === 'gamesall') { ui.gamesAll = !ui.gamesAll; render(); return; }
   if (a === 'navgame') { const g = state.matches[d.id]; if (!g) return; openNavGame(g); closeSheet(); render(); toTop(); return; }
   // the title row's back arrow: up one level (a game's and a shape's have their own, backgames and backsetup)
   if (a === 'navback') { const up = upView(); if (up) { ui.view = up; ui.picked = null; if (up === 'inbox') ui.thread = null; } closeSheet(); render(); toTop(); return; }
@@ -23010,7 +23052,7 @@ function onAct(e) {
     if (!g || !canGameEdit(g)) { toast(canCalTeam(g && g.teamId) ? 'It has kicked off: the coach changes it from here' : 'Only the team’s coach can change this game'); return; }
     sheetMatch(g); return;
   }
-  if (a === 'backgames') { ui.view = ui.gameFrom === 'calendar' ? 'calendar' : 'season'; ui.gameFrom = null; ui.picked = null; render(); return; }
+  if (a === 'backgames') { ui.view = upView('game'); ui.gameFrom = null; ui.picked = null; render(); return; }
   if (a === 'openmatch') { ui.matchId = d.id; ui.view = 'game'; ui.gameView = 'subs'; ui.gameFrom = null; render(); return; }
   if (a === 'savematch') {
     const side = Number($('#mSide').value);
@@ -23311,6 +23353,7 @@ function uiToHash() {
     const seg = { practice: 'practice', roster: 'squad', season: 'season', teamstats: 'stats', minutes: 'minutes', attend: 'attendance' }[ui.view];
     return `#/team/${t}/${seg}`;
   }
+  if (ui.view === 'games') return '#/games';
   if (ui.view === 'people') return '#/club/people';
   if (ui.view === 'club') return '#/club';
   if (ui.view === 'admin') return '#/club/settings';
@@ -23337,6 +23380,7 @@ function hashToUi() {
   if (p[0] === 'club' && (p[1] === 'calendar' || p[1] === 'schedule')) { ui.view = 'calendar'; ui.calSel = 'club'; return true; }
   if (p[0] === 'club') { ui.view = p[1] === 'settings' ? 'admin' : p[1] === 'people' ? 'people' : p[1] === 'planner' ? 'planner' : p[1] === 'registrations' ? 'regs' : p[1] === 'tryouts' ? 'tryout' : p[1] === 'compliance' ? 'comply' : 'club'; return true; }
   if (p[0] === 'my-players') { ui.view = 'mine'; return true; }
+  if (p[0] === 'games') { ui.view = 'games'; return true; }
   if (p[0] === 'my-calendar') { ui.view = 'calendar'; ui.calSel = 'mine'; return true; }
   if (p[0] === 'calendar') { ui.view = 'calendar'; ui.calSel = p[1] === 'all' ? 'club' : 'mine'; return true; }
   if (p[0] === 'messages') {

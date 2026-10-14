@@ -83,6 +83,10 @@ const sheet = () => String(A.dom.node('#sheet').innerHTML || '');
 const title = () => A.rendered('#titlebar');
 const bar = () => A.rendered('#tabbar');
 const tab = k => A.click({ act: 'tab', tab: k });
+/* Game, as the coach says it: the list of games (UX-REVIEW-3.md, 11.1; build
+   154), the game one tap down, unless it is being played. The same list on
+   every phone, so the walk takes the row. */
+const game = () => { tab('game'); if (A.ui.view === 'games') { if (!/data-act="navgame" data-id="g2"/.test(page())) throw new Error('no next game on the Games list'); A.click({ act: 'navgame', id: 'g2' }); } };
 /* Home, as the coach says it. For an admin or a club viewer Home is the list
    of teams (UX-REVIEW-2.md, 6.3), the team one tap down: a level added to
    the frame, not a different frame, so the walk takes it. */
@@ -94,11 +98,11 @@ const buttonsOf = card => [...card.matchAll(/<(?:button|a) class="btn [^"]*"[^>]
 /* ---------------- the ten things a parent asks about ---------------- */
 
 const PATHS = [
-  { ask: 'How do I see the score?', say: 'Game → Stats', who: EVERYONE,
-    walk() { tab('game'); A.click({ act: 'opengview', v: 'stats' }); },
+  { ask: 'How do I see the score?', say: 'Game → the next game → Stats', who: EVERYONE,
+    walk() { game(); A.click({ act: 'opengview', v: 'stats' }); },
     got: () => [A.ui.view, A.ui.matchId, A.ui.gameView].join(' ') + (/feedscore|G14 Flight/.test(page()) ? '' : ' (no score)'), want: 'game g2 stats' },
-  { ask: 'What is happening in the game?', say: 'Game → Live', who: EVERYONE,
-    walk() { tab('game'); A.click({ act: 'opengview', v: 'live' }); },
+  { ask: 'What is happening in the game?', say: 'Game → the next game → Live', who: EVERYONE,
+    walk() { game(); A.click({ act: 'opengview', v: 'live' }); },
     got: () => A.ui.gameView + ' ' + /What's happened/.test(page()), want: 'live true' },
   { ask: 'How did the last game go?', say: 'Home → Last game → Recap', who: EVERYONE,
     walk() { home(); A.click({ act: 'gotoplayer', tid: 't1', id: 'g1' }); A.click({ act: 'opengview', v: 'recap' }); },
@@ -133,8 +137,8 @@ const PATHS = [
   { ask: 'Where is the whole season?', say: 'Home → "G14 Flight on the calendar"', who: EVERYONE,
     walk() { home(); if (!/data-act="teamcal" data-tid="t1"/.test(page())) throw new Error('no link to the calendar'); A.click({ act: 'teamcal', tid: 't1' }); },
     got: () => A.ui.view, want: 'calendar' },
-  { ask: 'How do I share the game?', say: 'Game → ⋯ → Share', who: EVERYONE,
-    walk() { tab('game'); A.click({ act: 'gamemenu' }); },
+  { ask: 'How do I share the game?', say: 'Game → the next game → ⋯ → Share', who: EVERYONE,
+    walk() { game(); A.click({ act: 'gamemenu' }); },
     got: () => /data-act="sharesheet"/.test(sheet()), want: true }
 ];
 
@@ -201,14 +205,14 @@ console.log('\n--- one frame ---');
 
   // the game's screens, shared from the right
   const segs = {};
-  for (const uid of EVERYONE) { as(uid); tab('game'); const allowed = ['live', 'subs', 'track', 'stats', 'pitch', 'plan'].filter(v => { A.ui.gameView = v; A.render(); return A.ui.gameView === v; }); segs[uid] = A.gameSegments(allowed); }
+  for (const uid of EVERYONE) { as(uid); game(); const allowed = ['live', 'subs', 'track', 'stats', 'pitch', 'plan'].filter(v => { A.ui.gameView = v; A.render(); return A.ui.gameView === v; }); segs[uid] = A.gameSegments(allowed); }
   check('every role\'s game screens end in Stats · Live', EVERYONE.every(u => segs[u].slice(-2).join(' ') === 'stats live'), true);
   check('— a role adds screens before them, never between or after', EVERYONE.map(u => u + ':' + segs[u].join('·')).join(' '), 'boss:subs·track·plan·stats·live jaz:subs·track·plan·stats·live trk:track·stats·live hel:plan·stats·live vee:stats·live mum:stats·live nan:stats·live kid:stats·live');
-  check('— and no Stats / Live feed pair inside Stats for anyone', EVERYONE.some(u => { as(u); tab('game'); A.ui.gameView = 'stats'; A.render(); return /class="chips looks"/.test(page()); }), false);
+  check('— and no Stats / Live feed pair inside Stats for anyone', EVERYONE.some(u => { as(u); game(); A.ui.gameView = 'stats'; A.render(); return /class="chips looks"/.test(page()); }), false);
 
   // where each lands from the Game tab is the role's working screen, inside the same frame
   const lands = {};
-  for (const uid of EVERYONE) { as(uid); tab('game'); lands[uid] = A.ui.gameView; }
+  for (const uid of EVERYONE) { as(uid); game(); lands[uid] = A.ui.gameView; }
   check('Game lands each role where she works: a coach on Subs, a tracker on Track, the rest on Live', EVERYONE.map(u => u + ':' + lands[u]).join(' '), 'boss:subs jaz:subs trk:track hel:live vee:live mum:live nan:live kid:live');
 }
 
