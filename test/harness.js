@@ -228,7 +228,7 @@ const EXPORTS = `{
   msgTeams, staffTeams, famTeams, msgOn, unreadCount, notices, threadMsgs, threadUnread,
   families, guardianEmails, childrenOf, viewInbox, viewThread, watchMessages, sheetPostShare,
   get msgs() { return msgs }, get msgFor() { return msgFor },
-  msgUnread, notesUnread, colleagues, sdId, convMsgs, msgState, viewNotes, msgPeople, pickMatches, pickListHtml, get online() { return online },
+  msgUnread, notesUnread, colleagues, sdId, convMsgs, msgState, viewNotes, msgPeople, pickMatches, pickListHtml, get online() { return online }, set online(v) { online = v },
   /* team links and squad invites */
   get join() { return join }, set join(v) { join = v }, joinScreen, joinLink, claimMatches, pendingClaims, joinCard,
   /* training sessions */

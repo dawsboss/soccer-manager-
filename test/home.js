@@ -134,7 +134,10 @@ const club = () => ({
 
     h = as('kid', 'mine');
     check('a player with her own sign-in answers for herself', chipsFor(h, 'e_e1', 'p2'), true);
-    check('— her card says Your fans', />Your fans/.test(h), true);
+    check('— her name opens her own sheet, her fans a row in it (UX-REVIEW-3.md, 14.1)', /data-act="kidsheet" data-tid="t1" data-pid="p2"/.test(h) && !/data-act="fansheet"/.test(h), true);
+    A.click({ act: 'kidsheet', tid: 't1', pid: 'p2' });
+    check('— which reads as hers', />Family and friends who follow you</.test(String(A.dom.node('#sheet').innerHTML || '')), true);
+    A.closeSheet();
     h = as('nan', 'mine');
     check('a fan sees her player\'s next thing', /Next up<\/span>[\s\S]*?<span class="tag practice">/.test(h), true);
     check('— and answers nothing', anyChips(h), false);
@@ -148,6 +151,10 @@ const club = () => ({
     check('her child on top, then the next thing', h.indexOf('Rosa Delgado') < h.indexOf('Next up') && h.indexOf('Next up') < h.indexOf('<h2>Games</h2>'), true);
     check('with the answer on it', chipsFor(h, 'e_e1', 'p1'), true);
     check('and the next game, with its own', /Next game<\/span>/.test(h) && chipsFor(h, 'g_g2', 'p1'), true);
+    // one filled button a card (UX-REVIEW-3.md, 12.6): where she is asked, her answer is the thing to do
+    const gameCard = x => (x.match(/Next game<\/span>[\s\S]*?<\/div>\s*<\/div>/) || [''])[0];
+    check('— so Open the game waits quietly beside it', /<button class="btn quiet sm" data-act="calgame"/.test(gameCard(h)), true);
+    check('— while the coach, asked nothing, keeps it filled', /<button class="btn sm" data-act="calgame"/.test(gameCard(as('jaz', 'season'))), true);
     check('the last result, on her child\'s card', /Last game — Riverside/.test(h) && /1<small>–1/.test(h), true);
     check('— with her child\'s minutes in it', /5 Sep · 40 min played/.test(h), true);
     check('— and only there: no last-game card saying it again', /Season so far|<span class="muted">Last game<\/span>/.test(h), false);
@@ -184,7 +191,7 @@ const club = () => ({
     check('— no answers', anyChips(f), false);
     check('— and nobody else', /Rosa|Mia/.test(f), false);
     const k = as('kid', 'season');
-    check('a player\'s own: her card, with Your fans', /<b style="font-size:18px">Ella Fitzgerald<\/b>/.test(k) && />Your fans/.test(k), true);
+    check('a player\'s own: her card, her name the door to her fans', /data-act="kidsheet"[^>]*>[\s\S]*?<b style="font-size:18px">Ella Fitzgerald<\/b>/.test(k), true);
 
     // the coach's Season is short since build 146: the record, the games and rows into Stats, Minutes and Attendance
     const coachy = h => /data-v="teamstats"/.test(h) && /data-v="minutes"/.test(h);
