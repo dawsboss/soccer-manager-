@@ -124,6 +124,28 @@ title-row checks and `test/same.js`'s "a team's title the team over the club".
 
 ## 12. Buttons
 
+**Built in build 156**, all seven: her answer is its own control (`rsvpChips()`, a `.seg
+rsvpseg` 44px tall with ✓ ✕ ? and pressed green, grey or orange) on the next-up card, the
+entry's sheet and her child's card. What became of the tap is said without words (the owner,
+2026-10-14: a sentence was too much): the pressed answer carries a thin bar while it is still on
+her phone, sweeping while it goes and dotted with no signal, gone once the club has it; the same
+answer again still takes it back, the button visibly letting go (12.1, 12.2). Chips, small buttons and steppers 40px,
+the text buttons, the club line and the legal links a 40px hit area that moves nothing, the
+avatar 36px (12.3). From 12.4: *Add to my calendar* opens the two choices alone (`sheetCalAdd()`,
+*Google Calendar* / *Apple, Outlook or another*, the same pair under *Add to your calendar* in the
+entry's sheet); *Fans* is off the card, her name opening her own sheet (`sheetChild()`) with
+*Family and friends who follow Rosa*, the paragraph first and *Invite a grandparent or friend*;
+Settings → You and the avatar open one account sheet; *Share* is drawn only where there is a link
+or she may make one; *Notify me · Turn on* is *Goals and the final whistle · Buzz me* with the
+catch as one line; the sync badge is a button opening what is waiting. Sign out is quiet and
+*Delete my account…* a red line at the account sheet's foot; a lost game is grey, the now line
+the calendar's green, and there is one red (12.5). *Open the game* is quiet on a card that asks
+her answer, until the day (12.6). The clock and *FT* in the game header are a borderless pill
+(12.7). `test/rsvp.js`, `test/visual.js`, `test/home.js`, `test/nav.js`, `test/same.js`,
+`test/fans.js` and `test/feed.js` hold it. What 12.4 names that is still open in its own section:
+the subscription offered at the top of the calendar choices (15.3), the outbox line for the Database
+row (14.4, 18.4).
+
 The audit (`tools/screens`: every tappable thing on the parent's 181 screens, 4,433 of them,
 by class, label, action and size) says this about the controls a parent meets:
 
@@ -203,6 +225,18 @@ The fixes, in the order they pay:
 
 ## 13. The first five minutes
 
+*Built in build 155, all nine: a signed-in phone with no club gets the lock card (with a
+waiting team-link request said over it, and *+ Start a new club* a quiet link under it), never
+*Add a team* (a phone with teams of its own on it is still left open, as `awaitingSignIn()`
+leaves it); the registration link is shut like an invite; the sign-in sheet's *Optional* line
+only on a club nobody has locked, and no second hero over the welcome or lock card; the
+sent-link state, with *Send it again* and *Use another email*; on the Home Screen the sheet
+opens on a password and a link says where it opens, and a link opened where its address was
+not kept asks in the sheet, never `prompt()`; the team-link and registration forms with no
+*squad* and no *she*, held there by `test/copy.js`, which now draws every door; the invite's
+shirt said in words with what to do if it is wrong; no role card for a family and the details
+strip folded into the card under her child; the welcome card naming the two ways in.*
+
 - **13.1 Signed in with no club yet, a parent is told to add a team.** The welcome card says
   *If you were sent an invite link, open it again after signing in*; a parent who signs in
   first (the card tells her to) lands on *Calendar / All teams · Club ▾*, a bar Home · Calendar
@@ -276,6 +310,40 @@ The fixes, in the order they pay:
 
 ## 14. Home and her child's card
 
+**Built in builds 156 and 157**, all seven. Section 12 (build 156) built the part of 14.1 and
+14.4 that was also in 12.4: *Fans* is off the card, her name opening her own sheet
+(`sheetChild()`) with *Family and friends who follow Rosa*, the paragraph first and *Invite a
+grandparent or friend*, and the sync badge is a button opening what is waiting (with *Everything
+has reached the club* when nothing is). What it says about her answer is a bar on the pressed
+answer, not a sentence (the owner, 2026-10-14: a sentence was too much), so 14.4's *Saved on your
+phone, sent when there is signal* line is not built. Build 157 did the rest (`test/home.js` walks
+it; the others named below). As built, where it differs from what is written under each:
+
+- **14.1** Her sheet also says *Where Rosa has played*, which 14.2 took off the card.
+- **14.2** *3 games · 180 minutes · 1 goal · came to all 5 practices*, one line, the minutes
+  ticking in a live game (`data-live="smint"`). The games count is the attendance for games, so
+  *Games 3 of 3* is gone from her card (the coach's views keep `attendLine()`); what she was
+  asked to come to, practices, team events and extra sessions, is *came to 4 of 5 practices*, or
+  *came to the practice* for one. *60 at Midfield* is on her sheet (*Where Rosa has played*)
+  rather than behind a separate ⓘ: one door, not two. `test/attend.js`.
+- **14.3** `calledSoon()` and `calledCard()` in `nextUpBlock()`, so the coach's Season says it
+  too (one frame). A cancelled or postponed practice, game or event that is today (and not over)
+  or tomorrow: *Tonight's practice is cancelled* (*Today's* before five, *Tomorrow's*), with its
+  time and place struck through under it, grey, and a tap into the entry; the next thing under
+  it as before. `test/same.js` has it as a thirteenth question a parent asks.
+- **14.4** Settings' Database row reads *Connected* or *Offline* from the same `online` the badge
+  does (`test/settings.js`). The rest of 18.4 (one word for the outbox everywhere) is not built.
+- **14.5** On Home the LIVE card is the one door into the game, and her card says *Rosa: on the
+  pitch · 38 min* (or *off the pitch*, or *You: …* for the player herself) as a line. My players
+  (staff with a child) has no LIVE card, so its *Playing now* row stays a door.
+- **14.6** `scoreSpan()` and `.score` (both digits 21px ink, the dash soft), in the Games list,
+  the game picker, the live card, her card and the season's game list; the live card's score no
+  longer gives way to the title on Month. The recap's big score and the scores inside a sentence
+  are unchanged. `test/visual.js`.
+- **14.7** An entry with no title of its own (*Practice*, *Event*) is titled with the team on the
+  next-up card, the tag saying what it is; a titled one keeps its title. My players' *Next —
+  Practice* row drops the repeat the same way.
+
 - **14.1 "Fans (1)" is the biggest control on her child's card.** A full-width outlined button
   (334×46) under *Last game — Hill End*, above the next practice, for a feature used once a
   season, whose sheet is *Fans of Rosa · 1 fan follows Rosa · A fan · Follows Rosa · Remove ·
@@ -321,6 +389,30 @@ The fixes, in the order they pay:
   the team or the place. **An hour.**
 
 ## 15. The calendar and answering
+
+**Built in build 158**, all eleven. The answer is on the row for each of her own children or
+herself (`rowAnswer()`, under the entry since the entry is itself a button; staff keep their
+count line, and a coach whose daughter is on her team gets both), and leads a family's sheet,
+above the facts, with the note box always under it (a note typed first goes with the answer;
+Save with no answer says so and writes nothing). The row draws 12.1's control (`rsvpChips()`), the same
+one as the next-up card and the sheet. An entry carries `ask` (the coach's *Ask
+families whether they are coming*: on by default for a practice, off for anything else; a game
+always asks), and one that does not ask has no answer on its row or sheet. With several teams
+showing, team colours share nothing with the kinds' (`TEAM_HUES`), a key sits under the views
+(`calKey()`, a family's teams named with her children, nothing past eight), the *Whose* chips
+carry the colours and the *Show* chips do not. *Add to my calendar* opens *Add to your
+calendar* (`sheetCalAdd()`, the sheet 12.4 started, with the subscription added): Google Calendar, then *Apple, Outlook or another*, the same pair
+under the same label in the entry's and the session's sheets, and *Keep my calendar up to date*
+above them for whoever has no My calendar address (turning it on there shows the subscribe
+buttons in place). *Calendars* is drawn only with more than one team, a *Whose* choice,
+sessions or bookable times, or something left out. Day and Week come round to the first thing
+still to come (`calScroll()`, once per day or week looked at), and an empty day says *Nothing
+on today.* with *Next: Practice tomorrow 6pm* a tap away. The team's name in a sheet is plain for
+a family. Past rows are ink on a wash of their colour (12:1 at worst; `test/visual.js` works it
+out for every colour). *Who sees your calendar* is drawn for coaches and admins, here or in
+another club, and for whoever is already sharing. Found on the way: the add/edit sheet's
+*Practice* and *Something else* used the Calendars panel's own action, so tapping one hid that
+kind from the calendar and left the form as it was; the form's is `calfkind` now.
 
 - **15.1 The row says "Rosa: not answered" and does not let her answer.** Every practice block
   for ten weeks: *Practice · 6–7:15pm · Lakeside Park, field 2 · Rosa: not answered*
@@ -380,7 +472,7 @@ The fixes, in the order they pay:
 
 ## 16. Game day
 
-**Built in build 155**, all ten, as the fixes below say. Before kick-off Live leads with a
+**Built in build 159**, all ten, as the fixes below say (16.4 and 16.6 had already come with section 12 in build 156). Before kick-off Live leads with a
 *Match day* card (`matchDayCard()`: when, where, the ground, arrive by, kit, notes,
 Directions and her answer) and Stats is one line; once it is on, her child's line sits under
 the Live score (`myGameLine()`, hers alone, kept by the ticker) and the head says *2nd half ·
@@ -389,8 +481,8 @@ shows minutes alone with her own child first (the plan sentences are off her Rec
 rows and shot dots are plain for whoever may not change them, and `fixgoal`/`fixshot` are in
 `LOG_ACTS`; *Share* is on the game menu only when there is a link (`shareable()`); the picker
 and the menu say *Sat 17 Oct · 10am · Away*, *Postponed*, or the score with *FT*
-(`pickWhen()`, `pickCell()`), and the header says *Postponed*; the follow card is *Buzz me for
-goals and the final whistle*; a finished game opens on its Recap from every door and Stats
+(`pickWhen()`, `pickCell()`), and the header says *Postponed*; the follow card is *Goals and the final whistle · Buzz me*
+(build 156); a finished game opens on its Recap from every door and Stats
 has no button repeating it; and *Full time* is the word (`GLOSSARY.md` bans *Final*).
 `test/feed.js`, `test/parents.js`, `test/nav.js` and `test/same.js` (*Where do I go
 Saturday?*) hold it.
@@ -593,7 +685,7 @@ Cheapest high-impact first; one line is about one day's work, with the suites th
    button (14.4, 18.4), one live card (14.5), one score style (14.6), the tag (14.7), the role
    card and the details card folded (13.8), a fan's card (19.2). `test/home.js`,
    `test/fans.js`, `test/safekeep.js`, `test/sync.js`. **A day.**
-6. The calendar: the answer on the row and above the facts in the sheet (15.1), the colour
+6. **Built in build 158.** The calendar: the answer on the row and above the facts in the sheet (15.1), the colour
    key when several teams show (15.2), *Add to my calendar* as an action sheet and the
    subscription offered once (15.3), *Calendars* hidden for one team (15.4), Day opening on the
    first entry (15.5), events that do not ask (15.6), the sheet's link plain for a family

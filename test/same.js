@@ -37,7 +37,7 @@ const ROSA = 'Rosa Delgado', ELLA = 'Ella Fitzgerald', MIA = 'Mia Kowalski';
 const club = () => ({
   teams: {
     t1: {
-      id: 't1', name: 'G14 Flight', share: 'shareT1',
+      id: 't1', name: 'G14 Flight',
       players: {
         p1: { id: 'p1', name: ROSA, number: '7', guardians: { mum: true } },
         p2: { id: 'p2', name: ELLA, number: '9', fans: { nan: true }, self: { kid: true } },
@@ -117,9 +117,10 @@ const PATHS = [
   { ask: 'How do I get to practice?', say: 'Home → Next up → Directions', who: EVERYONE,
     walk() { home(); },
     got: () => /<a class="btn quiet sm" href="[^"]*Lakeside[^"]*"[^>]*>Directions<\/a>/.test(cardFor(page(), 'Next up')), want: true },
-  { ask: 'Can I put it in my own calendar?', say: 'Home → Next up → Add to my calendar → Apple or Outlook', who: EVERYONE,
-    walk() { home(); if (!/>Add to my calendar</.test(cardFor(page(), 'Next up'))) throw new Error('no Add to my calendar'); A.click({ act: 'calitem', k: 'practice', tid: 't1', id: 'e1' }); if (!/>Google Calendar</.test(sheet())) throw new Error('no Google Calendar'); A.click({ act: 'calics', k: 'practice', tid: 't1', id: 'e1' }); },
-    got: () => /data-act="calics"[^>]*>Apple or Outlook</.test(sheet()) && !A.lastToast(), want: true },
+  // the button opens the two choices, not the whole entry (UX-REVIEW-3.md, 15.3)
+  { ask: 'Can I put it in my own calendar?', say: 'Home → Next up → Add to my calendar → Apple, Outlook or another', who: EVERYONE,
+    walk() { home(); if (!/data-act="caladd"[^>]*>Add to my calendar</.test(cardFor(page(), 'Next up'))) throw new Error('no Add to my calendar'); A.click({ act: 'caladd', k: 'practice', tid: 't1', id: 'e1' }); if (!/<h3>Add to your calendar<\/h3>/.test(sheet()) || !/>Google Calendar</.test(sheet())) throw new Error('no Google Calendar'); A.click({ act: 'calics', k: 'practice', tid: 't1', id: 'e1' }); },
+    got: () => /data-act="calics"[^>]*>Apple, Outlook or another</.test(sheet()) && !A.lastToast(), want: true },
   { ask: 'How do I say she is not coming?', say: 'Calendar → the practice → Not going', who: ['boss', 'jaz', 'mum', 'kid'],
     walk(uid) {
       tab('calendar'); A.click({ act: 'calitem', k: 'practice', tid: 't1', id: 'e1' });
@@ -141,9 +142,13 @@ const PATHS = [
   { ask: 'Where do I go Saturday?', say: 'Game → the next game → Live → Match day', who: EVERYONE,
     walk() { game(); A.click({ act: 'opengview', v: 'live' }); },
     got: () => /<h2[^>]*>Match day<\/h2>[\s\S]*<dt>Where<\/dt>/.test(page()), want: true },
-  // Share is drawn only once the team has a link (UX-REVIEW-3.md, 16.6), so this club has one
+  // UX-REVIEW-3.md, 14.3: calNext() skips what is called off, so a practice cancelled that morning used to vanish from Home
+  { ask: 'Is practice on tonight?', say: 'Home → the first card says so when it is cancelled', who: EVERYONE,
+    walk() { Object.assign(A.state.teams.t1.events.e1, { date: '2026-09-12', called: 'cancelled' }); home(); },
+    got: () => { const h = page(); return h.replace(/<[^>]+>/g, '').includes('Tonight’s practice is cancelled') && h.indexOf('callednow') < h.indexOf('Next up') && h.indexOf('callednow') > -1; }, want: true },
+  // once there is a link to share: before the coach makes one, Share is hers alone (UX-REVIEW-3.md, 16.6)
   { ask: 'How do I share the game?', say: 'Game → the next game → ⋯ → Share', who: EVERYONE,
-    walk() { game(); A.click({ act: 'gamemenu' }); },
+    walk() { A.state.teams.t1.share = 'season1'; game(); A.click({ act: 'gamemenu' }); },
     got: () => /data-act="sharesheet"/.test(sheet()), want: true }
 ];
 
@@ -159,7 +164,7 @@ console.log('--- the coach\'s answer, walked on every phone ---');
     }
     check(`"${p.ask}" — ${p.say}`, bad.join('; ') || 'works for ' + p.who.length, 'works for ' + p.who.length);
   }
-  check('thirteen paths, and every one walked by a parent', PATHS.length + ' ' + PATHS.filter(p => p.who.includes('mum')).length, '13 13');
+  check('fourteen paths, and every one walked by a parent', PATHS.length + ' ' + PATHS.filter(p => p.who.includes('mum')).length, '14 14');
 }
 
 console.log('\n--- who may answer is the app\'s to say, and pinned ---');

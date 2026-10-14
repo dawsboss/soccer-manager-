@@ -56,6 +56,16 @@ const sheet = () => String(A.dom.node('#sheet').innerHTML || '');
 const heads = h => [...h.matchAll(/<h2 class="sechead">([^<·]+)/g)].map(m => m[1].trim()).join(' · ');
 const acts = h => new Set([...h.matchAll(/data-act="(\w+)"(?: data-(?:v|k|id)="([^"]*)")?/g)].map(m => m[2] ? m[1] + ':' + m[2] : m[1]));
 
+console.log('--- the Database row says what the badge says (UX-REVIEW-3.md, 14.4) ---');
+{
+  const row = h => (h.match(/<span class="pname">Database<\/span>[\s\S]*?<\/span>\s*<\/div>|Database[\s\S]{0,200}/) || [''])[0].replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ');
+  A.online = true;
+  check('connected: Connected', /Database Connected/.test(row(as('boss'))), true);
+  A.online = false;
+  check('with no signal: Offline, not "Connected"', /Database Offline/.test(row(as('boss'))) && !/Connected/.test(row(A.rendered())), true);
+  A.online = true;
+}
+
 console.log('--- the sections, by whose they are ---');
 {
   let h = as('boss');

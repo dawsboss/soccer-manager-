@@ -149,7 +149,10 @@ function fillProg(A, o) {
     check('she sees the program', /Fall 2027/.test(page) && /born 2014–2019/.test(page), true);
     check('— its fee, and that nothing is taken here', /\$120/.test(page) && /nothing is taken here/.test(page), true);
     check('— and nothing of the club\'s children', /Ella|Flight/.test(page), false);
+    // UX-REVIEW-3.md, 13.5: a door into the club, shut like an invite, not drawn inside the Calendar's title and the tab bar
+    check('— with no title row and no tab bar round it', A.rendered('#titlebar') + A.rendered('#tabbar'), '');
     A.click({ act: 'regform', id: 'new' });
+    check('— the form too', A.rendered('#titlebar') + A.rendered('#tabbar'), '');
     check('the form asks for the program\'s questions', /Any position she loves/.test(A.rendered()) && /match days\? \*/.test(A.rendered()), true);
     check('— and shows the waiver\'s words', /We may take photos at games/.test(A.rendered()), true);
     const send = async o => { fillKid(A, o); A.click({ act: 'regsend' }); await A.flush(20); };

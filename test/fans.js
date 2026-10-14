@@ -98,8 +98,13 @@ const invitesMade = (fbk, from = 0) => fbk.record.writes.slice(from).filter(w =>
   {
     const { A, fbk } = await boot('mumU');
     A.ui.view = 'mine'; A.render();
-    check('My players offers her child\'s fans', /data-act="fansheet" data-tid="t1" data-pid="p1"/.test(A.rendered()), true);
+    // her child's name opens her own sheet, and her fans are a row there (UX-REVIEW-3.md, 14.1), not a button on the card
+    check('My players offers her child\'s own sheet', /data-act="kidsheet" data-tid="t1" data-pid="p1"/.test(A.rendered()) && !/data-act="fansheet"/.test(A.rendered()), true);
+    A.click({ act: 'kidsheet', tid: 't1', pid: 'p1' });
+    check('— whose row is her fans', /data-act="fansheet" data-tid="t1" data-pid="p1"[\s\S]*?Family and friends who follow Ella/.test(sheet(A)), true);
     A.click({ act: 'fansheet', tid: 't1', pid: 'p1' });
+    check('— the sheet says what a fan is before anything to tap', sheet(A).indexOf('For a grandparent') < sheet(A).indexOf('data-act="faninvite"'), true);
+    check('— with one button to ask someone', />Invite a grandparent or friend</.test(sheet(A)), true);
     check('the sheet says what a fan gets, and does not', /doesn't say who is going, message the coaches or book sessions/.test(sheet(A)), true);
     check('and that a coach says yes first', /A coach of the team says yes before they see anything/.test(sheet(A)), true);
     A.click({ act: 'faninvite', tid: 't1', pid: 'p1', from: 'sheet' }); await A.flush(10);
@@ -108,6 +113,7 @@ const invitesMade = (fbk, from = 0) => fbk.record.writes.slice(from).filter(w =>
     check('for her child, on that team, in this club', inv && [inv.value.player, inv.value.team, inv.value.ws].join(), 'p1,t1,CLUB');
     check('in her name', inv && inv.value.by, 'mumU');
     check('not approved: the coach decides', inv && inv.value.approved, undefined);
+    check('one tap, no choices opened: one person, fourteen days (UX-REVIEW-3.md, 14.1)', inv && (inv.value.seats ? 'seats' : 'single') + ' ' + Math.round((inv.value.expiresAt - inv.value.at) / 864e5), 'single 14');
     check('naming the child by shirt number, never by name', inv && inv.value.playerNo + ' ' + /Ella|Fitz/.test(JSON.stringify(inv.value)), '7 false');
     check('never on the admins\' list, nor anywhere in the club', wrote(fbk).some(p => p.startsWith('clubInvites/') || (p.startsWith(OB) && JSON.stringify(valueAt(fbk, p) || '').includes(inv.path.split('/')[1]))), false);
     check('the link is on the sheet to send', /\?invite=/.test(sheet(A)) && /data-act="faninvdrop"/.test(sheet(A)), true);
@@ -293,7 +299,7 @@ const invitesMade = (fbk, from = 0) => fbk.record.writes.slice(from).filter(w =>
     org.access.teamFans.t1.aunt = 'p1'; org.access.teamFans.t1.uncle = 'p1';
     const { A, fbk } = await boot('mumU', org);
     A.click({ act: 'fansheet', tid: 't1', pid: 'p1' });
-    check('her child\'s fans, by name', /Aunt Jo/.test(sheet(A)) && /Uncle Sid/.test(sheet(A)) && /2 fans follow Ella/.test(sheet(A)), true);
+    check('her child\'s fans, by name', /Aunt Jo/.test(sheet(A)) && /Uncle Sid/.test(sheet(A)) && /who follow Ella · 2</.test(sheet(A)), true);
     check('with Remove beside each', (sheet(A).match(/data-act="fandrop"/g) || []).length, 2);
     check('the sheet offers how many people and for how long', /id="fanLUses"/.test(sheet(A)) && /id="fanLDays"/.test(sheet(A)), true);
     A.dom.confirm = () => true;

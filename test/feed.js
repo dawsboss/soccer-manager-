@@ -151,6 +151,11 @@ console.log('\n--- notifications ---');
 {
   const m = setup({ periods: { 0: { half: 1, start: T0 - 10 * MIN } }, goals: { a: { t: 60, side: 'us' } } });
   check('not following, nothing is watched', A.watchFeed().length, 0);
+  /* The promise and one line of the catch (UX-REVIEW-3.md, 12.4 and 16.4):
+     it was "Notify me · Turn on" over how the page being open worked. */
+  A.me = { uid: 'mum' }; A.render();
+  check('the card says what she gets, and the button what it does', /<h2>Goals and the final whistle<\/h2>[\s\S]*?data-act="feedfollow" data-v="1">Buzz me</.test(A.rendered()), true);
+  check('— and the catch, in one line', /Works while TeamPlayHQ is open on this phone\./.test(A.rendered()) && !/even in another tab|Notify me|>Turn on</.test(A.rendered()), true);
   A.click({ act: 'feedfollow', v: '1' });
   check('following is this game', A.ui.follow, 'g1');
   check('turning it on says so', A.lastToast(), 'Following this game');
@@ -193,7 +198,7 @@ console.log('\n--- game day, on a parent\'s phone (UX-REVIEW-3.md, 16) ---');
   check('— with her answer for her own child, and nobody else\'s', /data-act="rsvp"[^>]*data-pid="p1"/.test(h) + ' ' + /data-act="rsvp"[^>]*data-pid="p[234]"/.test(h), 'true false');
   check('— and no line about her child before there is a game to be in', /class="feedmine"/.test(h), false);
   // Notify me says the promise, then where it reaches her (16.4)
-  check('the follow card says what it buzzes for', /Buzz me for goals and the final whistle/.test(h) && /Works while TeamPlayHQ is open on this phone/.test(h), true);
+  check('the follow card says what it buzzes for', /Goals and the final whistle<\/h2>/.test(h) && />Buzz me</.test(h) && /Works while TeamPlayHQ is open on this phone/.test(h), true);
   check('— not the mechanism', /even in another tab|while this page is open/.test(h), false);
   A.ui.gameView = 'stats'; h = html();
   check('Stats waits for kick-off, in one line', /Stats appear once the game kicks off/.test(h), true);
