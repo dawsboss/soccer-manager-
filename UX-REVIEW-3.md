@@ -124,7 +124,7 @@ title-row checks and `test/same.js`'s "a team's title the team over the club".
 
 ## 12. Buttons
 
-**Built in build 155**, all seven: her answer is its own control (`rsvpChips()`, a `.seg
+**Built in build 156**, all seven: her answer is its own control (`rsvpChips()`, a `.seg
 rsvpseg` 44px tall with ✓ ✕ ? and pressed green, grey or orange) on the next-up card, the
 entry's sheet and her child's card. What became of the tap is said without words (the owner,
 2026-10-14: a sentence was too much): the pressed answer carries a thin bar while it is still on
@@ -224,6 +224,18 @@ The fixes, in the order they pay:
   `mum-live 02-game-live`). Draw them as a plain pill with no border. **An hour.**
 
 ## 13. The first five minutes
+
+*Built in build 155, all nine: a signed-in phone with no club gets the lock card (with a
+waiting team-link request said over it, and *+ Start a new club* a quiet link under it), never
+*Add a team* (a phone with teams of its own on it is still left open, as `awaitingSignIn()`
+leaves it); the registration link is shut like an invite; the sign-in sheet's *Optional* line
+only on a club nobody has locked, and no second hero over the welcome or lock card; the
+sent-link state, with *Send it again* and *Use another email*; on the Home Screen the sheet
+opens on a password and a link says where it opens, and a link opened where its address was
+not kept asks in the sheet, never `prompt()`; the team-link and registration forms with no
+*squad* and no *she*, held there by `test/copy.js`, which now draws every door; the invite's
+shirt said in words with what to do if it is wrong; no role card for a family and the details
+strip folded into the card under her child; the welcome card naming the two ways in.*
 
 - **13.1 Signed in with no club yet, a parent is told to add a team.** The welcome card says
   *If you were sent an invite link, open it again after signing in*; a parent who signs in

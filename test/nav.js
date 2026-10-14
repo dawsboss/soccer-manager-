@@ -47,8 +47,8 @@
    - More holds what is not a tab, by role: one Settings for everyone (People
      and the club's screens are in it since build 143, test/settings.js), My
      players for staff with a child, Training sessions for whoever may book
-     or run one, Clubs for whoever is in more than one and for staff, who may
-     start one (9.4; a family in one club is not offered Start a new club).
+     or run one, Clubs for everyone signed in, who may all start one (the
+     owner, 2026-10-14, overruling 9.4, which kept it from families).
    - The avatar's sheet is the account alone, and its Settings line is the
      More sheet's (9.4). A locked device draws no title and no bar, and no
      child's name is ever in either. */
@@ -432,10 +432,10 @@ console.log('\n--- More, by role ---');
   as('mum', 'mine'); m = more();
   check('a parent: no People, no Club settings', /data-v="people"|data-v="admin"/.test(m), false);
   check('— the club, Training sessions, settings, sign out', ['data-v="club"', 'data-v="sessions"', 'data-v="setup"', 'data-act="signout"'].every(x => m.includes(x)), true);
-  // staff and owners start clubs (UX-REVIEW-2.md, 9.4); a family sees Clubs only when she is in more than one
-  check('— and no Clubs row in her one club: a family does not start clubs', /<b>Clubs<\/b>/.test(m), false);
+  // anyone may start a club, a family included (the owner, 2026-10-14, overruling UX-REVIEW-2.md, 9.4)
+  check('— and Clubs, to start one, in her one club', /<b>Clubs<\/b>[\s\S]*?Start a new club/.test(m), true);
   A.click({ act: 'clubswitch' });
-  check('— nor Start a new club in the switcher', /data-act="newclub"/.test(sheet()), false);
+  check('— and Start a new club in the switcher', /data-act="newclub"/.test(sheet()), true);
   A.closeSheet();
   as('jaz'); m = more();
   check('a coach is offered Clubs, to start one', /<b>Clubs<\/b>[\s\S]*?Start a new club/.test(m), true);

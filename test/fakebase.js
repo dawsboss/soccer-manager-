@@ -58,8 +58,9 @@ function makeFakebase() {
         // point of authReady is that the app must cope with the gap
         return () => { authCb = null; };
       },
-      isSignInWithEmailLink: () => false,
-      signInWithEmailLink: () => Promise.resolve({ user: currentUser }),
+      // record.emailLink: the page was opened from a sign-in link (set before the app boots)
+      isSignInWithEmailLink: () => !!record.emailLink,
+      signInWithEmailLink: (auth, email, href) => { record.auth.push({ fn: 'emailLink', email, href }); return Promise.resolve({ user: currentUser }); },
       sendSignInLinkToEmail: (auth, email, opts) => { record.mails.push({ email, url: opts && opts.url }); return Promise.resolve(); },
       signInWithEmailAndPassword: () => Promise.resolve({ user: currentUser }),
       createUserWithEmailAndPassword: () => Promise.resolve({ user: currentUser }),

@@ -192,7 +192,7 @@ console.log('\n--- the + is in the flow, over no row ---');
   check('nothing pads the list for it any more', rules.some(r => r.sel === '.stack.calendar'), false);
 }
 
-/* ---------------- what a parent taps (UX-REVIEW-3.md, 12; build 155) ---------------- */
+/* ---------------- what a parent taps (UX-REVIEW-3.md, 12; build 156) ---------------- */
 console.log('\n--- the controls a parent taps: her answer its own, nothing under 40px, red for what cannot wait ---');
 {
   const px = (body, prop) => { const m = body.match(new RegExp('(?:^|;|\\s)' + prop + ':\\s*([\\d.]+)px')); return m ? parseFloat(m[1]) : 0; };

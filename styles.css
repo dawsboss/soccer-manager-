@@ -88,7 +88,7 @@ button{cursor:pointer}
   background:rgba(255,255,255,.16);border-radius:999px;padding:3px 9px;
   border:0;color:inherit;position:relative;
 }
-/* a button since build 155 (UX-REVIEW-3.md, 14.4), opening what is waiting: its
+/* a button since build 156 (UX-REVIEW-3.md, 14.4), opening what is waiting: its
    hit area reaches 40px tall without the pill growing (12.3) */
 .sync::before{content:"";position:absolute;inset:-9px -4px}
 .sync[data-state="live"]{background:#7FD6A6;color:#0E3B25;font-weight:600}
@@ -786,7 +786,7 @@ button.rsvprow:first-of-type{border-top:0}
 button.rsvprow[aria-expanded="true"]{color:var(--field)}
 .rsvpgo{color:var(--ink-soft);font-size:20px;line-height:1}
 .rsvpfor{padding:2px 0 8px}
-/* Her answer (UX-REVIEW-3.md, 12.1; build 155): a segment, as the calendar's
+/* Her answer (UX-REVIEW-3.md, 12.1; build 156): a segment, as the calendar's
    views are, not the pill a filter is; 44px tall with a mark per answer,
    and pressed in what she said, green, grey or orange. */
 .rsvpseg{margin-top:6px}

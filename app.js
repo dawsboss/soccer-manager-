@@ -2,7 +2,7 @@
    Static app. Data lives in localStorage, and mirrors to Firebase Realtime
    Database when a config + workspace code are present. */
 
-const BUILD = '155';
+const BUILD = '156';
 const BUILT = '2026-10-14';
 /* The version of database.rules.json this app was written against. The rules
    carry the same number in rulesVersion's .write, which accepts that number
@@ -632,7 +632,11 @@ async function initAuth() {
 
     // arriving back from a magic link
     if (authMod.isSignInWithEmailLink(fbAuth, location.href)) {
-      const mail = localStorage.getItem('sm.emailForLink') || prompt('Confirm your email to finish signing in');
+      /* Opened on a phone that did not send it (a Home Screen app has storage of
+         its own, so the browser this opens in never saw the address): asked in
+         the sign-in sheet's own field, never a bare browser prompt() (UX-REVIEW-3.md, 13.4). */
+      const mail = localStorage.getItem('sm.emailForLink');
+      if (!mail) { linkBack = location.href; sheetSignIn(); }
       if (mail) {
         try {
           await authMod.signInWithEmailLink(fbAuth, mail, location.href);
@@ -668,6 +672,8 @@ async function initAuth() {
       // Apple's hidden address is no name; she can type one on her account sheet
       if (!held) me = u ? { uid: u.uid, name: u.displayName || (!hiddenEmail(u.email) && (u.email || '').split('@')[0]) || 'Signed in', email: u.email || '', photo: u.photoURL || '', verified: u.emailVerified !== false } : null;
       cacheMe(me);   // signing out clears it, which is what locks the club now
+      // in by any way at all: a link still marked as on its way is not, or the next sign-out says "Check your email"
+      if (u) try { localStorage.removeItem('sm.emailForLink'); } catch (e) { }
       const uid = me ? me.uid : null;
       // her own drills are hers, not the phone's: gone the moment she is
       if (mineUid && mineUid !== uid) forgetMine();
@@ -1371,7 +1377,7 @@ function sheetPending() {
   const list = [...pendingList().map(([p, e]) => [pendingLabel(p), e.refused]), ...otherOwed().map(x => [x.label, x.refused])];
   const r = list.filter(([, refused]) => refused);
   /* The badge in the corner opens this too (UX-REVIEW-3.md, 12.4 and 14.4;
-     build 155): it was a span that looked like a button and did nothing. With
+     build 156): it was a span that looked like a button and did nothing. With
      nothing owed it says what the badge means. */
   if (!list.length) {
     openSheet(`<h3>${fb && online ? 'Everything has reached the club' : 'Nothing waiting to send'}</h3>
@@ -2047,6 +2053,14 @@ const needsSignIn = () => !me && gated();
    signed in and nothing held, the only way forward is to sign in, so say so.
    A device with teams of its own on it is somebody using the app alone: left open. */
 const awaitingSignIn = () => !me && !!fbConfig().apiKey && !wsRead && !anyAdmins() && !Object.keys(state.teams || {}).length;
+/* Signed in, with a database, and no club on this phone at all: a parent who
+   signed in before opening her invite, or whose team link is still waiting.
+   She has nothing to see until a club lets her in, and *Add a team* here made
+   a team in no club and from then on drew her as its coach (UX-REVIEW-3.md,
+   13.1). The lock card says what to do instead; starting a club is a link
+   under it for a coach who means to. A phone with teams of its own on it is
+   somebody using the app alone, left open as awaitingSignIn() leaves it. */
+const noClub = () => !!me && !!fbConfig().apiKey && !wsCode() && !Object.keys(state.teams || {}).length;
 
 /* Who may see and change which team.
    Admin: everything. Coach: edits her own team, reads the rest of the club —
@@ -2490,7 +2504,7 @@ function inviteWhat(v) {
   if (v.role === 'fan') return `a fan of ${v.playerNo ? '#' + esc(v.playerNo) : 'a player'} on <b>${esc(v.teamName || 'a team')}</b>: the calendar, the games as they happen and the team's notices${v.approved ? '' : '. A coach of the team says yes before you see anything'}`;
   if (v.role === 'viewer') return 'a club viewer: every team\u2019s games and calendar, to read';
   return v.role === 'parent'
-    ? `a parent of ${v.playerNo ? '#' + esc(v.playerNo) : 'a player'} on <b>${esc(v.teamName || 'a team')}</b>`
+    ? `a parent of ${v.playerNo ? 'the player wearing shirt ' + esc(v.playerNo) : 'a player'} on <b>${esc(v.teamName || 'a team')}</b>`
     : `${role.toLowerCase()} of <b>${esc(v.teamName || 'a team')}</b>`;
 }
 
@@ -2525,7 +2539,7 @@ function inviteScreen() {
     `${esc(invite.err || 'Something went wrong')}. Check the signal and try again.`,
     `<button class="btn" data-act="inviteretry">Try again</button>${later}`);
   return box(`Join ${club}`,
-    `${esc(v.byName || 'An admin')} has invited you as ${inviteWhat(v)}. You are signed in as <b>${esc(me.email || me.name)}</b>.`,
+    `${esc(v.byName || 'An admin')} has invited you as ${inviteWhat(v)}. You are signed in as <b>${esc(me.email || me.name)}</b>.${v.role === 'parent' && v.playerNo ? `<br>Not your child’s number? Ask ${esc(v.byName || 'whoever sent this')} for a new link.` : ''}`,
     `<button class="btn" data-act="inviteaccept">Accept</button>${later}`);
 }
 
@@ -3267,15 +3281,15 @@ function joinScreen() {
   return `<div class="stack"><div class="card">
     <h2>Join ${tm}</h2>
     <p class="muted" style="margin-top:4px">${club} · as a parent. You are signed in as <b>${esc(me.email || me.name)}</b>.</p>
-    <div class="chips" style="margin-bottom:12px"><button class="chip" type="button" data-act="joinkid" data-v="" aria-pressed="${!kid}">She's on the squad</button>
-      <button class="chip" type="button" data-act="joinkid" data-v="1" aria-pressed="${kid}">She isn't on it yet</button></div>
+    <div class="chips" style="margin-bottom:12px"><button class="chip" type="button" data-act="joinkid" data-v="" aria-pressed="${!kid}">On the team</button>
+      <button class="chip" type="button" data-act="joinkid" data-v="1" aria-pressed="${kid}">Not on it yet</button></div>
     ${kid ? `<label class="field"><span>Your child's name</span><input type="text" id="joinKidName" maxlength="120" autocomplete="off" placeholder="First and last"></label>
-    <label class="field"><span>Her birth date — optional</span><input type="date" id="joinKidBorn"></label>
+    <label class="field"><span>Birth date — optional</span><input type="date" id="joinKidBorn"></label>
     <div class="chips" style="margin-bottom:12px">${Object.entries(KID_GENDER).map(([k, l]) => `<button class="chip" type="button" data-act="joingender" data-v="${k}" aria-pressed="${join.gender === k}">${l}</button>`).join('')}</div>
-    <label class="field"><span>Her shirt number — if she has one</span><input type="text" inputmode="numeric" id="joinShirt" maxlength="40"></label>
-    <p class="muted">A coach of the team adds her to the squad and lets you in. You see nothing of the team until then.</p>`
+    <label class="field"><span>Shirt number — if your child has one</span><input type="text" inputmode="numeric" id="joinShirt" maxlength="40"></label>
+    <p class="muted">A coach of the team adds your child and lets you in. You see nothing of the team until then.</p>`
     : `<label class="field"><span>Your child's shirt number</span><input type="text" inputmode="numeric" id="joinShirt" maxlength="40" placeholder="7 — or 7, 12 for two"></label>
-    <label class="field"><span>Their first name — optional, helps the coach</span><input type="text" id="joinChild" maxlength="40" autocomplete="off"></label>
+    <label class="field"><span>Your child's first name — optional, helps the coach</span><input type="text" id="joinChild" maxlength="40" autocomplete="off"></label>
     <p class="muted">A coach of the team checks this and lets you in. You see nothing of the team until then.</p>`}
     <div class="row"><button class="btn" data-act="joinsend">Send to the coaches</button>${later}</div>
   </div></div>`;
@@ -7129,7 +7143,7 @@ function roleWords(lim) {
   if (!lim) return '';
   if (lim === 'tracker') return 'You track this team: you log what happens and make the coach\u2019s planned subs when they are due. The clock and other subs are the coach\u2019s.';
   if (lim === 'helper') return 'You help this team: the calendar, the register, the lineup before kick-off and notices. The clock and the subs are the coach\u2019s.';
-  if (lim === 'parent') return 'You are a parent here: you see your own child by name, say whether she is coming, and message the coaches.';
+  if (lim === 'parent') return 'You are a parent here: you see your own child by name, say whether your child is coming, and message the coaches.';
   if (lim === 'player') return 'You are signed in as a player: you see your team, and say whether you are coming.';
   if (lim === 'fan') return 'You follow the calendar, the games and the notices. The family answers and talks to the coaches.';
   if (lim === 'viewer') {
@@ -7152,7 +7166,12 @@ function render() {
      what there was. Both are drawn once the screen is settled, below. */
   const inviting = !!invite;
   const joining = !inviting && !!join && !join.hidden;
-  const shut = inviting || joining || !!purged || denied || unconfirmed || needsSignIn() || awaitingSignIn();
+  /* A registration link is a door into the club like an invite: the
+     Calendar's title and the tab bar round it were a club she is not in yet
+     (UX-REVIEW-3.md, 13.5). So is a signed-in phone with no club at all
+     (13.1), which drew *Add a team* and the bar of a club that is not there. */
+  const clubless = noClub() && !inviting && !joining && !regx;
+  const shut = inviting || joining || !!regx || !!purged || denied || unconfirmed || needsSignIn() || awaitingSignIn() || clubless;
   const t = team();
   if (!t && teams().length) { ui.teamId = teams()[0].id; }
   const vis = myTeams();
@@ -7246,7 +7265,7 @@ function render() {
   if (regx) { app.innerHTML = regScreen(); saveUi(); watchMessages(); return; }
   if (joining) { app.innerHTML = joinScreen(); saveUi(); watchMessages(); return; }
   if (purged) { app.innerHTML = purgedScreen(); saveUi(); watchMessages(); return; }
-  if (denied || needsSignIn()) { app.innerHTML = lockScreen(); saveUi(); watchMessages(); return; }
+  if (denied || needsSignIn() || clubless) { app.innerHTML = lockScreen(); saveUi(); watchMessages(); return; }
   if (awaitingSignIn()) { app.innerHTML = welcomeScreen(); saveUi(); return; }
   if (unconfirmed) { app.innerHTML = unconfirmedScreen(); saveUi(); return; }
   /* What her role lets her do, said once per account, club and role, and on
@@ -7254,7 +7273,12 @@ function render() {
      or My teams, as homeView() says): whoever has tapped through to the
      calendar or a game has found her way, and the card sat over the game
      screens until build 148. roleCard() says why it is a card at all. */
-  const roleNote = v === homeView() ? roleCard(lim) : '';
+  /* Not for a family (UX-REVIEW-3.md, 13.8): her Home leads with her child,
+     and the sentence sat over him; it stays in the account sheet. */
+  const fam = navKind() === 'family';
+  const roleNote = v === homeView() && !fam ? roleCard(lim) : '';
+  // the details strip, except where the cards to finish are on screen themselves (kidCards says the same)
+  const kidsHere = v === 'mine' || (fam && v === 'season');
   /* Never let a rehearsal pass for the real thing. Both facts are worth saying
      out loud: a test club holds invented data and publishes nothing, and a
      non-production environment is a different database with its own rules. */
@@ -7291,7 +7315,7 @@ function render() {
   lastScreen = here;
   placeMemo = new Map();
   try {
-    app.innerHTML = envNote + saveNote + (shut ? '' : alertBar() + detailsNote()) + joinNote + roleNote + (
+    app.innerHTML = envNote + saveNote + (shut ? '' : alertBar() + (kidsHere ? '' : detailsNote())) + joinNote + roleNote + (
       v === 'game' ? (g === 'track' ? viewTrack() : g === 'stats' ? viewStats() : g === 'recap' ? viewRecap() : g === 'pitch' ? viewMatch() : g === 'plan' ? viewPlan() : g === 'subs' ? viewSubs() : viewFeed()) :
         v === 'roster' ? viewRoster() :
           v === 'season' ? viewSeason() : v === 'teamstats' ? viewTeamStats() : v === 'minutes' ? viewMinutes() : v === 'attend' ? viewAttend() :
@@ -7347,11 +7371,39 @@ function unconfirmedScreen() {
    links to static pages, so they open with no signal-dependent code. */
 const LEGAL_LINKS = '<p class="auth-fine legal"><a href="privacy">Privacy Policy</a> · <a href="terms">Terms of Service</a></p>';
 
+/* The two ways into a club, in the words the coach used when she sent one
+   (UX-REVIEW-3.md, 13.9): "the account your coach or club knows" named an
+   account she did not have yet. */
+const WAYS_IN = 'open the invite link or the team link your coach sent you';
+/* A sign-in link is on its way (sm.emailForLink is set when it goes, and
+   cleared when it is used): the card she is looking at says so, rather than
+   drawing the screen she started on again after a two-second toast, which
+   read as nothing having happened and sent a second link (13.3). */
+const linkSentTo = () => { if (me) return ''; try { return localStorage.getItem('sm.emailForLink') || ''; } catch (e) { return ''; } };
+/* A Home Screen app has storage of its own, so the emailed link opens in the
+   browser, signs in there and leaves the icon on her Home Screen signed out
+   (13.4). Said wherever a link is offered or has gone. */
+const linkElsewhere = () => standalone()
+  ? `The link opens in ${iosDevice() ? 'Safari' : 'your browser'}, not here: sign in there, then open the app from your Home Screen again.` : '';
+function linkSentCard(mail) {
+  const away = linkElsewhere();
+  return `<div class="stack"><div class="auth-card">
+    ${authHero('Check your email', `We sent a sign-in link to <b>${esc(mail)}</b>. Open it on this phone and you’re in.`)}
+    <div class="auth-card-body">
+      ${away ? `<p class="auth-fine">${away}</p>` : ''}
+      <button class="btn wide" data-act="signin-resend">Send it again</button>
+      <button class="btn quiet wide" data-act="signin-other" style="margin-top:8px">Use another email</button>
+      ${LEGAL_LINKS}
+    </div></div></div>`;
+}
+
 function welcomeScreen() {
+  const sent = linkSentTo();
+  if (sent) return linkSentCard(sent);
   return `<div class="stack"><div class="auth-card">
     ${authHero('Sign in to see your team', wsCode()
-      ? 'This phone has not opened the club yet. Sign in with the account your coach or club knows, and your team and calendar will load.'
-      : 'Sign in with the account your coach or club knows, and your team and calendar will load. If you were sent an invite link, open it again after signing in.')}
+      ? 'This phone has not opened the club yet. Sign in, and your team and calendar will load.'
+      : `Sign in, then ${WAYS_IN}, and your team and calendar will be here.`)}
     <div class="auth-card-body">
       <button class="btn wide auth-go" data-act="signinsheet">Sign in</button>
       <p class="auth-fine">Read-only score pages need none of this — they keep working from their own link.</p>
@@ -7360,13 +7412,19 @@ function welcomeScreen() {
 }
 
 function lockScreen() {
-  return `<div class="stack"><div class="auth-card">
+  const sent = linkSentTo();
+  if (sent) return linkSentCard(sent);
+  // signed in with no club: a team-link request put aside with Not now is still waiting, and says so here
+  const waiting = noClub() && join && join.hidden && join.status === 'sent'
+    ? `<div class="rolebar">Waiting for a coach of <b>${esc((join.doc || {}).teamName || 'a team')}</b> to let you in. <button class="linkbtn dark" data-act="joinshow">Open</button></div>` : '';
+  return `<div class="stack">${waiting}<div class="auth-card">
     ${authHero(me ? 'Nobody has added you to a team yet' : 'Sign in to see this club', me
       ? `You are signed in as <b>${esc(me.name)}</b>. Ask your coach for the team link, or open the invite you were sent, and your team will be here.`
-      : 'What is here is private to the club. Sign in with the account your coach or club knows.')}
+      : `What is here is private to the club. Sign in, then ${WAYS_IN}.`)}
     <div class="auth-card-body">
       ${me ? `<button class="btn quiet wide" data-act="signout">Sign out</button>` : `<button class="btn wide auth-go" data-act="signinsheet">Sign in</button>`}
       ${me && Object.keys(myClubs || {}).some(c => c !== wsCode()) ? `<button class="btn quiet wide" data-act="clubswitch" style="margin-top:8px">Your other clubs</button>` : ''}
+      ${noClub() && canNewClub() ? `<p class="auth-fine">Or start a club of your own: <button class="linkbtn" data-act="newclub">+ Start a new club</button></p>` : ''}
       <p class="auth-fine">Read-only score pages need none of this — they keep working from their own link.</p>
       ${LEGAL_LINKS}
     </div></div></div>`;
@@ -7560,9 +7618,6 @@ function settingsLine() {
   const coachAny = !!me && teams().some(t => isCoach(t.id, me.uid));   // People, on Settings
   return ['You', team() && restricted() !== 'tracker' && !readerRole(restricted()) ? 'this team' : '', canAdmin() ? 'the club: people, registrations, fields' : coachAny ? 'people' : ''].filter(Boolean).join(', ');
 }
-/* Staff and owners start clubs (UX-REVIEW-2.md, 9.4); a family sees Clubs
-   only when she is in more than one. */
-const canStartClub = () => canNewClub() && navKind() !== 'family';
 function sheetMore() {
   const org = clubName();
   const b = me ? notesUnread() : 0;
@@ -7578,7 +7633,7 @@ function sheetMore() {
       <span class="rowsub">${esc(sessClubLine())}</span></button>` : ''}
     <button class="opt" data-act="goview" data-v="setup"><b>Settings</b>
       <span class="rowsub">${esc(settingsLine())}</span></button>
-    ${clubs.length > 1 || canStartClub() ? `<button class="opt" data-act="clubswitch"><b>Clubs</b>
+    ${clubs.length > 1 || canNewClub() ? `<button class="opt" data-act="clubswitch"><b>Clubs</b>
       <span class="rowsub">${clubs.length > 1 ? 'Switch to another club you are in' : 'Start a new club'}</span></button>` : ''}
     ${me ? `<button class="opt" data-act="signout"><b>Sign out</b>
       <span class="rowsub">${esc(me.email || me.name || '')}</span></button>`
@@ -7636,7 +7691,7 @@ function viewClub() {
 }
 
 /* The account, one sheet from both doors (UX-REVIEW-3.md, 12.4 and 18.2;
-   build 155): the avatar and Settings → You used to open two different
+   build 156): the avatar and Settings → You used to open two different
    sheets, one with the name box and Sign out, the other with Settings, Sign
    out and Delete my account. Now both open this: who she is, her role, her
    name as the club sees it, the ways she signs in, Settings (unless she is
@@ -7740,7 +7795,9 @@ function knownClubs() {
   return out.sort((a, b) => a.name.localeCompare(b.name));
 }
 
-/* Anyone signed in, with a database to make it in. Signed out there is no
+/* Anyone signed in, with a database to make it in, whatever she is in the
+   club she is in now: a parent may start one too (the owner, 2026-10-14,
+   overruling UX-REVIEW-2.md, 9.4, which kept it from families). Signed out there is no
    uid for the rules to make an admin of; with no Firebase config a "club" is
    just this phone, which is what it already is. */
 const canNewClub = () => !!(me && fbConfig().apiKey);
@@ -7757,7 +7814,7 @@ function sheetClubSwitch() {
     <p class="muted">Forget removes this device's copy only. Deleting a club for everyone is done outside the app, by its owner — see below.</p>
     <button class="opt" data-act="goview" data-v="club"><b>Club home</b>
       <span class="rowsub">Teams, stats and settings for ${esc((acc().org || {}).name || 'this club')}</span></button>
-    ${canStartClub() ? `<button class="opt" data-act="newclub"><b>+ Start a new club</b>
+    ${canNewClub() ? `<button class="opt" data-act="newclub"><b>+ Start a new club</b>
       <span class="rowsub">You become its admin</span></button>` : ''}
     <p class="muted">To join someone else's club, ask its admin for an invite link.</p>`);
 }
@@ -8764,7 +8821,7 @@ function viewFeed() {
   const closed = pushOn();
   const offerPush = !closed && me && pushSupport() === 'ok' ? ' For a closed phone, turn on notifications in Settings.' : '';
   /* The promise, then one line of the catch (UX-REVIEW-3.md, 12.4 and 16.4;
-     build 155): it was "Notify me · Turn on" over a sentence about the page
+     build 156): it was "Notify me · Turn on" over a sentence about the page
      being open in another tab, the mechanism and not what she gets. */
   const follow = st === 'done' ? '' : `<div class="card"><div class="spread"><h2>Goals and the final whistle</h2>
       <button class="btn ${following ? 'quiet ' : ''}sm" data-act="feedfollow" data-v="${following ? 0 : 1}">${following ? 'Stop' : 'Buzz me'}</button></div>
@@ -9833,7 +9890,7 @@ function setRsvp(tid, key, pid, v, note) {
 }
 
 /* Her answer, for one child, in the sheet, on Next up and on her card
-   (UX-REVIEW-3.md, 12.1; build 155). Its own control, not the pill five
+   (UX-REVIEW-3.md, 12.1; build 156). Its own control, not the pill five
    filters and a form also use: a parent could not tell from the look of a
    chip whether tapping it told the coach something or only changed what she
    was looking at. A segment, as the calendar's views are (which already
@@ -11027,7 +11084,7 @@ function viewFamSeason(t) {
   if (detailsBlocked()) return `<div class="stack">${todo}</div>`;
   const kids = [...players(t).filter(isMine).map(p => ({ p })), ...players(t).filter(p => iFan(p) && !isMine(p)).map(p => ({ p, sup: true }))];
   return `<div class="stack">
-    ${todo}${kids.map(({ p, sup }) => kidSeasonCard(t, p, sup, false)).join('')}
+    ${kids.map(({ p, sup }) => kidSeasonCard(t, p, sup, false)).join('')}${todo}
     ${nextUpBlock(t)}
     <button class="textbtn" data-act="teamcal" data-tid="${esc(t.id)}" style="align-self:flex-start">${teamLabel(t)} on the calendar</button>
     ${seasonGames(t, ms)}${elsewhereCards()}
@@ -11484,7 +11541,7 @@ function kidSeasonCard(t, p, sup, withNext) {
     .map(([k, v]) => `${mins(v)} at ${k}`).join(' · ');
   const ns = sup ? null : sessAll().find(s => !sessPast(s) && !s.called && (b => b && b.st !== 'out' && b.st !== 'no')(bookOf(s.id, p.id)));
   /* Her name opens her own sheet, where her fans are (UX-REVIEW-3.md, 12.4
-     and 14.1; build 155): "Fans (1)" was the biggest button on the card, for
+     and 14.1; build 156): "Fans (1)" was the biggest button on the card, for
      something done once a season. */
   const own = !sup && fbConfig().apiKey && mayFanAsk(t.id, p);
   const head = `${p.photo ? `<img class="crest" src="${esc(p.photo)}" alt="">` : `<span class="crest blank">${esc(p.number ?? '')}</span>`}
@@ -18923,18 +18980,35 @@ const authHero = (title, sub) => `<div class="auth-hero"><div class="auth-pitch"
   <img class="auth-crest" src="icon-192.png" alt="" width="56" height="56">
   <h3>${title}</h3>${sub ? `<p>${sub}</p>` : ''}</div>`;
 
-// which email way the sheet shows; a link is what parents should be pointed at (AUTH.md, Sign-in)
-let signinMode = 'link';
+/* Which email way the sheet shows; a link is what parents should be pointed
+   at (AUTH.md, Sign-in), except in a Home Screen app, where the link opens in
+   the browser and signs her in there instead (UX-REVIEW-3.md, 13.4): there it
+   leads with the companies and a password. Null until she picks. */
+let signinMode = null;
+const signinWay = () => signinMode || (standalone() ? 'pass' : 'link');
+// a sign-in link opened where its address was not kept: the sheet asks for it
+let linkBack = '';
 
 function sheetSignIn() {
   // signed in, the same door is her account (UX-REVIEW-3.md, 18.2)
   if (me) { sheetAccount(); return; }
   if (!authMod) { toast('Sign-in is not available on this build'); return; }
+  if (linkBack) {
+    openSheet(`<h3>Finish signing in</h3>
+      <p class="muted" style="margin-top:0">Type the email the link was sent to.</p>
+      <label class="field"><span>Email</span><input type="email" id="authEmail" placeholder="you@example.com" autocapitalize="off" autocorrect="off" autocomplete="email" value=""></label>
+      <button class="btn wide auth-go" data-act="signin-finish">Sign in</button>`);
+    return;
+  }
   const btn = (act, k) => `<button class="auth-btn auth-${k}" data-act="${act}" data-v="${k}">${AUTH_LOGO[k]}<span>${act === 'signin-oauth' ? 'Continue with' : 'Add'} ${esc(SIGNIN_PROVIDERS[k].label)}</span></button>`;
   const keys = signInProviders();
   const mail = pendingLink && pendingLink.email ? pendingLink.email : String(($('#authEmail') || {}).value || '');
-  const pass = signinMode === 'pass';
-  openSheet(`${authHero(pendingLink ? 'Nearly there' : 'Welcome to the touchline', pendingLink ? '' : 'Sign in to see your club, your teams and your calendar.')}
+  const pass = signinWay() === 'pass';
+  /* The welcome and lock cards are a pitch-green hero already; a second one
+     over the first read as two screens (UX-REVIEW-3.md, 13.2). */
+  const heroBelow = awaitingSignIn() || needsSignIn() || denied;
+  const away = linkElsewhere();
+  openSheet(`${pendingLink ? authHero('Nearly there', '') : heroBelow ? '<h3>Sign in</h3>' : authHero('Welcome to the touchline', 'Sign in to see your club, your teams and your calendar.')}
     ${pendingLink ? `<div class="auth-note"><b>${esc(pendingLink.email || 'That email')}</b> already has an account here. Sign in the way you did before, and ${esc(pendingLink.label)} will be added to it, so either works from now on. By a link to your email, it opens a fresh page, so add ${esc(pendingLink.label)} from <b>Your account</b> once you are in.</div>` : ''}
     ${keys.length ? `<div class="auth-btns">${keys.map(k => btn('signin-oauth', k)).join('')}</div>
     <div class="auth-or"><span>or use your email</span></div>` : ''}
@@ -18947,8 +19021,10 @@ function sheetSignIn() {
       <button class="btn wide auth-go" data-act="signin-pass">Sign in</button>
       <div class="auth-links"><button class="auth-link" data-act="signup-pass">Create an account</button><button class="auth-link" data-act="signin-reset">Forgot your password?</button></div>`
     : `<button class="btn wide auth-go" data-act="signin-link">Send me a sign-in link</button>
-      <p class="muted auth-hint">No password to forget: tap the link in the email and you are in.</p>`}
-    <p class="auth-fine">Optional for now — everything works signed out. Signing in means what you log carries a verified name instead of one anybody could type.</p>`);
+      <p class="muted auth-hint">${away || 'No password to forget: tap the link in the email and you are in.'}</p>`}
+    ${/* optional only where it is: a lone coach's own phone, whose club nobody has locked (13.2) */ ''}
+    <p class="auth-fine">${!gated() && wsCode() ? 'Optional for now — everything works signed out. Signing in means what you log carries a verified name instead of one anybody could type.'
+      : `If your invitation came by email, use that address; otherwise ${keys.includes('google') ? 'any Google account or email' : 'any email'} works.`}</p>`);
 }
 
 function sheetWho() {
@@ -19345,9 +19421,9 @@ function careForm(r) {
       <label class="field"><span>${i ? 'Another contact' : 'Who to call'}</span><input type="text" id="kC${i}n" maxlength="80" value="${esc(x.name || '')}" placeholder="${i ? 'Optional' : 'Name'}"></label>
       <label class="field"><span>Phone</span><input type="tel" id="kC${i}p" maxlength="40" value="${esc(x.phone || '')}"></label>
     </div>
-    <label class="field"><span>Who they are to her</span><input type="text" id="kC${i}r" maxlength="40" value="${esc(x.rel || '')}" placeholder="Mum, grandad, neighbour"></label>`; };
+    <label class="field"><span>Who they are to your child</span><input type="text" id="kC${i}r" maxlength="40" value="${esc(x.rel || '')}" placeholder="Mum, grandad, neighbour"></label>`; };
   return `<p class="lbl">At the pitch</p>
-    <p class="muted" style="margin-top:0">Only her team's coaches and the club's admins see this, never other families. Leave a box empty for none.</p>
+    <p class="muted" style="margin-top:0">Only your child's coaches and the club's admins see this, never other families. Leave a box empty for none.</p>
     ${row(0)}${row(1)}
     ${CARE_FIELDS.map(([k, l]) => `<label class="field"><span>${l}</span><textarea id="kCare_${k}" rows="1" maxlength="${k === 'doctor' ? 200 : 500}">${esc((r && r[k]) || '')}</textarea></label>`).join('')}`;
 }
@@ -19422,9 +19498,15 @@ function sheetKid(cid) {
 function kidCards() {
   const todo = myKidsTodo();
   const loose = myClubKids().filter(c => !kidUnfinished(c) && !Object.keys(c.teams || {}).length);
+  /* One card per child, carrying what the strip over every other screen
+     says (the deadline, and what is shut past it): on the screens that draw
+     these the strip is left off, so she is asked once, not in three voices
+     (UX-REVIEW-3.md, 13.8). */
+  const { by } = detailsSet(), shutNow = detailsBlocked();
+  const when = by && !shutNow ? ` The club needs them by ${esc(dayLabel(by))}.` : shutNow ? ' Until they are finished, the app shows your calendar and messages only.' : '';
   return todo.map(c => `<div class="card"><b>Check ${esc(c.first || 'your child')}’s details</b>
-      <p class="muted" style="margin:6px 0 10px">The club has her on its records${kidMissing(c).length ? ` and still needs ${wordsAnd(kidMissing(c).map(x => x === 'someone to call' ? x : 'her ' + x))}` : ''}. Only you can confirm them.</p>
-      <button class="btn wide" data-act="kidopen" data-id="${esc(c.id)}">Check her details</button></div>`).join('')
+      <p class="muted" style="margin:6px 0 10px">The club has ${esc(c.first || 'your child')} on its records${kidMissing(c).length ? ` and still needs ${wordsAnd(kidMissing(c).map(x => x === 'someone to call' ? x : 'their ' + x))}` : ''}. Only you can confirm them.${when}</p>
+      <button class="btn wide" data-act="kidopen" data-id="${esc(c.id)}">Check the details</button></div>`).join('')
     + loose.map(c => `<div class="card"><div class="row"><span class="crest blank">${esc((c.first || '?').slice(0, 1))}</span>
       <span><b style="font-size:18px">${esc(kidName(c))}</b><span class="rowsub">In the club · on no team yet</span></span></div>
       <button class="btn quiet wide" data-act="kidopen" data-id="${esc(c.id)}" style="margin-top:10px">Her details</button></div>`).join('');
@@ -20033,7 +20115,7 @@ function regForm() {
     <h2>${esc(d.name)}</h2>
     ${r && r.st === 'draft' ? `<p class="muted" style="margin-top:0">The club started this for you. Check it, fill in what is missing and send it.</p>` : ''}
     <div class="grid2">
-      <label class="field"><span>Her first name</span><input type="text" id="kFirst" maxlength="60" value="${esc(c.first || '')}"></label>
+      <label class="field"><span>First name</span><input type="text" id="kFirst" maxlength="60" value="${esc(c.first || '')}"></label>
       <label class="field"><span>Last name</span><input type="text" id="kLast" maxlength="60" value="${esc(c.last || '')}"></label>
     </div>
     <label class="field"><span>Birth date</span><input type="date" id="kBorn" value="${esc(c.born || '')}"></label>
@@ -20061,7 +20143,7 @@ async function sendReg() {
   const first = $('#kFirst').value.trim().slice(0, 60), last = $('#kLast').value.trim().slice(0, 60), born = $('#kBorn').value;
   const gEl = document.querySelector('[data-act="pickone"][data-grp="kgender"][aria-pressed="true"]');
   const gender = gEl && KID_GENDER[gEl.dataset.v] ? gEl.dataset.v : (c.gender || '');
-  if (!first) { toast('Her first name, please'); return; }
+  if (!first) { toast('A first name, please'); return; }
   if (!born || !BORN_OK.test(born) || !gender) { toast('Her birth date and gender, please: the club needs both'); return; }
   const why = progFits(d, born, gender);
   if (why) { toast(why); return; }
@@ -22470,14 +22552,30 @@ function onAct(e) {
     }).catch(err => toast(authMessage(err)));
     return;
   }
-  if (a === 'signin-link') {
-    const mail = $('#authEmail').value.trim();
-    if (!mail) { toast('Enter your email first'); return; }
+  if (a === 'signin-link' || a === 'signin-resend') {
+    const mail = a === 'signin-resend' ? linkSentTo() : $('#authEmail').value.trim();
+    if (!mail) { if (a === 'signin-resend') sheetSignIn(); else toast('Enter your email first'); return; }
+    if (!authMod) { toast('Sign-in is not available on this build'); return; }
     // an invite rides along, so the link still works if it is opened on another device
     const back = invite ? inviteLink(invite.id) : location.origin + location.pathname;
+    // the card under the sheet becomes the sent state (linkSentCard), so the toast is only a nod
     authMod.sendSignInLinkToEmail(fbAuth, mail, { url: back, handleCodeInApp: true })
-      .then(() => { localStorage.setItem('sm.emailForLink', mail); closeSheet(); toast('Check your email'); })
+      .then(() => { localStorage.setItem('sm.emailForLink', mail); closeSheet(); toast(a === 'signin-resend' ? 'Sent again' : 'Check your email'); render(); })
       .catch(err => toast(authMessage(err)));
+    return;
+  }
+  if (a === 'signin-other') {
+    try { localStorage.removeItem('sm.emailForLink'); } catch (e) { }
+    signinMode = 'link'; render(); sheetSignIn(); return;
+  }
+  // back from a link on a phone that did not send it (a Home Screen app's own storage): her address, typed into the sheet
+  if (a === 'signin-finish') {
+    const mail = String(($('#authEmail') || {}).value || '').trim();
+    if (!mail) { toast('Enter your email first'); return; }
+    if (!authMod || !linkBack) return;
+    authMod.signInWithEmailLink(fbAuth, mail, linkBack)
+      .then(() => { linkBack = ''; try { localStorage.removeItem('sm.emailForLink'); history.replaceState(null, '', location.pathname); } catch (e) { } closeSheet(); toast('Signed in'); })
+      .catch(err => toast(/invalid-email|user-mismatch/.test((err && err.code) || '') ? 'That is not the address the link was sent to' : 'That sign-in link did not work'));
     return;
   }
   if (a === 'signin-pass' || a === 'signup-pass') {
