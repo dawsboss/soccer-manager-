@@ -132,9 +132,21 @@ const PATHS = [
   { ask: 'How do I stop the buzzing?', say: 'More → Settings → Notifications', who: EVERYONE,
     walk() { tab('more'); A.click({ act: 'goview', v: 'setup' }); },
     got: () => A.ui.view + ' ' + /id="setNotify"/.test(page()), want: 'setup true' },
-  { ask: 'What changed?', say: "More → What's new", who: EVERYONE,
-    walk() { tab('more'); A.click({ act: 'goview', v: 'notes' }); },
-    got: () => A.ui.view, want: 'notes' },
+  /* One inbox for a family (UX-REVIEW-3.md, 17.1): what moved is a card at the
+     top of Messages, where people write to her, and What's new is not on her
+     More sheet. Staff keep What's new, which also carries club activity, so
+     this is the one question whose answer is two paths: the coach's, and the
+     parent's, which the coach gives as "it's on Messages". */
+  { ask: 'What changed?', say: "More → What's new (a family: Messages → Changes)", who: EVERYONE,
+    walk(uid) {
+      if (FAMILY.includes(uid)) {
+        A.pushAlert({ id: 'c:CLUB:e1:moved', code: 'CLUB', kind: 'cal', hash: '#/team/t1/calendar', title: 'Moved: Practice (G14 Flight)', body: 'Now Tue 6pm' });
+        tab('messages'); return;
+      }
+      tab('more'); A.click({ act: 'goview', v: 'notes' });
+    },
+    got: uid => A.ui.view + (FAMILY.includes(uid) ? ' ' + /<h2[^>]*>Changes<\/h2>[\s\S]*Moved: Practice \(G14 Flight\)/.test(page()) : ''),
+    want: uid => FAMILY.includes(uid) ? 'inbox true' : 'notes' },
   { ask: 'Where is the whole season?', say: 'Home → "G14 Flight on the calendar"', who: EVERYONE,
     walk() { home(); if (!/data-act="teamcal" data-tid="t1"/.test(page())) throw new Error('no link to the calendar'); A.click({ act: 'teamcal', tid: 't1' }); },
     got: () => A.ui.view, want: 'calendar' },
@@ -151,7 +163,7 @@ console.log('--- the coach\'s answer, walked on every phone ---');
       as(uid);
       let got;
       try { p.walk(uid); got = p.got(uid); } catch (e) { got = 'threw: ' + e.message; }
-      if (got !== p.want) bad.push(`${ROLES[uid]}: ${JSON.stringify(got)}`);
+      if (got !== (typeof p.want === 'function' ? p.want(uid) : p.want)) bad.push(`${ROLES[uid]}: ${JSON.stringify(got)}`);
     }
     check(`"${p.ask}" — ${p.say}`, bad.join('; ') || 'works for ' + p.who.length, 'works for ' + p.who.length);
   }

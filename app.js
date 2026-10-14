@@ -2,7 +2,7 @@
    Static app. Data lives in localStorage, and mirrors to Firebase Realtime
    Database when a config + workspace code are present. */
 
-const BUILD = '154';
+const BUILD = '155';
 const BUILT = '2026-10-12';
 /* The version of database.rules.json this app was written against. The rules
    carry the same number in rulesVersion's .write, which accepts that number
@@ -3766,6 +3766,17 @@ function msgUnread() {
 }
 const notesUnread = () => (newsFor() ? newsUnread() : 0) + (me ? alertsUnread() : 0);
 const unreadCount = () => msgUnread() + notesUnread();
+/* A family has one inbox, not two (UX-REVIEW-3.md, 17.1). People writing to
+   her, the app telling her a game moved and whether her phone buzzes were three
+   places with three names, and she opened the second for the first. Her
+   changes are a pinned card at the top of Messages, counted on the Messages
+   tab, and What's new is not on her More sheet. Staff keep it: club activity
+   has no other home, and the calendar changes of her teams are in it. A family
+   with no Messages tab (no conversations in this club) keeps What's new, since
+   a card on a tab that is not drawn would be a change nobody could read. */
+const changesInMessages = () => !!me && navKind() === 'family' && !newsFor() && msgsOn();
+const tabMsgCount = () => msgUnread() + (changesInMessages() ? alertsUnread() : 0);
+const tabMoreCount = () => changesInMessages() ? 0 : notesUnread();
 
 /* Families on a team, by account: a parent of two in the same squad is one
    family, and it is families a coach is asking about when she asks who has
@@ -3995,7 +4006,7 @@ async function pushTurnOn() {
   pushBusy = true; render();
   const uid = me.uid;
   try {
-    if (await perm !== 'granted') { toast(Notification.permission === 'denied' ? 'Notifications are blocked in this browser\'s settings' : 'Notifications not turned on'); return; }
+    if (await perm !== 'granted') { toast(Notification.permission === 'denied' ? 'Notifications are turned off for TeamPlayHQ in your phone\'s settings' : 'Notifications not turned on'); return; }
     const reg = await swReg();
     const m = await messagingMod();
     const token = await m.mod.getToken(m.messaging, { vapidKey: pushKey(), serviceWorkerRegistration: reg });
@@ -4151,7 +4162,7 @@ function muteCard() {
   if (!me) return '';
   const kinds = MUTE_KINDS.filter(([k]) => k === 'news' ? newsFor() : true);
   return `<div class="card"><h2 style="margin-bottom:4px">What notifies you</h2>
-    <p class="muted" style="margin:0 0 8px">Off means no pop-up, no buzz and no notification on a locked phone, on every phone you use. It still waits for you${kinds.some(([k]) => k === 'msg' || k === 'notice') ? ' on Messages or' : ''} on What's new.</p>
+    <p class="muted" style="margin:0 0 8px">Off means no pop-up, no buzz and no notification on a locked phone, on every phone you use. It still waits for you${changesInMessages() ? ' on Messages.' : `${kinds.some(([k]) => k === 'msg' || k === 'notice') ? ' on Messages or' : ''} on What's new.`}</p>
     <div class="plist">${kinds.map(([k, name, sub]) => {
       const off = muted(k);
       return `<div class="prow" style="grid-template-columns:minmax(0,1fr) auto"><span style="min-width:0"><span class="pname">${name}</span><span class="psub">${sub}</span></span>
@@ -4159,6 +4170,18 @@ function muteCard() {
     }).join('')}</div></div>`;
 }
 
+/* A block is undone in the phone's settings, not in TeamPlayHQ, and which
+   settings depends on the phone (UX-REVIEW-3.md, 17.4): "this browser's
+   settings" told a parent to go somewhere without saying where. The steps for
+   the phone she is holding, then what she gets once they are on. An iPhone
+   only reaches this state from the Home Screen, where it lists the app under
+   its own Notifications. */
+function pushBlockedSay() {
+  const how = iosDevice() ? 'Open your phone\'s <b>Settings</b>, tap <b>Notifications</b>, then <b>TeamPlayHQ</b>, and turn on <b>Allow Notifications</b>.'
+    : /Android/.test(uaStr()) ? 'Tap the lock icon in the address bar, then <b>Permissions</b>, and allow <b>Notifications</b>.'
+    : 'Click the lock icon beside the address, and allow <b>Notifications</b>.';
+  return `Notifications are turned off for TeamPlayHQ on this phone. ${how} Then come back and turn them on here: team notices, messages and changes to your games and practices will reach you even when TeamPlayHQ is closed.`;
+}
 function pushCard() {
   if (!me) return '';
   const sup = pushSupport();
@@ -4167,7 +4190,7 @@ function pushCard() {
   const say = pushBusy ? 'Turning on…'
     : sup === 'install' ? 'On an iPhone or iPad, TeamPlayHQ can notify you once it is on your Home Screen: tap <b>Share</b>, then <b>Add to Home Screen</b>, open TeamPlayHQ from there, and turn them on.'
     : sup === 'no' ? 'This browser can\'t get notifications from a website. TeamPlayHQ still pops up while it is open.'
-    : sup === 'blocked' ? 'Notifications are blocked for TeamPlayHQ in this browser\'s settings. Allow them there, then come back here.'
+    : sup === 'blocked' ? pushBlockedSay()
     : on ? 'On. Team notices, messages, changes to your games and practices, and games you follow reach this phone even with TeamPlayHQ closed.'
     : 'Team notices, messages, changes to your games and practices, and games you follow reach this phone even with TeamPlayHQ closed.';
   const btn = pushBusy || sup !== 'ok' ? ''
@@ -4205,9 +4228,30 @@ function notifyCards() {
 }
 const GEAR_SVG = '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:-2px"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>';
 function viewInbox() {
-  const other = me ? alertsCard('msgs') : '';
+  // her changes first, then her other clubs' messages (UX-REVIEW-3.md, 17.1)
+  const other = (changesInMessages() ? changesCard() : '') + (me ? alertsCard('msgs') : '');
   if (!msgOn()) return other ? `<div class="stack"><h2>Messages</h2>${other}</div>` : viewInboxMsgs();
   return viewInboxMsgs().replace('<!--others-->', other);
+}
+/* A family's changes, pinned at the top of Messages: one row per game or
+   practice that moved, was called off, came back or is new, in any of her
+   clubs, each opening where it happened. The last few, with the rest a tap
+   away; every one still unread is drawn, so the count on the tab is never more
+   than she can see. Opening Messages reads them, as opening What's new did. */
+const CHANGES_SHOW = 3;
+function changesCard() {
+  const all = alertsHere().list.filter(a => a.kind !== 'msg').slice(0, 15);
+  if (!all.length) return '';
+  const fresh = all.filter(a => !a.read).length;
+  const shown = ui.changesAll ? all : all.slice(0, Math.max(CHANGES_SHOW, fresh));
+  const clubs = knownClubs().length > 1;
+  const html = `<div class="card"><h2 style="margin-bottom:6px">Changes</h2>
+    <div class="plist">${shown.map(a => `<button class="prow go" type="button" data-act="alertgo" data-id="${esc(a.id)}" style="grid-template-columns:1fr auto">
+      <span style="min-width:0"><span class="pname">${a.read ? '' : '• '}${esc(a.title)}</span><span class="psub">${esc([clubs ? clubNameOf(a.code) : '', a.body, whenShort(a.at)].filter(Boolean).join(' · '))}</span></span>
+      <span class="muted">Open</span></button>`).join('')}</div>
+    ${all.length > shown.length ? `<button class="btn quiet wide" data-act="changesall">Show ${all.length - shown.length} older</button>` : ''}</div>`;
+  if (fresh) { for (const a of alerts.list) if (a.kind !== 'msg') a.read = true; saveAlerts(); }
+  return html;
 }
 const LOCK_SVG = '<svg class="lock" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>';
 // a colleague as the list and the thread name her: who, and what she is in the club
@@ -4265,18 +4309,28 @@ function viewInboxMsgs() {
   const rows = [...staffConvs, ...sdConvs].sort((a, b) => (b.n ? 1 : 0) - (a.n ? 1 : 0) || b.last - a.last);
   const list = famConvs.concat(rows).map(r => r.html).join('');
   const canStart = staff.length || colleagues().length || fams.length > 1;
+  /* A family's one door to the coaches is a row in the list below, and the
+     notices under it have no reply box, so she looked for one (UX-REVIEW-3.md,
+     17.2). For someone who can write to nobody else the button at the top says
+     what it does: one team opens the conversation, several open the list of
+     them. Staff, who write to anyone, keep New message. */
+  const own = fams.filter(x => x.fam === me.uid);
+  const toCoaches = own.length && !staff.length && !colleagues().length;
+  const startBtn = toCoaches
+    ? (own.length === 1 ? `<button class="btn sm" data-act="thread" data-tid="${own[0].tid}" data-fam="${esc(me.uid)}">Message the coaches</button>` : `<button class="btn sm" data-act="msgnew">Message the coaches</button>`)
+    : canStart ? `<button class="btn sm" data-act="msgnew">New message</button>` : '';
 
   return `<div class="stack">
-    <div class="spread"><h2>Messages</h2>
-      ${canStart ? `<button class="btn sm" data-act="msgnew">New message</button>` : ''}</div>
+    <div class="spread"><h2>Messages</h2>${startBtn}</div>
     <!--others-->
     <div class="card"><h2 style="margin-bottom:8px">Conversations</h2>
-      ${list ? `<div class="plist">${list}</div>` : `<p class="muted" style="margin:0">Nothing yet. Tap <b>New message</b> to write to ${staff.length ? 'a family on your team' : ''}${staff.length && colleagues().length ? ', or ' : ''}${colleagues().length ? 'another coach or an admin' : ''}.</p>`}
+      ${list ? `<div class="plist">${list}</div>` : `<p class="muted" style="margin:0">Nothing yet.${canStart ? ` Tap <b>New message</b> to write to ${staff.length ? 'a family on your team' : ''}${staff.length && colleagues().length ? ', or ' : ''}${colleagues().length ? 'another coach or an admin' : ''}.` : ''}</p>`}
       <p class="muted lockline" style="margin:8px 0 0">${LOCK_SVG} Private: each conversation is readable only by the people in it. <button class="linkbtn" data-act="msgprivacy">How private?</button></p></div>
     <div class="card"><div class="spread"><h2 style="margin:0">Team notices</h2>
       ${noticeTeams().length ? `<button class="btn quiet sm" data-act="postnew">Post a notice</button>` : ''}</div>
       <div style="margin-top:8px">${shown.length ? shown.map(notice).join('') : `<p class="muted" style="margin:0">${staff.length ? 'Nothing posted yet. A notice goes to every family on the team.' : 'Nothing from the coaches yet.'}</p>`}</div>
-      ${all.length > shown.length ? `<button class="btn quiet wide" data-act="msgall">Show ${all.length - shown.length} older</button>` : ''}</div>
+      ${all.length > shown.length ? `<button class="btn quiet wide" data-act="msgall">Show ${all.length - shown.length} older</button>` : ''}
+      ${noticeTeams().length ? '' : `<p class="muted" style="margin:8px 0 0">Notices are one-way.${own.length ? ' To reply, message the coaches.' : ''}</p>`}</div>
     <p class="muted">Messages pop up while TeamPlayHQ is open on a phone, and wait here with a count until then.${staff.length ? ' To reach everyone right now, use <b>Email or share</b> on a notice.' : ''}</p>
   </div>`;
 }
@@ -4312,8 +4366,10 @@ function viewThread() {
 function threadScreen(c, head, foot) {
   const draftKey = c.cid ? 'sd/' + c.cid : c.tid + '/' + c.fam;
   const to = c.cid ? `data-cid="${esc(c.cid)}"` : `data-tid="${c.tid}" data-fam="${esc(c.fam)}"`;
+  /* No back button of its own: the title row's arrow is the way up to Messages
+     (upView('thread')), and a second one 70px under it was two ways to do one
+     thing (UX-REVIEW-3.md, 17.3). */
   return `<div class="stack">
-    <div class="row"><button class="btn quiet sm" data-act="inbox">‹ Messages</button></div>
     <div class="card">${head}
       <button class="linkbtn lockline" type="button" data-act="msgprivacy" style="display:block;margin-top:6px">${LOCK_SVG} Private · only ${convReaders(c)} can read this</button></div>
     <div class="card"><div class="thread" id="thread">${threadHtml(c)}</div></div>
@@ -4610,12 +4666,25 @@ function msgPaint() {
 }
 /* The two buttons up top, each with its own count: Messages for what people
    wrote, the bell for what is new. */
-const msgsOn = () => !!me && (msgOn() || alertsHere().list.some(x => x.kind === 'msg') || elseUnread() > 0);
+const msgsOn = () => !!me && (msgOn() || alertsHere().list.some(x => x.kind === 'msg') || elseUnread() > 0 || msgsCached());
+/* The tab bar must not change shape while the page loads (UX-REVIEW-3.md,
+   17.5). msgOn() needs the SDK (msgTeams() reads `fb`), which arrives a moment
+   after the first paint, so a coach or a parent with Messages saw four tabs and
+   then five, and with no signal never the fifth. Until it has loaded, her phone's
+   own copy of her conversations says she had them: watchMessages() saves it for
+   every club and account it listens as, and signing out removes it. Once the SDK
+   is here the roles decide, as before, so a role since withdrawn takes the tab
+   away at the first read, not before. */
+function msgsCached() {
+  if (fb || !me || !wsCode() || needsSignIn()) return false;
+  try { return localStorage.getItem(msgsKey(me.uid)) != null; } catch (e) { return false; }
+}
 /* The counts on the tab bar: unread messages on Messages, what is new on
-   More (What's new lives under it). Repainted in place when something
-   arrives between draws; render() draws them fresh. */
+   More (What's new lives under it), except for a family, whose changes are on
+   Messages and are counted there (changesInMessages()). Repainted in place when
+   something arrives between draws; render() draws them fresh. */
 function paintBell(shut) {
-  const m = shut ? 0 : msgUnread(), b = shut ? 0 : notesUnread(), n = m + b;
+  const m = shut ? 0 : tabMsgCount(), b = shut ? 0 : tabMoreCount(), n = m + b;
   const put = (sel, k) => { const c = $(sel); if (c) c.textContent = k ? (k > 9 ? '9+' : String(k)) : ''; };
   put('#tabMsgN', m); put('#tabMoreN', b);
   if (typeof document !== 'undefined') document.title = (n ? `(${n}) ` : '') + 'TeamPlayHQ — soccer team manager';
@@ -7169,6 +7238,8 @@ function render() {
      club then would lose where it was going for good. */
   if ((ui.view === 'inbox' || ui.view === 'thread') && !shut && (wsRead || !fbConfig().apiKey) && !msgOn() && !(ui.view === 'inbox' && msgsOn())) ui.view = 'club';
   if (ui.view === 'notes' && !shut && !me) ui.view = 'club';
+  // a family's What's new is the top of Messages (17.1); an old link or a bell tap lands there
+  if (ui.view === 'notes' && !shut && changesInMessages()) ui.view = 'inbox';
   // the same wait, for the same reason: a family's link to a session opened cold
   if (ui.view === 'sessions' && !shut && (wsRead || !fbConfig().apiKey) && !canSessions()) ui.view = 'club';
   // an evaluator's scoring screen, for the evaluators a tryout names and nobody else
@@ -7533,7 +7604,7 @@ function titleBar() {
 }
 function tabBar() {
   const cur = tabFor();
-  const m = msgUnread(), b = notesUnread();
+  const m = tabMsgCount(), b = tabMoreCount();
   const n = k => k ? (k > 9 ? '9+' : String(k)) : '';
   return navTabs().map(t => `<button type="button" class="tab" data-act="tab" data-tab="${t.id}" aria-current="${t.id === cur}">${NAV_ICON[t.id]}<span class="tabl">${t.label}</span>${t.count ? `<span class="tabn" id="${t.count}">${t.count === 'tabMsgN' ? n(m) : n(b)}</span>` : ''}${t.live ? '<span class="tablive" title="Being played now"></span>' : ''}</button>`).join('');
 }
@@ -7553,10 +7624,10 @@ function settingsLine() {
 const canStartClub = () => canNewClub() && navKind() !== 'family';
 function sheetMore() {
   const org = clubName();
-  const b = me ? notesUnread() : 0;
+  const b = me ? tabMoreCount() : 0;
   const clubs = knownClubs();
   openSheet(`<h3>More</h3>
-    ${me ? `<button class="opt spread" data-act="goview" data-v="notes"><span><b>What's new</b>
+    ${me && !changesInMessages() ? `<button class="opt spread" data-act="goview" data-v="notes"><span><b>What's new</b>
       <span class="rowsub">Changes to your games and practices${newsFor() ? ', and club activity' : ''}</span></span>${b ? `<span class="pill asking">${b > 9 ? '9+' : b}</span>` : ''}</button>` : ''}
     ${(wsCode() || teams().length) && homeView() !== 'club' ? `<button class="opt" data-act="goview" data-v="club"><b>${esc(org)}</b>
       <span class="rowsub">Club home: its teams, and everything else in it</span></button>` : ''}
@@ -21501,6 +21572,7 @@ function onAct(e) {
      checks for itself who may do it, rather than trusting what was drawn. */
   if (a === 'inbox') { ui.view = 'inbox'; ui.thread = null; closeSheet(); render(); return; }
   if (a === 'msgall') { ui.msgAll = true; render(); return; }
+  if (a === 'changesall') { ui.changesAll = true; render(); return; }
   // anyone signed in, for her own phone: the rule is hers alone, so nothing here needs a role
   if (a === 'pushon') { pushTurnOn(); return; }
   // hers alone, for her own account: nothing here needs a role
@@ -22948,7 +23020,7 @@ function onAct(e) {
   if (a === 'alertgo') { openAlert(d.id); return; }
   if (a === 'alertx') { const x = alertsHere().list.find(y => y.id === d.id); if (x) { x.shut = true; saveAlerts(); } render(); return; }
   // the rest of what is waiting: messages are on Messages, everything else on What's new
-  if (a === 'alertall') { ui.view = alertsHere().list.some(x => !x.read && !x.shut && x.kind !== 'msg') ? 'notes' : 'inbox'; ui.thread = null; closeSheet(); render(); return; }
+  if (a === 'alertall') { ui.view = alertsHere().list.some(x => !x.read && !x.shut && x.kind !== 'msg') && !changesInMessages() ? 'notes' : 'inbox'; ui.thread = null; closeSheet(); render(); return; }
   if (a === 'switchclubto') {
     if (!myClubs || !myClubs[d.code]) return;
     try { localStorage.setItem(LS_WS, d.code); history.replaceState(null, '', location.pathname + location.search + (d.hash || '')); } catch (e) { }

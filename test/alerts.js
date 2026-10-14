@@ -111,7 +111,57 @@ const ORGS = { CLUB: { name: 'Lakeside SC', at: 1 }, HILL: { name: 'Hillside', a
     D.click({ act: 'alertx', id: D.alertsList()[0].id });
     check('Dismiss takes the bar away', bar(D), '');
     check('Messages keeps it, under her other clubs', (D.ui.view = 'inbox', D.render(), /From your other clubs[\s\S]*Pitch is waterlogged/.test(D.rendered())), true);
-    check('and the bell does not: a message is not a notification', (D.ui.view = 'notes', D.render(), /Pitch is waterlogged/.test(D.rendered())), false);
+    // UX-REVIEW-3.md, 17.1: a family has no What's new; its old address is Messages, whose Changes card is calendar changes only
+    D.ui.view = 'notes'; D.render();
+    check('her old What\'s new address is Messages now', D.ui.view, 'inbox');
+    check('and a message is not a change', /<h2[^>]*>Changes<\/h2>/.test(D.rendered()), false);
+  }
+
+  console.log('\n--- a family\'s changes are on Messages (UX-REVIEW-3.md, 17.1) ---');
+  {
+    const ev = (extra = {}) => club({ events: { e1: { id: 'e1', kind: 'practice', title: 'Practice', date: day(3), start: '17:00', end: '18:00', ...extra } } });
+    const { D, fbk } = await boot('mum', { CLUB: { name: 'Lakeside SC', at: 1 } }, ev());
+    D.render();
+    check('a parent has changes in Messages, not in What\'s new', D.changesInMessages(), true);
+    check('nothing yet, so no card', /<h2[^>]*>Changes<\/h2>/.test((D.ui.view = 'inbox', D.render(), D.rendered())), false);
+    arrive(D, ev({ called: 'cancelled' }));
+    const a = D.alertsList().find(x => x.kind === 'cal');
+    check('a practice called off is a change', a && a.title, 'Cancelled: Practice (G11 Flight)');
+    D.ui.view = 'season'; D.render();
+    check('counted on the Messages tab', D.dom.node('#tabMsgN').textContent, '1');
+    check('and not on More', D.dom.node('#tabMoreN').textContent, '');
+    check('the total is the same: one thing new', D.unreadCount(), 1);
+    D.sheetMore();
+    check('More has no What\'s new for her', /What's new/.test(String(D.dom.node('#sheet').innerHTML)), false);
+    D.closeSheet();
+    D.ui.view = 'inbox'; D.render();
+    const html = D.rendered();
+    check('Messages leads with a Changes card', /<h2[^>]*>Changes<\/h2>[\s\S]*Cancelled: Practice \(G11 Flight\)/.test(html) && html.indexOf('>Changes<') < html.indexOf('>Conversations<'), true);
+    check('one row, unread until she looked', /• Cancelled: Practice/.test(html), true);
+    check('opening Messages reads it', D.alertsList().find(x => x.kind === 'cal').read, true);
+    check('and the tab clears on that same draw', D.dom.node('#tabMsgN').textContent, '');
+    check('a message is not a change, nor a change a message', /Pitch is waterlogged/.test(D.rendered()), false);
+    D.ui.view = 'notes'; D.render();
+    check('the old What\'s new address lands on Messages', D.ui.view, 'inbox');
+    D.click({ act: 'alertgo', id: a.id });
+    check('a row opens where it happened, with no reload', D.ui.view + ' ' + D.ui.teamId, 'calendar t1');
+    const rows = () => { const h = D.rendered(), a = h.indexOf('>Changes<'); return a < 0 ? 0 : (h.slice(a, h.indexOf('>Conversations<')).match(/data-act="alertgo"/g) || []).length; };
+    for (let i = 0; i < 5; i++) D.pushAlert({ id: 'c:CLUB:e' + i, code: 'CLUB', kind: 'cal', hash: '#/team/t1/calendar', title: 'Moved: Practice ' + i, body: 'Now' });
+    D.ui.view = 'inbox'; D.ui.changesAll = false; D.render();
+    check('every unread change is drawn, so the count is never more than she can see', rows(), 5);
+    D.render();
+    check('once read, three at most', rows() + ' ' + /Show 3 older/.test(D.rendered()), '3 true');
+    D.click({ act: 'changesall' });
+    check('Show older draws them all', rows(), 6);
+  }
+  {
+    // a coach keeps What's new: club activity has no other home, and her team's changes are in it
+    const { D } = await boot('jaz', { CLUB: { name: 'Lakeside SC', at: 1 } });
+    D.render();
+    check('a coach\'s changes are not moved', D.changesInMessages(), false);
+    D.sheetMore();
+    check('her More keeps What\'s new', /What's new/.test(String(D.dom.node('#sheet').innerHTML)), true);
+    D.closeSheet();
   }
 
   console.log('\n--- her calendar, in every club ---');

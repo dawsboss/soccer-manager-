@@ -107,7 +107,8 @@ const asked = { 'sm.kidask.v1:mumU:CLUB:p1': '2000-01-01' };
     check('her team\'s Season is closed: the cards to finish instead', go(A, 'season') + ' ' + /Check her details/.test(A.rendered()) + ' ' + /class="card calnext"|<h2>Games<\/h2>|on the calendar/.test(A.rendered()), 'season true false');
     check('— a game too', (A.ui.gameView = 'live', go(A, 'game')), 'season');
     check('— and club home', go(A, 'club'), 'season');
-    for (const v of ['calendar', 'inbox', 'notes', 'setup']) check(`${v} stays open`, go(A, v), v);
+    // a family's What's new is the top of Messages since build 155 (UX-REVIEW-3.md, 17.1), which is open too
+    for (const v of ['calendar', 'inbox', 'notes', 'setup']) check(`${v} stays open`, go(A, v), v === 'notes' ? 'inbox' : v);
     check('the strip says why', /calendar and messages only/.test(A.rendered()), true);
     check('Home has the card to finish it', go(A, 'mine') === 'season' && /Check her details/.test(A.rendered()), true);
   }

@@ -139,6 +139,33 @@ console.log('--- one bar, for everyone ---');
   check('a club nobody owns yet, nobody signed in: the same bar, and no Messages to tap', tabs(), 'home calendar game more');
 }
 
+/* UX-REVIEW-3.md, 17.5: four tabs on the first paint, five once the SDK has
+   loaded, and with no signal never the fifth. msgTeams() reads the SDK, so the
+   bar waits on the phone's own copy of her conversations, which says she has
+   Messages, until the roles can decide. */
+console.log('\n--- the bar does not change shape while the page loads ---');
+{
+  const sdk = A.fb;
+  as('mum');
+  check('with the SDK, the bar she settles on', tabs(), BAR);
+  A.fb = null; A.render();
+  check('the SDK has not loaded and her phone keeps nothing: nothing is promised', tabs(), 'home calendar game more');
+  A.storage.setItem(A.msgsKey('mum'), JSON.stringify({ board: {}, dm: {}, sd: {}, outbox: {} })); A.render();
+  check('her phone keeps her conversations: Messages is there from the first paint', tabs(), BAR);
+  check('— the same ids as the settled bar', A.navTabs().map(t => t.id).join(' '), 'home calendar game messages more');
+  as('jaz'); A.fb = null; A.render();
+  check('another account on this phone is not promised hers', tabs(), 'home calendar game more');
+  as('mum'); A.fb = null; A.render();
+  A.fb = sdk; A.render();
+  check('once the SDK has loaded the roles decide, and she still has it', tabs(), BAR);
+  A.state.teams.t1.players.p1.guardians = {}; A.render();
+  check('a role since withdrawn takes the tab away at the first read, not before', tabs(), 'home calendar game more');
+  A.storage.removeItem(A.msgsKey('mum'));
+  as(null); A.fb = null; A.storage.setItem(A.msgsKey('mum'), '{}'); A.render();
+  check('signed out, a kept copy draws no bar at all', bar(), '');
+  A.storage.removeItem(A.msgsKey('mum')); A.fb = sdk;
+}
+
 console.log('\n--- which tab is lit ---');
 {
   const litOn = (uid, view, extra) => { as(uid, view); if (extra) extra(); A.render(); return lit(); };

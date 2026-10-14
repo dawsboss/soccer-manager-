@@ -388,6 +388,59 @@ const NOTE = (A, by, text, extra) => ({ by, byName: CLUB.access.members[by].name
     check('and cannot write in one', writes(fbk, 'staffdm/').length, 0);
   }
 
+  /* UX-REVIEW-3.md, 17.2 and 17.3. A family's only door to the coaches was a row
+     in the list, and the notices under it had no reply box and said nothing about
+     why; and the conversation had two back buttons, the title row's arrow and a
+     white one 70px under it. */
+  console.log('\n--- a family: a button to the coaches, notices that say they are one-way, one way back ---');
+  {
+    const { A, fbk } = await boot('mum');
+    fbk.deliver('board/CLUB/t1', { n1: NOTE(A, 'coach', 'Bring water') }); fbk.deliver('dm/CLUB/t1/mum', null); await A.flush();
+    A.click({ act: 'inbox' }); await A.flush();
+    const html = A.rendered(), top = html.slice(0, html.indexOf('>Conversations<'));
+    check('a parent is offered Message the coaches, at the top', /data-act="thread" data-tid="t1" data-fam="mum">Message the coaches</.test(top), true);
+    check('and not a New message, which is for writing to anyone', /New message/.test(html), false);
+    const notices = html.slice(html.indexOf('>Team notices<'));
+    check('under the notices, one quiet line: they are one-way, and where to reply', /Notices are one-way\. To reply, message the coaches\./.test(notices), true);
+    check('which is not said above them', /Notices are one-way/.test(top), false);
+    A.click({ act: 'thread', tid: 't1', fam: 'mum' }); await A.flush();
+    check('the button opens her conversation with the coaches', A.ui.view + ' ' + A.ui.thread.tid + ' ' + A.ui.thread.fam, 'thread t1 mum');
+    check('and the title row has the one way back', /data-act="navback"/.test(A.rendered('#titlebar')), true);
+    check('with no second button under it', /‹ Messages|data-act="inbox"/.test(A.rendered()), false);
+    A.click({ act: 'navback' }); await A.flush();
+    check('the arrow goes up to Messages', A.ui.view + ' ' + A.ui.thread, 'inbox null');
+  }
+  {
+    // a parent with a child on each of two teams: two conversations, so the button opens the list of them
+    const club = JSON.parse(JSON.stringify(CLUB));
+    club.teams.t2.players.q2 = { id: 'q2', name: 'Fay', number: '5', active: true, guardians: { mum: true } };
+    const { A, fbk } = await boot('mum', { club });
+    fbk.deliver('board/CLUB/t1', {}); fbk.deliver('board/CLUB/t2', {}); fbk.deliver('dm/CLUB/t1/mum', null); fbk.deliver('dm/CLUB/t2/mum', null); await A.flush();
+    A.click({ act: 'inbox' }); await A.flush();
+    check('two teams: the same words, opening the list of them', /data-act="msgnew">Message the coaches</.test(A.rendered()), true);
+    A.click({ act: 'msgnew' });
+    const sheet = String(A.dom.node('#sheet').innerHTML);
+    check('each team\'s coaches, and no other family', /Coaches of Flight/.test(sheet) && /Coaches of Storm/.test(sheet) && !/Dev|Cleo/.test(sheet), true);
+  }
+  {
+    const { A, fbk } = await boot('coach');
+    fbk.deliver('board/CLUB/t1', {}); fbk.deliver('dm/CLUB/t1', null); await A.flush();
+    A.click({ act: 'inbox' }); await A.flush();
+    check('a coach keeps New message, and is not offered the coaches', /data-act="msgnew">New message</.test(A.rendered()) && !/Message the coaches/.test(A.rendered()), true);
+    check('her notices are not one-way to her', /Notices are one-way/.test(A.rendered()), false);
+    A.click({ act: 'thread', tid: 't1', fam: 'mum' }); await A.flush();
+    check('a coach\'s conversation has the one way back too', /‹ Messages|data-act="inbox"/.test(A.rendered()) + ' ' + /data-act="navback"/.test(A.rendered('#titlebar')), 'false true');
+  }
+  {
+    // a tracker reads the notices and writes to nobody: the line says so and sends her nowhere
+    const { A, fbk } = await boot('trk');
+    fbk.deliver('board/CLUB/t1', {}); await A.flush();
+    A.click({ act: 'inbox' }); await A.flush();
+    const html = A.rendered();
+    check('a tracker: notices are one-way, with no one to reply to', /Notices are one-way\.(?! To reply)/.test(html), true);
+    check('and no button to the coaches, nor a line sending her to one', /Message the coaches|New message/.test(html), false);
+  }
+
   console.log('\n--- two buttons: Messages and the bell ---');
   {
     const { A } = await boot('coach');

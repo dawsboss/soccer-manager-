@@ -446,6 +446,37 @@ The fixes, in the order they pay:
 
 ## 17. Messages and being told things
 
+**Built in build 155**, all five. What was decided on the way, so the findings below read as
+what was asked and this as what was built:
+
+- **17.1** is a family's only: staff keep *What's new* under More, which also carries club
+  activity, so there are two paths to "what changed" and `test/same.js` says so. A family's
+  changes are the *Changes* card pinned above Conversations (`changesCard()`, `changesInMessages()`):
+  the last three, with *Show n older*, every unread one drawn so the count on the Messages tab is
+  never more than she can see, read when Messages opens. The tab's count is messages plus
+  changes and More's is nothing (`tabMsgCount()`, `tabMoreCount()`; the total is unchanged). Her
+  old address, `#/whats-new`, and the alert bar's *n more* land on Messages. A family with no
+  Messages tab in the club keeps *What's new*, since a card on a tab that is not drawn is a change
+  nobody can read. No gear on the card: the switches are in Settings → Notifications alone, as
+  UX-REVIEW-2.md 6.2 decided.
+- **17.2** *Message the coaches* at the top for anyone who can write to nobody else: one team
+  opens the conversation, several open the list of them (staff keep *New message*). *Notices are
+  one-way.* under Team notices for anyone who cannot post, with *To reply, message the coaches.*
+  added only when she has a conversation to reply in (a tracker or a fan is not sent to one).
+  Found on the way: a tracker with no conversations was told *Tap New message to write to .*
+  about a button she does not have; the sentence is now said only to someone who has it.
+- **17.3** the title row's arrow is the one way back; the in-page button is gone.
+- **17.4** Settings → Notifications names the steps for the phone she holds (an iPhone, an
+  Android phone, or a computer) and what she gets once they are on; the toast on tapping *Turn on*
+  with notifications blocked says the same place (`pushBlockedSay()`).
+- **17.5** with the SDK not yet loaded (`fb` null, so `msgTeams()` is empty) the tab is drawn
+  from the phone's own saved conversations (`msgsCached()`, `msgsKey`), for this account and club
+  only; once the SDK is here the roles decide, so a withdrawn role takes the tab away at the first
+  read. Checked in a real browser against the build before: four tabs, then five after the next
+  tap; now five from the first paint. Not done: with no signal at all the tab opens on *Connecting…*
+  (the conversations are on the phone, but every list is built from `msgTeams()`, which needs the
+  SDK); reading the saved copy without it is a bigger change than this item.
+
 - **17.1 Two inboxes and a gear.** Messages has a badge *2* (two unread notices); More → *What's
   new · Changes to your games and practices* opens *Nothing new*, with a *⚙ Notifications*
   button that goes to Settings (`29-messages`, `32-more`, `33-whats-new`). People writing to her,

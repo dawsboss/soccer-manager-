@@ -249,7 +249,9 @@ const EXPORTS = `{
   ROLE_LABEL, refusedMsg, roleWords, roleCard, roleCardSeen, INFO, infoBtn, sheetInfo, CAL_KIND,
   /* a family's own Home and Season (build 142) */
   playedLine, landNow, get landHome() { return landHome }, set landHome(v) { landHome = v },
-  alertsList: () => alertsHere().list, alertBar, calAlerts, elseUnread, openAlert, noteMine,
+  alertsList: () => alertsHere().list, alertBar, calAlerts, elseUnread, openAlert, noteMine, pushAlert,
+  /* one inbox for a family (UX-REVIEW-3.md, 17) */
+  changesInMessages, tabMsgCount, tabMoreCount, msgsOn, msgsCached, msgsKey, pushBlockedSay,
   /* safekeeping: what is owed, a full phone, and the backup */
   otherOwed, pendingCount, refusedCount, backupDoc, trainingCopy, isBackupData, keepStored,
   /* notifications to a closed phone */
