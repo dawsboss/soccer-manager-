@@ -657,6 +657,17 @@ while `stale()`. 18.6: the share page's line about numbers at the foot.
 
 ## 19. Two children, a fan, a player
 
+**Built in build 162** (19.1 and 19.2; 19.3 needed nothing of its own). A parent of two has
+both children on the one Home (`viewFamSeason()` over `homeTeams()`): each child's card and
+then her team's next-up block, named for the team (*Next up · B10 Storm*), child after child,
+then each team's calendar link and games list (*Games · B10 Storm*); the title says *Home* over
+the club with no team switcher, and it is the same Home whichever team was last open, so there
+is no favourite to pick (the owner, 2026-10-14: *"the switching seems weird, like you have to
+choose a favourite"*). The *Switch team* sheet is no longer drawn for a family at all; its rows
+are unchanged for staff (11.2, set aside). A fan's card says in one line what she gets, where
+the role card sat (13.8 took the card off every family's Home; the account sheet keeps the words), and *Stop
+following* is a text link at its foot. `test/home.js`, `test/nav.js`, `test/calendar.js`.
+
 - **19.1 A parent of two sees one child on Home and the other behind a switcher whose rows name
   neither.** Home opens on B10 Storm (whichever team was last on screen), Theo's card on top;
   Rosa is behind *B10 Storm ▾* → *Switch team · B10 Storm · 9 players · 2 games · view only / G12

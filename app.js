@@ -2,7 +2,7 @@
    Static app. Data lives in localStorage, and mirrors to Firebase Realtime
    Database when a config + workspace code are present. */
 
-const BUILD = '161';
+const BUILD = '162';
 const BUILT = '2026-10-14';
 /* The version of database.rules.json this app was written against. The rules
    carry the same number in rulesVersion's .write, which accepts that number
@@ -2141,6 +2141,13 @@ function myFanOf() {
   return out.sort((a, b) => (a.p.name || '').localeCompare(b.p.name || ''));
 }
 const anyPlayers = () => myPlayers().length > 0 || elsewhereKids().length > 0 || myFanOf().length > 0 || myClubKids().length > 0;
+/* The teams a family's Home is about: every team here with a child of hers
+   on it, or a player she follows, in the club's order (by name, as teams()
+   sorts), never the one that happens to be open. A parent of two children on
+   two teams gets both on one Home (UX-REVIEW-3.md, 19.1): until build 162 she
+   got whichever team was last on screen and the other behind a Switch team
+   sheet whose rows named neither child, as if she had to pick a favourite. */
+const homeTeams = () => !me ? [] : teams().filter(t => players(t).some(p => isMine(p) || iFan(p)));
 const allKidNames = () => [...myPlayers().map(x => x.p.name), ...myFanOf().map(x => x.p.name), ...elsewhereKids().map(x => x.name)];
 
 function canEditTeam(tid) {
@@ -7619,8 +7626,8 @@ function tabFor(v = ui.view) {
 /* The tab bar's first screen: her team's Season (a family's with her child
    on top, viewFamSeason), or for staff the list of teams (Club home) when
    she has several to work on (UX-REVIEW-2.md, 6.3), with each team one
-   level down from it. A family with children on several teams switches
-   team from the title, as a coach does. */
+   level down from it. A family with children on several teams has them
+   all on the one Home (viewFamSeason), and nothing to switch. */
 const homeView = () => navKind() === 'family' ? 'season' : navTeams().length > 1 ? 'club' : 'season';
 /* Where the back arrow goes: up one level, the same wherever the screen was
    opened from, so it can be predicted (the phone's own Back walks the real
@@ -7666,7 +7673,11 @@ function titleBar() {
   let main;
   if (scope === 'team' && team()) {
     const t = team();
-    const name = myTeams().length > 1
+    /* A family's Home holds every team her children are on (homeTeams(),
+       UX-REVIEW-3.md, 19.1), so with more than one it is titled Home, not
+       one team with a switcher to the other: there is nothing to switch. */
+    const name = navKind() === 'family' && homeTeams().length > 1 ? plain('Home')
+      : myTeams().length > 1
       ? `<button class="tbtitle pick" data-act="teammenu" aria-label="Switch team" title="Switch team"><span>${teamLabel(t)}</span>${CHEV_SVG}</button>`
       : plain(teamLabel(t));
     main = name + clubBtn('tbsub');
@@ -10855,13 +10866,14 @@ function nextAnswer(it) {
    as a card with no buttons, while a family's led with whatever was next
    and had Directions on it, so "tap Directions on the next practice" worked
    on her phone and not the coach's. */
-function nextUpBlock(t) {
+function nextUpBlock(t, multi = false) {
   const its = calItems([t.id]);
-  const live = calLiveCards(its.filter(x => x.kind === 'game' && x.status === 'live'), false);
+  const live = calLiveCards(its.filter(x => x.kind === 'game' && x.status === 'live'), multi);
   const up = its.filter(x => !(x.kind === 'game' && x.status === 'live'));
   const first = calNext(up);
   const other = !first ? null : first.kind === 'game' ? calNext(up.filter(x => x.kind === 'practice')) : calNext(up.filter(x => x.kind === 'game'));
-  return live + calledSoon(its).map(calledCard).join('') + (first ? calNextCard(first, false, 'Next up') : '') + (other ? calNextCard(other, false, other.kind === 'game' ? 'Next game' : 'Next practice') : '');
+  // `multi` names the team on each card, for a Home that holds more than one team's (UX-REVIEW-3.md, 19.1)
+  return live + calledSoon(its).map(calledCard).join('') + (first ? calNextCard(first, multi, 'Next up') : '') + (other ? calNextCard(other, multi, other.kind === 'game' ? 'Next game' : 'Next practice') : '');
 }
 
 /* ---- the list of calendars ---- */
@@ -11360,9 +11372,9 @@ function viewRoster() {
 /* --- season: the team first, then the players --- */
 const resultOf = m => { const sc = score(m); return gameStatus(m) !== 'done' ? '' : sc.us > sc.them ? 'W' : sc.us === sc.them ? 'D' : 'L'; };
 // the team's fixture list: every game, played and to come, one tap from each, and where a coach adds one
-function seasonGames(t, ms) {
-  if (!ms.length && readOnlyHere()) return '';
-  return `<div class="card"><div class="spread" style="margin-bottom:10px"><h2>Games</h2>${addGameBtn('btn sm')}</div>
+function seasonGames(t, ms, named = false) {
+  if (!ms.length && !canEditTeam(t.id)) return '';
+  return `<div class="card"><div class="spread" style="margin-bottom:10px"><h2>Games${named ? ' · ' + teamLabel(t) : ''}</h2>${addGameBtn('btn sm')}</div>
     ${ms.length ? '' : '<p class="muted" style="margin:0">No games yet. Add one, or a season of them from the + on the Calendar.</p>'}
     <div class="plist">${ms.map(m => {
     const sc = score(m), st = gameStatus(m), r = resultOf(m);
@@ -11421,17 +11433,23 @@ function kidPositions(ms, pid) {
    tab bar is (navKind()): a coach with a daughter on another team keeps the
    coach's Season everywhere, and finds My players under More. Past the
    club's deadline for her child's details (detailsBlocked()) Home is the
-   cards to finish them and nothing of the team. */
-function viewFamSeason(t) {
-  const ms = teamMatches(t.id);
+   cards to finish them and nothing of the team.
+   Every team her children are on, on the one Home (homeTeams(); UX-REVIEW-3.md,
+   19.1; build 162): each team's children and its next-up block first, child
+   after child, so a parent of two reads Theo's card and his next practice,
+   then Rosa's and hers, with the answer on each; the calendar links and the
+   games lists after all of them, each games list named for its team. With
+   one team it is the screen it was. Which team is "open" (ui.teamId) plays
+   no part, so nothing depends on what was last on screen. */
+function viewFamSeason() {
   const todo = kidCards() + regCards();
   if (detailsBlocked()) return `<div class="stack">${todo}</div>`;
-  const kids = [...players(t).filter(isMine).map(p => ({ p })), ...players(t).filter(p => iFan(p) && !isMine(p)).map(p => ({ p, sup: true }))];
+  const ts = homeTeams(), multi = ts.length > 1;
+  const kids = t => [...players(t).filter(isMine).map(p => ({ p })), ...players(t).filter(p => iFan(p) && !isMine(p)).map(p => ({ p, sup: true }))];
   return `<div class="stack">
-    ${kids.map(({ p, sup }) => kidSeasonCard(t, p, sup, false)).join('')}${todo}
-    ${nextUpBlock(t)}
-    <button class="textbtn" data-act="teamcal" data-tid="${esc(t.id)}" style="align-self:flex-start">${teamLabel(t)} on the calendar</button>
-    ${seasonGames(t, ms)}${elsewhereCards()}
+    ${ts.map((t, i) => kids(t).map(({ p, sup }) => kidSeasonCard(t, p, sup, false)).join('') + (i ? '' : todo) + nextUpBlock(t, multi)).join('')}
+    ${ts.map(t => `<button class="textbtn" data-act="teamcal" data-tid="${esc(t.id)}" style="align-self:flex-start">${teamLabel(t)} on the calendar</button>
+    ${seasonGames(t, teamMatches(t.id), multi)}`).join('')}${elsewhereCards()}
   </div>`;
 }
 /* Home for a family with no team here yet: a child registered and not
@@ -11481,7 +11499,7 @@ function seasonSums(t, ms) {
    list, a players table and a register. */
 function viewSeason() {
   const t = team();
-  if (navKind() === 'family') return t ? viewFamSeason(t) : famNoTeam();
+  if (navKind() === 'family') return homeTeams().length ? viewFamSeason() : famNoTeam();
   if (!t) return needTeam();
   const ms = teamMatches(t.id);
   const done = ms.filter(m => gameStatus(m) === 'done');
@@ -11861,7 +11879,8 @@ function viewMine() {
    (viewFamSeason, build 153), where the next-up block under it carries the
    next thing and the answer, and the whole of My players for staff with a
    child, where `withNext` adds the next thing and the next game with the
-   chips. */
+   chips. A fan's (sup) says in one line what she gets and offers Stop following as
+   a text link at its foot, not its biggest button (UX-REVIEW-3.md, 19.2). */
 function kidSeasonCard(t, p, sup, withNext) {
   const ms = teamMatches(t.id);
   const last = ms.find(m => gameStatus(m) === 'done');
@@ -11911,9 +11930,10 @@ function kidSeasonCard(t, p, sup, withNext) {
   return `<div class="card">
     ${door ? `<button class="plainbtn go kidhead" type="button" data-act="kidsheet" data-tid="${esc(t.id)}" data-pid="${esc(p.id)}">${who}</button>` : `<div class="row">${who}</div>`}
     <p class="muted" style="margin:10px 0 0">${kidSeasonLine(t, p, ms)}</p>
+    ${sup ? `<p class="muted fanline" style="margin:6px 0 0">You see ${esc(firstName(p))}\u2019s games and the team\u2019s notices. The family answers and talks to the coaches.</p>` : ''}
     ${now}
     ${rows ? `<div class="plist" style="margin-top:10px">${rows}</div>` : ''}
-    ${sup ? `<button class="btn quiet wide" data-act="fanleave" data-tid="${t.id}" data-pid="${p.id}" style="margin-top:10px">Stop following ${esc(firstName(p))}</button>` : ''}</div>`;
+    ${sup ? `<button class="textbtn" data-act="fanleave" data-tid="${t.id}" data-pid="${p.id}" style="margin-top:10px">Stop following ${esc(firstName(p))}</button>` : ''}</div>`;
 }
 /* Her children in her other clubs, from each club's cut-down copy
    (elsewhereKids(): no minutes until that club is opened). On a family's
