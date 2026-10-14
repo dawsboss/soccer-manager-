@@ -154,6 +154,24 @@ A.state = club(false);
 show('club');
 check('a device with teams of its own stays open', /Sign in to see your team/.test(app()), false);
 
+/* ---------------- signed in, and no club on this phone ---------------- */
+
+console.log('\n--- signed in with no club yet (UX-REVIEW-3.md, 13.1) ---');
+A.state = { teams: {}, matches: {}, access: {} };
+A.me = { uid: 'newbie', name: 'Mo', email: 'mo@x.test' }; A.denied = false;
+for (const v of ['club', 'calendar', 'season', 'games']) {
+  show(v);
+  if (/Add a team|data-act="newteam"/.test(app())) check(`no Add a team on ${v}`, false, true);
+  if (tabbar() || crumbs()) check(`no title row or tab bar on ${v}`, false, true);
+}
+check('she is told how in, not to add a team', /Nobody has added you to a team yet/.test(app()) && /team link/.test(app()) && !/Add a team/.test(app()), true);
+check('— no title row and no tab bar', crumbs() + tabbar(), '');
+check('— starting a club is a quiet link under it, for a coach', /class="linkbtn" data-act="newclub">\+ Start a new club/.test(app()), true);
+A.state = club(false);
+show('club');
+check('a phone with teams of its own stays open', /Nobody has added you/.test(app()), false);
+A.me = null;
+
 /* ---------------- no backend at all ---------------- */
 
 console.log('\n--- a device with no Firebase config ---');
