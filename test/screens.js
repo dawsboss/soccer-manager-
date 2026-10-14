@@ -165,8 +165,14 @@ const club = () => ({
   console.log('\n--- Calendar: a labelled picker, and "Earlier" ---');
   {
     const h = as('jaz', 'calendar', club(), () => { A.state.teams.t1.events.old = { id: 'old', kind: 'practice', title: 'Practice', date: '2026-09-08', start: '18:00', end: '19:00' }; });
-    check('the calendars picker says Calendars', /<button type="button" class="calmenu" data-act="caltree"[^>]*>Calendars <span aria-hidden="true">▾<\/span><\/button>/.test(h), true);
-    check('— no bare icon', /calmenu"[^>]*>\s*<svg/.test(h), false);
+    // one team and nothing but its games and practices: nothing to pick (UX-REVIEW-3.md, 15.4)
+    check('one team, no Calendars picker', /data-act="caltree"/.test(h), false);
+    const two = as('jaz', 'calendar', club(), () => {
+      A.state.teams.t2 = { id: 't2', name: 'B12 Storm', players: {}, events: { e9: { id: 'e9', kind: 'practice', title: 'Practice', date: '2026-09-16', start: '18:00', end: '19:00' } } };
+      A.state.access.teams.t2 = { coaches: { jaz: true } };
+    });
+    check('two teams: the calendars picker says Calendars', /<button type="button" class="calmenu" data-act="caltree"[^>]*>Calendars <span aria-hidden="true">▾<\/span><\/button>/.test(two), true);
+    check('— no bare icon', /calmenu"[^>]*>\s*<svg/.test(two), false);
     check('what has happened is Earlier (n)', /data-act="calpast">Earlier \(\d+\)<\/button>/.test(h), true);
     A.click({ act: 'calpast' });
     check('— then Hide earlier', /data-act="calpast">Hide earlier \(\d+\)<\/button>/.test(A.rendered()), true);

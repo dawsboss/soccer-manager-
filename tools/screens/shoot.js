@@ -110,7 +110,7 @@ const SNAP = () => {
       if (await tap('[data-act="roleok"]', 'Got it')) await capture('home', 'Home after Got it');
       if (await tap('[data-act="fansheet"]', 'Fans button on the child card')) { await capture('fans-sheet', 'her child\'s fans'); await closeSheet(); }
       // the next-up card: its buttons, its sheet, and the answer chips
-      if (await tap('.calnext [data-act="calitem"]', 'Add to my calendar on the next-up card')) { await capture('nextup-sheet', 'the next thing\'s sheet, from Add to my calendar'); await closeSheet(); }
+      if (await tap('.calnext [data-act="caladd"]', 'Add to my calendar on the next-up card')) { await capture('nextup-sheet', 'Add to your calendar, from the next-up card'); await closeSheet(); }
       if (await tap('#app [data-act="rsvp"][data-v="no"]', 'Not going chip on Home')) { await capture('home-rsvp-no', 'after tapping Not going on Home'); await tap('#app [data-act="rsvp"][data-v="no"]', 'Not going again (take back)'); }
       if (await tap('#app [data-act="calgame"]', 'Open the game on the Next game card')) { await capture('next-game-live', 'the next game opened from Home: Live'); await tap('#subtabs [data-gview="stats"]'); await capture('next-game-stats', 'the next game: Stats'); }
       if (await tap('[data-act="gamemenu"]', 'the game\'s ⋯ menu')) { await capture('game-menu', 'the ⋯ menu'); if (await tap('[data-act="sharesheet"]', 'Share')) { await capture('game-share', 'the Share sheet'); } await closeSheet(); }
