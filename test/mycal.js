@@ -92,7 +92,7 @@ const nameIn = v => names.some(n => JSON.stringify(v).includes(n));
     const clubOn = () => /data-act="clubswitch"[^>]*>[\s\S]*?<span>(All teams · )?Lakeside SC<\/span>/.test(T());
     D.ui.view = 'season'; D.render();
     check('a team\'s screen is titled with the team, over the club', /class="tbtitle"><span>G11 Flight<\/span>/.test(T()) && clubOn(), true);
-    for (const [v, name] of [['setup', 'Settings'], ['people', 'People'], ['sessions', 'Sessions'], ['inbox', 'Messages'], ['admin', 'Club details'], ['planner', 'Planner']]) {
+    for (const [v, name] of [['setup', 'Settings'], ['people', 'People'], ['sessions', 'Sessions'], ['inbox', 'Messages'], ['admin', 'Club details'], ['scheduler', 'Scheduler']]) {
       D.ui.view = v;
       check(`${v}: ${name} over the club, no team`, titled(name) && clubOn() && !/G11 Flight/.test(T()), true);
     }

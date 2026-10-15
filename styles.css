@@ -1212,6 +1212,15 @@ button.ev:active{filter:brightness(.92)}
 .tg-now{position:absolute;left:-1px;right:0;height:2px;background:var(--field-deep);z-index:2;pointer-events:none}
 .tg-now::before{content:"";position:absolute;left:-4px;top:-4px;width:10px;height:10px;border-radius:50%;background:var(--field-deep)}
 .tg-allday .mg-ev{font-size:11px}
+/* the Scheduler's board (SCHEDULER.md): the calendar's week grid, with the field's
+   supply painted over it, a game locked, and on a coach's board the rest dimmed */
+.tg-board .tg-shut{position:absolute;left:0;right:0;pointer-events:none;z-index:0;
+  background:repeating-linear-gradient(135deg,rgba(53,69,79,.10) 0 5px,transparent 5px 11px)}
+.tg-board .tg-shut[data-k="closed"]{background:rgba(53,69,79,.14)}
+.tg-board .tg-ev[data-lock="1"]{box-shadow:inset 0 0 0 2px rgba(0,0,0,.35),0 0 0 1px #fff}
+.tg-board .tg-ev[data-kind="session"]{background:color-mix(in srgb,var(--ev) 55%,#fff)}
+.tg-board .tg-ev[data-dim="1"]{background:#E1E8EB;color:var(--ink-soft);box-shadow:0 0 0 1px #fff}
+.tg-board .tg-ev span{display:block}
 @media (min-width:760px){
   .tg-week .tg-ev span{display:block}
   .tg-week .tg-ev[data-short="1"] span{display:none}

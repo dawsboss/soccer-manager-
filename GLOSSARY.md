@@ -27,7 +27,7 @@ secretary already has.
 | A 1-1 or small group that belongs to no team | **session** (**Sessions**, the screen) | Training sessions, 1-1s (alone) |
 | The coach's library of drills | **Drills** | Library |
 | What a coach plans for a practice | **plan** (**Plans**) | Practice plan (in a label), session plan |
-| The club's planning screen for admins | **Planner** | plans |
+| The club's week laid out by field, for admins and coaches (build 163) | **Scheduler** | Planner (a coach already has a practice plan and a game plan), plans, Club schedule |
 | Who runs the club | **Club admin** (**admin** in prose) | Org admin, Club administrator |
 | The one who can take an admin away | **Club owner** | Owner (alone, the app owner is "the app owner") |
 | The club's one place for settings | **Settings** | Your settings, Club settings, Club admin (the screen), Team set-up |

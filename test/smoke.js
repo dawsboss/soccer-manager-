@@ -159,7 +159,7 @@ try {
     ui.view='admin'; render(); console.log('  rendered club settings with readiness');
     appOwners={own:true}; state.access.index={own:true};
     ui.view='admin'; render(); console.log('  readiness renders when everything passes too');
-    ['clash','find','pic'].forEach(k=>{ui.view='planner'; ui.planner={tab:k,find:{ran:true}}; render();}); console.log('  rendered the planner: clashes, find a time, picture day');
+    ['board','find','coach','pic'].forEach(k=>{ui.view='scheduler'; ui.planner={tab:k,find:{ran:true}}; render();}); console.log('  rendered the scheduler: the board, find a time, coaches, picture day');
     state.access.teams={t1:{coaches:{own:true}}};
     state.programs={tr:{id:'tr',name:'Tryouts',kind:'tryout',evaluators:{own:true},by:'own',at:1}};
     state.tryBibs={tr:{1:{at:1,y:2016,g:'F'},2:{at:1}}}; state.evals={tr:{own:{1:{s:{ball:4},note:'Fast',at:1}}}};

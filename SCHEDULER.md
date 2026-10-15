@@ -312,13 +312,15 @@ The Calendar goes back to being a calendar.
 ## What the Planner becomes
 
 The Planner's four tabs are the Scheduler's parts: *Clashes* is the strip
-under the grid; *Coaches* is the grid read by coach (a filter on the board,
-*Jaz*, dimming everything that is not hers); *Find a time* and *Picture day*
-stay as they are, as the Scheduler's second and third tabs, since a one-off
-booking is a search and a picture day is its own layout. **One screen,
-Settings → Scheduler, and the word *Planner* comes off the screen**
-(`GLOSSARY.md`: *Scheduler*, not Planner, not plans; `test/copy.js` holds
-it). The old address lands on the new screen (`test/routing.js`).
+under the grid; *Find a time* and *Picture day* stay as they are, as tabs,
+since a one-off booking is a search and a picture day is its own layout; and
+*Coaches* stays a tab too, because it is where an admin reads who is free at
+a time and keeps each coach's time off, which the grid has no place for (the
+first draft folded it into the board as a filter by coach; that filter is
+what a coach's own board is, step 7). **One screen, Settings → Scheduler,
+and the word *Planner* comes off the screen** (`GLOSSARY.md`: *Scheduler*,
+not Planner, not plans; `test/copy.js` holds it). The old address lands on
+the new screen (`test/scheduler.js`).
 
 ## Who can do what
 
@@ -400,17 +402,28 @@ the harness, admins only and refused in the handler at every step, and every
 suite green (`node test/run.js`). Every step is a read or a write at a path
 the rules grant today; **no step changes `database.rules.json`.**
 
-1. **The settings.** A team's needs (`org/sched/teams/{tid}`) on the team's
-   row in Settings → Club, normalised on read (`per` 0 to 7, `len` 30 to
-   180), written one record at a time, admins only.
-2. **The board, read-only.** Settings → Scheduler: the week, the grid with
-   the supply painted and every entry, game and session of the week as a
-   block, the teams' rows counting what each has, the strip
-   (`clubClashesOn()` for the week, *Still to settle*, the drives). The
-   club's week card comes off the Calendar in this build and the Planner's
-   *Clashes* and *Coaches* tabs fold in; *Planner* becomes *Scheduler* in the
-   glossary (the owner's first decision), the old address lands here. A coach
-   gets the grid in this build too, her teams lit, nothing to tap yet.
+1. **The settings** — built, build 163. A team's needs
+   (`org/sched/teams/{tid}`, `schedNeed()`) from the team's row on the board
+   (not Settings → Club, which has no row per team: the board is where the
+   count is read against them), normalised on read (`per` 0 to 7, `len` 30
+   to 180 in steps of five, a field that has gone is no field), written one
+   record at a time, admins only, refused in the handler for anyone else.
+2. **The board, read-only** — built, build 163. Settings → Scheduler
+   (`viewScheduler()`, `schedBoard()`): the week with arrows, a field at a
+   time as chips (a place typed that matches no field is a column of its
+   own), the grid (`boardGrid()`) with the supply painted (`boardShut()`:
+   hatched outside the permit or the hours, a closed day struck) and every
+   entry, game and session of the week as a block in as many lanes as there
+   are (`boardLanes()`, no cap), a game locked; the teams' rows counting the
+   calendar against each team's needs (`boardTeams()`); and the strip
+   (`schedStrip()`: `clubClashesOn()` for the week, a coach's drive between
+   fields (`driveWarnings()`, `DRIVE_GAP_MIN`), teams short of their
+   practices, *Still to settle*, shared field time apart). The club's week
+   card came off the Calendar in this build and the Planner's *Clashes* tab
+   folded in; *Planner* became *Scheduler* in the glossary (the owner's first
+   decision) and the old address lands here. A coach gets the grid in this
+   build too, her teams in colour and the rest in grey with the names kept,
+   and nothing else to tap. `test/scheduler.js` pins all of it.
 3. **Placing.** The draft at `sm.sched.v1:{club}`, tap a team then a cell,
    the refusals and warnings in place, moving and taking off, surviving a
    reload, written by nothing yet.

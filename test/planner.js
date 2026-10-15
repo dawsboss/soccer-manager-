@@ -46,7 +46,7 @@ const sheet = A => String(A.dom.node('#sheet').innerHTML || '');
 const A = H.loadApp({ config: CONFIG, firebase: makeFakebase() });
 function as(uid, c = club()) {
   A.state = c; A.me = uid ? { uid, name: uid } : null; A.appOwners = {};
-  A.ui.teamId = 't1'; A.ui.view = 'planner'; A.ui.planner = {}; A.toasts.length = 0;
+  A.ui.teamId = 't1'; A.ui.view = 'scheduler'; A.ui.planner = {}; A.toasts.length = 0;
 }
 
 (async () => {
@@ -55,17 +55,18 @@ function as(uid, c = club()) {
   {
     for (const who of ['jaz', 'mum', 'trk']) {
       as(who); A.render();
-      check(who + ': the screen sends them back', A.ui.view, 'club');
+      // a coach reads the board since build 163 (SCHEDULER.md), her teams lit; a parent and a tracker are sent back
+      check(who + (who === 'jaz' ? ': the screen stays, read-only' : ': the screen sends them back'), A.ui.view, who === 'jaz' ? 'scheduler' : 'club');
       const before = JSON.stringify(A.state);
       A.click({ act: 'plbookgo', d: TUE, a: '600' });
       check(who + ': a booking that gets through is refused', A.lastToast(), 'Planning is for club admins');
       check(who + ': and nothing is written', JSON.stringify(A.state), before);
     }
     as('boss'); A.ui.view = 'setup'; A.render();
-    check('an admin has it on Settings, in the Club section', /data-act="planner"/.test(A.rendered()), true);
-    A.click({ act: 'planner' });
-    check('and it opens', A.ui.view, 'planner');
-    check('at its own address', A.uiToHash(), '#/club/planner');
+    check('an admin has it on Settings, in the Club section, as the Scheduler (build 163)', /data-act="scheduler"/.test(A.rendered()), true);
+    A.click({ act: 'scheduler' });
+    check('and it opens', A.ui.view, 'scheduler');
+    check('at its own address', A.uiToHash(), '#/club/scheduler');
   }
 
   console.log('\n--- clashes ---');
@@ -79,8 +80,9 @@ function as(uid, c = club()) {
     check('a coach due in two places', cs.some(c => c.kind === 'coach' && /^Jaz is due at/.test(c.text)), true);
     check('a family with children on both teams', cs.some(c => c.kind === 'family' && /^1 family has children at/.test(c.text) && /Ella and Sam/.test(c.text)), true);
     check('a family on one team only is not counted', cs.some(c => /Mia|Zoe/.test(c.text)), false);
-    A.render();
-    check('the screen lists them under the day', /Tue 15 Sep/.test(A.rendered()) && /Coach/.test(A.rendered()), true);
+    // the Clashes tab is the board's strip since build 163, for the week drawn
+    A.ui.planner = { board: { week: TUE } }; A.render();
+    check('the board lists them under the day', /Tue 15 Sep/.test(A.rendered()) && /Coach/.test(A.rendered()), true);
     check('the shared field apart, as a note', /Shared field time/.test(A.rendered()) && !/Same place/.test(A.rendered()), true);
 
     // a game needs its pitch: on a one-pitch field with a practice, that is a clash
@@ -230,7 +232,7 @@ function as(uid, c = club()) {
     const fbk = makeFakebase();
     const D = H.loadApp({ firebase: fbk, config: CONFIG, storage: { 'sm.workspace': 'CLUB' } });
     await D.flush(); fbk.signIn('boss', { name: 'Ada' }); await D.flush(); await fbk.serveClub('CLUB', club(), D.flush); await D.flush();
-    D.ui.view = 'planner'; D.ui.planner = { tab: 'find', find: { tids: [], len: 60, from: TUE, days: 1, h0: '19:00', h1: '20:00', ran: true } };
+    D.ui.view = 'scheduler'; D.ui.planner = { tab: 'find', find: { tids: [], len: 60, from: TUE, days: 1, h0: '19:00', h1: '20:00', ran: true } };
     D.render();
     for (const [k, v] of Object.entries({ plFrom: TUE, plH0: '19:00', plH1: '20:00', plLen: '60', plDays: '7', plField: '' })) D.dom.node('#' + k).value = v;
     D.click({ act: 'plbook', d: TUE, a: '1140' });

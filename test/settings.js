@@ -76,14 +76,14 @@ console.log('--- the sections, by whose they are ---');
   check('an admin: You, This team, Club, Advanced, About', heads(h), 'You · This team · Club · Advanced · About');
   check('— titled Settings', A.rendered('#titlebar').includes('<span>Settings</span>'), true);
   const a = acts(h);
-  for (const x of ['signinsheet', 'goview:admin', 'goview:people', 'goview:regs', 'goview:comply', 'planner', 'sesstab:fields', 'sesstab:fees', 'sesstab:hours', 'clubdrills', 'tpllist:clubTpl', 'bulkimport', 'backupsheet', 'readysheet', 'aboutsheet', 'editteam:t1', 'formations', 'trackcfg', 'sharesheet'])
+  for (const x of ['signinsheet', 'goview:admin', 'goview:people', 'goview:regs', 'goview:comply', 'scheduler', 'sesstab:fields', 'sesstab:fees', 'sesstab:hours', 'clubdrills', 'tpllist:clubTpl', 'bulkimport', 'backupsheet', 'readysheet', 'aboutsheet', 'editteam:t1', 'formations', 'trackcfg', 'sharesheet'])
     check(`— ${x}`, a.has(x), true);
   check('— no club calendar here: Club home and the Calendar have it', a.has('schedule'), false);
   check('— the links for families once', (h.match(/data-act="sharesheet"/g) || []).length, 1);
 
   h = as('jaz');
   check('a coach: You, This team, Club (People), About', heads(h), 'You · This team · Club · About');
-  check('— People and nothing else of the club\'s', [...acts(h)].filter(x => /^goview:(admin|people|regs|comply)$|^planner$|^bulkimport$|^clubdrills$/.test(x)).join(), 'goview:people');
+  check('— People, the Scheduler (read-only, her teams lit; build 163) and nothing else of the club\'s', [...acts(h)].filter(x => /^goview:(admin|people|regs|comply)$|^scheduler$|^bulkimport$|^clubdrills$/.test(x)).sort().join(), 'goview:people,scheduler');
   check('— her team\'s set-up, to change', ['editteam:t1', 'formations', 'trackcfg'].every(x => acts(h).has(x)), true);
   check('— no backup or readiness', /backupsheet|readysheet/.test(h), false);
   check('— My drills, since she plans', acts(h).has('mydrills'), true);
@@ -100,7 +100,7 @@ console.log('--- the sections, by whose they are ---');
   h = as('mum', 'setup');
   check('a parent: You and About (UX-REVIEW-3.md, 18.1)', heads(h), 'You · About');
   check('— one quiet row: no version line, database or account id on the page', /page and code agree|Database|Account id|data-act="hardreload"/.test(h), false);
-  check('— no team, no club, no links to manage', /data-act="(sharesheet|editteam|formations|trackcfg|planner|bulkimport)"|data-v="(admin|people|regs|comply)"/.test(h), false);
+  check('— no team, no club, no links to manage', /data-act="(sharesheet|editteam|formations|trackcfg|scheduler|bulkimport)"|data-v="(admin|people|regs|comply)"/.test(h), false);
   check('— and no child\'s name', /Rosa|Mia/.test(h), false);
   check('— and no drills of her own in a real club (UX-REVIEW-2.md, 7.3)', acts(h).has('mydrills') || /data-act="sesstab"/.test(h), false);
 
@@ -149,7 +149,7 @@ console.log('\n--- nothing twice ---');
 {
   let h = as('boss', 'admin');
   check('Club details is the club\'s own: details, what parents see, who runs it, teams, retire', ['saveorg', 'rosteropen', 'newteam', 'retireclub'].every(x => h.includes(`data-act="${x}"`)), true);
-  check('— and nothing a Settings row opens', /data-act="(schedule|planner|bulkimport|clubdrills|people|preplockdown|sesstab)"|data-v="(regs|comply)"/.test(h), false);
+  check('— and nothing a Settings row opens', /data-act="(schedule|scheduler|bulkimport|clubdrills|people|preplockdown|sesstab)"|data-v="(regs|comply)"/.test(h), false);
   check('— titled Club details, with no second heading', A.rendered('#titlebar').includes('<span>Club details</span>') && !/<h2>Club admin<\/h2>/.test(h), true);
   h = as('jaz', 'roster');
   check('Squad: one line to the team\'s settings', /data-act="goview" data-v="setup"/.test(h), true);
@@ -162,7 +162,7 @@ console.log('\n--- nothing twice ---');
 
 console.log('\n--- the way back ---');
 {
-  for (const v of ['people', 'admin', 'regs', 'comply', 'planner']) {
+  for (const v of ['people', 'admin', 'regs', 'comply', 'scheduler']) {
     as('boss', v); A.click({ act: 'navback' });
     check(`${v}: back to Settings`, A.ui.view, 'setup');
   }

@@ -206,6 +206,7 @@ const EXPORTS = `{
   /* rendering + routing */
   render, uiToHash, hashToUi, syncHash, openSheet, closeSheet, clubTag,
   clubClashesOn, coachStatus, freeCoaches, clubNews, newsFor, newsItems, newsUnread, fieldShut, fieldHours, fieldClosures, awayAll, awaySpans, calledOut, findTimes, picOrder, picLayout, plannerClashes, PLANNER_ACTS,
+  canSched, schedNeed, boardItems, boardColumns, boardHours, boardShut, boardLanes, boardTeams, driveWarnings, schedStrip, DRIVE_GAP_MIN,
   /* the club's week, adding to any team, and fields shared */
   schedWeek, schedTodo, schedLine, gameDefaults, fieldMates, fieldMatesLine, placeClash, myCalOwn, SCHED_ACTS, get gamesForm() { return gamesForm },
   viewRoster, teamSetUp,
