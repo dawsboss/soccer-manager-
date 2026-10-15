@@ -17,6 +17,13 @@ So maybe we leave it to them to schedule, but something that lays it out
 rather than an add button to find out later you messed up. Practices overlap
 on purpose: shared fields and locations.*
 
+The owner's three decisions, the same day, on the questions the first draft
+left open: *Planner* goes (*it feels overloaded, given that coaches plan with
+drills and plan their lineups for games*); fields are shared in many ways,
+so **nothing limits how many practices share a pitch**; and coaches get the
+board read-only, their own teams lit, and **can confirm their slots**. This is
+the version after those.
+
 ---
 
 ## What is wrong today
@@ -77,7 +84,7 @@ week can move alone.
 | --- | --- | --- |
 | **What a team needs** | How many practices a week, how long, and its preferences: a usual field, nights it cannot do | `orgs/{code}/org/sched/teams/{tid}` |
 | **What the club has** | The fields, their pitches, permits, hours and closures: already built | `orgs/{code}/org/venues/{fid}` (`SESSIONS.md`) |
-| **How a pitch is shared** | How many practices fit on one pitch at once (two, by default: half a pitch each) | `orgs/{code}/org/venues/{fid}/share` |
+| **A coach's word on a slot** | Her team's weekly slot confirmed, or flagged with a note, by its coach | `orgs/{code}/teams/{tid}/confirm/{series}` |
 | **The board** | One week, fields across, days and hours down, every placed practice a block; drawn from the calendar and the draft, never stored | the admin's screen |
 | **The draft** | Placements not written yet, on the admin's phone | `sm.sched.v1:{club}` |
 | **The term** | The weeks the layout is written for | the draft's `from` and `until` |
@@ -116,19 +123,29 @@ orgs/{code}/org/
                    not: [0..6],                          // weekdays it cannot practise
                    note }                                // "the coach works late Mondays"
     from, until                                          // the term last written, for the next draft to start from
-  venues/{fid}/share   2                                 // practices one pitch holds at once (1 to 4; 2 if missing)
+
+orgs/{code}/teams/{tid}/
+  confirm/{series}  { ok: true | false, by, at, note }   // the coach's word on one weekly slot, one write
 ```
 
-Everything is under `org`, which the whole club reads and only admins write,
-so **there is no new rule**. `share` sits on the field with its pitches and
-permits, where the admin edits the field. `sched/teams` is a setting about
-the team, kept apart from the team's record because the rule on `teams/$tid`
-lets that team's coach write the team, and how many practices the club gives
-her is the club's to say.
+`sched` is under `org`, which the whole club reads and only admins write; a
+coach's confirmation is under her team, beside its entries, which the rule on
+`teams/$tid` already lets that team's coaches and admins write. So **there is
+no new rule**. `sched/teams` is a setting about the team kept apart from the
+team's record because that same rule lets the coach write the team, and how
+many practices the club gives her is the club's to say.
+
+A confirmation is keyed by the slot's `series`, never by the entry: a term is
+fifteen entries and the coach's *works for me* is one word about the slot,
+one write. A slot moved on the board gets a new series id (below, *Writing
+the term*), so a moved slot is unconfirmed again, which is right: she said
+yes to Tuesday at six, not to Thursday at seven.
 
 Not stored: the layout itself (the calendar is it), a field's supply (read
-from its permits, hours, closures and pitches each time), and anything about a
-coach beyond what `access/teams/{tid}/coaches` and her time off already say.
+from its permits, hours, closures and pitches each time), how many practices a
+pitch may hold (the owner: fields are shared in many ways, so there is no
+number), and anything about a coach beyond what `access/teams/{tid}/coaches`
+and her time off already say.
 
 What a team's `per` is for: the board counts what each team has that week and
 says *1 of 2 placed*, and *Lay it out* places what is missing. A team with no
@@ -146,12 +163,16 @@ the handler as the Planner is). Four parts, top to bottom:
 2. **The grid.** Fields across (each pitch a column where a field describes
    its pitches, else one column `× n`), weekday evenings down with the hours
    as rows. The supply is painted first: hours inside a permit and the
-   field's opening hours are open, outside them hatched, a closure struck. A
-   pitch that holds two practices shows two lanes. Every practice already on
-   the calendar that week is a block, in its team's colour (`teamHue()`),
-   with the team's short name and time; a game is a block with a lock, in
-   place and never movable here; a session is a block too, greyed. A draft
-   placement is a block with a dotted edge.
+   field's opening hours are open, outside them hatched, a closure struck.
+   Practices on one pitch at once sit side by side in as many lanes as there
+   are, however many: the grid shows the sharing and never counts it. Every
+   practice already on the calendar that week is a block, in its team's
+   colour (`teamHue()`), with the team's short name and time; a game is a
+   block with a lock, in place and never movable here; a session is a block
+   too, greyed. A draft placement is a block with a dotted edge, and a block
+   on the calendar carries its coach's word: a tick once she has confirmed
+   it, a flag with her note when she has said it does not work, nothing
+   until she has said.
 3. **The teams.** One row per team: *G11 Flight · 2 × 75 min · 1 of 2
    placed*, its coaches, how many families it shares with another team. Tap
    a team then tap an open cell to place a practice there; tap a draft block
@@ -172,8 +193,9 @@ when it is):
 
 - outside every permit of a field that lists permits, or outside its hours,
   or on a closure (`permitCovers()`, `fieldShut()`);
-- on a pitch already holding its `share` of practices then, or a game, or a
-  session;
+- on a field whose pitches are all taken by games or sessions then (a game
+  needs its pitch, `placeClash()`); practices never fill a pitch, so a
+  practice is never refused for the practices already there;
 - while the team is already busy then (a game, another practice).
 
 A placement is **warned** on, in the strip and on the block, and can be made
@@ -194,8 +216,13 @@ anyway:
   and this is not it.
 - **A night it cannot do** (`not`).
 
-Nothing about a shared field is a warning. Two practices on one pitch is the
-normal state of a club, and the grid shows it as two blocks in two lanes.
+Nothing about a shared field is a warning, and nothing caps it. The owner,
+twice: *practices overlap on purpose* and *fields can be shared multiple ways,
+so let's not limit it*. Half a pitch each, a quarter each for the U7s, three
+groups rotating through one goal: the club knows how its fields work and the
+board shows who is on one together, as many as there are, and leaves the
+decision where it is. The one thing a practice cannot do is take a pitch from
+a game or a session that holds it.
 
 ### Lay it out for me
 
@@ -214,8 +241,10 @@ should trip as few of its warnings as it can:
    straight before or after is best, the same field the same night next; a
    drive, a coach elsewhere, a family elsewhere and a strange night cost in
    that order; the team's usual slot (`usualSlot()`) and usual field are
-   preferred; and a team's second practice goes on a different night from
-   its first.
+   preferred; a team's second practice goes on a different night from its
+   first; and other practices already on the pitch cost nothing, though
+   with every other thing equal the fill spreads teams across the open
+   pitches rather than stacking one.
 3. The cheapest cell wins; ties go to the earlier night and the earlier hour.
 
 That is a heuristic, not a solver, and it says so on the screen: *A first
@@ -240,7 +269,9 @@ through the same function, so a test can hold the two to each other.
 A block that is already on the calendar (a series the admin moved on the
 board) is **an edit of that series from this week on**, as *This and every
 later one* is on the sheet (`calTargets()` with `scope: 'later'`): the same
-entries, new day, time and place, and nothing new made. A block taken off
+entries, new day, time and place, and nothing new made, but under a new
+`series` id from that week on, so the coach's confirmation of the old slot
+does not carry to a slot she has not seen. A block taken off
 the board deletes the series from this week on, through `remoteDel()`, so
 the register, the plans and the answers go as they do when a coach deletes
 a practice. The calendar's own copy of a plan follows its entry
@@ -291,16 +322,40 @@ it). The old address lands on the new screen (`test/routing.js`).
 
 ## Who can do what
 
-| | The board, the strip | Place, lay out, write a term | A team's needs, a field's `share` | Her own calendar's practices |
-| --- | --- | --- | --- | --- |
-| Admin | Yes | Yes | Yes | Yes |
-| Coach | No (her teams' practices are on her calendar) | No | No | Yes, as today |
-| Helper, tracker, parent, viewer | No | No | No | — |
+| | The board | The strip, placing, laying out, writing a term | A team's needs | Confirm or flag a slot | Her own calendar's practices |
+| --- | --- | --- | --- | --- | --- |
+| Admin | Yes | Yes | Yes | For any team, in her own name | Yes |
+| Coach | Yes, read-only, her teams lit | No | No | Her own teams' slots only | Yes, as today |
+| Helper, tracker, parent, viewer | No | No | No | No | — |
 
-Admins only, like the Planner: a coach, a tracker or a parent who reaches an
-action is refused in the handler with nothing written, and the screen sends
-her back. The owner's question whether a coach should see the board read-only
-is left open below.
+Placing and writing are admins only, like the Planner was: a coach, a
+tracker or a parent who reaches one of those actions is refused in the
+handler with nothing written. A coach's confirmation is checked in the
+handler against the team on the button (`canEditTeam()`), as the register
+and the calendar are: a coach confirming another team's slot writes nothing.
+
+### The coach's board
+
+The owner, 2026-10-15: *definitely read-only, let them see theirs, and maybe
+allow them to confirm things.* So a coach opens Settings → Scheduler too and
+gets the same grid for the week, her teams' blocks in colour and everyone
+else's dimmed to grey, with the names kept (she wants to know who she is
+sharing Lakeside with on Tuesday). No teams' rows, no strip, no placing, no
+*Lay it out*, no *Put it on the calendars*: the week as it stands, which is
+her calendar drawn by field instead of by day.
+
+What she can do is tap one of her own blocks and say **Works for me** or
+**This doesn't work**, with a note (*I don't get off until 6:30*). One write,
+`teams/{tid}/confirm/{series}`, in her own name, through the outbox like any
+team write. The admin sees it on her board, block by block: a tick, a flag
+with the note, or nothing yet; the strip counts *4 of 12 slots confirmed, 1
+flagged*. A flag changes nothing on the calendar: the admin moves the block
+or messages the coach, and a moved block is a new slot for the coach to look
+at again. Nothing is held up waiting on confirmations; the term is written
+when the admin writes it, and the coach's word is about what is written.
+
+A coach with no team on the board that week (a coach of a team with no
+practice yet) still sees the grid, and her teams' rows say so.
 
 ## Offline
 
@@ -346,16 +401,16 @@ suite green (`node test/run.js`). Every step is a read or a write at a path
 the rules grant today; **no step changes `database.rules.json`.**
 
 1. **The settings.** A team's needs (`org/sched/teams/{tid}`) on the team's
-   row in Settings → Club, a field's `share` on the field's sheet with its
-   pitches, normalised on read (`per` 0 to 7, `len` 30 to 180, `share` 1 to
-   4), written one record at a time, admins only.
+   row in Settings → Club, normalised on read (`per` 0 to 7, `len` 30 to
+   180), written one record at a time, admins only.
 2. **The board, read-only.** Settings → Scheduler: the week, the grid with
    the supply painted and every entry, game and session of the week as a
    block, the teams' rows counting what each has, the strip
    (`clubClashesOn()` for the week, *Still to settle*, the drives). The
    club's week card comes off the Calendar in this build and the Planner's
    *Clashes* and *Coaches* tabs fold in; *Planner* becomes *Scheduler* in the
-   glossary, the old address lands here.
+   glossary (the owner's first decision), the old address lands here. A coach
+   gets the grid in this build too, her teams lit, nothing to tap yet.
 3. **Placing.** The draft at `sm.sched.v1:{club}`, tap a team then a cell,
    the refusals and warnings in place, moving and taking off, surviving a
    reload, written by nothing yet.
@@ -369,16 +424,23 @@ the rules grant today; **no step changes `database.rules.json`.**
 6. **Re-laying a term.** Opening the Scheduler on a term already written
    starts from the calendar as it stands, so October's lost Thursday is the
    same board: the stranded blocks are warned on the new supply, moved, and
-   written as edits.
+   written as edits under a new series id.
+7. **The coach's word.** *Works for me* and *This doesn't work* with a note
+   on her own blocks, one write at `teams/{tid}/confirm/{series}`, another
+   team's refused in the handler, through the outbox; the admin's board
+   showing each block's state and the strip counting them; a moved slot
+   unconfirmed again.
 
-## Open, for the owner
+## Decided, the owner, 2026-10-15
 
-1. **The word.** *Scheduler* in place of *Planner* on the screen, one screen
-   holding both: the recommendation here, and what the owner called it.
-2. **How a pitch is shared.** Two practices per pitch by default, set per
-   field. The alternative is by age (four U8 groups on one pitch), which is a
-   setting per team instead; a `share` per field covers most clubs and a
-   team's `len` and `per` are already per team.
-3. **Coaches and the board.** Read-only for a coach, dimmed to her teams, so
-   she sees her week laid out and the shared field she is walking into. Not
-   in the build order above; one step if wanted, nothing new written.
+1. **The word.** *Scheduler*, one screen holding what the Planner had.
+   *Planner* was already two other things on a coach's phone: a practice plan
+   of drills and a game's plan of minutes.
+2. **How a pitch is shared.** It isn't counted. The first draft had a
+   `share` per field, two practices a pitch by default; the owner: *fields
+   can be shared multiple ways, so let's not limit it*. The board shows who
+   is on a pitch together and refuses a practice only a pitch a game or a
+   session holds.
+3. **Coaches and the board.** Read-only, their teams lit, and a word on each
+   of their own slots: confirm, or flag with a note. *The coach's board*
+   above, step 7 in the build order.
