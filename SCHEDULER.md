@@ -395,6 +395,97 @@ club has not been heard this session, as My calendar does for another club.
   `busyItems()`. Nothing new.
 - **A draft shared between admins.** Above, *The pieces*.
 
+## The season, and other clubs
+
+The owner, 2026-10-15, after the first board: *this scheduler will be used to
+schedule a whole season at once, or maybe a few seasons. Other teams may want
+to view some information, or have an export: something where these different
+teams can communicate when games should happen. Then after that, when
+practices should happen (time and date) and where. The formula of location,
+time, space and people is important. Making a page to help simplify it is
+the goal.*
+
+**Location, time, space and people are the board's four axes**, and the
+reason it is a grid and not a list: a field (location), its pitches and how
+many practices share one (space), the days and hours with the permit painted
+(time), and the teams, their coaches and their families (people), with every
+clash and drive being two of those crossing. Nothing here adds a fifth.
+
+### The order of a season
+
+A season is written in this order, because each step fixes what the next one
+works around:
+
+1. **Fields and permits** (built, `SESSIONS.md`): what the club has, and when.
+   The council's letter is the supply.
+2. **Games.** A league fixes them, or two clubs agree them (below). They go in
+   first and the board locks them: *A run of games* on the Calendar, the
+   league's fixture list through the bulk import, or, later, a game agreed
+   with the other club in the app.
+3. **Each team's needs** (built): how many practices, how long, a usual
+   field, nights it cannot do.
+4. **Lay the practices out** around the games (steps 3 to 5 of the build
+   order): by hand, or the fill as a first go.
+5. **Write the term** (step 4): one weekly series per slot onto each team's
+   calendar.
+6. **Coaches confirm** (step 7).
+7. **Hand it on** (step 8, below): the field schedule to the council, the
+   school, the other club, the referees.
+
+**A season, or a few, at once.** A term is whatever dates the admin writes
+between, so a season is one term and a year is two or three written in
+turn, each laid out on its own pattern week (the autumn pattern is not the
+spring one: the lights go off earlier and the school turf is back). Each
+slot's series is at most `SERIES_MAX` entries (sixty), which holds a term of
+up to a year of weekly practices; a term longer than that is written as two.
+Nothing about the data changes: a term is entries on the calendar, as it is
+now. What the board adds for a season is the step back: a **term view**
+(step 8), the weeks across and the teams down, each cell the practices that
+week, so the admin sees the term she is about to write, the weeks a field is
+closed, and the holidays, before she writes it.
+
+### Other clubs, and the export
+
+Two different things are in the owner's note, and they are built apart.
+
+**Letting others read it.** The council wants the field schedule; the school
+wants Tuesdays; the other club wants to know when Lakeside is free for a
+friendly; the referees' secretary wants the games. None of them is in the
+club, and none of them should be let in for this. The answer is a file and
+a page, both with no names in them: the **field schedule export** (step 8),
+a CSV or a printable week per field (field, pitch, day, time, team, kind,
+from, until) built from the board, and, where a page is wanted, the team
+share links and calendar feeds that already exist (`public/`, the server's
+to write; SECURITY.md, SEC-D11). A club-wide read-only page of the fields
+would be one more `public/` page the server builds from the same
+`calendarDoc()` machinery, team by team: an id made by `randId()`, carried
+on `org/fieldsShare`, and taken down the same way as a team's. It carries
+places and times and nothing about a child, which is what a council needs.
+
+**Agreeing games with another club.** This is ROADMAP's *Opponents*: *one
+shared record both see, so a reschedule or a cancellation lands on both*.
+It crosses the one line the whole data model is built on, that a club lives
+on `orgs/{code}` and nothing grants it to anyone outside, so it is a design
+of its own and not a step of this brief. The shape that fits what is here:
+a **fixture ask** at a root node with its own rule, like a team link or a
+booking ask (`fixtureAsks/{id}`: the proposing club, team and admin, the
+other club's code or an email, a date, a kick-off, a place, and the other
+side's answer: yes, no, or another time), made by a coach or admin, sent as
+a link the other club's admin opens (she is not in this club and never is),
+answered there, and when both have said yes, written as a game on both
+clubs' calendars by the server (`functions/`), each club's copy its own,
+with the ask's id on both so a change on either side is offered to the
+other as a new ask and never written straight across. The proposing club's
+board shows its own field's free Saturdays as the slots to offer, which is
+*Find a time* with the field fixed. The other club need not be on this app
+at all: a link that shows the offer and takes yes, no or a counter-offer
+is the same mechanism as the registration link. This is the piece that lets
+*different teams communicate when games should happen*. It is written up
+here so the Scheduler's shape does not close it off (a game on the board
+is already locked and never moved; an agreed game is one more game), and
+it waits on the owner's call and on AUTH.md's treatment of a second club,
+not on this build order.
+
 ## Build order
 
 Each step a build of its own, with `test/scheduler.js` growing with it, in
@@ -411,7 +502,8 @@ the rules grant today; **no step changes `database.rules.json`.**
 2. **The board, read-only** — built, build 163. Settings → Scheduler
    (`viewScheduler()`, `schedBoard()`): the week with arrows, a field at a
    time as chips (a place typed that matches no field is a column of its
-   own), the grid (`boardGrid()`) with the supply painted (`boardShut()`:
+   own; with nothing picked, the field with most on it that week), the grid
+   (`boardGrid()`) with the supply painted (`boardShut()`:
    hatched outside the permit or the hours, a closed day struck) and every
    entry, game and session of the week as a block in as many lanes as there
    are (`boardLanes()`, no cap), a game locked; the teams' rows counting the
@@ -443,6 +535,16 @@ the rules grant today; **no step changes `database.rules.json`.**
    team's refused in the handler, through the outbox; the admin's board
    showing each block's state and the strip counting them; a moved slot
    unconfirmed again.
+8. **The term, and handing it on.** The term view (the weeks across, the
+   teams down, closures and holidays marked) before writing; and the field
+   schedule export, a CSV and a printable week per field with no names in
+   it, from the board (*The season, and other clubs*, above). A club-wide
+   fields page under `public/` only if the owner wants a link rather than a
+   file: it is the server's to build, like every share page.
+
+After these, and as its own brief: **games agreed with another club**
+(*Other clubs, and the export*, above; ROADMAP, *Opponents*), which needs a
+root node with a rule of its own and the server to write on both sides.
 
 ## Decided, the owner, 2026-10-15
 

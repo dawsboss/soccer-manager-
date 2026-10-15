@@ -18514,7 +18514,9 @@ function schedStripCard(week, items) {
    in colour and the rest in grey. */
 function schedBoard(p, adm) {
   const b = p.board, items = boardItems(b.week), cols = boardColumns(items), end = addDays(b.week, 6);
-  const col = cols.find(c => c.id === b.field) || cols[0];
+  // nothing picked: the field with most on it this week, not the first by name, so the board opens on the week's practices
+  const n = c => items.filter(x => x.col === c.id).length;
+  const col = cols.find(c => c.id === b.field) || cols.slice().sort((x, y) => n(y) - n(x))[0];
   const lit = adm ? null : new Set(teams().filter(t => isCoach(t.id, me.uid)).map(t => t.id));
   const chip = c => `<button class="chip" type="button" data-act="schfield" data-v="${esc(c.id)}" aria-pressed="${col && c.id === col.id}">${esc(c.name)}</button>`;
   const noPlace = items.filter(x => !x.col).length;

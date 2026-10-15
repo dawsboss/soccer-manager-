@@ -99,6 +99,17 @@ const SNAP = () => {
 
   const TOURS = {
     landing: async () => { await capture('landing', 'what the app opens on'); },
+    // the Scheduler (SCHEDULER.md, build 163): the board as an admin or a coach
+    scheduler: async () => {
+      await tap('[data-act="roleok"]');
+      await go('#/club/scheduler'); await capture('scheduler', 'the Scheduler: the board, this week');
+      if (await tap('#app [data-act="schfield"]:not([aria-pressed="true"])', 'another field')) await capture('scheduler-field-2', 'the board, another field');
+      if (await tap('#app [data-act="schweek"][data-v="1"]', 'the week after')) await capture('scheduler-next-week', 'the board, the week after');
+      if (await tap('#app [data-act="schneed"]', 'a team row')) { await capture('scheduler-needs', 'a team\'s needs sheet'); await closeSheet(); }
+      if (await tap('#app .tg-board .tg-ev', 'a block on the board')) { await capture('scheduler-block', 'a block opened: the entry\'s sheet'); await closeSheet(); }
+      for (const k of ['find', 'coach', 'pic']) { if (await tap(`[data-act="pltab"][data-k="${k}"]`, 'tab ' + k)) await capture('scheduler-' + k, 'the ' + k + ' tab'); }
+      await tab('more'); if (await tap('#sheet [data-act="goview"][data-v="setup"]', 'Settings')) await capture('settings', 'Settings, with the Scheduler row');
+    },
     anon: async () => {
       await capture('welcome', 'a phone that has never opened a club, signed out');
       await tapText('Sign in'); await capture('signin-sheet', 'the sign-in sheet');

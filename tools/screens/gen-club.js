@@ -103,6 +103,19 @@ s.access = {
   coachIndex: { jaz: 'sbA', wren: 'sbB' },
   members: Object.fromEntries(everyone.map(u => [u, { name: NAMES[u], email: EMAILS[u] || u + '@example.com', at: NOW - 60 * DAY }]))
 };
+/* `fields`: the club's fields with permits, hours and pitches, and each team's
+   practice needs, so the Scheduler's board has a supply to paint (build 163). */
+if (process.argv[4] === 'fields') {
+  s.access.org.venues = {
+    v1: { id: 'v1', name: 'Lakeside Park', address: '1 Lake Rd', pitches: 3, surface: 'Grass',
+      parts: { a: { id: 'a', name: 'Field 1', surface: 'Grass', o: 1 }, b: { id: 'b', name: 'Field 2', surface: 'Grass', o: 2 }, c: { id: 'c', name: 'Pitch 3', surface: 'Turf', lights: true, o: 3 } },
+      permits: { pm1: { id: 'pm1', days: [0, 1, 2, 3], start: '17:00', end: '20:00', ref: 'Council 2026-27' }, pm2: { id: 'pm2', days: [5, 6], start: '09:00', end: '14:00', ref: 'Council 2026-27' } },
+      hours: { d4: { closed: true } } },
+    v2: { id: 'v2', name: 'Eastfield Rec', address: '40 East St', pitches: 1, surface: 'Turf', lights: true,
+      permits: { pm3: { id: 'pm3', days: [1, 3], start: '18:00', end: '21:00' } } }
+  };
+  s.access.org.sched = { teams: { sbA: { per: 2, len: 75, field: 'v1', not: [], note: '' }, sbB: { per: 2, len: 60, field: 'v1', not: [0], note: 'Wren works late on Mondays' } } };
+}
 
 /* ---- answers ---- */
 s.rsvp = { sbA: {}, sbB: {} };

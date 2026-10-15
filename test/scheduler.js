@@ -176,6 +176,10 @@ const blocks = html => [...html.matchAll(/<button type="button" class="tg-ev" ([
     b = blocks(A.rendered());
     check('a game is locked', b.map(x => x.kind + ':' + x.lock).join(), 'game:1');
     check('nothing written to draw it', JSON.stringify(A.state.access.org.sched || null), 'null');
+    A.ui.planner = { board: { week: '2026-09-21' } };
+    A.state.matches.m2 = { id: 'm2', teamId: 't1', opponent: 'Hilltop', date: '2026-09-22', kickoff: '18:00', venue: 'School turf', periodCount: 2, periodMinutes: 25 };
+    A.render();
+    check('with nothing picked, the field with most on it that week is drawn first, not the first by name', blocks(A.rendered()).map(x => x.id).join() + ' ' + /data-v="f:v2" aria-pressed="true"/.test(A.rendered()), 'm2 true');
   }
 
   console.log('\n--- a coach\'s drive between fields ---');
