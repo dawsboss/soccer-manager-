@@ -2,7 +2,7 @@
    Static app. Data lives in localStorage, and mirrors to Firebase Realtime
    Database when a config + workspace code are present. */
 
-const BUILD = '164';
+const BUILD = '165';
 const BUILT = '2026-10-14';
 /* The version of database.rules.json this app was written against. The rules
    carry the same number in rulesVersion's .write, which accepts that number
@@ -11468,10 +11468,21 @@ function viewFamSeason() {
   const ts = homeTeams(), multi = ts.length > 1;
   const kids = t => [...players(t).filter(isMine).map(p => ({ p })), ...players(t).filter(p => iFan(p) && !isMine(p)).map(p => ({ p, sup: true }))];
   return `<div class="stack">
-    ${ts.map((t, i) => kids(t).map(({ p, sup }) => kidSeasonCard(t, p, sup, false)).join('') + (i ? '' : todo) + nextUpBlock(t, multi)).join('')}
+    ${ts.map((t, i) => kidMerged(t, kids(t), multi) + (i ? '' : todo)).join('')}
     ${ts.map(t => `<button class="textbtn" data-act="teamcal" data-tid="${esc(t.id)}" style="align-self:flex-start">${teamLabel(t)} on the calendar</button>
     ${seasonGames(t, teamMatches(t.id), multi)}`).join('')}${elsewhereCards()}
   </div>`;
+}
+/* Her child and what is next, as one card (the owner, 2026-10-15): her
+   season line, then the next thing with her answer, then the next game,
+   each the same next-up section the coach's Home draws, button for button
+   (test/same.js), only drawn inside her child's card instead of below it.
+   Two children on one team share the card, since the next thing is the
+   same for both. */
+function kidMerged(t, ks, multi) {
+  const next = nextUpBlock(t, multi);
+  if (!ks.length) return next;
+  return `<div class="card kidmerge">${ks.map(({ p, sup }) => kidSeasonCard(t, p, sup, false, true)).join('')}${next ? `<div class="kidnext">${next}</div>` : ''}</div>`;
 }
 /* Home for a family with no team here yet: a child registered and not
    placed, or hers in another club. The cards that were My players' alone. */
@@ -11553,10 +11564,35 @@ function viewSeason() {
     ${canCalTeam(t.id) ? setRow('goview', 'Attendance', esc(attendLineTeam(t)), ' data-v="attend"') : ''}
   </div></div>`;
   return `<div class="stack">
-    ${registerDueCard(t)}${nextUpBlock(t)}
+    ${registerDueCard(t)}${nextUpBlock(t)}${comingUpCard(t)}
     <button class="textbtn" data-act="teamcal" data-tid="${esc(t.id)}" style="align-self:flex-start">${teamLabel(t)} on the calendar</button>
     ${lastGameCard(t, ms, [])}${record}${results}${stats}${calSyncCard(t, false)}
   </div>`;
+}
+/* The few things after the next-up cards, each with the button to get it
+   ready (the owner, 2026-10-15: a coach plans the next few at a sitting,
+   drills for a practice and positions for a game): Plan on a practice,
+   Lineup on a game. Only for whoever may do one or the other; everyone
+   else has the calendar. The next-up cards already carry the first two. */
+const COMING_UP = 4;
+function comingUpCard(t) {
+  const plans = canPlan(t.id), lineups = canEditTeam(t.id) || canCalTeam(t.id);
+  if (!plans && !lineups) return '';
+  const up = calItems([t.id]).filter(x => x.date && !x.called && !calPast(x) && !(x.kind === 'game' && x.status === 'live'));
+  // the two nextUpBlock() draws, worked out the way it does
+  const first = calNext(up), other = !first ? null : first.kind === 'game' ? calNext(up.filter(x => x.kind === 'practice')) : calNext(up.filter(x => x.kind === 'game'));
+  const rest = up.filter(x => x !== first && x !== other && (x.kind === 'practice' || x.kind === 'game')).slice(0, COMING_UP);
+  if (!rest.length) return '';
+  const row = it => {
+    const when = [relDay(it.date) || dayLabel(it.date), niceTime(it.start)].filter(Boolean).join(' · ');
+    const head = plainTitle(it) && it.kind === 'practice' ? 'Practice' : it.title;
+    const btn = it.kind === 'practice'
+      ? (plans ? `<button class="btn quiet sm" data-act="pracfromcal" data-tid="${esc(t.id)}" data-id="${esc(it.id)}">${practiceById(t.id, it.id) ? 'Open plan' : 'Plan'}</button>` : '')
+      : (lineups ? `<button class="btn quiet sm" data-act="calgame" data-tid="${esc(t.id)}" data-id="${esc(it.id)}" data-g="plan">Lineup</button>` : '');
+    return `<div class="comingrow"><button class="plainbtn" data-act="calitem" data-k="${it.kind}" data-tid="${esc(t.id)}" data-id="${esc(it.id)}" style="text-align:left;flex:1;min-width:0">
+      <span class="pname">${esc(head)}</span><span class="rowsub">${esc(when)}</span></button>${btn}</div>`;
+  };
+  return `<div class="card"><h2 style="margin:0 0 4px">Coming up</h2>${rest.map(row).join('')}</div>`;
 }
 /* The practice just gone with no register yet, on the coach's Home (the
    owner, 2026-10-15: a coach opens the app for what is next and who came).
@@ -11918,7 +11954,7 @@ function viewMine() {
    child, where `withNext` adds the next thing and the next game with the
    chips. A fan's (sup) says in one line what she gets and offers Stop following as
    a text link at its foot, not its biggest button (UX-REVIEW-3.md, 19.2). */
-function kidSeasonCard(t, p, sup, withNext) {
+function kidSeasonCard(t, p, sup, withNext, bare = false) {
   const ms = teamMatches(t.id);
   const last = ms.find(m => gameStatus(m) === 'done');
   const live = ms.find(m => gameStatus(m) === 'live');
@@ -11964,7 +12000,7 @@ function kidSeasonCard(t, p, sup, withNext) {
         <span><span class="pname">Next session — ${esc(sessTitle(ns))}</span>
           <span class="rowsub">${[relDay(ns.date) || dayLabel(ns.date), niceTime(ns.start), sessPlace(ns), 'with ' + ns.coachName, BOOK[bookOf(ns.id, p.id).st]].filter(Boolean).map(esc).join(' · ')}</span></span>
         <span class="tag session">Session</span></button>` : ''}`.trim();
-  return `<div class="card">
+  return `<div class="${bare ? 'kidpart' : 'card'}">
     ${door ? `<button class="plainbtn go kidhead" type="button" data-act="kidsheet" data-tid="${esc(t.id)}" data-pid="${esc(p.id)}">${who}</button>` : `<div class="row">${who}</div>`}
     <p class="muted" style="margin:10px 0 0">${kidSeasonLine(t, p, ms)}</p>
     ${sup ? `<p class="muted fanline" style="margin:6px 0 0">You see ${esc(firstName(p))}\u2019s games and the team\u2019s notices. The family answers and talks to the coaches.</p>` : ''}

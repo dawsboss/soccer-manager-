@@ -277,7 +277,7 @@ console.log('\n--- buttons that are verbs ---');
 {
   const src = fs.readFileSync(H.APP_PATH, 'utf8');
   check('Plan, not "Plan this practice"', /'Plan this practice'/.test(src), false);
-  check('— and Open plan', (src.match(/\? 'Open plan' : 'Plan'/g) || []).length, 2);
+  check('— and Open plan', (src.match(/\? 'Open plan' : 'Plan'/g) || []).length, 3);   // the next-up card, the plans list, and Home's Coming up (build 165)
   check('Add to calendar, not "Add what is coming up"', /Add what is coming up|Add a one-off copy/.test(src), false);
   check('Reload, not Force refresh', /Force refresh/.test(src), false);
   const h = as('jaz', 'game', 't1', 'subs', 'g1');
