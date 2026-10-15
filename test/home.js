@@ -105,7 +105,40 @@ const club = () => ({
   const txt = h => String(h).replace(/<[^>]+>/g, '');
   const sheetHtml = () => String(A.dom.node('#sheet').innerHTML);
 
-  console.log('--- Home: her child on top, with the answer on it ---');
+  console.log('--- her child and what is next, one card (the owner, 2026-10-15) ---');
+  {
+    const h = as('mum', 'mine');
+    const merged = (h.match(/<div class="card kidmerge">[\s\S]*?data-act="teamcal"/) || [''])[0];
+    check('her child, the next thing and the next game in one card', merged.includes(ROSA) && /Next up<\/span>/.test(merged) && /Next game<\/span>[\s\S]*?v Northgate/.test(merged), true);
+    check('— her name first, then what is next', merged.indexOf(ROSA) < merged.indexOf('Next up'), true);
+    check('— with her answers in it', chipsFor(merged, 'e_e1', 'p1') && chipsFor(merged, 'g_g2', 'p1'), true);
+    check('one card, not a card and the next-up below it', (h.match(/class="card kidmerge"/g) || []).length + ' ' + (h.match(/class="kidpart"/g) || []).length, '1 1');
+    const two = club(); two.teams.t1.players.p3.guardians = { mum: true };
+    const h2 = as('mum', 'mine', 't1', two);
+    check('two children on one team share it, each named, the next thing once', (h2.match(/class="card kidmerge"/g) || []).length + ' ' + (h2.match(/class="kidpart"/g) || []).length + ' ' + (h2.match(/Next up<\/span>/g) || []).length, '1 2 1');
+    const s = as('jaz', 'season');
+    check('the coach\'s Home has no child card to merge into', /kidmerge|kidpart/.test(s), false);
+  }
+
+  console.log('\n--- the coach\'s Coming up (the owner, 2026-10-15) ---');
+  {
+    let h = as('jaz', 'season');
+    check('nothing past the next-up cards: no list', /<h2[^>]*>Coming up<\/h2>/.test(h), false);
+    const more = club(), P = (id, date) => ({ id, kind: 'practice', title: 'Practice', date, start: '18:00', end: '19:00' });
+    Object.assign(more.teams.t1.events, { e2: P('e2', '2026-09-17'), e3: P('e3', '2026-09-22'), e4: P('e4', '2026-09-24'), e5: P('e5', '2026-09-29'), e6: P('e6', '2026-10-01'), ex: { ...P('ex', '2026-09-20'), called: 'cancelled' } });
+    more.matches.g4 = { id: 'g4', teamId: 't1', opponent: 'Westbrook', date: '2026-09-27', kickoff: '11:00', periodCount: 2, periodMinutes: 40, currentHalf: 1, periods: {}, stints: {} };
+    h = as('jaz', 'season', 't1', more);
+    const list = (h.match(/<h2[^>]*>Coming up<\/h2>[\s\S]*?<\/div><\/div>(?=\s*<button class="textbtn")/) || [''])[0];
+    check('the next few after the next-up cards, in order, nothing called off', [...list.matchAll(/data-act="calitem" data-k="\w+" data-tid="t1" data-id="(\w+)"/g)].map(x => x[1]).join(), 'e2,e3,e4,g4');
+    check('— never the two the next-up cards already show', /data-id="e1"|data-id="g2"/.test(list), false);
+    check('Plan on each practice', (list.match(/data-act="pracfromcal"/g) || []).length, 3);
+    check('Lineup on the game', /data-act="calgame" data-tid="t1" data-id="g4" data-g="plan">Lineup</.test(list), true);
+    A.click({ act: 'calgame', tid: 't1', id: 'g4', g: 'plan' });
+    check('— which opens the game on its Lineup', A.ui.view + ' ' + A.ui.matchId + ' ' + A.ui.gameView, 'game g4 plan');
+    for (const who of ['mum', 'trk', 'nan']) check(who + ': no Coming up', /Coming up<\/h2>/.test(as(who, 'season', 't1', more)), false);
+  }
+
+  console.log('\n--- Home: her child on top, with the answer on it ---');
   {
     let h = as('mum', 'mine');
     check('My players is her Home, her child\'s team', A.ui.view + ' ' + A.ui.teamId, 'season t1');

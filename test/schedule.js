@@ -65,11 +65,16 @@ const fill = vals => { for (const [k, v] of Object.entries(vals)) A.dom.node('#'
     as('jaz'); A.render();
     check('jaz: the old address is the Calendar, on All teams', A.ui.view + ' ' + A.calSel(), 'calendar club');
     check('jaz: but no club\'s week, which is an admin\'s', /class="card clubweek"/.test(A.rendered()), false);
+    check('jaz: none on Club home either', (A.ui.view = 'club', A.render(), /clubweek/.test(A.rendered())), false);
+    A.click({ act: 'tab', tab: 'more' });
+    check('jaz: no All teams in More', /data-act="schedule"/.test(sheet(A)), false);
+    A.closeSheet();
     for (const who of ['mum', 'trk']) {
       as(who); A.render();
       check(who + ': no All teams to show her what isn\'t hers', A.ui.view + ' ' + A.calSels().includes('club'), 'calendar false');
       check(who + ': no club\'s week', /clubweek/.test(A.rendered()), false);
       check(who + ': no Calendar card for the club on Club home', (A.ui.view = 'club', A.render(), /data-act="schedule"/.test(A.rendered())), false);
+      check(who + ': nor the club\'s week', /clubweek/.test(A.rendered()), false);
       const before = JSON.stringify(A.state);
       A.ui.sched = { add: 'games' };
       A.click({ act: 'schedfor', tid: 't1' });
@@ -86,6 +91,15 @@ const fill = vals => { for (const [k, v] of Object.entries(vals)) A.dom.node('#'
     check('an admin has the Calendar first on Club home', /data-act="schedule"[^>]*>\s*(<span class="tc-main">)?<b>Calendar<\/b>/.test(A.rendered()), true);
     check('saying what is on this week', /Every team · This week: /.test(A.rendered()), true);
     check('and is not offered an empty My calendar ahead of it', /data-v="mycal"/.test(A.rendered()), false);
+    // her Home leads with the club's week (the owner, 2026-10-15), this week whatever the calendar was left on
+    check('Club home carries the club\'s week under it', /data-act="schedule"[\s\S]*?class="card clubweek"/.test(A.rendered()), true);
+    A.ui.calDay = '2027-03-01'; A.render();
+    check('— this week, whatever week the calendar was left on', /class="card clubweek"><div class="spread"><h2>The club, ([^<]*)</.exec(A.rendered())[1], (d => { const s = A.addDays(d, -A.weekdayOf(d)); return A.dayLabel(s).slice(4) + ' – ' + A.dayLabel(A.addDays(s, 6)).slice(4); })(A.todayStr()));
+    A.click({ act: 'tab', tab: 'more' });
+    check('More has All teams for her (the owner, 2026-10-15)', /data-act="schedule"><b>All teams<\/b>/.test(sheet(A)), true);
+    A.click({ act: 'schedule' });
+    check('— which opens the Calendar on every team', A.ui.view + ' ' + A.calSel() + ' ' + /data-act="planner"/.test(A.rendered()), 'calendar club true');
+    A.ui.view = 'club'; A.render();
     check('her own calendar holds only her own', A.myCalOwn(), false);
     A.click({ act: 'schedule' });
     check('it opens on every team', A.ui.view + ' ' + A.calSel() + ' ' + A.calTeams().length, 'calendar club 3');

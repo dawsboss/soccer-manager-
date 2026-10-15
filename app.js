@@ -2,7 +2,7 @@
    Static app. Data lives in localStorage, and mirrors to Firebase Realtime
    Database when a config + workspace code are present. */
 
-const BUILD = '162';
+const BUILD = '165';
 const BUILT = '2026-10-14';
 /* The version of database.rules.json this app was written against. The rules
    carry the same number in rulesVersion's .write, which accepts that number
@@ -7640,6 +7640,13 @@ function upView(v = ui.view) {
   if (v === 'formation') return ui.editFid === GAME_SHAPE ? 'game' : 'setup';
   if (v === 'thread') return 'inbox';
   if (SEASON_VIEWS.includes(v)) return 'season';
+  /* A screen with a list and one of its items open goes back to the list
+     first. These screens each had a Back button of their own on the right
+     of the heading as well as this arrow, and the two went to different
+     places (Planning's to Club details, the arrow to Settings); there is
+     one way up now, and it is this. */
+  if (v === 'regs' && (ui.regs || {}).prog) return 'regs';
+  if (v === 'tryout' && (ui.tryout || {}).prog && myTryouts().length > 1) return 'tryout';
   // the club's settings screens are Settings' Club section since build 143; the rest hang off Club home
   if (['people', 'admin', 'planner', 'regs', 'comply'].includes(v)) return 'setup';
   // fields, fees and hours are Settings' screens (UX-REVIEW-2.md, 7.3); Sessions itself hangs off Club home
@@ -7653,6 +7660,13 @@ function upView(v = ui.view) {
   // a team's own tabs, for staff with several teams: up is the list of them
   if (['season', 'roster', 'practice'].includes(v) && homeView() === 'club') return 'club';
   return null;
+}
+// the arrow says where it goes, read out and on a long press: the screen upView() names
+function upLabelFor(up) {
+  if (up === ui.view) return ui.view === 'regs' ? 'Back to the programs' : 'Back to the tryouts';
+  const name = up === 'setup' ? 'Settings' : up === 'club' ? 'Club home' : up === 'calendar' ? 'the calendar'
+    : up === 'inbox' ? 'Messages' : up === 'season' ? (homeView() === 'season' ? 'Home' : 'the team') : up === 'games' ? 'the games' : VIEW_TITLE[up];
+  return name ? 'Back to ' + name : 'Back';
 }
 // a game's back arrow says where it goes: the screen it was opened from
 const gameBackLabel = () => ui.gameFrom === 'calendar' ? 'Back to the calendar' : ui.gameFrom === 'games' ? 'Back to the games' : 'Back to the team';
@@ -7668,7 +7682,7 @@ function titleBar() {
   if (v === 'game' && team() && match()) return gameHeader(team(), match());
   const upAct = v === 'game' ? 'backgames' : v === 'formation' ? 'backsetup' : upView() ? 'navback' : null;
   const upLabel = v === 'game' ? gameBackLabel()
-    : v === 'formation' && ui.editFid === GAME_SHAPE ? 'Back to the game' : 'Back';
+    : v === 'formation' && ui.editFid === GAME_SHAPE ? 'Back to the game' : upAct === 'navback' ? upLabelFor(upView()) : 'Back';
   const back = upAct ? `<button class="tbback" data-act="${upAct}" aria-label="${upLabel}" title="${upLabel}">${BACK_SVG}</button>` : '';
   const org = clubName();
   const clubBtn = (cls, pre = '') => `<button class="${cls}" data-act="clubswitch" aria-label="Switch club" title="Switch club">${clubCrest('xs')}<span>${pre}${esc(org)}</span>${CHEV_SVG}</button>`;
@@ -7725,6 +7739,10 @@ function sheetMore() {
       <span class="rowsub">The club: its teams and sessions</span></button>` : ''}
     ${anyPlayers() && navKind() !== 'family' ? `<button class="opt" data-act="goview" data-v="mine"><b>My players</b>
       <span class="rowsub">${allKidNames().map(esc).join(', ')}</span></button>` : ''}
+    ${canAdmin() && myTeams().length ? `<button class="opt" data-act="schedule"><b>All teams</b>
+      <span class="rowsub">Every team's calendar: this week, what is still to settle, and the Planner</span></button>` : ''}
+    ${canTrain() && (team() || myTeams().length) ? `<button class="opt" data-act="moredrills"><b>Drills</b>
+      <span class="rowsub">The library, the club's and your own: look one up, change it, write a new one</span></button>` : ''}
     ${canSessions() ? `<button class="opt" data-act="goview" data-v="sessions"><b>Sessions</b>
       <span class="rowsub">${esc(sessClubLine())}</span></button>` : ''}
     <button class="opt" data-act="goview" data-v="setup"><b>Settings</b>
@@ -7766,7 +7784,7 @@ function viewClub() {
   return `<div class="stack">
     <div class="clubhead">${clubCrest('lg')}<div><b>${esc(org)}</b>
       <span class="rowsub">${list.length} team${list.length === 1 ? '' : 's'}</span></div></div>
-    ${canAdmin() && list.length ? goCard('schedule', '', 'Calendar', `Every team · ${esc(schedLine())}`)
+    ${canAdmin() && list.length ? goCard('schedule', '', 'Calendar', `Every team · ${esc(schedLine())}`) + clubWeekCard(thisClubWeek())
     : (me || !gated()) && myCalOwn() && !fam ? goCard('goview', ' data-v="mycal"', 'Calendar', esc(myCalLine())) : ''}
     ${anyPlayers() && !fam ? goCard('goview', ' data-v="mine"', 'My players', allKidNames().map(esc).join(', ')) : ''}
     ${canSessions() ? goCard('goview', ' data-v="sessions"', 'Sessions', esc(sessClubLine())) : ''}
@@ -11018,8 +11036,8 @@ function calFab(ed, v) {
 /* What Club schedule said about a week, said under the calendar: what's on,
    who shares a field, what clashes, which teams have no practice, and what is
    still missing a date, a time or a place. Reads the week being looked at. */
-function clubWeekCard() {
-  const w = schedWeek(), todo = schedTodo(w.tids), shown = todo.slice(0, 8);
+function clubWeekCard(s) {
+  const w = schedWeek(s), todo = schedTodo(w.tids), shown = todo.slice(0, 8);
   const sum = [w.games && `${w.games} game${w.games === 1 ? '' : 's'}`, w.practices && `${w.practices} practice${w.practices === 1 ? '' : 's'}`,
     w.events && `${w.events} other`, w.called && `${w.called} called off`].filter(Boolean).join(' · ') || 'Nothing on';
   return `<div class="card clubweek"><div class="spread"><h2>The club, ${esc(dayLabel(w.week).slice(4))} – ${esc(dayLabel(w.end).slice(4))}</h2></div>
@@ -11450,10 +11468,21 @@ function viewFamSeason() {
   const ts = homeTeams(), multi = ts.length > 1;
   const kids = t => [...players(t).filter(isMine).map(p => ({ p })), ...players(t).filter(p => iFan(p) && !isMine(p)).map(p => ({ p, sup: true }))];
   return `<div class="stack">
-    ${ts.map((t, i) => kids(t).map(({ p, sup }) => kidSeasonCard(t, p, sup, false)).join('') + (i ? '' : todo) + nextUpBlock(t, multi)).join('')}
+    ${ts.map((t, i) => kidMerged(t, kids(t), multi) + (i ? '' : todo)).join('')}
     ${ts.map(t => `<button class="textbtn" data-act="teamcal" data-tid="${esc(t.id)}" style="align-self:flex-start">${teamLabel(t)} on the calendar</button>
     ${seasonGames(t, teamMatches(t.id), multi)}`).join('')}${elsewhereCards()}
   </div>`;
+}
+/* Her child and what is next, as one card (the owner, 2026-10-15): her
+   season line, then the next thing with her answer, then the next game,
+   each the same next-up section the coach's Home draws, button for button
+   (test/same.js), only drawn inside her child's card instead of below it.
+   Two children on one team share the card, since the next thing is the
+   same for both. */
+function kidMerged(t, ks, multi) {
+  const next = nextUpBlock(t, multi);
+  if (!ks.length) return next;
+  return `<div class="card kidmerge">${ks.map(({ p, sup }) => kidSeasonCard(t, p, sup, false, true)).join('')}${next ? `<div class="kidnext">${next}</div>` : ''}</div>`;
 }
 /* Home for a family with no team here yet: a child registered and not
    placed, or hers in another club. The cards that were My players' alone. */
@@ -11535,10 +11564,51 @@ function viewSeason() {
     ${canCalTeam(t.id) ? setRow('goview', 'Attendance', esc(attendLineTeam(t)), ' data-v="attend"') : ''}
   </div></div>`;
   return `<div class="stack">
-    ${nextUpBlock(t)}
+    ${registerDueCard(t)}${nextUpBlock(t)}${comingUpCard(t)}
     <button class="textbtn" data-act="teamcal" data-tid="${esc(t.id)}" style="align-self:flex-start">${teamLabel(t)} on the calendar</button>
     ${lastGameCard(t, ms, [])}${record}${results}${stats}${calSyncCard(t, false)}
   </div>`;
+}
+/* The few things after the next-up cards, each with the button to get it
+   ready (the owner, 2026-10-15: a coach plans the next few at a sitting,
+   drills for a practice and positions for a game): Plan on a practice,
+   Lineup on a game. Only for whoever may do one or the other; everyone
+   else has the calendar. The next-up cards already carry the first two. */
+const COMING_UP = 4;
+function comingUpCard(t) {
+  const plans = canPlan(t.id), lineups = canEditTeam(t.id) || canCalTeam(t.id);
+  if (!plans && !lineups) return '';
+  const up = calItems([t.id]).filter(x => x.date && !x.called && !calPast(x) && !(x.kind === 'game' && x.status === 'live'));
+  // the two nextUpBlock() draws, worked out the way it does
+  const first = calNext(up), other = !first ? null : first.kind === 'game' ? calNext(up.filter(x => x.kind === 'practice')) : calNext(up.filter(x => x.kind === 'game'));
+  const rest = up.filter(x => x !== first && x !== other && (x.kind === 'practice' || x.kind === 'game')).slice(0, COMING_UP);
+  if (!rest.length) return '';
+  const row = it => {
+    const when = [relDay(it.date) || dayLabel(it.date), niceTime(it.start)].filter(Boolean).join(' · ');
+    const head = plainTitle(it) && it.kind === 'practice' ? 'Practice' : it.title;
+    const btn = it.kind === 'practice'
+      ? (plans ? `<button class="btn quiet sm" data-act="pracfromcal" data-tid="${esc(t.id)}" data-id="${esc(it.id)}">${practiceById(t.id, it.id) ? 'Open plan' : 'Plan'}</button>` : '')
+      : (lineups ? `<button class="btn quiet sm" data-act="calgame" data-tid="${esc(t.id)}" data-id="${esc(it.id)}" data-g="plan">Lineup</button>` : '');
+    return `<div class="comingrow"><button class="plainbtn" data-act="calitem" data-k="${it.kind}" data-tid="${esc(t.id)}" data-id="${esc(it.id)}" style="text-align:left;flex:1;min-width:0">
+      <span class="pname">${esc(head)}</span><span class="rowsub">${esc(when)}</span></button>${btn}</div>`;
+  };
+  return `<div class="card"><h2 style="margin:0 0 4px">Coming up</h2>${rest.map(row).join('')}</div>`;
+}
+/* The practice just gone with no register yet, on the coach's Home (the
+   owner, 2026-10-15: a coach opens the app for what is next and who came).
+   Only the latest of the last week, so a season of practices nobody took
+   is not a wall of nags (Attendance lists every one); only for whoever
+   takes it. */
+function registerDueCard(t) {
+  if (!canCalTeam(t.id)) return '';
+  const since = addDays(todayStr(), -7);
+  // calItems() is in the order things happen, so the last is the latest
+  const it = attendUntaken(t).filter(x => x.kind === 'practice' && x.date >= since).slice(-1)[0];
+  if (!it) return '';
+  const when = it.date === todayStr() ? 'today’s practice' : it.date === addDays(todayStr(), -1) ? 'yesterday’s practice' : 'practice on ' + dayLabel(it.date);
+  return `<div class="card"><span class="muted">Attendance</span>
+    <p style="margin:4px 0 0"><b>Who came to ${esc(when)}?</b></p>
+    <div class="row wrap" style="margin-top:10px"><button class="btn sm" data-act="attend" data-tid="${esc(t.id)}" data-id="${esc(it.id)}">Take attendance</button></div></div>`;
 }
 /* One line under each of Season's rows: enough to know whether to open it. */
 function seasonStatsLine(t, ms, x) {
@@ -11884,7 +11954,7 @@ function viewMine() {
    child, where `withNext` adds the next thing and the next game with the
    chips. A fan's (sup) says in one line what she gets and offers Stop following as
    a text link at its foot, not its biggest button (UX-REVIEW-3.md, 19.2). */
-function kidSeasonCard(t, p, sup, withNext) {
+function kidSeasonCard(t, p, sup, withNext, bare = false) {
   const ms = teamMatches(t.id);
   const last = ms.find(m => gameStatus(m) === 'done');
   const live = ms.find(m => gameStatus(m) === 'live');
@@ -11930,7 +12000,7 @@ function kidSeasonCard(t, p, sup, withNext) {
         <span><span class="pname">Next session — ${esc(sessTitle(ns))}</span>
           <span class="rowsub">${[relDay(ns.date) || dayLabel(ns.date), niceTime(ns.start), sessPlace(ns), 'with ' + ns.coachName, BOOK[bookOf(ns.id, p.id).st]].filter(Boolean).map(esc).join(' · ')}</span></span>
         <span class="tag session">Session</span></button>` : ''}`.trim();
-  return `<div class="card">
+  return `<div class="${bare ? 'kidpart' : 'card'}">
     ${door ? `<button class="plainbtn go kidhead" type="button" data-act="kidsheet" data-tid="${esc(t.id)}" data-pid="${esc(p.id)}">${who}</button>` : `<div class="row">${who}</div>`}
     <p class="muted" style="margin:10px 0 0">${kidSeasonLine(t, p, ms)}</p>
     ${sup ? `<p class="muted fanline" style="margin:6px 0 0">You see ${esc(firstName(p))}\u2019s games and the team\u2019s notices. The family answers and talks to the coaches.</p>` : ''}
@@ -18087,7 +18157,7 @@ function newsCard() {
    looks. A game against another club is fixed by a league; the planner says
    what it clashes with and never offers to move it. */
 const canPlanClub = () => canAdmin();
-const PLANNER_ACTS = new Set(['planner', 'plback', 'pltab', 'plcw', 'plrange', 'pltm', 'plfind', 'plbook', 'plkind', 'plbookgo', 'plpictm', 'plpic', 'plpicgo']);
+const PLANNER_ACTS = new Set(['planner', 'pltab', 'plcw', 'plrange', 'pltm', 'plfind', 'plbook', 'plkind', 'plbookgo', 'plpictm', 'plpic', 'plpicgo']);
 function plannerUi() {
   if (!ui.planner || typeof ui.planner !== 'object') ui.planner = {};
   const p = ui.planner;
@@ -18299,7 +18369,7 @@ function viewPlanner() {
   const tab = (k, l) => `<button class="chip" type="button" data-act="pltab" data-k="${k}" aria-pressed="${p.tab === k}">${l}</button>`;
   const body = p.tab === 'find' ? plannerFind(p) : p.tab === 'pic' ? plannerPic(p) : p.tab === 'coach' ? plannerCoaches(p) : plannerClashView(p);
   return `<div class="stack">
-    <div class="spread"><h2>Planning for the club</h2><button class="btn quiet sm" data-act="plback">Back</button></div>
+    <h2>Planning for the club</h2>
     <div class="chips">${tab('clash', 'Clashes')}${tab('find', 'Find a time')}${tab('coach', 'Coaches')}${tab('pic', 'Picture day')}</div>
     ${body}</div>`;
 }
@@ -18421,7 +18491,6 @@ function onPlannerAct(a, d) {
   plannerRead();
   const p = plannerUi();
   if (a === 'planner') { ui.view = 'planner'; render(); toTop(); return; }
-  if (a === 'plback') { ui.view = 'admin'; render(); return; }
   if (a === 'pltab') { p.tab = d.k; render(); return; }
   if (a === 'plcw') { render(); return; }
   if (a === 'plrange') { p.days = Number(d.v); render(); return; }
@@ -18511,8 +18580,12 @@ function schedWeek(s = calWeek()) {
   const idle = s.kOff.practice ? [] : tids.filter(tid => !on.some(x => x.tid === tid && x.kind === 'practice'));
   return { week: s.week, end, tids, items, games: n('game'), practices: n('practice'), events: n('event'), called: items.length - on.length, shared, clash, idle };
 }
+/* This week, every team and every kind: what an admin's Home leads with
+   (the owner, 2026-10-15: admins open the app for the club's schedule),
+   whatever week the calendar was last left on. */
+const thisClubWeek = () => ({ week: addDays(todayStr(), -weekdayOf(todayStr())), off: {}, kOff: {} });
 function schedLine() {
-  const w = schedWeek({ week: addDays(todayStr(), -weekdayOf(todayStr())), off: {}, kOff: {} });
+  const w = schedWeek(thisClubWeek());
   const bits = [w.games && `${w.games} game${w.games === 1 ? '' : 's'}`, w.practices && `${w.practices} practice${w.practices === 1 ? '' : 's'}`,
     w.events && `${w.events} other`].filter(Boolean);
   return `This week: ${bits.length ? bits.join(', ') : 'nothing on yet'}${w.clash ? ` · ${w.clash} with no pitch left` : ''}`;
@@ -20024,7 +20097,7 @@ function viewRegs() {
   const left = Object.values(state.children || {}).filter(c => c && c.left);
   staffCareFetch();
   return `<div class="stack">
-    <div class="spread"><h2>Registrations</h2><button class="btn quiet sm" data-act="goview" data-v="admin">Back</button></div>
+    <h2>Registrations</h2>
     ${detailsCard()}
     <p class="muted" style="margin-top:0">What families register their children for: a season, a camp, tryouts, training sessions. Each open program has a link to post wherever families will see it. Fees are shown, not taken; families pay the way you tell them.</p>
     ${programsAll().map(p => {
@@ -20051,7 +20124,7 @@ function viewRegList(pr) {
     .sort((a, b) => (b.r.sentAt || b.r.at || 0) - (a.r.sentAt || a.r.at || 0));
   const chip = (k, l) => `<button class="chip" type="button" data-act="regfilter" data-k="${k}" aria-pressed="${f === k}">${l}</button>`;
   return `<div class="stack">
-    <div class="spread"><h2>${esc(pr.name)}</h2><button class="btn quiet sm" data-act="regprog" data-id="">Back</button></div>
+    <h2>${esc(pr.name)}</h2>
     <p class="muted" style="margin-top:0">${esc([pr.closed ? 'Closed' : progOpen(pr) ? 'Open' : 'Not open yet', progLine(pr)].filter(Boolean).join(' · '))}</p>
     ${pr.link && !pr.closed ? `<div class="row wrap">${linkButtons(regLink(pr.link), { subject: `Register for ${pr.name || 'the season'} at ${(acc().org || {}).name || 'the club'}`, body: `${(acc().org || {}).name || 'The club'} is taking registrations for ${pr.name || 'the season'} in ${APP_NAME}. Open this link on your phone and sign in to register your child:`, send: { kind: 'reg', prog: pr.id } })}
       <button class="btn quiet" data-act="progedit" data-id="${esc(pr.id)}">Edit</button></div>`
@@ -20291,7 +20364,7 @@ function viewTryout() {
   const u = ui.tryout = ui.tryout || {};
   if (!list.length) return `<div class="empty"><strong>Nothing to score</strong>The club's admins name the evaluators on each tryout.</div>`;
   const pr = list.find(p => p.id === u.prog) || (list.length === 1 ? list[0] : null);
-  if (!pr) return `<div class="stack"><div class="spread"><h2>Tryouts</h2><button class="btn quiet sm" data-act="goview" data-v="club">Back</button></div>
+  if (!pr) return `<div class="stack"><h2>Tryouts</h2>
     ${list.map(p => `<button class="card go" data-act="tryprog" data-id="${esc(p.id)}" style="text-align:left;width:100%"><b>${esc(p.name)}</b>
       <span class="rowsub">${Object.keys(tryBibsOf(p.id)).length} bibs · ${Object.keys(((evalsOf(p.id))[me.uid]) || {}).length} scored by you</span></button>`).join('')}</div>`;
   const all = Object.entries(tryBibsOf(pr.id)).map(([b, x]) => ({ bib: Number(b), ...(x || {}) })).filter(x => x.bib).sort((a, b) => a.bib - b.bib);
@@ -20302,7 +20375,7 @@ function viewTryout() {
   const rec = cur ? mine[cur.bib] || {} : {};
   const chip = (k, n) => `<button class="chip" type="button" data-act="tryscore" data-k="${k}" data-n="${n}" aria-pressed="${(rec.s || {})[k] === n}">${n}</button>`;
   return `<div class="stack">
-    <div class="spread"><h2>${esc(pr.name)}</h2><button class="btn quiet sm" data-act="${list.length > 1 ? 'tryprog' : 'goview'}" data-v="club" data-id="">Back</button></div>
+    <h2>${esc(pr.name)}</h2>
     <p class="muted" style="margin-top:0">Score by bib: 1 is a long way to go, 5 is ready now. Only you and the club's admins see your scores, and nobody's name is on this screen. Saved on this phone at once and sent when there's a signal.</p>
     ${years.length > 1 ? `<div class="chips">${[['', 'All'], ...years.map(y => [y, 'Born ' + y])].map(([y, l]) => `<button class="chip" type="button" data-act="tryyear" data-y="${y}" aria-pressed="${(u.y || '') === y}">${l}</button>`).join('')}</div>` : ''}
     ${cur ? `<div class="card"><div class="spread"><h2 style="margin:0">Bib ${cur.bib}</h2><span class="muted">${esc(bibLine(cur))}</span></div>
@@ -20395,7 +20468,7 @@ function viewComply() {
   const rows = complyRows(), t = complyTally(rows);
   const teamsOf = u => Object.entries(acc().teams || {}).filter(([, ta]) => ((ta || {}).coaches || {})[u] || ((ta || {}).helpers || {})[u]).map(([tid]) => (state.teams[tid] || {}).name).filter(Boolean);
   return `<div class="stack">
-    <div class="spread"><h2>Coach compliance</h2><button class="btn quiet sm" data-act="goview" data-v="admin">Back</button></div>
+    <h2>Coach compliance</h2>
     <p class="muted" style="margin-top:0">What MSYSA asks of every coach, helper and admin, in its order: SafeSport, concussion training, then the background check. The checks are done through GotSport; this is the club's record of them. ${t.length ? esc(t.map(([st, n]) => `${n} ${COMPLY_TALLY[st]}`).join(' · ')) + '.' : 'Everyone is up to date.'} Flagged here and to the person, and nothing else changes.</p>
     <div class="plist">${rows.map(r => `<button class="prow go" type="button" data-act="complyopen" data-uid="${esc(r.uid)}" style="grid-template-columns:1fr auto">
       <span><span class="pname">${esc(r.name)}</span><span class="rowsub">${esc([teamsOf(r.uid).join(', ') || (isAdmin(r.uid) ? 'Admin' : ''), r.flags.map(complyLine).join('; ')].filter(Boolean).join(' · '))}</span></span>
@@ -21651,6 +21724,20 @@ function onAct(e) {
     toast('That is not here any more'); return;
   }
 
+  /* More's Drills (the owner, 2026-10-15: drills are a big part of a coach's
+     week, and they sat three taps down, under a team's Training tab). The
+     same screen as that tab's Drills, on the open team (or her first) so
+     the list starts at its age; render() sends anyone canTrain() refuses
+     back to Season. */
+  if (a === 'moredrills') {
+    closeSheet();
+    if (!canTrain()) return;
+    if (!team()) { const t = myTeams()[0]; if (!t) return; ui.teamId = t.id; }
+    const p = practiceUi();
+    p.tab = 'drills'; p.pick = null; p.run = null;
+    ui.view = 'practice'; ui.picked = null;
+    render(); toTop(); return;
+  }
   if (a === 'practab') {
     const p = practiceUi();
     p.tab = ['plans', 'drills', 'positions'].includes(d.k) ? d.k : 'plans';
@@ -22328,7 +22415,14 @@ function onAct(e) {
   }
   if (a === 'navgame') { const g = state.matches[d.id]; if (!g) return; openNavGame(g); closeSheet(); render(); toTop(); return; }
   // the title row's back arrow: up one level (a game's and a shape's have their own, backgames and backsetup)
-  if (a === 'navback') { const up = upView(); if (up) { ui.view = up; ui.picked = null; if (up === 'inbox') ui.thread = null; } closeSheet(); render(); toTop(); return; }
+  if (a === 'navback') {
+    const v = ui.view, up = upView();
+    if (up === v) {   // one of the screen's own items open: back to its list
+      if (v === 'regs') { ui.regs.prog = null; ui.regs.st = 'all'; }
+      if (v === 'tryout') { ui.tryout.prog = null; ui.tryout.bib = null; }
+    } else if (up) { ui.view = up; ui.picked = null; if (up === 'inbox') ui.thread = null; }
+    closeSheet(); render(); toTop(); return;
+  }
   if (a === 'accountsheet') { if (me) sheetAccount(); else sheetSignIn(); return; }
   if (a === 'retireclub') {
     if (!canAdmin()) { toast('Club admins and the app owner only'); return; }

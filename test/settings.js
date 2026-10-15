@@ -165,7 +165,17 @@ console.log('\n--- the way back ---');
   for (const v of ['people', 'admin', 'regs', 'comply', 'planner']) {
     as('boss', v); A.click({ act: 'navback' });
     check(`${v}: back to Settings`, A.ui.view, 'setup');
+    // one way up: the arrow, never a second Back of the screen's own going somewhere else
+    const h = as('boss', v);
+    check(`${v}: no Back button beside the heading, and the arrow says where it goes`, />Back<\/button>/.test(h) + ' ' + A.rendered('#titlebar').includes('aria-label="Back to Settings"'), 'false true');
   }
+  // a registration program open: the arrow goes to the list of programs first, then Settings
+  as('boss', 'regs'); A.state.programs = { p1: { id: 'p1', name: 'Fall' } }; A.ui.regs = { prog: 'p1' }; A.render();
+  check('a program open: the arrow says the programs', A.rendered('#titlebar').includes('aria-label="Back to the programs"'), true);
+  A.click({ act: 'navback' });
+  check('— and goes to them, still on Registrations', A.ui.view + ' ' + A.ui.regs.prog, 'regs null');
+  A.click({ act: 'navback' });
+  check('— then Settings', A.ui.view, 'setup');
   as('boss', 'formation'); A.ui.editFid = 'f1'; A.render(); A.click({ act: 'backsetup' });
   check('a team\'s shape: back to Settings, where Shapes is', A.ui.view, 'setup');
 }
