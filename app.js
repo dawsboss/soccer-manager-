@@ -2,7 +2,7 @@
    Static app. Data lives in localStorage, and mirrors to Firebase Realtime
    Database when a config + workspace code are present. */
 
-const BUILD = '163';
+const BUILD = '164';
 const BUILT = '2026-10-14';
 /* The version of database.rules.json this app was written against. The rules
    carry the same number in rulesVersion's .write, which accepts that number
@@ -7739,6 +7739,8 @@ function sheetMore() {
       <span class="rowsub">The club: its teams and sessions</span></button>` : ''}
     ${anyPlayers() && navKind() !== 'family' ? `<button class="opt" data-act="goview" data-v="mine"><b>My players</b>
       <span class="rowsub">${allKidNames().map(esc).join(', ')}</span></button>` : ''}
+    ${canAdmin() && myTeams().length ? `<button class="opt" data-act="schedule"><b>All teams</b>
+      <span class="rowsub">Every team's calendar: this week, what is still to settle, and the Planner</span></button>` : ''}
     ${canTrain() && (team() || myTeams().length) ? `<button class="opt" data-act="moredrills"><b>Drills</b>
       <span class="rowsub">The library, the club's and your own: look one up, change it, write a new one</span></button>` : ''}
     ${canSessions() ? `<button class="opt" data-act="goview" data-v="sessions"><b>Sessions</b>
@@ -7782,7 +7784,7 @@ function viewClub() {
   return `<div class="stack">
     <div class="clubhead">${clubCrest('lg')}<div><b>${esc(org)}</b>
       <span class="rowsub">${list.length} team${list.length === 1 ? '' : 's'}</span></div></div>
-    ${canAdmin() && list.length ? goCard('schedule', '', 'Calendar', `Every team · ${esc(schedLine())}`)
+    ${canAdmin() && list.length ? goCard('schedule', '', 'Calendar', `Every team · ${esc(schedLine())}`) + clubWeekCard(thisClubWeek())
     : (me || !gated()) && myCalOwn() && !fam ? goCard('goview', ' data-v="mycal"', 'Calendar', esc(myCalLine())) : ''}
     ${anyPlayers() && !fam ? goCard('goview', ' data-v="mine"', 'My players', allKidNames().map(esc).join(', ')) : ''}
     ${canSessions() ? goCard('goview', ' data-v="sessions"', 'Sessions', esc(sessClubLine())) : ''}
@@ -11034,8 +11036,8 @@ function calFab(ed, v) {
 /* What Club schedule said about a week, said under the calendar: what's on,
    who shares a field, what clashes, which teams have no practice, and what is
    still missing a date, a time or a place. Reads the week being looked at. */
-function clubWeekCard() {
-  const w = schedWeek(), todo = schedTodo(w.tids), shown = todo.slice(0, 8);
+function clubWeekCard(s) {
+  const w = schedWeek(s), todo = schedTodo(w.tids), shown = todo.slice(0, 8);
   const sum = [w.games && `${w.games} game${w.games === 1 ? '' : 's'}`, w.practices && `${w.practices} practice${w.practices === 1 ? '' : 's'}`,
     w.events && `${w.events} other`, w.called && `${w.called} called off`].filter(Boolean).join(' · ') || 'Nothing on';
   return `<div class="card clubweek"><div class="spread"><h2>The club, ${esc(dayLabel(w.week).slice(4))} – ${esc(dayLabel(w.end).slice(4))}</h2></div>
@@ -11551,10 +11553,26 @@ function viewSeason() {
     ${canCalTeam(t.id) ? setRow('goview', 'Attendance', esc(attendLineTeam(t)), ' data-v="attend"') : ''}
   </div></div>`;
   return `<div class="stack">
-    ${nextUpBlock(t)}
+    ${registerDueCard(t)}${nextUpBlock(t)}
     <button class="textbtn" data-act="teamcal" data-tid="${esc(t.id)}" style="align-self:flex-start">${teamLabel(t)} on the calendar</button>
     ${lastGameCard(t, ms, [])}${record}${results}${stats}${calSyncCard(t, false)}
   </div>`;
+}
+/* The practice just gone with no register yet, on the coach's Home (the
+   owner, 2026-10-15: a coach opens the app for what is next and who came).
+   Only the latest of the last week, so a season of practices nobody took
+   is not a wall of nags (Attendance lists every one); only for whoever
+   takes it. */
+function registerDueCard(t) {
+  if (!canCalTeam(t.id)) return '';
+  const since = addDays(todayStr(), -7);
+  // calItems() is in the order things happen, so the last is the latest
+  const it = attendUntaken(t).filter(x => x.kind === 'practice' && x.date >= since).slice(-1)[0];
+  if (!it) return '';
+  const when = it.date === todayStr() ? 'today’s practice' : it.date === addDays(todayStr(), -1) ? 'yesterday’s practice' : 'practice on ' + dayLabel(it.date);
+  return `<div class="card"><span class="muted">Attendance</span>
+    <p style="margin:4px 0 0"><b>Who came to ${esc(when)}?</b></p>
+    <div class="row wrap" style="margin-top:10px"><button class="btn sm" data-act="attend" data-tid="${esc(t.id)}" data-id="${esc(it.id)}">Take attendance</button></div></div>`;
 }
 /* One line under each of Season's rows: enough to know whether to open it. */
 function seasonStatsLine(t, ms, x) {
@@ -18526,8 +18544,12 @@ function schedWeek(s = calWeek()) {
   const idle = s.kOff.practice ? [] : tids.filter(tid => !on.some(x => x.tid === tid && x.kind === 'practice'));
   return { week: s.week, end, tids, items, games: n('game'), practices: n('practice'), events: n('event'), called: items.length - on.length, shared, clash, idle };
 }
+/* This week, every team and every kind: what an admin's Home leads with
+   (the owner, 2026-10-15: admins open the app for the club's schedule),
+   whatever week the calendar was last left on. */
+const thisClubWeek = () => ({ week: addDays(todayStr(), -weekdayOf(todayStr())), off: {}, kOff: {} });
 function schedLine() {
-  const w = schedWeek({ week: addDays(todayStr(), -weekdayOf(todayStr())), off: {}, kOff: {} });
+  const w = schedWeek(thisClubWeek());
   const bits = [w.games && `${w.games} game${w.games === 1 ? '' : 's'}`, w.practices && `${w.practices} practice${w.practices === 1 ? '' : 's'}`,
     w.events && `${w.events} other`].filter(Boolean);
   return `This week: ${bits.length ? bits.join(', ') : 'nothing on yet'}${w.clash ? ` · ${w.clash} with no pitch left` : ''}`;
