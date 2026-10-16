@@ -856,11 +856,23 @@ the rules grant today; **no step changes `database.rules.json`.**
    writes weekly slots. Not built: re-laying every week of the term from one
    board (each week is re-laid on its own; the term view, step 11, is where
    the weeks sit side by side).
-10. **The coach's word.** *Works for me* and *This doesn't work* with a note
-    on her own blocks, one write at `teams/{tid}/confirm/{series}`, another
-    team's refused in the handler, through the outbox; the admin's board
-    showing each block's state and the strip counting them; a moved slot
-    unconfirmed again.
+10. **The coach's word** — built, build 170. A coach taps her own team's
+    weekly slot on her board (another team's opens the entry as before) and
+    says *Works for me* or *This doesn't work*, with a note: one record at
+    `teams/{tid}/confirm/{series}` (`{ ok, by, at, note }`, `wordOf()` on
+    read) in her own name, through the outbox like any team write and with
+    no calendar stamp, so the rule on her team decides who may
+    (`test/rules.js`: her, never a parent, a tracker or another team's
+    coach); another team's slot and an admin's own word are refused in the
+    handler (`coachOfTeam()`: an admin's word is not the coach's), a parent
+    everything. Her block carries a tick or a flag (`data-word`); the admin's
+    board shows each block's state, the strip counts them (*1 of 2 weekly
+    slots confirmed by their coaches, 1 flagged*) with each flag's note, and
+    the note sits on the admin's sheet beside the admin's buttons. A slot
+    the admin moves is written under a new series id, so it is unconfirmed
+    again and the old word stays with the old series' earlier weeks. Not
+    built: a push to the admins when a coach flags a slot (club activity
+    says nothing of it yet), and a coach's word on a cross-team session.
 11. **The term, reports and handing it on.** The term view (the weeks
     across, the teams down, closures, blackout dates and holidays marked,
     *what changed* since it was written) before writing; the reports the

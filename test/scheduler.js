@@ -65,7 +65,20 @@
      this week on, written as an edit under a new series id, nothing new,
      earlier weeks untouched); taken off again gives the slot back. A kept
      series is never moved; a single practice is said and left to its coach;
-     a coach reads a week by date and is refused the fill. */
+     a coach reads a week by date and is refused the fill.
+
+   Build 170, step 10 (the coach's word):
+   - A coach taps her own team's weekly slot on her board and says Works for
+     me or This doesn't work, with a note: one record at
+     teams/{tid}/confirm/{series} in her own name (the rule on her team
+     decides, test/rules.js), through the outbox, with no calendar stamp;
+     another team's slot and an admin's own word refused in the handler, a
+     parent refused everything. Her block carries a tick or a flag; the
+     admin's board shows each block's state, the strip counts them (n of m
+     confirmed, k flagged) with each flag's note, and her note is on the
+     admin's sheet beside the admin's buttons. A slot the admin moves is
+     written under a new series id, so it is unconfirmed again and the old
+     word stays with the old series. */
 
 const H = require('./harness');
 const { check, deepEq } = H;
@@ -594,7 +607,7 @@ const blocks = html => [...html.matchAll(/<button type="button" class="tg-ev" ([
       A.toasts.length = 0; A.click({ act, ...d });
       check(`jaz: ${act} is refused`, A.lastToast(), 'Planning is for club admins');
     }
-    check('— her teams\' weekly practices open the entry, not the board\'s sheet', /data-act="schblock"/.test(A.rendered()), false);
+    check('— her teams\' single practices open the entry, not the board\'s sheet (her weekly slots open her word, below)', /data-act="schblock"/.test(A.rendered()), false);
     check('— the draft untouched, nothing written', A.draftBlocks().length + ' ' + (JSON.stringify(A.state) === before), '0 true');
   }
 
@@ -835,6 +848,67 @@ const blocks = html => [...html.matchAll(/<button type="button" class="tg-ev" ([
     check('— and is refused the fill', A.lastToast() + ' ' + A.draftBlocks().length, 'Planning is for club admins 0');
   }
 
+  console.log('\n--- the coach\'s word: works for me, or this doesn\'t work ---');
+  {
+    const c = club(); c.teams.t1.events.e1.series = 's1'; c.teams.t2.events.e2.series = 's2';
+    as('jaz', c); A.render();
+    let h = A.rendered();
+    check('her own weekly slot opens the board\'s sheet; another team\'s the entry', /data-act="schblock" data-k="e:e1"/.test(h) && /data-act="calitem" data-k="practice" data-tid="t2" data-id="e2"/.test(h), true);
+    check('— nothing said yet: no mark on any block', /data-word="ok"|data-word="no"/.test(h), false);
+    A.click({ act: 'schblock', k: 'e:e1' });
+    check('her sheet: the two buttons and a note, the practice to open, none of the admin\'s buttons', /data-act="schword" data-ok="1" data-tid="t1" data-s="s1">Works for me</ && /data-act="schword" data-ok="0"[^>]*>This doesn’t work</ && /id="swNote"/.test(sheet(A)) && /data-act="calitem"/.test(sheet(A)) && !/schmoveseries|schoffseries|hasn’t said/.test(sheet(A)), true);
+    const before = JSON.stringify(A.state);
+    setv('swNote', '');
+    A.click({ act: 'schword', ok: '1', tid: 't1', s: 's1' });
+    const w = A.state.teams.t1.confirm.s1;
+    check('works for me: one record at teams/{tid}/confirm/{series}, in her own name', [w.ok, w.by, typeof w.at, w.note, Object.keys(w).sort().join()].join('|'), 'true|jaz|number||at,by,note,ok');
+    check('— said', A.lastToast(), 'Works for you: the club has your word');
+    check('— and nothing else changed', JSON.stringify({ ...A.state, teams: { ...A.state.teams, t1: { ...A.state.teams.t1, confirm: undefined } } }), JSON.stringify({ ...JSON.parse(before), teams: { ...JSON.parse(before).teams, t1: { ...JSON.parse(before).teams.t1, confirm: undefined } } }));
+    A.render();
+    check('— her block carries the tick', /data-act="schblock" data-k="e:e1"[^>]*data-word="ok"[^>]*aria-label="G11 Flight: Practice, 5:30pm to 6:30pm, Field 2, confirmed by the coach"/.test(A.rendered()) && /<b>G11 Flight ✓<\/b>/.test(A.rendered()), true);
+    A.toasts.length = 0;
+    A.click({ act: 'schword', ok: '1', tid: 't2', s: 's2' });
+    check('another team\'s slot is refused in the handler, nothing written', A.lastToast() + ' ' + (A.state.teams.t2.confirm === undefined), 'Only the team’s coach can say true');
+    A.click({ act: 'schblock', k: 'e:e1' });
+    setv('swNote', "I don't get off until 6:30");
+    A.click({ act: 'schword', ok: '0', tid: 't1', s: 's1' });
+    check('this doesn\'t work, with her note: the same record rewritten', JSON.stringify([A.state.teams.t1.confirm.s1.ok, A.state.teams.t1.confirm.s1.note]), '[false,"I don\'t get off until 6:30"]');
+    check('— said', A.lastToast(), 'Flagged: the club has your note');
+    A.render();
+    check('— her block carries the flag', /data-k="e:e1"[^>]*data-word="no"[^>]*flagged by the coach"/.test(A.rendered()) && /<b>G11 Flight ⚑<\/b>/.test(A.rendered()), true);
+    A.click({ act: 'schblock', k: 'e:e1' });
+    check('— her sheet shows what she said, her note back in the box (escaped, as every typed word is)', /Jaz says this doesn’t work — “I don&#39;t get off until 6:30”/.test(sheet(A)) && /id="swNote"[^>]*value="I don&#39;t get off until 6:30"/.test(sheet(A)), true);
+    A.closeSheet();
+
+    // the admin's board: each block's state, the strip's count, the flag's note on the sheet
+    c.teams.t1.confirm = { s1: { ok: false, by: 'jaz', at: 1, note: "I don't get off until 6:30" } };
+    c.teams.t2.confirm = { s2: { ok: true, by: 'kim', at: 1 } };
+    as('boss', c); A.render();
+    h = A.rendered();
+    check('the admin sees a flag on G11\'s slot and a tick on G13\'s', /data-k="e:e1"[^>]*data-word="no"/.test(h) && /data-k="e:e2"[^>]*data-word="ok"/.test(h), true);
+    const s = A.schedStrip(MON, A.boardAll(MON));
+    deepEq('the strip counts them', [s.words.n, s.words.ok, s.words.no, s.words.flags.map(f => f.text)], [2, 1, 1, ["G11 Flight, Tuesdays 5:30pm: Jaz says this doesn’t work — “I don't get off until 6:30”"]]);
+    check('— said, with the note', /<span class="tag wait">Coaches<\/span> 1 of 2 weekly slots confirmed by their coaches, 1 flagged<\/p><p class="muted"[^>]*>G11 Flight, Tuesdays 5:30pm: Jaz says this doesn’t work — “I don&#39;t get off until 6:30”<\/p>/.test(h), true);
+    A.click({ act: 'schblock', k: 'e:e1' });
+    check('her note on the admin\'s sheet, with the admin\'s buttons and no word of the admin\'s own', /<span class="tag wait">Flagged<\/span> Jaz says this doesn’t work — “I don&#39;t get off until 6:30”/.test(sheet(A)) && /schmoveseries/.test(sheet(A)) && !/data-act="schword"/.test(sheet(A)), true);
+    A.toasts.length = 0; A.click({ act: 'schword', ok: '1', tid: 't1', s: 's1' });
+    check('— an admin\'s word is not the coach\'s: refused, the record as it was', A.lastToast() + ' ' + A.state.teams.t1.confirm.s1.ok, 'Only the team’s coach can say false');
+    A.click({ act: 'schblock', k: 'e:e2' });
+    check('a confirmed slot on the sheet', /<span class="tag">Works<\/span> Kim says it works<\/p>/.test(sheet(A)), true);
+    A.closeSheet();
+    // a moved slot is a new slot for the coach to look at again: the word is keyed by the series
+    const dr = A.schedDraft(); dr.from = MON; dr.until = '2026-09-27';
+    dr.blocks = { m1: { id: 'm1', tid: 't1', wd: 3, start: '18:00', len: 60, col: 'f:v1', pitch: '', series: 's1', locked: false } }; dr.off = { s1: true }; A.saveDraft();
+    A.schedWrite(MON); A.render();
+    const e1 = A.state.teams.t1.events.e1;
+    check('moved and written under a new series id: unconfirmed again, the old word left with the old series', e1.series !== 's1' && A.wordOf('t1', e1.series) === null && A.wordOf('t1', 's1').ok === false && /data-k="e:e1"[^>]*data-word=""/.test(A.rendered()), true);
+    check('— the strip counts it unconfirmed, the flag gone with it, G13\'s tick kept', /1 of 2 weekly slots confirmed by their coaches<\/p>/.test(A.rendered()) && !/flagged/.test(A.rendered()), true);
+    // a parent cannot reach it at all
+    as('mum', c); A.toasts.length = 0;
+    A.click({ act: 'schword', ok: '1', tid: 't1', s: 's1' });
+    check('a parent is refused, nothing written', A.lastToast() + ' ' + JSON.stringify(A.state.teams.t1.confirm), 'Planning is for club admins ' + JSON.stringify(c.teams.t1.confirm));
+  }
+
   // last, as every suite has it: a second app loaded takes the harness's document with it
   console.log('\n--- against the database: one write, at the depth the rule on org grants ---');
   {
@@ -871,6 +945,20 @@ const blocks = html => [...html.matchAll(/<button type="button" class="tg-ev" ([
     E.ui.view = 'scheduler'; E.ui.planner = { board: { week: MON } }; E.render();
     check('after a reload the draft is still there', E.draftBlocks().map(b => b.id + ':' + b.locked).join() + ' ' + JSON.stringify(E.schedDraft().forbid) + ' ' + E.draftTerm(MON).until, 'z:true {"0|17:00|f:v1":true} 2026-10-11');
     check('and drawn', /data-draft="1"[^>]*aria-label="G13 Storm: Practice, 7pm to 8pm, not written yet"/.test(E.rendered()) && /class="tg-forbid"/.test(E.rendered()), true);
+
+    // the coach's word: one write at orgs/{code}/teams/{tid}/confirm/{series}, in her name, no calendar stamp
+    const fbk3 = makeFakebase(), c3 = club(); c3.teams.t1.events.e1.series = 's1';
+    const F = H.loadApp({ firebase: fbk3, config: CONFIG, storage: { 'sm.workspace': 'CLUB' } });
+    await F.flush(); fbk3.signIn('jaz', { name: 'Jaz' }); await F.flush(); await fbk3.serveClub('CLUB', c3, F.flush); await F.flush();
+    F.ui.view = 'scheduler'; F.ui.planner = { board: { week: MON } }; F.render();
+    const n3 = fbk3.record.writes.length;
+    F.click({ act: 'schblock', k: 'e:e1' });
+    F.dom.node('#swNote').value = 'Fine by me';
+    F.click({ act: 'schword', ok: '1', tid: 't1', s: 's1' }); await F.flush();
+    const ww = fbk3.record.writes.slice(n3);
+    check('the coach\'s word: one write', ww.length, 1);
+    check('at orgs/{code}/teams/{tid}/confirm/{series}', ww[0].path, 'orgs/CLUB/teams/t1/confirm/s1');
+    check('the record whole, hers, no stamp', [ww[0].value.ok, ww[0].value.by, ww[0].value.note, typeof ww[0].value.at, 'edit' in ww[0].value].join('|'), 'true|jaz|Fine by me|number|false');
   }
 
   H.summary('the Scheduler');

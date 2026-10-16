@@ -396,6 +396,12 @@ console.log('\n--- the calendar: under the team, so the team rule decides ---');
   writes('a parent cannot', MUM, 'workspaces/CLUB/teams/t1/attend/e1', { p1: true }, false);
   writes('nor a tracker', TRK, 'workspaces/CLUB/teams/t1/attend/e1', { p1: true }, false);
   writes('nor another team\'s coach', OTHER, 'workspaces/CLUB/teams/t1/attend/e1', { p1: true }, false);
+  // the coach's word on a weekly slot (SCHEDULER.md, step 10) sits under her team, so the team rule decides
+  const word = { ok: true, by: 'coach', at: 1, note: '' };
+  writes('its coach gives her word on a weekly slot', COACH, 'workspaces/CLUB/teams/t1/confirm/s1', word, true);
+  writes('a parent cannot', MUM, 'workspaces/CLUB/teams/t1/confirm/s1', word, false);
+  writes('nor a tracker', TRK, 'workspaces/CLUB/teams/t1/confirm/s1', word, false);
+  writes('nor another team\'s coach', OTHER, 'workspaces/CLUB/teams/t1/confirm/s1', word, false);
   reads('a parent reads it with the rest of the club', MUM, 'workspaces/CLUB/teams/t1/events/e1', true);
   // the published copy is the server's to write (functions/mirror.js), never a phone's
   writes('the coach\'s phone cannot write the published copy\'s calendar', COACH, 'public/sh1/events', { e2: { kind: 'event', title: 'Team photo', date: '2026-09-20' } }, false);
