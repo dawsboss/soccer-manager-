@@ -663,70 +663,86 @@ other teams, but rather an account made.* So there is no club-wide fields
 page under `public/` (the first draft here had one, built like a team's
 share page), and a club-wide fields link is never made: whoever is not in
 the club and not the council gets a file, or an account. The account is
-*A visitor from another club*, below.
+*An opponent's account*, below.
 
-### A visitor from another club
+### An opponent's account
 
-The owner's decision reshapes the other half of this section. A visitor is
-a person from another club, signed in to TeamPlayHQ with her own account,
-whom an admin here lets look at the fields and nothing else. Not built; a
-brief of its own, because it needs a rule (every brief above this line
-changes none), a role, and the server.
+The owner's decision reshapes the other half of this section. An opponent
+is another club's admin or coach, signed in to TeamPlayHQ with her own
+account, whom an admin here lets in to arrange games and nothing else. The
+owner, 2026-10-16, on the first draft of this: *I like the role; maybe
+"opponent"? Visitor makes it sound like a grandparent watching. Basically
+just need access to communicate on the scheduler page, for games only.*
+So the word is **opponent** (ROADMAP's *Opponents* is the same idea), the
+role is about games, and nothing of the practices reaches her but the fact
+that a field is taken then. Not built; a brief of its own, because it needs
+a rule (every brief above this line changes none), a role, and the server.
 
 - **Who she is.** Another club's admin or coach, usually with a club of her
-  own on this app (the switcher lists ours beside hers); the referees'
-  secretary could be one too. A real account, named, so the club knows who
-  is looking: never a link anyone can forward, which is what the owner is
-  ruling out.
-- **What she reads.** The field schedule, as *Hand it on* exports it and as
-  the board draws it: each field's week, the permits' open hours (so she
-  sees what is *free*, which is why she is here), practices, games and
-  sessions as blocks with the team's name, kind and time, the term's weeks.
-  Never a child, a family, a coach's name, a note, an answer, a message, a
-  squad, a roster, a session's title. Nothing of a game but its time, place
-  and the team.
+  own on this app (the switcher lists ours beside hers). A real account,
+  named, so the club knows who is looking: never a link anyone can forward,
+  which is what the owner ruled out first.
+- **What she reads.** Enough to pick a game: each of our fields' week with
+  the permits' open hours (what is *free*, which is why she is here), what
+  is taken drawn as taken (a span and its kind: practice, game, session;
+  no team's name, since a practice is children at a predictable place and
+  she is not in the club), the games between our clubs by name, and the
+  asks between us. Never a child, a family, a coach's name, a note, an
+  answer, a message, a squad, a roster, a session's title, a team's name
+  on a practice.
+- **Which fields.** The owner: *games and practices are often not on the
+  same field; a club has home fields its games are always played on, I
+  think, but maybe we shouldn't restrict it like that.* So the app does
+  not: every field shows by default, and an admin can take a practice-only
+  field off opponents' view with one switch on the field sheet
+  (`org/venues/{fid}/opp: false`; the field is still ours to schedule on).
+  No separate list of home fields, no field type.
 - **Why she cannot simply be let in.** Everyone in `access/index` reads the
   club's teams whole (entries with their notes, games, answers, `roster/`
   while the club opens it), and a club viewer reads the squads for the
-  names. A visitor must read a narrower thing than the index grants, and a
+  names. An opponent must read a narrower thing than the index grants, and a
   rule cannot narrow `teams/` by role without rebuilding how the club is
   read. So she is **never in `access/index`**, and what she reads is a
   document the server builds for her.
-- **The shape.** A role under the club, `access/visitors/{uid}` (valued with
-  the invite id like every role an invite grants; `hasAnyRole()` counts it,
-  so her last role gone takes her bookmark, `functions/access.js`), written
-  by `joinAsk` from an invite with role `visitor`, which only an admin makes
-  (People → *Invite someone*, one more role on the builder, one person and
-  fourteen days by default, email-bound or a link, like a coach's). Her
-  bookmark `userOrgs/{uid}/{code}` so the club is in her switcher. The
-  document at a root node, `fieldsView/{code}`, readable by the club's
-  visitors, admins and coaches and nobody else (`.write: false`, the
-  server's as `public/` is), built by `functions/` from the same machinery
-  the share pages use (`mirror.js`, a queue per club so a run never leaves
-  it older than the club; the game math is already ported in `game.js`,
-  the field matching `fieldOfText()` would follow it), rebuilt when an
-  entry, a game, a session or a field changes, and holding item for item
-  what the phone's `fieldScheduleCsv()` and `schedPrintPages()` draw
-  (`test/`: stringified with a name typed into every free-text field and no
-  child in it, as `test/mirror.js` does). On her phone the club opens on one
-  screen, *Fields*: the board for the week read-only from `fieldsView/`
-  (the grid `boardGrid()` already draws, every block grey, the open hours
-  painted), the term's weeks, nothing else: no tabs, no Calendar, no
-  Messages, no Home. An admin takes her away on People; the server takes
-  her bookmark as it takes any last role's.
+- **The shape.** A role under the club, `access/opponents/{uid}` (valued
+  with the invite id like every role an invite grants, and carrying her
+  club's code where she has one; `hasAnyRole()` counts it, so her last role
+  gone takes her bookmark, `functions/access.js`), written by `joinAsk` from
+  an invite with role `opponent`, which only an admin makes (People →
+  *Invite someone*, one more role on the builder, one person and fourteen
+  days by default, email-bound or a link, like a coach's). Her bookmark
+  `userOrgs/{uid}/{code}` so the club is in her switcher. The document at a
+  root node, `fieldsView/{code}`, readable by the club's opponents, admins
+  and coaches and nobody else (`.write: false`, the server's as `public/`
+  is), built by `functions/` from the same machinery the share pages use
+  (`mirror.js`, a queue per club so a run never leaves it older than the
+  club; the game math is already ported in `game.js`, the field matching
+  `fieldOfText()` would follow it), rebuilt when an entry, a game, a
+  session or a field changes, and holding per field the open spans and the
+  taken spans with their kind, and the games against her club (`test/`:
+  stringified with a name typed into every free-text field and no child,
+  family, coach or team-on-a-practice in it, as `test/mirror.js` does). On
+  her phone the club opens on one screen, *Games with {club}*: the board
+  for the week read-only from `fieldsView/` (the grid `boardGrid()` already
+  draws, every block grey and unnamed, the open hours painted), the asks
+  between the clubs, nothing else: no tabs, no Calendar, no Messages, no
+  Home. An admin takes her away on People; the server takes her bookmark as
+  it takes any last role's.
 - **What it is for.** *Something where these different teams can
   communicate when games should happen*: she sees Lakeside free on
-  Saturday at ten and asks for a game there. That is the fixture ask below,
-  made from her screen instead of from a link, which is why the two are one
-  brief: the visitor's account is the door and the fixture ask is what she
-  does once she is in.
-- **Order.** 1. The rule and the role (`visitors`, `fieldsView`, the invite
-  role; a rules version; `test/rules.js` for every kind of account, a
-  visitor reading `fieldsView` and nothing under `orgs/` but `org/name`).
-  2. The server's document and its queue (`test/fieldsview.js`, the twin of
-  `test/mirror.js`). 3. The invite, the join and the tables (`joinAsk`,
-  `functions/access.js`, People). 4. Her screen. 5. The fixture ask, from
-  her screen and from ours (below).
+  Saturday at ten and asks for a game there, or offers her own field. That
+  is the fixture ask below, made from her screen, which is why the two are
+  one brief: the opponent's account is the door and the fixture ask is what
+  she does once she is in. Our side sees the asks on the Scheduler (a
+  *Games* tab for admins and the team's coaches) and answers there.
+- **Order.** 1. The rule and the role (`opponents`, `fieldsView`, the invite
+  role, the field's `opp` switch; a rules version; `test/rules.js` for every
+  kind of account, an opponent reading `fieldsView` and nothing under
+  `orgs/` but `org/name`). 2. The server's document and its queue
+  (`test/fieldsview.js`, the twin of `test/mirror.js`). 3. The invite, the
+  join and the tables (`joinAsk`, `functions/access.js`, People). 4. Her
+  screen. 5. The fixture ask, from her screen and from our Scheduler
+  (below).
 
 **Agreeing games with another club.** This is ROADMAP's *Opponents*: *one
 shared record both see, so a reschedule or a cancellation lands on both*.
@@ -737,16 +753,17 @@ a **fixture ask** at a root node with its own rule, like a team link or a
 booking ask (`fixtureAsks/{id}`: the proposing club, team and admin, the
 other club's code or an email, a date, a kick-off, a place, and the other
 side's answer: yes, no, or another time), made by a coach or admin, or by
-a visitor from her *Fields* screen on a slot she sees free (the owner,
-2026-10-16: the other club has an account here, not a link), answered by
-the other club's admin on her own phone, and when both have said yes,
+an opponent from her *Games with {club}* screen on a slot she sees free or
+at her own field (the owner, 2026-10-16: the other club has an account
+here, not a link), answered by the other side on her own phone, and when
+both have said yes,
 written as a game on both
 clubs' calendars by the server (`functions/`), each club's copy its own,
 with the ask's id on both so a change on either side is offered to the
 other as a new ask and never written straight across. The proposing club's
 board shows its own field's free Saturdays as the slots to offer, which is
 *Find a time* with the field fixed. The other club is on this app, as a
-club of its own or as a visitor's account here (above); the first draft had
+club of its own or as an opponent's account here (above); the first draft had
 a link for a club that is not, like the registration link, and the owner
 ruled that out: nothing about the schedule goes to whoever holds a link.
 This is the piece that lets *different teams communicate when games should
@@ -966,14 +983,18 @@ the rules grant today; **no step changes `database.rules.json`.**
     handler. Not built: a report across the whole term rather than its weeks
     one at a time, and re-laying every week of the term from one board. A
     club-wide fields page under `public/` is not wanted (the owner,
-    2026-10-16: an account, not a public page; *A visitor from another
-    club*).
+    2026-10-16: an account, not a public page; *An opponent's account*).
 
-After these, and as its own brief: **a visitor from another club, and the
-games agreed with her** (*A visitor from another club* and *Agreeing games
-with another club*, above; ROADMAP, *Opponents*), which needs a role, a
-root node with a rule of its own and the server to build her document and
-to write a game on both sides.
+After these, and as its own brief: **an opponent's account, and the games
+agreed with her** (*An opponent's account* and *Agreeing games with another
+club*, above; ROADMAP, *Opponents*), which needs a role, a root node with a
+rule of its own and the server to build her document and to write a game on
+both sides. With it the Scheduler is what the owner asked for on
+2026-10-15, start to finish: fields, games, practices, the term written,
+the coaches' word, the hand-off, and the other club in the room. What is
+left after that is small (a report across the term, re-laying every week
+from one board, a push when a coach flags a slot) or conditional (a solver
+on the server, only if a real club's fill falls short).
 
 ## Decided, the owner, 2026-10-15
 
@@ -991,6 +1012,11 @@ to write a game on both sides.
 4. **Other clubs, 2026-10-16.** *I don't want the scheduling to be public
    with other teams, but rather an account made.* No club-wide fields page
    under `public/`, no link to the schedule for anyone: the council and the
-   school get a file (*Hand it on*), another club gets an account, a
-   visitor who reads the fields and nothing else and asks for a game from
-   what she sees free. *A visitor from another club*, above; the next brief.
+   school get a file (*Hand it on*), another club gets an account. Then, on
+   the first draft of it: the word is *opponent*, not *visitor* (*it sounds
+   like a grandparent watching*); the account is *for games only*, so she
+   sees free and taken and no team's name on a practice; and fields are not
+   sorted into home fields and practice fields by the app (*games and
+   practices are often not on the same field… but maybe we shouldn't
+   restrict it like that*): every field shows unless an admin switches one
+   off. *An opponent's account*, above; the next brief.
