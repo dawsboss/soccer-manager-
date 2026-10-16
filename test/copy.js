@@ -89,7 +89,7 @@ const offending = html => banned.filter(w => wordRe(w).test(text(html)));
 
 console.log('--- no word from the code, the database or the docs on any screen ---');
 {
-  const views = ['season', 'teamstats', 'minutes', 'attend', 'roster', 'practice', 'calendar', 'club', 'setup', 'people', 'admin', 'mine', 'sessions', 'inbox', 'notes', 'planner', 'regs', 'comply'];
+  const views = ['season', 'teamstats', 'minutes', 'attend', 'roster', 'practice', 'calendar', 'club', 'setup', 'people', 'admin', 'mine', 'sessions', 'inbox', 'notes', 'scheduler', 'regs', 'comply'];
   const gviews = ['live', 'subs', 'track', 'stats', 'plan'];
   const bad = [];
   let drawn = 0;

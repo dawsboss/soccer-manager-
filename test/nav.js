@@ -405,7 +405,7 @@ console.log('\n--- the title row ---');
   check('— titled Settings, over the club', titled('Settings') && /data-act="clubswitch"/.test(title()), true);
   A.click({ act: 'navback' });
   check('— and back from there is the team', A.ui.view, 'season');
-  for (const v of ['admin', 'planner', 'regs', 'comply']) { as('boss', v); A.click({ act: 'navback' }); check(`${v}: back is Settings`, A.ui.view, 'setup'); }
+  for (const v of ['admin', 'scheduler', 'regs', 'comply']) { as('boss', v); A.click({ act: 'navback' }); check(`${v}: back is Settings`, A.ui.view, 'setup'); }
   as('boss', 'sessions'); A.click({ act: 'navback' }); check('sessions: back is Club home, where its card is', A.ui.view, 'club');
   // fields, fees and hours are Settings' screens since build 148 (UX-REVIEW-2.md, 7.3)
   for (const [k, name] of [['fields', 'Fields'], ['fees', 'Session fees'], ['hours', 'Coach hours']]) {

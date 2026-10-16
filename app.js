@@ -2,7 +2,7 @@
    Static app. Data lives in localStorage, and mirrors to Firebase Realtime
    Database when a config + workspace code are present. */
 
-const BUILD = '166';
+const BUILD = '172';
 const BUILT = '2026-10-14';
 /* The version of database.rules.json this app was written against. The rules
    carry the same number in rulesVersion's .write, which accepts that number
@@ -7280,7 +7280,9 @@ function render() {
   let inGame = ui.view === 'game';
   // a game screen with no game is just four buttons that do nothing
   if (inGame && !match() && !teamMatches(ui.teamId).length) { ui.view = 'season'; inGame = false; }
-  if ((ui.view === 'admin' || ui.view === 'planner' || ui.view === 'regs' || ui.view === 'comply') && !canAdmin()) ui.view = 'club';
+  if ((ui.view === 'admin' || ui.view === 'regs' || ui.view === 'comply') && !canAdmin()) ui.view = 'club';
+  // the Scheduler is read by every coach too, her teams lit (SCHEDULER.md); the rest of the club's screens are the admins'
+  if (ui.view === 'scheduler' && !canSched()) ui.view = 'club';
   // My players is the top of a family's Home since build 153 (viewFamSeason); staff with a child keep it under More
   if (ui.view === 'mine' && navKind() === 'family') ui.view = 'season';
   if (ui.view === 'mine' && !anyPlayers()) ui.view = 'calendar';
@@ -7412,7 +7414,7 @@ function render() {
           v === 'season' ? viewSeason() : v === 'teamstats' ? viewTeamStats() : v === 'minutes' ? viewMinutes() : v === 'attend' ? viewAttend() :
             v === 'formation' ? viewFormation() : v === 'games' ? viewGames() : v === 'club' ? viewClub() : v === 'people' ? viewPeople() : v === 'admin' ? viewAdmin()
               : v === 'mine' ? viewMine() : v === 'practice' ? viewPractice()
-                : v === 'inbox' ? viewInbox() : v === 'notes' ? viewNotes() : v === 'thread' ? viewThread() : v === 'sessions' ? viewSessions() : v === 'planner' ? viewPlanner() : v === 'regs' ? viewRegs() : v === 'tryout' ? viewTryout() : v === 'comply' ? viewComply()
+                : v === 'inbox' ? viewInbox() : v === 'notes' ? viewNotes() : v === 'thread' ? viewThread() : v === 'sessions' ? viewSessions() : v === 'scheduler' ? viewScheduler() : v === 'regs' ? viewRegs() : v === 'tryout' ? viewTryout() : v === 'comply' ? viewComply()
                 : v === 'setup' ? viewSetup() : viewCalendar());
   } finally { placeMemo = null; }
   syncHash();
@@ -7539,7 +7541,7 @@ const viewScope = (v = ui.view) => v === 'calendar' || v === 'mine' ? (me ? 'me'
 /* The screens that are not a team's, by name, for the title row. */
 const VIEW_TITLE = {
   calendar: 'Calendar', setup: 'Settings', people: 'People', admin: 'Club details', sessions: 'Sessions',
-  planner: 'Planner', inbox: 'Messages', thread: 'Messages', notes: 'What\'s new', mine: 'My players', formation: 'Shapes',
+  scheduler: 'Scheduler', inbox: 'Messages', thread: 'Messages', notes: 'What\'s new', mine: 'My players', formation: 'Shapes',
   games: 'Games', regs: 'Registration', tryout: 'Tryouts', comply: 'Coach compliance', club: 'Club home'
 };
 // the Sessions view draws three of Settings' screens too, each under its own name
@@ -7648,7 +7650,7 @@ function upView(v = ui.view) {
   if (v === 'regs' && (ui.regs || {}).prog) return 'regs';
   if (v === 'tryout' && (ui.tryout || {}).prog && myTryouts().length > 1) return 'tryout';
   // the club's settings screens are Settings' Club section since build 143; the rest hang off Club home
-  if (['people', 'admin', 'planner', 'regs', 'comply'].includes(v)) return 'setup';
+  if (['people', 'admin', 'scheduler', 'regs', 'comply'].includes(v)) return 'setup';
   // fields, fees and hours are Settings' screens (UX-REVIEW-2.md, 7.3); Sessions itself hangs off Club home
   if (v === 'sessions') return sessSetTab() ? 'setup' : 'club';
   if (v === 'tryout') return 'club';
@@ -9876,6 +9878,130 @@ function playerRow(m, p, now, isOn) {
    share link gets forwarded, and a practice is a predictable time and place
    where children are without the crowd a match brings. */
 const CAL_KIND = { game: 'Game', practice: 'Practice', event: 'Event', session: 'Session' };
+/* Kinds of practice (SCHEDULER.md, *Kinds of practice*; build 165). A practice
+   is a regular one unless its entry says otherwise (`ptype`), so every entry
+   from before reads as it did. A kind says its usual length, what space it
+   needs (a share of a pitch, a whole one, a room, or none: film is a room or
+   nothing) and who comes: the team, its keepers (`who: 'keepers'` on the
+   entry, the keepers alone asked and counted), or two teams at once. A
+   cross-team session is one entry per team sharing a `club` id, as picture
+   day is written, so each team's calendar, answers and register work
+   unchanged. The club changes a kind at org/sched/kinds/{kind}. */
+const PTYPES = {
+  regular: { label: 'Practice', len: 75, space: 'share', who: 'team' },
+  technical: { label: 'Technical', len: 60, space: 'share', who: 'team' },
+  film: { label: 'Film', len: 45, space: 'none', who: 'team' },
+  goalkeeper: { label: 'Goalkeepers', len: 60, space: 'share', who: 'keepers' },
+  fitness: { label: 'Fitness', len: 45, space: 'share', who: 'team' },
+  scrimmage: { label: 'Scrimmage', len: 60, space: 'pitch', who: 'two' }
+};
+const PTYPE_ORDER = ['regular', 'technical', 'film', 'goalkeeper', 'fitness', 'scrimmage'];
+const SPACES = ['share', 'pitch', 'room', 'none'], WHOS = ['team', 'keepers', 'two'];
+const ptypeOf = e => (e && PTYPES[e.ptype] ? e.ptype : 'regular');
+const whoOf = e => (e && e.who === 'keepers' ? 'keepers' : '');
+function kindOf(k) {
+  const id = PTYPES[k] ? k : 'regular', base = PTYPES[id], o = ((((acc().org || {}).sched || {}).kinds || {})[id]) || {};
+  return { id, label: base.label, len: SCHED_LENS.includes(Number(o.len)) ? Number(o.len) : base.len, space: SPACES.includes(o.space) ? o.space : base.space, who: WHOS.includes(o.who) ? o.who : base.who };
+}
+const tidsOf = x => (x.tids && x.tids.length ? x.tids : x.tid ? [x.tid] : []);
+
+/* Rules and tiers (SCHEDULER.md, *Everything the board says is a rule with a
+   tier*; build 166). Every refusal, warning and preference on the board is a
+   rule, and every rule has a tier the admin can move: Must refuses in place,
+   High, Medium and Low warn and cost in the fill in that order, Off keeps
+   the rule in the list and worthless. Built-in and custom rules are one
+   list, so "turn anything off" and "say what matters" are one feature. The
+   club's tiers are org/sched/rules/{rule}; a team's own, where it differs,
+   org/sched/teams/{tid}/rules/{rule}, most specific winning; a missing one
+   is the default here. A physical rule lowered is asked about: a coach in
+   two places is wrong, unless two teams share one session. */
+const TIERS = ['must', 'high', 'medium', 'low', 'off'];
+const TIER_LABEL = { must: 'Must', high: 'High', medium: 'Medium', low: 'Low', off: 'Off' };
+const TIER_COST = { must: Infinity, high: 100, medium: 10, low: 1, off: 0 };
+const RULES = [
+  { id: 'supply', label: 'Inside the permit and the hours, never on a closure', tier: 'must', physical: true },
+  { id: 'pitchTaken', label: 'A pitch a game, a session or a scrimmage holds is taken', tier: 'must', physical: true },
+  { id: 'teamBusy', label: 'A team is not on twice at once', tier: 'must', physical: true },
+  { id: 'coachBusy', label: 'A coach is not in two places at once', tier: 'must', physical: true },
+  { id: 'coachAway', label: 'A coach is not due during her time off', tier: 'must', physical: true },
+  { id: 'drive', label: 'No drive between fields for a coach', tier: 'high' },
+  { id: 'coachLoad', label: 'A coach’s load: sessions a day and a week, hours a day, the gap between', tier: 'high' },
+  { id: 'night', label: 'Not on a night the team can’t do', tier: 'high' },
+  { id: 'keepersOver', label: 'A keepers’ session not over a sending team’s practice', tier: 'high' },
+  { id: 'familySplit', label: 'No family with children due in two places', tier: 'medium' },
+  { id: 'household', label: 'A household’s soccer hours a day and a week', tier: 'medium' },
+  { id: 'siblings', label: 'Siblings at one field at the same or the next hour', tier: 'medium', fill: true },
+  { id: 'backToBack', label: 'A coach’s teams back to back on one field', tier: 'medium', fill: true },
+  { id: 'usualField', label: 'A team on its usual field', tier: 'medium' },
+  { id: 'sameSlot', label: 'The same slot every week of the term', tier: 'medium', fill: true },
+  { id: 'secondNight', label: 'A team’s second practice on another night, not the one after its first', tier: 'low', fill: true },
+  { id: 'spread', label: 'Spread across the open pitches; rotate the worst slots', tier: 'low', fill: true },
+  { id: 'stability', label: 'Fewest changes from what is written, when re-laying a term', tier: 'low', fill: true },
+  { id: 'headroom', label: 'Keep the pattern’s headroom for games', tier: 'low', fill: true }
+];
+const RULE = Object.fromEntries(RULES.map(r => [r.id, r]));
+const schedOrg = () => ((acc().org || {}).sched) || {};
+function ruleTier(id, tid) {
+  const r = RULE[id]; if (!r) return 'off';
+  const sc = schedOrg(), own = tid ? ((((sc.teams || {})[tid] || {}).rules || {})[id]) : null, club = (sc.rules || {})[id];
+  return TIERS.includes(own) ? own : TIERS.includes(club) ? club : r.tier;
+}
+/* Presets to start from: each is a set of tiers written out as rules, nothing
+   hidden behind the name. Balanced is the defaults. */
+const SCHED_PRESETS = {
+  balanced: { label: 'Balanced', tiers: {} },
+  field: { label: 'Field-first', tiers: { usualField: 'high', drive: 'medium', familySplit: 'low', siblings: 'low', backToBack: 'low' } },
+  coach: { label: 'Coach-friendly', tiers: { drive: 'high', backToBack: 'high', coachLoad: 'high', familySplit: 'low', siblings: 'low' } },
+  family: { label: 'Family-friendly', tiers: { familySplit: 'high', household: 'high', siblings: 'high', drive: 'medium', backToBack: 'medium' } }
+};
+const presetTiers = name => Object.fromEntries(RULES.map(r => [r.id, (SCHED_PRESETS[name] || SCHED_PRESETS.balanced).tiers[r.id] || r.tier]));
+/* Custom rules, three shapes and no builder: a team tagged X only on fields
+   tagged Y; nothing of a team or tag after a time; and a coach never on a
+   day, which is time off and built. One record each at org/sched/custom. */
+const CUSTOM_SHAPES = { tagfield: 'Teams tagged … only on fields tagged …', after: 'Nothing for … after …' };
+const tagOf = v => String(v || '').trim().toLowerCase().replace(/[^a-z0-9 -]/g, '').replace(/\s+/g, ' ').slice(0, 24);
+const tagList = v => [...new Set(String(v || '').split(',').map(tagOf).filter(Boolean))];
+const teamTags = tid => Object.keys(((((schedOrg().teams || {})[tid] || {}).tags) || {})).map(tagOf).filter(Boolean);
+const fieldTags = f => Object.keys((f && f.tags) || {}).map(tagOf).filter(Boolean);
+function customRules() {
+  return Object.entries(schedOrg().custom || {}).map(([id, c]) => c && typeof c === 'object' && CUSTOM_SHAPES[c.shape] ? {
+    id: c.id || id, shape: c.shape, a: c.shape === 'after' && state.teams[c.a] ? c.a : tagOf(c.a), b: c.shape === 'after' ? hm(c.b) || '' : tagOf(c.b),
+    tier: TIERS.includes(c.tier) ? c.tier : 'high', note: String(c.note || '').slice(0, 120)
+  } : null).filter(c => c && c.a && c.b);
+}
+/* Load (SCHEDULER.md, *Coaches: what she can't do, and how much she can*;
+   *Families: hours, and siblings*; build 167). A coach's caps: sessions a
+   day and a week, minutes a day, the gap between two; the club's defaults at
+   org/sched/coaches/default and a coach's own at coaches/{uid}. A
+   household's soccer minutes a day and a week at org/sched/household,
+   counted from every child's practices, games and sessions, overlapping
+   time once (one trip). Each is a rule (coachLoad, household) at its tier. */
+const COACH_CAPS = { perDay: 2, perWeek: 6, hoursDay: 180, gap: 0 };
+const HOUSE_CAPS = { hoursDay: 180, hoursWeek: 480 };
+function normCaps(o) {
+  const out = {}, pick = (k, lo, hi, step) => { if (!o || o[k] == null) return; const v = Number(o[k]); if (Number.isFinite(v)) out[k] = Math.min(hi, Math.max(lo, Math.round(v / step) * step)); };
+  pick('perDay', 1, 6, 1); pick('perWeek', 1, 20, 1); pick('hoursDay', 30, 600, 15); pick('gap', 0, 120, 5);
+  return out;
+}
+function coachCaps(uid) {
+  const sc = schedOrg().coaches || {}, own = normCaps(sc[uid]);
+  return { ...COACH_CAPS, ...normCaps(sc.default), ...own, own: !!Object.keys(own).length };
+}
+function householdCaps() {
+  const o = schedOrg().household || {}, out = { ...HOUSE_CAPS };
+  for (const [k, hi] of [['hoursDay', 600], ['hoursWeek', 2400]]) { const v = Number(o[k]); if (o[k] != null && Number.isFinite(v)) out[k] = Math.min(hi, Math.max(30, Math.round(v / 15) * 15)); }
+  return out;
+}
+const minsText = m => { const h = Math.floor(m / 60), r = m % 60; return h === 0 ? `${m} minutes` : r === 0 ? `${h} hour${h === 1 ? '' : 's'}` : r === 30 ? `${h}½ hours` : `${h} hour${h === 1 ? '' : 's'} ${r} minutes`; };
+const mergedMins = spans => { const s = spans.slice().sort((x, y) => x[0] - y[0]); let total = 0, cur = null; for (const [a, b] of s) { if (!cur || a > cur[1]) { if (cur) total += cur[1] - cur[0]; cur = [a, b]; } else cur[1] = Math.max(cur[1], b); } if (cur) total += cur[1] - cur[0]; return total; };
+/* A family's soccer minutes in one day's items: every child's, overlapping
+   time once. Keyed by guardian uid; a count to everyone, as everywhere. */
+function familyMinutes(items) {
+  const cache = {}, spans = {};
+  for (const x of items) for (const u of Object.keys(itemFams(x, cache))) (spans[u] = spans[u] || []).push([x.a, x.b]);
+  return Object.fromEntries(Object.entries(spans).map(([u, sp]) => [u, mergedMins(sp)]));
+}
+const customText = c => c.shape === 'after' ? `Nothing for ${state.teams[c.a] ? shortTeam(c.a) : 'teams tagged “' + c.a + '”'} after ${niceTime(c.b)}` : `Teams tagged “${c.a}” only on fields tagged “${c.b}”`;
 const CALLED = { cancelled: 'Cancelled', postponed: 'Postponed' };
 const HOME_AWAY = { home: 'Home', away: 'Away', neutral: 'Neutral ground' };
 const WEEKDAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
@@ -9939,7 +10065,9 @@ function calItems(tids) {
         title: e.title || CAL_KIND[kind], venue: e.venue || '',
         called: CALLED[e.called] ? e.called : '', public: !!e.public, series: e.series || null,
         // whether families are asked who is coming: a practice is, a team photo is not, unless the coach said (UX-REVIEW-3.md, 15.6)
-        ask: askOf(e, kind)
+        ask: askOf(e, kind),
+        // the kind of practice, who comes, and the id a cross-team session's entries share (never `club`, which is another club's item on My calendar)
+        ptype: kind === 'practice' ? ptypeOf(e) : 'regular', who: kind === 'practice' ? whoOf(e) : '', joint: String(e.club || '')
       });
     }
   }
@@ -10076,7 +10204,12 @@ const RSVP_SHORT = { yes: 'going', no: 'not going', maybe: 'maybe' };
 const RSVP_NOTE_MAX = 140;
 const rsvpKey = it => (it.kind === 'game' ? 'g_' : 'e_') + it.id;
 const rsvpOf = (tid, key, pid) => ((((state.rsvp || {})[tid] || {})[key] || {})[pid]) || null;
-const rsvpSquad = tid => players(state.teams[tid]).filter(p => p.active !== false);
+/* Who is asked and counted: the squad, or for a keepers' session (`who` on
+   the entry, SCHEDULER.md, *Kinds of practice*) its keepers alone. */
+function rsvpSquad(tid, key) {
+  const who = key && String(key).startsWith('e_') ? whoOf(((state.teams[tid] || {}).events || {})[String(key).slice(2)]) : '';
+  return players(state.teams[tid]).filter(p => p.active !== false && (who !== 'keepers' || p.gk));
+}
 // her own children on this team (or herself, a player with her own sign-in), by the lists the rule reads
 const myKids = tid => !me ? [] : rsvpSquad(tid).filter(isMine);
 const goingQ = p => isMe(p) ? 'Are you going?' : `Is ${firstName(p)} going?`;
@@ -10085,7 +10218,7 @@ const canRsvp = (tid, pid) => canEditTeam(tid) || myKids(tid).some(p => p.id ===
 const rsvpOpen = it => !!it.date && !it.called && !calPast(it) && it.ask !== false && !(it.kind === 'game' && it.status !== 'upcoming');
 function rsvpCounts(tid, key) {
   const c = { yes: 0, no: 0, maybe: 0, none: 0 };
-  for (const p of rsvpSquad(tid)) { const r = rsvpOf(tid, key, p.id); c[r && RSVP[r.v] ? r.v : 'none']++; }
+  for (const p of rsvpSquad(tid, key)) { const r = rsvpOf(tid, key, p.id); c[r && RSVP[r.v] ? r.v : 'none']++; }
   return c;
 }
 const countLine = c => [c.yes + ' going', c.no ? c.no + ' not' : '', c.maybe ? c.maybe + ' maybe' : '', c.none ? c.none + ' to answer' : ''].filter(Boolean).join(' · ');
@@ -10172,7 +10305,7 @@ function rsvpBlock(it) {
   if (canEditTeam(it.tid)) {
     // who has not answered first: that is who the coach has to chase
     const order = { none: 0, no: 1, maybe: 2, yes: 3 };
-    const rows = rsvpSquad(it.tid).map(p => ({ p, r: rsvpOf(it.tid, key, p.id) }))
+    const rows = rsvpSquad(it.tid, key).map(p => ({ p, r: rsvpOf(it.tid, key, p.id) }))
       .sort((a, b) => order[a.r ? a.r.v : 'none'] - order[b.r ? b.r.v : 'none'] || (Number(a.p.number) || 999) - (Number(b.p.number) || 999));
     if (!rows.length) return '';
     const who = r => r && r.by && r.by !== (me && me.uid) ? ((acc().members || {})[r.by] || {}).name || '' : '';
@@ -10276,11 +10409,11 @@ function sheetAttend() {
   const f = attForm; if (!f) return;
   const it = calItems([f.tid]).find(x => x.kind !== 'game' && x.id === f.eid);
   if (!it) { closeSheet(); return; }
-  const n = Object.values(f.marks).filter(Boolean).length, all = rsvpSquad(f.tid).length;
+  const n = Object.values(f.marks).filter(Boolean).length, all = rsvpSquad(f.tid, 'e_' + f.eid).length;
   openSheet(`<h3>Who came — ${esc(it.title)}</h3>
     <p class="muted" style="margin-top:0">${esc(dayLabel(it.date))}. ${attendOf(f.tid, f.eid) ? 'Tap anyone to change.' : 'Filled in from what families said — anyone whose family said not going starts as missed. Tap anyone to change, then save.'}</p>
     <button class="btn quiet wide" data-act="attall" style="margin-bottom:10px">Everyone came</button>
-    ${rsvpSquad(f.tid).map(p => {
+    ${rsvpSquad(f.tid, 'e_' + f.eid).map(p => {
     const r = rsvpOf(f.tid, 'e_' + f.eid, p.id);
     return `<button class="opt spread" type="button" data-act="attmark" data-pid="${esc(p.id)}">
       <span>${esc(shirtOf(p))} ${esc(p.name)}${r ? `<span class="rowsub">Family said ${esc(RSVP_SHORT[r.v])}${r.note ? ' · ' + esc(r.note) : ''}</span>` : ''}</span>
@@ -11032,18 +11165,21 @@ function calFab(ed, v) {
     <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg></button>`;
 }
 
-/* ---- the club's week, for its admins on All teams ---- */
-/* What Club schedule said about a week, said under the calendar: what's on,
-   who shares a field, what clashes, which teams have no practice, and what is
-   still missing a date, a time or a place. Reads the week being looked at. */
+/* The club's week card (counts, shared fields, no pitch left, teams with no
+   practice, still to settle) sat under All teams until build 163. The owner:
+   that is the admin's bookkeeping and the Calendar is not where she should
+   find it. It is the Scheduler's strip now (schedStrip()), and since the
+   Home work landed beside it (main, 2026-10-16: admins open the app for the
+   club's schedule) the same card leads an admin's Club home for this week,
+   where its door is the Scheduler. */
 function clubWeekCard(s) {
   const w = schedWeek(s), todo = schedTodo(w.tids), shown = todo.slice(0, 8);
   const sum = [w.games && `${w.games} game${w.games === 1 ? '' : 's'}`, w.practices && `${w.practices} practice${w.practices === 1 ? '' : 's'}`,
-    w.events && `${w.events} other`, w.called && `${w.called} called off`].filter(Boolean).join(' · ') || 'Nothing on';
-  return `<div class="card clubweek"><div class="spread"><h2>The club, ${esc(dayLabel(w.week).slice(4))} – ${esc(dayLabel(w.end).slice(4))}</h2></div>
+    w.events && `${w.events} other`, w.called && `${w.called} called off`].filter(Boolean).join(' \u00b7 ') || 'Nothing on';
+  return `<div class="card clubweek"><div class="spread"><h2>The club, ${esc(dayLabel(w.week).slice(4))} \u2013 ${esc(dayLabel(w.end).slice(4))}</h2></div>
     <p style="margin:6px 0 0"><b>${esc(sum)}</b></p>
     ${w.shared ? `<p class="muted" style="margin:6px 0 0">${w.shared} on a shared field: another team is on the same field at the same time. Fine for practices; each says who with.</p>` : ''}
-    ${w.clash ? `<p class="warn alert" style="margin:6px 0 0">${w.clash} ${w.clash === 1 ? 'entry has' : 'entries have'} no pitch left: a game, or something other than a practice, on a field already full then. Each is marked <b>Field clash</b>.</p>` : ''}
+    ${w.clash ? `<p class="warn alert" style="margin:6px 0 0">${w.clash} ${w.clash === 1 ? 'entry has' : 'entries have'} no pitch left: a game, or something other than a practice, on a field already full then. The Scheduler shows where.</p>` : ''}
     ${w.idle.length ? `<p class="muted" style="margin:6px 0 0">No practice this week: ${esc(w.idle.map(shortTeam).join(', '))}</p>` : ''}
     ${todo.length ? `<p class="lbl" style="margin:12px 0 4px">Still to settle</p>
       <p class="muted" style="margin:0 0 6px">Coming up with no date, time or place, which is what a family can't plan around.</p>
@@ -11052,9 +11188,8 @@ function clubWeekCard(s) {
       ${todo.length > shown.length ? `<p class="muted" style="margin:6px 0 0">And ${todo.length - shown.length} more.</p>` : ''}` : ''}
     <div class="row wrap" style="margin-top:12px">
       <button class="btn quiet sm" data-act="schedaddk" data-v="games" data-open="1">Schedule a run of games</button>
-      <button class="btn quiet sm" data-act="planner">Clashes and finding a time</button></div></div>`;
+      <button class="btn quiet sm" data-act="scheduler">Open the Scheduler</button></div></div>`;
 }
-
 /* ---- the screen ---- */
 function viewCalendar() {
   const offer = calSels(), sel = calSel();
@@ -11117,7 +11252,6 @@ function viewCalendar() {
     ${canBook ? `<button class="btn wide" data-act="sesstab" data-k="list">Book a 1-1 with a coach</button>` : ''}
     ${sel === 'mine' ? youNote() : ''}
     ${body}
-    ${sel === 'club' && canAdmin() ? clubWeekCard() : ''}
     ${sel === 'mine' ? awayCard() + myFeedCard() + youShareCard() : (t => t ? calSyncCard(t, calTeams().length > 1) : '')(state.teams[calTeams()[0]] || team())}
   </div>`;
 }
@@ -11239,7 +11373,7 @@ function calFormNew(tid, date, time) {
   return {
     tid, id: null, kind: 'practice', title: '', date: d, start, end,
     venue: last.venue || '', notes: '', public: false, ask: null, repeat: false, days: [weekdayOf(d)],
-    until: addDays(d, 7 * 10), scope: 'one'
+    until: addDays(d, 7 * 10), scope: 'one', ptype: 'regular'
   };
 }
 // what the form will save: what the coach picked, else the kind's own default
@@ -11248,7 +11382,7 @@ function calFormEdit(tid, e) {
   return {
     tid, id: e.id, kind: e.kind === 'practice' ? 'practice' : 'event', title: e.title || '', date: e.date || '',
     start: e.start || '', end: e.end || '', venue: e.venue || '', notes: e.notes || '', public: !!e.public,
-    ask: typeof e.ask === 'boolean' ? e.ask : null, repeat: false, days: [], until: '', scope: 'one'
+    ask: typeof e.ask === 'boolean' ? e.ask : null, repeat: false, days: [], until: '', scope: 'one', ptype: ptypeOf(e)
   };
 }
 function sheetCalEvent() {
@@ -11270,7 +11404,10 @@ function sheetCalEvent() {
       ${chip('calfkind', 'event', f.kind === 'event', 'Something else')}
       <button class="chip" type="button" data-act="newmatch" data-from="cal">A game →</button>
       <button class="chip" type="button" data-act="calgames" data-tid="${esc(f.tid)}">A run of games →</button></div>` : ''}
-    <label class="field"><span>What</span><input type="text" id="evTitle" value="${esc(f.title)}" placeholder="${f.kind === 'practice' ? 'Practice' : 'Team photo, tournament, end-of-season party'}"></label>
+    ${f.kind === 'practice' ? `<p class="lbl">What kind</p>
+      <div class="chips" style="margin-bottom:6px">${PTYPE_ORDER.map(k => chip('calptype', k, (f.ptype || 'regular') === k, kindOf(k).label)).join('')}</div>
+      ${kindOf(f.ptype).who === 'keepers' ? '<p class="muted" style="margin-top:0">Only the keepers are asked and counted.</p>' : ''}` : ''}
+    <label class="field"><span>What</span><input type="text" id="evTitle" value="${esc(f.title)}" placeholder="${f.kind === 'practice' ? esc(kindOf(f.ptype).label) : 'Team photo, tournament, end-of-season party'}"></label>
     <label class="field"><span>${isNew && f.repeat ? 'First one' : 'Date'}</span><input type="date" id="evDate" value="${esc(f.date)}"></label>
     <div class="grid2">
       <label class="field"><span>Starts</span><input type="time" id="evStart" value="${esc(f.start)}"></label>
@@ -11296,6 +11433,23 @@ function sheetCalEvent() {
       <button class="btn danger wide" data-act="caldel" data-tid="${esc(f.tid)}">Delete</button>`}`);
 }
 
+/* A weekly series written: one entry per date at teams/{tid}/events/{eid},
+   below the rule on $tid, sharing one series id when there is more than one
+   date. The add sheet and the Scheduler both write through here, so a
+   practice the Scheduler lays out is a practice in every respect
+   (SCHEDULER.md, *Writing the term*; test/scheduler.js holds the two to each
+   other). Returns the first entry made. */
+function addSeries(tid, fields, dates, extra) {
+  const series = dates.length > 1 ? uid() : null;
+  let first = null;
+  for (const date of dates) {
+    const id = uid();
+    const e = { id, ...fields, date, ...(series ? { series } : {}), ...(extra ? extra(date) : {}), createdAt: nowMs(), ...(me ? { by: me.uid } : {}) };
+    quiet(`teams/${tid}/events/${id}`, e);
+    first = first || e;
+  }
+  return first;
+}
 /* Each entry goes out at its own path, teams/{tid}/events/{eid} — below the
    rule on $tid, which is what grants it — and the redraw and the republish
    happen once at the end rather than once per week of a series. */
@@ -11315,26 +11469,22 @@ function saveCalEvent() {
   const t = state.teams[f.tid]; if (!t) return;
   if (!okDay(f.date)) { toast('Pick a date'); return; }
   const kind = f.kind === 'practice' ? 'practice' : 'event';
-  const fields = { kind, title: (f.title || '').trim() || CAL_KIND[kind], start: hm(f.start), end: hm(f.end), venue: (f.venue || '').trim(), notes: (f.notes || '').trim(), public: !!f.public, ask: calFormAsk({ ...f, kind }) };
+  const pk = kind === 'practice' ? kindOf(f.ptype) : null;
+  const fields = { kind, title: (f.title || '').trim() || (pk ? pk.label : CAL_KIND[kind]), start: hm(f.start), end: hm(f.end), venue: (f.venue || '').trim(), notes: (f.notes || '').trim(), public: !!f.public, ask: calFormAsk({ ...f, kind }),
+    // a regular practice carries no kind, so an entry from before is one; keepers alone are asked at a keepers' session
+    ...(pk && pk.id !== 'regular' ? { ptype: pk.id } : {}), ...(pk && pk.who === 'keepers' ? { who: 'keepers' } : {}) };
   const scrubbed = fields.public && ['title', 'venue', 'notes'].some(k => pubText(t, fields[k]) !== fields[k]);
   const why = scrubbed ? ' · a name in it is left off the share link' : '';
   if (f.id) {
     const list = calTargets();
-    for (const x of list) quiet(`teams/${f.tid}/events/${x.id}`, { ...x, ...fields, ...(x.id === f.id ? { date: f.date } : {}) });
+    for (const x of list) { const base = { ...x }; delete base.ptype; delete base.who; quiet(`teams/${f.tid}/events/${x.id}`, { ...base, ...fields, ...(x.id === f.id ? { date: f.date } : {}) }); }
     calForm = null;
     calDone((list.length > 1 ? `Saved ${list.length}` : 'Saved') + why);
     return;
   }
   const dates = f.repeat ? seriesDates(f.date, f.until, f.days.length ? f.days : [weekdayOf(f.date)]) : [f.date];
   if (!dates.length) { toast('No days between those dates'); return; }
-  const series = dates.length > 1 ? uid() : null;
-  let first = null;
-  for (const date of dates) {
-    const id = uid();
-    const e = { id, ...fields, date, ...(series ? { series } : {}), createdAt: nowMs(), ...(me ? { by: me.uid } : {}) };
-    quiet(`teams/${f.tid}/events/${id}`, e);
-    first = first || e;
-  }
+  const first = addSeries(f.tid, fields, dates);
   /* Added from the Practice tab: the coach came to plan it, so its plan is
      made and opened. The other weeks of a series wait on the Plans list. */
   if (f.plan && kind === 'practice' && canPlan(f.tid)) {
@@ -14481,17 +14631,33 @@ function hoursText(f) {
   const h = fieldHours(f), days = Object.keys(h).map(Number).sort();
   return days.map(d => `${WEEKDAYS[d]} ${h[d].closed ? 'closed' : niceTime(h[d].from) + '–' + niceTime(h[d].to)}`).join(', ');
 }
+/* Sunset (SCHEDULER.md, *Phases, blackout dates and sunset*; build 167): an
+   unlit pitch closes when the light goes, so Lakeside is open until nine in
+   September and six in November. Dated hours on the field, hoursBy/{id}:
+   between two dates it closes at a time, whatever its standing hours say. A
+   pitch marked `lights` is exempt. The admin types the dates; nothing works
+   out sunset from a map. */
+function fieldSunset(f) {
+  return Object.entries((f && f.hoursBy) || {}).map(([id, c]) => c && typeof c === 'object' && okDay(c.from) && hm(c.to) ? {
+    id: c.id || id, from: c.from, until: okDay(c.until) && c.until >= c.from ? c.until : c.from, to: hm(c.to), note: String(c.note || '').slice(0, 120)
+  } : null).filter(Boolean).sort((a, b) => a.from.localeCompare(b.from));
+}
+const sunsetOn = (f, date, pitch) => {
+  const q = pitch && f ? pitchesOf(f).find(x => x.id === pitch) : null;
+  return q && q.lights ? null : fieldSunset(f).find(c => c.from <= date && date <= c.until) || null;
+};
 /* Why the field can't be used then, in words, or '' if it can. */
 const DAYS_LONG = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
 // SERVER.md: permits and hours checked only on the phone; a server could check them on save.
-function fieldShut(f, date, a, b) {
+function fieldShut(f, date, a, b, pitch) {
   if (!f || !okDay(date)) return '';
   const c = fieldClosures(f).find(x => x.from <= date && date <= x.until);
   if (c) return `${f.name} is closed ${closureText(c)}`;
   const wd = weekdayOf(date), h = fieldHours(f)[wd];
-  if (!h) return '';
-  if (h.closed) return `${f.name} isn't open on ${DAYS_LONG[wd]}s`;
-  if (a < minOf(h.from) || b > minOf(h.to)) return `${f.name} is open ${niceTime(h.from)}–${niceTime(h.to)} on ${DAYS_LONG[wd]}s`;
+  if (h && h.closed) return `${f.name} isn't open on ${DAYS_LONG[wd]}s`;
+  if (h && (a < minOf(h.from) || b > minOf(h.to))) return `${f.name} is open ${niceTime(h.from)}–${niceTime(h.to)} on ${DAYS_LONG[wd]}s`;
+  const sun = sunsetOn(f, date, pitch);
+  if (sun && b > minOf(sun.to)) return `${f.name} closes at ${niceTime(sun.to)} ${closureText(sun)}: no lights`;
   return '';
 }
 function permitText(p) {
@@ -14844,7 +15010,7 @@ function busyItems(date) {
     // a coach who called out of it is not due there, so she is free for something else then
     const pt = pitchOfText(f, it.venue);
     out.push({ key: it.key, kind: it.kind, label: `${t.name || 'A team'}: ${it.title}`, a, b, field: f ? f.id : null, pitch: pt ? pt.id : null, venue: it.venue || '',
-      coaches: coachesOf(it.tid).filter(u => !out_.includes(u)), tid: it.tid, pids: null });
+      coaches: coachesOf(it.tid).filter(u => !out_.includes(u)), tid: it.tid, pids: null, ptype: it.ptype || 'regular', who: it.who || '', joint: it.joint || '' });
   }
   for (const s of sessAll()) {
     if (s.date !== date || s.called || !s.start) continue;
@@ -15654,7 +15820,7 @@ function sheetField(id) {
 let fieldForm = null;
 function fieldFormRead() {
   const f = fieldForm; if (!f) return;
-  for (const [k, sel] of [['name', '#fdName'], ['address', '#fdAddress'], ['pitches', '#fdPitches'], ['notes', '#fdNotes']]) {
+  for (const [k, sel] of [['name', '#fdName'], ['address', '#fdAddress'], ['pitches', '#fdPitches'], ['notes', '#fdNotes'], ['tags', '#fdTags']]) {
     const el = $(sel); if (el && typeof el.value === 'string') f[k] = el.value;
   }
   f.parts.forEach((p, i) => {
@@ -15666,6 +15832,9 @@ function fieldFormRead() {
   f.closures.forEach((c, i) => {
     for (const [k, sel] of [['from', '#fcFrom_' + i], ['until', '#fcUntil_' + i], ['note', '#fcNote_' + i]]) { const el = $(sel); if (el && typeof el.value === 'string') c[k] = el.value; }
   });
+  (f.sun || []).forEach((c, i) => {
+    for (const [k, sel] of [['from', '#fsFrom_' + i], ['until', '#fsUntil_' + i], ['to', '#fsTo_' + i], ['note', '#fsNote_' + i]]) { const el = $(sel); if (el && typeof el.value === 'string') c[k] = el.value; }
+  });
   f.permits.forEach((p, i) => {
     for (const [k, sel] of [['start', '#pmStart_' + i], ['end', '#pmEnd_' + i], ['from', '#pmFrom_' + i], ['until', '#pmUntil_' + i], ['ref', '#pmRef_' + i], ['note', '#pmNote_' + i]]) {
       const el = $(sel); if (el && typeof el.value === 'string') p[k] = el.value;
@@ -15674,9 +15843,9 @@ function fieldFormRead() {
 }
 function fieldFormOf(f, name) {
   const hours = d => { const h = fieldHours(f)[d]; return h ? { from: h.from || '', to: h.to || '', closed: !!h.closed } : { from: '', to: '', closed: false }; };
-  return f ? { id: f.id, name: f.name || '', address: f.address || '', pitches: String(f.pitches || 1), surface: f.surface || '', lights: !!f.lights, notes: f.notes || '', permits: permitsOf(f).map(p => ({ ...p })), parts: pitchesOf(f).map(p => ({ ...p })),
-    hours: [0, 1, 2, 3, 4, 5, 6].map(hours), closures: fieldClosures(f).map(c => ({ ...c })) }
-    : { id: null, name: name || '', address: '', pitches: '1', surface: '', lights: false, notes: '', permits: [], parts: [], hours: [0, 1, 2, 3, 4, 5, 6].map(() => ({ from: '', to: '', closed: false })), closures: [] };
+  return f ? { id: f.id, name: f.name || '', address: f.address || '', pitches: String(f.pitches || 1), surface: f.surface || '', lights: !!f.lights, notes: f.notes || '', tags: fieldTags(f).join(', '), permits: permitsOf(f).map(p => ({ ...p })), parts: pitchesOf(f).map(p => ({ ...p })),
+    hours: [0, 1, 2, 3, 4, 5, 6].map(hours), closures: fieldClosures(f).map(c => ({ ...c })), sun: fieldSunset(f).map(c => ({ ...c })) }
+    : { id: null, name: name || '', address: '', pitches: '1', surface: '', lights: false, notes: '', tags: '', permits: [], parts: [], hours: [0, 1, 2, 3, 4, 5, 6].map(() => ({ from: '', to: '', closed: false })), closures: [], sun: [] };
 }
 function sheetFieldForm() {
   const f = fieldForm; if (!f) return;
@@ -15687,6 +15856,7 @@ function sheetFieldForm() {
     <label class="field"><span>Pitches</span><input type="number" id="fdPitches" min="1" max="20" value="${esc(f.pitches)}"></label>
     <div class="chips" style="margin-bottom:10px">${['Grass', 'Turf', 'Indoor'].map(x => chip('fieldsurface', x, f.surface === x, x)).join('')}${chip('fieldlights', '1', f.lights, 'Lights')}</div>
     <label class="field"><span>Notes</span><textarea id="fdNotes" rows="2" placeholder="Gate code, parking, who to call">${esc(f.notes)}</textarea></label>
+    <label class="field"><span>Tags</span><input type="text" id="fdTags" maxlength="120" value="${esc(f.tags || '')}" placeholder="lights, turf"></label>
     <p class="lbl">Each pitch</p>
     ${f.parts.map((p, i) => `<div class="card" style="margin-bottom:8px">
       <label class="field"><span>Name</span><input type="text" id="ptName_${i}" maxlength="60" value="${esc(p.name)}" placeholder="Field 2, the turf"></label>
@@ -15708,6 +15878,15 @@ function sheetFieldForm() {
       <label class="field"><span>Why</span><input type="text" id="fcNote_${i}" maxlength="120" value="${esc(c.note)}" placeholder="Reseeding, the school's sports day"></label>
       <button class="btn quiet sm" data-act="fieldcloserm" data-i="${i}">Remove</button></div>`).join('')}
     <button class="btn quiet wide" data-act="fieldclose" style="margin-bottom:10px">Add dates it's closed</button>
+    <p class="lbl">Closes early between dates</p>
+    ${f.sun.map((c, i) => `<div class="card" style="margin-bottom:8px">
+      <div class="grid2"><label class="field"><span>From</span><input type="date" id="fsFrom_${i}" value="${esc(c.from)}"></label>
+        <label class="field"><span>Until</span><input type="date" id="fsUntil_${i}" value="${esc(c.until)}"></label></div>
+      <div class="grid2"><label class="field"><span>Closes at</span><input type="time" id="fsTo_${i}" value="${esc(c.to)}"></label>
+        <label class="field"><span>Why</span><input type="text" id="fsNote_${i}" maxlength="120" value="${esc(c.note)}" placeholder="Sunset, no lights"></label></div>
+      <button class="btn quiet sm" data-act="fieldsunrm" data-i="${i}">Remove</button></div>`).join('')}
+    <button class="btn quiet wide" data-act="fieldsun" style="margin-bottom:4px">Add dates it closes early</button>
+    <p class="muted" style="margin:0 0 10px">For the dark months: an unlit pitch closes at sunset. A pitch marked with lights stays open.</p>
     <p class="lbl">Permits</p>
     ${f.permits.map((p, i) => `<div class="card" style="margin-bottom:8px">
       <div class="chips" style="margin-bottom:8px">${WEEKDAYS.map((w, d) => chip('fieldday', d, p.days.includes(d), w, i)).join('')}</div>
@@ -15800,11 +15979,11 @@ const SESS_ACTS = new Set(['sesstab', 'sessscope', 'sesspast', 'sessopen', 'sess
   'sessfeeclear', 'sessremind', 'sessmoney', 'sessmonth', 'sesshourscoach', 'sesspay', 'sesspayper', 'sesspaysave', 'sesspayclear',
   'sessdrills', 'sessdrilladd', 'sessdrillrm', 'sessdrillmin', 'sessdrillq', 'sesstell', 'sessics', 'reachdm', 'reachcopy', 'reachmail', 'sessfeemail',
   'fieldopen', 'fieldnew', 'fieldedit', 'fieldsave', 'fielddel', 'fieldpermit', 'fieldpermitrm', 'fieldday', 'fieldsurface',
-  'fieldlights', 'fieldfromtext', 'fieldshut', 'fieldclose', 'fieldcloserm', 'fieldpt', 'fieldptrm', 'fieldptsurface', 'fieldptlights',
+  'fieldlights', 'fieldfromtext', 'fieldshut', 'fieldclose', 'fieldcloserm', 'fieldsun', 'fieldsunrm', 'fieldpt', 'fieldptrm', 'fieldptsurface', 'fieldptlights',
   'sesspacks', 'sesspknew', 'sesspkopen', 'sesspkkind', 'sesspkhow', 'sesspksave', 'sesspkdel', 'sesspkback']);
 // selling, changing and switching packages on are the admins'; using a place of one is the session's coach's, through Fees
 const PACK_ADMIN = new Set(['sesspacks', 'sesspknew', 'sesspkopen', 'sesspkkind', 'sesspkhow', 'sesspksave', 'sesspkdel']);
-const FIELD_EDIT = new Set(['fieldnew', 'fieldedit', 'fieldsave', 'fielddel', 'fieldpermit', 'fieldpermitrm', 'fieldday', 'fieldsurface', 'fieldlights', 'fieldfromtext', 'fieldshut', 'fieldclose', 'fieldcloserm', 'fieldpt', 'fieldptrm', 'fieldptsurface', 'fieldptlights']);
+const FIELD_EDIT = new Set(['fieldnew', 'fieldedit', 'fieldsave', 'fielddel', 'fieldpermit', 'fieldpermitrm', 'fieldday', 'fieldsurface', 'fieldlights', 'fieldfromtext', 'fieldshut', 'fieldclose', 'fieldcloserm', 'fieldsun', 'fieldsunrm', 'fieldpt', 'fieldptrm', 'fieldptsurface', 'fieldptlights']);
 const RUN_ACTS = new Set(['sessedit', 'sesscall', 'sessdel', 'sessbook', 'sesspick', 'sessregister', 'sesscame', 'sessdrills', 'sessdrilladd',
   'sessdrillrm', 'sessdrillmin', 'sessdrillq', 'sesstell']);
 
@@ -16086,7 +16265,7 @@ function onSessAct(a, d) {
   if (a === 'fieldopen') { sheetField(d.id); return; }
   if (a === 'fieldnew' || a === 'fieldfromtext') { ui.view = 'sessions'; u.tab = 'fields'; fieldForm = fieldFormOf(null, a === 'fieldfromtext' ? d.v : ''); sheetFieldForm(); return; }
   if (a === 'fieldedit') { const f = fieldById(d.id); if (!f) return; fieldForm = fieldFormOf(f); sheetFieldForm(); return; }
-  if (['fieldpermit', 'fieldpermitrm', 'fieldday', 'fieldsurface', 'fieldlights', 'fieldshut', 'fieldclose', 'fieldcloserm', 'fieldpt', 'fieldptrm', 'fieldptsurface', 'fieldptlights'].includes(a)) {
+  if (['fieldpermit', 'fieldpermitrm', 'fieldday', 'fieldsurface', 'fieldlights', 'fieldshut', 'fieldclose', 'fieldcloserm', 'fieldsun', 'fieldsunrm', 'fieldpt', 'fieldptrm', 'fieldptsurface', 'fieldptlights'].includes(a)) {
     const f = fieldForm; if (!f) return;
     fieldFormRead();
     const i = Number(d.i);
@@ -16098,6 +16277,8 @@ function onSessAct(a, d) {
     if (a === 'fieldshut' && f.hours[Number(d.v)]) { const h = f.hours[Number(d.v)]; h.closed = !h.closed; }
     if (a === 'fieldclose') f.closures.push({ id: uid(), from: '', until: '', note: '' });
     if (a === 'fieldcloserm') f.closures.splice(i, 1);
+    if (a === 'fieldsun') f.sun.push({ id: uid(), from: '', until: '', to: '', note: '' });
+    if (a === 'fieldsunrm') f.sun.splice(i, 1);
     if (a === 'fieldpt' && f.parts.length < 20) f.parts.push({ id: uid(), name: `Pitch ${f.parts.length + 1}`, surface: '', lights: false, address: '', notes: '' });
     if (a === 'fieldptrm') f.parts.splice(i, 1);
     if (a === 'fieldptsurface' && f.parts[i]) f.parts[i].surface = f.parts[i].surface === d.v ? '' : String(d.v);
@@ -16134,6 +16315,12 @@ function onSessAct(a, d) {
       const cid = c.id || uid();
       closed[cid] = { id: cid, from: c.from, until: okDay(c.until) && c.until >= c.from ? c.until : c.from, note: String(c.note || '').trim().slice(0, 120) };
     }
+    const hoursBy = {};
+    for (const c of f.sun || []) {
+      if (!okDay(c.from) || !hm(c.to)) continue;
+      const sid = c.id || uid();
+      hoursBy[sid] = { id: sid, from: c.from, until: okDay(c.until) && c.until >= c.from ? c.until : c.from, to: hm(c.to), note: String(c.note || '').trim().slice(0, 120) };
+    }
     // a pitch with no name can't be named by a venue, so it isn't kept; two with one name would be one pitch to the clash check
     const parts = {}, seenPt = new Set();
     let o = 0;
@@ -16148,7 +16335,8 @@ function onSessAct(a, d) {
     }
     quiet(`access/org/venues/${id}`, JSON.parse(JSON.stringify({
       id, name, address: String(f.address || '').trim().slice(0, 160), pitches: clamp(Math.max(Math.round(Number(f.pitches)) || 1, o), 1, 20),
-      surface: f.surface || '', lights: !!f.lights, notes: String(f.notes || '').trim().slice(0, 1000), permits, hours, closed, parts
+      surface: f.surface || '', lights: !!f.lights, notes: String(f.notes || '').trim().slice(0, 1000), permits, hours, closed, hoursBy, parts,
+      ...(tagList(f.tags).length ? { tags: Object.fromEntries(tagList(f.tags).map(x => [x, true])) } : {})
     })));
     saveLocal(); fieldForm = null; sheetField(id); render();
     toast(dropped ? `Saved · ${dropped} permit${dropped === 1 ? '' : 's'} with no days left off` : 'Saved'); return;
@@ -17612,7 +17800,8 @@ function viewSetup() {
     adm || coachAny ? setRow('goview', 'People', adm ? `${members().length} signed in · roles and invites` : 'Who is in the club, roles and invites', ' data-v="people"') : '',
     adm ? setRow('goview', 'Registrations', (k => k ? `${k} program${k === 1 ? '' : 's'}, their links, waivers and who has registered` : 'Programs families register for, with their links and waivers')(programsAll().length), ' data-v="regs"') : '',
     adm ? setRow('goview', 'Coach compliance', (x => x.length ? esc(x.map(([st, k]) => `${k} ${COMPLY_TALLY[st]}`).join(' · ')) : 'Everyone is up to date')(complyTally(complyRows())), ' data-v="comply"') : '',
-    adm ? setRow('planner', 'Planner', 'Clashes across the teams, find a time, picture day') : '',
+    adm ? setRow('scheduler', 'Scheduler', 'The week laid out by field, every team\'s practices, find a time, picture day')
+      : coachAny ? setRow('scheduler', 'Scheduler', 'Your teams\' practices on the club\'s fields, beside everyone else\'s') : '',
     // the sessions' set-up, off the Sessions screen since build 148 (UX-REVIEW-2.md, 7.3): a coach reads fields, and her own fees and hours
     adm || coachAny ? setRow('sesstab', 'Fields and permits', fieldList().length ? `${fieldList().length} field${fieldList().length === 1 ? '' : 's'}, their permits and hours` : adm ? 'Where the club trains, and the permits for each' : 'Where the club trains', ' data-k="fields"') : '',
     adm || coachAny ? setRow('sesstab', 'Session fees', adm ? 'What each family owes for 1-1s and groups, and what is paid' : 'What families owe for your sessions, and what is paid', ' data-k="fees"') : '',
@@ -18157,11 +18346,15 @@ function newsCard() {
    looks. A game against another club is fixed by a league; the planner says
    what it clashes with and never offers to move it. */
 const canPlanClub = () => canAdmin();
-const PLANNER_ACTS = new Set(['planner', 'pltab', 'plcw', 'plrange', 'pltm', 'plfind', 'plbook', 'plkind', 'plbookgo', 'plpictm', 'plpic', 'plpicgo']);
+const PLANNER_ACTS = new Set(['scheduler', 'schweek', 'schfield', 'schneed', 'schneedwd', 'schneedsave',
+  'schpick', 'schkind', 'schteams', 'schcell', 'schpitch', 'schplacego', 'schfill', 'schfillundo', 'schword', 'schcsv', 'schprint', 'schrfor', 'schpreset', 'schrtier', 'schcshape', 'schctier', 'schcadd', 'schcrm', 'schlimsave', 'schload', 'schloadsave', 'schloadclear', 'schforbid', 'schunforbid', 'schblock', 'schmove', 'schlock', 'schdrop', 'schmoveseries', 'schoffseries', 'schunoff', 'schterm', 'schtermsave', 'schclosedadd', 'schclosedrm', 'schwrite', 'schclear', 'pltab', 'plcw', 'plrange', 'pltm', 'plfind', 'plbook', 'plkind', 'plbookgo', 'plpictm', 'plpic', 'plpicgo']);
 function plannerUi() {
   if (!ui.planner || typeof ui.planner !== 'object') ui.planner = {};
   const p = ui.planner;
-  if (!['clash', 'find', 'pic', 'coach'].includes(p.tab)) p.tab = 'clash';
+  // Clashes was a tab until build 163; it is the board's strip now, so an old 'clash' lands on the board
+  if (!['board', 'rules', 'term', 'find', 'pic', 'coach'].includes(p.tab)) p.tab = 'board';
+  const bd = p.board && typeof p.board === 'object' ? p.board : {}, mon = d => addDays(d, -weekdayOf(d));
+  p.board = { week: okDay(bd.week) ? mon(bd.week) : mon(todayStr()), field: typeof bd.field === 'string' ? bd.field : '', pick: typeof bd.pick === 'string' ? bd.pick : '', kind: PTYPES[bd.kind] ? bd.kind : 'regular' };
   const cw = p.cw && typeof p.cw === 'object' ? p.cw : {};
   p.cw = { date: okDay(cw.date) ? cw.date : todayStr(), h0: hm(cw.h0) || '17:00', h1: hm(cw.h1) || '18:30' };
   if (![7, 14, 28].includes(p.days)) p.days = 14;
@@ -18363,34 +18556,1063 @@ function bookClubWide(tids, fields) {
   return club;
 }
 
-function viewPlanner() {
-  if (!canPlanClub()) return `<div class="empty"><strong>Club admins only</strong>Planning across the club's teams is for its admins.</div>`;
-  const p = plannerUi();
-  const tab = (k, l) => `<button class="chip" type="button" data-act="pltab" data-k="${k}" aria-pressed="${p.tab === k}">${l}</button>`;
-  const body = p.tab === 'find' ? plannerFind(p) : p.tab === 'pic' ? plannerPic(p) : p.tab === 'coach' ? plannerCoaches(p) : plannerClashView(p);
-  return `<div class="stack">
-    <h2>Planning for the club</h2>
-    <div class="chips">${tab('clash', 'Clashes')}${tab('find', 'Find a time')}${tab('coach', 'Coaches')}${tab('pic', 'Picture day')}</div>
-    ${body}</div>`;
+/* ---------------- the Scheduler: the club's week laid out by field ---------------- */
+/* SCHEDULER.md. The owner, 2026-10-15: the Calendar reported the club's week
+   after it was written (shared fields, no pitch left, teams with no practice),
+   and adding was a + that found out later it clashed. The Scheduler is the
+   week as a picture: a field at a time, the days across, the hours down, the
+   permit painted as what the club has, and every practice, game and session
+   where it falls. It stores nothing but what each team needs: the board is a
+   view of the calendar and never a second copy of it, so a week a coach moves
+   from her own calendar is on the board the next time an admin looks. Admins
+   read the whole of it; a coach reads it with her teams lit. Placing and
+   writing a term are the builds after this one. */
+const canSched = () => canPlanClub() || (!!me && isCoachAny(me.uid));
+/* ---- the coach's word (SCHEDULER.md, step 10) ----
+   A coach says of her own team's weekly slot whether it works for her, with
+   a note: one record at teams/{tid}/confirm/{series}, in her own name,
+   through the outbox like any team write, so the team rule decides who may
+   (her, never another team's coach; an admin's word is not the coach's).
+   Keyed by the series, so a slot the admin moves (a new series id from that
+   week on) is a new slot for her to look at again. It changes nothing on
+   the calendar: the admin moves the block or messages her. */
+const coachOfTeam = (tid, uid) => !!(uid && (teamAccess(tid).coaches || {})[uid]);
+function wordOf(tid, series) {
+  const w = series && (((state.teams[tid] || {}).confirm || {})[series]);
+  if (!w || typeof w !== 'object' || typeof w.ok !== 'boolean' || !w.by) return null;
+  return { ok: w.ok, by: String(w.by), at: Number(w.at) || 0, note: String(w.note || '').trim().slice(0, 200) };
 }
-function plannerClashView(p) {
-  const today = todayStr(), every = plannerClashes(today, p.days);
-  // a shared field is a note, listed apart, so it never reads as something to fix
-  const list = every.filter(c => c.kind !== 'shared'), shared = every.filter(c => c.kind === 'shared');
-  const icon = { place: 'Same place', coach: 'Coach', family: 'Families', away: 'Time off', nocoach: 'No coach', callout: 'Called out', field: 'Field' };
-  const end = addDays(today, p.days - 1);
-  const off = awayAll().filter(r => r.kind !== 'callout' && awayCurrent(r) && (r.kind === 'weekly' ? !r.from || r.from <= end : r.from <= end));
-  const byDay = {};
-  for (const c of list) (byDay[c.date] = byDay[c.date] || []).push(c);
-  return `<div class="chips">${[7, 14, 28].map(n => `<button class="chip" type="button" data-act="plrange" data-v="${n}" aria-pressed="${p.days === n}">${n === 7 ? 'This week' : n + ' days'}</button>`).join('')}</div>
-    ${list.length ? Object.entries(byDay).map(([date, cs]) => `<div class="card"><h4 style="margin:0 0 6px">${esc(dayLabel(date))}</h4>
-      ${cs.map(c => `<p style="margin:0 0 6px"><span class="tag off">${icon[c.kind]}</span> ${esc(c.text)}</p>`).join('')}</div>`).join('')
-      : `<div class="empty"><strong>Nothing collides</strong>No game short of a pitch, no coach due in two places or on time off, and no family with children due in two places, in the next ${p.days} days.</div>`}
-    ${shared.length ? `<div class="card"><h4 style="margin:0 0 6px">Shared field time</h4>
-      <p class="muted" style="margin-top:0">Teams on one field at once. Fine for practices; here so nobody is surprised to find another team there.</p>
-      ${shared.map(c => `<p style="margin:0 0 6px"><b>${esc(dayLabel(c.date))}</b> · ${esc(c.text)}</p>`).join('')}</div>` : ''}
-    ${off.length ? `<div class="card"><h4 style="margin:0 0 6px">Coaches' time off</h4>${off.map(r => `<p style="margin:0 0 4px"><b>${esc(coachName(r.uid))}</b> · ${esc(awayText(r))}</p>`).join('')}</div>` : ''}
-    <p class="muted">From every team's games and calendar, the training sessions, who coaches which team, and which families have children on which teams. A place is a field from Fields where one matches, or the same words typed. Practices may share a field; anything else needs a pitch of its own. Nothing here is stored or sent.</p>`;
+const DRIVE_GAP_MIN = 60;   // another field the same day with less than this between is a drive to say
+const BOARD_FROM = 16, BOARD_TO = 21;   // the evenings, unless something is on outside them
+
+/* What a team needs each week, a club setting at org/sched/teams/{tid}. Admins
+   write it (the rule on org), the whole club reads it, and the team's own
+   coach cannot change how many practices the club gives her. Held to sane
+   ranges on read because the board sums it; a team with no record wants one
+   practice, as long as its last one. */
+function schedNeed(tid) {
+  const r = ((((acc().org || {}).sched || {}).teams || {})[tid]) || {};
+  const t = state.teams[tid] || {};
+  const last = Object.values(t.events || {}).filter(e => e && e.kind === 'practice' && hm(e.start) && hm(e.end) && minOf(e.end) > minOf(e.start))
+    .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0))[0];
+  const lastLen = last ? Math.min(180, Math.max(30, minOf(last.end) - minOf(last.start))) : 60;
+  const per = r.per != null && Number.isFinite(Number(r.per)) ? Math.min(7, Math.max(0, Math.round(Number(r.per)))) : 1;
+  const len = r.len != null && Number.isFinite(Number(r.len)) ? Math.min(180, Math.max(30, Math.round(Number(r.len) / 5) * 5)) : lastLen;
+  const not = Array.isArray(r.not) ? [...new Set(r.not.map(Number).filter(d => Number.isInteger(d) && d >= 0 && d <= 6))].sort() : [];
+  // by kind (step 5): regular is `per`, the rest `need/{kind}`; the total is what the board counts against
+  const nd = r.need && typeof r.need === 'object' ? r.need : {}, need = {};
+  for (const k of PTYPE_ORDER) { const v = k === 'regular' ? per : Number(nd[k]); need[k] = Number.isFinite(v) ? Math.min(7, Math.max(0, Math.round(v))) : 0; }
+  return { tid, per, len, field: r.field && fieldById(r.field) ? r.field : '', not, note: String(r.note || '').trim().slice(0, 120), need, total: Object.values(need).reduce((a, b) => a + b, 0), tags: teamTags(tid), set: !!(r && typeof r === 'object' && Object.keys(r).length) };
+}
+const SCHED_LENS = [30, 45, 60, 75, 90, 105, 120, 150, 180];
+function sheetSchedNeed(tid) {
+  const t = state.teams[tid]; if (!t) return;
+  const p = plannerUi();
+  if (!p.need || p.need.tid !== tid) p.need = { ...schedNeed(tid) };
+  const f = p.need;
+  const chip = (i, on) => `<button class="chip" type="button" data-act="schneedwd" data-v="${i}" aria-pressed="${on}">${WEEKDAYS[i]}</button>`;
+  openSheet(`<h3>${teamLabel(t)}: practices</h3>
+    <p class="muted" style="margin-top:0">What the club gives the team each week. The board counts the calendar against it.</p>
+    <div class="grid2">
+      <label class="field"><span>A week</span><select id="snPer">${[0, 1, 2, 3, 4, 5, 6, 7].map(n => `<option value="${n}"${n === f.per ? ' selected' : ''}>${n === 0 ? 'None' : n}</option>`).join('')}</select></label>
+      <label class="field"><span>Each</span><select id="snLen">${SCHED_LENS.map(m => `<option value="${m}"${m === f.len ? ' selected' : ''}>${m} minutes</option>`).join('')}</select></label>
+    </div>
+    <p class="lbl">Other kinds, a week</p>
+    <div class="grid2" style="margin-bottom:6px">${PTYPE_ORDER.filter(k => k !== 'regular').map(k => `<label class="field"><span>${esc(kindOf(k).label)}</span><select id="snK_${k}">${[0, 1, 2, 3, 4, 5, 6, 7].map(n => `<option value="${n}"${n === f.need[k] ? ' selected' : ''}>${n === 0 ? 'None' : n}</option>`).join('')}</select></label>`).join('')}</div>
+    <label class="field"><span>Usual field</span><select id="snField"><option value="">Any</option>${fieldList().map(x => `<option value="${esc(x.id)}"${x.id === f.field ? ' selected' : ''}>${esc(x.name)}</option>`).join('')}</select></label>
+    <p class="lbl">Nights it can't do</p>
+    <div class="chips" style="margin-bottom:10px">${WEEKDAYS.map((w, i) => chip(i, f.not.includes(i))).join('')}</div>
+    <label class="field"><span>Note</span><input type="text" id="snNote" maxlength="120" value="${esc(f.note)}" placeholder="The coach works late on Mondays"></label>
+    <label class="field"><span>Tags</span><input type="text" id="snTags" maxlength="120" value="${esc((f.tags || []).join(', '))}" placeholder="needs lights, u8"></label>
+    <p class="muted" style="margin-top:-4px">For the club’s own rules on the Rules tab: a team tagged one way only on fields tagged another, or nothing for a tag after a time.</p>
+    <button class="btn wide" data-act="schneedsave" data-tid="${esc(tid)}">Save</button>
+    <button class="btn quiet wide" data-act="closesheet" style="margin-top:8px">Cancel</button>`);
+}
+/* Whatever has been typed, read back before the sheet is drawn again. */
+function schedNeedRead() {
+  const p = plannerUi(), f = p.need; if (!f) return;
+  const val = id => { const el = $('#' + id); return el && typeof el.value === 'string' ? el.value : null; };
+  const per = val('snPer'), len = val('snLen'), field = val('snField'), note = val('snNote'), tags = val('snTags');
+  if (tags != null) f.tags = tagList(tags);
+  if (per != null) f.per = Number(per);
+  if (len != null) f.len = Number(len);
+  if (field != null) f.field = field;
+  if (note != null) f.note = note;
+  for (const k of PTYPE_ORDER) if (k !== 'regular') { const v = val('snK_' + k); if (v != null) f.need[k] = Number(v); }
+}
+
+/* Everything with a time in one week, as busyItems() has it, with its date and
+   the board column it falls in: a field from Fields, or the same words typed
+   where none matches ('t:' + the words), or none. Time off and another club's
+   busy times have no place and are not drawn. */
+function boardItems(week) {
+  const out = [];
+  for (let i = 0; i < 7; i++) {
+    const date = addDays(week, i);
+    for (const x of busyItems(date)) {
+      if (x.away || x.kind === 'elsewhere') continue;
+      const e = x.tid && x.key.startsWith('e:') ? ((state.teams[x.tid] || {}).events || {})[x.key.slice(2)] : null;
+      out.push({ ...x, date, col: placeKey(x), series: (e && e.series) || '', word: e && e.series ? wordOf(x.tid, e.series) : null });
+    }
+  }
+  return out;
+}
+/* ---- the draft: placements not written yet, on this phone ---- */
+/* SCHEDULER.md, steps 3 and 4. What the admin has placed on the board and not
+   yet written is hers alone, kept at sm.sched.v1:{club} like a run of games
+   is kept in its form: one admin's afternoon of work, surviving a reload,
+   writing nothing until she says. Two admins laying out the same term each
+   hold a draft; the second to write sees the first's practices on the board
+   and places around them. A draft in the club would need a rule, an owner
+   and a way to throw it away, for a thing that lives an afternoon.
+
+   A block is a slot on the pattern week (a weekday and a start, never a
+   date): a new practice to write as a weekly series, or, with `series`, an
+   existing weekly series moved here from this week on. `off` is a series
+   taken off the board from this week on; `forbid` a cell the admin marked
+   off (the fill, step 8, never places there). */
+const LS_SCHED = 'sm.sched.v1';
+const schedKey = () => LS_SCHED + ':' + clubKey();
+let schedDraftCache = null, schedDraftFor = '';
+const DRAFT_BLANK = () => ({ blocks: {}, off: {}, forbid: {}, from: '', until: '' });
+function schedDraft() {
+  const k = schedKey();
+  if (schedDraftCache && schedDraftFor === k) return schedDraftCache;
+  const d = DRAFT_BLANK();
+  try {
+    const v = JSON.parse(localStorage.getItem(k) || 'null');
+    if (v && typeof v === 'object') for (const key of Object.keys(d)) if (v[key] != null && typeof v[key] === typeof d[key]) d[key] = v[key];
+  } catch (e) { }
+  schedDraftCache = d; schedDraftFor = k;
+  return d;
+}
+function saveDraft() { keepStored(schedKey(), JSON.stringify(schedDraft())); }
+/* The blocks as the board trusts them: a team still here, a weekday, a time,
+   a length the needs sheet allows, a column. Anything else in the file is
+   left where it is and not drawn. */
+function draftBlocks() {
+  return Object.values(schedDraft().blocks || {}).filter(b => b && typeof b === 'object' && state.teams[b.tid] && Number.isInteger(b.wd) && b.wd >= 0 && b.wd <= 6 && hm(b.start) && SCHED_LENS.includes(Number(b.len)) && typeof b.col === 'string' && b.col)
+    .map(b => ({ ...b, len: Number(b.len), pitch: String(b.pitch || ''), series: String(b.series || ''), locked: !!b.locked, fill: !!b.fill, ptype: PTYPES[b.ptype] ? b.ptype : 'regular',
+      tids: [...new Set([b.tid, ...(Array.isArray(b.tids) ? b.tids : [])].filter(t => state.teams[t]))] }));
+}
+const cellKey = (wd, start, col) => `${wd}|${start}|${col}`;
+/* The term the draft is for: what the admin set, else the week on the board
+   and fifteen weeks on. */
+function draftTerm(week) {
+  const d = schedDraft(), sc = schedOrg();
+  const from = okDay(d.from) ? d.from : week;
+  // inside a term already written, its last day: a slot moved in October is moved to the end of that term, not fifteen weeks on
+  const written = okDay(sc.until) && sc.until >= from && (!okDay(sc.from) || sc.from <= from) ? sc.until : '';
+  const until = okDay(d.until) && d.until >= from ? d.until : written || addDays(from, 7 * 15 - 1);
+  return { from, until };
+}
+/* Club blackout dates (org/sched/closed): no practice is written on them. */
+function schedClosed() {
+  return Object.entries((((acc().org || {}).sched || {}).closed) || {}).map(([id, c]) => c && typeof c === 'object' && okDay(c.from) ? {
+    id: c.id || id, from: c.from, until: okDay(c.until) && c.until >= c.from ? c.until : c.from, note: String(c.note || '').slice(0, 120)
+  } : null).filter(Boolean).sort((a, b) => a.from.localeCompare(b.from));
+}
+const dateClosed = date => schedClosed().some(c => c.from <= date && date <= c.until);
+/* A draft block as a board item on the week drawn: busyItems()'s shape, so
+   the checks, the lanes and the counts read it as they read a practice. */
+function draftItems(week) {
+  return draftBlocks().map(b => {
+    const date = addDays(week, b.wd), a = minOf(b.start), bEnd = a + b.len, k = kindOf(b.ptype);
+    const f = b.col.startsWith('f:') ? fieldById(b.col.slice(2)) : null;
+    return { key: 'd:' + b.id, kind: 'practice', tid: b.tid, tids: b.tids, label: b.tids.length > 1 ? `${k.label} (${b.tids.map(shortTeam).join(', ')})` : `${shortTeam(b.tid)}: ${k.label}`, a, b: bEnd, field: f ? f.id : null, pitch: b.pitch || null,
+      venue: f ? f.name : b.col.replace(/^t:/, ''), coaches: blockCoaches(b), pids: null, date, col: b.col, draft: b, series: b.series, ptype: b.ptype, who: k.who === 'keepers' ? 'keepers' : '' };
+  });
+}
+/* Whose time a block takes: a keepers' session is run by whoever coaches the
+   keepers, not the teams' coaches, so it holds nobody's evening here; a
+   scrimmage both teams'; the rest the team's. */
+const blockCoaches = b => (kindOf(b.ptype).who === 'keepers' ? [] : [...new Set(b.tids.flatMap(coachesOf))]);
+/* The week as the board draws it: the calendar's items, a series taken off
+   marked `off` from the term's start, and the draft's blocks. */
+function boardAll(week) {
+  const d = schedDraft(), { from } = draftTerm(week);
+  const real = boardItems(week).map(x => ({ ...x, tids: tidsOf(x), off: !!(x.series && d.off[x.series] && x.date >= from) }));
+  /* A cross-team session is one entry per team sharing a `club` id: drawn
+     and checked as one block carrying every team, so three keepers' entries
+     at six on Tuesday are one block that says who sends keepers. */
+  const out = [], seen = {};
+  for (const x of real) {
+    const j = x.kind === 'practice' && x.joint ? x.date + '|' + x.joint : '';
+    if (j && seen[j]) { seen[j].tids = [...new Set([...seen[j].tids, ...x.tids])]; seen[j].label = `${kindOf(x.ptype).label} (${seen[j].tids.map(shortTeam).join(', ')})`; continue; }
+    if (j) seen[j] = x;
+    out.push(x);
+  }
+  return out.concat(draftItems(week));
+}
+/* Whether a block may sit where it is, and what it costs: the refusals and
+   warnings of SCHEDULER.md, *What the board refuses, warns and says*,
+   worked out on the week drawn against everything else on it (the draft's
+   other blocks included, the block itself and anything taken off left out).
+   Nothing is stored; the sheet says it and the fill (step 8) reads it. */
+function placeCheck(block, week, pre) {
+  const refused = [], refusedBy = [], marks = [], d = schedDraft();
+  const date = addDays(week, block.wd), a = minOf(block.start), b = a + block.len;
+  const t = state.teams[block.tid]; if (!t) return { refused: ['That team is no longer here'], refusedBy: [], warned: [], marks: [], cost: Infinity };
+  const kind = kindOf(block.ptype), tids = tidsOf(block), onPitch = kind.space === 'share' || kind.space === 'pitch';
+  const f = block.col.startsWith('f:') ? fieldById(block.col.slice(2)) : null;
+  // the week as the board draws it, computed once by a caller placing many (the fill) or here
+  const all = (pre || boardAll(week)).filter(x => !x.off && x.key !== 'd:' + block.id && x.key !== block.key && !(block.series && x.series === block.series));
+  const items = all.filter(x => x.date === date);
+  const ov = items.filter(x => x.a < b && a < x.b);
+  // a rule says its piece at its tier for this team: Must refuses, Off says nothing, the rest warn and cost
+  const put = (tier, rule, text) => { if (tier === 'off') return; if (tier === 'must') { refused.push(text); refusedBy.push({ rule, text }); } else marks.push({ rule, tier, text }); };
+  const say = (rule, text) => put(ruleTier(rule, block.tid), rule, text);
+  if (kind.who === 'two' && tids.length !== 2) { refused.push('A scrimmage is two teams: pick the other one'); refusedBy.push({ rule: 'teams', text: 'A scrimmage is two teams' }); }
+  // a room or nothing (film) is not on the pitch: the permit, the hours and the pitches have nothing to say
+  if (onPitch) for (const [s0, s1, k] of boardShut(f, date, 0, 24, block.pitch)) if (s0 < b && a < s1) { const sun = sunsetOn(f, date, block.pitch); say('supply', k === 'closed' ? `${f.name} is closed then` : sun && b > minOf(sun.to) ? `${f.name} closes at ${niceTime(sun.to)} then: no lights` : `Outside the club’s permit or ${f.name}’s hours`); break; }
+  // her own mark is not a rule: it always holds
+  for (let m = a; m < b; m += 30) if (d.forbid[cellKey(block.wd, minHm(m), block.col)]) { refused.push('You marked that time off the board'); refusedBy.push({ rule: 'forbid', text: 'You marked that time off the board' }); break; }
+  const atField = ov.filter(x => x.col === block.col);
+  if (onPitch && block.pitch) { const same = atField.find(x => x.pitch === block.pitch); if (same) say('pitchTaken', `${(pitchesOf(f).find(q => q.id === block.pitch) || {}).name || 'That pitch'} is taken by ${same.label}`); }
+  // a game, a session or a scrimmage takes a whole pitch; practices share what is left
+  const taking = atField.filter(x => x.kind !== 'practice' || kindOf(x.ptype).space === 'pitch');
+  if (onPitch && f && taking.length >= pitchCount(f)) say('pitchTaken', `No pitch left: ${taking.map(x => x.label).join(', ')}`);
+  for (const tid of tids) {
+    const own = ov.filter(x => tidsOf(x).includes(tid));
+    if (kind.who === 'keepers') {
+      for (const x of own.filter(x => x.kind === 'practice' && x.who !== 'keepers')) say('keepersOver', `${shortTeam(tid)} practises then (${timeOf(x)}): its keepers can’t be at both`);
+    } else if (own.length) say('teamBusy', `${shortTeam(tid)} already has ${own.map(x => x.label.replace(/^[^:]*: /, '') + ' at ' + timeOf(x)).join(', ')}`);
+    else { const gk = ov.find(x => x.who === 'keepers' && tidsOf(x).includes(tid)); if (gk) say('keepersOver', `${shortTeam(tid)}’s keepers are at ${gk.label} then`); }
+  }
+  const need = schedNeed(block.tid), coaches = blockCoaches({ ...block, tids });
+  for (const u of coaches) { const el = ov.find(x => !tidsOf(x).some(tid => tids.includes(tid)) && x.coaches.includes(u)); if (el) say('coachBusy', `${coachName(u)} is due at ${el.label} then`); }
+  for (const u of coaches) if (awayDuring(u, date, a, b)) say('coachAway', `${coachName(u)} has time off then`);
+  // a drive is hers whichever team she drives from or to: her own team's game across town counts
+  for (const u of coaches) for (const x of items.filter(x => x.coaches.includes(u) && placeKey(x) !== block.col && (x.b <= a || x.a >= b))) {
+    const gap = x.b <= a ? a - x.b : x.a - b;
+    if (gap < DRIVE_GAP_MIN) say('drive', `${coachName(u)}: a drive ${x.b <= a ? 'from' : 'to'} ${x.label} at ${placeName(x)} (${gap ? gap + ' minutes' : 'nothing'} between)`);
+  }
+  const cache = {}, fams = Object.assign({}, ...tids.map(teamFams)), split = new Set();
+  for (const x of ov) if (!tidsOf(x).some(tid => tids.includes(tid))) for (const u of Object.keys(itemFams(x, cache))) if (fams[u]) split.add(u);
+  if (split.size) say('familySplit', `${split.size} famil${split.size === 1 ? 'y has' : 'ies have'} a child somewhere else then`);
+  if (kind.who !== 'keepers' && need.field && block.col !== 'f:' + need.field) say('usualField', `Off its usual field, ${(fieldById(need.field) || {}).name || ''}`);
+  if (need.not.includes(block.wd)) say('night', `A night ${shortTeam(block.tid)} can’t do`);
+  // load: the coach's day and week against her caps, the households' soccer hours against the club's
+  const me_ = { key: 'd:' + block.id, tid: block.tid, tids, a, b, coaches, pids: null, kind: 'practice', date };
+  const weekAll = all.concat([me_]);
+  const dayAll = weekAll.filter(x => x.date === date);
+  for (const u of coaches) {
+    const caps = coachCaps(u), mine = dayAll.filter(x => x.coaches.includes(u)).sort((x, y) => x.a - y.a || x.b - y.b);
+    if (mine.length > caps.perDay) say('coachLoad', `${coachName(u)}: ${mine.length} sessions that day (${caps.perDay} at most)`);
+    const mins = mergedMins(mine.map(x => [x.a, x.b]));
+    if (mins > caps.hoursDay) say('coachLoad', `${coachName(u)}: ${minsText(mins)} of soccer that day (${minsText(caps.hoursDay)} at most)`);
+    if (caps.gap) for (let i = 1; i < mine.length; i++) { const g = mine[i].a - mine[i - 1].b; if (g >= 0 && g < caps.gap && (mine[i] === me_ || mine[i - 1] === me_)) say('coachLoad', `${coachName(u)}: ${g} minutes between sessions (${caps.gap} wanted)`); }
+    const weekN = weekAll.filter(x => x.coaches.includes(u)).length;
+    if (weekN > caps.perWeek) say('coachLoad', `${coachName(u)}: ${weekN} sessions that week (${caps.perWeek} at most)`);
+  }
+  const hc = householdCaps(), famDay = familyMinutes(dayAll);
+  const overDay = Object.keys(fams).filter(u => (famDay[u] || 0) > hc.hoursDay).length;
+  if (overDay) say('household', `${overDay} famil${overDay === 1 ? 'y goes' : 'ies go'} past ${minsText(hc.hoursDay)} of soccer that day`);
+  const byDay = {}; for (const x of weekAll) (byDay[x.date] = byDay[x.date] || []).push(x);
+  const famWeek = {}; for (const dayItems of Object.values(byDay)) for (const [u, m] of Object.entries(familyMinutes(dayItems))) famWeek[u] = (famWeek[u] || 0) + m;
+  const overWeek = Object.keys(fams).filter(u => (famWeek[u] || 0) > hc.hoursWeek).length;
+  if (overWeek) say('household', `${overWeek} famil${overWeek === 1 ? 'y goes' : 'ies go'} past ${minsText(hc.hoursWeek)} of soccer that week`);
+  // the club's own rules, in the same list at their own tiers
+  for (const c of customRules()) {
+    if (c.shape === 'tagfield') {
+      const tagged = tids.filter(tid => teamTags(tid).includes(c.a));
+      if (tagged.length && onPitch && !(f && fieldTags(f).includes(c.b))) put(c.tier, 'custom', `${tagged.map(shortTeam).join(', ')} ${tagged.length === 1 ? 'is' : 'are'} “${c.a}” and ${f ? f.name : 'this place'} is not “${c.b}”`);
+    } else if (c.shape === 'after') {
+      const hit = state.teams[c.a] ? tids.includes(c.a) : tids.some(tid => teamTags(tid).includes(c.a));
+      if (hit && b > minOf(c.b)) put(c.tier, 'custom', `Past ${niceTime(c.b)}, which ${state.teams[c.a] ? shortTeam(c.a) : 'teams tagged “' + c.a + '”'} can’t do`);
+    }
+  }
+  const order = { high: 0, medium: 1, low: 2 };
+  marks.sort((x, y) => order[x.tier] - order[y.tier]);
+  return { refused, refusedBy, warned: marks.map(m => m.text), marks, cost: refused.length ? Infinity : marks.reduce((n, m) => n + TIER_COST[m.tier], 0) };
+}
+
+/* ---- Lay it out for me (SCHEDULER.md, *Lay it out for me*; build 168) ---- */
+/* The greedy fill with a pass of local search after it, over the rules as
+   tiered. It fills what each team still needs this week, hardest team first
+   (the one with the fewest open cells), each practice into the cheapest cell
+   on the board: a refusal rules a cell out, every warning costs its tier,
+   and the fill-only rules pull (a coach's teams back to back on one field,
+   siblings at one field at the same or the next hour, the team's usual slot)
+   or push (a second practice the same night or the night after the first,
+   a pitch already stacked). It never trips a Must rule, never moves a locked block or what is
+   on the calendar, and writes nothing: every placement is a draft block the
+   admin can move or take off. A real solver is a function away, if a real
+   club's fill ever falls short (SCHEDULER.md, *The engine*). Each run says
+   what it could not place and which rule shut every cell, so the admin
+   knows what to relax. */
+const FILL_MAX = 800;
+function fillCells(items) {
+  const [h0, h1] = boardHours(items), cols = boardColumns(items).map(c => c.id), out = [];
+  for (const col of cols) for (let wd = 0; wd < 7; wd++) for (let m = h0 * 60; m < h1 * 60; m += 30) out.push({ col, wd, start: minHm(m) });
+  // the biggest club's week at half-hour steps is a few thousand cells; past the cap, hourly steps
+  return out.length > FILL_MAX ? out.filter(c => c.start.endsWith(':00')) : out;
+}
+/* The fill-only rules, as a pull or a push on a candidate's cost. */
+function fillExtra(cand, week, pre) {
+  const date = addDays(week, cand.wd), a = minOf(cand.start), b = a + cand.len, t = (id, tid) => ruleTier(id, tid);
+  const day = pre.filter(x => !x.off && x.date === date && x.key !== 'd:' + cand.id), coaches = coachesOf(cand.tid);
+  let cost = 0;
+  const b2b = t('backToBack', cand.tid);
+  if (b2b !== 'off' && day.some(x => x.kind === 'practice' && x.col === cand.col && !tidsOf(x).includes(cand.tid) && x.coaches.some(u => coaches.includes(u)) && (x.b === a || x.a === b))) cost -= TIER_COST[b2b];
+  const sib = t('siblings', cand.tid);
+  if (sib !== 'off') {
+    const cache = {}, fams = teamFams(cand.tid);
+    if (day.some(x => x.col === cand.col && !tidsOf(x).includes(cand.tid) && x.a <= b + 60 && a <= x.b + 60 && Object.keys(itemFams(x, cache)).some(u => fams[u]))) cost -= TIER_COST[sib];
+  }
+  const same = t('sameSlot', cand.tid);
+  if (same !== 'off' && usualSlot(cand.tid) === `${cand.wd} ${cand.start}`) cost -= TIER_COST[same];
+  // the same night as its other practice costs twice what the night after does: no Must rule stops two in one evening
+  const sec = t('secondNight', cand.tid);
+  if (sec !== 'off') for (const x of pre) if (!x.off && x.kind === 'practice' && x.key !== 'd:' + cand.id && tidsOf(x).includes(cand.tid)) { const gap = Math.abs(weekdayOf(x.date) - cand.wd); if (gap <= 1) cost += TIER_COST[sec] * (gap ? 1 : 2); }
+  const spr = t('spread', cand.tid);
+  if (spr !== 'off') cost += TIER_COST[spr] * day.filter(x => x.kind === 'practice' && x.col === cand.col && x.a < b && a < x.b).length;
+  /* Stability (step 9): a weekly slot already written costs each change from
+     where it stands, the night, the time and the field apart, so a slot the
+     field lost its Thursday for moves to the same hour on another night
+     before it moves to another hour too. It weighs High whenever a term is
+     re-laid, whatever its tier short of Off (SCHEDULER.md's rule table):
+     the families have the old slot in their calendars. */
+  const st = t('stability', cand.tid);
+  if (st !== 'off' && cand.was) cost += TIER_COST.high * [cand.was.wd !== cand.wd, cand.was.start !== cand.start, cand.was.col !== cand.col].filter(Boolean).length;
+  return cost;
+}
+/* ---- re-laying a term (SCHEDULER.md, step 9) ----
+   Opening the Scheduler on a term already written starts from the calendar
+   as it stands, so a field's lost Thursday is the same board: its weekly
+   slots now sit on the hatch. A slot a Must rule refuses where it stands
+   (outside the permit or the hours since they changed, on a closure, its
+   coach now off, a game put on its pitch) is stranded; the strip says so,
+   and the fill takes each as a want with `series` and `was`, so it moves
+   as a hand-moved series does (an edit under a new series id from this week
+   on) and stability steers it to the fewest changes. A single practice is
+   said and left to its coach: the Scheduler writes weekly slots. */
+function itemBlock(x) {
+  const wd = weekdayOf(x.date), start = minHm(x.a);
+  return { id: 'x:' + x.key, key: x.key, tid: x.tid, tids: tidsOf(x), wd, start, len: Math.max(30, x.b - x.a), col: x.col, pitch: x.pitch || '', series: x.series || '', locked: false, ptype: x.ptype || 'regular', was: { wd, start, col: x.col } };
+}
+function strandedItems(week, pre) {
+  const all = pre || boardAll(week), d = schedDraft(), out = [];
+  for (const x of all) {
+    if (x.kind !== 'practice' || x.off || x.draft || !x.tid || !x.col || x.joint) continue;
+    if (x.series && Object.values(d.blocks).some(b => b && b.series === x.series)) continue;
+    const block = itemBlock(x), r = placeCheck(block, week, all);
+    if (r.refused.length) out.push({ x, block, refused: r.refused, refusedBy: r.refusedBy });
+  }
+  return out;
+}
+/* The first later week of the term with a stranded slot, so the admin on
+   September's board hears about October's before a family does. */
+const AHEAD_MAX = 26;
+function strandedAhead(week) {
+  const { until } = draftTerm(week);
+  for (let w = addDays(week, 7), i = 0; w <= until && i < AHEAD_MAX; w = addDays(w, 7), i++) {
+    const n = strandedItems(w).length;
+    if (n) return { week: w, n };
+  }
+  return null;
+}
+/* What a team still needs this week, kind by kind, single-team kinds only:
+   a keepers' session or a scrimmage names its teams, so the admin places it. */
+function fillWants(week, pre) {
+  const out = [];
+  // a stranded weekly slot first: moved as a series, to the fewest changes (stability), before anything new is placed around it
+  for (const { x, block } of strandedItems(week, pre)) if (x.series && kindOf(block.ptype).who === 'team') out.push({ tid: block.tid, ptype: block.ptype, len: block.len, series: x.series, was: block.was, pitch: block.pitch });
+  for (const r of boardTeams(week, pre)) for (const k of PTYPE_ORDER) {
+    const kind = kindOf(k); if (kind.who !== 'team') continue;
+    const have = r.by[k] || 0, want = r.n.need[k] || 0;
+    for (let i = have; i < want; i++) out.push({ tid: r.t.id, ptype: k, len: k === 'regular' ? r.n.len : kind.len });
+  }
+  return out;
+}
+function layOut(week) {
+  const d = schedDraft(), placed = [], unplaced = [];
+  let pre = boardAll(week);
+  const cells = fillCells(pre);
+  // a candidate keeps its id when it is a placed block being re-scored, so the board does not count the block against itself
+  const cand = (w, c, id) => ({ id: id || uid(), tid: w.tid, tids: [w.tid], wd: c.wd, start: c.start, len: w.len, col: c.col, pitch: '', series: w.series || '', was: w.was || null, locked: false, ptype: w.ptype, fill: true });
+  const score = (w, c, pre_, id) => { const x = cand(w, c, id); const r = placeCheck(x, week, pre_); return { x, cost: r.cost === Infinity ? Infinity : r.cost + fillExtra(x, week, pre_), refusedBy: r.refusedBy }; };
+  // hardest first: the fewest open cells for its first practice, then the most still wanted
+  const wants = fillWants(week, pre), byTeam = {};
+  for (const w of wants) (byTeam[w.tid] = byTeam[w.tid] || []).push(w);
+  const open = Object.fromEntries(Object.keys(byTeam).map(tid => [tid, cells.filter(c => score(byTeam[tid][0], c, pre).cost < Infinity).length]));
+  const order = Object.keys(byTeam).sort((x, y) => open[x] - open[y] || byTeam[y].length - byTeam[x].length);
+  for (const tid of order) for (const w of byTeam[tid]) {
+    let best = null; const why = {};
+    for (const c of cells) {
+      const r = score(w, c, pre);
+      if (r.cost === Infinity) { for (const x of r.refusedBy) why[x.rule] = (why[x.rule] || 0) + 1; continue; }
+      if (!best || r.cost < best.cost || (r.cost === best.cost && (c.wd < best.x.wd || (c.wd === best.x.wd && c.start < best.x.start)))) best = r;
+    }
+    if (!best) { unplaced.push({ tid, ptype: w.ptype, series: w.series || '', why }); continue; }
+    d.blocks[best.x.id] = { ...best.x };
+    // a moved series is taken off the board from this week on, as Move it here does; the write edits it instead
+    if (w.series) d.off[w.series] = true;
+    placed.push({ id: best.x.id, tid, ptype: w.ptype, series: w.series || '', cost: best.cost });
+    pre = boardAll(week);
+  }
+  /* One pass of local search: each block this run placed, in turn, to the
+     cheapest cell now that the rest are down; a locked block and anything
+     placed by hand stay where they are. */
+  for (const pz of placed) {
+    const b = d.blocks[pz.id]; if (!b || b.locked) continue;
+    const w = { tid: b.tid, ptype: b.ptype, len: b.len, series: b.series, was: b.was }, here = score(w, { col: b.col, wd: b.wd, start: b.start }, pre, b.id);
+    let best = null;
+    for (const c of cells) { const r = score(w, c, pre, b.id); if (r.cost < Infinity && (!best || r.cost < best.cost)) best = r; }
+    if (best && here.cost - best.cost >= 1) { Object.assign(b, { wd: best.x.wd, start: best.x.start, col: best.x.col }); pz.cost = best.cost; pre = boardAll(week); }
+  }
+  saveDraft();
+  // what the run's blocks carry, by rule: the score by category the report sheet shows
+  const tripped = {};
+  for (const pz of placed) for (const m of placeCheck(d.blocks[pz.id], week).marks) tripped[m.rule] = (tripped[m.rule] || 0) + 1;
+  return { placed, unplaced, wanted: wants.length, tripped };
+}
+/* The run told back: what was placed and what could not be, and for each of
+   those which rule shut every open cell, so the admin knows what to relax. */
+function sheetFillReport(r) {
+  const p = plannerUi();
+  const name = rule => rule === 'forbid' ? 'a time you marked off' : rule === 'teams' ? 'the teams' : (RULE[rule] || {}).label || rule;
+  const moved = r.placed.filter(x => x.series).length;
+  openSheet(`<h3>Laid out</h3>
+    <p style="margin-top:0">${r.placed.length ? `${r.placed.length} of ${r.wanted} placed on the board${moved ? ` (${moved} ${moved === 1 ? 'a weekly slot' : 'weekly slots'} moved from where ${moved === 1 ? 'it' : 'they'} can’t stay)` : ''}, as a first go: move anything.` : r.wanted ? 'Nothing could be placed.' : 'Every team already has what it needs this week.'}</p>
+    ${r.placed.length ? `<p class="muted" style="margin-top:-6px">${Object.keys(r.tripped || {}).length ? 'They carry: ' + esc(Object.entries(r.tripped).sort((x, y) => y[1] - x[1]).map(([k, n]) => `${name(k).toLowerCase()} (${n})`).join(', ')) + '.' : 'None of them trips a warning.'}</p>` : ''}
+    ${r.unplaced.length ? `<p class="lbl">Could not be placed</p>${r.unplaced.map(u => { const top = Object.entries(u.why).sort((x, y) => y[1] - x[1]); return `<p style="margin:0 0 6px"><b>${esc(shortTeam(u.tid))}: ${esc(kindOf(u.ptype).label.toLowerCase())}${u.series ? ', the weekly slot that can’t stay' : ''}</b><br><span class="muted">Every open half hour was refused${top.length ? ', mostly by: ' + esc(top.slice(0, 3).map(([k, n]) => `${name(k)} (${n})`).join(', ')) : ''}. ${top.length && RULE[top[0][0]] && !RULE[top[0][0]].physical ? `The cheapest to relax is “${esc(name(top[0][0]))}” on the Rules tab.` : 'A physical rule shut it: more permit, another field, or fewer practices.'}</span></p>`; }).join('')}` : ''}
+    ${r.placed.length ? `<button class="btn wide" data-act="closesheet" style="margin-bottom:8px">Keep them</button>
+      <button class="btn quiet wide" data-act="schfillundo" style="margin-bottom:8px">Take them off again</button>` : '<button class="btn quiet wide" data-act="closesheet">Close</button>'}`, true);
+  p.lastFill = r.placed.map(x => x.id);
+}
+/* What a placed block writes: the fields a practice from the add sheet has,
+   the kind's default title, team-only, families asked, the place as the
+   field's name and the pitch's where one was chosen (so fieldOfText() and
+   pitchOfText() read it back as every other entry is read). */
+function blockFields(b) {
+  const f = b.col.startsWith('f:') ? fieldById(b.col.slice(2)) : null, k = kindOf(b.ptype);
+  const pt = f && b.pitch ? pitchesOf(f).find(q => q.id === b.pitch) : null;
+  return { kind: 'practice', title: k.label, start: hm(b.start), end: minHm(Math.min(minOf(b.start) + b.len, 23 * 60 + 59)), venue: f ? f.name + (pt ? ', ' + pt.name : '') : b.col.replace(/^t:/, ''), notes: '', public: false, ask: true,
+    ...(k.id !== 'regular' ? { ptype: k.id } : {}), ...(k.who === 'keepers' ? { who: 'keepers' } : {}) };
+}
+/* A weekly series' length, from its first entry still to come, for moving it. */
+function seriesLen(tid, series) {
+  const all = Object.values((state.teams[tid] || {}).events || {}).filter(x => x && x.series === series && hm(x.start) && hm(x.end) && minOf(x.end) > minOf(x.start)).sort((a, b) => (a.date || '').localeCompare(b.date || ''));
+  const e = all.find(x => x.date >= todayStr()) || all[0];
+  if (!e) return 0;
+  const len = minOf(e.end) - minOf(e.start);
+  return SCHED_LENS.includes(len) ? len : SCHED_LENS.reduce((best, l) => Math.abs(l - len) < Math.abs(best - len) ? l : best, 60);
+}
+const hasPracticeAt = (t, date, start, ptype = 'regular') => Object.values((t && t.events) || {}).some(e => e && e.kind === 'practice' && e.date === date && hm(e.start) === start && ptypeOf(e) === ptype);
+/* Put it on the calendars (SCHEDULER.md, *Writing the term*): each new block
+   one weekly series from the term's start to its end through addSeries(), the
+   add sheet's own writer; each moved series its entries from this week on
+   under a new series id at the same entry ids, so a plan keyed by the entry
+   follows it; each series taken off deleted from this week on as the sheet
+   deletes a practice (its register with it); a blackout date skipped; a date
+   the team already practises at that time skipped, so writing twice writes
+   nothing; at most SERIES_MAX a series. Every write goes through quiet(), so
+   it is stamped and waits in the outbox like any calendar write. */
+function schedWrite(week) {
+  const d = schedDraft(), { from, until } = draftTerm(week);
+  let made = 0, moved = 0, removed = 0;
+  const teams_ = new Set();
+  const drop = (tid, x) => {
+    delDeep(state, `teams/${tid}/events/${x.id}`); remoteDel(`teams/${tid}/events/${x.id}`);
+    if (attendOf(tid, x.id)) { delDeep(state, `teams/${tid}/attend/${x.id}`); remoteDel(`teams/${tid}/attend/${x.id}`); }
+    removed++;
+  };
+  const movedSeries = new Set(draftBlocks().map(b => b.series).filter(Boolean));
+  for (const sid of Object.keys(d.off)) {
+    if (movedSeries.has(sid)) continue;
+    for (const t of teams()) for (const x of Object.values(t.events || {})) if (x && x.series === sid && x.date >= from) { drop(t.id, x); teams_.add(t.id); }
+  }
+  for (const b of draftBlocks()) {
+    const t = state.teams[b.tid]; if (!t) continue;
+    const fields = blockFields(b);
+    if (b.series) {
+      const old = Object.values(t.events || {}).filter(x => x && x.series === b.series && x.date >= from);
+      if (!old.length) continue;
+      const sid = uid();
+      for (const x of old) {
+        const date = addDays(addDays(x.date, -weekdayOf(x.date)), b.wd);
+        if (dateClosed(date) || date > until) { drop(b.tid, x); continue; }
+        quiet(`teams/${b.tid}/events/${x.id}`, { ...x, ...fields, date, series: sid });
+        moved++;
+      }
+      teams_.add(b.tid);
+    } else if (b.tids.length > 1) {
+      /* A cross-team session: one entry per team per date, the entries of a
+         date sharing a `club` id, as picture day is written. A team that
+         already has one then is skipped on its own, the rest still written. */
+      const all = seriesDates(from, until, [b.wd]).filter(date => !dateClosed(date)), joint = {};
+      for (const date of all) joint[date] = uid();
+      for (const tid of b.tids) {
+        const dates = all.filter(date => !hasPracticeAt(state.teams[tid], date, fields.start, b.ptype));
+        if (!dates.length) continue;
+        addSeries(tid, fields, dates, date => ({ club: joint[date] }));
+        made += dates.length; teams_.add(tid);
+      }
+    } else {
+      const dates = seriesDates(from, until, [b.wd]).filter(date => !dateClosed(date) && !hasPracticeAt(t, date, fields.start, b.ptype));
+      if (!dates.length) continue;
+      addSeries(b.tid, fields, dates);
+      made += dates.length; teams_.add(b.tid);
+    }
+  }
+  // re-laying a week inside a term already written keeps the term's start: the record is the term's, not this write's
+  const sc = schedOrg(), from0 = okDay(sc.from) && sc.from <= from && okDay(sc.until) && sc.until >= from ? sc.from : from;
+  quiet('access/org/sched/from', from0); quiet('access/org/sched/until', until);
+  d.blocks = {}; d.off = {}; saveDraft();
+  saveLocal(); shareIds();
+  return { made, moved, removed, teams: teams_.size };
+}
+
+/* The columns: every field the club lists, then any place typed into an entry
+   this week that matches none of them, so nothing with a place goes undrawn. */
+function boardColumns(items) {
+  const cols = fieldList().map(f => ({ id: 'f:' + f.id, name: f.name, f }));
+  for (const x of items) if (x.col && x.col.startsWith('t:') && !cols.some(c => c.id === x.col)) cols.push({ id: x.col, name: x.venue, f: null });
+  return cols;
+}
+/* The hours the grid draws, the same for every field so the columns line up. */
+function boardHours(items) {
+  let h0 = BOARD_FROM, h1 = BOARD_TO;
+  for (const x of items) { h0 = Math.min(h0, Math.floor(x.a / 60)); h1 = Math.max(h1, Math.ceil(x.b / 60)); }
+  return [Math.max(0, h0), Math.min(24, Math.max(h1, h0 + 1))];
+}
+/* When a field cannot be had on a day, as spans to paint over the grid: a
+   closure or a day its hours mark closed is the whole day ('closed'); else
+   what its hours and every permit leave out ('out'). A field that lists no
+   hours and no permits is open all day, as fieldShut() and the permit check
+   already treat it. The supply is read from the field each time, never kept. */
+function boardShut(f, date, h0, h1, pitch) {
+  if (!f) return [];
+  const A = h0 * 60, B = h1 * 60, wd = weekdayOf(date);
+  if (fieldClosures(f).some(c => c.from <= date && date <= c.until)) return [[A, B, 'closed']];
+  const hrs = fieldHours(f)[wd];
+  if (hrs && hrs.closed) return [[A, B, 'closed']];
+  let open = [[A, B]];
+  if (hrs) open = [[Math.max(A, minOf(hrs.from)), Math.min(B, minOf(hrs.to))]].filter(([a, b]) => b > a);
+  // sunset: an unlit pitch closes early between the dates given (a lit one is asked for by `pitch`)
+  const sun = sunsetOn(f, date, pitch);
+  if (sun) open = open.map(([a, b]) => [a, Math.min(b, minOf(sun.to))]).filter(([a, b]) => b > a);
+  const all = permitsOf(f);
+  if (all.length) {
+    const wins = all.filter(p => p.days.includes(wd) && !(p.from && date < p.from) && !(p.until && date > p.until))
+      .map(p => p.start && p.end ? [minOf(p.start), minOf(p.end)] : [0, 1440]);
+    open = open.flatMap(([x, y]) => wins.map(([a, b]) => [Math.max(x, a), Math.min(y, b)]).filter(([a, b]) => b > a));
+  }
+  open.sort((x, y) => x[0] - y[0]);
+  const merged = [];
+  for (const [a, b] of open) { const l = merged[merged.length - 1]; if (l && a <= l[1]) l[1] = Math.max(l[1], b); else merged.push([a, b]); }
+  const shut = []; let at = A;
+  for (const [a, b] of merged) { if (a > at) shut.push([at, a, 'out']); at = Math.max(at, b); }
+  if (at < B) shut.push([at, B, 'out']);
+  return shut;
+}
+/* Side by side, as many lanes as there are things on at once: the owner,
+   "fields can be shared multiple ways, so let's not limit it". Each run of
+   overlapping blocks shares the width, so three teams on one pitch are three
+   lanes and nothing is folded into a "+n". */
+function boardLanes(list) {
+  const evs = list.slice().sort((x, y) => x.a - y.a || y.b - x.b), out = [];
+  let run = [], end = -1;
+  const flush = () => {
+    const cols = [];
+    for (const e of run) { let c = cols.findIndex(last => last <= e.a); if (c < 0) { c = cols.length; cols.push(0); } cols[c] = e.b; e.col = c; }
+    for (const e of run) out.push({ ...e, n: cols.length });
+    run = []; end = -1;
+  };
+  for (const e of evs) { if (run.length && e.a >= end) flush(); run.push({ ...e }); end = Math.max(end, e.b); }
+  if (run.length) flush();
+  return out;
+}
+const boardAct = x => x.kind === 'session' ? `data-act="sessopen" data-id="${esc(x.key.slice(2))}"` : `data-act="calitem" data-k="${x.kind}" data-tid="${esc(x.tid)}" data-id="${esc(x.key.slice(2))}"`;
+/* One field's week: the days across, the hours down, the supply painted and
+   each block where it falls. A game is locked (a league fixed it; the board
+   never moves one), a session greyed, and on a coach's board everything that
+   is not her team's is dimmed to grey with the names kept, because who she is
+   sharing the field with is the point. */
+function boardGrid(col, week, items, lit, pick) {
+  const days = [...Array(7)].map((_, i) => addDays(week, i)), today = todayStr(), forbid = schedDraft().forbid || {};
+  const mine = items.filter(x => x.col === col.id);
+  const [h0, h1] = boardHours(items);
+  const at = m => `calc(var(--hr) * ${((m - h0 * 60) / 60).toFixed(3)})`;
+  const head = `<div class="tg-row tg-head"><span class="tg-gl"></span>${days.map(d => `<div class="tg-day" data-today="${d === today ? 1 : 0}"><small>${WEEKDAYS[weekdayOf(d)]}</small><b>${Number(d.slice(8))}</b></div>`).join('')}</div>`;
+  const cols = days.map((d, wd) => {
+    const sun = sunsetOn(col.f, d);
+    let html = boardShut(col.f, d, h0, h1).map(([a, b, k]) => `<i class="tg-shut" data-k="${k}" style="top:${at(a)};height:calc(var(--hr) * ${((b - a) / 60).toFixed(3)})" title="${k === 'closed' ? esc(col.name) + ' is closed' : sun && a >= minOf(sun.to) ? 'Unlit pitches close at ' + esc(niceTime(sun.to)) : 'Outside the club\u2019s permit or the field\u2019s hours'}"></i>`).join('');
+    /* Placing: with a team (or a block to move) picked, every half hour is a
+       place to tap; a cell the admin marked off is drawn so and taps back to
+       its sheet to unmark it. Nothing to tap otherwise, so the grid stays a
+       picture for whoever is only reading it. */
+    for (let m = h0 * 60; m < h1 * 60; m += 30) {
+      const t = minHm(m), off = !!forbid[cellKey(wd, t, col.id)];
+      if (off) html += `<i class="tg-forbid" style="top:${at(m)}" title="Marked off the board"></i>`;
+      if (pick) html += `<button class="tg-slot tg-half" type="button" data-act="schcell" data-wd="${wd}" data-t="${t}" style="top:${at(m)}" tabindex="-1" aria-hidden="true" title="${off ? 'Marked off' : 'Place at ' + esc(niceTime(t))}"></button>`;
+    }
+    for (const e of boardLanes(mine.filter(x => x.date === d))) {
+      const a = Math.max(e.a, h0 * 60), b = Math.min(e.b, h1 * 60);
+      const geo = `top:${at(a)};height:calc(var(--hr) * ${((b - a) / 60).toFixed(3)} - 2px);left:calc(${e.col} * 100% / ${e.n});width:calc(100% / ${e.n} - 3px)`;
+      const dim = lit ? !(e.tid && lit.has(e.tid)) : false;
+      const hue = e.kind === 'session' ? KIND_HUE.session : teamHue(e.tid);
+      const pt = e.pitch && col.f ? pitchesOf(col.f).find(q => q.id === e.pitch) : null;
+      const ek = e.kind === 'practice' ? kindOf(e.ptype) : null, many = e.tids && e.tids.length > 1;
+      const who = many ? ek.label : e.tid ? shortTeam(e.tid) : e.label.replace(/ \([^)]*\)$/, '');
+      // a draft block, a weekly practice on an admin's board, or a coach's own weekly slot opens the board's own sheet; everything else the entry's
+      const own = e.kind === 'practice' && e.series && (!lit || (e.tid && lit.has(e.tid)));
+      const act = e.draft ? `data-act="schblock" data-id="${esc(e.draft.id)}"` : own ? `data-act="schblock" data-k="${esc(e.key)}"` : boardAct(e);
+      // the coach's word on the slot: a tick once she has confirmed it, a flag when she has said it does not work, nothing until she has said
+      const word = e.word ? (e.word.ok ? 'ok' : 'no') : '';
+      html += `<button type="button" class="tg-ev" ${act} data-kind="${e.kind}" data-lock="${e.kind === 'game' || (e.draft && e.draft.locked) ? 1 : 0}" data-dim="${dim ? 1 : 0}" data-draft="${e.draft ? 1 : 0}" data-off="${e.off ? 1 : 0}" data-word="${word}" style="--ev:${hue};${geo}" aria-label="${esc(e.label)}, ${esc(niceTime(minHm(e.a)))} to ${esc(niceTime(minHm(e.b)))}${pt ? ', ' + esc(pt.name) : ''}${e.draft ? ', not written yet' : e.off ? ', taken off' : ''}${word === 'ok' ? ', confirmed by the coach' : word === 'no' ? ', flagged by the coach' : ''}">
+        <b>${esc(who)}${word === 'ok' ? ' \u2713' : word === 'no' ? ' \u2691' : ''}</b><span>${esc([niceTime(minHm(e.a)), many ? e.tids.map(shortTeam).join(', ') : ek && ek.id !== 'regular' ? ek.label : pt ? pt.name : e.kind === 'game' ? 'Game' : e.kind === 'session' ? 'Session' : ''].filter(Boolean).join(' · '))}</span></button>`;
+    }
+    return `<div class="tg-col" data-today="${d === today ? 1 : 0}">${html}</div>`;
+  });
+  const gutter = [];
+  for (let h = h0 + 1; h < h1; h++) gutter.push(`<span style="top:${at(h * 60)}">${hourLabel(h)}</span>`);
+  return `<div class="tg tg-week tg-board" style="--cols:7;--rows:${h1 - h0}">${head}
+    <div class="tg-row tg-body"><div class="tg-gutter"><span class="tg-first">${hourLabel(h0)}</span>${gutter.join('')}</div>${cols.join('')}</div></div>`;
+}
+/* Each team against what it needs this week: the practices on its calendar
+   that week (called off left out), counted against per. */
+function boardTeams(week, items) {
+  return teams().map(t => {
+    const n = schedNeed(t.id);
+    const mine = items.filter(x => tidsOf(x).includes(t.id) && x.kind === 'practice' && !x.off);
+    const by = {}; for (const x of mine) by[x.ptype || 'regular'] = (by[x.ptype || 'regular'] || 0) + 1;
+    return { t, n, placed: mine.filter(x => !x.draft).length, drafted: mine.filter(x => x.draft).length, by, coaches: coachesOf(t.id) };
+  });
+}
+/* A coach driving between fields: she is due at one place and then another
+   the same day with less than DRIVE_GAP_MIN between. Two things at once are
+   the coach clash clubClashesOn() already says; back to back at one field is
+   what the board prefers and nothing to say. The fields' addresses are only
+   text and no distance is worked out (SCHEDULER.md, *Not built*): the rule is
+   here, in one place, for when the club can say two fields are near. */
+// SERVER.md: drives worked out on the phone from what it holds; a server could check them on save.
+const placeName = x => ((x.field && fieldById(x.field)) || {}).name || x.venue;
+function driveWarnings(date) {
+  const items = busyItems(date).filter(x => !x.away && x.kind !== 'elsewhere' && placeKey(x)), out = [];
+  for (const u of coachUids()) {
+    const hers = items.filter(x => x.coaches.includes(u)).sort((x, y) => x.a - y.a || x.b - y.b);
+    for (let i = 1; i < hers.length; i++) {
+      const x = hers[i - 1], y = hers[i];
+      if (placeKey(x) === placeKey(y) || y.a < x.b) continue;
+      const gap = y.a - x.b;
+      if (gap >= DRIVE_GAP_MIN) continue;
+      out.push({ kind: 'drive', text: `${coachName(u)}: ${x.label} at ${placeName(x)} until ${niceTime(minHm(x.b))}, then ${y.label} at ${placeName(y)} at ${timeOf(y)} (${gap ? gap + ' minutes' : 'nothing'} between)` });
+    }
+  }
+  return out;
+}
+/* What the week needs looking at, under the grid: what collides (a game short
+   of a pitch, a coach due twice, families split, time off, no coach, a field
+   that can't be had), a coach's drive between fields, a team short of the
+   practices it needs, and what is still missing a date, a time or a place.
+   Shared field time is listed apart and quietly: it is how a club runs, never
+   something to fix. */
+/* The week's load, for the strip: each coach's day and week against her caps,
+   each household's soccer hours against the club's. Read from what the board
+   draws, the draft included. */
+function loadWarnings(week) {
+  const out = [], all = boardAll(week).filter(x => !x.off), hc = householdCaps(), weekN = {}, famWeek = {};
+  for (let i = 0; i < 7; i++) {
+    const date = addDays(week, i), day = all.filter(x => x.date === date);
+    for (const u of coachUids()) {
+      const caps = coachCaps(u), mine = day.filter(x => x.coaches.includes(u));
+      weekN[u] = (weekN[u] || 0) + mine.length;
+      if (mine.length > caps.perDay) out.push({ date, kind: 'load', text: `${coachName(u)}: ${mine.length} sessions (${caps.perDay} at most)` });
+      const mins = mergedMins(mine.map(x => [x.a, x.b]));
+      if (mins > caps.hoursDay) out.push({ date, kind: 'load', text: `${coachName(u)}: ${minsText(mins)} of soccer (${minsText(caps.hoursDay)} at most)` });
+    }
+    let over = 0;
+    for (const [u, m] of Object.entries(familyMinutes(day))) { famWeek[u] = (famWeek[u] || 0) + m; if (m > hc.hoursDay) over++; }
+    if (over) out.push({ date, kind: 'household', text: `${over} famil${over === 1 ? 'y goes' : 'ies go'} past ${minsText(hc.hoursDay)} of soccer` });
+  }
+  for (const [u, n] of Object.entries(weekN)) { const caps = coachCaps(u); if (n > caps.perWeek) out.push({ date: week, kind: 'load', text: `${coachName(u)}: ${n} sessions this week (${caps.perWeek} at most)` }); }
+  const overW = Object.values(famWeek).filter(m => m > hc.hoursWeek).length;
+  if (overW) out.push({ date: week, kind: 'household', text: `${overW} famil${overW === 1 ? 'y goes' : 'ies go'} past ${minsText(hc.hoursWeek)} of soccer this week` });
+  return out;
+}
+const STRIP_RULE = { place: 'pitchTaken', coach: 'coachBusy', family: 'familySplit', away: 'coachAway', field: 'supply', drive: 'drive', load: 'coachLoad', household: 'household' };
+function schedStrip(week, items) {
+  const out = [], shared = [];
+  for (let i = 0; i < 7; i++) {
+    const date = addDays(week, i);
+    for (const c of clubClashesOn(date)) (c.kind === 'shared' ? shared : out).push({ date, ...c });
+    for (const c of driveWarnings(date)) out.push({ date, ...c });
+  }
+  for (const c of loadWarnings(week)) out.push(c);
+  // a weekly slot that can no longer stay where it is: the permit, the hours or a closure moved under it (step 9)
+  for (const s of strandedItems(week, items)) out.push({ date: s.x.date, kind: 'stranded', tier: 'must', text: `${s.x.label} at ${timeOf(s.x)}${s.x.series ? ', every week' : ''}: ${s.refused[0]}${s.x.series ? '' : '. A single practice: move it from its calendar'}` });
+  // each at its rule's tier for the club: an Off rule says nothing, and Must comes first
+  const order = { must: 0, high: 1, medium: 2, low: 3 };
+  for (const c of out) if (!c.tier) c.tier = STRIP_RULE[c.kind] ? ruleTier(STRIP_RULE[c.kind], null) : 'high';
+  const list = out.filter(c => c.tier !== 'off').sort((x, y) => x.date.localeCompare(y.date) || order[x.tier] - order[y.tier]);
+  out.length = 0; out.push(...list);
+  const short = boardTeams(week, items).filter(r => r.placed + r.drafted < r.n.total).map(r => ({ kind: 'short', text: `${shortTeam(r.t.id)}: ${r.placed + r.drafted} of ${r.n.total} practice${r.n.total === 1 ? '' : 's'} this week` }));
+  // the coaches' words on this week's weekly slots: confirmed, flagged (with the note), or nothing yet
+  const slots = {}, words = { n: 0, ok: 0, no: 0, flags: [] };
+  for (const x of items) if (x.kind === 'practice' && x.series && x.tid && !x.off && !x.draft && !slots[x.tid + '|' + x.series]) {
+    slots[x.tid + '|' + x.series] = true; words.n++;
+    const w = x.word; if (!w) continue;
+    if (w.ok) words.ok++; else { words.no++; words.flags.push({ tid: x.tid, date: x.date, text: `${shortTeam(x.tid)}, ${DAYS_LONG[weekdayOf(x.date)]}s ${timeOf(x)}: ${coachName(w.by)} says this doesn\u2019t work${w.note ? ` \u2014 \u201c${w.note}\u201d` : ''}` }); }
+  }
+  return { list: out, shared, short, todo: schedTodo(teams().map(t => t.id)), ahead: strandedAhead(week), words };
+}
+const STRIP_TAG = { place: 'Same place', coach: 'Coach', family: 'Families', away: 'Time off', nocoach: 'No coach', callout: 'Called out', field: 'Field', drive: 'Drive', load: 'Load', household: 'Family hours', stranded: 'Can’t stay' };
+function schedStripCard(week, items) {
+  const s = schedStrip(week, items), byDay = {};
+  for (const c of s.list) (byDay[c.date] = byDay[c.date] || []).push(c);
+  const shown = s.todo.slice(0, 8);
+  const nothing = !s.list.length && !s.short.length && !s.todo.length && !s.ahead;
+  return `<div class="card schedstrip"><h2 style="margin-bottom:6px">What needs looking at</h2>
+    ${nothing ? '<p class="muted" style="margin:0">Nothing this week: every team has its practices, nobody is due in two places, and nothing is waiting on a date, a time or a place.</p>' : ''}
+    ${Object.entries(byDay).map(([date, cs]) => `<h4 style="margin:8px 0 4px">${esc(dayLabel(date))}</h4>${cs.map(c => `<p style="margin:0 0 6px"><span class="tag off">${STRIP_TAG[c.kind] || 'Check'}</span> ${esc(c.text)}</p>`).join('')}`).join('')}
+    ${s.short.map(c => `<p style="margin:0 0 6px"><span class="tag wait">Short</span> ${esc(c.text)}</p>`).join('')}
+    ${s.words.n ? `<p style="margin:0 0 6px"><span class="tag${s.words.no ? ' wait' : ''}">Coaches</span> ${s.words.ok} of ${s.words.n} weekly slot${s.words.n === 1 ? '' : 's'} confirmed by ${s.words.n === 1 ? 'its coach' : 'their coaches'}${s.words.no ? `, ${s.words.no} flagged` : ''}</p>${s.words.flags.map(f => `<p class="muted" style="margin:0 0 6px">${esc(f.text)}</p>`).join('')}` : ''}
+    ${s.ahead ? `<p style="margin:0 0 6px"><span class="tag off">Ahead</span> From ${esc(dayLabel(s.ahead.week))}, ${s.ahead.n === 1 ? 'a weekly slot' : s.ahead.n + ' weekly slots'} can’t stay where ${s.ahead.n === 1 ? 'it is' : 'they are'}: the field’s permit, hours or a closure change under ${s.ahead.n === 1 ? 'it' : 'them'}. <button class="btn quiet sm" type="button" data-act="schweek" data-date="${esc(s.ahead.week)}">Open that week</button></p>` : ''}
+    ${s.todo.length ? `<p class="lbl" style="margin:12px 0 4px">Still to settle</p>
+      <p class="muted" style="margin:0 0 6px">Coming up with no date, time or place, which the board cannot draw and a family can't plan around.</p>
+      <div class="agevs">${shown.map(({ x, miss }) => `<button class="ev" type="button" data-act="calitem" data-k="${x.kind}" data-tid="${esc(x.tid)}" data-id="${esc(x.id)}" data-called="0" data-past="0" style="--ev:${teamHue(x.tid)}">
+        <span class="ev-top"><span class="ev-title">${evTeam(x.tid)}${esc(x.title)}</span><span class="ev-score">${x.date ? esc(shortDate(x.date)) : 'TBC'}</span></span><span class="ev-sub">No ${esc(miss.join(', no '))} yet</span></button>`).join('')}</div>
+      ${s.todo.length > shown.length ? `<p class="muted" style="margin:6px 0 0">And ${s.todo.length - shown.length} more.</p>` : ''}` : ''}
+    ${s.shared.length ? `<p class="lbl" style="margin:12px 0 4px">Shared field time</p>
+      <p class="muted" style="margin:0 0 4px">Teams on one field at once. Fine for practices; here so nobody is surprised to find another team there.</p>
+      ${s.shared.map(c => `<p class="muted" style="margin:0 0 4px"><b>${esc(dayLabel(c.date))}</b> · ${esc(c.text)}</p>`).join('')}` : ''}</div>`;
+}
+/* The board: the week, a field at a time, the grid, and for an admin the teams
+   against their needs and the strip. A coach gets the grid alone, her teams
+   in colour and the rest in grey. */
+function schedBoard(p, adm) {
+  const b = p.board, items = adm ? boardAll(b.week) : boardItems(b.week), cols = boardColumns(items), end = addDays(b.week, 6);
+  // nothing picked: the field with most on it this week, not the first by name, so the board opens on the week's practices
+  const n = c => items.filter(x => x.col === c.id).length;
+  const col = cols.find(c => c.id === b.field) || cols.slice().sort((x, y) => n(y) - n(x))[0];
+  const lit = adm ? null : new Set(teams().filter(t => isCoach(t.id, me.uid)).map(t => t.id));
+  const chip = c => `<button class="chip" type="button" data-act="schfield" data-v="${esc(c.id)}" aria-pressed="${col && c.id === col.id}">${esc(c.name)}</button>`;
+  const noPlace = items.filter(x => !x.col).length;
+  const nav = `<div class="spread" style="margin-bottom:8px"><button class="btn quiet sm" type="button" data-act="schweek" data-v="-1" aria-label="The week before">\u2039</button>
+    <b>${esc(dayLabel(b.week).slice(4))} \u2013 ${esc(dayLabel(end).slice(4))}</b>
+    <button class="btn quiet sm" type="button" data-act="schweek" data-v="1" aria-label="The week after">\u203a</button></div>`;
+  const pick = adm ? pickOf(p) : null;
+  const stranded = adm ? strandedItems(b.week, items).filter(s => s.x.series).length : 0;
+  const short = adm ? (boardTeams(b.week, items).some(r => r.placed + r.drafted < r.n.total) || stranded > 0) : false;
+  /* Placing: a team picked, then a cell; or a block being moved. Said above
+     the grid so she knows what the next tap does. */
+  const picker = adm && col ? `<div class="chips" style="margin-bottom:8px">${teams().map(t => `<button class="chip" type="button" data-act="schpick" data-v="${esc(t.id)}" aria-pressed="${pick && pick.kind === 'team' && pick.tid === t.id}">${esc(t.name || 'Team')}</button>`).join('')}</div>
+    ${pick && pick.kind === 'team' ? `<div class="chips" style="margin-bottom:8px">${PTYPE_ORDER.map(k => `<button class="chip" type="button" data-act="schkind" data-v="${k}" aria-pressed="${b.kind === k}">${esc(kindOf(k).label)}</button>`).join('')}</div>` : ''}
+    <p class="muted" style="margin:0 0 8px">${pick ? (pick.kind === 'team' ? `Tap where ${esc(shortTeam(pick.tid))}\u2019s ${esc(kindOf(b.kind).label.toLowerCase())} goes: a half hour on any day. ` : `Tap where ${esc(shortTeam(pick.tid))}\u2019s slot moves to. `) + '<button class="textbtn" data-act="schpick" data-v="">Done</button>' : 'Tap a team, then tap where it practises. Tap a block to move it, lock it or take it off.'}</p>` : '';
+  const grid = col ? `${cols.length > 1 ? `<div class="chips" style="margin-bottom:8px">${cols.map(chip).join('')}</div>` : `<p class="lbl" style="margin-top:0">${esc(col.name)}</p>`}
+      ${picker}${short ? `<p style="margin:0 0 8px"><button class="btn quiet sm" data-act="schfill">Lay it out for me</button> <span class="muted">${stranded ? `A first go at what the teams still need, and a new slot for the ${stranded === 1 ? 'one' : stranded} that can’t stay where ${stranded === 1 ? 'it is' : 'they are'}; move anything.` : 'A first go at what the teams still need; move anything.'}</span></p>` : ''}${boardGrid(col, b.week, items, lit, pick)}
+      <p class="muted" style="margin:8px 0 0">${col.f ? 'Hatched is outside the club\u2019s permit or the field\u2019s hours; a closed day is struck. ' : ''}Teams on at once sit side by side, as many as there are.${noPlace ? ` ${noPlace} thing${noPlace === 1 ? ' has' : 's have'} no place yet and ${noPlace === 1 ? 'is' : 'are'} not drawn.` : ''}</p>`
+    : `<div class="empty"><strong>Nothing to lay out</strong>${adm ? 'Add the club\u2019s fields under <b>Fields and permits</b>, and the week\u2019s practices, games and sessions are drawn on them.' : 'Nothing with a place is on this week.'}</div>`;
+  if (!adm) return `<div class="card">${nav}${grid}</div><p class="muted">Your teams in colour; the rest of the club in grey, so you can see who is on the field with you.</p>`;
+  const rows = boardTeams(b.week, items);
+  const teamsCard = rows.length ? `<div class="card"><h2 style="margin-bottom:6px">Teams</h2><div class="plist">${rows.map(r => `<button class="prow go" type="button" data-act="schneed" data-tid="${esc(r.t.id)}" style="grid-template-columns:1fr auto">
+      <span style="min-width:0"><span class="pname">${teamLabel(r.t)}</span><span class="psub">${esc([`${r.n.per} \u00d7 ${r.n.len} min`, ...PTYPE_ORDER.filter(k => k !== 'regular' && r.n.need[k]).map(k => `${r.n.need[k]} ${kindOf(k).label.toLowerCase()}`), r.n.field ? (fieldById(r.n.field) || {}).name : '', r.coaches.map(coachName).join(', '), r.n.not.length ? 'not ' + r.n.not.map(i => WEEKDAYS[i]).join(', ') : ''].filter(Boolean).join(' \u00b7 '))}</span></span>
+      <span class="tag${r.placed + r.drafted < r.n.total ? ' wait' : ''}">${r.placed + r.drafted} of ${r.n.total} placed${r.drafted ? ` \u00b7 ${r.drafted} to write` : ''}</span></button>`).join('')}</div>
+    <p class="muted" style="margin:8px 0 0">Tap a team to set how many practices a week it needs, how long, its usual field and the nights it can't do.</p></div>` : '';
+  return `<div class="card">${nav}${grid}</div>${schedWriteCard(b.week)}${teamsCard}${schedStripCard(b.week, items)}`;
+}
+/* What is picked for the next tap on the grid: a team to place, or a draft
+   block or a weekly series to move. */
+function pickOf(p) {
+  const v = p.board.pick; if (!v) return null;
+  if (v.startsWith('b:')) { const b = draftBlocks().find(x => x.id === v.slice(2)); return b ? { kind: 'block', tid: b.tid, block: b } : null; }
+  if (v.startsWith('s:')) { const [, series, tid] = v.split(':'); return state.teams[tid] ? { kind: 'series', tid, series } : null; }
+  return state.teams[v] ? { kind: 'team', tid: v } : null;
+}
+/* The draft against the term: what is to write, from when to when, and the
+   buttons that write it or throw it away. Nothing drawn while the draft is
+   empty, so the first look at the board has no button on it that does
+   nothing. */
+function schedWriteCard(week) {
+  const d = schedDraft(), blocks = draftBlocks(), off = Object.keys(d.off || {}).filter(sid => !blocks.some(b => b.series === sid));
+  const { from, until } = draftTerm(week);
+  if (!blocks.length && !off.length) return '';
+  const news = blocks.filter(b => !b.series).length, moves = blocks.length - news;
+  const closed = schedClosed().filter(c => c.until >= from && c.from <= until);
+  return `<div class="card schedwrite"><h2 style="margin-bottom:6px">To write</h2>
+    <p style="margin:0 0 6px">${esc([news && `${news} new weekly slot${news === 1 ? '' : 's'}`, moves && `${moves} moved`, off.length && `${off.length} taken off`].filter(Boolean).join(' \u00b7 '))}, every week from <b>${esc(dayLabel(from))}</b> to <b>${esc(dayLabel(until))}</b>${closed.length ? `, skipping ${closed.map(c => esc(closureText(c))).join(', ')}` : ''}.</p>
+    <p class="muted" style="margin:0 0 10px">Each slot becomes one entry per week on that team\u2019s calendar, team-only, families asked, as the add sheet would make it. A coach can move or call off a week from her own calendar as she can any practice.</p>
+    <div class="row wrap"><button class="btn" data-act="schwrite">Put it on the calendars</button>
+      <button class="btn quiet" data-act="schterm">The term\u2026</button>
+      <button class="btn quiet" data-act="schclear">Throw the draft away</button></div></div>`;
+}
+/* The sheet a tapped cell opens: what would go there, the pitch where the
+   field has them, what refuses it or warns, and Place it (or Move it here). */
+function sheetSchedPlace(cand) {
+  const p = plannerUi(); p.place = cand;
+  const t = state.teams[cand.tid]; if (!t) return;
+  const f = cand.col.startsWith('f:') ? fieldById(cand.col.slice(2)) : null, pts = f ? pitchesOf(f) : [], k = kindOf(cand.ptype);
+  cand.tids = [...new Set([cand.tid, ...(cand.tids || [])].filter(x => state.teams[x]))];
+  const { refused, warned } = placeCheck(cand, p.board.week);
+  const chip = (v, on, l) => `<button class="chip" type="button" data-act="schpitch" data-v="${esc(v)}" aria-pressed="${on}">${esc(l)}</button>`;
+  const moving = !!(cand.series || cand.moving);
+  openSheet(`<h3>${moving ? 'Move' : 'Place'} ${teamLabel(t)}${k.id !== 'regular' ? ': ' + esc(k.label.toLowerCase()) : ''}</h3>
+    <p class="muted" style="margin-top:0">${esc(DAYS_LONG[cand.wd])}s \u00b7 ${esc(niceTime(cand.start))}\u2013${esc(niceTime(minHm(minOf(cand.start) + cand.len)))} \u00b7 ${esc(f ? f.name : cand.col.replace(/^t:/, ''))}${cand.series ? ' \u00b7 from this week on' : ''}${k.who === 'keepers' ? ' \u00b7 keepers only asked' : ''}</p>
+    ${k.who === 'keepers' || k.who === 'two' ? `<p class="lbl">${k.who === 'keepers' ? 'Which teams send keepers' : 'Against'}</p><div class="chips" style="margin-bottom:10px">${teams().map(x => `<button class="chip" type="button" data-act="schteams" data-v="${esc(x.id)}" aria-pressed="${cand.tids.includes(x.id)}"${x.id === cand.tid ? ' disabled' : ''}>${esc(x.name || 'Team')}</button>`).join('')}</div>` : ''}
+    ${pts.length && (k.space === 'share' || k.space === 'pitch') ? `<p class="lbl">Which pitch</p><div class="chips" style="margin-bottom:10px">${chip('', !cand.pitch, 'Any')}${pts.map(q => chip(q.id, cand.pitch === q.id, q.name)).join('')}</div>` : ''}
+    ${refused.length ? `<div class="warn alert" style="margin-bottom:10px"><b>Can\u2019t go here.</b> ${refused.map(esc).join(' ')}</div>` : ''}
+    ${warned.length ? `<div class="card planwarn" style="margin-bottom:10px">${warned.map(w => `<p>${esc(w)}</p>`).join('')}</div>` : !refused.length ? '<p class="muted">Nobody involved is busy, and the field is open.</p>' : ''}
+    ${refused.length ? '' : `<button class="btn wide" data-act="schplacego" style="margin-bottom:8px">${moving ? 'Move it here' : 'Place it'}</button>`}
+    <button class="btn quiet wide" data-act="${schedDraft().forbid[cellKey(cand.wd, cand.start, cand.col)] ? 'schunforbid' : 'schforbid'}" style="margin-bottom:8px">${schedDraft().forbid[cellKey(cand.wd, cand.start, cand.col)] ? 'Unmark this time' : 'Mark this time off the board'}</button>
+    <button class="btn quiet wide" data-act="closesheet">Cancel</button>`, true);
+}
+/* The sheet a block opens: a draft block (move, lock, take off) or a weekly
+   practice on the calendar (open it, move it on the board, take it off the
+   board from this week on). */
+function sheetSchedBlock(d) {
+  const p = plannerUi(), week = p.board.week;
+  if (d.id) {
+    const b = draftBlocks().find(x => x.id === d.id); if (!b) return;
+    const { warned } = placeCheck(b, week), t = state.teams[b.tid];
+    const f = b.col.startsWith('f:') ? fieldById(b.col.slice(2)) : null;
+    openSheet(`<h3>${b.tids.length > 1 ? esc(kindOf(b.ptype).label) + ' (' + esc(b.tids.map(shortTeam).join(', ')) + ')' : teamLabel(t) + (b.ptype !== 'regular' ? ': ' + esc(kindOf(b.ptype).label.toLowerCase()) : '')}: ${b.series ? 'moved slot' : 'new slot'}</h3>
+      <p class="muted" style="margin-top:0">${esc(DAYS_LONG[b.wd])}s \u00b7 ${esc(niceTime(b.start))}\u2013${esc(niceTime(minHm(minOf(b.start) + b.len)))} \u00b7 ${esc(f ? f.name : b.col.replace(/^t:/, ''))} \u00b7 not written yet${b.locked ? ' \u00b7 locked' : ''}</p>
+      ${warned.length ? `<div class="card planwarn" style="margin-bottom:10px">${warned.map(w => `<p>${esc(w)}</p>`).join('')}</div>` : ''}
+      <button class="btn wide" data-act="schmove" data-id="${esc(b.id)}" style="margin-bottom:8px">Move it</button>
+      <button class="btn quiet wide" data-act="schlock" data-id="${esc(b.id)}" style="margin-bottom:8px">${b.locked ? 'Unlock' : 'Lock it where it is'}</button>
+      <button class="btn danger wide" data-act="schdrop" data-id="${esc(b.id)}" style="margin-bottom:8px">Take it off</button>
+      <button class="btn quiet wide" data-act="closesheet">Cancel</button>`, true);
+    return;
+  }
+  const x = boardAll(week).find(y => y.key === d.k); if (!x || !x.tid) return;
+  const e = ((state.teams[x.tid] || {}).events || {})[x.key.slice(2)]; if (!e) return;
+  const adm = canPlanClub(), mine = coachOfTeam(x.tid, me && me.uid);
+  if (!adm && !mine) return;
+  const off = adm && !!schedDraft().off[x.series], w = wordOf(x.tid, x.series);
+  /* The coach's word (step 10): what she said, to the admin; and to the
+     team's own coach the two buttons with a note, whatever else is on the
+     sheet (an admin who coaches the team gets both). */
+  const said = w ? `<p style="margin:0 0 10px"><span class="tag${w.ok ? '' : ' wait'}">${w.ok ? 'Works' : 'Flagged'}</span> ${esc(coachName(w.by))} says ${w.ok ? 'it works' : 'this doesn\u2019t work'}${w.note ? ` \u2014 \u201c${esc(w.note)}\u201d` : ''}</p>` : adm ? '<p class="muted" style="margin:0 0 10px">The coach hasn\u2019t said yet.</p>' : '';
+  const word = mine ? `<p class="lbl">Your word on this slot</p>
+    <label class="field"><span>A note for the club</span><input type="text" id="swNote" maxlength="200" value="${esc(w && w.by === me.uid ? w.note : '')}" placeholder="I don\u2019t get off until 6:30"></label>
+    <div class="row wrap" style="margin-bottom:10px"><button class="btn" data-act="schword" data-ok="1" data-tid="${esc(x.tid)}" data-s="${esc(x.series)}">Works for me</button>
+      <button class="btn quiet" data-act="schword" data-ok="0" data-tid="${esc(x.tid)}" data-s="${esc(x.series)}">This doesn\u2019t work</button></div>
+    <p class="muted" style="margin:0 0 10px">The club sees it on the board. Nothing moves until an admin moves it.</p>` : '';
+  openSheet(`<h3>${teamLabel(state.teams[x.tid])}: ${esc(e.title || 'Practice')}</h3>
+    <p class="muted" style="margin-top:0">${esc(DAYS_LONG[weekdayOf(e.date)])}s \u00b7 ${esc(niceTime(e.start))}${e.end ? '\u2013' + esc(niceTime(e.end)) : ''} \u00b7 ${esc(e.venue || '')} \u00b7 every week${off ? ' \u00b7 taken off the board from this week' : ''}</p>
+    ${said}${word}
+    <button class="btn quiet wide" data-act="calitem" data-k="practice" data-tid="${esc(x.tid)}" data-id="${esc(e.id)}" style="margin-bottom:8px">Open the practice</button>
+    ${!adm ? '' : off ? `<button class="btn wide" data-act="schunoff" data-s="${esc(x.series)}" style="margin-bottom:8px">Keep it after all</button>`
+      : `<button class="btn wide" data-act="schmoveseries" data-s="${esc(x.series)}" data-tid="${esc(x.tid)}" style="margin-bottom:8px">Move it on the board</button>
+      <button class="btn danger wide" data-act="schoffseries" data-s="${esc(x.series)}" style="margin-bottom:8px">Take it off from this week on</button>`}
+    <button class="btn quiet wide" data-act="closesheet">Cancel</button>`, true);
+}
+/* The term: from when to when the draft is written, and the club's blackout
+   dates (org/sched/closed), which no practice is written on. The dates are
+   the draft's, on this phone; a blackout is the club's, one record each. */
+function sheetSchedTerm() {
+  const p = plannerUi(), { from, until } = draftTerm(p.board.week), closed = schedClosed();
+  openSheet(`<h3>The term</h3>
+    <div class="grid2">
+      <label class="field"><span>From</span><input type="date" id="stFrom" value="${esc(from)}"></label>
+      <label class="field"><span>Until</span><input type="date" id="stUntil" value="${esc(until)}"></label>
+    </div>
+    <p class="muted" style="margin-top:0">Every slot on the board is written each week between these, at most ${SERIES_MAX} weeks.</p>
+    <p class="lbl">No practice on</p>
+    ${closed.map(c => `<div class="spread" style="margin-bottom:6px"><span>${esc(closureText(c))}</span><button class="btn quiet sm" data-act="schclosedrm" data-id="${esc(c.id)}">Remove</button></div>`).join('') || '<p class="muted" style="margin:0 0 6px">No holidays or weeks off yet.</p>'}
+    <div class="grid2">
+      <label class="field"><span>From</span><input type="date" id="scFrom" value=""></label>
+      <label class="field"><span>Until</span><input type="date" id="scUntil" value=""></label>
+    </div>
+    <label class="field"><span>Why</span><input type="text" id="scNote" maxlength="120" placeholder="Half term, exam week, the tournament"></label>
+    <button class="btn quiet wide" data-act="schclosedadd" style="margin-bottom:12px">Add the dates</button>
+    <button class="btn wide" data-act="schtermsave" style="margin-bottom:8px">Save</button>
+    <button class="btn quiet wide" data-act="closesheet">Cancel</button>`, true);
+}
+/* The Rules tab: every rule with its tier, for the club or for one team,
+   the presets, and the club's own rules. */
+function plannerRules(p) {
+  const tid = p.rfor && state.teams[p.rfor] ? p.rfor : '';
+  const chip = (act, v, on, l, extra = '') => `<button class="chip" type="button" data-act="${act}" data-v="${esc(v)}" aria-pressed="${!!on}"${extra}>${esc(l)}</button>`;
+  const sc = schedOrg(), preset = tid ? (((sc.teams || {})[tid] || {}).preset) : sc.preset;
+  const rows = RULES.map(r => {
+    const own = tid ? ((((sc.teams || {})[tid] || {}).rules || {})[r.id]) : null, eff = ruleTier(r.id, tid);
+    return `<div class="rulerow"><p style="margin:0 0 4px"><b>${esc(r.label)}</b>${r.later ? ' <span class="muted">(counted from a later build)</span>' : r.fill ? ' <span class="muted">(the fill only)</span>' : ''}${tid && !TIERS.includes(own) ? ' <span class="muted">· the club’s</span>' : ''}</p>
+      <div class="chips" style="margin-bottom:10px">${TIERS.map(x => chip('schrtier', x, eff === x, TIER_LABEL[x], ` data-r="${r.id}"`)).join('')}${tid && TIERS.includes(own) ? chip('schrtier', '', false, 'As the club', ` data-r="${r.id}"`) : ''}</div></div>`;
+  }).join('');
+  const cs = customRules(), cf = p.custom || {};
+  return `<div class="card"><p class="lbl" style="margin-top:0">For</p>
+    <div class="chips" style="margin-bottom:10px">${chip('schrfor', '', !tid, 'The club')}${teams().map(t => chip('schrfor', t.id, tid === t.id, t.name || 'Team')).join('')}</div>
+    <p class="muted" style="margin:0">${tid ? `${esc(shortTeam(tid))}’s own tiers, where they differ from the club’s. A team with many single parents weighs the family rules High here and nowhere else.` : 'Must refuses on the board. High, Medium and Low warn, and cost in that order when the board lays the week out. Off keeps a rule in the list and worthless.'}</p></div>
+    <div class="card"><p class="lbl" style="margin-top:0">Start from</p>
+    <div class="chips" style="margin-bottom:6px">${Object.entries(SCHED_PRESETS).map(([k, v]) => chip('schpreset', k, preset === k, v.label)).join('')}</div>
+    <p class="muted" style="margin:0">A preset writes every rule’s tier out below; nothing is hidden behind the name.</p></div>
+    <div class="card">${rows}</div>
+    ${(() => { const cc = coachCaps(''), hc = householdCaps(); return `<div class="card"><h2 style="margin-bottom:6px">Limits</h2>
+      <p class="lbl" style="margin-top:0">A coach, unless her own say otherwise (Coaches)</p>
+      <div class="grid2"><label class="field"><span>Sessions a day</span><input type="number" id="lmPerDay" min="1" max="6" value="${cc.perDay}"></label><label class="field"><span>A week</span><input type="number" id="lmPerWeek" min="1" max="20" value="${cc.perWeek}"></label></div>
+      <div class="grid2"><label class="field"><span>Hours a day</span><input type="number" id="lmHours" min="0.5" max="10" step="0.25" value="${cc.hoursDay / 60}"></label><label class="field"><span>Minutes between</span><input type="number" id="lmGap" min="0" max="120" step="5" value="${cc.gap}"></label></div>
+      <p class="lbl">A household’s soccer hours</p>
+      <div class="grid2"><label class="field"><span>A day</span><input type="number" id="lmFamDay" min="0.5" max="10" step="0.25" value="${hc.hoursDay / 60}"></label><label class="field"><span>A week</span><input type="number" id="lmFamWeek" min="0.5" max="40" step="0.25" value="${hc.hoursWeek / 60}"></label></div>
+      <button class="btn quiet wide" data-act="schlimsave">Save the limits</button>
+      <p class="muted" style="margin:8px 0 0">Counted from every practice, game and session, overlapping time once. A family is a count here, as everywhere.</p></div>`; })()}
+    <div class="card"><h2 style="margin-bottom:6px">The club’s own rules</h2>
+    ${cs.length ? `<div class="plist">${cs.map(c => `<div class="prow" style="grid-template-columns:1fr auto auto"><span><span class="pname">${esc(customText(c))}</span>${c.note ? `<span class="psub">${esc(c.note)}</span>` : ''}</span><span class="tag">${TIER_LABEL[c.tier]}</span><button class="btn quiet sm" data-act="schcrm" data-id="${esc(c.id)}">Remove</button></div>`).join('')}</div>` : '<p class="muted" style="margin:0 0 8px">None yet.</p>'}
+    <p class="lbl">Add one</p>
+    <div class="chips" style="margin-bottom:10px">${Object.entries(CUSTOM_SHAPES).map(([k, l]) => chip('schcshape', k, (cf.shape || 'tagfield') === k, l)).join('')}</div>
+    ${(cf.shape || 'tagfield') === 'after' ? `<label class="field"><span>For</span><select id="scTeam"><option value="">Teams tagged…</option>${teams().map(t => `<option value="${esc(t.id)}">${esc(t.name || 'Team')}</option>`).join('')}</select></label>
+      <div class="grid2"><label class="field"><span>Or a tag</span><input type="text" id="scA" maxlength="24" placeholder="u8"></label><label class="field"><span>Nothing after</span><input type="time" id="scTime" value="19:00"></label></div>`
+      : `<div class="grid2"><label class="field"><span>Teams tagged</span><input type="text" id="scA" maxlength="24" placeholder="needs lights"></label><label class="field"><span>Only on fields tagged</span><input type="text" id="scB" maxlength="24" placeholder="lights"></label></div>`}
+    <p class="lbl">How much it matters</p>
+    <div class="chips" style="margin-bottom:10px">${TIERS.filter(x => x !== 'off').map(x => chip('schctier', x, (cf.tier || 'high') === x, TIER_LABEL[x])).join('')}</div>
+    <label class="field"><span>Why</span><input type="text" id="scNote" maxlength="120" placeholder="The U8s are in bed by eight"></label>
+    <button class="btn wide" data-act="schcadd">Add the rule</button>
+    <p class="muted" style="margin:8px 0 0">A coach never on a day is her time off, under Coaches. Tags go on a team (its row on the board) and on a field (Fields and permits).</p></div>`;
+}
+/* A coach's own limits, over the club's (Coaches tab). */
+function sheetCoachLoad(uid) {
+  const cc = coachCaps(uid);
+  openSheet(`<h3>${esc(coachName(uid))}: limits</h3>
+    <p class="muted" style="margin-top:0">${cc.own ? 'Her own, over the club’s.' : 'The club’s, until changed here.'}</p>
+    <div class="grid2"><label class="field"><span>Sessions a day</span><input type="number" id="clPerDay" min="1" max="6" value="${cc.perDay}"></label><label class="field"><span>A week</span><input type="number" id="clPerWeek" min="1" max="20" value="${cc.perWeek}"></label></div>
+    <div class="grid2"><label class="field"><span>Hours a day</span><input type="number" id="clHours" min="0.5" max="10" step="0.25" value="${cc.hoursDay / 60}"></label><label class="field"><span>Minutes between</span><input type="number" id="clGap" min="0" max="120" step="5" value="${cc.gap}"></label></div>
+    <button class="btn wide" data-act="schloadsave" data-u="${esc(uid)}" style="margin-bottom:8px">Save</button>
+    ${cc.own ? `<button class="btn quiet wide" data-act="schloadclear" data-u="${esc(uid)}" style="margin-bottom:8px">As the club</button>` : ''}
+    <button class="btn quiet wide" data-act="closesheet">Cancel</button>`, true);
+}
+/* ---- the term view, reports and handing it on (SCHEDULER.md, step 11) ----
+   The step back the owner asked for ("a whole season at once, or maybe a
+   few"): the weeks of the term across and the teams down, each cell a team's
+   practices that week against what it needs, the weeks the club is off and a
+   field is closed marked, and what the write would change (the draft's new
+   slots, moved series and series taken off) marked in the cells before she
+   writes it. Drawn from the calendar and the draft like the board; nothing
+   is stored. */
+function termWeeks(week) {
+  const { from, until } = draftTerm(week), out = [];
+  for (let w = addDays(from, -weekdayOf(from)); w <= until && out.length < SERIES_MAX; w = addDays(w, 7)) out.push(w);
+  return out;
+}
+/* One team's week: its practices (the draft's included, a series taken off
+   left out), what it needs, and what the write changes there. */
+function termCell(tid, items) {
+  const need = schedNeed(tid).total, mine = items.filter(x => x.kind === 'practice' && tidsOf(x).includes(tid)), blocks = draftBlocks();
+  const on = mine.filter(x => !x.off), drafts = on.filter(x => x.draft);
+  return { tid, n: on.length, need, short: on.length < need, drafts: drafts.length, moved: drafts.filter(x => x.draft.series).length,
+    off: mine.filter(x => x.off && !blocks.some(b => b.series === x.series)).length, days: [...new Set(on.map(x => weekdayOf(x.date)))].sort().map(i => WEEKDAYS[i]) };
+}
+function termView(week) {
+  const closed = schedClosed(), fields = fieldList();
+  const weeks = termWeeks(week).map(w => {
+    const days = [...Array(7)].map((_, i) => addDays(w, i));
+    return { w, items: boardAll(w), blackout: closed.filter(c => c.from <= days[6] && c.until >= w),
+      shut: fields.map(f => ({ f, days: days.filter(d => fieldClosures(f).some(c => c.from <= d && d <= c.until)).map(d => WEEKDAYS[weekdayOf(d)]) })).filter(x => x.days.length) };
+  });
+  return { weeks, rows: teams().map(t => ({ t, cells: weeks.map(x => termCell(t.id, x.items)) })) };
+}
+/* What the draft would change when written, counted as the write card counts it. */
+function draftChanges() {
+  const d = schedDraft(), blocks = draftBlocks();
+  return { news: blocks.filter(b => !b.series).length, moved: blocks.filter(b => b.series).length, off: Object.keys(d.off || {}).filter(sid => !blocks.some(b => b.series === sid)).length };
+}
+const changesText = c => [c.news && `${c.news} new weekly slot${c.news === 1 ? '' : 's'}`, c.moved && `${c.moved} moved`, c.off && `${c.off} taken off`].filter(Boolean).join(' \u00b7 ');
+function plannerTerm(p) {
+  const week = p.board.week, tv = termView(week), { from, until } = draftTerm(week), ch = draftChanges(), changed = ch.news + ch.moved + ch.off;
+  const head = tv.weeks.map(x => `<th scope="col"${x.blackout.length ? ' class="tc-black"' : ''}><button class="btn quiet sm" type="button" data-act="schweek" data-date="${x.w}" data-tab="board" title="Open this week on the board">${esc(shortDate(x.w))}</button>${x.blackout.map(c => `<span class="tc-sub">${esc(c.note || 'No practice')}</span>`).join('')}${x.shut.map(y => `<span class="tc-sub">${esc(y.f.name)} closed ${esc(y.days.join(', '))}</span>`).join('')}</th>`).join('');
+  const body = tv.rows.map(r => `<tr><th scope="row">${esc(shortTeam(r.t.id))}</th>${r.cells.map(c => `<td class="tc${c.short ? ' tc-short' : ''}${c.drafts ? ' tc-draft' : ''}${c.off ? ' tc-off' : ''}">${c.need || c.n ? `${c.n} of ${c.need}` : '\u2014'}${c.days.length ? `<span class="tc-sub">${c.days.join(' ')}</span>` : ''}${c.drafts ? `<span class="tc-sub">${c.moved ? (c.moved === c.drafts ? 'moved' : 'moved, new') : 'new'}</span>` : ''}${c.off ? '<span class="tc-sub">taken off</span>' : ''}</td>`).join('')}</tr>`).join('');
+  return `<div class="card"><h2 style="margin-bottom:6px">The term</h2>
+    <p class="muted" style="margin:0 0 8px">${esc(dayLabel(from))} to ${esc(dayLabel(until))}: ${tv.weeks.length} week${tv.weeks.length === 1 ? '' : 's'}. Each cell is a team\u2019s practices that week against what it needs; a week the club is off, or a field is closed, says so under its date. Tap a week to open it on the board.</p>
+    <p style="margin:0 0 8px">${changed ? `<b>When you write it:</b> ${esc(changesText(ch))}, every week of the term. Marked in the cells below.` : 'Nothing to write: the term as the calendars have it.'}</p>
+    ${tv.rows.length ? `<div class="tscroll"><table class="termgrid"><thead><tr><th scope="col"></th>${head}</tr></thead><tbody>${body}</tbody></table></div>` : '<p class="muted">No teams yet.</p>'}
+    <div class="row wrap" style="margin-top:10px"><button class="btn quiet" data-act="schterm">The term\u2026</button>${changed ? '<button class="btn" data-act="schwrite">Put it on the calendars</button>' : ''}</div></div>
+    ${schedReportCard(week)}
+    <div class="card"><h2 style="margin-bottom:6px">Hand it on</h2>
+    <p class="muted" style="margin:0 0 8px">The field schedule for the council, the school or another club: places, days and times, the teams by name, and nothing about a child. The week on the board, every weekly slot with the dates it runs between.</p>
+    <div class="row wrap"><button class="btn quiet" data-act="schcsv">Download the field schedule</button><button class="btn quiet" data-act="schprint">Print this week, a page per field</button></div></div>`;
+}
+/* The reports the strip summarises, for the week on the board: field use
+   (minutes on each field against the minutes it is open, pitch by pitch; a
+   field with no permit and no hours is open all day and gets no share), the
+   longest coach day, families with children due in two places at once, and
+   what the draft would change. */
+function schedReport(week) {
+  const items = boardAll(week).filter(x => !x.off), days = [...Array(7)].map((_, i) => addDays(week, i));
+  const fields = fieldList().map(f => {
+    const col = 'f:' + f.id, on = items.filter(x => x.col === col), bounded = permitsOf(f).length || Object.values(fieldHours(f)).some(h => h && (h.closed || h.from));
+    let open = null;
+    if (bounded) { open = 0; for (const d of days) { const shut = boardShut(f, d, 0, 24); open += (shut.some(x => x[2] === 'closed') ? 0 : 1440 - shut.reduce((n, [a, b]) => n + (b - a), 0)) * pitchCount(f); } }
+    const used = on.reduce((n, x) => n + (x.b - x.a), 0), byDay = {};
+    for (const x of on) byDay[x.date] = (byDay[x.date] || 0) + (x.b - x.a);
+    const busiest = Object.entries(byDay).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))[0];
+    return { f, n: on.length, used, open, pct: open ? Math.round(100 * used / open) : null, busiest: busiest ? busiest[0] : '' };
+  });
+  let worst = null;
+  for (const u of [...coachUids()].sort()) for (const d of days) {
+    const mine = items.filter(x => x.date === d && x.coaches.includes(u)); if (!mine.length) continue;
+    const mins = mergedMins(mine.map(x => [x.a, x.b]));
+    if (!worst || mins > worst.mins || (mins === worst.mins && mine.length > worst.n)) worst = { uid: u, date: d, mins, n: mine.length, places: [...new Set(mine.map(placeName).filter(Boolean))] };
+  }
+  const siblings = days.map(d => ({ date: d, n: clubClashesOn(d).filter(c => c.kind === 'family').length })).filter(x => x.n);
+  return { fields, worst, siblings, changes: draftChanges() };
+}
+function schedReportCard(week) {
+  const r = schedReport(week), day = d => DAYS_LONG[weekdayOf(d)], changed = r.changes.news + r.changes.moved + r.changes.off;
+  return `<div class="card"><h2 style="margin-bottom:6px">This week in numbers</h2>
+    <p class="lbl" style="margin-top:0">Field use</p>
+    ${r.fields.length ? r.fields.map(x => `<p style="margin:0 0 6px"><b>${esc(x.f.name)}</b>: ${x.n ? `${minsText(x.used)} on it${x.pct != null ? ` of ${minsText(x.open)} open (${x.pct}%)` : ', open all day'}${x.busiest ? `; busiest ${day(x.busiest)}` : ''}` : 'nothing on it'}</p>`).join('') : '<p class="muted" style="margin:0 0 6px">No fields yet.</p>'}
+    <p class="lbl">The longest coach day</p>
+    <p style="margin:0 0 6px">${r.worst ? `${esc(coachName(r.worst.uid))}: ${day(r.worst.date)}, ${r.worst.n} session${r.worst.n === 1 ? '' : 's'}, ${minsText(r.worst.mins)}${r.worst.places.length ? ` (${esc(r.worst.places.join(', '))})` : ''}` : 'No coach is due anywhere this week.'}</p>
+    <p class="lbl">Families with children in two places at once</p>
+    <p style="margin:0 0 6px">${r.siblings.length ? esc(r.siblings.map(x => `${day(x.date)}: ${x.n}`).join(' \u00b7 ')) : 'None.'}</p>
+    <p class="lbl">Changes from what is written</p>
+    <p style="margin:0">${changed ? esc(changesText(r.changes)) : 'None: the board is the calendars.'}</p></div>`;
+}
+/* The field schedule export: one row per thing on a field the week on the
+   board, with the dates a weekly slot runs between. Places, days, times and
+   teams by name; nothing about a child, which is what a council needs. */
+const FIELD_CSV_COLS = ['Field', 'Pitch', 'Day', 'Time', 'Team', 'Kind', 'From', 'Until'];
+function itemSpan(x, week) {
+  if (x.draft) { const { from, until } = draftTerm(week); return [from, until]; }
+  if (x.series && x.tid) { const ds = Object.values((state.teams[x.tid] || {}).events || {}).filter(e => e && e.series === x.series && okDay(e.date)).map(e => e.date).sort(); if (ds.length) return [ds[0], ds[ds.length - 1]]; }
+  return [x.date, x.date];
+}
+function fieldScheduleCsv(week) {
+  const rows = [FIELD_CSV_COLS.join(',')];
+  const items = boardAll(week).filter(x => !x.off && x.col && ['practice', 'game', 'session'].includes(x.kind)).sort((p, q) => p.col.localeCompare(q.col) || p.date.localeCompare(q.date) || p.a - q.a);
+  for (const x of items) {
+    const f = x.col.startsWith('f:') ? fieldById(x.col.slice(2)) : null, pt = f && x.pitch ? pitchesOf(f).find(q => q.id === x.pitch) : null, span = itemSpan(x, week);
+    const team = x.tids && x.tids.length > 1 ? x.tids.map(shortTeam).join(' / ') : x.tid ? shortTeam(x.tid) : '';
+    rows.push([f ? f.name : x.venue, pt ? pt.name : '', DAYS_LONG[weekdayOf(x.date)], `${minHm(x.a)}-${minHm(x.b)}`, team, x.kind === 'practice' ? kindOf(x.ptype).label : x.kind === 'game' ? 'Game' : 'Session', span[0], span[1]].map(csvCell).join(','));
+  }
+  return rows.join('\r\n') + '\r\n';
+}
+function exportFieldSchedule(week) {
+  try {
+    const blob = new Blob([fieldScheduleCsv(week)], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob), link = document.createElement('a');
+    link.href = url; link.download = `fields-${week}.csv`;
+    if (document.body && document.body.appendChild) document.body.appendChild(link);
+    link.click();
+    if (link.parentNode) link.parentNode.removeChild(link);
+    setTimeout(() => URL.revokeObjectURL(url), 4000);
+  } catch (e) { toast('This phone could not save the file'); }
+}
+/* A printable week: every field's grid for the week on the board, a page
+   each, the club named, and nothing else on the page while it prints. */
+function schedPrintPages(week) {
+  const items = boardAll(week).filter(x => !x.off), cols = boardColumns(items), end = addDays(week, 6);
+  if (!cols.length) return '<div class="empty"><strong>Nothing to print</strong>No field has anything on it this week.</div>';
+  return cols.map(c => `<section class="printpage"><h2 style="margin-bottom:2px">${esc(c.name)}</h2><p class="muted" style="margin:0 0 8px">${esc(clubName())} \u00b7 ${esc(dayLabel(week))} to ${esc(dayLabel(end))}</p>${boardGrid(c, week, items, null, null)}</section>`).join('');
+}
+function schedPrint() {
+  const p = plannerUi(); p.printing = true; render();
+  const done = () => { p.printing = false; render(); };
+  if (typeof window === 'undefined' || typeof window.print !== 'function') { done(); return; }
+  setTimeout(() => { try { window.print(); } finally { done(); } }, 60);
+}
+function viewScheduler() {
+  if (!canSched()) return `<div class="empty"><strong>Coaches and club admins only</strong>The club's week laid out by field is for the people who run it.</div>`;
+  const p = plannerUi(), adm = canPlanClub();
+  if (!adm) p.tab = 'board';
+  const tab = (k, l) => `<button class="chip" type="button" data-act="pltab" data-k="${k}" aria-pressed="${p.tab === k}">${l}</button>`;
+  // printing: the week, a page per field, and nothing else on the page (step 11)
+  if (adm && p.printing) return `<div class="printpages">${schedPrintPages(p.board.week)}</div>`;
+  const body = p.tab === 'find' ? plannerFind(p) : p.tab === 'pic' ? plannerPic(p) : p.tab === 'coach' ? plannerCoaches(p) : p.tab === 'rules' ? plannerRules(p) : p.tab === 'term' ? plannerTerm(p) : schedBoard(p, adm);
+  return `<div class="stack">
+    ${adm ? `<div class="chips">${tab('board', 'Board')}${tab('term', 'The term')}${tab('rules', 'Rules')}${tab('find', 'Find a time')}${tab('coach', 'Coaches')}${tab('pic', 'Picture day')}</div>` : ''}
+    ${body}</div>`;
 }
 /* Who can coach then: every coach, free first, each saying where she is
    otherwise, with her time off below and a way for the admin to add some or
@@ -18408,9 +19630,9 @@ function plannerCoaches(p) {
     <div class="grid2"><label class="field"><span>From</span><input type="time" id="cwH0" value="${esc(c.h0)}"></label>
       <label class="field"><span>Until</span><input type="time" id="cwH1" value="${esc(c.h1)}"></label></div>
     <button class="btn wide" data-act="plcw">Who's free</button></div>
-    ${rows.length ? `<div class="plist">${rows.map(r => `<div class="prow" style="grid-template-columns:1fr auto">
-      <span><span class="pname">${esc(coachName(r.u))}</span><span class="psub">${esc([teamsOf(r.u), r.why].filter(Boolean).join(' · '))}</span></span>
-      <span class="tag${r.state === 'off' || r.state === 'busy' ? ' off' : ''}">${label[r.state]}</span></div>`).join('')}</div>`
+    ${rows.length ? `<div class="plist">${rows.map(r => `<div class="prow" style="grid-template-columns:1fr auto auto">
+      <span><span class="pname">${esc(coachName(r.u))}</span><span class="psub">${esc([teamsOf(r.u), r.why, (cc => cc.own ? `her own limits: ${cc.perDay} a day, ${cc.perWeek} a week` : '')(coachCaps(r.u))].filter(Boolean).join(' · '))}</span></span>
+      <span class="tag${r.state === 'off' || r.state === 'busy' ? ' off' : ''}">${label[r.state]}</span>${canPlanClub() ? `<button class="btn quiet sm" data-act="schload" data-u="${esc(r.u)}">Limits</button>` : ''}</div>`).join('')}</div>`
       : `<div class="empty"><strong>No coaches yet</strong>Give someone a coach's role on a team under People.</div>`}
     <div class="card"><h2 style="margin-bottom:6px">Time off</h2>
       ${[...coachUids()].sort((x, y) => coachName(x).localeCompare(coachName(y))).map(u => {
@@ -18486,11 +19708,180 @@ function sheetPlBook(date, a) {
     <button class="btn quiet wide" data-act="closesheet" style="margin-top:8px">Cancel</button>`, true);
 }
 function onPlannerAct(a, d) {
-  // checked here, not just by the screen being hidden: this writes to every team's calendar
-  if (!canPlanClub()) { closeSheet(); toast('Planning is for club admins'); render(); return; }
+  /* Checked here, not just by the screen being hidden: the rest of this
+     writes to every team's calendar or the club's settings. A coach reaches
+     the board and its week and field, and nothing else. */
+  const reading = ['scheduler', 'schweek', 'schfield', 'schblock', 'schword'].includes(a);
+  if (!canSched() || (!canPlanClub() && !reading)) { closeSheet(); toast('Planning is for club admins'); render(); return; }
   plannerRead();
+  // the coach's word on her own team's weekly slot (step 10): hers alone, checked here, one write under her team
+  if (a === 'schword') {
+    const tid = String(d.tid || ''), sid = String(d.s || '');
+    if (!state.teams[tid] || !sid) return;
+    if (!coachOfTeam(tid, me && me.uid)) { toast('Only the team\u2019s coach can say'); return; }
+    const note = String((($('#swNote') || {}).value) || '').trim().slice(0, 200);
+    quiet(`teams/${tid}/confirm/${sid}`, { ok: d.ok === '1', by: me.uid, at: nowMs(), note });
+    saveLocal(); closeSheet(); render(); toast(d.ok === '1' ? 'Works for you: the club has your word' : 'Flagged: the club has your note'); return;
+  }
   const p = plannerUi();
-  if (a === 'planner') { ui.view = 'planner'; render(); toTop(); return; }
+  if (a === 'scheduler') { ui.view = 'scheduler'; render(); toTop(); return; }
+  if (a === 'schweek') { p.board.week = okDay(d.date) ? addDays(d.date, -weekdayOf(d.date)) : d.v === '0' ? addDays(todayStr(), -weekdayOf(todayStr())) : addDays(p.board.week, 7 * (Number(d.v) || 0)); if (d.tab === 'board') p.tab = 'board'; plannerUi(); render(); return; }
+  if (a === 'schcsv') { exportFieldSchedule(p.board.week); return; }
+  if (a === 'schprint') { schedPrint(); return; }
+  if (a === 'schfield') { p.board.field = String(d.v || ''); render(); return; }
+  if (a === 'schneed') { p.need = null; sheetSchedNeed(d.tid); return; }
+  if (a === 'schneedwd') {
+    schedNeedRead(); const f = p.need; if (!f) return;
+    const i = Number(d.v); f.not = f.not.includes(i) ? f.not.filter(x => x !== i) : [...f.not, i].sort();
+    sheetSchedNeed(f.tid); return;
+  }
+  if (a === 'schneedsave') {
+    schedNeedRead(); const f = p.need; if (!f || f.tid !== d.tid || !state.teams[f.tid]) return;
+    const per = Math.min(7, Math.max(0, Math.round(Number(f.per) || 0)));
+    const len = SCHED_LENS.includes(Number(f.len)) ? Number(f.len) : 60;
+    const need = {};
+    for (const k of PTYPE_ORDER) if (k !== 'regular') { const v = Math.min(7, Math.max(0, Math.round(Number((f.need || {})[k]) || 0))); if (v) need[k] = v; }
+    const tags = Object.fromEntries((f.tags || []).map(x => [x, true]));
+    const keep = (((schedOrg().teams || {})[f.tid]) || {});
+    // the team's tiers and preset are the Rules tab's, kept as they are when the needs are saved
+    const rec = { per, len, field: f.field && fieldById(f.field) ? f.field : '', not: [...new Set(f.not.map(Number).filter(x => x >= 0 && x <= 6))].sort(), note: String(f.note || '').trim().slice(0, 120), ...(Object.keys(need).length ? { need } : {}),
+      ...(Object.keys(tags).length ? { tags } : {}), ...(keep.rules ? { rules: keep.rules } : {}), ...(keep.preset ? { preset: keep.preset } : {}) };
+    // one record, at the depth the rule on org grants an admin
+    quiet(`access/org/sched/teams/${f.tid}`, rec);
+    p.need = null; saveLocal(); closeSheet(); render(); toast('Saved'); return;
+  }
+  if (a === 'schpick') { p.board.pick = d.v && state.teams[d.v] ? d.v : ''; render(); return; }
+  if (a === 'schkind') { p.board.kind = PTYPES[d.v] ? d.v : 'regular'; render(); return; }
+  if (a === 'schfill') { const r = layOut(p.board.week); p.board.pick = ''; render(); sheetFillReport(r); return; }
+  if (a === 'schfillundo') {
+    const dr = schedDraft();
+    for (const id of p.lastFill || []) { const b = dr.blocks[id]; if (b && b.series) delete dr.off[b.series]; delete dr.blocks[id]; }
+    p.lastFill = []; saveDraft(); closeSheet(); render(); return;
+  }
+  if (a === 'schrfor') { p.rfor = state.teams[d.v] ? d.v : ''; render(); return; }
+  if (a === 'schlimsave') {
+    const num = id => { const el = $('#' + id); const v = el && el.value !== '' ? Number(el.value) : NaN; return Number.isFinite(v) ? v : null; };
+    const caps = normCaps({ perDay: num('lmPerDay'), perWeek: num('lmPerWeek'), hoursDay: num('lmHours') == null ? null : num('lmHours') * 60, gap: num('lmGap') });
+    const hh = {}; for (const [k, id] of [['hoursDay', 'lmFamDay'], ['hoursWeek', 'lmFamWeek']]) { const v = num(id); if (v != null) hh[k] = Math.round(v * 60 / 15) * 15; }
+    quiet('access/org/sched/coaches/default', caps); quiet('access/org/sched/household', hh);
+    saveLocal(); render(); toast('Saved'); return;
+  }
+  if (a === 'schload') { if (!coachUids().has(d.u)) return; sheetCoachLoad(d.u); return; }
+  if (a === 'schloadsave') {
+    if (!coachUids().has(d.u)) return;
+    const num = id => { const el = $('#' + id); const v = el && el.value !== '' ? Number(el.value) : NaN; return Number.isFinite(v) ? v : null; };
+    const caps = normCaps({ perDay: num('clPerDay'), perWeek: num('clPerWeek'), hoursDay: num('clHours') == null ? null : num('clHours') * 60, gap: num('clGap') });
+    quiet(`access/org/sched/coaches/${d.u}`, caps); saveLocal(); closeSheet(); render(); toast('Saved'); return;
+  }
+  if (a === 'schloadclear') { if (!d.u) return; delDeep(state, `access/org/sched/coaches/${d.u}`); remoteDel(`access/org/sched/coaches/${d.u}`); saveLocal(); closeSheet(); render(); return; }
+  if (a === 'schrtier') {
+    const r = RULE[d.r]; if (!r) return;
+    const tid = p.rfor && state.teams[p.rfor] ? p.rfor : '', tier = TIERS.includes(d.v) ? d.v : '';
+    if (tier && tier !== 'must' && r.physical && ruleTier(r.id, tid) === 'must' && !confirm(`Lower “${r.label}”? The board will let it happen, and only warn. Two teams sharing one session is the usual reason.`)) return;
+    const path = tid ? `access/org/sched/teams/${tid}/rules/${r.id}` : `access/org/sched/rules/${r.id}`;
+    if (tier) quiet(path, tier); else { delDeep(state, path); remoteDel(path); }
+    saveLocal(); render(); return;
+  }
+  if (a === 'schpreset') {
+    if (!SCHED_PRESETS[d.v]) return;
+    const tid = p.rfor && state.teams[p.rfor] ? p.rfor : '', base = tid ? `access/org/sched/teams/${tid}` : 'access/org/sched';
+    // written out as rules, one map, so the list below says exactly what the name did
+    quiet(`${base}/rules`, presetTiers(d.v)); quiet(`${base}/preset`, d.v);
+    saveLocal(); render(); toast(`${SCHED_PRESETS[d.v].label}: every rule’s tier is set out below`); return;
+  }
+  if (a === 'schcshape') { p.custom = { ...(p.custom || {}), shape: CUSTOM_SHAPES[d.v] ? d.v : 'tagfield' }; render(); return; }
+  if (a === 'schctier') { p.custom = { ...(p.custom || {}), tier: TIERS.includes(d.v) && d.v !== 'off' ? d.v : 'high' }; render(); return; }
+  if (a === 'schcadd') {
+    const val = id => { const el = $('#' + id); return el && typeof el.value === 'string' ? el.value : ''; };
+    const cf = p.custom || {}, shape = CUSTOM_SHAPES[cf.shape] ? cf.shape : 'tagfield', tier = TIERS.includes(cf.tier) && cf.tier !== 'off' ? cf.tier : 'high';
+    const rec = shape === 'after' ? { shape, a: state.teams[val('scTeam')] ? val('scTeam') : tagOf(val('scA')), b: hm(val('scTime')) } : { shape, a: tagOf(val('scA')), b: tagOf(val('scB')) };
+    if (!rec.a || !rec.b) { toast(shape === 'after' ? 'Say which team or tag, and the time' : 'Say both tags'); return; }
+    const id = uid();
+    quiet(`access/org/sched/custom/${id}`, { id, ...rec, tier, note: val('scNote').trim().slice(0, 120) });
+    p.custom = null; saveLocal(); render(); toast('Added to the list'); return;
+  }
+  if (a === 'schcrm') {
+    if (!d.id || !getDeep(state, `access/org/sched/custom/${d.id}`)) return;
+    delDeep(state, `access/org/sched/custom/${d.id}`); remoteDel(`access/org/sched/custom/${d.id}`);
+    saveLocal(); render(); return;
+  }
+  if (a === 'schteams') { const c = p.place; if (!c || !state.teams[d.v] || d.v === c.tid) return; c.tids = c.tids.includes(d.v) ? c.tids.filter(x => x !== d.v) : [...c.tids, d.v]; sheetSchedPlace(c); return; }
+  if (a === 'schcell') {
+    const pick = pickOf(p), wd = Number(d.wd), start = hm(d.t);
+    if (!pick || !Number.isInteger(wd) || wd < 0 || wd > 6 || !start) return;
+    const items = boardAll(p.board.week), cols = boardColumns(items);
+    const n = c => items.filter(x => x.col === c.id).length;
+    const col = cols.find(c => c.id === p.board.field) || cols.slice().sort((x, y) => n(y) - n(x))[0];
+    if (!col) return;
+    const need = schedNeed(pick.tid);
+    const kind = pick.kind === 'team' ? kindOf(p.board.kind) : kindOf('regular');
+    const cand = pick.kind === 'block' ? { ...pick.block, wd, start, col: col.id, pitch: pick.block.col === col.id ? pick.block.pitch : '', moving: true }
+      : { id: pick.kind === 'series' ? 'm_' + pick.series : uid(), tid: pick.tid, tids: [pick.tid], wd, start, len: pick.kind === 'series' ? seriesLen(pick.tid, pick.series) || need.len : kind.id === 'regular' ? need.len : kind.len, col: col.id, pitch: '', series: pick.kind === 'series' ? pick.series : '', locked: false, ptype: kind.id };
+    sheetSchedPlace(cand); return;
+  }
+  if (a === 'schpitch') { if (!p.place) return; p.place.pitch = String(d.v || ''); sheetSchedPlace(p.place); return; }
+  if (a === 'schplacego') {
+    const c = p.place; if (!c || !state.teams[c.tid]) return;
+    if (placeCheck(c, p.board.week).refused.length) { toast('It can’t go there'); return; }
+    const dr = schedDraft();
+    dr.blocks[c.id] = { id: c.id, tid: c.tid, wd: c.wd, start: c.start, len: c.len, col: c.col, pitch: c.pitch || '', series: c.series || '', locked: !!c.locked, ptype: PTYPES[c.ptype] ? c.ptype : 'regular', tids: [...new Set([c.tid, ...(c.tids || [])])] };
+    if (c.series) dr.off[c.series] = true;
+    saveDraft(); p.place = null; p.board.pick = ''; closeSheet(); render(); toast(c.series ? 'Moved on the board. Nothing is written until you put it on the calendars.' : 'On the board. Nothing is written until you put it on the calendars.'); return;
+  }
+  if (a === 'schforbid' || a === 'schunforbid') {
+    const c = p.place; if (!c) return;
+    const dr = schedDraft(), k = cellKey(c.wd, c.start, c.col);
+    if (a === 'schforbid') dr.forbid[k] = true; else delete dr.forbid[k];
+    saveDraft(); p.place = null; closeSheet(); render(); return;
+  }
+  if (a === 'schblock') { sheetSchedBlock(d); return; }
+  if (a === 'schmove') { const b = draftBlocks().find(x => x.id === d.id); if (!b) return; p.board.pick = 'b:' + b.id; closeSheet(); render(); return; }
+  if (a === 'schlock') { const dr = schedDraft(), b = dr.blocks[d.id]; if (!b) return; b.locked = !b.locked; saveDraft(); sheetSchedBlock({ id: d.id }); render(); return; }
+  if (a === 'schdrop') {
+    const dr = schedDraft(), b = dr.blocks[d.id]; if (!b) return;
+    delete dr.blocks[d.id]; if (b.series) delete dr.off[b.series];
+    saveDraft(); closeSheet(); render(); return;
+  }
+  if (a === 'schmoveseries') { if (!d.s || !state.teams[d.tid]) return; p.board.pick = `s:${d.s}:${d.tid}`; closeSheet(); render(); return; }
+  if (a === 'schoffseries') { if (!d.s) return; const dr = schedDraft(); dr.off[d.s] = true; saveDraft(); closeSheet(); render(); return; }
+  if (a === 'schunoff') { if (!d.s) return; const dr = schedDraft(); delete dr.off[d.s]; for (const [id, b] of Object.entries(dr.blocks)) if (b && b.series === d.s) delete dr.blocks[id]; saveDraft(); closeSheet(); render(); return; }
+  if (a === 'schterm') { sheetSchedTerm(); return; }
+  if (a === 'schtermsave') {
+    const val = id => { const el = $('#' + id); return el && typeof el.value === 'string' ? el.value : ''; };
+    const from = val('stFrom'), until = val('stUntil');
+    if (!okDay(from) || !okDay(until)) { toast('Give the term a first and a last day'); return; }
+    if (until < from) { toast('The last day is before the first'); return; }
+    const dr = schedDraft(); dr.from = from; dr.until = until; saveDraft(); closeSheet(); render(); return;
+  }
+  if (a === 'schclosedadd') {
+    const val = id => { const el = $('#' + id); return el && typeof el.value === 'string' ? el.value : ''; };
+    const from = val('scFrom'), until = val('scUntil') || from, note = val('scNote').trim().slice(0, 120);
+    if (!okDay(from)) { toast('Pick the first day'); return; }
+    const id = uid();
+    quiet(`access/org/sched/closed/${id}`, { id, from, until: okDay(until) && until >= from ? until : from, note });
+    saveLocal(); sheetSchedTerm(); return;
+  }
+  if (a === 'schclosedrm') {
+    if (!d.id || !getDeep(state, `access/org/sched/closed/${d.id}`)) return;
+    delDeep(state, `access/org/sched/closed/${d.id}`); remoteDel(`access/org/sched/closed/${d.id}`);
+    saveLocal(); sheetSchedTerm(); return;
+  }
+  if (a === 'schclear') {
+    if (!confirm('Throw the draft away? Nothing on the calendars changes.')) return;
+    const dr = schedDraft(); dr.blocks = {}; dr.off = {}; dr.forbid = {}; saveDraft(); p.board.pick = ''; render(); return;
+  }
+  if (a === 'schwrite') {
+    const blocks = draftBlocks(), off = Object.keys(schedDraft().off || {});
+    if (!blocks.length && !off.length) { toast('Nothing on the board to write'); return; }
+    const bad = blocks.filter(b => placeCheck(b, p.board.week).refused.length);
+    if (bad.length) { toast(`${bad.length === 1 ? 'A slot' : bad.length + ' slots'} can’t go where ${bad.length === 1 ? 'it is' : 'they are'} any more: tap ${bad.length === 1 ? 'it' : 'them'} to see why`); return; }
+    const { from, until } = draftTerm(p.board.week);
+    if (!confirm(`Put ${blocks.length ? blocks.length + ' slot' + (blocks.length === 1 ? '' : 's') : 'this'} on the calendars, every week from ${dayLabel(from)} to ${dayLabel(until)}?`)) return;
+    const r = schedWrite(p.board.week);
+    p.board.pick = ''; render();
+    toast([r.made && `${r.made} practice${r.made === 1 ? '' : 's'} added`, r.moved && `${r.moved} moved`, r.removed && `${r.removed} taken off`].filter(Boolean).join(', ') + (r.teams ? ` on ${r.teams} calendar${r.teams === 1 ? '' : 's'}` : '') || 'Nothing to write: every week already had it');
+    return;
+  }
   if (a === 'pltab') { p.tab = d.k; render(); return; }
   if (a === 'plcw') { render(); return; }
   if (a === 'plrange') { p.days = Number(d.v); render(); return; }
@@ -18613,7 +20004,7 @@ function sheetSchedAdd(date, time) {
     ${groups.map(g => `${groups.length > 1 ? `<p class="lbl">${esc(g.label)}</p>` : '<p class="lbl">For which team</p>'}
       ${g.teams.map(t => `<button class="opt" data-act="schedfor" data-tid="${esc(t.id)}" style="border-left:4px solid ${teamHue(t.id)}"><b>${teamLabel(t)}</b>
         <span class="rowsub">${esc((gd => gd.onFieldCount ? `${gd.onFieldCount}v${gd.onFieldCount} · ${gd.periodCount} × ${gd.periodMinutes} min` : 'No games yet')(gameDefaults(t.id)))}</span></button>`).join('')}`).join('')}
-    ${k === 'event' && canAdmin() ? '<p class="muted">The same thing for several teams at once (a meeting, picture day) is under <b>Clashes and finding a time</b>, which books one entry on each.</p>' : ''}`, true);
+    ${k === 'event' && canAdmin() ? '<p class="muted">The same thing for several teams at once (a meeting, picture day) is the Scheduler\u2019s <b>Find a time</b>, which books one entry on each.</p>' : ''}`, true);
 }
 
 let gamesForm = null;
@@ -23763,11 +25154,13 @@ function onAct(e) {
   /* The form's own kind is calfkind: as calkind it was the Calendars panel's
      Show filter, whose handler comes first, so tapping Practice in the form
      hid practices from the calendar and left the form as it was. */
-  if (a === 'calfkind' || a === 'calrepeat' || a === 'calwd' || a === 'calpub' || a === 'calask' || a === 'calscopeed') {
+  if (a === 'calfkind' || a === 'calptype' || a === 'calrepeat' || a === 'calwd' || a === 'calpub' || a === 'calask' || a === 'calscopeed') {
     if (!calForm) return;
     calFormRead();
     const f = calForm;
     if (a === 'calfkind') f.kind = d.v === 'practice' ? 'practice' : 'event';
+    // a kind picked: its usual length fills an end the coach hasn't typed
+    if (a === 'calptype') { f.ptype = PTYPES[d.v] ? d.v : 'regular'; if (hm(f.start) && !hm(f.end)) f.end = minHm(Math.min(minOf(f.start) + kindOf(f.ptype).len, 23 * 60 + 59)); }
     // turning it on is when the days get chosen, so start from the date as typed by then
     if (a === 'calrepeat') { f.repeat = d.v === '1'; if (f.repeat && okDay(f.date)) f.days = [weekdayOf(f.date)]; }
     if (a === 'calwd') { const i = Number(d.v); f.days = f.days.includes(i) ? f.days.filter(x => x !== i) : [...f.days, i].sort(); }
@@ -24184,7 +25577,7 @@ function uiToHash() {
   if (ui.view === 'people') return '#/club/people';
   if (ui.view === 'club') return '#/club';
   if (ui.view === 'admin') return '#/club/settings';
-  if (ui.view === 'planner') return '#/club/planner';
+  if (ui.view === 'scheduler') return '#/club/scheduler';
   if (ui.view === 'regs') return '#/club/registrations';
   if (ui.view === 'tryout') return '#/club/tryouts';
   if (ui.view === 'comply') return '#/club/compliance';
@@ -24205,7 +25598,7 @@ function hashToUi() {
      address (build 102): All teams on the Calendar. #/my-calendar is what My
      calendar's feed links back to. */
   if (p[0] === 'club' && (p[1] === 'calendar' || p[1] === 'schedule')) { ui.view = 'calendar'; ui.calSel = 'club'; return true; }
-  if (p[0] === 'club') { ui.view = p[1] === 'settings' ? 'admin' : p[1] === 'people' ? 'people' : p[1] === 'planner' ? 'planner' : p[1] === 'registrations' ? 'regs' : p[1] === 'tryouts' ? 'tryout' : p[1] === 'compliance' ? 'comply' : 'club'; return true; }
+  if (p[0] === 'club') { ui.view = p[1] === 'settings' ? 'admin' : p[1] === 'people' ? 'people' : p[1] === 'planner' || p[1] === 'scheduler' ? 'scheduler' : p[1] === 'registrations' ? 'regs' : p[1] === 'tryouts' ? 'tryout' : p[1] === 'compliance' ? 'comply' : 'club'; return true; }
   if (p[0] === 'my-players') { ui.view = 'mine'; return true; }
   if (p[0] === 'games') { ui.view = 'games'; return true; }
   if (p[0] === 'my-calendar') { ui.view = 'calendar'; ui.calSel = 'mine'; return true; }

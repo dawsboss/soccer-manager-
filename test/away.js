@@ -100,8 +100,11 @@ const blank = { awFrom: '', awTo: '', awStart: '', awEnd: '', awNote: '' };
     const ft = A.findTimes({ tids: ['t1'], len: 60, from: MON, days: 2, h0: '19:00', h1: '20:00', field: '', ran: true });
     check('find a time counts her busy on Mondays', ft.find(r => r.date === MON).why.join(), 'Jaz is busy');
     check('and free on Tuesday evening', ft.find(r => r.date === TUE).why.length, 0);
-    A.ui.view = 'planner'; A.ui.planner = { tab: 'clash', days: 7 }; A.render();
-    check('the clashes tab lists coaches\' time off', /Coaches' time off/.test(A.rendered()) && /<b>Jaz<\/b> · Every Mon/.test(A.rendered()), true);
+    // the Clashes tab is the Scheduler's strip since build 163; time off itself is listed on the Coaches tab
+    A.ui.view = 'scheduler'; A.ui.planner = { tab: 'board', board: { week: MON } }; A.render();
+    check('the board\'s strip says she is due at practice on her night off', /Time off<\/span> Jaz has time off \(Every Mon, all day\) but is due at/.test(A.rendered()), true);
+    A.ui.planner = { tab: 'coach' }; A.render();
+    check('the Coaches tab lists coaches\' time off', /Time off/.test(A.rendered()) && /<b>Jaz<\/b>/.test(A.rendered()) && /Every Mon, all day/.test(A.rendered()), true);
 
     as('jaz');
     A.sess.away = { jaz: { w: { id: 'w', kind: 'weekly', days: [0], by: 'jaz', at: 1 } } };
@@ -222,7 +225,7 @@ const blank = { awFrom: '', awTo: '', awStart: '', awEnd: '', awNote: '' };
     const b = A.coachStatus('jaz', TUE, 17 * 60 + 45, 18 * 60 + 15);
     check('busy says where', b.state + ' ' + b.why, 'busy G11 Flight: Practice at 5:30pm; G13 Storm: Practice at 6pm');
     deepEq('who is free at once', A.freeCoaches(MON, 9 * 60, 10 * 60), ['Jaz', 'Kim'].map(n => n.toLowerCase()));
-    A.ui.view = 'planner'; A.ui.planner = { tab: 'coach', cw: { date: TUE, h0: '18:00', h1: '19:00' } }; A.render();
+    A.ui.view = 'scheduler'; A.ui.planner = { tab: 'coach', cw: { date: TUE, h0: '18:00', h1: '19:00' } }; A.render();
     const html = A.rendered();
     check('the Coaches tab lists every coach with where she is', /G13 Storm: Practice at 6pm/.test(html) && />Busy</.test(html), true);
     check('with a way to add time off for each', /data-act="awaynew" data-u="kim"/.test(html), true);

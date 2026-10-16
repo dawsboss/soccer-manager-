@@ -206,6 +206,13 @@ const EXPORTS = `{
   /* rendering + routing */
   render, uiToHash, hashToUi, syncHash, openSheet, closeSheet, clubTag,
   clubClashesOn, coachStatus, freeCoaches, clubNews, newsFor, newsItems, newsUnread, fieldShut, fieldHours, fieldClosures, awayAll, awaySpans, calledOut, findTimes, picOrder, picLayout, plannerClashes, PLANNER_ACTS,
+  canSched, schedNeed, boardItems, boardColumns, boardHours, boardShut, boardLanes, boardTeams, driveWarnings, schedStrip, DRIVE_GAP_MIN,
+  schedDraft, saveDraft, draftBlocks, draftTerm, draftItems, boardAll, placeCheck, blockFields, schedWrite, schedClosed, addSeries, seriesLen, pickOf,
+  layOut, fillCells, fillExtra, fillWants, sheetFillReport, itemBlock, strandedItems, strandedAhead, coachOfTeam, wordOf,
+  termWeeks, termView, termCell, draftChanges, schedReport, fieldScheduleCsv, FIELD_CSV_COLS, schedPrintPages, itemSpan,
+  PTYPES, PTYPE_ORDER, kindOf, ptypeOf, whoOf, tidsOf, rsvpSquad, rsvpCounts,
+  RULES, RULE, TIERS, TIER_COST, ruleTier, SCHED_PRESETS, presetTiers, customRules, customText, teamTags, fieldTags, tagList,
+  coachCaps, householdCaps, normCaps, minsText, mergedMins, familyMinutes, loadWarnings, fieldSunset, sunsetOn,
   /* the club's week, adding to any team, and fields shared */
   schedWeek, schedTodo, schedLine, gameDefaults, fieldMates, fieldMatesLine, placeClash, myCalOwn, SCHED_ACTS, get gamesForm() { return gamesForm },
   viewRoster, teamSetUp,

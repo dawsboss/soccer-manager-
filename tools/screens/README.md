@@ -19,7 +19,8 @@ node gen-club.js live live.json         # Saturday, a game 38 minutes in
 node gen-club.js details details.json   # the club still wants her child's details confirmed
 python3 -m http.server 8765 --bind 127.0.0.1 --directory ../..   # the site, in another shell
 node shoot.js quiet.json mum shots/mum-quiet family   # personas: mum dad nan kid jaz boss anon newbie signedout
-node shoot.js live.json mum shots/mum-live live       # tours: family live staff landing anon
+node shoot.js live.json mum shots/mum-live live       # tours: family live staff landing anon scheduler
+node gen-club.js quiet quiet.json fields && node shoot.js quiet.json boss shots/boss-sched scheduler   # the Scheduler's board, with fields and permits on the club
 node render-states.js && node shoot-states.js shots/onboarding   # invite, team link, registration, share pages
 python3 index.py                        # INDEX.md: every capture by persona and step
 ```

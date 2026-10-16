@@ -98,7 +98,7 @@ const fill = vals => { for (const [k, v] of Object.entries(vals)) A.dom.node('#'
     A.click({ act: 'tab', tab: 'more' });
     check('More has All teams for her (the owner, 2026-10-15)', /data-act="schedule"><b>All teams<\/b>/.test(sheet(A)), true);
     A.click({ act: 'schedule' });
-    check('— which opens the Calendar on every team', A.ui.view + ' ' + A.calSel() + ' ' + /data-act="planner"/.test(A.rendered()), 'calendar club true');
+    check('— which opens the Calendar on every team, with no week card there: the Scheduler has it (SCHEDULER.md, build 163)', A.ui.view + ' ' + A.calSel() + ' ' + /clubweek|data-act="scheduler"/.test(A.rendered()), 'calendar club false');
     A.ui.view = 'club'; A.render();
     check('her own calendar holds only her own', A.myCalOwn(), false);
     A.click({ act: 'schedule' });
@@ -129,12 +129,14 @@ const fill = vals => { for (const [k, v] of Object.entries(vals)) A.dom.node('#'
   {
     as('boss'); A.ui.view = 'calendar'; A.ui.calSel = 'club'; A.ui.calView = 'week'; A.ui.calDay = TUE; A.render();
     const html = A.rendered();
-    check('the week runs Monday to Sunday', /14 Sep – 20 Sep/.test(html), true);
+    check('the week runs Monday to Sunday', /aria-label="Mon 14 Sep"/.test(html) && /aria-label="Sun 20 Sep"/.test(html), true);
     check('every team\'s entries, under their day', /G11 Flight/.test(html) && /G13 Storm/.test(html) && /Team photo/.test(html), true);
     const w = A.schedWeek();
     check('counted', [w.games, w.practices, w.events].join(), '0,2,1');
     check('a team with no practice this week is said', w.idle.join(), 't3');
-    check('on screen, in the club\'s week', /class="card clubweek"/.test(html) && /No practice this week: B9 Comets/.test(html), true);
+    // the club's week card came off the Calendar in build 163 (SCHEDULER.md): what it said is the Scheduler's strip
+    check('and said on the Scheduler, not on the Calendar', !/clubweek/.test(html) && (A.ui.view = 'scheduler', A.ui.planner = { board: { week: TUE } }, A.render(), /B9 Comets: 0 of 1 practice this week/.test(A.rendered())), true);
+    A.ui.view = 'calendar'; A.render();
     check('a day with nothing has a way to add to it', /class="tg-slot"[^>]*data-act="schedadd" data-v="2026-09-14" data-t="18:00"/.test(html), true);
 
     A.click({ act: 'caltog', tid: 't1' });
@@ -154,7 +156,10 @@ const fill = vals => { for (const [k, v] of Object.entries(vals)) A.dom.node('#'
     check('still to settle: the photo with no time or place', todo.some(r => r.x.title === 'Team photo' && r.miss.join() === 'time,place'), true);
     check('and nothing already played', todo.some(r => r.x.id === 'm0'), false);
     A.ui.calDay = TUE; A.render();
-    check('listed on the screen', /Still to settle/.test(A.rendered()) && /No time, no place yet/.test(A.rendered()), true);
+    check('not on the Calendar any more (build 163)', /Still to settle/.test(A.rendered()), false);
+    A.ui.view = 'scheduler'; A.ui.planner = { board: { week: TUE } }; A.render();
+    check('listed on the Scheduler', /Still to settle/.test(A.rendered()) && /No time, no place yet/.test(A.rendered()), true);
+    A.ui.view = 'calendar';
   }
 
   console.log('\n--- shared field time ---');
@@ -178,7 +183,10 @@ const fill = vals => { for (const [k, v] of Object.entries(vals)) A.dom.node('#'
     check('a game on a one-pitch field with a practice on it is a clash', A.fieldMates(g).clash, true);
     check('said as one', /^Field clash: /.test(A.fieldMatesLine(g)), true);
     A.ui.view = 'calendar'; A.ui.calSel = 'club'; A.ui.calDay = TUE; A.render();
-    check('and counted in the club\'s week', A.schedWeek().clash > 0 && /no pitch left/.test(A.rendered()), true);
+    check('and counted in the club\'s week', A.schedWeek().clash > 0, true);
+    A.ui.view = 'scheduler'; A.ui.planner = { board: { week: TUE } }; A.render();
+    check('said on the Scheduler\'s strip, not the Calendar', /Same place<\/span> Lakeside Park: B9 Comets: v Riverside/.test(A.rendered()), true);
+    A.ui.view = 'calendar';
     c.access.org = { venues: { v1: { id: 'v1', name: 'Lakeside Park', pitches: 3 } } };
     check('with a pitch for each, the game only shares', A.fieldMates(g).clash, false);
     c.teams.t2.events.e2.called = 'cancelled';

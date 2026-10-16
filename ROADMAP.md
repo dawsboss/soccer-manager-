@@ -147,6 +147,10 @@ Two steps further, in increasing cost:
 > (weekly, dates away, calling out of one entry), were built the same day,
 > the time off at `training/{code}/away` rather than `access/members` (build history
 > says why). Games are said, never offered to move.
+>
+> **Next, 2026-10-15:** the owner wants the week laid out before it is
+> written, not reported on the Calendar after: a scheduler for admins, with
+> the club's week card off the Calendar. `SCHEDULER.md` is the brief.
 
 The next piece of work, and the reason the calendar, answers and attendance
 were built the way they were. A club admin scheduling the season asks one
