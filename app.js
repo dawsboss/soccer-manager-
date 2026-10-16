@@ -2,7 +2,7 @@
    Static app. Data lives in localStorage, and mirrors to Firebase Realtime
    Database when a config + workspace code are present. */
 
-const BUILD = '165';
+const BUILD = '166';
 const BUILT = '2026-10-14';
 /* The version of database.rules.json this app was written against. The rules
    carry the same number in rulesVersion's .write, which accepts that number
@@ -20974,7 +20974,22 @@ function sheetPlayer(p) {
     <div style="margin-top:8px"><button class="btn danger wide" data-act="delplayer" data-pid="${p.id}">Remove from roster</button></div>`);
 }
 
-function sheetAvailability() {
+/* Whether starting this game's plan asks who is coming first. A plan is made
+   from the players who are coming, so a coach who starts placing them before
+   she has looked at the answers plans for the wrong number: a family that said
+   nothing is in it, a maybe is in it, and finding out at the field means
+   redoing it there. So the first tap that puts somebody into an empty plan
+   (Plan kick-off, Draft a plan) opens the list instead, once per game on this
+   phone. Not once it has kicked off: then the plan is made from who turned up. */
+function asksWhoComing(t, m) {
+  return !!t && !!m && notKickedOff(m) && !planBlocks(m).length
+    && !((ui.availOk || {})[m.id]) && players(t).some(p => p.active !== false);
+}
+
+/* `then` is the tap that opened it as that check (snapstart or makeplan): the
+   same list, with the button that carries on and says how many it plans for. */
+function sheetAvailability(then) {
+  ui.availThen = then || null;
   const t = team(), m = match();
   const said = pid => rsvpOf(t.id, 'g_' + m.id, pid);
   const why = p => {
@@ -20985,11 +21000,27 @@ function sheetAvailability() {
     return fam;
   };
   const fromFamily = players(t).filter(p => p.active !== false && isOut(m, p.id) && (m.out || {})[p.id] === undefined).length;
+  const rows = players(t).filter(p => p.active !== false).map(p => `<button class="opt spread" type="button" data-act="toggleout" data-pid="${p.id}">
+      <span>${esc(p.number ?? '')} ${esc(p.name)}${why(p) ? `<span class="rowsub">${esc(why(p))}</span>` : ''}</span>
+      <span class="${isOut(m, p.id) ? 'off' : 'on'}">${isOut(m, p.id) ? 'out' : 'available'}</span></button>`).join('');
+  if (then) {
+    const ps = players(t).filter(p => p.active !== false), inn = ps.filter(p => !isOut(m, p.id));
+    const maybe = inn.filter(p => (said(p.id) || {}).v === 'maybe').length;
+    const quiet_ = inn.filter(p => !said(p.id) && (m.out || {})[p.id] !== false).length;
+    const n = inn.length;
+    openSheet(`<h3>Who is coming to ${esc(m.opponent || 'this game')}?</h3>
+      <p class="muted" style="margin-top:0">Check before you plan, so the plan has the right number of players. Tap anyone to put her in or leave her out.</p>
+      <p style="margin:0 0 10px"><b>${n} coming</b>${ps.length - n ? ` · ${ps.length - n} out` : ''}${maybe ? ` · ${maybe} maybe` : ''}${quiet_ ? ` · ${quiet_} not answered` : ''}</p>
+      ${quiet_ || maybe ? `<p class="muted" style="margin-top:0">Anyone who has not answered, or said maybe, is planned for until you leave her out.</p>` : ''}
+      ${rows}
+      ${n ? `<button class="btn wide" data-act="${esc(then)}" data-checked="1">Plan for ${n} player${n === 1 ? '' : 's'}</button>`
+        : '<p class="muted">Nobody is coming yet, so there is nobody to plan for.</p>'}
+      <div style="margin-top:8px"><button class="btn quiet wide" data-act="closesheet">Not now</button></div>`);
+    return;
+  }
   openSheet(`<h3>Available for ${esc(m.opponent || 'this game')}</h3>
     <p class="muted" style="margin-top:0">Anyone out is left out of the bench, the plan and the even split — but keeps her season totals. Families\u2019 answers come straight in: <b>not going</b> means out until you say otherwise.${fromFamily ? ` ${fromFamily} out because ${fromFamily === 1 ? 'her family said so' : 'their families said so'}.` : ''}</p>
-    ${players(t).filter(p => p.active !== false).map(p => `<button class="opt spread" type="button" data-act="toggleout" data-pid="${p.id}">
-      <span>${esc(p.number ?? '')} ${esc(p.name)}${why(p) ? `<span class="rowsub">${esc(why(p))}</span>` : ''}</span>
-      <span class="${isOut(m, p.id) ? 'off' : 'on'}">${isOut(m, p.id) ? 'out' : 'available'}</span></button>`).join('')}
+    ${rows}
     <button class="btn wide" data-act="closesheet">Done</button>`);
 }
 
@@ -23289,7 +23320,7 @@ function onAct(e) {
     if (want && onField(m, d.pid)) takeOffField(m, d.pid);
     if (want === familySaidNo(m, d.pid)) drop(`matches/${m.id}/out/${d.pid}`);
     else commit(`matches/${m.id}/out/${d.pid}`, want);
-    sheetAvailability(); return;
+    sheetAvailability(ui.availThen); return;
   }
 
   if (a === 'fixclock') { sheetFixClock(); return; }
@@ -23352,6 +23383,13 @@ function onAct(e) {
     saveLocal(); closeSheet(); render(); toast('Minutes updated'); return;
   }
 
+  /* Before the first player goes into an empty plan, who is coming
+     (asksWhoComing()). The sheet's button is the same tap again, marked as
+     checked, which closes the sheet and carries on. */
+  if ((a === 'snapstart' || a === 'makeplan') && m) {
+    if (d.checked) { (ui.availOk = ui.availOk || {})[m.id] = 1; closeSheet(); }
+    else if (asksWhoComing(t, m)) { sheetAvailability(a); return; }
+  }
   if (a === 'makeplan') {
     const roster = squad(t, m);
     if (!roster.length) { toast('Add players first'); return; }

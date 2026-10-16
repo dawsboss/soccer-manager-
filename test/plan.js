@@ -53,6 +53,9 @@ function setup(opts = {}) {
   A.ui.teamId = 't1'; A.ui.matchId = 'g1';
   A.ui.view = 'game'; A.ui.gameView = 'plan'; A.ui.plan = null; A.ui.picked = null;
   A.ui.snapAt = null; A.ui.snapSid = null;
+  /* who is coming has been looked at for this game, so Plan kick-off and Draft
+     a plan go straight in; the section on that check clears it */
+  A.ui.availOk = { g1: 1 }; A.ui.availThen = null;
   return () => A.state.matches.g1;
 }
 const html = () => { A.render(); return A.rendered(); };
@@ -66,6 +69,53 @@ console.log('--- an empty plan says how to start ---');
   const h = html();
   check('the tab leads with the lineup and offers kick-off (build 146: Lineup, not Snapshots)', /<h2[^>]*>Lineup<\/h2>/.test(h) && /Plan kick-off/.test(h) && h.indexOf('>Lineup<') < h.indexOf('data-act="planall"'), true);
   check('and still offers the draft', /Draft a plan/.test(h), true);
+}
+
+console.log('\n--- before the first player goes in, who is coming ---');
+{
+  const g = setup();
+  A.ui.availOk = {};
+  A.state.rsvp = { t1: { g_g1: { p1: { v: 'yes' }, p2: { v: 'no' }, p3: { v: 'maybe' } } } };
+  const sheet = () => String(A.dom.node('#sheet').innerHTML);
+  const open = () => !A.dom.node('#sheet').hidden;
+  A.click({ act: 'snapstart' });
+  check('Plan kick-off asks who is coming instead of starting the plan', open() && /Who is coming to Riverside\?/.test(sheet()), true);
+  check('and nothing is written to the plan yet', A.planBlocks(g()).length, 0);
+  check('it counts who is coming, out, maybe and not answered', /4 coming<\/b> · 1 out · 1 maybe · 2 not answered/.test(sheet()), true);
+  check('and its button plans for that many, carrying on the same tap', /data-act="snapstart" data-checked="1">Plan for 4 players</.test(sheet()), true);
+  A.click({ act: 'toggleout', pid: 'p4' });
+  check('leaving one out keeps the check open and counts again', open() && /Plan for 3 players/.test(sheet()), true);
+  check('— written as the coach\'s word on the game', g().out.p4, true);
+  A.click({ act: 'snapstart', checked: '1' });
+  check('carrying on closes the check and starts the plan', !open() && A.planBlocks(g()).length === 1, true);
+  check('with the players left out not on the list to place', A.squad(A.team(), g()).map(p => p.id).sort().join(), 'p1,p3,p5');
+  const conf = global.confirm; global.confirm = () => true;
+  A.click({ act: 'snapwipe' });
+  global.confirm = conf;
+  A.click({ act: 'snapstart' });
+  check('asked once per game on this phone: a fresh plan starts straight away', !open() && A.planBlocks(g()).length === 1, true);
+
+  const g2 = setup();
+  A.ui.availOk = {};
+  A.click({ act: 'makeplan' });
+  check('Draft a plan asks first too', open() && /data-act="makeplan" data-checked="1"/.test(sheet()) && !g2().plan, true);
+  A.click({ act: 'closesheet' });
+  check('Not now leaves the plan empty', !open() && !g2().plan, true);
+  A.click({ act: 'makeplan' });
+  check('so the next tap asks again', open(), true);
+  A.click({ act: 'makeplan', checked: '1' });
+  check('and carrying on drafts it', !open() && A.planBlocks(g2()).length > 0, true);
+
+  A.ui.availOk = {};
+  A.click({ act: 'availability' });
+  check('the Who is coming card\'s Change is the plain list, with no plan button', open() && !/data-checked/.test(sheet()), true);
+  A.click({ act: 'closesheet' });
+
+  const g3 = setup({ periods: { 0: { start: T0, end: null } }, currentHalf: 1 });
+  A.ui.availOk = {};
+  A.click({ act: 'snapstart' });
+  check('once kicked off the plan is made from who turned up: nothing asked', !open() && A.planBlocks(g3()).length === 1, true);
+  A.state.rsvp = {};
 }
 
 console.log('\n--- a game with no shape has no positions to plan ---');
