@@ -303,8 +303,10 @@ run of games is not: it goes through the outbox like every calendar write, so
 an admin with no signal sees *Waiting to send · n* and it lands when she has
 one.
 
-Once written, `org/sched/from` and `until` record the term, so the next time
-the screen opens it offers the week after `until` as the start of the next.
+Once written, `org/sched/from` and `until` record the term: a week opened
+inside it runs the term to that last day, so a slot re-laid in October is
+moved to the end of the term and not fifteen weeks on, and a week past it
+starts a new term of fifteen weeks (step 9).
 
 ## What the Calendar loses, and keeps
 
@@ -833,11 +835,27 @@ the rules grant today; **no step changes `database.rules.json`.**
    for a team it could not place which rule shut most cells and whether a
    tier on the Rules tab or more field would open it; *Take them off again*
    removes that run's blocks alone. A coach is refused in the handler.
-9. **Re-laying a term.** Opening the Scheduler on a term already written
-   starts from the calendar as it stands, so October's lost Thursday is the
-   same board: the stranded blocks are warned on the new supply, moved or
-   re-solved around what is kept with stability costing, and written as
-   edits under a new series id.
+9. **Re-laying a term** — built, build 169. Opening the Scheduler on a week
+   inside a term already written starts from the calendar as it stands and
+   runs the term to its recorded last day (`draftTerm()`), so October's lost
+   Thursday is the same board: a weekly slot a Must rule refuses where it
+   stands (`strandedItems()`: outside the permit or the hours since they
+   changed, on a closure, its coach now off, a game put on its pitch) is
+   stranded, said on the strip at Must under its day (*Can't stay*), and the
+   strip looks ahead to the first later week of the term with one
+   (`strandedAhead()`) with a button opening it. *Lay it out for me* is
+   offered though nobody is short and takes each stranded weekly slot as a
+   want first, as the series it is, remembering where it stood (`was`);
+   stability costs each change from there (the night, the hour, the field)
+   at High whatever its tier short of Off, so a slot moves to the same hour
+   on another night before another hour, and the move is a hand move's: the
+   series taken off the board from this week on, written as an edit under a
+   new series id, nothing new, earlier weeks untouched; *Take them off
+   again* gives the slot back. A kept series is never moved; a single
+   practice on the hatch is said and left to its coach, since the Scheduler
+   writes weekly slots. Not built: re-laying every week of the term from one
+   board (each week is re-laid on its own; the term view, step 11, is where
+   the weeks sit side by side).
 10. **The coach's word.** *Works for me* and *This doesn't work* with a note
     on her own blocks, one write at `teams/{tid}/confirm/{series}`, another
     team's refused in the handler, through the outbox; the admin's board

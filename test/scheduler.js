@@ -50,7 +50,22 @@
      saying how many, what they carry by rule, and for a team it could not
      place which rule shut most cells and whether relaxing a tier or more
      field would open it; the run taken off again as one tap; a coach
-     refused in the handler. */
+     refused in the handler.
+
+   Build 169, step 9 (re-laying a term):
+   - Inside a term already written the term runs to its last day; past it,
+     fifteen weeks. A weekly slot a Must rule refuses where it stands (the
+     permit no longer covering its night) is stranded: said on the strip at
+     Must, offered to the fill though nobody is short, the strip looking
+     ahead to the first later week with one and a button opening it. The
+     fill takes a stranded slot first, as the series it is, and stability
+     costs each change from where it stood (the night, the hour, the field)
+     at High, so it moves to the same hour on another night before another
+     hour; the move is a hand move's (the series taken off the board from
+     this week on, written as an edit under a new series id, nothing new,
+     earlier weeks untouched); taken off again gives the slot back. A kept
+     series is never moved; a single practice is said and left to its coach;
+     a coach reads a week by date and is refused the fill. */
 
 const H = require('./harness');
 const { check, deepEq } = H;
@@ -752,6 +767,72 @@ const blocks = html => [...html.matchAll(/<button type="button" class="tg-ev" ([
       wanted += want; placed += r.placed.length;
     }
     check('the sweep met clubs it could fill and clubs it could not', placed > 0 && placed < wanted, true);
+  }
+
+  console.log('\n--- re-laying a term: October\'s lost Thursday ---');
+  {
+    // the permit covers Thursdays until the end of September, then Monday to Wednesday alone; one field
+    const c = club(); c.matches = {}; delete c.access.org.venues.v2;
+    c.access.org.venues.v1.permits = { pm: { id: 'pm', days: [0, 1, 2, 3], start: '17:00', end: '20:00', until: '2026-09-30' }, pm2: { id: 'pm2', days: [0, 1, 2], start: '17:00', end: '20:00', from: '2026-10-01' } };
+    // the term written last month: G11 Thursdays at six, G13 Tuesdays at six, to the Sunday before Christmas
+    c.teams.t1.events = {}; c.teams.t2.events = {};
+    A.seriesDates('2026-09-17', '2026-12-20', [3]).forEach((date, i) => { c.teams.t1.events['h' + i] = { id: 'h' + i, kind: 'practice', title: 'Practice', date, start: '18:00', end: '19:00', venue: 'Lakeside Park', series: 's1', createdAt: 5 }; });
+    A.seriesDates('2026-09-15', '2026-12-20', [1]).forEach((date, i) => { c.teams.t2.events['u' + i] = { id: 'u' + i, kind: 'practice', title: 'Practice', date, start: '18:00', end: '19:00', venue: 'Lakeside Park', series: 's2' }; });
+    c.access.org.sched = { from: MON, until: '2026-12-20', teams: { t3: { per: 0 } } };
+    const OCT = '2026-09-28';
+    as('boss', c); A.render();
+    deepEq('inside a term already written, the term runs to its last day', A.draftTerm(MON), { from: MON, until: '2026-12-20' });
+    check('past it, a new one of fifteen weeks', A.draftTerm('2026-12-28').until, '2027-04-11');
+    check('September: every slot sits inside the permit', A.strandedItems(MON).length, 0);
+    deepEq('but the strip looks ahead: from the week of 1 October, one weekly slot can\'t stay', A.strandedAhead(MON), { week: OCT, n: 1 });
+    let h = A.rendered();
+    check('— said, with a button to that week', /<span class="tag off">Ahead<\/span> From Mon 28 Sep, a weekly slot can’t stay where it is: the field’s permit, hours or a closure change under it\. <button [^>]*data-act="schweek" data-date="2026-09-28"/.test(h), true);
+    check('— nothing to lay out this week', /data-act="schfill"/.test(h), false);
+    A.click({ act: 'schweek', date: OCT });
+    check('the week opened', A.ui.planner.board.week, OCT);
+    const st = A.strandedItems(OCT);
+    check('October: G11\'s Thursday is stranded, refused by the supply where it stands', st.length === 1 && st[0].x.series === 's1' && st[0].block.wd === 3 && st[0].block.start === '18:00' && /Outside the club’s permit or Lakeside Park’s hours/.test(st[0].refused[0]), true);
+    h = A.rendered();
+    check('— the strip says so under its day, at Must', /<h4[^>]*>Thu 1 Oct<\/h4>[^]*?<span class="tag off">Can’t stay<\/span> G11 Flight: Practice at 6pm, every week: Outside the club’s permit or Lakeside Park’s hours/.test(h), true);
+    check('— and the board offers to re-lay it though nobody is short', /Lay it out for me<\/button> <span class="muted">A first go at what the teams still need, and a new slot for the one that can’t stay where it is; move anything\./.test(h), true);
+    check('— G13\'s Tuesday, still inside the permit, is kept', st.some(x => x.x.series === 's2'), false);
+    const pre = A.boardAll(OCT);
+    deepEq('the fill wants it first, as the series it is, remembering where it stood', A.fillWants(OCT, pre)[0], { tid: 't1', ptype: 'regular', len: 60, series: 's1', was: { wd: 3, start: '18:00', col: 'f:v1' }, pitch: '' });
+    const was = { wd: 3, start: '18:00', col: 'f:v1' }, cand = (wd, start, col) => ({ id: 'q', tid: 't1', wd, start, len: 60, col, ptype: 'regular', series: 's1', was });
+    check('stability: each change from where it stands costs High, the night, the hour and the field apart', [A.fillExtra(cand(0, '18:00', 'f:v1'), OCT, pre), A.fillExtra(cand(0, '17:00', 'f:v1'), OCT, pre), A.fillExtra(cand(0, '17:00', 'f:v9'), OCT, pre)].join(), '100,200,300');
+    A.state.access.org.sched.rules = { stability: 'off' };
+    check('— nothing with the rule Off', A.fillExtra(cand(0, '17:00', 'f:v9'), OCT, pre), 0);
+    delete A.state.access.org.sched.rules;
+    const before = JSON.stringify(A.state);
+    let r = A.layOut(OCT);
+    let b = A.draftBlocks()[0];
+    check('laid out: the slot moved to the same hour on Monday (one change), not Monday at five, which the tie-break alone would have picked', [r.placed.length, r.wanted, b.tid, b.wd, b.start, b.col, b.series, b.fill].join('|'), '1|1|t1|0|18:00|f:v1|s1|true');
+    check('— as a hand move does: the series taken off the board from this week on', A.schedDraft().off.s1 === true && A.strandedItems(OCT).length === 0, true);
+    check('— nothing written', JSON.stringify(A.state), before);
+    A.render();
+    check('— the write card counts a move, the Thursday struck, Monday a draft', /1 moved, every week from <b>Mon 28 Sep<\/b> to <b>Sun 20 Dec<\/b>/.test(A.rendered()) && /data-off="1"/.test(A.rendered()) && /data-draft="1"/.test(A.rendered()), true);
+    A.sheetFillReport(r);
+    check('the report says what was a slot moved', /1 of 1 placed on the board \(1 a weekly slot moved from where it can’t stay\), as a first go: move anything\./.test(sheet(A)), true);
+    A.click({ act: 'schfillundo' });
+    check('taken off again: the slot stands where it was, stranded again', A.draftBlocks().length + ' ' + (A.schedDraft().off.s1 === undefined) + ' ' + A.strandedItems(OCT).length, '0 true 1');
+    r = A.layOut(OCT);
+    deepEq('written: an edit of the series from this week on, nothing new, nothing removed', A.schedWrite(OCT), { made: 0, moved: 12, removed: 0, teams: 1 });
+    const t1 = A.state.teams.t1.events, after = Object.values(t1).filter(e => e.date >= OCT).sort((x, y) => x.date.localeCompare(y.date));
+    check('— September\'s Thursdays untouched', [t1.h0.date, t1.h0.series, t1.h1.date, t1.h1.series].join(), '2026-09-17,s1,2026-09-24,s1');
+    check('— from October, Mondays at six, the same entries under one new series id', after.length === 12 && after.every(e => e.start === '18:00' && e.end === '19:00' && e.venue === 'Lakeside Park' && e.series && e.series !== 's1' && e.series === after[0].series && A.weekdayOf(e.date) === 0) && after[0].date === '2026-09-28' && after[11].date === '2026-12-14', true);
+    check('— G13\'s Tuesdays exactly as they were', JSON.stringify(A.state.teams.t2.events), JSON.stringify(c.teams.t2.events));
+    check('— the term recorded as it was', A.state.access.org.sched.from + ' ' + A.state.access.org.sched.until, MON + ' 2026-12-20');
+    // a single practice on the hatch is said and left to its coach: the Scheduler writes weekly slots
+    A.state.teams.t3.events.one = { id: 'one', kind: 'practice', title: 'Practice', date: '2026-10-01', start: '18:00', end: '19:00', venue: 'Lakeside Park' };
+    A.render();
+    check('a single practice stranded is said, as the coach\'s to move', /Can’t stay<\/span> B9 Comets: Practice at 6pm: Outside the club’s permit or Lakeside Park’s hours\. A single practice: move it from its calendar/.test(A.rendered()), true);
+    check('— not re-laid, and no button for it alone', A.fillWants(OCT, A.boardAll(OCT)).length + ' ' + /data-act="schfill"/.test(A.rendered()), '0 false');
+    // a coach reads the week ahead too, and lays nothing out
+    as('jaz', c); A.render();
+    A.click({ act: 'schweek', date: '2026-10-07' });
+    check('a coach opens a week by date', A.ui.planner.board.week, '2026-10-05');
+    A.toasts.length = 0; A.click({ act: 'schfill' });
+    check('— and is refused the fill', A.lastToast() + ' ' + A.draftBlocks().length, 'Planning is for club admins 0');
   }
 
   // last, as every suite has it: a second app loaded takes the harness's document with it
