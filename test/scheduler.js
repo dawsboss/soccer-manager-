@@ -121,7 +121,7 @@ const blocks = html => [...html.matchAll(/<button type="button" class="tg-ev" ([
     check('— Settings offers her the Scheduler, read-only', /data-act="scheduler"/.test(A.rendered()) && /beside everyone else/.test(A.rendered()), true);
 
     as('boss'); A.render(); h = A.rendered();
-    check('an admin: the board, Find a time, Coaches and Picture day as tabs', [...h.matchAll(/data-act="pltab" data-k="(\w+)"/g)].map(m => m[1]).join(), 'board,find,coach,pic');
+    check('an admin: the board, Rules, Find a time, Coaches and Picture day as tabs', [...h.matchAll(/data-act="pltab" data-k="(\w+)"/g)].map(m => m[1]).join(), 'board,rules,find,coach,pic');
     check('— no Clashes tab: it is the strip', /data-k="clash"/.test(h), false);
     check('— the teams against what they need', /data-act="schneed" data-tid="t1"/.test(h) && /What needs looking at/.test(h), true);
     check('— nothing dimmed on her board', blocks(h).every(b => b.dim === '0'), true);
@@ -229,7 +229,10 @@ const blocks = html => [...html.matchAll(/<button type="button" class="tg-ev" ([
     check('still to settle: the photo with no date, time or place', s.todo.map(r => r.x.title + ':' + r.miss.join()).join(), 'Team photo:date,time,place');
     check('— listed, a tap opening it', /Still to settle/.test(h) && /data-act="calitem" data-k="event" data-tid="t3" data-id="e3"/.test(h), true);
     check('two practices on one field are shared field time, apart and quiet', s.shared.length === 1 && !s.list.some(c => c.kind === 'shared') && /Shared field time/.test(h), true);
-    check('a family with children on both teams is said', s.list.some(c => c.kind === 'family'), true);
+    check('a family with children on both teams is said, at its rule\'s tier', s.list.some(c => c.kind === 'family' && c.tier === 'medium'), true);
+    A.state.access.org.sched = { rules: { familySplit: 'off' } };
+    check('— and not once the rule is Off', A.schedStrip(MON, A.boardItems(MON)).list.some(c => c.kind === 'family'), false);
+    delete A.state.access.org.sched;
     const e = club(); e.teams.t3.events = {}; e.matches = {}; e.access.org.sched = { teams: { t3: { per: 0 } } };
     as('boss', e); A.render();
     check('a team that needs none is not short', A.schedStrip(MON, A.boardItems(MON)).short.length, 0);
@@ -253,8 +256,12 @@ const blocks = html => [...html.matchAll(/<button type="button" class="tg-ev" ([
     check('the team already on then: refused', /G11 Flight already has Practice at 5:30pm/.test(sheet(A)) && !/schplacego/.test(sheet(A)), true);
     A.closeSheet();
     A.click({ act: 'schpick', v: 't3' }); A.click({ act: 'schcell', wd: '1', t: '17:30' });
-    check('warned, with a Place button: the coach due elsewhere, and a drive to her game', /Jaz is due at G11 Flight: Practice then/.test(sheet(A)) && /Jaz: a drive to B9 Comets: v Riverside at School turf \(30 minutes between\)/.test(sheet(A)) && /data-act="schplacego"/.test(sheet(A)), true);
+    check('the coach due elsewhere: refused by default (a Must rule), the drive to her game warned', /Can’t go here\.<\/b> Jaz is due at G11 Flight: Practice then/.test(sheet(A)) && /Jaz: a drive to B9 Comets: v Riverside at School turf \(30 minutes between\)/.test(sheet(A)) && !/data-act="schplacego"/.test(sheet(A)), true);
     A.closeSheet();
+    A.state.access.org.sched = { rules: { coachBusy: 'high' } };
+    A.click({ act: 'schcell', wd: '1', t: '17:30' });
+    check('the rule lowered to High: warned, with a Place button', /Jaz is due at G11 Flight: Practice then/.test(sheet(A)) && !/Can’t go here/.test(sheet(A)) && /data-act="schplacego"/.test(sheet(A)), true);
+    A.closeSheet(); delete A.state.access.org.sched;
     A.click({ act: 'schcell', wd: '0', t: '18:00' });
     check('a free cell: the pitches to pick, nobody busy', /Which pitch/.test(sheet(A)) && /data-act="schpitch" data-v="a"/.test(sheet(A)) && /Nobody involved is busy/.test(sheet(A)), true);
     A.click({ act: 'schpitch', v: 'a' });
@@ -390,8 +397,8 @@ const blocks = html => [...html.matchAll(/<button type="button" class="tg-ev" ([
     A.click({ act: 'schcell', wd: '2', t: '18:30' });
     check('on a one-pitch field a scrimmage leaves no pitch for a practice', /No pitch left: Scrimmage \(B9 Comets, G13 Storm\)/.test(sheet(A)), true);
     A.closeSheet();
-    A.click({ act: 'schkind', v: 'film' }); A.click({ act: 'schcell', wd: '2', t: '18:30' });
-    check('film is a room or nothing: neither the pitch nor the permit refuses it', !/No pitch left/.test(sheet(A)) && !/Outside the club’s permit/.test(sheet(A)) && /data-act="schplacego"/.test(sheet(A)), true);
+    A.click({ act: 'schkind', v: 'film' }); A.click({ act: 'schcell', wd: '2', t: '19:30' });
+    check('film is a room or nothing: neither the pitch nor the permit refuses it (past eight, on a one-pitch field with a scrimmage)', !/No pitch left/.test(sheet(A)) && !/Outside the club’s permit/.test(sheet(A)) && /data-act="schplacego"/.test(sheet(A)), true);
     A.closeSheet(); A.click({ act: 'schcell', wd: '4', t: '18:30' });
     check('— not even a closed day', !/is closed then/.test(sheet(A)) && /data-act="schplacego"/.test(sheet(A)), true);
     A.closeSheet(); A.click({ act: 'schpick', v: '' });
@@ -405,6 +412,76 @@ const blocks = html => [...html.matchAll(/<button type="button" class="tg-ev" ([
     check('the entries of a date share a club id across the teams, as picture day does', !!e1s[0].club && e1s[0].club === e2s[0].club && e1s[1].club === e2s[1].club && e1s[0].club !== e1s[1].club, true);
     A.render();
     check('and the board draws the two as one block', (A.rendered().match(/aria-label="Goalkeepers \(G11 Flight, G13 Storm\), 6pm to 7pm"/g) || []).length, 1);
+  }
+
+  console.log('\n--- rules and tiers ---');
+  {
+    as('boss');
+    check('every rule has a default tier and a label', A.RULES.length >= 18 && A.RULES.every(r => A.TIERS.includes(r.tier) && r.label), true);
+    check('a physical rule is Must by default', ['supply', 'pitchTaken', 'teamBusy', 'coachBusy', 'coachAway'].map(id => A.ruleTier(id)).join(), 'must,must,must,must,must');
+    A.state.access.org.sched = { rules: { drive: 'low', familySplit: 'off', usualField: 'bogus' }, teams: { t3: { rules: { drive: 'must' } } } };
+    check('the club\'s tier, the team\'s over it, an unknown word the default', [A.ruleTier('drive'), A.ruleTier('drive', 't3'), A.ruleTier('drive', 't1'), A.ruleTier('familySplit'), A.ruleTier('usualField'), A.ruleTier('nosuch')].join(), 'low,must,low,off,medium,off');
+    A.render(); A.click({ act: 'schpick', v: 't3' }); A.click({ act: 'schcell', wd: '1', t: '17:30' });
+    check('a rule made Must for one team refuses on its board: B9 Comets\' drive', /Can’t go here/.test(sheet(A)) && /Jaz: a drive to B9 Comets: v Riverside/.test(sheet(A)) && !/schplacego/.test(sheet(A)), true);
+    A.closeSheet();
+    A.state.access.org.sched.rules.coachBusy = 'high';
+    A.click({ act: 'schcell', wd: '1', t: '17:30' });
+    const refusedText = (sheet(A).match(/<b>Can’t go here\.<\/b>([^<]*)/) || [])[1] || '';
+    check('a physical rule lowered warns instead, the drive still refusing', /Jaz is due at G11 Flight: Practice then/.test(sheet(A)) && !/Jaz is due/.test(refusedText) && /a drive/.test(refusedText), true);
+    A.closeSheet();
+    A.state.access.org.sched = { rules: { familySplit: 'off', coachBusy: 'low', drive: 'high' } };
+    A.click({ act: 'schpick', v: 't2' }); A.click({ act: 'schcell', wd: '1', t: '17:30' });
+    check('a rule turned Off says nothing (the family with children on both teams)', /famil/.test(sheet(A)), false);
+    A.closeSheet(); A.click({ act: 'schpick', v: '' });
+    const pc = A.placeCheck({ id: 'x', tid: 't3', tids: ['t3'], wd: 1, start: '17:30', len: 60, col: 'f:v1', pitch: '', series: '', ptype: 'regular' }, MON);
+    check('placeCheck says each warning\'s rule and tier, highest first', pc.marks.length > 1 && pc.marks.every(m => m.rule && m.tier) && pc.marks.map(m => m.tier).join() === pc.marks.map(m => m.tier).sort((x, y) => ({ high: 0, medium: 1, low: 2 })[x] - ({ high: 0, medium: 1, low: 2 })[y]).join(), true);
+    check('— and the cost sums the tiers', pc.cost, pc.marks.reduce((n, m) => n + ({ high: 100, medium: 10, low: 1 })[m.tier], 0));
+    check('— a refusal costs everything', A.placeCheck({ id: 'x', tid: 't1', tids: ['t1'], wd: 1, start: '17:30', len: 60, col: 'f:v1', pitch: '', series: '', ptype: 'regular' }, MON).cost, Infinity);
+    delete A.state.access.org.sched;
+  }
+
+  console.log('\n--- the Rules tab: presets, a team\'s own tiers, the club\'s own rules, tags ---');
+  {
+    as('boss'); A.ui.planner = { tab: 'rules', board: { week: MON } }; A.render();
+    check('every rule with its five tier chips, for the club', (A.rendered().match(/data-act="schrtier"/g) || []).length, A.RULES.length * 5);
+    check('the presets', /data-act="schpreset" data-v="family"/.test(A.rendered()), true);
+    A.click({ act: 'schpreset', v: 'family' });
+    const rules = A.state.access.org.sched.rules;
+    check('a preset writes every rule\'s tier out, nothing hidden', [Object.keys(rules).length, rules.familySplit, rules.siblings, rules.supply, A.state.access.org.sched.preset].join(), A.RULES.length + ',high,high,must,family');
+    A.click({ act: 'schrtier', r: 'drive', v: 'low' });
+    check('a tier moved for the club', A.ruleTier('drive'), 'low');
+    A.click({ act: 'schrtier', r: 'teamBusy', v: 'high' });
+    check('a physical rule lowered, after asking (the harness says yes)', A.ruleTier('teamBusy'), 'high');
+    A.click({ act: 'schrfor', v: 't3' }); A.click({ act: 'schpreset', v: 'coach' });
+    check('a team\'s own preset: its tiers, the club\'s untouched', [A.ruleTier('drive', 't3'), A.ruleTier('drive'), A.state.access.org.sched.teams.t3.preset].join(), 'high,low,coach');
+    A.click({ act: 'schrtier', r: 'drive', v: '' });
+    check('As the club takes the team\'s own off', A.ruleTier('drive', 't3') + ' ' + ('drive' in A.state.access.org.sched.teams.t3.rules), 'low false');
+    A.click({ act: 'schrfor', v: '' });
+    setv('scA', 'Needs Lights!'); setv('scB', 'lights'); setv('scNote', 'Dark by six in November');
+    A.click({ act: 'schctier', v: 'must' }); A.click({ act: 'schcadd' });
+    let cs = A.customRules();
+    check('a tag rule, tags normalised, at its tier', cs.map(c => [c.shape, c.a, c.b, c.tier, c.note].join('|')).join(), 'tagfield|needs lights|lights|must|Dark by six in November');
+    check('said in words', /Teams tagged “needs lights” only on fields tagged “lights”/.test(A.rendered()), true);
+    A.click({ act: 'schcshape', v: 'after' }); setv('scTeam', 't3'); setv('scTime', '19:00'); setv('scNote', ''); A.click({ act: 'schctier', v: 'high' }); A.click({ act: 'schcadd' });
+    cs = A.customRules();
+    check('an after rule for a team', cs.filter(c => c.shape === 'after').map(c => [c.a, c.b, c.tier].join('|')).join(), 't3|19:00|high');
+    A.ui.planner = { tab: 'board', board: { week: MON } }; A.render();
+    A.click({ act: 'schneed', tid: 't3' }); for (const [k, v] of Object.entries({ snPer: '1', snLen: '60', snField: '', snNote: '', snTags: 'Needs lights, U8' })) setv(k, v);
+    for (const k of ['technical', 'film', 'goalkeeper', 'fitness', 'scrimmage']) setv('snK_' + k, '0');
+    A.click({ act: 'schneedsave', tid: 't3' });
+    deepEq('tags saved on the team, normalised', A.teamTags('t3'), ['needs lights', 'u8']);
+    check('— the team\'s own tiers and preset kept when its needs are saved', A.state.access.org.sched.teams.t3.preset + ' ' + !!A.state.access.org.sched.teams.t3.rules, 'coach true');
+    A.state.access.org.venues.v2.tags = { lights: true };
+    A.click({ act: 'schpick', v: 't3' }); A.click({ act: 'schcell', wd: '0', t: '18:00' });
+    check('the tag rule refuses on a field without the tag', /B9 Comets is “needs lights” and Lakeside Park is not “lights”/.test(sheet(A)) && !/schplacego/.test(sheet(A)), true);
+    A.closeSheet(); A.click({ act: 'schfield', v: 'f:v2' }); A.click({ act: 'schcell', wd: '0', t: '18:30' });
+    check('on a tagged field it is quiet, and the after rule warns past seven', !/needs lights/.test(sheet(A)) && /Past 7pm, which B9 Comets can’t do/.test(sheet(A)) && /schplacego/.test(sheet(A)), true);
+    A.closeSheet(); A.click({ act: 'schpick', v: '' });
+    A.ui.planner = { tab: 'rules', board: { week: MON } }; A.render();
+    A.click({ act: 'schcrm', id: cs[0].id });
+    check('a rule removed', A.customRules().length, 1);
+    as('jaz'); A.ui.planner = { tab: 'rules', board: { week: MON } }; A.render();
+    check('a coach has no Rules tab and is refused', !/data-act="schrtier"/.test(A.rendered()) && (A.click({ act: 'schrtier', r: 'drive', v: 'off' }), A.lastToast()) === 'Planning is for club admins' && A.ruleTier('drive') === 'high', true);
   }
 
   console.log('\n--- who may place: a coach reads, and writes nothing ---');

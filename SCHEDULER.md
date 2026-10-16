@@ -778,10 +778,25 @@ the rules grant today; **no step changes `database.rules.json`.**
    a kind (the app has coaches only; a keepers' session holds no coach's
    evening), and moving a cross-team series on the board (a single team's
    moves; the other teams' entries stay).
-6. **Rules and tiers.** The rule list with its defaults, the club's profile
-   and the four presets, a team's overrides, the three custom shapes and
-   tags; a Must rule refuses on the board, the rest order the strip and
-   cost in the fill; lowering a physical rule warns.
+6. **Rules and tiers** — built, build 166. `RULES` with their defaults and
+   `ruleTier(id, tid)` (the team's own at `org/sched/teams/{tid}/rules`, the
+   club's at `org/sched/rules`, the default); `placeCheck()` says every
+   finding at its rule's tier (Must refuses, High, Medium and Low warn in
+   that order and cost `TIER_COST`, Off says nothing) and returns its marks
+   and a cost for the fill; a coach in two places is Must by default now
+   (it warned in build 164) and her time off is checked too; the strip orders
+   its findings by the club's tiers and drops an Off rule's. The Rules tab:
+   the club or one team, every rule with its five chips (a physical rule
+   lowered from Must asks first; a team's own chip *As the club* takes its
+   override off), the four presets written out as every rule's tier with the
+   name kept at `preset`, and the club's own rules in two shapes
+   (`org/sched/custom`: teams tagged X only on fields tagged Y; nothing for
+   a team or a tag after a time; the third shape being time off, built), in
+   the one list at their own tiers. Tags on a team (its needs sheet) and on
+   a field (the field sheet), normalised. Not built: the fill-only rules
+   (siblings together, back to back, the same slot, the second night,
+   spread, stability, headroom) do nothing until step 8, and the two load
+   rules until step 7; the list says so beside each.
 7. **Load.** Coach caps, a household's soccer hours, dated hours on a field
    for sunset, each entering the board as a rule, each read through
    `busyItems()` or `fieldShut()` and nowhere else.

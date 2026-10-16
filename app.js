@@ -2,7 +2,7 @@
    Static app. Data lives in localStorage, and mirrors to Firebase Realtime
    Database when a config + workspace code are present. */
 
-const BUILD = '165';
+const BUILD = '166';
 const BUILT = '2026-10-14';
 /* The version of database.rules.json this app was written against. The rules
    carry the same number in rulesVersion's .write, which accepts that number
@@ -9886,6 +9886,72 @@ function kindOf(k) {
   return { id, label: base.label, len: SCHED_LENS.includes(Number(o.len)) ? Number(o.len) : base.len, space: SPACES.includes(o.space) ? o.space : base.space, who: WHOS.includes(o.who) ? o.who : base.who };
 }
 const tidsOf = x => (x.tids && x.tids.length ? x.tids : x.tid ? [x.tid] : []);
+
+/* Rules and tiers (SCHEDULER.md, *Everything the board says is a rule with a
+   tier*; build 166). Every refusal, warning and preference on the board is a
+   rule, and every rule has a tier the admin can move: Must refuses in place,
+   High, Medium and Low warn and cost in the fill in that order, Off keeps
+   the rule in the list and worthless. Built-in and custom rules are one
+   list, so "turn anything off" and "say what matters" are one feature. The
+   club's tiers are org/sched/rules/{rule}; a team's own, where it differs,
+   org/sched/teams/{tid}/rules/{rule}, most specific winning; a missing one
+   is the default here. A physical rule lowered is asked about: a coach in
+   two places is wrong, unless two teams share one session. */
+const TIERS = ['must', 'high', 'medium', 'low', 'off'];
+const TIER_LABEL = { must: 'Must', high: 'High', medium: 'Medium', low: 'Low', off: 'Off' };
+const TIER_COST = { must: Infinity, high: 100, medium: 10, low: 1, off: 0 };
+const RULES = [
+  { id: 'supply', label: 'Inside the permit and the hours, never on a closure', tier: 'must', physical: true },
+  { id: 'pitchTaken', label: 'A pitch a game, a session or a scrimmage holds is taken', tier: 'must', physical: true },
+  { id: 'teamBusy', label: 'A team is not on twice at once', tier: 'must', physical: true },
+  { id: 'coachBusy', label: 'A coach is not in two places at once', tier: 'must', physical: true },
+  { id: 'coachAway', label: 'A coach is not due during her time off', tier: 'must', physical: true },
+  { id: 'drive', label: 'No drive between fields for a coach', tier: 'high' },
+  { id: 'coachLoad', label: 'A coach’s load: sessions a day and a week, hours a day, the gap between', tier: 'high', later: 7 },
+  { id: 'night', label: 'Not on a night the team can’t do', tier: 'high' },
+  { id: 'keepersOver', label: 'A keepers’ session not over a sending team’s practice', tier: 'high' },
+  { id: 'familySplit', label: 'No family with children due in two places', tier: 'medium' },
+  { id: 'household', label: 'A household’s soccer hours a day and a week', tier: 'medium', later: 7 },
+  { id: 'siblings', label: 'Siblings at one field at the same or the next hour', tier: 'medium', fill: true },
+  { id: 'backToBack', label: 'A coach’s teams back to back on one field', tier: 'medium', fill: true },
+  { id: 'usualField', label: 'A team on its usual field', tier: 'medium' },
+  { id: 'sameSlot', label: 'The same slot every week of the term', tier: 'medium', fill: true },
+  { id: 'secondNight', label: 'A team’s second practice not the night after its first', tier: 'low', fill: true },
+  { id: 'spread', label: 'Spread across the open pitches; rotate the worst slots', tier: 'low', fill: true },
+  { id: 'stability', label: 'Fewest changes from what is written, when re-laying a term', tier: 'low', fill: true },
+  { id: 'headroom', label: 'Keep the pattern’s headroom for games', tier: 'low', fill: true }
+];
+const RULE = Object.fromEntries(RULES.map(r => [r.id, r]));
+const schedOrg = () => ((acc().org || {}).sched) || {};
+function ruleTier(id, tid) {
+  const r = RULE[id]; if (!r) return 'off';
+  const sc = schedOrg(), own = tid ? ((((sc.teams || {})[tid] || {}).rules || {})[id]) : null, club = (sc.rules || {})[id];
+  return TIERS.includes(own) ? own : TIERS.includes(club) ? club : r.tier;
+}
+/* Presets to start from: each is a set of tiers written out as rules, nothing
+   hidden behind the name. Balanced is the defaults. */
+const SCHED_PRESETS = {
+  balanced: { label: 'Balanced', tiers: {} },
+  field: { label: 'Field-first', tiers: { usualField: 'high', drive: 'medium', familySplit: 'low', siblings: 'low', backToBack: 'low' } },
+  coach: { label: 'Coach-friendly', tiers: { drive: 'high', backToBack: 'high', coachLoad: 'high', familySplit: 'low', siblings: 'low' } },
+  family: { label: 'Family-friendly', tiers: { familySplit: 'high', household: 'high', siblings: 'high', drive: 'medium', backToBack: 'medium' } }
+};
+const presetTiers = name => Object.fromEntries(RULES.map(r => [r.id, (SCHED_PRESETS[name] || SCHED_PRESETS.balanced).tiers[r.id] || r.tier]));
+/* Custom rules, three shapes and no builder: a team tagged X only on fields
+   tagged Y; nothing of a team or tag after a time; and a coach never on a
+   day, which is time off and built. One record each at org/sched/custom. */
+const CUSTOM_SHAPES = { tagfield: 'Teams tagged … only on fields tagged …', after: 'Nothing for … after …' };
+const tagOf = v => String(v || '').trim().toLowerCase().replace(/[^a-z0-9 -]/g, '').replace(/\s+/g, ' ').slice(0, 24);
+const tagList = v => [...new Set(String(v || '').split(',').map(tagOf).filter(Boolean))];
+const teamTags = tid => Object.keys(((((schedOrg().teams || {})[tid] || {}).tags) || {})).map(tagOf).filter(Boolean);
+const fieldTags = f => Object.keys((f && f.tags) || {}).map(tagOf).filter(Boolean);
+function customRules() {
+  return Object.entries(schedOrg().custom || {}).map(([id, c]) => c && typeof c === 'object' && CUSTOM_SHAPES[c.shape] ? {
+    id: c.id || id, shape: c.shape, a: c.shape === 'after' && state.teams[c.a] ? c.a : tagOf(c.a), b: c.shape === 'after' ? hm(c.b) || '' : tagOf(c.b),
+    tier: TIERS.includes(c.tier) ? c.tier : 'high', note: String(c.note || '').slice(0, 120)
+  } : null).filter(c => c && c.a && c.b);
+}
+const customText = c => c.shape === 'after' ? `Nothing for ${state.teams[c.a] ? shortTeam(c.a) : 'teams tagged “' + c.a + '”'} after ${niceTime(c.b)}` : `Teams tagged “${c.a}” only on fields tagged “${c.b}”`;
 const CALLED = { cancelled: 'Cancelled', postponed: 'Postponed' };
 const HOME_AWAY = { home: 'Home', away: 'Away', neutral: 'Neutral ground' };
 const WEEKDAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
@@ -15615,7 +15681,7 @@ function sheetField(id) {
 let fieldForm = null;
 function fieldFormRead() {
   const f = fieldForm; if (!f) return;
-  for (const [k, sel] of [['name', '#fdName'], ['address', '#fdAddress'], ['pitches', '#fdPitches'], ['notes', '#fdNotes']]) {
+  for (const [k, sel] of [['name', '#fdName'], ['address', '#fdAddress'], ['pitches', '#fdPitches'], ['notes', '#fdNotes'], ['tags', '#fdTags']]) {
     const el = $(sel); if (el && typeof el.value === 'string') f[k] = el.value;
   }
   f.parts.forEach((p, i) => {
@@ -15635,9 +15701,9 @@ function fieldFormRead() {
 }
 function fieldFormOf(f, name) {
   const hours = d => { const h = fieldHours(f)[d]; return h ? { from: h.from || '', to: h.to || '', closed: !!h.closed } : { from: '', to: '', closed: false }; };
-  return f ? { id: f.id, name: f.name || '', address: f.address || '', pitches: String(f.pitches || 1), surface: f.surface || '', lights: !!f.lights, notes: f.notes || '', permits: permitsOf(f).map(p => ({ ...p })), parts: pitchesOf(f).map(p => ({ ...p })),
+  return f ? { id: f.id, name: f.name || '', address: f.address || '', pitches: String(f.pitches || 1), surface: f.surface || '', lights: !!f.lights, notes: f.notes || '', tags: fieldTags(f).join(', '), permits: permitsOf(f).map(p => ({ ...p })), parts: pitchesOf(f).map(p => ({ ...p })),
     hours: [0, 1, 2, 3, 4, 5, 6].map(hours), closures: fieldClosures(f).map(c => ({ ...c })) }
-    : { id: null, name: name || '', address: '', pitches: '1', surface: '', lights: false, notes: '', permits: [], parts: [], hours: [0, 1, 2, 3, 4, 5, 6].map(() => ({ from: '', to: '', closed: false })), closures: [] };
+    : { id: null, name: name || '', address: '', pitches: '1', surface: '', lights: false, notes: '', tags: '', permits: [], parts: [], hours: [0, 1, 2, 3, 4, 5, 6].map(() => ({ from: '', to: '', closed: false })), closures: [] };
 }
 function sheetFieldForm() {
   const f = fieldForm; if (!f) return;
@@ -15648,6 +15714,7 @@ function sheetFieldForm() {
     <label class="field"><span>Pitches</span><input type="number" id="fdPitches" min="1" max="20" value="${esc(f.pitches)}"></label>
     <div class="chips" style="margin-bottom:10px">${['Grass', 'Turf', 'Indoor'].map(x => chip('fieldsurface', x, f.surface === x, x)).join('')}${chip('fieldlights', '1', f.lights, 'Lights')}</div>
     <label class="field"><span>Notes</span><textarea id="fdNotes" rows="2" placeholder="Gate code, parking, who to call">${esc(f.notes)}</textarea></label>
+    <label class="field"><span>Tags</span><input type="text" id="fdTags" maxlength="120" value="${esc(f.tags || '')}" placeholder="lights, turf"></label>
     <p class="lbl">Each pitch</p>
     ${f.parts.map((p, i) => `<div class="card" style="margin-bottom:8px">
       <label class="field"><span>Name</span><input type="text" id="ptName_${i}" maxlength="60" value="${esc(p.name)}" placeholder="Field 2, the turf"></label>
@@ -16109,7 +16176,8 @@ function onSessAct(a, d) {
     }
     quiet(`access/org/venues/${id}`, JSON.parse(JSON.stringify({
       id, name, address: String(f.address || '').trim().slice(0, 160), pitches: clamp(Math.max(Math.round(Number(f.pitches)) || 1, o), 1, 20),
-      surface: f.surface || '', lights: !!f.lights, notes: String(f.notes || '').trim().slice(0, 1000), permits, hours, closed, parts
+      surface: f.surface || '', lights: !!f.lights, notes: String(f.notes || '').trim().slice(0, 1000), permits, hours, closed, parts,
+      ...(tagList(f.tags).length ? { tags: Object.fromEntries(tagList(f.tags).map(x => [x, true])) } : {})
     })));
     saveLocal(); fieldForm = null; sheetField(id); render();
     toast(dropped ? `Saved · ${dropped} permit${dropped === 1 ? '' : 's'} with no days left off` : 'Saved'); return;
@@ -18120,12 +18188,12 @@ function newsCard() {
    what it clashes with and never offers to move it. */
 const canPlanClub = () => canAdmin();
 const PLANNER_ACTS = new Set(['scheduler', 'schweek', 'schfield', 'schneed', 'schneedwd', 'schneedsave',
-  'schpick', 'schkind', 'schteams', 'schcell', 'schpitch', 'schplacego', 'schforbid', 'schunforbid', 'schblock', 'schmove', 'schlock', 'schdrop', 'schmoveseries', 'schoffseries', 'schunoff', 'schterm', 'schtermsave', 'schclosedadd', 'schclosedrm', 'schwrite', 'schclear', 'plback', 'pltab', 'plcw', 'plrange', 'pltm', 'plfind', 'plbook', 'plkind', 'plbookgo', 'plpictm', 'plpic', 'plpicgo']);
+  'schpick', 'schkind', 'schteams', 'schcell', 'schpitch', 'schplacego', 'schrfor', 'schpreset', 'schrtier', 'schcshape', 'schctier', 'schcadd', 'schcrm', 'schforbid', 'schunforbid', 'schblock', 'schmove', 'schlock', 'schdrop', 'schmoveseries', 'schoffseries', 'schunoff', 'schterm', 'schtermsave', 'schclosedadd', 'schclosedrm', 'schwrite', 'schclear', 'plback', 'pltab', 'plcw', 'plrange', 'pltm', 'plfind', 'plbook', 'plkind', 'plbookgo', 'plpictm', 'plpic', 'plpicgo']);
 function plannerUi() {
   if (!ui.planner || typeof ui.planner !== 'object') ui.planner = {};
   const p = ui.planner;
   // Clashes was a tab until build 163; it is the board's strip now, so an old 'clash' lands on the board
-  if (!['board', 'find', 'pic', 'coach'].includes(p.tab)) p.tab = 'board';
+  if (!['board', 'rules', 'find', 'pic', 'coach'].includes(p.tab)) p.tab = 'board';
   const bd = p.board && typeof p.board === 'object' ? p.board : {}, mon = d => addDays(d, -weekdayOf(d));
   p.board = { week: okDay(bd.week) ? mon(bd.week) : mon(todayStr()), field: typeof bd.field === 'string' ? bd.field : '', pick: typeof bd.pick === 'string' ? bd.pick : '', kind: PTYPES[bd.kind] ? bd.kind : 'regular' };
   const cw = p.cw && typeof p.cw === 'object' ? p.cw : {};
@@ -18361,7 +18429,7 @@ function schedNeed(tid) {
   // by kind (step 5): regular is `per`, the rest `need/{kind}`; the total is what the board counts against
   const nd = r.need && typeof r.need === 'object' ? r.need : {}, need = {};
   for (const k of PTYPE_ORDER) { const v = k === 'regular' ? per : Number(nd[k]); need[k] = Number.isFinite(v) ? Math.min(7, Math.max(0, Math.round(v))) : 0; }
-  return { tid, per, len, field: r.field && fieldById(r.field) ? r.field : '', not, note: String(r.note || '').trim().slice(0, 120), need, total: Object.values(need).reduce((a, b) => a + b, 0), set: !!(r && typeof r === 'object' && Object.keys(r).length) };
+  return { tid, per, len, field: r.field && fieldById(r.field) ? r.field : '', not, note: String(r.note || '').trim().slice(0, 120), need, total: Object.values(need).reduce((a, b) => a + b, 0), tags: teamTags(tid), set: !!(r && typeof r === 'object' && Object.keys(r).length) };
 }
 const SCHED_LENS = [30, 45, 60, 75, 90, 105, 120, 150, 180];
 function sheetSchedNeed(tid) {
@@ -18382,6 +18450,8 @@ function sheetSchedNeed(tid) {
     <p class="lbl">Nights it can't do</p>
     <div class="chips" style="margin-bottom:10px">${WEEKDAYS.map((w, i) => chip(i, f.not.includes(i))).join('')}</div>
     <label class="field"><span>Note</span><input type="text" id="snNote" maxlength="120" value="${esc(f.note)}" placeholder="The coach works late on Mondays"></label>
+    <label class="field"><span>Tags</span><input type="text" id="snTags" maxlength="120" value="${esc((f.tags || []).join(', '))}" placeholder="needs lights, u8"></label>
+    <p class="muted" style="margin-top:-4px">For the club’s own rules on the Rules tab: a team tagged one way only on fields tagged another, or nothing for a tag after a time.</p>
     <button class="btn wide" data-act="schneedsave" data-tid="${esc(tid)}">Save</button>
     <button class="btn quiet wide" data-act="closesheet" style="margin-top:8px">Cancel</button>`);
 }
@@ -18389,7 +18459,8 @@ function sheetSchedNeed(tid) {
 function schedNeedRead() {
   const p = plannerUi(), f = p.need; if (!f) return;
   const val = id => { const el = $('#' + id); return el && typeof el.value === 'string' ? el.value : null; };
-  const per = val('snPer'), len = val('snLen'), field = val('snField'), note = val('snNote');
+  const per = val('snPer'), len = val('snLen'), field = val('snField'), note = val('snNote'), tags = val('snTags');
+  if (tags != null) f.tags = tagList(tags);
   if (per != null) f.per = Number(per);
   if (len != null) f.len = Number(len);
   if (field != null) f.field = field;
@@ -18504,43 +18575,59 @@ function boardAll(week) {
    other blocks included, the block itself and anything taken off left out).
    Nothing is stored; the sheet says it and the fill (step 8) reads it. */
 function placeCheck(block, week) {
-  const refused = [], warned = [], d = schedDraft();
+  const refused = [], marks = [], d = schedDraft();
   const date = addDays(week, block.wd), a = minOf(block.start), b = a + block.len;
-  const t = state.teams[block.tid]; if (!t) return { refused: ['That team is no longer here'], warned };
+  const t = state.teams[block.tid]; if (!t) return { refused: ['That team is no longer here'], warned: [], marks: [], cost: Infinity };
   const kind = kindOf(block.ptype), tids = tidsOf(block), onPitch = kind.space === 'share' || kind.space === 'pitch';
   const f = block.col.startsWith('f:') ? fieldById(block.col.slice(2)) : null;
   const items = boardAll(week).filter(x => x.date === date && !x.off && x.key !== 'd:' + block.id && !(block.series && x.series === block.series));
   const ov = items.filter(x => x.a < b && a < x.b);
+  // a rule says its piece at its tier for this team: Must refuses, Off says nothing, the rest warn and cost
+  const put = (tier, rule, text) => { if (tier === 'off') return; if (tier === 'must') refused.push(text); else marks.push({ rule, tier, text }); };
+  const say = (rule, text) => put(ruleTier(rule, block.tid), rule, text);
   if (kind.who === 'two' && tids.length !== 2) refused.push('A scrimmage is two teams: pick the other one');
   // a room or nothing (film) is not on the pitch: the permit, the hours and the pitches have nothing to say
-  if (onPitch) for (const [s0, s1, k] of boardShut(f, date, 0, 24)) if (s0 < b && a < s1) { refused.push(k === 'closed' ? `${f.name} is closed then` : `Outside the club\u2019s permit or ${f.name}\u2019s hours`); break; }
+  if (onPitch) for (const [s0, s1, k] of boardShut(f, date, 0, 24)) if (s0 < b && a < s1) { say('supply', k === 'closed' ? `${f.name} is closed then` : `Outside the club’s permit or ${f.name}’s hours`); break; }
+  // her own mark is not a rule: it always holds
   for (let m = a; m < b; m += 30) if (d.forbid[cellKey(block.wd, minHm(m), block.col)]) { refused.push('You marked that time off the board'); break; }
   const atField = ov.filter(x => x.col === block.col);
-  if (onPitch && block.pitch) { const same = atField.find(x => x.pitch === block.pitch); if (same) refused.push(`${(pitchesOf(f).find(q => q.id === block.pitch) || {}).name || 'That pitch'} is taken by ${same.label}`); }
+  if (onPitch && block.pitch) { const same = atField.find(x => x.pitch === block.pitch); if (same) say('pitchTaken', `${(pitchesOf(f).find(q => q.id === block.pitch) || {}).name || 'That pitch'} is taken by ${same.label}`); }
   // a game, a session or a scrimmage takes a whole pitch; practices share what is left
   const taking = atField.filter(x => x.kind !== 'practice' || kindOf(x.ptype).space === 'pitch');
-  if (onPitch && f && taking.length >= pitchCount(f)) refused.push(`No pitch left: ${taking.map(x => x.label).join(', ')}`);
+  if (onPitch && f && taking.length >= pitchCount(f)) say('pitchTaken', `No pitch left: ${taking.map(x => x.label).join(', ')}`);
   for (const tid of tids) {
     const own = ov.filter(x => tidsOf(x).includes(tid));
     if (kind.who === 'keepers') {
-      // the keepers' rule: never over the regular practice of a team sending one (High)
-      for (const x of own.filter(x => x.kind === 'practice' && x.who !== 'keepers')) warned.push(`${shortTeam(tid)} practises then (${timeOf(x)}): its keepers can\u2019t be at both`);
-    } else if (own.length) refused.push(`${shortTeam(tid)} already has ${own.map(x => x.label.replace(/^[^:]*: /, '') + ' at ' + timeOf(x)).join(', ')}`);
-    else { const gk = ov.find(x => x.who === 'keepers' && tidsOf(x).includes(tid)); if (gk) warned.push(`${shortTeam(tid)}\u2019s keepers are at ${gk.label} then`); }
+      for (const x of own.filter(x => x.kind === 'practice' && x.who !== 'keepers')) say('keepersOver', `${shortTeam(tid)} practises then (${timeOf(x)}): its keepers can’t be at both`);
+    } else if (own.length) say('teamBusy', `${shortTeam(tid)} already has ${own.map(x => x.label.replace(/^[^:]*: /, '') + ' at ' + timeOf(x)).join(', ')}`);
+    else { const gk = ov.find(x => x.who === 'keepers' && tidsOf(x).includes(tid)); if (gk) say('keepersOver', `${shortTeam(tid)}’s keepers are at ${gk.label} then`); }
   }
   const need = schedNeed(block.tid), coaches = blockCoaches({ ...block, tids });
-  for (const u of coaches) { const el = ov.find(x => x.tid !== block.tid && x.coaches.includes(u)); if (el) warned.push(`${coachName(u)} is due at ${el.label} then`); }
+  for (const u of coaches) { const el = ov.find(x => !tidsOf(x).some(tid => tids.includes(tid)) && x.coaches.includes(u)); if (el) say('coachBusy', `${coachName(u)} is due at ${el.label} then`); }
+  for (const u of coaches) if (awayDuring(u, date, a, b)) say('coachAway', `${coachName(u)} has time off then`);
   // a drive is hers whichever team she drives from or to: her own team's game across town counts
   for (const u of coaches) for (const x of items.filter(x => x.coaches.includes(u) && placeKey(x) !== block.col && (x.b <= a || x.a >= b))) {
     const gap = x.b <= a ? a - x.b : x.a - b;
-    if (gap < DRIVE_GAP_MIN) warned.push(`${coachName(u)}: a drive ${x.b <= a ? 'from' : 'to'} ${x.label} at ${placeName(x)} (${gap ? gap + ' minutes' : 'nothing'} between)`);
+    if (gap < DRIVE_GAP_MIN) say('drive', `${coachName(u)}: a drive ${x.b <= a ? 'from' : 'to'} ${x.label} at ${placeName(x)} (${gap ? gap + ' minutes' : 'nothing'} between)`);
   }
   const cache = {}, fams = Object.assign({}, ...tids.map(teamFams)), split = new Set();
   for (const x of ov) if (!tidsOf(x).some(tid => tids.includes(tid))) for (const u of Object.keys(itemFams(x, cache))) if (fams[u]) split.add(u);
-  if (split.size) warned.push(`${split.size} famil${split.size === 1 ? 'y has' : 'ies have'} a child somewhere else then`);
-  if (kind.who !== 'keepers' && need.field && block.col !== 'f:' + need.field) warned.push(`Off its usual field, ${(fieldById(need.field) || {}).name || ''}`);
-  if (need.not.includes(block.wd)) warned.push(`A night ${shortTeam(block.tid)} can\u2019t do`);
-  return { refused, warned };
+  if (split.size) say('familySplit', `${split.size} famil${split.size === 1 ? 'y has' : 'ies have'} a child somewhere else then`);
+  if (kind.who !== 'keepers' && need.field && block.col !== 'f:' + need.field) say('usualField', `Off its usual field, ${(fieldById(need.field) || {}).name || ''}`);
+  if (need.not.includes(block.wd)) say('night', `A night ${shortTeam(block.tid)} can’t do`);
+  // the club's own rules, in the same list at their own tiers
+  for (const c of customRules()) {
+    if (c.shape === 'tagfield') {
+      const tagged = tids.filter(tid => teamTags(tid).includes(c.a));
+      if (tagged.length && onPitch && !(f && fieldTags(f).includes(c.b))) put(c.tier, 'custom', `${tagged.map(shortTeam).join(', ')} ${tagged.length === 1 ? 'is' : 'are'} “${c.a}” and ${f ? f.name : 'this place'} is not “${c.b}”`);
+    } else if (c.shape === 'after') {
+      const hit = state.teams[c.a] ? tids.includes(c.a) : tids.some(tid => teamTags(tid).includes(c.a));
+      if (hit && b > minOf(c.b)) put(c.tier, 'custom', `Past ${niceTime(c.b)}, which ${state.teams[c.a] ? shortTeam(c.a) : 'teams tagged “' + c.a + '”'} can’t do`);
+    }
+  }
+  const order = { high: 0, medium: 1, low: 2 };
+  marks.sort((x, y) => order[x.tier] - order[y.tier]);
+  return { refused, warned: marks.map(m => m.text), marks, cost: refused.length ? Infinity : marks.reduce((n, m) => n + TIER_COST[m.tier], 0) };
 }
 /* What a placed block writes: the fields a practice from the add sheet has,
    the kind's default title, team-only, families asked, the place as the
@@ -18761,6 +18848,7 @@ function driveWarnings(date) {
    practices it needs, and what is still missing a date, a time or a place.
    Shared field time is listed apart and quietly: it is how a club runs, never
    something to fix. */
+const STRIP_RULE = { place: 'pitchTaken', coach: 'coachBusy', family: 'familySplit', away: 'coachAway', field: 'supply', drive: 'drive' };
 function schedStrip(week, items) {
   const out = [], shared = [];
   for (let i = 0; i < 7; i++) {
@@ -18768,6 +18856,11 @@ function schedStrip(week, items) {
     for (const c of clubClashesOn(date)) (c.kind === 'shared' ? shared : out).push({ date, ...c });
     for (const c of driveWarnings(date)) out.push({ date, ...c });
   }
+  // each at its rule's tier for the club: an Off rule says nothing, and Must comes first
+  const order = { must: 0, high: 1, medium: 2, low: 3 };
+  for (const c of out) c.tier = STRIP_RULE[c.kind] ? ruleTier(STRIP_RULE[c.kind], null) : 'high';
+  const list = out.filter(c => c.tier !== 'off').sort((x, y) => x.date.localeCompare(y.date) || order[x.tier] - order[y.tier]);
+  out.length = 0; out.push(...list);
   const short = boardTeams(week, items).filter(r => r.placed + r.drafted < r.n.total).map(r => ({ kind: 'short', text: `${shortTeam(r.t.id)}: ${r.placed + r.drafted} of ${r.n.total} practice${r.n.total === 1 ? '' : 's'} this week` }));
   return { list: out, shared, short, todo: schedTodo(teams().map(t => t.id)) };
 }
@@ -18918,14 +19011,46 @@ function sheetSchedTerm() {
     <button class="btn wide" data-act="schtermsave" style="margin-bottom:8px">Save</button>
     <button class="btn quiet wide" data-act="closesheet">Cancel</button>`, true);
 }
+/* The Rules tab: every rule with its tier, for the club or for one team,
+   the presets, and the club's own rules. */
+function plannerRules(p) {
+  const tid = p.rfor && state.teams[p.rfor] ? p.rfor : '';
+  const chip = (act, v, on, l, extra = '') => `<button class="chip" type="button" data-act="${act}" data-v="${esc(v)}" aria-pressed="${!!on}"${extra}>${esc(l)}</button>`;
+  const sc = schedOrg(), preset = tid ? (((sc.teams || {})[tid] || {}).preset) : sc.preset;
+  const rows = RULES.map(r => {
+    const own = tid ? ((((sc.teams || {})[tid] || {}).rules || {})[r.id]) : null, eff = ruleTier(r.id, tid);
+    return `<div class="rulerow"><p style="margin:0 0 4px"><b>${esc(r.label)}</b>${r.later ? ' <span class="muted">(counted from a later build)</span>' : r.fill ? ' <span class="muted">(the fill only)</span>' : ''}${tid && !TIERS.includes(own) ? ' <span class="muted">· the club’s</span>' : ''}</p>
+      <div class="chips" style="margin-bottom:10px">${TIERS.map(x => chip('schrtier', x, eff === x, TIER_LABEL[x], ` data-r="${r.id}"`)).join('')}${tid && TIERS.includes(own) ? chip('schrtier', '', false, 'As the club', ` data-r="${r.id}"`) : ''}</div></div>`;
+  }).join('');
+  const cs = customRules(), cf = p.custom || {};
+  return `<div class="card"><p class="lbl" style="margin-top:0">For</p>
+    <div class="chips" style="margin-bottom:10px">${chip('schrfor', '', !tid, 'The club')}${teams().map(t => chip('schrfor', t.id, tid === t.id, t.name || 'Team')).join('')}</div>
+    <p class="muted" style="margin:0">${tid ? `${esc(shortTeam(tid))}’s own tiers, where they differ from the club’s. A team with many single parents weighs the family rules High here and nowhere else.` : 'Must refuses on the board. High, Medium and Low warn, and cost in that order when the board lays the week out. Off keeps a rule in the list and worthless.'}</p></div>
+    <div class="card"><p class="lbl" style="margin-top:0">Start from</p>
+    <div class="chips" style="margin-bottom:6px">${Object.entries(SCHED_PRESETS).map(([k, v]) => chip('schpreset', k, preset === k, v.label)).join('')}</div>
+    <p class="muted" style="margin:0">A preset writes every rule’s tier out below; nothing is hidden behind the name.</p></div>
+    <div class="card">${rows}</div>
+    <div class="card"><h2 style="margin-bottom:6px">The club’s own rules</h2>
+    ${cs.length ? `<div class="plist">${cs.map(c => `<div class="prow" style="grid-template-columns:1fr auto auto"><span><span class="pname">${esc(customText(c))}</span>${c.note ? `<span class="psub">${esc(c.note)}</span>` : ''}</span><span class="tag">${TIER_LABEL[c.tier]}</span><button class="btn quiet sm" data-act="schcrm" data-id="${esc(c.id)}">Remove</button></div>`).join('')}</div>` : '<p class="muted" style="margin:0 0 8px">None yet.</p>'}
+    <p class="lbl">Add one</p>
+    <div class="chips" style="margin-bottom:10px">${Object.entries(CUSTOM_SHAPES).map(([k, l]) => chip('schcshape', k, (cf.shape || 'tagfield') === k, l)).join('')}</div>
+    ${(cf.shape || 'tagfield') === 'after' ? `<label class="field"><span>For</span><select id="scTeam"><option value="">Teams tagged…</option>${teams().map(t => `<option value="${esc(t.id)}">${esc(t.name || 'Team')}</option>`).join('')}</select></label>
+      <div class="grid2"><label class="field"><span>Or a tag</span><input type="text" id="scA" maxlength="24" placeholder="u8"></label><label class="field"><span>Nothing after</span><input type="time" id="scTime" value="19:00"></label></div>`
+      : `<div class="grid2"><label class="field"><span>Teams tagged</span><input type="text" id="scA" maxlength="24" placeholder="needs lights"></label><label class="field"><span>Only on fields tagged</span><input type="text" id="scB" maxlength="24" placeholder="lights"></label></div>`}
+    <p class="lbl">How much it matters</p>
+    <div class="chips" style="margin-bottom:10px">${TIERS.filter(x => x !== 'off').map(x => chip('schctier', x, (cf.tier || 'high') === x, TIER_LABEL[x])).join('')}</div>
+    <label class="field"><span>Why</span><input type="text" id="scNote" maxlength="120" placeholder="The U8s are in bed by eight"></label>
+    <button class="btn wide" data-act="schcadd">Add the rule</button>
+    <p class="muted" style="margin:8px 0 0">A coach never on a day is her time off, under Coaches. Tags go on a team (its row on the board) and on a field (Fields and permits).</p></div>`;
+}
 function viewScheduler() {
   if (!canSched()) return `<div class="empty"><strong>Coaches and club admins only</strong>The club's week laid out by field is for the people who run it.</div>`;
   const p = plannerUi(), adm = canPlanClub();
   if (!adm) p.tab = 'board';
   const tab = (k, l) => `<button class="chip" type="button" data-act="pltab" data-k="${k}" aria-pressed="${p.tab === k}">${l}</button>`;
-  const body = p.tab === 'find' ? plannerFind(p) : p.tab === 'pic' ? plannerPic(p) : p.tab === 'coach' ? plannerCoaches(p) : schedBoard(p, adm);
+  const body = p.tab === 'find' ? plannerFind(p) : p.tab === 'pic' ? plannerPic(p) : p.tab === 'coach' ? plannerCoaches(p) : p.tab === 'rules' ? plannerRules(p) : schedBoard(p, adm);
   return `<div class="stack">
-    ${adm ? `<div class="chips">${tab('board', 'Board')}${tab('find', 'Find a time')}${tab('coach', 'Coaches')}${tab('pic', 'Picture day')}</div>` : ''}
+    ${adm ? `<div class="chips">${tab('board', 'Board')}${tab('rules', 'Rules')}${tab('find', 'Find a time')}${tab('coach', 'Coaches')}${tab('pic', 'Picture day')}</div>` : ''}
     ${body}</div>`;
 }
 /* Who can coach then: every coach, free first, each saying where she is
@@ -19044,13 +19169,49 @@ function onPlannerAct(a, d) {
     const len = SCHED_LENS.includes(Number(f.len)) ? Number(f.len) : 60;
     const need = {};
     for (const k of PTYPE_ORDER) if (k !== 'regular') { const v = Math.min(7, Math.max(0, Math.round(Number((f.need || {})[k]) || 0))); if (v) need[k] = v; }
-    const rec = { per, len, field: f.field && fieldById(f.field) ? f.field : '', not: [...new Set(f.not.map(Number).filter(x => x >= 0 && x <= 6))].sort(), note: String(f.note || '').trim().slice(0, 120), ...(Object.keys(need).length ? { need } : {}) };
+    const tags = Object.fromEntries((f.tags || []).map(x => [x, true]));
+    const keep = (((schedOrg().teams || {})[f.tid]) || {});
+    // the team's tiers and preset are the Rules tab's, kept as they are when the needs are saved
+    const rec = { per, len, field: f.field && fieldById(f.field) ? f.field : '', not: [...new Set(f.not.map(Number).filter(x => x >= 0 && x <= 6))].sort(), note: String(f.note || '').trim().slice(0, 120), ...(Object.keys(need).length ? { need } : {}),
+      ...(Object.keys(tags).length ? { tags } : {}), ...(keep.rules ? { rules: keep.rules } : {}), ...(keep.preset ? { preset: keep.preset } : {}) };
     // one record, at the depth the rule on org grants an admin
     quiet(`access/org/sched/teams/${f.tid}`, rec);
     p.need = null; saveLocal(); closeSheet(); render(); toast('Saved'); return;
   }
   if (a === 'schpick') { p.board.pick = d.v && state.teams[d.v] ? d.v : ''; render(); return; }
   if (a === 'schkind') { p.board.kind = PTYPES[d.v] ? d.v : 'regular'; render(); return; }
+  if (a === 'schrfor') { p.rfor = state.teams[d.v] ? d.v : ''; render(); return; }
+  if (a === 'schrtier') {
+    const r = RULE[d.r]; if (!r) return;
+    const tid = p.rfor && state.teams[p.rfor] ? p.rfor : '', tier = TIERS.includes(d.v) ? d.v : '';
+    if (tier && tier !== 'must' && r.physical && ruleTier(r.id, tid) === 'must' && !confirm(`Lower “${r.label}”? The board will let it happen, and only warn. Two teams sharing one session is the usual reason.`)) return;
+    const path = tid ? `access/org/sched/teams/${tid}/rules/${r.id}` : `access/org/sched/rules/${r.id}`;
+    if (tier) quiet(path, tier); else { delDeep(state, path); remoteDel(path); }
+    saveLocal(); render(); return;
+  }
+  if (a === 'schpreset') {
+    if (!SCHED_PRESETS[d.v]) return;
+    const tid = p.rfor && state.teams[p.rfor] ? p.rfor : '', base = tid ? `access/org/sched/teams/${tid}` : 'access/org/sched';
+    // written out as rules, one map, so the list below says exactly what the name did
+    quiet(`${base}/rules`, presetTiers(d.v)); quiet(`${base}/preset`, d.v);
+    saveLocal(); render(); toast(`${SCHED_PRESETS[d.v].label}: every rule’s tier is set out below`); return;
+  }
+  if (a === 'schcshape') { p.custom = { ...(p.custom || {}), shape: CUSTOM_SHAPES[d.v] ? d.v : 'tagfield' }; render(); return; }
+  if (a === 'schctier') { p.custom = { ...(p.custom || {}), tier: TIERS.includes(d.v) && d.v !== 'off' ? d.v : 'high' }; render(); return; }
+  if (a === 'schcadd') {
+    const val = id => { const el = $('#' + id); return el && typeof el.value === 'string' ? el.value : ''; };
+    const cf = p.custom || {}, shape = CUSTOM_SHAPES[cf.shape] ? cf.shape : 'tagfield', tier = TIERS.includes(cf.tier) && cf.tier !== 'off' ? cf.tier : 'high';
+    const rec = shape === 'after' ? { shape, a: state.teams[val('scTeam')] ? val('scTeam') : tagOf(val('scA')), b: hm(val('scTime')) } : { shape, a: tagOf(val('scA')), b: tagOf(val('scB')) };
+    if (!rec.a || !rec.b) { toast(shape === 'after' ? 'Say which team or tag, and the time' : 'Say both tags'); return; }
+    const id = uid();
+    quiet(`access/org/sched/custom/${id}`, { id, ...rec, tier, note: val('scNote').trim().slice(0, 120) });
+    p.custom = null; saveLocal(); render(); toast('Added to the list'); return;
+  }
+  if (a === 'schcrm') {
+    if (!d.id || !getDeep(state, `access/org/sched/custom/${d.id}`)) return;
+    delDeep(state, `access/org/sched/custom/${d.id}`); remoteDel(`access/org/sched/custom/${d.id}`);
+    saveLocal(); render(); return;
+  }
   if (a === 'schteams') { const c = p.place; if (!c || !state.teams[d.v] || d.v === c.tid) return; c.tids = c.tids.includes(d.v) ? c.tids.filter(x => x !== d.v) : [...c.tids, d.v]; sheetSchedPlace(c); return; }
   if (a === 'schcell') {
     const pick = pickOf(p), wd = Number(d.wd), start = hm(d.t);
