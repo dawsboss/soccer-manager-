@@ -123,10 +123,27 @@ orgs/{code}/org/
                    not: [0..6],                          // weekdays it cannot practise
                    note }                                // "the coach works late Mondays"
     from, until                                          // the term last written, for the next draft to start from
+    teams/{tid}/need/{kind}   2                          // practices a week by kind (step 5); per/len stay regular's
+    teams/{tid}/rules/{rule}  'must'|'high'|'medium'|'low'|'off'   // this team's tier where it differs (step 6)
+    teams/{tid}/tags/{tag}    true                       // "needs lights", "turf only" (step 6)
+    rules/{rule}   tier                                  // the club's tier for a built-in rule; missing is the default
+    custom/{id}    { shape, a, b, tier, note }           // one of three shapes (step 6)
+    kinds/{kind}   { len, space, role, who }             // a kind of practice the club has changed or added (step 5)
+    coaches/{uid}  { perDay, perWeek, hoursDay, gap }    // load caps; coaches/default for everyone (step 7)
+    terms/{id}     { name, from, until }                 // a phase of the season (step 4)
+    closed/{id}    { from, until, note }                 // club blackout dates: holidays, exam weeks (step 4)
+  venues/{fid}/hoursBy/{id}  { from, until, d0..d6 }     // dated hours: unlit pitches close at six in November (step 7)
 
 orgs/{code}/teams/{tid}/
+  events/{eid}      + ptype: 'regular'|'technical'|'film'|'goalkeeper'|'fitness'|'scrimmage',   // step 5; missing is regular
+                    + who: 'keepers' | ''                // a cross-team session: one entry per team sharing `club`, keepers only asked
   confirm/{series}  { ok: true | false, by, at, note }   // the coach's word on one weekly slot, one write
 ```
+
+Everything above the line that is not built yet (steps 4 to 7) is marked
+with its step; what is built is `teams/{tid}` (per, len, field, not, note)
+and `from`/`until`. All of it stays under `org` or under the team, so none of
+it needs a rule.
 
 `sched` is under `org`, which the whole club reads and only admins write; a
 coach's confirmation is under her team, beside its entries, which the rule on
@@ -395,6 +412,187 @@ club has not been heard this session, as My calendar does for another club.
   `busyItems()`. Nothing new.
 - **A draft shared between admins.** Above, *The pieces*.
 
+## Rules, kinds and load
+
+The owner talked the scheduler through again in a second conversation on
+2026-10-15 and handed its plan here. His ask there: *a practice scheduler
+that looks at coaches, fields, and other inputs, including custom ones the
+admin can turn on and all of which can be turned off; X teams, each needing
+Y practices a week; extra practices like goalkeeper, and kinds like film,
+regular and technical; then games, which need the other team's admins,
+whether or not they are on the platform (if they are, we look for them too;
+if not, oh well); coaches, teams and parents not stretched thin, a cap on how
+much of a day is soccer for a family or a coach; and the admin saying what
+to prioritise and what she doesn't care about, by team, because some teams
+have single mothers and some want both parents there.* The plan that came
+back is folded in below, reconciled with what is built and decided; what it
+had that this brief does not take on is at the end of the section.
+
+### Everything the board says is a rule with a tier
+
+The plan's one principle, adopted whole: every refusal, warning and
+preference on the board is a **rule**, and every rule has a **tier**, *Must*,
+*High*, *Medium*, *Low* or *Off*, which the admin can move. Built-in rules
+and the admin's own are the same kind of thing, so "turn anything off" and
+"tell me what matters" are one list, not two features. A Must rule refuses
+in place (today's refusals); the rest cost in the fill and order the strip,
+and Off keeps the rule in the list and worthless. Stored as
+`org/sched/rules/{rule}: tier`, a missing one being the default below.
+
+| Rule | Default | Today |
+| --- | --- | --- |
+| A pitch a game or a session holds is taken | Must | refused |
+| Outside the permit, the hours or a closure | Must | refused |
+| The team is already on then | Must | refused |
+| A coach in two places (lowerable: two teams in one session is a real thing, so lowering it warns) | Must | refused |
+| A coach's drive between fields | High | warned |
+| A coach's load: sessions a day and a week, hours a day, the gap between (step 7) | High | — |
+| A night the team can't do | High | warned |
+| A keepers' session never over the regular practice of a team sending one (step 5) | High | — |
+| A family with children in two places | Medium | warned |
+| A household's soccer hours a day and a week (step 7) | Medium | — |
+| Siblings at one field at the same or the next hour | Medium | — |
+| A coach's teams back to back on one field | Medium | preferred by the fill |
+| The team on its usual field | Medium | warned |
+| The same slot every week of the term | Medium | — |
+| A team's second practice not the night after its first | Low | — |
+| Spread across the open pitches; rotate the worst slots across an age group | Low | — |
+| Fewest changes from what is written (stability, when re-laying a term; High then) | Low | — |
+| Keep the pattern's headroom for games (the games brief) | Low | — |
+
+The fill's *could not place* says which Must rules ruled every cell out for
+that practice and the cheapest one to relax, which the plan is right to call
+the most-used thing after the first run. Every placement the fill makes can
+say why it chose the cell, and every unmet soft rule is listed with its cost
+and who it hurts.
+
+### Profiles: the club's, and a team's own
+
+The tiers live in the club's profile with **presets to start from**:
+*field-first*, *coach-friendly*, *family-friendly* and *balanced*, each just a
+set of tiers written out as rules, nothing hidden behind the name. A team
+overrides any rule for itself (`org/sched/teams/{tid}/rules/{rule}`), most
+specific wins, and that is the whole of the owner's single-mothers case: for
+that team the family rules are High. *Both parents can come* for games is a
+weekend-window rule on the games brief. An age group's override (the plan
+had three levels) is left out: twelve teams is few enough to set by team.
+
+### Custom rules: three shapes, and tags
+
+The plan has a rule builder and custom resources. This brief takes **three
+shapes** and no builder, because each shape is one line in the same list and
+a general builder is a project of its own:
+
+1. *Teams tagged X only on fields tagged Y* (`tags` on a team at
+   `org/sched/teams/{tid}/tags`, on a field at `venues/{fid}/tags`: "needs
+   lights", "turf only", "U8").
+2. *No [team or tag] after [time]* (the young teams finish early).
+3. *[Coach] never on [day]*, which is time off and is built (`test/away.js`).
+
+A custom rule is `org/sched/custom/{id}` with its shape, its two operands,
+its tier and a note, and sits in the one list with the built-ins. Resources
+(goal sets, a bus, a trainer, the ball bag) are not taken on: each is a
+field-shaped thing with availability and capacity, and if a club asks, a
+field of kind *resource* is the way, not a new node.
+
+### Kinds of practice
+
+A practice has a kind: **regular, technical, film, goalkeeper, fitness,
+scrimmage**, built in, with the club able to change one or add its own
+(`org/sched/kinds/{kind}`). A kind says its usual length, what space it
+needs (a pitch, a share of one, a room, or none: film is a room or nothing),
+which staff role runs it, and who comes. On the entry it is `ptype`, missing
+meaning regular, so every practice there is today is a regular one and
+nothing moves. A team's needs become per kind (`need/{kind}`; `per` and `len`
+stay as regular's, so what is built keeps working): *two regular, one
+technical, film every other week, keepers once*.
+
+**Who comes is the hard part**, and the plan is right. A regular practice is
+one team. A goalkeeper session pulls keepers from several teams; a technical
+one may pool an age group; a scrimmage is two teams on a full pitch. A
+cross-team session is **one entry per team sharing a `club` id**, which is
+how club-wide bookings and picture day are written already (`test/planner.js`),
+so each team's calendar, answers, register and plan work unchanged; `who:
+'keepers'` on the entry means only the keepers are asked and counted. Its
+rules are its own: never over the regular practice of a team sending a
+keeper, and beside it at the same field when it can be (High and Medium
+above). A scrimmage takes a whole pitch, so it counts as a game for the
+space rule.
+
+### Coaches: what she can't do, and how much she can
+
+The plan collects weekly availability by form, with a deadline and the
+admin's approval. This app already has the inverse, **time off** (weekly,
+dates, a call-out; `training/{code}/away`), written by the coach and by an
+admin for her, which the board reads through `busyItems()`. That stays the
+way in: a coach says when she can't, which is shorter than when she can, and
+nothing is approved because an admin can write it too. Load is new: **caps**
+as rules (sessions a day and a week, hours a day, the gap between two),
+defaults for everyone at `org/sched/coaches/default` and a coach's own at
+`coaches/{uid}`. A coach who is also a parent is one account, so her
+household's rules apply to her too. Travel is the drive rule, with `near` on
+a field the day the club wants to say two fields are close.
+
+### Families: hours, and siblings
+
+Siblings are known from `guardians` and are why the family rules exist. New
+is a **household's soccer hours** a day and a week, counted from every
+child's practices, games and sessions (and the parent's own coaching, when
+she coaches), a Medium rule by default and High on the team that asks. The
+plan's opt-in household availability (when a family can't) is not taken on
+yet: it is private data about families and the board has no place to draw
+it; if it comes, it is coarse (a weekday evening off, never a reason) and
+read by admins and the fill alone. As everywhere, a family is a count to the
+club and a name to admins and that team's coaches.
+
+### Phases, blackout dates and sunset
+
+A **term is a phase** of the season (pre-season, in-season; `org/sched/
+terms/{id}`), each written on its own pattern week with its own needs, which
+the brief had as "a year is two or three terms" and the plan sharpens. **Club
+blackout dates** (`org/sched/closed`: holidays, exam weeks, tournament
+weeks) get no practice written on them, and the term view shows them.
+**Sunset** is the plan's best catch: an unlit pitch closes at sunset, so
+Lakeside's Field 1 is open until nine in September and six in November,
+and the autumn term needs an early and a late pattern. The data for it is
+**dated hours on a field** (`venues/{fid}/hoursBy/{id}`: from, until, and
+the weekday hours that apply between), read by `fieldShut()` ahead of the
+field's standing hours; a pitch marked `lights` is exempt. The admin types
+the dates; nothing works out sunset from a map, as nothing works out
+distance (*Not built*).
+
+### The engine
+
+The plan wants a real constraint solver (CP-SAT) with a greedy fallback for
+instant drafts. Here the order is reversed and the second half is deferred:
+the **greedy fill with a local search after it** is what the phone runs
+(step 8), time-boxed, scored by category, explaining itself, with **lock**,
+**pin** and **forbid** on any block or cell and *re-solve around what I kept*
+(stability a rule), because the app is a static site that ships no solver
+and a scheduler on a phone with no signal is the point of the place. A real
+solver is a Cloud Function away (`functions/`, the owner's decision on
+server-side code) and goes in only when a real club's fill is not good
+enough; the rule model is the same for both, which is why the rules come
+before the fill in the build order. The score the plan lists is the strip's
+summary: practices placed, Must rules broken (none, or the fill failed and
+says so), field use, the worst coach day, sibling clashes, changes from what
+is written.
+
+### Not taken on from the plan, and why
+
+- A general rule builder and custom resources: three shapes and tags
+  instead (above).
+- Coach availability forms with deadlines and approval: time off is the
+  inverse and is built.
+- Team managers editing their team's overrides: the owner decided coaches
+  read the board and confirm their slots; a team's tiers are the admin's.
+- Household availability opt-in: later, if at all, and coarse.
+- A solver in the app: on the server, later, if the fill falls short.
+- Age-group profiles between the club's and a team's: by team is enough.
+- Notifying only who is affected with a diff on publish: calendar changes
+  already reach each team and the admins (`calAlerts()`, push); the term
+  view's *what changed* is the diff.
+
 ## The season, and other clubs
 
 The owner, 2026-10-15, after the first board: *this scheduler will be used to
@@ -486,6 +684,17 @@ is already locked and never moved; an agreed game is one more game), and
 it waits on the owner's call and on AUTH.md's treatment of a second club,
 not on this build order.
 
+What games add to the rule list, from the second conversation's plan: the
+referees' availability (a resource-shaped thing, the one case for it), home
+and away balance over the season, a travel cap, rest between games, no game
+within N hours of a practice, headroom for games kept in the weekly pattern
+(a Low rule above), and *both parents can come* as a weekend-window rule a
+team turns up. A game reads practices as commitments, so coach, team and
+household load span both. An opponent on the platform means both clubs'
+rules in one solve, which only the server can do, each admin confirming;
+an opponent off it picks from offered windows through the link, and the ask
+moves offered, countered, accepted, confirmed.
+
 ## Build order
 
 Each step a build of its own, with `test/scheduler.js` growing with it, in
@@ -517,30 +726,49 @@ the rules grant today; **no step changes `database.rules.json`.**
    build too, her teams in colour and the rest in grey with the names kept,
    and nothing else to tap. `test/scheduler.js` pins all of it.
 3. **Placing.** The draft at `sm.sched.v1:{club}`, tap a team then a cell,
-   the refusals and warnings in place, moving and taking off, surviving a
-   reload, written by nothing yet.
+   the refusals and warnings in place, moving and taking off, **lock** on a
+   block and **forbid** on a cell, surviving a reload, written by nothing
+   yet.
 4. **Writing the term.** *Put it on the calendars*: new series through the
-   same function as `saveCalEvent()`, moved series as this-and-later edits,
-   removed ones deleted, twice writes nothing, `org/sched/from` and `until`
-   recorded. Through the outbox, stamped, team-only.
-5. **Lay it out for me.** The greedy fill, swept in the test across clubs
-   with more and fewer cells than practices wanted, never tripping a refusal,
-   saying what it could not place.
-6. **Re-laying a term.** Opening the Scheduler on a term already written
+   same function as `saveCalEvent()`, moved series as this-and-later edits
+   under a new series id, removed ones deleted, twice writes nothing; the
+   term a record (`org/sched/terms/{id}`) and club blackout dates
+   (`org/sched/closed`) written round. Through the outbox, stamped,
+   team-only.
+5. **Kinds of practice.** `ptype` and `who` on an entry, the built-in kinds
+   with the club's changes (`org/sched/kinds`), a team's needs per kind, a
+   cross-team session as one entry per team sharing `club`, keepers alone
+   asked and counted, and the keepers' rules.
+6. **Rules and tiers.** The rule list with its defaults, the club's profile
+   and the four presets, a team's overrides, the three custom shapes and
+   tags; a Must rule refuses on the board, the rest order the strip and
+   cost in the fill; lowering a physical rule warns.
+7. **Load.** Coach caps, a household's soccer hours, dated hours on a field
+   for sunset, each entering the board as a rule, each read through
+   `busyItems()` or `fieldShut()` and nowhere else.
+8. **Lay it out for me.** The greedy fill with a local search after it over
+   the rules as tiered, swept in the test across clubs with more and fewer
+   cells than practices wanted, never tripping a Must rule, re-solving
+   around what is locked, saying what it could not place and the cheapest
+   rule to relax, scored by category.
+9. **Re-laying a term.** Opening the Scheduler on a term already written
    starts from the calendar as it stands, so October's lost Thursday is the
-   same board: the stranded blocks are warned on the new supply, moved, and
-   written as edits under a new series id.
-7. **The coach's word.** *Works for me* and *This doesn't work* with a note
-   on her own blocks, one write at `teams/{tid}/confirm/{series}`, another
-   team's refused in the handler, through the outbox; the admin's board
-   showing each block's state and the strip counting them; a moved slot
-   unconfirmed again.
-8. **The term, and handing it on.** The term view (the weeks across, the
-   teams down, closures and holidays marked) before writing; and the field
-   schedule export, a CSV and a printable week per field with no names in
-   it, from the board (*The season, and other clubs*, above). A club-wide
-   fields page under `public/` only if the owner wants a link rather than a
-   file: it is the server's to build, like every share page.
+   same board: the stranded blocks are warned on the new supply, moved or
+   re-solved around what is kept with stability costing, and written as
+   edits under a new series id.
+10. **The coach's word.** *Works for me* and *This doesn't work* with a note
+    on her own blocks, one write at `teams/{tid}/confirm/{series}`, another
+    team's refused in the handler, through the outbox; the admin's board
+    showing each block's state and the strip counting them; a moved slot
+    unconfirmed again.
+11. **The term, reports and handing it on.** The term view (the weeks
+    across, the teams down, closures, blackout dates and holidays marked,
+    *what changed* since it was written) before writing; the reports the
+    strip summarises (field use, the worst coach day, sibling clashes); and
+    the field schedule export, a CSV and a printable week per field with no
+    names in it (*The season, and other clubs*). A club-wide fields page
+    under `public/` only if the owner wants a link rather than a file: it is
+    the server's to build, like every share page.
 
 After these, and as its own brief: **games agreed with another club**
 (*Other clubs, and the export*, above; ROADMAP, *Opponents*), which needs a
