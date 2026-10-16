@@ -106,6 +106,19 @@ const SNAP = () => {
       if (await tap('#app [data-act="schfield"]:not([aria-pressed="true"])', 'another field')) await capture('scheduler-field-2', 'the board, another field');
       if (await tap('#app [data-act="schweek"][data-v="1"]', 'the week after')) await capture('scheduler-next-week', 'the board, the week after');
       if (await tap('#app [data-act="schneed"]', 'a team row')) { await capture('scheduler-needs', 'a team\'s needs sheet'); await closeSheet(); }
+      // placing (build 164): pick a team, tap a half hour, place it
+      if (await tap('#app [data-act="schpick"]:not([aria-pressed="true"])', 'a team chip to place')) {
+        await capture('scheduler-picking', 'a team picked: every half hour is a place to tap');
+        if (await tap('#app [data-act="schcell"][data-wd="1"][data-t="19:00"]', 'Tuesday 7pm')) {
+          await capture('scheduler-place-sheet', 'the place sheet: pitch, what warns, Place it');
+          if (await tap('#sheet [data-act="schplacego"]', 'Place it')) await capture('scheduler-placed', 'a block placed, dotted, not written yet');
+          else await closeSheet();
+        }
+        if (await tap('#app [data-act="schcell"][data-wd="4"][data-t="18:00"]', 'Friday 6pm, when the field is closed')) { await capture('scheduler-refused', 'a cell that refuses'); await closeSheet(); }
+        await tap('#app [data-act="schpick"][data-v=""]', 'Done');
+      }
+      if (await tap('#app .tg-board .tg-ev[data-draft="1"]', 'the draft block')) { await capture('scheduler-draft-sheet', 'the draft block\'s sheet: move, lock, take off'); await closeSheet(); }
+      if (await tap('#app [data-act="schterm"]', 'The term…')) { await capture('scheduler-term', 'the term sheet'); await closeSheet(); }
       if (await tap('#app .tg-board .tg-ev', 'a block on the board')) { await capture('scheduler-block', 'a block opened: the entry\'s sheet'); await closeSheet(); }
       for (const k of ['find', 'coach', 'pic']) { if (await tap(`[data-act="pltab"][data-k="${k}"]`, 'tab ' + k)) await capture('scheduler-' + k, 'the ' + k + ' tab'); }
       await tab('more'); if (await tap('#sheet [data-act="goview"][data-v="setup"]', 'Settings')) await capture('settings', 'Settings, with the Scheduler row');

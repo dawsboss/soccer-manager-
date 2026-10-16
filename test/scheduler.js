@@ -19,7 +19,25 @@
      (the coach clash) is not.
    - The club's week card is off the Calendar (test/schedule.js has that half)
      and what it said is the strip here: short teams, still to settle, shared
-     field time apart. */
+     field time apart.
+
+   Build 164, steps 3 and 4 (placing, and writing the term):
+   - The draft is the phone's (sm.sched.v1:{club}): a team picked, then a
+     cell; refused in place (outside the permit, the team already on, a
+     pitch a game holds, a cell marked off) with no Place button, warned
+     (the coach elsewhere, a drive, families split, off its field, a night
+     it can't do) with one; a block moved, locked, taken off; a weekly
+     practice on the calendar moved on the board or taken off from this week
+     on; the draft counted against the team's needs; nothing written by any
+     of it; a coach refused in the handler with the draft untouched; the
+     draft surviving a reload.
+   - Put it on the calendars: a new block one weekly series through
+     addSeries(), the add sheet's own writer, so its entries have exactly the
+     add sheet's shape; a blackout date and a date the team already practises
+     at that time skipped, so twice writes nothing; a moved series its
+     entries from the term's start on at the same ids under a new series id;
+     a series taken off deleted from then on with its register; the term
+     recorded at org/sched; the draft cleared. */
 
 const H = require('./harness');
 const { check, deepEq } = H;
@@ -61,7 +79,10 @@ function as(uid, c = club()) {
   A.sess = { sessions: {}, booked: {}, came: {}, fees: {}, pay: {}, splans: {}, avail: {}, seats: {}, away: {}, dirty: {}, refused: {} };
   A.ui.teamId = 't1'; A.ui.view = 'scheduler'; A.ui.planner = { board: { week: MON } }; A.toasts.length = 0;
   A.dom.node('#sheet').innerHTML = '';
+  // the draft is the phone's, per club: start each case with none
+  const dr = A.schedDraft(); dr.blocks = {}; dr.off = {}; dr.forbid = {}; dr.from = ''; dr.until = ''; A.saveDraft();
 }
+const setv = (id, v) => { A.dom.node('#' + id).value = v; };
 const blocks = html => [...html.matchAll(/<button type="button" class="tg-ev" ([^>]*)>/g)].map(m => Object.fromEntries([...m[1].matchAll(/data-(\w+)="([^"]*)"/g)].map(x => [x[1], x[2]])));
 
 (async () => {
@@ -218,6 +239,176 @@ const blocks = html => [...html.matchAll(/<button type="button" class="tg-ev" ([
     check('and a club with no fields is told where to add them', (e.access.org.venues = {}, A.render(), /Fields and permits/.test(A.rendered())), true);
   }
 
+
+  console.log('\n--- placing: the draft on the phone ---');
+  {
+    as('boss'); A.render();
+    check('nothing to tap until a team is picked', /data-act="schcell"/.test(A.rendered()), false);
+    A.click({ act: 'schpick', v: 't3' });
+    check('a team picked: every half hour is a place to tap', A.ui.planner.board.pick + ' ' + /data-act="schcell" data-wd="0" data-t="18:30"/.test(A.rendered()) + ' ' + /Tap where B9 Comets practises/.test(A.rendered()), 't3 true true');
+    A.click({ act: 'schcell', wd: '0', t: '16:00' });
+    check('outside the permit: refused, no Place button', /Can’t go here/.test(sheet(A)) && /Outside the club’s permit/.test(sheet(A)) && !/schplacego/.test(sheet(A)), true);
+    A.closeSheet();
+    A.click({ act: 'schpick', v: 't1' }); A.click({ act: 'schcell', wd: '1', t: '17:30' });
+    check('the team already on then: refused', /G11 Flight already has Practice at 5:30pm/.test(sheet(A)) && !/schplacego/.test(sheet(A)), true);
+    A.closeSheet();
+    A.click({ act: 'schpick', v: 't3' }); A.click({ act: 'schcell', wd: '1', t: '17:30' });
+    check('warned, with a Place button: the coach due elsewhere, and a drive to her game', /Jaz is due at G11 Flight: Practice then/.test(sheet(A)) && /Jaz: a drive to B9 Comets: v Riverside at School turf \(30 minutes between\)/.test(sheet(A)) && /data-act="schplacego"/.test(sheet(A)), true);
+    A.closeSheet();
+    A.click({ act: 'schcell', wd: '0', t: '18:00' });
+    check('a free cell: the pitches to pick, nobody busy', /Which pitch/.test(sheet(A)) && /data-act="schpitch" data-v="a"/.test(sheet(A)) && /Nobody involved is busy/.test(sheet(A)), true);
+    A.click({ act: 'schpitch', v: 'a' });
+    check('the pitch picked is kept on the sheet', /data-v="a" aria-pressed="true"/.test(sheet(A)), true);
+    const before = JSON.stringify(A.state);
+    A.click({ act: 'schplacego' });
+    const b1 = A.draftBlocks()[0];
+    check('placed: a block in the draft, team, weekday, time, length, column and pitch', [b1.tid, b1.wd, b1.start, b1.len, b1.col, b1.pitch, b1.series, b1.locked].join('|'), 't3|0|18:00|60|f:v1|a||false');
+    check('nothing written to the club', JSON.stringify(A.state), before);
+    check('the pick is done', A.ui.planner.board.pick, '');
+    check('drawn dotted, said as not written yet', /data-draft="1"[^>]*aria-label="B9 Comets: Practice, 6pm to 7pm, Field 2, not written yet"/.test(A.rendered()), true);
+    check('counted against the team\'s needs, as to write', /1 of 1 placed · 1 to write/.test(A.rendered()), true);
+    check('and no longer short on the strip', /B9 Comets: 0 of 1 practice/.test(A.rendered()), false);
+    check('the To write card, with the term', /To write/.test(A.rendered()) && /1 new weekly slot/.test(A.rendered()) && /data-act="schwrite"/.test(A.rendered()) && /Mon 14 Sep/.test(A.rendered()) && /Sun 27 Dec/.test(A.rendered()), true);
+    check('said', A.lastToast(), 'On the board. Nothing is written until you put it on the calendars.');
+    A.click({ act: 'schpick', v: 't3' }); A.click({ act: 'schcell', wd: '0', t: '18:30' });
+    check('the draft counts as busy for its own team', /B9 Comets already has Practice at 6pm/.test(sheet(A)), true);
+    A.closeSheet(); A.click({ act: 'schpick', v: '' });
+
+    A.click({ act: 'schblock', id: b1.id });
+    check('a draft block opens its own sheet', /B9 Comets: new slot/.test(sheet(A)) && /data-act="schmove"/.test(sheet(A)) && /data-act="schdrop"/.test(sheet(A)), true);
+    A.click({ act: 'schlock', id: b1.id });
+    check('locked', A.draftBlocks()[0].locked + ' ' + /data-draft="1" data-off="0"/.test(A.rendered()) + ' ' + /data-lock="1" data-dim="0" data-draft="1"/.test(A.rendered()), 'true true true');
+    A.click({ act: 'schlock', id: b1.id }); A.closeSheet();
+    A.click({ act: 'schblock', id: b1.id }); A.click({ act: 'schmove', id: b1.id });
+    check('Move it: the block is the pick', A.ui.planner.board.pick + ' ' + /Tap where B9 Comets’s slot moves to/.test(A.rendered()), 'b:' + b1.id + ' true');
+    A.click({ act: 'schcell', wd: '3', t: '17:00' });
+    check('the cell says Move', /<h3>Move B9 Comets<\/h3>/.test(sheet(A)) && /Move it here/.test(sheet(A)), true);
+    A.click({ act: 'schplacego' });
+    const b2 = A.draftBlocks()[0];
+    check('moved within the field, the pitch kept', [A.draftBlocks().length, b2.id === b1.id, b2.wd, b2.start, b2.pitch].join('|'), '1|true|3|17:00|a');
+
+    A.click({ act: 'schpick', v: 't2' }); A.click({ act: 'schcell', wd: '2', t: '18:00' });
+    A.click({ act: 'schforbid' });
+    check('a cell marked off: kept, drawn', JSON.stringify(A.schedDraft().forbid) + ' ' + /class="tg-forbid"/.test(A.rendered()), '{"2|18:00|f:v1":true} true');
+    A.click({ act: 'schcell', wd: '2', t: '18:00' });
+    check('and refused, with Unmark', /You marked that time off the board/.test(sheet(A)) && /data-act="schunforbid"/.test(sheet(A)) && !/schplacego/.test(sheet(A)), true);
+    A.click({ act: 'schunforbid' });
+    check('unmarked', JSON.stringify(A.schedDraft().forbid), '{}');
+    A.click({ act: 'schpick', v: '' });
+
+    A.click({ act: 'schblock', id: b2.id }); A.click({ act: 'schdrop', id: b2.id });
+    check('taken off: the draft is empty and the card is gone', A.draftBlocks().length + ' ' + /To write/.test(A.rendered()), '0 false');
+  }
+
+  console.log('\n--- a weekly practice on the calendar, moved or taken off on the board ---');
+  {
+    const c = club();
+    c.teams.t1.events.e1.series = 's1'; c.teams.t1.events.e0.series = 's1';
+    c.teams.t1.events.e1b = { id: 'e1b', kind: 'practice', title: 'Practice', date: '2026-09-22', start: '17:30', end: '18:30', venue: 'Lakeside Park, Field 2', series: 's1' };
+    as('boss', c); A.render();
+    check('a weekly practice opens the board\'s sheet on an admin\'s board', /data-act="schblock" data-k="e:e1"/.test(A.rendered()), true);
+    check('a one-off practice still opens the entry', /data-act="calitem" data-k="practice" data-tid="t2" data-id="e2"/.test(A.rendered()), true);
+    A.click({ act: 'schblock', k: 'e:e1' });
+    check('the sheet: open it, move it, take it off', /Open the practice/.test(sheet(A)) && /data-act="schmoveseries" data-s="s1" data-tid="t1"/.test(sheet(A)) && /data-act="schoffseries" data-s="s1"/.test(sheet(A)), true);
+    A.click({ act: 'schoffseries', s: 's1' });
+    check('taken off from this week on: drawn struck, not counted', /data-act="schblock" data-k="e:e1"[^>]*data-off="1"/.test(A.rendered()) + ' ' + /G11 Flight<\/span>[^]*?0 of 1 placed/.test(A.rendered()), 'true true');
+    check('the To write card says so', /1 taken off/.test(A.rendered()), true);
+    A.click({ act: 'schblock', k: 'e:e1' });
+    check('and can be kept after all', /data-act="schunoff"/.test(sheet(A)), true);
+    A.click({ act: 'schunoff', s: 's1' });
+    check('kept', JSON.stringify(A.schedDraft().off) + ' ' + /data-off="1"/.test(A.rendered()), '{} false');
+    A.click({ act: 'schblock', k: 'e:e1' }); A.click({ act: 'schmoveseries', s: 's1', tid: 't1' });
+    check('Move it on the board: the series is the pick', A.ui.planner.board.pick, 's:s1:t1');
+    A.click({ act: 'schcell', wd: '3', t: '18:00' });
+    check('the cell says Move, from this week on', /<h3>Move G11 Flight<\/h3>/.test(sheet(A)) && /from this week on/.test(sheet(A)), true);
+    A.click({ act: 'schplacego' });
+    const b = A.draftBlocks()[0];
+    check('a moved series: a block naming it, its length from the calendar, the old slot off', [b.series, b.wd, b.start, b.len, !!A.schedDraft().off.s1].join('|'), 's1|3|18:00|60|true');
+    check('drawn: the old slot struck, the new one dotted', /data-k="e:e1"[^>]*data-off="1"/.test(A.rendered()) && /data-draft="1"[^>]*aria-label="G11 Flight: Practice, 6pm to 7pm, not written yet"/.test(A.rendered()), true);
+    check('counted once', /G11 Flight<\/span>[^]*?1 of 1 placed · 1 to write/.test(A.rendered()), true);
+    check('nothing written to the club', A.state.teams.t1.events.e1.date + ' ' + A.state.teams.t1.events.e1.series, '2026-09-15 s1');
+  }
+
+  console.log('\n--- who may place: a coach reads, and writes nothing ---');
+  {
+    as('jaz'); A.render();
+    const before = JSON.stringify(A.state);
+    for (const [act, d] of [['schpick', { v: 't1' }], ['schcell', { wd: '0', t: '18:00' }], ['schplacego', {}], ['schforbid', {}], ['schoffseries', { s: 's1' }], ['schwrite', {}], ['schtermsave', {}], ['schclosedadd', {}]]) {
+      A.toasts.length = 0; A.click({ act, ...d });
+      check(`jaz: ${act} is refused`, A.lastToast(), 'Planning is for club admins');
+    }
+    check('— her teams\' weekly practices open the entry, not the board\'s sheet', /data-act="schblock"/.test(A.rendered()), false);
+    check('— the draft untouched, nothing written', A.draftBlocks().length + ' ' + (JSON.stringify(A.state) === before), '0 true');
+  }
+
+  console.log('\n--- the term, and blackout dates ---');
+  {
+    as('boss'); A.render();
+    deepEq('by default the week on the board and fifteen weeks', A.draftTerm(MON), { from: MON, until: '2026-12-27' });
+    A.click({ act: 'schterm' });
+    check('the sheet', /id="stFrom"/.test(sheet(A)) && /No holidays or weeks off yet/.test(sheet(A)), true);
+    setv('stFrom', MON); setv('stUntil', '2026-10-11');
+    A.click({ act: 'schtermsave' });
+    deepEq('saved on the phone', A.draftTerm(MON), { from: MON, until: '2026-10-11' });
+    A.click({ act: 'schterm' }); setv('stFrom', '2026-10-01'); setv('stUntil', '2026-09-01'); A.click({ act: 'schtermsave' });
+    check('a last day before the first is refused', A.lastToast(), 'The last day is before the first');
+    setv('scFrom', '2026-09-28'); setv('scUntil', '2026-10-02'); setv('scNote', 'Half term');
+    A.click({ act: 'schclosedadd' });
+    const closed = A.schedClosed();
+    check('a blackout is the club\'s, one record', closed.length + ' ' + [closed[0].from, closed[0].until, closed[0].note].join('|'), '1 2026-09-28|2026-10-02|Half term');
+    check('written at org/sched/closed', !!A.state.access.org.sched.closed[closed[0].id], true);
+    check('and listed on the sheet with Remove', /Mon 28 Sep to Fri 2 Oct \(Half term\)/.test(sheet(A)) && /data-act="schclosedrm"/.test(sheet(A)), true);
+    A.click({ act: 'schclosedrm', id: closed[0].id });
+    check('removed', A.schedClosed().length, 0);
+    A.closeSheet();
+  }
+
+  console.log('\n--- put it on the calendars ---');
+  {
+    const c = club();
+    c.teams.t1.events.e1.series = 's1'; c.teams.t1.events.e0.series = 's1';
+    c.teams.t1.events.e1b = { id: 'e1b', kind: 'practice', title: 'Practice', date: '2026-09-29', start: '17:30', end: '18:30', venue: 'Lakeside Park, Field 2', series: 's1' };
+    c.teams.t1.events.e1c = { id: 'e1c', kind: 'practice', title: 'Practice', date: '2026-09-22', start: '17:30', end: '18:30', venue: 'Lakeside Park, Field 2', series: 's1' };
+    c.teams.t2.events.e2.series = 's2';
+    c.teams.t2.events.e2b = { id: 'e2b', kind: 'practice', title: 'Practice', date: '2026-09-22', start: '18:00', end: '19:00', venue: 'Lakeside Park', series: 's2' };
+    c.teams.t2.attend = { e2b: { p3: true } };
+    c.access.org.sched = { closed: { h: { id: 'h', from: '2026-09-28', until: '2026-10-02', note: 'Half term' } } };
+    as('boss', c); A.render();
+    // a practice from the add sheet, to hold the Scheduler's to
+    A.click({ act: 'calnew', tid: 't3' });
+    for (const [k, v] of Object.entries({ evTitle: '', evDate: '2026-09-16', evStart: '18:00', evEnd: '19:00', evVenue: 'School turf', evNotes: '' })) setv(k, v);
+    A.click({ act: 'calsave', tid: 't3' });
+    const fromSheet = Object.values(A.state.teams.t3.events).find(e => e.date === '2026-09-16');
+    check('the add sheet made one', !!fromSheet, true);
+    A.ui.view = 'scheduler';
+    const dr = A.schedDraft();
+    dr.from = MON; dr.until = '2026-10-11';
+    dr.blocks = { n1: { id: 'n1', tid: 't3', wd: 0, start: '18:00', len: 60, col: 'f:v1', pitch: 'a', series: '', locked: false },
+      m1: { id: 'm1', tid: 't1', wd: 3, start: '18:00', len: 60, col: 'f:v1', pitch: '', series: 's1', locked: false } };
+    dr.off = { s1: true, s2: true };
+    A.saveDraft(); A.render();
+    check('the card counts it', /1 new weekly slot · 1 moved · 1 taken off/.test(A.rendered()) && /skipping Mon 28 Sep to Fri 2 Oct \(Half term\)/.test(A.rendered()), true);
+    const r = A.schedWrite(MON);
+    deepEq('what was written', r, { made: 3, moved: 2, removed: 3, teams: 3 });
+    const news = Object.values(A.state.teams.t3.events).filter(e => e.venue === 'Lakeside Park, Field 2').sort((a, b) => a.date.localeCompare(b.date));
+    check('a new slot: one entry per Monday of the term, the blackout week skipped', news.map(e => e.date).join(), '2026-09-14,2026-09-21,2026-10-05');
+    check('one series, team-only, families asked, titled as a practice', news.every(e => e.series === news[0].series && e.series && e.public === false && e.ask === true && e.title === 'Practice' && e.kind === 'practice' && e.start === '18:00' && e.end === '19:00' && e.by === 'boss' && e.createdAt), true);
+    check('exactly the add sheet\'s shape', Object.keys(news[0]).sort().join(), Object.keys({ ...fromSheet, series: 1 }).sort().join());
+    const t1 = A.state.teams.t1.events;
+    check('a moved series: the same entries, Thursdays from this week on, under a new series id', [t1.e1.date, t1.e1.start, t1.e1.end, t1.e1.series !== 's1', t1.e1.series === t1.e1c.series, t1.e1c.date, t1.e1.venue].join('|'), '2026-09-17|18:00|19:00|true|true|2026-09-24|Lakeside Park');
+    check('— the week before the term untouched', t1.e0.date + ' ' + t1.e0.series, '2026-09-08 s1');
+    check('— a plan keyed by the entry would follow it: the ids are kept', !!t1.e1 && !!t1.e1c, true);
+    check('a series taken off: gone from this week on, with its register', [A.state.teams.t2.events.e2, A.state.teams.t2.events.e2b, (A.state.teams.t2.attend || {}).e2b].map(x => !!x).join(), 'false,false,false');
+    check('— and the moved series\' entry falling in the blackout week went too', !t1.e1b && !Object.values(t1).some(e => e.date >= '2026-09-28' && e.date <= '2026-10-02'), true);
+    check('the term recorded on the club', A.state.access.org.sched.from + ' ' + A.state.access.org.sched.until, MON + ' 2026-10-11');
+    check('the draft cleared', A.draftBlocks().length + ' ' + JSON.stringify(A.schedDraft().off), '0 {}');
+    dr.blocks = { n1: { id: 'n1', tid: 't3', wd: 0, start: '18:00', len: 60, col: 'f:v1', pitch: 'a', series: '', locked: false } }; A.saveDraft();
+    deepEq('written twice, nothing new: the team already practises then', A.schedWrite(MON), { made: 0, moved: 0, removed: 0, teams: 0 });
+    check('— the count unchanged', Object.values(A.state.teams.t3.events).filter(e => e.venue === 'Lakeside Park, Field 2').length, 3);
+    A.render();
+    check('the board draws what was written as the calendar\'s own', (A.rendered().match(/data-draft="0"/g) || []).length > 0 && !/data-draft="1"/.test(A.rendered()), true);
+  }
+
   // last, as every suite has it: a second app loaded takes the harness's document with it
   console.log('\n--- against the database: one write, at the depth the rule on org grants ---');
   {
@@ -233,6 +424,24 @@ const blocks = html => [...html.matchAll(/<button type="button" class="tg-ev" ([
     check('one write', ws.length, 1);
     check('at orgs/{code}/org/sched/teams/{tid}', ws[0].path, 'orgs/CLUB/org/sched/teams/t1');
     check('the record whole, the length from the team\'s last practice', ws[0].value.per + ' ' + ws[0].value.len, '2 60');
+    const dr = D.schedDraft();
+    dr.from = MON; dr.until = '2026-09-27';
+    dr.blocks = { n1: { id: 'n1', tid: 't3', wd: 0, start: '18:00', len: 60, col: 'f:v1', pitch: '', series: '', locked: false } };
+    D.saveDraft();
+    D.schedWrite(MON); await D.flush();
+    const ev = fbk.record.writes.filter(w => /^orgs\/CLUB\/teams\/t3\/events\/[\w-]+$/.test(w.path));
+    check('the term written: one write per entry at teams/{tid}/events/{eid}', ev.length + ' ' + ev.every(w => w.value && w.value.kind === 'practice' && w.value.series), '2 true');
+    check('each stamped with who wrote it', ev.every(w => w.value.edit && w.value.edit.by === 'boss'), true);
+    check('the term at org/sched', fbk.record.writes.some(w => w.path === 'orgs/CLUB/org/sched/from' && w.value === MON), true);
+    check('never a team\'s whole calendar', fbk.record.writes.some(w => /\/teams\/t3(\/events)?$/.test(w.path)), false);
+
+    // the draft survives a reload: a phone opened again with the draft in its storage
+    const fbk2 = makeFakebase();
+    const E = H.loadApp({ firebase: fbk2, config: CONFIG, storage: { 'sm.workspace': 'CLUB', 'sm.sched.v1:CLUB': JSON.stringify({ blocks: { z: { id: 'z', tid: 't2', wd: 1, start: '19:00', len: 60, col: 'f:v1', pitch: '', series: '', locked: true } }, off: {}, forbid: { '0|17:00|f:v1': true }, from: MON, until: '2026-10-11' }) } });
+    await E.flush(); fbk2.signIn('boss', { name: 'Ada' }); await E.flush(); await fbk2.serveClub('CLUB', club(), E.flush); await E.flush();
+    E.ui.view = 'scheduler'; E.ui.planner = { board: { week: MON } }; E.render();
+    check('after a reload the draft is still there', E.draftBlocks().map(b => b.id + ':' + b.locked).join() + ' ' + JSON.stringify(E.schedDraft().forbid) + ' ' + E.draftTerm(MON).until, 'z:true {"0|17:00|f:v1":true} 2026-10-11');
+    check('and drawn', /data-draft="1"[^>]*aria-label="G13 Storm: Practice, 7pm to 8pm, not written yet"/.test(E.rendered()) && /class="tg-forbid"/.test(E.rendered()), true);
   }
 
   H.summary('the Scheduler');

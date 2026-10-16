@@ -1221,6 +1221,13 @@ button.ev:active{filter:brightness(.92)}
 .tg-board .tg-ev[data-kind="session"]{background:color-mix(in srgb,var(--ev) 55%,#fff)}
 .tg-board .tg-ev[data-dim="1"]{background:#E1E8EB;color:var(--ink-soft);box-shadow:0 0 0 1px #fff}
 .tg-board .tg-ev span{display:block}
+.tg-board .tg-slot.tg-half{height:calc(var(--hr) / 2)}
+.tg-board .tg-forbid{position:absolute;left:0;right:0;height:calc(var(--hr) / 2);pointer-events:none;z-index:0;
+  background:repeating-linear-gradient(45deg,rgba(53,69,79,.28) 0 3px,transparent 3px 7px)}
+.tg-board .tg-ev[data-draft="1"]{border:2px dashed #fff;padding:1px 3px;box-shadow:0 0 0 1px var(--ev)}
+.tg-board .tg-ev[data-off="1"]{opacity:.45}
+.tg-board .tg-ev[data-off="1"] b{text-decoration:line-through}
+.schedwrite .row.wrap{gap:8px}
 @media (min-width:760px){
   .tg-week .tg-ev span{display:block}
   .tg-week .tg-ev[data-short="1"] span{display:none}

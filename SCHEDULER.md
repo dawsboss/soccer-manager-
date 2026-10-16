@@ -725,16 +725,35 @@ the rules grant today; **no step changes `database.rules.json`.**
    decision) and the old address lands here. A coach gets the grid in this
    build too, her teams in colour and the rest in grey with the names kept,
    and nothing else to tap. `test/scheduler.js` pins all of it.
-3. **Placing.** The draft at `sm.sched.v1:{club}`, tap a team then a cell,
-   the refusals and warnings in place, moving and taking off, **lock** on a
-   block and **forbid** on a cell, surviving a reload, written by nothing
-   yet.
-4. **Writing the term.** *Put it on the calendars*: new series through the
-   same function as `saveCalEvent()`, moved series as this-and-later edits
-   under a new series id, removed ones deleted, twice writes nothing; the
-   term a record (`org/sched/terms/{id}`) and club blackout dates
-   (`org/sched/closed`) written round. Through the outbox, stamped,
-   team-only.
+3. **Placing** — built, build 164. The draft at `sm.sched.v1:{club}`
+   (`schedDraft()`, `draftBlocks()`): a team picked as a chip, then a half
+   hour on any day of the field shown; the sheet says the pitch where the
+   field has them, what refuses it (`placeCheck()`: outside the permit, the
+   hours or a closure; the team already on; a pitch a game or session holds
+   or no pitch left; a cell marked off) with no Place button, or what warns
+   (the coach due elsewhere, her drive, families split, off its usual field,
+   a night it can't do) with one. A draft block is drawn dotted, counted
+   against the team's needs as *to write*, and opens its own sheet: move,
+   lock, take off. A cell can be marked off the board and unmarked. A weekly
+   practice on the calendar opens the board's sheet on an admin's board:
+   open it, move it on the board (its length from its first entry still to
+   come), or take it off from this week on, drawn struck. Nothing is written
+   by any of it; a coach is refused in the handler; the draft survives a
+   reload.
+4. **Writing the term** — built, build 164. *Put it on the calendars*
+   (`schedWrite()`): a new block one weekly series through `addSeries()`,
+   the add sheet's own writer (pulled out of `saveCalEvent()` so the two
+   cannot drift; the suite holds an entry of each to the same keys); a moved
+   series its entries from the term's start on, at the same ids under a new
+   series id, so a plan keyed by the entry follows; a series taken off
+   deleted from then on with its register, as the sheet deletes a practice;
+   a blackout date (`org/sched/closed`, kept from the term sheet) skipped,
+   as is a date the team already practises at that time, so writing twice
+   writes nothing; at most `SERIES_MAX` a series; the term's dates on the
+   draft (the term sheet) and recorded at `org/sched/from` and `until` once
+   written. Through the outbox, stamped, team-only, families asked. A term as
+   a record of its own (`org/sched/terms/{id}`, a phase) waits for step 7,
+   where phases come in; until then the term is the two dates.
 5. **Kinds of practice.** `ptype` and `who` on an entry, the built-in kinds
    with the club's changes (`org/sched/kinds`), a team's needs per kind, a
    cross-team session as one entry per team sharing `club`, keepers alone

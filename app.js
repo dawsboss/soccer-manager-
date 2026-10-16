@@ -2,7 +2,7 @@
    Static app. Data lives in localStorage, and mirrors to Firebase Realtime
    Database when a config + workspace code are present. */
 
-const BUILD = '163';
+const BUILD = '164';
 const BUILT = '2026-10-14';
 /* The version of database.rules.json this app was written against. The rules
    carry the same number in rulesVersion's .write, which accepts that number
@@ -11260,6 +11260,23 @@ function sheetCalEvent() {
       <button class="btn danger wide" data-act="caldel" data-tid="${esc(f.tid)}">Delete</button>`}`);
 }
 
+/* A weekly series written: one entry per date at teams/{tid}/events/{eid},
+   below the rule on $tid, sharing one series id when there is more than one
+   date. The add sheet and the Scheduler both write through here, so a
+   practice the Scheduler lays out is a practice in every respect
+   (SCHEDULER.md, *Writing the term*; test/scheduler.js holds the two to each
+   other). Returns the first entry made. */
+function addSeries(tid, fields, dates) {
+  const series = dates.length > 1 ? uid() : null;
+  let first = null;
+  for (const date of dates) {
+    const id = uid();
+    const e = { id, ...fields, date, ...(series ? { series } : {}), createdAt: nowMs(), ...(me ? { by: me.uid } : {}) };
+    quiet(`teams/${tid}/events/${id}`, e);
+    first = first || e;
+  }
+  return first;
+}
 /* Each entry goes out at its own path, teams/{tid}/events/{eid} — below the
    rule on $tid, which is what grants it — and the redraw and the republish
    happen once at the end rather than once per week of a series. */
@@ -11291,14 +11308,7 @@ function saveCalEvent() {
   }
   const dates = f.repeat ? seriesDates(f.date, f.until, f.days.length ? f.days : [weekdayOf(f.date)]) : [f.date];
   if (!dates.length) { toast('No days between those dates'); return; }
-  const series = dates.length > 1 ? uid() : null;
-  let first = null;
-  for (const date of dates) {
-    const id = uid();
-    const e = { id, ...fields, date, ...(series ? { series } : {}), createdAt: nowMs(), ...(me ? { by: me.uid } : {}) };
-    quiet(`teams/${f.tid}/events/${id}`, e);
-    first = first || e;
-  }
+  const first = addSeries(f.tid, fields, dates);
   /* Added from the Practice tab: the coach came to plan it, so its plan is
      made and opened. The other weeks of a series wait on the Plans list. */
   if (f.plan && kind === 'practice' && canPlan(f.tid)) {
@@ -18070,14 +18080,15 @@ function newsCard() {
    looks. A game against another club is fixed by a league; the planner says
    what it clashes with and never offers to move it. */
 const canPlanClub = () => canAdmin();
-const PLANNER_ACTS = new Set(['scheduler', 'schweek', 'schfield', 'schneed', 'schneedwd', 'schneedsave', 'plback', 'pltab', 'plcw', 'plrange', 'pltm', 'plfind', 'plbook', 'plkind', 'plbookgo', 'plpictm', 'plpic', 'plpicgo']);
+const PLANNER_ACTS = new Set(['scheduler', 'schweek', 'schfield', 'schneed', 'schneedwd', 'schneedsave',
+  'schpick', 'schcell', 'schpitch', 'schplacego', 'schforbid', 'schunforbid', 'schblock', 'schmove', 'schlock', 'schdrop', 'schmoveseries', 'schoffseries', 'schunoff', 'schterm', 'schtermsave', 'schclosedadd', 'schclosedrm', 'schwrite', 'schclear', 'plback', 'pltab', 'plcw', 'plrange', 'pltm', 'plfind', 'plbook', 'plkind', 'plbookgo', 'plpictm', 'plpic', 'plpicgo']);
 function plannerUi() {
   if (!ui.planner || typeof ui.planner !== 'object') ui.planner = {};
   const p = ui.planner;
   // Clashes was a tab until build 163; it is the board's strip now, so an old 'clash' lands on the board
   if (!['board', 'find', 'pic', 'coach'].includes(p.tab)) p.tab = 'board';
   const bd = p.board && typeof p.board === 'object' ? p.board : {}, mon = d => addDays(d, -weekdayOf(d));
-  p.board = { week: okDay(bd.week) ? mon(bd.week) : mon(todayStr()), field: typeof bd.field === 'string' ? bd.field : '' };
+  p.board = { week: okDay(bd.week) ? mon(bd.week) : mon(todayStr()), field: typeof bd.field === 'string' ? bd.field : '', pick: typeof bd.pick === 'string' ? bd.pick : '' };
   const cw = p.cw && typeof p.cw === 'object' ? p.cw : {};
   p.cw = { date: okDay(cw.date) ? cw.date : todayStr(), h0: hm(cw.h0) || '17:00', h1: hm(cw.h1) || '18:30' };
   if (![7, 14, 28].includes(p.days)) p.days = 14;
@@ -18351,11 +18362,184 @@ function boardItems(week) {
     const date = addDays(week, i);
     for (const x of busyItems(date)) {
       if (x.away || x.kind === 'elsewhere') continue;
-      out.push({ ...x, date, col: placeKey(x) });
+      const e = x.tid && x.key.startsWith('e:') ? ((state.teams[x.tid] || {}).events || {})[x.key.slice(2)] : null;
+      out.push({ ...x, date, col: placeKey(x), series: (e && e.series) || '' });
     }
   }
   return out;
 }
+/* ---- the draft: placements not written yet, on this phone ---- */
+/* SCHEDULER.md, steps 3 and 4. What the admin has placed on the board and not
+   yet written is hers alone, kept at sm.sched.v1:{club} like a run of games
+   is kept in its form: one admin's afternoon of work, surviving a reload,
+   writing nothing until she says. Two admins laying out the same term each
+   hold a draft; the second to write sees the first's practices on the board
+   and places around them. A draft in the club would need a rule, an owner
+   and a way to throw it away, for a thing that lives an afternoon.
+
+   A block is a slot on the pattern week (a weekday and a start, never a
+   date): a new practice to write as a weekly series, or, with `series`, an
+   existing weekly series moved here from this week on. `off` is a series
+   taken off the board from this week on; `forbid` a cell the admin marked
+   off (the fill, step 8, never places there). */
+const LS_SCHED = 'sm.sched.v1';
+const schedKey = () => LS_SCHED + ':' + clubKey();
+let schedDraftCache = null, schedDraftFor = '';
+const DRAFT_BLANK = () => ({ blocks: {}, off: {}, forbid: {}, from: '', until: '' });
+function schedDraft() {
+  const k = schedKey();
+  if (schedDraftCache && schedDraftFor === k) return schedDraftCache;
+  const d = DRAFT_BLANK();
+  try {
+    const v = JSON.parse(localStorage.getItem(k) || 'null');
+    if (v && typeof v === 'object') for (const key of Object.keys(d)) if (v[key] != null && typeof v[key] === typeof d[key]) d[key] = v[key];
+  } catch (e) { }
+  schedDraftCache = d; schedDraftFor = k;
+  return d;
+}
+function saveDraft() { keepStored(schedKey(), JSON.stringify(schedDraft())); }
+/* The blocks as the board trusts them: a team still here, a weekday, a time,
+   a length the needs sheet allows, a column. Anything else in the file is
+   left where it is and not drawn. */
+function draftBlocks() {
+  return Object.values(schedDraft().blocks || {}).filter(b => b && typeof b === 'object' && state.teams[b.tid] && Number.isInteger(b.wd) && b.wd >= 0 && b.wd <= 6 && hm(b.start) && SCHED_LENS.includes(Number(b.len)) && typeof b.col === 'string' && b.col)
+    .map(b => ({ ...b, len: Number(b.len), pitch: String(b.pitch || ''), series: String(b.series || ''), locked: !!b.locked }));
+}
+const cellKey = (wd, start, col) => `${wd}|${start}|${col}`;
+/* The term the draft is for: what the admin set, else the week on the board
+   and fifteen weeks on. */
+function draftTerm(week) {
+  const d = schedDraft();
+  const from = okDay(d.from) ? d.from : week;
+  const until = okDay(d.until) && d.until >= from ? d.until : addDays(from, 7 * 15 - 1);
+  return { from, until };
+}
+/* Club blackout dates (org/sched/closed): no practice is written on them. */
+function schedClosed() {
+  return Object.entries((((acc().org || {}).sched || {}).closed) || {}).map(([id, c]) => c && typeof c === 'object' && okDay(c.from) ? {
+    id: c.id || id, from: c.from, until: okDay(c.until) && c.until >= c.from ? c.until : c.from, note: String(c.note || '').slice(0, 120)
+  } : null).filter(Boolean).sort((a, b) => a.from.localeCompare(b.from));
+}
+const dateClosed = date => schedClosed().some(c => c.from <= date && date <= c.until);
+/* A draft block as a board item on the week drawn: busyItems()'s shape, so
+   the checks, the lanes and the counts read it as they read a practice. */
+function draftItems(week) {
+  return draftBlocks().map(b => {
+    const date = addDays(week, b.wd), a = minOf(b.start), bEnd = a + b.len;
+    const f = b.col.startsWith('f:') ? fieldById(b.col.slice(2)) : null;
+    return { key: 'd:' + b.id, kind: 'practice', tid: b.tid, label: `${shortTeam(b.tid)}: Practice`, a, b: bEnd, field: f ? f.id : null, pitch: b.pitch || null,
+      venue: f ? f.name : b.col.replace(/^t:/, ''), coaches: coachesOf(b.tid), pids: null, date, col: b.col, draft: b, series: b.series };
+  });
+}
+/* The week as the board draws it: the calendar's items, a series taken off
+   marked `off` from the term's start, and the draft's blocks. */
+function boardAll(week) {
+  const d = schedDraft(), { from } = draftTerm(week);
+  const real = boardItems(week).map(x => ({ ...x, off: !!(x.series && d.off[x.series] && x.date >= from) }));
+  return real.concat(draftItems(week));
+}
+/* Whether a block may sit where it is, and what it costs: the refusals and
+   warnings of SCHEDULER.md, *What the board refuses, warns and says*,
+   worked out on the week drawn against everything else on it (the draft's
+   other blocks included, the block itself and anything taken off left out).
+   Nothing is stored; the sheet says it and the fill (step 8) reads it. */
+function placeCheck(block, week) {
+  const refused = [], warned = [], d = schedDraft();
+  const date = addDays(week, block.wd), a = minOf(block.start), b = a + block.len;
+  const t = state.teams[block.tid]; if (!t) return { refused: ['That team is no longer here'], warned };
+  const f = block.col.startsWith('f:') ? fieldById(block.col.slice(2)) : null;
+  const items = boardAll(week).filter(x => x.date === date && !x.off && x.key !== 'd:' + block.id && !(block.series && x.series === block.series));
+  const ov = items.filter(x => x.a < b && a < x.b);
+  for (const [s0, s1, k] of boardShut(f, date, 0, 24)) if (s0 < b && a < s1) { refused.push(k === 'closed' ? `${f.name} is closed then` : `Outside the club\u2019s permit or ${f.name}\u2019s hours`); break; }
+  for (let m = a; m < b; m += 30) if (d.forbid[cellKey(block.wd, minHm(m), block.col)]) { refused.push('You marked that time off the board'); break; }
+  const atField = ov.filter(x => x.col === block.col);
+  if (block.pitch) { const same = atField.find(x => x.pitch === block.pitch); if (same) refused.push(`${(pitchesOf(f).find(q => q.id === block.pitch) || {}).name || 'That pitch'} is taken by ${same.label}`); }
+  const taking = atField.filter(x => x.kind !== 'practice');
+  if (f && taking.length >= pitchCount(f)) refused.push(`No pitch left: ${taking.map(x => x.label).join(', ')}`);
+  const own = ov.filter(x => x.tid === block.tid);
+  if (own.length) refused.push(`${shortTeam(block.tid)} already has ${own.map(x => x.label.replace(/^[^:]*: /, '') + ' at ' + timeOf(x)).join(', ')}`);
+  const need = schedNeed(block.tid), coaches = coachesOf(block.tid);
+  for (const u of coaches) { const el = ov.find(x => x.tid !== block.tid && x.coaches.includes(u)); if (el) warned.push(`${coachName(u)} is due at ${el.label} then`); }
+  // a drive is hers whichever team she drives from or to: her own team's game across town counts
+  for (const u of coaches) for (const x of items.filter(x => x.coaches.includes(u) && placeKey(x) !== block.col && (x.b <= a || x.a >= b))) {
+    const gap = x.b <= a ? a - x.b : x.a - b;
+    if (gap < DRIVE_GAP_MIN) warned.push(`${coachName(u)}: a drive ${x.b <= a ? 'from' : 'to'} ${x.label} at ${placeName(x)} (${gap ? gap + ' minutes' : 'nothing'} between)`);
+  }
+  const cache = {}, fams = teamFams(block.tid), split = new Set();
+  for (const x of ov) if (x.tid !== block.tid) for (const u of Object.keys(itemFams(x, cache))) if (fams[u]) split.add(u);
+  if (split.size) warned.push(`${split.size} famil${split.size === 1 ? 'y has' : 'ies have'} a child somewhere else then`);
+  if (need.field && block.col !== 'f:' + need.field) warned.push(`Off its usual field, ${(fieldById(need.field) || {}).name || ''}`);
+  if (need.not.includes(block.wd)) warned.push(`A night ${shortTeam(block.tid)} can\u2019t do`);
+  return { refused, warned };
+}
+/* What a placed block writes: the fields a practice from the add sheet has,
+   the kind's default title, team-only, families asked, the place as the
+   field's name and the pitch's where one was chosen (so fieldOfText() and
+   pitchOfText() read it back as every other entry is read). */
+function blockFields(b) {
+  const f = b.col.startsWith('f:') ? fieldById(b.col.slice(2)) : null;
+  const pt = f && b.pitch ? pitchesOf(f).find(q => q.id === b.pitch) : null;
+  return { kind: 'practice', title: CAL_KIND.practice, start: hm(b.start), end: minHm(Math.min(minOf(b.start) + b.len, 23 * 60 + 59)), venue: f ? f.name + (pt ? ', ' + pt.name : '') : b.col.replace(/^t:/, ''), notes: '', public: false, ask: true };
+}
+/* A weekly series' length, from its first entry still to come, for moving it. */
+function seriesLen(tid, series) {
+  const all = Object.values((state.teams[tid] || {}).events || {}).filter(x => x && x.series === series && hm(x.start) && hm(x.end) && minOf(x.end) > minOf(x.start)).sort((a, b) => (a.date || '').localeCompare(b.date || ''));
+  const e = all.find(x => x.date >= todayStr()) || all[0];
+  if (!e) return 0;
+  const len = minOf(e.end) - minOf(e.start);
+  return SCHED_LENS.includes(len) ? len : SCHED_LENS.reduce((best, l) => Math.abs(l - len) < Math.abs(best - len) ? l : best, 60);
+}
+const hasPracticeAt = (t, date, start) => Object.values((t && t.events) || {}).some(e => e && e.kind === 'practice' && e.date === date && hm(e.start) === start);
+/* Put it on the calendars (SCHEDULER.md, *Writing the term*): each new block
+   one weekly series from the term's start to its end through addSeries(), the
+   add sheet's own writer; each moved series its entries from this week on
+   under a new series id at the same entry ids, so a plan keyed by the entry
+   follows it; each series taken off deleted from this week on as the sheet
+   deletes a practice (its register with it); a blackout date skipped; a date
+   the team already practises at that time skipped, so writing twice writes
+   nothing; at most SERIES_MAX a series. Every write goes through quiet(), so
+   it is stamped and waits in the outbox like any calendar write. */
+function schedWrite(week) {
+  const d = schedDraft(), { from, until } = draftTerm(week);
+  let made = 0, moved = 0, removed = 0;
+  const teams_ = new Set();
+  const drop = (tid, x) => {
+    delDeep(state, `teams/${tid}/events/${x.id}`); remoteDel(`teams/${tid}/events/${x.id}`);
+    if (attendOf(tid, x.id)) { delDeep(state, `teams/${tid}/attend/${x.id}`); remoteDel(`teams/${tid}/attend/${x.id}`); }
+    removed++;
+  };
+  const movedSeries = new Set(draftBlocks().map(b => b.series).filter(Boolean));
+  for (const sid of Object.keys(d.off)) {
+    if (movedSeries.has(sid)) continue;
+    for (const t of teams()) for (const x of Object.values(t.events || {})) if (x && x.series === sid && x.date >= from) { drop(t.id, x); teams_.add(t.id); }
+  }
+  for (const b of draftBlocks()) {
+    const t = state.teams[b.tid]; if (!t) continue;
+    const fields = blockFields(b);
+    if (b.series) {
+      const old = Object.values(t.events || {}).filter(x => x && x.series === b.series && x.date >= from);
+      if (!old.length) continue;
+      const sid = uid();
+      for (const x of old) {
+        const date = addDays(addDays(x.date, -weekdayOf(x.date)), b.wd);
+        if (dateClosed(date) || date > until) { drop(b.tid, x); continue; }
+        quiet(`teams/${b.tid}/events/${x.id}`, { ...x, ...fields, date, series: sid });
+        moved++;
+      }
+      teams_.add(b.tid);
+    } else {
+      const dates = seriesDates(from, until, [b.wd]).filter(date => !dateClosed(date) && !hasPracticeAt(t, date, fields.start));
+      if (!dates.length) continue;
+      addSeries(b.tid, fields, dates);
+      made += dates.length; teams_.add(b.tid);
+    }
+  }
+  quiet('access/org/sched/from', from); quiet('access/org/sched/until', until);
+  d.blocks = {}; d.off = {}; saveDraft();
+  saveLocal(); shareIds();
+  return { made, moved, removed, teams: teams_.size };
+}
+
 /* The columns: every field the club lists, then any place typed into an entry
    this week that matches none of them, so nothing with a place goes undrawn. */
 function boardColumns(items) {
@@ -18419,14 +18603,23 @@ const boardAct = x => x.kind === 'session' ? `data-act="sessopen" data-id="${esc
    never moves one), a session greyed, and on a coach's board everything that
    is not her team's is dimmed to grey with the names kept, because who she is
    sharing the field with is the point. */
-function boardGrid(col, week, items, lit) {
-  const days = [...Array(7)].map((_, i) => addDays(week, i)), today = todayStr();
+function boardGrid(col, week, items, lit, pick) {
+  const days = [...Array(7)].map((_, i) => addDays(week, i)), today = todayStr(), forbid = schedDraft().forbid || {};
   const mine = items.filter(x => x.col === col.id);
   const [h0, h1] = boardHours(items);
   const at = m => `calc(var(--hr) * ${((m - h0 * 60) / 60).toFixed(3)})`;
   const head = `<div class="tg-row tg-head"><span class="tg-gl"></span>${days.map(d => `<div class="tg-day" data-today="${d === today ? 1 : 0}"><small>${WEEKDAYS[weekdayOf(d)]}</small><b>${Number(d.slice(8))}</b></div>`).join('')}</div>`;
-  const cols = days.map(d => {
-    let html = boardShut(col.f, d, h0, h1).map(([a, b, k]) => `<i class="tg-shut" data-k="${k}" style="top:${at(a)};height:calc(var(--hr) * ${((b - a) / 60).toFixed(3)})" title="${k === 'closed' ? esc(col.name) + ' is closed' : 'Outside the club’s permit or the field’s hours'}"></i>`).join('');
+  const cols = days.map((d, wd) => {
+    let html = boardShut(col.f, d, h0, h1).map(([a, b, k]) => `<i class="tg-shut" data-k="${k}" style="top:${at(a)};height:calc(var(--hr) * ${((b - a) / 60).toFixed(3)})" title="${k === 'closed' ? esc(col.name) + ' is closed' : 'Outside the club\u2019s permit or the field\u2019s hours'}"></i>`).join('');
+    /* Placing: with a team (or a block to move) picked, every half hour is a
+       place to tap; a cell the admin marked off is drawn so and taps back to
+       its sheet to unmark it. Nothing to tap otherwise, so the grid stays a
+       picture for whoever is only reading it. */
+    for (let m = h0 * 60; m < h1 * 60; m += 30) {
+      const t = minHm(m), off = !!forbid[cellKey(wd, t, col.id)];
+      if (off) html += `<i class="tg-forbid" style="top:${at(m)}" title="Marked off the board"></i>`;
+      if (pick) html += `<button class="tg-slot tg-half" type="button" data-act="schcell" data-wd="${wd}" data-t="${t}" style="top:${at(m)}" tabindex="-1" aria-hidden="true" title="${off ? 'Marked off' : 'Place at ' + esc(niceTime(t))}"></button>`;
+    }
     for (const e of boardLanes(mine.filter(x => x.date === d))) {
       const a = Math.max(e.a, h0 * 60), b = Math.min(e.b, h1 * 60);
       const geo = `top:${at(a)};height:calc(var(--hr) * ${((b - a) / 60).toFixed(3)} - 2px);left:calc(${e.col} * 100% / ${e.n});width:calc(100% / ${e.n} - 3px)`;
@@ -18434,7 +18627,9 @@ function boardGrid(col, week, items, lit) {
       const hue = e.kind === 'session' ? KIND_HUE.session : teamHue(e.tid);
       const pt = e.pitch && col.f ? pitchesOf(col.f).find(q => q.id === e.pitch) : null;
       const who = e.tid ? shortTeam(e.tid) : e.label.replace(/ \([^)]*\)$/, '');
-      html += `<button type="button" class="tg-ev" ${boardAct(e)} data-kind="${e.kind}" data-lock="${e.kind === 'game' ? 1 : 0}" data-dim="${dim ? 1 : 0}" style="--ev:${hue};${geo}" aria-label="${esc(e.label)}, ${esc(niceTime(minHm(e.a)))} to ${esc(niceTime(minHm(e.b)))}${pt ? ', ' + esc(pt.name) : ''}">
+      // a draft block, or a weekly practice on an admin's board, opens the board's own sheet; everything else the entry's
+      const act = e.draft ? `data-act="schblock" data-id="${esc(e.draft.id)}"` : !lit && e.kind === 'practice' && e.series ? `data-act="schblock" data-k="${esc(e.key)}"` : boardAct(e);
+      html += `<button type="button" class="tg-ev" ${act} data-kind="${e.kind}" data-lock="${e.kind === 'game' || (e.draft && e.draft.locked) ? 1 : 0}" data-dim="${dim ? 1 : 0}" data-draft="${e.draft ? 1 : 0}" data-off="${e.off ? 1 : 0}" style="--ev:${hue};${geo}" aria-label="${esc(e.label)}, ${esc(niceTime(minHm(e.a)))} to ${esc(niceTime(minHm(e.b)))}${pt ? ', ' + esc(pt.name) : ''}${e.draft ? ', not written yet' : e.off ? ', taken off' : ''}">
         <b>${esc(who)}</b><span>${esc([niceTime(minHm(e.a)), pt ? pt.name : e.kind === 'game' ? 'Game' : e.kind === 'session' ? 'Session' : ''].filter(Boolean).join(' · '))}</span></button>`;
     }
     return `<div class="tg-col" data-today="${d === today ? 1 : 0}">${html}</div>`;
@@ -18449,7 +18644,8 @@ function boardGrid(col, week, items, lit) {
 function boardTeams(week, items) {
   return teams().map(t => {
     const n = schedNeed(t.id);
-    return { t, n, placed: items.filter(x => x.tid === t.id && x.kind === 'practice').length, coaches: coachesOf(t.id) };
+    const mine = items.filter(x => x.tid === t.id && x.kind === 'practice' && !x.off);
+    return { t, n, placed: mine.filter(x => !x.draft).length, drafted: mine.filter(x => x.draft).length, coaches: coachesOf(t.id) };
   });
 }
 /* A coach driving between fields: she is due at one place and then another
@@ -18487,7 +18683,7 @@ function schedStrip(week, items) {
     for (const c of clubClashesOn(date)) (c.kind === 'shared' ? shared : out).push({ date, ...c });
     for (const c of driveWarnings(date)) out.push({ date, ...c });
   }
-  const short = boardTeams(week, items).filter(r => r.placed < r.n.per).map(r => ({ kind: 'short', text: `${shortTeam(r.t.id)}: ${r.placed} of ${r.n.per} practice${r.n.per === 1 ? '' : 's'} this week` }));
+  const short = boardTeams(week, items).filter(r => r.placed + r.drafted < r.n.per).map(r => ({ kind: 'short', text: `${shortTeam(r.t.id)}: ${r.placed + r.drafted} of ${r.n.per} practice${r.n.per === 1 ? '' : 's'} this week` }));
   return { list: out, shared, short, todo: schedTodo(teams().map(t => t.id)) };
 }
 const STRIP_TAG = { place: 'Same place', coach: 'Coach', family: 'Families', away: 'Time off', nocoach: 'No coach', callout: 'Called out', field: 'Field', drive: 'Drive' };
@@ -18513,27 +18709,126 @@ function schedStripCard(week, items) {
    against their needs and the strip. A coach gets the grid alone, her teams
    in colour and the rest in grey. */
 function schedBoard(p, adm) {
-  const b = p.board, items = boardItems(b.week), cols = boardColumns(items), end = addDays(b.week, 6);
+  const b = p.board, items = adm ? boardAll(b.week) : boardItems(b.week), cols = boardColumns(items), end = addDays(b.week, 6);
   // nothing picked: the field with most on it this week, not the first by name, so the board opens on the week's practices
   const n = c => items.filter(x => x.col === c.id).length;
   const col = cols.find(c => c.id === b.field) || cols.slice().sort((x, y) => n(y) - n(x))[0];
   const lit = adm ? null : new Set(teams().filter(t => isCoach(t.id, me.uid)).map(t => t.id));
   const chip = c => `<button class="chip" type="button" data-act="schfield" data-v="${esc(c.id)}" aria-pressed="${col && c.id === col.id}">${esc(c.name)}</button>`;
   const noPlace = items.filter(x => !x.col).length;
-  const nav = `<div class="spread" style="margin-bottom:8px"><button class="btn quiet sm" type="button" data-act="schweek" data-v="-1" aria-label="The week before">‹</button>
-    <b>${esc(dayLabel(b.week).slice(4))} – ${esc(dayLabel(end).slice(4))}</b>
-    <button class="btn quiet sm" type="button" data-act="schweek" data-v="1" aria-label="The week after">›</button></div>`;
+  const nav = `<div class="spread" style="margin-bottom:8px"><button class="btn quiet sm" type="button" data-act="schweek" data-v="-1" aria-label="The week before">\u2039</button>
+    <b>${esc(dayLabel(b.week).slice(4))} \u2013 ${esc(dayLabel(end).slice(4))}</b>
+    <button class="btn quiet sm" type="button" data-act="schweek" data-v="1" aria-label="The week after">\u203a</button></div>`;
+  const pick = adm ? pickOf(p) : null;
+  /* Placing: a team picked, then a cell; or a block being moved. Said above
+     the grid so she knows what the next tap does. */
+  const picker = adm && col ? `<div class="chips" style="margin-bottom:8px">${teams().map(t => `<button class="chip" type="button" data-act="schpick" data-v="${esc(t.id)}" aria-pressed="${pick && pick.kind === 'team' && pick.tid === t.id}">${esc(t.name || 'Team')}</button>`).join('')}</div>
+    <p class="muted" style="margin:0 0 8px">${pick ? (pick.kind === 'team' ? `Tap where ${esc(shortTeam(pick.tid))} practises: a half hour on any day. ` : `Tap where ${esc(shortTeam(pick.tid))}\u2019s slot moves to. `) + '<button class="textbtn" data-act="schpick" data-v="">Done</button>' : 'Tap a team, then tap where it practises. Tap a block to move it, lock it or take it off.'}</p>` : '';
   const grid = col ? `${cols.length > 1 ? `<div class="chips" style="margin-bottom:8px">${cols.map(chip).join('')}</div>` : `<p class="lbl" style="margin-top:0">${esc(col.name)}</p>`}
-      ${boardGrid(col, b.week, items, lit)}
-      <p class="muted" style="margin:8px 0 0">${col.f ? 'Hatched is outside the club’s permit or the field’s hours; a closed day is struck. ' : ''}Teams on at once sit side by side, as many as there are.${noPlace ? ` ${noPlace} thing${noPlace === 1 ? ' has' : 's have'} no place yet and ${noPlace === 1 ? 'is' : 'are'} not drawn.` : ''}</p>`
-    : `<div class="empty"><strong>Nothing to lay out</strong>${adm ? 'Add the club’s fields under <b>Fields and permits</b>, and the week’s practices, games and sessions are drawn on them.' : 'Nothing with a place is on this week.'}</div>`;
+      ${picker}${boardGrid(col, b.week, items, lit, pick)}
+      <p class="muted" style="margin:8px 0 0">${col.f ? 'Hatched is outside the club\u2019s permit or the field\u2019s hours; a closed day is struck. ' : ''}Teams on at once sit side by side, as many as there are.${noPlace ? ` ${noPlace} thing${noPlace === 1 ? ' has' : 's have'} no place yet and ${noPlace === 1 ? 'is' : 'are'} not drawn.` : ''}</p>`
+    : `<div class="empty"><strong>Nothing to lay out</strong>${adm ? 'Add the club\u2019s fields under <b>Fields and permits</b>, and the week\u2019s practices, games and sessions are drawn on them.' : 'Nothing with a place is on this week.'}</div>`;
   if (!adm) return `<div class="card">${nav}${grid}</div><p class="muted">Your teams in colour; the rest of the club in grey, so you can see who is on the field with you.</p>`;
   const rows = boardTeams(b.week, items);
   const teamsCard = rows.length ? `<div class="card"><h2 style="margin-bottom:6px">Teams</h2><div class="plist">${rows.map(r => `<button class="prow go" type="button" data-act="schneed" data-tid="${esc(r.t.id)}" style="grid-template-columns:1fr auto">
-      <span style="min-width:0"><span class="pname">${teamLabel(r.t)}</span><span class="psub">${esc([`${r.n.per} × ${r.n.len} min`, r.n.field ? (fieldById(r.n.field) || {}).name : '', r.coaches.map(coachName).join(', '), r.n.not.length ? 'not ' + r.n.not.map(i => WEEKDAYS[i]).join(', ') : ''].filter(Boolean).join(' · '))}</span></span>
-      <span class="tag${r.placed < r.n.per ? ' wait' : ''}">${r.placed} of ${r.n.per} placed</span></button>`).join('')}</div>
+      <span style="min-width:0"><span class="pname">${teamLabel(r.t)}</span><span class="psub">${esc([`${r.n.per} \u00d7 ${r.n.len} min`, r.n.field ? (fieldById(r.n.field) || {}).name : '', r.coaches.map(coachName).join(', '), r.n.not.length ? 'not ' + r.n.not.map(i => WEEKDAYS[i]).join(', ') : ''].filter(Boolean).join(' \u00b7 '))}</span></span>
+      <span class="tag${r.placed + r.drafted < r.n.per ? ' wait' : ''}">${r.placed + r.drafted} of ${r.n.per} placed${r.drafted ? ` \u00b7 ${r.drafted} to write` : ''}</span></button>`).join('')}</div>
     <p class="muted" style="margin:8px 0 0">Tap a team to set how many practices a week it needs, how long, its usual field and the nights it can't do.</p></div>` : '';
-  return `<div class="card">${nav}${grid}</div>${teamsCard}${schedStripCard(b.week, items)}`;
+  return `<div class="card">${nav}${grid}</div>${schedWriteCard(b.week)}${teamsCard}${schedStripCard(b.week, items)}`;
+}
+/* What is picked for the next tap on the grid: a team to place, or a draft
+   block or a weekly series to move. */
+function pickOf(p) {
+  const v = p.board.pick; if (!v) return null;
+  if (v.startsWith('b:')) { const b = draftBlocks().find(x => x.id === v.slice(2)); return b ? { kind: 'block', tid: b.tid, block: b } : null; }
+  if (v.startsWith('s:')) { const [, series, tid] = v.split(':'); return state.teams[tid] ? { kind: 'series', tid, series } : null; }
+  return state.teams[v] ? { kind: 'team', tid: v } : null;
+}
+/* The draft against the term: what is to write, from when to when, and the
+   buttons that write it or throw it away. Nothing drawn while the draft is
+   empty, so the first look at the board has no button on it that does
+   nothing. */
+function schedWriteCard(week) {
+  const d = schedDraft(), blocks = draftBlocks(), off = Object.keys(d.off || {}).filter(sid => !blocks.some(b => b.series === sid));
+  const { from, until } = draftTerm(week);
+  if (!blocks.length && !off.length) return '';
+  const news = blocks.filter(b => !b.series).length, moves = blocks.length - news;
+  const closed = schedClosed().filter(c => c.until >= from && c.from <= until);
+  return `<div class="card schedwrite"><h2 style="margin-bottom:6px">To write</h2>
+    <p style="margin:0 0 6px">${esc([news && `${news} new weekly slot${news === 1 ? '' : 's'}`, moves && `${moves} moved`, off.length && `${off.length} taken off`].filter(Boolean).join(' \u00b7 '))}, every week from <b>${esc(dayLabel(from))}</b> to <b>${esc(dayLabel(until))}</b>${closed.length ? `, skipping ${closed.map(c => esc(closureText(c))).join(', ')}` : ''}.</p>
+    <p class="muted" style="margin:0 0 10px">Each slot becomes one entry per week on that team\u2019s calendar, team-only, families asked, as the add sheet would make it. A coach can move or call off a week from her own calendar as she can any practice.</p>
+    <div class="row wrap"><button class="btn" data-act="schwrite">Put it on the calendars</button>
+      <button class="btn quiet" data-act="schterm">The term\u2026</button>
+      <button class="btn quiet" data-act="schclear">Throw the draft away</button></div></div>`;
+}
+/* The sheet a tapped cell opens: what would go there, the pitch where the
+   field has them, what refuses it or warns, and Place it (or Move it here). */
+function sheetSchedPlace(cand) {
+  const p = plannerUi(); p.place = cand;
+  const t = state.teams[cand.tid]; if (!t) return;
+  const f = cand.col.startsWith('f:') ? fieldById(cand.col.slice(2)) : null, pts = f ? pitchesOf(f) : [];
+  const { refused, warned } = placeCheck(cand, p.board.week);
+  const chip = (v, on, l) => `<button class="chip" type="button" data-act="schpitch" data-v="${esc(v)}" aria-pressed="${on}">${esc(l)}</button>`;
+  const moving = !!(cand.series || cand.moving);
+  openSheet(`<h3>${moving ? 'Move' : 'Place'} ${teamLabel(t)}</h3>
+    <p class="muted" style="margin-top:0">${esc(DAYS_LONG[cand.wd])}s \u00b7 ${esc(niceTime(cand.start))}\u2013${esc(niceTime(minHm(minOf(cand.start) + cand.len)))} \u00b7 ${esc(f ? f.name : cand.col.replace(/^t:/, ''))}${cand.series ? ' \u00b7 from this week on' : ''}</p>
+    ${pts.length ? `<p class="lbl">Which pitch</p><div class="chips" style="margin-bottom:10px">${chip('', !cand.pitch, 'Any')}${pts.map(q => chip(q.id, cand.pitch === q.id, q.name)).join('')}</div>` : ''}
+    ${refused.length ? `<div class="warn alert" style="margin-bottom:10px"><b>Can\u2019t go here.</b> ${refused.map(esc).join(' ')}</div>` : ''}
+    ${warned.length ? `<div class="card planwarn" style="margin-bottom:10px">${warned.map(w => `<p>${esc(w)}</p>`).join('')}</div>` : !refused.length ? '<p class="muted">Nobody involved is busy, and the field is open.</p>' : ''}
+    ${refused.length ? '' : `<button class="btn wide" data-act="schplacego" style="margin-bottom:8px">${moving ? 'Move it here' : 'Place it'}</button>`}
+    <button class="btn quiet wide" data-act="${schedDraft().forbid[cellKey(cand.wd, cand.start, cand.col)] ? 'schunforbid' : 'schforbid'}" style="margin-bottom:8px">${schedDraft().forbid[cellKey(cand.wd, cand.start, cand.col)] ? 'Unmark this time' : 'Mark this time off the board'}</button>
+    <button class="btn quiet wide" data-act="closesheet">Cancel</button>`, true);
+}
+/* The sheet a block opens: a draft block (move, lock, take off) or a weekly
+   practice on the calendar (open it, move it on the board, take it off the
+   board from this week on). */
+function sheetSchedBlock(d) {
+  const p = plannerUi(), week = p.board.week;
+  if (d.id) {
+    const b = draftBlocks().find(x => x.id === d.id); if (!b) return;
+    const { warned } = placeCheck(b, week), t = state.teams[b.tid];
+    const f = b.col.startsWith('f:') ? fieldById(b.col.slice(2)) : null;
+    openSheet(`<h3>${teamLabel(t)}: ${b.series ? 'moved slot' : 'new slot'}</h3>
+      <p class="muted" style="margin-top:0">${esc(DAYS_LONG[b.wd])}s \u00b7 ${esc(niceTime(b.start))}\u2013${esc(niceTime(minHm(minOf(b.start) + b.len)))} \u00b7 ${esc(f ? f.name : b.col.replace(/^t:/, ''))} \u00b7 not written yet${b.locked ? ' \u00b7 locked' : ''}</p>
+      ${warned.length ? `<div class="card planwarn" style="margin-bottom:10px">${warned.map(w => `<p>${esc(w)}</p>`).join('')}</div>` : ''}
+      <button class="btn wide" data-act="schmove" data-id="${esc(b.id)}" style="margin-bottom:8px">Move it</button>
+      <button class="btn quiet wide" data-act="schlock" data-id="${esc(b.id)}" style="margin-bottom:8px">${b.locked ? 'Unlock' : 'Lock it where it is'}</button>
+      <button class="btn danger wide" data-act="schdrop" data-id="${esc(b.id)}" style="margin-bottom:8px">Take it off</button>
+      <button class="btn quiet wide" data-act="closesheet">Cancel</button>`, true);
+    return;
+  }
+  const x = boardAll(week).find(y => y.key === d.k); if (!x || !x.tid) return;
+  const e = ((state.teams[x.tid] || {}).events || {})[x.key.slice(2)]; if (!e) return;
+  const off = !!schedDraft().off[x.series];
+  openSheet(`<h3>${teamLabel(state.teams[x.tid])}: ${esc(e.title || 'Practice')}</h3>
+    <p class="muted" style="margin-top:0">${esc(DAYS_LONG[weekdayOf(e.date)])}s \u00b7 ${esc(niceTime(e.start))}${e.end ? '\u2013' + esc(niceTime(e.end)) : ''} \u00b7 ${esc(e.venue || '')} \u00b7 every week${off ? ' \u00b7 taken off the board from this week' : ''}</p>
+    <button class="btn quiet wide" data-act="calitem" data-k="practice" data-tid="${esc(x.tid)}" data-id="${esc(e.id)}" style="margin-bottom:8px">Open the practice</button>
+    ${off ? `<button class="btn wide" data-act="schunoff" data-s="${esc(x.series)}" style="margin-bottom:8px">Keep it after all</button>`
+      : `<button class="btn wide" data-act="schmoveseries" data-s="${esc(x.series)}" data-tid="${esc(x.tid)}" style="margin-bottom:8px">Move it on the board</button>
+      <button class="btn danger wide" data-act="schoffseries" data-s="${esc(x.series)}" style="margin-bottom:8px">Take it off from this week on</button>`}
+    <button class="btn quiet wide" data-act="closesheet">Cancel</button>`, true);
+}
+/* The term: from when to when the draft is written, and the club's blackout
+   dates (org/sched/closed), which no practice is written on. The dates are
+   the draft's, on this phone; a blackout is the club's, one record each. */
+function sheetSchedTerm() {
+  const p = plannerUi(), { from, until } = draftTerm(p.board.week), closed = schedClosed();
+  openSheet(`<h3>The term</h3>
+    <div class="grid2">
+      <label class="field"><span>From</span><input type="date" id="stFrom" value="${esc(from)}"></label>
+      <label class="field"><span>Until</span><input type="date" id="stUntil" value="${esc(until)}"></label>
+    </div>
+    <p class="muted" style="margin-top:0">Every slot on the board is written each week between these, at most ${SERIES_MAX} weeks.</p>
+    <p class="lbl">No practice on</p>
+    ${closed.map(c => `<div class="spread" style="margin-bottom:6px"><span>${esc(closureText(c))}</span><button class="btn quiet sm" data-act="schclosedrm" data-id="${esc(c.id)}">Remove</button></div>`).join('') || '<p class="muted" style="margin:0 0 6px">No holidays or weeks off yet.</p>'}
+    <div class="grid2">
+      <label class="field"><span>From</span><input type="date" id="scFrom" value=""></label>
+      <label class="field"><span>Until</span><input type="date" id="scUntil" value=""></label>
+    </div>
+    <label class="field"><span>Why</span><input type="text" id="scNote" maxlength="120" placeholder="Half term, exam week, the tournament"></label>
+    <button class="btn quiet wide" data-act="schclosedadd" style="margin-bottom:12px">Add the dates</button>
+    <button class="btn wide" data-act="schtermsave" style="margin-bottom:8px">Save</button>
+    <button class="btn quiet wide" data-act="closesheet">Cancel</button>`, true);
 }
 function viewScheduler() {
   if (!canSched()) return `<div class="empty"><strong>Coaches and club admins only</strong>The club's week laid out by field is for the people who run it.</div>`;
@@ -18663,6 +18958,82 @@ function onPlannerAct(a, d) {
     // one record, at the depth the rule on org grants an admin
     quiet(`access/org/sched/teams/${f.tid}`, rec);
     p.need = null; saveLocal(); closeSheet(); render(); toast('Saved'); return;
+  }
+  if (a === 'schpick') { p.board.pick = d.v && state.teams[d.v] ? d.v : ''; render(); return; }
+  if (a === 'schcell') {
+    const pick = pickOf(p), wd = Number(d.wd), start = hm(d.t);
+    if (!pick || !Number.isInteger(wd) || wd < 0 || wd > 6 || !start) return;
+    const items = boardAll(p.board.week), cols = boardColumns(items);
+    const n = c => items.filter(x => x.col === c.id).length;
+    const col = cols.find(c => c.id === p.board.field) || cols.slice().sort((x, y) => n(y) - n(x))[0];
+    if (!col) return;
+    const need = schedNeed(pick.tid);
+    const cand = pick.kind === 'block' ? { ...pick.block, wd, start, col: col.id, pitch: pick.block.col === col.id ? pick.block.pitch : '', moving: true }
+      : { id: pick.kind === 'series' ? 'm_' + pick.series : uid(), tid: pick.tid, wd, start, len: pick.kind === 'series' ? seriesLen(pick.tid, pick.series) || need.len : need.len, col: col.id, pitch: '', series: pick.kind === 'series' ? pick.series : '', locked: false };
+    sheetSchedPlace(cand); return;
+  }
+  if (a === 'schpitch') { if (!p.place) return; p.place.pitch = String(d.v || ''); sheetSchedPlace(p.place); return; }
+  if (a === 'schplacego') {
+    const c = p.place; if (!c || !state.teams[c.tid]) return;
+    if (placeCheck(c, p.board.week).refused.length) { toast('It can’t go there'); return; }
+    const dr = schedDraft();
+    dr.blocks[c.id] = { id: c.id, tid: c.tid, wd: c.wd, start: c.start, len: c.len, col: c.col, pitch: c.pitch || '', series: c.series || '', locked: !!c.locked };
+    if (c.series) dr.off[c.series] = true;
+    saveDraft(); p.place = null; p.board.pick = ''; closeSheet(); render(); toast(c.series ? 'Moved on the board. Nothing is written until you put it on the calendars.' : 'On the board. Nothing is written until you put it on the calendars.'); return;
+  }
+  if (a === 'schforbid' || a === 'schunforbid') {
+    const c = p.place; if (!c) return;
+    const dr = schedDraft(), k = cellKey(c.wd, c.start, c.col);
+    if (a === 'schforbid') dr.forbid[k] = true; else delete dr.forbid[k];
+    saveDraft(); p.place = null; closeSheet(); render(); return;
+  }
+  if (a === 'schblock') { sheetSchedBlock(d); return; }
+  if (a === 'schmove') { const b = draftBlocks().find(x => x.id === d.id); if (!b) return; p.board.pick = 'b:' + b.id; closeSheet(); render(); return; }
+  if (a === 'schlock') { const dr = schedDraft(), b = dr.blocks[d.id]; if (!b) return; b.locked = !b.locked; saveDraft(); sheetSchedBlock({ id: d.id }); render(); return; }
+  if (a === 'schdrop') {
+    const dr = schedDraft(), b = dr.blocks[d.id]; if (!b) return;
+    delete dr.blocks[d.id]; if (b.series) delete dr.off[b.series];
+    saveDraft(); closeSheet(); render(); return;
+  }
+  if (a === 'schmoveseries') { if (!d.s || !state.teams[d.tid]) return; p.board.pick = `s:${d.s}:${d.tid}`; closeSheet(); render(); return; }
+  if (a === 'schoffseries') { if (!d.s) return; const dr = schedDraft(); dr.off[d.s] = true; saveDraft(); closeSheet(); render(); return; }
+  if (a === 'schunoff') { if (!d.s) return; const dr = schedDraft(); delete dr.off[d.s]; for (const [id, b] of Object.entries(dr.blocks)) if (b && b.series === d.s) delete dr.blocks[id]; saveDraft(); closeSheet(); render(); return; }
+  if (a === 'schterm') { sheetSchedTerm(); return; }
+  if (a === 'schtermsave') {
+    const val = id => { const el = $('#' + id); return el && typeof el.value === 'string' ? el.value : ''; };
+    const from = val('stFrom'), until = val('stUntil');
+    if (!okDay(from) || !okDay(until)) { toast('Give the term a first and a last day'); return; }
+    if (until < from) { toast('The last day is before the first'); return; }
+    const dr = schedDraft(); dr.from = from; dr.until = until; saveDraft(); closeSheet(); render(); return;
+  }
+  if (a === 'schclosedadd') {
+    const val = id => { const el = $('#' + id); return el && typeof el.value === 'string' ? el.value : ''; };
+    const from = val('scFrom'), until = val('scUntil') || from, note = val('scNote').trim().slice(0, 120);
+    if (!okDay(from)) { toast('Pick the first day'); return; }
+    const id = uid();
+    quiet(`access/org/sched/closed/${id}`, { id, from, until: okDay(until) && until >= from ? until : from, note });
+    saveLocal(); sheetSchedTerm(); return;
+  }
+  if (a === 'schclosedrm') {
+    if (!d.id || !getDeep(state, `access/org/sched/closed/${d.id}`)) return;
+    delDeep(state, `access/org/sched/closed/${d.id}`); remoteDel(`access/org/sched/closed/${d.id}`);
+    saveLocal(); sheetSchedTerm(); return;
+  }
+  if (a === 'schclear') {
+    if (!confirm('Throw the draft away? Nothing on the calendars changes.')) return;
+    const dr = schedDraft(); dr.blocks = {}; dr.off = {}; dr.forbid = {}; saveDraft(); p.board.pick = ''; render(); return;
+  }
+  if (a === 'schwrite') {
+    const blocks = draftBlocks(), off = Object.keys(schedDraft().off || {});
+    if (!blocks.length && !off.length) { toast('Nothing on the board to write'); return; }
+    const bad = blocks.filter(b => placeCheck(b, p.board.week).refused.length);
+    if (bad.length) { toast(`${bad.length === 1 ? 'A slot' : bad.length + ' slots'} can’t go where ${bad.length === 1 ? 'it is' : 'they are'} any more: tap ${bad.length === 1 ? 'it' : 'them'} to see why`); return; }
+    const { from, until } = draftTerm(p.board.week);
+    if (!confirm(`Put ${blocks.length ? blocks.length + ' slot' + (blocks.length === 1 ? '' : 's') : 'this'} on the calendars, every week from ${dayLabel(from)} to ${dayLabel(until)}?`)) return;
+    const r = schedWrite(p.board.week);
+    p.board.pick = ''; render();
+    toast([r.made && `${r.made} practice${r.made === 1 ? '' : 's'} added`, r.moved && `${r.moved} moved`, r.removed && `${r.removed} taken off`].filter(Boolean).join(', ') + (r.teams ? ` on ${r.teams} calendar${r.teams === 1 ? '' : 's'}` : '') || 'Nothing to write: every week already had it');
+    return;
   }
   if (a === 'plback') { ui.view = 'setup'; render(); return; }
   if (a === 'pltab') { p.tab = d.k; render(); return; }
