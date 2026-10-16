@@ -210,6 +210,7 @@ const EXPORTS = `{
   schedDraft, saveDraft, draftBlocks, draftTerm, draftItems, boardAll, placeCheck, blockFields, schedWrite, schedClosed, addSeries, seriesLen, pickOf,
   PTYPES, PTYPE_ORDER, kindOf, ptypeOf, whoOf, tidsOf, rsvpSquad, rsvpCounts,
   RULES, RULE, TIERS, TIER_COST, ruleTier, SCHED_PRESETS, presetTiers, customRules, customText, teamTags, fieldTags, tagList,
+  coachCaps, householdCaps, normCaps, minsText, mergedMins, familyMinutes, loadWarnings, fieldSunset, sunsetOn,
   /* the club's week, adding to any team, and fields shared */
   schedWeek, schedTodo, schedLine, gameDefaults, fieldMates, fieldMatesLine, placeClash, myCalOwn, SCHED_ACTS, get gamesForm() { return gamesForm },
   viewRoster, teamSetUp,

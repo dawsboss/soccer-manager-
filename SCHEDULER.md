@@ -797,9 +797,21 @@ the rules grant today; **no step changes `database.rules.json`.**
    (siblings together, back to back, the same slot, the second night,
    spread, stability, headroom) do nothing until step 8, and the two load
    rules until step 7; the list says so beside each.
-7. **Load.** Coach caps, a household's soccer hours, dated hours on a field
-   for sunset, each entering the board as a rule, each read through
-   `busyItems()` or `fieldShut()` and nowhere else.
+7. **Load** — built, build 167. A coach's caps (`coachCaps(uid)`: sessions
+   a day and a week, minutes a day, the gap between; the club's defaults at
+   `org/sched/coaches/default` from the Limits card on the Rules tab, a
+   coach's own at `coaches/{uid}` from *Limits* on her row on the Coaches
+   tab, *As the club* taking them off; held to sane ranges) and a
+   household's soccer hours (`householdCaps()`, `org/sched/household`, the
+   same card), counted from every child's practices, games and sessions
+   with overlapping time once (`familyMinutes()`, `mergedMins()`), a family
+   a count as everywhere. Both enter `placeCheck()` as the `coachLoad` and
+   `household` rules at their tiers and the strip through `loadWarnings()`.
+   Sunset as dated hours on a field (`hoursBy/{id}`: between two dates it
+   closes at a time, from the field sheet's *Closes early between dates*),
+   read by `fieldShut()` and `boardShut()` pitch by pitch, a pitch marked
+   `lights` exempt, painted on the grid as *Unlit pitches close at 6:30pm*
+   and refused on the board as *no lights*.
 8. **Lay it out for me.** The greedy fill with a local search after it over
    the rules as tiered, swept in the test across clubs with more and fewer
    cells than practices wanted, never tripping a Must rule, re-solving

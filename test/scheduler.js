@@ -484,6 +484,80 @@ const blocks = html => [...html.matchAll(/<button type="button" class="tg-ev" ([
     check('a coach has no Rules tab and is refused', !/data-act="schrtier"/.test(A.rendered()) && (A.click({ act: 'schrtier', r: 'drive', v: 'off' }), A.lastToast()) === 'Planning is for club admins' && A.ruleTier('drive') === 'high', true);
   }
 
+  console.log('\n--- load: a coach\'s caps, a household\'s hours ---');
+  {
+    as('boss');
+    deepEq('the club\'s defaults', (c => [c.perDay, c.perWeek, c.hoursDay, c.gap, c.own])(A.coachCaps('jaz')), [2, 6, 180, 0, false]);
+    A.state.access.org.sched = { coaches: { default: { perDay: 9, hoursDay: 1000, gap: 7 }, jaz: { perDay: 1, perWeek: 'x' } }, household: { hoursDay: 61, hoursWeek: 9999 } };
+    deepEq('held to sane ranges, a coach\'s own over the club\'s', (c => [c.perDay, c.perWeek, c.hoursDay, c.gap, c.own])(A.coachCaps('jaz')), [1, 6, 600, 5, true]);
+    deepEq('and the household\'s', A.householdCaps(), { hoursDay: 60, hoursWeek: 2400 });
+    check('overlapping time counts once', A.mergedMins([[60, 120], [90, 150], [200, 230]]), 120);
+    check('minutes said as hours', [A.minsText(60), A.minsText(90), A.minsText(180), A.minsText(45), A.minsText(125)].join('|'), '1 hour|1½ hours|3 hours|45 minutes|2 hours 5 minutes');
+    A.state.teams.t1.events.ew = { id: 'ew', kind: 'practice', title: 'Practice', date: WED, start: '17:00', end: '18:00', venue: 'Lakeside Park' };
+    A.state.access.org.sched = { coaches: { default: { hoursDay: 60, gap: 5 }, jaz: { perDay: 1, perWeek: 3 } } };
+    A.render(); A.click({ act: 'schpick', v: 't3' }); A.click({ act: 'schcell', wd: '2', t: '18:00' });
+    let sh = sheet(A);
+    check('a coach over her day: sessions, hours and the gap', /Jaz: 2 sessions that day \(1 at most\)/.test(sh) && /Jaz: 2 hours of soccer that day \(1 hour at most\)/.test(sh) && /Jaz: 0 minutes between sessions \(5 wanted\)/.test(sh), true);
+    check('and over her week', /Jaz: 4 sessions that week \(3 at most\)/.test(sh), true);
+    check('warned, not refused: the rule is High', /data-act="schplacego"/.test(sh), true);
+    A.closeSheet();
+    A.state.access.org.sched.rules = { coachLoad: 'off' };
+    A.click({ act: 'schcell', wd: '2', t: '18:00' });
+    check('Off says nothing', /Jaz: /.test(sheet(A)), false);
+    A.closeSheet(); A.click({ act: 'schpick', v: '' });
+    A.state.access.org.sched = { coaches: { default: { hoursDay: 60 }, jaz: { perWeek: 2 } }, household: { hoursDay: 75, hoursWeek: 120 } };
+    A.render(); sh = A.rendered();
+    check('the strip says a coach\'s day and week', /Load<\/span> Jaz: 2 hours 5 minutes of soccer \(1 hour at most\)/.test(sh) && /Load<\/span> Jaz: 3 sessions this week \(2 at most\)/.test(sh), true);
+    check('and a household past its hours (the family with children on both teams, Tuesday; the game-only family under it)', /Family hours<\/span> 1 family goes past 1 hour 15 minutes of soccer/.test(sh), true);
+    A.click({ act: 'schpick', v: 't1' }); A.click({ act: 'schcell', wd: '3', t: '17:00' });
+    check('placing adds to the household\'s week', /1 family goes past 2 hours of soccer that week/.test(sheet(A)) && !/that day/.test(sheet(A)), true);
+    A.closeSheet(); A.click({ act: 'schpick', v: '' });
+
+    A.ui.planner = { tab: 'rules', board: { week: MON } }; A.render();
+    check('the Limits card on the Rules tab', /id="lmPerDay"/.test(A.rendered()) && /id="lmFamWeek"/.test(A.rendered()), true);
+    for (const [k, v] of Object.entries({ lmPerDay: '3', lmPerWeek: '7', lmHours: '2.5', lmGap: '15', lmFamDay: '2', lmFamWeek: '6' })) setv(k, v);
+    A.click({ act: 'schlimsave' });
+    deepEq('saved: the club\'s coach defaults, in minutes', A.state.access.org.sched.coaches.default, { perDay: 3, perWeek: 7, hoursDay: 150, gap: 15 });
+    deepEq('and the household\'s', A.state.access.org.sched.household, { hoursDay: 120, hoursWeek: 360 });
+    A.ui.planner = { tab: 'coach', board: { week: MON } }; A.render();
+    check('each coach has Limits on the Coaches tab', /data-act="schload" data-u="jaz"/.test(A.rendered()), true);
+    A.click({ act: 'schload', u: 'jaz' }); for (const [k, v] of Object.entries({ clPerDay: '1', clPerWeek: '4', clHours: '2', clGap: '0' })) setv(k, v); A.click({ act: 'schloadsave', u: 'jaz' });
+    deepEq('her own, over the club\'s', (c => [c.perDay, c.perWeek, c.hoursDay, c.own])(A.coachCaps('jaz')), [1, 4, 120, true]);
+    A.render(); check('said on her row', /her own limits: 1 a day, 4 a week/.test(A.rendered()), true);
+    A.click({ act: 'schload', u: 'jaz' }); A.click({ act: 'schloadclear', u: 'jaz' });
+    check('As the club', A.coachCaps('jaz').own, false);
+    as('jaz'); A.click({ act: 'schlimsave' }); check('a coach is refused', A.lastToast(), 'Planning is for club admins');
+  }
+
+  console.log('\n--- sunset: dated hours on a field ---');
+  {
+    as('boss');
+    const f = A.state.access.org.venues.v1;
+    f.hoursBy = { s1: { id: 's1', from: '2026-09-14', until: '2026-09-20', to: '18:30', note: 'Sunset' } };
+    f.parts.c = { id: 'c', name: 'Pitch 3', lights: true };
+    deepEq('a field closes early between dates', A.boardShut(f, TUE, 16, 21), [[16 * 60, 17 * 60, 'out'], [18 * 60 + 30, 21 * 60, 'out']]);
+    deepEq('a pitch with lights stays open', A.boardShut(f, TUE, 16, 21, 'c'), [[16 * 60, 17 * 60, 'out'], [20 * 60, 21 * 60, 'out']]);
+    deepEq('outside the dates, nothing changes', A.boardShut(f, '2026-09-22', 16, 21), [[16 * 60, 17 * 60, 'out'], [20 * 60, 21 * 60, 'out']]);
+    check('said by fieldShut too, pitch by pitch', A.fieldShut(f, TUE, 18 * 60, 19 * 60) + ' | ' + A.fieldShut(f, TUE, 18 * 60, 19 * 60, 'c'), 'Lakeside Park closes at 6:30pm Mon 14 Sep to Sun 20 Sep (Sunset): no lights | ');
+    A.render();
+    check('painted on the grid, said as sunset', /Unlit pitches close at 6:30pm/.test(A.rendered()), true);
+    A.click({ act: 'schpick', v: 't3' }); A.click({ act: 'schcell', wd: '0', t: '18:00' });
+    check('placing past it is refused as no lights', /Lakeside Park closes at 6:30pm then: no lights/.test(sheet(A)) && !/schplacego/.test(sheet(A)), true);
+    A.click({ act: 'schpitch', v: 'c' });
+    check('on the lit pitch it is fine', !/no lights/.test(sheet(A)) && /schplacego/.test(sheet(A)), true);
+    A.closeSheet(); A.click({ act: 'schpick', v: '' });
+    A.click({ act: 'fieldedit', id: 'v1' });
+    check('the field sheet lists it', /id="fsFrom_0" value="2026-09-14"/.test(sheet(A)) && /id="fsTo_0" value="18:30"/.test(sheet(A)), true);
+    A.click({ act: 'fieldsun' });
+    check('and adds a row', /id="fsFrom_1"/.test(sheet(A)), true);
+    // the fake DOM reads every input back as typed, so the sheet's other fields are given their own values
+    for (const [k, v] of Object.entries({ fdName: 'Lakeside Park', fdAddress: '', fdPitches: '2', fdNotes: '', fdTags: '', ptName_0: 'Field 2', ptName_1: 'Pitch 3', pmStart_0: '17:00', pmEnd_0: '20:00', pmFrom_0: '', pmUntil_0: '', pmRef_0: '', pmNote_0: '',
+      fsFrom_0: '2026-09-14', fsUntil_0: '2026-09-20', fsTo_0: '18:30', fsNote_0: 'Sunset', fsFrom_1: '2026-11-01', fsUntil_1: '2027-02-28', fsTo_1: '17:00', fsNote_1: 'Winter' })) setv(k, v);
+    A.click({ act: 'fieldsave' });
+    check('saved', A.lastToast() !== 'Give the field a name', true);
+    check('saved as dated hours on the field', A.fieldSunset(A.state.access.org.venues.v1).map(c => c.from + '>' + c.to).join(), '2026-09-14>18:30,2026-11-01>17:00');
+  }
+
   console.log('\n--- who may place: a coach reads, and writes nothing ---');
   {
     as('jaz'); A.render();
