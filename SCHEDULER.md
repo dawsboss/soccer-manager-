@@ -318,7 +318,12 @@ The Calendar goes back to being a calendar.
   where it is the strip under the grid (*Still to settle* becomes a part of
   that strip: entries with no date, time or place are the one thing the
   board cannot draw). Club home's one-line week (`schedLine()`) stays: it is
-  a sentence, and it is the admin's door to the Scheduler.
+  a sentence, and it is the admin's door to the Scheduler. Since the Home
+  work of 2026-10-16 (*Each Home leads with what its person came for*), an
+  admin's Club home also carries the week card itself for this week, under
+  the Calendar row, with *Open the Scheduler* as its door: Home is where
+  she opens the app for the club's schedule; the Calendar is still not where
+  she finds the clashes.
 - **Kept on an entry:** *Shared field: G13 Storm 6pm* under a practice
   (`fieldMatesLine()`, `test/schedule.js`). It is not bookkeeping; it is who
   the coach will find on the field, and the owner asked for the note. *Field

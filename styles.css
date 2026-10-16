@@ -1435,3 +1435,16 @@ label.field .auth-inline span{display:inline}
   .tablewrap.people td:nth-child(5){grid-column:2;grid-row:2 / span 2;text-align:right}
   .tablewrap.people td[colspan]{grid-column:1 / -1}
 }
+
+/* A family's child and what is next, one card (build 165): the next-up
+   sections inside it lose their own card frame and sit under a rule, the
+   team's colour kept as the stripe down the side. Two children on a team
+   are two sections of the same card. */
+.kidmerge .kidpart + .kidpart{margin-top:14px;padding-top:14px;border-top:1px solid var(--line)}
+.kidmerge .kidnext{margin-top:14px;display:flex;flex-direction:column;gap:12px}
+.kidmerge .kidnext > .card{margin:0;box-shadow:none;border-top:0;border-right:0;border-bottom:0;border-radius:0;padding:2px 0 2px 12px;background:none}
+.kidmerge .kidnext > .card.go{padding-right:30px}
+/* The coach's Coming up: one line each, the thing to get ready on the right. */
+.comingrow{display:flex;align-items:center;gap:10px;padding:10px 0;border-top:1px solid var(--line)}
+.comingrow:first-of-type{border-top:0}
+.comingrow .pname,.comingrow .rowsub{display:block}

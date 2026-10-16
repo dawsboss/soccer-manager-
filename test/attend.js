@@ -77,6 +77,25 @@ const t1 = () => A.state.teams.t1;
 const reg = eid => A.attendOf('t1', eid);
 const attWrites = () => sets.filter(([p]) => /\/attend\//.test(p));
 
+console.log('--- on the coach\'s Home (the owner, 2026-10-15) ---');
+{
+  setup(); as('coachU'); A.ui.view = 'season';
+  let h = html();
+  check('the practice just gone with no register is asked about, ahead of what is next', /Who came to practice on Tue 8 Sep\?/.test(h) && h.indexOf('Who came to') < h.indexOf('Next up'), true);
+  A.click({ act: 'attend', tid: 't1', id: 'e1' });
+  check('— and Take attendance opens its register', /data-act="attsave"/.test(sheet()), true);
+  A.closeSheet();
+  t1().attend = { e1: { p1: true } };
+  check('once taken, it goes', /Who came to/.test(html()), false);
+  delete t1().attend;
+  H.clock.set(at('2026-09-16', '10:00'));
+  check('only the latest is asked about: yesterday\'s', /Who came to yesterday’s practice\?/.test(html()) && !/8 Sep/.test(html().slice(0, html().indexOf('Next up'))), true);
+  H.clock.set(at('2026-09-24', '10:00'));
+  check('over a week gone, it is Attendance\'s to list, not Home\'s to nag', /Who came to/.test(html()), false);
+  H.clock.set(at('2026-09-12', '10:00'));
+  for (const who of ['trkU', 'mumU', 'stormU']) { as(who); check(who + ': not asked', /Who came to/.test(html()), false); }
+}
+
 console.log('--- taking the register ---');
 {
   setup(); as('coachU');
