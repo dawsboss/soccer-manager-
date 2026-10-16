@@ -245,7 +245,7 @@ const blocks = html => [...html.matchAll(/<button type="button" class="tg-ev" ([
     as('boss'); A.render();
     check('nothing to tap until a team is picked', /data-act="schcell"/.test(A.rendered()), false);
     A.click({ act: 'schpick', v: 't3' });
-    check('a team picked: every half hour is a place to tap', A.ui.planner.board.pick + ' ' + /data-act="schcell" data-wd="0" data-t="18:30"/.test(A.rendered()) + ' ' + /Tap where B9 Comets practises/.test(A.rendered()), 't3 true true');
+    check('a team picked: every half hour is a place to tap', A.ui.planner.board.pick + ' ' + /data-act="schcell" data-wd="0" data-t="18:30"/.test(A.rendered()) + ' ' + /Tap where B9 Comets’s practice goes/.test(A.rendered()), 't3 true true');
     A.click({ act: 'schcell', wd: '0', t: '16:00' });
     check('outside the permit: refused, no Place button', /Can’t go here/.test(sheet(A)) && /Outside the club’s permit/.test(sheet(A)) && !/schplacego/.test(sheet(A)), true);
     A.closeSheet();
@@ -327,6 +327,84 @@ const blocks = html => [...html.matchAll(/<button type="button" class="tg-ev" ([
     check('drawn: the old slot struck, the new one dotted', /data-k="e:e1"[^>]*data-off="1"/.test(A.rendered()) && /data-draft="1"[^>]*aria-label="G11 Flight: Practice, 6pm to 7pm, not written yet"/.test(A.rendered()), true);
     check('counted once', /G11 Flight<\/span>[^]*?1 of 1 placed · 1 to write/.test(A.rendered()), true);
     check('nothing written to the club', A.state.teams.t1.events.e1.date + ' ' + A.state.teams.t1.events.e1.series, '2026-09-15 s1');
+  }
+
+  console.log('\n--- kinds of practice ---');
+  {
+    as('boss');
+    deepEq('the built-in kinds and their defaults', A.PTYPE_ORDER.map(k => [k, A.kindOf(k).len, A.kindOf(k).space, A.kindOf(k).who].join(':')), ['regular:75:share:team', 'technical:60:share:team', 'film:45:none:team', 'goalkeeper:60:share:keepers', 'fitness:45:share:team', 'scrimmage:60:pitch:two']);
+    A.state.access.org.sched = { kinds: { film: { len: 30, space: 'room' }, goalkeeper: { len: 999, who: 'nobody' } } };
+    check('the club changes a kind, held to the vocabularies', [A.kindOf('film').len, A.kindOf('film').space, A.kindOf('goalkeeper').len, A.kindOf('goalkeeper').who].join(), '30,room,60,keepers');
+    check('an unknown kind is regular, and an entry with none is regular', A.kindOf('yoga').id + ' ' + A.ptypeOf({ kind: 'practice' }) + ' ' + A.ptypeOf({ ptype: 'film' }), 'regular regular film');
+    A.state.access.org.sched = { teams: { t1: { per: 2, len: 75, need: { goalkeeper: 1, film: 9, yoga: 3 } } } };
+    const n = A.schedNeed('t1');
+    check('a team\'s needs by kind: regular is per, the rest held to 0 to 7, an unknown kind dropped', JSON.stringify(n.need) + ' ' + n.total, '{"regular":2,"technical":0,"film":7,"goalkeeper":1,"fitness":0,"scrimmage":0} 10');
+    A.render(); A.click({ act: 'schneed', tid: 't2' });
+    check('the needs sheet has a select per other kind', /id="snK_goalkeeper"/.test(sheet(A)) && /id="snK_scrimmage"/.test(sheet(A)), true);
+    setv('snPer', '1'); setv('snLen', '60'); setv('snField', ''); setv('snNote', ''); setv('snK_goalkeeper', '1'); setv('snK_technical', '0'); A.click({ act: 'schneedsave', tid: 't2' });
+    deepEq('saved, zeros left out', A.state.access.org.sched.teams.t2.need, { goalkeeper: 1 });
+    check('the row says it, and counts the total', /1 goalkeepers/.test(A.rendered()) && /G13 Storm<\/span>[^]*?1 of 2 placed/.test(A.rendered()), true);
+
+    A.click({ act: 'calnew', tid: 't2' });
+    check('the add sheet offers the kinds, regular pressed', /data-act="calptype" data-v="regular" aria-pressed="true"/.test(sheet(A)) && /data-act="calptype" data-v="goalkeeper"/.test(sheet(A)), true);
+    for (const [k, v] of Object.entries({ evDate: '2026-09-17', evStart: '17:00', evEnd: '', evTitle: '', evVenue: 'Lakeside Park', evNotes: '' })) setv(k, v);
+    A.click({ act: 'calptype', v: 'goalkeeper' });
+    check('a kind picked fills an end from its length, and says keepers alone are asked', /id="evEnd" value="18:00"/.test(sheet(A)) + ' ' + /Only the keepers are asked and counted/.test(sheet(A)), 'true true');
+    setv('evEnd', '18:00');   // the fake DOM keeps an input's value across a redraw; a browser would show 18:00 now
+    A.click({ act: 'calsave', tid: 't2' });
+    const gk = Object.values(A.state.teams.t2.events).find(e => e.date === '2026-09-17');
+    check('written with its kind, who comes, and the kind\'s title', [gk.ptype, gk.who, gk.title, gk.end].join('|'), 'goalkeeper|keepers|Goalkeepers|18:00');
+    A.state.teams.t2.players.p3.gk = true; A.state.teams.t2.players.p4 = kid('p4', 'Zoe', { fam4: true });
+    check('a keepers\' session asks and counts the keepers alone', A.rsvpCounts('t2', 'e_' + gk.id).none + ' ' + A.rsvpSquad('t2', 'e_' + gk.id).map(p => p.name).join(), '1 Sam');
+    check('a regular one the squad', A.rsvpCounts('t2', 'e_e2').none, 2);
+    A.click({ act: 'caledit', tid: 't2', id: gk.id }); A.click({ act: 'calptype', v: 'regular' }); A.click({ act: 'calsave', tid: 't2' });
+    check('made regular again: the kind and who come off the entry', ('ptype' in A.state.teams.t2.events[gk.id]) || ('who' in A.state.teams.t2.events[gk.id]), false);
+  }
+
+  console.log('\n--- placing a kind: keepers from several teams, a scrimmage, film ---');
+  {
+    const c = club(); c.teams.t1.players.p1.gk = true;
+    as('boss', c); A.render();
+    A.click({ act: 'schpick', v: 't1' });
+    check('a team picked: the kinds to choose, regular pressed', /data-act="schkind" data-v="goalkeeper"/.test(A.rendered()) && /data-act="schkind" data-v="regular" aria-pressed="true"/.test(A.rendered()), true);
+    A.click({ act: 'schkind', v: 'goalkeeper' });
+    check('said', /Tap where G11 Flight’s goalkeepers goes/.test(A.rendered()), true);
+    A.click({ act: 'schcell', wd: '1', t: '17:30' });
+    check('the sheet: which teams send keepers, the picked one in and fixed', /Which teams send keepers/.test(sheet(A)) && /data-act="schteams" data-v="t1" aria-pressed="true" disabled/.test(sheet(A)) && /keepers only asked/.test(sheet(A)), true);
+    check('the keepers\' rule: over the team\'s own practice it warns, never refuses', /G11 Flight practises then \(5:30pm\): its keepers can’t be at both/.test(sheet(A)) && /data-act="schplacego"/.test(sheet(A)), true);
+    A.click({ act: 'schteams', v: 't2' });
+    check('a second team sends keepers, and is warned about too', /data-v="t2" aria-pressed="true"/.test(sheet(A)) && /G13 Storm practises then/.test(sheet(A)), true);
+    A.closeSheet();
+    A.click({ act: 'schcell', wd: '0', t: '18:00' }); A.click({ act: 'schteams', v: 't2' }); A.click({ act: 'schplacego' });
+    const gkb = A.draftBlocks()[0];
+    check('placed: one block, two teams, the kind, the kind\'s length', [gkb.ptype, gkb.tids.join('+'), gkb.len].join('|'), 'goalkeeper|t1+t2|60');
+    check('drawn as one block naming the kind and both teams', /aria-label="Goalkeepers \(G11 Flight, G13 Storm\), 6pm to 7pm, not written yet"/.test(A.rendered()), true);
+    check('counted for both teams', /G11 Flight<\/span>[^]*?2 of 1 placed · 1 to write/.test(A.rendered()) && /G13 Storm<\/span>[^]*?2 of 1 placed · 1 to write/.test(A.rendered()), true);
+    A.click({ act: 'schpick', v: 't3' }); A.click({ act: 'schkind', v: 'scrimmage' }); A.click({ act: 'schcell', wd: '2', t: '18:00' });
+    check('a scrimmage wants the other team', /A scrimmage is two teams: pick the other one/.test(sheet(A)) && !/schplacego/.test(sheet(A)), true);
+    A.click({ act: 'schteams', v: 't2' });
+    check('with it, it can be placed', /data-act="schplacego"/.test(sheet(A)), true);
+    A.click({ act: 'schplacego' });
+    A.click({ act: 'schpick', v: 't1' }); A.click({ act: 'schkind', v: 'regular' });
+    A.state.access.org.venues.v1.pitches = 1; delete A.state.access.org.venues.v1.parts;
+    A.click({ act: 'schcell', wd: '2', t: '18:30' });
+    check('on a one-pitch field a scrimmage leaves no pitch for a practice', /No pitch left: Scrimmage \(B9 Comets, G13 Storm\)/.test(sheet(A)), true);
+    A.closeSheet();
+    A.click({ act: 'schkind', v: 'film' }); A.click({ act: 'schcell', wd: '2', t: '18:30' });
+    check('film is a room or nothing: neither the pitch nor the permit refuses it', !/No pitch left/.test(sheet(A)) && !/Outside the club’s permit/.test(sheet(A)) && /data-act="schplacego"/.test(sheet(A)), true);
+    A.closeSheet(); A.click({ act: 'schcell', wd: '4', t: '18:30' });
+    check('— not even a closed day', !/is closed then/.test(sheet(A)) && /data-act="schplacego"/.test(sheet(A)), true);
+    A.closeSheet(); A.click({ act: 'schpick', v: '' });
+    const dr = A.schedDraft(); dr.from = MON; dr.until = '2026-09-27';
+    dr.blocks = { [gkb.id]: dr.blocks[gkb.id] }; A.saveDraft();
+    const r = A.schedWrite(MON);
+    deepEq('a keepers\' session for two teams, two weeks: four entries on two calendars', r, { made: 4, moved: 0, removed: 0, teams: 2 });
+    const e1s = Object.values(A.state.teams.t1.events).filter(e => e.ptype === 'goalkeeper').sort((a, b) => a.date.localeCompare(b.date));
+    const e2s = Object.values(A.state.teams.t2.events).filter(e => e.ptype === 'goalkeeper').sort((a, b) => a.date.localeCompare(b.date));
+    check('each team its own weekly series, keepers only asked, titled Goalkeepers', e1s.map(e => e.date).join() + ' ' + e1s.every(e => e.who === 'keepers' && e.title === 'Goalkeepers' && e.series === e1s[0].series) + ' ' + (e1s[0].series !== e2s[0].series), '2026-09-14,2026-09-21 true true');
+    check('the entries of a date share a club id across the teams, as picture day does', !!e1s[0].club && e1s[0].club === e2s[0].club && e1s[1].club === e2s[1].club && e1s[0].club !== e1s[1].club, true);
+    A.render();
+    check('and the board draws the two as one block', (A.rendered().match(/aria-label="Goalkeepers \(G11 Flight, G13 Storm\), 6pm to 7pm"/g) || []).length, 1);
   }
 
   console.log('\n--- who may place: a coach reads, and writes nothing ---');

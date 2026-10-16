@@ -754,10 +754,30 @@ the rules grant today; **no step changes `database.rules.json`.**
    written. Through the outbox, stamped, team-only, families asked. A term as
    a record of its own (`org/sched/terms/{id}`, a phase) waits for step 7,
    where phases come in; until then the term is the two dates.
-5. **Kinds of practice.** `ptype` and `who` on an entry, the built-in kinds
-   with the club's changes (`org/sched/kinds`), a team's needs per kind, a
-   cross-team session as one entry per team sharing `club`, keepers alone
-   asked and counted, and the keepers' rules.
+5. **Kinds of practice** — built, build 165. `PTYPES` (regular, technical,
+   film, goalkeeper, fitness, scrimmage) with `kindOf()` laying the club's
+   changes at `org/sched/kinds/{kind}` over them, held to the vocabularies
+   (no screen writes them yet: the bulk import or a later sheet). `ptype` and
+   `who` on an entry, missing meaning regular; the add sheet offers the kinds
+   as chips (a kind picked fills an end the coach hasn't typed from its
+   length) and writes them, and takes them off an entry made regular again. A
+   keepers' session asks and counts the keepers alone (`rsvpSquad(tid, key)`,
+   the answers and the register through it; a keeper is `gk` on the squad). A
+   team's needs per kind (`need/{kind}`, `per` staying regular's) on the
+   needs sheet and summed on the row. On the board a kind is picked under the
+   team; a keepers' session or a scrimmage names its teams on the place sheet
+   and is one draft block carrying them, drawn and counted for each; a
+   cross-team session on the calendar is one entry per team sharing a `club`
+   id per date (written through `addSeries()` with a per-date extra, as
+   picture day is) and the board folds the entries of a date into one block.
+   The keepers' rule warns and never refuses (over a sending team's own
+   practice; or, for a regular practice, over its keepers' session); a
+   scrimmage takes a whole pitch, so a one-pitch field with one on has no
+   pitch left for a practice; film is a room or nothing, so neither the
+   pitch, the permit nor a closed day refuses it. Not built: a staff role on
+   a kind (the app has coaches only; a keepers' session holds no coach's
+   evening), and moving a cross-team series on the board (a single team's
+   moves; the other teams' entries stay).
 6. **Rules and tiers.** The rule list with its defaults, the club's profile
    and the four presets, a team's overrides, the three custom shapes and
    tags; a Must rule refuses on the board, the rest order the strip and
