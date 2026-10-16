@@ -873,14 +873,32 @@ the rules grant today; **no step changes `database.rules.json`.**
     again and the old word stays with the old series' earlier weeks. Not
     built: a push to the admins when a coach flags a slot (club activity
     says nothing of it yet), and a coach's word on a cross-team session.
-11. **The term, reports and handing it on.** The term view (the weeks
-    across, the teams down, closures, blackout dates and holidays marked,
-    *what changed* since it was written) before writing; the reports the
-    strip summarises (field use, the worst coach day, sibling clashes); and
-    the field schedule export, a CSV and a printable week per field with no
-    names in it (*The season, and other clubs*). A club-wide fields page
-    under `public/` only if the owner wants a link rather than a file: it is
-    the server's to build, like every share page.
+11. **The term, reports and handing it on** — built, build 171. *The term*
+    tab (`plannerTerm()`, admins only): the weeks of the term across
+    (`termWeeks()`, Mondays to its last day) and the teams down, each cell a
+    team's practices that week against what it needs (`termCell()`: short in
+    orange, the days named), the club's weeks off and a field's closures
+    under their dates, what the write would change said above (*When you
+    write it: 1 new weekly slot · 1 moved*, `draftChanges()`) and marked in
+    the cells (dashed for a draft, *moved* or *new*, struck for a series
+    taken off), a week tapped opening on the board, *The term…* and *Put it
+    on the calendars* under it. *This week in numbers* (`schedReport()`, the
+    week on the board): field use, the minutes on each field against the
+    minutes it is open pitch by pitch, with its busiest day (a field with no
+    permit and no hours is open all day and gets no share); the longest
+    coach day (whose, which day, how many sessions, how long, where);
+    families with children in two places at once, by day; and changes from
+    what is written. *Hand it on*: the field schedule as a CSV
+    (`fieldScheduleCsv()`: field, pitch, day, time, team, kind, from, until;
+    one row per thing on a field the week on the board, a weekly slot with
+    the dates its series runs between, a draft slot the term's; teams by
+    name and nothing about a child or a family), and a printable week, a
+    page per field with the club named (`schedPrintPages()`, the page's
+    chrome hidden while it prints). A coach has none of it, refused in the
+    handler. Not built: a club-wide fields page under `public/` (only if the
+    owner wants a link rather than a file; the server's to build, like every
+    share page), a report across the whole term rather than its weeks one at
+    a time, and re-laying every week of the term from one board.
 
 After these, and as its own brief: **games agreed with another club**
 (*Other clubs, and the export*, above; ROADMAP, *Opponents*), which needs a

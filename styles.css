@@ -1219,6 +1219,20 @@ button.ev:active{filter:brightness(.92)}
 .tg-board .tg-shut[data-k="closed"]{background:rgba(53,69,79,.14)}
 .tg-board .tg-ev[data-lock="1"]{box-shadow:inset 0 0 0 2px rgba(0,0,0,.35),0 0 0 1px #fff}
 .tg-board .tg-ev[data-kind="session"]{background:color-mix(in srgb,var(--ev) 55%,#fff)}
+/* the term view (SCHEDULER.md, step 11): the weeks across, the teams down; a short week in orange like the board's short teams, a draft dashed, a series taken off struck */
+.tscroll{overflow-x:auto;-webkit-overflow-scrolling:touch}
+.termgrid{border-collapse:separate;border-spacing:2px;font-size:14px;min-width:100%}
+.termgrid th{font-weight:600;text-align:left;vertical-align:top;padding:4px 6px;white-space:nowrap}
+.termgrid th[scope="row"]{position:sticky;left:0;background:var(--card);z-index:1}
+.termgrid th.tc-black{background:repeating-linear-gradient(135deg,transparent 0 5px,rgba(53,69,79,.08) 5px 10px);border-radius:6px}
+.termgrid td.tc{padding:4px 6px;border-radius:6px;background:color-mix(in srgb,var(--ink) 5%,#fff);min-width:72px;vertical-align:top;font-variant-numeric:tabular-nums}
+.termgrid td.tc-short{color:var(--owed);font-weight:600}
+.termgrid td.tc-draft{outline:1.5px dashed var(--ink-soft);outline-offset:-1.5px}
+.termgrid td.tc-off{text-decoration:line-through;color:var(--ink-soft)}
+.tc-sub{display:block;font-size:14px;font-weight:400;color:var(--ink-soft);white-space:nowrap}
+/* printing the week, a page per field: the chrome goes, each field on its own page */
+.printpage{break-after:page;page-break-after:always;padding:8px 0}
+@media print{.topbar,.titlebar,.tabs,#toast,#sheet,#scrim,.sync,.ver{display:none !important}.printpage .tg-board{break-inside:avoid}}
 .tg-board .tg-ev[data-dim="1"]{background:#E1E8EB;color:var(--ink-soft);box-shadow:0 0 0 1px #fff}
 .tg-board .tg-ev span{display:block}
 .tg-board .tg-slot.tg-half{height:calc(var(--hr) / 2)}

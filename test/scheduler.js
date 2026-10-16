@@ -78,7 +78,22 @@
      confirmed, k flagged) with each flag's note, and her note is on the
      admin's sheet beside the admin's buttons. A slot the admin moves is
      written under a new series id, so it is unconfirmed again and the old
-     word stays with the old series. */
+     word stays with the old series.
+
+   Build 171, step 11 (the term view, reports and handing it on):
+   - The term tab: the weeks of the term across (Mondays, to its last day)
+     and the teams down, each cell a team's practices that week against what
+     it needs, a short week orange, the club's weeks off and a field's
+     closures under their dates, what the write would change said above and
+     marked in the cells (a new slot, a series moved), a week tapped opening
+     on the board. The week in numbers: field use against the permit's hours
+     pitch by pitch (a field with no permit and no hours open all day and
+     unshared), the longest coach day, families with children in two places
+     at once by day, changes from what is written. Handing it on: the field
+     schedule as a CSV (field, pitch, day, time, team, kind, from, until; a
+     weekly slot with the dates it runs between, a draft slot the term's) with
+     no child or family in it, and a printable week, a page per field, the
+     club named. A coach has none of it, refused in the handler. */
 
 const H = require('./harness');
 const { check, deepEq } = H;
@@ -162,7 +177,7 @@ const blocks = html => [...html.matchAll(/<button type="button" class="tg-ev" ([
     check('— Settings offers her the Scheduler, read-only', /data-act="scheduler"/.test(A.rendered()) && /beside everyone else/.test(A.rendered()), true);
 
     as('boss'); A.render(); h = A.rendered();
-    check('an admin: the board, Rules, Find a time, Coaches and Picture day as tabs', [...h.matchAll(/data-act="pltab" data-k="(\w+)"/g)].map(m => m[1]).join(), 'board,rules,find,coach,pic');
+    check('an admin: the board, The term, Rules, Find a time, Coaches and Picture day as tabs', [...h.matchAll(/data-act="pltab" data-k="(\w+)"/g)].map(m => m[1]).join(), 'board,term,rules,find,coach,pic');
     check('— no Clashes tab: it is the strip', /data-k="clash"/.test(h), false);
     check('— the teams against what they need', /data-act="schneed" data-tid="t1"/.test(h) && /What needs looking at/.test(h), true);
     check('— nothing dimmed on her board', blocks(h).every(b => b.dim === '0'), true);
@@ -907,6 +922,60 @@ const blocks = html => [...html.matchAll(/<button type="button" class="tg-ev" ([
     as('mum', c); A.toasts.length = 0;
     A.click({ act: 'schword', ok: '1', tid: 't1', s: 's1' });
     check('a parent is refused, nothing written', A.lastToast() + ' ' + JSON.stringify(A.state.teams.t1.confirm), 'Planning is for club admins ' + JSON.stringify(c.teams.t1.confirm));
+  }
+
+  console.log('\n--- the term view, the week in numbers, and handing it on ---');
+  {
+    const c = club(); c.teams.t1.events.e1.series = 's1';
+    c.teams.t1.events.e1c = { id: 'e1c', kind: 'practice', title: 'Practice', date: '2026-09-22', start: '17:30', end: '18:30', venue: 'Lakeside Park, Field 2', series: 's1' };
+    c.access.org.sched = { from: MON, until: '2026-10-11', closed: { h: { id: 'h', from: '2026-09-28', until: '2026-10-02', note: 'Half term' } } };
+    as('boss', c); A.render();
+    deepEq('the weeks of the term, Mondays', A.termWeeks(MON), [MON, '2026-09-21', '2026-09-28', '2026-10-05']);
+    const tv = A.termView(MON);
+    check('the club\'s week off and a field\'s closure under their weeks', [tv.weeks[2].blackout.map(x => x.note).join(), tv.weeks[1].shut.map(x => x.f.name + ':' + x.days.join()).join(), tv.weeks[0].blackout.length, tv.weeks[0].shut.map(x => x.days.join()).join()].join('|'), 'Half term|Lakeside Park:Mon|0|Sun');
+    check('the teams down, by name, each week a cell: G11 has its Tuesday in the first two weeks and is short after', tv.rows.map(r => r.t.id).join() + ' ' + tv.rows[1].cells.map(c => `${c.n}/${c.need}${c.short ? '!' : ''}${c.days.join('')}`).join(' '), 't3,t1,t2 1/1Tue 1/1Tue 0/1! 0/1!');
+    A.click({ act: 'pltab', k: 'term' });
+    let h = A.rendered();
+    check('the tab: the table, a button per week to the board, the week off and the closure said under their dates', /<table class="termgrid">/.test(h) && (h.match(/data-act="schweek" data-date="\d{4}-\d\d-\d\d" data-tab="board"/g) || []).length === 4 && /data-date="2026-09-28"[^<]*<\/button><span class="tc-sub">Half term<\/span>/.test(h) && /data-date="2026-09-21"[^<]*<\/button><span class="tc-sub">Lakeside Park closed Mon<\/span>/.test(h), true);
+    check('— nothing to write', /Nothing to write: the term as the calendars have it\./.test(h) && !/data-act="schwrite"/.test(h), true);
+    check('— a short week in a short cell', /<td class="tc tc-short">0 of 1<\/td>/.test(h) && /<td class="tc">1 of 1<span class="tc-sub">Tue<\/span><\/td>/.test(h), true);
+    // the draft marked before it is written: a new slot, a series moved
+    const dr = A.schedDraft();
+    dr.blocks = { n1: { id: 'n1', tid: 't3', wd: 0, start: '18:00', len: 60, col: 'f:v1', pitch: '', series: '', locked: false }, m1: { id: 'm1', tid: 't1', wd: 3, start: '18:00', len: 60, col: 'f:v1', pitch: '', series: 's1', locked: false } };
+    dr.off = { s1: true }; A.saveDraft(); A.render(); h = A.rendered();
+    deepEq('what the write would change', A.draftChanges(), { news: 1, moved: 1, off: 0 });
+    check('— said above the grid, with the write button', /<b>When you write it:<\/b> 1 new weekly slot · 1 moved, every week of the term\./.test(h) && /data-act="schwrite"/.test(h), true);
+    check('— and marked in the cells: G11 moved to Thursday, B9 new on Monday, every week', (h.match(/<td class="tc tc-draft">1 of 1<span class="tc-sub">Thu<\/span><span class="tc-sub">moved<\/span><\/td>/g) || []).length + ' ' + (h.match(/<td class="tc tc-draft">1 of 1<span class="tc-sub">Mon<\/span><span class="tc-sub">new<\/span><\/td>/g) || []).length, '4 4');
+    A.click({ act: 'schweek', date: '2026-09-21', tab: 'board' });
+    check('a week tapped opens on the board', A.ui.planner.tab + ' ' + A.ui.planner.board.week, 'board 2026-09-21');
+    dr.blocks = {}; dr.off = {}; A.saveDraft(); A.ui.planner.board.week = MON; A.ui.planner.tab = 'term'; A.render();
+
+    // the week in numbers
+    const r = A.schedReport(MON);
+    check('field use: two hours on Lakeside of the permit\'s hours on two pitches, busiest Tuesday; the turf open all day gets no share', r.fields.map(x => `${x.f.name}:${x.n}:${x.used}:${x.open}:${x.pct}:${x.busiest}`).join('|'), 'Lakeside Park:2:120:1440:8:2026-09-15|School turf:1:' + r.fields[1].used + ':null:null:2026-09-15');
+    check('the longest coach day: Jaz on Tuesday, a practice then the game across town', [r.worst.uid, r.worst.date, r.worst.n, r.worst.places.join('+')].join('|'), 'jaz|2026-09-15|2|Lakeside Park+School turf');
+    deepEq('families with children in two places at once, by day', r.siblings, [{ date: TUE, n: 1 }]);
+    h = A.rendered();
+    check('— said', /<b>Lakeside Park<\/b>: 2 hours on it of 24 hours open \(8%\); busiest Tuesday<\/p>/.test(h) && /<b>School turf<\/b>: [^<]*on it, open all day; busiest Tuesday<\/p>/.test(h) && /Jaz: Tuesday, 2 sessions, [^<(]*\(Lakeside Park, School turf\)<\/p>/.test(h) && /Tuesday: 1<\/p>/.test(h) && /None: the board is the calendars\./.test(h), true);
+
+    // handing it on: the field schedule, no child in it
+    const csv = A.fieldScheduleCsv(MON), lines = csv.trim().split('\r\n');
+    check('the field schedule: the columns the council needs', lines[0], 'Field,Pitch,Day,Time,Team,Kind,From,Until');
+    check('— a row per thing on a field this week, by field, a weekly slot with the dates it runs between', lines.slice(1).join(' | '), `Lakeside Park,Field 2,Tuesday,17:30-18:30,G11 Flight,Practice,2026-09-15,2026-09-22 | Lakeside Park,,Tuesday,18:00-19:00,G13 Storm,Practice,2026-09-15,2026-09-15 | School turf,,Tuesday,19:00-${lines[3].split(',')[3].split('-')[1]},B9 Comets,Game,2026-09-15,2026-09-15`);
+    check('— no child in it, no family', /Ella|Sam|Leo|fam1|fam5/.test(csv), false);
+    check('— a draft slot carries the term\'s dates', (() => { A.schedDraft().blocks = { n1: { id: 'n1', tid: 't3', wd: 0, start: '18:00', len: 60, col: 'f:v1', pitch: '', series: '', locked: false } }; A.saveDraft(); const l = A.fieldScheduleCsv(MON).trim().split('\r\n'); A.schedDraft().blocks = {}; A.saveDraft(); return l.find(x => /B9 Comets,Practice/.test(x)); })(), 'Lakeside Park,,Monday,18:00-19:00,B9 Comets,Practice,2026-09-14,2026-10-11');
+    check('the download and print buttons', /data-act="schcsv"/.test(h) && /data-act="schprint"/.test(h), true);
+    A.toasts.length = 0; A.click({ act: 'schcsv' });
+    check('— downloading says nothing: the file is the answer', A.toasts.length, 0);
+    const pages = A.schedPrintPages(MON);
+    check('a printable week: a page per field, the club named, the grid on each', (pages.match(/<section class="printpage">/g) || []).length === 2 && /<h2[^>]*>Lakeside Park<\/h2>/.test(pages) && /<h2[^>]*>School turf<\/h2>/.test(pages) && (pages.match(/class="tg tg-week tg-board"/g) || []).length === 2 && /Mon 14 Sep<\/p>|Mon 14 Sep to Sun 20 Sep/.test(pages), true);
+    A.click({ act: 'schprint' });
+    check('— with no print dialog on this phone, the screen comes straight back', A.ui.planner.printing === false && /<table class="termgrid">/.test(A.rendered()), true);
+
+    // a coach has none of it
+    as('jaz', c); A.render();
+    for (const [act, d] of [['pltab', { k: 'term' }], ['schcsv', {}], ['schprint', {}]]) { A.toasts.length = 0; A.click({ act, ...d }); check(`jaz: ${act} is refused`, A.lastToast(), 'Planning is for club admins'); }
+    check('— no term tab, no export on her screen', /data-act="pltab"|data-act="schcsv"|data-act="schprint"/.test(A.rendered()), false);
   }
 
   // last, as every suite has it: a second app loaded takes the harness's document with it

@@ -2,7 +2,7 @@
    Static app. Data lives in localStorage, and mirrors to Firebase Realtime
    Database when a config + workspace code are present. */
 
-const BUILD = '170';
+const BUILD = '171';
 const BUILT = '2026-10-14';
 /* The version of database.rules.json this app was written against. The rules
    carry the same number in rulesVersion's .write, which accepts that number
@@ -18256,12 +18256,12 @@ function newsCard() {
    what it clashes with and never offers to move it. */
 const canPlanClub = () => canAdmin();
 const PLANNER_ACTS = new Set(['scheduler', 'schweek', 'schfield', 'schneed', 'schneedwd', 'schneedsave',
-  'schpick', 'schkind', 'schteams', 'schcell', 'schpitch', 'schplacego', 'schfill', 'schfillundo', 'schword', 'schrfor', 'schpreset', 'schrtier', 'schcshape', 'schctier', 'schcadd', 'schcrm', 'schlimsave', 'schload', 'schloadsave', 'schloadclear', 'schforbid', 'schunforbid', 'schblock', 'schmove', 'schlock', 'schdrop', 'schmoveseries', 'schoffseries', 'schunoff', 'schterm', 'schtermsave', 'schclosedadd', 'schclosedrm', 'schwrite', 'schclear', 'plback', 'pltab', 'plcw', 'plrange', 'pltm', 'plfind', 'plbook', 'plkind', 'plbookgo', 'plpictm', 'plpic', 'plpicgo']);
+  'schpick', 'schkind', 'schteams', 'schcell', 'schpitch', 'schplacego', 'schfill', 'schfillundo', 'schword', 'schcsv', 'schprint', 'schrfor', 'schpreset', 'schrtier', 'schcshape', 'schctier', 'schcadd', 'schcrm', 'schlimsave', 'schload', 'schloadsave', 'schloadclear', 'schforbid', 'schunforbid', 'schblock', 'schmove', 'schlock', 'schdrop', 'schmoveseries', 'schoffseries', 'schunoff', 'schterm', 'schtermsave', 'schclosedadd', 'schclosedrm', 'schwrite', 'schclear', 'plback', 'pltab', 'plcw', 'plrange', 'pltm', 'plfind', 'plbook', 'plkind', 'plbookgo', 'plpictm', 'plpic', 'plpicgo']);
 function plannerUi() {
   if (!ui.planner || typeof ui.planner !== 'object') ui.planner = {};
   const p = ui.planner;
   // Clashes was a tab until build 163; it is the board's strip now, so an old 'clash' lands on the board
-  if (!['board', 'rules', 'find', 'pic', 'coach'].includes(p.tab)) p.tab = 'board';
+  if (!['board', 'rules', 'term', 'find', 'pic', 'coach'].includes(p.tab)) p.tab = 'board';
   const bd = p.board && typeof p.board === 'object' ? p.board : {}, mon = d => addDays(d, -weekdayOf(d));
   p.board = { week: okDay(bd.week) ? mon(bd.week) : mon(todayStr()), field: typeof bd.field === 'string' ? bd.field : '', pick: typeof bd.pick === 'string' ? bd.pick : '', kind: PTYPES[bd.kind] ? bd.kind : 'regular' };
   const cw = p.cw && typeof p.cw === 'object' ? p.cw : {};
@@ -19381,14 +19381,146 @@ function sheetCoachLoad(uid) {
     ${cc.own ? `<button class="btn quiet wide" data-act="schloadclear" data-u="${esc(uid)}" style="margin-bottom:8px">As the club</button>` : ''}
     <button class="btn quiet wide" data-act="closesheet">Cancel</button>`, true);
 }
+/* ---- the term view, reports and handing it on (SCHEDULER.md, step 11) ----
+   The step back the owner asked for ("a whole season at once, or maybe a
+   few"): the weeks of the term across and the teams down, each cell a team's
+   practices that week against what it needs, the weeks the club is off and a
+   field is closed marked, and what the write would change (the draft's new
+   slots, moved series and series taken off) marked in the cells before she
+   writes it. Drawn from the calendar and the draft like the board; nothing
+   is stored. */
+function termWeeks(week) {
+  const { from, until } = draftTerm(week), out = [];
+  for (let w = addDays(from, -weekdayOf(from)); w <= until && out.length < SERIES_MAX; w = addDays(w, 7)) out.push(w);
+  return out;
+}
+/* One team's week: its practices (the draft's included, a series taken off
+   left out), what it needs, and what the write changes there. */
+function termCell(tid, items) {
+  const need = schedNeed(tid).total, mine = items.filter(x => x.kind === 'practice' && tidsOf(x).includes(tid)), blocks = draftBlocks();
+  const on = mine.filter(x => !x.off), drafts = on.filter(x => x.draft);
+  return { tid, n: on.length, need, short: on.length < need, drafts: drafts.length, moved: drafts.filter(x => x.draft.series).length,
+    off: mine.filter(x => x.off && !blocks.some(b => b.series === x.series)).length, days: [...new Set(on.map(x => weekdayOf(x.date)))].sort().map(i => WEEKDAYS[i]) };
+}
+function termView(week) {
+  const closed = schedClosed(), fields = fieldList();
+  const weeks = termWeeks(week).map(w => {
+    const days = [...Array(7)].map((_, i) => addDays(w, i));
+    return { w, items: boardAll(w), blackout: closed.filter(c => c.from <= days[6] && c.until >= w),
+      shut: fields.map(f => ({ f, days: days.filter(d => fieldClosures(f).some(c => c.from <= d && d <= c.until)).map(d => WEEKDAYS[weekdayOf(d)]) })).filter(x => x.days.length) };
+  });
+  return { weeks, rows: teams().map(t => ({ t, cells: weeks.map(x => termCell(t.id, x.items)) })) };
+}
+/* What the draft would change when written, counted as the write card counts it. */
+function draftChanges() {
+  const d = schedDraft(), blocks = draftBlocks();
+  return { news: blocks.filter(b => !b.series).length, moved: blocks.filter(b => b.series).length, off: Object.keys(d.off || {}).filter(sid => !blocks.some(b => b.series === sid)).length };
+}
+const changesText = c => [c.news && `${c.news} new weekly slot${c.news === 1 ? '' : 's'}`, c.moved && `${c.moved} moved`, c.off && `${c.off} taken off`].filter(Boolean).join(' \u00b7 ');
+function plannerTerm(p) {
+  const week = p.board.week, tv = termView(week), { from, until } = draftTerm(week), ch = draftChanges(), changed = ch.news + ch.moved + ch.off;
+  const head = tv.weeks.map(x => `<th scope="col"${x.blackout.length ? ' class="tc-black"' : ''}><button class="btn quiet sm" type="button" data-act="schweek" data-date="${x.w}" data-tab="board" title="Open this week on the board">${esc(shortDate(x.w))}</button>${x.blackout.map(c => `<span class="tc-sub">${esc(c.note || 'No practice')}</span>`).join('')}${x.shut.map(y => `<span class="tc-sub">${esc(y.f.name)} closed ${esc(y.days.join(', '))}</span>`).join('')}</th>`).join('');
+  const body = tv.rows.map(r => `<tr><th scope="row">${esc(shortTeam(r.t.id))}</th>${r.cells.map(c => `<td class="tc${c.short ? ' tc-short' : ''}${c.drafts ? ' tc-draft' : ''}${c.off ? ' tc-off' : ''}">${c.need || c.n ? `${c.n} of ${c.need}` : '\u2014'}${c.days.length ? `<span class="tc-sub">${c.days.join(' ')}</span>` : ''}${c.drafts ? `<span class="tc-sub">${c.moved ? (c.moved === c.drafts ? 'moved' : 'moved, new') : 'new'}</span>` : ''}${c.off ? '<span class="tc-sub">taken off</span>' : ''}</td>`).join('')}</tr>`).join('');
+  return `<div class="card"><h2 style="margin-bottom:6px">The term</h2>
+    <p class="muted" style="margin:0 0 8px">${esc(dayLabel(from))} to ${esc(dayLabel(until))}: ${tv.weeks.length} week${tv.weeks.length === 1 ? '' : 's'}. Each cell is a team\u2019s practices that week against what it needs; a week the club is off, or a field is closed, says so under its date. Tap a week to open it on the board.</p>
+    <p style="margin:0 0 8px">${changed ? `<b>When you write it:</b> ${esc(changesText(ch))}, every week of the term. Marked in the cells below.` : 'Nothing to write: the term as the calendars have it.'}</p>
+    ${tv.rows.length ? `<div class="tscroll"><table class="termgrid"><thead><tr><th scope="col"></th>${head}</tr></thead><tbody>${body}</tbody></table></div>` : '<p class="muted">No teams yet.</p>'}
+    <div class="row wrap" style="margin-top:10px"><button class="btn quiet" data-act="schterm">The term\u2026</button>${changed ? '<button class="btn" data-act="schwrite">Put it on the calendars</button>' : ''}</div></div>
+    ${schedReportCard(week)}
+    <div class="card"><h2 style="margin-bottom:6px">Hand it on</h2>
+    <p class="muted" style="margin:0 0 8px">The field schedule for the council, the school or another club: places, days and times, the teams by name, and nothing about a child. The week on the board, every weekly slot with the dates it runs between.</p>
+    <div class="row wrap"><button class="btn quiet" data-act="schcsv">Download the field schedule</button><button class="btn quiet" data-act="schprint">Print this week, a page per field</button></div></div>`;
+}
+/* The reports the strip summarises, for the week on the board: field use
+   (minutes on each field against the minutes it is open, pitch by pitch; a
+   field with no permit and no hours is open all day and gets no share), the
+   longest coach day, families with children due in two places at once, and
+   what the draft would change. */
+function schedReport(week) {
+  const items = boardAll(week).filter(x => !x.off), days = [...Array(7)].map((_, i) => addDays(week, i));
+  const fields = fieldList().map(f => {
+    const col = 'f:' + f.id, on = items.filter(x => x.col === col), bounded = permitsOf(f).length || Object.values(fieldHours(f)).some(h => h && (h.closed || h.from));
+    let open = null;
+    if (bounded) { open = 0; for (const d of days) { const shut = boardShut(f, d, 0, 24); open += (shut.some(x => x[2] === 'closed') ? 0 : 1440 - shut.reduce((n, [a, b]) => n + (b - a), 0)) * pitchCount(f); } }
+    const used = on.reduce((n, x) => n + (x.b - x.a), 0), byDay = {};
+    for (const x of on) byDay[x.date] = (byDay[x.date] || 0) + (x.b - x.a);
+    const busiest = Object.entries(byDay).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))[0];
+    return { f, n: on.length, used, open, pct: open ? Math.round(100 * used / open) : null, busiest: busiest ? busiest[0] : '' };
+  });
+  let worst = null;
+  for (const u of [...coachUids()].sort()) for (const d of days) {
+    const mine = items.filter(x => x.date === d && x.coaches.includes(u)); if (!mine.length) continue;
+    const mins = mergedMins(mine.map(x => [x.a, x.b]));
+    if (!worst || mins > worst.mins || (mins === worst.mins && mine.length > worst.n)) worst = { uid: u, date: d, mins, n: mine.length, places: [...new Set(mine.map(placeName).filter(Boolean))] };
+  }
+  const siblings = days.map(d => ({ date: d, n: clubClashesOn(d).filter(c => c.kind === 'family').length })).filter(x => x.n);
+  return { fields, worst, siblings, changes: draftChanges() };
+}
+function schedReportCard(week) {
+  const r = schedReport(week), day = d => DAYS_LONG[weekdayOf(d)], changed = r.changes.news + r.changes.moved + r.changes.off;
+  return `<div class="card"><h2 style="margin-bottom:6px">This week in numbers</h2>
+    <p class="lbl" style="margin-top:0">Field use</p>
+    ${r.fields.length ? r.fields.map(x => `<p style="margin:0 0 6px"><b>${esc(x.f.name)}</b>: ${x.n ? `${minsText(x.used)} on it${x.pct != null ? ` of ${minsText(x.open)} open (${x.pct}%)` : ', open all day'}${x.busiest ? `; busiest ${day(x.busiest)}` : ''}` : 'nothing on it'}</p>`).join('') : '<p class="muted" style="margin:0 0 6px">No fields yet.</p>'}
+    <p class="lbl">The longest coach day</p>
+    <p style="margin:0 0 6px">${r.worst ? `${esc(coachName(r.worst.uid))}: ${day(r.worst.date)}, ${r.worst.n} session${r.worst.n === 1 ? '' : 's'}, ${minsText(r.worst.mins)}${r.worst.places.length ? ` (${esc(r.worst.places.join(', '))})` : ''}` : 'No coach is due anywhere this week.'}</p>
+    <p class="lbl">Families with children in two places at once</p>
+    <p style="margin:0 0 6px">${r.siblings.length ? esc(r.siblings.map(x => `${day(x.date)}: ${x.n}`).join(' \u00b7 ')) : 'None.'}</p>
+    <p class="lbl">Changes from what is written</p>
+    <p style="margin:0">${changed ? esc(changesText(r.changes)) : 'None: the board is the calendars.'}</p></div>`;
+}
+/* The field schedule export: one row per thing on a field the week on the
+   board, with the dates a weekly slot runs between. Places, days, times and
+   teams by name; nothing about a child, which is what a council needs. */
+const FIELD_CSV_COLS = ['Field', 'Pitch', 'Day', 'Time', 'Team', 'Kind', 'From', 'Until'];
+function itemSpan(x, week) {
+  if (x.draft) { const { from, until } = draftTerm(week); return [from, until]; }
+  if (x.series && x.tid) { const ds = Object.values((state.teams[x.tid] || {}).events || {}).filter(e => e && e.series === x.series && okDay(e.date)).map(e => e.date).sort(); if (ds.length) return [ds[0], ds[ds.length - 1]]; }
+  return [x.date, x.date];
+}
+function fieldScheduleCsv(week) {
+  const rows = [FIELD_CSV_COLS.join(',')];
+  const items = boardAll(week).filter(x => !x.off && x.col && ['practice', 'game', 'session'].includes(x.kind)).sort((p, q) => p.col.localeCompare(q.col) || p.date.localeCompare(q.date) || p.a - q.a);
+  for (const x of items) {
+    const f = x.col.startsWith('f:') ? fieldById(x.col.slice(2)) : null, pt = f && x.pitch ? pitchesOf(f).find(q => q.id === x.pitch) : null, span = itemSpan(x, week);
+    const team = x.tids && x.tids.length > 1 ? x.tids.map(shortTeam).join(' / ') : x.tid ? shortTeam(x.tid) : '';
+    rows.push([f ? f.name : x.venue, pt ? pt.name : '', DAYS_LONG[weekdayOf(x.date)], `${minHm(x.a)}-${minHm(x.b)}`, team, x.kind === 'practice' ? kindOf(x.ptype).label : x.kind === 'game' ? 'Game' : 'Session', span[0], span[1]].map(csvCell).join(','));
+  }
+  return rows.join('\r\n') + '\r\n';
+}
+function exportFieldSchedule(week) {
+  try {
+    const blob = new Blob([fieldScheduleCsv(week)], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob), link = document.createElement('a');
+    link.href = url; link.download = `fields-${week}.csv`;
+    if (document.body && document.body.appendChild) document.body.appendChild(link);
+    link.click();
+    if (link.parentNode) link.parentNode.removeChild(link);
+    setTimeout(() => URL.revokeObjectURL(url), 4000);
+  } catch (e) { toast('This phone could not save the file'); }
+}
+/* A printable week: every field's grid for the week on the board, a page
+   each, the club named, and nothing else on the page while it prints. */
+function schedPrintPages(week) {
+  const items = boardAll(week).filter(x => !x.off), cols = boardColumns(items), end = addDays(week, 6);
+  if (!cols.length) return '<div class="empty"><strong>Nothing to print</strong>No field has anything on it this week.</div>';
+  return cols.map(c => `<section class="printpage"><h2 style="margin-bottom:2px">${esc(c.name)}</h2><p class="muted" style="margin:0 0 8px">${esc(clubName())} \u00b7 ${esc(dayLabel(week))} to ${esc(dayLabel(end))}</p>${boardGrid(c, week, items, null, null)}</section>`).join('');
+}
+function schedPrint() {
+  const p = plannerUi(); p.printing = true; render();
+  const done = () => { p.printing = false; render(); };
+  if (typeof window === 'undefined' || typeof window.print !== 'function') { done(); return; }
+  setTimeout(() => { try { window.print(); } finally { done(); } }, 60);
+}
 function viewScheduler() {
   if (!canSched()) return `<div class="empty"><strong>Coaches and club admins only</strong>The club's week laid out by field is for the people who run it.</div>`;
   const p = plannerUi(), adm = canPlanClub();
   if (!adm) p.tab = 'board';
   const tab = (k, l) => `<button class="chip" type="button" data-act="pltab" data-k="${k}" aria-pressed="${p.tab === k}">${l}</button>`;
-  const body = p.tab === 'find' ? plannerFind(p) : p.tab === 'pic' ? plannerPic(p) : p.tab === 'coach' ? plannerCoaches(p) : p.tab === 'rules' ? plannerRules(p) : schedBoard(p, adm);
+  // printing: the week, a page per field, and nothing else on the page (step 11)
+  if (adm && p.printing) return `<div class="printpages">${schedPrintPages(p.board.week)}</div>`;
+  const body = p.tab === 'find' ? plannerFind(p) : p.tab === 'pic' ? plannerPic(p) : p.tab === 'coach' ? plannerCoaches(p) : p.tab === 'rules' ? plannerRules(p) : p.tab === 'term' ? plannerTerm(p) : schedBoard(p, adm);
   return `<div class="stack">
-    ${adm ? `<div class="chips">${tab('board', 'Board')}${tab('rules', 'Rules')}${tab('find', 'Find a time')}${tab('coach', 'Coaches')}${tab('pic', 'Picture day')}</div>` : ''}
+    ${adm ? `<div class="chips">${tab('board', 'Board')}${tab('term', 'The term')}${tab('rules', 'Rules')}${tab('find', 'Find a time')}${tab('coach', 'Coaches')}${tab('pic', 'Picture day')}</div>` : ''}
     ${body}</div>`;
 }
 /* Who can coach then: every coach, free first, each saying where she is
@@ -19502,7 +19634,9 @@ function onPlannerAct(a, d) {
   }
   const p = plannerUi();
   if (a === 'scheduler') { ui.view = 'scheduler'; render(); toTop(); return; }
-  if (a === 'schweek') { p.board.week = okDay(d.date) ? addDays(d.date, -weekdayOf(d.date)) : d.v === '0' ? addDays(todayStr(), -weekdayOf(todayStr())) : addDays(p.board.week, 7 * (Number(d.v) || 0)); plannerUi(); render(); return; }
+  if (a === 'schweek') { p.board.week = okDay(d.date) ? addDays(d.date, -weekdayOf(d.date)) : d.v === '0' ? addDays(todayStr(), -weekdayOf(todayStr())) : addDays(p.board.week, 7 * (Number(d.v) || 0)); if (d.tab === 'board') p.tab = 'board'; plannerUi(); render(); return; }
+  if (a === 'schcsv') { exportFieldSchedule(p.board.week); return; }
+  if (a === 'schprint') { schedPrint(); return; }
   if (a === 'schfield') { p.board.field = String(d.v || ''); render(); return; }
   if (a === 'schneed') { p.need = null; sheetSchedNeed(d.tid); return; }
   if (a === 'schneedwd') {
