@@ -37,7 +37,20 @@
      at that time skipped, so twice writes nothing; a moved series its
      entries from the term's start on at the same ids under a new series id;
      a series taken off deleted from then on with its register; the term
-     recorded at org/sched; the draft cleared. */
+     recorded at org/sched; the draft cleared.
+
+   Build 168, step 8 (lay it out for me):
+   - The fill is a greedy pass with a local search after it over the rules
+     as tiered: never a Must rule tripped (swept across drawn clubs with more
+     and with fewer open cells than practices wanted), a coach's other team
+     straight before pulling, the same night or the night after a team's
+     first practice pushing, the usual field pulling; what is on the board
+     already (a hand-placed block, locked or not, and the calendar) never
+     moved; every placement a draft block, nothing written; the report
+     saying how many, what they carry by rule, and for a team it could not
+     place which rule shut most cells and whether relaxing a tier or more
+     field would open it; the run taken off again as one tap; a coach
+     refused in the handler. */
 
 const H = require('./harness');
 const { check, deepEq } = H;
@@ -638,6 +651,109 @@ const blocks = html => [...html.matchAll(/<button type="button" class="tg-ev" ([
     check('the board draws what was written as the calendar\'s own', (A.rendered().match(/data-draft="0"/g) || []).length > 0 && !/data-draft="1"/.test(A.rendered()), true);
   }
 
+  console.log('\n--- lay it out for me: the fill ---');
+  {
+    // the fill-only pulls, one want at a time so each is seen alone: a coach's other team straight before
+    let c = club(); c.matches = {};
+    as('boss', c); A.render();
+    check('the button, while a team is short', /data-act="schfill"/.test(A.rendered()), true);
+    deepEq('what is wanted: the team with nothing placed, one practice of its length', A.fillWants(MON, A.boardAll(MON)), [{ tid: 't3', ptype: 'regular', len: 60 }]);
+    const before = JSON.stringify(A.state);
+    let r = A.layOut(MON);
+    check('one placed, none left over', [r.placed.length, r.unplaced.length, r.wanted].join(), '1,0,1');
+    let b = A.draftBlocks().find(x => x.id === r.placed[0].id);
+    check('back to back on one field after its coach\'s other team: Tue 6:30 at Lakeside, after G11\'s 5:30', [b.tid, b.wd, b.start, b.col, b.ptype, b.fill, b.locked, b.series, b.pitch].join('|'), 't3|1|18:30|f:v1|regular|true|false||');
+    check('— its cost: the pull, less the practice already on the pitch then', r.placed[0].cost, -9);
+    check('— the board\'s own check passes it, and it carries no warning', A.placeCheck(b, MON).refused.length + ' ' + JSON.stringify(r.tripped), '0 {}');
+    check('nothing written', JSON.stringify(A.state), before);
+    A.render();
+    check('— drawn as a draft, counted for the team, and the button goes', /data-draft="1"/.test(A.rendered()) && !/data-act="schfill"/.test(A.rendered()), true);
+    deepEq('run again: nothing wanted, nothing placed', A.layOut(MON), { placed: [], unplaced: [], wanted: 0, tripped: {} });
+
+    // a team's second practice: the same night or the night after costs, its usual field pulls
+    c = club(); c.access.org.sched = { teams: { t1: { per: 2, field: 'v1' }, t3: { per: 0 } } };
+    as('boss', c); A.render();
+    r = A.layOut(MON);
+    b = A.draftBlocks()[0];
+    check('a second practice: not Tuesday after its own, not Monday or Wednesday beside it, on its usual field', [b.tid, b.wd, b.start, b.col].join('|'), 't1|3|17:00|f:v1');
+    // 4pm, clear of G13's practice: siblings at one field within the hour pull harder than the night pushes, by design
+    const night = wd => A.fillExtra({ id: 'q', tid: 't1', wd, start: '15:30', len: 60, col: 'f:v1', ptype: 'regular' }, MON, A.boardAll(MON));
+    check('— the same night is dearer than the night after, and a night clear of both costs nothing', [night(1), night(0), night(5)].join(), '2,1,0');
+
+    // what is already on the board stays: a block placed by hand, locked or not, and the calendar
+    c = club(); c.access.org.sched = { teams: { t1: { per: 2 }, t2: { per: 2 } } };
+    as('boss', c);
+    const hand = { id: 'n1', tid: 't3', wd: 0, start: '18:00', len: 60, col: 'f:v1', pitch: 'a', series: '', locked: true };
+    A.schedDraft().blocks = { n1: { ...hand } }; A.saveDraft(); A.render();
+    r = A.layOut(MON);
+    check('two wanted, two placed', [r.placed.length, r.unplaced.length, r.wanted].join(), '2,0,2');
+    deepEq('the hand-placed block exactly as it was', A.schedDraft().blocks.n1, hand);
+    check('every placed block passes the board\'s check against the whole board', A.draftBlocks().every(x => !A.placeCheck(x, MON).refused.length), true);
+    check('— and the calendar\'s own entries untouched', JSON.stringify(A.state.teams), JSON.stringify(club().teams));
+
+    // through the handler: the report, and taking the run off again
+    A.schedDraft().blocks = { n1: { ...hand, locked: false } }; A.saveDraft(); A.render();
+    A.click({ act: 'schfill' });
+    check('the report: how many, as a first go', /<h3>Laid out<\/h3>/.test(sheet(A)) && /2 of 2 placed on the board, as a first go: move anything\./.test(sheet(A)), true);
+    check('— what they carry, by rule, or that they carry nothing', /None of them trips a warning\.|They carry: /.test(sheet(A)), true);
+    check('— Keep them, or take them off again', /data-act="closesheet"[^>]*>Keep them</.test(sheet(A)) && /data-act="schfillundo"/.test(sheet(A)), true);
+    check('— the team pick is cleared so the next tap is not a placement', A.ui.planner.board.pick, '');
+    A.click({ act: 'schfillundo' });
+    check('taken off: the run\'s blocks gone, the hand-placed one kept', A.draftBlocks().map(x => x.id).join(), 'n1');
+    check('— the sheet closed', A.dom.node('#sheet').hidden, true);
+
+    // more wanted than the board can take: who could not be placed, and which rule shut every cell
+    c = club(); c.access.org.sched = { rules: { night: 'must' }, teams: { t3: { not: [0, 1, 2, 3, 4, 5, 6] } } };
+    as('boss', c); A.render();
+    A.click({ act: 'schfill' });
+    r = { why: {} };
+    check('nothing placed, said so', /Nothing could be placed\./.test(sheet(A)) && /Could not be placed/.test(sheet(A)) && /<b>B9 Comets: practice<\/b>/.test(sheet(A)), true);
+    check('— the rule that shut most cells named with its count, a tiered one the cheapest to relax', /mostly by: Not on a night the team can’t do \(\d+\)/.test(sheet(A)) && /The cheapest to relax is “Not on a night the team can’t do” on the Rules tab\./.test(sheet(A)), true);
+    check('— nothing to take off', /data-act="schfillundo"/.test(sheet(A)), false);
+    check('— no block drafted', A.draftBlocks().length, 0);
+    c = club(); c.matches = {}; delete c.access.org.venues.v2;
+    c.access.org.venues.v1.permits.pm = { id: 'pm', days: [1], start: '17:00', end: '18:00' };
+    as('boss', c); A.render();
+    r = A.layOut(MON);
+    check('a physical rule shutting it: the one open hour is its coach\'s other team\'s', [r.placed.length, r.unplaced.length, r.unplaced[0].tid, Object.entries(r.unplaced[0].why).sort((x, y) => y[1] - x[1]).map(([k]) => k).join('>')].join('|'), '0|1|t3|supply>coachBusy');
+    A.sheetFillReport(r);
+    check('— told what would open it', /A physical rule shut it: more permit, another field, or fewer practices\./.test(sheet(A)), true);
+    A.closeSheet();
+
+    // a coach reads the board and lays nothing out
+    as('jaz'); A.render();
+    for (const act of ['schfill', 'schfillundo']) { A.toasts.length = 0; A.click({ act }); check(`jaz: ${act} is refused`, A.lastToast(), 'Planning is for club admins'); }
+    check('— no block drafted', A.draftBlocks().length + ' ' + sheet(A), '0 ');
+
+    // a sweep of clubs, with more and with fewer open cells than practices wanted: never a Must rule tripped
+    // the high bits: a linear generator's low bit just alternates
+    let seed = 11; const rnd = n => { seed = (seed * 1103515245 + 12345) % 2147483648; return (seed >> 16) % n; };
+    const names = ['G9', 'G10', 'G11', 'G12', 'B9', 'B10', 'B11', 'B12'], fams = ['fa', 'fb', 'fc', 'fd'];
+    let wanted = 0, placed = 0, cells = [];
+    for (let i = 0; i < 14; i++) {
+      const g = { teams: {}, matches: {}, access: { admins: { boss: true }, index: { boss: true }, members: { boss: { name: 'Ada' } }, teams: {}, coachIndex: {}, org: { venues: {}, sched: { teams: {} } } } };
+      // the first club is one coach, one hour of one field and three teams; the rest are drawn
+      const nT = i ? 2 + rnd(6) : 3, nC = i ? 1 + rnd(3) : 1, nF = i ? 1 + rnd(3) : 1;
+      for (let k = 0; k < nF; k++) { const id = 'v' + k, s = 17 + rnd(2), e = i ? s + 2 + rnd(2) : s + 1; g.access.org.venues[id] = { id, name: 'Field ' + k, pitches: 1 + rnd(2), permits: { p: { id: 'p', days: i ? [0, 1, 2, 3].filter(() => rnd(3)) : [1], start: s + ':00', end: e + ':00' } } }; }
+      for (let k = 0; k < nT; k++) {
+        const id = 't' + k, coach = 'c' + rnd(nC);
+        g.teams[id] = { id, name: names[k], players: { ['p' + k]: kid('p' + k, 'Kid ' + k, { [fams[rnd(4)]]: true }) }, events: {} };
+        g.access.teams[id] = { coaches: { [coach]: true } }; g.access.index[coach] = true; g.access.members[coach] = { name: coach }; g.access.coachIndex[coach] = id;
+        g.access.org.sched.teams[id] = { per: 1 + rnd(3), len: [60, 75, 90][rnd(3)], not: rnd(2) ? [rnd(4)] : [] };
+      }
+      as('boss', g);
+      const pre = A.boardAll(MON), want = A.fillWants(MON, pre).length;
+      cells = A.fillCells(pre);
+      r = A.layOut(MON);
+      const blocks_ = A.draftBlocks(), bad = blocks_.filter(x => A.placeCheck(x, MON).refused.length);
+      check(`club ${i}: ${want} wanted, ${r.placed.length} placed, ${r.unplaced.length} not; none tripping a Must rule`, r.placed.length + r.unplaced.length === want && r.wanted === want && !bad.length && blocks_.length === r.placed.length, true);
+      check(`— each on a cell of the board, a draft the admin can move`, r.placed.every(x => { const q = blocks_.find(y => y.id === x.id); return q && q.fill && !q.locked && cells.some(z => z.col === q.col && z.wd === q.wd && z.start === q.start); }), true);
+      check(`— run again, what was left is all that is wanted`, A.layOut(MON).wanted, r.unplaced.length);
+      wanted += want; placed += r.placed.length;
+    }
+    check('the sweep met clubs it could fill and clubs it could not', placed > 0 && placed < wanted, true);
+  }
+
   // last, as every suite has it: a second app loaded takes the harness's document with it
   console.log('\n--- against the database: one write, at the depth the rule on org grants ---');
   {
@@ -645,6 +761,9 @@ const blocks = html => [...html.matchAll(/<button type="button" class="tg-ev" ([
     const D = H.loadApp({ firebase: fbk, config: CONFIG, storage: { 'sm.workspace': 'CLUB' } });
     await D.flush(); fbk.signIn('boss', { name: 'Ada' }); await D.flush(); await fbk.serveClub('CLUB', club(), D.flush); await D.flush();
     D.ui.view = 'scheduler'; D.ui.planner = { board: { week: MON } }; D.render();
+    const n0 = fbk.record.writes.length;
+    D.layOut(MON); await D.flush();
+    check('laid out: the draft on the phone, nothing written', D.draftBlocks().length + ' ' + (fbk.record.writes.length - n0), '1 0');
     D.click({ act: 'schneed', tid: 't1' });
     D.dom.node('#snPer').value = '2';
     D.click({ act: 'schneedsave', tid: 't1' });

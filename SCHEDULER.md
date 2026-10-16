@@ -265,8 +265,10 @@ should trip as few of its warnings as it can:
 3. The cheapest cell wins; ties go to the earlier night and the earlier hour.
 
 That is a heuristic, not a solver, and it says so on the screen: *A first
-go. Move anything.* A club with more practices wanted than cells open is told
-which teams it could not place and why, and the admin decides. A later build
+go. Move anything.* The run is told back: how many were placed, what they
+carry by rule, and for each team it could not place which rule shut most of
+its cells and whether relaxing a tier or more field would open it, so the
+admin decides; *Take them off again* removes that run's blocks alone. A later build
 can swap pairs to improve on it; nothing here depends on the fill being good,
 only on it being safe (`test/scheduler.js` sweeps it across clubs and
 requires no refusal in its output).
@@ -455,7 +457,7 @@ and Off keeps the rule in the list and worthless. Stored as
 | A coach's teams back to back on one field | Medium | preferred by the fill |
 | The team on its usual field | Medium | warned |
 | The same slot every week of the term | Medium | — |
-| A team's second practice not the night after its first | Low | — |
+| A team's second practice on another night, not the one after its first | Low | — |
 | Spread across the open pitches; rotate the worst slots across an age group | Low | — |
 | Fewest changes from what is written (stability, when re-laying a term; High then) | Low | — |
 | Keep the pattern's headroom for games (the games brief) | Low | — |
@@ -812,11 +814,25 @@ the rules grant today; **no step changes `database.rules.json`.**
    read by `fieldShut()` and `boardShut()` pitch by pitch, a pitch marked
    `lights` exempt, painted on the grid as *Unlit pitches close at 6:30pm*
    and refused on the board as *no lights*.
-8. **Lay it out for me.** The greedy fill with a local search after it over
-   the rules as tiered, swept in the test across clubs with more and fewer
-   cells than practices wanted, never tripping a Must rule, re-solving
-   around what is locked, saying what it could not place and the cheapest
-   rule to relax, scored by category.
+8. **Lay it out for me** — built, build 168. `layOut(week)`: the greedy
+   fill with one pass of local search after it, over the rules as tiered
+   (`placeCheck()` scores each open cell, a refusal ruling it out, and
+   `fillExtra()` adds the fill-only pulls and pushes: a coach's other team
+   straight before or after on one field, siblings at one field within the
+   hour, the team's usual slot, the same night or the night after its other
+   practice, a pitch already stacked), the hardest team first (the fewest
+   open cells, then the most still wanted), the cheapest cell winning and
+   ties going to the earlier night and hour; single-team kinds only
+   (`fillWants()`: a keepers' session or a scrimmage names its teams, so the
+   admin places it); half-hour cells, hourly past `FILL_MAX`. Never a Must
+   rule tripped (`test/scheduler.js` sweeps it across drawn clubs with more
+   and with fewer open cells than practices wanted), nothing on the board
+   already moved (a hand-placed block, locked or not, and the calendar),
+   every placement a draft block marked `fill`, nothing written. The report
+   (`sheetFillReport()`): how many of how many, what they carry by rule, and
+   for a team it could not place which rule shut most cells and whether a
+   tier on the Rules tab or more field would open it; *Take them off again*
+   removes that run's blocks alone. A coach is refused in the handler.
 9. **Re-laying a term.** Opening the Scheduler on a term already written
    starts from the calendar as it stands, so October's lost Thursday is the
    same board: the stranded blocks are warned on the new supply, moved or

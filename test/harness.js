@@ -208,6 +208,7 @@ const EXPORTS = `{
   clubClashesOn, coachStatus, freeCoaches, clubNews, newsFor, newsItems, newsUnread, fieldShut, fieldHours, fieldClosures, awayAll, awaySpans, calledOut, findTimes, picOrder, picLayout, plannerClashes, PLANNER_ACTS,
   canSched, schedNeed, boardItems, boardColumns, boardHours, boardShut, boardLanes, boardTeams, driveWarnings, schedStrip, DRIVE_GAP_MIN,
   schedDraft, saveDraft, draftBlocks, draftTerm, draftItems, boardAll, placeCheck, blockFields, schedWrite, schedClosed, addSeries, seriesLen, pickOf,
+  layOut, fillCells, fillExtra, fillWants, sheetFillReport,
   PTYPES, PTYPE_ORDER, kindOf, ptypeOf, whoOf, tidsOf, rsvpSquad, rsvpCounts,
   RULES, RULE, TIERS, TIER_COST, ruleTier, SCHED_PRESETS, presetTiers, customRules, customText, teamTags, fieldTags, tagList,
   coachCaps, householdCaps, normCaps, minsText, mergedMins, familyMinutes, loadWarnings, fieldSunset, sunsetOn,
