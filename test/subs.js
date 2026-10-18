@@ -1,8 +1,10 @@
 /* A locked-in plan at the sideline.
 
-   The coach locks the plan in from the Plan tab; whoever tracks the game —
-   often a parent — is told when each change is due and taps once when the
-   referee lets the subs on. Three things are worth pinning, because each one
+   The coach locks the plan in from the Lineup tab; at the game the bench, the
+   coach on Subs and her team's helper on Lineup, is told when each change is
+   due and taps once when the referee lets the subs on (until build 173 that
+   was the tracker's card, on Track, told when and never who; the owner,
+   2026-10-18, moved it so the tracker stays on the ball). Three things are worth pinning, because each one
    going wrong costs something real at a game:
 
    - Timing is asked in the half the change belongs to. A first half that runs
@@ -11,9 +13,9 @@
    - The tap writes the same stints a coach's subs would, at the minute it was
      pressed — so minutes, spots and the match log all agree — and can be taken
      back for a short while without leaving a hole in anyone's minutes.
-   - A tracker is told when, never who. The card a tracker sees carries no names, and
-     the click handler, not the button being hidden, is what stops a parent or a
-     stranger making subs.
+   - The card is staff's, with names: the coach's and the helper's. The click
+     handler, not the button being hidden, is what stops a parent, a tracker or
+     a stranger making subs.
 
    Booted with a Firebase config for the same reason visibility.js is: without
    one nothing is gated, and every "a parent may not" below would pass without
@@ -79,16 +81,18 @@ function setup(opts = {}) {
     },
     access: {
       admins: { boss: true },
-      teams: { t1: { coaches: { jaz: true }, trackers: { trk: true } }, t2: { trackers: { trk2: true } } },
-      index: { boss: true, jaz: true, trk: true, trk2: true, mum: true }
+      teams: { t1: { coaches: { jaz: true }, trackers: { trk: true }, helpers: { hal: true } }, t2: { trackers: { trk2: true } } },
+      index: { boss: true, jaz: true, trk: true, trk2: true, hal: true, mum: true }
     }
   };
-  as('trk');
-  A.ui.teamId = 't1'; A.ui.matchId = 'g1'; A.ui.view = 'game'; A.ui.gameView = 'track';
+  as('hal');   // the helper, on her Lineup: the sideline card is hers since build 173
+  A.ui.teamId = 't1'; A.ui.matchId = 'g1'; A.ui.view = 'game'; A.ui.gameView = 'plan';
   A.ui.plan = null; A.ui.picked = null; A.ui.snapAt = null; A.ui.snapSid = null;
   return () => A.state.matches.g1;
 }
-function as(uid) { A.me = uid ? { uid, name: uid === 'jaz' ? 'Jaz' : uid === 'trk' ? 'Tess' : uid } : null; A.appOwners = {}; }
+function as(uid) { A.me = uid ? { uid, name: uid === 'jaz' ? 'Jaz' : uid === 'trk' ? 'Tess' : uid === 'hal' ? 'Hal' : uid } : null; A.appOwners = {}; }
+// the match log is on Track: read it as the coach, then come back to whoever was tapping
+const trackLog = () => { const was = A.me, gv = A.ui.gameView; as('jaz'); A.ui.gameView = 'track'; const h = html(); A.me = was; A.ui.gameView = gv; return h.slice(h.indexOf('id="matchlog"')); };
 const html = () => { A.render(); return A.rendered(); };
 const card = () => A.subsCard(A.team(), A.match(), A.nowMs());
 const named = s => NAMES.filter(n => s.includes(n));
@@ -103,7 +107,7 @@ console.log('--- locking the plan in ---');
   as('jaz'); A.ui.gameView = 'plan';
   let h = html();
   check('an unlocked plan offers to lock it in', /data-act="planlock"/.test(h), true);
-  check('and says what locking does', /told when each change is due/.test(h), true);
+  check('and says what locking does: Subs and the helper\'s Lineup count down (build 173)', /Subs and your helper\u2019s Lineup count down to each change/.test(h), true);
 
   A.click({ act: 'planlock' });
   check('locking writes who and when', !!g().plan.locked && g().plan.locked.byName, 'Jaz');
@@ -201,8 +205,8 @@ function sideline() {
     let s = A.subsDue(g());
     check('an empty pitch wants the kick-off lineup', s && s.kind + ':' + s.b.start, 'due:0');
     const c = card();
-    check('the tracker is asked for the starters', /Starters are on/.test(c), true);
-    check('and is told how many, not who', named(c), []);
+    check('the helper is asked for the starters', /Starters are on/.test(c), true);
+    check('and told who: she is staff, and it is her tap', named(c).length > 0, true);
 
     A.click({ act: 'subsgo', start: '0' });
     check('one tap puts the plan\'s starters on', on(g), ['p1', 'p2', 'p3', 'p5']);
@@ -232,7 +236,7 @@ function sideline() {
     check('the card counts down', /in 5:00/.test(c), true);
     check('and says when on the half clock', /at 10:00 of the 1st half/.test(c), true);
     check('with no button yet', /data-act="subsgo"/.test(c), false);
-    check('and no names', named(c), []);
+    check('and the names already', named(c).length > 0, true);
 
     H.clock.advance(2.5 * MIN);
     s = A.subsDue(g());
@@ -245,12 +249,14 @@ function sideline() {
     check('past the minute it is due', [s.kind, s.until], ['due', -30]);
     c = card();
     check('loudly', /Subs due now/.test(c) && /data-state="due"/.test(c), true);
-    check('the tracker is told how many', /1 sub/.test(c), true);
-    check('and never who', named(c), []);
+    check('the helper is told how many', /1 sub/.test(c), true);
+    check('and who', /Jo/.test(c) && /Mia/.test(c), true);
     as('jaz');
     const cc = card();
-    check('the coach is told who — it is the coach\'s plan', /Jo/.test(cc) && /Mia/.test(cc), true);
+    check('the coach the same', /Jo/.test(cc) && /Mia/.test(cc), true);
     as('trk');
+    check('the tracker has no card at all (build 173)', card(), '');
+    as('hal');
 
     H.clock.advance(40 * 1000);
     check('how late it is shows on the card', /1:10 ago/.test(card()), true);
@@ -260,11 +266,11 @@ function sideline() {
     check('into the planned spot', openIn(g, 'p4').slot, 'sRB');
     check('Mia\'s minutes stop there', A.playedSec(g(), 'p2'), 670);
     check('and it says what it did', A.lastToast(), '1 sub made at 11:10');
-    check('who tapped is kept', g().planDone.s600.byName, 'Tess');
+    check('who tapped is kept', g().planDone.s600.byName, 'Hal');
     check('the match log has it', A.subEvents(g()).some(r => r.on === 'p4' && r.off === 'p2' && r.t === 670), true);
-    const log = () => { const h = html(); return h.slice(h.indexOf('id="matchlog"')); };
+    const log = trackLog;
     check('and the tap itself, as the planned change it was', /<b>Planned subs made<\/b> <span class="muted">\(10:00 · 1st half\)/.test(log()), true);
-    check('with who tapped it', /1st half\)<\/span> <span class="muted">· Tess/.test(log()), true);
+    check('with who tapped it', /1st half\)<\/span> <span class="muted">· Hal/.test(log()), true);
     check('above the sub it made', log().indexOf('Planned subs') < log().indexOf('Jo'), true);
     check('the card waits for half-time', A.subsDue(g()).kind + ':' + A.subsDue(g()).b.start, 'wait:2400');
 
@@ -357,8 +363,7 @@ function sideline() {
     A.click({ act: 'subsskip', start: '3000' });
     check('skipping moves nobody', on(g), ['p2', 'p4', 'p5', 'p6']);
     check('and says so', /nobody was moved/.test(A.lastToast()), true);
-    A.ui.gameView = 'track';
-    const skipLog = () => { const h = html(); return h.slice(h.indexOf('id="matchlog"')); };
+    const skipLog = trackLog;
     check('a skip is in the log, since it made no subs to show', /<b>Planned subs skipped<\/b> <span class="muted">\(50:00 · 2nd half\)/.test(skipLog()), true);
     check('at the minute it was tapped', g().planDone.s3000.t, A.elapsedSec(g()));
     check('that was the last one', A.subsDue(g()).kind, 'over');
@@ -381,19 +386,25 @@ function sideline() {
     as('trk2');
     A.click({ act: 'subsgo', start: '0' });
     check('nor can another team\'s tracker', on(g), []);
+    as('trk');
+    A.click({ act: 'subsgo', start: '0' });
+    check('nor the team\'s own tracker, since build 173: she is on the ball', on(g), []);
+    check('and has no card', card(), '');
     as('nobody');
     A.click({ act: 'subsgo', start: '0' });
     check('nor a signed-in stranger', on(g), []);
 
     as('jaz');
     A.click({ act: 'planunlock' });
-    as('trk');
+    as('hal');
     check('an unlocked plan is not followed', A.subsDue(g()), null);
     A.click({ act: 'subsgo', start: '0' });
-    check('and a tracker cannot act on it', on(g), []);
-    check('the tracker is told there is no plan yet', /No sub plan is locked in/.test(card()), true);
-    as('jaz'); A.ui.gameView = 'track';
-    check('the coach is told to lock it in', /Lock in your plan/.test(card()), true);
+    check('and the helper cannot act on it', on(g), []);
+    check('her Lineup has no card for it (its Lock in card says what to do)', card(), '');
+    as('jaz'); A.ui.gameView = 'subs';
+    check('the coach is told to lock it in, on Subs', /Lock in your plan/.test(card()), true);
+    A.ui.gameView = 'track';
+    check('— and nothing on Track', card(), '');
   }
 
   console.log('\n--- the clock on the Track tab ---');
@@ -470,8 +481,10 @@ function sideline() {
       'Going on:\n- Jo (9) at RB, for Mia (8)\n- Rosa (4) at ST, for Lou (11)\nComing off: Mia (8), Lou (11)');
     const due = card();
     check('the coach\'s card carries the calls', /for Mia \(8\)/.test(due) && /Tell the bench/.test(due), true);
+    as('hal');
+    check('the helper\'s card carries the same calls', /for Mia \(8\)/.test(card()) && /Tell the bench/.test(card()), true);
     as('trk');
-    check('the tracker\'s card still names nobody', named(card()), []);
+    check('the tracker has no card', card(), '');
 
     let copied = null;
     // Node 22 has a navigator of its own that an assignment cannot replace
@@ -484,6 +497,13 @@ function sideline() {
     check('a tracker cannot open the bench calls', sheet(), '');
     A.click({ act: 'benchall' });
     check('nor the bench sheet', sheet(), '');
+    as('hal');
+    A.click({ act: 'bench', start: '600' });
+    check('the helper can (build 173)', /Tell the bench/.test(sheet()) && /Jo \(9\)/.test(sheet()), true);
+    A.click({ act: 'benchcopy' });
+    check('— and copies it', copied && copied.split('\n')[0], 'Subs at 10:00 of the 1st half — v Riverside');
+    copied = null;
+    A.dom.node('#sheet').innerHTML = '';
 
     as('jaz');
     A.click({ act: 'bench', start: '600' });
@@ -512,12 +532,16 @@ function sideline() {
   {
     const g = setup();
     let h = html();
-    check('the Track tab shows the card', /id="subsdue"/.test(h), true);
+    check('the helper\'s Lineup shows the card, names and all (build 173)', /id="subsdue"/.test(h) && /Sam/.test(h), true);
+    as('trk'); A.ui.gameView = 'track'; h = html();
+    check('Track shows no card: the tracker is on the ball', /id="subsdue"/.test(h), false);
     // the role card is Home's alone since build 148 (UX-REVIEW-2.md, 7.3): a tracker's Home is her team's Season
     A.ui.view = 'season';
-    check('the tracker\'s role card, on Season, mentions the planned subs', /planned subs/.test(html()), true);
-    check('— and is not over Track', (A.ui.view = 'game', /planned subs/.test(html())), false);
-    as('jaz'); A.ui.gameView = 'subs';
+    check('the tracker\'s role card, on Season, says the ball and the clock, not the subs', /log what happens and run the clock/.test(html()) && !/planned subs/.test(html()), true);
+    A.ui.view = 'game';
+    as('jaz'); A.ui.gameView = 'track';
+    check('the coach\'s Track has no card either', /id="subsdue"/.test(html()), false);
+    A.ui.gameView = 'subs';
     h = html();
     check('the Subs tab shows it to the coach', /id="subsdue"/.test(h) && /Sam/.test(h), true);
     A.ui.gameView = 'plan';
@@ -525,7 +549,14 @@ function sideline() {
     A.click({ act: 'subsgo', start: '0' });
     startHalf(g, 1);
     H.clock.advance(10.5 * MIN);
-    check('and mid-game says the same thing is due as Track', /Subs due now/.test(html()), true);
+    check('and mid-game says the same thing is due as Subs', /Subs due now/.test(html()), true);
+    as('hal');
+    check('— and the helper\'s Lineup', /Subs due now/.test(html()), true);
+    A.click({ act: 'subsgo', start: '600' });
+    check('her tap makes the sub', on(g), ['p1', 'p3', 'p4', 'p5']);
+    A.click({ act: 'subsundo', key: 's600' });
+    check('and takes it back', on(g), ['p1', 'p2', 'p3', 'p5']);
+    as('jaz'); A.ui.gameView = 'plan';
     g().plan.blocks = [{ start: 0, ids: ['p5', 'p1', 'p2', 'p3'] }];   // the auto planner with no shape
     g().formation = null; g().periods = {}; g().stints = {}; g().positions = {}; delete g().planDone;
     A.click({ act: 'subsgo', start: '0' });

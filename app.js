@@ -11,7 +11,7 @@ const BUILT = '2026-10-14';
    never pasted look exactly like a coach with no signal: "saved on this phone
    only", one feature at a time. test/rules.js holds the two numbers together
    and fails when the rules change without this going up. */
-const RULES_VERSION = 32;
+const RULES_VERSION = 33;
 /* index.html carries the build it was published with. If this file is newer, the
    browser handed us a cached page — the exact failure that has eaten hours. */
 const pageBuild = () => {
@@ -6675,16 +6675,21 @@ function snapLabel(m, sec) {
 
 /* ---------------- planned subs, at the sideline ----------------
    A locked-in plan is what the sideline follows. The coach draws it at the
-   kitchen table; whoever tracks the game — often a parent — gets told when each
-   change is due and taps once when the referee actually lets the subs on. The
-   tracker is told when, never who: the plan is the coach's, and a parent reading
-   the whole afternoon's lineups before kick-off is not what locking it in is for.
+   kitchen table; at the game the bench, the coach on Subs and her team's
+   helper on Lineup, is told when each change is due and taps once when the
+   referee actually lets the subs on. Until build 173 that card was the
+   tracker's, on Track, told when and never who; the owner (2026-10-18) moved
+   it to the coach's page so the helper can help with the subs and the tracker
+   stays on the ball. Everyone who has the card now sees the names: they are
+   staff, and the plan is theirs to carry out.
 
    The lock lives inside the plan (plan/locked), so any rewrite of the plan —
    an edit, a redraft — unlocks it: a changed plan is not the one that was locked
-   in. What has been done lives beside it (planDone), because the tracker writes
+   in. What has been done lives beside it (planDone), because the helper writes
    it mid-game and a whole-plan write from the coach must never be able to
-   clobber it. Keys are 's' + start: a node keyed by small integers comes back
+   clobber it; the rules (version 33) let a helper write a stint, a position and
+   a done-mark of a game whose plan is locked, and nothing else once it has
+   kicked off. Keys are 's' + start: a node keyed by small integers comes back
    from the database as an array. */
 const SUB_LEAD = 180;          // how long before a planned change "coming up" opens, in seconds
 const SUB_UNDO_MS = 120000;    // how long a mis-tap can be taken back from the card
@@ -7235,8 +7240,8 @@ function roleCardDone(lim) {
 /* One sentence per role, the same on the card and in the account sheet. */
 function roleWords(lim) {
   if (!lim) return '';
-  if (lim === 'tracker') return 'You track this team: you log what happens and make the coach\u2019s planned subs when they are due. The clock and other subs are the coach\u2019s.';
-  if (lim === 'helper') return 'You help this team: the calendar, the register, the lineup before kick-off and notices. The clock and the subs are the coach\u2019s.';
+  if (lim === 'tracker') return 'You track this team: you log what happens and run the clock. The subs are the coach\u2019s, and the planned ones her helper\u2019s too.';
+  if (lim === 'helper') return 'You help this team: the calendar, the register, the lineup before kick-off, notices, and the planned subs when they are due. The clock is Track\u2019s; other subs are the coach\u2019s.';
   if (lim === 'parent') return 'You are a parent here: you see your own child by name, say whether your child is coming, and message the coaches.';
   if (lim === 'player') return 'You are signed in as a player: you see your team, and say whether you are coming.';
   if (lim === 'fan') return 'You follow the calendar, the games and the notices. The family answers and talks to the coaches.';
@@ -8430,7 +8435,6 @@ function viewTrack() {
 
   return `<div class="stack">
     ${clockCard(m, now, mayAct('start', m))}
-    ${subsCard(t, m, now)}
     ${scoreCard(t, m)}
     ${shotsCard}
     ${setCard}
@@ -9551,7 +9555,11 @@ function subsClock(m, b, u) {
 /* The one change to who is on the pitch a tracker may make: the coach decided
    it and locked it in, and the tracker only says when it happened. Anyone who
    may edit the team may too, which is the coach at the sideline. */
-const canCallSubs = m => !!m && (canEditTeam(m.teamId) || (restricted() === 'tracker' && m.teamId === ui.teamId));
+/* Who makes the planned subs: the team's coaches and the admins, and since
+   build 173 its helper (the owner, 2026-10-18: the subs card moves off Track
+   onto the coach's page so the helper can help with that and the tracker is
+   focused on the ball). A tracker has none of it now, and sees no card. */
+const canCallSubs = m => !!m && (canEditTeam(m.teamId) || !!(me && isHelper(m.teamId, me.uid)));
 
 /* The locked-in plan at the sideline: when the next change is due, a louder card
    when it is, and one button for the moment the referee lets the subs on. The
@@ -9562,29 +9570,24 @@ const canCallSubs = m => !!m && (canEditTeam(m.teamId) || (restricted() === 'tra
 function subsCard(t, m, now) {
   // a parent, or a coach reading another team's game, has nothing to call
   if (!canCallSubs(m)) return '';
-  const reveal = !restricted();
   const s = subsDue(m, now);
   if (!s) {
     if (m.ended) return '';
-    if (!reveal) return `<div class="card subscard" id="subsdue" data-k="none"><h2>Planned subs</h2>
-      <p class="muted" style="margin:6px 0 0">No sub plan is locked in for this game. Once the coach locks one in, this card says when each change is due and makes it with one tap.</p></div>`;
     /* The coach's heads-up (the owner, 2026-10-18): where the card will say
-       subs are coming up and due, said on Subs and its pitch as well as Track
-       before there is anything to count, so she locks the plan in rather than
-       finding the tracker's phone saying more than hers. Until build 173 it
-       was said on Track alone, and only once there was a plan. */
-    if (!['track', 'subs', 'pitch'].includes(ui.gameView)) return '';
+       subs are coming up and due, said on Subs and its pitch before there is
+       anything to count, so she locks the plan in. Lineup has its own Lock in
+       card for that, so the helper is not told twice. */
+    if (!['subs', 'pitch'].includes(ui.gameView)) return '';
     if (planBlocks(m).length) return `<div class="card subscard" id="subsdue" data-k="none"><div class="spread"><h2>Planned subs</h2>
           <button class="btn quiet sm" data-act="opengview" data-v="plan">Open the plan</button></div>
-          <p class="muted" style="margin:6px 0 0">Lock in your plan and this card counts down to each change, says when subs are due, and makes them with one tap — for whoever is tracking, too, without showing them who.</p></div>`;
-    return ui.gameView === 'track' ? ''
-      : `<div class="card subscard" id="subsdue" data-k="none"><div class="spread"><h2>Planned subs</h2>
+          <p class="muted" style="margin:6px 0 0">Lock in your plan and this card counts down to each change, says when subs are due, and makes them with one tap — here, and on your helper\u2019s Lineup.</p></div>`;
+    return `<div class="card subscard" id="subsdue" data-k="none"><div class="spread"><h2>Planned subs</h2>
           <button class="btn quiet sm" data-act="opengview" data-v="plan">Open Lineup</button></div>
           <p class="muted" style="margin:6px 0 0">Plan the game on Lineup and lock it in: this card then counts down to each change and says when subs are due.</p></div>`;
   }
-  // the coach gets the calls to make at the bench; a tracker gets none of it
-  const names = b => reveal ? `<div class="subsbench">${benchHtml(t, m, benchCalls(m, benchFrom(m, b), b), squad(t, m).map(p => p.id))}
-      <button class="btn quiet sm" data-act="bench" data-start="${b.start}" style="margin-top:8px">Tell the bench</button></div>` : '';
+  // the calls to make at the bench, by name: whoever has this card is staff
+  const names = b => `<div class="subsbench">${benchHtml(t, m, benchCalls(m, benchFrom(m, b), b), squad(t, m).map(p => p.id))}
+      <button class="btn quiet sm" data-act="bench" data-start="${b.start}" style="margin-top:8px">Tell the bench</button></div>`;
   const howMany = (b, d) => {
     if (!b.start) return `${(b.ids || []).length} players`;
     const n = Math.max(d.on.length, d.off.length), mv = d.moved.length;
@@ -9605,7 +9608,7 @@ function subsCard(t, m, now) {
       <p class="subsline">${ko ? 'From the plan' : 'Planned ' + esc(subsWhen(m, b))} · ${howMany(b, s.diff)}</p>
       ${names(b)}
       <button class="btn wide subsgo" data-act="subsgo" data-start="${b.start}">${ko ? 'Starters are on' : 'Subs are on'}</button>
-      <div class="spread" style="margin-top:8px"><span class="muted">${ko ? 'Tap once the starters are on the pitch.' : `Tap when the referee lets them on — ${reveal ? 'every change in the snapshot is made' : "the coach's planned subs are made for you"} at that minute.`}</span>
+      <div class="spread" style="margin-top:8px"><span class="muted">${ko ? 'Tap once the starters are on the pitch.' : `Tap when the referee lets them on — every change in the snapshot is made at that minute.`}</span>
         <button class="btn quiet sm" data-act="subsskip" data-start="${b.start}" style="flex:none">Not now</button></div></div>`;
   }
   if (s.kind === 'wait') {
@@ -9666,10 +9669,12 @@ function viewPlan() {
   const shape = (m.formation && m.formation.slots) || [];
   const locked = planLocked(m);
 
-  // once locked in, the sideline card is the one answer to "what is due" on every tab
-  const next = !blocks.length || el <= 0 ? ''
+  /* Once locked in, the sideline card is the one answer to "what is due",
+     here as on Subs, and before kick-off too (the starting lineup): Lineup
+     is where the team's helper makes the planned subs (build 173). */
+  const next = !blocks.length ? ''
     : locked ? subsCard(t, m, nowMs())
-      : `<div class="card"><h2 style="margin-bottom:10px">Next change</h2>${nextChange(m, el, name)}</div>`;
+      : el <= 0 ? '' : `<div class="card"><h2 style="margin-bottom:10px">Next change</h2>${nextChange(m, el, name)}</div>`;
 
   let lockCard = '';
   if (blocks.length && canGameEdit(m)) {
@@ -9685,12 +9690,12 @@ function viewPlan() {
       lockCard = `<div class="lockbar" data-state="${sv}">
         <div class="spread"><b>${sv === 'refused' ? '!' : '✓'} Plan locked in</b><span class="lockwhen">${esc(at)}${l.byName ? ' · ' + esc(l.byName) : ''}</span></div>
         <p class="lockmsg">${msg}</p>
-        <p class="lockmsg">Whoever tracks this game gets a countdown to each change and one button to make it — told when, never who.</p>
+        <p class="lockmsg">Subs, and your helper\u2019s Lineup, count down to each change with one button to make it.</p>
         <div class="row"><button class="btn sm" data-act="benchall">Bench sheet</button>
           <button class="btn quiet sm" data-act="planunlock">Unlock to change</button></div></div>`;
     } else {
       lockCard = `<div class="card"><div class="spread" style="align-items:flex-start"><div><h2>Happy with it?</h2>
-        <p class="muted" style="margin:4px 0 0">Lock it in. Nothing changes by accident, and whoever tracks the game is told when each change is due.</p></div>
+        <p class="muted" style="margin:4px 0 0">Lock it in. Nothing changes by accident, and Subs and your helper\u2019s Lineup count down to each change.</p></div>
         <button class="btn" data-act="planlock" style="flex:none">Lock in</button></div></div>`;
     }
   }
@@ -24917,12 +24922,12 @@ function onAct(e) {
   /* What to tell the bench names every player in the plan, so it is the coach's
      like the Plan tab is — checked here, not only by the button's absence. */
   if (a === 'bench' || a === 'benchall') {
-    if (!m || restricted()) return;
+    if (!m || !canCallSubs(m)) return;
     if (a === 'bench') sheetBench(t, m, d.start); else sheetBenchAll(t, m);
     return;
   }
   if (a === 'benchcopy') {
-    if (restricted() || !benchCopy) return;
+    if (!m || !canCallSubs(m) || !benchCopy) return;
     try { navigator.clipboard.writeText(benchCopy).then(() => toast('Copied — paste it into a message'), () => toast('Could not copy — select it by hand')); }
     catch (e) { toast('Could not copy — select it by hand'); }
     return;

@@ -2857,6 +2857,25 @@ reads('nor read', COACH, 'shareOwners/sh1', false);
     w('— nor a goal', OH, O + 'matches/g1/goals/x', { at: NOW }, false);
     w('— nor deleting it', OH, O + 'matches/g1', null, false);
     w('the tracker still logs it', OT, O + 'matches/g1/goals/x', { at: NOW }, true);
+    /* The owner, 2026-10-18 (build 173, rules version 33): the planned subs
+       are the helper's to make once the coach has locked the plan in, so she
+       writes what that one tap writes, a stint, a position, the done-mark,
+       and nothing else of a live game. */
+    ORGC.matches.g1.plan = { blocks: { b1: { at: 0 } }, locked: { at: NOW, by: 'oc' } };
+    w('with a locked plan she makes a planned sub: a stint', OH, O + 'matches/g1/stints/s9', { pid: 'p1', on: 600, slot: 'sRB' }, true);
+    w('— closes one', OH, O + 'matches/g1/stints/s9/off', 700, true);
+    w('— a position', OH, O + 'matches/g1/positions/p1', { x: 50, y: 40 }, true);
+    w('— takes one off', OH, O + 'matches/g1/positions/p1', null, true);
+    w('— and marks the change done', OH, O + 'matches/g1/planDone/s600', { t: 600, at: NOW, by: 'oh' }, true);
+    w('— still not a goal', OH, O + 'matches/g1/goals/x', { at: NOW }, false);
+    w('— nor the clock', OH, O + 'matches/g1/periods/1', { start: NOW }, false);
+    w('— nor the plan', OH, O + 'matches/g1/plan/locked', null, false);
+    w('— nor the stints whole', OH, O + 'matches/g1/stints', { s9: { pid: 'p1', on: 600 } }, false);
+    w('another team\'s helper never', { uid: 'oh2' }, O + 'matches/g1/stints/s9', { pid: 'p1', on: 600 }, false);
+    delete ORGC.matches.g1.plan.locked;
+    w('with the plan unlocked, no stint', OH, O + 'matches/g1/stints/s9', { pid: 'p1', on: 600 }, false);
+    w('— nor a done-mark', OH, O + 'matches/g1/planDone/s600', { t: 600 }, false);
+    delete ORGC.matches.g1.plan;
     delete ORGC.matches.g1.periods;
     ORGC.matches.g1.ended = true;
     w('nor once it is over', OH, O + 'matches/g1/plan', { blocks: {} }, false);
