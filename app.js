@@ -7375,7 +7375,9 @@ function render() {
      game ending, brings the frame back and gives the browser its chrome. */
   const fullTrack = !shut && inGame && openM && ui.gameView === 'track' && !!ui.trackFull;
   if (ui.trackFull && !fullTrack) leaveFullScreen();
-  if (document.body && document.body.dataset) document.body.dataset.full = fullTrack ? 'track' : '';
+  /* Set, or taken off entirely: an attribute left as "" still matches a bare
+     [data-full] selector, which is how build 173 lost every screen its bars. */
+  if (document.body && document.body.dataset) { if (fullTrack) document.body.dataset.full = 'track'; else delete document.body.dataset.full; }
   // two stacked rows of tabs read as a mistake; show whichever one applies, and one tab alone (a parent's Season) is no row at all
   const tabsOn = [...document.querySelectorAll('#tabs button')].filter(b => !b.hidden).length;
   const tb = $('#tabs'); if (tb) tb.hidden = shut || !!(inGame && openM) || !teamLevel || !team() || tabsOn < 2;
