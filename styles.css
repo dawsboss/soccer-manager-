@@ -1455,8 +1455,10 @@ label.field .auth-inline span{display:inline}
    and the tally rows share what the clock, the score and the subs card leave,
    so a button grows to the room there is. Two columns of rows once the
    screen is wider than tall: a phone on its side, a laptop, a monitor. */
-body[data-full] .topbar,body[data-full] .tabbar{display:none}
-body[data-full] main{padding:6px 8px calc(6px + env(safe-area-inset-bottom));max-width:1100px}
+/* By value, never by presence: [data-full] alone matched the empty attribute
+   render() left behind off Track and hid the bars on every screen (build 174). */
+body[data-full="track"] .topbar,body[data-full="track"] .tabbar{display:none}
+body[data-full="track"] main{padding:6px 8px calc(6px + env(safe-area-inset-bottom));max-width:1100px}
 .fs{display:flex;flex-direction:column;gap:6px;min-height:calc(100vh - 12px - env(safe-area-inset-bottom));min-height:calc(100dvh - 12px - env(safe-area-inset-bottom))}
 .fshead{background:var(--field-deep);color:#fff;border-radius:var(--r);padding:6px 10px 8px}
 .fsclockrow{display:flex;align-items:center;gap:10px}

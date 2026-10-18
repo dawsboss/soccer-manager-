@@ -621,6 +621,7 @@ console.log('\n--- game mode (UX-REVIEW.md, 1.3) ---');
 console.log('\n--- Track, full screen (build 173) ---');
 {
   const full = () => String((global.document.body.dataset || {}).full || '');
+  const fullAttr = () => 'full' in (global.document.body.dataset || {});
   const live = () => { A.state.matches.g2.periods = { 0: { half: 1, start: H.clock.t - 5 * MIN } }; };
   const btns = () => [...A.rendered().matchAll(/<button class="tallybtn" data-act="(\w+)"(?: data-kind="(\w+)")? data-side="(\w+)"(?: data-on="(\d)")?/g)].map(m => m[1] + (m[2] || m[4] || '') + ':' + m[3]).join(' ');
   const goalBtns = () => (A.rendered().match(/data-act="goal" data-side="(?:us|them)"/g) || []).length;
@@ -664,6 +665,11 @@ console.log('\n--- Track, full screen (build 173) ---');
   // out again, three ways
   A.click({ act: 'trackexit' });
   check('Exit: the frame is back, Track as it was', full() + ' ' + /class="fs"/.test(A.rendered()) + ' ' + /data-act="trackfull"/.test(A.rendered()), ' false true');
+  check('— the attribute taken off the body, not left empty: a bare [data-full] rule hid every screen\'s bars in build 173', fullAttr(), false);
+  {
+    const css = fs.readFileSync(path.join(__dirname, '..', 'styles.css'), 'utf8');
+    check('— and the CSS keys on its value, never its presence', /body\[data-full\]/.test(css) + ' ' + /body\[data-full="track"\] \.topbar,body\[data-full="track"\] \.tabbar\{display:none\}/.test(css), 'false true');
+  }
   A.click({ act: 'trackfull' });
   A.click({ act: 'opengview', v: 'subs' });
   check('leaving Track by a segment ends it, and coming back is not full screen', full() + ' ' + A.ui.gameView + ' ' + !!A.ui.trackFull, ' subs false');
@@ -687,7 +693,7 @@ console.log('\n--- Track, full screen (build 173) ---');
   A.click({ act: 'trackfull' });
   check('a parent is not on Track, and her tap does nothing', A.ui.gameView + ' ' + full() + ' ' + !!A.ui.trackFull, 'live  false');
   as('jaz', 'season');
-  check('off the game, nothing of it', full(), '');
+  check('off the game, nothing of it', full() + ' ' + fullAttr(), ' false');
 }
 
 console.log('\n--- no child\'s name in the chrome ---');
