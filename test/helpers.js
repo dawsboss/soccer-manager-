@@ -3,7 +3,7 @@
    register, notices, practice plans, the drill shelves and a game's plan
    before kick-off) and does nothing on the day. She does not change the
    squad, read the coach's notes or any family's conversation, and the clock
-   and her own subs stay Track's and the coach's. Since build 173 (the owner,
+   and her own subs stay Track's and the coach's. Since build 174 (the owner,
    2026-10-18) the planned subs are hers to make: once the coach has locked
    the plan in, her Lineup carries the sideline card and its one tap.
 
@@ -97,7 +97,7 @@ console.log('\n--- the game screens ---');
   check('— with Edit game on it', /data-act="editmatch"/.test(A.rendered()), true);
 }
 
-console.log('\n--- the planned subs are hers to make (the owner, 2026-10-18; build 173) ---');
+console.log('\n--- the planned subs are hers to make (the owner, 2026-10-18; build 174) ---');
 {
   as('hal');
   const g = A.state.matches.g1;

@@ -2857,7 +2857,7 @@ reads('nor read', COACH, 'shareOwners/sh1', false);
     w('— nor a goal', OH, O + 'matches/g1/goals/x', { at: NOW }, false);
     w('— nor deleting it', OH, O + 'matches/g1', null, false);
     w('the tracker still logs it', OT, O + 'matches/g1/goals/x', { at: NOW }, true);
-    /* The owner, 2026-10-18 (build 173, rules version 33): the planned subs
+    /* The owner, 2026-10-18 (build 174, rules version 33): the planned subs
        are the helper's to make once the coach has locked the plan in, so she
        writes what that one tap writes, a stint, a position, the done-mark,
        and nothing else of a live game. */
