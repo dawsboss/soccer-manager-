@@ -2208,7 +2208,7 @@ const COACH_ACTS = new Set([
   'addslot', 'saveslot', 'delslot', 'makeshare', 'rotateshare', 'republish',
   // running the game: clock, subs, lineup, plan
   'tap', 'taplive', 'puton', 'doswitch', 'stageadd', 'startplan', 'applyplan', 'applyblock', 'fillslot',
-  'clocksheet', 'start', 'pause', 'endhalf', 'endgame', 'reopengame', 'restartgame', 'fixclock', 'nudgeclock',
+  'reopengame', 'restartgame',
   'fixsub', 'nudgesub', 'setsubtime', 'addsub', 'doaddsub', 'fixminutes', 'addstint', 'delstint', 'savestints',
   'repair', 'makeplan', 'planall', 'saveplan', 'evensplit', 'availability', 'toggleavail', 'toggleout',
   'editgameshape', 'gameshapepreset', 'planlock', 'planunlock',
@@ -2228,6 +2228,12 @@ const HELPER_GAME_ACTS = new Set(['newmatch', 'editmatch', 'savematch', 'delmatc
 const LOG_ACTS = new Set([
   'goal', 'savegoal', 'delgoal', 'shot', 'saveshot', 'delshot', 'ev', 'saveev', 'delev',
   'poss', 'saveposs', 'delposs', 'undoposs', 'trackerclean', 'dropby',
+  /* The clock is Track's (the owner, 2026-10-18: Track runs the clock, not the
+     coach): whoever tracks the game starts, pauses and ends the halves and the
+     game, and nudges it, as the rules already allowed (a tracker writes the
+     match but its date, kick-off, place and opponent). Starting a game over
+     at 0:00 and reopening an ended one stay the coach's. */
+  'start', 'pause', 'endhalf', 'endgame', 'fixclock', 'nudgeclock',
   /* opening a goal's or a shot's editor: Save and Delete were refused, but a
      parent could open a working-looking editor from Stats first (UX-REVIEW-3.md, 16.5) */
   'fixgoal', 'fixshot'
@@ -8088,15 +8094,33 @@ function viewGames() {
 function gameHeader(t, m) {
   const st = gameStatus(m);
   const upLabel = gameBackLabel();
-  // the clock while it is being played, full time after; before, nothing: the date under the names says when
-  const when = st === 'live' ? `<span class="ghclock" data-live="clock" data-mid="${m.id}">${mmss(elapsedSec(m))}</span>`
-    : st === 'done' ? '<span class="ghclock ghft" title="Full time">FT</span>' : '';
+  /* The one clock, top right, on every one of a game's screens (the owner,
+     2026-10-18): ticking while it is played, FT after, and before kick-off
+     Not started or the last hour counted down (headClock()). Until build 173
+     the pill was drawn only while the game was being played. A game called
+     off has no clock; the line under the names says Postponed. */
+  const when = st === 'upcoming' && CALLED[m.called] ? ''
+    : `<span class="ghclock${st === 'done' ? ' ghft' : ''}" data-live="ghead" data-mid="${m.id}"${st === 'done' ? ' title="Full time"' : ''}>${headClock(m)}</span>`;
   return `<button class="tbback" data-act="backgames" aria-label="${upLabel}" title="${upLabel}">${BACK_SVG}</button>
     <button class="ghmain" data-act="pickgame" aria-label="Which game" title="Which game">
       <span class="ghname">${gameTitle(t, m)}</span><span class="ghwhen">${esc((st === 'upcoming' && CALLED[m.called] ? CALLED[m.called] + ' · ' : '') + gameWhen(m))}</span></button>
     ${when}
     <button class="sync ghsync" id="gsync" type="button" data-act="pendingsheet" hidden></button>
     <button class="tbback ghmore" data-act="gamemenu" aria-label="More for this game" title="More for this game">${DOTS_SVG}</button>`;
+}
+/* What the header's clock says. Live it ticks; over, FT; before kick-off it
+   says so, or counts the last hour down to kick-off (a date and a time on the
+   game, slotAt(); a game with no time says Not started). Redrawn by
+   tickLive() every second whether or not the clock is running, which is what
+   makes the countdown move. Words are set small inside the pill; the digits
+   keep its size. */
+function headClock(m, now = nowMs()) {
+  const st = gameStatus(m);
+  if (st === 'done') return 'FT';
+  if (st === 'live') return mmss(elapsedSec(m, now));
+  const ko = m.date && m.kickoff ? slotAt(m.date, m.kickoff) : 0;
+  if (ko && ko > now && ko - now <= 3600e3) return `<small>Kick-off in</small> ${mmss(Math.ceil((ko - now) / 1000))}`;
+  return '<small>Not started</small>';
 }
 /* The ⋯ menu: the game's place in the season (the first game played is 1, so
    the latest is n of n and a game's number never changes as more are added),
@@ -8203,7 +8227,7 @@ function clockCard(m, now, controls) {
       ${controls ? `<div class="clockbtns">
         <span class="pill live" style="align-self:center">Ended · ready for stats</span>
       </div>
-      <button class="linkbtn" data-act="reopengame">Ended by mistake?</button>`
+      ${canEditTeam(m.teamId) ? '<button class="linkbtn" data-act="reopengame">Ended by mistake?</button>' : ''}`
         : `<p class="clocknote">Game ended.</p>`}</div>`;
   }
   return `<div class="clockwrap">
@@ -8218,7 +8242,7 @@ function clockCard(m, now, controls) {
     </div>
     ${el || running(m) ? `<button class="btn quiet wide" data-act="endgame" style="margin-top:8px">End game</button>` : ''}
     <button class="linkbtn" data-act="fixclock">Clock reading wrong?</button>`
-      : `<p class="clocknote">${running(m) ? 'Running' : el ? 'Paused' : 'Not started'} — the coach runs the clock.</p>`}</div>`;
+      : `<p class="clocknote">${running(m) ? 'Running' : el ? 'Paused' : 'Not started'} — whoever tracks the game runs the clock.</p>`}</div>`;
 }
 
 function scoreCard(t, m) {
@@ -8231,40 +8255,6 @@ function scoreCard(t, m) {
       <button class="btn quiet sm" data-act="goal" data-side="them">Goal</button></div>
   </div>`;
 }
-
-/* Subs leads with the subbing (the owner, 2026-10-18). Its clock is one line:
-   the half and how far it has gone, with the one or two buttons the whistle
-   needs there and then (Start clock; Pause or Resume, and End half; End game
-   once the last period is over), and the rest of the card, the big digits,
-   End game whenever, Clock reading wrong?, behind a tap on it (sheetClock).
-   Measured before: the card was 238px at the top of a 2,269px screen whose
-   bench began at 1,650px, under a header that already carries the running
-   clock. Track keeps the card: it is the tracker's anchor, and the coach who
-   hands Track over still starts the clock from there (test/subs.js). */
-function clockStrip(m, now) {
-  if (m.ended) return clockCard(m, now, true);
-  const el = elapsedSec(m, now), n = m.currentHalf || 1, c = m.periodCount || 2;
-  const unit = n > c ? 'extra time' : c === 2 ? 'half' : c === 4 ? 'quarter' : 'period';
-  // the last period ended and nothing started after it: End game is the next thing, Resume still there for extra time
-  const over = n > c && !running(m);
-  const btns = running(m)
-    ? `<button class="btn sm" data-act="pause">Pause</button><button class="btn quiet sm" data-act="endhalf">End ${unit}</button>`
-    : over ? `<button class="btn quiet sm" data-act="start">Resume</button><button class="btn sm" data-act="endgame">End game</button>`
-      : `<button class="btn sm" data-act="start">${el ? 'Resume' : 'Start clock'}</button>${el ? `<button class="btn quiet sm" data-act="endhalf">End ${unit}</button>` : ''}`;
-  return `<div class="clockstrip">
-    <button class="clockstripmain" type="button" data-act="clocksheet" aria-label="The clock: pause it, end the half or the game, or fix it">
-      <b>${esc(halfName(m, n))}</b><span class="stripclock" data-halfclock="1">${mmss(halfSec(m, now))}</span><span class="stripof">of ${m.periodMinutes || 40}:00</span></button>
-    <span class="row">${btns}</span></div>`;
-}
-/* The clock's whole card as a sheet off the strip, redrawn after each clock
-   action while it is open so its buttons follow the state, and closed with
-   the game. Coaches and admins only, as the card's buttons are. */
-function sheetClock() {
-  const m = match();
-  if (!m || !canEditTeam(m.teamId)) return;
-  openSheet(`<div data-sheet="clock"><h3>The clock</h3>${clockCard(m, nowMs(), true)}</div>`);
-}
-const clockSheetOpen = () => { const s = $('#sheet'); return !!s && !s.hidden && String(s.innerHTML || '').includes('data-sheet="clock"'); };
 
 /* The two Goal taps in one row (the owner, 2026-10-18): the score itself is
    in the game header, so Subs no longer spends a card on it. Track keeps the
@@ -8439,7 +8429,7 @@ function viewTrack() {
       <button class="btn quiet wide" data-act="trackerclean">Review by tracker</button></div>` : '';
 
   return `<div class="stack">
-    ${clockCard(m, now, !restricted())}
+    ${clockCard(m, now, mayAct('start', m))}
     ${subsCard(t, m, now)}
     ${scoreCard(t, m)}
     ${shotsCard}
@@ -9228,7 +9218,6 @@ function viewSubs() {
   const bench = roster.filter(p => !onField(m, p.id))
     .sort(byNumber ? num : (a, b) => (plannedSec(m, b.id) - playedSec(m, b.id, now)) - (plannedSec(m, a.id) - playedSec(m, a.id, now)));
 
-  const clock = clockStrip(m, now);
   /* Orange for the three furthest behind the pace of the game and only them,
      since that is who the coach is scanning for; every other row's number is
      plain (UX-REVIEW-2.md, 7.2: "9 short" in orange on eleven rows read as
@@ -9283,7 +9272,6 @@ function viewSubs() {
     ${planBlocks(m).length ? `<button class="btn quiet wide" data-act="applyblock" data-start="${(planBlockAt(m, el) || planBlocks(m)[0]).start}" style="margin-bottom:10px">Use the planned lineup</button>` : ''}` : '';
 
   return `<div class="stack">
-    ${clock}
     ${subsLooks()}
     ${subsCard(t, m, now)}
     ${scCard}
@@ -9380,7 +9368,6 @@ function viewMatch() {
     <div class="pitchhint">${ui.picked ? 'Tap a spot, a player to swap, or anywhere on the grass' : field.length ? 'Drag to move · tap to pick' : 'Tap a bench player, then tap where she starts'}</div>
   </div>`;
 
-  const clock = clockStrip(m, now);   // the same line as the list: the pitch is a look at Subs
 
   const benchRows = bench.map(p => playerRow(m, p, now, false)).join('') ||
     `<p class="muted" style="margin:2px 0">Everyone is on the pitch.</p>`;
@@ -9407,8 +9394,8 @@ function viewMatch() {
   const outCount = outIds(t, m).length;
 
   return `<div class="stack">
-    ${clock}
     ${subsLooks()}
+    ${subsCard(t, m, now)}
     ${warn}
     <div class="split">
       <div class="stack">
@@ -9581,12 +9568,19 @@ function subsCard(t, m, now) {
     if (m.ended) return '';
     if (!reveal) return `<div class="card subscard" id="subsdue" data-k="none"><h2>Planned subs</h2>
       <p class="muted" style="margin:6px 0 0">No sub plan is locked in for this game. Once the coach locks one in, this card says when each change is due and makes it with one tap.</p></div>`;
-    // only worth saying on Track: that is the tab a coach hands to somebody else
-    return ui.gameView === 'track' && planBlocks(m).length
-      ? `<div class="card subscard" id="subsdue" data-k="none"><div class="spread"><h2>Planned subs</h2>
+    /* The coach's heads-up (the owner, 2026-10-18): where the card will say
+       subs are coming up and due, said on Subs and its pitch as well as Track
+       before there is anything to count, so she locks the plan in rather than
+       finding the tracker's phone saying more than hers. Until build 173 it
+       was said on Track alone, and only once there was a plan. */
+    if (!['track', 'subs', 'pitch'].includes(ui.gameView)) return '';
+    if (planBlocks(m).length) return `<div class="card subscard" id="subsdue" data-k="none"><div class="spread"><h2>Planned subs</h2>
           <button class="btn quiet sm" data-act="opengview" data-v="plan">Open the plan</button></div>
-          <p class="muted" style="margin:6px 0 0">Lock in your plan and this card counts down to each change — for whoever is tracking, too, without showing them who.</p></div>`
-      : '';
+          <p class="muted" style="margin:6px 0 0">Lock in your plan and this card counts down to each change, says when subs are due, and makes them with one tap — for whoever is tracking, too, without showing them who.</p></div>`;
+    return ui.gameView === 'track' ? ''
+      : `<div class="card subscard" id="subsdue" data-k="none"><div class="spread"><h2>Planned subs</h2>
+          <button class="btn quiet sm" data-act="opengview" data-v="plan">Open Lineup</button></div>
+          <p class="muted" style="margin:6px 0 0">Plan the game on Lineup and lock it in: this card then counts down to each change and says when subs are due.</p></div>`;
   }
   // the coach gets the calls to make at the bench; a tracker gets none of it
   const names = b => reveal ? `<div class="subsbench">${benchHtml(t, m, benchCalls(m, benchFrom(m, b), b), squad(t, m).map(p => p.id))}
@@ -20187,6 +20181,7 @@ function liveReading(kind, d, now = nowMs()) {
   const ms = d.tid ? teamMatches(d.tid) : [];
   const season = f => ms.reduce((a, x) => a + f(x), 0);
   if (kind === 'clock') return m ? mmss(elapsedSec(m, now)) : null;
+  if (kind === 'ghead') return m ? headClock(m, now) : null;   // the game header's pill, every second
   if (kind === 'half') return m ? mmss(halfSec(m, now)) : null;
   if (kind === 'mine') { const t = m && state.teams[m.teamId], p = t && (t.players || {})[d.pid]; return p ? myGameLine(t, m, p, now) : null; }
   if (kind === 'gmins') return m ? String(mins(elapsedSec(m, now))) : null;
@@ -22495,10 +22490,10 @@ function sheetFixClock() {
       ${[5, 15, 60, 300].map(d => `<button class="chip" type="button" data-act="nudgeclock" data-d="${d}">+${d >= 60 ? d / 60 + 'm' : d + 's'}</button>`).join('')}
     </div>
     <button class="btn wide" data-act="closesheet">Done</button>
-    <hr style="border:0;border-top:1px solid var(--line);margin:18px 0">
+    ${canEditTeam(m.teamId) ? `<hr style="border:0;border-top:1px solid var(--line);margin:18px 0">
     <h3>Started too early?</h3>
     <p class="muted" style="margin-top:0">Puts the clock back to 0:00. The ${onNow} player${onNow === 1 ? '' : 's'} on the pitch stay${onNow === 1 ? 's' : ''} on and start${onNow === 1 ? 's' : ''} a fresh spell. Subs already logged and any goals are cleared, because their times belong to the old clock. Your roster, lineup, planned minutes and game plan are untouched.</p>
-    <button class="btn danger wide" data-act="restartgame">Start this game over at 0:00</button>`);
+    <button class="btn danger wide" data-act="restartgame">Start this game over at 0:00</button>` : ''}`);
 }
 
 function sheetFixSub(i) {
@@ -24653,15 +24648,12 @@ function onAct(e) {
     closeSheet(); return;
   }
   if (a === 'delgoal') { drop(`matches/${m.id}/goals/${d.id}`); closeSheet(); return; }
-  if (a === 'clocksheet') { sheetClock(); return; }
-  // from the clock sheet, the sheet is drawn again so its buttons follow the clock
-  if (a === 'start') { startClock(m); if (clockSheetOpen()) sheetClock(); return; }
-  if (a === 'pause') { pauseClock(m); if (clockSheetOpen()) sheetClock(); return; }
-  if (a === 'endhalf') { endHalf(m); if (clockSheetOpen()) sheetClock(); return; }
+  if (a === 'start') { startClock(m); return; }
+  if (a === 'pause') { pauseClock(m); return; }
+  if (a === 'endhalf') { endHalf(m); return; }
   if (a === 'endgame') {
     const msg = running(m) ? 'The clock is still running. End the game anyway?' : 'End this game? It will be marked ready for stats.';
     if (!confirm(msg)) return;
-    if (clockSheetOpen()) closeSheet();
     endGame(m); return;
   }
   if (a === 'reopengame') { drop(`matches/${m.id}/ended`); toast('Game reopened'); return; }

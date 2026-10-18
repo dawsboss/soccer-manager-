@@ -398,15 +398,18 @@ function sideline() {
 
   console.log('\n--- the clock on the Track tab ---');
   {
-    /* Track is where the coach is when she is logging a corner, so the clock is
-       there too. It is still the coach's: a tracker sees it run, and neither the
-       button nor the click reaches startClock(). */
+    /* Track is where the clock is run (the owner, 2026-10-18: Track runs the
+       clock, not the coach): the coach from Track, and the tracker she hands it
+       to as well, since build 173. A parent sees it run and neither the button
+       nor the click reaches startClock(). Starting over at 0:00 and Ended by
+       mistake? stay the coach's. */
     const g = setup();
     as('jaz'); A.ui.gameView = 'track';
     let h = html();
     check('the coach can start the clock from Track', /data-act="start"/.test(h), true);
     A.click({ act: 'start' });
     check('and it starts', A.running(g()), true);
+    H.clock.advance(MIN);
     h = html();
     check('then pause it', /data-act="pause"/.test(h), true);
     check('or end the half', /data-act="endhalf"/.test(h), true);
@@ -414,10 +417,27 @@ function sideline() {
     check('and pausing stops it', A.running(g()), false);
     as('trk'); A.ui.gameView = 'track';
     h = html();
-    check('a tracker sees no clock buttons', /data-act="(start|pause|endhalf|endgame)"/.test(h), false);
-    check('and is told who runs it', /the coach runs the clock/.test(h), true);
+    check('a tracker has the clock buttons too (build 173)', /data-act="start"/.test(h) && /data-act="endhalf"/.test(h) && /data-act="endgame"/.test(h) && /data-act="fixclock"/.test(h), true);
     A.click({ act: 'start' });
-    check('a tracker cannot start it by force', A.running(g()), false);
+    check('and starts it', A.running(g()), true);
+    A.click({ act: 'pause' });
+    check('and pauses it', A.running(g()), false);
+    A.click({ act: 'fixclock' });
+    check('her Clock reading wrong? nudges, and never starts the game over', /data-act="nudgeclock"/.test(String(A.dom.node('#sheet').innerHTML)) && !/data-act="restartgame"/.test(String(A.dom.node('#sheet').innerHTML)), true);
+    A.closeSheet();
+    as('mum'); A.ui.gameView = 'track';
+    h = html();
+    check('a parent sees no clock buttons', /data-act="(start|pause|endhalf|endgame)"/.test(h), false);
+    A.click({ act: 'start' });
+    check('and cannot start it by force', A.running(g()), false);
+    as('trk');
+    A.click({ act: 'endgame' });
+    check('the tracker ends the game', !!g().ended, true);
+    A.click({ act: 'reopengame' });
+    check('— and cannot reopen it: that stays the coach\'s', !!g().ended, true);
+    as('jaz');
+    A.click({ act: 'reopengame' });
+    check('the coach reopens it', !!g().ended, false);
   }
 
   console.log('\n--- what to tell the bench ---');
@@ -529,11 +549,13 @@ function sideline() {
     check('back again: still none', A.subEvents(g()).length + ':' + A.stintsOf(g(), 'p4').length, '0:0');
   }
 
-  console.log('\n--- Subs leads with the subbing: one line of clock, one row of goals, the other side in a sheet (build 173) ---');
+  console.log('\n--- Subs leads with the subbing: no clock controls, the clock in the header, one row of goals, the other side in a sheet (build 173) ---');
   {
-    /* The owner, 2026-10-18: Subs is the subbing page, so it does not need the
-       clock card, and a sub took a lot of scrolling. Measured on the rig's live
-       club with eleven on: the card was 238px, the bench began 1,650px down a
+    /* The owner, 2026-10-18: Subs is the subbing page and Track runs the clock,
+       so Subs has no clock controls at all; the one clock is the header's, top
+       right on every game screen, saying Not started or counting down to
+       kick-off before it runs. Measured before on the rig's live club with
+       eleven on: the clock card was 238px, the bench began 1,650px down a
        2,269px screen. */
     const sheet = () => String(A.dom.node('#sheet').innerHTML || '');
     const sheetOpen = () => !A.dom.node('#sheet').hidden;
@@ -541,32 +563,33 @@ function sideline() {
     g().plan = null;
     as('jaz'); A.ui.gameView = 'subs';
     let h = html();
-    check('before kick-off Subs has one clock line, not the card', /class="clockstrip"/.test(h) && !/class="clockwrap"/.test(h), true);
-    check('— with Start clock on it', /data-act="start">Start clock</.test(h), true);
-    check('— and neither End game nor Clock reading wrong? on the screen', /data-act="(endgame|fixclock)"/.test(h), false);
+    check('Subs has no clock card and no clock button of any kind', /clockwrap|clockstrip|data-act="(start|pause|endhalf|endgame|fixclock)"/.test(h), false);
     check('the score is in the header: Subs has the two Goal taps in one row and no score card', (h.match(/data-act="goal"/g) || []).length + ' ' + /scorecard/.test(h), '2 false');
-    A.click({ act: 'clocksheet' });
-    check('the clock line opens the whole card as a sheet', sheetOpen() && /class="clockwrap"/.test(sheet()) && /data-act="start"/.test(sheet()) && /data-act="fixclock"/.test(sheet()), true);
-    A.click({ act: 'start' });
-    check('starting from the sheet starts the clock', A.running(g()), true);
-    check('— and the sheet follows: Pause, End 1st half, End game', sheetOpen() && /data-act="pause"/.test(sheet()) && /data-act="endhalf"/.test(sheet()) && /data-act="endgame"/.test(sheet()), true);
-    A.closeSheet();
-    h = html();
-    check('running, the line offers Pause and End half', /data-act="pause">Pause</.test(h) && /data-act="endhalf">End half</.test(h), true);
-    check('— the half and how far it has gone, ticking by attribute', /<b>1st half<\/b>/.test(h) && /data-halfclock="1"/.test(h), true);
+    check('with no plan, the coach is told where the subs heads-up will come from', /id="subsdue"/.test(h) && /Plan the game on Lineup and lock it in/.test(h) && /data-act="opengview" data-v="plan">Open Lineup</.test(h), true);
     A.ui.gameView = 'pitch'; h = html();
-    check('the pitch, a look at Subs, has the same line', /class="clockstrip"/.test(h) && !/class="clockwrap"/.test(h), true);
+    check('the pitch, a look at Subs, has no clock controls either', /clockwrap|clockstrip|data-act="(start|pause|endhalf)"/.test(h), false);
+    check('— and the same heads-up', /id="subsdue"/.test(h), true);
     A.ui.gameView = 'track'; h = html();
-    check('Track keeps the whole card', /class="clockwrap"/.test(h) && /data-act="endgame"/.test(h) && /data-act="fixclock"/.test(h), true);
-    as('trk');
-    A.click({ act: 'clocksheet' });
-    check('a tracker cannot open the clock sheet', sheetOpen(), false);
+    check('Track keeps the whole clock card', /class="clockwrap"/.test(h) && /data-act="start"/.test(h) && /data-act="fixclock"/.test(h), true);
 
-    // the last period over: End game is the next thing on the line
-    as('jaz'); A.ui.gameView = 'subs';
-    H.clock.advance(40 * MIN); A.click({ act: 'endhalf' }); A.click({ act: 'start' }); H.clock.advance(40 * MIN); A.click({ act: 'endhalf' });
-    h = html();
-    check('once the last half is ended the line offers End game, and Resume for extra time', /data-act="endgame">End game</.test(h) && /data-act="start">Resume</.test(h), true);
+    // the header's clock, on every screen of the game
+    const T = () => String(A.dom.node('#titlebar').innerHTML || '');
+    A.ui.gameView = 'subs'; html();
+    check('the header says Not started before kick-off', /class="ghclock" data-live="ghead"[^>]*><small>Not started<\/small><\/span>/.test(T()), true);
+    g().kickoff = '10:30';
+    H.clock.set(A.slotAt('2026-09-12', '10:30') - 20 * MIN); html();
+    check('— and counts the last hour down to kick-off', /<small>Kick-off in<\/small> 20:00</.test(T()), true);
+    check('— the reading tickLive() draws every second', A.headClock(g(), A.slotAt('2026-09-12', '10:30') - 65000), '<small>Kick-off in</small> 1:05');
+    H.clock.set(A.slotAt('2026-09-12', '10:30') - 2 * 3600e3); html();
+    check('— two hours out it says Not started: the line under the names has the time', /<small>Not started<\/small>/.test(T()), true);
+    H.clock.set(T0);
+    as('trk'); A.ui.gameView = 'track'; A.click({ act: 'start' }); H.clock.advance(5 * MIN);
+    as('jaz'); A.ui.gameView = 'subs'; html();
+    check('being played, the same pill ticks on the coach\'s Subs', /class="ghclock" data-live="ghead" data-mid="g1">5:00</.test(T()), true);
+    A.ui.gameView = 'stats'; html();
+    check('and on Stats', /data-live="ghead" data-mid="g1">5:00</.test(T()), true);
+    A.ui.gameView = 'subs';
+    as('trk'); A.ui.gameView = 'track'; A.click({ act: 'pause' }); as('jaz'); A.ui.gameView = 'subs';
     g().currentHalf = 1; g().periods = {};   // back to before kick-off, for the subs below
 
     // the sub sheet: the other side, one tap away
@@ -608,6 +631,12 @@ function sideline() {
     as('trk');
     A.click({ act: 'taplive', pid: 'p2' });
     check('a tracker gets no sub sheet and no pick', sheetOpen() + ' ' + A.ui.picked, 'false null');
+
+    // the heads-up once there is a plan to lock in
+    as('jaz'); A.ui.gameView = 'subs';
+    g().plan = { manual: true, blocks: [blk(0, { sGK: 'p5', sLB: 'p1', sRB: 'p2', sST: 'p3' })] };
+    h = html();
+    check('a plan not locked in: the coach is told to lock it in, on Subs', /id="subsdue"/.test(h) && /Lock in your plan and this card counts down/.test(h) && /data-act="opengview" data-v="plan">Open the plan</.test(h), true);
   }
 
   H.summary('planned subs at the sideline');
