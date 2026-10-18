@@ -2,7 +2,7 @@
    Static app. Data lives in localStorage, and mirrors to Firebase Realtime
    Database when a config + workspace code are present. */
 
-const BUILD = '172';
+const BUILD = '173';
 const BUILT = '2026-10-14';
 /* The version of database.rules.json this app was written against. The rules
    carry the same number in rulesVersion's .write, which accepts that number
@@ -462,7 +462,7 @@ function keepStored(key, text) {
 }
 function saveLocal() { keepStored(dataKey(), JSON.stringify(state)); }
 function saveUi() {
-  try { localStorage.setItem(LS_UI, JSON.stringify({ view: ui.view, teamId: ui.teamId, matchId: ui.matchId, sortBy: ui.sortBy, plan: ui.plan, gameView: ui.gameView, follow: ui.follow || null, feedAll: !!ui.feedAll, practice: ui.practice || null, sess: ui.sess ? { tab: ui.sess.tab, scope: ui.sess.scope, month: ui.sess.month } : null, calView: ui.calView || null, calSel: ui.calSel || null, myCal: ui.myCal || null, calOff: ui.calOff || {}, calKOff: ui.calKOff || {}, calTree: !!ui.calTree, subsLook: ui.subsLook || null, tabs: 2 })); } catch (e) { }
+  try { localStorage.setItem(LS_UI, JSON.stringify({ view: ui.view, teamId: ui.teamId, matchId: ui.matchId, sortBy: ui.sortBy, plan: ui.plan, gameView: ui.gameView, follow: ui.follow || null, feedAll: !!ui.feedAll, practice: ui.practice || null, sess: ui.sess ? { tab: ui.sess.tab, scope: ui.sess.scope, month: ui.sess.month } : null, calView: ui.calView || null, calSel: ui.calSel || null, myCal: ui.myCal || null, calOff: ui.calOff || {}, calKOff: ui.calKOff || {}, calTree: !!ui.calTree, subsLook: ui.subsLook || null, trackFull: !!ui.trackFull, tabs: 2 })); } catch (e) { }
 }
 function loadLocal() {
   try {
@@ -1428,8 +1428,8 @@ function paintSync() {
   /* Its twin on the game header (build 144), where the brand row has stepped
      aside: drawn only while there is something to say at the sideline (owed,
      refused, or not connected), never "synced". */
-  const g = $('#gsync');
-  if (g) { g.hidden = !fb || (!r && !n && syncBase[0] === 'live'); g.dataset.state = b.dataset.state; g.textContent = b.textContent; }
+  for (const g of [$('#gsync'), $('#fsync')])
+    if (g) { g.hidden = !fb || (!r && !n && syncBase[0] === 'live'); g.dataset.state = b.dataset.state; g.textContent = b.textContent; }
   rsvpBusy();
 }
 /* Everything else this phone keeps until the club has it: plans, drills, her
@@ -7344,6 +7344,13 @@ function render() {
   const st = $('#subtabs'); if (st) st.hidden = shut || !(inGame && openM);
   // game mode: the brand row steps aside for the game header (titleBar draws it)
   if (document.body && document.body.dataset) document.body.dataset.mode = !shut && inGame && openM ? 'game' : '';
+  /* Track's full screen (build 173) is a state of that one screen: the frame
+     (brand row, game header, segments, tab bar) is put away by CSS off this
+     attribute, and leaving Track by any door, a segment, Back, a link, the
+     game ending, brings the frame back and gives the browser its chrome. */
+  const fullTrack = !shut && inGame && openM && ui.gameView === 'track' && !!ui.trackFull;
+  if (ui.trackFull && !fullTrack) leaveFullScreen();
+  if (document.body && document.body.dataset) document.body.dataset.full = fullTrack ? 'track' : '';
   // two stacked rows of tabs read as a mistake; show whichever one applies, and one tab alone (a parent's Season) is no row at all
   const tabsOn = [...document.querySelectorAll('#tabs button')].filter(b => !b.hidden).length;
   const tb = $('#tabs'); if (tb) tb.hidden = shut || !!(inGame && openM) || !teamLevel || !team() || tabsOn < 2;
@@ -8342,7 +8349,15 @@ function viewTrack() {
       <p class="muted" style="margin-top:0">More than one person has been tapping. If someone double-counted, you can drop everything they logged without touching anyone else's.</p>
       <button class="btn quiet wide" data-act="trackerclean">Review by tracker</button></div>` : '';
 
+  if (ui.trackFull && !m.ended) return trackFull(t, m, now);
+  /* One tap to a screen that holds every button at once (build 173): the
+     tracker's complaint was that a shot, a corner and a goal were a screen
+     apart, and a scroll at the sideline is a tap missed. */
+  const fullBtn = m.ended ? '' : `<div class="spread fsoffer"><span class="muted">Every button on one screen, nothing to scroll.</span>
+    <button class="btn quiet sm" data-act="trackfull">Full screen</button></div>`;
+
   return `<div class="stack">
+    ${fullBtn}
     ${clockCard(m, now, !restricted())}
     ${subsCard(t, m, now)}
     ${scoreCard(t, m)}
@@ -8355,6 +8370,85 @@ function viewTrack() {
   </div>`;
 }
 
+/* Track with nothing to scroll (build 173): every button the tracker taps
+   during play, laid out to fill whatever screen this is. A flex column the
+   height of the viewport with the tally rows sharing what is left of it, two
+   columns of them once the screen is wider than it is tall (a phone on its
+   side, a laptop), so each button grows to the room there is instead of a
+   fixed 56px that scrolls on a phone and rattles around on a monitor. The
+   frame (brand row, game header, segments, tab bar) is put away by CSS off
+   body[data-full], and the browser's own chrome goes where the Fullscreen API
+   is there to ask (a computer, Android); an iPhone has it for video alone, so
+   there the screen is the tab's, which with the frame gone is the whole of it.
+
+   What is here, and nothing that is not tapped mid-game: the clock and (for
+   the coach) its controls; the score with a Goal each side; the planned-subs
+   card when the plan has something due, with its button; a row per thing
+   counted, shots on and off target, every set piece the coach switched on,
+   turnovers when they are; and at the foot the last thing logged, a tap
+   opening its editor (a mis-tap is the commonest thing on a screen of big
+   buttons), and who is logging. The match log, the filters, Choose and
+   "who logged what" stay on the ordinary Track, one tap away. Each button
+   says its side, since there is no header row to read across in two columns. */
+function trackFull(t, m, now) {
+  const us = teamLabel(t), them = esc(m.opponent || 'Them');
+  const controls = !restricted();
+  const el = elapsedSec(m, now);
+  const half = esc(halfName(m, m.currentHalf || 1));
+  const clockBtns = !controls ? `<span class="fsnote">${running(m) ? 'Running' : el ? 'Paused' : 'Not started'} · the coach runs the clock</span>`
+    : `<div class="fsclockbtns">${running(m)
+      ? `<button class="btn stop" data-act="pause">Pause</button><button class="btn stop" data-act="endhalf">End ${half.toLowerCase()}</button>`
+      : `<button class="btn" data-act="start">${el ? 'Resume' : 'Start clock'}</button>${el ? `<button class="btn stop" data-act="endhalf">End ${half.toLowerCase()}</button>` : ''}`}
+      ${el || running(m) ? `<button class="btn stop" data-act="endgame">End game</button>` : ''}</div>`;
+  const head = `<div class="fshead">
+    <div class="fsclockrow">
+      <div class="clockline"><div class="clock" id="clock">${mmss(el)}</div>
+        <div class="clockmeta"><b>${half}</b><span id="halfclock">${mmss(halfSec(m, now))}</span> of ${m.periodMinutes || 40}:00</div></div>
+      <button class="sync ghsync" id="fsync" type="button" data-act="pendingsheet" hidden></button>
+      <button class="btn quiet sm fsexit" data-act="trackexit">Exit full screen</button>
+    </div>
+    ${clockBtns}</div>`;
+
+  const tb = (attrs, n, side) => `<button class="tallybtn" ${attrs}><b>${n}</b><span>${side}</span></button>`;
+  const row = (lbl, sub, a, b) => `<div class="fsrow"><span class="tallylbl">${lbl}${sub ? `<span class="conv">${sub}</span>` : ''}</span>${a}${b}</div>`;
+  const sh = shotTally(m);
+  const rows = [
+    row('Shot on target', 'goals count too', tb('data-act="shot" data-side="us" data-on="1"', sh.usOn, us), tb('data-act="shot" data-side="them" data-on="1"', sh.themOn, them)),
+    row('Shot off target', '', tb('data-act="shot" data-side="us" data-on="0"', sh.usOff, us), tb('data-act="shot" data-side="them" data-on="0"', sh.themOff, them)),
+    ...tracked(t).map(e => row(e.label, e.who, tb(`data-act="ev" data-kind="${e.k}" data-side="us"`, evCount(m, e.k, 'us'), us), tb(`data-act="ev" data-kind="${e.k}" data-side="them"`, evCount(m, e.k, 'them'), them))),
+    ...(possOn(t) ? [row('Turnover', 'won by', tb('data-act="poss" data-side="us"', possList(m).filter(x => x.to === 'us').length, us), tb('data-act="poss" data-side="them"', possList(m).filter(x => x.to === 'them').length, them))] : [])
+  ];
+
+  lastLog = subEvents(m);
+  const last = timeline(t, m)[0];
+  const lastRow = last
+    ? (last.fixed ? `<div class="fslast"><span class="gb-label">Last</span><span class="t">${mmss(last.t)}</span><span class="fslh">${last.h}</span></div>`
+      : `<button type="button" class="fslast" data-act="${last.act}" data-id="${last.id}" data-i="${last.id}"><span class="gb-label">Last</span><span class="t">${mmss(last.t)}</span><span class="fslh">${last.h}</span><span class="gb-hint">edit</span></button>`)
+    : `<div class="fslast"><span class="gb-label">Last</span><span class="muted">Nothing logged yet.</span></div>`;
+  const who = whoAmI();
+  const whoBar = `<button class="gamebar" data-act="setwho">
+    <span class="gb-label">Logging as</span>
+    <span class="gb-name">${who ? esc(who) : 'nobody — tap to set a name'}</span>
+    <span class="gb-hint">${me ? 'signed in' : 'change'}</span></button>`;
+
+  return `<div class="fs">
+    ${head}
+    ${scoreCard(t, m)}
+    ${subsCard(t, m, now)}
+    <div class="fsrows">${rows.join('')}</div>
+    <div class="fsfoot">${lastRow}${whoBar}</div>
+  </div>`;
+}
+/* The browser's chrome, where it can be asked to go. Each is best effort: the
+   layout is the feature, and a phone that refuses (an iPhone, a tab that was
+   not tapped) still gets the frame put away. */
+function goFullScreen() {
+  try { const el = document.documentElement; if (el && el.requestFullscreen && !document.fullscreenElement) el.requestFullscreen().catch(() => { }); } catch (e) { }
+}
+function leaveFullScreen() {
+  ui.trackFull = false;
+  try { if (typeof document !== 'undefined' && document.fullscreenElement && document.exitFullscreen) document.exitFullscreen().catch(() => { }); } catch (e) { }
+}
 
 /* --- stats: read, do not tap. Safe mid-game or days later. --- */
 function viewStats() {
@@ -23577,6 +23671,9 @@ function onAct(e) {
   }
   if (a === 'delev') { drop(`matches/${m.id}/events/${d.id}`); closeSheet(); return; }
   if (a === 'logfilter') { ui.logFilter = d.v; render(); return; }
+  // Track's full screen (build 173): for whoever may log, which is who has the screen
+  if (a === 'trackfull') { if (!mayAct('shot', match())) return; ui.trackFull = true; goFullScreen(); render(); return; }
+  if (a === 'trackexit') { leaveFullScreen(); render(); return; }
   if (a === 'feedall') { ui.feedAll = d.v === '1'; render(); return; }
   if (a === 'logkind') { ui.logKind = LOG_KINDS.some(([k]) => k === d.v) ? d.v : 'all'; render(); return; }
   if (a === 'feedfollow') {
@@ -25722,6 +25819,9 @@ if (avEl) avEl.addEventListener('click', () => (me ? sheetAccount() : sheetSignI
 // a tab brought back to the front has now read what arrived while it was behind
 if (typeof document !== 'undefined' && document.addEventListener)
   document.addEventListener('visibilitychange', () => { if (!document.hidden && (ui.view === 'inbox' || ui.view === 'thread')) render(); });
+// Esc on a computer, or the browser's own way out: the frame comes back with the chrome
+if (typeof document !== 'undefined' && document.addEventListener)
+  document.addEventListener('fullscreenchange', () => { if (!document.fullscreenElement && ui.trackFull) { ui.trackFull = false; render(); } });
 
 if (typeof window !== 'undefined' && window.addEventListener) {
   const backOrForward = e => {
