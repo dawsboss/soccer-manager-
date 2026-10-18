@@ -529,5 +529,86 @@ function sideline() {
     check('back again: still none', A.subEvents(g()).length + ':' + A.stintsOf(g(), 'p4').length, '0:0');
   }
 
+  console.log('\n--- Subs leads with the subbing: one line of clock, one row of goals, the other side in a sheet (build 173) ---');
+  {
+    /* The owner, 2026-10-18: Subs is the subbing page, so it does not need the
+       clock card, and a sub took a lot of scrolling. Measured on the rig's live
+       club with eleven on: the card was 238px, the bench began 1,650px down a
+       2,269px screen. */
+    const sheet = () => String(A.dom.node('#sheet').innerHTML || '');
+    const sheetOpen = () => !A.dom.node('#sheet').hidden;
+    const g = setup();
+    g().plan = null;
+    as('jaz'); A.ui.gameView = 'subs';
+    let h = html();
+    check('before kick-off Subs has one clock line, not the card', /class="clockstrip"/.test(h) && !/class="clockwrap"/.test(h), true);
+    check('— with Start clock on it', /data-act="start">Start clock</.test(h), true);
+    check('— and neither End game nor Clock reading wrong? on the screen', /data-act="(endgame|fixclock)"/.test(h), false);
+    check('the score is in the header: Subs has the two Goal taps in one row and no score card', (h.match(/data-act="goal"/g) || []).length + ' ' + /scorecard/.test(h), '2 false');
+    A.click({ act: 'clocksheet' });
+    check('the clock line opens the whole card as a sheet', sheetOpen() && /class="clockwrap"/.test(sheet()) && /data-act="start"/.test(sheet()) && /data-act="fixclock"/.test(sheet()), true);
+    A.click({ act: 'start' });
+    check('starting from the sheet starts the clock', A.running(g()), true);
+    check('— and the sheet follows: Pause, End 1st half, End game', sheetOpen() && /data-act="pause"/.test(sheet()) && /data-act="endhalf"/.test(sheet()) && /data-act="endgame"/.test(sheet()), true);
+    A.closeSheet();
+    h = html();
+    check('running, the line offers Pause and End half', /data-act="pause">Pause</.test(h) && /data-act="endhalf">End half</.test(h), true);
+    check('— the half and how far it has gone, ticking by attribute', /<b>1st half<\/b>/.test(h) && /data-halfclock="1"/.test(h), true);
+    A.ui.gameView = 'pitch'; h = html();
+    check('the pitch, a look at Subs, has the same line', /class="clockstrip"/.test(h) && !/class="clockwrap"/.test(h), true);
+    A.ui.gameView = 'track'; h = html();
+    check('Track keeps the whole card', /class="clockwrap"/.test(h) && /data-act="endgame"/.test(h) && /data-act="fixclock"/.test(h), true);
+    as('trk');
+    A.click({ act: 'clocksheet' });
+    check('a tracker cannot open the clock sheet', sheetOpen(), false);
+
+    // the last period over: End game is the next thing on the line
+    as('jaz'); A.ui.gameView = 'subs';
+    H.clock.advance(40 * MIN); A.click({ act: 'endhalf' }); A.click({ act: 'start' }); H.clock.advance(40 * MIN); A.click({ act: 'endhalf' });
+    h = html();
+    check('once the last half is ended the line offers End game, and Resume for extra time', /data-act="endgame">End game</.test(h) && /data-act="start">Resume</.test(h), true);
+    g().currentHalf = 1; g().periods = {};   // back to before kick-off, for the subs below
+
+    // the sub sheet: the other side, one tap away
+    for (const pid of ['p5', 'p1', 'p2', 'p3']) A.click({ act: 'puton', pid });
+    check('four on, 4v4', on(g), ['p1', 'p2', 'p3', 'p5']);
+    A.click({ act: 'taplive', pid: 'p1' });
+    check('a tap on a player on the pitch opens who could take her place', sheetOpen() && /Ella coming off/.test(sheet()) && /Tap who takes her place/.test(sheet()), true);
+    check('— the bench and nobody on the pitch', /data-pid="p4"/.test(sheet()) && /data-pid="p6"/.test(sheet()) && !/data-pid="p2"/.test(sheet()), true);
+    check('— the same rows, with no spot chip to move her by', /class="liverow"/.test(sheet()) && !/lrspot/.test(sheet()), true);
+    A.click({ act: 'taplive', pid: 'p4' });
+    check('the second tap makes the sub', on(g), ['p2', 'p3', 'p4', 'p5']);
+    check('— and closes the sheet with nobody picked', sheetOpen() + ' ' + A.ui.picked, 'false null');
+    A.click({ act: 'taplive', pid: 'p1' });
+    check('a tap on the bench with no room opens who she could replace', sheetOpen() && /Ella going on/.test(sheet()) && /Tap who she replaces/.test(sheet()), true);
+    check('— the pitch, each with her spot in words, and nobody on the bench', /data-pid="p5"/.test(sheet()) && /GK · /.test(sheet()) && !/data-pid="p6"/.test(sheet()), true);
+    A.click({ act: 'taplive', pid: 'p2' });
+    check('and the second tap makes that sub too', on(g), ['p1', 'p3', 'p4', 'p5']);
+    A.click({ act: 'taplive', pid: 'p3' });
+    A.closeSheet();
+    check('dismissing the sheet leaves her picked, the pick bar up', A.ui.picked + ' ' + /class="pickbar"/.test(html()) + ' ' + /coming off/.test(html()), 'p3 true true');
+    A.click({ act: 'clearpick' });
+    check('Cancel clears the pick', A.ui.picked, null);
+    g().onFieldCount = 5;
+    A.click({ act: 'taplive', pid: 'p2' });
+    check('with room on the pitch a bench tap opens nothing: Put on is on the pick bar', sheetOpen() + ' ' + A.ui.picked + ' ' + /data-act="puton"/.test(html()), 'false p2 true');
+    A.click({ act: 'clearpick' });
+    g().onFieldCount = 4;
+
+    // several at once: the same sheet stages instead
+    A.click({ act: 'startplan' });
+    A.click({ act: 'taplive', pid: 'p3' });
+    check('staging, the sheet says nothing happens yet', sheetOpen() && /Nothing happens until you send the batch/.test(sheet()), true);
+    A.click({ act: 'taplive', pid: 'p6' });
+    check('the second tap stages the pair and closes the sheet', A.ui.plan.items.length + ' ' + sheetOpen() + ' ' + on(g).join(), '1 false p1,p3,p4,p5');
+    A.click({ act: 'taplive', pid: 'p1' });
+    check('whoever is in the batch is left out of the next sheet', /data-pid="p2"/.test(sheet()) && !/data-pid="p6"/.test(sheet()), true);
+    A.click({ act: 'clearpick' }); A.click({ act: 'cancelplan' });
+
+    as('trk');
+    A.click({ act: 'taplive', pid: 'p2' });
+    check('a tracker gets no sub sheet and no pick', sheetOpen() + ' ' + A.ui.picked, 'false null');
+  }
+
   H.summary('planned subs at the sideline');
 }

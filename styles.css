@@ -170,6 +170,18 @@ label.field span{display:block;font-size:14px;color:var(--ink-soft);margin-botto
 .clockbtns{display:flex;gap:8px;margin-top:12px}
 .clockbtns .btn{flex:1;background:#fff;color:var(--field-deep);border-color:#fff}
 .clockbtns .btn.stop{background:rgba(255,255,255,.14);color:#fff;border-color:rgba(255,255,255,.5)}
+/* Subs' clock as one line (build 173): the half and its clock, the next tap or two, the whole card a sheet behind it */
+.clockstrip{display:flex;align-items:center;gap:8px;background:var(--field-deep);color:#fff;border-radius:var(--r);padding:4px 6px 4px 12px}
+.clockstripmain{flex:1;min-width:0;display:flex;align-items:baseline;gap:7px;background:none;border:0;padding:8px 0;color:#fff;text-align:left;min-height:40px;font-size:15px;white-space:nowrap;overflow:hidden}
+.clockstripmain b{font-weight:600}
+.stripclock{font-family:"Barlow Condensed",sans-serif;font-weight:700;font-size:24px;line-height:1;font-variant-numeric:tabular-nums}
+.stripof{color:rgba(255,255,255,.75);font-size:14px}
+.clockstrip .btn{background:#fff;color:var(--field-deep);border-color:#fff;white-space:nowrap}
+.clockstrip .btn.quiet{background:rgba(255,255,255,.14);color:#fff;border-color:rgba(255,255,255,.5)}
+.clockstrip .row{gap:6px;flex:none}
+/* the two Goal taps in one row: the score is in the game header */
+.goalrow{display:flex;gap:8px}
+.goalrow .btn{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 
 /* ---------- pitch ---------- */
 /* The grass scrolls the page (pan-y); only the tokens take the finger for a
