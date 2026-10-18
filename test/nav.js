@@ -639,6 +639,22 @@ console.log('\n--- Track, full screen (build 173) ---');
   check('— no log, no filters, no Choose: those are the ordinary Track, one tap away', /Match log|data-act="logfilter"|data-act="trackcfg"|data-act="trackfull"/.test(A.rendered()), false);
   A.click({ act: 'shot', side: 'us', on: '1' });
   check('a shot tapped counts on its button, and is the last thing logged, a tap to its editor', /data-side="us" data-on="1"><b>1<\/b>/.test(A.rendered()) && /<button type="button" class="fslast" data-act="fixshot" data-id="\w+"/.test(A.rendered()) && full() === 'track', true);
+  // Undo last: the newest thing tapped, then the one before, all the way down
+  check('— and Undo last beside it, live', /<button class="btn quiet sm fsundo" data-act="undolast">Undo last</.test(A.rendered()), true);
+  H.clock.set(H.clock.t + 500);
+  A.click({ act: 'goal', side: 'them' });
+  check('a goal tapped the same minute is now the last (by when it was tapped, not the game minute)', /class="fslast" data-act="fixgoal"/.test(A.rendered()) && A.state.matches.g2.goals && Object.values(A.state.matches.g2.goals)[0].at === H.clock.t, true);
+  A.click({ act: 'undolast' });
+  check('Undo last takes the goal back and the shot is the last again', Object.keys(A.state.matches.g2.goals || {}).length + ' ' + /class="fslast" data-act="fixshot"/.test(A.rendered()) + ' ' + A.toasts[A.toasts.length - 1], '0 true Removed the goal at 5′');
+  A.click({ act: 'undolast' });
+  check('— tapped again, the shot goes too', Object.keys(A.state.matches.g2.shots || {}).length + ' ' + /Nothing logged yet/.test(A.rendered()), '0 true');
+  check('— and with nothing left the button is disabled', /data-act="undolast" disabled>/.test(A.rendered()), true);
+  const nT = A.toasts.length; A.click({ act: 'undolast' });
+  check('— a tap on nothing does nothing', A.toasts.length, nT);
+  A.click({ act: 'ev', kind: 'corner', side: 'us' }); A.click({ act: 'poss', side: 'them' }); A.click({ act: 'shot', side: 'them', on: '0' });
+  A.click({ act: 'undolast' }); A.click({ act: 'undolast' }); A.click({ act: 'undolast' });
+  check('a corner, a turnover and a shot, three taps of Undo: all gone, in the order tapped', ['events', 'poss', 'shots'].map(k => Object.keys(A.state.matches.g2[k] || {}).length).join('') + ' ' + A.toasts.slice(-3).join(' | '), '000 Removed the shot at 5′ | Removed the turnover at 5′ | Removed the corner at 5′');
+  H.clock.set(H.clock.t - 500);
   // the planned subs card, with its button, when the plan has a change due
   A.state.matches.g2.plan = { blocks: [{ start: 0, ids: ['p1', 'p2'] }, { start: 300, ids: ['p1'] }], locked: true };
   A.state.matches.g2.planDone = { b0: { t: 0, at: H.clock.t - 5 * MIN } };
@@ -663,6 +679,8 @@ console.log('\n--- Track, full screen (build 173) ---');
   check('a tracker gets it too: the same rows', full() + ' ' + btns().split(' ').length, 'track 14');
   check('— the clock to read, not to run', /the coach runs the clock/.test(A.rendered()) && !/data-act="pause"|data-act="endgame"/.test(A.rendered()), true);
   check('— and no End game, no Choose', /data-act="endgame"|data-act="trackcfg"/.test(A.rendered()), false);
+  A.click({ act: 'shot', side: 'us', on: '1' }); A.click({ act: 'undolast' });
+  check('— a tracker\'s Undo last works too', Object.keys(A.state.matches.g2.shots || {}).length + ' ' + /data-act="undolast"/.test(A.rendered()), '0 true');
   A.click({ act: 'trackexit' });
   // a parent: never on Track, and the tap does nothing
   as('mum', 'game'); A.ui.matchId = 'g2'; A.ui.gameView = 'track'; live(); A.render();

@@ -2227,7 +2227,7 @@ const HELPER_GAME_ACTS = new Set(['newmatch', 'editmatch', 'savematch', 'delmatc
   'snapstart', 'snapadd', 'snapdel', 'snaptime', 'snapslot', 'snapclear', 'snapplayer', 'snapwipe', 'snapfill']);
 const LOG_ACTS = new Set([
   'goal', 'savegoal', 'delgoal', 'shot', 'saveshot', 'delshot', 'ev', 'saveev', 'delev',
-  'poss', 'saveposs', 'delposs', 'undoposs', 'trackerclean', 'dropby',
+  'poss', 'saveposs', 'delposs', 'undoposs', 'undolast', 'trackerclean', 'dropby',
   /* opening a goal's or a shot's editor: Save and Delete were refused, but a
      parent could open a working-looking editor from Stats first (UX-REVIEW-3.md, 16.5) */
   'fixgoal', 'fixshot'
@@ -6447,6 +6447,20 @@ const tracked = t => EVENTS.filter(e => ((t.track || {})[e.k] !== false));
    and the editor stay put for whenever that lands. */
 const possOn = t => (t.track || {}).possession === true;
 const evList = m => Object.entries(m.events || {}).map(([id, x]) => ({ id, ...x })).sort((a, b) => a.t - b.t);
+/* The newest thing a tally tap logged (a goal, a shot, a set piece, a
+   turnover), by when it was tapped (`at`, build 173; two taps in one second
+   share a game minute, so the minute cannot order them) and by the minute for
+   anything logged before that stamp existed. What Undo last takes back. */
+const LOGGED = { goals: 'fixgoal', shots: 'fixshot', events: 'fixev', poss: 'fixposs' };
+// each tap stamped after the last, so two in one millisecond still have an order
+let lastTapAt = 0;
+const tapAt = () => (lastTapAt = Math.max(nowMs(), lastTapAt + 1));
+function lastLogged(m) {
+  const all = [];
+  for (const k of Object.keys(LOGGED)) for (const [id, x] of Object.entries(m[k] || {})) if (x) all.push({ k, id, x });
+  all.sort((a, b) => (b.x.at || 0) - (a.x.at || 0) || (b.x.t || 0) - (a.x.t || 0));
+  return all[0] || null;
+}
 const evCount = (m, k, side) => evList(m).filter(x => x.kind === k && x.side === side).length;
 
 const shotList = m => Object.entries(m.shots || {}).map(([id, x]) => ({ id, ...x })).sort((a, b) => a.t - b.t);
@@ -8387,7 +8401,9 @@ function viewTrack() {
    counted, shots on and off target, every set piece the coach switched on,
    turnovers when they are; and at the foot the last thing logged, a tap
    opening its editor (a mis-tap is the commonest thing on a screen of big
-   buttons), and who is logging. The match log, the filters, Choose and
+   buttons) with Undo last beside it, which takes back the newest thing
+   logged and, tapped again, the one before, as far back as she likes, and
+   who is logging. The match log, the filters, Choose and
    "who logged what" stay on the ordinary Track, one tap away. Each button
    says its side, since there is no header row to read across in two columns. */
 function trackFull(t, m, now) {
@@ -8420,11 +8436,14 @@ function trackFull(t, m, now) {
   ];
 
   lastLog = subEvents(m);
-  const last = timeline(t, m)[0];
+  /* The Last row is the thing Undo last would take back, so she sees what
+     goes before it goes; a tap on the row itself opens its editor instead. */
+  const ll = lastLogged(m);
+  const last = ll ? timeline(t, m).find(r => r.act === LOGGED[ll.k] && r.id === ll.id) : null;
   const lastRow = last
-    ? (last.fixed ? `<div class="fslast"><span class="gb-label">Last</span><span class="t">${mmss(last.t)}</span><span class="fslh">${last.h}</span></div>`
-      : `<button type="button" class="fslast" data-act="${last.act}" data-id="${last.id}" data-i="${last.id}"><span class="gb-label">Last</span><span class="t">${mmss(last.t)}</span><span class="fslh">${last.h}</span><span class="gb-hint">edit</span></button>`)
+    ? `<button type="button" class="fslast" data-act="${last.act}" data-id="${last.id}" data-i="${last.id}"><span class="gb-label">Last</span><span class="t">${mmss(last.t)}</span><span class="fslh">${last.h}</span><span class="gb-hint">edit</span></button>`
     : `<div class="fslast"><span class="gb-label">Last</span><span class="muted">Nothing logged yet.</span></div>`;
+  const undoBtn = `<button class="btn quiet sm fsundo" data-act="undolast"${ll ? '' : ' disabled'}>Undo last</button>`;
   const who = whoAmI();
   const whoBar = `<button class="gamebar" data-act="setwho">
     <span class="gb-label">Logging as</span>
@@ -8436,7 +8455,7 @@ function trackFull(t, m, now) {
     ${scoreCard(t, m)}
     ${subsCard(t, m, now)}
     <div class="fsrows">${rows.join('')}</div>
-    <div class="fsfoot">${lastRow}${whoBar}</div>
+    <div class="fsfoot"><div class="fslastrow">${lastRow}${undoBtn}</div>${whoBar}</div>
   </div>`;
 }
 /* The browser's chrome, where it can be asked to go. Each is best effort: the
@@ -23632,7 +23651,7 @@ function onAct(e) {
   if (a === 'unstage') { ui.plan.items.splice(Number(d.i), 1); saveUi(); render(); return; }
   if (a === 'applyplan') { applyStaged(m); return; }
   if (a === 'goal') {
-    const id = uid(), g = { t: elapsedSec(m), side: d.side, ...stampedBy() };
+    const id = uid(), g = { t: elapsedSec(m), at: tapAt(), side: d.side, ...stampedBy() };
     commit(`matches/${m.id}/goals/${id}`, g);
     const sc = score(m);
     toast(`${sc.us}–${sc.them} at ${mins(g.t)}′${d.side === 'us' ? ' · tap the goal to add a scorer' : ''}`);
@@ -23641,7 +23660,7 @@ function onAct(e) {
   if (a === 'fixgoal') { sheetGoal(d.id); return; }
   if (a === 'shot') {
     const id = uid();
-    commit(`matches/${m.id}/shots/${id}`, { t: elapsedSec(m), side: d.side, onTarget: d.on === '1', ...stampedBy() });
+    commit(`matches/${m.id}/shots/${id}`, { t: elapsedSec(m), at: tapAt(), side: d.side, onTarget: d.on === '1', ...stampedBy() });
     toast(`Shot ${d.on === '1' ? 'on' : 'off'} target at ${mins(elapsedSec(m))}′${d.side === 'us' ? ' · tap it to add who' : ''}`);
     return;
   }
@@ -23658,7 +23677,7 @@ function onAct(e) {
   }
   if (a === 'delshot') { drop(`matches/${m.id}/shots/${d.id}`); closeSheet(); return; }
   if (a === 'ev') {
-    commit(`matches/${m.id}/events/${uid()}`, { t: elapsedSec(m), side: d.side, kind: d.kind, ...stampedBy() });
+    commit(`matches/${m.id}/events/${uid()}`, { t: elapsedSec(m), at: tapAt(), side: d.side, kind: d.kind, ...stampedBy() });
     toast(`${evLabel(d.kind).replace(/s$/, '')} at ${mins(elapsedSec(m))}′`);
     return;
   }
@@ -24649,7 +24668,7 @@ function onAct(e) {
     for (const b of document.querySelectorAll('[data-act="togglechip"][data-grp="track"]')) cfg[b.dataset.v] = b.getAttribute('aria-pressed') === 'true';
     commit(`teams/${t.id}/track`, cfg); closeSheet(); return;
   }
-  if (a === 'poss') { commit(`matches/${m.id}/poss/${uid()}`, { t: elapsedSec(m), to: d.side, ...stampedBy() }); return; }
+  if (a === 'poss') { commit(`matches/${m.id}/poss/${uid()}`, { t: elapsedSec(m), at: tapAt(), to: d.side, ...stampedBy() }); return; }
   if (a === 'setpossmin') { commit(`teams/${t.id}/possMin`, Number(d.v)); return; }
   if (a === 'fixposs') { sheetPoss(d.id); return; }
   if (a === 'saveposs') {
@@ -24664,6 +24683,17 @@ function onAct(e) {
     closeSheet(); return;
   }
   if (a === 'delposs') { drop(`matches/${m.id}/poss/${d.id}`); closeSheet(); return; }
+  /* Undo last (build 173): the newest thing a tally tap logged, whoever
+     tapped it, taken back; tapped again, the one before, all the way down.
+     For a hand that slipped on a screen of big buttons, where the editor
+     behind the Last row is three taps. The planned subs keep their own Undo on
+     their card: a sub is a stint, not a tally. */
+  if (a === 'undolast') {
+    const l = lastLogged(m); if (!l) return;
+    drop(`matches/${m.id}/${l.k}/${l.id}`);
+    toast(`Removed the ${l.k === 'goals' ? 'goal' : l.k === 'shots' ? 'shot' : l.k === 'poss' ? 'turnover' : evLabel(l.x.kind).replace(/s$/, '').toLowerCase()} at ${mins(l.x.t)}′`);
+    return;
+  }
   if (a === 'undoposs') {
     const l = possList(m); if (!l.length) return;
     drop(`matches/${m.id}/poss/${l[l.length - 1].id}`); toast('Removed'); return;

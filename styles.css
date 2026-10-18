@@ -1478,6 +1478,9 @@ body[data-full] main{padding:6px 8px calc(6px + env(safe-area-inset-bottom));max
 .fsrow .tallybtn{height:100%;min-height:52px;padding:6px 4px}
 .fsrow .tallybtn span{max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .fsfoot{display:grid;grid-template-columns:1fr;gap:6px}
+.fslastrow{display:flex;gap:6px;min-width:0}
+.fslastrow .fslast{flex:1;min-width:0}
+.fsundo{flex:none;white-space:nowrap}
 .fslast{display:flex;align-items:center;gap:9px;width:100%;min-height:40px;
   background:#fff;border:1px solid var(--line);border-radius:10px;padding:8px 13px;text-align:left;font-size:14px}
 .fslast .t{flex:none;font-variant-numeric:tabular-nums;color:var(--ink-soft)}
