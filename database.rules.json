@@ -817,6 +817,21 @@
               "$other": {
                 ".validate": false
               }
+            },
+            "stints": {
+              "$sid": {
+                ".write": "auth != null && root.child('orgs/' + $code + '/access/teams/' + root.child('orgs/' + $code + '/matches/' + $mid + '/teamId').val() + '/helpers/' + auth.uid).exists() && root.child('orgs/' + $code + '/matches/' + $mid + '/plan/locked').exists()"
+              }
+            },
+            "positions": {
+              "$pid": {
+                ".write": "auth != null && root.child('orgs/' + $code + '/access/teams/' + root.child('orgs/' + $code + '/matches/' + $mid + '/teamId').val() + '/helpers/' + auth.uid).exists() && root.child('orgs/' + $code + '/matches/' + $mid + '/plan/locked').exists()"
+              }
+            },
+            "planDone": {
+              "$key": {
+                ".write": "auth != null && root.child('orgs/' + $code + '/access/teams/' + root.child('orgs/' + $code + '/matches/' + $mid + '/teamId').val() + '/helpers/' + auth.uid).exists() && root.child('orgs/' + $code + '/matches/' + $mid + '/plan/locked').exists()"
+              }
             }
           },
           ".indexOn": [
@@ -853,7 +868,7 @@
     },
     "rulesVersion": {
       ".read": true,
-      ".write": "newData.isNumber() && newData.val() === 32"
+      ".write": "newData.isNumber() && newData.val() === 33"
     },
     "public": {
       "$share": {

@@ -2,7 +2,7 @@
    Static app. Data lives in localStorage, and mirrors to Firebase Realtime
    Database when a config + workspace code are present. */
 
-const BUILD = '174';
+const BUILD = '175';
 const BUILT = '2026-10-14';
 /* The version of database.rules.json this app was written against. The rules
    carry the same number in rulesVersion's .write, which accepts that number
@@ -11,7 +11,7 @@ const BUILT = '2026-10-14';
    never pasted look exactly like a coach with no signal: "saved on this phone
    only", one feature at a time. test/rules.js holds the two numbers together
    and fails when the rules change without this going up. */
-const RULES_VERSION = 32;
+const RULES_VERSION = 33;
 /* index.html carries the build it was published with. If this file is newer, the
    browser handed us a cached page — the exact failure that has eaten hours. */
 const pageBuild = () => {
@@ -2208,7 +2208,7 @@ const COACH_ACTS = new Set([
   'addslot', 'saveslot', 'delslot', 'makeshare', 'rotateshare', 'republish',
   // running the game: clock, subs, lineup, plan
   'tap', 'taplive', 'puton', 'doswitch', 'stageadd', 'startplan', 'applyplan', 'applyblock', 'fillslot',
-  'start', 'pause', 'endhalf', 'endgame', 'reopengame', 'restartgame', 'fixclock', 'nudgeclock',
+  'reopengame', 'restartgame',
   'fixsub', 'nudgesub', 'setsubtime', 'addsub', 'doaddsub', 'fixminutes', 'addstint', 'delstint', 'savestints',
   'repair', 'makeplan', 'planall', 'saveplan', 'evensplit', 'availability', 'toggleavail', 'toggleout',
   'editgameshape', 'gameshapepreset', 'planlock', 'planunlock',
@@ -2228,6 +2228,12 @@ const HELPER_GAME_ACTS = new Set(['newmatch', 'editmatch', 'savematch', 'delmatc
 const LOG_ACTS = new Set([
   'goal', 'savegoal', 'delgoal', 'shot', 'saveshot', 'delshot', 'ev', 'saveev', 'delev',
   'poss', 'saveposs', 'delposs', 'undoposs', 'undolast', 'trackerclean', 'dropby',
+  /* The clock is Track's (the owner, 2026-10-18: Track runs the clock, not the
+     coach): whoever tracks the game starts, pauses and ends the halves and the
+     game, and nudges it, as the rules already allowed (a tracker writes the
+     match but its date, kick-off, place and opponent). Starting a game over
+     at 0:00 and reopening an ended one stay the coach's. */
+  'start', 'pause', 'endhalf', 'endgame', 'fixclock', 'nudgeclock',
   /* opening a goal's or a shot's editor: Save and Delete were refused, but a
      parent could open a working-looking editor from Stats first (UX-REVIEW-3.md, 16.5) */
   'fixgoal', 'fixshot'
@@ -6683,16 +6689,21 @@ function snapLabel(m, sec) {
 
 /* ---------------- planned subs, at the sideline ----------------
    A locked-in plan is what the sideline follows. The coach draws it at the
-   kitchen table; whoever tracks the game — often a parent — gets told when each
-   change is due and taps once when the referee actually lets the subs on. The
-   tracker is told when, never who: the plan is the coach's, and a parent reading
-   the whole afternoon's lineups before kick-off is not what locking it in is for.
+   kitchen table; at the game the bench, the coach on Subs and her team's
+   helper on Lineup, is told when each change is due and taps once when the
+   referee actually lets the subs on. Until build 175 that card was the
+   tracker's, on Track, told when and never who; the owner (2026-10-18) moved
+   it to the coach's page so the helper can help with the subs and the tracker
+   stays on the ball. Everyone who has the card now sees the names: they are
+   staff, and the plan is theirs to carry out.
 
    The lock lives inside the plan (plan/locked), so any rewrite of the plan —
    an edit, a redraft — unlocks it: a changed plan is not the one that was locked
-   in. What has been done lives beside it (planDone), because the tracker writes
+   in. What has been done lives beside it (planDone), because the helper writes
    it mid-game and a whole-plan write from the coach must never be able to
-   clobber it. Keys are 's' + start: a node keyed by small integers comes back
+   clobber it; the rules (version 33) let a helper write a stint, a position and
+   a done-mark of a game whose plan is locked, and nothing else once it has
+   kicked off. Keys are 's' + start: a node keyed by small integers comes back
    from the database as an array. */
 const SUB_LEAD = 180;          // how long before a planned change "coming up" opens, in seconds
 const SUB_UNDO_MS = 120000;    // how long a mis-tap can be taken back from the card
@@ -7243,8 +7254,8 @@ function roleCardDone(lim) {
 /* One sentence per role, the same on the card and in the account sheet. */
 function roleWords(lim) {
   if (!lim) return '';
-  if (lim === 'tracker') return 'You track this team: you log what happens and make the coach\u2019s planned subs when they are due. The clock and other subs are the coach\u2019s.';
-  if (lim === 'helper') return 'You help this team: the calendar, the register, the lineup before kick-off and notices. The clock and the subs are the coach\u2019s.';
+  if (lim === 'tracker') return 'You track this team: you log what happens and run the clock. The subs are the coach\u2019s, and the planned ones her helper\u2019s too.';
+  if (lim === 'helper') return 'You help this team: the calendar, the register, the lineup before kick-off, notices, and the planned subs when they are due. The clock is Track\u2019s; other subs are the coach\u2019s.';
   if (lim === 'parent') return 'You are a parent here: you see your own child by name, say whether your child is coming, and message the coaches.';
   if (lim === 'player') return 'You are signed in as a player: you see your team, and say whether you are coming.';
   if (lim === 'fan') return 'You follow the calendar, the games and the notices. The family answers and talks to the coaches.';
@@ -8111,15 +8122,33 @@ function viewGames() {
 function gameHeader(t, m) {
   const st = gameStatus(m);
   const upLabel = gameBackLabel();
-  // the clock while it is being played, full time after; before, nothing: the date under the names says when
-  const when = st === 'live' ? `<span class="ghclock" data-live="clock" data-mid="${m.id}">${mmss(elapsedSec(m))}</span>`
-    : st === 'done' ? '<span class="ghclock ghft" title="Full time">FT</span>' : '';
+  /* The one clock, top right, on every one of a game's screens (the owner,
+     2026-10-18): ticking while it is played, FT after, and before kick-off
+     Not started or the last hour counted down (headClock()). Until build 175
+     the pill was drawn only while the game was being played. A game called
+     off has no clock; the line under the names says Postponed. */
+  const when = st === 'upcoming' && CALLED[m.called] ? ''
+    : `<span class="ghclock${st === 'done' ? ' ghft' : ''}" data-live="ghead" data-mid="${m.id}"${st === 'done' ? ' title="Full time"' : ''}>${headClock(m)}</span>`;
   return `<button class="tbback" data-act="backgames" aria-label="${upLabel}" title="${upLabel}">${BACK_SVG}</button>
     <button class="ghmain" data-act="pickgame" aria-label="Which game" title="Which game">
       <span class="ghname">${gameTitle(t, m)}</span><span class="ghwhen">${esc((st === 'upcoming' && CALLED[m.called] ? CALLED[m.called] + ' · ' : '') + gameWhen(m))}</span></button>
     ${when}
     <button class="sync ghsync" id="gsync" type="button" data-act="pendingsheet" hidden></button>
     <button class="tbback ghmore" data-act="gamemenu" aria-label="More for this game" title="More for this game">${DOTS_SVG}</button>`;
+}
+/* What the header's clock says. Live it ticks; over, FT; before kick-off it
+   says so, or counts the last hour down to kick-off (a date and a time on the
+   game, slotAt(); a game with no time says Not started). Redrawn by
+   tickLive() every second whether or not the clock is running, which is what
+   makes the countdown move. Words are set small inside the pill; the digits
+   keep its size. */
+function headClock(m, now = nowMs()) {
+  const st = gameStatus(m);
+  if (st === 'done') return 'FT';
+  if (st === 'live') return mmss(elapsedSec(m, now));
+  const ko = m.date && m.kickoff ? slotAt(m.date, m.kickoff) : 0;
+  if (ko && ko > now && ko - now <= 3600e3) return `<small>Kick-off in</small> ${mmss(Math.ceil((ko - now) / 1000))}`;
+  return '<small>Not started</small>';
 }
 /* The ⋯ menu: the game's place in the season (the first game played is 1, so
    the latest is n of n and a game's number never changes as more are added),
@@ -8226,13 +8255,13 @@ function clockCard(m, now, controls) {
       ${controls ? `<div class="clockbtns">
         <span class="pill live" style="align-self:center">Ended · ready for stats</span>
       </div>
-      <button class="linkbtn" data-act="reopengame">Ended by mistake?</button>`
+      ${canEditTeam(m.teamId) ? '<button class="linkbtn" data-act="reopengame">Ended by mistake?</button>' : ''}`
         : `<p class="clocknote">Game ended.</p>`}</div>`;
   }
   return `<div class="clockwrap">
     <div class="clockline">
       <div class="clock" id="clock">${mmss(el)}</div>
-      <div class="clockmeta"><b>${esc(halfName(m, m.currentHalf || 1))}</b><span id="halfclock">${mmss(halfSec(m, now))}</span> of ${m.periodMinutes || 40}:00</div>
+      <div class="clockmeta"><b>${esc(halfName(m, m.currentHalf || 1))}</b><span data-halfclock="1">${mmss(halfSec(m, now))}</span> of ${m.periodMinutes || 40}:00</div>
     </div>
     ${controls ? `<div class="clockbtns">
       ${running(m)
@@ -8241,7 +8270,7 @@ function clockCard(m, now, controls) {
     </div>
     ${el || running(m) ? `<button class="btn quiet wide" data-act="endgame" style="margin-top:8px">End game</button>` : ''}
     <button class="linkbtn" data-act="fixclock">Clock reading wrong?</button>`
-      : `<p class="clocknote">${running(m) ? 'Running' : el ? 'Paused' : 'Not started'} — the coach runs the clock.</p>`}</div>`;
+      : `<p class="clocknote">${running(m) ? 'Running' : el ? 'Paused' : 'Not started'} — whoever tracks the game runs the clock.</p>`}</div>`;
 }
 
 function scoreCard(t, m) {
@@ -8253,6 +8282,68 @@ function scoreCard(t, m) {
     <div class="scoreside"><span class="scorelbl">${esc(m.opponent || 'Them')}</span><span class="scorenum">${sc.them}</span>
       <button class="btn quiet sm" data-act="goal" data-side="them">Goal</button></div>
   </div>`;
+}
+
+/* The two Goal taps in one row (the owner, 2026-10-18): the score itself is
+   in the game header, so Subs no longer spends a card on it. Track keeps the
+   score card. */
+const goalRow = (t, m) => `<div class="goalrow">
+    <button class="btn sm" data-act="goal" data-side="us">Goal · ${teamLabel(t)}</button>
+    <button class="btn quiet sm" data-act="goal" data-side="them">Goal · ${esc(m.opponent || 'Them')}</button></div>`;
+
+/* A player's row on Subs: her number, name and how long she has been on or
+   off, her minutes against the plan, and on the pitch her spot as a chip of
+   its own (switchpos). Plain, for the sub sheet: her spot in words before the
+   spell and no chip, since the sheet is for picking her, not moving her. */
+function liveRow(t, m, p, isOn, now, behind, plain) {
+  const el = elapsedSec(m, now);
+  const pl = playedSec(m, p.id, now), pd = plannedSec(m, p.id);
+  const diff = Math.round((pl - pd) / 60);
+  const spell = isOn ? spellSec(m, p.id, now) : restSec(m, p.id, now);
+  const tag = spell == null ? 'not on yet' : (isOn ? 'on ' : 'off ') + mmss(spell);
+  const spot = isOn ? currentSpot(m, p.id) : null;
+  return `<div class="liverow" data-on="${isOn ? 1 : 0}" data-picked="${ui.picked === p.id ? 1 : 0}" data-staged="${isStaged(p.id) ? 1 : 0}">
+      <button class="lrmain" type="button" data-act="taplive" data-pid="${p.id}">
+        <span class="pnum">${esc(p.number ?? '')}</span>
+        <span><span class="pname">${esc(p.name)}</span>
+          <span class="psub">${plain && spot ? esc(spot) + ' · ' : ''}<span data-spell="${p.id}">${tag}</span></span></span>
+        <span class="livemins"><span data-mins="${p.id}">${mins(pl)}<small> min</small></span>
+          ${pd > 0 ? `<span class="diff ${behind.has(p.id) ? 'owed' : diffClass(m, pl, pd, el) === 'over' ? 'over' : 'even'}">${diff < 0 ? -diff + ' short' : diff > 0 ? diff + ' over' : 'on plan'}</span>` : ''}</span>
+      </button>
+      ${isOn && !plain ? `<button class="lrspot" type="button" data-act="switchpos" data-pid="${p.id}" aria-label="${spot ? `${esc(spot)}: move` : 'Set her spot'}">
+        <span>${esc(spot || 'Spot')}</span></button>` : ''}
+    </div>`;
+}
+
+/* The other side of a sub, as a sheet (the owner, 2026-10-18: subbing took a
+   lot of scrolling). With eleven on, the bench began 1,650px down the screen,
+   and a sub was pick one, scroll, pick the other, scroll back. Now the first
+   tap opens a sheet of whoever can be paired with her: the bench for a player
+   coming off, the pitch for one going on when there is no room, and nothing
+   at all while there is room (Put on is on the pick bar, and tapping bench
+   players one after another still puts each on). The same rows in the same
+   order as the list she came from the other side of, and the same tap: the
+   second tap is tapLive() as it always was, so dismissing the sheet leaves
+   her picked, the pick bar up and the lists working as before. Whoever is in
+   the batch already is left out, as tapLive() would refuse her. */
+function sheetSubFor(pid) {
+  const t = team(), m = match();
+  if (!t || !m || !canEditTeam(m.teamId)) return;
+  const p = (t.players || {})[pid]; if (!p) return;
+  const now = nowMs(), isOn = onField(m, pid);
+  if (!isOn && fieldIds(m).length < (m.onFieldCount || 11)) return;
+  const roster = squad(t, m);
+  const others = roster.filter(q => q.id !== pid && onField(m, q.id) !== isOn && !isStaged(q.id));
+  if (!others.length) return;
+  const num = (a, b) => (Number(a.number) || 999) - (Number(b.number) || 999);
+  others.sort(ui.sortBy === 'number' ? num : isOn
+    ? (a, b) => (plannedSec(m, b.id) - playedSec(m, b.id, now)) - (plannedSec(m, a.id) - playedSec(m, a.id, now))
+    : (a, b) => (spellSec(m, b.id, now) || 0) - (spellSec(m, a.id, now) || 0));
+  const behind = mostBehind(m, roster, elapsedSec(m, now), now);
+  openSheet(`<div data-sheet="sub"><h3>${esc(p.name)} ${isOn ? 'coming off' : 'going on'}</h3>
+    <p class="muted" style="margin-top:0">${isOn ? 'Tap who takes her place.' : 'Tap who she replaces.'}${ui.plan ? ' Nothing happens until you send the batch.' : ''}</p>
+    <div class="plist">${others.map(q => liveRow(t, m, q, !isOn, now, behind, true)).join('')}</div>
+    <button class="btn quiet wide" data-act="clearpick" style="margin-top:12px">Cancel</button></div>`);
 }
 
 /* Everything that happened, in one list, so the Track tab stops being four
@@ -8374,8 +8465,7 @@ function viewTrack() {
 
   return `<div class="stack">
     ${fullBtn}
-    ${clockCard(m, now, !restricted())}
-    ${subsCard(t, m, now)}
+    ${clockCard(m, now, mayAct('start', m))}
     ${scoreCard(t, m)}
     ${shotsCard}
     ${setCard}
@@ -8397,10 +8487,10 @@ function viewTrack() {
    is there to ask (a computer, Android); an iPhone has it for video alone, so
    there the screen is the tab's, which with the frame gone is the whole of it.
 
-   What is here, and nothing that is not tapped mid-game: the clock and (for
-   the coach) its controls; the score with a Goal each side; the planned-subs
-   card when the plan has something due, with its button; a row per thing
-   counted, shots on and off target, every set piece the coach switched on,
+   What is here, and nothing that is not tapped mid-game: the clock and its
+   controls (the tracker's as the coach's since build 175, when the planned
+   subs left Track for the coach's Subs and the helper's Lineup); the score
+   with a Goal each side; a row per thing counted, shots on and off target, every set piece the coach switched on,
    turnovers when they are; and at the foot the last thing logged, a tap
    opening its editor (a mis-tap is the commonest thing on a screen of big
    buttons) with Undo last beside it, which takes back the newest thing
@@ -8410,10 +8500,10 @@ function viewTrack() {
    says its side, since there is no header row to read across in two columns. */
 function trackFull(t, m, now) {
   const us = teamLabel(t), them = esc(m.opponent || 'Them');
-  const controls = !restricted();
+  const controls = mayAct('start', m);   // Track runs the clock (build 175): the tracker as the coach
   const el = elapsedSec(m, now);
   const half = esc(halfName(m, m.currentHalf || 1));
-  const clockBtns = !controls ? `<span class="fsnote">${running(m) ? 'Running' : el ? 'Paused' : 'Not started'} · the coach runs the clock</span>`
+  const clockBtns = !controls ? `<span class="fsnote">${running(m) ? 'Running' : el ? 'Paused' : 'Not started'} · whoever tracks the game runs the clock</span>`
     : `<div class="fsclockbtns">${running(m)
       ? `<button class="btn stop" data-act="pause">Pause</button><button class="btn stop" data-act="endhalf">End ${half.toLowerCase()}</button>`
       : `<button class="btn" data-act="start">${el ? 'Resume' : 'Start clock'}</button>${el ? `<button class="btn stop" data-act="endhalf">End ${half.toLowerCase()}</button>` : ''}`}
@@ -8421,7 +8511,7 @@ function trackFull(t, m, now) {
   const head = `<div class="fshead">
     <div class="fsclockrow">
       <div class="clockline"><div class="clock" id="clock">${mmss(el)}</div>
-        <div class="clockmeta"><b>${half}</b><span id="halfclock">${mmss(halfSec(m, now))}</span> of ${m.periodMinutes || 40}:00</div></div>
+        <div class="clockmeta"><b>${half}</b><span data-halfclock="1">${mmss(halfSec(m, now))}</span> of ${m.periodMinutes || 40}:00</div></div>
       <button class="sync ghsync" id="fsync" type="button" data-act="pendingsheet" hidden></button>
       <button class="btn quiet sm fsexit" data-act="trackexit">Exit full screen</button>
     </div>
@@ -8455,7 +8545,6 @@ function trackFull(t, m, now) {
   return `<div class="fs">
     ${head}
     ${scoreCard(t, m)}
-    ${subsCard(t, m, now)}
     <div class="fsrows">${rows.join('')}</div>
     <div class="fsfoot"><div class="fslastrow">${lastRow}${undoBtn}</div>${whoBar}</div>
   </div>`;
@@ -9247,7 +9336,6 @@ function viewSubs() {
   const bench = roster.filter(p => !onField(m, p.id))
     .sort(byNumber ? num : (a, b) => (plannedSec(m, b.id) - playedSec(m, b.id, now)) - (plannedSec(m, a.id) - playedSec(m, a.id, now)));
 
-  const clock = clockCard(m, now, true);
   /* Orange for the three furthest behind the pace of the game and only them,
      since that is who the coach is scanning for; every other row's number is
      plain (UX-REVIEW-2.md, 7.2: "9 short" in orange on eleven rows read as
@@ -9278,24 +9366,7 @@ function viewSubs() {
     <span class="row">${!pickedOn && room ? `<button class="btn sm" data-act="${planning ? 'stageadd' : 'puton'}" data-pid="${picked.id}">Put on</button>` : ''}
     <button class="btn quiet sm" data-act="clearpick">Cancel</button></span></div>` : '';
 
-  const row = (p, isOn) => {
-    const pl = playedSec(m, p.id, now), pd = plannedSec(m, p.id);
-    const diff = Math.round((pl - pd) / 60);
-    const spell = isOn ? spellSec(m, p.id, now) : restSec(m, p.id, now);
-    const tag = spell == null ? 'not on yet' : (isOn ? 'on ' : 'off ') + mmss(spell);
-    const spot = isOn ? currentSpot(m, p.id) : null;
-    return `<div class="liverow" data-on="${isOn ? 1 : 0}" data-picked="${ui.picked === p.id ? 1 : 0}" data-staged="${isStaged(p.id) ? 1 : 0}">
-      <button class="lrmain" type="button" data-act="taplive" data-pid="${p.id}">
-        <span class="pnum">${esc(p.number ?? '')}</span>
-        <span><span class="pname">${esc(p.name)}</span>
-          <span class="psub" data-spell="${p.id}">${tag}</span></span>
-        <span class="livemins"><span data-mins="${p.id}">${mins(pl)}<small> min</small></span>
-          ${pd > 0 ? `<span class="diff ${behind.has(p.id) ? 'owed' : diffClass(m, pl, pd, el) === 'over' ? 'over' : 'even'}">${diff < 0 ? -diff + ' short' : diff > 0 ? diff + ' over' : 'on plan'}</span>` : ''}</span>
-      </button>
-      ${isOn ? `<button class="lrspot" type="button" data-act="switchpos" data-pid="${p.id}" aria-label="${spot ? `${esc(spot)}: move` : 'Set her spot'}">
-        <span>${esc(spot || 'Spot')}</span></button>` : ''}
-    </div>`;
-  };
+  const row = (p, isOn) => liveRow(t, m, p, isOn, now, behind);
 
   const clashes = clashesOn(t, m);
   const warn = (clashes.length
@@ -9312,14 +9383,13 @@ function viewSubs() {
         <span class="muted">fix</span></button>`).join('')}</div>`
     : `<p class="muted" style="margin:0">Nothing yet.</p>`;
 
-  const scCard = scoreCard(t, m);
+  const scCard = goalRow(t, m);
 
   const startHint = on.length === 0 ? `<p class="muted" style="margin:0 0 10px">Tap a player on the bench, then <b>Put on</b>. Repeat until your starters are out there.
     ${planBlocks(m).length ? ' Or fill the whole lineup from the plan.' : ''}</p>
     ${planBlocks(m).length ? `<button class="btn quiet wide" data-act="applyblock" data-start="${(planBlockAt(m, el) || planBlocks(m)[0]).start}" style="margin-bottom:10px">Use the planned lineup</button>` : ''}` : '';
 
   return `<div class="stack">
-    ${clock}
     ${subsLooks()}
     ${subsCard(t, m, now)}
     ${scCard}
@@ -9354,15 +9424,16 @@ function tapLive(pid) {
   const m = match(), t = team();
   const p = (t.players || {})[pid]; if (!p) return;
   if (ui.plan && isStaged(pid)) { toast(`${p.name} is already in this batch`); return; }
-  if (!ui.picked) { ui.picked = pid; render(); return; }
+  if (!ui.picked) { ui.picked = pid; render(); sheetSubFor(pid); return; }
   if (ui.picked === pid) { ui.picked = null; render(); return; }
   const a = ui.picked, b = pid;
   const aOn = onField(m, a), bOn = onField(m, b);
   if (aOn === bOn) {
     if (!aOn && !ui.plan && fieldIds(m).length < (m.onFieldCount || 11)) { ui.picked = null; putOn(m, a); ui.picked = b; render(); return; }
-    ui.picked = b; render(); return;
+    ui.picked = b; render(); sheetSubFor(b); return;
   }
   ui.picked = null;
+  closeSheet();   // the sub sheet, if that is where the second tap was
   const outPid = aOn ? a : b, inPid = aOn ? b : a;
   if (ui.plan) { stage({ k: 'sub', out: outPid, in: inPid }); render(); return; }
   swap(m, outPid, inPid);
@@ -9415,17 +9486,6 @@ function viewMatch() {
     <div class="pitchhint">${ui.picked ? 'Tap a spot, a player to swap, or anywhere on the grass' : field.length ? 'Drag to move · tap to pick' : 'Tap a bench player, then tap where she starts'}</div>
   </div>`;
 
-  const clock = `<div class="clockwrap">
-    <div class="clockline">
-      <div class="clock" id="clock">${mmss(el)}</div>
-      <div class="clockmeta"><b>${esc(halfName(m, m.currentHalf || 1))}</b><span id="halfclock">${mmss(halfSec(m, now))}</span> of ${m.periodMinutes || 40}:00</div>
-    </div>
-    <div class="clockbtns">
-      ${running(m)
-      ? `<button class="btn stop" data-act="pause">Pause clock</button><button class="btn stop" data-act="endhalf">End ${esc(halfName(m, m.currentHalf || 1)).toLowerCase()}</button>`
-      : `<button class="btn" data-act="start">${el ? 'Resume clock' : 'Start clock'}</button>${el ? `<button class="btn stop" data-act="endhalf">End ${esc(halfName(m, m.currentHalf || 1)).toLowerCase()}</button>` : ''}`}
-    </div>
-    <button class="linkbtn" data-act="fixclock">Clock reading wrong?</button></div>`;
 
   const benchRows = bench.map(p => playerRow(m, p, now, false)).join('') ||
     `<p class="muted" style="margin:2px 0">Everyone is on the pitch.</p>`;
@@ -9452,8 +9512,8 @@ function viewMatch() {
   const outCount = outIds(t, m).length;
 
   return `<div class="stack">
-    ${clock}
     ${subsLooks()}
+    ${subsCard(t, m, now)}
     ${warn}
     <div class="split">
       <div class="stack">
@@ -9609,7 +9669,11 @@ function subsClock(m, b, u) {
 /* The one change to who is on the pitch a tracker may make: the coach decided
    it and locked it in, and the tracker only says when it happened. Anyone who
    may edit the team may too, which is the coach at the sideline. */
-const canCallSubs = m => !!m && (canEditTeam(m.teamId) || (restricted() === 'tracker' && m.teamId === ui.teamId));
+/* Who makes the planned subs: the team's coaches and the admins, and since
+   build 175 its helper (the owner, 2026-10-18: the subs card moves off Track
+   onto the coach's page so the helper can help with that and the tracker is
+   focused on the ball). A tracker has none of it now, and sees no card. */
+const canCallSubs = m => !!m && (canEditTeam(m.teamId) || !!(me && isHelper(m.teamId, me.uid)));
 
 /* The locked-in plan at the sideline: when the next change is due, a louder card
    when it is, and one button for the moment the referee lets the subs on. The
@@ -9620,22 +9684,24 @@ const canCallSubs = m => !!m && (canEditTeam(m.teamId) || (restricted() === 'tra
 function subsCard(t, m, now) {
   // a parent, or a coach reading another team's game, has nothing to call
   if (!canCallSubs(m)) return '';
-  const reveal = !restricted();
   const s = subsDue(m, now);
   if (!s) {
     if (m.ended) return '';
-    if (!reveal) return `<div class="card subscard" id="subsdue" data-k="none"><h2>Planned subs</h2>
-      <p class="muted" style="margin:6px 0 0">No sub plan is locked in for this game. Once the coach locks one in, this card says when each change is due and makes it with one tap.</p></div>`;
-    // only worth saying on Track: that is the tab a coach hands to somebody else
-    return ui.gameView === 'track' && planBlocks(m).length
-      ? `<div class="card subscard" id="subsdue" data-k="none"><div class="spread"><h2>Planned subs</h2>
+    /* The coach's heads-up (the owner, 2026-10-18): where the card will say
+       subs are coming up and due, said on Subs and its pitch before there is
+       anything to count, so she locks the plan in. Lineup has its own Lock in
+       card for that, so the helper is not told twice. */
+    if (!['subs', 'pitch'].includes(ui.gameView)) return '';
+    if (planBlocks(m).length) return `<div class="card subscard" id="subsdue" data-k="none"><div class="spread"><h2>Planned subs</h2>
           <button class="btn quiet sm" data-act="opengview" data-v="plan">Open the plan</button></div>
-          <p class="muted" style="margin:6px 0 0">Lock in your plan and this card counts down to each change — for whoever is tracking, too, without showing them who.</p></div>`
-      : '';
+          <p class="muted" style="margin:6px 0 0">Lock in your plan and this card counts down to each change, says when subs are due, and makes them with one tap — here, and on your helper\u2019s Lineup.</p></div>`;
+    return `<div class="card subscard" id="subsdue" data-k="none"><div class="spread"><h2>Planned subs</h2>
+          <button class="btn quiet sm" data-act="opengview" data-v="plan">Open Lineup</button></div>
+          <p class="muted" style="margin:6px 0 0">Plan the game on Lineup and lock it in: this card then counts down to each change and says when subs are due.</p></div>`;
   }
-  // the coach gets the calls to make at the bench; a tracker gets none of it
-  const names = b => reveal ? `<div class="subsbench">${benchHtml(t, m, benchCalls(m, benchFrom(m, b), b), squad(t, m).map(p => p.id))}
-      <button class="btn quiet sm" data-act="bench" data-start="${b.start}" style="margin-top:8px">Tell the bench</button></div>` : '';
+  // the calls to make at the bench, by name: whoever has this card is staff
+  const names = b => `<div class="subsbench">${benchHtml(t, m, benchCalls(m, benchFrom(m, b), b), squad(t, m).map(p => p.id))}
+      <button class="btn quiet sm" data-act="bench" data-start="${b.start}" style="margin-top:8px">Tell the bench</button></div>`;
   const howMany = (b, d) => {
     if (!b.start) return `${(b.ids || []).length} players`;
     const n = Math.max(d.on.length, d.off.length), mv = d.moved.length;
@@ -9656,7 +9722,7 @@ function subsCard(t, m, now) {
       <p class="subsline">${ko ? 'From the plan' : 'Planned ' + esc(subsWhen(m, b))} · ${howMany(b, s.diff)}</p>
       ${names(b)}
       <button class="btn wide subsgo" data-act="subsgo" data-start="${b.start}">${ko ? 'Starters are on' : 'Subs are on'}</button>
-      <div class="spread" style="margin-top:8px"><span class="muted">${ko ? 'Tap once the starters are on the pitch.' : `Tap when the referee lets them on — ${reveal ? 'every change in the snapshot is made' : "the coach's planned subs are made for you"} at that minute.`}</span>
+      <div class="spread" style="margin-top:8px"><span class="muted">${ko ? 'Tap once the starters are on the pitch.' : `Tap when the referee lets them on — every change in the snapshot is made at that minute.`}</span>
         <button class="btn quiet sm" data-act="subsskip" data-start="${b.start}" style="flex:none">Not now</button></div></div>`;
   }
   if (s.kind === 'wait') {
@@ -9717,10 +9783,12 @@ function viewPlan() {
   const shape = (m.formation && m.formation.slots) || [];
   const locked = planLocked(m);
 
-  // once locked in, the sideline card is the one answer to "what is due" on every tab
-  const next = !blocks.length || el <= 0 ? ''
+  /* Once locked in, the sideline card is the one answer to "what is due",
+     here as on Subs, and before kick-off too (the starting lineup): Lineup
+     is where the team's helper makes the planned subs (build 175). */
+  const next = !blocks.length ? ''
     : locked ? subsCard(t, m, nowMs())
-      : `<div class="card"><h2 style="margin-bottom:10px">Next change</h2>${nextChange(m, el, name)}</div>`;
+      : el <= 0 ? '' : `<div class="card"><h2 style="margin-bottom:10px">Next change</h2>${nextChange(m, el, name)}</div>`;
 
   let lockCard = '';
   if (blocks.length && canGameEdit(m)) {
@@ -9736,12 +9804,12 @@ function viewPlan() {
       lockCard = `<div class="lockbar" data-state="${sv}">
         <div class="spread"><b>${sv === 'refused' ? '!' : '✓'} Plan locked in</b><span class="lockwhen">${esc(at)}${l.byName ? ' · ' + esc(l.byName) : ''}</span></div>
         <p class="lockmsg">${msg}</p>
-        <p class="lockmsg">Whoever tracks this game gets a countdown to each change and one button to make it — told when, never who.</p>
+        <p class="lockmsg">Subs, and your helper\u2019s Lineup, count down to each change with one button to make it.</p>
         <div class="row"><button class="btn sm" data-act="benchall">Bench sheet</button>
           <button class="btn quiet sm" data-act="planunlock">Unlock to change</button></div></div>`;
     } else {
       lockCard = `<div class="card"><div class="spread" style="align-items:flex-start"><div><h2>Happy with it?</h2>
-        <p class="muted" style="margin:4px 0 0">Lock it in. Nothing changes by accident, and whoever tracks the game is told when each change is due.</p></div>
+        <p class="muted" style="margin:4px 0 0">Lock it in. Nothing changes by accident, and Subs and your helper\u2019s Lineup count down to each change.</p></div>
         <button class="btn" data-act="planlock" style="flex:none">Lock in</button></div></div>`;
     }
   }
@@ -20232,6 +20300,7 @@ function liveReading(kind, d, now = nowMs()) {
   const ms = d.tid ? teamMatches(d.tid) : [];
   const season = f => ms.reduce((a, x) => a + f(x), 0);
   if (kind === 'clock') return m ? mmss(elapsedSec(m, now)) : null;
+  if (kind === 'ghead') return m ? headClock(m, now) : null;   // the game header's pill, every second
   if (kind === 'half') return m ? mmss(halfSec(m, now)) : null;
   if (kind === 'mine') { const t = m && state.teams[m.teamId], p = t && (t.players || {})[d.pid]; return p ? myGameLine(t, m, p, now) : null; }
   if (kind === 'gmins') return m ? String(mins(elapsedSec(m, now))) : null;
@@ -20294,7 +20363,7 @@ setInterval(() => {
   const t = team(); if (!t) return;
   const now = nowMs();
   const c = $('#clock'); if (c) c.textContent = mmss(elapsedSec(m, now));
-  const h = $('#halfclock'); if (h) h.textContent = mmss(halfSec(m, now));
+  for (const h of document.querySelectorAll('[data-halfclock]')) h.textContent = mmss(halfSec(m, now));   // the card, the strip, the clock sheet
   /* The planned-subs card counts down in place, and redraws when it changes
      state — "coming up" grows a button, "due" turns loud — with a buzz, since
      the phone is as likely to be in a pocket as in a hand. */
@@ -20312,12 +20381,10 @@ setInterval(() => {
   }
   for (const p of players(t)) {
     const pl = playedSec(m, p.id, now), pd = plannedSec(m, p.id);
-    const a = document.querySelector(`[data-mins="${p.id}"]`);
-    if (a) a.innerHTML = `${mins(pl)}<small> min</small>`;
+    for (const a of document.querySelectorAll(`[data-mins="${p.id}"]`)) a.innerHTML = `${mins(pl)}<small> min</small>`;   // the list, and the sub sheet over it
     const b = document.querySelector(`[data-tokmins="${p.id}"]`);
     if (b) b.textContent = mins(pl) + '′';
-    const sp = document.querySelector(`[data-spell="${p.id}"]`);
-    if (sp) {
+    for (const sp of document.querySelectorAll(`[data-spell="${p.id}"]`)) {
       const on = spellSec(m, p.id, now), off = restSec(m, p.id, now);
       sp.textContent = on != null ? 'on ' + mmss(on) : off != null ? 'off ' + mmss(off) : 'not on yet';
     }
@@ -22542,10 +22609,10 @@ function sheetFixClock() {
       ${[5, 15, 60, 300].map(d => `<button class="chip" type="button" data-act="nudgeclock" data-d="${d}">+${d >= 60 ? d / 60 + 'm' : d + 's'}</button>`).join('')}
     </div>
     <button class="btn wide" data-act="closesheet">Done</button>
-    <hr style="border:0;border-top:1px solid var(--line);margin:18px 0">
+    ${canEditTeam(m.teamId) ? `<hr style="border:0;border-top:1px solid var(--line);margin:18px 0">
     <h3>Started too early?</h3>
     <p class="muted" style="margin-top:0">Puts the clock back to 0:00. The ${onNow} player${onNow === 1 ? '' : 's'} on the pitch stay${onNow === 1 ? 's' : ''} on and start${onNow === 1 ? 's' : ''} a fresh spell. Subs already logged and any goals are cleared, because their times belong to the old clock. Your roster, lineup, planned minutes and game plan are untouched.</p>
-    <button class="btn danger wide" data-act="restartgame">Start this game over at 0:00</button>`);
+    <button class="btn danger wide" data-act="restartgame">Start this game over at 0:00</button>` : ''}`);
 }
 
 function sheetFixSub(i) {
@@ -23632,7 +23699,7 @@ function onAct(e) {
 
   if (a === 'tap') { tapPlayer(d.pid); return; }
   if (a === 'taplive') { tapLive(d.pid); return; }
-  if (a === 'clearpick') { ui.picked = null; render(); return; }
+  if (a === 'clearpick') { ui.picked = null; closeSheet(); render(); return; }
   if (a === 'puton') { ui.picked = null; putOn(m, d.pid); render(); return; }
   if (a === 'switchpos') { sheetSwitch(d.pid); return; }
   if (a === 'togglesort') { ui.sortBy = ui.sortBy === 'number' ? 'need' : 'number'; render(); return; }
@@ -24983,12 +25050,12 @@ function onAct(e) {
   /* What to tell the bench names every player in the plan, so it is the coach's
      like the Plan tab is — checked here, not only by the button's absence. */
   if (a === 'bench' || a === 'benchall') {
-    if (!m || restricted()) return;
+    if (!m || !canCallSubs(m)) return;
     if (a === 'bench') sheetBench(t, m, d.start); else sheetBenchAll(t, m);
     return;
   }
   if (a === 'benchcopy') {
-    if (restricted() || !benchCopy) return;
+    if (!m || !canCallSubs(m) || !benchCopy) return;
     try { navigator.clipboard.writeText(benchCopy).then(() => toast('Copied — paste it into a message'), () => toast('Could not copy — select it by hand')); }
     catch (e) { toast('Could not copy — select it by hand'); }
     return;

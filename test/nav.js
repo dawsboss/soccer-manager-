@@ -545,7 +545,8 @@ console.log('\n--- game mode (UX-REVIEW.md, 1.3) ---');
   as('jaz', 'game'); A.ui.matchId = 'g2'; A.render();
   check('a game is its own mode: the brand row steps aside', mode(), 'game');
   check('one slim header: back, the two teams, ours first, and the date under them', /data-act="backgames" aria-label="Back to the team"/.test(title()) && /class="ghname">G14 Flight v Northgate<\/span><span class="ghwhen">Sat 19 Sep · 9:30am<\/span>/.test(title()), true);
-  check('— no 0–0 before kick-off, which reads as a result (UX-REVIEW-2.md, 7.1), and no clock', /0–0|ghclock/.test(title()), false);
+  check('— no 0–0 before kick-off, which reads as a result (UX-REVIEW-2.md, 7.1)', /0–0/.test(title()), false);
+  check('— the clock pill there before kick-off too, saying Not started (build 175)', /class="ghclock" data-live="ghead" data-mid="g2"><small>Not started<\/small><\/span>/.test(title()), true);
   A.sheetGameMenu();
   const menu = String(A.dom.node('#sheet').innerHTML);
   check('— nor in its ⋯ menu', /<h3>Northgate<\/h3>/.test(menu), true);
@@ -554,7 +555,7 @@ console.log('\n--- game mode (UX-REVIEW.md, 1.3) ---');
   check('— and the ⋯ menu', /data-act="gamemenu"/.test(title()), true);
   check('no game bar on the screen any more', /barrow|data-act="sharesheet"|data-act="editmatch"/.test(A.rendered()), false);
   A.state.matches.g2.periods = { 0: { half: 1, start: H.clock.t - 5 * MIN } }; A.render();
-  check('being played: the clock, ticking in place', /class="ghclock" data-live="clock" data-mid="g2">5:00</.test(title()), true);
+  check('being played: the clock, ticking in place', /class="ghclock" data-live="ghead" data-mid="g2">5:00</.test(title()), true);
   check('— and the score between the teams, 0–0 included, once it has kicked off', /class="ghname">G14 Flight 0–0 Northgate</.test(title()), true);
   A.state.matches.g2.goals = { a: { t: 60, side: 'them' } }; A.render();
   check('— us–them, ours first', /class="ghname">G14 Flight 0–1 Northgate</.test(title()), true);
@@ -630,7 +631,7 @@ console.log('\n--- Track, full screen (build 173) ---');
   check('Track offers Full screen, and is not in it', /data-act="trackfull">Full screen</.test(A.rendered()) + ' ' + full() + ' ' + /class="fs"/.test(A.rendered()), 'true  false');
   A.click({ act: 'trackfull' });
   check('one tap: the body says so, for the CSS that puts the frame away', full() + ' ' + /class="fs"/.test(A.rendered()), 'track true');
-  check('— the clock ticking in place, with the coach\'s controls', /id="clock">5:00</.test(A.rendered()) && /id="halfclock"/.test(A.rendered()) && /class="fsclockbtns"><button class="btn stop" data-act="pause">Pause<\/button><button class="btn stop" data-act="endhalf">End 1st half<\/button>\s*<button class="btn stop" data-act="endgame">End game</.test(A.rendered()), true);
+  check('— the clock ticking in place, with the controls', /id="clock">5:00</.test(A.rendered()) && /data-halfclock="1"/.test(A.rendered()) && /class="fsclockbtns"><button class="btn stop" data-act="pause">Pause<\/button><button class="btn stop" data-act="endhalf">End 1st half<\/button>\s*<button class="btn stop" data-act="endgame">End game</.test(A.rendered()), true);
   check('— a Goal each side', goalBtns(), 2);
   check('— shots on and off, every set piece switched on, and turnovers: a row each, both sides', btns(),
     'shot1:us shot1:them shot0:us shot0:them evcorner:us evcorner:them evfoul:us evfoul:them evthrow:us evthrow:them evgoalkick:us evgoalkick:them evkeeper:us evkeeper:them poss:us poss:them');
@@ -656,11 +657,14 @@ console.log('\n--- Track, full screen (build 173) ---');
   A.click({ act: 'undolast' }); A.click({ act: 'undolast' }); A.click({ act: 'undolast' });
   check('a corner, a turnover and a shot, three taps of Undo: all gone, in the order tapped', ['events', 'poss', 'shots'].map(k => Object.keys(A.state.matches.g2[k] || {}).length).join('') + ' ' + A.toasts.slice(-3).join(' | '), '000 Removed the shot at 5′ | Removed the turnover at 5′ | Removed the corner at 5′');
   H.clock.set(H.clock.t - 500);
-  // the planned subs card, with its button, when the plan has a change due
+  // the planned subs are off Track (build 175): the coach's Subs and the helper's Lineup have the card, the tracker stays on the ball
   A.state.matches.g2.plan = { blocks: [{ start: 0, ids: ['p1', 'p2'] }, { start: 300, ids: ['p1'] }], locked: true };
   A.state.matches.g2.planDone = { b0: { t: 0, at: H.clock.t - 5 * MIN } };
   A.render();
-  check('the planned-subs card and its button, when a change is due', /id="subsdue" data-state="due"/.test(A.rendered()) && /data-act="subsgo" data-start="300">Subs are on</.test(A.rendered()) && /data-act="subsskip"/.test(A.rendered()), true);
+  check('no planned-subs card here, even with a change due (build 175)', /id="subsdue"|data-act="subsgo"/.test(A.rendered()), false);
+  A.click({ act: 'opengview', v: 'subs' }); A.render();
+  check('— it is on Subs', /id="subsdue" data-state="due"/.test(A.rendered()) && /data-act="subsgo" data-start="300">Subs are on</.test(A.rendered()), true);
+  A.ui.gameView = 'track'; A.render(); A.click({ act: 'trackfull' });
   delete A.state.matches.g2.plan; delete A.state.matches.g2.planDone;
   // out again, three ways
   A.click({ act: 'trackexit' });
@@ -679,12 +683,12 @@ console.log('\n--- Track, full screen (build 173) ---');
   A.state.matches.g2.ended = H.clock.t; A.state.matches.g2.currentHalf = 3; A.render();
   check('the game ending ends it too (Track is put away at full time)', full() + ' ' + !!A.ui.trackFull, ' false');
   delete A.state.matches.g2.ended; A.state.matches.g2.currentHalf = 1;
-  // a tracker: the same rows, no clock controls
+  // a tracker: the same rows, and the clock controls too (build 175: Track runs the clock)
   as('trk', 'game'); A.ui.matchId = 'g2'; A.ui.gameView = 'track'; live(); A.render();
   A.click({ act: 'trackfull' });
   check('a tracker gets it too: the same rows', full() + ' ' + btns().split(' ').length, 'track 14');
-  check('— the clock to read, not to run', /the coach runs the clock/.test(A.rendered()) && !/data-act="pause"|data-act="endgame"/.test(A.rendered()), true);
-  check('— and no End game, no Choose', /data-act="endgame"|data-act="trackcfg"/.test(A.rendered()), false);
+  check('— and the clock to run, since build 175', /data-act="pause"/.test(A.rendered()) && /data-act="endgame"/.test(A.rendered()) && !/runs the clock/.test(A.rendered()), true);
+  check('— no Choose', /data-act="trackcfg"/.test(A.rendered()), false);
   A.click({ act: 'shot', side: 'us', on: '1' }); A.click({ act: 'undolast' });
   check('— a tracker\'s Undo last works too', Object.keys(A.state.matches.g2.shots || {}).length + ' ' + /data-act="undolast"/.test(A.rendered()), '0 true');
   A.click({ act: 'trackexit' });

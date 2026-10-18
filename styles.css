@@ -170,6 +170,9 @@ label.field span{display:block;font-size:14px;color:var(--ink-soft);margin-botto
 .clockbtns{display:flex;gap:8px;margin-top:12px}
 .clockbtns .btn{flex:1;background:#fff;color:var(--field-deep);border-color:#fff}
 .clockbtns .btn.stop{background:rgba(255,255,255,.14);color:#fff;border-color:rgba(255,255,255,.5)}
+/* the two Goal taps in one row: the score is in the game header */
+.goalrow{display:flex;gap:8px}
+.goalrow .btn{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 
 /* ---------- pitch ---------- */
 /* The grass scrolls the page (pan-y); only the tokens take the finger for a
@@ -597,6 +600,8 @@ body[data-mode="game"] .titlebar{padding-top:4px;padding-bottom:8px}
 .ghclock{flex:none;font-family:"Barlow Condensed",sans-serif;font-weight:700;font-size:20px;line-height:1.2;
   font-variant-numeric:tabular-nums;color:#fff;background:rgba(0,0,0,.2);border:0;
   border-radius:999px;padding:3px 11px;max-width:38vw;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+/* the pill's words (Not started, Kick-off in) small, its digits full size */
+.ghclock small{font-family:"Barlow",sans-serif;font-size:14px;font-weight:600;color:rgba(255,255,255,.85)}
 .ghsync{font-size:12px;padding:2px 7px}
 /* the two looks folded into one screen: List / Pitch on Subs, Stats / Live feed on Stats */
 .chips.looks{flex-wrap:nowrap}

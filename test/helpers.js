@@ -3,7 +3,9 @@
    register, notices, practice plans, the drill shelves and a game's plan
    before kick-off) and does nothing on the day. She does not change the
    squad, read the coach's notes or any family's conversation, and the clock
-   and the subs stay the coach's and the tracker's.
+   and her own subs stay Track's and the coach's. Since build 175 (the owner,
+   2026-10-18) the planned subs are hers to make: once the coach has locked
+   the plan in, her Lineup carries the sideline card and its one tap.
 
    rules.js holds the database to that; this holds the screen and, as
    everywhere else here, the click handler, so a stale screen or a hidden
@@ -93,6 +95,32 @@ console.log('\n--- the game screens ---');
   A.ui.gameView = 'plan'; A.render();
   check('the plan is hers', A.ui.gameView, 'plan');
   check('— with Edit game on it', /data-act="editmatch"/.test(A.rendered()), true);
+}
+
+console.log('\n--- the planned subs are hers to make (the owner, 2026-10-18; build 175) ---');
+{
+  as('hal');
+  const g = A.state.matches.g1;
+  g.periodCount = 2; g.periodMinutes = 40; g.onFieldCount = 1; g.currentHalf = 1; g.periods = {}; g.stints = {}; g.positions = {};
+  g.formation = { name: '1', size: 1, slots: [{ id: 'sA', label: 'ST', role: 'Forward', x: 50, y: 22 }] };
+  g.plan = { manual: true, blocks: [{ start: 0, ids: ['a'], assign: { sA: 'a' } }, { start: 600, ids: ['b'], assign: { sA: 'b' } }], locked: { at: 1, by: 'jaz', byName: 'Jaz' } };
+  A.ui.view = 'game'; A.ui.matchId = 'g1'; A.ui.gameView = 'plan'; A.render();
+  check('her Lineup carries the planned-subs card, names and all', /id="subsdue"/.test(A.rendered()) && /Ava/.test(A.rendered()), true);
+  A.click({ act: 'subsgo', start: '0' });
+  check('her tap puts the starters on', A.fieldIds(g).join(), 'a');
+  check('— in her name', !!g.planDone && g.planDone.s0.byName, 'hal');
+  g.periods = { 0: { half: 1, start: H.clock.t - 11 * 60000 } };
+  A.render();
+  check('mid-game the card is due on her Lineup', /Subs due now/.test(A.rendered()), true);
+  A.click({ act: 'subsgo', start: '600' });
+  check('and her tap makes the planned sub', A.fieldIds(g).join(), 'b');
+  A.click({ act: 'bench', start: '600' });
+  check('Tell the bench is hers', /Tell the bench/.test(String(A.dom.node('#sheet').innerHTML || '')), true);
+  A.closeSheet();
+  check('a sub of her own is still not', A.mayAct('taplive', g, {}), false);
+  as('trk');
+  A.ui.view = 'game'; A.ui.matchId = 'g1'; A.ui.gameView = 'track'; A.render();
+  check('the tracker has no card: she is on the ball', /id="subsdue"/.test(A.rendered()), false);
 }
 
 console.log('\n--- her calendar writes are stamped as hers ---');
