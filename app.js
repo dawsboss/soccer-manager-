@@ -2,7 +2,7 @@
    Static app. Data lives in localStorage, and mirrors to Firebase Realtime
    Database when a config + workspace code are present. */
 
-const BUILD = '174';
+const BUILD = '175';
 const BUILT = '2026-10-14';
 /* The version of database.rules.json this app was written against. The rules
    carry the same number in rulesVersion's .write, which accepts that number
@@ -6691,7 +6691,7 @@ function snapLabel(m, sec) {
    A locked-in plan is what the sideline follows. The coach draws it at the
    kitchen table; at the game the bench, the coach on Subs and her team's
    helper on Lineup, is told when each change is due and taps once when the
-   referee actually lets the subs on. Until build 174 that card was the
+   referee actually lets the subs on. Until build 175 that card was the
    tracker's, on Track, told when and never who; the owner (2026-10-18) moved
    it to the coach's page so the helper can help with the subs and the tracker
    stays on the ball. Everyone who has the card now sees the names: they are
@@ -8124,7 +8124,7 @@ function gameHeader(t, m) {
   const upLabel = gameBackLabel();
   /* The one clock, top right, on every one of a game's screens (the owner,
      2026-10-18): ticking while it is played, FT after, and before kick-off
-     Not started or the last hour counted down (headClock()). Until build 174
+     Not started or the last hour counted down (headClock()). Until build 175
      the pill was drawn only while the game was being played. A game called
      off has no clock; the line under the names says Postponed. */
   const when = st === 'upcoming' && CALLED[m.called] ? ''
@@ -8488,7 +8488,7 @@ function viewTrack() {
    there the screen is the tab's, which with the frame gone is the whole of it.
 
    What is here, and nothing that is not tapped mid-game: the clock and its
-   controls (the tracker's as the coach's since build 174, when the planned
+   controls (the tracker's as the coach's since build 175, when the planned
    subs left Track for the coach's Subs and the helper's Lineup); the score
    with a Goal each side; a row per thing counted, shots on and off target, every set piece the coach switched on,
    turnovers when they are; and at the foot the last thing logged, a tap
@@ -8500,7 +8500,7 @@ function viewTrack() {
    says its side, since there is no header row to read across in two columns. */
 function trackFull(t, m, now) {
   const us = teamLabel(t), them = esc(m.opponent || 'Them');
-  const controls = mayAct('start', m);   // Track runs the clock (build 174): the tracker as the coach
+  const controls = mayAct('start', m);   // Track runs the clock (build 175): the tracker as the coach
   const el = elapsedSec(m, now);
   const half = esc(halfName(m, m.currentHalf || 1));
   const clockBtns = !controls ? `<span class="fsnote">${running(m) ? 'Running' : el ? 'Paused' : 'Not started'} · whoever tracks the game runs the clock</span>`
@@ -9670,7 +9670,7 @@ function subsClock(m, b, u) {
    it and locked it in, and the tracker only says when it happened. Anyone who
    may edit the team may too, which is the coach at the sideline. */
 /* Who makes the planned subs: the team's coaches and the admins, and since
-   build 174 its helper (the owner, 2026-10-18: the subs card moves off Track
+   build 175 its helper (the owner, 2026-10-18: the subs card moves off Track
    onto the coach's page so the helper can help with that and the tracker is
    focused on the ball). A tracker has none of it now, and sees no card. */
 const canCallSubs = m => !!m && (canEditTeam(m.teamId) || !!(me && isHelper(m.teamId, me.uid)));
@@ -9785,7 +9785,7 @@ function viewPlan() {
 
   /* Once locked in, the sideline card is the one answer to "what is due",
      here as on Subs, and before kick-off too (the starting lineup): Lineup
-     is where the team's helper makes the planned subs (build 174). */
+     is where the team's helper makes the planned subs (build 175). */
   const next = !blocks.length ? ''
     : locked ? subsCard(t, m, nowMs())
       : el <= 0 ? '' : `<div class="card"><h2 style="margin-bottom:10px">Next change</h2>${nextChange(m, el, name)}</div>`;

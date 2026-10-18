@@ -2,7 +2,7 @@
 
    The coach locks the plan in from the Lineup tab; at the game the bench, the
    coach on Subs and her team's helper on Lineup, is told when each change is
-   due and taps once when the referee lets the subs on (until build 174 that
+   due and taps once when the referee lets the subs on (until build 175 that
    was the tracker's card, on Track, told when and never who; the owner,
    2026-10-18, moved it so the tracker stays on the ball). Three things are worth pinning, because each one
    going wrong costs something real at a game:
@@ -85,7 +85,7 @@ function setup(opts = {}) {
       index: { boss: true, jaz: true, trk: true, trk2: true, hal: true, mum: true }
     }
   };
-  as('hal');   // the helper, on her Lineup: the sideline card is hers since build 174
+  as('hal');   // the helper, on her Lineup: the sideline card is hers since build 175
   A.ui.teamId = 't1'; A.ui.matchId = 'g1'; A.ui.view = 'game'; A.ui.gameView = 'plan';
   A.ui.plan = null; A.ui.picked = null; A.ui.snapAt = null; A.ui.snapSid = null;
   return () => A.state.matches.g1;
@@ -107,7 +107,7 @@ console.log('--- locking the plan in ---');
   as('jaz'); A.ui.gameView = 'plan';
   let h = html();
   check('an unlocked plan offers to lock it in', /data-act="planlock"/.test(h), true);
-  check('and says what locking does: Subs and the helper\'s Lineup count down (build 174)', /Subs and your helper\u2019s Lineup count down to each change/.test(h), true);
+  check('and says what locking does: Subs and the helper\'s Lineup count down (build 175)', /Subs and your helper\u2019s Lineup count down to each change/.test(h), true);
 
   A.click({ act: 'planlock' });
   check('locking writes who and when', !!g().plan.locked && g().plan.locked.byName, 'Jaz');
@@ -255,7 +255,7 @@ function sideline() {
     const cc = card();
     check('the coach the same', /Jo/.test(cc) && /Mia/.test(cc), true);
     as('trk');
-    check('the tracker has no card at all (build 174)', card(), '');
+    check('the tracker has no card at all (build 175)', card(), '');
     as('hal');
 
     H.clock.advance(40 * 1000);
@@ -388,7 +388,7 @@ function sideline() {
     check('nor can another team\'s tracker', on(g), []);
     as('trk');
     A.click({ act: 'subsgo', start: '0' });
-    check('nor the team\'s own tracker, since build 174: she is on the ball', on(g), []);
+    check('nor the team\'s own tracker, since build 175: she is on the ball', on(g), []);
     check('and has no card', card(), '');
     as('nobody');
     A.click({ act: 'subsgo', start: '0' });
@@ -411,7 +411,7 @@ function sideline() {
   {
     /* Track is where the clock is run (the owner, 2026-10-18: Track runs the
        clock, not the coach): the coach from Track, and the tracker she hands it
-       to as well, since build 174. A parent sees it run and neither the button
+       to as well, since build 175. A parent sees it run and neither the button
        nor the click reaches startClock(). Starting over at 0:00 and Ended by
        mistake? stay the coach's. */
     const g = setup();
@@ -428,7 +428,7 @@ function sideline() {
     check('and pausing stops it', A.running(g()), false);
     as('trk'); A.ui.gameView = 'track';
     h = html();
-    check('a tracker has the clock buttons too (build 174)', /data-act="start"/.test(h) && /data-act="endhalf"/.test(h) && /data-act="endgame"/.test(h) && /data-act="fixclock"/.test(h), true);
+    check('a tracker has the clock buttons too (build 175)', /data-act="start"/.test(h) && /data-act="endhalf"/.test(h) && /data-act="endgame"/.test(h) && /data-act="fixclock"/.test(h), true);
     A.click({ act: 'start' });
     check('and starts it', A.running(g()), true);
     A.click({ act: 'pause' });
@@ -499,7 +499,7 @@ function sideline() {
     check('nor the bench sheet', sheet(), '');
     as('hal');
     A.click({ act: 'bench', start: '600' });
-    check('the helper can (build 174)', /Tell the bench/.test(sheet()) && /Jo \(9\)/.test(sheet()), true);
+    check('the helper can (build 175)', /Tell the bench/.test(sheet()) && /Jo \(9\)/.test(sheet()), true);
     A.click({ act: 'benchcopy' });
     check('— and copies it', copied && copied.split('\n')[0], 'Subs at 10:00 of the 1st half — v Riverside');
     copied = null;
@@ -532,7 +532,7 @@ function sideline() {
   {
     const g = setup();
     let h = html();
-    check('the helper\'s Lineup shows the card, names and all (build 174)', /id="subsdue"/.test(h) && /Sam/.test(h), true);
+    check('the helper\'s Lineup shows the card, names and all (build 175)', /id="subsdue"/.test(h) && /Sam/.test(h), true);
     as('trk'); A.ui.gameView = 'track'; h = html();
     check('Track shows no card: the tracker is on the ball', /id="subsdue"/.test(h), false);
     // the role card is Home's alone since build 148 (UX-REVIEW-2.md, 7.3): a tracker's Home is her team's Season
@@ -580,7 +580,7 @@ function sideline() {
     check('back again: still none', A.subEvents(g()).length + ':' + A.stintsOf(g(), 'p4').length, '0:0');
   }
 
-  console.log('\n--- Subs leads with the subbing: no clock controls, the clock in the header, one row of goals, the other side in a sheet (build 174) ---');
+  console.log('\n--- Subs leads with the subbing: no clock controls, the clock in the header, one row of goals, the other side in a sheet (build 175) ---');
   {
     /* The owner, 2026-10-18: Subs is the subbing page and Track runs the clock,
        so Subs has no clock controls at all; the one clock is the header's, top

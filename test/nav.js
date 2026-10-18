@@ -546,7 +546,7 @@ console.log('\n--- game mode (UX-REVIEW.md, 1.3) ---');
   check('a game is its own mode: the brand row steps aside', mode(), 'game');
   check('one slim header: back, the two teams, ours first, and the date under them', /data-act="backgames" aria-label="Back to the team"/.test(title()) && /class="ghname">G14 Flight v Northgate<\/span><span class="ghwhen">Sat 19 Sep · 9:30am<\/span>/.test(title()), true);
   check('— no 0–0 before kick-off, which reads as a result (UX-REVIEW-2.md, 7.1)', /0–0/.test(title()), false);
-  check('— the clock pill there before kick-off too, saying Not started (build 174)', /class="ghclock" data-live="ghead" data-mid="g2"><small>Not started<\/small><\/span>/.test(title()), true);
+  check('— the clock pill there before kick-off too, saying Not started (build 175)', /class="ghclock" data-live="ghead" data-mid="g2"><small>Not started<\/small><\/span>/.test(title()), true);
   A.sheetGameMenu();
   const menu = String(A.dom.node('#sheet').innerHTML);
   check('— nor in its ⋯ menu', /<h3>Northgate<\/h3>/.test(menu), true);
@@ -657,11 +657,11 @@ console.log('\n--- Track, full screen (build 173) ---');
   A.click({ act: 'undolast' }); A.click({ act: 'undolast' }); A.click({ act: 'undolast' });
   check('a corner, a turnover and a shot, three taps of Undo: all gone, in the order tapped', ['events', 'poss', 'shots'].map(k => Object.keys(A.state.matches.g2[k] || {}).length).join('') + ' ' + A.toasts.slice(-3).join(' | '), '000 Removed the shot at 5′ | Removed the turnover at 5′ | Removed the corner at 5′');
   H.clock.set(H.clock.t - 500);
-  // the planned subs are off Track (build 174): the coach's Subs and the helper's Lineup have the card, the tracker stays on the ball
+  // the planned subs are off Track (build 175): the coach's Subs and the helper's Lineup have the card, the tracker stays on the ball
   A.state.matches.g2.plan = { blocks: [{ start: 0, ids: ['p1', 'p2'] }, { start: 300, ids: ['p1'] }], locked: true };
   A.state.matches.g2.planDone = { b0: { t: 0, at: H.clock.t - 5 * MIN } };
   A.render();
-  check('no planned-subs card here, even with a change due (build 174)', /id="subsdue"|data-act="subsgo"/.test(A.rendered()), false);
+  check('no planned-subs card here, even with a change due (build 175)', /id="subsdue"|data-act="subsgo"/.test(A.rendered()), false);
   A.click({ act: 'opengview', v: 'subs' }); A.render();
   check('— it is on Subs', /id="subsdue" data-state="due"/.test(A.rendered()) && /data-act="subsgo" data-start="300">Subs are on</.test(A.rendered()), true);
   A.ui.gameView = 'track'; A.render(); A.click({ act: 'trackfull' });
@@ -683,11 +683,11 @@ console.log('\n--- Track, full screen (build 173) ---');
   A.state.matches.g2.ended = H.clock.t; A.state.matches.g2.currentHalf = 3; A.render();
   check('the game ending ends it too (Track is put away at full time)', full() + ' ' + !!A.ui.trackFull, ' false');
   delete A.state.matches.g2.ended; A.state.matches.g2.currentHalf = 1;
-  // a tracker: the same rows, and the clock controls too (build 174: Track runs the clock)
+  // a tracker: the same rows, and the clock controls too (build 175: Track runs the clock)
   as('trk', 'game'); A.ui.matchId = 'g2'; A.ui.gameView = 'track'; live(); A.render();
   A.click({ act: 'trackfull' });
   check('a tracker gets it too: the same rows', full() + ' ' + btns().split(' ').length, 'track 14');
-  check('— and the clock to run, since build 174', /data-act="pause"/.test(A.rendered()) && /data-act="endgame"/.test(A.rendered()) && !/runs the clock/.test(A.rendered()), true);
+  check('— and the clock to run, since build 175', /data-act="pause"/.test(A.rendered()) && /data-act="endgame"/.test(A.rendered()) && !/runs the clock/.test(A.rendered()), true);
   check('— no Choose', /data-act="trackcfg"/.test(A.rendered()), false);
   A.click({ act: 'shot', side: 'us', on: '1' }); A.click({ act: 'undolast' });
   check('— a tracker\'s Undo last works too', Object.keys(A.state.matches.g2.shots || {}).length + ' ' + /data-act="undolast"/.test(A.rendered()), '0 true');
