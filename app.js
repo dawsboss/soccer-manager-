@@ -2,7 +2,7 @@
    Static app. Data lives in localStorage, and mirrors to Firebase Realtime
    Database when a config + workspace code are present. */
 
-const BUILD = '175';
+const BUILD = '176';
 const BUILT = '2026-10-14';
 /* The version of database.rules.json this app was written against. The rules
    carry the same number in rulesVersion's .write, which accepts that number
@@ -46,7 +46,7 @@ const SANDBOX_PREFIX = 'test-';
    answering; and the rule that lets a parent write here grants this node and
    nothing else, so a parent can never touch the team or the game. */
 let state = { teams: {}, matches: {}, access: {}, rsvp: {}, children: {}, care: {}, teamCare: {}, programs: {}, waivers: {}, regs: {}, agreed: {} };
-let ui = { view: 'calendar', gameView: 'subs', teamId: null, matchId: null, picked: null, dragging: false, editFid: null, sortBy: 'need', plan: null, snapAt: null, snapSid: null };
+let ui = { view: 'calendar', gameView: 'subs', teamId: null, matchId: null, dragging: false, editFid: null, sortBy: 'need', plan: null, snapAt: null, snapSid: null };
 let lastLog = [];
 let lastScreen = null;   // the screen render() last drew, so a redraw of the same one keeps its scroll
 
@@ -2207,7 +2207,7 @@ const COACH_ACTS = new Set([
   'formations', 'newformation', 'saveshapeteam', 'savefname', 'setdefault', 'delformation',
   'addslot', 'saveslot', 'delslot', 'makeshare', 'rotateshare', 'republish',
   // running the game: clock, subs, lineup, plan
-  'tap', 'taplive', 'puton', 'doswitch', 'stageadd', 'startplan', 'applyplan', 'applyblock', 'fillslot',
+  'taplive', 'puton', 'doswitch', 'stageadd', 'startplan', 'applyplan', 'applyblock', 'fillslot',
   'reopengame', 'restartgame',
   'fixsub', 'nudgesub', 'setsubtime', 'addsub', 'doaddsub', 'fixminutes', 'addstint', 'delstint', 'savestints',
   'repair', 'makeplan', 'planall', 'saveplan', 'evensplit', 'availability', 'toggleavail', 'toggleout',
@@ -7029,7 +7029,7 @@ function applyStaged(m) {
     if (holder) movePos(m, holder, mine, null, t);
   }
   const n = items.length;
-  ui.plan = null; ui.picked = null;
+  ui.plan = null;
   saveLocal(); render();
   toast(`${n} change${n === 1 ? '' : 's'} made at ${mins(t)}′`);
 }
@@ -7633,7 +7633,7 @@ function navGames() {
    role works, and a finished one on its recap. Its back arrow goes up to the
    list, wherever the tab took her. */
 function openNavGame(g) {
-  ui.teamId = g.teamId; ui.matchId = g.id; ui.view = 'game'; ui.gameFrom = 'games'; ui.picked = null;
+  ui.teamId = g.teamId; ui.matchId = g.id; ui.view = 'game'; ui.gameFrom = 'games';
   ui.gameView = gameStatus(g) === 'done' ? 'recap' : canEditTeam(g.teamId) ? 'subs' : me && isTracker(g.teamId, me.uid) ? 'track' : 'live';
 }
 const NAV_ICON = {
@@ -8210,7 +8210,6 @@ const gameSegments = allowed => GAME_SEG_ORDER.filter(k => allowed.some(gv => ga
 /* A segment tapped: Subs opens whichever look she used last, the list or the pitch. */
 function openGameScreen(k) {
   ui.gameView = k === 'subs' && ui.subsLook === 'pitch' ? 'pitch' : k;
-  ui.picked = null;
 }
 /* The two looks of Subs folded into one screen, as a chip pair at the top.
    Stats had a pair too (Stats / Live feed) until build 153; Live is a screen
@@ -8284,26 +8283,21 @@ function scoreCard(t, m) {
   </div>`;
 }
 
-/* The two Goal taps in one row (the owner, 2026-10-18): the score itself is
-   in the game header, so Subs no longer spends a card on it. Track keeps the
-   score card. */
-const goalRow = (t, m) => `<div class="goalrow">
-    <button class="btn sm" data-act="goal" data-side="us">Goal · ${teamLabel(t)}</button>
-    <button class="btn quiet sm" data-act="goal" data-side="them">Goal · ${esc(m.opponent || 'Them')}</button></div>`;
-
 /* A player's row on Subs: her number, name and how long she has been on or
    off, her minutes against the plan, and on the pitch her spot as a chip of
-   its own (switchpos). Plain, for the sub sheet: her spot in words before the
-   spell and no chip, since the sheet is for picking her, not moving her. */
-function liveRow(t, m, p, isOn, now, behind, plain) {
+   its own (switchpos). In the sub sheet (`withPid`, the player the sheet is
+   for) her spot is in words before the spell and there is no chip, since the
+   sheet is for picking her, not moving her, and the tap carries both ids. */
+function liveRow(t, m, p, isOn, now, behind, withPid) {
+  const plain = !!withPid;
   const el = elapsedSec(m, now);
   const pl = playedSec(m, p.id, now), pd = plannedSec(m, p.id);
   const diff = Math.round((pl - pd) / 60);
   const spell = isOn ? spellSec(m, p.id, now) : restSec(m, p.id, now);
   const tag = spell == null ? 'not on yet' : (isOn ? 'on ' : 'off ') + mmss(spell);
   const spot = isOn ? currentSpot(m, p.id) : null;
-  return `<div class="liverow" data-on="${isOn ? 1 : 0}" data-picked="${ui.picked === p.id ? 1 : 0}" data-staged="${isStaged(p.id) ? 1 : 0}">
-      <button class="lrmain" type="button" data-act="taplive" data-pid="${p.id}">
+  return `<div class="liverow" data-on="${isOn ? 1 : 0}" data-staged="${isStaged(p.id) ? 1 : 0}">
+      <button class="lrmain" type="button" data-act="taplive" data-pid="${p.id}"${withPid ? ` data-with="${withPid}"` : ''}>
         <span class="pnum">${esc(p.number ?? '')}</span>
         <span><span class="pname">${esc(p.name)}</span>
           <span class="psub">${plain && spot ? esc(spot) + ' · ' : ''}<span data-spell="${p.id}">${tag}</span></span></span>
@@ -8317,33 +8311,69 @@ function liveRow(t, m, p, isOn, now, behind, plain) {
 
 /* The other side of a sub, as a sheet (the owner, 2026-10-18: subbing took a
    lot of scrolling). With eleven on, the bench began 1,650px down the screen,
-   and a sub was pick one, scroll, pick the other, scroll back. Now the first
-   tap opens a sheet of whoever can be paired with her: the bench for a player
-   coming off, the pitch for one going on when there is no room, and nothing
-   at all while there is room (Put on is on the pick bar, and tapping bench
-   players one after another still puts each on). The same rows in the same
-   order as the list she came from the other side of, and the same tap: the
-   second tap is tapLive() as it always was, so dismissing the sheet leaves
-   her picked, the pick bar up and the lists working as before. Whoever is in
-   the batch already is left out, as tapLive() would refuse her. */
+   and a sub was pick one, scroll, pick the other, scroll back. The first tap
+   opens a sheet of whoever can be paired with her: the bench for a player
+   coming off, the pitch for one going on, with Put on above it while there is
+   room. The same rows in the same order as the list she came from the other
+   side of, each carrying both ids, so the second tap is the sub, or stages it.
+   This sheet is the one way to pair two players (the owner, 2026-10-18, the
+   same day: no picking one on the page and then another): dismissing it leaves
+   nothing picked and nothing half done. Whoever is in the batch already is
+   left out, as tapLive() would refuse her. Opened from the Pitch look it leads
+   with a mock of what the pitch will look like (mockPitch()), and offers her
+   spot's move, since a token has no spot chip. Nobody to pair with is said
+   and nothing opens. */
 function sheetSubFor(pid) {
   const t = team(), m = match();
   if (!t || !m || !canEditTeam(m.teamId)) return;
   const p = (t.players || {})[pid]; if (!p) return;
   const now = nowMs(), isOn = onField(m, pid);
-  if (!isOn && fieldIds(m).length < (m.onFieldCount || 11)) return;
+  const room = !isOn && fieldIds(m).length < (m.onFieldCount || 11);
   const roster = squad(t, m);
   const others = roster.filter(q => q.id !== pid && onField(m, q.id) !== isOn && !isStaged(q.id));
-  if (!others.length) return;
+  if (!others.length && !room) { toast(isOn ? 'Nobody on the bench to take her place' : 'Nobody on the pitch she could replace'); return; }
   const num = (a, b) => (Number(a.number) || 999) - (Number(b.number) || 999);
   others.sort(ui.sortBy === 'number' ? num : isOn
     ? (a, b) => (plannedSec(m, b.id) - playedSec(m, b.id, now)) - (plannedSec(m, a.id) - playedSec(m, a.id, now))
     : (a, b) => (spellSec(m, b.id, now) || 0) - (spellSec(m, a.id, now) || 0));
   const behind = mostBehind(m, roster, elapsedSec(m, now), now);
+  const onPitch = ui.gameView === 'pitch';
   openSheet(`<div data-sheet="sub"><h3>${esc(p.name)} ${isOn ? 'coming off' : 'going on'}</h3>
-    <p class="muted" style="margin-top:0">${isOn ? 'Tap who takes her place.' : 'Tap who she replaces.'}${ui.plan ? ' Nothing happens until you send the batch.' : ''}</p>
-    <div class="plist">${others.map(q => liveRow(t, m, q, !isOn, now, behind, true)).join('')}</div>
+    <p class="muted" style="margin-top:0">${isOn ? 'Tap who takes her place.' : room ? 'Put her on, or tap who she replaces.' : 'Tap who she replaces.'}${ui.plan ? ' Nothing happens until you send the batch.' : ''}</p>
+    ${onPitch ? mockPitch(t, m, pid, isOn, room) : ''}
+    ${room ? `<button class="btn wide" data-act="${ui.plan ? 'stageadd' : 'puton'}" data-pid="${pid}" style="margin-bottom:10px">Put on</button>` : ''}
+    <div class="plist">${others.map(q => liveRow(t, m, q, !isOn, now, behind, pid)).join('')}</div>
+    ${onPitch && isOn ? `<button class="textbtn" data-act="switchpos" data-pid="${pid}" style="margin-top:10px">Move her to another spot instead</button>` : ''}
     <button class="btn quiet wide" data-act="clearpick" style="margin-top:12px">Cancel</button></div>`);
+}
+
+/* What the pitch will look like (the owner, 2026-10-18), in the sub sheet the
+   Pitch look opens: the pitch as it stands with the change she is about to
+   make marked on it. A player coming off is a dashed token where she stands,
+   a ? for her number, waiting for whoever is tapped under it. One going on
+   with no room has every token a button: tapping one is tapping that name in
+   the list, she takes that spot. While there is room (and no batch, whose add
+   has no spot) each free spot is a dashed token carrying her number, a tap
+   putting her there. A picture, not the pitch: nothing here drags, so it
+   carries no id for wireDrag(), and the minutes are left off the tokens. The
+   bottom row is lifted a little (`top` capped) so the keeper's name is not
+   cut off by a pitch a third the size. */
+function mockPitch(t, m, pid, isOn, room) {
+  const p = (t.players || {})[pid] || {};
+  const first = q => esc((q.name || '').split(' ')[0]);
+  const tokens = squad(t, m).filter(q => onField(m, q.id)).map(q => {
+    const pos = posOf(m, q.id), sl = slotOf(m, q.id), out = q.id === pid;
+    const inner = `${sl ? `<span class="role">${esc(sl.label)}</span>` : ''}<span class="num">${out ? '?' : esc(q.number ?? '')}</span>
+      <span class="nm">${out ? 'for ' + first(q) : first(q)}</span>`;
+    return out || isOn || isStaged(q.id)
+      ? `<div class="token" data-pid="${q.id}"${out ? ' data-mock="out"' : ''}${isStaged(q.id) ? ' data-staged="1"' : ''} style="left:${pos.x}%;top:${Math.min(pos.y, 86)}%">${inner}</div>`
+      : `<button type="button" class="token" data-act="taplive" data-pid="${q.id}" data-with="${pid}" style="left:${pos.x}%;top:${Math.min(pos.y, 86)}%">${inner}</button>`;
+  }).join('');
+  const ghosts = room && !ui.plan ? ((m.formation && m.formation.slots) || []).filter(x => !slotTaken(m, x.id)).map(x =>
+    `<button type="button" class="token" data-mock="in" data-act="fillslot" data-sid="${x.id}" data-pid="${pid}" style="left:${x.x}%;top:${Math.min(x.y, 86)}%">
+      <span class="role">${esc(x.label)}</span><span class="num">${esc(p.number ?? '')}</span><span class="nm">${first(p)}</span></button>`).join('') : '';
+  return `<p class="muted mockcap">What the pitch will look like</p>
+    <div class="pitch mockpitch">${PITCH_LINES}${ghosts}${tokens}</div>`;
 }
 
 /* Everything that happened, in one list, so the Track tab stops being four
@@ -9358,14 +9388,6 @@ function viewSubs() {
       : `<p class="muted" style="margin:8px 0 0;color:rgba(255,255,255,.8)">Pair players as usual, or tap a spot chip to move someone. Nothing happens until you send it.</p>`}
   </div>` : '';
 
-  const picked = ui.picked ? (t.players || {})[ui.picked] : null;
-  const pickedOn = picked && onField(m, picked.id);
-  const room = on.length < (m.onFieldCount || 11);
-  const banner = picked ? `<div class="pickbar">
-    <span><b>${esc(picked.name)}</b> ${pickedOn ? 'coming off — tap who takes her place' : room ? 'going on' : 'going on — tap who she replaces'}</span>
-    <span class="row">${!pickedOn && room ? `<button class="btn sm" data-act="${planning ? 'stageadd' : 'puton'}" data-pid="${picked.id}">Put on</button>` : ''}
-    <button class="btn quiet sm" data-act="clearpick">Cancel</button></span></div>` : '';
-
   const row = (p, isOn) => liveRow(t, m, p, isOn, now, behind);
 
   const clashes = clashesOn(t, m);
@@ -9383,8 +9405,6 @@ function viewSubs() {
         <span class="muted">fix</span></button>`).join('')}</div>`
     : `<p class="muted" style="margin:0">Nothing yet.</p>`;
 
-  const scCard = goalRow(t, m);
-
   const startHint = on.length === 0 ? `<p class="muted" style="margin:0 0 10px">Tap a player on the bench, then <b>Put on</b>. Repeat until your starters are out there.
     ${planBlocks(m).length ? ' Or fill the whole lineup from the plan.' : ''}</p>
     ${planBlocks(m).length ? `<button class="btn quiet wide" data-act="applyblock" data-start="${(planBlockAt(m, el) || planBlocks(m)[0]).start}" style="margin-bottom:10px">Use the planned lineup</button>` : ''}` : '';
@@ -9392,9 +9412,7 @@ function viewSubs() {
   return `<div class="stack">
     ${subsLooks()}
     ${subsCard(t, m, now)}
-    ${scCard}
     ${planBar}
-    ${banner}
     ${warn}
     <div class="card"><div class="spread" style="margin-bottom:8px">
       <h2>On the pitch</h2>
@@ -9419,22 +9437,22 @@ function putOn(m, pid) {
   if (p) toast(`${p.name} on at ${mins(elapsedSec(m))}′`);
 }
 
-/* Simpler than the pitch version: one on, one off, that is a sub. */
-function tapLive(pid) {
+/* A sub is two taps, the second in the sheet the first opens (the owner,
+   2026-10-18: no picking a player on the page and then another to pair her
+   with; the sheet of names is the one way, or nothing). The first tap, on
+   either look, opens who could be paired with her; the second, on a name in
+   that sheet or a token on its mock pitch, carries both ids (`withPid`) and
+   makes the sub, or stages it. A sheet left open while the pitch changed
+   under it (another phone's sub) is opened again rather than trusted. */
+function tapLive(pid, withPid) {
   const m = match(), t = team();
   const p = (t.players || {})[pid]; if (!p) return;
   if (ui.plan && isStaged(pid)) { toast(`${p.name} is already in this batch`); return; }
-  if (!ui.picked) { ui.picked = pid; render(); sheetSubFor(pid); return; }
-  if (ui.picked === pid) { ui.picked = null; render(); return; }
-  const a = ui.picked, b = pid;
-  const aOn = onField(m, a), bOn = onField(m, b);
-  if (aOn === bOn) {
-    if (!aOn && !ui.plan && fieldIds(m).length < (m.onFieldCount || 11)) { ui.picked = null; putOn(m, a); ui.picked = b; render(); return; }
-    ui.picked = b; render(); sheetSubFor(b); return;
-  }
-  ui.picked = null;
-  closeSheet();   // the sub sheet, if that is where the second tap was
-  const outPid = aOn ? a : b, inPid = aOn ? b : a;
+  if (!withPid || withPid === pid || !(t.players || {})[withPid]) { sheetSubFor(pid); return; }
+  const aOn = onField(m, withPid), bOn = onField(m, pid);
+  if (aOn === bOn) { sheetSubFor(pid); return; }
+  closeSheet();
+  const outPid = aOn ? withPid : pid, inPid = aOn ? pid : withPid;
   if (ui.plan) { stage({ k: 'sub', out: outPid, in: inPid }); render(); return; }
   swap(m, outPid, inPid);
   toast(`${(t.players || {})[inPid].name} on for ${(t.players || {})[outPid].name} at ${mins(elapsedSec(m))}′`);
@@ -9460,8 +9478,7 @@ function viewMatch() {
     const pl = playedSec(m, p.id, now), pd = plannedSec(m, p.id);
     const owed = pd > 0 && pl < pd ? 1 : 0;
     const sl = slotOf(m, p.id);
-    return `<div class="token" data-pid="${p.id}" data-owed="${owed}" data-picked="${ui.picked === p.id ? 1 : 0}"
-      style="left:${pos.x}%;top:${pos.y}%">
+    return `<div class="token" data-pid="${p.id}" data-owed="${owed}" style="left:${pos.x}%;top:${pos.y}%">
       ${sl ? `<span class="role">${esc(sl.label)}</span>` : ''}
       <span class="num">${esc(p.number ?? '')}</span>
       <span class="mins" data-tokmins="${p.id}">${mins(pl)}′</span>
@@ -9473,17 +9490,8 @@ function viewMatch() {
     `<button type="button" class="ghost" data-act="fillslot" data-sid="${s.id}"
       style="left:${s.x}%;top:${s.y}%">${esc(s.label)}</button>`).join('');
 
-  const pitch = `<div class="pitch" id="pitch">
-    <svg class="lines" viewBox="0 0 68 100" preserveAspectRatio="none" aria-hidden="true">
-      <g fill="none" stroke="rgba(255,255,255,.45)" stroke-width=".5">
-        <rect x="2" y="2" width="64" height="96"/>
-        <line x1="2" y1="50" x2="66" y2="50"/>
-        <circle cx="34" cy="50" r="9"/>
-        <rect x="16" y="2" width="36" height="15"/><rect x="16" y="83" width="36" height="15"/>
-        <rect x="26" y="2" width="16" height="6"/><rect x="26" y="92" width="16" height="6"/>
-      </g>
-    </svg>${ghosts}${tokens}
-    <div class="pitchhint">${ui.picked ? 'Tap a spot, a player to swap, or anywhere on the grass' : field.length ? 'Drag to move · tap to pick' : 'Tap a bench player, then tap where she starts'}</div>
+  const pitch = `<div class="pitch" id="pitch">${PITCH_LINES}${ghosts}${tokens}
+    <div class="pitchhint">${field.length ? 'Drag to move · tap a player to sub' : 'Tap a bench player to put her on'}</div>
   </div>`;
 
 
@@ -9966,6 +9974,12 @@ function viewPlan() {
 /* The pitch as it stands, to look at: who is on, where, with her minutes.
    Subs' Pitch look is where she drags; this is the picture alone, for a
    screen that wants it without the handles (Lineup mid-game with no shape). */
+const PITCH_LINES = `<svg class="lines" viewBox="0 0 68 100" preserveAspectRatio="none" aria-hidden="true">
+      <g fill="none" stroke="rgba(255,255,255,.45)" stroke-width=".5">
+        <rect x="2" y="2" width="64" height="96"/><line x1="2" y1="50" x2="66" y2="50"/><circle cx="34" cy="50" r="9"/>
+        <rect x="16" y="2" width="36" height="15"/><rect x="16" y="83" width="36" height="15"/>
+        <rect x="26" y="2" width="16" height="6"/><rect x="26" y="92" width="16" height="6"/>
+      </g></svg>`;
 function pitchPicture(t, m, now) {
   const tokens = squad(t, m).filter(p => onField(m, p.id)).map(p => {
     const pos = posOf(m, p.id), sl = slotOf(m, p.id);
@@ -9973,13 +9987,7 @@ function pitchPicture(t, m, now) {
       ${sl ? `<span class="role">${esc(sl.label)}</span>` : ''}<span class="num">${esc(p.number ?? '')}</span>
       <span class="mins">${mins(playedSec(m, p.id, now))}′</span><span class="nm">${esc(p.name.split(' ')[0])}</span></div>`;
   }).join('');
-  return `<div class="pitch pitchnow">
-    <svg class="lines" viewBox="0 0 68 100" preserveAspectRatio="none" aria-hidden="true">
-      <g fill="none" stroke="rgba(255,255,255,.45)" stroke-width=".5">
-        <rect x="2" y="2" width="64" height="96"/><line x1="2" y1="50" x2="66" y2="50"/><circle cx="34" cy="50" r="9"/>
-        <rect x="16" y="2" width="36" height="15"/><rect x="16" y="83" width="36" height="15"/>
-        <rect x="26" y="2" width="16" height="6"/><rect x="26" y="92" width="16" height="6"/>
-      </g></svg>${tokens || '<div class="pitchhint">Nobody on yet. Put the starters on from Subs.</div>'}</div>`;
+  return `<div class="pitch pitchnow">${PITCH_LINES}${tokens || '<div class="pitchhint">Nobody on yet. Put the starters on from Subs.</div>'}</div>`;
 }
 
 /* Who to plan for, on the tab where the plan is made. The families' answers
@@ -10028,7 +10036,7 @@ function playerRow(m, p, now, isOn) {
   const pct = pd > 0 ? clamp(pl / pd * 100, 0, 100) : 0;
   const owed = pd > 0 && pl < pd - 60 ? 1 : 0;
   const bar = pd > 0 ? `<div class="bar"><i style="width:${pct}%" data-bar="${p.id}" data-owed="${owed}"></i><u style="left:100%"></u></div>` : '';
-  return `<button class="prow" type="button" data-act="tap" data-pid="${p.id}" data-on="${isOn ? 1 : 0}" data-picked="${ui.picked === p.id ? 1 : 0}">
+  return `<button class="prow" type="button" data-act="taplive" data-pid="${p.id}" data-on="${isOn ? 1 : 0}">
     <span class="pnum">${esc(p.number ?? '')}</span>
     <span><span class="pname">${esc(p.name)}</span>${bar}<span class="psub">${sl ? esc(sl.label) + ' · ' : ''}${pd > 0 ? mins(pd) + ' min planned' : 'no plan set'}</span></span>
     <span class="pmins" data-mins="${p.id}">${mins(pl)}<small> min</small></span>
@@ -20436,24 +20444,8 @@ function wireDrag() {
     const pid = tok.dataset.pid;
     draggable(pitch, tok,
       p => commit(`matches/${m.id}/positions/${pid}`, { ...((m.positions || {})[pid] || {}), x: p.x, y: p.y }),
-      () => tapPlayer(pid));
+      () => tapLive(pid));
   }
-
-  /* click, not pointerdown: the grass scrolls the page now, and a thumb that
-     lands on it to scroll must not drop the picked player where it landed. A
-     click only arrives for a tap that did not turn into a scroll. */
-  pitch.addEventListener('click', e => {
-    if (e.target.closest('.token') || e.target.closest('.ghost')) return;
-    if (!ui.picked || onField(m, ui.picked)) return;
-    if (fieldIds(m).length >= (m.onFieldCount || 11)) { toast('Pitch is full — tap a player to swap'); return; }
-    const rect = pitch.getBoundingClientRect();
-    const x = clamp((e.clientX - rect.left) / rect.width * 100, 4, 96);
-    const y = clamp((e.clientY - rect.top) / rect.height * 100, 4, 96);
-    const pid = ui.picked; ui.picked = null;
-    putOnField(m, pid, x, y, null);
-    const p = (team().players || {})[pid];
-    if (p) toast(p.name + ' on at ' + mins(elapsedSec(m)) + '′');
-  });
 }
 
 function wireFormationDrag() {
@@ -20466,30 +20458,6 @@ function wireFormationDrag() {
       commit(`${tg.path}/slots`, slots);
     }, () => sheetSlot(sid));
   }
-}
-
-function tapPlayer(pid) {
-  const m = match(); if (!m) return;
-  const t = team(); const p = (t.players || {})[pid]; if (!p) return;
-
-  if (!ui.picked) { ui.picked = pid; render(); return; }
-  if (ui.picked === pid) { ui.picked = null; render(); return; }
-
-  const a = ui.picked, b = pid;
-  const aOn = onField(m, a), bOn = onField(m, b);
-  ui.picked = null;
-
-  if (aOn && bOn) { // swap positions on the pitch
-    const pa = posOf(m, a), pb = posOf(m, b);
-    setDeep(state, `matches/${m.id}/positions/${a}`, pb); remoteSet(`matches/${m.id}/positions/${a}`, pb);
-    setDeep(state, `matches/${m.id}/positions/${b}`, pa); remoteSet(`matches/${m.id}/positions/${b}`, pa);
-    saveLocal(); render(); return;
-  }
-  if (!aOn && !bOn) { ui.picked = b; render(); return; }
-  const outPid = aOn ? a : b, inPid = aOn ? b : a;
-  swap(m, outPid, inPid);
-  const pin = (t.players || {})[inPid], pout = (t.players || {})[outPid];
-  toast(`${pin.name} on for ${pout.name} at ${mins(elapsedSec(m))}′`);
 }
 
 /* ---------------- public mirror ---------------- */
@@ -23339,7 +23307,7 @@ function onAct(e) {
     if (!team()) { const t = myTeams()[0]; if (!t) return; ui.teamId = t.id; }
     const p = practiceUi();
     p.tab = 'drills'; p.pick = null; p.run = null;
-    ui.view = 'practice'; ui.picked = null;
+    ui.view = 'practice';
     render(); toTop(); return;
   }
   if (a === 'practab') {
@@ -23697,15 +23665,14 @@ function onAct(e) {
     return;
   }
 
-  if (a === 'tap') { tapPlayer(d.pid); return; }
-  if (a === 'taplive') { tapLive(d.pid); return; }
-  if (a === 'clearpick') { ui.picked = null; closeSheet(); render(); return; }
-  if (a === 'puton') { ui.picked = null; putOn(m, d.pid); render(); return; }
+  if (a === 'taplive') { tapLive(d.pid, d.with); return; }
+  if (a === 'clearpick') { closeSheet(); return; }
+  if (a === 'puton') { closeSheet(); putOn(m, d.pid); return; }
   if (a === 'switchpos') { sheetSwitch(d.pid); return; }
   if (a === 'togglesort') { ui.sortBy = ui.sortBy === 'number' ? 'need' : 'number'; render(); return; }
   if (a === 'pickgame') { sheetPickGame(); return; }
   // a finished game lands on its recap wherever it is opened from (UX-REVIEW-3.md, 16.9)
-  if (a === 'pickgame2') { const g = state.matches[d.id]; ui.matchId = d.id; ui.picked = null; ui.view = 'game'; ui.gameView = g && gameStatus(g) === 'done' ? 'recap' : 'subs'; closeSheet(); render(); return; }
+  if (a === 'pickgame2') { const g = state.matches[d.id]; ui.matchId = d.id; ui.view = 'game'; ui.gameView = g && gameStatus(g) === 'done' ? 'recap' : 'subs'; closeSheet(); render(); return; }
   if (a === 'doswitch') {
     if (ui.plan) {
       const sl = d.sid ? slotById(m, d.sid) : null;
@@ -23714,9 +23681,9 @@ function onAct(e) {
     }
     switchTo(m, d.pid, d.sid || null, d.role || null); closeSheet(); return;
   }
-  if (a === 'stageadd') { ui.picked = null; stage({ k: 'add', pid: d.pid }); render(); return; }
-  if (a === 'startplan') { ui.plan = { matchId: ui.matchId, items: [] }; ui.picked = null; render(); return; }
-  if (a === 'cancelplan') { ui.plan = null; ui.picked = null; render(); return; }
+  if (a === 'stageadd') { closeSheet(); stage({ k: 'add', pid: d.pid }); render(); return; }
+  if (a === 'startplan') { ui.plan = { matchId: ui.matchId, items: [] }; render(); return; }
+  if (a === 'cancelplan') { ui.plan = null; render(); return; }
   if (a === 'unstage') { ui.plan.items.splice(Number(d.i), 1); saveUi(); render(); return; }
   if (a === 'applyplan') { applyStaged(m); return; }
   if (a === 'goal') {
@@ -23992,7 +23959,7 @@ function onAct(e) {
     closeSheet();
     const k = d.tab || d.v;
     if (k === 'more') { sheetMore(); return; }
-    if (k === 'calendar') { ui.view = 'calendar'; ui.picked = null; }
+    if (k === 'calendar') { ui.view = 'calendar'; }
     else if (k === 'messages') { ui.view = 'inbox'; ui.thread = null; }
     else if (k === 'home') {
       if (homeView() === 'club') ui.view = 'club';
@@ -24001,7 +23968,7 @@ function onAct(e) {
     else if (k === 'game') {
       const live = navGames().filter(g => gameStatus(g) === 'live');
       if (live.length === 1 && !(ui.view === 'game' && ui.matchId === live[0].id)) openNavGame(live[0]);
-      else { if (ui.view !== 'games') ui.gamesFrom = null; ui.view = 'games'; ui.picked = null; }
+      else { if (ui.view !== 'games') ui.gamesFrom = null; ui.view = 'games'; }
     }
     render(); toTop(); return;
   }
@@ -24015,7 +23982,7 @@ function onAct(e) {
   // the games past this week are the calendar's: the club's for whoever the list is the club for, else hers
   if (a === 'gameslater') {
     const own = ownGameTeams(), offer = calSels();
-    ui.view = 'calendar'; ui.picked = null;
+    ui.view = 'calendar';
     if (offer.includes('club') && navTeams().some(t => !own.has(t.id))) { ui.calSel = 'club'; ui.calOff = {}; }
     else ui.calSel = offer[0] || 'club';
     saveUi(); render(); toTop(); return;
@@ -24027,7 +23994,7 @@ function onAct(e) {
     if (up === v) {   // one of the screen's own items open: back to its list
       if (v === 'regs') { ui.regs.prog = null; ui.regs.st = 'all'; }
       if (v === 'tryout') { ui.tryout.prog = null; ui.tryout.bib = null; }
-    } else if (up) { ui.view = up; ui.picked = null; if (up === 'inbox') ui.thread = null; }
+    } else if (up) { ui.view = up; if (up === 'inbox') ui.thread = null; }
     closeSheet(); render(); toTop(); return;
   }
   if (a === 'accountsheet') { if (me) sheetAccount(); else sheetSignIn(); return; }
@@ -25045,7 +25012,7 @@ function onAct(e) {
     toast('Plan locked in');
     return;
   }
-  if (a === 'opengview') { ui.gameView = d.v; ui.picked = null; if (d.v === 'subs' || d.v === 'pitch') ui.subsLook = d.v; render(); return; }
+  if (a === 'opengview') { ui.gameView = d.v; if (d.v === 'subs' || d.v === 'pitch') ui.subsLook = d.v; render(); return; }
   if (a === 'gamemenu') { sheetGameMenu(); return; }
   /* What to tell the bench names every player in the plan, so it is the coach's
      like the Plan tab is — checked here, not only by the button's absence. */
@@ -25060,12 +25027,15 @@ function onAct(e) {
     catch (e) { toast('Could not copy — select it by hand'); }
     return;
   }
+  /* A free spot on the sub sheet's mock pitch carries the player it is for;
+     the real pitch's free spots carry nobody, and say where to start. */
   if (a === 'fillslot') {
     const sl = slotById(m, d.sid); if (!sl) return;
-    if (!ui.picked) { toast('Pick a player first'); return; }
-    const pid = ui.picked; ui.picked = null;
+    const pid = d.pid;
+    if (!pid || !(t.players || {})[pid]) { toast('Tap a player on the bench to put her here'); return; }
+    closeSheet();
     if (onField(m, pid)) { switchTo(m, pid, sl.id, null); return; }
-    if (fieldIds(m).length >= (m.onFieldCount || 11)) { toast('Pitch is full — tap a player to swap'); return; }
+    if (fieldIds(m).length >= (m.onFieldCount || 11)) { toast('Pitch is full — tap who she replaces'); return; }
     putOnField(m, pid, sl.x, sl.y, sl.id);
     const p = (t.players || {})[pid];
     if (p) toast(`${p.name} on at ${sl.label}, ${mins(elapsedSec(m))}′`);
@@ -25089,7 +25059,7 @@ function onAct(e) {
   if (a === 'editgameshape') {
     if (!m || restricted() || readOnlyHere()) return;
     if (!m.formation) commit(`matches/${m.id}/formation`, resolveShape(t, 'auto', m.onFieldCount || 11) || blankShape(m.onFieldCount || 11));
-    ui.editFid = GAME_SHAPE; ui.view = 'formation'; ui.picked = null; closeSheet(); render(); return;
+    ui.editFid = GAME_SHAPE; ui.view = 'formation'; closeSheet(); render(); return;
   }
   if (a === 'gameshapepreset') {
     const tg = shapeTarget(); if (!tg || !tg.game) return;
@@ -25313,7 +25283,7 @@ function onAct(e) {
     const g = state.matches[d.id]; if (!g) return;
     // back goes where she came from: the Calendar, or the team's Season and its cards
     ui.gameFrom = ui.view === 'calendar' ? 'calendar' : 'season';
-    ui.teamId = d.tid; ui.matchId = d.id; ui.view = 'game'; ui.picked = null;
+    ui.teamId = d.tid; ui.matchId = d.id; ui.view = 'game';
     /* Before kick-off a coach has a plan to make, and on the day the clock to
        start; once it is on, the subs. A tracker logs; everyone else follows
        the game. A card that knows which (the live one, Next up) says so. */
@@ -25466,7 +25436,7 @@ function onAct(e) {
     if (!g || !canGameEdit(g)) { toast(canCalTeam(g && g.teamId) ? 'It has kicked off: the coach changes it from here' : 'Only the team’s coach can change this game'); return; }
     sheetMatch(g); return;
   }
-  if (a === 'backgames') { ui.view = upView('game'); ui.gameFrom = null; ui.picked = null; render(); return; }
+  if (a === 'backgames') { ui.view = upView('game'); ui.gameFrom = null; render(); return; }
   if (a === 'openmatch') { const g = state.matches[d.id]; ui.matchId = d.id; ui.view = 'game'; ui.gameView = g && gameStatus(g) === 'done' ? 'recap' : 'subs'; ui.gameFrom = null; render(); return; }
   if (a === 'savematch') {
     const side = Number($('#mSide').value);
@@ -25708,7 +25678,7 @@ document.addEventListener('input', e => {
 $('#scrim').addEventListener('click', closeSheet);
 $('#tabs').addEventListener('click', e => {
   const b = e.target.closest('button'); if (!b) return;
-  ui.view = b.dataset.view; ui.picked = null; render();
+  ui.view = b.dataset.view; render();
 });
 $('#subtabs').addEventListener('click', e => {
   const b = e.target.closest('button'); if (!b) return;

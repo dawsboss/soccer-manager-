@@ -197,6 +197,18 @@ const SNAP = () => {
       await tap('[data-act="calview"][data-v="month"]'); await capture('calendar-live-month', 'Month during a game');
       await tab('home'); await tap('[data-act="gotoplayer"]', 'Playing now row'); await capture('playing-now-row', 'Playing now from the child card');
     },
+    /* The coach subbing (build 176): the list and the pitch, and the sheet
+       either opens, the one way to pair two players. Run on live.json as jaz. */
+    subs: async () => {
+      await tap('[data-act="roleok"]');
+      await tab('game'); await closeSheet();
+      await capture('subs', 'Subs, the list: no Goal taps, no pick bar');
+      if (await tap('#app .liverow[data-on="1"] [data-act="taplive"]', 'a player on the pitch')) { await capture('subs-sheet-off', 'her sheet: who takes her place'); await closeSheet(); }
+      if (await tap('#app .liverow[data-on="0"] [data-act="taplive"]', 'a player on the bench')) { await capture('subs-sheet-on', 'her sheet: who she replaces'); await closeSheet(); }
+      await tap('[data-act="opengview"][data-v="pitch"]', 'Pitch'); await capture('pitch', 'the Pitch look');
+      if (await tap('#pitch .token', 'a token')) { await capture('pitch-sheet-off', 'the sheet from a token: the mock pitch, her spot a ?'); await closeSheet(); }
+      if (await tap('#app .prow[data-on="0"][data-act="taplive"]', 'a bench row')) { await capture('pitch-sheet-on', 'the sheet from the bench: the mock pitch, every token tappable'); await closeSheet(); }
+    },
     staff: async () => {
       await capture('home-first', 'Home as this role');
       await tap('[data-act="roleok"]');

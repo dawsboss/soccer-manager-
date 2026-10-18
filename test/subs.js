@@ -595,13 +595,17 @@ function sideline() {
     as('jaz'); A.ui.gameView = 'subs';
     let h = html();
     check('Subs has no clock card and no clock button of any kind', /clockwrap|clockstrip|data-act="(start|pause|endhalf|endgame|fixclock)"/.test(h), false);
-    check('the score is in the header: Subs has the two Goal taps in one row and no score card', (h.match(/data-act="goal"/g) || []).length + ' ' + /scorecard/.test(h), '2 false');
+    /* The owner, 2026-10-18, later the same day: the Goal taps off Subs too.
+       The score is in the header and a goal is Track's to log; Subs is the
+       subbing page and nothing else. */
+    check('Subs has no Goal tap and no score card: the score is in the header, a goal is logged on Track', (h.match(/data-act="goal"/g) || []).length + ' ' + /scorecard|goalrow/.test(h), '0 false');
     check('with no plan, the coach is told where the subs heads-up will come from', /id="subsdue"/.test(h) && /Plan the game on Lineup and lock it in/.test(h) && /data-act="opengview" data-v="plan">Open Lineup</.test(h), true);
     A.ui.gameView = 'pitch'; h = html();
     check('the pitch, a look at Subs, has no clock controls either', /clockwrap|clockstrip|data-act="(start|pause|endhalf)"/.test(h), false);
     check('— and the same heads-up', /id="subsdue"/.test(h), true);
     A.ui.gameView = 'track'; h = html();
     check('Track keeps the whole clock card', /class="clockwrap"/.test(h) && /data-act="start"/.test(h) && /data-act="fixclock"/.test(h), true);
+    check('— and the score card with its two Goal taps', /class="card scorecard"/.test(h) && (h.match(/data-act="goal"/g) || []).length === 2, true);
 
     // the header's clock, on every screen of the game
     const T = () => String(A.dom.node('#titlebar').innerHTML || '');
@@ -623,37 +627,53 @@ function sideline() {
     as('trk'); A.ui.gameView = 'track'; A.click({ act: 'pause' }); as('jaz'); A.ui.gameView = 'subs';
     g().currentHalf = 1; g().periods = {};   // back to before kick-off, for the subs below
 
-    // the sub sheet: the other side, one tap away
+    /* The sub sheet: the other side, one tap away, and the one way to pair two
+       players (the owner, 2026-10-18: no picking one on the page and then
+       another; the sheet of names, or nothing). Each row in it carries both
+       ids, so the second tap is the sub wherever the sheet was dismissed from,
+       and dismissing it leaves nothing picked: no pick bar, no half-made sub. */
+    const mock = () => { const h = sheet(), i = h.indexOf('<p class="muted mockcap">What the pitch will look like</p>'); return i < 0 ? '' : h.slice(i, h.indexOf('<div class="plist">')); };
     for (const pid of ['p5', 'p1', 'p2', 'p3']) A.click({ act: 'puton', pid });
     check('four on, 4v4', on(g), ['p1', 'p2', 'p3', 'p5']);
     A.click({ act: 'taplive', pid: 'p1' });
     check('a tap on a player on the pitch opens who could take her place', sheetOpen() && /Ella coming off/.test(sheet()) && /Tap who takes her place/.test(sheet()), true);
     check('— the bench and nobody on the pitch', /data-pid="p4"/.test(sheet()) && /data-pid="p6"/.test(sheet()) && !/data-pid="p2"/.test(sheet()), true);
     check('— the same rows, with no spot chip to move her by', /class="liverow"/.test(sheet()) && !/lrspot/.test(sheet()), true);
-    A.click({ act: 'taplive', pid: 'p4' });
+    check('— each row carrying whom it pairs with', /data-act="taplive" data-pid="p4" data-with="p1"/.test(sheet()), true);
+    check('— and no mock pitch on the list look', mock(), '');
+    check('nothing is picked on the page behind it: no pick bar', /pickbar|data-picked/.test(html()), false);
+    A.click({ act: 'taplive', pid: 'p4', with: 'p1' });
     check('the second tap makes the sub', on(g), ['p2', 'p3', 'p4', 'p5']);
-    check('— and closes the sheet with nobody picked', sheetOpen() + ' ' + A.ui.picked, 'false null');
+    check('— and closes the sheet', sheetOpen(), false);
     A.click({ act: 'taplive', pid: 'p1' });
     check('a tap on the bench with no room opens who she could replace', sheetOpen() && /Ella going on/.test(sheet()) && /Tap who she replaces/.test(sheet()), true);
     check('— the pitch, each with her spot in words, and nobody on the bench', /data-pid="p5"/.test(sheet()) && /GK · /.test(sheet()) && !/data-pid="p6"/.test(sheet()), true);
-    A.click({ act: 'taplive', pid: 'p2' });
+    check('— and no Put on while there is no room', /data-act="puton"/.test(sheet()), false);
+    A.click({ act: 'taplive', pid: 'p2', with: 'p1' });
     check('and the second tap makes that sub too', on(g), ['p1', 'p3', 'p4', 'p5']);
     A.click({ act: 'taplive', pid: 'p3' });
     A.closeSheet();
-    check('dismissing the sheet leaves her picked, the pick bar up', A.ui.picked + ' ' + /class="pickbar"/.test(html()) + ' ' + /coming off/.test(html()), 'p3 true true');
+    check('dismissing the sheet leaves nothing picked and no pick bar: the sheet was the whole of it', /pickbar|coming off/.test(html()), false);
+    A.click({ act: 'taplive', pid: 'p6' });
+    A.click({ act: 'taplive', pid: 'p2' });
+    check('a tap on a name on the page is never the second tap: it opens her own sheet', sheetOpen() + ' ' + /Mia going on/.test(sheet()) + ' ' + on(g).join(), 'true true p1,p3,p4,p5');
     A.click({ act: 'clearpick' });
-    check('Cancel clears the pick', A.ui.picked, null);
+    check('Cancel closes the sheet', sheetOpen(), false);
+    A.click({ act: 'taplive', pid: 'p1', with: 'p3' });
+    check('a stale pair (both on the same side by the time of the tap) opens her sheet again instead of a sub', sheetOpen() + ' ' + /Ella coming off/.test(sheet()) + ' ' + on(g).join(), 'true true p1,p3,p4,p5');
+    A.closeSheet();
     g().onFieldCount = 5;
     A.click({ act: 'taplive', pid: 'p2' });
-    check('with room on the pitch a bench tap opens nothing: Put on is on the pick bar', sheetOpen() + ' ' + A.ui.picked + ' ' + /data-act="puton"/.test(html()), 'false p2 true');
-    A.click({ act: 'clearpick' });
-    g().onFieldCount = 4;
+    check('with room on the pitch a bench tap opens the sheet with Put on above who she could replace', sheetOpen() && /Put her on, or tap who she replaces/.test(sheet()) && /data-act="puton" data-pid="p2"/.test(sheet()) && /data-pid="p5" data-with="p2"/.test(sheet()), true);
+    A.click({ act: 'puton', pid: 'p2' });
+    check('— Put on puts her on and closes the sheet', on(g).join() + ' ' + sheetOpen(), 'p1,p2,p3,p4,p5 false');
+    A.takeOffField(g(), 'p2'); g().onFieldCount = 4;
 
     // several at once: the same sheet stages instead
     A.click({ act: 'startplan' });
     A.click({ act: 'taplive', pid: 'p3' });
     check('staging, the sheet says nothing happens yet', sheetOpen() && /Nothing happens until you send the batch/.test(sheet()), true);
-    A.click({ act: 'taplive', pid: 'p6' });
+    A.click({ act: 'taplive', pid: 'p6', with: 'p3' });
     check('the second tap stages the pair and closes the sheet', A.ui.plan.items.length + ' ' + sheetOpen() + ' ' + on(g).join(), '1 false p1,p3,p4,p5');
     A.click({ act: 'taplive', pid: 'p1' });
     check('whoever is in the batch is left out of the next sheet', /data-pid="p2"/.test(sheet()) && !/data-pid="p6"/.test(sheet()), true);
@@ -661,7 +681,39 @@ function sideline() {
 
     as('trk');
     A.click({ act: 'taplive', pid: 'p2' });
-    check('a tracker gets no sub sheet and no pick', sheetOpen() + ' ' + A.ui.picked, 'false null');
+    check('a tracker gets no sub sheet', sheetOpen(), false);
+
+    /* The Pitch look acts as the list does (the owner, 2026-10-18): a token
+       or a bench row opens the same sheet, which leads with a mock of what
+       the pitch will look like. */
+    as('jaz'); A.ui.gameView = 'pitch'; h = html();
+    check('the pitch look: every bench row is the same tap as the list\'s', /data-act="tap"/.test(h) + ' ' + (h.match(/class="prow" type="button" data-act="taplive"/g) || []).length, 'false 6');
+    check('— nothing picked on it, and the hint says what a tap does', /data-picked/.test(h) + ' ' + /Drag to move · tap a player to sub/.test(h), 'false true');
+    A.click({ act: 'taplive', pid: 'p1' });
+    check('a tap on a player on the pitch opens the same sheet', sheetOpen() && /Ella coming off/.test(sheet()) && /data-pid="p6" data-with="p1"/.test(sheet()), true);
+    check('— led by the mock pitch, captioned', /^<p class="muted mockcap">What the pitch will look like<\/p>\s*<div class="pitch mockpitch">/.test(mock()) && sheet().indexOf('mockpitch') < sheet().indexOf('class="liverow"'), true);
+    check('— her spot a dashed ? waiting for whoever is tapped, the rest as they stand', /<div class="token" data-pid="p1" data-mock="out" style="left:[\d.]+%;top:[\d.]+%"><span class="role">RB<\/span><span class="num">\?<\/span>\s*<span class="nm">for Ella<\/span>/.test(mock()) && /<div class="token" data-pid="p5" style=/.test(mock()) && !/<button/.test(mock()), true);
+    check('— with her spot\'s move offered, since a token has no spot chip', /data-act="switchpos" data-pid="p1"/.test(sheet()), true);
+    A.click({ act: 'taplive', pid: 'p6', with: 'p1' });
+    check('a bench name under it makes the sub', on(g).join() + ' ' + sheetOpen(), 'p3,p4,p5,p6 false');
+    A.click({ act: 'taplive', pid: 'p1' });
+    check('a bench player with no room: the sheet with the mock, every token a button that is her replacing that player', sheetOpen() && /Ella going on/.test(sheet()) && (mock().match(/<button type="button" class="token" data-act="taplive" data-pid="p\d" data-with="p1"/g) || []).length === 4 && !/data-mock/.test(mock()), true);
+    A.click({ act: 'taplive', pid: 'p6', with: 'p1' });
+    check('— a token tapped is the sub', on(g).join() + ' ' + sheetOpen(), 'p1,p3,p4,p5 false');
+    A.takeOffField(g(), 'p4');   // room, and a free spot (LB)
+    A.click({ act: 'taplive', pid: 'p4' });
+    check('with room, the free spot is a dashed token carrying her number, a tap putting her there', /<button type="button" class="token" data-mock="in" data-act="fillslot" data-sid="sLB" data-pid="p4"[^>]*>\s*<span class="role">LB<\/span><span class="num">9<\/span><span class="nm">Jo<\/span>/.test(mock()) && /data-act="puton" data-pid="p4"/.test(sheet()), true);
+    check('— the three on, each a button that is her replacing that player', (mock().match(/data-act="taplive" data-pid="p\d" data-with="p4"/g) || []).length, 3);
+    A.click({ act: 'fillslot', sid: 'sLB', pid: 'p4' });
+    check('— and it does', on(g).join() + ' ' + A.slotIdOf(g(), 'p4') + ' ' + sheetOpen(), 'p1,p3,p4,p5 sLB false');
+    A.takeOffField(g(), 'p4');
+    A.click({ act: 'fillslot', sid: 'sLB' });
+    check('a free spot on the real pitch, with nobody to put there, only says so', A.toasts[A.toasts.length - 1] + ' ' + on(g).join(), 'Tap a player on the bench to put her here p1,p3,p5');
+    A.click({ act: 'taplive', pid: 'p4' }); A.click({ act: 'puton', pid: 'p4' });
+    as('trk'); A.ui.gameView = 'pitch';
+    A.click({ act: 'taplive', pid: 'p2' });
+    check('a tracker gets nothing on the pitch look either', sheetOpen(), false);
+    as('jaz'); A.ui.gameView = 'subs';
 
     // the heads-up once there is a plan to lock in
     as('jaz'); A.ui.gameView = 'subs';
