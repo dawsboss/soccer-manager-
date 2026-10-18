@@ -56,6 +56,12 @@ if (scen === 'live') {
   // the sandbox made sbg3 live from NOW: keep it, on today's date
   s.matches.sbg3.date = '2026-10-17'; s.matches.sbg3.kickoff = '10:00'; s.matches.sbg3.venue = 'Lakeside Park, pitch 1'; s.matches.sbg3.home = 'home';
   s.matches.sbg5.date = '2026-10-24';
+  /* A shape and a spot for everyone on, so the Pitch look (and the sub sheet's
+     mock of it, build 176) draws players where they stand, not in one pile. */
+  const m = s.matches.sbg3, slots = JSON.parse(JSON.stringify(A.presetsFor(11)['4-3-3']));
+  m.formation = { name: '4-3-3', size: 11, slots };
+  m.positions = {};
+  A.fieldIds(m).forEach((pid, i) => { const sl = slots[i]; if (sl) m.positions[pid] = { x: sl.x, y: sl.y, slot: sl.id }; });
 } else {
   finish(s.matches.sbg3, '2026-10-10'); s.matches.sbg3.venue = 'Lakeside Park, pitch 1'; s.matches.sbg3.home = 'home';
   s.matches.sbg5.date = '2026-10-17';

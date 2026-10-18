@@ -46,7 +46,7 @@ try {
     state.teams.t_ok.players.p3={id:'p3',name:'Mia',number:'8',anywhere:true};
     ui.matchId='g1'; ui.view='game'; ui.gameView='subs'; render();
     tapLive('p3'); render();
-    tapLive('p2');
+    tapLive('p2', 'p3');
     console.log('after sub — p2 min:', Math.round(playedSec(state.matches.g1,'p2')/60),
                 '| p3 on field:', onField(state.matches.g1,'p3'),
                 '| stints:', Object.keys(state.matches.g1.stints).length);

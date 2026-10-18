@@ -145,7 +145,7 @@ check('and from app.js', /setgo/.test(app), false);
   /* Every row or card a tap opens carries .go. A row that is a choice (a
      player picked on Subs or the Lineup, a person ticked for a message) is
      not a door and gets none. */
-  const SELECT = new Set(['tap', 'snapplayer', 'msgpick']);
+  const SELECT = new Set(['taplive', 'snapplayer', 'msgpick']);
   const tags = [...app.matchAll(/<button[^>]*class="(prow|card)[^"]*"[^>]*>/g)];
   const rows = tags.map(m => {
     const cls = (m[0].match(/class="([^"]*)"/) || [])[1].replace(/\$\{[^}]*\}/g, '');

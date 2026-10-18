@@ -171,8 +171,6 @@ label.field span{display:block;font-size:14px;color:var(--ink-soft);margin-botto
 .clockbtns .btn{flex:1;background:#fff;color:var(--field-deep);border-color:#fff}
 .clockbtns .btn.stop{background:rgba(255,255,255,.14);color:#fff;border-color:rgba(255,255,255,.5)}
 /* the two Goal taps in one row: the score is in the game header */
-.goalrow{display:flex;gap:8px}
-.goalrow .btn{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 
 /* ---------- pitch ---------- */
 /* The grass scrolls the page (pan-y); only the tokens take the finger for a
@@ -208,6 +206,20 @@ label.field span{display:block;font-size:14px;color:var(--ink-soft);margin-botto
   position:absolute;left:0;right:0;bottom:8px;text-align:center;
   color:rgba(255,255,255,.85);font-size:14px;pointer-events:none;
 }
+/* The sub sheet's mock pitch (the Pitch look, build 176): the pitch as it
+   stands with the change marked on it, small enough to leave the names in
+   reach under it. A player coming off is a dashed outline where she stands,
+   a ? for her number; a free spot she could take carries her number, dashed,
+   and a token she could replace is a button. Tokens two thirds the size with
+   the minutes left off: it is a picture of where, not of how long. */
+.mockcap{margin:0 0 6px;text-align:center}
+.mockpitch{width:min(100%,230px);margin:0 auto 12px}
+.mockpitch .token{width:40px;height:40px}
+.mockpitch .token .num{font-size:16px}
+.mockpitch .token .mins{display:none}
+.mockpitch .token[data-mock="out"]{background:rgba(255,255,255,.18);border:2px dashed #fff;color:#fff}
+.mockpitch .token[data-mock="in"]{background:rgba(255,255,255,.35);border:2px dashed #fff}
+.mockpitch .token[data-staged="1"]{opacity:.55}
 
 /* ---------- player rows ---------- */
 .plist{display:flex;flex-direction:column;gap:6px}
@@ -402,12 +414,6 @@ label.field span{display:block;font-size:14px;color:var(--ink-soft);margin-botto
 /* Subs alone colours the three furthest behind the pace of the game: orange has to mean
    "look here" (UX-REVIEW-2.md, 7.2) */
 .liverow .diff.owed{color:var(--owed)}
-.pickbar{
-  position:sticky;top:96px;z-index:30;
-  display:flex;align-items:center;justify-content:space-between;gap:10px;
-  background:var(--field-deep);color:#fff;border-radius:var(--r);padding:11px 13px;font-size:14.5px;
-}
-.pickbar .btn{background:rgba(255,255,255,.16);color:#fff;border-color:rgba(255,255,255,.5)}
 
 /* ---------- score ---------- */
 .scorecard{display:flex;align-items:stretch;gap:10px;padding:12px}
@@ -963,7 +969,6 @@ button.rsvprow[aria-expanded="true"]{color:var(--field)}
 .nwsig{padding:10px 0;border-top:1px solid var(--line)}
 .nwsig:first-of-type{border-top:0;padding-top:4px}
 .planwarn p:last-child{margin-bottom:0}
-.pickbar{display:flex;align-items:center;justify-content:space-between;gap:10px;border-left:4px solid var(--field)}
 .runmode h4{font-size:12.5px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--ink-soft);margin:14px 0 4px}
 .runcard{text-align:center}
 .runcard h2{margin:0 0 4px}
