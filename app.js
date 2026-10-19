@@ -2,7 +2,7 @@
    Static app. Data lives in localStorage, and mirrors to Firebase Realtime
    Database when a config + workspace code are present. */
 
-const BUILD = '176';
+const BUILD = '177';
 const BUILT = '2026-10-14';
 /* The version of database.rules.json this app was written against. The rules
    carry the same number in rulesVersion's .write, which accepts that number
@@ -8781,6 +8781,56 @@ function recap(t, m, now = nowMs()) {
   const played = squad(t, m).map(p => ({ pid: p.id, sec: playedSec(m, p.id, now), plan: plannedSec(m, p.id) }))
     .filter(x => x.sec > 0).sort((a, b) => b.sec - a.sec);
   const short = played.filter(x => x.plan > 0 && x.plan - x.sec >= 300);
+  const unused = squad(t, m).filter(p => playedSec(m, p.id, now) === 0);
+  const subs = subEvents(m).filter(x => x.on && x.off && !x.move).length;
+
+  /* The story of the score: who scored first, whether we were ever behind,
+     whether a lead was held to the end. Worked out by replaying the goals in
+     order, because "came from behind" is a sentence about the sequence, not
+     the final score. `ledFrom` is the goal from which we led to the end. */
+  const run = goals.filter(g => g.side === 'us' || g.side === 'them');
+  let u = 0, h = 0, behind = false, led = false, ledFrom = null, changes = 0, leader = null, leadScore = null;
+  for (const g of run) {
+    if (g.side === 'us') u++; else h++;
+    if (u > h) { if (ledFrom == null) ledFrom = g.t; led = true; if (!leadScore || u - h > leadScore.us - leadScore.them) leadScore = { us: u, them: h }; }
+    else ledFrom = null;
+    if (h > u) behind = true;
+    const now2 = u > h ? 'us' : h > u ? 'them' : null;
+    if (now2 && leader && now2 !== leader) changes++;
+    if (now2) leader = now2;
+  }
+  const lead = {
+    first: run[0] ? run[0].side : null, firstAt: run[0] ? run[0].t : null, behind, led, ledFrom, changes, leadScore,
+    ht: byHalf.length === 2 ? { us: byHalf[0].us.goals, them: byHalf[0].them.goals } : null
+  };
+
+  // the match second the second half restarted at, and what came in the ten minutes after it
+  let restart = null;
+  { let acc = 0, prev = null; for (const s of segments(m).filter(x => x.start)) { if (prev != null && (s.half || 1) !== prev && restart == null) restart = acc; acc += Math.floor(((s.end || now) - s.start) / 1000); prev = s.half || 1; } }
+  if (!(restart > 0 && restart < L)) restart = null;
+  const afterHT = restart != null ? {
+    us: att.us.filter(x => x >= restart && x < restart + 600).length, them: att.them.filter(x => x >= restart && x < restart + 600).length,
+    firstUs: att.us.find(x => x >= restart)
+  } : null;
+  const lateShots = L >= 1200 ? { us: att.us.filter(x => x >= L - 600).length, them: att.them.filter(x => x >= L - 600).length } : null;
+  // spells we never got a shot away in
+  const quiet = spells.filter(s => s.us.goals + s.us.on + s.us.off === 0).length;
+
+  // the shot map's box is the top 17% of the pitch, both teams attacking upward
+  const placed = shots.filter(x => x.side === 'us' && x.xy && x.xy.x != null);
+  const box = { placed: placed.length, inside: placed.filter(x => Number(x.xy.y) <= 17).length };
+  // shots logged as shots (a game with only goals has no shot count to argue from)
+  const logged = { us: shots.filter(x => x.side === 'us').length, them: shots.filter(x => x.side === 'them').length };
+  // a goal within half a minute of a set piece came from it, near enough
+  const soon = (g, side, kind) => evs.some(e => e.kind === kind && e.side === side && g.t > e.t && g.t - e.t <= 30);
+  const fromCorner = { us: usG.filter(g => soon(g, 'us', 'corner')).length, them: themG.filter(g => soon(g, 'them', 'corner')).length };
+  // a foul given away by one side is the other side's free kick
+  const fromFoul = { us: usG.filter(g => soon(g, 'them', 'foul')).length, them: themG.filter(g => soon(g, 'us', 'foul')).length };
+  const kept = Math.max(0, sh.themOn - sc.them);
+  const assisted = usG.filter(g => g.assist).length;
+  const throws = { us: evCount(m, 'throw', 'us'), them: evCount(m, 'throw', 'them') };
+  const goalkicks = { us: evCount(m, 'goalkick', 'us'), them: evCount(m, 'goalkick', 'them') };
+  const keeper = { us: evCount(m, 'keeper', 'us'), them: evCount(m, 'keeper', 'them') };
 
   // the rest of the season, for "more than usual"; only games that counted shots
   const others = teamMatches(t.id).filter(x => x.id !== m.id && gameStatus(x) === 'done');
@@ -8788,19 +8838,38 @@ function recap(t, m, now = nowMs()) {
   const avgShots = withShots.length ? withShots.reduce((a, x) => a + shotTally(x).usOn + shotTally(x).usOff, 0) / withShots.length : null;
   const avgFor = others.length ? others.reduce((a, x) => a + score(x).us, 0) / others.length : null;
   const avgAg = others.length ? others.reduce((a, x) => a + score(x).them, 0) / others.length : null;
+  // the games before this one, newest first, for a run of results and the last meeting with this opponent
+  const before = others.filter(x => (x.date || '') < (m.date || '') || ((x.date || '') === (m.date || '') && (x.createdAt || 0) < (m.createdAt || 0)));
+  const res = x => { const k = score(x); return k.us > k.them ? 'w' : k.us < k.them ? 'l' : 'd'; };
+  let wins = 0, winless = 0;
+  for (const x of before) { if (res(x) === 'w') wins++; else break; }
+  for (const x of before) { if (res(x) !== 'w') winless++; else break; }
+  const opp = (m.opponent || '').trim().toLowerCase();
+  const prevGame = opp ? before.find(x => (x.opponent || '').trim().toLowerCase() === opp) : null;
+  const prevVs = prevGame ? score(prevGame) : null;
+  const gd = x => score(x).us - score(x).them;
+  const bestGD = others.length ? Math.max(...others.map(gd)) : null;
+  const mostFor = others.length ? Math.max(...others.map(x => score(x).us)) : null;
+  const mostAg = others.length ? Math.max(...others.map(x => score(x).them)) : null;
 
   return {
     L, sc, sh, att, spells, bs, best, worst, byHalf, answered, letBack, late, early, corners, fouls, po,
     drought: { us: drought(att.us), them: drought(att.them) },
     firstGoal: { us: usG[0] || null, them: themG[0] || null },
-    scorers: tally('pid'), assists: tally('assist'), played, short,
-    season: { games: others.length, shotGames: withShots.length, avgShots, avgFor, avgAg }
+    scorers: tally('pid'), assists: tally('assist'), played, short, unused, subs,
+    lead, restart, afterHT, lateShots, quiet, box, logged, fromCorner, fromFoul, kept, assisted, throws, goalkicks, keeper,
+    season: { games: others.length, shotGames: withShots.length, avgShots, avgFor, avgAg, wins, winless, prevVs, bestGD, mostFor, mostAg }
   };
 }
 
 /* What went well and what to work on, as plain sentences. Each rule says only
    what the numbers show, and needs enough of them to be worth saying: three
-   shots on target out of four is not a pattern. */
+   shots on target out of four is not a pattern. There are a lot of rules on
+   purpose: the score, the order of the goals, the halves, the restart, the
+   set pieces, the shot map, the minutes and the season each have their own,
+   so two games with the same score read differently, and a coach gets a
+   recap of her game rather than the same three lines every week. Most need
+   something to have been counted on Track, and say nothing otherwise. */
 function recapNotes(t, m, r) {
   const good = [], work = [];
   const them = m.opponent || 'them';
@@ -8810,8 +8879,25 @@ function recapNotes(t, m, r) {
   const span = (a, b) => `${feedMin(a)}–${feedMin(Math.max(a, b - 1))}`;
   const pl = (k, w) => `${k} ${w}${k === 1 ? '' : 's'}`;
   const counted = shotsUs + shotsThem > 0;
+  const won = r.sc.us > r.sc.them, lost = r.sc.us < r.sc.them, drew = r.sc.us === r.sc.them;
+  const minIn = sec => `${Math.floor((sec || 0) / 60) + 1} minutes in`;
+  const nth = n => n + (n % 100 >= 11 && n % 100 <= 13 ? 'th' : ['th', 'st', 'nd', 'rd'][n % 10] || 'th');
+  const ld = r.lead, half2 = r.byHalf.length === 2 ? r.byHalf[1].name.toLowerCase() : 'second half';
 
-  if (r.sc.us > r.sc.them) good.push(`Won it, ${r.sc.us}–${r.sc.them}.`);
+  if (won) good.push(`Won it, ${r.sc.us}–${r.sc.them}.`);
+  // the order of the goals: scored first, came from behind, a lead not held
+  // a first goal inside ten minutes is the fast start (or the early goal conceded) below, said once
+  const early = r.early && ld.firstAt < 600;
+  if (ld.first === 'us' && r.sc.them > 0 && (!early || (!ld.behind && ld.ledFrom === ld.firstAt))) good.push(!ld.behind && ld.ledFrom === ld.firstAt ? `Scored first, ${minIn(ld.firstAt)}, and never fell behind.` : `Scored first, ${minIn(ld.firstAt)}.`);
+  if (ld.first === 'them' && !won && !early) work.push(`Conceded first, ${minIn(ld.firstAt)}.`);
+  if (won && ld.behind) good.push(ld.ht && ld.ht.them > ld.ht.us ? `Came back from ${ld.ht.them}–${ld.ht.us} down at half time to win.` : 'Came from behind to win it.');
+  if (drew && ld.behind) good.push(`Came from behind to draw it, ${r.sc.us}–${r.sc.them}.`);
+  if (ld.led && !won) work.push(`Led ${ld.leadScore.us}–${ld.leadScore.them} and ${lost ? 'lost it' : 'let it slip to a draw'}.`);
+  if (r.byHalf.length === 2) {
+    const [a, b] = r.byHalf;
+    if (b.us.goals > b.them.goals && a.us.goals <= a.them.goals && !(won && ld.behind)) good.push(`Won the ${half2} ${b.us.goals}–${b.them.goals}${a.us.goals < a.them.goals ? ' after trailing at the break' : ''}.`);
+    if (b.them.goals > b.us.goals && a.us.goals >= a.them.goals && !(ld.led && !won)) work.push(`Lost the ${half2} ${b.them.goals}–${b.us.goals}${a.us.goals > a.them.goals ? ' after leading at the break' : ''}.`);
+  }
   if (r.sc.them === 0 && r.L >= 600) good.push('A clean sheet — nothing let in.');
   if (r.sc.us === 0 && r.L >= 600) work.push(shotsUs ? `No goal from ${pl(shotsUs, 'shot')}.` : 'No goal, and no shot recorded.');
   if (counted && shotsUs >= shotsThem + 2) good.push(`Outshot ${them} ${shotsUs} to ${shotsThem}.`);
@@ -8840,15 +8926,89 @@ function recapNotes(t, m, r) {
     const pct = Math.round(r.po.us / r.po.settled * 100);
     if (pct >= 55) good.push(`Kept the ball: ${pct}% of settled play.`);
     if (pct <= 45) work.push(`Chased the ball: ${pct}% of settled play.`);
+    // the ball without the shots, or the shots without the ball
+    if (pct >= 55 && counted && r.L >= 1800 && shotsUs <= 3) work.push(`Had the ball (${pct}%) but only ${pl(shotsUs, 'shot')} to show for it.`);
+    if (pct <= 45 && counted && shotsUs > shotsThem) good.push(`Did more with less: ${pct}% of the ball, but outshot ${them} ${shotsUs} to ${shotsThem}.`);
   }
   if (r.scorers.length >= 3) good.push(`Goals shared around — ${r.scorers.length} different scorers.`);
+  if (r.scorers.length === 1 && r.sc.us >= 3) work.push(`All ${r.sc.us} goals from one scorer — get more players into shooting positions.`);
+  if (r.assisted >= 2 && r.assisted * 2 >= r.sc.us) good.push(`Goals built together: ${r.assisted} of ${r.sc.us} set up by a pass.`);
+
+  // straight after half time, and the last ten minutes
+  if (r.afterHT && counted) {
+    if (r.afterHT.us >= 3) good.push(`Out fast after half time: ${pl(r.afterHT.us, 'shot')} in the first ten minutes of the ${half2}.`);
+    const wait = r.afterHT.firstUs == null ? null : r.afterHT.firstUs - r.restart;
+    if (r.L >= 1800 && shotsUs > 0 && (wait == null || wait >= 600)) work.push(wait == null ? 'Slow after the restart: no shot at all after half time.' : `Slow after the restart: ${Math.round(wait / 60)} minutes before a shot in the ${half2}.`);
+  }
+  if (r.lateShots) {
+    if (r.lateShots.us >= 3 && !r.late.us && !won) work.push(`${pl(r.lateShots.us, 'shot')} in the last ten minutes and no goal to show for them.`);
+    if (r.lateShots.them >= 3 && !r.late.them && !lost) good.push(`Held on: ${them} had ${pl(r.lateShots.them, 'shot')} in the last ten minutes and none went in.`);
+  }
+  // how often, spell by spell: the drought above is the longest gap, this is how many gaps
+  const spellWord = r.bs === 300 ? 'five' : 'ten';
+  if (counted && r.spells.length >= 6 && r.quiet === 0) good.push(`A shot in every ${spellWord}-minute spell of the game.`);
+  if (counted && r.L >= 1800 && shotsUs > 0 && r.quiet >= Math.ceil(r.spells.length / 2)) work.push(`Nothing on goal in ${r.quiet} of the game's ${r.spells.length} ${spellWord}-minute spells.`);
+
+  // the defence, from their shots: what was kept out, what went in
+  if (r.kept >= 3) good.push(`Kept out ${r.kept} of their ${r.sh.themOn} shots on target.`);
+  if (r.logged.them && r.sc.them >= 2 && r.sc.them / shotsThem >= 0.5) work.push(`Punished: ${them} scored from ${r.sc.them} of ${pl(shotsThem, 'shot')}.`);
+  if (r.logged.them && shotsThem >= 4 && r.sh.themOn / shotsThem <= 0.35) good.push(`Only ${r.sh.themOn} of their ${shotsThem} shots were on target.`);
+  // where we shot from, when the shots were placed on the map
+  if (r.box.placed >= 4) {
+    const pc = Math.round(r.box.inside / r.box.placed * 100);
+    if (pc >= 60) good.push(`${r.box.inside} of ${r.box.placed} placed shots came from inside the box.`);
+    if (pc <= 35) work.push(`Shooting from distance: only ${r.box.inside} of ${r.box.placed} placed shots from inside the box.`);
+  }
+  // set pieces that became goals, either way
+  if (r.fromCorner.us) good.push(r.fromCorner.us === 1 ? 'A goal straight from a corner.' : `${r.fromCorner.us} goals straight from corners.`);
+  if (r.fromCorner.them) work.push(`Conceded ${r.fromCorner.them === 1 ? 'one' : r.fromCorner.them} straight from a corner.`);
+  if (r.fromFoul.us) good.push(r.fromFoul.us === 1 ? 'Made a free kick count: a goal within half a minute of their foul.' : `${r.fromFoul.us} goals within half a minute of a free kick.`);
+  if (r.fromFoul.them) work.push(`Conceded ${r.fromFoul.them === 1 ? 'one' : r.fromFoul.them} from a free kick after a foul given away.`);
+  // the touchline and the goal line, when those were counted
+  if (r.throws.us + r.throws.them >= 8) {
+    if (r.throws.us >= r.throws.them + 4) good.push(`Won the touchline: ${r.throws.us} throw-ins to their ${r.throws.them}.`);
+    if (r.throws.them >= r.throws.us + 4) work.push(`Kept putting it out: ${them} had ${r.throws.them} throw-ins to our ${r.throws.us}.`);
+  }
+  if (r.goalkicks.us + r.goalkicks.them >= 6) {
+    if (r.goalkicks.them >= r.goalkicks.us + 4) good.push(`Pinned them in: ${them} took ${r.goalkicks.them} goal kicks to our ${r.goalkicks.us}.`);
+    if (r.goalkicks.us >= r.goalkicks.them + 4) work.push(`Pushed back: ${r.goalkicks.us} goal kicks for us to their ${r.goalkicks.them}.`);
+  }
+  if (r.keeper.us >= 3) good.push(`Safe hands: ${r.keeper.us} keeper claims.`);
+
   // the plan is the coach's bookkeeping: a family reads the game, not the coach's sums (UX-REVIEW-3.md, 16.3)
   if (!gameReader(restricted())) {
     if (r.short.length) work.push(`${pl(r.short.length, 'player')} got five or more minutes less than planned.`);
     else if (r.played.length && r.played.some(x => x.plan > 0)) good.push('Everyone got the minutes they were planned for.');
+    const sq = squad(t, m).length, onN = m.onFieldCount || 11;
+    if (sq > onN && r.unused.length) work.push(`${pl(r.unused.length, 'player')} never got on the pitch.`);
+    else if (sq > onN && r.played.length >= sq) good.push(`All ${sq} players got on the pitch.`);
+    if (r.played.length >= onN + 2) {
+      const most = r.played[0].sec, least = r.played[r.played.length - 1].sec;
+      if (most - least <= 600) good.push(`Minutes shared evenly: everyone who played got between ${mins(least)} and ${mins(most)}.`);
+      else if (least < r.L / 4 && most - least >= r.L / 2) work.push(`A wide spread of minutes: from ${mins(least)} to ${mins(most)}.`);
+    }
   }
-  if (r.season.avgShots != null && shotsUs >= r.season.avgShots + 3) good.push(`${shotsUs} shots — more than the ${r.season.avgShots.toFixed(1)} a game so far.`);
-  if (r.season.avgShots != null && r.season.shotGames >= 2 && shotsUs <= r.season.avgShots - 3) work.push(`${shotsUs} shots — fewer than the ${r.season.avgShots.toFixed(1)} a game so far.`);
+
+  // against the season: a run, a record, the last meeting with this opponent
+  const se = r.season;
+  if (se.avgShots != null && shotsUs >= se.avgShots + 3) good.push(`${shotsUs} shots — more than the ${se.avgShots.toFixed(1)} a game so far.`);
+  if (se.avgShots != null && se.shotGames >= 2 && shotsUs <= se.avgShots - 3) work.push(`${shotsUs} shots — fewer than the ${se.avgShots.toFixed(1)} a game so far.`);
+  if (won && se.wins >= 2) good.push(`${nth(se.wins + 1)} win in a row.`);
+  if (!won && se.winless >= 2) work.push(`${se.winless + 1} games without a win.`);
+  if (se.games >= 2) {
+    if (won && r.sc.us - r.sc.them > se.bestGD) good.push('The best result of the season so far.');
+    if (r.sc.us >= 2 && r.sc.us > se.mostFor) good.push(`${r.sc.us} goals — the most in a game this season.`);
+    else if (se.avgFor != null && r.sc.us >= se.avgFor + 2) good.push(`Scored ${r.sc.us}, against ${se.avgFor.toFixed(1)} a game so far.`);
+    if (r.sc.them >= 2 && r.sc.them > se.mostAg) work.push(`Let in ${r.sc.them} — the most in a game this season.`);
+    else if (se.avgAg != null && r.sc.them >= se.avgAg + 2) work.push(`Let in ${r.sc.them}, against ${se.avgAg.toFixed(1)} a game so far.`);
+  }
+  if (se.prevVs) {
+    const p = se.prevVs, ps = `${p.us}–${p.them}`;
+    if (won && p.us < p.them) good.push(`Turned round the last meeting with ${them} (lost ${ps}).`);
+    else if (won && p.us > p.them) good.push(`Beat ${them} again (${ps} last time).`);
+    if (lost && p.us < p.them) work.push(`Lost to ${them} again (${ps} last time).`);
+    else if (lost && p.us > p.them) work.push(`Beat ${them} ${ps} last time, lost this one.`);
+  }
   return { good, work };
 }
 

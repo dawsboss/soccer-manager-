@@ -150,6 +150,92 @@ console.log('--- what went well, and what to work on ---');
   check('no win claimed', nb.good.some(x => /Won/.test(x)), false);
 }
 
+console.log('--- more to say: the order of the goals, the restart, set pieces, the season ---');
+{
+  /* Two games with the same kind of score should not read the same. Each of
+     these rules needs its own evidence (a goal within half a minute of a
+     corner, a shot placed on the map, the last meeting with this opponent),
+     and says nothing without it, so a recap is built from what this game
+     recorded rather than the same three lines every week. */
+  const t = A.state.teams.t1;
+  const notes = (game, extra) => {
+    const m = setup(game);
+    Object.assign(A.state.matches, extra || {});
+    return A.recapNotes(t, m, A.recap(t, m));
+  };
+  // the fixture: scored first, got caught, took the lead back
+  const base = notes();
+  // the first goal came inside ten minutes, so the fast start says it and scored-first stands aside
+  check('an early first goal is the fast start, said once', base.good.filter(x => /Scored first|Fast start/.test(x)).length, 1);
+  const later = notes({ goals: { a: { t: 900, side: 'us', pid: 'p1' }, b: { t: 2500, side: 'them' }, c: { t: 2600, side: 'us', pid: 'p3' }, d: { t: 4500, side: 'us', pid: 'p1' } } });
+  check('a first goal after ten minutes is said as scored first', later.good.some(x => /^Scored first, 16 minutes in\.$/.test(x)), true);
+  const held = notes({ goals: { a: { t: 900, side: 'us', pid: 'p1' }, b: { t: 2500, side: 'us', pid: 'p3' }, c: { t: 2600, side: 'them' } } });
+  check('and never falling behind after it is said with it', held.good.some(x => /^Scored first, 16 minutes in, and never fell behind\.$/.test(x)), true);
+  check('and all four players got on', base.good.some(x => /All 4 players got on the pitch/.test(x)), true);
+  check('with nothing said about a draw, a lead let go or the restart', base.work.some(x => /let it slip|Lost the|Slow after/.test(x)), false);
+
+  // led, then lost it: a corner and a free kick cost two of the goals, every shot from range
+  const lost = notes({
+    goals: { a: { t: 300, side: 'us', pid: 'p1' }, b: { t: 1500, side: 'them' }, c: { t: 3020, side: 'them' }, d: { t: 4000, side: 'them' } },
+    shots: { x1: { t: 200, side: 'us', onTarget: false, xy: { x: 50, y: 40 } }, x2: { t: 4300, side: 'us', onTarget: true, xy: { x: 50, y: 45 } },
+      x3: { t: 4400, side: 'us', onTarget: false, xy: { x: 30, y: 50 } }, x4: { t: 4600, side: 'us', onTarget: true, xy: { x: 30, y: 10 } },
+      y1: { t: 2000, side: 'them', onTarget: true }, y2: { t: 2100, side: 'them', onTarget: false } },
+    events: { e1: { t: 1480, side: 'them', kind: 'corner' }, e2: { t: 3000, side: 'us', kind: 'foul' },
+      ...Object.fromEntries([100, 200, 300, 400, 500, 600].map((sec, i) => [`t${i}`, { t: sec, side: 'them', kind: 'throw' }])),
+      t7: { t: 700, side: 'us', kind: 'throw' }, t8: { t: 800, side: 'us', kind: 'throw' } }
+  }, { g5: { id: 'g5', teamId: 't1', opponent: 'riverside', date: '2026-08-29', createdAt: 1, ended: true, periods: {}, goals: { a: { t: 1, side: 'us' }, b: { t: 2, side: 'us' } } } });
+  const lw = lost.work.join(' | ');
+  check('a lead not held', /Led 1–0 and lost it/.test(lw), true);
+  check('a goal straight from their corner', /Conceded one straight from a corner/.test(lw), true);
+  check('and one from the free kick after our foul', /Conceded one from a free kick after a foul given away/.test(lw), true);
+  check('shots from distance, from the shot map', /only 1 of 4 placed shots from inside the box/.test(lw), true);
+  check('a slow restart, timed from the second half\'s kick-off', /Slow after the restart: 32 minutes before a shot in the 2nd half/.test(lw), true);
+  check('late shots with no goal to show', /3 shots in the last ten minutes and no goal to show/.test(lw), true);
+  check('the quiet spells counted', /Nothing on goal in 6 of the game's 8 ten-minute spells/.test(lw), true);
+  check('their finishing', /Punished: Riverside scored from 3 of 5 shots/.test(lw), true);
+  check('the touchline', /Riverside had 6 throw-ins to our 2/.test(lw), true);
+  check('the most let in this season', /Let in 3 — the most in a game this season/.test(lw), true);
+  check('the last meeting with them, matched whatever the case', /Beat Riverside 2–0 last time, lost this one/.test(lw), true);
+  check('a fast start is said once, not as scored-first too', lost.good.filter(x => /Scored first|Fast start/.test(x)).length, 1);
+  check('no win claimed', lost.good.some(x => /Won|win/.test(x)), false);
+
+  // two down at half time, three in the second half: a comeback, a run of wins, the keeper's afternoon
+  const back = notes({
+    goals: { a: { t: 300, side: 'them' }, b: { t: 900, side: 'them' }, c: { t: 2700, side: 'us', pid: 'p1', assist: 'p2' }, d: { t: 3300, side: 'us', pid: 'p3', assist: 'p1' }, e: { t: 4000, side: 'us', pid: 'p2' } },
+    shots: { x1: { t: 2500, side: 'us', onTarget: true }, x2: { t: 2550, side: 'us', onTarget: false }, x3: { t: 2590, side: 'us', onTarget: true },
+      y1: { t: 4300, side: 'them', onTarget: true }, y2: { t: 4400, side: 'them', onTarget: true }, y3: { t: 4500, side: 'them', onTarget: false } },
+    events: { k1: { t: 100, side: 'us', kind: 'keeper' }, k2: { t: 200, side: 'us', kind: 'keeper' }, k3: { t: 300, side: 'us', kind: 'keeper' } }
+  }, {
+    g0: { id: 'g0', teamId: 't1', opponent: 'Northgate', date: '2026-09-05', createdAt: 2, ended: true, periods: {}, goals: { a: { t: 1, side: 'us' } } },
+    g5: { id: 'g5', teamId: 't1', opponent: 'A', date: '2026-08-29', createdAt: 1, ended: true, periods: {}, goals: { a: { t: 1, side: 'us' } } },
+    g6: { id: 'g6', teamId: 't1', opponent: 'B', date: '2026-08-22', createdAt: 0, ended: true, periods: {}, goals: { a: { t: 1, side: 'us' }, b: { t: 2, side: 'them' } } }
+  });
+  const bg = back.good.join(' | ');
+  check('the comeback, from the half-time score', /Came back from 2–0 down at half time to win/.test(bg), true);
+  check('said once: not also as the second half won', /Won the 2nd half/.test(bg), false);
+  check('goals set up by a pass', /Goals built together: 2 of 3 set up by a pass/.test(bg), true);
+  check('out fast after half time', /Out fast after half time: 4 shots in the first ten minutes of the 2nd half/.test(bg), true);
+  check('held on under their late shots', /Held on: Riverside had 3 shots in the last ten minutes and none went in/.test(bg), true);
+  check('the keeper\'s claims', /Safe hands: 3 keeper claims/.test(bg), true);
+  check('the run stops at the last game not won', /3rd win in a row/.test(bg), true);
+  check('the most scored this season', /3 goals — the most in a game this season/.test(bg), true);
+  check('but their shots kept out need three', /Kept out/.test(bg), false);
+  check('and conceding first is the early goal, said once', back.work.filter(x => /Conceded first|Conceded one in the first ten/.test(x)).length, 1);
+
+  // one scorer for every goal, the lead changing hands, a draw rescued; the plan's sums kept from a family
+  const drawn = notes({
+    goals: { a: { t: 300, side: 'them' }, b: { t: 1200, side: 'us', pid: 'p1' }, c: { t: 2000, side: 'us', pid: 'p1' }, d: { t: 3000, side: 'them' }, e: { t: 3500, side: 'them' }, f: { t: 4200, side: 'us', pid: 'p1' } },
+    shots: {}, events: {}
+  });
+  check('a draw come back for', drawn.good.some(x => /Came from behind to draw it, 3–3/.test(x)), true);
+  check('a lead let slip to a draw', drawn.work.some(x => /Led 2–1 and let it slip to a draw/.test(x)), true);
+  check('one scorer for all three', drawn.work.some(x => /All 3 goals from one scorer/.test(x)), true);
+  check('with no shots logged, nothing about their finishing', drawn.work.some(x => /Punished/.test(x)), false);
+  check('no child named in any of it', ['Ella', 'Mia', 'Rosa', 'Jo '].some(n => JSON.stringify([base, lost, back, drawn]).includes(n)), false);
+  const fam = (() => { const m = setup({}, 'mum'); return A.recapNotes(t, m, A.recap(t, m)); })();
+  check('a family is not told who got on the pitch or the plan', fam.good.some(x => /got on the pitch|planned for/.test(x)), false);
+}
+
 console.log('--- only once the game is over ---');
 {
   setup();
