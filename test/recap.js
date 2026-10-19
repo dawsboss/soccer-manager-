@@ -250,6 +250,66 @@ console.log('--- how it built up ---');
   check('— named for the teams, no child in it', /<th>At<\/th><th>G14 Flight<\/th><th>Riverside<\/th>/.test(built) && !/Ella|Mia|Rosa|Nakamura/.test(built), true);
 }
 
+/* Build 177 (the owner, 2026-10-19): a finger dragged across a chart reads it
+   at that x. The chart carries its own data, the reading is pure, and the
+   document's pointer handlers move a cursor and fill the readout line. */
+console.log('--- drag across a chart ---');
+{
+  const m = setup();
+  const t = A.state.teams.t1;
+  const lines = A.recapLines(t, m, A.recap(t, m));
+  const dataOf = svg => JSON.parse(svg.match(/data-lc="([^"]*)"/)[1].replace(/&quot;/g, '"').replace(/&amp;/g, '&'));
+  const d = dataOf(lines[1].svg);
+  check('the shots chart carries its data and a hidden cursor', d.step === true && d.len === 4800 && /class="lc-cur" hidden/.test(lines[1].svg), true);
+  check('— naming the teams and no child', d.names.us === 'G14 Flight' && d.names.them === 'Riverside' && !/Ella|Mia|Rosa|Nakamura/.test(lines[1].svg), true);
+  const say = f => A.lcSay(d, A.lcReading(d, f));
+  check('at kick-off nothing yet', say(0), '1′ · G14 Flight 0 · Riverside 0');
+  check('half way, their first shot just in', say(.5), '41′ · G14 Flight 4 · Riverside 1');
+  check('just before it, not yet', say(.49), '40′ · G14 Flight 4 · Riverside 0');
+  check('the far end is full time and the full count', say(1), 'FT · G14 Flight 9 · Riverside 3');
+  check('past either edge is held to it', say(1.4) === say(1) && say(-1) === say(0), true);
+
+  // the season's: snapped to the nearest game, a gap said in words
+  const s = A.seasonTrends(t);
+  const sd = dataOf(s.charts.find(c => c.label === 'Shots').svg);
+  check('a season chart names each game', sd.xs.length === 2 && /Northgate/.test(sd.xs[0]) && /Riverside/.test(sd.xs[1]), true);
+  check('the first game never counted shots', A.lcSay(sd, A.lcReading(sd, .2)), `${sd.xs[0]} · G14 Flight not counted · Opponent not counted`);
+  check('the second did, and a drag past half way snaps to it', A.lcSay(sd, A.lcReading(sd, .6)), `${sd.xs[1]} · G14 Flight 9 · Opponent 3`);
+  const pd = dataOf(s.charts.find(c => c.label === 'Goals').svg);
+  check('goals read the score of the game under the finger', A.lcSay(pd, A.lcReading(pd, 1)), `${pd.xs[1]} · G14 Flight 3 · Opponent 1`);
+
+  // the pointer handlers app.js put on the document, driven with a fake chart
+  const fake = lc => {
+    const read = { textContent: '' }, line = { attrs: {}, setAttribute(k, v) { this.attrs[k] = v; } };
+    const dots = { us: { attrs: {}, setAttribute(k, v) { this.attrs[k] = v; }, removeAttribute(k) { delete this.attrs[k]; } }, them: { attrs: {}, setAttribute(k, v) { this.attrs[k] = v; }, removeAttribute(k) { delete this.attrs[k]; } } };
+    const g = { hidden: true, removeAttribute() { this.hidden = false; }, querySelector: sel => sel === '.lc-curline' ? line : dots[sel.replace(/.*data-side="(\w+)".*/, '$1')] };
+    const svg = { dataset: { lc }, captured: null, setPointerCapture(id) { this.captured = id; }, getBoundingClientRect: () => ({ left: 10, width: 640 }), querySelector: sel => sel === '.lc-cur' ? g : null, parentNode: { querySelector: sel => sel === '.lcread' ? read : null } };
+    return { svg, read, g, line, dots };
+  };
+  const fire = (type, ev) => { for (const h of A.dom.listeners[type] || []) h(ev); };
+  const on = (type, c, clientX, extra = {}) => fire(type, { pointerId: 1, pointerType: 'touch', clientX, target: { closest: sel => sel === 'svg.lchart' ? c.svg : null }, ...extra });
+  const c = fake(JSON.stringify(d));
+  // 640px wide from x=10: the plot runs from 30/320 to 310/320 of it, so half way across the plot is 10 + (30 + 140) * 2
+  on('pointerdown', c, 10 + 170 * 2);
+  check('a finger down reads the chart there', c.read.textContent, '41′ · G14 Flight 4 · Riverside 1');
+  check('— the cursor shown, on that x, with a dot on each line', !c.g.hidden && c.line.attrs.x1 === '170.0' && c.dots.us.attrs.cx === '170.0' && c.dots.them.attrs.cy !== undefined, true);
+  check('— and the chart holds the pointer', c.svg.captured, 1);
+  on('pointermove', c, 10 + 310 * 2);
+  check('dragged to the end, it reads full time', c.read.textContent, 'FT · G14 Flight 9 · Riverside 3');
+  on('pointermove', c, 10 + 30 * 2, { pointerId: 2 });
+  check('another finger does not move it', c.read.textContent, 'FT · G14 Flight 9 · Riverside 3');
+  on('pointerup', c, 0);
+  on('pointermove', c, 10 + 30 * 2);
+  check('lifted, a passing touch reads nothing', c.read.textContent, 'FT · G14 Flight 9 · Riverside 3');
+  on('pointermove', c, 10 + 30 * 2, { pointerType: 'mouse', pointerId: 3 });
+  check('a mouse reads as it passes', c.read.textContent, '1′ · G14 Flight 0 · Riverside 0');
+  const gap = fake(JSON.stringify(sd));
+  on('pointerdown', gap, 10 + 30 * 2);
+  check('a game with no count hides its dots and says so', gap.dots.us.attrs.hidden === '' && /not counted/.test(gap.read.textContent), true);
+  fire('pointerdown', { pointerId: 9, clientX: 50, target: { closest: () => null } });
+  check('a pointer anywhere else is nobody\'s', true, true);
+}
+
 console.log('--- the season, game by game ---');
 {
   setup();
