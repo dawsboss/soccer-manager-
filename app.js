@@ -9111,7 +9111,7 @@ const niceTop = v => v <= 4 ? Math.max(1, Math.ceil(v)) : v <= 10 ? Math.ceil(v 
    in 0..1 across. `step` draws a running total, which climbs at each event
    and stays flat between; otherwise points are joined, and a null breaks the
    line (a game that did not record this). */
-function lineChart({ series, step, top, vlines = [], xLabels = [], marks = [], ref, pct }) {
+function lineChart({ series, step, top, vlines = [], xLabels = [], marks = [], ref, pct, scrub }) {
   const T = top || niceTop(Math.max(1, ...series.flatMap(s => s.pts.filter(Boolean).map(p => p.v))));
   const y = v => lcY(v, T);
   // a gridline at 1.5 goals asks a question nobody has; only whole numbers get one
@@ -9135,7 +9135,66 @@ function lineChart({ series, step, top, vlines = [], xLabels = [], marks = [], r
     const dots = s.pts.filter(Boolean).map(p => `<circle class="lc-dot ${s.side}" cx="${lcX(p.f).toFixed(1)}" cy="${y(p.v).toFixed(1)}" r="${step ? 2.2 : 3}"><title>${esc(p.tip || '')}</title></circle>`).join('');
     return `<path class="lc-line ${s.side}" d="${d}"/>${dots}`;
   }).join('');
-  return `<svg class="lchart" viewBox="0 0 ${LC.W} ${LC.H}" role="img">${grid}${refLine}${vl}${lines}${mk}${xl}</svg>`;
+  /* The scrubber's data rides on the chart itself (`data-lc`), so a finger
+     dragged across it reads the lines at that x with nothing looked up: the
+     chart is HTML by the time a pointer reaches it. The cursor group sits
+     hidden until the first touch. */
+  const lc = scrub ? ` data-lc="${esc(JSON.stringify({ step: !!step, pct: !!pct, len: scrub.len, xs: scrub.xs, names: scrub.names,
+    s: series.map(s => ({ side: s.side, pts: s.pts.map(p => p ? [+p.f.toFixed(4), p.v] : null) })) }))}"` : '';
+  const cur = scrub ? `<g class="lc-cur" hidden><line class="lc-curline" x1="0" x2="0" y1="${LC.T}" y2="${LC.H - LC.B}"/>${series.map(s => `<circle class="lc-curdot ${s.side}" data-side="${s.side}" r="4" cx="0" cy="0"/>`).join('')}</g>` : '';
+  return `<svg class="lchart" viewBox="0 0 ${LC.W} ${LC.H}" role="img"${lc}>${grid}${refLine}${vl}${lines}${mk}${xl}${cur}</svg>`;
+}
+
+/* What a chart says at a point across it: `f` is 0..1 along the x axis. A
+   running total reads as the count of steps at or before that moment, at the
+   match minute; a season chart snaps to the nearest game and reads its
+   values, a gap as none. Pure, so the test can read a chart without a
+   pointer. */
+function lcReading(d, f) {
+  f = clamp(f, 0, 1);
+  const suf = d.pct ? '%' : '';
+  if (d.step) {
+    const sec = Math.round(f * (d.len || 0));
+    return { f, label: f >= 1 ? 'FT' : feedMin(sec), vals: d.s.map(s => { const v = s.pts.filter(p => p && p[0] <= f + 1e-6).length; return { side: s.side, v, text: String(v) }; }) };
+  }
+  const n = (d.xs || []).length; if (!n) return null;
+  const i = n === 1 ? 0 : Math.round(f * (n - 1));
+  return { f: n === 1 ? .5 : i / (n - 1), label: d.xs[i], vals: d.s.map(s => { const p = s.pts[i]; return { side: s.side, v: p ? p[1] : null, text: p ? p[1] + suf : 'not counted' }; }) };
+}
+
+/* The sentence the readout line says for a reading: the moment or the game,
+   then each line's value by the name it was drawn under. */
+function lcSay(d, r) {
+  const nm = { us: d.names.us, them: d.names.them, one: d.names.us };
+  // ours first, whatever order the lines were drawn in (theirs goes under ours on the chart)
+  const vals = r.vals.slice().sort((a, b) => (a.side === 'them') - (b.side === 'them'));
+  return `${r.label} · ${vals.map(v => v.side === 'one' ? v.text : `${nm[v.side]} ${v.text}`).join(' · ')}`;
+}
+
+/* Drag across a chart: move its cursor to the pointer and say the reading.
+   One handler for every chart on the page, found from the pointer's target,
+   so a re-render needs no wiring. The y of each dot is worked out as the
+   chart drew it (the same top, so the same lcY). */
+function lcScrub(svg, clientX) {
+  let d; try { d = svg.__lc || (svg.__lc = JSON.parse(svg.dataset.lc || svg.getAttribute('data-lc'))); } catch (e) { return null; }
+  if (!d) return null;
+  const rect = svg.getBoundingClientRect(); if (!rect.width) return null;
+  const f = ((clientX - rect.left) / rect.width * LC.W - LC.L) / (LC.W - LC.L - LC.R);
+  const r = lcReading(d, f); if (!r) return null;
+  const top = d.pct ? 100 : niceTop(Math.max(1, ...d.s.flatMap(s => s.pts.filter(Boolean).map(p => p[1]))));
+  const g = svg.querySelector('.lc-cur');
+  if (g) {
+    g.hidden = false; g.removeAttribute('hidden');
+    const line = g.querySelector('.lc-curline'); if (line) { line.setAttribute('x1', lcX(r.f).toFixed(1)); line.setAttribute('x2', lcX(r.f).toFixed(1)); }
+    for (const v of r.vals) {
+      const c = g.querySelector(`[data-side="${v.side}"]`); if (!c) continue;
+      if (v.v == null) { c.setAttribute('hidden', ''); continue; }
+      c.removeAttribute('hidden'); c.setAttribute('cx', lcX(r.f).toFixed(1)); c.setAttribute('cy', lcY(v.v, top).toFixed(1));
+    }
+  }
+  const box = svg.parentNode, read = box && box.querySelector && box.querySelector('.lcread');
+  if (read) read.textContent = lcSay(d, r);
+  return r;
 }
 
 /* The game's running totals, one chart per thing recorded. Match seconds run
@@ -9144,6 +9203,7 @@ function lineChart({ series, step, top, vlines = [], xLabels = [], marks = [], r
 function recapLines(t, m, r) {
   const L = r.L, f = sec => clamp((sec || 0) / L, 0, 1);
   const us = t.name || 'Us', them = m.opponent || 'Them';
+  const scrub = { len: L, names: { us, them } };
   const run = (times, side, label) => times.slice().sort((a, b) => a - b).map((s, i) => ({ f: f(s), v: i + 1, tip: `${feedMin(s)} — ${side === 'us' ? us : them}: ${i + 1} ${label}` }));
   const kinds = [
     { k: 'goals', label: 'Goals', us: goalList(m).filter(x => x.side === 'us').map(x => x.t), them: goalList(m).filter(x => x.side === 'them').map(x => x.t) },
@@ -9162,11 +9222,29 @@ function recapLines(t, m, r) {
   const marks = goalList(m).filter(g => g.side === 'us' || g.side === 'them').map(g => ({ f: f(g.t), side: g.side, tip: `${feedMin(g.t)} goal — ${g.side === 'us' ? us : them}` }));
   return kinds.map(x => ({
     k: x.k, label: x.label, us: x.us.length, them: x.them.length,
-    svg: lineChart({ step: true, vlines, xLabels, marks: x.k === 'goals' ? [] : marks,
+    svg: lineChart({ step: true, vlines, xLabels, marks: x.k === 'goals' ? [] : marks, scrub,
       series: [{ side: 'them', pts: run(x.them, 'them', x.label.toLowerCase()) }, { side: 'us', pts: run(x.us, 'us', x.label.toLowerCase()) }] }),
     // the table: the running totals at each ten minutes (five in a short game), and at the end
-    rows: r.spells.map(s => s.to).map(sec => ({ at: sec, us: x.us.filter(v => v < sec || sec >= L).length, them: x.them.filter(v => v < sec || sec >= L).length }))
+    rows: r.spells.map(s => s.to).map(sec => ({ at: sec, us: x.us.filter(v => v < sec || sec >= L).length, them: x.them.filter(v => v < sec || sec >= L).length })),
+    // the chart's own values: each step of the line, at the moment it was logged
+    at: stepValues(x.us, x.them)
   }));
+}
+
+/* The reading at every point of a running-total chart: one row per thing
+   logged, with both totals as they stood just after it. A hover shows this on
+   a computer; on a phone nothing does, so each chart offers it as a list. */
+function stepValues(us, them) {
+  const all = [...us.map(t => ({ t, side: 'us' })), ...them.map(t => ({ t, side: 'them' }))].sort((a, b) => a.t - b.t);
+  let u = 0, h = 0;
+  return all.map(x => { if (x.side === 'us') u++; else h++; return { t: x.t, us: u, them: h }; });
+}
+
+/* The link under a chart that opens its readings, one row per point on the x
+   axis. Plain HTML so a parent on a phone can read what the dots say. */
+function chartValues(head, rows) {
+  return `<details class="wtable lcvals"><summary>See the values</summary><div class="lctable"><table><thead><tr>${head.map(h => `<th>${h}</th>`).join('')}</tr></thead>
+    <tbody>${rows.map(r => `<tr>${r.map(c => `<td>${c}</td>`).join('')}</tr>`).join('')}</tbody></table></div></details>`;
 }
 
 function recapLinesCard(t, m, r) {
@@ -9174,9 +9252,9 @@ function recapLinesCard(t, m, r) {
   if (!list.length) return '';
   const us = teamLabel(t), them = esc(m.opponent || 'Them');
   return `<div class="card"><h2 style="margin-bottom:4px">How it built up</h2>
-    <p class="muted" style="margin:0 0 8px">Running totals through the game. Where the lines pull apart, someone was on top; flat is nothing happening.</p>
+    <p class="muted" style="margin:0 0 8px">Running totals through the game. Where the lines pull apart, someone was on top; flat is nothing happening. Drag across a chart to read it at any minute.</p>
     <div class="wlegend"><span><i class="k us"></i>${us}</span><span><i class="k them dash"></i>${them}</span><span><i class="k goal"></i>goal</span></div>
-    ${list.map(x => `<div class="lcbox"><div class="spread"><b>${esc(x.label)}</b><span class="lcend"><span class="on">${x.us}</span> – <span class="muted">${x.them}</span></span></div>${x.svg}</div>`).join('')}
+    ${list.map(x => `<div class="lcbox"><div class="spread"><b>${esc(x.label)}</b><span class="lcend"><span class="on">${x.us}</span> – <span class="muted">${x.them}</span></span></div>${x.svg}<div class="lcread" aria-live="polite"></div>${chartValues(['At', us, them], x.at.map(v => [feedMin(v.t), v.us, v.them]))}</div>`).join('')}
     <details class="wtable"><summary>As a table</summary><div class="lctable"><table><thead><tr><th>By</th>${list.map(x => `<th>${esc(x.label)}</th>`).join('')}</tr></thead>
       <tbody>${list[0].rows.map((row, i) => `<tr><td>${row.at >= r.L ? 'FT' : feedMin(row.at - 1)}</td>${list.map(x => `<td>${x.rows[i].us}–${x.rows[i].them}</td>`).join('')}</tr>`).join('')}</tbody></table></div></details></div>`;
 }
@@ -9207,6 +9285,7 @@ function seasonTrends(t) {
   ].filter(Boolean);
   const xLabels = n <= 8 ? games.map((m, i) => ({ f: f(i), label: String(i + 1) })) : [{ f: 0, label: '1' }, { f: .5, label: String(Math.ceil(n / 2)) }, { f: 1, label: String(n) }];
   const us = t.name || 'Us';
+  const scrub = { xs: games.map(name), names: { us, them: 'Opponent' } };
   return {
     games, xLabels,
     charts: out.map(c => {
@@ -9215,7 +9294,7 @@ function seasonTrends(t) {
       const one = c.vals.some(v => v && v.one != null);
       const series = one ? [side('one')] : [side('them'), side('us')];
       return { label: c.label, pct, one, vals: c.vals,
-        svg: lineChart({ series, xLabels, pct, top: pct ? 100 : undefined, ref: one ? 50 : undefined }) };
+        svg: lineChart({ series, xLabels, pct, top: pct ? 100 : undefined, ref: one ? 50 : undefined, scrub }) };
     })
   };
 }
@@ -9225,10 +9304,13 @@ function seasonTrendsCard(t) {
   if (!s) return '';
   const us = teamLabel(t);
   const cell = (v, k, pct) => v && v[k] != null ? v[k] + (pct ? '%' : '') : '–';
+  const game = (m, i) => `${i + 1}. ${esc(m.opponent || 'Game')}${m.date ? ' · ' + esc(shortDate(m.date)) : ''}`;
+  const vals = c => chartValues(c.one ? ['Game', us] : ['Game', us, 'Opponent'],
+    s.games.map((m, i) => c.one ? [game(m, i), cell(c.vals[i], 'one', c.pct)] : [game(m, i), cell(c.vals[i], 'us', c.pct), cell(c.vals[i], 'them', c.pct)]));
   return `<div class="card"><h2 style="margin-bottom:4px">Game by game</h2>
-    <p class="muted" style="margin:0 0 8px">Each finished game, oldest first. A gap means that game didn't record it.</p>
+    <p class="muted" style="margin:0 0 8px">Each finished game, oldest first. A gap means that game didn't record it. Drag across a chart to read it game by game.</p>
     <div class="wlegend"><span><i class="k us"></i>${us}</span><span><i class="k them dash"></i>Opponent</span></div>
-    ${s.charts.map(c => `<div class="lcbox"><b>${esc(c.label)}</b>${c.svg}</div>`).join('')}
+    ${s.charts.map(c => `<div class="lcbox"><b>${esc(c.label)}</b>${c.svg}<div class="lcread" aria-live="polite"></div>${vals(c)}</div>`).join('')}
     <details class="wtable"><summary>As a table</summary><div class="lctable"><table><thead><tr><th>Game</th>${s.charts.map(c => `<th>${esc(c.label)}</th>`).join('')}</tr></thead>
       <tbody>${s.games.map((m, i) => `<tr><td>${i + 1}. ${esc(m.opponent || 'Game')}</td>${s.charts.map(c => `<td>${c.one ? cell(c.vals[i], 'one', c.pct) : `${cell(c.vals[i], 'us', c.pct)}–${cell(c.vals[i], 'them', c.pct)}`}</td>`).join('')}</tr>`).join('')}</tbody></table></div></details></div>`;
 }
@@ -12195,7 +12277,9 @@ function viewMinutes() {
 }
 /* Stats: everything counted across the season. The charts wait for five
    finished games: two points joined by a line is not a trend (UX-REVIEW.md, 3). */
-const TRENDS_MIN = 5;
+/* Two finished games is a line; until build 177 the charts waited for five
+   (the owner, 2026-10-19: every chart shows, with its values a tap away). */
+const TRENDS_MIN = 2;
 function viewTeamStats() {
   const t = team(); if (!t) return needTeam();
   const ms = teamMatches(t.id);
@@ -12223,8 +12307,7 @@ function viewTeamStats() {
     <div class="spread" style="margin-top:6px"><span>${s.settled ? Math.round(s.pu / s.settled * 100) : 50}% ours</span>
       <span class="muted">${Math.round(s.pc / s.ptot * 100)}% neither side</span></div>
     <p class="muted" style="margin-bottom:0">Settled play across ${s.possGames} of ${ms.length} game${ms.length === 1 ? '' : 's'}${s.possGames < ms.length ? ', ignoring those with too little recorded to judge' : ''}.</p></div>` : '';
-  const trends = done.length >= TRENDS_MIN ? seasonTrendsCard(t)
-    : done.length >= 2 ? `<div class="card"><h2 style="margin-bottom:4px">Game by game</h2><p class="muted" style="margin:0">Charts of each game once ${TRENDS_MIN} have been played. ${done.length} so far.</p></div>` : '';
+  const trends = done.length >= TRENDS_MIN ? seasonTrendsCard(t) : '';
   const record = `<div class="card">
     <div class="spread"><h2>${s.w}W ${s.d}D ${s.l}L</h2>
       <span class="muted">${done.length} played${ms.length > done.length ? ` · ${ms.length - done.length} to come` : ''}</span></div>
@@ -25845,6 +25928,29 @@ $('#subtabs').addEventListener('click', e => {
   openGameScreen(b.dataset.gview); render();
 });
 document.addEventListener('keydown', e => { if (e.key === 'Escape') closeSheet(); });
+/* The charts' scrubber: a finger down on a chart reads it there, and dragged
+   along it follows (vertical scrolling is left to the page by touch-action:
+   pan-y, so a thumb going down the screen is still a scroll). A mouse reads
+   as it passes. The chart holds the pointer so a drag past its edge keeps
+   reading the end. */
+{
+  const chartOf = e => e.target && e.target.closest && e.target.closest('svg.lchart');
+  let held = null;
+  document.addEventListener('pointerdown', e => {
+    const svg = chartOf(e); if (!svg) return;
+    held = e.pointerId;
+    try { svg.setPointerCapture(e.pointerId); } catch (x) { }
+    lcScrub(svg, e.clientX);
+  });
+  document.addEventListener('pointermove', e => {
+    const svg = chartOf(e); if (!svg) return;
+    if (held !== e.pointerId && e.pointerType !== 'mouse') return;
+    lcScrub(svg, e.clientX);
+  });
+  const drop = e => { if (held === e.pointerId) held = null; };
+  document.addEventListener('pointerup', drop);
+  document.addEventListener('pointercancel', drop);
+}
 /* Time boxes (m:ss) keep their colon. On a phone's number pad there is no colon
    key, so a deleted colon could not be typed back and the time stopped parsing.
    Instead the box holds digits only and draws the colon itself: the last two

@@ -322,6 +322,78 @@ console.log('--- how it built up ---');
   check('and at 10 minutes it was 2–0', `${lines[1].rows[0].us}–${lines[1].rows[0].them}`, '2–0');
   check('half time is drawn', /class="lc-v"/.test(lines[1].svg), true);
   check('goals are marked on the shots chart', (lines[1].svg.match(/class="lc-goal/g) || []).length, 4);
+  // build 177: the chart's own readings, one per point of the line, at the moment each was logged
+  check('every step of the shots line is a reading', lines[1].at.length, 12);
+  deepEq('the first shot, at 200s, makes it 1–0', lines[1].at[0], { t: 200, us: 1, them: 0 });
+  deepEq('their first, at 2400s, comes after our fourth', lines[1].at[4], { t: 2400, us: 4, them: 1 });
+  deepEq('and the last reading is the full count', lines[1].at[11], { t: 4500, us: 9, them: 3 });
+  A.ui.gameView = 'recap'; A.render();
+  const html = A.rendered();
+  const built = html.slice(html.indexOf('How it built up'), html.indexOf('As a table', html.indexOf('How it built up')));
+  check('each chart carries a link to its values, shut until tapped', (built.match(/class="lcbox"/g) || []).length, 3);
+  check('— one per chart', (built.match(/<summary>See the values<\/summary>/g) || []).length, 3);
+  check('— the goals\' at their minutes, with the running score', /<td>6′<\/td><td>1<\/td><td>0<\/td>/.test(built) && /<td>42′<\/td><td>1<\/td><td>1<\/td>/.test(built) && /<td>76′<\/td><td>3<\/td><td>1<\/td>/.test(built), true);
+  check('— named for the teams, no child in it', /<th>At<\/th><th>G14 Flight<\/th><th>Riverside<\/th>/.test(built) && !/Ella|Mia|Rosa|Nakamura/.test(built), true);
+}
+
+/* Build 177 (the owner, 2026-10-19): a finger dragged across a chart reads it
+   at that x. The chart carries its own data, the reading is pure, and the
+   document's pointer handlers move a cursor and fill the readout line. */
+console.log('--- drag across a chart ---');
+{
+  const m = setup();
+  const t = A.state.teams.t1;
+  const lines = A.recapLines(t, m, A.recap(t, m));
+  const dataOf = svg => JSON.parse(svg.match(/data-lc="([^"]*)"/)[1].replace(/&quot;/g, '"').replace(/&amp;/g, '&'));
+  const d = dataOf(lines[1].svg);
+  check('the shots chart carries its data and a hidden cursor', d.step === true && d.len === 4800 && /class="lc-cur" hidden/.test(lines[1].svg), true);
+  check('— naming the teams and no child', d.names.us === 'G14 Flight' && d.names.them === 'Riverside' && !/Ella|Mia|Rosa|Nakamura/.test(lines[1].svg), true);
+  const say = f => A.lcSay(d, A.lcReading(d, f));
+  check('at kick-off nothing yet', say(0), '1′ · G14 Flight 0 · Riverside 0');
+  check('half way, their first shot just in', say(.5), '41′ · G14 Flight 4 · Riverside 1');
+  check('just before it, not yet', say(.49), '40′ · G14 Flight 4 · Riverside 0');
+  check('the far end is full time and the full count', say(1), 'FT · G14 Flight 9 · Riverside 3');
+  check('past either edge is held to it', say(1.4) === say(1) && say(-1) === say(0), true);
+
+  // the season's: snapped to the nearest game, a gap said in words
+  const s = A.seasonTrends(t);
+  const sd = dataOf(s.charts.find(c => c.label === 'Shots').svg);
+  check('a season chart names each game', sd.xs.length === 2 && /Northgate/.test(sd.xs[0]) && /Riverside/.test(sd.xs[1]), true);
+  check('the first game never counted shots', A.lcSay(sd, A.lcReading(sd, .2)), `${sd.xs[0]} · G14 Flight not counted · Opponent not counted`);
+  check('the second did, and a drag past half way snaps to it', A.lcSay(sd, A.lcReading(sd, .6)), `${sd.xs[1]} · G14 Flight 9 · Opponent 3`);
+  const pd = dataOf(s.charts.find(c => c.label === 'Goals').svg);
+  check('goals read the score of the game under the finger', A.lcSay(pd, A.lcReading(pd, 1)), `${pd.xs[1]} · G14 Flight 3 · Opponent 1`);
+
+  // the pointer handlers app.js put on the document, driven with a fake chart
+  const fake = lc => {
+    const read = { textContent: '' }, line = { attrs: {}, setAttribute(k, v) { this.attrs[k] = v; } };
+    const dots = { us: { attrs: {}, setAttribute(k, v) { this.attrs[k] = v; }, removeAttribute(k) { delete this.attrs[k]; } }, them: { attrs: {}, setAttribute(k, v) { this.attrs[k] = v; }, removeAttribute(k) { delete this.attrs[k]; } } };
+    const g = { hidden: true, removeAttribute() { this.hidden = false; }, querySelector: sel => sel === '.lc-curline' ? line : dots[sel.replace(/.*data-side="(\w+)".*/, '$1')] };
+    const svg = { dataset: { lc }, captured: null, setPointerCapture(id) { this.captured = id; }, getBoundingClientRect: () => ({ left: 10, width: 640 }), querySelector: sel => sel === '.lc-cur' ? g : null, parentNode: { querySelector: sel => sel === '.lcread' ? read : null } };
+    return { svg, read, g, line, dots };
+  };
+  const fire = (type, ev) => { for (const h of A.dom.listeners[type] || []) h(ev); };
+  const on = (type, c, clientX, extra = {}) => fire(type, { pointerId: 1, pointerType: 'touch', clientX, target: { closest: sel => sel === 'svg.lchart' ? c.svg : null }, ...extra });
+  const c = fake(JSON.stringify(d));
+  // 640px wide from x=10: the plot runs from 30/320 to 310/320 of it, so half way across the plot is 10 + (30 + 140) * 2
+  on('pointerdown', c, 10 + 170 * 2);
+  check('a finger down reads the chart there', c.read.textContent, '41′ · G14 Flight 4 · Riverside 1');
+  check('— the cursor shown, on that x, with a dot on each line', !c.g.hidden && c.line.attrs.x1 === '170.0' && c.dots.us.attrs.cx === '170.0' && c.dots.them.attrs.cy !== undefined, true);
+  check('— and the chart holds the pointer', c.svg.captured, 1);
+  on('pointermove', c, 10 + 310 * 2);
+  check('dragged to the end, it reads full time', c.read.textContent, 'FT · G14 Flight 9 · Riverside 3');
+  on('pointermove', c, 10 + 30 * 2, { pointerId: 2 });
+  check('another finger does not move it', c.read.textContent, 'FT · G14 Flight 9 · Riverside 3');
+  on('pointerup', c, 0);
+  on('pointermove', c, 10 + 30 * 2);
+  check('lifted, a passing touch reads nothing', c.read.textContent, 'FT · G14 Flight 9 · Riverside 3');
+  on('pointermove', c, 10 + 30 * 2, { pointerType: 'mouse', pointerId: 3 });
+  check('a mouse reads as it passes', c.read.textContent, '1′ · G14 Flight 0 · Riverside 0');
+  const gap = fake(JSON.stringify(sd));
+  on('pointerdown', gap, 10 + 30 * 2);
+  check('a game with no count hides its dots and says so', gap.dots.us.attrs.hidden === '' && /not counted/.test(gap.read.textContent), true);
+  fire('pointerdown', { pointerId: 9, clientX: 50, target: { closest: () => null } });
+  check('a pointer anywhere else is nobody\'s', true, true);
 }
 
 console.log('--- the season, game by game ---');
@@ -338,10 +410,18 @@ console.log('--- the season, game by game ---');
   A.ui.view = 'season'; A.render();
   check('Season leads into Stats, and draws no chart itself (build 146)', /data-v="teamstats"/.test(A.rendered()) && !/Game by game/.test(A.rendered()), true);
   A.ui.view = 'teamstats'; A.render();
-  check('Stats waits for five finished games before charting', /Charts of each game once 5 have been played. 2 so far/.test(A.rendered()) && !/class="lcbox"/.test(A.rendered()), true);
+  // build 177: two finished games is a line, so Stats charts from two (it waited for five until then)
+  check('Stats charts from two finished games, with no promise to wait for', /Game by game/.test(A.rendered()) && /class="lcbox"/.test(A.rendered()) && !/Charts of each game once/.test(A.rendered()), true);
+  {
+    const h = A.rendered(), card = h.slice(h.indexOf('Game by game'), h.indexOf('As a table', h.indexOf('Game by game')));
+    check('— every chart with a link to its values', (card.match(/class="lcbox"/g) || []).length, (card.match(/<summary>See the values<\/summary>/g) || []).length);
+    const shots = card.slice(card.indexOf('<b>Shots</b>'), card.indexOf('<b>Shots on target</b>'));
+    check('— each game a row, the gap a dash and the count where it was counted', /<td>1\. Northgate[^<]*<\/td><td>–<\/td><td>–<\/td>/.test(shots) && /<td>2\. Riverside[^<]*<\/td><td>9<\/td><td>3<\/td>/.test(shots), true);
+    check('— possession one column, the team\'s', /<th>Game<\/th><th>G14 Flight<\/th><\/tr>/.test(card) || !/<b>Possession<\/b>/.test(card), true);
+  }
   for (let i = 3; i <= 5; i++) A.state.matches['g' + i] = { id: 'g' + i, teamId: 't1', opponent: 'Side ' + i, date: '2026-08-0' + i, createdAt: 1, ended: true, periods: {} };
   A.render();
-  check('— and draws them at five', /Game by game/.test(A.rendered()) && /class="lcbox"/.test(A.rendered()), true);
+  check('— and still at five', /Game by game/.test(A.rendered()) && /class="lcbox"/.test(A.rendered()), true);
   for (let i = 3; i <= 5; i++) delete A.state.matches['g' + i];
   const all = JSON.stringify(s.charts.map(c => c.svg));
   check('no child is named in the charts', ['Ella', 'Mia', 'Rosa', 'Nakamura'].some(x => all.includes(x)), false);
