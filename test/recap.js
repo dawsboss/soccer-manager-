@@ -236,6 +236,18 @@ console.log('--- how it built up ---');
   check('and at 10 minutes it was 2–0', `${lines[1].rows[0].us}–${lines[1].rows[0].them}`, '2–0');
   check('half time is drawn', /class="lc-v"/.test(lines[1].svg), true);
   check('goals are marked on the shots chart', (lines[1].svg.match(/class="lc-goal/g) || []).length, 4);
+  // build 177: the chart's own readings, one per point of the line, at the moment each was logged
+  check('every step of the shots line is a reading', lines[1].at.length, 12);
+  deepEq('the first shot, at 200s, makes it 1–0', lines[1].at[0], { t: 200, us: 1, them: 0 });
+  deepEq('their first, at 2400s, comes after our fourth', lines[1].at[4], { t: 2400, us: 4, them: 1 });
+  deepEq('and the last reading is the full count', lines[1].at[11], { t: 4500, us: 9, them: 3 });
+  A.ui.gameView = 'recap'; A.render();
+  const html = A.rendered();
+  const built = html.slice(html.indexOf('How it built up'), html.indexOf('As a table', html.indexOf('How it built up')));
+  check('each chart carries a link to its values, shut until tapped', (built.match(/class="lcbox"/g) || []).length, 3);
+  check('— one per chart', (built.match(/<summary>See the values<\/summary>/g) || []).length, 3);
+  check('— the goals\' at their minutes, with the running score', /<td>6′<\/td><td>1<\/td><td>0<\/td>/.test(built) && /<td>42′<\/td><td>1<\/td><td>1<\/td>/.test(built) && /<td>76′<\/td><td>3<\/td><td>1<\/td>/.test(built), true);
+  check('— named for the teams, no child in it', /<th>At<\/th><th>G14 Flight<\/th><th>Riverside<\/th>/.test(built) && !/Ella|Mia|Rosa|Nakamura/.test(built), true);
 }
 
 console.log('--- the season, game by game ---');
@@ -252,10 +264,18 @@ console.log('--- the season, game by game ---');
   A.ui.view = 'season'; A.render();
   check('Season leads into Stats, and draws no chart itself (build 146)', /data-v="teamstats"/.test(A.rendered()) && !/Game by game/.test(A.rendered()), true);
   A.ui.view = 'teamstats'; A.render();
-  check('Stats waits for five finished games before charting', /Charts of each game once 5 have been played. 2 so far/.test(A.rendered()) && !/class="lcbox"/.test(A.rendered()), true);
+  // build 177: two finished games is a line, so Stats charts from two (it waited for five until then)
+  check('Stats charts from two finished games, with no promise to wait for', /Game by game/.test(A.rendered()) && /class="lcbox"/.test(A.rendered()) && !/Charts of each game once/.test(A.rendered()), true);
+  {
+    const h = A.rendered(), card = h.slice(h.indexOf('Game by game'), h.indexOf('As a table', h.indexOf('Game by game')));
+    check('— every chart with a link to its values', (card.match(/class="lcbox"/g) || []).length, (card.match(/<summary>See the values<\/summary>/g) || []).length);
+    const shots = card.slice(card.indexOf('<b>Shots</b>'), card.indexOf('<b>Shots on target</b>'));
+    check('— each game a row, the gap a dash and the count where it was counted', /<td>1\. Northgate[^<]*<\/td><td>–<\/td><td>–<\/td>/.test(shots) && /<td>2\. Riverside[^<]*<\/td><td>9<\/td><td>3<\/td>/.test(shots), true);
+    check('— possession one column, the team\'s', /<th>Game<\/th><th>G14 Flight<\/th><\/tr>/.test(card) || !/<b>Possession<\/b>/.test(card), true);
+  }
   for (let i = 3; i <= 5; i++) A.state.matches['g' + i] = { id: 'g' + i, teamId: 't1', opponent: 'Side ' + i, date: '2026-08-0' + i, createdAt: 1, ended: true, periods: {} };
   A.render();
-  check('— and draws them at five', /Game by game/.test(A.rendered()) && /class="lcbox"/.test(A.rendered()), true);
+  check('— and still at five', /Game by game/.test(A.rendered()) && /class="lcbox"/.test(A.rendered()), true);
   for (let i = 3; i <= 5; i++) delete A.state.matches['g' + i];
   const all = JSON.stringify(s.charts.map(c => c.svg));
   check('no child is named in the charts', ['Ella', 'Mia', 'Rosa', 'Nakamura'].some(x => all.includes(x)), false);

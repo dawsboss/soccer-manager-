@@ -1052,6 +1052,8 @@ button.rsvprow[aria-expanded="true"]{color:var(--field)}
 .lctable table{border-collapse:collapse;font-size:14px;white-space:nowrap}
 .lctable th,.lctable td{padding:3px 8px;border-bottom:1px solid var(--line);text-align:center}
 .lctable th:first-child,.lctable td:first-child{text-align:left}
+/* the values under each chart: a link in the card's quiet blue, the table only once asked for */
+.lcbox .lcvals{margin-top:2px}
 .tlogrow .t{display:flex;flex-direction:column;line-height:1.15}
 .tlogrow .t small{font-size:12px;color:var(--ink-soft);font-weight:500}
 .chip small{opacity:.65;margin-left:2px}

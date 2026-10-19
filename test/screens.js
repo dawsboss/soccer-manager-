@@ -11,7 +11,8 @@
    - Season, for the coach: short. What is on, the last result, the record,
      the games, and a row each into Stats, Minutes and Attendance, which are
      screens of their own (#/team/{id}/stats, /minutes, /attendance), Back
-     going to Season. The charts wait for five finished games. A family sent
+     going to Season. The charts draw from two finished games (five until build 177),
+   each with a link to its values. A family sent
      to any of them lands on her own Season; Attendance is only for whoever
      takes the register.
    - Players: no "no profile yet" under every name, and the rating dots are
@@ -130,7 +131,7 @@ const club = () => ({
     check('Back is Season', A.ui.view, 'season');
     for (let i = 3; i <= 6; i++) A.state.matches['g' + i] = played('g' + i, 'Side ' + i, '2026-08-0' + i, [{ t: 100, side: 'us', pid: 'p3' }]);
     A.ui.view = 'teamstats'; A.render();
-    check('five finished games: the charts', /Game by game/.test(A.rendered()) && /class="lcbox"/.test(A.rendered()), true);
+    check('finished games: the charts, each with its values a tap away', /Game by game/.test(A.rendered()) && /class="lcbox"/.test(A.rendered()) && /See the values/.test(A.rendered()), true);
     for (let i = 3; i <= 6; i++) delete A.state.matches['g' + i];
 
     h = as('jaz', 'minutes');

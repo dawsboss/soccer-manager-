@@ -2,7 +2,7 @@
    Static app. Data lives in localStorage, and mirrors to Firebase Realtime
    Database when a config + workspace code are present. */
 
-const BUILD = '176';
+const BUILD = '177';
 const BUILT = '2026-10-14';
 /* The version of database.rules.json this app was written against. The rules
    carry the same number in rulesVersion's .write, which accepts that number
@@ -9005,8 +9005,26 @@ function recapLines(t, m, r) {
     svg: lineChart({ step: true, vlines, xLabels, marks: x.k === 'goals' ? [] : marks,
       series: [{ side: 'them', pts: run(x.them, 'them', x.label.toLowerCase()) }, { side: 'us', pts: run(x.us, 'us', x.label.toLowerCase()) }] }),
     // the table: the running totals at each ten minutes (five in a short game), and at the end
-    rows: r.spells.map(s => s.to).map(sec => ({ at: sec, us: x.us.filter(v => v < sec || sec >= L).length, them: x.them.filter(v => v < sec || sec >= L).length }))
+    rows: r.spells.map(s => s.to).map(sec => ({ at: sec, us: x.us.filter(v => v < sec || sec >= L).length, them: x.them.filter(v => v < sec || sec >= L).length })),
+    // the chart's own values: each step of the line, at the moment it was logged
+    at: stepValues(x.us, x.them)
   }));
+}
+
+/* The reading at every point of a running-total chart: one row per thing
+   logged, with both totals as they stood just after it. A hover shows this on
+   a computer; on a phone nothing does, so each chart offers it as a list. */
+function stepValues(us, them) {
+  const all = [...us.map(t => ({ t, side: 'us' })), ...them.map(t => ({ t, side: 'them' }))].sort((a, b) => a.t - b.t);
+  let u = 0, h = 0;
+  return all.map(x => { if (x.side === 'us') u++; else h++; return { t: x.t, us: u, them: h }; });
+}
+
+/* The link under a chart that opens its readings, one row per point on the x
+   axis. Plain HTML so a parent on a phone can read what the dots say. */
+function chartValues(head, rows) {
+  return `<details class="wtable lcvals"><summary>See the values</summary><div class="lctable"><table><thead><tr>${head.map(h => `<th>${h}</th>`).join('')}</tr></thead>
+    <tbody>${rows.map(r => `<tr>${r.map(c => `<td>${c}</td>`).join('')}</tr>`).join('')}</tbody></table></div></details>`;
 }
 
 function recapLinesCard(t, m, r) {
@@ -9016,7 +9034,7 @@ function recapLinesCard(t, m, r) {
   return `<div class="card"><h2 style="margin-bottom:4px">How it built up</h2>
     <p class="muted" style="margin:0 0 8px">Running totals through the game. Where the lines pull apart, someone was on top; flat is nothing happening.</p>
     <div class="wlegend"><span><i class="k us"></i>${us}</span><span><i class="k them dash"></i>${them}</span><span><i class="k goal"></i>goal</span></div>
-    ${list.map(x => `<div class="lcbox"><div class="spread"><b>${esc(x.label)}</b><span class="lcend"><span class="on">${x.us}</span> – <span class="muted">${x.them}</span></span></div>${x.svg}</div>`).join('')}
+    ${list.map(x => `<div class="lcbox"><div class="spread"><b>${esc(x.label)}</b><span class="lcend"><span class="on">${x.us}</span> – <span class="muted">${x.them}</span></span></div>${x.svg}${chartValues(['At', us, them], x.at.map(v => [feedMin(v.t), v.us, v.them]))}</div>`).join('')}
     <details class="wtable"><summary>As a table</summary><div class="lctable"><table><thead><tr><th>By</th>${list.map(x => `<th>${esc(x.label)}</th>`).join('')}</tr></thead>
       <tbody>${list[0].rows.map((row, i) => `<tr><td>${row.at >= r.L ? 'FT' : feedMin(row.at - 1)}</td>${list.map(x => `<td>${x.rows[i].us}–${x.rows[i].them}</td>`).join('')}</tr>`).join('')}</tbody></table></div></details></div>`;
 }
@@ -9065,10 +9083,13 @@ function seasonTrendsCard(t) {
   if (!s) return '';
   const us = teamLabel(t);
   const cell = (v, k, pct) => v && v[k] != null ? v[k] + (pct ? '%' : '') : '–';
+  const game = (m, i) => `${i + 1}. ${esc(m.opponent || 'Game')}${m.date ? ' · ' + esc(shortDate(m.date)) : ''}`;
+  const vals = c => chartValues(c.one ? ['Game', us] : ['Game', us, 'Opponent'],
+    s.games.map((m, i) => c.one ? [game(m, i), cell(c.vals[i], 'one', c.pct)] : [game(m, i), cell(c.vals[i], 'us', c.pct), cell(c.vals[i], 'them', c.pct)]));
   return `<div class="card"><h2 style="margin-bottom:4px">Game by game</h2>
     <p class="muted" style="margin:0 0 8px">Each finished game, oldest first. A gap means that game didn't record it.</p>
     <div class="wlegend"><span><i class="k us"></i>${us}</span><span><i class="k them dash"></i>Opponent</span></div>
-    ${s.charts.map(c => `<div class="lcbox"><b>${esc(c.label)}</b>${c.svg}</div>`).join('')}
+    ${s.charts.map(c => `<div class="lcbox"><b>${esc(c.label)}</b>${c.svg}${vals(c)}</div>`).join('')}
     <details class="wtable"><summary>As a table</summary><div class="lctable"><table><thead><tr><th>Game</th>${s.charts.map(c => `<th>${esc(c.label)}</th>`).join('')}</tr></thead>
       <tbody>${s.games.map((m, i) => `<tr><td>${i + 1}. ${esc(m.opponent || 'Game')}</td>${s.charts.map(c => `<td>${c.one ? cell(c.vals[i], 'one', c.pct) : `${cell(c.vals[i], 'us', c.pct)}–${cell(c.vals[i], 'them', c.pct)}`}</td>`).join('')}</tr>`).join('')}</tbody></table></div></details></div>`;
 }
@@ -12035,7 +12056,9 @@ function viewMinutes() {
 }
 /* Stats: everything counted across the season. The charts wait for five
    finished games: two points joined by a line is not a trend (UX-REVIEW.md, 3). */
-const TRENDS_MIN = 5;
+/* Two finished games is a line; until build 177 the charts waited for five
+   (the owner, 2026-10-19: every chart shows, with its values a tap away). */
+const TRENDS_MIN = 2;
 function viewTeamStats() {
   const t = team(); if (!t) return needTeam();
   const ms = teamMatches(t.id);
@@ -12063,8 +12086,7 @@ function viewTeamStats() {
     <div class="spread" style="margin-top:6px"><span>${s.settled ? Math.round(s.pu / s.settled * 100) : 50}% ours</span>
       <span class="muted">${Math.round(s.pc / s.ptot * 100)}% neither side</span></div>
     <p class="muted" style="margin-bottom:0">Settled play across ${s.possGames} of ${ms.length} game${ms.length === 1 ? '' : 's'}${s.possGames < ms.length ? ', ignoring those with too little recorded to judge' : ''}.</p></div>` : '';
-  const trends = done.length >= TRENDS_MIN ? seasonTrendsCard(t)
-    : done.length >= 2 ? `<div class="card"><h2 style="margin-bottom:4px">Game by game</h2><p class="muted" style="margin:0">Charts of each game once ${TRENDS_MIN} have been played. ${done.length} so far.</p></div>` : '';
+  const trends = done.length >= TRENDS_MIN ? seasonTrendsCard(t) : '';
   const record = `<div class="card">
     <div class="spread"><h2>${s.w}W ${s.d}D ${s.l}L</h2>
       <span class="muted">${done.length} played${ms.length > done.length ? ` · ${ms.length - done.length} to come` : ''}</span></div>
