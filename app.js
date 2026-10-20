@@ -2,7 +2,7 @@
    Static app. Data lives in localStorage, and mirrors to Firebase Realtime
    Database when a config + workspace code are present. */
 
-const BUILD = '180';
+const BUILD = '181';
 const BUILT = '2026-10-14';
 /* The version of database.rules.json this app was written against. The rules
    carry the same number in rulesVersion's .write, which accepts that number
@@ -7217,14 +7217,40 @@ function restartMatch(m) {
   commit(`matches/${m.id}`, { ...m, periods: {}, currentHalf: 1, stints, goals: null, planDone: null });
 }
 
-/* nudge the match clock when it was started late or left running */
+/* Nudge the match clock when it was started late or early: the half's start
+   moves, and so does everything logged in it (build 181, the owner,
+   2026-10-20: the clock was put back five minutes and nobody's minutes
+   followed). A sub, a goal, a shot, a set piece or a possession tap is kept
+   as a match second, so until now a nudge left each where the clock had read
+   when it was tapped: a player subbed off kept every minute of a half the
+   clock now said was shorter, and one who had just come on read "on" at a
+   second the clock had not reached yet, so her minutes stood at nothing until
+   it did. Each happened at a real moment, and a nudge says the half started
+   at a different one, so each moves by the same seconds the start did. The
+   half's own first second is pinned: a starter's spell, or a change made
+   during the break, belongs to the start of the half wherever that turns out
+   to be, and nothing is moved before it. Earlier halves are closed and keep
+   their seconds. Every record goes out on its own (`quiet()`), at the depth
+   a tracker may write, with the start last so one redraw says it all. */
 function adjustClock(m, deltaSec) {
   const segs = segments(m).filter(s => (s.half || 1) === (m.currentHalf || 1) && s.start);
   const first = segs[0];
   if (!first) { toast('Start the clock first'); return; }
   const span = (first.end || nowMs()) - first.start;
   const shift = clamp(-deltaSec * 1000, -60 * 60000, span - 1000);
-  commit(`matches/${m.id}/periods/${first.i}/start`, first.start + shift);
+  const by = Math.round(shift / 1000);                 // seconds the start moved later; each second logged since moves earlier by it
+  const from = elapsedSec(m) - halfSec(m);             // the half's first second, as the clock stood
+  const path = `matches/${m.id}`;
+  const move = (coll, key) => {
+    for (const [id, x] of Object.entries(m[coll] || {})) {
+      const v = x && x[key];
+      if (typeof v !== 'number' || v <= from) continue;
+      const nv = Math.max(from, v - by);
+      if (nv !== v) quiet(`${path}/${coll}/${id}/${key}`, nv);
+    }
+  };
+  if (by) { move('stints', 'on'); move('stints', 'off'); move('goals', 't'); move('shots', 't'); move('events', 't'); move('poss', 't'); }
+  commit(`${path}/periods/${first.i}/start`, first.start + shift);
 }
 
 /* ---------------- sheet / toast ---------------- */
@@ -22943,7 +22969,7 @@ function sheetFixClock() {
   const m = match();
   const onNow = fieldIds(m).length;
   openSheet(`<h3>Adjust or restart the clock</h3>
-    <p class="muted" style="margin-top:0">Reads ${mmss(elapsedSec(m))} now. Nudging shifts the current ${esc(halfName(m, m.currentHalf || 1)).toLowerCase()} and the total together.</p>
+    <p class="muted" style="margin-top:0">Reads ${mmss(elapsedSec(m))} now. Nudging shifts the current ${esc(halfName(m, m.currentHalf || 1)).toLowerCase()} and the total together, and every sub, goal and shot logged this ${esc(halfName(m, m.currentHalf || 1)).toLowerCase()} moves with it, so minutes follow the clock.</p>
     <div class="chips" style="margin-bottom:8px">
       ${[-300, -60, -15, -5].map(d => `<button class="chip" type="button" data-act="nudgeclock" data-d="${d}">−${Math.abs(d) >= 60 ? Math.abs(d) / 60 + 'm' : Math.abs(d) + 's'}</button>`).join('')}
     </div>
