@@ -174,8 +174,8 @@ label.field span{display:block;font-size:14px;color:var(--ink-soft);margin-botto
 
 /* ---------- pitch ---------- */
 /* The grass scrolls the page (pan-y), and so does a finger that lands on a
-   token: since build 178 a token is a tap, never a drag, so the only thing
-   that holds the finger is a slot in the shape editor (.slotok). With
+   token: since build 178 a token is a tap, never a drag, and since build 179
+   even a slot in the shape editor (.slotok) pans until it has been held. With
    touch-action:none on the whole pitch, a phone had nowhere left to put a
    thumb to scroll past it. Capped at 70% of the screen's height for the same
    reason: full width at 68:100 is taller than most phones. */
@@ -373,12 +373,16 @@ label.field span{display:block;font-size:14px;color:var(--ink-soft);margin-botto
   font-family:"Barlow",sans-serif;font-size:10px;font-weight:600;
   color:#fff;background:rgba(0,0,0,.4);border-radius:3px;padding:1px 4px;white-space:nowrap;
 }
+/* A spot pans with the page like the grass does: it is only a drag once the
+   finger has held it (draggable(), build 179), so a thumb scrolling past the
+   shape editor never catches on one. No callout on the long press either. */
 .slotok{
   position:absolute;transform:translate(-50%,-50%);
   width:56px;height:56px;border-radius:50%;
   background:#fff;border:2px solid var(--field-deep);
   display:flex;flex-direction:column;align-items:center;justify-content:center;
-  font-family:"Barlow Condensed",sans-serif;line-height:1.05;touch-action:none;
+  font-family:"Barlow Condensed",sans-serif;line-height:1.05;touch-action:pan-y;
+  -webkit-touch-callout:none;
   box-shadow:0 1px 0 rgba(0,0,0,.25);
 }
 .slotok .lab{font-weight:700;font-size:17px}

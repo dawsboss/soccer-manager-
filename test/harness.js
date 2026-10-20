@@ -152,7 +152,7 @@ const EXPORTS = `{
   liveReading, diffTag, tickLive, feedItems, feedMin, watchFeed, viewFeed, myGameLine, matchDayCard, pickWhen, pickCell, shareable,
   playedSec, spellSec, restSec, plannedSec, matchMinutes, onField, fieldIds,
   posOf, anomalies, squad, isOut, evenSplit, clashesOn, buildPlan, resolveShape,
-  presetsFor, slotById, slotIdOf, slotTaken, currentSpot, byRole,
+  presetsFor, slotById, slotIdOf, slotTaken, currentSpot, byRole, draggable, HOLD_MS,
   planBlocks, planBlockAt, nextPlanBlock, planSeconds, snapLabel,
   /* planned subs at the sideline */
   planLocked, subsDue, subsUntil, subsWhen, subsDiff, subsClock, subsCard,

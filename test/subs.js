@@ -697,10 +697,79 @@ function sideline() {
        sheet, which writes a slot. */
     check('— every token on the pitch is the same tap, a button and never a handle', (h.match(/<button type="button" class="token" data-act="taplive" data-pid="p[1345]" data-owed="[01]" style="left:[\d.]+%;top:[\d.]+%">/g) || []).length + ' ' + /<div class="token"/.test(h) + ' ' + /id="pitch"/.test(h), '4 false false');
     check('— and nothing on it says drag', /[Dd]rag/.test(h), false);
+    const src = require('fs').readFileSync(require('path').join(__dirname, '..', 'app.js'), 'utf8');
     {
-      const src = require('fs').readFileSync(require('path').join(__dirname, '..', 'app.js'), 'utf8');
       const calls = (src.match(/\bdraggable\(/g) || []).length - 1;   // the definition itself
       check('— the shape editor is the one place that drags: no wireDrag, one draggable() call', /function wireDrag\b/.test(src) + ' ' + calls + ' ' + /\bpositions\/\$\{pid\}`, \{ \.\.\./.test(src), 'false 1 false');
+    }
+    /* Build 179 (the owner, 2026-10-20): even the shape editor's spot pans
+       with the page until it has been held. A finger that lands on a spot and
+       moves is a scroll (the browser takes it, pointercancel), never a drag
+       and never a tap; one that stays HOLD_MS lifts the spot and is then a
+       drag wherever it goes, with the page held still; a quick tap renames;
+       a mouse drags at once. Driven on a fake spot that records its
+       listeners, since the rig's elements swallow addEventListener. */
+    {
+      const css = require('fs').readFileSync(require('path').join(__dirname, '..', 'styles.css'), 'utf8');
+      const slot = css.slice(css.indexOf('.slotok{'), css.indexOf('}', css.indexOf('.slotok{')));
+      check('a formation spot lets the page pan: touch-action pan-y, no touch-action:none left in the file', /touch-action:pan-y/.test(slot) + ' ' + /touch-action:none\b/.test(css.replace(/\/\*[\s\S]*?\*\//g, '')), 'true false');
+      const fake = () => {
+        const ls = {}, el = {
+          style: {}, captured: 0, classes: new Set(),
+          addEventListener(t, fn) { (ls[t] = ls[t] || []).push(fn); },
+          removeEventListener(t, fn) { ls[t] = (ls[t] || []).filter(f => f !== fn); },
+          setPointerCapture() { el.captured++; },
+          fire(t, ev) { for (const f of [...(ls[t] || [])]) f({ pointerId: 1, pointerType: 'touch', preventDefault() { ev.prevented = true; }, ...ev }); return ev; },
+          has: t => (ls[t] || []).length
+        };
+        el.classList = { add: c => el.classes.add(c), remove: c => el.classes.delete(c) };
+        return el;
+      };
+      const pitch = { getBoundingClientRect: () => ({ left: 0, top: 0, width: 200, height: 400 }) };
+      const run = () => {
+        const el = fake(), got = { drops: [], taps: 0 };
+        A.draggable(pitch, el, p => got.drops.push(p), () => got.taps++);
+        return { el, got };
+      };
+      const pend = () => [...A.timers.pending.values()].filter(t => t.ms === A.HOLD_MS);
+      const hold = () => { for (const t of pend()) t.fn(); A.timers.pending.clear(); };
+      let { el, got } = run();
+      check('— a finger on a spot takes nothing: no capture, a hold timer armed', (el.fire('pointerdown', { clientX: 50, clientY: 100 }), el.captured + ' ' + pend().length + ' ' + A.ui.dragging), '0 1 false');
+      el.fire('pointermove', { clientX: 50, clientY: 140 });
+      check('— moved before the hold is a scroll: the hold is off, the spot stays, the page is not held', pend().length + ' ' + el.style.left + ' ' + el.fire('touchmove', {}).prevented, '0 undefined undefined');
+      el.fire('pointercancel', {}); el.fire('pointerup', { clientX: 50, clientY: 140 });
+      check('— and neither a drop nor a tap', got.drops.length + ' ' + got.taps + ' ' + el.has('pointermove'), '0 0 0');
+      A.timers.pending.clear();
+      ({ el, got } = run());
+      el.fire('pointerdown', { clientX: 50, clientY: 100 }); hold();
+      check('a finger that stays put lifts the spot: captured, marked, the page held still', el.captured + ' ' + el.classes.has('dragging') + ' ' + A.ui.dragging + ' ' + el.fire('touchmove', {}).prevented, '1 true true true');
+      el.fire('pointermove', { clientX: 100, clientY: 300 });
+      check('— and follows the finger wherever it goes', el.style.left + ' ' + el.style.top, '50% 75%');
+      el.fire('pointerup', { clientX: 100, clientY: 300 });
+      check('— let go, it is dropped there and the page is hers again', JSON.stringify(got.drops) + ' ' + got.taps + ' ' + A.ui.dragging + ' ' + el.classes.has('dragging') + ' ' + el.fire('touchmove', {}).prevented, '[{"x":50,"y":75}] 0 false false undefined');
+      ({ el, got } = run());
+      el.fire('pointerdown', { clientX: 50, clientY: 100 }); el.fire('pointerup', { clientX: 51, clientY: 100 });
+      check('a quick tap is a tap: rename, nothing dropped, the hold forgotten', got.taps + ' ' + got.drops.length + ' ' + pend().length, '1 0 0');
+      ({ el, got } = run());
+      el.fire('pointerdown', { clientX: 50, clientY: 100 }); hold(); el.fire('pointerup', { clientX: 50, clientY: 100 });
+      check('— held and let go without moving is a tap too', got.taps + ' ' + got.drops.length + ' ' + A.ui.dragging, '1 0 false');
+      ({ el, got } = run());
+      el.fire('pointerdown', { clientX: 50, clientY: 100, pointerType: 'mouse' });
+      check('a mouse has no page to scroll with a finger: it drags at once', el.captured + ' ' + pend().length, '1 0');
+      el.fire('pointermove', { clientX: 150, clientY: 100, pointerType: 'mouse' }); el.fire('pointerup', { clientX: 150, clientY: 100, pointerType: 'mouse' });
+      check('— and drops where it let go', JSON.stringify(got.drops), '[{"x":75,"y":25}]');
+      check('the shape editor says hold, not drag', /Hold a spot to move it/.test(src) + ' ' + /Drag a spot/.test(src), 'true false');
+      /* And none of it reaches Subs: the drag is wired by render() for the
+         shape editor's screen alone, wireFormationDrag() refuses any other,
+         and the game's pitch (every look, and the sheet's mock) carries no
+         spot a drag could hang off. */
+      check('the drag is wired for the shape editor alone, and refuses any other screen', (src.match(/wireFormationDrag\(\)/g) || []).length + ' ' + /if \(v === 'formation'\) wireFormationDrag\(\);/.test(src) + ' ' + /function wireFormationDrag\(\) \{[^}]*if \(ui\.view !== 'formation'\) return;/.test(src), '2 true true');   // the definition and the one call
+      A.ui.view = 'game'; A.ui.gameView = 'pitch'; A.render();
+      const subsH = A.rendered();
+      check('— the Subs pitch has no spot to drag, no editor pitch, and tokens that are buttons', /slotok|fpitch/.test(subsH) + ' ' + /<div class="token"/.test(subsH) + ' ' + (subsH.match(/<button type="button" class="token"/g) || []).length, 'false false 4');
+      A.click({ act: 'taplive', pid: 'p1' });
+      check('— nor does the sub sheet\'s mock pitch', /slotok|fpitch|[Dd]rag|[Hh]old a spot/.test(sheet()), false);
+      A.closeSheet();
     }
     A.click({ act: 'taplive', pid: 'p1' });
     check('a tap on a player on the pitch opens the same sheet', sheetOpen() && /Ella coming off/.test(sheet()) && /data-pid="p6" data-with="p1"/.test(sheet()), true);
