@@ -2,7 +2,7 @@
    Static app. Data lives in localStorage, and mirrors to Firebase Realtime
    Database when a config + workspace code are present. */
 
-const BUILD = '179';
+const BUILD = '180';
 const BUILT = '2026-10-14';
 /* The version of database.rules.json this app was written against. The rules
    carry the same number in rulesVersion's .write, which accepts that number
@@ -2205,15 +2205,15 @@ const COACH_ACTS = new Set([
   // the team's own settings
   'editteam', 'saveteam', 'picklogo', 'droplogo', 'setpossmin', 'trackcfg', 'savetrackcfg',
   'formations', 'newformation', 'saveshapeteam', 'savefname', 'setdefault', 'delformation',
-  'addslot', 'saveslot', 'delslot', 'makeshare', 'rotateshare', 'republish',
+  'addslot', 'saveslot', 'delslot', 'shapeundo', 'shapereset', 'makeshare', 'rotateshare', 'republish',
   // running the game: clock, subs, lineup, plan
   'taplive', 'puton', 'doswitch', 'stageadd', 'startplan', 'applyplan', 'applyblock', 'fillslot',
   'reopengame', 'restartgame',
-  'fixsub', 'nudgesub', 'setsubtime', 'addsub', 'doaddsub', 'fixminutes', 'addstint', 'delstint', 'savestints',
+  'fixsub', 'nudgesub', 'setsubtime', 'fixsubs', 'nudgesubs', 'setsubstime', 'addsub', 'doaddsub', 'fixminutes', 'addstint', 'delstint', 'savestints',
   'repair', 'makeplan', 'planall', 'saveplan', 'evensplit', 'availability', 'toggleavail', 'toggleout',
   'editgameshape', 'gameshapepreset', 'planlock', 'planunlock',
-  'snapstart', 'snapadd', 'snapdel', 'snaptime', 'snapslot', 'snapclear', 'snapplayer', 'snapwipe', 'snapfill',
-  'delsub', 'aiimport',
+  'snapstart', 'snapadd', 'snapdel', 'snaptime', 'snapslot', 'snapclear', 'snapplayer', 'snapwipe', 'snapfill', 'snapcancel',
+  'copyplan', 'copyplanfrom', 'delsub', 'aiimport',
   // the calendar
   'calnew', 'calgames', 'caledit', 'calsave', 'caldel', 'calcall', 'caleditgame', 'calsyncon', 'calsyncnew', 'attend', 'attsave'
 ]);
@@ -2224,7 +2224,7 @@ const HELPER_ACTS = new Set(['calnew', 'calgames', 'caledit', 'calsave', 'caldel
 const HELPER_GAME_ACTS = new Set(['newmatch', 'editmatch', 'savematch', 'delmatch',
   'makeplan', 'planall', 'saveplan', 'evensplit', 'availability', 'toggleavail', 'toggleout',
   'editgameshape', 'gameshapepreset', 'planlock', 'planunlock', 'applyblock', 'fillslot',
-  'snapstart', 'snapadd', 'snapdel', 'snaptime', 'snapslot', 'snapclear', 'snapplayer', 'snapwipe', 'snapfill']);
+  'snapstart', 'snapadd', 'snapdel', 'snaptime', 'snapslot', 'snapclear', 'snapplayer', 'snapwipe', 'snapfill', 'snapcancel', 'copyplan', 'copyplanfrom']);
 const LOG_ACTS = new Set([
   'goal', 'savegoal', 'delgoal', 'shot', 'saveshot', 'delshot', 'ev', 'saveev', 'delev',
   'poss', 'saveposs', 'delposs', 'undoposs', 'undolast', 'trackerclean', 'dropby',
@@ -6918,6 +6918,42 @@ function subEvents(m) {
   return rows.reverse();
 }
 
+/* The log's rows, with the changes made together as one (the owner,
+   2026-10-20: a planned change made with one tap used to land as a row per
+   sub, and putting the time right was a tap on each). Everything a planned
+   change or a Several at once batch makes goes in at the same second, so rows
+   at the same second are one group, and the fix sheet for a group moves every
+   row in it together. Two subs made by hand in the same second are grouped
+   too, which is what they would want. `i` is each row's place in subEvents(),
+   which is what the single-row fix sheet reads. */
+function subGroups(m) {
+  const out = [];
+  subEvents(m).forEach((r, i) => {
+    const g = out[out.length - 1];
+    if (g && g.t === r.t) g.rows.push({ i, r }); else out.push({ t: r.t, rows: [{ i, r }] });
+  });
+  return out;
+}
+const subRowHtml = (name, r) => r.move ? `${name(r.on)} moved to <span class="on">${esc(r.spot || 'a new spot')}</span>`
+  : `${r.on ? `<span class="on">${name(r.on)} on</span>` : ''}${r.on && r.off ? ' for ' : ''}${r.off ? `<span class="off">${name(r.off)} off</span>` : ''}`;
+function subGroupLabel(g) {
+  const subs = g.rows.filter(x => !x.r.move).length, moves = g.rows.length - subs;
+  return [subs ? `${subs} sub${subs === 1 ? '' : 's'}` : '', moves ? `${moves} move${moves === 1 ? '' : 's'}` : ''].filter(Boolean).join(' and ') + ' together';
+}
+const subGroupIds = g => g.rows.map(x => x.i).join(',');
+/* The sub log as Subs draws it, the newest first, a group one row. */
+function subLogHtml(name, m, max) {
+  return subGroups(m).slice(0, max || undefined).map(g => g.rows.length === 1
+    ? `<button type="button" data-act="fixsub" data-i="${g.rows[0].i}">
+        <span class="t">${mmss(g.t)}</span>
+        <span>${subRowHtml(name, g.rows[0].r)}</span>
+        <span class="muted">fix</span></button>`
+    : `<button type="button" data-act="fixsubs" data-is="${subGroupIds(g)}">
+        <span class="t">${mmss(g.t)}</span>
+        <span><b>${subGroupLabel(g)}</b><span class="subgroup">${g.rows.map(x => subRowHtml(name, x.r)).join('<br>')}</span></span>
+        <span class="muted">fix</span></button>`).join('');
+}
+
 /* move a whole sub (both sides) to a new match time */
 function moveSub(m, row, t) {
   t = clamp(Math.round(t), 0, elapsedSec(m));
@@ -8341,8 +8377,8 @@ function sheetSubFor(pid) {
     <p class="muted" style="margin-top:0">${isOn ? 'Tap who takes her place.' : room ? 'Put her on, or tap who she replaces.' : 'Tap who she replaces.'}${ui.plan ? ' Nothing happens until you send the batch.' : ''}</p>
     ${onPitch ? mockPitch(t, m, pid, isOn, room) : ''}
     ${room ? `<button class="btn wide" data-act="${ui.plan ? 'stageadd' : 'puton'}" data-pid="${pid}" style="margin-bottom:10px">Put on</button>` : ''}
+    ${isOn ? `<button class="btn quiet wide" data-act="switchpos" data-pid="${pid}" style="margin-bottom:10px">Move her to another spot, or swap with a teammate</button>` : ''}
     <div class="plist">${others.map(q => liveRow(t, m, q, !isOn, now, behind, pid)).join('')}</div>
-    ${onPitch && isOn ? `<button class="textbtn" data-act="switchpos" data-pid="${pid}" style="margin-top:10px">Move her to another spot instead</button>` : ''}
     <button class="btn quiet wide" data-act="clearpick" style="margin-top:12px">Cancel</button></div>`);
 }
 
@@ -8406,11 +8442,10 @@ function timeline(t, m) {
         + `<span class="muted">(${when || 'from the plan'})</span>${who(x)}`
     });
   }
-  subEvents(m).forEach((r, i) => rows.push({
-    t: r.t, g: 'sub', act: 'fixsub', id: String(i),
-    h: r.move ? `${nm(r.on)} moved to <span class="on">${esc(r.spot || 'a new spot')}</span>`
-      : `${r.on ? `<span class="on">${nm(r.on)} on</span>` : ''}${r.on && r.off ? ' for ' : ''}${r.off ? `<span class="off">${nm(r.off)} off</span>` : ''}`
-  }));
+  // changes made together are one line here too, fixed together (subGroups)
+  for (const g of subGroups(m)) rows.push(g.rows.length === 1
+    ? { t: g.t, g: 'sub', act: 'fixsub', id: String(g.rows[0].i), h: subRowHtml(nm, g.rows[0].r) }
+    : { t: g.t, g: 'sub', act: 'fixsubs', id: subGroupIds(g), h: `<b>${subGroupLabel(g)}</b><span class="subgroup">${g.rows.map(x => subRowHtml(nm, x.r)).join('<br>')}</span>` });
 
   return rows.sort((a, b) => b.t - a.t);
 }
@@ -9637,18 +9672,14 @@ function viewSubs() {
     + anomalyBanner(t, m);
 
   lastLog = subEvents(m);
-  const recent = lastLog.slice(0, 4);
-  const logHtml = recent.length
-    ? `<div class="log">${recent.map((r, i) => `<button type="button" data-act="fixsub" data-i="${i}">
-        <span class="t">${mmss(r.t)}</span>
-        <span>${r.move ? `${name(r.on)} moved to <span class="on">${esc(r.spot || 'a new spot')}</span>`
-        : `${r.on ? `<span class="on">${name(r.on)} on</span>` : ''}${r.on && r.off ? ' for ' : ''}${r.off ? `<span class="off">${name(r.off)} off</span>` : ''}`}</span>
-        <span class="muted">fix</span></button>`).join('')}</div>`
+  const logHtml = lastLog.length
+    ? `<div class="log">${subLogHtml(name, m, 4)}</div>`
     : `<p class="muted" style="margin:0">Nothing yet.</p>`;
 
+  const fromPlan = planBlocks(m).length && !planLocked(m);
   const startHint = on.length === 0 ? `<p class="muted" style="margin:0 0 10px">Tap a player on the bench, then <b>Put on</b>. Repeat until your starters are out there.
-    ${planBlocks(m).length ? ' Or fill the whole lineup from the plan.' : ''}</p>
-    ${planBlocks(m).length ? `<button class="btn quiet wide" data-act="applyblock" data-start="${(planBlockAt(m, el) || planBlocks(m)[0]).start}" style="margin-bottom:10px">Use the planned lineup</button>` : ''}` : '';
+    ${fromPlan ? ' Or fill the whole lineup from the plan.' : planLocked(m) ? ' Or tap <b>Starters are on</b> above once they are.' : ''}</p>
+    ${fromPlan ? `<button class="btn quiet wide" data-act="applyblock" data-start="${(planBlockAt(m, el) || planBlocks(m)[0]).start}" style="margin-bottom:10px">Use the planned lineup</button>` : ''}` : '';
 
   return `<div class="stack">
     ${subsLooks()}
@@ -9737,7 +9768,7 @@ function viewMatch() {
       style="left:${s.x}%;top:${s.y}%">${esc(s.label)}</button>`).join('');
 
   const pitch = `<div class="pitch">${PITCH_LINES}${ghosts}${tokens}
-    <div class="pitchhint">${field.length ? 'Tap a player to sub' : 'Tap a bench player to put her on'}</div>
+    <div class="pitchhint">${field.length ? 'Tap a player to sub or move her' : 'Tap a bench player to put her on'}</div>
   </div>`;
 
 
@@ -9749,11 +9780,7 @@ function viewMatch() {
   lastLog = subEvents(m);
   const name = id => { const p = (t.players || {})[id]; return p ? esc(p.name) : 'Unknown'; };
   const logHtml = lastLog.length
-    ? `<div class="log">${lastLog.map((r, i) => `<button type="button" data-act="fixsub" data-i="${i}">
-        <span class="t">${mmss(r.t)}</span>
-        <span>${r.move ? `${name(r.on)} moved to <span class="on">${esc(r.spot || 'a new spot')}</span>`
-        : `${r.on ? `<span class="on">${name(r.on)} on</span>` : ''}${r.on && r.off ? ' for ' : ''}${r.off ? `<span class="off">${name(r.off)} off</span>` : ''}`}</span>
-        <span class="muted">fix</span></button>`).join('')}</div>`
+    ? `<div class="log">${subLogHtml(name, m)}</div>`
     : `<p class="muted" style="margin:0">Subs and switches show up here with the minute they happened. Tap one to correct the time.</p>`;
 
   const clashes = clashesOn(t, m);
@@ -9946,9 +9973,10 @@ function subsCard(t, m, now) {
        anything to count, so she locks the plan in. Lineup has its own Lock in
        card for that, so the helper is not told twice. */
     if (!['subs', 'pitch'].includes(ui.gameView)) return '';
-    if (planBlocks(m).length) return `<div class="card subscard" id="subsdue" data-k="none"><div class="spread"><h2>Planned subs</h2>
+    if (planBlocks(m).length) return `<div class="card subscard" id="subsdue" data-k="none"><div class="spread"><h2>Plan not locked in</h2>
           <button class="btn quiet sm" data-act="opengview" data-v="plan">Open the plan</button></div>
-          <p class="muted" style="margin:6px 0 0">Lock in your plan and this card counts down to each change, says when subs are due, and makes them with one tap — here, and on your helper\u2019s Lineup.</p></div>`;
+          <p class="muted" style="margin:6px 0 0">Lock in your plan and this card counts down to each change, says when subs are due, and makes them with one tap — here, and on your helper\u2019s Lineup.</p>
+          ${canEditTeam(m.teamId) ? `<button class="btn wide" data-act="planlock" style="margin-top:10px">Lock in the plan</button>` : ''}</div>`;
     return `<div class="card subscard" id="subsdue" data-k="none"><div class="spread"><h2>Planned subs</h2>
           <button class="btn quiet sm" data-act="opengview" data-v="plan">Open Lineup</button></div>
           <p class="muted" style="margin:6px 0 0">Plan the game on Lineup and lock it in: this card then counts down to each change and says when subs are due.</p></div>`;
@@ -10062,11 +10090,19 @@ function viewPlan() {
         <div class="row"><button class="btn sm" data-act="benchall">Bench sheet</button>
           <button class="btn quiet sm" data-act="planunlock">Unlock to change</button></div></div>`;
     } else {
-      lockCard = `<div class="card"><div class="spread" style="align-items:flex-start"><div><h2>Happy with it?</h2>
-        <p class="muted" style="margin:4px 0 0">Lock it in. Nothing changes by accident, and Subs and your helper\u2019s Lineup count down to each change.</p></div>
-        <button class="btn" data-act="planlock" style="flex:none">Lock in</button></div></div>`;
+      /* Not locked in: the one thing left to do, said first (the owner,
+         2026-10-20: coaches did not realise they had to lock in, and the
+         starting lineup's own button beside it read as the way on). Locking
+         is what makes the starters' button appear at kick-off, so this card
+         leads the screen and the snapshot offers no way onto the pitch before
+         kick-off. */
+      lockCard = `<div class="card lockask" data-state="open"><h2>Lock in your plan</h2>
+        <p style="margin:6px 0 0">${el <= 0 ? 'At kick-off, Subs puts the starters on with one tap and then counts down to each change.' : 'Subs counts down to each change and makes it with one tap.'} Nothing changes by accident, and Subs and your helper\u2019s Lineup count down to each change.</p>
+        <button class="btn wide" data-act="planlock" style="margin-top:12px">Lock in</button>
+        <p class="muted" style="margin:8px 0 0">You can unlock it to change anything, right up to kick-off and after.</p></div>`;
     }
   }
+  const unlockedFirst = lockCard && !locked ? lockCard : '';
 
   /* The lineup leads (UX-REVIEW.md, 3, *Plan*): the pitch with who is where,
      and when there is no shape yet, one line and the button that gets one,
@@ -10086,17 +10122,18 @@ function viewPlan() {
     snaps = `<div class="card"><h2 style="margin-bottom:6px">Lineup</h2>
       <p class="muted" style="margin-top:0">Pick a shape (4-3-3, 2-3-1, or one you saved) and the lineup is a pitch to fill in.${infoBtn('snapshots')}</p>
       <button class="btn wide" data-act="editmatch" data-id="${m.id}">Pick a shape</button>
+      ${!blocks.length ? copyPlanBtn(t, m) : ''}
       ${blocks.length ? `<div style="margin-top:14px">${planDetail(t, m)}</div>` : ''}</div>`;
   } else if (!blocks.length) {
     snaps = `<div class="card"><h2 style="margin-bottom:6px">Lineup</h2>
       <p class="muted" style="margin-top:0">Who starts where, then who is where after each change.${infoBtn('snapshots')}</p>
       <button class="btn wide" data-act="snapstart">Plan kick-off</button>
+      ${copyPlanBtn(t, m)}
       <p class="muted" style="margin:12px 0 0">Or let the app draft one from your target minutes, or paste back an answer from <b>Ask an AI</b>, and change what you like.</p></div>`;
   } else {
     const cur = blocks.find(b => b.start === ui.snapAt) || blocks[0];
     const i = blocks.indexOf(cur), prev = i ? blocks[i - 1] : null;
     const assign = cur.assign || {};
-    const sel = ui.snapSid && shape.some(s => s.id === ui.snapSid) ? ui.snapSid : null;
     const P = id => (t.players || {})[id];
     const emptyN = shape.filter(s => !assign[s.id]).length;
     const slotOfIn = (b, pid) => Object.keys((b && b.assign) || {}).find(k => b.assign[k] === pid) || null;
@@ -10116,14 +10153,17 @@ function viewPlan() {
           <button class="btn quiet sm" data-act="snaptime" data-d="300" aria-label="5 minutes later">+5</button>
           <button class="btn danger sm snapx" data-act="snapdel" aria-label="Delete the change at ${mmss(cur.start)}">✕</button></div>`;
 
+    /* A spot is a tap and nothing else, as a token on Subs is (build 180, the
+       owner, 2026-10-20: Lineup edits the way Subs does): the tap opens the
+       sheet of who could take it, and the second tap, in the sheet, makes the
+       change. Nothing is picked on the page. */
     const spots = shape.map(s => {
       const pid = assign[s.id], p = pid && P(pid);
-      const picked = sel === s.id ? 1 : 0;
       return p
-        ? `<button type="button" class="token snaptok" data-act="snapslot" data-sid="${s.id}" data-picked="${picked}" style="left:${s.x}%;top:${s.y}%">
+        ? `<button type="button" class="token snaptok" data-act="snapslot" data-sid="${s.id}" style="left:${s.x}%;top:${s.y}%">
             <span class="role">${esc(s.label)}</span><span class="num">${esc(p.number ?? '')}</span>
             <span class="nm">${esc(p.name.split(' ')[0])}</span></button>`
-        : `<button type="button" class="ghost" data-act="snapslot" data-sid="${s.id}" data-picked="${picked}" style="left:${s.x}%;top:${s.y}%">${esc(s.label)}</button>`;
+        : `<button type="button" class="ghost" data-act="snapslot" data-sid="${s.id}" style="left:${s.x}%;top:${s.y}%">${esc(s.label)}</button>`;
     }).join('');
     const pitch = `<div class="pitch snappitch">
       <svg class="lines" viewBox="0 0 68 100" preserveAspectRatio="none" aria-hidden="true">
@@ -10133,13 +10173,9 @@ function viewPlan() {
           <rect x="26" y="2" width="16" height="6"/><rect x="26" y="92" width="16" height="6"/>
         </g></svg>${spots}</div>`;
 
-    const selSlot = sel && slotById(m, sel), selP = sel && assign[sel] && P(assign[sel]);
     const hint = locked
       ? `<div class="snaphint"><span class="muted">Locked in. Tap a time above to look through it; unlock to change anything.</span></div>`
-      : selSlot
-      ? `<div class="snaphint"><span>${selP ? `Who replaces <b>${esc(selP.name)}</b> at ${esc(selSlot.label)}? Or tap another spot to swap them.` : `Who plays <b>${esc(selSlot.label)}</b>?`}</span>
-          ${selP ? `<button class="btn quiet sm" data-act="snapclear">Leave empty</button>` : ''}</div>`
-      : `<div class="snaphint"><span class="muted">Tap a spot, then a player. Tap two spots to swap them.</span></div>`;
+      : `<div class="snaphint"><span class="muted">Tap a spot, or a player, to change who plays where.</span></div>`;
 
     // what this snapshot changes from the one before — the subs you would make
     let diff = '';
@@ -10163,7 +10199,7 @@ function viewPlan() {
       const mins_ = cur.start
         ? `<span class="pmins snapmins"><span>${sofar}<small> by ${mmss(cur.start)}</small></span><span class="pmtot">${got}${want != null ? ' of ' + want : ''} in game</span></span>`
         : `<span class="pmins">${got}<small>${want != null ? ' of ' + want : ''} min</small></span>`;
-      return `<button class="prow" type="button" data-act="snapplayer" data-pid="${p.id}" data-picked="${sid && sid === sel ? 1 : 0}">
+      return `<button class="prow" type="button" data-act="snapplayer" data-pid="${p.id}">
         <span class="pnum">${esc(p.number ?? '')}</span>
         <span><span class="pname">${esc(p.name)}</span><span class="psub">${sl ? esc(sl.label) : prev && slotOfIn(prev, p.id) ? 'was ' + esc((slotById(m, slotOfIn(prev, p.id)) || {}).label || 'on') + ' before' : 'not on'}${p.gk ? (sl && sl.role === 'GK' ? '' : ' · keeper') : p.preferred ? ' · likes ' + esc(p.preferred) : ''}</span></span>
         ${mins_}</button>`;
@@ -10181,7 +10217,8 @@ function viewPlan() {
       <div class="row" style="margin-top:10px">${locked ? '' : `<button class="btn quiet sm" data-act="snapadd">Add the next change</button>
         ${prev && emptyN && Object.values(prev.assign || {}).some(id => !Object.values(assign).includes(id)) ? '<button class="btn quiet sm" data-act="snapfill">Fill the gaps from the one before</button>' : ''}`}
         <button class="btn quiet sm" data-act="bench" data-start="${cur.start}">Tell the bench</button>
-        <button class="btn quiet sm" data-act="applyblock" data-start="${cur.start}">${elapsedSec(m) <= 0 && !m.ended ? 'Use as the starting lineup' : 'Put this on the pitch now'}</button></div>
+        ${el > 0 && !m.ended ? `<button class="btn quiet sm" data-act="applyblock" data-start="${cur.start}">Put this on the pitch now</button>` : ''}</div>
+      ${el <= 0 && !m.ended && !locked ? `<p class="muted" style="margin:10px 0 0">Lock the plan in and the starters go on from the Subs card at kick-off.</p>` : ''}
       ${list}</div>`;
   }
 
@@ -10198,9 +10235,10 @@ function viewPlan() {
   return `<div class="stack">
     <div class="split">
       <div class="stack">
+        ${unlockedFirst}
         ${next}
         ${snaps}
-        ${lockCard}
+        ${locked ? lockCard : ''}
         ${gameDetailsCard(m)}
       </div>
       <div class="stack">
@@ -12486,10 +12524,45 @@ function viewFormation() {
           <rect x="26" y="2" width="16" height="6"/><rect x="26" y="92" width="16" height="6"/>
         </g></svg>${toks}
       <div class="pitchhint">Hold a spot to move it · tap to rename</div></div>
+    ${shapeUndoRow(tg)}
     <div class="row"><button class="btn quiet" data-act="addslot">Add a spot</button>
       <button class="btn" data-act="savefname">Save name</button></div>
     ${foot}
   </div>`;
+}
+
+/* A spot moved can be put back (the owner, 2026-10-20: pitch movements need
+   an undo, or a way back to the defaults). Every drop on the editor's pitch
+   keeps the spots as they were before it, on this phone, for this shape, so
+   Undo walks back through the moves of this visit; and a shape that started
+   as a preset (its name is still the preset's) can go back to the preset's
+   spots in one tap, each spot matched by its id, then by its label, so a
+   renamed or added spot keeps its place. Both are a write of the whole slot
+   list, as a drag is, so the game or the team shape ends up exactly as the
+   editor shows it. Nothing of this is kept past leaving the editor: a move
+   from last week is a shape the coach has lived with. */
+const shapeUndo = { path: null, stack: [] };
+function shapeKeep(tg) {
+  if (shapeUndo.path !== tg.path) { shapeUndo.path = tg.path; shapeUndo.stack = []; }
+  shapeUndo.stack.push(clone(tg.f.slots || []));
+  if (shapeUndo.stack.length > 30) shapeUndo.stack.shift();
+}
+const shapeUndoable = tg => shapeUndo.path === tg.path && shapeUndo.stack.length > 0;
+/* The preset's spots for this shape, or null when the name is not a preset's
+   or every spot is where the preset has it already. */
+function shapePresetSlots(tg) {
+  const pre = presetsFor(tg.f.size)[tg.f.name]; if (!pre) return null;
+  const slots = (tg.f.slots || []).map(s => {
+    const q = pre.find(x => x.id === s.id) || pre.find(x => x.label === s.label);
+    return q ? { ...s, x: q.x, y: q.y } : s;
+  });
+  return slots.some((s, i) => s.x !== (tg.f.slots || [])[i].x || s.y !== (tg.f.slots || [])[i].y) ? slots : null;
+}
+function shapeUndoRow(tg) {
+  const undo = shapeUndoable(tg), back = !!shapePresetSlots(tg);
+  if (!undo && !back) return '';
+  return `<div class="row">${undo ? `<button class="btn quiet sm" data-act="shapeundo">Undo the last move</button>` : ''}
+    ${back ? `<button class="btn quiet sm" data-act="shapereset">Back to the ${esc(tg.f.name)} spots</button>` : ''}</div>`;
 }
 
 function sheetSlot(sid) {
@@ -20731,6 +20804,7 @@ function wireFormationDrag() {
     const sid = el.dataset.sid;
     draggable(pitch, el, p => {
       const slots = (tg.f.slots || []).map(s => s.id === sid ? { ...s, x: p.x, y: p.y } : s);
+      shapeKeep(tg);
       commit(`${tg.path}/slots`, slots);
     }, () => sheetSlot(sid));
   }
@@ -21019,9 +21093,10 @@ function sheetSwitch(pid) {
     const h = fieldIds(m).find(x => x !== pid && slotIdOf(m, x) === sid);
     return h ? (t.players || {})[h] : null;
   };
-  openSheet(`<h3>Move ${esc(p.name)}</h3>
-    <p class="muted" style="margin-top:0">${ui.plan ? 'Added to the batch — nothing happens until you send it.' : `Recorded at ${mmss(elapsedSec(m))}.`} Her total minutes do not change — they just start counting against the new spot.</p>
+  openSheet(`<h3>Move ${esc(p.name)} to another spot</h3>
+    <p class="muted" style="margin-top:0">Tap a free spot, or a teammate to swap spots with her. ${ui.plan ? 'Added to the batch — nothing happens until you send it.' : `Recorded at ${mmss(elapsedSec(m))}.`} Her total minutes do not change — they just start counting against the new spot.</p>
     ${roleSummary(m, pid) ? `<p class="muted">So far: ${esc(roleSummary(m, pid))}</p>` : ''}
+    ${shape.length ? mockMove(t, m, pid) : ''}
     ${shape.length ? `<p class="lbl">Spot in the ${esc(m.formation.name)}</p>
       ${shape.map(sl => { const h = holderOf(sl.id); return `<button class="opt spread" type="button" data-act="doswitch" data-pid="${pid}" data-sid="${sl.id}" aria-current="${here === sl.id}">
         <span>${esc(sl.label)} <span class="muted">· ${esc(sl.role)}</span></span>
@@ -21029,6 +21104,29 @@ function sheetSwitch(pid) {
       : `<p class="lbl">Role</p>
       ${ROLES.map(r => `<button class="opt" type="button" data-act="doswitch" data-pid="${pid}" data-role="${r}">${r}</button>`).join('')}`}
     <button class="btn quiet wide" data-act="closesheet" style="margin-top:8px">Cancel</button>`);
+}
+
+/* Where she could go, as a picture (the owner, 2026-10-20: swapping players
+   on the pitch look was a text link under the list, hard to find). The pitch
+   as it stands with her own token dashed, every teammate's token a button
+   that swaps the two, and every free spot a dashed token carrying her
+   number, a tap moving her there. The same rows as the list under it, in
+   the shape's own picture. */
+function mockMove(t, m, pid) {
+  const p = (t.players || {})[pid] || {};
+  const first = q => esc((q.name || '').split(' ')[0]);
+  const tokens = squad(t, m).filter(q => onField(m, q.id)).map(q => {
+    const pos = posOf(m, q.id), sl = slotOf(m, q.id), me_ = q.id === pid;
+    const inner = `${sl ? `<span class="role">${esc(sl.label)}</span>` : ''}<span class="num">${esc(q.number ?? '')}</span><span class="nm">${first(q)}</span>`;
+    return me_ || !sl
+      ? `<div class="token" data-pid="${q.id}"${me_ ? ' data-mock="out"' : ''} style="left:${pos.x}%;top:${Math.min(pos.y, 86)}%">${inner}</div>`
+      : `<button type="button" class="token" data-act="doswitch" data-pid="${pid}" data-sid="${sl.id}" aria-label="Swap with ${esc(q.name)}" style="left:${pos.x}%;top:${Math.min(pos.y, 86)}%">${inner}</button>`;
+  }).join('');
+  const ghosts = ((m.formation && m.formation.slots) || []).filter(x => !slotTaken(m, x.id)).map(x =>
+    `<button type="button" class="token" data-mock="in" data-act="doswitch" data-pid="${pid}" data-sid="${x.id}" style="left:${x.x}%;top:${Math.min(x.y, 86)}%">
+      <span class="role">${esc(x.label)}</span><span class="num">${esc(p.number ?? '')}</span><span class="nm">${first(p)}</span></button>`).join('');
+  return `<p class="muted mockcap">Tap where she goes</p>
+    <div class="pitch mockpitch">${PITCH_LINES}${ghosts}${tokens}</div>`;
 }
 
 function viewPeople() {
@@ -22805,8 +22903,8 @@ function asksWhoComing(t, m) {
 
 /* `then` is the tap that opened it as that check (snapstart or makeplan): the
    same list, with the button that carries on and says how many it plans for. */
-function sheetAvailability(then) {
-  ui.availThen = then || null;
+function sheetAvailability(then, id) {
+  ui.availThen = then || null; ui.availId = id || null;
   const t = team(), m = match();
   const said = pid => rsvpOf(t.id, 'g_' + m.id, pid);
   const why = p => {
@@ -22830,7 +22928,7 @@ function sheetAvailability(then) {
       <p style="margin:0 0 10px"><b>${n} coming</b>${ps.length - n ? ` · ${ps.length - n} out` : ''}${maybe ? ` · ${maybe} maybe` : ''}${quiet_ ? ` · ${quiet_} not answered` : ''}</p>
       ${quiet_ || maybe ? `<p class="muted" style="margin-top:0">Anyone who has not answered, or said maybe, is planned for until you leave her out.</p>` : ''}
       ${rows}
-      ${n ? `<button class="btn wide" data-act="${esc(then)}" data-checked="1">Plan for ${n} player${n === 1 ? '' : 's'}</button>`
+      ${n ? `<button class="btn wide" data-act="${esc(then)}"${id ? ` data-id="${esc(id)}"` : ''} data-checked="1">Plan for ${n} player${n === 1 ? '' : 's'}</button>`
         : '<p class="muted">Nobody is coming yet, so there is nobody to plan for.</p>'}
       <div style="margin-top:8px"><button class="btn quiet wide" data-act="closesheet">Not now</button></div>`);
     return;
@@ -22872,6 +22970,37 @@ function sheetFixSub(i) {
     <button class="btn wide" data-act="setsubtime" data-i="${i}">Save time</button>
     <div style="margin-top:8px"><button class="btn danger wide" data-act="delsub" data-i="${i}">Delete — this sub did not happen</button></div>
     <div style="margin-top:8px"><button class="btn quiet wide" data-act="closesheet">Cancel</button></div>`);
+}
+
+/* The changes made together, as one sheet: the time nudged or set once moves
+   every one of them, since they happened at one stoppage; a row that did not
+   is fixed on its own from here. The rows are found again by their spells
+   (`sids`), not their place in the log, which moves with the time. */
+function sheetFixSubs(is) {
+  const rows = is.map(i => lastLog[i]).filter(Boolean); if (!rows.length) return;
+  const t = team();
+  const nm = id => esc(shownName(t, (t.players || {})[id]));
+  const sids = rows.flatMap(r => [r.onSid, r.offSid]).filter(Boolean).join(',');
+  openSheet(`<h3>${rows.length} changes at ${mmss(rows[0].t)}</h3>
+    <p class="muted" style="margin-top:0">Made together, so they move together: put the time right once and every one of them follows.</p>
+    <div class="log" style="margin-bottom:14px">${rows.map((r, k) => `<div class="logrow"><span class="t">${mmss(r.t)}</span><span>${subRowHtml(nm, r)}</span>
+      <button class="btn quiet sm" type="button" data-act="fixsub" data-i="${is[k]}">This one</button></div>`).join('')}</div>
+    <div class="chips" style="margin-bottom:14px">
+      ${[-60, -30, -15, -5, 5, 15, 30, 60].map(d => `<button class="chip" type="button" data-act="nudgesubs" data-sids="${sids}" data-d="${d}">${d > 0 ? '+' : '−'}${Math.abs(d)}s</button>`).join('')}
+    </div>
+    <label class="field"><span>Or set the exact time for all of them</span><input type="text" id="subT" value="${mmss(rows[0].t)}" placeholder="23:10" inputmode="numeric" data-clock></label>
+    <button class="btn wide" data-act="setsubstime" data-sids="${sids}">Save time</button>
+    <div style="margin-top:8px"><button class="btn quiet wide" data-act="closesheet">Cancel</button></div>`);
+}
+const subRowsBySids = sids => { const S = new Set(sids); return lastLog.filter(r => S.has(r.onSid) || S.has(r.offSid)); };
+function moveSubs(m, rows, t) {
+  t = clamp(Math.round(t), 0, elapsedSec(m));
+  const p = `matches/${m.id}/stints`;
+  for (const row of rows) {
+    if (row.offSid) quiet(`${p}/${row.offSid}/off`, t);
+    if (row.onSid) quiet(`${p}/${row.onSid}/on`, t);
+  }
+  saveLocal(); render();
 }
 
 function sheetAddSub() {
@@ -22999,14 +23128,22 @@ function snapAction(t, m, a, d) {
   const blocks = planBlocks(m).map(b => ({ start: b.start, assign: { ...(b.assign || {}) } }));
   const cur = blocks.find(b => b.start === ui.snapAt) || blocks[0];
   const taken = sec => blocks.some(b => b !== cur && b.start === sec);
-  if (ui.snapSid && !shape.some(s => s.id === ui.snapSid)) ui.snapSid = null;
+  /* The spot picked is the one the open sheet is about (build 180): a sheet
+     closed by Back or the scrim leaves nothing picked, so the next tap on a
+     spot opens its sheet rather than swapping with a spot nobody can see. */
+  if (ui.snapSid && (!shape.some(s => s.id === ui.snapSid) || $('#sheet').hidden)) ui.snapSid = null;
 
+  if (a === 'snapcancel') { ui.snapSid = null; closeSheet(); render(); return; }
   if (a === 'snapstart') {
     // start from whoever is on the pitch right now, if anyone — usually nobody
     const assign = {};
     for (const pid of fieldIds(m)) { const sid = slotIdOf(m, pid); if (sid && shape.some(s => s.id === sid)) assign[sid] = pid; }
-    ui.snapAt = 0; ui.snapSid = shape.find(s => !assign[s.id]) ? shape.find(s => !assign[s.id]).id : null;
-    savePlan(m, [{ start: 0, assign }]); return;
+    const first = shape.find(s => !assign[s.id]);
+    ui.snapAt = 0; ui.snapSid = first ? first.id : null;
+    savePlan(m, [{ start: 0, assign }]);
+    // and straight into who plays the first spot, one tap per player from here
+    if (first) sheetSnapSpot(t, m, first.id);
+    return;
   }
   if (a === 'snapwipe') {
     if (!blocks.length || !confirm('Clear the whole plan? Every snapshot goes, and you start again from an empty pitch.')) return;
@@ -23062,18 +23199,22 @@ function snapAction(t, m, a, d) {
     savePlan(m, blocks); return;
   }
   if (a === 'snapslot') {
-    const sid = d.sid;
-    if (!ui.snapSid || ui.snapSid === sid) { ui.snapSid = ui.snapSid === sid ? null : sid; render(); return; }
-    // a spot was already picked: swap the two, empty or not
+    const sid = d.sid; if (!shape.some(s => s.id === sid)) return;
+    // a spot tapped on a player's sheet: she goes there, and that is all
+    if (d.pid && !ui.snapSid) { ui.snapSid = sid; snapAction(t, m, 'snapplayer', { pid: d.pid, one: '1' }); return; }
+    if (!ui.snapSid) { ui.snapSid = sid; sheetSnapSpot(t, m, sid); return; }
+    if (ui.snapSid === sid) { ui.snapSid = null; closeSheet(); render(); return; }
+    // a spot was already picked, on its sheet: swap the two, empty or not
     const x = cur.assign[ui.snapSid], y = cur.assign[sid];
-    if (!x && !y) { ui.snapSid = sid; render(); return; }
+    if (!x && !y) { ui.snapSid = sid; sheetSnapSpot(t, m, sid); return; }
     if (y) cur.assign[ui.snapSid] = y; else delete cur.assign[ui.snapSid];
     if (x) cur.assign[sid] = x; else delete cur.assign[sid];
-    ui.snapSid = null;
+    ui.snapSid = null; closeSheet();
     savePlan(m, blocks); return;
   }
   if (a === 'snapclear') {
     if (ui.snapSid) delete cur.assign[ui.snapSid];
+    ui.snapSid = null; closeSheet();
     savePlan(m, blocks); return;
   }
   if (a === 'snapplayer') {
@@ -23081,23 +23222,157 @@ function snapAction(t, m, a, d) {
     const had = Object.keys(cur.assign).find(k => cur.assign[k] === p.id) || null;
     let sid = ui.snapSid;
     if (!sid) {
-      if (had) { ui.snapSid = had; render(); return; }
-      // no spot picked: back where she was in the change before, else the open spot that suits her best
-      const open = shape.filter(s => !cur.assign[s.id]);
-      if (!open.length) { toast('Every spot is filled — tap the spot she should take'); return; }
-      const before = blocks.filter(b => b.start < cur.start).pop();
-      const was = before && Object.keys(before.assign || {}).find(k => before.assign[k] === p.id);
-      sid = was && !cur.assign[was] ? was : open.slice().sort((x, y) => fit(p, y) - fit(p, x))[0].id;
+      // a placed player's row is her token: the sheet of who could take her spot
+      if (had) { ui.snapSid = had; sheetSnapSpot(t, m, had); return; }
+      // a player not on: her sheet, unless the tap said to put her where she fits
+      if (!d.auto) { sheetSnapPlayer(t, m, p.id); return; }
+      const best = snapBestSpot(shape, blocks, cur, p);
+      if (!best) { toast('Every spot is filled — tap the spot she should take'); return; }
+      sid = best.id;
     }
-    if (had === sid) { ui.snapSid = null; render(); return; }
+    if (had === sid) { ui.snapSid = null; closeSheet(); render(); return; }
     const was = cur.assign[sid];
     cur.assign[sid] = p.id;
     if (had) { if (was) cur.assign[had] = was; else delete cur.assign[had]; }
-    // carry on down the empty spots, so a lineup is one tap per player
+    /* Filling an empty spot from its sheet carries on down the empty spots,
+       so a lineup is one tap per player; replacing somebody, or placing her
+       from her own sheet, is done. */
     const nextOpen = shape.find(s => !cur.assign[s.id]);
-    ui.snapSid = ui.snapSid && nextOpen ? nextOpen.id : null;
-    savePlan(m, blocks); return;
+    const goOn = !!(ui.snapSid && !was && !d.one && nextOpen);
+    ui.snapSid = goOn ? nextOpen.id : null;
+    if (!goOn) closeSheet();
+    savePlan(m, blocks);
+    if (goOn) sheetSnapSpot(t, m, nextOpen.id);
+    return;
   }
+}
+/* Where a player not in this snapshot goes with no spot named: back where
+   she was in the change before, else the open spot that suits her best. */
+function snapBestSpot(shape, blocks, cur, p) {
+  const open = shape.filter(s => !cur.assign[s.id]);
+  if (!open.length) return null;
+  const before = blocks.filter(b => b.start < cur.start).pop();
+  const was = before && Object.keys(before.assign || {}).find(k => before.assign[k] === p.id);
+  return was && !cur.assign[was] ? shape.find(s => s.id === was) : open.slice().sort((x, y) => fit(p, y) - fit(p, x))[0];
+}
+
+/* ---------------- Lineup's sheets ----------------
+   The Lineup edits the way Subs does (build 180, the owner, 2026-10-20: the
+   same editing on both, for consistency). A tap on a spot, filled or empty,
+   opens the sheet of who could play it, led by a mock of the snapshot with
+   the spot marked and every other spot a button (a teammate's swaps the two,
+   a free one moves her there); a tap on a player not in the snapshot opens
+   where she could go, Put on at her best spot above a mock where every spot
+   is a button. The second tap, in the sheet, makes the change through the
+   same snapslot and snapplayer actions the page used to pair on its own, so
+   nothing is picked on the page and a dismissed sheet leaves nothing half
+   done. */
+function snapSheetBlock(m) {
+  const blocks = planBlocks(m);
+  return blocks.find(b => b.start === ui.snapAt) || blocks[0] || null;
+}
+function mockSnap(t, m, cur, pick) {
+  const shape = (m.formation && m.formation.slots) || [], assign = cur.assign || {};
+  const P = id => (t.players || {})[id];
+  const first = q => esc(((q && q.name) || '').split(' ')[0]);
+  const me_ = pick.pid ? P(pick.pid) : null;
+  return `<p class="muted mockcap">${pick.pid ? 'Tap where she goes' : 'The snapshot as it stands'}</p>
+    <div class="pitch mockpitch">${PITCH_LINES}${shape.map(s => {
+    const p = assign[s.id] && P(assign[s.id]), here = pick.sid === s.id;
+    const top = Math.min(s.y, 86);
+    if (here) return `<div class="token" data-mock="out" data-sid="${s.id}" style="left:${s.x}%;top:${top}%"><span class="role">${esc(s.label)}</span><span class="num">?</span><span class="nm">${p ? 'for ' + first(p) : s.label}</span></div>`;
+    if (p) return `<button type="button" class="token" data-act="snapslot" data-sid="${s.id}"${pick.pid ? ` data-pid="${pick.pid}"` : ''} aria-label="${esc(pick.pid ? `${me_.name} for ${p.name}` : `Swap with ${p.name}`)}" style="left:${s.x}%;top:${top}%">
+        <span class="role">${esc(s.label)}</span><span class="num">${esc(p.number ?? '')}</span><span class="nm">${first(p)}</span></button>`;
+    return pick.pid
+      ? `<button type="button" class="token" data-mock="in" data-act="snapslot" data-sid="${s.id}" data-pid="${pick.pid}" style="left:${s.x}%;top:${top}%">
+        <span class="role">${esc(s.label)}</span><span class="num">${esc(me_.number ?? '')}</span><span class="nm">${first(me_)}</span></button>`
+      : `<button type="button" class="ghost" data-act="snapslot" data-sid="${s.id}" style="left:${s.x}%;top:${top}%">${esc(s.label)}</button>`;
+  }).join('')}</div>`;
+}
+function sheetSnapSpot(t, m, sid) {
+  const sl = slotById(m, sid), cur = snapSheetBlock(m); if (!sl || !cur) return;
+  const blocks = planBlocks(m), i = blocks.indexOf(cur), prev = i > 0 ? blocks[i - 1] : null;
+  const slotOfIn = (b, pid) => Object.keys((b && b.assign) || {}).find(k => b.assign[k] === pid) || null;
+  const holder = (cur.assign || {})[sid] ? (t.players || {})[cur.assign[sid]] : null;
+  const wasOn = p => !!(prev && slotOfIn(prev, p.id));
+  const off = squad(t, m).filter(p => !slotOfIn(cur, p.id))
+    .sort((x, y) => (wasOn(y) - wasOn(x)) || (fit(y, sl) - fit(x, sl)));
+  const secs = planSeconds(m);
+  const row = p => `<button class="prow" type="button" data-act="snapplayer" data-pid="${p.id}">
+      <span class="pnum">${esc(p.number ?? '')}</span>
+      <span><span class="pname">${esc(p.name)}</span><span class="psub">${wasOn(p) ? 'was ' + esc((slotById(m, slotOfIn(prev, p.id)) || {}).label || 'on') + ' before' : 'not on'}${p.gk ? (sl.role === 'GK' ? '' : ' · keeper') : p.preferred ? ' · likes ' + esc(p.preferred) : ''}</span></span>
+      <span class="pmins">${Math.round((secs[p.id] || 0) / 60)}<small> min in game</small></span></button>`;
+  openSheet(`<div data-sheet="snap"><h3>${esc(sl.label)}${holder ? ' · ' + esc(holder.name) : ' — nobody yet'}</h3>
+    <p class="muted" style="margin-top:0">${holder ? `Tap who plays ${esc(sl.label)} instead of ${esc(holder.name.split(' ')[0])}, or a teammate\u2019s spot to swap them.` : `Tap who plays ${esc(sl.label)}, or a teammate to move her here.`}</p>
+    ${mockSnap(t, m, cur, { sid })}
+    ${holder ? `<button class="btn quiet wide" data-act="snapclear" style="margin-bottom:10px">Leave ${esc(sl.label)} empty</button>` : ''}
+    <div class="plist">${off.map(row).join('') || '<p class="muted" style="margin:2px 0">Everyone is on in this snapshot.</p>'}</div>
+    <button class="btn quiet wide" data-act="snapcancel" style="margin-top:12px">Cancel</button></div>`);
+}
+function sheetSnapPlayer(t, m, pid) {
+  const p = (t.players || {})[pid], cur = snapSheetBlock(m); if (!p || !cur) return;
+  const shape = (m.formation && m.formation.slots) || [];
+  const blocks = planBlocks(m).map(b => ({ start: b.start, assign: { ...(b.assign || {}) } }));
+  const best = snapBestSpot(shape, blocks, blocks.find(b => b.start === cur.start) || blocks[0], p);
+  openSheet(`<div data-sheet="snap"><h3>${esc(p.name)} going on</h3>
+    <p class="muted" style="margin-top:0">${best ? 'Put her on where she fits, or tap the spot she plays.' : 'Every spot is filled: tap the player she takes over from.'}</p>
+    ${best ? `<button class="btn wide" data-act="snapplayer" data-pid="${pid}" data-auto="1" style="margin-bottom:10px">Put on at ${esc(best.label)}</button>` : ''}
+    ${mockSnap(t, m, cur, { pid })}
+    <button class="btn quiet wide" data-act="snapcancel" style="margin-top:12px">Cancel</button></div>`);
+}
+
+/* ---------------- a plan from another game ----------------
+   Most games are planned like the last one (the owner, 2026-10-20: taking a
+   plan from a previous game and applying it to a new one should be easy).
+   The team's other games with a plan are offered, newest first, and the one
+   picked is copied: its snapshots, with their times, held to this game's
+   length; the shape too when this game has none, or one the plan's spots are
+   not in (a game's shape is its own copy, so the same team shape has the
+   same spot ids from game to game and the plan fits as it is); a player who
+   is out for this game, or no longer on the roster, is left out of every
+   snapshot and said, so her spot is empty to fill rather than filled by
+   somebody the coach never picked. A copy is a plan of this game's own:
+   never locked, with nothing of the old game's done-marks, and offered only
+   into an empty plan so a tap can never lose snapshots. */
+function plansToCopy(t, m) {
+  return teamMatches(t.id).filter(g => g.id !== m.id && planBlocks(g).length);
+}
+function copyPlanBtn(t, m) {
+  if (!canGameEdit(m) || !plansToCopy(t, m).length) return '';
+  return `<button class="btn quiet wide" data-act="copyplan" style="margin-top:8px">Copy the plan from another game</button>`;
+}
+function sheetCopyPlan(t, m) {
+  const list = plansToCopy(t, m); if (!list.length) { toast('No other game of this team has a plan yet'); return; }
+  openSheet(`<h3>Copy a plan</h3>
+    <p class="muted" style="margin-top:0">Its snapshots come over as they are, to change here. Anyone out for this game is left out of them.</p>
+    ${list.map(g => { const n = planBlocks(g).length; return `<button class="opt spread" type="button" data-act="copyplanfrom" data-id="${esc(g.id)}">
+      <span>${esc(g.opponent ? 'v ' + g.opponent : 'Game')}<span class="rowsub">${esc([g.date ? shortDate(g.date) : '', g.formation ? g.formation.name : 'no shape', `${g.periodCount || 2} × ${g.periodMinutes || 40} min`].filter(Boolean).join(' · '))}</span></span>
+      <span class="muted">${n} snapshot${n === 1 ? '' : 's'}</span></button>`; }).join('')}
+    <button class="btn quiet wide" data-act="closesheet" style="margin-top:8px">Cancel</button>`);
+}
+function copyPlanFrom(t, m, src) {
+  if (planBlocks(m).length) { toast('There is a plan already — clear it first to copy one in'); return; }
+  const srcBlocks = planBlocks(src);
+  const used = new Set(srcBlocks.flatMap(b => Object.keys(b.assign || {})));
+  const have = new Set(((m.formation && m.formation.slots) || []).map(x => x.id));
+  const needShape = !!src.formation && [...used].some(sid => !have.has(sid));
+  if (needShape) quiet(`matches/${m.id}/formation`, clone(src.formation));
+  const ok = new Set(squad(t, m).map(p => p.id));
+  const left = new Set();
+  const end = matchMinutes(m) * 60;
+  const blocks = srcBlocks.filter(b => b.start < end).map(b => {
+    const assign = {};
+    for (const [sid, pid] of Object.entries(b.assign || {})) { if (ok.has(pid)) assign[sid] = pid; else left.add(pid); }
+    return { start: b.start, assign };
+  });
+  ui.snapAt = 0; ui.snapSid = null;
+  closeSheet();
+  /* A plan drafted with no shape has who, not where: its ids come over as
+     they are, since savePlan() would read them back from empty spots. */
+  if (!used.size) commit(`matches/${m.id}/plan`, { blocks: srcBlocks.filter(b => b.start < end).map(b => ({ start: b.start, ids: (b.ids || []).filter(pid => ok.has(pid) || (left.add(pid), false)), assign: {} })) });
+  else savePlan(m, blocks);
+  const nm = id => ((t.players || {})[id] || {}).name || 'someone';
+  toast(`Plan copied from ${src.opponent ? 'v ' + src.opponent : 'that game'}${needShape ? ', with its shape' : ''}${left.size ? ` — ${[...left].map(nm).join(', ')} left out` : ''}`);
 }
 
 function sheetPlan() {
@@ -25150,7 +25425,7 @@ function onAct(e) {
     if (want && onField(m, d.pid)) takeOffField(m, d.pid);
     if (want === familySaidNo(m, d.pid)) drop(`matches/${m.id}/out/${d.pid}`);
     else commit(`matches/${m.id}/out/${d.pid}`, want);
-    sheetAvailability(ui.availThen); return;
+    sheetAvailability(ui.availThen, ui.availId); return;
   }
 
   if (a === 'fixclock') { sheetFixClock(); return; }
@@ -25170,6 +25445,17 @@ function onAct(e) {
   if (a === 'setsubtime') {
     const r = lastLog[Number(d.i)]; if (!r) return;
     moveSub(m, r, parseTime($('#subT').value, r.t)); closeSheet(); return;
+  }
+  if (a === 'fixsubs') { sheetFixSubs(String(d.is || d.id || '').split(',').map(Number)); return; }
+  if (a === 'nudgesubs' || a === 'setsubstime') {
+    const sids = String(d.sids || '').split(',').filter(Boolean);
+    const rows = subRowsBySids(sids); if (!rows.length) return;
+    const t0 = rows[0].t;
+    moveSubs(m, rows, a === 'nudgesubs' ? t0 + Number(d.d) : parseTime($('#subT').value, t0));
+    if (a === 'setsubstime') { closeSheet(); return; }
+    const again = subRowsBySids(sids).map(r => lastLog.indexOf(r)).filter(i => i > -1);
+    if (again.length) sheetFixSubs(again); else closeSheet();
+    return;
   }
   if (a === 'delsub') {
     const r = lastLog[Number(d.i)]; if (!r) return;
@@ -25216,9 +25502,15 @@ function onAct(e) {
   /* Before the first player goes into an empty plan, who is coming
      (asksWhoComing()). The sheet's button is the same tap again, marked as
      checked, which closes the sheet and carries on. */
-  if ((a === 'snapstart' || a === 'makeplan') && m) {
+  if ((a === 'snapstart' || a === 'makeplan' || a === 'copyplanfrom') && m) {
     if (d.checked) { (ui.availOk = ui.availOk || {})[m.id] = 1; closeSheet(); }
-    else if (asksWhoComing(t, m)) { sheetAvailability(a); return; }
+    else if (asksWhoComing(t, m)) { sheetAvailability(a, d.id); return; }
+  }
+  if (a === 'copyplan') { sheetCopyPlan(t, m); return; }
+  if (a === 'copyplanfrom') {
+    if (!m || !canGameEdit(m)) return;
+    const src = plansToCopy(t, m).find(g => g.id === d.id); if (!src) return;
+    copyPlanFrom(t, m, src); return;
   }
   if (a === 'makeplan') {
     const roster = squad(t, m);
@@ -25341,6 +25633,7 @@ function onAct(e) {
     const tg = shapeTarget(); if (!tg || !tg.game) return;
     const sl = presetsFor(tg.f.size)[d.k]; if (!sl) return;
     if (!confirm(`Replace this game's shape with a fresh ${d.k}? Anyone on the pitch stays on.`)) return;
+    shapeKeep(tg);
     commit(tg.path, { name: d.k, size: tg.f.size, slots: clone(sl) }); return;
   }
   if (a === 'saveshapeteam') {
@@ -25364,6 +25657,20 @@ function onAct(e) {
     if ((t.defaults || {})[f.size] === f.id) drop(`teams/${t.id}/defaults/${f.size}`);
     drop(`teams/${t.id}/formations/${d.id}`);
     ui.view = 'setup'; ui.editFid = null; render(); return;
+  }
+  if (a === 'shapeundo') {
+    const tg = shapeTarget(); if (!tg || !shapeUndoable(tg)) return;
+    commit(`${tg.path}/slots`, shapeUndo.stack.pop());
+    toast('Put back');
+    return;
+  }
+  if (a === 'shapereset') {
+    const tg = shapeTarget(); if (!tg) return;
+    const slots = shapePresetSlots(tg); if (!slots) return;
+    shapeKeep(tg);
+    commit(`${tg.path}/slots`, slots);
+    toast(`Back to the ${tg.f.name} spots`);
+    return;
   }
   if (a === 'addslot') {
     const tg = shapeTarget(); if (!tg) return;
