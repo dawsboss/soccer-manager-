@@ -16,6 +16,7 @@ secretary already has.
 | Concept | Word | Not |
 |---|---|---|
 | The bar at the bottom (one for everyone since build 153) | **Home** · **Calendar** · **Game** · **Messages** · **More** | Team (the tab), Club, Season, Live |
+| The two doors (DOORS.md; build 179) | **Teams** (the season) and **Sessions** (the business), each with its own bar: in Sessions **Home** · **Calendar** · **Sessions** · **Messages** · **More** | Training (as the door; it is the team's tab), Business, Academy, Mode |
 | A team's own tabs | **Season** · **Players** · **Training** | Squad, Roster, Practice (the tab) |
 | Season's own screens (build 146) | **Stats** · **Minutes** · **Attendance** | Players (the minutes table; Players is the tab), Register |
 | A game's lineup card | **Lineup** | Snapshots (a snapshot is one picture of it, in prose only) |

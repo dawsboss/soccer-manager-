@@ -35,6 +35,7 @@ const SUITES = [
   ['signin', 'the ways in: Google, Apple, Microsoft, email, and one account per email'],
   ['routing', 'links in, links out'],
   ['nav', 'the way around: a tab bar by role, a title row with Back, More, and nothing of it on a locked device'],
+  ['doors', 'two doors, Teams and Sessions: who has which, where each starts, the switch remembered, the shared screens the same in both'],
   ['settings', 'one Settings screen: you, this team, the club and advanced, by role, and nothing in two places'],
   ['copy', 'copy and vocabulary: every screen held to GLOSSARY.md, the role card once, refusals in one sentence, labels not paragraphs'],
   ['visual', 'the visual system: type no smaller than its floor, grey text readable, a chevron on what a tap opens, called off in grey, the + clear of the list'],

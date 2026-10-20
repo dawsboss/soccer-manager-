@@ -252,6 +252,8 @@ const EXPORTS = `{
   get you() { return you }, busyOf, myFeedDoc, myFeedId, feedItem, youCalItems, youBusy, youClubs, elsewhereOn, sharing, sheetPersonCal, viewScope, watchMirror, mirrorSlim,
   /* where you are, and the way around (build 141) */
   titleBar, tabBar, navTabs, navKind, navGames, viewGames, nextGames, navTeams, tabFor, upView, homeView, sheetMore, sheetAccount, VIEW_TITLE,
+  /* two doors, Teams and Sessions (DOORS.md) */
+  DOORS, hasDoor, doorOf, curDoor, defaultDoor, settleDoor, doorHome, doorRow, viewSessHome, SESSION_VIEWS,
   /* copy and vocabulary (UX-REVIEW.md, 2; build 144) */
   ROLE_LABEL, refusedMsg, roleWords, roleCard, roleCardSeen, INFO, infoBtn, sheetInfo, CAL_KIND,
   /* a family's own Home and Season (build 142) */

@@ -169,12 +169,12 @@ console.log('\n--- the bar does not change shape while the page loads ---');
 console.log('\n--- which tab is lit ---');
 {
   const litOn = (uid, view, extra) => { as(uid, view); if (extra) extra(); A.render(); return lit(); };
-  for (const [v, want] of [['season', 'home'], ['roster', 'home'], ['practice', 'home'], ['calendar', 'calendar'], ['inbox', 'messages'], ['club', 'more'], ['people', 'more'], ['setup', 'more'], ['notes', 'more'], ['mine', 'more'], ['sessions', 'more']])
+  for (const [v, want] of [['season', 'home'], ['roster', 'home'], ['practice', 'home'], ['calendar', 'calendar'], ['inbox', 'messages'], ['club', 'more'], ['people', 'more'], ['setup', 'more'], ['notes', 'more'], ['mine', 'more'], ['sessions', 'sessions']])
     check(`a coach on ${v}: ${want}`, litOn('jaz', v), want);
   check('a coach on a game: Game', litOn('jaz', 'game', () => { A.ui.matchId = 'g2'; }), 'game');
   check("a coach on a game's shape: Game", litOn('jaz', 'formation', () => { A.ui.matchId = 'g2'; A.ui.editFid = '@game'; }), 'game');
   check('a tracker on Track: Game', litOn('trk', 'game', () => { A.ui.matchId = 'g2'; A.ui.gameView = 'track'; }), 'game');
-  for (const [v, want] of [['mine', 'home'], ['calendar', 'calendar'], ['inbox', 'messages'], ['club', 'more'], ['sessions', 'more'], ['setup', 'more'], ['season', 'home']])
+  for (const [v, want] of [['mine', 'home'], ['calendar', 'calendar'], ['inbox', 'messages'], ['club', 'more'], ['sessions', 'sessions'], ['setup', 'more'], ['season', 'home']])
     check(`a parent on ${v}: ${want}`, litOn('mum', v), want);
   // a game lights Game for everyone, wherever it was opened from (until build 153 a family's lit where she came from)
   check('a parent on a game opened from the calendar: Game', litOn('mum', 'game', () => { A.ui.matchId = 'g2'; A.ui.gameFrom = 'calendar'; }), 'game');
@@ -406,7 +406,7 @@ console.log('\n--- the title row ---');
   A.click({ act: 'navback' });
   check('— and back from there is the team', A.ui.view, 'season');
   for (const v of ['admin', 'scheduler', 'regs', 'comply']) { as('boss', v); A.click({ act: 'navback' }); check(`${v}: back is Settings`, A.ui.view, 'setup'); }
-  as('boss', 'sessions'); A.click({ act: 'navback' }); check('sessions: back is Club home, where its card is', A.ui.view, 'club');
+  as('boss', 'sessions'); check('sessions: a tab\'s own screen in the Sessions door, no back (DOORS.md)', A.upView() + ' ' + /tbback/.test(title()), 'null false');
   // fields, fees and hours are Settings' screens since build 148 (UX-REVIEW-2.md, 7.3)
   for (const [k, name] of [['fields', 'Fields'], ['fees', 'Session fees'], ['hours', 'Coach hours']]) {
     as('boss', 'setup'); A.click({ act: 'sesstab', k });
@@ -447,7 +447,7 @@ console.log('\n--- More, by role ---');
   const has = (re, s) => re.test(s);
   as('boss'); let m = more();
   check('an admin: What\'s new, Training sessions, Settings, Sign out',
-    ['data-v="notes"', 'data-v="sessions"', 'data-v="setup"', 'data-act="signout"'].every(x => m.includes(x)), true);
+    ['data-v="notes"', 'data-act="door" data-d="sessions"', 'data-v="setup"', 'data-act="signout"'].every(x => m.includes(x)), true);
   check('— and not Club home, which is her Team tab', has(/data-v="club"/, m), false);
   check('— one Settings, never People or Club details beside it (build 143)', /data-v="people"|data-v="admin"/.test(m) + ' ' + (m.match(/data-v="setup"/g) || []).length, 'false 1');
   check('— which says it has the club in it', /<b>Settings<\/b>[\s\S]*?the club: people, registrations, fields/.test(m), true);
@@ -456,11 +456,11 @@ console.log('\n--- More, by role ---');
   check('a coach: Settings, which names People, and no Club details', has(/data-v="setup"/, m) + ' ' + has(/<b>Settings<\/b>[\s\S]*?people/, m) + ' ' + has(/data-v="admin"/, m), 'true true false');
   check('— and the club, since her Team tab is her team', has(/data-v="club"/, m), true);
   as('trk'); m = more();
-  check('a tracker: neither, nor sessions', /data-v="people"|data-v="admin"|data-v="sessions"|data-v="mine"/.test(m), false);
+  check('a tracker: neither, nor sessions', /data-v="people"|data-v="admin"|data-v="sessions"|data-d="sessions"|data-v="mine"/.test(m), false);
   check('— the club, settings and sign out', ['data-v="club"', 'data-v="setup"', 'data-act="signout"'].every(x => m.includes(x)), true);
   as('mum', 'mine'); m = more();
   check('a parent: no People, no Club settings', /data-v="people"|data-v="admin"/.test(m), false);
-  check('— the club, Training sessions, settings, sign out', ['data-v="club"', 'data-v="sessions"', 'data-v="setup"', 'data-act="signout"'].every(x => m.includes(x)), true);
+  check('— the club, the Sessions door, settings, sign out', ['data-v="club"', 'data-act="door" data-d="sessions"', 'data-v="setup"', 'data-act="signout"'].every(x => m.includes(x)), true);
   // anyone may start a club, a family included (the owner, 2026-10-14, overruling UX-REVIEW-2.md, 9.4)
   check('— and Clubs, to start one, in her one club', /<b>Clubs<\/b>[\s\S]*?Start a new club/.test(m), true);
   A.click({ act: 'clubswitch' });
