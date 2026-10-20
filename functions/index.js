@@ -220,6 +220,11 @@ onClub('accessFans', '{code}/{squad}/{pid}/fans', onValueWritten, event => Promi
 exports.accessViewer = onValueWritten('/orgs/{code}/access/viewers/{uid}', event =>
   access.onViewer(writerOf(event), event.params, event.data.before.val(), event.data.after.val()));
 
+/* A session coach, a coach of no team (DOORS.md): named by an admin as a
+   viewer is, and kept in the index the same way. */
+exports.accessSessionCoach = onValueWritten('/orgs/{code}/access/sessionCoaches/{uid}', event =>
+  access.onSessionCoach(writerOf(event), event.params, event.data.before.val(), event.data.after.val()));
+
 /* Two derived parts (access.js): staff names, so a family can
    see who her coach is without reading anyone's email, and the roster, the
    numbers the whole club reads in place of the squad. A child's record is

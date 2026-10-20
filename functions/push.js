@@ -199,11 +199,12 @@ async function onStaff(env, params, v) {
   const pair = String(cid).split('~');
   if (pair.length !== 2 || pair.some(u => !/^[^.#$\[\]\/~]{1,128}$/.test(u)) || pair[0] === pair[1] || !pair.includes(v.by)) return none;
   const A = (await where(env.get, code)).access;
-  const [retired, admins, coachIndex] = await Promise.all([
-    env.get('retired/' + code), env.get(A + '/admins'), env.get(A + '/coachIndex')
+  const [retired, admins, coachIndex, sessionCoaches] = await Promise.all([
+    env.get('retired/' + code), env.get(A + '/admins'), env.get(A + '/coachIndex'), env.get(A + '/sessionCoaches')
   ]);
   if (retired) return none;
-  const staff = u => has(admins, u) || has(coachIndex, u);
+  // a session coach is a colleague too (DOORS.md; rules version 35)
+  const staff = u => has(admins, u) || has(coachIndex, u) || has(sessionCoaches, u);
   if (!pair.every(staff)) return none;
   const other = pair.find(u => u !== v.by);
   const people = new Set([other]);
@@ -229,11 +230,11 @@ async function onTalk(env, params, v) {
   const pair = String(cid).split('~');
   if (pair.length !== 2 || pair.some(u => !/^[^.#$\[\]\/~]{1,128}$/.test(u)) || pair[0] === pair[1] || !pair.includes(v.by)) return none;
   const A = (await where(env.get, code)).access;
-  const [retired, admins, coachIndex, helperIndex, index] = await Promise.all([
-    env.get('retired/' + code), env.get(A + '/admins'), env.get(A + '/coachIndex'), env.get(A + '/helperIndex'), env.get(A + '/index')
+  const [retired, admins, coachIndex, helperIndex, sessionCoaches, index] = await Promise.all([
+    env.get('retired/' + code), env.get(A + '/admins'), env.get(A + '/coachIndex'), env.get(A + '/helperIndex'), env.get(A + '/sessionCoaches'), env.get(A + '/index')
   ]);
   if (retired) return none;
-  const staff = u => has(admins, u) || has(coachIndex, u) || has(helperIndex, u);
+  const staff = u => has(admins, u) || has(coachIndex, u) || has(helperIndex, u) || has(sessionCoaches, u);
   if (!pair.every(u => has(index, u)) || !pair.some(staff)) return none;
   const other = pair.find(u => u !== v.by);
   const list = await messagesFor(env, new Set([other]), () => ({

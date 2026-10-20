@@ -35,7 +35,7 @@ async function forgetIn(env, code, uid, now, out) {
   const B = 'orgs/' + code;
   const gone = async p => { if ((await env.get(p)) !== null && (await env.get(p)) !== undefined) { await env.remove(p); out.push('del ' + p.slice(B.length + 1)); } };
   const access = (await env.get(B + '/access')) || {};
-  for (const k of ['admins', 'owners', 'viewers', 'index', 'coachIndex', 'helperIndex']) if (has(access[k], uid)) await gone(`${B}/access/${k}/${uid}`);
+  for (const k of ['admins', 'owners', 'viewers', 'sessionCoaches', 'index', 'coachIndex', 'helperIndex']) if (has(access[k], uid)) await gone(`${B}/access/${k}/${uid}`);
   for (const [tid, ta] of Object.entries(access.teams || {}))
     for (const k of ['coaches', 'trackers', 'helpers']) if (has((ta || {})[k], uid)) await gone(`${B}/access/teams/${tid}/${k}/${uid}`);
   for (const t of ['teamIndex', 'teamParents', 'teamPlayers', 'teamFans'])

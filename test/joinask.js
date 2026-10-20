@@ -177,6 +177,12 @@ const raw = (S, p) => S.ref(p).get().then(s => s.val());
     S.users.vic = { email: 'v@x.com', emailVerified: true, displayName: 'Vic' };
     const c = await ask(S, 'vic', { op: 'invite', invite: 'iV' });
     check('a club viewer is in', [c.ok, S.at(W + 'access/viewers/vic'), S.at(W + 'access/index/vic')].join(), 'true,iV,iV');
+    // a session coach, a coach of no team (DOORS.md): the same door, the whole club and no team
+    S.users.gus = { email: 'g@x.com', emailVerified: true, displayName: 'Gus' };
+    S.put('invites/iS', { ...inv({ role: 'sesscoach' }), team: null, player: null, teamName: null, playerNo: null });
+    const d = await ask(S, 'gus', { op: 'invite', invite: 'iS' });
+    check('a session coach is in', [d.ok, S.at(W + 'access/sessionCoaches/gus'), S.at(W + 'access/index/gus')].join(), 'true,iS,iS');
+    check('— and on no team', S.at(W + 'access/coachIndex/gus') == null && S.at(W + 'access/teams/t1/coaches/gus') == null, true);
   }
 
   console.log('\n--- a new club, at a code the server makes ---');

@@ -282,7 +282,7 @@ family as any staff may. Also plain: if the owner would rather these people
 be named a coach of a team for now, nothing here breaks, and the step is
 left out.
 
-**Decision: open.** The owner answers yes, no, or later.
+**Decided: yes** (the owner, 2026-10-20, *go for it*). *Built, build 181*, rules version 35: `access/sessionCoaches/{uid}`, People's *Session coach* chip and the `sesscoach` invite role, the training rules widened to her and the squad and children reads for the names (as a viewer reads squads), `staffdm` and `talk` counting her as staff, the server indexing her (`accessSessionCoach`) and letting her in by invite (`functions/join.js`), `coachesSessions()` on the phone wherever a coach of any team was asked for about sessions, and `sessOnly()` giving her the Sessions door alone. `test/sesscoach.js` pins it, `test/rules.js` walks her.
 
 ## What does not change
 
@@ -320,8 +320,8 @@ left out.
    `talk` in one of her other clubs while this one is open (`watchElseMessages()`
    listens to the other clubs' team conversations; the sessions' pairs there are
    not yet computed from the cut-down copy).
-5. **A coach of no team**, if the owner says yes: the role, its rules (version
-   35), the server's tables, People's *Name a session coach*, and her door.
+5. **A coach of no team** (*built, build 181*): the role, its rules (version
+   35), the server's tables, People's *Session coach* chip, and her door.
 
 Each step ships on its own; nothing in a later one is needed for an earlier
 one to hold.

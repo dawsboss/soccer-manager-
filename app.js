@@ -2,7 +2,7 @@
    Static app. Data lives in localStorage, and mirrors to Firebase Realtime
    Database when a config + workspace code are present. */
 
-const BUILD = '180';
+const BUILD = '181';
 const BUILT = '2026-10-14';
 /* The version of database.rules.json this app was written against. The rules
    carry the same number in rulesVersion's .write, which accepts that number
@@ -11,7 +11,7 @@ const BUILT = '2026-10-14';
    never pasted look exactly like a coach with no signal: "saved on this phone
    only", one feature at a time. test/rules.js holds the two numbers together
    and fails when the rules change without this going up. */
-const RULES_VERSION = 34;
+const RULES_VERSION = 35;
 /* index.html carries the build it was published with. If this file is newer, the
    browser handed us a cached page — the exact failure that has eaten hours. */
 const pageBuild = () => {
@@ -844,12 +844,15 @@ async function initSync() {
       for (const tbl of ['teamParents', 'teamPlayers', 'teamFans'])
         for (const [t, row] of Object.entries(a[tbl] || {})) if (u && row && typeof row[u] === 'string') (fam[t] = fam[t] || []).push(row[u]);
       // a club viewer reads every squad, for the names, and none of the coach's notes
-      const view = !!(u && (a.viewers || {})[u]);
-      return { admin, all, staffTeams, fam, view };
+      // a club viewer reads every squad, for the names, and none of the coach's notes; so does a session coach (DOORS.md),
+      // who reads the children's records too, for a child on no team and her age
+      const view = !!(u && ((a.viewers || {})[u] || (a.sessionCoaches || {})[u]));
+      const kids = all || !!(u && (a.sessionCoaches || {})[u]);
+      return { admin, all, staffTeams, fam, view, kids };
     }
     // the teams whose care copies this account reads: an admin's every team, a coach's own
     const careTeams = (r, a) => Object.keys((a && a.teams) || {}).filter(t => r.admin || (me && ((((a.teamIndex || {})[t]) || {})[me.uid] === 'coach')));
-    const reachKey = r => JSON.stringify([r.admin, r.all, r.staffTeams, Object.keys(r.fam).sort(), !!r.view]);
+    const reachKey = r => JSON.stringify([r.admin, r.all, r.staffTeams, Object.keys(r.fam).sort(), !!r.view, !!r.kids]);
 
     /* Her own children, team by team. The lookup tables name one child per
        team; a second on the same team (twins) is found by asking for each
@@ -895,7 +898,7 @@ async function initSync() {
          from her children's squad records (and, once listening, her own
          list of them at families/{uid}, for a child on no team). */
       let children = {};
-      if (r.all) children = (await once('children')) || {};
+      if (r.kids) children = (await once('children')) || {};
       else if (me) {
         const ids = new Set();
         for (const ps of Object.values(kids)) for (const p of Object.values(ps || {})) if (p && typeof p.child === 'string') ids.add(p.child);
@@ -1090,7 +1093,7 @@ async function initSync() {
       };
       watchMyRegs();
       for (const t of careTeams(r, x.access)) val('teamCare/' + t, v => { state.teamCare = state.teamCare || {}; state.teamCare[t] = v || {}; saveLocal(); render(); });
-      if (r.all) val('children', v => {
+      if (r.kids) val('children', v => {
         state.children = v || {};
         overlayPending(state.children, 'children');
         saveLocal(); render();
@@ -1658,6 +1661,17 @@ const famRole = r => r === 'parent' || r === 'player';
    and the screen draws every team read-only. The one read only she has
    beyond the index is every team's squad, for the names. */
 const isViewer = uid => !!(uid && (acc().viewers || {})[uid]);
+/* A session coach (DOORS.md, *A coach of no team*; rules version 35): a
+   coach the club pays for 1-1s and groups who runs no team, named by an
+   admin at access/sessionCoaches/{uid} as a viewer is. Staff for the
+   sessions (she offers, runs and plans them, keeps her register and fees,
+   reads the squads and the children's records for the names and ages, talks
+   to colleagues and families) and nothing of a team: no squad change, no
+   game, no practice, no notices, no conversation of a team's. Her door is
+   Sessions alone. */
+const isSessionCoach = uid => !!(uid && (acc().sessionCoaches || {})[uid]);
+// a coach for the sessions: of any team, or a session coach
+const coachesSessions = uid => isCoachAny(uid) || isSessionCoach(uid);
 /* A player's fans (AUTH.md, *More kinds of people*, 1): a grandparent,
    an aunt, a family friend. Under the player, not beside her parents:
    teams/{tid}/players/{pid}/fans/{uid}, on orgs/ only. Kept apart from
@@ -1737,7 +1751,7 @@ function sheetInfo(k) {
 }
 const refusedWhy = () => `The club\u2019s set-up is out of date: ${canAdmin() ? 'Check readiness, under Settings \u2192 Advanced, says what to do' : 'tell the club admin'}.`;
 const refusedMsg = (kept, lead = 'That didn\u2019t save.') => `${lead} ${kept ? 'It is kept on this phone. ' : ''}${refusedWhy()}`;
-const ROLE_LABEL = { owner: 'App owner', admin: 'Club admin', coach: 'Coach', tracker: 'Tracker', helper: 'Team helper', parent: 'Parent', player: 'Player', fan: 'Fan', viewer: 'Viewer' };
+const ROLE_LABEL = { owner: 'App owner', admin: 'Club admin', coach: 'Coach', tracker: 'Tracker', helper: 'Team helper', parent: 'Parent', player: 'Player', fan: 'Fan', viewer: 'Viewer', sesscoach: 'Session coach' };
 
 /* Whoever looks after the app itself. Read from the database root, never from
    this file — a personal email committed to a public repo gets scraped, sticks
@@ -1755,7 +1769,7 @@ const approved = uid => !!(uid && (acc().index || {})[uid]);
    flat node that a rule can check in a single lookup. */
 function hasAnyRole(uid) {
   const a = acc();
-  if ((a.admins || {})[uid] || (a.viewers || {})[uid]) return true;
+  if ((a.admins || {})[uid] || (a.viewers || {})[uid] || (a.sessionCoaches || {})[uid]) return true;
   for (const ta of Object.values(a.teams || {}))
     if ((ta.coaches || {})[uid] || (ta.trackers || {})[uid] || (ta.helpers || {})[uid]) return true;
   for (const t of Object.values(state.teams || {}))
@@ -2333,11 +2347,11 @@ async function takeSeat(put, base, v, who, at) {
     return k;
   }
 }
-const INVITE_ROLES = { coach: 'Coach', tracker: 'Tracker', helper: 'Team helper', parent: 'Parent', viewer: 'Club viewer' };
+const INVITE_ROLES = { coach: 'Coach', tracker: 'Tracker', helper: 'Team helper', parent: 'Parent', viewer: 'Club viewer', sesscoach: 'Session coach' };
 // where each staff role is named on a team: access/teams/{tid}/{key}/{uid}
 const STAFF_KEY = { coach: 'coaches', tracker: 'trackers', helper: 'helpers' };
 // a role for the whole club, with no team to pick
-const CLUB_ROLES = new Set(['viewer']);
+const CLUB_ROLES = new Set(['viewer', 'sesscoach']);
 let rtdb = null;        // { db, mod } once the database module has loaded, code or not
 /* null until asked, then 'asking', 'ok', 'old' (the published rules predate
    this app) or 'app' (this app predates them: another phone has already
@@ -2525,6 +2539,7 @@ function inviteWhat(v) {
   if (v.role === 'player') return `a player, #${esc(v.playerNo || '?')} on <b>${esc(v.teamName || 'a team')}</b>, with your own sign-in`;
   if (v.role === 'fan') return `a fan of ${v.playerNo ? '#' + esc(v.playerNo) : 'a player'} on <b>${esc(v.teamName || 'a team')}</b>: the calendar, the games as they happen and the team's notices${v.approved ? '' : '. A coach of the team says yes before you see anything'}`;
   if (v.role === 'viewer') return 'a club viewer: every team\u2019s games and calendar, to read';
+  if (v.role === 'sesscoach') return 'a session coach: 1-1s and small groups for the club\u2019s players, with no team of your own';
   return v.role === 'parent'
     ? `a parent of ${v.playerNo ? 'the player wearing shirt ' + esc(v.playerNo) : 'a player'} on <b>${esc(v.teamName || 'a team')}</b>`
     : `${role.toLowerCase()} of <b>${esc(v.teamName || 'a team')}</b>`;
@@ -2653,6 +2668,7 @@ async function redeemHere() {
       else if (v.role === 'player') await put(W(`teams/${v.team}/players/${v.player}/self/${who}`), id);
       else if (v.role === 'fan') await put(W(`teams/${v.team}/players/${v.player}/fans/${who}`), id);
       else if (v.role === 'viewer') await put(W('access/viewers/' + who), id);
+      else if (v.role === 'sesscoach') await put(W('access/sessionCoaches/' + who), id);
       else await put(W(`access/teams/${v.team}/${STAFF_KEY[v.role] || 'trackers'}/${who}`), id);
       await put(W('access/index/' + who), id);
     }
@@ -2677,7 +2693,7 @@ async function redeemHere() {
     await soft(put(W(`teams/${v.team}/players/${v.player}/fanNames/${who}`), String(me.name || me.email || 'A fan').slice(0, 80)));
     await soft(put(W(`access/teamFans/${v.team}/${who}`), v.player));
   }
-  else if (v.role === 'viewer') { /* club-wide: no per-team table to join */ }
+  else if (v.role === 'viewer' || v.role === 'sesscoach') { /* club-wide: no per-team table to join */ }
   else if (v.role !== 'parent') {
     await soft(put(W(`access/teamIndex/${v.team}/${who}`), v.role));
     // the club's drill shelves ask "a helper of any team?" with no team in hand
@@ -2888,7 +2904,7 @@ function sheetInviteDetail(id) {
   const st = inviteStatus(v), link = inviteLink(id);
   const when = ms => ms ? new Date(ms).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' }) : 'unknown';
   const who = v.used && (acc().members || {})[v.used.by];
-  const stillHas = v.used && (v.role === 'viewer' ? isViewer(v.used.by) : v.role === 'parent'
+  const stillHas = v.used && (v.role === 'viewer' ? isViewer(v.used.by) : v.role === 'sesscoach' ? isSessionCoach(v.used.by) : v.role === 'parent'
     ? !!(((((state.teams[v.team] || {}).players || {})[v.player] || {}).guardians || {})[v.used.by])
     : v.role === 'coach' ? isCoach(v.team, v.used.by) : isTracker(v.team, v.used.by));
   const line = (k, val) => `<div class="spread" style="padding:6px 0;border-top:1px solid var(--line)"><span class="muted">${k}</span><span style="text-align:right">${val}</span></div>`;
@@ -2923,7 +2939,8 @@ function sheetInvite() {
     <p class="lbl">As</p>
     <div class="chips" style="margin-bottom:12px">${Object.entries(INVITE_ROLES).map(([k, l]) =>
     `<button class="chip" type="button" data-act="invitepick" data-k="role" data-v="${k}" aria-pressed="${f.role === k}">${l}</button>`).join('')}</div>
-    ${CLUB_ROLES.has(f.role) ? `<p class="muted" style="margin-top:0">Reads every team's calendar and games, with the children's names, and nothing else: no emails, no access log, no coach's notes, no messages, no answering who's coming, no changes.</p>` : `<p class="lbl">Team</p>
+    ${f.role === 'sesscoach' ? `<p class="muted" style="margin-top:0">Runs 1-1s and small groups for the club's players: offers and books sessions and bookable times, keeps her register and fees, and messages the families in them. No team of her own: no squad, game, practice or notice is hers.</p>` : ''}
+    ${f.role === 'viewer' ? `<p class="muted" style="margin-top:0">Reads every team's calendar and games, with the children's names, and nothing else: no emails, no access log, no coach's notes, no messages, no answering who's coming, no changes.</p>` : `<p class="lbl">Team</p>
     ${pickOne('invitepick', 'team', f.team, teams().map(x => [x.id, esc(x.name || 'Team')]), 'Add a team first.')}`}
     ${f.role === 'helper' ? `<p class="muted" style="margin-top:-4px">A manager or a volunteer: the team's calendar, register, notices, practice plans and game plans before kick-off, and the drills. Not the squad, the clock or the subs, and no family's conversations.</p>` : ''}
     ${f.role === 'parent' ? `<p class="lbl">Parent of</p>
@@ -3642,11 +3659,11 @@ const myThread = (tid, fam) => !!me && famThreads().some(x => x.tid === tid && x
 /* Coaches and admins talking to each other. Staff here is what the staffdm
    rule reads: an admin, or a coach of any team (coachIndex). The app owner
    with no role in the club is neither, and the rule would refuse her. */
-const staffUid = u => !!u && (isAdmin(u) || isCoachAny(u));
+const staffUid = u => !!u && (isAdmin(u) || coachesSessions(u));
 const amStaff = () => !!me && !!fb && !!wsCode() && !needsSignIn() && anyAdmins() && staffUid(me.uid);
 function colleagues() {
   if (!amStaff()) return [];
-  const out = new Set([...Object.keys(acc().admins || {}), ...coachUids()]);
+  const out = new Set([...Object.keys(acc().admins || {}), ...coachUids(), ...Object.keys(acc().sessionCoaches || {})]);
   out.delete(me.uid);
   return [...out].filter(staffUid);
 }
@@ -3664,7 +3681,7 @@ const myStaffChat = cid => amStaff() && String(cid || '').split('~').includes(me
    chat with an adult is not a thing this app makes), and two colleagues talk
    at staffdm, the two alone, as before. */
 const isHelperAny = u => !!u && teams().some(t => isHelper(t.id, u));
-const talkStaff = u => !!u && (isAdmin(u) || isCoachAny(u) || isHelperAny(u));
+const talkStaff = u => !!u && (isAdmin(u) || coachesSessions(u) || isHelperAny(u));
 const isPlayerUid = u => !!u && (teams().some(t => Object.values(t.players || {}).some(p => p && (p.self || {})[u])) || Object.values(clubKids()).some(c => c && (c.self || {})[u]));
 // which root a pair's conversation is at: two colleagues at staffdm, anyone else at talk
 const cidRoot = cid => { const [a, b] = String(cid || '').split('~'); return staffUid(a) && staffUid(b) ? 'staffdm' : 'talk'; };
@@ -4396,7 +4413,7 @@ const LOCK_SVG = '<svg class="lock" viewBox="0 0 24 24" width="13" height="13" f
 // a colleague as the list and the thread name her: who, and what she is in the club
 function colleagueLabel(u) {
   const ts = teams().filter(t => (teamAccess(t.id).coaches || {})[u]).map(t => t.name).filter(Boolean);
-  return [isAdmin(u) ? 'Admin' : 'Coach', ts.join(', ')].filter(Boolean).join(' · ');
+  return [isAdmin(u) ? 'Admin' : isCoachAny(u) ? 'Coach' : 'Session coach', ts.join(', ')].filter(Boolean).join(' · ');
 }
 function viewInboxMsgs() {
   if (!msgOn() && !wsRead && fbConfig().apiKey) return `<div class="empty"><strong>Connecting…</strong>Messages appear once TeamPlayHQ has reached the club.</div>`;
@@ -7371,6 +7388,7 @@ function roleWords(lim) {
   if (lim === 'player') return 'You are signed in as a player: you see your team, and say whether you are coming.';
   if (lim === 'fan') return 'You follow the calendar, the games and the notices. The family answers and talks to the coaches.';
   if (lim === 'viewer') {
+    if (sessOnly()) return 'You coach sessions here: 1-1s and small groups for the club\u2019s players, your bookable times, who is booked and what they owe. Teams, games and practices are the team coaches\u2019.';
     const t = team();
     const asViewer = me && isViewer(me.uid) && !teams().some(x => isCoach(x.id, me.uid));
     return t ? `You can read ${t.name ? esc(t.name) : 'this team'}, not change it: ${asViewer ? 'you are a club viewer' : 'it is another team\u2019s'}.` : 'You can read this club, not change it.';
@@ -7431,6 +7449,8 @@ function render() {
   if (ui.view === 'notes' && !shut && changesInMessages()) ui.view = 'inbox';
   // the same wait, for the same reason: a family's link to a session opened cold
   if ((ui.view === 'sessions' || ui.view === 'shome') && !shut && (wsRead || !fbConfig().apiKey) && !canSessions()) ui.view = 'club';
+  // a session coach has no Teams door: a team's screen, a game or the club's screens land her on her own Home
+  if (!shut && (wsRead || !fbConfig().apiKey) && sessOnly() && doorOf() === 'teams') ui.view = 'shome';
   // which door she is standing in, settled once the screen is (DOORS.md): the bar, the title and Home read it
   settleDoor();
   // an evaluator's scoring screen, for the evaluators a tryout names and nobody else
@@ -7724,13 +7744,19 @@ const screenTitle = v => v === 'sessions' && sessSetTab() ? SESS_SET[sessSetTab(
 const DOORS = { teams: 'Teams', sessions: 'Sessions' };
 // the screens that are the Sessions door's own, and a tab's own screen inside it
 const SESSION_VIEWS = ['sessions', 'shome'];
-const hasDoor = d => d === 'teams' || (d === 'sessions' && canSessions());
+/* A session coach with nothing of a team (no team she coaches, tracks or
+   helps, no child, no fan's player, not a viewer or an admin) has the
+   Sessions door alone: Teams would be a club of teams she may not touch. */
+const sessOnly = () => !!me && gated() && isSessionCoach(me.uid) && !canAdmin() && !isViewer(me.uid) && !anyPlayers()
+  && !teams().some(t => isCoach(t.id, me.uid) || isTracker(t.id, me.uid) || isHelper(t.id, me.uid));
+const hasDoor = d => d === 'teams' ? !sessOnly() : (d === 'sessions' && canSessions());
 const doorOf = (v = ui.view) => SESSION_VIEWS.includes(v) ? 'sessions'
   : TEAM_VIEWS.includes(v) || ['games', 'formation', 'scheduler', 'club', 'people', 'admin', 'regs', 'tryout', 'comply'].includes(v) ? 'teams' : null;
 /* Where she starts, decided from where her uid appears, as navKind() decides
    Home: a family whose only children are on no team is the person the
    Sessions door is for, and opens in it. Everyone else opens in Teams. */
 function defaultDoor() {
+  if (sessOnly()) return 'sessions';
   if (!hasDoor('sessions') || navKind() !== 'family') return 'teams';
   const kids = myChildren();
   return kids.length && kids.every(k => k.t.id === CLUB_TID) && !myPlayers().length && !myFanOf().length ? 'sessions' : 'teams';
@@ -7909,7 +7935,7 @@ function titleBar() {
   /* The switch to the other door (DOORS.md): at the end of the row, its icon
      and its name, for whoever has both doors; nothing for whoever has one. */
   const other = curDoor() === 'sessions' ? 'teams' : 'sessions';
-  const door = hasDoor('sessions') ? `<button class="tbdoor" data-act="door" data-d="${other}" aria-label="Switch to ${DOORS[other]}" title="Switch to ${DOORS[other]}">${DOOR_ICON[other]}<span>${DOORS[other]}</span></button>` : '';
+  const door = hasDoor('sessions') && hasDoor('teams') ? `<button class="tbdoor" data-act="door" data-d="${other}" aria-label="Switch to ${DOORS[other]}" title="Switch to ${DOORS[other]}">${DOOR_ICON[other]}<span>${DOORS[other]}</span></button>` : '';
   return `${back}<div class="tbmain">${main}</div>${door}`;
 }
 function tabBar() {
@@ -7935,7 +7961,7 @@ function settingsLine() {
    door she does not have. */
 const SESS_MORE = { fields: 'The places the club trains, and the permits it holds', fees: 'Who has paid for a place, and who still owes', hours: 'What each coach ran this month' };
 function doorRow() {
-  if (!hasDoor('sessions')) return '';
+  if (!hasDoor('sessions') || !hasDoor('teams')) return '';
   const to = curDoor() === 'sessions' ? 'teams' : 'sessions';
   const sub = to === 'sessions' ? sessClubLine() : 'Your teams, games and practices';
   return `<button class="opt door" data-act="door" data-d="${to}"><span class="dooric">${DOOR_ICON[to]}</span><span><b>${DOORS[to]}</b>
@@ -15100,12 +15126,12 @@ function coachUids() {
 const isCoachAny = uid => !!uid && coachUids().has(uid);
 /* Families, coaches of any team and admins. A tracker is there to log a game,
    and has no child here to book. */
-const canSessions = () => !gated() || isOwner() || (!!me && (isAdmin(me.uid) || isCoachAny(me.uid) || guardsAnyone()));
+const canSessions = () => !gated() || isOwner() || (!!me && (isAdmin(me.uid) || coachesSessions(me.uid) || guardsAnyone()));
 // who may offer a session at all, and gets the Fields, Fees and Hours tabs
-const canOffer = () => !gated() || canAdmin() || (!!me && isCoachAny(me.uid));
+const canOffer = () => !gated() || canAdmin() || (!!me && coachesSessions(me.uid));
 /* The coach a session names runs it, while she is still a coach; an admin runs
    any. The same two clauses as the rule on booked/$sid. */
-const canRun = s => !!s && (!gated() || canAdmin() || (!!me && s.coach === me.uid && isCoachAny(me.uid)));
+const canRun = s => !!s && (!gated() || canAdmin() || (!!me && s.coach === me.uid && coachesSessions(me.uid)));
 
 /* ---- the sessions ---- */
 /* Any coach may write a session, and the rules check its owner and its kind
@@ -15508,17 +15534,17 @@ function sessWanted() {
   if (!canSessions()) return [];
   const want = ['sessions', 'booked', 'came', 'avail'];
   // coaches' time off is the coaches' and the admins', never a family's
-  if (isAdmin(me.uid) || isCoachAny(me.uid)) want.push('away');
+  if (isAdmin(me.uid) || coachesSessions(me.uid)) want.push('away');
   const all = sessAll();
   // packages, while the club offers them: staff hear all of them, to use one on a place; a family her own children's
   if (packsOn()) {
-    if (isAdmin(me.uid) || isCoachAny(me.uid)) want.push('packs', 'packuse');
+    if (isAdmin(me.uid) || coachesSessions(me.uid)) want.push('packs', 'packuse');
     else for (const { t, p } of myChildren()) want.push(`packs/${t.id}/${p.id}`, `packuse/${t.id}/${p.id}`);
   }
   if (isAdmin(me.uid)) want.push('fees', 'pay');
   else {
     for (const s of all) if (s.coach === me.uid) want.push('fees/' + s.id);
-    if (isCoachAny(me.uid)) want.push('pay/' + me.uid);
+    if (coachesSessions(me.uid)) want.push('pay/' + me.uid);
     for (const { p } of myChildren()) for (const s of all) if (bookOf(s.id, p.id)) want.push('fees/' + s.id + '/' + p.id);
   }
   const open = sessById(sessUi().open);
@@ -16267,7 +16293,7 @@ function sessFormEdit(s) {
 /* Who a session can be run by: the club's coaches and admins, by name. Only an
    admin is offered the choice; a coach runs what she makes. */
 function sessCoaches() {
-  const ids = new Set([...coachUids(), ...Object.keys(acc().admins || {})]);
+  const ids = new Set([...coachUids(), ...Object.keys(acc().admins || {}), ...Object.keys(acc().sessionCoaches || {})]);
   if (me) ids.add(me.uid);
   return [...ids].map(u => [u, personName(u) || (me && u === me.uid ? whoAmI() : '') || 'Someone']).sort((a, b) => a[1].localeCompare(b[1]));
 }
@@ -16422,7 +16448,7 @@ function sessHoursView() {
     const r = payOf(h.uid), pay = payFor(h);
     return [h.name, h.n, (h.mins / 60).toFixed(2), h.one, h.group, r ? `${fmtMoney(r.rate)}/${r.per}` : '', pay == null ? '' : fmtMoney(pay)].join('\t');
   })].join('\n');
-  const coaches = canAdmin() ? sessCoaches().filter(([uid]) => isCoachAny(uid) || payOf(uid)) : [];
+  const coaches = canAdmin() ? sessCoaches().filter(([uid]) => coachesSessions(uid) || payOf(uid)) : [];
   return `<div class="card"><div class="spread">
       <button class="stepbtn" data-act="sessmonth" data-v="-1" aria-label="Previous month">‹</button>
       <b>${esc(monthLabel(u.month))}</b>
@@ -17062,7 +17088,7 @@ function saveSessForm() {
   const f = sessForm; if (!f) return;
   if (!okDay(f.date)) { toast('Pick a date'); return; }
   if (!hm(f.start) || !hm(f.end)) { toast('Give it a start and an end — the hours and the clash check need both'); return; }
-  if (!canAdmin() && gated() && !(me && isCoachAny(me.uid))) { closeSheet(); toast('That is for coaches and admins'); return; }
+  if (!canAdmin() && gated() && !(me && coachesSessions(me.uid))) { closeSheet(); toast('That is for coaches and admins'); return; }
   // a coach runs what she makes; only an admin names somebody else
   const coach = canAdmin() && f.coach ? f.coach : (me ? me.uid : (f.coach || 'device'));
   const ns = sessFromForm({ ...f, coach });
@@ -17157,7 +17183,7 @@ const blockSeries = b => (b.series ? blockAll().filter(x => x.series === b.serie
 const blockPlace = b => { const f = fieldById(b.field); return f ? f.name + (b.place ? ', ' + b.place : '') : b.place; };
 const blockLabel = b => b.title || (b.kind === 'group' ? `Small group, ${b.cap} places` : '1-1s');
 // the same two clauses as the rule on avail/$bid, and as canRun() for a session
-const canEditBlock = b => !!b && (!gated() || canAdmin() || (!!me && b.coach === me.uid && isCoachAny(me.uid)));
+const canEditBlock = b => !!b && (!gated() || canAdmin() || (!!me && b.coach === me.uid && coachesSessions(me.uid)));
 const minsNow = () => { const d = new Date(nowMs()); return d.getHours() * 60 + d.getMinutes(); };
 const startMs = s => Number(s.t0) || slotAt(s.date, s.start || '00:00');
 const hoursUntil = s => (startMs(s) - nowMs()) / 3600000;
@@ -17502,7 +17528,7 @@ function saveBlockForm() {
   if (!start || !end || minOf(end) <= minOf(start)) { toast('Give it a start, and an end after it'); return; }
   if (minOf(end) - minOf(start) < f.len) { toast(`Shorter than one ${f.len}-minute slot`); return; }
   const coach = canAdmin() && f.coach ? f.coach : (me ? me.uid : (f.coach || 'device'));
-  if (gated() && !canAdmin() && !(me && coach === me.uid && isCoachAny(me.uid))) { closeSheet(); toast('Coaches offer their own times; an admin anyone’s'); return; }
+  if (gated() && !canAdmin() && !(me && coach === me.uid && coachesSessions(me.uid))) { closeSheet(); toast('Coaches offer their own times; an admin anyone’s'); return; }
   const lo = Number(f.lo), hi = Number(f.hi);
   const ages = lo && hi ? [Math.min(lo, hi), Math.max(lo, hi)] : lo ? [lo, 19] : hi ? [4, hi] : null;
   const price = Number(String(f.price || '').replace(/[^0-9.]/g, '')) || 0;
@@ -17684,7 +17710,7 @@ const myCalOwn = () => myCalTeams().length > 0 || youClubs().length > 0
 function myCalFilters() {
   const out = [['all', 'Everything']];
   const kids = myPlayers();
-  const staff = !!me && (myRoleTeams().size > 0 || isCoachAny(me.uid) || blockAll().some(b => b.coach === me.uid));
+  const staff = !!me && (myRoleTeams().size > 0 || coachesSessions(me.uid) || blockAll().some(b => b.coach === me.uid));
   if (kids.length > 1 || (kids.length && staff)) for (const { p } of kids) out.push(['p:' + p.id, esc(firstName(p))]);
   if (kids.length && staff) out.push(['me', 'My coaching']);
   // a chip per club, once there is more than one: the person's calendar, not this club's
@@ -18300,7 +18326,7 @@ function alertsCard(where) {
    Whoever is sharing keeps it, to stop. */
 function youStaff() {
   if (!me) return false;
-  if (canAdmin() || isCoachAny(me.uid) || sessAll().some(s => s.coach === me.uid) || blockAll().some(b => b.coach === me.uid)) return true;
+  if (canAdmin() || coachesSessions(me.uid) || sessAll().some(s => s.coach === me.uid) || blockAll().some(b => b.coach === me.uid)) return true;
   return youClubs().some(([, c]) => { const a = ((c.ws || {}).access) || {}; return !!((a.admins || {})[me.uid] || (a.coachIndex || {})[me.uid]); });
 }
 function youShareCard() {
@@ -18719,7 +18745,7 @@ function awayDuring(u, date, a, b) {
   for (const r of awayOf(u)) for (const [x, y] of awaySpans(r, date)) if (x < b && a < y) return r;
   return null;
 }
-const awayOn = () => !!me && (!gated() || isAdmin(me.uid) || isCoachAny(me.uid));
+const awayOn = () => !!me && (!gated() || isAdmin(me.uid) || coachesSessions(me.uid));
 
 /* Where a coach is at a given time: free, due somewhere (and where), or off
    (time off, or called out of the one thing she'd be at). Only people who
@@ -21314,7 +21340,7 @@ function viewPeople() {
         <td class="dim">${when(u.at)}</td>
         <td class="right">${none
         ? `<button class="btn sm" data-act="personedit" data-uid="${u.uid}">Let in</button>`
-        : `${isCoachAny(u.uid) || isAdmin(u.uid) ? `<button class="btn quiet sm" data-act="personcal" data-uid="${u.uid}">Calendar</button> ` : ''}<button class="btn quiet sm" data-act="personedit" data-uid="${u.uid}">Roles</button>`}</td>
+        : `${coachesSessions(u.uid) || isAdmin(u.uid) ? `<button class="btn quiet sm" data-act="personcal" data-uid="${u.uid}">Calendar</button> ` : ''}<button class="btn quiet sm" data-act="personedit" data-uid="${u.uid}">Roles</button>`}</td>
       </tr>`).join('') || '<tr><td colspan="5" class="dim">Nobody matches that filter.</td></tr>'}</tbody>
     </table></div>
 
@@ -21357,6 +21383,7 @@ function roleTags(uid, scope) {
   const by = {};
   for (const v of rolesHeld(uid, scope)) (by[v.r] = by[v.r] || new Set()).add(v.x.name || 'Team');
   return (isViewer(uid) && !isAdmin(uid) ? `<span class="tag">${esc(INVITE_ROLES.viewer)}<i>every team</i></span>` : '')
+    + (isSessionCoach(uid) && !isAdmin(uid) ? `<span class="tag">${esc(INVITE_ROLES.sesscoach)}<i>sessions</i></span>` : '')
     + ['coach', 'tracker', 'helper', 'parent', 'player', 'fan'].filter(r => by[r]).map(r => {
     const names = [...by[r]];
     const what = names.length > 2 ? `${names.length} teams` : names.join(', ');
@@ -21403,7 +21430,8 @@ function sheetPersonRoles(uid) {
     <div class="chips" style="margin-bottom:14px">
       <button class="chip" type="button" data-act="setrole" data-uid="${uid}" data-r="admin" aria-pressed="${isAdmin(uid)}">Club admin</button>
       ${isAdmin(uid) && (isClubOwner(uid) || (me && isClubOwner(me.uid))) ? `<button class="chip" type="button" data-act="setowner" data-uid="${uid}" aria-pressed="${isClubOwner(uid)}">Club owner</button>` : ''}
-      ${isAdmin(uid) ? '' : `<button class="chip" type="button" data-act="setviewer" data-uid="${uid}" aria-pressed="${isViewer(uid)}">Club viewer</button>`}
+      ${isAdmin(uid) ? '' : `<button class="chip" type="button" data-act="setviewer" data-uid="${uid}" aria-pressed="${isViewer(uid)}">Club viewer</button>
+      <button class="chip" type="button" data-act="setsesscoach" data-uid="${uid}" aria-pressed="${isSessionCoach(uid)}">Session coach</button>`}
     </div>
     ${isViewer(uid) && !isAdmin(uid) ? '<p class="muted" style="margin-top:-6px">Reads every team\u2019s calendar and games with names. No emails, no log, no messages, no answering, no changes.</p>' : ''}
     ${isClubOwner(uid) ? `<p class="muted" style="margin-top:-6px">${me && uid === me.uid ? 'You own the club: only an owner takes an admin away. Tap Club owner to step down once someone else owns it too.' : 'Owns the club. Only she can step down as owner.'}</p>`
@@ -24594,6 +24622,16 @@ function onAct(e) {
     ui.inv = f; sheetInvite(); return;
   }
   if (a === 'invitemake') { makeInvite(); return; }
+  // a session coach, named by an admin as a viewer is (DOORS.md, *A coach of no team*)
+  if (a === 'setsesscoach') {
+    if (!canAdmin()) { toast('Club admins only'); return; }
+    const on = (acc().sessionCoaches || {})[d.uid];
+    logAccess(on ? 'removed session coach' : 'made session coach', d.uid);
+    if (on) { forgetInvite(on); drop(`access/sessionCoaches/${d.uid}`); }
+    else commit(`access/sessionCoaches/${d.uid}`, true);
+    syncIndex(d.uid);
+    sheetPersonRoles(d.uid); return;
+  }
   if (a === 'setviewer') {
     if (!canAdmin()) { toast('Club admins only'); return; }
     const on = (acc().viewers || {})[d.uid];

@@ -254,6 +254,8 @@ const EXPORTS = `{
   titleBar, tabBar, navTabs, navKind, navGames, viewGames, nextGames, navTeams, tabFor, upView, homeView, sheetMore, sheetAccount, VIEW_TITLE,
   /* two doors, Teams and Sessions (DOORS.md) */
   DOORS, hasDoor, doorOf, curDoor, defaultDoor, settleDoor, doorHome, doorRow, viewSessHome, SESSION_VIEWS,
+  /* a session coach, a coach of no team (DOORS.md) */
+  isSessionCoach, coachesSessions, sessOnly, isCoachAny, INVITE_ROLES, CLUB_ROLES, sheetPersonRoles, sessCoaches,
   /* copy and vocabulary (UX-REVIEW.md, 2; build 144) */
   ROLE_LABEL, refusedMsg, roleWords, roleCard, roleCardSeen, INFO, infoBtn, sheetInfo, CAL_KIND,
   /* a family's own Home and Season (build 142) */

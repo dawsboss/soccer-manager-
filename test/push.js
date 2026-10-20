@@ -141,8 +141,8 @@ const toUid = (S, u) => S.sent().filter(m => m.data.uid === u);
     const m = toUid(S, 'other')[0];
     check('titled with who wrote it', m.data.title, 'Jaz');
     check('opening the conversation with her', m.data.hash, '#/messages/with/coach');
-    const reads = S.reads.filter(p => !/^((workspaces|orgs)\/CLUB\/access\/(admins|coachIndex|index)$|retired\/CLUB$|pushTokens\/other$|people\/other\/mute\/msg$)/.test(p));
-    deepEq('it read the two tables, her switch for messages, and her phones, nothing else', reads, []);
+    const reads = S.reads.filter(p => !/^((workspaces|orgs)\/CLUB\/access\/(admins|coachIndex|sessionCoaches|index)$|retired\/CLUB$|pushTokens\/other$|people\/other\/mute\/msg$)/.test(p));
+    deepEq('it read the three tables, her switch for messages, and her phones, nothing else', reads, []);
   }
   {
     const S = server();
@@ -178,8 +178,13 @@ const toUid = (S, u) => S.sent().filter(m => m.data.uid === u);
     check('not the admins, who read it but are not told', toUid(S, 'adm').length, 0);
     const m = toUid(S, 'mum')[0];
     check('titled with who wrote it, opening the conversation with her', m.data.title + ' ' + m.data.hash, 'Jaz #/messages/with/coach');
-    const reads = S.reads.filter(p => !/^((workspaces|orgs)\/CLUB\/access\/(admins|coachIndex|helperIndex|index)$|retired\/CLUB$|pushTokens\/mum$|people\/mum\/mute\/msg$)/.test(p));
-    deepEq('it read the four tables, her switch for messages, and her phones, nothing else', reads, []);
+    const reads = S.reads.filter(p => !/^((workspaces|orgs)\/CLUB\/access\/(admins|coachIndex|helperIndex|sessionCoaches|index)$|retired\/CLUB$|pushTokens\/mum$|people\/mum\/mute\/msg$)/.test(p));
+    deepEq('it read the five tables, her switch for messages, and her phones, nothing else', reads, []);
+    // a session coach (DOORS.md, a coach of no team) is staff for this too
+    const S2 = server();
+    await S2.fire('workspaces/CLUB/access/sessionCoaches/gk', true); await S2.fire('workspaces/CLUB/access/index/gk', true);
+    const r2 = await S2.fire('talk/CLUB/gk~mum/m/t9', { by: 'gk', byName: 'Gus', at: 5, text: 'Keeper session Tuesday' });
+    deepEq('a session coach to a family', (r2.pushTalkMessage || {}).to, ['mum']);
   }
   {
     const S = server();

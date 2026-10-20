@@ -2828,6 +2828,69 @@ reads('nor read', COACH, 'shareOwners/sh1', false);
   w('— not anyone else', RANDO, O + 'access/viewers/rando', 'inv-nv', false);
   DB.invites['inv-nv'].role = 'coach';
   w('— nor an invite to something else', { uid: 'nv' }, O + 'access/viewers/nv', 'inv-nv', false);
+
+  /* A session coach (DOORS.md, *A coach of no team*; version 35): a coach the
+     club pays for 1-1s and groups who runs no team. Named by an admin at
+     access/sessionCoaches/{uid} as a viewer is; indexed like everyone. Reads
+     the squads and the children's records for the names and ages, as a viewer
+     reads squads; offers, runs and plans sessions, keeps her register and
+     fees, has bookable times and time off, talks to colleagues and families;
+     and nothing of a team: no squad change, no game, no practice plan, no
+     notice, no family conversation of a team's, no members or coach's notes. */
+  console.log('\n--- a club on orgs/: a session coach, a coach of no team ---');
+  ORGC.access.sessionCoaches = { gk: 'inv-gk' };
+  ORGC.access.index.gk = 'inv-gk';
+  const GK = { uid: 'gk' }, T = 'training/ORGC/';
+  DB.training = DB.training || {};
+  DB.training.ORGC = { ...(DB.training.ORGC || {}), sessions: { ...(((DB.training.ORGC || {}).sessions) || {}), gs1: { id: 'gs1', coach: 'gk', date: '2026-09-20', start: '17:00', end: '18:00', kind: 'one', cap: 1 } } };
+  for (const part of ['teams', 'matches', 'org', 'names', 'access', 'roster'])
+    r('a session coach reads ' + part, GK, O + part, true);
+  r('— every team\'s squad, for the names of the children she books', GK, O + 'squad/t1', true);
+  r('— and the children\'s records, for a child on no team and her age', GK, O + 'children', true);
+  r('not the members and their emails', GK, O + 'members', false);
+  r('not the access log', GK, O + 'log', false);
+  r('not the coach\'s notes', GK, O + 'coachNotes/t1/p1', false);
+  r('not a family\'s conversation with a team', GK, 'dm/ORGC/t1/om', false);
+  r('not a team\'s notices', GK, 'board/ORGC/t1', false);
+  r('not a team\'s practice plans', GK, T + 'practices/t1', false);
+  r('the club\'s drills, for her session plans', GK, T + 'drills', true);
+  r('— and templates', GK, T + 'templates', true);
+  r('the sessions, bookings and bookable times, as the club does', GK, T + 'sessions', true);
+  r('coaches\' time off and busy times elsewhere, as a coach does', GK, T + 'away', true);
+  w('she offers a session of her own', GK, T + 'sessions/gs2', { id: 'gs2', coach: 'gk', coachName: 'Gus', date: '2026-09-21', start: '17:00', end: '18:00', kind: 'one', cap: 1, by: 'gk', at: NOW }, true);
+  w('— not one in another coach\'s name', GK, T + 'sessions/gs3', { id: 'gs3', coach: 'oc', coachName: 'Jaz', date: '2026-09-21', start: '17:00', end: '18:00', kind: 'one', cap: 1, by: 'gk', at: NOW }, false);
+  w('— books a child into hers', GK, T + 'booked/gs1/p1', { tid: 't1', st: 'in', by: 'gk', at: NOW }, true);
+  w('— takes her register', GK, T + 'came/gs1', { p1: true }, true);
+  w('— marks a fee paid', GK, T + 'fees/gs1/p1', { paid: 20, how: 'cash', at: NOW, by: 'gk' }, true);
+  r('— reads the fees on her session', GK, T + 'fees/gs1', true);
+  w('— writes her session plan', GK, T + 'splans/gs1', { blocks: [], by: 'gk', at: NOW }, true);
+  w('— offers bookable times', GK, T + 'avail/gb1', { id: 'gb1', coach: 'gk', date: '2026-09-22', start: '17:00', end: '19:00', len: 60, cap: 1, kind: 'one', day0: NOW, by: 'gk', at: NOW }, true);
+  w('— and her time off', GK, T + 'away/gk/a1', { id: 'a1', kind: 'dates', by: 'gk', at: NOW }, true);
+  w('— and her own name for the club', GK, O + 'names/gk', { name: 'Gus' }, true);
+  w('she changes no team', GK, O + 'teams/t1/name', 'Keepers FC', false);
+  w('— nor a squad', GK, O + 'squad/t1/p1/name', 'Ellie', false);
+  w('— adds no game', GK, O + 'matches/g9', { id: 'g9', teamId: 't1' }, false);
+  w('— plans no practice', GK, T + 'practices/t1/x', { blocks: [] }, false);
+  w('— posts no notice', GK, 'board/ORGC/t1/n1', { by: 'gk', at: NOW, text: 'hi' }, false);
+  w('— writes in no team\'s conversation', GK, 'dm/ORGC/t1/om/m/x', { by: 'gk', at: NOW, text: 'hi' }, false);
+  w('— answers for nobody', GK, O + 'rsvp/t1/g_g1/p1', { v: 'no', by: 'gk', at: NOW }, false);
+  w('— and makes herself nothing more', GK, O + 'access/admins/gk', true, false);
+  w('— nor a coach', GK, O + 'access/teams/t1/coaches/gk', true, false);
+  w('she talks to a colleague', GK, 'staffdm/ORGC/gk~oc/m/s1', { by: 'gk', at: NOW, text: 'hi' }, true);
+  w('— and to a family, the admins reading it', GK, 'talk/ORGC/gk~om/m/t1', { by: 'gk', at: NOW, text: 'hi' }, true);
+  w('the admin names a session coach', OA, O + 'access/sessionCoaches/ngk', true, true);
+  w('— and takes it away', OA, O + 'access/sessionCoaches/gk', null, true);
+  w('a coach does not', OC, O + 'access/sessionCoaches/ngk', true, false);
+  w('nor a parent', OM, O + 'access/sessionCoaches/om', true, false);
+  w('a stranger cannot make herself one', RANDO, O + 'access/sessionCoaches/rando', true, false);
+  w('she steps down herself', GK, O + 'access/sessionCoaches/gk', null, true);
+  DB.invites['inv-gk'] = { ws: 'ORGC', role: 'sesscoach', by: 'oa', expiresAt: NOW + 1e6, used: { by: 'ngk', at: NOW } };
+  w('an invite to be a session coach, spent by her, makes her one', { uid: 'ngk' }, O + 'access/sessionCoaches/ngk', 'inv-gk', true);
+  w('— and indexes her', { uid: 'ngk' }, O + 'access/index/ngk', 'inv-gk', true);
+  w('— not anyone else', RANDO, O + 'access/sessionCoaches/rando', 'inv-gk', false);
+  w('— nor as a viewer', { uid: 'ngk' }, O + 'access/viewers/ngk', 'inv-gk', false);
+  w('an admin makes the invite, with no team on it', OA, 'invites/inv-gk2', { ws: 'ORGC', role: 'sesscoach', by: 'oa', expiresAt: NOW + 1e6 }, true);
+  delete ORGC.access.sessionCoaches; delete ORGC.access.index.gk;
   delete DB.invites;
   w('only an admin makes a viewer\'s invite, with no team', OA, 'invites/inv8', { ws: 'ORGC', by: 'oa', role: 'viewer', at: NOW, expiresAt: NOW + 1e9 }, true);
   w('— not a coach', OC, 'invites/inv8', { ws: 'ORGC', by: 'oc', role: 'viewer', at: NOW, expiresAt: NOW + 1e9 }, false);
