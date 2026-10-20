@@ -2,7 +2,7 @@
    Static app. Data lives in localStorage, and mirrors to Firebase Realtime
    Database when a config + workspace code are present. */
 
-const BUILD = '178';
+const BUILD = '179';
 const BUILT = '2026-10-14';
 /* The version of database.rules.json this app was written against. The rules
    carry the same number in rulesVersion's .write, which accepts that number
@@ -12485,7 +12485,7 @@ function viewFormation() {
           <rect x="16" y="2" width="36" height="15"/><rect x="16" y="83" width="36" height="15"/>
           <rect x="26" y="2" width="16" height="6"/><rect x="26" y="92" width="16" height="6"/>
         </g></svg>${toks}
-      <div class="pitchhint">Drag a spot to move it · tap to rename</div></div>
+      <div class="pitchhint">Hold a spot to move it · tap to rename</div></div>
     <div class="row"><button class="btn quiet" data-act="addslot">Add a spot</button>
       <button class="btn" data-act="savefname">Save name</button></div>
     ${foot}
@@ -20657,35 +20657,67 @@ setInterval(() => {
 /* Only the shape editor drags (a slot of a formation). The game's own pitch
    on Subs stopped dragging in build 178 (the owner, 2026-10-20): a token
    there is a tap, and a player's spot is a slot picked from the sheet, so
-   nothing on the pitch writes loose coordinates any more. */
+   nothing on the pitch writes loose coordinates any more.
+
+   Even here a finger is not a drag until it has held (build 179, the owner,
+   2026-10-20: scrolling past a pitch was hard, because a spot took the finger
+   the moment it landed). A spot lets the page pan (touch-action: pan-y in
+   styles.css), so a thumb that lands on one and moves off is a scroll, which
+   the browser takes and reports as pointercancel; a finger that stays put for
+   HOLD_MS lifts the spot, and from then on the page is held still (touchmove's
+   default refused, the one way to stop a pan the touch-action allowed) and the
+   spot follows wherever she goes. A mouse has no page to scroll with a finger,
+   so it drags at once, as before. A tap, quick or after a hold, stays a tap. */
+const HOLD_MS = 220;
 function draggable(pitch, el, onDrop, onTap) {
+  let lifted = false, timer = null;
+  el.addEventListener('touchmove', e => { if (lifted) e.preventDefault(); }, { passive: false });
+  el.addEventListener('contextmenu', e => { if (lifted || timer) e.preventDefault(); });   // a long press is ours, not the browser's menu
   el.addEventListener('pointerdown', e => {
-    let moved = false;
+    if (e.button != null && e.button !== 0) return;
+    let moved = false, slid = false;
     const rect = pitch.getBoundingClientRect();
     const at = ev => ({
       x: clamp((ev.clientX - rect.left) / rect.width * 100, 4, 96),
       y: clamp((ev.clientY - rect.top) / rect.height * 100, 4, 96)
     });
-    el.setPointerCapture(e.pointerId);
-    el.classList.add('dragging');
-    ui.dragging = true;
+    const far = ev => Math.abs(ev.clientX - e.clientX) + Math.abs(ev.clientY - e.clientY) > 6;
+    const lift = () => {
+      timer = null; lifted = true;
+      try { el.setPointerCapture(e.pointerId); } catch (x) { }
+      el.classList.add('dragging');
+      ui.dragging = true;
+      if (navigator.vibrate) try { navigator.vibrate(8); } catch (x) { }
+    };
+    const done = () => {
+      clearTimeout(timer); timer = null;
+      el.removeEventListener('pointermove', move);
+      el.removeEventListener('pointerup', up);
+      el.removeEventListener('pointercancel', cancel);
+      if (lifted) { el.classList.remove('dragging'); ui.dragging = false; lifted = false; }
+    };
     const move = ev => {
-      if (Math.abs(ev.clientX - e.clientX) + Math.abs(ev.clientY - e.clientY) > 6) moved = true;
+      if (!lifted) {
+        /* Moved before the hold: the page is scrolling, or she slid off. Not a
+           drag, and not a tap either. */
+        if (far(ev) && timer) { clearTimeout(timer); timer = null; slid = true; }
+        return;
+      }
+      if (far(ev)) moved = true;
       if (!moved) return;
       const p = at(ev);
       el.style.left = p.x + '%'; el.style.top = p.y + '%';
     };
     const up = ev => {
-      el.removeEventListener('pointermove', move);
-      el.removeEventListener('pointerup', up);
-      el.removeEventListener('pointercancel', up);
-      el.classList.remove('dragging');
-      ui.dragging = false;
-      if (moved) onDrop(at(ev)); else onTap();
+      const was = lifted;
+      done();
+      if (was && moved) onDrop(at(ev)); else if (!slid) onTap();
     };
+    const cancel = () => done();   // the browser took the gesture to scroll
     el.addEventListener('pointermove', move);
     el.addEventListener('pointerup', up);
-    el.addEventListener('pointercancel', up);
+    el.addEventListener('pointercancel', cancel);
+    if (e.pointerType === 'mouse') lift(); else timer = setTimeout(lift, HOLD_MS);
   });
 }
 
