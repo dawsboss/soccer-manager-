@@ -127,7 +127,7 @@ const named = o => NAMES.filter(n => new RegExp('\\b' + n + '\\b', 'i').test(JSO
     S.put('serverState', null);
     const before = JSON.stringify(S.at('public'));
     await S.fire(W + 'matches/g2/positions/p1', { x: 10, y: 20 });
-    check('a token dragged on the pitch rewrites nothing', JSON.stringify(S.at('public')), before);
+    check('a player\'s spot moved on the pitch rewrites nothing', JSON.stringify(S.at('public')), before);
     await S.fire(W + 'teams/t1/players/p1/guardians/dad', true);
     check('nor a family linked to a player', JSON.stringify(S.at('public')), before);
   }

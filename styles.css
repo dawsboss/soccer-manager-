@@ -173,10 +173,12 @@ label.field span{display:block;font-size:14px;color:var(--ink-soft);margin-botto
 /* the two Goal taps in one row: the score is in the game header */
 
 /* ---------- pitch ---------- */
-/* The grass scrolls the page (pan-y); only the tokens take the finger for a
-   drag. With touch-action:none on the whole pitch, a phone had nowhere left
-   to put a thumb to scroll past it. Capped at 70% of the screen's height for
-   the same reason: full width at 68:100 is taller than most phones. */
+/* The grass scrolls the page (pan-y), and so does a finger that lands on a
+   token: since build 178 a token is a tap, never a drag, so the only thing
+   that holds the finger is a slot in the shape editor (.slotok). With
+   touch-action:none on the whole pitch, a phone had nowhere left to put a
+   thumb to scroll past it. Capped at 70% of the screen's height for the same
+   reason: full width at 68:100 is taller than most phones. */
 .pitch{
   position:relative;width:min(100%, calc(70vh * .68));margin-inline:auto;aspect-ratio:68/100;
   background:var(--field);border-radius:var(--r);overflow:hidden;
@@ -190,7 +192,7 @@ label.field span{display:block;font-size:14px;color:var(--ink-soft);margin-botto
   display:flex;flex-direction:column;align-items:center;justify-content:center;
   font-family:"Barlow Condensed",sans-serif;line-height:1;
   box-shadow:0 1px 0 rgba(0,0,0,.25);
-  touch-action:none;
+  touch-action:manipulation;
 }
 .token .num{font-weight:700;font-size:20px;font-variant-numeric:tabular-nums}
 .token .mins{font-size:12px;font-weight:600;color:var(--ink-soft);font-variant-numeric:tabular-nums}
@@ -201,7 +203,6 @@ label.field span{display:block;font-size:14px;color:var(--ink-soft);margin-botto
 }
 .token[data-owed="1"]{border-color:var(--owed);background:var(--owed-wash)}
 .token[data-picked="1"]{outline:3px solid #fff;outline-offset:2px}
-.token.dragging{z-index:5;box-shadow:0 6px 14px rgba(0,0,0,.35)}
 .pitchhint{
   position:absolute;left:0;right:0;bottom:8px;text-align:center;
   color:rgba(255,255,255,.85);font-size:14px;pointer-events:none;

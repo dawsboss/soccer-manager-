@@ -2,7 +2,7 @@
    Static app. Data lives in localStorage, and mirrors to Firebase Realtime
    Database when a config + workspace code are present. */
 
-const BUILD = '177';
+const BUILD = '178';
 const BUILT = '2026-10-14';
 /* The version of database.rules.json this app was written against. The rules
    carry the same number in rulesVersion's .write, which accepts that number
@@ -7454,7 +7454,6 @@ function render() {
   syncHash();
   if (drillLink) setTimeout(openDrillLink, 0);
   if (keepY && (window.scrollY || 0) !== keepY) { try { window.scrollTo(0, keepY); } catch (e) { } }
-  if (v === 'game' && g === 'pitch') wireDrag();
   if (v === 'formation') wireFormationDrag();
   if (v === 'calendar') calScroll(); else calScrolled = '';
   saveUi();
@@ -8354,8 +8353,8 @@ function sheetSubFor(pid) {
    with no room has every token a button: tapping one is tapping that name in
    the list, she takes that spot. While there is room (and no batch, whose add
    has no spot) each free spot is a dashed token carrying her number, a tap
-   putting her there. A picture, not the pitch: nothing here drags, so it
-   carries no id for wireDrag(), and the minutes are left off the tokens. The
+   putting her there. A picture, not the pitch: the minutes are left off the
+   tokens, and a token with nothing to offer is no button at all. The
    bottom row is lifted a little (`top` capped) so the keeper's name is not
    cut off by a pitch a third the size. */
 function mockPitch(t, m, pid, isOn, room) {
@@ -9720,11 +9719,16 @@ function viewMatch() {
     const pl = playedSec(m, p.id, now), pd = plannedSec(m, p.id);
     const owed = pd > 0 && pl < pd ? 1 : 0;
     const sl = slotOf(m, p.id);
-    return `<div class="token" data-pid="${p.id}" data-owed="${owed}" style="left:${pos.x}%;top:${pos.y}%">
+    /* A token is a tap and nothing else (the owner, 2026-10-20): the first tap
+       of a sub, the same as her row in the list, so a finger on the pitch
+       never moves anyone by accident at the sideline. Her spot is changed
+       from the sub sheet (Move her) or by tapping a free spot, which writes
+       a slot, never loose coordinates. */
+    return `<button type="button" class="token" data-act="taplive" data-pid="${p.id}" data-owed="${owed}" style="left:${pos.x}%;top:${pos.y}%">
       ${sl ? `<span class="role">${esc(sl.label)}</span>` : ''}
       <span class="num">${esc(p.number ?? '')}</span>
       <span class="mins" data-tokmins="${p.id}">${mins(pl)}′</span>
-      <span class="nm">${esc(p.name.split(' ')[0])}</span></div>`;
+      <span class="nm">${esc(p.name.split(' ')[0])}</span></button>`;
   }).join('');
 
   const shape = (m.formation && m.formation.slots) || [];
@@ -9732,8 +9736,8 @@ function viewMatch() {
     `<button type="button" class="ghost" data-act="fillslot" data-sid="${s.id}"
       style="left:${s.x}%;top:${s.y}%">${esc(s.label)}</button>`).join('');
 
-  const pitch = `<div class="pitch" id="pitch">${PITCH_LINES}${ghosts}${tokens}
-    <div class="pitchhint">${field.length ? 'Drag to move · tap a player to sub' : 'Tap a bench player to put her on'}</div>
+  const pitch = `<div class="pitch">${PITCH_LINES}${ghosts}${tokens}
+    <div class="pitchhint">${field.length ? 'Tap a player to sub' : 'Tap a bench player to put her on'}</div>
   </div>`;
 
 
@@ -10214,8 +10218,9 @@ function viewPlan() {
 }
 
 /* The pitch as it stands, to look at: who is on, where, with her minutes.
-   Subs' Pitch look is where she drags; this is the picture alone, for a
-   screen that wants it without the handles (Lineup mid-game with no shape). */
+   Subs' Pitch look is where a token is tapped to sub; this is the picture
+   alone, for a screen that wants nothing tappable on it (Lineup mid-game
+   with no shape). */
 const PITCH_LINES = `<svg class="lines" viewBox="0 0 68 100" preserveAspectRatio="none" aria-hidden="true">
       <g fill="none" stroke="rgba(255,255,255,.45)" stroke-width=".5">
         <rect x="2" y="2" width="64" height="96"/><line x1="2" y1="50" x2="66" y2="50"/><circle cx="34" cy="50" r="9"/>
@@ -20649,6 +20654,10 @@ setInterval(() => {
 }, 1000);
 
 /* ---------------- drag ---------------- */
+/* Only the shape editor drags (a slot of a formation). The game's own pitch
+   on Subs stopped dragging in build 178 (the owner, 2026-10-20): a token
+   there is a tap, and a player's spot is a slot picked from the sheet, so
+   nothing on the pitch writes loose coordinates any more. */
 function draggable(pitch, el, onDrop, onTap) {
   el.addEventListener('pointerdown', e => {
     let moved = false;
@@ -20678,17 +20687,6 @@ function draggable(pitch, el, onDrop, onTap) {
     el.addEventListener('pointerup', up);
     el.addEventListener('pointercancel', up);
   });
-}
-
-function wireDrag() {
-  const pitch = $('#pitch'); if (!pitch) return;
-  const m = match(); if (!m) return;
-  for (const tok of pitch.querySelectorAll('.token')) {
-    const pid = tok.dataset.pid;
-    draggable(pitch, tok,
-      p => commit(`matches/${m.id}/positions/${pid}`, { ...((m.positions || {})[pid] || {}), x: p.x, y: p.y }),
-      () => tapLive(pid));
-  }
 }
 
 function wireFormationDrag() {
