@@ -688,7 +688,20 @@ function sideline() {
        the pitch will look like. */
     as('jaz'); A.ui.gameView = 'pitch'; h = html();
     check('the pitch look: every bench row is the same tap as the list\'s', /data-act="tap"/.test(h) + ' ' + (h.match(/class="prow" type="button" data-act="taplive"/g) || []).length, 'false 6');
-    check('— nothing picked on it, and the hint says what a tap does', /data-picked/.test(h) + ' ' + /Drag to move · tap a player to sub/.test(h), 'false true');
+    check('— nothing picked on it, and the hint says what a tap does', /data-picked/.test(h) + ' ' + /Tap a player to sub/.test(h), 'false true');
+    /* Build 178 (the owner, 2026-10-20): the pitch on Subs does not move
+       anyone. A token is a button that is the first tap of a sub, the same
+       as her row in the list, never a handle; the hint says nothing about
+       dragging, the pitch carries no id for a drag to hang off, and the only
+       drag left in the app is the shape editor's. A spot is changed from the
+       sheet, which writes a slot. */
+    check('— every token on the pitch is the same tap, a button and never a handle', (h.match(/<button type="button" class="token" data-act="taplive" data-pid="p[1345]" data-owed="[01]" style="left:[\d.]+%;top:[\d.]+%">/g) || []).length + ' ' + /<div class="token"/.test(h) + ' ' + /id="pitch"/.test(h), '4 false false');
+    check('— and nothing on it says drag', /[Dd]rag/.test(h), false);
+    {
+      const src = require('fs').readFileSync(require('path').join(__dirname, '..', 'app.js'), 'utf8');
+      const calls = (src.match(/\bdraggable\(/g) || []).length - 1;   // the definition itself
+      check('— the shape editor is the one place that drags: no wireDrag, one draggable() call', /function wireDrag\b/.test(src) + ' ' + calls + ' ' + /\bpositions\/\$\{pid\}`, \{ \.\.\./.test(src), 'false 1 false');
+    }
     A.click({ act: 'taplive', pid: 'p1' });
     check('a tap on a player on the pitch opens the same sheet', sheetOpen() && /Ella coming off/.test(sheet()) && /data-pid="p6" data-with="p1"/.test(sheet()), true);
     check('— led by the mock pitch, captioned', /^<p class="muted mockcap">What the pitch will look like<\/p>\s*<div class="pitch mockpitch">/.test(mock()) && sheet().indexOf('mockpitch') < sheet().indexOf('class="liverow"'), true);
