@@ -20722,6 +20722,9 @@ function draggable(pitch, el, onDrop, onTap) {
 }
 
 function wireFormationDrag() {
+  /* The shape editor's screen alone, whatever asked: the game's pitches on
+     Subs, Lineup and the sub sheet are taps and never get a drag wired. */
+  if (ui.view !== 'formation') return;
   const pitch = $('#fpitch'); if (!pitch) return;
   const tg = shapeTarget(); if (!tg) return;
   for (const el of pitch.querySelectorAll('.slotok')) {

@@ -759,6 +759,17 @@ function sideline() {
       el.fire('pointermove', { clientX: 150, clientY: 100, pointerType: 'mouse' }); el.fire('pointerup', { clientX: 150, clientY: 100, pointerType: 'mouse' });
       check('— and drops where it let go', JSON.stringify(got.drops), '[{"x":75,"y":25}]');
       check('the shape editor says hold, not drag', /Hold a spot to move it/.test(src) + ' ' + /Drag a spot/.test(src), 'true false');
+      /* And none of it reaches Subs: the drag is wired by render() for the
+         shape editor's screen alone, wireFormationDrag() refuses any other,
+         and the game's pitch (every look, and the sheet's mock) carries no
+         spot a drag could hang off. */
+      check('the drag is wired for the shape editor alone, and refuses any other screen', (src.match(/wireFormationDrag\(\)/g) || []).length + ' ' + /if \(v === 'formation'\) wireFormationDrag\(\);/.test(src) + ' ' + /function wireFormationDrag\(\) \{[^}]*if \(ui\.view !== 'formation'\) return;/.test(src), '2 true true');   // the definition and the one call
+      A.ui.view = 'game'; A.ui.gameView = 'pitch'; A.render();
+      const subsH = A.rendered();
+      check('— the Subs pitch has no spot to drag, no editor pitch, and tokens that are buttons', /slotok|fpitch/.test(subsH) + ' ' + /<div class="token"/.test(subsH) + ' ' + (subsH.match(/<button type="button" class="token"/g) || []).length, 'false false 4');
+      A.click({ act: 'taplive', pid: 'p1' });
+      check('— nor does the sub sheet\'s mock pitch', /slotok|fpitch|[Dd]rag|[Hh]old a spot/.test(sheet()), false);
+      A.closeSheet();
     }
     A.click({ act: 'taplive', pid: 'p1' });
     check('a tap on a player on the pitch opens the same sheet', sheetOpen() && /Ella coming off/.test(sheet()) && /data-pid="p6" data-with="p1"/.test(sheet()), true);
