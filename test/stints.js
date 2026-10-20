@@ -375,6 +375,37 @@ console.log('\n--- a game can carry, and edit, a shape of its own ---');
   check('back returns to the game, not club settings', A.ui.view + ':' + A.ui.gameView, 'game:pitch');
 }
 
+console.log('\n--- a spot moved can be put back, or every spot back to the preset (build 180) ---');
+{
+  /* The owner, 2026-10-20: pitch movements should have an undo, or a way
+     back to the defaults. */
+  const m = setup();
+  const pre = A.presetsFor(7)['2-3-1'];
+  m.formation = { name: '2-3-1', size: 7, slots: JSON.parse(JSON.stringify(pre)) };
+  m.positions = {}; m.stints = {};
+  A.click({ act: 'editgameshape' });
+  check('nothing to put back yet: no Undo, and no way back while every spot is where the preset has it', /data-act="shapeundo"|data-act="shapereset"/.test(A.rendered()), false);
+  // a drop, as the editor's drag makes it: the spots kept, then the move written
+  const tg = A.shapeTarget(), lb = pre[1].id;
+  A.shapeKeep(tg);
+  A.commit(`${tg.path}/slots`, tg.f.slots.map(s => s.id === lb ? { ...s, x: 10, y: 10 } : s));
+  let h = A.rendered();
+  check('after a move: Undo the last move, and Back to the preset\'s spots', /data-act="shapeundo">Undo the last move</.test(h) && /data-act="shapereset">Back to the 2-3-1 spots</.test(h), true);
+  A.click({ act: 'addslot' });
+  A.click({ act: 'saveslot', sid: tg.f.slots[2].id });   // renamed? no: saved as it is, through the sheet's absent input
+  A.click({ act: 'shapereset' });
+  const g = A.state.matches.g1;
+  check('back to the preset puts every spot where the preset has it, a spot of her own kept', g.formation.slots.find(s => s.id === lb).x + ' ' + g.formation.slots.length, pre[1].x + ' 8');
+  check('— and can itself be undone', /data-act="shapeundo"/.test(A.rendered()), true);
+  A.click({ act: 'shapeundo' });
+  check('undo puts the move back', g.formation.slots.find(s => s.id === lb).x, 10);
+  A.click({ act: 'shapeundo' });
+  check('and once more, the spot where it started', g.formation.slots.find(s => s.id === lb).x, pre[1].x);
+  check('nothing left to undo', /data-act="shapeundo"/.test(A.rendered()), false);
+  check('the team\'s shapes were never touched', JSON.stringify(A.state.teams.t1.formations || {}), '{}');
+  A.click({ act: 'backsetup' });
+}
+
 console.log('\n--- fixing minutes by hand keeps the spot she played them in ---');
 {
   /* Found as "she was in goal for 30 and it says 19": every path below rewrote a

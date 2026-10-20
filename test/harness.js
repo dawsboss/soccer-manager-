@@ -161,7 +161,8 @@ const EXPORTS = `{
   pitchNow, benchCalls, benchFrom, benchText, sheetBench, sheetBenchAll,
   /* stats */
   goalList, score, EVENTS, evOf, evLabel, evCount, evList, possOn, shotList, recap, recapNotes, viewRecap, gameMenu, gameHeader, headClock, sheetGameMenu, gameSegments, gameSegOf, openGameScreen, recapLines, seasonTrends, logCard, lineChart, lcReading, lcSay, lcScrub,
-  shotTally, possMarkers, possession, subEvents, deleteSub,
+  shotTally, possMarkers, possession, subEvents, subGroups, deleteSub,
+  shapeTarget, shapeKeep, shapePresetSlots, plansToCopy, copyPlanFrom,
   /* actions */
   startClock, pauseClock, endHalf, endGame, putOnField, takeOffField, swap,
   moveSub, subQuiet, applyStaged, movePos, switchTo, subAt, restartMatch,

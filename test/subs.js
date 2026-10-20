@@ -570,7 +570,12 @@ function sideline() {
     delete g().plan.locked;
     as('jaz'); A.ui.gameView = 'plan';
     A.ui.snapAt = 0;
-    check('before kick-off the button says what it does', /Use as the starting lineup/.test(html()), true);
+    /* Build 180 (the owner, 2026-10-20): before kick-off the snapshot has no
+       button onto the pitch at all. Locking in is the step, and Lock in leads
+       the screen; the starters go on from the card's one button. */
+    let h = html();
+    check('before kick-off the snapshot offers no way onto the pitch: lock in is the step, said first', /data-act="applyblock"/.test(h) + ' ' + /Use as the starting lineup/.test(h) + ' ' + (h.indexOf('class="card lockask"') < h.indexOf('<h2>Lineup</h2>')) + ' ' + /At kick-off, Subs puts the starters on with one tap/.test(h), 'false false true true');
+    check('— and the Lineup card says where the starters go on from', /Lock the plan in and the starters go on from the Subs card at kick-off/.test(h), true);
     A.click({ act: 'applyblock', start: '0' });
     A.click({ act: 'applyblock', start: '600' });         // then the 10:00 lineup, still at 0:00
     check('the second lineup is the one on', on(g), ['p1', 'p3', 'p4', 'p5']);
@@ -632,7 +637,8 @@ function sideline() {
        another; the sheet of names, or nothing). Each row in it carries both
        ids, so the second tap is the sub wherever the sheet was dismissed from,
        and dismissing it leaves nothing picked: no pick bar, no half-made sub. */
-    const mock = () => { const h = sheet(), i = h.indexOf('<p class="muted mockcap">What the pitch will look like</p>'); return i < 0 ? '' : h.slice(i, h.indexOf('<div class="plist">')); };
+    // the mock pitch alone: up to the first button under it (Put on, or Move her) or the list
+    const mock = () => { const h = sheet(), i = h.indexOf('<p class="muted mockcap">What the pitch will look like</p>'); if (i < 0) return ''; const ends = [h.indexOf('<button class="btn', i), h.indexOf('<div class="plist">', i)].filter(x => x > -1); return h.slice(i, Math.min(...ends)); };
     for (const pid of ['p5', 'p1', 'p2', 'p3']) A.click({ act: 'puton', pid });
     check('four on, 4v4', on(g), ['p1', 'p2', 'p3', 'p5']);
     A.click({ act: 'taplive', pid: 'p1' });
@@ -802,6 +808,73 @@ function sideline() {
     g().plan = { manual: true, blocks: [blk(0, { sGK: 'p5', sLB: 'p1', sRB: 'p2', sST: 'p3' })] };
     h = html();
     check('a plan not locked in: the coach is told to lock it in, on Subs', /id="subsdue"/.test(h) && /Lock in your plan and this card counts down/.test(h) && /data-act="opengview" data-v="plan">Open the plan</.test(h), true);
+  }
+
+  console.log('\n--- subs made together are one line in the log, fixed with one tap (build 180) ---');
+  {
+    /* The owner, 2026-10-20: when executing the planned subs, the sub should
+       show up on one line, so changing the time later is one tap instead of
+       one per sub. */
+    const g = setup();
+    as('jaz'); A.ui.gameView = 'subs';
+    A.click({ act: 'subsgo', start: '0' });
+    startHalf(g, 1);
+    H.clock.advance(11 * MIN);
+    A.click({ act: 'subsgo', start: '600' });              // Jo on for Mia, alone
+    H.clock.advance(27 * MIN);
+    A.endHalf(g());
+    A.click({ act: 'subsgo', start: '2400' });             // two at half-time, one tap
+    const groups = A.subGroups(g());
+    check('the two changes made together are one group, the one before its own', groups.map(x => x.rows.length), [2, 1]);
+    let h = html();
+    const line = (h.match(/<button type="button" data-act="fixsubs" data-is="([^"]+)">[^]*?<\/button>/) || [])[0] || '';
+    check('Subs draws them as one line, naming both, with one fix', /<span class="t">38:00<\/span>/.test(line) && /<b>2 subs together<\/b>/.test(line) && /Mia on<\/span> for <span class="off">Ella off/.test(line) && /Lou on<\/span> for <span class="off">Rosa off/.test(line) && (h.match(/data-act="fixsubs"/g) || []).length === 1, true);
+    check('— the single one stays a line of its own', /data-act="fixsub" data-i="\d+">\s*<span class="t">11:00<\/span>/.test(h), true);
+    const is = (line.match(/data-is="([^"]+)"/) || [])[1];
+    A.click({ act: 'fixsubs', is });
+    const sheet = () => String(A.dom.node('#sheet').innerHTML || '');
+    check('fix opens the two as one sheet, the time nudged once for both', /<h3>2 changes at 38:00<\/h3>/.test(sheet()) && /data-act="nudgesubs" data-sids="[^"]+" data-d="-60"/.test(sheet()) && /data-act="setsubstime"/.test(sheet()), true);
+    check('— each with a way to fix it alone', (sheet().match(/data-act="fixsub" data-i="\d+"[^>]*>This one</g) || []).length, 2);
+    const sids = (sheet().match(/data-sids="([^"]+)"/) || [])[1];
+    A.click({ act: 'nudgesubs', sids, d: '-60' });
+    check('a nudge moves every spell of both subs together', [A.openStint(g(), 'p2')[1].on, A.openStint(g(), 'p6')[1].on, A.stintsOf(g(), 'p1').find(([, s]) => s.off != null)[1].off, A.stintsOf(g(), 'p3').find(([, s]) => s.off != null)[1].off], [2220, 2220, 2220, 2220]);
+    check('— the sheet stays open on them at the new time', /<h3>2 changes at 37:00<\/h3>/.test(sheet()), true);
+    check('— and the one before is untouched', A.openStint(g(), 'p4')[1].on, 660);
+    A.dom.node('#subT').value = '36:30';
+    A.click({ act: 'setsubstime', sids });
+    check('an exact time moves them all, and closes', [A.openStint(g(), 'p2')[1].on, A.openStint(g(), 'p6')[1].on, A.dom.node('#sheet').hidden], [2190, 2190, true]);
+    check('Track\'s match log has the same one line', /data-act="fixsubs" data-id="\d+,\d+"[^>]*>\s*<span class="t">36:30<\/span><span><b>2 subs together<\/b>/.test(trackLog()), true);
+    as('mum');
+    A.click({ act: 'nudgesubs', sids, d: '60' });
+    check('a parent\'s tap moves nothing', A.openStint(g(), 'p2')[1].on, 2190);
+  }
+
+  console.log('\n--- moving or swapping a player on the pitch look is a button, with a picture (build 180) ---');
+  {
+    /* The owner, 2026-10-20: swapping players in pitch mode should be easier
+       to see and find than a little text link. */
+    const g = setup();
+    g().plan = null;
+    as('jaz'); A.ui.gameView = 'pitch';
+    const sheet = () => String(A.dom.node('#sheet').innerHTML || '');
+    A.click({ act: 'subsgo', start: '0' });
+    A.putOnField(g(), 'p5', 50, 92, 'sGK'); A.putOnField(g(), 'p1', 25, 70, 'sLB'); A.putOnField(g(), 'p2', 75, 70, 'sRB');
+    startHalf(g, 1);
+    H.clock.advance(5 * MIN);
+    html();
+    A.click({ act: 'taplive', pid: 'p1' });
+    check('the sub sheet offers her move as a button, not a text link', /<button class="btn quiet wide" data-act="switchpos" data-pid="p1"[^>]*>Move her to another spot, or swap with a teammate</.test(sheet()) && !/class="textbtn"/.test(sheet()), true);
+    check('— and the pitch\'s hint says a tap moves her too', /Tap a player to sub or move her/.test(html()), true);
+    A.click({ act: 'switchpos', pid: 'p1' });
+    check('the move sheet says what a tap does', /<h3>Move Ella to another spot<\/h3>/.test(sheet()) && /Tap a free spot, or a teammate to swap spots with her/.test(sheet()), true);
+    check('— led by a picture: her token dashed, a teammate\'s a button that swaps them, the free spot a dashed token with her number', /<div class="token" data-pid="p1" data-mock="out"/.test(sheet()) && /<button type="button" class="token" data-act="doswitch" data-pid="p1" data-sid="sRB" aria-label="Swap with Mia"/.test(sheet()) && /<button type="button" class="token" data-mock="in" data-act="doswitch" data-pid="p1" data-sid="sST"[^>]*>\s*<span class="role">ST<\/span><span class="num">7<\/span>/.test(sheet()), true);
+    A.click({ act: 'doswitch', pid: 'p1', sid: 'sRB' });
+    check('a teammate\'s token swaps the two', A.slotIdOf(g(), 'p1') + ' ' + A.slotIdOf(g(), 'p2') + ' ' + A.dom.node('#sheet').hidden, 'sRB sLB true');
+    A.click({ act: 'taplive', pid: 'p1' });
+    A.ui.gameView = 'subs'; html();
+    A.click({ act: 'taplive', pid: 'p1' });
+    check('the list look offers the same button', /data-act="switchpos" data-pid="p1"[^>]*>Move her to another spot/.test(sheet()), true);
+    A.closeSheet();
   }
 
   H.summary('planned subs at the sideline');
