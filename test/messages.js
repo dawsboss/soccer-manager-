@@ -10,7 +10,7 @@
    that a name never reaches a screen it has no business on. */
 
 const H = require('./harness');
-const { check } = H;
+const { check, deepEq } = H;
 const { makeFakebase } = require('./fakebase');
 
 const CONFIG = { apiKey: 'k', databaseURL: 'https://prod.example', projectId: 'p' };
@@ -364,10 +364,11 @@ const NOTE = (A, by, text, extra) => ({ by, byName: CLUB.access.members[by].name
     fbk.deliver('staffdm/CLUB/adm~coach', null); await A.flush();
     A.click({ act: 'inbox' }); await A.flush();
     check('listed under Conversations with what she is', /Kim <span class="muted">· Coach · Storm/.test(A.rendered()), true);
+    // a tracker or a parent is not a colleague: a conversation with either is keyed by the two people, at talk/, and the admins read it (DOORS.md)
     A.click({ act: 'sdopen', u: 'trk' }); await A.flush();
-    check('not with a tracker', A.ui.view, 'inbox');
+    check('with a tracker it is a people conversation, not a colleagues\' one', A.ui.view + ' ' + A.cidRoot(A.sdId('coach', 'trk')), 'thread talk');
     A.click({ act: 'sdopen', u: 'mum' }); await A.flush();
-    check('nor a parent', A.ui.view, 'inbox');
+    check('and with a parent the same, read by the admins too', A.ui.view + ' ' + /you, Mo and the club's admins/.test(A.rendered()), 'thread true');
   }
   {
     const { A, fbk } = await boot('other');
@@ -386,6 +387,67 @@ const NOTE = (A, by, text, extra) => ({ by, byName: CLUB.access.members[by].name
     A.dom.node('#msgText').value = 'hi';
     A.click({ act: 'msgsend', cid: 'coach~' + who }); await A.flush();
     check('and cannot write in one', writes(fbk, 'staffdm/').length, 0);
+  }
+
+  /* Conversations keyed by people (DOORS.md; the owner, 2026-10-20): a session's
+     coach and a child's family talk at talk/{code}/{a}~{b}, the two of them and
+     the club's admins, whatever team either is on. Never a player's own sign-in,
+     never two families; a colleague stays at staffdm. */
+  console.log('\n--- two people, keyed by their accounts ---');
+  {
+    const withSess = async who => {
+      const club = JSON.parse(JSON.stringify(CLUB));
+      club.teams.t1.players.p1.self = { ella: true }; club.access.index.ella = true;
+      const { A, fbk } = await boot(who, { club });
+      // Kim (other, the coach of Storm) runs a finishing group with Ella (mum's child, on Flight) in it
+      A.sess = { sessions: { s1: { id: 's1', kind: 'group', title: 'Finishing', coach: 'other', coachName: 'Kim', date: A.addDays(A.todayStr(), 2), start: '17:00', end: '18:00', cap: 6, price: 0, open: true, place: 'Hill End' } },
+        booked: { s1: { p1: { tid: 't1', st: 'in', by: 'other', at: 1 } } }, came: {}, fees: {}, pay: {}, splans: {}, dirty: {} };
+      A.render(); await A.flush();
+      return { A, fbk };
+    };
+    {
+      const { A, fbk } = await withSess('mum');
+      deepEq('the family may write to the coach of her child\'s session, and nobody else by this door', A.talkPartners(), ['other']);
+      check('her phone listens to that one conversation, at talk/, and no list', fbk.watching('talk/CLUB/mum~other') && !fbk.watching('talk/CLUB') && !fbk.readPaths().some(p => /^staffdm\//.test(p)), true);
+      A.click({ act: 'sessopen', id: 's1' }); await A.flush();
+      check('the session\'s sheet offers Message Kim', /data-act="sdopen" data-u="other"[^>]*>Message Kim</.test(String(A.dom.node('#sheet').innerHTML)), true);
+      A.click({ act: 'sdopen', u: 'other' }); await A.flush();
+      check('which opens it, saying who reads it', A.ui.view === 'thread' && /Private · only you, Kim and the club's admins/.test(A.rendered()), true);
+      A.dom.node('#msgText').value = 'Can Ella work on her left foot?';
+      A.click({ act: 'msgsend', cid: A.sdId('mum', 'other') }); await A.flush();
+      const w = writes(fbk, 'talk/');
+      check('one write, at one message in their conversation, in her own name', w.length === 1 && w[0].path.startsWith('talk/CLUB/mum~other/m/') && w[0].value.by === 'mum', true);
+      check('nothing at staffdm/ or dm/ for it', writes(fbk, 'staffdm/').length + writes(fbk, 'dm/').length, 0);
+      A.click({ act: 'sdopen', u: 'dad' }); await A.flush();
+      check('not with another family', A.ui.view !== 'thread' || A.ui.thread.cid !== A.sdId('mum', 'dad'), true);
+      A.click({ act: 'msgnew' });
+      check('New message lists the coach of the session under Sessions', /Kim/.test(A.pickListHtml()) && A.pickGroups().some(g => g[0] === 'sessions'), true);
+    }
+    {
+      const { A, fbk } = await withSess('other');
+      deepEq('the coach may write to the family of a child in her session', A.talkPartners(), ['mum']);
+      check('listening to that pair alone', fbk.watching('talk/CLUB/mum~other') && !fbk.watching('talk/CLUB'), true);
+      A.click({ act: 'sessopen', id: 's1' }); await A.flush();
+      check('the booking row offers Message Mo', /data-act="sdopen" data-u="mum"[^>]*>Message Mo</.test(String(A.dom.node('#sheet').innerHTML)), true);
+      A.click({ act: 'sdopen', u: 'ella' }); await A.flush();
+      check('never the child\'s own sign-in', A.ui.view !== 'thread' || (A.ui.thread || {}).cid !== A.sdId('other', 'ella'), true);
+      check('— and she is nobody\'s partner', A.talkPartners().includes('ella'), false);
+    }
+    {
+      const { A, fbk } = await withSess('adm');
+      check('an admin listens to the whole of talk/: she reads every one of them', fbk.watching('talk/CLUB'), true);
+      fbk.deliver('talk/CLUB', { 'mum~other': { m: { t1: { by: 'other', byName: 'Kim', at: A.nowMs() - 1000, text: 'Left foot it is' } } } }); await A.flush();
+      A.click({ act: 'inbox' }); await A.flush();
+      check('listed as whose it is, to read', /Mo and Kim <span class="muted">· you can read this as an admin/.test(A.rendered()), true);
+      check('and not counted as hers to answer', A.msgUnread(), 0);
+      A.click({ act: 'talkread', cid: 'mum~other' }); await A.flush();
+      check('opens read-only: no composer, the readers named', A.ui.view === 'thread' && !/id="msgText"/.test(A.rendered()) && /Mo, Kim and the club's admins/.test(A.rendered()), true);
+    }
+    for (const who of ['trk', 'dad']) {
+      const { A, fbk } = await withSess(who);
+      check(`a ${who === 'trk' ? 'tracker' : 'family with no child in the session'} has nobody to talk to by this door`, A.talkPartners().length, 0);
+      check('— and listens to nothing at talk/', fbk.readPaths().some(p => p.startsWith('talk/')), false);
+    }
   }
 
   /* UX-REVIEW-3.md, 17.2 and 17.3. A family's only door to the coaches was a row

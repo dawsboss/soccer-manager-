@@ -122,6 +122,11 @@ exports.pushMessage = onValueCreated('/dm/{code}/{tid}/{fam}/m/{id}', event =>
 exports.pushStaffMessage = onValueCreated('/staffdm/{code}/{cid}/m/{id}', event =>
   push.onStaff(envOf(event), event.params, event.data.val()));
 
+/* A new message between two people keyed by their accounts (DOORS.md; build
+   180): a session's coach and a family, or an admin and a family. Append-only. */
+exports.pushTalkMessage = onValueCreated('/talk/{code}/{cid}/m/{id}', event =>
+  push.onTalk(envOf(event), event.params, event.data.val()));
+
 /* A practice or event on a team's calendar changed: the entry, before and
    after. Entries are small and nothing writes them during a game (the
    register sits beside them, at teams/{tid}/attend), so the whole entry is

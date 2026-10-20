@@ -235,7 +235,7 @@ talk/{code}/{a}~{b}/
   `talk` is keyed by her uid. A rule cannot find her guardians from a
   root-level id, and a child alone in a chat with an adult is not a thing
   this app makes.
-- Rules version 34: `talk` with the clauses above, in `test/rules.js` first
+- *Built, build 180.* Rules version 34: `talk` with the clauses above, in `test/rules.js` first
   for every kind of account (a tracker, a fan, a stranger, two families, a
   player's own sign-in all refused). A push trigger beside the three message
   triggers in `functions/push.js`, telling the other person and never the
@@ -298,7 +298,7 @@ left out.
 
 ## Build order
 
-1. **The door and the two bars.** `ui.door`, `navTabs()` by door, the screens
+1. **The door and the two bars** (*built, build 179*). `ui.door`, `navTabs()` by door, the screens
    that name a door setting it, the shared screens reading the remembered
    one. Teams is unchanged for everyone with Teams alone. The Sessions bar's
    third tab is today's Sessions screen. `test/nav.js` and `test/same.js`
@@ -307,16 +307,19 @@ left out.
    a reload, every shared screen the same in both doors, a tracker, a fan, a
    viewer and a player's own sign-in never given the door, and a locked
    device given nothing.
-2. **Sessions Home, by role**, from the pieces `viewSessions()` already draws,
+2. **Sessions Home, by role** (*built, build 179*), from the pieces `viewSessions()` already draws,
    handler checks and all; `test/sessions.js` and `test/doors.js` walk it as
    a family, a coach, an admin, and refuse the rest.
-3. **The switch and the defaults**: the title-row button and the More rows
+3. **The switch and the defaults** (*built, build 179*; the captures with `tools/screens/` still to make): the title-row button and the More rows
    with the two icons, a family of no-team children opening in Sessions, a
    link, alert or notification switching the door to its screen, Back
    honoured (`test/routing.js`). Capture both doors with `tools/screens/`.
-4. **Messages keyed by people**: `test/rules.js` cases first, rules version
+4. **Messages keyed by people** (*built, build 180*): `test/rules.js` cases first, rules version
    34, `talk`, its push trigger, the Messages list, *Message the coach* on a
-   session and *Message the family* on a booking.
+   session and *Message the family* on a booking. Left for later: hearing a
+   `talk` in one of her other clubs while this one is open (`watchElseMessages()`
+   listens to the other clubs' team conversations; the sessions' pairs there are
+   not yet computed from the cut-down copy).
 5. **A coach of no team**, if the owner says yes: the role, its rules (version
    35), the server's tables, People's *Name a session coach*, and her door.
 

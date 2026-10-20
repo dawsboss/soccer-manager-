@@ -116,8 +116,9 @@ console.log('--- who has which door, and where each starts ---');
 
 console.log('\n--- the same bar for everyone inside a door ---');
 {
-  for (const uid of EVERYONE) { as(uid); check(`${ROLES[uid]} in Teams: ${TEAMS_BAR}`, tabs(), uid === 'vee' || uid === 'lou' ? TEAMS_BAR.replace(' messages', '') : TEAMS_BAR); }
-  for (const uid of BOTH) { as(uid, 'sessions'); check(`${ROLES[uid]} in Sessions: ${SESS_BAR}`, tabs(), uid === 'lou' ? SESS_BAR.replace(' messages', '') : SESS_BAR); }
+  // Lou has Messages too: her child is in Jaz's session, so she may write to Jaz (DOORS.md, Messages: people, not teams)
+  for (const uid of EVERYONE) { as(uid); check(`${ROLES[uid]} in Teams: ${TEAMS_BAR}`, tabs(), uid === 'vee' ? TEAMS_BAR.replace(' messages', '') : TEAMS_BAR); }
+  for (const uid of BOTH) { as(uid, 'sessions'); check(`${ROLES[uid]} in Sessions: ${SESS_BAR}`, tabs(), SESS_BAR); }
   as('jaz', 'sessions');
   check('— the same ids and labels, so one tap sequence is true on every phone', A.navTabs().map(t => t.id + ':' + t.label).join(' '), 'home:Home calendar:Calendar sessions:Sessions messages:Messages more:More');
   check('— the Sessions tab is lit on the list', lit(), 'sessions');

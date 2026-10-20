@@ -213,6 +213,35 @@ async function onStaff(env, params, v) {
   return { to: [other], ...(await deliver(env, list)) };
 }
 
+/* A conversation keyed by people, talk/{code}/{a}~{b}/m/{id} (DOORS.md; the
+   owner, 2026-10-20): the staffdm shape for a pair that is not two
+   colleagues, a session's coach and a child's family or an admin and the
+   family of a child on no team. The rule's readers are the two, both in the
+   club's index with at least one of them staff for this (an admin, a coach of
+   any team or a team helper), and the club's admins. The one person told is
+   the other of the pair, never the author and never the admins who merely
+   read it. A player's own sign-in is never in one: that is the app's wall,
+   not the rule's, and the server tells whoever the rule would let read. */
+async function onTalk(env, params, v) {
+  const none = { to: [], sent: 0, failed: 0, removed: [] };
+  if (!v || typeof v !== 'object' || !v.by || typeof v.text !== 'string' || !v.text || !params || !params.code || !params.cid || !params.id) return none;
+  const { code, cid, id } = params;
+  const pair = String(cid).split('~');
+  if (pair.length !== 2 || pair.some(u => !/^[^.#$\[\]\/~]{1,128}$/.test(u)) || pair[0] === pair[1] || !pair.includes(v.by)) return none;
+  const A = (await where(env.get, code)).access;
+  const [retired, admins, coachIndex, helperIndex, index] = await Promise.all([
+    env.get('retired/' + code), env.get(A + '/admins'), env.get(A + '/coachIndex'), env.get(A + '/helperIndex'), env.get(A + '/index')
+  ]);
+  if (retired) return none;
+  const staff = u => has(admins, u) || has(coachIndex, u) || has(helperIndex, u);
+  if (!pair.every(u => has(index, u)) || !pair.some(staff)) return none;
+  const other = pair.find(u => u !== v.by);
+  const list = await messagesFor(env, new Set([other]), () => ({
+    title: v.byName || 'Someone', body: short(v.text), tag: id, code, hash: `#/messages/with/${v.by}`, urgent: ''
+  }), 'msg');
+  return { to: [other], ...(await deliver(env, list)) };
+}
+
 /* ---------------- a change to the calendar ---------------- */
 
 /* A game or practice of hers called off, back on, moved, or new: the same
@@ -539,4 +568,4 @@ async function onFollowed(env, params, what, id, was) {
   return res;
 }
 
-module.exports = { onFollowed, LIVE_MS, FT_FRESH_MS, onNotice, onMessage, onStaff, onEntry, onGameField, messagesFor, deliver, calNews, calSig, whenOf, teamReaders, noticeReaders, threadReaders, teamFacts, BODY_MAX, BATCH, SOON_DAYS, GAME_FIELDS };
+module.exports = { onFollowed, LIVE_MS, FT_FRESH_MS, onNotice, onMessage, onStaff, onTalk, onEntry, onGameField, messagesFor, deliver, calNews, calSig, whenOf, teamReaders, noticeReaders, threadReaders, teamFacts, BODY_MAX, BATCH, SOON_DAYS, GAME_FIELDS };
