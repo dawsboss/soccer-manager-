@@ -2,7 +2,7 @@
    Static app. Data lives in localStorage, and mirrors to Firebase Realtime
    Database when a config + workspace code are present. */
 
-const BUILD = '181';
+const BUILD = '182';
 const BUILT = '2026-10-14';
 /* The version of database.rules.json this app was written against. The rules
    carry the same number in rulesVersion's .write, which accepts that number
@@ -2233,7 +2233,7 @@ const LOG_ACTS = new Set([
      game, and nudges it, as the rules already allowed (a tracker writes the
      match but its date, kick-off, place and opponent). Starting a game over
      at 0:00 and reopening an ended one stay the coach's. */
-  'start', 'pause', 'endhalf', 'endgame', 'fixclock', 'nudgeclock',
+  'start', 'pause', 'endhalf', 'endgame', 'fixclock', 'nudgeclock', 'halflen', 'stopout',
   /* opening a goal's or a shot's editor: Save and Delete were refused, but a
      parent could open a working-looking editor from Stats first (UX-REVIEW-3.md, 16.5) */
   'fixgoal', 'fixshot'
@@ -7217,40 +7217,140 @@ function restartMatch(m) {
   commit(`matches/${m.id}`, { ...m, periods: {}, currentHalf: 1, stints, goals: null, planDone: null });
 }
 
-/* Nudge the match clock when it was started late or early: the half's start
-   moves, and so does everything logged in it (build 181, the owner,
-   2026-10-20: the clock was put back five minutes and nobody's minutes
-   followed). A sub, a goal, a shot, a set piece or a possession tap is kept
-   as a match second, so until now a nudge left each where the clock had read
-   when it was tapped: a player subbed off kept every minute of a half the
-   clock now said was shorter, and one who had just come on read "on" at a
-   second the clock had not reached yet, so her minutes stood at nothing until
-   it did. Each happened at a real moment, and a nudge says the half started
-   at a different one, so each moves by the same seconds the start did. The
-   half's own first second is pinned: a starter's spell, or a change made
-   during the break, belongs to the start of the half wherever that turns out
-   to be, and nothing is moved before it. Earlier halves are closed and keep
-   their seconds. Every record goes out on its own (`quiet()`), at the depth
-   a tracker may write, with the start last so one redraw says it all. */
-function adjustClock(m, deltaSec) {
-  const segs = segments(m).filter(s => (s.half || 1) === (m.currentHalf || 1) && s.start);
-  const first = segs[0];
-  if (!first) { toast('Start the clock first'); return; }
-  const span = (first.end || nowMs()) - first.start;
-  const shift = clamp(-deltaSec * 1000, -60 * 60000, span - 1000);
-  const by = Math.round(shift / 1000);                 // seconds the start moved later; each second logged since moves earlier by it
-  const from = elapsedSec(m) - halfSec(m);             // the half's first second, as the clock stood
-  const path = `matches/${m.id}`;
+/* Fixing the clock after the fact (build 181 the nudge, build 182 the rest;
+   the owner, 2026-10-20 and 21: the clock put back five minutes and nobody's
+   minutes following, then "we need a way to fix times"). A sub, a goal, a
+   shot, a set piece and a possession tap are kept as seconds on the match
+   clock, and the clock is a list of stretches of play in wall time; so a
+   stretch changed after the fact (its start nudged, a half that ran long
+   trimmed, a stoppage the clock ran through taken out) changes what second
+   each of those moments is. Until build 181 a nudge left every one where the
+   clock had read when it was tapped: a player subbed off kept every minute
+   of a half the clock now said was shorter, and one who had just come on
+   read "on" at a second the clock had not reached yet, so her minutes stood
+   at nothing until it did.
+
+   `remapSec()` is the one rule: a second is found as the wall moment it was
+   under the clock as it stood, then read back as a second under the clock as
+   it will be. A moment inside time taken out lands at the second it was
+   taken out at, one before a start moved later at that start, a starter's
+   spell and a half-time change at the half's start wherever that turns out
+   to be, and a moment in a half that was not touched keeps its second.
+   Nothing is guessed. `reclock()` applies it to every record, each its own
+   write at the depth a tracker may already write, with the stretches last so
+   one redraw says it all; the stretches go out whole and renumbered, since
+   taking a stoppage out puts a new one in the middle (the follow push says
+   nothing for a stretch that is not its half's first). */
+function remapSec(was, will, sec, now = nowMs()) {
+  const stretches = p => segments({ periods: p }).filter(s => s.start)
+    .map(s => ({ half: s.half || 1, start: s.start, end: s.end || now, dur: Math.floor(((s.end || now) - s.start) / 1000) }));
+  const o = stretches(was), n = stretches(will);
+  /* A half's first second is the half's, not a moment's: a starter's spell
+     and a half-time change begin when the half does, wherever its start is
+     put, and never five minutes into it because the start was moved back. */
+  const firstSec = (list, h) => { let acc = 0; for (const s of list) { if (s.half === h) return acc; acc += s.dur; } return null; };
+  for (const h of [...new Set(o.map(s => s.half))]) {
+    if (firstSec(o, h) !== sec) continue;
+    const f = firstSec(n, h); if (f != null) return f;
+  }
+  let acc = 0, ms = null;
+  for (const s of o) {
+    if (sec <= acc + s.dur) { ms = s.start + (sec - acc) * 1000; break; }
+    acc += s.dur;
+  }
+  if (ms == null) { const l = o[o.length - 1]; if (!l) return sec; ms = l.end + (sec - acc) * 1000; }
+  acc = 0;
+  for (const s of n) {
+    if (ms < s.start) return acc;
+    if (ms <= s.end) return acc + Math.floor((ms - s.start) / 1000);
+    acc += s.dur;
+  }
+  return acc;
+}
+/* The stretches as the database keeps them: numbered in order, `i` off, no
+   `end` on an open one. */
+function periodsFrom(list) {
+  return Object.fromEntries(list.map((s, k) => {
+    const v = { ...s }; delete v.i; if (v.end == null) delete v.end;
+    return [k, v];
+  }));
+}
+function reclock(m, periods) {
+  const now = nowMs(), path = `matches/${m.id}`, was = m.periods || {};
   const move = (coll, key) => {
     for (const [id, x] of Object.entries(m[coll] || {})) {
       const v = x && x[key];
-      if (typeof v !== 'number' || v <= from) continue;
-      const nv = Math.max(from, v - by);
+      if (typeof v !== 'number') continue;
+      const nv = remapSec(was, periods, v, now);
       if (nv !== v) quiet(`${path}/${coll}/${id}/${key}`, nv);
     }
   };
-  if (by) { move('stints', 'on'); move('stints', 'off'); move('goals', 't'); move('shots', 't'); move('events', 't'); move('poss', 't'); }
-  commit(`${path}/periods/${first.i}/start`, first.start + shift);
+  move('stints', 'on'); move('stints', 'off'); move('goals', 't'); move('shots', 't'); move('events', 't'); move('poss', 't');
+  commit(`${path}/periods`, periods);
+}
+/* How long a half has been on, on its own clock. */
+function halfLenSec(m, h, now = nowMs()) {
+  return segments(m).filter(s => s.start && (s.half || 1) === h).reduce((t, s) => t + Math.floor(((s.end || now) - s.start) / 1000), 0);
+}
+
+/* Nudge the match clock when it was started late or early: the current
+   half's first stretch starts earlier or later. Never before the stretch
+   before it ended, never past its own last second. */
+function adjustClock(m, deltaSec) {
+  const all = segments(m);
+  const segs = all.filter(s => (s.half || 1) === (m.currentHalf || 1) && s.start);
+  const first = segs[0];
+  if (!first) { toast('Start the clock first'); return; }
+  const prev = all.filter(s => s.start && s.i < first.i).pop();
+  const span = (first.end || nowMs()) - first.start;
+  const floor = Math.max(-60 * 60000, prev ? (prev.end || first.start) - first.start : -60 * 60000);
+  const shift = clamp(-deltaSec * 1000, floor, span - 1000);
+  reclock(m, periodsFrom(all.map(s => s.i === first.i ? { ...s, start: first.start + shift } : s)));
+}
+/* A half that ran long (nobody tapped End half, or End game) or short: its
+   last stretch ends where the length says. Never before its own first
+   second, never into the next half, never past now or full time. A half
+   still running is stopped there, which is how a clock left running since
+   Saturday is closed. Returns a reason when refused, nothing when done. */
+function setHalfLength(m, half, lenSec) {
+  const now = nowMs(), all = segments(m), segs = all.filter(s => s.start && (s.half || 1) === half);
+  const last = segs[segs.length - 1];
+  if (!last) return 'That half has not been played';
+  const before = segs.slice(0, -1).reduce((t, s) => t + Math.floor(((s.end || now) - s.start) / 1000), 0);
+  const next = all.find(s => s.start && s.i > last.i);
+  const cap = next ? next.start - 1000 : Math.min(now, m.ended || now);
+  const end = clamp(last.start + (Math.round(lenSec) - before) * 1000, last.start + 1000, cap);
+  reclock(m, periodsFrom(all.map(s => s.i === last.i ? { ...s, end } : s)));
+  return null;
+}
+/* The clock ran on through a stoppage: at a second on the half's clock,
+   for so long. The stretch it fell in is split there, with the stoppage as
+   the gap, so the half is that much shorter and everything after it moves
+   up. A stoppage that reaches the end of a closed stretch takes the rest
+   of it; one that reaches now is refused, and so is one that would take
+   the whole half. Returns a reason when refused, nothing when done. */
+function takeOutStoppage(m, half, atSec, lenSec) {
+  const now = nowMs(), all = segments(m), segs = all.filter(s => s.start && (s.half || 1) === half);
+  if (!segs.length) return 'That half has not been played';
+  if (!(lenSec > 0)) return 'How long was the stoppage?';
+  let acc = 0, hit = null, w = null;
+  for (const s of segs) {
+    const dur = Math.floor(((s.end || now) - s.start) / 1000);
+    if (atSec <= acc + dur) { hit = s; w = s.start + (atSec - acc) * 1000; break; }
+    acc += dur;
+  }
+  if (!hit) return 'The half had not got that far';
+  const end = hit.end || now, resume = w + Math.round(lenSec) * 1000;
+  if (!hit.end && resume >= end) return 'That stoppage would run past now';
+  const out = [];
+  for (const s of all) {
+    if (s.i !== hit.i) { out.push(s); continue; }
+    if (w > hit.start) out.push({ ...hit, end: w });
+    if (resume < end) out.push({ half: hit.half, start: resume, ...(hit.end ? { end: hit.end } : {}) });
+  }
+  if (!out.some(s => s.start && (s.half || 1) === half)) return 'That would take the whole half';
+  reclock(m, periodsFrom(out));
+  return null;
 }
 
 /* ---------------- sheet / toast ---------------- */
@@ -9395,7 +9495,7 @@ function logCard(t, m) {
       ${x.score ? `<span class="fscore">${x.score}</span>` : '<span></span>'}</div>`;
   const counts = Object.fromEntries(LOG_KINDS.map(([c]) => [c, c === 'all' ? all.length : all.filter(x => x.kind === c).length]));
   return `<div class="card"><h2 style="margin-bottom:4px">Match log</h2>
-    <p class="muted" style="margin:0 0 10px">Everything recorded, in order: the match clock, and the time of day it happened.</p>
+    <p class="muted" style="margin:0 0 10px">Everything recorded, in order: the match clock, and the time of day it happened.${mayAct('fixclock', m) ? ' <button class="linkbtn" data-act="fixclock">Clock reading wrong?</button>' : ''}</p>
     <div class="chips" style="margin-bottom:10px">${LOG_KINDS.filter(([c]) => c === 'all' || counts[c]).map(([c, label]) => `<button class="chip" type="button" data-act="logkind" data-v="${c}" aria-pressed="${k === c}">${label} <small>${counts[c]}</small></button>`).join('')}</div>
     ${shown.length ? `<div class="feed">${shown.map(row).join('')}</div>` : '<p class="muted" style="margin:0">Nothing of that kind was recorded.</p>'}</div>`;
 }
@@ -22965,19 +23065,48 @@ function sheetAvailability(then, id) {
     <button class="btn wide" data-act="closesheet">Done</button>`);
 }
 
+/* The clock, fixable during the game and after it (build 182): the nudge
+   for the half being played, and for every half played its real length and
+   a stoppage the clock ran through, each on the half's own clock. One
+   sentence says what every change here does to the minutes, since it is the
+   same for all of them (reclock()). Starting over stays the coach's. */
 function sheetFixClock() {
-  const m = match();
+  const m = match(), now = nowMs();
   const onNow = fieldIds(m).length;
-  openSheet(`<h3>Adjust or restart the clock</h3>
-    <p class="muted" style="margin-top:0">Reads ${mmss(elapsedSec(m))} now. Nudging shifts the current ${esc(halfName(m, m.currentHalf || 1)).toLowerCase()} and the total together, and every sub, goal and shot logged this ${esc(halfName(m, m.currentHalf || 1)).toLowerCase()} moves with it, so minutes follow the clock.</p>
+  const cur = m.currentHalf || 1;
+  const halves = [...new Set(segments(m).filter(s => s.start).map(s => s.half || 1))].sort((a, b) => a - b);
+  const live = !m.ended && halves.includes(cur);
+  const tod = ms => { const d = new Date(ms); return pad2(d.getHours()) + ':' + pad2(d.getMinutes()); };
+  const halfRows = halves.map(h => {
+    const segs = segments(m).filter(s => s.start && (s.half || 1) === h), last = segs[segs.length - 1];
+    const len = halfLenSec(m, h, now), open = !last.end;
+    return `<div class="fixhalf">
+      <p style="margin:14px 0 6px"><b>${esc(halfName(m, h))}</b> · ${mmss(len)} on the clock · ${tod(segs[0].start)} to ${open ? 'now' : tod(last.end)}${segs.length > 1 ? ` · paused ${segs.length - 1} time${segs.length === 2 ? '' : 's'}` : ''}</p>
+      <div class="row">
+        <label class="field" style="flex:1;margin-bottom:0"><span>Really lasted</span><input type="text" id="hl${h}" value="${mmss(len)}" placeholder="40:00" inputmode="numeric" data-clock></label>
+        <button class="btn quiet sm" data-act="halflen" data-h="${h}">Save</button>
+      </div>
+      ${open ? '<p class="muted" style="margin:4px 0 0">Saving a length stops the clock there.</p>' : ''}
+      <div class="row" style="margin-top:10px">
+        <label class="field" style="flex:1;margin-bottom:0"><span>Ran on through a stoppage at</span><input type="text" id="sa${h}" placeholder="23:10" inputmode="numeric" data-clock></label>
+        <label class="field" style="flex:1;margin-bottom:0"><span>For</span><input type="text" id="sl${h}" placeholder="3:00" inputmode="numeric" data-clock></label>
+        <button class="btn quiet sm" data-act="stopout" data-h="${h}">Take it out</button>
+      </div>
+      <p class="muted" style="margin:4px 0 0">Times on this half's clock. The half gets that much shorter from there.</p>
+    </div>`;
+  }).join('');
+  openSheet(`<h3>${m.ended ? 'Fix the clock' : 'Adjust or restart the clock'}</h3>
+    <p class="muted" style="margin-top:0">${m.ended ? `Full time at ${mmss(elapsedSec(m, now))}.` : `Reads ${mmss(elapsedSec(m, now))} now.`} Whatever you change here, every sub, goal and shot keeps the moment it happened and its time on the clock moves with it, so minutes follow the clock.</p>
+    ${live ? `<p class="muted" style="margin:0 0 6px">Nudge the current ${esc(halfName(m, cur)).toLowerCase()}: it shifts the half and the total together.</p>
     <div class="chips" style="margin-bottom:8px">
       ${[-300, -60, -15, -5].map(d => `<button class="chip" type="button" data-act="nudgeclock" data-d="${d}">−${Math.abs(d) >= 60 ? Math.abs(d) / 60 + 'm' : Math.abs(d) + 's'}</button>`).join('')}
     </div>
-    <div class="chips" style="margin-bottom:16px">
+    <div class="chips" style="margin-bottom:8px">
       ${[5, 15, 60, 300].map(d => `<button class="chip" type="button" data-act="nudgeclock" data-d="${d}">+${d >= 60 ? d / 60 + 'm' : d + 's'}</button>`).join('')}
-    </div>
-    <button class="btn wide" data-act="closesheet">Done</button>
-    ${canEditTeam(m.teamId) ? `<hr style="border:0;border-top:1px solid var(--line);margin:18px 0">
+    </div>` : ''}
+    ${halfRows ? `<h3 style="margin:10px 0 0">Each half, as the clock has it</h3>${halfRows}` : ''}
+    <button class="btn wide" data-act="closesheet" style="margin-top:16px">Done</button>
+    ${canEditTeam(m.teamId) && !m.ended ? `<hr style="border:0;border-top:1px solid var(--line);margin:18px 0">
     <h3>Started too early?</h3>
     <p class="muted" style="margin-top:0">Puts the clock back to 0:00. The ${onNow} player${onNow === 1 ? '' : 's'} on the pitch stay${onNow === 1 ? 's' : ''} on and start${onNow === 1 ? 's' : ''} a fresh spell. Subs already logged and any goals are cleared, because their times belong to the old clock. Your roster, lineup, planned minutes and game plan are untouched.</p>
     <button class="btn danger wide" data-act="restartgame">Start this game over at 0:00</button>` : ''}`);
@@ -25456,6 +25585,19 @@ function onAct(e) {
 
   if (a === 'fixclock') { sheetFixClock(); return; }
   if (a === 'nudgeclock') { adjustClock(m, Number(d.d)); sheetFixClock(); return; }
+  if (a === 'halflen') {
+    const h = Number(d.h), box = $('#hl' + h), len = parseTime(box && box.value, -1);
+    if (len < 0) { toast('Type the length as minutes and seconds, like 40:00'); return; }
+    const why = setHalfLength(m, h, len); if (why) { toast(why); return; }
+    sheetFixClock(); toast(`${halfName(m, h)}: ${mmss(halfLenSec(match(), h))}`); return;
+  }
+  if (a === 'stopout') {
+    const h = Number(d.h), at = $('#sa' + h), len = $('#sl' + h);
+    const atSec = parseTime(at && at.value, -1), lenSec = parseTime(len && len.value, -1);
+    if (atSec < 0 || lenSec <= 0) { toast('Type when it was and how long, like 23:10 and 3:00'); return; }
+    const why = takeOutStoppage(m, h, atSec, lenSec); if (why) { toast(why); return; }
+    sheetFixClock(); toast(`${mmss(lenSec)} taken out of the ${halfName(m, h).toLowerCase()}`); return;
+  }
   if (a === 'restartgame') {
     if (!confirm('Put the clock back to 0:00? Subs and goals logged so far will be cleared.')) return;
     restartMatch(m); closeSheet(); toast('Clock back to 0:00'); return;

@@ -166,7 +166,7 @@ const EXPORTS = `{
   /* actions */
   startClock, pauseClock, endHalf, endGame, putOnField, takeOffField, swap,
   moveSub, subQuiet, applyStaged, movePos, switchTo, subAt, restartMatch,
-  adjustClock, tapLive, putOn, stage, staged, stagedIds, isStaged,
+  adjustClock, remapSec, reclock, periodsFrom, halfLenSec, setHalfLength, takeOutStoppage, tapLive, putOn, stage, staged, stagedIds, isStaged,
   /* public mirror */
   publicGame, publicDoc, shareIds, pageAt, shareBase, teamLink, gameLink,
   gameStatus, shirtOf,
