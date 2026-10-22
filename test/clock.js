@@ -251,4 +251,368 @@ console.log('\n--- typing a time into the edit sheet ---');
   check('a stray colon falls back', A.parseTime('12:', 99), 99);
 }
 
+console.log('\n--- nudging the clock moves the half, and what was logged in it (build 181) ---');
+/* "Clock reading wrong?" shifts the half's start. Everything logged is a match
+   second, so until build 181 a nudge left each sub, goal and shot where the
+   clock had read when it was tapped: the owner put the clock back five minutes
+   and nobody's minutes followed. A thing logged happened at a real moment, and
+   the nudge says the half began at a different one, so each moves by the same
+   seconds the start did; the half's own first second is pinned (a starter, a
+   change made during the break) and nothing moves before it. */
+function seed(periods, extra) {
+  H.clock.set(T0);
+  A.state = {
+    teams: { t1: { id: 't1', name: 'G14 Flight', players: {
+      p1: { id: 'p1', name: 'Ella', number: '7' }, p2: { id: 'p2', name: 'Mia', number: '8' },
+      p3: { id: 'p3', name: 'Rosa', number: '4' }, p4: { id: 'p4', name: 'Jo', number: '9' }, p5: { id: 'p5', name: 'Sam', number: '1' } } } },
+    matches: { g1: { ...game(periods, extra), opponent: 'Riverside', date: '2026-09-12' } },
+    access: {}
+  };
+  A.ui.teamId = 't1'; A.ui.matchId = 'g1'; A.ui.view = 'game'; A.ui.gameView = 'track';
+  return A.state.matches.g1;
+}
+{
+  // first half, thirty minutes on the clock
+  const m = seed({ 0: { half: 1, start: T0 - 30 * MIN } }, {
+    stints: {
+      s1: { pid: 'p1', on: 0 },               // a starter, still on
+      s2: { pid: 'p2', on: 0, off: 1200 },    // off at 20:00
+      s3: { pid: 'p3', on: 1200 },            // on at 20:00 for her
+      s4: { pid: 'p4', on: 1680 },            // on at 28:00
+      s5: { pid: 'p5', on: 0, off: 120 }      // off at 2:00
+    },
+    goals: { g1: { t: 1500, side: 'us', pid: 'p3' } },
+    shots: { h1: { t: 60, side: 'us' } },
+    events: { e1: { t: 1740, side: 'them', kind: 'corner' } },
+    poss: { q1: { t: 900, to: 'us' } }
+  });
+  check('the clock reads 30:00', A.elapsedSec(m), 1800);
+  check('Jo has two minutes', A.playedSec(m, 'p4'), 120);
+  A.adjustClock(m, -300);
+  const g = () => A.state.matches.g1;
+  check('put back five minutes it reads 25:00', A.elapsedSec(g()), 1500);
+  check('the half went with it', A.halfSec(g()), 1500);
+  check('the start moved five minutes later', g().periods[0].start, T0 - 25 * MIN);
+  check('a starter still on has 25 minutes', A.playedSec(g(), 'p1'), 1500);
+  check('the one who went off at 20:00 went off at 15:00', g().stints.s2.off, 900);
+  check('so she has 15 minutes, not 20', A.playedSec(g(), 'p2'), 900);
+  check('the one who came on for her came on at 15:00', g().stints.s3.on, 900);
+  check('and keeps the ten minutes she has played', A.playedSec(g(), 'p3'), 600);
+  check('the one who came on at 28:00 came on at 23:00', g().stints.s4.on, 1380);
+  check('and still has her two minutes, not none', A.playedSec(g(), 'p4'), 120);
+  check('her spell reads two minutes, never a minus', A.spellSec(g(), 'p4'), 120);
+  check('a spell that ended before the new kick-off is squeezed to the start', g().stints.s5.off, 0);
+  check('a starter stays on from 0:00', g().stints.s1.on, 0);
+  check('the goal moved with the half', g().goals.g1.t, 1200);
+  check('a shot before the new kick-off sits at 0:00', g().shots.h1.t, 0);
+  check('the corner moved', g().events.e1.t, 1440);
+  check('the possession tap moved', g().poss.q1.t, 600);
+  A.adjustClock(g(), 300);
+  check('five minutes on again reads 30:00', A.elapsedSec(g()), 1800);
+  check('the sub is back at 20:00', g().stints.s2.off, 1200);
+  check('and the player who came on', g().stints.s3.on, 1200);
+  check('the goal is back at 25:00', g().goals.g1.t, 1500);
+  check('a starter stays on from 0:00 either way', g().stints.s1.on, 0);
+  check('and plays the thirty', A.playedSec(g(), 'p1'), 1800);
+}
+{
+  // second half, ten minutes in after a forty-minute first half
+  const m = seed({ 0: { half: 1, start: T0 - 70 * MIN, end: T0 - 30 * MIN }, 1: { half: 2, start: T0 - 10 * MIN } }, {
+    currentHalf: 2,
+    stints: {
+      s1: { pid: 'p1', on: 0 },               // played the whole game so far
+      s2: { pid: 'p2', on: 0, off: 2400 },    // off at half time
+      s3: { pid: 'p3', on: 2400 },            // on at half time
+      s4: { pid: 'p4', on: 2700 },            // on at 45:00
+      s5: { pid: 'p5', on: 600, off: 1800 }   // a first-half spell
+    },
+    goals: { g1: { t: 1000, side: 'them' }, g2: { t: 2820, side: 'us', pid: 'p3' } }
+  });
+  check('the clock reads 50:00', A.elapsedSec(m), 3000);
+  A.adjustClock(m, -300);
+  const g = () => A.state.matches.g1;
+  check('put back five minutes it reads 45:00', A.elapsedSec(g()), 2700);
+  check('the second half is five minutes', A.halfSec(g()), 300);
+  check('the first half is untouched', g().periods[0].end - g().periods[0].start, 40 * MIN);
+  check('a half-time sub stays at half time: off', g().stints.s2.off, 2400);
+  check('a half-time sub stays at half time: on', g().stints.s3.on, 2400);
+  check('one who came on at 45:00 came on at the restart', g().stints.s4.on, 2400);
+  check('a first-half spell keeps its seconds', [g().stints.s5.on, g().stints.s5.off].join(','), '600,1800');
+  check('a first-half goal keeps its time', g().goals.g1.t, 1000);
+  check('a second-half goal moved with the half', g().goals.g2.t, 2520);
+  check('the one who played it all has 45 minutes', A.playedSec(g(), 'p1'), 2700);
+}
+{
+  // the clock started late: five minutes on, in the second half
+  const m = seed({ 0: { half: 1, start: T0 - 70 * MIN, end: T0 - 30 * MIN }, 1: { half: 2, start: T0 - 10 * MIN } }, {
+    currentHalf: 2,
+    stints: { s1: { pid: 'p1', on: 0 }, s3: { pid: 'p3', on: 2400 }, s4: { pid: 'p4', on: 2700 }, s2: { pid: 'p2', on: 0, off: 2700 } },
+    goals: { g2: { t: 2820, side: 'us' } }
+  });
+  A.adjustClock(m, 300);
+  const g = () => A.state.matches.g1;
+  check('five minutes on reads 55:00', A.elapsedSec(g()), 3300);
+  check('the start moved five minutes earlier', g().periods[1].start, T0 - 15 * MIN);
+  check('a half-time sub still belongs to the restart', g().stints.s3.on, 2400);
+  check('one who came on at 45:00 came on at 50:00', g().stints.s4.on, 3000);
+  check('and keeps her five minutes', A.playedSec(g(), 'p4'), 300);
+  check('the one she replaced went off at 50:00', g().stints.s2.off, 3000);
+  check('so she has 50 minutes', A.playedSec(g(), 'p2'), 3000);
+  check('the goal moved on too', g().goals.g2.t, 3120);
+  check('the player who played it all has 55 minutes', A.playedSec(g(), 'p1'), 3300);
+}
+{
+  // a nudge the half cannot take whole moves what it did take
+  const m = seed({ 0: { half: 1, start: T0 - 3 * MIN } }, { stints: { s1: { pid: 'p1', on: 0 }, s3: { pid: 'p3', on: 120 } }, goals: { g1: { t: 150, side: 'us' } } });
+  A.adjustClock(m, -300);
+  const g = () => A.state.matches.g1;
+  check('the half keeps its last second', A.elapsedSec(g()), 1);
+  check('a sub at 2:00 is squeezed to the start', g().stints.s3.on, 0);
+  check('the goal at 2:30 too', g().goals.g1.t, 0);
+  check('nothing is logged in the future', A.playedSec(g(), 'p3'), 1);
+}
+{
+  // nothing to nudge before kick-off
+  const m = seed({}, { stints: { s1: { pid: 'p1', on: 0 } } });
+  A.adjustClock(m, -300);
+  deepEq('a clock not started is left alone', A.state.matches.g1.periods, {});
+  check('and so is the starter', A.state.matches.g1.stints.s1.on, 0);
+}
+
+console.log('\n--- a half that ran long is given its real length (build 182) ---');
+/* "We need a way to fix times" (the owner, 2026-10-21). Nobody tapped End
+   half, so the first half reads 52:10 and the second is under way. Giving
+   the half its real length ends its last stretch there: what was logged in
+   the dead time lands at the half's end, the second half moves up by the
+   difference, the first half's own moments keep their seconds. */
+{
+  const m = seed({ 0: { half: 1, start: T0 - 82 * MIN - 10000, end: T0 - 30 * MIN }, 1: { half: 2, start: T0 - 10 * MIN } }, {
+    currentHalf: 2,
+    stints: {
+      s1: { pid: 'p1', on: 0 },               // the whole game
+      s2: { pid: 'p2', on: 0, off: 2700 },    // "45:00": the dead time after the real 40:00
+      s3: { pid: 'p3', on: 2700 },
+      s4: { pid: 'p4', on: 3130 },            // at half time, as the clock had it
+      s5: { pid: 'p5', on: 3430 }             // five minutes into the second half
+    },
+    goals: { g1: { t: 1500, side: 'us' }, g2: { t: 3400, side: 'them' } },
+    shots: { h1: { t: 3000, side: 'us' } }
+  });
+  check('the first half reads 52:10', A.halfLenSec(m, 1), 3130);
+  check('the clock reads 62:10', A.elapsedSec(m), 3730);
+  check('nothing to refuse', A.setHalfLength(m, 1, 2400), null);
+  const g = () => A.state.matches.g1;
+  check('the first half is 40:00', A.halfLenSec(g(), 1), 2400);
+  check('its last stretch ends forty minutes after it began', g().periods[0].end - g().periods[0].start, 40 * MIN);
+  check('the second half is untouched', g().periods[1].start, T0 - 10 * MIN);
+  check('the clock reads 50:00', A.elapsedSec(g()), 3000);
+  check('a first-half goal keeps its second', g().goals.g1.t, 1500);
+  check('a sub in the dead time went off at the end of the half', g().stints.s2.off, 2400);
+  check('and the one who came on for her came on then', g().stints.s3.on, 2400);
+  check('a shot in the dead time sits at the end of the half', g().shots.h1.t, 2400);
+  check('a half-time sub is at half time', g().stints.s4.on, 2400);
+  check('five minutes into the second half is still that', g().stints.s5.on, 2700);
+  check('a second-half goal moved up with the half', g().goals.g2.t, 2670);
+  check('the player on all game has 50 minutes, not 62', A.playedSec(g(), 'p1'), 3000);
+  check('the one subbed off has 40', A.playedSec(g(), 'p2'), 2400);
+  check('the one who came on for her has the second half', A.playedSec(g(), 'p3'), 600);
+  deepEq('the stretches are numbered in order, no index inside', Object.keys(g().periods), ['0', '1']);
+  check('and a closed one keeps its end', 'end' in g().periods[0], true);
+  check('an open one has none', 'end' in g().periods[1], false);
+}
+{
+  // the clock left running since Saturday: the half is still open, days on
+  const m = seed({ 0: { half: 1, start: T0 - 55 * MIN } }, { stints: { s1: { pid: 'p1', on: 0 }, s3: { pid: 'p3', on: 2700 } } });
+  check('still running', A.running(m), true);
+  A.setHalfLength(m, 1, 2400);
+  const g = () => A.state.matches.g1;
+  check('a length stops the clock there', A.running(g()), false);
+  check('at 40:00', A.elapsedSec(g()), 2400);
+  check('a spell still open stays open', g().stints.s1.off, undefined);
+  check('and reads 40 minutes', A.playedSec(g(), 'p1'), 2400);
+  check('one who came on in the dead time came on at the end', g().stints.s3.on, 2400);
+  H.clock.advance(60 * MIN);
+  check('an hour on it is still 40:00', A.elapsedSec(g()), 2400);
+}
+{
+  // a game ended with its last half too long
+  const m = seed({ 0: { half: 1, start: T0 - 110 * MIN, end: T0 - 70 * MIN }, 1: { half: 2, start: T0 - 60 * MIN, end: T0 - 5 * MIN } }, {
+    currentHalf: 3, ended: T0 - 5 * MIN,
+    stints: { s1: { pid: 'p1', on: 0, off: 5700 }, s2: { pid: 'p2', on: 2400, off: 5700 } },
+    goals: { g1: { t: 5000, side: 'us' } }
+  });
+  check('full time at 95:00', A.elapsedSec(m), 5700);
+  A.setHalfLength(m, 2, 2400);
+  const g = () => A.state.matches.g1;
+  check('full time at 80:00', A.elapsedSec(g()), 4800);
+  check('the game is still over', g().ended, T0 - 5 * MIN);
+  check('a spell closed at the old full time closes at the new', g().stints.s1.off, 4800);
+  check('so she has 80 minutes', A.playedSec(g(), 'p1'), 4800);
+  check('a half-time sub too', A.playedSec(g(), 'p2'), 2400);
+  check('a goal in the dead time is at full time', g().goals.g1.t, 4800);
+  check('a length past full time is held to full time', A.setHalfLength(g(), 2, 7200), null);
+  check('— so the half is the fifty-five it ran', A.halfLenSec(g(), 2), 3300);
+  check('a first half stretched into the second stops short of it', A.setHalfLength(g(), 1, 4000), null);
+  check('— a second before the second half began', A.halfLenSec(g(), 1), 2999);
+  check('a half not played is refused', A.setHalfLength(g(), 3, 600), 'That half has not been played');
+  check('a half cannot be shorter than a second', A.setHalfLength(g(), 1, 0), null);
+  check('— it keeps one', A.halfLenSec(g(), 1), 1);
+}
+
+console.log('\n--- a stoppage the clock ran through is taken out (build 182) ---');
+{
+  // first half running, thirty minutes on the clock, a four-minute injury at 20:00 nobody paused for
+  const m = seed({ 0: { half: 1, start: T0 - 30 * MIN } }, {
+    stints: { s1: { pid: 'p1', on: 0 }, s2: { pid: 'p2', on: 0, off: 1500 }, s3: { pid: 'p3', on: 1500 } },
+    goals: { g1: { t: 1200, side: 'us' }, g2: { t: 1680, side: 'them' } },
+    shots: { h1: { t: 1260, side: 'us' } }
+  });
+  check('nothing to refuse', A.takeOutStoppage(m, 1, 1200, 240), null);
+  const g = () => A.state.matches.g1;
+  deepEq('the stretch is split at the stoppage', Object.keys(g().periods), ['0', '1']);
+  check('the first stretch ends at 20:00', g().periods[0].end, T0 - 10 * MIN);
+  check('the second begins four minutes later', g().periods[1].start, T0 - 6 * MIN);
+  check('in the same half', g().periods[1].half, 1);
+  check('and is still open', 'end' in g().periods[1], false);
+  check('the clock is still running', A.running(g()), true);
+  check('and reads 26:00', A.elapsedSec(g()), 1560);
+  check('the half too', A.halfSec(g()), 1560);
+  check('a goal at the stoppage keeps its second', g().goals.g1.t, 1200);
+  check('a shot inside the stoppage lands at it', g().shots.h1.t, 1200);
+  check('a goal after it moves up four minutes', g().goals.g2.t, 1440);
+  check('a sub after it too: off', g().stints.s2.off, 1260);
+  check('— and on', g().stints.s3.on, 1260);
+  check('the starter has 26 minutes', A.playedSec(g(), 'p1'), 1560);
+  check('the one who went off at 25:00 has 21', A.playedSec(g(), 'p2'), 1260);
+  check('a second stoppage, in the second stretch', A.takeOutStoppage(g(), 1, 1440, 60), null);
+  deepEq('three stretches', Object.keys(g().periods), ['0', '1', '2']);
+  check('25:00 on the clock', A.elapsedSec(g()), 1500);
+  check('a stoppage that runs past now is refused', A.takeOutStoppage(g(), 1, 1470, 600), 'That stoppage would run past now');
+  check('— with the clock as it was', A.elapsedSec(g()), 1500);
+  check('a half not played', A.takeOutStoppage(g(), 2, 60, 60), 'That half has not been played');
+  check('no length', A.takeOutStoppage(g(), 1, 60, 0), 'How long was the stoppage?');
+  check('past the end of the half', A.takeOutStoppage(g(), 1, 9999, 60), 'The half had not got that far');
+  check('and nothing changed for any of them', [A.elapsedSec(g()), Object.keys(g().periods).length].join(','), '1500,3');
+}
+{
+  // a closed half: the stoppage reaches the end of it, and one that would take all of it
+  const m = seed({ 0: { half: 1, start: T0 - 70 * MIN, end: T0 - 30 * MIN }, 1: { half: 2, start: T0 - 10 * MIN } }, {
+    currentHalf: 2, stints: { s1: { pid: 'p1', on: 0 }, s3: { pid: 'p3', on: 2400 } }, goals: { g1: { t: 2200, side: 'us' } }
+  });
+  check('the whole half is refused', A.takeOutStoppage(m, 1, 0, 2400), 'That would take the whole half');
+  check('a stoppage to the end of the half', A.takeOutStoppage(m, 1, 2100, 600), null);
+  const g = () => A.state.matches.g1;
+  check('the half is 35:00', A.halfLenSec(g(), 1), 2100);
+  deepEq('one stretch for it, the second half after', Object.keys(g().periods), ['0', '1']);
+  check('a goal in the stoppage is at the end of the half', g().goals.g1.t, 2100);
+  check('a half-time sub is at the new half time', g().stints.s3.on, 2100);
+  check('the clock reads 45:00', A.elapsedSec(g()), 2700);
+}
+
+console.log('\n--- the sheet, through the click handler ---');
+{
+  const m = seed({ 0: { half: 1, start: T0 - 82 * MIN - 10000, end: T0 - 30 * MIN }, 1: { half: 2, start: T0 - 10 * MIN } }, {
+    currentHalf: 2, stints: { s1: { pid: 'p1', on: 0 } }
+  });
+  A.ui.gameView = 'track';
+  A.click({ act: 'fixclock' });
+  const sheet = () => String(A.dom.node('#sheet').innerHTML || '');
+  check('the sheet lists each half', /1st half/.test(sheet()) && /2nd half/.test(sheet()), true);
+  check('with its length', /52:10 on the clock/.test(sheet()), true);
+  check('a box for the real length of each', /id="hl1"/.test(sheet()) && /id="hl2"/.test(sheet()), true);
+  check('and for a stoppage', /id="sa1"/.test(sheet()) && /id="sl1"/.test(sheet()), true);
+  check('the nudges for each half', /data-act="nudgeclock" data-h="1"/.test(sheet()) && /data-act="nudgeclock" data-h="2"/.test(sheet()), true);
+  check('it asks where the time went wrong (build 183)', /Where did the time go wrong\?/.test(sheet()), true);
+  check('and offers the four answers by name', /Started at the wrong moment/.test(sheet()) && /Ran on after it ended/.test(sheet()) && /Ran on through a stoppage/.test(sheet()), true);
+  check('a half with no pause offers no pause to undo', /Paused when play was on/.test(sheet()), false);
+  check('and one sentence on what it does to the minutes', /minutes follow the clock/.test(sheet()), true);
+  A.dom.node('#hl1').value = '40:00';
+  A.click({ act: 'halflen', h: '1' });
+  check('Save gives the half its length', A.halfLenSec(A.state.matches.g1, 1), 2400);
+  check('and the sheet stays open, redrawn', /40:00 on the clock/.test(sheet()), true);
+  A.dom.node('#hl2').value = 'soon';
+  A.click({ act: 'halflen', h: '2' });
+  check('a length that is not one is refused in words', /minutes and seconds/.test(String(A.dom.node('#toast').textContent || '')), true);
+  check('— with the half as it was', A.halfLenSec(A.state.matches.g1, 2), 600);
+  A.dom.node('#sa2').value = '2:00'; A.dom.node('#sl2').value = '1:00';
+  A.click({ act: 'stopout', h: '2' });
+  check('Take it out takes the stoppage out of that half', A.halfLenSec(A.state.matches.g1, 2), 540);
+  check('on the half\'s own clock', A.state.matches.g1.periods[1].end, T0 - 8 * MIN);
+  check('and the sheet is still open', /2nd half/.test(sheet()), true);
+  A.dom.node('#sa2').value = '8:00'; A.dom.node('#sl2').value = '5:00';
+  A.click({ act: 'stopout', h: '2' });
+  check('one that runs past now is refused in words', /past now/.test(String(A.dom.node('#toast').textContent || '')), true);
+  check('— and nothing changed', A.halfLenSec(A.state.matches.g1, 2), 540);
+}
+{
+  // once the game is over the door is on the Log tab
+  const m = seed({ 0: { half: 1, start: T0 - 110 * MIN, end: T0 - 70 * MIN }, 1: { half: 2, start: T0 - 60 * MIN, end: T0 - 5 * MIN } }, {
+    currentHalf: 3, ended: T0 - 5 * MIN, stints: { s1: { pid: 'p1', on: 0, off: 5700 } }
+  });
+  const t = A.state.teams.t1;
+  check('the match log offers Clock reading wrong?', /data-act="fixclock"/.test(A.logCard(t, m)), true);
+  A.ui.gameView = 'log';
+  A.click({ act: 'fixclock' });
+  const sheet = () => String(A.dom.node('#sheet').innerHTML || '');
+  check('the sheet says full time', /Full time at 95:00/.test(sheet()), true);
+  check('the nudges stay, one set per half (build 183)', /data-act="nudgeclock" data-h="1"/.test(sheet()) && /data-act="nudgeclock" data-h="2"/.test(sheet()), true);
+  check('no starting over either', /data-act="restartgame"/.test(sheet()), false);
+  check('but each half', /id="hl1"/.test(sheet()) && /id="hl2"/.test(sheet()), true);
+}
+
+console.log('\n--- where did the time go wrong? the start of a finished half, and a pause that should not have been (build 183) ---');
+{
+  // the first half kicked off five minutes after the clock was started; noticed in the second half
+  const m = seed({ 0: { half: 1, start: T0 - 75 * MIN, end: T0 - 30 * MIN }, 1: { half: 2, start: T0 - 10 * MIN } }, {
+    currentHalf: 2,
+    stints: { s1: { pid: 'p1', on: 0 }, s2: { pid: 'p2', on: 0, off: 1200 }, s3: { pid: 'p3', on: 1200 }, s4: { pid: 'p4', on: 2700 } },
+    goals: { g1: { t: 1500, side: 'us' }, g2: { t: 2880, side: 'them' } }
+  });
+  check('the first half reads 45:00', A.halfLenSec(m, 1), 2700);
+  A.adjustClock(m, -300, 1);
+  const g = () => A.state.matches.g1;
+  check('put back five minutes it is 40:00', A.halfLenSec(g(), 1), 2400);
+  check('its start moved five minutes later', g().periods[0].start, T0 - 70 * MIN);
+  check('its end did not', g().periods[0].end, T0 - 30 * MIN);
+  check('the second half is as it was', g().periods[1].start, T0 - 10 * MIN);
+  check('the sub at 20:00 is at 15:00', g().stints.s2.off, 900);
+  check('— and the one who came on', g().stints.s3.on, 900);
+  check('a half-time sub is at the new half time', g().stints.s4.on, 2400);
+  check('a first-half goal moved with the kick-off', g().goals.g1.t, 1200);
+  check('a second-half goal keeps its place in its half', g().goals.g2.t, 2580);
+  check('the starter has 50 minutes, not 55', A.playedSec(g(), 'p1'), 3000);
+  check('a nudge that would start before the first half ended is held there', (A.adjustClock(g(), 1200, 2), g().periods[1].start), T0 - 30 * MIN);
+  check('— so the second half is thirty minutes', A.halfLenSec(g(), 2), 1800);
+}
+{
+  // someone hit Pause at 20:00 of the first half and play went on three minutes before anyone noticed
+  const m = seed({ 0: { half: 1, start: T0 - 30 * MIN, end: T0 - 10 * MIN }, 1: { half: 1, start: T0 - 7 * MIN } }, {
+    stints: { s1: { pid: 'p1', on: 0 }, s2: { pid: 'p2', on: 0, off: 1200 }, s3: { pid: 'p3', on: 1200 }, s4: { pid: 'p4', on: 1500 } },
+    goals: { g1: { t: 1560, side: 'us' } }
+  });
+  check('the clock reads 27:00', A.elapsedSec(m), 1620);
+  deepEq('the sheet knows the pause', A.pausesIn(m, 1), [{ i: 0, at: 1200, len: 180 }]);
+  A.ui.gameView = 'track';
+  A.click({ act: 'fixclock' });
+  const sheet = () => String(A.dom.node('#sheet').innerHTML || '');
+  check('it offers the pause to undo', /Paused when play was on/.test(sheet()) && /Paused at 20:00 for 3:00/.test(sheet()), true);
+  check('with the button', /data-act="joinpause" data-h="1" data-i="0"/.test(sheet()), true);
+  A.click({ act: 'joinpause', h: '1', i: '0' });
+  const g = () => A.state.matches.g1;
+  deepEq('the two stretches are one', Object.keys(g().periods), ['0']);
+  check('from the kick-off', g().periods[0].start, T0 - 30 * MIN);
+  check('still open', 'end' in g().periods[0], false);
+  check('and the clock reads 30:00', A.elapsedSec(g()), 1800);
+  check('still running', A.running(g()), true);
+  check('a sub at the pause keeps its second: off', g().stints.s2.off, 1200);
+  check('— and on', g().stints.s3.on, 1200);
+  check('one who came on after the pause moved on three minutes', g().stints.s4.on, 1680);
+  check('— and keeps the two minutes she has played', A.playedSec(g(), 'p4'), 120);
+  check('the goal after it too', g().goals.g1.t, 1740);
+  check('the starter has the thirty', A.playedSec(g(), 'p1'), 1800);
+  check('the sheet no longer offers it', /Paused when play was on/.test(sheet()), false);
+  check('a pause that is gone is refused', A.joinPause(g(), 1, 0), 'That pause is not there any more');
+  check('as is one in the wrong half', (A.state.matches.g1.periods[1] = { half: 2, start: T0 - 5 * MIN }, A.joinPause(A.state.matches.g1, 1, 0)), 'That pause is not there any more');
+}
+
 H.summary('clock and minutes');

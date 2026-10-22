@@ -152,7 +152,7 @@ const EXPORTS = `{
   liveReading, diffTag, tickLive, feedItems, feedMin, watchFeed, viewFeed, myGameLine, matchDayCard, pickWhen, pickCell, shareable,
   playedSec, spellSec, restSec, plannedSec, matchMinutes, onField, fieldIds,
   posOf, anomalies, squad, isOut, evenSplit, clashesOn, buildPlan, resolveShape,
-  presetsFor, slotById, slotIdOf, slotTaken, currentSpot, byRole,
+  presetsFor, slotById, slotIdOf, slotTaken, currentSpot, byRole, draggable, HOLD_MS,
   planBlocks, planBlockAt, nextPlanBlock, planSeconds, snapLabel,
   /* planned subs at the sideline */
   planLocked, subsDue, subsUntil, subsWhen, subsDiff, subsClock, subsCard,
@@ -161,11 +161,12 @@ const EXPORTS = `{
   pitchNow, benchCalls, benchFrom, benchText, sheetBench, sheetBenchAll,
   /* stats */
   goalList, score, EVENTS, evOf, evLabel, evCount, evList, possOn, shotList, recap, recapNotes, viewRecap, gameMenu, gameHeader, headClock, sheetGameMenu, gameSegments, gameSegOf, openGameScreen, recapLines, seasonTrends, logCard, lineChart, lcReading, lcSay, lcScrub,
-  shotTally, possMarkers, possession, subEvents, deleteSub,
+  shotTally, possMarkers, possession, subEvents, subGroups, deleteSub,
+  shapeTarget, shapeKeep, shapePresetSlots, plansToCopy, copyPlanFrom,
   /* actions */
   startClock, pauseClock, endHalf, endGame, putOnField, takeOffField, swap,
   moveSub, subQuiet, applyStaged, movePos, switchTo, subAt, restartMatch,
-  adjustClock, tapLive, putOn, stage, staged, stagedIds, isStaged,
+  adjustClock, remapSec, reclock, periodsFrom, halfLenSec, setHalfLength, takeOutStoppage, joinPause, pausesIn, tapLive, putOn, stage, staged, stagedIds, isStaged,
   /* public mirror */
   publicGame, publicDoc, shareIds, pageAt, shareBase, teamLink, gameLink,
   gameStatus, shirtOf,
