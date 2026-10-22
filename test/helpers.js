@@ -71,7 +71,7 @@ console.log('\n--- what she may do, checked in the handler ---');
   check('a game that has kicked off: not its plan', A.mayAct('snapadd', g2, {}), false);
   check('— not editing it', A.mayAct('editmatch', g1, { id: 'g2' }), false);
   check('— nor deleting it', A.mayAct('delmatch', g1, { id: 'g2' }), false);
-  for (const a of ['start', 'pause', 'endgame', 'taplive', 'puton', 'doswitch', 'fixclock'])
+  for (const a of ['start', 'pause', 'endgame', 'taplive', 'puton', 'doswitch', 'fixclock', 'halflen', 'stopout', 'joinpause'])
     check(`never the day itself: ${a}`, A.mayAct(a, g1, {}), false);
   for (const a of ['goal', 'shot', 'ev'])
     check(`nor logging: ${a}`, A.mayAct(a, g1, {}), false);
