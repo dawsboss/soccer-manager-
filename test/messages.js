@@ -368,7 +368,7 @@ const NOTE = (A, by, text, extra) => ({ by, byName: CLUB.access.members[by].name
     A.click({ act: 'sdopen', u: 'trk' }); await A.flush();
     check('with a tracker it is a people conversation, not a colleagues\' one', A.ui.view + ' ' + A.cidRoot(A.sdId('coach', 'trk')), 'thread talk');
     A.click({ act: 'sdopen', u: 'mum' }); await A.flush();
-    check('and with a parent the same, read by the admins too', A.ui.view + ' ' + /you, Mo and the club's admins/.test(A.rendered()), 'thread true');
+    check('and with a parent the same, the two alone', A.ui.view + ' ' + /Private · only you and Mo/.test(A.rendered()), 'thread true');
   }
   {
     const { A, fbk } = await boot('other');
@@ -412,7 +412,7 @@ const NOTE = (A, by, text, extra) => ({ by, byName: CLUB.access.members[by].name
       A.click({ act: 'sessopen', id: 's1' }); await A.flush();
       check('the session\'s sheet offers Message Kim', /data-act="sdopen" data-u="other"[^>]*>Message Kim</.test(String(A.dom.node('#sheet').innerHTML)), true);
       A.click({ act: 'sdopen', u: 'other' }); await A.flush();
-      check('which opens it, saying who reads it', A.ui.view === 'thread' && /Private · only you, Kim and the club's admins/.test(A.rendered()), true);
+      check('which opens it, saying the two alone read it', A.ui.view === 'thread' && /Private · only you and Kim/.test(A.rendered()) && /no other coach, and no admin/.test(A.rendered()), true);
       A.dom.node('#msgText').value = 'Can Ella work on her left foot?';
       A.click({ act: 'msgsend', cid: A.sdId('mum', 'other') }); await A.flush();
       const w = writes(fbk, 'talk/');
@@ -434,14 +434,11 @@ const NOTE = (A, by, text, extra) => ({ by, byName: CLUB.access.members[by].name
       check('— and she is nobody\'s partner', A.talkPartners().includes('ella'), false);
     }
     {
+      // the two alone (the owner, 2026-10-22): an admin reads no conversation she is not in, not even the list of them
       const { A, fbk } = await withSess('adm');
-      check('an admin listens to the whole of talk/: she reads every one of them', fbk.watching('talk/CLUB'), true);
-      fbk.deliver('talk/CLUB', { 'mum~other': { m: { t1: { by: 'other', byName: 'Kim', at: A.nowMs() - 1000, text: 'Left foot it is' } } } }); await A.flush();
-      A.click({ act: 'inbox' }); await A.flush();
-      check('listed as whose it is, to read', /Mo and Kim <span class="muted">· you can read this as an admin/.test(A.rendered()), true);
-      check('and not counted as hers to answer', A.msgUnread(), 0);
+      check('an admin listens to her own pairs and never the list at talk/', !fbk.watching('talk/CLUB') && !fbk.watching('talk/CLUB/mum~other') && fbk.watching('talk/CLUB/adm~mum'), true);
       A.click({ act: 'talkread', cid: 'mum~other' }); await A.flush();
-      check('opens read-only: no composer, the readers named', A.ui.view === 'thread' && !/id="msgText"/.test(A.rendered()) && /Mo, Kim and the club's admins/.test(A.rendered()), true);
+      check('— and has no door into one', A.ui.view !== 'thread', true);
     }
     for (const who of ['trk', 'dad']) {
       const { A, fbk } = await withSess(who);

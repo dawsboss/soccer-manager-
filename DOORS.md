@@ -223,17 +223,19 @@ talk/{code}/{a}~{b}/
   a session coach, a family and an admin, two coaches: all of these. Two
   families are not: parents never see another family's name in the app, and
   a parents' chat is a different product.
-- **Who reads it**: the two, and the club's admins. The admins' read is what
-  keeps the spirit of *never one coach alone* with a family while the team's
-  other coaches drop out of a conversation that was never about the team.
-  The lock on screen says exactly that: *Kept to the two of you and the
-  club's admins.* Two colleagues' `staffdm` stays the two alone and is not
-  moved; new colleague conversations may use `talk` or `staffdm` as the
-  build finds simplest, but one of them, not both.
-- **A child with her own sign-in is never in one.** She keeps reading and
-  writing in her parents' conversations (`famThreads()`) as today, and no
-  `talk` is keyed by her uid. A rule cannot find her guardians from a
-  root-level id, and a child alone in a chat with an adult is not a thing
+- **Who reads it**: the two, and nobody else (the owner, 2026-10-22: *the
+  people in a message are the only people able to access it*; build 182,
+  rules version 36 took the admins' read out, which build 180 had added to
+  keep the spirit of *never one coach alone*). The lock on screen says *only
+  you and Kim*. Two colleagues' `staffdm` stays the two alone, as it was.
+- **A child with her own sign-in is never in one**, on the rule's word since
+  build 182: `access/playerIndex/{uid}` is a team she plays on with her own
+  sign-in, checked against `teamPlayers` (which the squad's own `self`
+  backs), written by her own phone on accepting her invite, kept by the
+  coach's and an admin's phone (`syncPlayerIndex()`) and by the server
+  (`functions/access.js`), and the `talk` rule refuses a pair with either
+  account on it. She keeps reading and writing in her parents' conversations
+  (`famThreads()`), and a child alone in a chat with an adult is not a thing
   this app makes.
 - *Built, build 180.* Rules version 34: `talk` with the clauses above, in `test/rules.js` first
   for every kind of account (a tracker, a fan, a stranger, two families, a

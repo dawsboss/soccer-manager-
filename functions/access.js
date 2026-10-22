@@ -161,6 +161,20 @@ async function syncCoachIndex(env, f, code, uid, out) {
   await syncOneIndex(env, f, uid, out, 'coachIndex', 'coaches', coachTeamOf);
   await syncOneIndex(env, f, uid, out, 'helperIndex', 'helpers', helperTeamOf);
 }
+/* playerIndex (DOORS.md; rules version 36): a team she plays on with her own
+   sign-in, so a root-level rule (talk/) can tell a child's account from a
+   parent's with one lookup. Kept as coachIndex is: any team will do, rewritten
+   only once the one it names stops being true. */
+const playerTeamOf = (f, uid) => keys(f.teams).sort().find(tid => Object.values(squad(f, tid)).some(p => p && has(p.self, uid))) || null;
+async function syncPlayerIndex(env, f, uid, out) {
+  const now = (f.access.playerIndex || {})[uid] || null;
+  if (now && Object.values(squad(f, now)).some(p => p && has(p.self, uid))) return;
+  const want = playerTeamOf(f, uid);
+  if (want === now) return;
+  const p = `${f.L.access}/playerIndex/${uid}`;
+  if (want) { await env.set(p, want); out.push('set playerIndex/' + uid); }
+  else { await env.remove(p); out.push('del playerIndex/' + uid); }
+}
 
 async function syncIndex(env, f, code, uid, out, now) {
   const index = f.access.index;
@@ -205,6 +219,7 @@ async function settle(env, code, { uids = [], tids = [], parents = false, player
   }
   for (const uid of [...new Set(uids)].filter(okKey)) {
     if (coaches) await syncCoachIndex(env, f, code, uid, out);
+    if (players) await syncPlayerIndex(env, f, uid, out);
     await syncIndex(env, f, code, uid, out, now);
     await syncName(env, f, uid, out);
   }
@@ -416,4 +431,4 @@ function onFans(env, params, before, after, now) {
   return settle(env, params.code, { uids: both(before, after), tids: [params.tid], fans: true }, now);
 }
 
-module.exports = { onChildRecord, onCare, childFrom, splitName, settle, onAdmin, onTeamStaff, onGuardians, onSelf, onViewer, onSessionCoach, onFans, onMember, onSquadPlayer, onRosterOpen, rosterEntry, isStaff, hasRole, teamIndexWanted, linkedWanted, coachTeamOf, helperTeamOf };
+module.exports = { onChildRecord, onCare, childFrom, splitName, settle, onAdmin, onTeamStaff, onGuardians, onSelf, onViewer, onSessionCoach, onFans, playerTeamOf, onMember, onSquadPlayer, onRosterOpen, rosterEntry, isStaff, hasRole, teamIndexWanted, linkedWanted, coachTeamOf, helperTeamOf };

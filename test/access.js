@@ -277,10 +277,12 @@ const rest = S => canon({ ...S.at('workspaces/CLUB'), children: null, teams: noC
     const S = server();
     await S.fire(W + 'teams/t1/players/p2/self/rosa', 'inv_r');
     check('a player given her own sign-in: teamPlayers names her record', A_(S, 'teamPlayers/t1/rosa'), 'p2');
+    check('— and playerIndex her team, so a root-level rule knows her account is a child\'s (DOORS.md)', A_(S, 'playerIndex/rosa'), 't1');
     check('in the club', A_(S, 'index/rosa'), true);
     check('never a family', A_(S, 'teamParents/t1/rosa'), null);
     await S.fire(W + 'teams/t1/players/p1/self/ella', null);
     check('taken away: out of teamPlayers', A_(S, 'teamPlayers/t1/ella'), null);
+    check('— and off playerIndex', A_(S, 'playerIndex/ella'), null);
     check('and the club', A_(S, 'index/ella'), null);
     check('her parents keep theirs', A_(S, 'teamParents/t1/mum'), 'p1');
   }

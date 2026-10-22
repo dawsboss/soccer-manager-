@@ -1333,8 +1333,8 @@ reads('nor read', COACH, 'shareOwners/sh1', false);
   const TK = 'talk/CLUB/coach~mum';
   reads('the coach reads her conversation with a family', COACH, TK, true);
   reads('and so does the family', MUM, TK, true);
-  reads('an admin reads it too, though she is not in it', ADM, TK, true);
-  reads('— and the list of every one of them', ADM, 'talk/CLUB', true);
+  reads('an admin who is not in it does not: the two alone (the owner, 2026-10-22)', ADM, TK, false);
+  reads('— nor the list of them', ADM, 'talk/CLUB', false);
   reads('a coach does not read the list', COACH, 'talk/CLUB', false);
   reads('nor another coach this one', OTHER, TK, false);
   reads('nor the tracker', TRK, TK, false);
@@ -1342,7 +1342,7 @@ reads('nor read', COACH, 'shareOwners/sh1', false);
   writes('the coach writes to the family', COACH, TK + '/m/t1', msg('coach'), true);
   writes('the family answers', MUM, TK + '/m/t1', msg('mum'), true);
   writes('not in the coach\'s name', MUM, TK + '/m/t1', msg('coach'), false);
-  writes('the admin reads it but cannot write into a conversation that is not hers', ADM, TK + '/m/t1', msg('adm'), false);
+  writes('an admin cannot write into a conversation that is not hers', ADM, TK + '/m/t1', msg('adm'), false);
   writes('an admin writes to a family in her own', ADM, 'talk/CLUB/adm~mum/m/t1', msg('adm'), true);
   writes('two who are neither staff cannot: a family and the tracker', MUM, 'talk/CLUB/mum~trk/m/t1', msg('mum'), false);
   writes('nor the tracker starting it', TRK, 'talk/CLUB/mum~trk/m/t1', msg('trk'), false);
@@ -1418,6 +1418,23 @@ reads('nor read', COACH, 'shareOwners/sh1', false);
     writes('the coach can put her on it', COACH, TPL + 't1/ella', 'p1', true);
     writes('another team\'s coach cannot', OTHER, TPL + 't1/ella', 'p1', false);
     A.teamPlayers = { t1: { ella: 'p1' } };
+    // playerIndex (DOORS.md; version 36): the team she plays on, checked against teamPlayers, so a root-level rule knows a child's account
+    const PIX = 'workspaces/CLUB/access/playerIndex/';
+    writes('she puts herself on the players\' index, naming her team', ELLA, PIX + 'ella', 't1', true);
+    writes('not a team whose player list does not hold her', ELLA, PIX + 'ella', 't2', false);
+    writes('a parent cannot put herself on it', MUM, PIX + 'mum', 't1', false);
+    writes('the coach can put her on it', COACH, PIX + 'ella', 't1', true);
+    writes('another team\'s coach cannot', OTHER, PIX + 'ella', 't1', false);
+    writes('an admin can', ADM, PIX + 'ella', 't1', true);
+    writes('only a team id', ELLA, PIX + 'ella', true, false);
+    A.playerIndex = { ella: 't1' };
+    writes('the coach takes her off it', COACH, PIX + 'ella', null, true);
+    writes('a parent does not', MUM, PIX + 'ella', null, false);
+    reads('a conversation keyed by people never holds a child: the coach cannot open one with her', COACH, 'talk/CLUB/coach~ella', false);
+    writes('nor write into it', COACH, 'talk/CLUB/coach~ella/m/t1', msg('coach'), false);
+    reads('nor can she', ELLA, 'talk/CLUB/coach~ella', false);
+    writes('nor start one', ELLA, 'talk/CLUB/coach~ella/m/t1', msg('ella'), false);
+    delete A.playerIndex;
     reads('she reads her team\'s notices', ELLA, 'board/CLUB/t1', true);
     reads('not another team\'s', ELLA, 'board/CLUB/t2', false);
     writes('and ticks one seen', ELLA, 'board/CLUB/t1/n1/seen/ella', NOW, true);
@@ -3174,15 +3191,14 @@ console.log(`
      read (functions/mycal.js). Private is the default, and the rules refuse
      any busy time while she has not said to share.
 
- 11. A conversation keyed by people (talk/{code}/{a}~{b}, version 34) is held
-     by the rules to two accounts in the club with at least one of them staff
-     (an admin, a coach or a team helper), the admins reading it too. What the
-     rules cannot see is whether one of the two is a player's own sign-in: a
-     rule can find her guardians from a team's table, not from a root-level
-     id. The app never offers or opens one (isPlayerUid, myTalk), and a staff
-     account writing to a child directly would be a staff account misusing
-     the database, which no rule here distinguishes from a coach writing to a
-     parent. A lookup table of players' own uids would close it.`);
+ 11. Closed (version 36): a conversation keyed by people (talk/{code}/{a}~{b})
+     is held to two accounts in the club with at least one of them staff (an
+     admin, a coach, a team helper or a session coach), the two alone reading
+     it (the owner, 2026-10-22), and never a player's own sign-in: the
+     players' index (access/playerIndex/{uid}, a team she plays on, checked
+     against teamPlayers) is the one lookup a root-level rule needed to tell a
+     child's account from a parent's. The app never offers one either
+     (isPlayerUid, myTalk).`);
 
 console.log(`\n${failures ? failures + ' EXPECTATION(S) FAILED' : 'all expectations hold'}`);
 process.exit(failures ? 1 : 0);

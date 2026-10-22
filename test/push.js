@@ -178,8 +178,13 @@ const toUid = (S, u) => S.sent().filter(m => m.data.uid === u);
     check('not the admins, who read it but are not told', toUid(S, 'adm').length, 0);
     const m = toUid(S, 'mum')[0];
     check('titled with who wrote it, opening the conversation with her', m.data.title + ' ' + m.data.hash, 'Jaz #/messages/with/coach');
-    const reads = S.reads.filter(p => !/^((workspaces|orgs)\/CLUB\/access\/(admins|coachIndex|helperIndex|sessionCoaches|index)$|retired\/CLUB$|pushTokens\/mum$|people\/mum\/mute\/msg$)/.test(p));
-    deepEq('it read the five tables, her switch for messages, and her phones, nothing else', reads, []);
+    const reads = S.reads.filter(p => !/^((workspaces|orgs)\/CLUB\/access\/(admins|coachIndex|helperIndex|sessionCoaches|playerIndex|index)$|retired\/CLUB$|pushTokens\/mum$|people\/mum\/mute\/msg$)/.test(p));
+    deepEq('it read the six tables, her switch for messages, and her phones, nothing else', reads, []);
+    // a player's own sign-in is never in one (playerIndex, rules version 36): nobody is told
+    const S3 = server();
+    await S3.fire('workspaces/CLUB/access/playerIndex/ella', 't1');
+    const r3 = await S3.fire('talk/CLUB/coach~ella/m/t8', { by: 'coach', byName: 'Jaz', at: 5, text: 'hi' });
+    check('a child\'s own sign-in named in the pair: nobody is told', (r3.pushTalkMessage || { to: [] }).to.length + S3.sent().length, 0);
     // a session coach (DOORS.md, a coach of no team) is staff for this too
     const S2 = server();
     await S2.fire('workspaces/CLUB/access/sessionCoaches/gk', true); await S2.fire('workspaces/CLUB/access/index/gk', true);
